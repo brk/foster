@@ -55,8 +55,11 @@ CtorId parseCtorId(const pb::PbCtorId& c) { CtorId x;
 
 CtorInfo parseCtorInfo(const pb::PbCtorInfo& c) { CtorInfo x;
   x.ctorId = parseCtorId(c.ctor_id());
-  for (int i = 0; i < c.ctor_arg_types_size(); ++i) {
-    x.ctorArgTypes.push_back(TypeAST_from_pb(&c.ctor_arg_types(i)));
+  x.ctorStructType = NULL;
+  if (c.has_ctor_struct_ty()) {
+    x.ctorStructType = dynamic_cast<StructTypeAST*>(
+                         TypeAST_from_pb(&c.ctor_struct_ty()));
+    ASSERT(x.ctorStructType != NULL);
   }
   return x;
 }
@@ -485,15 +488,7 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
   }
 
   if (t.tag() == pb::Type::PROC) {
-    FnTypeAST* fnty = parseProcType(t.procty());
-    fnty->markAsProc();
-    return fnty;
-  }
-
-  if (t.tag() == pb::Type::CLOSURE) {
-    FnTypeAST* fnty = parseProcType(t.procty());
-    fnty->markAsClosure();
-    return fnty;
+    return parseProcType(t.procty());
   }
 
   if (t.tag() == pb::Type::STRUCT) {
@@ -502,14 +497,6 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
       parts[i] = TypeAST_from_pb(&t.type_parts(i));
     }
     return StructTypeAST::get(parts);
-  }
-
-  if (t.tag() == pb::Type::TUPLE) {
-    std::vector<TypeAST*> parts(t.type_parts_size());
-    for (size_t i = 0; i < parts.size(); ++i) {
-      parts[i] = TypeAST_from_pb(&t.type_parts(i));
-    }
-    return TupleTypeAST::get(parts);
   }
 
   if (t.tag() == pb::Type::CORO) {

@@ -329,7 +329,7 @@ data Ident = Ident        T.Text Uniq
            | GlobalSymbol T.Text
 
 data TypedId ty = TypedId { tidType :: ty, tidIdent :: Ident }
-
+  
 type PatternBinding expr ty = ((Pattern ty, [TypedId ty]), expr)
 
 data FosterPrim ty = NamedPrim (TypedId ty) -- invariant: global symbol
@@ -445,6 +445,7 @@ deriving instance Functor AllocInfo
 deriving instance Functor FosterPrim
 deriving instance Functor CtorInfo
 deriving instance Functor DataCtor
+deriving instance Functor DataType
 deriving instance Functor ArrayIndex
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

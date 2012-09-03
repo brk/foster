@@ -9,7 +9,7 @@
 module Foster.CFG
 ( computeCFGs
 , Insn(..)
-, BlockId, BlockEntry
+, BlockId, BlockEntry'
 , BasicBlockGraph(..)
 , BasicBlock
 , CFLast(..)
@@ -143,7 +143,7 @@ extractFunction st fn = do
         entryLab (bb:_) = let frs :: Insn C O
                               frs@(ILabel elab) = firstNode bb in elab
 
-blockId :: BlockEntry -> BlockId
+blockId :: BlockEntry' t -> BlockId
 blockId = fst
 
 measure :: String -> Boxes.Box
@@ -417,7 +417,8 @@ data BasicBlockGraph = BasicBlockGraph { bbgEntry :: BlockEntry
                                        , bbgBody  :: Graph Insn C C
                                        }
 type CFFn = Fn BasicBlockGraph MonoType
-type BlockEntry = (BlockId, [TypedId MonoType])
+type BlockEntry = BlockEntry' MonoType
+type BlockEntry' t = (BlockId, [TypedId t])
 
 -- We pair a name for later codegen with a label for Hoopl's NonLocal class.
 type BlockId = (String, Label)

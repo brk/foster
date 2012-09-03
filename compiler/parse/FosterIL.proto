@@ -6,9 +6,7 @@ message Type {
     PTR = 2;
     PROC = 3;
     CORO = 4;
-    TUPLE = 5;
     CARRAY = 6;
-    CLOSURE = 7;
     PRIM_INT = 8;
     FLOAT64 = 9;
     ARRAY = 11;
@@ -209,7 +207,7 @@ message PbSwitch {
 
 message PbCtorInfo {
   required PbCtorId      ctor_id = 1;
-  repeated Type   ctor_arg_types = 4;
+  optional Type   ctor_struct_ty = 4;
 }
 
 message PbCtorId {

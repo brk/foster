@@ -13,6 +13,7 @@ import Foster.Base(LiteralInt, LiteralFloat, CtorInfo, ArrayIndex(..),
                    -- AExpr(freeIdents), tidIdent,
                    TExpr(freeTypedIds), TypedWith(..))
 import Foster.MonoType
+import Foster.TypeLL
 
 import qualified Data.Text as T
 
@@ -88,6 +89,27 @@ instance TypedWith (Letable MonoType) MonoType where
       ILArrayRead t _   -> t
       ILArrayPoke   ai v-> TupleType []
       ILAllocate info   -> PtrType (allocType info)
+      
+instance TypedWith (Letable TypeLL) TypeLL where
+  typeOf letable = case letable of
+      ILText         {} -> LLTyConApp "Text" []
+      ILBool         {} -> llBoolType
+      ILInt         t _ -> t
+      ILFloat       t _ -> t
+      ILTuple      vs _ -> LLPtrType (LLStructType (map tidType vs))
+      ILKillProcess t _ -> t
+      ILOccurrence t v _-> t
+      ILCallPrim t _ _  -> t
+      ILCall     t _ _  -> t
+      ILAppCtor  t _ _  -> t
+      ILAlloc      v _  -> LLPtrType (tidType v)
+      ILDeref    t v    -> t
+      ILStore      v v2 -> LLPtrType (LLStructType [])
+      ILBitcast  t _    -> t
+      ILAllocArray t _  -> t
+      ILArrayRead t _   -> t
+      ILArrayPoke   ai v-> LLPtrType (LLStructType [])
+      ILAllocate info   -> LLPtrType (allocType info)
 
 isPurePrim _ = False -- TODO: recognize pure primitives
 isPureFunc _ = False -- TODO: use effect information to refine this predicate.
@@ -134,7 +156,7 @@ isPure letable = case letable of
       ILArrayRead    {} -> True
       ILArrayPoke    {} -> False -- as with store
 
-canGC :: Letable MonoType -> Bool
+canGC :: Letable TypeLL -> Bool
 canGC letable = case letable of
          ILAppCtor     {} -> True
          ILAllocate    {} -> True
@@ -164,7 +186,7 @@ canGCPrim (NamedPrim (TypedId _ (GlobalSymbol name))) =
                         ,"expect_i32b", "print_i32b"])
 canGCPrim _ = True
 
-canGCF :: TypedId MonoType -> Bool -- "can gc from calling this function-typed variable"
+canGCF :: TypedId TypeLL -> Bool -- "can gc from calling this function-typed variable"
 canGCF fnvarid = True -- TODO: use effect information to recognize OK calls
                       --      (or explicit mayGC annotations on call sites?)
 

@@ -102,30 +102,6 @@ RefTypeAST* RefTypeAST::get(TypeAST* baseType) {
 
 /////////////////////////////////////////////////////////////////////
 
-class StructTypeAST;
-
-// converts      t1 (t2, t3)      to { t1 (i8*, t2, t3)*, i8* }
-StructTypeAST* FnTypeAST::getClosureStructType() const {
-  TypeAST* envType = getGenericClosureEnvType();
-
-  // We can mark closures with whatever calling convention we want,
-  // since closures are internal by definition.
-  std::vector<TypeAST*> fnParams;
-  fnParams.push_back(envType);
-  // Converts t1 (t2, t3)   to  t1 (i8*, t2, t3)*
-  for (int i = 0; i < this->getNumParams(); ++i) {
-    fnParams.push_back(this->getParamType(i));
-  }
-  FnTypeAST* newProcTy = new FnTypeAST(this->getReturnType(), fnParams,
-                                       this->getAnnots());
-  newProcTy->markAsProc();
-
-  std::vector<TypeAST*> cloTypes;
-  cloTypes.push_back(newProcTy);
-  cloTypes.push_back(envType);
-  return StructTypeAST::get(cloTypes);
-}
-
 FnTypeAST::FnTypeAST(TypeAST* returnType,
                      const std::vector<TypeAST*>& argTypes,
                      std::map<string, string> _annots)
@@ -136,21 +112,15 @@ FnTypeAST::FnTypeAST(TypeAST* returnType,
   ASSERT(returnType) << "FnTypeAST() needs non-NULL return type";
   getCallingConventionID(); // ensure we have a valid calling convention...
 
-  // By default, function types are not proc types...
+  // By default, function types are not proc types (at the front-end).
   if (annots["proc"] == "") {
     annots["proc"] = "false";
   }
 }
 
 llvm::Type* FnTypeAST::getLLVMType() const {
-  if (!repr) {
-    if (isMarkedAsClosure()) {
-      EDiag() << "FnTypeAST::getClosureType for fn type" << str(this) << " ~~~ " << str(getLLVMFnType());
-      repr = llvm::PointerType::getUnqual(getClosureStructType()->getLLVMType());
-      EDiag() << "FnTypeAST::getClosureType : " << str(repr);
-    } else {
-      repr = llvm::PointerType::getUnqual(getLLVMFnType());
-    }
+  if (!repr) { // At the backend, FnTypeAST == LLProcType
+    repr = llvm::PointerType::getUnqual(getLLVMFnType());
   }
   return repr;
 }
@@ -210,7 +180,8 @@ llvm::CallingConv::ID FnTypeAST::getCallingConventionID() const {
 /////////////////////////////////////////////////////////////////////
 
 llvm::Type* TupleTypeAST::getLLVMType() const {
-  return llvm::PointerType::getUnqual(getUnderlyingStruct()->getLLVMType());
+  ASSERT(false) << "TupleTypeAST should not be used by the backend!";
+  return NULL;
 }
 
 TupleTypeAST* TupleTypeAST::get(const vector<TypeAST*>& argTypes) {

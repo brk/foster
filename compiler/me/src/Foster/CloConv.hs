@@ -25,6 +25,7 @@ import Compiler.Hoopl
 
 import Foster.Base
 import Foster.CFG
+import Foster.TypeLL
 import Foster.MonoType
 import Foster.Letable
 import Foster.PatternMatch
@@ -42,18 +43,19 @@ import Foster.Output(out)
 
 -- ||||||||||||||||||||||||| Datatypes ||||||||||||||||||||||||||{{{
 data CCBody = CCB_Procs [CCProc] CCMain
-data CCMain = CCMain TailQ MonoType MoVar [MoVar]
+data CCMain = CCMain TailQ TypeLL LLVar [LLVar]
 type CCProc = Proc BasicBlockGraph'
 type Block' = Block Insn' C C
 type BlockG = Graph Insn' C C
+type BlockEntryL = BlockEntry' TypeLL
 
-mkBlockG :: BlockEntry -> [Insn' O O] -> Insn' O C -> BlockG
+mkBlockG :: BlockEntryL -> [Insn' O O] -> Insn' O C -> BlockG
 mkBlockG lab mids last = blockGraph (mkBlock' lab mids last)
 
-mkBlock' :: BlockEntry -> [Insn' O O] -> Insn' O C -> Block'
+mkBlock' :: BlockEntryL -> [Insn' O O] -> Insn' O C -> Block'
 mkBlock' lab mids last = (blockJoin (CCLabel lab) (blockFromList mids) last)
 
-data BasicBlockGraph' = BasicBlockGraph' { bbgpEntry :: BlockEntry
+data BasicBlockGraph' = BasicBlockGraph' { bbgpEntry :: BlockEntryL
                                          , bbgpRetK  :: BlockId
                                          , bbgpBody  :: BlockG
                                          }
@@ -61,35 +63,35 @@ data BasicBlockGraph' = BasicBlockGraph' { bbgpEntry :: BlockEntry
 -- A Closure records the information needed to generate code for a closure.
 -- The environment name is recorded so that the symbol table contains
 -- the right entry when mutually-recursive functions capture multiple envs.
-data Closure = Closure { closureProcVar  :: MoVar
-                       , closureEnvVar   :: MoVar
-                       , closureCaptures :: [MoVar]
+data Closure = Closure { closureProcVar  :: LLVar
+                       , closureEnvVar   :: LLVar
+                       , closureCaptures :: [LLVar]
                        , closureAllocSrc :: AllocationSource
                        } deriving Show
-type MonoLetable = Letable MonoType
-data Insn' e x where
-        CCLabel   :: BlockEntry           -> Insn' C O
-        CCLetVal  :: Ident   -> MonoLetable   -> Insn' O O
-        CCLetFuns :: [Ident] -> [Closure] -> Insn' O O
-        CCGCLoad  :: MoVar   -> RootVar   -> Insn' O O
-        CCGCInit  :: MoVar -> MoVar -> RootVar -> Insn' O O
-        CCGCKill  :: Bool  ->   RootVar   -> Insn' O O
-        CCTupleStore :: [MoVar] -> MoVar -> AllocMemRegion -> Insn' O O
-        CCLast    :: CCLast               -> Insn' O C
+type LLRootVar = LLVar
+data Insn' e x where                             
+        CCLabel   :: BlockEntryL                  -> Insn' C O
+        CCLetVal  :: Ident   -> Letable TypeLL   -> Insn' O O
+        CCLetFuns :: [Ident] -> [Closure]        -> Insn' O O
+        CCGCLoad  :: LLVar   -> LLRootVar        -> Insn' O O
+        CCGCInit  :: LLVar -> LLVar -> LLRootVar -> Insn' O O
+        CCGCKill  :: Bool  ->   RootVar          -> Insn' O O
+        CCTupleStore :: [LLVar] -> LLVar -> AllocMemRegion -> Insn' O O
+        CCLast    :: CCLast                      -> Insn' O C
 
-type RootVar = MoVar
+type RootVar = LLVar
 
 data Proc blocks =
-     Proc { procReturnType :: MonoType
+     Proc { procReturnType :: TypeLL
           , procIdent      :: Ident
-          , procVars       :: [MoVar]
+          , procVars       :: [LLVar]
           , procRange      :: SourceRange
           , procBlocks     :: blocks
           }
 
-data CCLast = CCCont        BlockId [MoVar] -- either ret or br
-            | CCCall        BlockId MonoType Ident MoVar [MoVar] -- add ident for later let-binding
-            | CCCase        MoVar [(CtorId, BlockId)] (Maybe BlockId) (Occurrence MonoType)
+data CCLast = CCCont        BlockId [LLVar] -- either ret or br
+            | CCCall        BlockId TypeLL Ident LLVar [LLVar] -- add ident for later let-binding
+            | CCCase        LLVar [(CtorId, BlockId)] (Maybe BlockId) (Occurrence TypeLL)
             deriving (Show)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -98,7 +100,7 @@ closureConvertAndLift :: DataTypeSigs
                       -> [Ident]
                       -> Uniq
                       -> ModuleIL CFBody MonoType
-                      -> ModuleIL CCBody MonoType
+                      -> ModuleIL CCBody TypeLL
 closureConvertAndLift dataSigs globalIds u m =
     -- We lambda lift top level functions, since we know a priori
     -- that they don't have any "real" free vars.
@@ -106,7 +108,13 @@ closureConvertAndLift dataSigs globalIds u m =
     let initialState = ILMState u Map.empty Map.empty dataSigs in
     let (ccmain, st) = runState (closureConvertToplevel globalIds $ moduleILbody m)
                                                                  initialState in
-    m { moduleILbody = CCB_Procs (Map.elems $ ilmProcs st) ccmain }
+    ModuleIL {
+          moduleILbody        = CCB_Procs (Map.elems $ ilmProcs st) ccmain
+        , moduleILdecls       = map (\(s,t) -> (s, monoToLL t)) (moduleILdecls m)
+        , moduleILdataTypes   = map (fmap monoToLL) (moduleILdataTypes m)
+        , moduleILprimTypes   = map (fmap monoToLL) (moduleILprimTypes m)
+        , moduleILsourceLines = moduleILsourceLines m
+        }
 
 closureConvertToplevel :: [Ident] -> CFBody -> ILM CCMain
 closureConvertToplevel globalIds body = do
@@ -120,7 +128,7 @@ closureConvertToplevel globalIds body = do
        -- (via the ILM monad) a list of all procs generated, including those
        -- from nested functions.
        cvt :: Set Ident -> CFBody -> ILM CCMain
-       cvt _ (CFB_Call tc t v vs) = return (CCMain tc t v vs)
+       cvt _ (CFB_Call tc t v vs) = return (CCMain tc (monoToLL t) (llv v) (map llv vs))
 
        cvt globalized (CFB_LetFuns ids fns body) =
          let
@@ -201,6 +209,30 @@ lambdaLift freeVars f = do
     ilmPutProc (closureConvertedProc liftedProcVars f newbody)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+monoToLL :: MonoType -> TypeLL
+monoToLL mt = case mt of
+   PrimInt       isb            -> LLPrimInt       isb    
+   PrimFloat64                  -> LLPrimFloat64          
+   TyConApp      dtn tys        -> LLTyConApp      dtn (map q tys)
+   TupleType     tys            -> llTupleType     (map q tys)   
+   StructType    tys            -> LLStructType    (map q tys)   
+   CoroType      s t            -> LLCoroType      (q s) (q t)    
+   ArrayType     t              -> LLArrayType     (q t)     
+   PtrType       t              -> LLPtrType       (q t)     
+   PtrTypeUnknown               -> LLPtrTypeUnknown
+   FnType        d r cc FT_Proc -> LLProcType (map q d)  (q r) cc
+   FnType        d r cc FT_Func -> LLPtrType (LLStructType [procty,envty])
+                              where procty = LLProcType (envty:(map q d)) (q r) cc
+                                    envty  = LLPtrType (LLPrimInt I8)
+ where q = monoToLL
+       llTupleType tys = LLPtrType (LLStructType tys)
+ 
+llv :: MoVar -> LLVar
+llv v = fmap monoToLL v
+
+llb :: BlockEntry' MonoType -> BlockEntry' TypeLL
+llb (s,vs) = (s, map llv vs)
+ 
 -- ||||||||||||||||||||||||| Closure Conversion, pt 1 |||||||||||{{{
 -- We serialize a basic block graph by computing a depth-first search
 -- starting from the graph's entry block.
@@ -209,20 +241,20 @@ closureConvertBlocks bbg = do
    g' <- rebuildGraphM (case bbgEntry bbg of (bid, _) -> bid) (bbgBody bbg)
                                                                        transform
    return BasicBlockGraph' {
-                 bbgpEntry = bbgEntry bbg,
-                 bbgpRetK  = bbgRetK  bbg,
+                 bbgpEntry = llb (bbgEntry bbg),
+                 bbgpRetK  =      bbgRetK  bbg,
                  bbgpBody  = g'
           }
   where
       transform :: Insn e x -> ILM (Graph Insn' e x)
       transform insn = case insn of
-        ILabel l                -> do return $ mkFirst $ CCLabel l
-        ILetVal id val          -> do return $ mkMiddle $ CCLetVal id val
+        ILabel l                -> do return $ mkFirst $ CCLabel (llb l)
+        ILetVal id val          -> do return $ mkMiddle $ CCLetVal id (fmap monoToLL val)
         ILetFuns ids fns        -> do closures <- closureConvertLetFuns ids fns
                                       return $ mkMiddle $ CCLetFuns ids closures
-        ILast (CFCont b vs)     -> do return $ mkLast $ CCLast (CCCont b vs)
+        ILast (CFCont b vs)     -> do return $ mkLast $ CCLast (CCCont b (map llv vs))
         ILast (CFCall b t v vs) -> do id <- ilmFresh (T.pack ".call")
-                                      return $ mkLast $ CCLast (CCCall b t id v vs)
+                                      return $ mkLast $ CCLast (CCCall b (monoToLL t) id (llv v) (map llv vs))
         ILast (CFCase a pbs) -> do
            allSigs <- gets ilmCtors
            let dt = compilePatterns pbs allSigs
@@ -302,12 +334,16 @@ compileDecisionTree scrutinee (DT_Switch occ subtrees maybeDefaultDt) = do
                          return (dblockss, Just did)
         let (blockss, ids) = unzip (map splitBlockFin fins)
         (id, block) <- ilmNewBlock ".dt.switch" [] $ (CCLast $
-                          mkSwitch scrutinee (zip ctors ids) maybeDefaultId occ)
+                          mkSwitch (llv scrutinee) (zip ctors ids) maybeDefaultId (llOcc occ))
         return $ BlockFin (blockGraph block |*><*| (foldr (|*><*|) emptyClosedGraph blockss) |*><*| dblockss) id
 
+llOcc occ = map (\(i,c) -> (i, fmap monoToLL c)) occ
+        
 emitOccurrence :: MoVar -> (Ident, Occurrence MonoType) -> Insn' O O
-emitOccurrence scrutinee (id, occ) = CCLetVal id (mkILOccurrence scrutinee occ)
+emitOccurrence scrutinee (id, occ) = CCLetVal id ilocc
+                       where ilocc = mkILOccurrence (llv scrutinee) (llOcc occ)
 
+mkILOccurrence :: TypedId t -> Occurrence t -> Letable t
 mkILOccurrence v occ = ILOccurrence t v occ
   where t = go (tidType v) (zip o (map ctorInfoDc i))
                          where (o,i) = unzip occ
@@ -331,13 +367,13 @@ closureOfKnFn infoMap (self_id, fn) = do
     let transformedFn = makeEnvPassingExplicit fn
     (envVar, newproc) <- closureConvertFn transformedFn varsOfClosure
     let procid        = TypedId (procType newproc) (procIdent newproc)
-    return $ Closure procid envVar varsOfClosure
+    return $ Closure procid (llv envVar) (map llv varsOfClosure)
                    (AllocationSource (show procid ++ ":") (procRange newproc))
   where
     procType proc =
       let retty = procReturnType proc in
       let argtys = map tidType (procVars proc) in
-      FnType argtys retty FastCC FT_Proc
+      LLProcType argtys retty FastCC
 
     -- Each closure converted proc need not capture its own environment
     -- variable, because it will be added as an implicit parameter, but
@@ -431,13 +467,13 @@ closureConvertedProc :: [MoVar] -> CFFn -> BasicBlockGraph' -> ILM CCProc
 closureConvertedProc procArgs f newbody = do
   case fnVar f of
     TypedId (FnType _ ftrange _ _) id ->
-       return $ Proc ftrange id procArgs (fnRange f) newbody
+       return $ Proc (monoToLL ftrange) id (map llv procArgs) (fnRange f) newbody
     tid -> error $ "Expected closure converted proc to have fntype, had " ++ show tid
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- Canonicalize single-consequent cases to unconditional branches,
 -- and use the first case as the default for exhaustive pattern matches.
--- mkSwitch :: MoVar -> [(CtorId, BlockId)] -> Maybe BlockId -> Occurrence MonoType -> CCLast
+-- mkSwitch :: LLVar -> [(CtorId, BlockId)] -> Maybe BlockId -> Occurrence TypeLL -> CCLast
 mkSwitch _ [arm]      Nothing _   = CCCont (snd arm) []
 mkSwitch v (a:arms)   Nothing occ = CCCase v arms (Just $ snd a) occ
 mkSwitch v    arms    def     occ = CCCase v arms def            occ
@@ -530,10 +566,10 @@ isFunc ft = case ft of FnType _ _ _ FT_Func                            -> True
 
 instance Pretty CCLast where
   pretty (CCCont bid       vs) = text "cont" <+> prettyBlockId bid <+>              list (map pretty vs)
-  pretty (CCCall bid _ _ v vs) =
-        case extractFnType (tidType v) of
-          FnType _ _ _ FT_Proc -> text "call (proc)" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
-          FnType _ _ _ FT_Func -> text "call (func)" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
+  pretty (CCCall bid _ _ v vs) = text "TODO:534"
+        --case extractFnType (tidType v) of
+        --  (_, FT_Proc) -> text "call (proc)" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
+        --  (_, FT_Func) -> text "call (func)" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
   pretty (CCCase v arms def occ) = align $
     text "case" <+> pretty (mkILOccurrence v occ) <$> indent 2
        ((vcat [ arm (text "of" <+> pretty ctor) bid
@@ -562,6 +598,8 @@ instance Pretty BasicBlockGraph' where
 instance Pretty CCBody where
  pretty (CCB_Procs procs _) = vcat (map (\p -> line <> pretty p) procs)
 
+instance Pretty TypeLL where pretty t = text (show t) -- TODO fix
+ 
 instance Pretty CCProc where
  pretty proc = pretty (procIdent proc) <+> list (map pretty (procVars proc))
                <$> text "{"

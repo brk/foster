@@ -422,7 +422,6 @@ struct LLProcStringOfCStringPrim : public LLProcPrimBase {
       std::map<std::string, std::string> annots; annots["callconv"] = "ccc";
       this->type            = new FnTypeAST(RefTypeAST::get(TypeAST::i(999)),
                                             argTypes, annots);
-      this->type->markAsProc();
   }
   virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) {
     Function::arg_iterator AI = F->arg_begin();

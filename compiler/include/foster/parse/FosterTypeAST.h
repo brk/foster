@@ -163,7 +163,6 @@ public:
 
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
-  StructTypeAST* getClosureStructType() const;
   virtual llvm::Type* getLLVMType() const;
 
   TypeAST*& getParamType(int i) { return argTypes[i]; }
@@ -176,7 +175,6 @@ public:
         getAnnots() const { return annots; }
   llvm::FunctionType* getLLVMFnType() const;
 
-  void markAsClosure() { annots["proc"] = "false"; }
   void markAsProc()    { annots["proc"] = "true"; }
   bool isMarkedAsClosure() const;
 
@@ -222,7 +220,6 @@ class TupleTypeAST : public IndexableTypeAST {
 public:
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
-  StructTypeAST* getUnderlyingStruct() const { return structType; }
   virtual llvm::Type* getLLVMType() const;
 
   virtual int getNumContainedTypes() const { return structType->getNumContainedTypes(); }

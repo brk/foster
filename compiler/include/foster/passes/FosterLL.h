@@ -262,8 +262,8 @@ struct CtorId {
 };
 
 struct CtorInfo {
-  std::vector<TypeAST*> ctorArgTypes;
-  CtorId                ctorId;
+  StructTypeAST* ctorStructType; // or NULL
+  CtorId         ctorId;
 };
 
 struct LLCallPrimOp : public LLExpr {

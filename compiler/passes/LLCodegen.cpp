@@ -409,7 +409,6 @@ std::string getGlobalSymbolName(const std::string& sourceName) {
 void LLProc::codegenProto(CodegenPass* pass) {
   std::string symbolName = getGlobalSymbolName(this->getCName());
 
-  this->getFnType()->markAsProc();
   llvm::FunctionType* FT = getLLVMFunctionType(this->getFnType(), symbolName);
 
   llvm::GlobalValue::LinkageTypes linkage = this->getFunctionLinkage();
@@ -964,12 +963,7 @@ llvm::Value* LLUnitValue::codegen(CodegenPass* pass) {
 
 void LLTupleStore::codegenMiddle(CodegenPass* pass) {
   if (vars.empty()) return;
-
   llvm::Value* tup_ptr = this->storage->codegen(pass);
-  //llvm::Value* slot    = this->storage->codegen(pass);
-  //llvm::Value* tup_ptr = this->storage_indir
-  //                        ? emitNonVolatileLoad(slot, "normalize")
-  //                        : slot;
   copyValuesToStruct(codegenAll(pass, this->vars), tup_ptr);
 }
 
@@ -978,11 +972,6 @@ void LLTupleStore::codegenMiddle(CodegenPass* pass) {
 ////////////////////////////////////////////////////////////////////
 //////////////// Decision Trees ////////////////////////////////////
 /////////////////////////////////////////////////////////////////{{{
-
-llvm::Type* maybeGetCtorStructType(const CtorInfo& c) {
-  return (c.ctorArgTypes.empty())
-           ? NULL : TupleTypeAST::get(c.ctorArgTypes)->getLLVMType();
-}
 
 llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
   ASSERT(ctors.size() == offsets.size());
@@ -1002,9 +991,8 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
   for (size_t i = 0; i < offsets.size(); ++i) {
     // If we know that the subterm at this position was created with
     // a particular data constructor, emit a cast to that ctor's type.
-    if (llvm::Type* structtype = maybeGetCtorStructType(ctors[i])) {
-      v = emitBitcast(v, structtype);
-      ASSERT(isPointerToStruct(structtype)) << str(v);
+    if (ctors[i].ctorStructType) {
+      v = emitBitcast(v, ptrTo(ctors[i].ctorStructType->getLLVMType()));
     }
 
     v = getElementFromComposite(v, offsets[i], "switch_insp");

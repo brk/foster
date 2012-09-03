@@ -11,7 +11,7 @@ module Foster.ProtobufIL (
 import Foster.Base
 import Foster.ILExpr
 import qualified Foster.CloConv as CC(Proc(..))
-import Foster.MonoType
+import Foster.TypeLL
 import Foster.Letable
 import Foster.ProtobufUtils
 
@@ -77,10 +77,6 @@ mayTriggerGC (TypedId _ (GlobalSymbol name)) = globalMayGC name
 mayTriggerGC _ = True
 
 -----------------------------------------------------------------------
-
-tagProcOrFunc FT_Proc = PbTypeTag.PROC
-tagProcOrFunc FT_Func = PbTypeTag.CLOSURE
-
 intOfSize I1 = 1
 intOfSize I8 = 8
 intOfSize I32 = 32
@@ -96,31 +92,28 @@ dumpUnknownType () =
 dumpIntType sizeBits = P'.defaultValue { PbType.tag  = PbTypeTag.PRIM_INT
                                        , PbType.carray_size = Just sizeBits }
 
-dumpType :: MonoType -> PbType.Type
-dumpType (PtrTypeUnknown)  = dumpUnknownType ()
-dumpType (PrimInt size)    = dumpIntType (intOfSize size)
-dumpType (PrimFloat64)     =
+dumpType :: TypeLL -> PbType.Type
+dumpType (LLPtrTypeUnknown)  = dumpUnknownType ()
+dumpType (LLPrimInt size)    = dumpIntType (intOfSize size)
+dumpType (LLPrimFloat64)     =
               P'.defaultValue { PbType.tag  = PbTypeTag.FLOAT64 }
-dumpType (TyConApp nm _tys)=
+dumpType (LLTyConApp nm _tys)=
               P'.defaultValue { PbType.tag  = PbTypeTag.NAMED
                               , PbType.name = Just $ u8fromString nm }
-dumpType (StructType types) =
+dumpType (LLStructType types) =
               P'.defaultValue { PbType.tag  = PbTypeTag.STRUCT
                               ,  type_parts = fromList $ fmap dumpType types }
-dumpType (TupleType types) =
-              P'.defaultValue { PbType.tag  = PbTypeTag.TUPLE
-                              ,  type_parts = fromList $ fmap dumpType types }
-dumpType (CoroType a b) =
+dumpType (LLCoroType a b) =
               P'.defaultValue { PbType.tag  = PbTypeTag.CORO
                               ,  type_parts = fromList $ fmap dumpType [a,b] }
-dumpType (PtrType ty) =
+dumpType (LLPtrType ty) =
               P'.defaultValue { PbType.tag = PbTypeTag.PTR
                               , type_parts = fromList $ fmap dumpType [ty] }
-dumpType (ArrayType ty) =
+dumpType (LLArrayType ty) =
               P'.defaultValue { PbType.tag = PbTypeTag.ARRAY
                               , type_parts = fromList $ fmap dumpType [ty] }
-dumpType (FnType s t cc cs) =
-              P'.defaultValue { PbType.tag = tagProcOrFunc cs
+dumpType (LLProcType s t cc) =
+              P'.defaultValue { PbType.tag = PbTypeTag.PROC
                               , PbType.procty = Just $ dumpProcType (s, t, cc) }
 dumpProcType (ss, t, cc) =
     ProcType.ProcType {
@@ -149,7 +142,7 @@ dumpMemRegion amr = case amr of
     MemRegionStack      -> PbMemRegion.MEM_REGION_STACK
     MemRegionGlobalHeap -> PbMemRegion.MEM_REGION_GLOBAL_HEAP
 
-dumpAllocate :: AllocInfo MonoType -> PbAllocInfo
+dumpAllocate :: AllocInfo TypeLL -> PbAllocInfo
 dumpAllocate (AllocInfo typ region typename maybe_tag maybe_array_size allocsite zeroinit) =
     P'.defaultValue { PbAllocInfo.mem_region = dumpMemRegion region
                     , PbAllocInfo.type'      = dumpType      typ
@@ -195,7 +188,7 @@ dumpTupleStore (ILTupleStore vs v r) =
     }
 dumpTupleStore other = error $ "dumpTupleStore called on non-tuple-store value: " ++ show other
 
-dumpLetVal :: Ident -> Letable MonoType -> PbLetVal.LetVal
+dumpLetVal :: Ident -> Letable TypeLL -> PbLetVal.LetVal
 dumpLetVal id letable =
     P'.defaultValue { let_val_id = dumpIdent id
                     , let_expr   = dumpExpr letable
@@ -224,7 +217,7 @@ dumpSwitch var arms def occ =
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||||||| Expressions |||||||||||||||||||||||||{{{
-dumpExpr :: Letable MonoType -> PbLetable.Letable
+dumpExpr :: Letable TypeLL -> PbLetable.Letable
 dumpExpr (ILAlloc    {}) = error "ILAlloc should have been translated away!"
 dumpExpr (ILBitcast t v) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar v]
@@ -263,7 +256,7 @@ dumpExpr (ILAllocate info) =
                     , PbLetable.type' = Just $ dumpType (allocType info)
                     , PbLetable.alloc_info = Just $ dumpAllocate info }
 
-dumpExpr  (ILAllocArray (ArrayType elt_ty) size) =
+dumpExpr  (ILAllocArray (LLArrayType elt_ty) size) =
     P'.defaultValue { PbLetable.parts = fromList []
                     , PbLetable.tag   = IL_ALLOCATE
                     , PbLetable.type' = Just $ dumpType elt_ty
@@ -316,8 +309,7 @@ dumpExpr (ILCall t base args)
         = dumpCall t (dumpVar base)          args (mayTriggerGC base) ccs
   where stringOfCC FastCC = "fastcc"
         stringOfCC CCC    = "ccc"
-        (FnType _ _ cc _) = extractFnType (tidType base)
-        ccs = stringOfCC cc
+        ccs = stringOfCC $ extractCallConv (tidType base)
 
 dumpExpr (ILCallPrim t (NamedPrim (TypedId _ (GlobalSymbol gs))) [arr])
         | gs == T.pack "prim_arrayLength"
@@ -342,7 +334,7 @@ dumpExpr (ILAppCtor _ _cinfo _) = error $ "ProtobufIL.hs saw ILAppCtor, which"
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||||||||| Calls ||||||||||||||||||||||||||{{{
-dumpCall :: MonoType -> TermVar -> [TypedId MonoType] -> Bool -> String -> PbLetable.Letable
+dumpCall :: TypeLL -> TermVar -> [TypedId TypeLL] -> Bool -> String -> PbLetable.Letable
 dumpCall t base args mayGC callConv =
     P'.defaultValue { PbLetable.tag   = IL_CALL
                     , PbLetable.parts = fromList $ base:(fmap dumpVar args)
@@ -399,7 +391,9 @@ dumpCtorInfo (CtorInfo cid@(CtorId _dtn dtcn _arity ciid)
     (False, _) -> error $ "Ctor info inconsistent, had different tags for ctor id and data ctor."
     (_,     _) -> -- ignore type formals...
         P'.defaultValue { PbCtorInfo.ctor_id = dumpCtorId cid
-                        , PbCtorInfo.ctor_arg_types = fromList $ map dumpType tys
+                        , PbCtorInfo.ctor_struct_ty = if null tys
+                                then Nothing
+                                else Just $ dumpType (LLStructType tys)
                         }
 
 dumpCtorId (CtorId dtn dtcn _arity ciid) =
@@ -472,7 +466,7 @@ dumpILProgramToProtobuf m outpath = do
              , Decl.type' = dumpDataType name (dataTypeCtors datatype)
              }
 
-    dumpDecl (MoExternDecl s t) =
+    dumpDecl (LLExternDecl s t) =
         Decl { Decl.name  = u8fromString s
              , Decl.type' = dumpType t
              }

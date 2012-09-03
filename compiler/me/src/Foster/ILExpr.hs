@@ -18,7 +18,7 @@ import Debug.Trace(trace)
 import Foster.Base
 import Foster.CFG
 import Foster.CloConv
-import Foster.MonoType
+import Foster.TypeLL
 import Foster.Letable
 import Foster.Output(out, Output)
 
@@ -45,40 +45,40 @@ import Control.Monad.State(evalStateT, get, put, StateT)
 -- |  * CCLetFuns are eliminated.
 -- |  * ILTuples are eliminated, except for unit values.
 -- |  * FnType _ _ _ FT_Func should have been eliminated
--- |    in favor of PtrType (StructType (FnType _ _ _ FT_Proc:_)).
+-- |    in favor of LLPtrType (LLStructType (FnType _ _ _ FT_Proc:_)).
 
 -- ||||||||||||||||||||||||| Datatypes ||||||||||||||||||||||||||{{{
 -- A program consists of top-level data types and mutually-recursive procedures.
 data ILProgram = ILProgram [ILProcDef]
-                           [MoExternDecl]
-                           [DataType MonoType]
+                           [LLExternDecl]
+                           [DataType TypeLL]
                            SourceLines
 
-data ILExternDecl = ILDecl String MonoType
+data ILExternDecl = ILDecl String TypeLL
 data ILProcDef = ILProcDef (Proc [ILBlock]) NumPredsMap [RootVar]
 type NumPredsMap = Map BlockId Int
 
 -- The standard definition of a basic block and its parts.
 -- This is equivalent to MinCaml's make_closure ...
-data ILBlock  = Block BlockEntry [ILMiddle] ILLast
-data ILMiddle = ILLetVal      Ident   (Letable MonoType)
-              | ILGCRootKill  MoVar
-              | ILGCRootInit  MoVar    RootVar
-              | ILTupleStore  [MoVar]  MoVar    AllocMemRegion
+data ILBlock  = Block BlockEntryL [ILMiddle] ILLast
+data ILMiddle = ILLetVal      Ident   (Letable TypeLL)
+              | ILGCRootKill  LLVar
+              | ILGCRootInit  LLVar    RootVar
+              | ILTupleStore  [LLVar]  LLVar    AllocMemRegion
               deriving Show
 
 -- Drop call-as-a-terminator and implicitly re-allow it as a letable value,
 -- which better matches LLVM's IR. (If/when we support exception handling,
 -- note that a possibly-exception-raising call remains a block terminator!)
 data ILLast = ILRetVoid
-            | ILRet      MoVar
-            | ILBr       BlockId [MoVar]
-            | ILCase     MoVar [(CtorId, BlockId)] (Maybe BlockId) (Occurrence MonoType)
+            | ILRet      LLVar
+            | ILBr       BlockId [LLVar]
+            | ILCase     LLVar [(CtorId, BlockId)] (Maybe BlockId) (Occurrence TypeLL)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-prepForCodegen :: ModuleIL CCBody MonoType -> IORef Uniq -> IO ILProgram
+prepForCodegen :: ModuleIL CCBody TypeLL -> IORef Uniq -> IO ILProgram
 prepForCodegen m uref = do
-    let decls = map (\(s,t) -> MoExternDecl s t) (moduleILdecls m)
+    let decls = map (\(s,t) -> LLExternDecl s t) (moduleILdecls m)
     let dts = moduleILprimTypes m ++ moduleILdataTypes m
     procs <- mapM (deHooplize uref) (flatten $ moduleILbody m)
     return $ ILProgram procs decls dts (moduleILsourceLines m)
@@ -115,23 +115,23 @@ makeAllocationsExplicit bbgp uref = do
             let info = AllocInfo t memregion "ref" Nothing Nothing "ref-allocator" NoZeroInit
             return $
               (mkMiddle $ CCLetVal id  (ILAllocate info)) <*>
-              (mkMiddle $ CCLetVal id' (ILStore v (TypedId (PtrType t) id)))
+              (mkMiddle $ CCLetVal id' (ILStore v (TypedId (LLPtrType t) id)))
     (CCLetVal id (ILTuple [] allocsrc)) -> return $ mkMiddle $ insn
     (CCLetVal id (ILTuple vs allocsrc)) -> do
             id' <- fresh "tup-alloc"
-            let t = StructType (map tidType vs)
+            let t = LLStructType (map tidType vs)
             let memregion = MemRegionGlobalHeap
             let info = AllocInfo t memregion "tup" Nothing Nothing "tup-allocator" NoZeroInit
             return $
               (mkMiddle $ CCLetVal id (ILAllocate info)) <*>
-              (mkMiddle $ CCTupleStore vs (TypedId (PtrType t) id) memregion)
+              (mkMiddle $ CCTupleStore vs (TypedId (LLPtrType t) id) memregion)
     (CCLetVal id (ILAppCtor t (CtorInfo cid _) vs)) -> do
             id' <- fresh "ctor-alloc"
             let tynm = ctorTypeName cid ++ "." ++ ctorCtorName cid
             let tag  = ctorSmallInt cid
-            let t = StructType (map tidType vs)
-            let obj = (TypedId (PtrType t) id' )
-            let genty = PtrTypeUnknown
+            let t = LLStructType (map tidType vs)
+            let obj = (TypedId (LLPtrType t) id' )
+            let genty = LLPtrTypeUnknown
             let memregion = MemRegionGlobalHeap
             let info = AllocInfo t memregion tynm (Just tag) Nothing "ctor-allocator" NoZeroInit
             return $
@@ -177,14 +177,16 @@ makeAllocationsExplicit bbgp uref = do
     -- Similarly, for the closures themselves, we can trade off between
     -- redundant loads and stores.
 makeClosureAllocationExplicit fresh ids clos = do
-  let generic_env_ptr_ty = PtrType (PrimInt I8)
-  let generic_fnty ty =
-            let (FnType (_conc_env_ptr_type:rest) rt cc pf) = ty in
-                (FnType (generic_env_ptr_ty:rest) rt cc pf)
+  let generic_env_ptr_ty = LLPtrType (LLPrimInt I8)
+  let generic_procty (LLProcType (_conc_env_ptr_type:rest) rt cc) =
+                      LLProcType (generic_env_ptr_ty:rest) rt cc
+  --let generic_fnty ty =
+  --          let (FnType (_conc_env_ptr_type:rest) rt cc pf) = ty in
+  --              (FnType (generic_env_ptr_ty:rest) rt cc pf)
 
   gen_proc_vars <- mapM (\procvar -> do
                           gen_proc_id <- fresh ".gen.proc"
-                          return (TypedId (generic_fnty $ tidType procvar)
+                          return (TypedId (generic_procty $ tidType procvar)
                                            gen_proc_id)
                         ) (map closureProcVar clos)
 
@@ -200,8 +202,8 @@ makeClosureAllocationExplicit fresh ids clos = do
   let envAllocsAndStores envid clo =
            let memregion = MemRegionGlobalHeap in
            let vs = map substGenEnv $ closureCaptures clo in
-           let t = StructType (map tidType vs) in
-           let envvar = TypedId (PtrType t) envid in
+           let t = LLStructType (map tidType vs) in
+           let envvar = TypedId (LLPtrType t) envid in
            let ealloc = ILAllocate (AllocInfo t memregion "env" Nothing Nothing
                                                 "env-allocator" DoZeroInit) in
            (CCLetVal envid ealloc, CCTupleStore vs envvar memregion, envvar)
@@ -209,8 +211,8 @@ makeClosureAllocationExplicit fresh ids clos = do
            let bitcast = ILBitcast (tidType gen_proc_var) (closureProcVar clo) in
            let memregion = MemRegionGlobalHeap in
            let vs = [gen_proc_var, gen env_gen_id] in
-           let t  = StructType (map tidType vs) in
-           let t' = generic_fnty (fnty clo) in
+           let t  = LLStructType (map tidType vs) in
+           let t' = fnty_of_procty (generic_procty (tidType (closureProcVar clo))) in
            let clovar = TypedId t' cloid in
            let calloc = ILAllocate (AllocInfo t memregion "clo" Nothing Nothing
                                                 "clo-allocator" DoZeroInit) in
@@ -268,7 +270,7 @@ flattenGraph bbgp =
      mid (CCTupleStore vs tid r)  = ILTupleStore vs tid r
      mid (CCLetFuns ids closures) = error $ "Invariant violated: CCLetFuns should have been eliminated!"
 
-     frs :: Insn' C O -> BlockEntry
+     frs :: Insn' C O -> BlockEntryL
      frs (CCLabel be) = be
 
      fin :: Insn' O C -> ([ILMiddle], ILLast)
@@ -310,9 +312,9 @@ mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
               Just (m,s) -> go s        acc  (m:zs)
               Nothing    -> go subst (x:acc) (y:zs)
 
-     mergeAdjacent :: Map MoVar MoVar -> (Block Insn' C O, Insn' O C)
+     mergeAdjacent :: Map LLVar LLVar -> (Block Insn' C O, Insn' O C)
                                       -> (Insn' C O, Block Insn' O C)
-                                      -> Maybe (Block Insn' C C, Map MoVar MoVar)
+                                      -> Maybe (Block Insn' C C, Map LLVar LLVar)
      mergeAdjacent subst (xem, xl) (CCLabel (yb,yargs), yml) =
        case (yargs, xl) of
          ([yarg], CCLast (CCCall cb t _id v vs)) | cb == yb ->
@@ -359,12 +361,12 @@ mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
      substForInClo s clo =
        clo { closureCaptures = (map s (closureCaptures clo)) }
 
-type VarSubstFor a = (MoVar -> MoVar) -> a -> a
+type VarSubstFor a = (LLVar -> LLVar) -> a -> a
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||| GC Root Insertion |||||||||||||||||||||||{{{
 
-instance TExpr Closure MonoType where freeTypedIds _ = []
+instance TExpr Closure TypeLL where freeTypedIds _ = []
 
 -- A moving garbage collector can copy a pointer. Because LLVM does
 -- not automatically spill GCable pointers to the stack (because it
@@ -377,8 +379,8 @@ instance TExpr Closure MonoType where freeTypedIds _ = []
 -- includes a potential GC point.
 
 -- |||||||||||||||||||| Figure out which variables need roots |||{{{
-type LiveGCRoots    = Set.Set MoVar
-type RootLiveWhenGC = Set.Set MoVar
+type LiveGCRoots    = Set.Set LLVar
+type RootLiveWhenGC = Set.Set LLVar
 type LiveAGC2 = (LiveGCRoots, RootLiveWhenGC)
 
 -- When we see a load from a root, the root becomes live;
@@ -509,8 +511,8 @@ insertSmartGCRoots uref bbgp0 = do
                      else error $ "mapInverse can't reverse a non-one-to-one map!"
                                ++ "\nkeys: " ++ show ks ++ "\nelems:" ++ show es
 
-type GCRootsForVariables = Map MoVar RootVar
-type VariablesForGCRoots = Map RootVar MoVar
+type GCRootsForVariables = Map LLVar RootVar
+type VariablesForGCRoots = Map RootVar LLVar
 
 makeSubstWith :: Ord a => [a] -> [a] -> (a -> a)
 makeSubstWith from to = let m = Map.fromList $ zip from to in
@@ -593,7 +595,8 @@ insertDumbGCRoots uref bbgp = do
                                          let s = makeSubstWith vs vs' in
                                          (mkMiddle $ CCLetVal id (substVarsInLetable s val)) <*> ri)
     CCLetFuns [id] [clo]          -> do
-                                        (ri, gcr' ) <- maybeRootInitializer (TypedId (fnty clo) id) gcr
+                                        let concrete_fnty = fnty_of_procty (tidType (closureProcVar clo))
+                                        (ri, gcr' ) <- maybeRootInitializer (TypedId concrete_fnty id) gcr
                                         let vs = [closureEnvVar clo]
                                         withGCLoads gcr' vs (\vs' ->
                                           let s = makeSubstWith vs vs' in
@@ -617,7 +620,7 @@ insertDumbGCRoots uref bbgp = do
       then return (emptyGraph, gcr)
       else
         do junkid <- fresh (show (tidIdent v) ++ ".junk")
-           let junk = TypedId (TupleType []) junkid
+           let junk = TypedId (LLPtrType (LLStructType [])) junkid
            case Map.lookup v gcr of
              Just root -> do error $ "Wasn't expecting to see existing root when initializing! " ++ show v ++ "; " ++ show root
              Nothing   -> do rootid <- fresh (show (tidIdent v) ++ ".root")
@@ -627,8 +630,8 @@ insertDumbGCRoots uref bbgp = do
 
   -- A helper function to assist in rewriting instructions to use loads from
   -- GC roots for variables which are subject to garbage collection.
-  withGCLoads :: GCRootsForVariables -> [MoVar]
-                                     -> ([MoVar] -> Graph Insn' O x)
+  withGCLoads :: GCRootsForVariables -> [LLVar]
+                                     -> ([LLVar] -> Graph Insn' O x)
                                      -> IO (Graph Insn' O x, GCRootsForVariables)
   withGCLoads gcr vs mkG = do
     (loadsAndVars , gcr' ) <- mapFoldM' vs gcr withGCLoad
@@ -648,8 +651,8 @@ insertDumbGCRoots uref bbgp = do
           return ((oos ++ [CCGCLoad loadedvar root
                           ,CCGCKill False     root], loadedvar), gcr)
 
-      withGCLoad :: MoVar -> GCRootsForVariables
-                          -> IO (([Insn' O O], MoVar), GCRootsForVariables)
+      withGCLoad :: LLVar -> GCRootsForVariables
+                          -> IO (([Insn' O O], LLVar), GCRootsForVariables)
       withGCLoad v gcr = do
         if not $ isGCable v
           then return (([], v), gcr)
@@ -729,8 +732,8 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
                                           then v
                                           else varForRoot root
 
-fnty clo = let (FnType argtys retty cc FT_Proc) = tidType (closureProcVar clo)
-            in  FnType argtys retty cc FT_Func
+fnty_of_procty pt@(LLProcType (env:args) rets cc) =
+      LLPtrType (LLStructType [pt, env])
 
 canGCLetable l = let rv = canGC  l in if rv then {- trace ("canGCL: " ++ show l) -} rv else rv
 canGCCalled  v = let rv = canGCF v in if rv then {- trace ("canGCF: " ++ show v) -} rv else rv
@@ -738,18 +741,15 @@ canGCCalled  v = let rv = canGCF v in if rv then {- trace ("canGCF: " ++ show v)
 -- Filter out non-pointer-typed variables from live set.
 gcable vs = Set.fromList $ filter isGCable vs
 isGCable v = case tidType v of
-               PrimInt _            -> False
-               PrimFloat64          -> False
-               StructType _         -> False
-               TupleType  []        -> False
-               FnType _ _ _ FT_Proc -> False
-               FnType _ _ _ FT_Func -> True
-               PtrType _            -> True -- could have further annotations on ptr types
-               TyConApp   {}        -> True
-               TupleType  {}        -> True
-               CoroType _ _         -> True
-               ArrayType _          -> True
-               PtrTypeUnknown       -> True
+               LLPrimInt _            -> False
+               LLPrimFloat64          -> False
+               LLStructType _         -> False
+               LLProcType _ _ _       -> False
+               LLPtrType _            -> True -- could have further annotations on ptr types
+               LLTyConApp   {}        -> True
+               LLCoroType _ _         -> True
+               LLArrayType _          -> True
+               LLPtrTypeUnknown       -> True
 {-
 
 // * If a function body cannot trigger GC, then the in-params
