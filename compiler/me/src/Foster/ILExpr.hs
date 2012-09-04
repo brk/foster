@@ -20,7 +20,6 @@ import Foster.CFG
 import Foster.CloConv
 import Foster.TypeLL
 import Foster.Letable
-import Foster.Output(out, Output)
 
 import Data.Maybe(fromMaybe)
 import Data.IORef
@@ -813,23 +812,24 @@ main = fn () {
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||||| Boilerplate ||||||||||||||||||||||||{{{
-showILProgramStructure :: ILProgram -> Output
+showILProgramStructure :: ILProgram -> Doc
 showILProgramStructure (ILProgram procdefs _decls _dtypes _lines) =
-    concatMap showProcStructure procdefs
+    vcat $ map showProcStructure procdefs
   where
     showProcStructure (ILProcDef proc _ roots) =
-        out (show $ procIdent proc) ++ (out " // ")
-            ++ (out $ show $ map procVarDesc (procVars proc))
-            ++ (out " ==> ") ++ (out $ show $ procReturnType proc)
-          ++ out ("\n" ++ unlines (map show roots))
-          ++ out "\n" ++ concatMap showBlock (procBlocks proc)
-          ++ out "\n^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n"
+        text (show $ procIdent proc) <+> (text "//")
+            <+> (text $ show $ map procVarDesc (procVars proc))
+            <+> (text "==>") <+> (text $ show $ procReturnType proc)
+          <$> text (unlines (map show roots))
+          <$> vcat (map showBlock $ procBlocks proc)
+          <$> text "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^"
+
     procVarDesc (TypedId ty id) = "( " ++ (show id) ++ " :: " ++ show ty ++ " ) "
 
     showBlock (Block blockid mids last) =
-           out (show blockid ++ "\n")
-        ++ out (concatMap (\m -> "\t" ++ show m ++ "\n") mids)
-        ++ out (show last ++ "\n\n")
+            text (show blockid)
+        <$> text (concatMap (\m -> "\t" ++ show m ++ "\n") mids)
+        <$> text (show last ++ "\n\n")
 
 instance Show ILLast where
   show (ILRetVoid     ) = "ret void"

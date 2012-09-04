@@ -11,7 +11,9 @@ import Foster.Base
 import Foster.Kind
 import Foster.ExprAST
 import Foster.TypeAST
-import Foster.Output(out, outLn, Output, OutputOr(..))
+
+import Text.PrettyPrint.ANSI.Leijen
+import Foster.Output
 
 data ContextBinding ty = TermVarBinding T.Text (TypedId ty)
 
@@ -96,15 +98,15 @@ tcOnError (Just o) m k = Tc $ \env -> do result <- unTc env m
 tcLift :: IO a -> Tc a
 tcLift action = Tc $ \_env -> action >>= retOK
 
-tcFails :: [Output] -> Tc a
+tcFails :: [Doc] -> Tc a
 tcFails errs = Tc $ \_env -> return $ Errors errs
 
-tcFailsMore :: [Output] -> Tc a
+tcFailsMore :: [Doc] -> Tc a
 tcFailsMore errs = do
   parents <- tcGetCurrentHistory
   case reverse parents of -- parents returned in root-to-child order.
-    []    -> tcFails $ errs ++ [out $ "[unscoped]"]
-    (e:_) -> tcFails $ errs ++ [out $ "Unification failure triggered when " ++
+    []    -> tcFails $ errs ++ [text $ "[unscoped]"]
+    (e:_) -> tcFails $ errs ++ [text $ "Unification failure triggered when " ++
                   "typechecking source line:" ++ highlightFirstLine (rangeOf e)]
 
 readTcMeta :: MetaTyVar ty -> Tc (Maybe ty)
@@ -171,18 +173,18 @@ isOK _      = False
 
 -----------------------------------------------------------------------
 
-tcShowStructure :: (Structured a) => a -> Tc Output
+tcShowStructure :: (Structured a) => a -> Tc Doc
 tcShowStructure e = do
     header <- getStructureContextMessage
-    return $ header ++ showStructure e
+    return $ header <> showStructure e
 
 
-getStructureContextMessage :: Tc Output
+getStructureContextMessage :: Tc Doc
 getStructureContextMessage = do
     hist <- tcGetCurrentHistory
-    let outputs = map (\e -> (out "\t\t") ++ textOf e 40 ++ outLn "") hist
+    let outputs = map (\e -> (text "\t\t") <> textOf e 40) hist
     let output = case outputs of
                  [] -> (outLn $ "\tTop-level definition:")
-                 _  -> (outLn $ "\tContext for AST below is:") ++ concat outputs
+                 _  -> (outLn $ "\tContext for AST below is:") <> vcat outputs
     return output
 

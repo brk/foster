@@ -14,7 +14,7 @@ import Foster.MonoType
 
 import qualified Data.Text as T
 
-import Foster.Output
+import Text.PrettyPrint.ANSI.Leijen
 
 import Data.Map(Map)
 import Data.Map as Map(insert, lookup, alter, fromList, union, empty)
@@ -93,7 +93,7 @@ monoKN subst e =
     let (monos, polys) = split (zip ids fns)
 
     liftIO $ putStrLn $ "monos/polys: " ++ show (fst $ unzip monos, fst $ unzip polys)
-    liftIO $ runOutput $ concatMap (\f -> showStructure (tidType (fnVar f))) (snd $ unzip monos)
+    liftIO $ putDoc $ vcat $ [showStructure (tidType (fnVar f)) | f <- snd $ unzip monos]
 
     monoAddOrigins polys
     -- Expose the definitions of the polymorphic

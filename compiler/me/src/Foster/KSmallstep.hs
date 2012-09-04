@@ -21,15 +21,14 @@ import Data.IORef
 import Data.Array
 import qualified Data.ByteString as BS
 import Text.Printf(printf)
+import Text.PrettyPrint.ANSI.Leijen
 
-import System.Console.ANSI
 import Control.Exception(assert)
 
 
 import Foster.Base
 import Foster.TypeIL
 import Foster.KNExpr
-import Foster.Output(runOutput, outCSLn)
 
 -- Relatively simple small-step "definitional" interpreter.
 --
@@ -849,11 +848,11 @@ printStringNL gs s  = printString  gs (s ++ "\n")
 expectStringNL gs s = expectString gs (s ++ "\n")
 
 printString  gs s = do
-  runOutput (outCSLn Blue s)
+  putDoc (blue $ text s)
   appendFile (outFile gs) s
 
 expectString gs s = do
-  runOutput (outCSLn Green s)
+  putDoc (green $ text s)
   appendFile (errFile gs)  s
 
 --------------------------------------------------------------------

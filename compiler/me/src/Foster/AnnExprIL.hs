@@ -14,8 +14,8 @@ import Foster.Context
 import Foster.AnnExpr
 import Foster.TypeIL
 import Foster.TypeAST(gFosterPrimOpsTable, TypeAST)
-import Foster.Output(out)
 
+import Text.PrettyPrint.ANSI.Leijen(text)
 import qualified Data.Text as T
 
 import Control.Monad(when)
@@ -121,7 +121,7 @@ ail ctx ae =
                                                      vs' <- mapM (aiVar ctx) vs
                                                      return ((p', vs'), e')) bs
                                          return $ AICase ti ei bsi
-        AnnPrimitive _rng v -> tcFails [out $ "Primitives must be called directly!"
+        AnnPrimitive _rng v -> tcFails [text $ "Primitives must be called directly!"
                                           ++ "\n\tFound non-call use of " ++ show v]
         AnnCall _range t b (E_AnnTuple _rng args) -> do
             ti <- qt t
@@ -181,7 +181,7 @@ kindCheckSubsumption :: SourceRange -> ((TyVar, Kind), TypeIL) -> Tc ()
 kindCheckSubsumption rng ((tv, kind), ty) = do
   if kindOfTypeIL ty `subkindOf` kind
     then return ()
-    else tcFails [out $ "Kind mismatch:" ++ highlightFirstLine rng
+    else tcFails [text $ "Kind mismatch:" ++ highlightFirstLine rng
        ++ "Cannot instantiate type variable " ++ show tv ++ " of kind " ++ show kind
        ++ "\nwith type " ++ show ty ++ " of kind " ++ show (kindOfTypeIL ty)]
 
@@ -222,9 +222,9 @@ fnOf ctx f = do
     -- Ensure that the types resulting from function calls don't make
     -- dubious claims of supporting unboxed polymorphism.
     when (containsUnboxedPolymorphism (fnReturnType ft)) $
-       tcFails [out $ "Returning an unboxed-polymorphic value from "
-                   ++ show (fnIdent f) ++ "? Inconceivable!"
-               ,out $ "Try using boxed polymorphism instead."]
+       tcFails [text $ "Returning an unboxed-polymorphic value from "
+                    ++ show (fnIdent f) ++ "? Inconceivable!"
+               ,text $ "Try using boxed polymorphism instead."]
 
     let extctx = extendTyCtx ctx (tyvarBindersOf ft)
     vars     <- mapM (aiVar extctx) (fnVars f)

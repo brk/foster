@@ -373,7 +373,7 @@ data CFLast = CFCont        BlockId [MoVar] -- either ret or br
             | CFCall        BlockId MonoType MoVar [MoVar]
             | CFCase        MoVar [PatternBinding BlockId MonoType]
             deriving (Show)
-            
+
 data Insn e x where
               ILabel   :: BlockEntry                  -> Insn C O
               ILetVal  :: Ident   -> Letable MonoType -> Insn O O
@@ -615,12 +615,12 @@ elimContInBBG :: IORef Uniq -> BasicBlockGraph -> IO BasicBlockGraph
 elimContInBBG uref bbg = runWithUniqAndFuel uref infiniteFuel (elimContInBBG' bbg)
   where elimContInBBG' :: BasicBlockGraph -> M BasicBlockGraph
         elimContInBBG' bbg = do
-         (bb', _, _) <- analyzeAndRewriteBwd bwd' (JustC [bbgEntry bbg])
+         (bb', _, _) <- analyzeAndRewriteBwd bwd (JustC [bbgEntry bbg])
                                                         (bbgBody  bbg)
                                                         mapEmpty
          return $ bbg { bbgBody = bb' }
 
-        bwd' = debugBwdTransfers trace showing (\_ _ -> True) bwd
+        _bwd = debugBwdTransfers trace showing (\_ _ -> True) bwd
         bwd = BwdPass { bp_lattice  = contEquivLattice
                       , bp_transfer = contContFind
                       , bp_rewrite  = contContElim

@@ -21,9 +21,8 @@ import Foster.AnnExpr
 import Foster.Infer
 import Foster.Context
 import Foster.TypecheckInt(sanityCheck, typecheckInt, typecheckRat)
-import Foster.Output(out, OutputOr(Errors))
-import Foster.Output(outCS, runOutput)
-import System.Console.ANSI
+import Foster.Output(OutputOr(Errors), putDocLn)
+import Text.PrettyPrint.ANSI.Leijen
 
 data TCWanted = TCSigma | TCRho deriving Show
 
@@ -108,7 +107,7 @@ inferSigma ctx e msg = do
     let forall_tvs = res_tvs \\ env_tvs
     case forall_tvs of
       [] -> return ()
-      _ -> tcFails [out $ "inferSigma ought to quantify over the escaping meta type variables " ++ show (map MetaTyVar forall_tvs)]
+      _ -> tcFails [text $ "inferSigma ought to quantify over the escaping meta type variables " ++ show (map MetaTyVar forall_tvs)]
     return e'
 -- }}}
 
@@ -137,7 +136,7 @@ checkSigmaDirect ctx (E_FnAST fn) sigma@(ForAllAST {}) = do
     tcSigmaFn ctx fn (Check sigma)
 
 checkSigmaDirect _ctx _ (ForAllAST {}) =
-    tcFails [out $ "checkSigmaDirect: can't check a sigma type against an "
+    tcFails [text $ "checkSigmaDirect: can't check a sigma type against an "
                 ++ "arbitrary expression"]
 
 checkSigmaDirect ctx e rho = checkRho ctx e rho
@@ -174,9 +173,7 @@ tcRho :: Context Sigma -> Term -> Expected Rho -> Tc (AnnExpr Rho)
 -- Invariant: if the second argument is (Check rho),
 -- 	      then rho is in weak-prenex form
 tcRho ctx expr expTy = do
-  when tcVERBOSE $ do
-    tcLift $ runOutput $ outCS Green ("typecheck: ") ++ textOf expr 0 ++ out (" <=? " ++ show expTy)
-    tcLift $ putStrLn ""
+  debugDoc $ green (text "typecheck: ") <> textOf expr 0 <> text (" <=? " ++ show expTy)
   tcWithScope expr $ do
     case expr of
       E_VarAST    rng v              -> tcRhoVar      ctx rng (evarName v) expTy
@@ -208,7 +205,7 @@ tcRho ctx expr expTy = do
               tcRhoArrayPoke rng s ta tb tc expTy
       E_CompilesAST rng maybe_expr -> do
           result <- case maybe_expr of
-                      Nothing -> return $ Errors [out $ "parse error"]
+                      Nothing -> return $ Errors [text $ "parse error"]
                       Just  e -> tcIntrospect (inferSigma ctx e "compiles")
           -- Note: we infer a sigma, not a rho, because we don't want to
           -- instantiate a sigma with meta vars and then never bind them.
@@ -218,7 +215,7 @@ tcRho ctx expr expTy = do
              (Check t) -> return t
              (Infer _) -> newTcUnificationVarTau $ "kill-process"
           matchExp expTy (AnnKillProcess rng tau msg) "kill-process"
-      E_KillProcess _rng _ -> tcFails [out $ "prim kill-process requires a string literal"]
+      E_KillProcess _rng _ -> tcFails [text $ "prim kill-process requires a string literal"]
 
 matchExp expTy ann msg =
      case expTy of
@@ -236,7 +233,7 @@ matchExp expTy ann msg =
 --  ------------------     or      -----------------------
 --  G |- v ~~> v ::: s             G |- v ~~> prim v ::: s
 tcSigmaVar ctx rng name = do
-  tcLift $ runOutput $ outCS Green "typecheckVar (sigma): " ++ out (T.unpack name ++ "...\n")
+  debugDoc $ green (text "typecheckVar (sigma): ") <> text (T.unpack name ++ "...")
   -- Resolve the given name as either a variable or a primitive reference.
   let query m = termVarLookup name m
   case (query (contextBindings ctx), query (primitiveBindings ctx)) of
@@ -244,7 +241,7 @@ tcSigmaVar ctx rng name = do
     (Nothing  , Just avar) -> return $ AnnPrimitive rng avar
     (Nothing, Nothing) -> do
          msg <- getStructureContextMessage
-         tcFails [out $ "Unknown variable " ++ T.unpack name
+         tcFails [text $ "Unknown variable " ++ T.unpack name
                   ++ showSourceRange rng
                   ++ "ctx: "++ unlines (map show (Map.toList $ contextBindings ctx))
                   ++ "\nhist: " , msg]
@@ -261,16 +258,11 @@ tcSigmaVar ctx rng name = do
 --  ------------------
 --  G |- v ~~> v ::: r
 tcRhoVar ctx rng name expTy = do
-     when tcVERBOSE $ do
-         tcLift $ runOutput $ outCS Green "typecheckVar (rho): " ++ out (T.unpack name ++ " :?: " ++ show expTy)
-         tcLift $ putStrLn ""
+     debugDoc $ green (text "typecheckVar (rho): ") <> text (T.unpack name ++ " :?: " ++ show expTy)
      v_sigma <- tcSigmaVar ctx rng name
      ann_var <- inst v_sigma "tcRhoVar"
-     when tcVERBOSE $ do
-         tcLift $ runOutput $ outCS Green "typecheckVar v_sigma: " ++ out (T.unpack name) ++ out " :: " ++ out (show (typeAST v_sigma))
-         tcLift $ putStrLn ""
-         tcLift $ runOutput $ outCS Green "typecheckVar ann_var: " ++ out (T.unpack name) ++ out " :: " ++ out (show (typeAST ann_var))
-         tcLift $ putStrLn ""
+     debugDoc $ green (text "typecheckVar v_sigma: ") <> text (T.unpack name ++ " :: " ++ show (typeAST v_sigma))
+     debugDoc $ green (text "typecheckVar ann_var: ") <> text (T.unpack name ++ " :: " ++ show (typeAST ann_var))
      matchExp expTy ann_var "var"
 
 -- Now, a bunch of straightforward rules:
@@ -285,7 +277,7 @@ tcRhoBool rng b expTy = do
          Check  (PrimIntAST I1) -> return ab
          Check  m@MetaTyVar {}  -> do unify m (PrimIntAST I1) "bool literal"
                                       return ab
-         Check  t -> tcFails [out $ "Unable to check Bool constant in context"
+         Check  t -> tcFails [text $ "Unable to check Bool constant in context"
                                 ++ " expecting non-Bool type " ++ show t
                                 ++ showSourceRange rng]
 -- }}}
@@ -300,7 +292,7 @@ tcRhoText rng b expTy = do
          Check  (TyConAppAST "Text" []) -> return ab
          Check  m@MetaTyVar {} -> do unify m (TyConAppAST "Text" []) "text literal"
                                      return ab
-         Check  t -> tcFails [out $ "Unable to check Text constant in context"
+         Check  t -> tcFails [text $ "Unable to check Text constant in context"
                                 ++ " expecting non-Text type " ++ show t
                                 ++ showSourceRange rng]
 -- }}}
@@ -349,7 +341,7 @@ tcRhoDeref ctx rng e1 expTy = do
     case typeAST a1 of
       RefTypeAST {} -> return ()
       MetaTyVar  {} -> return ()
-      other -> tcFails [out $ "Expected deref-ed expr "
+      other -> tcFails [text $ "Expected deref-ed expr "
                            ++ "to have ref type, had " ++ show other ++ highlightFirstLine rng]
     matchExp expTy (AnnDeref rng tau a1) "deref"
 -- }}}
@@ -376,7 +368,7 @@ tcRhoTuple ctx rng exprs expTy = do
      Infer _                 -> tcTuple ctx rng exprs [Nothing | _ <- exprs]
      Check (TupleTypeAST ts) -> tcTuple ctx rng exprs [Just t  | t <- ts]
      Check (MetaTyVar {}   ) -> tcTuple ctx rng exprs [Nothing | _ <- exprs]
-     Check ty -> tcFails [out $ "typecheck: tuple (" ++ show exprs ++ ") "
+     Check ty -> tcFails [text $ "typecheck: tuple (" ++ show exprs ++ ") "
                              ++ "cannot check against non-tuple type " ++ show ty]
    matchExp expTy tup (highlightFirstLine rng)
   where
@@ -414,10 +406,10 @@ tcRhoArrayRead rng s base aiexpr expTy = do
         let expr = AnnArrayRead rng t (ArrayIndex base aiexpr rng s)
         matchExp expTy expr "arrayread"
     (TupleTypeAST _) ->
-        tcFails [out $ "ArrayReading tuples is not allowed; use"
+        tcFails [text $ "ArrayReading tuples is not allowed; use"
                    ++ " pattern matching instead!" ++ highlightFirstLine rng]
     _ ->
-        tcFails [out $ "Unable to arrayread expression of type " ++ show (typeAST base)
+        tcFails [text $ "Unable to arrayread expression of type " ++ show (typeAST base)
                     ++ " (context expected type " ++ show expTy ++ ")"
                     ++ highlightFirstLine rng]
 -- }}}
@@ -437,7 +429,7 @@ tcRhoArrayPoke rng s v b i expTy = do
       let expr = AnnArrayPoke rng t (ArrayIndex b i rng s) v
       matchExp expTy expr "arraypoke"
     baseType ->
-      tcFails [out $ "Unable to arraypoke expression of type " ++ show baseType
+      tcFails [text $ "Unable to arraypoke expression of type " ++ show baseType
                   ++ " (context expected type " ++ show expTy ++ ")"
                   ++ highlightFirstLine rng]
 -- }}}
@@ -562,14 +554,14 @@ tcRhoTyApp ctx rng e t1tn expTy = do
                                  expr <- instWith rng aeSigma types
                                  matchExp expTy expr "tyapp"
       (_        , MetaTyVar _ ) -> do
-        tcFails [out $ "Cannot instantiate unknown type of term:"
-                ,out $ highlightFirstLine $ rangeOf aeSigma
-                ,out $ "Try adding an explicit type annotation."
+        tcFails [text $ "Cannot instantiate unknown type of term:"
+                ,text $ highlightFirstLine $ rangeOf aeSigma
+                ,text $ "Try adding an explicit type annotation."
                 ]
       (_        , othertype   ) -> do
-        tcFails [out $ "Cannot apply type args to expression of"
+        tcFails [text $ "Cannot apply type args to expression of"
                    ++ " non-ForAll type: " ++ show othertype
-                ,out $ highlightFirstLine $ rangeOf e]
+                ,text $ highlightFirstLine $ rangeOf e]
 -- }}}
 
 -- G |- b  ~~> f ::: ((s1 ... sn) -> sr)
@@ -608,7 +600,7 @@ tcSigmaCall ctx rng base argstup exp_ty = do
         annargs <- sequence [checkSigma ctx arg ty | (arg, ty) <- zip argexprs args_ty]
         let args = E_AnnTuple (tupleAstRange argstup) annargs
         debug $ "call: annargs: "
-        tcLift $ runOutput $ showStructure (AnnTuple args)
+        debugDoc $ showStructure (AnnTuple args)
         debug $ "call: res_ty is " ++ show res_ty
         debug $ "call: exp_ty is " ++ show exp_ty
         debug $ "tcRhoCall deferring to instSigma"
@@ -618,7 +610,7 @@ tcSigmaCall ctx rng base argstup exp_ty = do
 
 unifyFun :: Rho -> [a] -> String -> Tc ([Sigma], Rho)
 unifyFun (FnTypeAST args res _cc _cs) _args _msg = return (args, res)
-unifyFun (ForAllAST {}) _ _ = tcFails [out $ "invariant violated: sigma passed to unifyFun!"]
+unifyFun (ForAllAST {}) _ _ = tcFails [text $ "invariant violated: sigma passed to unifyFun!"]
 unifyFun tau args msg = do
         arg_tys <- mapM (\_ -> newTcUnificationVarTau "fn args ty") args
         res_ty <- newTcUnificationVarTau ("fn res ty:" ++ msg)
@@ -689,13 +681,13 @@ tcSigmaFn ctx f expTy = do
             debug $ "checking body against type: " ++ show body_ty
             body <- checkRho extCtx (fnAstBody f) body_ty
             debug $ "called checkRho for function body:"
-            tcLift $ runOutput $ showStructure body
-            debug $ "\ntype: "
-            tcLift $ runOutput $ showStructure (typeAST body)
+            debugDoc $ showStructure body
+            debug $ "type: "
+            debugDoc $ showStructure (typeAST body)
             return body
 
             {-
-            tcFails [out $ "checking function body against expected sigma type"
+            tcFails [text $ "checking function body against expected sigma type"
                     ,out $ "exp_sigma = " ++ show exp_sigma
                     ,out $ "exp_rho   = " ++ show exp_rho
                     ,out $ "exp_rho'  = " ++ show exp_rho']
@@ -720,7 +712,7 @@ tcSigmaFn ctx f expTy = do
                   checkSigma extCtx (fnAstBody f) body_ty
               else
                  -- Can't call unifyFun because ckfnty may be polymorphic.
-                 tcFails [out $ "not yet checking poly fn literals against polymorphic types"
+                 tcFails [text $ "not yet checking poly fn literals against polymorphic types"
                          ,out $ "expected type is:"
                          ,showStructure ckfnty]
          -}
@@ -742,7 +734,7 @@ tcSigmaFn ctx f expTy = do
                        (MetaTyVar m) -> do
                             debug $ "zonked " ++ show t ++ " to " ++ show t ++ "; writing " ++ show tv
                             writeTcMeta m (TyVarAST tv)
-                       y -> tcFails [out $ "expected ty param metavar to be un-unified, instead had " ++ show y]
+                       y -> tcFails [text $ "expected ty param metavar to be un-unified, instead had " ++ show y]
                   ) (zip taus ktvs)
         -- Zonk the type to ensure that the meta vars are completely gone.
         debug $ "inferred raw overall type of polymorphic function: " ++ show fnty0
@@ -828,7 +820,7 @@ getUniquelyNamedFormals rng rawFormals fnProtoName = do
         rename :: Ident -> Uniq -> Tc Ident
         rename (Ident p _) u = return (Ident p u)
         rename (GlobalSymbol name) _u =
-                tcFails [out $ "Cannot rename global symbol " ++ show name]
+                tcFails [text $ "Cannot rename global symbol " ++ show name]
 
 -- }}}
 
@@ -914,7 +906,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
       let ctorInfos = contextCtorInfo ctx
       case Map.lookup ctorName ctorInfos of
         Just [info] -> return info
-        elsewise -> tcFails [out $ "Typecheck.getCtorInfoForCtor: Too many or"
+        elsewise -> tcFails [text $ "Typecheck.getCtorInfoForCtor: Too many or"
                                     ++ " too few definitions for $" ++ T.unpack ctorName
                                     ++ "\n\t" ++ show elsewise]
 
@@ -924,7 +916,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
         Just [dt] -> do
           formals <- mapM (\_ -> newTcUnificationVarTau "dt-tyformal") (dataTypeTyFormals dt)
           return $ TyConAppAST typeName formals
-        other -> tcFails [out $ "Typecheck.generateTypeSchemaForDataType: Too many or"
+        other -> tcFails [text $ "Typecheck.generateTypeSchemaForDataType: Too many or"
                             ++ " too few definitions for $" ++ typeName
                             ++ "\n\t" ++ show other]
 
@@ -938,7 +930,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
 
     checkSuspiciousPatternVariable rng var =
       if T.unpack (evarName var) `elem` ["true", "false"]
-       then tcFails [out $ "Error: this matches a variable, not a boolean constant!"
+       then tcFails [text $ "Error: this matches a variable, not a boolean constant!"
                       ++ highlightFirstLine rng]
        else return ()
 -- }}}
@@ -986,12 +978,12 @@ subsCheck esigma sigma2@(ForAllAST {}) msg = do
                        "\nbad type variables: " ++ show bad_tvs)
   return esigma
 
-subsCheck _esigma _rho2 _msg = tcFails [out $ "rho passed to subsCheck!"]
+subsCheck _esigma _rho2 _msg = tcFails [text $ "rho passed to subsCheck!"]
 
 subsCheckRho :: AnnExpr Sigma -> Rho -> Tc (AnnExpr Rho)
 subsCheckRho esigma rho2 = do
   case (typeAST esigma, rho2) of
-    (_, ForAllAST {}) -> do tcFails [out $ "violated invariant: sigma passed to subsCheckRho"]
+    (_, ForAllAST {}) -> do tcFails [text $ "violated invariant: sigma passed to subsCheckRho"]
     (ForAllAST {}, _) -> do -- Rule SPEC
         debug $ "subsCheckRho instantiating " ++ show (typeAST esigma)
         erho <- inst esigma "subsCheckRho"
@@ -1089,8 +1081,8 @@ resolveType rng subst x =
     MetaTyVar   _                  -> return x
     TyVarAST (SkolemTyVar _ _ _)   -> return x
     TyVarAST (BoundTyVar name)     -> case Map.lookup name subst of
-                                         Nothing -> tcFails [out $ "Typecheck.hs: ill-formed type with free bound variable " ++ name,
-                                                             out $ highlightFirstLine rng]
+                                         Nothing -> tcFails [text $ "Typecheck.hs: ill-formed type with free bound variable " ++ name,
+                                                             text $ highlightFirstLine rng]
                                          Just ty -> return ty
     RefTypeAST    ty               -> liftM RefTypeAST   (q ty)
     ArrayTypeAST  ty               -> liftM ArrayTypeAST (q ty)
@@ -1183,10 +1175,8 @@ shallowZonk t = return t
 -- types is updated according to the unification solution.
 unify :: TypeAST -> TypeAST -> String -> Tc ()
 unify t1 t2 msg = do
-  when tcVERBOSE $ do
-    tcLift $ runOutput $ outCS Green $ "unify " ++ show t1 ++ " ?==? " ++ show t2 ++ " (" ++ msg ++ ")"
-    tcLift $ putStrLn ""
-  tcOnError (liftM out (Just msg)) (tcUnifyTypes t1 t2) $ \(Just soln) -> do
+  debugDoc $ green $ text $ "unify " ++ show t1 ++ " ?==? " ++ show t2 ++ " (" ++ msg ++ ")"
+  tcOnError (liftM text (Just msg)) (tcUnifyTypes t1 t2) $ \(Just soln) -> do
      let univars = collectAllUnificationVars [t1, t2]
      forM_ univars $ \m -> do
        mt1 <- readTcMeta m
@@ -1205,7 +1195,7 @@ unify t1 t2 msg = do
                                      False   -> writeTcMeta m x2
                                      True    -> occurdCheck m x2
   where
-     occurdCheck m t = tcFails [out $ "Occurs check for " ++ show (MetaTyVar m)
+     occurdCheck m t = tcFails [text $ "Occurs check for " ++ show (MetaTyVar m)
                                    ++ " failed in " ++ show t]
 -- }}}
 
@@ -1220,7 +1210,7 @@ tcTypeWellFormed msg ctx typ = do
         MetaTyVar     _       -> return ()
         TyConAppAST nm types  -> case Map.lookup nm (contextDataTypes ctx) of
                                    Just  _ -> mapM_ q types
-                                   Nothing -> tcFails [out $ "Unknown type "
+                                   Nothing -> tcFails [text $ "Unknown type "
                                                         ++ nm ++ " " ++ msg]
         TupleTypeAST types    -> mapM_ q types
         FnTypeAST ss r _ _    -> mapM_ q (r:ss)
@@ -1231,7 +1221,7 @@ tcTypeWellFormed msg ctx typ = do
         TyVarAST (SkolemTyVar {}) -> return ()
         TyVarAST tv@(BoundTyVar _) ->
                  case Prelude.lookup tv (contextTypeBindings ctx) of
-                   Nothing -> tcFails [out $ "Unbound type variable "
+                   Nothing -> tcFails [text $ "Unbound type variable "
                                            ++ show tv ++ " " ++ msg]
                    Just  _ -> return ()
 
@@ -1251,9 +1241,9 @@ tcContext ctx = do
          let extctx = extendTyCtx ctx (map convertTyFormal tyformals)
          case detectDuplicates (map dataCtorName (dataTypeCtors dt)) of
            []   -> mapM_ (tcDataCtor nm extctx) (dataTypeCtors dt)
-           dups -> tcFails [out $ "Duplicate constructor names " ++ show dups
+           dups -> tcFails [text $ "Duplicate constructor names " ++ show dups
                                 ++ " in definition of data type " ++ nm]
-      _ -> tcFails [out $ "Data type name " ++ nm
+      _ -> tcFails [text $ "Data type name " ++ nm
                        ++ " didn't map to a single data type!"]
   }
   mapM_ checkDataType (Map.toList $ contextDataTypes ctx)
@@ -1307,7 +1297,7 @@ verifyNonOverlappingBindings :: SourceRange -> String -> [ContextBinding ty] -> 
 verifyNonOverlappingBindings rng name binders = do
     case detectDuplicates [name | (TermVarBinding name _) <- binders] of
         []   -> return ()
-        dups -> tcFails [out $ "Error when checking " ++ name ++ ": "
+        dups -> tcFails [text $ "Error when checking " ++ name ++ ": "
                               ++ "had duplicated bindings: " ++ show dups
                               ++ highlightFirstLine rng]
 
@@ -1342,9 +1332,10 @@ type Term = ExprAST TypeAST
 -- can contain a sigma, not just a tau.
 data Expected t = Infer (IORef t) | Check t
 
-tcVERBOSE = True
+tcVERBOSE = False
 
-debug s = do when tcVERBOSE (tcLift $ putStrLn s)
+debug    s = do when tcVERBOSE (tcLift $ putStrLn s)
+debugDoc d = do when tcVERBOSE (tcLift $ putDocLn d)
 
 typeAST :: AnnExpr TypeAST -> TypeAST
 typeAST = typeOf

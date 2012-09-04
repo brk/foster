@@ -16,6 +16,8 @@ import Data.Sequence as Seq(Seq, length, index, (><))
 import Data.Map as Map(Map)
 import Data.List as List(replicate, intersperse)
 
+import Text.PrettyPrint.ANSI.Leijen
+import qualified Text.PrettyPrint.ANSI.Leijen as PP
 import qualified Data.Text as T
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -241,7 +243,7 @@ data AllocationSource = AllocationSource String SourceRange deriving Show
 -- ||||||||||||||||||||| Structured Things ||||||||||||||||||||||{{{
 
 class Structured a where
-    textOf     :: a -> Int -> Output
+    textOf     :: a -> Int -> Doc
     childrenOf :: a -> [a]
 
 -- Builds trees like this:
@@ -251,14 +253,14 @@ class Structured a where
 -- │ └─AnnTuple
 -- │   └─AnnInt       999999 :: i32
 
-showStructure :: (Structured a) => a -> Output
-showStructure e = showStructureP e (out "") False
+showStructure :: (Structured a) => a -> Doc
+showStructure e = showStructureP e "" False
   where
-    showStructureP :: Structured b => b -> Output -> Bool -> Output
+    showStructureP :: Structured b => b -> String -> Bool -> Doc
     showStructureP e prefix isLast =
         let children = childrenOf e in
-        let thisIndent = prefix ++ out (if isLast then "└─" else "├─") in
-        let nextIndent = prefix ++ out (if isLast then "  " else "│ ") in
+        let thisIndent = prefix ++ (if isLast then "└─" else "├─") in
+        let nextIndent = prefix ++ (if isLast then "  " else "│ ") in
         let padding = max 6 (60 - Prelude.length thisIndent) in
         -- [ (child, index, numchildren) ]
         let childpairs = Prelude.zip3 children [1..]
@@ -266,8 +268,8 @@ showStructure e = showStructureP e (out "") False
         let childlines = map (\(c, n, l) ->
                                 showStructureP c nextIndent (n == l))
                              childpairs in
-        (thisIndent :: Output) ++ (textOf e padding) ++ (out "\n")
-                               ++ (Prelude.foldl (++) (out "") childlines)
+        text thisIndent <> textOf e padding <> line
+                                     <> (Prelude.foldl (<>) PP.empty childlines)
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||||||||| Utilities ||||||||||||||||||||||||||{{{
@@ -329,7 +331,7 @@ data Ident = Ident        T.Text Uniq
            | GlobalSymbol T.Text
 
 data TypedId ty = TypedId { tidType :: ty, tidIdent :: Ident }
-  
+
 type PatternBinding expr ty = ((Pattern ty, [TypedId ty]), expr)
 
 data FosterPrim ty = NamedPrim (TypedId ty) -- invariant: global symbol

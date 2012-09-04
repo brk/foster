@@ -29,7 +29,6 @@ import Foster.TypeLL
 import Foster.MonoType
 import Foster.Letable
 import Foster.PatternMatch
-import Foster.Output(out)
 
 -- | Closure conversion and lambda lifting.
 -- |
@@ -69,7 +68,7 @@ data Closure = Closure { closureProcVar  :: LLVar
                        , closureAllocSrc :: AllocationSource
                        } deriving Show
 type LLRootVar = LLVar
-data Insn' e x where                             
+data Insn' e x where
         CCLabel   :: BlockEntryL                  -> Insn' C O
         CCLetVal  :: Ident   -> Letable TypeLL   -> Insn' O O
         CCLetFuns :: [Ident] -> [Closure]        -> Insn' O O
@@ -181,8 +180,7 @@ closureConvertToplevel globalIds body = do
                  ILetVal id (ILBitcast _ v) | tidIdent v `elem` ids -> id:ids
                  _ -> ids
          in
-            if trace ("gonna lift " ++ show ids ++ "? " ++ show gonnaLift ++ " ;; " ++ show allUnliftables
-                 ++ " ***** " ++ show ids ++ "//" ++ show globalized) gonnaLift
+            if trace ("gonna lift " ++ show ids ++ "? " ++ show gonnaLift ++ " ;; " ++ show allUnliftables) gonnaLift
               then do _ <- mapM (lambdaLift []) fns      ; cvt globalized' body
               else do _ <- closureConvertLetFuns ids fns ; cvt globalized  body
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -211,14 +209,14 @@ lambdaLift freeVars f = do
 
 monoToLL :: MonoType -> TypeLL
 monoToLL mt = case mt of
-   PrimInt       isb            -> LLPrimInt       isb    
-   PrimFloat64                  -> LLPrimFloat64          
+   PrimInt       isb            -> LLPrimInt       isb
+   PrimFloat64                  -> LLPrimFloat64
    TyConApp      dtn tys        -> LLTyConApp      dtn (map q tys)
-   TupleType     tys            -> llTupleType     (map q tys)   
-   StructType    tys            -> LLStructType    (map q tys)   
-   CoroType      s t            -> LLCoroType      (q s) (q t)    
-   ArrayType     t              -> LLArrayType     (q t)     
-   PtrType       t              -> LLPtrType       (q t)     
+   TupleType     tys            -> llTupleType     (map q tys)
+   StructType    tys            -> LLStructType    (map q tys)
+   CoroType      s t            -> LLCoroType      (q s) (q t)
+   ArrayType     t              -> LLArrayType     (q t)
+   PtrType       t              -> LLPtrType       (q t)
    PtrTypeUnknown               -> LLPtrTypeUnknown
    FnType        d r cc FT_Proc -> LLProcType (map q d)  (q r) cc
    FnType        d r cc FT_Func -> LLPtrType (LLStructType [procty,envty])
@@ -226,13 +224,13 @@ monoToLL mt = case mt of
                                     envty  = LLPtrType (LLPrimInt I8)
  where q = monoToLL
        llTupleType tys = LLPtrType (LLStructType tys)
- 
+
 llv :: MoVar -> LLVar
 llv v = fmap monoToLL v
 
 llb :: BlockEntry' MonoType -> BlockEntry' TypeLL
 llb (s,vs) = (s, map llv vs)
- 
+
 -- ||||||||||||||||||||||||| Closure Conversion, pt 1 |||||||||||{{{
 -- We serialize a basic block graph by computing a depth-first search
 -- starting from the graph's entry block.
@@ -338,7 +336,7 @@ compileDecisionTree scrutinee (DT_Switch occ subtrees maybeDefaultDt) = do
         return $ BlockFin (blockGraph block |*><*| (foldr (|*><*|) emptyClosedGraph blockss) |*><*| dblockss) id
 
 llOcc occ = map (\(i,c) -> (i, fmap monoToLL c)) occ
-        
+
 emitOccurrence :: MoVar -> (Ident, Occurrence MonoType) -> Insn' O O
 emitOccurrence scrutinee (id, occ) = CCLetVal id ilocc
                        where ilocc = mkILOccurrence (llv scrutinee) (llOcc occ)
@@ -529,7 +527,7 @@ renderCC m put = if put then putDoc (pretty m) >>= (return . Left)
                         else return . Right $ show (pretty m)
 
 instance Structured (String, Label) where
-    textOf (str, lab) _width = out $ str ++ "." ++ show lab
+    textOf (str, lab) _width = text $ str ++ "." ++ show lab
     childrenOf _ = []
 
 instance UniqueMonad (State ILMState) where
@@ -554,7 +552,7 @@ instance Pretty (Insn' e x) where
   pretty (CCGCLoad  loadedvar root) = indent 4 $ text "load from" <+> pretty root <+> text "to" <+> pretty loadedvar
   pretty (CCGCInit  _  srcvar root) = indent 4 $ text "init root" <+> pretty root <+> text ":=" <+> pretty srcvar
   pretty (CCGCKill  enabled  root) = indent 4 $ text "kill root" <+> pretty root <+> pretty enabled
-  pretty (CCTupleStore vs tid memregion) = indent 4 $ text "stores " <+> pretty vs <+> text "to" <+> pretty tid
+  pretty (CCTupleStore vs tid _memregion) = indent 4 $ text "stores " <+> pretty vs <+> text "to" <+> pretty tid
   pretty (CCLast    cclast     ) = pretty cclast
 
 isProc ft = case ft of FnType _ _ _ FT_Proc -> True
@@ -566,10 +564,10 @@ isFunc ft = case ft of FnType _ _ _ FT_Func                            -> True
 
 instance Pretty CCLast where
   pretty (CCCont bid       vs) = text "cont" <+> prettyBlockId bid <+>              list (map pretty vs)
-  pretty (CCCall bid _ _ v vs) = text "TODO:534"
-        --case extractFnType (tidType v) of
-        --  (_, FT_Proc) -> text "call (proc)" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
-        --  (_, FT_Func) -> text "call (func)" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
+  pretty (CCCall bid _ _ v vs) =
+        case tidType v of
+          LLProcType _ _ _ -> text "call (proc)" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
+          _                -> text "call (func)" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
   pretty (CCCase v arms def occ) = align $
     text "case" <+> pretty (mkILOccurrence v occ) <$> indent 2
        ((vcat [ arm (text "of" <+> pretty ctor) bid
@@ -599,7 +597,7 @@ instance Pretty CCBody where
  pretty (CCB_Procs procs _) = vcat (map (\p -> line <> pretty p) procs)
 
 instance Pretty TypeLL where pretty t = text (show t) -- TODO fix
- 
+
 instance Pretty CCProc where
  pretty proc = pretty (procIdent proc) <+> list (map pretty (procVars proc))
                <$> text "{"

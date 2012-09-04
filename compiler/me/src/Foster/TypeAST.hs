@@ -16,10 +16,10 @@ where
 
 import Data.Map as Map(fromList, toList)
 import Data.Char as Char(isLetter)
+import Text.PrettyPrint.ANSI.Leijen(text)
 
 import Foster.Base
 import Foster.Kind
-import Foster.Output(out)
 
 type AnnVar = TypedId TypeAST
 
@@ -71,17 +71,17 @@ descMTVQ MTVTau   = "R"
 instance Structured TypeAST where
     textOf e _width =
         case e of
-            PrimIntAST     size            -> out $ "PrimIntAST " ++ show size
-            PrimFloat64AST                 -> out $ "PrimFloat64"
-            TyConAppAST    tc  _           -> out $ "TyConAppAST " ++ tc
-            TupleTypeAST       _           -> out $ "TupleTypeAST"
-            FnTypeAST    _ _  _  _         -> out $ "FnTypeAST"
-            CoroTypeAST  _ _               -> out $ "CoroTypeAST"
-            ForAllAST  tvs _rho            -> out $ "ForAllAST " ++ show tvs
-            TyVarAST   tv                  -> out $ "TyVarAST " ++ show tv
-            MetaTyVar m                    -> out $ "MetaTyVar " ++ mtvDesc m
-            RefTypeAST    _                -> out $ "RefTypeAST"
-            ArrayTypeAST  _                -> out $ "ArrayTypeAST"
+            PrimIntAST     size            -> text $ "PrimIntAST " ++ show size
+            PrimFloat64AST                 -> text $ "PrimFloat64"
+            TyConAppAST    tc  _           -> text $ "TyConAppAST " ++ tc
+            TupleTypeAST       _           -> text $ "TupleTypeAST"
+            FnTypeAST    _ _  _  _         -> text $ "FnTypeAST"
+            CoroTypeAST  _ _               -> text $ "CoroTypeAST"
+            ForAllAST  tvs _rho            -> text $ "ForAllAST " ++ show tvs
+            TyVarAST   tv                  -> text $ "TyVarAST " ++ show tv
+            MetaTyVar m                    -> text $ "MetaTyVar " ++ mtvDesc m
+            RefTypeAST    _                -> text $ "RefTypeAST"
+            ArrayTypeAST  _                -> text $ "ArrayTypeAST"
 
     childrenOf e =
         case e of

@@ -5,7 +5,7 @@
 -----------------------------------------------------------------------------
 module Foster.TypecheckInt(typecheckInt, typecheckRat, sanityCheck) where
 
-import System.Console.ANSI(Color(Red))
+import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T
 import qualified Data.Bits as Bits(shiftR)
 import Data.Char(toLower)
@@ -16,10 +16,9 @@ import Foster.Base
 import Foster.Context
 import Foster.AnnExpr
 import Foster.TypeAST
-import Foster.Output(outCSLn, outLn)
 
 sanityCheck :: Bool -> String -> Tc ()
-sanityCheck cond msg = if cond then return () else tcFails [outCSLn Red msg]
+sanityCheck cond msg = if cond then return () else tcFails [red (text msg)]
 
 typecheckInt :: SourceRange -> String -> Maybe TypeAST -> Tc (AnnExpr Rho)
 typecheckInt rng originalText _expTyTODO = do
@@ -48,13 +47,13 @@ typecheckInt rng originalText _expTyTODO = do
         -- Given "raw" integer text like "123`456_10",
         -- return ("123456", 10)
         extractCleanBase :: String -> Tc (String, Int)
-        extractCleanBase text = do
-            let noticks = Prelude.filter (/= '`') text
+        extractCleanBase raw = do
+            let noticks = Prelude.filter (/= '`') raw
             case splitString "_" noticks of
                 [first, base] -> return (first, read base)
                 [first]       -> return (first, 10)
                 _otherwise    -> tcFails
-                   [outLn $ "Unable to parse integer literal " ++ text]
+                   [text "Unable to parse integer literal" <+> text raw]
 
         splitString :: String -> String -> [String]
         splitString needle haystack =

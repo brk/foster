@@ -9,7 +9,6 @@ module Main (main) where
 import Text.ProtocolBuffers(messageGet)
 
 import System.Environment(getArgs,getProgName)
-import System.Console.ANSI(Color(..))
 
 import qualified Data.ByteString.Lazy as L(readFile)
 import qualified Data.Text as T
@@ -44,10 +43,12 @@ import Foster.CloConv(closureConvertAndLift, renderCC)
 import Foster.Monomo
 import Foster.MonoType
 import Foster.KSmallstep
-import Foster.Output
 import Foster.MainCtorHelpers
 import Foster.ConvertExprAST
 import Foster.MainOpts
+
+import Foster.Output
+import Text.PrettyPrint.ANSI.Leijen
 
 -----------------------------------------------------------------------
 -- TODO shouldn't claim successful typechecks until we reach AnnExprIL.
@@ -104,7 +105,7 @@ typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
 
     if null errsAndASTs
      then return $ (,) (map OK goodexprs) (newctx, tcenv)
-     else return $ (,) [Errors [out $ "not all functions type checked in SCC: "
+     else return $ (,) [Errors [text $ "not all functions type checked in SCC: "
                                   ++ show (map fnAstName fns)]
                         ]                 (newctx, tcenv)
 
@@ -118,13 +119,13 @@ typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
         inspect typechecked (ast, _) =
             case typechecked of
                 OK e -> do
-                    when showASTs     $ (runOutput $ showStructure ast)
-                    when showAnnExprs $ (runOutput $ showStructure e)
+                    when showASTs     $ (putDocLn $ showStructure ast)
+                    when showAnnExprs $ (putDocLn $ showStructure e)
                 Errors errs -> do
-                    runOutput $ showStructure ast
-                    runOutput $ (outCSLn Red "Typecheck error: ")
-                    printOutputs errs
-                    runOutput $ (outLn "")
+                    putDocLn $ showStructure ast
+                    putDocLn $ red $ text "Typecheck error: "
+                    forM_ errs putDocLn
+                    putDoc line
 
         bindingForAnnFn :: Fn (AnnExpr TypeAST) TypeAST -> ContextBinding TypeAST
         bindingForAnnFn f = TermVarBinding (identPrefix $ fnIdent f) (fnVar f)
@@ -172,8 +173,8 @@ typecheckModule verboseMode modast tcenv0 = do
     let primBindings = computeContextBindings primitiveDecls
     let declBindings = computeContextBindings (moduleASTdecls modast) ++
                        computeContextBindings (concatMap extractCtorTypes dts)
-    runOutput $ (outLn "vvvv declBindings:====================")
-    runOutput $ (outCSLn Yellow (joinWith "\n" $ map show declBindings))
+    putDocLn $ (outLn "vvvv declBindings:====================")
+    putDocLn $ (dullyellow (vcat $ map (text . show) declBindings))
 
     let ctx0 = mkContext declBindings primBindings dts
     ctxErrsOrOK <- unTc tcenv0 (tcContext ctx0)
@@ -192,7 +193,7 @@ typecheckModule verboseMode modast tcenv0 = do
                                           (typecheckFnSCC showASTs showAnnExprs)
         unTc tcenv (convertTypeILofAST modast ctx annFnSCCs)
       ([], Errors os) -> return (Errors os)
-      (dups, _) -> return (Errors [out $ "Unable to check module due to "
+      (dups, _) -> return (Errors [text $ "Unable to check module due to "
                                         ++ "duplicate bindings: " ++ show dups])
  where
    mkContext declBindings primBindings datatypes =
@@ -317,18 +318,11 @@ typecheckModule verboseMode modast tcenv0 = do
                 tys <- mapM f types
                 return $ DataCtor dataCtorName n tyformals tys
 
-printOutputs :: [Output] -> IO ()
-printOutputs outs =
-  forM_ outs $ \(output) ->
-    do
-       runOutput $ output
-       runOutput $ (outLn "")
-
 dieOnError :: OutputOr t -> Compiled t
 dieOnError (OK     e) = return e
 dieOnError (Errors errs) = liftIO $ do
-    runOutput (outCSLn Red $ "Unable to type check input module:")
-    printOutputs errs
+    putDocLn (red $ text "Unable to type check input module:")
+    forM_ errs putDocLn
     error "compilation failed"
 
 isTau :: TypeAST -> Bool
@@ -434,8 +428,8 @@ lowerModule ai_mod ctx_il = do
      let kmod = kNormalizeModule ai_mod ctx_il
 
      whenDumpIR "kn" $ do
-         runOutput (outLn $ "vvvv k-normalized :====================")
-         runOutput (showStructure (moduleILbody kmod))
+         putDocLn (outLn $ "vvvv k-normalized :====================")
+         putDocLn (showStructure (moduleILbody kmod))
          _ <- liftIO $ renderKN kmod True
          return ()
 
@@ -446,24 +440,24 @@ lowerModule ai_mod ctx_il = do
      ilprog   <- liftIO $ prepForCodegen ccmod uniqref
 
      whenDumpIR "mono" $ do
-         runOutput $ (outLn "/// Monomorphized program =============")
+         putDocLn $ (outLn "/// Monomorphized program =============")
          _ <- liftIO $ renderKN monomod True
-         runOutput $ (outLn "^^^ ===================================")
+         putDocLn $ (outLn "^^^ ===================================")
 
      whenDumpIR "cfg" $ do
-         runOutput $ (outLn "/// CFG-ized program ==================")
+         putDocLn $ (outLn "/// CFG-ized program ==================")
          _ <- liftIO $ renderCFG cfgmod True
-         runOutput $ (outLn "^^^ ===================================")
+         putDocLn $ (outLn "^^^ ===================================")
 
      whenDumpIR "cc" $ do
-         runOutput $ (outLn "/// Closure-converted program =========")
+         putDocLn $ (outLn "/// Closure-converted program =========")
          _ <- liftIO $ renderCC ccmod True
-         runOutput $ (outLn "^^^ ===================================")
+         putDocLn $ (outLn "^^^ ===================================")
 
      whenDumpIR "il" $ do
-         runOutput $ (outLn "/// ILProgram =========================")
-         runOutput (showILProgramStructure ilprog)
-         runOutput $ (outLn "^^^ ===================================")
+         putDocLn $ (outLn "/// ILProgram =========================")
+         putDocLn (showILProgramStructure ilprog)
+         putDocLn $ (outLn "^^^ ===================================")
 
      -- _ <- liftIO $ renderCFG cfgmod True
 
@@ -503,15 +497,15 @@ showGeneratedMetaTypeVariables :: (Show ty) =>
 showGeneratedMetaTypeVariables varlist ctx_il =
   ccWhen ccVerbose $ do
     metaTyVars <- readIORef varlist
-    runOutput $ (outLn $ "generated " ++ (show $ length metaTyVars) ++ " meta type variables:")
+    putDocLn $ (outLn $ "generated " ++ (show $ length metaTyVars) ++ " meta type variables:")
     forM_ metaTyVars $ \mtv -> do
         t <- readIORef (mtvRef mtv)
         let wasTau = fmap isTau t /= Just False
         if mtvConstraint mtv == MTVTau && not wasTau
-         then runOutput (outLn $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t) -- error $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t ++ " wasn't a tau!"
-         else runOutput (outLn $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t)
-    runOutput $ (outLn "vvvv contextBindings:====================")
-    runOutput $ (outCSLn Yellow (joinWith "\n" $ map show (Map.toList $ contextBindings ctx_il)))
+         then putDocLn (text $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t) -- error $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t ++ " wasn't a tau!"
+         else putDocLn (text $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t)
+    putDocLn $ (outLn "vvvv contextBindings:====================")
+    putDocLn $ (dullyellow $ vcat $ map (text . show) (Map.toList $ contextBindings ctx_il))
 
 type Compiled = StateT CompilerContext IO
 data CompilerContext = CompilerContext {

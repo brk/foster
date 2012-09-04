@@ -9,11 +9,11 @@ import Data.Map(Map)
 import qualified Data.Map as Map(lookup, empty, insert, findWithDefault, singleton)
 import qualified Data.List as List(length, elem, lookup)
 import Data.Maybe(fromMaybe)
+import Text.PrettyPrint.ANSI.Leijen(text)
 
 import Foster.Base
 import Foster.TypeAST
 import Foster.Context
-import Foster.Output(out)
 
 ----------------------
 
@@ -99,31 +99,31 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
  --tcLift $ putStrLn ("tcUnifyLoop: t1 = " ++ show t1 ++ "; t2 = " ++ show t2)
  if illegal t1 || illegal t2
   then tcFailsMore
-        [out $ "Bound type variables cannot be unified!\n" ++
+        [text $ "Bound type variables cannot be unified!\n" ++
                "Unable to unify\n\t" ++ show t1 ++ "\nand\n\t" ++ show t2
-        ,out $ "t1::", showStructure t1, out $ "t2::", showStructure t2]
+        ,text $ "t1::", showStructure t1, text $ "t2::", showStructure t2]
   else
    case (t1, t2) of
     (PrimFloat64AST, PrimFloat64AST) -> tcUnifyLoop constraints tysub
     ((PrimIntAST n1), (PrimIntAST n2)) ->
       if n1 == n2 then tcUnifyLoop constraints tysub
-                  else tcFails [out $ "Unable to unify different primitive types: "
+                  else tcFails [text $ "Unable to unify different primitive types: "
                                   ++ show n1 ++ " vs " ++ show n2]
 
     ((TyVarAST tv1), (TyVarAST tv2)) ->
        if tv1 == tv2 then tcUnifyLoop constraints tysub
-                     else tcFails [out $ "Unable to unify different type variables: "
+                     else tcFails [text $ "Unable to unify different type variables: "
                                      ++ show tv1 ++ " vs " ++ show tv2]
 
     ((TyConAppAST nm1 tys1), (TyConAppAST nm2 tys2)) ->
       if nm1 == nm2
         then tcUnifyMoreTypes tys1 tys2 constraints tysub
-        else tcFails [out $ "Unable to unify different type constructors: "
+        else tcFails [text $ "Unable to unify different type constructors: "
                                   ++ nm1 ++ " vs " ++ nm2]
 
     ((TupleTypeAST tys1), (TupleTypeAST tys2)) ->
         if List.length tys1 /= List.length tys2
-          then tcFails [out $ "Unable to unify tuples of different lengths!"]
+          then tcFails [text $ "Unable to unify tuples of different lengths!"]
           else tcUnifyMoreTypes tys1 tys2 constraints tysub
 
     -- Mismatches between unitary tuple types probably indicate
@@ -131,7 +131,7 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
 
     ((FnTypeAST as1 a2 _cc1 _), (FnTypeAST bs1 b2 _cc2 _)) ->
         if List.length as1 /= List.length bs1
-          then tcFails [out $ "Unable to unify functions of different arity!\n"
+          then tcFails [text $ "Unable to unify functions of different arity!\n"
                            ++ show as1 ++ "\nvs\n" ++ show bs1]
           else tcUnifyLoop ([TypeConstrEq a b | (a, b) <- zip as1 bs1]
                          ++ (TypeConstrEq a2 b2):constraints) tysub
@@ -143,9 +143,9 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
         let (tyvars1, kinds1) = unzip ktyvars1 in
         let (tyvars2, kinds2) = unzip ktyvars2 in
         if List.length tyvars1 /= List.length tyvars2
-         then tcFails [out $ "Unable to unify foralls of different arity!\n" ++ show t1 ++ "\nvs\n" ++ show t2]
+         then tcFails [text $ "Unable to unify foralls of different arity!\n" ++ show t1 ++ "\nvs\n" ++ show t2]
          else if kinds1 /= kinds2
-          then tcFails [out $ "Unable to unify foralls with differently-kinded type variables"]
+          then tcFails [text $ "Unable to unify foralls with differently-kinded type variables"]
           else let t1 = rho1 in
                let tySubst = zip tyvars2 (map (\(tv,_) -> TyVarAST tv) ktyvars1) in
                let t2 = parSubstTy tySubst rho2 in
@@ -161,8 +161,8 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
         tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
     _otherwise -> tcFailsMore
-        [out $ "Unable to unify\n\t" ++ show t1 ++ "\nand\n\t" ++ show t2
-        ,out $ "t1::", showStructure t1, out $ "t2::", showStructure t2]
+        [text $ "Unable to unify\n\t" ++ show t1 ++ "\nand\n\t" ++ show t2
+        ,text $ "t1::", showStructure t1, text $ "t2::", showStructure t2]
 
 tcUnifyVar :: MetaTyVar TypeAST -> TypeAST -> TypeSubst -> [TypeConstraint] -> Tc UnifySoln
 

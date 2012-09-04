@@ -16,7 +16,7 @@ import Foster.Base
 import Foster.Context
 import Foster.TypeIL
 import Foster.AnnExprIL
-import Foster.Output(out, outToString)
+
 import Text.PrettyPrint.ANSI.Leijen
 
 -- | Foster.KNExpr binds all intermediate values to named variables
@@ -151,7 +151,7 @@ kNormalize mebTail expr =
                   nestedLets args (\xs -> KNCall mebTail t a xs)
               _ -> error $ "knCall: Called var had non-function type!\n\t" ++
                                 show a ++
-                                outToString (showStructure (tidType a))
+                                show (showStructure (tidType a))
 -- }}}|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 --------------------------------------------------------------------
@@ -343,30 +343,30 @@ typeKN expr =
 instance Show ty => Structured (KNExpr' ty) where
     textOf e _width =
         case e of
-            KNString     _ _    -> out $ "KNString    "
-            KNBool       _ b    -> out $ "KNBool      " ++ (show b)
-            KNCall tail t _ _   -> out $ "KNCall " ++ show tail ++ " :: " ++ show t
-            KNCallPrim t prim _ -> out $ "KNCallPrim  " ++ (show prim) ++ " :: " ++ show t
-            KNAppCtor  t cid  _ -> out $ "KNAppCtor   " ++ (show cid) ++ " :: " ++ show t
-            KNLetVal   x b    _ -> out $ "KNLetVal    " ++ (show x) ++ " :: " ++ (show $ typeKN b) ++ " = ... in ... "
-            KNLetFuns ids fns _ -> out $ "KNLetFuns   " ++ (show $ zip ids (map fnVar fns))
-            KNIf      t  _ _ _  -> out $ "KNIf        " ++ " :: " ++ show t
-            KNUntil   t  _ _ _  -> out $ "KNUntil     " ++ " :: " ++ show t
-            KNInt ty int        -> out $ "KNInt       " ++ (litIntText int) ++ " :: " ++ show ty
-            KNFloat ty flt      -> out $ "KNFloat     " ++ (litFloatText flt) ++ " :: " ++ show ty
-            KNAlloc      {}     -> out $ "KNAlloc     "
-            KNDeref      {}     -> out $ "KNDeref     "
-            KNStore      {}     -> out $ "KNStore     "
-            KNCase _t v bnds    -> out $ "KNCase      " ++ show v ++ " binding " ++ (show $ map fst bnds)
-            KNAllocArray {}     -> out $ "KNAllocArray "
-            KNArrayRead  t _    -> out $ "KNArrayRead " ++ " :: " ++ show t
-            KNArrayPoke  {}     -> out $ "KNArrayPoke "
-            KNTuple   _ vs _    -> out $ "KNTuple     (size " ++ (show $ length vs) ++ ")"
+            KNString     _ _    -> text $ "KNString    "
+            KNBool       _ b    -> text $ "KNBool      " ++ (show b)
+            KNCall tail t _ _   -> text $ "KNCall " ++ show tail ++ " :: " ++ show t
+            KNCallPrim t prim _ -> text $ "KNCallPrim  " ++ (show prim) ++ " :: " ++ show t
+            KNAppCtor  t cid  _ -> text $ "KNAppCtor   " ++ (show cid) ++ " :: " ++ show t
+            KNLetVal   x b    _ -> text $ "KNLetVal    " ++ (show x) ++ " :: " ++ (show $ typeKN b) ++ " = ... in ... "
+            KNLetFuns ids fns _ -> text $ "KNLetFuns   " ++ (show $ zip ids (map fnVar fns))
+            KNIf      t  _ _ _  -> text $ "KNIf        " ++ " :: " ++ show t
+            KNUntil   t  _ _ _  -> text $ "KNUntil     " ++ " :: " ++ show t
+            KNInt ty int        -> text $ "KNInt       " ++ (litIntText int) ++ " :: " ++ show ty
+            KNFloat ty flt      -> text $ "KNFloat     " ++ (litFloatText flt) ++ " :: " ++ show ty
+            KNAlloc      {}     -> text $ "KNAlloc     "
+            KNDeref      {}     -> text $ "KNDeref     "
+            KNStore      {}     -> text $ "KNStore     "
+            KNCase _t v bnds    -> text $ "KNCase      " ++ show v ++ " binding " ++ (show $ map fst bnds)
+            KNAllocArray {}     -> text $ "KNAllocArray "
+            KNArrayRead  t _    -> text $ "KNArrayRead " ++ " :: " ++ show t
+            KNArrayPoke  {}     -> text $ "KNArrayPoke "
+            KNTuple   _ vs _    -> text $ "KNTuple     (size " ++ (show $ length vs) ++ ")"
             KNVar (TypedId t (GlobalSymbol name))
-                                -> out $ "KNVar(Global):   " ++ T.unpack name ++ " :: " ++ show t
-            KNVar (TypedId t i) -> out $ "KNVar(Local):   " ++ show i ++ " :: " ++ show t
-            KNTyApp t _e argty  -> out $ "KNTyApp     " ++ show argty ++ "] :: " ++ show t
-            KNKillProcess t m   -> out $ "KNKillProcess " ++ show m ++ " :: " ++ show t
+                                -> text $ "KNVar(Global):   " ++ T.unpack name ++ " :: " ++ show t
+            KNVar (TypedId t i) -> text $ "KNVar(Local):   " ++ show i ++ " :: " ++ show t
+            KNTyApp t _e argty  -> text $ "KNTyApp     " ++ show argty ++ "] :: " ++ show t
+            KNKillProcess t m   -> text $ "KNKillProcess " ++ show m ++ " :: " ++ show t
     childrenOf expr =
         let var v = KNVar v in
         case expr of

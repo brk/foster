@@ -9,7 +9,8 @@ where
 
 import Foster.Base
 import Foster.Kind
-import Foster.Output(out)
+
+import Text.PrettyPrint.ANSI.Leijen(text)
 
 data TypeP =
            PrimIntP       IntSizeBits
@@ -47,16 +48,16 @@ instance Show TypeP where
 instance Structured TypeP where
     textOf e _width =
         case e of
-            PrimIntP     size            -> out $ "PrimIntP " ++ show size
-            TyConAppP    tc  _           -> out $ "TyConAppP " ++ tc
-            TupleTypeP       _           -> out $ "TupleTypeP"
-            FnTypeP    _ _  _  _         -> out $ "FnTypeP"
-            CoroTypeP  _ _               -> out $ "CoroTypeP"
-            ForAllP  tvs _rho            -> out $ "ForAllP " ++ show tvs
-            TyVarP   tv                  -> out $ "TyVarP " ++ show tv
-            RefTypeP    _                -> out $ "RefTypeP"
-            ArrayTypeP  _                -> out $ "ArrayTypeP"
-            MetaPlaceholder s            -> out $ "MetaPlaceholder " ++ s
+            PrimIntP     size            -> text $ "PrimIntP " ++ show size
+            TyConAppP    tc  _           -> text $ "TyConAppP " ++ tc
+            TupleTypeP       _           -> text $ "TupleTypeP"
+            FnTypeP    _ _  _  _         -> text $ "FnTypeP"
+            CoroTypeP  _ _               -> text $ "CoroTypeP"
+            ForAllP  tvs _rho            -> text $ "ForAllP " ++ show tvs
+            TyVarP   tv                  -> text $ "TyVarP " ++ show tv
+            RefTypeP    _                -> text $ "RefTypeP"
+            ArrayTypeP  _                -> text $ "ArrayTypeP"
+            MetaPlaceholder s            -> text $ "MetaPlaceholder " ++ s
 
     childrenOf e =
         case e of

@@ -10,7 +10,8 @@ import Foster.Base
 import Foster.Kind
 import Foster.TypeAST
 import Foster.Context
-import Foster.Output(out)
+
+import Text.PrettyPrint.ANSI.Leijen(text)
 
 type RhoIL = TypeIL
 data TypeIL =
@@ -86,14 +87,14 @@ ilOf ctx typ = do
      TyVarAST tv@(SkolemTyVar _ _ k) -> return $ TyVarIL tv k
      TyVarAST tv@(BoundTyVar _) ->
         case Prelude.lookup tv (contextTypeBindings ctx) of
-          Nothing -> tcFails [out $ "Unable to find kind of type variable " ++ show typ]
+          Nothing -> tcFails [text $ "Unable to find kind of type variable " ++ show typ]
           Just k  -> return $ TyVarIL tv k
      MetaTyVar m -> do
         mty <- readTcMeta m
         case mty of
           Nothing -> if False -- TODO this is dangerous, can violate type correctness
                       then return $ TupleTypeIL []
-                      else tcFails [out $ "Found un-unified unification variable "
+                      else tcFails [text $ "Found un-unified unification variable "
                                 ++ show (mtvUniq m) ++ "(" ++ mtvDesc m ++ ")!"]
           Just t  -> q t
 
@@ -156,16 +157,16 @@ data ILDataCtor = ILDataCtor String Int (DataCtor TypeIL) deriving Show
 instance Structured TypeIL where
     textOf e _width =
         case e of
-            TyConAppIL nam _types -> out $ "TyConAppIL " ++ nam
-            PrimIntIL     size    -> out $ "PrimIntIL " ++ show size
-            PrimFloat64IL         -> out $ "PrimFloat64IL"
-            TupleTypeIL   {}      -> out $ "TupleTypeIL"
-            FnTypeIL      {}      -> out $ "FnTypeIL"
-            CoroTypeIL    {}      -> out $ "CoroTypeIL"
-            ForAllIL ktvs _rho    -> out $ "ForAllIL " ++ show ktvs
-            TyVarIL       {}      -> out $ "TyVarIL "
-            ArrayTypeIL   {}      -> out $ "ArrayTypeIL"
-            PtrTypeIL     {}      -> out $ "PtrTypeIL"
+            TyConAppIL nam _types -> text $ "TyConAppIL " ++ nam
+            PrimIntIL     size    -> text $ "PrimIntIL " ++ show size
+            PrimFloat64IL         -> text $ "PrimFloat64IL"
+            TupleTypeIL   {}      -> text $ "TupleTypeIL"
+            FnTypeIL      {}      -> text $ "FnTypeIL"
+            CoroTypeIL    {}      -> text $ "CoroTypeIL"
+            ForAllIL ktvs _rho    -> text $ "ForAllIL " ++ show ktvs
+            TyVarIL       {}      -> text $ "TyVarIL "
+            ArrayTypeIL   {}      -> text $ "ArrayTypeIL"
+            PtrTypeIL     {}      -> text $ "PtrTypeIL"
 
     childrenOf e =
         case e of

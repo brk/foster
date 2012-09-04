@@ -16,7 +16,8 @@ import qualified Data.Map  as Map(lookup, size)
 import qualified Data.Text as T
 
 import Foster.Base
-import Foster.Output(out)
+
+import Text.PrettyPrint.ANSI.Leijen hiding (column)
 
 {-
 Straightforward implementation of pattern match compilation
@@ -240,9 +241,9 @@ instance Ord (CtorInfo t) where
 instance (Structured a, Show t) => Structured (DecisionTree a t) where
     textOf e _width =
       case e of
-        DT_Fail                  ->  out $ "DT_Fail      "
-        DT_Leaf a idsoccs        -> (out $ "DT_Leaf    " ++ show idsoccs ++ "\n") ++ (showStructure a)
-        DT_Switch  occ idsdts _  ->  out $ "DT_Switch    " ++ (show occ) ++ (show $ subIds idsdts)
+        DT_Fail                  ->  text $ "DT_Fail      "
+        DT_Leaf a idsoccs        -> (text $ "DT_Leaf    " ++ show idsoccs) <$> showStructure a
+        DT_Switch  occ idsdts _  ->  text $ "DT_Switch    " ++ (show occ) ++ (show $ subIds idsdts)
                where   subIds idsDts          = map fst idsDts
     childrenOf e =
       case e of

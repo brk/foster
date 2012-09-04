@@ -12,7 +12,9 @@ module Foster.AnnExpr (
 
 import Foster.Base
 import Foster.TypeAST
-import Foster.Output(out, OutputOr(..))
+
+import Text.PrettyPrint.ANSI.Leijen(text)
+import Foster.Output(OutputOr(..))
 
 import qualified Data.Text as T
 
@@ -98,28 +100,28 @@ instance TypedWith (AnnExpr TypeAST) TypeAST where
 instance Structured (AnnExpr TypeAST) where
   textOf e _width =
     case e of
-      AnnString   _rng    _      -> out $ "AnnString    "
-      AnnBool     _rng    b      -> out $ "AnnBool      " ++ (show b)
-      AnnCall     _rng t _b _args-> out $ "AnnCall      " ++ " :: " ++ show t
-      AnnCompiles _rng cr        -> out $ "AnnCompiles  " ++ show cr
-      AnnKillProcess _rng t msg  -> out $ "AnnKillProcess " ++ show msg ++ " :: " ++ show t
-      AnnIf       _rng t _ _ _   -> out $ "AnnIf        " ++ " :: " ++ show t
-      AnnUntil    _rng t _ _     -> out $ "AnnUntil     " ++ " :: " ++ show t
-      AnnInt      _rng ty int    -> out $ "AnnInt       " ++ (litIntText int) ++ " :: " ++ show ty
-      AnnFloat    _rng ty flt    -> out $ "AnnFloat     " ++ (litFloatText flt) ++ " :: " ++ show ty
-      AnnLetVar   _rng id _a _b  -> out $ "AnnLetVar    " ++ show id
-      AnnLetFuns  _rng ids _ _   -> out $ "AnnLetFuns   " ++ show ids
-      AnnAlloc  {}               -> out $ "AnnAlloc     "
-      AnnDeref  {}               -> out $ "AnnDeref     "
-      AnnStore  {}               -> out $ "AnnStore     "
-      AnnArrayRead _rng t _      -> out $ "AnnArrayRead " ++ " :: " ++ show t
-      AnnArrayPoke _rng t _ _    -> out $ "AnnArrayPoke " ++ " :: " ++ show t
-      AnnTuple  {}               -> out $ "AnnTuple     "
-      AnnCase   {}               -> out $ "AnnCase      "
-      AnnPrimitive _r tid        -> out $ "AnnPrimitive " ++ show tid
-      E_AnnVar _r tid            -> out $ "AnnVar       " ++ show tid
-      E_AnnTyApp _rng t _e argty -> out $ "AnnTyApp     [" ++ show argty ++ "] :: " ++ show t
-      E_AnnFn annFn              -> out $ "AnnFn " ++ T.unpack (identPrefix $ fnIdent annFn) ++ " // "
+      AnnString   _rng    _      -> text $ "AnnString    "
+      AnnBool     _rng    b      -> text $ "AnnBool      " ++ (show b)
+      AnnCall     _rng t _b _args-> text $ "AnnCall      " ++ " :: " ++ show t
+      AnnCompiles _rng cr        -> text $ "AnnCompiles  " ++ show cr
+      AnnKillProcess _rng t msg  -> text $ "AnnKillProcess " ++ show msg ++ " :: " ++ show t
+      AnnIf       _rng t _ _ _   -> text $ "AnnIf        " ++ " :: " ++ show t
+      AnnUntil    _rng t _ _     -> text $ "AnnUntil     " ++ " :: " ++ show t
+      AnnInt      _rng ty int    -> text $ "AnnInt       " ++ (litIntText int) ++ " :: " ++ show ty
+      AnnFloat    _rng ty flt    -> text $ "AnnFloat     " ++ (litFloatText flt) ++ " :: " ++ show ty
+      AnnLetVar   _rng id _a _b  -> text $ "AnnLetVar    " ++ show id
+      AnnLetFuns  _rng ids _ _   -> text $ "AnnLetFuns   " ++ show ids
+      AnnAlloc  {}               -> text $ "AnnAlloc     "
+      AnnDeref  {}               -> text $ "AnnDeref     "
+      AnnStore  {}               -> text $ "AnnStore     "
+      AnnArrayRead _rng t _      -> text $ "AnnArrayRead " ++ " :: " ++ show t
+      AnnArrayPoke _rng t _ _    -> text $ "AnnArrayPoke " ++ " :: " ++ show t
+      AnnTuple  {}               -> text $ "AnnTuple     "
+      AnnCase   {}               -> text $ "AnnCase      "
+      AnnPrimitive _r tid        -> text $ "AnnPrimitive " ++ show tid
+      E_AnnVar _r tid            -> text $ "AnnVar       " ++ show tid
+      E_AnnTyApp _rng t _e argty -> text $ "AnnTyApp     [" ++ show argty ++ "] :: " ++ show t
+      E_AnnFn annFn              -> text $ "AnnFn " ++ T.unpack (identPrefix $ fnIdent annFn) ++ " // "
         ++ (show $ fnBoundNames annFn) ++ " :: " ++ show (fnType annFn) where
                    fnBoundNames :: (Show t) => Fn e t -> [String]
                    fnBoundNames fn = map show (fnVars fn)
