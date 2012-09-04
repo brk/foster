@@ -1,0 +1,7 @@
+main = {
+ expect_i1 False;
+ print_i1 (__COMPILES__ f g0); 
+};
+
+g0 = { () };
+f = { c : { Int32 => () } => c 0 };
