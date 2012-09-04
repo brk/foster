@@ -1,0 +1,18 @@
+main = {
+
+  let id = { forall t:Boxed, x:t => x };
+      //exp_unit = { x : () => 0 };
+      exp_thnk = { x : { Int32 } => 2 };
+      exp_pair = { x : (Int32, Int32) => 1 };
+  in
+    // TODO fix distinction between unit-meaning-void and unit-meaning-unit.
+    //expect_i32 0;
+    //print_i32 (exp_unit (id:[()] ()));
+
+    expect_i32 2;
+    print_i32 (exp_thnk (id:[ {Int32} ] { 4 }));
+
+    expect_i32 1;
+    print_i32 (exp_pair (id:[(Int32, Int32)] (2,3)));
+  end
+};
