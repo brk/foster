@@ -26,9 +26,16 @@ monomorphization, pattern match compilation, and closure
 conversion. Eventually, type checking should be performed on
 SCCs of modules.
 
-The back-end is written in C++. The primary advantage of
-using C++ rather than Haskell for lowering to LLVM is that
-we can use custom LLVM IR passes, as well as our GC plugin.
+The back-end is written in C++. The primary advantages of
+using C++ rather than Haskell for lowering to LLVM are:
+
+  * We can use custom LLVM IR passes.
+  * We can use a custom GC plugin.
+  * It's easier to link against our standard library,
+    especially when we don't know the types of certain symbols
+    in advance.
+  * It seems easier to do GC metadata & type maps this way.
+
 LLVM provides some support for loadable modules, which enables
 passes to be dynamically loaded into standard LLVM tools like
 ``opt`` and ``llc``. Unfortunately, that functionality is not
@@ -43,7 +50,7 @@ and emits native object code or assembly.
 
 Possible choices for generation of LLVM IR:
 
-  * Have C++ convert custom IR from protobuf to LLVM
+  * Have C++ convert custom IR from protobuf to LLVM (currently done)
   * Have Haskell generate LLVM via text string pasting
   * Have Haskell generate LLVM-isomorphic protocol buffers
 
@@ -585,6 +592,7 @@ Compiler Details
         gc
         optimizations
         match-compilation
+        recursive-bindings
 
 .. include:: closureconversion.rst
 .. include:: fosterlower.rst
@@ -593,3 +601,5 @@ Compiler Details
 .. include:: gc.rst
 .. include:: optimizations.rst
 .. include:: match-compilation.rst
+.. include:: recursive-bindings.rst
+
