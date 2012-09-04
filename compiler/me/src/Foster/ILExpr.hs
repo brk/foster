@@ -24,7 +24,7 @@ import Foster.Letable
 import Data.Maybe(fromMaybe)
 import Data.IORef
 import Data.Map(Map)
-import Data.List(zipWith, zipWith4)
+import Data.List(zipWith4)
 import qualified Data.Set as Set
 import qualified Data.Map as Map(singleton, insertWith, lookup, empty, fromList,
                                  elems, keysSet, insert, union, findWithDefault)
@@ -518,8 +518,12 @@ makeSubstWith from to = let m = Map.fromList $ zip from to in
                         let s v = Map.findWithDefault v v m in
                         s
 
-measure :: String -> Boxes.Box
-measure s = Boxes.vcat Boxes.left (map Boxes.text $ lines s)
+catboxes2 bbg1 bbg2 = Boxes.hsep 1 Boxes.left $
+                            [(boxify . measure . plain . pretty) bbg1
+                            ,(boxify . measure .         pretty) bbg2]
+
+measure :: Doc -> Boxes.Box
+measure d = Boxes.vcat Boxes.left (map Boxes.text $ lines $ show d)
 
 boxify :: Boxes.Box -> Boxes.Box
 boxify b = v Boxes.<> (h Boxes.// b Boxes.// h) Boxes.<> v
@@ -565,11 +569,7 @@ insertDumbGCRoots uref bbgp = do
    (g' , fini) <- rebuildGraphAccM (case bbgpEntry bbgp of (bid, _) -> bid)
                                        (bbgpBody bbgp) Map.empty transform
 
-   if False then return ()
-     else do
-           let catboxes bbgs = Boxes.hsep 1 Boxes.left $ map (boxify . measure) $
-                                                         map (show . pretty) bbgs
-           Boxes.printBox $ catboxes [bbgpBody bbgp , g' ]
+   if False then return () else do Boxes.printBox $ catboxes2 (bbgpBody bbgp) g'
 
    return (bbgp { bbgpBody =  g' }, fini)
 
@@ -683,11 +683,8 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
                                                        (bbgpBody bbgp) transform
    g' <- evalStateT mappedAction Map.empty
 
-   if False then return ()
-     else do
-           let catboxes bbgs = Boxes.hsep 1 Boxes.left $ map (boxify . measure) $
-                                                         map (show . pretty) bbgs
-           Boxes.printBox $ catboxes [bbgpBody bbgp , g' ]
+   if False then return () else Boxes.printBox $ catboxes2 (bbgpBody bbgp) g'
+
    return bbgp { bbgpBody =  g' }
  where
   isLive root = Set.member root liveRoots

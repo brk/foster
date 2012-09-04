@@ -549,9 +549,9 @@ instance Pretty (Insn' e x) where
                                   indent 4 (align $
                                    vcat [text recfun <+> text (show id) <+> text "=" <+> pretty fn
                                         | (id,fn) <- zip ids fns])
-  pretty (CCGCLoad  loadedvar root) = indent 4 $ text "load from" <+> pretty root <+> text "to" <+> pretty loadedvar
-  pretty (CCGCInit  _  srcvar root) = indent 4 $ text "init root" <+> pretty root <+> text ":=" <+> pretty srcvar
-  pretty (CCGCKill  enabled  root) = indent 4 $ text "kill root" <+> pretty root <+> pretty enabled
+  pretty (CCGCLoad  loadedvar root) = indent 4 $ dullwhite $ text "load from" <+> pretty root <+> text "to" <+> pretty loadedvar
+  pretty (CCGCInit  _  srcvar root) = indent 4 $ dullgreen $ text "init root" <+> pretty root <+> text ":=" <+> pretty srcvar
+  pretty (CCGCKill  enabled  root)  = indent 4 $ dullwhite $ text "kill root" <+> pretty root <+> pretty enabled
   pretty (CCTupleStore vs tid _memregion) = indent 4 $ text "stores " <+> pretty vs <+> text "to" <+> pretty tid
   pretty (CCLast    cclast     ) = pretty cclast
 
