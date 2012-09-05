@@ -72,18 +72,17 @@ LLExpr* parseText(const pb::Letable& e) {
   return new LLText(e.string_value());
 }
 
-LLVar* parseTermVar(const pb::TermVar* v) {
-  ASSERT(v != NULL) << "parseTermVar got NULL var!";
-  ASSERT(v->name() != "") << "parseTermVar got empty var!";
+LLVar* parseTermVar(const pb::TermVar& v) {
+  ASSERT(v.name() != "") << "parseTermVar got empty var!";
   LLVar* rv = NULL;
 
-  switch (v->tag()) {
-  case pb::TermVar::IL_VAR:           rv = new          LLVar(v->name()); break;
-  case pb::TermVar::IL_GLOBAL_SYMBOL: rv = new LLGlobalSymbol(v->name()); break;
+  switch (v.tag()) {
+  case pb::TermVar::IL_VAR:           rv = new          LLVar(v.name()); break;
+  case pb::TermVar::IL_GLOBAL_SYMBOL: rv = new LLGlobalSymbol(v.name()); break;
   }
   ASSERT(rv != NULL) << "parseTermVar didn't recognize tag.";
-  if (v->has_typ()) {
-    rv->type = TypeAST_from_pb(& v->typ());
+  if (v.has_typ()) {
+    rv->type = TypeAST_from_pb(& v.typ());
   }
   return rv;
 }
@@ -107,10 +106,10 @@ LLExpr* parseCall(const pb::Letable& e) {
 
   int firstArg = c.has_coro_prim() ? 0 : 1;
   LLExpr* base = c.has_coro_prim() ? parseCoroPrim(c.coro_prim())
-                                   : parseTermVar(&e.parts(0));
+                                   : parseTermVar(e.parts(0));
   std::vector<LLVar*> args;
   for (int i = firstArg; i < e.parts_size(); ++i) {
-    args.push_back(parseTermVar(&e.parts(i)));
+    args.push_back(parseTermVar(e.parts(i)));
   }
   return new LLCall(base, args, c.call_may_trigger_gc(),
                     c.call_is_a_tail_call(), c.call_conv());
@@ -120,7 +119,7 @@ LLExpr* parseCallPrimOp(const pb::Letable& e) {
   ASSERT(e.parts_size() >= 1);
   std::vector<LLVar*> args;
   for (int i = 0; i < e.parts_size(); ++i) {
-    args.push_back(parseTermVar(&e.parts(i)));
+    args.push_back(parseTermVar(e.parts(i)));
   }
   return new LLCallPrimOp(e.prim_op_name(), args);
 }
@@ -150,7 +149,7 @@ LLAllocate::MemRegion parseMemRegion(const pb::PbAllocInfo& a) {
 LLAllocate* parseAllocInfo(const pb::PbAllocInfo& a) {
   LLVar* array_size = NULL;
   if (a.has_array_size()) {
-    array_size = parseTermVar(&a.array_size());
+    array_size = parseTermVar(a.array_size());
   }
 
   std::string tynm = a.type_name();
@@ -180,9 +179,9 @@ parseLinkage(const pb::Proc::Linkage linkage) {
 LLTupleStore* parseTupleStore(const pb::TupleStore& ts) {
   std::vector<LLVar*> vars;
   for (int i = 0; i < ts.stored_vars_size(); ++i) {
-    vars.push_back(parseTermVar(&ts.stored_vars(i)));
+    vars.push_back(parseTermVar(ts.stored_vars(i)));
   }
-  return new LLTupleStore(vars, parseTermVar(&ts.storage()), ts.storage_indir());
+  return new LLTupleStore(vars, parseTermVar(ts.storage()), ts.storage_indir());
 }
 
 LLMiddle* parseLetVal(const pb::LetVal& b) {
@@ -195,12 +194,12 @@ LLMiddle* parseLetVal(const pb::LetVal& b) {
 
 LLExpr* parseBitcast(const pb::Letable& e) {
   ASSERT(e.parts_size() == 1) << "bitcast muse have var to cast";
-  return new LLBitcast(parseTermVar(&e.parts(0)));
+  return new LLBitcast(parseTermVar(e.parts(0)));
 }
 
 LLMiddle* parseGCRootInit(const pb::RootInit& r) {
-  return new LLGCRootInit(parseTermVar(&r.root_init_src()),
-                          parseTermVar(&r.root_init_root()));
+  return new LLGCRootInit(parseTermVar(r.root_init_src()),
+                          parseTermVar(r.root_init_root()));
 }
 
 LLSwitch* parseSwitch(const pb::Terminator&);
@@ -208,7 +207,7 @@ LLSwitch* parseSwitch(const pb::Terminator&);
 LLBr* parseBr(const pb::Terminator& b) {
   std::vector<LLVar*> args;
   for (int i = 0; i < b.args_size(); ++i) {
-      args.push_back(parseTermVar(&b.args(i)));
+      args.push_back(parseTermVar(b.args(i)));
   }
   return new LLBr(b.block(), args);
 }
@@ -217,7 +216,7 @@ LLTerminator* parseTerminator(const pb::Terminator& b) {
   LLTerminator* rv = NULL;
   switch (b.tag()) {
   case pb::Terminator::BLOCK_RET_VOID: return new LLRetVoid();
-  case pb::Terminator::BLOCK_RET_VAL: return new LLRetVal(parseTermVar(&b.var()));
+  case pb::Terminator::BLOCK_RET_VAL: return new LLRetVal(parseTermVar(b.var()));
   case pb::Terminator::BLOCK_BR: return parseBr(b);
   case pb::Terminator::BLOCK_CASE: return parseSwitch(b);
   default: ASSERT(false); return NULL;
@@ -241,7 +240,7 @@ LLBlock* parseBlock(const pb::Block& b) {
     bb->mids.push_back(parseMiddle(b.middle(i)));
   }
   for (int i = 0; i < b.phis_size(); ++i) {
-    bb->phiVars.push_back(parseTermVar(&b.phis(i)));
+    bb->phiVars.push_back(parseTermVar(b.phis(i)));
   }
   bb->terminator = parseTerminator(b.last());
   return bb;
@@ -264,7 +263,7 @@ LLProc* parseProc(const pb::Proc& e) {
 
   std::vector<LLVar*> gcroots;
   for (int i = 0; i < e.gcroots_size(); ++i) {
-    gcroots.push_back(parseTermVar(&e.gcroots(i)));
+    gcroots.push_back(parseTermVar(e.gcroots(i)));
   }
 
   foster::sgProcLines[e.name()] = e.lines();
@@ -276,8 +275,8 @@ LLProc* parseProc(const pb::Proc& e) {
 
 LLArrayIndex* parseArrayIndex(const pb::Letable& e) {
   ASSERT(e.parts_size() >= 2) << "array_index must have base and index";
-  return new LLArrayIndex(parseTermVar(& e.parts(0)),
-                          parseTermVar(& e.parts(1)),
+  return new LLArrayIndex(parseTermVar( e.parts(0)),
+                          parseTermVar( e.parts(1)),
                           e.string_value(),
                           e.prim_op_name());
 }
@@ -290,12 +289,12 @@ LLExpr* parseArrayRead(const pb::Letable& e) {
 LLExpr* parseArrayPoke(const pb::Letable& e) {
   ASSERT(e.parts_size() == 3) << "array_write must have value, base and index";
   return new LLArrayPoke(parseArrayIndex(e),
-                         parseTermVar(& e.parts(2)));
+                         parseTermVar( e.parts(2)));
 }
 
 LLExpr* parseArrayLength(const pb::Letable& e) {
   ASSERT(e.parts_size() == 1) << "array_length must have value";
-  return new LLArrayLength(parseTermVar(& e.parts(0)));
+  return new LLArrayLength(parseTermVar( e.parts(0)));
 }
 
 LLOccurrence* parseOccurrence(const pb::PbOccurrence& o) {
@@ -306,7 +305,7 @@ LLOccurrence* parseOccurrence(const pb::PbOccurrence& o) {
   for (int i = 0; i < o.occ_ctors_size(); ++i) {
     rv->ctors.push_back(parseCtorInfo(o.occ_ctors(i)));
   }
-  rv->var = parseTermVar(&o.scrutinee());
+  rv->var = parseTermVar(o.scrutinee());
   if (o.has_type()) {
     rv->type = TypeAST_from_pb(& o.type());
   }
@@ -335,13 +334,13 @@ LLSwitch* parseSwitch(const pb::Terminator& b) {
 }
 
 LLExpr* parseDeref(const pb::Letable& e) {
-  return new LLDeref(parseTermVar(& e.parts(0)));
+  return new LLDeref(parseTermVar( e.parts(0)));
 }
 
 LLExpr* parseStore(const pb::Letable& e) {
   return new LLStore(
-      parseTermVar(& e.parts(0)),
-      parseTermVar(& e.parts(1)));
+      parseTermVar( e.parts(0)),
+      parseTermVar( e.parts(1)));
 }
 
 LLExpr* parseKillProcess(const pb::Letable& e) {
