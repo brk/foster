@@ -49,7 +49,7 @@ message Block {
 
 message BlockMiddle {
   optional LetVal       let_val = 1;
-  optional TermVar  gcroot_kill = 5;
+  optional RootKill gcroot_kill = 5;
   optional RootInit gcroot_init = 6;
   optional TupleStore tuple_store = 7;
 }
@@ -63,6 +63,11 @@ message TupleStore {
 message RootInit {
   required TermVar root_init_src  = 1;
   required TermVar root_init_root = 2;
+}
+
+message RootKill {
+  required TermVar root_kill_root = 1;
+  required bool    root_kill_null = 2;
 }
 
 message LetVal {

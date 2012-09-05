@@ -217,7 +217,7 @@ CodegenPass::storeAndMarkPointerAsGCRoot(llvm::Value* val) {
   ASSERT(val->getType()->isPointerTy());
   // allocate a slot for a T* on the stack
   llvm::AllocaInst* stackslot = stackSlotWithValue(val, ".gcroot");
-  if (this->useGC) { markGCRoot(stackslot, this); }
+  if (this->config.useGC) { markGCRoot(stackslot, this); }
   return stackslot;
 }
 
@@ -255,7 +255,7 @@ CodegenPass::emitMalloc(TypeAST* typ,
               ? llvm::ConstantPointerNull::get(builder.getInt8PtrTy())
               : builder.CreateBitCast(this->getGlobalString(srclines),
                                                builder.getInt8PtrTy());
-  if (this->trackAllocSites) {
+  if (this->config.trackAllocSites) {
     emitRecordMallocCallsite(mod, typemap, linesgv);
   }
 
@@ -334,7 +334,7 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
                                     IRBuilder<>& b,
                                     const std::vector<Value*>& args) {
   Value* VL = args[0];
-       if (op == "negate") { return b.CreateNeg(VL, "negtmp", this->useNUW, this->useNSW); }
+       if (op == "negate") { return b.CreateNeg(VL, "negtmp", this->config.useNUW, this->config.useNSW); }
   else if (op == "bitnot") { return b.CreateNot(VL, "nottmp"); }
   else if (op == "sext_i64") { return b.CreateSExt(VL, b.getInt64Ty(), "sexti64tmp"); }
   else if (op == "sext_i32") { return b.CreateSExt(VL, b.getInt32Ty(), "sexti32tmp"); }
@@ -347,9 +347,9 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   Value* VR = args[1];
   // Other variants: F (float), NSW (no signed wrap), NUW,
   // UDiv, ExactSDiv, URem, SRem,
-       if (op == "+") { return b.CreateAdd(VL, VR, "addtmp", this->useNUW, this->useNSW); }
-  else if (op == "-") { return b.CreateSub(VL, VR, "subtmp", this->useNUW, this->useNSW); }
-  else if (op == "*") { return b.CreateMul(VL, VR, "multmp", this->useNUW, this->useNSW); }
+       if (op == "+") { return b.CreateAdd(VL, VR, "addtmp", this->config.useNUW, this->config.useNSW); }
+  else if (op == "-") { return b.CreateSub(VL, VR, "subtmp", this->config.useNUW, this->config.useNSW); }
+  else if (op == "*") { return b.CreateMul(VL, VR, "multmp", this->config.useNUW, this->config.useNSW); }
   else if (op == "sdiv") { return b.CreateSDiv(VL, VR, "sdivtmp"); }
   else if (op == "srem") { return b.CreateSRem(VL, VR, "sremtmp"); }
   else if (op == "urem") { return b.CreateURem(VL, VR, "uremtmp"); }
@@ -379,7 +379,7 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   else if (op == "bitor") {  return b.CreateOr( VL, VR, "bitortmp"); }
   else if (op == "bitxor") { return b.CreateXor(VL, VR, "bitxortmp"); }
 
-  else if (op == "bitshl")  { return b.CreateShl(VL,  getMaskedForShift(b, VL, VR), "shltmp", this->useNUW, this->useNSW); }
+  else if (op == "bitshl")  { return b.CreateShl(VL,  getMaskedForShift(b, VL, VR), "shltmp", this->config.useNUW, this->config.useNSW); }
   else if (op == "bitlshr") { return b.CreateLShr(VL, getMaskedForShift(b, VL, VR), "lshrtmp"); }
   else if (op == "bitashr") { return b.CreateAShr(VL, getMaskedForShift(b, VL, VR), "ashrtmp"); }
 

@@ -68,13 +68,14 @@ data Closure = Closure { closureProcVar  :: LLVar
                        , closureAllocSrc :: AllocationSource
                        } deriving Show
 type LLRootVar = LLVar
+data Enabled = Disabled | Enabled Bool -- bool: gc may happen in continuation.
 data Insn' e x where
-        CCLabel   :: BlockEntryL                  -> Insn' C O
+        CCLabel   :: BlockEntryL                 -> Insn' C O
         CCLetVal  :: Ident   -> Letable TypeLL   -> Insn' O O
         CCLetFuns :: [Ident] -> [Closure]        -> Insn' O O
         CCGCLoad  :: LLVar   -> LLRootVar        -> Insn' O O
         CCGCInit  :: LLVar -> LLVar -> LLRootVar -> Insn' O O
-        CCGCKill  :: Bool  ->   RootVar          -> Insn' O O
+        CCGCKill  :: Enabled        -> LLRootVar -> Insn' O O
         CCTupleStore :: [LLVar] -> LLVar -> AllocMemRegion -> Insn' O O
         CCLast    :: CCLast                      -> Insn' O C
 
@@ -541,6 +542,10 @@ prettyInsn' i d = d <$> pretty i
 
 prettyBlockId (b,l) = text b <> text "." <> text (show l)
 
+instance Pretty Enabled where
+  pretty (Enabled _) = text "Enabled"
+  pretty Disabled    = text "Disabled"
+
 instance Pretty (Insn' e x) where
   pretty (CCLabel   bentry     ) = line <> prettyBlockId (fst bentry) <+> list (map pretty (snd bentry))
   pretty (CCLetVal  id  letable) = indent 4 (text "let" <+> text (show id) <+> text "="
@@ -551,7 +556,7 @@ instance Pretty (Insn' e x) where
                                         | (id,fn) <- zip ids fns])
   pretty (CCGCLoad  loadedvar root) = indent 4 $ dullwhite $ text "load from" <+> pretty root <+> text "to" <+> pretty loadedvar
   pretty (CCGCInit  _  srcvar root) = indent 4 $ dullgreen $ text "init root" <+> pretty root <+> text ":=" <+> pretty srcvar
-  pretty (CCGCKill  enabled  root)  = indent 4 $ dullwhite $ text "kill root" <+> pretty root <+> pretty enabled
+  pretty (CCGCKill  enabled   root) = indent 4 $ dullwhite $ text "kill root" <+> pretty root <+> pretty enabled
   pretty (CCTupleStore vs tid _memregion) = indent 4 $ text "stores " <+> pretty vs <+> text "to" <+> pretty tid
   pretty (CCLast    cclast     ) = pretty cclast
 

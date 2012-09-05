@@ -65,8 +65,8 @@ struct LLGCRootInit : public LLMiddle {
 };
 
 struct LLGCRootKill : public LLMiddle {
-  LLVar* root;
-  explicit LLGCRootKill(LLVar* root) : root(root) {}
+  LLVar* root; bool doNullOutSlot;
+  explicit LLGCRootKill(LLVar* root, bool n) : root(root), doNullOutSlot(n) {}
   virtual void codegenMiddle(CodegenPass* pass);
 };
 

@@ -24,7 +24,7 @@ import Foster.Letable
 import Data.Maybe(fromMaybe)
 import Data.IORef
 import Data.Map(Map)
-import Data.List(zipWith4)
+import Data.List(zipWith4, unzip3, or)
 import qualified Data.Set as Set
 import qualified Data.Map as Map(singleton, insertWith, lookup, empty, fromList,
                                  elems, keysSet, insert, union, findWithDefault)
@@ -61,7 +61,7 @@ type NumPredsMap = Map BlockId Int
 -- This is equivalent to MinCaml's make_closure ...
 data ILBlock  = Block BlockEntryL [ILMiddle] ILLast
 data ILMiddle = ILLetVal      Ident   (Letable TypeLL)
-              | ILGCRootKill  LLVar
+              | ILGCRootKill  LLVar    Bool -- continuation may GC
               | ILGCRootInit  LLVar    RootVar
               | ILTupleStore  [LLVar]  LLVar    AllocMemRegion
               deriving Show
@@ -264,8 +264,8 @@ flattenGraph bbgp =
      mid (CCLetVal id letable)    = ILLetVal   id  letable
      mid (CCGCLoad v   fromroot)  = ILLetVal (tidIdent v) (ILDeref (tidType v) fromroot)
      mid (CCGCInit _ src toroot)  = ILGCRootInit src toroot
-     mid (CCGCKill True    root)  = ILGCRootKill root
-     mid (CCGCKill False  _root)  = error $ "Invariant violated: saw disabled root kill pseudo-insn!"
+     mid (CCGCKill (Enabled cgc) root) = ILGCRootKill root cgc
+     mid (CCGCKill Disabled     _root) = error $ "Invariant violated: saw disabled root kill pseudo-insn!"
      mid (CCTupleStore vs tid r)  = ILTupleStore vs tid r
      mid (CCLetFuns ids closures) = error $ "Invariant violated: CCLetFuns should have been eliminated!"
 
@@ -380,7 +380,8 @@ instance TExpr Closure TypeLL where freeTypedIds _ = []
 -- |||||||||||||||||||| Figure out which variables need roots |||{{{
 type LiveGCRoots    = Set.Set LLVar
 type RootLiveWhenGC = Set.Set LLVar
-type LiveAGC2 = (LiveGCRoots, RootLiveWhenGC)
+type ContinuationMayGC = Bool
+type LiveAGC2 = (LiveGCRoots, RootLiveWhenGC, ContinuationMayGC)
 
 -- When we see a load from a root, the root becomes live;
 -- when we see a root init happen, the root becomes dead.
@@ -391,25 +392,25 @@ liveAtGCPointXfer2 :: BwdTransfer Insn' LiveAGC2
 liveAtGCPointXfer2 = mkBTransfer go
   where
     go :: Insn' e x -> Fact x LiveAGC2 -> LiveAGC2
-    go (CCLabel   {}        ) sg = ifgc False            sg
-    go (CCGCLoad _v fromroot) sg = markLive fromroot     sg
-    go (CCGCInit _ _v toroot) sg = markDead   toroot     sg
-    go (CCGCKill {}         ) sg = {- just ignore it  -} sg
-    go (CCLetVal  _id  l    ) sg = ifgc (canGCLetable l) sg
-    go (CCLetFuns _ids _clos) sg = ifgc True             sg
-    go (CCTupleStore   {}   ) sg = ifgc False            sg
+    go (CCLabel   {}        ) f = ifgc False            f
+    go (CCGCLoad _v fromroot) f = markLive fromroot     f
+    go (CCGCInit _ _v toroot) f = markDead   toroot     f
+    go (CCGCKill {}         ) f = {- just ignore it  -} f
+    go (CCLetVal  _id  l    ) f = ifgc (canGCLetable l) f
+    go (CCLetFuns _ids _clos) f = ifgc True             f
+    go (CCTupleStore   {}   ) f = ifgc False            f
     go node@(CCLast    cclast) fdb =
-          let sg = combineLastFacts fdb node in
+          let f = combineLastFacts fdb node in
           case cclast of
-            (CCCont {}       ) -> ifgc False sg
-            (CCCall _ _ _ v _) -> ifgc (canGCCalled v) sg
-            (CCCase {}       ) -> ifgc False sg
+            (CCCont {}       ) -> ifgc False f
+            (CCCall _ _ _ v _) -> ifgc (canGCCalled v) f
+            (CCCase {}       ) -> ifgc False f
 
-    markLive root (s, g) = (Set.insert root s, g)
-    markDead root (s, g) = (Set.delete root s, g)
+    markLive root (s, g, c) = (Set.insert root s, g, c)
+    markDead root (s, g, c) = (Set.delete root s, g, c)
 
-    ifgc mayGC (s, g) = if mayGC then (s, g `Set.union` s)
-                                 else (s, g)
+    ifgc mayGC (s, g, c) = if mayGC then (s, g `Set.union` s, True)
+                                    else (s, g              , c)
 
 -- If we see a (disabled) GCKill marker when a root is still alive,
 -- we'll remove the marker, but if the root is dead, we'll enable
@@ -418,20 +419,20 @@ liveAtGCPointRewrite2 :: forall m. FuelMonad m => BwdRewrite m Insn' LiveAGC2
 liveAtGCPointRewrite2 = mkBRewrite d
   where
     d :: Insn' e x -> Fact x LiveAGC2 -> m (Maybe (Graph Insn' e x))
-    d (CCLabel      {}      ) (_,_) = return Nothing
-    d (CCLetVal     {}      ) (_,_) = return Nothing
-    d (CCLetFuns    {}      ) (_,_) = return Nothing
-    d (CCTupleStore {}      ) (_,_) = return Nothing
-    d (CCGCLoad     {}      ) (_,_) = return Nothing
-    d (CCGCInit     {}      ) (_,_) = return Nothing
-    d (CCGCKill True   _root) (_,_) = return Nothing -- leave as-is.
-    d (CCGCKill False   root) (s,_) = -- s is the set of live roots
+    d (CCLabel      {}      )    _    = return Nothing
+    d (CCLetVal     {}      )    _    = return Nothing
+    d (CCLetFuns    {}      )    _    = return Nothing
+    d (CCTupleStore {}      )    _    = return Nothing
+    d (CCGCLoad     {}      )    _    = return Nothing
+    d (CCGCInit     {}      )    _    = return Nothing
+    d (CCGCKill (Enabled _) _root)    _    = return Nothing -- leave as-is.
+    d (CCGCKill Disabled     root) (s,_,c) = -- s is the set of live roots
           if {-trace ("agc @ GCKILL " ++ show root ++ " : live? " ++ show (Set.member root s) ++ show s) $-}
              Set.member root s
             then return $ Just emptyGraph
              -- If a root is live, remove its fake kill node.
              -- Otherwise, toggle the node from disabled to enabled.
-            else return $ Just (mkMiddle (CCGCKill True root))
+            else return $ Just (mkMiddle (CCGCKill (Enabled c) root))
     d _node@(CCLast {}      ) _fdb  = return Nothing
 
 runLiveAtGCPoint2 :: IORef Uniq -> BasicBlockGraph' -> IO (BasicBlockGraph'
@@ -444,9 +445,9 @@ runLiveAtGCPoint2 uref bbgp = runWithUniqAndFuel uref infiniteFuel (go bbgp)
         (body' , fdb, _) <- analyzeAndRewriteBwd bwd (JustC [bbgpEntry bbgp])
                                                              (bbgpBody bbgp)
                          (mapSingleton blab (fact_bot liveAtGCPointLattice2))
-        return (bbgp { bbgpBody = body' }
-               , snd $ fromMaybe (error "runLiveAtGCPoint failed") $
-                                                            lookupFact blab fdb)
+        let (_, liveRoots, _) = fromMaybe (error "runLiveAtGCPoint failed") $
+                                                             lookupFact blab fdb
+        return (bbgp { bbgpBody = body' } , liveRoots)
 
     bwd = BwdPass { bp_lattice  = liveAtGCPointLattice2
                   , bp_transfer = liveAtGCPointXfer2
@@ -456,21 +457,22 @@ runLiveAtGCPoint2 uref bbgp = runWithUniqAndFuel uref infiniteFuel (go bbgp)
 liveAtGCPointLattice2 :: DataflowLattice LiveAGC2
 liveAtGCPointLattice2 = DataflowLattice
   { fact_name = "Live GC roots"
-  , fact_bot  = (Set.empty, Set.empty)
+  , fact_bot  = (Set.empty, Set.empty, False)
   , fact_join = add
   }
-    where add _lab (OldFact (ol,og)) (NewFact (nl,ng)) = (ch, (jl, jg))
+    where add _lab (OldFact (ol,og,oc)) (NewFact (nl,ng,nc)) = (ch, (jl, jg,jc))
             where
               jl = nl `Set.union` ol
               jg = ng `Set.union` og
+              jc = nc     ||      oc
               ch = changeIf (Set.size jl > Set.size ol
                           || Set.size jg > Set.size og)
 
 combineLastFacts :: FactBase LiveAGC2 -> Insn' O C -> LiveAGC2
-combineLastFacts fdb node = union2s (map (fact fdb) (successors node))
+combineLastFacts fdb node = union3s (map (fact fdb) (successors node))
   where
-    union2s xys = let (xs,ys) = unzip xys
-                  in  (Set.unions xs, Set.unions ys)
+    union3s xycs = let (xs,ys,cs) = unzip3 xycs
+                   in  (Set.unions xs, Set.unions ys, or cs)
 
     fact :: FactBase LiveAGC2 -> Label -> LiveAGC2
     fact f l = fromMaybe (fact_bot liveAtGCPointLattice2) $ lookupFact l f
@@ -566,6 +568,10 @@ boxify b = v Boxes.<> (h Boxes.// b Boxes.// h) Boxes.<> v
 -- The problem is that, in order to be safe-for-space, x.root should be
 -- deallocatable while we're running compute-without-x, but as translated
 -- above, we never kill the root slot!
+--
+-- So we must insert kills for dead root slots at the start of basic blocks.
+-- To avoid having redundant kills, we'll only keep the kills which have a
+-- potential-GC point in their continuation.
 insertDumbGCRoots :: IORef Uniq -> BasicBlockGraph' -> IO (BasicBlockGraph'
                                                           ,GCRootsForVariables)
 insertDumbGCRoots uref bbgp = do
@@ -583,7 +589,7 @@ insertDumbGCRoots uref bbgp = do
     -- See the note above explaining why we generate all these GCKills...
     CCLabel (bid, vs)             -> do (inits, gcr' ) <- mapFoldM' vs gcr maybeRootInitializer
                                         return (mkFirst insn <*> catGraphs inits <*> mkMiddles [
-                                                CCGCKill False root | root <- Map.elems gcr' ]
+                                                CCGCKill Disabled root | root <- Map.elems gcr' ]
                                                                                       , gcr' )
     CCGCLoad  {}                  -> do return (mkMiddle $ insn                       , gcr)
     CCGCInit  {}                  -> do return (mkMiddle $ insn                       , gcr)
@@ -651,7 +657,7 @@ insertDumbGCRoots uref bbgp = do
           id <- fresh (show (tidIdent root) ++ ".load")
           let loadedvar = TypedId (tidType root) id
           return ((oos ++ [CCGCLoad loadedvar root
-                          ,CCGCKill False     root], loadedvar), gcr)
+                          ,CCGCKill Disabled  root], loadedvar), gcr)
 
       withGCLoad :: LLVar -> GCRootsForVariables
                           -> IO (([Insn' O O], LLVar), GCRootsForVariables)
@@ -700,8 +706,8 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
                                         put (Map.insert v root m)
                                         iflive root $ mkMiddle $ insn
     CCGCInit  _ _   root          -> do iflive root $ mkMiddle $ insn
-    CCGCKill  True  root          -> do iflive root $ mkMiddle $ insn
-    CCGCKill  False root          -> do return emptyGraph -- TODO remove this
+    CCGCKill  (Enabled _)  root   -> do iflive root $ mkMiddle $ insn
+    CCGCKill  Disabled    _root   -> do return emptyGraph -- TODO remove this
     CCTupleStore vs v r           -> do undoDeadGCLoads (v:vs) (\(v' : vs' ) ->
                                          mkMiddle $ CCTupleStore vs' v' r)
     CCLetVal id val               -> do let vs = freeTypedIds val

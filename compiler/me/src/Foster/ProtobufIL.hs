@@ -43,6 +43,7 @@ import Foster.Bepb.PbSwitch     as PbSwitch
 import Foster.Bepb.PbCoroPrim   as PbCoroPrim
 import Foster.Bepb.Module       as Module
 import Foster.Bepb.RootInit     as PbRootInit
+import Foster.Bepb.RootKill     as PbRootKill
 import Foster.Bepb.TupleStore   as PbTupleStore
 import Foster.Bepb.Letable.Tag
 import Foster.Bepb.PbCoroPrim.Tag
@@ -168,14 +169,16 @@ dumpBlock predmap (Block (id, phis) mids illast) =
 dumpMiddle :: ILMiddle -> PbBlockMiddle.BlockMiddle
 dumpMiddle (ILLetVal id letable) =
     P'.defaultValue { let_val = Just (dumpLetVal id letable) }
-dumpMiddle (ILGCRootKill v) =
-    P'.defaultValue { gcroot_kill = Just (dumpVar v) }
+dumpMiddle (ILGCRootKill v continuationMayGC) =
+    P'.defaultValue { gcroot_kill = Just $ P'.defaultValue {
+           root_kill_root = (dumpVar v)
+         , root_kill_null = continuationMayGC
+      } }
 dumpMiddle (ILGCRootInit src root) =
     P'.defaultValue { gcroot_init = Just $ P'.defaultValue {
            root_init_src  = (dumpVar src)
          , root_init_root = (dumpVar root)
-      }
-    }
+    } }
 dumpMiddle ts@(ILTupleStore {}) =
     P'.defaultValue { tuple_store = Just $ dumpTupleStore ts }
 

@@ -285,7 +285,7 @@ void registerKnownDataTypes(const std::vector<LLDecl*> datatype_decls,
 }
 
 void createGCMapsSymbolIfNeeded(CodegenPass* pass) {
-  if (!pass->useGC) {
+  if (!pass->config.useGC) {
     // The runtime needs a "foster__gcmaps" symbol for linking to succeed.
     // If we're not letting the GC plugin run, we'll need to emit it ourselves.
     new llvm::GlobalVariable(
@@ -383,7 +383,7 @@ void LLProc::codegenProto(CodegenPass* pass) {
   ASSERT(F->getName() == symbolName) << "redefinition of function " << symbolName;
 
   setFunctionArgumentNames(F, this->getFunctionArgNames());
-  if (pass->useGC) { F->setGC("fostergc"); }
+  if (pass->config.useGC) { F->setGC("fostergc"); }
   F->setCallingConv(this->type->getCallingConventionID());
 }
 
@@ -433,7 +433,7 @@ void LLProcCFG::codegenToFunction(CodegenPass* pass, llvm::Function* F) {
   for (size_t i = 0; i < gcroots.size(); ++i) {
     llvm::AllocaInst* slot = CreateEntryAlloca(getLLVMType(gcroots[i]->type),
                                                gcroots[i]->getName());
-    if (pass->useGC) { markGCRoot(slot, pass); }
+    if (pass->config.useGC) { markGCRoot(slot, pass); }
     pass->insertScopedValue(gcroots[i]->getName(), slot);
   }
 
@@ -644,7 +644,8 @@ void LLGCRootInit::codegenMiddle(CodegenPass* pass) {
 
 void LLGCRootKill::codegenMiddle(CodegenPass* pass) {
   llvm::Value* slot = root->codegen(pass);
-  if (pass->config.killDeadSlots) { storeNullPointerToSlot(slot); }
+  if (this->doNullOutSlot &&
+      pass->config.killDeadSlots) { storeNullPointerToSlot(slot); }
   if (pass->config.emitLifetimeInfo) {
      markAsNonAllocating(builder.CreateLifetimeEnd(slot));
   }

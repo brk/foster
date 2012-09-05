@@ -202,8 +202,9 @@ LLMiddle* parseGCRootInit(const pb::RootInit& r) {
                           parseTermVar(r.root_init_root()));
 }
 
-LLMiddle* parseGCRootKill(const pb::TermVar& root) {
-  return new LLGCRootKill(parseTermVar(root));
+LLMiddle* parseGCRootKill(const pb::RootKill& r) {
+  return new LLGCRootKill(parseTermVar(r.root_kill_root()),
+                          r.root_kill_null());
 }
 
 LLSwitch* parseSwitch(const pb::Terminator&);
