@@ -38,9 +38,8 @@ using std::vector;
 
 namespace foster {
 
-void codegenLL(LLModule* prog, llvm::Module* mod,
-               bool useGC, bool nsw, bool nuw, bool trackAllocSites) {
-  CodegenPass cp(mod, useGC, nsw, nuw, trackAllocSites);
+void codegenLL(LLModule* prog, llvm::Module* mod, CodegenPassConfig config) {
+  CodegenPass cp(mod, config);
   prog->codegenModule(&cp);
 }
 
@@ -221,10 +220,8 @@ void assertValueHasSameTypeAsPhiNode(llvm::Value* v, LLBlock* block, int i) {
 
 // Implementation of CodegenPass helpers {{{
 
-CodegenPass::CodegenPass(llvm::Module* m, bool useGC, bool nsw, bool nuw,
-                         bool allocSites)
-  : useGC(useGC), useNSW(nsw), useNUW(nuw), trackAllocSites(allocSites),
-    mod(m) {
+CodegenPass::CodegenPass(llvm::Module* m, CodegenPassConfig config)
+                                                      : config(config), mod(m) {
   //dib = new DIBuilder(*mod);
 }
 
@@ -432,6 +429,14 @@ void initializeBlockPhis(LLBlock* block) {
 void LLProcCFG::codegenToFunction(CodegenPass* pass, llvm::Function* F) {
   pass->fosterBlocks.clear();
 
+  // Pre-allocate all our GC roots.
+  for (size_t i = 0; i < gcroots.size(); ++i) {
+    llvm::AllocaInst* slot = CreateEntryAlloca(getLLVMType(gcroots[i]->type),
+                                               gcroots[i]->getName());
+    if (pass->useGC) { markGCRoot(slot, pass); }
+    pass->insertScopedValue(gcroots[i]->getName(), slot);
+  }
+
   // Create all the basic blocks before codegenning any of them.
   for (size_t i = 0; i < blocks.size(); ++i) {
     LLBlock* bi = blocks[i];
@@ -629,10 +634,20 @@ llvm::Value* LLBitcast::codegen(CodegenPass* pass) {
 }
 
 void LLGCRootInit::codegenMiddle(CodegenPass* pass) {
-  llvm::Value* v = src->codegen(pass);
-  llvm::AllocaInst* stackslot = pass->storeAndMarkPointerAsGCRoot(v);
-  EDiag() << "initialized stack slot " << stackslot->getName() << " with value of type " << str(v->getType());
-  pass->insertScopedValue(root->getName(), stackslot);
+  llvm::Value* v    = src->codegen(pass);
+  llvm::Value* slot = root->codegen(pass);
+  if (pass->config.emitLifetimeInfo) {
+    markAsNonAllocating(builder.CreateLifetimeStart(slot));
+  }
+  emitStore(v, slot);
+}
+
+void LLGCRootKill::codegenMiddle(CodegenPass* pass) {
+  llvm::Value* slot = root->codegen(pass);
+  if (pass->config.killDeadSlots) { storeNullPointerToSlot(slot); }
+  if (pass->config.emitLifetimeInfo) {
+     markAsNonAllocating(builder.CreateLifetimeEnd(slot));
+  }
 }
 
 ////////////////////////////////////////////////////////////////////

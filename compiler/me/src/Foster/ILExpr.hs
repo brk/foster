@@ -426,7 +426,7 @@ liveAtGCPointRewrite2 = mkBRewrite d
     d (CCGCInit     {}      ) (_,_) = return Nothing
     d (CCGCKill True   _root) (_,_) = return Nothing -- leave as-is.
     d (CCGCKill False   root) (s,_) = -- s is the set of live roots
-          if {-trace ("agc @ GCKILL " ++ show root ++ " : " ++ "live? " ++ show (Set.member root s) ++ show (s,g)) $ -}
+          if {-trace ("agc @ GCKILL " ++ show root ++ " : live? " ++ show (Set.member root s) ++ show s) $-}
              Set.member root s
             then return $ Just emptyGraph
              -- If a root is live, remove its fake kill node.
@@ -434,16 +434,19 @@ liveAtGCPointRewrite2 = mkBRewrite d
             else return $ Just (mkMiddle (CCGCKill True root))
     d _node@(CCLast {}      ) _fdb  = return Nothing
 
-runLiveAtGCPoint2 :: IORef Uniq -> BasicBlockGraph' -> IO RootLiveWhenGC
+runLiveAtGCPoint2 :: IORef Uniq -> BasicBlockGraph' -> IO (BasicBlockGraph'
+                                                          ,RootLiveWhenGC)
 runLiveAtGCPoint2 uref bbgp = runWithUniqAndFuel uref infiniteFuel (go bbgp)
   where
-    go :: BasicBlockGraph' -> M RootLiveWhenGC
+    go :: BasicBlockGraph' -> M (BasicBlockGraph' ,RootLiveWhenGC)
     go bbgp = do
         let ((_,blab), _) = bbgpEntry bbgp
-        (_, fdb, _) <- analyzeAndRewriteBwd bwd (JustC [bbgpEntry bbgp]) (bbgpBody bbgp)
+        (body' , fdb, _) <- analyzeAndRewriteBwd bwd (JustC [bbgpEntry bbgp])
+                                                             (bbgpBody bbgp)
                          (mapSingleton blab (fact_bot liveAtGCPointLattice2))
-        return (snd $ fromMaybe (error "runLiveAtGCPoint failed") $
-                            lookupFact blab fdb)
+        return (bbgp { bbgpBody = body' }
+               , snd $ fromMaybe (error "runLiveAtGCPoint failed") $
+                                                            lookupFact blab fdb)
 
     bwd = BwdPass { bp_lattice  = liveAtGCPointLattice2
                   , bp_transfer = liveAtGCPointXfer2
@@ -498,10 +501,10 @@ combineLastFacts fdb node = union2s (map (fact fdb) (successors node))
 insertSmartGCRoots :: IORef Uniq -> BasicBlockGraph' -> IO ( BasicBlockGraph' , [RootVar] )
 insertSmartGCRoots uref bbgp0 = do
   (bbgp' , gcr) <- insertDumbGCRoots uref bbgp0
-  rootsLiveAtGCPoints <- runLiveAtGCPoint2 uref bbgp'
-  bbgp'' <- removeDeadGCRoots bbgp' (mapInverse gcr) rootsLiveAtGCPoints
+  (bbgp'' , rootsLiveAtGCPoints) <- runLiveAtGCPoint2 uref bbgp'
+  bbgp''' <- removeDeadGCRoots bbgp'' (mapInverse gcr) rootsLiveAtGCPoints
   putStrLn $ "these roots were live at GC points: " ++ show rootsLiveAtGCPoints
-  return ( bbgp'' , Set.toList rootsLiveAtGCPoints)
+  return ( bbgp''' , Set.toList rootsLiveAtGCPoints)
  where
     mapInverse m = let ks = Map.keysSet m in
                    let es = Set.fromList (Map.elems m) in

@@ -65,6 +65,14 @@ optTrackAllocSites("gc-track-alloc-sites",
   cl::desc("[foster] Inform the GC of which program locations are allocating"));
 
 static cl::opt<bool>
+optDontKillDeadSlots("dont-kill-dead-slots",
+  cl::desc("[foster] Disable nulling-out of statically dead GC root slots"));
+
+static cl::opt<bool>
+optDisableLifetimeInfo("disable-lifetime-info",
+  cl::desc("[foster] Disable lifetime info for GC roots"));
+
+static cl::opt<bool>
 optForceNUW("unsafe-use-nuw",
   cl::desc("[foster] Forcibly tag all relevant LLVM instructions with nuw"));
 
@@ -209,8 +217,7 @@ areDeclaredValueTypesOK(llvm::Module* mod,
 }
 
 namespace foster {
-  void codegenLL(LLModule*, llvm::Module* mod, bool useGC, bool nsw, bool nuw,
-                 bool trackAllocSites);
+  void codegenLL(LLModule*, llvm::Module* mod, CodegenPassConfig config);
 }
 
 int main(int argc, char** argv) {
@@ -307,8 +314,15 @@ int main(int argc, char** argv) {
       program_status = 1; goto cleanup;
     }
 
-    foster::codegenLL(prog, module, !optDisableGC, optForceNSW, optForceNUW,
-                      optTrackAllocSites);
+    CodegenPassConfig config;
+    config.useGC             = !optDisableGC;
+    config.useNSW            = optForceNSW;
+    config.useNUW            = optForceNUW;
+    config.trackAllocSites   = optTrackAllocSites;
+    config.killDeadSlots     = !optDontKillDeadSlots;
+    config.emitLifetimeInfo  = !optDisableLifetimeInfo;
+
+    foster::codegenLL(prog, module, config);
   }
 
   if (optDumpPreLinkedIR) {

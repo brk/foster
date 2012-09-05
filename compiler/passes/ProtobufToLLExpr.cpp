@@ -202,6 +202,10 @@ LLMiddle* parseGCRootInit(const pb::RootInit& r) {
                           parseTermVar(r.root_init_root()));
 }
 
+LLMiddle* parseGCRootKill(const pb::TermVar& root) {
+  return new LLGCRootKill(parseTermVar(root));
+}
+
 LLSwitch* parseSwitch(const pb::Terminator&);
 
 LLBr* parseBr(const pb::Terminator& b) {
@@ -227,7 +231,7 @@ LLTerminator* parseTerminator(const pb::Terminator& b) {
 LLMiddle* parseMiddle(const pb::BlockMiddle& b) {
   if (b.has_tuple_store()) { return parseTupleStore(b.tuple_store()); }
   if (b.has_let_val()) { return parseLetVal(b.let_val()); }
-  //if (b.has_gcroot_kill()) { return parseBitcast(b.bitcast()); }
+  if (b.has_gcroot_kill()) { return parseGCRootKill(b.gcroot_kill()); }
   if (b.has_gcroot_init()) { return parseGCRootInit(b.gcroot_init()); }
   ASSERT(false) << "parseMiddle unhandled case!"; return NULL;
 }

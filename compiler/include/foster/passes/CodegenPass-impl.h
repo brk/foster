@@ -96,10 +96,7 @@ struct DataTypeAST;
 struct LazyCoroPrimInfo;
 
 struct CodegenPass {
-  bool useGC;
-  bool useNSW;
-  bool useNUW;
-  bool trackAllocSites;
+  CodegenPassConfig config;
 
   typedef foster::SymbolTable<llvm::Value> ValueTable;
   typedef ValueTable::LexicalScope         ValueScope;
@@ -128,8 +125,7 @@ struct CodegenPass {
   WorklistLIFO<std::string, LLBlock*>   worklistBlocks;
   std::map<std::string, llvm::Value*> staticStrings;
 
-  explicit CodegenPass(llvm::Module* mod, bool useGC, bool nsw, bool nuw,
-                       bool trackAllocSites);
+  explicit CodegenPass(llvm::Module* mod, CodegenPassConfig config);
 
   ~CodegenPass() {
     //delete dib;

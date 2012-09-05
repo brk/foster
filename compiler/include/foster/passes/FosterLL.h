@@ -37,6 +37,14 @@ class FnTypeAST;
 class LLTupleStore;
 
 struct CodegenPass;
+struct CodegenPassConfig {
+  bool useGC;
+  bool useNSW;
+  bool useNUW;
+  bool trackAllocSites;
+  bool killDeadSlots;
+  bool emitLifetimeInfo;
+};
 
 std::ostream& operator<<(std::ostream& out, LLExpr& expr);
 
@@ -53,6 +61,12 @@ struct LLMiddle {
 struct LLGCRootInit : public LLMiddle {
   LLVar* src; LLVar* root;
   explicit LLGCRootInit(LLVar* src, LLVar* root) : src(src), root(root) {}
+  virtual void codegenMiddle(CodegenPass* pass);
+};
+
+struct LLGCRootKill : public LLMiddle {
+  LLVar* root;
+  explicit LLGCRootKill(LLVar* root) : root(root) {}
   virtual void codegenMiddle(CodegenPass* pass);
 };
 
