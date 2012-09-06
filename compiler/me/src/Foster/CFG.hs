@@ -134,14 +134,10 @@ extractFunction st fn = do
   Boxes.printBox $ catboxes $ map blockGraph $
                      preorder_dfs $ mkLast (jumpTo bbg') |*><*| bbgBody bbg'
   return $ fn { fnBody = bbg' }
-  where -- Dunno why this function isn't in Hoopl...
-        catClosedGraphs :: NonLocal i => [Graph i C C] -> Graph i C C
-        catClosedGraphs = foldr (|*><*|) emptyClosedGraph
-
+  where
         entryLab :: forall x. [Block Insn C x] -> BlockEntry
         entryLab [] = error $ "can't get entry block label from empty list!"
-        entryLab (bb:_) = let frs :: Insn C O
-                              frs@(ILabel elab) = firstNode bb in elab
+        entryLab (bb:_) = let (ILabel elab) = firstNode bb in elab
 
 blockId :: BlockEntry' t -> BlockId
 blockId = fst
@@ -486,7 +482,7 @@ instance Pretty t => Pretty (Letable t) where
       ILFloat     _ f       -> text (litFloatText f)
       ILTuple     vs _asrc  -> parens (hsep $ punctuate comma (map pretty vs))
       ILKillProcess t m     -> text ("prim KillProcess " ++ show m ++ " :: ") <> pretty t
-      ILOccurrence  _ v occ -> pretty v <> text "/" <> pretty (map fst occ)
+      ILOccurrence  _ v occ -> prettyOccurrence v occ
       ILCallPrim  _ p vs    -> (text "prim" <+> pretty p <+> hsep (map prettyId vs))
       ILCall      _ v vs    -> pretty v <+> hsep (map pretty vs)
       ILAppCtor   _ c vs    -> (text "~" <> parens (text (ctorCtorName (ctorInfoId c)) <+> hsep (map prettyId vs)))

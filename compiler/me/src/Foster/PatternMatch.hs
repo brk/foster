@@ -32,7 +32,7 @@ heuristic.
 data DecisionTree a t
     =  DT_Fail
     |  DT_Leaf  a                -- The expression/block id to evaluate/jump to.
-              [(Ident, Occurrence t)]  -- Subterms of scrutinee to bind in leaf.
+         [(TypedId t, Occurrence t)]  -- Subterms of scrutinee to bind in leaf.
     |  DT_Switch
                       (Occurrence t)  -- Subterm of scrutinee to switch on.
                 [(CtorId, DecisionTree a t)] -- Map of ctors to decision trees.
@@ -48,7 +48,7 @@ data ClauseRow a t  = ClauseRow { rowOrigPat  :: (SPattern t)
                                 , rowAction   :: a }
 
 data SPattern t = SP_Wildcard
-                | SP_Variable  Ident
+                | SP_Variable (TypedId t)
                 | SP_Ctor     (CtorInfo t) [SPattern t]
                deriving (Show)
 
@@ -65,7 +65,7 @@ compilePatterns bs allSigs =
   compilePattern :: Pattern t -> SPattern t
   compilePattern p = case p of
     (P_Wildcard _ _)       -> SP_Wildcard
-    (P_Variable _ v)       -> SP_Variable (tidIdent v)
+    (P_Variable _ v)       -> SP_Variable v
     (P_Bool     _ _ b)     -> SP_Ctor (boolCtor b)     []
     (P_Int      _ _ i)     -> SP_Ctor (int32Ctor i)    []
     (P_Ctor  _ _ pats nfo) -> SP_Ctor nfo              (map compilePattern pats)
@@ -105,8 +105,8 @@ cc _occs cm _allSigs | allGuaranteedMatch (rowPatterns $ firstRow cm) =
             (computeBindings emptyOcc (rowOrigPat r))
       where r = firstRow cm
             emptyOcc = []
-            computeBindings :: Occurrence t -> SPattern t -> [(Ident, Occurrence t)]
-            computeBindings  occ (SP_Variable i   ) = [(i, occ)]
+            computeBindings :: Occurrence t -> SPattern t -> [(TypedId t, Occurrence t)]
+            computeBindings  occ (SP_Variable v   ) = [(v, occ)]
             computeBindings _occ (SP_Wildcard     ) = []
             computeBindings  occ (SP_Ctor ctorinfo pats) =
               let occs = expand occ ctorinfo (Prelude.length pats) in

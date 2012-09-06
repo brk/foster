@@ -399,6 +399,8 @@ instance Ord TyVar where
   BoundTyVar s1      `compare` SkolemTyVar s2 _ _ = s1 `compare` s2
   SkolemTyVar s1 _ _ `compare` BoundTyVar s2      = s1 `compare` s2
 
+prettyOccurrence v occ = pretty v <> text "/" <> pretty (map fst occ)
+
 instance Show TyVar where
     show (BoundTyVar x) = "'" ++ x
     show (SkolemTyVar x u k) = "$" ++ x ++ "." ++ show u ++ "::" ++ show k

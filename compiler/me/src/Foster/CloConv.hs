@@ -314,11 +314,11 @@ compileDecisionTree _scrutinee (DT_Leaf armid []) = do
 -- bindings multiple times, we associate each armid with the id of a basic
 -- block which binds the arm's free variables, and make all the leafs jump
 -- to the wrapper instead of directly to the arm.
-compileDecisionTree scrutinee (DT_Leaf armid idsoccs) = do
+compileDecisionTree scrutinee (DT_Leaf armid varoccs) = do
         wrappers <- gets ilmBlockWrappers
         case Map.lookup armid wrappers of
            Just id -> do return $ BlockFin emptyClosedGraph id
-           Nothing -> do let binders = map (emitOccurrence scrutinee) idsoccs
+           Nothing -> do let binders = map (emitOccurrence scrutinee) varoccs
                          (id, block) <- ilmNewBlock ".leaf" binders (CCLast $ CCCont armid []) -- TODO
                          ilmAddWrapper armid id
                          return $ BlockFin (blockGraph block) id
@@ -334,21 +334,15 @@ compileDecisionTree scrutinee (DT_Switch occ subtrees maybeDefaultDt) = do
         let (blockss, ids) = unzip (map splitBlockFin fins)
         (id, block) <- ilmNewBlock ".dt.switch" [] $ (CCLast $
                           mkSwitch (llv scrutinee) (zip ctors ids) maybeDefaultId (llOcc occ))
-        return $ BlockFin (blockGraph block |*><*| (foldr (|*><*|) emptyClosedGraph blockss) |*><*| dblockss) id
+        let catClosedGraphs = foldr (|*><*|) emptyClosedGraph
+        return $ BlockFin (blockGraph block |*><*| catClosedGraphs blockss |*><*| dblockss) id
 
 llOcc occ = map (\(i,c) -> (i, fmap monoToLL c)) occ
 
-emitOccurrence :: MoVar -> (Ident, Occurrence MonoType) -> Insn' O O
-emitOccurrence scrutinee (id, occ) = CCLetVal id ilocc
-                       where ilocc = mkILOccurrence (llv scrutinee) (llOcc occ)
-
-mkILOccurrence :: TypedId t -> Occurrence t -> Letable t
-mkILOccurrence v occ = ILOccurrence t v occ
-  where t = go (tidType v) (zip o (map ctorInfoDc i))
-                         where (o,i) = unzip occ
-
-        go ty [] = ty
-        go _ ((k,(DataCtor _ _ _ types)):rest) = go (types !! k) rest
+emitOccurrence :: MoVar -> (TypedId MonoType, Occurrence MonoType) -> Insn' O O
+emitOccurrence scrutinee (v, occ) = CCLetVal (tidIdent v) ilocc
+           where ilocc = ILOccurrence (monoToLL $ tidType v)
+                                      (llv scrutinee) (llOcc occ)
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -574,7 +568,7 @@ instance Pretty CCLast where
           LLProcType _ _ _ -> text "call (proc)" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
           _                -> text "call (func)" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
   pretty (CCCase v arms def occ) = align $
-    text "case" <+> pretty (mkILOccurrence v occ) <$> indent 2
+    text "case" <+> prettyOccurrence v occ <$> indent 2
        ((vcat [ arm (text "of" <+> pretty ctor) bid
               | (ctor, bid) <- arms
               ]) <> (case def of Nothing -> empty
