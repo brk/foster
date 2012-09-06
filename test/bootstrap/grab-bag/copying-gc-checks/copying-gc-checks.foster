@@ -1,0 +1,169 @@
+main = {
+  no-gc (ref 0);
+  gc-before-use (ref 0);
+  gc-before-and-after-use (ref 0);
+  let x = (ref 0); in
+    gc-pat-match (1, (x,x));
+    gc-pat-match (2, (x,x));
+    gc-pat-match (3, (x,x));
+
+    gc-pat-match-seq (4, (x,x));
+  nogc-pat-match-seq (4, (x,x));
+  end;
+};
+
+no-gc = { x : Ref Int32 =>
+  expect_i32 0;
+  print_i32 x^;
+};
+
+gc-before-use = { x : Ref Int32 =>
+  expect_i32 0;
+  force_gc_for_debugging_purposes !;
+  print_i32 x^;
+};
+
+gc-before-and-after-use = { x : Ref Int32 =>
+  expect_i32 0;
+  force_gc_for_debugging_purposes !;
+  print_i32 x^;
+
+  force_gc_for_debugging_purposes !;
+
+  expect_i32 0;
+  print_i32 x^;
+};
+
+gc-pat-match = { x : (Int32, (Ref Int32, Ref Int32)) =>
+  expect_i32 0;
+  case x
+    of (1, yz)    -> case yz of     (y,z)  -> print_i32 (y^ +Int32 z^) end
+    of (2, (y,z)) ->                          print_i32 (y^ +Int32 z^)
+    of (_, _)     -> case x  of (_, (y,z)) -> print_i32 (y^ +Int32 z^) end
+  end;
+  ()
+};
+/*
+gc-pat-match [x!5]
+{
+        ret k = (rk,L56)
+        entry = (postalloca,L55)
+        ------------------------------
+
+    postalloca.L55 [x!5]
+        let .x!7 = 0
+        let .seq!6 = prim expect_i32 .x!7
+    cont .dt.switch.L99 []
+
+    .dt.switch.L99 []
+    cont .dt.switch.L98 []
+
+    .dt.switch.L98 []
+    case x!5/[0]
+      of Int32.<Int32>(1)  -> .leaf.L95
+      of Int32.<Int32>(2)  -> .leaf.L96
+      default:             -> .leaf.L100
+
+            .leaf.L95 []
+                let yz!8 = x!5/[1]
+                                         cont .leaf.L103 [] |*><*| .leaf.L103 []
+                let y!10 = yz!8/[0]
+                let z!11 = yz!8/[1]
+            cont case_arm.L61 []
+
+                    case_arm.L61 []
+                        let .x!8 = y!10^
+                        let .x!9 = z!11^
+                        let .x!10 = prim + .x!8 .x!9
+                        let .cfg_seq!63 = prim print_i32 .x!10
+                    cont case_cont.L60 [.cfg_seq!63]
+
+            .leaf.L96 []
+                let y!12 = x!5/[1,0]
+                let z!13 = x!5/[1,1]
+            cont case_arm.L58 []
+
+                    case_arm.L58 []
+                        let .x!11 = y!12^
+                        let .x!12 = z!13^
+                        let .x!13 = prim + .x!11 .x!12
+                        let .cfg_seq!65 = prim print_i32 .x!13
+                    cont case_cont.L60 [.cfg_seq!65]
+
+            .leaf.L100 []
+                let y!15 = x!5/[1,0]
+                let z!16 = x!5/[1,1]
+            cont case_arm.L66 []
+
+                    case_arm.L66 []
+                        let .x!14 = y!15^
+                        let .x!15 = z!16^
+                        let .x!16 = prim + .x!14 .x!15
+                        let .cfg_seq!68 = prim print_i32 .x!16
+                    cont case_cont.L60 [.cfg_seq!68]
+
+    case_cont.L60 [.seq!17]
+        let .cfg_seq!70 = ()
+    cont rk.L56 [.cfg_seq!70]
+}
+*/
+
+nogc-pat-match-seq = { x : (Int32, (Ref Int32, Ref Int32)) =>
+  expect_i32 0;
+  case x of (_, (y,z)) -> print_i32 y^ end;
+  expect_i32 0;
+  case x of (_, (y,z)) -> print_i32 z^ end;
+  ()
+};
+/*
+nogc-pat-match-seq [x!5]
+{
+        ret k = (rk,L69)
+        entry = (postalloca,L68)
+        ------------------------------
+
+    postalloca.L68 [x!5]
+        let .x!7 = 0
+        let .seq!6 = prim expect_i32 .x!7
+    cont .leaf.L121 []
+
+    .leaf.L121 []
+        let y!8 = x!5/[1,0]
+        let z!9 = x!5/[1,1]
+    cont case_arm.L70 []
+    case_arm.L70 []
+        let .x!8 = y!8^
+        let .cfg_seq!72 = prim print_i32 .x!8
+    cont case_cont.L71 [.cfg_seq!72]
+
+    case_cont.L71 [.seq!10]
+        let .x!9 = 0
+        let .seq!11 = prim expect_i32 .x!9
+    cont .dt.switch.L125 []
+    .dt.switch.L125 []
+
+    cont .leaf.L124 []
+    .leaf.L124 []
+        let y!13 = x!5/[1,0]
+        let z!14 = x!5/[1,1]
+    cont case_arm.L73 []
+    case_arm.L73 []
+        let .x!10 = z!14^
+        let .cfg_seq!75 = prim print_i32 .x!10
+    cont case_cont.L74 [.cfg_seq!75]
+    case_cont.L74 [.seq!15]
+        let .cfg_seq!76 = ()
+    cont rk.L69 [.cfg_seq!76]
+}
+*/
+
+gc-pat-match-seq = { x : (Int32, (Ref Int32, Ref Int32)) =>
+  expect_i32 0;
+  case x of (_, (y,z)) -> print_i32 y^ end;
+
+  force_gc_for_debugging_purposes !;
+
+  expect_i32 0;
+  case x of (_, (y,z)) -> print_i32 z^ end;
+  ()
+};
