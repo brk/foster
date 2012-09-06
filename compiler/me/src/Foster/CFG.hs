@@ -137,7 +137,8 @@ extractFunction st fn = do
   where
         entryLab :: forall x. [Block Insn C x] -> BlockEntry
         entryLab [] = error $ "can't get entry block label from empty list!"
-        entryLab (bb:_) = let (ILabel elab) = firstNode bb in elab
+        entryLab (bb:_) = let _r :: Insn C O -- needed for GHC 6.12 compat
+                              _r@(ILabel elab) = firstNode bb in elab
 
 blockId :: BlockEntry' t -> BlockId
 blockId = fst
