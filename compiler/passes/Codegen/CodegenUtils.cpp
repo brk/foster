@@ -8,6 +8,7 @@
 
 #include "passes/CodegenPass-impl.h"
 #include "parse/FosterTypeAST.h"
+#include "parse/ParsingContext.h"
 
 #include "llvm/Intrinsics.h"
 #include "llvm/LLVMContext.h"
@@ -405,15 +406,15 @@ public:
 // So much boilerplate...
 struct LLProcStringOfCStringPrim : public LLProcPrimBase {
   explicit LLProcStringOfCStringPrim() {
-      this->name            = "foster_emit_string_of_cstring";
+      this->name = "foster_emit_string_of_cstring";
       this->argnames.push_back("buf");
       this->argnames.push_back("len");
       std::vector<TypeAST*> argTypes;
       argTypes.push_back(RefTypeAST::get(TypeAST::i(8)));
       argTypes.push_back(TypeAST::i(32));
       std::map<std::string, std::string> annots; annots["callconv"] = "ccc";
-      this->type            = new FnTypeAST(RefTypeAST::get(TypeAST::i(999)),
-                                            argTypes, annots);
+      this->type = new FnTypeAST(foster::ParsingContext::lookupType("Text"),
+                                                              argTypes, annots);
   }
   virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) {
     Function::arg_iterator AI = F->arg_begin();

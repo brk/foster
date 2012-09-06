@@ -70,20 +70,11 @@ llvm::Type* NamedTypeAST::getLLVMType() const {
 
 ////////////////////////////////////////////////////////////////////
 
-/*
-llvm::PointerType* DataTypeAST::getOpaquePointerTy(llvm::Module* mod) const {
-  if (!this->opaq) {
-    EDiag() << "Generating opaque pointer for data type " << this->name;
-    this->opaq = llvm::OpaqueType::get(llvm::getGlobalContext());
-    if (mod) { mod->addTypeName(this->name, this->opaq); }
-  }
-  return llvm::PointerType::getUnqual(this->opaq);
-}
-*/
-
 llvm::Type* DataTypeAST::getLLVMType() const {
-  //return this->getOpaquePointerTy(NULL);
-  return llvm::PointerType::getUnqual(llvmIntType(999));
+  llvm::StructType* dt_opaque_named_ty =
+         llvm::StructType::create(llvm::getGlobalContext(),
+                                               std::string(this->name + ".DT"));
+  return llvm::PointerType::getUnqual(dt_opaque_named_ty);
 }
 
 ////////////////////////////////////////////////////////////////////

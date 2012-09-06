@@ -982,7 +982,14 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
     v = getElementFromComposite(v, offsets[i], "switch_insp");
   }
 
-  return v;
+  // Consider code like         case v of Some x -> ... x ...
+  // when there's a type definition Maybe a = None | Some a.
+  // v's source type is Maybe X, which (since we erase type parameters)
+  // corresponds to the LLVM type Maybe.DT*. This will be refined to
+  // { i999* }* when computing the occurrence for x. But x's physical type then
+  // remains i999*, while it ought to be the translation of its source type, X.
+  // This bitcast fixes the mismatch.
+  return emitBitcast(v, getLLVMType(this->type), "occty");
 }
 
 ///}}}//////////////////////////////////////////////////////////////

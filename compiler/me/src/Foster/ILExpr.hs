@@ -124,13 +124,12 @@ makeAllocationsExplicit bbgp uref = do
             return $
               (mkMiddle $ CCLetVal id (ILAllocate info)) <*>
               (mkMiddle $ CCTupleStore vs (TypedId (LLPtrType t) id) memregion)
-    (CCLetVal id (ILAppCtor t (CtorInfo cid _) vs)) -> do
+    (CCLetVal id (ILAppCtor genty (CtorInfo cid _) vs)) -> do
             id' <- fresh "ctor-alloc"
             let tynm = ctorTypeName cid ++ "." ++ ctorCtorName cid
             let tag  = ctorSmallInt cid
             let t = LLStructType (map tidType vs)
             let obj = (TypedId (LLPtrType t) id' )
-            let genty = LLPtrTypeUnknown
             let memregion = MemRegionGlobalHeap
             let info = AllocInfo t memregion tynm (Just tag) Nothing "ctor-allocator" NoZeroInit
             return $
