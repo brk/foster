@@ -22,6 +22,7 @@ import Foster.GCRoots
 import Data.IORef
 import Data.Map(Map)
 import Data.List(zipWith4)
+import qualified Data.Set as Set(toList, map)
 import qualified Data.Map as Map(singleton, insertWith, lookup, empty, fromList,
                                                          union, findWithDefault)
 import qualified Data.Text as T(pack, unpack)
@@ -252,14 +253,14 @@ flattenGraph bbgp =
          Block (frs f) (concatMap midmany (blockToList ms) ++ lastmids) last
    where
      midmany :: Insn' O O -> [ILMiddle]
+     midmany (CCGCKill Disabled     _root) = error $ "Invariant violated: saw disabled root kill pseudo-insn!"
+     midmany (CCGCKill (Enabled cgc) roots) = [ILGCRootKill root cgc | root <- Set.toList roots]
      midmany insn = [mid insn]
 
      mid :: Insn' O O -> ILMiddle
      mid (CCLetVal id letable)    = ILLetVal   id  letable
      mid (CCGCLoad v   fromroot)  = ILLetVal (tidIdent v) (ILDeref (tidType v) fromroot)
      mid (CCGCInit _ src toroot)  = ILGCRootInit src toroot
-     mid (CCGCKill (Enabled cgc) root) = ILGCRootKill root cgc
-     mid (CCGCKill Disabled     _root) = error $ "Invariant violated: saw disabled root kill pseudo-insn!"
      mid (CCTupleStore vs tid r)  = ILTupleStore vs tid r
      mid (CCLetFuns ids closures) = error $ "Invariant violated: CCLetFuns should have been eliminated!"
 
@@ -341,7 +342,7 @@ mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
           (CCLabel   {}        ) -> insn
           (CCGCLoad  v fromroot) -> CCGCLoad        (s v) (s fromroot)
           (CCGCInit vr v toroot) -> CCGCInit (s vr) (s v) (s   toroot)
-          (CCGCKill enabld root) -> CCGCKill enabld (s root)
+          (CCGCKill enabld roots) -> CCGCKill enabld (Set.map s roots)
           (CCTupleStore vs  v r) -> CCTupleStore (map s vs) (s v) r
           (CCLetVal  id letable) -> CCLetVal id $ substVarsInLetable s letable
           (CCLetFuns ids fns   ) -> CCLetFuns ids $ map (substForInClo s) fns

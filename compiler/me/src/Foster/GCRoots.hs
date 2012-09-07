@@ -10,6 +10,8 @@ module Foster.GCRoots(insertSmartGCRoots, fnty_of_procty) where
 
 import Compiler.Hoopl
 
+import Debug.Trace(trace)
+
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Text.PrettyPrint.Boxes as Boxes
 
@@ -62,8 +64,13 @@ insertSmartGCRoots uref bbgp0 = do
   (bbgp' , gcr) <- insertDumbGCRoots uref bbgp0
   (bbgp'' , rootsLiveAtGCPoints) <- runLiveAtGCPoint2 uref bbgp'
   bbgp''' <- removeDeadGCRoots bbgp'' (mapInverse gcr) rootsLiveAtGCPoints
-  putStrLn $ "these roots were live at GC points: " ++ show rootsLiveAtGCPoints
-  return ( bbgp''' , Set.toList rootsLiveAtGCPoints)
+  bbgp'''' <- runAvails uref bbgp'''
+
+  if False then return () else Boxes.printBox $ catboxes2 (bbgpBody bbgp''') (bbgpBody bbgp'''' )
+
+  return ( bbgp'''' , Set.toList rootsLiveAtGCPoints)
+  -- We need to return the set of live roots so LLVM codegen can create them
+  -- in advance.
  where
     mapInverse m = let ks = Map.keysSet m in
                    let es = Set.fromList (Map.elems m) in
@@ -122,25 +129,22 @@ liveAtGCPointXfer2 = mkBTransfer go
 -- If we see a (disabled) GCKill marker when a root is still alive,
 -- we'll remove the marker, but if the root is dead, we'll enable
 -- the marker, since it is, by definition, (conservatively) correct.
+-- Eliminating redundant kills is a job for a separate (forward) pass.
 liveAtGCPointRewrite2 :: forall m. FuelMonad m => BwdRewrite m Insn' LiveAGC2
 liveAtGCPointRewrite2 = mkBRewrite d
   where
     d :: Insn' e x -> Fact x LiveAGC2 -> m (Maybe (Graph Insn' e x))
-    d (CCLabel      {}      )    _    = return Nothing
-    d (CCLetVal     {}      )    _    = return Nothing
-    d (CCLetFuns    {}      )    _    = return Nothing
-    d (CCTupleStore {}      )    _    = return Nothing
-    d (CCGCLoad     {}      )    _    = return Nothing
-    d (CCGCInit     {}      )    _    = return Nothing
-    d (CCGCKill (Enabled _) _root)    _    = return Nothing -- leave as-is.
-    d (CCGCKill Disabled     root) (s,_,c) = -- s is the set of live roots
-          if {-trace ("agc @ GCKILL " ++ show root ++ " : live? " ++ show (Set.member root s) ++ show s) $-}
-             Set.member root s
-            then return $ Just emptyGraph
-             -- If a root is live, remove its fake kill node.
-             -- Otherwise, toggle the node from disabled to enabled.
-            else return $ Just (mkMiddle (CCGCKill (Enabled c) root))
-    d _node@(CCLast {}      ) _fdb  = return Nothing
+    d (CCLabel      {}       )   _    = return Nothing
+    d (CCLetVal     {}       )   _    = return Nothing
+    d (CCLetFuns    {}       )   _    = return Nothing
+    d (CCTupleStore {}       )   _    = return Nothing
+    d (CCGCLoad     {}       )   _    = return Nothing
+    d (CCGCInit     {}       )   _    = return Nothing
+    d (CCGCKill (Enabled _) _)   _    = return Nothing -- leave as-is.
+    d (CCGCKill Disabled    roots) (liveRoots,_,cgc) =
+          return $ Just (mkMiddle (CCGCKill (Enabled cgc) deadRoots))
+                   where deadRoots = Set.difference roots liveRoots
+    d (CCLast {}              ) _fdb  = return Nothing
 
 runLiveAtGCPoint2 :: IORef Uniq -> BasicBlockGraph' -> IO (BasicBlockGraph'
                                                           ,RootLiveWhenGC)
@@ -256,8 +260,8 @@ insertDumbGCRoots uref bbgp = do
   transform gcr insn = case insn of
     -- See the note above explaining why we generate all these GCKills...
     CCLabel (_bid, vs)            -> do (inits, gcr' ) <- mapFoldM' vs gcr maybeRootInitializer
-                                        return (mkFirst insn <*> catGraphs inits <*> mkMiddles [
-                                                CCGCKill Disabled root | root <- Map.elems gcr' ]
+                                        return (mkFirst insn <*> catGraphs inits <*> mkMiddle
+                                           (CCGCKill Disabled (Set.fromList $ Map.elems gcr' ))
                                                                                       , gcr' )
     CCGCLoad  {}                  -> do return (mkMiddle $ insn                       , gcr)
     CCGCInit  {}                  -> do return (mkMiddle $ insn                       , gcr)
@@ -325,7 +329,8 @@ insertDumbGCRoots uref bbgp = do
           id <- fresh (show (tidIdent root) ++ ".load")
           let loadedvar = TypedId (tidType root) id
           return ((oos ++ [CCGCLoad loadedvar root
-                          ,CCGCKill Disabled  root], loadedvar), gcr)
+                          ,CCGCKill Disabled (Set.fromList [root])]
+                          , loadedvar), gcr)
 
       withGCLoad :: LLVar -> GCRootsForVariables
                           -> IO (([Insn' O O], LLVar), GCRootsForVariables)
@@ -374,10 +379,8 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
                                         put (Map.insert v root m)
                                         iflive root $ mkMiddle $ insn
     CCGCInit  _ _   root          -> do iflive root $ mkMiddle $ insn
-    CCGCKill  (Enabled _)  root   -> do if isLive root
-                                         then return $ mkMiddle insn
-                                         else return emptyGraph
     CCGCKill  Disabled    _root   -> do error "transform saw disabled gckill?"
+    CCGCKill  enabled     roots   -> do return $ mkMiddle (CCGCKill enabled (Set.intersection roots liveRoots))
     CCTupleStore vs v r           -> do undoDeadGCLoads (v:vs) (\(v' : vs' ) ->
                                          mkMiddle $ CCTupleStore vs' v' r)
     CCLetVal id val               -> do let vs = freeTypedIds val
@@ -424,6 +427,100 @@ isGCable v = case tidType v of
                LLCoroType _ _         -> True
                LLArrayType _          -> True
                LLPtrTypeUnknown       -> True
+
+-- |||||||||||||||||||| Redundancy elimination ||||||||||||||||||{{{
+
+-- We want to track which roots have been killed, so that when we see
+-- a kill of an already-killed (on all paths) root, we can drop the redundant
+-- kill. The straightforward thing to do is to directly track a set of killed
+-- roots, which starts out empty (for bottom), and grows when we xfer
+-- past a kill. Because we want an all-paths  property, join is intersection.
+--
+-- The problem is that doing so does not form a valid lattice: as defined,
+-- we would have _|_ \/ e = _|_ instead of the correct invariant, = e.
+-- Instead of tracking *killed* roots, we track *unkilled* roots, which thus
+-- allows us to form a proper lattice that tracks what roots don't need kills.
+data AvailSet elts = UniverseMinus (Set.Set elts)
+delAvails       (UniverseMinus elts) es = UniverseMinus (Set.union elts es)
+availFrom    es (UniverseMinus elts)    = Set.difference es elts
+intersectAvails (UniverseMinus e1) (UniverseMinus e2) = UniverseMinus (Set.union e1 e2)
+availSmaller    (UniverseMinus e1) (UniverseMinus e2) = Set.size e2 < Set.size e1
+
+type UnkilledRoots = AvailSet LLRootVar
+-- type LiveLoads   = Map LLRootVar LLVar
+data Avails = Avails { unkilledRoots :: UnkilledRoots } -- LiveLoads
+
+availsXfer :: FwdTransfer Insn' Avails
+availsXfer = mkFTransfer3 go go (distributeXfer availsLattice go)
+  where
+    go :: Insn' e x -> Avails -> Avails
+    go (CCLabel      {}    ) f = f
+    go (CCGCLoad     {}    ) f = f
+    go (CCGCInit     {}    ) f = f
+    go (CCGCKill (Enabled _) roots) a = a { unkilledRoots =
+                                            unkilledRoots a `delAvails` roots }
+    go (CCGCKill     {}    ) f = f
+    go (CCLetVal     {}    ) f = f
+    go (CCLetFuns    {}    ) f = f
+    go (CCTupleStore {}    ) f = f
+    go _node@(CCLast cclast) f =
+          case cclast of
+            (CCCont  {}       ) -> f
+            (CCCall _ _ _ _v _) -> f
+            (CCCase  {}       ) -> f
+
+availsRewrite :: forall m. FuelMonad m => FwdRewrite m Insn' Avails
+availsRewrite = mkFRewrite d
+  where
+    d :: Insn' e x -> Avails -> m (Maybe (Graph Insn' e x))
+    d (CCLabel      {}       )   _    = return Nothing
+    d (CCLetVal     {}       )   _    = return Nothing
+    d (CCLetFuns    {}       )   _    = return Nothing
+    d (CCTupleStore {}       )   _    = return Nothing
+    d (CCGCLoad     {}       )   _    = return Nothing
+    d (CCGCInit     {}       )   _    = return Nothing
+    d (CCGCKill Disabled    _)   _    = return Nothing
+    d (CCGCKill enabled roots)   a = return $ Just $
+        if Set.null unkilled
+          then emptyGraph
+          else mkMiddle (CCGCKill enabled unkilled)
+               where unkilled = roots `availFrom` (unkilledRoots a)
+    d (CCLast {}             )   _    = return Nothing
+
+runAvails :: IORef Uniq -> BasicBlockGraph' -> IO BasicBlockGraph'
+runAvails uref bbgp = runWithUniqAndFuel uref infiniteFuel (go bbgp)
+  where
+    go :: BasicBlockGraph' -> M BasicBlockGraph'
+    go bbgp = do
+        let ((_,blab), _) = bbgpEntry bbgp
+        (body' , _, _) <- analyzeAndRewriteFwd fwd (JustC [bbgpEntry bbgp])
+                                                           (bbgpBody bbgp)
+                              (mapSingleton blab (fact_bot availsLattice))
+        return bbgp { bbgpBody = body' }
+
+    --_fwd = debugFwdTransfers trace showing (\_ _ -> True) fwd
+    --_fwd = debugFwdJoins trace (\_ -> True) fwd
+    fwd = FwdPass { fp_lattice  = availsLattice
+                  , fp_transfer = availsXfer
+                  , fp_rewrite  = availsRewrite
+                  }
+
+showing :: Insn' e x -> String
+showing insn = show (pretty insn)
+
+availsLattice :: DataflowLattice Avails
+availsLattice = DataflowLattice
+  { fact_name = "Availables"
+  , fact_bot  = Avails (UniverseMinus Set.empty)
+  , fact_join = add
+  }
+    where add _lab (OldFact (Avails ok)) (NewFact (Avails nk)) = (ch, Avails jk)
+            where
+              jk = nk `intersectAvails` ok
+              ch = changeIf (availSmaller jk ok)
+
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
 {-
 
 // * If a function body cannot trigger GC, then the in-params
