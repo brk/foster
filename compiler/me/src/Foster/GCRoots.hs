@@ -10,8 +10,6 @@ module Foster.GCRoots(insertSmartGCRoots, fnty_of_procty) where
 
 import Compiler.Hoopl
 
-import Debug.Trace(trace)
-
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Text.PrettyPrint.Boxes as Boxes
 
@@ -27,12 +25,15 @@ import Data.IORef(IORef, modifyIORef, readIORef)
 import Data.Map(Map)
 import qualified Data.Set as Set
 import qualified Data.Map as Map(lookup, empty, fromList, elems, keysSet,
-                                                        insert, findWithDefault)
+                                 unionWith, insertWith, insert, findWithDefault)
 import qualified Data.Text as T(pack)
+import Control.Monad(when)
 import Control.Monad.State(evalStateT, get, put, StateT)
 
 -- | Explicit insertion (and optimization) of GC roots.
 -- | Assumption: allocation has already been made explicit.
+
+showOptResults = True
 
 --------------------------------------------------------------------
 
@@ -66,7 +67,7 @@ insertSmartGCRoots uref bbgp0 = do
   bbgp''' <- removeDeadGCRoots bbgp'' (mapInverse gcr) rootsLiveAtGCPoints
   bbgp'''' <- runAvails uref bbgp'''
 
-  if False then return () else Boxes.printBox $ catboxes2 (bbgpBody bbgp''') (bbgpBody bbgp'''' )
+  when showOptResults $ Boxes.printBox $ catboxes2 (bbgpBody bbgp''') (bbgpBody bbgp'''' )
 
   return ( bbgp'''' , Set.toList rootsLiveAtGCPoints)
   -- We need to return the set of live roots so LLVM codegen can create them
@@ -113,6 +114,7 @@ liveAtGCPointXfer2 = mkBTransfer go
     go (CCLetVal  _id  l    ) f = ifgc (canGCLetable l) f
     go (CCLetFuns _ids _clos) f = ifgc True             f
     go (CCTupleStore   {}   ) f = ifgc False            f
+    go (CCRebindId     {}   ) f = ifgc False            f
     go node@(CCLast    cclast) fdb =
           let f = combineLastFacts fdb node in
           case cclast of
@@ -138,6 +140,7 @@ liveAtGCPointRewrite2 = mkBRewrite d
     d (CCLetVal     {}       )   _    = return Nothing
     d (CCLetFuns    {}       )   _    = return Nothing
     d (CCTupleStore {}       )   _    = return Nothing
+    d (CCRebindId   {}       )   _    = return Nothing
     d (CCGCLoad     {}       )   _    = return Nothing
     d (CCGCInit     {}       )   _    = return Nothing
     d (CCGCKill (Enabled _) _)   _    = return Nothing -- leave as-is.
@@ -250,7 +253,7 @@ insertDumbGCRoots uref bbgp = do
    (g' , fini) <- rebuildGraphAccM (case bbgpEntry bbgp of (bid, _) -> bid)
                                        (bbgpBody bbgp) Map.empty transform
 
-   if False then return () else do Boxes.printBox $ catboxes2 (bbgpBody bbgp) g'
+   when showOptResults $ do Boxes.printBox $ catboxes2 (bbgpBody bbgp) g'
 
    return (bbgp { bbgpBody =  g' }, fini)
 
@@ -282,6 +285,7 @@ insertDumbGCRoots uref bbgp = do
                                           let s = makeSubstWith vs vs' in
                                           (mkMiddle $ CCLetFuns [id] [substVarsInClo s clo]) <*> ri)
     CCLetFuns ids _clos           -> do error $ "CCLetFuns should all become singletons!" ++ show ids
+    CCRebindId     {}             -> do error $ "CCRebindId should not have been introduced yet!"
     CCLast (CCCont b vs)          -> do withGCLoads gcr vs (\vs'  ->
                                                (mkLast $ CCLast (CCCont b vs' )))
     CCLast (CCCall b t id v vs)   -> do withGCLoads gcr (v:vs) (\(v' : vs' ) ->
@@ -365,7 +369,7 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
                                                        (bbgpBody bbgp) transform
    g' <- evalStateT mappedAction Map.empty
 
-   if False then return () else Boxes.printBox $ catboxes2 (bbgpBody bbgp) g'
+   when showOptResults $ Boxes.printBox $ catboxes2 (bbgpBody bbgp) g'
 
    return bbgp { bbgpBody =  g' }
  where
@@ -394,7 +398,7 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
                                                (mkLast $ CCLast (CCCall b t id v' vs' )))
     CCLast (CCCase v arms mb occ) -> do undoDeadGCLoads [v] (\[v' ] ->
                                                (mkLast $ CCLast (CCCase v' arms mb occ)))
-
+    CCRebindId     {}             -> do error $ "CCRebindId should not have been introduced yet!"
   varForRoot root = case Map.lookup root varsForGCRoots of
                       Nothing -> error $ "Unable to find source variable for root " ++ show root
                       Just var -> var
@@ -412,6 +416,7 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
 
 fnty_of_procty pt@(LLProcType (env:_args) _rets _cc) =
       LLPtrType (LLStructType [pt, env])
+fnty_of_procty other = error $ "GCRoots.hs: fnty_of_procty undefined for " ++ show other
 
 canGCLetable l = let rv = canGC  l in if rv then {- trace ("canGCL: " ++ show l) -} rv else rv
 canGCCalled  v = let rv = canGCF v in if rv then {- trace ("canGCF: " ++ show v) -} rv else rv
@@ -440,35 +445,95 @@ isGCable v = case tidType v of
 -- we would have _|_ \/ e = _|_ instead of the correct invariant, = e.
 -- Instead of tracking *killed* roots, we track *unkilled* roots, which thus
 -- allows us to form a proper lattice that tracks what roots don't need kills.
-data AvailSet elts = UniverseMinus (Set.Set elts)
-delAvails       (UniverseMinus elts) es = UniverseMinus (Set.union elts es)
-availFrom    es (UniverseMinus elts)    = Set.difference es elts
+--
+-- Things are a bit trickier still for eliminating redundant reloads. We want
+-- to track the set of available bindings corresponding to each (unkilled) root.
+-- Since availability is an all-paths property, we need to use set intersection
+-- as our join, which in turn implies that the bottom element must be
+-- (UniverseMinus empty). But, unusually, this is *not* the element we want to
+-- assign for our entry node! Rather, we need to use (Avail empty), i.e. top.
+-- Consider this graph:
+--      entry:
+--              x.load  = load from x.root
+--              do something with x.load
+--      other:
+--              x.load2 = load from x.root
+--              jmp entry
+-- When jmp'ing back to entry, x.load2 is available to replace a load from root.
+-- If the beginning fact is (UniverseMinus empty), then we'll try to replace
+-- x.load with x.load2---bad! Using top instead of bottom at the start fact
+-- for the set of loaded roots prevents this from occurring.
+data AvailSet elts = UniverseMinus (Set.Set elts) | Avail (Set.Set elts)
+
+delAvails       (UniverseMinus elts) es = UniverseMinus (Set.union es elts)
+delAvails       (Avail         elts) es = Avail (availFrom elts (UniverseMinus es))
+
+addAvail        (Avail elts)         e  = Avail         (Set.insert e elts)
+addAvail        (UniverseMinus elts) e  = UniverseMinus (Set.delete e elts)
+
+availFrom    es (UniverseMinus elts)    = Set.difference   es elts
+availFrom    es (Avail         elts)    = Set.intersection es elts
+
+availIn e a = not $ Set.null $ availFrom (Set.singleton e) a
+
 intersectAvails (UniverseMinus e1) (UniverseMinus e2) = UniverseMinus (Set.union e1 e2)
+intersectAvails (Avail es) a = Avail (availFrom es a)
+intersectAvails a (Avail es) = Avail (availFrom es a)
+
 availSmaller    (UniverseMinus e1) (UniverseMinus e2) = Set.size e2 < Set.size e1
+availSmaller    (Avail e1)         (Avail e2)         = Set.size e1 < Set.size e2
+availSmaller    (Avail _ )         (UniverseMinus s) | null (Set.toList s) = True
+availSmaller _ _ = error $ "GCRoots.hs: Can't compare sizes of Avail and UniverseMinus..."
+--availSmaller a u = error $ "Can't compare sizes of " ++ show a ++ " and " ++ show u
 
 type UnkilledRoots = AvailSet LLRootVar
--- type LiveLoads   = Map LLRootVar LLVar
-data Avails = Avails { unkilledRoots :: UnkilledRoots } -- LiveLoads
+type LoadedRoots   = AvailSet LLRootVar
+data Avails = Avails { unkilledRoots :: UnkilledRoots
+                     , loadedRoots   :: LoadedRoots
+                     , loadsForRoots :: Map LLRootVar (Set.Set LLVar) }
+--instance Show (AvailSet LLVar) where
+--  show (UniverseMinus elts) = "(UniverseMinus " ++ show (map tidIdent $ Set.toList elts) ++ ")"
+--  show (Avail         elts) = "(Avail "         ++ show (map tidIdent $ Set.toList elts) ++ ")"
+--
+--ptidIdent (x,y) = (tidIdent x, tidIdent y)
+--instance Show (AvailSet (LLVar, LLVar)) where
+--  show (UniverseMinus elts) = "(UniverseMinus " ++ show (map ptidIdent $ Set.toList elts) ++ ")"
+--  show (Avail         elts) = "(Avail "         ++ show (map ptidIdent $ Set.toList elts) ++ ")"
+--
+--instance Show Avails where show a = show (pretty a)
+--instance Pretty Avails where
+--  pretty (Avails uk lr fr) = text "(Avails unkilledRoots=" <> text (show uk)
+--                         <+> text "loadedRoots="   <> text (show uk)
+--                         <+> text "loadsForRoots=" <> text (show $ Map.map (Set.map tidIdent) fr) <> text ")"
 
 availsXfer :: FwdTransfer Insn' Avails
 availsXfer = mkFTransfer3 go go (distributeXfer availsLattice go)
   where
     go :: Insn' e x -> Avails -> Avails
     go (CCLabel      {}    ) f = f
-    go (CCGCLoad     {}    ) f = f
-    go (CCGCInit     {}    ) f = f
-    go (CCGCKill (Enabled _) roots) a = a { unkilledRoots =
-                                            unkilledRoots a `delAvails` roots }
+    go (CCGCInit _ var root) f = makeAvail var root f
+    go (CCGCLoad   var root) f = makeAvail var root f
+    go (CCGCKill (Enabled _) roots) f = f { unkilledRoots =
+                                            unkilledRoots f `delAvails` roots }
     go (CCGCKill     {}    ) f = f
-    go (CCLetVal     {}    ) f = f
-    go (CCLetFuns    {}    ) f = f
+    go (CCLetVal   _id  l  ) f = ifgc (canGCLetable l) f
+    go (CCLetFuns    {}    ) f = ifgc True             f
     go (CCTupleStore {}    ) f = f
+    go (CCRebindId   {}    ) f = f
     go _node@(CCLast cclast) f =
-          case cclast of
-            (CCCont  {}       ) -> f
-            (CCCall _ _ _ _v _) -> f
-            (CCCase  {}       ) -> f
+         case cclast of
+           (CCCont  {}      ) -> f
+           (CCCall _ _ _ v _) -> ifgc (canGCCalled v)  f
+           (CCCase  {}      ) -> f
 
+    ifgc mayGC f = if mayGC then f { loadedRoots = Avail Set.empty
+                                   , loadsForRoots = Map.empty }
+                            else f -- when a GC might occur, all root loads
+                                   -- become invalidated...
+
+    makeAvail var root f = f { loadedRoots = loadedRoots f `addAvail` root
+                             , loadsForRoots = Map.insertWith Set.union root
+                                        (Set.singleton var) (loadsForRoots f)  }
 availsRewrite :: forall m. FuelMonad m => FwdRewrite m Insn' Avails
 availsRewrite = mkFRewrite d
   where
@@ -477,14 +542,21 @@ availsRewrite = mkFRewrite d
     d (CCLetVal     {}       )   _    = return Nothing
     d (CCLetFuns    {}       )   _    = return Nothing
     d (CCTupleStore {}       )   _    = return Nothing
-    d (CCGCLoad     {}       )   _    = return Nothing
+    d (CCRebindId   {}       )   _    = return Nothing
+    d (CCGCLoad     var' root)   a    =
+        if availIn root (loadedRoots a)
+          then case fmap Set.toList (Map.lookup root (loadsForRoots a)) of
+                 Just [var] -> return $ Just $ mkMiddle (CCRebindId var' var)
+                 Just _     -> return Nothing
+                 Nothing    -> return Nothing
+          else return Nothing
     d (CCGCInit     {}       )   _    = return Nothing
     d (CCGCKill Disabled    _)   _    = return Nothing
     d (CCGCKill enabled roots)   a = return $ Just $
         if Set.null unkilled
           then emptyGraph
           else mkMiddle (CCGCKill enabled unkilled)
-               where unkilled = roots `availFrom` (unkilledRoots a)
+               where unkilled = roots `availFrom` unkilledRoots a
     d (CCLast {}             )   _    = return Nothing
 
 runAvails :: IORef Uniq -> BasicBlockGraph' -> IO BasicBlockGraph'
@@ -493,31 +565,34 @@ runAvails uref bbgp = runWithUniqAndFuel uref infiniteFuel (go bbgp)
     go :: BasicBlockGraph' -> M BasicBlockGraph'
     go bbgp = do
         let ((_,blab), _) = bbgpEntry bbgp
+        let init = Avails (UniverseMinus Set.empty) (Avail Set.empty) Map.empty
         (body' , _, _) <- analyzeAndRewriteFwd fwd (JustC [bbgpEntry bbgp])
                                                            (bbgpBody bbgp)
-                              (mapSingleton blab (fact_bot availsLattice))
+                           (mapSingleton blab init) -- note: not bottom element!
         return bbgp { bbgpBody = body' }
 
-    --_fwd = debugFwdTransfers trace showing (\_ _ -> True) fwd
+    --__fwd = debugFwdTransfers trace showing (\_ _ -> True) _fwd
     --_fwd = debugFwdJoins trace (\_ -> True) fwd
     fwd = FwdPass { fp_lattice  = availsLattice
                   , fp_transfer = availsXfer
                   , fp_rewrite  = availsRewrite
                   }
 
-showing :: Insn' e x -> String
-showing insn = show (pretty insn)
+--showing :: Insn' e x -> String
+--showing insn = show (pretty insn)
 
 availsLattice :: DataflowLattice Avails
 availsLattice = DataflowLattice
   { fact_name = "Availables"
-  , fact_bot  = Avails (UniverseMinus Set.empty)
+  , fact_bot  = Avails (UniverseMinus Set.empty) (UniverseMinus Set.empty) Map.empty
   , fact_join = add
   }
-    where add _lab (OldFact (Avails ok)) (NewFact (Avails nk)) = (ch, Avails jk)
+    where add _lab (OldFact (Avails ok ol om)) (NewFact (Avails nk nl nm)) = (ch, Avails jk jl jm)
             where
               jk = nk `intersectAvails` ok
-              ch = changeIf (availSmaller jk ok)
+              jl = nl `intersectAvails` ol
+              jm = Map.unionWith Set.intersection om nm
+              ch = changeIf (availSmaller jk ok || availSmaller jl ol)
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

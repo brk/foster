@@ -70,6 +70,12 @@ struct LLGCRootKill : public LLMiddle {
   virtual void codegenMiddle(CodegenPass* pass);
 };
 
+struct LLRebindId : public LLMiddle {
+  std::string from; LLVar* to;
+  explicit LLRebindId(std::string from, LLVar* to) : from(from), to(to) {}
+  virtual void codegenMiddle(CodegenPass* pass);
+};
+
 struct LLBlock {
   std::string block_id;
   int numPreds;

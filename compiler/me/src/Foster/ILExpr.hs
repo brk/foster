@@ -60,6 +60,7 @@ data ILMiddle = ILLetVal      Ident   (Letable TypeLL)
               | ILGCRootKill  LLVar    Bool -- continuation may GC
               | ILGCRootInit  LLVar    RootVar
               | ILTupleStore  [LLVar]  LLVar    AllocMemRegion
+              | ILRebindId    Ident    LLVar
               deriving Show
 
 -- Drop call-as-a-terminator and implicitly re-allow it as a letable value,
@@ -135,6 +136,7 @@ makeAllocationsExplicit bbgp uref = do
     (CCTupleStore   {}   ) -> return $ mkMiddle insn
     (CCLetVal  _id  _l   ) -> return $ mkMiddle insn
     (CCLetFuns ids clos)   -> makeClosureAllocationExplicit fresh ids clos
+    (CCRebindId     {}   ) -> return $ mkMiddle insn
     (CCLast    cclast)     ->
           case cclast of
             (CCCont {}       ) -> return $ mkLast insn
@@ -262,7 +264,9 @@ flattenGraph bbgp =
      mid (CCGCLoad v   fromroot)  = ILLetVal (tidIdent v) (ILDeref (tidType v) fromroot)
      mid (CCGCInit _ src toroot)  = ILGCRootInit src toroot
      mid (CCTupleStore vs tid r)  = ILTupleStore vs tid r
-     mid (CCLetFuns ids closures) = error $ "Invariant violated: CCLetFuns should have been eliminated!"
+     mid (CCRebindId v1 v2)       = ILRebindId (tidIdent v1) v2 -- (tidIdent v2) v1 -- ugh :-(
+     mid (CCLetFuns {}          ) = error $ "Invariant violated: CCLetFuns should have been eliminated!"
+     mid (CCGCKill  {}          ) = error $ "Invariant violated: GCKill should have been handled by `midmany`..."
 
      frs :: Insn' C O -> BlockEntryL
      frs (CCLabel be) = be
@@ -346,6 +350,7 @@ mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
           (CCTupleStore vs  v r) -> CCTupleStore (map s vs) (s v) r
           (CCLetVal  id letable) -> CCLetVal id $ substVarsInLetable s letable
           (CCLetFuns ids fns   ) -> CCLetFuns ids $ map (substForInClo s) fns
+          (CCRebindId v1 v2    ) -> CCRebindId (s v1) (s v2)
           (CCLast    cclast    ) -> case cclast of
               (CCCont b vs)        -> CCLast (CCCont b (map s vs))
               (CCCall b t id v vs) -> CCLast (CCCall b t id (s v) (map s vs))

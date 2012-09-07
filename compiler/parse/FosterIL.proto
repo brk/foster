@@ -49,9 +49,15 @@ message Block {
 
 message BlockMiddle {
   optional LetVal       let_val = 1;
+  optional RebindId     rebind  = 3;
   optional RootKill gcroot_kill = 5;
   optional RootInit gcroot_init = 6;
   optional TupleStore tuple_store = 7;
+}
+
+message RebindId {
+  required string from_id = 1;
+  required TermVar to_var = 2;
 }
 
 message TupleStore {

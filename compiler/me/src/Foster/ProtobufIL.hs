@@ -37,6 +37,7 @@ import Foster.Bepb.PbCtorId     as PbCtorId
 import Foster.Bepb.PbDataCtor   as PbDataCtor
 import Foster.Bepb.PbCallInfo   as PbCallInfo
 import Foster.Bepb.PbCtorInfo   as PbCtorInfo
+import Foster.Bepb.RebindId     as PbRebindId
 import Foster.Bepb.PbAllocInfo  as PbAllocInfo
 import Foster.Bepb.PbOccurrence as PbOccurrence
 import Foster.Bepb.PbSwitch     as PbSwitch
@@ -179,6 +180,9 @@ dumpMiddle (ILGCRootInit src root) =
            root_init_src  = (dumpVar src)
          , root_init_root = (dumpVar root)
     } }
+dumpMiddle (ILRebindId id var) =
+    P'.defaultValue { rebind = Just $
+         P'.defaultValue { from_id = dumpIdent id , to_var  = dumpVar var } }
 dumpMiddle ts@(ILTupleStore {}) =
     P'.defaultValue { tuple_store = Just $ dumpTupleStore ts }
 
