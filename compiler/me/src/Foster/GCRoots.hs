@@ -374,8 +374,10 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
                                         put (Map.insert v root m)
                                         iflive root $ mkMiddle $ insn
     CCGCInit  _ _   root          -> do iflive root $ mkMiddle $ insn
-    CCGCKill  (Enabled _)  root   -> do iflive root $ mkMiddle $ insn
-    CCGCKill  Disabled    _root   -> do return emptyGraph -- TODO remove this
+    CCGCKill  (Enabled _)  root   -> do if isLive root
+                                         then return $ mkMiddle insn
+                                         else return emptyGraph
+    CCGCKill  Disabled    _root   -> do error "transform saw disabled gckill?"
     CCTupleStore vs v r           -> do undoDeadGCLoads (v:vs) (\(v' : vs' ) ->
                                          mkMiddle $ CCTupleStore vs' v' r)
     CCLetVal id val               -> do let vs = freeTypedIds val
