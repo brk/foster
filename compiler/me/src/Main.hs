@@ -211,18 +211,20 @@ typecheckModule verboseMode modast tcenv0 = do
 
    -- Given a data type  T (A1::K1) ... (An::Kn)
    -- returns the type   T A1 .. An   (with A1..An free).
-   typeOfDataType :: DataType TypeAST -> TypeAST
-   typeOfDataType dt =
+   typeOfDataType :: DataType TypeAST -> CtorName -> TypeAST
+   typeOfDataType dt _ctorName =
      let boundTyVarFor (TypeFormalAST name _kind) = TyVarAST $ BoundTyVar name in
      TyConAppAST (dataTypeName dt) (map boundTyVarFor $ dataTypeTyFormals dt)
 
    extractCtorTypes :: DataType TypeAST -> [(String, TypeAST)]
    extractCtorTypes dt = map nmCTy (dataTypeCtors dt)
      where nmCTy (DataCtor name _tag tyformals types) =
-                 (T.unpack name, ctorTypeAST tyformals dt types)
+                 (T.unpack name, ctorTypeAST tyformals dtType types)
+                         where dtType = typeOfDataType dt name
 
-   ctorTypeAST [] dt ctorArgTypes =
-                       FnTypeAST ctorArgTypes (typeOfDataType dt) FastCC FT_Proc
+   -- TODO: if ctorArgTypes = [], no need to assign a function type for a const.
+   ctorTypeAST [] dtType ctorArgTypes =
+                       FnTypeAST ctorArgTypes dtType FastCC FT_Proc
 
    ctorTypeAST tyformals dt ctorArgTypes =
       ForAllAST (map convertTyFormal tyformals) $ ctorTypeAST [] dt ctorArgTypes
