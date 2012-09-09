@@ -20,7 +20,7 @@ import Foster.Base(SourceRange, Expr(..), freeVars, identPrefix, Structured(..),
 import Foster.TypeAST(TypeAST, EPattern(..), E_VarAST(..))
 import Foster.Kind
 
-import Text.PrettyPrint.ANSI.Leijen(text)
+import Text.PrettyPrint.ANSI.Leijen(text, pretty)
 import qualified Data.Text as T
 
 -----------------------------------------------------------------------
@@ -102,7 +102,7 @@ instance Structured (ExprAST TypeAST) where
             E_TyApp     {}         -> text $ "TyApp        "
             E_Case      {}         -> text $ "Case         "
             E_KillProcess {}       -> text $ "KillProcess  "
-            E_VarAST _rng v        -> text $ "VarAST       " ++ T.unpack (evarName v) ++ " :: " ++ show (evarMaybeType v)
+            E_VarAST _rng v        -> text $ "VarAST       " ++ T.unpack (evarName v) ++ " :: " ++ show (pretty $ evarMaybeType v)
     childrenOf e =
         let termBindingExpr (TermBinding _ e) = e in
         case e of

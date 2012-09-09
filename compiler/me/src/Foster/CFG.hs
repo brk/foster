@@ -566,7 +566,6 @@ type M a = InfiniteFuelMonad UniqMonadIO a
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||||||||| CFG Analysis ||||||||||||||||||||||{{{
-instance Pretty Ident where pretty id = text (show id)
 instance LabelsPtr (BlockId, ts) where targetLabels ((_, label), _) = [label]
 instance Pretty (Set.Set HowUsed) where pretty s = string (show s)
 
@@ -770,7 +769,6 @@ getCensus bbg = let cf = getCensusFns bbg in
         ILBitcast      _ v       -> addUsed m [(v, UsedFirstClass)] -- conservatively :(
         ILTuple        vs _asrc  -> addUsed m [(v, UsedFirstClass) | v <- vs]
         ILCallPrim     _ _ vs    -> addUsed m [(v, UsedFirstClass) | v <- vs]
-        ILCall         _ v _vs   -> error $ "census encountered non-tail ILCall of " ++ show v
         ILAppCtor      _ _ vs    -> addUsed m [(v, UsedFirstClass) | v <- vs]
         ILAlloc        v _rgn    -> addUsed m [(v, UsedFirstClass)]
         ILDeref        t v       -> addUsed m [(v, UsedFirstClass)]
@@ -779,6 +777,8 @@ getCensus bbg = let cf = getCensusFns bbg in
         ILArrayRead  _t (ArrayIndex v1 v2 _rng _s) -> addUsed m [(v1, UsedFirstClass), (v2, UsedFirstClass)]
         ILArrayPoke  (ArrayIndex v1 v2 _rng _s) v3 -> addUsed m [(v1, UsedFirstClass), (v2, UsedFirstClass),
                                                                  (v3, UsedFirstClass)]
+        ILAllocate {}            -> error $ "census encountered unexpected ILAllocate..."
+        ILCall         _ v _vs   -> error $ "census encountered non-tail ILCall of " ++ show v
 
 runCensusRewrites' :: IORef Uniq -> BasicBlockGraph -> IO BasicBlockGraph
 runCensusRewrites' uref bbg = do

@@ -52,6 +52,10 @@ data TyVar = BoundTyVar  String -- bound by a ForAll, that is
            | SkolemTyVar String Uniq Kind
 
 
+instance Pretty TyVar where
+  pretty (BoundTyVar name) = text "'" <> text name
+  pretty (SkolemTyVar name uniq _kind) = text "$" <> text name <> text ":" <> pretty uniq
+
 data MTVQ = MTVSigma | MTVTau deriving (Eq)
 data MetaTyVar t = Meta { mtvConstraint :: MTVQ
                         , mtvDesc       :: String
@@ -363,6 +367,18 @@ data ZeroInit = DoZeroInit | NoZeroInit deriving Show
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||||||||| Instances |||||||||||||||||||||||||{{{
+intOfSize I1 = 1
+intOfSize I8 = 8
+intOfSize I32 = 32
+intOfSize I64 = 64
+
+instance Pretty IntSizeBits    where pretty i = text (show $ intOfSize i)
+instance Pretty Ident          where pretty id = text (show id)
+instance Pretty t => Pretty (TypedId t)
+                               where pretty tid = pretty (tidIdent tid)
+instance SourceRanged expr => Pretty (CompilesResult expr)
+                               where pretty cr = text (show cr)
+
 deriving instance (Show ty) => Show (DataType ty)
 deriving instance (Show ty) => Show (DataCtor ty)
 
@@ -419,6 +435,18 @@ instance Show (Pattern ty) where
   show (P_Bool     _ _ b)          = "P_Bool     " ++ show b
   show (P_Int      _ _ i)          = "P_Int      " ++ show (litIntText i)
   show (P_Tuple    _ _ pats)       = "P_Tuple    " ++ show pats
+
+instance Pretty ty => Pretty (EPattern ty) where
+  pretty (EP_Wildcard _)            = text "EP_Wildcard"
+  pretty (EP_Variable _ v)          = text "EP_Variable " <> pretty v
+  pretty (EP_Ctor     _ _pats ctor) = text "EP_Ctor     " <> text (show ctor)
+  pretty (EP_Bool     _ b)          = text "EP_Bool     " <> pretty b
+  pretty (EP_Int      _ str)        = text "EP_Int      " <> text str
+  pretty (EP_Tuple    _ pats)       = text "EP_Tuple    " <> pretty pats
+
+instance Pretty ty => Pretty (E_VarAST ty) where
+  pretty (VarAST (Just ty) txt) = text (show txt) <+> text "::" <+> pretty ty
+  pretty (VarAST Nothing   txt) = text (show txt)
 
 instance Show ty => Show (EPattern ty) where
   show (EP_Wildcard _)            = "EP_Wildcard"

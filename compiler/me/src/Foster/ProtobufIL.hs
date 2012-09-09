@@ -79,10 +79,6 @@ mayTriggerGC (TypedId _ (GlobalSymbol name)) = globalMayGC name
 mayTriggerGC _ = True
 
 -----------------------------------------------------------------------
-intOfSize I1 = 1
-intOfSize I8 = 8
-intOfSize I32 = 32
-intOfSize I64 = 64
 
 -- |||||||||||||||||||||||||||| Types |||||||||||||||||||||||||||{{{
 

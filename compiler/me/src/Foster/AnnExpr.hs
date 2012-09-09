@@ -13,7 +13,7 @@ module Foster.AnnExpr (
 import Foster.Base
 import Foster.TypeAST
 
-import Text.PrettyPrint.ANSI.Leijen(text)
+import Text.PrettyPrint.ANSI.Leijen
 import Foster.Output(OutputOr(..))
 
 import qualified Data.Text as T
@@ -100,31 +100,31 @@ instance TypedWith (AnnExpr TypeAST) TypeAST where
 instance Structured (AnnExpr TypeAST) where
   textOf e _width =
     case e of
-      AnnString   _rng    _      -> text $ "AnnString    "
-      AnnBool     _rng    b      -> text $ "AnnBool      " ++ (show b)
-      AnnCall     _rng t _b _args-> text $ "AnnCall      " ++ " :: " ++ show t
-      AnnCompiles _rng cr        -> text $ "AnnCompiles  " ++ show cr
-      AnnKillProcess _rng t msg  -> text $ "AnnKillProcess " ++ show msg ++ " :: " ++ show t
-      AnnIf       _rng t _ _ _   -> text $ "AnnIf        " ++ " :: " ++ show t
-      AnnUntil    _rng t _ _     -> text $ "AnnUntil     " ++ " :: " ++ show t
-      AnnInt      _rng ty int    -> text $ "AnnInt       " ++ (litIntText int) ++ " :: " ++ show ty
-      AnnFloat    _rng ty flt    -> text $ "AnnFloat     " ++ (litFloatText flt) ++ " :: " ++ show ty
-      AnnLetVar   _rng id _a _b  -> text $ "AnnLetVar    " ++ show id
-      AnnLetFuns  _rng ids _ _   -> text $ "AnnLetFuns   " ++ show ids
-      AnnAlloc  {}               -> text $ "AnnAlloc     "
-      AnnDeref  {}               -> text $ "AnnDeref     "
-      AnnStore  {}               -> text $ "AnnStore     "
-      AnnArrayRead _rng t _      -> text $ "AnnArrayRead " ++ " :: " ++ show t
-      AnnArrayPoke _rng t _ _    -> text $ "AnnArrayPoke " ++ " :: " ++ show t
-      AnnTuple  {}               -> text $ "AnnTuple     "
-      AnnCase   {}               -> text $ "AnnCase      "
-      AnnPrimitive _r tid        -> text $ "AnnPrimitive " ++ show tid
-      E_AnnVar _r tid            -> text $ "AnnVar       " ++ show tid
-      E_AnnTyApp _rng t _e argty -> text $ "AnnTyApp     [" ++ show argty ++ "] :: " ++ show t
+      AnnString   _rng    _      -> text "AnnString    "
+      AnnBool     _rng    b      -> text "AnnBool      " <> pretty b
+      AnnCall     _rng t _b _args-> text "AnnCall      :: " <> pretty t
+      AnnCompiles _rng cr        -> text "AnnCompiles  " <> pretty cr
+      AnnKillProcess _rng t msg  -> text "AnnKillProcess " <> string (show msg) <> text  " :: " <> pretty t
+      AnnIf       _rng t _ _ _   -> text "AnnIf         :: " <> pretty t
+      AnnUntil    _rng t _ _     -> text "AnnUntil      :: " <> pretty t
+      AnnInt      _rng ty int    -> text "AnnInt       " <> text (litIntText int) <> text " :: " <> pretty ty
+      AnnFloat    _rng ty flt    -> text "AnnFloat     " <> text (litFloatText flt) <> text " :: " <> pretty ty
+      AnnLetVar   _rng id _a _b  -> text "AnnLetVar    " <> pretty id
+      AnnLetFuns  _rng ids _ _   -> text "AnnLetFuns   " <> list (map pretty ids)
+      AnnAlloc  {}               -> text "AnnAlloc     "
+      AnnDeref  {}               -> text "AnnDeref     "
+      AnnStore  {}               -> text "AnnStore     "
+      AnnArrayRead _rng t _      -> text "AnnArrayRead :: " <> pretty t
+      AnnArrayPoke _rng t _ _    -> text "AnnArrayPoke :: " <> pretty t
+      AnnTuple  {}               -> text "AnnTuple     "
+      AnnCase   {}               -> text "AnnCase      "
+      AnnPrimitive _r tid        -> text "AnnPrimitive " <> pretty tid
+      E_AnnVar _r tid            -> text "AnnVar       " <> pretty tid
+      E_AnnTyApp _rng t _e argty -> text "AnnTyApp     ["  <> pretty argty <> text  "] :: " <> pretty t
       E_AnnFn annFn              -> text $ "AnnFn " ++ T.unpack (identPrefix $ fnIdent annFn) ++ " // "
-        ++ (show $ fnBoundNames annFn) ++ " :: " ++ show (fnType annFn) where
-                   fnBoundNames :: (Show t) => Fn e t -> [String]
-                   fnBoundNames fn = map show (fnVars fn)
+        ++ (show $ fnBoundNames annFn) ++ " :: " ++ show (pretty (fnType annFn)) where
+                   fnBoundNames :: (Pretty t) => Fn e t -> [String]
+                   fnBoundNames fn = map (show . pretty) (fnVars fn)
   childrenOf e =
     case e of
       AnnString {}                         -> []

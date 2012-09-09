@@ -16,7 +16,7 @@ where
 
 import Data.Map as Map(fromList, toList)
 import Data.Char as Char(isLetter)
-import Text.PrettyPrint.ANSI.Leijen(text)
+import Text.PrettyPrint.ANSI.Leijen
 
 import Foster.Base
 import Foster.Kind
@@ -51,6 +51,28 @@ instance Eq (MetaTyVar t) where
          ++ show (mtvUniq m1) ++ "@" ++ (mtvDesc m1) ++ " and "
          ++ show (mtvUniq m2) ++ "@" ++ (mtvDesc m2) ++ ": mismatch between uniqs and refs!"
 
+
+instance Pretty TypeAST where
+    pretty x = case x of
+        PrimIntAST         size         -> text "Int" <> pretty size
+        PrimFloat64AST                  -> text "Float64"
+        TyConAppAST    tc types         -> parens $ text (show tc) <+> hsep (map pretty types)
+        TupleTypeAST      types         -> tupled $ map pretty types
+        FnTypeAST    s t cc cs          -> text "(" <> pretty s <> text " =" <> text (briefCC cc) <> text "> " <> pretty t <> text " @{" <> text (show cs) <> text "})"
+        CoroTypeAST  s t                -> text "(Coro " <> pretty s <> text " " <> pretty t <> text ")"
+        ForAllAST  tvs rho              -> text "(forall " <> hsep (prettyTVs tvs) <> text ". " <> pretty rho <> text ")"
+        TyVarAST   tv                   -> text (show tv)
+        MetaTyVar m                     -> text "(~(" <> pretty (descMTVQ (mtvConstraint m)) <> text ")!" <> text (show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")")
+        RefTypeAST    ty                -> text "(Ref " <> pretty ty <> text ")"
+        ArrayTypeAST  ty                -> text "(Array " <> pretty ty <> text ")"
+
+prettyTVs tvs = map (\(tv,k) -> parens (pretty tv <+> text "::" <+> pretty k)) tvs
+
+instance Pretty Kind where
+  pretty KindAnySizeType = text "Type"
+  pretty KindPointerSized = text "Boxed"
+
+  {-
 instance Show TypeAST where
     show x = case x of
         PrimIntAST         size         -> "(PrimIntAST " ++ show size ++ ")"
@@ -64,6 +86,7 @@ instance Show TypeAST where
         MetaTyVar m                     -> "(~(" ++ descMTVQ (mtvConstraint m) ++ ")!" ++ show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")"
         RefTypeAST    ty                -> "(Ref " ++ show ty ++ ")"
         ArrayTypeAST  ty                -> "(Array " ++ show ty ++ ")"
+-}
 
 descMTVQ MTVSigma = "S"
 descMTVQ MTVTau   = "R"

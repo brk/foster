@@ -15,7 +15,7 @@ import Foster.AnnExpr
 import Foster.TypeIL
 import Foster.TypeAST(gFosterPrimOpsTable, TypeAST)
 
-import Text.PrettyPrint.ANSI.Leijen(text)
+import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T
 
 import Control.Monad(when)
@@ -121,8 +121,8 @@ ail ctx ae =
                                                      vs' <- mapM (aiVar ctx) vs
                                                      return ((p', vs'), e')) bs
                                          return $ AICase ti ei bsi
-        AnnPrimitive _rng v -> tcFails [text $ "Primitives must be called directly!"
-                                          ++ "\n\tFound non-call use of " ++ show v]
+        AnnPrimitive _rng v -> tcFails [string ("Primitives must be called directly!"
+                                         ++ "\n\tFound non-call use of ") <> pretty v]
         AnnCall _range t b (E_AnnTuple _rng args) -> do
             ti <- qt t
             argsi <- mapM q args

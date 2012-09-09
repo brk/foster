@@ -430,9 +430,6 @@ instance Pretty MonoType where
           PtrType        t            -> text "Ref" <+> pretty t
           PtrTypeUnknown              -> text "?"
 
-instance Pretty t => Pretty (TypedId t) where
-  pretty (TypedId t i) = showUnTyped (text $ show i) t
-
 instance Pretty AllocMemRegion where
   pretty rgn = text (show rgn)
 

@@ -11,7 +11,7 @@ import Foster.Kind
 import Foster.TypeAST
 import Foster.Context
 
-import Text.PrettyPrint.ANSI.Leijen(text)
+import Text.PrettyPrint.ANSI.Leijen
 
 type RhoIL = TypeIL
 data TypeIL =
@@ -87,7 +87,7 @@ ilOf ctx typ = do
      TyVarAST tv@(SkolemTyVar _ _ k) -> return $ TyVarIL tv k
      TyVarAST tv@(BoundTyVar _) ->
         case Prelude.lookup tv (contextTypeBindings ctx) of
-          Nothing -> tcFails [text $ "Unable to find kind of type variable " ++ show typ]
+          Nothing -> tcFails [text "Unable to find kind of type variable " <> pretty typ]
           Just k  -> return $ TyVarIL tv k
      MetaTyVar m -> do
         mty <- readTcMeta m

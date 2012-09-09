@@ -79,9 +79,9 @@ tcSigmaToplevel (TermVarBinding txt tid) ctx ast = do
     tcTypeWellFormed ("in the type declaration for " ++ T.unpack txt)
                      ctx (tidType tid)
 
-    debug $ "tcSigmaToplevel deferring to checkSigmaDirect with expected type " ++ show (tidType tid)
+    debug $ "tcSigmaToplevel deferring to checkSigmaDirect with expected type " ++ show (pretty (tidType tid))
     e <- checkSigmaDirect ctx ast (tidType tid)
-    debug $ "tcSigmaToplevel returned expression with type " ++ show (typeAST e)
+    debugDoc $ text "tcSigmaToplevel returned expression with type " <> pretty (typeAST e)
 
     return e
 -- }}}
@@ -588,9 +588,9 @@ tcSigmaCall ctx rng base argstup exp_ty = do
         annbase <- inferRho ctx base "called base"
         let fun_ty = typeAST annbase
         let argexprs = tupleAstExprs argstup
-        debug $ "call: fn type is " ++ show fun_ty
+        debugDoc $ text "call: fn type is " <> pretty fun_ty
         (args_ty, res_ty) <- unifyFun fun_ty argexprs ("tSC("++tryGetVarName base++")")
-        debug $ "call: fn args ty is " ++ show args_ty
+        debugDoc $ text "call: fn args ty is " <> pretty args_ty
         debug $ "call: arg exprs are " ++ show argexprs
         sanityCheck (eqLen argexprs args_ty) $
                 "tcSigmaCall expected equal # of arguments! Had "
@@ -601,11 +601,11 @@ tcSigmaCall ctx rng base argstup exp_ty = do
         let args = E_AnnTuple (tupleAstRange argstup) annargs
         debug $ "call: annargs: "
         debugDoc $ showStructure (AnnTuple args)
-        debug $ "call: res_ty is " ++ show res_ty
-        debug $ "call: exp_ty is " ++ show exp_ty
-        debug $ "tcRhoCall deferring to instSigma"
+        debugDoc $ text "call: res_ty is " <> pretty res_ty
+        debugDoc $ text "call: exp_ty is " <> pretty exp_ty
+        debugDoc $ text "tcRhoCall deferring to instSigma"
         let app = AnnCall rng res_ty annbase args
-        debug $ "call: overall ty is " ++ show (typeAST app)
+        debugDoc $ text "call: overall ty is " <> pretty (typeAST app)
         matchExp exp_ty app "tcSigmaCall"
 
 unifyFun :: Rho -> [a] -> String -> Tc ([Sigma], Rho)
@@ -660,8 +660,9 @@ tcSigmaFn ctx f expTy = do
         let extCtx = extendContext extTyCtx uniquelyNamedFormals
 
         -- Check or infer the type of the body.
-        debug $ "inferring type of body of polymorphic function"
-        debug $ "\tafter generating meta ty vars for type formals: " ++ show (zip taus ktvs)
+        debugDoc $ string "inferring type of body of polymorphic function"
+        debugDoc $ string "\tafter generating meta ty vars for type formals: "
+                        <> list (map pretty (zip taus ktvs))
         annbody <- case expTy of
            Check (ForAllAST exp_ktvs exp_rho) -> do
             -- Suppose we have something like
@@ -677,12 +678,12 @@ tcSigmaFn ctx f expTy = do
             exp_rho' <- resolveType rng (extendTypeBindingsWith exp_ktvs) exp_rho
             let var_tys = map tidType uniquelyNamedFormals
             (arg_tys, body_ty) <- unifyFun exp_rho' var_tys "poly-fn-lit"
-            debug $ "calling checkRho for function body..."
-            debug $ "checking body against type: " ++ show body_ty
+            debugDoc $ text "calling checkRho for function body..."
+            debugDoc $ text "checking body against type: " <> pretty body_ty
             body <- checkRho extCtx (fnAstBody f) body_ty
-            debug $ "called checkRho for function body:"
+            debugDoc $ text "called checkRho for function body:"
             debugDoc $ showStructure body
-            debug $ "type: "
+            debugDoc $ text "type: "
             debugDoc $ showStructure (typeAST body)
             return body
 
@@ -717,7 +718,8 @@ tcSigmaFn ctx f expTy = do
                          ,showStructure ckfnty]
          -}
 
-        debug $ "inferred raw type of body of polymorphic function: " ++ show (typeAST annbody)
+        debugDoc $ text "inferred raw type of body of polymorphic function: "
+                        <> pretty (typeAST annbody)
 
         let fnty0 = ForAllAST ktvs $
                 fnTypeTemplate f argtys (typeAST annbody) FastCC
@@ -732,15 +734,15 @@ tcSigmaFn ctx f expTy = do
                      t' <- shallowZonk t
                      case t' of
                        (MetaTyVar m) -> do
-                            debug $ "zonked " ++ show t ++ " to " ++ show t ++ "; writing " ++ show tv
+                            debugDoc $ text "zonked " <> pretty t <> text " to " <> pretty t <> text "; writing " <> pretty tv
                             writeTcMeta m (TyVarAST tv)
-                       y -> tcFails [text $ "expected ty param metavar to be un-unified, instead had " ++ show y]
+                       y -> tcFails [text "expected ty param metavar to be un-unified, instead had " <> pretty tv]
                   ) (zip taus ktvs)
         -- Zonk the type to ensure that the meta vars are completely gone.
-        debug $ "inferred raw overall type of polymorphic function: " ++ show fnty0
-        debug $ "zonking; (meta)/tyvars were " ++ show (zip taus ktvs)
+        debugDoc $ text "inferred raw overall type of polymorphic function: " <> pretty fnty0
+        debugDoc $ text "zonking; (meta)/tyvars were " <> list (map pretty (zip taus ktvs))
         fnty <- zonkType fnty0
-        debug $ "inferred overall type of body of polymorphic function: " ++ show fnty
+        debugDoc $ text "inferred overall type of body of polymorphic function: " <> pretty fnty
 
         -- We also need to zonk the expected type, which might have wound up
         -- getting some of its meta type variables unified with taus that now
@@ -753,8 +755,8 @@ tcSigmaFn ctx f expTy = do
         -- capture the function's arguments from the environment!
         let fn = E_AnnFn $ Fn (TypedId fnty (GlobalSymbol $ fnAstName f))
                               uniquelyNamedFormals annbody Nothing rng
-        debug $ "tcSigmaFn calling matchExp  expTy  = " ++ show expTy
-        debug $ "tcSigmaFn calling matchExp, expTy' = " ++ show expTy'
+        debugDoc $ text "tcSigmaFn calling matchExp  expTy  = " <> pretty expTy
+        debugDoc $ text "tcSigmaFn calling matchExp, expTy' = " <> pretty expTy'
         matchExp expTy' fn "tcSigmaFn"
 -- }}}
 
@@ -835,14 +837,14 @@ tcRhoCase ctx rng scrutinee branches expTy = do
 
   ascrutinee <- inferRho ctx scrutinee "scrutinee"
   u <- newTcUnificationVarTau "case"
-  debug $ "case scrutinee has type " ++ show (typeAST ascrutinee)
-  debug $ "metavar for overall type of case is " ++ show u
-  debug $ " exp ty is " ++ show expTy
+  debugDoc $ text "case scrutinee has type " <> pretty (typeAST ascrutinee)
+  debugDoc $ text "metavar for overall type of case is " <> pretty u
+  debugDoc $ text " exp ty is " <> pretty expTy
   let checkBranch (pat, body) = do
       p <- checkPattern ctx pat (typeAST ascrutinee)
       debug $ "case branch pat: " ++ show p
       let bindings = extractPatternBindings p
-      debug $ "case branch generated bindings: " ++ show bindings
+      debugDoc $ text "case branch generated bindings: " <> list (map pretty bindings)
       let ctxbindings = [varbind id ty | (TypedId ty id) <- bindings]
       verifyNonOverlappingBindings rng "case" ctxbindings
       abody <- tcRho (prependContextBindings ctx ctxbindings) body expTy
@@ -880,11 +882,11 @@ tcRhoCase ctx rng scrutinee branches expTy = do
         let ktvs = map convertTyFormal tyformals
         ts <- mapM (\ty -> instSigmaWith ktvs ty metas) types
         ps <- sequence [checkPattern ctx p t | (p, t) <- zip eps ts]
-        tcLift $ putStrLn $ "checkPattern for " ++ show pattern
-        tcLift $ putStrLn $ "*** P_Ctor -  ty   " ++ show ty
-        tcLift $ putStrLn $ "*** P_Ctor -  ty   " ++ show ctxTy
-        tcLift $ putStrLn $ "*** P_Ctor - metas " ++ show metas
-        tcLift $ putStrLn $ "*** P_Ctor - sgmas " ++ show ts
+        tcLift $ putStrLn $ "checkPattern for "   ++ show (pretty pattern)
+        tcLift $ putStrLn $ "*** P_Ctor -  ty   " ++ show (pretty ty     )
+        tcLift $ putStrLn $ "*** P_Ctor -  ty   " ++ show (pretty ctxTy  )
+        tcLift $ putStrLn $ "*** P_Ctor - metas " ++ show (pretty metas  )
+        tcLift $ putStrLn $ "*** P_Ctor - sgmas " ++ show (pretty ts     )
 
         unify ty ctxTy ("checkPattern:P_Ctor " ++ show cid)
         return $ P_Ctor r ty ps info
@@ -908,7 +910,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
         Just [info] -> return info
         elsewise -> tcFails [text $ "Typecheck.getCtorInfoForCtor: Too many or"
                                     ++ " too few definitions for $" ++ T.unpack ctorName
-                                    ++ "\n\t" ++ show elsewise]
+                                    ++ "\n\t" ++ show (pretty elsewise)]
 
     generateTypeSchemaForDataType :: Context Sigma -> DataTypeName -> Tc TypeAST
     generateTypeSchemaForDataType ctx typeName = do
@@ -918,7 +920,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
           return $ TyConAppAST typeName formals
         other -> tcFails [text $ "Typecheck.generateTypeSchemaForDataType: Too many or"
                             ++ " too few definitions for $" ++ typeName
-                            ++ "\n\t" ++ show other]
+                            ++ "\n\t" ++ show (pretty other)]
 
     extractPatternBindings :: Pattern TypeAST -> [TypedId Sigma]
     extractPatternBindings (P_Wildcard    {}) = []
@@ -1311,6 +1313,27 @@ isRho _               = True
 instance Show a => Show (Expected a) where
   show (Infer _) = "<infer>"
   show (Check a) = show a
+
+instance Pretty a => Pretty (Expected a) where
+  pretty (Infer _) = text "<infer>"
+  pretty (Check a) = pretty a
+
+instance Pretty ty => Pretty (CtorInfo ty) where
+  pretty (CtorInfo cid dc) = parens (text "CtorInfo" <+> text (show cid) <+> pretty dc)
+
+instance Pretty ty => Pretty (DataCtor ty) where
+  pretty (DataCtor name small tyformals ctortyargs) =
+        parens (text "DataCtor" <+> text (T.unpack name))
+
+instance Pretty ty => Pretty (DataType ty) where
+  pretty (DataType name tyformals dctors) =
+        text "type case " <> pretty name <+> hsep (map pretty tyformals)
+                <$> vsep (map pretty dctors)
+
+instance Pretty TypeFormalAST where
+  pretty (TypeFormalAST name kind) = text name <> text " :: " <> pretty kind
+
+instance Show TypeAST where show t = show (pretty t)
 
 retypeTID :: (t1 -> Tc t2) -> TypedId t1 -> Tc (TypedId t2)
 retypeTID f (TypedId t1 id) = f t1 >>= \t2 -> return (TypedId t2 id)
