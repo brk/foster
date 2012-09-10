@@ -155,7 +155,7 @@ closureConvertToplevel globalIds body = do
                                       let allIds = foldGraphNodes collectBitcasts
                                                            (bbgBody bbg) ids in
                                         foldGraphNodes (checkUses allIds (bbgRetK bbg))
-                                                       (bbgBody bbg) (trace ("all ids: " ++ show allIds) True)
+                                                       (bbgBody bbg) True
 
              checkUses :: [Ident] -> BlockId -> Insn e x -> Bool -> Bool
              checkUses _      _    _   False = False
@@ -182,7 +182,10 @@ closureConvertToplevel globalIds body = do
                  ILetVal id (ILBitcast _ v) | tidIdent v `elem` ids -> id:ids
                  _ -> ids
          in
-            if trace ("gonna lift " ++ show ids ++ "? " ++ show gonnaLift ++ " ;; " ++ show allUnliftables) gonnaLift
+          let traced = if gonnaLift then id
+                          else trace ("not gonna lift " ++ show ids ++
+                                 " due to unliftables " ++ show allUnliftables)
+          in if traced gonnaLift
               then do _ <- mapM (lambdaLift []) fns      ; cvt globalized' body
               else do _ <- closureConvertLetFuns ids fns ; cvt globalized  body
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||

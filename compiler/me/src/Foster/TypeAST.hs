@@ -51,12 +51,14 @@ instance Eq (MetaTyVar t) where
          ++ show (mtvUniq m1) ++ "@" ++ (mtvDesc m1) ++ " and "
          ++ show (mtvUniq m2) ++ "@" ++ (mtvDesc m2) ++ ": mismatch between uniqs and refs!"
 
+hpre [] = empty
+hpre ds = empty <+> hsep ds
 
 instance Pretty TypeAST where
     pretty x = case x of
         PrimIntAST         size         -> text "Int" <> pretty size
         PrimFloat64AST                  -> text "Float64"
-        TyConAppAST    tc types         -> parens $ text (show tc) <+> hsep (map pretty types)
+        TyConAppAST  tcnm types         -> parens $ text tcnm <> hpre (map pretty types)
         TupleTypeAST      types         -> tupled $ map pretty types
         FnTypeAST    s t cc cs          -> text "(" <> pretty s <> text " =" <> text (briefCC cc) <> text "> " <> pretty t <> text " @{" <> text (show cs) <> text "})"
         CoroTypeAST  s t                -> text "(Coro " <> pretty s <> text " " <> pretty t <> text ")"

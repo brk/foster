@@ -10,6 +10,7 @@ import System.Console.GetOpt
 
 data Flag = Interpret String
           | DumpIR    String
+          | DumpFn    String
           | ProgArg   String
           | Verbose
           deriving Eq
@@ -20,6 +21,7 @@ options =
  [ Option []     ["interpret"]  (ReqArg Interpret  "DIR") "interpret in DIR"
  , Option []     ["prog-arg"]   (ReqArg ProgArg    "ARG") "pass through ARG"
  , Option []     ["dump-ir"]    (ReqArg DumpIR      "IR") "dump a particular IR"
+ , Option []     ["dump-fn"]    (ReqArg DumpFn      "FN") "dump a particular fn"
  , Option []     ["verbose"]    (NoArg  Verbose)          "verbose mode"
  ]
 
@@ -33,6 +35,7 @@ parseOpts argv =
 -- Accessors to query the result of parsing options.
 getInterpretFlag (flags, _) = foldr (\f a -> case f of Interpret d -> Just d  ; _ -> a) Nothing flags
 getProgArgs      (flags, _) = foldr (\f a -> case f of ProgArg arg -> arg:a   ; _ -> a) []      flags
+getDumpFns       (flags, _) = foldr (\f a -> case f of DumpFn  arg -> arg:a   ; _ -> a) []      flags
 getVerboseFlag   (flags, _) = Verbose   `elem` flags
 getDumpIRFlag ir (flags, _) = DumpIR ir `elem` flags
 

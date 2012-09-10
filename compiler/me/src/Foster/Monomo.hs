@@ -21,7 +21,7 @@ import Data.Map as Map(insert, lookup, alter, fromList, union, empty)
 import Data.Set(Set)
 import Data.Set as Set(member, insert, empty)
 import Data.List as List(all)
-import Control.Monad(liftM, liftM2)
+import Control.Monad(liftM, liftM2, when)
 import Control.Monad.State(evalStateT, get, gets, put, StateT, liftIO)
 import Data.IORef
 
@@ -39,14 +39,14 @@ import Data.IORef
 -- On the way back up the tree, we'll replace each SCC of bindings
 -- with the generated monomorphic definitions.
 
-monomorphize :: IORef Uniq -> (ModuleIL (KNExpr' TypeIL) TypeIL) -> IO (ModuleIL (KNExpr' MonoType) MonoType)
-monomorphize uref (ModuleIL body decls dts primdts lines) = do
+monomorphize :: IORef Uniq -> (ModuleIL (KNExpr' TypeIL) TypeIL) -> [String] -> IO (ModuleIL (KNExpr' MonoType) MonoType)
+monomorphize uref (ModuleIL body decls dts primdts lines) wantedFns = do
     monobody <- evalStateT (monoKN emptyMonoSubst body) monoState0
     return $ ModuleIL monobody monodecls monodts monoprimdts lines
       where
         monoprimdts   = monomorphizedDataTypes primdts
         monodts       = monomorphizedDataTypes     dts
-        monoState0 = MonoState Set.empty Map.empty Map.empty uref
+        monoState0 = MonoState Set.empty Map.empty Map.empty uref wantedFns
         monodecls  = map monoExternDecl decls
 
 mono :: Functor f => MonoSubst -> f TypeIL -> f MonoType
@@ -92,8 +92,9 @@ monoKN subst e =
   KNLetFuns     ids fns b  -> do
     let (monos, polys) = split (zip ids fns)
 
-    liftIO $ putStrLn $ "monos/polys: " ++ show (fst $ unzip monos, fst $ unzip polys)
-    liftIO $ putDoc $ vcat $ [showStructure (tidType (fnVar f)) | f <- snd $ unzip monos]
+    when False $ liftIO $ do
+      putStrLn $ "monos/polys: " ++ show (fst $ unzip monos, fst $ unzip polys)
+      putDoc $ vcat $ [showStructure (tidType (fnVar f)) | f <- snd $ unzip monos]
 
     monoAddOrigins polys
     -- Expose the definitions of the polymorphic
@@ -129,9 +130,11 @@ monoKN subst e =
        Just polydef -> do
           monobinder <- monoInstantiate polydef polybinder
                                  (tidIdent $ fnVar polydef) monotys extsubst t''
-          liftIO $ putStrLn $ "for monobinder " ++ show monobinder ++ ", t   is " ++ show t
-          liftIO $ putStrLn $ "for monobinder " ++ show monobinder ++ ", t'  is " ++ show t'
-          liftIO $ putStrLn $ "for monobinder " ++ show monobinder ++ ", t'' is " ++ show t''
+
+          whenMonoWanted monobinder $ liftIO $ do
+            putStrLn $ "for monobinder " ++ show monobinder ++ ", t   is " ++ show t
+            putStrLn $ "for monobinder " ++ show monobinder ++ ", t'  is " ++ show t'
+            putStrLn $ "for monobinder " ++ show monobinder ++ ", t'' is " ++ show t''
 
           -- We need to bitcast the proc we generate because we're
           -- sharing similarly-kinded instantiations, but we want for
@@ -243,16 +246,27 @@ monoInstantiate polydef polybinder polyprocid monotys subst ty' = do
 
   replaceFnVar :: MonoProcId -> Fn KNExpr TypeIL -> Mono (Fn KNExpr TypeIL)
   replaceFnVar moid fn = do
-          liftIO $ putStrLn $ "polydef fn var:: " ++ show (fnVar fn)
-          liftIO $ putStrLn $ "monodef fn var:: " ++ show (TypedId (tidType $ fnVar fn) moid)
-          return fn { fnVar = TypedId (tidType $ fnVar fn) moid }
+    whenMonoWanted (tidIdent $ fnVar fn) $ liftIO $ do
+      putStrLn $ "polydef fn var:: " ++ show (fnVar fn)
+      putStrLn $ "monodef fn var:: " ++ show (TypedId (tidType $ fnVar fn) moid)
+    return fn { fnVar = TypedId (tidType $ fnVar fn) moid }
+
+showFnStructure :: Fn KNExpr TypeIL -> Doc
+showFnStructure (Fn fnvar args body _mb_isrec _srcrange) =
+  pretty fnvar <+> text "=" <+>
+                     text "{" <+> hsep (map pretty args)
+                 <$> indent 2 (showStructure body)
+                 <$> text "}" <> line
 
 alphaRename :: Fn KNExpr TypeIL -> Mono (Fn KNExpr TypeIL)
 alphaRename fn = do
   uref <- gets monoUniques
   renamed <- liftIO $ evalStateT (renameFn fn) (RenameState uref Map.empty)
-  liftIO $ putStrLn $ "fn:      " ++ show fn
-  liftIO $ putStrLn $ "renamed: " ++ show renamed
+
+  whenMonoWanted (tidIdent $ fnVar fn) $ liftIO $ do
+      putDoc $ text "fn:      " <$> showFnStructure fn
+      putDoc $ text "renamed: " <$> showFnStructure renamed
+
   return renamed
    where
     renameV :: TypedId TypeIL -> Renamed (TypedId TypeIL)
@@ -420,6 +434,7 @@ data MonoState = MonoState {
   , monoOrigins :: Map PolyBinder (Fn (KNExpr' TypeIL) TypeIL)
   , monoResults :: Map PolyBinder [MonoResult]
   , monoUniques :: IORef Uniq
+  , monoWantedFns :: [String]
 }
 
 type MonoProcId = Ident
@@ -467,5 +482,11 @@ monoGatherVersions polyids = do
                          Nothing -> []
                          Just rs -> map (\(MonoResult mid mfn) -> (mid, mfn)) rs
   return $ unzip $ concatMap results polyids
+
+whenMonoWanted id action = do
+  wantedFns <- gets monoWantedFns
+  if T.unpack (identPrefix id) `elem` wantedFns
+    then action
+    else return ()
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||

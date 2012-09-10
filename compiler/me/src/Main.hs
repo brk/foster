@@ -85,7 +85,9 @@ typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
         let ast = (E_FnAST fn)
         let name = T.unpack $ fnAstName fn
 
-        putStrLn $ "typechecking " ++ name ++ " with binding " ++ show binding
+        when False $ do
+          putStrLn $ "typechecking " ++ name ++ " with binding " ++ show binding
+
         annfn <- unTc tcenv $ tcSigmaToplevel binding extCtx ast
 
         -- We can't convert AnnExpr to AIExpr here because
@@ -357,6 +359,7 @@ main = do
                                 ccVerbose  = getVerboseFlag flagVals
                               , ccFlagVals = flagVals
                               , ccTcEnv    = tcenv
+                              , ccDumpFns  = getDumpFns flagVals
                          }
         dumpILProgramToProtobuf ilprog outfile
 
@@ -427,6 +430,7 @@ lowerModule :: ModuleIL AIExpr TypeIL
             -> Context TypeIL
             -> Compiled ILProgram
 lowerModule ai_mod ctx_il = do
+     wantedFns <- gets ccDumpFns
      let kmod = kNormalizeModule ai_mod ctx_il
 
      whenDumpIR "kn" $ do
@@ -436,10 +440,10 @@ lowerModule ai_mod ctx_il = do
          return ()
 
      uniqref  <- gets (tcEnvUniqs.ccTcEnv)
-     monomod  <- liftIO $ monomorphize uniqref kmod
+     monomod  <- liftIO $ monomorphize uniqref kmod wantedFns
      cfgmod   <- cfgModule monomod
      ccmod    <- closureConvert cfgmod
-     ilprog   <- liftIO $ prepForCodegen ccmod uniqref
+     ilprog   <- liftIO $ prepForCodegen ccmod uniqref wantedFns
 
      whenDumpIR "mono" $ do
          putDocLn $ (outLn "/// Monomorphized program =============")
@@ -470,8 +474,9 @@ lowerModule ai_mod ctx_il = do
     cfgModule :: ModuleIL (KNExpr' MonoType) MonoType -> Compiled (ModuleIL CFBody MonoType)
     cfgModule kmod = do
         uniqref <- gets (tcEnvUniqs.ccTcEnv)
+        wantedFns <- gets ccDumpFns
         liftIO $ do
-            cfgBody <- computeCFGs uniqref (moduleILbody kmod)
+            cfgBody <- computeCFGs uniqref (moduleILbody kmod) wantedFns
             return $ kmod { moduleILbody = cfgBody }
 
     closureConvert cfgmod = do
@@ -514,6 +519,7 @@ data CompilerContext = CompilerContext {
         ccVerbose   :: Bool
       , ccFlagVals  :: ([Flag], [String])
       , ccTcEnv     :: TcEnv
+      , ccDumpFns   :: [String]
 }
 
 ccWhen :: (CompilerContext -> Bool) -> IO () -> Compiled ()

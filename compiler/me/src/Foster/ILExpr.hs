@@ -72,8 +72,8 @@ data ILLast = ILRetVoid
             | ILCase     LLVar [(CtorId, BlockId)] (Maybe BlockId) (Occurrence TypeLL)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-prepForCodegen :: ModuleIL CCBody TypeLL -> IORef Uniq -> IO ILProgram
-prepForCodegen m uref = do
+prepForCodegen :: ModuleIL CCBody TypeLL -> IORef Uniq -> [String] -> IO ILProgram
+prepForCodegen m uref wantedFns = do
     let decls = map (\(s,t) -> LLExternDecl s t) (moduleILdecls m)
     let dts = moduleILprimTypes m ++ moduleILdataTypes m
     procs <- mapM (deHooplize uref) (flatten $ moduleILbody m)
@@ -85,9 +85,11 @@ prepForCodegen m uref = do
    deHooplize :: IORef Uniq -> Proc BasicBlockGraph' -> IO ILProcDef
    deHooplize uref p = do
      g' <- makeAllocationsExplicit (simplifyCFG $ procBlocks p) uref
-     (g, liveRoots) <- insertSmartGCRoots uref g'
+     (g, liveRoots) <- insertSmartGCRoots uref g' (want p wantedFns)
      let (cfgBlocks , numPreds) = flattenGraph g
      return $ ILProcDef (p { procBlocks = cfgBlocks }) numPreds liveRoots
+
+   want p wantedFns = T.unpack (identPrefix (procIdent p)) `elem` wantedFns
 
 -- ||||||||||||||||||||||||| Allocation Explication  ||||||||||||{{{
 makeAllocationsExplicit :: BasicBlockGraph' -> IORef Uniq -> IO BasicBlockGraph'

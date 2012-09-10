@@ -58,12 +58,12 @@ type KNMono = KNExpr' MonoType
 -- This is the "entry point" into CFG-building for the outside.
 -- We take (and update) a mutable reference as a convenient way of
 -- threading through the small amount of globally-unique state we need.
-computeCFGs :: IORef Uniq -> KNMono -> IO CFBody
-computeCFGs uref expr =
+computeCFGs :: IORef Uniq -> KNMono -> [String] -> IO CFBody
+computeCFGs uref expr wantedFns =
   case expr of
     KNLetFuns ids fns body -> do
-      cffns <- mapM (computeCFGIO uref) fns
-      cfbody <- computeCFGs uref body
+      cffns <- mapM (computeCFGIO uref wantedFns) fns
+      cfbody <- computeCFGs uref body wantedFns
       return $ CFB_LetFuns ids cffns cfbody
     -- We've kept a placeholder call to the main function here until now,
     -- but at this point we can get rid of it, since we're convering to a
@@ -71,23 +71,24 @@ computeCFGs uref expr =
     KNCall tq t v vs -> return $ CFB_Call tq t v vs
     _ -> error $ "computeCFGIO expected a series of KNLetFuns bindings! had " ++ show expr
 
-computeCFGIO :: IORef Uniq -> Fn (KNMono) MonoType -> IO CFFn
-computeCFGIO uref fn = do
-  cfgState <- internalComputeCFG uref fn
+computeCFGIO :: IORef Uniq -> [String] -> Fn (KNMono) MonoType -> IO CFFn
+computeCFGIO uref wantedFns fn = do
+  cfgState <- internalComputeCFG uref fn wantedFns
   extractFunction cfgState fn
 
 -- A mirror image for internal use (when converting nested functions).
 -- As above, we thread through the updated unique value from the subcomputation!
 cfgComputeCFG :: Fn (KNMono) MonoType -> CFG CFFn
 cfgComputeCFG fn = do
-  uref <- gets cfgUniq
-  cfgState <- liftIO $ internalComputeCFG uref fn
+  uref      <- gets cfgUniq
+  wantedFns <- gets cfgWantedFns
+  cfgState  <- liftIO $ internalComputeCFG uref fn wantedFns
   liftIO $ extractFunction cfgState fn
 
 -- A helper for the CFG functions above, to run computeBlocks.
-internalComputeCFG :: IORef Int -> Fn (KNMono) MonoType -> IO CFGState
-internalComputeCFG uniqRef fn = do
-  let state0 = CFGState uniqRef Nothing [] Nothing Nothing Nothing Map.empty
+internalComputeCFG :: IORef Int -> Fn (KNMono) MonoType -> [String] -> IO CFGState
+internalComputeCFG uniqRef fn wantedFns = do
+  let state0 = CFGState uniqRef Nothing [] Nothing Nothing Nothing Map.empty wantedFns
   execStateT runComputeBlocks state0
   where
     runComputeBlocks = do
@@ -120,25 +121,34 @@ extractFunction st fn = do
                       ]
   bbgs <- scanlM (\bbg opt -> opt (cfgUniq st) bbg) bbg optimizations
 
-  putStrLn "BEFORE/AFTER"
-  let sndEq (_, a) (_, b) = a == b
-  let annotate (n, s) = s ++ "\n        (stage " ++ show n ++ ")"
   let catboxes bbgs = Boxes.hsep 1 Boxes.left $ map (boxify . measure . annotate) $
-                            (nubBy sndEq $ zip [1..] $ map (show . pretty) bbgs)
-  -- Discards duplicates before annotating
-  Boxes.printBox $ catboxes bbgs
-  putStrLn ""
+                        (nubBy sndEq $ zip [1..] $ map (show . pretty) bbgs)
+       where sndEq (_, a) (_, b) = a == b
+             annotate (n, s) = s ++ "\n        (stage " ++ show n ++ ")"
+
+  when (fn `isWanted` cfgWantedFns st) $ do
+      putStrLn "BEFORE/AFTER"
+      -- Discards duplicates before annotating
+      Boxes.printBox $ catboxes bbgs
+      putStrLn ""
 
   let bbg' = last bbgs
-  let jumpTo bbg = case bbgEntry bbg of (bid, _) -> ILast $ CFCont bid undefined
-  Boxes.printBox $ catboxes $ map blockGraph $
-                     preorder_dfs $ mkLast (jumpTo bbg') |*><*| bbgBody bbg'
+
+  when (fn `isWanted` cfgWantedFns st) $ do
+      let jumpTo bbg = case bbgEntry bbg of (bid, _) -> ILast $ CFCont bid undefined
+      Boxes.printBox $ catboxes $ map blockGraph $
+                         preorder_dfs $ mkLast (jumpTo bbg') |*><*| bbgBody bbg'
+
+
   return $ fn { fnBody = bbg' }
   where
         entryLab :: forall x. [Block Insn C x] -> BlockEntry
         entryLab [] = error $ "can't get entry block label from empty list!"
         entryLab (bb:_) = let _r :: Insn C O -- needed for GHC 6.12 compat
                               _r@(ILabel elab) = firstNode bb in elab
+
+        isWanted fn wanted = -- Could be fancier and use regexp matching.
+           T.unpack (identPrefix (fnIdent fn)) `elem` wanted
 
 blockId :: BlockEntry' t -> BlockId
 blockId = fst
@@ -385,6 +395,7 @@ data CFGState = CFGState {
   , cfgRetCont      :: Maybe BlockId
   , cfgCurrentFnVar :: Maybe MoVar
   , cfgKnownFnVars  :: Map Ident MoVar
+  , cfgWantedFns    :: [String]
 }
 
 type CFG = StateT CFGState IO

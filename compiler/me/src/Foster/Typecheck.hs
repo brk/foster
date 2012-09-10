@@ -548,8 +548,8 @@ tcRhoTyApp ctx rng e t1tn expTy = do
     case (t1tn, typeAST aeSigma) of
       ([]  , _           ) -> matchExp expTy aeSigma "empty-tyapp"
       (t1tn, ForAllAST {}) -> do let resolve = resolveType rng (localTypeBindings ctx)
-                                 tcLift $ putStrLn $ "local type bindings: " ++ show (localTypeBindings ctx)
-                                 tcLift $ putStrLn $ "********raw type arguments: " ++ show t1tn
+                                 debug $ "local type bindings: " ++ show (localTypeBindings ctx)
+                                 debug $ "********raw type arguments: " ++ show t1tn
                                  types <- mapM resolve t1tn
                                  expr <- instWith rng aeSigma types
                                  matchExp expTy expr "tyapp"
@@ -882,11 +882,13 @@ tcRhoCase ctx rng scrutinee branches expTy = do
         let ktvs = map convertTyFormal tyformals
         ts <- mapM (\ty -> instSigmaWith ktvs ty metas) types
         ps <- sequence [checkPattern ctx p t | (p, t) <- zip eps ts]
-        tcLift $ putStrLn $ "checkPattern for "   ++ show (pretty pattern)
-        tcLift $ putStrLn $ "*** P_Ctor -  ty   " ++ show (pretty ty     )
-        tcLift $ putStrLn $ "*** P_Ctor -  ty   " ++ show (pretty ctxTy  )
-        tcLift $ putStrLn $ "*** P_Ctor - metas " ++ show (pretty metas  )
-        tcLift $ putStrLn $ "*** P_Ctor - sgmas " ++ show (pretty ts     )
+
+        when tcVERBOSE $ tcLift $ do
+          putStrLn $ "checkPattern for "   ++ show (pretty pattern)
+          putStrLn $ "*** P_Ctor -  ty   " ++ show (pretty ty     )
+          putStrLn $ "*** P_Ctor -  ty   " ++ show (pretty ctxTy  )
+          putStrLn $ "*** P_Ctor - metas " ++ show (pretty metas  )
+          putStrLn $ "*** P_Ctor - sgmas " ++ show (pretty ts     )
 
         unify ty ctxTy ("checkPattern:P_Ctor " ++ show cid)
         return $ P_Ctor r ty ps info

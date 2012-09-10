@@ -33,7 +33,7 @@ import Control.Monad.State(evalStateT, get, put, StateT)
 -- | Explicit insertion (and optimization) of GC roots.
 -- | Assumption: allocation has already been made explicit.
 
-showOptResults = True
+showOptResults = False
 
 --------------------------------------------------------------------
 
@@ -60,14 +60,15 @@ type GCRootsForVariables = Map LLVar RootVar
 type VariablesForGCRoots = Map RootVar LLVar
 
 -- Precondition: allocations have been made explicit in the input graph.
-insertSmartGCRoots :: IORef Uniq -> BasicBlockGraph' -> IO ( BasicBlockGraph' , [RootVar] )
-insertSmartGCRoots uref bbgp0 = do
-  (bbgp' , gcr) <- insertDumbGCRoots uref bbgp0
+insertSmartGCRoots :: IORef Uniq -> BasicBlockGraph' -> Bool -> IO ( BasicBlockGraph' , [RootVar] )
+insertSmartGCRoots uref bbgp0 dump = do
+  (bbgp' , gcr) <- insertDumbGCRoots uref bbgp0 dump
   (bbgp'' , rootsLiveAtGCPoints) <- runLiveAtGCPoint2 uref bbgp'
   bbgp''' <- removeDeadGCRoots bbgp'' (mapInverse gcr) rootsLiveAtGCPoints
   bbgp'''' <- runAvails uref bbgp'''
 
-  when showOptResults $ Boxes.printBox $ catboxes2 (bbgpBody bbgp''') (bbgpBody bbgp'''' )
+  when (showOptResults || dump) $
+              Boxes.printBox $ catboxes2 (bbgpBody bbgp''') (bbgpBody bbgp'''' )
 
   return ( bbgp'''' , Set.toList rootsLiveAtGCPoints)
   -- We need to return the set of live roots so LLVM codegen can create them
@@ -247,13 +248,13 @@ boxify b = v Boxes.<> (h Boxes.// b Boxes.// h) Boxes.<> v
 -- So we must insert kills for dead root slots at the start of basic blocks.
 -- To avoid having redundant kills, we'll only keep the kills which have a
 -- potential-GC point in their continuation.
-insertDumbGCRoots :: IORef Uniq -> BasicBlockGraph' -> IO (BasicBlockGraph'
-                                                          ,GCRootsForVariables)
-insertDumbGCRoots uref bbgp = do
+insertDumbGCRoots :: IORef Uniq -> BasicBlockGraph' -> Bool ->
+                                      IO (BasicBlockGraph' ,GCRootsForVariables)
+insertDumbGCRoots uref bbgp dump = do
    (g' , fini) <- rebuildGraphAccM (case bbgpEntry bbgp of (bid, _) -> bid)
                                        (bbgpBody bbgp) Map.empty transform
 
-   when showOptResults $ do Boxes.printBox $ catboxes2 (bbgpBody bbgp) g'
+   when (showOptResults || dump) $ do Boxes.printBox $ catboxes2 (bbgpBody bbgp) g'
 
    return (bbgp { bbgpBody =  g' }, fini)
 
