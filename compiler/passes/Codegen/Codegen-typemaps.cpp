@@ -31,14 +31,20 @@ typedef std::vector<Offset> OffsetSet;
 
 unsigned kDefaultHeapAlignment = 16;
 
-bool isGarbageCollectible(Type* ty) {
+bool isPointerToSized(Type* ty) {
   // For now, we don't distinguish between different kinds of pointer;
   // we consider any pointer to be a possible heap pointer.
   return ty->isPointerTy() && ty->getContainedType(0)->isSized();
 }
 
 bool isGarbageCollectible(TypeAST* typ, Type* ty) {
-  return isGarbageCollectible(ty);
+  if (isPointerToSized(ty)) return true;
+  if (NamedTypeAST* nt = dynamic_cast<NamedTypeAST*>(typ)) {
+    if (dynamic_cast<DataTypeAST*>(nt->getType())) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // TODO vector of pointers now supported by LLVM...

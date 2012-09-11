@@ -1,0 +1,18 @@
+type case V of $V1 Int32
+            of $V2;
+// we need two constructors, not one, to make sure we get bitcasts
+
+main = {
+  let v = (ref (V1 0));
+  in
+    case v^ of $V1 x -> expect_i32 x;
+            of $V2   -> expect_i32 12345 end;
+
+    force_gc_for_debugging_purposes !;
+
+    // If %V.DT is not considered GCable, we'll fail here:
+    case v^ of $V1 x -> print_i32 x;
+            of $V2   -> print_i32 12345 end;
+  end
+};
+

@@ -87,6 +87,7 @@ public:
   virtual void dump(DumpTypeToProtobufPass* pass);
   virtual llvm::Type* getLLVMType() const;
   const std::string getName() { return name; }
+  TypeAST* getType() const { return namedType; }
 };
 
 struct DataCtor {
