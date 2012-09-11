@@ -718,6 +718,7 @@ data RecStatus = YesRec | NotRec deriving (Eq, Ord, Show)
 data HowUsed = UnknownCall BlockId
              | KnownCall   BlockId {- provided cont; -}
                            (RecStatus,BlockId) {- of known fn entry point -}
+             | TailRecursion
              | UsedFirstClass | UsedSecondClass -- as cont arg
                  deriving (Eq, Ord, Show)
 
@@ -758,6 +759,15 @@ getCensus bbg = let cf = getCensusFns bbg in
                  case Map.lookup (tidIdent v) cf of
                    Nothing -> addUsed m $ (v, UnknownCall bid):
                                          [(v, UsedFirstClass) | v <- vs]
+
+                   -- This identifies only self-recursive tail calls;
+                   -- it does not distinguish between (tail calls to other
+                   -- functions within the same recursive SCC) or (tail calls to
+                   -- known functions defined outside of the current fn's SCC).
+                   Just fn | bid == bbgRetK (fnBody fn)
+                           -> addUsed m $ (v, TailRecursion):
+                                         [(v, UsedFirstClass) | v <- vs]
+
                    Just fn -> addUsed m $ (v, (KnownCall bid (fnEntryId fn))):
                                          [(v, UsedFirstClass) | v <- vs]
             (CFCase v _pats)    -> addUsed m [(v, UsedSecondClass)]
@@ -802,41 +812,52 @@ runCensusRewrites' uref bbg = do
 
         getKnownCall ci id =
           case fmap Set.toList (Map.lookup id ci) of
-            Just [kn] -> Just kn
-            _         -> Nothing
+            -- Simple case: non-recursive function, with only one return cont.
+            Just [KnownCall bid (NotRec, fn_ent)] -> Just (bid, fn_ent)
+
+            -- A recursive continuation must have one return cont provided
+            -- from the outside, and only tail recursive calls from inside.
+            -- (does not handle non-trivial SCCs of tail recursive functions...)
+            Just [TailRecursion, KnownCall bid (_, fn_ent)] -> Just (bid, fn_ent)
+            Just [KnownCall bid (_, fn_ent), TailRecursion] -> Just (bid, fn_ent)
+
+            _ -> Nothing
 
         transform ci = rw
          where
           rw :: Insn e x -> M (Graph Insn e x)
           rw n = case n of
              ILabel   {} -> do return $ mkFirst  n
-             ILetFuns [id] [fn]
-               | Just (KnownCall bid (NotRec, _)) <- getKnownCall ci id
+             ILetFuns [id] [fn] | Just (bid, _fn_ent) <- getKnownCall ci id
                          -> do let ag = aGraphOfGraph emptyGraph
-                               fng <- aGraphOfFn fn bid
+                               fng <- aGraphOfFn ci fn bid
                                graphOfAGraph (addBlocks ag fng)
              ILetFuns _ids _fns    -> return $ mkMiddle n
              ILetVal  _id _letable -> return $ mkMiddle n
-             ILast (CFCall _ _t v vs)
-               | Just (KnownCall _bid (NotRec, fn_ent)) <- getKnownCall ci (tidIdent v)
-                     -> return $ mkLast $ ILast (CFCont (contified fn_ent) vs)
-             ILast _ -> return $ mkLast n
+             ILast cflast -> return $ mkLast $ ILast (contifyCalls ci cflast)
+
+        contifyCalls :: Census -> CFLast -> CFLast
+        contifyCalls ci (CFCall _k _t v vs)
+          | Just (_bid, fn_ent) <- getKnownCall ci (tidIdent v) =
+                     -- Replace (v k vs) with (j vs) if all calls to v had eq k.
+                     CFCont (contified fn_ent) vs
+        contifyCalls _ci other = other
 
         contified ("postalloca", l) = ("contified_postalloca", l)
         contified entry             = entry
 
         -- Rewrite the function's body so that returns become jumps to the
         -- continuation that all callers had provided.
-        aGraphOfFn fn retbid = do
+        -- This computes  K[k0/k]  from CwCC.
+        aGraphOfFn ci fn retbid = do
           let ret bid = if bid == bbgRetK (fnBody fn) then retbid else bid
           let rw :: Insn e x -> Insn e x
               rw (ILabel (entry,vs)) = ILabel (contified entry, vs)
-              rw (ILast (CFCont bid           vs)) =
-                  ILast (CFCont (ret bid)     vs)
-              rw (ILast (CFCall bid       t v vs)) =
-                  ILast (CFCall (ret bid) t v vs)
-              rw (ILast (CFCase v arms)) =
-                 (ILast (CFCase v (map (\(p,k) -> (p,ret k)) arms)))
+              rw (ILast cflast) =
+                ILast $ case (contifyCalls ci cflast) of
+                  CFCont bid vs     -> CFCont (ret bid) vs
+                  CFCall bid t v vs -> CFCall (ret bid) t v vs
+                  CFCase v arms     -> CFCase v (map (\(p,k) -> (p,ret k)) arms)
               rw insn = insn
           let g = mapGraph rw $ bbgBody $ fnBody fn
           return $ aGraphOfGraph g
