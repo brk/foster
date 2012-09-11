@@ -124,11 +124,11 @@ advance = { bodies : Array Planet => i : Ref Int64
   let c0 = { b1 : Planet => i : Int64 => bodies }; in
   until i^ ==Int64 l then
     (i^ +Int64 (primitive_sext_i64_i32 1)) >^ j;
-    let b1 = prim subscript bodies i^;
+    let b1 = prim subscript bodies (primitive_trunc_i64_i32 i^);
         c1 = { b2 : Planet => j : Int64 => b1 };
     in
       until j^ >=Int64 l then
-        let b2 = prim subscript bodies j^; in
+        let b2 = prim subscript bodies (primitive_trunc_i64_i32 j^); in
           let dx = px b1 -f64 px b2;
               dy = py b1 -f64 py b2;
               dz = pz b1 -f64 pz b2;
@@ -154,7 +154,7 @@ advance = { bodies : Array Planet => i : Ref Int64
   let c1 = { b : Planet => ign:Int64 => incrByFloat64 (pxr b) (vx b); }; in
     (primitive_sext_i64_i32 0) >^ i;
     until i^ ==Int64 l then
-      let b = prim subscript bodies i^; in
+      let b = prim subscript bodies (primitive_trunc_i64_i32 i^); in
         incrByFloat64 (pxr b) (vx b);
         incrByFloat64 (pyr b) (vy b);
         incrByFloat64 (pzr b) (vz b);

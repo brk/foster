@@ -158,9 +158,9 @@ advance-loop = { n : Int32 => bodies : Array Planet
     (primitive_sext_i64_i32 0) >^ j;
     until i^ ==Int64 l then
       (i^ +Int64 (primitive_sext_i64_i32 1)) >^ j;
-      let b1 = prim subscript bodies i^; in
+      let b1 = prim subscript bodies (primitive_trunc_i64_i32 i^); in
         until j^ >=Int64 l then
-          let b2 = prim subscript bodies j^; in
+          let b2 = prim subscript bodies (primitive_trunc_i64_i32 j^); in
             let dx = px b1 -f64 px b2;
                 dy = py b1 -f64 py b2;
                 dz = pz b1 -f64 pz b2;
@@ -181,17 +181,17 @@ advance-loop = { n : Int32 => bodies : Array Planet
       end;
       (i^ +Int64 (primitive_sext_i64_i32 1)) >^ i;
     end;
-    
+
     (primitive_sext_i64_i32 0) >^ i;
     until i^ ==Int64 l then
-      let b = prim subscript-unsafe bodies i^; in
+      let b = prim subscript-unsafe bodies (primitive_trunc_i64_i32 i^); in
         incrByFloat64 (pxr b) (vx b);
         incrByFloat64 (pyr b) (vy b);
         incrByFloat64 (pzr b) (vz b);
         (i^ +Int64 (primitive_sext_i64_i32 1)) >^ i;
       end
     end;
-  
+
     advance-loop (n -Int32 1) bodies i j l;
   end
 };

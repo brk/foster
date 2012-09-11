@@ -129,9 +129,9 @@ advance = { bodies : Array Planet => i : Ref Int64
   (primitive_sext_i64_i32 0) >^ j;
   until i^ ==Int64 l then
     (i^ +Int64 (primitive_sext_i64_i32 1)) >^ j;
-    let b1 = prim subscript bodies i^; in
+    let b1 = prim subscript bodies (primitive_trunc_i64_i32 i^); in
       until j^ >=Int64 l then
-        let b2 = prim subscript bodies j^; in
+        let b2 = prim subscript bodies (primitive_trunc_i64_i32 j^); in
           let dx = px b1 -f64 px b2;
               dy = py b1 -f64 py b2;
               dz = pz b1 -f64 pz b2;
@@ -155,7 +155,7 @@ advance = { bodies : Array Planet => i : Ref Int64
 
   (primitive_sext_i64_i32 0) >^ i;
   until i^ ==Int64 l then
-    let b = prim subscript bodies i^; in
+    let b = prim subscript bodies (primitive_trunc_i64_i32 i^); in
       incrByFloat64 (pxr b) (vx b);
       incrByFloat64 (pyr b) (vy b);
       incrByFloat64 (pzr b) (vz b);
@@ -221,3 +221,8 @@ main = {
       print_float_p9f64 (energy bodies);
   end
 };
+
+// For 50000000, should print (after 20-some seconds, optimized)
+//        -0.169075164
+//        -0.169059907
+
