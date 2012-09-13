@@ -58,12 +58,12 @@ type KNMono = KNExpr' MonoType
 -- This is the "entry point" into CFG-building for the outside.
 -- We take (and update) a mutable reference as a convenient way of
 -- threading through the small amount of globally-unique state we need.
-computeCFGs :: IORef Uniq -> KNMono -> [String] -> IO CFBody
-computeCFGs uref expr wantedFns =
+computeCFGs :: IORef Uniq -> KNMono -> IO CFBody
+computeCFGs uref expr =
   case expr of
     KNLetFuns ids fns body -> do
-      cffns <- mapM (computeCFGIO uref wantedFns) fns
-      cfbody <- computeCFGs uref body wantedFns
+      cffns <- mapM (computeCFGIO uref) fns
+      cfbody <- computeCFGs uref body
       return $ CFB_LetFuns ids cffns cfbody
     -- We've kept a placeholder call to the main function here until now,
     -- but at this point we can get rid of it, since we're convering to a
@@ -71,9 +71,9 @@ computeCFGs uref expr wantedFns =
     KNCall tq t v vs -> return $ CFB_Call tq t v vs
     _ -> error $ "computeCFGIO expected a series of KNLetFuns bindings! had " ++ show expr
 
-computeCFGIO :: IORef Uniq -> [String] -> Fn (KNMono) MonoType -> IO CFFn
-computeCFGIO uref wantedFns fn = do
-  cfgState <- internalComputeCFG uref fn wantedFns
+computeCFGIO :: IORef Uniq -> Fn (KNMono) MonoType -> IO CFFn
+computeCFGIO uref fn = do
+  cfgState <- internalComputeCFG uref fn
   extractFunction cfgState fn
 
 -- A mirror image for internal use (when converting nested functions).
@@ -81,14 +81,13 @@ computeCFGIO uref wantedFns fn = do
 cfgComputeCFG :: Fn (KNMono) MonoType -> CFG CFFn
 cfgComputeCFG fn = do
   uref      <- gets cfgUniq
-  wantedFns <- gets cfgWantedFns
-  cfgState  <- liftIO $ internalComputeCFG uref fn wantedFns
+  cfgState  <- liftIO $ internalComputeCFG uref fn
   liftIO $ extractFunction cfgState fn
 
 -- A helper for the CFG functions above, to run computeBlocks.
-internalComputeCFG :: IORef Int -> Fn (KNMono) MonoType -> [String] -> IO CFGState
-internalComputeCFG uniqRef fn wantedFns = do
-  let state0 = CFGState uniqRef Nothing [] Nothing Nothing Nothing Map.empty wantedFns
+internalComputeCFG :: IORef Int -> Fn (KNMono) MonoType -> IO CFGState
+internalComputeCFG uniqRef fn = do
+  let state0 = CFGState uniqRef Nothing [] Nothing Nothing Nothing Map.empty
   execStateT runComputeBlocks state0
   where
     runComputeBlocks = do
@@ -358,7 +357,6 @@ data CFGState = CFGState {
   , cfgRetCont      :: Maybe BlockId
   , cfgCurrentFnVar :: Maybe MoVar
   , cfgKnownFnVars  :: Map Ident MoVar
-  , cfgWantedFns    :: [String]
 }
 
 type CFG = StateT CFGState IO

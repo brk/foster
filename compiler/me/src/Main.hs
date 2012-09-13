@@ -477,7 +477,7 @@ lowerModule ai_mod ctx_il = do
         uniqref <- gets (tcEnvUniqs.ccTcEnv)
         wantedFns <- gets ccDumpFns
         liftIO $ do
-            cfgBody <- computeCFGs uniqref (moduleILbody kmod) wantedFns
+            cfgBody <- computeCFGs uniqref (moduleILbody kmod)
             cfgBody' <- optimizeCFGs uniqref cfgBody wantedFns
             return $ kmod { moduleILbody = cfgBody' }
 
