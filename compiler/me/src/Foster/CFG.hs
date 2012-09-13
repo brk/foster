@@ -28,22 +28,17 @@ module Foster.CFG
 
 import Foster.Base
 import Foster.MonoType
-import Foster.KNExpr(KNExpr'(..), typeKN, TailQ(..))
-import Foster.Letable(Letable(..), isPure)
+import Foster.KNExpr(KNExpr'(..), typeKN)
+import Foster.Letable(Letable(..))
 
 import Compiler.Hoopl
 import Text.PrettyPrint.ANSI.Leijen
-import qualified Text.PrettyPrint.Boxes as Boxes
-
-import Debug.Trace(trace)
 
 import qualified Data.Text as T
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Map(Map)
 import Data.Set(Set)
-import Data.Maybe(fromMaybe, fromJust, isJust)
-import Data.List(nubBy, last)
 import Control.Monad.State
 import Data.IORef
 import Prelude hiding (id, last)
@@ -460,12 +455,12 @@ instance Pretty t => Pretty (Letable t) where
       ILCall      _ v vs    -> pretty v <+> hsep (map pretty vs)
       ILAppCtor   _ c vs    -> (text "~" <> parens (text (ctorCtorName (ctorInfoId c)) <+> hsep (map prettyId vs)))
       ILAlloc     v rgn     -> text "(ref" <+> pretty v <+> comment (pretty rgn) <> text ")"
-      ILDeref     t v       -> pretty v <> text "^"
+      ILDeref     _ v       -> pretty v <> text "^"
       ILStore     v1 v2     -> text "store" <+> pretty v1 <+> text "to" <+> pretty v2
       ILAllocArray _ _v     -> text $ "ILAllocArray..."
       ILArrayRead  _t (ArrayIndex _v1 _v2 _rng _s)  -> text $ "ILArrayRead..."
       ILArrayPoke  (ArrayIndex _v1 _v2 _rng _s) _v3 -> text $ "ILArrayPoke..."
-      ILBitcast   t v       -> text "bitcast " <+> pretty v <+> text "to" <+> text "..."
+      ILBitcast   _ v       -> text "bitcast " <+> pretty v <+> text "to" <+> text "..."
       ILAllocate info       -> text "allocate " <+> pretty (allocType info)
 
 instance Pretty BasicBlockGraph where
@@ -499,8 +494,6 @@ instance FosterNode Insn where branchTo bid = ILast $ CFCont bid []
 instance LabelsPtr (BlockId, ts) where targetLabels ((_, label), _) = [label]
 
 -- |||||||||||||||||||| Free identifiers ||||||||||||||||||||||||{{{
-type IdentSetPair = (Set.Set Ident, Set.Set Ident)
-
 instance TExpr BasicBlockGraph MonoType where
   freeTypedIds bbg =
        let (bvs,fvs) = foldGraphNodes go (bbgBody bbg) (Set.empty, Set.empty) in
