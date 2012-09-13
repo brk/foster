@@ -26,6 +26,7 @@ import Control.Monad.State(forM, when, forM_, StateT, runStateT, gets,
 
 import Foster.Base
 import Foster.CFG
+import Foster.CFGOptimization
 import Foster.Fepb.WholeProgram(WholeProgram)
 import Foster.ProtobufFE(parseWholeProgram)
 import Foster.ProtobufIL(dumpILProgramToProtobuf)
@@ -477,7 +478,8 @@ lowerModule ai_mod ctx_il = do
         wantedFns <- gets ccDumpFns
         liftIO $ do
             cfgBody <- computeCFGs uniqref (moduleILbody kmod) wantedFns
-            return $ kmod { moduleILbody = cfgBody }
+            cfgBody' <- optimizeCFGs uniqref cfgBody wantedFns
+            return $ kmod { moduleILbody = cfgBody' }
 
     closureConvert cfgmod = do
         uniqref <- gets (tcEnvUniqs.ccTcEnv)
