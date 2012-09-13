@@ -1,5 +1,4 @@
-{-# LANGUAGE GADTs, TypeSynonymInstances, RankNTypes, ScopedTypeVariables,
-             PatternGuards, TypeFamilies, DoRec, NoMonoLocalBinds #-}
+{-# LANGUAGE GADTs, ScopedTypeVariables, PatternGuards, NoMonoLocalBinds #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2012 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -162,14 +161,14 @@ elimContInBBG uref bbg = runWithUniqAndFuel uref infiniteFuel (elimContInBBG' bb
             --     k []    = j [a,b]      ==> k []    = c [b,z,a]
             --     j [x,y] = c [y,z,x]    ==> ...
             -- bid/vs is j/[x,y], otherid/ovs is c/[y,z,x], & [a,b] (will b) avs
-            renamerFunc vs ovs = if vs == ovs then Nothing
-                                   else Just (\avs -> applySubst
-                                                     (buildSubst vs avs) ovs)
-            buildSubst oldvars newvars = Map.fromList (zip oldvars newvars)
-            applySubst subst   tgtvars = map (\v -> Map.findWithDefault v v subst) tgtvars
-
-            fact :: FactBase CFGTrivia -> Label -> CFGTrivia
-            fact f l = fromMaybe (fact_bot contEquivLattice) $ lookupFact l f
+            ----renamerFunc vs ovs = if vs == ovs then Nothing
+            ----                       else Just (\avs -> applySubst
+            ----                                         (buildSubst vs avs) ovs)
+            ----buildSubst oldvars newvars = Map.fromList (zip oldvars newvars)
+            ----applySubst subst   tgtvars = map (\v -> Map.findWithDefault v v subst) tgtvars
+            ----
+            ----fact :: FactBase CFGTrivia -> Label -> CFGTrivia
+            ----fact f l = fromMaybe (fact_bot contEquivLattice) $ lookupFact l f
 
             successorFacts' :: NonLocal n => n O C -> FactBase f -> [f]
             successorFacts' n fb = [ fromJust f | id <- successors n,
@@ -280,7 +279,7 @@ getCensus bbg = let cf = getCensusFns bbg in
         ILCallPrim     _ _ vs    -> addUsed m [(v, UsedFirstClass) | v <- vs]
         ILAppCtor      _ _ vs    -> addUsed m [(v, UsedFirstClass) | v <- vs]
         ILAlloc        v _rgn    -> addUsed m [(v, UsedFirstClass)]
-        ILDeref        t v       -> addUsed m [(v, UsedFirstClass)]
+        ILDeref        _ v       -> addUsed m [(v, UsedFirstClass)]
         ILStore        v1 v2     -> addUsed m [(v1, UsedFirstClass), (v2, UsedFirstClass)]
         ILAllocArray    _ v      -> addUsed m [(v, UsedFirstClass)]
         ILArrayRead  _t (ArrayIndex v1 v2 _rng _s) -> addUsed m [(v1, UsedFirstClass), (v2, UsedFirstClass)]
@@ -369,15 +368,15 @@ liveness :: BwdTransfer Insn Live
 liveness = mkBTransfer go
   where
     go :: Insn e x -> Fact x Live -> Live
-    go (ILabel   (bid, vs)  ) s = s
+    go (ILabel (_bid, _vs)  ) s = s
     go (ILetVal  id letable ) s = Set.union  (without s [id]) (Set.fromList $ freeIdents letable)
     go (ILetFuns ids fns    ) s = Set.unions ((without s ids):(map (Set.fromList . freeIdents) fns))
     go node@(ILast    cflast) fdb =
           let s = Set.unions (map (fact fdb) (successors node)) in
           case cflast of
-            (CFCont _bid    vs) -> insert s vs
-            (CFCall bid _ v vs) -> insert s (v:vs)
-            (CFCase v _pats)    -> insert s [v]
+            (CFCont _bid     vs) -> insert s vs
+            (CFCall _bid _ v vs) -> insert s (v:vs)
+            (CFCase v _pats)     -> insert s [v]
 
     without s ids = Set.difference s (Set.fromList ids)
     insert s vs = Set.union s (Set.fromList (map tidIdent vs))
@@ -436,11 +435,11 @@ cfgSize :: BasicBlockGraph -> (Int, Int) -- toplevel, cumulative
 cfgSize bbg = foldGraphNodes go (bbgBody bbg) (0, 0)
   where
     go :: Insn e x -> (Int, Int) -> (Int, Int)
-    go (ILabel   (bid, vs)  ) (t,a) = (t + 1         , a + 1)
-    go (ILetVal  id letable ) (t,a) = (t + 1         , a + 1)
-    go (ILetFuns ids fns    ) (t,a) = (t + length fns, a + length fns +
+    go (ILabel   (_bid, _vs)) (t,a) = (t + 1         , a + 1)
+    go (ILetVal _id _letable) (t,a) = (t + 1         , a + 1)
+    go (ILetFuns _ids fns   ) (t,a) = (t + length fns, a + length fns +
                                       sum [snd $ cfgSize (fnBody f) | f <- fns])
-    go (ILast    cflast     ) (t,a) = (t + 1         , a + 1)
+    go (ILast   _cflast     ) (t,a) = (t + 1         , a + 1)
 
 cfgCalls :: BasicBlockGraph -> Map Ident (Set BlockId) -- fn var to continuation
 cfgCalls bbg = foldGraphNodes go (bbgBody bbg) Map.empty
