@@ -143,6 +143,7 @@ struct CodegenPass {
 
   void scheduleBlockCodegen(LLBlock* b);
   LLBlock* lookupBlock(const std::string& s) {
+      ASSERT(fosterBlocks.count(s) != 0) << "missing basic block: " << s;
       scheduleBlockCodegen(fosterBlocks[s]);
       return fosterBlocks[s];
   }
