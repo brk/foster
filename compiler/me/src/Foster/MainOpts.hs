@@ -6,14 +6,9 @@
 
 module Foster.MainOpts where
 
-import System.Console.GetOpt
+import Foster.Config(Flag(..))
 
-data Flag = Interpret String
-          | DumpIR    String
-          | DumpFn    String
-          | ProgArg   String
-          | Verbose
-          deriving Eq
+import System.Console.GetOpt
 
 options :: [OptDescr Flag]
 options =

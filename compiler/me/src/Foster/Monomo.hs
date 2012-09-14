@@ -9,6 +9,7 @@ module Foster.Monomo (monomorphize, monomorphizedDataTypes) where
 import Foster.Base
 import Foster.Kind
 import Foster.KNExpr
+import Foster.Config
 import Foster.TypeIL
 import Foster.MonoType
 
@@ -39,14 +40,17 @@ import Data.IORef
 -- On the way back up the tree, we'll replace each SCC of bindings
 -- with the generated monomorphic definitions.
 
-monomorphize :: IORef Uniq -> (ModuleIL (KNExpr' TypeIL) TypeIL) -> [String] -> IO (ModuleIL (KNExpr' MonoType) MonoType)
-monomorphize uref (ModuleIL body decls dts primdts lines) wantedFns = do
-    monobody <- evalStateT (monoKN emptyMonoSubst body) monoState0
+monomorphize :: ModuleIL (KNExpr' TypeIL  ) TypeIL
+   -> Compiled (ModuleIL (KNExpr' MonoType) MonoType)
+monomorphize (ModuleIL body decls dts primdts lines) = do
+    uref      <- gets ccUniqRef
+    wantedFns <- gets ccDumpFns
+    let monoState0 = MonoState Set.empty Map.empty Map.empty uref wantedFns
+    monobody <- liftIO $ evalStateT (monoKN emptyMonoSubst body) monoState0
     return $ ModuleIL monobody monodecls monodts monoprimdts lines
       where
         monoprimdts   = monomorphizedDataTypes primdts
         monodts       = monomorphizedDataTypes     dts
-        monoState0 = MonoState Set.empty Map.empty Map.empty uref wantedFns
         monodecls  = map monoExternDecl decls
 
 mono :: Functor f => MonoSubst -> f TypeIL -> f MonoType

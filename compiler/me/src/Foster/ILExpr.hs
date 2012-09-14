@@ -13,16 +13,16 @@ import Compiler.Hoopl
 import Text.PrettyPrint.ANSI.Leijen
 
 import Foster.Base
+import Foster.Config
 import Foster.CFG
 import Foster.CloConv
 import Foster.TypeLL
 import Foster.Letable
 import Foster.GCRoots
 
-import Data.IORef
 import Data.Map(Map)
 import Data.List(zipWith4)
-import Control.Monad.State(evalState, State, get, modify)
+import Control.Monad.State(evalState, State, get, gets, modify)
 import qualified Data.Set as Set(toList, map)
 import qualified Data.Map as Map(singleton, insertWith, lookup, empty, fromList,
                                                 insert, union, findWithDefault)
@@ -73,51 +73,48 @@ data ILLast = ILRetVoid
             | ILCase     LLVar [(CtorId, BlockId)] (Maybe BlockId) (Occurrence TypeLL)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-prepForCodegen :: ModuleIL CCBody TypeLL -> IORef Uniq -> [String] -> IO ILProgram
-prepForCodegen m uref wantedFns = do
+prepForCodegen :: ModuleIL CCBody TypeLL -> Compiled ILProgram
+prepForCodegen m = do
     let decls = map (\(s,t) -> LLExternDecl s t) (moduleILdecls m)
     let dts = moduleILprimTypes m ++ moduleILdataTypes m
-    procs <- mapM (deHooplize uref) (flatten $ moduleILbody m)
+    procs <- mapM deHooplize (flatten $ moduleILbody m)
     return $ ILProgram procs decls dts (moduleILsourceLines m)
   where
    flatten :: CCBody -> [CCProc]
    flatten (CCB_Procs procs _) = procs
 
-   deHooplize :: IORef Uniq -> Proc BasicBlockGraph' -> IO ILProcDef
-   deHooplize uref p = do
-     g' <- makeAllocationsExplicit (simplifyCFG $ procBlocks p) uref
-     (g , liveRoots) <- insertSmartGCRoots uref g' (want p wantedFns)
+   deHooplize :: Proc BasicBlockGraph' -> Compiled ILProcDef
+   deHooplize p = do
+     wantedFns <- gets ccDumpFns
+     g' <- makeAllocationsExplicit (simplifyCFG $ procBlocks p)
+     (g , liveRoots) <- insertSmartGCRoots g' (want p wantedFns)
      let (cfgBlocks , numPreds) = flattenGraph g
      return $ ILProcDef (p { procBlocks = cfgBlocks }) numPreds liveRoots
 
    want p wantedFns = T.unpack (identPrefix (procIdent p)) `elem` wantedFns
 
 -- ||||||||||||||||||||||||| Allocation Explication  ||||||||||||{{{
-makeAllocationsExplicit :: BasicBlockGraph' -> IORef Uniq -> IO BasicBlockGraph'
-makeAllocationsExplicit bbgp uref = do
+makeAllocationsExplicit :: BasicBlockGraph' -> Compiled BasicBlockGraph'
+makeAllocationsExplicit bbgp = do
      let (bid,_) = bbgpEntry bbgp
      bb' <- rebuildGraphM bid (bbgpBody bbgp) explicate
      return $ bbgp { bbgpBody = bb' }
  where
-  fresh str = do u <- modifyIORef uref (+1) >> readIORef uref
-                 return (Ident (T.pack str) u)
-
-  explicate :: forall e x. Insn' e x -> IO (Graph Insn' e x)
+  explicate :: forall e x. Insn' e x -> Compiled (Graph Insn' e x)
   explicate insn = case insn of
     (CCLabel   {}        ) -> return $ mkFirst $ insn
     (CCGCLoad _v    _root) -> return $ mkMiddle $ insn
     (CCGCInit _ _v  _root) -> return $ mkMiddle $ insn
     (CCGCKill {}         ) -> return $ mkMiddle $ insn
     (CCLetVal id (ILAlloc v memregion)) -> do
-            id' <- fresh "ref-alloc"
+            id' <- ccFreshId (T.pack "ref-alloc")
             let t = tidType v
             let info = AllocInfo t memregion "ref" Nothing Nothing "ref-allocator" NoZeroInit
             return $
               (mkMiddle $ CCLetVal id  (ILAllocate info)) <*>
               (mkMiddle $ CCLetVal id' (ILStore v (TypedId (LLPtrType t) id)))
-    (CCLetVal id (ILTuple [] _allocsrc)) -> return $ mkMiddle $ insn
-    (CCLetVal id (ILTuple vs _allocsrc)) -> do
-            id' <- fresh "tup-alloc"
+    (CCLetVal _id (ILTuple [] _allocsrc)) -> return $ mkMiddle $ insn
+    (CCLetVal  id (ILTuple vs _allocsrc)) -> do
             let t = LLStructType (map tidType vs)
             let memregion = MemRegionGlobalHeap
             let info = AllocInfo t memregion "tup" Nothing Nothing "tup-allocator" NoZeroInit
@@ -125,7 +122,7 @@ makeAllocationsExplicit bbgp uref = do
               (mkMiddle $ CCLetVal id (ILAllocate info)) <*>
               (mkMiddle $ CCTupleStore vs (TypedId (LLPtrType t) id) memregion)
     (CCLetVal id (ILAppCtor genty (CtorInfo cid _) vs)) -> do
-            id' <- fresh "ctor-alloc"
+            id' <- ccFreshId (T.pack "ctor-alloc")
             let tynm = ctorTypeName cid ++ "." ++ ctorCtorName cid
             let tag  = ctorSmallInt cid
             let t = LLStructType (map tidType vs)
@@ -138,7 +135,7 @@ makeAllocationsExplicit bbgp uref = do
               (mkMiddle $ CCLetVal id  (ILBitcast genty obj))
     (CCTupleStore   {}   ) -> return $ mkMiddle insn
     (CCLetVal  _id  _l   ) -> return $ mkMiddle insn
-    (CCLetFuns ids clos)   -> makeClosureAllocationExplicit fresh ids clos
+    (CCLetFuns ids clos)   -> makeClosureAllocationExplicit ids clos
     (CCRebindId     {}   ) -> return $ mkMiddle insn
     (CCLast    cclast)     ->
           case cclast of
@@ -175,21 +172,21 @@ makeAllocationsExplicit bbgp uref = do
     --
     -- Similarly, for the closures themselves, we can trade off between
     -- redundant loads and stores.
-makeClosureAllocationExplicit fresh ids clos = do
+makeClosureAllocationExplicit ids clos = do
   let generic_env_ptr_ty = LLPtrType (LLPrimInt I8)
   let generic_procty (LLProcType (_conc_env_ptr_type:rest) rt cc) =
                       LLProcType (generic_env_ptr_ty:rest) rt cc
 
   gen_proc_vars <- mapM (\procvar -> do
-                          gen_proc_id <- fresh ".gen.proc"
+                          gen_proc_id <- ccFreshId (T.pack ".gen.proc")
                           return (TypedId (generic_procty $ tidType procvar)
                                            gen_proc_id)
                         ) (map closureProcVar clos)
 
   let gen id = TypedId generic_env_ptr_ty id
   let envids = map (tidIdent . closureEnvVar) clos
-  env_gens <- mapM (\envid -> do fresh (T.unpack $ prependedTo ".gen"
-                                                    (identPrefix envid))) envids
+  env_gens <- mapM (\envid -> do ccFreshId (prependedTo ".gen"
+                                                  (identPrefix envid))) envids
   let env_gen_map = Map.fromList $ zip envids env_gens
   let substGenEnv v = case Map.lookup (tidIdent v) env_gen_map of
                            Nothing -> v

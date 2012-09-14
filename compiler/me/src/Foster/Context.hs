@@ -1,3 +1,9 @@
+-----------------------------------------------------------------------------
+-- Copyright (c) 2012 Ben Karel. All rights reserved.
+-- Use of this source code is governed by a BSD-style license that can be
+-- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
+-----------------------------------------------------------------------------
+
 module Foster.Context where
 
 import Data.IORef(IORef,newIORef,readIORef,writeIORef,modifyIORef)
@@ -59,9 +65,9 @@ extendTyCtx ctx ktvs = ctx { contextTypeBindings =
 --   subexpressions. For example, we want each function in a SCC
 --   of functions to be type checked in the same Gamma context. But
 --   we do need to thread the supply of unique variables through...
-data TcEnv = TcEnv { tcEnvUniqs :: IORef Uniq
+data TcEnv = TcEnv { tcEnvUniqs        :: IORef Uniq
                    , tcUnificationVars :: IORef [MetaTyVar TypeAST]
-                   , tcParents  :: [ExprAST TypeAST]
+                   , tcParents         :: [ExprAST TypeAST]
                    }
 
 newtype Tc a = Tc (TcEnv -> IO (OutputOr a))

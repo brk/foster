@@ -13,22 +13,22 @@ import Compiler.Hoopl
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Text.PrettyPrint.Boxes as Boxes
 
-import Foster.Base(Uniq, TExpr, TypedId(TypedId), Ident(..), freeTypedIds,
+import Foster.Base(TExpr, TypedId(TypedId), freeTypedIds,
                    tidType, tidIdent, typeOf)
 import Foster.CFG(runWithUniqAndFuel, M, rebuildGraphM)
+import Foster.Config
 import Foster.CloConv
 import Foster.TypeLL
 import Foster.Letable
 
 import Data.Maybe(fromMaybe)
-import Data.IORef(IORef, modifyIORef, readIORef)
 import Data.Map(Map)
 import qualified Data.Set as Set
 import qualified Data.Map as Map(lookup, empty, elems, findWithDefault, insert,
                 assocs, delete, size, unionWith, fromList, insertWith, keysSet)
 import qualified Data.Text as T(pack)
 import Control.Monad(when)
-import Control.Monad.State(evalStateT, get, put, modify, StateT, lift)
+import Control.Monad.State(evalStateT, get, put, modify, StateT, lift, gets)
 
 import Debug.Trace(trace)
 
@@ -63,16 +63,16 @@ type GCRootsForVariables = Map LLVar RootVar
 type VariablesForGCRoots = Map RootVar LLVar
 
 -- Precondition: allocations have been made explicit in the input graph.
-insertSmartGCRoots :: IORef Uniq -> BasicBlockGraph' -> Bool -> IO ( BasicBlockGraph' , [RootVar] )
-insertSmartGCRoots uref bbgp0 dump = do
-  bbgp'    <- insertDumbGCRoots uref bbgp0 dump
+insertSmartGCRoots :: BasicBlockGraph' -> Bool -> Compiled ( BasicBlockGraph' , [RootVar] )
+insertSmartGCRoots bbgp0 dump = do
+  bbgp'    <- insertDumbGCRoots bbgp0 dump
   let gcr = computeGCRootsForVars bbgp'
 
-  (bbgp'' , rootsLiveAtGCPoints) <- runLiveAtGCPoint2 uref bbgp'
+  (bbgp'' , rootsLiveAtGCPoints) <- runLiveAtGCPoint2 bbgp'
   bbgp'''  <- removeDeadGCRoots bbgp'' (mapInverse gcr) rootsLiveAtGCPoints
-  bbgp'''' <- runAvails uref bbgp''' rootsLiveAtGCPoints
+  bbgp'''' <- runAvails bbgp''' rootsLiveAtGCPoints
 
-  when (showOptResults || dump) $ do
+  lift $ when (showOptResults || dump) $ do
               putStrLn "difference from runAvails:"
               Boxes.printBox $ catboxes2 (bbgpBody bbgp''') (bbgpBody bbgp'''' )
 
@@ -169,9 +169,10 @@ liveAtGCPointRewrite2 = mkBRewrite d
                    where deadRoots = Set.difference roots liveRoots
     d (CCLast {}              ) _fdb  = return Nothing
 
-runLiveAtGCPoint2 :: IORef Uniq -> BasicBlockGraph' -> IO (BasicBlockGraph'
+runLiveAtGCPoint2 :: BasicBlockGraph' -> Compiled (BasicBlockGraph'
                                                           ,RootLiveWhenGC)
-runLiveAtGCPoint2 uref bbgp = runWithUniqAndFuel uref infiniteFuel (go bbgp)
+runLiveAtGCPoint2 bbgp = do uref <- gets ccUniqRef
+                            lift $ runWithUniqAndFuel uref infiniteFuel (go bbgp)
   where
     go :: BasicBlockGraph' -> M (BasicBlockGraph' ,RootLiveWhenGC)
     go bbgp = do
@@ -266,14 +267,14 @@ boxify b = v Boxes.<> (h Boxes.// b Boxes.// h) Boxes.<> v
 -- So we must insert kills for dead root slots at the start of basic blocks.
 -- To avoid having redundant kills, we'll only keep the kills which have a
 -- potential-GC point in their continuation.
-insertDumbGCRoots :: IORef Uniq -> BasicBlockGraph' -> Bool -> IO BasicBlockGraph'
-insertDumbGCRoots uref bbgp dump = do
+insertDumbGCRoots :: BasicBlockGraph' -> Bool -> Compiled BasicBlockGraph'
+insertDumbGCRoots bbgp dump = do
    -- HIRO runAvails / runWithUniqAndFuel uref infiniteFuel (go bbgp)
    g'  <- evalStateT (rebuildGraphM (case bbgpEntry bbgp of (bid, _) -> bid)
                                     (bbgpBody bbgp) transform)
-                     Map.empty
+                             Map.empty
 
-   when (showOptResults || dump) $ do Boxes.printBox $ catboxes2 (bbgpBody bbgp) g'
+   lift $ when (showOptResults || dump) $ do Boxes.printBox $ catboxes2 (bbgpBody bbgp) g'
 
    return bbgp { bbgpBody =  g' }
 
@@ -312,8 +313,7 @@ insertDumbGCRoots uref bbgp dump = do
     CCLast (CCCase v arms mb occ) -> do withGCLoads [v] (\[v' ] ->
                                                (mkLast $ CCLast (CCCase v' arms mb occ)))
 
-  fresh str = lift $ do u <- modifyIORef uref (+1) >> readIORef uref
-                        return (Ident (T.pack str) u)
+  fresh str = lift $ ccFreshId (T.pack str)
 
   substVarsInClo s (Closure proc env capts asrc) =
         Closure proc (s env) (map s capts) asrc
@@ -362,7 +362,7 @@ insertDumbGCRoots uref bbgp dump = do
                                  put (Map.insert v root gcr)
                                  retLoaded root
 
-type RootMapped = StateT GCRootsForVariables IO
+type RootMapped = StateT GCRootsForVariables Compiled
 
 -- Now we know the set of GC roots which are (and, implicitly, are not)
 -- live when GC can occur. If a root is not live, we'll remove all the
@@ -376,13 +376,13 @@ type RootMapped = StateT GCRootsForVariables IO
 removeDeadGCRoots :: BasicBlockGraph'
                   -> VariablesForGCRoots
                   -> RootLiveWhenGC
-                  -> IO BasicBlockGraph'
+                  -> Compiled BasicBlockGraph'
 removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
    let mappedAction = rebuildGraphM (case bbgpEntry bbgp of (bid, _) -> bid)
-                                                       (bbgpBody bbgp) transform
+                                    (bbgpBody bbgp) transform
    g' <- evalStateT mappedAction Map.empty
 
-   when showOptResults $ Boxes.printBox $ catboxes2 (bbgpBody bbgp) g'
+   lift $ when showOptResults $ Boxes.printBox $ catboxes2 (bbgpBody bbgp) g'
 
    return bbgp { bbgpBody =  g' }
  where
@@ -659,8 +659,10 @@ availsRewrite allRoots = mkFRewrite d
               [ v' ] -> v'
               s -> error $ "Subst mapped " ++ show v ++ " to  " ++ show s
 
-runAvails :: IORef Uniq -> BasicBlockGraph' -> RootLiveWhenGC -> IO BasicBlockGraph'
-runAvails uref bbgp rootsLiveAtGCPoints = runWithUniqAndFuel uref infiniteFuel (go bbgp)
+runAvails :: BasicBlockGraph' -> RootLiveWhenGC -> Compiled BasicBlockGraph'
+runAvails bbgp rootsLiveAtGCPoints = do
+         uref <- gets ccUniqRef
+         lift $ runWithUniqAndFuel uref infiniteFuel (go bbgp)
   where
     go :: BasicBlockGraph' -> M BasicBlockGraph'
     go bbgp = do

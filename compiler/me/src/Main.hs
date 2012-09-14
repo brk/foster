@@ -21,10 +21,11 @@ import Data.Set(Set)
 import Data.IORef(IORef, newIORef, readIORef)
 import Data.Traversable(mapM)
 import Prelude hiding (mapM)
-import Control.Monad.State(forM, when, forM_, StateT, runStateT, gets,
+import Control.Monad.State(forM, when, forM_, evalStateT, gets,
                            liftIO, liftM, liftM2)
 
 import Foster.Base
+import Foster.Config
 import Foster.CFG
 import Foster.CFGOptimization
 import Foster.Fepb.WholeProgram(WholeProgram)
@@ -350,26 +351,29 @@ main = do
 
   case messageGet protobuf of
     Left msg -> error $ "Failed to parse protocol buffer.\n" ++ msg
-    Right (pb_program, _) -> do
-        uniqref <- newIORef 1
-        varlist <- liftIO $ newIORef []
-        let tcenv = TcEnv {       tcEnvUniqs = uniqref,
-                           tcUnificationVars = varlist,
-                                   tcParents = [] }
-        (ilprog, _) <- runStateT (compile pb_program) $ CompilerContext {
-                                ccVerbose  = getVerboseFlag flagVals
-                              , ccFlagVals = flagVals
-                              , ccTcEnv    = tcenv
-                              , ccDumpFns  = getDumpFns flagVals
-                         }
-        dumpILProgramToProtobuf ilprog outfile
+    Right (pb_program, _) -> runCompiler pb_program flagVals outfile
 
-compile :: WholeProgram -> Compiled ILProgram
-compile pb_program =
+runCompiler pb_program flagVals outfile = do
+   uniqref <- newIORef 1
+   varlist <- liftIO $ newIORef []
+   let tcenv = TcEnv {       tcEnvUniqs = uniqref,
+                      tcUnificationVars = varlist,
+                              tcParents = [] }
+   ilprog <- evalStateT (compile pb_program tcenv)
+                    CompilerContext {
+                           ccVerbose  = getVerboseFlag flagVals
+                         , ccFlagVals = flagVals
+                         , ccDumpFns  = getDumpFns flagVals
+                         , ccUniqRef  = uniqref
+                    }
+   dumpILProgramToProtobuf ilprog outfile
+
+compile :: WholeProgram -> TcEnv -> Compiled ILProgram
+compile pb_program tcenv =
     (return $ parseWholeProgram pb_program)
      >>= mergeModules -- temporary hack
-     >>= desugarParsedModule
-     >>= typecheckSourceModule
+     >>= desugarParsedModule tcenv
+     >>= typecheckSourceModule tcenv
      >>= (uncurry lowerModule)
 
 mergeModules :: WholeProgramAST FnAST TypeP
@@ -387,41 +391,39 @@ mergeModules (WholeProgramAST modules) = return (foldr1 mergedModules modules)
      , moduleASTprimTypes   = moduleASTprimTypes   m1 -- should be the same
                                      }
 
-astOfParsedType :: TypeP -> Tc TypeAST
-astOfParsedType typep =
-  let q = astOfParsedType in
-  case typep of
-        PrimIntP         size  -> return $ PrimIntAST         size
-        TyConAppP "Int64"   [] -> return $ PrimIntAST         I64
-        TyConAppP "Int32"   [] -> return $ PrimIntAST         I32
-        TyConAppP "Int8"    [] -> return $ PrimIntAST         I8
-        TyConAppP "Bool"    [] -> return $ PrimIntAST         I1
-        TyConAppP "Float64" [] -> return $ PrimFloat64AST
-        TyConAppP "Array"  [t] -> liftM  ArrayTypeAST            (q t)
-        TyConAppP "Ref"    [t] -> liftM  RefTypeAST              (q t)
-        TyConAppP    tc types  -> liftM (TyConAppAST tc) (mapM q types)
-        TupleTypeP      types  -> liftM  TupleTypeAST    (mapM q types)
-        RefTypeP       t       -> liftM  RefTypeAST              (q t)
-        ArrayTypeP     t       -> liftM  ArrayTypeAST            (q t)
-        CoroTypeP    s t       -> liftM2 CoroTypeAST       (q s) (q t)
-        ForAllP    tvs t       -> liftM (ForAllAST $ map convertTyFormal tvs) (q t)
-        TyVarP     tv          -> do return $ TyVarAST tv
-        FnTypeP      s t cc cs -> do s' <- mapM q s
-                                     t' <- q t
-                                     return $ FnTypeAST      s' t' cc cs
-        MetaPlaceholder desc -> do newTcUnificationVarTau desc
-
-desugarParsedModule :: ModuleAST FnAST TypeP ->
-             Compiled (ModuleAST FnAST TypeAST)
-desugarParsedModule m = do
-  tcenv <- gets ccTcEnv
+desugarParsedModule :: TcEnv -> ModuleAST FnAST TypeP ->
+                      Compiled (ModuleAST FnAST TypeAST)
+desugarParsedModule tcenv m = do
   (liftIO $ unTc tcenv (convertModule astOfParsedType m)) >>= dieOnError
+ where
+  astOfParsedType :: TypeP -> Tc TypeAST
+  astOfParsedType typep =
+    let q = astOfParsedType in
+    case typep of
+          PrimIntP         size  -> return $ PrimIntAST         size
+          TyConAppP "Int64"   [] -> return $ PrimIntAST         I64
+          TyConAppP "Int32"   [] -> return $ PrimIntAST         I32
+          TyConAppP "Int8"    [] -> return $ PrimIntAST         I8
+          TyConAppP "Bool"    [] -> return $ PrimIntAST         I1
+          TyConAppP "Float64" [] -> return $ PrimFloat64AST
+          TyConAppP "Array"  [t] -> liftM  ArrayTypeAST            (q t)
+          TyConAppP "Ref"    [t] -> liftM  RefTypeAST              (q t)
+          TyConAppP    tc types  -> liftM (TyConAppAST tc) (mapM q types)
+          TupleTypeP      types  -> liftM  TupleTypeAST    (mapM q types)
+          RefTypeP       t       -> liftM  RefTypeAST              (q t)
+          ArrayTypeP     t       -> liftM  ArrayTypeAST            (q t)
+          CoroTypeP    s t       -> liftM2 CoroTypeAST       (q s) (q t)
+          ForAllP    tvs t       -> liftM (ForAllAST $ map convertTyFormal tvs) (q t)
+          TyVarP     tv          -> do return $ TyVarAST tv
+          FnTypeP      s t cc cs -> do s' <- mapM q s
+                                       t' <- q t
+                                       return $ FnTypeAST      s' t' cc cs
+          MetaPlaceholder desc -> do newTcUnificationVarTau desc
 
-typecheckSourceModule :: ModuleAST FnAST TypeAST
+typecheckSourceModule :: TcEnv ->  ModuleAST FnAST TypeAST
                       -> Compiled (ModuleIL AIExpr TypeIL, Context TypeIL)
-typecheckSourceModule sm = do
+typecheckSourceModule tcenv sm = do
     verboseMode <- gets ccVerbose
-    tcenv       <- gets ccTcEnv
     (ctx_il, ai_mod) <- (liftIO $ typecheckModule verboseMode sm tcenv)
                       >>= dieOnError
     showGeneratedMetaTypeVariables (tcUnificationVars tcenv) ctx_il
@@ -431,7 +433,6 @@ lowerModule :: ModuleIL AIExpr TypeIL
             -> Context TypeIL
             -> Compiled ILProgram
 lowerModule ai_mod ctx_il = do
-     wantedFns <- gets ccDumpFns
      let kmod = kNormalizeModule ai_mod ctx_il
 
      whenDumpIR "kn" $ do
@@ -440,11 +441,10 @@ lowerModule ai_mod ctx_il = do
          _ <- liftIO $ renderKN kmod True
          return ()
 
-     uniqref  <- gets (tcEnvUniqs.ccTcEnv)
-     monomod  <- liftIO $ monomorphize uniqref kmod wantedFns
-     cfgmod   <- cfgModule monomod
+     monomod  <- monomorphize   kmod
+     cfgmod   <- cfgModule      monomod
      ccmod    <- closureConvert cfgmod
-     ilprog   <- liftIO $ prepForCodegen ccmod uniqref wantedFns
+     ilprog   <- prepForCodegen ccmod
 
      whenDumpIR "mono" $ do
          putDocLn $ (outLn "/// Monomorphized program =============")
@@ -466,15 +466,14 @@ lowerModule ai_mod ctx_il = do
          putDocLn (showILProgramStructure ilprog)
          putDocLn $ (outLn "^^^ ===================================")
 
-     -- _ <- liftIO $ renderCFG cfgmod True
-
      maybeInterpretKNormalModule kmod
+
      return ilprog
 
   where
     cfgModule :: ModuleIL (KNExpr' MonoType) MonoType -> Compiled (ModuleIL CFBody MonoType)
     cfgModule kmod = do
-        uniqref <- gets (tcEnvUniqs.ccTcEnv)
+        uniqref <- gets ccUniqRef
         wantedFns <- gets ccDumpFns
         liftIO $ do
             cfgBody <- computeCFGs uniqref (moduleILbody kmod)
@@ -482,7 +481,7 @@ lowerModule ai_mod ctx_il = do
             return $ kmod { moduleILbody = cfgBody' }
 
     closureConvert cfgmod = do
-        uniqref <- gets (tcEnvUniqs.ccTcEnv)
+        uniqref <- gets ccUniqRef
         liftIO $ do
             let datatypes = moduleILprimTypes cfgmod ++
                             moduleILdataTypes cfgmod
@@ -515,17 +514,6 @@ showGeneratedMetaTypeVariables varlist ctx_il =
          else putDocLn (text $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t)
     putDocLn $ (outLn "vvvv contextBindings:====================")
     putDocLn $ (dullyellow $ vcat $ map (text . show) (Map.toList $ contextBindings ctx_il))
-
-type Compiled = StateT CompilerContext IO
-data CompilerContext = CompilerContext {
-        ccVerbose   :: Bool
-      , ccFlagVals  :: ([Flag], [String])
-      , ccTcEnv     :: TcEnv
-      , ccDumpFns   :: [String]
-}
-
-ccWhen :: (CompilerContext -> Bool) -> IO () -> Compiled ()
-ccWhen getter action = do cond <- gets getter ; liftIO $ when cond action
 
 whenDumpIR :: String -> IO () -> Compiled ()
 whenDumpIR ir action = do flags <- gets ccFlagVals
