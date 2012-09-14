@@ -77,7 +77,7 @@ data Insn' e x where
         CCGCInit  :: LLVar -> LLVar -> LLRootVar -> Insn' O O
         CCGCKill  :: Enabled    -> Set LLRootVar -> Insn' O O
         CCTupleStore :: [LLVar] -> LLVar -> AllocMemRegion -> Insn' O O
-        CCRebindId:: LLVar   -> LLVar            -> Insn' O O
+        CCRebindId:: Doc    -> LLVar   -> LLVar  -> Insn' O O
         CCLast    :: CCLast                      -> Insn' O C
 
 type RootVar = LLVar
@@ -557,9 +557,9 @@ instance Pretty (Insn' e x) where
                                         | (id,fn) <- zip ids fns])
   pretty (CCGCLoad  loadedvar root) = indent 4 $ dullwhite $ text "load from" <+> pretty root <+> text "to" <+> pretty loadedvar
   pretty (CCGCInit  _  srcvar root) = indent 4 $ dullgreen $ text "init root" <+> pretty root <+> text ":=" <+> pretty srcvar
-  pretty (CCGCKill  enabled  roots) = indent 4 $ dullwhite $ text "kill roots" <+> pretty roots <+> pretty enabled
+  pretty (CCGCKill  enabled  roots) = indent 4 $ (dullred  $ text "kill roots") <+> pretty roots <+> pretty enabled
   pretty (CCTupleStore vs tid _memregion) = indent 4 $ text "stores " <+> pretty vs <+> text "to" <+> pretty tid
-  pretty (CCRebindId v1 v2) = indent 4 $ text "rebind " <+> pretty v1 <+> text "AS" <+> pretty v2
+  pretty (CCRebindId d v1 v2) = indent 4 $ text "REPLACE " <+> pretty v1 <+> text "WITH" <+> pretty v2 <+> parens d
   pretty (CCLast    cclast     ) = pretty cclast
 
 isProc ft = case ft of FnType _ _ _ FT_Proc -> True

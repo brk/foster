@@ -22,9 +22,10 @@ import Foster.GCRoots
 import Data.IORef
 import Data.Map(Map)
 import Data.List(zipWith4)
+import Control.Monad.State(evalState, State, get, modify)
 import qualified Data.Set as Set(toList, map)
 import qualified Data.Map as Map(singleton, insertWith, lookup, empty, fromList,
-                                                         union, findWithDefault)
+                                                insert, union, findWithDefault)
 import qualified Data.Text as T(pack, unpack)
 
 --------------------------------------------------------------------
@@ -85,7 +86,7 @@ prepForCodegen m uref wantedFns = do
    deHooplize :: IORef Uniq -> Proc BasicBlockGraph' -> IO ILProcDef
    deHooplize uref p = do
      g' <- makeAllocationsExplicit (simplifyCFG $ procBlocks p) uref
-     (g, liveRoots) <- insertSmartGCRoots uref g' (want p wantedFns)
+     (g , liveRoots) <- insertSmartGCRoots uref g' (want p wantedFns)
      let (cfgBlocks , numPreds) = flattenGraph g
      return $ ILProcDef (p { procBlocks = cfgBlocks }) numPreds liveRoots
 
@@ -104,8 +105,8 @@ makeAllocationsExplicit bbgp uref = do
   explicate :: forall e x. Insn' e x -> IO (Graph Insn' e x)
   explicate insn = case insn of
     (CCLabel   {}        ) -> return $ mkFirst $ insn
-    (CCGCLoad _v fromroot) -> return $ mkMiddle $ insn
-    (CCGCInit _ _v toroot) -> return $ mkMiddle $ insn
+    (CCGCLoad _v    _root) -> return $ mkMiddle $ insn
+    (CCGCInit _ _v  _root) -> return $ mkMiddle $ insn
     (CCGCKill {}         ) -> return $ mkMiddle $ insn
     (CCLetVal id (ILAlloc v memregion)) -> do
             id' <- fresh "ref-alloc"
@@ -114,8 +115,8 @@ makeAllocationsExplicit bbgp uref = do
             return $
               (mkMiddle $ CCLetVal id  (ILAllocate info)) <*>
               (mkMiddle $ CCLetVal id' (ILStore v (TypedId (LLPtrType t) id)))
-    (CCLetVal id (ILTuple [] allocsrc)) -> return $ mkMiddle $ insn
-    (CCLetVal id (ILTuple vs allocsrc)) -> do
+    (CCLetVal id (ILTuple [] _allocsrc)) -> return $ mkMiddle $ insn
+    (CCLetVal id (ILTuple vs _allocsrc)) -> do
             id' <- fresh "tup-alloc"
             let t = LLStructType (map tidType vs)
             let memregion = MemRegionGlobalHeap
@@ -178,9 +179,6 @@ makeClosureAllocationExplicit fresh ids clos = do
   let generic_env_ptr_ty = LLPtrType (LLPrimInt I8)
   let generic_procty (LLProcType (_conc_env_ptr_type:rest) rt cc) =
                       LLProcType (generic_env_ptr_ty:rest) rt cc
-  --let generic_fnty ty =
-  --          let (FnType (_conc_env_ptr_type:rest) rt cc pf) = ty in
-  --              (FnType (generic_env_ptr_ty:rest) rt cc pf)
 
   gen_proc_vars <- mapM (\procvar -> do
                           gen_proc_id <- fresh ".gen.proc"
@@ -245,8 +243,8 @@ withGraphBlocks bbgp f =
    f $ preorder_dfs $ mkLast (jumpTo bbgp) |*><*| bbgpBody bbgp
 
 flattenGraph :: BasicBlockGraph' -> ( [ILBlock] , NumPredsMap )
-flattenGraph bbgp =
-   withGraphBlocks bbgp (\blocks ->
+flattenGraph bbgp = -- clean up any rebindings from gc root optz.
+   withGraphBlocks (simplifyCFG bbgp) (\blocks ->
      ( map (deHooplizeBlock (bbgpRetK bbgp)) blocks
      , computeNumPredecessors (bbgpEntry bbgp) blocks ))
  where
@@ -266,7 +264,7 @@ flattenGraph bbgp =
      mid (CCGCLoad v   fromroot)  = ILLetVal (tidIdent v) (ILDeref (tidType v) fromroot)
      mid (CCGCInit _ src toroot)  = ILGCRootInit src toroot
      mid (CCTupleStore vs tid r)  = ILTupleStore vs tid r
-     mid (CCRebindId v1 v2)       = ILRebindId (tidIdent v1) v2 -- (tidIdent v2) v1 -- ugh :-(
+     mid (CCRebindId {}         ) = error $ "Invariant violated: ILRebindId not eliminated!" -- ILRebindId (tidIdent v1) v2 -- (tidIdent v2) v1 -- ugh :-(
      mid (CCLetFuns {}          ) = error $ "Invariant violated: CCLetFuns should have been eliminated!"
      mid (CCGCKill  {}          ) = error $ "Invariant violated: GCKill should have been handled by `midmany`..."
 
@@ -340,8 +338,28 @@ mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
          _ -> Nothing
 
      finalize revblocks subst =
-         let s v = Map.findWithDefault v v subst in
-         map (mapBlock' $ substIn s) (reverse revblocks)
+         --let s v = Map.findWithDefault v v subst in
+         --map (mapBlock' $ substIn s) (reverse revblocks)
+         let elimRebindingsInBlock block = do mapBlockM substIn' block in
+         evalState (mapM elimRebindingsInBlock (reverse revblocks)) subst
+
+     -- | Monadic version of the strict mapBlock3' from Hoopl.
+     mapBlockM :: Monad m => (forall e x. i e x -> m [i e x]) -> Block i C C -> m (Block i C C)
+     mapBlockM a b = do
+       let (f, ms, l) = unblock ( blockSplit b )
+       [ f' ]  <- a f
+       ms'     <- mapM a ms
+       [ l' ]  <- a l
+       return $ blockJoin f' (blockFromList $ concat ms' ) l'
+      where unblock (f, ms_blk, l) = (f, blockToList ms_blk, l)
+
+     substIn' :: Insn' e x -> State (Map LLVar LLVar) [Insn' e x]
+     substIn' (CCRebindId _ v1 v2) = do modify (Map.insert v1 v2)
+                                        return []
+     substIn' insn = do
+       subst <- get
+       let s v = Map.findWithDefault v v subst
+       return [substIn s insn]
 
      substIn :: VarSubstFor (Insn' e x)
      substIn s insn  = case insn of
@@ -352,7 +370,7 @@ mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
           (CCTupleStore vs  v r) -> CCTupleStore (map s vs) (s v) r
           (CCLetVal  id letable) -> CCLetVal id $ substVarsInLetable s letable
           (CCLetFuns ids fns   ) -> CCLetFuns ids $ map (substForInClo s) fns
-          (CCRebindId v1 v2    ) -> CCRebindId (s v1) (s v2)
+          (CCRebindId {}       ) -> error $ "Unexpected rebinding!"
           (CCLast    cclast    ) -> case cclast of
               (CCCont b vs)        -> CCLast (CCCont b (map s vs))
               (CCCall b t id v vs) -> CCLast (CCCall b t id (s v) (map s vs))

@@ -461,7 +461,7 @@ instance Pretty t => Pretty (Letable t) where
       ILArrayRead  _t (ArrayIndex _v1 _v2 _rng _s)  -> text $ "ILArrayRead..."
       ILArrayPoke  (ArrayIndex _v1 _v2 _rng _s) _v3 -> text $ "ILArrayPoke..."
       ILBitcast   _ v       -> text "bitcast " <+> pretty v <+> text "to" <+> text "..."
-      ILAllocate info       -> text "allocate " <+> pretty (allocType info)
+      ILAllocate info       -> text "allocate ..." -- <+> pretty (allocType info)
 
 instance Pretty BasicBlockGraph where
  pretty bbg =
@@ -586,6 +586,6 @@ runWithUniqAndFuel r f x = do startUniq <- readIORef r
                               writeIORef r (u + 1)
                               return v
 
-type M a = InfiniteFuelMonad UniqMonadIO a
+type M {-a-} = InfiniteFuelMonad UniqMonadIO {-a-}
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

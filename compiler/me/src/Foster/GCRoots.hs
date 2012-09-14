@@ -14,8 +14,8 @@ import Text.PrettyPrint.ANSI.Leijen
 import qualified Text.PrettyPrint.Boxes as Boxes
 
 import Foster.Base(Uniq, TExpr, TypedId(TypedId), Ident(..), freeTypedIds,
-                   tidType, tidIdent, mapFoldM' , typeOf)
-import Foster.CFG(runWithUniqAndFuel, M, rebuildGraphAccM, rebuildGraphM)
+                   tidType, tidIdent, typeOf)
+import Foster.CFG(runWithUniqAndFuel, M, rebuildGraphM)
 import Foster.CloConv
 import Foster.TypeLL
 import Foster.Letable
@@ -24,16 +24,19 @@ import Data.Maybe(fromMaybe)
 import Data.IORef(IORef, modifyIORef, readIORef)
 import Data.Map(Map)
 import qualified Data.Set as Set
-import qualified Data.Map as Map(lookup, empty, fromList, elems, keysSet,
-                                 unionWith, insertWith, insert, findWithDefault)
+import qualified Data.Map as Map(lookup, empty, elems, findWithDefault, insert,
+                assocs, delete, size, unionWith, fromList, insertWith, keysSet)
 import qualified Data.Text as T(pack)
 import Control.Monad(when)
-import Control.Monad.State(evalStateT, get, put, StateT)
+import Control.Monad.State(evalStateT, get, put, modify, StateT, lift)
+
+import Debug.Trace(trace)
 
 -- | Explicit insertion (and optimization) of GC roots.
 -- | Assumption: allocation has already been made explicit.
 
 showOptResults = False
+doReuseRootSlots = True
 
 --------------------------------------------------------------------
 
@@ -62,24 +65,40 @@ type VariablesForGCRoots = Map RootVar LLVar
 -- Precondition: allocations have been made explicit in the input graph.
 insertSmartGCRoots :: IORef Uniq -> BasicBlockGraph' -> Bool -> IO ( BasicBlockGraph' , [RootVar] )
 insertSmartGCRoots uref bbgp0 dump = do
-  (bbgp' , gcr) <- insertDumbGCRoots uref bbgp0 dump
-  (bbgp'' , rootsLiveAtGCPoints) <- runLiveAtGCPoint2 uref bbgp'
-  bbgp''' <- removeDeadGCRoots bbgp'' (mapInverse gcr) rootsLiveAtGCPoints
-  bbgp'''' <- runAvails uref bbgp'''
+  bbgp'    <- insertDumbGCRoots uref bbgp0 dump
+  let gcr = computeGCRootsForVars bbgp'
 
-  when (showOptResults || dump) $
+  (bbgp'' , rootsLiveAtGCPoints) <- runLiveAtGCPoint2 uref bbgp'
+  bbgp'''  <- removeDeadGCRoots bbgp'' (mapInverse gcr) rootsLiveAtGCPoints
+  bbgp'''' <- runAvails uref bbgp''' rootsLiveAtGCPoints
+
+  when (showOptResults || dump) $ do
+              putStrLn "difference from runAvails:"
               Boxes.printBox $ catboxes2 (bbgpBody bbgp''') (bbgpBody bbgp'''' )
 
-  return ( bbgp'''' , Set.toList rootsLiveAtGCPoints)
+  let bbgp_final = bbgp''''
+  return ( bbgp_final , computeUsedRoots bbgp_final )
   -- We need to return the set of live roots so LLVM codegen can create them
   -- in advance.
  where
     mapInverse m = let ks = Map.keysSet m in
                    let es = Set.fromList (Map.elems m) in
+                   let swap (a,b) = (b,a) in
                    if Set.size ks == Set.size es
-                     then Map.fromList (zip (Set.toList es) (Set.toList ks))
+                     then Map.fromList (map swap $ Map.assocs m)
                      else error $ "mapInverse can't reverse a non-one-to-one map!"
                                ++ "\nkeys: " ++ show ks ++ "\nelems:" ++ show es
+
+    computeUsedRoots bbgp = Set.toList . Set.fromList $
+                             Map.elems (computeGCRootsForVars bbgp)
+
+    computeGCRootsForVars bbgp = foldGraphNodes go (bbgpBody bbgp) Map.empty
+      where
+        go :: Insn' e x -> GCRootsForVariables -> GCRootsForVariables
+        go (CCGCInit _ v root) s = -- assert v not in s
+                                   Map.insert v root s
+        -- don't recurse into functions: we don't want their roots!
+        go _                   s = s
 
 instance TExpr Closure TypeLL where freeTypedIds _ = []
 
@@ -193,7 +212,6 @@ combineLastFacts fdb node = union3s (map (fact fdb) (successors node))
     fact f l = fromMaybe (fact_bot liveAtGCPointLattice2) $ lookupFact l f
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-
 makeSubstWith :: Ord a => [a] -> [a] -> (a -> a)
 makeSubstWith from to = let m = Map.fromList $ zip from to in
                         let s v = Map.findWithDefault v v m in
@@ -248,80 +266,76 @@ boxify b = v Boxes.<> (h Boxes.// b Boxes.// h) Boxes.<> v
 -- So we must insert kills for dead root slots at the start of basic blocks.
 -- To avoid having redundant kills, we'll only keep the kills which have a
 -- potential-GC point in their continuation.
-insertDumbGCRoots :: IORef Uniq -> BasicBlockGraph' -> Bool ->
-                                      IO (BasicBlockGraph' ,GCRootsForVariables)
+insertDumbGCRoots :: IORef Uniq -> BasicBlockGraph' -> Bool -> IO BasicBlockGraph'
 insertDumbGCRoots uref bbgp dump = do
-   (g' , fini) <- rebuildGraphAccM (case bbgpEntry bbgp of (bid, _) -> bid)
-                                       (bbgpBody bbgp) Map.empty transform
+   -- HIRO runAvails / runWithUniqAndFuel uref infiniteFuel (go bbgp)
+   g'  <- evalStateT (rebuildGraphM (case bbgpEntry bbgp of (bid, _) -> bid)
+                                    (bbgpBody bbgp) transform)
+                     Map.empty
 
    when (showOptResults || dump) $ do Boxes.printBox $ catboxes2 (bbgpBody bbgp) g'
 
-   return (bbgp { bbgpBody =  g' }, fini)
+   return bbgp { bbgpBody =  g' }
 
  where
 
-  transform :: forall e x. GCRootsForVariables -> Insn' e x -> IO (Graph Insn' e x, GCRootsForVariables)
-  transform gcr insn = case insn of
+  transform :: forall e x. Insn' e x -> RootMapped (Graph Insn' e x)
+  transform insn = case insn of
     -- See the note above explaining why we generate all these GCKills...
-    CCLabel (_bid, vs)            -> do (inits, gcr' ) <- mapFoldM' vs gcr maybeRootInitializer
-                                        return (mkFirst insn <*> catGraphs inits <*> mkMiddle
-                                           (CCGCKill Disabled (Set.fromList $ Map.elems gcr' ))
-                                                                                      , gcr' )
-    CCGCLoad  {}                  -> do return (mkMiddle $ insn                       , gcr)
-    CCGCInit  {}                  -> do return (mkMiddle $ insn                       , gcr)
-    CCGCKill  {}                  -> do return (mkMiddle $ insn                       , gcr)
+    CCLabel (_bid, vs)            -> do inits <- mapM maybeRootInitializer vs
+                                        return (mkFirst insn <*> catGraphs inits {- <*> mkMiddle
+                                           (CCGCKill Disabled (Set.fromList $ Map.elems gcr' ) -} )
+    CCGCLoad  {}                  -> do return $ mkMiddle $ insn
+    CCGCInit  {}                  -> do return $ mkMiddle $ insn
+    CCGCKill  {}                  -> do return $ mkMiddle $ insn
     CCTupleStore vs v r           -> do {- trace ("isGCable " ++ show v ++ " :" ++ show (isGCable v)) $ -}
-                                         withGCLoads gcr (v:vs) (\(v' : vs' ) ->
+                                         withGCLoads (v:vs) (\(v' : vs' ) ->
                                           mkMiddle $ CCTupleStore vs' v' r)
-    CCLetVal id val               -> do (ri, gcr' ) <- maybeRootInitializer (TypedId (typeOf val) id) gcr
+    CCLetVal id val               -> do ri <- maybeRootInitializer (TypedId (typeOf val) id)
                                         let vs = freeTypedIds val
-                                        withGCLoads gcr' vs (\vs' ->
+                                        withGCLoads vs (\vs' ->
                                          let s = makeSubstWith vs vs' in
                                          (mkMiddle $ CCLetVal id (substVarsInLetable s val)) <*> ri)
     CCLetFuns [id] [clo]          -> do
                                         let concrete_fnty = fnty_of_procty (tidType (closureProcVar clo))
-                                        (ri, gcr' ) <- maybeRootInitializer (TypedId concrete_fnty id) gcr
+                                        ri <- maybeRootInitializer (TypedId concrete_fnty id)
                                         let vs = [closureEnvVar clo]
-                                        withGCLoads gcr' vs (\vs' ->
+                                        withGCLoads vs (\vs' ->
                                           let s = makeSubstWith vs vs' in
                                           (mkMiddle $ CCLetFuns [id] [substVarsInClo s clo]) <*> ri)
     CCLetFuns ids _clos           -> do error $ "CCLetFuns should all become singletons!" ++ show ids
     CCRebindId     {}             -> do error $ "CCRebindId should not have been introduced yet!"
-    CCLast (CCCont b vs)          -> do withGCLoads gcr vs (\vs'  ->
+    CCLast (CCCont b vs)          -> do withGCLoads vs (\vs'  ->
                                                (mkLast $ CCLast (CCCont b vs' )))
-    CCLast (CCCall b t id v vs)   -> do withGCLoads gcr (v:vs) (\(v' : vs' ) ->
+    CCLast (CCCall b t id v vs)   -> do withGCLoads (v:vs) (\(v' : vs' ) ->
                                                (mkLast $ CCLast (CCCall b t id v' vs' )))
-    CCLast (CCCase v arms mb occ) -> do withGCLoads gcr [v] (\[v' ] ->
+    CCLast (CCCase v arms mb occ) -> do withGCLoads [v] (\[v' ] ->
                                                (mkLast $ CCLast (CCCase v' arms mb occ)))
 
-  fresh str = do u <- modifyIORef uref (+1) >> readIORef uref
-                 return (Ident (T.pack str) u)
+  fresh str = lift $ do u <- modifyIORef uref (+1) >> readIORef uref
+                        return (Ident (T.pack str) u)
 
   substVarsInClo s (Closure proc env capts asrc) =
         Closure proc (s env) (map s capts) asrc
 
-  maybeRootInitializer v gcr = do
+  maybeRootInitializer :: LLVar -> RootMapped (Graph Insn' O O)
+  maybeRootInitializer v = do
     if not $ isGCable v
-      then return (emptyGraph, gcr)
-      else
-        do junkid <- fresh (show (tidIdent v) ++ ".junk")
-           let junk = TypedId (LLPtrType (LLStructType [])) junkid
-           case Map.lookup v gcr of
-             Just root -> do error $ "Wasn't expecting to see existing root when initializing! " ++ show v ++ "; " ++ show root
-             Nothing   -> do rootid <- fresh (show (tidIdent v) ++ ".root")
-                             let root = TypedId (tidType v) rootid
-                             let gcr' = Map.insert v root gcr
-                             return (mkMiddle $ CCGCInit junk v root, gcr' )
+      then return emptyGraph
+      else do junkid <- fresh (show (tidIdent v) ++ ".junk")
+              let junk = TypedId (LLPtrType (LLStructType [])) junkid
+              rootid <- fresh (show (tidIdent v) ++ ".root")
+              let root = TypedId (tidType v) rootid
+              modify (Map.insert v root)
+              return . mkMiddle $ CCGCInit junk v root
 
   -- A helper function to assist in rewriting instructions to use loads from
   -- GC roots for variables which are subject to garbage collection.
-  withGCLoads :: GCRootsForVariables -> [LLVar]
-                                     -> ([LLVar] -> Graph Insn' O x)
-                                     -> IO (Graph Insn' O x, GCRootsForVariables)
-  withGCLoads gcr vs mkG = do
-    (loadsAndVars , gcr' ) <- mapFoldM' vs gcr withGCLoad
+  withGCLoads :: [LLVar] -> ([LLVar] -> Graph Insn' O x) -> RootMapped (Graph Insn' O x)
+  withGCLoads vs mkG = do
+    loadsAndVars <- mapM withGCLoad vs
     let (loads, vs' ) = unzip loadsAndVars
-    return (mkMiddles (concat loads) <*> mkG vs' , gcr' )
+    return $ mkMiddles (concat loads) <*> mkG vs'
    where
       -- We'll rewrite something like ``call @foo (x,n)`` (where ``x`` is
       -- GCable and ``n`` isn't) with::
@@ -330,25 +344,23 @@ insertDumbGCRoots uref bbgp dump = do
       ---     call @foo (x.load , n)
       -- We'll removed kills for live roots and enable the remainder.
       -- We'll insert root initializations in a separate pass.
-      retLoaded root gcr oos = do
+      retLoaded root = do
           id <- fresh (show (tidIdent root) ++ ".load")
           let loadedvar = TypedId (tidType root) id
-          return ((oos ++ [CCGCLoad loadedvar root
-                          ,CCGCKill Disabled (Set.fromList [root])]
-                          , loadedvar), gcr)
+          return ([CCGCLoad loadedvar root
+                  ,CCGCKill Disabled (Set.fromList [root])]
+                 , loadedvar)
 
-      withGCLoad :: LLVar -> GCRootsForVariables
-                          -> IO (([Insn' O O], LLVar), GCRootsForVariables)
-      withGCLoad v gcr = do
-        if not $ isGCable v
-          then return (([], v), gcr)
-          else case Map.lookup v gcr of
-                 Just root -> do retLoaded root gcr []
+      withGCLoad :: LLVar -> RootMapped ([Insn' O O], LLVar)
+      withGCLoad v = if not $ isGCable v then return ([], v)
+       else do gcr <- get
+               case Map.lookup v gcr of
+                 Just root -> do retLoaded root
                  Nothing   -> do
                                  rootid <- fresh (show (tidIdent v) ++ ".ROOT")
                                  let root = TypedId (tidType v) rootid
-                                 let gcr' = Map.insert v root gcr
-                                 retLoaded root gcr' []
+                                 put (Map.insert v root gcr)
+                                 retLoaded root
 
 type RootMapped = StateT GCRootsForVariables IO
 
@@ -440,11 +452,12 @@ isGCable v = case tidType v of
 -- a kill of an already-killed (on all paths) root, we can drop the redundant
 -- kill. The straightforward thing to do is to directly track a set of killed
 -- roots, which starts out empty (for bottom), and grows when we xfer
--- past a kill. Because we want an all-paths  property, join is intersection.
+-- past a kill. Because we want an all-paths  property, join is intersection:
+-- a root is only killed if it is killed on all incoming paths.
 --
 -- The problem is that doing so does not form a valid lattice: as defined,
--- we would have _|_ \/ e = _|_ instead of the correct invariant, = e.
--- Instead of tracking *killed* roots, we track *unkilled* roots, which thus
+-- we would have ``_|_ \/ e = _|_`` instead of the needed ``_|_ \/ e = e``.
+-- Rather than tracking *killed* roots, we track *unkilled* roots, which thus
 -- allows us to form a proper lattice that tracks what roots don't need kills.
 --
 -- Things are a bit trickier still for eliminating redundant reloads. We want
@@ -464,7 +477,11 @@ isGCable v = case tidType v of
 -- If the beginning fact is (UniverseMinus empty), then we'll try to replace
 -- x.load with x.load2---bad! Using top instead of bottom at the start fact
 -- for the set of loaded roots prevents this from occurring.
+--
+--
+-- (note: this pass runs after removeDeadGCRoots.)
 data AvailSet elts = UniverseMinus (Set.Set elts) | Avail (Set.Set elts)
+        deriving Show
 
 delAvails       (UniverseMinus elts) es = UniverseMinus (Set.union es elts)
 delAvails       (Avail         elts) es = Avail (availFrom elts (UniverseMinus es))
@@ -474,6 +491,9 @@ addAvail        (UniverseMinus elts) e  = UniverseMinus (Set.delete e elts)
 
 availFrom    es (UniverseMinus elts)    = Set.difference   es elts
 availFrom    es (Avail         elts)    = Set.intersection es elts
+
+lessAvail    es (UniverseMinus elts)    = Set.intersection es elts
+lessAvail    es (Avail         elts)    = Set.difference   es elts
 
 availIn e a = not $ Set.null $ availFrom (Set.singleton e) a
 
@@ -487,11 +507,40 @@ availSmaller    (Avail _ )         (UniverseMinus s) | null (Set.toList s) = Tru
 availSmaller _ _ = error $ "GCRoots.hs: Can't compare sizes of Avail and UniverseMinus..."
 --availSmaller a u = error $ "Can't compare sizes of " ++ show a ++ " and " ++ show u
 
-type UnkilledRoots = AvailSet LLRootVar
-type LoadedRoots   = AvailSet LLRootVar
+
+data AvailMap = AvailMap (AvailSet LLRootVar)
+                         (Map LLRootVar (Set.Set LLVar)) deriving Show
+noAvailLoads = AvailMap (Avail Set.empty) Map.empty
+
+intersectAvailMap (AvailMap oa om) (AvailMap na nm) =
+  let
+       ja = na `intersectAvails` oa
+       jm = Map.unionWith Set.intersection om nm
+  in (AvailMap ja jm,  availSmaller ja oa || Map.size jm /= Map.size om)
+
+insertAvailMap key val (AvailMap a m) =
+                 (AvailMap (a `addAvail` key)
+                             (Map.insertWith Set.union key (Set.singleton val) m))
+
+eraseLoads roots (AvailMap a m) =
+                 (AvailMap a (Set.fold Map.delete m roots))
+
+lookupAvailMap key (AvailMap a m) =
+  if availIn key a
+   then case fmap Set.toList (Map.lookup key m) of
+               Nothing -> []
+               Just vs -> vs
+   else []
+
+type UnkilledRoots    = AvailSet LLRootVar
+type InitializedRoots = AvailSet LLRootVar
 data Avails = Avails { unkilledRoots :: UnkilledRoots
-                     , loadedRoots   :: LoadedRoots
-                     , loadsForRoots :: Map LLRootVar (Set.Set LLVar) }
+                     , rootLoads     :: AvailMap
+                     , initedRoots   :: InitializedRoots
+                     , availSubst    :: AvailMap
+                     }  -- note: AvailMap works because LLVar == LLRootVar...
+                     deriving Show
+
 --instance Show (AvailSet LLVar) where
 --  show (UniverseMinus elts) = "(UniverseMinus " ++ show (map tidIdent $ Set.toList elts) ++ ")"
 --  show (Avail         elts) = "(Avail "         ++ show (map tidIdent $ Set.toList elts) ++ ")"
@@ -512,31 +561,37 @@ availsXfer = mkFTransfer3 go go (distributeXfer availsLattice go)
   where
     go :: Insn' e x -> Avails -> Avails
     go (CCLabel      {}    ) f = f
-    go (CCGCInit _ var root) f = makeAvail var root f
-    go (CCGCLoad   var root) f = makeAvail var root f
-    go (CCGCKill (Enabled _) roots) f = f { unkilledRoots =
-                                            unkilledRoots f `delAvails` roots }
+    go (CCGCLoad   var root) f = makeLoadAvail var root f
+    go (CCGCInit _ var root) f =trace ("\navailXfer: init of root " ++ show root ++ " ;; " ++ show f) $
+                                 makeLoadAvail var root f `unkill` root
+    go (CCGCKill (Enabled _) roots) f = -- trace ("availXfer: kill of roots " ++ show roots)
+                                                        f `killin` roots
     go (CCGCKill     {}    ) f = f
     go (CCLetVal   _id  l  ) f = ifgc (canGCLetable l) f
     go (CCLetFuns    {}    ) f = ifgc True             f
     go (CCTupleStore {}    ) f = f
-    go (CCRebindId   {}    ) f = f
+    go (CCRebindId _ v1 v2 ) f = trace ("\navailsXfer: replacing " ++ show (tidIdent v1) ++ " with " ++ show (tidIdent v2) ++ " ;; " ++ show f) $
+                                  f { availSubst = insertAvailMap v1 v2 (availSubst f) }
     go _node@(CCLast cclast) f =
          case cclast of
            (CCCont  {}      ) -> f
            (CCCall _ _ _ v _) -> ifgc (canGCCalled v)  f
            (CCCase  {}      ) -> f
 
-    ifgc mayGC f = if mayGC then f { loadedRoots = Avail Set.empty
-                                   , loadsForRoots = Map.empty }
+    ifgc mayGC f = if mayGC then f { rootLoads = noAvailLoads }
                             else f -- when a GC might occur, all root loads
                                    -- become invalidated...
 
-    makeAvail var root f = f { loadedRoots = loadedRoots f `addAvail` root
-                             , loadsForRoots = Map.insertWith Set.union root
-                                        (Set.singleton var) (loadsForRoots f)  }
-availsRewrite :: forall m. FuelMonad m => FwdRewrite m Insn' Avails
-availsRewrite = mkFRewrite d
+    makeLoadAvail var root f = f { rootLoads = insertAvailMap root var (rootLoads f) }
+
+    -- Killing a root implies removing it from the unkilled set, and vice versa.
+    killin f roots = f { rootLoads     = eraseLoads roots (rootLoads f)
+                       , unkilledRoots = unkilledRoots f `delAvails` roots }
+    unkill f root  = f { unkilledRoots = unkilledRoots f `addAvail`  root
+                       , initedRoots   = initedRoots f   `addAvail`  root }
+
+availsRewrite :: forall m. FuelMonad m => RootLiveWhenGC -> FwdRewrite m Insn' Avails
+availsRewrite allRoots = mkFRewrite d
   where
     d :: Insn' e x -> Avails -> m (Maybe (Graph Insn' e x))
     d (CCLabel      {}       )   _    = return Nothing
@@ -544,39 +599,88 @@ availsRewrite = mkFRewrite d
     d (CCLetFuns    {}       )   _    = return Nothing
     d (CCTupleStore {}       )   _    = return Nothing
     d (CCRebindId   {}       )   _    = return Nothing
-    d (CCGCLoad     var' root)   a    =
-        if availIn root (loadedRoots a)
-          then case fmap Set.toList (Map.lookup root (loadsForRoots a)) of
-                 Just [var] -> return $ Just $ mkMiddle (CCRebindId var' var)
-                 Just _     -> return Nothing
-                 Nothing    -> return Nothing
-          else return Nothing
-    d (CCGCInit     {}       )   _    = return Nothing
+    -- When we see a load from a root and a prior load of that root is
+    -- in scope that hasn't been killed by a potential GC, replace the
+    -- new load with the value of the old one.
+    -- That is, replace::
+    --          let var  = load root in
+    --          let var' = load root in
+    --          ... var ... var' ...
+    -- with::
+    --          let var  = load root in
+    --          REPLACE var' WITH var in
+    --          ... var ... var' ...
+    d (CCGCLoad     var' root0)   a =
+        let root = s a root0 in
+        let showd v = show (tidIdent v) in
+        let replacement = if root == root0 then Nothing
+                           else trace ("availsRewrite CCGCLoad " ++ showd var' ++ "; root0=" ++ showd root0 ++ "; root= " ++ showd root) $
+                                 Just $ mkMiddle $ CCGCLoad var' root in
+        --let replacement = Nothing in
+        case lookupAvailMap root (rootLoads a) of
+              [var] -> return $ Just $ mkMiddle (CCRebindId (text "gcload") var' var)
+              _     -> return replacement
+
+    d (CCGCInit j v root0) a =
+      if not doReuseRootSlots || root0 /= s a root0 ||
+                                 (case show (tidIdent root0) of
+                                   ('l':'s':_) -> True
+                                   _ -> False
+                                  )then return Nothing
+       else
+        let root = s a root0 in
+        -- Note: we remove the root eligible for replacement from consideration.
+        -- Also, if a root is killed in the body of a loop, it will be marked
+        -- as such at the head of the loop, so we restrict ourselves to roots
+        -- which have been both initilized and killed (on all paths), not just
+        -- killed.
+        let killedRoots = Set.toList $ (Set.delete root allRoots
+                                                `lessAvail` unkilledRoots a)
+                                                  `availFrom` initedRoots a in
+        let killedRootsOfRightType = filter (varTypesEq v) killedRoots in
+        case killedRootsOfRightType of
+          [] -> return Nothing
+          (r:_) ->trace ("*** GCInit: " ++ show (tidIdent root) ++ " (originally " ++ show (tidIdent root0) ++ ") :: killedRootsOfRightType: " ++ show (map tidIdent killedRootsOfRightType)) $
+                   return $ Just $ mkMiddle (CCRebindId (text "gcinit") root r)
+                               <*> mkMiddle (CCGCInit j v r)
     d (CCGCKill Disabled    _)   _    = return Nothing
     d (CCGCKill enabled roots)   a = return $ Just $
-        if Set.null unkilled
-          then emptyGraph
+        if {-trace ("availsRewrite saw GCKill of roots: " ++ show roots ++ "; subst= " ++ show (availSubst a)
+                ++ "unkilled: " ++ show unkilled) $-} Set.null unkilled
+          then emptyGraph -- Remove kills of killed roots == keep unkilled ones.
           else mkMiddle (CCGCKill enabled unkilled)
-               where unkilled = roots `availFrom` unkilledRoots a
+               where unkilled = Set.map (s a) roots `availFrom` unkilledRoots a
     d (CCLast {}             )   _    = return Nothing
 
-runAvails :: IORef Uniq -> BasicBlockGraph' -> IO BasicBlockGraph'
-runAvails uref bbgp = runWithUniqAndFuel uref infiniteFuel (go bbgp)
+    varTypesEq v1 v2 = tidType v1 == tidType v2
+
+    s a v = case lookupAvailMap v (availSubst a) of
+              [    ] -> v
+              [ v' ] -> v'
+              s -> error $ "Subst mapped " ++ show v ++ " to  " ++ show s
+
+runAvails :: IORef Uniq -> BasicBlockGraph' -> RootLiveWhenGC -> IO BasicBlockGraph'
+runAvails uref bbgp rootsLiveAtGCPoints = runWithUniqAndFuel uref infiniteFuel (go bbgp)
   where
     go :: BasicBlockGraph' -> M BasicBlockGraph'
     go bbgp = do
         let ((_,blab), _) = bbgpEntry bbgp
-        let init = Avails (UniverseMinus Set.empty) (Avail Set.empty) Map.empty
+        -- NOTE! The bottom element for the loaded & initialized roots is
+        --       (UnivMinus empty), which is what we use for joins, but we use
+        --       (Avail empty), i.e. top, for the entry block. Thus if/when we
+        --       go back to the entry, we'll discard loads/inits from the body.
+        --       See the commentary on AvailSet and AvailMap.
+        let init = Avails (UniverseMinus Set.empty) noAvailLoads (Avail Set.empty) noAvailLoads
         (body' , _, _) <- analyzeAndRewriteFwd fwd (JustC [bbgpEntry bbgp])
                                                            (bbgpBody bbgp)
-                           (mapSingleton blab init) -- note: not bottom element!
+                           (mapSingleton blab init)
         return bbgp { bbgpBody = body' }
 
-    --__fwd = debugFwdTransfers trace showing (\_ _ -> True) _fwd
+    -- __fwd = debugFwdTransfers trace showing (\_ _ -> True) fwd
     --_fwd = debugFwdJoins trace (\_ -> True) fwd
     fwd = FwdPass { fp_lattice  = availsLattice
                   , fp_transfer = availsXfer
-                  , fp_rewrite  = availsRewrite
+                  , fp_rewrite  = availsRewrite rootsLiveAtGCPoints
                   }
 
 --showing :: Insn' e x -> String
@@ -585,76 +689,19 @@ runAvails uref bbgp = runWithUniqAndFuel uref infiniteFuel (go bbgp)
 availsLattice :: DataflowLattice Avails
 availsLattice = DataflowLattice
   { fact_name = "Availables"
-  , fact_bot  = Avails (UniverseMinus Set.empty) (UniverseMinus Set.empty) Map.empty
+  , fact_bot  = Avails (UniverseMinus Set.empty) (AvailMap (UniverseMinus Set.empty) Map.empty)
+                       (UniverseMinus Set.empty) (AvailMap (UniverseMinus Set.empty) Map.empty)
   , fact_join = add
   }
-    where add _lab (OldFact (Avails ok ol om)) (NewFact (Avails nk nl nm)) = (ch, Avails jk jl jm)
+    where add _lab (OldFact (Avails ok oa oi os)) (NewFact (Avails nk na ni ns))
+                 = (ch, Avails jk ja ji js)
             where
               jk = nk `intersectAvails` ok
-              jl = nl `intersectAvails` ol
-              jm = Map.unionWith Set.intersection om nm
-              ch = changeIf (availSmaller jk ok || availSmaller jl ol)
+              ji = ni `intersectAvails` oi
+              (js, c1) = os `intersectAvailMap` ns
+              (ja, c2) = oa `intersectAvailMap` na
+              ch = changeIf (availSmaller jk ok || availSmaller ji oi
+                                                || c1 || c2)
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
-{-
-
-// * If a function body cannot trigger GC, then the in-params
-//   need not be stored in gcroot slots. Reason: the params
-//   are never live after a GC point, because there are no GC points.
-
-fn-no-gc = { n : i32 => r : ref i32 =>
-  let d = r^; in
-    expect_i32 d;
-    print_i32  n;
-  end
-}
-
-
-// * If there are no GC points after a call returns a gc-ed pointer,
-//   then the returned pointer need not be stored in a gcroot slot.
-//   Reason: there are no further GC points
-//           across which the pointer must be stored.
-
-may-trigger-gc = {
-  let x = (ref 0);
-      d = x ^  ;
-  in  d  end
-}
-
-
-no-gc-after-new = fn (to i32) {
-  may-trigger-gc ! ;
-  let n = (ref 0); in
-    0
-  end
-}
-
-// * If a pointer is dead before a GC can be triggered,
-//   then it need not exist in a gcroot slot.
-//
-no-root-for-dead-ptrs = fn () {
-  expect_i32(42)
-  print_i32(deref(new 42))
-  may-trigger-gc()
-}
-
-no-root-for-dead-ptrs = {
-  expect_i32     42;
-  let r = (ref 42);
-      d = r ^     ;
-  in
-    print_i32 d;
-    may-trigger-gc !;
-  end
-}
-
-
-
-main = fn () {
-  fn-no-gc(30, new 30)
-  //no-gc-after-new()
-  no-root-for-dead-ptrs()
-}
--}
 
