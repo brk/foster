@@ -8,7 +8,7 @@ module Foster.Letable where
 
 import Foster.Base(LiteralInt, LiteralFloat, CtorInfo, ArrayIndex(..),
                    AllocMemRegion, AllocInfo(..), Occurrence, AllocationSource,
-                   FosterPrim(..),
+                   FosterPrim(..), MayGC(..),
                    TypedId(..), Ident(..),
                    -- AExpr(freeIdents), tidIdent,
                    TExpr(freeTypedIds), TypedWith(..))
@@ -179,37 +179,39 @@ isPure letable = case letable of
       ILArrayRead    {} -> True
       ILArrayPoke    {} -> False -- as with store
 
-canGC :: Letable TypeLL -> Bool
-canGC letable = case letable of
-         ILAppCtor     {} -> True
-         ILAllocate    {} -> True
-         ILAlloc       {} -> True
-         ILAllocArray  {} -> True
-         ILCall     _ v _ -> canGCF v
+canGC :: String -> Letable TypeLL -> MayGC
+canGC msg letable = case letable of
+         ILAppCtor     {} -> MayGC
+         ILAllocate    {} -> MayGC
+         ILAlloc       {} -> MayGC
+         ILAllocArray  {} -> MayGC
+         ILCall     _ v _ -> canGCF v -- Exists due to mergeAdjacentBlocks.
          ILCallPrim _ p _ -> canGCPrim p
-         ILTuple    _ _   -> True -- rather than stack allocating tuples, easier to just remove 'em probably.
-         ILText        {} -> True -- unless we statically allocate such things
-         ILInt         {} -> False -- unless it's a bignum...
-         ILBool        {} -> False
-         ILFloat       {} -> False
-         ILKillProcess {} -> False
-         ILOccurrence  {} -> False
-         ILDeref       {} -> False
-         ILStore       {} -> False
-         ILBitcast     {} -> False
-         ILArrayRead   {} -> False
-         ILArrayPoke   {} -> False
+         ILTuple    _ _   -> MayGC -- rather than stack allocating tuples, easier to just remove 'em probably.
+         ILText        {} -> MayGC -- unless we statically allocate such things
+         ILInt         {} -> WillNotGC -- unless it's a bignum...
+         ILBool        {} -> WillNotGC
+         ILFloat       {} -> WillNotGC
+         ILKillProcess {} -> WillNotGC
+         ILOccurrence  {} -> WillNotGC
+         ILDeref       {} -> WillNotGC
+         ILStore       {} -> WillNotGC
+         ILBitcast     {} -> WillNotGC
+         ILArrayRead   {} -> WillNotGC
+         ILArrayPoke   {} -> WillNotGC
 
-canGCPrim (PrimIntTrunc {}) = False
-canGCPrim (PrimOp       {}) = False
+canGCPrim (PrimIntTrunc {}) = WillNotGC
+canGCPrim (PrimOp       {}) = WillNotGC
 canGCPrim (NamedPrim (TypedId _ (GlobalSymbol name))) =
-                    not $ name `elem` (map T.pack
+                    if name `elem` (map T.pack
                         ["expect_i1", "print_i1"
                         ,"expect_i64" , "print_i64" , "expect_i32", "print_i32"
                         ,"expect_i32b", "print_i32b"])
-canGCPrim _ = True
+                    then WillNotGC
+                    else GCUnknown "canGCPrim:global"
+canGCPrim _ = GCUnknown "canGCPrim:other"
 
-canGCF :: TypedId TypeLL -> Bool -- "can gc from calling this function-typed variable"
-canGCF fnvarid = True -- TODO: use effect information to recognize OK calls
+canGCF :: TypedId t -> MayGC -- "can gc from calling this function-typed variable"
+canGCF fnvarid = GCUnknown "canGCF" -- TODO: use effect information to recognize OK calls
                       --      (or explicit mayGC annotations on call sites?)
 

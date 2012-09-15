@@ -57,7 +57,7 @@ type NumPredsMap = Map BlockId Int
 -- The standard definition of a basic block and its parts.
 -- This is equivalent to MinCaml's make_closure ...
 data ILBlock  = Block BlockEntryL [ILMiddle] ILLast
-data ILMiddle = ILLetVal      Ident   (Letable TypeLL)
+data ILMiddle = ILLetVal      Ident   (Letable TypeLL) MayGC
               | ILGCRootKill  LLVar    Bool -- continuation may GC
               | ILGCRootInit  LLVar    RootVar
               | ILTupleStore  [LLVar]  LLVar    AllocMemRegion
@@ -106,22 +106,22 @@ makeAllocationsExplicit bbgp = do
     (CCGCLoad _v    _root) -> return $ mkMiddle $ insn
     (CCGCInit _ _v  _root) -> return $ mkMiddle $ insn
     (CCGCKill {}         ) -> return $ mkMiddle $ insn
-    (CCLetVal id (ILAlloc v memregion)) -> do
+    (CCLetVal id (ILAlloc v memregion) _) -> do
             id' <- ccFreshId (T.pack "ref-alloc")
             let t = tidType v
             let info = AllocInfo t memregion "ref" Nothing Nothing "ref-allocator" NoZeroInit
             return $
-              (mkMiddle $ CCLetVal id  (ILAllocate info)) <*>
-              (mkMiddle $ CCLetVal id' (ILStore v (TypedId (LLPtrType t) id)))
-    (CCLetVal _id (ILTuple [] _allocsrc)) -> return $ mkMiddle $ insn
-    (CCLetVal  id (ILTuple vs _allocsrc)) -> do
+              (mkMiddle $ CCLetVal id  (ILAllocate info) (memRegionMayGC memregion)) <*>
+              (mkMiddle $ CCLetVal id' (ILStore v (TypedId (LLPtrType t) id)) WillNotGC)
+    (CCLetVal _id (ILTuple [] _allocsrc) _) -> return $ mkMiddle $ insn
+    (CCLetVal  id (ILTuple vs _allocsrc) _) -> do
             let t = LLStructType (map tidType vs)
             let memregion = MemRegionGlobalHeap
             let info = AllocInfo t memregion "tup" Nothing Nothing "tup-allocator" NoZeroInit
             return $
-              (mkMiddle $ CCLetVal id (ILAllocate info)) <*>
+              (mkMiddle $ CCLetVal id (ILAllocate info) (memRegionMayGC memregion)) <*>
               (mkMiddle $ CCTupleStore vs (TypedId (LLPtrType t) id) memregion)
-    (CCLetVal id (ILAppCtor genty (CtorInfo cid _) vs)) -> do
+    (CCLetVal id (ILAppCtor genty (CtorInfo cid _) vs) _) -> do
             id' <- ccFreshId (T.pack "ctor-alloc")
             let tynm = ctorTypeName cid ++ "." ++ ctorCtorName cid
             let tag  = ctorSmallInt cid
@@ -130,18 +130,14 @@ makeAllocationsExplicit bbgp = do
             let memregion = MemRegionGlobalHeap
             let info = AllocInfo t memregion tynm (Just tag) Nothing "ctor-allocator" NoZeroInit
             return $
-              (mkMiddle $ CCLetVal id' (ILAllocate info)) <*>
+              (mkMiddle $ CCLetVal id' (ILAllocate info) (memRegionMayGC memregion)) <*>
               (mkMiddle $ CCTupleStore vs obj memregion)  <*>
-              (mkMiddle $ CCLetVal id  (ILBitcast genty obj))
+              (mkMiddle $ CCLetVal id  (ILBitcast genty obj) WillNotGC)
     (CCTupleStore   {}   ) -> return $ mkMiddle insn
-    (CCLetVal  _id  _l   ) -> return $ mkMiddle insn
+    (CCLetVal  _id  _l  _) -> return $ mkMiddle insn
     (CCLetFuns ids clos)   -> makeClosureAllocationExplicit ids clos
     (CCRebindId     {}   ) -> return $ mkMiddle insn
-    (CCLast    cclast)     ->
-          case cclast of
-            (CCCont {}       ) -> return $ mkLast insn
-            (CCCall _ _ _ _ _) -> return $ mkLast insn
-            (CCCase {}       ) -> return $ mkLast insn
+    (CCLast         {}   ) -> return $ mkLast insn
 
     -- Closures and their environments are mutually recursive; we'll tie
     -- the knot using mutation, as usual. For example, we'll translate::
@@ -199,7 +195,8 @@ makeClosureAllocationExplicit ids clos = do
            let envvar = TypedId (LLPtrType t) envid in
            let ealloc = ILAllocate (AllocInfo t memregion "env" Nothing Nothing
                                                 "env-allocator" DoZeroInit) in
-           (CCLetVal envid ealloc, CCTupleStore vs envvar memregion, envvar)
+           (CCLetVal envid ealloc (memRegionMayGC memregion)
+           ,CCTupleStore vs envvar memregion, envvar)
   let cloAllocsAndStores cloid gen_proc_var clo env_gen_id =
            let bitcast = ILBitcast (tidType gen_proc_var) (closureProcVar clo) in
            let memregion = MemRegionGlobalHeap in
@@ -209,11 +206,12 @@ makeClosureAllocationExplicit ids clos = do
            let clovar = TypedId t' cloid in
            let calloc = ILAllocate (AllocInfo t memregion "clo" Nothing Nothing
                                                 "clo-allocator" DoZeroInit) in
-           (CCLetVal cloid calloc, [CCLetVal (tidIdent gen_proc_var) bitcast
-                                   ,CCTupleStore vs clovar memregion])
+           (CCLetVal cloid calloc (memRegionMayGC memregion)
+           , [CCLetVal (tidIdent gen_proc_var) bitcast WillNotGC
+             ,CCTupleStore vs clovar memregion])
   let (envallocs, env_tuplestores, envvars) = unzip3 $ zipWith  envAllocsAndStores envids clos
   let (cloallocs, clo_tuplestores         ) = unzip  $ zipWith4 cloAllocsAndStores ids gen_proc_vars clos env_gens
-  let bitcasts = [CCLetVal envgen (ILBitcast generic_env_ptr_ty envvv)
+  let bitcasts = [CCLetVal envgen (ILBitcast generic_env_ptr_ty envvv) WillNotGC
                  | (envvv, envgen) <- zip envvars env_gens]
   return $ mkMiddles $ envallocs ++ cloallocs ++ bitcasts
                     ++ concat clo_tuplestores ++ env_tuplestores
@@ -257,8 +255,8 @@ flattenGraph bbgp = -- clean up any rebindings from gc root optz.
      midmany insn = [mid insn]
 
      mid :: Insn' O O -> ILMiddle
-     mid (CCLetVal id letable)    = ILLetVal   id  letable
-     mid (CCGCLoad v   fromroot)  = ILLetVal (tidIdent v) (ILDeref (tidType v) fromroot)
+     mid (CCLetVal id letable mgc)= ILLetVal id letable mgc
+     mid (CCGCLoad v   fromroot)  = ILLetVal (tidIdent v) (ILDeref (tidType v) fromroot) WillNotGC
      mid (CCGCInit _ src toroot)  = ILGCRootInit src toroot
      mid (CCTupleStore vs tid r)  = ILTupleStore vs tid r
      mid (CCRebindId {}         ) = error $ "Invariant violated: ILRebindId not eliminated!" -- ILRebindId (tidIdent v1) v2 -- (tidIdent v2) v1 -- ugh :-(
@@ -272,8 +270,8 @@ flattenGraph bbgp = -- clean up any rebindings from gc root optz.
      fin (CCLast (CCCont k vs)       ) = ([], cont k vs)
      fin (CCLast (CCCase v bs mb occ)) = ([], ILCase v bs mb occ)
      -- [[f k vs]] ==> let x = f vs in [[k x]]
-     fin (CCLast (CCCall k t id v vs)) = ([ILLetVal id (ILCall t v vs)]
-                                         , cont k [TypedId t id] )
+     fin (CCLast (CCCall k t id v vs maygc)) =
+        ([ILLetVal id (ILCall t v vs) maygc], cont k [TypedId t id])
      -- Translate continuation application to br or ret, as appropriate.
      cont k vs =
         case (k == retk, vs) of
@@ -312,10 +310,10 @@ mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
                                       -> Maybe (Block Insn' C C, Map LLVar LLVar)
      mergeAdjacent subst (xem, xl) (CCLabel (yb,yargs), yml) =
        case (yargs, xl) of
-         ([yarg], CCLast (CCCall cb t _id v vs)) | cb == yb ->
+         ([yarg], CCLast (CCCall cb t _id v vs maygc)) | cb == yb ->
              if Map.lookup yb numpreds == Just 1
                  then Just ((xem `blockSnoc`
-                              (CCLetVal (tidIdent yarg) (ILCall t v vs)))
+                              (CCLetVal (tidIdent yarg) (ILCall t v vs) maygc))
                                  `blockAppend` yml, subst)
                  else Nothing
          (_, CCLast (CCCont cb   avs))          | cb == yb ->
@@ -365,13 +363,13 @@ mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
           (CCGCInit vr v toroot) -> CCGCInit (s vr) (s v) (s   toroot)
           (CCGCKill enabld roots) -> CCGCKill enabld (Set.map s roots)
           (CCTupleStore vs  v r) -> CCTupleStore (map s vs) (s v) r
-          (CCLetVal  id letable) -> CCLetVal id $ substVarsInLetable s letable
+          (CCLetVal id letable g)-> CCLetVal id (substVarsInLetable s letable) g
           (CCLetFuns ids fns   ) -> CCLetFuns ids $ map (substForInClo s) fns
           (CCRebindId {}       ) -> error $ "Unexpected rebinding!"
           (CCLast    cclast    ) -> case cclast of
-              (CCCont b vs)        -> CCLast (CCCont b (map s vs))
-              (CCCall b t id v vs) -> CCLast (CCCall b t id (s v) (map s vs))
-              (CCCase v cs mb occ) -> CCLast (CCCase (s v) cs mb occ)
+              CCCont b vs          -> CCLast (CCCont b (map s vs))
+              CCCall b t id v vs g -> CCLast (CCCall b t id (s v) (map s vs) g)
+              CCCase v cs mb occ   -> CCLast (CCCase (s v) cs mb occ)
 
      substForInClo :: VarSubstFor Closure
      substForInClo s clo =

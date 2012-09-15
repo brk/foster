@@ -43,6 +43,7 @@ data IntSizeBits = I1 | I8 | I32 | I64 deriving (Eq, Show)
 data ProcOrFunc   = FT_Proc | FT_Func  deriving Show
 data VarNamespace = VarProc | VarLocal deriving Show
 data TailQ = YesTail | NotTail deriving Show
+data MayGC = GCUnknown String | MayGC | WillNotGC deriving (Eq, Show)
 
 data SafetyGuarantee = SG_Static | SG_Dynamic               deriving (Show)
 data ArrayIndex expr = ArrayIndex expr expr SourceRange
@@ -67,6 +68,10 @@ childrenOfArrayIndex (ArrayIndex a b _ _) = [a, b]
 
 briefCC CCC = "ccc"
 briefCC FastCC = ""
+
+boolGC  WillNotGC    = False
+boolGC  MayGC        = True
+boolGC (GCUnknown _) = True
 
 -- |||||||||||||||||||||||||| Patterns ||||||||||||||||||||||||||{{{
 
@@ -353,6 +358,10 @@ data CoroPrim = CoroCreate | CoroInvoke | CoroYield
 --                                 type-specific heaps, etc, etc...
 data AllocMemRegion = MemRegionStack
                     | MemRegionGlobalHeap deriving Show
+
+memRegionMayGC :: AllocMemRegion -> MayGC
+memRegionMayGC MemRegionStack = WillNotGC
+memRegionMayGC MemRegionGlobalHeap = MayGC
 
 data AllocInfo t = AllocInfo { allocType      :: t
                              , allocRegion    :: AllocMemRegion

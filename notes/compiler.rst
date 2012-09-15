@@ -566,6 +566,28 @@ it earlier makes it harder to cheat---which argues in favor of doing
 it earlier!
 
 
+Pass Ordering Constraints: may-GC analysis
+------------------------------------------
+
+Strict requirement: may-gc information must be computed
+before GC root insertion can occur.
+
+Closure conversion loses the call graph
+structure that would make it easy to do a bottom-up may-gc
+analysis, which suggests doing may-gc computation before closure conversion.
+
+However, closure conversion also makes representation decisions which can
+eliminate potential allocations. As a result, if we do may-gc computation
+before closure conversion, we'll be forced into a (well, an even more)
+conservative estimate of which functions might wind up GCing.
+
+Thus we split the collection into two phases: first, we collect constraints
+before doing closure conversion. The primary benefit of this choice is that
+we can generate a more efficient constraint set. If ``f`` calls ``h``, and
+we know that ``h`` has a known gc effect, we can avoid generating and then
+later solving an indirect constraint. After collecting a minimal constraint
+set, we wait until after closure conversion to resolve the constraints.
+
 Extending The Language
 ----------------------
 

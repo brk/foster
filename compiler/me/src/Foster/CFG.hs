@@ -48,6 +48,8 @@ data CFBody = CFB_LetFuns [Ident] [CFFn] CFBody
 
 type KNMono = KNExpr' MonoType
 
+-- Next stage: optimizeCFGs in CFGOptimizations.hs
+
 -- |||||||||||||||||||| Entry Point & Helpers |||||||||||||||||||{{{
 
 -- This is the "entry point" into CFG-building for the outside.

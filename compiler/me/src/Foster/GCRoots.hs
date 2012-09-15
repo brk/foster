@@ -14,7 +14,7 @@ import Text.PrettyPrint.ANSI.Leijen
 import qualified Text.PrettyPrint.Boxes as Boxes
 
 import Foster.Base(TExpr, TypedId(TypedId), freeTypedIds,
-                   tidType, tidIdent, typeOf)
+                   tidType, tidIdent, typeOf, boolGC)
 import Foster.CFG(runWithUniqAndFuel, M, rebuildGraphM)
 import Foster.Config
 import Foster.CloConv
@@ -31,7 +31,10 @@ import Control.Monad(when)
 import Control.Monad.State(evalStateT, get, put, modify, StateT, lift, gets)
 
 -- | Explicit insertion (and optimization) of GC roots.
--- | Assumption: allocation has already been made explicit.
+
+-- Assumption: allocation has already been made explicit,
+--             and we're being called as part of ILExpr.hs's
+--             pre-codegen preparations.
 
 showOptResults = False
 doReuseRootSlots = True
@@ -61,6 +64,7 @@ type GCRootsForVariables = Map LLVar RootVar
 type VariablesForGCRoots = Map RootVar LLVar
 
 -- Precondition: allocations have been made explicit in the input graph.
+-- Precondition: may-gc analysis has updated the annotations in the graph.
 insertSmartGCRoots :: BasicBlockGraph' -> Bool -> Compiled ( BasicBlockGraph' , [RootVar] )
 insertSmartGCRoots bbgp0 dump = do
   bbgp'    <- insertDumbGCRoots bbgp0 dump
@@ -129,16 +133,16 @@ liveAtGCPointXfer2 = mkBTransfer go
     go (CCGCLoad _v fromroot) f = markLive fromroot     f
     go (CCGCInit _ _v toroot) f = markDead   toroot     f
     go (CCGCKill {}         ) f = {- just ignore it  -} f
-    go (CCLetVal  _id  l    ) f = ifgc (canGCLetable l) f
+    go (CCLetVal  _ _  maygc) f = ifgc (boolGC maygc)   f
     go (CCLetFuns _ids _clos) f = ifgc True             f
     go (CCTupleStore   {}   ) f = ifgc False            f
     go (CCRebindId     {}   ) f = ifgc False            f
     go node@(CCLast    cclast) fdb =
           let f = combineLastFacts fdb node in
           case cclast of
-            (CCCont {}       ) -> ifgc False f
-            (CCCall _ _ _ v _) -> ifgc (canGCCalled v) f
-            (CCCase {}       ) -> ifgc False f
+             CCCont {} -> ifgc False f
+             CCCase {} -> ifgc False f
+             CCCall _ _ _ _ _ maygc -> ifgc (boolGC maygc) f
 
     markLive root (s, g, c) = (Set.insert root s, g, c)
     markDead root (s, g, c) = (Set.delete root s, g, c)
@@ -290,11 +294,11 @@ insertDumbGCRoots bbgp dump = do
     CCTupleStore vs v r           -> do {- trace ("isGCable " ++ show v ++ " :" ++ show (isGCable v)) $ -}
                                          withGCLoads (v:vs) (\(v' : vs' ) ->
                                           mkMiddle $ CCTupleStore vs' v' r)
-    CCLetVal id val               -> do ri <- maybeRootInitializer (TypedId (typeOf val) id)
+    CCLetVal id val maygc         -> do ri <- maybeRootInitializer (TypedId (typeOf val) id)
                                         let vs = freeTypedIds val
                                         withGCLoads vs (\vs' ->
                                          let s = makeSubstWith vs vs' in
-                                         (mkMiddle $ CCLetVal id (substVarsInLetable s val)) <*> ri)
+                                         (mkMiddle $ CCLetVal id (substVarsInLetable s val) maygc) <*> ri)
     CCLetFuns [id] [clo]          -> do
                                         let concrete_fnty = fnty_of_procty (tidType (closureProcVar clo))
                                         ri <- maybeRootInitializer (TypedId concrete_fnty id)
@@ -306,8 +310,8 @@ insertDumbGCRoots bbgp dump = do
     CCRebindId     {}             -> do error $ "CCRebindId should not have been introduced yet!"
     CCLast (CCCont b vs)          -> do withGCLoads vs (\vs'  ->
                                                (mkLast $ CCLast (CCCont b vs' )))
-    CCLast (CCCall b t id v vs)   -> do withGCLoads (v:vs) (\(v' : vs' ) ->
-                                               (mkLast $ CCLast (CCCall b t id v' vs' )))
+    CCLast (CCCall b t id v vs mg)-> do withGCLoads (v:vs) (\(v' : vs' ) ->
+                                               (mkLast $ CCLast (CCCall b t id v' vs' mg)))
     CCLast (CCCase v arms mb occ) -> do withGCLoads [v] (\[v' ] ->
                                                (mkLast $ CCLast (CCCase v' arms mb occ)))
 
@@ -398,15 +402,15 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
     CCGCKill  enabled     roots   -> do return $ mkMiddle (CCGCKill enabled (Set.intersection roots liveRoots))
     CCTupleStore vs v r           -> do undoDeadGCLoads (v:vs) (\(v' : vs' ) ->
                                          mkMiddle $ CCTupleStore vs' v' r)
-    CCLetVal id val               -> do let vs = freeTypedIds val
+    CCLetVal id val maygc         -> do let vs = freeTypedIds val
                                         undoDeadGCLoads vs (\vs' ->
                                          let s = makeSubstWith vs vs' in
-                                         mkMiddle $ CCLetVal id (substVarsInLetable s val))
+                                         mkMiddle $ CCLetVal id (substVarsInLetable s val) maygc)
     CCLetFuns {}                  -> do return $ mkMiddle $ insn
     CCLast (CCCont b vs)          -> do undoDeadGCLoads vs (\vs'  ->
                                                (mkLast $ CCLast (CCCont b vs' )))
-    CCLast (CCCall b t id v vs)   -> do undoDeadGCLoads (v:vs) (\(v' : vs' ) ->
-                                               (mkLast $ CCLast (CCCall b t id v' vs' )))
+    CCLast (CCCall b t id v vs mgc)-> do undoDeadGCLoads (v:vs) (\(v' : vs' ) ->
+                                               (mkLast $ CCLast (CCCall b t id v' vs' mgc)))
     CCLast (CCCase v arms mb occ) -> do undoDeadGCLoads [v] (\[v' ] ->
                                                (mkLast $ CCLast (CCCase v' arms mb occ)))
     CCRebindId     {}             -> do error $ "CCRebindId should not have been introduced yet!"
@@ -428,9 +432,6 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
 fnty_of_procty pt@(LLProcType (env:_args) _rets _cc) =
       LLPtrType (LLStructType [pt, env])
 fnty_of_procty other = error $ "GCRoots.hs: fnty_of_procty undefined for " ++ show other
-
-canGCLetable l = let rv = canGC  l in if rv then {- trace ("canGCL: " ++ show l) -} rv else rv
-canGCCalled  v = let rv = canGCF v in if rv then {- trace ("canGCF: " ++ show v) -} rv else rv
 
 -- Filter out non-pointer-typed variables from live set.
 isGCable v = case tidType v of
@@ -563,15 +564,11 @@ availsXfer = mkFTransfer3 go go (distributeXfer availsLattice go)
     go (CCGCInit _ var root) f = makeLoadAvail var root f `unkill` root
     go (CCGCKill (Enabled _) roots) f =                 f `killin` roots
     go (CCGCKill     {}    ) f = f
-    go (CCLetVal   _id  l  ) f = ifgc (canGCLetable l) f
+    go (CCLetVal _ _  maygc) f = ifgc (boolGC maygc)   f
     go (CCLetFuns    {}    ) f = ifgc True             f
     go (CCTupleStore {}    ) f = f
     go (CCRebindId _ v1 v2 ) f = f { availSubst = insertAvailMap v1 v2 (availSubst f) }
-    go _node@(CCLast cclast) f =
-         case cclast of
-           (CCCont  {}      ) -> f
-           (CCCall _ _ _ v _) -> ifgc (canGCCalled v)  f
-           (CCCase  {}      ) -> f
+    go (CCLast       cclast) f = ifgc (canCCLastGC cclast) f
 
     ifgc mayGC f = if mayGC then f { rootLoads = noAvailLoads }
                             else f -- when a GC might occur, all root loads

@@ -56,6 +56,8 @@ import Foster.Bepb.PbAllocInfo.MemRegion as PbMemRegion
 import qualified Text.ProtocolBuffers.Header as P'
 import qualified Data.Text as T
 
+import Debug.Trace(trace)
+
 -----------------------------------------------------------------------
 
 stringSG SG_Static  = u8fromString "static"
@@ -69,14 +71,6 @@ dumpIdent i@(Ident _name num) = if num < 0
                 --then u8fromString $ name
                 then error $ "cannot dump negative ident! " ++ show i
                 else u8fromString $ show i
-
-mayTriggerGC :: TypedId t -> Bool
-mayTriggerGC (TypedId _ (GlobalSymbol name)) = globalMayGC name
-  where globalMayGC name = not $ name `Prelude.elem` (map T.pack
-                        ["expect_i1", "print_i1"
-                        ,"expect_i64" , "print_i64" , "expect_i32", "print_i32"
-                        ,"expect_i32b", "print_i32b"])
-mayTriggerGC _ = True
 
 -----------------------------------------------------------------------
 
@@ -164,8 +158,8 @@ dumpBlock predmap (Block (id, phis) mids illast) =
                     } -- num_preds needed for LLVM to initialize the phi nodes.
 
 dumpMiddle :: ILMiddle -> PbBlockMiddle.BlockMiddle
-dumpMiddle (ILLetVal id letable) =
-    P'.defaultValue { let_val = Just (dumpLetVal id letable) }
+dumpMiddle (ILLetVal id letable maygc) =
+    P'.defaultValue { let_val = Just (dumpLetVal id letable maygc) }
 dumpMiddle (ILGCRootKill v continuationMayGC) =
     P'.defaultValue { gcroot_kill = Just $ P'.defaultValue {
            root_kill_root = (dumpVar v)
@@ -191,10 +185,10 @@ dumpTupleStore (ILTupleStore vs v r) =
     }
 dumpTupleStore other = error $ "dumpTupleStore called on non-tuple-store value: " ++ show other
 
-dumpLetVal :: Ident -> Letable TypeLL -> PbLetVal.LetVal
-dumpLetVal id letable =
+dumpLetVal :: Ident -> Letable TypeLL -> MayGC -> PbLetVal.LetVal
+dumpLetVal id letable maygc =
     P'.defaultValue { let_val_id = dumpIdent id
-                    , let_expr   = dumpExpr letable
+                    , let_expr   = dumpExpr maygc letable
                     }
 
 dumpLast :: ILLast -> PbTerminator.Terminator
@@ -220,81 +214,81 @@ dumpSwitch var arms def occ =
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||||||| Expressions |||||||||||||||||||||||||{{{
-dumpExpr :: Letable TypeLL -> PbLetable.Letable
-dumpExpr (ILAlloc    {}) = error "ILAlloc should have been translated away!"
-dumpExpr (ILBitcast t v) =
+dumpExpr :: MayGC -> Letable TypeLL -> PbLetable.Letable
+dumpExpr _ (ILAlloc    {}) = error "ILAlloc should have been translated away!"
+dumpExpr _ (ILBitcast t v) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar v]
                     , PbLetable.tag   = IL_BITCAST
                     , PbLetable.type' = Just $ dumpType t  }
-dumpExpr x@(ILText s) =
+dumpExpr _ x@(ILText s) =
     P'.defaultValue { PbLetable.string_value = Just $ textToPUtf8 s
                     , PbLetable.tag   = IL_TEXT
                     , PbLetable.type' = Just $ dumpType (typeOf x)  }
 
-dumpExpr x@(ILBool b) =
+dumpExpr _ x@(ILBool b) =
     P'.defaultValue { PbLetable.bool_value = Just b
                     , PbLetable.tag   = IL_BOOL
                     , PbLetable.type' = Just $ dumpType (typeOf x)  }
 
-dumpExpr x@(ILKillProcess _ msg) =
+dumpExpr _ x@(ILKillProcess _ msg) =
     P'.defaultValue { PbLetable.string_value = Just $ textToPUtf8 msg
                     , PbLetable.tag   = IL_KILL_PROCESS
                     , PbLetable.type' = Just $ dumpType (typeOf x)  }
 
-dumpExpr x@(ILTuple [] _allocsrc) =
+dumpExpr _ x@(ILTuple [] _allocsrc) =
     P'.defaultValue { PbLetable.tag   = IL_UNIT
                     , PbLetable.type' = Just $ dumpType (typeOf x) }
 
-dumpExpr (ILTuple vs allocsrc) =
+dumpExpr _ (ILTuple vs allocsrc) =
         error $ "ProtobufIL.hs: ILTuple " ++ show vs
             ++ "\n should have been eliminated!\n" ++ show allocsrc
 
-dumpExpr (ILOccurrence t v occ) =
+dumpExpr _ (ILOccurrence t v occ) =
     P'.defaultValue { PbLetable.tag   = IL_OCCURRENCE
                     , PbLetable.occ   = Just $ dumpOccurrence v occ
                     , PbLetable.type' = Just $ dumpType t }
 
-dumpExpr (ILAllocate info) =
+dumpExpr _ (ILAllocate info) =
     P'.defaultValue { PbLetable.tag   = IL_ALLOCATE
                     , PbLetable.type' = Just $ dumpType (allocType info)
                     , PbLetable.alloc_info = Just $ dumpAllocate info }
 
-dumpExpr  (ILAllocArray (LLArrayType elt_ty) size) =
+dumpExpr _  (ILAllocArray (LLArrayType elt_ty) size) =
     P'.defaultValue { PbLetable.parts = fromList []
                     , PbLetable.tag   = IL_ALLOCATE
                     , PbLetable.type' = Just $ dumpType elt_ty
                     , PbLetable.alloc_info = Just $ dumpAllocate
                        (AllocInfo elt_ty MemRegionGlobalHeap "xarrayx"
                                   Nothing (Just size)  "...array..." NoZeroInit) }
-dumpExpr  (ILAllocArray nonArrayType _) =
+dumpExpr _  (ILAllocArray nonArrayType _) =
          error $ "ProtobufIL.hs: Can't dump ILAllocArray with non-array type "
               ++ show nonArrayType
 
-dumpExpr x@(ILDeref _ a) =
+dumpExpr _ x@(ILDeref _ a) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar a]
                     , PbLetable.tag   = IL_DEREF
                     , PbLetable.type' = Just $ dumpType (typeOf x)  }
 
-dumpExpr x@(ILStore v r) =
+dumpExpr _ x@(ILStore v r) =
     P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [v, r])
                     , PbLetable.tag   = IL_STORE
                     , PbLetable.type' = Just $ dumpType (typeOf x)  }
 
-dumpExpr x@(ILArrayRead _t (ArrayIndex b i rng sg)) =
+dumpExpr _ x@(ILArrayRead _t (ArrayIndex b i rng sg)) =
     P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [b, i])
                     , PbLetable.tag   = IL_ARRAY_READ
                     , PbLetable.string_value = Just $ stringSG sg
                     , PbLetable.prim_op_name = Just $ u8fromString $ highlightFirstLine rng
                     , PbLetable.type' = Just $ dumpType (typeOf x)  }
 
-dumpExpr x@(ILArrayPoke (ArrayIndex b i rng sg) v) =
+dumpExpr _ x@(ILArrayPoke (ArrayIndex b i rng sg) v) =
     P'.defaultValue { PbLetable.parts = fromList (fmap dumpVar [b, i, v])
                     , PbLetable.tag   = IL_ARRAY_POKE
                     , PbLetable.string_value = Just $ stringSG sg
                     , PbLetable.prim_op_name = Just $ u8fromString $ highlightFirstLine rng
                     , PbLetable.type' = Just $ dumpType (typeOf x)  }
 
-dumpExpr x@(ILInt _ty int) =
+dumpExpr _ x@(ILInt _ty int) =
     P'.defaultValue { PbLetable.tag   = IL_INT
                     , PbLetable.type' = Just $ dumpType (typeOf x)
                     , PbLetable.pb_int = Just $ PBInt.PBInt
@@ -302,47 +296,48 @@ dumpExpr x@(ILInt _ty int) =
                                  , bits  = intToInt32   (litIntMinBits int) }
                     }
 
-dumpExpr x@(ILFloat _ty flt) =
+dumpExpr _ x@(ILFloat _ty flt) =
     P'.defaultValue { PbLetable.tag   = IL_FLOAT
                     , PbLetable.type' = Just $ dumpType (typeOf x)
                     , PbLetable.dval  = Just $ litFloatValue flt
                     }
 
-dumpExpr (ILCall t base args)
-        = dumpCall t (dumpVar base)          args (mayTriggerGC base) ccs
+dumpExpr maygc (ILCall t base args)
+        = dumpCall t (dumpVar base)          args maygc ccs
   where stringOfCC FastCC = "fastcc"
         stringOfCC CCC    = "ccc"
         ccs = stringOfCC $ extractCallConv (tidType base)
 
-dumpExpr (ILCallPrim t (NamedPrim (TypedId _ (GlobalSymbol gs))) [arr])
+dumpExpr _ (ILCallPrim t (NamedPrim (TypedId _ (GlobalSymbol gs))) [arr])
         | gs == T.pack "prim_arrayLength"
         = dumpArrayLength t arr
 
-dumpExpr (ILCallPrim t (NamedPrim base) args)
-        = dumpCall t (dumpGlobalSymbol base) args (mayTriggerGC base) "ccc"
+dumpExpr maygc (ILCallPrim t (NamedPrim base) args)
+        = dumpCall t (dumpGlobalSymbol base) args maygc "ccc"
 
-dumpExpr (ILCallPrim t (PrimOp op _ty) args)
+dumpExpr _ (ILCallPrim t (PrimOp op _ty) args)
         = dumpCallPrimOp t op args
 
-dumpExpr (ILCallPrim t (CoroPrim coroPrim argty retty) args)
+dumpExpr _ (ILCallPrim t (CoroPrim coroPrim argty retty) args)
         = dumpCallCoroOp t coroPrim argty retty args True
 
-dumpExpr (ILCallPrim t (PrimIntTrunc _from to) args)
+dumpExpr _ (ILCallPrim t (PrimIntTrunc _from to) args)
         = dumpCallPrimOp t ("trunc_i" ++ show tosize) args
         where tosize = intOfSize to
 
-dumpExpr (ILAppCtor _ _cinfo _) = error $ "ProtobufIL.hs saw ILAppCtor, which"
+dumpExpr _ (ILAppCtor _ _cinfo _) = error $ "ProtobufIL.hs saw ILAppCtor, which"
                                        ++ " should have been translated away..."
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||||||||| Calls ||||||||||||||||||||||||||{{{
-dumpCall :: TypeLL -> TermVar -> [TypedId TypeLL] -> Bool -> String -> PbLetable.Letable
-dumpCall t base args mayGC callConv =
+dumpCall :: TypeLL -> TermVar -> [TypedId TypeLL] -> MayGC -> String -> PbLetable.Letable
+dumpCall t base args maygc callConv =
     P'.defaultValue { PbLetable.tag   = IL_CALL
                     , PbLetable.parts = fromList $ base:(fmap dumpVar args)
                     , PbLetable.type' = Just $ dumpType t
-                    , PbLetable.call_info = Just $ dumpCallInfo mayGC callConv Nothing
+                    , PbLetable.call_info = Just $ dumpCallInfo (trace ("mayGC " ++ show (PbTermVar.name base) ++ "\t:\t" ++show maygc) $ boolGC maygc)
+                                                                callConv Nothing
                     }
 
 dumpCallInfo mayGC strCallConv pbCoroPrim =

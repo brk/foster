@@ -40,6 +40,9 @@ import Foster.PatternMatch
 -- |    as a reusult, nested patterns are translated,
 -- |    via decision trees, to flat switches.
 
+-- Previous stage: optimizeCFGs   in CFGOptimizations.hs
+-- Next     stage: prepForCodegen in ILExpr.hs
+
 -- ||||||||||||||||||||||||| Datatypes ||||||||||||||||||||||||||{{{
 data CCBody = CCB_Procs [CCProc] CCMain
 data CCMain = CCMain TailQ TypeLL LLVar [LLVar]
@@ -70,15 +73,15 @@ data Closure = Closure { closureProcVar  :: LLVar
 type LLRootVar = LLVar
 data Enabled = Disabled | Enabled Bool -- bool: gc may happen in continuation.
 data Insn' e x where
-        CCLabel   :: BlockEntryL                 -> Insn' C O
-        CCLetVal  :: Ident   -> Letable TypeLL   -> Insn' O O
-        CCLetFuns :: [Ident] -> [Closure]        -> Insn' O O
-        CCGCLoad  :: LLVar   -> LLRootVar        -> Insn' O O
-        CCGCInit  :: LLVar -> LLVar -> LLRootVar -> Insn' O O
-        CCGCKill  :: Enabled    -> Set LLRootVar -> Insn' O O
+        CCLabel      :: BlockEntryL                        -> Insn' C O
+        CCLetVal     :: Ident   -> Letable TypeLL -> MayGC -> Insn' O O
+        CCLetFuns    :: [Ident] -> [Closure]               -> Insn' O O
+        CCGCLoad     :: LLVar   -> LLRootVar               -> Insn' O O
+        CCGCInit     :: LLVar   -> LLVar -> LLRootVar      -> Insn' O O
+        CCGCKill     :: Enabled -> Set      LLRootVar      -> Insn' O O
         CCTupleStore :: [LLVar] -> LLVar -> AllocMemRegion -> Insn' O O
-        CCRebindId:: Doc    -> LLVar   -> LLVar  -> Insn' O O
-        CCLast    :: CCLast                      -> Insn' O C
+        CCRebindId   :: Doc     -> LLVar -> LLVar          -> Insn' O O
+        CCLast       :: CCLast                             -> Insn' O C
 
 type RootVar = LLVar
 
@@ -91,9 +94,17 @@ data Proc blocks =
           }
 
 data CCLast = CCCont        BlockId [LLVar] -- either ret or br
-            | CCCall        BlockId TypeLL Ident LLVar [LLVar] -- add ident for later let-binding
+            | CCCall        BlockId TypeLL Ident LLVar [LLVar] MayGC -- add ident for later let-binding
             | CCCase        LLVar [(CtorId, BlockId)] (Maybe BlockId) (Occurrence TypeLL)
             deriving (Show)
+
+canCCLastGC (CCCall _ _ _ v _ maygc) =
+                         case maygc of GCUnknown _ -> boolGC (canGCF v)
+                                       MayGC       -> True
+                                       WillNotGC   -> False
+canCCLastGC (CCCont {}) = False
+canCCLastGC (CCCase {}) = False
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||||| The Driver |||||||||||||||||||||||||{{{
@@ -252,12 +263,13 @@ closureConvertBlocks bbg = do
       transform :: Insn e x -> ILM (Graph Insn' e x)
       transform insn = case insn of
         ILabel l                -> do return $ mkFirst $ CCLabel (llb l)
-        ILetVal id val          -> do return $ mkMiddle $ CCLetVal id (fmap monoToLL val)
+        ILetVal id val          -> do return $ mkMiddle $ CCLetVal id val' (canGC "..." val' ) where val' = fmap monoToLL val
         ILetFuns ids fns        -> do closures <- closureConvertLetFuns ids fns
                                       return $ mkMiddle $ CCLetFuns ids closures
         ILast (CFCont b vs)     -> do return $ mkLast $ CCLast (CCCont b (map llv vs))
         ILast (CFCall b t v vs) -> do id <- ilmFresh (T.pack ".call")
-                                      return $ mkLast $ CCLast (CCCall b (monoToLL t) id (llv v) (map llv vs))
+                                      return $ mkLast $ CCLast (CCCall b (monoToLL t) id (llv v) (map llv vs)
+                                                               (canGCF v))
         ILast (CFCase a pbs) -> do
            allSigs <- gets ilmCtors
            let dt = compilePatterns pbs allSigs
@@ -344,7 +356,7 @@ compileDecisionTree scrutinee (DT_Switch occ subtrees maybeDefaultDt) = do
 llOcc occ = map (\(i,c) -> (i, fmap monoToLL c)) occ
 
 emitOccurrence :: MoVar -> (TypedId MonoType, Occurrence MonoType) -> Insn' O O
-emitOccurrence scrutinee (v, occ) = CCLetVal (tidIdent v) ilocc
+emitOccurrence scrutinee (v, occ) = CCLetVal (tidIdent v) ilocc WillNotGC
            where ilocc = ILOccurrence (monoToLL $ tidType v)
                                       (llv scrutinee) (llOcc occ)
 
@@ -549,7 +561,7 @@ instance Pretty (Set LLRootVar) where
 
 instance Pretty (Insn' e x) where
   pretty (CCLabel   bentry     ) = line <> prettyBlockId (fst bentry) <+> list (map pretty (snd bentry))
-  pretty (CCLetVal  id  letable) = indent 4 (text "let" <+> text (show id) <+> text "="
+  pretty (CCLetVal id letable _) = indent 4 (text "let" <+> text (show id) <+> text "="
                                                        <+> pretty letable)
   pretty (CCLetFuns ids fns    ) = let recfun = if length ids == 1 then "fun" else "rec" in
                                   indent 4 (align $
@@ -571,10 +583,10 @@ isFunc ft = case ft of FnType _ _ _ FT_Func                            -> True
 
 instance Pretty CCLast where
   pretty (CCCont bid       vs) = text "cont" <+> prettyBlockId bid <+>              list (map pretty vs)
-  pretty (CCCall bid _ _ v vs) =
+  pretty (CCCall bid _ _ v vs maygc) =
         case tidType v of
-          LLProcType _ _ _ -> text "call (proc)" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
-          _                -> text "call (func)" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
+          LLProcType _ _ _ -> text ("call (proc,"++show maygc++")") <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
+          _                -> text ("call (func,"++show maygc++")") <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
   pretty (CCCase v arms def occ) = align $
     text "case" <+> prettyOccurrence v occ <$> indent 2
        ((vcat [ arm (text "of" <+> pretty ctor) bid
@@ -628,8 +640,12 @@ block'TargetsOf :: Insn' O C -> [BlockId]
 block'TargetsOf (CCLast last) =
     case last of
         CCCont     b _              -> [b]
-        CCCall     b _ _ _ _        -> [b]
+        CCCall     b _ _ _ _ _      -> [b]
         CCCase     _ cbs (Just b) _ -> b:map snd cbs
         CCCase     _ cbs Nothing  _ ->   map snd cbs
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+
+-- canGCCalled  v = let rv = canGCF v in if rv then {- trace ("canGCF: " ++ show v) -} rv else rv
+--canGCLetable msg l = let rv = canGC msg l in if rv then {- trace ("canGCL: " ++ show l) -} rv else rv
 
