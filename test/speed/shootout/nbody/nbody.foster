@@ -24,8 +24,8 @@ pz = { p : Planet => case p of $Planet _ _ v  _ _ _  _ -> v^ end };
 vx = { p : Planet => case p of $Planet _ _ _  v _ _  _ -> v^ end };
 vy = { p : Planet => case p of $Planet _ _ _  _ v _  _ -> v^ end };
 vz = { p : Planet => case p of $Planet _ _ _  _ _ v  _ -> v^ end };
-ma = { p : Planet => case p of $Planet _ _ _  _ _ _  v -> v^ end };
-pxr = { p : Planet => case p of $Planet v _ _  _ _ _  _ -> v end };
+ma = { p : Planet => case p of $Planet _ _ _  _ _ _  v -> v^ end }; // cfg sz: 4
+pxr = { p : Planet => case p of $Planet v _ _  _ _ _  _ -> v end }; // cfg sz: 3
 pyr = { p : Planet => case p of $Planet _ v _  _ _ _  _ -> v end };
 pzr = { p : Planet => case p of $Planet _ _ v  _ _ _  _ -> v end };
 vxr = { p : Planet => case p of $Planet _ _ _  v _ _  _ -> v end };
@@ -35,7 +35,7 @@ mar = { p : Planet => case p of $Planet _ _ _  _ _ _  v -> v end };
 
 mkPlanet = { px : Float64 => py : Float64 => pz : Float64 =>
              vx : Float64 => vy : Float64 => vz : Float64 =>
-             mass : Float64 =>
+             mass : Float64 => // cfg sz 8
   Planet (ref px) (ref py) (ref pz) (ref vx) (ref vy) (ref vz) (ref mass)
 };
 
@@ -89,22 +89,22 @@ mkBodies = { nbodies : Int32 =>
   end
 };
 
-repeat = { n : Int32 => f : { () } =>
+repeat = { n : Int32 => f : { () } => // cfg sz 15
   if n >Int32 0 then f !; repeat (n -Int32 1) f else () end
 };
 
-incrBy = { r : Ref Int32 => n : Int32 => (n +Int32 r^) >^ r; };
+incrBy = { r : Ref Int32 => n : Int32 => (n +Int32 r^) >^ r; }; // cfg size: 5
 decrBy = { r : Ref Int32 => n : Int32 => (n -Int32 r^) >^ r; };
 
 incrByFloat64 = { r : Ref Float64 => n : Float64 => (r^ +f64 n) >^ r; };
 decrByFloat64 = { r : Ref Float64 => n : Float64 => (r^ -f64 n) >^ r; };
 multByFloat64 = { r : Ref Float64 => n : Float64 => (r^ *f64 n) >^ r; };
 
-dot_bodyPos = { b : Planet =>
+dot_bodyPos = { b : Planet => // cfg sz 19
   (vx b *f64 vx b)  +f64  (vy b *f64 vy b)  +f64  (vz b *f64 vz b)
 };
 
-energy = { bodies : Array Planet =>
+energy = { bodies : Array Planet => // (top-level) cfg size: 9; total: 53
   let e = (ref 0.0); in
     arrayEnum bodies { b1 : Planet => i : Int64 =>
       incrByFloat64 e (0.5 *f64 ma b1 *f64 dot_bodyPos b1);

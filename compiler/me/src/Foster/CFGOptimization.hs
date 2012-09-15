@@ -427,15 +427,15 @@ runLiveness uref bbg = runWithUniqAndFuel uref infiniteFuel (go bbg)
 instance AExpr (Letable ty)    where freeIdents x = map tidIdent $ ((freeTypedIds x) :: [TypedId ty])
 instance AExpr BasicBlockGraph where freeIdents x = map tidIdent $ ((freeTypedIds x) :: [TypedId MonoType])
 
-showing :: Insn e x -> String
+--showing :: Insn e x -> String
 --showing insn = "SHOWING: " ++ show (pretty insn) ++ "\nEND SHOWING\n"
-showing insn = show (pretty insn)
+--showing insn = show (pretty insn)
 
 cfgSize :: BasicBlockGraph -> (Int, Int) -- toplevel, cumulative
 cfgSize bbg = foldGraphNodes go (bbgBody bbg) (0, 0)
   where
     go :: Insn e x -> (Int, Int) -> (Int, Int)
-    go (ILabel   (_bid, _vs)) (t,a) = (t + 1         , a + 1)
+    go (ILabel   (_bid, _vs)) (t,a) = (t             , a)
     go (ILetVal _id  letable) (t,a) = (t + size      , a + size)
                                      where size = letableSize letable
     go (ILetFuns _ids fns   ) (t,a) = (t + length fns, a + length fns +
