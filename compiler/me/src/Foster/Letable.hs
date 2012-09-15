@@ -89,7 +89,7 @@ instance TypedWith (Letable MonoType) MonoType where
       ILArrayRead t _   -> t
       ILArrayPoke   ai v-> TupleType []
       ILAllocate info   -> PtrType (allocType info)
-      
+
 instance TypedWith (Letable TypeLL) TypeLL where
   typeOf letable = case letable of
       ILText         {} -> LLTyConApp "Text" []
@@ -134,6 +134,29 @@ substVarsInLetable s letable = case letable of
   ILAllocArray  t v                        -> ILAllocArray  t (s v)
   ILArrayRead   t (ArrayIndex v1 v2 rng a) -> ILArrayRead   t (ArrayIndex (s v1) (s v2) rng a)
   ILArrayPoke  (ArrayIndex v1 v2 rng a) v3 -> ILArrayPoke  (ArrayIndex (s v1) (s v2) rng a) (s v3)
+
+-- | Some letables are trivial (literals, bitcasts), others not so much.
+--   It remains to be seen whether deref/store should be counted or not.
+letableSize :: Letable t -> Int
+letableSize letable = case letable of
+      ILText         {} -> 0
+      ILBool         {} -> 0
+      ILInt          {} -> 0 -- TODO: distinguish fixnums from bignums?
+      ILFloat        {} -> 0
+      ILTuple        {} -> 1
+      ILKillProcess  {} -> 0
+      ILOccurrence   {} -> 1
+      ILCallPrim     {} -> 1
+      ILCall         {} -> 1
+      ILAppCtor      {} -> 1
+      ILAllocate     {} -> 1
+      ILAlloc        {} -> 1
+      ILDeref        {} -> 1 -- 0?
+      ILStore        {} -> 0
+      ILBitcast      {} -> 0
+      ILAllocArray   {} -> 1
+      ILArrayRead    {} -> 1
+      ILArrayPoke    {} -> 1
 
 isPure :: Letable MonoType -> Bool
 isPure letable = case letable of

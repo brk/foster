@@ -9,7 +9,7 @@ module Foster.CFGOptimization (optimizeCFGs) where
 
 import Foster.Base
 import Foster.MonoType
-import Foster.Letable(Letable(..), isPure)
+import Foster.Letable(Letable(..), isPure, letableSize)
 import Foster.CFG
 
 import Compiler.Hoopl
@@ -436,7 +436,8 @@ cfgSize bbg = foldGraphNodes go (bbgBody bbg) (0, 0)
   where
     go :: Insn e x -> (Int, Int) -> (Int, Int)
     go (ILabel   (_bid, _vs)) (t,a) = (t + 1         , a + 1)
-    go (ILetVal _id _letable) (t,a) = (t + 1         , a + 1)
+    go (ILetVal _id  letable) (t,a) = (t + size      , a + size)
+                                     where size = letableSize letable
     go (ILetFuns _ids fns   ) (t,a) = (t + length fns, a + length fns +
                                       sum [snd $ cfgSize (fnBody f) | f <- fns])
     go (ILast   _cflast     ) (t,a) = (t + 1         , a + 1)
