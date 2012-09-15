@@ -931,10 +931,11 @@ the possibility of inlining, because the closure **escapes** the scope of ``x``.
 .. note::
 
    In a data-flow framework, "escaping" is even more conservative, and I don't
-   think that the environment problem actually occurs in practice. Consider:
-   in order for a function to escape the scope of one of its free variables,
-   the function must escape upwards, but return continuations are completely
-   opaque...
+   think that the environment problem actually occurs in practice without using
+   aggressive control-flow analysis, which can reason about where returned/
+   escaping values can flow. Consider: in order for a function to escape the
+   scope of one of its free variables, the function must escape upwards, but
+   return continuations are completely opaque to pure data flow analysis...
 
 .. note::
 

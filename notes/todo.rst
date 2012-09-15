@@ -137,7 +137,6 @@ TODO: less minor optimizations
   ``f_unknown(env, args) = case args of (x,y,...,z) -> f_known(env, x,y,...,z)``
 * Think about function arity, type inference, higher rank functions...
 
-* LLVM register maps/liveness info for GC
 * Flow-sensitive type systems -- emission of proof witness values?
 * Simple effect analysis, effect-based optimizations?
         Memoization a la Tarditi's dissertation
@@ -153,6 +152,13 @@ TODO: less minor optimizations
    * Lightweight closure conversion: when a free variable is available
      at every dynamic call site (and must alias the captured variable),
      those variables can be moved from the environment to the parameter list.
+
+TODO: LLVM enhancements
+-----------------------
+
+* LLVM register maps/liveness info for GC
+* Fine-grained control over safe point generation
+* Emission of custom code at safe points?
 
 TODO: implementation details
 ----------------------------
