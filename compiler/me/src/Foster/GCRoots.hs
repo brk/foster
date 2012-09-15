@@ -30,8 +30,6 @@ import qualified Data.Text as T(pack)
 import Control.Monad(when)
 import Control.Monad.State(evalStateT, get, put, modify, StateT, lift, gets)
 
-import Debug.Trace(trace)
-
 -- | Explicit insertion (and optimization) of GC roots.
 -- | Assumption: allocation has already been made explicit.
 
@@ -562,16 +560,13 @@ availsXfer = mkFTransfer3 go go (distributeXfer availsLattice go)
     go :: Insn' e x -> Avails -> Avails
     go (CCLabel      {}    ) f = f
     go (CCGCLoad   var root) f = makeLoadAvail var root f
-    go (CCGCInit _ var root) f =trace ("\navailXfer: init of root " ++ show root ++ " ;; " ++ show f) $
-                                 makeLoadAvail var root f `unkill` root
-    go (CCGCKill (Enabled _) roots) f = -- trace ("availXfer: kill of roots " ++ show roots)
-                                                        f `killin` roots
+    go (CCGCInit _ var root) f = makeLoadAvail var root f `unkill` root
+    go (CCGCKill (Enabled _) roots) f =                 f `killin` roots
     go (CCGCKill     {}    ) f = f
     go (CCLetVal   _id  l  ) f = ifgc (canGCLetable l) f
     go (CCLetFuns    {}    ) f = ifgc True             f
     go (CCTupleStore {}    ) f = f
-    go (CCRebindId _ v1 v2 ) f = trace ("\navailsXfer: replacing " ++ show (tidIdent v1) ++ " with " ++ show (tidIdent v2) ++ " ;; " ++ show f) $
-                                  f { availSubst = insertAvailMap v1 v2 (availSubst f) }
+    go (CCRebindId _ v1 v2 ) f = f { availSubst = insertAvailMap v1 v2 (availSubst f) }
     go _node@(CCLast cclast) f =
          case cclast of
            (CCCont  {}      ) -> f
@@ -612,21 +607,14 @@ availsRewrite allRoots = mkFRewrite d
     --          ... var ... var' ...
     d (CCGCLoad     var' root0)   a =
         let root = s a root0 in
-        let showd v = show (tidIdent v) in
         let replacement = if root == root0 then Nothing
-                           else trace ("availsRewrite CCGCLoad " ++ showd var' ++ "; root0=" ++ showd root0 ++ "; root= " ++ showd root) $
-                                 Just $ mkMiddle $ CCGCLoad var' root in
-        --let replacement = Nothing in
+                           else Just $ mkMiddle $ CCGCLoad var' root in
         case lookupAvailMap root (rootLoads a) of
               [var] -> return $ Just $ mkMiddle (CCRebindId (text "gcload") var' var)
               _     -> return replacement
 
     d (CCGCInit j v root0) a =
-      if not doReuseRootSlots || root0 /= s a root0 ||
-                                 (case show (tidIdent root0) of
-                                   ('l':'s':_) -> True
-                                   _ -> False
-                                  )then return Nothing
+      if not doReuseRootSlots || root0 /= s a root0 then return Nothing
        else
         let root = s a root0 in
         -- Note: we remove the root eligible for replacement from consideration.
@@ -640,13 +628,11 @@ availsRewrite allRoots = mkFRewrite d
         let killedRootsOfRightType = filter (varTypesEq v) killedRoots in
         case killedRootsOfRightType of
           [] -> return Nothing
-          (r:_) ->trace ("*** GCInit: " ++ show (tidIdent root) ++ " (originally " ++ show (tidIdent root0) ++ ") :: killedRootsOfRightType: " ++ show (map tidIdent killedRootsOfRightType)) $
-                   return $ Just $ mkMiddle (CCRebindId (text "gcinit") root r)
+          (r:_) -> return $ Just $ mkMiddle (CCRebindId (text "gcinit") root r)
                                <*> mkMiddle (CCGCInit j v r)
     d (CCGCKill Disabled    _)   _    = return Nothing
     d (CCGCKill enabled roots)   a = return $ Just $
-        if {-trace ("availsRewrite saw GCKill of roots: " ++ show roots ++ "; subst= " ++ show (availSubst a)
-                ++ "unkilled: " ++ show unkilled) $-} Set.null unkilled
+        if Set.null unkilled
           then emptyGraph -- Remove kills of killed roots == keep unkilled ones.
           else mkMiddle (CCGCKill enabled unkilled)
                where unkilled = Set.map (s a) roots `availFrom` unkilledRoots a
