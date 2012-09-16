@@ -119,6 +119,8 @@ int main(int argc, char** argv) {
   }
 
   if (numParseErrors > 0) {
+    EDiag() << "Encountered " << numParseErrors << " parsing errors; exiting."
+            << (pgmAST ? " (with AST)" : " (without AST");
     return 3;
   } else if (!pgmAST) {
     return 4;

@@ -34,7 +34,8 @@ displayRecognitionErrorFunc sgDefaultDRE;
 bool handleEarlyExit(      pANTLR3_EXCEPTION, const string&, const SourceRange&);
 bool handleNoViableAlt(    pANTLR3_EXCEPTION, const string&, const SourceRange&);
 bool handleGenericError(   pANTLR3_EXCEPTION, const string&, const SourceRange&);
-bool handleMissingToken(   pANTLR3_EXCEPTION, const string&, const SourceRange&);
+bool handleMissingToken(   pANTLR3_EXCEPTION, const string&, const SourceRange&
+                       ,   pANTLR3_BASE_RECOGNIZER recognizer);
 bool handleUnwantedToken(  pANTLR3_EXCEPTION, const string&, const SourceRange&);
 bool handleMismatchedToken(pANTLR3_EXCEPTION, const string&, const SourceRange&);
 
@@ -103,7 +104,7 @@ static void	customDisplayRecognitionErrorFunc
 
   switch (ex->type) {
     case ANTLR3_MISSING_TOKEN_EXCEPTION:
-      doDefault = handleMissingToken(ex, tokenText, sourceRange);
+      doDefault = handleMissingToken(ex, tokenText, sourceRange, recognizer);
       break;
     case ANTLR3_NO_VIABLE_ALT_EXCEPTION:
       doDefault = handleNoViableAlt(ex, tokenText, sourceRange);
@@ -157,9 +158,11 @@ bool handleEarlyExit(pANTLR3_EXCEPTION ex,
 
 bool handleMissingToken(pANTLR3_EXCEPTION ex,
                         const string& tokenText,
-                        const SourceRange& r) {
+                        const SourceRange& r,
+                        pANTLR3_BASE_RECOGNIZER recognizer) {
   errs() << "Warning: inserted missing " << tokenText << ":\n\n"
          << r << "\n";
+  recognizer->state->errorCount--; // warning, not error!
   return false;
 }
 
