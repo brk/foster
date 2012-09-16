@@ -10,7 +10,6 @@ import Foster.Base(LiteralInt, LiteralFloat, CtorInfo, ArrayIndex(..),
                    AllocMemRegion, AllocInfo(..), Occurrence, AllocationSource,
                    FosterPrim(..), MayGC(..), memRegionMayGC,
                    TypedId(..), Ident(..),
-                   -- AExpr(freeIdents), tidIdent,
                    TExpr(freeTypedIds), TypedWith(..))
 import Foster.MonoType
 import Foster.TypeLL
@@ -79,17 +78,17 @@ instance TypedWith (Letable MonoType) MonoType where
       ILFloat       t _ -> t
       ILTuple      vs _ -> TupleType (map tidType vs)
       ILKillProcess t _ -> t
-      ILOccurrence t v _-> t
+      ILOccurrence t _ _-> t
       ILCallPrim t _ _  -> t
       ILCall     t _ _  -> t
       ILAppCtor  t _ _  -> t
       ILAlloc      v _  -> PtrType (tidType v)
-      ILDeref    t v    -> t
-      ILStore      v v2 -> TupleType []
-      ILBitcast  t _    -> t
+      ILDeref      t _  -> t
+      ILStore       {}  -> TupleType []
+      ILBitcast    t _  -> t
       ILAllocArray t _  -> t
-      ILArrayRead t _   -> t
-      ILArrayPoke   ai v-> TupleType []
+      ILArrayRead  t _  -> t
+      ILArrayPoke   {}  -> TupleType []
       ILAllocate info   -> PtrType (allocType info)
 
 instance TypedWith (Letable TypeLL) TypeLL where
@@ -211,11 +210,10 @@ canGCPrim (NamedPrim (TypedId _ (GlobalSymbol name))) =
                                             else GCUnknown "canGCPrim:global"
 canGCPrim _ = GCUnknown "canGCPrim:other"
 
-canGCF :: TypedId t -> MayGC -- "can gc from calling this function-typed variable"
-canGCF fnvarid = GCUnknown "canGCF" -- TODO: use effect information to recognize OK calls
-                      --      (or explicit mayGC annotations on call sites?)
-
 willNotGCGlobal name = name `elem` (map T.pack
                         ["expect_i1", "print_i1", "expect_i8", "print_i8"
                         ,"expect_i64" , "print_i64" , "expect_i32", "print_i32"
-                        ,"expect_i32b", "print_i32b"])
+                        ,"expect_i32b", "print_i32b", "memcpy_i8_to_from_at_len"
+                        ,"expect_newline", "print_newline", "prim_arrayLength"
+                        ,"prim_print_bytes_stdout", "prim_print_bytes_stderr"
+                        ,"print_float_p9f64", "expect_float_p9f64"])
