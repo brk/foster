@@ -13,8 +13,8 @@ import Compiler.Hoopl
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Text.PrettyPrint.Boxes as Boxes
 
-import Foster.Base(TExpr, TypedId(TypedId), freeTypedIds,
-                   tidType, tidIdent, typeOf, boolGC)
+import Foster.Base(TExpr, TypedId(TypedId), freeTypedIds, Ident,
+                   tidType, tidIdent, typeOf, MayGC(GCUnknown), boolGC)
 import Foster.CFG(runWithUniqAndFuel, M, rebuildGraphM)
 import Foster.Config
 import Foster.CloConv
@@ -65,14 +65,14 @@ type VariablesForGCRoots = Map RootVar LLVar
 
 -- Precondition: allocations have been made explicit in the input graph.
 -- Precondition: may-gc analysis has updated the annotations in the graph.
-insertSmartGCRoots :: BasicBlockGraph' -> Bool -> Compiled ( BasicBlockGraph' , [RootVar] )
-insertSmartGCRoots bbgp0 dump = do
+insertSmartGCRoots :: BasicBlockGraph' -> Map Ident MayGC -> Bool -> Compiled ( BasicBlockGraph' , [RootVar] )
+insertSmartGCRoots bbgp0 mayGCmap dump = do
   bbgp'    <- insertDumbGCRoots bbgp0 dump
   let gcr = computeGCRootsForVars bbgp'
 
-  (bbgp'' , rootsLiveAtGCPoints) <- runLiveAtGCPoint2 bbgp'
+  (bbgp'' , rootsLiveAtGCPoints) <- runLiveAtGCPoint2 bbgp' mayGCmap
   bbgp'''  <- removeDeadGCRoots bbgp'' (mapInverse gcr) rootsLiveAtGCPoints
-  bbgp'''' <- runAvails bbgp''' rootsLiveAtGCPoints
+  bbgp'''' <- runAvails bbgp''' rootsLiveAtGCPoints mayGCmap
 
   lift $ when (showOptResults || dump) $ do
               putStrLn "difference from runAvails:"
@@ -125,24 +125,21 @@ type LiveAGC2 = (LiveGCRoots, RootLiveWhenGC, ContinuationMayGC)
 -- When we see an operation that may induce (copying) GC,
 -- we'll add the current set of live roots to the set of
 -- roots we keep.
-liveAtGCPointXfer2 :: BwdTransfer Insn' LiveAGC2
-liveAtGCPointXfer2 = mkBTransfer go
+liveAtGCPointXfer2 :: Map Ident MayGC -> BwdTransfer Insn' LiveAGC2
+liveAtGCPointXfer2 mayGCmap = mkBTransfer go
   where
     go :: Insn' e x -> Fact x LiveAGC2 -> LiveAGC2
     go (CCLabel   {}        ) f = ifgc False            f
     go (CCGCLoad _v fromroot) f = markLive fromroot     f
     go (CCGCInit _ _v toroot) f = markDead   toroot     f
     go (CCGCKill {}         ) f = {- just ignore it  -} f
-    go (CCLetVal  _ _  maygc) f = ifgc (boolGC maygc)   f
+    go (CCLetVal  _ letable ) f = ifgc (boolGC maygc)   f where maygc = canGC mayGCmap letable
     go (CCLetFuns _ids _clos) f = ifgc True             f
     go (CCTupleStore   {}   ) f = ifgc False            f
     go (CCRebindId     {}   ) f = ifgc False            f
     go node@(CCLast    cclast) fdb =
           let f = combineLastFacts fdb node in
-          case cclast of
-             CCCont {} -> ifgc False f
-             CCCase {} -> ifgc False f
-             CCCall _ _ _ _ _ maygc -> ifgc (boolGC maygc) f
+          ifgc (canCCLastGC mayGCmap cclast) f
 
     markLive root (s, g, c) = (Set.insert root s, g, c)
     markDead root (s, g, c) = (Set.delete root s, g, c)
@@ -171,9 +168,10 @@ liveAtGCPointRewrite2 = mkBRewrite d
                    where deadRoots = Set.difference roots liveRoots
     d (CCLast {}              ) _fdb  = return Nothing
 
-runLiveAtGCPoint2 :: BasicBlockGraph' -> Compiled (BasicBlockGraph'
-                                                          ,RootLiveWhenGC)
-runLiveAtGCPoint2 bbgp = do uref <- gets ccUniqRef
+runLiveAtGCPoint2 :: BasicBlockGraph' -> Map Ident MayGC ->
+                               Compiled (BasicBlockGraph' , RootLiveWhenGC)
+runLiveAtGCPoint2 bbgp mayGCmap
+                       = do uref <- gets ccUniqRef
                             lift $ runWithUniqAndFuel uref infiniteFuel (go bbgp)
   where
     go :: BasicBlockGraph' -> M (BasicBlockGraph' ,RootLiveWhenGC)
@@ -187,7 +185,7 @@ runLiveAtGCPoint2 bbgp = do uref <- gets ccUniqRef
         return (bbgp { bbgpBody = body' } , liveRoots)
 
     bwd = BwdPass { bp_lattice  = liveAtGCPointLattice2
-                  , bp_transfer = liveAtGCPointXfer2
+                  , bp_transfer = liveAtGCPointXfer2 mayGCmap
                   , bp_rewrite  = liveAtGCPointRewrite2
                   }
 
@@ -294,11 +292,11 @@ insertDumbGCRoots bbgp dump = do
     CCTupleStore vs v r           -> do {- trace ("isGCable " ++ show v ++ " :" ++ show (isGCable v)) $ -}
                                          withGCLoads (v:vs) (\(v' : vs' ) ->
                                           mkMiddle $ CCTupleStore vs' v' r)
-    CCLetVal id val maygc         -> do ri <- maybeRootInitializer (TypedId (typeOf val) id)
+    CCLetVal id val               -> do ri <- maybeRootInitializer (TypedId (typeOf val) id)
                                         let vs = freeTypedIds val
                                         withGCLoads vs (\vs' ->
                                          let s = makeSubstWith vs vs' in
-                                         (mkMiddle $ CCLetVal id (substVarsInLetable s val) maygc) <*> ri)
+                                         (mkMiddle $ CCLetVal id (substVarsInLetable s val)) <*> ri)
     CCLetFuns [id] [clo]          -> do
                                         let concrete_fnty = fnty_of_procty (tidType (closureProcVar clo))
                                         ri <- maybeRootInitializer (TypedId concrete_fnty id)
@@ -310,8 +308,8 @@ insertDumbGCRoots bbgp dump = do
     CCRebindId     {}             -> do error $ "CCRebindId should not have been introduced yet!"
     CCLast (CCCont b vs)          -> do withGCLoads vs (\vs'  ->
                                                (mkLast $ CCLast (CCCont b vs' )))
-    CCLast (CCCall b t id v vs mg)-> do withGCLoads (v:vs) (\(v' : vs' ) ->
-                                               (mkLast $ CCLast (CCCall b t id v' vs' mg)))
+    CCLast (CCCall b t id v vs)  -> do withGCLoads (v:vs) (\(v' : vs' ) ->
+                                               (mkLast $ CCLast (CCCall b t id v' vs' )))
     CCLast (CCCase v arms mb occ) -> do withGCLoads [v] (\[v' ] ->
                                                (mkLast $ CCLast (CCCase v' arms mb occ)))
 
@@ -402,15 +400,15 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
     CCGCKill  enabled     roots   -> do return $ mkMiddle (CCGCKill enabled (Set.intersection roots liveRoots))
     CCTupleStore vs v r           -> do undoDeadGCLoads (v:vs) (\(v' : vs' ) ->
                                          mkMiddle $ CCTupleStore vs' v' r)
-    CCLetVal id val maygc         -> do let vs = freeTypedIds val
+    CCLetVal id val               -> do let vs = freeTypedIds val
                                         undoDeadGCLoads vs (\vs' ->
                                          let s = makeSubstWith vs vs' in
-                                         mkMiddle $ CCLetVal id (substVarsInLetable s val) maygc)
+                                         mkMiddle $ CCLetVal id (substVarsInLetable s val))
     CCLetFuns {}                  -> do return $ mkMiddle $ insn
     CCLast (CCCont b vs)          -> do undoDeadGCLoads vs (\vs'  ->
                                                (mkLast $ CCLast (CCCont b vs' )))
-    CCLast (CCCall b t id v vs mgc)-> do undoDeadGCLoads (v:vs) (\(v' : vs' ) ->
-                                               (mkLast $ CCLast (CCCall b t id v' vs' mgc)))
+    CCLast (CCCall b t id v vs)   -> do undoDeadGCLoads (v:vs) (\(v' : vs' ) ->
+                                               (mkLast $ CCLast (CCCall b t id v' vs' )))
     CCLast (CCCase v arms mb occ) -> do undoDeadGCLoads [v] (\[v' ] ->
                                                (mkLast $ CCLast (CCCase v' arms mb occ)))
     CCRebindId     {}             -> do error $ "CCRebindId should not have been introduced yet!"
@@ -555,8 +553,8 @@ data Avails = Avails { unkilledRoots :: UnkilledRoots
 --                         <+> text "loadedRoots="   <> text (show uk)
 --                         <+> text "loadsForRoots=" <> text (show $ Map.map (Set.map tidIdent) fr) <> text ")"
 
-availsXfer :: FwdTransfer Insn' Avails
-availsXfer = mkFTransfer3 go go (distributeXfer availsLattice go)
+availsXfer :: Map Ident MayGC -> FwdTransfer Insn' Avails
+availsXfer mayGCmap = mkFTransfer3 go go (distributeXfer availsLattice go)
   where
     go :: Insn' e x -> Avails -> Avails
     go (CCLabel      {}    ) f = f
@@ -564,11 +562,11 @@ availsXfer = mkFTransfer3 go go (distributeXfer availsLattice go)
     go (CCGCInit _ var root) f = makeLoadAvail var root f `unkill` root
     go (CCGCKill (Enabled _) roots) f =                 f `killin` roots
     go (CCGCKill     {}    ) f = f
-    go (CCLetVal _ _  maygc) f = ifgc (boolGC maygc)   f
+    go (CCLetVal _ letable ) f = ifgc (boolGC maygc)   f where maygc = canGC mayGCmap letable
     go (CCLetFuns    {}    ) f = ifgc True             f
     go (CCTupleStore {}    ) f = f
     go (CCRebindId _ v1 v2 ) f = f { availSubst = insertAvailMap v1 v2 (availSubst f) }
-    go (CCLast       cclast) f = ifgc (canCCLastGC cclast) f
+    go (CCLast       cclast) f = ifgc (canCCLastGC mayGCmap cclast) f
 
     ifgc mayGC f = if mayGC then f { rootLoads = noAvailLoads }
                             else f -- when a GC might occur, all root loads
@@ -642,8 +640,9 @@ availsRewrite allRoots = mkFRewrite d
               [ v' ] -> v'
               s -> error $ "Subst mapped " ++ show v ++ " to  " ++ show s
 
-runAvails :: BasicBlockGraph' -> RootLiveWhenGC -> Compiled BasicBlockGraph'
-runAvails bbgp rootsLiveAtGCPoints = do
+runAvails :: BasicBlockGraph' -> RootLiveWhenGC -> Map Ident MayGC
+                                                -> Compiled BasicBlockGraph'
+runAvails bbgp rootsLiveAtGCPoints mayGCmap = do
          uref <- gets ccUniqRef
          lift $ runWithUniqAndFuel uref infiniteFuel (go bbgp)
   where
@@ -664,7 +663,7 @@ runAvails bbgp rootsLiveAtGCPoints = do
     -- __fwd = debugFwdTransfers trace showing (\_ _ -> True) fwd
     --_fwd = debugFwdJoins trace (\_ -> True) fwd
     fwd = FwdPass { fp_lattice  = availsLattice
-                  , fp_transfer = availsXfer
+                  , fp_transfer = availsXfer mayGCmap
                   , fp_rewrite  = availsRewrite rootsLiveAtGCPoints
                   }
 
@@ -689,4 +688,9 @@ availsLattice = DataflowLattice
                                                 || c1 || c2)
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+canCCLastGC mayGCmap (CCCall _ _ _ v _) =
+  boolGC $ Map.findWithDefault (GCUnknown "") (tidIdent v) mayGCmap
+canCCLastGC _        (CCCont {}) = False
+canCCLastGC _        (CCCase {}) = False
 

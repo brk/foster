@@ -443,8 +443,12 @@ lowerModule ai_mod ctx_il = do
 
      monomod  <- monomorphize   kmod
      cfgmod   <- cfgModule      monomod
+     let mayGCconstraints = collectMayGCConstraints (moduleILbody cfgmod)
+     liftIO $ putStrLn "\n MAY GC CONSTRAINTS ======================="
+     liftIO $ putDocLn $ list (map pretty $ (Map.toList mayGCconstraints))
+     liftIO $ putStrLn "\n/MAY GC CONSTRAINTS ======================="
      ccmod    <- closureConvert cfgmod
-     ilprog   <- prepForCodegen ccmod
+     ilprog   <- prepForCodegen ccmod  mayGCconstraints
 
      whenDumpIR "mono" $ do
          putDocLn $ (outLn "/// Monomorphized program =============")
@@ -474,11 +478,9 @@ lowerModule ai_mod ctx_il = do
     cfgModule :: ModuleIL (KNExpr' MonoType) MonoType -> Compiled (ModuleIL CFBody MonoType)
     cfgModule kmod = do
         uniqref <- gets ccUniqRef
-        wantedFns <- gets ccDumpFns
-        liftIO $ do
-            cfgBody <- computeCFGs uniqref (moduleILbody kmod)
-            cfgBody' <- optimizeCFGs uniqref cfgBody wantedFns
-            return $ kmod { moduleILbody = cfgBody' }
+        cfgBody <- liftIO $ computeCFGs uniqref (moduleILbody kmod)
+        cfgBody' <- optimizeCFGs cfgBody
+        return $ kmod { moduleILbody = cfgBody' }
 
     closureConvert cfgmod = do
         uniqref <- gets ccUniqRef

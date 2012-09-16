@@ -8,7 +8,7 @@ module Foster.Letable where
 
 import Foster.Base(LiteralInt, LiteralFloat, CtorInfo, ArrayIndex(..),
                    AllocMemRegion, AllocInfo(..), Occurrence, AllocationSource,
-                   FosterPrim(..), MayGC(..),
+                   FosterPrim(..), MayGC(..), memRegionMayGC,
                    TypedId(..), Ident(..),
                    -- AExpr(freeIdents), tidIdent,
                    TExpr(freeTypedIds), TypedWith(..))
@@ -16,6 +16,8 @@ import Foster.MonoType
 import Foster.TypeLL
 
 import qualified Data.Text as T
+
+import qualified Data.Map as Map(Map, findWithDefault)
 
 -- The reason we have both ILAllocate and ILAlloc is that
 -- LLCodegen performs auto-loads from stack slots, which
@@ -179,13 +181,15 @@ isPure letable = case letable of
       ILArrayRead    {} -> True
       ILArrayPoke    {} -> False -- as with store
 
-canGC :: String -> Letable TypeLL -> MayGC
-canGC msg letable = case letable of
+canGC :: Map.Map Ident MayGC -> Letable ty -> MayGC
+canGC mayGCmap letable =
+  case letable of
          ILAppCtor     {} -> MayGC
-         ILAllocate    {} -> MayGC
          ILAlloc       {} -> MayGC
          ILAllocArray  {} -> MayGC
-         ILCall     _ v _ -> canGCF v -- Exists due to mergeAdjacentBlocks.
+         ILAllocate info  -> memRegionMayGC (allocRegion info)
+         ILCall     _ v _ -> -- Exists due to mergeAdjacentBlocks.
+                             Map.findWithDefault (GCUnknown "") (tidIdent v) mayGCmap
          ILCallPrim _ p _ -> canGCPrim p
          ILTuple    _ _   -> MayGC -- rather than stack allocating tuples, easier to just remove 'em probably.
          ILText        {} -> MayGC -- unless we statically allocate such things
@@ -203,15 +207,15 @@ canGC msg letable = case letable of
 canGCPrim (PrimIntTrunc {}) = WillNotGC
 canGCPrim (PrimOp       {}) = WillNotGC
 canGCPrim (NamedPrim (TypedId _ (GlobalSymbol name))) =
-                    if name `elem` (map T.pack
-                        ["expect_i1", "print_i1"
-                        ,"expect_i64" , "print_i64" , "expect_i32", "print_i32"
-                        ,"expect_i32b", "print_i32b"])
-                    then WillNotGC
-                    else GCUnknown "canGCPrim:global"
+                    if willNotGCGlobal name then WillNotGC
+                                            else GCUnknown "canGCPrim:global"
 canGCPrim _ = GCUnknown "canGCPrim:other"
 
 canGCF :: TypedId t -> MayGC -- "can gc from calling this function-typed variable"
 canGCF fnvarid = GCUnknown "canGCF" -- TODO: use effect information to recognize OK calls
                       --      (or explicit mayGC annotations on call sites?)
 
+willNotGCGlobal name = name `elem` (map T.pack
+                        ["expect_i1", "print_i1", "expect_i8", "print_i8"
+                        ,"expect_i64" , "print_i64" , "expect_i32", "print_i32"
+                        ,"expect_i32b", "print_i32b"])

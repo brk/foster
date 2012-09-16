@@ -21,12 +21,15 @@ import Foster.Letable
 import Foster.GCRoots
 
 import Data.Map(Map)
-import Data.List(zipWith4)
-import Control.Monad.State(evalState, State, get, gets, modify)
+import Data.List(zipWith4, foldl' )
+import Data.Maybe(maybeToList)
+import Control.Monad.State(evalState, State, get, gets, modify, lift)
 import qualified Data.Set as Set(toList, map)
 import qualified Data.Map as Map(singleton, insertWith, lookup, empty, fromList,
-                                                insert, union, findWithDefault)
+                                        adjust,  insert, union, findWithDefault)
 import qualified Data.Text as T(pack, unpack)
+import qualified Data.Graph as Graph(stronglyConnComp)
+import Data.Graph(SCC(..))
 
 --------------------------------------------------------------------
 
@@ -73,22 +76,38 @@ data ILLast = ILRetVoid
             | ILCase     LLVar [(CtorId, BlockId)] (Maybe BlockId) (Occurrence TypeLL)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-prepForCodegen :: ModuleIL CCBody TypeLL -> Compiled ILProgram
-prepForCodegen m = do
+prepForCodegen :: ModuleIL CCBody TypeLL -> MayGCConstraints -> Compiled ILProgram
+prepForCodegen m mayGCconstraints0 = do
     let decls = map (\(s,t) -> LLExternDecl s t) (moduleILdecls m)
     let dts = moduleILprimTypes m ++ moduleILdataTypes m
-    procs <- mapM deHooplize (flatten $ moduleILbody m)
+    let hprocs = flatten $ moduleILbody m
+    aprocs <- mapM explicateProc hprocs
+
+    --let sccinput = [ (procIdent p, procIdent p, Set.toList s)
+    --            | p <- aprocs, (m,s) <- maybeToList $
+    --                                        Map.lookup (procIdent p) mayGCconstraints0
+    --          ]
+    --let scc = Graph.stronglyConnComp sccinput
+    --lift $ putStrLn $ "maygc SCC input: " ++ show sccinput
+    --lift $ putStrLn $ "maygc SCC: " ++ show scc
+    let mayGCmap = resolveMayGC mayGCconstraints0 aprocs
+    lift $ putStrLn $ "resolved maygc: " ++ show mayGCmap
+
+    procs <- mapM (deHooplize mayGCmap) aprocs
     return $ ILProgram procs decls dts (moduleILsourceLines m)
   where
    flatten :: CCBody -> [CCProc]
    flatten (CCB_Procs procs _) = procs
 
-   deHooplize :: Proc BasicBlockGraph' -> Compiled ILProcDef
-   deHooplize p = do
-     wantedFns <- gets ccDumpFns
+   explicateProc p = do
      g' <- makeAllocationsExplicit (simplifyCFG $ procBlocks p)
-     (g , liveRoots) <- insertSmartGCRoots g' (want p wantedFns)
-     let (cfgBlocks , numPreds) = flattenGraph g
+     return p { procBlocks = g' }
+
+   deHooplize :: Map Ident MayGC -> Proc BasicBlockGraph' -> Compiled ILProcDef
+   deHooplize mayGCmap p = do
+     wantedFns <- gets ccDumpFns
+     (g , liveRoots) <- insertSmartGCRoots (procBlocks p) mayGCmap (want p wantedFns)
+     let (cfgBlocks , numPreds) = flattenGraph g mayGCmap
      return $ ILProcDef (p { procBlocks = cfgBlocks }) numPreds liveRoots
 
    want p wantedFns = T.unpack (identPrefix (procIdent p)) `elem` wantedFns
@@ -106,22 +125,22 @@ makeAllocationsExplicit bbgp = do
     (CCGCLoad _v    _root) -> return $ mkMiddle $ insn
     (CCGCInit _ _v  _root) -> return $ mkMiddle $ insn
     (CCGCKill {}         ) -> return $ mkMiddle $ insn
-    (CCLetVal id (ILAlloc v memregion) _) -> do
+    (CCLetVal id (ILAlloc v memregion)) -> do
             id' <- ccFreshId (T.pack "ref-alloc")
             let t = tidType v
             let info = AllocInfo t memregion "ref" Nothing Nothing "ref-allocator" NoZeroInit
             return $
-              (mkMiddle $ CCLetVal id  (ILAllocate info) (memRegionMayGC memregion)) <*>
-              (mkMiddle $ CCLetVal id' (ILStore v (TypedId (LLPtrType t) id)) WillNotGC)
-    (CCLetVal _id (ILTuple [] _allocsrc) _) -> return $ mkMiddle $ insn
-    (CCLetVal  id (ILTuple vs _allocsrc) _) -> do
+              (mkMiddle $ CCLetVal id  (ILAllocate info)) <*>
+              (mkMiddle $ CCLetVal id' (ILStore v (TypedId (LLPtrType t) id)))
+    (CCLetVal _id (ILTuple [] _allocsrc)) -> return $ mkMiddle $ insn
+    (CCLetVal  id (ILTuple vs _allocsrc)) -> do
             let t = LLStructType (map tidType vs)
             let memregion = MemRegionGlobalHeap
             let info = AllocInfo t memregion "tup" Nothing Nothing "tup-allocator" NoZeroInit
             return $
-              (mkMiddle $ CCLetVal id (ILAllocate info) (memRegionMayGC memregion)) <*>
+              (mkMiddle $ CCLetVal id (ILAllocate info)) <*>
               (mkMiddle $ CCTupleStore vs (TypedId (LLPtrType t) id) memregion)
-    (CCLetVal id (ILAppCtor genty (CtorInfo cid _) vs) _) -> do
+    (CCLetVal id (ILAppCtor genty (CtorInfo cid _) vs)) -> do
             id' <- ccFreshId (T.pack "ctor-alloc")
             let tynm = ctorTypeName cid ++ "." ++ ctorCtorName cid
             let tag  = ctorSmallInt cid
@@ -130,11 +149,11 @@ makeAllocationsExplicit bbgp = do
             let memregion = MemRegionGlobalHeap
             let info = AllocInfo t memregion tynm (Just tag) Nothing "ctor-allocator" NoZeroInit
             return $
-              (mkMiddle $ CCLetVal id' (ILAllocate info) (memRegionMayGC memregion)) <*>
+              (mkMiddle $ CCLetVal id' (ILAllocate info)) <*>
               (mkMiddle $ CCTupleStore vs obj memregion)  <*>
-              (mkMiddle $ CCLetVal id  (ILBitcast genty obj) WillNotGC)
+              (mkMiddle $ CCLetVal id  (ILBitcast genty obj))
     (CCTupleStore   {}   ) -> return $ mkMiddle insn
-    (CCLetVal  _id  _l  _) -> return $ mkMiddle insn
+    (CCLetVal  _id  _l   ) -> return $ mkMiddle insn
     (CCLetFuns ids clos)   -> makeClosureAllocationExplicit ids clos
     (CCRebindId     {}   ) -> return $ mkMiddle insn
     (CCLast         {}   ) -> return $ mkLast insn
@@ -195,8 +214,7 @@ makeClosureAllocationExplicit ids clos = do
            let envvar = TypedId (LLPtrType t) envid in
            let ealloc = ILAllocate (AllocInfo t memregion "env" Nothing Nothing
                                                 "env-allocator" DoZeroInit) in
-           (CCLetVal envid ealloc (memRegionMayGC memregion)
-           ,CCTupleStore vs envvar memregion, envvar)
+           (CCLetVal envid ealloc , CCTupleStore vs envvar memregion, envvar)
   let cloAllocsAndStores cloid gen_proc_var clo env_gen_id =
            let bitcast = ILBitcast (tidType gen_proc_var) (closureProcVar clo) in
            let memregion = MemRegionGlobalHeap in
@@ -206,17 +224,67 @@ makeClosureAllocationExplicit ids clos = do
            let clovar = TypedId t' cloid in
            let calloc = ILAllocate (AllocInfo t memregion "clo" Nothing Nothing
                                                 "clo-allocator" DoZeroInit) in
-           (CCLetVal cloid calloc (memRegionMayGC memregion)
-           , [CCLetVal (tidIdent gen_proc_var) bitcast WillNotGC
+           (CCLetVal cloid calloc
+           , [CCLetVal (tidIdent gen_proc_var) bitcast
              ,CCTupleStore vs clovar memregion])
   let (envallocs, env_tuplestores, envvars) = unzip3 $ zipWith  envAllocsAndStores envids clos
   let (cloallocs, clo_tuplestores         ) = unzip  $ zipWith4 cloAllocsAndStores ids gen_proc_vars clos env_gens
-  let bitcasts = [CCLetVal envgen (ILBitcast generic_env_ptr_ty envvv) WillNotGC
+  let bitcasts = [CCLetVal envgen (ILBitcast generic_env_ptr_ty envvv)
                  | (envvv, envgen) <- zip envvars env_gens]
   return $ mkMiddles $ envallocs ++ cloallocs ++ bitcasts
                     ++ concat clo_tuplestores ++ env_tuplestores
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+resolveMayGC :: MayGCConstraints -> [ Proc BasicBlockGraph' ] -> Map Ident MayGC
+resolveMayGC constraints procs =
+  let scc = Graph.stronglyConnComp [ ((p,m), procIdent p, Set.toList s)
+                | p <- procs, (m,s) <- maybeToList $
+                                            Map.lookup (procIdent p) constraints
+            ] in
+  foldl' go Map.empty scc
+    where go :: (Map Ident MayGC -> SCC (Proc BasicBlockGraph' , MayGC) -> MayGCMap)
+          go m (AcyclicSCC (p,mgc)) = let m' = collectMayGCConstraints_Proc p $
+                                                (Map.insert (procIdent p) mgc m)
+                                      in Map.adjust unknownMeansNoGC (procIdent p) m'
+          go m (CyclicSCC [(p,mgc)])= let m' = collectMayGCConstraints_Proc p $
+                                                (Map.insert (procIdent p) mgc m)
+                                      in Map.adjust unknownMeansNoGC (procIdent p) m'
+          go _ (CyclicSCC pms) = let (ps,_mgcs) = unzip pms in
+                                 error $ "Can't yet handle CyclicCC: " ++ show (map procIdent ps)
+
+-- At this point, all allocation has been made explicit;
+-- if a known function has no constraints that imply it will GC,
+-- then we can conclude that it will not GC.
+unknownMeansNoGC (GCUnknown _) = WillNotGC
+unknownMeansNoGC other         = other
+
+-- Individual calls should be pessimistically assumed to GC.
+unknownMeansMayGC (GCUnknown _) = MayGC
+unknownMeansMayGC other         = other
+
+type MayGCMap = Map Ident MayGC
+
+collectMayGCConstraints_Proc :: Proc BasicBlockGraph' -> MayGCMap -> MayGCMap
+collectMayGCConstraints_Proc proc m = foldGraphNodes go (bbgpBody $ procBlocks proc) m
+  where
+        go :: forall e x. Insn' e x -> MayGCMap -> MayGCMap
+        go (CCLabel        {}   ) m = m
+        go (CCGCLoad       {}   ) m = m
+        go (CCGCInit       {}   ) m = m
+        go (CCGCKill       {}   ) m = m
+        go (CCTupleStore   {}   ) m = m
+        go (CCRebindId     {}   ) m = m
+        go (CCLast (CCCont {} ) ) m = m
+        go (CCLast (CCCase {} ) ) m = m
+
+        go (CCLetFuns  _ _clos) _ = error $ "collecMayGCConstraints saw CCLetClosures!"
+
+        go (CCLast (CCCall _ _ _ v _ )) m = withGC m $ unknownMeansMayGC (Map.findWithDefault (GCUnknown "") (tidIdent v) m)
+        go (CCLetVal  _ letable)        m = withGC m $ unknownMeansMayGC (canGC m letable)
+
+        withGC m WillNotGC     = m
+        withGC m MayGC         = Map.adjust (\_ -> MayGC) (procIdent proc) m
+        withGC m (GCUnknown _) = m
 --------------------------------------------------------------------
 
 computeNumPredecessors elab blocks =
@@ -237,8 +305,8 @@ withGraphBlocks bbgp f =
    let jumpTo bg = case bbgpEntry bg of (bid, _) -> CCLast $ CCCont bid [] in
    f $ preorder_dfs $ mkLast (jumpTo bbgp) |*><*| bbgpBody bbgp
 
-flattenGraph :: BasicBlockGraph' -> ( [ILBlock] , NumPredsMap )
-flattenGraph bbgp = -- clean up any rebindings from gc root optz.
+flattenGraph :: BasicBlockGraph' -> MayGCMap -> ( [ILBlock] , NumPredsMap )
+flattenGraph bbgp mayGCmap = -- clean up any rebindings from gc root optz.
    withGraphBlocks (simplifyCFG bbgp) (\blocks ->
      ( map (deHooplizeBlock (bbgpRetK bbgp)) blocks
      , computeNumPredecessors (bbgpEntry bbgp) blocks ))
@@ -255,7 +323,7 @@ flattenGraph bbgp = -- clean up any rebindings from gc root optz.
      midmany insn = [mid insn]
 
      mid :: Insn' O O -> ILMiddle
-     mid (CCLetVal id letable mgc)= ILLetVal id letable mgc
+     mid (CCLetVal id letable   ) = ILLetVal id letable (canGC mayGCmap letable)
      mid (CCGCLoad v   fromroot)  = ILLetVal (tidIdent v) (ILDeref (tidType v) fromroot) WillNotGC
      mid (CCGCInit _ src toroot)  = ILGCRootInit src toroot
      mid (CCTupleStore vs tid r)  = ILTupleStore vs tid r
@@ -270,7 +338,8 @@ flattenGraph bbgp = -- clean up any rebindings from gc root optz.
      fin (CCLast (CCCont k vs)       ) = ([], cont k vs)
      fin (CCLast (CCCase v bs mb occ)) = ([], ILCase v bs mb occ)
      -- [[f k vs]] ==> let x = f vs in [[k x]]
-     fin (CCLast (CCCall k t id v vs maygc)) =
+     fin (CCLast (CCCall k t id v vs)) =
+        let maygc = Map.findWithDefault MayGC (tidIdent v) mayGCmap in
         ([ILLetVal id (ILCall t v vs) maygc], cont k [TypedId t id])
      -- Translate continuation application to br or ret, as appropriate.
      cont k vs =
@@ -310,10 +379,10 @@ mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
                                       -> Maybe (Block Insn' C C, Map LLVar LLVar)
      mergeAdjacent subst (xem, xl) (CCLabel (yb,yargs), yml) =
        case (yargs, xl) of
-         ([yarg], CCLast (CCCall cb t _id v vs maygc)) | cb == yb ->
+         ([yarg], CCLast (CCCall cb t _id v vs)) | cb == yb ->
              if Map.lookup yb numpreds == Just 1
                  then Just ((xem `blockSnoc`
-                              (CCLetVal (tidIdent yarg) (ILCall t v vs) maygc))
+                              (CCLetVal (tidIdent yarg) (ILCall t v vs)))
                                  `blockAppend` yml, subst)
                  else Nothing
          (_, CCLast (CCCont cb   avs))          | cb == yb ->
@@ -363,12 +432,12 @@ mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
           (CCGCInit vr v toroot) -> CCGCInit (s vr) (s v) (s   toroot)
           (CCGCKill enabld roots) -> CCGCKill enabld (Set.map s roots)
           (CCTupleStore vs  v r) -> CCTupleStore (map s vs) (s v) r
-          (CCLetVal id letable g)-> CCLetVal id (substVarsInLetable s letable) g
+          (CCLetVal id letable ) -> CCLetVal id (substVarsInLetable s letable)
           (CCLetFuns ids fns   ) -> CCLetFuns ids $ map (substForInClo s) fns
           (CCRebindId {}       ) -> error $ "Unexpected rebinding!"
           (CCLast    cclast    ) -> case cclast of
               CCCont b vs          -> CCLast (CCCont b (map s vs))
-              CCCall b t id v vs g -> CCLast (CCCall b t id (s v) (map s vs) g)
+              CCCall b t id v vs   -> CCLast (CCCall b t id (s v) (map s vs))
               CCCase v cs mb occ   -> CCLast (CCCase (s v) cs mb occ)
 
      substForInClo :: VarSubstFor Closure

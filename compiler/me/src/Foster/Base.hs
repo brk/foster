@@ -11,7 +11,7 @@ import Foster.Kind
 import Foster.Output
 
 import Data.IORef(IORef)
-import Data.Set as Set(fromList, toList, difference, insert, empty, member)
+import Data.Set as Set(Set, fromList, toList, difference, insert, empty, member)
 import Data.Sequence as Seq(Seq, length, index, (><))
 import Data.Map as Map(Map)
 import Data.List as List(replicate, intersperse)
@@ -373,6 +373,10 @@ data AllocInfo t = AllocInfo { allocType      :: t
                              }
 
 data ZeroInit = DoZeroInit | NoZeroInit deriving Show
+
+type MayGCConstraint = (MayGC -- at most one direct constraint
+                       ,Set.Set Ident) --any # of indirect constraints
+type MayGCConstraints = Map Ident MayGCConstraint
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||||||||| Instances |||||||||||||||||||||||||{{{

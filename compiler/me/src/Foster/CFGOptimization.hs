@@ -5,11 +5,12 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.CFGOptimization (optimizeCFGs) where
+module Foster.CFGOptimization (optimizeCFGs, collectMayGCConstraints) where
 
 import Foster.Base
 import Foster.MonoType
-import Foster.Letable(Letable(..), isPure, letableSize)
+import Foster.Letable(Letable(..), isPure, letableSize, canGC, willNotGCGlobal)
+import Foster.Config
 import Foster.CFG
 
 import Compiler.Hoopl
@@ -27,35 +28,33 @@ import Control.Monad.State
 import Data.IORef
 import Prelude hiding (id, last)
 
-optimizeCFGs :: IORef Uniq -> CFBody -> [String] -> IO CFBody
-optimizeCFGs uref cfb wantedFns = go cfb
-  where go :: CFBody -> IO CFBody
-
-        go c@(CFB_Call {}) = return c
-
-        go (CFB_LetFuns ids cffns cfbody) = do
-          cffns' <- mapM (optimizeCFFn uref wantedFns) cffns
-          cfbody' <- go cfbody
+optimizeCFGs :: CFBody -> Compiled CFBody
+optimizeCFGs c@(CFB_Call {}) = return c
+optimizeCFGs (CFB_LetFuns ids cffns cfbody) = do
+          cffns'  <- mapM optimizeCFFn cffns
+          cfbody' <- optimizeCFGs cfbody
           return $ CFB_LetFuns ids cffns' cfbody'
 
-optimizeCFFn :: IORef Uniq -> [String] -> CFFn -> IO CFFn
-optimizeCFFn uref wantedFns fn = do
+optimizeCFFn :: CFFn -> Compiled CFFn
+optimizeCFFn fn = do
+  wantedFns <- gets ccDumpFns
+  uref      <- gets ccUniqRef
 
   let optimizations = [ elimContInBBG
                       , runCensusRewrites' , elimContInBBG
                      -- ,runLiveness
                       ]
-  bbg  <- mapFunctions (optimizeCFFn uref wantedFns) (fnBody fn)
-  bbgs <- scanlM (\bbg opt -> opt uref bbg) bbg optimizations
+  bbg  <- mapFunctions optimizeCFFn (fnBody fn)
+  bbgs <- liftIO $ scanlM (\bbg opt -> opt uref bbg) bbg optimizations
 
   let catboxes bbgs = Boxes.hsep 1 Boxes.left $ map (boxify . measure . annotate) $
                         (nubBy sndEq $ zip [1..] $ map (show . pretty) bbgs)
        where sndEq (_, a) (_, b) = a == b
              annotate (n, s) = s ++ "\n        (stage " ++ show n ++ ")"
 
-  when True $ do
+  when True $ liftIO $ do
       putStrLn $ " CFG size was " ++ show (cfgSize bbg) ++ " for " ++ show (fnVar fn)
-  when (fn `isWanted` wantedFns) $ do
+  when (fn `isWanted` wantedFns) $ liftIO $ do
       putStrLn "BEFORE/AFTER"
       -- Discards duplicates before annotating
       Boxes.printBox $ catboxes bbgs
@@ -63,7 +62,7 @@ optimizeCFFn uref wantedFns fn = do
 
   let bbg' = last bbgs
 
-  when (fn `isWanted` wantedFns) $ do
+  when (fn `isWanted` wantedFns) $ liftIO $ do
       let jumpTo bbg = case bbgEntry bbg of (bid, _) -> ILast $ CFCont bid undefined
       Boxes.printBox $ catboxes $ map blockGraph $
                          preorder_dfs $ mkLast (jumpTo bbg') |*><*| bbgBody bbg'
@@ -82,10 +81,11 @@ optimizeCFFn uref wantedFns fn = do
                      where v = Boxes.vcat Boxes.left (take (Boxes.rows b + 2) (repeat (Boxes.char '|')))
                            h = Boxes.text $          (take (Boxes.cols b    ) (repeat '-'))
 
+mapFunctions :: forall m. MonadIO m => (CFFn -> m CFFn) -> BasicBlockGraph -> m BasicBlockGraph
 mapFunctions optFn bbg = do
   body' <- rebuildGraphM (fst $ bbgEntry bbg) (bbgBody bbg) recurse
   return bbg { bbgBody = body' }
-    where recurse :: forall e x. Insn e x -> IO (Graph Insn e x)
+    where recurse :: forall e x. Insn e x -> m (Graph Insn e x)
           recurse insn@(ILabel  {}) = return (mkFirst  insn)
           recurse insn@(ILetVal {}) = return (mkMiddle insn)
           recurse insn@(ILast   {}) = return (mkLast   insn)
@@ -455,3 +455,75 @@ cfgCalls bbg = foldGraphNodes go (bbgBody bbg) Map.empty
     go (ILast _               ) m = m
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+-- ||||||||||| Bottom-up May-GC constraint propagation ||||||||||{{{
+type MGCM a = State MayGCConstraints a -- MGCM = "may-gc monad"
+
+collectMayGCConstraints :: CFBody -> MayGCConstraints
+collectMayGCConstraints cfbody = execState (go cfbody) Map.empty
+  where
+    go :: CFBody -> MGCM ()
+    go (CFB_Call {}) = return ()
+    go (CFB_LetFuns ids cffns cfbody) = do
+          collectMayGCConstraints_CFFns ids cffns
+          go cfbody
+
+collectMayGCConstraints_CFFns :: [Ident] -> [CFFn] -> MGCM ()
+collectMayGCConstraints_CFFns ids fns = do
+  mapM_ initializeMayGCConstraint ids
+  mapM_ collectMayGCConstraints_CFFn fns
+ where
+   initializeMayGCConstraint id = do
+      modify (Map.insert id (GCUnknown "maygc-init", Set.empty))
+
+collectMayGCConstraints_CFFn :: CFFn -> MGCM ()
+collectMayGCConstraints_CFFn fn = collectMayGCConstraints_CFG (fnBody fn)
+                                                    (tidIdent (fnVar  fn))
+
+collectMayGCConstraints_CFG :: BasicBlockGraph -> Ident -> MGCM ()
+collectMayGCConstraints_CFG bbg fnid = let (bid,_) = bbgEntry bbg in
+                                       mapGraphNodesM_ go bid (bbgBody bbg)
+  where
+        go :: forall e x. Insn e x -> MGCM ()
+        go (ILabel  _    )    = return ()
+        go (ILetVal _  lt)    = withGC $ canGC Map.empty lt
+        go (ILetFuns ids fns) = collectMayGCConstraints_CFFns ids fns
+           -- Note: the function bindings themselves don't (yet) contribute
+           -- to their parent's GC status; we need the representation decisions
+           -- made by closure conversion before getting a final answer.
+        go (ILast cflast)     = case cflast of
+                     CFCont {}      -> return ()
+                     CFCase {}      -> return ()
+                     CFCall _ _ v _ -> callGC (tidIdent v)
+
+        withGC WillNotGC     = return ()
+        withGC MayGC         = modify $ Map.adjust (\_ -> (MayGC, Set.empty)) fnid
+        withGC (GCUnknown _) = return ()
+
+        callGC :: Ident -> MGCM ()
+
+        callGC id@(GlobalSymbol name) = do
+           if willNotGCGlobal name
+             then return ()
+             else addIndirectConstraint id
+
+        callGC localid = do
+                m <- get
+                case Map.lookup localid m of
+                  Nothing -> withGC MayGC
+                     -- Note: Because we collect may-gc constraints after
+                     --       running optimizations, the conservative estimate
+                     --       that every unknown call site might GC is probably
+                     --       not a bad approximation to the truth.
+
+                  Just (GCUnknown _, _) -> addIndirectConstraint localid
+                  Just (maygc,       _) -> withGC maygc
+
+        addIndirectConstraint id =
+          modify $ Map.adjust (\(maygc, indirs) ->
+                                (maygc, Set.insert id indirs)) fnid
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+instance Pretty MayGC where pretty maygc = text (show maygc)
+instance Pretty (Set Ident) where pretty s = list $ map pretty (Set.toList s)
+

@@ -18,6 +18,7 @@ module Foster.CFG
 , renderCFG
 , blockId
 , blockTargetsOf
+, mapGraphNodesM_
 , rebuildGraphM
 , rebuildGraphAccM
 , graphOfClosedBlocks
@@ -523,6 +524,17 @@ instance TExpr BasicBlockGraph MonoType where
  -- Dunno why this function isn't in Hoopl...
 catClosedGraphs :: NonLocal i => [Graph i C C] -> Graph i C C
 catClosedGraphs = foldr (|*><*|) emptyClosedGraph
+
+mapGraphNodesM_ :: Monad m => (forall e x. Insn e x -> m ())
+                           -> BlockId -> Graph Insn C C -> m ()
+mapGraphNodesM_ a entrybid g = do
+   let mapBlockM_ blk_cc = do {
+      ; let (f, ms_blk, l) = blockSplit blk_cc
+      ; a f
+      ; mapM_ a (blockToList ms_blk)
+      ; a l
+   }
+   mapM_ mapBlockM_ $ postorder_dfs (mkLast (branchTo entrybid) |*><*| g)
 
 -- Simplified interface for rebuilding graphs in the common case where
 -- the client doesn't want to bother threading any state through.
