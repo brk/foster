@@ -182,7 +182,7 @@ tcRho ctx expr expTy = do
       E_BoolAST   rng b              -> tcRhoBool         rng   b          expTy
       E_StringAST rng txt            -> tcRhoText         rng   txt        expTy
       E_CallAST   rng base argtup    -> tcRhoCall     ctx rng   base argtup expTy
-      E_TupleAST (TupleAST rng exps) -> tcRhoTuple    ctx rng   exps       expTy
+      E_TupleAST  rng exprs          -> tcRhoTuple    ctx rng   exprs      expTy
       E_IfAST   rng a b c            -> tcRhoIf       ctx rng   a b c      expTy
       E_FnAST f                      -> tcRhoFn       ctx       f          expTy
       E_LetRec rng bindings e        -> tcRhoLetRec   ctx rng   bindings e expTy
@@ -374,7 +374,7 @@ tcRhoTuple ctx rng exprs expTy = do
   where
     tcTuple ctx rng exps typs = do
         exprs <- typecheckExprsTogether ctx exps typs
-        return $ AnnTuple (E_AnnTuple rng exprs)
+        return $ AnnTuple rng exprs
 
     -- Typechecks each expression in the same context
     typecheckExprsTogether ctx exprs expectedTypes = do
@@ -572,7 +572,7 @@ tcRhoTyApp ctx rng e t1tn expTy = do
 -- G |- b e1 ... en ~~> f a1 ... an ::: sr
 -- {{{
 tcRhoCall :: Context Sigma -> SourceRange
-              -> ExprAST TypeAST -> (TupleAST TypeAST)
+              -> ExprAST TypeAST -> [ExprAST TypeAST]
               -> Expected TypeAST -> Tc (AnnExpr Rho)
 tcRhoCall ctx rng base argstup exp_ty = do
    -- TODO think harder about when it's safe to push exp_ty down
@@ -584,10 +584,9 @@ tcRhoCall ctx rng base argstup exp_ty = do
 tryGetVarName (E_VarAST _ v) = T.unpack $ evarName v
 tryGetVarName _ = ""
 
-tcSigmaCall ctx rng base argstup exp_ty = do
+tcSigmaCall ctx rng base argexprs exp_ty = do
         annbase <- inferRho ctx base "called base"
         let fun_ty = typeAST annbase
-        let argexprs = tupleAstExprs argstup
         debugDoc $ text "call: fn type is " <> pretty fun_ty
         (args_ty, res_ty) <- unifyFun fun_ty argexprs ("tSC("++tryGetVarName base++")")
         debugDoc $ text "call: fn args ty is " <> pretty args_ty
@@ -597,10 +596,9 @@ tcSigmaCall ctx rng base argstup exp_ty = do
                 ++ (show $ List.length argexprs) ++ "; expected "
                 ++ (show $ List.length args_ty)
                 ++ highlightFirstLine rng
-        annargs <- sequence [checkSigma ctx arg ty | (arg, ty) <- zip argexprs args_ty]
-        let args = E_AnnTuple (tupleAstRange argstup) annargs
+        args <- sequence [checkSigma ctx arg ty | (arg, ty) <- zip argexprs args_ty]
         debug $ "call: annargs: "
-        debugDoc $ showStructure (AnnTuple args)
+        debugDoc $ showStructure (AnnTuple rng args)
         debugDoc $ text "call: res_ty is " <> pretty res_ty
         debugDoc $ text "call: exp_ty is " <> pretty exp_ty
         debugDoc $ text "tcRhoCall deferring to instSigma"

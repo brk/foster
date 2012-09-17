@@ -53,11 +53,6 @@ convertPat f pat = case pat of
         EP_Ctor     rng pats txt -> do pats' <- mapM (convertPat f) pats
                                        return $ EP_Ctor rng pats' txt
 
-convertTuple :: (a -> Tc b) -> TupleAST a -> Tc (TupleAST b)
-convertTuple f (TupleAST rng exprs) = do
-  exprs' <- mapM (convertExprAST f) exprs
-  return $ TupleAST rng exprs'
-
 convertTermBinding :: (a -> Tc b) -> TermBinding a -> Tc (TermBinding b)
 convertTermBinding f (TermBinding evar expr) = do
   evar' <- convertEVar    f evar
@@ -81,7 +76,7 @@ convertExprAST f expr =
     E_StoreAST     rng a b      -> liftM2 (E_StoreAST     rng)   (q a) (q b)
     E_TyApp        rng a tys    -> liftM2 (E_TyApp        rng)   (q a) (mapM f tys)
     E_VarAST       rng v        -> liftM  (E_VarAST       rng) (convertEVar f v)
-    E_TupleAST tup              -> liftM  (E_TupleAST        ) (convertTuple f tup)
+    E_TupleAST     rng exprs    -> liftM  (E_TupleAST     rng) (mapM q exprs)
     E_ArrayRead    rng (ArrayIndex a b rng2 s) -> do [x, y] <- mapM q [a, b]
                                                      return $ E_ArrayRead rng (ArrayIndex x y rng2 s)
     E_ArrayPoke    rng (ArrayIndex a b rng2 s) c -> do [x, y, z] <- mapM q [a, b, c]
@@ -94,7 +89,7 @@ convertExprAST f expr =
                                       return $ E_Case     rng  e' bs'
     E_LetRec       rng bnz e    -> liftM2 (E_LetRec       rng) (mapM (convertTermBinding f) bnz) (q e)
     E_LetAST       rng bnd e    -> liftM2 (E_LetAST       rng) (convertTermBinding f bnd) (q e)
-    E_CallAST      rng b tup    -> liftM2 (E_CallAST      rng) (q b) (convertTuple f tup)
+    E_CallAST      rng b exprs  -> liftM2 (E_CallAST      rng) (q b) (mapM q exprs)
     E_FnAST fn                  -> liftM  (E_FnAST           ) (convertFun f fn)
     E_KillProcess  rng a        -> liftM  (E_KillProcess  rng) (q a)
 

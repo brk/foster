@@ -75,14 +75,13 @@ parseBool pbexpr range = do
 
 parseCall pbexpr rng = do
     (base:args) <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
-    return $ E_CallAST rng base (argTuple rng args)
-        where argTuple rng args = TupleAST (rangeSpanOf rng args) args
+    return $ E_CallAST rng base args
 
 parseCallPrim pbexpr rng = do
     args <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
     let primname = getName "prim" $ PbExpr.string_value pbexpr
     case (T.unpack primname, args) of
-      ("tuple",  _ ) -> return $ E_TupleAST (TupleAST rng args)
+      ("tuple",  _ ) -> return $ E_TupleAST rng args
       ("deref", [e]) -> return $ E_DerefAST rng e
       ("alloc",           [e]) -> return $ E_AllocAST rng e MemRegionGlobalHeap
       ("stackref-unsafe", [e]) -> return $ E_AllocAST rng e MemRegionStack

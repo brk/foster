@@ -111,8 +111,8 @@ ail ctx ae =
                                          ti <- qt t
                                          [x,y,z]   <- mapM q [a,b,c]
                                          return $ AIArrayPoke ti (ArrayIndex x y rng s) z
-        AnnTuple tup               -> do aies <- mapM q (childrenOf ae)
-                                         return $ AITuple aies (annTupleRange tup)
+        AnnTuple rng exprs         -> do aies <- mapM q exprs
+                                         return $ AITuple aies rng
         AnnCase _rng t e bs        -> do ti <- qt t
                                          ei <- q e
                                          bsi <- mapM (\((p, vs),e) -> do
@@ -123,7 +123,7 @@ ail ctx ae =
                                          return $ AICase ti ei bsi
         AnnPrimitive _rng v -> tcFails [string ("Primitives must be called directly!"
                                          ++ "\n\tFound non-call use of ") <> pretty v]
-        AnnCall _range t b (E_AnnTuple _rng args) -> do
+        AnnCall _range t b args -> do
             ti <- qt t
             argsi <- mapM q args
             case b of

@@ -7,7 +7,6 @@
 module Foster.ExprAST(
   ExprAST(..)
 , FnAST(..)
-, TupleAST(..)
 , TypeFormalAST(..)
 , TermBinding(..)
 , termBindingName
@@ -31,7 +30,7 @@ data ExprAST ty =
         | E_BoolAST       SourceRange Bool
         | E_IntAST        SourceRange String
         | E_RatAST        SourceRange String
-        | E_TupleAST      (TupleAST ty)
+        | E_TupleAST      SourceRange [ExprAST ty]
         | E_FnAST         (FnAST ty)
         -- Control flow
         | E_IfAST         SourceRange (ExprAST ty) (ExprAST ty) (ExprAST ty)
@@ -43,7 +42,7 @@ data ExprAST ty =
         | E_LetRec        SourceRange [TermBinding ty] (ExprAST ty)
         -- Use of bindings
         | E_VarAST        SourceRange (E_VarAST ty)
-        | E_CallAST       SourceRange (ExprAST ty) (TupleAST ty)
+        | E_CallAST       SourceRange (ExprAST ty) [ExprAST ty]
         -- Mutable ref cells
         | E_AllocAST      SourceRange (ExprAST ty) AllocMemRegion
         | E_DerefAST      SourceRange (ExprAST ty)
@@ -57,9 +56,6 @@ data ExprAST ty =
         | E_CompilesAST   SourceRange (Maybe (ExprAST ty))
         | E_KillProcess   SourceRange (ExprAST ty) -- arg must be string literal
         deriving Show
-
-data TupleAST ty = TupleAST { tupleAstRange :: SourceRange
-                            , tupleAstExprs :: [ExprAST ty] } deriving (Show)
 
 data FnAST ty  = FnAST { fnAstRange    :: SourceRange
                        , fnAstName     :: T.Text
@@ -110,7 +106,7 @@ instance Structured (ExprAST TypeAST) where
             E_BoolAST     _rng _b        -> []
             E_IntAST      _rng _txt      -> []
             E_RatAST      _rng _txt      -> []
-            E_CallAST     _rng b tup     -> b:(tupleAstExprs tup)
+            E_CallAST     _rng b exprs   -> b:exprs
             E_CompilesAST _rng (Just e)  -> [e]
             E_CompilesAST _rng Nothing   -> []
             E_KillProcess _rng _         -> []
@@ -123,7 +119,7 @@ instance Structured (ExprAST TypeAST) where
             E_StoreAST    _rng a b       -> [a, b]
             E_ArrayRead   _rng ari       -> childrenOfArrayIndex ari
             E_ArrayPoke   _rng ari c     -> childrenOfArrayIndex ari ++ [c]
-            E_TupleAST tup               -> tupleAstExprs tup
+            E_TupleAST    _rng exprs     -> exprs
             E_TyApp       _rng a _t      -> [a]
             E_Case        _rng e bs      -> e:(map snd bs)
             E_VarAST      _rng _         -> []
@@ -141,7 +137,7 @@ instance SourceRanged (ExprAST ty)
       E_BoolAST       rng _ -> rng
       E_IntAST        rng _ -> rng
       E_RatAST        rng _ -> rng
-      E_TupleAST    tup -> tupleAstRange tup
+      E_TupleAST      rng _ -> rng
       E_FnAST         f -> fnAstRange f
       E_LetAST        rng _ _   -> rng
       E_LetRec        rng _ _   -> rng

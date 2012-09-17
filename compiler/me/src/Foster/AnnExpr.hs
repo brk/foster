@@ -5,10 +5,7 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.AnnExpr (
-  AnnExpr(..)
-, AnnTuple(..)
-) where
+module Foster.AnnExpr (AnnExpr(..)) where
 
 import Foster.Base
 import Foster.TypeAST
@@ -32,7 +29,7 @@ data AnnExpr ty =
         | AnnFloat      { afltRange  :: SourceRange
                         , afltType   :: ty
                         , afltLit    :: LiteralFloat }
-        | AnnTuple      (AnnTuple ty)
+        | AnnTuple      SourceRange [AnnExpr ty]
         | E_AnnFn       (Fn (AnnExpr ty) ty)
 
         -- Control flow
@@ -47,7 +44,7 @@ data AnnExpr ty =
         -- Use of bindings
         | E_AnnVar      SourceRange (TypedId ty)
         | AnnPrimitive  SourceRange (TypedId ty)
-        | AnnCall       SourceRange ty (AnnExpr ty) (AnnTuple ty)
+        | AnnCall       SourceRange ty (AnnExpr ty) [AnnExpr ty]
         -- Mutable ref cells
         | AnnAlloc      SourceRange              (AnnExpr ty) AllocMemRegion
         | AnnDeref      SourceRange ty           (AnnExpr ty)
@@ -66,9 +63,6 @@ data AnnExpr ty =
         -- We keep kill-process as a primitive rather than translate it to a
         -- call to a primitive because we must ensure that its assigned value
         -- is the undef constant, which wouldn't work through a function call.
-
-data AnnTuple ty = E_AnnTuple { annTupleRange :: SourceRange
-                              , annTupleExprs :: [AnnExpr ty] }
 
 -- ||||||||||||||||||||||||| Boilerplate ||||||||||||||||||||||||{{{
 
@@ -129,7 +123,7 @@ instance Structured (AnnExpr TypeAST) where
     case e of
       AnnString {}                         -> []
       AnnBool   {}                         -> []
-      AnnCall _r _t b argtup               -> b:(annTupleExprs argtup)
+      AnnCall _r _t b exprs                -> b:exprs
       AnnCompiles  _rng (CompilesResult (OK     e)) -> [e]
       AnnCompiles  _rng (CompilesResult (Errors _)) -> []
       AnnKillProcess {}                    -> []
@@ -145,7 +139,7 @@ instance Structured (AnnExpr TypeAST) where
       AnnStore     _rng    a b             -> [a, b]
       AnnArrayRead _rng _t ari             -> childrenOfArrayIndex ari
       AnnArrayPoke _rng _t ari c           -> childrenOfArrayIndex ari ++ [c]
-      AnnTuple tup                         -> annTupleExprs tup
+      AnnTuple _rng exprs                  -> exprs
       AnnCase _rng _t e bs                 -> e:(map snd bs)
       E_AnnVar {}                          -> []
       AnnPrimitive {}                      -> []
@@ -193,7 +187,7 @@ instance SourceRanged (AnnExpr ty) where
       AnnStore     rng _ _        -> rng
       AnnArrayRead rng _ _        -> rng
       AnnArrayPoke rng _ _ _      -> rng
-      AnnTuple tup                -> annTupleRange tup
+      AnnTuple     rng _          -> rng
       AnnCase      rng _ _ _      -> rng
       E_AnnVar     rng _          -> rng
       AnnPrimitive rng _          -> rng
