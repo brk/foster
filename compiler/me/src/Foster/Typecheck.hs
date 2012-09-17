@@ -232,17 +232,17 @@ matchExp expTy ann msg =
 --  G contains v ::: s             G has v as primitive
 --  ------------------     or      -----------------------
 --  G |- v ~~> v ::: s             G |- v ~~> prim v ::: s
-tcSigmaVar ctx rng name = do
+tcSigmaVar ctx annot name = do
   debugDoc $ green (text "typecheckVar (sigma): ") <> text (T.unpack name ++ "...")
   -- Resolve the given name as either a variable or a primitive reference.
   let query m = termVarLookup name m
   case (query (contextBindings ctx), query (primitiveBindings ctx)) of
-    (Just avar, _        ) -> return $ E_AnnVar     rng avar
-    (Nothing  , Just avar) -> return $ AnnPrimitive rng avar
+    (Just avar, _        ) -> return $ E_AnnVar     annot avar
+    (Nothing  , Just avar) -> return $ AnnPrimitive annot avar
     (Nothing, Nothing) -> do
          msg <- getStructureContextMessage
          tcFails [text $ "Unknown variable " ++ T.unpack name
-                  ++ showSourceRange rng
+                  ++ showSourceRange (annotRange annot)
                   ++ "ctx: "++ unlines (map show (Map.toList $ contextBindings ctx))
                   ++ "\nhist: " , msg]
 
@@ -279,7 +279,7 @@ tcRhoBool rng b expTy = do
                                       return ab
          Check  t -> tcFails [text $ "Unable to check Bool constant in context"
                                 ++ " expecting non-Bool type " ++ show t
-                                ++ showSourceRange rng]
+                                ++ showSourceRange (annotRange rng)]
 -- }}}
 
 --  ------------------
@@ -294,7 +294,7 @@ tcRhoText rng b expTy = do
                                      return ab
          Check  t -> tcFails [text $ "Unable to check Text constant in context"
                                 ++ " expecting non-Text type " ++ show t
-                                ++ showSourceRange rng]
+                                ++ showSourceRange (annotRange rng)]
 -- }}}
 
 
@@ -342,7 +342,7 @@ tcRhoDeref ctx rng e1 expTy = do
       RefTypeAST {} -> return ()
       MetaTyVar  {} -> return ()
       other -> tcFails [text $ "Expected deref-ed expr "
-                           ++ "to have ref type, had " ++ show other ++ highlightFirstLine rng]
+                           ++ "to have ref type, had " ++ show other ++ highlightFirstLine (annotRange rng)]
     matchExp expTy (AnnDeref rng tau a1) "deref"
 -- }}}
 
@@ -361,7 +361,7 @@ tcRhoAlloc ctx rng e1 rgn expTy = do
 --  G |- en ::: tn
 --  ------------------------------------
 --  G |- (e1, ..., en) ::: (t1, ..., tn)
-tcRhoTuple :: Context Sigma -> SourceRange -> [Term] -> Expected TypeAST -> Tc (AnnExpr Rho)
+tcRhoTuple :: Context Sigma -> ExprAnnot -> [Term] -> Expected TypeAST -> Tc (AnnExpr Rho)
 -- {{{
 tcRhoTuple ctx rng exprs expTy = do
    tup <- case expTy of
@@ -370,7 +370,7 @@ tcRhoTuple ctx rng exprs expTy = do
      Check (MetaTyVar {}   ) -> tcTuple ctx rng exprs [Nothing | _ <- exprs]
      Check ty -> tcFails [text $ "typecheck: tuple (" ++ show exprs ++ ") "
                              ++ "cannot check against non-tuple type " ++ show ty]
-   matchExp expTy tup (highlightFirstLine rng)
+   matchExp expTy tup (highlightFirstLine (annotRange rng))
   where
     tcTuple ctx rng exps typs = do
         exprs <- typecheckExprsTogether ctx exps typs
@@ -395,15 +395,16 @@ tcRhoTuple ctx rng exprs expTy = do
 -- G |- e1 ::: Array t
 -- ---------------------  e2 ::: t2 where t2 is a word-like type
 -- G |- e1 [ e2 ]  ::: t
-tcRhoArrayRead :: SourceRange -> SafetyGuarantee -> AnnExpr Sigma -> AnnExpr Sigma -> Expected TypeAST -> Tc (AnnExpr Rho)
+tcRhoArrayRead :: ExprAnnot -> SafetyGuarantee -> AnnExpr Sigma -> AnnExpr Sigma -> Expected TypeAST -> Tc (AnnExpr Rho)
 -- {{{
-tcRhoArrayRead rng s base aiexpr expTy = do
+tcRhoArrayRead annot s base aiexpr expTy = do
+  let rng = annotRange annot
   case typeAST base of
     (ArrayTypeAST t) -> do
         -- TODO check aiexpr type is compatible with Word
         unify (PrimIntAST I32) (typeAST aiexpr) "arrayread idx type"
         unify (ArrayTypeAST t) (typeAST base)   "arrayread type"
-        let expr = AnnArrayRead rng t (ArrayIndex base aiexpr rng s)
+        let expr = AnnArrayRead annot t (ArrayIndex base aiexpr rng s)
         matchExp expTy expr "arrayread"
     (TupleTypeAST _) ->
         tcFails [text $ "ArrayReading tuples is not allowed; use"
@@ -420,18 +421,18 @@ tcRhoArrayRead rng s base aiexpr expTy = do
 -- G |- b[i] ::: Array t
 -- ---------------------
 -- G |- v >^ b[i] ::: ()
-tcRhoArrayPoke rng s v b i expTy = do
+tcRhoArrayPoke annot s v b i expTy = do
 -- {{{
   case typeAST b of
     ArrayTypeAST t -> do
       -- TODO check aiexpr type is compatible with Word
       unify t (typeAST v) "arraypoke type"
-      let expr = AnnArrayPoke rng t (ArrayIndex b i rng s) v
+      let expr = AnnArrayPoke annot t (ArrayIndex b i (annotRange annot) s) v
       matchExp expTy expr "arraypoke"
     baseType ->
       tcFails [text $ "Unable to arraypoke expression of type " ++ show baseType
                   ++ " (context expected type " ++ show expTy ++ ")"
-                  ++ highlightFirstLine rng]
+                  ++ highlightFirstLine (annotRange annot)]
 -- }}}
 
 -----------------------------------------------------------------------
@@ -489,7 +490,7 @@ tcRhoLet ctx rng (TermBinding v e1) e2 mt = do
     --     let x = x; in x end
     -- will be caught by the usual variable scoping rules.
     errMsg = "Recursive bindings should use 'rec', not 'let':"
-           ++ highlightFirstLine rng
+           ++ highlightFirstLine (annotRange rng)
 -- }}}
 
 {-
@@ -499,7 +500,7 @@ tcRhoLet ctx rng (TermBinding v e1) e2 mt = do
    in e end
 -}
 -- {{{
-tcRhoLetRec :: Context Sigma -> SourceRange -> [TermBinding TypeAST]
+tcRhoLetRec :: Context Sigma -> ExprAnnot -> [TermBinding TypeAST]
                 -> Term -> Expected TypeAST -> Tc (AnnExpr Rho)
 tcRhoLetRec ctx0 rng recBindings e mt = do
     -- Generate unification variables for the overall type of
@@ -511,7 +512,7 @@ tcRhoLetRec ctx0 rng recBindings e mt = do
     -- Create an extended context for typechecking the bindings
     let ctxBindings = map (uncurry varbind) (zip ids unificationVars)
     let ctx = prependContextBindings ctx0 ctxBindings
-    verifyNonOverlappingBindings rng "rec" ctxBindings
+    verifyNonOverlappingBindings (annotRange rng) "rec" ctxBindings
 
     -- Typecheck each binding
     tcbodies <- forM (zip unificationVars recBindings) $
@@ -540,18 +541,18 @@ tcRhoLetRec ctx0 rng recBindings e mt = do
 -- G |- t_n <::: k_n                          (checked later)
 -- ------------------------------------------
 -- G |- e :[ t1..tn ]  ::: rho{t1..tn/a1..an}
-tcRhoTyApp ctx rng e t1tn expTy = do
+tcRhoTyApp ctx annot e t1tn expTy = do
 -- {{{
     debug $ "ty app: inferring sigma type for base..."
     aeSigma <- inferSigma ctx e "tyapp"
     debug $ "ty app: base has type " ++ show (typeAST aeSigma)
     case (t1tn, typeAST aeSigma) of
       ([]  , _           ) -> matchExp expTy aeSigma "empty-tyapp"
-      (t1tn, ForAllAST {}) -> do let resolve = resolveType rng (localTypeBindings ctx)
+      (t1tn, ForAllAST {}) -> do let resolve = resolveType annot (localTypeBindings ctx)
                                  debug $ "local type bindings: " ++ show (localTypeBindings ctx)
                                  debug $ "********raw type arguments: " ++ show t1tn
                                  types <- mapM resolve t1tn
-                                 expr <- instWith rng aeSigma types
+                                 expr <- instWith annot aeSigma types
                                  matchExp expTy expr "tyapp"
       (_        , MetaTyVar _ ) -> do
         tcFails [text $ "Cannot instantiate unknown type of term:"
@@ -571,7 +572,7 @@ tcRhoTyApp ctx rng e t1tn expTy = do
 -- ------------------------------------------
 -- G |- b e1 ... en ~~> f a1 ... an ::: sr
 -- {{{
-tcRhoCall :: Context Sigma -> SourceRange
+tcRhoCall :: Context Sigma -> ExprAnnot
               -> ExprAST TypeAST -> [ExprAST TypeAST]
               -> Expected TypeAST -> Tc (AnnExpr Rho)
 tcRhoCall ctx rng base argstup exp_ty = do
@@ -595,7 +596,7 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
                 "tcSigmaCall expected equal # of arguments! Had "
                 ++ (show $ List.length argexprs) ++ "; expected "
                 ++ (show $ List.length args_ty)
-                ++ highlightFirstLine rng
+                ++ highlightFirstLine (annotRange rng)
         args <- sequence [checkSigma ctx arg ty | (arg, ty) <- zip argexprs args_ty]
         debug $ "call: annargs: "
         debugDoc $ showStructure (AnnTuple rng args)
@@ -636,7 +637,8 @@ tcSigmaFn ctx f expTy = do
   case (fnTyFormals f) of
     []        -> tcRhoFnHelper ctx f expTy
     tyformals -> do
-        let rng = fnAstRange f
+        let annot = fnAstAnnot f
+        let rng   = annotRange annot
         let ktvs = map convertTyFormal tyformals
         taus <- genTauUnificationVarsLike ktvs (\n -> "fn type parameter " ++ show n ++ " for " ++ T.unpack (fnAstName f))
 
@@ -651,7 +653,7 @@ tcSigmaFn ctx f expTy = do
         -- While we're munging, we'll also make sure the names are all distinct.
         uniquelyNamedFormals0 <- getUniquelyNamedFormals rng (fnFormals f) (fnAstName f)
         uniquelyNamedFormals <- mapM
-                          (retypeTID (resolveType rng $ localTypeBindings extTyCtx))
+                          (retypeTID (resolveType annot $ localTypeBindings extTyCtx))
                           uniquelyNamedFormals0
 
         -- Extend the variable environment with the function arg's types.
@@ -673,7 +675,7 @@ tcSigmaFn ctx f expTy = do
             sanityCheck (eqLen ktvs exp_ktvs)
                        ("tcSigmaFn: expected same number of formals for "
                         ++ show ktvs ++ " and " ++ show exp_ktvs)
-            exp_rho' <- resolveType rng (extendTypeBindingsWith exp_ktvs) exp_rho
+            exp_rho' <- resolveType annot (extendTypeBindingsWith exp_ktvs) exp_rho
             let var_tys = map tidType uniquelyNamedFormals
             (arg_tys, body_ty) <- unifyFun exp_rho' var_tys "poly-fn-lit"
             debugDoc $ text "calling checkRho for function body..."
@@ -752,7 +754,7 @@ tcSigmaFn ctx f expTy = do
         -- Note we collect free vars in the old context, since we can't possibly
         -- capture the function's arguments from the environment!
         let fn = E_AnnFn $ Fn (TypedId fnty (GlobalSymbol $ fnAstName f))
-                              uniquelyNamedFormals annbody Nothing rng
+                              uniquelyNamedFormals annbody Nothing annot
         debugDoc $ text "tcSigmaFn calling matchExp  expTy  = " <> pretty expTy
         debugDoc $ text "tcSigmaFn calling matchExp, expTy' = " <> pretty expTy'
         matchExp expTy' fn "tcSigmaFn"
@@ -764,11 +766,12 @@ tcSigmaFn ctx f expTy = do
 -- G |- { x1 : t1 => ... => xn : tn => e } ::: { t1 => ... => tn => tb }
 -- {{{
 tcRhoFnHelper ctx f expTy = do
-    let rng = fnAstRange f
+    let annot = fnAstAnnot f
+    let rng = annotRange annot
     -- While we're munging, we'll also make sure the names are all distinct.
     uniquelyNamedFormals0 <- getUniquelyNamedFormals rng (fnFormals f) (fnAstName f)
     uniquelyNamedFormals <- mapM
-                      (retypeTID (resolveType rng $ localTypeBindings ctx))
+                      (retypeTID (resolveType annot $ localTypeBindings ctx))
                       uniquelyNamedFormals0
 
     -- Extend the variable environment with the function arg's types.
@@ -790,7 +793,7 @@ tcRhoFnHelper ctx f expTy = do
     -- Note we collect free vars in the old context, since we can't possibly
     -- capture the function's arguments from the environment!
     let fn = E_AnnFn $ Fn (TypedId fnty (GlobalSymbol $ fnAstName f))
-                          uniquelyNamedFormals annbody Nothing rng
+                          uniquelyNamedFormals annbody Nothing annot
     matchExp expTy fn "tcRhoFn"
 -- }}}
 
@@ -806,6 +809,7 @@ fnTypeTemplate f argtypes retty cc =
 
 -- | Verify that the given formals have distinct names,
 -- | and return unique'd versions of each.
+getUniquelyNamedFormals :: SourceRange -> [TypedId TypeAST] -> T.Text -> Tc [TypedId TypeAST]
 getUniquelyNamedFormals rng rawFormals fnProtoName = do
     verifyNonOverlappingBindings rng (T.unpack fnProtoName)
      [TermVarBinding (identPrefix $ tidIdent v) undefined | v <- rawFormals]
@@ -844,7 +848,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
       let bindings = extractPatternBindings p
       debugDoc $ text "case branch generated bindings: " <> list (map pretty bindings)
       let ctxbindings = [varbind id ty | (TypedId ty id) <- bindings]
-      verifyNonOverlappingBindings rng "case" ctxbindings
+      verifyNonOverlappingBindings (annotRange rng) "case" ctxbindings
       abody <- tcRho (prependContextBindings ctx ctxbindings) body expTy
       unify u (typeAST abody) ("Failed to unify all branches of case " ++ show rng)
       return ((p, bindings), abody)
@@ -860,9 +864,10 @@ tcRhoCase ctx rng scrutinee branches expTy = do
       EP_Variable r v     -> do checkSuspiciousPatternVariable r v
                                 id <- tcFreshT (evarName v)
                                 return $ P_Variable r (TypedId ctxTy id)
-      EP_Bool     r b     -> do annbool <- tcRho ctx (E_BoolAST r b) (Check ctxTy)
+      EP_Bool     r b     -> do let boolexpr = E_BoolAST (ExprAnnot [] r  []) b
+                                annbool <- tcRho ctx boolexpr (Check ctxTy)
                                 return $ P_Bool r (typeAST annbool) b
-      EP_Int      r str   -> do annint <- typecheckInt r str (Just ctxTy)
+      EP_Int      r str   -> do annint <- typecheckInt (ExprAnnot [] r []) str (Just ctxTy)
                                 return $ P_Int r (aintType annint) (aintLit annint)
 
       EP_Ctor     r eps s -> do
@@ -1044,10 +1049,10 @@ inst base msg = do
   case zonked of
      ForAllAST ktvs _rho -> do
        taus <- genTauUnificationVarsLike ktvs (\n -> "inst("++msg++") type parameter " ++ vname base n)
-       instWith (rangeOf base) base taus
+       instWith (annExprAnnot base) base taus
      _rho -> return base
 
-instWith :: SourceRange -> AnnExpr Sigma -> [Tau] -> Tc (AnnExpr Rho)
+instWith :: ExprAnnot -> AnnExpr Sigma -> [Tau] -> Tc (AnnExpr Rho)
 instWith _          aexpSigma [] = do
         sanityCheck (isRho $ typeAST aexpSigma)
                      "Tried to instantiate a sigma with no types!"
@@ -1075,8 +1080,8 @@ instSigmaWith ktvs rho taus = do
 -- }}}
 
 -- {{{
-resolveType rng subst x =
-  let q = resolveType rng subst in
+resolveType annot subst x =
+  let q = resolveType annot subst in
   case x of
     PrimIntAST  _                  -> return x
     PrimFloat64AST                 -> return x
@@ -1084,7 +1089,7 @@ resolveType rng subst x =
     TyVarAST (SkolemTyVar _ _ _)   -> return x
     TyVarAST (BoundTyVar name)     -> case Map.lookup name subst of
                                          Nothing -> tcFails [text $ "Typecheck.hs: ill-formed type with free bound variable " ++ name,
-                                                             text $ highlightFirstLine rng]
+                                                             text $ highlightFirstLine (annotRange annot)]
                                          Just ty -> return ty
     RefTypeAST    ty               -> liftM RefTypeAST   (q ty)
     ArrayTypeAST  ty               -> liftM ArrayTypeAST (q ty)
@@ -1093,7 +1098,7 @@ resolveType rng subst x =
     CoroTypeAST  s t               -> liftM2 CoroTypeAST (q s) (q t)
     TyConAppAST   tc  types        -> liftM (TyConAppAST tc) (mapM q types)
     TupleTypeAST      types        -> liftM  TupleTypeAST    (mapM q types)
-    ForAllAST     ktvs rho         -> liftM (ForAllAST ktvs) (resolveType rng subst' rho)
+    ForAllAST     ktvs rho         -> liftM (ForAllAST ktvs) (resolveType annot subst' rho)
                                        where
                                         subst' = foldl' ins subst ktvs
                                         ins m (tv@(BoundTyVar nm), _k) = Map.insert nm (TyVarAST tv) m

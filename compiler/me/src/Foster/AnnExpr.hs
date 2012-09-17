@@ -5,7 +5,7 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.AnnExpr (AnnExpr(..)) where
+module Foster.AnnExpr (AnnExpr(..), annExprAnnot) where
 
 import Foster.Base
 import Foster.TypeAST
@@ -21,45 +21,45 @@ import qualified Data.Text as T
 
 data AnnExpr ty =
         -- Literals
-          AnnBool       SourceRange Bool
-        | AnnString     SourceRange T.Text
-        | AnnInt        { aintRange  :: SourceRange
+          AnnBool       ExprAnnot Bool
+        | AnnString     ExprAnnot T.Text
+        | AnnInt        { aintRange  :: ExprAnnot
                         , aintType   :: ty
                         , aintLit    :: LiteralInt }
-        | AnnFloat      { afltRange  :: SourceRange
+        | AnnFloat      { afltRange  :: ExprAnnot
                         , afltType   :: ty
                         , afltLit    :: LiteralFloat }
-        | AnnTuple      SourceRange [AnnExpr ty]
+        | AnnTuple      ExprAnnot [AnnExpr ty]
         | E_AnnFn       (Fn (AnnExpr ty) ty)
 
         -- Control flow
-        | AnnIf         SourceRange ty (AnnExpr ty) (AnnExpr ty) (AnnExpr ty)
-        | AnnUntil      SourceRange ty (AnnExpr ty) (AnnExpr ty)
+        | AnnIf         ExprAnnot ty (AnnExpr ty) (AnnExpr ty) (AnnExpr ty)
+        | AnnUntil      ExprAnnot ty (AnnExpr ty) (AnnExpr ty)
         -- Creation of bindings
-        | AnnCase       SourceRange ty (AnnExpr ty) [PatternBinding (AnnExpr ty) ty]
-        | AnnLetVar     SourceRange Ident (AnnExpr ty) (AnnExpr ty)
+        | AnnCase       ExprAnnot ty (AnnExpr ty) [PatternBinding (AnnExpr ty) ty]
+        | AnnLetVar     ExprAnnot Ident (AnnExpr ty) (AnnExpr ty)
         -- We have separate syntax for a SCC of recursive functions
         -- because they are compiled differently from non-recursive closures.
-        | AnnLetFuns    SourceRange [Ident] [Fn (AnnExpr ty) ty] (AnnExpr ty)
+        | AnnLetFuns    ExprAnnot [Ident] [Fn (AnnExpr ty) ty] (AnnExpr ty)
         -- Use of bindings
-        | E_AnnVar      SourceRange (TypedId ty)
-        | AnnPrimitive  SourceRange (TypedId ty)
-        | AnnCall       SourceRange ty (AnnExpr ty) [AnnExpr ty]
+        | E_AnnVar      ExprAnnot (TypedId ty)
+        | AnnPrimitive  ExprAnnot (TypedId ty)
+        | AnnCall       ExprAnnot ty (AnnExpr ty) [AnnExpr ty]
         -- Mutable ref cells
-        | AnnAlloc      SourceRange              (AnnExpr ty) AllocMemRegion
-        | AnnDeref      SourceRange ty           (AnnExpr ty)
-        | AnnStore      SourceRange (AnnExpr ty) (AnnExpr ty)
+        | AnnAlloc      ExprAnnot              (AnnExpr ty) AllocMemRegion
+        | AnnDeref      ExprAnnot ty           (AnnExpr ty)
+        | AnnStore      ExprAnnot (AnnExpr ty) (AnnExpr ty)
         -- Array operations
-        | AnnArrayRead  SourceRange ty (ArrayIndex (AnnExpr ty))
-        | AnnArrayPoke  SourceRange ty (ArrayIndex (AnnExpr ty)) (AnnExpr ty)
+        | AnnArrayRead  ExprAnnot ty (ArrayIndex (AnnExpr ty))
+        | AnnArrayPoke  ExprAnnot ty (ArrayIndex (AnnExpr ty)) (AnnExpr ty)
         -- Terms indexed by types
-        | E_AnnTyApp {  annTyAppRange       :: SourceRange
+        | E_AnnTyApp {  annTyAppRange       :: ExprAnnot
                      ,  annTyAppOverallType :: ty
                      ,  annTyAppExpr        :: (AnnExpr ty)
                      ,  annTyAppArgTypes    :: [ty] }
         -- Others
-        | AnnCompiles   SourceRange (CompilesResult (AnnExpr ty))
-        | AnnKillProcess SourceRange ty T.Text
+        | AnnCompiles   ExprAnnot (CompilesResult (AnnExpr ty))
+        | AnnKillProcess ExprAnnot ty T.Text
         -- We keep kill-process as a primitive rather than translate it to a
         -- call to a primitive because we must ensure that its assigned value
         -- is the undef constant, which wouldn't work through a function call.
@@ -168,29 +168,31 @@ patBindingFreeIds ((_, binds), expr) =
 
 -----------------------------------------------------------------------
 
-instance SourceRanged (AnnExpr ty) where
-  rangeOf expr = case expr of
-      AnnString    rng    _       -> rng
-      AnnBool      rng    _       -> rng
-      AnnCall      rng _ _ _      -> rng
-      AnnCompiles  rng _          -> rng
-      AnnKillProcess rng _ _      -> rng
-      AnnIf        rng _ _ _ _    -> rng
-      AnnUntil     rng _ _ _      -> rng
-      AnnInt       rng _ _        -> rng
-      AnnFloat     rng _ _        -> rng
-      E_AnnFn f                   -> fnRange f
-      AnnLetVar    rng _ _ _      -> rng
-      AnnLetFuns   rng _ _ _      -> rng
-      AnnAlloc     rng   _ _      -> rng
-      AnnDeref     rng _ _        -> rng
-      AnnStore     rng _ _        -> rng
-      AnnArrayRead rng _ _        -> rng
-      AnnArrayPoke rng _ _ _      -> rng
-      AnnTuple     rng _          -> rng
-      AnnCase      rng _ _ _      -> rng
-      E_AnnVar     rng _          -> rng
-      AnnPrimitive rng _          -> rng
-      E_AnnTyApp   rng _ _ _      -> rng
+annExprAnnot :: AnnExpr ty -> ExprAnnot
+annExprAnnot expr = case expr of
+      AnnString    annot    _       -> annot
+      AnnBool      annot    _       -> annot
+      AnnCall      annot _ _ _      -> annot
+      AnnCompiles  annot _          -> annot
+      AnnKillProcess annot _ _      -> annot
+      AnnIf        annot _ _ _ _    -> annot
+      AnnUntil     annot _ _ _      -> annot
+      AnnInt       annot _ _        -> annot
+      AnnFloat     annot _ _        -> annot
+      E_AnnFn      f                -> fnAnnot f
+      AnnLetVar    annot _ _ _      -> annot
+      AnnLetFuns   annot _ _ _      -> annot
+      AnnAlloc     annot   _ _      -> annot
+      AnnDeref     annot _ _        -> annot
+      AnnStore     annot _ _        -> annot
+      AnnArrayRead annot _ _        -> annot
+      AnnArrayPoke annot _ _ _      -> annot
+      AnnTuple     annot _          -> annot
+      AnnCase      annot _ _ _      -> annot
+      E_AnnVar     annot _          -> annot
+      AnnPrimitive annot _          -> annot
+      E_AnnTyApp   annot _ _ _      -> annot
+
+instance SourceRanged (AnnExpr ty) where rangeOf e = annotRange (annExprAnnot e)
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||

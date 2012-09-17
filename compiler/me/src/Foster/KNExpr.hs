@@ -206,7 +206,7 @@ varOrThunk (a, targetType) = do
                       , fnVars     = vars
                       , fnBody     = KNCall YesTail (fnTypeILRange fnty) v vars
                       , fnIsRec    = Just False
-                      , fnRange    = MissingSourceRange $ "thunk for " ++ show v
+                      , fnAnnot    = ExprAnnot [] (MissingSourceRange $ "thunk for " ++ show v) []
                       }
         -- TODO the above ident/global check doesn't work correctly for
         -- global polymorphic functions, which are first type-instantiated
@@ -306,7 +306,7 @@ kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
                   , fnVars  = vars
                   , fnBody  = KNAppCtor (TyConAppIL dname []) info vars -- TODO fix
                   , fnIsRec = Just False
-                  , fnRange = MissingSourceRange ("kNormalCtor " ++ show cid)
+                  , fnAnnot = ExprAnnot [] (MissingSourceRange $ "kNormalCtor " ++ show cid) []
                   }
 
 -- ||||||||||||||||||||||||| Boilerplate ||||||||||||||||||||||||{{{

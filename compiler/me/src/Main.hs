@@ -84,7 +84,7 @@ typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
     -- in scope (for typechecking recursive calls).
     -- TODO better error messages for type conflicts
     tcResults <- forM (zip bindings fns) $ \(binding, fn) -> do
-        let ast = (E_FnAST (fnAstRange fn) fn)
+        let ast = (E_FnAST (fnAstAnnot fn) fn)
         let name = T.unpack $ fnAstName fn
 
         when False $ do

@@ -80,7 +80,7 @@ ail ctx ae =
                                      return $ AIIf    ti x y z
         AnnUntil rng  t  a b   -> do ti <- qt t
                                      [x,y]   <- mapM q [a,b]
-                                     return $ AIUntil ti x y rng
+                                     return $ AIUntil ti x y (annotRange rng)
         -- For anonymous function literals
         E_AnnFn annFn        -> do fn_id <- tcFresh "lit_fn"
                                    aiFn <- fnOf ctx annFn
@@ -112,7 +112,7 @@ ail ctx ae =
                                          [x,y,z]   <- mapM q [a,b,c]
                                          return $ AIArrayPoke ti (ArrayIndex x y rng s) z
         AnnTuple rng exprs         -> do aies <- mapM q exprs
-                                         return $ AITuple aies rng
+                                         return $ AITuple aies (annotRange rng)
         AnnCase _rng t e bs        -> do ti <- qt t
                                          ei <- q e
                                          bsi <- mapM (\((p, vs),e) -> do
@@ -173,7 +173,7 @@ ail ctx ae =
 
                 origExprType <- qt (typeOf e)
                 let ktvs = tyvarBindersOf origExprType
-                mapM_ (kindCheckSubsumption rng) (zip ktvs argtys)
+                mapM_ (kindCheckSubsumption (annotRange rng)) (zip ktvs argtys)
 
                 return $ E_AITyApp ti ae argtys
 
@@ -233,6 +233,6 @@ fnOf ctx f = do
                 , fnVars  = vars
                 , fnBody  = body
                 , fnIsRec = fnIsRec f
-                , fnRange = fnRange f
+                , fnAnnot = fnAnnot f
                 }
 

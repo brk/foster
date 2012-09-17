@@ -156,7 +156,7 @@ data Fn expr ty = Fn { fnVar   :: TypedId ty
                      , fnVars  :: [TypedId ty]
                      , fnBody  :: expr
                      , fnIsRec :: Maybe Bool
-                     , fnRange :: SourceRange
+                     , fnAnnot :: ExprAnnot
                      } deriving Show -- For KNExpr and KSmallstep
 
 fnType :: Fn e t -> t
@@ -245,6 +245,19 @@ sourceLine (SourceLines seq) n =
         then "<no line " ++ show n ++ " of "
                          ++ (show $ Seq.length seq) ++ ">"
         else (T.unpack $ Seq.index seq n)
+
+data Formatting = Comment    SourceRange Doc
+                | BlankLines SourceRange Doc
+
+data ExprAnnot = ExprAnnot
+                        [Formatting] -- preceding comments and/or blank lines.
+                        SourceRange  -- range of bare expr not incl. formatting.
+                        [Formatting] -- trailing comments and/or blank lines.
+
+annotRange :: ExprAnnot -> SourceRange
+annotRange (ExprAnnot _ rng _) = rng
+
+instance Show ExprAnnot where show (ExprAnnot _ rng _) = show rng
 
 data AllocationSource = AllocationSource String SourceRange deriving Show
 

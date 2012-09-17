@@ -89,7 +89,7 @@ data Proc blocks =
      Proc { procReturnType :: TypeLL
           , procIdent      :: Ident
           , procVars       :: [LLVar]
-          , procRange      :: SourceRange
+          , procAnnot      :: ExprAnnot
           , procBlocks     :: blocks
           }
 
@@ -369,7 +369,8 @@ closureOfKnFn infoMap (self_id, fn) = do
     (envVar, newproc) <- closureConvertFn transformedFn varsOfClosure
     let procid        = TypedId (procType newproc) (procIdent newproc)
     return $ Closure procid (llv envVar) (map llv varsOfClosure)
-                   (AllocationSource (show procid ++ ":") (procRange newproc))
+                   (AllocationSource (show procid ++ ":")
+                                     (annotRange $ procAnnot newproc))
   where
     procType proc =
       let retty = procReturnType proc in
@@ -468,7 +469,7 @@ closureConvertedProc :: [MoVar] -> CFFn -> BasicBlockGraph' -> ILM CCProc
 closureConvertedProc procArgs f newbody = do
   case fnVar f of
     TypedId (FnType _ ftrange _ _) id ->
-       return $ Proc (monoToLL ftrange) id (map llv procArgs) (fnRange f) newbody
+       return $ Proc (monoToLL ftrange) id (map llv procArgs) (fnAnnot f) newbody
     tid -> error $ "Expected closure converted proc to have fntype, had " ++ show tid
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

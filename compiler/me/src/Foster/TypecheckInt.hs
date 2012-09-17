@@ -20,8 +20,8 @@ import Foster.TypeAST
 sanityCheck :: Bool -> String -> Tc ()
 sanityCheck cond msg = if cond then return () else tcFails [red (text msg)]
 
-typecheckInt :: SourceRange -> String -> Maybe TypeAST -> Tc (AnnExpr Rho)
-typecheckInt rng originalText _expTyTODO = do
+typecheckInt :: ExprAnnot -> String -> Maybe TypeAST -> Tc (AnnExpr Rho)
+typecheckInt annot originalText _expTyTODO = do
     let goodBases = [2, 8, 10, 16]
     let maxBits = 32
     (clean, base) <- extractCleanBase originalText
@@ -35,7 +35,7 @@ typecheckInt rng originalText _expTyTODO = do
     sanityCheck (activeBits <= maxBits)
                 ("Integers currently limited to " ++ show maxBits ++ " bits, "
                                   ++ clean ++ " requires " ++ show activeBits)
-    return (AnnInt rng (PrimIntAST $ sizeOfBits maxBits) int)
+    return (AnnInt annot (PrimIntAST $ sizeOfBits maxBits) int)
  where
         onlyValidDigitsIn :: String -> Int -> Bool
         onlyValidDigitsIn str lim =
@@ -84,10 +84,10 @@ typecheckInt rng originalText _expTyTODO = do
         sizeOfBits 32 = I32
         sizeOfBits n = error $ "TypecheckInt.hs:sizeOfBits: Only support i32 for now, not " ++ show n
 
-typecheckRat :: SourceRange -> String -> Maybe TypeAST -> Tc (AnnExpr Rho)
-typecheckRat rng originalText _expTyTODO = do
+typecheckRat :: ExprAnnot -> String -> Maybe TypeAST -> Tc (AnnExpr Rho)
+typecheckRat annot originalText _expTyTODO = do
   --tcLift $ putStrLn $ "typecheckRat: " ++ originalText ++ " :?: " ++ show _expTyTODO
   -- TODO: be more discriminating about float vs rational numbers?
   let val = (read originalText) :: Double
-  return (AnnFloat rng PrimFloat64AST (LiteralFloat val originalText))
+  return (AnnFloat annot PrimFloat64AST (LiteralFloat val originalText))
 

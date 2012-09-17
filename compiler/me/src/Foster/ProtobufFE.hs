@@ -71,28 +71,28 @@ type FE a = State FEState a
 getName _    (Just s) = pUtf8ToText s
 getName desc Nothing  = error $ "Missing required name in " ++ desc ++ "!"
 
-parseBool pbexpr range = do
-    return $ E_BoolAST range $ fromMaybe False (PbExpr.bool_value pbexpr)
+parseBool pbexpr annot = do
+    return $ E_BoolAST annot $ fromMaybe False (PbExpr.bool_value pbexpr)
 
 parseCall pbexpr rng = do
     (base:args) <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
     return $ E_CallAST rng base args
 
-parseCallPrim pbexpr rng = do
+parseCallPrim pbexpr annot = do
     args <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
     let primname = getName "prim" $ PbExpr.string_value pbexpr
     case (T.unpack primname, args) of
-      ("tuple",  _ ) -> return $ E_TupleAST rng args
-      ("deref", [e]) -> return $ E_DerefAST rng e
-      ("alloc",           [e]) -> return $ E_AllocAST rng e MemRegionGlobalHeap
-      ("stackref-unsafe", [e]) -> return $ E_AllocAST rng e MemRegionStack
-      ("subscript",       [a,b]) -> return $ E_ArrayRead rng (ArrayIndex a b rng SG_Dynamic)
-      ("subscript-unsafe",[a,b]) -> return $ E_ArrayRead rng (ArrayIndex a b rng SG_Static)
+      ("tuple",  _ ) -> return $ E_TupleAST annot args
+      ("deref", [e]) -> return $ E_DerefAST annot e
+      ("alloc",           [e]) -> return $ E_AllocAST annot e MemRegionGlobalHeap
+      ("stackref-unsafe", [e]) -> return $ E_AllocAST annot e MemRegionStack
+      ("subscript",       [a,b]) -> return $ E_ArrayRead annot (ArrayIndex a b (annotRange annot) SG_Dynamic)
+      ("subscript-unsafe",[a,b]) -> return $ E_ArrayRead annot (ArrayIndex a b (annotRange annot) SG_Static)
       ("store",[a,b])-> case b of -- a>^ c[d]
-                           E_ArrayRead _ ari -> return $ E_ArrayPoke rng ari a
-                           _                 -> return $ E_StoreAST rng a b
+                           E_ArrayRead _ ari -> return $ E_ArrayPoke annot ari a
+                           _                 -> return $ E_StoreAST annot a b
       ("kill-entire-process",  [s@(E_StringAST {})]) ->
-                                                return $ E_KillProcess rng s
+                                                return $ E_KillProcess annot s
       _ -> error $ "ProtobufFE: unknown primitive/arg combo " ++ show primname
 
 parseCompiles pbexpr range = do
@@ -113,7 +113,7 @@ parseTypeFormal pbtyformal =
     let kind = parseKind $ PbTypeFormal.kind pbtyformal in
     TypeFormalAST name kind
 
-parseFn pbexpr = do range <- parseRange pbexpr
+parseFn pbexpr = do annot <- parseAnnot pbexpr
                     bodies <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
                     let body = case bodies of
                                [b] -> b
@@ -125,7 +125,7 @@ parseFn pbexpr = do range <- parseRange pbexpr
                     let formals = toList $ PBValAbs.formals valabs
                     let tyformals = map parseTypeFormal $
                                         toList $ PBValAbs.type_formals valabs
-                    return $ (FnAST range name tyformals
+                    return $ (FnAST annot name tyformals
                                (map parseFormal formals) body
                                False) -- assume closure until proven otherwise
   where
@@ -133,7 +133,7 @@ parseFn pbexpr = do range <- parseRange pbexpr
 
 parseValAbs pbexpr range = pure (E_FnAST range) <*> parseFn pbexpr
 
-parseIf pbexpr range =
+parseIf pbexpr annot =
         if (isSet pbexpr PbExpr.pb_if)
                 then parseFromPBIf (getVal pbexpr PbExpr.pb_if)
                 else error "must have if to parse from if!"
@@ -141,29 +141,29 @@ parseIf pbexpr range =
                eif   <- parseExpr (PBIf.test_expr pbif)
                ethen <- parseExpr (PBIf.then_expr pbif)
                eelse <- parseExpr (PBIf.else_expr pbif)
-               return (E_IfAST range eif ethen eelse)
+               return (E_IfAST annot eif ethen eelse)
 
 parseUntil pbexpr range = do
     [a, b] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
     return $ E_UntilAST range a b
 
-parseInt :: PbExpr.Expr -> SourceRange -> FE (ExprAST TypeP)
-parseInt pbexpr range = do
-    return $ E_IntAST range (uToString $ getVal pbexpr PbExpr.string_value)
+parseInt :: PbExpr.Expr -> ExprAnnot -> FE (ExprAST TypeP)
+parseInt pbexpr annot = do
+    return $ E_IntAST annot (uToString $ getVal pbexpr PbExpr.string_value)
 
-parseRat :: PbExpr.Expr -> SourceRange -> FE (ExprAST TypeP)
-parseRat pbexpr range = do
-    return $ E_RatAST range (uToString $ getVal pbexpr PbExpr.string_value)
+parseRat :: PbExpr.Expr -> ExprAnnot -> FE (ExprAST TypeP)
+parseRat pbexpr annot = do
+    return $ E_RatAST annot (uToString $ getVal pbexpr PbExpr.string_value)
 
 -- String literals are parsed with leading and trailing " characters,
 -- so we take tail . init to strip them off.
-parseString :: PbExpr.Expr -> SourceRange -> FE (ExprAST TypeP)
-parseString pbexpr range = do
-    return $ E_StringAST range (T.init . T.tail . pUtf8ToText $
+parseString :: PbExpr.Expr -> ExprAnnot -> FE (ExprAST TypeP)
+parseString pbexpr annot = do
+    return $ E_StringAST annot (T.init . T.tail . pUtf8ToText $
                                  getVal pbexpr PbExpr.string_value)
 
-parseLet pbexpr range = do
-    parsePBLet range
+parseLet pbexpr annot = do
+    parsePBLet annot
                (fromMaybe (error "Protobuf node tagged LET without PbLet field!")
                           (PbExpr.pb_let pbexpr))
       where parseBinding (PbTermBinding.TermBinding u e) = do
@@ -181,16 +181,17 @@ parseLet pbexpr range = do
                    (b:[]) -> E_LetAST range b expr
                    (b:bs) -> E_LetAST range b (buildLets range bs expr)
 
-parseSeq pbexpr rng = do
+parseSeq pbexpr annot = do
     exprs <- mapM parseExpr $ toList (toList $ PbExpr.parts pbexpr)
     return $ buildSeqs exprs
       where
         -- Convert a list of ExprASTs to a right-leaning "list" of SeqAST nodes.
         buildSeqs :: [ExprAST t] -> (ExprAST t)
         buildSeqs []    = error $ "ProtobufFE.parseSeq can't parse empty seq!"
-                                 ++ highlightFirstLine rng
+                                 ++ highlightFirstLine (annotRange annot)
         buildSeqs [a]   = a
-        buildSeqs (a:b) = E_SeqAST (MissingSourceRange "buildSeqs") a (buildSeqs b)
+        buildSeqs (a:b) = E_SeqAST (ExprAnnot [] (MissingSourceRange "buildSeqs") [])
+                                   a (buildSeqs b)
 
 parseTyApp pbexpr range = do
     [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
@@ -230,6 +231,11 @@ parseCaseExpr pbexpr range = do
       patterns    <- mapM parsePattern (toList $ PBCase.pattern pbcase)
       branchexprs <- mapM parseExpr    (toList $ PBCase.branch  pbcase)
       return $ E_Case range expr (Prelude.zip patterns branchexprs)
+
+parseAnnot :: PbExpr.Expr -> FE ExprAnnot
+parseAnnot expr = do
+  rng <- parseRange expr
+  return $ ExprAnnot [] rng []
 
 parseRange :: PbExpr.Expr -> FE SourceRange
 parseRange pbexpr =
@@ -272,8 +278,8 @@ parseExpr pbexpr = do
                 PAT_TUPLE    -> error "parseExpr called on pattern!"
 
                 --otherwise -> error $ "parseExpr saw unknown tag: " ++ (show $ PbExpr.tag pbexpr) ++ "\n"
-    range <- parseRange pbexpr
-    fn pbexpr range
+    annot <- parseAnnot pbexpr
+    fn pbexpr annot
 
 parseDataType :: DataType.DataType -> FE (Foster.Base.DataType TypeP)
 parseDataType dt = do

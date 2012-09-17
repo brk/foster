@@ -15,7 +15,8 @@ where
 
 import Foster.Base(SourceRange, Expr(..), freeVars, identPrefix, Structured(..),
                    SourceRanged(..), TypedId(..), butnot, ArrayIndex(..),
-                   AllocMemRegion, childrenOfArrayIndex)
+                   AllocMemRegion, childrenOfArrayIndex,
+                   ExprAnnot(..), annotRange)
 import Foster.TypeAST(TypeAST, EPattern(..), E_VarAST(..))
 import Foster.Kind
 
@@ -24,7 +25,7 @@ import qualified Data.Text as T
 
 -----------------------------------------------------------------------
 
-type ExprAST ty = ExprSkel SourceRange ty
+type ExprAST ty = ExprSkel ExprAnnot ty
 
 data ExprSkel annot ty =
         -- Literals
@@ -59,7 +60,7 @@ data ExprSkel annot ty =
         | E_KillProcess   annot (ExprAST ty) -- arg must be string literal
         deriving Show
 
-data FnAST ty  = FnAST { fnAstRange    :: SourceRange
+data FnAST ty  = FnAST { fnAstAnnot    :: ExprAnnot
                        , fnAstName     :: T.Text
                        , fnTyFormals   :: [TypeFormalAST]
                        , fnFormals     :: [TypedId ty]
@@ -157,7 +158,7 @@ exprAnnot e = case e of
       E_TyApp         annot _ _   -> annot
       E_Case          annot _ _   -> annot
 
-instance SourceRanged (ExprAST ty) where rangeOf e = exprAnnot e
+instance SourceRanged (ExprAST ty) where rangeOf e = annotRange (exprAnnot e)
 
 -- The free-variable determination logic here is tested in
 --      test/bootstrap/testcases/rec-fn-detection
