@@ -18,6 +18,7 @@ import Data.Maybe(fromMaybe)
 import Data.Foldable(toList)
 
 import Control.Monad.State
+import Control.Applicative
 import Data.Char(isLower)
 
 import Text.ProtocolBuffers(isSet,getVal)
@@ -130,9 +131,7 @@ parseFn pbexpr = do range <- parseRange pbexpr
   where
      parseFormal (Formal u t) = TypedId (parseType t) (Ident (pUtf8ToText u) 0)
 
-parseValAbs pbexpr _range = do
-  fn <- parseFn pbexpr
-  return $ E_FnAST fn
+parseValAbs pbexpr range = pure (E_FnAST range) <*> parseFn pbexpr
 
 parseIf pbexpr range =
         if (isSet pbexpr PbExpr.pb_if)

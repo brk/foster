@@ -31,7 +31,7 @@ data ExprAST ty =
         | E_IntAST        SourceRange String
         | E_RatAST        SourceRange String
         | E_TupleAST      SourceRange [ExprAST ty]
-        | E_FnAST         (FnAST ty)
+        | E_FnAST         SourceRange (FnAST ty)
         -- Control flow
         | E_IfAST         SourceRange (ExprAST ty) (ExprAST ty) (ExprAST ty)
         | E_UntilAST      SourceRange (ExprAST ty) (ExprAST ty)
@@ -85,7 +85,7 @@ instance Structured (ExprAST TypeAST) where
             E_CompilesAST {}       -> text $ "CompilesAST  "
             E_IfAST       {}       -> text $ "IfAST        "
             E_UntilAST _rng _ _    -> text $ "UntilAST     "
-            E_FnAST f              -> text $ "FnAST        " ++ T.unpack (fnAstName f)
+            E_FnAST    _rng f      -> text $ "FnAST        " ++ T.unpack (fnAstName f)
             E_LetRec    {}         -> text $ "LetRec       "
             E_LetAST _rng bnd _    -> text $ "LetAST       " ++ T.unpack (termBindingName bnd)
             E_SeqAST    {}         -> text $ "SeqAST       "
@@ -112,7 +112,7 @@ instance Structured (ExprAST TypeAST) where
             E_KillProcess _rng _         -> []
             E_IfAST       _rng    a b c  -> [a, b, c]
             E_UntilAST    _rng a b       -> [a, b]
-            E_FnAST f                    -> [fnAstBody f]
+            E_FnAST       _rng f         -> [fnAstBody f]
             E_SeqAST      _rng  _a _b    -> unbuildSeqs e
             E_AllocAST    _rng a _       -> [a]
             E_DerefAST    _rng a         -> [a]
@@ -133,12 +133,12 @@ instance Structured (ExprAST TypeAST) where
 instance SourceRanged (ExprAST ty)
   where
     rangeOf e = case e of
-      E_StringAST     rng _ -> rng
-      E_BoolAST       rng _ -> rng
-      E_IntAST        rng _ -> rng
-      E_RatAST        rng _ -> rng
-      E_TupleAST      rng _ -> rng
-      E_FnAST         f -> fnAstRange f
+      E_StringAST     rng _     -> rng
+      E_BoolAST       rng _     -> rng
+      E_IntAST        rng _     -> rng
+      E_RatAST        rng _     -> rng
+      E_TupleAST      rng _     -> rng
+      E_FnAST         rng _     -> rng
       E_LetAST        rng _ _   -> rng
       E_LetRec        rng _ _   -> rng
       E_CallAST       rng _ _   -> rng
@@ -165,7 +165,7 @@ instance Expr (ExprAST TypeAST) where
     E_LetRec _rng nest _ -> concatMap freeVars (childrenOf e) `butnot`
                                           [evarName v | TermBinding v _ <- nest]
     E_Case _rng e pbinds -> freeVars e ++ (concatMap epatBindingFreeVars pbinds)
-    E_FnAST f            -> let bodyvars  = freeVars (fnAstBody f) in
+    E_FnAST _rng f       -> let bodyvars  = freeVars (fnAstBody f) in
                             let boundvars = map (identPrefix.tidIdent) (fnFormals f) in
                             bodyvars `butnot` boundvars
     E_VarAST _rng v      -> [evarName v]

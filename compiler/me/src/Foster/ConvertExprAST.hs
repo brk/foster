@@ -90,7 +90,7 @@ convertExprAST f expr =
     E_LetRec       rng bnz e    -> liftM2 (E_LetRec       rng) (mapM (convertTermBinding f) bnz) (q e)
     E_LetAST       rng bnd e    -> liftM2 (E_LetAST       rng) (convertTermBinding f bnd) (q e)
     E_CallAST      rng b exprs  -> liftM2 (E_CallAST      rng) (q b) (mapM q exprs)
-    E_FnAST fn                  -> liftM  (E_FnAST           ) (convertFun f fn)
+    E_FnAST        rng fn       -> liftM  (E_FnAST        rng) (convertFun f fn)
     E_KillProcess  rng a        -> liftM  (E_KillProcess  rng) (q a)
 
 liftMaybe :: Monad m => (a -> m b) -> Maybe a -> m (Maybe b)

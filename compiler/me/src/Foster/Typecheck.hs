@@ -91,7 +91,7 @@ inferSigma :: Context TypeAST -> Term -> String -> Tc (AnnExpr Sigma)
 -- Special-case variables and function literals
 -- to avoid a redundant instantation + generalization
 inferSigma ctx (E_VarAST rng v) _msg = tcSigmaVar ctx rng (evarName v)
-inferSigma ctx (E_FnAST f)       msg = do r <- newTcRef (error $ "inferSigmaFn: empty result: " ++ msg)
+inferSigma ctx (E_FnAST _rng f)  msg = do r <- newTcRef (error $ "inferSigmaFn: empty result: " ++ msg)
                                           tcSigmaFn  ctx f (Infer r)
 inferSigma ctx (E_CallAST   rng base argtup) msg = do
                 r <- newTcRef (error $ "inferSigmaFn: empty result: " ++ msg)
@@ -132,7 +132,7 @@ checkSigma ctx e sigma = do
 
 checkSigmaDirect :: Context TypeAST -> Term -> Sigma -> Tc (AnnExpr Sigma)
 -- {{{
-checkSigmaDirect ctx (E_FnAST fn) sigma@(ForAllAST {}) = do
+checkSigmaDirect ctx (E_FnAST _rng fn) sigma@(ForAllAST {}) = do
     tcSigmaFn ctx fn (Check sigma)
 
 checkSigmaDirect _ctx _ (ForAllAST {}) =
@@ -184,7 +184,7 @@ tcRho ctx expr expTy = do
       E_CallAST   rng base argtup    -> tcRhoCall     ctx rng   base argtup expTy
       E_TupleAST  rng exprs          -> tcRhoTuple    ctx rng   exprs      expTy
       E_IfAST   rng a b c            -> tcRhoIf       ctx rng   a b c      expTy
-      E_FnAST f                      -> tcRhoFn       ctx       f          expTy
+      E_FnAST  _rng f                -> tcRhoFn       ctx       f          expTy
       E_LetRec rng bindings e        -> tcRhoLetRec   ctx rng   bindings e expTy
       E_LetAST rng binding  e        -> tcRhoLet      ctx rng   binding  e expTy
       E_TyApp  rng e types           -> tcRhoTyApp    ctx rng   e types    expTy
@@ -482,8 +482,8 @@ tcRhoLet ctx rng (TermBinding v e1) e2 mt = do
     maybeVarType = evarMaybeType v
     isRecursiveFunction boundName expr =
                        (boundName `elem` freeVars expr && isFnAST expr)
-                  where   isFnAST (E_FnAST _) = True
-                          isFnAST _           = False
+                  where   isFnAST (E_FnAST {}) = True
+                          isFnAST _            = False
     -- We'll only warn about recursive function bindings;
     -- shadowing is permissible, and erroneous definitions like
     --     let x = x; in x end
