@@ -5,7 +5,7 @@
 -----------------------------------------------------------------------------
 
 module Foster.ExprAST(
-  ExprAST(..)
+  ExprAST, ExprSkel(..)
 , FnAST(..)
 , TypeFormalAST(..)
 , TermBinding(..)
@@ -24,37 +24,39 @@ import qualified Data.Text as T
 
 -----------------------------------------------------------------------
 
-data ExprAST ty =
+type ExprAST ty = ExprSkel SourceRange ty
+
+data ExprSkel annot ty =
         -- Literals
-          E_StringAST     SourceRange T.Text
-        | E_BoolAST       SourceRange Bool
-        | E_IntAST        SourceRange String
-        | E_RatAST        SourceRange String
-        | E_TupleAST      SourceRange [ExprAST ty]
-        | E_FnAST         SourceRange (FnAST ty)
+          E_StringAST     annot T.Text
+        | E_BoolAST       annot Bool
+        | E_IntAST        annot String
+        | E_RatAST        annot String
+        | E_TupleAST      annot [ExprAST ty]
+        | E_FnAST         annot (FnAST ty)
         -- Control flow
-        | E_IfAST         SourceRange (ExprAST ty) (ExprAST ty) (ExprAST ty)
-        | E_UntilAST      SourceRange (ExprAST ty) (ExprAST ty)
-        | E_SeqAST        SourceRange (ExprAST ty) (ExprAST ty)
+        | E_IfAST         annot (ExprAST ty) (ExprAST ty) (ExprAST ty)
+        | E_UntilAST      annot (ExprAST ty) (ExprAST ty)
+        | E_SeqAST        annot (ExprAST ty) (ExprAST ty)
         -- Creation of bindings
-        | E_Case          SourceRange (ExprAST ty) [(EPattern ty, ExprAST ty)]
-        | E_LetAST        SourceRange (TermBinding ty) (ExprAST ty)
-        | E_LetRec        SourceRange [TermBinding ty] (ExprAST ty)
+        | E_Case          annot (ExprAST ty) [(EPattern ty, ExprAST ty)]
+        | E_LetAST        annot (TermBinding ty) (ExprAST ty)
+        | E_LetRec        annot [TermBinding ty] (ExprAST ty)
         -- Use of bindings
-        | E_VarAST        SourceRange (E_VarAST ty)
-        | E_CallAST       SourceRange (ExprAST ty) [ExprAST ty]
+        | E_VarAST        annot (E_VarAST ty)
+        | E_CallAST       annot (ExprAST ty) [ExprAST ty]
         -- Mutable ref cells
-        | E_AllocAST      SourceRange (ExprAST ty) AllocMemRegion
-        | E_DerefAST      SourceRange (ExprAST ty)
-        | E_StoreAST      SourceRange (ExprAST ty) (ExprAST ty)
+        | E_AllocAST      annot (ExprAST ty) AllocMemRegion
+        | E_DerefAST      annot (ExprAST ty)
+        | E_StoreAST      annot (ExprAST ty) (ExprAST ty)
         -- Array subscripting
-        | E_ArrayRead     SourceRange (ArrayIndex (ExprAST ty))
-        | E_ArrayPoke     SourceRange (ArrayIndex (ExprAST ty)) (ExprAST ty)
+        | E_ArrayRead     annot (ArrayIndex (ExprAST ty))
+        | E_ArrayPoke     annot (ArrayIndex (ExprAST ty)) (ExprAST ty)
         -- Terms indexed by types
-        | E_TyApp         SourceRange (ExprAST ty) [ty]
+        | E_TyApp         annot (ExprAST ty) [ty]
         -- Others
-        | E_CompilesAST   SourceRange (Maybe (ExprAST ty))
-        | E_KillProcess   SourceRange (ExprAST ty) -- arg must be string literal
+        | E_CompilesAST   annot (Maybe (ExprAST ty))
+        | E_KillProcess   annot (ExprAST ty) -- arg must be string literal
         deriving Show
 
 data FnAST ty  = FnAST { fnAstRange    :: SourceRange
@@ -79,24 +81,24 @@ instance Structured (ExprAST TypeAST) where
         case e of
             E_StringAST _rng _s    -> text $ "StringAST    "
             E_BoolAST   _rng  b    -> text $ "BoolAST      " ++ (show b)
-            E_IntAST _rng txt      -> text $ "IntAST       " ++ txt
-            E_RatAST _rng txt      -> text $ "RatAST       " ++ txt
+            E_IntAST    _rng txt   -> text $ "IntAST       " ++ txt
+            E_RatAST    _rng txt   -> text $ "RatAST       " ++ txt
             E_CallAST _rng b _args -> text $ "CallAST      " ++ tryGetCallNameE b
             E_CompilesAST {}       -> text $ "CompilesAST  "
             E_IfAST       {}       -> text $ "IfAST        "
             E_UntilAST _rng _ _    -> text $ "UntilAST     "
             E_FnAST    _rng f      -> text $ "FnAST        " ++ T.unpack (fnAstName f)
-            E_LetRec    {}         -> text $ "LetRec       "
-            E_LetAST _rng bnd _    -> text $ "LetAST       " ++ T.unpack (termBindingName bnd)
-            E_SeqAST    {}         -> text $ "SeqAST       "
-            E_AllocAST  {}         -> text $ "AllocAST     "
-            E_DerefAST  {}         -> text $ "DerefAST     "
-            E_StoreAST  {}         -> text $ "StoreAST     "
-            E_ArrayRead {}         -> text $ "SubscriptAST "
-            E_ArrayPoke {}         -> text $ "ArrayPokeAST "
-            E_TupleAST  {}         -> text $ "TupleAST     "
-            E_TyApp     {}         -> text $ "TyApp        "
-            E_Case      {}         -> text $ "Case         "
+            E_LetRec      {}       -> text $ "LetRec       "
+            E_LetAST   _rng bnd _  -> text $ "LetAST       " ++ T.unpack (termBindingName bnd)
+            E_SeqAST      {}       -> text $ "SeqAST       "
+            E_AllocAST    {}       -> text $ "AllocAST     "
+            E_DerefAST    {}       -> text $ "DerefAST     "
+            E_StoreAST    {}       -> text $ "StoreAST     "
+            E_ArrayRead   {}       -> text $ "SubscriptAST "
+            E_ArrayPoke   {}       -> text $ "ArrayPokeAST "
+            E_TupleAST    {}       -> text $ "TupleAST     "
+            E_TyApp       {}       -> text $ "TyApp        "
+            E_Case        {}       -> text $ "Case         "
             E_KillProcess {}       -> text $ "KillProcess  "
             E_VarAST _rng v        -> text $ "VarAST       " ++ T.unpack (evarName v) ++ " :: " ++ show (pretty $ evarMaybeType v)
     childrenOf e =
@@ -130,31 +132,32 @@ instance Structured (ExprAST TypeAST) where
                 unbuildSeqs (E_SeqAST _rng a b) = a : unbuildSeqs b
                 unbuildSeqs expr = [expr]
 
-instance SourceRanged (ExprAST ty)
-  where
-    rangeOf e = case e of
-      E_StringAST     rng _     -> rng
-      E_BoolAST       rng _     -> rng
-      E_IntAST        rng _     -> rng
-      E_RatAST        rng _     -> rng
-      E_TupleAST      rng _     -> rng
-      E_FnAST         rng _     -> rng
-      E_LetAST        rng _ _   -> rng
-      E_LetRec        rng _ _   -> rng
-      E_CallAST       rng _ _   -> rng
-      E_CompilesAST   rng _     -> rng
-      E_KillProcess   rng _     -> rng
-      E_IfAST         rng _ _ _ -> rng
-      E_UntilAST      rng _ _   -> rng
-      E_SeqAST        rng _ _   -> rng
-      E_AllocAST      rng _ _   -> rng
-      E_DerefAST      rng _     -> rng
-      E_StoreAST      rng _ _   -> rng
-      E_ArrayRead     rng _     -> rng
-      E_ArrayPoke     rng _ _   -> rng
-      E_VarAST        rng _     -> rng
-      E_TyApp         rng _ _   -> rng
-      E_Case          rng _ _   -> rng
+exprAnnot :: ExprSkel annot ty -> annot
+exprAnnot e = case e of
+      E_StringAST     annot _     -> annot
+      E_BoolAST       annot _     -> annot
+      E_IntAST        annot _     -> annot
+      E_RatAST        annot _     -> annot
+      E_TupleAST      annot _     -> annot
+      E_FnAST         annot _     -> annot
+      E_LetAST        annot _ _   -> annot
+      E_LetRec        annot _ _   -> annot
+      E_CallAST       annot _ _   -> annot
+      E_CompilesAST   annot _     -> annot
+      E_KillProcess   annot _     -> annot
+      E_IfAST         annot _ _ _ -> annot
+      E_UntilAST      annot _ _   -> annot
+      E_SeqAST        annot _ _   -> annot
+      E_AllocAST      annot _ _   -> annot
+      E_DerefAST      annot _     -> annot
+      E_StoreAST      annot _ _   -> annot
+      E_ArrayRead     annot _     -> annot
+      E_ArrayPoke     annot _ _   -> annot
+      E_VarAST        annot _     -> annot
+      E_TyApp         annot _ _   -> annot
+      E_Case          annot _ _   -> annot
+
+instance SourceRanged (ExprAST ty) where rangeOf e = exprAnnot e
 
 -- The free-variable determination logic here is tested in
 --      test/bootstrap/testcases/rec-fn-detection
