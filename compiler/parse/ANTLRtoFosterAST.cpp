@@ -973,9 +973,41 @@ namespace foster {
     pANTLR3_TOKEN_SOURCE originalSource;
   };
 
+  // The token source produces hidden tokens as well as non-hidden tokens;
+  // it's the token stream which wraps the token source that filters out
+  // hidden tokens.
+  //
+  // We can record interesting tokens (like comments, which are type 98)
+  // or implement Haskell-like layout rules.
+  //
+  // See also http://meri-stuff.blogspot.com/2012/09/tackling-comments-in-antlr-compiler.html
+  //
+  // If the first token in the file is a comment, it will start at char -1.
   pANTLR3_COMMON_TOKEN fosterNextTokenFunc(pANTLR3_TOKEN_SOURCE tokenSource) {
-    FosterIndentingTokenSource* fits = (FosterIndentingTokenSource*) tokenSource;
-    return fits->originalSource->nextToken(fits->originalSource);
+    FosterIndentingTokenSource* s = (FosterIndentingTokenSource*) tokenSource;
+    pANTLR3_COMMON_TOKEN tok = s->originalSource->nextToken(s->originalSource);
+
+    if (tok->channel == 0) {
+      ParsingContext::sawNonHiddenToken();
+    }
+    if (tok->channel != 0) {
+      if (tok->type == NL
+       || tok->type == LINE_COMMENT
+       || tok->type == NESTING_COMMENT) {
+        ParsingContext::sawHiddenToken(tok); // note: WS not included.
+      }
+
+      if (false) {
+        pANTLR3_STRING txt = tok->getText(tok);
+        printf("FITS token: channel %d, index %d, type %3d, line %2d, char %2d, text '%s'\n",
+                tok->channel, tok->index, tok->type, tok->line, tok->charPosition,
+                        (tok->type == NL)
+                                ? "\\n"
+                                : (const char*) txt->chars);
+      }
+    }
+
+    return tok;
   }
 
   pANTLR3_TOKEN_SOURCE newFosterIndentingTokenSource(pANTLR3_TOKEN_SOURCE src) {
@@ -1015,8 +1047,8 @@ namespace foster {
       return getMemoryBufferHash(file.getBuffer()->getMemoryBuffer());
     }
 
-    void createParser(foster::ANTLRContext& ctx,
-                      const string& filepath,
+    void createParser(foster::ANTLRContext&    ctx,
+                      const string&            filepath,
                       foster::InputTextBuffer* textbuf) {
       llvm::MemoryBuffer* buf = textbuf->getMemoryBuffer();
       ASSERT(buf->getBufferSize() <= ((ANTLR3_UINT32)-1)
@@ -1062,6 +1094,8 @@ namespace foster {
 
   void deleteANTLRContext(ANTLRContext* ctx) { delete ctx; }
 
+  // Note: Modules are parsed iteratively, not nestedly.
+  // Parsing contexts can be stacked, but we no longer use that functionality.
   void parseModule(WholeProgramAST* pgm,
                    const foster::InputFile& file,
                    unsigned* outNumANTLRErrors,
@@ -1090,6 +1124,7 @@ namespace foster {
 
     ModuleAST* m = parseTopLevel(langAST.tree, file.getShortName(), hashstr, out_imports);
     m->buf = file.getBuffer();
+    m->hiddenTokens = ParsingContext::getHiddenTokens();
 
     pgm->seen[hash] = m;
     pgm->modules.push_back(m);

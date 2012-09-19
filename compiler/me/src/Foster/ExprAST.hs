@@ -5,7 +5,7 @@
 -----------------------------------------------------------------------------
 
 module Foster.ExprAST(
-  ExprAST, ExprSkel(..)
+  ExprAST, ExprSkel(..), exprAnnot
 , FnAST(..)
 , TypeFormalAST(..) -- TODO remove?
 , TermBinding(..)
@@ -16,7 +16,7 @@ where
 import Foster.Base(Expr(..), freeVars, identPrefix, Structured(..),
                    SourceRanged(..), TypedId(..), butnot, ArrayIndex(..),
                    AllocMemRegion, childrenOfArrayIndex,
-                   ExprAnnot(..), annotRange)
+                   ExprAnnot(..), annotRange, annotComments, showComments)
 import Foster.TypeAST(TypeAST, EPattern(..), E_VarAST(..))
 import Foster.Kind
 
@@ -80,28 +80,28 @@ instance Structured (ExprAST t) where
         let tryGetCallNameE (E_VarAST _rng (VarAST _mt v)) = T.unpack v
             tryGetCallNameE _                              = "" in
         case e of
-            E_StringAST _rng _s    -> text $ "StringAST    "
-            E_BoolAST   _rng  b    -> text $ "BoolAST      " ++ (show b)
-            E_IntAST    _rng txt   -> text $ "IntAST       " ++ txt
-            E_RatAST    _rng txt   -> text $ "RatAST       " ++ txt
-            E_CallAST _rng b _args -> text $ "CallAST      " ++ tryGetCallNameE b
-            E_CompilesAST {}       -> text $ "CompilesAST  "
-            E_IfAST       {}       -> text $ "IfAST        "
-            E_UntilAST _rng _ _    -> text $ "UntilAST     "
-            E_FnAST    _rng f      -> text $ "FnAST        " ++ T.unpack (fnAstName f)
-            E_LetRec      {}       -> text $ "LetRec       "
-            E_LetAST   _rng bnd _  -> text $ "LetAST       " ++ T.unpack (termBindingName bnd)
-            E_SeqAST      {}       -> text $ "SeqAST       "
-            E_AllocAST    {}       -> text $ "AllocAST     "
-            E_DerefAST    {}       -> text $ "DerefAST     "
-            E_StoreAST    {}       -> text $ "StoreAST     "
-            E_ArrayRead   {}       -> text $ "SubscriptAST "
-            E_ArrayPoke   {}       -> text $ "ArrayPokeAST "
-            E_TupleAST    {}       -> text $ "TupleAST     "
-            E_TyApp       {}       -> text $ "TyApp        "
-            E_Case        {}       -> text $ "Case         "
-            E_KillProcess {}       -> text $ "KillProcess  "
-            E_VarAST _rng v        -> text $ "VarAST       " ++ T.unpack (evarName v) -- ++ " :: " ++ show (pretty $ evarMaybeType v)
+            E_StringAST _rng _s    -> text $ "StringAST    "                                   ++ (exprCmnts e)
+            E_BoolAST   _rng  b    -> text $ "BoolAST      " ++ (show b)                       ++ (exprCmnts e)
+            E_IntAST    _rng txt   -> text $ "IntAST       " ++ txt                            ++ (exprCmnts e)
+            E_RatAST    _rng txt   -> text $ "RatAST       " ++ txt                            ++ (exprCmnts e)
+            E_CallAST _rng b _args -> text $ "CallAST      " ++ tryGetCallNameE b              ++ (exprCmnts e)
+            E_CompilesAST {}       -> text $ "CompilesAST  "                                   ++ (exprCmnts e)
+            E_IfAST       {}       -> text $ "IfAST        "                                   ++ (exprCmnts e)
+            E_UntilAST _rng _ _    -> text $ "UntilAST     "                                   ++ (exprCmnts e)
+            E_FnAST    _rng f      -> text $ "FnAST        " ++ T.unpack (fnAstName f)         ++ (exprCmnts e)
+            E_LetRec      {}       -> text $ "LetRec       "                                   ++ (exprCmnts e)
+            E_LetAST   _rng bnd _  -> text $ "LetAST       " ++ T.unpack (termBindingName bnd) ++ (exprCmnts e)
+            E_SeqAST      {}       -> text $ "SeqAST       "                                   ++ (exprCmnts e)
+            E_AllocAST    {}       -> text $ "AllocAST     "                                   ++ (exprCmnts e)
+            E_DerefAST    {}       -> text $ "DerefAST     "                                   ++ (exprCmnts e)
+            E_StoreAST    {}       -> text $ "StoreAST     "                                   ++ (exprCmnts e)
+            E_ArrayRead   {}       -> text $ "SubscriptAST "                                   ++ (exprCmnts e)
+            E_ArrayPoke   {}       -> text $ "ArrayPokeAST "                                   ++ (exprCmnts e)
+            E_TupleAST    {}       -> text $ "TupleAST     "                                   ++ (exprCmnts e)
+            E_TyApp       {}       -> text $ "TyApp        "                                   ++ (exprCmnts e)
+            E_Case        {}       -> text $ "Case         "                                   ++ (exprCmnts e)
+            E_KillProcess {}       -> text $ "KillProcess  "                                   ++ (exprCmnts e)
+            E_VarAST _rng v        -> text $ "VarAST       " ++ T.unpack (evarName v)          ++ (exprCmnts e) -- ++ " :: " ++ show (pretty $ evarMaybeType v)
     childrenOf e =
         let termBindingExpr (TermBinding _ e) = e in
         case e of
@@ -132,6 +132,8 @@ instance Structured (ExprAST t) where
                 unbuildSeqs :: (ExprAST ty) -> [ExprAST ty]
                 unbuildSeqs (E_SeqAST _rng a b) = a : unbuildSeqs b
                 unbuildSeqs expr = [expr]
+
+exprCmnts e = showComments $ annotComments (exprAnnot e)
 
 exprAnnot :: ExprSkel annot ty -> annot
 exprAnnot e = case e of

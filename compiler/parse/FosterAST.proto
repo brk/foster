@@ -11,6 +11,17 @@ message SourceRange {
   required SourceLocation end       = 3;
 }
 
+message Formatting {
+  enum Tag {
+    COMMENT = 1;
+    NEWLINE = 2;
+    NHIDDEN = 3;
+  }
+  required Tag            tag     = 1;
+  optional string         comment = 2;
+  required SourceLocation f_loc   = 3;
+}
+
 message Type {
   enum Tag {
     TYVAR = 1; // Type variable or constructor
@@ -163,6 +174,7 @@ message SourceModule {
   repeated Decl     decl      = 6;
   repeated Defn     defn      = 7;
   repeated DataType data_type = 8;
+  repeated Formatting formatting = 9;
 }
 
 message WholeProgram {

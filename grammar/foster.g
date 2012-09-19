@@ -185,7 +185,7 @@ tannots :  binding (',' binding)* -> ^(BINDING binding+);
 //    1011`1011_2
 //    FEEDFACE_16
 //    12.34
-//    12.34`56   
+//    12.34`56
 //    12.34e+01
 //    12.34e-10
 /*
@@ -298,7 +298,7 @@ NESTING_COMMENT :
     '*/' {$channel=HIDDEN;}
     ;
 
-NL  :   '\n' WS? {$channel=HIDDEN;};
+NL  :   '\n' {$channel=HIDDEN;};
 WS  :   ( ' '
         | '\t'
         | '\r'

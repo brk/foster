@@ -16,6 +16,8 @@
 
 #include "city.h"
 
+#include "antlr3interfaces.h"
+
 using std::string;
 
 namespace llvm {
@@ -73,6 +75,7 @@ struct ModuleAST {
   std::vector<Defn*> defn_parts;
   std::vector<Decl*> decl_parts;
   std::vector<Data*> data_parts;
+  std::vector<pANTLR3_COMMON_TOKEN> hiddenTokens;
 
   explicit ModuleAST(const std::vector<Decl*>& decls,
                      const std::vector<Defn*>& defns,

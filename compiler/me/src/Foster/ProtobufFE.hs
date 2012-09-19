@@ -18,7 +18,6 @@ import Data.Maybe(fromMaybe)
 import Data.Foldable(toList)
 
 import Control.Monad.State
-import Control.Applicative
 import Data.Char(isLower)
 
 import Text.ProtocolBuffers(isSet,getVal)
@@ -31,7 +30,7 @@ import Foster.Fepb.Type.Tag as PbTypeTag
 import Foster.Fepb.Type     as PbType
 import Foster.Fepb.Formal   as PbFormal
 import Foster.Fepb.TypeFormal as PbTypeFormal
-import Foster.Fepb.TermBinding    as PbTermBinding
+import qualified Foster.Fepb.TermBinding    as PbTermBinding
 import Foster.Fepb.Kind     as PbKind
 import Foster.Fepb.Kind.Tag as PbKindTag
 import Foster.Fepb.PBLet    as PBLet
@@ -53,6 +52,8 @@ import Foster.Fepb.Expr.Tag(Tag(IF, LET, VAR, SEQ, UNTIL,
                                 PAT_VARIABLE, PAT_TUPLE))
 import qualified Foster.Fepb.SourceRange as Pb
 import qualified Foster.Fepb.SourceLocation as Pb
+import qualified Foster.Fepb.Formatting as PbFormatting
+import Foster.Fepb.Formatting.Tag
 
 import Foster.Primitives
 
@@ -131,7 +132,7 @@ parseFn pbexpr = do annot <- parseAnnot pbexpr
   where
      parseFormal (Formal u t) = TypedId (parseType t) (Ident (pUtf8ToText u) 0)
 
-parseValAbs pbexpr range = pure (E_FnAST range) <*> parseFn pbexpr
+parseValAbs pbexpr range = liftM (E_FnAST range) (parseFn pbexpr)
 
 parseIf pbexpr annot =
         if (isSet pbexpr PbExpr.pb_if)
@@ -247,10 +248,10 @@ parseRange pbexpr =
                        (parseSourceLocation (Pb.end   r))
                        lines
                        (fmap uToString (Pb.file_path r))
- where
-   parseSourceLocation :: Pb.SourceLocation -> ESourceLocation
-   parseSourceLocation sr = -- This may fail for files of more than 2^29 lines.
-       ESourceLocation (fromIntegral $ Pb.line sr) (fromIntegral $ Pb.column sr)
+
+parseSourceLocation :: Pb.SourceLocation -> ESourceLocation
+parseSourceLocation sr = -- This may fail for files of more than 2^29 lines.
+    ESourceLocation (fromIntegral $ Pb.line sr) (fromIntegral $ Pb.column sr)
 
 parseExpr :: PbExpr.Expr -> FE (ExprAST TypeP)
 parseExpr pbexpr = do
@@ -310,17 +311,136 @@ parseModule _name hash decls defns datatypes = do
     toplevel f = f { fnWasToplevel = True }
 
 parseSourceModule :: SourceModule -> ModuleAST FnAST TypeP
-parseSourceModule sm =
-    evalState
+parseSourceModule sm = resolveFormatting m where
+   m =
+     evalState
       (parseModule (uToString $ SourceModule.self_name sm)
                    (uToString $ SourceModule.hash sm)
                    (toList    $ SourceModule.decl sm)
                    (toList    $ SourceModule.defn sm)
                    (toList    $ SourceModule.data_type sm))
       (FEState (sourceLines sm))
-  where
+
+   formatting = map p $ toList $ SourceModule.formatting sm
+
+     where p pbf = (,) (parseSourceLocation $ PbFormatting.f_loc pbf) $
+                    case PbFormatting.tag pbf of
+                       NEWLINE -> BlankLine
+                       NHIDDEN -> NonHidden
+                       COMMENT -> Comment (case PbFormatting.comment pbf of
+                                             Just u -> uToString u
+                                             Nothing -> error $ "PbFormatting.COMMENT without comment?")
+
    sourceLines :: SourceModule -> SourceLines
    sourceLines sm = SourceLines (fmapDefault pUtf8ToText (SourceModule.line sm))
+
+   resolveFormatting :: ModuleAST FnAST TypeP -> ModuleAST FnAST TypeP
+   resolveFormatting m =
+     m { moduleASTfunctions = evalState
+                                (mapM attachFormattingFn (moduleASTfunctions m))
+                                formatting }
+
+   hiddens ps = Prelude.filter (\x -> case x of NonHidden -> False
+                                                _         -> True) $
+                               processNewlines (map snd ps)
+      where
+           processNewlines xs = drop1st xs
+             where drop1st   [] = []
+                   drop1st   (BlankLine:xs) =     keepuntil xs
+                   drop1st   (x        :xs) = x : drop1st   xs
+                   keepuntil (NonHidden:xs) =     drop1st   xs
+                   keepuntil (x        :xs) = x : keepuntil xs
+                   keepuntil [] = []
+
+   getPreFormatting :: ExprAnnot -> State [(ESourceLocation, Formatting)]
+                                          ExprAnnot
+   getPreFormatting (ExprAnnot [] rng post) = do
+     fs <- get
+     let prefilter (_, NonHidden) = True
+         prefilter (loc, _      ) = loc `beforeRangeStart` rng
+     let (pre, rest) = span prefilter fs
+     put rest
+     return (ExprAnnot (hiddens pre) rng post)
+
+   getPostFormatting :: ExprAnnot -> State [(ESourceLocation, Formatting)]
+                                           ExprAnnot
+   getPostFormatting (ExprAnnot pre0 rng []) = do
+     fs <- get
+     case fs of
+       [] -> return (ExprAnnot pre0 rng [])
+       ((_loc0, _):_) -> do
+          let
+              prefilter (_, NonHidden) = True
+              prefilter (loc, _ ) = loc `beforeRangeEnd` rng
+
+              onlyComments (_, Comment _) = True
+              onlyComments (_, _)         = False
+
+              (pre, rest0) = span prefilter fs
+              (post, rest) = span onlyComments rest0
+          put rest
+          return (ExprAnnot (pre0 ++ hiddens pre) rng (map snd post))
+
+   attachFormattingFn :: FnAST TypeP -> State [(ESourceLocation, Formatting)]
+                                              (FnAST TypeP)
+   attachFormattingFn fn = do
+     a0 <- getPreFormatting  (fnAstAnnot fn)
+     b  <- attachFormatting  (fnAstBody  fn)
+     an <- getPostFormatting a0
+     return $ fn { fnAstAnnot = an, fnAstBody = b }
+
+    -- patterns have source ranges, not annotations.
+   convertTermBinding (TermBinding evar expr) =
+                liftM (TermBinding evar) (attachFormatting expr)
+
+   attachFormatting :: ExprAST TypeP -> State [(ESourceLocation, Formatting)]
+                                              (ExprAST TypeP)
+   attachFormatting expr = do
+     let q = attachFormatting
+     a0 <- getPreFormatting (exprAnnot expr)
+     let ana = getPostFormatting a0 -- "annotation action"
+     case expr of
+       E_StringAST    _ s        -> liftM2' E_StringAST   ana (return s)
+       E_BoolAST      _ b        -> liftM2' E_BoolAST     ana (return b)
+       E_IntAST       _ txt      -> liftM2' E_IntAST      ana (return txt)
+       E_RatAST       _ txt      -> liftM2' E_RatAST      ana (return txt)
+       E_VarAST       _ v        -> liftM2' E_VarAST      ana (return v)
+
+       E_KillProcess  _ e        -> liftM2' E_KillProcess ana (q e)
+       E_CompilesAST  _ me       -> liftM2' E_CompilesAST ana (liftMaybeM q me)
+       E_IfAST        _ a b c    -> liftM4' E_IfAST       ana (q a) (q b) (q c)
+       E_UntilAST     _ a b      -> liftM3' E_UntilAST    ana (q a) (q b)
+       E_SeqAST       _ a b      -> liftM3' E_SeqAST      ana (q a) (q b)
+       E_AllocAST     _ a rgn    -> liftM3' E_AllocAST    ana (q a) (return rgn)
+       E_DerefAST     _ a        -> liftM2' E_DerefAST    ana (q a)
+       E_StoreAST     _ a b      -> liftM3' E_StoreAST    ana (q a) (q b)
+       E_TyApp        _ a tys    -> liftM3' E_TyApp       ana (q a) (return tys)
+       E_TupleAST     _ exprs    -> liftM2' E_TupleAST    ana (mapM q exprs)
+       E_LetRec       _ bnz e    -> liftM3' E_LetRec      ana (mapM convertTermBinding bnz) (q e)
+       E_LetAST       _ bnd e    -> liftM3' E_LetAST      ana (convertTermBinding bnd) (q e)
+       E_CallAST      _ b exprs  -> liftM3' E_CallAST     ana (q b) (mapM q exprs)
+       E_FnAST        _ fn       -> liftM2' E_FnAST       ana (attachFormattingFn fn)
+       E_ArrayRead    _ (ArrayIndex a b rng2 s) -> do [x, y] <- mapM q [a, b]
+                                                      an <- ana
+                                                      return $ E_ArrayRead an (ArrayIndex x y rng2 s)
+       E_ArrayPoke    _ (ArrayIndex a b rng2 s) c -> do [x, y, z] <- mapM q [a, b, c]
+                                                        an <- ana
+                                                        return $ E_ArrayPoke an (ArrayIndex x y rng2 s) z
+       E_Case         _ e bs     -> do e' <- q e
+                                       bs' <- mapM (\(pat, exp) -> do
+                                                           exp' <- q exp
+                                                           return (pat, exp' )) bs
+                                       an <- ana
+                                       return $ E_Case an e' bs'
+
+   liftM2' f a b     = do b' <- b;                   a' <- a; return $ f a' b'
+   liftM3' f a b c   = do b' <- b; c' <- c;          a' <- a; return $ f a' b' c'
+   liftM4' f a b c d = do b' <- b; c' <- c; d' <- d; a' <- a; return $ f a' b' c' d'
+
+
+   liftMaybeM :: Monad m => (a -> m b) -> Maybe a -> m (Maybe b)
+   liftMaybeM f m = case m of Nothing ->         return Nothing
+                              Just t  -> f t >>= return.Just
 
 parseWholeProgram :: WholeProgram -> WholeProgramAST FnAST TypeP
 parseWholeProgram pgm =

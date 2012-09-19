@@ -186,6 +186,20 @@ data SourceRange = SourceRange { sourceRangeBegin :: ESourceLocation
                                }
                   | MissingSourceRange String
 
+beforeRangeStart _ (MissingSourceRange _) = False
+        -- error "cannot compare source location to missing source range!"
+beforeRangeStart loc (SourceRange begin _ _ _) =
+         sourceLocationLine loc <  sourceLocationLine begin
+     || (sourceLocationLine loc == sourceLocationLine begin
+     &&  sourceLocationCol  loc <  sourceLocationCol  begin)
+
+beforeRangeEnd _ (MissingSourceRange _) = False
+        -- error "cannot compare source location to missing source range!"
+beforeRangeEnd loc (SourceRange _ end _ _) =
+         sourceLocationLine loc <  sourceLocationLine end
+     || (sourceLocationLine loc == sourceLocationLine end
+     &&  sourceLocationCol  loc <  sourceLocationCol  end)
+
 class SourceRanged a
   where rangeOf :: a -> SourceRange
 
@@ -246,8 +260,10 @@ sourceLine (SourceLines seq) n =
                          ++ (show $ Seq.length seq) ++ ">"
         else (T.unpack $ Seq.index seq n)
 
-data Formatting = Comment    SourceRange Doc
-                | BlankLines SourceRange Doc
+data Formatting = Comment    {-SourceRange-} String
+                | BlankLine
+                | NonHidden
+                deriving Show
 
 data ExprAnnot = ExprAnnot
                         [Formatting] -- preceding comments and/or blank lines.
@@ -260,6 +276,14 @@ annotRange (ExprAnnot _ rng _) = rng
 instance Show ExprAnnot where show (ExprAnnot _ rng _) = show rng
 
 data AllocationSource = AllocationSource String SourceRange deriving Show
+
+
+data Comments = C { leading :: [Formatting], trailing :: [Formatting] } deriving Show
+annotComments (ExprAnnot l _ t) = C l t
+
+showComments (C [] []) = ""
+showComments other     = " ... " ++ show other
+
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||||| Structured Things ||||||||||||||||||||||{{{

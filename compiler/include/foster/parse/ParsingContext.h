@@ -25,6 +25,8 @@ struct TypeAST;
 
 namespace foster {
 
+  bool isNewlineToken(pANTLR3_COMMON_TOKEN tok);
+
 class ParsingContext {
 public:
   explicit ParsingContext();
@@ -64,6 +66,15 @@ public:
 
   static pANTLR3_COMMON_TOKEN
   getEndToken(pANTLR3_BASE_TREE t);
+
+  static void
+  sawHiddenToken(pANTLR3_COMMON_TOKEN tok);
+
+  static void
+  sawNonHiddenToken(); // generate fake hidden token marker
+
+  static std::vector<pANTLR3_COMMON_TOKEN> // with NULL pointers marking non-hidden tokens
+  getHiddenTokens();
 
   static void
   clearTokenBoundaries();

@@ -12,6 +12,8 @@
 #include "llvm/Module.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include "_generated_/fosterLexer.h"
+
 #include <stack>
 #include <map>
 
@@ -19,6 +21,10 @@ using std::map;
 using std::string;
 
 namespace foster {
+
+  bool isNewlineToken(pANTLR3_COMMON_TOKEN tok) {
+    return tok->type == NL;
+  }
 
 std::stack<ParsingContext*> gParsingContexts;
 
@@ -32,6 +38,9 @@ struct ParsingContext::Impl {
 
   std::map<pANTLR3_BASE_TREE, pANTLR3_COMMON_TOKEN> startTokens;
   std::map<pANTLR3_BASE_TREE, pANTLR3_COMMON_TOKEN>   endTokens;
+
+  std::map<const foster::InputFile*,
+             std::vector<pANTLR3_COMMON_TOKEN> >   hiddenTokens;
 
   std::string accumulated_output;
   llvm::raw_string_ostream os;
@@ -153,6 +162,25 @@ ParsingContext::getEndToken(pANTLR3_BASE_TREE t) {
   return gParsingContexts.top()->impl->endTokens[t];
 }
 
+void
+ParsingContext::sawHiddenToken(pANTLR3_COMMON_TOKEN tok) {
+  ASSERT(!gParsingContexts.empty());
+  gParsingContexts.top()->impl->hiddenTokens[gInputFile].push_back(tok);
+}
+
+void
+ParsingContext::sawNonHiddenToken() {
+  ASSERT(!gParsingContexts.empty());
+  std::vector<pANTLR3_COMMON_TOKEN>& tokens
+                       = gParsingContexts.top()->impl->hiddenTokens[gInputFile];
+  if (tokens.back()) tokens.push_back(NULL);
+}
+
+std::vector<pANTLR3_COMMON_TOKEN> // static
+ParsingContext::getHiddenTokens() {
+  ASSERT(!gParsingContexts.empty());
+  return gParsingContexts.top()->impl->hiddenTokens[gInputFile];
+}
 
 void // static
 ParsingContext::clearTokenBoundaries() {

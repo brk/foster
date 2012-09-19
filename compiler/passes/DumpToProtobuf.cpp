@@ -12,6 +12,9 @@
 
 #include "llvm/Support/Path.h"
 
+#include <antlr3commontoken.h>
+#include <antlr3string.h>
+
 // Protobufs do not easily allow mirroring of existing object
 // graph structures in the depth-first preorder style usually
 // associated with visitors, because repeated (pointer) fields only
@@ -63,6 +66,22 @@ void setSourceRange(pb::SourceRange* pbr,
   }
   if (r.end   != foster::SourceLocation::getInvalidLocation()) {
     setSourceLocation(pbr->mutable_end(),   r.end);
+  }
+}
+
+void dumpFormatting(pb::Formatting* f, pANTLR3_COMMON_TOKEN tok) {
+  pb::SourceLocation* pbloc = f->mutable_f_loc();
+  // clone of getStartLocation, not called because it's in a separate module.
+  pbloc->set_line(   tok ? tok->getLine(tok) - 1           : -1 );
+  pbloc->set_column( tok ? tok->getCharPositionInLine(tok) : -1 );
+
+  if (!tok) { // NULL pointers inserted by calls to sawNonHiddenToken()
+    f->set_tag(pb::Formatting::NHIDDEN);
+  } else if (foster::isNewlineToken(tok)) {
+    f->set_tag(pb::Formatting::NEWLINE);
+  } else {
+    f->set_tag(pb::Formatting::COMMENT);
+    f->set_comment((const char*) tok->getText(tok)->chars);
   }
 }
 
@@ -147,6 +166,10 @@ void dumpModule(DumpToProtobufPass* pass,
     for (int i = 0; i < buf->getLineCount(); ++i) {
       sm.add_line(buf->getLine(i));
     }
+  }
+
+  for (size_t i = 0; i < mod->hiddenTokens.size(); ++i) {
+    dumpFormatting(sm.add_formatting(), mod->hiddenTokens[i]);
   }
 }
 
