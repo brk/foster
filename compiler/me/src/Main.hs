@@ -34,6 +34,7 @@ import Foster.ProtobufIL(dumpILProgramToProtobuf)
 import Foster.ExprAST
 import Foster.TypeAST
 import Foster.ParsedType
+import Foster.PrettyExprAST()
 import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn))
 import Foster.AnnExprIL(AIExpr(AILetFuns, AICall, E_AIVar), fnOf)
 import Foster.TypeIL(TypeIL(TupleTypeIL, FnTypeIL), ilOf)
@@ -129,7 +130,7 @@ typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
                     putDocLn $ showStructure ast
                     putDocLn $ red $ text "Typecheck error: "
                     forM_ errs putDocLn
-                    putDoc line
+                    putDocP line
 
         bindingForAnnFn :: Fn (AnnExpr TypeAST) TypeAST -> ContextBinding TypeAST
         bindingForAnnFn f = TermVarBinding (identPrefix $ fnIdent f) (fnVar f)
@@ -378,7 +379,9 @@ compile pb_program tcenv =
 
 mergeModules :: WholeProgramAST FnAST TypeP
               -> Compiled (ModuleAST FnAST TypeP)
-mergeModules (WholeProgramAST modules) = return (foldr1 mergedModules modules)
+mergeModules (WholeProgramAST modules) = do
+  liftIO $ putDocLn (pretty (head modules))
+  return (foldr1 mergedModules modules)
   -- Modules are listed in reverse dependency order, conveniently.
   -- TODO track explicit module dependency graph, decompose to DAG, etc.
   where mergedModules m1 m2 = ModuleAST {
@@ -457,7 +460,7 @@ lowerModule ai_mod ctx_il = do
 
      whenDumpIR "cfg" $ do
          putDocLn $ (outLn "/// CFG-ized program ==================")
-         _ <- liftIO $ renderCFG cfgmod True
+         putDocP  $ pretty cfgmod
          putDocLn $ (outLn "^^^ ===================================")
 
      whenDumpIR "cc" $ do

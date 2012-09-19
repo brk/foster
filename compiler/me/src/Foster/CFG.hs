@@ -15,7 +15,6 @@ module Foster.CFG
 , CFLast(..)
 , CFBody(..)
 , CFFn
-, renderCFG
 , blockId
 , blockTargetsOf
 , mapGraphNodesM_
@@ -392,10 +391,6 @@ type BlockId = (String, Label)
 
 
 -- ||||||||||||||||||||| CFG Pretty Printing ||||||||||||||||||||{{{
-
-renderCFG :: (ModuleIL CFBody MonoType) -> Bool -> IO (Either () String)
-renderCFG cfg put = if put then putDoc (pretty cfg) >>= (return . Left)
-                        else return . Right $ show (pretty cfg)
 
 comment d = text "/*" <+> d <+> text "*/"
 

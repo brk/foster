@@ -392,7 +392,8 @@ type MayGCConstraint = (MayGC -- at most one direct constraint
 type MayGCConstraints = Map Ident MayGCConstraint
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
--- ||||||||||||||||||||||||| Instances |||||||||||||||||||||||||{{{
+-- ||||||||||||||||||||||||| Instances ||||||||||||||||||||||||||{{{
+
 intOfSize I1 = 1
 intOfSize I8 = 8
 intOfSize I32 = 32
@@ -471,8 +472,8 @@ instance Pretty ty => Pretty (EPattern ty) where
   pretty (EP_Tuple    _ pats)       = text "EP_Tuple    " <> pretty pats
 
 instance Pretty ty => Pretty (E_VarAST ty) where
-  pretty (VarAST (Just ty) txt) = text (show txt) <+> text "::" <+> pretty ty
-  pretty (VarAST Nothing   txt) = text (show txt)
+  pretty (VarAST (Just ty) txt) = text (T.unpack txt) <+> text "::" <+> pretty ty
+  pretty (VarAST Nothing   txt) = text (T.unpack txt)
 
 instance Show ty => Show (EPattern ty) where
   show (EP_Wildcard _)            = "EP_Wildcard"

@@ -7,20 +7,20 @@
 module Foster.ExprAST(
   ExprAST, ExprSkel(..)
 , FnAST(..)
-, TypeFormalAST(..)
+, TypeFormalAST(..) -- TODO remove?
 , TermBinding(..)
 , termBindingName
 )
 where
 
-import Foster.Base(SourceRange, Expr(..), freeVars, identPrefix, Structured(..),
+import Foster.Base(Expr(..), freeVars, identPrefix, Structured(..),
                    SourceRanged(..), TypedId(..), butnot, ArrayIndex(..),
                    AllocMemRegion, childrenOfArrayIndex,
                    ExprAnnot(..), annotRange)
 import Foster.TypeAST(TypeAST, EPattern(..), E_VarAST(..))
 import Foster.Kind
 
-import Text.PrettyPrint.ANSI.Leijen(text, pretty)
+import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T
 
 -----------------------------------------------------------------------
@@ -75,7 +75,7 @@ termBindingName (TermBinding v _) = evarName v
 
 -- ||||||||||||||||||||||||| Instances ||||||||||||||||||||||||||{{{
 
-instance Structured (ExprAST TypeAST) where
+instance Structured (ExprAST t) where
     textOf e _width =
         let tryGetCallNameE (E_VarAST _rng (VarAST _mt v)) = T.unpack v
             tryGetCallNameE _                              = "" in
@@ -101,7 +101,7 @@ instance Structured (ExprAST TypeAST) where
             E_TyApp       {}       -> text $ "TyApp        "
             E_Case        {}       -> text $ "Case         "
             E_KillProcess {}       -> text $ "KillProcess  "
-            E_VarAST _rng v        -> text $ "VarAST       " ++ T.unpack (evarName v) ++ " :: " ++ show (pretty $ evarMaybeType v)
+            E_VarAST _rng v        -> text $ "VarAST       " ++ T.unpack (evarName v) -- ++ " :: " ++ show (pretty $ evarMaybeType v)
     childrenOf e =
         let termBindingExpr (TermBinding _ e) = e in
         case e of
