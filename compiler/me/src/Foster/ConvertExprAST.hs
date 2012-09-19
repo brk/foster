@@ -18,13 +18,13 @@ convertModule f (ModuleAST hash funs decls dts lines primdts) = do
 convertVar f (TypedId t i) = do ty <- f t
                                 return $ TypedId ty i
 
-convertFun :: (a -> Tc b) -> FnAST a -> Tc (FnAST b)
+convertFun :: Monad m => (a -> m b) -> FnAST a -> m (FnAST b)
 convertFun f (FnAST rng nm tyformals formals body toplevel) = do
     formals' <- mapM (convertVar f) formals
     body'    <- convertExprAST f body
     return $ FnAST rng nm tyformals formals' body' toplevel
 
-convertDecl :: (a -> Tc b) -> (String, a) -> Tc (String, b)
+convertDecl :: Monad m => (a -> m b) -> (String, a) -> m (String, b)
 convertDecl f (s, ty) = do t <- f ty ; return (s, t)
 
 convertDataType :: (Show a, Show b) =>
@@ -37,13 +37,13 @@ convertDataType f (DataType dtName tyformals ctors) = do
         tys <- mapM f types
         return $ DataCtor dataCtorName n formals tys
 
-liftMaybeTc :: (a -> Tc b) -> Maybe a -> Tc (Maybe b)
-liftMaybeTc f m = case m of Nothing ->         return Nothing
-                            Just t  -> f t >>= return.Just
+liftMaybeM :: Monad m => (a -> m b) -> Maybe a -> m (Maybe b)
+liftMaybeM f m = case m of Nothing ->         return Nothing
+                           Just t  -> f t >>= return.Just
 
-convertEVar f (VarAST mt name) = do ft <- liftMaybeTc f mt; return $ VarAST ft name
+convertEVar f (VarAST mt name) = do ft <- liftMaybeM f mt; return $ VarAST ft name
 
-convertPat :: (a -> Tc b) -> EPattern a -> Tc (EPattern b)
+convertPat :: Monad m => (a -> m b) -> EPattern a -> m (EPattern b)
 convertPat f pat = case pat of
         EP_Wildcard rng          -> return (EP_Wildcard rng  )
         EP_Bool     rng b        -> return (EP_Bool     rng b)
@@ -53,13 +53,13 @@ convertPat f pat = case pat of
         EP_Ctor     rng pats txt -> do pats' <- mapM (convertPat f) pats
                                        return $ EP_Ctor rng pats' txt
 
-convertTermBinding :: (a -> Tc b) -> TermBinding a -> Tc (TermBinding b)
+convertTermBinding :: Monad m => (a -> m b) -> TermBinding a -> m (TermBinding b)
 convertTermBinding f (TermBinding evar expr) = do
   evar' <- convertEVar    f evar
   expr' <- convertExprAST f expr
   return $ TermBinding evar' expr'
 
-convertExprAST :: (x -> Tc z) -> ExprAST x -> Tc (ExprAST z)
+convertExprAST :: Monad m => (x -> m z) -> ExprAST x -> m (ExprAST z)
 convertExprAST f expr =
   let q = convertExprAST f in
   case expr of
@@ -67,7 +67,7 @@ convertExprAST f expr =
     E_BoolAST      rng b        -> return $ (E_BoolAST      rng) b
     E_IntAST       rng txt      -> return $ (E_IntAST       rng) txt
     E_RatAST       rng txt      -> return $ (E_RatAST       rng) txt
-    E_CompilesAST  rng me       -> liftM  (E_CompilesAST  rng) (liftMaybeTc q me)
+    E_CompilesAST  rng me       -> liftM  (E_CompilesAST  rng) (liftMaybeM q me)
     E_IfAST        rng    a b c -> liftM3 (E_IfAST        rng)   (q a) (q b) (q c)
     E_UntilAST     rng a b      -> liftM2 (E_UntilAST     rng)   (q a) (q b)
     E_SeqAST       rng a b      -> liftM2 (E_SeqAST       rng)   (q a) (q b)
