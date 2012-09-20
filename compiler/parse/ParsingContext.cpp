@@ -173,7 +173,7 @@ ParsingContext::sawNonHiddenToken() {
   ASSERT(!gParsingContexts.empty());
   std::vector<pANTLR3_COMMON_TOKEN>& tokens
                        = gParsingContexts.top()->impl->hiddenTokens[gInputFile];
-  if (tokens.back()) tokens.push_back(NULL);
+  if ((!tokens.empty()) && tokens.back()) tokens.push_back(NULL);
 }
 
 std::vector<pANTLR3_COMMON_TOKEN> // static
