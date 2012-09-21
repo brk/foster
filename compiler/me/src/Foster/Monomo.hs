@@ -227,7 +227,11 @@ idAppend id s = case id of (GlobalSymbol o) -> (GlobalSymbol $ beforeS o)
                            (Ident o m)      -> (Ident (beforeS o) m)
                 where beforeS o = o `T.append` T.pack s
 
-monoInstantiate polydef polybinder polyprocid monotys subst ty' = do
+monoInstantiate :: Fn KNExpr TypeIL -> {-Poly-} Ident -> {-Poly-} Ident
+                -> [MonoType]       -> MonoSubst      -> MonoType
+                -> Mono ({- Mono -} Ident)
+monoInstantiate polydef polybinder polyprocid
+                monotys subst      ty' = do
   let monoprocid = getMonoId polyprocid monotys
   let monobinder = getMonoId polybinder monotys
   have <- seen monoprocid
