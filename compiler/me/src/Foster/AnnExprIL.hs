@@ -64,13 +64,13 @@ ail ctx ae =
     let qt = ilOf ctx in
     let qp = ilOfPat ctx in
     case ae of
-        AnnCompiles _rng (CompilesResult ooe) -> do
+        AnnCompiles _rng _ty (CompilesResult ooe) -> do
                 oox <- tcIntrospect (tcInject q ooe)
                 return $ AIBool (isOK oox)
         AnnKillProcess _rng t m -> do ti <- qt t
                                       return $ AIKillProcess ti m
-        AnnBool   _rng b       -> do return $ AIBool b
-        AnnString _rng s       -> do return $ AIString s
+        AnnBool   _rng _ b     -> do return $ AIBool b
+        AnnString _rng _ s     -> do return $ AIString s
         AnnInt    _rng t int   -> do ti <- qt t
                                      return $ AIInt ti int
         AnnFloat _rng t flt    -> do ti <- qt t
@@ -97,11 +97,11 @@ ail ctx ae =
         AnnLetFuns _rng ids fns e  -> do fnsi <- mapM (fnOf ctx) fns
                                          ei <- q e
                                          return $ AILetFuns ids fnsi ei
-        AnnAlloc _rng   a rgn      -> do [x] <- mapM q [a]
+        AnnAlloc _rng _t a rgn     -> do [x] <- mapM q [a]
                                          return $ AIAlloc x rgn
         AnnDeref _rng _t a         -> do [x] <- mapM q [a]
                                          return $ AIDeref x
-        AnnStore _rng   a b        -> do [x,y]   <- mapM q [a,b]
+        AnnStore _rng _t a b       -> do [x,y]   <- mapM q [a,b]
                                          return $ AIStore x y
         AnnArrayRead _rng t (ArrayIndex a b rng s) -> do
                                          ti <- qt t
@@ -111,7 +111,7 @@ ail ctx ae =
                                          ti <- qt t
                                          [x,y,z]   <- mapM q [a,b,c]
                                          return $ AIArrayPoke ti (ArrayIndex x y rng s) z
-        AnnTuple rng exprs         -> do aies <- mapM q exprs
+        AnnTuple rng _ exprs       -> do aies <- mapM q exprs
                                          return $ AITuple aies (annotRange rng)
         AnnCase _rng t e bs        -> do ti <- qt t
                                          ei <- q e

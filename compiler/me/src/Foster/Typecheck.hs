@@ -209,7 +209,7 @@ tcRho ctx expr expTy = do
                       Just  e -> tcIntrospect (inferSigma ctx e "compiles")
           -- Note: we infer a sigma, not a rho, because we don't want to
           -- instantiate a sigma with meta vars and then never bind them.
-          matchExp expTy (AnnCompiles rng (CompilesResult result)) "compiles"
+          matchExp expTy (AnnCompiles rng fosBoolType (CompilesResult result)) "compiles"
       E_KillProcess rng (E_StringAST _ msg) -> do
           tau <- case expTy of
              (Check t) -> return t
@@ -271,7 +271,7 @@ tcRhoVar ctx rng name expTy = do
 --  G |- true :: Bool      G |- false :: Bool
 tcRhoBool rng b expTy = do
 -- {{{
-    let ab = AnnBool rng b
+    let ab = AnnBool rng (PrimIntAST I1) b
     case expTy of
          Infer  r               -> update r (return ab)
          Check  (PrimIntAST I1) -> return ab
@@ -286,7 +286,7 @@ tcRhoBool rng b expTy = do
 --  G |- "..." :: Text
 tcRhoText rng b expTy = do
 -- {{{
-    let ab = AnnString rng b
+    let ab = AnnString rng (TyConAppAST "Text" []) b
     case expTy of
          Infer r                        -> update r (return ab)
          Check  (TyConAppAST "Text" []) -> return ab
@@ -325,7 +325,7 @@ tcRhoStore ctx rng e1 e2 expTy = do
 -- {{{
     a1 <- inferRho ctx e1 "store"
     a2 <- checkRho ctx e2 (RefTypeAST (typeAST a1))
-    matchExp expTy (AnnStore rng a1 a2) "store"
+    matchExp expTy (AnnStore rng (TupleTypeAST []) a1 a2) "store"
 -- }}}
 
 
@@ -353,7 +353,7 @@ tcRhoAlloc ctx rng e1 rgn expTy = do
 -- {{{
     ea <- case expTy of Check (RefTypeAST t) -> tcRho ctx e1 (Check t)
                         _                    -> inferRho ctx e1 "alloc"
-    matchExp expTy (AnnAlloc rng ea rgn) "alloc"
+    matchExp expTy (AnnAlloc rng (RefTypeAST (typeOf ea)) ea rgn) "alloc"
 -- }}}
 
 --  G |- e1 ::: t1
@@ -374,7 +374,7 @@ tcRhoTuple ctx rng exprs expTy = do
   where
     tcTuple ctx rng exps typs = do
         exprs <- typecheckExprsTogether ctx exps typs
-        return $ AnnTuple rng exprs
+        return $ AnnTuple rng TupleTypeAST exprs
 
     -- Typechecks each expression in the same context
     typecheckExprsTogether ctx exprs expectedTypes = do
@@ -599,7 +599,7 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
                 ++ highlightFirstLine (annotRange rng)
         args <- sequence [checkSigma ctx arg ty | (arg, ty) <- zip argexprs args_ty]
         debug $ "call: annargs: "
-        debugDoc $ showStructure (AnnTuple rng args)
+        debugDoc $ showStructure (AnnTuple rng TupleTypeAST args)
         debugDoc $ text "call: res_ty is " <> pretty res_ty
         debugDoc $ text "call: exp_ty is " <> pretty exp_ty
         debugDoc $ text "tcRhoCall deferring to instSigma"

@@ -21,15 +21,15 @@ import qualified Data.Text as T
 
 data AnnExpr ty =
         -- Literals
-          AnnBool       ExprAnnot Bool
-        | AnnString     ExprAnnot T.Text
+          AnnBool       ExprAnnot ty Bool
+        | AnnString     ExprAnnot ty T.Text
         | AnnInt        { aintRange  :: ExprAnnot
                         , aintType   :: ty
                         , aintLit    :: LiteralInt }
         | AnnFloat      { afltRange  :: ExprAnnot
                         , afltType   :: ty
                         , afltLit    :: LiteralFloat }
-        | AnnTuple      ExprAnnot [AnnExpr ty]
+        | AnnTuple      ExprAnnot ([ty] -> ty) [AnnExpr ty]
         | E_AnnFn       (Fn (AnnExpr ty) ty)
 
         -- Control flow
@@ -46,9 +46,9 @@ data AnnExpr ty =
         | AnnPrimitive  ExprAnnot (TypedId ty)
         | AnnCall       ExprAnnot ty (AnnExpr ty) [AnnExpr ty]
         -- Mutable ref cells
-        | AnnAlloc      ExprAnnot              (AnnExpr ty) AllocMemRegion
-        | AnnDeref      ExprAnnot ty           (AnnExpr ty)
-        | AnnStore      ExprAnnot (AnnExpr ty) (AnnExpr ty)
+        | AnnAlloc      ExprAnnot ty              (AnnExpr ty) AllocMemRegion
+        | AnnDeref      ExprAnnot ty              (AnnExpr ty)
+        | AnnStore      ExprAnnot ty (AnnExpr ty) (AnnExpr ty)
         -- Array operations
         | AnnArrayRead  ExprAnnot ty (ArrayIndex (AnnExpr ty))
         | AnnArrayPoke  ExprAnnot ty (ArrayIndex (AnnExpr ty)) (AnnExpr ty)
@@ -58,7 +58,7 @@ data AnnExpr ty =
                      ,  annTyAppExpr        :: (AnnExpr ty)
                      ,  annTyAppArgTypes    :: [ty] }
         -- Others
-        | AnnCompiles   ExprAnnot (CompilesResult (AnnExpr ty))
+        | AnnCompiles   ExprAnnot ty (CompilesResult (AnnExpr ty))
         | AnnKillProcess ExprAnnot ty T.Text
         -- We keep kill-process as a primitive rather than translate it to a
         -- call to a primitive because we must ensure that its assigned value
@@ -68,22 +68,22 @@ data AnnExpr ty =
 
 instance TypedWith (AnnExpr TypeAST) TypeAST where
   typeOf annexpr = case annexpr of
-     AnnString {}          -> fosStringType
-     AnnBool   {}          -> fosBoolType
+     AnnString _ t _       -> t
+     AnnBool   _ t _       -> t
      AnnInt   _rng t _     -> t
      AnnFloat _rng t _     -> t
-     AnnTuple  {}          -> TupleTypeAST [typeOf e | e <- childrenOf annexpr]
+     AnnTuple  _ tf _      -> tf [typeOf e | e <- childrenOf annexpr]
      E_AnnFn annFn         -> fnType annFn
      AnnCall _rng t _ _    -> t
-     AnnCompiles {}        -> fosBoolType
+     AnnCompiles _ t _     -> t
      AnnKillProcess _ t _  -> t
      AnnIf _rng t _ _ _    -> t
      AnnUntil _rng t _ _   -> t
      AnnLetVar _rng _ _ b  -> typeOf b
      AnnLetFuns _rng _ _ e -> typeOf e
-     AnnAlloc _rng e _     -> RefTypeAST (typeOf e)
+     AnnAlloc _rng t _ _   -> t
      AnnDeref _rng t _     -> t
-     AnnStore _rng _ _     -> TupleTypeAST []
+     AnnStore _rng t _ _   -> t
      AnnArrayRead _rng t _ -> t
      AnnArrayPoke _ _ _ _  -> TupleTypeAST []
      AnnCase _rng t _ _    -> t
@@ -94,10 +94,10 @@ instance TypedWith (AnnExpr TypeAST) TypeAST where
 instance Structured (AnnExpr TypeAST) where
   textOf e _width =
     case e of
-      AnnString   _rng    _      -> text "AnnString    "
-      AnnBool     _rng    b      -> text "AnnBool      " <> pretty b
+      AnnString   _rng _  _      -> text "AnnString    "
+      AnnBool     _rng _  b      -> text "AnnBool      " <> pretty b
       AnnCall     _rng t _b _args-> text "AnnCall      :: " <> pretty t
-      AnnCompiles _rng cr        -> text "AnnCompiles  " <> pretty cr
+      AnnCompiles _rng _ cr      -> text "AnnCompiles  " <> pretty cr
       AnnKillProcess _rng t msg  -> text "AnnKillProcess " <> string (show msg) <> text  " :: " <> pretty t
       AnnIf       _rng t _ _ _   -> text "AnnIf         :: " <> pretty t
       AnnUntil    _rng t _ _     -> text "AnnUntil      :: " <> pretty t
@@ -124,8 +124,8 @@ instance Structured (AnnExpr TypeAST) where
       AnnString {}                         -> []
       AnnBool   {}                         -> []
       AnnCall _r _t b exprs                -> b:exprs
-      AnnCompiles  _rng (CompilesResult (OK     e)) -> [e]
-      AnnCompiles  _rng (CompilesResult (Errors _)) -> []
+      AnnCompiles  _rng _ (CompilesResult (OK     e)) -> [e]
+      AnnCompiles  _rng _ (CompilesResult (Errors _)) -> []
       AnnKillProcess {}                    -> []
       AnnIf        _rng _t  a b c          -> [a, b, c]
       AnnUntil     _rng _t  a b            -> [a, b]
@@ -134,12 +134,12 @@ instance Structured (AnnExpr TypeAST) where
       E_AnnFn annFn                        -> [fnBody annFn]
       AnnLetVar    _rng _ a b              -> [a, b]
       AnnLetFuns   _rng _ids fns e         -> (map E_AnnFn fns) ++ [e]
-      AnnAlloc     _rng    a _             -> [a]
+      AnnAlloc     _rng _t a _             -> [a]
       AnnDeref     _rng _t a               -> [a]
-      AnnStore     _rng    a b             -> [a, b]
+      AnnStore     _rng _t a b             -> [a, b]
       AnnArrayRead _rng _t ari             -> childrenOfArrayIndex ari
       AnnArrayPoke _rng _t ari c           -> childrenOfArrayIndex ari ++ [c]
-      AnnTuple _rng exprs                  -> exprs
+      AnnTuple _rng _ exprs                -> exprs
       AnnCase _rng _t e bs                 -> e:(map snd bs)
       E_AnnVar {}                          -> []
       AnnPrimitive {}                      -> []
@@ -170,10 +170,10 @@ patBindingFreeIds ((_, binds), expr) =
 
 annExprAnnot :: AnnExpr ty -> ExprAnnot
 annExprAnnot expr = case expr of
-      AnnString    annot    _       -> annot
-      AnnBool      annot    _       -> annot
+      AnnString    annot _  _       -> annot
+      AnnBool      annot _  _       -> annot
       AnnCall      annot _ _ _      -> annot
-      AnnCompiles  annot _          -> annot
+      AnnCompiles  annot _ _        -> annot
       AnnKillProcess annot _ _      -> annot
       AnnIf        annot _ _ _ _    -> annot
       AnnUntil     annot _ _ _      -> annot
@@ -182,12 +182,12 @@ annExprAnnot expr = case expr of
       E_AnnFn      f                -> fnAnnot f
       AnnLetVar    annot _ _ _      -> annot
       AnnLetFuns   annot _ _ _      -> annot
-      AnnAlloc     annot   _ _      -> annot
+      AnnAlloc     annot _ _ _      -> annot
       AnnDeref     annot _ _        -> annot
-      AnnStore     annot _ _        -> annot
+      AnnStore     annot _ _ _      -> annot
       AnnArrayRead annot _ _        -> annot
       AnnArrayPoke annot _ _ _      -> annot
-      AnnTuple     annot _          -> annot
+      AnnTuple     annot _ _        -> annot
       AnnCase      annot _ _ _      -> annot
       E_AnnVar     annot _          -> annot
       AnnPrimitive annot _          -> annot
