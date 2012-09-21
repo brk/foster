@@ -7,8 +7,8 @@
 
 module Foster.KNExpr (kNormalizeModule, KNExpr, KNExpr'(..), TailQ(..), typeKN,
                       renderKN, renderKNM, renderKNF, renderKNFM) where
-
-import Control.Monad.State(forM, evalState, get, put, State)
+import Control.Monad(liftM, liftM2)
+import Control.Monad.State(evalState, get, put, State)
 import qualified Data.Text as T
 
 import Foster.MonoType
@@ -101,53 +101,50 @@ kNormalize mebTail expr =
       AIKillProcess t m -> return $ KNKillProcess t m
       E_AIPrim p -> error $ "KNExpr.kNormalize: Should have detected prim " ++ show p
 
-      AIAllocArray t a      -> do a' <- gn a ; nestedLets [a'] (\[x] -> KNAllocArray (ArrayTypeIL t) x)
-      AIAlloc a rgn         -> do a' <- gn a ; nestedLets [a'] (\[x] -> KNAlloc (PtrTypeIL $ tidType x) x rgn)
-      AIDeref   a           -> do a' <- gn a ; nestedLets [a'] (\[x] -> KNDeref (pointedToTypeOfVar x) x)
-      E_AITyApp t a argtys  -> do a' <- gn a ; nestedLets [a'] (\[x] -> KNTyApp t x argtys)
+      AIAllocArray t a      -> do nestedLets [gn a] (\[x] -> KNAllocArray (ArrayTypeIL t) x)
+      AIAlloc a rgn         -> do nestedLets [gn a] (\[x] -> KNAlloc (PtrTypeIL $ tidType x) x rgn)
+      AIDeref   a           -> do nestedLets [gn a] (\[x] -> KNDeref (pointedToTypeOfVar x) x)
+      E_AITyApp t a argtys  -> do nestedLets [gn a] (\[x] -> KNTyApp t x argtys)
 
-      AILetVar id  a b  -> do a' <- gn a
-                              b' <- gt b; return $ buildLet id a' b'
-      AIUntil t a b rng -> do [a', b'] <- mapM gn [a, b] ; return $ (KNUntil t a' b' rng)
-
-      AIStore      a b  -> do [a', b'] <- mapM gn [a, b] ; nestedLetsDo [a', b'] (\[x,y] -> knStore x y)
-      AIArrayRead  t (ArrayIndex a b rng s) -> do
-                              [a', b'] <- mapM gn [a, b]
-                              nestedLets [a', b'] (\[x, y] -> KNArrayRead t (ArrayIndex x y rng s))
+      AIStore      a b  -> do nestedLetsDo [gn a, gn b] (\[x,y] -> knStore x y)
+      AIArrayRead  t (ArrayIndex a b rng s) ->
+              nestedLets (map gn [a, b])
+                               (\[x, y] -> KNArrayRead t (ArrayIndex x y rng s))
       AIArrayPoke _t (ArrayIndex a b rng s) c -> do
-                              [a', b', c'] <- mapM gn [a,b,c]
-                              nestedLets [a', b', c'] (\[x,y,z] -> KNArrayPoke (TupleTypeIL []) (ArrayIndex x y rng s) z)
+              nestedLets (map gn [a,b,c])
+                               (\[x,y,z] -> KNArrayPoke (TupleTypeIL []) (ArrayIndex x y rng s) z)
 
       AILetFuns ids fns a   -> do knFns <- mapM kNormalizeFn fns
-                                  a' <- gt a
-                                  return $ KNLetFuns ids knFns a'
+                                  liftM (KNLetFuns ids knFns) (gt a)
 
-      AITuple    es rng     -> do ks <- mapM gn es
-                                  nestedLets ks (\vs ->
+      AITuple   es rng      -> do nestedLets (map gn es) (\vs ->
                                     KNTuple (TupleTypeIL (map tidType vs)) vs rng)
 
-      AICase t e bs         -> do e' <- gn e
-                                  ibs <- forM bs (\(p, ae) -> do ke <- gt ae
-                                                                 return (p, ke))
-                                  nestedLets [e'] (\[v] -> KNCase t v ibs)
+      AILetVar id a b       -> do liftM2 (buildLet id) (gn a) (gt b)
+      AIUntil   t a b rng   -> do liftM2 (\a' b' -> KNUntil t a' b' rng) (gn a) (gn b)
+      AICase    t e bs      -> do e' <- gn e
+                                  ibs <- mapM gtp bs
+                                  nestedLets [return e'] (\[v] -> KNCase t v ibs)
+                                    where gtp (p, ae) = liftM (\ae' -> (p, ae')) (gt ae)
 
-      AIIf      t  a b c    -> do a' <- gn a ; [ b', c'] <- mapM gt [b, c]
-                                  nestedLets [a'] (\[v] -> KNIf t v b' c')
+      AIIf      t  a b c    -> do a' <- gn a
+                                  [ b', c' ] <- mapM gt [b, c]
+                                  nestedLets [return a'] (\[v] -> KNIf t v b' c')
       AICall    t b es -> do
-          cargs <- mapM gn es
+          let cargs = map gn es
           case b of
               E_AIPrim p -> do nestedLets   cargs (\vars -> KNCallPrim t p vars)
               E_AIVar v  -> do nestedLetsDo cargs (\vars -> knCall t v vars)
-              _ -> do cb <- gn b
-                      nestedLetsDo (cb:cargs) (\(vb:vars) -> knCall t vb vars)
+              _ -> do nestedLetsDo (gn b:cargs) (\(vb:vars) -> knCall t vb vars)
+
   where knStore x y = do
-            q <- varOrThunk (x, pointedToType $ tidType y)
+            let q = varOrThunk (x, pointedToType $ tidType y)
             nestedLets [q] (\[z] -> KNStore (TupleTypeIL []) z y)
 
         knCall t a vs =
           case (tidType a) of
               FnTypeIL tys _ _ _ -> do
-                  args <- mapM varOrThunk (zip vs tys)
+                  let args = map varOrThunk (zip vs tys)
                   nestedLets args (\xs -> KNCall mebTail t a xs)
               _ -> error $ "knCall: Called var had non-function type!\n\t" ++
                                 show a ++
@@ -244,8 +241,9 @@ buildLet ident bound inexpr =
 -- |     base(x1,x2,x3)
 -- | The fresh variables will be accumulated and passed to a
 -- | continuation which generates a LetVal expr using the variables.
-nestedLetsDo :: [KNExpr] -> ([AIVar] -> KN KNExpr) -> KN KNExpr
-nestedLetsDo exprs g = nestedLets' exprs [] g
+nestedLetsDo :: [KN KNExpr] -> ([AIVar] -> KN KNExpr) -> KN KNExpr
+nestedLetsDo exprActions g = do exprs <- sequence exprActions
+                                nestedLets' exprs [] g
   where
     nestedLets' :: [KNExpr] -> [AIVar] -> ([AIVar] -> KN KNExpr) -> KN KNExpr
     nestedLets' []     vars k = k (reverse vars)
@@ -273,8 +271,8 @@ nestedLetsDo exprs g = nestedLets' exprs [] g
 -- Note: Haskell's type system is insufficiently expressive here:
 --       we can't express the constraint that len [KNExpr] == len [AIVar].
 --       As a result, we get many spurious pattern match warnings.
-nestedLets :: [KNExpr] -> ([AIVar] -> KNExpr) -> KN KNExpr
-nestedLets exprs g = nestedLetsDo exprs (\vars -> return $ g vars)
+nestedLets :: [KN KNExpr] -> ([AIVar] -> KNExpr) -> KN KNExpr
+nestedLets exprActions g = nestedLetsDo exprActions (\vars -> return $ g vars)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- Produces a list of (K-normalized) functions, eta-expansions of each ctor.
@@ -418,9 +416,9 @@ instance Pretty TypeIL where
 
 instance Pretty MonoType where
   pretty t = case t of
-          PrimInt        isb          -> text "IntN"
+          PrimInt        isb          -> text "Int" <> pretty isb
           PrimFloat64                 -> text "Float64"
-          TyConApp       dt ts        -> text "[TyCon" <+> tupled (map pretty ts) <> text "]"
+          TyConApp       dt ts        -> text "(" <> pretty dt <+> tupled (map pretty ts) <> text "]"
           TupleType      ts           -> tupled (map pretty ts)
           StructType     ts           -> text "#" <> tupled (map pretty ts)
           FnType         ts r cc pf   -> text "{" <+> hsep [pretty t <+> text "=>" | t <- ts]
@@ -531,4 +529,4 @@ instance Pretty ty => Pretty (KNExpr' ty) where
             KNArrayPoke  _ ai v -> prettyId v <+> text ">^" <+> pretty ai
             KNTuple      _ vs _ -> parens (hsep $ punctuate comma (map pretty vs))
 
-deriving instance (Show ty) => Show (KNExpr' ty)
+deriving instance (Show ty) => Show (KNExpr' ty) -- used elsewhere...
