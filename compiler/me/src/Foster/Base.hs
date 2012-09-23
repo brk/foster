@@ -499,6 +499,12 @@ instance Pretty ty => Pretty (E_VarAST ty) where
   pretty (VarAST (Just ty) txt) = text (T.unpack txt) <+> text "::" <+> pretty ty
   pretty (VarAST Nothing   txt) = text (T.unpack txt)
 
+instance Pretty t => Pretty (FosterPrim t) where
+  pretty (NamedPrim (TypedId _ i)) = text (show i)
+  pretty (PrimOp nm _ty) = text nm
+  pretty (PrimIntTrunc frm to) = text ("trunc from " ++ show frm ++ " to " ++ show to)
+  pretty (CoroPrim c t1 t2) = text "...coroprim..."
+
 instance Show ty => Show (EPattern ty) where
   show (EP_Wildcard _)            = "EP_Wildcard"
   show (EP_Variable _ v)          = "EP_Variable " ++ show v

@@ -43,13 +43,14 @@ data AnnExpr ty =
         | AnnLetFuns    ExprAnnot [Ident] [Fn (AnnExpr ty) ty] (AnnExpr ty)
         -- Use of bindings
         | E_AnnVar      ExprAnnot (TypedId ty)
-        | AnnPrimitive  ExprAnnot (TypedId ty)
+        | AnnPrimitive  ExprAnnot ty (FosterPrim ty)
         | AnnCall       ExprAnnot ty (AnnExpr ty) [AnnExpr ty]
         -- Mutable ref cells
         | AnnAlloc      ExprAnnot ty              (AnnExpr ty) AllocMemRegion
         | AnnDeref      ExprAnnot ty              (AnnExpr ty)
         | AnnStore      ExprAnnot ty (AnnExpr ty) (AnnExpr ty)
         -- Array operations
+        | AnnAllocArray ExprAnnot ty (AnnExpr ty) ty
         | AnnArrayRead  ExprAnnot ty (ArrayIndex (AnnExpr ty))
         | AnnArrayPoke  ExprAnnot ty (ArrayIndex (AnnExpr ty)) (AnnExpr ty)
         -- Terms indexed by types
@@ -86,9 +87,10 @@ instance TypedWith (AnnExpr TypeAST) TypeAST where
      AnnStore _rng t _ _   -> t
      AnnArrayRead _rng t _ -> t
      AnnArrayPoke _ _ _ _  -> TupleTypeAST []
+     AnnAllocArray _ t _ _ -> t
      AnnCase _rng t _ _    -> t
      E_AnnVar _rng tid     -> tidType tid
-     AnnPrimitive _rng tid -> tidType tid
+     AnnPrimitive _rng t _ -> t
      E_AnnTyApp _rng substitutedTy _tm _tyArgs -> substitutedTy
 
 instance Structured (AnnExpr TypeAST) where
@@ -108,11 +110,12 @@ instance Structured (AnnExpr TypeAST) where
       AnnAlloc  {}               -> text "AnnAlloc     "
       AnnDeref  {}               -> text "AnnDeref     "
       AnnStore  {}               -> text "AnnStore     "
-      AnnArrayRead _rng t _      -> text "AnnArrayRead :: " <> pretty t
-      AnnArrayPoke _rng t _ _    -> text "AnnArrayPoke :: " <> pretty t
+      AnnAllocArray _rng _ _ aty -> text "AnnAllocArray:: " <> pretty aty
+      AnnArrayRead  _rng t _     -> text "AnnArrayRead :: " <> pretty t
+      AnnArrayPoke  _rng t _ _   -> text "AnnArrayPoke :: " <> pretty t
       AnnTuple  {}               -> text "AnnTuple     "
       AnnCase   {}               -> text "AnnCase      "
-      AnnPrimitive _r tid        -> text "AnnPrimitive " <> pretty tid
+      AnnPrimitive _r _ p        -> text "AnnPrimitive " <> pretty p
       E_AnnVar _r tid            -> text "AnnVar       " <> pretty tid
       E_AnnTyApp _rng t _e argty -> text "AnnTyApp     ["  <> pretty argty <> text  "] :: " <> pretty t
       E_AnnFn annFn              -> text $ "AnnFn " ++ T.unpack (identPrefix $ fnIdent annFn) ++ " // "
@@ -137,6 +140,7 @@ instance Structured (AnnExpr TypeAST) where
       AnnAlloc     _rng _t a _             -> [a]
       AnnDeref     _rng _t a               -> [a]
       AnnStore     _rng _t a b             -> [a, b]
+      AnnAllocArray _rng _ e _             -> [e]
       AnnArrayRead _rng _t ari             -> childrenOfArrayIndex ari
       AnnArrayPoke _rng _t ari c           -> childrenOfArrayIndex ari ++ [c]
       AnnTuple _rng _ exprs                -> exprs
@@ -185,12 +189,13 @@ annExprAnnot expr = case expr of
       AnnAlloc     annot _ _ _      -> annot
       AnnDeref     annot _ _        -> annot
       AnnStore     annot _ _ _      -> annot
+      AnnAllocArray annot _ _ _     -> annot
       AnnArrayRead annot _ _        -> annot
       AnnArrayPoke annot _ _ _      -> annot
       AnnTuple     annot _ _        -> annot
       AnnCase      annot _ _ _      -> annot
       E_AnnVar     annot _          -> annot
-      AnnPrimitive annot _          -> annot
+      AnnPrimitive annot _ _        -> annot
       E_AnnTyApp   annot _ _ _      -> annot
 
 instance SourceRanged (AnnExpr ty) where rangeOf e = annotRange (annExprAnnot e)

@@ -9,7 +9,7 @@ import qualified Data.List as List(length, zip)
 import Data.List(foldl', (\\))
 import Control.Monad(liftM, forM_, forM, liftM, liftM2, when)
 
-import qualified Data.Text as T(Text, unpack)
+import qualified Data.Text as T(Text, unpack, pack)
 import qualified Data.Map as Map(lookup, insert, elems, toList, null)
 import qualified Data.Set as Set(toList, fromList)
 import Data.IORef(IORef,newIORef,readIORef,writeIORef)
@@ -237,8 +237,8 @@ tcSigmaVar ctx annot name = do
   -- Resolve the given name as either a variable or a primitive reference.
   let query m = termVarLookup name m
   case (query (contextBindings ctx), query (primitiveBindings ctx)) of
-    (Just avar, _        ) -> return $ E_AnnVar     annot avar
-    (Nothing  , Just avar) -> return $ AnnPrimitive annot avar
+    (Just avar, _        ) -> return $   E_AnnVar     annot avar
+    (Nothing  , Just avar) -> return $ mkAnnPrimitive annot avar
     (Nothing, Nothing) -> do
          msg <- getStructureContextMessage
          tcFails [text $ "Unknown variable " ++ T.unpack name
@@ -264,6 +264,16 @@ tcRhoVar ctx rng name expTy = do
      debugDoc $ green (text "typecheckVar v_sigma: ") <> text (T.unpack name ++ " :: " ++ show (typeAST v_sigma))
      debugDoc $ green (text "typecheckVar ann_var: ") <> text (T.unpack name ++ " :: " ++ show (typeAST ann_var))
      matchExp expTy ann_var "var"
+
+mkAnnPrimitive annot tid =
+  AnnPrimitive annot (tidType tid) $
+    case fmap snd $ Map.lookup (T.unpack $ identPrefix $ tidIdent tid)
+                               gFosterPrimOpsTable of
+        Just (NamedPrim tid)      -> NamedPrim tid
+        Just (PrimOp nm ty)       -> PrimOp nm ty
+        Just (PrimIntTrunc i1 i2) -> PrimIntTrunc i1 i2
+        Just (CoroPrim {}       ) -> error $ "mkAnPrim saw unexpected CoroPrim"
+        Nothing                   -> NamedPrim tid
 
 -- Now, a bunch of straightforward rules:
 
@@ -603,9 +613,19 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
         debugDoc $ text "call: res_ty is " <> pretty res_ty
         debugDoc $ text "call: exp_ty is " <> pretty exp_ty
         debugDoc $ text "tcRhoCall deferring to instSigma"
-        let app = AnnCall rng res_ty annbase args
+        let app = mkAnnCall rng res_ty annbase args
         debugDoc $ text "call: overall ty is " <> pretty (typeAST app)
         matchExp exp_ty app "tcSigmaCall"
+
+mkAnnCall rng res_ty annbase args =
+  case annbase of
+    E_AnnTyApp _ _ annprim@(AnnPrimitive _ _ (NamedPrim (TypedId _ (GlobalSymbol gs)))) [argty]
+         | T.unpack gs == "prim_arrayLength"
+      -> AnnCall rng res_ty annprim args
+    E_AnnTyApp _ _ (AnnPrimitive _ _ (NamedPrim (TypedId _ (GlobalSymbol gs)))) [argty]
+         | T.unpack gs == "allocDArray"
+      -> AnnAllocArray rng res_ty arraySize argty where [arraySize] = args
+    _ -> AnnCall rng res_ty annbase args
 
 unifyFun :: Rho -> [a] -> String -> Tc ([Sigma], Rho)
 unifyFun (FnTypeAST args res _cc _cs) _args _msg = return (args, res)

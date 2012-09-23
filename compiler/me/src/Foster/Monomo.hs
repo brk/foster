@@ -156,7 +156,7 @@ monoKN subst e =
        Nothing ->
           if List.all (\(_tv, kind) -> kind == KindPointerSized) ktvs
             then return $ KNTyApp t' (TypedId t' polybinder) []
-            else error $ "Cannot instantiate unknown function's type variables "
+            else error $ "Cannot instantiate unknown function " ++ show polybinder ++ "'s type variables "
                ++ show ktvs
                ++ " with types "
                ++ show argtys

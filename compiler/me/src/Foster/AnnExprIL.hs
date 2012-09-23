@@ -6,14 +6,12 @@
 
 module Foster.AnnExprIL (AIExpr(..), fnOf) where
 
-import Data.Map as Map(lookup)
-
 import Foster.Base
 import Foster.Kind
 import Foster.Context
 import Foster.AnnExpr
 import Foster.TypeIL
-import Foster.TypeAST(gFosterPrimOpsTable, TypeAST)
+import Foster.TypeAST(TypeAST)
 
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T
@@ -103,6 +101,9 @@ ail ctx ae =
                                          return $ AIDeref x
         AnnStore _rng _t a b       -> do [x,y]   <- mapM q [a,b]
                                          return $ AIStore x y
+        AnnAllocArray _rng _ e aty -> do ta <- qt aty
+                                         x <- q e
+                                         return $ AIAllocArray ta x
         AnnArrayRead _rng t (ArrayIndex a b rng s) -> do
                                          ti <- qt t
                                          [x,y]   <- mapM q [a,b]
@@ -121,50 +122,41 @@ ail ctx ae =
                                                      vs' <- mapM (aiVar ctx) vs
                                                      return ((p', vs'), e')) bs
                                          return $ AICase ti ei bsi
-        AnnPrimitive _rng v -> tcFails [string ("Primitives must be called directly!"
-                                         ++ "\n\tFound non-call use of ") <> pretty v]
+
+        E_AnnVar _rng v -> aiVar ctx v >>= return . E_AIVar
+
+        AnnPrimitive _rng _ p -> tcFails [string ("Primitives must be called directly!"
+                                         ++ "\n\tFound non-call use of ") <> pretty p]
         AnnCall _range t b args -> do
             ti <- qt t
             argsi <- mapM q args
             case b of
-                AnnPrimitive _rng (TypedId pty id) -> do
-                   pti <- qt pty
-                   prim' <- ilPrimFor pti id qt (aiVar ctx)
-                   return $ AICall ti (E_AIPrim $ prim') argsi
+                -- Calls to primitives are OK; other uses of primitives
+                -- will be flagged as errors in `ail`.
+                AnnPrimitive _rng _ prim -> do
+                   prim' <- ilPrim ctx prim
+                   return $ AICall ti (E_AIPrim prim') argsi
 
-                E_AnnTyApp _ _ot (AnnPrimitive _rng (TypedId pty id@(GlobalSymbol gs))) _argty
-                        | gs == T.pack "prim_arrayLength" -> do
-                    pti <- qt pty
-                    prim' <- ilPrimFor pti id qt (aiVar ctx)
-                    return $ AICall ti (E_AIPrim $ prim') argsi
-
-                E_AnnTyApp _ _ot (AnnPrimitive _rng (TypedId _ (GlobalSymbol gs))) [argty]
-                        | gs == T.pack "allocDArray" -> do
-                    let [arraySize] = argsi
-                    aty <- qt argty
-                    return $ AIAllocArray aty arraySize
-
-                E_AnnTyApp _ ot (AnnPrimitive _rng (TypedId vty id)) apptys ->
-                   let primName = identPrefix id in
+                -- Now that we can see type applications,
+                -- we can build coroutine primitive nodes.
+                E_AnnTyApp _ ot (AnnPrimitive _rng _ prim@(NamedPrim tid)) apptys ->
+                   let primName = identPrefix (tidIdent tid) in
                    case (coroPrimFor primName, apptys) of
                      (Just coroPrim, [argty, retty]) -> do
                        [aty, rty] <- mapM qt [argty, retty]
                        return $ AICall ti (E_AIPrim $ CoroPrim coroPrim aty rty) argsi
                      _otherwise -> do
                        -- v[types](args) ~~>> let <fresh> = v[types] in <fresh>(args)
-                       [vti, oti] <- mapM qt [vty, ot]
-                       apptysi    <- mapM qt apptys
-                       let primVar = TypedId vti id
-                       call <- return $ AICall ti (E_AIPrim $ NamedPrim primVar) argsi
-                       let primName = identPrefix id
+                       apptysi <- mapM qt apptys
+                       prim' <- ilPrim ctx prim
+                       tid' <- aiVar ctx tid
+                       oti <- qt ot
                        x <- tcFreshT $ "appty_" `prependedTo` primName
-                       return $ AILetVar x (E_AITyApp oti (E_AIVar primVar) apptysi) call
+                       return $ AILetVar x (E_AITyApp oti (E_AIVar tid') apptysi)
+                                          $ AICall ti (E_AIPrim prim') argsi
 
-                _otherwise -> do bi <- q b
-                                 return $ AICall ti bi argsi
-
-        E_AnnVar _rng v -> do vv <- aiVar ctx v
-                              return $ E_AIVar vv
+                _else -> do bi <- q b
+                            return $ AICall ti bi argsi
 
         E_AnnTyApp rng t e raw_argtys  -> do
                 ti     <- qt t
@@ -190,20 +182,15 @@ coroPrimFor s | s == T.pack "coro_invoke" = Just $ CoroInvoke
 coroPrimFor s | s == T.pack "coro_yield"  = Just $ CoroYield
 coroPrimFor _ = Nothing
 
-ilPrimFor :: TypeIL -> Ident -> (TypeAST -> Tc TypeIL)
-                     -> (TypedId TypeAST -> Tc (TypedId TypeIL))
-                                         -> Tc (FosterPrim TypeIL)
-ilPrimFor ti id qt qtid =
-  case fmap snd $ Map.lookup (T.unpack $ identPrefix id) gFosterPrimOpsTable of
-        Just (NamedPrim tid)    -> do tid' <- qtid tid
-                                      return $ NamedPrim tid'
-        Just (PrimOp nm ty)     -> do ty' <- qt ty
-                                      return $ PrimOp nm ty'
-        Just (CoroPrim c t1 t2) -> do t1' <- qt t1
-                                      t2' <- qt t2
-                                      return $ CoroPrim c t1' t2'
-        Just (PrimIntTrunc i1 i2) ->  return $ PrimIntTrunc i1 i2
-        Nothing                   ->  return $ NamedPrim (TypedId ti id)
+ilPrim :: Context ty -> FosterPrim TypeAST -> Tc (FosterPrim TypeIL)
+ilPrim ctx prim =
+  case prim of
+    NamedPrim tid     -> do tid' <- aiVar ctx tid
+                            return $ NamedPrim tid'
+    PrimOp    nm ty   -> do ty' <- ilOf ctx ty
+                            return $ PrimOp nm ty'
+    PrimIntTrunc i1 i2 ->   return $ PrimIntTrunc i1 i2
+    CoroPrim {} -> error $ "Shouldn't yet have constructed CoroPrim!"
 
 containsUnboxedPolymorphism :: TypeIL -> Bool
 containsUnboxedPolymorphism (ForAllIL ktvs rho) =

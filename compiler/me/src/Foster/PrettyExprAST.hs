@@ -30,12 +30,6 @@ instance Pretty e => Pretty (ArrayIndex e) where
   pretty (ArrayIndex b i _rng SG_Dynamic) =
     text "prim array-subscript-unsafe" <+> pretty b <+> pretty i
 
-instance Pretty t => Pretty (FosterPrim t) where
-  pretty (NamedPrim tid) = prettyId tid
-  pretty (PrimOp nm _ty) = text nm
-  pretty (PrimIntTrunc frm to) = text ("trunc from " ++ show frm ++ " to " ++ show to)
-  pretty (CoroPrim c t1 t2) = text "...coroprim..."
-
 -- (<//>) ?vs? align (x <$> y)
 
 kwd  s = dullblue  (text s)
