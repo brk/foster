@@ -1,0 +1,36 @@
+type case V
+       of $Fn { V => V }
+       of $Nm Int32
+;
+
+app = { v : V => a : V =>
+  case v
+    of $Fn f -> f a
+    of _     -> Nm 0
+  end
+};
+
+main = {
+  // note here: vsum not bound to literal function!
+  rec vsum = Fn { v : V =>
+               case v
+                of $Fn _ -> Nm 0
+                of $Nm n ->
+                  if n <=Int32 0
+                    then case (app vsum (Nm (n -Int32 1)))
+                           of $Nm k -> Nm (n +Int32 k)
+                           of _     -> Nm 0
+                         end
+                    else Nm 0
+                  end
+              end
+            };
+  in
+    expect_i32 10;
+    case (app vsum (Nm 4))
+      of $Nm k -> print_i32 k
+      of _     -> print_i32 0
+    end
+  end
+};
+
