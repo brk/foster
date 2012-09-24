@@ -67,13 +67,13 @@ data AnnExpr ty =
 
 -- ||||||||||||||||||||||||| Boilerplate ||||||||||||||||||||||||{{{
 
-instance TypedWith (AnnExpr TypeAST) TypeAST where
+instance TypedWith (AnnExpr ty) ty where
   typeOf annexpr = case annexpr of
      AnnString _ t _       -> t
      AnnBool   _ t _       -> t
      AnnInt   _rng t _     -> t
      AnnFloat _rng t _     -> t
-     AnnTuple  _ tf _      -> tf [typeOf e | e <- childrenOf annexpr]
+     AnnTuple  _ tf exprs  -> tf (map typeOf exprs)
      E_AnnFn annFn         -> fnType annFn
      AnnCall _rng t _ _    -> t
      AnnCompiles _ t _     -> t
@@ -86,7 +86,7 @@ instance TypedWith (AnnExpr TypeAST) TypeAST where
      AnnDeref _rng t _     -> t
      AnnStore _rng t _ _   -> t
      AnnArrayRead _rng t _ -> t
-     AnnArrayPoke _ _ _ _  -> TupleTypeAST []
+     AnnArrayPoke  _ t _ _ -> t
      AnnAllocArray _ t _ _ -> t
      AnnCase _rng t _ _    -> t
      E_AnnVar _rng tid     -> tidType tid

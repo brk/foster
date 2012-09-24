@@ -437,7 +437,7 @@ tcRhoArrayPoke annot s v b i expTy = do
     ArrayTypeAST t -> do
       -- TODO check aiexpr type is compatible with Word
       unify t (typeAST v) "arraypoke type"
-      let expr = AnnArrayPoke annot t (ArrayIndex b i (annotRange annot) s) v
+      let expr = AnnArrayPoke annot (TupleTypeAST []) (ArrayIndex b i (annotRange annot) s) v
       matchExp expTy expr "arraypoke"
     baseType ->
       tcFails [text $ "Unable to arraypoke expression of type " ++ show baseType

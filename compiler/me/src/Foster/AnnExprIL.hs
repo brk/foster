@@ -110,7 +110,7 @@ ail ctx ae =
                                          return $ AIArrayRead ti (ArrayIndex x y rng s)
         AnnArrayPoke _rng t (ArrayIndex a b rng s) c -> do
                                          ti <- qt t
-                                         [x,y,z]   <- mapM q [a,b,c]
+                                         [x,y,z] <- mapM q [a,b,c]
                                          return $ AIArrayPoke ti (ArrayIndex x y rng s) z
         AnnTuple rng _ exprs       -> do aies <- mapM q exprs
                                          return $ AITuple aies (annotRange rng)
