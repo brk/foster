@@ -18,13 +18,14 @@ import qualified Data.Text as T
 
 import Control.Monad(when)
 
--- AnnExprIL defines a copy of AnnExpr, annotated with TypeIL
--- instead of TypeAST. This lets us structurally enforce the
--- restriction that unification variables must be eliminated
--- for type checking to succeed.
--- We also force all functions to be let-bound, not anonymous.
+-- Changes between AnnExpr and AnnExprIL:
+-- * Type annotation changes from TypeAST to TypeIL, which
+--   primarily means we've eliminated all unification variables.
+-- * Per above, we recognize calls to coroutine primitives w/ type parameters.
+-- * Lambdas are forced to be let/rec-bound.
+-- * __COMPILES__ expressions are translated to the appropriate bool constant.
 
-data AIExpr=
+data AIExpr =
         -- Literals
           AIBool       Bool
         | AIString     T.Text
@@ -123,7 +124,7 @@ ail ctx ae =
                                                      return ((p', vs'), e')) bs
                                          return $ AICase ti ei bsi
 
-        E_AnnVar _rng v -> aiVar ctx v >>= return . E_AIVar
+        E_AnnVar     _rng v   -> aiVar ctx v >>= return . E_AIVar
 
         AnnPrimitive _rng _ p -> tcFails [string ("Primitives must be called directly!"
                                          ++ "\n\tFound non-call use of ") <> pretty p]

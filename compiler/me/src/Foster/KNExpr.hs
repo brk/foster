@@ -8,11 +8,11 @@
 module Foster.KNExpr (kNormalizeModule, KNExpr, KNExpr'(..), TailQ(..), typeKN,
                       renderKN, renderKNM, renderKNF, renderKNFM) where
 import Control.Monad(liftM, liftM2)
-import Control.Monad.State(evalState, get, put, State)
 import qualified Data.Text as T
 
 import Foster.MonoType
 import Foster.Base
+import Foster.Config
 import Foster.Context
 import Foster.TypeIL
 import Foster.AnnExprIL
@@ -55,20 +55,17 @@ data KNExpr' ty =
 -- When monmomorphizing, we use (KNTyApp t v [])
 -- to represent a bitcast to type t.
 
-type KN a = State Uniq a
-
 type KNExpr = KNExpr' TypeIL
 
+type KN = Compiled
+
 knFresh :: String -> KN Ident
-knFresh s = do old <- get
-               put (old + 1)
-               return (Ident (T.pack s) old)
+knFresh s = ccFreshId (T.pack s)
 
 --------------------------------------------------------------------
 
-kNormalizeModule :: (ModuleIL AIExpr TypeIL)
-                 -> Context TypeIL
-                 -> (ModuleIL KNExpr TypeIL)
+kNormalizeModule :: (ModuleIL AIExpr TypeIL) -> Context TypeIL ->
+           Compiled (ModuleIL KNExpr TypeIL)
 kNormalizeModule m ctx =
     -- TODO move ctor wrapping earlier?
     let knCtorFuncs = concatMap (kNormalCtors ctx) (moduleILprimTypes m ++
@@ -77,7 +74,8 @@ kNormalizeModule m ctx =
                            ; body  <- kNormalize YesTail (moduleILbody m)
                            ; return $ wrapFns ctors body
                            } in
-    m { moduleILbody = evalState knWrappedBody 0 }
+    do body' <- knWrappedBody
+       return m { moduleILbody = body' }
       where
         wrapFns :: [Fn KNExpr TypeIL] -> KNExpr -> KNExpr
         wrapFns fs e = foldr (\f body -> KNLetFuns [fnIdent f] [f] body) e fs
@@ -392,6 +390,7 @@ instance Show ty => Structured (KNExpr' ty) where
             KNTyApp _t v _argty     -> [var v]
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+-- ||||||||||||||||||||||||| Pretty-printing ||||||||||||||||||||{{{
 renderKN m put = if put then putDoc (pretty m) >>= (return . Left)
                         else return . Right $ show (pretty m)
 
@@ -524,3 +523,6 @@ instance Pretty ty => Pretty (KNExpr' ty) where
             KNTuple      _ vs _ -> parens (hsep $ punctuate comma (map pretty vs))
 
 deriving instance (Show ty) => Show (KNExpr' ty) -- used elsewhere...
+
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+

@@ -436,7 +436,7 @@ lowerModule :: ModuleIL AIExpr TypeIL
             -> Context TypeIL
             -> Compiled ILProgram
 lowerModule ai_mod ctx_il = do
-     let kmod = kNormalizeModule ai_mod ctx_il
+     kmod <- kNormalizeModule ai_mod ctx_il
 
      whenDumpIR "kn" $ do
          putDocLn (outLn $ "vvvv k-normalized :====================")
