@@ -140,7 +140,7 @@ makeAllocationsExplicit bbgp = do
             return $
               (mkMiddle $ CCLetVal id (ILAllocate info)) <*>
               (mkMiddle $ CCTupleStore vs (TypedId (LLPtrType t) id) memregion)
-    (CCLetVal id (ILAppCtor genty (CtorInfo cid _) vs)) -> do
+    (CCLetVal id (ILAppCtor genty cid vs)) -> do
             id' <- ccFreshId (T.pack "ctor-alloc")
             let tynm = ctorTypeName cid ++ "." ++ ctorCtorName cid
             let tag  = ctorSmallInt cid
