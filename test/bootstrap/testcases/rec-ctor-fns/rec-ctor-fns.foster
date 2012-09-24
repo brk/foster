@@ -14,12 +14,12 @@ main = {
   // note here: vsum not bound to literal function!
   rec vsum = Fn { v : V =>
                case v
-                of $Fn _ -> Nm 0
+                of $Fn _ -> Nm 23456
                 of $Nm n ->
-                  if n <=Int32 0
+                  if n >=Int32 0
                     then case (app vsum (Nm (n -Int32 1)))
                            of $Nm k -> Nm (n +Int32 k)
-                           of _     -> Nm 0
+                           of _     -> Nm 34567
                          end
                     else Nm 0
                   end
@@ -29,7 +29,7 @@ main = {
     expect_i32 10;
     case (app vsum (Nm 4))
       of $Nm k -> print_i32 k
-      of _     -> print_i32 0
+      of _     -> print_i32 12345
     end
   end
 };

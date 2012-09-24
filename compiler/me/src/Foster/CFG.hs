@@ -133,7 +133,7 @@ caseIf a b = [(pat True, a), (pat False, b)]
 computeBlocks :: KNMono -> Maybe Ident -> (MoVar -> CFG ()) -> CFG ()
 computeBlocks expr idmaybe k = do
     case expr of
-        KNIf t v a b -> do
+        KNIf t v a b -> do -- Compile [if v then ...] as [case v of ...].
             computeBlocks (KNCase t v $ caseIf a b) idmaybe k
 
         KNUntil _t a b rng -> do
@@ -165,6 +165,55 @@ computeBlocks expr idmaybe k = do
             -- choosing, that is), we provide it explicitly as idmaybe.
             computeBlocks bexp (Just id) $ \_var -> return ()
             computeBlocks cont idmaybe k
+
+        KNLetRec [id] [bexp] e -> do
+            -- With KNLetFuns, we maintain a special binding form for SCCs of
+            -- mutually-recursive functions, because we'll sometimes optimize
+            -- them to continuations and/or inline them away entirely.
+            -- We also 'evaluate' them specially, avoiding extra allocations.
+            --
+            -- For more complex recursive bindings, we'll just do the (second)
+            -- simplest thing that works, at least for now.
+            -- TODO: extend this to use the 'immediate in-place update' scheme.
+
+            -- Let-bind un-initialized blocks to the ids
+            --
+            -- It's tempting to say "allocate a block for type (typeKN bexp)",
+            -- but that's wrong for two (related) reasons. First, at this stage
+            -- in the game, the visible representation is the pointer, not the
+            -- underlying struct. Second, the same datatype can be constructed
+            -- from different-sized blocks/ctors, which means there's no way
+            -- to derive a representation struct from a type alone.
+
+            -- We also need to separate the internal and external
+            -- representations of the block.
+            stor <- cfgFreshId ".rec.storage"
+            let allocInfo = allocInfoForKNExpr bexp
+            let obj = TypedId (PtrType (allocType allocInfo)) stor
+
+            cfgAddMiddle (ILetVal stor (ILAllocate allocInfo))
+            cfgAddMiddle (ILetVal id   (ILBitcast (typeKN bexp) obj))
+
+            -- Emit code to evaluate the expressions (bound to temporaries).
+            tmpgen <- cfgFreshId ".rec.tmp.gen"
+            computeBlocks bexp (Just tmpgen) $ \_var -> return ()
+
+            -- Overwrite the id-bound blocks with the temporary values.
+            tmpid <- cfgFreshId ".rec.tmp"
+            cfgAddMiddle (ILetVal tmpid (ILBitcast (tidType obj)
+                                          (TypedId (typeKN bexp) tmpgen)))
+
+            let tmp = TypedId (tidType obj) tmpid
+            tupstorid <- cfgFreshId ".rec.tupstore"
+            cfgAddMiddle (ILetVal tupstorid (ILObjectCopy tmp obj))
+
+            -- Emit code to evaluate the body of the letrec.
+            computeBlocks e idmaybe k
+            -- Paper references:
+            --  * "Fixing Letrec"
+            --  * "Compilation of Extended Recursion in Call-by-value Functional Languages"
+
+        KNLetRec {} -> error $ "CFG.hs: no support yet for multi-extended-letrec"
 
         KNLetFuns ids fns e -> do
             funs <- mapM cfgComputeCFG fns
@@ -269,6 +318,19 @@ computeBlocks expr idmaybe k = do
          KNKillProcess t m   -> ILKillProcess t m
          _                   -> error $ "non-letable thing seen by letable: "
                                       ++ show expr
+
+    allocInfoForKNExpr bexp =
+      case bexp of
+        KNLetVal     _ _  b -> allocInfoForKNExpr b
+        KNLetFuns    _ _  b -> allocInfoForKNExpr b
+        KNAppCtor    _ cid vs ->
+          let structty = StructType (map tidType vs) in
+          let tynm = ctorTypeName cid ++ "." ++ ctorCtorName cid in
+          let tag  = ctorSmallInt cid in
+          AllocInfo structty   MemRegionGlobalHeap   tynm
+                    (Just tag) Nothing "KNLetRecTmp" DoZeroInit
+        KNCall _ _ base _ -> error $ "allocInfoForKNExpr can't handle " ++ show (textOf bexp 0) ++ " ;; " ++ show base
+        _ -> error $ "allocInfoForKNExpr can't handle " ++ show (textOf bexp 0)
 
     cfgFreshVarI idmaybe t n = do
         id <- (case idmaybe of
@@ -405,7 +467,6 @@ instance Pretty (Fn BasicBlockGraph MonoType) where
                                 (fnVars fn))))
                     <$> indent 4 (pretty (fnBody fn))
                     <$> rbrace)
-                    -- <$> (pretty $ Map.toList $ getCensus (fnBody fn))
 
 instance Pretty Label where pretty l = text (show l)
 
@@ -460,6 +521,7 @@ instance Pretty t => Pretty (Letable t) where
       ILArrayPoke  (ArrayIndex _v1 _v2 _rng _s) _v3 -> text $ "ILArrayPoke..."
       ILBitcast   _ v       -> text "bitcast " <+> pretty v <+> text "to" <+> text "..."
       ILAllocate info       -> text "allocate ..." -- <+> pretty (allocType info)
+      ILObjectCopy from to  -> text "copy object" <+> pretty from <+> text "to" <+> pretty to
 
 instance Pretty BasicBlockGraph where
  pretty bbg =

@@ -56,7 +56,7 @@ import Text.PrettyPrint.ANSI.Leijen
 -----------------------------------------------------------------------
 -- TODO shouldn't claim successful typechecks until we reach AnnExprIL.
 
-pair2binding (nm, ty) = TermVarBinding nm (TypedId ty (GlobalSymbol nm))
+pair2binding (nm, ty, mcid) = TermVarBinding nm (TypedId ty (GlobalSymbol nm), mcid)
 
 -- Every function in the SCC should typecheck against the input context,
 -- and the resulting context should include the computed types of each
@@ -74,7 +74,7 @@ typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
         OK binding <-
             case termVarLookup (fnAstName fn) (contextBindings ctx) of
                 Nothing  -> do unTc tcenv $ bindingForFnAST fn
-                Just tid -> do return (OK $ TermVarBinding (fnAstName fn) tid)
+                Just cxb -> do return (OK $ TermVarBinding (fnAstName fn) cxb)
         return binding
 
     bindings <- mapM genBinding fns
@@ -133,14 +133,14 @@ typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
                     putDocP line
 
         bindingForAnnFn :: Fn (AnnExpr TypeAST) TypeAST -> ContextBinding TypeAST
-        bindingForAnnFn f = TermVarBinding (identPrefix $ fnIdent f) (fnVar f)
+        bindingForAnnFn f = TermVarBinding (identPrefix $ fnIdent f) (fnVar f, Nothing)
 
         -- Start with the most specific binding possible (i.e. sigma, not tau).
         -- Otherwise, if we blindly used a meta type variable, we'd be unable
         -- to type check a recursive & polymorphic function.
         bindingForFnAST :: (FnAST TypeAST) -> Tc (ContextBinding TypeAST)
         bindingForFnAST f = do t <- fnTypeTemplate f
-                               return $ pair2binding (fnAstName f, t)
+                               return $ pair2binding (fnAstName f, t, Nothing)
 
         typeTemplateSigma :: Maybe Sigma -> String -> Tc Sigma
         typeTemplateSigma Nothing    name = newTcUnificationVarSigma name
@@ -175,8 +175,8 @@ typecheckModule :: Bool
 typecheckModule verboseMode modast tcenv0 = do
     let dts = moduleASTprimTypes modast ++ moduleASTdataTypes modast
     let fns = moduleASTfunctions modast
-    let primBindings = computeContextBindings primitiveDecls
-    let declBindings = computeContextBindings (moduleASTdecls modast) ++
+    let primBindings = computeContextBindings' primitiveDecls
+    let declBindings = computeContextBindings' (moduleASTdecls modast) ++
                        computeContextBindings (concatMap extractCtorTypes dts)
     putDocLn $ (outLn "vvvv declBindings:====================")
     putDocLn $ (dullyellow (vcat $ map (text . show) declBindings))
@@ -211,8 +211,11 @@ typecheckModule verboseMode modast tcenv0 = do
              tyvarsMap    = Map.fromList []
              unbind (TermVarBinding s t) = (s, t)
 
-   computeContextBindings :: [(String, TypeAST)] -> [ContextBinding TypeAST]
-   computeContextBindings decls = map (\(s,t) -> pair2binding (T.pack s, t)) decls
+   computeContextBindings' :: [(String, TypeAST)] -> [ContextBinding TypeAST]
+   computeContextBindings' decls = map (\(s,t) -> pair2binding (T.pack s, t, Nothing)) decls
+
+   computeContextBindings :: [(String, TypeAST, CtorId)] -> [ContextBinding TypeAST]
+   computeContextBindings decls = map (\(s,t,cid) -> pair2binding (T.pack s, t, Just cid)) decls
 
    -- Given a data type  T (A1::K1) ... (An::Kn)
    -- returns the type   T A1 .. An   (with A1..An free).
@@ -221,11 +224,12 @@ typecheckModule verboseMode modast tcenv0 = do
      let boundTyVarFor (TypeFormalAST name _kind) = TyVarAST $ BoundTyVar name in
      TyConAppAST (dataTypeName dt) (map boundTyVarFor $ dataTypeTyFormals dt)
 
-   extractCtorTypes :: DataType TypeAST -> [(String, TypeAST)]
+   extractCtorTypes :: DataType TypeAST -> [(String, TypeAST, CtorId)]
    extractCtorTypes dt = map nmCTy (dataTypeCtors dt)
-     where nmCTy (DataCtor name _tag tyformals types) =
-                 (T.unpack name, ctorTypeAST tyformals dtType types)
+     where nmCTy dc@(DataCtor name _tag tyformals types) =
+                 (T.unpack name, ctorTypeAST tyformals dtType types, cid)
                          where dtType = typeOfDataType dt name
+                               cid    = ctorId (T.unpack name) dc
 
    -- TODO: if ctorArgTypes = [], no need to assign a function type for a const.
    ctorTypeAST [] dtType ctorArgTypes =
@@ -298,14 +302,17 @@ typecheckModule verboseMode modast tcenv0 = do
         liftContextM :: (Monad m, Show t1, Show t2)
                      => (t1 -> m t2) -> Context t1 -> m (Context t2)
         liftContextM f (Context cb pb vb gb tyvars tybinds ctortypeast dtinfo) = do
-          cb' <-mmapM (liftTID f) cb
-          pb' <- mapM (liftTID f) pb
+          cb' <-mmapM (liftCXB f) cb
+          pb' <- mapM (liftCXB f) pb
           gb' <- mapM (liftBinding f) gb
           tyvars' <- mmapM f tyvars
           return $ Context cb' pb' vb gb' tyvars' tybinds ctortypeast dtinfo
 
         liftTID :: Monad m => (t1 -> m t2) -> TypedId t1 -> m (TypedId t2)
         liftTID f (TypedId t i) = do t2 <- f t ; return $ TypedId t2 i
+
+        liftCXB :: Monad m => (t1 -> m t2) -> CtxBound t1 -> m (CtxBound t2)
+        liftCXB f (tid, mb_ci) = do tid' <- liftTID f tid; return (tid' , mb_ci)
 
         mmapM :: (Monad m, Ord k) => (a -> m b) -> Map k a -> m (Map k b)
         mmapM f ka = do
@@ -492,7 +499,7 @@ lowerModule ai_mod ctx_il = do
                             moduleILdataTypes cfgmod
             let dataSigs = dataTypeSigs datatypes
             u0 <- readIORef uniqref
-            let tmBindingId (TermVarBinding _ tid) = tidIdent tid
+            let tmBindingId (TermVarBinding _ (tid, _)) = tidIdent tid
                 globals = map tmBindingId (globalBindings ctx_il)
             return $ closureConvertAndLift dataSigs globals u0 cfgmod
 

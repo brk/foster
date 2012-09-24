@@ -281,11 +281,12 @@ getCensus bbg = let cf = getCensusFns bbg in
         ILAlloc        v _rgn    -> addUsed m [(v, UsedFirstClass)]
         ILDeref        _ v       -> addUsed m [(v, UsedFirstClass)]
         ILStore        v1 v2     -> addUsed m [(v1, UsedFirstClass), (v2, UsedFirstClass)]
+        ILObjectCopy   v1 _id    -> addUsed m [(v1, UsedFirstClass)]
         ILAllocArray    _ v      -> addUsed m [(v, UsedFirstClass)]
         ILArrayRead  _t (ArrayIndex v1 v2 _rng _s) -> addUsed m [(v1, UsedFirstClass), (v2, UsedFirstClass)]
         ILArrayPoke  (ArrayIndex v1 v2 _rng _s) v3 -> addUsed m [(v1, UsedFirstClass), (v2, UsedFirstClass),
                                                                  (v3, UsedFirstClass)]
-        ILAllocate {}            -> error $ "census encountered unexpected ILAllocate..."
+        ILAllocate {}            -> m -- Might have been introduced by KNLetRec.
         ILCall         _ v _vs   -> error $ "census encountered non-tail ILCall of " ++ show v
 
 runCensusRewrites' :: IORef Uniq -> BasicBlockGraph -> IO BasicBlockGraph

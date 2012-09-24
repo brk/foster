@@ -91,6 +91,8 @@ monoKN subst e =
                                  return $ KNIf         (qt t) (qv v) ethen eelse
   KNLetVal       id e   b  -> do [e' , b' ] <- mapM (monoKN subst) [e, b]
                                  return $ KNLetVal      id e'  b'
+  KNLetRec     ids exprs e -> do (e' : exprs' ) <- mapM (monoKN subst) (e:exprs)
+                                 return $ KNLetRec      ids exprs' e'
   -- Here are the interesting bits:
   KNLetFuns     ids fns b  -> do
     let (monos, polys) = split (zip ids fns)
@@ -348,6 +350,9 @@ alphaRename fn = do
       KNLetVal       id e   b  -> do id' <- renameI id
                                      [e' , b' ] <- mapM renameKN [e, b]
                                      return $ KNLetVal id' e'  b'
+      KNLetRec     ids exprs e -> do ids' <- mapM renameI ids
+                                     (e' : exprs' ) <- mapM renameKN (e:exprs)
+                                     return $ KNLetRec ids' exprs'  e'
       KNLetFuns     ids fns b  -> do ids' <- mapM renameI ids
                                      fns' <- mapM renameFn fns
                                      b'   <- renameKN b

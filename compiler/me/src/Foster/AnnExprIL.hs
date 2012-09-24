@@ -39,11 +39,13 @@ data AIExpr =
         -- Creation of bindings
         | AICase       TypeIL AIExpr [PatternBinding AIExpr TypeIL]
         | AILetVar     Ident AIExpr AIExpr
+        | AILetRec     [Ident] [AIExpr] AIExpr
         | AILetFuns    [Ident] [Fn AIExpr TypeIL] AIExpr
         -- Use of bindings
         | E_AIVar      (TypedId TypeIL)
         | E_AIPrim     ILPrim
         | AICall       TypeIL AIExpr [AIExpr]
+        | AIAppCtor    TypeIL CtorId [AIExpr]
         -- Mutable ref cells
         | AIAlloc      AIExpr AllocMemRegion
         | AIDeref      AIExpr
@@ -93,6 +95,8 @@ ail ctx ae =
                                   return $ AILetFuns [id] [aiFn] b'
         AnnLetVar _rng id  a b     -> do [x,y]   <- mapM q [a,b]
                                          return $ AILetVar id x y
+        AnnLetRec _rng ids exprs e -> do (e' : exprs' ) <- mapM q (e:exprs)
+                                         return $ AILetRec ids exprs' e'
         AnnLetFuns _rng ids fns e  -> do fnsi <- mapM (fnOf ctx) fns
                                          ei <- q e
                                          return $ AILetFuns ids fnsi ei
@@ -124,10 +128,16 @@ ail ctx ae =
                                                      return ((p', vs'), e')) bs
                                          return $ AICase ti ei bsi
 
-        E_AnnVar     _rng v   -> aiVar ctx v >>= return . E_AIVar
+        E_AnnVar     _rng (v,_)   -> do v' <- aiVar ctx v
+                                        return $ E_AIVar v'
 
         AnnPrimitive _rng _ p -> tcFails [string ("Primitives must be called directly!"
                                          ++ "\n\tFound non-call use of ") <> pretty p]
+
+        AnnAppCtor _rng t cid args -> do ti <- qt t
+                                         argsi <- mapM q args
+                                         return $ AIAppCtor ti cid argsi
+
         AnnCall _range t b args -> do
             ti <- qt t
             argsi <- mapM q args

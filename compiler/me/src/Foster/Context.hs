@@ -21,10 +21,12 @@ import Foster.TypeAST
 import Text.PrettyPrint.ANSI.Leijen
 import Foster.Output
 
-data ContextBinding ty = TermVarBinding T.Text (TypedId ty)
+type CtxBound ty = (TypedId ty, Maybe CtorId)
+data ContextBinding ty = TermVarBinding T.Text (CtxBound ty)
 
-data Context ty = Context { contextBindings   :: Map T.Text (TypedId ty)
-                          , primitiveBindings :: Map T.Text (TypedId ty)
+type ContextBindings ty = Map T.Text (CtxBound ty)
+data Context ty = Context { contextBindings   :: ContextBindings ty
+                          , primitiveBindings :: ContextBindings ty
                           , contextVerbose    :: Bool
                           , globalBindings    :: [ContextBinding ty]
                           , localTypeBindings :: Map String ty
@@ -33,8 +35,8 @@ data Context ty = Context { contextBindings   :: Map T.Text (TypedId ty)
                           , contextDataTypes  :: Map DataTypeName [DataType TypeAST]
                           }
 
-prependBinding :: Map T.Text (TypedId ty) -> ContextBinding ty -> Map T.Text (TypedId ty)
-prependBinding m (TermVarBinding nm tid) = Map.insert nm tid m
+prependBinding :: ContextBindings ty -> ContextBinding ty -> ContextBindings ty
+prependBinding m (TermVarBinding nm cxb) = Map.insert nm cxb m
 
 prependContextBinding :: Context ty -> ContextBinding ty -> Context ty
 prependContextBinding ctx binding =
@@ -47,7 +49,7 @@ prependContextBindings ctx prefix =
 instance (Show ty) => Show (ContextBinding ty) where
     show (TermVarBinding _s annvar) = "(termvar " ++ show annvar ++ ")"
 
-termVarLookup :: T.Text -> Map T.Text (TypedId ty) -> Maybe (TypedId ty)
+termVarLookup :: T.Text -> Map T.Text v -> Maybe v
 termVarLookup name bindings = Map.lookup name bindings
 
 typeVarLookup :: String -> Map String (TyVar, Kind) -> Maybe (TyVar, Kind)

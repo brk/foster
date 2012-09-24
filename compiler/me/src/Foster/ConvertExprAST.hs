@@ -98,7 +98,7 @@ liftMaybe _ Nothing = return Nothing
 liftMaybe f (Just a) = do b <- f a ; return $ Just b
 
 liftBinding :: Monad m => (t1 -> m t2) -> ContextBinding t1 -> m (ContextBinding t2)
-liftBinding f (TermVarBinding s (TypedId t i)) = do
+liftBinding f (TermVarBinding s (TypedId t i, mb_cid)) = do
   t2 <- f t
-  return $ TermVarBinding s (TypedId t2 i)
+  return $ TermVarBinding s (TypedId t2 i, mb_cid)
 

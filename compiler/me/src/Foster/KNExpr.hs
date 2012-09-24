@@ -36,6 +36,7 @@ data KNExpr' ty =
         -- Creation of bindings
         | KNCase        ty (TypedId ty) [PatternBinding (KNExpr' ty) ty]
         | KNLetVal      Ident      (KNExpr' ty)     (KNExpr' ty)
+        | KNLetRec     [Ident]     [KNExpr' ty]     (KNExpr' ty)
         | KNLetFuns    [Ident] [Fn (KNExpr' ty) ty] (KNExpr' ty)
         -- Use of bindings
         | KNVar         (TypedId ty)
@@ -119,6 +120,12 @@ kNormalize mebTail expr =
                                     KNTuple (TupleTypeIL (map tidType vs)) vs rng)
 
       AILetVar id a b       -> do liftM2 (buildLet id) (gn a) (gt b)
+      AILetRec ids exprs e  -> do -- Unlike with LetVal, we can't float out the
+                                  -- inner bindings, because they're presuambly
+                                  -- defined in terms of the ids being bound.
+                                  exprs' <- mapM gn exprs
+                                  e'     <- gt e
+                                  return $ KNLetRec ids exprs' e'
       AIUntil   t a b rng   -> do liftM2 (\a' b' -> KNUntil t a' b' rng) (gn a) (gn b)
       AICase    t e bs      -> do e' <- gn e
                                   ibs <- mapM gtp bs
@@ -128,6 +135,7 @@ kNormalize mebTail expr =
       AIIf      t  a b c    -> do a' <- gn a
                                   [ b', c' ] <- mapM gt [b, c]
                                   nestedLets [return a'] (\[v] -> KNIf t v b' c')
+      AIAppCtor t c es -> do nestedLets (map gn es) (\vars -> KNAppCtor t c vars)
       AICall    t b es -> do
           let cargs = map gn es
           case b of
@@ -297,8 +305,10 @@ kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
       let genFreshVarOfType t = do fresh <- knFresh ".autogen"
                                    return $ TypedId t fresh
       vars <- mapM genFreshVarOfType tys
-      let (Just tid) = termVarLookup cname (contextBindings ctx)
-      return $ Fn { fnVar   = tid
+      case termVarLookup cname (contextBindings ctx) of
+        Nothing -> error $ "Unable to find binder for constructor " ++ show cname
+        Just (tid, _) -> return $
+               Fn { fnVar   = tid
                   , fnVars  = vars
                   , fnBody  = KNAppCtor (TyConAppIL dname []) cid vars -- TODO fix
                   , fnIsRec = Just False
@@ -330,6 +340,7 @@ typeKN expr =
     KNArrayPoke     t _ _    -> t
     KNCase          t _ _    -> t
     KNLetVal        _ _ e    -> typeKN e
+    KNLetRec        _ _ e    -> typeKN e
     KNLetFuns       _ _ e    -> typeKN e
     KNVar                  v -> tidType v
     KNTyApp overallType _tm _tyArgs -> overallType
@@ -345,6 +356,7 @@ instance Show ty => Structured (KNExpr' ty) where
             KNCallPrim t prim _ -> text $ "KNCallPrim  " ++ (show prim) ++ " :: " ++ show t
             KNAppCtor  t cid  _ -> text $ "KNAppCtor   " ++ (show cid) ++ " :: " ++ show t
             KNLetVal   x b    _ -> text $ "KNLetVal    " ++ (show x) ++ " :: " ++ (show $ typeKN b) ++ " = ... in ... "
+            KNLetRec   _ _    _ -> text $ "KNLetRec    "
             KNLetFuns ids fns _ -> text $ "KNLetFuns   " ++ (show $ zip ids (map fnVar fns))
             KNIf      t  _ _ _  -> text $ "KNIf        " ++ " :: " ++ show t
             KNUntil   t  _ _ _  -> text $ "KNUntil     " ++ " :: " ++ show t
@@ -375,7 +387,8 @@ instance Show ty => Structured (KNExpr' ty) where
             KNTuple   _ vs _        -> map var vs
             KNCase _ e bs           -> (var e):(map snd bs)
             KNLetFuns _ids fns e    -> map fnBody fns ++ [e]
-            KNLetVal _x b e         -> [b, e]
+            KNLetVal _x b  e        -> [b, e]
+            KNLetRec _x bs e        -> bs ++ [e]
             KNCall  _  _t  v vs     -> [var v] ++ [var v | v <- vs]
             KNCallPrim _t _v vs     ->            [var v | v <- vs]
             KNAppCtor  _t _c vs     ->            [var v | v <- vs]
@@ -498,6 +511,14 @@ instance Pretty ty => Pretty (KNExpr' ty) where
                                                       ])
                                    <$> lkwd "in"
                                    <$> pretty k
+                                   <$> end
+            KNLetRec  ids xps e -> text "rec"
+                                   <$> indent 2 (vcat [text (show id) <+> text "="
+                                                                      <+> pretty xpr
+                                                      | (id, xpr) <- zip ids xps
+                                                      ])
+                                   <$> lkwd "in"
+                                   <$> pretty e
                                    <$> end
             KNIf     _t v b1 b2 -> kwd "if" <+> prettyId v
                                    <$> nest 2 (kwd "then" <+> pretty b1)

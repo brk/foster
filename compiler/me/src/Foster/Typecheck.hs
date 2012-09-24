@@ -9,7 +9,7 @@ import qualified Data.List as List(length, zip)
 import Data.List(foldl', (\\))
 import Control.Monad(liftM, forM_, forM, liftM, liftM2, when)
 
-import qualified Data.Text as T(Text, unpack, pack)
+import qualified Data.Text as T(Text, unpack)
 import qualified Data.Map as Map(lookup, insert, elems, toList, null)
 import qualified Data.Set as Set(toList, fromList)
 import Data.IORef(IORef,newIORef,readIORef,writeIORef)
@@ -70,10 +70,15 @@ data TCWanted = TCSigma | TCRho deriving Show
 --     instantiate polymorphic types. This provides a nice way of supporting
 --     impredicative instantiation and polymorphic recursion.
 --
+--   * We opportunistically eta-contract calls to data constructors
+--     so that, later on, compilation of letrec can directly see what data
+--     constructor (& thus, what representation) it needs to pre-allocate.
+--     OCaml avoids this by making constructors second-class;
+--     SML   avoids this by disallowing constructors on the RHS of letrec.
 
 -----------------------------------------------------------------------
 
-tcSigmaToplevel (TermVarBinding txt tid) ctx ast = do
+tcSigmaToplevel (TermVarBinding txt (tid, _)) ctx ast = do
 -- {{{
     -- Make sure the (potentially user-supplied) type annotation is well-formed.
     tcTypeWellFormed ("in the type declaration for " ++ T.unpack txt)
@@ -236,9 +241,10 @@ tcSigmaVar ctx annot name = do
   debugDoc $ green (text "typecheckVar (sigma): ") <> text (T.unpack name ++ "...")
   -- Resolve the given name as either a variable or a primitive reference.
   let query m = termVarLookup name m
+  tcLift $ putDocLn $ text "query cxb: " <+> text (show (query (contextBindings ctx)))
   case (query (contextBindings ctx), query (primitiveBindings ctx)) of
-    (Just avar, _        ) -> return $   E_AnnVar     annot avar
-    (Nothing  , Just avar) -> return $ mkAnnPrimitive annot avar
+    (Just avar, _           ) -> return $   E_AnnVar     annot avar
+    (Nothing, Just (avar, _)) -> return $ mkAnnPrimitive annot avar
     (Nothing, Nothing) -> do
          msg <- getStructureContextMessage
          tcFails [text $ "Unknown variable " ++ T.unpack name
@@ -539,12 +545,17 @@ tcRhoLetRec ctx0 rng recBindings e mt = do
     -- Typecheck the body as well
     e' <- tcRho ctx e mt
 
-    let fns = [f { fnIsRec = Just True } | (E_AnnFn f) <- tcbodies]
-    let nonfns = filter notAnnFn tcbodies
-                  where notAnnFn (E_AnnFn _) = False
-                        notAnnFn _           = True
-    sanityCheck (null nonfns) "Recursive bindings should only contain functions!"
-    return $ AnnLetFuns rng ids fns e'
+    case tcbodies of
+      [AnnAppCtor _ _ _ [E_AnnFn _]] -> do
+        return $ AnnLetRec rng ids tcbodies e'
+      _ -> do
+        tcLift $ putDocLn $ showStructure (head tcbodies)
+        let fns = [f { fnIsRec = Just True } | (E_AnnFn f) <- tcbodies]
+        let nonfns = filter notAnnFn tcbodies
+                      where notAnnFn (E_AnnFn _) = False
+                            notAnnFn _           = True
+        sanityCheck (null nonfns) "Recursive bindings should only contain functions!"
+        return $ AnnLetFuns rng ids fns e'
 -- }}}
 
 -- G |- e ::: forall a1::k1..an::kn, rho
@@ -625,6 +636,8 @@ mkAnnCall rng res_ty annbase args =
     E_AnnTyApp _ _ (AnnPrimitive _ _ (NamedPrim (TypedId _ (GlobalSymbol gs)))) [argty]
          | T.unpack gs == "allocDArray"
       -> AnnAllocArray rng res_ty arraySize argty where [arraySize] = args
+    E_AnnVar _rng (tid, Just cid)
+      -> AnnAppCtor rng res_ty cid  args
     _ -> AnnCall rng res_ty annbase args
 
 unifyFun :: Rho -> [a] -> String -> Tc ([Sigma], Rho)
@@ -1304,10 +1317,11 @@ collectAllUnificationVars xs = Set.toList (Set.fromList (concatMap go xs))
 instance Ord (MetaTyVar TypeAST) where
   compare m1 m2 = compare (mtvUniq m1) (mtvUniq m2)
 
-vname (E_AnnVar _rng av) n = show n ++ " for " ++ T.unpack (identPrefix $ tidIdent av)
-vname _                  n = show n
+vname (E_AnnVar _rng (av, _)) n = show n ++ " for " ++ T.unpack (identPrefix $ tidIdent av)
+vname _                       n = show n
 
-varbind id ty = TermVarBinding (identPrefix id) (TypedId ty id)
+varbind id ty = TermVarBinding (identPrefix id) (TypedId ty id, Nothing)
+bindingForVar (TypedId ty id) = varbind id ty
 
 genTauUnificationVarsLike :: [a] -> (Int -> String) -> Tc [TypeAST]
 genTauUnificationVarsLike spine namegen = do
@@ -1327,8 +1341,6 @@ verifyNonOverlappingBindings rng name binders = do
         dups -> tcFails [text $ "Error when checking " ++ name ++ ": "
                               ++ "had duplicated bindings: " ++ show dups
                               ++ highlightFirstLine rng]
-
-bindingForVar v = TermVarBinding (identPrefix $ tidIdent v) v
 
 tyvarsOf ktyvars = map (\(tv,_k) -> tv) ktyvars
 
@@ -1365,7 +1377,8 @@ retypeTID f (TypedId t1 id) = f t1 >>= \t2 -> return (TypedId t2 id)
 
 eqLen a b = List.length a == List.length b
 
-getEnvTypes ctx = return (map tidType $ Map.elems (contextBindings ctx))
+getEnvTypes ctx = return (map ctxBinderType $ Map.elems (contextBindings ctx))
+  where ctxBinderType (tid, _) = tidType tid
 
 expMaybe (Infer _) = Nothing
 expMaybe (Check t) = Just t

@@ -41,10 +41,12 @@ data AnnExpr ty =
         -- We have separate syntax for a SCC of recursive functions
         -- because they are compiled differently from non-recursive closures.
         | AnnLetFuns    ExprAnnot [Ident] [Fn (AnnExpr ty) ty] (AnnExpr ty)
+        | AnnLetRec     ExprAnnot [Ident] [AnnExpr ty] (AnnExpr ty)
         -- Use of bindings
-        | E_AnnVar      ExprAnnot (TypedId ty)
+        | E_AnnVar      ExprAnnot (TypedId ty, Maybe CtorId)
         | AnnPrimitive  ExprAnnot ty (FosterPrim ty)
         | AnnCall       ExprAnnot ty (AnnExpr ty) [AnnExpr ty]
+        | AnnAppCtor    ExprAnnot ty CtorId       [AnnExpr ty]
         -- Mutable ref cells
         | AnnAlloc      ExprAnnot ty              (AnnExpr ty) AllocMemRegion
         | AnnDeref      ExprAnnot ty              (AnnExpr ty)
@@ -76,11 +78,13 @@ instance TypedWith (AnnExpr ty) ty where
      AnnTuple  _ tf exprs  -> tf (map typeOf exprs)
      E_AnnFn annFn         -> fnType annFn
      AnnCall _rng t _ _    -> t
+     AnnAppCtor _rng t _ _ -> t
      AnnCompiles _ t _     -> t
      AnnKillProcess _ t _  -> t
      AnnIf _rng t _ _ _    -> t
      AnnUntil _rng t _ _   -> t
      AnnLetVar _rng _ _ b  -> typeOf b
+     AnnLetRec _rng _ _ b  -> typeOf b
      AnnLetFuns _rng _ _ e -> typeOf e
      AnnAlloc _rng t _ _   -> t
      AnnDeref _rng t _     -> t
@@ -89,7 +93,7 @@ instance TypedWith (AnnExpr ty) ty where
      AnnArrayPoke  _ t _ _ -> t
      AnnAllocArray _ t _ _ -> t
      AnnCase _rng t _ _    -> t
-     E_AnnVar _rng tid     -> tidType tid
+     E_AnnVar _rng (tid, _)-> tidType tid
      AnnPrimitive _rng t _ -> t
      E_AnnTyApp _rng substitutedTy _tm _tyArgs -> substitutedTy
 
@@ -99,6 +103,7 @@ instance Structured (AnnExpr TypeAST) where
       AnnString   _rng _  _      -> text "AnnString    "
       AnnBool     _rng _  b      -> text "AnnBool      " <> pretty b
       AnnCall     _rng t _b _args-> text "AnnCall      :: " <> pretty t
+      AnnAppCtor  _rng t _ _     -> text "AnnAppCtor   :: " <> pretty t
       AnnCompiles _rng _ cr      -> text "AnnCompiles  " <> pretty cr
       AnnKillProcess _rng t msg  -> text "AnnKillProcess " <> string (show msg) <> text  " :: " <> pretty t
       AnnIf       _rng t _ _ _   -> text "AnnIf         :: " <> pretty t
@@ -106,6 +111,7 @@ instance Structured (AnnExpr TypeAST) where
       AnnInt      _rng ty int    -> text "AnnInt       " <> text (litIntText int) <> text " :: " <> pretty ty
       AnnFloat    _rng ty flt    -> text "AnnFloat     " <> text (litFloatText flt) <> text " :: " <> pretty ty
       AnnLetVar   _rng id _a _b  -> text "AnnLetVar    " <> pretty id
+      AnnLetRec   _rng ids _ _   -> text "AnnLetRec    " <> list (map pretty ids)
       AnnLetFuns  _rng ids _ _   -> text "AnnLetFuns   " <> list (map pretty ids)
       AnnAlloc  {}               -> text "AnnAlloc     "
       AnnDeref  {}               -> text "AnnDeref     "
@@ -116,7 +122,7 @@ instance Structured (AnnExpr TypeAST) where
       AnnTuple  {}               -> text "AnnTuple     "
       AnnCase   {}               -> text "AnnCase      "
       AnnPrimitive _r _ p        -> text "AnnPrimitive " <> pretty p
-      E_AnnVar _r tid            -> text "AnnVar       " <> pretty tid
+      E_AnnVar _r (tid, _)       -> text "AnnVar       " <> pretty tid
       E_AnnTyApp _rng t _e argty -> text "AnnTyApp     ["  <> pretty argty <> text  "] :: " <> pretty t
       E_AnnFn annFn              -> text $ "AnnFn " ++ T.unpack (identPrefix $ fnIdent annFn) ++ " // "
         ++ (show $ fnBoundNames annFn) ++ " :: " ++ show (pretty (fnType annFn)) where
@@ -127,6 +133,7 @@ instance Structured (AnnExpr TypeAST) where
       AnnString {}                         -> []
       AnnBool   {}                         -> []
       AnnCall _r _t b exprs                -> b:exprs
+      AnnAppCtor _r _t _cid exprs          -> exprs
       AnnCompiles  _rng _ (CompilesResult (OK     e)) -> [e]
       AnnCompiles  _rng _ (CompilesResult (Errors _)) -> []
       AnnKillProcess {}                    -> []
@@ -136,6 +143,7 @@ instance Structured (AnnExpr TypeAST) where
       AnnFloat {}                          -> []
       E_AnnFn annFn                        -> [fnBody annFn]
       AnnLetVar    _rng _ a b              -> [a, b]
+      AnnLetRec    _rng _ exprs e          -> exprs ++ [e]
       AnnLetFuns   _rng _ids fns e         -> (map E_AnnFn fns) ++ [e]
       AnnAlloc     _rng _t a _             -> [a]
       AnnDeref     _rng _t a               -> [a]
@@ -160,11 +168,13 @@ instance AExpr (AnnExpr TypeAST) where
     freeIdents e = case e of
         AnnPrimitive {}     -> []
         AnnLetVar _rng  id  b   e -> freeIdents b ++ (freeIdents e `butnot` [id])
+        AnnLetRec _rng  ids xps e -> (concatMap freeIdents xps ++ freeIdents e)
+                                                                   `butnot` ids
         AnnLetFuns _rng ids fns e -> (concatMap freeIdents fns ++ freeIdents e)
                                                                    `butnot` ids
         AnnCase _rng _t e patbnds -> freeIdents e ++ (concatMap patBindingFreeIds patbnds)
         E_AnnFn f                 -> freeIdents f
-        E_AnnVar _rng v           -> [tidIdent v]
+        E_AnnVar _rng (v, _)      -> [tidIdent v]
         _                         -> concatMap freeIdents (childrenOf e)
 
 patBindingFreeIds ((_, binds), expr) =
@@ -177,6 +187,7 @@ annExprAnnot expr = case expr of
       AnnString    annot _  _       -> annot
       AnnBool      annot _  _       -> annot
       AnnCall      annot _ _ _      -> annot
+      AnnAppCtor   annot _ _ _      -> annot
       AnnCompiles  annot _ _        -> annot
       AnnKillProcess annot _ _      -> annot
       AnnIf        annot _ _ _ _    -> annot
@@ -185,6 +196,7 @@ annExprAnnot expr = case expr of
       AnnFloat     annot _ _        -> annot
       E_AnnFn      f                -> fnAnnot f
       AnnLetVar    annot _ _ _      -> annot
+      AnnLetRec    annot _ _ _      -> annot
       AnnLetFuns   annot _ _ _      -> annot
       AnnAlloc     annot _ _ _      -> annot
       AnnDeref     annot _ _        -> annot

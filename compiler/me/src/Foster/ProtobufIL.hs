@@ -234,7 +234,10 @@ dumpExpr _ x@(ILKillProcess _ msg) =
     P'.defaultValue { PbLetable.string_value = Just $ textToPUtf8 msg
                     , PbLetable.tag   = IL_KILL_PROCESS
                     , PbLetable.type' = Just $ dumpType (typeOf x)  }
-
+dumpExpr _ x@(ILObjectCopy from to) =
+    P'.defaultValue { PbLetable.parts = fromList [dumpVar from, dumpVar to]
+                    , PbLetable.tag   = IL_OBJECT_COPY
+                    , PbLetable.type' = Just $ dumpType (typeOf x)  }
 dumpExpr _ x@(ILTuple [] _allocsrc) =
     P'.defaultValue { PbLetable.tag   = IL_UNIT
                     , PbLetable.type' = Just $ dumpType (typeOf x) }

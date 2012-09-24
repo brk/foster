@@ -92,6 +92,7 @@ message Letable {
     IL_CALL = 23;
     IL_CALL_PRIMOP = 24;
     IL_BITCAST = 28;
+    IL_OBJECT_COPY = 29;
     IL_DEREF = 31;
     IL_STORE = 32;
     IL_IF = 33;

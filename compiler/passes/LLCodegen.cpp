@@ -670,6 +670,15 @@ llvm::Value* LLStore::codegen(CodegenPass* pass) {
   return emitStore(vv, vr);
 }
 
+llvm::Value* LLObjectCopy::codegen(CodegenPass* pass) {
+  llvm::Value* vv = from->codegen(pass);
+  llvm::Value* vr =   to->codegen(pass);
+  // TODO assert that object tags are equal?
+
+  llvm::Value* from_obj = emitNonVolatileLoad(vv, "from_obj");
+  return emitStore(from_obj, vr);
+}
+
 ////////////////////////////////////////////////////////////////////
 
 void trySetName(llvm::Value* v, const string& name) {

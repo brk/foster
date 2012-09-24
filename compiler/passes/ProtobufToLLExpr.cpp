@@ -354,6 +354,12 @@ LLExpr* parseStore(const pb::Letable& e) {
       parseTermVar( e.parts(1)));
 }
 
+LLExpr* parseObjectCopy(const pb::Letable& e) {
+  return new LLObjectCopy(
+      parseTermVar( e.parts(0)),
+      parseTermVar( e.parts(1)));
+}
+
 LLExpr* parseKillProcess(const pb::Letable& e) {
   return new LLKillProcess(e.string_value());
 }
@@ -426,6 +432,7 @@ LLExpr* LLExpr_from_pb(const pb::Letable* pe) {
   case pb::Letable::IL_ARRAY_LENGTH:rv = parseArrayLength(e); break;
   case pb::Letable::IL_ALLOCATE:    rv = parseAllocate(e); break;
   case pb::Letable::IL_OCCURRENCE:  rv = parseOccurrence(e.occ()); break;
+  case pb::Letable::IL_OBJECT_COPY: rv = parseObjectCopy(e); break;
   case pb::Letable::IL_KILL_PROCESS:rv = parseKillProcess(e); break;
 
   default:
