@@ -6,7 +6,7 @@
 
 module Foster.Letable where
 
-import Foster.Base(LiteralInt, LiteralFloat, CtorId, ArrayIndex(..),
+import Foster.Base(Literal(..), CtorId, ArrayIndex(..),
                    AllocMemRegion, AllocInfo(..), Occurrence, AllocationSource,
                    FosterPrim(..), MayGC(..), memRegionMayGC,
                    TypedId(..), Ident(..),
@@ -23,10 +23,7 @@ import qualified Data.Map as Map(Map, findWithDefault)
 -- means that a derived ILAlloc can't return a stack slot value!
 
 data Letable ty =
-          ILBool        Bool
-        | ILText        T.Text
-        | ILInt         ty LiteralInt
-        | ILFloat       ty LiteralFloat
+          ILLiteral     ty Literal
         | ILTuple       [TypedId ty] AllocationSource
         | ILKillProcess ty T.Text
         -- Struct member lookup
@@ -52,10 +49,7 @@ data Letable ty =
 
 instance TExpr (Letable ty) ty where
   freeTypedIds letable = case letable of
-      ILText         {} -> []
-      ILBool         {} -> []
-      ILInt          {} -> []
-      ILFloat        {} -> []
+      ILLiteral      {} -> []
       ILTuple      vs _ -> vs
       ILKillProcess  {} -> []
       ILOccurrence _ v _-> [v]
@@ -74,10 +68,7 @@ instance TExpr (Letable ty) ty where
 
 instance TypedWith (Letable MonoType) MonoType where
   typeOf letable = case letable of
-      ILText         {} -> TyConApp "Text" []
-      ILBool         {} -> boolMonoType
-      ILInt         t _ -> t
-      ILFloat       t _ -> t
+      ILLiteral     t _ -> t
       ILTuple      vs _ -> TupleType (map tidType vs)
       ILKillProcess t _ -> t
       ILOccurrence t _ _-> t
@@ -96,10 +87,7 @@ instance TypedWith (Letable MonoType) MonoType where
 
 instance TypedWith (Letable TypeLL) TypeLL where
   typeOf letable = case letable of
-      ILText         {} -> LLTyConApp "Text" []
-      ILBool         {} -> llBoolType
-      ILInt         t _ -> t
-      ILFloat       t _ -> t
+      ILLiteral     t _ -> t
       ILTuple      vs _ -> LLPtrType (LLStructType (map tidType vs))
       ILKillProcess t _ -> t
       ILOccurrence t v _-> t
@@ -121,10 +109,7 @@ isPureFunc _ = False -- TODO: use effect information to refine this predicate.
 
 substVarsInLetable :: (TypedId t -> TypedId t) -> Letable t -> Letable t
 substVarsInLetable s letable = case letable of
-  ILText        {}                         -> letable
-  ILBool        {}                         -> letable
-  ILInt         {}                         -> letable
-  ILFloat       {}                         -> letable
+  ILLiteral     {}                         -> letable
   ILKillProcess {}                         -> letable
   ILAllocate    {}                         -> letable
   ILTuple       vs asrc                    -> ILTuple       (map s vs) asrc
@@ -145,10 +130,7 @@ substVarsInLetable s letable = case letable of
 --   It remains to be seen whether deref/store should be counted or not.
 letableSize :: Letable t -> Int
 letableSize letable = case letable of
-      ILText         {} -> 0
-      ILBool         {} -> 0
-      ILInt          {} -> 0 -- TODO: distinguish fixnums from bignums?
-      ILFloat        {} -> 0
+      ILLiteral      {} -> 0 -- TODO: distinguish fixnums from bignums?
       ILTuple        {} -> 1
       ILKillProcess  {} -> 0
       ILOccurrence   {} -> 1
@@ -167,10 +149,7 @@ letableSize letable = case letable of
 
 isPure :: Letable MonoType -> Bool
 isPure letable = case letable of
-      ILText         {} -> True
-      ILBool         {} -> True
-      ILInt          {} -> True
-      ILFloat        {} -> True
+      ILLiteral      {} -> True
       ILTuple        {} -> True
       ILKillProcess  {} -> False
       ILOccurrence   {} -> True
@@ -198,10 +177,10 @@ canGC mayGCmap letable =
                              Map.findWithDefault (GCUnknown "") (tidIdent v) mayGCmap
          ILCallPrim _ p _ -> canGCPrim p
          ILTuple    _ _   -> MayGC -- rather than stack allocating tuples, easier to just remove 'em probably.
-         ILText        {} -> MayGC -- unless we statically allocate such things
-         ILInt         {} -> WillNotGC -- unless it's a bignum...
-         ILBool        {} -> WillNotGC
-         ILFloat       {} -> WillNotGC
+         ILLiteral _ (LitText _) -> MayGC -- unless we statically allocate such things
+         ILLiteral _ (LitInt  _) -> WillNotGC -- unless it's a bignum...
+         ILLiteral _ (LitBool _) -> WillNotGC
+         ILLiteral _ (LitFloat _)-> WillNotGC
          ILKillProcess {} -> WillNotGC
          ILOccurrence  {} -> WillNotGC
          ILDeref       {} -> WillNotGC

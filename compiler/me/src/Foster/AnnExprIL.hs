@@ -27,10 +27,7 @@ import Control.Monad(when)
 
 data AIExpr =
         -- Literals
-          AIBool       Bool
-        | AIString     T.Text
-        | AIInt        TypeIL LiteralInt
-        | AIFloat      TypeIL LiteralFloat
+          AILiteral    TypeIL Literal
         | AITuple      [AIExpr] SourceRange
         | AIKillProcess TypeIL T.Text
         -- Control flow
@@ -67,15 +64,11 @@ ail ctx ae =
     case ae of
         AnnCompiles _rng _ty (CompilesResult ooe) -> do
                 oox <- tcIntrospect (tcInject q ooe)
-                return $ AIBool (isOK oox)
+                return $ AILiteral boolTypeIL (LitBool (isOK oox))
         AnnKillProcess _rng t m -> do ti <- qt t
                                       return $ AIKillProcess ti m
-        AnnBool   _rng _ b     -> do return $ AIBool b
-        AnnString _rng _ s     -> do return $ AIString s
-        AnnInt    _rng t int   -> do ti <- qt t
-                                     return $ AIInt ti int
-        AnnFloat _rng t flt    -> do ti <- qt t
-                                     return $ AIFloat ti flt
+        AnnLiteral _rng ty lit -> do ti <- qt ty
+                                     return $ AILiteral ti lit
         AnnIf   _rng  t  a b c -> do ti <- qt t
                                      [x,y,z] <- mapM q [a,b,c]
                                      return $ AIIf    ti x y z

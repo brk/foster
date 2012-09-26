@@ -35,7 +35,7 @@ typecheckInt annot originalText _expTyTODO = do
     sanityCheck (activeBits <= maxBits)
                 ("Integers currently limited to " ++ show maxBits ++ " bits, "
                                   ++ clean ++ " requires " ++ show activeBits)
-    return (AnnInt annot (PrimIntAST $ sizeOfBits maxBits) int)
+    return (AnnLiteral annot (PrimIntAST $ sizeOfBits maxBits) (LitInt int))
  where
         onlyValidDigitsIn :: String -> Int -> Bool
         onlyValidDigitsIn str lim =
@@ -89,5 +89,5 @@ typecheckRat annot originalText _expTyTODO = do
   --tcLift $ putStrLn $ "typecheckRat: " ++ originalText ++ " :?: " ++ show _expTyTODO
   -- TODO: be more discriminating about float vs rational numbers?
   let val = (read originalText) :: Double
-  return (AnnFloat annot PrimFloat64AST (LiteralFloat val originalText))
+  return (AnnLiteral annot PrimFloat64AST (LitFloat $ LiteralFloat val originalText))
 

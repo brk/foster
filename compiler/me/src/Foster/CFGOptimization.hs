@@ -268,10 +268,7 @@ getCensus bbg = let cf = getCensusFns bbg in
 
     censusLetable letable m =
       case letable of
-        ILText         {}        -> m
-        ILBool         {}        -> m
-        ILInt          {}        -> m
-        ILFloat        {}        -> m
+        ILLiteral      {}        -> m
         ILKillProcess  {}        -> m
         ILOccurrence   {}        -> m
         ILBitcast      _ v       -> addUsed m [(v, UsedFirstClass)] -- conservatively :(

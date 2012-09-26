@@ -24,10 +24,7 @@ import Text.PrettyPrint.ANSI.Leijen
 
 data KNExpr' ty =
         -- Literals
-          KNBool        ty Bool
-        | KNString      ty T.Text
-        | KNInt         ty LiteralInt
-        | KNFloat       ty LiteralFloat
+          KNLiteral     ty Literal
         | KNTuple       ty [TypedId ty] SourceRange
         | KNKillProcess ty T.Text
         -- Control flow
@@ -92,10 +89,7 @@ kNormalize mebTail expr =
   let gt = kNormalize mebTail in
   let gn = kNormalize NotTail in
   case expr of
-      AIString s        -> return $ KNString stringTypeIL s
-      AIBool b          -> return $ KNBool   boolTypeIL   b
-      AIInt t i         -> return $ KNInt t i
-      AIFloat t f       -> return $ KNFloat t f
+      AILiteral ty lit  -> return $ KNLiteral ty lit
       E_AIVar v         -> return $ KNVar v
       AIKillProcess t m -> return $ KNKillProcess t m
       E_AIPrim p -> error $ "KNExpr.kNormalize: Should have detected prim " ++ show p
@@ -321,10 +315,7 @@ kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
 typeKN :: KNExpr' ty -> ty
 typeKN expr =
   case expr of
-    KNBool          t _      -> t
-    KNString        t _      -> t
-    KNInt           t _      -> t
-    KNFloat         t _      -> t
+    KNLiteral       t _      -> t
     KNTuple         t _  _   -> t
     KNKillProcess   t _      -> t
     KNCall        _ t _ _    -> t
@@ -350,8 +341,10 @@ typeKN expr =
 instance Show ty => Structured (KNExpr' ty) where
     textOf e _width =
         case e of
-            KNString     _ _    -> text $ "KNString    "
-            KNBool       _ b    -> text $ "KNBool      " ++ (show b)
+            KNLiteral _  (LitText  _) -> text $ "KNString    "
+            KNLiteral _  (LitBool  b) -> text $ "KNBool      " ++ (show b)
+            KNLiteral ty (LitInt int) -> text $ "KNInt       " ++ (litIntText int) ++ " :: " ++ show ty
+            KNLiteral ty (LitFloat f) -> text $ "KNFloat     " ++ (litFloatText f) ++ " :: " ++ show ty
             KNCall tail t _ _   -> text $ "KNCall " ++ show tail ++ " :: " ++ show t
             KNCallPrim t prim _ -> text $ "KNCallPrim  " ++ (show prim) ++ " :: " ++ show t
             KNAppCtor  t cid  _ -> text $ "KNAppCtor   " ++ (show cid) ++ " :: " ++ show t
@@ -360,8 +353,6 @@ instance Show ty => Structured (KNExpr' ty) where
             KNLetFuns ids fns _ -> text $ "KNLetFuns   " ++ (show $ zip ids (map fnVar fns))
             KNIf      t  _ _ _  -> text $ "KNIf        " ++ " :: " ++ show t
             KNUntil   t  _ _ _  -> text $ "KNUntil     " ++ " :: " ++ show t
-            KNInt ty int        -> text $ "KNInt       " ++ (litIntText int) ++ " :: " ++ show ty
-            KNFloat ty flt      -> text $ "KNFloat     " ++ (litFloatText flt) ++ " :: " ++ show ty
             KNAlloc      {}     -> text $ "KNAlloc     "
             KNDeref      {}     -> text $ "KNDeref     "
             KNStore      {}     -> text $ "KNStore     "
@@ -378,10 +369,7 @@ instance Show ty => Structured (KNExpr' ty) where
     childrenOf expr =
         let var v = KNVar v in
         case expr of
-            KNString {}             -> []
-            KNBool   {}             -> []
-            KNInt    {}             -> []
-            KNFloat  {}             -> []
+            KNLiteral {}            -> []
             KNKillProcess {}        -> []
             KNUntil _t a b _        -> [a, b]
             KNTuple   _ vs _        -> map var vs
@@ -484,6 +472,8 @@ instance Pretty t => Pretty (Pattern t) where
         P_Int           _rng _ty li       -> text (litIntText li)
         P_Tuple         _rng _ty pats     -> parens (hsep $ punctuate comma (map pretty pats))
 
+
+
 instance Pretty ty => Pretty (KNExpr' ty) where
   pretty e =
         case e of
@@ -493,8 +483,7 @@ instance Pretty ty => Pretty (KNExpr' ty) where
             KNVar (TypedId t i) -> prettyId (TypedId t i)
             KNTyApp t e argtys  -> showTyped (pretty e <> text ":[" <> hsep (punctuate comma (map pretty argtys)) <> text "]") t
             KNKillProcess t m   -> text ("KNKillProcess " ++ show m ++ " :: ") <> pretty t
-            KNString     _ s    -> dquotes (text $ T.unpack s)
-            KNBool       _ b    -> text $ show b
+            KNLiteral _ lit     -> pretty lit
             KNCall _tail t v [] -> showUnTyped (prettyId v <+> text "!") t
             KNCall _tail t v vs -> showUnTyped (prettyId v <> hsep (map pretty vs)) t
             KNCallPrim t prim vs-> showUnTyped (text "prim" <+> pretty prim <+> hsep (map prettyId vs)) t
@@ -527,8 +516,6 @@ instance Pretty ty => Pretty (KNExpr' ty) where
             KNUntil  _t c b _sr -> kwd "until" <+> pretty c <//> lkwd "then"
                                    <$> nest 2 (pretty b)
                                    <$> end
-            KNInt   _ty int     -> red $ text (litIntText int)
-            KNFloat _ty flt     -> dullred $ text (litFloatText flt)
             KNAlloc _ v rgn     -> text "(ref" <+> prettyId v <+> comment (pretty rgn) <> text ")"
             KNDeref _ v         -> prettyId v <> text "^"
             KNStore _ v1 v2     -> text "store" <+> prettyId v1 <+> text "to" <+> prettyId v2

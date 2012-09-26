@@ -21,6 +21,8 @@ import qualified Data.Text as T
 
 data AnnExpr ty =
         -- Literals
+          AnnLiteral    ExprAnnot ty Literal
+        {-
           AnnBool       ExprAnnot ty Bool
         | AnnString     ExprAnnot ty T.Text
         | AnnInt        { aintRange  :: ExprAnnot
@@ -29,6 +31,7 @@ data AnnExpr ty =
         | AnnFloat      { afltRange  :: ExprAnnot
                         , afltType   :: ty
                         , afltLit    :: LiteralFloat }
+        -}
         | AnnTuple      ExprAnnot ([ty] -> ty) [AnnExpr ty]
         | E_AnnFn       (Fn (AnnExpr ty) ty)
 
@@ -71,10 +74,7 @@ data AnnExpr ty =
 
 instance TypedWith (AnnExpr ty) ty where
   typeOf annexpr = case annexpr of
-     AnnString _ t _       -> t
-     AnnBool   _ t _       -> t
-     AnnInt   _rng t _     -> t
-     AnnFloat _rng t _     -> t
+     AnnLiteral  _ t _     -> t
      AnnTuple  _ tf exprs  -> tf (map typeOf exprs)
      E_AnnFn annFn         -> fnType annFn
      AnnCall _rng t _ _    -> t
@@ -100,16 +100,17 @@ instance TypedWith (AnnExpr ty) ty where
 instance Structured (AnnExpr TypeAST) where
   textOf e _width =
     case e of
-      AnnString   _rng _  _      -> text "AnnString    "
-      AnnBool     _rng _  b      -> text "AnnBool      " <> pretty b
+      AnnLiteral _ _  (LitText _)  -> text "AnnText      "
+      AnnLiteral _ _  (LitBool b)  -> text "AnnBool      " <> pretty b
+      AnnLiteral _ ty (LitInt int) -> text "AnnInt       " <> text (litIntText int) <> text " :: " <> pretty ty
+      AnnLiteral _ ty (LitFloat f) -> text "AnnFloat     " <> text (litFloatText f) <> text " :: " <> pretty ty
+
       AnnCall     _rng t _b _args-> text "AnnCall      :: " <> pretty t
       AnnAppCtor  _rng t _ _     -> text "AnnAppCtor   :: " <> pretty t
       AnnCompiles _rng _ cr      -> text "AnnCompiles  " <> pretty cr
       AnnKillProcess _rng t msg  -> text "AnnKillProcess " <> string (show msg) <> text  " :: " <> pretty t
       AnnIf       _rng t _ _ _   -> text "AnnIf         :: " <> pretty t
       AnnUntil    _rng t _ _     -> text "AnnUntil      :: " <> pretty t
-      AnnInt      _rng ty int    -> text "AnnInt       " <> text (litIntText int) <> text " :: " <> pretty ty
-      AnnFloat    _rng ty flt    -> text "AnnFloat     " <> text (litFloatText flt) <> text " :: " <> pretty ty
       AnnLetVar   _rng id _a _b  -> text "AnnLetVar    " <> pretty id
       AnnLetRec   _rng ids _ _   -> text "AnnLetRec    " <> list (map pretty ids)
       AnnLetFuns  _rng ids _ _   -> text "AnnLetFuns   " <> list (map pretty ids)
@@ -130,8 +131,7 @@ instance Structured (AnnExpr TypeAST) where
                    fnBoundNames fn = map (show . pretty) (fnVars fn)
   childrenOf e =
     case e of
-      AnnString {}                         -> []
-      AnnBool   {}                         -> []
+      AnnLiteral {}                        -> []
       AnnCall _r _t b exprs                -> b:exprs
       AnnAppCtor _r _t _cid exprs          -> exprs
       AnnCompiles  _rng _ (CompilesResult (OK     e)) -> [e]
@@ -139,8 +139,6 @@ instance Structured (AnnExpr TypeAST) where
       AnnKillProcess {}                    -> []
       AnnIf        _rng _t  a b c          -> [a, b, c]
       AnnUntil     _rng _t  a b            -> [a, b]
-      AnnInt {}                            -> []
-      AnnFloat {}                          -> []
       E_AnnFn annFn                        -> [fnBody annFn]
       AnnLetVar    _rng _ a b              -> [a, b]
       AnnLetRec    _rng _ exprs e          -> exprs ++ [e]
@@ -184,16 +182,13 @@ patBindingFreeIds ((_, binds), expr) =
 
 annExprAnnot :: AnnExpr ty -> ExprAnnot
 annExprAnnot expr = case expr of
-      AnnString    annot _  _       -> annot
-      AnnBool      annot _  _       -> annot
+      AnnLiteral   annot _ _        -> annot
       AnnCall      annot _ _ _      -> annot
       AnnAppCtor   annot _ _ _      -> annot
       AnnCompiles  annot _ _        -> annot
       AnnKillProcess annot _ _      -> annot
       AnnIf        annot _ _ _ _    -> annot
       AnnUntil     annot _ _ _      -> annot
-      AnnInt       annot _ _        -> annot
-      AnnFloat     annot _ _        -> annot
       E_AnnFn      f                -> fnAnnot f
       AnnLetVar    annot _ _ _      -> annot
       AnnLetRec    annot _ _ _      -> annot

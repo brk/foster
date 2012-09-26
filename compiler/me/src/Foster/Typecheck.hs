@@ -287,7 +287,7 @@ mkAnnPrimitive annot tid =
 --  G |- true :: Bool      G |- false :: Bool
 tcRhoBool rng b expTy = do
 -- {{{
-    let ab = AnnBool rng (PrimIntAST I1) b
+    let ab = AnnLiteral rng (PrimIntAST I1) (LitBool b)
     case expTy of
          Infer  r               -> update r (return ab)
          Check  (PrimIntAST I1) -> return ab
@@ -302,7 +302,7 @@ tcRhoBool rng b expTy = do
 --  G |- "..." :: Text
 tcRhoText rng b expTy = do
 -- {{{
-    let ab = AnnString rng (TyConAppAST "Text" []) b
+    let ab = AnnLiteral rng (TyConAppAST "Text" []) (LitText b)
     case expTy of
          Infer r                        -> update r (return ab)
          Check  (TyConAppAST "Text" []) -> return ab
@@ -900,8 +900,8 @@ tcRhoCase ctx rng scrutinee branches expTy = do
       EP_Bool     r b     -> do let boolexpr = E_BoolAST (ExprAnnot [] r  []) b
                                 annbool <- tcRho ctx boolexpr (Check ctxTy)
                                 return $ P_Bool r (typeAST annbool) b
-      EP_Int      r str   -> do annint <- typecheckInt (ExprAnnot [] r []) str (Just ctxTy)
-                                return $ P_Int r (aintType annint) (aintLit annint)
+      EP_Int      r str   -> do (AnnLiteral _ ty (LitInt int)) <- typecheckInt (ExprAnnot [] r []) str (Just ctxTy)
+                                return $ P_Int r ty int
 
       EP_Ctor     r eps s -> do
         info@(CtorInfo cid (DataCtor _ _ tyformals types)) <- getCtorInfoForCtor ctx s

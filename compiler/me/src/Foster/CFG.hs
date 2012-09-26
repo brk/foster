@@ -297,11 +297,8 @@ computeBlocks expr idmaybe k = do
     knToLetable :: KNMono -> Letable MonoType
     knToLetable expr =
       case expr of
+         KNLiteral    t lit  -> ILLiteral    t lit
          KNVar        _v     -> error $ "can't make Letable from KNVar!"
-         KNString   _ s      -> ILText       s
-         KNBool     _ b      -> ILBool       b
-         KNInt        t i    -> ILInt        t i
-         KNFloat      t f    -> ILFloat      t f
          KNTuple    _ vs rng -> ILTuple      vs (AllocationSource "tuple" rng)
          KNCallPrim   t p vs -> ILCallPrim   t p vs
          KNAppCtor    t c vs -> ILAppCtor    t c vs
@@ -503,10 +500,7 @@ instance Pretty CFLast where
 instance Pretty t => Pretty (Letable t) where
   pretty l =
     case l of
-      ILText      s         -> string (T.unpack s)
-      ILBool      b         -> text (if b then "True" else "False")
-      ILInt       _ i       -> text (litIntText i)
-      ILFloat     _ f       -> text (litFloatText f)
+      ILLiteral   _ lit     -> pretty lit
       ILTuple     vs _asrc  -> parens (hsep $ punctuate comma (map pretty vs))
       ILKillProcess t m     -> text ("prim KillProcess " ++ show m ++ " :: ") <> pretty t
       ILOccurrence  _ v occ -> prettyOccurrence v occ

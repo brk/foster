@@ -213,6 +213,27 @@ dumpSwitch var arms def occ =
                     , PbSwitch.occ   = Just $ dumpOccurrence var occ }
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+-- |||||||||||||||||||||||| Literals ||||||||||||||||||||||||||||{{{
+dumpLiteral ty lit =
+  case lit of
+    LitBool  b -> P'.defaultValue { PbLetable.bool_value = Just b
+                                  , PbLetable.tag   = IL_BOOL
+                                  , PbLetable.type' = Just $ dumpType ty }
+    LitText  t -> P'.defaultValue { PbLetable.string_value = Just $ textToPUtf8 t
+                                  , PbLetable.tag   = IL_TEXT
+                                  , PbLetable.type' = Just $ dumpType ty  }
+    LitInt int -> P'.defaultValue { PbLetable.tag   = IL_INT
+                                  , PbLetable.type' = Just $ dumpType ty
+                                  , PbLetable.pb_int = Just $ PBInt.PBInt
+                                               { clean = u8fromString (show $ litIntValue int)
+                                               , bits  = intToInt32   (litIntMinBits int) }
+                                  }
+    LitFloat f -> P'.defaultValue { PbLetable.tag   = IL_FLOAT
+                                  , PbLetable.type' = Just $ dumpType ty
+                                  , PbLetable.dval  = Just $ litFloatValue f
+                                  }
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
 -- |||||||||||||||||||||||| Expressions |||||||||||||||||||||||||{{{
 dumpExpr :: MayGC -> Letable TypeLL -> PbLetable.Letable
 dumpExpr _ (ILAlloc    {}) = error "ILAlloc should have been translated away!"
@@ -220,16 +241,7 @@ dumpExpr _ (ILBitcast t v) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar v]
                     , PbLetable.tag   = IL_BITCAST
                     , PbLetable.type' = Just $ dumpType t  }
-dumpExpr _ x@(ILText s) =
-    P'.defaultValue { PbLetable.string_value = Just $ textToPUtf8 s
-                    , PbLetable.tag   = IL_TEXT
-                    , PbLetable.type' = Just $ dumpType (typeOf x)  }
-
-dumpExpr _ x@(ILBool b) =
-    P'.defaultValue { PbLetable.bool_value = Just b
-                    , PbLetable.tag   = IL_BOOL
-                    , PbLetable.type' = Just $ dumpType (typeOf x)  }
-
+dumpExpr _ (ILLiteral ty lit) = dumpLiteral ty lit
 dumpExpr _ x@(ILKillProcess _ msg) =
     P'.defaultValue { PbLetable.string_value = Just $ textToPUtf8 msg
                     , PbLetable.tag   = IL_KILL_PROCESS
@@ -290,20 +302,6 @@ dumpExpr _ x@(ILArrayPoke (ArrayIndex b i rng sg) v) =
                     , PbLetable.string_value = Just $ stringSG sg
                     , PbLetable.prim_op_name = Just $ u8fromString $ highlightFirstLine rng
                     , PbLetable.type' = Just $ dumpType (typeOf x)  }
-
-dumpExpr _ x@(ILInt _ty int) =
-    P'.defaultValue { PbLetable.tag   = IL_INT
-                    , PbLetable.type' = Just $ dumpType (typeOf x)
-                    , PbLetable.pb_int = Just $ PBInt.PBInt
-                                 { clean = u8fromString (show $ litIntValue int)
-                                 , bits  = intToInt32   (litIntMinBits int) }
-                    }
-
-dumpExpr _ x@(ILFloat _ty flt) =
-    P'.defaultValue { PbLetable.tag   = IL_FLOAT
-                    , PbLetable.type' = Just $ dumpType (typeOf x)
-                    , PbLetable.dval  = Just $ litFloatValue flt
-                    }
 
 dumpExpr maygc (ILCall t base args)
         = dumpCall t (dumpVar base)          args maygc ccs

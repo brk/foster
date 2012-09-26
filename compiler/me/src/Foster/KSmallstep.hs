@@ -203,6 +203,7 @@ data IExpr =
         | IStore  Ident Ident
         | ILetFuns     [Ident] [Fn KNExpr TypeIL] SSTerm
         | ILetVal       Ident   SSTerm  SSTerm
+        | ILetRec      [Ident] [SSTerm] SSTerm
         | IArrayRead    Ident   Ident
         | IArrayPoke    Ident   Ident Ident
         | IAllocArray   Ident
@@ -239,18 +240,19 @@ ssTermOfExpr expr =
   let tr   = ssTermOfExpr in
   let idOf = tidIdent     in
   case expr of
-    KNBool    _t b         -> SSTmValue $ SSBool b
-    KNInt     _t i         -> SSTmValue $ SSInt (litIntValue i)
-    KNFloat   _t f         -> SSTmValue $ SSFloat (litFloatValue f)
-    KNString  _t s         -> SSTmValue $ textFragmentOf s
+    KNLiteral _ (LitBool  b) -> SSTmValue $ SSBool b
+    KNLiteral _ (LitInt   i) -> SSTmValue $ SSInt (litIntValue i)
+    KNLiteral _ (LitFloat f) -> SSTmValue $ SSFloat (litFloatValue f)
+    KNLiteral _ (LitText  s) -> SSTmValue $ textFragmentOf s
     KNVar        v         -> SSTmExpr  $ IVar (idOf v)
     KNTuple   _t vs _      -> SSTmExpr  $ ITuple (map idOf vs)
-    KNLetFuns ids funs e   -> SSTmExpr  $ ILetFuns ids funs (tr e)
-    KNLetVal x b e         -> SSTmExpr  $ ILetVal x (tr b) (tr e)
+    KNLetFuns ids funs e   -> SSTmExpr  $ ILetFuns   ids funs           (tr e)
+    KNLetVal x b e         -> SSTmExpr  $ ILetVal      x (tr b)         (tr e)
+    KNLetRec ids exprs e   -> SSTmExpr  $ ILetRec    ids (map tr exprs) (tr e)
     KNCall  _  _t b vs     -> SSTmExpr  $ ICall (idOf b) (map idOf vs)
     KNCallPrim _t b vs     -> SSTmExpr  $ ICallPrim b (map idOf vs)
-    KNIf       _t  v b c   -> SSTmExpr  $ IIf (idOf v) (tr b) (tr c)
-    KNUntil    _t  a b _   -> SSTmExpr  $ IUntil    (tr a) (tr b)
+    KNIf       _t  v b c   -> SSTmExpr  $ IIf      (idOf v) (tr b) (tr c)
+    KNUntil    _t  a b _   -> SSTmExpr  $ IUntil            (tr a) (tr b)
     KNArrayRead _t (ArrayIndex a b _ _)
                            -> SSTmExpr  $ IArrayRead (idOf a) (idOf b)
     KNArrayPoke _t (ArrayIndex b i _ _) v
@@ -374,6 +376,8 @@ stepExpr gs expr = do
     IStore iv ir -> do let (SSLocation z) = getval gs ir
                        let gs' = modifyHeapWith gs z (\_ -> getval gs iv)
                        return $ withTerm gs' unit
+
+    ILetRec  ids exprs e -> error $ "Smallstep.hs: cannot yet handle ILetRec."
 
     ILetFuns ids fns e ->
       let extenv = extendEnv (envOf gs) ids (map clo fns)

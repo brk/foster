@@ -95,7 +95,7 @@ data Pattern ty =
         | P_Tuple         SourceRange ty [Pattern ty]
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
--- ||||||||||||||||||| Data Types, Int Literals |||||||||||||||||{{{
+-- ||||||||||||||||||| Data Types |||||||||||||||||||||||||||||||{{{
 data DataType ty = DataType {
     dataTypeName      :: DataTypeName
   , dataTypeTyFormals :: [TypeFormalAST]
@@ -119,7 +119,7 @@ data CtorInfo ty = CtorInfo { ctorInfoId :: CtorId
                             , ctorInfoDc :: DataCtor ty
                             } deriving Show -- for Typecheck
 
-type CtorName    = T.Text
+type CtorName     = T.Text
 type DataTypeName = String
 
 data DataTypeSig   = DataTypeSig (Map CtorName CtorId)
@@ -128,6 +128,12 @@ data DataTypeSig   = DataTypeSig (Map CtorName CtorId)
 -- A pair (n, c) in an occurrence means "field n of the struct type for ctor c".
 type FieldOfCtor ty = (Int, CtorInfo ty)
 type Occurrence ty = [FieldOfCtor ty]
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+-- ||||||||||||||||||| Literals |||||||||||||||||||||||||||||||||{{{
+data Literal = LitInt   LiteralInt
+             | LitFloat LiteralFloat
+             | LitText  T.Text
+             | LitBool  Bool
 
 data LiteralInt = LiteralInt { litIntValue   :: Integer
                              , litIntMinBits :: Int
@@ -138,6 +144,12 @@ data LiteralInt = LiteralInt { litIntValue   :: Integer
 data LiteralFloat = LiteralFloat { litFloatValue   :: Double
                                  , litFloatText    :: String
                                  }
+
+instance Pretty Literal where
+  pretty (LitInt int) = red     $ text (litIntText int)
+  pretty (LitFloat f) = dullred $ text (litFloatText f)
+  pretty (LitText  t) =  dquotes (text $ T.unpack t)
+  pretty (LitBool  b) =           text (if b then "True" else "False")
 
 data WholeProgramAST fnCtor ty = WholeProgramAST {
           programASTmodules    :: [ModuleAST fnCtor ty]
@@ -527,6 +539,7 @@ deriving instance (Show ty) => Show (FosterPrim ty)
 deriving instance Show CoroPrim
 deriving instance Show LiteralInt
 deriving instance Show LiteralFloat
+deriving instance Show Literal
 
 deriving instance Functor Pattern
 deriving instance Functor TypedId

@@ -65,10 +65,7 @@ monoKN subst e =
  in
  case e of
   -- These cases are trivially inductive.
-  KNBool          t b      -> return $ KNBool          (qt t) b
-  KNString        t s      -> return $ KNString        (qt t) s
-  KNInt           t i      -> return $ KNInt           (qt t) i
-  KNFloat         t f      -> return $ KNFloat         (qt t) f
+  KNLiteral       t lit    -> return $ KNLiteral       (qt t) lit
   KNTuple         t vs a   -> return $ KNTuple         (qt t) (map qv vs) a
   KNKillProcess   t s      -> return $ KNKillProcess   (qt t) s
   KNCall       tc t v vs   -> return $ KNCall       tc (qt t) (qv v) (map qv vs)
@@ -323,12 +320,9 @@ alphaRename fn = do
     renameKN :: KNExpr -> Renamed KNExpr
     renameKN e =
       case e of
-      KNBool          {}       -> return $ e
-      KNString        {}       -> return $ e
-      KNInt           {}       -> return $ e
-      KNFloat         {}       -> return $ e
+      KNLiteral       {}       -> return e
+      KNKillProcess   {}       -> return e
       KNTuple         t vs a   -> mapM qv vs     >>= \vs' -> return $ KNTuple t vs' a
-      KNKillProcess   {}       -> return $ e
       KNCall       tc t v vs   -> mapM qv (v:vs) >>= \(v':vs') -> return $ KNCall tc t v' vs'
       KNCallPrim      t p vs   -> liftM  (KNCallPrim      t p) (mapM qv vs)
       KNAppCtor       t c vs   -> liftM  (KNAppCtor       t c) (mapM qv vs)
