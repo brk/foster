@@ -33,10 +33,10 @@ getCtorInfo datatypes = Map.unionsWith (++) $ map getCtorInfoList datatypes
 -----------------------------------------------------------------------
 
 ctorIdFor :: String -> DataCtor t -> (CtorName, CtorId)
-ctorIdFor name ctor = (dataCtorName ctor, ctorId name ctor)
+ctorIdFor tynm ctor = (dataCtorName ctor, ctorId tynm ctor)
 
-ctorId   nm (DataCtor ctorName n _tyformals types) =
-  CtorId nm (T.unpack ctorName) (Prelude.length types) n
+ctorId   tynm (DataCtor ctorName n _tyformals types) =
+  CtorId tynm (T.unpack ctorName) (Prelude.length types) n
 
 -----------------------------------------------------------------------
 

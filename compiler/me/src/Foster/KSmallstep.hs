@@ -211,7 +211,7 @@ data IExpr =
         | IUntil                SSTerm     SSTerm
         | ICall         Ident  [Ident]
         | ICallPrim     ILPrim [Ident]
-        | ICase         Ident  {-(DecisionTree KNExpr)-} [(Pattern TypeIL, SSTerm)]
+        | ICase         Ident  {-(DecisionTree KNExpr)-} [(Pattern TypeIL, SSTerm)] [Pattern TypeIL]
         | ITyApp        Ident  [TypeIL]
         | IAppCtor      CtorId [Ident]
         deriving (Show)
@@ -263,7 +263,7 @@ ssTermOfExpr expr =
     KNStore    _t a b      -> SSTmExpr  $ IStore (idOf a) (idOf b)
     KNTyApp    _t v argtys -> SSTmExpr  $ ITyApp (idOf v) argtys
     KNCase _t a bs {-dt-}  -> SSTmExpr  $ ICase (idOf a) {-dt-} [(p, tr e) |
-                                                              ((p, _), e) <- bs]
+                                                              ((p, _), e) <- bs] []
     KNAppCtor     _t cid vs-> SSTmExpr  $ IAppCtor cid (map idOf vs)
     KNKillProcess _t msg   -> SSTmExpr  $ error $ "prim kill-process: " ++ T.unpack msg
 
@@ -385,14 +385,15 @@ stepExpr gs expr = do
       in
       return $ withTerm (withEnv gs extenv) e
 
-    ICase  a {-_dt-} [] ->
+    ICase  a {-_dt-} [] rejectedPatterns ->
         error $ "Smallstep.hs: Pattern match failure when evaluating case expr!"
              ++ "\n\tFailing value: " ++ (show $ getval gs a)
-    ICase  a {- dt-} ((p, e):bs) ->
+             ++ "\n\tRejected patterns: " ++ (show (list $ map pretty rejectedPatterns))
+    ICase  a {- dt-} ((p, e):bs) rejectedPatterns ->
        -- First, interpret the pattern list directly
        -- (using recursive calls to discard unmatched branches).
        case matchPattern p (getval gs a) of
-         Nothing -> return $ withTerm gs (SSTmExpr $ ICase a {-dt-} bs)
+         Nothing -> return $ withTerm gs (SSTmExpr $ ICase a {-dt-} bs (p:rejectedPatterns))
          Just varsvals ->
            -- Then check that interpreting the decision tree
            -- gives identical results to direct pattern interpretation.
@@ -463,10 +464,6 @@ stepExpr gs expr = do
 -- |||||||||||||||||||||||| Pattern Matching ||||||||||||||||||||{{{
 matchPattern :: Pattern TypeIL -> SSValue -> Maybe [(Ident, SSValue)]
 matchPattern p v =
-  let trivialMatchSuccess = Just [] in
-  let matchFailure        = Nothing in
-  let matchIf cond = if cond then trivialMatchSuccess
-                             else matchFailure in
   case (v, p) of
     (_, P_Wildcard _ _  ) -> trivialMatchSuccess
     (_, P_Variable _ tid) -> Just [(tidIdent tid, v)]
@@ -484,6 +481,11 @@ matchPattern p v =
 
     (SSTuple vals, P_Tuple _ _ pats) -> matchPatterns pats vals
     (_, P_Tuple _ _ _) -> matchFailure
+ where
+   trivialMatchSuccess = Just []
+   matchFailure        = Nothing
+   matchIf cond = if cond then trivialMatchSuccess
+                          else matchFailure
 
 matchPatterns :: [Pattern TypeIL] -> [SSValue] -> Maybe [(Ident, SSValue)]
 matchPatterns pats vals = do

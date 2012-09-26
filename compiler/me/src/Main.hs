@@ -229,7 +229,7 @@ typecheckModule verboseMode modast tcenv0 = do
      where nmCTy dc@(DataCtor name _tag tyformals types) =
                  (T.unpack name, ctorTypeAST tyformals dtType types, cid)
                          where dtType = typeOfDataType dt name
-                               cid    = ctorId (T.unpack name) dc
+                               cid    = ctorId (dataTypeName dt) dc
 
    -- TODO: if ctorArgTypes = [], no need to assign a function type for a const.
    ctorTypeAST [] dtType ctorArgTypes =
