@@ -317,18 +317,26 @@ unit = (SSTmValue $ SSTuple [])
 -- Looks up the given id as either a local variable or a proc definition.
 getval :: MachineState -> Ident -> SSValue
 getval gs id =
-  let env = envOf gs in
-  case Map.lookup id env of
+  case Map.lookup id (envOf gs) of
     Just v -> v
     Nothing -> error $ "Unable to get value for " ++ show id
-                      ++ "\n\tenv (unsorted) is " ++ show env
+                      ++ "\n\tenv (unsorted) is " ++ show (envOf gs)
 
 -- Update the current term to be the body of the given procedure, with
 -- the environment set up to match the proc's formals to the given args.
-callFunc gs func args =
-  let names = ssFuncVars func in
-  let extenv = extendEnv (ssFuncEnv func) names args in
-  withTerm (withEnv gs extenv) (ssFuncBody func)
+callFunc :: MachineState -> SSFunc -> [SSValue] ->
+           (MachineState -> SSTerm -> r) -> r
+callFunc gs func args kont =
+                      kont (withEnv gs extenv) (ssFuncBody func)
+  where extenv = extendEnv (ssFuncEnv func) names args
+        names  = ssFuncVars func
+
+evalIf gs v b c kont =
+  case getval gs v of
+    SSBool True  -> kont gs b
+    SSBool False -> kont gs c
+    _ -> error $ "Smallstep.hs: if's conditional was not a boolean: "
+                  ++ show v ++ " => " ++ display (getval gs v)
 
 -- ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -342,13 +350,67 @@ popContext gs =
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+-- |||||||||| (big-step) Evaluating An Expression, Purely |||||||{{{
+-- Unlike stepExpr, evalExpr won't (indeed, cannot) allocate new
+-- heap locations or otherwise affect the abstract machine state.
+-- Note that some concrete allocations (e.g. for tuples or closures)
+-- do not correspond to heap allocations on this abstract machine.
+evalTerm :: MachineState -> SSTerm -> SSValue
+evalTerm _ (SSTmValue v) = v
+evalTerm gs (SSTmExpr expr) = evalExpr gs expr
+
+evalExpr :: MachineState -> IExpr -> SSValue
+evalExpr gs expr =
+  case expr of
+    IVar        id -> getval gs id
+    ITyApp v _argty-> getval gs v
+    ITuple      vs -> SSTuple      (map (getval gs) vs)
+    IAppCtor id vs -> SSCtorVal id (map (getval gs) vs)
+    IDeref      id -> case getval gs id of
+                         SSLocation z -> lookupHeap gs z
+                         other -> error $ "cannot deref non-location value "
+                                                             ++ show other
+    ILetRec  ids terms e -> evalRec gs ids terms e evalTerm evalTerm
+    ILetFuns ids fns   e -> evalRec gs ids fns   e evalFunc evalTerm
+
+    -- We syntatically restrict other expressions from being recursively
+    -- bound, so anything that makes it past typechecking shouldn't fail here.
+    other -> error $ "Smallstep.hs: evalExpr cannot handle " ++ show other
+
+type ExtMachineState = MachineState
+
+-- This helper is called from both evalExpr and stepExpr; the only difference
+-- between the two cases is whether `kont` is evalTerm or withTerm.
+evalRec :: MachineState -> [Ident] -> [term] -> SSTerm
+        -> (ExtMachineState -> term   -> SSValue)
+        -> (ExtMachineState -> SSTerm -> r) -> r
+evalRec gs ids terms e eval kont = kont gs' e
+ where extenv = extendEnv (envOf gs) ids values
+       gs'    = withEnv gs extenv
+       values = map (eval gs') terms
+
+evalFunc gs' fn = ssClosure (ssFunc fn) (envOf gs')
+
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
 -- |||||||||||||||||||||| Stepping An Expression ||||||||||||||||{{{
 stepExpr :: MachineState -> IExpr -> IO MachineState
 stepExpr gs expr = do
   case expr of
-    IVar i         -> do return $ withTerm gs (SSTmValue $ getval gs i)
-    ITuple      vs -> do return $ withTerm gs (SSTmValue $ SSTuple      (map (getval gs) vs))
-    IAppCtor id vs -> do return $ withTerm gs (SSTmValue $ SSCtorVal id (map (getval gs) vs))
+    -- These terms step to a value with no side effects:
+    IVar     {} -> do return $ withTerm gs (SSTmValue $ evalExpr gs expr)
+    ITuple   {} -> do return $ withTerm gs (SSTmValue $ evalExpr gs expr)
+    IAppCtor {} -> do return $ withTerm gs (SSTmValue $ evalExpr gs expr)
+    IDeref   {} -> do return $ withTerm gs (SSTmValue $ evalExpr gs expr)
+    ITyApp   {} -> do return $ withTerm gs (SSTmValue $ evalExpr gs expr)
+
+    ILetRec  ids terms e -> return $ evalRec gs ids terms e evalTerm withTerm
+    ILetFuns ids fns   e -> return $ evalRec gs ids fns   e evalFunc withTerm
+
+    IIf v b c            -> return $ evalIf gs v b c                 withTerm
+
+    -- These cases involve modifying the machine state in ways beyond simple
+    -- environment extensions or heap lookups:
 
     -- If b is a value, we extend the environment and prepare to evaluate e.
     -- But if b is not a value, we must begin stepping it. The straightforward
@@ -370,20 +432,10 @@ stepExpr gs expr = do
 
     IAlloc i     -> do let (loc, gs') = extendHeap gs (getval gs i)
                        return $ withTerm gs' (SSTmValue $ SSLocation loc)
-    IDeref i     -> do case getval gs i of
-                         SSLocation z -> return $ withTerm gs  (SSTmValue $ lookupHeap gs z)
-                         other -> error $ "cannot deref non-location value " ++ show other
+
     IStore iv ir -> do let (SSLocation z) = getval gs ir
                        let gs' = modifyHeapWith gs z (\_ -> getval gs iv)
                        return $ withTerm gs' unit
-
-    ILetRec  ids exprs e -> error $ "Smallstep.hs: cannot yet handle ILetRec."
-
-    ILetFuns ids fns e ->
-      let extenv = extendEnv (envOf gs) ids (map clo fns)
-          clo fn = ssClosure (ssFunc fn) extenv
-      in
-      return $ withTerm (withEnv gs extenv) e
 
     ICase  a {-_dt-} [] rejectedPatterns ->
         error $ "Smallstep.hs: Pattern match failure when evaluating case expr!"
@@ -418,15 +470,8 @@ stepExpr gs expr = do
     ICall b vs ->
         let args = map (getval gs) vs in
         case getval gs b of
-           SSFunc func -> return (callFunc gs func args)
+           SSFunc func -> return (callFunc gs func args withTerm)
            v -> error $ "Cannot call non-function value " ++ display v
-
-    IIf v b c ->
-        case getval gs v of
-           (SSBool True ) -> return $ withTerm gs b
-           (SSBool False) -> return $ withTerm gs c
-           _ -> error $ "if cond was not a boolean: " ++ show v
-                     ++ " => " ++ display (getval gs v)
 
     IUntil c b ->
       let v = (Ident (T.pack "!untilval") 0) in
@@ -457,8 +502,6 @@ stepExpr gs expr = do
         -- The array cells are initially filled with constant zeros,
         -- regardless of what type we will eventually store.
         arrayFrom gs [0 .. i] (\_ _ -> 0)
-
-    ITyApp v _argty -> return $ withTerm gs (SSTmValue $ getval gs v)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||||||| Pattern Matching ||||||||||||||||||||{{{
