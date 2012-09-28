@@ -23,14 +23,18 @@ main = {
   // Unbound type variable
   expect_i1 False ; print_i1 (__COMPILES__  { x:x => 0 }  );
 
-  // IfAST condition must be bool
+  expect_i32 12345;
+  print_i32 12345;
+
+  // IfAST condition must be bool (punning allowed, for now...)
   expect_i1 True  ; print_i1 (__COMPILES__  if True then True else True end);
-  expect_i1 False ; print_i1 (__COMPILES__  if  0   then True else True end);
-  expect_i1 False ; print_i1 (__COMPILES__  if  0   then True else True end);
+  expect_i1 False ; print_i1 (__COMPILES__  if  2   then True else True end);
+  expect_i1 True  ; print_i1 (__COMPILES__  if  0   then True else True end);
 
   // IfAST branches must have same type
   expect_i1 True  ; print_i1 (__COMPILES__  if True then True else True end);
-  expect_i1 False ; print_i1 (__COMPILES__  if True then  0   else True end);
+  expect_i1 False ; print_i1 (__COMPILES__  if True then  2   else True end);
+  expect_i1 True  ; print_i1 (__COMPILES__  if True then  0   else True end);
 
   // Call to non-function thing
   expect_i1 False ; print_i1 (__COMPILES__ (0,0) (0));
@@ -94,7 +98,9 @@ main = {
 
 id = { forall t:Boxed, x : t => x };
 
+a :: { Int32 };
 a = { 0 };
+
 b = { x : Int32 => x };
 
 // Just want to make sure these test cases properly codegen.

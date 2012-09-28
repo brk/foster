@@ -70,6 +70,7 @@ extendTyCtx ctx ktvs = ctx { contextTypeBindings =
 data TcEnv = TcEnv { tcEnvUniqs        :: IORef Uniq
                    , tcUnificationVars :: IORef [MetaTyVar TypeAST]
                    , tcParents         :: [ExprAST TypeAST]
+                   , tcMetaIntConstraints :: IORef (Map (MetaTyVar TypeAST) Int)
                    }
 
 newtype Tc a = Tc (TcEnv -> IO (OutputOr a))
@@ -117,6 +118,9 @@ tcFailsMore errs = do
     (e:_) -> tcFails $ errs ++ [text $ "Unification failure triggered when " ++
                   "typechecking source line:" ++ highlightFirstLine (rangeOf e)]
 
+sanityCheck :: Bool -> String -> Tc ()
+sanityCheck cond msg = if cond then return () else tcFails [red (text msg)]
+
 readTcMeta :: MetaTyVar ty -> Tc (Maybe ty)
 readTcMeta m = tcLift $ readIORef (mtvRef m)
 
@@ -124,6 +128,17 @@ writeTcMeta :: MetaTyVar ty -> ty -> Tc ()
 writeTcMeta m v = do
   --tcLift $ putStrLn $ "=========== Writing meta type variable: " ++ show (MetaTyVar m) ++ " := " ++ show v
   tcLift $ writeIORef (mtvRef m) (Just v)
+
+-- A "shallow" alternative to zonking which only peeks at the topmost tycon
+shallowZonk :: TypeAST -> Tc TypeAST
+shallowZonk (MetaTyVar m) = do
+         mty <- readTcMeta m
+         case mty of
+             Nothing -> return (MetaTyVar m)
+             Just ty -> do ty' <- shallowZonk ty
+                           writeTcMeta m ty'
+                           return ty'
+shallowZonk t = return t
 
 newTcSkolem (tv, k) = do u <- newTcUniq
                          return (SkolemTyVar (nameOf tv) u k)
@@ -170,6 +185,25 @@ tcFresh s = tcFreshT (T.pack s)
 
 tcGetCurrentHistory :: Tc [ExprAST TypeAST]
 tcGetCurrentHistory = Tc $ \env -> do retOK $ Prelude.reverse $ tcParents env
+
+instance Ord (MetaTyVar TypeAST) where
+  compare m1 m2 = compare (mtvUniq m1) (mtvUniq m2)
+
+tcUpdateIntConstraint :: MetaTyVar TypeAST -> Int -> Tc ()
+tcUpdateIntConstraint km n = Tc $ \env -> do
+  modifyIORef (tcMetaIntConstraints env) (Map.insertWith max km n)
+  retOK ()
+
+instance Show (MetaTyVar TypeAST) where show m = show (pretty (MetaTyVar m))
+
+tcApplyIntConstraints :: Tc ()
+tcApplyIntConstraints = Tc $ \env -> do
+  map <- readIORef (tcMetaIntConstraints env)
+  mapM_ (\(m, neededBits) -> do putStrLn $ "applying int constraint: " ++ show m ++ " ~ " ++ show neededBits
+                                writeIORef (mtvRef m)
+                                    (Just $ PrimIntAST $ sizeOfBits neededBits))
+        (Map.toList map)
+  retOK ()
 
 -- The type says it all: run a Tc action, and capture any errors explicitly.
 tcIntrospect :: Tc a -> Tc (OutputOr a)

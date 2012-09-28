@@ -34,6 +34,9 @@ class TExpr a t where
 class TypedWith a t where
     typeOf :: a -> t
 
+class IntSized t where
+    intSizeOf :: t -> Int
+
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 data CompilesResult expr = CompilesResult (OutputOr expr)
@@ -49,9 +52,12 @@ data SafetyGuarantee = SG_Static | SG_Dynamic               deriving (Show)
 data ArrayIndex expr = ArrayIndex expr expr SourceRange
                                             SafetyGuarantee deriving (Show)
 
+-- In contrast to meta type variables, the IORef for inferred types
+-- can contain a sigma, not just a tau. See Typecheck.hs for details.
+data Expected t = Infer (IORef t) | Check t
+
 data TyVar = BoundTyVar  String -- bound by a ForAll, that is
            | SkolemTyVar String Uniq Kind
-
 
 instance Pretty TyVar where
   pretty (BoundTyVar name) = text "'" <> text name
@@ -430,10 +436,19 @@ type MayGCConstraints = Map Ident MayGCConstraint
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||||||||| Instances ||||||||||||||||||||||||||{{{
 
+instance IntSized IntSizeBits where intSizeOf = intOfSize
+
 intOfSize I1 = 1
 intOfSize I8 = 8
 intOfSize I32 = 32
 intOfSize I64 = 64
+
+sizeOfBits :: Int -> IntSizeBits
+sizeOfBits 1           = I1
+sizeOfBits n | n <= 8  = I8
+sizeOfBits n | n <= 32 = I32
+sizeOfBits n | n <= 64 = I64
+sizeOfBits n = error $ "TypecheckInt.hs:sizeOfBits: Unsupported size: " ++ show n
 
 instance Pretty IntSizeBits    where pretty i = text (show $ intOfSize i)
 instance Pretty Ident          where pretty id = text (show id)

@@ -17,11 +17,8 @@ import Foster.Context
 import Foster.AnnExpr
 import Foster.TypeAST
 
-sanityCheck :: Bool -> String -> Tc ()
-sanityCheck cond msg = if cond then return () else tcFails [red (text msg)]
-
-typecheckInt :: ExprAnnot -> String -> Maybe TypeAST -> Tc (AnnExpr Rho)
-typecheckInt annot originalText _expTyTODO = do
+typecheckInt :: ExprAnnot -> String -> Expected TypeAST -> Tc (AnnExpr Rho)
+typecheckInt annot originalText expTy = do
     let goodBases = [2, 8, 10, 16]
     let maxBits = 32
     (clean, base) <- extractCleanBase originalText
@@ -35,7 +32,13 @@ typecheckInt annot originalText _expTyTODO = do
     sanityCheck (activeBits <= maxBits)
                 ("Integers currently limited to " ++ show maxBits ++ " bits, "
                                   ++ clean ++ " requires " ++ show activeBits)
-    return (AnnLiteral annot (PrimIntAST $ sizeOfBits maxBits) (LitInt int))
+
+    -- No need to unify with Infer here because tcRho does it for us.
+    ty <- case expTy of
+             Infer _ -> newTcUnificationVarTau $ "int-lit"
+             Check t -> return t
+
+    return (AnnLiteral annot ty (LitInt int))
  where
         onlyValidDigitsIn :: String -> Int -> Bool
         onlyValidDigitsIn str lim =
@@ -79,10 +82,6 @@ typecheckInt annot originalText _expTyTODO = do
                 | n <= 1    = show n
                 | otherwise = lowBitOf n ++ reverseBitStringOf (Bits.shiftR n 1)
                         where lowBitOf n = if even n then "1" else "0"
-
-        sizeOfBits :: Int -> IntSizeBits
-        sizeOfBits 32 = I32
-        sizeOfBits n = error $ "TypecheckInt.hs:sizeOfBits: Only support i32 for now, not " ++ show n
 
 typecheckRat :: ExprAnnot -> String -> Maybe TypeAST -> Tc (AnnExpr Rho)
 typecheckRat annot originalText _expTyTODO = do

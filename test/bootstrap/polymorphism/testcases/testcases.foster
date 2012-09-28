@@ -18,7 +18,7 @@ t0 = {
       //bc = { forall b:Boxed c:Boxed, x:(b,c) => x };
       //aa = { forall a:Boxed, y:a => y };
    in
-      0
+      ()
   end
 };
 

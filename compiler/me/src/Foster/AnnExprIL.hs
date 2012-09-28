@@ -4,14 +4,14 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.AnnExprIL (AIExpr(..), fnOf) where
+module Foster.AnnExprIL (AIExpr(..), fnOf, collectIntConstraints) where
 
 import Foster.Base
 import Foster.Kind
 import Foster.Context
 import Foster.AnnExpr
 import Foster.TypeIL
-import Foster.TypeAST(TypeAST)
+import Foster.TypeAST(TypeAST(PrimIntAST, MetaTyVar))
 
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T
@@ -56,6 +56,26 @@ data AIExpr =
                     , aiTyAppExpr        :: AIExpr
                     , aiTyAppArgTypes    :: [TypeIL] }
 
+collectIntConstraints :: AnnExpr TypeAST -> Tc ()
+collectIntConstraints ae =
+    case ae of
+        AnnCompiles _ _ty (CompilesResult ooe) -> do
+                _ <- tcIntrospect (tcInject collectIntConstraints ooe)
+                return ()
+        AnnLiteral _ ty (LitInt int) -> do
+          -- We can't directly mutate the meta type variable for int literals,
+          -- because of code like       print_i8 ({ 1234 } !)   where the
+          -- constraint that the literal fit an i8 cannot be discarded.
+          -- So we collect all the constraints in a pre-pass, and then fix up
+          -- un-constrained meta ty vars, while leaving constrained ones alone.
+          ty' <- shallowZonk ty
+          case ty' of
+            MetaTyVar m -> do
+                    tcUpdateIntConstraint m (litIntMinBits int)
+            _ -> do return ()
+
+        _ -> mapM_ collectIntConstraints (childrenOf ae)
+
 ail :: Context ty -> AnnExpr TypeAST -> Tc AIExpr
 ail ctx ae =
     let q  = ail  ctx in
@@ -67,6 +87,9 @@ ail ctx ae =
                 return $ AILiteral boolTypeIL (LitBool (isOK oox))
         AnnKillProcess _rng t m -> do ti <- qt t
                                       return $ AIKillProcess ti m
+        AnnLiteral annot ty (LitInt int) -> do ailInt (annotRange annot) int ty
+                                               ti <- qt ty
+                                               return $ AILiteral ti (LitInt int)
         AnnLiteral _rng ty lit -> do ti <- qt ty
                                      return $ AILiteral ti lit
         AnnIf   _rng  t  a b c -> do ti <- qt t
@@ -172,6 +195,29 @@ ail ctx ae =
                 mapM_ (kindCheckSubsumption (annotRange rng)) (zip ktvs argtys)
 
                 return $ E_AITyApp ti ae argtys
+
+ailInt rng int ty = do
+  -- 1. We need to make sure that the types eventually given to an int
+  --    are large enough to hold it.
+  -- 2. For ints with an un-unified meta type variable,
+  --    such as from silly code like (let x = 0; in () end),
+  --    we should update the int's meta type variable
+  --    with the smallest type that accomodates the int.
+  case ty of
+    PrimIntAST isb -> do
+      sanityCheck (intOfSize isb >= litIntMinBits int) $
+         "Int constraint violated; context-imposed exact size (in bits) was " ++ show (intOfSize isb)
+          ++ "\n                              but the literal intrinsically needs " ++ show (litIntMinBits int)
+                         ++ highlightFirstLine rng
+
+    MetaTyVar m -> do
+      mty <- readTcMeta m
+      case mty of
+        Just t -> do ailInt rng int t
+        Nothing -> do tcFails [text "Int literal should have had type inferred for it!"]
+
+    _ -> do tcFails [text "Unable to assign integer literal the type" <+> pretty ty
+                  ,string (highlightFirstLine rng)]
 
 kindCheckSubsumption :: SourceRange -> ((TyVar, Kind), TypeIL) -> Tc ()
 kindCheckSubsumption rng ((tv, kind), ty) = do

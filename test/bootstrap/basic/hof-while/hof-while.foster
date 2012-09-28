@@ -1,6 +1,6 @@
-hof-while = { t : {Bool} => b : {Int32} =>
+hof-while = { t : {Bool} => b : { () } =>
   if t ! then b ! ; hof-while t b
-          else 0 end
+          else () end
 };
 
 main = {
@@ -47,7 +47,7 @@ stress-hof = { // 100 mm iters => 1000 ms without inlining
   let x = (ref 0);
       n = opaquely_i32 10`000`000; in
     hof-while { x^ <Int32 n } {
-      (x^ +Int32 1) >^ x; 0
+      (x^ +Int32 1) >^ x
     };
   end
 };
@@ -60,9 +60,8 @@ variant-one = {
       n = opaquely_i32 3;
    in
      hof-while { v^ <Int32 n } {
-       print_i32 v^ ; (v^ +Int32 1) >^ v ; 0
+       print_i32 v^ ; (v^ +Int32 1) >^ v
      }
-     ; 0
   end
 };
 
@@ -74,7 +73,7 @@ variant-two = {
       n = opaquely_i32 3;
    in
      hof-while { v^ <Int32 n } {
-       print_i32 v^ ; (v^ +Int32 1) >^ v ; 0
+       print_i32 v^ ; (v^ +Int32 1) >^ v
      }
      // This once triggered a bug where the closure pairs passed to hof-while
      // were being stack-allocated, and TCO resulted in them being clobbered.

@@ -226,12 +226,15 @@ dumpLiteral ty lit =
                                   , PbLetable.type' = Just $ dumpType ty
                                   , PbLetable.pb_int = Just $ PBInt.PBInt
                                                { clean = u8fromString (show $ litIntValue int)
-                                               , bits  = intToInt32   (litIntMinBits int) }
+                                               , bits  = intToInt32 (fixnumTypeSize ty) }
                                   }
     LitFloat f -> P'.defaultValue { PbLetable.tag   = IL_FLOAT
                                   , PbLetable.type' = Just $ dumpType ty
                                   , PbLetable.dval  = Just $ litFloatValue f
                                   }
+
+fixnumTypeSize (LLPrimInt isb) = intOfSize isb
+fixnumTypeSize other = error $ "Expected int literal to have LLPrimInt type; had " ++ show other
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||||||| Expressions |||||||||||||||||||||||||{{{

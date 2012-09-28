@@ -188,15 +188,16 @@ private:
   llvm::APInt* apint;
 
 public:
-  explicit LLInt(const std::string& cleanTextBase10, int activeBits)
+  explicit LLInt(const std::string& cleanTextBase10, int bitSize)
     : LLExpr("LLInt") {
     // Debug builds of LLVM don't ignore leading zeroes when considering
     // needed bit widths.
-    int bitsLLVMneeds = (std::max)(intSizeForNBits(activeBits),
+    int bitsLLVMneeds = (std::max)(intSizeForNBits(bitSize),
                                    (unsigned) cleanText.size());
     int ourSize = intSizeForNBits(bitsLLVMneeds);
+    ASSERT(bitSize == ourSize) << "Integer '" << cleanTextBase10 << "' had "
+                               << bitSize << " bits; needed " << ourSize;
     apint = new llvm::APInt(ourSize, cleanTextBase10, 10);
-    type = TypeAST::i(ourSize);
   }
 
   virtual llvm::Value* codegen(CodegenPass* pass);
@@ -204,9 +205,9 @@ public:
 
   unsigned intSizeForNBits(unsigned n) const {
   // Disabled until we get better inferred literal types
-    //if (n <= 1) return 1;
-    //if (n <= 8) return 8;
-    //if (n <= 16) return 16;
+    if (n <= 1)  return 1;
+    if (n <= 8)  return 8;
+    if (n <= 16) return 16;
     if (n <= 32) return 32;
     if (n <= 64) return 64;
     ASSERT(false) << "Support for arbitrary-precision ints not yet implemented.";

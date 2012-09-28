@@ -22,10 +22,10 @@ tuprefs1 = {
 tuprefs2 = {
   let r = (ref (1, 2, 3, 4)); in
     expect_i32 4;
-    case r^ of (_, _, _, x) -> print_i32 x; 0 end;
+    case r^ of (_, _, _, x) -> print_i32 x end;
     expect_i32 14;
     (11, 12, 13, 14) >^ r;
-    case r^ of (_, _, _, x) -> print_i32 x; 0 end;
+    case r^ of (_, _, _, x) -> print_i32 x end;
   end
 };
 
@@ -58,13 +58,13 @@ ref-if = {
 };
 
 hof-until-if = { c : {Bool} => b : { () } =>
-  if c ! then 0 else let j0 = b !; in hof-until-if c b end
+  if c ! then () else let j0 = b !; in hof-until-if c b end
   end
 };
 
 hof-until-case = { c : {Bool} => b : { () } =>
   case c !
-    of True ->  0
+    of True ->  ()
     of False -> let j0 = b !; in hof-until-case c b end
   end
 };

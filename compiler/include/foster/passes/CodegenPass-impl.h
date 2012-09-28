@@ -49,6 +49,7 @@ bool containsGCablePointers(TypeAST* typ, llvm::Type* ty);
 llvm::Constant* slotSizeOf(llvm::Type* ty);
 
 // From CodegenUtils.cpp
+Value* signExtend(Value* v, llvm::Type* dst);
 void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr);
 void emitFosterArrayBoundsCheck(llvm::Module* mod, llvm::Value* idx64,
                                                    llvm::Value* len64,

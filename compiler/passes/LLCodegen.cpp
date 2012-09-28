@@ -587,9 +587,11 @@ void codegenSwitch(CodegenPass* pass, LLSwitch* sw, llvm::Value* insp_tag) {
     ConstantInt* onVal = getTagForCtorId(c);
 
     ASSERT(si->getCondition()->getType() == onVal->getType())
-        << "switch case and inspected value had different types!"
+        << "switch case and inspected value had different types!\n"
         << "SwitchCase ctor " << (i+1) << "/" << sw->ctors.size()
-           << ": " << c.typeName << "." << c.ctorName << "#" << c.smallId;
+           << ": " << c.typeName << "." << c.ctorName << "#" << c.smallId
+        << "\ncond type: " << str(si->getCondition()->getType())
+                      << "; val type: " << str(onVal->getType());
 
     si->addCase(onVal, destBB);
   }
@@ -866,6 +868,20 @@ llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
 //////////////// Arrays ////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////{{{
 
+Value* asInt32(Value* v) {
+  if (v->getType()->isIntegerTy(32)) return v;
+  ASSERT(!v->getType()->isIntegerTy(64));
+
+  if (llvm::ConstantInt* ci = dyn_cast<llvm::ConstantInt>(v)) {
+    int32_t limit = ~int32_t(0);
+    return builder.getInt32(ci->getLimitedValue(limit));
+  } else {
+    ASSERT(false) << "dynamically sign-extending from " << str(v->getType())
+                  << " due to asInt32\n" << str(v);
+    return signExtend(v, builder.getInt32Ty());
+  }
+}
+
 bool tryBindArray(llvm::Value* base, Value*& arr, Value*& len) {
   // {i64, [0 x T]}*
   if (isPointerToStruct(base->getType())) {
@@ -892,7 +908,7 @@ Value* getArraySlot(Value* base, Value* idx, CodegenPass* pass,
     if (dynCheck) {
       emitFosterArrayBoundsCheck(pass->mod, idx, len, srclines);
     }
-    return getPointerToIndex(arr, idx, "arr_slot");
+    return getPointerToIndex(arr, asInt32(idx), "arr_slot");
   } else {
     ASSERT(false) << "expected array, got " << str(base);
     return NULL;

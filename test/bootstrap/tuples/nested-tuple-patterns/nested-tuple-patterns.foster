@@ -25,8 +25,8 @@ t1 = { e : Int32 =>
 t2 = {
   expect_i32 6;
   print_i32
-    case (1, (2, 3))
-      of (x, (5, q)) -> 7
+    case (1, (22, 3))
+      of (x, (9, q)) -> 7
       of (a, qq    ) -> 6
     end;
 };

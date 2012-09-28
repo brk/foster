@@ -11,14 +11,14 @@ test-capture-one = {
       c = { n +Int32 (opaquely_i32 3) };
      j0 = expect_i32 5;
      j1 = print_i32 (run-clo c);
-  in 0 end
+  in () end
 };
 
 test-capture-zero = {
   let c = { (opaquely_i32 0) +Int32 (opaquely_i32 3) };
      j0 = expect_i32 3;
      j1 = print_i32 (run-clo c);
-  in 0 end
+  in () end
 };
 
 test-run-it = {

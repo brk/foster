@@ -54,7 +54,8 @@ data SPattern t = SP_Wildcard
 
 type DataTypeSigs = Map DataTypeName DataTypeSig
 
-compilePatterns :: [((Pattern t, _binds), a)]
+compilePatterns :: IntSized t
+                => [((Pattern t, _binds), a)]
                 -> DataTypeSigs
                 -> DecisionTree a t
 compilePatterns bs allSigs =
@@ -62,12 +63,12 @@ compilePatterns bs allSigs =
 
   compilePatternRow ((p, _binds), a) = ClauseRow (compilePattern p)
                                                  [compilePattern p] a
-  compilePattern :: Pattern t -> SPattern t
+  compilePattern :: IntSized t => Pattern t -> SPattern t
   compilePattern p = case p of
     (P_Wildcard _ _)       -> SP_Wildcard
     (P_Variable _ v)       -> SP_Variable v
     (P_Bool     _ _ b)     -> SP_Ctor (boolCtor b)     []
-    (P_Int      _ _ i)     -> SP_Ctor (int32Ctor i)    []
+    (P_Int     _ ty i)     -> SP_Ctor (intCtor ty i)   []
     (P_Ctor  _ _ pats nfo) -> SP_Ctor nfo              (map compilePattern pats)
     (P_Tuple _ _ pats)     -> SP_Ctor (tupleCtor pats) (map compilePattern pats)
     where
@@ -79,11 +80,14 @@ compilePatterns bs allSigs =
           boolCtor False = ctorInfo "Bool"  "False" []                     0
           boolCtor True  = ctorInfo "Bool"  "True"  []                     1
           tupleCtor pats = ctorInfo "()"    "()"    (map patternType pats) 0
-          int32Ctor li   = ctorInfo "Int32" "<Int32>" [] $
-                                if litIntMinBits li <= 32
-                                  then fromInteger $ litIntValue li
-                                  else error "cannot cram >32 bits into Int32!"
-
+          intCtor ty li  = ctorInfo ctnm ("<"++ctnm++">") [] tag
+                             where
+                              bits = intSizeOf ty
+                              ctnm = "Int" ++ show bits
+                              tag  = if litIntMinBits li <= bits
+                                      then fromInteger $ litIntValue li
+                                      else error $ "cannot cram " ++ show bits
+                                               ++ " bits into Int"++ show (litIntMinBits li)++"!"
           patternType :: Pattern ty -> ty
           patternType pattern = case pattern of
                   P_Wildcard  _rng ty     -> ty
@@ -218,7 +222,10 @@ swapCol i (ClauseMatrix rows) = ClauseMatrix (map (swapRow i) rows)
 isSignature :: (Set CtorId) -> (Map DataTypeName DataTypeSig) -> Bool
 isSignature ctorSet allSigs =
   case Set.toList (Set.map ctorTypeName ctorSet) of
+    ["Int8"]  -> False
+    ["Int16"] -> False
     ["Int32"] -> False
+    ["Int64"] -> False
     ["()"] -> True
     ["Bool"] -> Set.size ctorSet == 2
     [typename] ->

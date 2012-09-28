@@ -20,7 +20,7 @@ import Foster.ExprAST
 import Foster.AnnExpr
 import Foster.Infer
 import Foster.Context
-import Foster.TypecheckInt(sanityCheck, typecheckInt, typecheckRat)
+import Foster.TypecheckInt(typecheckInt, typecheckRat)
 import Foster.Output(OutputOr(Errors), putDocLn)
 import Text.PrettyPrint.ANSI.Leijen
 
@@ -182,7 +182,7 @@ tcRho ctx expr expTy = do
   tcWithScope expr $ do
     case expr of
       E_VarAST    rng v              -> tcRhoVar      ctx rng (evarName v) expTy
-      E_IntAST    rng txt -> (typecheckInt rng txt (expMaybe expTy)) >>= (\v -> matchExp expTy v "tcInt")
+      E_IntAST    rng txt ->            typecheckInt rng txt expTy   >>= (\v -> matchExp expTy v "tcInt")
       E_RatAST    rng txt -> (typecheckRat rng txt (expMaybe expTy)) >>= (\v -> matchExp expTy v "tcRat")
       E_BoolAST   rng b              -> tcRhoBool         rng   b          expTy
       E_StringAST rng txt            -> tcRhoText         rng   txt        expTy
@@ -241,7 +241,6 @@ tcSigmaVar ctx annot name = do
   debugDoc $ green (text "typecheckVar (sigma): ") <> text (T.unpack name ++ "...")
   -- Resolve the given name as either a variable or a primitive reference.
   let query m = termVarLookup name m
-  tcLift $ putDocLn $ text "query cxb: " <+> text (show (query (contextBindings ctx)))
   case (query (contextBindings ctx), query (primitiveBindings ctx)) of
     (Just avar, _           ) -> return $   E_AnnVar     annot avar
     (Nothing, Just (avar, _)) -> return $ mkAnnPrimitive annot avar
@@ -876,6 +875,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
   debugDoc $ text "metavar for overall type of case is " <> pretty u
   debugDoc $ text " exp ty is " <> pretty expTy
   let checkBranch (pat, body) = do
+      tcLift $ putDocLn $ text "checking pattern with context ty " <+> pretty (typeAST ascrutinee) <+> string (highlightFirstLine $ annotRange rng)
       p <- checkPattern ctx pat (typeAST ascrutinee)
       debug $ "case branch pat: " ++ show p
       let bindings = extractPatternBindings p
@@ -900,7 +900,10 @@ tcRhoCase ctx rng scrutinee branches expTy = do
       EP_Bool     r b     -> do let boolexpr = E_BoolAST (ExprAnnot [] r  []) b
                                 annbool <- tcRho ctx boolexpr (Check ctxTy)
                                 return $ P_Bool r (typeAST annbool) b
-      EP_Int      r str   -> do (AnnLiteral _ ty (LitInt int)) <- typecheckInt (ExprAnnot [] r []) str (Just ctxTy)
+      EP_Int      r str   -> do (AnnLiteral _ ty (LitInt int))
+                                         <- typecheckInt (ExprAnnot [] r []) str
+                                                         (Check ctxTy)
+                                tcLift $ putDocLn $ text ("P_Int " ++ str) <+> pretty ctxTy
                                 return $ P_Int r ty int
 
       EP_Ctor     r eps s -> do
@@ -1195,17 +1198,6 @@ zonkType x = do
         CoroTypeAST s r       -> liftM2 (CoroTypeAST  ) (zonkType s) (zonkType r)
         FnTypeAST ss r cc cs  -> do ss' <- mapM zonkType ss ; r' <- zonkType r
                                     return $ FnTypeAST ss' r' cc cs
-
--- We also provide a "shallow" alternative which only peeks at the topmost tycon
-shallowZonk :: TypeAST -> Tc TypeAST
-shallowZonk (MetaTyVar m) = do
-         mty <- readTcMeta m
-         case mty of
-             Nothing -> return (MetaTyVar m)
-             Just ty -> do ty' <- shallowZonk ty
-                           writeTcMeta m ty'
-                           return ty'
-shallowZonk t = return t
 -- }}}
 
 -- {{{ Unification driver
@@ -1296,7 +1288,10 @@ tcDataCtor dtname ctx dc = do
 
 -- {{{ Miscellaneous helpers.
 collectUnboundUnificationVars :: [TypeAST] -> Tc [MetaTyVar TypeAST]
-collectUnboundUnificationVars xs = mapM zonkType xs >>= (return . collectAllUnificationVars)
+collectUnboundUnificationVars xs = do
+  xs' <- mapM zonkType xs
+  return $ [m | m <- collectAllUnificationVars xs' , not $ isForIntLit m]
+    where isForIntLit m = mtvDesc m == "int-lit"
 
 collectAllUnificationVars :: [TypeAST] -> [MetaTyVar TypeAST]
 collectAllUnificationVars xs = Set.toList (Set.fromList (concatMap go xs))
@@ -1313,9 +1308,6 @@ collectAllUnificationVars xs = Set.toList (Set.fromList (concatMap go xs))
             MetaTyVar     m       -> [m]
             RefTypeAST    ty      -> go ty
             ArrayTypeAST  ty      -> go ty
-
-instance Ord (MetaTyVar TypeAST) where
-  compare m1 m2 = compare (mtvUniq m1) (mtvUniq m2)
 
 vname (E_AnnVar _rng (av, _)) n = show n ++ " for " ++ T.unpack (identPrefix $ tidIdent av)
 vname _                       n = show n
@@ -1388,10 +1380,6 @@ update r e_action = do e <- e_action
                        return e
 
 type Term = ExprAST TypeAST
-
--- In contrast to meta type variables, the IORef for inferred types
--- can contain a sigma, not just a tau.
-data Expected t = Infer (IORef t) | Check t
 
 tcVERBOSE = False
 

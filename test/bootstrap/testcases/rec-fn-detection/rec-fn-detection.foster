@@ -15,7 +15,7 @@ test0 = {
             // mis-computed the definition of free variables for let
             // bindings, it will be...
           };
-          in 0 end
+          in () end
 
   );
 
@@ -26,7 +26,7 @@ test0 = {
             rec f = { f ! ; () }; in f ! end
             //  Likewise...          ^
           };
-          in 0 end
+          in () end
 
   );
 
@@ -37,7 +37,7 @@ test0 = {
             case 0 of f -> f end
             // Likewise... ^
           };
-          in 0 end
+          in () end
 
   );
 
@@ -65,9 +65,9 @@ test1 = {
       rec f = { 0 }; in
           let f = {
              // /------------------\ <-- if fvs = {}, wrongly, this is OK
-                let f = f ; in 0 end                        // to let-bind
+                let f = f ; in () end                        // to let-bind
                 //      ^ free reference to rec f binding through let, illegally
-          }; in 0 end
+          }; in () end
       end
   );
 
@@ -76,8 +76,8 @@ test1 = {
   print_i1 (__COMPILES__
       rec f = { 0 }; in
           let f = {
-                rec f = { f ! ; () } ; in 0 end
-          }; in 0 end
+                rec f = { f ! ; () } ; in () end
+          }; in () end
       end
   );
 };
@@ -86,23 +86,23 @@ test1 = {
 test2 = {
 
   expect_i32 3;
-  rec f = { 2 }; in
+  rec f = { 11 }; in
       let f = {
             rec f = { x: Int32 => f x ; () } ; in 3 end
       }; in print_i32 (f !) end
   end;
 
-  expect_i32 2;
+  expect_i32 4;
   rec f = { () }; in
-    rec f = { 2 }; in
+    rec f = { 4 }; in
       print_i32 (f !);
     end
   end;
 
-  expect_i32 0;
-  rec f = { 1 }; in
+  expect_i32 5;
+  rec f = { 12 }; in
       let f = {
-            rec f = { x: Int32 => let f = f x; in 2 end } ; in 0 end
+            rec f = { x: Int32 => let f = f x; in 13 end } ; in 5 end
       }; in print_i32 (f !); end
   end;
 };

@@ -12,7 +12,7 @@ import System.Environment(getArgs,getProgName)
 
 import qualified Data.ByteString.Lazy as L(readFile)
 import qualified Data.Text as T
-import qualified Data.Map as Map(fromList, toList)
+import qualified Data.Map as Map(fromList, toList, empty)
 import qualified Data.Set as Set(filter, toList, fromList, notMember, intersection)
 import qualified Data.Graph as Graph(SCC, flattenSCC, stronglyConnComp)
 import Data.Map(Map)
@@ -36,7 +36,7 @@ import Foster.TypeAST
 import Foster.ParsedType
 import Foster.PrettyExprAST()
 import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn))
-import Foster.AnnExprIL(AIExpr(AILetFuns, AICall, E_AIVar), fnOf)
+import Foster.AnnExprIL(AIExpr(AILetFuns, AICall, E_AIVar), fnOf, collectIntConstraints)
 import Foster.TypeIL(TypeIL(TupleTypeIL, FnTypeIL), ilOf)
 import Foster.ILExpr(ILProgram, showILProgramStructure, prepForCodegen)
 import Foster.KNExpr(KNExpr', kNormalizeModule, renderKN)
@@ -255,6 +255,9 @@ typecheckModule verboseMode modast tcenv0 = do
                       -> [[OutputOr (AnnExpr TypeAST)]]
                       -> Tc (Context TypeIL, ModuleIL AIExpr TypeIL)
    convertTypeILofAST mAST ctx_ast oo_annfns = do
+     mapM_ (tcInject collectIntConstraints) (concat oo_annfns)
+     tcApplyIntConstraints
+
      ctx_il    <- liftContextM   (ilOf ctx_ast) ctx_ast
      decls     <- mapM (convertDecl (ilOf ctx_ast)) (externalModuleDecls mAST)
      primtypes <- mapM (convertDataTypeAST ctx_ast) (moduleASTprimTypes mAST)
@@ -363,10 +366,12 @@ main = do
 
 runCompiler pb_program flagVals outfile = do
    uniqref <- newIORef 1
-   varlist <- liftIO $ newIORef []
+   varlist <- newIORef []
+   icmap   <- newIORef Map.empty
    let tcenv = TcEnv {       tcEnvUniqs = uniqref,
                       tcUnificationVars = varlist,
-                              tcParents = [] }
+                              tcParents = [],
+                   tcMetaIntConstraints = icmap }
    ilprog <- evalStateT (compile pb_program tcenv)
                     CompilerContext {
                            ccVerbose  = getVerboseFlag flagVals

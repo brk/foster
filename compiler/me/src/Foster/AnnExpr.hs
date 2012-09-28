@@ -22,19 +22,8 @@ import qualified Data.Text as T
 data AnnExpr ty =
         -- Literals
           AnnLiteral    ExprAnnot ty Literal
-        {-
-          AnnBool       ExprAnnot ty Bool
-        | AnnString     ExprAnnot ty T.Text
-        | AnnInt        { aintRange  :: ExprAnnot
-                        , aintType   :: ty
-                        , aintLit    :: LiteralInt }
-        | AnnFloat      { afltRange  :: ExprAnnot
-                        , afltType   :: ty
-                        , afltLit    :: LiteralFloat }
-        -}
         | AnnTuple      ExprAnnot ([ty] -> ty) [AnnExpr ty]
         | E_AnnFn       (Fn (AnnExpr ty) ty)
-
         -- Control flow
         | AnnIf         ExprAnnot ty (AnnExpr ty) (AnnExpr ty) (AnnExpr ty)
         | AnnUntil      ExprAnnot ty (AnnExpr ty) (AnnExpr ty)
