@@ -36,6 +36,12 @@ void CodegenPass::popExistingScope(ValueScope* scope) {
 
 ////////////////////////////////////////////////////////////////////
 
+Value* signExtend(Value* v, llvm::Type* dst) {
+  return v->getType()->isIntegerTy(1)
+           ? builder.CreateZExt(v, dst)
+           : builder.CreateSExt(v, dst);
+}
+
 void emitFosterArrayBoundsCheck(llvm::Module* mod, llvm::Value* idx,
                                                    llvm::Value* len64,
                                                    const std::string& srclines) {
@@ -44,8 +50,8 @@ void emitFosterArrayBoundsCheck(llvm::Module* mod, llvm::Value* idx,
 
   Value* msg_array = builder.CreateGlobalString(srclines);
   Value* msg = builder.CreateBitCast(msg_array, builder.getInt8PtrTy());
-  llvm::CallInst* call = builder.CreateCall3(fosterBoundsCheck,
-                          builder.CreateSExt(idx, len64->getType()),
+  Value* ext = signExtend(idx, len64->getType());
+  llvm::CallInst* call = builder.CreateCall3(fosterBoundsCheck, ext,
                                              len64,
                                              msg);
   markAsNonAllocating(call);
@@ -288,7 +294,7 @@ CodegenPass::emitArrayMalloc(TypeAST* elt_type, llvm::Value* n, bool init) {
                                             ->getContainedType(0) // function
                                             ->getContainedType(1); // first arg
   llvm::Value* typemap = builder.CreateBitCast(ti, typemap_type);
-  llvm::Value* num_elts = builder.CreateSExt(n, builder.getInt64Ty(), "ext");
+  llvm::Value* num_elts = signExtend(n, builder.getInt64Ty());
   llvm::Value* vinit   = builder.getInt8(init);
   llvm::CallInst* mem = builder.CreateCall3(memalloc, typemap, num_elts, vinit, "arrmem");
 
