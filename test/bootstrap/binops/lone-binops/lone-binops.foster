@@ -31,3 +31,5 @@ main = {
   print_i32b ((bitshl-Int32) 1111_2 (opaquely_i32 (0 -Int32 1)));
   expect_i32b     ((bitshl-Int32) 1 31);
 };
+
+bitnot-Int32-wrapper = { a : Int32  => prim bitnot-Int32 a };

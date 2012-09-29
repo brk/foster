@@ -45,6 +45,7 @@ data ExprSkel annot ty =
         | E_LetRec        annot [TermBinding ty] (ExprAST ty)
         -- Use of bindings
         | E_VarAST        annot (E_VarAST ty)
+        | E_PrimAST       annot String
         | E_CallAST       annot (ExprAST ty) [ExprAST ty]
         -- Mutable ref cells
         | E_AllocAST      annot (ExprAST ty) AllocMemRegion
@@ -85,6 +86,7 @@ instance Structured (ExprAST t) where
             E_IntAST    _rng txt   -> text $ "IntAST       " ++ txt                            ++ (exprCmnts e)
             E_RatAST    _rng txt   -> text $ "RatAST       " ++ txt                            ++ (exprCmnts e)
             E_CallAST _rng b _args -> text $ "CallAST      " ++ tryGetCallNameE b              ++ (exprCmnts e)
+            E_PrimAST _rng nm      -> text $ "PrimAST      " ++ nm                             ++ (exprCmnts e)
             E_CompilesAST {}       -> text $ "CompilesAST  "                                   ++ (exprCmnts e)
             E_IfAST       {}       -> text $ "IfAST        "                                   ++ (exprCmnts e)
             E_UntilAST _rng _ _    -> text $ "UntilAST     "                                   ++ (exprCmnts e)
@@ -105,14 +107,16 @@ instance Structured (ExprAST t) where
     childrenOf e =
         let termBindingExpr (TermBinding _ e) = e in
         case e of
-            E_StringAST   _rng _s        -> []
-            E_BoolAST     _rng _b        -> []
-            E_IntAST      _rng _txt      -> []
-            E_RatAST      _rng _txt      -> []
-            E_CallAST     _rng b exprs   -> b:exprs
-            E_CompilesAST _rng (Just e)  -> [e]
+            E_StringAST   {}             -> []
+            E_BoolAST     {}             -> []
+            E_IntAST      {}             -> []
+            E_RatAST      {}             -> []
+            E_PrimAST     {}             -> []
+            E_KillProcess {}             -> []
+            E_VarAST      {}             -> []
             E_CompilesAST _rng Nothing   -> []
-            E_KillProcess _rng _         -> []
+            E_CompilesAST _rng (Just e)  -> [e]
+            E_CallAST     _rng b exprs   -> b:exprs
             E_IfAST       _rng    a b c  -> [a, b, c]
             E_UntilAST    _rng a b       -> [a, b]
             E_FnAST       _rng f         -> [fnAstBody f]
@@ -125,7 +129,6 @@ instance Structured (ExprAST t) where
             E_TupleAST    _rng exprs     -> exprs
             E_TyApp       _rng a _t      -> [a]
             E_Case        _rng e bs      -> e:(map snd bs)
-            E_VarAST      _rng _         -> []
             E_LetRec      _rng bnz e     -> [termBindingExpr bnd | bnd <- bnz] ++ [e]
             E_LetAST      _rng bnd e     -> (termBindingExpr bnd):[e]
        where     -- | Converts a right-leaning "list" of SeqAST nodes to a List
@@ -145,6 +148,7 @@ exprAnnot e = case e of
       E_FnAST         annot _     -> annot
       E_LetAST        annot _ _   -> annot
       E_LetRec        annot _ _   -> annot
+      E_PrimAST       annot _     -> annot
       E_CallAST       annot _ _   -> annot
       E_CompilesAST   annot _     -> annot
       E_KillProcess   annot _     -> annot

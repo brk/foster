@@ -10,12 +10,14 @@ import Foster.Base
 import Foster.Kind
 import Foster.ExprAST
 import Foster.ParsedType
+import Foster.TypeAST(gFosterPrimOpsTable)
 import Foster.ProtobufUtils(pUtf8ToText)
 
 import Data.Traversable(fmapDefault)
 import Data.Sequence as Seq
 import Data.Maybe(fromMaybe)
 import Data.Foldable(toList)
+import qualified Data.Map as Map(lookup)
 
 import Control.Monad.State
 import Data.Char(isLower)
@@ -94,7 +96,13 @@ parseCallPrim pbexpr annot = do
                            _                 -> return $ E_StoreAST annot a b
       ("kill-entire-process",  [s@(E_StringAST {})]) ->
                                                 return $ E_KillProcess annot s
-      _ -> error $ "ProtobufFE: unknown primitive/arg combo " ++ show primname
+      (name, args) ->
+        case Map.lookup name gFosterPrimOpsTable of
+          Just _ ->
+            let emptyAnnot = ExprAnnot [] (MissingSourceRange "prim") [] in
+            return $ E_CallAST annot (E_PrimAST emptyAnnot name) args
+          Nothing ->
+            error $ "ProtobufFE: unknown primitive/arg combo " ++ show primname
 
 parseCompiles pbexpr range = do
     let numChildren = Seq.length $ PbExpr.parts pbexpr
@@ -405,6 +413,7 @@ parseSourceModule sm = resolveFormatting m where
        E_IntAST       _ txt      -> liftM2' E_IntAST      ana (return txt)
        E_RatAST       _ txt      -> liftM2' E_RatAST      ana (return txt)
        E_VarAST       _ v        -> liftM2' E_VarAST      ana (return v)
+       E_PrimAST      _ nm       -> liftM2' E_PrimAST     ana (return nm)
 
        E_KillProcess  _ e        -> liftM2' E_KillProcess ana (q e)
        E_CompilesAST  _ me       -> liftM2' E_CompilesAST ana (liftMaybeM q me)

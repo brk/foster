@@ -102,6 +102,7 @@ prettyAtom e =
     E_SeqAST      {} -> parens $ pretty e
     E_CallAST     {} -> parens $ pretty e
 
+    E_PrimAST     {} -> pretty e
     E_StringAST   {} -> pretty e
     E_BoolAST     {} -> pretty e
     E_IntAST      {} -> pretty e
@@ -144,6 +145,7 @@ instance Pretty (ExprAST TypeP) where
             E_KillProcess annot exp -> withAnnot annot $ text "prim kill-entire-process" <+> pretty exp
             E_StringAST   annot s   -> withAnnot annot $ dquotes (text $ T.unpack s)
             E_BoolAST     annot b   -> withAnnot annot $ text $ show b
+            E_PrimAST     annot nm  -> withAnnot annot $ text nm
             E_CallAST annot e []    -> withAnnot annot $ pretty e <+> text "!"
             E_CallAST annot e [e1,e2] | isOperator e
                                     -> withAnnot annot $ pretty e1 <+> pretty e <+> pretty e2
@@ -190,11 +192,9 @@ instance Pretty (ExprAST TypeP) where
             E_ArrayRead   annot ai   -> withAnnot annot $ pretty ai
             E_ArrayPoke   annot ai e -> withAnnot annot $ pretty e <+> text ">^" <+> pretty ai
             E_TupleAST    annot es   -> withAnnot annot $ parens (hsep $ punctuate comma (map pretty es))
-            E_SeqAST annot e1 e2 -> let exprs = childrenOf e in
+            E_SeqAST annot _  _  -> let exprs = childrenOf e in
                                     let seqcat l r = pretty l <> text ";"
                                                  <$> pretty r in
                                     withAnnot annot $
                                         group $ foldl1 seqcat (map pretty exprs)
             E_FnAST annot fn     -> withAnnot annot $ pretty fn
-            other -> error $ "Unhandled: " ++ show other
-

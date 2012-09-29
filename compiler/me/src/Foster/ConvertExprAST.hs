@@ -63,10 +63,11 @@ convertExprAST :: Monad m => (x -> m z) -> ExprAST x -> m (ExprAST z)
 convertExprAST f expr =
   let q = convertExprAST f in
   case expr of
-    E_StringAST    rng s        -> return $ (E_StringAST    rng) s
-    E_BoolAST      rng b        -> return $ (E_BoolAST      rng) b
-    E_IntAST       rng txt      -> return $ (E_IntAST       rng) txt
-    E_RatAST       rng txt      -> return $ (E_RatAST       rng) txt
+    E_StringAST    rng s        -> return $ (E_StringAST  rng) s
+    E_BoolAST      rng b        -> return $ (E_BoolAST    rng) b
+    E_IntAST       rng txt      -> return $ (E_IntAST     rng) txt
+    E_RatAST       rng txt      -> return $ (E_RatAST     rng) txt
+    E_PrimAST      rng nm       -> return $ (E_PrimAST    rng) nm
     E_CompilesAST  rng me       -> liftM  (E_CompilesAST  rng) (liftMaybeM q me)
     E_IfAST        rng    a b c -> liftM3 (E_IfAST        rng)   (q a) (q b) (q c)
     E_UntilAST     rng a b      -> liftM2 (E_UntilAST     rng)   (q a) (q b)

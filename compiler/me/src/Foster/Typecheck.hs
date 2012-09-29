@@ -9,10 +9,10 @@ import qualified Data.List as List(length, zip)
 import Data.List(foldl', (\\))
 import Control.Monad(liftM, forM_, forM, liftM, liftM2, when)
 
-import qualified Data.Text as T(Text, unpack)
+import qualified Data.Text as T(Text, pack, unpack)
 import qualified Data.Map as Map(lookup, insert, elems, toList, null)
 import qualified Data.Set as Set(toList, fromList)
-import Data.IORef(IORef,newIORef,readIORef,writeIORef)
+import Data.IORef(newIORef,readIORef,writeIORef)
 
 import Foster.Base
 import Foster.TypeAST
@@ -182,6 +182,7 @@ tcRho ctx expr expTy = do
   tcWithScope expr $ do
     case expr of
       E_VarAST    rng v              -> tcRhoVar      ctx rng (evarName v) expTy
+      E_PrimAST   rng nm             -> tcRhoPrim     ctx rng (T.pack  nm) expTy
       E_IntAST    rng txt ->            typecheckInt rng txt expTy   >>= (\v -> matchExp expTy v "tcInt")
       E_RatAST    rng txt -> (typecheckRat rng txt (expMaybe expTy)) >>= (\v -> matchExp expTy v "tcRat")
       E_BoolAST   rng b              -> tcRhoBool         rng   b          expTy
@@ -240,11 +241,11 @@ matchExp expTy ann msg =
 tcSigmaVar ctx annot name = do
   debugDoc $ green (text "typecheckVar (sigma): ") <> text (T.unpack name ++ "...")
   -- Resolve the given name as either a variable or a primitive reference.
-  let query m = termVarLookup name m
-  case (query (contextBindings ctx), query (primitiveBindings ctx)) of
-    (Just avar, _           ) -> return $   E_AnnVar     annot avar
-    (Nothing, Just (avar, _)) -> return $ mkAnnPrimitive annot avar
-    (Nothing, Nothing) -> do
+  case (termVarLookup name (contextBindings ctx)
+       ,tcSigmaPrim ctx annot name) of
+    (Just avar, _)       -> return $ E_AnnVar annot avar
+    (Nothing, Just prim) -> return prim
+    (Nothing, Nothing)   -> do
          msg <- getStructureContextMessage
          tcFails [text $ "Unknown variable " ++ T.unpack name
                   ++ showSourceRange (annotRange annot)
@@ -269,6 +270,25 @@ tcRhoVar ctx rng name expTy = do
      debugDoc $ green (text "typecheckVar v_sigma: ") <> text (T.unpack name ++ " :: " ++ show (typeAST v_sigma))
      debugDoc $ green (text "typecheckVar ann_var: ") <> text (T.unpack name ++ " :: " ++ show (typeAST ann_var))
      matchExp expTy ann_var "var"
+
+tcSigmaPrim ctx annot name = do
+  case termVarLookup name (primitiveBindings ctx) of
+    Just (avar, _) -> Just $ mkAnnPrimitive annot avar
+    Nothing        -> Nothing
+
+tcRhoPrim ctx annot name expTy = do
+     case tcSigmaPrim ctx annot name of
+
+       Just v_sigma -> do
+         ann_var <- inst v_sigma "tcRhoVar"
+         matchExp expTy ann_var "var"
+
+       Nothing -> do
+         msg <- getStructureContextMessage
+         tcFails [text $ "Unknown variable " ++ T.unpack name
+                  ++ showSourceRange (annotRange annot)
+                  ++ "ctx: "++ unlines (map show (Map.toList $ contextBindings ctx))
+                  ++ "\nhist: " , msg]
 
 mkAnnPrimitive annot tid =
   AnnPrimitive annot (tidType tid) $
