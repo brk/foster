@@ -35,4 +35,5 @@ data Flag = Interpret String
           | DumpFn    String
           | ProgArg   String
           | Verbose
+          | DumpPrims
           deriving Eq

@@ -18,6 +18,7 @@ import qualified Data.Graph as Graph(SCC, flattenSCC, stronglyConnComp)
 import Data.Map(Map)
 import Data.Set(Set)
 
+import qualified Data.Char as Char(isAlphaNum)
 import Data.IORef(IORef, newIORef, readIORef)
 import Data.Traversable(mapM)
 import Prelude hiding (mapM)
@@ -350,19 +351,25 @@ isTau t = all isTau (childrenOf t)
 
 main = do
   args <- getArgs
-  (protobuf, outfile, flagVals) <- case args of
-         (infile : outfile : rest) -> do
-                protobuf <- L.readFile infile
-                flagVals <- parseOpts rest
-                return (protobuf, outfile, flagVals)
-         _ -> do
-                self <- getProgName
-                return (error $ "Usage: " ++ self
-                        ++ " path/to/infile.pb path/to/outfile.pb")
+  case args of
+    (infile : outfile : rest) -> do
+       protobuf <- L.readFile infile
+       flagVals <- parseOpts rest
+       case messageGet protobuf of
+        Left msg -> error $ "Failed to parse protocol buffer.\n" ++ msg
+        Right (pb_program, _) ->
+          runCompiler pb_program flagVals outfile
 
-  case messageGet protobuf of
-    Left msg -> error $ "Failed to parse protocol buffer.\n" ++ msg
-    Right (pb_program, _) -> runCompiler pb_program flagVals outfile
+    rest -> do
+      flagVals <- parseOpts rest
+      if getDumpPrimitives flagVals
+        then do
+           mapM_ dumpPrimitive (Map.toList gFosterPrimOpsTable)
+        else do
+           self <- getProgName
+           return (error $ "Usage: " ++ self
+                   ++ " path/to/infile.pb path/to/outfile.pb")
+
 
 runCompiler pb_program flagVals outfile = do
    uniqref <- newIORef 1
@@ -531,6 +538,21 @@ showGeneratedMetaTypeVariables varlist ctx_il =
          else putDocLn (text $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t)
     putDocLn $ (outLn "vvvv contextBindings:====================")
     putDocLn $ (dullyellow $ vcat $ map (text . show) (Map.toList $ contextBindings ctx_il))
+
+dumpPrimitive (name, ((FnTypeAST args ret _ _), _primop)) = do
+  let allNames = "abcdefghijklmnop"
+  let namesArgs = [(text (name:[]) , arg) | (name, arg) <- zip allNames args]
+  let textid str = if Char.isAlphaNum (head str)
+                           then         text str
+                           else parens (text str)
+  putDocLn $ (fill 20 $ textid name)
+             <> text " = {"
+                 <+> hsep [fill 10 (name <+> text ":" <+> pretty arg) <+> text "=>"
+                          | (name, arg) <- namesArgs]
+                 <+> text "prim" <+> text name <+> hsep (map fst namesArgs)
+             <+> text "}; // :: " <> pretty ret
+
+dumpPrimitive (name, (_ty, _primop)) = error $ "Can't dump primitive " ++ name ++ " yet."
 
 whenDumpIR :: String -> IO () -> Compiled ()
 whenDumpIR ir action = do flags <- gets ccFlagVals

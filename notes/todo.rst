@@ -45,13 +45,9 @@ General Compiler Structure Improvements
 ---------------------------------------
 * Move pattern match compilation earlier in the pipeline?
         * Requires "hand-compiling" pattern matches on env tuples.
-* More regular IL constructs for recursive values and/or closures.
+* More regular IL constructs for recursive values and/or closures. (started)
 * Use newtypes to distinguish old-vs-new cases when doing
   transformations from an IR to an implicit subset.
-
-* Better phi handling:
-  * Args to postalloca phi use emit()
-  * Args to internal (non-postalloca) phis use codegen()
 
 TODO: libraries, benchmarks, & applications
 -------------------------------------------
@@ -70,6 +66,11 @@ TODO: libraries, benchmarks, & applications
 * Growable vectors
 * Parallel benchmarks?
 * Timing infrastructure
+
+* "Global" constants
+  * Non-GCed values are easy.
+  * GCed values need to be registered with the GC when initialized.
+  * Need to decide how to deal with module-level initialization in a sane way.
 
 TODO: benchmarks
 ----------------
@@ -96,7 +97,6 @@ TODO: minor optimizations
   identical to (some subterm of) the inspected value).
 * Make sure linear chains of variable remappings don't trigger O(n^2) behavior.
         should be fixed now, but should still test just in case
-* Eliminating redundant stack slots for phi nodes?
 * Arity raising/unit elimination
 * Worker/wrapper for closures??
 * Track integer ranges and omit bitshift masks when possible.
@@ -221,7 +221,7 @@ TODO: design & implementation
 
 * Primitive types
   * Integer vs Int32 ?
-    * Determining types of literals
+    * Determining types of literals - now DONE by inference.
     * Overloading of operators like +
       * Abstrcting over one type   : simply-typed functions
       * Abstracting over all types : polymorphic  functions
