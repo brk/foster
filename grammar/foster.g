@@ -14,7 +14,7 @@ tokens {
 
   IF='if'; THEN='then'; ELSE='else'; TRU='True'; FLS='False';
   CASE='case'; END='end'; OF='of';
-  AND='and'; OR='or'; EQ='=';
+  AND='and'; OR='or'; EQ='='; MINUS='-';
   TYPE='type';
   COMPILES='__COMPILES__';
 
@@ -90,9 +90,9 @@ e    :
 
 binops  :       (opr phrase)+;
 
-phrase  :       lvalue+                         -> ^(PHRASE lvalue+)
+phrase  :       '-'?   lvalue+                  -> ^(PHRASE '-'? lvalue+)
         |       'prim' name lvalue*             -> ^(PRIMAPP name lvalue*);
-lvalue  :       atom suffix*                    -> ^(LVALUE atom suffix*);
+lvalue  :              atom suffix*             -> ^(LVALUE atom suffix*);
 
 type_application
         :	':[' t (',' t)* ']'          -> ^(VAL_TYPE_APP t+) // type application
@@ -180,6 +180,7 @@ tannots :  binding (',' binding)* -> ^(BINDING binding+);
 
 // Numbers are things like:
 //    1
+//    -2
 //    1234
 //    10101011_2
 //    1011`1011_2
@@ -201,7 +202,7 @@ tannots :  binding (',' binding)* -> ^(BINDING binding+);
 */
 
 num : NUM -> ^(LIT_NUM NUM);
-NUM			:  DIGIT HEX_CLUMP? ('`' HEX_CLUMP)*
+NUM			:  '-'? DIGIT HEX_CLUMP? ('`' HEX_CLUMP)*
 				( '.' DIGIT* ('`' DIGIT+)* SCI_NOTATION?
 				|                          INT_RAT_BASE?
 				);

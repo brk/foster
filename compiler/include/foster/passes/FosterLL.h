@@ -204,7 +204,6 @@ public:
   llvm::APInt& getAPInt() { return *apint; }
 
   unsigned intSizeForNBits(unsigned n) const {
-  // Disabled until we get better inferred literal types
     if (n <= 1)  return 1;
     if (n <= 8)  return 8;
     if (n <= 16) return 16;

@@ -581,10 +581,20 @@ ExprAST* parseLValue(pTree tree) {
 }
 
 ExprAST* parseCall(pTree tree) {
-  ExprAST* base = parseLValue(child(tree, 0));
-  if (getChildCount(tree) == 1) { return base; }
+  bool is_negated = typeOf(child(tree, 0)) == MINUS;
+  unsigned  index = is_negated ? 1 : 0;
+
+  if (is_negated) {
+    EDiag() << "no support yet for negated expressions" << show(rangeOf(tree));
+    // In particular, we need a better story about overloading,
+    // so we can support, e.g.,  -(a *f64 b) rather than ((0.0 -f64 a) *f64 b).
+    return NULL;
+  }
+
+  ExprAST* base = parseLValue(child(tree, index));
+  if (getChildCount(tree) == index + 1 && !is_negated) { return base; }
   Exprs exprs;
-  for (size_t i = 1; i < getChildCount(tree); ++i) {
+  for (size_t i = index + 1; i < getChildCount(tree); ++i) {
     exprs.push_back(parseLValue(child(tree, i)));
   }
   return new CallAST(base, exprs, rangeOf(tree));
@@ -600,7 +610,7 @@ ExprAST* parsePrimApp(pTree tree) {
   return new CallPrimAST(name, exprs, rangeOf(tree));
 }
 
-// ^(PHRASE lvalue+) | ^(PRIMAPP id lvalue*)
+// ^(PHRASE '-'? lvalue+) | ^(PRIMAPP id lvalue*)
 ExprAST* parsePhrase(pTree tree) {
   int token = typeOf(tree);
   if (token == PHRASE) { return parseCall(tree); }

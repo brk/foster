@@ -21,13 +21,13 @@ typecheckInt :: ExprAnnot -> String -> Expected TypeAST -> Tc (AnnExpr Rho)
 typecheckInt annot originalText expTy = do
     let goodBases = [2, 8, 10, 16]
     let maxBits = 32
-    (clean, base) <- extractCleanBase originalText
+    (negated, clean, base) <- extractCleanBase originalText
     sanityCheck (base `Prelude.elem` goodBases)
                 ("Integer base must be one of " ++ show goodBases
                                     ++ "; was " ++ show base)
     sanityCheck (onlyValidDigitsIn clean base)
                 ("Cleaned integer must contain only hex digits: " ++ clean)
-    let int = precheckedLiteralInt originalText maxBits clean base
+    let int = precheckedLiteralInt originalText negated clean base
     let activeBits = litIntMinBits int
     sanityCheck (activeBits <= maxBits)
                 ("Integers currently limited to " ++ show maxBits ++ " bits, "
@@ -47,14 +47,18 @@ typecheckInt annot originalText expTy = do
 
         indexOf x = (toLower x) `List.elemIndex` "0123456789abcdef"
 
-        -- Given "raw" integer text like "123`456_10",
-        -- return ("123456", 10)
-        extractCleanBase :: String -> Tc (String, Int)
+        -- Given "raw" integer text like "-123`456_10",
+        -- return (True, "123456", 10)
+        extractCleanBase :: String -> Tc (Bool, String, Int)
         extractCleanBase raw = do
-            let noticks = Prelude.filter (/= '`') raw
+            let getNeg ('-':first, base) = (True,  first, base)
+                getNeg (    first, base) = (False, first, base)
+
+                noticks = Prelude.filter (/= '`') raw
+
             case splitString "_" noticks of
-                [first, base] -> return (first, read base)
-                [first]       -> return (first, 10)
+                [first, base] -> return $ getNeg (first, read base)
+                [first]       -> return $ getNeg (first, 10)
                 _otherwise    -> tcFails
                    [text "Unable to parse integer literal" <+> text raw]
 
@@ -63,10 +67,12 @@ typecheckInt annot originalText expTy = do
             map T.unpack $ T.splitOn (T.pack needle) (T.pack haystack)
 
         -- Precondition: the provided string must be parseable in the given radix
-        precheckedLiteralInt :: String -> Int -> String -> Int -> LiteralInt
-        precheckedLiteralInt originalText _maxBits clean base =
-            let integerValue = parseRadixRev (fromIntegral base) (List.reverse clean) in
-            let activeBits = List.length (bitStringOf integerValue) in
+        precheckedLiteralInt :: String -> Bool -> String -> Int -> LiteralInt
+        precheckedLiteralInt originalText negated clean base =
+            let nat = parseRadixRev (fromIntegral base) (List.reverse clean) in
+            let activeBits = List.length (bitStringOf nat)
+                                                 + (if negated then 1 else 0) in
+            let integerValue = (if negated then -1 else 1) * nat in
             LiteralInt integerValue activeBits originalText base
 
         -- Precondition: string contains only valid hex digits.
