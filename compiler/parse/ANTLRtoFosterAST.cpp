@@ -271,8 +271,15 @@ ExprAST* parseParenExpr(pTree tree) {
 }
 
 Formal parseFormal(pTree formal) {
-  ASSERT(getChildCount(formal) == 2);
-  TypeAST* ty = TypeAST_from(child(formal, 1));
+  TypeAST* ty = NULL;
+  if (getChildCount(formal) == 2) {
+    ty = TypeAST_from(child(formal, 1));
+  } else {
+    NamedTypeAST* tv = new NamedTypeAST(ParsingContext::freshName(".inferred."),
+                                        NULL, rangeOf(formal));
+    tv->is_placeholder = true;
+    ty = tv;
+  }
   return Formal(textOfVar(child(formal, 0)), ty);
 }
 

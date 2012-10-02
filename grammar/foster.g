@@ -146,7 +146,7 @@ ifexpr : 'if' cond=e 'then' thenpart=e_seq 'else' elsepart=e_seq 'end'
           -> ^(IF $cond $thenpart $elsepart);
 
 binding : x '=' e     -> ^(BINDING x e);
-formal  : xid (':' t)   -> ^(FORMAL xid t);
+formal  : xid (':' t)?  -> ^(FORMAL xid t);
 tyformal: aid (':' k)?  -> ^(TYPEVAR_DECL aid k);
 tyformalr: aid ':' k    -> ^(TYPEVAR_DECL aid k);
 
