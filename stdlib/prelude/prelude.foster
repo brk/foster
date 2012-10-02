@@ -97,7 +97,15 @@ text_maxdepth = { s : Text =>
 ////
 
 arrayLength :: forall x:Type, { Array x => Int64 };
-arrayLength = { forall t:Type, a : Array t => prim_arrayLength a };
+arrayLength = { forall t:Type, a : Array t =>
+  prim_arrayLength a
+};
+
+arrayLength32 :: forall x:Type, { Array x => Int32 };
+arrayLength32 = { forall t:Type, a : Array t =>
+  primitive_trunc_i64_i32 (prim_arrayLength a)
+};
+
 
 incr64 = { n : Int64 => n +Int64 (primitive_sext_i64_i32 1) };
 
@@ -124,6 +132,20 @@ arrayEach = { forall t:Type,
   arrayEnum a { ign:Int64 => v:t => f v };
 };
 */
+
+newDArray = { forall v:Type,
+                n : Int32 =>
+                f : { Int32 => v } =>
+  let a = allocDArray:[v] n;
+      x = (ref n);
+   in
+      until x^ ==Int32 0 then
+          f x^      >^ a[x^ -Int32  1];
+           (x^ -Int32 1) >^ x
+      end;
+    a
+  end
+};
 
 ////
 
@@ -195,17 +217,95 @@ tmp_Text_of_Int32_digit = { n:Int32 =>
   end
 };
 
-tmp_Text_of_Int32 = { n:Int32 =>
+tmp_Text_16_of_Int32_digit = { n:Int32 =>
+  case n
+    of 0 -> "0"
+    of 1 -> "1"
+    of 2 -> "2"
+    of 3 -> "3"
+    of 4 -> "4"
+    of 5 -> "5"
+    of 6 -> "6"
+    of 7 -> "7"
+    of 8 -> "8"
+    of 9 -> "9"
+    of 10 -> "A"
+    of 11 -> "B"
+    of 12 -> "C"
+    of 13 -> "D"
+    of 14 -> "E"
+    of 15 -> "F"
+    of _ -> "<error:value passed to tmp_Text_16_of_Int32_digit was too large>"
+  end
+};
+
+tmp_Text_of_Int32 = { n:Int32 => tmp_Text_of_Int64 (primitive_sext_i64_i32 n) };
+
+tmp_Text_2_of_Int32_nibble = { n : Int32 =>
+  case n
+    of 0  -> "0000"
+    of 1  -> "0001"
+    of 2  -> "0010"
+    of 3  -> "0011"
+    of 4  -> "0100"
+    of 5  -> "0101"
+    of 6  -> "0110"
+    of 7  -> "0111"
+    of 8  -> "1000"
+    of 9  -> "1001"
+    of 10 -> "1010"
+    of 11 -> "1011"
+    of 12 -> "1100"
+    of 13 -> "1101"
+    of 14 -> "1110"
+    of 15 -> "1111"
+    of _ -> "<error:value passed to tmp_Text_2_of_Int32_nibble was too large>"
+  end
+};
+
+tmp_Text_2_of_Int32 = { n:Int32 =>
   rec go = { n:Int32 => t:Text =>
-    if n <=Int32 10
-      then mkTextConcat (tmp_Text_of_Int32_digit n) t
-      else let r = srem-Int32 n 10;
-               q = sdiv-Int32 n 10;
-            in go q (mkTextConcat (tmp_Text_of_Int32_digit r) t); end
+    if n <=Int32 15
+      then mkTextConcat (tmp_Text_2_of_Int32_nibble n) t
+      else let r = srem-Int32 n 16;
+               q = sdiv-Int32 n 16;
+               s = mkTextConcat (tmp_Text_2_of_Int32_nibble r) t;
+            in go q s end
      end
-  }; in if n <=Int32 0 then mkTextConcat "-" (go (0 -Int32 n) "")
-                       else go n ""
+  }; in if n <Int32 0 then mkTextConcat "-" (go (0 -Int32 n) "")
+                      else go n ""
         end
   end
 };
+
+high32BitsOf64 = { n : Int64 =>
+  primitive_trunc_i64_i32 (bitlshr-Int64 n 32)
+};
+
+splitInt64 = { n : Int64 =>
+  let highbits = high32BitsOf64 n;
+      lowbits  = high32BitsOf64 (bitshl-Int64 n 32);
+   in (highbits, lowbits) end
+};
+
+tmp_Text_2_of_Int64 = { n:Int64 =>
+  case splitInt64 n of
+    (na, nb) -> mkTextConcat (tmp_Text_2_of_Int32 na) (tmp_Text_2_of_Int32 nb)
+  end
+};
+
+tmp_Text_of_Int64 = { n:Int64 =>
+  rec go = { n:Int64 => t:Text =>
+    if n <=Int64 10
+      then mkTextConcat (tmp_Text_of_Int32_digit (primitive_trunc_i64_i32 n)) t
+      else let r = primitive_trunc_i64_i32 (srem-Int64 n 10);
+               q =                          sdiv-Int64 n 10 ;
+            in go q (mkTextConcat (tmp_Text_of_Int32_digit r) t); end
+     end
+  }; in if n <Int64 0 then mkTextConcat "-" (go (negate-Int64 n) "")
+                      else go n ""
+        end
+  end
+};
+
 

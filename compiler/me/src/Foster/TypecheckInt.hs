@@ -20,7 +20,7 @@ import Foster.TypeAST
 typecheckInt :: ExprAnnot -> String -> Expected TypeAST -> Tc (AnnExpr Rho)
 typecheckInt annot originalText expTy = do
     let goodBases = [2, 8, 10, 16]
-    let maxBits = 32
+    let maxBits = 64
     (negated, clean, base) <- extractCleanBase originalText
     sanityCheck (base `Prelude.elem` goodBases)
                 ("Integer base must be one of " ++ show goodBases

@@ -432,20 +432,27 @@ tcRhoTuple ctx rng exprs expTy = do
 -- G |- e1 [ e2 ]  ::: t
 tcRhoArrayRead :: ExprAnnot -> SafetyGuarantee -> AnnExpr Sigma -> AnnExpr Sigma -> Expected TypeAST -> Tc (AnnExpr Rho)
 -- {{{
-tcRhoArrayRead annot s base aiexpr expTy = do
+tcRhoArrayRead annot sg base aiexpr expTy = do
   let rng = annotRange annot
-  case typeAST base of
-    (ArrayTypeAST t) -> do
+  let ck t = do
         -- TODO check aiexpr type is compatible with Word
         unify (PrimIntAST I32) (typeAST aiexpr) "arrayread idx type"
-        unify (ArrayTypeAST t) (typeAST base)   "arrayread type"
-        let expr = AnnArrayRead annot t (ArrayIndex base aiexpr rng s)
+        let expr = AnnArrayRead annot t (ArrayIndex base aiexpr rng sg)
         matchExp expTy expr "arrayread"
-    (TupleTypeAST _) ->
+
+  case typeAST base of
+    ArrayTypeAST t -> do ck t
+    TupleTypeAST _ ->
         tcFails [text $ "ArrayReading tuples is not allowed; use"
                    ++ " pattern matching instead!" ++ highlightFirstLine rng]
+    MetaTyVar _ -> do
+        t <- case expTy of
+              Check t -> return t
+              Infer _ -> newTcUnificationVarTau $ "arrayread_type"
+        unify (ArrayTypeAST t) (typeAST base) "arrayread type"
+        ck t
     _ ->
-        tcFails [text $ "Unable to arrayread expression of type " ++ show (typeAST base)
+        tcFails [text $ "Unable to arrayread expression of non-array type " ++ show (typeAST base)
                     ++ " (context expected type " ++ show expTy ++ ")"
                     ++ highlightFirstLine rng]
 -- }}}
@@ -456,14 +463,22 @@ tcRhoArrayRead annot s base aiexpr expTy = do
 -- G |- b[i] ::: Array t
 -- ---------------------
 -- G |- v >^ b[i] ::: ()
-tcRhoArrayPoke annot s v b i expTy = do
+tcRhoArrayPoke annot s v base i expTy = do
 -- {{{
-  case typeAST b of
-    ArrayTypeAST t -> do
+  let ck t = do
       -- TODO check aiexpr type is compatible with Word
       unify t (typeAST v) "arraypoke type"
-      let expr = AnnArrayPoke annot (TupleTypeAST []) (ArrayIndex b i (annotRange annot) s) v
+      let expr = AnnArrayPoke annot (TupleTypeAST []) (ArrayIndex base i (annotRange annot) s) v
       matchExp expTy expr "arraypoke"
+
+  case typeAST base of
+    ArrayTypeAST t ->
+        ck t
+    MetaTyVar _ -> do
+        t <- newTcUnificationVarTau $ "arraypoke_type"
+        unify (ArrayTypeAST t) (typeAST base) "arraypoke type"
+        ck t
+
     baseType ->
       tcFails [text $ "Unable to arraypoke expression of type " ++ show baseType
                   ++ " (context expected type " ++ show expTy ++ ")"
@@ -895,7 +910,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
   debugDoc $ text "metavar for overall type of case is " <> pretty u
   debugDoc $ text " exp ty is " <> pretty expTy
   let checkBranch (pat, body) = do
-      tcLift $ putDocLn $ text "checking pattern with context ty " <+> pretty (typeAST ascrutinee) <+> string (highlightFirstLine $ annotRange rng)
+      debugDoc $ text "checking pattern with context ty " <+> pretty (typeAST ascrutinee) <+> string (highlightFirstLine $ annotRange rng)
       p <- checkPattern ctx pat (typeAST ascrutinee)
       debug $ "case branch pat: " ++ show p
       let bindings = extractPatternBindings p

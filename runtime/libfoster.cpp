@@ -123,6 +123,8 @@ void fprint_i32(FILE* f, int32_t x) {  fprintf(f, "%d\n", x); fflush(f); }
 void fprint_i32x(FILE* f, int32_t x) { fprintf(f, "%X_16\n", x); }
 void fprint_i32b(FILE* f, int32_t x) { fprint_b2<32>(f, x); }
 
+void fprint_i8b(FILE* f, int8_t x) { fprint_b2<8>(f, x); }
+
 void fprint_mp_int(FILE* f, mp_int m, int radix) {
   mp_small small;
   mp_result conv = mp_int_to_int(m, &small);
@@ -193,6 +195,9 @@ void expect_intb(mp_int m) { fprint_mp_int(stderr, m, 2); }
 
 void  print_i8(int8_t x) { fprint_i32(stdout, x); } // implicit conversion
 void expect_i8(int8_t x) { fprint_i32(stderr, x); } // implicit conversion
+
+void  print_i8b(int8_t x) { fprint_i8b(stdout, x); }
+void expect_i8b(int8_t x) { fprint_i8b(stderr, x); }
 
 void  print_i32(int32_t x) { fprint_i32(stdout, x); }
 void expect_i32(int32_t x) { fprint_i32(stderr, x); }

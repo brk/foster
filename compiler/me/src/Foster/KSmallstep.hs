@@ -683,9 +683,10 @@ evalPrimitiveIntOp I32 "bitnot" [SSInt i] = SSInt $
 evalPrimitiveIntOp I8 "bitnot" [SSInt i] = SSInt $
         modifyIntWith i (complement :: Int8 -> Int8)
 
--- Sign extension (on Integers) is a no-op.
+-- Extension (on Integers) is a no-op.
 evalPrimitiveIntOp _ "sext_i32" [SSInt i] = SSInt i
 evalPrimitiveIntOp _ "sext_i64" [SSInt i] = SSInt i
+evalPrimitiveIntOp _ "zext_i64" [SSInt i] = SSInt i
 
 evalPrimitiveIntOp I32 "sitofp_f64"     [SSInt i] = SSFloat (fromIntegral i)
 evalPrimitiveIntOp I32 "fptosi_f64_i32" [SSFloat f] =
@@ -737,6 +738,14 @@ evalNamedPrimitive "expect_i32b" gs [SSInt i] =
 
 evalNamedPrimitive "print_i32b" gs [SSInt i] =
       do printStringNL gs (showBits 32 i)
+         return $ withTerm gs unit
+
+evalNamedPrimitive "expect_i8b" gs [SSInt i] =
+      do expectStringNL gs (showBits 8 i)
+         return $ withTerm gs unit
+
+evalNamedPrimitive "print_i8b" gs [SSInt i] =
+      do printStringNL gs (showBits 8 i)
          return $ withTerm gs unit
 
 evalNamedPrimitive "force_gc_for_debugging_purposes" gs _args =

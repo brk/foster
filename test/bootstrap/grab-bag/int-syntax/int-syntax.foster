@@ -13,14 +13,14 @@ main = {
   expect_i1 False ; print_i1 (__COMPILES__ f_16 );
 
   // ==== numeric representation limit tests ====
-  // === base 10 === 
+  // === base 10 ===
 
-  expect_i1 True ; print_i1( __COMPILES__ 1234);
-  expect_i1 True ; print_i1( __COMPILES__ 2147483648); // 2^31
-  expect_i1 True ; print_i1( __COMPILES__ 2147483649); // 2^31 + 1
-  expect_i1 True ; print_i1( __COMPILES__ 4294967295); // 2^32 - 1
-  expect_i1 False; print_i1( __COMPILES__ 4294967296); // 2^32
-  expect_i1 False; print_i1( __COMPILES__ 4294967297); // 2^32 + 1
+  expect_i1 True ; print_i1( __COMPILES__ print_i32 1234);
+  expect_i1 True ; print_i1( __COMPILES__ print_i32 2147483648); // 2^31
+  expect_i1 True ; print_i1( __COMPILES__ print_i32 2147483649); // 2^31 + 1
+  expect_i1 True ; print_i1( __COMPILES__ print_i32 4294967295); // 2^32 - 1
+  expect_i1 False; print_i1( __COMPILES__ print_i32 4294967296); // 2^32
+  expect_i1 False; print_i1( __COMPILES__ print_i32 4294967297); // 2^32 + 1
 
   // === base 2 ===
   expect_i1 True; print_i1( __COMPILES__ 1111`1111_2); // 8 bits
@@ -29,9 +29,9 @@ main = {
   // TODO LLVM i<n> type counts bits only
   // signedness comes from operations
     // 32 bits
-  expect_i1 True; print_i1( __COMPILES__ 1111`1111`1111`1111`1111`1111`1111`1111_2);
+  expect_i1 True ; print_i1 (__COMPILES__ print_i32   1111`1111`1111`1111`1111`1111`1111`1111_2);
     // zero + 32 bits
-  expect_i1 True; print_i1( __COMPILES__ 0`1111`1111`1111`1111`1111`1111`1111`1111_2);
+  expect_i1 True ; print_i1 (__COMPILES__ print_i32 0`1111`1111`1111`1111`1111`1111`1111`1111_2);
     // one + 32 bits
-  expect_i1 False; print_i1( __COMPILES__ 1`1111`1111`1111`1111`1111`1111`1111`1111_2);
+  expect_i1 False; print_i1 (__COMPILES__ print_i32 1`1111`1111`1111`1111`1111`1111`1111`1111_2);
 };

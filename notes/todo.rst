@@ -57,7 +57,7 @@ TODO: libraries, benchmarks, & applications
 * Hash tables
 * Sequences
 * Persistent maps
-* MP integers
+* MP integers (started)
 * C interop story
   * GC design
 * 32-bit floats

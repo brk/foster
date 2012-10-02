@@ -157,6 +157,8 @@ primitiveDecls =
     ,(,)  "print_i8"   $ mkProcType [i8] []
     ,(,) "expect_i32b" $ mkProcType [i32] []
     ,(,)  "print_i32b" $ mkProcType [i32] []
+    ,(,) "expect_i8b"  $ mkProcType [i8] []
+    ,(,)  "print_i8b"  $ mkProcType [i8] []
 
     ,(,) "opaquely_i32" $ mkProcType [i32] [i32]
     ,(,) "get_cmdline_arg_n" $ mkProcType [i32] [fosStringType]
@@ -268,7 +270,8 @@ flonumPrimitives tystr ty =
 gFosterPrimOpsTable = Map.fromList $
   [(,) "not"                    $ (,) (mkFnType [i1]  [i1]      ) $ PrimOp "bitnot" i1
   ,(,) "primitive_sext_i64_i32" $ (,) (mkFnType [i32] [i64]     ) $ PrimOp "sext_i64" i32
-  ,(,) "primitive_sext_i8_to_i32"$(,) (mkFnType [i8 ] [i32]     ) $ PrimOp "sext_i32" i8
+  ,(,) "primitive_zext_i32_to_i64"$(,) (mkFnType [i32] [i64]     ) $ PrimOp "zext_i64" i32
+  ,(,) "primitive_sext_i8_to_i32" $(,) (mkFnType [i8 ] [i32]     ) $ PrimOp "sext_i32" i8
   ,(,) "primitive_trunc_i32_i8" $ (,) (mkFnType [i32] [i8 ]     ) $ PrimIntTrunc I32 I8
   ,(,) "primitive_trunc_i64_i32"$ (,) (mkFnType [i64] [i32]     ) $ PrimIntTrunc I64 I32
   ,(,) "primitive_f64_to_i32"    $(,) (mkFnType [f64] [i32]     ) $ PrimOp "fptosi_f64_i32" i32

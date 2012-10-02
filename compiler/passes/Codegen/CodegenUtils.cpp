@@ -344,7 +344,9 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
        if (op == "negate") { return b.CreateNeg(VL, "negtmp", this->config.useNUW, this->config.useNSW); }
   else if (op == "bitnot") { return b.CreateNot(VL, "nottmp"); }
   else if (op == "sext_i64") { return b.CreateSExt(VL, b.getInt64Ty(), "sexti64tmp"); }
+  else if (op == "zext_i64") { return b.CreateZExt(VL, b.getInt64Ty(), "zexti64tmp"); }
   else if (op == "sext_i32") { return b.CreateSExt(VL, b.getInt32Ty(), "sexti32tmp"); }
+  else if (op == "zext_i32") { return b.CreateZExt(VL, b.getInt32Ty(), "zexti32tmp"); }
   else if (op == "trunc_i8") { return b.CreateTrunc(VL, b.getInt8Ty(), "trunci8tmp"); }
   else if (op == "trunc_i32"){ return b.CreateTrunc(VL, b.getInt32Ty(), "trunci32tmp"); }
   else if (op == "fsqrt")    { return createSqrt(b, VL, "fsqrttmp"); }
