@@ -155,10 +155,12 @@ primitiveDecls =
     ,(,)  "print_i1"   $ mkProcType [i1] []
     ,(,) "expect_i8"   $ mkProcType [i8] []
     ,(,)  "print_i8"   $ mkProcType [i8] []
-    ,(,) "expect_i32b" $ mkProcType [i32] []
-    ,(,)  "print_i32b" $ mkProcType [i32] []
     ,(,) "expect_i8b"  $ mkProcType [i8] []
     ,(,)  "print_i8b"  $ mkProcType [i8] []
+    ,(,) "expect_i32b" $ mkProcType [i32] []
+    ,(,)  "print_i32b" $ mkProcType [i32] []
+    ,(,) "expect_i64b" $ mkProcType [i64] []
+    ,(,)  "print_i64b" $ mkProcType [i64] []
 
     ,(,) "opaquely_i32" $ mkProcType [i32] [i32]
     ,(,) "get_cmdline_arg_n" $ mkProcType [i32] [fosStringType]
@@ -226,6 +228,11 @@ prettyOpName nm tystr =
 fixnumPrimitives bitsize =
   let iKK = PrimIntAST bitsize in
   let mkPrim nm ty = (prettyOpName nm (intSize bitsize), (ty, PrimOp nm iKK)) in
+  [("<U"  ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp "<u"  iKK))
+  ,(">U"  ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp ">u"  iKK))
+  ,("<=U" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp "<=u" iKK))
+  ,(">=U" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp ">=u" iKK))
+  ] ++
   [mkPrim "+"       $ mkFnType [iKK, iKK] [iKK]
   ,mkPrim "-"       $ mkFnType [iKK, iKK] [iKK]
   ,mkPrim "*"       $ mkFnType [iKK, iKK] [iKK]
@@ -237,6 +244,8 @@ fixnumPrimitives bitsize =
   ,mkPrim "bitashr" $ mkFnType [iKK, iKK] [iKK]
   ,mkPrim "srem"    $ mkFnType [iKK, iKK] [iKK]
   ,mkPrim "sdiv"    $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "urem"    $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "udiv"    $ mkFnType [iKK, iKK] [iKK]
   ,mkPrim "<"       $ mkFnType [iKK, iKK] [i1]
   ,mkPrim ">"       $ mkFnType [iKK, iKK] [i1]
   ,mkPrim "<="      $ mkFnType [iKK, iKK] [i1]

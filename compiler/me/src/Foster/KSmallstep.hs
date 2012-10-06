@@ -568,9 +568,10 @@ modifyIntWith i1 f = fromIntegral (liftInt f i1)
 modifyIntsWith :: (Integral a) => Integer -> Integer -> (a -> a -> a) -> Integer
 modifyIntsWith i1 i2 f = fromIntegral (liftInt2 f i1 i2)
 
-lowShiftBits k b = (.&.) (k - 1) (fromIntegral b)
+lowShiftBits k b = (k - 1) .&. fromIntegral b
 
 ashr k a b = shiftR a (lowShiftBits k b)
+lshr k a b = shiftR a (lowShiftBits k b)
 shl  k a b = shiftL a (lowShiftBits k b)
 
 tryGetFixnumPrimOp :: (Bits a, Integral a) => Int -> String -> Maybe (a -> a -> a)
@@ -580,11 +581,13 @@ tryGetFixnumPrimOp k name =
     "+"       -> Just (+)
     "-"       -> Just (-)
     "sdiv"    -> Just div
+    "udiv"    -> Just div
     "srem"    -> Just rem
     "bitxor"  -> Just xor
     "bitor"   -> Just (.|.)
     "bitand"  -> Just (.&.)
     "bitashr" -> Just (ashr k)
+    "bitlshr" -> Just (lshr k)
     "bitshl"  -> Just (shl  k)
     _ -> Nothing
 
@@ -602,6 +605,11 @@ tryGetPrimCmp name =
     "!="       -> Just ((/=))
     ">="       -> Just ((>=))
     ">"        -> Just ((>))
+    -- unsigned variants...
+    "<u"       -> Just ((<))
+    "<=u"      -> Just ((<=))
+    ">=u"      -> Just ((>=))
+    ">u"       -> Just ((>))
     _ -> Nothing
 
 tryGetFlonumPrimOp :: (Fractional a) => String -> Maybe (a -> a -> a)
@@ -674,6 +682,8 @@ evalPrimitiveIntOp I8 opName [SSInt i1, SSInt i2] =
 
 -- TODO hmm
 evalPrimitiveIntOp I32 "negate" [SSInt i] = SSInt (negate i)
+evalPrimitiveIntOp I64 "negate" [SSInt i] = SSInt (negate i)
+evalPrimitiveIntOp I8  "negate" [SSInt i] = SSInt (negate i)
 
 evalPrimitiveIntOp  I1 "bitnot" [SSBool b] = SSBool (not b)
 
@@ -707,7 +717,8 @@ trunc32 :: Integer -> Int32
 trunc32 = fromInteger
 
 evalPrimitiveIntTrunc :: IntSizeBits -> IntSizeBits -> [SSValue] -> SSValue
-evalPrimitiveIntTrunc I32 I8 [SSInt i] = SSInt (toInteger $ trunc8 i)
+evalPrimitiveIntTrunc I32 I8  [SSInt i] = SSInt (toInteger $ trunc8 i)
+evalPrimitiveIntTrunc I64 I32 [SSInt i] = SSInt (toInteger $ trunc32 i)
 
 evalPrimitiveIntTrunc from to _args =
   error $ "Smallstep.evalPrimitiveIntTrunc " ++ show from ++ " " ++ show to
@@ -730,6 +741,14 @@ evalNamedPrimitive primName gs [val] | isPrintFunction primName =
 
 evalNamedPrimitive primName gs [val] | isExpectFunction primName =
       do expectStringNL gs (display val)
+         return $ withTerm gs unit
+
+evalNamedPrimitive "expect_i64b" gs [SSInt i] =
+      do expectStringNL gs (showBits 64 i)
+         return $ withTerm gs unit
+
+evalNamedPrimitive "print_i64b" gs [SSInt i] =
+      do printStringNL gs (showBits 64 i)
          return $ withTerm gs unit
 
 evalNamedPrimitive "expect_i32b" gs [SSInt i] =

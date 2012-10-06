@@ -107,8 +107,10 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
     (PrimFloat64AST, PrimFloat64AST) -> tcUnifyLoop constraints tysub
     ((PrimIntAST n1), (PrimIntAST n2)) ->
       if n1 == n2 then tcUnifyLoop constraints tysub
-                  else tcFails [text $ "Unable to unify different primitive types: "
-                                  ++ show n1 ++ " vs " ++ show n2]
+                  else do msg <- getStructureContextMessage
+                          tcFails [text $ "Unable to unify different primitive types: "
+                                  ++ show n1 ++ " vs " ++ show n2
+                                  , msg]
 
     ((TyVarAST tv1), (TyVarAST tv2)) ->
        if tv1 == tv2 then tcUnifyLoop constraints tysub
@@ -160,9 +162,12 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
     ((ArrayTypeAST t1), (ArrayTypeAST t2)) ->
         tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
-    _otherwise -> tcFailsMore
+    _otherwise -> do
+      msg <- getStructureContextMessage
+      tcFailsMore
         [string "Unable to unify\n\t" <> pretty t1 <> string "\nand\n\t" <> pretty t2
-        ,text "t1::", showStructure t1, text "t2::", showStructure t2]
+        ,text "t1::", showStructure t1, text "t2::", showStructure t2
+        ,msg]
 
 tcUnifyVar :: MetaTyVar TypeAST -> TypeAST -> TypeSubst -> [TypeConstraint] -> Tc UnifySoln
 

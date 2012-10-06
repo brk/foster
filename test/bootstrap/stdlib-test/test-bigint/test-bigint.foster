@@ -1,0 +1,283 @@
+snafuinclude Big "bignum";
+
+main = {
+  //t0 !;
+  //t1 !;
+  //t2 !;
+  //t3 !;
+  //t4 !;
+  //t5 !;
+  t6 !;
+  t7 !;
+};
+
+t0 = {
+  expect_i32 12345;
+  print_i64  12345;
+
+  expect_text "0000000000000000000000000000000000000000000000000011000000111001_2";
+  print_i64b  12345;
+};
+
+
+t1 = {
+
+  expect_text "12345";
+  print_text (foster_mp_to_text_radix (foster_mp_from_Int32 12345) 10);
+
+  expect_text "00000000";
+  print_text (tmp_Text_2_of_Int8 0);
+
+  expect_text "0000000000000000000000000000000000000000000000000011000000111001";
+  print_text (foster_mp_to_text_radix (foster_mp_from_Int32 12345) 2);
+
+  expect_text "00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000";
+  print_text (foster_mp_to_text_radix
+                (foster_mp_mul_2d (foster_mp_from_Int32 1) 60)
+              2);
+
+  expect_text "18446744073709551616";
+  print_text (foster_mp_to_text_radix
+                (foster_mp_mul_2d (foster_mp_from_Int32 1) 64)
+              10);
+
+  expect_text "16";
+  print_text (foster_mp_to_text_radix
+                (foster_mp_mul_2d (foster_mp_from_Int32 1) 4)
+              10);
+
+  expect_text "17310711067705344";
+  print_text (foster_mp_to_text_radix
+                (foster_mp_mul_2d (foster_mp_from_Int32 123) 47)
+              10);
+
+  expect_text "297395751625198776977719296";
+  print_text (foster_mp_to_text_radix
+                (foster_mp_mul_2d (foster_mp_from_Int32 123) 81)
+              10);
+
+  expect_text "1307960347852357218937346147315859062784";
+  print_text (foster_mp_to_text_radix
+                (foster_mp_mul_2d (foster_mp_from_Int32 123) 123)
+              10);
+};
+
+t2 = {
+
+  expect_text "1308248520328005901870729589862130778112";
+  print_text (foster_mp_to_text_radix
+               (foster_mp_add
+                (foster_mp_mul_2d (foster_mp_from_Int32 123) 123)
+                (foster_mp_mul_2d (foster_mp_from_Int32 111) 111))
+              10);
+
+  expect_text "1307672175376708536003962704769587347456";
+  print_text (foster_mp_to_text_radix
+               (foster_mp_sub
+                (foster_mp_mul_2d (foster_mp_from_Int32 123) 123)
+                (foster_mp_mul_2d (foster_mp_from_Int32 111) 111))
+              10);
+
+  // TODO: reliably optimize 0 - x to (negate x)?
+  //       Statically easy; dynamically harder, since we don't
+  //       have a constant-time test for zero in general.
+  //       We can dynamically test |a| = 1, a[0] = 0,
+  //       but it's not clear if that test would lead to a net win.
+
+  expect_text "-12345";
+  print_text (foster_mp_to_text_radix (foster_mp_from_Int32 -12345) 10);
+
+  expect_text "0";
+  print_text (foster_mp_to_text_radix (foster_mp_from_Int32 0) 10);
+
+  test_small_sub        16             8;
+  test_small_sub        5              10;
+  test_small_sub        223344         0;
+  test_small_sub        0              54321;
+  test_small_sub        54321          0;
+  test_small_sub        7             -13;
+  test_small_sub       -7              13;
+  test_small_sub       -7              -5;
+  test_small_sub       -5              -7;
+  test_small_sub       5              7;
+  test_small_sub       7              5;
+
+  test_small_add        16             8;
+  test_small_add        5              10;
+  test_small_add        223344         0;
+  test_small_add        0              54321;
+  test_small_add        54321          0;
+  test_small_add        7             -13;
+  test_small_add       -7              13;
+  test_small_add       -7              -5;
+  test_small_add       -5              -7;
+
+  expect_text "-17310711067705344";
+  print_text (foster_mp_to_text_radix
+               (foster_mp_sub (foster_mp_from_Int32 0)
+                (foster_mp_mul_2d (foster_mp_from_Int32 123) 47))
+              10);
+};
+
+
+test_small_sub = { k0 : Int32 => k1 : Int32 =>
+  test_small_op k0 k1 { a => b => a -Int32 b } foster_mp_sub;
+};
+
+test_small_add = { k0 : Int32 => k1 : Int32 =>
+  test_small_op k0 k1 { a => b => a +Int32 b } foster_mp_add;
+};
+
+test_small_op = { k0 : Int32 => k1 : Int32 =>
+                  fixop : { Int32 => Int32 => Int32 } =>
+                  bigop : { IntInf => IntInf => IntInf } =>
+
+  let i0 = foster_mp_from_Int32 k0;
+      i1 = foster_mp_from_Int32 k1;
+      a = foster_mp_add i0 i1;
+      c = k0 +Int32 k1;
+      b = foster_mp_from_Int32 c;
+  in
+    expect_text (textOfOrd (cmpInt32 k0 k1));
+    print_text (textOfOrd (foster_mp_cmp i0 i1));
+
+    expect_i1 True;
+    print_i1 (eqBool (isNegative a) (isNegative b));
+
+    expect_i32 c;
+    print_text (foster_mp_to_text_radix a 10);
+
+    expect_i32 c;
+    print_text (foster_mp_to_text_radix b 10);
+  end;
+
+};
+
+t3 = {
+  test-cmp-d 0;
+  test-cmp-d 1;
+  test-cmp-d 12342523;
+  test-cmp-d -1;
+  test-cmp-d -12342523;
+
+  // around 2^62 (i.e. bit 63 of 64 set)
+  test-cmp-d 4611686018427387903;
+  test-cmp-d 4611686018427387904;
+  test-cmp-d 4611686018427387905;
+
+  case splitInt64 4611686018427387904
+    of (hi, lo) ->
+      expect_i32b 01000000000000000000000000000000_2;
+      print_i32b hi;
+      expect_i32b 0;
+      print_i32b lo;
+  end;
+
+  expect_text "4611686018427387904";
+  print_text (foster_mp_to_text_radix (foster_mp_from_Int64 4611686018427387904) 10);
+
+};
+
+// Precondition: neither k-1 nor k+1 overflow.
+test-cmp-d = { k : Int64 =>
+  let ii = foster_mp_from_Int64 k;
+  in
+    expect_i64 k;
+    print_text (foster_mp_to_text_radix ii 10);
+
+    expect_text "EQ";
+    print_text (textOfOrd (cmpIntInfD ii k));
+
+    expect_text "GT";
+    print_text (textOfOrd (cmpIntInfD ii (k -Int64 1)));
+
+    expect_text "LT";
+    print_text (textOfOrd (cmpIntInfD ii (k +Int64 1)));
+  end
+};
+
+t4 = {
+  case foster_sqr_i64 9 of
+    (hi, lo) -> expect_i64 81;
+                 print_i64 lo;
+  end;
+
+  case foster_sqr_i64      1839720382 of
+    (hi, lo) -> expect_i64 3384571083946225924;
+                 print_i64 lo;
+
+                expect_i64 0;
+                 print_i64 hi;
+  end;
+
+  case foster_sqr_i64      11839720383 of
+    (hi, lo) -> expect_i64b 1001100101011111110001100111100010001101010000100111100010000001_2;
+                print_i64b lo;
+
+                expect_i64 7;
+                print_i64  hi;
+  end;
+
+};
+
+text_of_Maybe_Int = { mi : Maybe IntInf =>
+  case mi
+    of $Some ii -> mkTextConcat "Some "
+                               (foster_mp_to_text_radix ii 10);
+    of $None    -> "None";
+  end
+};
+
+t5 = {
+  expect_text "Some 0";
+  print_text (text_of_Maybe_Int (foster_mp_rshd (foster_mp_from_Int64 4096) 3));
+
+  let foster_DIGIT_BIT = 60;
+      ii = foster_mp_mul_2d (foster_mp_from_Int32 7) foster_DIGIT_BIT;
+  in
+    expect_text "Some 7";
+    print_text (text_of_Maybe_Int (foster_mp_rshd ii 1));
+  end
+};
+
+t6 = {
+
+  let k0 = 101010011011011011_2;
+      k1 = 001010101000111110_2;
+  in
+    expect_i64 (bitand-Int64 k0 k1);
+    print_text (foster_mp_nat_to_text_radix
+                   (foster_mp_bitand_nat
+                      (mkDigitsOfInt64 k0)
+                      (mkDigitsOfInt64 k1))
+                10);
+  end;
+
+
+  expect_i64 (bitshl-Int64 1 30);
+  print_text (foster_mp_to_text_radix
+                 (foster_mp_2expt 30)
+              10);
+
+  expect_text "1180591620717411303424";
+  print_text (foster_mp_to_text_radix
+                 (foster_mp_2expt 70)
+              10);
+
+  expect_text "-1180591620717411303424";
+  print_text (foster_mp_to_text_radix
+                 (foster_mp_negate (foster_mp_2expt 70))
+              10);
+
+  expect_text "0";
+  print_text (foster_mp_to_text_radix
+                 (foster_mp_negate (foster_mp_from_Int32 0))
+              10);
+};
+
+t7 = {
+  expect_i64 (bitshl-Int64 1 30);
+  print_text (foster_mp_to_text_radix
+                 (foster_mp_rshb (foster_mp_2expt 70) 40)
+              10);
+};

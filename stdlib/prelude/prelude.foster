@@ -94,6 +94,17 @@ text_maxdepth = { s : Text =>
    end;
 };
 
+// Precondition: n in range 0..128.
+textOfASCII = { n : Int32 => textOfASCII8 (primitive_trunc_i32_i8 n) };
+
+// Precondition: n in range 0..128.
+textOfASCII8 = { n : Int8 =>
+  let a = newDArray:[Int8] 1 { i => n };
+  in
+    TextFragment a 1
+  end
+};
+
 ////
 
 arrayLength :: forall x:Type, { Array x => Int64 };
@@ -133,6 +144,7 @@ arrayEach = { forall t:Type,
 };
 */
 
+// Initializes slot a[k] with f (k + 1)
 newDArray = { forall v:Type,
                 n : Int32 =>
                 f : { Int32 => v } =>
@@ -147,23 +159,41 @@ newDArray = { forall v:Type,
   end
 };
 
-////
+// Initializes slot a[k] with (f k)
+newDArray0 = { forall v:Type,
+                n : Int32 =>
+                f : { Int32 => v } =>
+  let a = allocDArray:[v] n;
+      x = (ref n);
+   in
+      until x^ ==Int32 0 then
+        let y  = x^ -Int32 1; in
+          (f y) >^ a[y];
+             y  >^ x
+        end
+      end;
+    a
+  end
+};
 
 // Returns True on success, otherwise False.
-tmp_bytes_iter_reverse = { a : Array Int8 =>
+arrayIterReverse = { forall t:Type,
+                           a : Array t =>
                            n : Int32 => // invariant: n < len a
-                           f : { Int8 => Bool } =>
-  if n >=Int32 0
-  then if f a[n] then tmp_bytes_iter_reverse a (n -Int32 1) f
+                           f : { t => Bool } =>
+  if n >=Int32 0 // TODO change this to avoid needing wraparound here.
+  then if f a[n] then arrayIterReverse a (n -Int32 1) f
                  else False end
   else True end
 };
+
+////
 
 // Returns True on success, otherwise False.
 tmp_Text_bytes_iter_reverse = { t:Text =>
                                 f: { Int8 => Bool } =>
   case t
-    of $TextFragment a n     -> tmp_bytes_iter_reverse a (n -Int32 1) f;
+    of $TextFragment a n     -> arrayIterReverse a (n -Int32 1) f;
     of $TextConcat   s1 s2 n ->
         if    tmp_Text_bytes_iter_reverse s2 f
          then tmp_Text_bytes_iter_reverse s1 f
@@ -241,7 +271,7 @@ tmp_Text_16_of_Int32_digit = { n:Int32 =>
 
 tmp_Text_of_Int32 = { n:Int32 => tmp_Text_of_Int64 (primitive_sext_i64_i32 n) };
 
-tmp_Text_2_of_Int32_nibble = { n : Int32 =>
+tmp_Text_2_of_Int8_nibble = { n : Int8 =>
   case n
     of 0  -> "0000"
     of 1  -> "0001"
@@ -259,21 +289,30 @@ tmp_Text_2_of_Int32_nibble = { n : Int32 =>
     of 13 -> "1101"
     of 14 -> "1110"
     of 15 -> "1111"
-    of _ -> "<error:value passed to tmp_Text_2_of_Int32_nibble was too large>"
+    of _ -> "<error:value passed to tmp_Text_2_of_Int8_nibble was too large>"
   end
 };
 
+tmp_Text_2_of_Int8 = { n:Int8 =>
+  mkTextConcat (tmp_Text_2_of_Int8_nibble (bitand-Int8 15 (bitlshr-Int8 n 4)))
+ (mkTextConcat (tmp_Text_2_of_Int8_nibble (bitand-Int8 15 n))
+  "");
+};
+
 tmp_Text_2_of_Int32 = { n:Int32 =>
-  rec go = { n:Int32 => t:Text =>
-    if n <=Int32 15
-      then mkTextConcat (tmp_Text_2_of_Int32_nibble n) t
-      else let r = srem-Int32 n 16;
-               q = sdiv-Int32 n 16;
-               s = mkTextConcat (tmp_Text_2_of_Int32_nibble r) t;
-            in go q s end
-     end
-  }; in if n <Int32 0 then mkTextConcat "-" (go (0 -Int32 n) "")
-                      else go n ""
+  let go = { n:Int32 =>
+    let n0 = primitive_trunc_i32_i8 n;
+        n1 = primitive_trunc_i32_i8 (bitlshr-Int32 n 8 );
+        n2 = primitive_trunc_i32_i8 (bitlshr-Int32 n 16);
+        n3 = primitive_trunc_i32_i8 (bitlshr-Int32 n 24);
+    in
+     mkTextConcat (tmp_Text_2_of_Int8 n3)
+    (mkTextConcat (tmp_Text_2_of_Int8 n2)
+    (mkTextConcat (tmp_Text_2_of_Int8 n1)
+    (mkTextConcat (tmp_Text_2_of_Int8 n0) "")))
+   end
+  }; in if n <Int32 0 then mkTextConcat "-" (go (0 -Int32 n))
+                      else go n
         end
   end
 };
@@ -290,7 +329,8 @@ splitInt64 = { n : Int64 =>
 
 tmp_Text_2_of_Int64 = { n:Int64 =>
   case splitInt64 n of
-    (na, nb) -> mkTextConcat (tmp_Text_2_of_Int32 na) (tmp_Text_2_of_Int32 nb)
+    (na, nb) ->
+      mkTextConcat (tmp_Text_2_of_Int32 na) (tmp_Text_2_of_Int32 nb)
   end
 };
 

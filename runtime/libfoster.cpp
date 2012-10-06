@@ -104,8 +104,8 @@ template <int N, typename Int>
 int fprint_b2(FILE* f, Int x) {
   char* buf = new char[N+1];
   buf[N] = '\0';
-  for (int i = 0; i < N; ++i) {
-    buf[(N-1) - i] = (x & (1<<i)) ? '1' : '0';
+  for (Int i = 0; i < N; ++i) {
+    buf[(N-1) - i] = (x & (Int(1)<<i)) ? '1' : '0';
   }
   int n = fprintf(f, "%s_2\n", buf);
   delete [] buf;
@@ -213,6 +213,8 @@ int read_i32() { int32_t n; scanf(" %d", &n); return n; }
 void  print_i64(int64_t x) { fprint_i64(stdout, x); }
 void expect_i64(int64_t x) { fprint_i64(stderr, x); }
 void expect_i64x(int64_t x) { fprint_i64x(stderr, x); }
+
+void  print_i64b(int64_t x) { fprint_i64b(stdout, x); }
 void expect_i64b(int64_t x) { fprint_i64b(stderr, x); }
 
 // C type "bool" becomes LLVM "i8 zeroext", not "i1"

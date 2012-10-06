@@ -360,6 +360,7 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   else if (op == "-") { return b.CreateSub(VL, VR, "subtmp", this->config.useNUW, this->config.useNSW); }
   else if (op == "*") { return b.CreateMul(VL, VR, "multmp", this->config.useNUW, this->config.useNSW); }
   else if (op == "sdiv") { return b.CreateSDiv(VL, VR, "sdivtmp"); }
+  else if (op == "udiv") { return b.CreateUDiv(VL, VR, "udivtmp"); }
   else if (op == "srem") { return b.CreateSRem(VL, VR, "sremtmp"); }
   else if (op == "urem") { return b.CreateURem(VL, VR, "uremtmp"); }
   else if (op == "frem") { return b.CreateFRem(VL, VR, "fremtmp"); }
@@ -368,11 +369,14 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   else if (op == "fdiv"){return b.CreateFDiv(VL, VR, "fdivtmp"); }
   else if (op == "f*") { return b.CreateFMul(VL, VR, "fmultmp"); }
 
-  // Also have unsigned variants (TODO)
   else if (op == "<")  { return b.CreateICmpSLT(VL, VR, "slttmp"); }
   else if (op == "<=") { return b.CreateICmpSLE(VL, VR, "sletmp"); }
   else if (op == ">")  { return b.CreateICmpSGT(VL, VR, "sgttmp"); }
   else if (op == ">=") { return b.CreateICmpSGE(VL, VR, "sgetmp"); }
+  else if (op == "<u") { return b.CreateICmpULT(VL, VR, "ulttmp"); }
+  else if (op == "<=u"){ return b.CreateICmpULE(VL, VR, "uletmp"); }
+  else if (op == ">u") { return b.CreateICmpUGT(VL, VR, "ugttmp"); }
+  else if (op == ">=u"){ return b.CreateICmpUGE(VL, VR, "ugetmp"); }
   else if (op == "==") { return b.CreateICmpEQ(VL, VR, "eqtmp"); }
   else if (op == "!=") { return b.CreateICmpNE(VL, VR, "netmp"); }
   // Use unordered (U) variants because we don't analyze for QNANs.
