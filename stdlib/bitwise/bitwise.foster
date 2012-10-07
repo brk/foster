@@ -1,0 +1,118 @@
+// Based on Scheme's SRFI 60, which is covered
+// by the following BSD-compatible license:
+/*
+;;;; "logical.scm", bit access and operations for integers for Scheme
+;;; Copyright (C) 1991, 1993, 2001, 2003, 2005 Aubrey Jaffer
+;
+;Permission to copy this software, to modify it, to redistribute it,
+;to distribute modified versions, and to use it for any purpose is
+;granted, subject to the following restrictions and understandings.
+;
+;1.  Any copy made of this software must include this copyright notice
+;in full.
+;
+;2.  I have made no warranty or representation that the operation of
+;this software will be error-free, and I am under no obligation to
+;provide any services, by way of maintenance, update, or otherwise.
+;
+;3.  In conjunction with products arising from the use of this
+;material, there shall be no use of my name in any advertising,
+;promotional, or sales literature without prior written consent in
+;each case.
+*/
+//
+
+// Primitives provided for fixnums (8/32/64):
+//
+// bitand
+// bitnot
+// bitor
+// bitxor
+//
+// bitlshr
+// bitashr
+// bitshl
+//
+
+bitmerge-Int32 = { mask:Int32 => a:Int32 => b:Int32 =>
+  bitor-Int32 (bitand-Int32 a               mask)
+              (bitand-Int32 b (bitnot-Int32 mask));
+};
+
+// Preconditions:
+//      fin - start <= 32
+//            start <= 32
+bitfield-Int32 = { n:Int32 => start:Int32 => fin:Int32 =>
+  bitand-Int32 (bitnot-Int32 (bitshl-Int32 -1 (fin -Int32 start)))
+               (bitashr-Int32 n start);
+};
+
+// TODO: any-bits-set
+
+// TODO: bitcount
+
+bitlength-Int32 = { n : Int32 =>
+  rec go = { n => total =>
+             // This lookup table is not consistent with SRFI 60,
+             // but they define both 0 and -1 as being of bit length zero,
+             // which seems totally bogus.
+             case n
+               of 0 -> total
+               of 1 -> total +Int32 1
+               of 2 -> total +Int32 2
+               of 3 -> total +Int32 2
+               of 4 -> total +Int32 3
+               of 5 -> total +Int32 3
+               of 6 -> total +Int32 3
+               of 7 -> total +Int32 3
+               of _ -> go (bitlshr-Int32 n 4) (total +Int32 4);
+             end
+           };
+  in  go n 0 end
+};
+
+bitlength-alt-Int32 = { n : Int32 =>
+  rec go = { n => total =>
+             if n ==Int32 0
+               then total
+               else go (bitlshr-Int32 n 1) (total +Int32 1)
+             end
+           };
+  in  go n 0 end
+};
+
+first-set-bit-Int32 = { n : Int32 =>
+  (bitlength-Int32 (bitand-Int32 n (negate-Int32 n))) -Int32 1
+};
+
+// TODO: is-bit-set
+
+// TODO: copy-bit
+
+bit-reverse-Int32 = { k : Int32 => n : Int32 =>
+  rec go = { m => k => rvs =>
+             if k <Int32 0
+               then if n <Int32 0 then bitnot-Int32 rvs else rvs end
+               else go (bitlshr-Int32 m 1)
+                       (k -Int32 1)
+                       (bitor-Int32 (bitshl-Int32 rvs 1) (bitand-Int32 1 m))
+            end
+           };
+  in go if n <Int32 0 then (negate-Int32 n) else n end
+        (k -Int32 1)
+        0;
+  end
+};
+
+// Preconditions:
+//      fin - start < 32
+//            start < 32
+bit-field-reverse-Int32 = { n : Int32 => start : Int32 => fin : Int32 =>
+  let width = fin -Int32 start;
+      mask  = bitnot-Int32 (bitshl-Int32 -1 width);
+      zn    = bitand-Int32 mask (bitashr-Int32 n start);
+  in
+      bitor-Int32 (bitshl-Int32 (bit-reverse-Int32 width zn) start)
+                  (bitand-Int32 (bitnot-Int32 (bitshl-Int32 mask start)) n)
+  end
+};
