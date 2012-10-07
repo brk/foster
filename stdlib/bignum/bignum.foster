@@ -935,3 +935,53 @@ foster_mp_int_slow_sqr = { ii : IntInf =>
 };
 */
 
+// Precondition: k >= 0
+//
+foster_mp_mul_nat_Int32 = { a : Array Int64 => k : Int32 =>
+
+  let c = allocDArray (used a +Int32 1);
+      u = foldRange 0 (used a) 0 { ix => u : Int64 =>
+            let k64 = primitive_sext_i64_i32 k;
+                foster_MP_MASK = 0FFF`FFFF`FFFF`FFFF_16;
+                foster_DIGIT_BIT = 60;
+            in
+                case foster_mul_i64 (u +Int64 a[ix]) k64 of
+                (rhi, rlo) ->
+                  (bitand-Int64 rlo foster_MP_MASK) >^ c[ix];
+
+                  // Propagate carry:  [0|0|  c   ][b|   a   ]  ====>
+                  //                               [0|  c  |b]
+                  bitor-Int64
+                    (bitlshr-Int64 rlo foster_DIGIT_BIT)
+                    (bitlshr-Int64 rhi (64 -Int64 foster_DIGIT_BIT))
+                end
+             end
+          };
+  in
+    u >^ c[used a];
+    trimLeadingZeros c;
+  end
+
+};
+
+// Precondition: k >= 0
+//
+foster_mp_mul_Int32 = { ii : IntInf => k : Int32 =>
+
+  mkIntInf (foster_mp_mul_nat_Int32 (digits ii) k) (isNegative ii)
+
+};
+
+
+// Compute (c,d) such that a = c*b + d.
+//
+// Precondition: b != 0.
+//
+foster_mp_divmod = { a : IntInf => b : IntInf =>
+  case foster_mp_cmp a b
+    of $LT -> (foster_mp_from_Int32 0, a) // if a < b then q=0, r = a.
+    of _   ->
+      // TODO
+      (a, b)
+  end
+};

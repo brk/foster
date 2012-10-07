@@ -280,4 +280,12 @@ t7 = {
   print_text (foster_mp_to_text_radix
                  (foster_mp_rshb (foster_mp_2expt 70) 40)
               10);
+
+
+  expect_i64 (1373420 *Int64 13423);
+  print_text (foster_mp_to_text_radix
+                 (foster_mp_mul_Int32 (foster_mp_from_Int32 1373420)
+                                      13423)
+              10);
+
 };
