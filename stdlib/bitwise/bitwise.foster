@@ -47,9 +47,26 @@ bitfield-Int32 = { n:Int32 => start:Int32 => fin:Int32 =>
                (bitashr-Int32 n start);
 };
 
-// TODO: any-bits-set
+any-common-bits-Int32 = { j : Int32 => k : Int32 =>
+  (bitand-Int32 j k) !=Int32 0
+};
 
-// TODO: bitcount
+// TODO: use ctpop intrinsic?
+bitcount-Int32 = { n : Int32 =>
+  rec count-1-bits = { k : Int32 => acc : Int32 =>
+         if k ==Int32 0 then acc else
+           count-1-bits (bitlshr-Int32 k 1) (acc +Int32 (bitand-Int32 k 1));
+         end
+      };
+  in
+    if n <Int32 0 then
+      // Count 0 bits by inverting and counting 1 bits.
+      count-1-bits (bitnot-Int32 n) 0
+    else // Count 1 bits directly
+      count-1-bits n 0
+    end
+  end
+};
 
 bitlength-Int32 = { n : Int32 =>
   rec go = { n => total =>
@@ -85,9 +102,19 @@ first-set-bit-Int32 = { n : Int32 =>
   (bitlength-Int32 (bitand-Int32 n (negate-Int32 n))) -Int32 1
 };
 
-// TODO: is-bit-set
+// Precondition: 0 <= index < 32
+//
+is-bit-set-Int32 = {  n : Int32 => index : Int32 =>
+  0 !=Int32 (bitand-Int32 n
+            (bitshl-Int32 1 index));
+};
 
-// TODO: copy-bit
+copy-bit-Int32 = { n : Int32 => newbit : Bool => index : Int32 =>
+  if newbit
+    then bitor-Int32  n               (bitshl-Int32 1 index);
+    else bitand-Int32 n (bitnot-Int32 (bitshl-Int32 1 index));
+  end
+};
 
 bit-reverse-Int32 = { k : Int32 => n : Int32 =>
   rec go = { m => k => rvs =>

@@ -66,6 +66,22 @@ bitwise-ops = {
 
   expect_i32b                     0000`1101_2;
   print_i32b (bit-reverse-Int32 8 1011`0000_2);
+
+  expect_i1 True ; print_i1 (is-bit-set-Int32 101011_2 0);
+  expect_i1 True ; print_i1 (is-bit-set-Int32 101011_2 1);
+  expect_i1 False; print_i1 (is-bit-set-Int32 101011_2 2);
+  expect_i1 True ; print_i1 (is-bit-set-Int32 101011_2 3);
+  expect_i1 False; print_i1 (is-bit-set-Int32 101011_2 4);
+  expect_i1 True ; print_i1 (is-bit-set-Int32 101011_2 5);
+
+  expect_i32 1;      print_i32 (copy-bit-Int32 0  True  0);
+  expect_i32 0100_2; print_i32 (copy-bit-Int32 0  True  2);
+  expect_i32 1011_2; print_i32 (copy-bit-Int32 15 False 2);
+
+
+  expect_i32 4; print_i32 (bitcount-Int32 10101010_2);
+  expect_i32 0; print_i32 (bitcount-Int32 0);
+  expect_i32 1; print_i32 (bitcount-Int32 -2);
 };
 
 first-bit-set-Int32-test = { e : Int32 => n : Int32 =>
