@@ -972,6 +972,97 @@ foster_mp_mul_Int32 = { ii : IntInf => k : Int32 =>
 
 };
 
+isLT = { x =>
+  case x of $LT -> True
+         of  _  -> False
+  end
+};
+
+lshrInt128 = { hi : Ref Int64 => lo : Ref Int64 =>
+  let hi2 = bitlshr-Int64 hi^ 1;
+      lo2 = bitor-Int64 (bitlshr-Int64 lo^ 1)
+                         (bitshl-Int64 hi^ 63);
+  in
+    hi2 >^ hi;
+    lo2 >^ lo;
+  end
+};
+
+shlInt128 = { hi : Ref Int64 => lo : Ref Int64 =>
+  let lo2 = bitshl-Int64 lo^ 1;
+      hi2 = bitor-Int64 (bitshl-Int64 hi^ 1)
+                       (bitlshr-Int64 lo^ 63);
+  in
+    hi2 >^ hi;
+    lo2 >^ lo;
+  end
+};
+
+gteInt128 = { hA : Int64 => lA : Int64 =>
+              hB : Int64 => lB : Int64 =>
+  if hA >Int64 hB then True else
+    both (hA ==Int64 hB) (lA >=Int64 lB)
+  end
+};
+
+// Modifies ra,rb by side effect because we don't want to assume
+// any direct codegen support at all for Int128.
+subInt128 = { hAr : Ref Int64 => lAr : Ref Int64 =>
+              hB  :     Int64 => lB  :     Int64 =>
+  let hc = hAr^ -Int64 hB;
+      lc = lAr^ -Int64 lB;
+  in
+    if lc >=Int64 0 then // signed comparison
+      hc >^ hAr;            lc >^ lAr; // same bitstrings
+    else
+      (hc -Int64 1) >^ hAr; lc >^ lAr; // borrow from high bits.
+    end
+  end
+};
+
+// Modifies ra,rb by side effect for consistency with subInt128.
+// Version on smaller bitstrings for easier testing.
+subInt64 = { hAr : Ref Int32 => lAr : Ref Int32 =>
+             hB  :     Int32 => lB  :     Int32 =>
+  let hc = hAr^ -Int32 hB;
+      lc = lAr^ -Int32 lB;
+  in
+    if lc >=Int32 0 then // signed comparison
+      hc >^ hAr;            lc >^ lAr; // same bitstrings
+    else
+      (hc -Int32 1) >^ hAr; lc >^ lAr; // borrow from high bits.
+    end;
+    ()
+  end
+};
+
+/*
+
+// Precondition: d > 0
+//
+divmod-Int128-64 = { hi : Int64 => lo : Int64 => d : Int64 =>
+  let
+      hi2 = (ref hi);
+      lo2 = (ref lo);
+
+      xhi = (ref 0);
+      xlo = (ref d);
+
+      ahi = (ref hi);
+      alo = (ref lo);
+      quo = (ref 0);
+  in
+    lshrInt128 hi2 lo2;
+
+    until both (ahi^ ==Int64 0) (alo^ <Int64 d) then
+      if gteInt128 ahi^ alo^ xhi^ xlo^ then
+        subInt128 ahi alo xhi^ xlo^;
+      else () end;
+
+      lshrInt128 xhi xlo;
+    end
+  end
+};
 
 // Compute (c,d) such that a = c*b + d.
 //
@@ -982,6 +1073,56 @@ foster_mp_divmod = { a : IntInf => b : IntInf =>
     of $LT -> (foster_mp_from_Int32 0, a) // if a < b then q=0, r = a.
     of _   ->
       // TODO
-      (a, b)
+      // q = allocDArray (used a +Int32 2);
+      // qn = not (eqBool (isNegative a) (isNegative b));
+      // x = (ref (copy of a, positive))
+      // y = (ref (copy of b, positive))
+
+      norm0 = foster_mp_count_bits y^ -Int32 foster_DIGIT_BIT;
+      normn = (DIGIT_BIT -Int32 1) -Int32 norm0;
+      norm = if normn <=Int32 0 then 0 else
+               foster_mp_mul_2d x^ normn >^ x;
+               foster_mp_mul_2d y^ normn >^ y;
+               normn
+             end;
+
+      n = used x^ -Int32 1;
+      t = used y^ -Int32 1;
+
+      nmt = n -Int32 t;
+      foster_DIGIT_BIT64 = 60;
+
+      (foster_mp_lshd y^) >^ y;
+
+      until isLT (foster_mp_cmp x^ y^) then
+        q[nmt] +Int64 1 >^ q[nmt];
+        (foster_mp_sub x^ y^) >^ x;
+      end;
+
+      (foster_mp_rshd y^ nmt) >^ y;
+
+      foldRangeDown n (t +Int32 1) () { i => unit =>
+        if i >Int32 used x^ then unit else
+          if (digits x^)[i] ==Int64 (digits y^)[i] then
+            ((bitshl-Int64 1 foster_DIGIT_BIT64) -Int64 1)
+                                                      >^ q[i -Int32 t -Int32 1];
+          else
+             // emulate double-precision shl by calculating upper & lower parts.
+             tmphi  = bitlshr-Int64 (digits x^)[i]
+                                       (64 -Int64 foster_DIGIT_BIT64);
+             tmplo0 = bitshl-Int64 (digits x^)[i] foster_DIGIT_BIT64;
+             tmplo  = bitor-Int64  (digits x^)[i -Int32 1] tmplo0;
+
+             case divmod-Int128-64 tmphi tmplo (digits y^)[t] of (quo, rem) ->
+               (if quo >Int64 foster_MP_MASK then foster_MP_MASK else
+                                 bitand-Int64 quo foster_MP_MASK)
+                   >^ q[i -Int32 t -Int32 1];
+             end
+          end;
+
+        end
+      };
   end
 };
+
+*/
