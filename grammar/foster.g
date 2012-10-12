@@ -88,9 +88,13 @@ e    :
               -> ^(TERM ^(MU opr?) ^(MU phrase) ^(MU binops?))
   ;
 
-binops  :       (opr phrase)+;
+binop   : opr          -> opr
+        | '`' name '`' -> name
+        ;
 
-phrase  :       '-'?   lvalue+                  -> ^(PHRASE '-'? lvalue+)
+binops  : (binop phrase)+;
+
+phrase  :       '-'?   lvalue+                  -> ^(PHRASE '-'?  lvalue+)
         |       'prim' name lvalue*             -> ^(PRIMAPP name lvalue*);
 lvalue  :              atom suffix*             -> ^(LVALUE atom suffix*);
 

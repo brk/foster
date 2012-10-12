@@ -622,7 +622,9 @@ ExprAST* parsePhrase(pTree tree) {
   int token = typeOf(tree);
   if (token == PHRASE) { return parseCall(tree); }
   if (token == PRIMAPP) { return parsePrimApp(tree); }
-  ASSERT(false) << "Unknown token type in parsePhrase()!";
+
+  display_pTree(tree, 2);
+  ASSERT(false) << "Unknown token type in parsePhrase()!" << token;
   return NULL;
 }
 
