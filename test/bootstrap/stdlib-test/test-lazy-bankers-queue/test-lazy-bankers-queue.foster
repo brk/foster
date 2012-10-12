@@ -23,7 +23,7 @@ bankersQueueIsEmpty = { forall a:Boxed, q: BankersQueue a =>
 bankersQueueCheck :: forall a:Boxed, { BankersQueue a => BankersQueue a };
 bankersQueueCheck = { forall a:Boxed, q: BankersQueue a =>
   case q of $BankersQueue lenf f lenr r ->
-    if lenr <=Int32 lenf
+    if lenr <=SInt32 lenf
       then q
       else BankersQueue (lenf +Int32 lenr) (stream-append f (stream-reverse r))
                         0                  (stream-nil-mediocre !)

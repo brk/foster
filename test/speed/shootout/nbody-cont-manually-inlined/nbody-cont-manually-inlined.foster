@@ -90,7 +90,7 @@ mkBodies = { nbodies : Int32 =>
 };
 
 repeat = { n : Int32 => f : { () } =>
-  if n >Int32 0 then f !; repeat (n -Int32 1) f else () end
+  if n >SInt32 0 then f !; repeat (n -Int32 1) f else () end
 };
 
 incrBy = { r : Ref Int32 => n : Int32 => (n +Int32 r^) >^ r; };
@@ -112,7 +112,7 @@ energy = { bodies : Array Planet =>
                           a : Array t =>
                           k : Int64 =>
                           f : { t => Int64 => () } =>
-          if k <Int64 prim_arrayLength a
+          if k <SInt64 prim_arrayLength a
             then f a[primitive_trunc_i64_i32 k] k;
                  arrayEnumFromF a (incr64 k) f
             else ()
@@ -120,7 +120,7 @@ energy = { bodies : Array Planet =>
         };
         */
         arrayEnumFromF = {k : Int64 =>
-          if k <Int64 prim_arrayLength bodies
+          if k <SInt64 prim_arrayLength bodies
             then /* { */
 
             let b1 = bodies[primitive_trunc_i64_i32 k];
@@ -128,7 +128,7 @@ energy = { bodies : Array Planet =>
              in
                 rec
                    arrayEnumFromH = { k : Int64 =>
-                     if k <Int64 prim_arrayLength bodies
+                     if k <SInt64 prim_arrayLength bodies
                        then
                            let b2 = bodies[primitive_trunc_i64_i32 k];
                                jj = k;

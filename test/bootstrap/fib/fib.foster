@@ -11,7 +11,7 @@ main = {
 };
 
 fib-naive = { x : Int32 =>
-  if x <Int32 3
+  if x <SInt32 3
     then 1
     else (fib-naive (x -Int32 1)) +Int32
          (fib-naive (x -Int32 2))

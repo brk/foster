@@ -369,13 +369,13 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   else if (op == "fdiv"){return b.CreateFDiv(VL, VR, "fdivtmp"); }
   else if (op == "f*") { return b.CreateFMul(VL, VR, "fmultmp"); }
 
-  else if (op == "<")  { return b.CreateICmpSLT(VL, VR, "slttmp"); }
-  else if (op == "<=") { return b.CreateICmpSLE(VL, VR, "sletmp"); }
-  else if (op == ">")  { return b.CreateICmpSGT(VL, VR, "sgttmp"); }
-  else if (op == ">=") { return b.CreateICmpSGE(VL, VR, "sgetmp"); }
-  else if (op == "<u") { return b.CreateICmpULT(VL, VR, "ulttmp"); }
+  else if (op ==  "<s"){ return b.CreateICmpSLT(VL, VR, "slttmp"); }
+  else if (op == "<=s"){ return b.CreateICmpSLE(VL, VR, "sletmp"); }
+  else if (op ==  ">s"){ return b.CreateICmpSGT(VL, VR, "sgttmp"); }
+  else if (op == ">=s"){ return b.CreateICmpSGE(VL, VR, "sgetmp"); }
+  else if (op == " <u"){ return b.CreateICmpULT(VL, VR, "ulttmp"); }
   else if (op == "<=u"){ return b.CreateICmpULE(VL, VR, "uletmp"); }
-  else if (op == ">u") { return b.CreateICmpUGT(VL, VR, "ugttmp"); }
+  else if (op ==  ">u"){ return b.CreateICmpUGT(VL, VR, "ugttmp"); }
   else if (op == ">=u"){ return b.CreateICmpUGE(VL, VR, "ugetmp"); }
   else if (op == "==") { return b.CreateICmpEQ(VL, VR, "eqtmp"); }
   else if (op == "!=") { return b.CreateICmpNE(VL, VR, "netmp"); }

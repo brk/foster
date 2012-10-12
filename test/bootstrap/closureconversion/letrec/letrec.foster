@@ -24,14 +24,14 @@ test-rec-ret1 :: { Int32 };
 test-rec-ret1 = { rec x = { 12345 }; in x ! end };
 
 test-rec-let = { z : Int32 =>
-  rec grope = { x:Int32 => if x <Int32 0 then x else grope (x -Int32 1) end }; in
+  rec grope = { x:Int32 => if x <SInt32 0 then x else grope (x -Int32 1) end }; in
     let eporg = { grope };
      in eporg ! (opaquely_i32 z); end
   end
 };
 
 test-rec-ret = { z : Int32 =>
-  rec grope = { x:Int32 => if x <Int32 0 then x else grope (x -Int32 1) end };
+  rec grope = { x:Int32 => if x <SInt32 0 then x else grope (x -Int32 1) end };
       eporg = { grope };
    in eporg ! (opaquely_i32 z);
   end

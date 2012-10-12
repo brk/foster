@@ -90,7 +90,7 @@ mkBodies = { nbodies : Int32 =>
 };
 
 repeat = { n : Int32 => f : { () } => // cfg sz 15
-  if n >Int32 0 then f !; repeat (n -Int32 1) f else () end
+  if n >SInt32 0 then f !; repeat (n -Int32 1) f else () end
 };
 
 incrBy = { r : Ref Int32 => n : Int32 => (n +Int32 r^) >^ r; }; // cfg size: 5

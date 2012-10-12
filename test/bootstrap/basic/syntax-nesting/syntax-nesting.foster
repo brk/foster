@@ -37,7 +37,7 @@ test-nested-let-if = {
                          z2 = opaquely_i32 2;
                       in z +Int32 z2 end;
                  q2 = opaquely_i32 3;
-              in (q +Int32 q2) <Int32 0 end)
+              in (q +Int32 q2) <SInt32 0 end)
    then print_i32 777
    else print_i32 666
    end;

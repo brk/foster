@@ -92,7 +92,7 @@ stream-countdown-tozero :: forall a:Boxed,
                           {     Int32 =>     { Int32 => a } => Lazy (Stream a) };
 stream-countdown-tozero = { forall a:Boxed,
                             n : Int32 => f : { Int32 => a } =>
-  if n <=Int32 0
+  if n <=SInt32 0
     then stream-nil-mediocre !
     else lazily {
            stream-cons-mediocre (delay { f n })

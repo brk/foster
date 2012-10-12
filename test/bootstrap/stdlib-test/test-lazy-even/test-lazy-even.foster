@@ -76,7 +76,7 @@ main = {
               // can't define recursive binding for a lazy value:
               //        rec p = delay { ... (force p) ... }; end
              pf = { print_text "pf";
-                    if (count ^) <=Int32 0 // pf :: { BInt }
+                    if (count ^) <=SInt32 0 // pf :: { BInt }
                          then B (count ^)
                          else ((count ^) -Int32 1) >^ count;
                               force (pr ^);

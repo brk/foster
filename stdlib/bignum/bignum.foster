@@ -55,14 +55,14 @@ ordInvertIf = { b : Ord => cnd : Bool =>
 cmpInt32 = { a : Int32 => b : Int32 =>
   if a ==Int32 b
   then EQ !
-  else if a <Int32 b then LT ! else GT ! end
+  else if a <SInt32 b then LT ! else GT ! end
   end
 };
 
 cmpInt64 = { a : Int64 => b : Int64 =>
   if a ==Int64 b
   then EQ !
-  else if a <Int64 b then LT ! else GT ! end
+  else if a <SInt64 b then LT ! else GT ! end
   end
 };
 
@@ -76,7 +76,7 @@ textOfOrd = { o : Ord =>
 
 findFirstUsedDigit = { a : Array Int64 =>
   rec go = { k =>
-     if k <Int32 0 then 0 else
+     if k <SInt32 0 then 0 else
          if a[k] !=Int64 0
              then k
              else go (k -Int32 1)
@@ -89,7 +89,7 @@ findFirstUsedDigit = { a : Array Int64 =>
 // Precondition: b & MP_DIGIT_MASK == b
 //
 cmpIntInfAbsDigitsD = { a : Array Int64 => b : Int64 =>
-  if used a >Int32 1
+  if used a >SInt32 1
     then
          // Because we don't yet use all 64 bits of each word,
          // a 62-bit or 63-bit number needs two limbs to represent.
@@ -110,7 +110,7 @@ cmpIntInfAbsD = { a : IntInf => b : Int64 =>
 };
 
 cmpIntInfD = { a : IntInf => b : Int64 =>
-  case (isNegative a, b <Int64 0)
+  case (isNegative a, b <SInt64 0)
     of (True, False) -> LT !
     of (False, True) -> GT !
     of (False,False) -> cmpIntInfAbsDigitsD (digits a) b
@@ -172,7 +172,7 @@ foldRange = { forall t:Type,
               init : t =>
               iter : { Int32 => t => t } =>
   rec go =  { n : Int32 => acc : t =>
-                if n >=Int32 fin then acc else
+                if n >=SInt32 fin then acc else
                   go (n +Int32 1) (iter n acc)
                 end
             };
@@ -187,7 +187,7 @@ foldRangeDown = { forall t:Type,
               init : t =>
               iter : { Int32 => t => t } =>
   rec go =  { n : Int32 => acc : t =>
-                if n >=Int32 fin then
+                if n >=SInt32 fin then
                   go (n -Int32 1) (iter n acc)
                 else acc end
             };
@@ -291,7 +291,7 @@ foster_mp_add_UA = { a => b =>
 let foster_MP_MASK = 0FFF`FFFF`FFFF`FFFF_16;
 in
   case
-    if (used a) <Int32 (used b)
+    if (used a) <SInt32 (used b)
       then (a, b)
       else (b, a)
     end
@@ -306,7 +306,7 @@ in
               unext
             end
           };
-        p = if used sm <Int32 used lg
+        p = if used sm <SInt32 used lg
               then
                 foldRange (used sm) (used lg) u { i => u =>
                   (lg[i] +Int64 u) >^ c[i];
@@ -410,7 +410,7 @@ foster_mp_copy_to = { a => res =>
 
 foster_mp_lshd_UA :: { Array Int64 => Int32 => Array Int64 };
 foster_mp_lshd_UA = { a => n =>
-  if n <=Int32 0 then a else
+  if n <=SInt32 0 then a else
     // TODO assert that n + arraySize a does not overflow...
     let r = allocDArray:[Int64] (n +Int32 used a);
     in
@@ -457,7 +457,7 @@ foster_mp_mul_2d_UA = { a => n =>
       print_i32   d;
       */
 
-      if by_digits >Int32 0
+      if by_digits >SInt32 0
         then foster_mp_lshd_to a by_digits r
         else foster_mp_copy_to a           r
       end;
@@ -526,7 +526,7 @@ mkDigitsOfInt32 = { k =>
 
 foster_mp_from_Int32 :: { Int32 => IntInf };
 foster_mp_from_Int32 = { k =>
-  if k <Int32 0
+  if k <SInt32 0
     then IntInf (mkDigitsOfInt32 (negate-Int32 k)) True
     else IntInf (mkDigitsOfInt32 k) False
   end
@@ -548,7 +548,7 @@ mkDigitsOfInt64 = { k =>
 // Precondition: k >= 0
 foster_mp_from_Int64 :: { Int64 => IntInf };
 foster_mp_from_Int64 = { k =>
-  if k <Int64 0
+  if k <SInt64 0
     then IntInf (mkDigitsOfInt64 (negate-Int64 k)) True
     else IntInf (mkDigitsOfInt64 k) False
   end
@@ -727,7 +727,7 @@ foster_mp_to_text_radix = { i : IntInf => radix : Int32 =>
 // TODO Int128 intrinsics -- mulq on x86-64 computes 128-bit result.
 
 foster_sqr_i64 = { x : Int64 =>
-  if x <=Int64 1839720382
+  if x <=SInt64 1839720382
     then (0, x *Int64 x) // x*x won't overflow Int64
     else // might overflow...
       case splitInt64 x
@@ -760,7 +760,7 @@ foster_sqr_i64 = { x : Int64 =>
 
 // TODO test
 foster_mul_i64 = { x : Int64 => y : Int64 =>
-  if both (x <=Int64 1839720382) (y <=Int64 1839720382)
+  if both (x <=SInt64 1839720382) (y <=SInt64 1839720382)
     then (0, x *Int64 y) // x*y won't overflow Int64
     else // might overflow...
       case (splitInt64 x, splitInt64 y)
@@ -785,7 +785,7 @@ foster_mul_i64 = { x : Int64 => y : Int64 =>
 };
 
 min-Int32 = { a : Int32 => b : Int32 =>
-  if a <Int32 b then a else b end
+  if a <SInt32 b then a else b end
 };
 
 foster_mp_bitand_nat :: { Array Int64 => Array Int64 => Array Int64 };
@@ -809,11 +809,11 @@ foster_mp_bitand = { i => j =>
 //
 foster_mp_rshd :: { IntInf => Int32 => Maybe IntInf };
 foster_mp_rshd = { ii => b =>
-  if b <=Int32 0 then None ! else
+  if b <=SInt32 0 then None ! else
     let a = digits ii;
         newsize = used a -Int32 b;
      in
-      if newsize <=Int32 0 then
+      if newsize <=SInt32 0 then
         Some (foster_mp_from_Int32 0)
       else
         // old [b0 | b1 | ... | bb | ... | bn ]
@@ -829,7 +829,7 @@ foster_mp_rshd = { ii => b =>
 //
 foster_mp_2expt :: { Int32 => IntInf };
 foster_mp_2expt = { k =>
-  if k <Int32 0 then foster_mp_from_Int32 0 else
+  if k <SInt32 0 then foster_mp_from_Int32 0 else
     let foster_DIGIT_BIT = 60;
         ndigits          = sdiv-Int32 k foster_DIGIT_BIT;
     in
@@ -862,7 +862,7 @@ foster_mp_rshb_nat = { a : Array Int64 => nbits : Int32 =>
         ndigits = udiv-Int32 nbits foster_DIGIT_BIT;
         newsize = used a -Int32 ndigits;
      in
-      if newsize <=Int32 0 then
+      if newsize <=SInt32 0 then
         mkDigitsOfInt32 0
       else
         let rembits = primitive_zext_i32_to_i64
@@ -891,7 +891,7 @@ foster_mp_rshb_nat = { a : Array Int64 => nbits : Int32 =>
 //
 foster_mp_rshb :: { IntInf => Int32 => IntInf };
 foster_mp_rshb = { ii => nbits =>
-  if nbits <=Int32 0
+  if nbits <=SInt32 0
     then ii
     else mkIntInf (foster_mp_rshb_nat (digits ii) nbits) (isNegative ii)
   end
@@ -1016,8 +1016,8 @@ shlInt128 = { hi : Ref Int64 => lo : Ref Int64 =>
 
 gteInt128 = { hA : Int64 => lA : Int64 =>
               hB : Int64 => lB : Int64 =>
-  if hA >Int64 hB then True else
-    both (hA ==Int64 hB) (lA >=Int64 lB)
+  if hA >SInt64 hB then True else
+    both (hA ==Int64 hB) (lA >=SInt64 lB)
   end
 };
 
@@ -1031,7 +1031,7 @@ subNat128 = { hAr : Ref Int64 => lAr : Ref Int64 =>
   let hc = hAr^ -Int64 hB;
       lc = lAr^ -Int64 lB;
   in
-    if lc >=Int64 0 then // signed comparison
+    if lc >=SInt64 0 then // signed comparison
       hc >^ hAr;            lc >^ lAr; // same bitstrings
     else
       (hc -Int64 1) >^ hAr; lc >^ lAr; // borrow from high bits.
@@ -1046,7 +1046,7 @@ subInt64 = { hAr : Ref Int32 => lAr : Ref Int32 =>
   let hc = hAr^ -Int32 hB;
       lc = lAr^ -Int32 lB;
   in
-    if lc >=Int32 0 then // signed comparison
+    if lc >=SInt32 0 then // signed comparison
       hc >^ hAr;            lc >^ lAr; // same bitstrings
     else
       (hc -Int32 1) >^ hAr; lc >^ lAr; // borrow from high bits.
@@ -1086,7 +1086,7 @@ divmod-Int128-64 = { hi : Int64 => lo : Int64 => d : Int64 =>
       //print_text "scale x";
     end;
 
-    until either (both (ahi^ ==Int64 0) (alo^ <Int64 d))
+    until either (both (ahi^ ==Int64 0) (alo^ <SInt64 d))
                  (both (xhi^ ==Int64 0) (xlo^ ==Int64 0)) then
 //    print_text "ahi; alo; xhi/lo, d:";
 //    print_i64 ahi^;
@@ -1128,7 +1128,7 @@ foster_mp_divmod = { a : IntInf => b : IntInf =>
 
       norm0 = foster_mp_count_bits y^ -Int32 foster_DIGIT_BIT;
       normn = (DIGIT_BIT -Int32 1) -Int32 norm0;
-      norm = if normn <=Int32 0 then 0 else
+      norm = if normn <=SInt32 0 then 0 else
                foster_mp_mul_2d x^ normn >^ x;
                foster_mp_mul_2d y^ normn >^ y;
                normn
@@ -1150,7 +1150,7 @@ foster_mp_divmod = { a : IntInf => b : IntInf =>
       (foster_mp_rshd y^ nmt) >^ y;
 
       foldRangeDown n (t +Int32 1) () { i => unit =>
-        if i >Int32 used x^ then unit else
+        if i >SInt32 used x^ then unit else
           // {{{
           let it1 = i -Int32 t -Int32 1; in
             if (digits x^)[i] ==Int64 (digits y^)[i] then
@@ -1173,7 +1173,7 @@ foster_mp_divmod = { a : IntInf => b : IntInf =>
             rec doloop = {
               (bitand-Int64 (q[it1] +Int64 1) foster_MP_MASK) >^ q[it1];
               let thi = foster_mp_from_Int64 (digits y^)[t];
-                  tlo = foster_mp_from_Int64 (if t -Int32 1 <Int32 0
+                  tlo = foster_mp_from_Int64 (if t -Int32 1 <SInt32 0
                          then 0 else (digits y^)[t -Int32 1] end);
                   t1  = foster_mp_mul_d // TODO
                                  (foster_mp_add (foster_mp_lshd thi 1) tlo)
@@ -1181,8 +1181,8 @@ foster_mp_divmod = { a : IntInf => b : IntInf =>
 
                   t2a = newDArray 3 { k =>
                     case k
-                      of 0 -> if (i -Int32 2) <Int32 0 then 0 else (digits x^)[i -Int32 2] end
-                      of 1 -> if (i -Int32 1) <Int32 0 then 0 else (digits x^)[i -Int32 1] end
+                      of 0 -> if (i -Int32 2) <SInt32 0 then 0 else (digits x^)[i -Int32 2] end
+                      of 1 -> if (i -Int32 1) <SInt32 0 then 0 else (digits x^)[i -Int32 1] end
                       of 2 -> (digits x^)[i]
                       of _ -> 0 // can't happen
                     end;

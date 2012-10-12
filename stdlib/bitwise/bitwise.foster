@@ -59,7 +59,7 @@ bitcount-Int32 = { n : Int32 =>
          end
       };
   in
-    if n <Int32 0 then
+    if n <SInt32 0 then
       // Count 0 bits by inverting and counting 1 bits.
       count-1-bits (bitnot-Int32 n) 0
     else // Count 1 bits directly
@@ -118,14 +118,14 @@ copy-bit-Int32 = { n : Int32 => newbit : Bool => index : Int32 =>
 
 bit-reverse-Int32 = { k : Int32 => n : Int32 =>
   rec go = { m => k => rvs =>
-             if k <Int32 0
-               then if n <Int32 0 then bitnot-Int32 rvs else rvs end
+             if k <SInt32 0
+               then if n <SInt32 0 then bitnot-Int32 rvs else rvs end
                else go (bitlshr-Int32 m 1)
                        (k -Int32 1)
                        (bitor-Int32 (bitshl-Int32 rvs 1) (bitand-Int32 1 m))
             end
            };
-  in go if n <Int32 0 then (negate-Int32 n) else n end
+  in go if n <SInt32 0 then (negate-Int32 n) else n end
         (k -Int32 1)
         0;
   end

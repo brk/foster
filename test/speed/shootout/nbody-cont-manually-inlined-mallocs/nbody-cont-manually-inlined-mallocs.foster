@@ -103,7 +103,7 @@ dot_bodyPos = { b : Planet =>
 energy = { bodies : Array Planet =>
   rec
         arrayIterFromF = { k : Int64 => e : Float64 =>
-          if k <Int64 prim_arrayLength bodies
+          if k <SInt64 prim_arrayLength bodies
             then
              arrayIterFromF (incr64 k)
                (let b1 = bodies[primitive_trunc_i64_i32 k];
@@ -111,7 +111,7 @@ energy = { bodies : Array Planet =>
                 in
                    rec
                       arrayIterFromH = { k : Int64 => e : Float64 =>
-                        if k <Int64 prim_arrayLength bodies
+                        if k <SInt64 prim_arrayLength bodies
                           then
                               let b2 = bodies[primitive_trunc_i64_i32 k];
                                   jj = k;
@@ -143,12 +143,12 @@ energy = { bodies : Array Planet =>
 
 advance = { bodies : Array Planet =>
   rec arrayEnumFromF = { k : Int64 =>
-          if k <Int64 prim_arrayLength bodies
+          if k <SInt64 prim_arrayLength bodies
             then let b1 = bodies[primitive_trunc_i64_i32 k];
                      i  = k;
                  in
                      rec arrayEnumFromH = { k : Int64 =>
-                          if k <Int64 prim_arrayLength bodies
+                          if k <SInt64 prim_arrayLength bodies
                             then  let b2 = bodies[primitive_trunc_i64_i32 k];
                                       jj = k;
 
@@ -182,7 +182,7 @@ advance = { bodies : Array Planet =>
   end;
 
   rec arrayEnumFromG = { k : Int64 =>
-          if k <Int64 prim_arrayLength bodies
+          if k <SInt64 prim_arrayLength bodies
             then let b = bodies[primitive_trunc_i64_i32 k];
                  in
                     incrByFloat64 (pxr b) (vx b);
@@ -240,7 +240,7 @@ main = {
       // TODO: make sure a global defn of repeat can be inlined,
       //       and a thunk parameter can be inlined/specialized.
       rec repeat = { n : Int32 =>
-          if n >Int32 0 then advance bodies; repeat (n -Int32 1) else () end
+          if n >SInt32 0 then advance bodies; repeat (n -Int32 1) else () end
         };
       in repeat n^ end;
 

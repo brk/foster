@@ -89,7 +89,7 @@ mkBodies = { nbodies : Int32 =>
 };
 
 repeat = { n : Int32 => f : { () } =>
-  if n >Int32 0 then f !; repeat (n -Int32 1) f else () end
+  if n >SInt32 0 then f !; repeat (n -Int32 1) f else () end
 };
 
 incrBy = { r : Ref Int32 => n : Int32 => (n +Int32 r^) >^ r; };
@@ -159,7 +159,7 @@ advance-loop = { n : Int32 => bodies : Array Planet
     until i^ ==Int64 l then
       (i^ +Int64 (primitive_sext_i64_i32 1)) >^ j;
       let b1 = prim subscript bodies (primitive_trunc_i64_i32 i^); in
-        until j^ >=Int64 l then
+        until j^ >=SInt64 l then
           let b2 = prim subscript bodies (primitive_trunc_i64_i32 j^); in
             let dx = px b1 -f64 px b2;
                 dy = py b1 -f64 py b2;

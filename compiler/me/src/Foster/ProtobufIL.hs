@@ -86,7 +86,7 @@ dumpIntType sizeBits = P'.defaultValue { PbType.tag  = PbTypeTag.PRIM_INT
 
 dumpType :: TypeLL -> PbType.Type
 dumpType (LLPtrTypeUnknown)  = dumpUnknownType ()
-dumpType (LLPrimInt size)    = dumpIntType (intOfSize size)
+dumpType (LLPrimInt size)    = dumpIntType (fromIntegral $ intSizeOf size)
 dumpType (LLPrimFloat64)     =
               P'.defaultValue { PbType.tag  = PbTypeTag.FLOAT64 }
 dumpType (LLTyConApp nm _tys)=
@@ -233,7 +233,7 @@ dumpLiteral ty lit =
                                   , PbLetable.dval  = Just $ litFloatValue f
                                   }
 
-fixnumTypeSize (LLPrimInt isb) = intOfSize isb
+fixnumTypeSize (LLPrimInt isb) = intSizeOf isb
 fixnumTypeSize other = error $ "Expected int literal to have LLPrimInt type; had " ++ show other
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -326,8 +326,7 @@ dumpExpr _ (ILCallPrim t (CoroPrim coroPrim argty retty) args)
         = dumpCallCoroOp t coroPrim argty retty args True
 
 dumpExpr _ (ILCallPrim t (PrimIntTrunc _from to) args)
-        = dumpCallPrimOp t ("trunc_i" ++ show tosize) args
-        where tosize = intOfSize to
+        = dumpCallPrimOp t ("trunc_i" ++ show (intSizeOf to)) args
 
 dumpExpr _ (ILAppCtor _ _cinfo _) = error $ "ProtobufIL.hs saw ILAppCtor, which"
                                        ++ " should have been translated away..."

@@ -16,7 +16,7 @@ main = {
                case v
                 of $Fn _ -> Nm 23456
                 of $Nm n ->
-                  if n >=Int32 0
+                  if n >=SInt32 0
                     then case (app vsum (Nm (n -Int32 1)))
                            of $Nm k -> Nm (n +Int32 k)
                            of _     -> Nm 34567

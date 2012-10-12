@@ -196,6 +196,12 @@ ail ctx ae =
 
                 return $ E_AITyApp ti ae argtys
 
+sanityCheckIntLiteralNotOversized rng isb int =
+    sanityCheck (intSizeOf isb >= litIntMinBits int) $
+       "Int constraint violated; context-imposed exact size (in bits) was " ++ show (intSizeOf isb)
+        ++ "\n                              but the literal intrinsically needs " ++ show (litIntMinBits int)
+        ++ highlightFirstLine rng
+
 ailInt rng int ty = do
   -- 1. We need to make sure that the types eventually given to an int
   --    are large enough to hold it.
@@ -205,10 +211,7 @@ ailInt rng int ty = do
   --    with the smallest type that accomodates the int.
   case ty of
     PrimIntAST isb -> do
-      sanityCheck (intOfSize isb >= litIntMinBits int) $
-         "Int constraint violated; context-imposed exact size (in bits) was " ++ show (intOfSize isb)
-          ++ "\n                              but the literal intrinsically needs " ++ show (litIntMinBits int)
-                         ++ highlightFirstLine rng
+      sanityCheckIntLiteralNotOversized rng isb int
 
     MetaTyVar m -> do
       mty <- readTcMeta m

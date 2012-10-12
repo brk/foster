@@ -436,12 +436,12 @@ type MayGCConstraints = Map Ident MayGCConstraint
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||||||||| Instances ||||||||||||||||||||||||||{{{
 
-instance IntSized IntSizeBits where intSizeOf = intOfSize
-
-intOfSize I1 = 1
-intOfSize I8 = 8
-intOfSize I32 = 32
-intOfSize I64 = 64
+instance IntSized IntSizeBits
+ where intSizeOf = intOfSize where
+                       intOfSize I1 = 1
+                       intOfSize I8 = 8
+                       intOfSize I32 = 32
+                       intOfSize I64 = 64
 
 sizeOfBits :: Int -> IntSizeBits
 sizeOfBits 1           = I1
@@ -450,7 +450,7 @@ sizeOfBits n | n <= 32 = I32
 sizeOfBits n | n <= 64 = I64
 sizeOfBits n = error $ "TypecheckInt.hs:sizeOfBits: Unsupported size: " ++ show n
 
-instance Pretty IntSizeBits    where pretty i = text (show $ intOfSize i)
+instance Pretty IntSizeBits    where pretty i = text (show $ intSizeOf i)
 instance Pretty Ident          where pretty id = text (show id)
 instance Pretty t => Pretty (TypedId t)
                                where pretty tid = pretty (tidIdent tid)

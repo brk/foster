@@ -41,7 +41,7 @@ mkTextConcat = { a : Text => b : Text =>
       of ($TextFragment ba na, $TextFragment bb nb) ->
         // One optimization from the paper "Ropes: an alternative to strings":
         // transparently flatten concatenations of small leaf nodes.
-        if lensum <=Int32 small
+        if lensum <=SInt32 small
         then TextFragment (bytesConcatByCopy ba na bb nb lensum) lensum
         else TextConcat a b lensum
         end
@@ -84,7 +84,7 @@ print_text = { s : Text =>
   print_text_bare s; print_newline !; ()
 };
 
-max-Int32 = { n : Int32 => m : Int32 => if n <Int32 m then m else n end };
+max-Int32 = { n : Int32 => m : Int32 => if n <SInt32 m then m else n end };
 
 text_maxdepth = { s : Text =>
   case s
@@ -124,7 +124,7 @@ arrayEnumFrom = { forall t:Type,
                   a : Array t =>
                   k : Int64 =>
                   f : { t => Int64 => () } =>
-  if k <Int64 prim_arrayLength a
+  if k <SInt64 prim_arrayLength a
     then f a[primitive_trunc_i64_i32 k] k; arrayEnumFrom a (incr64 k) f
     else ()
   end
@@ -181,7 +181,7 @@ arrayIterReverse = { forall t:Type,
                            a : Array t =>
                            n : Int32 => // invariant: n < len a
                            f : { t => Bool } =>
-  if n >=Int32 0 // TODO change this to avoid needing wraparound here.
+  if n >=SInt32 0 // TODO change this to avoid needing wraparound here.
   then if f a[n] then arrayIterReverse a (n -Int32 1) f
                  else False end
   else True end
@@ -203,8 +203,8 @@ tmp_Text_bytes_iter_reverse = { t:Text =>
 };
 
 is_ascii_digit = { c : Int8 =>
-  if   c <=Int8 (primitive_trunc_i32_i8 57)
-  then c >=Int8 (primitive_trunc_i32_i8 48)
+  if   c <=SInt8 (primitive_trunc_i32_i8 57)
+  then c >=SInt8 (primitive_trunc_i32_i8 48)
   else False
   end
 };
@@ -311,7 +311,7 @@ tmp_Text_2_of_Int32 = { n:Int32 =>
     (mkTextConcat (tmp_Text_2_of_Int8 n1)
     (mkTextConcat (tmp_Text_2_of_Int8 n0) "")))
    end
-  }; in if n <Int32 0 then mkTextConcat "-" (go (0 -Int32 n))
+  }; in if n <SInt32 0 then mkTextConcat "-" (go (0 -Int32 n))
                       else go n
         end
   end
@@ -336,13 +336,13 @@ tmp_Text_2_of_Int64 = { n:Int64 =>
 
 tmp_Text_of_Int64 = { n:Int64 =>
   rec go = { n:Int64 => t:Text =>
-    if n <=Int64 10
+    if n <=SInt64 10
       then mkTextConcat (tmp_Text_of_Int32_digit (primitive_trunc_i64_i32 n)) t
       else let r = primitive_trunc_i64_i32 (srem-Int64 n 10);
                q =                          sdiv-Int64 n 10 ;
             in go q (mkTextConcat (tmp_Text_of_Int32_digit r) t); end
      end
-  }; in if n <Int64 0 then mkTextConcat "-" (go (negate-Int64 n) "")
+  }; in if n <SInt64 0 then mkTextConcat "-" (go (negate-Int64 n) "")
                       else go n ""
         end
   end

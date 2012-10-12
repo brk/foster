@@ -46,7 +46,7 @@ stress-native = {
 stress-hof = { // 100 mm iters => 1000 ms without inlining
   let x = (ref 0);
       n = opaquely_i32 10`000`000; in
-    hof-while { x^ <Int32 n } {
+    hof-while { x^ <SInt32 n } {
       (x^ +Int32 1) >^ x
     };
   end
@@ -59,7 +59,7 @@ variant-one = {
   let v = (ref 0);
       n = opaquely_i32 3;
    in
-     hof-while { v^ <Int32 n } {
+     hof-while { v^ <SInt32 n } {
        print_i32 v^ ; (v^ +Int32 1) >^ v
      }
   end
@@ -72,7 +72,7 @@ variant-two = {
   let v = (ref 0);
       n = opaquely_i32 3;
    in
-     hof-while { v^ <Int32 n } {
+     hof-while { v^ <SInt32 n } {
        print_i32 v^ ; (v^ +Int32 1) >^ v
      }
      // This once triggered a bug where the closure pairs passed to hof-while

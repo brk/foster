@@ -228,10 +228,14 @@ prettyOpName nm tystr =
 fixnumPrimitives bitsize =
   let iKK = PrimIntAST bitsize in
   let mkPrim nm ty = (prettyOpName nm (intSize bitsize), (ty, PrimOp nm iKK)) in
-  [("<U"  ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp "<u"  iKK))
-  ,(">U"  ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp ">u"  iKK))
+  [( "<U" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp  "<u" iKK))
+  ,( ">U" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp  ">u" iKK))
   ,("<=U" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp "<=u" iKK))
   ,(">=U" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp ">=u" iKK))
+  ,( "<S" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp  "<s" iKK))
+  ,( ">S" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp  ">s" iKK))
+  ,("<=S" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp "<=s" iKK))
+  ,(">=S" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp ">=s" iKK))
   ] ++
   [mkPrim "+"       $ mkFnType [iKK, iKK] [iKK]
   ,mkPrim "-"       $ mkFnType [iKK, iKK] [iKK]
@@ -246,10 +250,6 @@ fixnumPrimitives bitsize =
   ,mkPrim "sdiv"    $ mkFnType [iKK, iKK] [iKK]
   ,mkPrim "urem"    $ mkFnType [iKK, iKK] [iKK]
   ,mkPrim "udiv"    $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "<"       $ mkFnType [iKK, iKK] [i1]
-  ,mkPrim ">"       $ mkFnType [iKK, iKK] [i1]
-  ,mkPrim "<="      $ mkFnType [iKK, iKK] [i1]
-  ,mkPrim ">="      $ mkFnType [iKK, iKK] [i1]
   ,mkPrim "=="      $ mkFnType [iKK, iKK] [i1]
   ,mkPrim "!="      $ mkFnType [iKK, iKK] [i1]
   ,mkPrim "negate"  $ mkFnType [iKK]      [iKK]
