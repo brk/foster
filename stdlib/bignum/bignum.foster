@@ -358,6 +358,22 @@ foster_mp_sub_UA = { lg => sm =>
   end
 };
 
+/*
+// Left shift by n digits.
+//
+// Precondition:
+//      |a| + n does not overflow
+//      |a| + n <= |res|
+//            n > 0
+foster_mp_lshd :: { Array Int64 => Int32 => Array Int64 };
+foster_mp_lshd =  { a => n =>
+  let res = allocDArray (used a +Int32 n); in
+    foster_mp_lshd_to a n res;
+    res
+  end
+};
+*/
+
 // Left shift by n digits.
 //
 // Precondition:
@@ -1007,7 +1023,10 @@ gteInt128 = { hA : Int64 => lA : Int64 =>
 
 // Modifies ra,rb by side effect because we don't want to assume
 // any direct codegen support at all for Int128.
-subInt128 = { hAr : Ref Int64 => lAr : Ref Int64 =>
+//
+// Precondition: A >= B.
+//
+subNat128 = { hAr : Ref Int64 => lAr : Ref Int64 =>
               hB  :     Int64 => lB  :     Int64 =>
   let hc = hAr^ -Int64 hB;
       lc = lAr^ -Int64 lB;
@@ -1020,7 +1039,7 @@ subInt128 = { hAr : Ref Int64 => lAr : Ref Int64 =>
   end
 };
 
-// Modifies ra,rb by side effect for consistency with subInt128.
+// Modifies ra,rb by side effect for consistency with subNat128.
 // Version on smaller bitstrings for easier testing.
 subInt64 = { hAr : Ref Int32 => lAr : Ref Int32 =>
              hB  :     Int32 => lB  :     Int32 =>
@@ -1036,10 +1055,12 @@ subInt64 = { hAr : Ref Int32 => lAr : Ref Int32 =>
   end
 };
 
-/*
+either = { a : Bool => b : Bool => if a then True else b end };
 
+/*
 // Precondition: d > 0
 //
+// TODO or is it quorem?
 divmod-Int128-64 = { hi : Int64 => lo : Int64 => d : Int64 =>
   let
       hi2 = (ref hi);
@@ -1048,22 +1069,48 @@ divmod-Int128-64 = { hi : Int64 => lo : Int64 => d : Int64 =>
       xhi = (ref 0);
       xlo = (ref d);
 
+      fhi = (ref 0);
+      flo = (ref 1);
+
       ahi = (ref hi);
       alo = (ref lo);
-      quo = (ref 0);
+      qhi = (ref 0);
+      qlo = (ref 0);
   in
-    lshrInt128 hi2 lo2;
+    lshrInt128 hi2 lo2; // compute A/2
 
-    until both (ahi^ ==Int64 0) (alo^ <Int64 d) then
+    // scale x until it's at least half of A.
+    until gteInt128 xhi^ xlo^ hi2^ lo2^ then
+      shlInt128 xhi xlo;
+      shlInt128 fhi flo;
+      //print_text "scale x";
+    end;
+
+    until either (both (ahi^ ==Int64 0) (alo^ <Int64 d))
+                 (both (xhi^ ==Int64 0) (xlo^ ==Int64 0)) then
+//    print_text "ahi; alo; xhi/lo, d:";
+//    print_i64 ahi^;
+//    print_i64 alo^;
+//
+//    print_i64 xhi^;
+//    print_i64 xlo^;
+//
+//    print_i64 d;
       if gteInt128 ahi^ alo^ xhi^ xlo^ then
-        subInt128 ahi alo xhi^ xlo^;
+         subNat128 ahi  alo  xhi^ xlo^;
+         addNat128 qhi  qlo  fhi^ flo^;
       else () end;
 
       lshrInt128 xhi xlo;
-    end
+      lshrInt128 fhi flo;
+    end;
+
+     ((qhi^, qlo^), alo^)
   end
 };
+*/
 
+/*
 // Compute (c,d) such that a = c*b + d.
 //
 // Precondition: b != 0.
@@ -1074,9 +1121,10 @@ foster_mp_divmod = { a : IntInf => b : IntInf =>
     of _   ->
       // TODO
       // q = allocDArray (used a +Int32 2);
-      // qn = not (eqBool (isNegative a) (isNegative b));
       // x = (ref (copy of a, positive))
       // y = (ref (copy of b, positive))
+
+      sneg = not (eqBool (isNegative a) (isNegative b));
 
       norm0 = foster_mp_count_bits y^ -Int32 foster_DIGIT_BIT;
       normn = (DIGIT_BIT -Int32 1) -Int32 norm0;
@@ -1103,26 +1151,66 @@ foster_mp_divmod = { a : IntInf => b : IntInf =>
 
       foldRangeDown n (t +Int32 1) () { i => unit =>
         if i >Int32 used x^ then unit else
-          if (digits x^)[i] ==Int64 (digits y^)[i] then
-            ((bitshl-Int64 1 foster_DIGIT_BIT64) -Int64 1)
-                                                      >^ q[i -Int32 t -Int32 1];
-          else
-             // emulate double-precision shl by calculating upper & lower parts.
-             tmphi  = bitlshr-Int64 (digits x^)[i]
-                                       (64 -Int64 foster_DIGIT_BIT64);
-             tmplo0 = bitshl-Int64 (digits x^)[i] foster_DIGIT_BIT64;
-             tmplo  = bitor-Int64  (digits x^)[i -Int32 1] tmplo0;
+          // {{{
+          let it1 = i -Int32 t -Int32 1; in
+            if (digits x^)[i] ==Int64 (digits y^)[i] then
+              ((bitshl-Int64 1 foster_DIGIT_BIT64) -Int64 1) >^ q[it1];
+            else
+               // emulate double-precision shl by calculating upper & lower parts.
+               tmphi  = bitlshr-Int64 (digits x^)[i]
+                                         (64 -Int64 foster_DIGIT_BIT64);
+               tmplo0 = bitshl-Int64 (digits x^)[i] foster_DIGIT_BIT64;
+               tmplo  = bitor-Int64  (digits x^)[i -Int32 1] tmplo0;
 
-             case divmod-Int128-64 tmphi tmplo (digits y^)[t] of (quo, rem) ->
-               (if quo >Int64 foster_MP_MASK then foster_MP_MASK else
-                                 bitand-Int64 quo foster_MP_MASK)
-                   >^ q[i -Int32 t -Int32 1];
-             end
-          end;
+               case divmod-Int128-64 tmphi tmplo (digits y^)[t] of ((qhi, qlo), rem) ->
+                 (if gteInt128 qhi qlo 0 foster_MP_MASK
+                                    then foster_MP_MASK else
+                        bitand-Int64 qlo foster_MP_MASK)
+                     >^ q[it1];
+               end
+            end;
 
+            rec doloop = {
+              (bitand-Int64 (q[it1] +Int64 1) foster_MP_MASK) >^ q[it1];
+              let thi = foster_mp_from_Int64 (digits y^)[t];
+                  tlo = foster_mp_from_Int64 (if t -Int32 1 <Int32 0
+                         then 0 else (digits y^)[t -Int32 1] end);
+                  t1  = foster_mp_mul_d // TODO
+                                 (foster_mp_add (foster_mp_lshd thi 1) tlo)
+                                 q[it1];
+
+                  t2a = newDArray 3 { k =>
+                    case k
+                      of 0 -> if (i -Int32 2) <Int32 0 then 0 else (digits x^)[i -Int32 2] end
+                      of 1 -> if (i -Int32 1) <Int32 0 then 0 else (digits x^)[i -Int32 1] end
+                      of 2 -> (digits x^)[i]
+                      of _ -> 0 // can't happen
+                    end;
+                  };
+                  t2 = mkIntInf t2a False;
+              case foster_mp_cmp t1 t2
+                of $GT -> doloop !;
+                of _   -> ()
+              end
+            }; in doloop !; end;
+
+            let t1 = foster_mp_lshd (foster_mp_mul_d y^ q[it1]) it1; in
+              (foster_mp_sub x^ t1) >^ x;
+              if isNegative x^ then
+                foster_mp_add x^ (foster_mp_lshd y^ it1) >^ x;
+                (foster-bitand-Int64
+                      (q[it1] -Int64 1) foster_MP_MASK) >^ q[it1];
+              end;
+            end;
+
+          end
+          // }}}
         end
       };
+
+      // d = mp_div_2d x norm
+      // c = mkIntInf (trimLeadingZeros q) sneg;
   end
 };
-
 */
+
