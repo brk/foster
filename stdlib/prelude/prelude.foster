@@ -8,6 +8,65 @@ type case Maybe (a:Boxed)
 
 /////
 
+type case Ord
+       of $LT
+       of $EQ
+       of $GT
+       ;
+
+notBool = { a:Bool => if a then False else True end };
+eqBool = { a:Bool => b:Bool => if a then b else notBool b end };
+
+ordInvert = { b : Ord =>
+  case b
+    of $LT -> GT !
+    of $GT -> LT !
+    of _   -> b
+  end
+};
+
+ordInvertIf = { b : Ord => cnd : Bool =>
+  if cnd then ordInvert b else b end
+};
+
+textOfOrd = { o : Ord =>
+  case o
+    of $LT -> "LT"
+    of $EQ -> "EQ"
+    of $GT -> "GT"
+  end
+};
+
+cmpSInt32 = { a : Int32 => b : Int32 =>
+  if a ==Int32 b
+  then EQ !
+  else if a <SInt32 b then LT ! else GT ! end
+  end
+};
+
+cmpSInt64 = { a : Int64 => b : Int64 =>
+  if a ==Int64 b
+  then EQ !
+  else if a <SInt64 b then LT ! else GT ! end
+  end
+};
+
+cmpUInt32 = { a : Int32 => b : Int32 =>
+  if a ==Int32 b
+  then EQ !
+  else if a <UInt32 b then LT ! else GT ! end
+  end
+};
+
+cmpUInt64 = { a : Int64 => b : Int64 =>
+  if a ==Int64 b
+  then EQ !
+  else if a <UInt64 b then LT ! else GT ! end
+  end
+};
+
+/////
+
 bytesConcatByCopy = { a : Array Int8 => alen : Int32 =>
                       b : Array Int8 => blen : Int32 => len : Int32 =>
   if blen ==Int32 0 then a else

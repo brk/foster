@@ -142,7 +142,7 @@ test_small_op = { k0 : Int32 => k1 : Int32 =>
       c = k0 +Int32 k1;
       b = foster_mp_from_Int32 c;
   in
-    expect_text (textOfOrd (cmpInt32 k0 k1));
+    expect_text (textOfOrd (cmpSInt32 k0 k1));
     print_text (textOfOrd (foster_mp_cmp i0 i1));
 
     expect_i1 True;

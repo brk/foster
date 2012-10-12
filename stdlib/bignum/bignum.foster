@@ -9,15 +9,6 @@ type case IntInf
 // TODO use the LLVM's -with-overflow intrinsics to
 // enable use of the full 64 bits for the digit value.
 
-type case Ord
-       of $LT
-       of $EQ
-       of $GT
-       ;
-
-notBool = { a:Bool => if a then False else True end };
-eqBool = { a:Bool => b:Bool => if a then b else notBool b end };
-
 digits :: { IntInf => Array Int64 };
 digits = {  i      =>
   case i
@@ -39,40 +30,6 @@ used = { a =>
 
 //foster_MP_MASK = ...;
 // need 'global' constants
-
-ordInvert = { b : Ord =>
-  case b
-    of $LT -> GT !
-    of $GT -> LT !
-    of _   -> b
-  end
-};
-
-ordInvertIf = { b : Ord => cnd : Bool =>
-  if cnd then ordInvert b else b end
-};
-
-cmpInt32 = { a : Int32 => b : Int32 =>
-  if a ==Int32 b
-  then EQ !
-  else if a <SInt32 b then LT ! else GT ! end
-  end
-};
-
-cmpInt64 = { a : Int64 => b : Int64 =>
-  if a ==Int64 b
-  then EQ !
-  else if a <SInt64 b then LT ! else GT ! end
-  end
-};
-
-textOfOrd = { o : Ord =>
-  case o
-    of $LT -> "LT"
-    of $EQ -> "EQ"
-    of $GT -> "GT"
-  end
-};
 
 findFirstUsedDigit = { a : Array Int64 =>
   rec go = { k =>
@@ -101,7 +58,7 @@ cmpIntInfAbsDigitsD = { a : Array Int64 => b : Int64 =>
            then cmpIntInfAbs a (mkDigitsOfInt64 b)
            else GT !
          end
-    else cmpInt64 a[0] b
+    else cmpUInt64 a[0] b
   end
 };
 
@@ -125,14 +82,14 @@ cmpIntInfD = { a : IntInf => b : Int64 =>
 cmpIntInfAbs = { a : Array Int64 => b : Array Int64 =>
   let a_first_used = findFirstUsedDigit a;
       b_first_used = findFirstUsedDigit b;
-      cmpord = cmpInt32 a_first_used b_first_used;
+      cmpord = cmpUInt32 a_first_used b_first_used;
   in
     case cmpord
       of $LT -> cmpord
       of $GT -> cmpord
       of _ ->
         rec go = { k =>
-                    let cmpord = cmpInt64 a[k] b[k]; in
+                    let cmpord = cmpUInt64 a[k] b[k]; in
                       if k ==Int32 0 then cmpord
                       else
                         case cmpord
