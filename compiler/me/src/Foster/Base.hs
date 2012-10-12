@@ -42,7 +42,11 @@ class IntSized t where
 data CompilesResult expr = CompilesResult (OutputOr expr)
 type Uniq = Int
 data CallConv = CCC | FastCC deriving (Eq, Show)
-data IntSizeBits = I1 | I8 | I32 | I64 deriving (Eq, Show)
+type LogInt = Int
+data IntSizeBits = I1 | I8 | I32 | I64
+                 | IWord LogInt -- Word 3 means 8x larger; -2 is 4x smaller.
+                 deriving (Eq, Show)
+
 data ProcOrFunc   = FT_Proc | FT_Func  deriving Show
 data VarNamespace = VarProc | VarLocal deriving Show
 data TailQ = YesTail | NotTail deriving Show
@@ -442,6 +446,8 @@ instance IntSized IntSizeBits
                        intOfSize I8 = 8
                        intOfSize I32 = 32
                        intOfSize I64 = 64
+                       intOfSize (IWord 0) = 32
+                       intOfSize (IWord 1) = 64
 
 sizeOfBits :: Int -> IntSizeBits
 sizeOfBits 1           = I1

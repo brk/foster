@@ -336,6 +336,30 @@ createSqrt(IRBuilder<>& b, llvm::Value* v, const char* valname) {
   return CI;
 }
 
+bool is32Bit() {
+  #if defined(__x86_64__) || defined(__x86_64)
+    return false;
+  #else
+    return true;
+  #endif
+}
+
+llvm::Type* getWordTy(IRBuilder<>& b) {
+  if (is32Bit()) {
+    return b.getInt32Ty();
+  } else {
+    return b.getInt64Ty();
+  }
+}
+
+llvm::Type* getWordX2Ty(IRBuilder<>& b) {
+  if (is32Bit()) {
+    return b.getInt64Ty();
+  } else {
+    return llvm::Type::getIntNTy(b.getContext(), 128);
+  }
+}
+
 llvm::Value*
 CodegenPass::emitPrimitiveOperation(const std::string& op,
                                     IRBuilder<>& b,
@@ -347,8 +371,12 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   else if (op == "zext_i64") { return b.CreateZExt(VL, b.getInt64Ty(), "zexti64tmp"); }
   else if (op == "sext_i32") { return b.CreateSExt(VL, b.getInt32Ty(), "sexti32tmp"); }
   else if (op == "zext_i32") { return b.CreateZExt(VL, b.getInt32Ty(), "zexti32tmp"); }
+  else if (op == "zext_WordX2") { return b.CreateZExt(VL, getWordX2Ty(b), "zextWx2tmp"); }
   else if (op == "trunc_i8") { return b.CreateTrunc(VL, b.getInt8Ty(), "trunci8tmp"); }
   else if (op == "trunc_i32"){ return b.CreateTrunc(VL, b.getInt32Ty(), "trunci32tmp"); }
+  else if (op == "trunc_i64"){ return b.CreateTrunc(VL, b.getInt64Ty(), "trunci64tmp"); }
+  else if (op == "trunc_w0") { return b.CreateTrunc(VL, getWordTy(b),   "truncw0tmp"); }
+  else if (op == "trunc_w1") { return b.CreateTrunc(VL, getWordX2Ty(b), "truncw1tmp"); }
   else if (op == "fsqrt")    { return createSqrt(b, VL, "fsqrttmp"); }
   else if (op == "fptosi_f64_i32") { return b.CreateFPToSI(VL, b.getInt32Ty(), "fptosi_f64_i32tmp"); }
   else if (op == "sitofp_f64")     { return b.CreateSIToFP(VL, b.getDoubleTy(), "sitofp_f64tmp"); }

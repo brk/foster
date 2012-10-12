@@ -326,7 +326,14 @@ dumpExpr _ (ILCallPrim t (CoroPrim coroPrim argty retty) args)
         = dumpCallCoroOp t coroPrim argty retty args True
 
 dumpExpr _ (ILCallPrim t (PrimIntTrunc _from to) args)
-        = dumpCallPrimOp t ("trunc_i" ++ show (intSizeOf to)) args
+        = dumpCallPrimOp t (truncOp to) args
+  where truncOp I1        = "trunc_i1"
+        truncOp I8        = "trunc_i8"
+        truncOp I32       = "trunc_i32"
+        truncOp I64       = "trunc_i64"
+        truncOp (IWord 0) = "trunc_w0"
+        truncOp (IWord 1) = "trunc_w1"
+        truncOp (IWord x) = error $ "Protobuf.hs: truncOp can't handle Word " ++ show x
 
 dumpExpr _ (ILAppCtor _ _cinfo _) = error $ "ProtobufIL.hs saw ILAppCtor, which"
                                        ++ " should have been translated away..."

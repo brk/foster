@@ -138,6 +138,8 @@ i8  = PrimIntAST I8
 i32 = PrimIntAST I32
 i64 = PrimIntAST I64
 i1  = PrimIntAST I1
+iw0 = PrimIntAST (IWord 0)
+iw1 = PrimIntAST (IWord 1)
 f64 = PrimFloat64AST
 
 primTyVars tyvars = map (\v -> (v, KindAnySizeType)) tyvars
@@ -219,6 +221,9 @@ intSize I1  = "Bool"
 intSize I8  = "Int8"
 intSize I32 = "Int32"
 intSize I64 = "Int64"
+intSize (IWord 0) = "Word"
+intSize (IWord 1) = "WordX2"
+intSize (IWord x) = error $ "Unable to handle Word " ++ show x
 
 prettyOpName nm tystr =
   if Char.isLetter (head nm)
@@ -283,9 +288,17 @@ gFosterPrimOpsTable = Map.fromList $
   ,(,) "primitive_sext_i8_to_i32" $(,) (mkFnType [i8 ] [i32]     ) $ PrimOp "sext_i32" i8
   ,(,) "primitive_trunc_i32_i8" $ (,) (mkFnType [i32] [i8 ]     ) $ PrimIntTrunc I32 I8
   ,(,) "primitive_trunc_i64_i32"$ (,) (mkFnType [i64] [i32]     ) $ PrimIntTrunc I64 I32
+  ,(,) "primitive_trunc_Word_i32"  $ (,) (mkFnType [iw0] [i32]  ) $ PrimIntTrunc (IWord 0) I32
+  ,(,) "primitive_trunc_WordX2_i32"$ (,) (mkFnType [iw1] [i32]  ) $ PrimIntTrunc (IWord 1) I32
+  ,(,) "primitive_trunc_WordX2_Word" $(,) (mkFnType [iw1] [iw0] ) $ PrimIntTrunc (IWord 1) (IWord 0)
+  ,(,) "primitive_zext_i32_to_Word"  $(,) (mkFnType [i32] [iw0] ) $ PrimOp "zext_Word"   i32
+  ,(,) "primitive_zext_i32_to_WordX2"$(,) (mkFnType [i32] [iw1] ) $ PrimOp "zext_WordX2" i32
+  ,(,) "primitive_zext_Word_to_WordX2"$(,) (mkFnType [iw0] [iw1] )$ PrimOp "zext_WordX2" iw0
   ,(,) "primitive_f64_to_i32"    $(,) (mkFnType [f64] [i32]     ) $ PrimOp "fptosi_f64_i32" i32
   ,(,) "primitive_i32_to_f64"    $(,) (mkFnType [i32] [f64]     ) $ PrimOp "sitofp_f64" i32
   ] ++ fixnumPrimitives I64
     ++ fixnumPrimitives I32
     ++ fixnumPrimitives I8
     ++ flonumPrimitives "f64" PrimFloat64AST
+    ++ fixnumPrimitives (IWord 0)
+    ++ fixnumPrimitives (IWord 1)
