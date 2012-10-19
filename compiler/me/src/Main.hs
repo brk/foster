@@ -423,6 +423,8 @@ desugarParsedModule tcenv m = do
     let q = astOfParsedType in
     case typep of
           PrimIntP         size  -> return $ PrimIntAST         size
+          TyConAppP "Word"    [] -> return $ PrimIntAST         (IWord 0)
+          TyConAppP "WordX2"  [] -> return $ PrimIntAST         (IWord 1)
           TyConAppP "Int64"   [] -> return $ PrimIntAST         I64
           TyConAppP "Int32"   [] -> return $ PrimIntAST         I32
           TyConAppP "Int8"    [] -> return $ PrimIntAST         I8

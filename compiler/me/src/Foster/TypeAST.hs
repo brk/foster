@@ -172,6 +172,8 @@ primitiveDecls =
 
     ,(,) "memcpy_i8_to_from_at_len" $ mkProcType [ArrayTypeAST i8,
                                                   ArrayTypeAST i8, i32, i32] []
+    ,(,) "memcpy_i8_to_at_from_len" $ mkProcType [ArrayTypeAST i8, i32,
+                                                  ArrayTypeAST i8, i32] []
 
     ,(,) "prim_print_bytes_stdout" $ mkProcType [ArrayTypeAST i8, i32] []
     ,(,) "prim_print_bytes_stderr" $ mkProcType [ArrayTypeAST i8, i32] []
@@ -284,13 +286,16 @@ flonumPrimitives tystr ty =
 gFosterPrimOpsTable = Map.fromList $
   [(,) "not"                    $ (,) (mkFnType [i1]  [i1]      ) $ PrimOp "bitnot" i1
   ,(,) "primitive_sext_i64_i32" $ (,) (mkFnType [i32] [i64]     ) $ PrimOp "sext_i64" i32
-  ,(,) "primitive_zext_i32_to_i64"$(,) (mkFnType [i32] [i64]     ) $ PrimOp "zext_i64" i32
+  ,(,) "primitive_zext_i32_to_i64"  $(,) (mkFnType [i32] [i64]  ) $ PrimOp "zext_i64" i32
+  ,(,) "primitive_zext_Word_to_i64" $(,) (mkFnType [iw0] [i64]  ) $ PrimOp "zext_i64" iw0
   ,(,) "primitive_sext_i8_to_i32" $(,) (mkFnType [i8 ] [i32]     ) $ PrimOp "sext_i32" i8
   ,(,) "primitive_trunc_i32_i8" $ (,) (mkFnType [i32] [i8 ]     ) $ PrimIntTrunc I32 I8
   ,(,) "primitive_trunc_i64_i32"$ (,) (mkFnType [i64] [i32]     ) $ PrimIntTrunc I64 I32
+  ,(,) "primitive_trunc_i64_to_Word"$(,) (mkFnType [i64] [iw0]     ) $ PrimIntTrunc I64 (IWord 0)
   ,(,) "primitive_trunc_Word_i32"  $ (,) (mkFnType [iw0] [i32]  ) $ PrimIntTrunc (IWord 0) I32
   ,(,) "primitive_trunc_WordX2_i32"$ (,) (mkFnType [iw1] [i32]  ) $ PrimIntTrunc (IWord 1) I32
   ,(,) "primitive_trunc_WordX2_Word" $(,) (mkFnType [iw1] [iw0] ) $ PrimIntTrunc (IWord 1) (IWord 0)
+  ,(,) "primitive_sext_i32_to_Word"  $(,) (mkFnType [i32] [iw0] ) $ PrimOp "sext_Word"   i32
   ,(,) "primitive_zext_i32_to_Word"  $(,) (mkFnType [i32] [iw0] ) $ PrimOp "zext_Word"   i32
   ,(,) "primitive_zext_i32_to_WordX2"$(,) (mkFnType [i32] [iw1] ) $ PrimOp "zext_WordX2" i32
   ,(,) "primitive_zext_Word_to_WordX2"$(,) (mkFnType [iw0] [iw1] )$ PrimOp "zext_WordX2" iw0

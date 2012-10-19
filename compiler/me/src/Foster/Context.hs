@@ -229,4 +229,3 @@ getStructureContextMessage = do
                  [] -> (outLn $ "\tTop-level definition:")
                  _  -> (outLn $ "\tContext for AST below is:") <> vcat outputs
     return output
-

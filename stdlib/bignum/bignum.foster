@@ -182,14 +182,6 @@ mkIntInf = { a => isNeg =>
   end
 };
 
-copyOfArrayTo :: { Array Int64 => // of length m
-                   /*n:*/Int32 =>
-                   Array Int64    // of length n
-                 };
-copyOfArrayTo =  { a => n =>
-  newDArray:[Int64] n { i : Int32 => a[i -Int32 1] };
-};
-
 trimLeadingZeros :: { Array Int64 => Array Int64 };
 trimLeadingZeros = { a =>
   rec findFirstNonZero = { n : Int32 =>

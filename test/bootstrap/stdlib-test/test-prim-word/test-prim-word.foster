@@ -1,0 +1,42 @@
+snafuinclude Word "prim-word";
+
+// Types: Word, Word*2, Word/2
+//              WordX2  WordO2 (at C level)
+//
+
+// zext i32 to Word (or noop)
+// trunc Word to i32 (or noop)
+
+// Complication 1: type checking (of literal numbers for conformance against
+//                 word types) depends on the eventual size of Word.
+//      * Could thread that state through
+//      * Could eliminate the Word alias early on
+//      * Could be conservative and reject 64-bit literals even on 64-bit platforms.
+//      * Could keep Word as a separate abstract type & forbid literals;
+//          only allow conversions from explicitly typed/sized literals.
+
+// Complication 2: where do we fix the sizes of words?
+//      * Type checking: lose portability of typechecked code.
+//      * Later: typechecking can't do all checks!
+
+main = {
+  expect_i32 22222;
+  print_i32 (primitive_trunc_WordX2_i32
+                ((primitive_zext_i32_to_WordX2 (opaquely_i32 11111)) +WordX2
+                 (primitive_zext_i32_to_WordX2 11111)));
+
+  expect_i32 0;
+  print_i32 (primitive_trunc_WordX2_i32
+                ((primitive_zext_i32_to_WordX2 (opaquely_i32 11111)) -WordX2
+                 (primitive_zext_i32_to_WordX2 11111)));
+
+  expect_i32 22222;
+  print_i32 (primitive_trunc_WordX2_i32
+                ((primitive_zext_i32_to_WordX2 (opaquely_i32 11111)) *WordX2
+                 (primitive_zext_i32_to_WordX2 2)));
+
+  expect_i32 11111;
+  print_i32 (primitive_trunc_WordX2_i32
+                ((primitive_zext_i32_to_WordX2 (opaquely_i32 22222)) `sdiv-WordX2`
+                 (primitive_zext_i32_to_WordX2 2)));
+};

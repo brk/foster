@@ -372,6 +372,9 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   else if (op == "sext_i32") { return b.CreateSExt(VL, b.getInt32Ty(), "sexti32tmp"); }
   else if (op == "zext_i32") { return b.CreateZExt(VL, b.getInt32Ty(), "zexti32tmp"); }
   else if (op == "zext_WordX2") { return b.CreateZExt(VL, getWordX2Ty(b), "zextWx2tmp"); }
+  else if (op == "zext_Word")   { return b.CreateZExt(VL, getWordTy(b),   "zextWtmp"); }
+  else if (op == "sext_WordX2") { return b.CreateZExt(VL, getWordX2Ty(b), "sextWx2tmp"); }
+  else if (op == "sext_Word")   { return b.CreateZExt(VL, getWordTy(b),   "sextWtmp"); }
   else if (op == "trunc_i8") { return b.CreateTrunc(VL, b.getInt8Ty(), "trunci8tmp"); }
   else if (op == "trunc_i32"){ return b.CreateTrunc(VL, b.getInt32Ty(), "trunci32tmp"); }
   else if (op == "trunc_i64"){ return b.CreateTrunc(VL, b.getInt64Ty(), "trunci64tmp"); }

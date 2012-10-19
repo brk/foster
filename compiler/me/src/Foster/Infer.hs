@@ -108,9 +108,9 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
     ((PrimIntAST n1), (PrimIntAST n2)) ->
       if n1 == n2 then tcUnifyLoop constraints tysub
                   else do msg <- getStructureContextMessage
-                          tcFails [text $ "Unable to unify different primitive types: "
-                                  ++ show n1 ++ " vs " ++ show n2
-                                  , msg]
+                          tcFailsMore [text $ "Unable to unify different primitive types: "
+                                       ++ show n1 ++ " vs " ++ show n2
+                                       , msg]
 
     ((TyVarAST tv1), (TyVarAST tv2)) ->
        if tv1 == tv2 then tcUnifyLoop constraints tysub
@@ -120,8 +120,10 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
     ((TyConAppAST nm1 tys1), (TyConAppAST nm2 tys2)) ->
       if nm1 == nm2
         then tcUnifyMoreTypes tys1 tys2 constraints tysub
-        else tcFails [text $ "Unable to unify different type constructors: "
-                                  ++ nm1 ++ " vs " ++ nm2]
+        else do msg <- getStructureContextMessage
+                tcFailsMore [text $ "Unable to unify different type constructors: "
+                                  ++ nm1 ++ " vs " ++ nm2,
+                             msg]
 
     ((TupleTypeAST tys1), (TupleTypeAST tys2)) ->
         if List.length tys1 /= List.length tys2

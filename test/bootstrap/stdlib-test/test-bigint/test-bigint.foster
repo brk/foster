@@ -1,4 +1,5 @@
 snafuinclude Big "bignum";
+snafuinclude Nat "bignat";
 
 main = {
   //t0 !;
@@ -12,8 +13,107 @@ main = {
   //t8 !;
   //t9 !;
 
+  n0 !;
+
   ()
 };
+
+////////
+
+isSome = { forall t:Type, v : Maybe t =>
+  case v
+    of $Some _ -> True
+    of _       -> False
+  end
+};
+
+txt0 = {
+  expect_text "efghi";
+  print_text (textDrop 4 "abcdefghi")
+};
+
+n0 = {
+  txt0 !;
+
+  expect_i1 True;
+  print_i1 (natIsZero (natFromInt64 0));
+
+  expect_i1 False;
+  print_i1 (natIsZero (natFromInt64 1));
+
+  expect_i32 0;
+  print_text (foster_nat_to_text_radix (natFromInt64 0) 10);
+
+  expect_i64 123456789012345;
+  print_text (foster_nat_to_text_radix (natFromInt64 123456789012345) 10);
+
+  expect_i1 True;
+  print_i1 (isSome (natSub (natFromInt32 2) (natFromInt32 1)));
+
+  expect_i1 False;
+  print_i1 (isSome (natSub (natFromInt32 1) (natFromInt32 2)));
+
+  expect_i32 16;
+  print_text (foster_nat_to_text_radix (natShr (natFromInt64 64) 2) 10);
+
+  expect_i32 0;
+  print_text (foster_nat_to_text_radix (natShr (natFromInt64 64) 16) 10);
+
+  expect_text "666555444333222111";
+  print_i64 666`555`444`333`222`111;
+
+  expect_text "666555444333222111";
+  print_text (foster_nat_to_text_radix (natFromInt64 666`555`444`333`222`111) 10);
+
+  expect_text "999666333";
+  print_text (foster_nat_to_text_radix (natMulDigit (natFromInt64 333`222`111)
+                                                   3) 10);
+
+  expect_text "999666333000000";
+  print_text (foster_nat_to_text_radix (natMulDigit (natFromInt64 333`222`111`000`000)
+                                                   3) 10);
+
+  expect_text "00000011100011010011000011110100101011000010000101000000";
+  print_text (foster_nat_to_text_radix (natMulDigit (natFromInt64 333`222`111`000`000)
+                                                   3) 2);
+
+  expect_text "1999332666000000";
+  print_text (foster_nat_to_text_radix (natMulDigit (natFromInt64 333`222`111`000`000)
+                                                   6) 10);
+
+  expect_text "7997330664000000";
+  print_text (foster_nat_to_text_radix (natMulDigit (natFromInt64 333`222`111`000`000)
+                                                   (3 *Word 8)) 10);
+
+  expect_text "00011100011010011000011110100101011000010000101000000000";
+  print_text (foster_nat_to_text_radix (natMulDigit (natFromInt64 333`222`111`000`000)
+                                                   (3 *Word 8)) 2);
+
+  expect_text "15994661328000000";
+  print_text (foster_nat_to_text_radix (natMulDigit (natFromInt64 333`222`111`000`000)
+                                                   (3 *Word 16)) 10);
+
+  expect_text "00011100011010011000011110100101011000010000101000000000";
+  print_text (foster_nat_to_text_radix (natMulDigit (natFromInt64 333`222`111`000`000)
+                                                   (3 *Word 8)) 2);
+
+  expect_text "999666333000000000";
+  print_text (foster_nat_to_text_radix (natMulDigit (natFromInt64 333`222`111`000`000`000)
+                                                   3) 10);
+
+  expect_text "000000000000000000000000110111011111100001110011101111000000011000011110001000000000";
+  print_text (foster_nat_to_text_radix (natMulDigit (natFromInt64 333`222`111`000`000`000)
+                                                   3) 2);
+
+  expect_i1 True;
+  print_i1 (isValidDigit 77`333`444);
+
+  expect_text "51547028127238349460580284";
+  print_text (foster_nat_to_text_radix (natMulDigit (natFromInt64 666`555`444`333`222`111)
+                                                   77`333`444) 10);
+};
+
+////////
 
 t0 = {
   expect_i32 12345;

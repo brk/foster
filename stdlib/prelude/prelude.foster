@@ -65,6 +65,51 @@ cmpUInt64 = { a : Int64 => b : Int64 =>
   end
 };
 
+cmpUWord = { a : Word => b : Word =>
+  if a ==Word b
+  then EQ !
+  else if a <UWord b then LT ! else GT ! end
+  end
+};
+
+/////
+
+// Specialization of popcount(-1 :: Word).
+// Assumption: Word is either 32 or 64 bits.
+wordNumBits :: { Int32 };
+wordNumBits = {
+  let n = primitive_sext_i32_to_Word -1; in
+    if bitlshr-Word (bitlshr-Word n 16) 16 ==Word (primitive_zext_i32_to_Word 0)
+      then 32
+      else 64
+    end
+  end
+};
+
+/////
+
+assert :: { Bool => Text => () };
+assert = { cond : Bool => msg : Text =>
+  if cond then () else
+    print_text "Assert failed!";
+    print_text msg;
+    prim kill-entire-process "assert-failed";
+    ()
+  end
+};
+
+// Precondition: m >= n
+copyOfArrayTo :: forall t:Type,
+                 { Array t => // of length m
+                   /*n:*/Int32 =>
+                   Array t    // of length n
+                 };
+copyOfArrayTo = { forall t:Type,
+                   a => n =>
+  assert (arrayLength a >=UInt64 (primitive_zext_i32_to_i64 n)) "copyOfArrayTo";
+  newDArray0:[t] n { i : Int32 => a[i] };
+};
+
 /////
 
 bytesConcatByCopy = { a : Array Int8 => alen : Int32 =>
@@ -80,9 +125,9 @@ bytesConcatByCopy = { a : Array Int8 => alen : Int32 =>
   // complexity rather than O(n), because we don't over-allocate our arrays.
   let bytes = allocDArray len; in
       // bytes[0..whatever]    = a[0..alen]
-      memcpy_i8_to_from_at_len bytes a 0    alen;
+      memcpy_i8_to_at_from_len bytes 0    a alen;
       // bytes[alen..whatever] = b[0..blen]
-      memcpy_i8_to_from_at_len bytes b alen blen;
+      memcpy_i8_to_at_from_len bytes alen b blen;
       bytes
   end
   end
@@ -384,6 +429,13 @@ splitInt64 = { n : Int64 =>
   let highbits = high32BitsOf64 n;
       lowbits  = high32BitsOf64 (bitshl-Int64 n 32);
    in (highbits, lowbits) end
+};
+
+tmp_Text_2_of_Word = { n:Word =>
+  if wordNumBits ! ==Int32 32
+     then tmp_Text_2_of_Int32 (primitive_trunc_Word_i32 n);
+     else tmp_Text_2_of_Int64 (primitive_zext_Word_to_i64 n);
+  end
 };
 
 tmp_Text_2_of_Int64 = { n:Int64 =>
