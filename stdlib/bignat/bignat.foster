@@ -241,9 +241,70 @@ foster_nat_sub_digits = { lg => sm =>
     end
 };
 
+natMulAddWWW = { x : Word => y : Word => c : Word =>
+  splitWordX2 (((primitive_zext_Word_to_WordX2 x)  *WordX2
+                (primitive_zext_Word_to_WordX2 y)) +WordX2
+                (primitive_zext_Word_to_WordX2 c))
+};
 
-// mulAddWW
-// basicMul
+natAddWW0 = { z : Word => y : Word =>
+  splitWordX2 ((primitive_zext_Word_to_WordX2 z) +WordX2
+               (primitive_zext_Word_to_WordX2 y))
+};
+
+print_Word = { w : Word => print_i64 (primitive_zext_Word_to_i64 w); };
+
+splitCarry = { hi : Word => lo : Word =>
+  // Propagate carry:  [0|0|  c   ][b|  a  | ]  ====>
+  //                               [0|  c  |b]  (and a as well).
+  // i.e. shift (hi,lo) by DIGIT_BIT, returning shifted bits too.
+  let foster_MP_MASK   = digitNumBitsMask !;
+      foster_DIGIT_BIT = digitNumBitsWord !;
+      reslo = bitand-Word lo foster_MP_MASK;
+      reshi = bitor-Word
+               (bitlshr-Word lo foster_DIGIT_BIT)
+                (bitshl-Word hi (primitive_zext_i32_to_Word (wordNumBits !)
+                                                      -Word foster_DIGIT_BIT));
+  in
+    (reshi, reslo)
+  end
+};
+
+natAddMulVVW = { z : Array Word => zo : Int32 => x : Array Word => y : Word =>
+  foldRange 0 (arrayLength32 x) 0 { i => c =>
+    case natMulAddWWW x[i] y z[i +Int32 zo] of (z1, z0) ->
+      case natAddWW0 z0 c of (cp, rawlo) ->
+        case splitCarry (cp +Word z1) rawlo of (carry, digit) ->
+          digit >^ z[i +Int32 zo];
+          carry
+        end
+      end
+    end
+  };
+};
+
+natBasicMulA = { x : Array Word => y : Array Word =>
+  let z = newDArray (arrayLength32 x +Int32 arrayLength32 y) { i => 0 };
+  in
+    arrayEnum y { d : Word => i6 : Int64 =>
+      // TODO(optimization): the range checks in this call to natMulAddVVW are
+      // redundant because of the size of the array we allocate for z.
+      if d !=Word 0 then
+        let i = primitive_trunc_i64_i32 i6;
+            r = natAddMulVVW z i x d; in
+          r >^ z[arrayLength32 x +Int32 i];
+          ()
+        end
+      else () end
+    };
+    z
+  end
+};
+
+natBasicMul = { x : NatInf => y : NatInf =>
+  NatInf (trimLeadingZeroWords (natBasicMulA (natDigits x) (natDigits y)))
+};
+
 // karatsubaAdd
 // karatsubaSub
 // karasubaThreshold = 32
@@ -251,19 +312,15 @@ foster_nat_sub_digits = { lg => sm =>
 // karatsubaLen
 // natMul
 // natRangeProduct
-// natDivW
-// natDiv
-// natDivLarge
 // natLenBits
 // natExpWW
+// natModW
+//
 // natTrailingZeroBits
 // natShl
-// natBit
 // natAnd
 // natXor
 // natOr
-// natModW
-//
 
 // Shift right by n bits.
 //
@@ -384,6 +441,9 @@ natMulDigit = { ni : NatInf => k : Word =>
 // Precondition: b != 1
 foster_div_nat_digit_nz :: { NatInf => Word => (NatInf, Word) };
 foster_div_nat_digit_nz = { n => b =>
+  assert (b !=Word 0) "foster_div_nat_digit_nz b != 0";
+  assert (b !=Word 1) "foster_div_nat_digit_nz b != 1";
+
   // TODO special handling for b=3, b power of 2...
   let a         = natDigits n;
       q         = allocDArray:[Word] (natDigitsUsed n);
@@ -477,4 +537,148 @@ case n of $NatInf a ->
   end // if
  end // if
 end // case
+};
+
+// natDivW
+// natDiv
+
+shlVU = { z : Array Word => x : Array Word => s : Word =>
+  let n = min-Int32 (arrayLength32 z) (arrayLength32 x); in
+    if n ==Int32 0 then ()
+    else
+      let s_hat = primitive_zext_i32_to_Word (wordNumBits !) -Word s;
+          w1    = x[n -Int32 1];
+          c     = bitlshr-Word w1 s_hat;
+      in
+        rec loop = { i : Int32 => w0 : Word =>
+          if i ==Int32 0 then w0 else
+            let ip = i -Int32 1;
+                w1 = x[ip];
+            in
+              (bitor-Word (bitshl-Word w0 s)
+                          (bitlshr-Word w1 s_hat)) >^ z[i];
+              loop ip w1
+            end
+          end
+        }; in
+          (bitshl-Word (loop (n -Int32 1) w1) s) >^ z[0];
+          c
+        end
+      end
+    end
+  end
+};
+
+shrVU = { z : Array Word => x : Array Word => s : Word =>
+  let n = min-Int32 (arrayLength32 z) (arrayLength32 x); in
+    if n ==Int32 0 then ()
+    else
+      let s_hat = primitive_zext_i32_to_Word (wordNumBits !) -Word s;
+          w1    = x[0];
+          c     = bitshl-Word w1 s_hat;
+      in
+        rec loop = { i : Int32 => w0 : Word =>
+          if i ==Int32 (n -Int32 1) then w0 else
+            let ip = i +Int32 1;
+                w1 = x[ip];
+            in
+              (bitor-Word (bitlshr-Word w0 s)
+                          (bitshl-Word w1 s_hat)) >^ z[i];
+              loop ip w1
+            end
+          end
+        }; in
+          (bitlshr-Word (loop 0 w1) s) >^ z[n -Int32 1];
+          c
+        end
+      end
+    end
+  end
+};
+
+subVVfrom = { j : Int32 => z : Array Word =>
+                           x : Array Word =>
+                           y : Array Word =>
+  assert (arrayLength32 y <=SInt32 (arrayLength32 x -Int32 j)) "|y| <= |x| - j";
+  assert (arrayLength32 y <=SInt32 (arrayLength32 z -Int32 j)) "|y| <= |z| - j";
+
+  rec loop = { i : Int32 => c : Word =>
+    if i ==Int32 arrayLength32 y then c else
+      case subWW x[i +Int32 j] y[i] c of (cn, zi) ->
+        zi >^ z[i +Int32 j];
+        loop (i +Int32 1) cn
+      end
+    end
+  }; in loop 0 0;
+};
+
+// Returns (q, r) such that (q * v) + r = uIn
+//
+natDivLarge = { uIn : Array Word => v0 : Array Word =>
+  let n = arrayLength32 v0;
+      f = arrayLength32 uIn;
+      m = f -Int32 n;
+
+      q = allocDArray (m +Int32 1);
+      qhatv = allocDArray (n +Int32 1);
+      u = newDArray (arrayLength32 uIn +Int32 1) { i => 0 };
+
+      shift = leadingZeros v[n -Int32 1];
+      v = newDArray n { i => v[i] }; // local, private scratchpad
+      qhatref = (ref 0);
+  in
+    // D1.
+    shlVU v v0  shift;
+    shlVU u uIn shift >^ u[f];
+
+    // D2.
+    rec loop = { j : Int32 =>
+      if j >=SInt32 0 then
+        // D3.
+        (bitshl-Word 1 (primitive_zext_i32_to_Word (wordNumBits !))
+                                                            -Word 1) >^ qhatref;
+        let jn = j +Int32 n;
+            n1 = n -Int32 1;
+        in
+          if u[jn] !=Word v[n1] then
+            case divWW u[j +Int32 n] u[jn -Int32 1] v[n1] of (qq, rr) ->
+              case mulWW qq v[n -Int32 2] of (x1, x2) ->
+                rec loop = { x1 => x2 => rhat =>
+                  if greatherThan x1 x2 rhat u[jn -Int32 2] then
+                    let rhatP = rhat +Word v[n1]; in
+                      (qhatref^ -Int32 1) >^ qhatref;
+                      if rhatP < rhat then () else
+                        case mulWW qhatref^ v[n -Int32 2] of (nx1, nx2) ->
+                          loop nx1 nx2 rhatP
+                        end
+                      end
+                    end
+                  else () end
+                }; in
+                  loop x1 x2 rr
+                end
+              end
+            end
+          else () end
+        end;
+
+        // D4.
+        *** mulAddVWW qhatv 0 n v qhat 0 >^ qhatv[n];
+        if subVVfrom j u u qhatv != 0 then
+          let c = addVVfrom j u u v;
+          in
+            (u[j +Int32 n] +Word c) >^ u[j +Int32 n];
+            (qhatref^ -Int32 1) >^ qhatref;
+          end
+        else () end;
+
+        qhatref^ >^ q[j];
+        loop (j -Int32 1)
+      else
+        ()
+      end
+    }; in
+      loop m
+    end;
+  end
 };

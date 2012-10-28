@@ -237,7 +237,7 @@ arrayEnumFrom = { forall t:Type,
 arrayEnum = { forall t:Type,
               a : Array t =>
               f : { t => Int64 => () } =>
-  arrayEnumFrom a (primitive_sext_i64_i32 0) f
+  arrayEnumFrom a 0 f
 };
 
 /*
@@ -289,6 +289,12 @@ arrayIterReverse = { forall t:Type,
   then if f a[n] then arrayIterReverse a (n -Int32 1) f
                  else False end
   else True end
+};
+
+////
+
+min-Int32 = { a : Int32 => b : Int32 =>
+  if a <SInt32 b then a else b end
 };
 
 ////

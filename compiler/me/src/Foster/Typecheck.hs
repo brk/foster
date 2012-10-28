@@ -1092,8 +1092,8 @@ subsCheckFunTy as1 r1 as2 r2 = do
         if eqLen as1 as2
           then return ()
           else do msg <- getStructureContextMessage
-                  tcFails [text "Function types must have equal-length argument lists"
-                          ,msg]
+                  tcFailsMore [text "Function types must have equal-length argument lists"
+                              ,msg]
         debug $ "subsCheckFunTy arg: " ++ show as2 ++ " ?<=? " ++ show as1
         mapM_ (\(a2, a1) -> subsCheckTy a2 a1 "sCFTa") (zip as2 as1)
         debug $ "subsCheckFunTy res: " ++ show r1 ++ " ?<=? " ++ show r2

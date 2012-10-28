@@ -733,10 +733,6 @@ foster_mul_i64 = { x : Int64 => y : Int64 =>
   end
 };
 
-min-Int32 = { a : Int32 => b : Int32 =>
-  if a <SInt32 b then a else b end
-};
-
 foster_mp_bitand_nat :: { Array Int64 => Array Int64 => Array Int64 };
 foster_mp_bitand_nat = { a => b =>
   let dd = newDArray0 (min-Int32 (used a) (used b))

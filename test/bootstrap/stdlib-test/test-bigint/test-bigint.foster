@@ -14,6 +14,7 @@ main = {
   //t9 !;
 
   n0 !;
+  n1 !;
 
   ()
 };
@@ -111,6 +112,47 @@ n0 = {
   expect_text "51547028127238349460580284";
   print_text (foster_nat_to_text_radix (natMulDigit (natFromInt64 666`555`444`333`222`111)
                                                    77`333`444) 10);
+};
+
+n1 = {
+  expect_text "63";
+  print_text (foster_nat_to_text_radix (natMulDigit (natFromInt32 7) 9) 10);
+
+  /*
+  expect_text "63";
+  print_text (foster_nat_to_text_radix (natBasicMul (natFromInt32 7)
+                                                    (natFromInt32 9)) 10);
+*/
+  expect_text "2342135343234";
+  print_text (foster_nat_to_text_radix (natFromInt64 2342135343234) 10);
+
+  expect_text "12342342324231";
+  print_text (foster_nat_to_text_radix (natFromInt64 12342342324231) 10);
+
+  testNatMulAddWWW 1378166914 2901282823 0 930962151 2456304526;
+  testNatMulAddWWW 1378166914 2873 1582135758 922 1095832768;
+  testNatMulAddWWW 545 2873 368 0 1566153;
+
+  let x = natBasicMul (natFromInt64 2342135343234)
+                      (natFromInt64 12342342324231);
+  in
+      expect_text "28907436175874298500103054";
+      print_text (foster_nat_to_text_radix x 10);
+
+      expect_text "835639866262246086805018926722439349915248620126916";
+      print_text (foster_nat_to_text_radix (natBasicMul x x) 10);
+  end
+
+};
+
+testNatMulAddWWW = { a : Word => b : Word => c : Word => e1 : Int64 => e0 : Int64 =>
+  case natMulAddWWW a b c of (z1, z0) ->
+    expect_i64 e1;
+    print_i64 (primitive_zext_Word_to_i64 z1);
+
+    expect_i64 e0;
+    print_i64 (primitive_zext_Word_to_i64 z0);
+  end;
 };
 
 ////////
