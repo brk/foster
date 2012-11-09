@@ -394,6 +394,8 @@ foster_mul_Word_split = { x : Word => y : Word =>
                (primitive_zext_Word_to_WordX2 y))
 };
 
+mulWW = { x : Word => y : Word => foster_mul_Word_split x y };
+
 // Precondition: k >= 0
 //
 natMulInt32 = { ni : NatInf => k : Int32 =>
@@ -544,7 +546,7 @@ end // case
 
 shlVU = { z : Array Word => x : Array Word => s : Word =>
   let n = min-Int32 (arrayLength32 z) (arrayLength32 x); in
-    if n ==Int32 0 then ()
+    if n ==Int32 0 then 0
     else
       let s_hat = primitive_zext_i32_to_Word (wordNumBits !) -Word s;
           w1    = x[n -Int32 1];
@@ -571,7 +573,7 @@ shlVU = { z : Array Word => x : Array Word => s : Word =>
 
 shrVU = { z : Array Word => x : Array Word => s : Word =>
   let n = min-Int32 (arrayLength32 z) (arrayLength32 x); in
-    if n ==Int32 0 then ()
+    if n ==Int32 0 then 0
     else
       let s_hat = primitive_zext_i32_to_Word (wordNumBits !) -Word s;
           w1    = x[0];
@@ -596,9 +598,32 @@ shrVU = { z : Array Word => x : Array Word => s : Word =>
   end
 };
 
+// Precondition: c == 0 or c == 1.
+//
+subWW = { x : Word => y : Word => c : Word =>
+  let yc = y +Word c;
+      z0 = x -Word yc;
+      z1 = if either (z0 >UWord x) (yc <UWord y) then 1 else 0 end;
+  in
+     (z1, z0)
+  end
+};
+
+// Precondition: c == 0 or c == 1.
+//
+addWW = { x : Word => y : Word => c : Word =>
+  let yc = y +Word c;
+      z0 = x +Word yc;
+      z1 = if either (z0 <UWord x) (yc <UWord y) then 1 else 0 end;
+  in
+     (z1, z0)
+  end
+};
+
 subVVfrom = { j : Int32 => z : Array Word =>
                            x : Array Word =>
                            y : Array Word =>
+  // Make sure that array sizes are compatible with offset j.
   assert (arrayLength32 y <=SInt32 (arrayLength32 x -Int32 j)) "|y| <= |x| - j";
   assert (arrayLength32 y <=SInt32 (arrayLength32 z -Int32 j)) "|y| <= |z| - j";
 
@@ -612,6 +637,126 @@ subVVfrom = { j : Int32 => z : Array Word =>
   }; in loop 0 0;
 };
 
+addVVfrom = { j : Int32 => z : Array Word =>
+                           x : Array Word =>
+                           y : Array Word =>
+  // Make sure that array sizes are compatible with offset j.
+  assert (arrayLength32 y <=SInt32 (arrayLength32 x -Int32 j)) "|y| <= |x| - j";
+  assert (arrayLength32 y <=SInt32 (arrayLength32 z -Int32 j)) "|y| <= |z| - j";
+
+  rec loop = { i : Int32 => c : Word =>
+    if i ==Int32 arrayLength32 y then c else
+      case addWW x[i +Int32 j] y[i] c of (cn, zi) ->
+        zi >^ z[i +Int32 j];
+        loop (i +Int32 1) cn
+      end
+    end
+  }; in loop 0 0;
+};
+
+
+mulAddVWW = { z : Array Word => zo : Int32 => zn : Int32 =>
+              x : Array Word => y : Word => r : Word =>
+  assert (zn >=SInt32 zo) "(zn >=SInt32 zo)";
+  foldRange 0 (zn -Int32 zo) r { i => c =>
+    case natMulAddWWW x[i] y c of (cn, zi) ->
+      zi >^ z[zo +Int32 i];
+      cn
+    end
+  }
+};
+
+bitLengthWord = { w : Word =>
+  rec go = { w : Word => len : Int32 =>
+    if w ==Word 0 then len else
+      go (bitlshr-Word w 1) (len +Int32 1)
+    end
+  }; in go w 0 end
+};
+
+wordLeadingZeros32 = { w : Word =>
+  (wordNumBits !) -Int32 (bitLengthWord w)
+};
+
+wordLeadingZeros = { w : Word =>
+  primitive_zext_i32_to_Word (wordLeadingZeros32 w)
+};
+
+// Returns (q, r) such that (q * v) + r = u.
+divWW = { u1 : Word => u0 : Word => v : Word =>
+  assert (u1 <UWord v) "divWW:u1 < v";
+
+  let
+	s  = wordLeadingZeros v;
+	vs = bitshl-Word v s;
+	w_W2 = primitive_zext_i32_to_Word (bitlshr-Int32 (wordNumBits !) 1);
+	w_B2 = bitlshr-Word 1 w_W2;
+	w_M2 = w_B2 -Word 1;
+
+	vn1 = bitlshr-Word v w_W2;
+	vn0 = bitand-Word  v w_M2;
+
+	w_W = primitive_zext_i32_to_Word (wordNumBits !);
+	un32 = bitor-Word (bitshl-Word u1 s)
+	                  (bitlshr-Word u0 (w_W -Word s));
+	un10 = bitshl-Word u0 s;
+	un1  = bitlshr-Word un10 w_W2;
+	un0  = bitand-Word  un10 w_M2;
+	q1   = un32 `udiv-Word` vn1;
+	rhat = un32 -Word (q1 *Word vn1);
+  in
+    rec
+      again1 = { q1 => rhat =>
+        rec k = { q1 =>
+	  let un21 = ((un32 *Word w_B2) +Word un1) -Word (q1 *Word v);
+	      q0   = un21 `udiv-Word` vn1;
+	      rhat = un21 -Word (q0 *Word vn1);
+	  in
+	      again2 un21 q1 q0 rhat;
+	  end
+        }; in
+	  if either (q1 >=UWord w_B2)
+	            ((q1 *Word vn0) >UWord ((w_B2 *Word rhat) +Word un1) then
+	    let q1p   = q1   -Word 1;
+	  	rhatp = rhat +Word vn1;
+	    in
+	  	if rhatp <UWord w_B2
+	  	  then again1 q1p rhatp
+	  	  else k      q1p       end
+	    end
+	  else         k      q1        end
+	end;
+      };
+
+      again2 = { un21 => q1 => q0 => rhat =>
+        let returns = { un21 => q1 => q0 =>
+	  ((q1 *Word w_B2) +Word q0,
+	   bitlshr-Word (((un21 *Word w_B2) +Word un0) -Word (q0 *Word v))
+	                s)
+        }; in
+	  if either (q0 >=UWord w_B2)
+	            ((q0 *Word vn0) >UWord ((w_B2 *Word rhat) +Word un0)) then
+	    let q0p   = q0   -Word 1;
+	  	rhatp = rhat +Word vn1;
+	    in
+	  	if rhatp <UWord w_B2
+	  	then again2  un21 q1 q0p rhatp
+	  	else returns un21 q1 q0p  end
+	    end
+	  else       returns un21 q1 q0   end
+        end
+      };
+  in
+    again1 q1 rhat;
+  end
+};
+
+// Compare the split digits x and y (return x > y).
+greaterThan = { x1 : Word => x2 : Word => y1 : Word => y2 : Word =>
+  either (x1 >UWord y1)
+         (both (x1 ==Word y1) (x2 >UWord y2));
+};
+
 // Returns (q, r) such that (q * v) + r = uIn
 //
 natDivLarge = { uIn : Array Word => v0 : Array Word =>
@@ -623,8 +768,8 @@ natDivLarge = { uIn : Array Word => v0 : Array Word =>
       qhatv = allocDArray (n +Int32 1);
       u = newDArray (arrayLength32 uIn +Int32 1) { i => 0 };
 
-      shift = leadingZeros v[n -Int32 1];
-      v = newDArray n { i => v[i] }; // local, private scratchpad
+      shift = wordLeadingZeros v0[n -Int32 1];
+      v = newDArray n { i => v0[i] }; // local, private scratchpad
       qhatref = (ref 0);
   in
     // D1.
@@ -644,10 +789,10 @@ natDivLarge = { uIn : Array Word => v0 : Array Word =>
             case divWW u[j +Int32 n] u[jn -Int32 1] v[n1] of (qq, rr) ->
               case mulWW qq v[n -Int32 2] of (x1, x2) ->
                 rec loop = { x1 => x2 => rhat =>
-                  if greatherThan x1 x2 rhat u[jn -Int32 2] then
+                  if greaterThan x1 x2 rhat u[jn -Int32 2] then
                     let rhatP = rhat +Word v[n1]; in
-                      (qhatref^ -Int32 1) >^ qhatref;
-                      if rhatP < rhat then () else
+                      (qhatref^ -Word 1) >^ qhatref;
+                      if rhatP <UWord rhat then () else
                         case mulWW qhatref^ v[n -Int32 2] of (nx1, nx2) ->
                           loop nx1 nx2 rhatP
                         end
@@ -663,12 +808,12 @@ natDivLarge = { uIn : Array Word => v0 : Array Word =>
         end;
 
         // D4.
-        *** mulAddVWW qhatv 0 n v qhat 0 >^ qhatv[n];
-        if subVVfrom j u u qhatv != 0 then
+        mulAddVWW qhatv 0 n v qhatref^ 0 >^ qhatv[n];
+        if subVVfrom j u u qhatv !=Word 0 then
           let c = addVVfrom j u u v;
           in
             (u[j +Int32 n] +Word c) >^ u[j +Int32 n];
-            (qhatref^ -Int32 1) >^ qhatref;
+            (qhatref^ -Word 1) >^ qhatref;
           end
         else () end;
 

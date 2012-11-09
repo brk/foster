@@ -15,7 +15,7 @@ main = {
 
   n0 !;
   n1 !;
-
+  n2 !;
   ()
 };
 
@@ -143,6 +143,17 @@ n1 = {
       print_text (foster_nat_to_text_radix (natBasicMul x x) 10);
   end
 
+};
+
+n2 = {
+  expect_i32 3;
+  print_i32 (bitLengthWord 7);
+
+  expect_i32 1;
+  print_i32 (bitLengthWord 1);
+
+  expect_i32 21;
+  print_i32 (bitLengthWord 1703581);
 };
 
 testNatMulAddWWW = { a : Word => b : Word => c : Word => e1 : Int64 => e0 : Int64 =>

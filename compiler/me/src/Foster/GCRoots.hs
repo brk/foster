@@ -21,13 +21,15 @@ import Foster.CloConv
 import Foster.TypeLL
 import Foster.Letable
 
+import Debug.Trace(trace)
+
 import Data.Maybe(fromMaybe)
 import Data.Map(Map)
 import qualified Data.Set as Set
 import qualified Data.Map as Map(lookup, empty, elems, findWithDefault, insert,
-                assocs, delete, size, unionWith, fromList, insertWith, keysSet)
+           keys, assocs, delete, size, unionWith, fromList, insertWith, keysSet)
 import qualified Data.Text as T(pack)
-import Control.Monad(when)
+import Control.Monad(when, liftM)
 import Control.Monad.State(evalStateT, get, put, modify, StateT, lift, gets)
 
 -- | Explicit insertion (and optimization) of GC roots.
@@ -352,7 +354,11 @@ insertDumbGCRoots bbgp dump = do
                  , loadedvar)
 
       withGCLoad :: LLVar -> RootMapped ([Insn' O O], LLVar)
-      withGCLoad v = if not $ isGCable v then return ([], v)
+      withGCLoad v = do rv <- withGCLoad_h (trace ("withGCLoad " ++ show v) v)
+                        return $ trace ("withGCLoad " ++ show v ++ " ==> " ++ show (pretty rv)) rv
+
+      withGCLoad_h :: LLVar -> RootMapped ([Insn' O O], LLVar)
+      withGCLoad_h v = if not $ isGCable v then return ([], v)
        else do gcr <- get
                case Map.lookup v gcr of
                  Just root -> do retLoaded root
@@ -412,13 +418,17 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
     CCLast (CCCase v arms mb occ) -> do undoDeadGCLoads [v] (\[v' ] ->
                                                (mkLast $ CCLast (CCCase v' arms mb occ)))
     CCRebindId     {}             -> do error $ "CCRebindId should not have been introduced yet!"
-  varForRoot root = case Map.lookup root varsForGCRoots of
-                      Nothing -> error $ "Unable to find source variable for root " ++ show root
-                      Just var -> var
 
-  undoDeadGCLoads vs k = do
-    vs' <- mapM undo vs
-    return $ k vs'
+  varForRoot root = let rv = varForRoot_h (trace ("varForRoot " ++ show root) root) in
+                    trace ("varForRoot " ++ show root ++ " ==> " ++ show (pretty rv)) rv
+
+  varForRoot_h root = case Map.lookup root varsForGCRoots of
+                       Nothing -> error $ "Unable to find source variable for root "
+                                        ++ show root ++ "\nmap keys are "
+                                        ++ show (map tidIdent $ Map.keys varsForGCRoots)
+                       Just var -> var
+
+  undoDeadGCLoads vs k = liftM k (mapM undo vs)
 
   undo v = do gcRootsForVars <- get
               return $ case Map.lookup v gcRootsForVars of

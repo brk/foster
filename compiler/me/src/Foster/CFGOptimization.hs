@@ -122,7 +122,7 @@ elimContInBBG uref bbg = runWithUniqAndFuel uref infiniteFuel (elimContInBBG' bb
 
         contEquivLattice :: DataflowLattice CFGTrivia
         contEquivLattice = DataflowLattice
-                          { fact_name = "Continuned continuations"
+                          { fact_name = "Continued continuations"
                           , fact_bot  = CFGTrivia Nothing Map.empty
                           , fact_join = fj
                           }
@@ -261,9 +261,9 @@ getCensus bbg = let cf = getCensusFns bbg in
 
     fnEntryId fn = let bbg = fnBody fn in
                    let st = case fnIsRec fn of
-                             Just True  -> YesRec
-                             Just False -> NotRec
-                             Nothing    -> NotRec
+                              Just    True  -> YesRec
+                              Just    False -> NotRec
+                              Nothing       -> NotRec
                    in (st, blockId $ bbgEntry bbg)
 
     censusLetable letable m =
@@ -286,44 +286,77 @@ getCensus bbg = let cf = getCensusFns bbg in
         ILAllocate {}            -> m -- Might have been introduced by KNLetRec.
         ILCall         _ v _vs   -> error $ "census encountered non-tail ILCall of " ++ show v
 
+data ContInfo = NoConts
+              | OneCont BlockId BlockId
+              | ManyConts
+              deriving (Show)
+
 runCensusRewrites' :: IORef Uniq -> BasicBlockGraph -> IO BasicBlockGraph
 runCensusRewrites' uref bbg = do
      runWithUniqAndFuel uref infiniteFuel (go (getCensus bbg) bbg)
-  where go :: Census -> BasicBlockGraph -> M BasicBlockGraph
+  where
+        go :: Census -> BasicBlockGraph -> M BasicBlockGraph
         go ci bbg = do
-         let (bid,_) = bbgEntry bbg
-         bb' <- rebuildGraphM bid (bbgBody bbg) (transform ci)
-         return $ bbg { bbgBody = bb' }
+          let (bid,_) = bbgEntry bbg
+          bb' <- rebuildGraphM bid (bbgBody bbg) (transform ci)
+          return $ bbg { bbgBody = bb' }
 
+        getKnownCall :: Census -> Ident -> ContInfo
         getKnownCall ci id =
           case fmap Set.toList (Map.lookup id ci) of
             -- Simple case: non-recursive function, with only one return cont.
-            Just [KnownCall bid (NotRec, fn_ent)] -> Just (bid, fn_ent)
+            Just [KnownCall bid (NotRec, fn_ent)] -> OneCont bid fn_ent
 
             -- A recursive continuation must have one return cont provided
             -- from the outside, and only tail recursive calls from inside.
             -- (does not handle non-trivial SCCs of tail recursive functions...)
-            Just [TailRecursion, KnownCall bid (_, fn_ent)] -> Just (bid, fn_ent)
-            Just [KnownCall bid (_, fn_ent), TailRecursion] -> Just (bid, fn_ent)
+            Just [TailRecursion, KnownCall bid (_, fn_ent)] -> OneCont bid fn_ent
+            Just [KnownCall bid (_, fn_ent), TailRecursion] -> OneCont bid fn_ent
 
-            _ -> Nothing
+            Just _others -> {- trace ("getKnownCall returning ManyConts for " ++ show id ++ " due to " ++ show others) -}
+                            ManyConts
+            Nothing -> NoConts
+
+        transformFn ci fn = do
+          bbg' <- go ci (fnBody fn)
+          return $ fn { fnBody = bbg' }
 
         transform ci = rw
          where
           rw :: Insn e x -> M (Graph Insn e x)
           rw n = case n of
-             ILabel   {} -> do return $ mkFirst  n
-             ILetFuns [id] [fn] | Just (bid, _fn_ent) <- getKnownCall ci id
-                         -> do let ag = aGraphOfGraph emptyGraph
-                               fng <- aGraphOfFn ci fn bid
-                               graphOfAGraph (addBlocks ag fng)
-             ILetFuns _ids _fns    -> return $ mkMiddle n
+             ILabel   {} -> do return $ mkFirst n
+             -- TODO may need to re-position contified functions in a smaller
+             --      scope. For example:
+             --                    let f1 = { ... };
+             --                        f2 = { ... f1 ! ... }; in f2 ! end
+             -- cannot be transformed to
+             --                letcont j1 = { ... };
+             --                letfun  f2 = { ... j1 ! ... }; in f2 ! end
+             -- because f2 can't call a continuation that belongs to its parent.
+             ILetFuns ids rawfns -> do
+               fns <- mapM (transformFn ci) rawfns
+               let (contifiables, nonconts) = splitContifiable (zip ids fns) ci
+               let nonconts_ag = aGraphOfGraph $ mkMiddle $ uncurry ILetFuns $ unzip nonconts
+
+               fngs <- mapM (\(_, fn, bid) -> aGraphOfFn ci fn bid) contifiables
+               graphOfAGraph (foldr (flip addBlocks) nonconts_ag fngs)
+
              ILetVal  _id _letable -> return $ mkMiddle n
              ILast cflast -> return $ mkLast $ ILast (contifyCalls ci cflast)
 
+        splitContifiable :: [(Ident, CFFn)] -> Census -> ([(Ident, CFFn, BlockId)],
+                                                          [(Ident, CFFn)])
+        splitContifiable idsfns ci =
+          let idsfns' = map (\(id, fn) -> (id, fn, getKnownCall ci id)) idsfns in
+          let contifiables = [(id, fn, bid) | (id, fn, OneCont bid _fn_ent) <- idsfns' ] in
+          let nonconts     = [(id, fn)      | (id, fn, ManyConts)           <- idsfns' ] in
+          -- Silently drop dead functions...
+          (contifiables, nonconts)
+
         contifyCalls :: Census -> CFLast -> CFLast
         contifyCalls ci (CFCall _k _t v vs)
-          | Just (_bid, fn_ent) <- getKnownCall ci (tidIdent v) =
+          | OneCont _bid fn_ent <- getKnownCall ci (tidIdent v) =
                      -- Replace (v k vs) with (j vs) if all calls to v had eq k.
                      CFCont (contified fn_ent) vs
         contifyCalls _ci other = other
@@ -333,7 +366,7 @@ runCensusRewrites' uref bbg = do
 
         -- Rewrite the function's body so that returns become jumps to the
         -- continuation that all callers had provided.
-        -- This computes  K[k0/k]  from CwCC.
+        -- This computes  K[k0/k]  from the paper Comp w/ Continuations, Cont'd.
         aGraphOfFn ci fn retbid = do
           let ret bid = if bid == bbgRetK (fnBody fn) then retbid else bid
           let rw :: Insn e x -> Insn e x
@@ -344,8 +377,9 @@ runCensusRewrites' uref bbg = do
                   CFCall bid t v vs -> CFCall (ret bid) t v vs
                   CFCase v arms     -> CFCase v (map (\(p,k) -> (p,ret k)) arms)
               rw insn = insn
-          let g = mapGraph rw $ bbgBody $ fnBody fn
-          return $ aGraphOfGraph g
+          let g_old = bbgBody $ fnBody fn
+          let g_new = mapGraph rw g_old
+          return $ aGraphOfGraph g_new
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||| Liveness ||||||||||||||||||||||||||||||||{{{

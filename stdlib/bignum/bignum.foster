@@ -1000,8 +1000,6 @@ subInt64 = { hAr : Ref Int32 => lAr : Ref Int32 =>
   end
 };
 
-either = { a : Bool => b : Bool => if a then True else b end };
-
 /*
 // Precondition: d > 0
 //

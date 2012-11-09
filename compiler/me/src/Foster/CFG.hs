@@ -454,9 +454,13 @@ type BlockId = (String, Label)
 comment d = text "/*" <+> d <+> text "*/"
 
 prettyId (TypedId _ i) = text (show i)
+prettyTypedVar (TypedId t i) = text (show i) <+> text "::" <+> pretty t
 
 showTyped :: Doc -> MonoType -> Doc
 showTyped d t = parens (d <+> text "::" <+> pretty t)
+
+fnFreeIds :: (Fn BasicBlockGraph MonoType) -> [MoVar]
+fnFreeIds fn = freeTypedIds fn
 
 instance Pretty (Fn BasicBlockGraph MonoType) where
   pretty fn = group (lbrace <+>
@@ -464,6 +468,7 @@ instance Pretty (Fn BasicBlockGraph MonoType) where
                                 (fnVars fn))))
                     <$> indent 4 (pretty (fnBody fn))
                     <$> rbrace)
+                     <+> text "free-ids" <+> text (show (map prettyTypedVar (fnFreeIds fn)))
 
 instance Pretty Label where pretty l = text (show l)
 
@@ -550,8 +555,12 @@ instance LabelsPtr (BlockId, ts) where targetLabels ((_, label), _) = [label]
 -- |||||||||||||||||||| Free identifiers ||||||||||||||||||||||||{{{
 instance TExpr BasicBlockGraph MonoType where
   freeTypedIds bbg =
+       -- Compute the bound and free variables of the set of instructions
+       -- in the graph, and discard any free variables which are also bound.
+       --
        let (bvs,fvs) = foldGraphNodes go (bbgBody bbg) (Set.empty, Set.empty) in
        filter (\v -> Set.notMember (tidIdent v) bvs) (Set.toList fvs)
+       --
        -- We rely on the fact that these graphs are alpha-converted, and thus
        -- have a unique-binding property. This means we can  get away with just
        -- sticking all the binders in one set, and all the occurrences in

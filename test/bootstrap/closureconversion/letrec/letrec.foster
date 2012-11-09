@@ -44,6 +44,26 @@ is-odd = { z:Int32 =>
   end
 };
 
+// TODO figure out why this doesn't codegen properly.
+is-odd-sunk = { z:Int32 =>
+  rec odd_s = { x:Int32 =>
+    rec even_s = { z:Int32 => if z ==Int32 0 then True else odd_s (z -Int32 1) end };
+    in
+      if x ==Int32 1 then True else even_s (x -Int32 1) end
+    end
+  };
+  in odd_s (opaquely_i32 3); end
+};
+
+// TODO we ought to restrict block-sinking to contifiable functions [1]...
+//      hmmm... but functions become contifiable
+//      after contifying other functions...
+//              [1] ... because if a function is not contifiable,
+//                      sinking it can result in excess memory consumption,
+//                      e.g. if it is moved from a place evaluated once
+//                           to a scope where it is evaluated n times.
+// UGH!
+
 loopy = { z:Int32 =>
   rec loop = { x:Int32 => if x ==Int32 0 then True else loop (x -Int32 1) end };
    in loop z;

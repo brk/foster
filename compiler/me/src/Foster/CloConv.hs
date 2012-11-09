@@ -137,9 +137,18 @@ closureConvertToplevel globalIds body = do
 
        cvt globalized (CFB_LetFuns ids fns body) =
          let
-             unliftable fn glbl = [ id | (TypedId _ id) <- fnFreeIds fn
+             unliftable glbl fn =
+             {-
+                 trace (if (identPrefix $ tidIdent $ fnVar fn) == T.pack "problem4" then
+                        "Computing unliftables for fn " ++ show (fnVar fn)
+                        ++ "\nfree ids: " ++ show (fnFreeIds fn)
+                        -- ++ "\nglobals: " ++ show glbl
+                        ++ "\n"
+                        else "") $ -}
+                                  [ id | (TypedId _ id) <- fnFreeIds fn
                                        , Set.notMember id glbl]
-             allUnliftables = filter (not . null) (map (\fn -> unliftable fn globalized' ) fns)
+             allUnliftables = filter (not . null)
+                                     (map (unliftable globalized' ) fns)
              -- If a recursive nest of functions don't close over any other
              -- variables, they can all be globalized as long as every use
              -- of their peers happens to be a direct call. So, we'll assume
@@ -292,7 +301,8 @@ closureConvertLetFuns ids fns = do
     let mkProcVar  (TypedId ft id) = TypedId (mkProcType ft) id
 
     let proc_vars = map (mkProcVar . fnVar) fns
-    let genFreshId id = ilmFresh (".env." `prependedTo` identPrefix id)
+    let genFreshId id = do rv <- ilmFresh (".env." `prependedTo` identPrefix id)
+                           return $ trace ("genFreshId for " ++ show id ++ " is " ++ show rv ++ " ;; " ++ show (map fnIdent fns) ++ "; fn: " ++ show (map pretty (tail fns))) rv
     cloEnvIds <- mapM genFreshId ids
     let infoMap = Map.fromList (zip ids (zip proc_vars cloEnvIds))
     let idfns = zip ids fns
@@ -365,8 +375,16 @@ closureOfKnFn :: InfoMap
               -> ILM Closure
 closureOfKnFn infoMap (self_id, fn) = do
     let varsOfClosure = closedOverVarsOfKnFn
-    let transformedFn = makeEnvPassingExplicit fn
-    (envVar, newproc) <- closureConvertFn transformedFn varsOfClosure
+
+    let envId  = snd (infoMap Map.! self_id)
+    -- Note that this env var has a precise type! The other's is missing.
+    let envVar = TypedId (TupleType $ map tidType varsOfClosure) envId
+
+    -- Note that this will also rewrite recursive calls in nested functions,
+    -- which changes the set of closed-over variables for the nested function
+    -- (from outer fn to outer env).
+    let transformedFn = makeEnvPassingExplicit envVar fn
+    newproc          <- closureConvertFn transformedFn envVar varsOfClosure
     let procid        = TypedId (procType newproc) (procIdent newproc)
     return $ Closure procid (llv envVar) (map llv varsOfClosure)
                    (AllocationSource (show procid ++ ":")
@@ -393,10 +411,12 @@ closureOfKnFn infoMap (self_id, fn) = do
         -- since we can refer to the other closure's code function directly.
         -- However, if we want to return one closure from another, we (probably)
         -- do not wish turn that variable reference into a closure allocation.
-        concatMap (\v -> let tid = tidIdent v in case Map.lookup tid infoMap of
+        concatMap (\v -> let tid = tidIdent v in
+                         case Map.lookup tid infoMap of
                               Nothing ->   [v]
-                              Just (_, envid) -> capturedVarsFor tid v envid)
-             nonGlobalVars
+                              Just (_, envid) -> capturedVarsFor tid v envid) $
+             trace ("nonGlobalVars for " ++ show self_id ++ " is " ++ show nonGlobalVars ++ "\n" ++ show (pretty fn))
+                nonGlobalVars
 
     fakeCloVar id = TypedId fakeCloEnvType id
                       where fakeCloEnvType = TyConApp "Foster$GenericClosureEnvPtr" []
@@ -405,12 +425,8 @@ closureOfKnFn infoMap (self_id, fn) = do
     -- we create a procedure which also takes an extra (strongly-typed) env ptr
     -- argument. The new body does case analysis to bind the free variable names
     -- to the contents of the slots of the environment.
-    closureConvertFn :: CFFn -> [MoVar] -> ILM (MoVar, CCProc)
-    closureConvertFn f varsOfClosure = do
-        let envId  = snd (infoMap Map.! self_id)
-        -- Note that this env var has a precise type! The other's is missing.
-        let envVar = TypedId (TupleType $ map tidType varsOfClosure) envId
-
+    closureConvertFn :: CFFn -> MoVar -> [MoVar] -> ILM CCProc
+    closureConvertFn f envVar varsOfClosure = do
         -- If the body has x and y free, the closure converted body should be
         --     case env of (x, y, ...) -> body end
         newbody <- do
@@ -419,9 +435,9 @@ closureOfKnFn infoMap (self_id, fn) = do
                            ((P_Tuple norange t (map patVar varsOfClosure),
                                                            varsOfClosure)
                            , fst bodyentry) ]
-                        where t   = TupleType (map tidType varsOfClosure)
+                        where t        = tidType envVar
                               patVar a = P_Variable norange a
-                              norange = MissingSourceRange ""
+                              norange  = MissingSourceRange ""
             -- We change the entry block of the new body (versus the old).
             lab <- freshLabel
             let bid = ((".env.caseof", lab), [envVar])
@@ -431,14 +447,13 @@ closureOfKnFn infoMap (self_id, fn) = do
             closureConvertBlocks $
                BasicBlockGraph bid rk (caseblock |*><*| oldbodygraph)
 
-        proc <- ilmPutProc $ closureConvertedProc (envVar:(fnVars f)) f newbody
-        return (envVar, proc)
+        ilmPutProc $ closureConvertedProc (envVar:(fnVars f)) f newbody
 
     mapBasicBlock f (BasicBlockGraph entry rk bg) = BasicBlockGraph entry rk (f bg)
 
     -- Making environment passing explicit simply means rewriting calls
     -- of closure variables from   v(args...)   ==>   v_proc(v_env, args...).
-    makeEnvPassingExplicit fn =
+    makeEnvPassingExplicit envVar fn =
       let mapBlock :: forall e x. Graph' Block Insn e x -> Graph' Block Insn e x
           mapBlock g = mapGraphBlocks (mapBlock' go) g in
       fn { fnBody = mapBasicBlock mapBlock (fnBody fn) }
@@ -447,7 +462,7 @@ closureOfKnFn infoMap (self_id, fn) = do
           go insn = case insn of
             ILabel   {}      -> insn
             ILetVal  {}      -> insn
-            ILetFuns ids fns -> ILetFuns ids $ map makeEnvPassingExplicit fns
+            ILetFuns ids fns -> ILetFuns ids $ map (makeEnvPassingExplicit envVar) fns
             ILast cf -> case cf of
               CFCont {} -> insn
               CFCase {} -> insn
@@ -456,7 +471,9 @@ closureOfKnFn infoMap (self_id, fn) = do
                   Nothing -> insn
                   -- The only really interesting case: call to let-bound function!
                   Just (proc_var, envid) ->
-                    let env = fakeCloVar envid in
+                    let env = if envid == tidIdent envVar
+                               then envVar
+                               else fakeCloVar envid in
                     ILast $ CFCall b t proc_var (env:vs) -- Call proc with env as first arg.
                     -- We don't know the env type here, since we don't
                     -- pre-collect the set of closed-over envs from other procs.
@@ -592,10 +609,12 @@ instance Pretty CCLast where
 instance Pretty CtorId where
   pretty (CtorId tynm ctnm _ sm) = pretty tynm <> text "." <> pretty ctnm <> parens (pretty sm)
 
+prettyTypedVar v = pretty (tidIdent v) <+> text "::" <+> pretty (tidType v)
+
 instance Pretty Closure where
   pretty clo = text "(Closure" <+> text "env =(" <> pretty (tidIdent $ closureEnvVar clo)
                          <>  text ") proc =(" <+> pretty (closureProcVar clo)
-                         <+> text ") captures" <+> text (show (map pretty (closureCaptures clo)))
+                         <+> text ") captures" <+> text (show (map prettyTypedVar (closureCaptures clo)))
                          <+> text ")"
 
 instance Pretty BasicBlockGraph' where

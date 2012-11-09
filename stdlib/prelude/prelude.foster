@@ -1,5 +1,9 @@
 snafuinclude List "list";
 
+either = { a : Bool => b : Bool => if a then True else b end };
+
+/////
+
 // TODO switching from Boxed to Type fails...
 type case Maybe (a:Boxed)
   of $None
