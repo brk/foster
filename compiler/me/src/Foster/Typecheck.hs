@@ -11,8 +11,9 @@ import Control.Monad(liftM, forM_, forM, liftM, liftM2, when)
 
 import qualified Data.Text as T(Text, pack, unpack)
 import qualified Data.Map as Map(lookup, insert, elems, toList, null)
-import qualified Data.Set as Set(toList, fromList)
+import qualified Data.Set as Set(toList, fromList, intersection, null)
 import Data.IORef(newIORef,readIORef,writeIORef)
+import qualified Data.Graph as Graph(SCC(..), stronglyConnComp)
 
 import Foster.Base
 import Foster.TypeAST
@@ -584,12 +585,38 @@ tcRhoLetRec ctx0 rng recBindings e mt = do
         return $ AnnLetRec rng ids tcbodies e'
       _ -> do
         tcLift $ putDocLn $ showStructure (head tcbodies)
-        let fns = [f { fnIsRec = Just True } | (E_AnnFn f) <- tcbodies]
+        let fns = [f | (E_AnnFn f) <- tcbodies]
         let nonfns = filter notAnnFn tcbodies
                       where notAnnFn (E_AnnFn _) = False
                             notAnnFn _           = True
         sanityCheck (null nonfns) "Recursive bindings should only contain functions!"
-        return $ AnnLetFuns rng ids fns e'
+        return $ mkAnnLetFuns rng ids fns e'
+-- }}}
+
+-- Split up a sequence of function bindings into minimal SCCs.
+-- {{{
+mkAnnLetFuns rng ids fns body =
+  let idset    = Set.fromList ids
+      fnids fn = Set.toList $ Set.intersection (Set.fromList (freeIdents fn))
+                                               idset
+      callGraphList = map (\(id, fn) -> ((fn, id), id, fnids fn)) (zip ids fns)
+      theSCCs       = Graph.stronglyConnComp callGraphList
+      recon = foldr (\scc body ->
+          let markIsRec ids f = f { fnIsRec = Just r }
+                 where -- f is recursive if it has a free id from its SCC.
+                       r = not $ Set.null (setIntersectLists (freeIdents f) ids)
+                       setIntersectLists a b = Set.intersection (Set.fromList a)
+                                                                (Set.fromList b)
+              mkFuns ids rawfns =
+                let fns = map (markIsRec ids) rawfns in
+                AnnLetFuns rng ids fns body
+          in
+          case scc of
+                Graph.AcyclicSCC (fn, id) -> mkFuns [id] [fn]
+                Graph.CyclicSCC fnids ->     mkFuns ids fns
+                                              where (fns, ids) = unzip fnids
+         ) body theSCCs
+  in recon
 -- }}}
 
 -- G |- e ::: forall a1::k1..an::kn, rho

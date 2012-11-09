@@ -1,0 +1,21 @@
+main = {
+  ()
+};
+
+miscompiled = {
+  rec
+      g = {
+        case opaquely_i32 0
+          of 0 -> g !
+          of _ -> ()
+        end
+      };
+
+      // At one point, a second function in the `rec` block would
+      // prevent g from being contified, but g's caller would blithely
+      // assume it was (and thus try to call a label that didn't exist).
+      f = { () };
+  in
+    g !
+  end
+};

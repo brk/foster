@@ -1,0 +1,22 @@
+main = {
+  expect_i1 True;
+  print_i1 (is-odd-alt2 5);
+};
+
+is-odd-alt2 = { z:Int32 =>
+  rec odd_s = { x:Int32 =>
+    rec even_s = { z:Int32 => if z ==Int32 0 then True else odd_s (z -Int32 1) end };
+    in
+      if x ==Int32 1 then True else
+        if True then
+          even_s (x -Int32 1)
+        else
+          if even_s (x -Int32 1) then True else False end
+          // different continuation for even_s, which disables contification.
+        end
+      end
+    end
+  };
+  in odd_s (opaquely_i32 3); end
+};
+
