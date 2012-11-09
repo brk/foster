@@ -427,7 +427,10 @@ knSinkBlocks m = do
   return $ m { moduleILbody = rebuildWith rebuilder (moduleILbody m) }
 
 -- We perform (function-)local block sinking after monomorphization.
--- Block sinking is needed for contification to work properly.
+-- Block sinking is needed for contification to work properly;
+-- without it, a contifiable function would get contified into an outer scope,
+-- which doesn't work (since functions eventually get lifted to toplevel).
+--
 -- Performing sinking after monomorphization allows each monomorphization
 -- of a given function to be separately sunk.
 localBlockSinking :: Fn (KNExpr' t) t -> Fn (KNExpr' t) t
