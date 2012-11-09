@@ -6,9 +6,16 @@
 -----------------------------------------------------------------------------
 
 module Foster.KNExpr (kNormalizeModule, KNExpr, KNExpr'(..), TailQ(..), typeKN,
+                      knSinkBlocks,
                       renderKN, renderKNM, renderKNF, renderKNFM) where
 import Control.Monad(liftM, liftM2)
 import qualified Data.Text as T
+import qualified Data.Map as Map
+import qualified Data.Set as Set
+import Data.Set(Set)
+import Data.Map(Map)
+import Data.List(foldl')
+import Data.Maybe(maybeToList)
 
 import Foster.MonoType
 import Foster.Base
@@ -19,8 +26,13 @@ import Foster.AnnExprIL
 
 import Text.PrettyPrint.ANSI.Leijen
 
+import qualified Data.Graph.Inductive.Graph            as Graph
+import qualified Data.Graph.Inductive.PatriciaTree     as Graph
+import qualified Data.Graph.Inductive.Query.Dominators as Graph
+
 -- | Foster.KNExpr binds all intermediate values to named variables
--- | via a variant of K-normalization.
+-- | via a variant of K-normalization.  We also perform local block sinking,
+-- | in preparation for later contification.
 
 data KNExpr' ty =
         -- Literals
@@ -294,8 +306,8 @@ kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
     kNormalCtor ctx datatype dc@(DataCtor cname small _tyformals tys) = do
       let dname = dataTypeName datatype
       let arity = Prelude.length tys
-      let cid = CtorId dname (T.unpack cname) arity small
-      let info = CtorInfo cid dc
+      let cid   = CtorId dname (T.unpack cname) arity small
+      let info  = CtorInfo cid dc
       let genFreshVarOfType t = do fresh <- knFresh ".autogen"
                                    return $ TypedId t fresh
       vars <- mapM genFreshVarOfType tys
@@ -308,6 +320,196 @@ kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
                   , fnIsRec = Just False
                   , fnAnnot = ExprAnnot [] (MissingSourceRange $ "kNormalCtor " ++ show cid) []
                   }
+
+-- |||||||||||||||||||||||||| Local Block Sinking |||||||||||||||{{{
+
+-- The block-sinking transformation here is loosely based on the
+-- presentation in the paper
+--
+--      Lambda-Dropping: Transforming Recursive Equations into
+--      Programs with Block Structure
+--
+-- by Olivier Danvy and Ulrik P. Schultz.
+--
+-- http://www.brics.dk/RS/99/27/BRICS-RS-99-27.pdf
+
+collectFunctions :: Fn (KNExpr' t) t -> [(Ident, Ident, Fn (KNExpr' t) t)]  -- (parent, binding, child)
+collectFunctions knf = go [] (fnBody knf)
+  where go xs e = case e of
+          KNLiteral       {} -> xs
+          KNTuple         {} -> xs
+          KNKillProcess   {} -> xs
+          KNVar           {} -> xs
+          KNCallPrim      {} -> xs
+          KNCall          {} -> xs
+          KNAppCtor       {} -> xs
+          KNAlloc         {} -> xs
+          KNDeref         {} -> xs
+          KNStore         {} -> xs
+          KNAllocArray    {} -> xs
+          KNArrayRead     {} -> xs
+          KNArrayPoke     {} -> xs
+          KNTyApp         {} -> xs
+          KNIf            _ _ e1 e2   -> go (go xs e1) e2
+          KNLetVal          _ e1 e2   -> go (go xs e1) e2
+          KNUntil           _ e1 e2 _ -> go (go xs e1) e2
+          KNCase       _ _ patbinds -> let es = map snd patbinds in
+                                       foldl' go xs es
+          KNLetRec     _ es b       -> foldl' go xs (b:es)
+          KNLetFuns    ids fns b ->
+                 let entries = map (\(id, f) -> (fnIdent knf, id, f)) (zip ids fns) in
+                 let ys      = concatMap collectFunctions fns in
+                 xs ++ entries ++ go ys b
+
+collectMentions :: Fn (KNExpr' t) t -> Set (Ident, Ident) -- (caller, callee)
+collectMentions knf = go Set.empty (fnBody knf)
+  where cc       = fnIdent knf
+        uu xs vs = Set.union xs (Set.fromList [(cc, tidIdent v) | v <- vs])
+        vv xs v  = Set.insert (cc, tidIdent v) xs
+        go xs e = case e of
+          KNLiteral     {} -> xs
+          KNKillProcess {} -> xs
+          KNAllocArray  {} -> xs -- next few cases can't be fn-valued due to type checking.
+          KNArrayRead   {} -> xs
+          KNArrayPoke   {} -> xs
+          KNDeref       {} -> xs
+          KNTuple       _ vs _ -> uu xs vs
+          KNAppCtor     _ _ vs -> uu xs vs
+          KNCallPrim    _ _ vs -> uu xs vs
+          KNVar           v    -> vv xs v
+          KNAlloc       _ v _  -> vv xs v
+          KNTyApp       _ v _  -> vv xs v
+          KNStore     _  v1 v2 -> vv (vv xs v1) v2
+          KNCall      _ _ v vs -> vv (uu xs vs) v
+          KNIf          _ v e1 e2   -> go (go (vv xs v) e1) e2
+          KNUntil       _   e1 e2 _ -> go (go xs e1) e2
+          KNLetVal      _   e1 e2   -> go (go xs e1) e2
+          KNCase        _ v patbinds -> let es = map snd patbinds in
+                                       foldl' go (vv xs v) es
+          KNLetRec     _ es b ->        foldl' go xs (b:es)
+          KNLetFuns    _ fns b -> Set.union xs $ go (Set.unions $ map collectMentions fns) b
+
+rebuildFnWith rebuilder addBindingsFor f =
+         let rebuiltBody = rebuildWith rebuilder (fnBody f) in
+         f { fnBody = addBindingsFor f rebuiltBody }
+
+rebuildWith rebuilder e = q e
+  where
+    q x = case x of
+      KNVar         {} -> x
+      KNLiteral     {} -> x
+      KNTuple       {} -> x
+      KNKillProcess {} -> x
+      KNCallPrim    {} -> x
+      KNCall        {} -> x
+      KNAppCtor     {} -> x
+      KNAlloc       {} -> x
+      KNDeref       {} -> x
+      KNStore       {} -> x
+      KNAllocArray  {} -> x
+      KNArrayRead   {} -> x
+      KNArrayPoke   {} -> x
+      KNTyApp       {} -> x
+      KNIf          ty v ethen eelse -> KNIf       ty v (q ethen) (q eelse)
+      KNUntil       ty cond body rng -> KNUntil    ty   (q cond)  (q body) rng
+      KNLetVal      id  e1   e2      -> KNLetVal   id   (q e1)    (q e2)
+      KNLetRec      ids es   e       -> KNLetRec   ids (map q es) (q e)
+      KNCase        ty v patbinds    -> KNCase     ty v (map (\(p,e) -> (p, q e)) patbinds)
+      KNLetFuns     ids fns e        -> mkLetFuns (rebuilder (zip ids fns)) (q e)
+
+mkLetFuns []       e = e
+mkLetFuns bindings e = let (ids, fns) = unzip bindings in
+                       KNLetFuns ids fns e
+
+knSinkBlocks :: ModuleIL (KNExpr' t) t -> KN (ModuleIL (KNExpr' t) t)
+knSinkBlocks m = do
+  let rebuilder idsfns = [(id, localBlockSinking fn) | (id, fn) <- idsfns]
+  return $ m { moduleILbody = rebuildWith rebuilder (moduleILbody m) }
+
+-- We perform (function-)local block sinking after monomorphization.
+-- Block sinking is needed for contification to work properly.
+-- Performing sinking after monomorphization allows each monomorphization
+-- of a given function to be separately sunk.
+localBlockSinking :: Fn (KNExpr' t) t -> Fn (KNExpr' t) t
+localBlockSinking knf = rebuildFn knf
+ where
+  rebuildFn   = rebuildFnWith rebuilder addBindingsFor
+  functions   = collectFunctions knf
+  allMentions = collectMentions knf
+  (parents, bindings, child_functions) = unzip3 functions
+
+  children = map fnIdent child_functions
+
+  bindingToChildMap = Map.fromList (zip bindings children)
+  functionsSet      = Set.fromList $ fnIdent knf : parents ++ children
+
+  (block2node, node2block) = buildIsomorphism functionsSet
+    where buildIsomorphism elemset =
+                let elems = Set.toList elemset in
+                (Map.fromList $ zip elems [0..]
+                ,Map.fromList $ zip [0..] elems )
+  --  (block2node, node2block) :: (Map Ident Node, Map Node Ident)
+
+  b2n e = case Map.lookup e block2node of
+                 Just r -> r
+                 Nothing -> error $ "block2node failed for " ++ show e
+  n2b e = case Map.lookup e node2block of
+                 Just r -> r
+                 Nothing -> error $ "node2block failed for " ++ show e
+
+  root = b2n (fnIdent knf)
+
+  -- Build the call graph based on call site info.
+  callGraph :: Graph.UGr
+  callGraph = Graph.mkGraph lnodes ledges
+    where
+      mentions = [(parent, child) | (parent, binding) <- Set.toList allMentions
+                 , child <- maybeToList $ Map.lookup binding bindingToChildMap]
+
+      mentionsL = [(b2n caller, b2n callee) | (caller, callee) <- mentions]
+
+      lnodes = let (callers, callees) = unzip mentionsL in
+               let nodes = Set.toList $ Set.fromList $ callers ++ callees in
+                   (root, ()) : [(n, ()) | n <- nodes]
+
+      ledges = [(caller, callee, ()) | (caller, callee) <- mentionsL]
+
+  -- If a function is dominated by a node which is not its parent, relocate it.
+  -- relocationTargetsList :: [(Fn (KNExpr' t) t, Ident)]
+  relocationTargetsList = [((id, f), dom)
+                          | f_id <- Set.toList functionsSet
+                          ,parent <- maybeToList $ Map.lookup f_id parentMap
+                          ,dom    <- maybeToList $ Map.lookup f_id doms
+                          ,(id,f) <- maybeToList $ Map.lookup f_id fnForChildId
+                          , dom /= parent]
+     where
+          parentMap = Map.fromList (zip children parents)
+
+          fnForChildId = Map.fromList [(fnIdent f, (id, f))
+                                      | (id, f) <- zip bindings child_functions]
+
+          -- Compute dominators of each function.
+          doms :: Map Ident (Ident {-dom-})
+          doms = Map.fromList [(n2b node, n2b ndom)
+                              | (node, ndom) <- Graph.iDom callGraph root]
+
+  -- Remove bindings which are being relocated.
+  rebuilder idsfns =
+      [(id, fn)
+      |(id, fn) <- map (\(id, fn) -> (id, rebuildFn fn)) idsfns,
+       Set.notMember (fnIdent fn) shouldBeRelocated]
+    where
+        shouldBeRelocated = Set.fromList $ map (\((_id, fn), _) -> fnIdent fn)
+                                               relocationTargetsList
+
+  addBindingsFor f body = mkLetFuns newfns body
+        where
+          newfns = Map.findWithDefault [] (fnIdent f) newBindingsForFn
+          newBindingsForFn  = Map.unionsWith (++)
+                              [Map.singleton dom [(id, f)]
+                              | ((id, f), dom) <- relocationTargetsList]
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
 
 -- ||||||||||||||||||||||||| Boilerplate ||||||||||||||||||||||||{{{
 -- This is necessary due to transformations of AIIf and nestedLets

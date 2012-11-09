@@ -7,7 +7,7 @@ license-file: ""
 copyright:
 maintainer:
 build-depends: ansi-terminal -any, array -any, base -any,
-               bytestring -any, containers -any, filepath >=1.1.0.3,
+               bytestring -any, containers -any, filepath >=1.1.0.3, fgl -any,
                mtl -any, protocol-buffers -any, hoopl >=3.9.0.0,
                protocol-buffers-descriptor -any, text -any, utf8-string -any
 stability:
@@ -24,7 +24,7 @@ data-dir: ""
 extra-source-files: Foster/Pb.hs Foster/Pb/Expr.hs
                     Foster/Pb/SourceLocation.hs Foster/Pb/SourceRange.hs
 extra-tmp-files:
- 
+
 executable: me
 main-is: Main.hs
 buildable: True

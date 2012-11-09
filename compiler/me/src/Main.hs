@@ -40,7 +40,7 @@ import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn))
 import Foster.AnnExprIL(AIExpr(AILetFuns, AICall, E_AIVar), fnOf, collectIntConstraints)
 import Foster.TypeIL(TypeIL(TupleTypeIL, FnTypeIL), ilOf)
 import Foster.ILExpr(ILProgram, showILProgramStructure, prepForCodegen)
-import Foster.KNExpr(KNExpr', kNormalizeModule, renderKN)
+import Foster.KNExpr(KNExpr', kNormalizeModule, knSinkBlocks, renderKN)
 import Foster.Typecheck
 import Foster.Context
 import Foster.CloConv(closureConvertAndLift, renderCC)
@@ -458,6 +458,8 @@ lowerModule :: ModuleIL AIExpr TypeIL
             -> Compiled ILProgram
 lowerModule ai_mod ctx_il = do
      kmod <- kNormalizeModule ai_mod ctx_il
+     monomod0 <- monomorphize   kmod
+     monomod  <- knSinkBlocks   monomod0
 
      whenDumpIR "kn" $ do
          putDocLn (outLn $ "vvvv k-normalized :====================")
@@ -465,7 +467,16 @@ lowerModule ai_mod ctx_il = do
          _ <- liftIO $ renderKN kmod True
          return ()
 
-     monomod  <- monomorphize   kmod
+     whenDumpIR "mono" $ do
+         putDocLn $ (outLn "/// Monomorphized program =============")
+         _ <- liftIO $ renderKN monomod0 True
+         putDocLn $ (outLn "^^^ ===================================")
+
+     whenDumpIR "mono-sunk" $ do
+         putDocLn $ (outLn "/// Block-sunk program =============")
+         _ <- liftIO $ renderKN monomod  True
+         putDocLn $ (outLn "^^^ ===================================")
+
      cfgmod   <- cfgModule      monomod
      let mayGCconstraints = collectMayGCConstraints (moduleILbody cfgmod)
      liftIO $ putStrLn "\n MAY GC CONSTRAINTS ======================="
@@ -473,11 +484,6 @@ lowerModule ai_mod ctx_il = do
      liftIO $ putStrLn "\n/MAY GC CONSTRAINTS ======================="
      ccmod    <- closureConvert cfgmod
      ilprog   <- prepForCodegen ccmod  mayGCconstraints
-
-     whenDumpIR "mono" $ do
-         putDocLn $ (outLn "/// Monomorphized program =============")
-         _ <- liftIO $ renderKN monomod True
-         putDocLn $ (outLn "^^^ ===================================")
 
      whenDumpIR "cfg" $ do
          putDocLn $ (outLn "/// CFG-ized program ==================")
