@@ -114,8 +114,8 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
 
     ((TyVarAST tv1), (TyVarAST tv2)) ->
        if tv1 == tv2 then tcUnifyLoop constraints tysub
-                     else tcFails [text $ "Unable to unify different type variables: "
-                                     ++ show tv1 ++ " vs " ++ show tv2]
+                     else tcFailsMore [text $ "Unable to unify different type variables: "
+                                       ++ show tv1 ++ " vs " ++ show tv2]
 
     ((TyConAppAST nm1 tys1), (TyConAppAST nm2 tys2)) ->
       if nm1 == nm2
@@ -127,7 +127,10 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
 
     ((TupleTypeAST tys1), (TupleTypeAST tys2)) ->
         if List.length tys1 /= List.length tys2
-          then tcFails [text $ "Unable to unify tuples of different lengths!"]
+          then tcFailsMore [text $ "Unable to unify tuples of different lengths"
+                           ++ " ("   ++ show (List.length tys1)
+                           ++ " vs " ++ show (List.length tys2)
+                           ++ ")."]
           else tcUnifyMoreTypes tys1 tys2 constraints tysub
 
     -- Mismatches between unitary tuple types probably indicate
@@ -135,7 +138,7 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
 
     ((FnTypeAST as1 a2 _cc1 _), (FnTypeAST bs1 b2 _cc2 _)) ->
         if List.length as1 /= List.length bs1
-          then tcFails [string "Unable to unify functions of different arity!\n"
+          then tcFailsMore [string "Unable to unify functions of different arity!\n"
                            <> pretty as1 <> string "\nvs\n" <> pretty bs1]
           else tcUnifyLoop ([TypeConstrEq a b | (a, b) <- zip as1 bs1]
                          ++ (TypeConstrEq a2 b2):constraints) tysub

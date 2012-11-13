@@ -154,6 +154,51 @@ n2 = {
 
   expect_i32 21;
   print_i32 (bitLengthWord 1703581);
+
+  expect_i32 1;
+  print_i32 (arrayLength32 (natDigits (natFromInt64 2342135)));
+
+
+
+  expect_text "GT";
+  print_text (textOfOrd (natCmp (natFromInt64 12342342324231)
+                                (natFromInt64 2342135343234)));
+
+  //testNatDiv 12342342324231 1 "12342342324231" "0"; // OK
+
+  //testNatDiv 12342342324231 7654321 "1612467" "2304324";
+  testNatDivW 12342342324231 7654321;
+
+  expect_i32 2;
+  print_i32 (arrayLength32 (natDigits (natFromInt64 2342135343234)));
+
+  // testNatDiv 12342342324231 2342135343234 "5" "631665608061";
+};
+
+testNatDivW = { i : Int64 => j : Int64 =>
+  case uQuoRemInt64 i j of (lq, lr) ->
+    case foster_div_nat_digit_nz (natFromInt64 i) (primitive_trunc_i64_to_Word j)
+      of (q, r) ->
+        expect_i64 lq;
+        print_text (foster_nat_to_text_radix q 10);
+
+        expect_i64 lr;
+        print_i64 (primitive_zext_Word_to_i64 r);
+    end
+  end
+};
+
+testNatDiv = { i : Int64 => j : Int64 => exp_q : Text => exp_r : Text =>
+  case natDiv (natFromInt64 i) (natFromInt64 j)
+    of $Some (q, r) -> expect_text exp_q;
+                       print_text (foster_nat_to_text_radix q 10);
+                       expect_text exp_r;
+                       print_text (foster_nat_to_text_radix r 10);
+
+    of $None        -> print_text "unexpected natDiv failure; i/j are:";
+                       print_i64 i;
+                       print_i64 j;
+  end
 };
 
 testNatMulAddWWW = { a : Word => b : Word => c : Word => e1 : Int64 => e0 : Int64 =>

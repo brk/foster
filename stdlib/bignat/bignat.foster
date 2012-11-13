@@ -769,7 +769,7 @@ natDivLarge = { uIn : Array Word => v0 : Array Word =>
       u = newDArray (arrayLength32 uIn +Int32 1) { i => 0 };
 
       shift = wordLeadingZeros v0[n -Int32 1];
-      v = newDArray n { i => v0[i] }; // local, private scratchpad
+      v = newDArray0 n { i => v0[i] }; // local, private scratchpad
       qhatref = (ref 0);
   in
     // D1.
@@ -825,5 +825,41 @@ natDivLarge = { uIn : Array Word => v0 : Array Word =>
     }; in
       loop m
     end;
+
+    shrVU u u shift;
+
+    (NatInf (trimLeadingZeroWords q),
+     NatInf (trimLeadingZeroWords u))
   end
+};
+
+natDiv :: { NatInf => NatInf => Maybe (NatInf, NatInf) };
+natDiv =  { u => v =>
+  if natIsZero v
+    then None !
+    else
+      case natCmp u v
+         of $LT -> Some (natFromInt32 0, u)
+         of $EQ -> Some (natFromInt32 1, natFromInt32 0)
+         of $GT ->
+           let va = natDigits v; in
+              if arrayLength32 va ==Int32 1
+                then case va[0]
+                       of 1 -> Some (u, natFromInt32 0)
+                       // d can't be zero, because v is non-zero.
+                       of d ->
+                         case foster_div_nat_digit_nz u d
+                           of (q, rword) ->
+                               Some (q, natFromInt64 (primitive_zext_Word_to_i64 rword))
+                         end
+                     end
+                else Some (natDivLarge (natDigits u) va)
+              end
+           end
+       end
+  end
+};
+
+uQuoRemInt64 = { i : Int64 => j : Int64 =>
+  (udiv-Int64 i j, urem-Int64 i j)
 };

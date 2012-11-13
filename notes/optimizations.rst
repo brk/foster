@@ -48,3 +48,12 @@ Liveness allows optimizing use of gc roots::
           //no-gc-after-new()
           no-root-for-dead-ptrs()
         }
+
+Data Structure Elimination
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The following idioms should not involve runtime allocation::
+
+        case (x, ..., x) of ... end
+
+        let v = (x, ..., x) in case v of ... end end

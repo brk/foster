@@ -404,7 +404,7 @@ tcRhoTuple ctx rng exprs expTy = do
      Infer _                 -> tcTuple ctx rng exprs [Nothing | _ <- exprs]
      Check (TupleTypeAST ts) -> tcTuple ctx rng exprs [Just t  | t <- ts]
      Check (MetaTyVar {}   ) -> tcTuple ctx rng exprs [Nothing | _ <- exprs]
-     Check ty -> tcFails [text $ "typecheck: tuple (" ++ show exprs ++ ") "
+     Check ty -> tcFailsMore [text $ "typecheck: tuple (" ++ show exprs ++ ") "
                              ++ "cannot check against non-tuple type " ++ show ty]
    matchExp expTy tup (highlightFirstLine (annotRange rng))
   where
