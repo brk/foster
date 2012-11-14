@@ -86,6 +86,8 @@ dumpIntType sizeBits = P'.defaultValue { PbType.tag  = PbTypeTag.PRIM_INT
 
 dumpType :: TypeLL -> PbType.Type
 dumpType (LLPtrTypeUnknown)  = dumpUnknownType ()
+dumpType (LLPrimInt (IWord 0)) = dumpIntType (-32)
+dumpType (LLPrimInt (IWord 1)) = dumpIntType (-64)
 dumpType (LLPrimInt size)    = dumpIntType (fromIntegral $ intSizeOf size)
 dumpType (LLPrimFloat64)     =
               P'.defaultValue { PbType.tag  = PbTypeTag.FLOAT64 }
@@ -233,6 +235,8 @@ dumpLiteral ty lit =
                                   , PbLetable.dval  = Just $ litFloatValue f
                                   }
 
+fixnumTypeSize (LLPrimInt (IWord 0)) = (-32)
+fixnumTypeSize (LLPrimInt (IWord 1)) = (-64)
 fixnumTypeSize (LLPrimInt isb) = intSizeOf isb
 fixnumTypeSize other = error $ "Expected int literal to have LLPrimInt type; had " ++ show other
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||

@@ -542,9 +542,26 @@ TypeAST* TypeAST_from_pb(const pb::Type* pt) {
 
   if (t.tag() == pb::Type::PRIM_INT) {
     int size = t.carray_size();
-    std::stringstream name; name << "Int" << size;
-    return PrimitiveTypeAST::get(size == 1 ? "Bool" : name.str(),
-          llvm::IntegerType::get(llvm::getGlobalContext(), size));
+
+    llvm::Type* ty;
+    // -32 means word size; -64 means 2x word.
+    std::stringstream name;
+    if (size == -32) {
+      name << "Word";
+      ty = getWordTy(builder);
+    } else if (size == -64) {
+      name << "WordX2";
+      ty = getWordX2Ty(builder);
+    } else {
+
+      ty = llvm::IntegerType::get(llvm::getGlobalContext(), size);
+      if (size == 1) {
+        name << "Bool";
+      } else if (size > 0) {
+        name << "Int" << size;
+      }
+    }
+    return PrimitiveTypeAST::get(name.str(), ty);
   }
 
   if (t.tag() == pb::Type::FLOAT64) {

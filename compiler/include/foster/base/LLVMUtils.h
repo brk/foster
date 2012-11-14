@@ -72,4 +72,9 @@ bool typesEq(llvm::Type* t1, llvm::Type* t2);
 
 void storeNullPointerToSlot(llvm::Value* slot);
 
+bool is32Bit();
+int  getWordTySize();
+llvm::Type* getWordTy(llvm::IRBuilder<>& b);
+llvm::Type* getWordX2Ty(llvm::IRBuilder<>& b);
+
 #endif

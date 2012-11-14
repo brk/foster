@@ -280,3 +280,29 @@ void storeNullPointerToSlot(llvm::Value* slot) {
     slot, /*isVolatile=*/ false);
 }
 
+
+
+bool is32Bit() {
+  #if defined(__x86_64__) || defined(__x86_64)
+    return false;
+  #else
+    return true;
+  #endif
+}
+
+int getWordTySize() {
+  if (is32Bit()) {
+    return 32;
+  } else {
+    return 64;
+  }
+}
+
+llvm::Type* getWordTy(IRBuilder<>& b) {
+  return llvm::Type::getIntNTy(b.getContext(), 1 * getWordTySize());
+}
+
+llvm::Type* getWordX2Ty(IRBuilder<>& b) {
+  return llvm::Type::getIntNTy(b.getContext(), 2 * getWordTySize());
+}
+

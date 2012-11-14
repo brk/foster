@@ -183,8 +183,6 @@ struct IntAST;
 
 struct LLInt : public LLExpr {
 private:
-  std::string cleanText;
-  std::string originalText;
   llvm::APInt* apint;
 
 public:
@@ -193,9 +191,9 @@ public:
     // Debug builds of LLVM don't ignore leading zeroes when considering
     // needed bit widths.
     int bitsLLVMneeds = (std::max)(intSizeForNBits(bitSize),
-                                   (unsigned) cleanText.size());
+                                   (unsigned) cleanTextBase10.size());
     int ourSize = intSizeForNBits(bitsLLVMneeds);
-    ASSERT(bitSize == ourSize) << "Integer '" << cleanTextBase10 << "' had "
+    ASSERT(abs(bitSize) <= ourSize) << "Integer '" << cleanTextBase10 << "' had "
                                << bitSize << " bits; needed " << ourSize;
     apint = new llvm::APInt(ourSize, cleanTextBase10, 10);
   }
@@ -203,7 +201,9 @@ public:
   virtual llvm::Value* codegen(CodegenPass* pass);
   llvm::APInt& getAPInt() { return *apint; }
 
-  unsigned intSizeForNBits(unsigned n) const {
+  unsigned intSizeForNBits(int n) const {
+    if (n == -32) return getWordTySize();
+    if (n == -64) return getWordTySize() * 2;
     if (n <= 1)  return 1;
     if (n <= 8)  return 8;
     if (n <= 16) return 16;

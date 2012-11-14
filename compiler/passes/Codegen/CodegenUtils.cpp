@@ -336,30 +336,6 @@ createSqrt(IRBuilder<>& b, llvm::Value* v, const char* valname) {
   return CI;
 }
 
-bool is32Bit() {
-  #if defined(__x86_64__) || defined(__x86_64)
-    return false;
-  #else
-    return true;
-  #endif
-}
-
-llvm::Type* getWordTy(IRBuilder<>& b) {
-  if (is32Bit()) {
-    return b.getInt32Ty();
-  } else {
-    return b.getInt64Ty();
-  }
-}
-
-llvm::Type* getWordX2Ty(IRBuilder<>& b) {
-  if (is32Bit()) {
-    return b.getInt64Ty();
-  } else {
-    return llvm::Type::getIntNTy(b.getContext(), 128);
-  }
-}
-
 llvm::Value*
 CodegenPass::emitPrimitiveOperation(const std::string& op,
                                     IRBuilder<>& b,
@@ -385,6 +361,15 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   else if (op == "sitofp_f64")     { return b.CreateSIToFP(VL, b.getDoubleTy(), "sitofp_f64tmp"); }
 
   Value* VR = args[1];
+
+  if (VL->getType() != VR->getType()) {
+    b.GetInsertBlock()->getParent()->dump();
+    ASSERT(false) << "primop values did not have equal types\n"
+           << "VL: " << str(VL) << " :: " << str(VL->getType()) << "\n"
+           << "VR: " << str(VR) << " :: " << str(VR->getType()) << "\n"
+           << "32-bit: " << is32Bit() << "; " << str(getWordTy(b));
+  }
+
   // Other variants: F (float), NSW (no signed wrap), NUW,
   // UDiv, ExactSDiv, URem, SRem,
        if (op == "+") { return b.CreateAdd(VL, VR, "addtmp", this->config.useNUW, this->config.useNSW); }

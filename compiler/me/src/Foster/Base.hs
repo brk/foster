@@ -446,7 +446,7 @@ instance IntSized IntSizeBits
                        intOfSize I8 = 8
                        intOfSize I32 = 32
                        intOfSize I64 = 64
-                       intOfSize (IWord 0) = 32
+                       intOfSize (IWord 0) = 32 -- TODO this is hacky =/
                        intOfSize (IWord 1) = 64
 
 sizeOfBits :: Int -> IntSizeBits
