@@ -657,9 +657,9 @@ block'TargetsOf (CCLast last) =
         CCCase     _ cbs Nothing  _ ->   map snd cbs
 
 
-instance IntSized MonoType where
-        intSizeOf (PrimInt isb) = intSizeOf isb
-        intSizeOf _ = error $ "Unable to compute IntSized for non-PrimInt type"
+instance IntSizedBits MonoType where
+        intSizeBitsOf (PrimInt isb) = isb
+        intSizeBitsOf _ = error $ "Unable to compute IntSizedBits for non-PrimInt type"
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

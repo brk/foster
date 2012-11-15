@@ -556,6 +556,10 @@ void addAndEmitTo(Function* f, BasicBlock* bb) {
 ConstantInt* getTagForCtorId(const CtorId& c) {
          if (c.typeName == "Bool")  { return builder.getInt1(c.smallId);
   } else if (c.typeName == "Int32") { return builder.getInt32(c.smallId);
+  } else if (c.typeName == "Int64") { return builder.getInt64(c.smallId);
+  } else if (c.typeName == "Word")  { return is32Bit()
+                                           ? builder.getInt32(c.smallId)
+                                           : builder.getInt64(c.smallId);
   } else                            { return builder.getInt8(c.smallId); }
 }
 

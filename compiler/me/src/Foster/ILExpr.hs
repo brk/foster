@@ -471,6 +471,7 @@ instance Show ILLast where
   show (ILRetVoid     ) = "ret void"
   show (ILRet v       ) = "ret " ++ show v
   show (ILBr  bid args) = "br " ++ show bid ++ " , " ++ show args
-  show (ILCase v _arms _def _occ) = "case(" ++ show v ++ ")"
+  show (ILCase v arms _def _occ) = "case(" ++ show v ++ ")"
+                                ++ "\n" ++ concatMap (\arm -> "\t" ++ show arm ++ "\n") arms
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

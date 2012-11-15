@@ -37,6 +37,9 @@ class TypedWith a t where
 class IntSized t where
     intSizeOf :: t -> Int
 
+class IntSizedBits t where
+    intSizeBitsOf :: t -> IntSizeBits
+
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 data CompilesResult expr = CompilesResult (OutputOr expr)

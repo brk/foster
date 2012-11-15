@@ -52,3 +52,10 @@ c2 = {
       else 64
   end
 };
+
+c3 = { w : Word =>
+  case w
+    of 1 -> 0
+    of _ -> 1
+  end
+};

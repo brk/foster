@@ -54,7 +54,7 @@ data SPattern t = SP_Wildcard
 
 type DataTypeSigs = Map DataTypeName DataTypeSig
 
-compilePatterns :: IntSized t
+compilePatterns :: IntSizedBits t
                 => [((Pattern t, _binds), a)]
                 -> DataTypeSigs
                 -> DecisionTree a t
@@ -63,7 +63,7 @@ compilePatterns bs allSigs =
 
   compilePatternRow ((p, _binds), a) = ClauseRow (compilePattern p)
                                                  [compilePattern p] a
-  compilePattern :: IntSized t => Pattern t -> SPattern t
+  compilePattern :: IntSizedBits t => Pattern t -> SPattern t
   compilePattern p = case p of
     (P_Wildcard _ _)       -> SP_Wildcard
     (P_Variable _ v)       -> SP_Variable v
@@ -82,8 +82,12 @@ compilePatterns bs allSigs =
           tupleCtor pats = ctorInfo "()"    "()"    (map patternType pats) 0
           intCtor ty li  = ctorInfo ctnm ("<"++ctnm++">") [] tag
                              where
-                              bits = intSizeOf ty
-                              ctnm = "Int" ++ show bits
+                              isb  = intSizeBitsOf ty
+                              bits = intSizeOf     isb
+                              ctnm = case isb of
+                                         IWord 0 -> "Word"
+                                         IWord 1 -> "WordX2"
+                                         _       -> "Int" ++ show bits
                               tag  = if litIntMinBits li <= bits
                                       then fromInteger $ litIntValue li
                                       else error $ "cannot cram " ++ show bits
@@ -222,12 +226,14 @@ swapCol i (ClauseMatrix rows) = ClauseMatrix (map (swapRow i) rows)
 isSignature :: (Set CtorId) -> (Map DataTypeName DataTypeSig) -> Bool
 isSignature ctorSet allSigs =
   case Set.toList (Set.map ctorTypeName ctorSet) of
-    ["Int8"]  -> False
-    ["Int16"] -> False
-    ["Int32"] -> False
-    ["Int64"] -> False
-    ["()"] -> True
-    ["Bool"] -> Set.size ctorSet == 2
+    ["Int8"]   -> False
+    ["Int16"]  -> False
+    ["Int32"]  -> False
+    ["Int64"]  -> False
+    ["Word"]   -> False
+    ["WordX2"] -> False
+    ["()"]     -> True
+    ["Bool"]   -> Set.size ctorSet == 2
     [typename] ->
       case Map.lookup typename allSigs of
        (Just (DataTypeSig map)) -> Set.size ctorSet == Map.size map
