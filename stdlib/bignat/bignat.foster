@@ -27,9 +27,11 @@ trimLeadingZeroWords = { a =>
   end
 };
 
+mkNatInf = { a => NatInf (trimLeadingZeroWords a) };
+
 mkNatVia :: { Int32 => { Int32 => Word } => NatInf };
 mkNatVia = { n => f =>
-  NatInf (trimLeadingZeroWords (newDArray0:[Word] n f));
+  mkNatInf (newDArray0:[Word] n f);
 };
 
 // The representation of Word can be either Int32 or Int64,
@@ -170,41 +172,39 @@ findFirstUsedDigitWord = { a : Array Word =>
   in go (arrayLength32 a -Int32 1) end;
 };
 
+natCmpDigits = { a : Array Word => b : Array Word =>
+  let a_first_used = findFirstUsedDigitWord a;
+      b_first_used = findFirstUsedDigitWord b;
+      cmpord = cmpUInt32 a_first_used b_first_used;
+  in
+    case cmpord
+      of $LT -> cmpord
+      of $GT -> cmpord
+      of _ ->
+        rec go = { k =>
+                    let cmpord = cmpUWord a[k] b[k]; in
+                      if k ==Int32 0 then cmpord
+                      else
+                        case cmpord
+                          of $LT -> cmpord
+                          of $GT -> cmpord
+                          of _   -> go (k -Int32 1)
+                        end
+                      end
+                    end
+                 };
+       in
+          if arrayLength32 a ==Int32 0 then EQ ! else
+            go a_first_used
+          end
+       end
+     end
+  end
+};
+
 natCmp :: { NatInf => NatInf => Ord };
 natCmp =  { a => b =>
-  let
-        cmpDigits = { a : Array Word => b : Array Word =>
-          let a_first_used = findFirstUsedDigitWord a;
-              b_first_used = findFirstUsedDigitWord b;
-              cmpord = cmpUInt32 a_first_used b_first_used;
-          in
-            case cmpord
-              of $LT -> cmpord
-              of $GT -> cmpord
-              of _ ->
-                rec go = { k =>
-                            let cmpord = cmpUWord a[k] b[k]; in
-                              if k ==Int32 0 then cmpord
-                              else
-                                case cmpord
-                                  of $LT -> cmpord
-                                  of $GT -> cmpord
-                                  of _   -> go (k -Int32 1)
-                                end
-                              end
-                            end
-                         };
-               in
-                  if arrayLength32 a ==Int32 0 then EQ ! else
-                    go a_first_used
-                  end
-               end
-             end
-          end
-        };
-  in
-    cmpDigits (natDigits a) (natDigits b);
-  end
+  natCmpDigits (natDigits a) (natDigits b);
 };
 
 natSub :: { NatInf => NatInf => Maybe NatInf };
@@ -302,7 +302,7 @@ natBasicMulA = { x : Array Word => y : Array Word =>
 };
 
 natBasicMul = { x : NatInf => y : NatInf =>
-  NatInf (trimLeadingZeroWords (natBasicMulA (natDigits x) (natDigits y)))
+  mkNatInf (natBasicMulA (natDigits x) (natDigits y))
 };
 
 // karatsubaAdd
@@ -317,45 +317,60 @@ natBasicMul = { x : NatInf => y : NatInf =>
 // natModW
 //
 // natTrailingZeroBits
-// natShl
 // natAnd
 // natXor
 // natOr
+
+// aka natDiv2d
+//
+natShr_A = { a : Array Word => nbits : Int32 =>
+
+  let
+      foster_DIGIT_BIT = digitNumBits !;
+      ndigits = nbits `udiv-Int32` foster_DIGIT_BIT;
+      newsize = arrayLength32 a -Int32 ndigits;
+  in
+      assert (nbits   >SInt32 0) "natShr_A: nbits   < 0";
+      assert (newsize >SInt32 0) "natShr_A: newsize < 0";
+
+      let rembits  = primitive_zext_i32_to_Word
+                         (nbits `urem-Int32` foster_DIGIT_BIT);
+          irembits = (primitive_zext_i32_to_Word foster_DIGIT_BIT)
+                         -Word rembits;
+       in
+         /*
+         expect_text "d.numbits:"; print_i32 (digitNumBits !);
+         expect_text "rembits: "; print_Word rembits;
+         expect_text "irembits: ";print_Word irembits;
+         */
+
+         newDArray0 newsize { i:Int32 =>
+             let h0 = a[i +Int32 ndigits];
+                 l1 = if i ==Int32 (newsize -Int32 1)
+                       then 0
+                       else a[i +Int32 ndigits +Int32 1]
+                      end;
+             in
+               // Combine high bits of word i
+               // with low bits of word 1 + i.
+               //
+               // TODO only need to mask out explicitly
+               // if actual word size > digitNumBits!
+               bitor-Word (bitlshr-Word h0 rembits)
+                 (bitand-Word (oneBitsWord rembits)
+                   (bitshl-Word l1 irembits));
+             end
+         };
+      end
+  end
+
+};
 
 // Shift right by n bits.
 //
 natShr :: { NatInf => Int32 => NatInf };
 natShr = { ni => nbits =>
-
-    let a = natDigits ni;
-        foster_DIGIT_BIT   = digitNumBits !;
-        foster_DIGIT_BIT64 = primitive_zext_i32_to_i64 foster_DIGIT_BIT;
-        ndigits = udiv-Int32 nbits foster_DIGIT_BIT;
-        newsize = arrayLength32 a -Int32 ndigits;
-     in
-      if newsize <=SInt32 0 then
-        natFromInt32 0
-      else
-        let rembits  = primitive_zext_i32_to_Word (urem-Int32 nbits foster_DIGIT_BIT);
-            irembits = (primitive_zext_i32_to_Word foster_DIGIT_BIT) -Word rembits;
-            newdigits = newDArray0 newsize { i:Int32 =>
-                             let h0 = a[i +Int32 ndigits];
-                                 l1 = if i ==Int32 (newsize -Int32 1)
-                                       then 0
-                                       else a[i +Int32 ndigits +Int32 1]
-                                      end;
-                             in
-                               // Combine high bits of word i
-                               // with low bits of word 1 + i.
-                               bitor-Word (bitlshr-Word h0 rembits)
-                                           (bitshl-Word l1 irembits);
-                             end
-                         };
-        in
-          NatInf (trimLeadingZeroWords newdigits)
-        end
-      end
-    end
+  mkNatInf (natShr_A (natDigits ni) nbits);
 };
 
 // Calculates 2 ** k === (1 << k)
@@ -432,7 +447,7 @@ natMulDigit = { ni : NatInf => k : Word =>
           };
   in
     u >^ c[arrayLength32 a];
-    NatInf (trimLeadingZeroWords c);
+    mkNatInf c;
   end
 
 };
@@ -463,7 +478,7 @@ foster_div_nat_digit_nz = { n => b =>
                     end
                   };
   in
-     (NatInf (trimLeadingZeroWords q), remainder)
+     (mkNatInf q, remainder)
   end
 };
 
@@ -757,36 +772,213 @@ greaterThan = { x1 : Word => x2 : Word => y1 : Word => y2 : Word =>
          (both (x1 ==Word y1) (x2 >UWord y2));
 };
 
+dbgW = { s : Text => w : Word =>
+  expect_text s;
+  print_i64 (primitive_zext_Word_to_i64 w);
+};
+
+oneBitsWord = { n : Word => (bitshl-Word 1 n) -Word 1 };
+oneBitsWord32 = { n : Int32 => oneBitsWord (primitive_zext_i32_to_Word n); };
+
+// Left shift by n digits.
+//
+// Precondition:
+//      |a| + n does not overflow
+//      |a| + n <= |res|
+//            n > 0
+natLShdTo :: { Array Word => Int32 => Array Word => () };
+natLShdTo = { a => n => res =>
+  // TODO memcpy?
+  // Fill in the top digits:
+  arrayEnum a { e : Word => ik : Int64 =>
+    e >^ res[primitive_trunc_i64_i32 ik +Int32 n];
+    // It's safe to compute i + n without checking for overflow,
+    // because i <= arraySize a and n + i cannot overflow if
+    //                   i <= k and n + k cannot oveflow.
+  };
+  // Zero out the bottom digits:
+  foldRange 0 n () { k => unit => 0 >^ res[k]; unit };
+};
+
+// Precondition:
+//      |a| == |res|
+natCopyTo :: { Array Word => Array Word => () };
+natCopyTo = { a => res =>
+  arrayEnum a { e : Word => ik : Int64 =>
+    e >^ res[primitive_trunc_i64_i32 ik];
+    // It's safe to compute i + n without checking for overflow,
+    // because i <= arraySize a and n + i cannot overflow if
+    //                   i <= k and n + k cannot oveflow.
+  };
+};
+
+// Left shift by n bits.
+//
+// Precondition: 0 <= n < wordSize
+//
+natMul2d_A :: { Array Word => Int32 => Array Word };
+natMul2d_A = { a => n =>
+    // TODO assert that (slop + used a) does not overflow...
+    let by_digits = sdiv-Int32 n (digitNumBits !);
+        sz        = by_digits +Int32 arrayLength32 a;
+        r         = allocDArray:[Word] (sz +Int32 1);
+        d         = srem-Int32 n (digitNumBits !);
+    in
+      0 >^ r[sz]; // zero out the slop digit.
+
+      // Step 0:          [////|////|////|////] (a)
+      //
+      // Step 1b: [00|0000|0000|0000|0000|0000] (r allocated)
+      // Step 1b: [00|////|////|////|////|0000] (r gets a, shifted left)
+      //
+      // Step 2n: [//|////|////|////|//00|0000] (after intra-digit shifting)
+
+      if by_digits >SInt32 0
+        then natLShdTo a by_digits r
+        else natCopyTo a           r
+      end;
+
+      if d ==Int32 0 then () else
+        let
+            dW     = primitive_sext_i32_to_Word d;
+            maskW  = (bitshl-Word 1 dW) -Word 1;
+            shift32 = (digitNumBits !) -Int32 d;
+
+            shiftW = primitive_sext_i32_to_Word shift32;
+
+            rml   = arrayLength32 r -Int32 1;
+            carry = foldRange 0 rml 0 { i => u =>
+                      let rr = bitand-Word maskW
+                              (bitlshr-Word r[i] shiftW);
+                          v =  bitand-Word (digitNumBitsMask !)
+                              (bitor-Word u
+                              (bitshl-Word r[i] dW));
+                      in
+                          v >^ r[i];
+                          rr
+                      end
+                    };
+        in
+           if carry !=Word 0
+             then carry >^ r[rml];
+             else ()
+           end
+        end
+      end;
+
+      trimLeadingZeroWords r
+    end
+};
+
+// aka natShl
+//
+natMul2d = { a => n =>
+  NatInf (natMul2d_A (natDigits a) n)
+};
+
+natCountBits_A :: { Array Word => Int32 };
+natCountBits_A = { a =>
+  let i  = arrayLength32 a -Int32 1;
+  in
+      (i *Int32 (digitNumBits !))
+         +Int32 (bitlength-Word a[i]);
+  end
+};
+
+decrWord = { r => (r^ -Word 1) >^ r; r^ };
+
+print_nat = { a =>
+  print_text (foster_nat_to_text_radix a 10);
+};
+
+print_A = { a =>
+  print_nat (mkNatInf a)
+};
+
+// "natDiv; LibTomMath/bit-banging version"
+//
+// Returns (q, r) such that (q * b) + r = a.
+//
+natDivLTM_BB = { a : Array Word => b : Array Word =>
+  let n32 = natCountBits_A a -Int32 natCountBits_A b;
+       n = (ref (primitive_sext_i32_to_Word n32));
+       q = (ref (natDigits (natFromInt32 0)));
+       r = (ref a);
+      tb = (ref (natMul2d_A b n32));
+      tq = (ref (natMul2d_A (natDigits (natFromInt32 1)) n32));
+  in
+    /*
+    expect_text "|a| = "; print_i32 (natCountBits_A a);
+    expect_text "|b| = "; print_i32 (natCountBits_A b);
+    expect_text "n   = "; print_i32 n32;
+    */
+    until (decrWord n <SWord -1) then
+      /*
+      expect_text "..."; print_text "...";
+      expect_text "q  = "; print_A q^;
+      expect_text "r  = "; print_A r^;
+      expect_text "tb = "; print_A tb^;
+      expect_text "tq = "; print_A tq^;
+      expect_text "n   = "; print_Word n^;
+      expect_text "CMP : ";
+      */
+      case natCmpDigits tb^ r^
+        of $GT -> ()
+        of _   ->
+           (foster_nat_sub_digits r^  tb^) >^ r;
+           (foster_nat_add_digits q^  tq^) >^ q;
+      end;
+      natShr_A tb^ 1 >^ tb;
+      natShr_A tq^ 1 >^ tq;
+    end;
+
+    (mkNatInf q^, mkNatInf r^)
+  end
+};
+
 // Returns (q, r) such that (q * v) + r = uIn
 //
+// For whole-word digits...
 natDivLarge = { uIn : Array Word => v0 : Array Word =>
-  let n = arrayLength32 v0;
-      f = arrayLength32 uIn;
-      m = f -Int32 n;
+  let n     = arrayLength32 v0;
+      f     = arrayLength32 uIn;
+      m     = f -Int32 n;
 
-      q = allocDArray (m +Int32 1);
+      q     = allocDArray (m +Int32 1);
       qhatv = allocDArray (n +Int32 1);
-      u = newDArray (arrayLength32 uIn +Int32 1) { i => 0 };
+      u     = newDArray (f +Int32 1) { i => 0 };
 
-      shift = wordLeadingZeros v0[n -Int32 1];
-      v = newDArray0 n { i => v0[i] }; // local, private scratchpad
+      shift = (wordLeadingZeros v0[n -Int32 1]) -Word 4;
+      v     = newDArray0 n { i => v0[i] }; // local, private scratchpad
       qhatref = (ref 0);
   in
+    dbgW "uIn[0]" uIn[0];
+    dbgW "uIn[1]" uIn[1];
+    dbgW "v0[0]" v0[0];
+    dbgW "v0[1]" v0[1];
+
     // D1.
     shlVU v v0  shift;
     shlVU u uIn shift >^ u[f];
+
+    dbgW "v[0]" v[0];
+    dbgW "v[1]" v[1];
+    dbgW "u[0]" u[0];
+    dbgW "u[1]" u[1];
+
+    dbgW "shift" shift;
+    dbgW "u[f]"  u[f];
 
     // D2.
     rec loop = { j : Int32 =>
       if j >=SInt32 0 then
         // D3.
-        (bitshl-Word 1 (primitive_zext_i32_to_Word (wordNumBits !))
-                                                            -Word 1) >^ qhatref;
+        (oneBitsWord32 (wordNumBits !)) >^ qhatref;
         let jn = j +Int32 n;
             n1 = n -Int32 1;
         in
           if u[jn] !=Word v[n1] then
-            case divWW u[j +Int32 n] u[jn -Int32 1] v[n1] of (qq, rr) ->
+            case divWW u[jn] u[jn -Int32 1] v[n1] of (qq, rr) ->
               case mulWW qq v[n -Int32 2] of (x1, x2) ->
                 rec loop = { x1 => x2 => rhat =>
                   if greaterThan x1 x2 rhat u[jn -Int32 2] then
@@ -828,8 +1020,7 @@ natDivLarge = { uIn : Array Word => v0 : Array Word =>
 
     shrVU u u shift;
 
-    (NatInf (trimLeadingZeroWords q),
-     NatInf (trimLeadingZeroWords u))
+    (mkNatInf q, mkNatInf u)
   end
 };
 
@@ -853,7 +1044,7 @@ natDiv =  { u => v =>
                                Some (q, natFromInt64 (primitive_zext_Word_to_i64 rword))
                          end
                      end
-                else Some (natDivLarge (natDigits u) va)
+                else Some (natDivLTM_BB (natDigits u) va)
               end
            end
        end

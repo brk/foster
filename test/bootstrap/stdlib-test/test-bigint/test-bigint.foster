@@ -167,12 +167,47 @@ n2 = {
   //testNatDiv 12342342324231 1 "12342342324231" "0"; // OK
 
   //testNatDiv 12342342324231 7654321 "1612467" "2304324";
-  testNatDivW 12342342324231 7654321;
+
+  //testNatDivW 87654321 7654321;
+  //testNatDivW 12342342324231 7654321;
+
+  testNatDivW 8666555444333222999 5;
 
   expect_i32 2;
   print_i32 (arrayLength32 (natDigits (natFromInt64 2342135343234)));
 
-  // testNatDiv 12342342324231 2342135343234 "5" "631665608061";
+  let n = natFromInt64 9368541372936;
+      s = natShr n 1;
+  in
+    expect_text "9368541372936";
+    print_nat n;
+
+    expect_text "4684270686468";
+    print_nat s;
+  end;
+
+  testNatDivW 12342342324231 2342135343234;
+
+  expect_i32 2;
+  print_i32 (arrayLength32 (natDigits (natFromInt64 12342342324231)));
+
+  testNatDiv  12342342324231 2342135343234 "5" "631665608061";
+};
+
+print_Wordb = { k =>
+  print_i64b (primitive_zext_Word_to_i64 k);
+};
+
+print_Wordx = { k =>
+  print_i64x (primitive_zext_Word_to_i64 k);
+};
+
+debug_nat_2 = { n =>
+  let a = natDigits n;
+  in
+    expect_text "_[1] = "; print_Wordb a[1];
+    expect_text "_[0] = "; print_Wordb a[0];
+  end;
 };
 
 testNatDivW = { i : Int64 => j : Int64 =>

@@ -379,6 +379,8 @@ foster_mp_mul_2d = { i => k =>
   end
 };
 
+// Left shift by n bits.
+//
 // Precondition: 0 <= n < 64
 //
 foster_mp_mul_2d_UA :: { Array Int64 => Int32 => Array Int64 };
@@ -502,19 +504,6 @@ foster_mp_from_Int64 = { k =>
     else IntInf (mkDigitsOfInt64 k) False
   end
   // OK not to use mkIntInf here because we're preserving IntInf's invariants.
-};
-
-bitlength-Int64 :: { Int64 => Int32 };
-bitlength-Int64 = { k =>
-  rec go = { x => acc =>
-                 if x ==Int64 0
-                   then acc
-                   else go (bitlshr-Int64 k 1) (acc +Int32 1)
-                 end
-           };
-  in
-    go k 0
-  end
 };
 
 foster_mp_bitlength :: { IntInf => Int32 };

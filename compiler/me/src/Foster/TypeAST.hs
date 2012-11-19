@@ -152,6 +152,8 @@ primitiveDecls =
     ,(,)  "print_i32"  $ mkProcType [i32] []
     ,(,) "expect_i64"  $ mkProcType [i64] []
     ,(,)  "print_i64"  $ mkProcType [i64] []
+    ,(,) "expect_i64x" $ mkProcType [i64] []
+    ,(,)  "print_i64x" $ mkProcType [i64] []
 
     ,(,) "expect_i1"   $ mkProcType [i1] []
     ,(,)  "print_i1"   $ mkProcType [i1] []

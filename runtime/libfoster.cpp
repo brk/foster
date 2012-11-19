@@ -212,6 +212,7 @@ int read_i32() { int32_t n; scanf(" %d", &n); return n; }
 
 void  print_i64(int64_t x) { fprint_i64(stdout, x); }
 void expect_i64(int64_t x) { fprint_i64(stderr, x); }
+void  print_i64x(int64_t x) { fprint_i64x(stdout, x); }
 void expect_i64x(int64_t x) { fprint_i64x(stderr, x); }
 
 void  print_i64b(int64_t x) { fprint_i64b(stdout, x); }

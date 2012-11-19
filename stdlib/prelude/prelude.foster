@@ -78,16 +78,46 @@ cmpUWord = { a : Word => b : Word =>
 
 /////
 
+bitlength-Int64 :: { Int64 => Int32 };
+bitlength-Int64 = { k =>
+  rec go = { x => acc =>
+                 if x ==Int64 0
+                   then acc
+                   else go (bitlshr-Int64 x 1) (acc +Int32 1)
+                 end
+           };
+  in
+    go k 0
+  end
+};
+
+bitlength-Word :: { Word => Int32 };
+bitlength-Word = { k =>
+  rec go = { x => acc =>
+                 if x ==Word 0
+                   then acc
+                   else go (bitlshr-Word x 1) (acc +Int32 1)
+                 end
+           };
+  in
+    go k 0
+  end
+};
+
+/////
+
 // Specialization of popcount(-1 :: Word).
 // Assumption: Word is either 32 or 64 bits.
 wordNumBits :: { Int32 };
 wordNumBits = {
+
   let n = primitive_sext_i32_to_Word -1; in
-    if bitlshr-Word (bitlshr-Word n 16) 16 ==Word (primitive_zext_i32_to_Word 0)
+    if 0 ==Word bitlshr-Word (bitlshr-Word n 16) 16
       then 32
       else 64
     end
   end
+
 };
 
 /////

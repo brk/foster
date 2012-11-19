@@ -353,12 +353,12 @@ insertDumbGCRoots bbgp dump = do
                   ,CCGCKill Disabled (Set.fromList [root])]
                  , loadedvar)
 
-      withGCLoad :: LLVar -> RootMapped ([Insn' O O], LLVar)
-      withGCLoad v = do rv <- withGCLoad_h (trace ("withGCLoad " ++ show v) v)
-                        return $ trace ("withGCLoad " ++ show v ++ " ==> " ++ show (pretty rv)) rv
+      withGCLoad_t :: LLVar -> RootMapped ([Insn' O O], LLVar)
+      withGCLoad_t v = do rv <- withGCLoad (trace ("withGCLoad " ++ show v) v)
+                          return $ trace ("withGCLoad " ++ show v ++ " ==> " ++ show (pretty rv)) rv
 
-      withGCLoad_h :: LLVar -> RootMapped ([Insn' O O], LLVar)
-      withGCLoad_h v = if not $ isGCable v then return ([], v)
+      withGCLoad :: LLVar -> RootMapped ([Insn' O O], LLVar)
+      withGCLoad v = if not $ isGCable v then return ([], v)
        else do gcr <- get
                case Map.lookup v gcr of
                  Just root -> do retLoaded root
@@ -419,10 +419,10 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
                                                (mkLast $ CCLast (CCCase v' arms mb occ)))
     CCRebindId     {}             -> do error $ "CCRebindId should not have been introduced yet!"
 
-  varForRoot root = let rv = varForRoot_h (trace ("varForRoot " ++ show root) root) in
-                    trace ("varForRoot " ++ show root ++ " ==> " ++ show (pretty rv)) rv
+  varForRoot_t root = let rv = varForRoot (trace ("varForRoot " ++ show root) root) in
+                      trace ("varForRoot " ++ show root ++ " ==> " ++ show (pretty rv)) rv
 
-  varForRoot_h root = case Map.lookup root varsForGCRoots of
+  varForRoot root = case Map.lookup root varsForGCRoots of
                        Nothing -> error $ "Unable to find source variable for root "
                                         ++ show root ++ "\nmap keys are "
                                         ++ show (map tidIdent $ Map.keys varsForGCRoots)

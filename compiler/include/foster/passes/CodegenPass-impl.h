@@ -70,6 +70,7 @@ llvm::AllocaInst* stackSlotWithValue(llvm::Value* val,
 void extendWithImplementationSpecificProcs(CodegenPass* _pass,
                                            std::vector<LLProc*>& procs);
 llvm::Constant* getConstantArrayOfString(const std::string& s);
+
 ////////////////////////////////////////////////////////////////////
 
 inline bool operator<(const CtorId& a, const CtorId& b) {
