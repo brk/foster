@@ -72,6 +72,13 @@ TODO: libraries, benchmarks, & applications
   * GCed values need to be registered with the GC when initialized.
   * Need to decide how to deal with module-level initialization in a sane way.
 
+TODO: bugs
+----------
+
+* Word constants should be limited to 32 bits (and, as a last-ditch measure,
+  size-checked at codegen time).
+
+
 TODO: benchmarks
 ----------------
 

@@ -186,7 +186,7 @@ n2 = {
     print_nat s;
   end;
 
-  testNatDivW 12342342324231 2342135343234;
+  testNatDivW 1`142`324`231 234`213`534;
 
   expect_i32 2;
   print_i32 (arrayLength32 (natDigits (natFromInt64 12342342324231)));
