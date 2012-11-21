@@ -137,12 +137,10 @@ bitlength-Word = { k =>
 wordNumBits32 :: { Int32 };
 wordNumBits32 = {
 
-  let n = primitive_sext_i32_to_Word -1; in
-    if 0 ==Word bitlshr-Word (bitlshr-Word n 16) 16
+    if 0 ==Word (bitxor-Word (-1) 0FFFF`FFFF_16
       then 32
       else 64
     end
-  end
 
 };
 
