@@ -136,21 +136,6 @@ foldRange = { forall t:Type,
   in go fst init end
 };
 
-// Precondition: fst >= fin
-//
-foldRangeDown = { forall t:Type,
-              fst : Int32 =>
-              fin : Int32 =>
-              init : t =>
-              iter : { Int32 => t => t } =>
-  rec go =  { n : Int32 => acc : t =>
-                if n >=SInt32 fin then
-                  go (n -Int32 1) (iter n acc)
-                else acc end
-            };
-  in go fst init end
-};
-
 // foster_DIGIT_BIT = 60
 // foster_MP_DIGIT_BIT_MASK = (1 << foster_DIGIT_BIT) - 1
 // foster_MP_DIGIT_BIT_MASK = FFF`FFFF`FFFF`FFFF_16
@@ -1097,7 +1082,7 @@ foster_mp_divmod = { a : IntInf => b : IntInf =>
                case divmod-Int128-64 tmphi tmplo (digits y^)[t] of ((qhi, qlo), rem) ->
                  (if gteInt128 qhi qlo 0 foster_MP_MASK
                                     then foster_MP_MASK else
-                        bitand-Int64 qlo foster_MP_MASK)
+                        bitand-Int64 qlo foster_MP_MASK end)
                      >^ q[it1];
                end
             end;

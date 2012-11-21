@@ -13,8 +13,11 @@ main = {
   //t8 !;
   //t9 !;
 
+  expect_text "n0"; print_text "n0";
   n0 !;
+  expect_text "n1"; print_text "n1";
   n1 !;
+  expect_text "n2"; print_text "n2";
   n2 !;
   ()
 };

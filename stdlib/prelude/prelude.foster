@@ -76,6 +76,32 @@ cmpUWord = { a : Word => b : Word =>
   end
 };
 
+// notLT
+//
+isGE = { o : Ord =>
+  case o
+    of $LT -> False
+    of _   -> True
+  end
+};
+
+/////
+
+// Precondition: fst >= fin
+//
+foldRangeDown = { forall t:Type,
+              fst : Int32 =>
+              fin : Int32 =>
+              init : t =>
+              iter : { Int32 => t => t } =>
+  rec go =  { n : Int32 => acc : t =>
+                if n >=SInt32 fin then
+                  go (n -Int32 1) (iter n acc)
+                else acc end
+            };
+  in go fst init end
+};
+
 /////
 
 bitlength-Int64 :: { Int64 => Int32 };
@@ -108,8 +134,8 @@ bitlength-Word = { k =>
 
 // Specialization of popcount(-1 :: Word).
 // Assumption: Word is either 32 or 64 bits.
-wordNumBits :: { Int32 };
-wordNumBits = {
+wordNumBits32 :: { Int32 };
+wordNumBits32 = {
 
   let n = primitive_sext_i32_to_Word -1; in
     if 0 ==Word bitlshr-Word (bitlshr-Word n 16) 16
@@ -118,6 +144,11 @@ wordNumBits = {
     end
   end
 
+};
+
+wordNumBits :: { Word };
+wordNumBits = {
+  primitive_sext_i32_to_Word (wordNumBits32 !)
 };
 
 /////
@@ -223,6 +254,8 @@ print_text = { s : Text =>
 };
 
 max-Int32 = { n : Int32 => m : Int32 => if n <SInt32 m then m else n end };
+max-SInt64 = { n : Int64 => m : Int64 => if n <SInt64 m then m else n end };
+max-SWord  = { n : Word  => m : Word  => if n <SWord  m then m else n end };
 
 text_maxdepth = { s : Text =>
   case s
@@ -472,7 +505,7 @@ splitInt64 = { n : Int64 =>
 };
 
 tmp_Text_2_of_Word = { n:Word =>
-  if wordNumBits ! ==Int32 32
+  if wordNumBits32 ! ==Int32 32
      then tmp_Text_2_of_Int32 (primitive_trunc_Word_i32 n);
      else tmp_Text_2_of_Int64 (primitive_zext_Word_to_i64 n);
   end
