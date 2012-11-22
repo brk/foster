@@ -262,6 +262,96 @@ Exprs getExprs(pTree tree) {
   return f;
 }
 
+enum StmtTag { StmtExprs, StmtLetBinds, StmtRecBinds };
+
+string str(StmtTag t) {
+  if (t == StmtRecBinds) return "StmtRecBinds";
+  if (t == StmtLetBinds) return "StmtLetBinds";
+  if (t == StmtExprs)    return "StmtExprs";
+  return "UnknownStmtTag";
+}
+
+StmtTag classifyStmt(pTree t) {
+  if (typeOf(t) == ABINDING) {
+    if (getChildCount(t) == 2) {
+      return StmtRecBinds;
+    } else {
+      return StmtLetBinds;
+    }
+  } else {
+    return StmtExprs;
+  }
+}
+
+foster::SourceRange rangeOfTrees(const std::vector<pTree>& v) {
+  return rangeFrom(v.front(), v.back());
+}
+
+Binding parseBinding(pTree tree) {
+  return Binding(textOfVar(child(tree, 0)), ExprAST_from(child(tree, 1)));
+}
+
+ExprAST* parseStmts_seq(const std::vector<pTree>& v, ExprAST* mb_last) {
+  assert(!v.empty());
+  Exprs e;
+  for (unsigned i = 0; i < v.size(); ++i) { e.push_back(ExprAST_from(v[i])); }
+  if (mb_last) e.push_back(mb_last);
+  return new SeqAST(e, rangeOfTrees(v));
+}
+
+// ugh...
+ExprAST* parseStmts(pTree tree) {
+  if (getChildCount(tree) == 1 && typeOf(child(tree, 0)) != ABINDING) {
+    return ExprAST_from(child(tree, 0));
+  }
+
+  std::vector<std::pair<StmtTag, std::vector<pTree> > > sections;
+
+  for (unsigned i = 0; i < getChildCount(tree);      ) {
+    StmtTag t = classifyStmt(child(tree, i));
+    std::vector<pTree> section;
+    do {
+      section.push_back(child(tree, i));
+      ++i;
+    } while (i < getChildCount(tree) && classifyStmt(child(tree, i)) == t);
+    sections.push_back(std::make_pair(t, section));
+  }
+
+  ASSERT(!sections.empty());
+  ASSERT(sections.back().first == StmtExprs) <<
+        "# tree children: " << getChildCount(tree) << "\n" <<
+        "# sections: " << sections.size() << "\n" <<
+        "last type: " << str(sections.back().first);
+
+  std::vector<pTree>& end_asts = sections.back().second;
+  ExprAST* acc = parseStmts_seq(end_asts, NULL);
+
+  // Walk backwards over sections, accumulating.
+  for (int i = sections.size() - 2; i >= 0; --i) {
+    bool isRec = sections[i].first == StmtRecBinds;
+    std::vector<Binding> bindings;
+
+    switch (sections[i].first) {
+    case StmtRecBinds: // fallthrough
+    case StmtLetBinds:
+      for (unsigned x = 0; x < sections[i].second.size(); ++x) {
+        pTree c = sections[i].second[x];
+        int offset = isRec ? 1 : 0;
+        bindings.push_back(parseBinding(child(c, offset)));
+      }
+      acc = new LetAST(bindings, acc, isRec, rangeOfTrees(sections[i].second));
+      break;
+
+    case StmtExprs:
+      // accumulator becomes last expr in sequence
+      acc = parseStmts_seq(sections[i].second, acc);
+      break;
+    }
+  }
+
+  return acc;
+}
+
 ExprAST* parseSeq(pTree tree) {
   return new SeqAST(getExprs(tree), rangeOf(tree));
 }
@@ -314,7 +404,7 @@ std::vector<TypeFormal> parseTyFormals(pTree t, KindAST* defaultKind) {
   return names;
 }
 
-// ^(VAL_ABS ^(FORMALS formals) ^(MU tyvar_decl*) e_seq?)
+// ^(VAL_ABS ^(FORMALS formals) ^(MU tyvar_decl*) stmts?)
 ExprAST* parseValAbs(pTree tree) {
   std::vector<Formal> formals;
   parseFormals(formals, child(tree, 0));
@@ -322,7 +412,7 @@ ExprAST* parseValAbs(pTree tree) {
                                                         getDefaultKind());
   TypeAST* resultType = NULL;
   ExprAST* resultSeq = getChildCount(tree) == 3
-                         ? parseSeq(child(tree, 2))
+                         ? parseStmts(child(tree, 2))
                          : new SeqAST(Exprs(), rangeOf(tree));
   return new ValAbs(formals, tyVarFormals, resultSeq, resultType, rangeOf(tree));
 }
@@ -333,10 +423,6 @@ ExprAST* parseTuple(pTree t) {
   } return new CallPrimAST("tuple", getExprs(t), rangeOf(t));
 }
 
-Binding parseBinding(pTree tree) {
-  return Binding(textOfVar(child(tree, 0)), ExprAST_from(child(tree, 1)));
-}
-
 std::vector<Binding> parseBindings(pTree tree) {
   std::vector<Binding> bindings;
   for (size_t i = 0; i < getChildCount(tree); ++i) {
@@ -345,17 +431,17 @@ std::vector<Binding> parseBindings(pTree tree) {
   return bindings;
 }
 
-// ^(LETS ^(MU binding+) e_seq)
+// ^(LETS ^(MU binding+) stmts)
 ExprAST* parseLets(pTree tree) {
   return new LetAST(parseBindings(child(tree, 0)),
-                         parseSeq(child(tree, 1)),
+                       parseStmts(child(tree, 1)),
                          false, rangeOf(tree));
 }
 
-// ^(LETREC ^(MU binding+) e_seq)
+// ^(LETREC ^(MU binding+) stmts)
 ExprAST* parseLetRec(pTree tree) {
   return new LetAST(parseBindings(child(tree, 0)),
-                         parseSeq(child(tree, 1)),
+                       parseStmts(child(tree, 1)),
                          true,  rangeOf(tree));
 }
 
@@ -381,18 +467,18 @@ VariableAST* parseTermVar(pTree t) {
   return new VariableAST(parseName(child(t, 0)), NULL, rangeOf(t));
 }
 
-// ^(IF e e_seq e_seq)
+// ^(IF e stmts stmts)
 ExprAST* parseIf(pTree tree) {
   return new IfExprAST(ExprAST_from(child(tree, 0)),
-                       parseSeq(child(tree, 1)),
-                       parseSeq(child(tree, 2)),
+                       parseStmts(child(tree, 1)),
+                       parseStmts(child(tree, 2)),
                        rangeOf(tree));
 }
 
-// ^(UNTIL e e_seq)
+// ^(UNTIL e stmts)
 ExprAST* parseUntil(pTree tree) {
   return new UntilExpr(ExprAST_from(child(tree, 0)),
-                       parseSeq(child(tree, 1)),
+                       parseStmts(child(tree, 1)),
                        rangeOf(tree));
 }
 
@@ -400,6 +486,7 @@ ExprAST* parseRef(pTree tree) {
   return CallPrimAST::one("alloc", ExprAST_from(child(tree, 0)), rangeOf(tree));
 }
 
+// ^(COMPILES e)
 ExprAST* parseBuiltinCompiles(pTree t) {
  return new BuiltinCompilesExprAST(ExprAST_from(child(t, 0)), rangeOf(t));
 }
@@ -503,10 +590,10 @@ Pattern* parsePattern(pTree t) {
                            getPatternAtomsFrom1(t));
 }
 
-// ^(CASE p e_seq)
+// ^(CASE p stmts)
 CaseBranch parseCaseBranch(pTree t) {
   CaseBranch b = std::make_pair(parsePattern(child(t, 0)),
-                                parseSeq(    child(t, 1)));
+                                parseStmts(  child(t, 1)));
   return b;
 }
 

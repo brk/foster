@@ -1,7 +1,9 @@
-main = {
 
+main = {
+  i = 1;
   ()
 };
+
 
 /*
 type case List (a:Boxed)

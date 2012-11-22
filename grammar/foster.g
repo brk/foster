@@ -19,7 +19,7 @@ tokens {
   COMPILES='__COMPILES__';
 
   VAL_APP; UNTIL; FORMALS;
-  BINDING; LETS; LETREC; SEQ;
+  BINDING; ABINDING; LETS; LETREC; SEQ; STMTS;
   LIT_NUM; BOOL; STRING;
   DECL; DEFN;
   TERMNAME; TYPENAME; TYPEVAR_DECL;
@@ -81,8 +81,18 @@ k       :               // kinds
 //  |     '{' a '->' k '}'                -> ^(KIND_TYOP a k)     // dependent kinds (kinds of type operators)
   ;
 
-e_seq 	:	 e (';' e)* ';'? -> ^(SEQ e+);
-e    :
+// Syntax sugar for sequence of (recursive) let bindings & expressions.
+// the last stmt in stmts should be an expr, not a binding,
+// but we can give better error messages later on in the pipeline.
+stmts   :  stmt_ (';' stmt_)* ';'? -> ^(STMTS stmt_ +);
+stmt_   : abinding | e ;
+abinding : 'REC' idbinding -> ^(ABINDING 'rec' idbinding)
+         |        pbinding -> ^(ABINDING        pbinding);
+
+idbinding : id '=' e    -> ^(BINDING id e);
+pbinding  : id '=' e    -> ^(BINDING id e);
+
+e       :
     opr? phrase
            binops? // value application, with optional prefix operator
               -> ^(TERM ^(MU opr?) ^(MU phrase) ^(MU binops?))
@@ -117,20 +127,20 @@ atom    :       // syntactically "closed" terms
   | letrec                              // recursive let
   | ifexpr
   | 'case' e (OF pmatch)+ 'end'         -> ^(CASE e pmatch+) // pattern matching
-  | 'until' e 'then' e_seq 'end'        -> ^(UNTIL e e_seq)
+  | 'until' e 'then' stmts 'end'        -> ^(UNTIL e stmts)
   | '(' ')'                             -> ^(TUPLE)
   | '(' COMPILES e ')'                  -> ^(COMPILES e)
   | '(' 'ref' e ')'                     -> ^(REF e)     // allocation
   | '(' e (',' e)* ')'                  -> ^(TUPLE e+)  // tuples (products) (sguar: (a,b,c) == Tuple3 a b c)
   | '{' ('forall' tyformal* ',')?
         (formal '=>')*
-         e_seq?
+         stmts?
     '}'                                 -> ^(VAL_ABS ^(FORMALS formal*)
-                                                     ^(MU tyformal*) e_seq?)
+                                                     ^(MU tyformal*) stmts?)
                   // value + type abstraction (terms indexed by terms and types)
   ;
 
-pmatch  : p '->' e_seq -> ^(CASE p e_seq);
+pmatch  : p '->' stmts -> ^(CASE p stmts);
 
 // Example: (C _ (C2 3 x), C3, 0).
 p : dctor patom*  -> ^(MU dctor patom*)
@@ -146,16 +156,16 @@ patom :
 
 lit     : num | str | TRU -> ^(BOOL TRU) | FLS -> ^(BOOL FLS);
 
-ifexpr : 'if' cond=e 'then' thenpart=e_seq 'else' elsepart=e_seq 'end'
+ifexpr : 'if' cond=e 'then' thenpart=stmts 'else' elsepart=stmts 'end'
           -> ^(IF $cond $thenpart $elsepart);
 
-binding : x '=' e     -> ^(BINDING x e);
-formal  : xid (':' t)?  -> ^(FORMAL xid t);
-tyformal: aid (':' k)?  -> ^(TYPEVAR_DECL aid k);
-tyformalr: aid ':' k    -> ^(TYPEVAR_DECL aid k);
+binding  : x '=' e       -> ^(BINDING x e);
+formal   : xid (':' t)?  -> ^(FORMAL xid t);
+tyformal : aid (':' k)?  -> ^(TYPEVAR_DECL aid k);
+tyformalr: aid ':' k     -> ^(TYPEVAR_DECL aid k);
 
-lets   : 'let' (binding ';')+ 'in' e_seq 'end' -> ^(LETS   ^(MU binding+) e_seq);
-letrec : 'rec' (binding ';')+ 'in' e_seq 'end' -> ^(LETREC ^(MU binding+) e_seq);
+lets   : 'let' (binding ';')+ 'in' stmts 'end' -> ^(LETS   ^(MU binding+) stmts);
+letrec : 'rec' (binding ';')+ 'in' stmts 'end' -> ^(LETREC ^(MU binding+) stmts);
 
 ////////////////////////////////////////////////////////////////////////////////
 
