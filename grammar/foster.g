@@ -89,8 +89,8 @@ stmt_   : abinding | e ;
 abinding : 'REC' idbinding -> ^(ABINDING 'rec' idbinding)
          |        pbinding -> ^(ABINDING        pbinding);
 
-idbinding : id '=' e    -> ^(BINDING id e);
-pbinding  : id '=' e    -> ^(BINDING id e);
+idbinding : xid '=' e    -> ^(BINDING xid e);
+pbinding  : xid '=' e    -> ^(BINDING xid e);
 
 e       :
     opr? phrase
