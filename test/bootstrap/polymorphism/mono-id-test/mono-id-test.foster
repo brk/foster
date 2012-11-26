@@ -24,9 +24,10 @@ test3 = { forall t:Boxed, x:t =>
 main = {
 
   { forall t:Boxed, x:t =>
-      let f = id2:[t];
-          g = id f;
-       in g x end
+      f = id2:[t];
+      g = id f;
+
+      g x
   } ();
 
 };

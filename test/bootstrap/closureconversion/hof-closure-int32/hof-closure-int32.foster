@@ -1,5 +1,6 @@
 main = {
-  let n = 5;
-      p = { n +Int32 n };
-  in expect_i32 10; print_i32 (p !); end
+  n = 5;
+  p = { n +Int32 n };
+  expect_i32 10;
+  print_i32 (p !);
 };

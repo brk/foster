@@ -14,34 +14,30 @@ f = { forall ft:Boxed,
 //id = { forall a:Type, x:a => x };
 
 t0 = {
-  let tc = { f: forall b:Boxed, c:Boxed, { (b,c) => (b,c) } => f (B 0, C 0) };
-      //bc = { forall b:Boxed c:Boxed, x:(b,c) => x };
-      //aa = { forall a:Boxed, y:a => y };
-   in
-      ()
-  end
+  tc = { f: forall b:Boxed, c:Boxed, { (b,c) => (b,c) } => f (B 0, C 0) };
+  //bc = { forall b:Boxed c:Boxed, x:(b,c) => x };
+  //aa = { forall a:Boxed, y:a => y };
+  ()
 };
 
 t1 = {
-  let tc = { f: forall b:Boxed, c:Boxed, { (b,c) => (b,c) }
+  tc = { f: forall b:Boxed, c:Boxed, { (b,c) => (b,c) }
               => f (B 0, C 0) };
-      aa = { forall a:Boxed, y:a => y };
-   in
-      // aa :: forall a  , {   a   =>   a   }
-      // tc :: forall b c, { (b,c) => (b,c) } => (B32, C32) }
-      tc aa;
-  end;
+  aa = { forall a:Boxed, y:a => y };
+
+  // aa :: forall a  , {   a   =>   a   }
+  // tc :: forall b c, { (b,c) => (b,c) } => (B32, C32) }
+  tc aa;
 };
 
 t2 = {
-  let tc = { f: forall b:Boxed, c:Boxed, { (b,c) => (b,c) }
-              => f (B 0, C 0) };
-      bc = { forall p:Boxed q:Boxed, x:(p,q) => x };
-   in
-      // bc :: forall p q, { (p,q) => (p,q) }
-      // tc :: forall b c, { (b,c) => (b,c) }
-      tc bc;
-  end;
+  tc = { f: forall b:Boxed, c:Boxed, { (b,c) => (b,c) }
+          => f (B 0, C 0) };
+  bc = { forall p:Boxed q:Boxed, x:(p,q) => x };
+
+  // bc :: forall p q, { (p,q) => (p,q) }
+  // tc :: forall b c, { (b,c) => (b,c) }
+  tc bc;
 };
 
 // From p. 70 of Peyton Jones, Vytiniotis, Weirich, and Shields
@@ -51,14 +47,13 @@ t2 = {
 //  inference will not push the partially-known type Int -> 'a into the
 //  anonymous function passed to bar, and the program will be rejected."
 t3 = {
-  let tc = { f: forall a:Boxed, { (a,a) => (a,a) }
-              => f (B 0, B 0) };
-      aa = { forall b:Boxed c:Boxed, y:(b,c) => y };
-   in
-      // aa :: forall b c, { (b,c) => (b,c) }
-      // tc :: forall a  , { (a,a) => (a,a) }
-      tc aa;
-  end;
+  tc = { f: forall a:Boxed, { (a,a) => (a,a) }
+          => f (B 0, B 0) };
+  aa = { forall b:Boxed c:Boxed, y:(b,c) => y };
+
+  // aa :: forall b c, { (b,c) => (b,c) }
+  // tc :: forall a  , { (a,a) => (a,a) }
+  tc aa;
 };
 
 /*

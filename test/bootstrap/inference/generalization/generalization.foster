@@ -15,14 +15,13 @@ polyretval = { i : Int32 =>
              { forall b:Boxed, x:b => x } };
 
 polyretvaltest = {
-  let id = polyretval 1;
-  in
-    expect_i32 0;
-    print_i32
-      case (id (B 0))
-         of $B n -> n
-      end;
-  end;
+  id = polyretval 1;
+
+  expect_i32 0;
+  print_i32
+    case (id (B 0))
+       of $B n -> n
+    end;
 };
 
 // foo0 :: { forall b, Int32 => { b => b } };

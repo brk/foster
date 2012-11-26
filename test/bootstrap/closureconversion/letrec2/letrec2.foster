@@ -3,9 +3,10 @@ main = { test 123 ; };
 // A regression test for the compiler mangling GC roots for recursive functions.
 
 test = { n:Int32 =>
-  rec go = { t:Text =>
+  REC go = { t:Text =>
       go "^"; ()
-  }; in () end
+  };
+  ()
 };
 
 tmp_Text_bytes_iter_reverse = { t:Text =>

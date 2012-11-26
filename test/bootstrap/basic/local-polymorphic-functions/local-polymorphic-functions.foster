@@ -10,12 +10,11 @@ type case SomeBoxedType
 gBoxed = { y : SomeBoxedType => y };
 
 test-poly = {
-  let doubleP = { forall t:Boxed,
+  doubleP = { forall t:Boxed,
             f : { t => t } =>  x : t =>
             f (f x)
-          };
-  in
-        doubleP:[SomeBoxedType] gBoxed (SomeBoxedCtor 0);
-  end;
+  };
+
+  doubleP:[SomeBoxedType] gBoxed (SomeBoxedCtor 0);
   ()
 };

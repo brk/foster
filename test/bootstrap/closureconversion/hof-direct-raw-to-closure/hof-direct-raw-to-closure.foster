@@ -24,10 +24,9 @@ check-call-of-literal-function = {
 run-it = { f: {Int32} => f ! };
 
 check-shadowing = {
-  let read_i32 = { opaquely_i32 50 };
-   in
-      expect_i32 50 ; // check shadowing of global names
-      print_i32 (run-it read_i32);
-  end;
+  read_i32 = { opaquely_i32 50 };
+
+  expect_i32 50 ; // check shadowing of global names
+  print_i32 (run-it read_i32);
 };
 

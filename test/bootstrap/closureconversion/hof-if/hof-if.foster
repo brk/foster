@@ -13,33 +13,30 @@ main = {
 };
 
 test1 = {
-  let x = opaquely_i32 2;
-      y = opaquely_i32 3;
-      z = opaquely_i32 4;
-  in
-    expect_i1 True;  print_i1 (prim-and (x <SInt32 y)
-                                        (y <SInt32 z));
-  end
+  x = opaquely_i32 2;
+  y = opaquely_i32 3;
+  z = opaquely_i32 4;
+
+  expect_i1 True;  print_i1 (prim-and (x <SInt32 y)
+                                      (y <SInt32 z));
 };
 
 
 test2 = {
-  let x = opaquely_i32 2;
-      y = opaquely_i32 3;
-      z = opaquely_i32 4;
-  in
-    expect_i1 False; print_i1 (prim-and (x <SInt32 y)
-                                        (z <SInt32 y));
-  end
+  x = opaquely_i32 2;
+  y = opaquely_i32 3;
+  z = opaquely_i32 4;
+
+  expect_i1 False; print_i1 (prim-and (x <SInt32 y)
+                                      (z <SInt32 y));
 };
 
 
 test3 = {
-  let x = opaquely_i32 2;
-      y = opaquely_i32 3;
-      z = opaquely_i32 4;
-  in
-    expect_i1 True ; print_i1 (hof-and { x <SInt32 y }
-                                       { y <SInt32 z });
-  end
+  x = opaquely_i32 2;
+  y = opaquely_i32 3;
+  z = opaquely_i32 4;
+
+  expect_i1 True ; print_i1 (hof-and { x <SInt32 y }
+                                     { y <SInt32 z });
 };

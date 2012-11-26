@@ -186,13 +186,13 @@ bytesConcatByCopy = { a : Array Int8 => alen : Int32 =>
   //
   // It's also not great that using this in a loop gives O(n^2) asympotic
   // complexity rather than O(n), because we don't over-allocate our arrays.
-  let bytes = allocDArray len; in
-      // bytes[0..whatever]    = a[0..alen]
-      memcpy_i8_to_at_from_len bytes 0    a alen;
-      // bytes[alen..whatever] = b[0..blen]
-      memcpy_i8_to_at_from_len bytes alen b blen;
-      bytes
-  end
+  bytes = allocDArray len;
+  // bytes[0..whatever]    = a[0..alen]
+  memcpy_i8_to_at_from_len bytes 0    a alen;
+  // bytes[alen..whatever] = b[0..blen]
+  memcpy_i8_to_at_from_len bytes alen b blen;
+  bytes
+
   end
 };
 
@@ -201,24 +201,23 @@ both = { a : Bool => b : Bool =>
 };
 
 mkTextConcat = { a : Text => b : Text =>
-  let lensum = (textLength a) +Int32 (textLength b);
-       small = 120; // we'll be willing to memcpy buffers smaller than this.
-  in
-    case (a, b)
-      of ($TextFragment ba na, $TextFragment bb nb) ->
-        // One optimization from the paper "Ropes: an alternative to strings":
-        // transparently flatten concatenations of small leaf nodes.
-        if lensum <=SInt32 small
-        then TextFragment (bytesConcatByCopy ba na bb nb lensum) lensum
-        else TextConcat a b lensum
-        end
-      // Un-implemented optimizations: perform similar flattening for
-      // ($TextConcat a ($TextFragment ab na) _, $TextFragment bb nb) ->
-      // and
-      // ($TextFragment ba na, $TextConcat ($TextFragment bb nb) c) ->
-      of (_                  , _) ->
-        TextConcat a b lensum
-    end
+  lensum = (textLength a) +Int32 (textLength b);
+  small  = 120; // we'll be willing to memcpy buffers smaller than this.
+
+  case (a, b)
+    of ($TextFragment ba na, $TextFragment bb nb) ->
+      // One optimization from the paper "Ropes: an alternative to strings":
+      // transparently flatten concatenations of small leaf nodes.
+      if lensum <=SInt32 small
+      then TextFragment (bytesConcatByCopy ba na bb nb lensum) lensum
+      else TextConcat a b lensum
+      end
+    // Un-implemented optimizations: perform similar flattening for
+    // ($TextConcat a ($TextFragment ab na) _, $TextFragment bb nb) ->
+    // and
+    // ($TextFragment ba na, $TextConcat ($TextFragment bb nb) c) ->
+    of (_                  , _) ->
+      TextConcat a b lensum
   end
 };
 
@@ -268,10 +267,8 @@ textOfASCII = { n : Int32 => textOfASCII8 (primitive_trunc_i32_i8 n) };
 
 // Precondition: n in range 0..128.
 textOfASCII8 = { n : Int8 =>
-  let a = newDArray:[Int8] 1 { i => n };
-  in
-    TextFragment a 1
-  end
+  a = newDArray:[Int8] 1 { i => n };
+  TextFragment a 1
 };
 
 ////
@@ -317,32 +314,30 @@ arrayEach = { forall t:Type,
 newDArray = { forall v:Type,
                 n : Int32 =>
                 f : { Int32 => v } =>
-  let a = allocDArray:[v] n;
-      x = (ref n);
-   in
-      until x^ ==Int32 0 then
-          f x^      >^ a[x^ -Int32  1];
-           (x^ -Int32 1) >^ x
-      end;
-    a
-  end
+  a = allocDArray:[v] n;
+  x = (ref n);
+
+  until x^ ==Int32 0 then
+      f x^      >^ a[x^ -Int32  1];
+       (x^ -Int32 1) >^ x
+  end;
+  a
 };
 
 // Initializes slot a[k] with (f k)
 newDArray0 = { forall v:Type,
                 n : Int32 =>
                 f : { Int32 => v } =>
-  let a = allocDArray:[v] n;
-      x = (ref n);
-   in
-      until x^ ==Int32 0 then
-        let y  = x^ -Int32 1; in
-          (f y) >^ a[y];
-             y  >^ x
-        end
-      end;
-    a
-  end
+  a = allocDArray:[v] n;
+  x = (ref n);
+
+  until x^ ==Int32 0 then
+    let y  = x^ -Int32 1; in
+      (f y) >^ a[y];
+         y  >^ x
+    end
+  end;
+  a
 };
 
 // Returns True on success, otherwise False.
@@ -385,25 +380,21 @@ is_ascii_digit = { c : Int8 =>
 };
 
 tmp_Int32_of_base_10_Text = { t:Text =>
-  let acc = (ref 0);
-      pow = (ref 1);
-      base = 10;
-      ok = tmp_Text_bytes_iter_reverse t { c : Int8 =>
-       //print_text "is_ascii_digit c:"; // hmm, causes crash...
-       if is_ascii_digit c
-         then
-           let s = (primitive_sext_i8_to_i32 c) -Int32 48;
-           in
-             (acc^ +Int32 (s *Int32 pow^)) >^ acc;
-             (pow^           *Int32 base ) >^ pow;
-             True
-           end
-         else False
-       end;
-     };
-  in
-    if ok then acc^ else 0 end
-  end
+  acc = (ref 0);
+  pow = (ref 1);
+  base = 10;
+  ok = tmp_Text_bytes_iter_reverse t { c : Int8 =>
+   //print_text "is_ascii_digit c:"; // hmm, causes crash...
+   if is_ascii_digit c
+     then
+       s = (primitive_sext_i8_to_i32 c) -Int32 48;
+       (acc^ +Int32 (s *Int32 pow^)) >^ acc;
+       (pow^           *Int32 base ) >^ pow;
+       True
+     else False
+   end;
+  };
+  if ok then acc^ else 0 end
 };
 
 tmp_Text_of_Int32_digit = { n:Int32 =>
@@ -475,21 +466,21 @@ tmp_Text_2_of_Int8 = { n:Int8 =>
 };
 
 tmp_Text_2_of_Int32 = { n:Int32 =>
-  let go = { n:Int32 =>
-    let n0 = primitive_trunc_i32_i8 n;
-        n1 = primitive_trunc_i32_i8 (bitlshr-Int32 n 8 );
-        n2 = primitive_trunc_i32_i8 (bitlshr-Int32 n 16);
-        n3 = primitive_trunc_i32_i8 (bitlshr-Int32 n 24);
-    in
+  go = { n:Int32 =>
+    n0 = primitive_trunc_i32_i8 n;
+    n1 = primitive_trunc_i32_i8 (bitlshr-Int32 n 8 );
+    n2 = primitive_trunc_i32_i8 (bitlshr-Int32 n 16);
+    n3 = primitive_trunc_i32_i8 (bitlshr-Int32 n 24);
+
      mkTextConcat (tmp_Text_2_of_Int8 n3)
     (mkTextConcat (tmp_Text_2_of_Int8 n2)
     (mkTextConcat (tmp_Text_2_of_Int8 n1)
     (mkTextConcat (tmp_Text_2_of_Int8 n0) "")))
-   end
-  }; in if n <SInt32 0 then mkTextConcat "-" (go (0 -Int32 n))
-                      else go n
-        end
-  end
+  };
+  if n <SInt32 0
+    then mkTextConcat "-" (go (0 -Int32 n))
+    else                   go n
+  end;
 };
 
 high32BitsOf64 = { n : Int64 =>
@@ -497,9 +488,9 @@ high32BitsOf64 = { n : Int64 =>
 };
 
 splitInt64 = { n : Int64 =>
-  let highbits = high32BitsOf64 n;
-      lowbits  = high32BitsOf64 (bitshl-Int64 n 32);
-   in (highbits, lowbits) end
+  highbits = high32BitsOf64 n;
+  lowbits  = high32BitsOf64 (bitshl-Int64 n 32);
+  (highbits, lowbits)
 };
 
 tmp_Text_2_of_Word = { n:Word =>
@@ -517,16 +508,18 @@ tmp_Text_2_of_Int64 = { n:Int64 =>
 };
 
 tmp_Text_of_Int64 = { n:Int64 =>
-  rec go = { n:Int64 => t:Text =>
+  REC go = { n:Int64 => t:Text =>
     if n <=SInt64 10
       then mkTextConcat (tmp_Text_of_Int32_digit (primitive_trunc_i64_i32 n)) t
-      else let r = primitive_trunc_i64_i32 (srem-Int64 n 10);
-               q =                          sdiv-Int64 n 10 ;
-            in go q (mkTextConcat (tmp_Text_of_Int32_digit r) t); end
-     end
-  }; in if n <SInt64 0 then mkTextConcat "-" (go (negate-Int64 n) "")
-                      else go n ""
-        end
+      else r = primitive_trunc_i64_i32 (srem-Int64 n 10);
+           q =                          sdiv-Int64 n 10 ;
+           go q (mkTextConcat (tmp_Text_of_Int32_digit r) t);
+    end
+  };
+
+  if n <SInt64 0
+    then mkTextConcat "-" (go (negate-Int64 n) "")
+    else go n ""
   end
 };
 

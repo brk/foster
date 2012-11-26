@@ -44,23 +44,22 @@ main = {
   */
 
   expect_i32 (observeWordUnsignedWraparound !);
-  print_i32 (wordNumBits !);
+  print_i32 (wordNumBits32 !);
 };
 
 observeWordUnsignedWraparound :: { Int32 };
 observeWordUnsignedWraparound = {
-  let n0 = primitive_zext_i32_to_Word 3;
-      n1 = bitshl-Word n0 (primitive_zext_i32_to_Word 16);
-      n2 = bitshl-Word n1 (primitive_zext_i32_to_Word 16);
-      n3 = bitshl-Word n2 (primitive_zext_i32_to_Word 16);
-      n4 = bitshl-Word n3 (primitive_zext_i32_to_Word 16);
-  in
-    if n2 ==Word (primitive_zext_i32_to_Word 0)
-      then 32
-      else if n4 ==Word (primitive_zext_i32_to_Word 0)
-        then 64
-        else 128
-      end
+  n0 = primitive_zext_i32_to_Word 3;
+  n1 = bitshl-Word n0 (primitive_zext_i32_to_Word 16);
+  n2 = bitshl-Word n1 (primitive_zext_i32_to_Word 16);
+  n3 = bitshl-Word n2 (primitive_zext_i32_to_Word 16);
+  n4 = bitshl-Word n3 (primitive_zext_i32_to_Word 16);
+
+  if n2 ==Word (primitive_zext_i32_to_Word 0)
+    then 32
+    else if n4 ==Word (primitive_zext_i32_to_Word 0)
+      then 64
+      else 128
     end
   end
 };

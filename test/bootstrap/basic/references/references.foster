@@ -13,48 +13,43 @@ main = {
 
 
 tuprefs1 = {
-  let t = ((ref opaquely_i32 1), (ref 2)); in
-    expect_i32 1;
-    case t of (r, _) -> print_i32 r^ end
-  end
+  t = ((ref opaquely_i32 1), (ref 2));
+  expect_i32 1;
+  case t of (r, _) -> print_i32 r^ end;
 };
 
 tuprefs2 = {
-  let r = (ref (1, 2, 3, 4)); in
-    expect_i32 4;
-    case r^ of (_, _, _, x) -> print_i32 x end;
-    expect_i32 14;
-    (11, 12, 13, 14) >^ r;
-    case r^ of (_, _, _, x) -> print_i32 x end;
-  end
+  r = (ref (1, 2, 3, 4));
+  expect_i32 4;
+  case r^ of (_, _, _, x) -> print_i32 x end;
+  expect_i32 14;
+  (11, 12, 13, 14) >^ r;
+  case r^ of (_, _, _, x) -> print_i32 x end;
 };
 
 simpler = {
-  let r = (ref 0); in
-    expect_i32 0;
-     print_i32 r^;
-    3 >^ r;
-    expect_i32 3;
-     print_i32 r^;
-   end
+  r = (ref 0);
+
+  expect_i32 0;
+   print_i32 r^;
+  3 >^ r;
+  expect_i32 3;
+   print_i32 r^;
 };
 
 capture = {
-  let r = (ref 0);
-      f = { r^ };
-   in
-     2 >^ r;
-     expect_i32 2;
-      print_i32 (f !);
-  end
+  r = (ref 0);
+  f = { r^ };
+
+  2 >^ r;
+  expect_i32 2;
+   print_i32 (f !);
 };
 
 ref-if = {
-  let r = if 2 ==Int32 (opaquely_i32 2) then (ref 0) else (ref 1) end;
-  in
-   expect_i32 0;
-    print_i32 r^;
-  end
+  r = if 2 ==Int32 (opaquely_i32 2) then (ref 0) else (ref 1) end;
+  expect_i32 0;
+   print_i32 r^;
 };
 
 hof-until-if = { c : {Bool} => b : { () } =>
@@ -70,20 +65,19 @@ hof-until-case = { c : {Bool} => b : { () } =>
 };
 
 hof-until = {
-  let r = (ref 16);
-   in expect_i32 16;
-      expect_i32 15;
-      expect_i32 14;
-      hof-until-if   { r^ ==Int32 13 } {
-                print_i32 r^; (r^ -Int32 1) >^ r;
-      };
-      expect_i32 13;
-      expect_i32 14;
-      expect_i32 15;
-      hof-until-case { r^ ==Int32 16 } {
-                print_i32 r^; (r^ +Int32 1) >^ r;
-      };
-  end
+  r = (ref 16);
+  expect_i32 16;
+  expect_i32 15;
+  expect_i32 14;
+  hof-until-if   { r^ ==Int32 13 } {
+            print_i32 r^; (r^ -Int32 1) >^ r;
+  };
+  expect_i32 13;
+  expect_i32 14;
+  expect_i32 15;
+  hof-until-case { r^ ==Int32 16 } {
+            print_i32 r^; (r^ +Int32 1) >^ r;
+  };
 };
 
 ref-until = {
@@ -91,12 +85,11 @@ ref-until = {
   expect_i32 3;
   expect_i32 2;
   expect_i32 1;
-  let r = (ref opaquely_i32 3);
-   in print_i32 r^;
-      until r^ ==Int32 0 then
-        print_i32 r^;
-        (r^ -Int32 1) >^ r;
-      end
+  r = (ref opaquely_i32 3);
+  print_i32 r^;
+  until r^ ==Int32 0 then
+    print_i32 r^;
+    (r^ -Int32 1) >^ r;
   end
 };
 

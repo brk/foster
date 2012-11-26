@@ -13,37 +13,32 @@ main = {
 };
 
 test2 = {
-  let t = (opaquely_i32 3, 4);
-   in
-      expect_i32 3;
-      // If t is heap allocated and is codegenned to a
-      // pointer eagerly loaded from the gc root, it will be stale
-      // after a GC, and (because semispaces are cleared after GC)
-      // the following test will return the wrong value.
-      force_gc_for_debugging_purposes !;
-      case t
-        of (a, _) -> print_i32 a
-      end;
-  end
+  t = (opaquely_i32 3, 4);
+  expect_i32 3;
+  // If t is heap allocated and is codegenned to a
+  // pointer eagerly loaded from the gc root, it will be stale
+  // after a GC, and (because semispaces are cleared after GC)
+  // the following test will return the wrong value.
+  force_gc_for_debugging_purposes !;
+  case t
+    of (a, _) -> print_i32 a
+  end;
 };
 
 test3helper = {
-  let t = ((ref 3), (ref 4)); in
-    { expect_i32 3;
-       // This closure captures t alone; if the first slot in the
-       // closure env is ignored by the GC, then we should get junk
-       // when we chase the pointers.
-       case t
-         of (a, _) -> print_i32 a^
-       end; ()
-    }
-  end
+  t = ((ref 3), (ref 4));
+  { expect_i32 3;
+     // This closure captures t alone; if the first slot in the
+     // closure env is ignored by the GC, then we should get junk
+     // when we chase the pointers.
+     case t
+       of (a, _) -> print_i32 a^
+     end; ()
+  }
 };
 
 test3 = {
-  let clo = test3helper !;
-    in
-       force_gc_for_debugging_purposes !;
-       clo !;
-  end
+  clo = test3helper !;
+  force_gc_for_debugging_purposes !;
+  clo !;
 };

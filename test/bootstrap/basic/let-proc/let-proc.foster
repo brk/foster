@@ -8,22 +8,20 @@ main = {
 g = { x : Int32 => { x } };
 
 call_deref_a = {
-  let r = (ref g);
-     gg = r^;
-   in
-      expect_i32 3;
-      print_i32 ((gg 3) !);
-  end
+  r = (ref g);
+  gg = r^;
+
+  expect_i32 3;
+  print_i32 ((gg 3) !);
 };
 
 f = { x : Int32 => x };
 
 call_deref_b = {
-  let r = (ref f);
-     gg = r^;
-   in
-      expect_i32 3;
-      print_i32 (gg 3);
-  end
+  r = (ref f);
+  gg = r^;
+
+  expect_i32 3;
+  print_i32 (gg 3);
 };
 

@@ -4,15 +4,14 @@ main = {
   expect_i32 120;
 
   print_i32 999999;
-  let co = coro_create { x : Int32 =>
-                           let a = coro_yield:[Int32,Int32] x;
-                               b = coro_yield:[Int32,Int32] (a +Int32 20);
-                            in 0 end
-                        };
-      x = coro_invoke co 10;
-      y = coro_invoke co 100;
-   in
-     print_i32 x;
-     print_i32 y;
-  end
+  co = coro_create { x : Int32 =>
+          a = coro_yield:[Int32,Int32] x;
+          b = coro_yield:[Int32,Int32] (a +Int32 20);
+          0
+  };
+  x = coro_invoke co 10;
+  y = coro_invoke co 100;
+
+  print_i32 x;
+  print_i32 y;
 };

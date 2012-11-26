@@ -46,24 +46,24 @@ problem0 = {
 // * problem4 is assigned an extra env parameter,
 //      but its call sites aren't updated (?)
 problem4 = {
-  let again2 = { if False then 3 else 4 end };
-      again1 = { again2 ! }; in
-    if True then again1 ! else again1 ! +Int32 1 end
-  end
+  again2 = { if False then 3 else 4 end };
+  again1 = { again2 ! };
+
+  if True then again1 ! else again1 ! +Int32 1 end
 };
 
 // This is how we should internally rearrange problem4 before contifying it.
 problem5 = {
- let again1 = {
-   let again2 = { if False then 3 else 4 end };
-   in again2 ! end
- }; in
-    if True then again1 ! else again1 ! +Int32 1 end
-  end
+ again1 = {
+   again2 = { if False then 3 else 4 end };
+   again2 !
+ };
+
+ if True then again1 ! else again1 ! +Int32 1 end
 };
 
 problem2 = {
-    rec
+  rec
       again1 = { again2 ! };
       again2 = {
 	 if False then again2 ! else () end
@@ -76,17 +76,15 @@ problem2 = {
 problem3 = {
   rec again2 = { if opaquely_i32 0 ==Int32 1 then again2 ! else 3 end };
   in
-     let again1 = { again2 ! }; in
-       again1
-     end
+     again1 = { again2 ! };
+     again1
   end
 };
 
 problem3a = { a : Int32 =>
   rec again2 = { if opaquely_i32 0 ==Int32 1 then again2 ! else a end };
   in
-     let again1 = { again2 ! }; in
-       again1
-     end
+     again1 = { again2 ! };
+     again1
   end
 };

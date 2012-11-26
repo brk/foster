@@ -4,18 +4,17 @@ main = {
 };
 
 test-rawfn-in-clo = {
-  let n    = 5;
-      clo  = { x:Int32 => x +Int32 n };
-      cell = (ref clo);
-   in
-      expect_i32 7;
-      print_i32 (cell^ 2);
+  n    = 5;
+  clo  = { x:Int32 => x +Int32 n };
+  cell = (ref clo);
 
-      inc >^ cell;
+  expect_i32 7;
+  print_i32 (cell^ 2);
 
-      expect_i32 9;
-      print_i32 (cell^ 8);
-  end
+  inc >^ cell;
+
+  expect_i32 9;
+  print_i32 (cell^ 8);
 };
 
 inc = { x : Int32 => x +Int32 1; };

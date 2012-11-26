@@ -1,6 +1,5 @@
 main = {
   expect_i32 567;
   print_i64  567;
-
-  let unused = 123; in () end
+  ()
 };

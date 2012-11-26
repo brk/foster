@@ -80,8 +80,8 @@ murmurhash2-step-let-transformed = {
 };
 
 murmurhash2-step-let = { k:Int32 => h:Int32 => r:Int32 => m:Int32 =>
-  let km = k *Int32 m;
-      kx = bitxor-Int32 km (bitashr-Int32 km r);
-   in      bitxor-Int32 (h  *Int32 m)
-                        (kx *Int32 m) end
+  km = k *Int32 m;
+  kx = bitxor-Int32 km (bitashr-Int32 km r);
+       bitxor-Int32 (h  *Int32 m)
+                    (kx *Int32 m)
 };

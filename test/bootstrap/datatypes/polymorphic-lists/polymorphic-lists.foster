@@ -22,33 +22,33 @@ main = {
 
 
 test-explicit = {
-  let n = 0;
-      o = Nil:[B32] ! ;
-      z = ex3       o;
-      w = ex3:[B32] o;
-  in
-      expect_i32 n;
-      print_i32  z;
+  n = 0;
+  o = Nil:[B32] ! ;
+  z = ex3       o;
+  w = ex3:[B32] o;
 
-      expect_i32 n;
-      print_i32  w;
-  end
+  expect_i32 n;
+  print_i32  z;
+
+  expect_i32 n;
+  print_i32  w;
+
 };
 
 test-ones = {
-  let n = 6;
-      o = ones n;
-      z = len       o;
-      w = len:[B32] o;
-  in
-      expect_i32 n;
-      print_i32  z;
+  n = 6;
+  o = ones n;
+  z = len       o;
+  w = len:[B32] o;
 
-      expect_i32 n;
-      print_i32  w;
+  expect_i32 n;
+  print_i32  z;
 
-      ()
-  end
+  expect_i32 n;
+  print_i32  w;
+
+  ()
+
 };
 
 

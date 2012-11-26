@@ -83,37 +83,36 @@ realtimeQueueTail = { forall a:Boxed, q: RealtimeQueue a =>
 type case BInt of $B Int32;
 
 main = {
-  let e0 = realtimeQueueEmpty:[BInt] !;
-      e1 = realtimeQueueSnoc e0 (B 1);
-      e2 = realtimeQueueSnoc e1 (B 2);
-      e3 = realtimeQueueSnoc e2 (B 3);
-      v1_3 = realtimeQueueHead e3;
-      v1_2 = realtimeQueueHead e2;
-      v1_1 = realtimeQueueHead e1;
-      v4 = realtimeQueueHead e0;
-      un = { v:Maybe BInt => case v of $None -> 0 of $Some ($B n) -> n end };
-  in
-    expect_i32 1;
-    print_i32 case v4 of $Some _ -> 0 of $None -> 1 end;
+  e0 = realtimeQueueEmpty:[BInt] !;
+  e1 = realtimeQueueSnoc e0 (B 1);
+  e2 = realtimeQueueSnoc e1 (B 2);
+  e3 = realtimeQueueSnoc e2 (B 3);
+  v1_3 = realtimeQueueHead e3;
+  v1_2 = realtimeQueueHead e2;
+  v1_1 = realtimeQueueHead e1;
+  v4 = realtimeQueueHead e0;
+  un = { v:Maybe BInt => case v of $None -> 0 of $Some ($B n) -> n end };
 
-    expect_i32 1; print_i32 (un v1_1);
-    expect_i32 1; print_i32 (un v1_2);
-    expect_i32 1; print_i32 (un v1_3);
+  expect_i32 1;
+  print_i32 case v4 of $Some _ -> 0 of $None -> 1 end;
 
-    case realtimeQueueTail e3
-      of $None -> ()
-      of $Some t3 ->
-        expect_i32 2;
-        print_i32 (un (realtimeQueueHead t3));
+  expect_i32 1; print_i32 (un v1_1);
+  expect_i32 1; print_i32 (un v1_2);
+  expect_i32 1; print_i32 (un v1_3);
 
-        case realtimeQueueTail t3
-          of $None -> ()
-          of $Some t2 ->
-            expect_i32 3;
-            print_i32 (un (realtimeQueueHead t2));
-         end
-    end;
+  case realtimeQueueTail e3
+    of $None -> ()
+    of $Some t3 ->
+      expect_i32 2;
+      print_i32 (un (realtimeQueueHead t3));
 
-    ()
-  end
+      case realtimeQueueTail t3
+        of $None -> ()
+        of $Some t2 ->
+          expect_i32 3;
+          print_i32 (un (realtimeQueueHead t2));
+       end
+  end;
+
+  ()
 };

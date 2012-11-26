@@ -53,23 +53,21 @@ any-common-bits-Int32 = { j : Int32 => k : Int32 =>
 
 // TODO: use ctpop intrinsic?
 bitcount-Int32 = { n : Int32 =>
-  rec count-1-bits = { k : Int32 => acc : Int32 =>
-         if k ==Int32 0 then acc else
-           count-1-bits (bitlshr-Int32 k 1) (acc +Int32 (bitand-Int32 k 1));
-         end
-      };
-  in
-    if n <SInt32 0 then
-      // Count 0 bits by inverting and counting 1 bits.
-      count-1-bits (bitnot-Int32 n) 0
-    else // Count 1 bits directly
-      count-1-bits n 0
-    end
+  REC count-1-bits = { k : Int32 => acc : Int32 =>
+     if k ==Int32 0 then acc else
+       count-1-bits (bitlshr-Int32 k 1) (acc +Int32 (bitand-Int32 k 1));
+     end
+  };
+  if n <SInt32 0 then
+    // Count 0 bits by inverting and counting 1 bits.
+    count-1-bits (bitnot-Int32 n) 0
+  else // Count 1 bits directly
+    count-1-bits n 0
   end
 };
 
 bitlength-Int32 = { n : Int32 =>
-  rec go = { n => total =>
+  REC go = { n => total =>
              // This lookup table is not consistent with SRFI 60,
              // but they define both 0 and -1 as being of bit length zero,
              // which seems totally bogus.
@@ -85,7 +83,7 @@ bitlength-Int32 = { n : Int32 =>
                of _ -> go (bitlshr-Int32 n 4) (total +Int32 4);
              end
            };
-  in  go n 0 end
+  go n 0;
 };
 
 bitlength-alt-Int32 = { n : Int32 =>
@@ -117,29 +115,26 @@ copy-bit-Int32 = { n : Int32 => newbit : Bool => index : Int32 =>
 };
 
 bit-reverse-Int32 = { k : Int32 => n : Int32 =>
-  rec go = { m => k => rvs =>
+  REC go = { m => k => rvs =>
              if k <SInt32 0
                then if n <SInt32 0 then bitnot-Int32 rvs else rvs end
                else go (bitlshr-Int32 m 1)
                        (k -Int32 1)
                        (bitor-Int32 (bitshl-Int32 rvs 1) (bitand-Int32 1 m))
             end
-           };
-  in go if n <SInt32 0 then (negate-Int32 n) else n end
-        (k -Int32 1)
-        0;
-  end
+  };
+  m0 = if n <SInt32 0 then (negate-Int32 n) else n end;
+  go m0 (k -Int32 1) 0;
 };
 
 // Preconditions:
 //      fin - start < 32
 //            start < 32
 bit-field-reverse-Int32 = { n : Int32 => start : Int32 => fin : Int32 =>
-  let width = fin -Int32 start;
-      mask  = bitnot-Int32 (bitshl-Int32 -1 width);
-      zn    = bitand-Int32 mask (bitashr-Int32 n start);
-  in
-      bitor-Int32 (bitshl-Int32 (bit-reverse-Int32 width zn) start)
-                  (bitand-Int32 (bitnot-Int32 (bitshl-Int32 mask start)) n)
-  end
+  width = fin -Int32 start;
+  mask  = bitnot-Int32 (bitshl-Int32 -1 width);
+  zn    = bitand-Int32 mask (bitashr-Int32 n start);
+
+  bitor-Int32 (bitshl-Int32 (bit-reverse-Int32 width zn) start)
+              (bitand-Int32 (bitnot-Int32 (bitshl-Int32 mask start)) n)
 };

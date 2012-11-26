@@ -68,11 +68,10 @@ stream-map-mediocre = { forall d:Boxed e:Boxed,
     case force s
       of $StreamNilV       -> delay { StreamNilV:[e] ! } // note: not s!
       of $StreamCons la ls ->
-        let le = delay { f (force la) };
-            es = stream-map-mediocre f ls;
-        in
-          stream-cons-mediocre le es
-        end
+        le = delay { f (force la) };
+        es = stream-map-mediocre f ls;
+
+        stream-cons-mediocre le es
     end
   };
 };
@@ -105,12 +104,13 @@ stream-countdown-tozero = { forall a:Boxed,
 // Worst-case cost: O(n) = O(len(s))
 stream-reverse :: forall v:Boxed, { Lazy (Stream v) => Lazy (Stream v) };
 stream-reverse = { forall v:Boxed, s : Lazy (Stream v) =>
-  rec go = { x : Lazy (Stream v) => acc : Lazy (Stream v) =>
+  REC go = { x : Lazy (Stream v) => acc : Lazy (Stream v) =>
     case force x
       of $StreamNilV       -> acc
       of $StreamCons la ls -> go ls (eager (StreamCons la acc))
     end
-  }; in go s (stream-nil-mediocre !) end
+  };
+  go s (stream-nil-mediocre !)
 };
 
 // Laziness: incremental

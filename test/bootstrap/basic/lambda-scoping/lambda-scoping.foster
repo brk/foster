@@ -7,8 +7,8 @@ foo = { x:Int32 =>
   if x ==Int32 0 then
     0
   else
-    let y = x +Int32 1;
-        z = foo (x -Int32 1);
-     in y end
+    y = x +Int32 1;
+    z = foo (x -Int32 1);
+    y
   end
 };

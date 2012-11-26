@@ -2,14 +2,14 @@ main = {
   no-gc (ref 0);
   gc-before-use (ref 0);
   gc-before-and-after-use (ref 0);
-  let x = (ref 0); in
+
+  x = (ref 0);
     gc-pat-match (1, (x,x));
     gc-pat-match (2, (x,x));
     gc-pat-match (3, (x,x));
 
     gc-pat-match-seq (4, (x,x));
   nogc-pat-match-seq (4, (x,x));
-  end;
 };
 
 no-gc = { x : Ref Int32 =>

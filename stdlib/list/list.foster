@@ -13,10 +13,11 @@ listLength = { forall t:Boxed, xs : List t =>
 
 
 listReverse = { forall t:Boxed, xs : List t =>
-  rec go = { xs : List t => acc : List t =>
+  REC go = { xs : List t => acc : List t =>
         case xs
           of $Nil -> acc
           of $Cons x ys -> go ys (Cons x acc)
          end;
-  }; in go xs (Nil !) end
+  };
+  go xs (Nil !)
 };

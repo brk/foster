@@ -13,6 +13,7 @@ t0 = {
           case T0C2 !
             of $T0C0 -> 3
             of $T0C1 -> 5
-            of $T0C2 -> 6 end;
+            of $T0C2 -> 6
+          end;
 };
 

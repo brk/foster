@@ -35,49 +35,45 @@ main = {
 //      jne	.LBB11_9
 //
 stress-native = {
-  let x = (ref 0);
-      n = opaquely_i32 10`000`000; in
-    until (x^ ==Int32 n) then
-       (x^ +Int32 1) >^ x;
-    end;
+  x = (ref 0);
+  n = opaquely_i32 10`000`000;
+  until (x^ ==Int32 n) then
+        (x^ +Int32 1) >^ x;
   end;
 };
 
 stress-hof = { // 100 mm iters => 1000 ms without inlining
-  let x = (ref 0);
-      n = opaquely_i32 10`000`000; in
-    hof-while { x^ <SInt32 n } {
-      (x^ +Int32 1) >^ x
-    };
-  end
+  x = (ref 0);
+  n = opaquely_i32 10`000`000;
+  hof-while { x^ <SInt32 n } {
+     (x^ +Int32 1) >^ x
+  };
 };
 
 variant-one = {
   expect_i32 0;
   expect_i32 1;
   expect_i32 2;
-  let v = (ref 0);
-      n = opaquely_i32 3;
-   in
-     hof-while { v^ <SInt32 n } {
-       print_i32 v^ ; (v^ +Int32 1) >^ v
-     }
-  end
+  v = (ref 0);
+  n = opaquely_i32 3;
+
+  hof-while { v^ <SInt32 n } {
+    print_i32 v^ ; (v^ +Int32 1) >^ v
+  }
 };
 
 variant-two = {
   expect_i32 0;
   expect_i32 1;
   expect_i32 2;
-  let v = (ref 0);
-      n = opaquely_i32 3;
-   in
-     hof-while { v^ <SInt32 n } {
-       print_i32 v^ ; (v^ +Int32 1) >^ v
-     }
-     // This once triggered a bug where the closure pairs passed to hof-while
-     // were being stack-allocated, and TCO resulted in them being clobbered.
-  end
+  v = (ref 0);
+  n = opaquely_i32 3;
+
+  hof-while { v^ <SInt32 n } {
+    print_i32 v^ ; (v^ +Int32 1) >^ v
+  }
+  // This once triggered a bug where the closure pairs passed to hof-while
+  // were being stack-allocated, and TCO resulted in them being clobbered.
 };
 
 // TODO check this

@@ -7,37 +7,32 @@ main = {
 };
 
 newDArray32 = { n : Int32 => f : { Int32 => Int32 } =>
-  let a = allocDArray:[Int32] n;
-      x = (ref n);
-   in
-      until x^ ==Int32 0 then
-          f x^      >^ a[x^ -Int32  1];
-           (x^ -Int32 1) >^ x
-      end;
-    a
-  end
+  a = allocDArray:[Int32] n;
+  x = (ref n);
+
+  until x^ ==Int32 0 then
+      f x^      >^ a[x^ -Int32  1];
+       (x^ -Int32 1) >^ x
+  end;
+  a
 };
 
 arrays = {
-  let a = newDArray32 2 { n : Int32 => n };
-   in
-      expect_i32 2;
-     print_i32 a[opaquely_i32 1];
-  end
+  a = newDArray32 2 { n : Int32 => n };
+  expect_i32 2;
+  print_i32 a[opaquely_i32 1];
 };
 
 trunc32to8 = { n : Int32 => primitive_trunc_i32_i8 n; };
 
 newDArray8 = { n : Int32 => f : { Int32 => Int8 } =>
-  let a = allocDArray:[Int8] n;
-      x = (ref n);
-   in
-      until x^ ==Int32 0 then
-          f x^           >^ a[x^ -Int32  1];
-           (x^ -Int32 1) >^ x
-      end;
-    a
-  end
+  a = allocDArray:[Int8] n;
+  x = (ref n);
+  until x^ ==Int32 0 then
+      f x^           >^ a[x^ -Int32  1];
+       (x^ -Int32 1) >^ x
+  end;
+  a
 };
 
 
@@ -50,19 +45,18 @@ print_text = { s : Text =>
 
 
 arrays8 = {
-  let k = 26;
-      a = newDArray8 k { x : Int32 => trunc32to8 (x +Int32 96) };
-   in
-     expect_i32 99;
-     print_i8 a[opaquely_i32 2];
+  k = 26;
+  a = newDArray8 k { x : Int32 => trunc32to8 (x +Int32 96) };
 
-     (trunc32to8 0) >^ a[3];
-     prim_print_bytes_stdout a 6;
-     print_abc !;
+  expect_i32 99;
+  print_i8 a[opaquely_i32 2];
 
-     expect_i32 k;
-     print_i64 (prim_arrayLength a);
-  end
+  (trunc32to8 0) >^ a[3];
+  prim_print_bytes_stdout a 6;
+  print_abc !;
+
+  expect_i32 k;
+  print_i64 (prim_arrayLength a);
 };
 
 print_abc = {
