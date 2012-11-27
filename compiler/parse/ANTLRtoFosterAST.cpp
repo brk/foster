@@ -318,10 +318,12 @@ ExprAST* parseStmts(pTree tree) {
   }
 
   ASSERT(!sections.empty());
-  ASSERT(sections.back().first == StmtExprs) <<
-        "# tree children: " << getChildCount(tree) << "\n" <<
-        "# sections: " << sections.size() << "\n" <<
-        "last type: " << str(sections.back().first);
+  if (sections.back().first != StmtExprs) {
+    ASSERT(false)
+        << "\n\n" << "Statement block should end"
+        << " in an expression!" << "\n"
+        << show(rangeOf(tree));
+  }
 
   std::vector<pTree>& end_asts = sections.back().second;
   ExprAST* acc = parseStmts_seq(end_asts, NULL);
