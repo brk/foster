@@ -727,9 +727,10 @@ tcRhoFn ctx f expTy = do
 -- G |- { forall a1:k1, ..., an:kn, x1 : t1 => ... => xn : tn => e } :::
 --        forall a1:k1, ..., an:kn,    { t1 => ... =>      tn => tb }
 -- {{{
-tcSigmaFn ctx f expTy = do
+tcSigmaFn :: Context Sigma -> FnAST TypeAST -> Expected Sigma -> Tc (AnnExpr Sigma)
+tcSigmaFn ctx f expTyRaw = do
   case (fnTyFormals f) of
-    []        -> tcRhoFnHelper ctx f expTy
+    []        -> tcRhoFnHelper ctx f expTyRaw
     tyformals -> do
         let annot = fnAstAnnot f
         let rng   = annotRange annot
@@ -744,6 +745,24 @@ tcSigmaFn ctx f expTy = do
 
         let extTyCtx = ctx { localTypeBindings = extendTypeBindingsWith ktvs }
 
+        mb_rho <-
+          case expTyRaw of
+            Check (ForAllAST exp_ktvs exp_rho_raw) -> do
+              -- Suppose we have something like
+              -- f ::  forall a:Boxed, { List a }         [exp_ktvs = a]
+              -- f =  { forall b:Boxed,   Nil ! }         [    ktvs = b]
+              -- Here, we need the expected type to get the right type for
+              -- the instantiation of Nil, but we can't use the type variable 'a
+              -- in the expression, because only 'b is in scope.
+              -- So, we must rewrite rho in terms of the function's type variables
+              -- (rather than rewriting the body in terms of the expected type).
+              sanityCheck (eqLen ktvs exp_ktvs)
+                         ("tcSigmaFn: expected same number of formals for "
+                          ++ show ktvs ++ " and " ++ show exp_ktvs)
+              exp_rho' <- resolveType annot (extendTypeBindingsWith exp_ktvs) exp_rho_raw
+              return $ Just exp_rho'
+            _ -> return $ Nothing
+
         -- While we're munging, we'll also make sure the names are all distinct.
         uniquelyNamedFormals0 <- getUniquelyNamedFormals rng (fnFormals f) (fnAstName f)
         uniquelyNamedFormals <- mapM
@@ -754,41 +773,16 @@ tcSigmaFn ctx f expTy = do
         let extCtx = extendContext extTyCtx uniquelyNamedFormals
 
         -- Check or infer the type of the body.
-        debugDoc $ string "inferring type of body of polymorphic function"
-        debugDoc $ string "\tafter generating meta ty vars for type formals: "
-                        <> list (map pretty (zip taus ktvs))
-        annbody <- case expTy of
-           Check (ForAllAST exp_ktvs exp_rho) -> do
-            -- Suppose we have something like
-            -- f ::  forall a:Boxed, { List a }
-            -- f =  { forall b:Boxed,   Nil ! }
-            -- Here, we need the expected type to get the right type for
-            -- the instantiation of Nil, but we can't use the type variable 'a
-            -- in the expression, because only 'b is in scope.
-            -- So, we must rewrite rho in terms of the function's type variables
-            sanityCheck (eqLen ktvs exp_ktvs)
-                       ("tcSigmaFn: expected same number of formals for "
-                        ++ show ktvs ++ " and " ++ show exp_ktvs)
-            exp_rho' <- resolveType annot (extendTypeBindingsWith exp_ktvs) exp_rho
-            let var_tys = map tidType uniquelyNamedFormals
-            (arg_tys, body_ty) <- unifyFun exp_rho' var_tys "poly-fn-lit"
-            debugDoc $ text "calling checkRho for function body..."
-            debugDoc $ text "checking body against type: " <> pretty body_ty
-            body <- checkRho extCtx (fnAstBody f) body_ty
-            debugDoc $ text "called checkRho for function body:"
-            debugDoc $ showStructure body
-            debugDoc $ text "type: "
-            debugDoc $ showStructure (typeAST body)
-            return body
+        annbody <- case mb_rho of
+          Just exp_rho' -> do
+                let var_tys = map tidType uniquelyNamedFormals
+                debugDoc $ string "var_tys: " <+> pretty var_tys
+                (arg_tys, body_ty) <- unifyFun exp_rho' var_tys "poly-fn-lit"
+                mapM checkAgainst (zip arg_tys var_tys)
+                checkRho extCtx (fnAstBody f) body_ty
 
-            {-
-            tcFails [text $ "checking function body against expected sigma type"
-                    ,out $ "exp_sigma = " ++ show exp_sigma
-                    ,out $ "exp_rho   = " ++ show exp_rho
-                    ,out $ "exp_rho'  = " ++ show exp_rho']
-                    -}
-           Check _      -> inferSigma extCtx (fnAstBody f) "poly-fn body"
-           Infer _      -> inferSigma extCtx (fnAstBody f) "poly-fn body"
+          -- for Infer or for Check of a non-ForAll type
+          Nothing      -> inferSigma extCtx (fnAstBody f) "poly-fn body"
            {-
              -- TODO: if we permitted functions with un-annotated parameters,
              -- we'd want to use the expected function type to guide their types.
@@ -841,16 +835,16 @@ tcSigmaFn ctx f expTy = do
         -- We also need to zonk the expected type, which might have wound up
         -- getting some of its meta type variables unified with taus that now
         -- refer to bound type variables.
-        expTy' <- case expTy of
+        expTy' <- case expTyRaw of
                     Check t -> liftM Check (zonkType t)
-                    Infer _ -> return expTy
+                    Infer _ -> return expTyRaw
 
         -- Note we collect free vars in the old context, since we can't possibly
         -- capture the function's arguments from the environment!
         let fn = E_AnnFn $ Fn (TypedId fnty (GlobalSymbol $ fnAstName f))
                               uniquelyNamedFormals annbody Nothing annot
-        debugDoc $ text "tcSigmaFn calling matchExp  expTy  = " <> pretty expTy
-        debugDoc $ text "tcSigmaFn calling matchExp, expTy' = " <> pretty expTy'
+        debugDoc $ text "tcSigmaFn calling matchExp  expTyRaw = " <> pretty expTyRaw
+        debugDoc $ text "tcSigmaFn calling matchExp, expTy'   = " <> pretty expTy'
         matchExp expTy' fn "tcSigmaFn"
 -- }}}
 
@@ -1248,7 +1242,8 @@ zonkType x = do
     case x of
         MetaTyVar m -> do mty <- readTcMeta m
                           case mty of
-                            Nothing -> return x
+                            Nothing -> do debugDoc $ string "unable to zonk meta " <> pretty x
+                                          return x
                             Just ty -> do ty' <- zonkType ty
                                           writeTcMeta m ty'
                                           return ty'
@@ -1265,6 +1260,28 @@ zonkType x = do
         FnTypeAST ss r cc cs  -> do ss' <- mapM zonkType ss ; r' <- zonkType r
                                     return $ FnTypeAST ss' r' cc cs
 -- }}}
+
+-- Sad hack:
+-- Given code like
+--    poly2b :: forall b:Boxed, { { b => Int32 } => Int32 };
+--    poly2b = { forall b:Boxed, tmp : ?? T => 0 };
+-- we want to "unify" ??T with { b => Int32 },
+-- but we can't literally unify because then we'd fail on code like
+--    poly2b :: forall b:Boxed, { { b => Int32 } => Int32 };
+--    poly2b = { forall b:Boxed, tmp : { b => Int32 } => 0 };
+-- when we would try to unify the bound type variable b with itself.
+checkAgainst (ety, cty) = do
+  debugDoc $ string "checkAgainst ety: " <+> pretty ety
+  debugDoc $ string "checkAgainst cty: " <+> pretty cty
+  case (cty, ety) of
+    (MetaTyVar m, MetaTyVar _) -> return () -- avoid creating a cycle
+    (MetaTyVar m, _) -> do
+        mty <- readTcMeta m
+        case mty of
+            Nothing -> do ty' <- zonkType ety
+                          writeTcMeta m ty'
+            Just  _ -> do return ()
+    _ -> return ()
 
 -- {{{ Unification driver
 -- If unification fails, the provided error message (if any)

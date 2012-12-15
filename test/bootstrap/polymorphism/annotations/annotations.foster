@@ -2,6 +2,7 @@ main = {
   ()
 };
 
+/*
 triv :: forall b:Boxed, { b => Int32 };
 triv =  { forall t:Boxed, v : t => 0     };
 
@@ -10,3 +11,19 @@ pid =  { forall bd:Boxed, v:bd => v};
 
 poly :: forall t:Type, { Array t => Int32 };
 poly  = { forall a:Type, x : Array a => 0 };
+*/
+
+//poly2a :: { { Int32 => Int32 } => Int32 };
+//poly2a = { tmp => 0 };
+
+
+// Make sure we don't get this error:
+//
+// Typecheck error:
+// subsCheck(tcSigmaFn): Type
+// (forall ('a :: Boxed). ([(~(R)!1:.inferred.)] => Int32 @{FT_Proc})) not as polymorphic as
+// (forall ('b :: Boxed). ([(['b] => Int32 @{FT_Func})] => Int32 @{FT_Proc}))
+// bad type variables: [$b.4::KindPointerSized]
+
+poly2b :: forall b:Boxed, { { b => Int32 } => Int32 };
+poly2b = { forall a:Boxed, tmp => 0 };
