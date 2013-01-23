@@ -16,6 +16,7 @@ data CompilerContext = CompilerContext {
         ccVerbose   :: Bool
       , ccUniqRef   :: IORef Uniq
       , ccFlagVals  :: ([Flag], [String])
+      , ccInline    :: Bool
       , ccDumpFns   :: [String]
 }
 
@@ -36,4 +37,5 @@ data Flag = Interpret String
           | ProgArg   String
           | Verbose
           | DumpPrims
+          | NoInline
           deriving Eq

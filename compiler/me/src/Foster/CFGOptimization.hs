@@ -12,6 +12,7 @@ import Foster.MonoType
 import Foster.Letable(Letable(..), isPure, letableSize, canGC, willNotGCGlobal)
 import Foster.Config
 import Foster.CFG
+import Foster.CFGInlining
 
 import Compiler.Hoopl
 import Text.PrettyPrint.ANSI.Leijen
@@ -44,6 +45,7 @@ optimizeCFFn fn = do
                       , runCensusRewrites' , elimContInBBG
                      -- ,runLiveness
                       ]
+
   bbg  <- mapFunctions optimizeCFFn (fnBody fn)
   bbgs <- liftIO $ scanlM (\bbg opt -> opt uref bbg) bbg optimizations
 

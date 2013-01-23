@@ -6,7 +6,7 @@
 -----------------------------------------------------------------------------
 
 module Foster.KNExpr (kNormalizeModule, KNExpr, KNExpr'(..), TailQ(..), typeKN,
-                      knSinkBlocks,
+                      knSinkBlocks, knInline,
                       renderKN, renderKNM, renderKNF, renderKNFM) where
 import Control.Monad(liftM, liftM2)
 import qualified Data.Text as T
@@ -29,6 +29,8 @@ import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Graph.Inductive.Graph            as Graph
 import qualified Data.Graph.Inductive.PatriciaTree     as Graph
 import qualified Data.Graph.Inductive.Query.Dominators as Graph
+
+import Control.Monad.State(gets, liftIO)
 
 -- | Foster.KNExpr binds all intermediate values to named variables
 -- | via a variant of K-normalization.  We also perform local block sinking,
@@ -738,4 +740,93 @@ instance Pretty ty => Pretty (KNExpr' ty) where
 deriving instance (Show ty) => Show (KNExpr' ty) -- used elsewhere...
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+-- {{{||||||||||||||||||||||  Inlining  ||||||||||||||||||||||||||||
+
+
+
+{-
+
+  Cases to consider::
+
+   * (foo ... g ...) where
+            * g   is a known value (function or other constant)
+            * foo is a known function (assume w.l.o.g. it binds g to x)
+            * substituting g for x doesn't blow up the code too much
+              (always true if foo contains at most one occurrence of x;
+               could be true if there are a few occurrences of x and
+               g happens to be very small).
+
+      There are two separate (and separable) things to do for this case:
+
+        1. Specialize foo' = foo{g/x} and replace (foo .. g ..) w/ (foo' .. ..).
+        2. Contify (foo' .. ..), because it has only a single call site.
+
+      Note that foo may have multiple call sites,
+      only some of which get inlined.
+
+      Also note that the most important case is (probably) when g
+      is a known function, rather than any other form of constant.
+
+
+   * (foo ...) where foo is a very small function
+
+      In this case, we should beta-reduce foo; even though it will
+      blow the code up a little bit, there's no point in paying the
+      cost of function call overhead for such a small body.
+
+-}
+
+knInline :: (ModuleIL (KNExpr' t) t) -> Compiled (ModuleIL (KNExpr' t) t)
+knInline knmod = do
+  uref      <- gets ccUniqRef
+  liftIO $ putStrLn "~~~~~~~~~~ RUN INLINING ~~~~~~~~~~~~~~"
+
+  return knmod
+
+-- The non-local exits in the Chez Scheme inlining algorithm
+-- would be very nice to implement using coroutines!
+
+-- TODO I think this would be simpler (and more clearly a "source-to-source"
+--        transformation) if it operated on KNF, rather than CPS/CFG...
+{-
+runInlining' :: BasicBlockGraph -> IO BasicBlockGraph
+runInlining' bbg = do
+  body' <- rebuildGraphM (fst $ bbgEntry bbg) (bbgBody bbg) recurse
+  return bbg { bbgBody = body' }
+    where recurse :: forall e x. Insn e x -> IO (Graph Insn e x)
+          recurse insn@(ILabel   {}) = return (mkFirst  insn)
+
+          -- When we see plain bindings, add the binding and continue.
+          recurse insn@(ILetVal id l) = processLetVal id l
+
+          -- When we see recursive bindings, recursively optimize the group,
+          -- then add the binding group and continue.
+          recurse insn@(ILetFuns {}) = return (mkMiddle insn)
+
+          -- Nothing to do for plain jumps or returns,
+          -- except note that the actual args may flow to the formals of bid.
+          -- Problem: backward edges....?
+          recurse insn@(ILast (CFCont bid           args)) = return (mkLast   insn)
+
+          -- For calls, we may want to insert a copy of the definition of the
+          -- callee, substituting the actual args for the formals of callee.
+          -- Otherwise, if there's some restriction on the result of the call,
+          -- that information can be bound to the formal of bid?
+          recurse insn@(ILast (CFCall bid ty callee args)) = return (mkLast   insn)
+
+          -- Cases can be simplified if we know something about the scrutinee...
+          recurse insn@(ILast (CFCase scrutinee arms    )) = return (mkLast   insn)
+-}
+
+data Unvisited = Unvisited
+--data Opnd = Opnd SrcExpr SrcEnv (Either ResExpr Unvisited)
+
+--processLetVal :: Ident -> Letable MonoType -> IO (Graph Insn O O)
+--processLetVal (ILLiteral ty lit) = return (mkMiddle (ILetVal id (ILLiteral ty lit)))
+
+--processLetVal letable = return (mkMiddle (ILetVal letable))
+
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
 

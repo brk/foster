@@ -40,7 +40,7 @@ import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn))
 import Foster.AnnExprIL(AIExpr(AILetFuns, AICall, E_AIVar), fnOf, collectIntConstraints)
 import Foster.TypeIL(TypeIL(TupleTypeIL, FnTypeIL), ilOf)
 import Foster.ILExpr(ILProgram, showILProgramStructure, prepForCodegen)
-import Foster.KNExpr(KNExpr', kNormalizeModule, knSinkBlocks, renderKN)
+import Foster.KNExpr(KNExpr', kNormalizeModule, knSinkBlocks, knInline, renderKN)
 import Foster.Typecheck
 import Foster.Context
 import Foster.CloConv(closureConvertAndLift, renderCC)
@@ -384,6 +384,7 @@ runCompiler pb_program flagVals outfile = do
                            ccVerbose  = getVerboseFlag flagVals
                          , ccFlagVals = flagVals
                          , ccDumpFns  = getDumpFns flagVals
+                         , ccInline   = getInlining flagVals
                          , ccUniqRef  = uniqref
                     }
    dumpILProgramToProtobuf ilprog outfile
@@ -457,9 +458,12 @@ lowerModule :: ModuleIL AIExpr TypeIL
             -> Context TypeIL
             -> Compiled ILProgram
 lowerModule ai_mod ctx_il = do
+     inline   <- gets ccInline
+
      kmod <- kNormalizeModule ai_mod ctx_il
      monomod0 <- monomorphize   kmod
-     monomod  <- knSinkBlocks   monomod0
+     monomod1 <- (if inline then knInline else return) monomod0
+     monomod  <- knSinkBlocks   monomod1
 
      whenDumpIR "kn" $ do
          putDocLn (outLn $ "vvvv k-normalized :====================")
@@ -479,9 +483,12 @@ lowerModule ai_mod ctx_il = do
 
      cfgmod   <- cfgModule      monomod
      let mayGCconstraints = collectMayGCConstraints (moduleILbody cfgmod)
-     liftIO $ putStrLn "\n MAY GC CONSTRAINTS ======================="
-     liftIO $ putDocLn $ list (map pretty $ (Map.toList mayGCconstraints))
-     liftIO $ putStrLn "\n/MAY GC CONSTRAINTS ======================="
+
+     whenDumpIR "may-gc" $ do
+         liftIO $ putStrLn "\n MAY GC CONSTRAINTS ======================="
+         liftIO $ putDocLn $ list (map pretty $ (Map.toList mayGCconstraints))
+         liftIO $ putStrLn "\n/MAY GC CONSTRAINTS ======================="
+
      ccmod    <- closureConvert cfgmod
      ilprog   <- prepForCodegen ccmod  mayGCconstraints
 

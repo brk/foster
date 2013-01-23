@@ -19,6 +19,7 @@ options =
  , Option []     ["dump-fn"]    (ReqArg DumpFn      "FN") "dump a particular fn"
  , Option []     ["verbose"]    (NoArg  Verbose)          "verbose mode"
  , Option []     ["dump-prims"] (NoArg  DumpPrims)        "dump primitive bindings"
+ , Option []     ["no-inline"]  (NoArg  NoInline)         "disable inlining"
  ]
 
 parseOpts :: [String] -> IO ([Flag], [String])
@@ -32,7 +33,8 @@ parseOpts argv =
 getInterpretFlag (flags, _) = foldr (\f a -> case f of Interpret d -> Just d  ; _ -> a) Nothing flags
 getProgArgs      (flags, _) = foldr (\f a -> case f of ProgArg arg -> arg:a   ; _ -> a) []      flags
 getDumpFns       (flags, _) = foldr (\f a -> case f of DumpFn  arg -> arg:a   ; _ -> a) []      flags
-getVerboseFlag   (flags, _) = Verbose   `elem` flags
-getDumpIRFlag ir (flags, _) = DumpIR ir `elem` flags
-getDumpPrimitives(flags, _) = DumpPrims `elem` flags
+getVerboseFlag   (flags, _) =       Verbose   `elem` flags
+getDumpIRFlag ir (flags, _) =       DumpIR ir `elem` flags
+getDumpPrimitives(flags, _) =       DumpPrims `elem` flags
+getInlining      (flags, _) = not $ NoInline  `elem` flags
 

@@ -415,7 +415,7 @@ closureOfKnFn infoMap (self_id, fn) = do
                          case Map.lookup tid infoMap of
                               Nothing ->   [v]
                               Just (_, envid) -> capturedVarsFor tid v envid) $
-             trace ("nonGlobalVars for " ++ show self_id ++ " is " ++ show nonGlobalVars ++ "\n" ++ show (pretty fn))
+             -- trace ("nonGlobalVars for " ++ show self_id ++ " is " ++ show nonGlobalVars ++ "\n" ++ show (pretty fn))
                 nonGlobalVars
 
     fakeCloVar id = TypedId fakeCloEnvType id

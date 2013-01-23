@@ -350,8 +350,9 @@ dumpCall t base args maygc callConv =
     P'.defaultValue { PbLetable.tag   = IL_CALL
                     , PbLetable.parts = fromList $ base:(fmap dumpVar args)
                     , PbLetable.type' = Just $ dumpType t
-                    , PbLetable.call_info = Just $ dumpCallInfo (trace ("mayGC " ++ show (PbTermVar.name base) ++ "\t:\t" ++show maygc) $ boolGC maygc)
-                                                                callConv Nothing
+                    , PbLetable.call_info = Just $ dumpCallInfo
+                                ( --trace ("mayGC " ++ show (PbTermVar.name base) ++ "\t:\t" ++show maygc) $
+                                 boolGC maygc) callConv Nothing
                     }
 
 dumpCallInfo mayGC strCallConv pbCoroPrim =
