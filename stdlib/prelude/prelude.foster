@@ -12,6 +12,17 @@ type case Maybe (a:Boxed)
 
 /////
 
+// Partial.
+unMaybe :: forall a:Boxed, { Maybe a => a };
+unMaybe = { forall a:Boxed, x:Maybe a =>
+  case x
+    of $Some a -> a
+    of $None   -> prim kill-entire-process "unMaybe-failed";
+  end
+};
+
+/////
+
 type case Ord
        of $LT
        of $EQ
@@ -82,6 +93,13 @@ isGE = { o : Ord =>
   case o
     of $LT -> False
     of _   -> True
+  end
+};
+
+isEQ = { o : Ord =>
+  case o
+    of $EQ -> True
+    of _   -> False
   end
 };
 

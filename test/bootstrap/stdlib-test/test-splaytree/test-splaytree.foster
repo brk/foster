@@ -1,0 +1,11 @@
+snafuinclude Splaytree "splaytree";
+
+main = {
+  s = (SplayObj { () } (SplayNil !) (SplayNil !));
+  x = splay s { z => EQ ! };
+  soca s;
+  ()
+};
+
+soca :: { SplayTree { () } => () };
+soca = { x => () };

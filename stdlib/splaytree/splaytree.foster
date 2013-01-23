@@ -1,0 +1,139 @@
+snafuinclude Prelude "prelude";
+
+type case SplayTree (a:Boxed)
+  of $SplayNil
+  of $SplayObj a (SplayTree a) (SplayTree a)
+  ;
+
+splay :: forall a:Boxed, { SplayTree a => { a => Ord } => SplayTree a };
+splay = { forall a:Boxed,
+           t => cmp =>
+
+  case t
+    of $SplayNil -> t
+    of $SplayObj v l r ->
+    case cmp v
+      of $EQ -> t
+                /*
+                       [x]
+                      /   \
+                    (l)   (r)
+                */
+      of $LT -> case l
+                  of $SplayNil -> t // x not in the tree
+                  of $SplayObj gp ll lr ->
+                    case cmp gp
+                      of $EQ -> SplayObj gp ll (SplayObj v lr r)
+                                /*
+                                       [v]                 .    [x]
+                                      /   \                .    /  \
+                                    [x]  (r)      ===>     . (ll)   [v]
+                                   /   \                   .        /  \
+                                 (ll)  (lr)                .     (lr)  (r)
+                                */
+
+                      of $LT ->
+                        case ll
+                          of $SplayNil -> SplayObj gp ll (SplayObj v lr r)
+                          of _         ->
+                             case splay ll cmp
+                               of $SplayObj nv nl nr ->
+                                   SplayObj nv nl (SplayObj gp nr (SplayObj v lr r))
+                               of _ -> prim kill-entire-process "splay invariant violated"
+                             end
+                        end
+                      of $GT ->
+                        case lr
+                          of $SplayNil -> SplayObj gp ll (SplayObj v lr r)
+                          of _         ->
+                             case splay lr cmp
+                               of $SplayObj nv nl nr ->
+                                   SplayObj nv (SplayObj gp ll nl) (SplayObj v nr r)
+                               of _ -> prim kill-entire-process "splay invariant violated"
+                             end
+                        end
+                    end
+                end
+      of $GT -> case r
+                  of $SplayNil -> t // x not in the tree
+                  of $SplayObj gp rl rr ->
+                    case cmp gp
+                      of $EQ -> SplayObj gp (SplayObj v l rl) rr
+                      of $LT ->
+                        case rl
+                          of $SplayNil -> SplayObj gp (SplayObj v l rl) rr
+                          of _         ->
+                             case splay rl cmp
+                               of $SplayObj nv nl nr ->
+                                   SplayObj nv (SplayObj v l nl) (SplayObj gp nr rr)
+                               of _ -> prim kill-entire-process "splay invariant violated"
+                             end
+                        end
+                      of $GT ->
+                        case rr
+                          of $SplayNil -> SplayObj gp (SplayObj v l rl) rr
+                          of _         ->
+                             case splay rr cmp
+                               of $SplayObj nv nl nr ->
+                                   SplayObj nv (SplayObj gp (SplayObj v l rl) nl) nr
+                               of _ -> prim kill-entire-process "splay invariant violated"
+                             end
+                        end
+                    end
+                end
+    end
+  end
+};
+
+
+//splay-join :: forall a, { SplayTree a => SplayTree a => SplayTree a };
+
+
+splay-depth :: forall a:Boxed, { SplayTree a => Word };
+splay-depth = { forall a:Boxed,
+                t =>
+  case t
+    of $SplayObj _ l r -> (max-SWord (splay-depth l)
+                                     (splay-depth r)) +Word 1
+    of $SplayNil       -> 0
+  end
+};
+
+splay-root :: forall a:Boxed, { SplayTree a => Maybe a };
+splay-root = { forall a:Boxed,
+                t : SplayTree a =>
+  case t
+    of $SplayObj x _ _ -> Some x
+    of $SplayNil       -> None !
+  end
+};
+
+
+splay-lookup :: forall a:Boxed,
+                         { SplayTree a => { a => Ord } => (Bool, SplayTree a) };
+splay-lookup = { forall a:Boxed,
+                 t => cmp =>
+  case splay t cmp
+    of $SplayNil ->      (False,           t)
+    of tt ->
+      case splay-root tt
+        of $Some root -> (isEQ (cmp root), tt)
+        of _          -> (False,           tt)
+      end
+  end
+};
+
+splay-insert :: forall a:Boxed,
+                         { a => SplayTree a => { a => a => Ord } => SplayTree a };
+splay-insert = { forall a:Boxed,
+                 v => t => cmp =>
+  case splay t { q => cmp v q }
+    of $SplayNil -> (SplayObj v (SplayNil !) (SplayNil !))
+    of $SplayObj q l r ->
+      case cmp v q
+        of $EQ -> SplayObj q l r
+        of $LT -> SplayObj v l (SplayObj q (SplayNil !) r)
+        of $GT -> SplayObj q (SplayObj q l (SplayNil !)) r
+      end
+  end
+};

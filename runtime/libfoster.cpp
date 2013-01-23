@@ -287,5 +287,7 @@ void* get_cmdline_arg_n(int32_t n) {
 
 extern int32_t opaquely_i32(int32_t n);
 
+// http://stackoverflow.com/questions/4308996/finding-the-address-range-of-the-data-segment
+
 } // extern "C"
 
