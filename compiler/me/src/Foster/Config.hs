@@ -38,4 +38,5 @@ data Flag = Interpret String
           | Verbose
           | DumpPrims
           | NoInline
+          | Inline
           deriving Eq

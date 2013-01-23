@@ -40,7 +40,7 @@ import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn))
 import Foster.AnnExprIL(AIExpr(AILetFuns, AICall, E_AIVar), fnOf, collectIntConstraints)
 import Foster.TypeIL(TypeIL(TupleTypeIL, FnTypeIL), ilOf)
 import Foster.ILExpr(ILProgram, showILProgramStructure, prepForCodegen)
-import Foster.KNExpr(KNExpr', kNormalizeModule, knSinkBlocks, knInline, renderKN)
+import Foster.KNExpr(KNExpr', kNormalizeModule, knSinkBlocks, knInline, knSize, renderKN)
 import Foster.Typecheck
 import Foster.Context
 import Foster.CloConv(closureConvertAndLift, renderCC)
@@ -474,8 +474,15 @@ lowerModule ai_mod ctx_il = do
 
      whenDumpIR "mono" $ do
          putDocLn $ (outLn "/// Monomorphized program =============")
+         putDocLn $ (outLn $ "///               size: " ++ show (knSize (moduleILbody monomod0)))
          _ <- liftIO $ renderKN monomod0 True
          putDocLn $ (outLn "^^^ ===================================")
+
+         when inline $ do
+           putDocLn $ (outLn "/// Inlined       program =============")
+           putDocLn $ (outLn $ "///               size: " ++ show (knSize (moduleILbody monomod1)))
+           _ <- liftIO $ renderKN monomod1 True
+           putDocLn $ (outLn "^^^ ===================================")
 
      whenDumpIR "mono-sunk" $ do
          putDocLn $ (outLn "/// Block-sunk program =============")

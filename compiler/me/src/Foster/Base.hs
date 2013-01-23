@@ -345,6 +345,13 @@ showStructure e = showStructureP e "" False
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||||||||| Utilities ||||||||||||||||||||||||||{{{
 
+-- | Does what it says on the tin: monadic foldl'
+foldlM :: (Monad m) => (a -> b -> m a) -> a -> [b] -> m a
+foldlM _ a      [] = return a
+foldlM f a1 (b:bs) = do
+    a2  <- f a1 b
+    foldlM f a2 bs
+
 -- | Does what it says on the tin: monadically combines a map and a fold,
 -- | threading state through.
 mapFoldM :: (Monad m) => [a] -> b ->
