@@ -584,7 +584,7 @@ tcRhoLetRec ctx0 rng recBindings e mt = do
       [AnnAppCtor _ _ _ [E_AnnFn _]] -> do
         return $ AnnLetRec rng ids tcbodies e'
       _ -> do
-        tcLift $ putDocLn $ showStructure (head tcbodies)
+        -- tcLift $ putDocLn $ showStructure (head tcbodies)
         let fns = [f | (E_AnnFn f) <- tcbodies]
         let nonfns = filter notAnnFn tcbodies
                       where notAnnFn (E_AnnFn _) = False
