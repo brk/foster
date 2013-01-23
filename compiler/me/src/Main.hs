@@ -449,6 +449,7 @@ typecheckSourceModule :: TcEnv ->  ModuleAST FnAST TypeAST
                       -> Compiled (ModuleIL AIExpr TypeIL, Context TypeIL)
 typecheckSourceModule tcenv sm = do
     verboseMode <- gets ccVerbose
+    liftIO $ putStrLn $ "Verbose mode: " ++ show verboseMode
     (ctx_il, ai_mod) <- (liftIO $ typecheckModule verboseMode sm tcenv)
                       >>= dieOnError
     showGeneratedMetaTypeVariables (tcUnificationVars tcenv) ctx_il
@@ -482,15 +483,15 @@ lowerModule ai_mod ctx_il = do
          putDocLn $ (outLn "^^^ ===================================")
 
      cfgmod   <- cfgModule      monomod
-     let mayGCconstraints = collectMayGCConstraints (moduleILbody cfgmod)
+     let constraints = collectMayGCConstraints (moduleILbody cfgmod)
 
      whenDumpIR "may-gc" $ do
          liftIO $ putStrLn "\n MAY GC CONSTRAINTS ======================="
-         liftIO $ putDocLn $ list (map pretty $ (Map.toList mayGCconstraints))
+         liftIO $ putDocLn $ list (map pretty $ (Map.toList constraints))
          liftIO $ putStrLn "\n/MAY GC CONSTRAINTS ======================="
 
      ccmod    <- closureConvert cfgmod
-     ilprog   <- prepForCodegen ccmod  mayGCconstraints
+     ilprog   <- prepForCodegen ccmod  constraints
 
      whenDumpIR "cfg" $ do
          putDocLn $ (outLn "/// CFG-ized program ==================")

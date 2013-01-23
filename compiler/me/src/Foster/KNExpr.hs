@@ -8,7 +8,6 @@
 module Foster.KNExpr (kNormalizeModule, KNExpr, KNExpr'(..), TailQ(..), typeKN,
                       knSinkBlocks, knInline,
                       renderKN, renderKNM, renderKNF, renderKNFM) where
-import Control.Monad(liftM, liftM2)
 import qualified Data.Text as T
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -30,7 +29,8 @@ import qualified Data.Graph.Inductive.Graph            as Graph
 import qualified Data.Graph.Inductive.PatriciaTree     as Graph
 import qualified Data.Graph.Inductive.Query.Dominators as Graph
 
-import Control.Monad.State(gets, liftIO)
+import Control.Monad.State(gets, liftIO, evalStateT, StateT, liftM, liftM2)
+import Data.IORef(IORef, newIORef, readIORef, writeIORef, modifyIORef)
 
 -- | Foster.KNExpr binds all intermediate values to named variables
 -- | via a variant of K-normalization.  We also perform local block sinking,
@@ -777,12 +777,284 @@ deriving instance (Show ty) => Show (KNExpr' ty) -- used elsewhere...
 
 -}
 
-knInline :: (ModuleIL (KNExpr' t) t) -> Compiled (ModuleIL (KNExpr' t) t)
+knInline ::          (ModuleIL SrcExpr MonoType)
+         -> Compiled (ModuleIL ResExpr MonoType)
 knInline knmod = do
-  uref      <- gets ccUniqRef
   liftIO $ putStrLn "~~~~~~~~~~ RUN INLINING ~~~~~~~~~~~~~~"
+  uniq <- gets ccUniqRef
 
-  return knmod
+  expr' <- liftIO $
+           evalStateT (knInline' (moduleILbody knmod) Value
+                                 (SrcEnv Map.empty Map.empty))
+                      (InlineState uniq)
+
+  return $ knmod { moduleILbody = expr' }
+
+type In   = StateT InlineState IO
+data InlineState = InlineState {
+  inUniqRef :: IORef Uniq
+}
+
+knInline' :: SrcExpr -> Ctx -> SrcEnv -> In ResExpr
+knInline' expr ctx env = do
+  case expr of
+    KNLiteral     {} -> return expr
+    KNKillProcess {} -> return expr
+    KNAllocArray  {} -> return expr
+    KNArrayRead   {} -> return expr
+    KNArrayPoke   {} -> return expr
+    KNDeref       {} -> return expr
+    KNTuple       {} -> return expr
+    KNAlloc       {} -> return expr
+    KNTyApp       {} -> return expr
+    KNStore       {} -> return expr
+
+    KNVar v -> do
+      liftIO $ putStrLn $ "saw standalone var " ++ show v
+      return expr
+
+    KNAppCtor     _ _ vs -> return expr
+
+
+    KNCallPrim    _ _ vs ->
+        -- If enough is known about the values to the prim,
+        -- we might be able to partially evaluate it.
+        return expr
+
+    KNCall tailq ty v vs -> do
+        let VO_F opf@(OpndF fn f_env fref rop rip) = lookupVarOp v env
+        if show (tidIdent v) == "main"
+          then do _ <- visitF opf ctx -- don't inline away main, just process it!
+                  return expr
+          else do
+            liftIO $ putStrLn $ "saw call of var " ++ show (tidIdent v) ++ " ~~> " ++ show (tidIdent (fnVar fn))
+            -- _ <- visitF opf ctx -- don't inline away main, just process it!
+            return expr
+
+    KNUntil       ty e1 e2 rng -> do
+        e1' <- knInline' e1 Value env
+        e2' <- knInline' e2 Value env
+        return $ KNUntil ty e1' e2' rng
+
+    KNIf          ty v e1 e2 -> do
+        -- If something is known about v's value,
+        -- select either e1 or e2 appropriately;
+        -- otherwise, if e2 and e3 are both the same value,
+        -- we can get rid of the if;
+        -- otherwise, business as usual.
+
+        e1' <- knInline' e1 Value env
+        e2' <- knInline' e2 Value env
+        return $ KNIf ty v e1' e2'
+
+    KNCase        ty v patbinds -> do
+        -- If something is known about v's value,
+        -- select or discard the appropriate branches.
+        -- TODO when are default branches inserted?
+        let inlineArm ((pat, vars), expr) = do
+                expr' <- knInline' expr Value env
+                return ((pat, vars), expr' )
+        patbinds' <- mapM inlineArm patbinds
+        return $ KNCase ty v patbinds'
+
+    KNLetVal id bound body -> do
+      -- Be demand-driven: don't investigate e1 until e2 finds it necessary.
+      liftIO $ putStrLn $ "saw let binding of id " ++ show id
+      (op, ctx' ) <- mkOpExprCtx bound env ctx
+      body'  <- knInline' body ctx' env
+      bound' <- visitE op ctx' -- todo could this result in inlining a function?
+      return $ KNLetVal id bound' body'
+
+    KNLetRec     ids es  b -> do
+        liftIO $ putStrLn $ "saw rec bindings of ids " ++ show ids
+        b' <- knInline' b ctx env
+        return $ KNLetRec ids es b'
+
+    KNLetFuns    ids fns b -> do
+        liftIO $ putStrLn $ "saw fun bindings of ids " ++ show ids
+        ids' <- mapM freshenId ids
+        refs <- mapM (\_ -> mkOpRefs) fns
+        let ops  = map (\(f,(r1,r2,r3)) -> VO_F (OpndF f env' r1 r2 r3)) (zip fns refs)
+            env' = extendEnv ids ids' ops env
+        let ctx' = ctx -- ???
+        -- liftIO $ putStrLn $ "processing body of fn-bindings w/ ids " ++ show ids
+        b' <- knInline' b ctx' env'
+        return $ KNLetFuns ids fns b'
+
+knInlineFn' :: Fn SrcExpr MonoType -> SrcEnv -> In (Fn ResExpr MonoType)
+knInlineFn' fn env = do
+  liftIO $ putStrLn $ "examining function " ++ show (fnVar fn)
+  let vs = fnVars fn
+  vs'   <- mapM freshenTid vs
+  -- TODO assert that the ops associated with the incoming vars are VO_Null
+  let env' = extendEnv (map tidIdent vs) (map tidIdent vs' ) [VO_Null | _ <- vs] env
+  body' <- knInline' (fnBody fn) Value env'
+  return $ fn { fnBody = body' , fnVars = vs' }
+
+mkOpRefs = do
+  lexp <- newRef Unvisited
+  oup  <- newRef OP_False
+  inp  <- newRef IP_False
+  return (lexp, oup, inp)
+
+mkOpExprCtx e env ctx = do
+  lctx <- newRef NotInlined
+  (le, oup, inp) <- mkOpRefs
+  let op = OpndE e env le oup inp
+  let ctx' = App op ctx lctx
+  return (op, ctx' )
+
+mkOpFnCtx f env ctx = do
+  lf   <- newRef Unvisited
+  lctx <- newRef NotInlined
+  (lf, oup, inp) <- mkOpRefs
+  let op = OpndF f env lf oup inp
+  let ctx' = Fun op ctx lctx
+  return (op, ctx' )
+
+type SrcExpr = (KNExpr' MonoType)
+type ResExpr = (KNExpr' MonoType)
+data VisitStatus t = Unvisited | Visited t
+data SrcEnv = SrcEnv (Map Ident VarOp)
+                     (Map Ident Ident)
+data OuterPending = OP_False | OP_True
+data InnerPending = IP_False | IP_True
+data OpndE = OpndE     SrcExpr           SrcEnv (IORef (VisitStatus     ResExpr))           (IORef OuterPending) (IORef InnerPending)
+data OpndF = OpndF (Fn SrcExpr MonoType) SrcEnv (IORef (VisitStatus (Fn ResExpr MonoType))) (IORef OuterPending) (IORef InnerPending)
+data VarOp = VO_Null | VO_E OpndE | VO_F OpndF
+data InlinedFlag = YesInlined | NotInlined
+data Ctx = Value
+         | App OpndE Ctx (IORef InlinedFlag)
+         | Fun OpndF Ctx (IORef InlinedFlag)
+
+-- We don't track var flags here because we syntactically distinguish
+-- assigned variables from pure ones, and we can use Hoopl-based liveness
+-- later on to eliminate useless assignments and/or bindings.
+
+instance Show VarOp where
+  show VO_Null  = "VO_Null"
+  show (VO_E _) = "VO_E"
+  show (VO_F (OpndF f _ _ _ _)) = "VO_F " ++ show (tidIdent $ fnVar f)
+
+copy :: TypedId MonoType -> VarOp -> ResExpr -> Ctx -> In ResExpr
+copy v varop e ctx = do
+  -- Copy/inline e for the occurrence of var v... (maybe)
+  case e of
+    KNLiteral     {} -> return e
+    KNVar         v' -> return $ KNVar v'
+
+    KNKillProcess {} -> return $ KNVar v
+    KNAllocArray  {} -> return $ KNVar v
+    KNArrayRead   {} -> return $ KNVar v
+    KNArrayPoke   {} -> return $ KNVar v
+    KNTuple       {} -> return $ KNVar v
+    KNAlloc       {} -> return $ KNVar v
+    KNTyApp       {} -> return $ KNVar v
+    KNStore       {} -> return $ KNVar v
+    KNDeref       {} -> return $ KNVar v
+
+    KNCall tailq ty v vs ->
+      case ctx of Value -> return $ KNVar v
+                  App op1 ctx1 lctx -> error "foldLambda..." -- foldLambda
+
+    KNAppCtor     _ _ vs       -> return $ KNVar v
+    KNUntil       _   e1 e2 _  -> return $ KNVar v
+    KNIf          _ v e1 e2    -> return $ KNVar v
+    KNCase        _ v patbinds -> return $ KNVar v
+    KNLetVal      _   e1 e2    -> return $ KNVar v
+    KNLetRec     _ es b        -> return $ KNVar v
+    KNLetFuns    _ fns b       -> return $ KNVar v
+    KNCallPrim    _ _ vs       -> return $ KNVar v
+
+lookupVar :: TypedId MonoType -> SrcEnv -> Ident
+lookupVar v (SrcEnv _ ii) =
+  case Map.lookup (tidIdent v) ii of
+    Just id -> id
+    Nothing -> error $ "KNExpr inlining failed to look up var " ++ show v
+
+lookupVarOp :: TypedId MonoType -> SrcEnv -> VarOp
+lookupVarOp v env@(SrcEnv tv _) =
+  case Map.lookup (lookupVar v env) tv of
+    Just op -> op
+    Nothing -> error $ "KNExpr inlining failed to look up var op " ++ show v
+
+extendEnv :: [Ident] -> [Ident] -> [VarOp] -> SrcEnv -> SrcEnv
+extendEnv ids ids' ops (SrcEnv io ii) =
+        (SrcEnv (Map.union (Map.fromList $ zip ids' ops  ) io)
+                (Map.union (Map.fromList $ zip ids  ids' ) ii))
+
+readRef  r   = liftIO $ readIORef  r
+writeRef r v = liftIO $ writeIORef r v
+newRef     v = liftIO $ newIORef     v
+newUniq = do uref <- gets inUniqRef
+             liftIO $ modifyIORef uref (+1) >> readIORef uref
+
+freshenId :: Ident -> In Ident
+freshenId (GlobalSymbol name) = -- error $ "can't freshen global symbol " ++ (T.unpack name)
+     do u <- newUniq
+        return $ Ident name u
+freshenId (Ident name _) = do
+        u  <- newUniq
+        return $ Ident name u
+
+freshenTid tid = do
+        id <- freshenId (tidIdent tid)
+        return $ TypedId (tidType tid) id
+
+foldLambda :: TypedId MonoType -> SrcExpr -> Ctx -> SrcEnv -> In ResExpr
+foldLambda v body (App op ctx lctx) env = do
+  let id = tidIdent v
+  id'  <- freshenId id
+  let env' = extendEnv [ id ] [ id' ] [ VO_E op ] env
+
+  e' <- knInline' body ctx env'
+
+  -- TODO couild this be a fn?
+  e1' <- visitE op Value
+
+  writeRef lctx YesInlined
+  return $ KNLetVal id' e1' e'
+
+foldPrimRef p (App op ctx lctx) env = do
+  e' <- visitE op ctx
+  -- If enough is known about the values to the prim,
+  -- we might be able to partially evaluate it.
+  -- (TODO)
+  let canEval = False
+  if canEval
+    then do writeRef lctx YesInlined
+            error "return compile-time constant..."
+    else do error "return primref..."
+
+visitF :: OpndF -> Ctx -> In (Fn (KNExpr' MonoType) MonoType)
+visitF (OpndF fn env loc_fn _ loc_ip) _ctx = do
+  ff <- readRef loc_fn
+  case ff of
+    Unvisited -> do ip <- readRef loc_ip
+                    case ip of
+                      IP_False -> do
+                        fn' <- knInlineFn' fn env
+                        writeRef loc_fn (Visited fn' )
+                        return fn'
+                      IP_True -> do
+                        liftIO $ putStrLn $ "inner-pending true for " ++ show (tidIdent $ fnVar fn)
+                        return fn --TODO this is WRONG :(
+    Visited r -> return r
+
+visitE :: OpndE -> Ctx -> In (KNExpr' MonoType)
+visitE (OpndE e env loc_e _ loc_ip) ctx = do
+  ef <- readRef loc_e
+  case ef of
+    Unvisited -> do ip <- readRef loc_ip
+                    case ip of
+                      IP_False -> do
+                        e' <- knInline' e ctx env
+                        writeRef loc_e (Visited e' )
+                        return e'
+                      IP_True -> do
+                        liftIO $ putStrLn $ "inner-pending true for expr...????"
+                        return e --TODO this is WRONG :(
+    Visited r -> return r
 
 -- The non-local exits in the Chez Scheme inlining algorithm
 -- would be very nice to implement using coroutines!
@@ -818,9 +1090,6 @@ runInlining' bbg = do
           -- Cases can be simplified if we know something about the scrutinee...
           recurse insn@(ILast (CFCase scrutinee arms    )) = return (mkLast   insn)
 -}
-
-data Unvisited = Unvisited
---data Opnd = Opnd SrcExpr SrcEnv (Either ResExpr Unvisited)
 
 --processLetVal :: Ident -> Letable MonoType -> IO (Graph Insn O O)
 --processLetVal (ILLiteral ty lit) = return (mkMiddle (ILetVal id (ILLiteral ty lit)))
