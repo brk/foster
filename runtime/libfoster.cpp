@@ -287,6 +287,15 @@ void* get_cmdline_arg_n(int32_t n) {
 
 extern int32_t opaquely_i32(int32_t n);
 
+// Provided by third_party/fftw/cycle_wrapper.c
+extern int64_t __foster_getticks();
+extern double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
+
+int64_t foster_getticks() { return __foster_getticks(); }
+double  foster_getticks_elapsed(int64_t t1, int64_t t2) {
+  return __foster_getticks_elapsed(t1, t2);
+}
+
 // http://stackoverflow.com/questions/4308996/finding-the-address-range-of-the-data-segment
 
 } // extern "C"

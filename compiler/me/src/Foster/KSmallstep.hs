@@ -22,6 +22,7 @@ import Data.Array
 import qualified Data.ByteString as BS
 import Text.Printf(printf)
 import Text.PrettyPrint.ANSI.Leijen
+import Criterion.Measurement(getTime)
 
 import Control.Exception(assert)
 
@@ -599,12 +600,13 @@ tryGetPrimCmp name =
                         n     -> n
                    in
   case clean_name of
-    "<"        -> Just ((<))
-    "<="       -> Just ((<=))
     "=="       -> Just ((==))
     "!="       -> Just ((/=))
-    ">="       -> Just ((>=))
-    ">"        -> Just ((>))
+    -- signed variants
+    "<s"       -> Just ((<))
+    "<=s"      -> Just ((<=))
+    ">=s"      -> Just ((>=))
+    ">s"       -> Just ((>))
     -- unsigned variants...
     "<u"       -> Just ((<))
     "<=u"      -> Just ((<=))
@@ -837,6 +839,17 @@ evalNamedPrimitive "memcpy_i8_to_from_at_len" gs
                              gs' <- prim_arrayPoke gs to_idx arr val
                              return ([], gs' ))
              return $ withTerm gs' unit
+
+-- This should supposedly be an Int64 not a Float,
+-- but then it should really be an opaque sized value, not a concrete Int64.
+evalNamedPrimitive "foster_getticks" gs [] = do
+  t <- getTime
+  return $ withTerm gs (SSTmValue $ SSFloat t)
+
+evalNamedPrimitive "foster_getticks_elapsed" gs [SSFloat t1, SSFloat t2] = do
+  -- "Convert" seconds to ticks by treating our abstract machine
+  -- as a blazingly fast 2 MHz beast!
+  return $ withTerm gs (SSTmValue $ SSFloat ((t2 - t1) * 2000000.0))
 
 evalNamedPrimitive prim _gs args = error $ "evalNamedPrimitive " ++ show prim
                                          ++ " not yet defined for args:\n"

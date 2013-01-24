@@ -294,6 +294,26 @@ add_custom_target(imath_wrapper_bc DEPENDS
 
 #-----------------------------------------------------------
 
+#add_custom_command(
+#  OUTPUT
+#        ${PROJECT_BINARY_DIR}/_bitcodelibs_/cycle-wrapper.bc
+#  COMMAND
+#        ${CLANG} -x c
+#          ${PROJECT_SOURCE_DIR}/third_party/fftw_cycle/cycle-wrapper.c
+#          -I ${PROJECT_BINARY_DIR}
+#          -c -emit-llvm
+#          -o ${PROJECT_BINARY_DIR}/_bitcodelibs_/cycle-wrapper.bc
+#  DEPENDS
+#          ${PROJECT_BINARY_DIR}/_bitcodelibs_
+#          ${PROJECT_SOURCE_DIR}/third_party/fftw_cycle/cycle-wrapper.c
+#)
+#
+#add_custom_target(cycle_wrapper_bc DEPENDS
+#        ${PROJECT_BINARY_DIR}/_bitcodelibs_/cycle-wrapper.bc
+#        cycle)
+
+#-----------------------------------------------------------
+
 # Attaching commands to add_custom_target basically means
 # "run these commands whenver the target is mentioned."
 add_custom_target(unittests COMMAND ctest -V -R unittest
@@ -310,6 +330,7 @@ include_directories(
   ${PROJECT_SOURCE_DIR}/third_party
   ${PROJECT_SOURCE_DIR}/third_party/chromium_base
   ${PROJECT_SOURCE_DIR}/third_party/cityhash/src
+  ${PROJECT_SOURCE_DIR}/third_party/fftw_cycle
 )
 
 # Takes ldflags, which looks like
@@ -336,6 +357,7 @@ include(${PROJECT_SOURCE_DIR}/third_party/cpuid/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/gtest/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/imath/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/libcoro/CMakeLists.txt)
+include(${PROJECT_SOURCE_DIR}/third_party/fftw_cycle/CMakeLists.txt)
 
 add_library(fosterc_base STATIC
   compiler/base/Assert.cpp
@@ -442,7 +464,7 @@ target_link_libraries(fosterlower
   antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
 
 add_dependencies(fosterlower
-    libfoster_bc coro_wrapper_bc imath_wrapper_bc hs_me)
+    libfoster_bc coro_wrapper_bc imath_wrapper_bc hs_me cycle)
 
 ############
 

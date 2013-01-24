@@ -219,6 +219,12 @@ primitiveDecls =
     ,(,) "force_gc_for_debugging_purposes" $ mkFnType [] []
     ,(,) "llvm_readcyclecounter" $ mkFnType [] [i64]
 
+    -- TODO this is not correct for Solaris, AIX, or SGI/Irix,
+    -- which use structs for time results, and is misleading on
+    -- Alpha and Sparc v9, which have a 32-bit result.
+    ,(,) "foster_getticks"         $ mkFnType [] [i64]
+    ,(,) "foster_getticks_elapsed" $ mkFnType [i64, i64] [f64]
+
     ] ++ (map (\(name, (ty, _op)) -> (name, ty)) $ Map.toList gFosterPrimOpsTable)
 
 intSize I1  = "Bool"
