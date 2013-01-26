@@ -698,7 +698,7 @@ instance Pretty ty => Pretty (KNExpr' ty) where
             KNLetVal   x b    k -> lkwd "let"
                                       <+> fill 8 (text (show x))
                                       <+> text "="
-                                      <+> pretty b <+> lkwd "in"
+                                      <+> (indent 0 $ pretty b) <+> lkwd "in"
                                    <$> pretty k
             KNLetFuns ids fns k -> text "letfuns"
                                    <$> indent 2 (vcat [text (show id) <+> text "="
@@ -717,8 +717,8 @@ instance Pretty ty => Pretty (KNExpr' ty) where
                                    <$> pretty e
                                    <$> end
             KNIf     _t v b1 b2 -> kwd "if" <+> prettyId v
-                                   <$> nest 2 (kwd "then" <+> pretty b1)
-                                   <$> nest 2 (kwd "else" <+> pretty b2)
+                                   <$> nest 2 (kwd "then" <+> (indent 0 $ pretty b1))
+                                   <$> nest 2 (kwd "else" <+> (indent 0 $ pretty b2))
                                    <$> end
             KNUntil  _t c b _sr -> kwd "until" <+> pretty c <//> lkwd "then"
                                    <$> nest 2 (pretty b)
