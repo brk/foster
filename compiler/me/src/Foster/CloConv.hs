@@ -294,11 +294,11 @@ closureConvertBlocks bbg = do
 
 closureConvertLetFuns :: [Ident] -> [CFFn] -> ILM [Closure]
 closureConvertLetFuns ids fns = do
-    let mkProcType ft = case ft of
+    let mkProcType ft id = case ft of
                  FnType s t cc FT_Func -> FnType s t cc FT_Proc
-                 other -> error $ "mkProcType given non-function type?? " ++ show other
+                 other -> error $ "CloConv.hs: mkProcType given non-function type?? " ++ show id ++ " ; " ++ show other
 
-    let mkProcVar  (TypedId ft id) = TypedId (mkProcType ft) id
+    let mkProcVar  (TypedId ft id) = TypedId (mkProcType ft id) id
 
     let proc_vars = map (mkProcVar . fnVar) fns
     let genFreshId id = do rv <- ilmFresh (".env." `prependedTo` identPrefix id)

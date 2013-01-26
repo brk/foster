@@ -265,8 +265,11 @@ typecheckModule verboseMode modast tcenv0 = do
      datatypes <- mapM (convertDataTypeAST ctx_ast) (moduleASTdataTypes mAST)
      let unfuns fns -- :: [[OutputOr (AnnExpr TypeAST)]] -> [[OutputOr (Fn (AnnExpr TypeAST) TypeAST)]]
                     = map (map (fmapOO unFunAnn)) fns
-     let tci f -- :: OutputOr (Fn (AnnExpr TypeAST) TypeAST) -> Tc (Fn AIExpr TypeIL)
-               = tcInject (fnOf ctx_ast) f
+     -- Set fnIsRec flag on top-level functions.
+     let tci oof -- :: OutputOr (Fn (AnnExpr TypeAST) TypeAST) -> Tc (Fn AIExpr TypeIL)
+               = tcInject (\fn -> do
+                            let r = Just $ tidIdent (fnVar fn) `elem` freeIdents fn
+                            fnOf ctx_ast (fn { fnIsRec = r})) oof
      let tcis fns = mapM tci fns
      aiFns     <- mapM tcis (unfuns oo_annfns)
      let q = buildExprSCC aiFns
