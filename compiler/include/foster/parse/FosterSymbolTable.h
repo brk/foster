@@ -65,10 +65,11 @@ public:
       val_of.erase(ident);
     }
 
-    T* insert(const string& ident, T* V) {
+    T* insert(const string& ident, T* V, const std::string& msg) {
       T* old = val_of[ident];
       ASSERT(!old) << "Alpha conversion failed: should never insert"
-                      " the same name (" << ident << ") in the same scope twice!";
+                      " the same name (" << ident << ") in the same scope twice!"
+                   << "\n" << msg;
       val_of[ident] = V;
       return V;
     }
@@ -125,7 +126,9 @@ public:
   }
 
   /// Inserts the given value into the current scope.
-  T* insert(string ident, T* V) { return currentScope()->insert(ident, V); }
+  T* insert(string ident, T* V, const std::string& errmsg) {
+      return currentScope()->insert(ident, V, errmsg);
+  }
 
   /// Creates and returns a new scope within the current scope.
   LexicalScope* pushScope(string scopeName) {

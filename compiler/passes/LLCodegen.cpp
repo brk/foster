@@ -221,7 +221,7 @@ void assertValueHasSameTypeAsPhiNode(llvm::Value* v, LLBlock* block, int i) {
 // Implementation of CodegenPass helpers {{{
 
 CodegenPass::CodegenPass(llvm::Module* m, CodegenPassConfig config)
-                                                      : config(config), mod(m) {
+    : config(config), mod(m), currentProcName("<no proc yet>") {
   //dib = new DIBuilder(*mod);
 }
 
@@ -391,6 +391,8 @@ void LLProc::codegenProto(CodegenPass* pass) {
 
 void LLProc::codegenProc(CodegenPass* pass) {
   ASSERT(this->F != NULL) << "LLModule should codegen proto for " << getName();
+  pass->currentProcName = getName();
+
   assertRightNumberOfArgnamesForFunction(F, this->getFunctionArgNames());
 
   pass->addEntryBB(F);
@@ -749,7 +751,8 @@ llvm::Value* LLVar::codegen(CodegenPass* pass) {
   if (!v) {
     builder.GetInsertBlock()->getParent()->dump();
     pass->valueSymTab.dump(llvm::errs());
-    ASSERT(false) << "Unknown variable name " << this->name << " in CodegenPass";
+    ASSERT(false) << "Unknown variable name " << this->name << " in CodegenPass"
+                  << " in function " << pass->currentProcName;
   }
   return v;
 }

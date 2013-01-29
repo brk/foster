@@ -124,7 +124,7 @@ void // static
 ParsingContext::insertType(const std::string& str, TypeAST* ast) {
   ASSERT(!gParsingContexts.empty());
   ParsingContext* cc = gParsingContexts.top();
-  cc->impl->typeScope.insert(str, ast);
+  cc->impl->typeScope.insert(str, ast, "ParsingContext::insertType");
 }
 
 /////////////////////

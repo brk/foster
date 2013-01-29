@@ -27,7 +27,7 @@ CodegenPass::ValueScope* CodegenPass::newScope(const std::string& scopeName) {
 }
 
 void CodegenPass::insertScopedValue(const std::string& name, llvm::Value* v) {
-  valueSymTab.insert(name, v);
+  valueSymTab.insert(name, v, this->currentProcName);
 }
 
 void CodegenPass::popExistingScope(ValueScope* scope) {

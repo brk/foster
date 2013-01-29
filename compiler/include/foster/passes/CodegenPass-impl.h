@@ -127,6 +127,8 @@ struct CodegenPass {
   WorklistLIFO<std::string, LLBlock*>   worklistBlocks;
   std::map<std::string, llvm::Value*> staticStrings;
 
+  std::string currentProcName;
+
   explicit CodegenPass(llvm::Module* mod, CodegenPassConfig config);
 
   ~CodegenPass() {
