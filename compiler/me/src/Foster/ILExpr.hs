@@ -341,6 +341,7 @@ flattenGraph bbgp mayGCmap = -- clean up any rebindings from gc root optz.
      fin (CCLast (CCCall k t id v vs)) =
         let maygc = Map.findWithDefault MayGC (tidIdent v) mayGCmap in
         ([ILLetVal id (ILCall t v vs) maygc], cont k [TypedId t id])
+
      -- Translate continuation application to br or ret, as appropriate.
      cont k vs =
         case (k == retk, vs) of
@@ -377,22 +378,47 @@ mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
      mergeAdjacent :: Map LLVar LLVar -> (Block Insn' C O, Insn' O C)
                                       -> (Insn' C O, Block Insn' O C)
                                       -> Maybe (Block Insn' C C, Map LLVar LLVar)
-     mergeAdjacent subst (xem, xl) (CCLabel (yb,yargs), yml) =
+     mergeAdjacent subst (xem, xl) (CCLabel (yb,yargs), yml)
+     -- [...xem..., xl] [yb(yargs): ...yml...]
+      =
        case (yargs, xl) of
+         -- Given a call next to its single-predecessor target,
+         -- glue together the blocks with a let-binding in between.
          ([yarg], CCLast (CCCall cb t _id v vs)) | cb == yb ->
              if Map.lookup yb numpreds == Just 1
                  then Just ((xem `blockSnoc`
                               (CCLetVal (tidIdent yarg) (ILCall t v vs)))
                                  `blockAppend` yml, subst)
                  else Nothing
+
+         -- Given a continuation/branch to its single-predecessor target,
+         -- and assuming that the args match up properly,
+         -- glue the blocks together with nothing in between,
+         -- and an extended substitution for the remaining blocks.
          (_, CCLast (CCCont cb   avs))          | cb == yb ->
              if Map.lookup yb numpreds == Just 1
                  then case (length yargs == length avs, yb) of
                         (True, _) ->
-                          let subst' = Map.union subst (Map.fromList $ zip yargs avs) in
+                          let s v = Map.findWithDefault v v subst in
+                          let avs' = map s avs in
+                          -- Apply the substitution to the actuals;
+                          -- otherwise, code like this will fail:
+                          --     L407 [.x!204]
+                          --     cont L408 [.x!185]
+                          --
+                          --     L408 [.x!205]
+                          --     cont L385 [.x!205]
+                          --
+                          --     L385 [a!213]
+                          --         let .cfg_seq!387 = prim blah a!213
+                          -- because we'll fail to replace .x!205 with .x!185
+                          -- when substituting in the binding for .cfg_seq!387.
+                          let subst' = Map.union (Map.fromList $ zip yargs avs' ) subst in
                           Just ((xem `blockAppend` yml), subst' )
+
                         (False, ("postalloca",_)) ->
                           Nothing
+
                         (False, _) ->
                           error $ "Continuation application not passing same # of arguments "
                                ++ "as expected by the continuation!\n"
