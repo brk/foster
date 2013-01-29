@@ -152,6 +152,10 @@ computeBlocks expr idmaybe k = do
             cfgAddLet idmaybe (ILTuple [] (AllocationSource "until" rng))
                               (TupleType []) >>= k
 
+        -- Perform on-demand let-flattening, which enables a CPS tranform with a mostly-first-order flavor.
+        KNLetVal id (KNLetVal  x   e   c) b -> computeBlocks (KNLetVal x e      (KNLetVal id c b)) idmaybe k
+        KNLetVal id (KNLetFuns ids fns a) b -> computeBlocks (KNLetFuns ids fns (KNLetVal id a b)) idmaybe k
+
         KNLetVal id (KNVar v) expr -> do
             cont <- cfgFresh "rebind_cont"
             cfgEndWith (CFCont cont [v])
@@ -349,7 +353,8 @@ computeBlocks expr idmaybe k = do
         old <- get
         case cfgPreBlock old of
             Just (id, phis, mids) -> do put (old { cfgPreBlock = Just (id, phis, mid:mids) })
-            Nothing         -> error $ "Tried to add middle without a block"
+            Nothing         -> error $ "Tried to add middle without a block: " ++ show (pretty mid)
+                                         ++ "\n" ++ show (pretty (cfgAllBlocks old))
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||| CFG Monadic Helpers ||||||||||||||||||||{{{
@@ -519,7 +524,7 @@ instance Pretty t => Pretty (Letable t) where
       ILArrayRead  _t (ArrayIndex _v1 _v2 _rng _s)  -> text $ "ILArrayRead..."
       ILArrayPoke  (ArrayIndex _v1 _v2 _rng _s) _v3 -> text $ "ILArrayPoke..."
       ILBitcast   _ v       -> text "bitcast " <+> pretty v <+> text "to" <+> text "..."
-      ILAllocate info       -> text "allocate ..." -- <+> pretty (allocType info)
+      ILAllocate _info      -> text "allocate ..." -- <+> pretty (allocType info)
       ILObjectCopy from to  -> text "copy object" <+> pretty from <+> text "to" <+> pretty to
 
 instance Pretty BasicBlockGraph where

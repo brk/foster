@@ -500,25 +500,23 @@ lowerModule ai_mod ctx_il = do
 
      cfgmod   <- cfgModule      monomod
      let constraints = collectMayGCConstraints (moduleILbody cfgmod)
-
      whenDumpIR "may-gc" $ do
          liftIO $ putStrLn "\n MAY GC CONSTRAINTS ======================="
          liftIO $ putDocLn $ list (map pretty $ (Map.toList constraints))
          liftIO $ putStrLn "\n/MAY GC CONSTRAINTS ======================="
-
-     ccmod    <- closureConvert cfgmod
-     ilprog   <- prepForCodegen ccmod  constraints
 
      whenDumpIR "cfg" $ do
          putDocLn $ (outLn "/// CFG-ized program ==================")
          putDocP  $ pretty cfgmod
          putDocLn $ (outLn "^^^ ===================================")
 
+     ccmod    <- closureConvert cfgmod
      whenDumpIR "cc" $ do
          putDocLn $ (outLn "/// Closure-converted program =========")
          _ <- liftIO $ renderCC ccmod True
          putDocLn $ (outLn "^^^ ===================================")
 
+     ilprog   <- prepForCodegen ccmod  constraints
      whenDumpIR "il" $ do
          putDocLn $ (outLn "/// ILProgram =========================")
          putDocLn (showILProgramStructure ilprog)

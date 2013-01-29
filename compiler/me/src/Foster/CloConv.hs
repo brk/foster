@@ -302,7 +302,8 @@ closureConvertLetFuns ids fns = do
 
     let proc_vars = map (mkProcVar . fnVar) fns
     let genFreshId id = do rv <- ilmFresh (".env." `prependedTo` identPrefix id)
-                           return $ trace ("genFreshId for " ++ show id ++ " is " ++ show rv ++ " ;; " ++ show (map fnIdent fns) ++ "; fn: " ++ show (map pretty (tail fns))) rv
+                           return $ -- trace ("genFreshId for " ++ show id ++ " is " ++ show rv ++ " ;; " ++ show (map fnIdent fns) ++ "; fn: " ++ show (map pretty (tail fns)))
+                                      rv
     cloEnvIds <- mapM genFreshId ids
     let infoMap = Map.fromList (zip ids (zip proc_vars cloEnvIds))
     let idfns = zip ids fns

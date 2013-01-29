@@ -425,7 +425,7 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
   varForRoot root = case Map.lookup root varsForGCRoots of
                        Nothing -> error $ "Unable to find source variable for root "
                                         ++ show root ++ "\nmap keys are "
-                                        ++ show (map tidIdent $ Map.keys varsForGCRoots)
+                                        ++ show (pretty $ map tidIdent $ Map.keys varsForGCRoots)
                        Just var -> var
 
   undoDeadGCLoads vs k = liftM k (mapM undo vs)
@@ -648,7 +648,9 @@ availsRewrite allRoots = mkFRewrite d
     s a v = case lookupAvailMap v (availSubst a) of
               [    ] -> v
               [ v' ] -> v'
-              s -> error $ "Subst mapped " ++ show v ++ " to  " ++ show s
+              [ v1, v2 ] -> trace ("GCRoots.hs: OOPS, " ++ show v ++ " mapped to two vars! choosing neither") v
+              s -> error $ "GCRoots.hs: Expected avail. subst to map " ++ show v
+                           ++ " to zero or one variables, but had " ++ show s
 
 runAvails :: BasicBlockGraph' -> RootLiveWhenGC -> Map Ident MayGC
                                                 -> Compiled BasicBlockGraph'

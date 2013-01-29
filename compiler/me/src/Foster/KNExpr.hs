@@ -235,7 +235,7 @@ varOrThunk (a, targetType) = do
 -- ||||||||||||||||||||||| Let-Flattening |||||||||||||||||||||||{{{
 -- Because buildLet is applied bottom-to-top, we maintain the invariant
 -- that the bound form in the result is never a binder itself.
-buildLet :: Ident -> KNExpr -> KNExpr -> KNExpr
+buildLet :: Ident -> KNExpr' t -> KNExpr' t -> KNExpr' t
 buildLet ident bound inexpr =
   case bound of
     -- Convert  let i = (let x = e in c) in inexpr
@@ -904,7 +904,8 @@ instance Pretty t => Pretty (Pattern t) where
         P_Int           _rng _ty li       -> text (litIntText li)
         P_Tuple         _rng _ty pats     -> parens (hsep $ punctuate comma (map pretty pats))
 
-
+pr YesTail = "(tail)"
+pr NotTail = "(non-tail)"
 
 instance Pretty ty => Pretty (KNExpr' ty) where
   pretty e =
@@ -917,7 +918,7 @@ instance Pretty ty => Pretty (KNExpr' ty) where
             KNKillProcess t m   -> text ("KNKillProcess " ++ show m ++ " :: ") <> pretty t
             KNLiteral _ lit     -> pretty lit
             KNCall _tail t v [] -> showUnTyped (prettyId v <+> text "!") t
-            KNCall _tail t v vs -> showUnTyped (prettyId v <+> hsep (map pretty vs)) t
+            KNCall _tail t v vs -> showUnTyped (prettyId v <+> hsep (map pretty vs)) t <+> text "/*" <+> text (pr _tail) <+> text "*/"
             KNCallPrim t prim vs-> showUnTyped (text "prim" <+> pretty prim <+> hsep (map prettyId vs)) t
             KNAppCtor  t cid  vs-> showUnTyped (text "~" <> parens (text (show cid)) <> hsep (map prettyId vs)) t
             KNLetVal   x b    k -> lkwd "let"
@@ -1009,8 +1010,8 @@ knInline knmod = do
   uniq <- gets ccUniqRef
 
   expr' <- liftIO $
-           evalStateT (knInline' (moduleILbody knmod)
-                                 (SrcEnv Map.empty Map.empty))
+           evalStateT (knInlineToplevel (moduleILbody knmod)
+                                        (SrcEnv Map.empty Map.empty))
                       (InlineState uniq)
 
   return $ knmod { moduleILbody = expr' }
@@ -1020,12 +1021,41 @@ data InlineState = InlineState {
   inUniqRef :: IORef Uniq
 }
 
-knInline' :: SrcExpr -> SrcEnv -> In ResExpr
-knInline' expr env = do
-  let qq v env = case lookupVarMb v env of
+-- Specialized version of knInline' which does not rename functions.
+knInlineToplevel :: SrcExpr -> SrcEnv -> In ResExpr
+knInlineToplevel expr env = do
+  let q v = case lookupVarMb v env of
                    Just id -> (TypedId (tidType v) id)
                    Nothing -> v
-  let q v = qq v env
+  case expr of
+    KNLetFuns ids fns body -> do
+        liftIO $ putStrLn $ "saw toplevel fun bindings of " ++ show ids
+        let ids' = ids -- Don't rename top-level functions!
+        refs <- mapM (\_ -> mkOpRefs) fns
+        let ops  = map (\(f,(r1,r2,r3)) -> (Opnd f env' r1 r2 r3)) (zip fns refs)
+            env' = extendEnv ids ids' (map VO_F ops) env
+
+        b' <- knInlineToplevel body env'
+        mb_fns <- mapM visitF ops
+        let fns' = map (\(fn, mb_fn) -> case mb_fn of Just f -> f
+                                                      Nothing -> fn) (zip fns mb_fns)
+        return $ KNLetFuns ids' fns' b'
+
+    KNCall tq ty v vs ->
+        case lookupVarOp env v of
+            Just (VO_F opf) -> do
+                 _ <- visitF opf -- don't inline away main, just process it!
+                 return $ KNCall tq ty (q v) (map q vs)
+            _ -> error $ "knInlineToplevel couldn't find function to inline for main!"
+
+    _ -> error $ "knInlineToplevel expected a series of KNLetFuns bindings! had " ++ show expr
+
+knInline' :: SrcExpr -> SrcEnv -> In ResExpr
+knInline' expr env = do
+  let qq env v = case lookupVarMb v env of
+                   Just id -> (TypedId (tidType v) id)
+                   Nothing -> v
+  let q v = qq env v
   case expr of
     KNLiteral     {} -> return expr
     KNKillProcess {} -> return expr
@@ -1039,7 +1069,7 @@ knInline' expr env = do
     KNTuple      ty vs rng -> return $ KNTuple      ty (map q vs) rng
 
     KNVar v -> do
-      liftIO $ putStrLn $ "saw standalone var " ++ show v
+      -- liftIO $ putStrLn $ "saw standalone var " ++ show v
       return $ KNVar (q v)
 
     KNAppCtor     ty cid vs  -> return $ KNAppCtor  ty cid  (map q vs)
@@ -1050,37 +1080,20 @@ knInline' expr env = do
 
     KNCall tailq ty v vs -> do
       let expr' = KNCall tailq ty (q v) (map q vs)
-      -- TODO which of these should be return expr' instead of return expr?
-      liftIO $ putStrLn $ "saw call of var " ++ show (tidIdent v) ++ " ~?~> " ++ show (lookupVarMb v env)
-      case lookupVarOp env v of
-       VO_E (Opnd e _ _ _ _) ->
-         case e of
-           KNVar {} -> return expr'
-           _ -> error $ "KNExpr.hs: lookup var op of called " ++ show v ++ " failed; had non-function\n" ++ show (pretty e)
+      --liftIO $ putStrLn $ "saw call of var " ++ show (tidIdent v) ++ " ~?~> " ++ show (lookupVarMb v env)
 
-       VO_F opf@(Opnd fn _ _ loc_op _) -> do
-        let shouldNotInline nm = nm == "main" || "noinline_" `isPrefixOf` nm
-        if shouldNotInline (show $ tidIdent v)
+      case lookupVarOp env v of
+        -- If the callee isn't a known function, we can't possibly inline it.
+        Just (VO_E _)   -> do return expr'
+        Nothing         -> do return expr'
+
+        Just (VO_F opf) -> do
+         let shouldNotInline nm = nm == "main" || "noinline_" `isPrefixOf` nm
+         if shouldNotInline (show $ tidIdent v)
           then do _ <- visitF opf -- don't inline away main, just process it!
                   return expr'
 
-          else do
-            liftIO $ putStrLn $ "saw call of var " ++ show (tidIdent v) ++ " ~~> " ++ show (tidIdent (fnVar fn))
-            res <- visitF opf
-            case res of
-              Just f' -> do
-                liftIO $ putStrLn $    "call of var " ++ show (tidIdent v) ++ " ~~> " ++ show (tidIdent (fnVar fn))
-                liftIO $ putDoc $ text "    " <> pretty expr <> text "\n"
-                liftIO $ putDoc $ text "resulted in:\n" <> pretty f' <+> text "\n\n"
-                if True
-                  then do
-                    mb_e' <- foldLambda' f' loc_op (map q vs) env
-                    case mb_e' of
-                       Just e' -> do liftIO $ putDoc $ text "lambda folding resulted in " <> pretty e' <> text "\n"
-                                     return e'
-                       Nothing -> do return expr'
-                  else return expr'
-              Nothing -> return expr'
+          else do handleCallOfKnownFunction expr expr' opf v vs env q
 
     KNUntil       ty e1 e2 rng -> do
         e1' <- knInline' e1 env
@@ -1104,26 +1117,41 @@ knInline' expr env = do
         -- TODO when are default branches inserted?
         let v' = q v
         let inlineArm ((pat, vars), expr) = do
-                expr' <- knInline' expr env
-                return ((pat, vars), expr' )
+                ops <- mapM (\v -> mkOpExpr (KNVar v) env) vars
+                let ids  = map tidIdent vars
+                ids'  <- mapM freshenId ids
+                let env' = extendEnv ids ids' (map VO_E ops) env
+                expr' <- knInline' expr env'
+                let vars' = map (qq env' ) vars
+                return ((qp (qq env' ) pat, vars' ), expr' )
         patbinds' <- mapM inlineArm patbinds
         return $ KNCase ty v' patbinds'
 
     KNLetVal id bound body -> do
         -- Be demand-driven: don't investigate e1 until e2 finds it necessary.
-        liftIO $ putStrLn $ "saw let binding  of " ++ show id
+        --liftIO $ putStrLn $ "saw let binding  of " ++ show id
         id' <- freshenId id
         op <- mkOpExpr bound env
         let env' = extendEnv [ id ] [ id' ] [ VO_E op ] env
+
+        --liftIO $ putStrLn $ "visiting body with " ++ show id ++ " remapped to " ++ show id'
+
         body'  <- knInline' body env'
+
+        --liftIO $ putStrLn $ "visited  body with " ++ show id ++ " remapped to " ++ show id'
+        --                                          ++ ", now visiting op " ++ show (pretty bound)
+
         bound' <- visitE op -- todo could this result in inlining a function?
+
         let expr' = KNLetVal id' bound' body'
-        liftIO $ putStrLn "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv"
-        liftIO $ putDoc $ text ("pre-processed let binding  of " ++ show id) <> text "\n"
-                          <$> indent 4 (pretty expr  ) <> text "\n\n"
-        liftIO $ putDoc $ text ("postprocessed let binding  of " ++ show id)
-                          <$> indent 4 (pretty expr' ) <> text "\n\n"
-        liftIO $ putStrLn "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^"
+
+        --liftIO $ putStrLn "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv"
+        --liftIO $ putDoc $ text ("pre-processed let binding  of " ++ show id) <> text "\n"
+        --                  <$> indent 4 (pretty expr  ) <> text "\n\n"
+        --liftIO $ putDoc $ text ("postprocessed let binding  of " ++ show id)
+        --                  <$> indent 4 (pretty expr' ) <> text "\n\n"
+        --liftIO $ putStrLn "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^"
+
         return expr'
 
     KNLetRec     ids es  b -> do
@@ -1131,20 +1159,46 @@ knInline' expr env = do
         b' <- knInline' b env
         return $ KNLetRec ids es b'
 
-    KNLetFuns    ids fns b -> do
+    KNLetFuns    ids fns0 b -> do
         liftIO $ putStrLn $ "saw fun bindings of " ++ show ids
-        --ids' <- mapM freshenId ids
-        let ids' = ids
+        ids' <- mapM freshenId ids
+
+        -- Rename the fnVar so we don't get duplicate procedure names.
+        -- TODO would this be a good place to rename procedures to reflect scoping?
+        let mkGlobal (TypedId t _) (Ident s u) = TypedId t (GlobalSymbol $ T.pack (T.unpack s ++ show u))
+
+        let fns = map (\(f, id) -> f { fnVar = mkGlobal (fnVar f) id } ) (zip fns0 ids' )
         refs <- mapM (\_ -> mkOpRefs) fns
+
         let ops  = map (\(f,(r1,r2,r3)) -> (Opnd f env' r1 r2 r3)) (zip fns refs)
             env' = extendEnv ids ids' (map VO_F ops) env
-        -- liftIO $ putStrLn $ "processing body of fn-bindings w/ ids " ++ show ids
+
+        --liftIO $ putStrLn $ "processing body of fn-bindings w/ ids " ++ show ids
         b' <- knInline' b env'
+        --liftIO $ putStrLn $ "processed  body of fn-bindings w/ ids " ++ show ids ++ ", now visiting the fns themselves"
+
         mb_fns <- mapM visitF ops
         let fns' = map (\(fn, mb_fn) -> case mb_fn of Just f -> f
                                                       Nothing -> fn) (zip fns mb_fns)
-        -- TODO why does ids' here fail? (looks like it's a local-vs-global issue)
         return $ KNLetFuns ids' fns' b'
+
+handleCallOfKnownFunction expr expr' opf@(Opnd fn _ _ loc_op _) v vs env q = do
+    --liftIO $ putStrLn $ "saw call of var " ++ show (tidIdent v) ++ " ~~> " ++ show (tidIdent (fnVar fn))
+    res <- visitF opf
+    case res of
+        Just f' -> do
+            --liftIO $ putStrLn $    "call of var " ++ show (tidIdent v) ++ " ~~> " ++ show (tidIdent (fnVar fn))
+            --liftIO $ putDoc $ text "    " <> pretty expr <> text "\n"
+            --liftIO $ putDoc $ text "resulted in:\n" <> pretty f' <+> text "\n\n"
+            if True
+              then do
+                mb_e' <- foldLambda' f' loc_op (map q vs) env
+                case mb_e' of
+                   Just e' -> do --liftIO $ putDoc $ text "lambda folding resulted in " <> pretty e' <> text "\n"
+                                 return e'
+                   Nothing -> do return expr'
+              else return expr'
+        Nothing -> return expr'
 
 knInlineFn' :: Fn SrcExpr MonoType -> SrcEnv -> In (Fn ResExpr MonoType)
 knInlineFn' fn env = do
@@ -1172,18 +1226,16 @@ mkOpRefs = do
 mkOpExpr e env = do
   (le, oup, inp) <- mkOpRefs
   return $ Opnd e env le oup inp
-  --lctx <- newRef NotInlined
-  --let ctx' = App op ctx lctx
 
-  {-
-mkOpFnCtx f env ctx = do
-  lf   <- newRef Unvisited
-  lctx <- newRef NotInlined
-  (lf, oup, inp) <- mkOpRefs
-  let op = OpndF f env lf oup inp
-  let ctx' = Fun op ctx lctx
-  return (op, ctx' )
--}
+-- Apply a variable substitution in a pattern.
+qp subst pattern =
+ case pattern of
+   P_Wildcard rng t            -> P_Wildcard rng t
+   P_Variable rng v            -> P_Variable rng   (subst v)
+   P_Ctor     rng t pats ctor  -> P_Ctor     rng t (map (qp subst) pats) ctor
+   P_Bool     rng t b          -> P_Bool     rng t b
+   P_Int      rng t i          -> P_Int      rng t i
+   P_Tuple    rng t pats       -> P_Tuple    rng t (map (qp subst) pats)
 
 type SrcExpr = (KNExpr' MonoType)
 type ResExpr = (KNExpr' MonoType)
@@ -1204,52 +1256,19 @@ instance Show VarOp where
   show (VO_E _) = "VO_E"
   show (VO_F (Opnd f _ _ _ _)) = "VO_F " ++ show (tidIdent $ fnVar f)
 
-  {-
-copy :: TypedId MonoType -> VarOp -> ResExpr -> Ctx -> In ResExpr
-copy v varop e ctx = do
-  -- Copy/inline e for the occurrence of var v... (maybe)
-  case e of
-    KNLiteral     {} -> return e
-    KNVar         v' -> return $ KNVar v'
-
-    KNKillProcess {} -> return $ KNVar v
-    KNAllocArray  {} -> return $ KNVar v
-    KNArrayRead   {} -> return $ KNVar v
-    KNArrayPoke   {} -> return $ KNVar v
-    KNTuple       {} -> return $ KNVar v
-    KNAlloc       {} -> return $ KNVar v
-    KNTyApp       {} -> return $ KNVar v
-    KNStore       {} -> return $ KNVar v
-    KNDeref       {} -> return $ KNVar v
-
-    KNCall tailq ty v vs ->
-      case ctx of Value -> return $ KNVar v
-                  --App op1 ctx1 lctx -> error "foldLambda..." -- foldLambda
-
-    KNAppCtor     _ _ vs       -> return $ KNVar v
-    KNUntil       _   e1 e2 _  -> return $ KNVar v
-    KNIf          _ v e1 e2    -> return $ KNVar v
-    KNCase        _ v patbinds -> return $ KNVar v
-    KNLetVal      _   e1 e2    -> return $ KNVar v
-    KNLetRec     _ es b        -> return $ KNVar v
-    KNLetFuns    _ fns b       -> return $ KNVar v
-    KNCallPrim    _ _ vs       -> return $ KNVar v
--}
-
 lookupVarMb :: TypedId MonoType -> SrcEnv -> Maybe Ident
 lookupVarMb v (SrcEnv _ ii) = Map.lookup (tidIdent v) ii
 
 -- src var
-lookupVarOp :: SrcEnv -> TypedId MonoType -> VarOp
+lookupVarOp :: SrcEnv -> TypedId MonoType -> Maybe VarOp
 lookupVarOp env@(SrcEnv tv _) v =
   case lookupVarMb v env of
-    Nothing -> -- case Map.lookup (tidIdent v) tv of
-               --  Just op -> op
-               --  Nothing ->
-                  error $ "KNExpr inlining (lookupVarOp) failed to look up var " ++ show v
+    Nothing -> -- Declarations for external functions won't
+               -- have a known binding, obviously.
+               Map.lookup (tidIdent v) tv
     Just vv ->
       case Map.lookup vv tv of
-        Just op -> op
+        Just op -> Just op
         Nothing -> error $ "KNExpr inlining (lookupVarOp) failed to look up var op " ++ show v ++ " ~~> " ++ show vv
 
 -- residual var
@@ -1284,17 +1303,19 @@ freshenTid tid = do
 
 -- input are residual vars, not src vars, fwiw
 foldLambda' :: Fn SrcExpr MonoType -> IORef OuterPending -> [TypedId MonoType] -> SrcEnv -> In (Maybe ResExpr)
-foldLambda' fn loc_op vs env = do
-  let ids = map tidIdent (fnVars fn)
-  ids'  <- mapM freshenId ids
-  let ops = map (lookupVarOp' env) vs
+foldLambda' fn loc_op vs' env = do
+
   let env' = extendEnv ids ids' ops env
+                where
+                        ids  = map tidIdent (fnVars fn)
+                        ids' = map tidIdent vs'
+                        ops  = map (lookupVarOp' env) vs'
+
   -- ids   are the function's formals;
-  -- ids'  are the function's formals, renamed;
-  -- vs    are the function's actuals (residual vars)
+  -- vs'   are the function's actuals (residual vars)
   -- ops   are the corresponding operand structures.
 
-  liftIO $ putDoc $ text "with arg ops:" <+> text (show ops) <> text "\n"
+  -- liftIO $ putDoc $ text "with arg ops:" <+> text (show ops) <> text "\n"
 
   o_pending <- readRef loc_op
   case o_pending of
@@ -1303,22 +1324,8 @@ foldLambda' fn loc_op vs env = do
 
     OP_False -> do
       writeRef loc_op OP_True
-
-      e' <- knInline' (fnBody fn) env'
-
-      -- TODO couild this be a fn?
-      -- If we copy a function from a recursive nest,
-      -- can we bind it with a single LetFuns? Do we need to
-      -- copy the whole recursive nest along with it?
-      bounds <- mapM visitWithDefault (zip ops vs)
-
-      liftIO $ putStrLn $ "folded lambda " ++ show (tidIdent $ fnVar fn)
-      return $ Just $ mkLetVals ids' bounds e'
-
-mkLetVals [] [] e = e
-mkLetVals (id:ids) (Left  b:bs) e = KNLetVal   id   b  (mkLetVals ids bs e)
-mkLetVals (id:ids) (Right f:bs) e = KNLetFuns [id] [f] (mkLetVals ids bs e)
-mkLetVals _ _ _ = error $ "KNExpr.hs: mismatched args to mkLetVals..."
+      e' <- knInline' (removeTailCallAnnots $ fnBody fn) env'
+      return $ Just e'
 
   {-
 foldPrimRef p (App op ctx lctx) env = do
@@ -1343,16 +1350,6 @@ visitWithDefault (vo, resv) = do
                     Just fn -> return $ Right fn
                     Nothing -> return $ Left (KNVar resv)
 
-{-
-visit :: VarOp -> In (Maybe (Either ResExpr (Fn ResExpr MonoType)))
-visit vo = do
-  case vo of
-    VO_E eo -> do e <- visitE eo
-                  return $ Just (Left e)
-    VO_F fo -> do mb_fn <- visitF fo
-                  return $ fmap Right mb_fn
--}
-
 --visitF :: OpndF -> In (Maybe (Fn ResExpr MonoType))
 visitF (Opnd fn env loc_fn _ loc_ip) = do
   ff <- readRef loc_fn
@@ -1373,58 +1370,43 @@ visitF (Opnd fn env loc_fn _ loc_ip) = do
 visitE (Opnd e env loc_e _ loc_ip) = do
   ef <- readRef loc_e
   case ef of
-    Unvisited -> do ip <- readRef loc_ip
-                    case ip of
-                      IP_False -> do
-                        -- TODO set IP_True flag?
-                        e' <- knInline' e env
-                        writeRef loc_e (Visited e' )
-                        return e'
-                      IP_True -> do
-                        liftIO $ putStrLn $ "inner-pending true for expr...????"
-                        return e --TODO this is WRONG :(
-    Visited r -> return r
+    Unvisited -> do
+        --liftIO $ putStrLn $ ""
+        --liftIO $ putStrLn $ "visited opnd " ++ show (pretty e) ++ ", it was Unvisited..."
+        ip <- readRef loc_ip
+        case ip of
+          IP_False -> do
+            -- TODO set IP_True flag?
+            e' <- knInline' e env
+
+            --liftIO $ putStrLn $ "visited opnd " ++ show (pretty e) ++ ", it was Unvisited, visiting it resulted in\n" ++ show (pretty e' )
+            --liftIO $ putStrLn $ ""
+
+            writeRef loc_e (Visited e' )
+            return e'
+          IP_True -> do
+            liftIO $ putStrLn $ "inner-pending true for expr...????"
+            return e --TODO this is WRONG :(
+    Visited r -> do
+        liftIO $ putStrLn $ "visited opnd " ++ show (pretty e) ++ ", it was Visited:\n" ++ show (pretty r)
+        return r
+
+-- When we inline a function body, it moves from a tail context to a non-tail
+-- context, so we must remove any direct tail-call annotations.
+removeTailCallAnnots :: KNExpr' MonoType -> KNExpr' MonoType
+removeTailCallAnnots expr = go expr where
+  go expr = case expr of
+    KNCase        ty v patbinds -> KNCase    ty v (map (\(p,e) -> (p, go e)) patbinds)
+    KNIf          ty v e1 e2    -> KNIf      ty v (go e1) (go e2)
+    KNLetVal      id   e1 e2    -> KNLetVal  id       e1  (go e2)
+    KNLetRec      ids  es  b    -> KNLetRec  ids      es  (go b)
+    KNLetFuns     ids  fns b    -> KNLetFuns ids     fns  (go b)
+    KNCall _ ty v vs -> KNCall NotTail ty v vs
+    _ -> expr
+
 
 -- The non-local exits in the Chez Scheme inlining algorithm
 -- would be very nice to implement using coroutines!
-
--- TODO I think this would be simpler (and more clearly a "source-to-source"
---        transformation) if it operated on KNF, rather than CPS/CFG...
-{-
-runInlining' :: BasicBlockGraph -> IO BasicBlockGraph
-runInlining' bbg = do
-  body' <- rebuildGraphM (fst $ bbgEntry bbg) (bbgBody bbg) recurse
-  return bbg { bbgBody = body' }
-    where recurse :: forall e x. Insn e x -> IO (Graph Insn e x)
-          recurse insn@(ILabel   {}) = return (mkFirst  insn)
-
-          -- When we see plain bindings, add the binding and continue.
-          recurse insn@(ILetVal id l) = processLetVal id l
-
-          -- When we see recursive bindings, recursively optimize the group,
-          -- then add the binding group and continue.
-          recurse insn@(ILetFuns {}) = return (mkMiddle insn)
-
-          -- Nothing to do for plain jumps or returns,
-          -- except note that the actual args may flow to the formals of bid.
-          -- Problem: backward edges....?
-          recurse insn@(ILast (CFCont bid           args)) = return (mkLast   insn)
-
-          -- For calls, we may want to insert a copy of the definition of the
-          -- callee, substituting the actual args for the formals of callee.
-          -- Otherwise, if there's some restriction on the result of the call,
-          -- that information can be bound to the formal of bid?
-          recurse insn@(ILast (CFCall bid ty callee args)) = return (mkLast   insn)
-
-          -- Cases can be simplified if we know something about the scrutinee...
-          recurse insn@(ILast (CFCase scrutinee arms    )) = return (mkLast   insn)
--}
-
---processLetVal :: Ident -> Letable MonoType -> IO (Graph Insn O O)
---processLetVal (ILLiteral ty lit) = return (mkMiddle (ILetVal id (ILLiteral ty lit)))
-
---processLetVal letable = return (mkMiddle (ILetVal letable))
-
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 
