@@ -6,7 +6,7 @@
 -----------------------------------------------------------------------------
 
 module Foster.KNExpr (kNormalizeModule, KNExpr, KNExpr'(..), TailQ(..), typeKN,
-                      knSinkBlocks, knInline, knSize,
+                      knLoopHeaders, knSinkBlocks, knInline, knSize,
                       renderKN, renderKNM, renderKNF, renderKNFM) where
 import qualified Data.Text as T
 import qualified Data.Map as Map
@@ -14,7 +14,7 @@ import qualified Data.Set as Set
 import Data.Set(Set)
 import Data.Map(Map)
 import Data.List(foldl' , isPrefixOf)
-import Data.Maybe(maybeToList)
+import Data.Maybe(maybeToList, catMaybes)
 
 import Foster.MonoType
 import Foster.Base
@@ -23,13 +23,15 @@ import Foster.Context
 import Foster.TypeIL
 import Foster.AnnExprIL
 
+import Debug.Trace(trace)
+
 import Text.PrettyPrint.ANSI.Leijen
 
 import qualified Data.Graph.Inductive.Graph            as Graph
 import qualified Data.Graph.Inductive.PatriciaTree     as Graph
 import qualified Data.Graph.Inductive.Query.Dominators as Graph
 
-import Control.Monad.State(gets, liftIO, evalStateT, StateT, liftM, liftM2)
+import Control.Monad.State(gets, liftIO, evalStateT, execStateT, StateT, liftM, liftM2, get, put, lift)
 import Data.IORef(IORef, newIORef, readIORef, writeIORef, modifyIORef)
 
 -- | Foster.KNExpr binds all intermediate values to named variables
@@ -305,11 +307,11 @@ kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
   where
     kNormalCtor :: Context TypeIL -> DataType TypeIL -> DataCtor TypeIL
                 -> KN (Fn KNExpr TypeIL)
-    kNormalCtor ctx datatype dc@(DataCtor cname small _tyformals tys) = do
+    kNormalCtor ctx datatype _dc@(DataCtor cname small _tyformals tys) = do
       let dname = dataTypeName datatype
       let arity = Prelude.length tys
       let cid   = CtorId dname (T.unpack cname) arity small
-      let info  = CtorInfo cid dc
+      -- let info  = CtorInfo cid dc
       let genFreshVarOfType t = do fresh <- knFresh ".autogen"
                                    return $ TypedId t fresh
       vars <- mapM genFreshVarOfType tys
@@ -515,6 +517,223 @@ localBlockSinking knf = rebuildFn knf
                               | ((id, f), dom) <- relocationTargetsList]
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+-- ||||||||||||||||||||||||| Loop Headers |||||||||||||||||||||||{{{
+
+-- Insert loop headers for recursive functions in the program.
+--
+-- For each recursive function, we'll look at all the (recursive)
+-- tail calls it makes, and which arguments each call passes.
+--
+-- If there's a subset of arguments which are passed at every recursive
+-- call, these arguments will be factored out of the loop header
+-- and each recursive call.
+--
+-- Since the loop header is only called from tail position, it will
+-- be contifiable by definition. (This is why we ignore non-tail recursive
+-- calls -- because inserting a non-contifiable function wrapper would
+-- change the allocation behavior of programs.)
+--
+-- Adding loop headers has two benefits:
+--   1) Passing fewer arguments as loop arguments avoids unnecessary copies.
+--   2) When inlining is applied, inlining a function wrapping a loop header
+--      corresponds to specializing the recursive function to its arguments,
+--      rather than merely unrolling the loop once.
+--
+-- See Andrew Appel's 1994 paper "Loop Headers in lambda-calculus or CPS"
+-- for more examples: http://www.cs.princeton.edu/~appel/papers/460.pdf
+
+type Hdr = StateT HdrState KN
+data HdrState =   HdrState {
+    headers :: LoopHeaders
+  , census  :: LoopCensus
+}
+
+-- Map each function's (outer) bound identifier to a fresh id,
+-- fresh variables, and a flag indicating whether any tail calls to
+-- the function were detected, since we only care about arguments
+-- passed to tail calls.
+type LoopHeaders = Map Ident ((Ident, [TypedId MonoType]), Bool)
+
+-- Map each recursive fn identifier to the list of variables it is always
+-- passed. This list starts as [Just x] for each formal x; if a recursive call
+-- ever passes a different variable, we'll switch to Nothing for that entry.
+type LoopCensus  = Map Ident [Maybe (TypedId MonoType)]
+
+mergeInfo :: [TypedId MonoType] -> [Maybe (TypedId MonoType)] -> [Maybe (TypedId MonoType)]
+mergeInfo ys xs = -- implicit: lists are the same length...
+    let r = map resolve (zip xs ys) in
+    trace ("mergeInfo\n\t" ++ show (map (fmap tidIdent) xs) ++ "\n\t" ++ show (map tidIdent ys) ++ "\n\n==>\t" ++ show (map (fmap tidIdent) r)) r
+  where resolve (Nothing, _) = Nothing
+        resolve (Just x,  y) = if x == y then Just x else Nothing
+
+-- At each call site, we want to pass only the args which were not useless;
+-- i.e. the ones for which the corresponding info was unknown (Nothing).
+dropUselessArgs :: [Maybe (TypedId MonoType)] -> [TypedId MonoType] -> [TypedId MonoType]
+dropUselessArgs xs ys = resolve (zip xs ys)
+  where resolve [] = []
+        resolve ((Just  _, _):xs) =    resolve xs
+        resolve ((Nothing, x):xs) = x:(resolve xs)
+
+-- The loop header should rename variables which are getting new bindings
+-- in the loop, but keep unchanged the variables that are loop-invariant.
+renameUsefulArgs :: [Maybe (TypedId MonoType)] -> [TypedId MonoType] -> [TypedId MonoType]
+renameUsefulArgs xs ys = resolve (zip xs ys)
+  where resolve [] = []
+        resolve ((Just  y, _):xs) = y:(resolve xs)
+        resolve ((Nothing, x):xs) = x:(resolve xs)
+
+getUselessArgs :: [Maybe (TypedId MonoType)] -> [TypedId MonoType]
+getUselessArgs = catMaybes
+
+-- Map each recursive fn identifier to the var/s for its loop header, and a
+-- list reflecting which of the original formals were recursively useless.
+type LoopInfo = Map Ident ((Ident, [TypedId MonoType]), [Maybe (TypedId MonoType)])
+
+isAllNothing [] = True
+isAllNothing (Nothing:xs) = isAllNothing xs
+isAllNothing (_      :_ ) = False
+
+computeInfo :: LoopCensus -> LoopHeaders -> LoopInfo
+computeInfo census headers = Map.mapMaybeWithKey go census
+  where go id mt = let Just (hdr, called) = Map.lookup id headers in
+                   if isAllNothing mt || not called
+                     then Nothing
+                     else Just (hdr, mt)
+
+knFreshen (Ident name _) = ccFreshId name
+knFreshenTid (TypedId t id) = do id' <- knFreshen id
+                                 return $ TypedId t id'
+
+knLoopHeaderCensusFn activeids (id, fn) = do
+  let vars = fnVars fn
+  id'   <- lift $ knFresh "loop.hdr"
+  vars' <- lift $ mapM knFreshenTid vars -- generate new vars for wrapper in advance
+  st <- get
+  put $ st { headers = Map.insert id ((id' , vars' ), False) (headers st)
+           , census  = Map.insert id (map Just vars)         (census st) }
+  knLoopHeaderCensus activeids (fnBody fn)
+
+knLoopHeaderCensus :: Set Ident -> KNExpr' MonoType -> Hdr ()
+knLoopHeaderCensus activeids expr = go expr where
+  go expr = case expr of
+    KNCase        _ _ patbinds -> do mapM_ (\(_,e) -> go e) patbinds
+    KNUntil         _ e1 e2 _  -> do go e1 ; go e2
+    KNIf          _ _ e1 e2    -> do go e1 ; go e2
+    KNLetVal      _   e1 e2    -> do go e1 ; go e2
+    KNLetRec      _   es  b    -> do mapM_ go es ; go b
+    KNLetFuns     ids@[_] fns@[fn] b | isRec fn -> do
+                                     mapM_ (knLoopHeaderCensusFn (Set.union activeids
+                                                                   (Set.fromList ids)))
+                                                                 (zip ids fns)
+                                     -- Note: when we recur, activeids will not
+                                     -- include the bound ids, so calls in the
+                                     -- body will be ignored.
+                                     go b
+    KNLetFuns    _ids fns b    -> do mapM_ (knLoopHeaderCensus activeids . fnBody) fns
+                                     go b
+    KNCall YesTail _ v vs -> do
+      let id = tidIdent v
+      if Set.member id activeids
+        then do st <- get
+                put $ st { census  = Map.adjust (mergeInfo vs) id (census st)
+                         , headers = Map.adjust (\(hdr, _) -> (hdr, True)) id (headers st) }
+        else return ()
+
+    -- Silently handle other cases...
+    -- One potential improvement: track variable renamings.
+    _ -> return ()
+
+isRec fn = case fnIsRec fn of Just True -> True
+                              _         -> False
+
+
+
+knLoopHeaders ::          (ModuleIL (KNExpr' MonoType) MonoType)
+              -> Compiled (ModuleIL (KNExpr' MonoType) MonoType)
+knLoopHeaders m = do body' <- knLoopHeaders' (moduleILbody m)
+                     return $ m { moduleILbody = body' }
+
+knLoopHeaders' :: KNExpr' MonoType -> Compiled (KNExpr' MonoType)
+knLoopHeaders' expr = do
+    HdrState h c <- execStateT (knLoopHeaderCensus Set.empty expr)
+                               (HdrState Map.empty Map.empty)
+    let info = computeInfo c h
+    liftIO $ putStrLn $ show info
+    return $ qq info expr
+ where
+  qq info expr =
+   let q = qq info in
+   case expr of
+    KNLiteral     {} -> expr
+    KNVar         {} -> expr
+    KNKillProcess {} -> expr
+    KNTyApp       {} -> expr
+    KNTuple       {} -> expr
+    KNAllocArray  {} -> expr
+    KNArrayRead   {} -> expr
+    KNArrayPoke   {} -> expr
+    KNAlloc       {} -> expr
+    KNStore       {} -> expr
+    KNDeref       {} -> expr
+    KNCallPrim    {} -> expr
+    KNAppCtor     {} -> expr
+    KNUntil       ty e1 e2  rng -> KNUntil ty (q e1) (q e2) rng
+    KNCase        ty v patbinds -> let patbinds' = map (\(p,e) -> (p, q e)) patbinds in
+                                   KNCase ty v patbinds'
+    KNIf          ty v e1 e2    -> KNIf     ty v (q e1) (q e2)
+    KNLetVal      id   e1 e2    -> KNLetVal id   (q e1) (q e2)
+    KNLetRec      ids es  b     -> KNLetRec ids (map q es) (q b)
+    KNLetFuns     [id] [fn] b ->
+        case Map.lookup id info of
+          Nothing -> KNLetFuns [id] [fn] (q b)
+
+          -- If we have a single recursive function (as detected earlier),
+          -- we should wrap its body with a minimal loop,
+          -- and replace recursive calls with calls to a loop header.
+          --
+          -- For example, replace (rec fold = { f => x => ... fold f z ... };
+          --                         in b end)
+          -- with                 (fun fold = { f => x' =>
+          --                         rec loop = { x => ... loop z ... };
+          --                         in
+          --                             loop x' end
+          --                       }; in b end)
+          Just ((id' , vs' ), mt ) -> -- vs' is the complete list of fresh args
+            let v'  = TypedId (tidType (fnVar fn)) id' in
+            -- The inner, recursive body
+            let fn'' = Fn { fnVar   = mkGlobal v'
+                          , fnVars  = dropUselessArgs mt (fnVars fn)
+                          , fnBody  = (q $ fnBody fn)
+                          , fnIsRec = Just True
+                          , fnAnnot = ExprAnnot [] (annotRange $ fnAnnot fn) []
+                          } in
+            -- The outer, non-recursive wrapper:
+            let fn' = Fn { fnVar   = fnVar fn
+                         , fnVars  = renameUsefulArgs mt vs'
+                         , fnBody  = KNLetFuns [ id' ] [ fn'' ]
+                                         (KNCall YesTail (typeKN (fnBody fn)) v' (dropUselessArgs mt vs' ))
+                         , fnIsRec = Just False
+                         , fnAnnot = fnAnnot fn
+                         } in
+            KNLetFuns [id ] [ fn' ] (qq (Map.delete id info) b)
+
+    KNLetFuns     ids fns b     ->
+        -- If we have a nest of recursive functions,
+        -- the replacements should only happen locally, not intra-function.
+        -- (TODO)
+        KNLetFuns ids (map (\fn -> fn { fnBody = q (fnBody fn) }) fns) (q b)
+
+    -- If we see a *tail* call to a recursive function, replace it with
+    -- the appropriate pre-computed call to the corresponding loop header.
+    KNCall tailq ty v vs ->
+      case (tailq, Map.lookup (tidIdent v) info) of
+        (YesTail, Just ((id, _), mt)) ->
+             KNCall YesTail ty (TypedId (tidType v) id) (dropUselessArgs mt vs)
+        _ -> expr
+
+mkGlobal (TypedId ty (Ident t u)) = TypedId ty (GlobalSymbol $ T.pack ((T.unpack t) ++ show u))
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
 
 -- ||||||||||||||||||||||||| Boilerplate ||||||||||||||||||||||||{{{
 -- This is necessary due to transformations of AIIf and nestedLets
@@ -652,6 +871,12 @@ instance Pretty t => Pretty (Fn (KNExpr' t) t) where
   pretty fn = group (lbrace <+> (hsep (map (\v -> pretty v <+> text "=>") (fnVars fn)))
                     <$> indent 4 (pretty (fnBody fn))
                     <$> rbrace) <+> pretty (fnVar fn)
+                                <+> text "(rec?:" <+> prettyfnIsRec fn <+> text ")"
+
+prettyfnIsRec fn = p (fnIsRec fn)
+  where p Nothing      = text "Nothing"
+        p (Just True)  = text "True"
+        p (Just False) = text "False"
 
 instance (Pretty body, Pretty t) => Pretty (ModuleIL body t) where
   pretty m = text "// begin decls"
@@ -1029,7 +1254,7 @@ lookupVarOp env@(SrcEnv tv _) v =
 
 -- residual var
 lookupVarOp' :: SrcEnv -> TypedId MonoType -> VarOp
-lookupVarOp' env@(SrcEnv tv _) vv =
+lookupVarOp' (SrcEnv tv _) vv =
   case Map.lookup (tidIdent vv) tv of
     Just op -> op
     Nothing -> error $ "KNExpr inlining (lookupVarOp') failed to look up var op " ++ show vv
@@ -1118,6 +1343,7 @@ visitWithDefault (vo, resv) = do
                     Just fn -> return $ Right fn
                     Nothing -> return $ Left (KNVar resv)
 
+{-
 visit :: VarOp -> In (Maybe (Either ResExpr (Fn ResExpr MonoType)))
 visit vo = do
   case vo of
@@ -1125,6 +1351,7 @@ visit vo = do
                   return $ Just (Left e)
     VO_F fo -> do mb_fn <- visitF fo
                   return $ fmap Right mb_fn
+-}
 
 --visitF :: OpndF -> In (Maybe (Fn ResExpr MonoType))
 visitF (Opnd fn env loc_fn _ loc_ip) = do
