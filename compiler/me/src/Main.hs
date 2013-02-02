@@ -522,6 +522,9 @@ lowerModule ai_mod ctx_il = do
          putDocLn (showILProgramStructure ilprog)
          putDocLn $ (outLn "^^^ ===================================")
 
+     liftIO $ putDocLn $ (text $ "/// Mono    size: " ++ show (knSize (moduleILbody monomod0)))
+     liftIO $ putDocLn $ (text $ "/// Inlined size: " ++ show (knSize (moduleILbody monomod4)))
+
      maybeInterpretKNormalModule kmod
 
      return ilprog
