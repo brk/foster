@@ -1,0 +1,20 @@
+main = {
+  noinline_c1 !;
+  noinline_c2 !;
+};
+
+// Make sure that we're not accidentally caching
+// inlined functions with the wrong args bound to them.
+
+noinline_c1 = {
+  expect_i32 4;
+  print_i32 (dethunk { 4 });
+};
+
+noinline_c2 = {
+  expect_i32 5;
+  print_i32 (dethunk { 5 });
+};
+
+dethunk = { t => t ! };
+

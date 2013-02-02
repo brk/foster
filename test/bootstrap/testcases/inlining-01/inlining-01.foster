@@ -1,0 +1,79 @@
+main = {
+  noinline_ex1 !;
+  //noinline_ex2 !;
+  //noinline_ex3 !;
+  //noinline_ex4 !;
+};
+
+fib1 = { x =>
+  if x ==Int32 0 then 1 else
+    x *Int32 (fib1 (x -Int32 1))
+  end
+}
+
+noinline_ex1 = {
+  expect_i32 120;
+  print_i32 (fib1 5);
+};
+
+
+fold2 = { f2 => x => b => nullp => car => cdr =>
+  if (nullp x) then b else
+   f2 (car x) (fold2 f2 (cdr x) b nullp car cdr)
+  end
+};
+
+noinline_ex2 = {
+  expect_i32 120;
+  print_i32 (fold2
+                   { a => b => a *Int32 b }
+                   5
+                   1
+                   { q => q ==Int32 0 }
+                   { r => r }
+                   { s => s -Int32 1 });
+};
+
+/*
+noinline_ex3 = {
+  let fold3 = { f3  => x => b => nullp => car => cdr =>
+    rec loop = {f3l => x => b => nullp => car => cdr =>
+      if (nullp x) then b else
+        f3l (car x) (loop f3l (cdr x) b nullp car cdr)
+      end
+    }; in
+      loop f3 x b nullp car cdr
+    end
+  }; in
+    expect_i32 120;
+    print_i32 (fold3
+                   { a => b => a *Int32 b }
+                   5
+                   1
+                   { q => q ==Int32 0 }
+                   { r => r }
+                   { s => s -Int32 1 });
+  end
+};
+
+noinline_ex4 = {
+  let fold4 = { f4 => x => b => nullp => car => cdr =>
+    rec loop = { x =>
+      if (nullp x) then b else
+        f4 (car x) (loop (cdr x))
+      end
+    }; in
+      loop x
+    end
+  }; in
+    expect_i32 120;
+    print_i32 (fold4
+                   { a => b => a *Int32 b }
+                   5
+                   1
+                   { q => q ==Int32 0 }
+                   { r => r }
+                   { s => s -Int32 1 });
+  end
+};
+*/

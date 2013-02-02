@@ -1,0 +1,13 @@
+main = {
+  expect_i32 1;
+  print_i32 (eta True);
+
+  expect_i32 0;
+  print_i32 (eta False);
+};
+
+// Trivial testcase for combined inlining + constant propagation.
+// The inlined copies of eta should reduce to simple constants,
+// not control flow.
+
+eta = { b : Bool => if b then 1 else 0 end };

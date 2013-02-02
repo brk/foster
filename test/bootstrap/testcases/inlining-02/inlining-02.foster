@@ -1,0 +1,64 @@
+main = {
+/*
+  expect_i1 True;
+  print_i1 (noinline_is-odd 11);
+
+  expect_i1 False;
+  print_i1 (noinline_is-odd 10);
+*/
+  noinline_testfoo !;
+};
+
+foo = { f =>
+  f 3
+};
+
+noinline_testfoo = {
+  tf = { q => q +Int32 1 };
+  expect_i32 4;
+  print_i32 (foo tf);
+};
+
+/* OK...
+noinline_is-odd = { z:Int32 =>
+  rec noinline_even = { x:Int32 => if x ==Int32 0 then True  else
+                                   if x ==Int32 1 then False else noinline_odd  (x -Int32 1) end end };
+      noinline_odd  = { x:Int32 => if x ==Int32 1 then True  else noinline_even (x -Int32 1) end };
+   in
+      ignore0 = noinline_even z;
+      ignore1 = noinline_odd  z;
+
+      noinline_odd z
+  end
+};
+*/
+
+/*
+// OK
+noinline_is-odd = { z:Int32 =>
+  rec even = { x:Int32 => if x ==Int32 0 then True  else
+                          if x ==Int32 1 then False else odd  (x -Int32 1) end end };
+      odd  = { y:Int32 => if y ==Int32 1 then True  else even (y -Int32 1) end };
+   in
+      ignore0 = even z;
+      ignore1 = odd  z;
+
+      odd z
+  end
+};
+*/
+
+
+/*
+noinline_is-odd = { z:Int32 =>
+  rec even = { x:Int32 => if x ==Int32 0 then True  else
+                          if x ==Int32 1 then False else odd  (x -Int32 1) end end };
+      odd  = { y:Int32 => if y ==Int32 1 then True  else even (y -Int32 1) end };
+   in
+      ignore0 = even z;
+      ignore1 = odd  z;
+
+      foo odd
+  end
+};
+*/
