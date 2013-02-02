@@ -112,12 +112,12 @@ foldRangeDown = { forall t:Type,
               fin : Int32 =>
               init : t =>
               iter : { Int32 => t => t } =>
-  rec go =  { n : Int32 => acc : t =>
+  REC frd =  { n : Int32 => acc : t =>
                 if n >=SInt32 fin then
-                  go (n -Int32 1) (iter n acc)
+                  frd (n -Int32 1) (iter n acc)
                 else acc end
             };
-  in go fst init end
+  frd fst init
 };
 
 /////
@@ -484,7 +484,7 @@ tmp_Text_2_of_Int8 = { n:Int8 =>
 };
 
 tmp_Text_2_of_Int32 = { n:Int32 =>
-  go = { n:Int32 =>
+  ttgo = { n:Int32 =>
     n0 = primitive_trunc_i32_i8 n;
     n1 = primitive_trunc_i32_i8 (bitlshr-Int32 n 8 );
     n2 = primitive_trunc_i32_i8 (bitlshr-Int32 n 16);
@@ -496,9 +496,39 @@ tmp_Text_2_of_Int32 = { n:Int32 =>
     (mkTextConcat (tmp_Text_2_of_Int8 n0) "")))
   };
   if n <SInt32 0
-    then mkTextConcat "-" (go (0 -Int32 n))
-    else                   go n
+    then mkTextConcat "-" (ttgo (0 -Int32 n))
+    else                   ttgo n
   end;
+};
+
+textDrop = { d : Int32 => s : Text =>
+  assert (textLength s >=SInt32 d) "textDrop";
+
+  if d ==Int32 0 then s else
+    case s
+      // TODO resolve confusion between bytes/codepoints/glyphs.
+      of $TextFragment a n     -> TextFragment (dropBytes a d) (n -Int32 d)
+      of $TextConcat   s1 s2 n ->
+        if textLength s1 <=SInt32 d
+          then             textDrop (d -Int32 textLength s1) s2
+          else TextConcat (textDrop  d s1)                   s2 (n -Int32 d)
+        end
+     end
+  end
+};
+
+dropBytes = { a : Array Int8 => d : Int32 =>
+  alen = arrayLength32 a -Int32 d;
+  bytes = allocDArray alen;
+
+  // bytes[0..alen]    = a[d..alen+d]
+  memcpy_i8_to_from_at_len bytes a d    alen;
+  bytes
+
+/*
+  alen = arrayLength32 a -Int32 d;
+  newDArray0 alen { i => a[d +Int32 i] };
+  */
 };
 
 high32BitsOf64 = { n : Int64 =>

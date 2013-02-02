@@ -457,36 +457,6 @@ foster_div_nat_digit_nz = { n => b =>
   (mkNatInf q, remainder)
 };
 
-dropBytes = { a : Array Int8 => d : Int32 =>
-  alen = arrayLength32 a -Int32 d;
-  bytes = allocDArray alen;
-
-  // bytes[0..alen]    = a[d..alen+d]
-  memcpy_i8_to_from_at_len bytes a d    alen;
-  bytes
-
-/*
-  alen = arrayLength32 a -Int32 d;
-  newDArray0 alen { i => a[d +Int32 i] };
-  */
-};
-
-textDrop = { d : Int32 => s : Text =>
-  assert (textLength s >=SInt32 d) "textDrop";
-
-  if d ==Int32 0 then s else
-    case s
-      // TODO resolve confusion between bytes/codepoints/glyphs.
-      of $TextFragment a n     -> TextFragment (dropBytes a d) (n -Int32 d)
-      of $TextConcat   s1 s2 n ->
-        if textLength s1 <=SInt32 d
-          then             textDrop (d -Int32 textLength s1) s2
-          else TextConcat (textDrop  d s1)                   s2 (n -Int32 d)
-        end
-     end
-  end
-};
-
 tmp_Text_2_of_digit = { k : Word =>
   // Drop top four bits...
   textDrop 4 (tmp_Text_2_of_Word k)
