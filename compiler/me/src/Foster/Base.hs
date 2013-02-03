@@ -477,13 +477,20 @@ deriving instance (Show ty) => Show (DataType ty)
 deriving instance (Show ty) => Show (DataCtor ty)
 
 instance Ord CtorId where
-  compare a b = compare (show a) (show b)
-
-instance Ord Ident where
     compare a b = compare (show a) (show b)
 
+instance Ord Ident where
+    compare (GlobalSymbol t1) (GlobalSymbol t2) = compare t1 t2
+    compare (Ident t1 u1)     (Ident t2 u2)     = case compare u1 u2 of
+                                                    EQ -> compare t1 t2
+                                                    cr -> cr
+    compare (GlobalSymbol _)  (Ident _  _ )     = LT
+    compare (Ident _ _)       (GlobalSymbol  _) = GT
+
 instance Eq Ident where
-    i == j      =    (show i) == (show j)
+    (GlobalSymbol t1) == (GlobalSymbol t2) = t1 == t2
+    (Ident t1 u1)     == (Ident t2 u2) = u1 == u2 && t1 == t2
+    _ == _ = False
 
 instance Show Ident where
     show (Ident name number) = T.unpack name ++ "!" ++ show number
