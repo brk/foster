@@ -5,6 +5,9 @@ main = {
 closure-over-itself = {
   f = (ref { 0 });
 
+  expect_i32 0;
+  print_i32 (f^ !);
+
   REC oddball = {
     oddball >^ f;
     1

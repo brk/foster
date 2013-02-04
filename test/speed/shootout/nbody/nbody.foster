@@ -105,21 +105,19 @@ dot_bodyPos = { b : Planet => // cfg sz 19
 };
 
 energy = { bodies : Array Planet => // (top-level) cfg size: 9; total: 53
-  let e = (ref 0.0); in
+    e = (ref 0.0);
     arrayEnum bodies { b1 : Planet => i : Int64 =>
       incrByFloat64 e (0.5 *f64 ma b1 *f64 dot_bodyPos b1);
       arrayEnumFrom bodies (incr64 i) { b2: Planet => jj : Int64 =>
-        let dx = px b1 -f64 px b2;
-            dy = py b1 -f64 py b2;
-            dz = pz b1 -f64 pz b2;
-            distance = sqrt-f64 ((dx *f64 dx) +f64 (dy *f64 dy) +f64 (dz *f64 dz));
-        in
-          decrByFloat64 e (div-f64 (ma b1 *f64 ma b2) distance);
-        end
+         dx = px b1 -f64 px b2;
+         dy = py b1 -f64 py b2;
+         dz = pz b1 -f64 pz b2;
+         distance = sqrt-f64 ((dx *f64 dx) +f64 (dy *f64 dy) +f64 (dz *f64 dz));
+
+         decrByFloat64 e (div-f64 (ma b1 *f64 ma b2) distance);
       };
     };
     e^
-  end
 };
 
 advance = { bodies : Array Planet =>
