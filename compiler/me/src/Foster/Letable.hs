@@ -130,6 +130,7 @@ substVarsInLetable s letable = case letable of
 --   It remains to be seen whether deref/store should be counted or not.
 letableSize :: Letable t -> Int
 letableSize letable = case letable of
+      ILLiteral _ (LitText {}) -> 2 -- two calls to initialize!
       ILLiteral      {} -> 0 -- TODO: distinguish fixnums from bignums?
       ILTuple        {} -> 1
       ILKillProcess  {} -> 0
