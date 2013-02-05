@@ -12,7 +12,6 @@ import Foster.MonoType
 import Foster.Letable(Letable(..), isPure, letableSize, canGC, willNotGCGlobal)
 import Foster.Config
 import Foster.CFG
-import Foster.CFGInlining
 
 import Compiler.Hoopl
 import Text.PrettyPrint.ANSI.Leijen
@@ -55,7 +54,7 @@ optimizeCFFn fn = do
              annotate (n, s) = s ++ "\n        (stage " ++ show n ++ ")"
 
   when True $ liftIO $ do
-      putStrLn $ " CFG size was " ++ show (cfgSize bbg) ++ " for " ++ show (fnVar fn)
+      putStrLn $ " CFG size was " ++ show (cfgSize bbg) ++ " for " ++ show (tidIdent $ fnVar fn)
   when (fn `isWanted` wantedFns) $ liftIO $ do
       putStrLn "BEFORE/AFTER"
       -- Discards duplicates before annotating
