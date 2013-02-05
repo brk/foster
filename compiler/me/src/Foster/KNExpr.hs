@@ -1119,6 +1119,9 @@ knInlineToplevel expr env = do
 mkKNLetFuns []  []  b = b
 mkKNLetFuns ids fns b = KNLetFuns ids fns b
 
+mkKNLetRec []  []  b = b
+mkKNLetRec ids fns b = KNLetRec ids fns b
+
 knInline' :: SrcExpr -> SrcEnv -> In ResExpr
 knInline' expr env = do
   let q v = resVar env v
@@ -1226,8 +1229,16 @@ knInline' expr env = do
 
     KNLetRec     ids es  b -> do
         --liftIO $ putStrLn $ "saw rec bindings of " ++ show ids
-        b' <- knInline' b env
-        return $ KNLetRec ids es b'
+        ids' <- mapM freshenId ids
+        refs <- mapM (\_ -> mkOpRefs) es
+        let ops  = map (\(e,(r1,r2,r3)) -> (Opnd e env' r1 r2 r3)) (zip es refs)
+            env' = extendEnv ids ids' (map VO_E ops) env
+        b' <- knInline' b env'
+        es'     <- mapM visitE ops
+        occ_sts <- mapM getVarStatus ids'
+        let (ids'', fns'') = unzip [ide | (ide, occst) <- zip (zip ids' es' ) occ_sts
+                                        , notDead occst]
+        return $ mkKNLetRec ids'' fns'' b'
 
     KNLetFuns    ids fns0 b -> do
         --liftIO $ putStrLn $ "saw fun bindings of " ++ show ids
@@ -1254,8 +1265,8 @@ knInline' expr env = do
         occ_sts <- mapM getVarStatus ids'
         let fns' = map (\(fn, mb_fn) -> case mb_fn of Just f -> f
                                                       Nothing -> fn) (zip fns mb_fns)
-        let (ids'', fns'') = unzip [(id, fn) | (id, fn, occst) <- zip3 ids' fns' occ_sts
-                                             , notDead occst]
+        let (ids'', fns'') = unzip [idfn | (idfn, occst) <- zip (zip ids' fns' ) occ_sts
+                                         , notDead occst]
         return $ mkKNLetFuns ids'' fns'' b'
 
 handleCallOfKnownFunction expr resExprA opf@(Opnd fn _ _ loc_op _) v vs env q = do
