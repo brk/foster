@@ -72,6 +72,8 @@ TODO: libraries, benchmarks, & applications
   * GCed values need to be registered with the GC when initialized.
   * Need to decide how to deal with module-level initialization in a sane way.
 
+* Primitive to determine aliasing between refs and/or arrays?
+
 TODO: bugs
 ----------
 
@@ -137,6 +139,16 @@ TODO loop optimizations
 * Move stack stores for invariant function args from postalloca to entry
   (minor efficiency gain for tail-recursive functions).
   Basically the exact same cost analysis as above.
+
+* Contifying code like this?::
+
+    b  = 1;
+    f1 = { ... };
+    b  = 2;
+    f2 = { ... f1 ! ... };
+
+  Should be handled by alpha-normalization, but should check...
+
 
 TODO: less minor optimizations
 ------------------------------
