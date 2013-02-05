@@ -520,7 +520,7 @@ foster_mp_nat_to_text_radix = { a : Array Int64 => radix : Int32 =>
    then foldRange 0 (used a) "" { d => t =>
           //print_text "radix:d";
           //print_i64b  a[d];
-          mkTextConcat (tmp_Text_2_of_Int64 a[d]) t
+          mkTextConcat (tmp_Text_2_of_UInt64 a[d]) t
         };
   else
   if radix ==Int32 10 then

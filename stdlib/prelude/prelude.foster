@@ -477,28 +477,32 @@ tmp_Text_2_of_Int8_nibble = { n : Int8 =>
   end
 };
 
-tmp_Text_2_of_Int8 = { n:Int8 =>
+tmp_Text_2_of_UInt8 = { n:Int8 =>
   mkTextConcat (tmp_Text_2_of_Int8_nibble (bitand-Int8 15 (bitlshr-Int8 n 4)))
  (mkTextConcat (tmp_Text_2_of_Int8_nibble (bitand-Int8 15 n))
   "");
 };
 
-tmp_Text_2_of_Int32 = { n:Int32 =>
+tmp_Text_2_of_UInt32 = { n:Int32 =>
   ttgo = { n:Int32 =>
     n0 = primitive_trunc_i32_i8 n;
     n1 = primitive_trunc_i32_i8 (bitlshr-Int32 n 8 );
     n2 = primitive_trunc_i32_i8 (bitlshr-Int32 n 16);
     n3 = primitive_trunc_i32_i8 (bitlshr-Int32 n 24);
 
-     mkTextConcat (tmp_Text_2_of_Int8 n3)
-    (mkTextConcat (tmp_Text_2_of_Int8 n2)
-    (mkTextConcat (tmp_Text_2_of_Int8 n1)
-    (mkTextConcat (tmp_Text_2_of_Int8 n0) "")))
+     mkTextConcat (tmp_Text_2_of_UInt8 n3)
+    (mkTextConcat (tmp_Text_2_of_UInt8 n2)
+    (mkTextConcat (tmp_Text_2_of_UInt8 n1)
+    (mkTextConcat (tmp_Text_2_of_UInt8 n0) "")))
   };
+  ttgo n;
+};
+
+tmp_Text_2_of_SInt32 = { n:Int32 =>
   if n <SInt32 0
-    then mkTextConcat "-" (ttgo (0 -Int32 n))
-    else                   ttgo n
-  end;
+    then mkTextConcat "-" (tmp_Text_2_of_UInt32 (0 -Int32 n))
+    else                   tmp_Text_2_of_UInt32 n
+  end
 };
 
 textDrop = { d : Int32 => s : Text =>
@@ -543,19 +547,26 @@ splitInt64 = { n : Int64 =>
 
 tmp_Text_2_of_Word = { n:Word =>
   if wordNumBits32 ! ==Int32 32
-     then tmp_Text_2_of_Int32 (primitive_trunc_Word_i32 n);
-     else tmp_Text_2_of_Int64 (primitive_zext_Word_to_i64 n);
+     then tmp_Text_2_of_UInt32 (primitive_trunc_Word_i32 n);
+     else tmp_Text_2_of_UInt64 (primitive_zext_Word_to_i64 n);
   end
 };
 
-tmp_Text_2_of_Int64 = { n:Int64 =>
+tmp_Text_2_of_UInt64 = { n:Int64 =>
   case splitInt64 n of
     (na, nb) ->
-      mkTextConcat (tmp_Text_2_of_Int32 na) (tmp_Text_2_of_Int32 nb)
+      mkTextConcat (tmp_Text_2_of_UInt32 na) (tmp_Text_2_of_UInt32 nb)
   end
 };
 
 tmp_Text_of_Int64 = { n:Int64 =>
+  if n <SInt64 0
+    then mkTextConcat "-" (tmp_Text_of_UInt64 (negate-Int64 n))
+    else                   tmp_Text_of_UInt64               n
+  end
+};
+
+tmp_Text_of_UInt64 = { n:Int64 =>
   REC go = { n:Int64 => t:Text =>
     if n <=SInt64 10
       then mkTextConcat (tmp_Text_of_Int32_digit (primitive_trunc_i64_i32 n)) t
@@ -564,11 +575,6 @@ tmp_Text_of_Int64 = { n:Int64 =>
            go q (mkTextConcat (tmp_Text_of_Int32_digit r) t);
     end
   };
-
-  if n <SInt64 0
-    then mkTextConcat "-" (go (negate-Int64 n) "")
-    else go n ""
-  end
+  go n ""
 };
-
 

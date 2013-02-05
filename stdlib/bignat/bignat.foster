@@ -469,8 +469,11 @@ case n of $NatInf a ->
   if radix ==Int32 2
 
    then foldRange 0 (natDigitsUsed n) "" { d => t =>
-          //print_text "radix:d";
-          //print_i64b  a[d];
+          //print_text "\n";
+          //print_text "radix:d (base 2 )";
+          //print_i64b (primitive_zext_Word_to_i64 a[d]);
+          //print_text "radix:d (base 10)";
+          //print_i64  (primitive_zext_Word_to_i64 a[d]);
           mkTextConcat (tmp_Text_2_of_digit a[d]) t
         };
   else
