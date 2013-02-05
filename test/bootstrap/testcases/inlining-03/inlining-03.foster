@@ -1,19 +1,20 @@
+
+
 main = {
-  //print_result_120 (noinline_call_fold1 !);
-  //df = elapsed_time_n noinline_call_fold1_   100;
-  // print_float_p9f64 df;
-  //expect_float_p9f64 df;
+  print_result_120 (noinline_call_fold1 !);
+  df = elapsed_time_n noinline_call_fold1_   1000;
+   print_float_p9f64 df;
+  expect_float_p9f64 df;
 
-  //print_result_120 (noinline_call_fold2 !);
-  //dg = elapsed_time_n noinline_call_fold2_   100;
-  // print_float_p9f64 dg;
-  //expect_float_p9f64 dg;
+  print_result_120 (noinline_call_fold2 !);
+  dg = elapsed_time_n noinline_call_fold2_   1000;
+   print_float_p9f64 dg;
+  expect_float_p9f64 dg;
 
-  //print_result_120 (noinline_call_fold3 !);
+  print_result_120 (noinline_call_fold3 !);
   ()
 };
 
-/*
 noinline_elapsed_time_once = { fg : { () } =>
   t1 = foster_getticks !;
   fg !;
@@ -33,21 +34,20 @@ noinline_elapsed_time_100 = { qq : { () } =>
 };
 
 elapsed_time_n = { ff : { () } => n : Int32 =>
-  rec loop = { x : Int32 =>
+  REC loop = { x : Int32 =>
     if x <=SInt32 0 then () else
       ff !; loop (x -Int32 1);
     end
-  }; in
+  };
 
-    t1 = foster_getticks !;
-    loop n;
-    t2 = foster_getticks !;
+  t1 = foster_getticks !;
+  loop n;
+  t2 = foster_getticks !;
 
-    foster_getticks_elapsed t1 t2
-  end
+  foster_getticks_elapsed t1 t2
 };
 
-*/
+
 fold1 = { f1 => x => b => nullp => car => cdr =>
   if nullp x
     then b
@@ -73,7 +73,6 @@ noinline_call_fold1 = {
 };
 
 
-/*
 noinline_call_fold2_ = { noinline_call_fold2  ! ; () };
 noinline_call_fold2 = {
   (fold2
@@ -95,7 +94,6 @@ fold2 = { f2 => x => b => nullp => car => cdr =>
     loop x b
   end
 };
-*/
 
 
 noinline_call_fold3_ = { noinline_call_fold3  ! ; () };
