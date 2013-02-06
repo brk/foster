@@ -546,6 +546,7 @@ type Hdr = StateT HdrState KN
 data HdrState =   HdrState {
     headers :: LoopHeaders
   , census  :: LoopCensus
+  , varmap  :: Map Ident Ident -- for tracking bitcasts...
 }
 
 -- Map each function's (outer) bound identifier to a fresh id,
@@ -619,7 +620,14 @@ knLoopHeaderCensus activeids expr = go expr where
     KNCase        _ _ patbinds -> do mapM_ (\(_,e) -> go e) patbinds
     KNUntil         _ e1 e2 _  -> do go e1 ; go e2
     KNIf          _ _ e1 e2    -> do go e1 ; go e2
-    KNLetVal      _   e1 e2    -> do go e1 ; go e2
+    KNLetVal      id  e1 e2    -> do go e1
+                                     case e1 of
+                                       (KNTyApp _ v _)
+                                         -> addIdRemapping id (tidIdent v)
+                                       (KNVar v)
+                                         -> addIdRemapping id (tidIdent v)
+                                       _ -> return ()
+                                     go e2
     KNLetRec      _   es  b    -> do mapM_ go es ; go b
     KNLetFuns     ids@[_] fns@[fn] b | isRec fn -> do
                                      mapM_ (knLoopHeaderCensusFn (Set.union activeids
@@ -632,7 +640,7 @@ knLoopHeaderCensus activeids expr = go expr where
     KNLetFuns    _ids fns b    -> do mapM_ (knLoopHeaderCensus activeids . fnBody) fns
                                      go b
     KNCall YesTail _ v vs -> do
-      let id = tidIdent v
+      id <- lookupId (tidIdent v)
       if Set.member id activeids
         then do st <- get
                 put $ st { census  = Map.adjust (mergeInfo vs) id (census st)
@@ -646,7 +654,14 @@ knLoopHeaderCensus activeids expr = go expr where
 isRec fn = case fnIsRec fn of Just True -> True
                               _         -> False
 
+lookupId id = do
+  st <- get
+  return $ Map.findWithDefault id id (varmap st)
 
+addIdRemapping id id' = do
+  id'' <- lookupId id'
+  st <- get
+  put $ st { varmap = Map.insert id id'' (varmap st) }
 
 knLoopHeaders ::          (ModuleIL (KNExpr' MonoType) MonoType)
               -> Compiled (ModuleIL (KNExpr' MonoType) MonoType)
@@ -655,14 +670,15 @@ knLoopHeaders m = do body' <- knLoopHeaders' (moduleILbody m)
 
 knLoopHeaders' :: KNExpr' MonoType -> Compiled (KNExpr' MonoType)
 knLoopHeaders' expr = do
-    HdrState h c <- execStateT (knLoopHeaderCensus Set.empty expr)
-                               (HdrState Map.empty Map.empty)
+    HdrState h c r <- execStateT (knLoopHeaderCensus Set.empty expr)
+                                 (HdrState Map.empty Map.empty Map.empty)
     let info = computeInfo c h
     liftIO $ putStrLn $ show info
-    return $ qq info expr
+    return $ qq info r expr
  where
-  qq info expr =
-   let q = qq info in
+  qq info r expr =
+   let qv id = Map.lookup (Map.findWithDefault id id r ) info in
+   let q = qq info r in
    case expr of
     KNLiteral     {} -> expr
     KNVar         {} -> expr
@@ -684,7 +700,7 @@ knLoopHeaders' expr = do
     KNLetVal      id   e1 e2    -> KNLetVal id   (q e1) (q e2)
     KNLetRec      ids es  b     -> KNLetRec ids (map q es) (q b)
     KNLetFuns     [id] [fn] b ->
-        case Map.lookup id info of
+        case qv id of
           Nothing -> KNLetFuns [id] [fn] (q b)
 
           -- If we have a single recursive function (as detected earlier),
@@ -715,7 +731,7 @@ knLoopHeaders' expr = do
                          , fnIsRec = Just False
                          , fnAnnot = fnAnnot fn
                          } in
-            KNLetFuns [id ] [ fn' ] (qq (Map.delete id info) b)
+            KNLetFuns [id ] [ fn' ] (qq (Map.delete id info) r b)
 
     KNLetFuns     ids fns b     ->
         -- If we have a nest of recursive functions,
@@ -726,7 +742,7 @@ knLoopHeaders' expr = do
     -- If we see a *tail* call to a recursive function, replace it with
     -- the appropriate pre-computed call to the corresponding loop header.
     KNCall tailq ty v vs ->
-      case (tailq, Map.lookup (tidIdent v) info) of
+      case (tailq, qv (tidIdent v)) of
         (YesTail, Just ((id, _), mt)) ->
              KNCall YesTail ty (TypedId (tidType v) id) (dropUselessArgs mt vs)
         _ -> expr
