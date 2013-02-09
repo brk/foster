@@ -1,0 +1,7 @@
+snafuinclude Pidigits "bench/shootout/pidigits";
+
+main = {
+  n0 = tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1);
+  n = if n0 ==Int32 0 then 30 else n0 end;
+  pidigits n;
+};

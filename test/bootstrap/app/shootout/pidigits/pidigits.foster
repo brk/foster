@@ -1,0 +1,8 @@
+snafuinclude Pidigits "bench/shootout/pidigits";
+
+main = {
+  expect_text  "3141592653    10";
+  expect_text  "5897932384    20";
+  expect_text  "6264338327    30";
+  pidigits 30;
+};

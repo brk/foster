@@ -1,0 +1,113 @@
+snafuinclude Prelude "prelude";
+snafuinclude Bignum  "bignum";
+
+// Transliteration of Computer Language Benchmarks Game
+// program for Ruby contributed by Rick Branson
+// based on Mario Pernici's Python program.
+//
+// http://shootout.alioth.debian.org/u32/program.php?test=pidigts&lang=yarv&id=3
+
+mul32 :: { IntInf => Int32 => IntInf };
+mul32 = { a => b => intMulInt32 a b };
+
+pow2_32 :: { IntInf => Int32 => IntInf };
+pow2_32 = { i => k => intMul2d i k };
+
+add :: { IntInf => IntInf => IntInf };
+add =  { i => j => intAdd i j };
+
+sub :: { IntInf => IntInf => IntInf };
+sub =  { i => j => intSub i j };
+
+mul3 :: { IntInf => IntInf };
+mul3 = { i => intMulInt32 i 3 };
+
+mul :: { IntInf => IntInf => IntInf };
+mul = { i => j => intBasicMul i j };
+
+divmod :: { IntInf => IntInf => (IntInf, IntInf) };
+divmod = { a => b =>
+  //print_text "divmod";
+  //printIntInf a;
+  //printIntInf b;
+  //print_text (textOfOrd (intCmp a b));
+  intQuoRem a b
+};
+
+geIntInf :: { IntInf => IntInf => Bool };
+geIntInf =  { a => b => case intCmp a b of $LT -> False
+                                        of _   -> True
+                        end
+};
+
+gtIntInf :: { IntInf => IntInf => Bool };
+gtIntInf =  { a => b => case intCmp a b of $GT -> True
+                                        of _   -> False
+                        end
+};
+
+pidigits = { nn : Int32 =>
+  REC lup = { a0 => n0 : IntInf => k0 : Int32 => k10 : Int32 =>
+              d0 => ns0 : Int64 => i0 : Int32 =>
+
+       kp  = k0  +Int32 1;
+       k1p = k10 +Int32 2;
+       np  = mul32 n0                                 kp;
+       ap  = mul32 (add a0 (pow2_32 n0 1)) k1p;
+       dp  = mul32 d0                                 k1p;
+       /*
+       print_text_bare "          i0: "; print_i32 i0;
+       print_text_bare "                 "; print_i32 kp;
+       print_text_bare "                 "; print_i64 ns0;
+       print_text_bare "                 "; print_i32 k1p;
+       print_text_bare "                 "; printIntInf np;
+       print_text_bare "                 "; printIntInf ap;
+       print_text_bare "                 "; printIntInf dp;
+       print_text      "                t"; //print_i32 t;
+       print_text      "                u"; //print_i32 u;
+       */
+       if geIntInf ap np
+          then
+            n3a = (mul3 np) `add` ap;
+            case n3a `divmod` dp of (t, u0) ->
+                u = add u0 np;
+                /*
+                print_text_bare "             n3: "; printIntInf n3a;
+                print_text_bare "             t': "; printIntInf t;
+                print_text_bare "             u0: "; printIntInf u0;
+                print_text_bare "             u': "; printIntInf u;
+                */
+                if gtIntInf dp u
+                  then     ns1 = ns0 *Int64 10 +Int64 (primitive_zext_Word_to_i64 (intLowWord t));
+                           i   = i0 +Int32 1;
+                           ns  = if srem-Int32 i 10 ==Int32 0
+                                    then print_i64_bare ns1;
+                                         print_text_bare "    ";
+                                         print_i32 i;
+                                         0;
+                                    else ns1
+                                  end;
+
+                          if i >=SInt32 nn then () // break
+                          else
+                             a = mul32 (sub ap (mul dp t)) 10;
+                             n = mul32 np 10;
+                             lup a n kp k1p dp ns i;
+                          end
+                  else // d <= u
+                    lup ap np kp k1p dp ns0 i0
+                end
+            end
+          else // ap < np
+              lup ap np kp k1p dp ns0 i0
+       end
+  };
+
+  a = intFromInt32 0;
+  n = intFromInt32 1;
+  d = intFromInt32 1;
+  //lup a n k k1 d ns i
+  lup   a n 0 1  d 0  0;
+
+};
+
