@@ -70,9 +70,12 @@ typecheckInt annot originalText expTy = do
         precheckedLiteralInt :: String -> Bool -> String -> Int -> LiteralInt
         precheckedLiteralInt originalText negated clean base =
             let nat = parseRadixRev (fromIntegral base) (List.reverse clean) in
-            let activeBits = List.length (bitStringOf nat)
-                                                 + (if negated then 1 else 0) in
             let integerValue = (if negated then -1 else 1) * nat in
+            let activeBits =
+                 if integerValue == -2147483648 then 32 -- handle edge cases directly
+                   else if integerValue == -9223372036854775808 then 64
+                     else List.length (bitStringOf nat)
+                                                 + (if negated then 1 else 0) in
             LiteralInt integerValue activeBits originalText base
 
         -- Precondition: string contains only valid hex digits.
