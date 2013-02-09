@@ -745,6 +745,10 @@ evalNamedPrimitive primName gs [val] | isExpectFunction primName =
       do expectStringNL gs (display val)
          return $ withTerm gs unit
 
+evalNamedPrimitive "print_i64_bare" gs [SSInt i] =
+      do printString gs (showBits 64 i)
+         return $ withTerm gs unit
+
 evalNamedPrimitive "expect_i64b" gs [SSInt i] =
       do expectStringNL gs (showBits 64 i)
          return $ withTerm gs unit

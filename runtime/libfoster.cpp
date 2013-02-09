@@ -118,6 +118,7 @@ void fprint_p9f64(FILE* f, double x) { fprintf(f, "%.9f\n", x); }
 void fprint_i64(FILE* f, int64_t x) { fprintf(f, "%" PRId64 "\n", x); }
 void fprint_i64x(FILE* f, int64_t x) { fprintf(f, "%" PRIX64 "_16\n", x); }
 void fprint_i64b(FILE* f, int64_t x) { fprint_b2<64>(f, x); }
+void fprint_i64_bare(FILE* f, int64_t x) { fprintf(f, "%" PRId64 , x); }
 
 void fprint_i32(FILE* f, int32_t x) {  fprintf(f, "%d\n", x); fflush(f); }
 void fprint_i32x(FILE* f, int32_t x) { fprintf(f, "%X_16\n", x); }
@@ -210,6 +211,7 @@ void expect_i32b(int32_t x) { fprint_i32b(stderr, x); }
 
 int read_i32() { int32_t n; scanf(" %d", &n); return n; }
 
+void  print_i64_bare(int64_t x) { fprint_i64_bare(stdout, x); }
 void  print_i64(int64_t x) { fprint_i64(stdout, x); }
 void expect_i64(int64_t x) { fprint_i64(stderr, x); }
 void  print_i64x(int64_t x) { fprint_i64x(stdout, x); }
