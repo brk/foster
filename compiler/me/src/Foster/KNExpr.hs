@@ -1198,7 +1198,7 @@ knInline' expr env = do
           then do _ <- visitF opf -- don't inline away main, just process it!
                   resExpr "noinline"
 
-          else do handleCallOfKnownFunction expr resExpr opf v vs env qs
+          else do handleCallOfKnownFunction tailq expr resExpr opf v vs env qs
 
     KNUntil       ty e1 e2 rng -> do
         e1' <- knInline' e1 env
@@ -1317,7 +1317,7 @@ knInline' expr env = do
                                          , notDead occst]
         return $ mkKNLetFuns ids'' fns'' b'
 
-handleCallOfKnownFunction expr resExprA opf@(Opnd fn _ _ loc_op _) v vs env qs = do
+handleCallOfKnownFunction tailq expr resExprA opf@(Opnd fn _ _ loc_op _) v vs env qs = do
     -- liftIO $ putStrLn $ "saw call of var " ++ show (tidIdent v) ++ " ~~> " ++ show (tidIdent (fnVar fn))
     res <- visitF opf
     case res of
@@ -1328,7 +1328,7 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn _ _ loc_op _) v vs env qs =
             if True
               then do
                 qvs'  <- mapM (qs "known call vs") vs
-                mb_e' <- foldLambda' f' loc_op qvs' env
+                mb_e' <- foldLambda' tailq f' loc_op qvs' env
                 case mb_e' of
                    Just e' -> do --liftIO $ putDoc $ text "lambda folding resulted in " <> pretty e' <> text "\n"
                                  --case lookupVarMb v env of
@@ -1473,8 +1473,8 @@ newUniq = do uref <- gets inUniqRef
              liftIO $ modifyIORef uref (+1) >> readIORef uref
 
 -- input are residual vars, not src vars, fwiw
-foldLambda' :: Fn SrcExpr MonoType -> IORef OuterPending -> [TypedId MonoType] -> SrcEnv -> In (Maybe ResExpr)
-foldLambda' fn loc_op vs' env = do
+foldLambda' :: TailQ -> Fn SrcExpr MonoType -> IORef OuterPending -> [TypedId MonoType] -> SrcEnv -> In (Maybe ResExpr)
+foldLambda' tailq fn loc_op vs' env = do
 
   let env' = extendEnv ids ids' ops env
                 where
@@ -1496,7 +1496,9 @@ foldLambda' fn loc_op vs' env = do
 
     OP_False -> do
       writeRef loc_op OP_True
-      e' <- knInline' (removeTailCallAnnots $ fnBody fn) env'
+      let mangle = case tailq of YesTail -> id
+                                 NotTail -> removeTailCallAnnots
+      e' <- knInline' (mangle $ fnBody fn) env'
       -- writeRef loc_op OP_False
       return $ Just e'
 
@@ -1550,7 +1552,7 @@ visitE (Opnd e env loc_e _ loc_ip) = do
             liftIO $ putStrLn $ "inner-pending true for expr...????"
             return e --TODO this is WRONG :(
     Visited r -> do
-        liftIO $ putStrLn $ "visited opnd " ++ show (pretty e) ++ ", it was Visited:\n" ++ show (pretty r)
+        --liftIO $ putStrLn $ "visited opnd " ++ show (pretty e) ++ ", it was Visited:\n" ++ show (pretty r)
         return r
 
 -- When we inline a function body, it moves from a tail context to a non-tail
