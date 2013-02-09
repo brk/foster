@@ -912,7 +912,7 @@ Value* getArraySlot(Value* base, Value* idx, CodegenPass* pass,
                     bool dynCheck, const std::string& srclines) {
   Value* arr = NULL; Value* len;
   if (tryBindArray(base, arr, len)) {
-    if (dynCheck) {
+    if (dynCheck && !pass->config.disableAllArrayBoundsChecks) {
       emitFosterArrayBoundsCheck(pass->mod, idx, len, srclines);
     }
     return getPointerToIndex(arr, asInt32(idx), "arr_slot");

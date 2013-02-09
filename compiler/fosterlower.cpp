@@ -71,7 +71,9 @@ optDontKillDeadSlots("dont-kill-dead-slots",
 static cl::opt<bool>
 optDisableLifetimeInfo("disable-lifetime-info",
   cl::desc("[foster] Disable lifetime info for GC roots"));
-
+static cl::opt<bool>
+optDisableAllArrayBoundsChecks("unsafe-disable-array-bounds-checks",
+  cl::desc("[foster] Unsafely omit array bounds checking"));
 static cl::opt<bool>
 optForceNUW("unsafe-use-nuw",
   cl::desc("[foster] Forcibly tag all relevant LLVM instructions with nuw"));
@@ -321,6 +323,8 @@ int main(int argc, char** argv) {
     config.trackAllocSites   = optTrackAllocSites;
     config.killDeadSlots     = !optDontKillDeadSlots;
     config.emitLifetimeInfo  = !optDisableLifetimeInfo;
+    config.disableAllArrayBoundsChecks
+                             =  optDisableAllArrayBoundsChecks;
 
     foster::codegenLL(prog, module, config);
   }
