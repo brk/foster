@@ -277,7 +277,11 @@ void memcpy_i8_to_at_from_len(foster_bytes* to,   uint32_t req_at,
 void print_float_p9f64(double f) { return fprint_p9f64(stdout, f); }
 void expect_float_p9f64(double f) { return fprint_p9f64(stderr, f); }
 
-void* get_cmdline_arg_n(int32_t n) {
+// For GC roots to work correctly, the returned pointer
+// must be of type Text (i.e. %Text.DT*) but we have no
+// way of naming that type here. So we wrap this function
+// as get_cmdline_arg_n(n) in CodegenUtils.cpp.
+void* foster_get_cmdline_arg_n_raw(int32_t n) {
   if (n >= 0 && n < foster_argc) {
       const char* s = foster_argv[n];
       return foster_emit_string_of_cstring(s, strlen(s));
