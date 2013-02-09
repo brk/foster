@@ -1,1036 +1,193 @@
-snafuinclude Prelude "prelude";
+snafuinclude Bignat "bignat";
 
 type case IntInf
-      of $IntInf (Array Int64) Bool
+      of $IntInf NatInf Bool
       ;
 
-// Invariant on (IntInf a _):   used a >= 1.
+intNat :: { IntInf => NatInf };
+intNat = { i => case i of $IntInf n _ -> n end };
 
-// TODO use the LLVM's -with-overflow intrinsics to
-// enable use of the full 64 bits for the digit value.
+intNeg :: { IntInf => Bool };
+intNeg = { i => case i of $IntInf _ b -> b end };
 
-digits :: { IntInf => Array Int64 };
-digits = {  i      =>
-  case i
-    of $IntInf a _ -> a
-  end
+mkIntInf = { n => b =>
+        if natIsZero n then IntInf n False
+                       else IntInf n b end
 };
 
-isNegative :: { IntInf => Bool };
-isNegative = {  i      =>
-  case i
-    of $IntInf _ n -> n
-  end
-};
-
-used :: { Array Int64 => Int32 };
-used = { a =>
-  arrayLength32 a  // just array size, since we don't over-allocate.
-};
-
-//foster_MP_MASK = ...;
-// need 'global' constants
-
-findFirstUsedDigit = { a : Array Int64 =>
-  REC go = { k =>
-     if k <SInt32 0 then 0 else
-         if a[k] !=Int64 0
-             then k
-             else go (k -Int32 1)
+intFromInt32 = { i : Int32 =>
+  if i <SInt32 0
+    then if i ==Int32 (minReprInt32 !)
+           then // 0 - MIN_INT does not produce -MIN_INT,
+                //           cursed pigeonhole principle!
+                noinline_mkNegativeMinInt32 !
+           else IntInf (natFromInt32 (0 -Int32 i)) True
          end
-     end
-  };
-  go (used a -Int32 1);
+    else        IntInf (natFromInt32 i)           False
+  end
 };
 
-// Precondition: b & MP_DIGIT_MASK == b
-//
-cmpIntInfAbsDigitsD = { a : Array Int64 => b : Int64 =>
-  if used a >SInt32 1
-    then
-         // Because we don't yet use all 64 bits of each word,
-         // a 62-bit or 63-bit number needs two limbs to represent.
-         //
-         // We can (and eventually plan to) fix this by using LLVM's
-         // overflow-reflecting intrinsics to use all 64 bits.
-         //
-         if used a ==Int32 2
-           then cmpIntInfAbs a (mkDigitsOfInt64 b)
-           else GT !
+intFromInt64 = { i : Int64 =>
+  if i <SInt64 0
+    then if i ==Int64 (minReprInt64 !)
+           then // 0 - MIN_INT does not produce -MIN_INT,
+                //           cursed pigeonhole principle!
+                noinline_mkNegativeMinInt64 !
+           else IntInf (natFromInt64 (0 -Int64 i)) True
          end
-    else cmpUInt64 a[0] b
-  end
-};
-
-cmpIntInfAbsD = { a : IntInf => b : Int64 =>
-  cmpIntInfAbsDigitsD (digits a) b
-};
-
-cmpIntInfD = { a : IntInf => b : Int64 =>
-  case (isNegative a, b <SInt64 0)
-    of (True, False) -> LT !
-    of (False, True) -> GT !
-    of (False,False) -> cmpIntInfAbsDigitsD (digits a) b
-    of (True , True) ->
-      case cmpIntInfAbsDigitsD (digits a) (negate-Int64 b)
-        of $EQ -> EQ !
-        of c   -> ordInvert c
-      end
-  end
-};
-
-cmpIntInfAbs = { a : Array Int64 => b : Array Int64 =>
-  a_first_used = findFirstUsedDigit a;
-  b_first_used = findFirstUsedDigit b;
-  cmpord = cmpUInt32 a_first_used b_first_used;
-
-  case cmpord
-    of $LT -> cmpord
-    of $GT -> cmpord
-    of _ ->
-      REC go = { k =>
-        cmpord = cmpUInt64 a[k] b[k];
-        if k ==Int32 0 then cmpord
-        else
-          case cmpord
-            of $LT -> cmpord
-            of $GT -> cmpord
-            of _   -> go (k -Int32 1)
-          end
-        end
-      };
-      if used a ==Int32 0 then EQ ! else
-        go a_first_used
-      end
-  end
-};
-
-foster_mp_cmp = { x : IntInf => y:IntInf =>
-  case (isNegative x, isNegative y)
-    of (True, False) -> LT !
-    of (False, True) -> GT !
-    of (xneg , _   ) ->
-      if xneg
-        then cmpIntInfAbs (digits y) (digits x)
-        else cmpIntInfAbs (digits x) (digits y)
-      end
-  end
-};
-
-// Precondition: fst <= fin
-//
-foldRange = { forall t:Type,
-              fst : Int32 =>
-              fin : Int32 =>
-              init : t =>
-              iter : { Int32 => t => t } =>
-  REC go = { n : Int32 => acc : t =>
-      if n >=SInt32 fin then acc else
-        go (n +Int32 1) (iter n acc)
-      end
-  };
-  go fst init;
-};
-
-// foster_DIGIT_BIT = 60
-// foster_MP_DIGIT_BIT_MASK = (1 << foster_DIGIT_BIT) - 1
-// foster_MP_DIGIT_BIT_MASK = FFF`FFFF`FFFF`FFFF_16
-
-addCarryOf :: { Int64 => Int64 };
-addCarryOf = { n =>
-  bitlshr-Int64 n 60
-  // shift right (>>) by foster_MP_DIGIT_BIT = 60 for i64
-};
-
-subCarryOf :: { Int64 => Int64 };
-subCarryOf = { n =>
-  bitlshr-Int64 n 63
-  // shift right (>>) by foster_MP_SIGN_BITSHIFT = 63 for i64
-};
-
-foster_mp_isZero_nat = { a : Array Int64 =>
-  if used a ==Int32 0 then True else
-    arrayIterReverse a (used a -Int32 1) { v : Int64 =>
-      v ==Int64 0
-    };
-  end
-};
-
-mkIntInf :: { Array Int64 => Bool => IntInf };
-mkIntInf = { a => isNeg =>
-  if foster_mp_isZero_nat a then IntInf a False
-                     else IntInf a isNeg
-  end
-};
-
-trimLeadingZeros :: { Array Int64 => Array Int64 };
-trimLeadingZeros = { a =>
-  REC findFirstNonZero = { n : Int32 =>
-     if n ==Int32 0 // or a[n] !=Int64 0
-       then n
-       else if a[n] !=Int64 0
-              then n
-              else findFirstNonZero (n -Int32 1)
-            end
-     end
-  };
-
-  start = used a -Int32 1;
-  n     = findFirstNonZero start;
-  if n ==Int32 start
-    then a
-    else copyOfArrayTo a (n +Int32 1)
-  end
-};
-
-foster_mp_add :: {  IntInf =>   IntInf => IntInf };
-foster_mp_add = { a:IntInf => b:IntInf =>
-
-    if eqBool (isNegative a) (isNegative b)
-      then             mkIntInf (foster_mp_add_UA (digits a) (digits b)) (isNegative a)
-      else case cmpIntInfAbs (digits a) (digits b)
-             of $LT -> mkIntInf (foster_mp_sub_UA (digits b) (digits a)) (isNegative b)
-             of _   -> mkIntInf (foster_mp_sub_UA (digits a) (digits b)) (isNegative a)
-           end
-    end
-
-};
-
-
-foster_mp_sub :: {  IntInf =>   IntInf => IntInf };
-foster_mp_sub = { a:IntInf => b:IntInf =>
-
-    if eqBool (isNegative a) (isNegative b)
-      then case cmpIntInfAbs (digits a) (digits b) // interesting bug if non-abs comparison is used.
-             of $LT -> // if b > a, then +a - +b = -(b - a), and (-a - -b) = (+)(b - a).
-                       mkIntInf (foster_mp_sub_UA (digits b) (digits a)) (not (isNegative a))
-             of _   -> mkIntInf (foster_mp_sub_UA (digits a) (digits b)) (isNegative a)
-                       // if a >= b,then +a - +b = (+)(a - b), and (-a - -b) = -(a - b).
-           end
-      else // -a - b = -(a + b), and a - -b = (+)(a + b)
-                       mkIntInf (foster_mp_add_UA (digits a) (digits b)) (isNegative a)
-    end
-
-};
-
-foster_mp_add_UA :: { Array Int64 => Array Int64 => Array Int64 };
-foster_mp_add_UA = { a => b =>
-  foster_MP_MASK = 0FFF`FFFF`FFFF`FFFF_16;
-  case
-    if (used a) <SInt32 (used b)
-      then (a, b)
-      else (b, a)
-    end
-  of (sm, lg) ->
-
-    c = allocDArray:[Int64] (used lg +Int32 1);
-    u = foldRange 0 (used sm) 0 { i => u =>
-        (a[i] +Int64 b[i] +Int64 u) >^ c[i];
-        unext = addCarryOf c[i];
-        (bitand-Int64 c[i] foster_MP_MASK) >^ c[i];
-        unext
-      };
-    p = if used sm <SInt32 used lg
-          then
-            foldRange (used sm) (used lg) u { i => u =>
-              (lg[i] +Int64 u) >^ c[i];
-              unext = addCarryOf c[i];
-              (bitand-Int64 c[i] foster_MP_MASK) >^ c[i];
-              unext
-            }
-          else
-            u
-        end;
-
-    p >^ c[used lg];
-
-    // The C version clears digits from used to olduse,
-    // but we don't need to because we allocate from scratch.
-
-    trimLeadingZeros c
-  end
-};
-
-// Precondition: |lg| > |sm|
-foster_mp_sub_UA :: { Array Int64 => Array Int64 => Array Int64 };
-foster_mp_sub_UA = { lg => sm =>
-  foster_MP_MASK = 0FFF`FFFF`FFFF`FFFF_16;
-  c = allocDArray:[Int64] (used lg);
-  u = foldRange 0 (used sm) 0 { i => u =>
-         ci = lg[i] -Int64 sm[i] -Int64 u;
-         (bitand-Int64 ci foster_MP_MASK) >^ c[i];
-         subCarryOf ci
-  };
-  p = foldRange (used sm) (used lg) u { i => u =>
-         ci = lg[i] -Int64 u;
-         (bitand-Int64 ci foster_MP_MASK) >^ c[i];
-         subCarryOf ci
-  };
-  // The C version clears digits from used to olduse,
-  // but we don't need to because we allocate from scratch.
-
-  trimLeadingZeros c
-};
-
-/*
-// Left shift by n digits.
-//
-// Precondition:
-//      |a| + n does not overflow
-//      |a| + n <= |res|
-//            n > 0
-foster_mp_lshd :: { Array Int64 => Int32 => Array Int64 };
-foster_mp_lshd =  { a => n =>
-  let res = allocDArray (used a +Int32 n); in
-    foster_mp_lshd_to a n res;
-    res
-  end
-};
-*/
-
-// Left shift by n digits.
-//
-// Precondition:
-//      |a| + n does not overflow
-//      |a| + n <= |res|
-//            n > 0
-foster_mp_lshd_to :: { Array Int64 => Int32 => Array Int64 => () };
-foster_mp_lshd_to = { a => n => res =>
-  // TODO memcpy?
-  // Fill in the top digits:
-  arrayEnum a { e : Int64 => ik : Int64 =>
-    e >^ res[primitive_trunc_i64_i32 ik +Int32 n];
-    // It's safe to compute i + n without checking for overflow,
-    // because i <= arraySize a and n + i cannot overflow if
-    //                   i <= k and n + k cannot oveflow.
-  };
-  // Zero out the bottom digits:
-  foldRange 0 n () { k:Int32 => unit => 0 >^ res[k]; unit };
-};
-
-// Precondition:
-//      |a| == |res|
-foster_mp_copy_to :: { Array Int64 => Array Int64 => () };
-foster_mp_copy_to = { a => res =>
-  arrayEnum a { e : Int64 => ik : Int64 =>
-    e >^ res[primitive_trunc_i64_i32 ik];
-    // It's safe to compute i + n without checking for overflow,
-    // because i <= arraySize a and n + i cannot overflow if
-    //                   i <= k and n + k cannot oveflow.
-  };
-};
-// TODO: can we guarantee generation of (foster_mp_copy_to a b)'s code
-//       by optimizing (foster_mp_lshd_to a 0 b)?
-
-foster_mp_lshd_UA :: { Array Int64 => Int32 => Array Int64 };
-foster_mp_lshd_UA = { a => n =>
-  if n <=SInt32 0 then a else
-    // TODO assert that n + arraySize a does not overflow...
-    let r = allocDArray:[Int64] (n +Int32 used a);
-    in
-      foster_mp_lshd_to a n r;
-      r
-    end
-  end
-};
-
-
-// Left shift by k bits.
-//
-foster_mp_mul_2d :: { IntInf => Int32 => IntInf };
-foster_mp_mul_2d = { i => k =>
-  case i of
-     $IntInf a n -> IntInf (foster_mp_mul_2d_UA a k) n
-  end
-};
-
-// Left shift by n bits.
-//
-// Precondition: 0 <= n < 64
-//
-foster_mp_mul_2d_UA :: { Array Int64 => Int32 => Array Int64 };
-foster_mp_mul_2d_UA = { a => n =>
-    // TODO assert that (slop + used a) does not overflow...
-    foster_DIGIT_BIT = 60;
-    by_digits = sdiv-Int32 n foster_DIGIT_BIT;
-    sz        = by_digits +Int32 used a;
-    r         = allocDArray:[Int64] (sz +Int32 1);
-    d         = srem-Int32 n foster_DIGIT_BIT;
-
-    0 >^ r[sz]; // zero out the slop digit.
-
-    // Step 0:          [////|////|////|////] (a)
-    //
-    // Step 1b: [00|0000|0000|0000|0000|0000] (r allocated)
-    // Step 1b: [00|////|////|////|////|0000] (r gets a, shifted left)
-    //
-    // Step 2n: [//|////|////|////|//00|0000] (after intra-digit shifting)
-
-    /*
-    print_text "by_digits";
-    print_i32   by_digits;
-    print_text "d";
-    print_i32   d;
-    */
-
-    if by_digits >SInt32 0
-      then foster_mp_lshd_to a by_digits r
-      else foster_mp_copy_to a           r
-    end;
-
-    if d ==Int32 0 then () else
-       //mask32  = (bitshl-Int32 1 d) -Int32 1; // buggy (for d=32)
-       //mask64  = primitive_sext_i64_i32 mask32;
-
-       d64     = primitive_sext_i64_i32 d;
-       mask64  = (bitshl-Int64 1 d64) -Int64 1;
-       shift32 = foster_DIGIT_BIT -Int32 d;
-
-       shift64 = primitive_sext_i64_i32 shift32;
-
-       foster_MP_MASK = 0FFF`FFFF`FFFF`FFFF_16;
-
-       carry = foldRange 0 (used r -Int32 1) 0 { i => u =>
-                 rr = bitand-Int64 mask64
-                     (bitlshr-Int64 r[i] shift64);
-                 v =  bitand-Int64 foster_MP_MASK
-                     (bitor-Int64 u
-                     (bitshl-Int64 r[i] d64));
-
-                 v >^ r[i];
-                 rr
-               };
-
-       if carry !=Int64 0
-         then carry >^ r[used r -Int32 1];
-         else ()
-       end
-    end;
-
-    trimLeadingZeros r
-};
-
-mkDigitsOfInt32 :: { Int32 => Array Int64 };
-mkDigitsOfInt32 = { k =>
-  newDArray 1 { ignore => primitive_zext_i32_to_i64 k }
-};
-
-foster_mp_from_Int32 :: { Int32 => IntInf };
-foster_mp_from_Int32 = { k =>
-  if k <SInt32 0
-    then IntInf (mkDigitsOfInt32 (negate-Int32 k)) True
-    else IntInf (mkDigitsOfInt32 k) False
-  end
-  // OK not to use mkIntInf here because we're preserving IntInf's invariants.
-};
-
-mkDigitsOfInt64 :: { Int64 => Array Int64 };
-mkDigitsOfInt64 = { k =>
-  case splitInt64 k
-    of (hi, lo) ->
-      ahi = mkDigitsOfInt32 hi;
-      alo = mkDigitsOfInt32 lo;
-
-      trimLeadingZeros (foster_mp_add_UA (foster_mp_mul_2d_UA ahi 32) alo)
-  end
-};
-
-// Precondition: k >= 0
-foster_mp_from_Int64 :: { Int64 => IntInf };
-foster_mp_from_Int64 = { k =>
-  if k <SInt64 0
-    then IntInf (mkDigitsOfInt64 (negate-Int64 k)) True
-    else IntInf (mkDigitsOfInt64 k) False
-  end
-  // OK not to use mkIntInf here because we're preserving IntInf's invariants.
-};
-
-foster_mp_bitlength :: { IntInf => Int32 };
-foster_mp_bitlength = { i =>
-  foster_DIGIT_BIT = 60;
-  a                = digits i;
-  r0               = (used a -Int32 1) *Int32 foster_DIGIT_BIT;
-
-  r0 +Int32 (bitlength-Int64 a[used a -Int32 1]);
-
-};
-
-
-foster_mp_unsigned_bin_size :: { IntInf => Int32 };
-foster_mp_unsigned_bin_size = { i =>
-   size = foster_mp_bitlength i;
-   extra_bit = if (bitand-Int32 size 7) ==Int32 0 then 0 else 1 end;
-
-   (sdiv-Int32 size 8) +Int32 extra_bit
-};
-
-// Returns ( quo=floor(i/b) , rem=i-quo*b )
-//
-// Precondition: b != 0
-// Precondition: b != 1
-foster_mp_div_nat_digit_nz :: { Array Int64 => Int64 => (Array Int64, Int64) };
-foster_mp_div_nat_digit_nz = { a => b =>
-  // TODO special handling for b=3, b power of 2...
-
-  foster_DIGIT_BIT = 60;
-  q         = allocDArray:[Int64] (used a);
-  remainder = foldRangeDown (used a -Int32 1) 0 0 { k32 => w0 =>
-                 w = bitor-Int64 a[k32]
-                        (bitshl-Int64 w0 foster_DIGIT_BIT);
-                 wb = w >=UInt64 b;
-                 t  = if wb then udiv-Int64 w b else 0 end;
-
-                 t >^ q[k32];
-
-                 if wb then
-                            w -Int64 (t *Int64 b)
-                       else w
-                 end
-              };
-
-  (trimLeadingZeros q, remainder)
-};
-
-// Returns ( quo=floor(i/b) , rem=i-quo*b )
-//
-// Precondition: b != 0
-// Precondition: b != 1
-foster_mp_div_digit_nz :: { IntInf => Int64 => (IntInf, Int64) };
-foster_mp_div_digit_nz = { i : IntInf => b : Int64 =>
-  case foster_mp_div_nat_digit_nz (digits i) b
-    of (q, remainder) -> (mkIntInf q (isNegative i), remainder)
-  end
-};
-
-/*
-foster_mp_ascii_bytes_in_base_for_abs = { i : IntInf => base : Int32 =>
-
-};
-*/
-
-foster_mp_isZero = { i : IntInf =>
-  if isNegative i then False else foster_mp_isZero_nat (digits i) end
-};
-
-// Precondition:
-//      radix is 2 or 10 (eventually should support more radix values).
-foster_mp_nat_to_text_radix = { a : Array Int64 => radix : Int32 =>
-  if radix ==Int32 2
-
-   then foldRange 0 (used a) "" { d => t =>
-          //print_text "radix:d";
-          //print_i64b  a[d];
-          mkTextConcat (tmp_Text_2_of_UInt64 a[d]) t
-        };
-  else
-  if radix ==Int32 10 then
-    ascii-0-1 = 47;
-    lookup = newDArray:[Int8] 10 { i:Int32 =>
-                   primitive_trunc_i32_i8 (i +Int32 ascii-0-1) };
-
-    REC go = { aa => t =>
-                 if foster_mp_isZero_nat aa then t else
-                    case foster_mp_div_nat_digit_nz aa 10
-                      of (bb, r) ->
-                        go bb (mkTextConcat (textOfASCII8
-                                        lookup[primitive_trunc_i64_i32 r])
-                                     t)
-                    end
-                 end
-               };
-    if foster_mp_isZero_nat a then "0" else go a "" end;
-  else
-    "<foster_mp_nat_to_text_radix not yet implemented for this radix>"
-  end // if
- end // if
-};
-
-// Precondition:
-//      radix is 2 or 10 (eventually should support more radix values).
-foster_mp_to_text_radix = { i : IntInf => radix : Int32 =>
-  t = foster_mp_nat_to_text_radix (digits i) radix;
-
-  if isNegative i
-    then mkTextConcat "-" t
-    else t
-  end
-};
-
-// TODO use base 1`000`000`000`000`000`000 instead of base 10
-//      (with zero-padding for intermediate results).
-
-
-// TODO compiler-rt doesn't yet support
-// 128-bit multiplication on 32-bit hosts.
-// It seems like it would be significantly
-// wasted work, anyhow.
-// We should probably go ahead and define
-// Word and HalfWord types.
-
-// TODO Int128 intrinsics -- mulq on x86-64 computes 128-bit result.
-
-foster_sqr_i64 = { x : Int64 =>
-  if x <=SInt64 1839720382
-    then (0, x *Int64 x) // x*x won't overflow Int64
-    else // might overflow...
-      case splitInt64 x
-        of (hi32, lo32) ->
-             hi64 = primitive_zext_i32_to_i64 hi32;
-             lo64 = primitive_zext_i32_to_i64 lo32;
-             lolo = lo64 *Int64 lo64;
-             hilo = lo64 *Int64 hi64;
-             hihi = hi64 *Int64 hi64;
-
-             // (hilo + hilo) * 2^32
-             //     ==  hilo *  2^33
-             // will get split between
-             // the top and bottom portions
-             // of the 128 bit result.
-
-             // [0.32|..64|..96|.128]
-             // [  lolo  ] [  hihi  ]
-             //        .[ hilo ]
-             // The bottom gets the lower
-             // 64 - 33 = 31 bits.
-             midlo = bitshl-Int64 hilo 33;
-             midhi = bitlshr-Int64 hilo 31;
-             (hihi +Int64 midhi, lolo +Int64 midlo)
-      end
-  end
-};
-
-// TODO test
-foster_mul_i64 = { x : Int64 => y : Int64 =>
-  if both (x <=SInt64 1839720382) (y <=SInt64 1839720382)
-    then (0, x *Int64 y) // x*y won't overflow Int64
-    else // might overflow...
-      case (splitInt64 x, splitInt64 y)
-        of ((hi32x, lo32x), (hi32y, lo32y)) ->
-             hi64x = primitive_zext_i32_to_i64 hi32x;
-             lo64x = primitive_zext_i32_to_i64 lo32x;
-             hi64y = primitive_zext_i32_to_i64 hi32y;
-             lo64y = primitive_zext_i32_to_i64 lo32y;
-             lolo = lo64x *Int64 lo64y;
-             hylx = lo64x *Int64 hi64y;
-             hxly = lo64y *Int64 hi64x;
-             hihi = hi64x *Int64 hi64y;
-
-             hilo = hylx +Int64 hxly;
-             midlo = bitshl-Int64  hilo 32;
-             midhi = bitlshr-Int64 hilo 32;
-             (hihi +Int64 midhi, lolo +Int64 midlo)
-      end
-  end
-};
-
-foster_mp_bitand_nat :: { Array Int64 => Array Int64 => Array Int64 };
-foster_mp_bitand_nat = { a => b =>
-  dd = newDArray0 (min-Int32 (used a) (used b))
-                 { i : Int32 => bitand-Int64 a[i] b[i] };
-
-  trimLeadingZeros dd;
-};
-
-foster_mp_bitand :: { IntInf => IntInf => IntInf };
-foster_mp_bitand = { i => j =>
-  mkIntInf (foster_mp_bitand_nat (digits i)     (digits j))
-           (both             (isNegative i) (isNegative j));
-};
-
-// Right-shift by b digits.
-//
-// Returns None if b is negative.
-//
-foster_mp_rshd :: { IntInf => Int32 => Maybe IntInf };
-foster_mp_rshd = { ii => b =>
-  if b <=SInt32 0 then None ! else
-     a = digits ii;
-     newsize = used a -Int32 b;
-
-     if newsize <=SInt32 0 then
-       Some (foster_mp_from_Int32 0)
-     else
-       // old [b0 | b1 | ... | bb | ... | bn ]
-       // new [bb | ... | bn ]
-       Some (IntInf (newDArray0 newsize { i:Int32 => a[i +Int32 b] })
-                    (isNegative ii))
-     end
-  end
-};
-
-// Computes 2 ** k
-//
-foster_mp_2expt :: { Int32 => IntInf };
-foster_mp_2expt = { k =>
-  if k <SInt32 0 then foster_mp_from_Int32 0 else
-    foster_DIGIT_BIT = 60;
-    ndigits          = sdiv-Int32 k foster_DIGIT_BIT;
-
-    // Writing it this way allows us to directly initialize
-    // an immutable array, at the (negligible until proven otherwise)
-    // cost of a few extra compares.
-    IntInf (newDArray0 (ndigits +Int32 1) { i:Int32 =>
-               if i ==Int32 ndigits then
-                 bitshl-Int64 1
-                   (primitive_zext_i32_to_i64
-                      (srem-Int32 k foster_DIGIT_BIT));
-               else 0 end
-           })
-           False;
-  end
-};
-
-foster_mp_negate = { ii : IntInf =>
-  mkIntInf (digits ii) (not (isNegative ii))
-};
-
-// TODO guarantee that functions won't need a closure just for a constant?
-
-foster_mp_rshb_nat :: {    Array Int64 =>         Int32 => Array Int64 };
-foster_mp_rshb_nat = { a : Array Int64 => nbits : Int32 =>
-
-   foster_DIGIT_BIT   = 60;
-   foster_DIGIT_BIT64 = 60;
-   ndigits = udiv-Int32 nbits foster_DIGIT_BIT;
-   newsize = used a -Int32 ndigits;
-
-   if newsize <=SInt32 0 then
-     mkDigitsOfInt32 0
-   else
-     rembits = primitive_zext_i32_to_i64
-                  (urem-Int32 nbits foster_DIGIT_BIT);
-     irembits = foster_DIGIT_BIT64 -Int64 rembits;
-
-     newDArray0 newsize { i:Int32 =>
-        h0 = a[i +Int32 ndigits];
-        l1 = if i ==Int32 (newsize -Int32 1)
-              then 0
-              else a[i +Int32 ndigits +Int32 1]
-             end;
-
-        // Combine high bits of word i
-        // with low bits of word 1 + i.
-        bitor-Int64 (bitlshr-Int64 h0 rembits)
-                    (bitshl-Int64 l1 irembits);
-     };
-   end
-};
-
-// Right-shift by b bits.
-//
-foster_mp_rshb :: { IntInf => Int32 => IntInf };
-foster_mp_rshb = { ii => nbits =>
-  if nbits <=SInt32 0
-    then ii
-    else mkIntInf (foster_mp_rshb_nat (digits ii) nbits) (isNegative ii)
-  end
-};
-
-
-foster_mp_getlow_Int32 :: { IntInf => (IntInf, Int32) };
-foster_mp_getlow_Int32 = { ii =>
-  k64   = (digits ii)[0];
-  k64lo = bitand-Int64 k64 0FFFF`FFFF_16;
-
-  (foster_mp_rshb ii 32, primitive_trunc_i64_i32 k64lo)
-};
-
-
-foster_mp_getlow_Int64 :: { IntInf => (IntInf, Int64) };
-foster_mp_getlow_Int64 = { ii =>
-  if used (digits ii) ==Int32 1
-    then (foster_mp_from_Int32 0 , (digits ii)[0] )
     else
-      case foster_mp_getlow_Int32 ii of (jj, low32) ->
-        case foster_mp_getlow_Int32 jj of (kk, hi32) ->
-          (kk, bitor-Int64
-                 (bitshl-Int64 (primitive_zext_i32_to_i64 hi32) 32)
-                               (primitive_zext_i32_to_i64 low32))
-        end
-      end
+                IntInf (natFromInt64 i)           False
   end
 };
 
-// TODO write & test mp_mod_2d
-// TODO test foster_mp_rshd
-// TODO write & test mp_div_2, mp_div, mp_sqrt
-// TODO ...
+intZero = { intFromInt32 0 };
 
-/*
-foster_mp_int_slow_sqr = { ii : IntInf =>
-  let a = digits ii;
-      maxsize = (2 *Int32 used a) +Int32 1;
-      // assert maxsize > used a (TODO)
-      q         = newDArray:[Int64] maxsize { qi => 0 };
-      t = foldRange 0 (used a) () { ix => unit =>
-            let k = a[ix]; in
-              case foster_sqr_i64 of (hi, lo) ->
-
-              end
-            end
-                r = q[2 *Int32 ix] +Int64
-                      (k *Int64 k);
-
-          };
-
-  in
-
+noinline_foo2 = { i : Int32 =>
+  if i <SInt32 0
+    then IntInf (natFromInt32 (0 -Int32 i)) True
+    else IntInf (natFromInt32 i)           False
   end
 };
-*/
 
-// Precondition: k >= 0
-//
-foster_mp_mul_nat_Int32 = { a : Array Int64 => k : Int32 =>
+noinline_foo3 = { i : Int32 =>
+  case (if i <SInt32 0 then (0 -Int32 i, True)
+                      else (         i,False))
+   of (x, b) -> IntInf (natFromInt32 x) b
+  end
+};
 
-  c = allocDArray (used a +Int32 1);
-  u = foldRange 0 (used a) 0 { ix => u : Int64 =>
-        let k64 = primitive_sext_i64_i32 k;
-            foster_MP_MASK = 0FFF`FFFF`FFFF`FFFF_16;
-            foster_DIGIT_BIT = 60;
-        in
-            case foster_mul_i64 (u +Int64 a[ix]) k64 of
-            (rhi, rlo) ->
-              (bitand-Int64 rlo foster_MP_MASK) >^ c[ix];
+noinline_mkNegativeMinInt64 = {
+  IntInf (natAdd (natFromInt64 (maxReprInt64 !))
+                 (natFromInt64 1)) True;
+};
 
-              // Propagate carry:  [0|0|  c   ][b|   a   ]  ====>
-              //                               [0|  c  |b]
-              bitor-Int64
-                (bitlshr-Int64 rlo foster_DIGIT_BIT)
-                (bitlshr-Int64 rhi (64 -Int64 foster_DIGIT_BIT))
-            end
+noinline_mkNegativeMinInt32 = {
+  m64 = primitive_zext_i32_to_i64 (maxReprInt32 !);
+  IntInf (natFromInt64 (m64 +Int64 1)) True
+};
+
+intAdd :: { IntInf => IntInf => IntInf };
+intAdd =  { i => j =>
+  a = intNat i;
+  b = intNat j;
+  if intNeg i `eqBool` intNeg j
+    then // -x + -y = -(x + y)
+         mkIntInf (natAdd a b) (intNeg i)
+    else
+         case natCmp a b
+           of $LT -> mkIntInf (natSub_precond b a) (intNeg j)
+           of _   -> mkIntInf (natSub_precond a b) (intNeg i)
          end
-      };
-
-  u >^ c[used a];
-  trimLeadingZeros c;
-
-};
-
-// Precondition: k >= 0
-//
-foster_mp_mul_Int32 = { ii : IntInf => k : Int32 =>
-
-  mkIntInf (foster_mp_mul_nat_Int32 (digits ii) k) (isNegative ii)
-
-};
-
-isLT = { x =>
-  case x of $LT -> True
-         of  _  -> False
   end
 };
 
-lshrInt128 = { hi : Ref Int64 => lo : Ref Int64 =>
-  hi2 = bitlshr-Int64 hi^ 1;
-  lo2 = bitor-Int64 (bitlshr-Int64 lo^ 1)
-                     (bitshl-Int64 hi^ 63);
-
-  hi2 >^ hi;
-  lo2 >^ lo;
-};
-
-shlInt128 = { hi : Ref Int64 => lo : Ref Int64 =>
-  lo2 = bitshl-Int64 lo^ 1;
-  hi2 = bitor-Int64 (bitshl-Int64 hi^ 1)
-                       (bitlshr-Int64 lo^ 63);
-  hi2 >^ hi;
-  lo2 >^ lo;
-};
-
-gteInt128 = { hA : Int64 => lA : Int64 =>
-              hB : Int64 => lB : Int64 =>
-  if hA >SInt64 hB then True else
-    both (hA ==Int64 hB) (lA >=SInt64 lB)
+intSub :: { IntInf => IntInf => IntInf };
+intSub =  { i => j =>
+  a = intNat i;
+  b = intNat j;
+  if intNeg i `eqBool` intNeg j
+    then case natCmp a b
+                     // if a < b, then +a - +b = -(b - a), and (-a - -b) = (+)(b - a).
+           of $LT -> mkIntInf (natSub_precond b a) (not (intNeg i))
+           of _   -> mkIntInf (natSub_precond a b)      (intNeg i)
+         end
+    else // -x  - y = -(x + y) ; x - -y = (+)(x + y)
+         mkIntInf (natAdd a b) (intNeg i)
   end
 };
 
-// Modifies ra,rb by side effect because we don't want to assume
-// any direct codegen support at all for Int128.
+// aka intShl(b), mp_mul_2d
 //
-// Precondition: A >= B.
-//
-subNat128 = { hAr : Ref Int64 => lAr : Ref Int64 =>
-              hB  :     Int64 => lB  :     Int64 =>
-  hc = hAr^ -Int64 hB;
-  lc = lAr^ -Int64 lB;
+intMul2d = { n : IntInf => k : Int32 =>
+  mkIntInf (natMul2d (intNat n) k) (intNeg n)
+};
 
-  if lc >=SInt64 0 then // signed comparison
-    hc >^ hAr;            lc >^ lAr; // same bitstrings
-  else
-    (hc -Int64 1) >^ hAr; lc >^ lAr; // borrow from high bits.
+intNegate = { n : IntInf =>
+  mkIntInf (intNat n) (not (intNeg n))
+};
+
+intMulInt32 = { n : IntInf => k : Int32 =>
+  if k <SInt32 0
+    then mkIntInf (natMulInt32 (intNat n) (0 -Int32 k)) (not (intNeg n))
+    else mkIntInf (natMulInt32 (intNat n) k)                 (intNeg n)
   end
 };
 
-// Modifies ra,rb by side effect for consistency with subNat128.
-// Version on smaller bitstrings for easier testing.
-subInt64 = { hAr : Ref Int32 => lAr : Ref Int32 =>
-             hB  :     Int32 => lB  :     Int32 =>
-  hc = hAr^ -Int32 hB;
-  lc = lAr^ -Int32 lB;
+intBasicMul = { i : IntInf => j : IntInf =>
+  // -x * -y = (x * y)
+ mkIntInf (natBasicMul (intNat i) (intNat j))
+          (not (intNeg i `eqBool` intNeg j))
+};
 
-  if lc >=SInt32 0 then // signed comparison
-    hc >^ hAr;            lc >^ lAr; // same bitstrings
-  else
-    (hc -Int32 1) >^ hAr; lc >^ lAr; // borrow from high bits.
-  end;
-  ()
+intQuoRem :: { IntInf => IntInf => (IntInf, IntInf) };
+intQuoRem = { a => b =>
+  case natDiv (intNat a) (intNat b)
+    of $Some (na, nb) -> (mkIntInf na (not (intNeg a `eqBool` intNeg b))
+                         ,mkIntInf nb                        (intNeg b))
+    of $None -> prim kill-entire-process "quorem failed"
+  end
+};
+
+intCmp :: { IntInf => IntInf => Ord };
+intCmp =  { i => j =>
+  case   cmpBoolTrueLT (intNeg i) (intNeg j)
+    of $EQ   -> natCmp (intNat i) (intNat j)
+    of other -> other
+  end
+};
+
+intCmp64 :: { IntInf => Int64 => Ord };
+intCmp64 = { i => k =>
+  case (intNeg i, k <SInt64 0)
+    of (True, False) -> LT !
+    of (False, True) -> GT !
+    of (False,False) ->            natCmpU64 (intNat i) k
+    of (True , True) -> ordInvert (natCmpU64 (intNat i) (negate-Int64 k))
+  end
+};
+
+intLowWord = { i : IntInf =>
+  natLowWord (intNat i)
+};
+
+int_2expt = { k : Int32 =>
+  mkIntInf (nat_2expt k) False
+};
+
+intPosRShd = { i : IntInf => ndigits : Int32 =>
+  assert (ndigits >=SInt32 0) "intPosRShd: ndigits >= 0";
+  assert (ndigits !=Int32 0) "intPosRShd: ndigits != 0";
+  assert (not (intNeg i)) "intPosRShd: i >= 0";
+  mkIntInf (natRShd (intNat i) ndigits) (intNeg i)
 };
 
 /*
-// Precondition: d > 0
-//
-// TODO or is it quorem?
-divmod-Int128-64 = { hi : Int64 => lo : Int64 => d : Int64 =>
-  let
-      hi2 = (ref hi);
-      lo2 = (ref lo);
-
-      xhi = (ref 0);
-      xlo = (ref d);
-
-      fhi = (ref 0);
-      flo = (ref 1);
-
-      ahi = (ref hi);
-      alo = (ref lo);
-      qhi = (ref 0);
-      qlo = (ref 0);
-  in
-    lshrInt128 hi2 lo2; // compute A/2
-
-    // scale x until it's at least half of A.
-    until gteInt128 xhi^ xlo^ hi2^ lo2^ then
-      shlInt128 xhi xlo;
-      shlInt128 fhi flo;
-      //print_text "scale x";
-    end;
-
-    until either (both (ahi^ ==Int64 0) (alo^ <SInt64 d))
-                 (both (xhi^ ==Int64 0) (xlo^ ==Int64 0)) then
-//    print_text "ahi; alo; xhi/lo, d:";
-//    print_i64 ahi^;
-//    print_i64 alo^;
-//
-//    print_i64 xhi^;
-//    print_i64 xlo^;
-//
-//    print_i64 d;
-      if gteInt128 ahi^ alo^ xhi^ xlo^ then
-         subNat128 ahi  alo  xhi^ xlo^;
-         addNat128 qhi  qlo  fhi^ flo^;
-      else () end;
-
-      lshrInt128 xhi xlo;
-      lshrInt128 fhi flo;
-    end;
-
-     ((qhi^, qlo^), alo^)
-  end
+intRShb = { i : IntInf => nbits : Int32 =>
+  assert (ndigits >=SInt32 0) "intPosRShd: ndigits >= 0";
+  assert (ndigits !=Int32 0) "intPosRShd: ndigits != 0";
+  assert (not (intNeg i)) "intPosRShd: i >= 0";
+  mkIntInf (natRShd (intNat i) ndigits) (intNeg i)
 };
 */
 
-/*
-// Compute (c,d) such that a = c*b + d.
-//
-// Precondition: b != 0.
-//
-foster_mp_divmod = { a : IntInf => b : IntInf =>
-  case foster_mp_cmp a b
-    of $LT -> (foster_mp_from_Int32 0, a) // if a < b then q=0, r = a.
-    of _   ->
-      // TODO
-      // q = allocDArray (used a +Int32 2);
-      // x = (ref (copy of a, positive))
-      // y = (ref (copy of b, positive))
+intBitAnd :: { IntInf => IntInf => IntInf };
+intBitAnd = { i => j =>
+  mkIntInf (natBitAnd (intNat i) (intNat j))
+           (both      (intNeg i) (intNeg j));
+};
 
-      sneg = not (eqBool (isNegative a) (isNegative b));
-
-      norm0 = foster_mp_count_bits y^ -Int32 foster_DIGIT_BIT;
-      normn = (DIGIT_BIT -Int32 1) -Int32 norm0;
-      norm = if normn <=SInt32 0 then 0 else
-               foster_mp_mul_2d x^ normn >^ x;
-               foster_mp_mul_2d y^ normn >^ y;
-               normn
-             end;
-
-      n = used x^ -Int32 1;
-      t = used y^ -Int32 1;
-
-      nmt = n -Int32 t;
-      foster_DIGIT_BIT64 = 60;
-
-      (foster_mp_lshd y^) >^ y;
-
-      until isLT (foster_mp_cmp x^ y^) then
-        q[nmt] +Int64 1 >^ q[nmt];
-        (foster_mp_sub x^ y^) >^ x;
-      end;
-
-      (foster_mp_rshd y^ nmt) >^ y;
-
-      foldRangeDown n (t +Int32 1) () { i => unit =>
-        if i >SInt32 used x^ then unit else
-          // {{{
-          let it1 = i -Int32 t -Int32 1; in
-            if (digits x^)[i] ==Int64 (digits y^)[i] then
-              ((bitshl-Int64 1 foster_DIGIT_BIT64) -Int64 1) >^ q[it1];
-            else
-               // emulate double-precision shl by calculating upper & lower parts.
-               tmphi  = bitlshr-Int64 (digits x^)[i]
-                                         (64 -Int64 foster_DIGIT_BIT64);
-               tmplo0 = bitshl-Int64 (digits x^)[i] foster_DIGIT_BIT64;
-               tmplo  = bitor-Int64  (digits x^)[i -Int32 1] tmplo0;
-
-               case divmod-Int128-64 tmphi tmplo (digits y^)[t] of ((qhi, qlo), rem) ->
-                 (if gteInt128 qhi qlo 0 foster_MP_MASK
-                                    then foster_MP_MASK else
-                        bitand-Int64 qlo foster_MP_MASK end)
-                     >^ q[it1];
-               end
-            end;
-
-            rec doloop = {
-              (bitand-Int64 (q[it1] +Int64 1) foster_MP_MASK) >^ q[it1];
-              let thi = foster_mp_from_Int64 (digits y^)[t];
-                  tlo = foster_mp_from_Int64 (if t -Int32 1 <SInt32 0
-                         then 0 else (digits y^)[t -Int32 1] end);
-                  t1  = foster_mp_mul_d // TODO
-                                 (foster_mp_add (foster_mp_lshd thi 1) tlo)
-                                 q[it1];
-
-                  t2a = newDArray 3 { k =>
-                    case k
-                      of 0 -> if (i -Int32 2) <SInt32 0 then 0 else (digits x^)[i -Int32 2] end
-                      of 1 -> if (i -Int32 1) <SInt32 0 then 0 else (digits x^)[i -Int32 1] end
-                      of 2 -> (digits x^)[i]
-                      of _ -> 0 // can't happen
-                    end;
-                  };
-                  t2 = mkIntInf t2a False;
-              case foster_mp_cmp t1 t2
-                of $GT -> doloop !;
-                of _   -> ()
-              end
-            }; in doloop !; end;
-
-            let t1 = foster_mp_lshd (foster_mp_mul_d y^ q[it1]) it1; in
-              (foster_mp_sub x^ t1) >^ x;
-              if isNegative x^ then
-                foster_mp_add x^ (foster_mp_lshd y^ it1) >^ x;
-                (foster-bitand-Int64
-                      (q[it1] -Int64 1) foster_MP_MASK) >^ q[it1];
-              end;
-            end;
-
-          end
-          // }}}
-        end
-      };
-
-      // d = mp_div_2d x norm
-      // c = mkIntInf (trimLeadingZeros q) sneg;
+foster_mp_to_text_radix = { i : IntInf => r : Int32 =>
+  t = foster_nat_to_text_radix (intNat i) r;
+  if intNeg i
+    then mkTextConcat "-" t
+    else                  t
   end
 };
-*/
 
+printIntInf = { i : IntInf =>
+  print_text (foster_mp_to_text_radix i 10);
+};
+
+expectIntInf = { i : IntInf =>
+  expect_text (foster_mp_to_text_radix i 10);
+};

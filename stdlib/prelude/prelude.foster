@@ -32,6 +32,16 @@ type case Ord
 notBool = { a:Bool => if a then False else True end };
 eqBool = { a:Bool => b:Bool => if a then b else notBool b end };
 
+cmpBoolTrueLT = { a : Bool => b : Bool =>
+  if a then if b then EQ !
+                 else LT !
+            end
+       else if b then GT !
+                 else EQ !
+            end
+  end
+};
+
 ordInvert = { b : Ord =>
   case b
     of $LT -> GT !
@@ -118,6 +128,21 @@ foldRangeDown = { forall t:Type,
                 else acc end
             };
   frd fst init
+};
+
+// Precondition: fst <= fin
+//
+foldRange = { forall t:Type,
+              fst : Int32 =>
+              fin : Int32 =>
+              init : t =>
+              iter : { Int32 => t => t } =>
+  REC go = { n : Int32 => acc : t =>
+      if n >=SInt32 fin then acc else
+        go (n +Int32 1) (iter n acc)
+      end
+  };
+  go fst init;
 };
 
 /////
@@ -269,6 +294,7 @@ print_text = { s : Text =>
 };
 
 max-Int32 = { n : Int32 => m : Int32 => if n <SInt32 m then m else n end };
+max-SInt32 = { n : Int32 => m : Int32 => if n <SInt32 m then m else n end };
 max-SInt64 = { n : Int64 => m : Int64 => if n <SInt64 m then m else n end };
 max-SWord  = { n : Word  => m : Word  => if n <SWord  m then m else n end };
 
@@ -578,3 +604,14 @@ tmp_Text_of_UInt64 = { n:Int64 =>
   go n ""
 };
 
+minReprInt32 :: { Int32 };
+minReprInt32 = { -2`147`483`648 };
+
+maxReprInt32 :: { Int32 };
+maxReprInt32 = {  2`147`483`647 };
+
+minReprInt64 :: { Int64 };
+minReprInt64 = { -9`223`372`036`854`775`808 };
+
+maxReprInt64 :: { Int64 };
+maxReprInt64 = {  9`223`372`036`854`775`807 };

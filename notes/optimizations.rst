@@ -1,7 +1,27 @@
 Optimizations
 -------------
 
+Because data constructors are (relatively) heavyweight,
+we can save code size in some cases by merging continuations::
 
+        foo2 = { i : Int32 =>
+          if i <Int32 0
+            then IntInf (natFromInt32 (0 -Int32 i)) True
+            else IntInf (natFromInt32 i)           False
+          end
+        };
+
+        foo3 = { i : Int32 =>
+          case (if i <Int32 0 then (0 -Int32 i, True)
+                              else (         i,False))
+           of (x, b) -> IntInf (natFromInt32 x b)
+          end
+        };
+
+This optimization makes more sense for ctors than general calls
+because (1) ctors can't be usefully specialized for known arg values,
+            whereas some calls to known functions can be specialized.
+        (2) a ctor call is relatively many insns; a call is just one.
 
 GC Optimizations
 ~~~~~~~~~~~~~~~~
