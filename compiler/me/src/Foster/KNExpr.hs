@@ -583,8 +583,10 @@ renameUsefulArgs xs ys = resolve (zip xs ys)
         resolve ((Just  y, _):xs) = y:(resolve xs)
         resolve ((Nothing, x):xs) = x:(resolve xs)
 
+{-
 getUselessArgs :: [Maybe (TypedId MonoType)] -> [TypedId MonoType]
 getUselessArgs = catMaybes
+-}
 
 -- Map each recursive fn identifier to the var/s for its loop header, and a
 -- list reflecting which of the original formals were recursively useless.
@@ -1034,7 +1036,7 @@ knInline knmod = do
 
 type In   = StateT InlineState IO
 data InlineState = InlineState {
-    inUniqRef :: IORef Uniq
+    inUniqRef  :: IORef Uniq
   , inVarCount :: Map Ident (IORef Int)
 }
 
@@ -1051,6 +1053,15 @@ sawVar id = do vcm <- gets inVarCount
                  Nothing -> error $ "sawVar had no count for " ++ show id
                  Just r -> do liftIO $ modifyIORef r (+1)
 
+{-
+unSawVar id = do vcm <- gets inVarCount
+                 case Map.lookup id vcm of
+                   Nothing -> error $ "sawVar had no count for " ++ show id
+                   Just r -> do v <- liftIO $ readIORef r
+                                liftIO $ putStrLn $ "unSawVar " ++ show id ++ " with count " ++ show v
+                                liftIO $ modifyIORef r (\x -> x - 1)
+-}
+
 getVarStatus id = do vcm <- gets inVarCount
                      case Map.lookup id vcm of
                        Nothing -> error $ "getVarStatus had no count for " ++ show id
@@ -1058,7 +1069,8 @@ getVarStatus id = do vcm <- gets inVarCount
                                     return $ classifyVarCount v
 data VarStatus = Dead | Once | Many deriving Show
 classifyVarCount :: Int -> VarStatus
-classifyVarCount 0 = Dead
+classifyVarCount x | x <= 0
+                   = Dead
 classifyVarCount 1 = Once
 classifyVarCount _ = Many
 
@@ -1140,6 +1152,8 @@ mkKNLetRec ids fns b = KNLetRec ids fns b
 
 knInline' :: SrcExpr -> SrcEnv -> In ResExpr
 knInline' expr env = do
+  let qs str v = do --liftIO $ putStrLn $ "resVar << " ++ str ++ "\t;\t" ++ show (tidIdent v)
+                    resVar env v
   let q v = resVar env v
   case expr of
     KNLiteral     {} -> return expr
@@ -1155,30 +1169,36 @@ knInline' expr env = do
 
     KNVar v -> do
       -- liftIO $ putStrLn $ "saw standalone var " ++ show v
-      liftM KNVar (q v)
+      liftM KNVar (qs "KNVar" v)
 
     KNAppCtor     ty cid vs  -> liftM (KNAppCtor  ty cid) (mapM q vs)
 
-    KNCallPrim    ty prim vs -> liftM (KNCallPrim ty prim) (mapM q vs)
+    KNCallPrim    ty prim vs -> do
         -- If enough is known about the values to the prim,
         -- we might be able to partially evaluate it.
 
+        mb_consts <- mapM (extractConstExpr env) vs
+        case evalPrim ty prim mb_consts of
+             Just e  -> return e
+             Nothing -> do vs' <- mapM q vs
+                           return $ KNCallPrim ty prim vs'
+
     KNCall tailq ty v vs -> do
-      let resExpr () = do liftM2 (KNCall tailq ty) (q v) (mapM q vs)
+      let resExpr s = do liftM2 (KNCall tailq ty) (qs ("KNCall v " ++ s) v) (mapM (qs "KNCall vs") vs)
       --liftIO $ putStrLn $ "saw call of var " ++ show (tidIdent v) ++ " ~?~> " ++ show (lookupVarMb v env)
 
       case lookupVarOp env v of
         -- If the callee isn't a known function, we can't possibly inline it.
-        Just (VO_E _)   -> do resExpr ()
-        Nothing         -> do resExpr ()
+        Just (VO_E _)   -> do resExpr "Just_VO_E_"
+        Nothing         -> do resExpr "Nothing"
 
         Just (VO_F opf) -> do
          let shouldNotInline nm = nm == "main" || "noinline_" `isPrefixOf` nm
          if shouldNotInline (show $ tidIdent v)
           then do _ <- visitF opf -- don't inline away main, just process it!
-                  resExpr ()
+                  resExpr "noinline"
 
-          else do handleCallOfKnownFunction expr resExpr opf v vs env q
+          else do handleCallOfKnownFunction expr resExpr opf v vs env qs
 
     KNUntil       ty e1 e2 rng -> do
         e1' <- knInline' e1 env
@@ -1191,16 +1211,15 @@ knInline' expr env = do
         -- otherwise, if e2 and e3 are both the same value,
         -- we can get rid of the if;
         -- otherwise, business as usual.
-        v'  <- q v
-        e1' <- knInline' e1 env
-        e2' <- knInline' e2 env
-        return $ KNIf ty v' e1' e2'
+        mb_const <- extractConstExpr env v
+        case mb_const of
+          Just (Lit (LitBool b)) -> knInline' (if b then e1 else e2) env
+          _ -> do   v'  <- q v
+                    e1' <- knInline' e1 env
+                    e2' <- knInline' e2 env
+                    return $ KNIf ty v' e1' e2'
 
     KNCase        ty v patbinds -> do
-        -- If something is known about v's value,
-        -- select or discard the appropriate branches.
-        -- TODO when are default branches inserted?
-        v' <- q v
         let inlineArm ((pat, vars), expr) = do
                 ops <- mapM (\v -> mkOpExpr (KNVar v) env) vars
                 let ids  = map tidIdent vars
@@ -1210,8 +1229,21 @@ knInline' expr env = do
                 vars' <- mapM (resVar env' ) vars
                 expr' <- knInline' expr env'
                 return ((pat' , vars' ), expr' )
-        patbinds' <- mapM inlineArm patbinds
-        return $ KNCase ty v' patbinds'
+
+        -- If something is known about v's value,
+        -- select or discard the appropriate branches.
+        -- TODO when are default branches inserted?
+        mb_const <- extractConstExpr env v
+        case mb_const of
+          Just c -> case matchConstExpr c patbinds of
+                      Right e -> knInline' e env
+                      Left patbinds0 -> do v' <- q v
+                                           patbinds' <- mapM inlineArm patbinds0
+                                           return $ KNCase ty v' patbinds'
+          _ -> do v' <- q v
+                  patbinds' <- mapM inlineArm patbinds
+                  return $ KNCase ty v' patbinds'
+
 
     KNLetVal id bound body -> do
         -- Be demand-driven: don't investigate e1 until e2 finds it necessary.
@@ -1229,8 +1261,8 @@ knInline' expr env = do
 
         bound' <- visitE op -- todo could this result in inlining a function?
 
-        s <- getVarStatus id'
-        liftIO $ putStrLn $ show id ++ " is " ++ show s
+        --s <- getVarStatus id'
+        --liftIO $ putStrLn $ show id ++ " is " ++ show s
 
         let expr' = KNLetVal id' bound' body'
 
@@ -1285,7 +1317,7 @@ knInline' expr env = do
                                          , notDead occst]
         return $ mkKNLetFuns ids'' fns'' b'
 
-handleCallOfKnownFunction expr resExprA opf@(Opnd fn _ _ loc_op _) v vs env q = do
+handleCallOfKnownFunction expr resExprA opf@(Opnd fn _ _ loc_op _) v vs env qs = do
     -- liftIO $ putStrLn $ "saw call of var " ++ show (tidIdent v) ++ " ~~> " ++ show (tidIdent (fnVar fn))
     res <- visitF opf
     case res of
@@ -1295,19 +1327,22 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn _ _ loc_op _) v vs env q = 
             -- liftIO $ putDoc $ text "resulted in:\n" <> pretty f' <+> text "\n\n"
             if True
               then do
-                qvs'  <- mapM q vs
+                qvs'  <- mapM (qs "known call vs") vs
                 mb_e' <- foldLambda' f' loc_op qvs' env
                 case mb_e' of
                    Just e' -> do --liftIO $ putDoc $ text "lambda folding resulted in " <> pretty e' <> text "\n"
+                                 --case lookupVarMb v env of
+                                 --   Just id -> unSawVar id
+                                 --   Nothing -> return ()
                                  return e'
                    Nothing -> do -- liftIO $ putDoc $ text "lambda folding " <> pretty expr' <> text " failed; residualizing call instead.\n"
-                                 resExprA ()
-              else resExprA ()
+                                 resExprA "kNothing"
+              else resExprA "False"
         Nothing -> do
             -- liftIO $ putStrLn $    "call of var " ++ show (tidIdent v) ++ " ~~> " ++ show (tidIdent (fnVar fn))
             -- liftIO $ putDoc $ text "    " <> pretty expr <> text "\n"
             -- liftIO $ putDoc $ text "resulted in failed inlining attempt; residualizing call instead\n\n"
-            resExprA ()
+            resExprA "resNothing"
 
 knInlineFn' :: Fn SrcExpr MonoType -> SrcEnv -> In (Fn ResExpr MonoType)
 knInlineFn' fn env = do
@@ -1325,6 +1360,43 @@ knInlineFn' fn env = do
 
   body' <- knInline' (fnBody fn) env'
   return $ fn { fnBody = body' , fnVars = vs' }
+
+data ConstExpr = Lit            Literal
+               | NullaryCtor    CtorId
+               deriving Show
+
+extractConstExpr :: SrcEnv -> TypedId MonoType -> In (Maybe ConstExpr)
+extractConstExpr env var = go var where
+ go v = case lookupVarOp env v of
+            Just (VO_E ope) -> do
+                 e <- visitE ope
+                 case e of
+                    KNLiteral _ lit    -> return $ Just $ Lit         lit
+                    KNAppCtor _ cid [] -> return $ Just $ NullaryCtor cid
+                    _                  -> return $ Nothing
+                    -- TODO could recurse through binders
+                    -- TODO could track const-ness of ctor args
+            _ -> return $ Nothing
+
+matchConstExpr :: ConstExpr -> [PatternBinding (KNExpr' MonoType) MonoType] -> (Either [PatternBinding (KNExpr' MonoType) MonoType] SrcExpr)
+matchConstExpr c patbinds = go patbinds
+  where go [] = Left patbinds -- no match found
+        go (((p,_),e):rest) = if matchPatternWithConst p c then Right e else go rest
+
+matchPatternWithConst :: Pattern ty -> ConstExpr -> Bool
+matchPatternWithConst p c =
+  case (c, p) of
+    (_, P_Wildcard _ _  ) -> True
+    -- (_, P_Variable _ tid) -> Just [(tidIdent tid, v)]
+    (Lit (LitInt  i1), P_Int  _ _ i2) -> litIntValue i1 == litIntValue i2
+    (Lit (LitBool b1), P_Bool _ _ b2) -> b1 == b2
+    (NullaryCtor vid, P_Ctor _ _ [] (CtorInfo cid _)) -> vid == cid
+    (_ , _) -> False
+
+evalPrim resty (PrimOp "==" _ty)
+         [Just (Lit (LitInt i1)), Just (Lit (LitInt i2))]
+                = Just (KNLiteral resty (LitBool $ litIntValue i1 == litIntValue i2))
+evalPrim _ _ _ = Nothing
 
 mkOpRefs = do
   lexp <- newRef Unvisited
@@ -1428,19 +1500,7 @@ foldLambda' fn loc_op vs' env = do
       -- writeRef loc_op OP_False
       return $ Just e'
 
-  {-
-foldPrimRef p (App op ctx lctx) env = do
-  e' <- visitE op ctx
-  -- If enough is known about the values to the prim,
-  -- we might be able to partially evaluate it.
-  -- (TODO)
-  let canEval = False
-  if canEval
-    then do writeRef lctx YesInlined
-            error "return compile-time constant..."
-    else do error "return primref..."
--}
-
+{-
 visitWithDefault :: (VarOp, TypedId MonoType) -> In (Either ResExpr (Fn ResExpr MonoType))
 visitWithDefault (vo, resv) = do
   case vo of
@@ -1450,6 +1510,7 @@ visitWithDefault (vo, resv) = do
                   case mb_fn of
                     Just fn -> return $ Right fn
                     Nothing -> return $ Left (KNVar resv)
+-}
 
 --visitF :: OpndF -> In (Maybe (Fn ResExpr MonoType))
 visitF (Opnd fn env loc_fn _ loc_ip) = do
@@ -1515,7 +1576,7 @@ knSize :: KNExpr' t -> (Int, Int) -- toplevel, cumulative
 knSize expr = go expr (0, 0) where
   go expr (t, a) = case expr of
     KNLiteral     {} -> (t, a)
-    KNVar         v' -> (t, a)
+    KNVar         {} -> (t, a)
     KNKillProcess {} -> (t, a)
     KNTyApp       {} -> (t, a)
     KNTuple       {} -> (t + 1, a + 1)
@@ -1529,12 +1590,12 @@ knSize expr = go expr (0, 0) where
     KNCall        {} -> (t + 1, a + 1)
     KNAppCtor     {} -> (t + 1, a + 1)
     KNUntil       _   e1 e2 _  -> go e2 (go e1 (t + 1, a + 1))
-    KNIf          _ v e1 e2    -> go e2 (go e1 (t + 1, a + 1))
-    KNCase        _ v patbinds -> foldl' (\ta (_, e) -> go e ta) (t, a) patbinds
+    KNIf          _ _ e1 e2    -> go e2 (go e1 (t + 1, a + 1))
+    KNCase        _ _ patbinds -> foldl' (\ta (_, e) -> go e ta) (t, a) patbinds
     KNLetVal      _   e1 e2    -> go e2 (go e1 (t + 1, a + 1))
     KNLetRec     _ es b        -> foldl' (\ta e -> go e ta) (go b (t, a)) es
     KNLetFuns    _ fns b       -> let n = length fns in
-                                  let ta' @ (t', a' ) = go b (t, a) in
+                                  let ta' @ (t', _ ) = go b (t, a) in
                                   let (_, bodies) = foldl' (\ta fn -> go (fnBody fn) ta) ta' fns in
                                   (t' + n, n + bodies)
 

@@ -90,18 +90,18 @@ instance TypedWith (Letable TypeLL) TypeLL where
       ILLiteral     t _ -> t
       ILTuple      vs _ -> LLPtrType (LLStructType (map tidType vs))
       ILKillProcess t _ -> t
-      ILOccurrence t v _-> t
+      ILOccurrence t _ _-> t
       ILCallPrim t _ _  -> t
       ILCall     t _ _  -> t
       ILAppCtor  t _ _  -> t
       ILAlloc      v _  -> LLPtrType (tidType v)
-      ILDeref    t v    -> t
+      ILDeref    t _    -> t
       ILStore      {}   -> LLPtrType (LLStructType [])
       ILObjectCopy {}   -> LLPtrType (LLStructType [])
       ILBitcast  t _    -> t
       ILAllocArray t _  -> t
       ILArrayRead t _   -> t
-      ILArrayPoke   ai v-> LLPtrType (LLStructType [])
+      ILArrayPoke   _ _ -> LLPtrType (LLStructType [])
       ILAllocate info   -> LLPtrType (allocType info)
 
 isPurePrim _ = False -- TODO: recognize pure primitives
@@ -137,7 +137,7 @@ letableSize letable = case letable of
       ILOccurrence   {} -> 1
       ILCallPrim     {} -> 1
       ILCall         {} -> 1
-      ILAppCtor      {} -> 1
+      ILAppCtor      {} -> 1 -- 2?
       ILAllocate     {} -> 1
       ILAlloc        {} -> 1
       ILDeref        {} -> 1 -- 0?
