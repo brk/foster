@@ -1,0 +1,30 @@
+main = {
+  foo 5
+};
+
+foo = { x : Int32 =>
+  print_i32 x;
+  bar
+};
+
+bar = { x : Int32 =>
+  expect_i32 x;
+  r = (ref foo);
+  ()
+};
+
+/*
+foo = { x : Int32 =>
+  if x ==Int32 0 then () else
+  print_i32 x;
+  bar x
+  end
+};
+
+bar = { x : Int32 =>
+  if x ==Int32 0 then () else
+  expect_i32 x;
+  foo 0
+  end
+};
+*/

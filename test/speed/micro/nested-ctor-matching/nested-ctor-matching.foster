@@ -1,0 +1,41 @@
+main = {
+  t1-stress 1`000`000;
+};
+
+type case T
+       of $A
+       of $B
+       of $C
+       of $D
+       of $E
+       of $F
+       of $G
+       of $H
+       ;
+
+t1-stress = { n : Int32 =>
+  if n ==Int32 0 then
+    0
+  else
+  t1 (E !)    ((A !, B !), (C !, (E !, E !)));
+  t1 (F !)    ((A !, B !), (D !, (D !, E !)));
+  t1 (G !)    ((G !, G !), (C !, (D !, E !)));
+  t1 (H !)    ((H !, B !), (C !, (D !, E !)));
+  t1 (A !)    ((A !, B !), (C !, (D !, E !)));
+  t1-stress (n -Int32 1);
+  end
+};
+
+combine = { a : T => b : T => a };
+
+t1 = { e : T =>
+       x : ((T, T), (T, (T, T))) =>
+    case x
+      of ((x, y),  (z, ($E, q))) -> combine x y
+      of ((a, b),  ($D, qq    )) -> combine a b
+      of ((c, $G), ($C, ($D, $E))) -> c
+      of (($H, d), ($C, ($D, $E))) -> d
+      of (xy, zz) -> e
+    end;
+};
+

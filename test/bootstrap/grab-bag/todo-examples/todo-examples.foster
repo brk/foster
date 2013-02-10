@@ -1,0 +1,155 @@
+main = {
+  // inferSigma ought to quanitfy over the escaping meta type variables (fn res ty)
+  //expect_i1 False ; print_i1 (__COMPILES__ { x:() => rec x = { n:Int32 => x n }; in x end });
+
+  // found un-unified variable....
+  //expect_i1 False ; print_i1 (__COMPILES__ rec x = { x ! }; in x end);
+
+  ()
+};
+
+/*
+// Good and working, but hard to automatically check:
+// "Unbound type variable 'e in the type declaration for foo"
+id = { forall c:Boxed, y:c => y };
+foo ::  forall d:Boxed, { d => e };
+foo = { forall a:Boxed, x:a => x };
+
+// "Unknown type E in the type declaration for foo"
+bar ::  forall d:Boxed, { d => E };
+bar = { forall a:Boxed, x:a => x };
+*/
+
+/*
+type case GenMeta (a:Boxed)
+  of $GenMetaD ()
+;
+
+gen-meta ::   forall b:Boxed, { GenMeta b };
+gen-meta  = { forall b:Boxed, GenMetaD () };
+*/
+
+
+array_poke_return_type = {
+  // This makes sure that the return value of an array-poke expression
+  // is consistent between the front and back ends.
+  0 >^ (allocDArray:[Int32] 1)[0];
+};
+
+/*
+
+type case Lazy (a:Boxed)
+  of $LazyWrap a
+  of $LazyCheat
+;
+
+type case Stream (a:Boxed)
+  of $StreamNilV
+;
+
+
+// inferSigma ought to quantify... (real problem is missing nullary application)
+//stream-nil-mediocre ::   forall b:Boxed, { Lazy b };
+//stream-nil-mediocre  = { forall b:Boxed, LazyCheat:[b] };
+*/
+
+/*
+stream-nil-mediocre ::   forall b:Boxed, { Lazy (Stream b) };
+stream-nil-mediocre  = { forall b:Boxed, LazyWrap ( StreamNilV ! ) };
+*/
+
+type case Foo (b:Boxed)
+//of $FooC1 e // "Unbound type variable 'e in field of data constructor FooC1 of type Foo"
+//of $FooC2 E // "Unknown type E in field of data constructor FooC2 of type Foo"
+
+//of $FooC3
+//of $FooC3 // "Duplicate constructor names ["FooC1"] in definition of data type Foo"
+;
+
+// fails to typecheck: bound type variables cannot be unified
+/*
+loopy = { forall a:Boxed, lazy : Lazy a =>
+case lazy
+    of $LazyDelay r ->
+      case r ^
+        of $LazyThunk thunk -> (LazyBusy !) >^ r;
+                               let v = (thunk !); in
+                                 (LazyValue v) >^ r;
+                                 v
+                               end
+        of $LazyValue v -> v
+        of $LazyBusy -> print_i32 123456; loopy:[a] lazy
+      end
+  end
+};
+*/
+
+/*
+//error: /home/benkarel/foster/compiler/passes/LLCodegen.cpp:218: ASSERT(getUnitValue()->getType() == builder.getCurrentFunctionReturnType()) failed.
+catenableLinkAll :: forall a:Boxed, { BatchedQueue (CatenableList a) => Maybe (CatenableList a) };
+catenableLinkAll = { forall a:Boxed, q : BatchedQueue (CatenableList a) =>
+  prim kill-entire-process "catenableLinkAll"
+};
+*/
+
+/*
+bqHead :: forall a:Boxed, { BatchedQueue a => a => Maybe a };
+bqHead = { forall a:Boxed, bq : BatchedQueue a =>
+  case bq
+    of $BatchedQueue ($Nil)      _ -> None !
+    of $BatchedQueue ($Cons x _) _ -> Some x
+  end
+};
+*/
+
+/*
+//error: /home/benkarel/foster/compiler/passes/LLCodegen.cpp:233: ASSERT(v->getType() == block->phiNodes[i]->getType()) failed. Can't pass a value of type {}* to a phi node of type i999*
+catenableLinkAll :: { Maybe () };
+catenableLinkAll = { prim kill-entire-process "catenableLinkAll" };
+*/
+
+// case ... of $C $Nil -> ... end
+//   isn't allowed; we need
+// case ... of $C ($Nil) -> ... end
+/*
+Make the GC very unhappy by allocating all memory to a linear list
+(currently causes stack overflow in the GC because we use the C stack
+ when walking data structures)
+*/
+/*
+type case BInt of $B Int32;
+
+eat-list = { n : Int32 => xs : List BInt => eat (n +Int32 1) (Cons (B n) xs) ; () };
+*/
+
+
+/* A slightly "better" way of making the GC unhappy: allocate progressively
+   bigger tree structures until we run out of memory.
+*/
+/*
+type case Tree of $T Tree Int32 Tree
+               of $TNil;
+tree-depth = { n : Int32 => if n ==Int32 0 then TNil !
+                             else let k = n -Int32 1;
+                                   in T (tree-depth k) n (tree-depth k) end
+                            end };
+eat-tree = { n : Int32 => xs : Tree =>
+        eat-tree (n +Int32 1) (T xs n (tree-depth n)); () };
+
+//eat-tree 0 (TNil !);
+*/
+
+
+/*
+wrong-annot :: { Int32 => Int32 => () };
+wrong-annot = { x:Int32 =>         () };
+*/
+
+// 105 /Int32 10;
+
+
+/*
+  /-Int32 appears to be aliased to -Int32
+  expect_i32 10;
+  print_i32 (105 /-Int32 10);
+*/
