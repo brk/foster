@@ -55,8 +55,8 @@ def link_all(all_bcs):
   outbc = os.path.join(bindir, "_bitcodelibs_", "libfoster.bc")
   # Well, actually, link all except what fosterlower.cpp links beforehand, to
   # avoid multiply-defined symbols when everything comes together at the end.
-  bcs = [bc for bc in all_bcs if not bc.endswith("libfoster_coro.bc")]
-  cmd = "%s %s -link-as-library -o %s" % (llvmld, " ".join(bcs), outbc)
+  bcs = [bc for bc in all_bcs if not (bc.endswith("libfoster_coro.bc") or bc.endswith(".h"))]
+  cmd = "%s %s -o %s" % (llvmld, " ".join(bcs), outbc)
   print cmd
   return subprocess.call(cmd.split(" "))
 
@@ -69,7 +69,7 @@ def get_libfoster_parser(usage):
   parser.add_option("--clang", dest="clang", action="store",
                     help="Path to clang(++)")
   parser.add_option("--llvmdir", dest="llvmdir", action="store",
-                    help="Path to LLVM bin dir (llvm-ld should be found here)")
+                    help="Path to LLVM bin dir (llvm-link should be found here)")
   parser.add_option("--corodef", dest="corodef", action="store",
                     help="libcoro method definition, like CORO_ASM")
   parser.add_option("--debug_mode", action="store_true", dest="debug", default=False,
@@ -85,7 +85,7 @@ if __name__ == "__main__":
   clang  = options.clang
   srcdir = options.srcdir
   bindir = options.bindir
-  llvmld = os.path.join(options.llvmdir, 'llvm-ld')
+  llvmld = os.path.join(options.llvmdir, 'llvm-link')
   outdir = os.path.join(bindir, "_bitcodelibs_/gc_bc")
   ensure_dir_exists(outdir)
 

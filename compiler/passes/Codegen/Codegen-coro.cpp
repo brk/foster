@@ -461,8 +461,10 @@ void generateInvokeYield(bool isYield,
   Value* sib_ctx_addr = builder.CreateConstInBoundsGEP2_32(sibling_ptr_gen, 0, coroField_Context());
 
   llvm::CallInst* transfer = builder.CreateCall2(coroTransfer, sib_ctx_addr, ctx_addr);
-  transfer->addAttribute(1, llvm::Attribute::InReg);
-  transfer->addAttribute(2, llvm::Attribute::InReg);
+  llvm::AttrBuilder ab; ab.addAttribute(llvm::Attributes::InReg);
+  llvm::Attributes inreg = llvm::Attributes::get(builder.getContext(), ab);
+  transfer->addAttribute(1, inreg);
+  transfer->addAttribute(2, inreg);
 
   //=================================================================
   //=================================================================

@@ -5,7 +5,7 @@
 #include "llvm/DerivedTypes.h"
 #include "llvm/Module.h"
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/Support/IRBuilder.h"
+#include "llvm/IRBuilder.h"
 #include "llvm/Intrinsics.h"
 
 #include "base/LLVMUtils.h" // for str(TypeAST*)

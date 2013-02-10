@@ -16,7 +16,7 @@
 #include "llvm/MC/MCSymbol.h"
 
 #include "llvm/Target/Mangler.h"
-#include "llvm/Target/TargetData.h"
+#include "llvm/DataLayout.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/Function.h"
@@ -124,7 +124,7 @@ public:
     // Set up for emitting addresses.
     const char *AddressDirective;
     int AddressAlignLog;
-    if (AP.TM.getTargetData()->getPointerSize() == sizeof(int32_t)) {
+    if (AP.TM.getDataLayout()->getPointerSize() == sizeof(int32_t)) {
       AddressDirective = MAI.getData32bitsDirective();
       AddressAlignLog = 2;
     } else {
@@ -233,7 +233,7 @@ public:
           i32sForThisFunction++;
         }
 
-        unsigned IntPtrSize = AP.TM.getTargetData()->getPointerSize();
+        unsigned IntPtrSize = AP.TM.getDataLayout()->getPointerSize();
 
         // Emit the addresses of the safe points in the cluster.
         for (Labels::iterator lit = labels.begin();

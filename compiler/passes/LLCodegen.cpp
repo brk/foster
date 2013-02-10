@@ -296,7 +296,7 @@ void createGCMapsSymbolIfNeeded(CodegenPass* pass) {
     /*Initializer=*/ llvm::ConstantInt::get(builder.getInt32Ty(), 0),
     /*Name=*/        "foster__gcmaps",
     /*InsertBefore=*/NULL,
-    /*ThreadLocal=*/ false);
+    /*ThreadLocal=*/ llvm::GlobalVariable::NotThreadLocal);
   }
 }
 
@@ -863,8 +863,9 @@ llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
     ASSERT(this->region == LLAllocate::MEM_REGION_GLOBAL_HEAP);
     return pass->emitArrayMalloc(this->type, array_size, this->zero_init);
   } else {
-    if (StructTypeAST* sty = dynamic_cast<StructTypeAST*>(this->type)) {
-      registerStructType(sty, this->type_name,          this->ctorId, pass->mod);
+    if (const StructTypeAST* sty = this->type->castStructTypeAST()) {
+      registerStructType(const_cast<StructTypeAST*>(sty),
+                         this->type_name,          this->ctorId, pass->mod);
     }
     return allocateCell(pass, this->type, this->region, this->ctorId,
                               this->srclines, this->zero_init);

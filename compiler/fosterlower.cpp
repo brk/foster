@@ -193,7 +193,8 @@ areDeclaredValueTypesOK(llvm::Module* mod,
     Value* v;
     if (!f) { v = mod->getGlobalVariable(d->getName()); }
     else { // Make sure function callconv matches
-      FnTypeAST* fnty = dynamic_cast<FnTypeAST*>(t);
+      const FnTypeAST* fnty = t->castFnTypeAST();
+      ASSERT(fnty);
       ASSERT(f->getCallingConv() == fnty->getCallingConventionID())
         << "\nCalling convention mismatch for symbol " << d->getName()
         << ":\n"

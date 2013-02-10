@@ -78,6 +78,19 @@ string(REPLACE ${NDEBUG_FLAG} "" LLVM_CFLAGS "${LLVM_CFLAGS}")
 #
 string(STRIP "${LLVM_ORIGINAL_CFLAGS}" LLVM_ORIGINAL_CFLAGS)
 
+# We've already set most of llvm-config's flags above via LLVM_CFLAGS;
+# here, we just want to set the flags we removed from LLVM_CFLAGS,
+# for programs which must compile without RTTI for LLVM compatibility.
+#
+set (LLVM_EXTRA_CFLAGS "")
+
+   if (${LLVM_ORIGINAL_CFLAGS} MATCHES         ${NO_RTTI_FLAG})
+  set (LLVM_EXTRA_CFLAGS "${LLVM_EXTRA_CFLAGS} ${NO_RTTI_FLAG}")
+endif (${LLVM_ORIGINAL_CFLAGS} MATCHES         ${NO_RTTI_FLAG})
+
+   if (${LLVM_ORIGINAL_CFLAGS} MATCHES         ${NDEBUG_FLAG})
+  set (LLVM_EXTRA_CFLAGS "${LLVM_EXTRA_CFLAGS} ${NDEBUG_FLAG}")
+endif (${LLVM_ORIGINAL_CFLAGS} MATCHES         ${NDEBUG_FLAG})
 
 # Hack for now: rather than running all programs JITted from the main fosterc
 # compiler binary (and embedding the foster runtime inside the foster compiler)
@@ -213,6 +226,7 @@ add_custom_target(hs_me
   COMMAND python ${PROJECT_SOURCE_DIR}/scripts/mk_me.py
           --srcroot ${PROJECT_SOURCE_DIR}
           --bindir ${PROJECT_BINARY_DIR}
+          --profile
   )
 # We currently run tests in parallel on Linux and serially on Mac OS X.
 # Haskell's profiling coverage tool corrupts its database when
@@ -415,30 +429,12 @@ add_library(fosterc_passes STATIC
   compiler/passes/PrettyPrintPass.cpp
 )
 
+add_library(fosterc_fosteril_pb STATIC
+  ${GENERATED}/FosterIL.pb.cc
+)
+
 add_dependencies(fosterc_passes fosterc_parse)
-set_target_properties(fosterc_llvm
-  PROPERTIES
-  COMPILE_FLAGS -Wall
-)
 
-
-# We've already set most of llvm-config's flags above via LLVM_CFLAGS;
-# here, we just want to set the flags we removed from LLVM_CFLAGS.
-#
-set (LLVM_EXTRA_CFLAGS "")
-
-   if (${LLVM_ORIGINAL_CFLAGS} MATCHES         ${NO_RTTI_FLAG})
-  set (LLVM_EXTRA_CFLAGS "${LLVM_EXTRA_CFLAGS} ${NO_RTTI_FLAG}")
-endif (${LLVM_ORIGINAL_CFLAGS} MATCHES         ${NO_RTTI_FLAG})
-
-   if (${LLVM_ORIGINAL_CFLAGS} MATCHES         ${NDEBUG_FLAG})
-  set (LLVM_EXTRA_CFLAGS "${LLVM_EXTRA_CFLAGS} ${NDEBUG_FLAG}")
-endif (${LLVM_ORIGINAL_CFLAGS} MATCHES         ${NDEBUG_FLAG})
-
-set_target_properties(fosterc_llvm
-  PROPERTIES
-  COMPILE_FLAGS ${LLVM_EXTRA_CFLAGS}
-)
 ############
 
 add_executable(fosterparse compiler/fosterparse.cpp)
@@ -456,11 +452,10 @@ add_executable(fosterlower
     compiler/passes/Codegen/CodegenUtils.cpp
     compiler/passes/Codegen/Codegen-coro.cpp
     compiler/passes/Codegen/Codegen-typemaps.cpp
-    ${GENERATED}/FosterIL.pb.cc
   )
 target_link_libraries(fosterlower
   fosterc_parse fosterc_passes fosterc_parse fosterc_base
-  fosterc_llvm
+  fosterc_llvm fosterc_fosteril_pb
   antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
 
 add_dependencies(fosterlower
@@ -495,10 +490,17 @@ add_dependencies(libfoster_bc coro)
 
 
 set_target_properties(
-  fosterc_passes fosterc_parse fosterc_base
-  fosterparse fosterlower fosteroptc
+  fosterc_passes fosterc_parse 
   PROPERTIES
   COMPILE_FLAGS -Wall
+)
+
+# These files contain code which inherits from LLVM classes,
+# or uses llvm::cl, and thus must be compiled without RTTI.
+set_target_properties(fosterc_llvm fosterc_base
+                      fosterlower fosteroptc fosterparse 
+  PROPERTIES
+  COMPILE_FLAGS ${LLVM_EXTRA_CFLAGS}
 )
 
 #####################################################################

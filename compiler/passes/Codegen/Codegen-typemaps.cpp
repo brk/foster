@@ -39,12 +39,7 @@ bool isPointerToSized(Type* ty) {
 
 bool isGarbageCollectible(TypeAST* typ, Type* ty) {
   if (isPointerToSized(ty)) return true;
-  if (NamedTypeAST* nt = dynamic_cast<NamedTypeAST*>(typ)) {
-    if (dynamic_cast<DataTypeAST*>(nt->getType())) {
-      return true;
-    }
-  }
-  return false;
+  return typ->isGarbageCollectible();
 }
 
 // TODO vector of pointers now supported by LLVM...
@@ -71,7 +66,7 @@ OffsetSet countPointersInType(TypeAST* typ, Type* ty) {
   // if we have a struct { T1; T2 } then our offset set will be the set for T1,
   // plus the set for T2 with offsets incremented by the offset of T2.
   else if (StructType* sty = dyn_cast<StructType>(ty)) {
-    StructTypeAST* stp = dynamic_cast<StructTypeAST*>(typ);
+    StructTypeAST* stp = const_cast<StructTypeAST*>(typ->castStructTypeAST());
     ASSERT(stp) << "StructType without corresponding StructTypeAST?!? "
                 << str(typ) << " ~~tag = " << typ->tag;
 
@@ -188,7 +183,7 @@ GlobalVariable* constructTypeMap(llvm::Type*  ty,
     /*Initializer=*/ 0,
     /*Name=*/        "__foster_typemap_" + name,
     /*InsertBefore=*/NULL,
-    /*ThreadLocal=*/ false);
+    /*ThreadLocal=*/ GlobalVariable::NotThreadLocal);
   typeMapVar->setAlignment(16);
 
   std::string wrapped;
@@ -318,7 +313,7 @@ void registerStructType(StructTypeAST* structty,
 
 StructTypeAST*
 isCoroStructType(TypeAST* typ) {
-  if (StructTypeAST* sty = dynamic_cast<StructTypeAST*>(typ)) {
+  if (StructTypeAST* sty = const_cast<StructTypeAST*>(typ->castStructTypeAST())) {
     if (sty == foster_generic_coro_ast
      ||  ( sty->getNumContainedTypes() > 0
         && sty->getContainedType(0) == foster_generic_coro_ast)) {

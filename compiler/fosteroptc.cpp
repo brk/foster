@@ -9,7 +9,7 @@
 #include "llvm/Config/config.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
 #include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
-#include "llvm/Target/TargetData.h"
+#include "llvm/DataLayout.h"
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Target/TargetOptions.h"
 
@@ -179,10 +179,10 @@ namespace  {
   }
 } // namespace
 
-TargetData* getTargetDataForModule(Module* mod) {
+DataLayout* getDataLayoutForModule(Module* mod) {
   const string& layout = mod->getDataLayout();
   if (layout.empty()) return NULL;
-  return new TargetData(layout);
+  return new DataLayout(layout);
 }
 
 void optimizeModuleAndRunPasses(Module* mod) {
@@ -190,10 +190,10 @@ void optimizeModuleAndRunPasses(Module* mod) {
   PassManager passes;
   FunctionPassManager fpasses(mod);
 
-  TargetData* td = getTargetDataForModule(mod);
+  DataLayout* td = getDataLayoutForModule(mod);
   if (td) {
     passes.add(td);
-    fpasses.add(new TargetData(*td));
+    fpasses.add(new DataLayout(*td));
   } else {
     llvm::outs() << "Warning: no target data for module!" << "\n";
   }
@@ -207,7 +207,7 @@ void optimizeModuleAndRunPasses(Module* mod) {
     ScopedTimer timer("llvm.opt.memalloc");
     FunctionPassManager fpasses_first(mod);
     // Run this one before inlining, otherwise we won't see the mallocs!
-    fpasses_first.add(new TargetData(*td));
+    fpasses_first.add(new DataLayout(*td));
     fpasses_first.add(foster::createMemallocSpecializerPass());
     foster::runFunctionPassesOverModule(fpasses_first, mod);
   }
@@ -334,10 +334,10 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
 
   PassManager passes;
   // Use specific target data if available, else generic target data.
-  if (const TargetData* td = tm->getTargetData()) {
-    passes.add(new TargetData(*td));
+  if (const DataLayout* td = tm->getDataLayout()) {
+    passes.add(new DataLayout(*td));
   } else {
-    passes.add(new TargetData(mod));
+    passes.add(new DataLayout(mod));
   }
 
   llvm::raw_fd_ostream raw_out(filename.c_str(), err,

@@ -57,8 +57,9 @@ CtorInfo parseCtorInfo(const pb::PbCtorInfo& c) { CtorInfo x;
   x.ctorId = parseCtorId(c.ctor_id());
   x.ctorStructType = NULL;
   if (c.has_ctor_struct_ty()) {
-    x.ctorStructType = dynamic_cast<StructTypeAST*>(
-                         TypeAST_from_pb(&c.ctor_struct_ty()));
+    x.ctorStructType = const_cast<StructTypeAST*>(
+                         TypeAST_from_pb(&c.ctor_struct_ty())
+                                           ->castStructTypeAST());
     ASSERT(x.ctorStructType != NULL);
   }
   return x;

@@ -136,7 +136,7 @@ struct CommentWriter : public llvm::AssemblyAnnotationWriter {
     os << "; #uses = " << v.getNumUses() << "\t; " << *(v.getType());
   }
 
-  void emitFunctionAnnot(llvm::Function* f, formatted_raw_ostream& os) {
+  void emitFunctionAnnot(const llvm::Function* f, formatted_raw_ostream& os) {
     if (!f->isDeclaration()) {
 
       std::string originalName = f->getName();

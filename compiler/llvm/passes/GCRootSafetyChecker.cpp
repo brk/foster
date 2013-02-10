@@ -6,7 +6,7 @@
 #include "llvm/Function.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Instructions.h"
-#include "llvm/Support/IRBuilder.h"
+#include "llvm/IRBuilder.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/InstIterator.h"

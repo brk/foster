@@ -19,6 +19,7 @@
 using foster::SourceRange;
 
 class TypeAST;
+class FnTypeAST;
 class RefTypeAST;
 class StructTypeAST;
 
@@ -48,6 +49,10 @@ public:
   const char* const tag;
   const SourceRange& getSourceRange() const { return sourceRange; }
   virtual llvm::Type* getLLVMType() const { return repr; }
+
+  virtual const FnTypeAST*     castFnTypeAST() const { return NULL; }
+  virtual const StructTypeAST* castStructTypeAST() const { return NULL; }
+  virtual bool isGarbageCollectible() const { return false; }
 
   virtual void show(PrettyPrintTypePass*    pass) = 0;
   virtual void dump(DumpTypeToProtobufPass* pass) = 0;
@@ -88,6 +93,7 @@ public:
   virtual llvm::Type* getLLVMType() const;
   const std::string getName() { return name; }
   TypeAST* getType() const { return namedType; }
+  virtual bool isGarbageCollectible() const { return getType()->isGarbageCollectible(); }
 };
 
 struct DataCtor {
@@ -114,6 +120,7 @@ public:
   size_t getNumCtors() const { return ctors.size(); }
   DataCtor* getCtor(size_t x) const { return ctors[x]; }
   const std::string getName() { return name; }
+  virtual bool isGarbageCollectible() const { return true; }
 };
 
 class IndexableTypeAST : public TypeAST {
@@ -166,6 +173,8 @@ public:
   virtual void dump(DumpTypeToProtobufPass* pass);
   virtual llvm::Type* getLLVMType() const;
 
+  virtual const FnTypeAST*     castFnTypeAST() const { return this; }
+
   TypeAST*& getParamType(int i) { return argTypes[i]; }
   TypeAST* getParamType(int i) const { return argTypes[i]; }
   TypeAST*& getReturnType() { return returnType; }
@@ -196,6 +205,8 @@ public:
   virtual void show(PrettyPrintTypePass* pass);
   virtual void dump(DumpTypeToProtobufPass* pass);
   virtual llvm::Type* getLLVMType() const;
+
+  virtual const StructTypeAST* castStructTypeAST() const { return this; }
 
   virtual int getNumContainedTypes() const { return parts.size(); }
   virtual int64_t getNumElements()   const { return parts.size(); }

@@ -11,7 +11,7 @@
 #include "llvm/Constants.h"
 #include "llvm/Pass.h"
 #include "llvm/ADT/Statistic.h"
-#include "llvm/Target/TargetData.h"
+#include "llvm/DataLayout.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Analysis/ConstantFolding.h"
 
@@ -32,7 +32,7 @@ public:
   const char* getPassName() const { return "SpecializeAllocations"; }
 
   virtual void getAnalysisUsage(AnalysisUsage &AU) const {
-    AU.addRequired<TargetData>();
+    AU.addRequired<DataLayout>();
     AU.setPreservesCFG();
 
     // TODO should add more preserved transforms here.
@@ -84,7 +84,7 @@ bool SpecializeAllocations::runOnBasicBlock(BasicBlock &BB) {
   assert(memalloc && memalloc_16 && "Pass not initialized!");
 
   BasicBlock::InstListType &BBIL = BB.getInstList();
-  const TargetData &TD = getAnalysis<TargetData>();
+  const DataLayout &TD = getAnalysis<DataLayout>();
 
   for (BasicBlock::iterator I = BB.begin(), E = BB.end(); I != E; ++I) {
     if (llvm::CallInst* call = llvm::dyn_cast<CallInst>(I)) {

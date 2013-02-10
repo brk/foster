@@ -675,7 +675,7 @@ knLoopHeaders' expr = do
     HdrState h c r <- execStateT (knLoopHeaderCensus Set.empty expr)
                                  (HdrState Map.empty Map.empty Map.empty)
     let info = computeInfo c h
-    liftIO $ putStrLn $ show info
+    --liftIO $ putStrLn $ show info
     return $ qq info r expr
  where
   qq info r expr =
