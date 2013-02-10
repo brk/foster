@@ -117,3 +117,7 @@ add_custom_command(TARGET chromium_base POST_BUILD
 if (${APPLE})
   target_link_libraries(chromium_base "-framework Cocoa")
 endif (${APPLE})
+
+if ("${UNIX}" AND NOT "${APPLE}")
+  target_link_libraries(chromium_base "-lrt")
+endif ("${UNIX}" AND NOT "${APPLE}")
