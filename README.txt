@@ -33,11 +33,21 @@ Ubuntu 10.10:
 		binutils-gold	cmake-curses-gui	mercurial
 					libffi-dev
 		ccache		ack-grep
-      ghc6    cabal-install  libghc6-zlib-dev   leksah
-                libprotobuf6    protobuf-compiler       libprotobuf-dev
+
+                libprotobuf6 (7 on newer Ubuntus)
+                protobuf-compiler       libprotobuf-dev
                 python-protobuf libprotobuf-java
       subversion    vim     curl  ctags
 
+      For GHC, to get profiling libraries, do not use apt-get;
+      instead, download a generic binary tarball directly from
+      http://www.haskell.org/ghc/download
+      and cabal-install from
+      http://www.haskell.org/cabal/download.html
+
+      To get GHC to see libgmp:
+        sudo apt-get install libgmp3-dev
+        sudo ln -s /usr/lib/i386-linux-gnu/libgmp.so{,.3}
 
         For Ott:
                 coq             texlive-latex-base
@@ -69,7 +79,7 @@ ANTLR on Linux and OS X:
 	ANTLR_DIR=~/antlr/${ANTLR_VERSION}
 	mkdir tmp
 	cd tmp
-		wget http://antlr.org/download/C/libantlr3c-${ANTLR_VERSION}.tar.gz
+		wget http://antlr3.org/download/C/libantlr3c-${ANTLR_VERSION}.tar.gz
 		tar xzvf libantlr3c-${ANTLR_VERSION}.tar.gz
                 cd libantlr3c-${ANTLR_VERSION}
 		./configure --prefix=${ANTLR_DIR} --enable-64bit && make && make install
@@ -77,7 +87,7 @@ ANTLR on Linux and OS X:
 	cd ..
 	rm -rf ./tmp
 	pushd ${ANTLR_DIR}
-	wget http://antlr.org/download/antlr-${ANTLR_VERSION}.jar
+	wget http://antlr3.org/download/antlr-${ANTLR_VERSION}.jar
 	popd
 
 On Ubuntu 10.10:
@@ -97,7 +107,7 @@ Haskell:
       cabal install chart
       cabal install criterion
       : **** : hoopl
-      cabal install text protocol-buffers filepath hprotoc ansi-terminal leksah ansi-wl-pprint
+      cabal install text protocol-buffers filepath hprotoc ansi-terminal ansi-wl-pprint
 
       : *** : You must install hoopl from source via https://github.com/brk/packages-hoopl/
 
