@@ -1,0 +1,15 @@
+main = {
+
+  let rA = (ref 1); in
+    force_gc_for_debugging_purposes !;
+    expect_i32 rA^;
+  end;
+
+  let rB = (ref 0); // rA's root is free, so rB can use it...
+      rC = (ref 1); // ... but rC shouldn't! If rC steals rB's
+  in                // root, the result will be printing 2 instead of 1.
+    force_gc_for_debugging_purposes !;
+    print_i32 (rC^ +Int32 rB^);
+  end;
+
+};
