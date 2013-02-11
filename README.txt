@@ -111,3 +111,17 @@ Haskell:
 
       : *** : You must install hoopl from source via https://github.com/brk/packages-hoopl/
 
+
+Other libraries/tools:
+        gperftools: https://code.google.com/p/gperftools/
+        kcachegrind: http://kcachegrind.sourceforge.net/html/Home.html
+        valgrind
+        pin:        http://software.intel.com/en-us/articles/pin-a-dynamic-binary-instrumentation-tool
+        leveldb:    https://code.google.com/p/leveldb/
+        leveldb-go: https://code.google.com/p/leveldb-go/
+        snappy:     https://code.google.com/p/snappy/
+        cityhash:   https://code.google.com/p/cityhash/
+        ocaml-core: https://bitbucket.org/janestreet/core
+
+        hprotoc:    http://hackage.haskell.org/package/hprotoc
+
