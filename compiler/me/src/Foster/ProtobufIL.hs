@@ -56,8 +56,6 @@ import Foster.Bepb.PbAllocInfo.MemRegion as PbMemRegion
 import qualified Text.ProtocolBuffers.Header as P'
 import qualified Data.Text as T
 
-import Debug.Trace(trace)
-
 -----------------------------------------------------------------------
 
 stringSG SG_Static  = u8fromString "static"
@@ -68,7 +66,6 @@ dumpBlockId (str, lab) = u8fromString (str ++ "." ++ show lab)
 dumpIdent :: Ident -> P'.Utf8
 dumpIdent (GlobalSymbol name) = textToPUtf8 name
 dumpIdent i@(Ident _name num) = if num < 0
-                --then u8fromString $ name
                 then error $ "cannot dump negative ident! " ++ show i
                 else u8fromString $ show i
 
