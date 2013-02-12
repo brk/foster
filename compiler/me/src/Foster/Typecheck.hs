@@ -106,14 +106,7 @@ inferSigma ctx e msg = do
     debug $ "inferSigma " ++ highlightFirstLine (rangeOf e)
     debug $ "inferSigma deferring to inferRho"
     e' <- inferRho ctx e msg
-    debug $ "inferSigma inferred :: " ++ show (typeAST e')
-    env_tys <- getEnvTypes ctx
-    env_tvs <- collectUnboundUnificationVars env_tys
-    res_tvs <- collectUnboundUnificationVars [typeAST e']
-    let forall_tvs = res_tvs \\ env_tvs
-    case forall_tvs of
-      [] -> return ()
-      _ -> tcFails [text $ "inferSigma ought to quantify over the escaping meta type variables " ++ show (map MetaTyVar forall_tvs)]
+    doQuantificationCheck e' ctx
     return e'
 -- }}}
 
@@ -126,13 +119,34 @@ checkSigma ctx e sigma = do
     debug $ "checkSigma deferring to checkRho for: " ++ highlightFirstLine (rangeOf e)
 
     ann <- checkRho ctx e rho
+    checkForEscapingTypeVariables e ann ctx sigma skol_tvs
+    return ann
+-- }}}
+
+-- {{{
+doQuantificationCheck e' ctx = do
+    debug $ "inferSigma inferred :: " ++ show (typeAST e')
+    env_tys <- getEnvTypes ctx
+    env_tvs <- collectUnboundUnificationVars env_tys
+    res_tvs <- collectUnboundUnificationVars [typeAST e']
+    let forall_tvs = res_tvs \\ env_tvs
+    sanityCheck (null forall_tvs) $
+        "inferSigma ought to quantify over the escaping meta type variables " ++ show (map MetaTyVar forall_tvs)
+
+checkForEscapingTypeVariables _ _   _   _     [] = return ()
+checkForEscapingTypeVariables e ann ctx sigma skol_tvs = do
     env_tys <- getEnvTypes ctx
     esc_tvs <- getFreeTyVars (sigma : env_tys)
+    tcLift $ putStrLn $ "esc-chk: |env| = " ++ show (List.length env_tys)
+                            ++ "\t|tvs| = " ++ show (List.length esc_tvs)
+                            ++ "\t|skz| = " ++ show (List.length skol_tvs)
+
     let bad_tvs = filter (`elem` esc_tvs) skol_tvs
-    debug $ "checkSigma escaping types from were " ++ show esc_tvs ++ "; bad tvs were " ++ show bad_tvs ++ highlightFirstLine (rangeOf e)
+    debug $ "checkSigma escaping types from were " ++ show esc_tvs
+         ++ "; bad tvs were " ++ show bad_tvs
+         ++ highlightFirstLine (rangeOf e)
     sanityCheck (null bad_tvs)
                 ("Type not polymorphic enough")
-    return ann
 -- }}}
 
 
