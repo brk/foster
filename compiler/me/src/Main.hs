@@ -53,6 +53,7 @@ import Foster.MainOpts
 
 import Foster.Output
 import Text.PrettyPrint.ANSI.Leijen
+import Criterion.Measurement(time, secs)
 
 -----------------------------------------------------------------------
 -- TODO shouldn't claim successful typechecks until we reach AnnExprIL.
@@ -382,7 +383,7 @@ runCompiler pb_program flagVals outfile = do
                       tcUnificationVars = varlist,
                               tcParents = [],
                    tcMetaIntConstraints = icmap }
-   ilprog <- evalStateT (compile pb_program tcenv)
+   (il_time, ilprog) <- time $ evalStateT (compile pb_program tcenv)
                     CompilerContext {
                            ccVerbose  = getVerboseFlag flagVals
                          , ccFlagVals = flagVals
@@ -390,7 +391,9 @@ runCompiler pb_program flagVals outfile = do
                          , ccInline   = getInlining flagVals
                          , ccUniqRef  = uniqref
                     }
-   dumpILProgramToProtobuf ilprog outfile
+   (pb_time, _) <- time $ dumpILProgramToProtobuf ilprog outfile
+   putStrLn $ "compilation time: " ++ secs il_time
+   putStrLn $ "protobufout time: " ++ secs pb_time
 
 compile :: WholeProgram -> TcEnv -> Compiled ILProgram
 compile pb_program tcenv =
