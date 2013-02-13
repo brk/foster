@@ -1,0 +1,47 @@
+snafuinclude Bignum "bignum";
+
+main = {
+  n0 = tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1);
+  n = if n0 ==Int32 0 then 1000 else n0 end;
+  addtobits_raw n;
+};
+
+addtobits_int = { n : Int32 =>
+  REC loop = { iters : Int32 => x : IntInf => y : IntInf =>
+    if intCountBits x <UInt32 n
+      then t = intAdd x y;
+           loop (iters +Int32 1) t (intAdd t y)
+      else iters
+    end
+  };
+
+  niters = loop 0 (intFromInt32 1) (intFromInt32 2);
+  print_i32 niters;
+};
+
+addtobits_nat = { n : Int32 =>
+  REC loop = { iters : Int32 => x : NatInf => y : NatInf =>
+    if natCountBits x <UInt32 n
+      then t = natAdd x y;
+           loop (iters +Int32 1) t (natAdd t y)
+      else iters
+    end
+  };
+
+  niters = loop 0 (natFromInt32 1) (natFromInt32 2);
+  print_i32 niters;
+};
+
+addtobits_raw = { n : Int32 =>
+  REC loop = { iters : Int32 => x : Array Word => y : Array Word =>
+    if natCountBits_A x <UInt32 n
+      then t = foster_nat_add_digits x y;
+           loop (iters +Int32 1) t (foster_nat_add_digits t y)
+      else iters
+    end
+  };
+
+  niters = loop 0 (natDigits (natFromInt32 1)) (natDigits (natFromInt32 2));
+  print_i32 niters;
+  print_i32 niters;
+};
