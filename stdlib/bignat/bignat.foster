@@ -932,10 +932,14 @@ natMul2d = { n : NatInf => k : Int32 =>
 
 natCountBits_A :: { Array Word => Int32 };
 natCountBits_A = { a =>
-  i  = arrayLength32 a -Int32 1;
+  fin = arrayLength32 a -Int32 1;
 
-  (i *Int32 (digitNumBits !))
-         +Int32 (bitlength-Word a[i]);
+  // Count the bits used in the digits up to,
+  // but not including, the last one.
+  r0 = fin *Int32 (digitNumBits !);
+
+  // Add the number of bits needed for the last digit.
+  r0  +Int32 (bitlength-Word a[fin]);
 };
 
 natBitAnd_A :: { Array Word => Array Word => Array Word };
@@ -1223,5 +1227,9 @@ tmp_nat_of_base_10_Text = { t:Text =>
   };
   assert ok "tmp_nat_of_base_10_Text failed!";
   acc^
+};
+
+natCountBits = { i : NatInf =>
+  natCountBits_A (natDigits i)
 };
 

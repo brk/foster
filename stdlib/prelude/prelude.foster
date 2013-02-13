@@ -160,6 +160,7 @@ bitlength-Int64 = { k =>
   end
 };
 
+// TODO should this be called wordCountBits instead?
 bitlength-Word :: { Word => Int32 };
 bitlength-Word = { k =>
   rec go = { x => acc =>
@@ -615,3 +616,4 @@ minReprInt64 = { -9`223`372`036`854`775`808 };
 
 maxReprInt64 :: { Int64 };
 maxReprInt64 = {  9`223`372`036`854`775`807 };
+

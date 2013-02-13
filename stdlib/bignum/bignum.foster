@@ -191,3 +191,8 @@ printIntInf = { i : IntInf =>
 expectIntInf = { i : IntInf =>
   expect_text (foster_mp_to_text_radix i 10);
 };
+
+intCountBits = { i : IntInf =>
+  natCountBits (intNat i)
+};
+
