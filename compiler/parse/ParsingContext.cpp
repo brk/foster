@@ -16,6 +16,7 @@
 
 #include <stack>
 #include <map>
+#include <list>
 
 using std::map;
 using std::string;
@@ -35,6 +36,8 @@ struct ParsingContext::Impl {
 
   SymbolTable<ExprAST> exprScope;
   SymbolTable<TypeAST> typeScope;
+
+  std::list<std::string> bindingContexts;
 
   std::map<pANTLR3_BASE_TREE, pANTLR3_COMMON_TOKEN> startTokens;
   std::map<pANTLR3_BASE_TREE, pANTLR3_COMMON_TOKEN>   endTokens;
@@ -134,6 +137,34 @@ ParsingContext::freshName(std::string like) {
   ASSERT(!foster::gParsingContexts.empty());
 
   return foster::gParsingContexts.top()->impl->freshNames.fresh(like);
+}
+
+/////////////////////
+
+void // static
+ParsingContext::pushCurrentBinding(std::string binder) {
+  ASSERT(!foster::gParsingContexts.empty());
+  foster::gParsingContexts.top()->impl->bindingContexts.push_back(binder);
+}
+
+void // static
+ParsingContext::popCurrentBinding() {
+  ASSERT(!foster::gParsingContexts.empty());
+  foster::gParsingContexts.top()->impl->bindingContexts.pop_back();
+}
+
+std::string // static
+ParsingContext::getCurrentBindings() {
+  ASSERT(!foster::gParsingContexts.empty());
+  std::list<std::string>& bcs =
+  	 	 	  foster::gParsingContexts.top()->impl->bindingContexts;
+  ASSERT(!bcs.empty());
+  std::list<std::string>::iterator it = bcs.begin();
+  std::string rv = *it; ++it;
+  for ( ; it != bcs.end(); ++it) {
+    rv += "___" + *it;
+  }
+  return rv;
 }
 
 /////////////////////

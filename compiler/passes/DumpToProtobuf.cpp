@@ -226,11 +226,16 @@ void dumpValAbs(DumpToProtobufPass* pass, pb::PBValAbs* target,
 void ValAbs::dump(DumpToProtobufPass* pass) {
   processExprAST(pass->current, this, pb::Expr::VAL_ABS);
   if (this->name == "") {
-    this->name = foster::ParsingContext::freshName("<anon_fn_");
+    foster::ParsingContext::pushCurrentBinding(
+    	    	foster::ParsingContext::freshName("<anon_fn_"));
+    this->name = foster::ParsingContext::getCurrentBindings();
+  } else {
+    foster::ParsingContext::pushCurrentBinding(this->name);
   }
   pass->current->set_string_value(this->name);
   dumpValAbs(pass, pass->current->mutable_pb_val_abs(), this);
   dumpChild(pass, pass->current->add_parts(), this->parts[0]);
+  foster::ParsingContext::popCurrentBinding();
 }
 
 void IfExprAST::dump(DumpToProtobufPass* pass) {
@@ -262,7 +267,9 @@ void LetAST::dump(DumpToProtobufPass* pass) {
   for (size_t i = 0; i < this->bindings.size(); ++i) {
     pb::TermBinding* b = let_->add_binding();
     b->set_name(this->bindings[i].name);
+    foster::ParsingContext::pushCurrentBinding(this->bindings[i].name);
     dumpChild(pass, b->mutable_body(), this->bindings[i].body);
+    foster::ParsingContext::popCurrentBinding();
   }
   dumpChild(pass, let_->mutable_body(), this->parts[0]);
 }

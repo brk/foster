@@ -57,6 +57,17 @@ public:
   /////////////////////
 
   static void
+  pushCurrentBinding(std::string binder);
+
+  static void
+  popCurrentBinding();
+
+  static std::string
+  getCurrentBindings();
+
+  /////////////////////
+
+  static void
   setTokenRange(pANTLR3_BASE_TREE t,
                 pANTLR3_COMMON_TOKEN s,
                 pANTLR3_COMMON_TOKEN e);

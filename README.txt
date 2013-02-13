@@ -114,6 +114,7 @@ Haskell:
 
 Other libraries/tools:
         gperftools: https://code.google.com/p/gperftools/
+        	If you install via deb, you'll need to install both...
         kcachegrind: http://kcachegrind.sourceforge.net/html/Home.html
         valgrind
         pin:        http://software.intel.com/en-us/articles/pin-a-dynamic-binary-instrumentation-tool
