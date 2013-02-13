@@ -371,10 +371,12 @@ void LLProc::codegenProto(CodegenPass* pass) {
   llvm::FunctionType* FT = getLLVMFunctionType(this->getFnType(), symbolName);
 
   llvm::GlobalValue::LinkageTypes linkage = this->getFunctionLinkage();
+  llvm::CallingConv::ID cc = this->type->getCallingConventionID();
   if (symbolName == kFosterMain) {
     // No args, returning void...
     FT = llvm::FunctionType::get(builder.getVoidTy(), false);
     linkage = llvm::GlobalValue::ExternalLinkage;
+    cc      = llvm::CallingConv::C;
   }
 
   ASSERT(FT) << "expecting top-level proc to have FunctionType!";
@@ -384,7 +386,8 @@ void LLProc::codegenProto(CodegenPass* pass) {
 
   setFunctionArgumentNames(F, this->getFunctionArgNames());
   if (pass->config.useGC) { F->setGC("fostergc"); }
-  F->setCallingConv(this->type->getCallingConventionID());
+
+  F->setCallingConv(cc);
 }
 
 ////////////////////////////////////////////////////////////////////
