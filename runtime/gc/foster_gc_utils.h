@@ -163,5 +163,10 @@ struct stackmap_table {
   stackmap stackmaps[0];
 };
 
-
 } } } // namespace foster::runtime::gc
+
+// This symbol is emitted by the fostergc LLVM GC plugin to the
+// final generated assembly.
+extern "C" {
+  extern foster::runtime::gc::stackmap_table foster__gcmaps;
+}

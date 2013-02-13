@@ -8,16 +8,18 @@
 
 ////////////////////////////////////////////////////////////////
 
-// This symbol is hardcoded in fosterc (specifically, CodegenPass.cpp)
-// as the replacement for any "main" function.
-extern "C" int foster__main();
-
 #include "libfoster.h"
 
+// This symbol is hardcoded in fosterc (specifically, CodegenPass.cpp)
+// as the replacement for any "main" function.
+extern "C" int foster__runtime__main__wrapper(int argc, char** argv);
+extern "C" int foster__main();
+
 int main(int argc, char** argv) {
-  foster::runtime::initialize(argc, argv);
-  foster__main();
-  return foster::runtime::cleanup();
+  return foster__runtime__main__wrapper(argc, argv);
+  //foster::runtime::initialize(argc, argv);
+  //foster__main();
+  //return foster::runtime::cleanup();
 }
 
 // This lives here to prevent it from being inlined away when

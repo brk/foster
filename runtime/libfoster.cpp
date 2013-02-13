@@ -14,6 +14,7 @@
 #include "libfoster.h"
 #include "foster_gc.h"
 #include "libfoster_gc_roots.h"
+#include "foster_gc_utils.h"
 
 #include "_generated_/imath.h"
 #include "cpuid.h"
@@ -303,6 +304,28 @@ double  foster_getticks_elapsed(int64_t t1, int64_t t2) {
 }
 
 // http://stackoverflow.com/questions/4308996/finding-the-address-range-of-the-data-segment
+
+// We want to perform aggressive link time optimization of
+// foster code + stdlib, without having runtime::initialize()
+// and ::cleanup() discarded. This function is hardcoded to be
+// a LTO root, since libfoster_main is compiled straight to .o, not .bc,
+//  which is why it doesn't contribute to their non-deadness.
+extern "C" int foster__main();
+extern "C" void foster_coro_delete_self_reference(void* vc);
+
+int foster__runtime__main__wrapper(int argc, char** argv) {
+  bool tru = opaquely_i32(0) == 0;
+
+  foster::runtime::initialize(argc, argv);
+  foster__main();
+
+  if (!tru) {
+    // kung-fu grip to prevent LTO from being too mean.
+    foster_coro_delete_self_reference((void*)&foster__gcmaps);
+  }
+
+  return foster::runtime::cleanup();
+}
 
 } // extern "C"
 
