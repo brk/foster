@@ -28,7 +28,7 @@ Ubuntu 10.10:
 	Assuming you already have LLVM installed, in $PATH and $PKG_CONFIG_PATH...
 
 	Interesting packages:
-		cmake		libgmp3c2
+		cmake		libgmp3c2      m4
 	(universe)
 		binutils-gold	cmake-curses-gui	mercurial
 					libffi-dev

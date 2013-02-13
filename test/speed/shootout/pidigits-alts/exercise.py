@@ -50,7 +50,7 @@ def run_command(cmd, showcmd=False, stdout=None, stderr=None, stdin=None):
 #########################################
 
 if __name__ == '__main__':
-  cmds = 'pd_pure pd_small pd.foster.exe'.split(' ')
+  cmds = 'pd_pure.exe pd_small.exe pd.foster.exe'.split(' ')
   vals = '100 200 300 400 500 600 700 800 900 1000 1200 1600 2400 3200 4000 4800 5200 5600 6000 6400'.split(' ')
   #vals = '100 200 300 400 500 600 700 800 900'.split(' ')
   results = {}

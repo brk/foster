@@ -20,6 +20,9 @@ tools/c-viewer/
 dox/
 notes/_build/
 glob:compiler/me/*.protox
+glob:test/**/gmp-*/
+glob:test/**/libtommath/
+glob:test/**/libtommath*.a
 compiler/me/dist/
 compiler/me/src/Foster/Fepb/
 compiler/me/src/Foster/Fepb.hs
