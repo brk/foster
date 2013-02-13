@@ -67,6 +67,8 @@ def get_static_libs():
 
 def get_link_flags():
   common = ['-lpthread']
+  if options and options.profile:
+    common.append('-lprofiler') # from gperftools
   import platform
   flags = {
     'Darwin': lambda: common + ['-framework', 'CoreFoundation',
@@ -126,7 +128,7 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
 
     ghc_rts_args = ["-smeGCstats.txt"]
 
-    if options and options.profile:
+    if options and options.profileme:
       ghc_rts_args.append("-p")
       ghc_rts_args.append("-hc")
 
@@ -321,8 +323,10 @@ def get_test_parser(usage):
                     help="Run using interpreter instead of compiling via LLVM")
   parser.add_option("--optimize", dest="optlevel", default=False,
                     help="Enable optimizations in fosteroptc")
-  parser.add_option("--profile", dest="profile", default=False,
+  parser.add_option("--profileme", dest="profileme", default=False,
                     help="Enable detailed profiling of compiler middle-end")
+  parser.add_option("--profile", dest="profile", action="store_true", default=False,
+                    help="Enable profiling of generated executable")
   parser.add_option("--me-arg", action="append", dest="meargs", default=[],
                     help="Pass through arg to middle-end.")
   parser.add_option("--be-arg", action="append", dest="beargs", default=[],
