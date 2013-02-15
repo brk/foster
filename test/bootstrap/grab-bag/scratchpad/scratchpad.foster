@@ -1,9 +1,22 @@
 
 main = {
-  i = 1;
-  ()
+  aaaaaaaaa "1"
 };
 
+aaaaaaaaa = { t:Text =>
+  bbbbbbbbb t
+};
+
+bbbbbbbbb = { t:Text =>
+  REC ccccc = { x =>
+      case t
+        of $TextFragment a n     -> ()
+        of $TextConcat   s1 s2 n ->
+            bbbbbbbbb s2 ; ccccc s1
+      end
+  };
+  ccccc t;
+};
 
 /*
 type case List (a:Boxed)

@@ -50,7 +50,7 @@ data IntSizeBits = I1 | I8 | I32 | I64
                  | IWord LogInt -- Word 3 means 8x larger; -2 is 4x smaller.
                  deriving (Eq, Show)
 
-data ProcOrFunc   = FT_Proc | FT_Func  deriving Show
+data ProcOrFunc   = FT_Proc | FT_Func  deriving (Show, Eq)
 data VarNamespace = VarProc | VarLocal deriving Show
 data TailQ = YesTail | NotTail deriving Show
 data MayGC = GCUnknown String | MayGC | WillNotGC deriving (Eq, Show)

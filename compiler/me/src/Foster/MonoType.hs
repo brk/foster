@@ -22,7 +22,7 @@ data MonoType =
          | ArrayType     MonoType
          | PtrType       MonoType
          | PtrTypeUnknown
-         deriving (Show)
+         deriving (Show, Eq)
 
 extractFnType (FnType _ _ cc pf) = (cc, pf)
 extractFnType (PtrType (StructType ((FnType _ _ cc FT_Proc):_))) = (cc, FT_Func)

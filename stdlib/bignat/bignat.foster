@@ -930,6 +930,23 @@ natMul2d = { n : NatInf => k : Int32 =>
   NatInf (natMul2d_A (natDigits n) k)
 };
 
+//natCountBits_A = { a => natCountBits_AL a (arrayLength32 a) };
+
+natCountBits_AL :: { Array Word => Int32 => Int32 };
+natCountBits_AL = { a => aprefixlen =>
+  // assert aprefixlen <=SInt32 arrayLength32 a...
+  // assert aprefixlen >=SInt32 1;
+  fin = aprefixlen -Int32 1;
+
+  // Count the bits used in the digits up to,
+  // but not including, the last one.
+  r0 = fin *Int32 (digitNumBits !);
+
+  // Add the number of bits needed for the last digit.
+  r0  +Int32 (bitlength-Word a[fin]);
+};
+
+
 natCountBits_A :: { Array Word => Int32 };
 natCountBits_A = { a =>
   fin = arrayLength32 a -Int32 1;

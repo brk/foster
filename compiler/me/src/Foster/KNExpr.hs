@@ -425,6 +425,9 @@ mkLetFuns []       e = e
 mkLetFuns bindings e = let (ids, fns) = unzip bindings in
                        KNLetFuns ids fns e
 
+mkLetVals []            e = e
+mkLetVals ((id,b):rest) e = KNLetVal id b (mkLetVals rest e)
+
 knSinkBlocks :: ModuleIL (KNExpr' t) t -> KN (ModuleIL (KNExpr' t) t)
 knSinkBlocks m = do
   let rebuilder idsfns = [(id, localBlockSinking fn) | (id, fn) <- idsfns]
@@ -1127,8 +1130,8 @@ knInlineToplevel expr env = do
         mb_fns <- mapM visitF ops
         let fns' = map (\(fn, mb_fn) -> case mb_fn of Just f -> f
                                                       Nothing -> fn) (zip fns mb_fns)
-        mapM_ (\id' -> do s <- getVarStatus id'
-                          liftIO $ putStrLn $ "top level fn " ++ show id' ++ " is " ++ show s) ids'
+        --mapM_ (\id' -> do s <- getVarStatus id'
+        --                  liftIO $ putStrLn $ "top level fn " ++ show id' ++ " is " ++ show s) ids'
         occ_sts <- mapM getVarStatus ids'
 
         let (ids'', fns'') = unzip [(id, fn) | (id, fn, occst) <- zip3 ids' fns' occ_sts
@@ -1188,17 +1191,26 @@ knInline' expr env = do
       --liftIO $ putStrLn $ "saw call of var " ++ show (tidIdent v) ++ " ~?~> " ++ show (lookupVarMb v env)
 
       case lookupVarOp env v of
+        -- Peek through type applications...
+        Just (VO_E (Opnd (KNTyApp _ v' []) _ _ _ _)) -> peekTyApps v'
+          where peekTyApps v' =
+                  case lookupVarOp env v' of
+                    Just (VO_E (Opnd (KNTyApp _ v'' []) _ _ _ _)) -> peekTyApps v''
+                    Just (VO_E  _) -> resExpr "Just_VO_E"
+                    Nothing        -> resExpr "Nothing"
+                    Just (VO_F _) -> inlineBitcastedFunction v' tailq ty v vs env
+
         -- If the callee isn't a known function, we can't possibly inline it.
         Just (VO_E _)   -> do resExpr "Just_VO_E_"
         Nothing         -> do resExpr "Nothing"
 
         Just (VO_F opf) -> do
-         let shouldNotInline nm = nm == "main" || "noinline_" `isPrefixOf` nm
-         if shouldNotInline (show $ tidIdent v)
-          then do _ <- visitF opf -- don't inline away main, just process it!
-                  resExpr "noinline"
+          let shouldNotInline nm = "noinline_" `isPrefixOf` nm
+          if shouldNotInline (show $ tidIdent v)
+            then do _ <- visitF opf -- don't inline this function...
+                    resExpr "noinline"
 
-          else do handleCallOfKnownFunction tailq expr resExpr opf v vs env qs
+            else do handleCallOfKnownFunction tailq expr resExpr opf v vs env qs
 
     KNUntil       ty e1 e2 rng -> do
         e1' <- knInline' e1 env
@@ -1243,7 +1255,6 @@ knInline' expr env = do
           _ -> do v' <- q v
                   patbinds' <- mapM inlineArm patbinds
                   return $ KNCase ty v' patbinds'
-
 
     KNLetVal id bound body -> do
         -- Be demand-driven: don't investigate e1 until e2 finds it necessary.
@@ -1306,8 +1317,8 @@ knInline' expr env = do
         b' <- knInline' b env'
         --liftIO $ putStrLn $ "processed  body of fn-bindings w/ ids " ++ show ids ++ ", now visiting the fns themselves"
 
-        mapM_ (\id' -> do s <- getVarStatus id'
-                          liftIO $ putStrLn $ "nested fn " ++ show id' ++ " is " ++ show s) ids'
+        --mapM_ (\id' -> do s <- getVarStatus id'
+        --                  liftIO $ putStrLn $ "nested fn " ++ show id' ++ " is " ++ show s) ids'
 
         mb_fns <- mapM visitF ops
         occ_sts <- mapM getVarStatus ids'
@@ -1317,49 +1328,141 @@ knInline' expr env = do
                                          , notDead occst]
         return $ mkKNLetFuns ids'' fns'' b'
 
-handleCallOfKnownFunction tailq expr resExprA opf@(Opnd fn _ _ loc_op _) v vs env qs = do
+handleCallOfKnownFunction tailq expr resExprA opf v vs env qs = do
     -- liftIO $ putStrLn $ "saw call of var " ++ show (tidIdent v) ++ " ~~> " ++ show (tidIdent (fnVar fn))
-    res <- visitF opf
-    case res of
-        Just f' -> do
-            -- liftIO $ putStrLn $    "call of var " ++ show (tidIdent v) ++ " ~~> " ++ show (tidIdent (fnVar fn))
-            -- liftIO $ putDoc $ text "    " <> pretty expr <> text "\n"
-            -- liftIO $ putDoc $ text "resulted in:\n" <> pretty f' <+> text "\n\n"
-            if True
-              then do
-                qvs'  <- mapM (qs "known call vs") vs
-                mb_e' <- foldLambda' tailq f' loc_op qvs' env
-                case mb_e' of
-                   Just e' -> do --liftIO $ putDoc $ text "lambda folding resulted in " <> pretty e' <> text "\n"
-                                 --case lookupVarMb v env of
-                                 --   Just id -> unSawVar id
-                                 --   Nothing -> return ()
-                                 return e'
-                   Nothing -> do -- liftIO $ putDoc $ text "lambda folding " <> pretty expr' <> text " failed; residualizing call instead.\n"
-                                 resExprA "kNothing"
-              else resExprA "False"
-        Nothing -> do
-            -- liftIO $ putStrLn $    "call of var " ++ show (tidIdent v) ++ " ~~> " ++ show (tidIdent (fnVar fn))
-            -- liftIO $ putDoc $ text "    " <> pretty expr <> text "\n"
-            -- liftIO $ putDoc $ text "resulted in failed inlining attempt; residualizing call instead\n\n"
-            resExprA "resNothing"
+    -- liftIO $ putStrLn $    "call of var " ++ show (tidIdent v) ++ " ~~> " ++ show (tidIdent (fnVar fn))
+    -- liftIO $ putDoc $ text "    " <> pretty expr <> text "\n"
+    -- liftIO $ putDoc $ text "resulted in:\n" <> pretty f' <+> text "\n\n"
+    qvs'  <- mapM (qs "known call vs") vs
+    mb_e' <- foldLambda' tailq opf qvs' env
+    case mb_e' of
+       Just e' -> do --liftIO $ putDoc $ text "lambda folding resulted in " <> pretty e' <> text "\n"
+                     --case lookupVarMb v env of
+                     --   Just id -> unSawVar id
+                     --   Nothing -> return ()
+                     let size@(topsz, _) = knSize e'
+                     if topsz < 30
+                       then do --liftIO $ putDoc $ text ("\tlambda folding " ++ show (tidIdent v) ++ " resulted in expr of size ") <> text (show size) <> text "\n"
+                               --liftIO $ putDoc $ text ("\tlambda folding " ++ show (tidIdent v) ++ " resulted in expr         ") <> pretty e' <> text "\n"
+                               return e'
+                       else do --liftIO $ putDoc $ text ("\tlambda folding " ++ show (tidIdent v) ++ " failed due to expr of size ") <> text (show size) <> text "\n"
+                               resExprA "toobig"
+       Nothing -> do -- liftIO $ putDoc $ text "lambda folding " <> pretty expr' <> text " failed; residualizing call instead.\n"
+                     resExprA "kNothing"
+  where
+    -- input are residual vars, not src vars, fwiw
+    foldLambda' :: TailQ -> Opnd (Fn SrcExpr MonoType) -> [TypedId MonoType] -> SrcEnv -> In (Maybe ResExpr)
+    foldLambda' tailq (Opnd fn _ _ loc_op _) vs' env = do
 
-knInlineFn' :: Fn SrcExpr MonoType -> SrcEnv -> In (Fn ResExpr MonoType)
-knInlineFn' fn env = do
-  -- liftIO $ putStrLn $ "examining function " ++ show (fnVar fn)
-  let vs = fnVars fn
-  vs'   <- mapM freshenTid vs
-  -- TODO assert that the ops associated with the incoming vars are trivial
+      let env' = extendEnv ids ids' ops env
+                    where
+                            ids  = map tidIdent (fnVars fn)
+                            ids' = map tidIdent vs'
+                            ops  = map (lookupVarOp' env) vs'
 
-  -- liftIO $ putDoc $ text "mapping fn formals: " <+> pretty (zip vs vs' ) <> text " ... \n"
+      -- ids   are the function's formals;
+      -- vs'   are the function's actuals (residual vars)
+      -- ops   are the corresponding operand structures.
 
-  let foldEnv env (v , v' ) = do
-        ope <- mkOpExpr (KNVar v' ) env
-        return $ extendEnv [tidIdent v] [tidIdent v' ] [ VO_E ope ] env
-  env' <- foldlM foldEnv env (zip vs vs' )
+      -- liftIO $ putDoc $ text "with arg ops:" <+> text (show ops) <> text "\n"
 
-  body' <- knInline' (fnBody fn) env'
-  return $ fn { fnBody = body' , fnVars = vs' }
+      o_pending <- readRef loc_op
+      case o_pending of
+        OP_True -> do
+          -- liftIO $ putDoc $ text "lambda folding failed due to outer-pending flag...\n"
+          return Nothing
+
+        OP_False -> do
+          writeRef loc_op OP_True
+          let mangle = case tailq of YesTail -> id
+                                     NotTail -> removeTailCallAnnots
+          e' <- knInline' (mangle $ fnBody fn) env'
+          writeRef loc_op OP_False
+          return $ Just e'
+
+--visitF :: OpndF -> In (Maybe (Fn ResExpr MonoType))
+visitF (Opnd fn env loc_fn _ loc_ip) = do
+  ff <- readRef loc_fn
+  case ff of
+    Unvisited -> do
+        ip <- readRef loc_ip
+        case ip of
+          IP_False -> do
+            writeRef loc_ip IP_True
+            fn' <- knInlineFn' fn env
+            writeRef loc_fn (Visited fn' )
+            return $ Just fn'
+          IP_True -> do
+            liftIO $ putStrLn $ "inner-pending true for " ++ show (tidIdent $ fnVar fn)
+            return Nothing
+    Visited f -> return $ Just f
+ where
+    knInlineFn' :: Fn SrcExpr MonoType -> SrcEnv -> In (Fn ResExpr MonoType)
+    knInlineFn' fn env = do
+      -- liftIO $ putStrLn $ "examining function " ++ show (fnVar fn)
+      let vs = fnVars fn
+      vs'   <- mapM freshenTid vs
+      -- TODO assert that the ops associated with the incoming vars are trivial
+      -- liftIO $ putDoc $ text "mapping fn formals: " <+> pretty (zip vs vs' ) <> text " ... \n"
+      let foldEnv env (v , v' ) = do
+          ope <- mkOpExpr (KNVar v' ) env
+          return $ extendEnv [tidIdent v] [tidIdent v' ] [ VO_E ope ] env
+      env' <- foldlM foldEnv env (zip vs vs' )
+      body' <- knInline' (fnBody fn) env'
+      return $ fn { fnBody = body' , fnVars = vs' }
+
+--visitE :: OpndE -> In (KNExpr' MonoType)
+visitE (Opnd e env loc_e _ loc_ip) = do
+  ef <- readRef loc_e
+  case ef of
+    Unvisited -> do
+        --liftIO $ putStrLn $ "\nvisited opnd " ++ show (pretty e) ++ ", it was Unvisited..."
+        ip <- readRef loc_ip
+        case ip of
+          IP_False -> do
+            -- TODO set IP_True flag?
+            e' <- knInline' e env
+            --liftIO $ putStrLn $ "visited opnd " ++ show (pretty e) ++ ", it was Unvisited, visiting it resulted in\n" ++ show (pretty e' )
+            --liftIO $ putStrLn $ ""
+            writeRef loc_e (Visited e' )
+            return e'
+          IP_True -> do
+            liftIO $ putStrLn $ "inner-pending true for expr...????"
+            return e --TODO this is WRONG :(
+    Visited r -> do
+        --liftIO $ putStrLn $ "visited opnd " ++ show (pretty e) ++ ", it was Visited:\n" ++ show (pretty r)
+        return r
+
+inlineBitcastedFunction v' tailq ty v vs env = do
+    -- Some of the formal parameters to the underlying function
+    -- may be generically typed. Elsewhere in the compiler, we'll
+    -- insert bitcasts around the called function, but when we're
+    -- inlining, that won't work -- we need to bitcast every parameter
+    -- with a type mismatch (not just those that are PtrTypeUnknown),
+    -- and possibly also the result.
+    let (FnType tys tyr _ _) = tidType v'
+    binders_ref <- liftIO $ newIORef []
+    vs' <- mapM (\(ty, vorig) -> do
+      if ty == tidType vorig
+           then return vorig
+           else do
+                      let e = KNTyApp ty vorig []
+                      newid <- freshenId (Ident (T.pack "castarg") (error "newid"))
+                      liftIO $ modifyIORef binders_ref (++[(newid, e)])
+                      return $ TypedId ty newid
+                   ) (zip tys vs)
+    binders <- liftIO $ readIORef binders_ref
+    -- If we leave a YesTail marker on a call which is, strictly speaking,
+    -- not tail due to a pending bitcast of its result, CFG building will
+    -- drop the pending bitcast. But we don't need to do tht if the bitcast
+    -- would be a no-op. Incidentally, this highlights a slight tension:
+    -- fully monomorphizing avoids the need for bitcasts, but risks code blowup.
+    if ty == tyr then do knInline' (mkLetVals binders $ KNCall tailq ty  v' vs') env
+                 else do newid <- freshenId (Ident (T.pack "castres") (error "newid"))
+                         let vres = TypedId tyr newid
+                         knInline' (KNLetVal newid
+                                      (mkLetVals binders $ KNCall NotTail tyr v' vs')
+                                      (KNTyApp ty vres [])) env
 
 data ConstExpr = Lit            Literal
                | NullaryCtor    CtorId
@@ -1471,89 +1574,6 @@ writeRef r v = liftIO $ writeIORef r v
 newRef     v = liftIO $ newIORef     v
 newUniq = do uref <- gets inUniqRef
              liftIO $ modifyIORef uref (+1) >> readIORef uref
-
--- input are residual vars, not src vars, fwiw
-foldLambda' :: TailQ -> Fn SrcExpr MonoType -> IORef OuterPending -> [TypedId MonoType] -> SrcEnv -> In (Maybe ResExpr)
-foldLambda' tailq fn loc_op vs' env = do
-
-  let env' = extendEnv ids ids' ops env
-                where
-                        ids  = map tidIdent (fnVars fn)
-                        ids' = map tidIdent vs'
-                        ops  = map (lookupVarOp' env) vs'
-
-  -- ids   are the function's formals;
-  -- vs'   are the function's actuals (residual vars)
-  -- ops   are the corresponding operand structures.
-
-  -- liftIO $ putDoc $ text "with arg ops:" <+> text (show ops) <> text "\n"
-
-  o_pending <- readRef loc_op
-  case o_pending of
-    OP_True -> do
-      -- liftIO $ putDoc $ text "lambda folding failed due to outer-pending flag...\n"
-      return Nothing
-
-    OP_False -> do
-      writeRef loc_op OP_True
-      let mangle = case tailq of YesTail -> id
-                                 NotTail -> removeTailCallAnnots
-      e' <- knInline' (mangle $ fnBody fn) env'
-      -- writeRef loc_op OP_False
-      return $ Just e'
-
-{-
-visitWithDefault :: (VarOp, TypedId MonoType) -> In (Either ResExpr (Fn ResExpr MonoType))
-visitWithDefault (vo, resv) = do
-  case vo of
-    VO_E eo -> do e <- visitE eo
-                  return $ Left e
-    VO_F fo -> do mb_fn <- visitF fo
-                  case mb_fn of
-                    Just fn -> return $ Right fn
-                    Nothing -> return $ Left (KNVar resv)
--}
-
---visitF :: OpndF -> In (Maybe (Fn ResExpr MonoType))
-visitF (Opnd fn env loc_fn _ loc_ip) = do
-  ff <- readRef loc_fn
-  case ff of
-    Unvisited -> do ip <- readRef loc_ip
-                    case ip of
-                      IP_False -> do
-                        writeRef loc_ip IP_True
-                        fn' <- knInlineFn' fn env
-                        writeRef loc_fn (Visited fn' )
-                        return $ Just fn'
-                      IP_True -> do
-                        liftIO $ putStrLn $ "inner-pending true for " ++ show (tidIdent $ fnVar fn)
-                        return Nothing
-    Visited f -> return $ Just f
-
---visitE :: OpndE -> In (KNExpr' MonoType)
-visitE (Opnd e env loc_e _ loc_ip) = do
-  ef <- readRef loc_e
-  case ef of
-    Unvisited -> do
-        --liftIO $ putStrLn $ ""
-        --liftIO $ putStrLn $ "visited opnd " ++ show (pretty e) ++ ", it was Unvisited..."
-        ip <- readRef loc_ip
-        case ip of
-          IP_False -> do
-            -- TODO set IP_True flag?
-            e' <- knInline' e env
-
-            --liftIO $ putStrLn $ "visited opnd " ++ show (pretty e) ++ ", it was Unvisited, visiting it resulted in\n" ++ show (pretty e' )
-            --liftIO $ putStrLn $ ""
-
-            writeRef loc_e (Visited e' )
-            return e'
-          IP_True -> do
-            liftIO $ putStrLn $ "inner-pending true for expr...????"
-            return e --TODO this is WRONG :(
-    Visited r -> do
-        --liftIO $ putStrLn $ "visited opnd " ++ show (pretty e) ++ ", it was Visited:\n" ++ show (pretty r)
-        return r
 
 -- When we inline a function body, it moves from a tail context to a non-tail
 -- context, so we must remove any direct tail-call annotations.

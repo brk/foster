@@ -1,0 +1,97 @@
+main = {
+  noinline_t1 !;
+  noinline_t2 !;
+  noinline_t3 !;
+};
+
+
+noinline_t1 = {
+  a = newDArray0_local:[Int32] 5 { i => i +Int32 1 };
+  expect_i32 5;
+  print_i32 (primitive_trunc_i64_i32 (prim_arrayLength a));
+};
+
+// This test is to make sure that inlining
+// of monomorphized functions works correctly.
+
+newDArray0_local = { forall v:Type,
+                n : Int32 =>
+                f : { Int32 => v } =>
+  a = allocDArray:[v] n;
+  x = (ref n);
+
+  until x^ ==Int32 0 then
+    let y  = x^ -Int32 1; in
+      (f y) >^ a[y];
+         y  >^ x
+    end
+  end;
+  a
+};
+
+
+noinline_t2 = {
+  expect_i32 110;
+  print_i32 (foldRange_local 0 5 100 { d => t => t +Int32 d });
+};
+
+// Precondition: fst <= fin
+//
+foldRange_local = { forall t:Type,
+              fst : Int32 =>
+              fin : Int32 =>
+              init : t =>
+              iter : { Int32 => t => t } =>
+  REC go = { n : Int32 => acc : t =>
+      if n >=SInt32 fin then acc else
+        go (n +Int32 1) (iter n acc)
+      end
+  };
+  go fst init;
+};
+
+// TODO current inlining duplicates too much at the wrong point
+// in the process, which means the literal function is still called,
+// and can't be eliminated :(
+//
+// Also, for some reason, this fails codegen due to type mismatch;
+// it looks like the init parameter of foldRange_local remains
+// generically-typed, rather than specifically-typed...
+noinline_t3 = {
+  noinline_expect_text "111";
+  noinline_print_text (foldRange_local 0 3 "" { d => t => mkTextConcat_local "1" t });
+};
+
+mkTextConcat_local = { a : Text => b : Text =>
+  lensum = (textLength a) +Int32 (textLength b);
+  TextConcat a b lensum
+};
+
+textLength = { t : Text =>
+  case t
+    of $TextFragment _ n -> n
+    of $TextConcat _ _ n -> n
+   end;
+};
+
+expect_text_bare = { s : Text =>
+  case s
+    of $TextFragment a n     -> prim_print_bytes_stderr a n; n
+    of $TextConcat   s1 s2 n -> expect_text_bare s1; expect_text_bare s2; n
+   end;
+};
+
+print_text_bare = { s : Text =>
+  case s
+    of $TextFragment a n     -> prim_print_bytes_stdout a n; n
+    of $TextConcat   s1 s2 n -> print_text_bare s1; print_text_bare s2; n
+   end;
+};
+
+noinline_expect_text = { s : Text =>
+  expect_text_bare s; expect_newline !; ()
+};
+
+noinline_print_text = { s : Text =>
+  print_text_bare s; print_newline !; ()
+};
