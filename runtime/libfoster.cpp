@@ -6,6 +6,10 @@
 #undef NDEBUG
 #endif
 
+#ifndef __STDC_FORMAT_MACROS
+#define __STDC_FORMAT_MACROS
+#endif
+
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
@@ -158,27 +162,33 @@ extern "C" {
 
 //////////////////////////////////////////////////////////////////
 
+void foster__assert_failed(const char* msg) {
+  fprintf(stderr, "%s\n", msg);
+  fflush(stderr);
+  exit(1);
+}
+
 void foster__assert(bool ok, const char* msg) {
   if (!ok) {
-    fprintf(stderr, "%s\n", msg);
-    fflush(stderr);
-    exit(1);
+    foster__assert_failed(msg);
   }
 }
 
 void foster__abort() {
-  fprintf(stderr, "foster__abort called\n");
+  foster__assert_failed("foster__abort called");
+}
+
+void foster__boundscheck64_failed(int64_t idx, int64_t len, const char* srclines) {
+  fprintf(stderr, "bounds check failed: cannot index array of "
+                  "length %" PRId64 " (%" PRIX64 ") with value %" PRId64 "\n"
+                  "%s", len, len, idx, srclines);
   fflush(stderr);
   exit(1);
 }
 
 void foster__boundscheck64(int64_t idx, int64_t len, const char* srclines) {
   if (idx < 0 || idx >= len) {
-    fprintf(stderr, "bounds check failed: cannot index array of "
-                    "length %" PRId64 " with value % " PRId64 "\n"
-                    "%s", len, idx, srclines);
-    fflush(stderr);
-    exit(1);
+    foster__boundscheck64_failed(idx, len, srclines);
   }
 }
 

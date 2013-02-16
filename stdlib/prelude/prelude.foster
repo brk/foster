@@ -328,8 +328,7 @@ arrayLength32 = { forall t:Type, a : Array t =>
   primitive_trunc_i64_i32 (prim_arrayLength a)
 };
 
-
-incr64 = { n : Int64 => n +Int64 (primitive_sext_i64_i32 1) };
+incr64 = { n : Int64 => n +Int64 1 };
 
 arrayEnumFrom = { forall t:Type,
                   a : Array t =>

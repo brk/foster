@@ -233,8 +233,12 @@ class copying_gc {
             arr = heap_array::from_heap_cell(cell);
             cell_size = array_size_for(arr->num_elts(), map->cell_size);
             if (ENABLE_GCLOG) {
-              fprintf(gclog, "Collecting array of total size %lld, cell size %lld, len %lld...\n",
-                                  cell_size, map->cell_size, arr->num_elts());
+              fprintf(gclog, "Collecting array of total size %lld (rounded up from %d + %lld = %lld), cell size %lld, len %lld...\n",
+                                  cell_size,
+                                  sizeof(heap_array),  arr->num_elts() * map->cell_size,
+                                  sizeof(heap_array) + arr->num_elts() * map->cell_size,
+                                  map->cell_size,
+                                  arr->num_elts());
             }
           } else {
             // probably an actual pointer
