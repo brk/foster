@@ -569,8 +569,8 @@ availsXfer mayGCmap = mkFTransfer3 go go (distributeXfer availsLattice go)
     go :: Insn' e x -> Avails -> Avails
     go (CCLabel      {}    ) f = f
     go (CCGCLoad   var root) f = makeLoadAvail var root f
-    go (CCGCInit _ var root) f = makeLoadAvail var root f `unkill` root
-    go (CCGCKill (Enabled _) roots) f =                 f `killin` roots
+    go (CCGCInit _ _   root) f =        f `unkill` root
+    go (CCGCKill (Enabled _) roots) f = f `killin` roots
     go (CCGCKill     {}    ) f = f
     go (CCLetVal _ letable ) f = ifgc (boolGC maygc)   f where maygc = canGC mayGCmap letable
     go (CCLetFuns    {}    ) f = ifgc True             f

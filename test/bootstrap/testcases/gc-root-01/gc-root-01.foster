@@ -1,0 +1,39 @@
+main = {
+  expect_i32 11111111;
+  t1 !;
+   print_i32 11111111;
+  expect_i32 22222222;
+  t2 !;
+   print_i32 22222222;
+};
+
+t1 = {
+  // Because a is not dead after the call to arrayEnum, we will allocate
+  // a GC root slot for it.
+  a = allocDArray:[Int32] 8;
+  arrayEnumFromP a 0;
+  dosomethingwith a;
+};
+
+dosomethingwith = { a =>
+  force_gc_for_debugging_purposes !;
+};
+
+t2 = {
+  // Because a is dead after the call to arrayEnum, we won't allocate
+  // a GC root slot for it.
+  a = allocDArray:[Int32] 8;
+  arrayEnumFromP a 0;
+};
+
+arrayEnumFromP = { forall t:Type,
+                  a : Array t =>
+                  k : Int64 =>
+  if k <SInt64 prim_arrayLength a
+    then junk = a[primitive_trunc_i64_i32 k];
+         force_gc_for_debugging_purposes !;
+         arrayEnumFromP a (k +Int64 1)
+    else ()
+  end
+};
+
