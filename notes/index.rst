@@ -19,6 +19,7 @@ Foster Notes
    mutation
    parallelism
    polymorphism
+   inlining
    todo
 
 .. Indices and tables

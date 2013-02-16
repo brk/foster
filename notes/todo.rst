@@ -1,6 +1,49 @@
 TODO
 ====
 
+* Inlining
+  * **figure out why manual inlining is still better than auto inlining on addtobits**
+  * test to see whether/how often inlining increases dynamic allocation
+  * better heuristics/algorithms (specialization-oriented inlining?)
+    to avoid keeping unneeded functions around?
+  * Recast algorithm on a CPS IR?
+    * Up/down tree traversal on CPS IR?
+* Random number generation
+  * and benchmarking
+* Parsing & regular expressions
+  * menhir, parsec, attoparsec, ll(*) library for ocaml?
+  * and benchmarking
+* Pretty printing
+  * and benchmarks
+* Overloading
+  * Type classes?
+  * Something else?
+* Higher-kinded types/polymorphism
+* QuickCheck
+* GC improvements
+* Safe parallel programming
+* Unifying big & small integers
+
+
+Future Design/Impl. Elements
+----------------------------
+* Implicit variables
+  * dynamic scoping <-> coroutines
+   * http://drhanson.s3.amazonaws.com/storage/documents/dynamic.pdf
+  * type classes, logic programming
+* Dynamic Software Updating
+ * http://www.cs.umd.edu/~mwh/papers/dissertation-neamtiu.pdf
+ * http://www.cs.umd.edu/~mwh/papers/hayden-dissertation-2012.pdf
+ * http://en.wikipedia.org/wiki/Dynamic_Software_Updating
+* Concurrent programming models
+* Concurrent programming primitives
+* Lightweight monadic programming
+* Effect handlers
+* Extensible records/first class labels
+
+Misc TODOs
+----------
+
 * Measure impact of alignment (1 vs 4)? vs 8 vs 16 --
   can enable SSE2+ insns for align 16, but can also raise memory usage.
 * Can begin doing comparative timing tests for verifying efficient
