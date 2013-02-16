@@ -607,6 +607,7 @@ computeInfo census headers = Map.mapMaybeWithKey go census
                      else Just (hdr, mt)
 
 knFreshen (Ident name _) = ccFreshId name
+knFreshen id@(GlobalSymbol  _) = error $ "KNExpr.hs: cannot freshen global " ++ show id
 knFreshenTid (TypedId t id) = do id' <- knFreshen id
                                  return $ TypedId t id'
 
@@ -706,7 +707,7 @@ knLoopHeaders' expr = do
     KNLetRec      ids es  b     -> KNLetRec ids (map q es) (q b)
     KNLetFuns     [id] [fn] b ->
         case qv id of
-          Nothing -> KNLetFuns [id] [fn] (q b)
+          Nothing -> KNLetFuns [id] [fn { fnBody = (q $ fnBody fn) }] (q b)
 
           -- If we have a single recursive function (as detected earlier),
           -- we should wrap its body with a minimal loop,
