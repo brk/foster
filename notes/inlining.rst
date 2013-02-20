@@ -193,3 +193,252 @@ program! Specifically, the (inlined) program above allocates a closure for
 TODO test to see whether/how often inlining increases allocation in practice?
 
 
+
+Inlining Size Threshold
+-----------------------
+
+The ``addtobits`` benchmark
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. image:: images/inline-size-addtobits.png
+  :width: 1024px
+
+This scatterplot shows several things of interest:
+
+ * When inlining is enabled but the size threshold is too small,
+   we don't get any benefit from doing inlining ourselves, beyond
+   just letting LLVM handle it. It's not clear whether no inlining
+   is happening, or if only trivial functions that LLVM can inline
+   are getting inlined.
+ * Without donation, the effective performance is sensitive to
+   the inlining threshold, in a nonlinear way: the blue points
+   jump around from (roughly) 1100, to 650, to 380, to 820,
+   back to 380, then eventually 440.
+ * With donation, we get much more consistent benefit: with
+   a tiny threshold, runtime is nearly halved, and there is
+   no "bad spot" between 20 and 30.
+ * Curiosity 1: it seems that donation is a slight loss between
+   13 and 20. Is it a real effect or a benchmarking artifact?
+ * Curiosity 2: a size threshold of 40 appears to do better
+   than a size threshold of 20.  Is it a real difference?
+
+To answer these curiosities, we can use the ``ministat`` and
+``compare-perf`` tools, which we can use to re-run the generated
+binaries to give better statistical insights.
+
+For (1)::
+
+    |   +**********xx                                                                                                     |
+    |   +**********xxx                                                                                                    |
+    |   +**********xxx                                                                                                    |
+    |   +**********xxx                                                                                                    |
+    |   +**********xxx                                                                                                    |
+    |   +**********xxx                                                                                                    |
+    |   +**********xxx                                                                                                    |
+    |   +**********xxx                                                                                                    |
+    |   +**********xxx                                                                                                    |
+    |   +**********xxx                                                                                                    |
+    |   +***********xx                                                                                                    |
+    |   +***********xx                                                                                                    |
+    |   +***********xx                                                                                                    |
+    |   +***********xx                                                                                                    |
+    |   ************xx                                                                                                    |
+    |   ************xx                                                                                                    |
+    |   *************x                                                                                                    |
+    |  +*************x                                                                                                    |
+    |  +*************x                                                                                                    |
+    |  +*************x                                                                                                    |
+    |  +*************x                                                                                                    |
+    | +**************x                                                                                                    |
+    | ****************  *                                                                                                 |
+    |+****************xx*  *  + x              +                                                                          |
+    |+*****************x*  *x * x     x+ + +   +       * **xx + +         x     *     +      * x  x  +  +x        xx    xx|
+    |   |____AA__|__|                                                                                                     |
+    +---------------------------------------------------------------------------------------------------------------------+
+        N           Min           Max        Median           Avg        Stddev
+    x 3334         0.787         0.999         0.802    0.80270906   0.010554387
+    + 3349         0.786         0.968           0.8    0.80035443  0.0079365067
+    Difference at 95.0% confidence
+      -0.00235462 +/- 0.000447614
+      -0.293335% +/- 0.0557629%
+      (Student's t, pooled s = 0.00933473)
+
+A small handful of obvious outliers -- runtimes above 1.0 -- were manually discarded.
+Interestingly, the outliers formed a (very small) bimodal distribution, not the long tail
+observed here.
+
+I believe the t-test results here are misleading, because the actual distributions of runtimes
+is most definitely **not** a normal distribution, it's more like an Erlang distribution.
+Thus the remaining outliers exert undue influence on the result. Keep in mind that the
+original difference appeared to be on the order of at least 5%, so a claimed 0.3% difference
+is cause for rejecting the initial appearance of a performance discrepancy.
+
+For (2)::
+
+    x before
+    + after_
+    +---------------------------------------------------------------------------------------------------------------------+
+    |        +    +                                                                                                       |
+    |        +  + +                                                                                                       |
+    |        +  + +                                                                                                       |
+    |        +  + +                                                                                                       |
+    |        +  + +                                                                                                       |
+    |        +  + +                                                                                                       |
+    |        +  + +                                                                                                       |
+    |        +  + +    +                                                                                                  |
+    |        +  + +  + +                                          x                                                       |
+    |        +  + +  + +                                          x            x x                                        |
+    |        +  + +  + +                                          x    x       x x                                        |
+    |     +  +  + +  + +                                          x    x       x x  x                                     |
+    |     +  +  + +  + +                                          x    x  x    x x  x                                     |
+    |     +  +  + +  + +                                    x  x  x    x  x x  x x  x  x                                  |
+    |     +  +  + +  + +  +                                 x  x  x    x  x x  x x  x  x x                                |
+    |     +  +  + +  + +  +                            x    x  x  x    x  x x  x x  x  x x                                |
+    |     +  +  + +  + +  +  +                         x    x  x  x    x  x x  x x  x  x x  x                             |
+    |   + +  +  + +  + +  +  +                         x    x  x  x x  x  x x  x x  x  x x  x                             |
+    |+  + +  +  + +  + +  +  +         +          x    x    x  x  x x  x  x x  x x  x  x x  x  x x     x    x    x  x    x|
+    |       |_____A____|                                        |___________MA____________|                               |
+    +---------------------------------------------------------------------------------------------------------------------+
+        N           Min           Max        Median           Avg        Stddev
+    x 101         0.794         0.821         0.804    0.80420792  0.0049725584
+    +  99         0.777          0.79         0.782    0.78176768  0.0021035843
+    Difference at 95.0% confidence
+      -0.0224402 +/- 0.00106201
+      -2.79035% +/- 0.132057%
+      (Student's t, pooled s = 0.00383122)
+
+Ok, this looks perhaps more significant -- let's run more tests and check::
+
+    |     ++++  xxxxx                                                                                                     |
+    |     ++++  xxxxx                                                                                                     |
+    |     ++++  xxxxx                                                                                                     |
+    |     ++++  xxxxx                                                                                                     |
+    |     ++++ xxxxxxx                                                                                                    |
+    |     ++++ xxxxxxx                                                                                                    |
+    |     ++++ xxxxxxx                                                                                                    |
+    |     +++++xxxxxxx                                                                                                    |
+    |     +++++xxxxxxx                                                                                                    |
+    |     +++++xxxxxxx                                                                                                    |
+    |     +++++xxxxxxx                                                                                                    |
+    |     +++++xxxxxxx                                                                                                    |
+    |     +++++xxxxxxxx                                                                                                   |
+    |     +++++xxxxxxxx                                                                                                   |
+    |     +++++xxxxxxxx                                                                                                   |
+    |     +++++xxxxxxxx                                                                                                   |
+    |     +++++xxxxxxxx                                                                                                   |
+    |     ++++*xxxxxxxx                                                                                                   |
+    |     ++++*xxxxxxxx                                                                                                   |
+    |     ++++**xxxxxxx                                                                                                   |
+    |     ++++**xxxxxxx                                                                                                   |
+    |     ++++**xxxxxxx                                                                                                   |
+    |     ++++**xxxxxxxx                                                                                                  |
+    |     ++++***x*xxxxx  +                                                                                               |
+    |    +++++***x*x*xx* x+x*   +          x                                            x   x            +      +        x|
+    ||_____|MA____MA|______|                                                                                              |
+    +---------------------------------------------------------------------------------------------------------------------+
+        N           Min           Max        Median           Avg        Stddev
+    x 337         0.355         0.575         0.364    0.36581899   0.016815699
+    + 337         0.345         0.556         0.351    0.35262018    0.01588532
+    Difference at 95.0% confidence
+      -0.0131988 +/- 0.00246981
+      -3.60802% +/- 0.675145%
+      (Student's t, pooled s = 0.0163571)
+
+Hmm, those outliers. Let's remove 'em::
+
+    |          + +  + +                          x  x x  x                                                                |
+    |          + +  + +                          x  x x  x                                                                |
+    |          + +  + +                        x x  x x  x                                                                |
+    |       +  + +  + +                        x x  x x  x                                                                |
+    |       +  + +  + +                        x x  x x  x                                                                |
+    |       +  + +  + +                        x x  x x  x x                                                              |
+    |       +  + +  + +                        x x  x x  x x                                                              |
+    |       +  + +  + +                        x x  x x  x x                                                              |
+    |       +  + +  + +                   x    x x  x x  x x                                                              |
+    |       +  + +  + +                   x    x x  x x  x x  x                                                           |
+    |       +  + +  + +                   x    x x  x x  x x  x                                                           |
+    |       +  + +  + +                   x    x x  x x  x x  x                                                           |
+    |       +  + +  + +              x    x x  x x  x x  x x  x                                                           |
+    |       +  + +  + +  +           x    x x  x x  x x  x x  x                                                           |
+    |       +  + +  + +  +           x    x x  x x  x x  x x  x                                                           |
+    |       +  + +  + +  +           x    x x  x x  x x  x x  x                                                           |
+    |       +  + +  + +  +           x    x x  x x  x x  x x  x x                                                         |
+    |       +  + +  + +  +           x    x x  x x  x x  x x  x x                                                         |
+    |       +  + +  + +  + +         x  x x x  x x  x x  x x  x x                                                         |
+    |       +  + +  + +  + +         x  x x x  x x  x x  x x  x x                                                         |
+    |       +  + +  + +  + +  + +    x  x x x  x x  x x  x x  x x                                                         |
+    |       +  + +  + +  + +  + +    x  x x x  x x  x x  x x  x x  x x                                                    |
+    |       +  + +  + +  + +  + +    x  x x x  x x  x x  x x  x x  x x                                                    |
+    |       +  + +  + +  + +  + +    x  x x x  x x  x x  x x  x x  x x                                                    |
+    |     + +  + +  + +  + +  + *    x  x x x  x x  x x  x x  x x  x x  x                                                 |
+    |     + +  + +  + +  + +  + *  x x  x x x  x x  x x  x x  x x  x x  x                                                 |
+    |     + +  + +  + +  + +  * *  * *  x x x  x x  x x  x x  x x  x x  x x                                               |
+    |     + +  + +  + +  + +  * *  * *  x x x  x x  x x  x x  x x  x x  x x                                               |
+    |+    + +  + +  + +  + +  * *  * *  * * x  x *  * x  x x  * x  x x  x x  +      x    + +  x      +  x                +|
+    |     |_________MA__________|         |_________A_________|                                                           |
+    +---------------------------------------------------------------------------------------------------------------------+
+        N           Min           Max        Median           Avg        Stddev
+    x 333         0.355         0.385         0.364    0.36416817  0.0040481226
+    + 335         0.345         0.392         0.351    0.35144776   0.004610206
+    Difference at 95.0% confidence
+      -0.0127204 +/- 0.000658114
+      -3.493% +/- 0.180717%
+      (Student's t, pooled s = 0.00433912)
+
+So: it looks like there is, in fact, a performance gain when raising the inlining threshold.
+
+Beware, though!::
+
+    :2013-02-19 01:29:11 ~/tmp/ $ ministat before after
+    x before
+    + after
+    +---------------------------------------------------------------------------------------------------------------------+
+    |                                +                                                                                    |
+    |                                +                                                                                    |
+    |                                +                                                                                    |
+    |                          +     +                                                                                    |
+    |                          +     +                                                                                    |
+    |                          +     +                                                                                    |
+    |                          +     +                                                                                    |
+    |                          +     +                                                                                    |
+    |                          +     +                                                                                    |
+    |                          +     +                                                                                    |
+    |                          +     +                                                                                    |
+    |                     +    +     +                                                                                    |
+    |                     +    +     +                                                                                    |
+    |                     +    +     +    +                    x                                                          |
+    |                     +    +     +    +    x               x    x                                                     |
+    |                     +    +     +    +    x               x    x                    x                                |
+    |                     +    +     +    +    x               x    x                    x                                |
+    |                     +    +     +    +    x               x    x               x    x                                |
+    |                     +    +     +    +    x               x    x               x    x                                |
+    |                     +    +     +    +    x               x    x          x    x    x                                |
+    |                     +    +     +    +    x          x    x    x          x    x    x                                |
+    |                     +    +     +    +    *          x    x    x     x    x    x    x               x                |
+    |     +          +    +    +     +    +    *    x     x    x    x     x    x    x    x     x         x                |
+    |     +          +    +    +     +    +    *    *     x    x    x     x    x    x    x     x         x                |
+    |     +          +    +    *     *    *    *    *     x    x    x     x    x    x    x     x    x    x                |
+    |+    +     +    +    *    *     *    *    *    *     *    *    x     x    x    x    x     x    x    x    x          +|
+    |                |_____________A_M__________|  |________________M_A___________________|                               |
+    +---------------------------------------------------------------------------------------------------------------------+
+        N           Min           Max        Median           Avg        Stddev
+    x  98         0.356         0.372         0.364    0.36436735  0.0036704104
+    +  98         0.352         0.374         0.358    0.35761224  0.0025144229
+    Difference at 95.0% confidence
+      -0.0067551 +/- 0.000880871
+      -1.85393% +/- 0.241754%
+      (Student's t, pooled s = 0.00314597)
+
+    :2013-02-19 01:29:12 ~/tmp/ $ cat before.sh
+    EXE=~/foster/_obj/data/2013-02-18@02.59.37/\[inline\=yes\,LLVMopt\=O2\,donate\=no\,inineSize\=19\].a2b.exe
+    rm -f gclog.txt
+    ${EXE} $1 &> /dev/null
+    cat gclog.txt | grep 'Elapsed' | awk '{ print $3 }'
+
+    :2013-02-19 01:29:27 ~/tmp/ $ cat after.sh
+    EXE=~/foster/_obj/data/2013-02-18@02.59.37/\[inline\=yes\,LLVMopt\=O2\,donate\=no\,inineSize\=19\].a2b.exe
+    rm -f gclog.txt
+    ${EXE} $1 &> /dev/null
+    cat gclog.txt | grep 'Elapsed' | awk '{ print $3 }'
+
+We're running the exact same binary, but getting a statistically significant performance difference!

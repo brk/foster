@@ -21,6 +21,9 @@ options =
  , Option []     ["dump-prims"] (NoArg  DumpPrims)        "dump primitive bindings"
  , Option []     ["no-inline"]  (NoArg  NoInline)         "disable inlining"
  , Option []     ["inline"]     (NoArg  Inline)           "enable inlining"
+ , Option []     ["no-donate"]  (NoArg  NoDonate)         "diable inlining donation"
+ , Option []     ["inline-size-limit"]
+                                (ReqArg InlineSize "SIZE")"size counter value for inlining"
  ]
 
 parseOpts :: [String] -> IO ([Flag], [String])
@@ -38,4 +41,5 @@ getVerboseFlag   (flags, _) =       Verbose   `elem` flags
 getDumpIRFlag ir (flags, _) =       DumpIR ir `elem` flags
 getDumpPrimitives(flags, _) =       DumpPrims `elem` flags
 getInlining      (flags, _) = (not $ NoInline  `elem` flags) && (Inline  `elem` flags)
-
+getInliningDonate(flags, _) = (not $ NoDonate  `elem` flags)
+getInliningSize  (flags, _) = foldr (\f a -> case f of InlineSize s -> Just (read s :: Int) ; _ -> a) Nothing flags

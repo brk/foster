@@ -466,11 +466,14 @@ lowerModule :: ModuleIL AIExpr TypeIL
             -> Compiled ILProgram
 lowerModule ai_mod ctx_il = do
      inline   <- gets ccInline
+     flags    <- gets ccFlagVals
+     let donate = getInliningDonate flags
+     let insize = getInliningSize   flags
 
      kmod <- kNormalizeModule ai_mod ctx_il
      monomod0 <- monomorphize   kmod
      monomod2 <- knLoopHeaders  monomod0
-     monomod4 <- (if inline then knInline else return) monomod2
+     monomod4 <- (if inline then knInline insize donate else return) monomod2
      monomod  <- knSinkBlocks   monomod4
 
      whenDumpIR "kn" $ do

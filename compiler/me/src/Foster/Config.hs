@@ -39,4 +39,6 @@ data Flag = Interpret String
           | DumpPrims
           | NoInline
           | Inline
+          | NoDonate
+          | InlineSize String
           deriving Eq

@@ -1,4 +1,4 @@
-{-# LANGUAGE GADTs , StandaloneDeriving #-}
+{-# LANGUAGE GADTs , StandaloneDeriving, BangPatterns #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2011 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -10,7 +10,7 @@ module Foster.Base where
 import Foster.Kind
 import Foster.Output
 
-import Data.IORef(IORef)
+import Data.IORef(IORef, readIORef, writeIORef)
 import Data.Set as Set(Set, fromList, toList, difference, insert, empty, member)
 import Data.Sequence as Seq(Seq, length, index, (><))
 import Data.Map as Map(Map)
@@ -398,6 +398,13 @@ joinWith s ss = foldr1 (++) (intersperse s ss)
 
 prependedTo :: String -> T.Text -> T.Text
 prependedTo str txt = T.pack str `T.append` txt
+
+-- Re-implement strict version of modifyIORef for compatibility with
+-- older implementations of the Haskell base library.
+modifyIORef' r f = do
+  v <- readIORef r
+  let ! v' = f v
+  writeIORef r v'
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- |||||||||||||||||||||||||| Idents |||||||||||||||||||||||||||{{{
