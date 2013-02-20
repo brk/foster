@@ -195,10 +195,32 @@ Combined Beta-Eta For Continuation Application::
 |---------------------------------------|
 
 
+LLVM Examples
+-------------
 
 
+When array bounds checks are disabled, these two expressions
+are optimized to the same IR by LLVM's CSE.::
 
+    u = foldRange 0 (arrayLength32 sm) 0 { i => u =>
+        ci = (a[i] +Word b[i] +Word u);
+        unext = addCarryOfWord ci;
+        (bitand-Word ci (digitNumBitsMask !)) >^ c[i];
+        unext
+      };
 
+    u2 = foldRange 0 (arrayLength32 sm) 0 { i => u =>
+        (a[i] +Word b[i] +Word u) >^ c[i];
+        unext = addCarryOfWord c[i];
+        (bitand-Word c[i] (digitNumBitsMask !)) >^ c[i];
+        unext
+      };
+
+However, when bounds checks are not disabled, ``u2`` will produce
+one extra bounds check operation, compared to ``u`` (for the argument to
+``addCarryOfWord`` -- LLVM, out of the box, is smart enough to deduce
+that the next line's bounds check fails iff the first one does, and can
+thus be eliminated).
 
 
 
