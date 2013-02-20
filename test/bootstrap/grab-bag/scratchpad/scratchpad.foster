@@ -1,3 +1,14 @@
+main = {
+  //itr { itr { print_i32 0 } 2 } 3;
+  itr { print_i32 0 } 3;
+};
+
+itr = { f => n =>
+  if n ==Int32 0 then ()
+                 else f ! ; itr f (n -Int32 1) end
+};
+
+
 /*
 main = {
   //aaaaaaaaa "1"
@@ -11,6 +22,8 @@ main = {
 };
 */
 
+
+/*
 snafuinclude Prelude "prelude";
 main = {
   a = allocDArray:[Int32] 8;
@@ -94,7 +107,7 @@ trimLeadingZeroWords = { a =>
     else copyOfArrayTo a (n +Int32 1)
   end
 };
-
+*/
 
 /*
 aaaaaaaaa = { t:Text =>
