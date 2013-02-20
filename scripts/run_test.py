@@ -225,7 +225,7 @@ def run_one_test(testpath, paths, tmpdir, progargs):
                 compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir)
 
         if to_asm:
-          rv, as_elapsed = run_command('gcc %s.s -c -o %s.o' % (finalpath, finalpath), paths, testpath)
+          rv, as_elapsed = run_command('gcc -g %s.s -c -o %s.o' % (finalpath, finalpath), paths, testpath)
         else: # fosteroptc emitted a .o directly.
           as_elapsed = 0
 
