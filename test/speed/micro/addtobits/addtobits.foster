@@ -2,7 +2,7 @@ snafuinclude Bignum "bignum";
 
 main = {
   n0 = tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1);
-  n = if n0 ==Int32 0 then 1000 else n0 end;
+  n = if n0 ==Int32 0 then 200 else n0 end;
   addtobits_nat n;
 };
 

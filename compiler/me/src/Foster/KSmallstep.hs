@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2011 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -12,12 +13,15 @@ where
 import Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.IntMap (IntMap)
+import qualified Data.IntMap as IntMap
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import Data.Int
 import Data.Word
+import Data.DoubleWord
 import Data.Bits
-import Data.IORef
+import Data.IORef(IORef, readIORef, newIORef)
 import Data.Array
 import qualified Data.ByteString as BS
 import Text.Printf(printf)
@@ -44,8 +48,8 @@ import Foster.KNExpr
 -- uglier in the abstract machine.
 
 -- |||||||||||||||||||||||  Entry Point  ||||||||||||||||||||||||{{{
-errFile gs = (stTmpDir gs) ++ "/istderr.txt"
-outFile gs = (stTmpDir gs) ++ "/istdout.txt"
+errFile gs = (stTmpDir $ stConfig gs) ++ "/istderr.txt"
+outFile gs = (stTmpDir $ stConfig gs) ++ "/istdout.txt"
 
 -- To interpret a program, we construct a coroutine for main
 -- (no arguments need be passed yet) and step until the program finishes.
@@ -60,8 +64,9 @@ interpretKNormalMod kmod tmpDir cmdLineArgs = do
                       , coroStack = [(env, Prelude.id)]
                       } where env = Map.empty
   let emptyHeap = Heap (nextLocation loc)
-                       (Map.singleton loc (SSCoro mainCoro))
-  let globalState = MachineState emptyHeap loc tmpDir ("ksmallstep":cmdLineArgs)
+                       (IntMap.singleton loc (SSCoro mainCoro))
+  let globalState = MachineState emptyHeap $
+                    MachineStateConfig loc tmpDir ("ksmallstep":cmdLineArgs)
 
   _ <- writeFile (outFile globalState) ""
   _ <- writeFile (errFile globalState) ""
@@ -79,7 +84,7 @@ interpret :: IORef Int -> MachineState -> IO MachineState
 interpret stepsTaken gs =
   case (coroStack $ stCoro gs) of
     [] -> do return gs
-    _  -> do modifyIORef stepsTaken (+1)
+    _  -> do modifyIORef' stepsTaken (+1)
              (interpret stepsTaken =<< step gs)
 
 -- Stepping an expression is unsurprising.
@@ -104,8 +109,13 @@ step gs =
 -- state does not include the coroutine value itself!
 
 data MachineState = MachineState {
-           stHeap    :: Heap
-        ,  stCoroLoc :: Location
+           stHeap    :: !Heap
+        ,  stConfig  :: MachineStateConfig
+}
+
+-- Split out the invariant stuff to make updating the heap faster.
+data MachineStateConfig = MachineStateConfig {
+           stCoroLoc :: Location
         ,  stTmpDir  :: String
         ,  stCmdArgs :: [String]
 }
@@ -120,7 +130,7 @@ data MachineState = MachineState {
 data Coro = Coro {
     coroTerm :: SSTerm
   , coroArgs :: [Ident]
-  , coroEnv  :: ValueEnv
+  , coroEnv  :: !ValueEnv
   , coroStat :: CoroStatus
   , coroLoc  :: Location
   , coroPrev :: Maybe Location
@@ -142,30 +152,27 @@ data CoroStatus = CoroStatusInvalid
 type Location = Int
 nextLocation x = x + 1
 data Heap = Heap {
-          hpBump :: Location
-        , hpMap  :: Map Location SSValue
+          hpBump :: !Location
+        , hpMap  :: !(IntMap SSValue)
 }
 
 -- Fetch the current coroutine from the heap.
-stCoro gs = let (SSCoro c) = lookupHeap gs (stCoroLoc gs) in c
+stCoro gs = let (SSCoro c) = lookupHeap gs (stCoroLoc $ stConfig gs) in c
 
 lookupHeap :: MachineState -> Location -> SSValue
-lookupHeap gs loc =
-  case Map.lookup loc (hpMap (stHeap gs)) of
-    Just v -> v
-    Nothing -> error $ "Unable to find heap cell for location " ++ show loc
+lookupHeap gs loc = (IntMap.!) (hpMap (stHeap gs)) loc
 
 extendHeap :: MachineState -> SSValue -> (Location, MachineState)
 extendHeap gs val =
   let heap = stHeap gs in
   let loc = nextLocation (hpBump heap) in
-  let hmp = Map.insert loc val (hpMap heap) in
+  let hmp = IntMap.insert loc val (hpMap heap) in
   (loc, gs { stHeap = Heap { hpBump = loc, hpMap = hmp } })
 
 -- Simple helper to store two values in two locations.
 modifyHeap2 gs l1 v1 l2 v2 =
   let heap = stHeap gs in
-  heap { hpMap = Map.insert l2 v2 (Map.insert l1 v1 (hpMap heap)) }
+  heap { hpMap = IntMap.insert l2 v2 (IntMap.insert l1 v1 (hpMap heap)) }
 
 -- Updates the value at the given location according to the provided function.
 modifyHeapWith :: MachineState -> Location -> (SSValue -> SSValue)
@@ -173,11 +180,11 @@ modifyHeapWith :: MachineState -> Location -> (SSValue -> SSValue)
 modifyHeapWith gs loc fn =
   let oldheap = stHeap gs in
   let val  = lookupHeap gs loc in
-  let heap = oldheap { hpMap = Map.insert loc (fn val) (hpMap oldheap) } in
+  let heap = oldheap { hpMap = IntMap.insert loc (fn val) (hpMap oldheap) } in
   gs { stHeap = heap }
 
 modifyCoro gs f =
-  modifyHeapWith gs (stCoroLoc gs) (\ss ->
+  modifyHeapWith gs (stCoroLoc $ stConfig gs) (\ss ->
                     case ss of SSCoro c -> SSCoro $ f c
                                _        -> error "Expected coro in coro slot!")
 
@@ -303,8 +310,8 @@ coroFromClosure gs func =
 
 extendEnv :: ValueEnv -> [Ident] -> [SSValue] -> ValueEnv
 extendEnv env names args =
-  let ins (id, arg) map = Map.insert id arg map in
-  List.foldr ins env (zip names args)
+  let ins !map !(id, !arg) = Map.insert id arg map in
+  List.foldl' ins env (zip names args)
 
 withExtendEnv :: MachineState -> [Ident] -> [SSValue] -> MachineState
 withExtendEnv gs names args =
@@ -538,6 +545,10 @@ matchPatterns pats vals = do
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||||| Primitive Operators ||||||||||||||||||{{{
+kVirtualWordSize = 64
+type IntVW0 = Int64
+type IntVW1 = Int128
+
 arraySlotLocation arr n = SSLocation (arr ! n)
 
 prim_arrayLength :: SSValue -> Int
@@ -584,6 +595,7 @@ tryGetFixnumPrimOp k name =
     "sdiv"    -> Just div
     "udiv"    -> Just div
     "srem"    -> Just rem
+    "urem"    -> Just rem
     "bitxor"  -> Just xor
     "bitor"   -> Just (.|.)
     "bitand"  -> Just (.&.)
@@ -682,23 +694,42 @@ evalPrimitiveIntOp I8 opName [SSInt i1, SSInt i2] =
           (Just fn) -> SSBool (liftInt2 fn i1 i2)
           _ -> error $ "Unknown primitive operation " ++ opName
 
+evalPrimitiveIntOp (IWord 0) opName [SSInt i1, SSInt i2] =
+  case tryGetFixnumPrimOp kVirtualWordSize opName of
+    (Just fn)
+      -> SSInt (modifyIntsWith i1 i2 (fn :: IntVW0 -> IntVW0 -> IntVW0))
+    _ -> case tryGetPrimCmp opName of
+          (Just fn) -> SSBool (liftInt2 fn i1 i2)
+          _ -> error $ "Unknown primitive operation " ++ opName
+
+evalPrimitiveIntOp (IWord 1) opName [SSInt i1, SSInt i2] =
+  case tryGetFixnumPrimOp kVirtualWordSize opName of
+    (Just fn)
+      -> SSInt (modifyIntsWith i1 i2 (fn :: IntVW1 -> IntVW1 -> IntVW1))
+    _ -> case tryGetPrimCmp opName of
+          (Just fn) -> SSBool (liftInt2 fn i1 i2)
+          _ -> error $ "Unknown primitive operation " ++ opName
+
 -- TODO hmm
 evalPrimitiveIntOp I32 "negate" [SSInt i] = SSInt (negate i)
 evalPrimitiveIntOp I64 "negate" [SSInt i] = SSInt (negate i)
 evalPrimitiveIntOp I8  "negate" [SSInt i] = SSInt (negate i)
+evalPrimitiveIntOp (IWord 0) "negate" [SSInt i] = SSInt (negate i)
 
-evalPrimitiveIntOp  I1 "bitnot" [SSBool b] = SSBool (not b)
-
-evalPrimitiveIntOp I32 "bitnot" [SSInt i] = SSInt $
-        modifyIntWith i (complement :: Int32 -> Int32)
-
-evalPrimitiveIntOp I8 "bitnot" [SSInt i] = SSInt $
-        modifyIntWith i (complement :: Int8 -> Int8)
+evalPrimitiveIntOp I1  "bitnot" [SSBool b] = SSBool (not b)
+evalPrimitiveIntOp I32 "bitnot" [SSInt i] = SSInt $ modifyIntWith i (complement :: Int32 -> Int32)
+evalPrimitiveIntOp I8  "bitnot" [SSInt i] = SSInt $ modifyIntWith i (complement :: Int8 -> Int8)
+evalPrimitiveIntOp I64 "bitnot" [SSInt i] = SSInt $ modifyIntWith i (complement :: Int64 -> Int64)
+evalPrimitiveIntOp (IWord 0) "bitnot" [SSInt i] = SSInt $ modifyIntWith i (complement :: IntVW0 -> IntVW0)
 
 -- Extension (on Integers) is a no-op.
 evalPrimitiveIntOp _ "sext_i32" [SSInt i] = SSInt i
 evalPrimitiveIntOp _ "sext_i64" [SSInt i] = SSInt i
 evalPrimitiveIntOp _ "zext_i64" [SSInt i] = SSInt i
+evalPrimitiveIntOp _ "sext_Word" [SSInt i] = SSInt i
+evalPrimitiveIntOp _ "zext_Word" [SSInt i] = SSInt i
+-- note: above case assumes virtual word size is 64, not 32.
+evalPrimitiveIntOp _ "zext_WordX2" [SSInt i] = SSInt i
 
 evalPrimitiveIntOp I32 "sitofp_f64"     [SSInt i] = SSFloat (fromIntegral i)
 evalPrimitiveIntOp I32 "fptosi_f64_i32" [SSFloat f] =
@@ -712,15 +743,18 @@ evalPrimitiveIntOp size opName args =
 
 --------------------------------------------------------------------
 
-trunc8 :: Integer -> Int8
-trunc8 = fromInteger
-
-trunc32 :: Integer -> Int32
-trunc32 = fromInteger
+trunc8  = fromInteger :: Integer -> Int8
+trunc32 = fromInteger :: Integer -> Int32
+trunc64 = fromInteger :: Integer -> Int64
 
 evalPrimitiveIntTrunc :: IntSizeBits -> IntSizeBits -> [SSValue] -> SSValue
 evalPrimitiveIntTrunc I32 I8  [SSInt i] = SSInt (toInteger $ trunc8 i)
 evalPrimitiveIntTrunc I64 I32 [SSInt i] = SSInt (toInteger $ trunc32 i)
+evalPrimitiveIntTrunc (IWord 0) I32 [SSInt i] = SSInt (toInteger $ trunc32 i)
+evalPrimitiveIntTrunc I64 (IWord 0) [SSInt i] = SSInt i
+evalPrimitiveIntTrunc (IWord 1) I32 [SSInt i] = SSInt (toInteger $ trunc32 i)
+evalPrimitiveIntTrunc (IWord 1) I64 [SSInt i] = SSInt (toInteger $ trunc64 i)
+evalPrimitiveIntTrunc (IWord 1) (IWord 0) [SSInt i] = SSInt (toInteger $ trunc64 i)
 
 evalPrimitiveIntTrunc from to _args =
   error $ "Smallstep.evalPrimitiveIntTrunc " ++ show from ++ " " ++ show to
@@ -810,7 +844,7 @@ evalNamedPrimitive "prim_arrayLength" gs [arr@(SSByteString _)] =
       do return $ withTerm gs (SSTmValue $ SSInt (fromIntegral $ (prim_arrayLength arr)))
 
 evalNamedPrimitive "get_cmdline_arg_n" gs [SSInt i] =
-      do let argN = let args = stCmdArgs gs in
+      do let argN = let args = stCmdArgs $ stConfig gs in
                     let ii = fromIntegral i in
                     T.pack $ if ii < List.length args && ii >= 0
                               then args !! ii else ""
@@ -887,14 +921,14 @@ evalCoroPrimitive CoroInvoke gs [(SSLocation targetloc),arg] =
         return $ gs {
             stHeap = modifyHeap2 gs (coroLoc ccoro) (SSCoro $ ccoro { coroStat = CoroStatusSuspended })
                                     (coroLoc ncoro) (SSCoro $ newcoro)
-          , stCoroLoc = coroLoc ncoro
+          , stConfig = (stConfig gs) { stCoroLoc = coroLoc ncoro }
         }
      else
         let newcoro = newcoro2 in
         let gs2 = gs {
             stHeap = modifyHeap2 gs (coroLoc ccoro) (SSCoro $ ccoro { coroStat = CoroStatusSuspended })
                                     (coroLoc ncoro) (SSCoro $ newcoro)
-          , stCoroLoc = coroLoc ncoro
+          , stConfig = (stConfig gs) { stCoroLoc = coroLoc ncoro }
         } in
         return $ withExtendEnv gs2 (coroArgs newcoro) [arg]
 
@@ -931,7 +965,7 @@ evalCoroPrimitive CoroYield gs [arg] =
           stHeap = modifyHeap2 gs prevloc (SSCoro newpcoro)
                           (coroLoc ccoro) (SSCoro $ ccoro { coroPrev = Nothing
                                                           , coroStat = CoroStatusSuspended })
-        , stCoroLoc = prevloc
+        , stConfig = (stConfig gs) { stCoroLoc = prevloc }
       } in
       return $ gs2
 evalCoroPrimitive CoroYield _gs _ = error $ "Wrong arguments to coro_yield"
