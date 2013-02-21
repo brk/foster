@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef BASE_STRING_SPLIT_H_
-#define BASE_STRING_SPLIT_H_
-#pragma once
+#ifndef BASE_STRINGS_STRING_SPLIT_H_
+#define BASE_STRINGS_STRING_SPLIT_H_
 
 #include <string>
 #include <utility>
@@ -15,9 +14,9 @@
 
 namespace base {
 
-// Splits |str| into a vector of strings delimited by |s|. Append the results
-// into |r| as they appear. If several instances of |s| are contiguous, or if
-// |str| begins with or ends with |s|, then an empty string is inserted.
+// Splits |str| into a vector of strings delimited by |s|, placing the results
+// in |r|. If several instances of |s| are contiguous, or if |str| begins with
+// or ends with |s|, then an empty string is inserted.
 //
 // Every substring is trimmed of any leading or trailing white space.
 // NOTE: |c| must be in BMP (Basic Multilingual Plane)
@@ -32,10 +31,10 @@ BASE_EXPORT void SplitString(const std::string& str,
                              char c,
                              std::vector<std::string>* r);
 
-BASE_EXPORT bool SplitStringIntoKeyValues(
-    const std::string& line,
-    char key_value_delimiter,
-    std::string* key, std::vector<std::string>* values);
+BASE_EXPORT bool SplitStringIntoKeyValues(const std::string& line,
+                                          char key_value_delimiter,
+                                          std::string* key,
+                                          std::vector<std::string>* values);
 
 BASE_EXPORT bool SplitStringIntoKeyValuePairs(
     const std::string& line,
@@ -79,4 +78,4 @@ BASE_EXPORT void SplitStringAlongWhitespace(const std::string& str,
 
 }  // namespace base
 
-#endif  // BASE_STRING_SPLIT_H
+#endif  // BASE_STRINGS_STRING_SPLIT_H_

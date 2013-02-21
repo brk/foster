@@ -14,10 +14,12 @@ set (BASE_SOURCES
 	${CHROMIUM_BASE}/base/debug/alias.cc
         ${CHROMIUM_BASE}/base/memory/weak_ptr.cc
         ${CHROMIUM_BASE}/base/threading/thread_checker_impl.cc
+	${CHROMIUM_BASE}/base/sys_info.cc
 	${CHROMIUM_BASE}/base/string_util.cc
 	${CHROMIUM_BASE}/base/string16.cc
-	${CHROMIUM_BASE}/base/string_number_conversions.cc
-	${CHROMIUM_BASE}/base/string_split.cc
+	${CHROMIUM_BASE}/base/strings/string_number_conversions.cc
+	${CHROMIUM_BASE}/base/strings/utf_string_conversion_utils.cc
+	${CHROMIUM_BASE}/base/strings/string_split.cc
 	${CHROMIUM_BASE}/base/string_piece.cc
 	${CHROMIUM_BASE}/base/stringprintf.cc
 	${CHROMIUM_BASE}/base/pickle.cc
@@ -30,11 +32,11 @@ set (BASE_SOURCES
 	${CHROMIUM_BASE}/base/threading/thread_restrictions.cc
 	${CHROMIUM_BASE}/base/threading/thread_collision_warner.cc
 	${CHROMIUM_BASE}/base/utf_string_conversions.cc
-	${CHROMIUM_BASE}/base/utf_string_conversion_utils.cc
 	${CHROMIUM_BASE}/base/vlog.cc
 	${CHROMIUM_BASE}/base/third_party/icu/icu_utf.cc
 	${CHROMIUM_BASE}/base/third_party/dmg_fp/g_fmt.cc
 	${CHROMIUM_BASE}/base/third_party/dmg_fp/dtoa.cc
+	${CHROMIUM_BASE}/base/third_party/nspr/prtime.cc
 )
 
 #####################################################################
@@ -43,9 +45,13 @@ if (${APPLE})
 set(BASE_SOURCES
     ${BASE_SOURCES}
 	${CHROMIUM_BASE}/base/time_mac.cc
+	${CHROMIUM_BASE}/base/sys_info_mac.cc
+	${CHROMIUM_BASE}/base/mac/scoped_mach_port.cc
 	${CHROMIUM_BASE}/base/mac/foundation_util.mm
+	${CHROMIUM_BASE}/base/mac/bundle_locations.mm
+	${CHROMIUM_BASE}/base/mac/mac_logging.cc
 	${CHROMIUM_BASE}/base/threading/platform_thread_mac.mm
-	${CHROMIUM_BASE}/base/sys_string_conversions_mac.mm
+	${CHROMIUM_BASE}/base/strings/sys_string_conversions_mac.mm
 )
 endif (${APPLE})
 
@@ -54,8 +60,9 @@ endif (${APPLE})
 if ("${UNIX}" AND NOT "${APPLE}")
   set (BASE_SOURCES
     ${BASE_SOURCES}
-	${CHROMIUM_BASE}/base/sys_string_conversions_posix.cc
+	${CHROMIUM_BASE}/base/strings/sys_string_conversions_posix.cc
 	${CHROMIUM_BASE}/base/time_posix.cc
+	${CHROMIUM_BASE}/base/sys_info_posix.cc
   )
 endif ("${UNIX}" AND NOT "${APPLE}")
 
@@ -94,7 +101,8 @@ if (${WIN32})
 	${CHROMIUM_BASE}/base/threading/platform_thread_win.cc
 	${CHROMIUM_BASE}/base/threading/thread_local_win.cc
 	${CHROMIUM_BASE}/base/threading/thread_local_storage_win.cc
-	${CHROMIUM_BASE}/base/sys_string_conversions_win.cc
+	${CHROMIUM_BASE}/base/strings/sys_string_conversions_win.cc
+	${CHROMIUM_BASE}/base/sys_info_win.cc
   )
 endif (${WIN32})
 

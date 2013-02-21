@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,18 @@
 
 #include "base/file_path.h"
 #include "base/logging.h"
-#include "base/sys_string_conversions.h"
+#include "base/mac/bundle_locations.h"
+#include "base/mac/mac_logging.h"
+#include "base/strings/sys_string_conversions.h"
+
+#ifdef FOSTER_KEYCHAIN 
+#if !defined(OS_IOS)
+extern "C" {
+CFTypeID SecACLGetTypeID();
+CFTypeID SecTrustedApplicationGetTypeID();
+}  // extern "C"
+#endif
+#endif
 
 namespace base {
 namespace mac {
@@ -19,6 +30,10 @@ static bool g_override_am_i_bundled_value = false;
 
 // Adapted from http://developer.apple.com/carbon/tipsandtricks.html#AmIBundled
 static bool UncachedAmIBundled() {
+#if defined(OS_IOS)
+  // All apps are bundled on iOS
+  return true;
+#else
   if (g_override_am_i_bundled)
     return g_override_am_i_bundled_value;
 
@@ -27,7 +42,7 @@ static bool UncachedAmIBundled() {
   FSRef fsref;
   OSStatus pbErr;
   if ((pbErr = GetProcessBundleLocation(&psn, &fsref)) != noErr) {
-    DLOG(ERROR) << "GetProcessBundleLocation failed: error " << pbErr;
+    OSSTATUS_DLOG(ERROR, pbErr) << "GetProcessBundleLocation failed";
     return false;
   }
 
@@ -35,11 +50,12 @@ static bool UncachedAmIBundled() {
   OSErr fsErr;
   if ((fsErr = FSGetCatalogInfo(&fsref, kFSCatInfoNodeFlags, &info,
                                 NULL, NULL, NULL)) != noErr) {
-    DLOG(ERROR) << "FSGetCatalogInfo failed: error " << fsErr;
+    OSSTATUS_DLOG(ERROR, fsErr) << "FSGetCatalogInfo failed";
     return false;
   }
 
   return info.nodeFlags & kFSNodeIsDirectoryMask;
+#endif
 }
 
 bool AmIBundled() {
@@ -55,55 +71,28 @@ bool AmIBundled() {
 }
 
 void SetOverrideAmIBundled(bool value) {
+#if defined(OS_IOS)
+  // It doesn't make sense not to be bundled on iOS.
+  if (!value)
+    NOTREACHED();
+#endif
   g_override_am_i_bundled = true;
   g_override_am_i_bundled_value = value;
 }
 
 bool IsBackgroundOnlyProcess() {
   // This function really does want to examine NSBundle's idea of the main
-  // bundle dictionary, and not the overriden MainAppBundle.  It needs to look
-  // at the actual running .app's Info.plist to access its LSUIElement
-  // property.
-  NSDictionary* info_dictionary = [[NSBundle mainBundle] infoDictionary];
+  // bundle dictionary.  It needs to look at the actual running .app's
+  // Info.plist to access its LSUIElement property.
+  NSDictionary* info_dictionary = [base::mac::MainBundle() infoDictionary];
   return [[info_dictionary objectForKey:@"LSUIElement"] boolValue] != NO;
 }
 
-// No threading worries since NSBundle isn't thread safe.
-static NSBundle* g_override_app_bundle = nil;
-
-NSBundle* MainAppBundle() {
-  if (g_override_app_bundle)
-    return g_override_app_bundle;
-  return [NSBundle mainBundle];
-}
-
-FilePath MainAppBundlePath() {
-  NSBundle* bundle = MainAppBundle();
-  return FilePath([[bundle bundlePath] fileSystemRepresentation]);
-}
-
-FilePath PathForMainAppBundleResource(CFStringRef resourceName) {
-  NSBundle* bundle = MainAppBundle();
+FilePath PathForFrameworkBundleResource(CFStringRef resourceName) {
+  NSBundle* bundle = base::mac::FrameworkBundle();
   NSString* resourcePath = [bundle pathForResource:(NSString*)resourceName
                                             ofType:nil];
-  if (!resourcePath)
-    return FilePath();
-  return FilePath([resourcePath fileSystemRepresentation]);
-}
-
-void SetOverrideAppBundle(NSBundle* bundle) {
-  if (bundle != g_override_app_bundle) {
-    [g_override_app_bundle release];
-    g_override_app_bundle = [bundle retain];
-  }
-}
-
-void SetOverrideAppBundlePath(const FilePath& file_path) {
-  NSString* path = base::SysUTF8ToNSString(file_path.value());
-  NSBundle* bundle = [NSBundle bundleWithPath:path];
-  DCHECK(bundle) << "Failed to load the bundle at " << file_path.value();
-
-  SetOverrideAppBundle(bundle);
+  return NSStringToFilePath(resourcePath);
 }
 
 OSType CreatorCodeForCFBundleRef(CFBundleRef bundle) {
@@ -129,8 +118,7 @@ bool GetSearchPathDirectory(NSSearchPathDirectory directory,
   if ([dirs count] < 1) {
     return false;
   }
-  NSString* path = [dirs objectAtIndex:0];
-  *result = FilePath([path fileSystemRepresentation]);
+  *result = NSStringToFilePath([dirs objectAtIndex:0]);
   return true;
 }
 
@@ -214,42 +202,15 @@ TYPE_NAME_FOR_CF_TYPE_DEFN(CFNull);
 TYPE_NAME_FOR_CF_TYPE_DEFN(CFNumber);
 TYPE_NAME_FOR_CF_TYPE_DEFN(CFSet);
 TYPE_NAME_FOR_CF_TYPE_DEFN(CFString);
+TYPE_NAME_FOR_CF_TYPE_DEFN(CFURL);
+TYPE_NAME_FOR_CF_TYPE_DEFN(CFUUID);
+
+TYPE_NAME_FOR_CF_TYPE_DEFN(CGColor);
+
+TYPE_NAME_FOR_CF_TYPE_DEFN(CTFont);
+TYPE_NAME_FOR_CF_TYPE_DEFN(CTRun);
 
 #undef TYPE_NAME_FOR_CF_TYPE_DEFN
-
-std::string GetValueFromDictionaryErrorMessage(
-    CFStringRef key, const std::string& expected_type, CFTypeRef value) {
-  ScopedCFTypeRef<CFStringRef> actual_type_ref(
-      CFCopyTypeIDDescription(CFGetTypeID(value)));
-  return "Expected value for key " +
-      base::SysCFStringRefToUTF8(key) +
-      " to be " +
-      expected_type +
-      " but it was " +
-      base::SysCFStringRefToUTF8(actual_type_ref) +
-      " instead";
-}
-
-CFTypeRef GetValueFromDictionary(CFDictionaryRef dict,
-                                 CFStringRef key,
-                                 CFTypeID expected_type) {
-  CFTypeRef value = CFDictionaryGetValue(dict, key);
-  if (!value)
-    return value;
-
-  if (CFGetTypeID(value) != expected_type) {
-    ScopedCFTypeRef<CFStringRef> expected_type_name(
-        CFCopyTypeIDDescription(expected_type));
-    std::string expected_type_utf8 =
-        base::SysCFStringRefToUTF8(expected_type_name);
-    DLOG(WARNING) << GetValueFromDictionaryErrorMessage(key,
-                                                        expected_type_utf8,
-                                                        value);
-    return NULL;
-  }
-
-  return value;
-}
 
 void NSObjectRetain(void* obj) {
   id<NSObject> nsobj = static_cast<id<NSObject> >(obj);
@@ -354,7 +315,7 @@ CFCast<TypeCF##Ref>(const CFTypeRef& cf_val) { \
     return NULL; \
   } \
   if (CFGetTypeID(cf_val) == TypeCF##GetTypeID()) { \
-    return reinterpret_cast<TypeCF##Ref>(cf_val); \
+    return (TypeCF##Ref)(cf_val); \
   } \
   return NULL; \
 } \
@@ -376,8 +337,47 @@ CF_CAST_DEFN(CFNull);
 CF_CAST_DEFN(CFNumber);
 CF_CAST_DEFN(CFSet);
 CF_CAST_DEFN(CFString);
+CF_CAST_DEFN(CFURL);
+CF_CAST_DEFN(CFUUID);
+
+CF_CAST_DEFN(CGColor);
+
+CF_CAST_DEFN(CTFont);
+CF_CAST_DEFN(CTRun);
+
+#ifdef FOSTER_KEYCHAIN
+#if !defined(OS_IOS)
+CF_CAST_DEFN(SecACL);
+CF_CAST_DEFN(SecTrustedApplication);
+#endif
+#endif
 
 #undef CF_CAST_DEFN
+
+std::string GetValueFromDictionaryErrorMessage(
+    CFStringRef key, const std::string& expected_type, CFTypeRef value) {
+  ScopedCFTypeRef<CFStringRef> actual_type_ref(
+      CFCopyTypeIDDescription(CFGetTypeID(value)));
+  return "Expected value for key " +
+      base::SysCFStringRefToUTF8(key) +
+      " to be " +
+      expected_type +
+      " but it was " +
+      base::SysCFStringRefToUTF8(actual_type_ref) +
+      " instead";
+}
+
+NSString* FilePathToNSString(const FilePath& path) {
+  if (path.empty())
+    return nil;
+  return [NSString stringWithUTF8String:path.value().c_str()];
+}
+
+FilePath NSStringToFilePath(NSString* str) {
+  if (![str length])
+    return FilePath();
+  return FilePath([str fileSystemRepresentation]);
+}
 
 }  // namespace mac
 }  // namespace base

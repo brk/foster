@@ -51,8 +51,9 @@ void register_stackmaps(std::map<void*, const stackmap::PointCluster*>& clusterF
       //fprintf(gclog, "  pointcluster*: %p\n", pc); fflush(gclog);
 
       const stackmap::PointCluster& c = *pc;
-      size_t liveOffset = totalOffset + sizeof(int32_t) * 4;
-      totalOffset += sizeof(int32_t) * 4 // sizes + counts
+      size_t sizesAndCounts = sizeof(int32_t) * 4; // sizes + counts
+      size_t liveOffset = totalOffset + sizesAndCounts;
+      totalOffset += sizesAndCounts
                    + sizeof(int32_t) * c.liveCountWithoutMetadata
                    + OFFSET_WITH_METADATA_SIZE * c.liveCountWithMetadata;
 
@@ -78,10 +79,11 @@ void register_stackmaps(std::map<void*, const stackmap::PointCluster*>& clusterF
                      c.frameSize, c.addressCount,
                      c.liveCountWithMetadata, c.liveCountWithoutMetadata);
 
-      stackmap::OffsetWithMetadata* op = (stackmap::OffsetWithMetadata*) (offset(ps, liveOffset));
       for (int i = 0; i < c.liveCountWithMetadata; ++i) {
+        stackmap::OffsetWithMetadata* op = (stackmap::OffsetWithMetadata*)
+                              offset(ps, liveOffset + OFFSET_WITH_METADATA_SIZE * i);
         fprintf(gclog, "      offset %d , meta %p = %s\n",
-                        op[i].offset, op[i].metadata, op[i].metadata);
+                        op->offset, op->metadata, op->metadata);
       }
       fprintf(gclog, "\n");
     }
