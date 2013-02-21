@@ -386,59 +386,6 @@ Hmm, those outliers. Let's remove 'em::
       (Student's t, pooled s = 0.00433912)
 
 So: it looks like there is, in fact, a performance gain when raising the inlining threshold.
+Incidentally, this demonstrates the value of tools like ``ministat`` to clearly show
+statistically significant performance differences on the order of milliseconds.
 
-Beware, though!::
-
-    :2013-02-19 01:29:11 ~/tmp/ $ ministat before after
-    x before
-    + after
-    +---------------------------------------------------------------------------------------------------------------------+
-    |                                +                                                                                    |
-    |                                +                                                                                    |
-    |                                +                                                                                    |
-    |                          +     +                                                                                    |
-    |                          +     +                                                                                    |
-    |                          +     +                                                                                    |
-    |                          +     +                                                                                    |
-    |                          +     +                                                                                    |
-    |                          +     +                                                                                    |
-    |                          +     +                                                                                    |
-    |                          +     +                                                                                    |
-    |                     +    +     +                                                                                    |
-    |                     +    +     +                                                                                    |
-    |                     +    +     +    +                    x                                                          |
-    |                     +    +     +    +    x               x    x                                                     |
-    |                     +    +     +    +    x               x    x                    x                                |
-    |                     +    +     +    +    x               x    x                    x                                |
-    |                     +    +     +    +    x               x    x               x    x                                |
-    |                     +    +     +    +    x               x    x               x    x                                |
-    |                     +    +     +    +    x               x    x          x    x    x                                |
-    |                     +    +     +    +    x          x    x    x          x    x    x                                |
-    |                     +    +     +    +    *          x    x    x     x    x    x    x               x                |
-    |     +          +    +    +     +    +    *    x     x    x    x     x    x    x    x     x         x                |
-    |     +          +    +    +     +    +    *    *     x    x    x     x    x    x    x     x         x                |
-    |     +          +    +    *     *    *    *    *     x    x    x     x    x    x    x     x    x    x                |
-    |+    +     +    +    *    *     *    *    *    *     *    *    x     x    x    x    x     x    x    x    x          +|
-    |                |_____________A_M__________|  |________________M_A___________________|                               |
-    +---------------------------------------------------------------------------------------------------------------------+
-        N           Min           Max        Median           Avg        Stddev
-    x  98         0.356         0.372         0.364    0.36436735  0.0036704104
-    +  98         0.352         0.374         0.358    0.35761224  0.0025144229
-    Difference at 95.0% confidence
-      -0.0067551 +/- 0.000880871
-      -1.85393% +/- 0.241754%
-      (Student's t, pooled s = 0.00314597)
-
-    :2013-02-19 01:29:12 ~/tmp/ $ cat before.sh
-    EXE=~/foster/_obj/data/2013-02-18@02.59.37/\[inline\=yes\,LLVMopt\=O2\,donate\=no\,inineSize\=19\].a2b.exe
-    rm -f gclog.txt
-    ${EXE} $1 &> /dev/null
-    cat gclog.txt | grep 'Elapsed' | awk '{ print $3 }'
-
-    :2013-02-19 01:29:27 ~/tmp/ $ cat after.sh
-    EXE=~/foster/_obj/data/2013-02-18@02.59.37/\[inline\=yes\,LLVMopt\=O2\,donate\=no\,inineSize\=19\].a2b.exe
-    rm -f gclog.txt
-    ${EXE} $1 &> /dev/null
-    cat gclog.txt | grep 'Elapsed' | awk '{ print $3 }'
-
-We're running the exact same binary, but getting a statistically significant performance difference!
