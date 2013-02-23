@@ -74,7 +74,7 @@ def get_link_flags():
     'Darwin': lambda: common + ['-framework', 'CoreFoundation',
                                 '-framework', 'Cocoa',
                                 '-lobjc'],
-    'Linux': lambda: common + ['-lrt']
+    'Linux': lambda: common + ['-lrt', '-lglib-2.0']
   }[platform.system()]()
   return ' '.join(flags)
 

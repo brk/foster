@@ -96,6 +96,12 @@ if ("${UNIX}" AND NOT "${APPLE}")
 	${CHROMIUM_BASE}/base/strings/sys_string_conversions_posix.cc
 	${CHROMIUM_BASE}/base/process_util_linux.cc
   )
+
+  execute_process(COMMAND pkg-config --cflags glib-2.0
+    OUTPUT_VARIABLE PKG_CONFIG_GLIB_CFLAGS
+  )
+  add_definitions(${PKG_CONFIG_GLIB_CFLAGS})
+  # scripts/run_test.py is careful to link with glib-2.0 on Linux...
 endif ("${UNIX}" AND NOT "${APPLE}")
 
 #####################################################################
