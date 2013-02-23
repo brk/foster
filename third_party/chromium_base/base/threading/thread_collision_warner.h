@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef BASE_THREADING_THREAD_COLLISION_WARNER_H_
 #define BASE_THREADING_THREAD_COLLISION_WARNER_H_
-#pragma once
 
 #include <memory>
 
@@ -119,7 +118,7 @@
 
 #else
 
-#define DFAKE_MUTEX(obj)
+#define DFAKE_MUTEX(obj) typedef void InternalFakeMutexType##obj
 #define DFAKE_SCOPED_LOCK(obj) ((void)0)
 #define DFAKE_SCOPED_RECURSIVE_LOCK(obj) ((void)0)
 #define DFAKE_SCOPED_LOCK_THREAD_LOCKED(obj) ((void)0)
@@ -145,7 +144,7 @@ struct BASE_EXPORT DCheckAsserter : public AsserterBase {
 class BASE_EXPORT ThreadCollisionWarner {
  public:
   // The parameter asserter is there only for test purpose
-  ThreadCollisionWarner(AsserterBase* asserter = new DCheckAsserter())
+  explicit ThreadCollisionWarner(AsserterBase* asserter = new DCheckAsserter())
       : valid_thread_id_(0),
         counter_(0),
         asserter_(asserter) {}

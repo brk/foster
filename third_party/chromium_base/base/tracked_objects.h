@@ -1,25 +1,26 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef BASE_TRACKED_OBJECTS_H_
 #define BASE_TRACKED_OBJECTS_H_
-#pragma once
 
 #include <map>
+#include <set>
 #include <stack>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/base_export.h"
+//#include "base/gtest_prod_util.h"
 #include "base/lazy_instance.h"
 #include "base/location.h"
+#include "base/profiler/alternate_timer.h"
 #include "base/profiler/tracked_time.h"
-#include "base/time.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_local_storage.h"
 #include "base/tracking_info.h"
-//#include "base/values.h"
 
 // TrackedObjects provides a database of stats about objects (generally Tasks)
 // that are tracked.  Tracking means their birth, death, duration, birth thread,
@@ -125,33 +126,36 @@
 // be able to run concurrently with ongoing augmentation of the birth and death
 // data.
 //
+// This header also exports collection of classes that provide "snapshotted"
+// representations of the core tracked_objects:: classes.  These snapshotted
+// representations are designed for safe transmission of the tracked_objects::
+// data across process boundaries.  Each consists of:
+// (1) a default constructor, to support the IPC serialization macros,
+// (2) a constructor that extracts data from the type being snapshotted, and
+// (3) the snapshotted data.
+//
 // For a given birth location, information about births is spread across data
-// structures that are asynchronously changing on various threads.  For display
-// purposes, we need to construct Snapshot instances for each combination of
-// birth thread, death thread, and location, along with the count of such
-// lifetimes.  We gather such data into a Snapshot instances, so that such
-// instances can be sorted and aggregated (and remain frozen during our
-// processing).  Snapshot instances use pointers to constant portions of the
-// birth and death datastructures, but have local (frozen) copies of the actual
-// statistics (birth count, durations, etc. etc.).
+// structures that are asynchronously changing on various threads.  For
+// serialization and display purposes, we need to construct TaskSnapshot
+// instances for each combination of birth thread, death thread, and location,
+// along with the count of such lifetimes.  We gather such data into a
+// TaskSnapshot instances, so that such instances can be sorted and
+// aggregated (and remain frozen during our processing).
 //
-// A DataCollector is a container object that holds a set of Snapshots. The
-// statistics in a snapshot are gathered asynhcronously relative to their
-// ongoing updates.  It is possible, though highly unlikely, that stats could be
-// incorrectly recorded by this process (all data is held in 32 bit ints, but we
-// are not atomically collecting all data, so we could have count that does not,
-// for example, match with the number of durations we accumulated).  The
-// advantage to having fast (non-atomic) updates of the data outweighs the
-// minimal risk of a singular corrupt statistic snapshot (only the snapshot
-// could be corrupt, not the underlying and ongoing statistic).  In constrast,
-// pointer data that is accessed during snapshotting is completely invariant,
-// and hence is perfectly acquired (i.e., no potential corruption, and no risk
-// of a bad memory reference).
-//
-// After an array of Snapshots instances are collected into a DataCollector,
-// they need to be prepared for displaying our output.  We currently implement a
-// serialization into a Value hierarchy, which is automatically translated to
-// JSON when supplied to rendering Java Scirpt.
+// The ProcessDataSnapshot struct is a serialized representation of the list
+// of ThreadData objects for a process.  It holds a set of TaskSnapshots
+// and tracks parent/child relationships for the executed tasks.  The statistics
+// in a snapshot are gathered asynhcronously relative to their ongoing updates.
+// It is possible, though highly unlikely, that stats could be incorrectly
+// recorded by this process (all data is held in 32 bit ints, but we are not
+// atomically collecting all data, so we could have count that does not, for
+// example, match with the number of durations we accumulated).  The advantage
+// to having fast (non-atomic) updates of the data outweighs the minimal risk of
+// a singular corrupt statistic snapshot (only the snapshot could be corrupt,
+// not the underlying and ongoing statistic).  In constrast, pointer data that
+// is accessed during snapshotting is completely invariant, and hence is
+// perfectly acquired (i.e., no potential corruption, and no risk of a bad
+// memory reference).
 //
 // TODO(jar): We can implement a Snapshot system that *tries* to grab the
 // snapshots on the source threads *when* they have MessageLoops available
@@ -162,9 +166,6 @@
 // achieve this feat, and it *might* be valuable when we are colecting data for
 // upload via UMA (where correctness of data may be more significant than for a
 // single screen of about:profiler).
-//
-// TODO(jar): We need to save a single sample in each DeathData instance of the
-// times recorded.  This sample should be selected in a uniformly random way.
 //
 // TODO(jar): We should support (optionally) the recording of parent-child
 // relationships for tasks.  This should be done by detecting what tasks are
@@ -184,8 +185,6 @@
 // remove the Reset() methods.  We may also need a short-term-max value in
 // DeathData that is reset (as synchronously as possible) during each snapshot.
 // This will facilitate displaying a max value for each snapshot period.
-
-class MessageLoop;
 
 namespace tracked_objects {
 
@@ -214,23 +213,35 @@ class BASE_EXPORT BirthOnThread {
 };
 
 //------------------------------------------------------------------------------
+// A "snapshotted" representation of the BirthOnThread class.
+
+struct BASE_EXPORT BirthOnThreadSnapshot {
+  BirthOnThreadSnapshot();
+  explicit BirthOnThreadSnapshot(const BirthOnThread& birth);
+  ~BirthOnThreadSnapshot();
+
+  LocationSnapshot location;
+  std::string thread_name;
+};
+
+//------------------------------------------------------------------------------
 // A class for accumulating counts of births (without bothering with a map<>).
 
 class BASE_EXPORT Births: public BirthOnThread {
  public:
   Births(const Location& location, const ThreadData& current);
 
-  int birth_count() const { return birth_count_; }
+  int birth_count() const;
 
-  // When we have a birth we update the count for this BirhPLace.
-  void RecordBirth() { ++birth_count_; }
+  // When we have a birth we update the count for this birthplace.
+  void RecordBirth();
 
   // When a birthplace is changed (updated), we need to decrement the counter
   // for the old instance.
-  void ForgetBirth() { --birth_count_; }  // We corrected a birth place.
+  void ForgetBirth();
 
   // Hack to quickly reset all counts to zero.
-  void Clear() { birth_count_ = 0; }
+  void Clear();
 
  private:
   // The number of births on this thread for our location_.
@@ -247,72 +258,67 @@ class BASE_EXPORT Births: public BirthOnThread {
 class BASE_EXPORT DeathData {
  public:
   // Default initializer.
-  DeathData() : count_(0) {}
+  DeathData();
 
   // When deaths have not yet taken place, and we gather data from all the
   // threads, we create DeathData stats that tally the number of births without
-  // a corrosponding death.
-  explicit DeathData(int count)
-      : count_(count) {}
+  // a corresponding death.
+  explicit DeathData(int count);
 
   // Update stats for a task destruction (death) that had a Run() time of
   // |duration|, and has had a queueing delay of |queue_duration|.
-  void RecordDeath(DurationInt queue_duration,
-                   DurationInt run_duration);
+  void RecordDeath(const int32 queue_duration,
+                   const int32 run_duration,
+                   int random_number);
 
-  // Metrics accessors.
-  int count() const { return count_; }
-  DurationInt run_duration() const { return run_time_.duration(); }
-  DurationInt AverageMsRunDuration() const;
-  DurationInt run_duration_max() const { return run_time_.max(); }
-  DurationInt queue_duration() const { return queue_time_.duration(); }
-  DurationInt AverageMsQueueDuration() const;
-  DurationInt queue_duration_max() const { return queue_time_.max(); }
+  // Metrics accessors, used only for serialization and in tests.
+  int count() const;
+  int32 run_duration_sum() const;
+  int32 run_duration_max() const;
+  int32 run_duration_sample() const;
+  int32 queue_duration_sum() const;
+  int32 queue_duration_max() const;
+  int32 queue_duration_sample() const;
 
-  // Accumulate metrics from other into this.  This method is never used on
-  // realtime statistics, and only used in snapshots and aggregatinos.
-  void AddDeathData(const DeathData& other);
-
-#if 0
-  // Construct a DictionaryValue instance containing all our stats. The caller
-  // assumes ownership of the returned instance.
-  base::DictionaryValue* ToValue() const;
-#endif
+  // Reset the max values to zero.
+  void ResetMax();
 
   // Reset all tallies to zero. This is used as a hack on realtime data.
   void Clear();
 
  private:
-  // DeathData::Data is a helper class, useful when different metrics need to be
-  // aggregated, such as queueing times, or run times.
-  class Data {
-   public:
-    Data() : duration_(0), max_(0) {}
-    ~Data() {}
+  // Members are ordered from most regularly read and updated, to least
+  // frequently used.  This might help a bit with cache lines.
+  // Number of runs seen (divisor for calculating averages).
+  int count_;
+  // Basic tallies, used to compute averages.
+  int32 run_duration_sum_;
+  int32 queue_duration_sum_;
+  // Max values, used by local visualization routines.  These are often read,
+  // but rarely updated.
+  int32 run_duration_max_;
+  int32 queue_duration_max_;
+  // Samples, used by crowd sourcing gatherers.  These are almost never read,
+  // and rarely updated.
+  int32 run_duration_sample_;
+  int32 queue_duration_sample_;
+};
 
-    DurationInt duration() const { return duration_; }
-    DurationInt max() const { return max_; }
+//------------------------------------------------------------------------------
+// A "snapshotted" representation of the DeathData class.
 
-    // Agggegate data into our state.
-    void AddData(const Data& other);
-    void AddDuration(DurationInt duration);
+struct BASE_EXPORT DeathDataSnapshot {
+  DeathDataSnapshot();
+  explicit DeathDataSnapshot(const DeathData& death_data);
+  ~DeathDataSnapshot();
 
-    // Central helper function for calculating averages (correctly, in only one
-    // place).
-    DurationInt AverageMsDuration(int count) const;
-
-    // Resets all members to zero.
-    void Clear();
-
-   private:
-    DurationInt duration_;  // Sum of all durations seen.
-    DurationInt max_;       // Largest singular duration seen.
-  };
-
-
-  int count_;         // Number of deaths seen.
-  Data run_time_;    // Data about run time durations.
-  Data queue_time_;  // Data about queueing times durations.
+  int count;
+  int32 run_duration_sum;
+  int32 run_duration_max;
+  int32 run_duration_sample;
+  int32 queue_duration_sum;
+  int32 queue_duration_max;
+  int32 queue_duration_sample;
 };
 
 //------------------------------------------------------------------------------
@@ -322,97 +328,16 @@ class BASE_EXPORT DeathData {
 // The source of this data was collected on many threads, and is asynchronously
 // changing.  The data in this instance is not asynchronously changing.
 
-class BASE_EXPORT Snapshot {
- public:
-  // When snapshotting a full life cycle set (birth-to-death), use this:
-  Snapshot(const BirthOnThread& birth_on_thread, const ThreadData& death_thread,
-           const DeathData& death_data);
+struct BASE_EXPORT TaskSnapshot {
+  TaskSnapshot();
+  TaskSnapshot(const BirthOnThread& birth,
+               const DeathData& death_data,
+               const std::string& death_thread_name);
+  ~TaskSnapshot();
 
-  // When snapshotting a birth, with no death yet, use this:
-  Snapshot(const BirthOnThread& birth_on_thread, int count);
-
-  const ThreadData* birth_thread() const { return birth_->birth_thread(); }
-  const Location location() const { return birth_->location(); }
-  const BirthOnThread& birth() const { return *birth_; }
-  const ThreadData* death_thread() const {return death_thread_; }
-  const DeathData& death_data() const { return death_data_; }
-  const std::string DeathThreadName() const;
-
-  int count() const { return death_data_.count(); }
-  DurationInt run_duration() const { return death_data_.run_duration(); }
-  DurationInt AverageMsRunDuration() const {
-    return death_data_.AverageMsRunDuration();
-  }
-  DurationInt run_duration_max() const {
-    return death_data_.run_duration_max();
-  }
-  DurationInt queue_duration() const { return death_data_.queue_duration(); }
-  DurationInt AverageMsQueueDuration() const {
-    return death_data_.AverageMsQueueDuration();
-  }
-  DurationInt queue_duration_max() const {
-    return death_data_.queue_duration_max();
-  }
-
-#if 0
-  // Construct a DictionaryValue instance containing all our data recursively.
-  // The caller assumes ownership of the memory in the returned instance.
-  base::DictionaryValue* ToValue() const;
-#endif
-
- private:
-  const BirthOnThread* birth_;  // Includes Location and birth_thread.
-  const ThreadData* death_thread_;
-  DeathData death_data_;
-};
-
-//------------------------------------------------------------------------------
-// DataCollector is a container class for Snapshot and BirthOnThread count
-// items.
-
-class BASE_EXPORT DataCollector {
- public:
-  typedef std::vector<Snapshot> Collection;
-
-  // Construct with a list of how many threads should contribute.  This helps us
-  // determine (in the async case) when we are done with all contributions.
-  DataCollector();
-  ~DataCollector();
-
-  // Adds all stats from the indicated thread into our arrays.  This function
-  // uses locks at the lowest level (when accessing the underlying maps which
-  // could change when not locked), and can be called from any threads.
-  void Append(const ThreadData& thread_data);
-
-  // After the accumulation phase, the following accessor is used to process the
-  // data (i.e., sort it, filter it, etc.).
-  Collection* collection();
-
-  // Adds entries for all the remaining living objects (objects that have
-  // tallied a birth, but have not yet tallied a matching death, and hence must
-  // be either running, queued up, or being held in limbo for future posting).
-  // This should be called after all known ThreadData instances have been
-  // processed using Append().
-  void AddListOfLivingObjects();
-
-#if 0
-  // Generates a ListValue representation of the vector of snapshots. The caller
-  // assumes ownership of the memory in the returned instance.
-  base::ListValue* ToValue() const;
-#endif
-
- private:
-  typedef std::map<const BirthOnThread*, int> BirthCount;
-
-  // The array that we collect data into.
-  Collection collection_;
-
-  // The total number of births recorded at each location for which we have not
-  // seen a death count.  This map changes as we do Append() calls, and is later
-  // used by AddListOfLivingObjects() to gather up unaccounted for births.
-  BirthCount global_birth_count_;
-
-  DISALLOW_COPY_AND_ASSIGN(DataCollector);
+  BirthOnThreadSnapshot birth;
+  DeathDataSnapshot death_data;
+  std::string death_thread_name;
 };
 
 //------------------------------------------------------------------------------
@@ -422,18 +347,24 @@ class BASE_EXPORT DataCollector {
 // We also have a linked list of ThreadData instances, and that list is used to
 // harvest data from all existing instances.
 
+struct ProcessDataSnapshot;
 class BASE_EXPORT ThreadData {
  public:
   // Current allowable states of the tracking system.  The states can vary
   // between ACTIVE and DEACTIVATED, but can never go back to UNINITIALIZED.
   enum Status {
-    UNINITIALIZED,
-    ACTIVE,
-    DEACTIVATED,
+    UNINITIALIZED,              // PRistine, link-time state before running.
+    DORMANT_DURING_TESTS,       // Only used during testing.
+    DEACTIVATED,                // No longer recording profling.
+    PROFILING_ACTIVE,           // Recording profiles (no parent-child links).
+    PROFILING_CHILDREN_ACTIVE,  // Fully active, recording parent-child links.
   };
 
   typedef std::map<Location, Births*> BirthMap;
   typedef std::map<const Births*, DeathData> DeathMap;
+  typedef std::pair<const Births*, const Births*> ParentChildPair;
+  typedef std::set<ParentChildPair> ParentChildSet;
+  typedef std::stack<const Births*> ParentStack;
 
   // Initialize the current thread context with a new instance of ThreadData.
   // This is used by all threads that have names, and should be explicitly
@@ -447,12 +378,10 @@ class BASE_EXPORT ThreadData {
   // This may return NULL if the system is disabled for any reason.
   static ThreadData* Get();
 
-#if 0
-  // Constructs a DictionaryValue instance containing all recursive results in
-  // our process.  The caller assumes ownership of the memory in the returned
-  // instance.
-  static base::DictionaryValue* ToValue();
-#endif
+  // Fills |process_data| with all the recursive results in our process.
+  // During the scavenging, if |reset_max| is true, then the DeathData instances
+  // max-values are reset to zero during this scan.
+  static void Snapshot(bool reset_max, ProcessDataSnapshot* process_data);
 
   // Finds (or creates) a place to count births from the given location in this
   // thread, and increment that tally.
@@ -492,24 +421,7 @@ class BASE_EXPORT ThreadData {
       const TrackedTime& start_of_run,
       const TrackedTime& end_of_run);
 
-  const std::string thread_name() const { return thread_name_; }
-
-  // ---------------------
-  // TODO(jar):
-  // The following functions should all be private, and are only public because
-  // the collection is done externally.  We need to relocate that code from the
-  // collection class into this class, and then all these methods can be made
-  // private.
-  // (Thread safe) Get start of list of all ThreadData instances.
-  static ThreadData* first();
-  // Iterate through the null terminated list of ThreadData instances.
-  ThreadData* next() const { return next_; }
-  // Using our lock, make a copy of the specified maps.  These calls may arrive
-  // from non-local threads, and are used to quickly scan data from all threads
-  // in order to build JSON for about:profiler.
-  void SnapshotBirthMap(BirthMap *output) const;
-  void SnapshotDeathMap(DeathMap *output) const;
-  // -------- end of should be private methods.
+  const std::string& thread_name() const { return thread_name_; }
 
   // Hack: asynchronously clear all birth counts and death tallies data values
   // in all ThreadData instances.  The numerical (zeroing) part is done without
@@ -521,17 +433,35 @@ class BASE_EXPORT ThreadData {
   // while we are single threaded). Returns false if unable to initialize.
   static bool Initialize();
 
-  // Sets internal status_ to either become ACTIVE, or DEACTIVATED,
-  // based on argument being true or false respectively.
+  // Sets internal status_.
+  // If |status| is false, then status_ is set to DEACTIVATED.
+  // If |status| is true, then status_ is set to, PROFILING_ACTIVE, or
+  // PROFILING_CHILDREN_ACTIVE.
   // If tracking is not compiled in, this function will return false.
-  static bool InitializeAndSetTrackingStatus(bool status);
-  static bool tracking_status();
+  // If parent-child tracking is not compiled in, then an attempt to set the
+  // status to PROFILING_CHILDREN_ACTIVE will only result in a status of
+  // PROFILING_ACTIVE (i.e., it can't be set to a higher level than what is
+  // compiled into the binary, and parent-child tracking at the
+  // PROFILING_CHILDREN_ACTIVE level might not be compiled in).
+  static bool InitializeAndSetTrackingStatus(Status status);
+
+  static Status status();
+
+  // Indicate if any sort of profiling is being done (i.e., we are more than
+  // DEACTIVATED).
+  static bool TrackingStatus();
+
+  // For testing only, indicate if the status of parent-child tracking is turned
+  // on.  This is currently a compiled option, atop TrackingStatus().
+  static bool TrackingParentChildStatus();
 
   // Special versions of Now() for getting times at start and end of a tracked
   // run.  They are super fast when tracking is disabled, and have some internal
   // side effects when we are tracking, so that we can deduce the amount of time
   // accumulated outside of execution of tracked runs.
-  static TrackedTime NowForStartOfRun();
+  // The task that will be tracked is passed in as |parent| so that parent-child
+  // relationships can be (optionally) calculated.
+  static TrackedTime NowForStartOfRun(const Births* parent);
   static TrackedTime NowForEndOfRun();
 
   // Provide a time function that does nothing (runs fast) when we don't have
@@ -539,6 +469,12 @@ class BASE_EXPORT ThreadData {
   // ifdef'ed to be small enough (allowing the profiler to be "compiled out" of
   // the code).
   static TrackedTime Now();
+
+  // Use the function |now| to provide current times, instead of calling the
+  // TrackedTime::Now() function.  Since this alternate function is being used,
+  // the other time arguments (used for calculating queueing delay) will be
+  // ignored.
+  static void SetAlternateTimeSource(NowFunction* now);
 
   // This function can be called at process termination to validate that thread
   // cleanup routines have been called for at least some number of named
@@ -548,7 +484,15 @@ class BASE_EXPORT ThreadData {
  private:
   // Allow only tests to call ShutdownSingleThreadedCleanup.  We NEVER call it
   // in production code.
+  // TODO(jar): Make this a friend in DEBUG only, so that the optimizer has a
+  // better change of optimizing (inlining? etc.) private methods (knowing that
+  // there will be no need for an external entry point).
   friend class TrackedObjectsTest;
+  //FRIEND_TEST_ALL_PREFIXES(TrackedObjectsTest, MinimalStartupShutdown);
+  //FRIEND_TEST_ALL_PREFIXES(TrackedObjectsTest, TinyStartupShutdown);
+  //FRIEND_TEST_ALL_PREFIXES(TrackedObjectsTest, ParentChildTest);
+
+  typedef std::map<const BirthOnThread*, int> BirthCountMap;
 
   // Worker thread construction creates a name since there is none.
   explicit ThreadData(int thread_number);
@@ -563,13 +507,49 @@ class BASE_EXPORT ThreadData {
   // the instance permanently on that list.
   void PushToHeadOfList();
 
+  // (Thread safe) Get start of list of all ThreadData instances using the lock.
+  static ThreadData* first();
+
+  // Iterate through the null terminated list of ThreadData instances.
+  ThreadData* next() const;
+
+
   // In this thread's data, record a new birth.
   Births* TallyABirth(const Location& location);
 
   // Find a place to record a death on this thread.
-  void TallyADeath(const Births& birth,
-                   DurationInt queue_duration,
-                   DurationInt duration);
+  void TallyADeath(const Births& birth, int32 queue_duration, int32 duration);
+
+  // Snapshot (under a lock) the profiled data for the tasks in each ThreadData
+  // instance.  Also updates the |birth_counts| tally for each task to keep
+  // track of the number of living instances of the task.  If |reset_max| is
+  // true, then the max values in each DeathData instance are reset during the
+  // scan.
+  static void SnapshotAllExecutedTasks(bool reset_max,
+                                       ProcessDataSnapshot* process_data,
+                                       BirthCountMap* birth_counts);
+
+  // Snapshots (under a lock) the profiled data for the tasks for this thread
+  // and writes all of the executed tasks' data -- i.e. the data for the tasks
+  // with with entries in the death_map_ -- into |process_data|.  Also updates
+  // the |birth_counts| tally for each task to keep track of the number of
+  // living instances of the task -- that is, each task maps to the number of
+  // births for the task that have not yet been balanced by a death.  If
+  // |reset_max| is true, then the max values in each DeathData instance are
+  // reset during the scan.
+  void SnapshotExecutedTasks(bool reset_max,
+                             ProcessDataSnapshot* process_data,
+                             BirthCountMap* birth_counts);
+
+  // Using our lock, make a copy of the specified maps.  This call may be made
+  // on  non-local threads, which necessitate the use of the lock to prevent
+  // the map(s) from being reallocaed while they are copied. If |reset_max| is
+  // true, then, just after we copy the DeathMap, we will set the max values to
+  // zero in the active DeathMap (not the snapshot).
+  void SnapshotMaps(bool reset_max,
+                    BirthMap* birth_map,
+                    DeathMap* death_map,
+                    ParentChildSet* parent_child_set);
 
   // Using our lock to protect the iteration, Clear all birth and death data.
   void Reset();
@@ -593,8 +573,12 @@ class BASE_EXPORT ThreadData {
   // ThreadData instances.
   static void ShutdownSingleThreadedCleanup(bool leak);
 
+  // When non-null, this specifies an external function that supplies monotone
+  // increasing time functcion.
+  static NowFunction* now_function_;
+
   // We use thread local store to identify which ThreadData to interact with.
-  static base::ThreadLocalStorage::Slot tls_index_;
+  static base::ThreadLocalStorage::StaticSlot tls_index_;
 
   // List of ThreadData instances for use with worker threads. When a worker
   // thread is done (terminated), we push it onto this llist.  When a new worker
@@ -625,14 +609,7 @@ class BASE_EXPORT ThreadData {
   // unregistered_thread_data_pool_.  This lock is leaked at shutdown.
   // The lock is very infrequently used, so we can afford to just make a lazy
   // instance and be safe.
-  static base::LazyInstance<base::Lock,
-      base::LeakyLazyInstanceTraits<base::Lock> > list_lock_;
-
-  // Record of what the incarnation_counter_ was when this instance was created.
-  // If the incarnation_counter_ has changed, then we avoid pushing into the
-  // pool (this is only critical in tests which go through multiple
-  // incarations).
-  int incarnation_count_for_pool_;
+  static base::LazyInstance<base::Lock>::Leaky list_lock_;
 
   // We set status_ to SHUTDOWN when we shut down the tracking service.
   static Status status_;
@@ -669,6 +646,11 @@ class BASE_EXPORT ThreadData {
   // locking before reading it.
   DeathMap death_map_;
 
+  // A set of parents that created children tasks on this thread. Each pair
+  // corresponds to potentially non-local Births (location and thread), and a
+  // local Births (that took place on this thread).
+  ParentChildSet parent_child_set_;
+
   // Lock to protect *some* access to BirthMap and DeathMap.  The maps are
   // regularly read and written on this thread, but may only be read from other
   // threads.  To support this, we acquire this lock if we are writing from this
@@ -677,31 +659,57 @@ class BASE_EXPORT ThreadData {
   // writing is only done from this thread.
   mutable base::Lock map_lock_;
 
+  // The stack of parents that are currently being profiled. This includes only
+  // tasks that have started a timer recently via NowForStartOfRun(), but not
+  // yet concluded with a NowForEndOfRun().  Usually this stack is one deep, but
+  // if a scoped region is profiled, or <sigh> a task runs a nested-message
+  // loop, then the stack can grow larger.  Note that we don't try to deduct
+  // time in nested porfiles, as our current timer is based on wall-clock time,
+  // and not CPU time (and we're hopeful that nested timing won't be a
+  // significant additional cost).
+  ParentStack parent_stack_;
+
+  // A random number that we used to select decide which sample to keep as a
+  // representative sample in each DeathData instance.  We can't start off with
+  // much randomness (because we can't call RandInt() on all our threads), so
+  // we stir in more and more as we go.
+  int32 random_number_;
+
+  // Record of what the incarnation_counter_ was when this instance was created.
+  // If the incarnation_counter_ has changed, then we avoid pushing into the
+  // pool (this is only critical in tests which go through multiple
+  // incarnations).
+  int incarnation_count_for_pool_;
+
   DISALLOW_COPY_AND_ASSIGN(ThreadData);
 };
 
 //------------------------------------------------------------------------------
-// Provide simple way to to start global tracking, and to tear down tracking
-// when done.  The design has evolved to *not* do any teardown (and just leak
-// all allocated data structures).  As a result, we don't have any code in this
-// destructor, and perhaps this whole class should go away.
+// A snapshotted representation of a (parent, child) task pair, for tracking
+// hierarchical profiles.
 
-class BASE_EXPORT AutoTracking {
+struct BASE_EXPORT ParentChildPairSnapshot {
  public:
-  AutoTracking() {
-    ThreadData::Initialize();
-  }
+  ParentChildPairSnapshot();
+  explicit ParentChildPairSnapshot(
+      const ThreadData::ParentChildPair& parent_child);
+  ~ParentChildPairSnapshot();
 
-  ~AutoTracking() {
-    // TODO(jar): Consider emitting a CSV dump of the data at this point.  This
-    // should be called after the message loops have all terminated (or at least
-    // the main message loop is gone), so there is little chance for additional
-    // tasks to be Run.
-  }
+  BirthOnThreadSnapshot parent;
+  BirthOnThreadSnapshot child;
+};
 
- private:
+//------------------------------------------------------------------------------
+// A snapshotted representation of the list of ThreadData objects for a process.
 
-  DISALLOW_COPY_AND_ASSIGN(AutoTracking);
+struct BASE_EXPORT ProcessDataSnapshot {
+ public:
+  ProcessDataSnapshot();
+  ~ProcessDataSnapshot();
+
+  std::vector<TaskSnapshot> tasks;
+  std::vector<ParentChildPairSnapshot> descendants;
+  int process_id;
 };
 
 }  // namespace tracked_objects

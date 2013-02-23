@@ -1,10 +1,9 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef BASE_LOGGING_H_
 #define BASE_LOGGING_H_
-#pragma once
 
 #include <cassert>
 #include <string>
@@ -13,6 +12,7 @@
 
 #include "base/base_export.h"
 #include "base/basictypes.h"
+#include "base/debug/debugger.h"
 #include "build/build_config.h"
 
 //
@@ -209,6 +209,10 @@ BASE_EXPORT bool BaseInitLoggingImpl(const PathChar* log_file,
 // The default log file is initialized to "debug.log" in the application
 // directory. You probably don't want this, especially since the program
 // directory may not be writable on an enduser's system.
+//
+// This function may be called a second time to re-direct logging (e.g after
+// loging in to a user partition), however it should never be called more than
+// twice.
 inline bool InitLogging(const PathChar* log_file,
                         LoggingDestination logging_dest,
                         LogLockingState lock_log,
@@ -326,6 +330,7 @@ const LogSeverity LOG_DFATAL = LOG_FATAL;
 #define COMPACT_GOOGLE_LOG_DFATAL \
   COMPACT_GOOGLE_LOG_EX_DFATAL(LogMessage)
 
+#if defined(OS_WIN)
 // wingdi.h defines ERROR to be 0. When we call LOG(ERROR), it gets
 // substituted with 0, and it expands to COMPACT_GOOGLE_LOG_0. To allow us
 // to keep using this syntax, we define this macro to do the same thing
@@ -337,6 +342,7 @@ const LogSeverity LOG_DFATAL = LOG_FATAL;
 #define COMPACT_GOOGLE_LOG_0 COMPACT_GOOGLE_LOG_ERROR
 // Needed for LOG_IS_ON(ERROR).
 const LogSeverity LOG_0 = LOG_ERROR;
+#endif
 
 // As special cases, we can assume that LOG_IS_ON(ERROR_REPORT) and
 // LOG_IS_ON(FATAL) always hold.  Also, LOG_IS_ON(DFATAL) always holds
@@ -433,7 +439,6 @@ const LogSeverity LOG_0 = LOG_ERROR;
 // PLOG_STREAM is used by PLOG, which is the usual error logging macro
 // for each platform.
 #define PLOG_STREAM(severity) LOG_ERRNO_STREAM(severity)
-// TODO(tschmelcher): Should we add OSStatus logging for Mac?
 #endif
 
 #define PLOG(severity)                                          \
@@ -442,12 +447,44 @@ const LogSeverity LOG_0 = LOG_ERROR;
 #define PLOG_IF(severity, condition) \
   LAZY_STREAM(PLOG_STREAM(severity), LOG_IS_ON(severity) && (condition))
 
+// http://crbug.com/16512 is open for a real fix for this.  For now, Windows
+// uses OFFICIAL_BUILD and other platforms use the branding flag when NDEBUG is
+// defined.
+#if ( defined(OS_WIN) && defined(OFFICIAL_BUILD)) || \
+    (!defined(OS_WIN) && defined(NDEBUG) && defined(GOOGLE_CHROME_BUILD))
+#define LOGGING_IS_OFFICIAL_BUILD 1
+#else
+#define LOGGING_IS_OFFICIAL_BUILD 0
+#endif
+
+// The actual stream used isn't important.
+#define EAT_STREAM_PARAMETERS                                           \
+  true ? (void) 0 : ::logging::LogMessageVoidify() & LOG_STREAM(FATAL)
+
 // CHECK dies with a fatal error if condition is not true.  It is *not*
 // controlled by NDEBUG, so the check will be executed regardless of
 // compilation mode.
 //
 // We make sure CHECK et al. always evaluates their arguments, as
 // doing CHECK(FunctionWithSideEffect()) is a common idiom.
+
+#if LOGGING_IS_OFFICIAL_BUILD
+
+// Make all CHECK functions discard their log strings to reduce code
+// bloat for official builds.
+
+// TODO(akalin): This would be more valuable if there were some way to
+// remove BreakDebugger() from the backtrace, perhaps by turning it
+// into a macro (like __debugbreak() on Windows).
+#define CHECK(condition)                                                \
+  !(condition) ? ::base::debug::BreakDebugger() : EAT_STREAM_PARAMETERS
+
+#define PCHECK(condition) CHECK(condition)
+
+#define CHECK_OP(name, op, val1, val2) CHECK((val1) op (val2))
+
+#else
+
 #define CHECK(condition)                       \
   LAZY_STREAM(LOG_STREAM(FATAL), !(condition)) \
   << "Check failed: " #condition ". "
@@ -455,6 +492,19 @@ const LogSeverity LOG_0 = LOG_ERROR;
 #define PCHECK(condition) \
   LAZY_STREAM(PLOG_STREAM(FATAL), !(condition)) \
   << "Check failed: " #condition ". "
+
+// Helper macro for binary operators.
+// Don't use this macro directly in your code, use CHECK_EQ et al below.
+//
+// TODO(akalin): Rewrite this so that constructs like if (...)
+// CHECK_EQ(...) else { ... } work properly.
+#define CHECK_OP(name, op, val1, val2)                          \
+  if (std::string* _result =                                    \
+      logging::Check##name##Impl((val1), (val2),                \
+                                 #val1 " " #op " " #val2))      \
+    logging::LogMessage(__FILE__, __LINE__, _result).stream()
+
+#endif
 
 // Build the error message string.  This is separate from the "Impl"
 // function template because it is not performance critical and so can
@@ -488,17 +538,6 @@ std::string* MakeCheckOpString<std::string, std::string>(
     const std::string&, const std::string&, const char* name);
 #endif
 
-// Helper macro for binary operators.
-// Don't use this macro directly in your code, use CHECK_EQ et al below.
-//
-// TODO(akalin): Rewrite this so that constructs like if (...)
-// CHECK_EQ(...) else { ... } work properly.
-#define CHECK_OP(name, op, val1, val2)                          \
-  if (std::string* _result =                                    \
-      logging::Check##name##Impl((val1), (val2),                \
-                                 #val1 " " #op " " #val2))      \
-    logging::LogMessage(__FILE__, __LINE__, _result).stream()
-
 // Helper functions for CHECK_OP macro.
 // The (int, int) specialization works around the issue that the compiler
 // will not instantiate the template version of the function on values of
@@ -529,14 +568,7 @@ DEFINE_CHECK_OP_IMPL(GT, > )
 #define CHECK_GE(val1, val2) CHECK_OP(GE, >=, val1, val2)
 #define CHECK_GT(val1, val2) CHECK_OP(GT, > , val1, val2)
 
-// http://crbug.com/16512 is open for a real fix for this.  For now, Windows
-// uses OFFICIAL_BUILD and other platforms use the branding flag when NDEBUG is
-// defined.
-#if ( defined(OS_WIN) && defined(OFFICIAL_BUILD)) || \
-    (!defined(OS_WIN) && defined(NDEBUG) && defined(GOOGLE_CHROME_BUILD))
-// Used by unit tests.
-#define LOGGING_IS_OFFICIAL_BUILD
-
+#if LOGGING_IS_OFFICIAL_BUILD
 // In order to have optimized code for official builds, remove DLOGs and
 // DCHECKs.
 #define ENABLE_DLOG 0
@@ -572,15 +604,12 @@ DEFINE_CHECK_OP_IMPL(GT, > )
 // is not defined).  Contrast this with DCHECK et al., which has
 // different behavior.
 
-#define DLOG_EAT_STREAM_PARAMETERS                                      \
-  true ? (void) 0 : ::logging::LogMessageVoidify() & LOG_STREAM(FATAL)
-
 #define DLOG_IS_ON(severity) false
-#define DLOG_IF(severity, condition) DLOG_EAT_STREAM_PARAMETERS
-#define DLOG_ASSERT(condition) DLOG_EAT_STREAM_PARAMETERS
-#define DPLOG_IF(severity, condition) DLOG_EAT_STREAM_PARAMETERS
-#define DVLOG_IF(verboselevel, condition) DLOG_EAT_STREAM_PARAMETERS
-#define DVPLOG_IF(verboselevel, condition) DLOG_EAT_STREAM_PARAMETERS
+#define DLOG_IF(severity, condition) EAT_STREAM_PARAMETERS
+#define DLOG_ASSERT(condition) EAT_STREAM_PARAMETERS
+#define DPLOG_IF(severity, condition) EAT_STREAM_PARAMETERS
+#define DVLOG_IF(verboselevel, condition) EAT_STREAM_PARAMETERS
+#define DVPLOG_IF(verboselevel, condition) EAT_STREAM_PARAMETERS
 
 #endif  // ENABLE_DLOG
 
@@ -922,8 +951,12 @@ inline std::ostream& operator<<(std::ostream& out, const std::wstring& wstr) {
 //   5 -- LOG(ERROR) at runtime, only once per call-site
 
 #ifndef NOTIMPLEMENTED_POLICY
+#if defined(OS_ANDROID) && defined(OFFICIAL_BUILD)
+#define NOTIMPLEMENTED_POLICY 0
+#else
 // Select default policy: LOG(ERROR)
 #define NOTIMPLEMENTED_POLICY 4
+#endif
 #endif
 
 #if defined(COMPILER_GCC)
@@ -935,7 +968,7 @@ inline std::ostream& operator<<(std::ostream& out, const std::wstring& wstr) {
 #endif
 
 #if NOTIMPLEMENTED_POLICY == 0
-#define NOTIMPLEMENTED() ;
+#define NOTIMPLEMENTED() EAT_STREAM_PARAMETERS
 #elif NOTIMPLEMENTED_POLICY == 1
 // TODO, figure out how to generate a warning
 #define NOTIMPLEMENTED() COMPILE_ASSERT(false, NOT_IMPLEMENTED)
@@ -947,18 +980,11 @@ inline std::ostream& operator<<(std::ostream& out, const std::wstring& wstr) {
 #define NOTIMPLEMENTED() LOG(ERROR) << NOTIMPLEMENTED_MSG
 #elif NOTIMPLEMENTED_POLICY == 5
 #define NOTIMPLEMENTED() do {\
-  static int count = 0;\
-  LOG_IF(ERROR, 0 == count++) << NOTIMPLEMENTED_MSG;\
-} while(0)
+  static bool logged_once = false;\
+  LOG_IF(ERROR, !logged_once) << NOTIMPLEMENTED_MSG;\
+  logged_once = true;\
+} while(0);\
+EAT_STREAM_PARAMETERS
 #endif
-
-namespace base {
-
-class StringPiece;
-
-// Allows StringPiece to be logged.
-BASE_EXPORT std::ostream& operator<<(std::ostream& o, const StringPiece& piece);
-
-}  // namespace base
 
 #endif  // BASE_LOGGING_H_

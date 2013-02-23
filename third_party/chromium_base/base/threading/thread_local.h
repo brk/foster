@@ -47,7 +47,6 @@
 
 #ifndef BASE_THREADING_THREAD_LOCAL_H_
 #define BASE_THREADING_THREAD_LOCAL_H_
-#pragma once
 
 #include "base/base_export.h"
 #include "base/basictypes.h"
@@ -93,7 +92,8 @@ class ThreadLocalPointer {
   }
 
   void Set(Type* ptr) {
-    internal::ThreadLocalPlatform::SetValueInSlot(slot_, ptr);
+    internal::ThreadLocalPlatform::SetValueInSlot(
+        slot_, const_cast<void*>(static_cast<const void*>(ptr)));
   }
 
  private:

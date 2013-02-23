@@ -1,11 +1,10 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/threading/thread_restrictions.h"
 
-// This entire file is compiled out in Release mode.
-#ifndef NDEBUG
+#if ENABLE_THREAD_RESTRICTIONS
 
 #include "base/lazy_instance.h"
 #include "base/logging.h"
@@ -15,11 +14,14 @@ namespace base {
 
 namespace {
 
-LazyInstance<ThreadLocalBoolean, LeakyLazyInstanceTraits<ThreadLocalBoolean> >
+LazyInstance<ThreadLocalBoolean>::Leaky
     g_io_disallowed = LAZY_INSTANCE_INITIALIZER;
 
-LazyInstance<ThreadLocalBoolean, LeakyLazyInstanceTraits<ThreadLocalBoolean> >
+LazyInstance<ThreadLocalBoolean>::Leaky
     g_singleton_disallowed = LAZY_INSTANCE_INITIALIZER;
+
+LazyInstance<ThreadLocalBoolean>::Leaky
+    g_wait_disallowed = LAZY_INSTANCE_INITIALIZER;
 
 }  // anonymous namespace
 
@@ -42,6 +44,7 @@ void ThreadRestrictions::AssertIOAllowed() {
   }
 }
 
+// static
 bool ThreadRestrictions::SetSingletonAllowed(bool allowed) {
   bool previous_disallowed = g_singleton_disallowed.Get().Get();
   g_singleton_disallowed.Get().Set(!allowed);
@@ -58,6 +61,25 @@ void ThreadRestrictions::AssertSingletonAllowed() {
   }
 }
 
+// static
+void ThreadRestrictions::DisallowWaiting() {
+  g_wait_disallowed.Get().Set(true);
+}
+
+// static
+void ThreadRestrictions::AssertWaitAllowed() {
+  if (g_wait_disallowed.Get().Get()) {
+    LOG(FATAL) << "Waiting is not allowed to be used on this thread to prevent"
+               << "jank and deadlock.";
+  }
+}
+
+bool ThreadRestrictions::SetWaitAllowed(bool allowed) {
+  bool previous_disallowed = g_wait_disallowed.Get().Get();
+  g_wait_disallowed.Get().Set(!allowed);
+  return !previous_disallowed;
+}
+
 }  // namespace base
 
-#endif  // NDEBUG
+#endif  // ENABLE_THREAD_RESTRICTIONS

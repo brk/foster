@@ -1,10 +1,6 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
-#ifndef FOSTER_ENABLED
-#define FOSTER_ENABLED 0
-#endif
 
 #include "base/logging.h"
 
@@ -49,12 +45,14 @@ typedef pthread_mutex_t* MutexHandle;
 #include <ostream>
 
 #include "base/base_switches.h"
-//#include "base/command_line.h"
+#include "base/command_line.h"
+#include "base/debug/alias.h"
 #include "base/debug/debugger.h"
-//#include "base/debug/stack_trace.h"
-#include "base/eintr_wrapper.h"
+#include "base/debug/stack_trace.h"
+#include "base/posix/eintr_wrapper.h"
 #include "base/string_piece.h"
 #include "base/synchronization/lock_impl.h"
+#include "base/threading/platform_thread.h"
 #include "base/utf_string_conversions.h"
 #include "base/vlog.h"
 #if defined(OS_POSIX)
@@ -68,7 +66,11 @@ typedef pthread_mutex_t* MutexHandle;
 namespace logging {
 
 DcheckState g_dcheck_state = DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS;
+
+namespace {
+
 VlogInfo* g_vlog_info = NULL;
+VlogInfo* g_vlog_info_prev = NULL;
 
 const char* const log_severity_names[LOG_NUM_SEVERITIES] = {
   "INFO", "WARNING", "ERROR", "ERROR_REPORT", "FATAL" };
@@ -126,22 +128,6 @@ int32 CurrentProcessId() {
   return GetCurrentProcessId();
 #elif defined(OS_POSIX)
   return getpid();
-#endif
-}
-
-int32 CurrentThreadId() {
-#if defined(OS_WIN)
-  return GetCurrentThreadId();
-#elif defined(OS_MACOSX)
-  return mach_thread_self();
-#elif defined(OS_LINUX)
-  return syscall(__NR_gettid);
-#elif defined(OS_ANDROID)
-  return gettid();
-#elif defined(OS_NACL)
-  return pthread_self();
-#elif defined(OS_POSIX)
-  return reinterpret_cast<int64>(pthread_self());
 #endif
 }
 
@@ -354,26 +340,33 @@ bool InitializeLogFileHandle() {
   return true;
 }
 
+}  // namespace
+
+
 bool BaseInitLoggingImpl(const PathChar* new_log_file,
                          LoggingDestination logging_dest,
                          LogLockingState lock_log,
                          OldFileDeletionState delete_old,
                          DcheckState dcheck_state) {
   g_dcheck_state = dcheck_state;
-  delete g_vlog_info;
-  g_vlog_info = NULL;
-#if FOSTER_ENABLED
+// TODO(bbudge) Hook this up to NaCl logging.
+#if !defined(OS_NACL)
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
   // Don't bother initializing g_vlog_info unless we use one of the
   // vlog switches.
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kV) ||
       command_line->HasSwitch(switches::kVModule)) {
+    // NOTE: If g_vlog_info has already been initialized, it might be in use
+    // by another thread. Don't delete the old VLogInfo, just create a second
+    // one. We keep track of both to avoid memory leak warnings.
+    CHECK(!g_vlog_info_prev);
+    g_vlog_info_prev = g_vlog_info;
+
     g_vlog_info =
         new VlogInfo(command_line->GetSwitchValueASCII(switches::kV),
                      command_line->GetSwitchValueASCII(switches::kVModule),
                      &min_log_level);
   }
-#endif
 
   LoggingLock::Init(lock_log, new_log_file);
 
@@ -400,6 +393,10 @@ bool BaseInitLoggingImpl(const PathChar* new_log_file,
     DeleteFilePath(*log_file_name);
 
   return InitializeLogFileHandle();
+#else
+  (void) g_vlog_info_prev;
+  return true;
+#endif  // !defined(OS_NACL)
 }
 
 void SetMinLogLevel(int level) {
@@ -416,8 +413,11 @@ int GetVlogVerbosity() {
 
 int GetVlogLevelHelper(const char* file, size_t N) {
   DCHECK_GT(N, 0U);
-  return g_vlog_info ?
-      g_vlog_info->GetVlogLevel(base::StringPiece(file, N - 1)) :
+  // Note: g_vlog_info may change on a different thread during startup
+  // (but will always be valid or NULL).
+  VlogInfo* vlog_info = g_vlog_info;
+  return vlog_info ?
+      vlog_info->GetVlogLevel(base::StringPiece(file, N - 1)) :
       GetVlogVerbosity();
 }
 
@@ -558,7 +558,7 @@ LogMessage::LogMessage(const char* file, int line, LogSeverity severity,
 LogMessage::~LogMessage() {
   // TODO(port): enable stacktrace generation on LOG_FATAL once backtrace are
   // working in Android.
-#if FOSTER_ENABLED && !defined(NDEBUG) && !defined(OS_ANDROID)
+#if  !defined(NDEBUG) && !defined(OS_ANDROID) && !defined(OS_NACL)
   if (severity_ == LOG_FATAL) {
     // Include a stack trace on a fatal.
     base::debug::StackTrace trace;
@@ -638,6 +638,12 @@ LogMessage::~LogMessage() {
   }
 
   if (severity_ == LOG_FATAL) {
+    // Ensure the first characters of the string are on the stack so they
+    // are contained in minidumps for diagnostic purposes.
+    char str_stack[1024];
+    str_newline.copy(str_stack, arraysize(str_stack));
+    base::debug::Alias(str_stack);
+
     // display a message or break into the debugger on a fatal error
     if (base::debug::BeingDebugged()) {
       base::debug::BreakDebugger();
@@ -681,7 +687,7 @@ void LogMessage::Init(const char* file, int line) {
   if (log_process_id)
     stream_ << CurrentProcessId() << ':';
   if (log_thread_id)
-    stream_ << CurrentThreadId() << ':';
+    stream_ << base::PlatformThread::CurrentId() << ':';
   if (log_timestamp) {
     time_t t = time(NULL);
     struct tm local_time = {0};
@@ -785,6 +791,10 @@ Win32ErrorLogMessage::~Win32ErrorLogMessage() {
     stream() << ": Error " << GetLastError() << " while retrieving error "
         << err_;
   }
+  // We're about to crash (CHECK). Put |err_| on the stack (by placing it in a
+  // field) and use Alias in hopes that it makes it into crash dumps.
+  DWORD last_error = err_;
+  base::debug::Alias(&last_error);
 }
 #elif defined(OS_POSIX)
 ErrnoLogMessage::ErrnoLogMessage(const char* file,
@@ -841,20 +851,11 @@ void RawLog(int level, const char* message) {
     base::debug::BreakDebugger();
 }
 
+// This was defined at the beginning of this file.
+#undef write
+
 }  // namespace logging
 
 std::ostream& operator<<(std::ostream& out, const wchar_t* wstr) {
   return out << WideToUTF8(std::wstring(wstr));
 }
-
-namespace base {
-
-// This was defined at the beginnig of this file.
-#undef write
-
-std::ostream& operator<<(std::ostream& o, const StringPiece& piece) {
-  o.write(piece.data(), static_cast<std::streamsize>(piece.size()));
-  return o;
-}
-
-}  // namespace base
