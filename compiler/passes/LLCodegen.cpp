@@ -388,6 +388,12 @@ void LLProc::codegenProto(CodegenPass* pass) {
   if (pass->config.useGC) { F->setGC("fostergc"); }
 
   F->setCallingConv(cc);
+
+  // We must not inline foster__main, which is marked with our gc,
+  // into its caller, which is a gc-less function!
+  if (symbolName == kFosterMain) {
+    F->addFnAttr(llvm::Attributes::NoInline);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////
