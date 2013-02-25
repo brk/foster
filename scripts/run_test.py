@@ -172,7 +172,7 @@ def link_to_executable(finalpath, exepath, paths, testpath):
                          'linkflags' : get_link_flags(),
                          'exepath'   : exepath,
                          'rpath'     : rpath(nativelib_dir())
-                       },  paths, testpath)
+                       },  paths, testpath, showcmd=show_cmdlines(options))
 
 def aggregate_results(results):
     fields = ["total_elapsed", "compile_elapsed", "overhead",
@@ -225,7 +225,8 @@ def run_one_test(testpath, paths, tmpdir, progargs):
                 compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir)
 
         if to_asm:
-          rv, as_elapsed = run_command('gcc -g %s.s -c -o %s.o' % (finalpath, finalpath), paths, testpath)
+          rv, as_elapsed = run_command('gcc -g %s.s -c -o %s.o' % (finalpath, finalpath), paths, testpath,
+                                       showcmd=show_cmdlines(options))
         else: # fosteroptc emitted a .o directly.
           as_elapsed = 0
 

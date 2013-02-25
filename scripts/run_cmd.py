@@ -60,8 +60,8 @@ def run_command(cmd, paths, testpath, showcmd=False, stdout=None, stderr=None, s
     cmd = cmd.strip().split(' ')
   arglist = [default_lookup(arg, paths) for arg in cmd]
 
-  (rv, ms) = run_cmd(arglist, stdout=stdout, stderr=stderr, stdin=stdin)
+  (rv, ms) = run_cmd(arglist, showcmd=showcmd, stdout=stdout, stderr=stderr, stdin=stdin)
 
   if strictrv and rv != 0:
-    raise TestFailed(cmdline, testpath)
+    raise TestFailed(cmd, testpath)
   return (rv, ms)
