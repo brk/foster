@@ -1,0 +1,134 @@
+main = {
+  expect_i32 89;
+  print_i32 (noinline_llvm_fooo (natFromInt64 2));
+};
+
+noinline_llvm_fooo = { zzz =>
+  REC loop = { iters : Int32 => x : NatInf => y : NatInf =>
+    if natCountBits x <UInt32 5000
+      then t = natAddSilly x y;
+           loop (iters +Int32 1) t (noinline_llvm_natAddSilly t y)
+      else iters
+    end
+  };
+
+  loop 0 ((natFromInt64 1)) zzz;
+};
+
+natCountBits = { i : NatInf =>
+  a = (natDigits i);
+    fin = noinline_llvm_arrLen32 a -Int32 1;
+
+  // Count the bits used in the digits up to,
+  // but not including, the last one.
+  r0 = fin *Int32 (digitNumBits !);
+
+  // Add the number of bits needed for the last digit.
+  r0  +Int32 (bitlength-Word a[fin])
+};
+
+noinline_llvm_arrLen32 :: forall x:Type, { Array x => Int32 };
+noinline_llvm_arrLen32 = { forall t:Type, a : Array t =>
+  primitive_trunc_i64_i32 (prim_arrayLength a)
+};
+
+arrLen32 :: forall x:Type, { Array x => Int32 };
+arrLen32 = { forall t:Type, a : Array t =>
+  primitive_trunc_i64_i32 (prim_arrayLength a)
+};
+
+mkNatInf = { a => NatInf a };
+
+mkNatVia :: { Int32 => { Int32 => Word } => NatInf };
+mkNatVia = { n => f =>
+  mkNatInf (newDArray0:[Word] n f);
+};
+
+// Initializes slot a[k] with (f k)
+newDArray0 = { forall v:Type,
+                n : Int32 =>
+                f : { Int32 => v } =>
+  a = allocDArray:[v] n;
+  x = (ref n);
+
+  until x^ ==Int32 0 then
+    let y  = x^ -Int32 1; in
+      (f y) >^ a[y];
+         y  >^ x
+    end
+  end;
+  a
+};
+
+digitNumBits :: { Int32 };
+digitNumBits = { wordNumBits32 !  -Int32 4 };
+
+digitNumBitsWord :: { Word };
+digitNumBitsWord = { primitive_zext_i32_to_Word (digitNumBits !) };
+
+digitNumBitsMask :: { Word };
+digitNumBitsMask = {
+  (bitshl-Word 1 (primitive_zext_i32_to_Word (digitNumBits !))
+         -Word 1)
+};
+natFromInt64 :: { Int64 => NatInf };
+natFromInt64 = { i =>
+  // Might need 3x 28-bit words for a 64-bit nat.
+  mkNatVia 3 { n : Int32 =>
+    shiftAmount = digitNumBits ! *Int32 n;
+    if shiftAmount >=SInt32 64
+      then 0
+      else bitand-Word (digitNumBitsMask !)
+              (primitive_trunc_i64_to_Word (bitlshr-Int64 i
+                               (primitive_sext_i64_i32 shiftAmount)));
+    end
+  };
+};
+
+natAddSilly :: { NatInf => NatInf => NatInf };
+natAddSilly =  { a => b =>
+  NatInf (foster_nat_add_digits_silly (natDigits a) (natDigits b));
+};
+
+natDigits :: { NatInf => Array Word };
+natDigits = { n =>
+  case n of $NatInf a -> a end
+};
+
+noinline_llvm_natAddSilly :: { NatInf => NatInf => NatInf };
+noinline_llvm_natAddSilly =  { a => b =>
+  NatInf (foster_nat_add_digits_silly (natDigits a) (natDigits b));
+};
+
+foster_nat_add_digits_silly :: { Array Word => Array Word => Array Word };
+foster_nat_add_digits_silly = { a => b =>
+    lg_size = if (arrLen32 a) >SInt32 (arrLen32 b) then arrLen32 a else arrLen32 b end;
+    c = allocDArray:[Word] (lg_size +Int32 1);
+    c
+};
+
+type case NatInf
+      of $NatInf (Array Word)
+      ;
+
+bitlength-Word :: { Word => Int32 };
+bitlength-Word = { k =>
+  rec go = { x => acc =>
+                 if x ==Word 0
+                   then acc
+                   else go (bitlshr-Word x 1) (acc +Int32 1)
+                 end
+           };
+  in
+    go k 0
+  end
+};
+wordNumBits32 :: { Int32 };
+wordNumBits32 = {
+
+    if 0 ==Word bitxor-Word (-1) 0FFFF`FFFF_16
+      then 32
+      else 64
+    end
+
+};

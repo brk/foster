@@ -39,7 +39,7 @@ import Control.Monad.State(evalStateT, get, put, modify, StateT, lift, gets)
 --             pre-codegen preparations.
 
 showOptResults = False
-doReuseRootSlots = True
+gDoReuseRootSlots = True
 
 --------------------------------------------------------------------
 
@@ -76,7 +76,7 @@ doReuseRootSlots = True
 -- If we only insert kills after uses, we will fail to kill b on the T path,
 -- likewise a on the S path.
 --
--- So we take a six-stage (!) approach to inserting roots, detailed below.
+-- So we take a nine-stage (!!!) approach to inserting roots, detailed below.
 --
 -- An alternate design would annotate BB headers & terminators with their
 -- live/dead sets, and then propagate that information forward, using the
@@ -93,32 +93,40 @@ insertSmartGCRoots :: BasicBlockGraph' -> Map Ident MayGC -> Bool -> Compiled ( 
 insertSmartGCRoots bbgp0 mayGCmap dump = do
   --   1) Run a rewriting (non-dataflow) pass to insert root initializers
   --      at first uses, and insert disabled kill markers after each use.
-  bbgp'0 <- insertDumbGCRoots bbgp0 dump
+  bbgp'1 <- insertDumbGCRoots bbgp0 dump
 
   --   2) Fold to compute the (root, initializing variable) relation/mapping.
-  let gcr = computeGCRootsForVars bbgp'0
+  let gcr = computeGCRootsForVars bbgp'1
 
-  --   3) Run a rewriting (non-dataflow) pass to insert root kills for *every*
-  --      root at *every* basic block.
-  bbgp' <- insertDumbGCKills bbgp'0 dump (Map.elems gcr)
-  --bbgp' <- return bbgp'0
-
-  --   4) Run a backwards liveness pass to compute:
+  --   3) Run a backwards liveness pass to compute:
   --        * What the set of live roots are, when a GC might occur.
   --      This pass also enables kills (after trimming out live roots).
-  (bbgp'' , rootsLiveAtGCPoints) <- runLiveAtGCPoint2 bbgp' mayGCmap
+  (bbgp'2 , rootsLiveAtGCPoints) <- runLiveAtGCPoint2 bbgp'1 mayGCmap
 
-  --   5) Run a rewriting pass to remove actions referencing dead roots.
-  bbgp'''  <- removeDeadGCRoots bbgp'' (mapInverse gcr) rootsLiveAtGCPoints
+  --   4) Run a rewriting pass to remove actions referencing dead roots.
+  bbgp'3  <- removeDeadGCRoots bbgp'2 (mapInverse gcr) rootsLiveAtGCPoints
+
+  --   5) Run a rewriting (non-dataflow) pass to insert root kills for *every*
+  --      root at *every* basic block.
+  bbgp'4 <- insertDumbGCKills bbgp'3 dump (Map.elems gcr)
 
   --   6) Run a forwards pass to trim redundant kills.
-  bbgp'''' <- runAvails bbgp''' rootsLiveAtGCPoints mayGCmap
+  --      If we are configured to reuse root slots,
+  --      this is where we do it.
+  bbgp'5a <- runAvails bbgp'4 rootsLiveAtGCPoints mayGCmap gDoReuseRootSlots
+
+  -- runAvails might have reused a root slot in a forwards pass, which might
+  -- have invalidated liveness information (backwards pass). So we'll re-run the
+  -- backwards pass, and finish with runAvails configured not to reuse slots.
+  (bbgp'5b , rootsLiveAtGCPoints'5b) <- runLiveAtGCPoint2 bbgp'5a mayGCmap
+  bbgp'5c  <- removeDeadGCRoots bbgp'5b (mapInverse gcr) rootsLiveAtGCPoints'5b
+  bbgp'5d <- runAvails bbgp'5c rootsLiveAtGCPoints'5b mayGCmap False
 
   lift $ when (showOptResults || dump) $ do
               putStrLn "difference from runAvails:"
-              Boxes.printBox $ catboxes2 (bbgpBody bbgp''') (bbgpBody bbgp'''' )
+              Boxes.printBox $ catboxes2 (bbgpBody bbgp'4) (bbgpBody bbgp'5d )
 
-  let bbgp_final = bbgp''''
+  let bbgp_final = bbgp'5d
   return ( bbgp_final , computeUsedRoots bbgp_final )
   -- We need to return the set of live roots so LLVM codegen can create them
   -- in advance.
@@ -281,7 +289,6 @@ boxify b = v Boxes.<> (h Boxes.// b Boxes.// h) Boxes.<> v
 -- unneeded roots, and incorrectly-placed kill marks.
 insertDumbGCRoots :: BasicBlockGraph' -> Bool -> Compiled BasicBlockGraph'
 insertDumbGCRoots bbgp dump = do
-   -- HIRO runAvails / runWithUniqAndFuel uref infiniteFuel (go bbgp)
    g'  <- evalStateT (rebuildGraphM (case bbgpEntry bbgp of (bid, _) -> bid)
                                     (bbgpBody bbgp) transform)
                              Map.empty
@@ -474,7 +481,7 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
                                                (mkLast $ CCLast (CCCall b t id v' vs' )))
     CCLast (CCCase v arms mb occ) -> do undoDeadGCLoads [v] (\[v' ] ->
                                                (mkLast $ CCLast (CCCase v' arms mb occ)))
-    CCRebindId     {}             -> do error $ "CCRebindId should not have been introduced yet!"
+    CCRebindId     {}             -> do return $ mkMiddle $ insn
 
   varForRoot_t root = let rv = varForRoot (trace ("varForRoot " ++ show root) root) in
                       trace ("varForRoot " ++ show root ++ " ==> " ++ show (pretty rv)) rv
@@ -648,8 +655,8 @@ availsXfer mayGCmap = mkFTransfer3 go go (distributeXfer availsLattice go)
     unkill f root  = f { unkilledRoots = unkilledRoots f `addAvail`  root
                        , initedRoots   = initedRoots f   `addAvail`  root }
 
-availsRewrite :: forall m. FuelMonad m => RootLiveWhenGC -> FwdRewrite m Insn' Avails
-availsRewrite allRoots = mkFRewrite d
+availsRewrite :: forall m. FuelMonad m => RootLiveWhenGC -> Bool -> FwdRewrite m Insn' Avails
+availsRewrite allRoots doReuseRootSlots = mkFRewrite d
   where
     d :: Insn' e x -> Avails -> m (Maybe (Graph Insn' e x))
     d (CCLabel      {}       )   _    = return Nothing
@@ -730,9 +737,9 @@ availsRewrite allRoots = mkFRewrite d
               s -> error $ "GCRoots.hs: Expected avail. subst to map " ++ show v
                            ++ " to zero or one variables, but had " ++ show s
 
-runAvails :: BasicBlockGraph' -> RootLiveWhenGC -> Map Ident MayGC
+runAvails :: BasicBlockGraph' -> RootLiveWhenGC -> Map Ident MayGC -> Bool
                                                 -> Compiled BasicBlockGraph'
-runAvails bbgp rootsLiveAtGCPoints mayGCmap = do
+runAvails bbgp rootsLiveAtGCPoints mayGCmap doReuseRootSlots = do
          uref <- gets ccUniqRef
          lift $ runWithUniqAndFuel uref infiniteFuel (go bbgp)
   where
@@ -754,7 +761,7 @@ runAvails bbgp rootsLiveAtGCPoints mayGCmap = do
     --_fwd = debugFwdJoins trace (\_ -> True) fwd
     fwd = FwdPass { fp_lattice  = availsLattice
                   , fp_transfer = availsXfer mayGCmap
-                  , fp_rewrite  = availsRewrite rootsLiveAtGCPoints
+                  , fp_rewrite  = availsRewrite rootsLiveAtGCPoints doReuseRootSlots
                   }
 
 --showing :: Insn' e x -> String
