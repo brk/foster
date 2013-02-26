@@ -391,7 +391,7 @@ void LLProc::codegenProto(CodegenPass* pass) {
 
   // We must not inline foster__main, which is marked with our gc,
   // into its caller, which is a gc-less function!
-  if (symbolName == kFosterMain) {
+  if (symbolName == kFosterMain || F->getName().find("noinline_llvm_") == 0) {
     F->addFnAttr(llvm::Attributes::NoInline);
   }
 }
