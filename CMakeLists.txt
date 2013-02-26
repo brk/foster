@@ -7,7 +7,7 @@ cmake_policy(VERSION 2.8.0)
 
 set(LIBRARY_OUTPUT_PATH ${PROJECT_BINARY_DIR}/_nativelibs_)
 
-set(LLVM_VERSION 3.0)
+set(LLVM_VERSION 3.2)
 
 # ~~~~~~~~~~~~~~~~~~~~ ANTLR ~~~~~~~~~~~~~~~~~~~~~
 
@@ -423,7 +423,6 @@ add_library(fosterc_llvm STATIC
 )
 add_dependencies(fosterc_llvm fosterc_base)
 
-
 add_library(fosterc_passes STATIC
   compiler/passes/DumpToProtobuf.cpp
   compiler/passes/PrettyPrintPass.cpp
@@ -490,7 +489,7 @@ add_dependencies(libfoster_bc coro)
 
 
 set_target_properties(
-  fosterc_passes fosterc_parse 
+  fosterc_passes fosterc_parse
   PROPERTIES
   COMPILE_FLAGS -Wall
 )
@@ -498,7 +497,7 @@ set_target_properties(
 # These files contain code which inherits from LLVM classes,
 # or uses llvm::cl, and thus must be compiled without RTTI.
 set_target_properties(fosterc_llvm fosterc_base
-                      fosterlower fosteroptc fosterparse 
+                      fosterlower fosteroptc fosterparse
   PROPERTIES
   COMPILE_FLAGS ${LLVM_EXTRA_CFLAGS}
 )
