@@ -43,7 +43,7 @@ doReuseRootSlots = True
 
 --------------------------------------------------------------------
 
--- Every potentially-GCing operation can potentially invalidate
+-- Every potentially-GCing operation could invalidate
 -- every value stored in the root slots, so we must insert reloads
 -- from slots between GC points and uses. The simplest strategy
 -- is to insert reloads immediately after each GC point. But consider
@@ -58,9 +58,31 @@ doReuseRootSlots = True
 -- lifetime markers, which will help LLVM generate better code for
 -- inlined functions. The most straightforward way of doing so would
 -- be to run a liveness analysis and transformation that inserts
--- liveness markers after loads, but unfortunately that would require
--- a backwards analysis combined with a forward rewrite, which Hoopl
--- does not support.
+-- liveness markers after loads. Unfortunately that has two problems:
+---First, it would require a backwards analysis combined with a
+-- forward rewrite, which Hoopl does not support. To avoid this problem,
+-- we'll first place "disabled" markers in a forward pass, then remove/enable
+-- them in a separate backwards, liveness-based pass. Second, placing markers
+-- after loads alone is insufficient to achieve precise GC root placement.
+-- In particular, consider a CFG like this::
+--
+--      E: [gen a,b ; condbr T S]    << note: a, b both live here
+--      T: [                         << note: b dead here!
+--           use a  ;
+--           br F]
+--      S: [use b   ;     br F]
+--      F: [ret]
+--
+-- If we only insert kills after uses, we will fail to kill b on the T path,
+-- likewise a on the S path.
+--
+-- So we take a six-stage (!) approach to inserting roots, detailed below.
+--
+-- An alternate design would annotate BB headers & terminators with their
+-- live/dead sets, and then propagate that information forward, using the
+-- differences to guide placement of GC root kills at BB headers. The main
+-- reason we don't is that doing so would involve extending the definition of
+-- BasicBlockGraph' and/or ILExpr, which would be a hassle.
 
 type GCRootsForVariables = Map LLVar RootVar
 type VariablesForGCRoots = Map RootVar LLVar
@@ -69,11 +91,28 @@ type VariablesForGCRoots = Map RootVar LLVar
 -- Precondition: may-gc analysis has updated the annotations in the graph.
 insertSmartGCRoots :: BasicBlockGraph' -> Map Ident MayGC -> Bool -> Compiled ( BasicBlockGraph' , [RootVar] )
 insertSmartGCRoots bbgp0 mayGCmap dump = do
-  bbgp'    <- insertDumbGCRoots bbgp0 dump
-  let gcr = computeGCRootsForVars bbgp'
+-- AAAAAAAA
 
+  --   1) Run a rewriting (non-dataflow) pass to insert root initializers
+  --      at first uses, and insert disabled kill markers after each use.
+  bbgp'0 <- insertDumbGCRoots bbgp0 dump
+
+  --   2) Fold to compute the (root, initializing variable) relation/mapping.
+  let gcr = computeGCRootsForVars bbgp'0
+
+  --   3) Run a rewriting (non-dataflow) pass to insert root kills for *every*
+  --      root at *every* basic block.
+  --bbgp' <- insertDumbGCKills bbgp'0 dump (Map.elems gcr)
+  bbgp' <- return bbgp'0
+
+  --   4) Run a backwards liveness pass to compute:
+  --        * What the set of live roots are, when a GC might occur.
   (bbgp'' , rootsLiveAtGCPoints) <- runLiveAtGCPoint2 bbgp' mayGCmap
+
+  --   5) Run a rewriting pass to remove actions referencing dead roots.
   bbgp'''  <- removeDeadGCRoots bbgp'' (mapInverse gcr) rootsLiveAtGCPoints
+
+  --   6) Run a forwards pass to trim redundant kills.
   bbgp'''' <- runAvails bbgp''' rootsLiveAtGCPoints mayGCmap
 
   lift $ when (showOptResults || dump) $ do
@@ -241,34 +280,6 @@ boxify b = v Boxes.<> (h Boxes.// b Boxes.// h) Boxes.<> v
 -- In a later flow-driven pass, we'll figure out which roots are really needed,
 -- and remove redundant loads (TODO),
 -- unneeded roots, and incorrectly-placed kill marks.
---
--- There's one unusual subtlety here: in addition to generating (disabled)
--- kill markers after each load from a root, we also generate markers at the
--- start of each basic block. The reason is due to code like this::
---      (... ; if use x then compute-without-x else reuse x end)
---
--- This will get translated to
---      ...                                    ...
---      x.load = gcload from x.root            x.load = gcload from x.root
---      tmp = call use x.load                  tmp = call use x.load
---      kill x.root (disabled)                 // removed; x.root is live!
---      cond tmp Lthen Lelse                   cond tmp Lthen Lelse
---    Lthen:                                 Lthen:
---      tmp3 = call compute-without-x ()       tmp3 = call compute-without-x ()
---      ret tmp3                               ret tmp3
---    Lelse:                                 Lelse:
---      x.load2 = gcload from x.root           x.load2 = gcload from x.root
---      kill x.root (disabled)                 kill x.root (enabled) // x.root dead
---      tmp2 = call reuse x.load2              tmp2 = call reuse x.load2
---      ret tmp2                               ret tmp2
---
--- The problem is that, in order to be safe-for-space, x.root should be
--- deallocatable while we're running compute-without-x, but as translated
--- above, we never kill the root slot!
---
--- So we must insert kills for dead root slots at the start of basic blocks.
--- To avoid having redundant kills, we'll only keep the kills which have a
--- potential-GC point in their continuation.
 insertDumbGCRoots :: BasicBlockGraph' -> Bool -> Compiled BasicBlockGraph'
 insertDumbGCRoots bbgp dump = do
    -- HIRO runAvails / runWithUniqAndFuel uref infiniteFuel (go bbgp)
@@ -329,7 +340,8 @@ insertDumbGCRoots bbgp dump = do
               rootid <- fresh (show (tidIdent v) ++ ".root")
               let root = TypedId (tidType v) rootid
               modify (Map.insert v root)
-              return . mkMiddle $ CCGCInit junk v root
+              return $ --trace ("maybeRootInitializer: adding gcinit for root " ++ show (tidIdent root)) $
+                       mkMiddle $ CCGCInit junk v root
 
   -- A helper function to assist in rewriting instructions to use loads from
   -- GC roots for variables which are subject to garbage collection.
@@ -367,6 +379,55 @@ insertDumbGCRoots bbgp dump = do
                                  let root = TypedId (tidType v) rootid
                                  put (Map.insert v root gcr)
                                  retLoaded root
+
+-- There's one unusual subtlety here: in addition to generating (disabled)
+-- kill markers after each load from a root, we also generate markers at the
+-- start of each basic block. The reason is due to code like this::
+--      (... ; if use x then compute-without-x else reuse x end)
+--
+-- This will get translated to
+--      ...                                    ...
+--      x.load = gcload from x.root            x.load = gcload from x.root
+--      tmp = call use x.load                  tmp = call use x.load
+--      kill x.root (disabled)                 // removed; x.root is live!
+--      cond tmp Lthen Lelse                   cond tmp Lthen Lelse
+--    Lthen:                                 Lthen:
+--      tmp3 = call compute-without-x ()       tmp3 = call compute-without-x ()
+--      ret tmp3                               ret tmp3
+--    Lelse:                                 Lelse:
+--      x.load2 = gcload from x.root           x.load2 = gcload from x.root
+--      kill x.root (disabled)                 kill x.root (enabled) // x.root dead
+--      tmp2 = call reuse x.load2              tmp2 = call reuse x.load2
+--      ret tmp2                               ret tmp2
+--
+-- The problem is that, in order to be safe-for-space, x.root should be
+-- deallocatable while we're running compute-without-x, but as translated
+-- above, we never kill the root slot!
+--
+-- So we must insert kills for dead root slots at the start of basic blocks.
+-- To avoid having redundant kills, we'll only keep the kills which have a
+-- potential-GC point in their continuation.
+insertDumbGCKills :: BasicBlockGraph' -> Bool -> [RootVar] -> Compiled BasicBlockGraph'
+insertDumbGCKills bbgp dump allroots = do
+   -- HIRO runAvails / runWithUniqAndFuel uref infiniteFuel (go bbgp)
+   g'  <- rebuildGraphM (case bbgpEntry bbgp of (bid, _) -> bid)
+                                    (bbgpBody bbgp) transform
+   lift $ when (showOptResults || dump) $ do Boxes.printBox $ catboxes2 (bbgpBody bbgp) g'
+   return bbgp { bbgpBody =  g' }
+ where
+  transform :: forall e x. Insn' e x -> Compiled (Graph Insn' e x)
+  transform insn = case insn of
+    -- See the note above explaining why we generate all these GCKills...
+    CCLabel _ -> do return (mkFirst insn <*> mkMiddle
+                                    (CCGCKill Disabled (Set.fromList allroots)))
+    CCLast _ -> do return $ mkLast insn
+    CCGCInit     {} -> do return $ mkMiddle insn
+    CCGCLoad     {} -> do return $ mkMiddle insn
+    CCGCKill     {} -> do return $ mkMiddle insn
+    CCLetVal     {} -> do return $ mkMiddle insn
+    CCTupleStore {} -> do return $ mkMiddle insn
+    CCLetFuns    {} -> do return $ mkMiddle insn
+    CCRebindId   {} -> do return $ mkMiddle insn
 
 type RootMapped = StateT GCRootsForVariables Compiled
 
@@ -619,28 +680,45 @@ availsRewrite allRoots = mkFRewrite d
               _     -> return replacement
 
     d (CCGCInit j v root0) a =
-      if not doReuseRootSlots || root0 /= s a root0 then return Nothing
+      if (not doReuseRootSlots) || root0 /= s a root0 then return Nothing -- AAAAAAAA
        else
         let root = s a root0 in
         -- Note: we remove the root eligible for replacement from consideration.
         -- Also, if a root is killed in the body of a loop, it will be marked
         -- as such at the head of the loop, so we restrict ourselves to roots
-        -- which have been both initilized and killed (on all paths), not just
+        -- which have been both initialized and killed (on all paths), not just
         -- killed.
         let killedRoots = Set.toList $ (Set.delete root allRoots
                                                 `lessAvail` unkilledRoots a)
                                                   `availFrom` initedRoots a in
         let killedRootsOfRightType = filter (varTypesEq v) killedRoots in
+        let unkill f root  = f { unkilledRoots = unkilledRoots f `addAvail`  root
+                               , initedRoots   = initedRoots f   `addAvail`  root } in
         case killedRootsOfRightType of
           [] -> return Nothing
-          (r:_) -> return $ Just $ mkMiddle (CCRebindId (text "gcinit") root r)
+          (r:_) -> let a1 = unkill a r in
+                   let a2 = unkill a root in
+                   return $ trace ("\navailsRewrite: adding gcinit for root " ++ show (tidIdent root)
+                                         ++ ";\n\tunkilled: " ++ show (unkilledRoots a)
+                                         ++ ";\n\tinited: "   ++ show (initedRoots a)
+                                         ++ ";\n\t    pretending to unkill " ++ show r
+                                         ++ ";\n\tunkilled(1): " ++ show (unkilledRoots a1)
+                                         ++ ";\n\tinited(1): "   ++ show (initedRoots a1)
+                                         ++ ";\n\t    pretending to unkill " ++ show root
+                                         ++ ";\n\tunkilled(2): " ++ show (unkilledRoots a2)
+                                         ++ ";\n\tinited(2): "   ++ show (initedRoots a2)
+                                         ++ ";\n\tallroots "  ++ show (allRoots)
+                                         )
+                          $ Just $ mkMiddle (CCRebindId (text $ "gcinit" ++ if root /= root0 then "; root0 = " ++ show (tidIdent root0) else "; kr: " ++ show (killedRootsOfRightType)) root r)
                                <*> mkMiddle (CCGCInit j v r)
     d (CCGCKill Disabled    _)   _    = return Nothing
-    d (CCGCKill enabled roots)   a = return $ Just $
+    d (CCGCKill enabled roots)   a =
+      let unkilled = (Set.map (s a) roots `availFrom` unkilledRoots a)
+                                          `availFrom` initedRoots   a  in -- AAAAAAAA
+      return $ Just $
         if Set.null unkilled
           then emptyGraph -- Remove kills of killed roots == keep unkilled ones.
           else mkMiddle (CCGCKill enabled unkilled)
-               where unkilled = Set.map (s a) roots `availFrom` unkilledRoots a
     d (CCLast {}             )   _    = return Nothing
 
     varTypesEq v1 v2 = tidType v1 == tidType v2
@@ -672,7 +750,7 @@ runAvails bbgp rootsLiveAtGCPoints mayGCmap = do
                            (mapSingleton blab init)
         return bbgp { bbgpBody = body' }
 
-    -- __fwd = debugFwdTransfers trace showing (\_ _ -> True) fwd
+    --__fwd = debugFwdTransfers trace showing (\_ _ -> True) fwd
     --_fwd = debugFwdJoins trace (\_ -> True) fwd
     fwd = FwdPass { fp_lattice  = availsLattice
                   , fp_transfer = availsXfer mayGCmap
