@@ -24,10 +24,11 @@ namespace {
 class SpecializeAllocations : public BasicBlockPass {
   Constant *memalloc;
   Constant *memalloc_16;
+  bool ready;
 public:
   static char ID;
   explicit SpecializeAllocations() : BasicBlockPass(ID),
-        memalloc(NULL), memalloc_16(NULL) {}
+        memalloc(NULL), memalloc_16(NULL), ready(false) {}
 
   const char* getPassName() const { return "SpecializeAllocations"; }
 
@@ -71,6 +72,7 @@ Pass* createMemallocSpecializerPass() { return new SpecializeAllocations(); }
 bool SpecializeAllocations::doInitialization(Module &M) {
   memalloc    = M.getFunction("memalloc_cell");
   memalloc_16 = M.getFunction("memalloc_cell_16");
+  ready = memalloc && memalloc_16;
   return true;
 }
 
@@ -79,6 +81,7 @@ bool SpecializeAllocations::doInitialization(Module &M) {
 //
 bool SpecializeAllocations::runOnBasicBlock(BasicBlock &BB) {
   if (!BB.getParent()->hasGC()) return false;
+  if (!ready) return false;
 
   bool Changed = false;
   assert(memalloc && memalloc_16 && "Pass not initialized!");
