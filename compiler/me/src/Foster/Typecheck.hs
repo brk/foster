@@ -685,7 +685,7 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
         annbase <- inferRho ctx base "called base"
         let fun_ty = typeAST annbase
         debugDoc $ text "call: fn type is " <> pretty fun_ty
-        (args_ty, res_ty) <- unifyFun fun_ty argexprs ("tSC("++tryGetVarName base++")")
+        (args_ty, res_ty) <- unifyFun fun_ty argexprs ("tSC("++tryGetVarName base++")" ++ highlightFirstLine (annotRange rng))
         debugDoc $ text "call: fn args ty is " <> pretty args_ty
         debug $ "call: arg exprs are " ++ show argexprs
         sanityCheck (eqLen argexprs args_ty) $
@@ -717,7 +717,9 @@ mkAnnCall rng res_ty annbase args =
 
 unifyFun :: Rho -> [a] -> String -> Tc ([Sigma], Rho)
 unifyFun (FnTypeAST args res _cc _cs) _args _msg = return (args, res)
-unifyFun (ForAllAST {}) _ _ = tcFails [text $ "invariant violated: sigma passed to unifyFun!"]
+unifyFun (ForAllAST {}) _ str = tcFails [text $ "invariant violated: sigma passed to unifyFun!"
+                                        ,text $ "For now, lambdas given forall types must be annotated with forall markers."
+                                        ,text str]
 unifyFun tau args msg = do
         arg_tys <- mapM (\_ -> newTcUnificationVarTau "fn args ty") args
         res_ty <- newTcUnificationVarTau ("fn res ty:" ++ msg)
@@ -791,7 +793,7 @@ tcSigmaFn ctx f expTyRaw = do
           Just exp_rho' -> do
                 let var_tys = map tidType uniquelyNamedFormals
                 debugDoc $ string "var_tys: " <+> pretty var_tys
-                (arg_tys, body_ty) <- unifyFun exp_rho' var_tys "poly-fn-lit"
+                (arg_tys, body_ty) <- unifyFun exp_rho' var_tys ("poly-fn-lit" ++ highlightFirstLine rng)
                 mapM checkAgainst (zip arg_tys var_tys)
                 checkRho extCtx (fnAstBody f) body_ty
 
@@ -883,7 +885,7 @@ tcRhoFnHelper ctx f expTy = do
     annbody <- case expTy of
       Infer _    -> do inferSigma extCtx (fnAstBody f) "mono-fn body"
       Check fnty -> do let var_tys = map tidType uniquelyNamedFormals
-                       (arg_tys, body_ty) <- unifyFun fnty var_tys "@"
+                       (arg_tys, body_ty) <- unifyFun fnty var_tys ("@" ++ highlightFirstLine rng)
                        _ <- sequence [subsCheckTy argty varty "mono-fn-arg" |
                                        (argty, varty) <- zip arg_tys var_tys]
                        -- TODO is there an arg translation?
@@ -953,7 +955,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
       let ctxbindings = [varbind id ty | (TypedId ty id) <- bindings]
       verifyNonOverlappingBindings (annotRange rng) "case" ctxbindings
       abody <- tcRho (prependContextBindings ctx ctxbindings) body expTy
-      unify u (typeAST abody) ("Failed to unify all branches of case " ++ show rng)
+      unify u (typeAST abody) ("Failed to unify all branches of case " ++ highlightFirstLine (annotRange rng))
       return ((p, bindings), abody)
   abranches <- forM branches checkBranch
   matchExp expTy (AnnCase rng u ascrutinee abranches) "case"
@@ -1071,8 +1073,8 @@ subsCheckRhoTy (ForAllAST ktvs rho) rho2 = do -- Rule SPEC
              taus <- genTauUnificationVarsLike ktvs (\n -> "instSigma type parameter " ++ show n)
              rho1 <- instSigmaWith ktvs rho taus
              subsCheckRhoTy rho1 rho2
-subsCheckRhoTy rho1 (FnTypeAST as2 r2 _ _) = unifyFun rho1 as2 "!" >>= \(as1, r1) -> subsCheckFunTy as1 r1 as2 r2
-subsCheckRhoTy (FnTypeAST as1 r1 _ _) rho2 = unifyFun rho2 as1 "!" >>= \(as2, r2) -> subsCheckFunTy as1 r1 as2 r2
+subsCheckRhoTy rho1 (FnTypeAST as2 r2 _ _) = unifyFun rho1 as2 "subsCheckRhoTy" >>= \(as1, r1) -> subsCheckFunTy as1 r1 as2 r2
+subsCheckRhoTy (FnTypeAST as1 r1 _ _) rho2 = unifyFun rho2 as1 "subsCheckRhoTy" >>= \(as2, r2) -> subsCheckFunTy as1 r1 as2 r2
 subsCheckRhoTy tau1 tau2 -- Rule MONO
      = unify tau1 tau2 "subsCheckRho" -- Revert to ordinary unification
 -- }}}
