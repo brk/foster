@@ -1,7 +1,6 @@
 // Copyright (c) 2009 Ben Karel. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
-
 #include "llvm/Module.h"
 #include "llvm/LinkAllPasses.h"
 #include "llvm/PassManager.h"
@@ -86,6 +85,10 @@ optCleanupOnly("cleanup-only",
   cl::desc("[foster] Run cleanup passes only"));
 
 static cl::opt<bool>
+optInternalize("foster-internalize",
+  cl::desc("[foster] Internalize and strip unreferenced globals"));
+
+static cl::opt<bool>
 optDumpStats("dump-stats",
   cl::desc("[foster] Dump timing and other statistics from compilation"));
 
@@ -95,7 +98,11 @@ optPrintTimings("fosterc-time",
 
 static cl::opt<bool>
 optOptimizeZero("O0",
-  cl::desc("[foster] Disable optimization passes after linking with standard library"));
+  cl::desc("[foster] Disable most optimization passes after linking with standard library"));
+
+static cl::opt<bool>
+optDisableAllOptimizations("Onone",
+  cl::desc("[foster] Disable all optimization passes after linking with standard library"));
 
 static cl::opt<bool>
 optNoSpecializeMemallocs("no-specialize-memallocs",
@@ -144,6 +151,16 @@ void dumpModuleToBitcode(Module* mod, const string& filename) {
 // The standard LLVM pass logic migrated from the libraries to opt in 3.0.
 // These routines are adapted copies of the ones used by opt.
 namespace  {
+
+  void scheduleInternalizePass(PassManagerBase& passes) {
+    std::vector<const char*> E;
+    E.push_back("foster__runtime__main__wrapper");
+    E.push_back("foster__main");
+    E.push_back("foster__gcmaps");
+    E.push_back("foster_coro_delete_self_reference");
+    passes.add(createInternalizePass(E));
+  }
+
   void AddOptimizationPasses(PassManagerBase& MPM,
                              FunctionPassManager& FPM,
                              unsigned OptLevel,
@@ -187,12 +204,7 @@ namespace  {
   // for a main function.  If main is defined, mark all other functions
   // internal.
   if (Internalize) {
-    std::vector<const char*> E;
-    E.push_back("foster__runtime__main__wrapper");
-    E.push_back("foster__main");
-    E.push_back("foster__gcmaps");
-    E.push_back("foster_coro_delete_self_reference");
-    PM.add(createInternalizePass(E));
+    scheduleInternalizePass(PM);
   }
 
   // Propagate constants at call sites into the functions they call.  This
@@ -330,6 +342,15 @@ void optimizeModuleAndRunPasses(Module* mod) {
   }
 
   foster::runFunctionPassesOverModule(fpasses, mod);
+  passes.run(*mod);
+}
+
+void runInternalizePasses(Module* mod) {
+  ScopedTimer timer("llvm.opt");
+  PassManager passes;
+  PassManagerBuilder Builder;
+  scheduleInternalizePass(passes);
+  passes.add(createGlobalDCEPass());
   passes.run(*mod);
 }
 
@@ -501,13 +522,18 @@ int main(int argc, char** argv) {
     foster::runCleanupPasses(*module);
     dumpModuleToBitcode(module, (gOutputNameBase + ".cleaned.bc"));
     foster::runWarningPasses(*module);
+  } else if (optInternalize) {
+    runInternalizePasses(module);
+    dumpModuleToFile(module,  (gOutputNameBase + ".internalized.ll"));
   } else {
     dumpModuleToFile(module,  (gOutputNameBase + ".preopt.ll"));
 
-    optimizeModuleAndRunPasses(module);
+    if (!optDisableAllOptimizations) {
+      optimizeModuleAndRunPasses(module);
 
-    if (optDumpPostOptIR) {
-      dumpModuleToFile(module,  (gOutputNameBase + ".postopt.ll"));
+      if (optDumpPostOptIR) {
+        dumpModuleToFile(module,  (gOutputNameBase + ".postopt.ll"));
+      }
     }
 
     compileToNativeAssemblyOrObject(module, optOutputName);
