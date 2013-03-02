@@ -21,3 +21,22 @@ listReverse = { forall t:Boxed, xs : List t =>
   };
   go xs (Nil !)
 };
+
+
+// Precondition: List is not empty.
+listHead! :: forall t:Boxed, { List t => t };
+listHead! = { forall t:Boxed, xs : List t =>
+  case xs
+    of $Nil -> prim kill-entire-process "listHead! passed an empty list"
+    of $Cons x _ -> x
+  end
+};
+
+// Precondition: List is not empty.
+listTail! :: forall t:Boxed, { List t => List t };
+listTail! = { forall t:Boxed, xs : List t =>
+  case xs
+    of $Nil -> prim kill-entire-process "listTail! passed an empty list"
+    of $Cons _ ys -> ys
+  end
+};

@@ -1,0 +1,25 @@
+
+// TODO switching from Boxed to Type fails...
+type case Maybe (a:Boxed)
+  of $None
+  of $Some a
+;
+
+/////
+
+// Partial.
+unMaybe :: forall a:Boxed, { Maybe a => a };
+unMaybe = { forall a:Boxed, x:Maybe a =>
+  case x
+    of $Some a -> a
+    of $None   -> prim kill-entire-process "unMaybe-failed";
+  end
+};
+
+isSome :: forall a:Boxed, { Maybe a => Bool };
+isSome = { forall a:Boxed, x:Maybe a =>
+  case x
+    of $Some _ -> True
+    of $None   -> False
+  end
+};
