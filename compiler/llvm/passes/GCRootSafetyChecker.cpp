@@ -5,6 +5,7 @@
 #include "llvm/Pass.h"
 #include "llvm/Function.h"
 #include "llvm/LLVMContext.h"
+#include "llvm/Intrinsics.h"
 #include "llvm/Instructions.h"
 #include "llvm/IRBuilder.h"
 #include "llvm/Support/raw_ostream.h"
@@ -25,6 +26,14 @@ using namespace llvm;
 // ptr  = load slot
 // call force_gc_for_debugging_purposes (or any other function that can trigger gc)
 // use ptr
+//
+//
+// Or this one:
+// call @llvm.lifetime.start(x)
+// ...
+// (no intervening lifetime.end())
+// ...
+// call @llvm.lifetime.start(x)
 
 namespace {
 
@@ -47,7 +56,6 @@ struct GCRootSafetyChecker : public FunctionPass {
   const char* getPassName() const { return "GCRootSafetyChecker"; }
 
   bool callSiteMayGC(llvm::Instruction* i) {
-    //ImmutableCallSite cs(i);
     if (i->getMetadata("willnotgc")) {
       return false;
     }
@@ -117,6 +125,7 @@ struct GCRootSafetyChecker : public FunctionPass {
     // results from simply iterating over the instructions.
     std::map<llvm::BasicBlock*, ValueValueMap> bb_tainted_loads;
     std::vector<StaleLoadInfo> problems;
+    std::map<const llvm::Value*, const llvm::Value*> lifetime_started;
 
     for (Function::iterator bb = F.begin(); bb != F.end(); ++bb) {
       ValueValueMap& tainted_loads = bb_tainted_loads[bb];
@@ -125,7 +134,38 @@ struct GCRootSafetyChecker : public FunctionPass {
       // Iterate through each instruction in each basic block.
       for (BasicBlock::iterator i = bb->begin(); i != bb->end(); ++i) {
         if (llvm::isa<CallInst>(i) || llvm::isa<InvokeInst>(i)) {
-          if (callSiteMayGC(i)) {
+          // {{{ lifetime intrinsic handling
+          ImmutableCallSite cs(i);
+          const llvm::Function* f = cs.getCalledFunction();
+          if (f && f->getIntrinsicID() == llvm::Intrinsic::lifetime_start) {
+            const llvm::Value* arg = cs.getArgument(1)->stripPointerCasts();
+            const llvm::Value* orig = lifetime_started[arg];
+            if (!orig) {
+              lifetime_started[arg] = i;
+            } else {
+              llvm::errs() << "******** repeated call to llvm.lifetime.start"
+                     << " likely to cause problems in function " << F.getName()
+                     << "\n\tFirst:      " << *orig
+                     << "\n\tSecond:     " << *i << "\n";
+            }
+          } else if (f && f->getIntrinsicID() == llvm::Intrinsic::lifetime_end) {
+            // we don't consider multiple ends to be a problem, because
+            // this is ok::
+            //          A:
+            //            lifetime begin
+            //            condbr B C
+            //          B:
+            //            lifetime end
+            //          C:
+            //            lifetime end
+            const llvm::Value* arg = cs.getArgument(1)->stripPointerCasts();
+            lifetime_started.erase(arg);
+          } else
+          // }}}
+          // {{{ gc root taint handling
+                 if (f && f->getIntrinsicID() != llvm::Intrinsic::not_intrinsic) {
+            // call site won't gc...
+          } else if (callSiteMayGC(i)) {
             // Taint every untainted load.
             for (ValueSet::iterator utit = untainted_loads.begin();
                                     utit != untainted_loads.end(); ++utit) {
@@ -133,6 +173,7 @@ struct GCRootSafetyChecker : public FunctionPass {
             }
             untainted_loads.clear();
           }
+          // }}}
         } else if (llvm::isa<LoadInst>(i) && gcroot_loads.count(i) == 1) {
           // Loads from gcroots are untainted until we hit the next gc point.
           untainted_loads.insert(i);
@@ -160,7 +201,7 @@ struct GCRootSafetyChecker : public FunctionPass {
                    << "\n\tDue to potential GC: " << *si.cause << "\n";
     }
 
-    if (!problems.empty()) exit(1);
+    //if (!problems.empty()) exit(1);
 
     return false;
   }
@@ -183,8 +224,8 @@ namespace llvm {
   void initializeGCRootSafetyCheckerPass(llvm::PassRegistry&);
 }
 
-INITIALIZE_PASS(GCRootSafetyChecker, "foster-escaping-alloca-finder",
-                "Incomplete and unsound identification of escaping allocas",
+INITIALIZE_PASS(GCRootSafetyChecker, "foster-gc-root-safety-checker",
+                "Incomplete and unsound identification of dodgy gc root usage",
                 false, false);
 
 namespace foster {
