@@ -178,10 +178,11 @@ void foster__abort() {
   foster__assert_failed("foster__abort called");
 }
 
+__attribute__((noinline))
 void foster__boundscheck64_failed(int64_t idx, int64_t len, const char* srclines) {
   fprintf(stderr, "bounds check failed: cannot index array of "
-                  "length %" PRId64 " (%" PRIX64 ") with value %" PRId64 "\n"
-                  "%s", len, len, idx, srclines);
+                  "length %" PRId64 " (0x%" PRIX64 ") with value %" PRId64 " (0x%" PRIX64 ")\n"
+                  "%s", len, len, idx, idx, srclines);
   fflush(stderr);
   exit(1);
 }
