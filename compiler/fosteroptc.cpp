@@ -529,6 +529,7 @@ int main(int argc, char** argv) {
     dumpModuleToFile(module,  (gOutputNameBase + ".preopt.ll"));
 
     if (!optDisableAllOptimizations) {
+      foster::runWarningPasses(*module);
       optimizeModuleAndRunPasses(module);
 
       if (optDumpPostOptIR) {
