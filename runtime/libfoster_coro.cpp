@@ -2,17 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#include "base/synchronization/lock.h"
-
 #include "libfoster.h"
 #include "libfoster_gc_roots.h"
 #include "foster_gc.h"
 
+#include <cstring> // for memset
+
+#ifdef FOSTER_MULTITHREADED
+#include "base/synchronization/lock.h"
+base::Lock g_coro_create_mutex;
+#endif
+
 using namespace foster::runtime;
 
 #define TRACE do { fprintf(stdout, "%s::%d\n", __FILE__, __LINE__); fflush(stdout); } while (0)
-
-base::Lock coro_create_mutex;
 
 // (eventually, per-thread variable)
 // coro_invoke(c) sets this to c.
@@ -47,7 +50,9 @@ void foster_coro_ensure_self_reference(foster_generic_coro* coro) {
 // corofn :: void* -> void
 void foster_coro_create(coro_func corofn,
                         void* arg) {
-  base::AutoLock locker(coro_create_mutex);
+#ifdef FOSTER_MULTITHREADED
+  base::AutoLock locker(g_coro_create_mutex);
+#endif
 
   long ssize = 16*1024;
   // TODO allocate small stacks that grow on demand

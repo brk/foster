@@ -67,6 +67,12 @@ Ubuntu 10.10:
 
 	sudo apt-get install cmake cmake-curses-gui # etc
 
+	For emscripten:
+	        sudo apt-get install python-software-properties
+	        sudo apt-get update
+	        sudo add-apt-repository ppa:chris-lea/node.js
+	        sudo apt-get install nodejs npm
+
 Mac OS X:
 	Interesting ports (via MacPorts):
 

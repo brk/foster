@@ -241,11 +241,17 @@ add_custom_target(hs_clean
 
 add_custom_command(
   OUTPUT ${LIBRARY_OUTPUT_PATH}/libfoster_main.o
+   	 ${PROJECT_BINARY_DIR}/_bitcodelibs_/libfoster_main.bc
   COMMAND
         ${CMAKE_CXX_COMPILER} -g
           ${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
           -I ${PROJECT_SOURCE_DIR}/runtime/gc/
                 -c -o ${LIBRARY_OUTPUT_PATH}/libfoster_main.o
+  COMMAND
+        ${CLANG} -g -emit-llvm
+          ${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
+          -I ${PROJECT_SOURCE_DIR}/runtime/gc/
+                -c -o ${PROJECT_BINARY_DIR}/_bitcodelibs_/libfoster_main.bc
   DEPENDS
         ${LIBRARY_OUTPUT_PATH}
         ${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp

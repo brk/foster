@@ -1,0 +1,22 @@
+#!/bin/bash
+
+if [ "$#" == "0" ]; then
+  echo "Usage: $0 <input-file.bc/ll>"
+  echo ""
+  echo "This script will automatically link in foster_main."
+  exit 1
+fi
+
+SCRIPTDIR=$(readlink --canonicalize $(dirname `which $0`)/..)
+OBJDIR=$SCRIPTDIR/_obj
+BCDIR=$OBJDIR/_bitcodelibs_
+
+TMPFILE=/tmp/foster-emcc-$RANDOM.bc
+
+llvm-link $1 $BCDIR/libfoster_main.bc -o $TMPFILE
+
+# Discard the ll/bc file from the parameters passed to emcc.
+shift
+
+emcc $TMPFILE "$@"
+rm $TMPFILE

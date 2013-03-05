@@ -964,4 +964,30 @@ the possibility of inlining, because the closure **escapes** the scope of ``x``.
    Research question: how common is it to encounter call sites with one known
    callee, where the callee may escape the scope of its innermost free variable?
 
+Emscripten
+----------
 
+The Emscripten project gets us (maybe)
+90% of the way to running Foster in a browser.
+The main obstacles remaining:
+ * The runtime currently dynamically links to ``chromium_base``,
+   instead of statically linking it in, mainly for compilation-speed reasons.
+   Several possible fixes:
+    * link statically against ``chromium_base.bc``
+      instead of dynamically against ``chromium_base.so``
+    * reduce dependency on chromium_base by re-implementing in C++ or foster
+    * create a JS-specific platform analogue to ``chromium_base``.
+ * Currently emscripten does not support stack switching, which means we can't
+   use coroutines. But at least programs which do not use coroutines will still
+   work, and there has been some work by others on compiling delimited
+   continuations to JS:
+     http://users-cs.au.dk/danvy/sfp12/papers/thivierge-feeley-paper-sfp12.pdf
+ * The garbage collector uses a custom backtrace function.
+   Maybe emscripten has a port of libunwind?
+ * An eventual implementation of parallelism would probably need to be adapted
+   from a shared-state to the pure message passing capabilities provided by JS.
+
+On the one hand, compiling directly from Foster IR to JS, bypassing LLVM
+entirely, would enable support for coroutines and **might** result in faster
+code. However, we'd have to do slightly more work to use other libraries
+compiled from C++ via emscripten.
