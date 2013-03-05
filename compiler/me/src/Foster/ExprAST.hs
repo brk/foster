@@ -59,6 +59,7 @@ data ExprSkel annot ty =
         -- Others
         | E_CompilesAST   annot (Maybe (ExprAST ty))
         | E_KillProcess   annot (ExprAST ty) -- arg must be string literal
+        | E_TyCheck       annot (ExprAST ty) ty
         deriving Show
 
 data FnAST ty  = FnAST { fnAstAnnot    :: ExprAnnot
@@ -103,6 +104,7 @@ instance Structured (ExprAST t) where
             E_TyApp       {}       -> text $ "TyApp        "                                   ++ (exprCmnts e)
             E_Case        {}       -> text $ "Case         "                                   ++ (exprCmnts e)
             E_KillProcess {}       -> text $ "KillProcess  "                                   ++ (exprCmnts e)
+            E_TyCheck     {}       -> text $ "TyCheck      "                                   ++ (exprCmnts e)
             E_VarAST _rng v        -> text $ "VarAST       " ++ T.unpack (evarName v)          ++ (exprCmnts e) -- ++ " :: " ++ show (pretty $ evarMaybeType v)
     childrenOf e =
         let termBindingExpr (TermBinding _ e) = e in
@@ -128,6 +130,7 @@ instance Structured (ExprAST t) where
             E_ArrayPoke   _rng ari c     -> childrenOfArrayIndex ari ++ [c]
             E_TupleAST    _rng exprs     -> exprs
             E_TyApp       _rng a _t      -> [a]
+            E_TyCheck     _rng a _t      -> [a]
             E_Case        _rng e bs      -> e:(map snd bs)
             E_LetRec      _rng bnz e     -> [termBindingExpr bnd | bnd <- bnz] ++ [e]
             E_LetAST      _rng bnd e     -> (termBindingExpr bnd):[e]
@@ -162,6 +165,7 @@ exprAnnot e = case e of
       E_ArrayPoke     annot _ _   -> annot
       E_VarAST        annot _     -> annot
       E_TyApp         annot _ _   -> annot
+      E_TyCheck       annot _ _   -> annot
       E_Case          annot _ _   -> annot
 
 instance SourceRanged (ExprAST ty) where rangeOf e = annotRange (exprAnnot e)

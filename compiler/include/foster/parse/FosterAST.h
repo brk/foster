@@ -194,6 +194,18 @@ struct ETypeAppAST : public ExprAST {
   virtual void dump(DumpToProtobufPass* pass);
 };
 
+// (e as ty)
+struct ETypeCheckAST : public ExprAST {
+  explicit ETypeCheckAST(ExprAST* base, TypeAST* checkedTy,
+                         foster::SourceRange sourceRange)
+      : ExprAST("ETypeCheckAST", sourceRange) {
+    parts.push_back(base);
+    this->type = checkedTy;
+  }
+  virtual void dump(DumpToProtobufPass* pass);
+};
+
+
 struct Binding {
   string name;
   ExprAST* body;

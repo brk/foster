@@ -25,7 +25,7 @@ tokens {
   TERMNAME; TYPENAME; TYPEVAR_DECL;
   TERM; PHRASE; PRIMAPP; LVALUE; SUBSCRIPT;
   VAL_TYPE_APP; DEREF; ASSIGN_TO;
-  REF; TUPLE; VAL_ABS; TYP_ABS; TYPE_ATOM;
+  REF; TUPLE; VAL_ABS; TYP_ABS; TYPE_ATOM; TYANNOT;
   TYPE_TYP_APP; TYPE_TYP_ABS;
   KIND_TYPE; KIND_TYOP; KIND_TYPE_BOXED; FORALL_TYPE;
   FUNC_TYPE;
@@ -131,7 +131,7 @@ atom    :       // syntactically "closed" terms
   | '(' ')'                             -> ^(TUPLE)
   | '(' COMPILES e ')'                  -> ^(COMPILES e)
   | '(' 'ref' e ')'                     -> ^(REF e)     // allocation
-  | '(' e (',' e)* ')'                  -> ^(TUPLE e+)  // tuples (products) (sguar: (a,b,c) == Tuple3 a b c)
+  | tuple
   | '{' ('forall' tyformal* ',')?
         (formal '=>')*
          stmts?
@@ -139,6 +139,11 @@ atom    :       // syntactically "closed" terms
                                                      ^(MU tyformal*) stmts?)
                   // value + type abstraction (terms indexed by terms and types)
   ;
+
+tuple : '(' e ( AS  t    ')'                  -> ^(TYANNOT e t)
+              | (',' e)* ')'                  -> ^(TUPLE e+)  // tuples (products) (sugar: (a,b,c) == Tuple3 a b c)
+              )
+      ;
 
 pmatch  : p '->' stmts -> ^(CASE p stmts);
 

@@ -46,7 +46,7 @@ import Foster.Fepb.PBValAbs as PBValAbs
 import Foster.Fepb.Expr     as PbExpr
 import Foster.Fepb.SourceModule as SourceModule
 import Foster.Fepb.WholeProgram as WholeProgram
-import Foster.Fepb.Expr.Tag(Tag(IF, LET, VAR, SEQ, UNTIL,
+import Foster.Fepb.Expr.Tag(Tag(IF, LET, VAR, SEQ, UNTIL, TY_CHECK,
                                 BOOL, CALL, CALLPRIM, TY_APP, STRING, -- MODULE,
                                 PB_INT, PB_RAT,
                                 CASE_EXPR, COMPILES, VAL_ABS,
@@ -207,6 +207,11 @@ parseTyApp pbexpr range = do
     let tys = map parseType (toList $ PbExpr.ty_app_arg_type pbexpr)
     return $ E_TyApp range  body tys
 
+parseTyCheck pbexpr range = do
+    [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
+    let Just ty = fmap parseType (PbExpr.type' pbexpr)
+    return $ E_TyCheck range body ty
+
 parseEVar pbexpr range = do return $ E_VarAST range (parseVar pbexpr)
 
 parseVar pbexpr = do VarAST (fmap parseType (PbExpr.type' pbexpr))
@@ -277,6 +282,7 @@ parseExpr pbexpr = do
                 SEQ       -> parseSeq
                 LET       -> parseLet
                 TY_APP    -> parseTyApp
+                TY_CHECK  -> parseTyCheck
                 CASE_EXPR -> parseCaseExpr
                 COMPILES  -> parseCompiles
                 PAT_WILDCARD -> error "parseExpr called on pattern!"
@@ -424,6 +430,7 @@ parseSourceModule sm = resolveFormatting m where
        E_DerefAST     _ a        -> liftM2' E_DerefAST    ana (q a)
        E_StoreAST     _ a b      -> liftM3' E_StoreAST    ana (q a) (q b)
        E_TyApp        _ a tys    -> liftM3' E_TyApp       ana (q a) (return tys)
+       E_TyCheck      _ a ty     -> liftM3' E_TyCheck     ana (q a) (return ty )
        E_TupleAST     _ exprs    -> liftM2' E_TupleAST    ana (mapM q exprs)
        E_LetRec       _ bnz e    -> liftM3' E_LetRec      ana (mapM convertTermBinding bnz) (q e)
        E_LetAST       _ bnd e    -> liftM3' E_LetAST      ana (convertTermBinding bnd) (q e)

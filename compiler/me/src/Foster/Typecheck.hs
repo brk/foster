@@ -209,6 +209,7 @@ tcRho ctx expr expTy = do
       E_LetRec rng bindings e        -> tcRhoLetRec   ctx rng   bindings e expTy
       E_LetAST rng binding  e        -> tcRhoLet      ctx rng   binding  e expTy
       E_TyApp  rng e types           -> tcRhoTyApp    ctx rng   e types    expTy
+      E_TyCheck rng e ty             -> tcRhoTyCheck  ctx rng   e ty       expTy
       E_Case   rng a branches        -> tcRhoCase     ctx rng   a branches expTy
       E_AllocAST rng a rgn           -> tcRhoAlloc    ctx rng   a rgn      expTy
       E_StoreAST rng e1 e2           -> tcRhoStore    ctx rng   e1 e2      expTy
@@ -659,6 +660,17 @@ tcRhoTyApp ctx annot e t1tn expTy = do
         tcFails [text $ "Cannot apply type args to expression of"
                    ++ " non-ForAll type: " ++ show othertype
                 ,text $ highlightFirstLine $ rangeOf e]
+-- }}}
+
+
+-- G |- e ~~~> a1 ::: t1
+-- G |- t1 is an instance of t
+-- ------------------------------------------
+-- G |- e as t  ~~~>  a1 ::: t
+tcRhoTyCheck ctx annot e ty expTy = do
+-- {{{
+    ann <- checkSigma ctx e ty
+    matchExp expTy ann "tycheck"
 -- }}}
 
 -- G |- b  ~~> f ::: ((s1 ... sn) -> sr)

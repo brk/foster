@@ -121,6 +121,7 @@ prettyAtom e =
     E_ArrayRead   {} -> pretty e
     E_ArrayPoke   {} -> pretty e
     E_TyApp       {} -> pretty e
+    E_TyCheck     {} -> pretty e
     E_CompilesAST {} -> pretty e
     E_KillProcess {} -> pretty e
 
@@ -141,7 +142,8 @@ instance Pretty (ExprAST TypeP) where
   pretty e =
         case e of
             E_VarAST annot evar     -> withAnnot annot $ pretty evar
-            E_TyApp annot e argtys  -> withAnnot annot $ pretty e <> text ":[" <> hsep (punctuate comma (map pretty argtys)) <> text "]"
+            E_TyApp  annot e argtys -> withAnnot annot $ pretty e <> text ":[" <> hsep (punctuate comma (map pretty argtys)) <> text "]"
+            E_TyCheck annot e ty    -> withAnnot annot $ parens (pretty e <+> text "as" <+> pretty ty)
             E_KillProcess annot exp -> withAnnot annot $ text "prim kill-entire-process" <+> pretty exp
             E_StringAST   annot s   -> withAnnot annot $ dquotes (text $ T.unpack s)
             E_BoolAST     annot b   -> withAnnot annot $ text $ show b

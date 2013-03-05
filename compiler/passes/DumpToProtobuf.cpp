@@ -296,6 +296,11 @@ void ETypeAppAST::dump(DumpToProtobufPass* pass) {
   }
 }
 
+void ETypeCheckAST::dump(DumpToProtobufPass* pass) {
+  processExprAST(pass->current, this, pb::Expr::TY_CHECK);
+  dumpChildren(pass, this);
+}
+
 void BuiltinCompilesExprAST::dump(DumpToProtobufPass* pass) {
   processExprAST(pass->current, this, pb::Expr::COMPILES);
   if (this->parts[0] == NULL) {

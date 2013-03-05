@@ -425,6 +425,13 @@ ExprAST* parseTuple(pTree t) {
   } return new CallPrimAST("tuple", getExprs(t), rangeOf(t));
 }
 
+ExprAST* parseTyCheck(pTree t) {
+  ASSERT(getChildCount(t) == 2);
+  return new ETypeCheckAST(ExprAST_from(child(t, 0)),
+                           TypeAST_from(child(t, 1)),
+                           rangeOf(t));
+}
+
 std::vector<Binding> parseBindings(pTree tree) {
   std::vector<Binding> bindings;
   for (size_t i = 0; i < getChildCount(tree); ++i) {
@@ -616,6 +623,7 @@ ExprAST* parseAtom(pTree tree) {
   if (token == LETS)     { return parseLets(tree); }
   if (token == LETREC)   { return parseLetRec(tree); }
   if (token == TUPLE)    { return parseTuple(tree); }
+  if (token == TYANNOT)  { return parseTyCheck(tree); }
   if (token == UNTIL)    { return parseUntil(tree); }
   if (token == TERMNAME) { return parseTermVar(tree); }
   if (token == LIT_NUM)  { return parseNumFrom(tree); }

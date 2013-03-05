@@ -90,6 +90,7 @@ message Expr {
     CALLPRIM  = 33;
     SEQ       = 24;
     TY_APP    = 25;
+    TY_CHECK  = 26;
     CASE_EXPR = 30;
     COMPILES  = 31;
     IF        = 32;
