@@ -101,6 +101,27 @@ public:
     return knownOperators.count(op) == 1;
   }
 
+  void parseAsTighter(const OperatorPrecedenceTable::Operator& a,
+                      const OperatorPrecedenceTable::Operator& b) {
+    requireNoPriorRelation(a, b, kOpBindsTighter);
+    knownOperators.insert(a);
+    knownOperators.insert(b);
+    table[ OpPair(a, b) ] = kOpBindsTighter;
+  }
+
+  void parseAsLooser(const OperatorPrecedenceTable::Operator& a,
+                     const OperatorPrecedenceTable::Operator& b) {
+    requireNoPriorRelation(a, b, kOpBindsLooser);
+    knownOperators.insert(a);
+    knownOperators.insert(b);
+    table[ OpPair(a, b) ] = kOpBindsLooser;
+  }
+
+  void initWith(const OperatorPrecedenceTable& other) {
+    this->table          = other.impl->table;
+    this->knownOperators = other.impl->knownOperators;
+  }
+
 private:
   void requireKnownOperator(const Operator& op) {
     if (!isKnownOperator(op)) {
@@ -109,18 +130,16 @@ private:
     }
   }
 
-  void parseAsTighter(const OperatorPrecedenceTable::Operator& a,
-                      const OperatorPrecedenceTable::Operator& b) {
-    knownOperators.insert(a);
-    knownOperators.insert(b);
-    table[ OpPair(a, b) ] = kOpBindsTighter;
-  }
-
-  void parseAsLooser(const OperatorPrecedenceTable::Operator& a,
-                     const OperatorPrecedenceTable::Operator& b) {
-    knownOperators.insert(a);
-    knownOperators.insert(b);
-    table[ OpPair(a, b) ] = kOpBindsLooser;
+  void requireNoPriorRelation(const Operator& a, const Operator& b, OperatorRelation r) {
+    OpTable::iterator it = table.find(OpPair(a, b));
+    if (it != table.end()) {
+      if ((*it).second != kNoRelationSpecified) {
+        dumpOperatorRelation();
+        ASSERT(false) << "\nOperator precedence table refusing to overwrite entry "
+                      << str((*it).second) << " with " << str(r)
+                      << " for operator pair '" << a << "' and '" << b << "'";
+      }
+    }
   }
 
   void parseAs(const string& a, const string& b) {
@@ -191,12 +210,12 @@ private:
       for (size_t j = 0; j < vlops.size(); ++j) {
             const string& z = vtops[i];
         const string& q = vlops[j];
+        // parse   a Q b Z c   as a Q (b Z c)
+        parseAsLooser(q, z);
+
         // If Z binds tighter than Q,
         // parse   a Z b Q c   as (a Z b) Q c
         parseAsTighter(z, q);
-
-        // parse   a Q b Z c   as a Q (b Z c)
-        parseAsLooser(q, z);
       }
     }
   }
@@ -255,11 +274,11 @@ public:
     tighter("+ *", "==");
 
     // ==  tighter than and
-    parseAs("a and b == c", "a and (b == c)");
-    parseAs("a == b and c", "(a == b) and c");
-
-    parseAs("a and b < c", "a and (b < c)");
-    parseAs("a < b and c", "(a < b) and c");
+    //parseAs("a and b == c", "a and (b == c)");
+    //parseAs("a == b and c", "(a == b) and c");
+    //
+    //parseAs("a and b < c", "a and (b < c)");
+    //parseAs("a < b and c", "(a < b) and c");
     tighter("+ * == <", "and");
 
     // ** right associative
@@ -344,6 +363,18 @@ OperatorPrecedenceTable::get(const OperatorPrecedenceTable::Operator& opa,
 
 bool OperatorPrecedenceTable::isKnownOperatorName(const std::string& s) {
   return impl->isKnownOperator(s);
+}
+
+void OperatorPrecedenceTable::parseAsTighter(const Operator& a, const Operator& b) {
+  return impl->parseAsTighter(a, b);
+}
+
+void OperatorPrecedenceTable::parseAsLooser(const Operator& a, const Operator& b) {
+  return impl->parseAsLooser(a, b);
+}
+
+void OperatorPrecedenceTable::initWith(const OperatorPrecedenceTable& other) {
+  return impl->initWith(other);
 }
 
 bool OperatorPrecedenceTable::check() { return impl->check(); }

@@ -432,6 +432,46 @@ ExprAST* parseTyCheck(pTree t) {
                            rangeOf(t));
 }
 
+// so lame :(
+// in particular, we assume the tree is properly structured without checking...
+void tryParseOperatorAssocDecl(pTree raw, pTree expli) {
+  ASSERT(getChildCount(raw) == 3); // ^(TERM ^(MU opr?) ^(MU phrase) ^(MU binops?))
+  pTree rawBinops = child(raw, 2);
+  ASSERT(getChildCount(rawBinops) == 4); // ^(MU op1 _ op2 _)
+  string o1 = textOf(child(rawBinops, 0));
+  string o2 = textOf(child(rawBinops, 2));
+
+  // If this check is removed, note/beware that parseAsTighter(o1, o2)
+  // does not imply parseAsLooser(o2, o1)!
+  ASSERT(o1 == o2) << "for now, operators must be the same...";
+
+  ASSERT(getChildCount(child(expli, 2)) == 0) << "no binops in explicit parse tree";
+  // HUUUUURRRRKKKKKK
+  pTree expl = child(child(child(child(child(expli, 1), 0), 0), 0), 0);
+  pTree ex   = child(child(child(child(child(expl,  1), 0), 1), 0), 0);
+  bool isLeftAssoc = getChildCount(ex) > 1;
+  if (isLeftAssoc) {
+    ParsingContext::parseAsTighter(o1, o2);
+  } else {
+    ParsingContext::parseAsLooser(o1, o2);
+  }
+}
+
+// #associate e1 as e2 in e3 end
+// but it's really
+// #associate _ `o1` _ `o2` _ as (ox _ (oy _ _)) in e3 end
+// ... at least for now...
+// ^(PARSE_DECL e1 e2 stmts)
+ExprAST* parseParseDecl(pTree t) {
+  ASSERT(getChildCount(t) == 3);
+
+  ParsingContext::pushNewContext();
+  tryParseOperatorAssocDecl(child(t, 0), child(t, 1));
+  ExprAST* e = parseStmts(child(t, 2));
+  ParsingContext::popCurrentContext();
+  return e;
+}
+
 std::vector<Binding> parseBindings(pTree tree) {
   std::vector<Binding> bindings;
   for (size_t i = 0; i < getChildCount(tree); ++i) {
@@ -624,6 +664,7 @@ ExprAST* parseAtom(pTree tree) {
   if (token == LETREC)   { return parseLetRec(tree); }
   if (token == TUPLE)    { return parseTuple(tree); }
   if (token == TYANNOT)  { return parseTyCheck(tree); }
+  if (token == PARSE_DECL){return parseParseDecl(tree); }
   if (token == UNTIL)    { return parseUntil(tree); }
   if (token == TERMNAME) { return parseTermVar(tree); }
   if (token == LIT_NUM)  { return parseNumFrom(tree); }
@@ -933,8 +974,8 @@ ModuleAST* parseTopLevel(pTree root_tree, std::string moduleName,
     } else {
       EDiag() << "ANTLRtoFosterAST.cpp: "
               << "Unexpected top-level element with token ID " << token;
-      display_pTree(c, 8);
-      display_pTree(root_tree, 4);
+      //display_pTree(c, 8);
+      //display_pTree(root_tree, 4);
       EDiag() << show(rangeOf(c));
     }
   }

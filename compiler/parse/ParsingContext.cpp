@@ -97,6 +97,14 @@ ParsingContext::Impl::initMaps() {
 ParsingContext* // static
 ParsingContext::pushNewContext() {
   ParsingContext* cc = new ParsingContext();
+  if (!gParsingContexts.empty()) {
+    // new context gets copy of prev context's precedence tables.
+    cc->impl->prec.initWith(gParsingContexts.top()->impl->prec);
+
+    cc->impl->startTokens  = gParsingContexts.top()->impl->startTokens;
+    cc->impl->endTokens    = gParsingContexts.top()->impl->endTokens;
+    cc->impl->hiddenTokens = gParsingContexts.top()->impl->hiddenTokens;
+  }
   gParsingContexts.push(cc);
   return cc;
 }
@@ -229,6 +237,22 @@ ParsingContext::getOperatorRelation(const std::string& op1,
   ASSERT(!gParsingContexts.empty());
 
   return gParsingContexts.top()->impl->prec.get(op1, op2);
+}
+
+void // static
+ParsingContext::parseAsTighter(const std::string& op1,
+                               const std::string& op2) {
+  ASSERT(!gParsingContexts.empty());
+
+  return gParsingContexts.top()->impl->prec.parseAsTighter(op1, op2);
+}
+
+void // static
+ParsingContext::parseAsLooser(const std::string& op1,
+                              const std::string& op2) {
+  ASSERT(!gParsingContexts.empty());
+
+  return gParsingContexts.top()->impl->prec.parseAsLooser(op1, op2);
 }
 
 bool // static

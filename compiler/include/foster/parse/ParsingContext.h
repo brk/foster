@@ -98,6 +98,12 @@ public:
   static bool
   isKnownOperatorName(const std::string& op);
 
+  static void
+  parseAsTighter(const std::string& op1, const std::string& op2);
+
+  static void
+  parseAsLooser(const std::string& op1, const std::string& op2);
+
   static bool
   isKeyword(const std::string& op);
 

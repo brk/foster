@@ -26,6 +26,11 @@ public:
   bool isKnownOperatorName(const std::string&);
   OperatorRelation get(const Operator& opa, const Operator& opb);
 
+  void parseAsTighter(const Operator& a, const Operator& b);
+  void parseAsLooser(const Operator& a, const Operator& b);
+
+  void initWith(const OperatorPrecedenceTable& other);
+
 private:
   struct Impl;
   Impl* impl;

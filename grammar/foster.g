@@ -21,7 +21,7 @@ tokens {
   VAL_APP; UNTIL; FORMALS;
   BINDING; ABINDING; LETS; LETREC; SEQ; STMTS;
   LIT_NUM; BOOL; STRING;
-  DECL; DEFN;
+  DECL; DEFN; PARSE_DECL;
   TERMNAME; TYPENAME; TYPEVAR_DECL;
   TERM; PHRASE; PRIMAPP; LVALUE; SUBSCRIPT;
   VAL_TYPE_APP; DEREF; ASSIGN_TO;
@@ -126,6 +126,7 @@ atom    :       // syntactically "closed" terms
   | lets                                // sequential let
   | letrec                              // recursive let
   | ifexpr
+  | parse_in
   | 'case' e (OF pmatch)+ 'end'         -> ^(CASE e pmatch+) // pattern matching
   | 'until' e 'then' stmts 'end'        -> ^(UNTIL e stmts)
   | '(' ')'                             -> ^(TUPLE)
@@ -139,6 +140,10 @@ atom    :       // syntactically "closed" terms
                                                      ^(MU tyformal*) stmts?)
                   // value + type abstraction (terms indexed by terms and types)
   ;
+
+parse_in :
+	'#associate' e 'as' e 'in' stmts 'end' -> ^(PARSE_DECL e e stmts)
+	;
 
 tuple : '(' e ( AS  t    ')'                  -> ^(TYANNOT e t)
               | (',' e)* ')'                  -> ^(TUPLE e+)  // tuples (products) (sugar: (a,b,c) == Tuple3 a b c)
