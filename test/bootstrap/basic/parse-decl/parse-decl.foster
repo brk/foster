@@ -1,0 +1,30 @@
+minus = { a : Int32 => b => a -Int32 b };
+
+main = {
+  #associate   a `minus` b `minus` c
+          as   (minus a (minus b c))
+  in
+    expect_i32 7;
+    print_i32 (minus 10 (minus 5 2));
+
+    expect_i32 7;
+    print_i32 (10 `minus` 5 `minus` 2);
+
+    // We currently, by design, refuse to allow overriding associativity
+    // of already-specified operators, not even by lexical scope.
+  end;
+
+  #associate   a `minus` b `minus` c
+          as   (minus (minus a b) c)
+  in
+    expect_i32 3;
+    print_i32 (minus (minus 10 5) 2);
+
+    expect_i32 3;
+    print_i32 (10 `minus` 5 `minus` 2);
+  end;
+
+  //expect_i32 False; // with no explicit precedence specified, should fail:
+  //print_i32 (__COMPILES__ (10 `minus` 5 `minus` 2));
+  // TODO fails via assert, should fail more gracefully...
+};
