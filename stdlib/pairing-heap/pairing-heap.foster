@@ -1,0 +1,127 @@
+snafuinclude List "list";
+snafuinclude Ord  "ord";
+snafuinclude Maybe "maybe";
+
+// Pairing heaps based on the code from Okasaki's book (p.54).
+
+type case PairingHeap (elem:Boxed)
+      of $PairingHeapE
+      of $PairingHeapT elem (List PairingHeap)
+      ;
+
+mkEmptyPairingHeap :: forall a:Boxed, { PairingHeap a };
+mkEmptyPairingHeap = { forall a:Boxed,
+  PairingHeapE !
+};
+
+/*
+// Mostly to set the stage for _alt_2, we can introduce a trivial unit arg:
+mkEmptyPairingHeap_alt_1 :: forall a:Boxed, { () => PairingHeap a };
+mkEmptyPairingHeap_alt_1 = { forall a:Boxed, unit =>
+  PairingHeapE !
+};
+
+// This definition makes sense, but I'm pretty sure it won't type check.
+mkEmptyPairingHeap_alt_2 :: { () => forall a:Boxed, PairingHeap a };
+mkEmptyPairingHeap_alt_2 = { unit =>
+  PairingHeapE !
+};
+*/
+
+pairingHeapMerge :: forall a:Boxed, { { a => a => Ord } => PairingHeap a => PairingHeap a => PairingHeap a };
+pairingHeapMerge = { forall a:Boxed, cmp => pa => pb =>
+  case (pa, pb)
+    of ($PairingHeapE, _) -> pb
+    of (_, $PairingHeapE) -> pa
+    of ($PairingHeapT ea la, $PairingHeapT eb lb) ->
+      case cmp ea eb
+        of $GT -> PairingHeapT eb (Cons pa lb)
+        of _   -> PairingHeapT ea (Cons pb la)
+      end
+  end
+};
+
+pairingHeapInsertSimple :: forall a:Boxed, { { a => a => Ord } => a => PairingHeap a => PairingHeap a };
+pairingHeapInsertSimple = { forall a:Boxed, cmp => e => h =>
+  pairingHeapMerge cmp (PairingHeapT e (Nil !)) h
+};
+
+// TODO benchmark difference between pairingHeapInsertSimple and pairingHeapInsert.
+// The main benefit (once (Nil !) does not allocate) would be saving
+// an allocation of a heap node on one branch.
+pairingHeapInsert :: forall a:Boxed, { { a => a => Ord } => a => PairingHeap a => PairingHeap a };
+pairingHeapInsert = { forall a:Boxed, cmp => e => h =>
+  case h
+    of $PairingHeapE -> PairingHeapT e (Nil !)
+    of $PairingHeapT eb lb ->
+      case cmp e eb
+        of $GT -> pa = PairingHeapT e (Nil !);
+                  PairingHeapT eb (Cons pa lb)
+        of _   -> PairingHeapT e  (Cons h (Nil !))
+      end
+  end
+};
+
+pairingHeapMergePairs :: forall a:Boxed, { { a => a => Ord } => List (PairingHeap a) => PairingHeap a };
+pairingHeapMergePairs = { forall a:Boxed, cmp => l =>
+  case l
+    of ($Nil)                   -> PairingHeapE !
+    of ($Cons h  ($Nil))        -> h
+    of ($Cons h1 ($Cons h2 hs)) ->
+      pairingHeapMerge cmp
+         (pairingHeapMerge cmp h1 h2)
+         (pairingHeapMergePairs cmp hs)
+  end
+};
+
+pairingHeapFindMin :: forall a:Boxed, { PairingHeap a => Maybe a };
+pairingHeapFindMin = { forall a:Boxed, h =>
+  case h
+    of $PairingHeapE -> None !
+    of $PairingHeapT e _ -> Some e
+  end
+};
+
+pairingHeapDeleteMin :: forall a:Boxed, { { a => a => Ord } => PairingHeap a => Maybe (PairingHeap a) };
+pairingHeapDeleteMin = { forall a:Boxed, cmp => h =>
+  case h
+    of $PairingHeapE -> None !
+    of $PairingHeapT _ l -> Some (pairingHeapMergePairs cmp l)
+  end
+};
+
+pairingHeapToSortedList :: forall a:Boxed, { { a => a => Ord } => PairingHeap a => List a };
+pairingHeapToSortedList = { forall a:Boxed, cmp => h =>
+  case h
+    of $PairingHeapE -> Nil !
+    of $PairingHeapT e l -> Cons e (pairingHeapToSortedList cmp (pairingHeapMergePairs cmp l))
+  end
+};
+
+pairingHeapToSortedListIter :: forall a:Boxed, { { a => a => Ord } => PairingHeap a => List a };
+pairingHeapToSortedListIter = { forall a:Boxed, cmp => h =>
+  REC go = { h => acc =>
+      case h
+        of $PairingHeapE -> acc
+        of $PairingHeapT e l ->
+            go (pairingHeapMergePairs cmp l) (Cons e acc);
+      end
+  };
+  go h (Nil !)
+};
+
+pairingHeapFromList :: forall a:Boxed, { { a => a => Ord } => List a => PairingHeap a };
+pairingHeapFromList = { forall a:Boxed, cmp => lst =>
+  REC go = { lst => ph =>
+    case lst
+      of $Nil -> ph
+      of $Cons h t -> go t (pairingHeapInsertSimple cmp h ph)
+    end
+  };
+  go lst (mkEmptyPairingHeap !)
+};
+
+listSortViaPairingHeapWith :: forall a:Boxed, { { a => a => Ord } => List a => List a };
+listSortViaPairingHeapWith = { forall a:Boxed, cmp => lst =>
+  pairingHeapToSortedList cmp (pairingHeapFromList cmp lst)
+};
