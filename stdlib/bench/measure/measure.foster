@@ -1,0 +1,50 @@
+
+noinline_elapsed_time_once = { fg : { () } =>
+  t1 = foster_getticks !;
+  fg !;
+  t2 = foster_getticks !;
+
+  foster_getticks_elapsed t1 t2
+};
+
+// TODO verify that this gets inlined to equivalent code as noinline_elapsed_time_once
+noinline_elapsed_time_1 = { fq : { () } =>
+  elapsed_time_n fq 1
+};
+
+// TODO verify that this does NOT get fully inlined!
+noinline_elapsed_time_100 = { qq : { () } =>
+  elapsed_time_n qq 100
+};
+
+elapsed_time_n :: { { () } => Int32 => Float64 };
+elapsed_time_n = { ff : { () } => n : Int32 =>
+  REC loop = { x : Int32 =>
+    if x <=SInt32 0 then () else
+      ff !; loop (x -Int32 1);
+    end
+  };
+
+  t1 = foster_getticks !;
+  loop n;
+  t2 = foster_getticks !;
+
+  foster_getticks_elapsed t1 t2
+};
+
+
+elapsed_ticks_n :: { Int32 => { () } => Int64 };
+elapsed_ticks_n = { n => f =>
+  REC loop = { x : Int32 =>
+    if x <=SInt32 0 then () else
+      f !; loop (x -Int32 1);
+    end
+  };
+
+  t1 = foster_getticks !;
+  loop n;
+  t2 = foster_getticks !;
+
+  t2 -Int64 t1
+};
+
