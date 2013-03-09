@@ -1,7 +1,8 @@
 snafuinclude List "list";
 snafuinclude Ord  "ord";
 
-either = { a : Bool => b : Bool => if a then True else b end };
+either = { a : Bool => b : Bool => if a then True else b     end };
+both   = { a : Bool => b : Bool => if a then b    else False end };
 
 /////
 
@@ -165,10 +166,6 @@ bytesConcatByCopy = { a : Array Int8 => alen : Int32 =>
   bytes
 
   end
-};
-
-both = { a : Bool => b : Bool =>
-  if a then b else False end
 };
 
 mkTextConcat = { a : Text => b : Text =>

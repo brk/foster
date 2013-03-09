@@ -1,3 +1,4 @@
+snafuinclude Maybe "maybe";
 
 type case List (a:Boxed)
   of $Nil
@@ -22,7 +23,6 @@ listReverse = { forall t:Boxed, xs : List t =>
   go xs (Nil !)
 };
 
-
 // Precondition: List is not empty.
 listHead! :: forall t:Boxed, { List t => t };
 listHead! = { forall t:Boxed, xs : List t =>
@@ -38,5 +38,48 @@ listTail! = { forall t:Boxed, xs : List t =>
   case xs
     of $Nil -> prim kill-entire-process "listTail! passed an empty list"
     of $Cons _ ys -> ys
+  end
+};
+
+// Precondition: i >= 0, listLength xs > i
+listGet! = { forall t:Boxed, xs : List t => i : Int32 =>
+  unMaybe (listGet xs i)
+};
+
+listGet = { forall t:Boxed, xs : List t => i : Int32 =>
+  if i <SInt32 0 then None ! else
+    // invariant: i >= 0.
+    REC go = { xs => i =>
+      case xs
+        of $Nil -> None !
+        of $Cons y ys ->
+          if i ==Int32 0 then Some y else
+            go ys (i -Int32 1)
+          end
+      end
+    };
+    go xs i;
+  end
+};
+
+// Uses O(1) stack and heap proportional to whatever f allocates.
+listFoldl :: forall a:Boxed, e:Boxed, { List e => { e => a => a } => a => a };
+listFoldl = { forall a:Boxed e:Boxed, v => f => acc : a =>
+  case v
+    of $Nil            -> acc
+    of $Cons head tail -> listFoldl tail f (f head acc)
+  end
+};
+
+listMap :: forall a:Boxed, e:Boxed, { List e => { e => a } => List a };
+listMap = { forall a:Boxed e:Boxed, v => f =>
+  listFoldl v { e => tail => Cons (f e) tail } (Nil !);
+};
+
+listIter :: forall a:Boxed, { List a => { a => () } => () };
+listIter = { forall a:Boxed, v => f =>
+  case v
+    of $Nil            -> ()
+    of $Cons head tail -> f head; listIter tail f;
   end
 };

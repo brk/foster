@@ -1,9 +1,15 @@
 snafuinclude Prelude "prelude";
+snafuinclude Maybe   "maybe";
 
 type case SplayTree (a:Boxed)
   of $SplayNil
   of $SplayObj a (SplayTree a) (SplayTree a)
   ;
+
+splay-empty :: forall a:Boxed, { SplayTree a };
+splay-empty = { forall a:Boxed,
+  SplayNil !
+};
 
 splay :: forall a:Boxed, { SplayTree a => { a => Ord } => SplayTree a };
 splay = { forall a:Boxed,
@@ -124,16 +130,20 @@ splay-lookup = { forall a:Boxed,
 };
 
 splay-insert :: forall a:Boxed,
-                         { a => SplayTree a => { a => a => Ord } => SplayTree a };
+                       { a => SplayTree a => { a => a => Ord } => SplayTree a };
 splay-insert = { forall a:Boxed,
                  v => t => cmp =>
-  case splay t { q => cmp v q }
-    of $SplayNil -> (SplayObj v (SplayNil !) (SplayNil !))
-    of $SplayObj q l r ->
-      case cmp v q
-        of $EQ -> SplayObj q l r
-        of $LT -> SplayObj v l (SplayObj q (SplayNil !) r)
-        of $GT -> SplayObj q (SplayObj q l (SplayNil !)) r
-      end
-  end
+  REC insert = { v => t =>
+    case t
+      of $SplayNil -> (SplayObj v (SplayNil !) (SplayNil !))
+      of $SplayObj q l r ->
+        case cmp v q
+          of $EQ -> SplayObj q l r
+          of $LT -> SplayObj q (insert v l) r
+          of $GT -> SplayObj q l (insert v r)
+        end
+    end
+  };
+  splay (insert v t) { q => cmp v q };
 };
+
