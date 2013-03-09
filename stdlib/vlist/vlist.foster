@@ -1,0 +1,197 @@
+snafuinclude List "list";
+snafuinclude Maybe "maybe";
+snafuinclude Prelude "prelude";
+
+type case VList (a:Boxed)
+       of $VList Int32 (VListBase a) Int32
+       ;
+
+type case VListBase (a:Boxed)
+       of $VListBase (Maybe (VListBase a)) (List a)
+       ;
+
+mkEmptyVList :: forall a:Boxed, { VList a };
+mkEmptyVList =  { forall a:Boxed,
+  VList 0 (VListBase (None !) (Nil !)) 0
+};
+
+vListCons :: forall a:Boxed, { a => VList a => VList a };
+vListCons =  { forall a:Boxed, e => v =>
+  case v of $VList offset base size ->
+    case base of $VListBase prev elems ->
+      if size ==Int32 0
+        then      // invariant: prev is None, offset == 0
+                  VList 1 (VListBase prev (Cons e elems)) 1
+        else if size ==Int32 offset
+             then pptr = Some base;
+                  VList 1 (VListBase pptr (Cons e (Nil !))) (size *Int32 2)
+             else VList (offset +Int32 1)
+                          (VListBase prev (Cons e elems))  size
+             end
+      end
+    end
+  end
+};
+
+// Precondition: v is not empty.
+vListHead! :: forall a:Boxed, { VList a => a };
+vListHead! =  { forall a:Boxed, v =>
+  unMaybe (vListHead v)
+};
+
+vListHead :: forall a:Boxed, { VList a => Maybe a };
+vListHead =  { forall a:Boxed, v =>
+  case v of $VList offset ($VListBase prev elems) size ->
+    case elems
+      of $Nil      -> None !
+      of $Cons e _ -> Some e
+    end
+  end
+};
+
+vListLast :: forall a:Boxed, { VList a => Maybe a };
+vListLast =  { forall a:Boxed, v =>
+  REC go = { base =>
+    case base of $VListBase prev elems ->
+      case (prev, elems)
+        of ($None, $Nil)      -> None !
+        of ($None, $Cons e _) -> Some e
+        of ($Some base, _)    -> go base
+      end
+    end
+  };
+  case v of $VList offset base size -> go base end
+};
+
+// Precondition: v is not empty.
+vListTail! :: forall a:Boxed, { VList a => VList a };
+vListTail! =  { forall a:Boxed, v =>
+  unMaybe (vListTail v)
+};
+
+vListTail :: forall a:Boxed, { VList a => Maybe (VList a) };
+vListTail =  { forall a:Boxed, v =>
+  case v of $VList offset ($VListBase prev elems) size ->
+    new-off = offset -Int32 1;
+    if size ==Int32 0
+      then None !
+      else
+        if new-off ==Int32 0
+          then case prev
+                of $Some prevbase ->
+                        newsize = size `sdiv-Int32` 2;
+                        Some (VList newsize prevbase newsize)
+                of _ -> Some (mkEmptyVList !)
+               end
+          else // listTail! is justified because new-off > 0,
+               // which implies that elems is non-empty.
+               Some (VList new-off (VListBase prev (listTail! elems)) size)
+        end
+    end
+  end
+};
+
+
+vListLength :: forall a:Boxed, { VList a => Int32 };
+vListLength =  { forall a:Boxed, v =>
+  case v of $VList offset ($VListBase prev elems) size ->
+    if size ==Int32 0
+      then 0
+      else size +Int32 (offset -Int32 1)
+    end
+  end
+};
+
+vListGet :: forall a:Boxed, { VList a => Int32 => Maybe a };
+vListGet =  { forall a:Boxed, v => i =>
+  REC helper-loop = { idx => newsize => base =>
+    case base of ($VListBase prev elems) ->
+      case prev
+        of $Some prevbase ->
+          if i >=SInt32 newsize
+            then helper-loop (idx -Int32 newsize) (newsize `sdiv-Int32` 2) prevbase
+            else listGet elems idx
+          end
+        of $None -> listGet elems idx
+      end
+    end
+  };
+
+  if i >=UInt32 vListLength v
+    then None !
+    else
+      case v of $VList offset ($VListBase prev elems) size ->
+        if i ==Int32 0 // and, implicitly, |v| > 0, thus listHead! is ok.
+          then Some (listHead! elems)
+             // TODO should be just as efficient to do (unMaybe (vListHead v))
+          else case prev
+                 of $None -> listGet elems i
+                 of $Some prevbase ->
+                      if i >=SInt32 offset
+                        then helper-loop (i -Int32 offset) (size `sdiv-Int32` 2) prevbase;
+                        else listGet elems i
+                      end
+               end
+        end
+      end
+  end
+};
+
+vListSplit :: forall c:Boxed, { VList c => Maybe (c, VList c) };
+vListSplit = { forall c:Boxed, v =>
+  case v of $VList offset ($VListBase prev elems) size ->
+    if size ==Int32 0
+      then None !
+      else Some (vListHead! v, vListTail! v)
+    end
+  end
+};
+
+// Uses O(1) stack and O(n) heap.
+vListReverse :: forall a:Boxed, { VList a => VList a };
+vListReverse = { forall a:Boxed, v =>
+  REC helper-loop = { v => acc =>
+    case vListSplit v
+      of $None              -> acc
+      of $Some (head, tail) -> helper-loop tail (vListCons head acc)
+    end
+  };
+  helper-loop v (mkEmptyVList !)
+};
+
+// Uses O(1) stack and heap proportional to whatever f allocates.
+vListFoldl :: forall a:Boxed, e:Boxed, { VList e => { e => a => a } => a => a };
+vListFoldl = { forall a:Boxed e:Boxed, v => f => acc : a =>
+  case vListSplit v
+    of $None              -> acc
+    of $Some (head, tail) -> vListFoldl tail f (f head acc)
+  end
+};
+
+// Uses O(n) stack and heap proportional to whatever f allocates.
+vListFoldr :: forall a:Boxed, e:Boxed, { VList e => { e => a => a } => a => a };
+vListFoldr = { forall a:Boxed e:Boxed, v => f => acc =>
+  case vListSplit v
+    of $None -> acc
+    of $Some (head, tail) -> f head (vListFoldr tail f acc)
+  end
+};
+
+// Note: the order in which the elements are mapped over
+// implementation-specific and should not be relied upon!
+vListMap :: forall a:Boxed, e:Boxed, { VList e => { e => a } => VList a };
+vListMap = { forall a:Boxed e:Boxed, v => f =>
+  vListFoldl v { e => vv => vListCons (f e) vv } (mkEmptyVList !)
+};
+
+vListOfList :: forall a:Boxed, { List a => VList a };
+vListOfList = { forall a:Boxed, v =>
+  // Because we fold from the left, the left-most element is the first
+  // one vConsed onto vNil, so it becomes the last element of the new list.
+  listFoldl (listReverse v) vListCons (mkEmptyVList !)
+};
+
+listOfVList :: forall a:Boxed, { VList a => List a };
+listOfVList = { forall a:Boxed, v =>
+  vListFoldl (vListReverse v) Cons (Nil !)
+};

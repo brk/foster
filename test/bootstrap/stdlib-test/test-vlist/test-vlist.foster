@@ -1,0 +1,59 @@
+snafuinclude Prelude "prelude";
+snafuinclude Vlist   "vlist";
+snafuinclude Measure "bench/measure";
+
+type case BoxedInt64 of $BoxedInt64 Int64;
+
+print_bil = { lst =>
+  print_text_bare "[";
+  listFoldl lst { b => unit => case b of $BoxedInt64 i ->
+                                 print_i64_bare i; print_text_bare ", "; ()
+                               end } ();
+  print_text "]";
+};
+
+print_bil_vList = { v =>
+  print_text_bare "[";
+  vListFoldl v { b => unit => case b of $BoxedInt64 i ->
+                                 print_i64_bare i; print_text_bare ", "; ()
+                              end } ();
+  print_text "]";
+};
+
+type case BoxedInt32 of $BoxedInt32 Int32;
+
+main = {
+  lst =(Cons (BoxedInt64 0)
+       (Cons (BoxedInt64 1)
+       (Cons (BoxedInt64 2)
+       (Cons (BoxedInt64 3)
+       (Cons (BoxedInt64 4)
+       (Cons (BoxedInt64 5)
+       (Cons (BoxedInt64 6)
+       (Cons (BoxedInt64 7)
+       (Cons (BoxedInt64 8)
+       (Cons (BoxedInt64 9)
+       (Nil !)))))))))));
+
+  expect_text "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, ]";
+  print_bil lst;
+
+  expect_text "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, ]";
+  print_bil_vList (vListOfList lst);
+
+  expect_text "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, ]";
+  print_bil (listOfVList (vListOfList lst));
+
+
+  // TODO large VList runtime - why?
+  //print_i64 (elapsed_ticks_n 1 { foldRange 0 100    (Nil !) { e => t => Cons (BoxedInt32 e) t }; () });
+  //print_i64 (elapsed_ticks_n 1 { foldRange 0 1000   (Nil !) { e => t => Cons (BoxedInt32 e) t }; () });
+  //print_i64 (elapsed_ticks_n 1 { foldRange 0 10000  (Nil !) { e => t => Cons (BoxedInt32 e) t }; () });
+  //
+  //print_i64 (elapsed_ticks_n 1 { foldRange 0 100    (mkEmptyVList !) { e => t => vListCons (BoxedInt32 e) t }; () });
+  //print_i64 (elapsed_ticks_n 1 { foldRange 0 1000   (mkEmptyVList !) { e => t => vListCons (BoxedInt32 e) t }; () });
+  //print_i64 (elapsed_ticks_n 1 { foldRange 0 10000  (mkEmptyVList !) { e => t => vListCons (BoxedInt32 e) t }; () });
+
+  // TODO need larger heap to run this test:
+  //print_i64 (elapsed_ticks_n 1 { foldRange 0 100000 (Nil !) { e => t => Cons (BoxedInt32 e) t }; () });
+};
