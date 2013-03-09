@@ -25,13 +25,6 @@ main = {
 
 ////////
 
-isSome = { forall t:Type, v : Maybe t =>
-  case v
-    of $Some _ -> True
-    of _       -> False
-  end
-};
-
 txt0 = {
   expect_text "efghi";
   print_text (textDrop 4 "abcdefghi")
