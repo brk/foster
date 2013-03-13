@@ -14,7 +14,7 @@
 
 using std::string;
 
-struct TypeAST;
+class TypeAST;
 
 namespace llvm {
   class Value;

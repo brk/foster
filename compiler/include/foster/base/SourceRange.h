@@ -13,8 +13,8 @@ namespace llvm {
 
 namespace foster {
 
-struct InputFile;
-struct InputTextBuffer;
+class InputFile;
+class InputTextBuffer;
 
 // Maintaining a global pointer to the current input file is a convenient
 // alternative to threading the current input file through ExprAST_from()

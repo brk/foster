@@ -27,8 +27,8 @@ class StructTypeAST;
 extern llvm::Type* foster_generic_coro_t;
 extern TypeAST* foster_generic_coro_ast;
 
-class PrettyPrintTypePass;
-class DumpTypeToProtobufPass;
+struct PrettyPrintTypePass;
+struct DumpTypeToProtobufPass;
 
 std::string str(const TypeAST* type);
 

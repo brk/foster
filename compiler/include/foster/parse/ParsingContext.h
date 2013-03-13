@@ -21,7 +21,7 @@ namespace llvm {
 }
 
 struct ExprAST;
-struct TypeAST;
+class  TypeAST;
 
 namespace foster {
 
