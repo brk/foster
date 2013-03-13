@@ -1,5 +1,11 @@
 snafuinclude Prelude "prelude";
+snafuinclude List    "list";
 
+/* Catenable lists are defined in terms of queues.
+   The current implementation uses batched queues,
+   but only because it was developed before bootstrapped
+   queues were implemented.
+*/
 type case BatchedQueue (a:Boxed)
        of $BatchedQueue (List a) (List a)
        ;
@@ -53,6 +59,21 @@ type case CatenableList (a:Boxed)
        of $CatenableListC a (BatchedQueue (CatenableList a))
        ;
 
+catenableListSingleton :: forall a:Boxed, { a => CatenableList a };
+catenableListSingleton = { forall a:Boxed, e =>
+  CatenableListC e (bqEmpty !)
+};
+
+catenableListCons :: forall a:Boxed, { a => CatenableList a => CatenableList a };
+catenableListCons = { forall a:Boxed, e => c =>
+  catenableListConcat (catenableListSingleton e) c
+};
+
+catenableListSnoc :: forall a:Boxed, { CatenableList a => a => CatenableList a };
+catenableListSnoc = { forall a:Boxed, c => e =>
+  catenableListConcat c (catenableListSingleton e)
+};
+
 catenableListHead :: forall a:Boxed, { CatenableList a => Maybe a };
 catenableListHead = { forall a:Boxed, c : CatenableList a =>
   case c
@@ -60,6 +81,27 @@ catenableListHead = { forall a:Boxed, c : CatenableList a =>
     of _                   -> None !
    end
 };
+
+catenableListTail :: forall a:Boxed, { CatenableList a => Maybe (CatenableList a) };
+catenableListTail = { forall a:Boxed, c : CatenableList a =>
+  case c
+    of $CatenableListC _ bq -> catenableLinkAll bq
+    of _                   -> None !
+   end
+};
+
+catenableListSplit :: forall a:Boxed, { CatenableList a => Maybe (a, CatenableList a) };
+catenableListSplit = { forall a:Boxed, c : CatenableList a =>
+  case c
+    of $CatenableListC x bq ->
+      case catenableLinkAll bq
+        of $None ->    Some (x, CatenableListE !)
+        of $Some xs -> Some (x, xs)
+      end
+    of _ -> None !
+   end
+};
+
 
 /*
 // Providing a wrong type signature induces an occurs check error:
@@ -109,6 +151,73 @@ catenableLinkAll = { forall a:Boxed, q : BatchedQueue (CatenableList a) =>
   end
 };
 
+catenableListToList :: forall a:Boxed, { CatenableList a => List a };
+catenableListToList = { forall a:Boxed, c =>
+  case catenableListSplit c
+    of $None         -> Nil !
+    of $Some (x, xs) -> Cons x (catenableListToList xs)
+   end
+};
+
+catenableListOfList :: forall a:Boxed, { List a => CatenableList a };
+catenableListOfList = { forall a:Boxed, lst =>
+  listFoldl (listReverse lst) catenableListCons (CatenableListE !)
+};
+
+catenableListLift :: forall a:Boxed, { { List a => List a } => CatenableList a => CatenableList a };
+catenableListLift = { forall a:Boxed, f => c =>
+  catenableListOfList (f (catenableListToList c))
+};
+
+catenableListReverse :: forall a:Boxed, { CatenableList a => CatenableList a };
+catenableListReverse = { forall a:Boxed, c =>
+  catenableListLift listReverse c
+};
+
+catenableListMap :: forall a:Boxed, { { a => a } => CatenableList a => CatenableList a };
+catenableListMap = { forall a:Boxed, f => c =>
+  catenableListLift { lst => listMap lst f } c
+};
+
+////////////
+
+print_bil = { lst =>
+  print_text_bare "[";
+  listFoldl lst { f => unit => print_i64_bare (f !); print_text_bare ", "; () } ();
+  print_text "]";
+};
+
 main = {
-  ()
+  lst =(Cons { 0 }
+       (Cons { 1 }
+       (Cons { 2 }
+       (Cons { 3 }
+       (Cons { 4 }
+       (Cons { 5 }
+       (Nil:[{Int64}] !)))))));
+
+  expect_text "[0, 1, 2, 3, 4, 5, ]";
+  print_bil lst;
+
+  expect_text "[0, 1, 2, 3, 4, 5, ]";
+  print_bil (catenableListToList (catenableListOfList lst));
+
+  expect_text "[0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, ]";
+  print_bil (catenableListToList
+               (catenableListConcat
+                 (catenableListOfList lst)
+                 (catenableListOfList lst)));
+
+  expect_text "[5, 4, 3, 2, 1, 0, 0, 1, 2, 3, 4, 5, ]";
+  print_bil (catenableListToList
+               (catenableListConcat
+                 (catenableListOfList (listReverse lst))
+                 (catenableListOfList lst)));
+
+  expect_text "[5, 4, 3, 2, 1, 0, 0, 1, 2, 3, 4, 5, ]";
+  print_bil (catenableListToList
+               (catenableListConcat
+                 (catenableListReverse (catenableListOfList lst))
+                 (catenableListOfList lst)));
+
 };

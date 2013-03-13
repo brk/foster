@@ -1,4 +1,5 @@
 snafuinclude List "list";
+snafuinclude Prelude "prelude";
 
 main = {
   expect_i32 5;
@@ -6,6 +7,23 @@ main = {
 
   expect_i32 0;
   print_i32 (listLength (Nil:[()] !));
+
+  lst =(Cons { 0 }
+       (Cons { 1 }
+       (Cons { 2 }
+       (Cons { 3 }
+       (Cons { 4 }
+       (Cons { 5 }
+       (Nil:[{Int64}] !)))))));
+
+  expect_text "[0, 1, 2, 3, 4, 5, ]";
+  print_bil lst;
+
+  expect_text "[5, 4, 3, 2, 1, 0, ]";
+  print_bil (listReverse lst);
+
+  expect_text "[0, 1, 2, 3, 4, 5, 5, 4, 3, 2, 1, 0, ]";
+  print_bil (listAppend lst (listReverse lst));
 };
 
 mkUnitListTo = { n : Int32 =>
@@ -22,5 +40,11 @@ mkPairListTo = { n : Int32 =>
   else
     Cons (n, n) (mkPairListTo (n -Int32 1))
   end
+};
+
+print_bil = { lst =>
+  print_text_bare "[";
+  listFoldl lst { f => unit => print_i64_bare (f !); print_text_bare ", "; () } ();
+  print_text "]";
 };
 

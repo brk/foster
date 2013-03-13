@@ -323,7 +323,8 @@ compileDecisionTree :: MoVar -> DecisionTree BlockId MonoType -> ILM BlockFin
 -- nested pattern matching will load the same subterm multiple times:
 -- once on the path to a leaf, and once more inside the leaf itself.
 
-compileDecisionTree _scrutinee (DT_Fail) = error "can't do dt_FAIL yet"
+compileDecisionTree _scrutinee (DT_Fail) =
+  error $ "can't do dt_FAIL yet, for scrutinee " ++ show _scrutinee
 
 compileDecisionTree _scrutinee (DT_Leaf armid []) = do
         return $ BlockFin emptyClosedGraph armid

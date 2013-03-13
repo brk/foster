@@ -5,24 +5,6 @@ type case List (a:Boxed)
   of $Cons a (List a)
 ;
 
-listLength = { forall t:Boxed, xs : List t =>
-  case xs
-    of $Nil -> 0
-    of $Cons _ ys -> 1 +Int32 (listLength ys)
-   end;
-};
-
-
-listReverse = { forall t:Boxed, xs : List t =>
-  REC go = { xs : List t => acc : List t =>
-        case xs
-          of $Nil -> acc
-          of $Cons x ys -> go ys (Cons x acc)
-         end;
-  };
-  go xs (Nil !)
-};
-
 // Precondition: List is not empty.
 listHead! :: forall t:Boxed, { List t => t };
 listHead! = { forall t:Boxed, xs : List t =>
@@ -62,7 +44,7 @@ listGet = { forall t:Boxed, xs : List t => i : Int32 =>
   end
 };
 
-// Uses O(1) stack and heap proportional to whatever f allocates.
+// Uses O(1) stack, and heap proportional to whatever f allocates.
 listFoldl :: forall a:Boxed, e:Boxed, { List e => { e => a => a } => a => a };
 listFoldl = { forall a:Boxed e:Boxed, v => f => acc : a =>
   case v
@@ -74,6 +56,52 @@ listFoldl = { forall a:Boxed e:Boxed, v => f => acc : a =>
 listMap :: forall a:Boxed, e:Boxed, { List e => { e => a } => List a };
 listMap = { forall a:Boxed e:Boxed, v => f =>
   listFoldl v { e => tail => Cons (f e) tail } (Nil !);
+};
+
+listLength = { forall t:Boxed, xs : List t =>
+  REC go = { xs => acc =>
+    case xs
+      of $Nil -> acc
+      of $Cons x ys -> go ys (acc +Int32 1)
+    end
+  };
+  go xs 0
+};
+
+/* Can't yet do this because of Boxed/Type kind mismatch
+listLengthAlt = { forall t:Boxed, xs : List t =>
+  listFoldl xs { e => len => 1 +Int32 len } 0
+};
+*/
+
+listReverse = { forall t:Boxed, xs : List t =>
+  REC go = { xs : List t => acc : List t =>
+    case xs
+      of $Nil -> acc
+      of $Cons x ys -> go ys (Cons x acc)
+    end
+  };
+  go xs (Nil !)
+};
+
+listReverseAlt = { forall t:Boxed, xs : List t =>
+  listFoldl xs Cons (Nil !)
+};
+
+listAppend :: forall t:Boxed, { List t => List t => List t };
+listAppend = { forall t:Boxed, xs => ys =>
+  REC go = { rev => acc =>
+    case rev
+      of $Nil -> acc
+      of $Cons z zs -> go zs (Cons z acc)
+    end
+  };
+  go (listReverse xs) ys
+};
+
+listAppendAlt :: forall t:Boxed, { List t => List t => List t };
+listAppendAlt = { forall t:Boxed, xs => ys =>
+  listFoldl (listReverse xs) Cons ys
 };
 
 listIter :: forall a:Boxed, { List a => { a => () } => () };
