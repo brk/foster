@@ -356,7 +356,7 @@ bool isGenericClosureType(const llvm::Type* ty) {
 
     const llvm::Type* fnty = sty->getContainedType(0)->getContainedType(0);
     if (!fnty->isFunctionTy()) return false;
-    if (!fnty->getNumContainedTypes() >= 2) return false;
+    if (fnty->getNumContainedTypes() < 2) return false;
     if (fnty->getContainedType(1) != env) return false;
     return true;
   }
