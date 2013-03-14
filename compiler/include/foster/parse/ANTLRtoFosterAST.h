@@ -11,12 +11,12 @@
 
 typedef pANTLR3_BASE_TREE pTree;
 
-class WholeProgramAST;
+struct WholeProgramAST;
 
 namespace foster {
 
-class ANTLRContext;
-struct InputFile;
+struct ANTLRContext;
+class InputFile;
 
 WholeProgramAST* parseWholeProgram(const InputFile& file,
                                    const std::string& searchPath,

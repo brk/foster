@@ -336,10 +336,7 @@ add_custom_target(imath_wrapper_bc DEPENDS
 
 # Attaching commands to add_custom_target basically means
 # "run these commands whenver the target is mentioned."
-add_custom_target(unittests COMMAND ctest -V -R unittest
-  DEPENDS
-    unittest_fosterc_base
-    unittest_fosterc_parse)
+
 
 # Look for ANTLR-generated lexer and parser, and ANTLR library files
 include_directories(${ANTLR_DIR}/include ${PROJECT_BINARY_DIR})
@@ -510,19 +507,6 @@ set_target_properties(fosterc_llvm fosterc_base
 
 #####################################################################
 
-add_executable(unittest_fosterc_base
-  ${PROJECT_SOURCE_DIR}/compiler/base/Assert_unittest.cpp
-  ${PROJECT_SOURCE_DIR}/compiler/base/SourceRange_unittest.cpp
-  ${PROJECT_SOURCE_DIR}/compiler/base/GenericGraph_unittest.cpp
-  ${PROJECT_SOURCE_DIR}/compiler/base/FreshNameGenerator_unittest.cpp
-)
-target_link_libraries(unittest_fosterc_base
-  fosterc_parse fosterc_base
-  gtest_main
-  antlr3c ${LLVM_LDFLAGS})
-
-#####################################################################
-
 enable_testing()
 
 add_test(bootstrap
@@ -536,10 +520,3 @@ add_test(bootstrap
 set(CTEST_CUSTOM_ERROR_MATCH ${CTEST_CUSTOM_ERROR_MATCH}
   "[1-9][0-9] tests failed")
 
-add_test(NAME fosterc_unittest_base
-  COMMAND python ${PROJECT_SOURCE_DIR}/scripts/gtest_wrapper.py
-                 ${PROJECT_BINARY_DIR}/unittest_fosterc_base)
-
-add_test(NAME fosterc_unittest_parse
-  COMMAND python ${PROJECT_SOURCE_DIR}/scripts/gtest_wrapper.py
-                 ${PROJECT_BINARY_DIR}/unittest_fosterc_parse)

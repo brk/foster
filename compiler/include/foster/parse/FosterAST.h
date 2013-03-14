@@ -30,11 +30,11 @@ namespace llvm {
 using llvm::Type;
 using llvm::APInt;
 
-class ExprAST;
-class TypeAST;
-class VariableAST;
+struct ExprAST;
+struct VariableAST;
+class  TypeAST;
 
-class DumpToProtobufPass;
+struct DumpToProtobufPass;
 
 typedef std::vector<ExprAST*> Exprs;
 
@@ -60,14 +60,14 @@ struct ExprAST {
   virtual void dump(DumpToProtobufPass* pass) = 0;
 };
 
-class IntAST;
-class RatAST;
-class BoolAST;
-class SeqAST;
-class IfExprAST;
-class VariableAST;
+struct IntAST;
+struct RatAST;
+struct BoolAST;
+struct SeqAST;
+struct IfExprAST;
+struct VariableAST;
 
-class Decl; class Defn; class Data;
+struct Decl; struct Defn; struct Data;
 struct ModuleAST {
   std::string name;
   std::string hash;

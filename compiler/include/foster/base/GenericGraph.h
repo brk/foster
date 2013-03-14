@@ -198,8 +198,8 @@ public:
     for (typename std::map< std::pair<NodePtr, NodePtr>, EdgeLabel >::iterator
           it = edgeLabels.begin(); it != edgeLabels.end(); ++it) {
       std::pair<NodePtr, NodePtr> edge = (*it).first;
-      unsigned tailComponent = edge.first->getSCCId()  - 1;
-      unsigned headComponent = edge.second->getSCCId() - 1;
+      int tailComponent = edge.first->getSCCId()  - 1;
+      int headComponent = edge.second->getSCCId() - 1;
       if (tailComponent < 0 || headComponent < 0) {
         continue; // ignore edges to or from the virtual root.
       }

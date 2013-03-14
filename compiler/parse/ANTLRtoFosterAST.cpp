@@ -239,7 +239,7 @@ ExprAST* parseNumFrom(pTree t) {
               << "rationals should not contain hex digits or a base specifier"
               << "; saw " << alltext;
 
-    if (alltext.find_first_of("eE") >= 0) {
+    if (alltext.find_first_of("eE") != string::npos) {
       ASSERT(alltext.find_first_of("eE") > alltext.find_first_of("."))
               << "e/E should only appear in rational as exponent specifier";
     }
