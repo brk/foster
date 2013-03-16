@@ -705,19 +705,23 @@ availsRewrite allRoots doReuseRootSlots = mkFRewrite d
           [] -> return Nothing
           (r:_) -> let a1 = unkill a r in
                    let a2 = unkill a root in
-                   return $ trace ("\navailsRewrite: adding gcinit for root " ++ show (tidIdent root)
-                                         ++ ";\n\tunkilled: " ++ show (unkilledRoots a)
-                                         ++ ";\n\tinited: "   ++ show (initedRoots a)
-                                         ++ ";\n\t    pretending to unkill " ++ show r
-                                         ++ ";\n\tunkilled(1): " ++ show (unkilledRoots a1)
-                                         ++ ";\n\tinited(1): "   ++ show (initedRoots a1)
-                                         ++ ";\n\t    pretending to unkill " ++ show root
-                                         ++ ";\n\tunkilled(2): " ++ show (unkilledRoots a2)
-                                         ++ ";\n\tinited(2): "   ++ show (initedRoots a2)
-                                         ++ ";\n\tallroots "  ++ show (allRoots)
-                                         )
-                          $ Just $ mkMiddle (CCRebindId (text $ "gcinit" ++ if root /= root0 then "; root0 = " ++ show (tidIdent root0) else "; kr: " ++ show (killedRootsOfRightType)) root r)
-                               <*> mkMiddle (CCGCInit j v r)
+                   let rv = Just $ mkMiddle (CCRebindId (text $ "gcinit" ++ if root /= root0 then "; root0 = " ++ show (tidIdent root0) else "; kr: " ++ show (killedRootsOfRightType)) root r)
+                               <*> mkMiddle (CCGCInit j v r) in
+                   if True
+                    then return rv
+                    else return $
+                     trace ("\navailsRewrite: adding gcinit for root " ++ show (tidIdent root)
+                                  ++ ";\n\tunkilled: " ++ show (unkilledRoots a)
+                                  ++ ";\n\tinited: "   ++ show (initedRoots a)
+                                  ++ ";\n\t    pretending to unkill " ++ show r
+                                  ++ ";\n\tunkilled(1): " ++ show (unkilledRoots a1)
+                                  ++ ";\n\tinited(1): "   ++ show (initedRoots a1)
+                                  ++ ";\n\t    pretending to unkill " ++ show root
+                                  ++ ";\n\tunkilled(2): " ++ show (unkilledRoots a2)
+                                  ++ ";\n\tinited(2): "   ++ show (initedRoots a2)
+                                  ++ ";\n\tallroots "  ++ show (allRoots)
+                                  ) rv
+
     d (CCGCKill Disabled    _)   _    = return Nothing
     d (CCGCKill enabled roots)   a =
       let unkilled = (Set.map (s a) roots `availFrom` unkilledRoots a)
