@@ -30,8 +30,6 @@ ordInvertIf = { b : Ord => cnd : Bool =>
   if cnd then ordInvert b else b end
 };
 
-// notLT
-//
 isGE = { o : Ord =>
   case o
     of $LT -> False
@@ -39,9 +37,34 @@ isGE = { o : Ord =>
   end
 };
 
+notLT = { o => isGE o };
+
+isLE = { o : Ord =>
+  case o
+    of $GT -> False
+    of _   -> True
+  end
+};
+
+notGT = { o => isLE o };
+
 isEQ = { o : Ord =>
   case o
     of $EQ -> True
+    of _   -> False
+  end
+};
+
+isGT = { o : Ord =>
+  case o
+    of $GT -> True
+    of _   -> False
+  end
+};
+
+isLT = { o : Ord =>
+  case o
+    of $LT -> True
     of _   -> False
   end
 };

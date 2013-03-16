@@ -4,6 +4,9 @@ snafuinclude Ord  "ord";
 either = { a : Bool => b : Bool => if a then True else b     end };
 both   = { a : Bool => b : Bool => if a then b    else False end };
 
+oror   = { a : { Bool } => b : { Bool } => if a ! then True else b !   end };
+andand = { a : { Bool } => b : { Bool } => if a ! then b !  else False end };
+
 /////
 
 cmpSInt32 = { a : Int32 => b : Int32 =>

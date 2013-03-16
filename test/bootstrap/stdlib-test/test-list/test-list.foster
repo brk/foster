@@ -22,6 +22,9 @@ main = {
   expect_text "[5, 4, 3, 2, 1, 0, ]";
   print_bil (listReverse lst);
 
+  expect_text "[0, 1, 2, 3, ]";
+  print_bil (listKeepIf lst { f => (f !) <SInt64 4 });
+
   expect_text "[0, 1, 2, 3, 4, 5, 5, 4, 3, 2, 1, 0, ]";
   print_bil (listAppend lst (listReverse lst));
 };

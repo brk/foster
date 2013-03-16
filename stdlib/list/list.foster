@@ -53,9 +53,20 @@ listFoldl = { forall a:Boxed e:Boxed, v => f => acc : a =>
   end
 };
 
+// Uses O(1) stack, and heap O(n) + whatever f allocates.
+listFoldr :: forall a:Boxed, e:Boxed, { List e => { e => a => a } => a => a };
+listFoldr = { forall a:Boxed e:Boxed, v => f => acc : a =>
+  listFoldl (listReverse v) f acc
+};
+
 listMap :: forall a:Boxed, e:Boxed, { List e => { e => a } => List a };
 listMap = { forall a:Boxed e:Boxed, v => f =>
   listFoldl v { e => tail => Cons (f e) tail } (Nil !);
+};
+
+listKeepIf :: forall a:Boxed, { List a => { a => Bool } => List a };
+listKeepIf = { forall a:Boxed, v => f =>
+  listFoldl (listReverse v) { e => tail => if f e then Cons e tail else tail end } (Nil !);
 };
 
 listLength = { forall t:Boxed, xs : List t =>
@@ -101,7 +112,7 @@ listAppend = { forall t:Boxed, xs => ys =>
 
 listAppendAlt :: forall t:Boxed, { List t => List t => List t };
 listAppendAlt = { forall t:Boxed, xs => ys =>
-  listFoldl (listReverse xs) Cons ys
+  listFoldr xs Cons ys
 };
 
 listIter :: forall a:Boxed, { List a => { a => () } => () };
