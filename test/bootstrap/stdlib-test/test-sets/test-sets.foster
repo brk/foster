@@ -1,0 +1,45 @@
+snafuinclude Sets "set";
+
+print_bil = { lst =>
+  print_text_bare "[";
+  listFoldl lst { f => unit => print_i64_bare (f !); print_text_bare ", "; () } ();
+  print_text "]";
+};
+
+main = {
+  lst =(Cons { 0 }
+       (Cons { 1 }
+       (Cons { 2 }
+       (Cons { 4 }
+       (Cons { 5 }
+       (Cons { 6 }
+       (Cons { 1 }
+       (Nil:[{Int64}] !))))))));
+
+  cmp = { f1 => f2 => cmpSInt64 (f1 !) (f2 !) };
+
+  shw = { f1 => tmp_Text_of_Int64 (f1 !) };
+
+  expect_text "[0, 1, 2, 4, 5, 6, 1, ]";
+  print_bil lst;
+
+  expect_text "[0, 1, 2, 4, 5, 6, ]";
+  print_bil (setToList (setOfList lst cmp));
+
+  expect_text "[4, 5, 6, ]";
+  print_bil (setToList
+     (setJoin { 4 } (SetTip !)
+                    (SetBin 2 { 5 } (SetTip !)
+                                    (setSingleton { 6 }))));
+
+  s1 = (setOfList lst cmp);
+  case setSplit { 3 } s1 cmp of (lo, hi) ->
+    expect_text "[0, 1, 2, ]";
+    print_bil (setToList lo);
+
+    expect_text "[4, 5, 6, ]";
+    print_bil (setToList hi);
+  end;
+
+};
+
