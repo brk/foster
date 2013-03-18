@@ -1,10 +1,13 @@
 snafuinclude Prelude "prelude";
 snafuinclude List    "list";
 
-/* Based on the (BSD-licensed) implementation of sets in
-   the Haskell `containers-0.5.0.0` package:
+/*
+  Based on the (BSD-licensed) implementation of sets in
+  the Haskell `containers-0.5.0.0` package:
     http://hackage.haskell.org/packages/archive/containers/0.5.0.0/doc/html/src/Data-Set-Base.html#null
-   (c) Daan Leijen 2002
+  (c) Daan Leijen 2002
+
+  The relevant license file may be found in third_party/ghc/LICENSE.txt
  */
 
 type case Set (a:Boxed)
