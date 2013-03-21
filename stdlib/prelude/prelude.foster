@@ -159,6 +159,8 @@ highestBitMask-Word = { x0 =>
   x3 = x2 `bitor-Word` (x2 `bitlshr-Word` 4);
   x4 = x3 `bitor-Word` (x3 `bitlshr-Word` 8);
   x5 = x4 `bitor-Word` (x4 `bitlshr-Word` 16);
+  // In LLVM, shifting a 32-bit value 32 bits
+  // produces undefined, not zero.
   x6 = if 0 ==Word bitxor-Word (-1) 0FFFF`FFFF_16
           then x5 // 32 bits in a word
           else    // 64 bits in a word

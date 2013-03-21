@@ -1,0 +1,718 @@
+snafuinclude Prelude "prelude";
+snafuinclude List    "list";
+
+/*
+  Based on the (BSD-licensed) implementation of Data.IntMap in
+  the Haskell `containers-0.5.2.1` package:
+    http://hackage.haskell.org/packages/archive/containers/0.5.2.1/doc/html/src/Data-IntMap-Base.html
+  (c) Daan Leijen 2002
+  (c) Andriy Palamarchuk 2008
+
+  The relevant license file may be found in third_party/ghc/LICENSE.txt
+ */
+
+type case WordMap (a:Boxed)
+       of $WordMapBin Word // prefix
+                      Word // mask
+                      (WordMap a) (WordMap a)
+       of $WordMapTip Word /* key */   a
+       of $WordMapNil
+       ;
+
+wordMapEmpty :: forall a:Boxed, { WordMap a };
+wordMapEmpty = { forall a:Boxed, WordMapNil ! };
+
+// O(1)
+wordMapIsEmpty :: forall a:Boxed, { WordMap a => Bool };
+wordMapIsEmpty = { forall a:Boxed, s =>
+  case s
+    of $WordMapNil -> True
+    of _           -> False
+  end
+};
+
+// O(1)
+wordMapSingleton :: forall a:Boxed, { Word => a => WordMap a };
+wordMapSingleton = { forall a:Boxed, k => v => WordMapTip k v };
+
+// O(1)
+wordMapSize :: forall a:Boxed, { WordMap a => Word };
+wordMapSize = { forall a:Boxed, s =>
+  case s
+    of $WordMapNil         -> 0
+    of $WordMapTip _ _     -> 1
+    of $WordMapBin _ _ l r -> wordMapSize l +Word wordMapSize r
+  end
+};
+
+// O(1)
+wordMapBin :: forall a:Boxed, { Word => Word => WordMap a => WordMap a => WordMap a };
+wordMapBin = { forall a:Boxed, p => m => l => r =>
+  if wordMapIsEmpty r then l else
+  if wordMapIsEmpty l then r else
+                           WordMapBin p m l r
+  end
+  end
+};
+
+// O(?)
+// Smart constructor which restores balance and size if necessary.
+wordMapJoin :: forall a:Boxed, { Word => WordMap a => Word => WordMap a => WordMap a };
+wordMapJoin = { forall a:Boxed, p1   => t1        => p2   => t2 =>
+  m = wordMapBranchMask p1 p2;
+  p = wordMapMask       p1 m;
+  if wordMapZero p1 m
+    then WordMapBin p m t1 t2
+    else WordMapBin p m t2 t1
+  end
+};
+
+// O(lg n)
+// May perform one allocation, depending on compiler-chosen data representation.
+wordMapLookup :: forall a:Boxed, { WordMap a => Word => Maybe a };
+wordMapLookup = { forall a:Boxed, s => k =>
+  REC go = { s =>
+      case s
+        of $WordMapNil                -> None !
+        of $WordMapTip kx x           ->
+          if k ==Word kx then Some x
+                         else None !
+          end
+        of $WordMapBin _ m l r ->
+          if wordMapZero k m
+            then go l
+            else go r
+          end
+      end
+  };
+  go s;
+};
+
+// O(lg n)
+// Does not allocate.
+wordMapContainsKey :: forall a:Boxed, { WordMap a => Word => Bool };
+wordMapContainsKey = { forall a:Boxed, s => k =>
+  REC go = { s =>
+      case s
+        of $WordMapNil                -> False
+        of $WordMapTip kx x           ->
+          if k ==Word kx then True
+                         else False
+          end
+        of $WordMapBin _ m l r ->
+          if wordMapZero k m
+            then go l
+            else go r
+          end
+      end
+  };
+  go s;
+};
+
+// O(lg  n)
+// Does not allocate.
+wordMapLookupWithDefault :: forall a:Boxed, { WordMap a => Word => a => a };
+wordMapLookupWithDefault = { forall a:Boxed, s => k => a =>
+  REC go = { s =>
+      case s
+        of $WordMapNil                -> a
+        of $WordMapTip kx x           ->
+          if k ==Word kx then x
+                         else a
+          end
+        of $WordMapBin _ m l r ->
+          if wordMapZero k m
+            then go l
+            else go r
+          end
+      end
+  };
+  go s;
+};
+
+/*
+// O(lg n)
+// Find largest element smaller than the given one.
+wordMapLookupLT :: forall a:Boxed, { WordMap a => k => Maybe a };
+wordMapLookupLT = { forall a:Boxed, s => k =>
+  REC goNone = { s =>
+      case s
+        of $WordMapNil                -> None !
+        of $WordMapBin _ kelt elt l r ->
+          if isLT (cmp elt e)
+            then goSome elt r
+            else goNone l
+          end
+      end
+  };
+  REC goSome = { best => s =>
+      case s
+        of $WordMapNil           -> Some best
+        of $WordMapBin _ kelt elt l r ->
+            if isLT (cmp elt e)
+              then goSome elt  r
+              else goSome best l
+            end
+      end
+  };
+  goNone s;
+};
+
+// O(lg n)
+// Find smallest element greater than the given one.
+wordMapLookupGT :: forall a:Boxed, { WordMap a => a => Maybe k };
+wordMapLookupGT = { forall a:Boxed, s => e =>
+  REC goNone = { s =>
+      case s
+        of $WordMapNil           -> None !
+        of $WordMapBin _ kelt elt l r ->
+          if isGT (cmp elt e)
+            then goNone l
+            else goSome elt r
+          end
+      end
+  };
+  REC goSome = { best => s =>
+      case s
+        of $WordMapNil           -> Some best
+        of $WordMapBin _ kelt elt l r ->
+            if isGT (cmp elt e)
+              then goSome best l
+              else goSome elt  r
+            end
+      end
+  };
+  goNone s;
+};
+
+// O(lg n)
+// Find largest element smaller or equal to the given one.
+wordMapLookupLE :: forall a:Boxed, { WordMap a => a => Maybe k };
+wordMapLookupLE = { forall a:Boxed, s => e =>
+  REC goNone = { s =>
+      case s
+        of $WordMapNil           -> None !
+        of $WordMapBin _ kelt elt l r ->
+          case cmp elt e
+            of $LT -> goSome elt r
+            of $EQ -> Some elt
+            of $GT -> goNone l
+          end
+      end
+  };
+  REC goSome = { best => s =>
+      case s
+        of $WordMapNil           -> Some best
+        of $WordMapBin _ kelt elt l r ->
+          case cmp elt e
+            of $LT -> goSome best l
+            of $EQ -> Some elt
+            of $GT -> goSome elt l
+          end
+      end
+  };
+  goNone s;
+};
+
+// O(lg n)
+// Find smallest element greater or equal to the given one.
+wordMapLookupGE :: forall a:Boxed, { WordMap a => a => Maybe k };
+wordMapLookupGE = { forall a:Boxed, s => e =>
+  REC goNone = { s =>
+      case s
+        of $WordMapNil           -> None !
+        of $WordMapBin _ kelt elt l r ->
+          case cmp elt e
+            of $LT -> goNone r
+            of $EQ -> Some elt
+            of $GT -> goSome elt l
+          end
+      end
+  };
+  REC goSome = { best => s =>
+      case s
+        of $WordMapNil           -> Some best
+        of $WordMapBin _ kelt elt l r ->
+          case cmp elt e
+            of $LT -> goSome best r
+            of $EQ -> Some elt
+            of $GT -> goSome elt l
+          end
+      end
+  };
+  goNone s;
+};
+*/
+
+// O(lg n)
+// If an element is equivalent to one already in the wordMap,
+// the new element replaces the old one.
+wordMapInsert :: forall a:Boxed, { Word => a => WordMap a => WordMap a };
+wordMapInsert = { forall a:Boxed, k => x : a => s =>
+  REC go = { s =>
+      case s
+        of $WordMapNil            -> wordMapSingleton k x
+        of $WordMapTip ky _       -> sp = WordMapTip k x;
+                                     if k ==Word ky
+                                       then sp
+                                       else wordMapJoin k sp ky s
+                                     end
+        of $WordMapBin p m l r ->
+          if wordMapNoMatch k p m then wordMapJoin k (WordMapTip k x) p s else
+          if wordMapZero k m      then WordMapBin p m (wordMapInsert k x l) r
+                                  else WordMapBin p m l (wordMapInsert k x r)
+          end
+          end
+      end
+  };
+  go s;
+};
+
+// O(lg n)
+wordMapInsertWith :: forall a:Boxed, { { a => a => a } => Word => a => WordMap a => WordMap a };
+wordMapInsertWith = { forall a:Boxed, f => k => x : a => s =>
+  wordMapInsertWithKey { w => xp => yp => f xp yp } k x s
+};
+
+// O(lg n)
+wordMapInsertWithKey :: forall a:Boxed, { { Word => a => a => a } => Word => a => WordMap a => WordMap a };
+wordMapInsertWithKey = { forall a:Boxed, f => k => x : a => s =>
+  REC go = { s =>
+      case s
+        of $WordMapNil            -> WordMapTip k x
+        of $WordMapTip ky y       -> if k ==Word ky
+                                       then WordMapTip k (f k x y)
+                                       else wordMapJoin k (WordMapTip k x) ky s
+                                     end
+        of $WordMapBin p m l r    ->
+          if wordMapNoMatch k p m then wordMapJoin k (WordMapTip k x) p s else
+          if wordMapZero k m      then WordMapBin p m (wordMapInsertWithKey f k x l) r
+                                  else WordMapBin p m l (wordMapInsertWithKey f k x r)
+          end
+          end
+      end
+  };
+  go s;
+};
+
+
+// TODO the x : a annotation is only needed due to a compiler bug (2013/03/15).
+
+// O(lg n)
+// If an element is equivalent to one already in the wordMap,
+// the original wordMap is returned, not a new wordMap.
+wordMapDelete :: forall a:Boxed, { WordMap a => Word => WordMap a };
+wordMapDelete = { forall a:Boxed, s => k =>
+  REC go = { s =>
+      case s
+        of $WordMapNil            -> s
+        of $WordMapTip ky _       -> if k ==Word ky
+                                       then WordMapNil !
+                                       else s
+                                     end
+        of $WordMapBin p m l r ->
+          if wordMapNoMatch k p m then s else
+          if wordMapZero k m      then wordMapBin p m (wordMapDelete l k) r
+                                  else wordMapBin p m l (wordMapDelete r k)
+          end
+          end
+      end
+  };
+  go s;
+};
+
+////////////
+
+// O(n+m)
+wordMapUnion :: forall a:Boxed, { WordMap a => WordMap a => WordMap a };
+wordMapUnion = { forall a:Boxed, s1 => s2 =>
+  case (s1, s2)
+    of ($WordMapNil, _) -> s2
+    of (_, $WordMapNil) -> s1
+    of (t, $WordMapTip k x) -> wordMapInsertWith { ky => y => y } k x t
+    of ($WordMapTip k x, t) -> wordMapInsert                   k x t
+    of ($WordMapBin p1 m1 l1 r1, $WordMapBin p2 m2 l2 r2) ->
+      if wordMapShorter m1 m2 then
+        if wordMapNoMatch p2 p1 m1 then wordMapJoin p1 s1 p2 s2 else
+              if wordMapZero p2 m1
+                then WordMapBin p1 m1 (wordMapUnion l1 s2) r1
+                else WordMapBin p1 m1 l1 (wordMapUnion r1 s2)
+              end
+        end
+      else
+          if wordMapShorter m2 m1 then
+            if wordMapNoMatch p1 p2 m2 then wordMapJoin p1 s1 p2 s2 else
+                if wordMapZero p1 m2
+                  then WordMapBin p2 m2 (wordMapUnion s1 l2) r2
+                  else WordMapBin p2 m2 l2 (wordMapUnion s1 r2)
+                end
+          end
+        else
+          if p1 ==Word p2
+            then WordMapBin p1 m1 (wordMapUnion l1 l2) (wordMapUnion r1 r2)
+            else wordMapJoin p1 s1 p2 s2
+          end
+        end
+      end
+  end
+};
+
+// O(n+m)
+wordMapDifference :: forall a:Boxed, { WordMap a => WordMap a => WordMap a };
+wordMapDifference = { forall a:Boxed, s1 => s2 =>
+  case (s1, s2)
+    of ($WordMapNil, _) -> s1
+    of (_, $WordMapNil) -> s1
+    of (_, $WordMapTip k _) -> wordMapDelete s1 k
+    of ($WordMapTip k _, _) -> if wordMapContainsKey s2 k
+                                 then WordMapNil ! else s1 end
+    of ($WordMapBin p1 m1 l1 r1, $WordMapBin p2 m2 l2 r2) ->
+      if wordMapShorter m1 m2 then
+        if wordMapNoMatch p2 p1 m1 then wordMapJoin p1 s1 p2 s2 else
+              if wordMapZero p2 m1
+                then wordMapBin p1 m1 (wordMapDifference l1 s2) r1
+                else wordMapBin p1 m1 l1 (wordMapDifference r1 s2)
+              end
+        end
+      else
+          if wordMapShorter m2 m1 then
+            if wordMapNoMatch p1 p2 m2 then s1 else
+                if wordMapZero p1 m2
+                  then wordMapDifference s1 l2
+                  else wordMapDifference s1 r2
+                end
+          end
+        else
+          if p1 ==Word p2
+            then wordMapBin p1 m1 (wordMapDifference l1 l2) (wordMapDifference r1 r2)
+            else s1
+          end
+        end
+      end
+  end
+};
+
+// O(n+m)
+wordMapIntersection :: forall a:Boxed, { WordMap a => WordMap a => WordMap a };
+wordMapIntersection = { forall a:Boxed, s1 => s2 =>
+  case (s1, s2)
+    of ($WordMapNil, _) -> s1
+    of (_, $WordMapNil) -> s2
+    of (_, $WordMapTip k _) -> case wordMapLookup s1 k
+                                 of $Some y -> WordMapTip k y
+                                 of $None   -> WordMapNil !
+                               end
+    of ($WordMapTip k _, _) -> if wordMapContainsKey s2 k
+                                 then s1 else WordMapNil ! end
+    of ($WordMapBin p1 m1 l1 r1, $WordMapBin p2 m2 l2 r2) ->
+      if wordMapShorter m1 m2 then
+        if wordMapNoMatch p2 p1 m1 then WordMapNil ! else
+              if wordMapZero p2 m1
+                then wordMapIntersection l1 s2
+                else wordMapIntersection r1 s2
+              end
+        end
+      else
+          if wordMapShorter m2 m1 then
+            if wordMapNoMatch p1 p2 m2 then s1 else
+                if wordMapZero p1 m2
+                  then wordMapIntersection s1 l2
+                  else wordMapIntersection s1 r2
+                end
+          end
+        else
+          if p1 ==Word p2
+            then wordMapBin p1 m1 (wordMapIntersection l1 l2) (wordMapIntersection r1 r2)
+            else WordMapNil !
+          end
+        end
+      end
+  end
+};
+
+/*
+// O(n+m)
+wordMapIsSubmapOf :: forall a:Boxed, { WordMap a => WordMap a => Bool };
+wordMapIsSubmapOf = { forall a:Boxed, s1 => s2 =>
+  REC go = { s1 => s2 =>
+    case (s1, s2)
+      of ($WordMapNil, _) -> True
+      of (_, $WordMapNil) -> False
+      of ($WordMapBin _ kx x l r, _) ->
+        case wordMapSplitLookup kx s2 cmp
+          of (lt, found, gt) ->
+            both found ({ go l lt } `andand` { go r gt })
+        end
+    end
+  };
+  { wordMapSize s1 <=UWord wordMapSize s2 } `andand` { go s1 s2 };
+};
+
+*/
+
+wordMapSplit :: forall a:Boxed, { Word => WordMap a => (WordMap a, WordMap a) };
+wordMapSplit = { forall a:Boxed, k => s =>
+  case wordMapSplitLookup k s
+    of (lt, _, gt) -> (lt, gt)
+  end
+};
+
+// O(lg n)
+wordMapSplitLookup :: forall a:Boxed, { Word => WordMap a => (WordMap a, Maybe a, WordMap a) };
+wordMapSplitLookup = { forall a:Boxed, k => s =>
+  case s
+   of $WordMapBin _ m l r ->
+     if m <SWord 0
+       then
+         if k >=SWord 0
+           then case wordMapSplitLookup_ k l of (lt,found,gt) -> (wordMapUnion r lt,found, gt) end
+           else case wordMapSplitLookup_ k r of (lt,found,gt) -> (lt,found, wordMapUnion gt l) end
+         end
+       else wordMapSplitLookup_ k s
+     end
+   of $WordMapTip ky y  ->
+     case cmpSWord k ky
+       of $LT -> (WordMapNil ! , None ! , s)
+       of $EQ -> (WordMapNil ! , Some y , WordMapNil !)
+       of $GT -> (s, None ! , WordMapNil !)
+     end
+   of $WordMapNil -> (s, None ! , s)
+  end
+};
+
+wordMapSplitLookup_ :: forall a:Boxed, { Word => WordMap a => (WordMap a, Maybe a, WordMap a) };
+wordMapSplitLookup_ = { forall a:Boxed, k => s =>
+  case s
+   of $WordMapBin p m l r ->
+     if wordMapNoMatch k p m
+       then if k >SWord p then (s, None ! , WordMapNil !)
+                          else (WordMapNil ! , None ! , s) end
+       else
+         if wordMapZero k m
+           then case wordMapSplitLookup k l of (lt,found,gt) -> (lt, found, wordMapUnion gt r) end
+           else case wordMapSplitLookup k r of (lt,found,gt) -> (wordMapUnion l lt, found, gt) end
+         end
+     end
+   of $WordMapTip ky y  ->
+     case cmpSWord k ky
+       of $LT -> (WordMapNil ! , None ! , s)
+       of $EQ -> (WordMapNil ! , Some y , WordMapNil !)
+       of $GT -> (s, None ! , WordMapNil !)
+     end
+   of $WordMapNil -> (s, None ! , s)
+  end
+};
+
+////////////
+
+// O(n)
+wordMapFoldlWithKey :: forall v:Boxed, a:Boxed, { WordMap v => { Word => v => a => a } => a => a };
+wordMapFoldlWithKey = { forall v:Boxed a:Boxed, s => f => z =>
+  REC go = { s => acc =>
+      case s
+        of $WordMapNil                -> acc
+        of $WordMapTip k x            -> f k x acc
+        of $WordMapBin p m l r        -> go r (go l acc)
+      end
+  };
+  case s
+    of $WordMapNil                -> z
+    of $WordMapTip k x            -> f k x z
+    of $WordMapBin p m l r ->
+      if both (p ==Word 0) (m <SWord 0)
+        then go l (go r z) // negative numbers in reverse order
+        else go r (go l z)
+      end
+  end
+};
+
+// O(n)
+wordMapFoldr :: forall v:Boxed, a:Boxed, { WordMap v => { v => a => a } => a => a };
+wordMapFoldr = { forall v:Boxed a:Boxed, s => f => z =>
+  wordMapFoldrWithKey s { k => x => a => f x a } z
+};
+
+wordMapFoldrWithKey :: forall v:Boxed, a:Boxed, { WordMap v => { Word => v => a => a } => a => a };
+wordMapFoldrWithKey = { forall v:Boxed a:Boxed, s => f => z =>
+  REC go = { s => acc =>
+      case s
+        of $WordMapNil                -> acc
+        of $WordMapTip k x            -> f k x acc
+        of $WordMapBin p m l r        -> go l (go r acc)
+      end
+  };
+  case s
+    of $WordMapNil                -> z
+    of $WordMapTip k x            -> f k x z
+    of $WordMapBin p m l r ->
+      if both (p ==Word 0) (m <SWord 0)
+        then go r (go l z) // negative numbers in reverse order
+        else go l (go r z)
+      end
+  end
+};
+
+/*
+// O(n)
+wordMapWordMap :: forall a:Boxed, r:Boxed, { WordMap a => { v => r } => WordMap k r };
+wordMapWordMap = { forall a:Boxed r:Boxed, s => f =>
+  REC go = { s =>
+      case s
+        of $WordMapNil                 -> WordMapNil !
+        of $WordMapBin sz kelt elt l r -> WordMapBin sz kelt (f elt) (go l) (go r)
+      end
+  };
+  go s;
+};
+*/
+
+/*
+wordMapKeepIf :: forall a:Boxed, { WordMap a => { a => Bool } => WordMap a };
+wordMapKeepIf = { forall a:Boxed, s => p =>
+  case s
+    of $WordMapNil -> s
+    of $WordMapBin _ kx x l r ->
+      if p x
+        then wordMapJoin kx x (wordMapKeepIf l p) (wordMapKeepIf r p)
+        else wordMapMerge  (wordMapKeepIf l p) (wordMapKeepIf r p)
+      end
+  end
+};
+*/
+
+wordMapToList :: forall a:Boxed, { WordMap a => List (Word, a) };
+wordMapToList = { forall a:Boxed, s =>
+  wordMapFoldrWithKey s { k => v => lst => Cons (k, v) lst } (Nil !)
+};
+
+wordMapToListDesc :: forall a:Boxed, { WordMap a => List (Word, a) };
+wordMapToListDesc = { forall a:Boxed, s =>
+  wordMapFoldlWithKey s { k => v => lst => Cons (k, v) lst } (Nil !)
+};
+
+wordMapOfList :: forall a:Boxed, { List (Word, a) => WordMap a };
+wordMapOfList = { forall a:Boxed, lst =>
+  listFoldl lst { p : (Word, a) => s : WordMap a => case p of (k, v) -> wordMapInsert k v s end } (WordMapNil !)
+};
+
+////////////
+
+/*
+// Precondition: wordMapSize s > 0
+wordMapDeleteFindMin! :: forall a:Boxed, { WordMap a => ((k, v), WordMap a) };
+wordMapDeleteFindMin! = { forall a:Boxed, s =>
+  case s
+    of $WordMapBin _ kelt elt ($WordMapNil) r -> ((kelt, elt), r)
+    of $WordMapBin _ kelt elt l r ->
+        case wordMapDeleteFindMin! l of (kxm, lp) -> (kxm, wordMapBalanceR kelt elt lp r) end
+    of $WordMapNil -> prim kill-entire-process "wordMapDeleteFindMin! invariant violated"
+  end
+};
+
+// Precondition: wordMapSize s > 0
+wordMapDeleteFindMax! :: forall a:Boxed, { WordMap a => ((k, v), WordMap a) };
+wordMapDeleteFindMax! = { forall a:Boxed, s =>
+  case s
+    of $WordMapBin _ kelt elt l ($WordMapNil) -> ((kelt, elt), l)
+    of $WordMapBin _ kelt elt l r ->
+        case wordMapDeleteFindMax! r of (kxm, rp) -> (kxm, wordMapBalanceL kelt elt l rp) end
+    of $WordMapNil -> prim kill-entire-process "wordMapDeleteFindMax! invariant violated"
+  end
+};
+*/
+
+////////////
+
+wordMapBranchMask = { p1 => p2 =>
+  highestBitMask-Word (p1 `bitxor-Word` p2)
+};
+
+wordMapMask = { k => m => bitand-Word k (bitnot-Word (m -Word 1) `bitxor-Word` m) };
+
+wordMapZero  = { k => m => 0 ==Word (bitand-Word k m) };
+
+wordMapMatch = { k => p => m => wordMapMask k m ==Word p };
+
+wordMapNoMatch = { k => p => m => wordMapMask k m !=Word p };
+
+wordMapShorter = { m1 => m2 => m1 >SWord m2 };
+
+////////////
+/*
+// O(n)
+wordMapSizeValid_ :: forall a:Boxed, { WordMap a => Bool };
+wordMapSizeValid_ = { forall a:Boxed, s =>
+  REC realsize = { s =>
+    case s
+      of $WordMapNil            -> Some { 0 }
+      of $WordMapBin sz _ _ l r ->
+            case (realsize l, realsize r)
+              of ($Some nf  , $Some mf  ) ->
+                if (nf !) +Word (mf !) +Word 1 ==Word sz
+                  then Some { sz }
+                  else None !
+                end
+              of _ -> None !
+            end
+    end
+  };
+  case realsize s
+    of $Some fsz -> (fsz !) ==Word wordMapSize s
+    of _ -> False
+  end
+};
+
+wordMapBalanced :: forall a:Boxed, { WordMap a => Bool };
+wordMapBalanced = { forall a:Boxed, s =>
+  case s
+    of $WordMapNil           -> True
+    of $WordMapBin _ _ l r -> wordMapsBalanced l r
+  end
+};
+
+wordMapsBalanced :: forall a:Boxed, { WordMap a => WordMap a => Bool };
+wordMapsBalanced = { forall a:Boxed, l => r =>
+  sl = wordMapSize l;
+  sr = wordMapSize r;
+  andand { either (sl +Word sr <=UWord 1)
+                  (both (sl <=UWord (wordMapDelta !) *Word sr)
+                        (sr <=UWord (wordMapDelta !) *Word sl)) }
+         { { wordMapBalanced l } `andand` { wordMapBalanced r } }
+};
+*/
+
+////////////
+
+/*
+wordMapShowTree = { forall a:Boxed, s : WordMap a => shw : { k => v => Text } =>
+  wordMapShowTreeRot (Nil !) (Nil !) s shw
+};
+
+wordMapShowTreeRot = { forall a:Boxed, lbars : List Text => rbars : List Text => s : WordMap a => shw : { k => v => Text } =>
+  #associate   a `mkTextConcat` b `mkTextConcat` c
+          as   (mkTextConcat (mkTextConcat a b) c)
+  in
+  case s
+    of $WordMapNil ->            wordMapShowTreeBars lbars `mkTextConcat` "|\n"
+    of $WordMapBin 1 kx x _ _ -> wordMapShowTreeBars lbars `mkTextConcat` shw kx x `mkTextConcat` "\n"
+    of $WordMapBin _ kx x l r ->
+        wordMapShowTreeRot (wordMapShowTreeWithBar rbars) (wordMapShowTreeWithEmpty rbars) r shw `mkTextConcat`
+        wordMapShowTreeBars lbars `mkTextConcat` shw kx x `mkTextConcat` "\n"            `mkTextConcat`
+        wordMapShowTreeRot (wordMapShowTreeWithEmpty lbars) (wordMapShowTreeWithBar lbars) l shw
+  end
+  end
+};
+
+wordMapShowTreeWithBar   = { bars => Cons "|  " bars };
+wordMapShowTreeWithEmpty = { bars => Cons "   " bars };
+
+wordMapShowTreeBars = { bars : List Text =>
+  case bars
+    of $Nil -> ""
+    of $Cons _ tail -> mkTextConcat (listFoldl (listReverse tail) mkTextConcat "")
+                                   "+--"
+  end
+};
+*/
+
+
