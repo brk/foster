@@ -1,0 +1,64 @@
+// Fast but non-cryptographically-secure random number generators.
+//
+// Based on the sample code from "Xorshift RNGs" by George Marsaglia. [1]
+//
+// Marsaglia notes that the number sequence produced satisfies the
+// DieHard test suite, but Panneton & L'Ecuyer observe that the sequence
+// is weak in other respects.  They make some suggestions for selection
+// of better generators, but overall recommend against using xorshift.
+//
+// [1] http://www.jstatsoft.org/v08/i14/paper
+// [2] http://www.iro.umontreal.ca/~lecuyer/myftp/papers/xorshift.pdf
+//
+// For all PRNGs implemented here:
+//  * Seed values must be nonzero.
+//  * A state called MxN has a period of 2^(M*N) - 1.
+
+/////////
+
+type case Xor1x32State
+      of $Xor1x32State Int32
+         ;
+
+xorshift-nonzero-Int32 = { x => if x ==Int32 0 then 1 else x };
+
+xor1x32MakeState :: { Int32 => Xor1x32State };
+xor1x32MakeState = { x => Xor1x32State (xorshift-nonzero-Int32 x) };
+
+xor1x32gen :: { Xor1x32State => (Int32, Xor1x32State) };
+xor1x32gen = { s =>
+  a = 13;
+  b = 17;
+  c = 5;
+  case s of $Xor1x32State x ->
+    y0 = bitxor-Int32  x ( bitshl-Int32  x a);
+    y1 = bitxor-Int32 y0 (bitlshr-Int32 y0 b);
+    y2 = bitxor-Int32 y1 ( bitshl-Int32 y1 c);
+    (y2, xor1x32MakeState y2)
+  end
+};
+
+//////////
+
+type case Xor1x64State
+      of $Xor1x64State Int64
+         ;
+
+xorshift-nonzero-Int64 = { x => if x ==Int64 0 then 1 else x };
+
+xor1x64MakeState :: { Int64 => Xor1x64State };
+xor1x64MakeState = { x => Xor1x64State (xorshift-nonzero-Int64 x) };
+
+xor1x64gen :: { Xor1x64State => (Int64, Xor1x64State) };
+xor1x64gen = { s =>
+  a = 13;
+  b = 7;
+  c = 17;
+  case s of $Xor1x64State x ->
+    y0 = bitxor-Int64  x ( bitshl-Int64  x a);
+    y1 = bitxor-Int64 y0 (bitlshr-Int64 y0 b);
+    y2 = bitxor-Int64 y1 ( bitshl-Int64 y1 c);
+    (y2, xor1x64MakeState y2)
+  end
+};
+
