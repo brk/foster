@@ -102,6 +102,8 @@ vListLength =  { forall a:Boxed, v =>
   end
 };
 
+// Time: amortized O(1) for random accesses, O(lg n) worst case.
+// TODO factor out `vListGet!` ?
 vListGet :: forall a:Boxed, { VList a => Int32 => Maybe a };
 vListGet =  { forall a:Boxed, v => i =>
   REC helper-loop = { idx => newsize => base =>

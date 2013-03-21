@@ -7,6 +7,8 @@ both   = { a : Bool => b : Bool => if a then b    else False end };
 oror   = { a : { Bool } => b : { Bool } => if a ! then True else b !   end };
 andand = { a : { Bool } => b : { Bool } => if a ! then b !  else False end };
 
+when   = { a : Bool => f : { () } => if a then f ! else () end };
+
 /////
 
 cmpSInt32 = { a : Int32 => b : Int32 =>
@@ -41,6 +43,13 @@ cmpUWord = { a : Word => b : Word =>
   if a ==Word b
   then EQ !
   else if a <UWord b then LT ! else GT ! end
+  end
+};
+
+cmpSWord = { a : Word => b : Word =>
+  if a ==Word b
+  then EQ !
+  else if a <SWord b then LT ! else GT ! end
   end
 };
 
@@ -92,6 +101,8 @@ bitlength-Int64 = { k =>
 };
 
 // TODO should this be called wordCountBits instead?
+// Note: this function implements the function called _BitScanReverse,
+//       which is equal to llvm.ctlz(0, 0) - llvm.ctlz(k, 0).
 bitlength-Word :: { Word => Int32 };
 bitlength-Word = { k =>
   rec go = { x => acc =>
@@ -122,6 +133,38 @@ wordNumBits32 = {
 wordNumBits :: { Word };
 wordNumBits = {
   primitive_sext_i32_to_Word (wordNumBits32 !)
+};
+
+/////
+
+// Computes the following function::
+//     x: f(x)
+//     0: 0
+//     1: 1
+//     2: 2
+//     3: 2
+//     4: 4
+//     ...
+//     7: 4
+//     8: 8
+//     9: 8
+//     ...
+//     127: 64
+//     128: 128
+//     129: 128
+highestBitMask-Word :: { Word => Word };
+highestBitMask-Word = { x0 =>
+  x1 = x0 `bitor-Word` (x0 `bitlshr-Word` 1);
+  x2 = x1 `bitor-Word` (x1 `bitlshr-Word` 2);
+  x3 = x2 `bitor-Word` (x2 `bitlshr-Word` 4);
+  x4 = x3 `bitor-Word` (x3 `bitlshr-Word` 8);
+  x5 = x4 `bitor-Word` (x4 `bitlshr-Word` 16);
+  x6 = if 0 ==Word bitxor-Word (-1) 0FFFF`FFFF_16
+          then x5 // 32 bits in a word
+          else    // 64 bits in a word
+               x5 `bitor-Word` (x5 `bitlshr-Word` 32);
+       end;
+  x6 `bitxor-Word` (x6 `bitlshr-Word` 1);
 };
 
 /////
@@ -529,6 +572,17 @@ tmp_Text_of_UInt64 = { n:Int64 =>
     end
   };
   go n ""
+};
+
+tmp_Text_of_SWord = { n:Word =>
+  if n <SWord 0
+    then mkTextConcat "-" (tmp_Text_of_UWord (negate-Word n))
+    else                   tmp_Text_of_UWord              n
+  end
+};
+
+tmp_Text_of_UWord = { n:Word =>
+  tmp_Text_of_UInt64 (primitive_zext_Word_to_i64 n)
 };
 
 minReprInt32 :: { Int32 };

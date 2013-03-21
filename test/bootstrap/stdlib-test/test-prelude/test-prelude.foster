@@ -45,6 +45,18 @@ main = {
 
   expect_i32 (observeWordUnsignedWraparound !);
   print_i32 (wordNumBits32 !);
+
+  expect_i32 2;
+  print_i32 (bitlength-Word 3);
+
+  expect_i32 3;
+  print_i32 (bitlength-Word 4);
+
+  expect_i32 3;
+  print_i32 (bitlength-Word 7);
+
+  expect_i32 4;
+  print_i32 (bitlength-Word 8);
 };
 
 observeWordUnsignedWraparound :: { Int32 };
