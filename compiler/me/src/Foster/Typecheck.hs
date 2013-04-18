@@ -85,7 +85,8 @@ tcSigmaToplevel (TermVarBinding txt (tid, _)) ctx ast = do
     tcTypeWellFormed ("in the type declaration for " ++ T.unpack txt)
                      ctx (tidType tid)
 
-    debug $ "tcSigmaToplevel deferring to checkSigmaDirect with expected type " ++ show (pretty (tidType tid))
+    debugDoc $ text "tcSigmaToplevel deferring to checkSigmaDirect with expected type"
+            <$> (pretty (tidType tid)) <> line
     e <- checkSigmaDirect ctx ast (tidType tid)
     debugDoc $ text "tcSigmaToplevel returned expression with type " <> pretty (typeAST e)
 
@@ -196,8 +197,8 @@ tcRho ctx expr expTy = do
   debugDoc $ green (text "typecheck: ") <> textOf expr 0 <> text (" <=? " ++ show expTy)
   tcWithScope expr $ do
     case expr of
-      E_VarAST    rng v              -> tcRhoVar      ctx rng (evarName v) expTy
-      E_PrimAST   rng nm             -> tcRhoPrim     ctx rng (T.pack  nm) expTy
+      E_VarAST    rng v              -> tcRhoVar      ctx rng (evarName v)      expTy
+      E_PrimAST   rng nm args        -> tcRhoPrim     ctx rng (T.pack  nm) args expTy
       E_IntAST    rng txt ->            typecheckInt rng txt expTy   >>= (\v -> matchExp expTy v "tcInt")
       E_RatAST    rng txt -> (typecheckRat rng txt (expMaybe expTy)) >>= (\v -> matchExp expTy v "tcRat")
       E_BoolAST   rng b              -> tcRhoBool         rng   b          expTy
@@ -292,7 +293,7 @@ tcSigmaPrim ctx annot name = do
     Just (avar, _) -> Just $ mkAnnPrimitive annot avar
     Nothing        -> Nothing
 
-tcRhoPrim ctx annot name expTy = do
+tcRhoPrim ctx annot name args expTy = do
      case tcSigmaPrim ctx annot name of
 
        Just v_sigma -> do
@@ -773,6 +774,13 @@ tcSigmaFn ctx f expTyRaw = do
 
         let extTyCtx = ctx { localTypeBindings = extendTypeBindingsWith ktvs }
 
+
+        debugDoc $ text "tcSigmaFn: f is " <> pretty (show f)
+        debugDoc $ text "tcSigmaFn: expTyRaw is " <> pretty expTyRaw
+        debugDoc $ text "tcSigmaFn: tyformals is " <> pretty tyformals
+        debugDoc $ text "tcSigmaFn: ktvs is " <> pretty ktvs
+        debugDoc $ text "tcSigmaFn: taus is " <> pretty taus
+
         mb_rho <-
           case expTyRaw of
             Check (ForAllAST exp_ktvs exp_rho_raw) -> do
@@ -787,9 +795,14 @@ tcSigmaFn ctx f expTyRaw = do
               sanityCheck (eqLen ktvs exp_ktvs)
                          ("tcSigmaFn: expected same number of formals for "
                           ++ show ktvs ++ " and " ++ show exp_ktvs)
+              debugDoc $ text "tcSigmaFn: exp_ktvs is " <> pretty exp_ktvs
+              debugDoc $ text "tcSigmaFn: exp_rho_raw is " <> pretty exp_rho_raw
               exp_rho' <- resolveType annot (extendTypeBindingsWith exp_ktvs) exp_rho_raw
+              debugDoc $ text "tcSigmaFn: exp_rho' is " <> pretty exp_rho'
               return $ Just exp_rho'
             _ -> return $ Nothing
+
+        debugDoc $ text "tcSigmaFn: mb_rho is " <> pretty mb_rho
 
         -- While we're munging, we'll also make sure the names are all distinct.
         uniquelyNamedFormals0 <- getUniquelyNamedFormals rng (fnFormals f) (fnAstName f)
@@ -805,8 +818,19 @@ tcSigmaFn ctx f expTyRaw = do
           Just exp_rho' -> do
                 let var_tys = map tidType uniquelyNamedFormals
                 debugDoc $ string "var_tys: " <+> pretty var_tys
+                var_tys' <- mapM shZonkType var_tys
+                debugDoc $ string "var_tys': " <+> pretty var_tys'
                 (arg_tys, body_ty) <- unifyFun exp_rho' var_tys ("poly-fn-lit" ++ highlightFirstLine rng)
-                mapM checkAgainst (zip arg_tys var_tys)
+                debugDoc $ string "arg_tys: " <+> pretty arg_tys
+                debugDoc $ string "zipped : " <+> pretty (zip arg_tys var_tys)
+                let unMeta (MetaTyVar m) = m
+                mapM (checkAgainst (map unMeta taus)) (zip arg_tys var_tys)
+                var_tys'' <- mapM shZonkType var_tys
+                debugDoc $ string "var_tys'': " <+> pretty var_tys''
+                debugDoc $ string "metaOf var_tys  : " <+> pretty (show $ collectAllUnificationVars var_tys)
+                debugDoc $ string "metaOf var_tys'': " <+> pretty (show $ collectAllUnificationVars $ map unMBS var_tys'')
+                -- mvar_tys'' <- mapM shZonkMetaType (collectAllUnificationVars var_tys)
+
                 checkRho extCtx (fnAstBody f) body_ty
 
           -- for Infer or for Check of a non-ForAll type
@@ -1132,7 +1156,7 @@ subsCheckRho esigma rho2 = do
     -- shallow, not deep, skolemization due to being a strict language.
 
     (rho1, _) -> do -- Rule MONO
-        unify rho1 rho2 "subsCheckRho" -- Revert to ordinary unification
+        unify rho1 rho2 ("subsCheckRho[" ++ show rho2 ++ "]" ++ show (showStructure esigma)) -- Revert to ordinary unification
         return esigma
 -- }}}
 
@@ -1262,6 +1286,30 @@ getFreeTyVars xs = do zs <- mapM zonkType xs
         ArrayTypeAST  ty      -> (go bound) ty
 -- }}}
 
+unMBS :: MetaBindStatus -> TypeAST
+unMBS (NonMeta t) = t
+unMBS (MetaUnbound m  ) = MetaTyVar m
+unMBS (MetaBoundTo _ t) = t
+
+instance Pretty MetaBindStatus where pretty mbs = string (show mbs)
+
+data MetaBindStatus = NonMeta TypeAST
+                    | MetaUnbound (MetaTyVar TypeAST)
+                    | MetaBoundTo (MetaTyVar TypeAST) TypeAST
+                    deriving Show
+
+shZonkType :: TypeAST -> Tc MetaBindStatus
+shZonkType x = do
+    case x of
+        MetaTyVar m -> do shZonkMetaType m
+        _ -> return (NonMeta x)
+
+shZonkMetaType m = do
+  mty <- readTcMeta m
+  case mty of
+    Nothing -> do return $ MetaUnbound m
+    Just ty -> do return $ MetaBoundTo m ty
+
 -- As in the paper, zonking recursively eliminates indirections
 -- from instantiated meta type variables.
 zonkType :: TypeAST -> Tc TypeAST
@@ -1298,18 +1346,29 @@ zonkType x = do
 --    poly2b :: forall b:Boxed, { { b => Int32 } => Int32 };
 --    poly2b = { forall b:Boxed, tmp : { b => Int32 } => 0 };
 -- when we would try to unify the bound type variable b with itself.
-checkAgainst (ety, cty) = do
+-- Also, for code like
+--    poly2b :: forall b:Boxed, { b => Int32 };
+--    poly2b = { forall b:Boxed, tmp :?? T => 0 };
+-- ... SADFACE
+checkAgainst taus (ety, MetaTyVar m) = do
   debugDoc $ string "checkAgainst ety: " <+> pretty ety
-  debugDoc $ string "checkAgainst cty: " <+> pretty cty
-  case (cty, ety) of
-    (MetaTyVar m, MetaTyVar _) -> return () -- avoid creating a cycle
-    (MetaTyVar m, _) -> do
+  debugDoc $ string "checkAgainst cty: " <+> pretty (MetaTyVar m)
+  let tryOverwrite = do
         mty <- readTcMeta m
         case mty of
             Nothing -> do ty' <- zonkType ety
                           writeTcMeta m ty'
             Just  _ -> do return ()
-    _ -> return ()
+
+  case ety of
+    MetaTyVar em ->
+      if em `elem` taus then do ty' <- zonkType ety
+                                debugDoc $ string "checkAgainst: ety ~> " <+> pretty ty'
+                                --tryOverwrite
+                                return ()
+                        else return ()
+    _ -> tryOverwrite
+checkAgainst _ (_, _) = return ()
 
 -- {{{ Unification driver
 -- If unification fails, the provided error message (if any)
@@ -1318,20 +1377,40 @@ checkAgainst (ety, cty) = do
 -- types is updated according to the unification solution.
 unify :: TypeAST -> TypeAST -> String -> Tc ()
 unify t1 t2 msg = do
+  --z1 <- zonkType t1
+  --z2 <- zonkType t2
+  --tcLift $ putDocLn $ green $ text $ "unify " ++ show t1 ++ " ~> " ++ show z1
+  --                               ++ "\n?==? " ++ show t2 ++ " ~> " ++ show z2 ++ " (" ++ msg ++ ")"
+  unify' 0 t1 t2 msg
+
+unify' !depth t1 t2 msg | depth == 512 =
+   error $ "unify hit depth 512 equating " ++ show t1 ++ " and " ++ show t2
+unify' !depth t1 t2 msg = do
   debugDoc $ green $ text $ "unify " ++ show t1 ++ " ?==? " ++ show t2 ++ " (" ++ msg ++ ")"
+  case (t1, t2) of
+    (MetaTyVar m1, MetaTyVar m2) -> do
+      mt1 <- readTcMeta m1
+      mt2 <- readTcMeta m2
+      debugDoc $ text $ show t1 ++ " ~> " ++ show mt1
+      debugDoc $ text $ show t2 ++ " ~> " ++ show mt2
+      return ()
+    _ -> return ()
+
   tcOnError (liftM text (Just msg)) (tcUnifyTypes t1 t2) $ \(Just soln) -> do
+     debugDoc $ text $ "soln is: " ++ show soln
      let univars = collectAllUnificationVars [t1, t2]
      forM_ univars $ \m -> do
        mt1 <- readTcMeta m
        case (mt1, Map.lookup (mtvUniq m) soln) of
          (_,       Nothing)          -> return () -- no type to update to.
-         (Just x1, Just x2)          -> do unify x1 x2 msg
+         (Just x1, Just x2)          -> do unify' (depth + 1) x1 x2 msg
          -- The unification var m1 has no bound type, but it's being
          -- associated with var m2, so we'll peek through m2.
          (Nothing, Just (MetaTyVar m2)) -> do
                          mt2 <- readTcMeta m2
                          case mt2 of
-                             Just x2 -> unify (MetaTyVar m) x2 msg
+                             Just x2 -> do debugDoc $ pretty (MetaTyVar m2) <+> text "~>" <+> pretty x2
+                                           unify' (depth + 1) (MetaTyVar m) x2 msg
                              Nothing -> writeTcMeta m (MetaTyVar m2)
          (Nothing, Just x2) -> do unbounds <- collectUnboundUnificationVars [x2]
                                   case m `elem` unbounds of
@@ -1339,7 +1418,8 @@ unify t1 t2 msg = do
                                      True    -> occurdCheck m x2
   where
      occurdCheck m t = tcFails [text $ "Occurs check for " ++ show (MetaTyVar m)
-                                   ++ " failed in " ++ show t]
+                                   ++ " failed in " ++ show t
+                               ,string msg]
 -- }}}
 
 -- {{{ Well-formedness checks
