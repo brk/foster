@@ -1,6 +1,40 @@
 main = {
   expect_i32 6;
   print_i32 (len (ones 6));
+};
+
+ones = { n : Int32 =>
+  REC go = { n : Int32 => acc : ListInt32 =>
+    if n ==Int32 0
+     then acc
+     else go (n -Int32 1) (ConsInt32 n acc)
+    end
+  };
+  go n (NilInt32 !)
+};
+
+len = { z : ListInt32 =>
+  REC go = { z : ListInt32 => acc : Int32 =>
+    case z
+      of $NilInt32       -> acc
+      of $ConsInt32 n ns -> go ns (1 +Int32 acc)
+    end
+  };
+  go z 0;
+};
+
+type case ListInt32
+  of $NilInt32
+  of $ConsInt32 Int32 ListInt32
+;
+
+
+
+
+/*
+main = {
+  expect_i32 6;
+  print_i32 (len (ones 6));
 /*
   expect_i32 0;
   print_i32 (ex2 (Nil:[B32] !));
@@ -56,3 +90,4 @@ type case ListB32
   of $NilB32
   of $ConsB32 B32 ListB32
 ;
+*/
