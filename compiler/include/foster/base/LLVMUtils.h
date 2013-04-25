@@ -77,4 +77,6 @@ int  getWordTySize();
 llvm::Type* getWordTy(llvm::IRBuilder<>& b);
 llvm::Type* getWordX2Ty(llvm::IRBuilder<>& b);
 
+llvm::Constant* getNullOrZero(llvm::Type* t);
+
 #endif

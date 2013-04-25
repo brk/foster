@@ -306,3 +306,14 @@ llvm::Type* getWordX2Ty(IRBuilder<>& b) {
   return llvm::Type::getIntNTy(b.getContext(), 2 * getWordTySize());
 }
 
+llvm::Constant* getNullOrZero(llvm::Type* t) {
+  if (llvm::PointerType* p = llvm::dyn_cast<llvm::PointerType>(t)) {
+    return llvm::ConstantPointerNull::get(p);
+  } else if (llvm::isa<llvm::IntegerType>(t)) {
+    return llvm::ConstantInt::get(t, 0);
+  } else {
+    assert(false && "getNullOrZero given improper type");
+    return NULL;
+  }
+}
+
