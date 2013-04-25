@@ -422,6 +422,7 @@ type PatternBinding expr ty = ((Pattern ty, [TypedId ty]), expr)
 data FosterPrim ty = NamedPrim (TypedId ty) -- invariant: global symbol
                    | PrimOp { ilPrimOpName :: String
                             , ilPrimOpType :: ty }
+                   | PrimArrayLiteral
                    | PrimIntTrunc IntSizeBits IntSizeBits -- from, to
                    | CoroPrim  CoroPrim ty ty
 
@@ -559,6 +560,7 @@ instance Pretty ty => Pretty (E_VarAST ty) where
 instance Pretty t => Pretty (FosterPrim t) where
   pretty (NamedPrim (TypedId _ i)) = text (show i)
   pretty (PrimOp nm _ty) = text nm
+  pretty PrimArrayLiteral = text "prim mach-array-lit"
   pretty (PrimIntTrunc frm to) = text ("trunc from " ++ show frm ++ " to " ++ show to)
   pretty (CoroPrim c t1 t2) = text "...coroprim..."
 

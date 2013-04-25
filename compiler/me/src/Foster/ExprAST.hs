@@ -35,6 +35,7 @@ data ExprSkel annot ty =
         | E_RatAST        annot String
         | E_TupleAST      annot [ExprAST ty]
         | E_FnAST         annot (FnAST ty)
+        | E_MachArrayLit  annot [ExprAST ty]
         -- Control flow
         | E_IfAST         annot (ExprAST ty) (ExprAST ty) (ExprAST ty)
         | E_UntilAST      annot (ExprAST ty) (ExprAST ty)
@@ -106,6 +107,7 @@ instance Structured (ExprAST t) where
             E_KillProcess {}       -> text $ "KillProcess  "                                   ++ (exprCmnts e)
             E_TyCheck     {}       -> text $ "TyCheck      "                                   ++ (exprCmnts e)
             E_VarAST _rng v        -> text $ "VarAST       " ++ T.unpack (evarName v)          ++ (exprCmnts e) -- ++ " :: " ++ show (pretty $ evarMaybeType v)
+            E_MachArrayLit {}      -> text $ "MachArrayLit "                                   ++ (exprCmnts e)
     childrenOf e =
         let termBindingExpr (TermBinding _ e) = e in
         case e of
@@ -116,6 +118,7 @@ instance Structured (ExprAST t) where
             E_PrimAST     {}             -> []
             E_KillProcess {}             -> []
             E_VarAST      {}             -> []
+            E_MachArrayLit {}     -> []
             E_CompilesAST _rng Nothing   -> []
             E_CompilesAST _rng (Just e)  -> [e]
             E_CallAST     _rng b exprs   -> b:exprs
@@ -167,6 +170,7 @@ exprAnnot e = case e of
       E_TyApp         annot _ _   -> annot
       E_TyCheck       annot _ _   -> annot
       E_Case          annot _ _   -> annot
+      E_MachArrayLit annot _ -> annot
 
 instance SourceRanged (ExprAST ty) where rangeOf e = annotRange (exprAnnot e)
 

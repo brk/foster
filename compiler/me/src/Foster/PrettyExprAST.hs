@@ -124,6 +124,7 @@ prettyAtom e =
     E_TyCheck     {} -> pretty e
     E_CompilesAST {} -> pretty e
     E_KillProcess {} -> pretty e
+    E_MachArrayLit {} -> pretty e
 
 isOperator (E_VarAST _ evar) = not . isAlpha . T.head $ evarName evar
 isOperator _                 = False
@@ -141,6 +142,7 @@ withAnnot (ExprAnnot pre _ post) doc =
 instance Pretty (ExprAST TypeP) where
   pretty e =
         case e of
+            E_MachArrayLit annot args -> withAnnot annot $ text "prim mach-array-literal" <+> hsep (map pretty args)
             E_VarAST annot evar     -> withAnnot annot $ pretty evar
             E_TyApp  annot e argtys -> withAnnot annot $ pretty e <> text ":[" <> hsep (punctuate comma (map pretty argtys)) <> text "]"
             E_TyCheck annot e ty    -> withAnnot annot $ parens (pretty e <+> text "as" <+> pretty ty)

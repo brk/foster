@@ -178,10 +178,7 @@ canGC mayGCmap letable =
                              Map.findWithDefault (GCUnknown "") (tidIdent v) mayGCmap
          ILCallPrim _ p _ -> canGCPrim p
          ILTuple    _ _   -> MayGC -- rather than stack allocating tuples, easier to just remove 'em probably.
-         ILLiteral _ (LitText _) -> MayGC -- unless we statically allocate such things
-         ILLiteral _ (LitInt  _) -> WillNotGC -- unless it's a bignum...
-         ILLiteral _ (LitBool _) -> WillNotGC
-         ILLiteral _ (LitFloat _)-> WillNotGC
+         ILLiteral  _ lit -> canGCLit lit
          ILKillProcess {} -> WillNotGC
          ILOccurrence  {} -> WillNotGC
          ILDeref       {} -> WillNotGC
@@ -191,11 +188,18 @@ canGC mayGCmap letable =
          ILArrayPoke   {} -> WillNotGC
          ILObjectCopy  {} -> WillNotGC
 
+canGCLit lit = case lit of
+  LitText      {} -> MayGC -- unless we statically allocate such things
+  LitInt       {} -> WillNotGC -- unless it's a bignum...
+  LitBool      {} -> WillNotGC
+  LitFloat     {} -> WillNotGC
+
 canGCPrim (PrimIntTrunc {}) = WillNotGC
 canGCPrim (PrimOp       {}) = WillNotGC
 canGCPrim (NamedPrim (TypedId _ (GlobalSymbol name))) =
                     if willNotGCGlobal name then WillNotGC
                                             else GCUnknown "canGCPrim:global"
+canGCPrim PrimArrayLiteral = MayGC
 canGCPrim _ = GCUnknown "canGCPrim:other"
 
 willNotGCGlobal name = name `elem` (map T.pack

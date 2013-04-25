@@ -334,6 +334,15 @@ struct LLArrayLength : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
+struct LLArrayLiteral : public LLExpr {
+  TypeAST* elem_type;
+  LLVar* arr;
+  std::vector<LLVar*> args;
+  explicit LLArrayLiteral(TypeAST* elem_type, LLVar* arr, std::vector<LLVar*> args)
+        : LLExpr("LLArrayLiteral"), elem_type(elem_type), arr(arr), args(args) {}
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
 struct LLLetVals : public LLMiddle {
   std::vector<std::string> names;
   std::vector<LLExpr*>     exprs;

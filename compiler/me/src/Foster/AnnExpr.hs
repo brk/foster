@@ -45,6 +45,7 @@ data AnnExpr ty =
         | AnnStore      ExprAnnot ty (AnnExpr ty) (AnnExpr ty)
         -- Array operations
         | AnnAllocArray ExprAnnot ty (AnnExpr ty) ty
+        | AnnArrayLit   ExprAnnot ty [AnnExpr ty]
         | AnnArrayRead  ExprAnnot ty (ArrayIndex (AnnExpr ty))
         | AnnArrayPoke  ExprAnnot ty (ArrayIndex (AnnExpr ty)) (AnnExpr ty)
         -- Terms indexed by types
@@ -78,6 +79,7 @@ instance TypedWith (AnnExpr ty) ty where
      AnnAlloc _rng t _ _   -> t
      AnnDeref _rng t _     -> t
      AnnStore _rng t _ _   -> t
+     AnnArrayLit  _rng t _ -> t
      AnnArrayRead _rng t _ -> t
      AnnArrayPoke  _ t _ _ -> t
      AnnAllocArray _ t _ _ -> t
@@ -106,6 +108,7 @@ instance Structured (AnnExpr TypeAST) where
       AnnAlloc  {}               -> text "AnnAlloc     "
       AnnDeref  {}               -> text "AnnDeref     "
       AnnStore  {}               -> text "AnnStore     "
+      AnnArrayLit   _rng _ _     -> text "AnnArrayLit  "
       AnnAllocArray _rng _ _ aty -> text "AnnAllocArray:: " <> pretty aty
       AnnArrayRead  _rng t _     -> text "AnnArrayRead :: " <> pretty t
       AnnArrayPoke  _rng t _ _   -> text "AnnArrayPoke :: " <> pretty t
@@ -136,6 +139,7 @@ instance Structured (AnnExpr TypeAST) where
       AnnDeref     _rng _t a               -> [a]
       AnnStore     _rng _t a b             -> [a, b]
       AnnAllocArray _rng _ e _             -> [e]
+      AnnArrayLit  _rng _t exprs           -> exprs
       AnnArrayRead _rng _t ari             -> childrenOfArrayIndex ari
       AnnArrayPoke _rng _t ari c           -> childrenOfArrayIndex ari ++ [c]
       AnnTuple _rng _ exprs                -> exprs
@@ -185,6 +189,7 @@ annExprAnnot expr = case expr of
       AnnAlloc     annot _ _ _      -> annot
       AnnDeref     annot _ _        -> annot
       AnnStore     annot _ _ _      -> annot
+      AnnArrayLit  annot _ _        -> annot
       AnnAllocArray annot _ _ _     -> annot
       AnnArrayRead annot _ _        -> annot
       AnnArrayPoke annot _ _ _      -> annot

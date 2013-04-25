@@ -85,6 +85,7 @@ parseCallPrim pbexpr annot = do
     args <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
     let primname = getName "prim" $ PbExpr.string_value pbexpr
     case (T.unpack primname, args) of
+      ("mach-array-literal", _) -> return $ E_MachArrayLit annot args
       ("tuple",  _ ) -> return $ E_TupleAST annot args
       ("deref", [e]) -> return $ E_DerefAST annot e
       ("alloc",           [e]) -> return $ E_AllocAST annot e MemRegionGlobalHeap
@@ -420,6 +421,7 @@ parseSourceModule sm = resolveFormatting m where
        E_RatAST       _ txt      -> liftM2' E_RatAST      ana (return txt)
        E_VarAST       _ v        -> liftM2' E_VarAST      ana (return v)
        E_PrimAST      _ nm       -> liftM2' E_PrimAST     ana (return nm)
+       E_MachArrayLit _ args     -> liftM2' E_MachArrayLit ana (mapM q args)
 
        E_KillProcess  _ e        -> liftM2' E_KillProcess ana (q e)
        E_CompilesAST  _ me       -> liftM2' E_CompilesAST ana (liftMaybeM q me)

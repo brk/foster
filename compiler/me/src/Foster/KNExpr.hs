@@ -111,7 +111,6 @@ kNormalize mebTail expr =
       AILiteral ty lit  -> return $ KNLiteral ty lit
       E_AIVar v         -> return $ KNVar v
       AIKillProcess t m -> return $ KNKillProcess t m
-      E_AIPrim p -> error $ "KNExpr.kNormalize: Should have detected prim " ++ show p
 
       AIAllocArray t a      -> do nestedLets [gn a] (\[x] -> KNAllocArray (ArrayTypeIL t) x)
       AIAlloc a rgn         -> do nestedLets [gn a] (\[x] -> KNAlloc (PtrTypeIL $ tidType x) x rgn)
@@ -148,13 +147,10 @@ kNormalize mebTail expr =
       AIIf      t  a b c    -> do a' <- gn a
                                   [ b', c' ] <- mapM gt [b, c]
                                   nestedLets [return a'] (\[v] -> KNIf t v b' c')
-      AIAppCtor t c es -> do nestedLets (map gn es) (\vars -> KNAppCtor t c vars)
-      AICall    t b es -> do
-          let cargs = map gn es
-          case b of
-              E_AIPrim p -> do nestedLets   cargs (\vars -> KNCallPrim t p vars)
-              E_AIVar v  -> do nestedLetsDo cargs (\vars -> knCall t v vars)
-              _ -> do nestedLetsDo (gn b:cargs) (\(vb:vars) -> knCall t vb vars)
+      AICallPrim t p es -> do nestedLets (map gn es) (\vars -> KNCallPrim t p vars)
+      AIAppCtor  t c es -> do nestedLets (map gn es) (\vars -> KNAppCtor  t c vars)
+      AICall     t (E_AIVar v) es -> do nestedLetsDo (     map gn es) (\    vars  -> knCall t v  vars)
+      AICall     t b           es -> do nestedLetsDo (gn b:map gn es) (\(vb:vars) -> knCall t vb vars)
 
   where knStore x y = do
             let q = varOrThunk (x, pointedToType $ tidType y)

@@ -40,7 +40,7 @@ data AIExpr =
         | AILetFuns    [Ident] [Fn AIExpr TypeIL] AIExpr
         -- Use of bindings
         | E_AIVar      (TypedId TypeIL)
-        | E_AIPrim     ILPrim
+        | AICallPrim   TypeIL ILPrim [AIExpr]
         | AICall       TypeIL AIExpr [AIExpr]
         | AIAppCtor    TypeIL CtorId [AIExpr]
         -- Mutable ref cells
@@ -125,6 +125,19 @@ ail ctx ae =
         AnnAllocArray _rng _ e aty -> do ta <- qt aty
                                          x <- q e
                                          return $ AIAllocArray ta x
+        -- In order for GC root placement to work properly, all allocations
+        -- must be explicit in the IR; primitives cannot perform a GC op
+        -- before they use all their args, because if they did, the args
+        -- would be stale. Thus we make the array allocation explicit here.
+        AnnArrayLit  _rng t exprs  -> do ti <- qt t
+                                         let (ArrayTypeIL ati) = ti
+                                         ais <- mapM q exprs
+                                         let arr = AIAllocArray ati (AILiteral i64 litint)
+                                         return $ AICallPrim ti PrimArrayLiteral (arr:ais) where {
+          n = length exprs
+        ; i64 = PrimIntIL I64
+        ; litint = LitInt (LiteralInt (fromIntegral n) 32 (show n) 10)
+        }
         AnnArrayRead _rng t (ArrayIndex a b rng s) -> do
                                          ti <- qt t
                                          [x,y]   <- mapM q [a,b]
@@ -162,7 +175,7 @@ ail ctx ae =
                 -- will be flagged as errors in `ail`.
                 AnnPrimitive _rng _ prim -> do
                    prim' <- ilPrim ctx prim
-                   return $ AICall ti (E_AIPrim prim') argsi
+                   return $ AICallPrim ti prim' argsi
 
                 -- Now that we can see type applications,
                 -- we can build coroutine primitive nodes.
@@ -171,7 +184,7 @@ ail ctx ae =
                    case (coroPrimFor primName, apptys) of
                      (Just coroPrim, [argty, retty]) -> do
                        [aty, rty] <- mapM qt [argty, retty]
-                       return $ AICall ti (E_AIPrim $ CoroPrim coroPrim aty rty) argsi
+                       return $ AICallPrim ti (CoroPrim coroPrim aty rty) argsi
                      _otherwise -> do
                        -- v[types](args) ~~>> let <fresh> = v[types] in <fresh>(args)
                        apptysi <- mapM qt apptys
@@ -180,7 +193,7 @@ ail ctx ae =
                        oti <- qt ot
                        x <- tcFreshT $ "appty_" `prependedTo` primName
                        return $ AILetVar x (E_AITyApp oti (E_AIVar tid') apptysi)
-                                          $ AICall ti (E_AIPrim prim') argsi
+                                          $ AICallPrim ti prim' argsi
 
                 _else -> do bi <- q b
                             return $ AICall ti bi argsi
@@ -242,6 +255,7 @@ ilPrim ctx prim =
                             return $ NamedPrim tid'
     PrimOp    nm ty   -> do ty' <- ilOf ctx ty
                             return $ PrimOp nm ty'
+    PrimArrayLiteral   ->   return $ PrimArrayLiteral
     PrimIntTrunc i1 i2 ->   return $ PrimIntTrunc i1 i2
     CoroPrim {} -> error $ "Shouldn't yet have constructed CoroPrim!"
 

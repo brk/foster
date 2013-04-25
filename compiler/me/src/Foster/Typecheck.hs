@@ -131,8 +131,17 @@ doQuantificationCheck e' ctx = do
     env_tvs <- collectUnboundUnificationVars env_tys
     res_tvs <- collectUnboundUnificationVars [typeAST e']
     let forall_tvs = res_tvs \\ env_tvs
-    sanityCheck (null forall_tvs) $
+    sanityCheck (null forall_tvs || not (isValue e' )) $
         "inferSigma ought to quantify over the escaping meta type variables " ++ show (map MetaTyVar forall_tvs)
+
+isValue e = case e of
+  AnnLiteral      {} -> True
+  E_AnnFn         {} -> True
+  AnnCompiles     {} -> True
+  E_AnnTyApp _ _ a _ -> isValue a
+  AnnAppCtor _ _ _ exprs -> all isValue exprs
+  AnnTuple   _ _   exprs -> all isValue exprs
+  _ -> False
 
 checkForEscapingTypeVariables _ _   _   _     [] = return ()
 checkForEscapingTypeVariables e ann ctx sigma skol_tvs = do
@@ -198,11 +207,12 @@ tcRho ctx expr expTy = do
   tcWithScope expr $ do
     case expr of
       E_VarAST    rng v              -> tcRhoVar      ctx rng (evarName v)      expTy
-      E_PrimAST   rng nm args        -> tcRhoPrim     ctx rng (T.pack  nm) args expTy
+      E_PrimAST   rng nm             -> tcRhoPrim     ctx rng (T.pack  nm)      expTy
       E_IntAST    rng txt ->            typecheckInt rng txt expTy   >>= (\v -> matchExp expTy v "tcInt")
       E_RatAST    rng txt -> (typecheckRat rng txt (expMaybe expTy)) >>= (\v -> matchExp expTy v "tcRat")
       E_BoolAST   rng b              -> tcRhoBool         rng   b          expTy
       E_StringAST rng txt            -> tcRhoText         rng   txt        expTy
+      E_MachArrayLit rng args        -> tcRhoArrayLit ctx rng   args       expTy
       E_CallAST   rng base argtup    -> tcRhoCall     ctx rng   base argtup expTy
       E_TupleAST  rng exprs          -> tcRhoTuple    ctx rng   exprs      expTy
       E_IfAST   rng a b c            -> tcRhoIf       ctx rng   a b c      expTy
@@ -293,7 +303,7 @@ tcSigmaPrim ctx annot name = do
     Just (avar, _) -> Just $ mkAnnPrimitive annot avar
     Nothing        -> Nothing
 
-tcRhoPrim ctx annot name args expTy = do
+tcRhoPrim ctx annot name expTy = do
      case tcSigmaPrim ctx annot name of
 
        Just v_sigma -> do
@@ -314,7 +324,8 @@ mkAnnPrimitive annot tid =
         Just (NamedPrim tid)      -> NamedPrim tid
         Just (PrimOp nm ty)       -> PrimOp nm ty
         Just (PrimIntTrunc i1 i2) -> PrimIntTrunc i1 i2
-        Just (CoroPrim {}       ) -> error $ "mkAnPrim saw unexpected CoroPrim"
+        Just PrimArrayLiteral     -> PrimArrayLiteral
+        Just (CoroPrim {}       ) -> error $ "mkAnnPrim saw unexpected CoroPrim"
         Nothing                   -> NamedPrim tid
 
 -- Now, a bunch of straightforward rules:
@@ -338,16 +349,50 @@ tcRhoBool rng b expTy = do
 --  G |- "..." :: Text
 tcRhoText rng b expTy = do
 -- {{{
-    let ab = AnnLiteral rng (TyConAppAST "Text" []) (LitText b)
+    let ty = TyConAppAST "Text" []
+    let ab = AnnLiteral rng ty (LitText b)
     case expTy of
          Infer r                        -> update r (return ab)
          Check  (TyConAppAST "Text" []) -> return ab
-         Check  m@MetaTyVar {} -> do unify m (TyConAppAST "Text" []) "text literal"
+         Check  m@MetaTyVar {} -> do unify m ty "text literal"
                                      return ab
          Check  t -> tcFails [text $ "Unable to check Text constant in context"
                                 ++ " expecting non-Text type " ++ show t
                                 ++ showSourceRange (annotRange rng)]
 -- }}}
+
+--  e1 :: tau             ...           en :: tau
+--  ---------------------------------------------------
+--  G |- prim mach-array-literal e1 ... en :: Array tau
+tcRhoArrayLit ctx rng args expTy = do
+-- {{{
+    tau <- newTcUnificationVarTau $ "prim array type"
+    let ty = ArrayTypeAST tau
+    args' <- mapM (\arg -> checkRho ctx arg tau) args
+    let ab = AnnArrayLit rng ty args'
+    case expTy of
+         Infer r                     -> update r (return ab)
+         Check  (ArrayTypeAST rho' ) -> do unify tau rho' "mach-array literal"
+                                           return ab
+         Check  m@MetaTyVar {} -> do unify m ty "mach-array literal"
+                                     return ab
+         Check  t -> tcFails [text $ "Unable to check array constant in context"
+                                ++ " expecting non-array type " ++ show t
+                                ++ showSourceRange (annotRange rng)]
+  -- There's a problematic interaction going on here.
+  -- Integer literals do not impose an immediate constraint
+  -- on the types they check against, because the type of an integer
+  -- is determined after collecting all type constraints, e.g. to determine
+  -- whether 0 :: Int8 or 0 :: Int32.
+  -- Second, inferSigma should quantify over escaping un-unified meta tyvars,
+  -- but if it did, then (prim mach-array-literal 1 2) would UNSOUNDLY have
+  -- the type forall t. Array t instead of the proper non-polymorphic type
+  -- Array %%T for some integer type eventually unifying with %%T.
+
+  -- For now, we restrict quantification to values and treat arrays
+  -- as non-values, even though an immutable array could be a value...
+-- }}}
+
 
 
 --  G |- e1 ::: tau    (should perhaps later change to ())
@@ -824,7 +869,7 @@ tcSigmaFn ctx f expTyRaw = do
                 debugDoc $ string "arg_tys: " <+> pretty arg_tys
                 debugDoc $ string "zipped : " <+> pretty (zip arg_tys var_tys)
                 let unMeta (MetaTyVar m) = m
-                mapM (checkAgainst (map unMeta taus)) (zip arg_tys var_tys)
+                _ <- mapM (checkAgainst (map unMeta taus)) (zip arg_tys var_tys)
                 var_tys'' <- mapM shZonkType var_tys
                 debugDoc $ string "var_tys'': " <+> pretty var_tys''
                 debugDoc $ string "metaOf var_tys  : " <+> pretty (show $ collectAllUnificationVars var_tys)

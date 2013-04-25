@@ -125,10 +125,13 @@ LLExpr* parseCallPrimOp(const pb::Letable& e) {
   return new LLCallPrimOp(e.prim_op_name(), args);
 }
 
-LLExpr* parseInt(const pb::Letable& e) {
-  if (!e.has_pb_int()) return NULL;
-  const pb::PBInt& i = e.pb_int();
+LLExpr* parsePbInt(const pb::PBInt& i) {
   return new LLInt(i.clean(), i.bits());
+}
+
+LLExpr* parseInt(const pb::Letable& e) {
+  ASSERT(e.has_pb_int());
+  return parsePbInt(e.pb_int());
 }
 
 LLExpr* parseFloat(const pb::Letable& e) {
@@ -309,6 +312,16 @@ LLExpr* parseArrayLength(const pb::Letable& e) {
   return new LLArrayLength(parseTermVar( e.parts(0)));
 }
 
+LLExpr* parseArrayLiteral(const pb::Letable& e) {
+  ASSERT(e.has_elem_type());
+  std::vector<LLVar*> args;
+  LLVar* arr = parseTermVar(e.parts(0));
+  for (int i = 1; i < e.parts_size(); ++i) {
+    args.push_back(parseTermVar(e.parts(i)));
+  }
+  return new LLArrayLiteral(TypeAST_from_pb(&e.elem_type()), arr, args);
+}
+
 LLOccurrence* parseOccurrence(const pb::PbOccurrence& o) {
   LLOccurrence* rv = new LLOccurrence;
   for (int i = 0; i < o.occ_offset_size(); ++i) {
@@ -431,6 +444,7 @@ LLExpr* LLExpr_from_pb(const pb::Letable* pe) {
   case pb::Letable::IL_ARRAY_READ:  rv = parseArrayRead(e); break;
   case pb::Letable::IL_ARRAY_POKE:  rv = parseArrayPoke(e); break;
   case pb::Letable::IL_ARRAY_LENGTH:rv = parseArrayLength(e); break;
+  case pb::Letable::IL_ARRAY_LITERAL:rv = parseArrayLiteral(e); break;
   case pb::Letable::IL_ALLOCATE:    rv = parseAllocate(e); break;
   case pb::Letable::IL_OCCURRENCE:  rv = parseOccurrence(e.occ()); break;
   case pb::Letable::IL_OBJECT_COPY: rv = parseObjectCopy(e); break;

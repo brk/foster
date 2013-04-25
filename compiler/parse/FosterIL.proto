@@ -100,6 +100,7 @@ message Letable {
     IL_ARRAY_READ = 35;
     IL_ARRAY_POKE = 36;
     IL_ARRAY_LENGTH = 37;
+    IL_ARRAY_LITERAL = 38;
     IL_NAMED_TYPE_DECL = 40;
     IL_KILL_PROCESS = 63;
   }
@@ -120,6 +121,7 @@ message Letable {
   optional string    prim_op_name = 30;
   optional int32     prim_op_size = 31; // TODO use this
   optional PbCtorInfo   ctor_info = 32;
+  optional Type         elem_type = 33;
 }
 
 message PbCallInfo {

@@ -960,6 +960,7 @@ llvm::Value* LLArrayPoke::codegen(CodegenPass* pass) {
   return builder.CreateStore(val, slot, /*isVolatile=*/ false);
 }
 
+
 llvm::Value* LLArrayLength::codegen(CodegenPass* pass) {
   Value* val  = this->value->codegen(pass);
   Value* _bytes; Value* len;
@@ -967,6 +968,66 @@ llvm::Value* LLArrayLength::codegen(CodegenPass* pass) {
     // len already assigned.
   } else { ASSERT(false); }
   return len;
+}
+
+
+llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
+  // the array header starts 16-byte aligned, but the data starts
+  // 8 bytes later...
+  unsigned align = 8;
+
+  // Allocate a global array, with zeros/nulls for non-literal elements.
+  //
+  std::vector<llvm::Constant*> vals;
+  std::vector<std::pair<llvm::Value*, unsigned> > ncvals;
+  llvm::Type* elem_ty = this->elem_type->getLLVMType();
+  for (unsigned i = 0; i < this->args.size(); ++i) {
+    llvm::Value* v = this->args[i]->codegen(pass);
+    if (llvm::Constant* c = llvm::dyn_cast<llvm::Constant>(v)) {
+      vals.push_back(c);
+    } else {
+      vals.push_back(getNullOrZero(elem_ty));
+      ncvals.push_back(std::make_pair(v, i));
+    }
+  }
+  llvm::ArrayType* ty = llvm::ArrayType::get(elem_ty, vals.size());
+  llvm::Constant* const_arr = llvm::ConstantArray::get(ty, vals);
+
+  llvm::GlobalVariable* arrayGlobal = new llvm::GlobalVariable(
+      /*Module=*/      *(pass->mod),
+      /*Type=*/        const_arr->getType(),
+      /*isConstant=*/  true,
+      /*Linkage=*/     llvm::GlobalValue::PrivateLinkage,
+      /*Initializer=*/ const_arr,
+      /*Name=*/        ".arr");
+  arrayGlobal->setAlignment(align);
+
+  // Load the heap array which our forebears allocated unto us.
+  llvm::Value* heap_arr = this->arr->codegen(pass);
+
+  Value* heapmem; Value* _len;
+  if (tryBindArray(heap_arr, /*out*/ heapmem, /*out*/ _len)) {
+    EDiag() << "memcpying from global to heap";
+    // Memcpy from global to heap.
+    //
+
+    int64_t size_in_bytes = (elem_ty->getPrimitiveSizeInBits() / 8)
+                          * this->args.size();
+    builder.CreateMemCpy(heapmem, arrayVariableToPointer(arrayGlobal),
+                                  size_in_bytes, align);
+
+    // Copy any non-constant values to the heap array
+    //
+    llvm::Type* i32 = builder.getInt32Ty();
+    for (unsigned i = 0; i < ncvals.size(); ++i) {
+      unsigned k  = ncvals[i].second;
+      Value* val  = ncvals[i].first;
+      Value* slot = getPointerToIndex(heapmem, llvm::ConstantInt::get(i32, k), "arr_slot");
+      builder.CreateStore(val, slot, /*isVolatile=*/ false);
+    }
+  } else { ASSERT(false); }
+
+  return heap_arr;
 }
 
 ///}}}//////////////////////////////////////////////////////////////

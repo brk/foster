@@ -1,0 +1,59 @@
+main =  {
+  expect_i64 6;
+
+  x = prim mach-array-literal 1 1 2 3 5 (8 +Int32 (opaquely_i32 0));
+  print_i64 (prim_arrayLength x);
+
+  expect_i32 1;
+  print_i32 x[0];
+
+  expect_i32 1;
+  print_i32 x[1];
+
+  expect_i32 2;
+  print_i32 x[2];
+
+  expect_i32 3;
+  print_i32 x[3];
+
+  expect_i32 5;
+  print_i32 x[4];
+
+  expect_i32 8;
+  print_i32 x[5];
+
+  part2 !;
+  part3 !;
+  part4 !;
+};
+
+part2 = {
+  x = prim mach-array-literal 1 2;
+
+  expect_i32 1;
+  print_i64 x[0];
+
+  expect_i32 2;
+  print_i64 x[1];
+};
+
+part3 = {
+  x = prim mach-array-literal { True } { False };
+  //x = prim mach-array-literal { 1 } { 2 };
+
+  expect_i1 True;
+  print_i1 (x[0] !);
+
+  expect_i1 False;
+  print_i1 (x[1] !);
+};
+
+part4 = {
+  x = prim mach-array-literal { 1 } { 2 };
+
+  expect_i32 1;
+  print_i32 (x[0] !);
+
+  expect_i32 2;
+  print_i32 (x[1] !);
+};

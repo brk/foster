@@ -223,14 +223,15 @@ dumpLiteral ty lit =
                                   , PbLetable.type' = Just $ dumpType ty  }
     LitInt int -> P'.defaultValue { PbLetable.tag   = IL_INT
                                   , PbLetable.type' = Just $ dumpType ty
-                                  , PbLetable.pb_int = Just $ PBInt.PBInt
-                                               { clean = u8fromString (show $ litIntValue int)
-                                               , bits  = intToInt32 (fixnumTypeSize ty) }
+                                  , PbLetable.pb_int = Just $ mkPbInt ty int
                                   }
     LitFloat f -> P'.defaultValue { PbLetable.tag   = IL_FLOAT
                                   , PbLetable.type' = Just $ dumpType ty
                                   , PbLetable.dval  = Just $ litFloatValue f
                                   }
+
+mkPbInt ty int = PBInt.PBInt { clean = u8fromString (show $ litIntValue int)
+                             , bits  = intToInt32 (fixnumTypeSize ty) }
 
 fixnumTypeSize (LLPrimInt (IWord 0)) = (-32)
 fixnumTypeSize (LLPrimInt (IWord 1)) = (-64)
@@ -335,6 +336,15 @@ dumpExpr _ (ILCallPrim t (PrimIntTrunc _from to) args)
         truncOp (IWord 0) = "trunc_w0"
         truncOp (IWord 1) = "trunc_w1"
         truncOp (IWord x) = error $ "Protobuf.hs: truncOp can't handle Word " ++ show x
+
+dumpExpr _ (ILCallPrim ty PrimArrayLiteral args)
+        = let (LLArrayType ety) = ty in
+          P'.defaultValue {
+                      PbLetable.tag       = IL_ARRAY_LITERAL
+                    , PbLetable.type'     = Just $ dumpType ty
+                    , PbLetable.elem_type = Just $ dumpType ety
+                    , PbLetable.parts     = fromList (map dumpVar args)
+          }
 
 dumpExpr _ (ILAppCtor _ _cinfo _) = error $ "ProtobufIL.hs saw ILAppCtor, which"
                                        ++ " should have been translated away..."
