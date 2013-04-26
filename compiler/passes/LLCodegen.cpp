@@ -766,16 +766,6 @@ llvm::Value* LLVar::codegen(CodegenPass* pass) {
   return v;
 }
 
-llvm::Value* allocateIntWithWord(CodegenPass* pass, llvm::Value* small) {
-  // Small integers may be initialized immediately.
-  llvm::Value* mpint = pass->allocateMPInt();
-
-  // Call mp_int_init_value() (ignore rv for now)
-  llvm::Value* mp_init_value = pass->lookupFunctionOrDie("mp_int_init_value");
-  builder.CreateCall2(mp_init_value, mpint, small);
-  return mpint;
-}
-
 llvm::Value* LLInt::codegen(CodegenPass* pass) {
   ASSERT(this->type && this->type->getLLVMType());
   llvm::Type* ty = this->type->getLLVMType();
@@ -785,46 +775,14 @@ llvm::Value* LLInt::codegen(CodegenPass* pass) {
   // Our type could be an LLVM type, or an arbitrary precision int type.
   if (ty->isIntegerTy()) {
     return small;
-  } else if (false) {
-    // MP integer constants that do not fit in 64 bits
-    // must be initialized from string data.
-    ASSERT(false) << "codegen for int values that don't fit"
-                  << " in 64 bits not yet implemented";
-    return NULL;
-  } else {
-    return allocateIntWithWord(pass, small);
   }
-}
 
-/**
-// Note: the logical signature of addition on multi-precision ints (Int)
-// is (+Int) :: Int -> Int -> Int
-// but the C-level signature for mp_int_add is
-// mp_result mp_int_add(mp_int, mp_int, mp_int);
-
-llvm::Value* emitRuntimeMPInt_Op(llvm::Value* VL, llvm::Value* VR,
-                                 const char* mp_int_op_name) {
-  // TODO If we have ASTs, we would be able to use the _value
-  // variants for small constants.
-
-  llvm::Value* result = allocateMPInt();
-  builder.CreateCall(foster::module->getFunction("mp_int_init"), result);
-  builder.CreateCall3(foster::module->getFunction(mp_int_op_name),
-                      VL, VR, result);
-  return result;
-}
-
-llvm::Value* emitRuntimeArbitraryPrecisionOperation(const std::string& op,
-                                        llvm::Value* VL, llvm::Value* VR) {
-       if (op == "+") { return emitRuntimeMPInt_Op(VL, VR, "mp_int_add"); }
-  else if (op == "*") { return emitRuntimeMPInt_Op(VL, VR, "mp_int_mul"); }
-
-  EDiag() << "\t emitRuntimeArbitraryPrecisionOperation() not yet implemented"
-          << " for operation " << op << "!";
-  exit(1);
+  // MP integer constants that do not fit in 64 bits
+  // must be initialized from string data.
+  ASSERT(false) << "codegen for int values that don't fit"
+                << " in 64 bits not yet implemented";
   return NULL;
 }
-*/
 
 llvm::Value* LLKillProcess::codegen(CodegenPass* pass) {
   emitFosterAssert(pass->mod, builder.getFalse(), this->stringValue.c_str());

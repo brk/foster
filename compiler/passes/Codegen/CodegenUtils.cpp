@@ -302,13 +302,6 @@ CodegenPass::emitArrayMalloc(TypeAST* elt_type, llvm::Value* n, bool init) {
                   ArrayTypeAST::getZeroLengthTypeRef(elt_type), "arr_ptr");
 }
 
-llvm::Value*
-CodegenPass::allocateMPInt() {
-  llvm::Value* mp_int_alloc = mod->getFunction("mp_int_alloc");
-  ASSERT(mp_int_alloc);
-  return builder.CreateCall(mp_int_alloc);
-}
-
 // If _template has type i32, returns (v & 31) unless v is a constant < 32, in
 // which case no mask is necessary to get well-defined cross-platform behavior.
 llvm::Value* getMaskedForShift(IRBuilder<>& b,
