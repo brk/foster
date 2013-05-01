@@ -79,4 +79,6 @@ llvm::Type* getWordX2Ty(llvm::IRBuilder<>& b);
 
 llvm::Constant* getNullOrZero(llvm::Type* t);
 
+bool isFosterFunction(llvm::Function& F);
+
 #endif

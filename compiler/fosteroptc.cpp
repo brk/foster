@@ -16,6 +16,8 @@
 #include "llvm/Analysis/Verifier.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 
+#include "llvm/Analysis/LoopPass.h"
+
 #include "llvm/Support/Host.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/PassNameParser.h"
@@ -87,6 +89,10 @@ optCleanupOnly("cleanup-only",
 static cl::opt<bool>
 optInternalize("foster-internalize",
   cl::desc("[foster] Internalize and strip unreferenced globals"));
+
+static cl::opt<bool>
+optInsertTimerChecks("foster-insert-timing-checks",
+  cl::desc("[foster] Insert timing checks at loop backedges"));
 
 static cl::opt<bool>
 optDumpStats("dump-stats",
@@ -531,6 +537,13 @@ int main(int argc, char** argv) {
     if (!optDisableAllOptimizations) {
       foster::runWarningPasses(*module);
       optimizeModuleAndRunPasses(module);
+
+      if (optInsertTimerChecks) {
+        llvm::FunctionPassManager fpasses(module);
+        fpasses.add(new llvm::LoopInfo());
+        fpasses.add(foster::createTimerChecksInsertionPass());
+        foster::runFunctionPassesOverModule(fpasses, module);
+      }
 
       if (optDumpPostOptIR) {
         dumpModuleToFile(module,  (gOutputNameBase + ".postopt.ll"));

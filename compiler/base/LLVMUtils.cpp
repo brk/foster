@@ -316,4 +316,7 @@ llvm::Constant* getNullOrZero(llvm::Type* t) {
     return NULL;
   }
 }
+bool isFosterFunction(llvm::Function& F) {
+  return F.hasGC() && F.getGC() == std::string("fostergc");
+}
 

@@ -21,6 +21,7 @@ llvm::Pass* createGCMallocFinderPass();
 llvm::Pass* createGCRootSafetyCheckerPass();
 llvm::Pass* createMemallocSpecializerPass();
 llvm::Pass* createEscapingAllocaFinderPass();
+llvm::Pass* createTimerChecksInsertionPass();
 llvm::Pass* createCallingConventionCheckerPass();
 
 }

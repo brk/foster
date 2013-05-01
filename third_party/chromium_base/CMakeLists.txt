@@ -57,6 +57,7 @@ set (BASE_SOURCES
 	${CHROMIUM_BASE}/base/threading/thread_restrictions.cc
 	${CHROMIUM_BASE}/base/threading/thread_collision_warner.cc
 	${CHROMIUM_BASE}/base/threading/thread_id_name_manager.cc
+	${CHROMIUM_BASE}/base/threading/simple_thread.cc
 	${CHROMIUM_BASE}/base/utf_string_conversions.cc
 	${CHROMIUM_BASE}/base/values.cc
 	${CHROMIUM_BASE}/base/vlog.cc
@@ -134,6 +135,8 @@ if (${UNIX})
 	${CHROMIUM_BASE}/base/sys_info_posix.cc
 	${CHROMIUM_BASE}/base/process_posix.cc
 	${CHROMIUM_BASE}/base/debug/stack_trace_posix.cc
+        ${CHROMIUM_BASE}/base/synchronization/waitable_event_posix.cc
+        ${CHROMIUM_BASE}/base/synchronization/condition_variable_posix.cc
 	${CHROMIUM_BASE}/base/nix/xdg_util.cc
 	${CHROMIUM_BASE}/base/third_party/xdg_user_dirs/xdg_user_dir_lookup.cc
   )
@@ -160,6 +163,8 @@ if (${WIN32})
 	${CHROMIUM_BASE}/base/sys_info_win.cc
 	${CHROMIUM_BASE}/base/platform_file_win.cc
 	${CHROMIUM_BASE}/base/debug/stack_trace_win.cc
+        ${CHROMIUM_BASE}/base/synchronization/waitable_event_win.cc
+        ${CHROMIUM_BASE}/base/synchronization/condition_variable_win.cc
   )
 endif (${WIN32})
 

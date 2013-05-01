@@ -20,7 +20,14 @@
 #include "libfoster_gc_roots.h"
 #include "foster_gc_utils.h"
 
-#include "_generated_/imath.h"
+#include "base/atomicops.h"
+#include "base/threading/simple_thread.h"
+
+#ifdef OS_MACOSX
+#include <objc/runtime.h>
+#include <objc/objc-runtime.h>
+#endif
+
 #include "cpuid.h"
 
 // This file provides the bootstrap "standard library" of utility functions for
@@ -66,9 +73,67 @@
 
 ////////////////////////////////////////////////////////////////
 
+const bool kUseSchedulingTimerThread = true;
+
 std::vector<coro_context> coro_initial_contexts;
 int    foster_argc;
 char** foster_argv;
+base::SimpleThread* __foster_scheduling_timer_thread;
+
+#ifdef OS_MACOSX
+id     __foster_autorelease_pool;
+
+// http://stackoverflow.com/questions/11237579/how-to-create-a-nsautoreleasepool-without-objective-c
+id allocAndInitAutoreleasePool() {
+  id pool = class_createInstance((Class) objc_getClass("NSAutoreleasePool"), 0);
+  return objc_msgSend(pool, sel_registerName("init"));
+}
+
+void drainAutoreleasePool(id pool) {
+  (void)objc_msgSend(pool, sel_registerName("drain"));
+}
+#endif
+
+// {{{
+volatile base::subtle::Atomic32 __foster_need_resched_threadlocal_bit = 0;
+
+extern "C" void __foster_do_resched() {
+  printf("__foster_do_resched...\n");
+}
+
+extern "C" bool __foster_need_resched_threadlocal() {
+  if (base::subtle::Acquire_Load(&__foster_need_resched_threadlocal_bit) > 0) {
+     base::subtle::Release_Store(&__foster_need_resched_threadlocal_bit, 0);
+     return true;
+  }
+  return false;
+}
+
+// Rather than muck about with alarms, etc,
+// we'll just use a dedicated sleepy thread.
+class FosterSchedulingTimerThread : public base::SimpleThread {
+ private:
+  volatile base::subtle::Atomic32 ending;
+
+ public:
+  virtual void Join() { // should only be called from main thread...
+    base::subtle::Release_Store(&ending, 1);
+    return base::SimpleThread::Join();
+  }
+
+  explicit FosterSchedulingTimerThread()
+    : base::SimpleThread("foster.scheduling-timer-thread"), ending(false) {}
+  virtual void Run() {
+    while (base::subtle::Acquire_Load(&ending) != 1) {
+      const int ms = 1000;
+      base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(16));
+
+      // Mark all execution contexts as needing rescheduling.
+      base::subtle::NoBarrier_Store(&__foster_need_resched_threadlocal_bit, 1);
+    }
+  }
+};
+// }}}
 
 extern "C"
 struct foster_bytes {
@@ -99,9 +164,26 @@ void initialize(int argc, char** argv) {
 
   foster_argc = argc;
   foster_argv = argv;
+
+  if (kUseSchedulingTimerThread) {
+#ifdef OS_MACOSX
+    // Need to allocate an autorelease pool, or else the NSThread underlying
+    // pthread underlying base::SimpleThread for our timer will be leaked.
+    __foster_autorelease_pool = allocAndInitAutoreleasePool();
+#endif
+    __foster_scheduling_timer_thread = new FosterSchedulingTimerThread();
+    __foster_scheduling_timer_thread->Start();
+  }
 }
 
 int cleanup() {
+  if (kUseSchedulingTimerThread) {
+    __foster_scheduling_timer_thread->Join();
+    delete __foster_scheduling_timer_thread;
+#ifdef OS_MACOSX
+    drainAutoreleasePool(__foster_autorelease_pool);
+#endif
+  }
   return gc::cleanup();
 }
 
@@ -130,24 +212,6 @@ void fprint_i32x(FILE* f, int32_t x) { fprintf(f, "%X_16\n", x); }
 void fprint_i32b(FILE* f, int32_t x) { fprint_b2<32>(f, x); }
 
 void fprint_i8b(FILE* f, int8_t x) { fprint_b2<8>(f, x); }
-
-void fprint_mp_int(FILE* f, mp_int m, int radix) {
-  mp_small small;
-  mp_result conv = mp_int_to_int(m, &small);
-  if (conv != MP_RANGE) {
-    switch (radix) {
-    case 10: return fprint_i64(f, int64_t(small));
-    case 16: return fprint_i64x(f, int64_t(small));
-    default: return fprint_i64b(f, int64_t(small));
-    }
-  }
-
-  mp_result len = mp_int_string_len(m, radix);
-  char* buf = (char*) malloc(len);
-  mp_result res0 = mp_int_to_string(m, radix, buf, len);
-  fprintf(f, "%s\n", buf);
-  free(buf);
-}
 
 void fprint_bytes(FILE* f, foster_bytes* array, uint32_t n) {
   uint32_t c = array->cap;
@@ -196,15 +260,6 @@ void foster__boundscheck64(int64_t idx, int64_t len, const char* srclines) {
 int force_gc_for_debugging_purposes() {
   gc::force_gc_for_debugging_purposes(); return 0;
 }
-
-void foster__mp_int(mp_int m) {  mp_small small;
-  mp_result conv = mp_int_to_int(m, &small); }
-void  print_int(mp_int m) { fprint_mp_int(stdout, m, 10); }
-void expect_int(mp_int m) { fprint_mp_int(stderr, m, 10); }
-void  print_intx(mp_int m) { fprint_mp_int(stdout, m, 16); }
-void expect_intx(mp_int m) { fprint_mp_int(stderr, m, 16); }
-void  print_intb(mp_int m) { fprint_mp_int(stdout, m, 2); }
-void expect_intb(mp_int m) { fprint_mp_int(stderr, m, 2); }
 
 void  print_i8(int8_t x) { fprint_i32(stdout, x); } // implicit conversion
 void expect_i8(int8_t x) { fprint_i32(stderr, x); } // implicit conversion
