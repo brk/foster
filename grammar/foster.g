@@ -54,12 +54,14 @@ data_defn : TYPE CASE id ('(' tyformal ')')*
 data_ctor : OF dctor tatom*                     -> ^(OF dctor tatom*);
 
 opr     :       SYMBOL;
-id      :       SMALL_IDENT | UPPER_IDENT;
+id      :       SMALL_IDENT | UPPER_IDENT | UNDER_IDENT;
 
 name    :     id ('.' name -> ^(QNAME id name)
                  |         -> id
                  )
         |       '(' opr ')' -> opr;
+
+nopr    :       name | opr;
 
 x       :       name -> ^(TERMNAME name);
 a       :       name -> ^(TYPENAME name);
@@ -75,7 +77,7 @@ ctor  :     x          -> ^(CTOR x);
 dctor : '$' ctor       -> ctor ;
 tctor : '$' ctor       -> ctor ;
 
-k       :               // kinds
+k       :              // kinds
     'Type'                              -> ^(KIND_TYPE)         // kind of types
   | 'Boxed'                             -> ^(KIND_TYPE_BOXED)
 //  |     '{' a '->' k '}'                -> ^(KIND_TYOP a k)     // dependent kinds (kinds of type operators)
@@ -105,7 +107,7 @@ binop   : opr          -> opr
 binops  : (binop phrase)+;
 
 phrase  :       '-'?   lvalue+                  -> ^(PHRASE '-'?  lvalue+)
-        |       'prim' name lvalue*             -> ^(PRIMAPP name lvalue*);
+        |       'prim' nopr lvalue*             -> ^(PRIMAPP nopr lvalue*);
 lvalue  :              atom suffix*             -> ^(LVALUE atom suffix*);
 
 type_application
@@ -238,9 +240,10 @@ fragment WORD_CHAR      : IDENT_START_SMALL | IDENT_START_UPPER;
 fragment DIGIT          : '0'..'9';
 fragment HEX_DIGIT      : DIGIT |'a'..'f' | 'A'..'F' ;
 
-// Identifiers must start with an upper or lowercase letter.
+// Identifiers must start with an upper or lowercase letter, or an underscore.
 SMALL_IDENT             :       IDENT_START_SMALL IDENT_CONTINUE*;
 UPPER_IDENT             :       IDENT_START_UPPER IDENT_CONTINUE*;
+UNDER_IDENT             :       '_'               IDENT_CONTINUE+;
 fragment IDENT_START_SMALL : 'a'..'z' ;
 fragment IDENT_START_UPPER : 'A'..'Z' ;
 fragment IDENT_CONTINUE    : (DIGIT | WORD_CHAR | IDENT_SYMBOL);
