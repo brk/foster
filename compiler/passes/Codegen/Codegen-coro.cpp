@@ -36,6 +36,13 @@ enum {
   FOSTER_CORO_DEAD
 };
 
+const char kFosterCoroCreate[] = "foster_coro_create";
+const char kCoroTransfer[]     = "coro_transfer";
+
+Value* codegenCurrentCoroSlot(llvm::Module* mod) {
+  return mod->getGlobalVariable("current_coro");
+}
+
 bool isSingleElementStruct(llvm::Type* t,
                      llvm::StructType*& sty) {
   sty = llvm::dyn_cast<llvm::StructType>(t);
@@ -363,7 +370,7 @@ Value* CodegenPass::emitCoroCreateFn(
   llvm::Value* wrapper = emitCoroWrapperFn(this, retTy, argTypes);
   // coro_func wrapper = ...;
   // foster_coro_create(wrapper, fcoro);
-  llvm::Value* foster_coro_create = this->mod->getFunction("foster_coro_create");
+  llvm::Value* foster_coro_create = this->mod->getFunction(kFosterCoroCreate);
   ASSERT(foster_coro_create != NULL);
 
   Value* fcoro_gen = builder.CreateBitCast(fcoro, builder.getInt8PtrTy());
@@ -393,7 +400,7 @@ void generateInvokeYield(bool isYield,
                          const std::vector<llvm::Value*>& inputArgs) {
   llvm::Value* coro_slot = pass->storeAndMarkPointerAsGCRoot(coro);
 
-  llvm::Value* current_coro_slot = pass->mod->getGlobalVariable("current_coro");
+  llvm::Value* current_coro_slot = codegenCurrentCoroSlot(pass->mod);
   Value* current_coro = builder.CreateLoad(current_coro_slot);
 
   /// TODO: call coro_dump(coro)
@@ -455,7 +462,7 @@ void generateInvokeYield(bool isYield,
     builder.CreateStore(coro, current_coro_slot);
   }
 
-  Value* coroTransfer = pass->mod->getFunction("coro_transfer");
+  Value* coroTransfer = pass->mod->getFunction(kCoroTransfer);
   ASSERT(coroTransfer != NULL);
   Value*     ctx_addr = builder.CreateConstInBoundsGEP2_32(coro,            0, coroField_Context());
   Value* sib_ctx_addr = builder.CreateConstInBoundsGEP2_32(sibling_ptr_gen, 0, coroField_Context());
@@ -575,7 +582,7 @@ Value* CodegenPass::emitCoroYieldFn(llvm::Type* retTy,
 
 Value* getCurrentCoroSibling(llvm::Module* mod) {
   // The current_coro global only exists after we link in libfoster_coro.
-  Value* current_coro_slot = mod->getGlobalVariable("current_coro");
+  Value* current_coro_slot = codegenCurrentCoroSlot(mod);
   ASSERT(current_coro_slot != NULL);
 
   Value* current_coro = builder.CreateLoad(current_coro_slot, "coro");

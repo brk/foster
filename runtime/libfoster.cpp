@@ -26,6 +26,8 @@
 #ifdef OS_MACOSX
 #include <objc/runtime.h>
 #include <objc/objc-runtime.h>
+#else
+typedef void* id;
 #endif
 
 #include "cpuid.h"
@@ -73,16 +75,35 @@
 
 ////////////////////////////////////////////////////////////////
 
+struct AtomicBool {
+  AtomicBool(bool val) : flag(val) {}
+
+  void set(bool val) { base::subtle::Release_Store(&flag, val ? 1 : 0); }
+
+  bool get() { return (base::subtle::Acquire_Load(&flag) > 0); }
+
+private:
+  volatile base::subtle::Atomic32 flag;
+};
+
+////////////////////////////////////////////////////////////////
+
 const bool kUseSchedulingTimerThread = true;
 
-std::vector<coro_context> coro_initial_contexts;
-int    foster_argc;
-char** foster_argv;
-base::SimpleThread* __foster_scheduling_timer_thread;
+struct FosterGlobals {
+  int                    argc;
+  char**                 argv;
+
+  // One timer thread for the whole runtime, not per-vCPU.
+  base::SimpleThread*    scheduling_timer_thread;
+  id                     scheduling_timer_thread_autorelease_pool;
+
+  cpuid_info             x86_cpuid_info;
+};
+
+FosterGlobals __foster_globals;
 
 #ifdef OS_MACOSX
-id     __foster_autorelease_pool;
-
 // http://stackoverflow.com/questions/11237579/how-to-create-a-nsautoreleasepool-without-objective-c
 id allocAndInitAutoreleasePool() {
   id pool = class_createInstance((Class) objc_getClass("NSAutoreleasePool"), 0);
@@ -92,19 +113,50 @@ id allocAndInitAutoreleasePool() {
 void drainAutoreleasePool(id pool) {
   (void)objc_msgSend(pool, sel_registerName("drain"));
 }
+#else
+id allocAndInitAutoreleasePool() { return NULL; }
+void drainAutoreleasePool(id pool) { return; }
 #endif
 
+////////////////////////////////////////////////////////////////////////////////
+
+struct FosterVirtualCPU {
+  FosterVirtualCPU() : needs_resched(0) {
+    // Per-vCPU initialization...
+
+    // Per the libcoro documentation, passing all zeros creates
+    // an "empty" context which is suitable as an initial source
+    // for coro_transfer.
+    coro_create(&client_context, 0, 0, 0, 0);
+  }
+
+  ~FosterVirtualCPU() {
+    (void) coro_destroy(&client_context);
+  }
+
+  //coro_context         runtime_context; // TODO...
+  coro_context           client_context;
+  AtomicBool             needs_resched;
+};
+
+std::vector<FosterVirtualCPU*> __foster_vCPUs;
+
 // {{{
-volatile base::subtle::Atomic32 __foster_need_resched_threadlocal_bit = 0;
+
+inline FosterVirtualCPU* __foster_get_current_vCPU() {
+  // TODO use TLS to store current vCPU?
+  return __foster_vCPUs[0];
+}
 
 extern "C" void __foster_do_resched() {
   printf("__foster_do_resched...\n");
 }
 
 extern "C" bool __foster_need_resched_threadlocal() {
-  if (base::subtle::Acquire_Load(&__foster_need_resched_threadlocal_bit) > 0) {
-     base::subtle::Release_Store(&__foster_need_resched_threadlocal_bit, 0);
-     return true;
+  FosterVirtualCPU* v = __foster_get_current_vCPU();
+  if (v->needs_resched.get()) {
+      v->needs_resched.set(false);
+      return true;
   }
   return false;
 }
@@ -113,23 +165,23 @@ extern "C" bool __foster_need_resched_threadlocal() {
 // we'll just use a dedicated sleepy thread.
 class FosterSchedulingTimerThread : public base::SimpleThread {
  private:
-  volatile base::subtle::Atomic32 ending;
+  AtomicBool ending;
 
  public:
   virtual void Join() { // should only be called from main thread...
-    base::subtle::Release_Store(&ending, 1);
+    ending.set(true);
     return base::SimpleThread::Join();
   }
 
   explicit FosterSchedulingTimerThread()
     : base::SimpleThread("foster.scheduling-timer-thread"), ending(false) {}
   virtual void Run() {
-    while (base::subtle::Acquire_Load(&ending) != 1) {
+    while (!ending.get()) {
       const int ms = 1000;
       base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(16));
 
       // Mark all execution contexts as needing rescheduling.
-      base::subtle::NoBarrier_Store(&__foster_need_resched_threadlocal_bit, 1);
+      __foster_get_current_vCPU()->needs_resched.set(true); // just one for now
     }
   }
 };
@@ -147,45 +199,48 @@ extern "C" void* foster_emit_string_of_cstring(const char*, int32_t);
 namespace foster {
 namespace runtime {
 
-void initialize(int argc, char** argv) {
-  cpuid_info info;
-  cpuid_introspect(info);
+  void start_scheduling_timer_thread() {
+    if (kUseSchedulingTimerThread) {
+      // Need to allocate an autorelease pool, or else the NSThread underlying
+      // pthread underlying base::SimpleThread for our timer will be leaked.
+      __foster_globals.scheduling_timer_thread_autorelease_pool
+                                                  = allocAndInitAutoreleasePool();
+      __foster_globals.scheduling_timer_thread = new FosterSchedulingTimerThread();
+      __foster_globals.scheduling_timer_thread->Start();
+    }
+  }
 
-  int cachesmall = cpuid_small_cache_size(info);
-  int cachelarge = cpuid_large_cache_size(info);
+  void finish_scheduling_timer_thread() {
+    if (kUseSchedulingTimerThread) {
+             __foster_globals.scheduling_timer_thread->Join();
+      delete __foster_globals.scheduling_timer_thread;
+      drainAutoreleasePool(__foster_globals.scheduling_timer_thread_autorelease_pool);
+    }
+  }
+
+void initialize(int argc, char** argv) {
+  __foster_globals.argc = argc;
+  __foster_globals.argv = argv;
+
+  cpuid_introspect(__foster_globals.x86_cpuid_info);
+  //int cachesmall = cpuid_small_cache_size(__foster_globals.x86_cpuid_info);
+  //int cachelarge = cpuid_large_cache_size(__foster_globals.x86_cpuid_info);
+
 
   // TODO Initialize one default coro context per thread.
-  coro_initial_contexts.push_back(coro_context());
-  coro_create(&coro_initial_contexts[0], 0, 0, 0, 0);
+  __foster_vCPUs.push_back(new FosterVirtualCPU());
 
   current_coro = NULL;
 
   gc::initialize();
-
-  foster_argc = argc;
-  foster_argv = argv;
-
-  if (kUseSchedulingTimerThread) {
-#ifdef OS_MACOSX
-    // Need to allocate an autorelease pool, or else the NSThread underlying
-    // pthread underlying base::SimpleThread for our timer will be leaked.
-    __foster_autorelease_pool = allocAndInitAutoreleasePool();
-#endif
-    __foster_scheduling_timer_thread = new FosterSchedulingTimerThread();
-    __foster_scheduling_timer_thread->Start();
-  }
+  start_scheduling_timer_thread();
 }
 
 int cleanup() {
-  if (kUseSchedulingTimerThread) {
-    __foster_scheduling_timer_thread->Join();
-    delete __foster_scheduling_timer_thread;
-#ifdef OS_MACOSX
-    drainAutoreleasePool(__foster_autorelease_pool);
-#endif
-  }
+  finish_scheduling_timer_thread();
   return gc::cleanup();
 }
+
 
 template <int N, typename Int>
 int fprint_b2(FILE* f, Int x) {
@@ -349,8 +404,8 @@ void expect_float_p9f64(double f) { return fprint_p9f64(stderr, f); }
 // way of naming that type here. So we wrap this function
 // as get_cmdline_arg_n(n) in CodegenUtils.cpp.
 void* foster_get_cmdline_arg_n_raw(int32_t n) {
-  if (n >= 0 && n < foster_argc) {
-      const char* s = foster_argv[n];
+  if (n >= 0  &&  n < __foster_globals.argc) {
+      const char* s = __foster_globals.argv[n];
       return foster_emit_string_of_cstring(s, strlen(s));
   } else {
       const char* s = "";
