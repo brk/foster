@@ -74,7 +74,7 @@ Musings::
   Array n ::      { Type -> Type }
   Array :: { Nat -> Type -> Type }
 
-  Array :: { {n:Int | n > 0} -> Type -> Type }
+  Array :: { {n:Int | n >= 0} -> Type -> Type }
 
 
   DArray :: { Type -> Type }
@@ -83,3 +83,40 @@ Musings::
 
   newArray :: { (a:Type) -> (n:Nat) -> {Nat -> a} -> Array n a }
   newDArray :: { (a:Type) -> Int -> {Int -> a} -> DArray a }
+
+
+
+
+  PrimMutableDArray :: Type -> Type
+  newDArrayPrim :: { (a:Type) -> Int -> { Int -> a } -> PrimMutableDArray a }
+  getDArraySlot :: PrimMutableDArray T -> Int -> T
+  setDArraySlot :: PrimMutableDArray T -> Int -> T -> ()
+
+
+  MutableArray
+  mutableArrayCap :: MutableArray T -> Int
+  mutableArrayLen :: MutableArray T -> Int
+  mutableArrayAppend :: (in: MutableArray T)
+                     -> T
+                     -> (out:MutableArray T|len in + 1 == len out)
+
+A key point is whether the same read operation is permitted to read from both
+mutable and immutable arrays. Since they share a representation, this should
+be permissible. Likewise, should the same dereference operation work on both
+heap and stack slots?
+
+
+
+Translating LLVM to a functional language:
+  * Basic blocks (with phi nodes) become functions (with arguments).
+  * Branches become function calls; values identified in phis are the actual params.
+  * No need to worry about returns in non-tail positions!
+  * Primops get translated as-is.
+  * Problems:
+    * Calls to primitives
+    * "Undoing" GC slots, object initialization, etc.
+    * Handling stack allocations
+    * Handling unsafe memory idioms
+
+
+
