@@ -17,13 +17,14 @@ using namespace foster::runtime;
 
 #define TRACE do { fprintf(stdout, "%s::%d\n", __FILE__, __LINE__); fflush(stdout); } while (0)
 
-// (eventually, per-thread variable)
-// coro_invoke(c) sets this to c.
-// coro_yield() resets this to current_coro->invoker.
-foster_generic_coro* current_coro;
-
 namespace foster {
 namespace runtime {
+
+  int32_t              coro_status(foster_generic_coro* c) { return c->status; }
+  foster_generic_coro* coro_sibling(foster_generic_coro* c) { return c->sibling; }
+  foster_generic_coro* coro_invoker(foster_generic_coro* c) { return c->invoker; }
+  CoroProc             coro_fn(foster_generic_coro* c) { return c->fn; }
+  coro_context         coro_ctx(foster_generic_coro* c) { return c->ctx; }
 
   // coro_transfer may be defined as a macro or assembly-
   // language "function." The purpose of foster_coro_transfer

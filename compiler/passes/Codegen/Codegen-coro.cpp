@@ -40,7 +40,8 @@ const char kFosterCoroCreate[] = "foster_coro_create";
 const char kCoroTransfer[]     = "coro_transfer";
 
 Value* codegenCurrentCoroSlot(llvm::Module* mod) {
-  return mod->getGlobalVariable("current_coro");
+  Value* f = mod->getFunction("__foster_get_current_coro_slot");
+  return builder.CreateCall(f, "currentCoroSlot");
 }
 
 bool isSingleElementStruct(llvm::Type* t,
@@ -392,6 +393,15 @@ Value* CodegenPass::emitCoroCreateFn(
 //////////////////////////  INVOKE/YIELD  //////////////////////////
 ////////////////////////////////////////////////////////////////////
 
+// When LLVM links libfoster_coro with the rest of foster_runtime,
+// for some reason it doesn't unify the two identical definitions
+// of %struct.foster_generic_coro, so the function
+// __foster_get_current_coro_slot() ends up with the "wrong" type.
+// So we sometimes insert coercions to undo the silliness.
+Value* createStore(Value* val, Value* ptr) {
+  return builder.CreateStore(val, builder.CreateBitCast(ptr, ptrTo(val->getType())));
+}
+
 void generateInvokeYield(bool isYield,
                          CodegenPass* pass,
                          llvm::Value* coro,
@@ -456,10 +466,10 @@ void generateInvokeYield(bool isYield,
   if (!isYield) {
     ///   coro->invoker = current_coro;
     Value* invoker_slot = builder.CreateConstInBoundsGEP2_32(coro, 0, coroField_Invoker());
-    builder.CreateStore(current_coro, invoker_slot);
+    createStore(current_coro, invoker_slot);
 
     ///   current_coro = coro;
-    builder.CreateStore(coro, current_coro_slot);
+    createStore(coro, current_coro_slot);
   }
 
   Value* coroTransfer = pass->mod->getFunction(kCoroTransfer);
@@ -467,7 +477,10 @@ void generateInvokeYield(bool isYield,
   Value*     ctx_addr = builder.CreateConstInBoundsGEP2_32(coro,            0, coroField_Context());
   Value* sib_ctx_addr = builder.CreateConstInBoundsGEP2_32(sibling_ptr_gen, 0, coroField_Context());
 
-  llvm::CallInst* transfer = builder.CreateCall2(coroTransfer, sib_ctx_addr, ctx_addr);
+  llvm::Type* coro_context_ptr_ty = coroTransfer->getType()->getContainedType(0)->getContainedType(1);
+  llvm::CallInst* transfer = builder.CreateCall2(coroTransfer,
+                                builder.CreateBitCast(sib_ctx_addr, coro_context_ptr_ty),
+                                builder.CreateBitCast(ctx_addr, coro_context_ptr_ty));
   llvm::AttrBuilder ab; ab.addAttribute(llvm::Attributes::InReg);
   llvm::Attributes inreg = llvm::Attributes::get(builder.getContext(), ab);
   transfer->addAttribute(1, inreg);
@@ -488,7 +501,7 @@ void generateInvokeYield(bool isYield,
     ///   current_coro = coro->invoker;
     Value* invoker_slot = builder.CreateConstInBoundsGEP2_32(coro, 0, coroField_Invoker());
     Value* invoker      = builder.CreateLoad(invoker_slot);
-    builder.CreateStore(invoker, current_coro_slot);
+    createStore(invoker, current_coro_slot);
   }
 
   // So if we were originally yielding, then we are

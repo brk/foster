@@ -121,7 +121,9 @@ void drainAutoreleasePool(id pool) { return; }
 ////////////////////////////////////////////////////////////////////////////////
 
 struct FosterVirtualCPU {
-  FosterVirtualCPU() : needs_resched(0) {
+  FosterVirtualCPU() : needs_resched(0)
+                     , current_coro(NULL)
+                     {
     // Per-vCPU initialization...
 
     // Per the libcoro documentation, passing all zeros creates
@@ -131,11 +133,16 @@ struct FosterVirtualCPU {
   }
 
   ~FosterVirtualCPU() {
-    (void) coro_destroy(&client_context);
+    foster_coro_destroy(&client_context);
   }
 
   //coro_context         runtime_context; // TODO...
   coro_context           client_context;
+
+  // coro_invoke(c) sets this to c.
+  // coro_yield() resets this to current_coro->invoker.
+  foster_generic_coro*   current_coro;
+
   AtomicBool             needs_resched;
 };
 
@@ -146,6 +153,10 @@ std::vector<FosterVirtualCPU*> __foster_vCPUs;
 inline FosterVirtualCPU* __foster_get_current_vCPU() {
   // TODO use TLS to store current vCPU?
   return __foster_vCPUs[0];
+}
+
+extern "C" foster_generic_coro** __foster_get_current_coro_slot() {
+  return &(__foster_get_current_vCPU()->current_coro);
 }
 
 extern "C" void __foster_do_resched() {
@@ -226,11 +237,8 @@ void initialize(int argc, char** argv) {
   //int cachesmall = cpuid_small_cache_size(__foster_globals.x86_cpuid_info);
   //int cachelarge = cpuid_large_cache_size(__foster_globals.x86_cpuid_info);
 
-
   // TODO Initialize one default coro context per thread.
   __foster_vCPUs.push_back(new FosterVirtualCPU());
-
-  current_coro = NULL;
 
   gc::initialize();
   start_scheduling_timer_thread();

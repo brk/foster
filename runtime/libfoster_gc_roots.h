@@ -10,10 +10,12 @@
 #include <inttypes.h>
 #include "libcoro/coro.h"
 
+typedef void (*CoroProc)(void*);
+
 struct foster_generic_coro {
   coro_context ctx;
   foster_generic_coro* sibling;
-  void (*fn)(void*);
+  CoroProc fn;
   void* env;
   foster_generic_coro* invoker;
   foster_generic_coro** indirect_self;
@@ -34,13 +36,14 @@ enum {
   FOSTER_CORO_DEAD
 };
 
-// (eventually, per-thread variable)
-// coro_invoke(c) sets this to c.
-// coro_yield() resets this to current_coro->invoker.
-extern "C" foster_generic_coro* current_coro;
-
 namespace foster {
 namespace runtime {
+
+  int32_t              coro_status(foster_generic_coro* c) ;
+  foster_generic_coro* coro_sibling(foster_generic_coro* c);
+  foster_generic_coro* coro_invoker(foster_generic_coro* c);
+  CoroProc             coro_fn(foster_generic_coro* c)     ;
+  coro_context         coro_ctx(foster_generic_coro* c)    ;
 
 // We can't rely on assert() to print messages for us when we're
 // not on the main thread's stack.

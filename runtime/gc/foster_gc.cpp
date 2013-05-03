@@ -86,9 +86,9 @@ isCoroBelongingToOtherThread(const typemap* map, heap_cell* cell) {
   #ifdef FOSTER_MULTITHREADED
   if (map->isCoro) {
     foster_generic_coro* coro = (foster_generic_coro*) cell->body_addr();
-    if (coro->status == FOSTER_CORO_RUNNING) {
+    if (coro_status(coro) == FOSTER_CORO_RUNNING) {
       // Don't scan a coroutine if it's being run by another thread!
-      if (coro->owner_thread != PlatformThread::CurrentId()) {
+      if (coro_owner_thread(coro) != PlatformThread::CurrentId()) {
         return true;
       }
     }
@@ -531,6 +531,8 @@ base::TimeTicks gc_time;
 base::TimeTicks runtime_start;
 base::TimeTicks    init_start;
 
+extern "C" foster_generic_coro** __foster_get_current_coro_slot();
+
 void copying_gc::gc() {
   base::TimeTicks begin = base::TimeTicks::HighResNow();
   ++this->num_collections;
@@ -541,13 +543,15 @@ void copying_gc::gc() {
   visitGCRootsWithStackMaps(__builtin_frame_address(0),
                             copying_gc_root_visitor);
 
-  if (current_coro) {
+  foster_generic_coro** coro_slot = __foster_get_current_coro_slot();
+  foster_generic_coro*  coro = *coro_slot;
+  if (coro) {
     if (ENABLE_GCLOG) {
-      fprintf(gclog, "==========visiting current ccoro: %p\n", current_coro); fflush(gclog);
+      fprintf(gclog, "==========visiting current ccoro: %p\n", coro); fflush(gclog);
     }
-    copying_gc_root_visitor((void**)&current_coro, NULL);
+    copying_gc_root_visitor((void**)coro_slot, NULL);
     if (ENABLE_GCLOG) {
-      fprintf(gclog, "==========visited current ccoro: %p\n", current_coro); fflush(gclog);
+      fprintf(gclog, "==========visited current ccoro: %p\n", coro); fflush(gclog);
     }
   }
 
@@ -712,11 +716,11 @@ void* coro_topmost_frame_pointer(foster_generic_coro* coro) {
   // TODO when multithreading, running coros should be stamed with
   // the id of the thread running them, so that other threads will
   // know not to scan underneath another running thread.
-  foster_assert(coro->status == FOSTER_CORO_SUSPENDED
-             || coro->status == FOSTER_CORO_DORMANT,
+  foster_assert(coro_status(coro) == FOSTER_CORO_SUSPENDED
+             || coro_status(coro) == FOSTER_CORO_DORMANT,
            "can only get topmost frame pointer from "
            "suspended or dormant coro!");
-  void** sp = coro->ctx.sp;
+  void** sp = coro_ctx(coro).sp;
   #if __amd64
   const int NUM_SAVED = 6;
   #else // CORO_WIN_TIB : += 3
@@ -726,8 +730,8 @@ void* coro_topmost_frame_pointer(foster_generic_coro* coro) {
   return &sp[NUM_SAVED - 1];
 }
 
-const char* coro_status(int status) {
-  switch (status) {
+const char* coro_status_name(foster_generic_coro* c) {
+  switch (coro_status(c)) {
   case FOSTER_CORO_INVALID: return "invalid";
   case FOSTER_CORO_SUSPENDED: return "suspended";
   case FOSTER_CORO_DORMANT: return "dormant";
@@ -741,7 +745,10 @@ void coro_print(foster_generic_coro* coro) {
   if (!coro) return;
   fprintf(gclog, "coro %p: ", coro); fflush(stdout);
   fprintf(gclog, "sibling %p, invoker %p, status %s, fn %p\n",
-      coro->sibling, coro->invoker, coro_status(coro->status), coro->fn);
+      foster::runtime::coro_sibling(coro),
+      foster::runtime::coro_invoker(coro),
+      coro_status_name(coro),
+      foster::runtime::coro_fn(coro));
 }
 
 void coro_dump(foster_generic_coro* coro) {
@@ -749,7 +756,7 @@ void coro_dump(foster_generic_coro* coro) {
     fprintf(gclog, "cannot dump NULL coro ptr!\n");
   } else if (ENABLE_GCLOG) {
     coro_print(coro);
-    fprintf(gclog, " "); coro_print(coro->sibling);
+    fprintf(gclog, " "); coro_print(foster::runtime::coro_sibling(coro));
   }
 }
 
@@ -761,9 +768,9 @@ void scanCoroStack(foster_generic_coro* coro,
                    gc_visitor_fn visitor) {
   coro_dump(coro);
   if (!coro) return;
-  if (coro->status == FOSTER_CORO_INVALID
-   || coro->status == FOSTER_CORO_DEAD
-   || coro->status == FOSTER_CORO_RUNNING) {
+  if (foster::runtime::coro_status(coro) == FOSTER_CORO_INVALID
+   || foster::runtime::coro_status(coro) == FOSTER_CORO_DEAD
+   || foster::runtime::coro_status(coro) == FOSTER_CORO_RUNNING) {
     // No need to scan the coro's stack...
     return;
   }
@@ -795,7 +802,7 @@ void scanCoroStack(foster_generic_coro* coro,
 
   if (ENABLE_GCLOG) {
     fprintf(gclog, "========= scanning coro (%p, fn=%p, %s) stack from %p\n",
-        coro, coro->fn, coro_status(coro->status), frameptr);
+        coro, foster::runtime::coro_fn(coro), coro_status_name(coro), frameptr);
   }
 
   visitGCRootsWithStackMaps(frameptr, visitor);
