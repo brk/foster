@@ -10,6 +10,9 @@
 // This file exists to provide symbols to link
 // libfoster_main.cpp::main() to libfoster
 
+struct coro_context;
+void foster_coro_destroy(coro_context* ctx);
+
 namespace foster {
 namespace runtime {
 
