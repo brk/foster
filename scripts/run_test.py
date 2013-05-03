@@ -294,7 +294,7 @@ def get_paths(options, tmpdir):
   for prog in ['fosterparse', 'fosterlower', 'fosteroptc']:
       paths[prog] = mkpath(bindir, prog)
 
-  for lib in ['libfoster.bc']:
+  for lib in ['foster_runtime.bc']:
       paths[lib] =  mkpath(bindir, os.path.join('_bitcodelibs_', lib))
 
   for lib in [ 'libfoster_main.o']:

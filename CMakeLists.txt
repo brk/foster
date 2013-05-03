@@ -267,7 +267,7 @@ set(LIBFOSTER_CPP_SOURCES
 
 # Use clang or llvm-g++ to build libfoster.bc
 add_custom_command(
-  OUTPUT ${PROJECT_BINARY_DIR}/_bitcodelibs_/libfoster.bc
+  OUTPUT ${PROJECT_BINARY_DIR}/_bitcodelibs_/foster_runtime.bc
   COMMAND
     python ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
         --clang="${CLANG}"
@@ -279,38 +279,16 @@ add_custom_command(
   DEPENDS
     ${LIBFOSTER_CPP_SOURCES}
     ${PROJECT_BINARY_DIR}/_bitcodelibs_
-    ${PROJECT_BINARY_DIR}/_generated_/imath.h
     ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
 )
 # We could attach the command to build libfoster.bc directly
 # to the libfoster_bc target, but the effect of doing that would
 # be that libfoster.bc would always be considered out of date,
 # and would be rebuilt on every single invocation of make.
-add_custom_target(libfoster_bc DEPENDS
-        ${PROJECT_BINARY_DIR}/_bitcodelibs_/libfoster.bc
+add_custom_target(foster_runtime_bc DEPENDS
+        ${PROJECT_BINARY_DIR}/_bitcodelibs_/foster_runtime.bc
         ${LIBRARY_OUTPUT_PATH}/libfoster_main.o)
 
-
-#-----------------------------------------------------------
-
-add_custom_command(
-  OUTPUT
-        ${PROJECT_BINARY_DIR}/_bitcodelibs_/imath-wrapper.bc
-  COMMAND
-        ${CLANG} -x c
-          ${PROJECT_SOURCE_DIR}/third_party/imath/imath-wrapper.c
-          -I ${PROJECT_BINARY_DIR}
-          -c -emit-llvm
-          -o ${PROJECT_BINARY_DIR}/_bitcodelibs_/imath-wrapper.bc
-  DEPENDS
-          ${PROJECT_BINARY_DIR}/_generated_/imath.h
-          ${PROJECT_BINARY_DIR}/_bitcodelibs_
-          ${PROJECT_SOURCE_DIR}/third_party/imath/imath-wrapper.c
-)
-
-add_custom_target(imath_wrapper_bc DEPENDS
-        ${PROJECT_BINARY_DIR}/_bitcodelibs_/imath-wrapper.bc
-        imath)
 
 #-----------------------------------------------------------
 
@@ -462,7 +440,7 @@ target_link_libraries(fosterlower
   antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
 
 add_dependencies(fosterlower
-    libfoster_bc coro_wrapper_bc imath_wrapper_bc hs_me cycle)
+    foster_runtime_bc coro_wrapper_bc imath_wrapper_bc hs_me cycle)
 
 ############
 
@@ -471,25 +449,13 @@ target_link_libraries(fosteroptc
     fosterc_base fosterc_llvm ${LLVM_LDFLAGS})
 
 add_dependencies(fosteroptc
-    libfoster_bc coro_wrapper_bc imath_wrapper_bc hs_me)
+    foster_runtime_bc coro_wrapper_bc imath_wrapper_bc hs_me)
 
 ############
 
-#add_executable(proto2llvm
-#    compiler/llvm/ProtoToLLVM.cpp
-#    ${GENERATED}/LLVM.pb.cc)
-#
-#target_link_libraries(proto2llvm
-#    ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
-#
-#add_dependencies(proto2llvm
-#    libfoster_bc coro_wrapper_bc imath_wrapper_bc)
-
-############
-
-add_dependencies(libfoster_bc chromium_base)
-add_dependencies(libfoster_bc cpuid)
-add_dependencies(libfoster_bc coro)
+add_dependencies(foster_runtime_bc chromium_base)
+add_dependencies(foster_runtime_bc cpuid)
+add_dependencies(foster_runtime_bc coro)
 
 
 set_target_properties(

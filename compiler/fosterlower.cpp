@@ -302,7 +302,7 @@ int main(int argc, char** argv) {
       );
   }
 
-  libfoster_bc = readLLVMModuleFromPath("_bitcodelibs_/libfoster.bc");
+  libfoster_bc = readLLVMModuleFromPath("_bitcodelibs_/foster_runtime.bc");
   foster::putModuleFunctionsInScope(libfoster_bc, module);
 
   //imath_bc     = readLLVMModuleFromPath("_bitcodelibs_/imath-wrapper.bc");

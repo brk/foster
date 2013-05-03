@@ -52,7 +52,7 @@ def compile_source(src):
   return outbc
 
 def link_all(all_bcs):
-  outbc = os.path.join(bindir, "_bitcodelibs_", "libfoster.bc")
+  outbc = os.path.join(bindir, "_bitcodelibs_", "foster_runtime.bc")
   # Well, actually, link all except what fosterlower.cpp links beforehand, to
   # avoid multiply-defined symbols when everything comes together at the end.
   bcs = [bc for bc in all_bcs if not (bc.endswith("libfoster_coro.bc") or bc.endswith(".h"))]
