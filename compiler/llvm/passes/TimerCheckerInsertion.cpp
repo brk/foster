@@ -9,6 +9,7 @@
 #include "llvm/Instructions.h"
 #include "llvm/IRBuilder.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/CallSite.h"
 #include "llvm/ADT/StringSwitch.h"
 
 #include "llvm/Analysis/LoopInfo.h"
@@ -38,24 +39,59 @@ struct TimerChecksInsertion : public FunctionPass {
     AU.addPreserved<LoopInfo>();
   }
 
+  // If F is recursive, or makes calls to statically unknown functions,
+  // we should insert a check at the entry.
+  bool needsHeader(llvm::Function& F) {
+    for (Function::iterator BB = F.begin(); BB != F.end(); ++BB) {
+      for (BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
+        if (llvm::CallInst* call = llvm::dyn_cast<CallInst>(I)) {
+          llvm::Value* Vtgt = call->getCalledValue();
+          if (!Vtgt) {
+            errs() << F.getName() << " needs header due to unknown target " << str(call);
+            return true; // Call to unknown function.
+          }
+          if (llvm::dyn_cast<llvm::Function>(Vtgt->stripPointerCasts()) == &F) {
+            errs() << F.getName() << " needs header due to recursive call " << str(call);
+            return true; // Recursive call.
+          }
+        }
+      }
+    }
+
+    return false;
+  }
+
   llvm::Value* needReschedF;
+  llvm::Value* doReschedF;
 
   virtual bool doInitialization(Module& M) {
     needReschedF = M.getFunction("__foster_need_resched_threadlocal");
+    doReschedF   = M.getFunction("__foster_do_resched");
     return false;
+  }
+
+  void insertCheckAt(Function* F, BasicBlock* bb, Instruction* here) {
+      BasicBlock* newbb = bb->splitBasicBlock(here);
+      newbb->setName("postcheck_");
+      // newbb takes all the stuff after the phi nodes in bb
+      // bb now has an unconditional branch to newbb; erase it
+      bb->getTerminator()->eraseFromParent();
+
+      builder.SetInsertPoint(bb);
+
+      Value* needsResched = builder.CreateCall(needReschedF, "needsResched");
+      BasicBlock* doReschedBB = BasicBlock::Create(getGlobalContext(), "doyield", F, newbb);
+      builder.CreateCondBr(needsResched, doReschedBB, newbb);
+
+      builder.SetInsertPoint(doReschedBB);
+      builder.CreateCall(doReschedF);
+      builder.CreateBr(newbb);
   }
 
   virtual bool runOnFunction(llvm::Function& F) {
     if (!isFosterFunction(F)) { return false; }
 
-    /*
-    TODO: if F is recursive, or makes calls to statically unknown functions,
-    we should insert a check at the entry.
-    Otherwise, if there are no loops, the function can't diverge (though it
-    (perhaps) can block in native platform/library function calls, which
-    cannot be safely pre-empted...
-    */
-
+    bool modified = false;
     std::vector<BasicBlock*> headers;
 
     LoopInfo& LI = getAnalysis<LoopInfo>();
@@ -66,27 +102,25 @@ struct TimerChecksInsertion : public FunctionPass {
 
     for (int i = 0; i < headers.size(); ++i) {
       BasicBlock* bb = headers[i];
-      BasicBlock* newbb = bb->splitBasicBlock(bb->getFirstNonPHI());
-      newbb->setName("postcheck_");
-      // newbb takes all the stuff after the phi nodes in bb
-      // bb now has an unconditional branch to newbb; erase it
-      bb->getTerminator()->eraseFromParent();
+      insertCheckAt(&F, bb, bb->getFirstNonPHI());
+    }
 
-      builder.SetInsertPoint(bb);
+    modified = !headers.empty();
 
-      Value* needsResched = builder.CreateCall(needReschedF, "needsResched");
-      BasicBlock* doReschedBB = BasicBlock::Create(getGlobalContext(), "doyield", &F, newbb);
-      builder.CreateCondBr(needsResched, doReschedBB, newbb);
-
-      builder.SetInsertPoint(doReschedBB);
-      // TODO: insert call to foster coro yield (against (thread local?) 'runtime' coro)...
-      builder.CreateBr(newbb);
+    /*
+    Otherwise, if there are no loops, the function can't diverge (though it
+    (perhaps) can block in native platform/library function calls, which
+    cannot be safely pre-empted...
+    */
+    if (headers.empty() && needsHeader(F)) {
+      BasicBlock* bb = &F.getEntryBlock();
+      insertCheckAt(&F,  bb, bb->getTerminator());
     }
 
     outs() << "TimerChecksInsertion ran on function " << F.getName()
            << " with " << headers.size() << "headers" << "\n";
 
-    return false;
+    return modified;
   }
 };
 

@@ -342,6 +342,11 @@ void optimizeModuleAndRunPasses(Module* mod) {
     }
   }
 
+  if (optInsertTimerChecks) {
+    fpasses.add(new llvm::LoopInfo());
+    fpasses.add(foster::createTimerChecksInsertionPass());
+  }
+
   if (!optOptimizeZero) {
     AddOptimizationPasses(passes, fpasses, 3, false);
     passes.add(llvm::createVerifierPass());
@@ -537,13 +542,6 @@ int main(int argc, char** argv) {
     if (!optDisableAllOptimizations) {
       foster::runWarningPasses(*module);
       optimizeModuleAndRunPasses(module);
-
-      if (optInsertTimerChecks) {
-        llvm::FunctionPassManager fpasses(module);
-        fpasses.add(new llvm::LoopInfo());
-        fpasses.add(foster::createTimerChecksInsertionPass());
-        foster::runFunctionPassesOverModule(fpasses, module);
-      }
 
       if (optDumpPostOptIR) {
         dumpModuleToFile(module,  (gOutputNameBase + ".postopt.ll"));
