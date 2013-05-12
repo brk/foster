@@ -171,7 +171,7 @@ canGC :: Map.Map Ident MayGC -> Letable ty -> MayGC
 canGC mayGCmap letable =
   case letable of
          ILAppCtor     {} -> MayGC
-         ILAlloc       {} -> MayGC
+         ILAlloc    _ amr -> memRegionMayGC amr
          ILAllocArray  {} -> MayGC
          ILAllocate info  -> memRegionMayGC (allocRegion info)
          ILCall     _ v _ -> -- Exists due to mergeAdjacentBlocks.
