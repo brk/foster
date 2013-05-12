@@ -984,7 +984,21 @@ void inspect_typemap(const typemap* ti) {
 }
 
 bool isMetadataPointer(const void* meta) {
- return uint64_t(meta) > uint64_t(1<<16);
+  if (uint64_t(meta) < uint64_t(1<<16)) return false;
+  if (GC_ASSERTIONS) {
+    const typemap* map = (const typemap*) meta;
+    bool is_corrupted = (
+          ((map->isCoro != 0)  && (map->isCoro != 1))
+       || ((map->isArray != 0) && (map->isArray != 1))
+       || (map->numOffsets < 0)
+       || (map->cell_size  < 0));
+    if (is_corrupted) {
+      inspect_typemap(map);
+      printf("meta: %p\n", meta);
+      gc_assert(!is_corrupted, "isMetadataPointer() found corrupted meta");
+    }
+  }
+  return true;
 }
 
 /////////////////////////////////////////////////////////////////
