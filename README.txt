@@ -20,6 +20,10 @@ $ ctest -V    # Run tests in verbose mode; output from tests will be printed.
 $ ctest -V -R unittest      # Run only unit tests ("unittest" can be any regex)
 
 ============================= Installation =================================
+Paths:
+  You'll want to append $PATH_TO_FOSTER/scripts to $PATH and $PYTHONPATH,
+  probably in .bashrc or equivalent.
+
 Ubuntu 10.10:
 	Dependencies: CMake, ANTLR3 C runtime, Java, LLVM, Google protobuf
 
