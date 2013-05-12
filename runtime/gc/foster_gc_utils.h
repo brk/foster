@@ -74,7 +74,7 @@ struct heap_cell {
   }
 
   static heap_cell* for_body(tidy* ptr) {
-    return (heap_cell*) offset((void*)ptr, -((int)HEAP_CELL_HEADER_SIZE));
+    return (heap_cell*) offset((void*)ptr, -((intptr_t)HEAP_CELL_HEADER_SIZE));
   }
 };
 

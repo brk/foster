@@ -79,9 +79,9 @@ struct allocator_range {
 
 std::vector<allocator_range> allocator_ranges;
 
-bool is_marked_as_stable(heap_cell* addr) {
+bool is_marked_as_stable(tidy* body) {
   for (int i = 0, j = allocator_ranges.size(); i < j; ++i) {
-    if (allocator_ranges[i].range.contains((void*) addr)) {
+    if (allocator_ranges[i].range.contains((void*) body)) {
       return allocator_ranges[i].stable;
     }
   }
@@ -386,6 +386,15 @@ class copying_gc {
         }
       }
 
+      inline void scan_cell(heap_cell* cell, int depth) {
+        const void* meta = NULL;
+        heap_array* arr = NULL;
+        const typemap* map = NULL;
+        int64_t cell_size;
+        get_cell_metadata(cell, meta, arr, map, cell_size);
+        if (map) scan_with_map_and_arr(cell, map, arr, depth);
+      }
+
     private:
       intr* from_tidy(tidy* t) { return (intr*) t; }
   };
@@ -521,14 +530,14 @@ public:
     tidy* body = *root;
     if (!body) return;
 
-    heap_cell* obj = heap_cell::for_body(*root);
-    if (curr->contains(obj)) {
+    heap_cell* obj = heap_cell::for_body(body);
+    if (curr->contains(body)) {
       *root = next->ss_copy(obj, depth);
-    } else if (is_marked_as_stable(obj)) {
-      // TODO: scan but don't copy
-      fprintf(gclog, "foster_gc error: tried to collect stable cell...\n");
-      fflush(gclog);
-      exit(253);
+
+      gc_assert(*root != NULL, "copying gc should not null out slots");
+      gc_assert(*root != body, "copying gc should return new pointers");
+    } else if (is_marked_as_stable(body)) {
+      next->scan_cell(obj, depth);
     } else {
       // {{{ Should-never-happen error handling...
       if (next->contains(obj)) {
@@ -547,9 +556,6 @@ public:
       }
       // }}}
     }
-
-    gc_assert(*root != NULL, "copying gc should not null out slots");
-    gc_assert(*root != body, "copying gc should return new pointers");
   }
 
   // {{{ Allocation, in various flavors & specializations.
@@ -627,9 +633,7 @@ void copying_gc_root_visitor(tidy** root, const typemap* slotname) {
     fprintf(gclog, "\t\tSTACK SLOT %p contains %p, slot name = %s\n", root, *root,
                       (slotname ? ((const char*) slotname) : "<unknown slot>"));
   }
-  if (*root) {
-    allocator->copy_or_update(root, kFosterGCMaxDepth);
-  }
+  allocator->copy_or_update(root, kFosterGCMaxDepth);
 }
 
 base::TimeTicks gc_time;
@@ -682,13 +686,8 @@ void copying_gc::gc() {
 void copying_gc::worklist::process(copying_gc::semispace* next) {
   while (!empty()) {
     heap_cell* cell = peek_front();
-    const void* meta = NULL;
-    heap_array* arr = NULL;
-    const typemap* map = NULL;
-    int64_t cell_size;
-    next->get_cell_metadata(cell, meta, arr, map, cell_size);
     advance();
-    if (map) next->scan_with_map_and_arr(cell, map, arr, kFosterGCMaxDepth);
+    next->scan_cell(cell, kFosterGCMaxDepth);
   }
 }
 
