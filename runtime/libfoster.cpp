@@ -23,6 +23,8 @@
 #include "base/atomicops.h"
 #include "base/threading/simple_thread.h"
 
+#include <signal.h>
+
 #ifdef OS_MACOSX
 #include <objc/runtime.h>
 #include <objc/objc-runtime.h>
@@ -75,6 +77,10 @@ typedef void* id;
 
 ////////////////////////////////////////////////////////////////
 
+extern "C" void foster__assert(bool ok, const char* msg);
+
+////////////////////////////////////////////////////////////////
+
 struct AtomicBool {
   AtomicBool(bool val) : flag(val) {}
 
@@ -120,9 +126,34 @@ void drainAutoreleasePool(id pool) { return; }
 
 ////////////////////////////////////////////////////////////////////////////////
 
+void __foster_handle_sigsegv(int, siginfo_t* si, void*) {
+  fprintf(stdout,
+          "ERROR: Foster runtime caught SIGSEGV at addr %p, aborting!\n",
+          si->si_addr);
+  fflush(stdout);
+  exit(2);
+}
+
+void __foster_install_sigsegv_handler() {
+  struct sigaction sa = {
+      .sa_sigaction = __foster_handle_sigsegv,
+      .sa_flags     = SA_ONSTACK | SA_SIGINFO,
+      .sa_mask      = 0,
+  };
+  int rv;
+  rv = sigfillset(&sa.sa_mask); // block all other signals
+  foster__assert(rv == 0, "sigfillset failed");
+
+  rv = sigaction(SIGSEGV, &sa, NULL);
+  foster__assert(rv == 0, "installing SIGSEGV fault handler failed");
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 struct FosterVirtualCPU {
   FosterVirtualCPU() : needs_resched(0)
                      , current_coro(NULL)
+                     , signal_stack(NULL)
                      {
     // Per-vCPU initialization...
 
@@ -134,6 +165,19 @@ struct FosterVirtualCPU {
 
   ~FosterVirtualCPU() {
     foster_coro_destroy(&client_context);
+    free(signal_stack);
+  }
+
+  void install_signal_stack() {
+    signal_stack = malloc(SIGSTKSZ);
+    foster__assert(signal_stack, "signal stack allocation failed");
+    stack_t ss = {
+        .ss_size = SIGSTKSZ,
+        .ss_sp = signal_stack,
+        .ss_flags = 0,
+    };
+    int rv = sigaltstack(&ss, NULL);
+    foster__assert(rv == 0, "signaltstack failed");
   }
 
   //coro_context         runtime_context; // TODO...
@@ -144,6 +188,8 @@ struct FosterVirtualCPU {
   foster_generic_coro*   current_coro;
 
   AtomicBool             needs_resched;
+
+  void*                  signal_stack;
 };
 
 std::vector<FosterVirtualCPU*> __foster_vCPUs;
@@ -239,6 +285,9 @@ void initialize(int argc, char** argv, void* stack_base) {
 
   // TODO Initialize one default coro context per thread.
   __foster_vCPUs.push_back(new FosterVirtualCPU());
+  __foster_vCPUs[0]->install_signal_stack();
+
+  __foster_install_sigsegv_handler();
 
   gc::initialize(stack_base);
   start_scheduling_timer_thread();
