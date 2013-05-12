@@ -37,6 +37,10 @@ inline void* offset(void* base, intptr_t off) {
   return (void*) (((char*) base) + off);
 }
 
+inline size_t distance(void* base, void* bound) {
+  return (char*) bound - (char*) base;
+}
+
 const uint64_t FORWARDED_BIT = 0x02; // 0b000..00010
 
 // This should remain synchronized with getHeapCellHeaderTy()

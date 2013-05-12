@@ -60,6 +60,7 @@ struct memory_range {
     if (addr >= bound) return "after";
     return "within";
   }
+  size_t size() const { return distance(base, bound); }
 };
 
 struct allocator_range {
@@ -135,56 +136,54 @@ class copying_gc {
   class semispace {
   public:
       semispace(int64_t size, copying_gc* parent) : parent(parent) {
-        start = (char*) malloc(size);
-        end   = start + size;
+        range.base  = malloc(size);
+        range.bound = offset(range.base, size);
         reset_bump();
-        memset(start, 0x66, size);
+        memset(range.base, 0x66, size);
 
         genericClosureMarker = NULL;
       }
 
       ~semispace() {
-        free(start);
+        free(range.base);
       }
   private:
-      char* start;
-      char* end;
-      char* bump;
+      memory_range range;
+      void* bump;
       copying_gc* parent;
 
       char* genericClosureMarker;
 
   public:
       void realign_bump() {
-         bump = roundUpToNearestMultipleWeak(bump + HEAP_CELL_HEADER_SIZE,
+         bump = offset(
+                roundUpToNearestMultipleWeak(offset(bump, HEAP_CELL_HEADER_SIZE),
                                              FOSTER_GC_DEFAULT_ALIGNMENT)
-                                                  - HEAP_CELL_HEADER_SIZE;
+                                                         ,HEAP_CELL_HEADER_SIZE);
       }
       void reset_bump() {
         // We want to position the bump pointer far enough into the buffer
         // so that after accounting for the heap cell header, the body pointer
         // resulting from allocation will be properly aligned.
-        bump = start;
+        bump = range.base;
         realign_bump();
         fprintf(gclog, "after reset, bump = %p, low bits: %x\n", bump,
                                                     int(intptr_t(bump) & 0xf));
       }
 
-      bool contains(void* ptr) {
-        return (ptr >= start) && (ptr < end);
-      }
+      bool contains(void* ptr) const { return range.contains(ptr); }
 
       void clear() {
-        fprintf(gclog, "clearing mem from %p to %p, bump = %p\n", start, end, bump);
+        fprintf(gclog, "clearing mem from %p to %p, bump = %p\n", range.base, range.bound, bump);
         fflush(gclog);
-        memset(start, 0xFE, end - start);
+        memset(range.base, 0xFE, range.size());
       }
 
-      int64_t used_size() const { return bump - start; }
+      int64_t used_size() const { return distance(range.base, bump); }
       int64_t free_size() const {
         //fprintf(gclog, "this=%p, bump = %p, low bits: %x\n", this, bump, intptr_t(bump) & 0xf);
         //fflush(gclog);
-        return end - bump;
+        return distance(bump, range.bound);
       }
 
       bool can_allocate_bytes(int64_t num_bytes) {
@@ -197,7 +196,7 @@ class copying_gc {
         //fprintf(gclog, "this=%p, memsetting %d bytes at %p (ti=%p)\n", this, int(typeinfo->cell_size), bump, typeinfo); fflush(gclog);
         if (DEBUG_INITIALIZE_ALLOCATIONS) { memset(bump, 0xAA, N); }
         if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(N); }
-        bump += N;
+        bump = offset(bump, N);
         allot->set_meta(typeinfo);
         //fprintf(gclog, "alloc'd %d, bump = %p, low bits: %x\n", int(typeinfo->cell_size), bump, intptr_t(bump) & 0xF);
         return allot->body_addr();
@@ -208,7 +207,7 @@ class copying_gc {
         //fprintf(gclog, "this=%p, memsetting %d bytes at %p (ti=%p)\n", this, int(typeinfo->cell_size), bump, typeinfo); fflush(gclog);
         if (DEBUG_INITIALIZE_ALLOCATIONS) { memset(bump, 0xAA, typeinfo->cell_size); }
         if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(typeinfo->cell_size); }
-        bump += typeinfo->cell_size;
+        bump = offset(bump, typeinfo->cell_size);
         allot->set_meta(typeinfo);
         //fprintf(gclog, "alloc'd %d, bump = %p, low bits: %x\n", int(typeinfo->cell_size), bump, intptr_t(bump) & 0xF);
         return allot->body_addr();
@@ -220,7 +219,7 @@ class copying_gc {
                                       bool     init) {
         heap_array* allot = (heap_array*) bump;
         if (init) memset(bump, 0x00, total_bytes);
-        bump += total_bytes;
+        bump = offset(bump, total_bytes);
         //fprintf(gclog, "alloc'a %d, bump = %p, low bits: %x\n", int(total_bytes), bump, intptr_t(bump) & 0xF);
         allot->set_meta(arr_elt_typeinfo);
         allot->set_num_elts(num_elts);
@@ -284,7 +283,7 @@ class copying_gc {
         if (can_allocate_bytes(cell_size)) {
           memcpy(bump, cell, cell_size);
           heap_cell* new_addr = (heap_cell*) bump;
-          bump += cell_size;
+          bump = offset(bump, cell_size);
           cell->set_forwarded_body(new_addr->body_addr());
           if (isMetadataPointer(meta)) {
             const typemap* map = (const typemap*) meta;
