@@ -34,6 +34,8 @@
 const int KB = 1024;
 const int SEMISPACE_SIZE = 1024 * KB;
 
+const int kFosterGCMaxDepth = 1024;
+
 /////////////////////////////////////////////////////////////////
 
 void register_stackmaps();
@@ -154,6 +156,7 @@ class copying_gc {
       ~semispace() {
         free(range.base);
       }
+
   private:
       memory_range range;
       void* bump;
@@ -204,7 +207,7 @@ class copying_gc {
         //fprintf(gclog, "this=%p, memsetting %d bytes at %p (ti=%p)\n", this, int(typeinfo->cell_size), bump, typeinfo); fflush(gclog);
         if (DEBUG_INITIALIZE_ALLOCATIONS) { memset(bump, 0xAA, N); }
         if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(N); }
-        bump = offset(bump, N);
+        incr_by(bump, N);
         allot->set_meta(typeinfo);
         //fprintf(gclog, "alloc'd %d, bump = %p, low bits: %x\n", int(typeinfo->cell_size), bump, intptr_t(bump) & 0xF);
         return allot->body_addr();
@@ -215,7 +218,7 @@ class copying_gc {
         //fprintf(gclog, "this=%p, memsetting %d bytes at %p (ti=%p)\n", this, int(typeinfo->cell_size), bump, typeinfo); fflush(gclog);
         if (DEBUG_INITIALIZE_ALLOCATIONS) { memset(bump, 0xAA, typeinfo->cell_size); }
         if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(typeinfo->cell_size); }
-        bump = offset(bump, typeinfo->cell_size);
+        incr_by(bump, typeinfo->cell_size);
         allot->set_meta(typeinfo);
         //fprintf(gclog, "alloc'd %d, bump = %p, low bits: %x\n", int(typeinfo->cell_size), bump, intptr_t(bump) & 0xF);
         return allot->body_addr();
@@ -227,7 +230,7 @@ class copying_gc {
                                       bool     init) {
         heap_array* allot = (heap_array*) bump;
         if (init) memset(bump, 0x00, total_bytes);
-        bump = offset(bump, total_bytes);
+        incr_by(bump, total_bytes);
         //fprintf(gclog, "alloc'a %d, bump = %p, low bits: %x\n", int(total_bytes), bump, intptr_t(bump) & 0xF);
         allot->set_meta(arr_elt_typeinfo);
         allot->set_num_elts(num_elts);
@@ -236,39 +239,33 @@ class copying_gc {
       }
       // }}}
 
-      // Invariant: cell is owned by the other semispace.
-      // Returns body of newly allocated cell.
-      tidy* ss_copy(heap_cell* cell) {
-        tidy*       result = NULL;
-        const void* meta = NULL;
-        heap_array* arr = NULL;
-        const typemap* map = NULL;
-
-        fprintf(gclog, "cell meta for %p is %p\n", cell, cell->get_meta());
-
-        if (cell->is_forwarded()) {
-          goto return_result;
-        }
-
+      // {{{ metadata helpers
+      inline void get_cell_metadata(heap_cell* cell,
+                                    const void*    & meta,
+                                    heap_array*    & arr ,
+                                    const typemap* & map,
+                                    int64_t        & cell_size) {
         meta = cell->get_meta();
         gc_assert(meta != NULL, "cannot copy cell lacking metadata");
 
-        int64_t cell_size;
-
-        if (!isMetadataPointer(meta)) {
-          cell_size = int64_t(meta);
-        } else {
+        if (isMetadataPointer(meta)) {
           map = (const typemap*) meta;
           if (ENABLE_GCLOG) { inspect_typemap(map); }
 
-          if (isCoroBelongingToOtherThread(map, cell)) {
-            // Don't copy or scan a coroutine if
-            // it belongs to a different thread!
-            return cell->body_addr();
-          }
-
           if (map->isArray) {
             arr = heap_array::from_heap_cell(cell);
+          }
+        }
+
+        get_cell_size(meta, arr, map, cell_size);
+      }
+
+      inline void get_cell_size(const void*      meta,
+                                heap_array*      arr ,
+                                const typemap*   map,
+                                int64_t        & cell_size) {
+        if (map) {
+          if (arr) {
             cell_size = array_size_for(arr->num_elts(), map->cell_size);
             if (ENABLE_GCLOG) {
               fprintf(gclog, "Collecting array of total size %lld (rounded up from %d + %lld = %lld), cell size %lld, len %lld...\n",
@@ -282,7 +279,30 @@ class copying_gc {
             // probably an actual pointer
             cell_size = map->cell_size;
           }
+        } else {
+          cell_size = int64_t(meta);
         }
+      }
+      // }}}
+
+      // Invariant: cell is owned by the other semispace.
+      // Returns body of newly allocated cell.
+      tidy* ss_copy(heap_cell* cell, int remaining_depth) {
+        tidy*       result = NULL;
+        const void* meta = NULL;
+        heap_array* arr = NULL;
+        const typemap* map = NULL;
+        int64_t cell_size;
+
+        //fprintf(gclog, "cell meta for %p is %p\n", cell, cell->get_meta());
+
+        if (cell->is_forwarded()) {
+          goto return_result;
+        }
+
+        get_cell_metadata(cell, meta, arr, map, cell_size);
+
+        // {{{ assertions etc
         gc_assert(cell_size >= 16, "cell size must be at least 16!");
         if (ENABLE_GCLOG) {
           fprintf(gclog, "copying cell %p, cell size %llu\n", cell, cell_size); fflush(gclog);
@@ -299,15 +319,29 @@ class copying_gc {
           }
         }
 
+        if (map) {
+         if (isCoroBelongingToOtherThread(map, cell)) {
+            // Don't copy or scan a coroutine if
+            // it belongs to a different thread!
+            return cell->body_addr();
+          }
+        }
+        // }}}
+
         {
           heap_cell* new_addr = (heap_cell*) bump;
-          bump = offset(bump, cell_size);
+          incr_by(bump, cell_size);
           memcpy(new_addr, cell, cell_size);
           cell->set_forwarded_body(new_addr->body_addr());
 
-          if (map) {
-            if (arr) arr = heap_array::from_heap_cell(new_addr);
-            scan_with_map_and_arr(new_addr, map, arr);
+          // Copy depth-first, but not so much that we blow the stack...
+          if (remaining_depth > 0) {
+            if (map) {
+              if (arr) arr = heap_array::from_heap_cell(new_addr);
+              scan_with_map_and_arr(new_addr, map, arr, remaining_depth - 1);
+            }
+          } else {
+            parent->worklist.add(new_addr);
           }
         }
 
@@ -322,7 +356,7 @@ class copying_gc {
 
       // Invariant: map is not null
       void scan_with_map_and_arr(heap_cell* cell, const typemap* map,
-                                 heap_array* arr) {
+                                 heap_array* arr, int depth) {
         //fprintf(gclog, "copying %lld cell %p, map np %d, name %s\n",
         //  cell_size, cell, map->numEntries, map->name); fflush(gclog);
 
@@ -331,10 +365,10 @@ class copying_gc {
           int64_t numcells = arr->num_elts();
           for (int64_t cellnum = 0; cellnum < numcells; ++cellnum) {
             //fprintf(gclog, "num cells in array: %lld, curr: %lld\n", numcells, cellnum);
-            scan_with_map(arr->elt_body(cellnum, map->cell_size), map);
+            scan_with_map(arr->elt_body(cellnum, map->cell_size), map, depth);
           }
         } else {
-            scan_with_map(from_tidy(cell->body_addr()), map);
+            scan_with_map(from_tidy(cell->body_addr()), map, depth);
         }
 
         if (map->isCoro) {
@@ -345,12 +379,12 @@ class copying_gc {
 
 
       // Invariant: map is not null
-      void scan_with_map(intr* body, const typemap* map) {
+      void scan_with_map(intr* body, const typemap* map, int depth) {
         for (int i = 0; i < map->numOffsets; ++i) {
-          parent->copy_or_update((tidy**) offset(body, map->offsets[i]));
+          parent->copy_or_update((tidy**) offset(body, map->offsets[i]),
+                                 depth);
         }
       }
-
 
     private:
       intr* from_tidy(tidy* t) { return (intr*) t; }
@@ -381,6 +415,19 @@ class copying_gc {
 
   semispace* curr;
   semispace* next;
+
+  struct worklist {
+      void       initialize()      { ptrs.clear(); idx = 0; }
+      void       process(semispace* next);
+      bool       empty()           { return idx >= ptrs.size(); }
+      void       advance()         { ++idx; }
+      heap_cell* peek_front()      { return ptrs[idx]; }
+      void       add(heap_cell* c) { ptrs.push_back(c); }
+    private:
+      size_t                  idx;
+      std::vector<heap_cell*> ptrs;
+  };
+  worklist worklist;
 
   void gc();
 
@@ -463,7 +510,7 @@ public:
   }
 
   // Jones/Hosking/Moss refer to this function as "process(fld)".
-  void copy_or_update(tidy** root) {
+  void copy_or_update(tidy** root, int depth) {
     //       |------------|            |------------|
     // root: |    body    |---\        |  size/meta |
     //       |------------|   |        |------------|
@@ -476,7 +523,7 @@ public:
 
     heap_cell* obj = heap_cell::for_body(*root);
     if (curr->contains(obj)) {
-      *root = next->ss_copy(obj);
+      *root = next->ss_copy(obj, depth);
     } else if (is_marked_as_stable(obj)) {
       // TODO: scan but don't copy
       fprintf(gclog, "foster_gc error: tried to collect stable cell...\n");
@@ -581,7 +628,7 @@ void copying_gc_root_visitor(tidy** root, const typemap* slotname) {
                       (slotname ? ((const char*) slotname) : "<unknown slot>"));
   }
   if (*root) {
-    allocator->copy_or_update(root);
+    allocator->copy_or_update(root, kFosterGCMaxDepth);
   }
 }
 
@@ -598,6 +645,8 @@ void copying_gc::gc() {
     fprintf(gclog, ">>>>>>> visiting gc roots on current stack\n"); fflush(gclog);
   }
 
+  worklist.initialize();
+
   visitGCRootsWithStackMaps(__builtin_frame_address(0),
                             copying_gc_root_visitor);
 
@@ -613,6 +662,8 @@ void copying_gc::gc() {
     }
   }
 
+  worklist.process(next);
+
   if (TRACK_BYTES_KEPT_ENTRIES) {
     bytes_kept_per_gc.record_sample(next->used_size());
   }
@@ -626,6 +677,19 @@ void copying_gc::gc() {
   }
 
   gc_time += (base::TimeTicks::HighResNow() - begin);
+}
+
+void copying_gc::worklist::process(copying_gc::semispace* next) {
+  while (!empty()) {
+    heap_cell* cell = peek_front();
+    const void* meta = NULL;
+    heap_array* arr = NULL;
+    const typemap* map = NULL;
+    int64_t cell_size;
+    next->get_cell_metadata(cell, meta, arr, map, cell_size);
+    advance();
+    if (map) next->scan_with_map_and_arr(cell, map, arr, kFosterGCMaxDepth);
+  }
 }
 
 typedef void* ret_addr;

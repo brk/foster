@@ -37,6 +37,10 @@ inline void* offset(void* base, intptr_t off) {
   return (void*) (((char*) base) + off);
 }
 
+inline void incr_by(void* & base, intptr_t off) {
+  base = offset(base, off);
+}
+
 inline size_t distance(void* base, void* bound) {
   return (char*) bound - (char*) base;
 }

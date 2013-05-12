@@ -1,0 +1,31 @@
+snafuinclude List "list";
+snafuinclude Prelude "prelude";
+
+main = {
+  // This test is intended to make sure that the GC is capable
+  // of handling heap layouts with very long linear chains of references.
+  // In particular, collecting such a chain must not blow the stack!
+
+  // n here is carefully chosen so that naive recursive collection
+  // will overflow the stack, but allocating it in the first place
+  // will not overflow the heap.
+  n = 50`000;
+  expect_i32 n;
+  longlist = mkUnitListTo n;
+  print_i32 (listLength longlist);
+
+  expect_i32 n;
+  force_gc_for_debugging_purposes !;
+  print_i32 (listLength longlist);
+};
+
+mkUnitListTo = { n : Int32 =>
+  REC go = { n => acc =>
+    if n ==Int32 0 then
+      acc
+    else
+      go (n -Int32 1) (Cons () acc)
+    end
+  };
+  go n (Nil:[()] !);
+};
