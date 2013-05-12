@@ -228,8 +228,6 @@ class copying_gc {
         return allot->body_addr();
       }
 
-      void complain_to_lack_of_metadata(heap_cell* cell);
-
       // returns body of newly allocated cell
       void* ss_copy(heap_cell* cell) {
         if (!this->parent->owns(cell)) return cell->body_addr();
@@ -875,23 +873,6 @@ void scanCoroStack(foster_generic_coro* coro,
 }
 
 /////////////////////////////////////////////////////////////////
-
-void copying_gc::semispace::complain_to_lack_of_metadata(heap_cell* cell) {
-  void* body = cell->body_addr();
-  const int ptrsize = sizeof(void*);
-  void** bp4 = (void**) offset(body, ptrsize);
-  const void* meta2 = *(const void**) offset(body, -ptrsize);
-  inspect_typemap((typemap*) meta2);
-  fprintf(gclog, "called copy with null metadata\n"); fflush(gclog);
-  fprintf(gclog, "body   is %p -> %p\n", body, *(void**)body); fflush(gclog);
-  fprintf(gclog, "body+%d is %p -> %p\n", ptrsize, offset(body, ptrsize), *bp4); fflush(gclog);
-  fprintf(gclog, "body-%d is %p -> %p\n", ptrsize, offset(body,-ptrsize), *(void**)offset(body,-ptrsize));
-  fflush(gclog);
-  void** envptr = (void**)*bp4;
-  fprintf(gclog, "envptr: %p -> %p\n", envptr, *envptr); fflush(gclog);
-  typemap* envtm = (typemap*) *envptr;
-  fprintf(gclog, "env tm name is %s, # ptrs = %d\n", envtm->name, envtm->numOffsets); fflush(gclog);
-}
 
 void inspect_typemap(typemap* ti) {
   fprintf(gclog, "typemap: %p\n", ti); fflush(gclog);
