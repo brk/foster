@@ -2,20 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#include <inttypes.h>
-#include <string>
+#include "foster_gc.h"
 
 namespace foster {
 namespace runtime {
 namespace gc {
 
-typedef void (*gc_visitor_fn)(void** root, const void* meta);
+struct typemap;
+
+typedef void (*gc_visitor_fn)(tidy** root, const typemap* meta);
 
 void visitGCRootsWithStackMaps(void* start_frame,
                                gc_visitor_fn visitor);
 
-void copying_gc_root_visitor(void **root, const void *meta);
-bool isMetadataPointer(const void* meta);
+void copying_gc_root_visitor(tidy **root, const typemap* data);
+bool isMetadataPointer(const void* data);
 
 const unsigned int FOSTER_GC_DEFAULT_ALIGNMENT = 16;      // 0b0..010000
 const unsigned int FOSTER_GC_DEFAULT_ALIGNMENT_MASK = 15; // 0b0..001111
@@ -30,8 +31,6 @@ inline T roundUpToNearestMultipleWeak(T v, uintptr_t powerOf2) {
   uintptr_t mask = powerOf2 - 1;
   return T((uintptr_t(v) + mask) & ~mask);
 }
-
-
 
 // Performs byte-wise addition on void pointer base
 inline void* offset(void* base, intptr_t off) {
@@ -49,49 +48,51 @@ struct heap_cell {
   HEAP_CELL_HEADER_TYPE size;
   unsigned char         body[0];
   //======================================
-  void* body_addr() { return (void*) &body; }
+  tidy*   body_addr() { return (tidy*) &body; }
   int64_t cell_size() { return size; }
-  void* get_meta() { return (void*) size; }
+  meta*   get_meta() { return (meta*) size; }
 
-  void set_meta(void* meta) { size = (HEAP_CELL_HEADER_TYPE) meta; }
+  void set_meta(typemap* data) { size = (HEAP_CELL_HEADER_TYPE) data; }
   void set_cell_size(int64_t sz) { size = sz; }
 
   bool is_forwarded() {
     return (((uint64_t) cell_size()) & FORWARDED_BIT) != 0;
   }
-  void set_forwarded_body(void* newbody) {
+  void set_forwarded_body(tidy* newbody) {
     size = ((HEAP_CELL_HEADER_TYPE) newbody) | FORWARDED_BIT;
   }
-  void* get_forwarded_body() {
-    return (void*) (((uint64_t) cell_size()) & ~FORWARDED_BIT);
+  tidy* get_forwarded_body() {
+    return (tidy*) (((uint64_t) cell_size()) & ~FORWARDED_BIT);
   }
 
-  static heap_cell* for_body(void* ptr) {
-    return (heap_cell*) offset(ptr, -((int)HEAP_CELL_HEADER_SIZE));
+  static heap_cell* for_body(tidy* ptr) {
+    return (heap_cell*) offset((void*)ptr, -((int)HEAP_CELL_HEADER_SIZE));
   }
 };
 
 struct heap_array {
-  HEAP_CELL_HEADER_TYPE meta;
+  HEAP_CELL_HEADER_TYPE data;
   int64_t               arsz;
   unsigned char         elts[0];
   //======================================
-  void* body_addr() { return (void*) &arsz; }
-  void* elts_addr() { return (void*) &elts; }
-  void* elt_body(int64_t cellnum, int64_t cellsz) { return offset(elts_addr(), cellnum * cellsz); };
+  tidy* body_addr() { return (tidy*) &arsz; }
+  void* elt_body(int64_t cellnum, int64_t cellsz) {
+    return offset((void*)&elts, cellnum * cellsz);
+    // TODO invariant which means cellnum * cellsz will not overflow?
+  };
   int64_t num_elts() { return arsz; }
   void set_num_elts(int64_t n) { arsz = n; }
-  void* get_meta() { return (void*) meta; }
+  meta* get_meta() { return (meta*) data; }
 
-  void set_meta(void* m) { meta = (HEAP_CELL_HEADER_TYPE) m; }
+  void set_meta(typemap* m) { data = (HEAP_CELL_HEADER_TYPE) m; }
   bool is_forwarded() {
     return (((uint64_t) get_meta()) & FORWARDED_BIT) != 0;
   }
-  void set_forwarded_body(void* newbody) {
-    set_meta((void*) (((uint64_t) newbody) | FORWARDED_BIT));
+  void set_forwarded_body(tidy* newbody) {
+    set_meta((typemap*) (((uint64_t) newbody) | FORWARDED_BIT));
   }
-  void* get_forwarded_body() {
-    return (void*) (((uint64_t) get_meta()) & ~FORWARDED_BIT);
+  tidy* get_forwarded_body() {
+    return (tidy*) (((uint64_t) get_meta()) & ~FORWARDED_BIT);
   }
 
   static heap_array* from_heap_cell(heap_cell* ptr) {

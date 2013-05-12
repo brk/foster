@@ -9,6 +9,9 @@ namespace foster {
 namespace runtime {
 namespace gc {
 
+struct tidy;
+struct meta;
+
 void initialize(void* stack_base);
 int  cleanup();
 void force_gc_for_debugging_purposes();

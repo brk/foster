@@ -192,7 +192,7 @@ class copying_gc {
       }
 
       template <int N>
-      void* allocate_cell_prechecked_N(typemap* typeinfo) {
+      tidy* allocate_cell_prechecked_N(typemap* typeinfo) {
         heap_cell* allot = (heap_cell*) bump;
         //fprintf(gclog, "this=%p, memsetting %d bytes at %p (ti=%p)\n", this, int(typeinfo->cell_size), bump, typeinfo); fflush(gclog);
         if (DEBUG_INITIALIZE_ALLOCATIONS) { memset(bump, 0xAA, N); }
@@ -203,7 +203,7 @@ class copying_gc {
         return allot->body_addr();
       }
 
-      void* allocate_cell_prechecked(typemap* typeinfo) {
+      tidy* allocate_cell_prechecked(typemap* typeinfo) {
         heap_cell* allot = (heap_cell*) bump;
         //fprintf(gclog, "this=%p, memsetting %d bytes at %p (ti=%p)\n", this, int(typeinfo->cell_size), bump, typeinfo); fflush(gclog);
         if (DEBUG_INITIALIZE_ALLOCATIONS) { memset(bump, 0xAA, typeinfo->cell_size); }
@@ -214,7 +214,7 @@ class copying_gc {
         return allot->body_addr();
       }
 
-      void* allocate_array_prechecked(typemap* arr_elt_typeinfo,
+      tidy* allocate_array_prechecked(typemap* arr_elt_typeinfo,
                                       int64_t  num_elts,
                                       int64_t  total_bytes,
                                       bool     init) {
@@ -229,9 +229,9 @@ class copying_gc {
       }
 
       // returns body of newly allocated cell
-      void* ss_copy(heap_cell* cell) {
+      tidy* ss_copy(heap_cell* cell) {
         if (!this->parent->owns(cell)) return cell->body_addr();
-        void* result = NULL;
+        tidy* result = NULL;
         const void* meta = NULL;
         heap_array* arr = NULL;
 
@@ -305,14 +305,14 @@ class copying_gc {
               void* new_body = offset(old_body, from_old_body_to_new_body);
               for (int i = 0; i < map->numOffsets; ++i) {
                 int32_t off_bytes = map->offsets[i];
-                void** oldslot = (void**) offset(old_body, off_bytes);
+                tidy** oldslot = (tidy**) offset(old_body, off_bytes);
 
                 //fprintf(gclog, "body is %p, offset is %d, typeinfo is %p, addr_of_ptr_slot is %p, ptr_slot_val is %p\n",
                 //    body, e.offset, e.typeinfo, oldslot, *oldslot);
                 // recursively copy the field from cell, yielding subfwdaddr
                 // set the copied cell field to subfwdaddr
                 if (*oldslot != NULL) {
-                  void** newslot = (void**) offset(new_body, off_bytes);
+                  tidy** newslot = (tidy**) offset(new_body, off_bytes);
                   //fprintf(gclog, "recursively copying of cell %p slot %p with type map %p to %p\n",
                   //  cell, oldslot, map, newslot); fflush(gclog);
                   *newslot = ss_copy(heap_cell::for_body(*oldslot));
@@ -468,7 +468,7 @@ public:
     return false;
   }
 
-  void copy_or_update(void* body, void** root) {
+  void copy_or_update(tidy* body, tidy** root) {
     //       |------------|            |------------|
     // root: |    body    |---\        |  size/meta |
     //       |------------|   |        |------------|
@@ -546,9 +546,9 @@ copying_gc* allocator = NULL;
 // This function statically references the global allocator.
 // Eventually we'll want a generational GC with thread-specific
 // allocators and (perhaps) type-specific allocators.
-void copying_gc_root_visitor(void **root, const void *slotname) {
+void copying_gc_root_visitor(tidy** root, const typemap* slotname) {
   foster_assert(root != NULL, "someone passed a NULL root addr!");
-  void* body = *root;
+  tidy* body = *root;
   if (ENABLE_GCLOG) {
     fprintf(gclog, "\t\tSTACK SLOT %p contains %p, slot name = %s\n", root, body,
                       (slotname ? ((const char*) slotname) : "<unknown slot>"));
@@ -580,7 +580,7 @@ void copying_gc::gc() {
     if (ENABLE_GCLOG) {
       fprintf(gclog, "==========visiting current ccoro: %p\n", coro); fflush(gclog);
     }
-    copying_gc_root_visitor((void**)coro_slot, NULL);
+    copying_gc_root_visitor((tidy**)coro_slot, NULL);
     if (ENABLE_GCLOG) {
       fprintf(gclog, "==========visited current ccoro: %p\n", coro); fflush(gclog);
     }
@@ -601,7 +601,9 @@ void copying_gc::gc() {
   gc_time += (base::TimeTicks::HighResNow() - begin);
 }
 
-typedef std::map<void*, const stackmap::PointCluster*> ClusterMap;
+typedef void* ret_addr;
+typedef void* frameptr;
+typedef std::map<frameptr, const stackmap::PointCluster*> ClusterMap;
 ClusterMap clusterForAddress;
 
 void register_stackmaps(ClusterMap& clusterForAddress);
@@ -676,7 +678,7 @@ int cleanup() {
 void visitGCRootsWithStackMaps(void* start_frame,
                                gc_visitor_fn visitor) {
   enum { MAX_NUM_RET_ADDRS = 1024 };
-  void* retaddrs[MAX_NUM_RET_ADDRS];
+  ret_addr  retaddrs[MAX_NUM_RET_ADDRS];
   frameinfo frames[MAX_NUM_RET_ADDRS];
 
   // Collect frame pointers and return addresses
@@ -729,30 +731,30 @@ void visitGCRootsWithStackMaps(void* start_frame,
   // stack frame sizes to crawl the rest of the stack.
 
   for (int i = 0; i < nFrames; ++i) {
-    void* safePointAddr = frames[i].retaddr;
-    void* frameptr = (void*) frames[i].frameptr;
+    ret_addr safePointAddr = frames[i].retaddr;
+    frameptr fp = (frameptr) frames[i].frameptr;
 
     const stackmap::PointCluster* pc = clusterForAddress[safePointAddr];
     if (!pc) {
       if (ENABLE_GCLOG) {
-        fprintf(gclog, "no point cluster for address %p with frame ptr%p\n", safePointAddr, frameptr);
+        fprintf(gclog, "no point cluster for address %p with frame ptr%p\n", safePointAddr, fp);
       }
       continue;
     }
 
     if (ENABLE_GCLOG) {
       fprintf(gclog, "\nframe %d: retaddr %p, frame ptr %p: live count w/meta %d, w/o %d\n",
-        i, safePointAddr, frameptr,
+        i, safePointAddr, fp,
         pc->liveCountWithMetadata, pc->liveCountWithoutMetadata);
     }
 
     int32_t frameSize = pc->frameSize;
     for (int a = 0; a < pc->liveCountWithMetadata; ++a) {
-      int32_t     off  = pc->offsetWithMetadata(a)->offset;
-      const void* meta = pc->offsetWithMetadata(a)->metadata;
-      void* rootaddr = offset(frameptr, off);
+      int32_t     off = pc->offsetWithMetadata(a)->offset;
+      void*         m = pc->offsetWithMetadata(a)->metadata;
+      void*  rootaddr = offset(fp, off);
 
-      visitor((void**) rootaddr, meta);
+      visitor((tidy**) rootaddr, (const typemap*) m);
     }
 
     foster_assert(pc->liveCountWithoutMetadata == 0,
@@ -932,7 +934,7 @@ void fflush_gclog() { fflush(gclog); }
 } // namespace foster::runtime::gc
 
 uint8_t ctor_id_of(void* constructed) {
-  gc::heap_cell* cell = gc::heap_cell::for_body(constructed);
+  gc::heap_cell* cell = gc::heap_cell::for_body((gc::tidy*) constructed);
   gc::typemap* map = (gc::typemap*) cell->get_meta();
   int8_t ctorId = map->ctorId;
   if (ctorId < 0) {
