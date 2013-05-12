@@ -229,7 +229,7 @@ namespace runtime {
     }
   }
 
-void initialize(int argc, char** argv) {
+void initialize(int argc, char** argv, void* stack_base) {
   __foster_globals.argc = argc;
   __foster_globals.argv = argv;
 
@@ -240,7 +240,7 @@ void initialize(int argc, char** argv) {
   // TODO Initialize one default coro context per thread.
   __foster_vCPUs.push_back(new FosterVirtualCPU());
 
-  gc::initialize();
+  gc::initialize(stack_base);
   start_scheduling_timer_thread();
 }
 
@@ -432,8 +432,6 @@ double  foster_getticks_elapsed(int64_t t1, int64_t t2) {
   return __foster_getticks_elapsed(t1, t2);
 }
 
-// http://stackoverflow.com/questions/4308996/finding-the-address-range-of-the-data-segment
-
 // We want to perform aggressive link time optimization of
 // foster code + stdlib, without having runtime::initialize()
 // and ::cleanup() discarded. This function is hardcoded to be
@@ -445,7 +443,7 @@ extern "C" void foster_coro_delete_self_reference(void* vc);
 int foster__runtime__main__wrapper(int argc, char** argv) {
   bool tru = opaquely_i32(0) == 0;
 
-  foster::runtime::initialize(argc, argv);
+  foster::runtime::initialize(argc, argv, (void*) &tru);
   foster__main();
 
   if (!tru) {

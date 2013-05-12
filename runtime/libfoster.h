@@ -16,7 +16,7 @@ void foster_coro_destroy(coro_context* ctx);
 namespace foster {
 namespace runtime {
 
-void initialize(int argc, char** argv);
+void initialize(int argc, char** argv, void*);
 int  cleanup();
 
 uint8_t ctor_id_of(void* body);

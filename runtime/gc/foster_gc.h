@@ -9,7 +9,7 @@ namespace foster {
 namespace runtime {
 namespace gc {
 
-void initialize();
+void initialize(void* stack_base);
 int  cleanup();
 void force_gc_for_debugging_purposes();
 

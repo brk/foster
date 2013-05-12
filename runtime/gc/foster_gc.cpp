@@ -16,6 +16,10 @@
 #include "base/time.h"
 #include "base/threading/platform_thread.h"
 
+// for getrlimit
+#include <sys/time.h>
+#include <sys/resource.h>
+
 #include "execinfo.h"
 
 #define TRACE do { fprintf(gclog, "%s::%d\n", __FILE__, __LINE__); fflush(gclog); } while (0)
@@ -45,6 +49,35 @@ namespace runtime {
 namespace gc {
 
 FILE* gclog = NULL;
+
+// {{{
+struct memory_range {
+  void* base;
+  void* bound;
+  bool contains(void* addr) const { return base <= addr && addr < bound; }
+  const char* rel(void* addr) const {
+    if (addr <  base) return "before";
+    if (addr >= bound) return "after";
+    return "within";
+  }
+};
+
+struct allocator_range {
+  memory_range range;
+  bool         stable;
+};
+
+std::vector<allocator_range> allocator_ranges;
+
+bool is_marked_as_stable(heap_cell* addr) {
+  for (int i = 0, j = allocator_ranges.size(); i < j; ++i) {
+    if (allocator_ranges[i].range.contains((void*) addr)) {
+      return true;
+    }
+  }
+  return false;
+}
+// }}}
 
 template<typename T>
 struct stat_tracker {
@@ -575,12 +608,40 @@ ClusterMap clusterForAddress;
 
 void register_stackmaps(ClusterMap& clusterForAddress);
 
-void initialize() {
+size_t get_default_stack_size() {
+  struct rlimit rlim;
+  getrlimit(RLIMIT_STACK, &rlim);
+  //foster_assert(rlim.rlim_cur != RLIM_INFINITY);
+  // TODO: account for stack space already being used?
+  return (size_t) rlim.rlim_cur;
+}
+
+// http://stackoverflow.com/questions/4308996/finding-the-address-range-of-the-data-segment
+extern "C" char etext, end;
+void get_static_data_range(memory_range& r) {
+  r.base  = &etext;
+  r.bound = &end;
+}
+
+void initialize(void* stack_highest_addr) {
   init_start = base::TimeTicks::HighResNow();
   gclog = fopen("gclog.txt", "w");
   fprintf(gclog, "----------- gclog ------------\n");
 
   allocator = new copying_gc(SEMISPACE_SIZE);
+
+  // ASSUMPTION: stack segments grow down, and are linear...
+  size_t stack_size = get_default_stack_size();
+  allocator_range ar;
+  ar.range.bound = stack_highest_addr;
+  ar.range.base  = (void*) (((char*) ar.range.bound) - stack_size);
+  ar.stable = true;
+  allocator_ranges.push_back(ar);
+
+  allocator_range datarange;
+  get_static_data_range(datarange.range);
+  datarange.stable = true;
+  allocator_ranges.push_back(datarange);
 
   register_stackmaps(clusterForAddress);
 
