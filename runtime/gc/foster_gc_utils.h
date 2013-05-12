@@ -80,8 +80,8 @@ struct heap_array {
   unsigned char         elts[0];
   //======================================
   tidy* body_addr() { return (tidy*) &arsz; }
-  void* elt_body(int64_t cellnum, int64_t cellsz) {
-    return offset((void*)&elts, cellnum * cellsz);
+  intr* elt_body(int64_t cellnum, int64_t cellsz) {
+    return (intr*) offset((void*)&elts, cellnum * cellsz);
     // TODO invariant which means cellnum * cellsz will not overflow?
   };
   int64_t num_elts() { return arsz; }

@@ -11,6 +11,7 @@ namespace gc {
 
 struct tidy;
 struct meta;
+struct intr; // interior/internal; like tidy, but not preceded by metadata.
 
 void initialize(void* stack_base);
 int  cleanup();
