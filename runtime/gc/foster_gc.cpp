@@ -706,12 +706,23 @@ size_t get_default_stack_size() {
   return (size_t) rlim.rlim_cur;
 }
 
+#if OS_LINUX
 // http://stackoverflow.com/questions/4308996/finding-the-address-range-of-the-data-segment
 extern "C" char etext, end;
 void get_static_data_range(memory_range& r) {
   r.base  = &etext;
   r.bound = &end;
 }
+#elif OS_MACOSX
+// http://stackoverflow.com/questions/1765969/unable-to-locate-definition-of-etext-edata-end
+#include <mach-o/getsect.h>
+void get_static_data_range(memory_range& r) {
+  r.base  = (void*) get_etext();
+  r.bound = (void*) get_end();
+}
+#else
+#error TODO: Use Win32 to find boundaries of data segment range.
+#endif
 
 void initialize(void* stack_highest_addr) {
   init_start = base::TimeTicks::HighResNow();
