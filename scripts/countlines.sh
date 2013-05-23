@@ -78,5 +78,4 @@ insp "compiler/me    " compiler/me
 echo
 insp "runtime        " runtime
 insp "compiler       " compiler
-inspbase "unittests      " compiler --match-f="_unittest.cpp"
 insp "third_party    " third_party

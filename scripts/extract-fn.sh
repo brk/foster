@@ -1,6 +1,6 @@
 #!/bin/sh
 
-LLVM=~/llvm/3.1/bin
+LLVM=~/llvm/3.2/bin
 
 TEST=$1
 FUNC=$2
