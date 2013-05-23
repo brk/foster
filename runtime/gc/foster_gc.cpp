@@ -6,13 +6,12 @@
 #include <cstdio>
 #include <cstring>
 #include <cstddef> // for offsetof
-#include <numeric>
-#include <algorithm>
 
 #include "libfoster.h"
 #include "foster_gc.h"
 #include "libfoster_gc_roots.h"
 #include "foster_globals.h"
+#include "stat_tracker.h"
 
 #include "base/time.h"
 #include "base/threading/platform_thread.h"
@@ -24,6 +23,10 @@
 #include "execinfo.h"
 
 #define TRACE do { fprintf(gclog, "%s::%d\n", __FILE__, __LINE__); fflush(gclog); } while (0)
+
+// These are defined as compile-time constants so that the compiler
+// can do effective dead-code elimination. If we were JIT compiling
+// the GC we could (re-)specialize these config vars at runtime...
 #define ENABLE_GCLOG 0
 #define GC_ASSERTIONS 1
 #define TRACK_NUM_ALLOCATIONS         0
@@ -32,7 +35,6 @@
 #define GC_BEFORE_EVERY_MEMALLOC_CELL 0
 #define DEBUG_INITIALIZE_ALLOCATIONS  0
 
-const int KB = 1024;
 const int kFosterGCMaxDepth = 1024;
 const int inline gSEMISPACE_SIZE() { return __foster_globals.semispace_size; }
 
@@ -88,35 +90,6 @@ bool is_marked_as_stable(tidy* body) {
   return false;
 }
 // }}}
-
-template<typename T>
-struct stat_tracker {
-  int  idx;
-  int  idx_max;
-  std::vector<T> samples;
-  stat_tracker() : idx(0), idx_max(0) {}
-
-  void resize(size_t sz) { samples.resize(sz); }
-
-  void record_sample(T v) {
-    samples[idx] = v;
-    if (idx > idx_max) { idx_max = idx; }
-    idx = (idx + 1) % int(samples.size());
-  }
-
-  T compute_min() const {
-    return *std::min_element(samples.begin(), samples.end());
-  }
-
-  T compute_max() const {
-    return *std::max_element(samples.begin(), samples.end());
-  }
-
-  T compute_avg_arith() const {
-    return std::accumulate(samples.begin(), samples.end(), T(0)) /
-                                                              T(samples.size());
-  }
-};
 
 ////////////////////////////////////////////////////////////////////
 
@@ -636,6 +609,7 @@ void copying_gc_root_visitor(tidy** root, const typemap* slotname) {
   allocator->copy_or_update(root, kFosterGCMaxDepth);
 }
 
+// TODO de-globalize these
 base::TimeTicks gc_time;
 base::TimeTicks runtime_start;
 base::TimeTicks    init_start;
@@ -696,7 +670,7 @@ typedef void* frameptr;
 typedef std::map<frameptr, const stackmap::PointCluster*> ClusterMap;
 ClusterMap clusterForAddress;
 
-void register_stackmaps(ClusterMap& clusterForAddress);
+void register_stackmaps(ClusterMap&);
 
 size_t get_default_stack_size() {
   struct rlimit rlim;
@@ -1060,5 +1034,5 @@ uint8_t ctor_id_of(void* constructed) {
 }
 
 } // namespace foster::runtime
-}
+} // namespace foster
 
