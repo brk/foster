@@ -19,20 +19,11 @@
 #include "foster_gc.h"
 #include "libfoster_gc_roots.h"
 #include "foster_gc_utils.h"
+#include "foster_globals.h"
 
 #include "base/atomicops.h"
-#include "base/threading/simple_thread.h"
 
 #include <signal.h>
-
-#ifdef OS_MACOSX
-#include <objc/runtime.h>
-#include <objc/objc-runtime.h>
-#else
-typedef void* id;
-#endif
-
-#include "cpuid.h"
 
 // This file provides the bootstrap "standard library" of utility functions for
 // programs compiled (to LLVM IR) with foster. Making these functions available
@@ -96,33 +87,7 @@ private:
 
 const bool kUseSchedulingTimerThread = true;
 
-struct FosterGlobals {
-  int                    argc;
-  char**                 argv;
-
-  // One timer thread for the whole runtime, not per-vCPU.
-  base::SimpleThread*    scheduling_timer_thread;
-  id                     scheduling_timer_thread_autorelease_pool;
-
-  cpuid_info             x86_cpuid_info;
-};
-
 FosterGlobals __foster_globals;
-
-#ifdef OS_MACOSX
-// http://stackoverflow.com/questions/11237579/how-to-create-a-nsautoreleasepool-without-objective-c
-id allocAndInitAutoreleasePool() {
-  id pool = class_createInstance((Class) objc_getClass("NSAutoreleasePool"), 0);
-  return objc_msgSend(pool, sel_registerName("init"));
-}
-
-void drainAutoreleasePool(id pool) {
-  (void)objc_msgSend(pool, sel_registerName("drain"));
-}
-#else
-id allocAndInitAutoreleasePool() { return NULL; }
-void drainAutoreleasePool(id pool) { return; }
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -256,6 +221,21 @@ extern "C" void* foster_emit_string_of_cstring(const char*, int32_t);
 namespace foster {
 namespace runtime {
 
+#ifdef OS_MACOSX
+  // http://stackoverflow.com/questions/11237579/how-to-create-a-nsautoreleasepool-without-objective-c
+  id allocAndInitAutoreleasePool() {
+    id pool = class_createInstance((Class) objc_getClass("NSAutoreleasePool"), 0);
+    return objc_msgSend(pool, sel_registerName("init"));
+  }
+
+  void drainAutoreleasePool(id pool) {
+    (void)objc_msgSend(pool, sel_registerName("drain"));
+  }
+#else
+  id allocAndInitAutoreleasePool() { return NULL; }
+  void drainAutoreleasePool(id pool) { return; }
+#endif
+
   void start_scheduling_timer_thread() {
     if (kUseSchedulingTimerThread) {
       // Need to allocate an autorelease pool, or else the NSThread underlying
@@ -276,8 +256,7 @@ namespace runtime {
   }
 
 void initialize(int argc, char** argv, void* stack_base) {
-  __foster_globals.argc = argc;
-  __foster_globals.argv = argv;
+  parse_runtime_options(argc, argv);
 
   cpuid_introspect(__foster_globals.x86_cpuid_info);
   //int cachesmall = cpuid_small_cache_size(__foster_globals.x86_cpuid_info);
@@ -461,8 +440,8 @@ void expect_float_p9f64(double f) { return fprint_p9f64(stderr, f); }
 // way of naming that type here. So we wrap this function
 // as get_cmdline_arg_n(n) in CodegenUtils.cpp.
 void* foster_get_cmdline_arg_n_raw(int32_t n) {
-  if (n >= 0  &&  n < __foster_globals.argc) {
-      const char* s = __foster_globals.argv[n];
+  if (n >= 0  &&  n < __foster_globals.args.size()) {
+      const char* s = __foster_globals.args[n];
       return foster_emit_string_of_cstring(s, strlen(s));
   } else {
       const char* s = "";

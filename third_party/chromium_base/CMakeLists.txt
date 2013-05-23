@@ -19,6 +19,8 @@ set (BASE_SOURCES
 	${CHROMIUM_BASE}/base/debug/stack_trace.cc
         #${CHROMIUM_BASE}/base/json/json_file_value_serializer.cc
         ${CHROMIUM_BASE}/base/json/json_string_value_serializer.cc
+        ${CHROMIUM_BASE}/base/json/json_reader.cc
+        ${CHROMIUM_BASE}/base/json/json_parser.cc
         ${CHROMIUM_BASE}/base/json/json_writer.cc
         ${CHROMIUM_BASE}/base/json/string_escape.cc
 	${CHROMIUM_BASE}/base/metrics/bucket_ranges.cc

@@ -12,6 +12,7 @@
 #include "libfoster.h"
 #include "foster_gc.h"
 #include "libfoster_gc_roots.h"
+#include "foster_globals.h"
 
 #include "base/time.h"
 #include "base/threading/platform_thread.h"
@@ -32,9 +33,8 @@
 #define DEBUG_INITIALIZE_ALLOCATIONS  0
 
 const int KB = 1024;
-const int SEMISPACE_SIZE = 1024 * KB;
-
 const int kFosterGCMaxDepth = 1024;
+const int inline gSEMISPACE_SIZE() { return __foster_globals.semispace_size; }
 
 /////////////////////////////////////////////////////////////////
 
@@ -475,7 +475,7 @@ public:
 
   ~copying_gc() {
       // {{{
-      double approx_bytes = double(num_collections * SEMISPACE_SIZE);
+      double approx_bytes = double(num_collections * gSEMISPACE_SIZE());
       fprintf(gclog, "num collections: %" PRId64 "\n", num_collections);
       if (TRACK_NUM_ALLOCATIONS) {
       fprintf(gclog, "num allocations: %.3g\n", double(num_allocations));
@@ -487,9 +487,9 @@ public:
       int64_t mn = bytes_kept_per_gc.compute_min(),
               mx = bytes_kept_per_gc.compute_max(),
               aa = bytes_kept_per_gc.compute_avg_arith();
-      fprintf(gclog, "min bytes kept: %8" PRId64 " (%.2g%%)\n", mn, double(mn * 100.0)/double(SEMISPACE_SIZE));
-      fprintf(gclog, "max bytes kept: %8" PRId64 " (%.2g%%)\n", mx, double(mx * 100.0)/double(SEMISPACE_SIZE));
-      fprintf(gclog, "avg bytes kept: %8" PRId64 " (%.2g%%)\n", aa, double(aa * 100.0)/double(SEMISPACE_SIZE));
+      fprintf(gclog, "min bytes kept: %8" PRId64 " (%.2g%%)\n", mn, double(mn * 100.0)/double(gSEMISPACE_SIZE()));
+      fprintf(gclog, "max bytes kept: %8" PRId64 " (%.2g%%)\n", mx, double(mx * 100.0)/double(gSEMISPACE_SIZE()));
+      fprintf(gclog, "avg bytes kept: %8" PRId64 " (%.2g%%)\n", aa, double(aa * 100.0)/double(gSEMISPACE_SIZE()));
       }
       if (TRACK_BYTES_ALLOCATED_ENTRIES) {
         for (int i = 0; i < bytes_req_per_alloc.size() - 1; ++i) {
@@ -729,7 +729,7 @@ void initialize(void* stack_highest_addr) {
   gclog = fopen("gclog.txt", "w");
   fprintf(gclog, "----------- gclog ------------\n");
 
-  allocator = new copying_gc(SEMISPACE_SIZE);
+  allocator = new copying_gc(gSEMISPACE_SIZE());
 
   // ASSUMPTION: stack segments grow down, and are linear...
   size_t stack_size = get_default_stack_size();

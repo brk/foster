@@ -263,6 +263,7 @@ set(LIBFOSTER_CPP_SOURCES
         ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc.cpp
         ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc_utils.h
         ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc_stackmaps.cpp
+        ${PROJECT_SOURCE_DIR}/runtime/foster_globals.cpp
 )
 
 # Use clang or llvm-g++ to build libfoster.bc

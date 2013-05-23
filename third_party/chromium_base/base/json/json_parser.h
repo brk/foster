@@ -14,7 +14,7 @@
 #include "base/string_piece.h"
 
 #if !defined(OS_CHROMEOS)
-#include "base/gtest_prod_util.h"
+//#include "base/gtest_prod_util.h"
 #endif
 
 namespace base {
@@ -254,6 +254,7 @@ class BASE_EXPORT_PRIVATE JSONParser {
   int error_column_;
 
   friend class JSONParserTest;
+  /*
   FRIEND_TEST_ALL_PREFIXES(JSONParserTest, NextChar);
   FRIEND_TEST_ALL_PREFIXES(JSONParserTest, ConsumeDictionary);
   FRIEND_TEST_ALL_PREFIXES(JSONParserTest, ConsumeList);
@@ -261,7 +262,7 @@ class BASE_EXPORT_PRIVATE JSONParser {
   FRIEND_TEST_ALL_PREFIXES(JSONParserTest, ConsumeLiterals);
   FRIEND_TEST_ALL_PREFIXES(JSONParserTest, ConsumeNumbers);
   FRIEND_TEST_ALL_PREFIXES(JSONParserTest, ErrorMessages);
-
+  */
   DISALLOW_COPY_AND_ASSIGN(JSONParser);
 };
 
