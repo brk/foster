@@ -89,6 +89,9 @@ const bool kUseSchedulingTimerThread = true;
 
 FosterGlobals __foster_globals;
 
+struct FosterVirtualCPU;
+std::vector<FosterVirtualCPU*> __foster_vCPUs;
+
 ////////////////////////////////////////////////////////////////////////////////
 
 void __foster_handle_sigsegv(int, siginfo_t* si, void*) {
@@ -156,8 +159,6 @@ struct FosterVirtualCPU {
 
   void*                  signal_stack;
 };
-
-std::vector<FosterVirtualCPU*> __foster_vCPUs;
 
 // {{{
 
@@ -317,6 +318,7 @@ extern "C" {
 
 //////////////////////////////////////////////////////////////////
 
+__attribute__((noinline))
 void foster__assert_failed(const char* msg) {
   fprintf(stderr, "%s\n", msg);
   fflush(stderr);
