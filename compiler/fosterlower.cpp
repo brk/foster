@@ -56,6 +56,11 @@ optOutdirName("outdir",
   cl::desc("[foster] Output directory for output and dump files"),
   cl::init("fc-output"));
 
+static cl::opt<string>
+optBitcodeLibsDir("bitcodelibs",
+  cl::desc("[foster] Path to _bitcodelibs_ directory"),
+  cl::init("_bitcodelibs_"));
+
 static cl::opt<bool>
 optEmitDebugInfo("g",
   cl::desc("[foster] Emit debug information in generated LLVM IR"));
@@ -268,7 +273,7 @@ int main(int argc, char** argv) {
   llvm::Module* module = new Module(mainModulePath.str().c_str(), getGlobalContext());
 
   {
-    coro_bc = readLLVMModuleFromPath("_bitcodelibs_/gc_bc/libfoster_coro.bc");
+    coro_bc = readLLVMModuleFromPath(optBitcodeLibsDir + "/gc_bc/libfoster_coro.bc");
     linkTo(coro_bc, "libfoster_coro", module);
 
     StructTypeAST* coroast = StructTypeAST::getRecursive("foster_generic_coro.struct");
@@ -302,21 +307,8 @@ int main(int argc, char** argv) {
       );
   }
 
-  libfoster_bc = readLLVMModuleFromPath("_bitcodelibs_/foster_runtime.bc");
+  libfoster_bc = readLLVMModuleFromPath(optBitcodeLibsDir + "/foster_runtime.bc");
   foster::putModuleFunctionsInScope(libfoster_bc, module);
-
-  //imath_bc     = readLLVMModuleFromPath("_bitcodelibs_/imath-wrapper.bc");
-  //ASSERT(imath_bc) << "must have imath library!";
-  //llvm::Type* mpz_struct_ty = imath_bc->getTypeByName("struct.mpz");
-  //if (!mpz_struct_ty) {
-  //  EDiag() << "Unable to find imath bitcode library";
-  //  program_status = 1; goto cleanup;
-  //}
-  //mp_int = llvm::PointerType::getUnqual(mpz_struct_ty);
-  //module->addTypeName("mp_int", mp_int);
-  //foster::ParsingContext::insertType("Int",
-  //             PrimitiveTypeAST::get("Int", mp_int));
-  //foster::putModuleMembersInScope(imath_bc, module);
 
   //================================================================
   foster::ParsingContext::insertType("Foster$GenericClosureEnvPtr",

@@ -25,7 +25,12 @@ def run_cmd(cmd, showcmd=False, stdout=None, stderr=None, stdin=None):
     cmd = cmd.strip().split(' ')
 
   start = walltime()
-  rv = subprocess.call(cmd, stdout=stdout, stderr=stderr, stdin=stdin)
+  rv = 1
+  try:
+    rv = subprocess.call(cmd, stdout=stdout, stderr=stderr, stdin=stdin)
+  except OSError:
+    print ": error: Unable to execute ", cmd
+    raise
   end = walltime()
 
   cmdline = ' '.join(cmd)

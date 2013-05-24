@@ -50,7 +50,7 @@ def extract_expected_input(path, rootdir):
   return open(tmpname, 'r')
 
 def nativelib_dir():
-  return "_nativelibs_"
+  return mkpath(options.bindir, "_nativelibs_")
 
 def shared(lib):
   import platform
@@ -153,7 +153,8 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     # running fosterlower on a ParsedAST produces a bitcode Module
     # linking a bunch of Modules produces a Module
     (s3, e3) = crun(['fosterlower', check_output, '-o', finalname,
-                         '-outdir', tmpdir, '-dump-prelinked', '-fosterc-time']
+                         '-outdir', tmpdir, '-dump-prelinked', '-fosterc-time',
+                         '-bitcodelibs', mkpath(options.bindir, '_bitcodelibs_')]
                     + options.beargs)
 
     # Running opt on a Module produces a Module
