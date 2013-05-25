@@ -132,7 +132,8 @@
 #if defined(COMPILER_MSVC)
 #define OVERRIDE override
 #elif defined(__clang__)
-#define OVERRIDE override
+//#define OVERRIDE override // disabled because we're not compiling as C++11
+#define OVERRIDE
 #else
 #define OVERRIDE
 #endif
