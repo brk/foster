@@ -28,12 +28,15 @@
 // can do effective dead-code elimination. If we were JIT compiling
 // the GC we could (re-)specialize these config vars at runtime...
 #define ENABLE_GCLOG 0
-#define GC_ASSERTIONS 1
+#define GC_ASSERTIONS 0
 #define TRACK_NUM_ALLOCATIONS         0
 #define TRACK_BYTES_KEPT_ENTRIES      0
 #define TRACK_BYTES_ALLOCATED_ENTRIES 0
 #define GC_BEFORE_EVERY_MEMALLOC_CELL 0
 #define DEBUG_INITIALIZE_ALLOCATIONS  0
+// This included file may un/re-define these parameters, providing
+// a way of easily overriding-without-overwriting the defaults.
+#include "gc/foster_gc_reconfig-inl.h"
 
 const int kFosterGCMaxDepth = 1024;
 const int inline gSEMISPACE_SIZE() { return __foster_globals.semispace_size; }
@@ -382,7 +385,7 @@ class copying_gc {
   }
 
   // An efficiently-encoded int->int map...
-  // A value of v at index k in [index 0..TRACK_BYTES_ALLOCATED_HIST)
+  // A value of v at index k in [index 0..TRACK_BYTES_ALLOCATED_ENTRIES)
   // means v allocations of size (k * FOSTER_GC_DEFAULT_ALIGNMENT).
   // All larger allocations go in the last array entry.
   std::vector<int64_t>  bytes_req_per_alloc;

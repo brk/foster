@@ -281,6 +281,7 @@ add_custom_command(
     ${LIBFOSTER_CPP_SOURCES}
     ${PROJECT_BINARY_DIR}/_bitcodelibs_
     ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
+    ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc_config-inl.h
 )
 # We could attach the command to build libfoster.bc directly
 # to the libfoster_bc target, but the effect of doing that would

@@ -20,6 +20,9 @@ outdir = "<outdir not set>"
 coro_method = "<coro_method not set>"
 debug_flag = ""
 
+def ensure_file_exists(path):
+  open(path, 'a').close()
+
 def ensure_dir_exists(output):
   """Creates the given directory if it doesn't exist;
       if the name refers to a path, prints an error and aborts."""
@@ -65,7 +68,7 @@ def get_libfoster_parser(usage):
   parser.add_option("--bindir", dest="bindir", action="store",
                     help="Use bindir as default place to find binaries")
   parser.add_option("--srcdir", dest="srcdir", action="store",
-                    help="Use srcdir as default place to find binaries")
+                    help="Use srcdir as default place to find source")
   parser.add_option("--clang", dest="clang", action="store",
                     help="Path to clang(++)")
   parser.add_option("--llvmdir", dest="llvmdir", action="store",
@@ -88,6 +91,7 @@ if __name__ == "__main__":
   llvmld = os.path.join(options.llvmdir, 'llvm-link')
   outdir = os.path.join(bindir, "_bitcodelibs_/gc_bc")
   ensure_dir_exists(outdir)
+  ensure_file_exists(os.path.join(srcdir, 'runtime', 'gc', 'foster_gc_reconfig-inl.h'))
 
   coro_method = options.corodef
   sources = args
