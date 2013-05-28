@@ -21,6 +21,7 @@ typedef void* id;
 
 struct FosterGlobals {
   std::vector<const char*> args;
+  bool                     dump_json_stats;
 
   int                    semispace_size;
 

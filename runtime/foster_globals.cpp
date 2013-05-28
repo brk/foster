@@ -22,6 +22,8 @@ namespace runtime {
 
   // Trawl through argv, looking for any JSON flags destined for the runtime itself.
   // The remainder of the flags will be installed in the global .args.
+  // Note that we must be given command-line args like -foster-runtime '{ ... }',
+  //                                               not -foster-runtime='{ ... }'!
   void parse_runtime_options(int argc, char** argv) {
     base::JSONReader reader;
     base::DictionaryValue dv;
@@ -49,22 +51,39 @@ namespace runtime {
     }
 
     extract_global_config_options(dv);
+
+    if (false) {
+      std::stringstream ss;
+      ss << dv;
+      fprintf(stderr, "%s\n", ss.str().c_str());
+      std::string s = dump_global_config_options();
+      fprintf(stderr, "%s\n", s.c_str());
+    }
   }
 
   // Heads up: keys with '.' in them will not work unless the non-expanding get/set
   // variants for DictionaryValue are used, // because JSON parsing doesn't perform
   // path expansion.
   const char kGCSemispaceSizeKb[] = "gc_semispace_size_kb";
+  const char kDumpJSONStats[]     = "dump_json_stats";
 
   void extract_global_config_options(const base::DictionaryValue& dv) {
+    bool ok;
     int ss_kb = 1024;
-    bool ok = dv.GetInteger(kGCSemispaceSizeKb, &ss_kb);
+    ok = dv.GetInteger(kGCSemispaceSizeKb, &ss_kb);
     __foster_globals.semispace_size = ss_kb * 1024;
+
+    bool dump_json_stats = false;
+    ok = dv.GetBoolean(kDumpJSONStats, &dump_json_stats);
+    __foster_globals.dump_json_stats = dump_json_stats;
   }
 
   std::string dump_global_config_options() {
     base::DictionaryValue dv;
+
     dv.SetInteger(kGCSemispaceSizeKb, __foster_globals.semispace_size / 1024);
+    dv.SetBoolean(kDumpJSONStats,     __foster_globals.dump_json_stats);
+
     std::stringstream ss;
     ss << dv;
     return ss.str();

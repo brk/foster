@@ -450,40 +450,53 @@ public:
   }
 
   ~copying_gc() {
-      // {{{
-      double approx_bytes = double(num_collections * gSEMISPACE_SIZE());
-      fprintf(gclog, "num collections: %" PRId64 "\n", num_collections);
-      if (TRACK_NUM_ALLOCATIONS) {
-      fprintf(gclog, "num allocations: %.3g\n", double(num_allocations));
-      fprintf(gclog, "avg. alloc size: %d\n", int(approx_bytes / double(num_allocations)));
-      }
-      fprintf(gclog, "alloc # bytes >: %.3g\n", approx_bytes);
+    dump_stats(NULL);
+  }
 
-      if (TRACK_BYTES_KEPT_ENTRIES) {
-      int64_t mn = bytes_kept_per_gc.compute_min(),
-              mx = bytes_kept_per_gc.compute_max(),
-              aa = bytes_kept_per_gc.compute_avg_arith();
-      fprintf(gclog, "min bytes kept: %8" PRId64 " (%.2g%%)\n", mn, double(mn * 100.0)/double(gSEMISPACE_SIZE()));
-      fprintf(gclog, "max bytes kept: %8" PRId64 " (%.2g%%)\n", mx, double(mx * 100.0)/double(gSEMISPACE_SIZE()));
-      fprintf(gclog, "avg bytes kept: %8" PRId64 " (%.2g%%)\n", aa, double(aa * 100.0)/double(gSEMISPACE_SIZE()));
-      }
-      if (TRACK_BYTES_ALLOCATED_ENTRIES) {
-        for (int i = 0; i < bytes_req_per_alloc.size() - 1; ++i) {
-          int sz = i * FOSTER_GC_DEFAULT_ALIGNMENT;
-          fprintf(gclog, "allocs of size %4d: %12" PRId64 "\n", sz, bytes_req_per_alloc[i]);
-        }
-        fprintf(gclog,  "allocs of size more: %12" PRId64 "\n", bytes_req_per_alloc.back());
-      }
+  void dump_stats(FILE* json) {
+    // {{{
+    FILE* stats = json ? json : gclog;
 
-      if (!this->alloc_site_counters.empty()) {
-        std::map<std::pair<const char*, typemap*>, int64_t>::iterator it;
-        for (it  = this->alloc_site_counters.begin();
-             it != this->alloc_site_counters.end(); ++it) {
-          fprintf(gclog,  "%12" PRId64 " allocations of typemap %p from %s\n",
-                          it->second, it->first.second, it->first.first);
-        }
+    double approx_bytes = double(num_collections * gSEMISPACE_SIZE());
+    fprintf(stats, "'num_collections' : %" PRId64 ",\n", num_collections);
+    if (TRACK_NUM_ALLOCATIONS) {
+    fprintf(stats, "'num_allocations' : %.3g,\n", double(num_allocations));
+    fprintf(stats, "'avg_alloc_size' : %d,\n", int(approx_bytes / double(num_allocations)));
+    }
+    fprintf(stats, "'alloc_num_bytes_gt' : %.3g,\n", approx_bytes);
+    fprintf(stats, "'semispace_size_kb' : %" PRId64 ",\n", gSEMISPACE_SIZE() / 1024);
+
+    if (TRACK_BYTES_KEPT_ENTRIES) {
+    int64_t mn = bytes_kept_per_gc.compute_min(),
+            mx = bytes_kept_per_gc.compute_max(),
+            aa = bytes_kept_per_gc.compute_avg_arith();
+    fprintf(stats, "'min_bytes_kept' : %8" PRId64 ",\n", mn);
+    fprintf(stats, "'max_bytes_kept' : %8" PRId64 ",\n", mx);
+    fprintf(stats, "'avg_bytes_kept' : %8" PRId64 ",\n", aa);
+    fprintf(stats, "'min_bytes_kept_percent' : %.2g%%,\n", double(mn * 100.0)/double(gSEMISPACE_SIZE()));
+    fprintf(stats, "'max_bytes_kept_percent' : %.2g%%,\n", double(mx * 100.0)/double(gSEMISPACE_SIZE()));
+    fprintf(stats, "'avg_bytes_kept_percent' : %.2g%%,\n", double(aa * 100.0)/double(gSEMISPACE_SIZE()));
+    }
+    if (TRACK_BYTES_ALLOCATED_ENTRIES) {
+      for (int i = 0; i < bytes_req_per_alloc.size() - 1; ++i) {
+        int sz = i * FOSTER_GC_DEFAULT_ALIGNMENT;
+        fprintf(stats, "allocs_of_size_%4d: %12" PRId64 ",\n", sz, bytes_req_per_alloc[i]);
       }
-      // }}}
+      fprintf(stats,  "allocs_of_size_more: %12" PRId64 ",\n", bytes_req_per_alloc.back());
+    }
+
+    if (!this->alloc_site_counters.empty()) {
+      fprintf(stats, "'allocation_sites' : [\n");
+      std::map<std::pair<const char*, typemap*>, int64_t>::iterator it;
+      for (it  = this->alloc_site_counters.begin();
+            it != this->alloc_site_counters.end(); ++it) {
+        fprintf(stats, "{ 'typemap' : %p , 'allocations' : %12" PRId64 ",\n", it->first.second, it->second);
+        fprintf(stats, "  'from' : \"%s\" },\n", it->first.first);
+      }
+      fprintf(stats, "],\n");
+    }
+    // }}}
+
   }
 
   bool had_problems() { return saw_bad_pointer; }
@@ -727,10 +740,18 @@ void initialize(void* stack_highest_addr) {
   runtime_start = base::TimeTicks::HighResNow();
 }
 
-void gclog_time(const char* msg, base::TimeDelta d) {
+void gclog_time(const char* msg, base::TimeDelta d, FILE* json) {
   fprintf(gclog, "%s: %2ld.%03ld s\n", msg,
           long(d.InSeconds()),
           long(d.InMilliseconds() - (d.InSeconds() * 1000)));
+  if (json) {
+  fprintf(json, "'%s_s' : %2ld.%03ld,\n", msg,
+          long(d.InSeconds()),
+          long(d.InMilliseconds() - (d.InSeconds() * 1000)));
+  fprintf(json, "'%s_ms': %2ld.%03ld,\n", msg,
+          long(d.InMilliseconds()),
+          long(d.InMicroseconds() - (d.InMilliseconds() * 1000)));
+  }
 }
 
 // TODO: track bytes allocated, bytes clollected, max heap size,
@@ -741,13 +762,21 @@ int cleanup() {
   base::TimeDelta total_elapsed = fin - init_start;
   base::TimeDelta  init_elapsed = runtime_start - init_start;
   base::TimeDelta    gc_elapsed = gc_time - base::TimeTicks();
-  gclog_time("Elapsed runtime", total_elapsed);
-  gclog_time("Initlzn runtime",  init_elapsed);
-  gclog_time("     GC runtime",    gc_elapsed);
-  gclog_time("Mutator runtime", total_elapsed - gc_elapsed - init_elapsed);
+  base::TimeDelta   mut_elapsed = total_elapsed - gc_elapsed - init_elapsed;
+  FILE* json = __foster_globals.dump_json_stats
+                ? fopen("stats.json", "w")
+                : NULL;
+  if (json) fprintf(json, "{\n");
+  gclog_time("Elapsed_runtime", total_elapsed, json);
+  gclog_time("Initlzn_runtime",  init_elapsed, json);
+  gclog_time("     GC_runtime",    gc_elapsed, json);
+  gclog_time("Mutator_runtime",   mut_elapsed, json);
   bool had_problems = allocator->had_problems();
+  if (json) allocator->dump_stats(json);
   delete allocator;
   fclose(gclog); gclog = NULL;
+  if (json) fprintf(json, "\n}");
+  if (json) fclose(json);
   return had_problems ? 99 : 0;
 }
 
