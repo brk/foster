@@ -257,6 +257,15 @@ add_custom_command(
         ${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
 )
 
+add_custom_command(
+  OUTPUT ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc_reconfig-inl.h
+  COMMAND
+    python ${PROJECT_SOURCE_DIR}/scripts/mk_gc_reconfig_h.py
+      --srcdir=${PROJECT_SOURCE_DIR}
+  DEPENDS
+    ${PROJECT_SOURCE_DIR}/scripts/mk_gc_reconfig_h.py
+)
+
 set(LIBFOSTER_CPP_SOURCES
         ${PROJECT_SOURCE_DIR}/runtime/libfoster.cpp
         ${PROJECT_SOURCE_DIR}/runtime/libfoster_coro.cpp
