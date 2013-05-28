@@ -65,7 +65,7 @@ namespace runtime {
   // variants for DictionaryValue are used, // because JSON parsing doesn't perform
   // path expansion.
   const char kGCSemispaceSizeKb[] = "gc_semispace_size_kb";
-  const char kDumpJSONStats[]     = "dump_json_stats";
+  const char kDumpJSONStatsPath[] = "dump_json_stats_path";
 
   void extract_global_config_options(const base::DictionaryValue& dv) {
     bool ok;
@@ -73,16 +73,16 @@ namespace runtime {
     ok = dv.GetInteger(kGCSemispaceSizeKb, &ss_kb);
     __foster_globals.semispace_size = ss_kb * 1024;
 
-    bool dump_json_stats = false;
-    ok = dv.GetBoolean(kDumpJSONStats, &dump_json_stats);
-    __foster_globals.dump_json_stats = dump_json_stats;
+    std::string dump_json_stats_path;
+    ok =  dv.GetString(kDumpJSONStatsPath, &dump_json_stats_path);
+    __foster_globals.dump_json_stats_path = dump_json_stats_path;
   }
 
   std::string dump_global_config_options() {
     base::DictionaryValue dv;
 
     dv.SetInteger(kGCSemispaceSizeKb, __foster_globals.semispace_size / 1024);
-    dv.SetBoolean(kDumpJSONStats,     __foster_globals.dump_json_stats);
+    dv.SetString( kDumpJSONStatsPath, __foster_globals.dump_json_stats_path);
 
     std::stringstream ss;
     ss << dv;

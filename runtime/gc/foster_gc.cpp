@@ -763,9 +763,9 @@ int cleanup() {
   base::TimeDelta  init_elapsed = runtime_start - init_start;
   base::TimeDelta    gc_elapsed = gc_time - base::TimeTicks();
   base::TimeDelta   mut_elapsed = total_elapsed - gc_elapsed - init_elapsed;
-  FILE* json = __foster_globals.dump_json_stats
-                ? fopen("stats.json", "w")
-                : NULL;
+  FILE* json = __foster_globals.dump_json_stats_path.empty()
+                ? NULL
+                : fopen(__foster_globals.dump_json_stats_path.c_str(), "w");
   if (json) fprintf(json, "{\n");
   gclog_time("Elapsed_runtime", total_elapsed, json);
   gclog_time("Initlzn_runtime",  init_elapsed, json);
@@ -775,7 +775,7 @@ int cleanup() {
   if (json) allocator->dump_stats(json);
   delete allocator;
   fclose(gclog); gclog = NULL;
-  if (json) fprintf(json, "\n}");
+  if (json) fprintf(json, "},\n");
   if (json) fclose(json);
   return had_problems ? 99 : 0;
 }
