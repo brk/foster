@@ -464,7 +464,7 @@ public:
     fprintf(stats, "'avg_alloc_size' : %d,\n", int(approx_bytes / double(num_allocations)));
     }
     fprintf(stats, "'alloc_num_bytes_gt' : %.3g,\n", approx_bytes);
-    fprintf(stats, "'semispace_size_kb' : %" PRId64 ",\n", gSEMISPACE_SIZE() / 1024);
+    fprintf(stats, "'semispace_size_kb' : %d,\n", gSEMISPACE_SIZE() / 1024);
 
     if (TRACK_BYTES_KEPT_ENTRIES) {
     int64_t mn = bytes_kept_per_gc.compute_min(),

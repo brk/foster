@@ -20,6 +20,7 @@ Foster Notes
    parallelism
    polymorphism
    inlining
+   bench
    todo
 
 .. Indices and tables
