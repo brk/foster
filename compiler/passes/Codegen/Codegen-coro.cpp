@@ -552,6 +552,12 @@ Value* CodegenPass::emitCoroInvokeFn(llvm::Type* retTy,
 
     fn->setCallingConv(llvm::CallingConv::Fast);
     fn->setGC("fostergc");
+
+    // TODO when using inlining along with any codegen opt level greater
+    //      than None, the basic-coro test segfaults after returning from
+    //      coro_transfer or when using std::map to lookup stackmap entries.
+    //      why?!?  :(
+    fn->addFnAttr(llvm::Attributes::NoInline);
   }
 
   return fn;
