@@ -33,9 +33,11 @@ show-splay-tree = { forall a:Boxed, st => fmt : { a => Text } =>
 };
 
 main = {
+/*
   cmpt = { f1 => f2 => cmpSInt32 (f1 !) (f2 !) };
   cmpn = { n => { f2 => cmpSInt32 n (f2 !) } };
   s = (SplayNil !);
+*/
 
   /*
   // zig on left
@@ -92,6 +94,7 @@ main = {
   show-splay-tree x1s { f => tmp_Text_of_Int32 (f !) };
   */
 
+  /*
   s0 = splay-insert { 1 } s  cmpt;
   s1 = splay-insert { 1 } s0 cmpt;
   s2 = splay-insert { 2 } s1 cmpt;
@@ -106,6 +109,9 @@ main = {
   show-splay-tree s4 { f => tmp_Text_of_Int32 (f !) };
   show-splay-tree s5 { f => tmp_Text_of_Int32 (f !) };
   show-splay-tree s6 { f => tmp_Text_of_Int32 (f !) };
+
+  TODO expect-binary-tree function.
+  */
 
   ()
 };

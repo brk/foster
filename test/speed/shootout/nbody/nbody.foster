@@ -5,7 +5,9 @@ snafuinclude Prelude "prelude";
 //                         and sped up by Petr Prokhorenkov.
 //
 // http://shootout.alioth.debian.org/u32/program.php?test=nbody&lang=gcc&id=2
-
+//
+// Note that the above isn't the fastest "C" implementation, but it is (was)
+// the fastest non-SSE implementation in pure C.
 
 type case Planet of
   $Planet (Ref Float64) // px
