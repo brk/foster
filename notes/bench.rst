@@ -50,3 +50,37 @@ The format of the ``stats_n.json`` file varies with compile-time options. One ex
     'alloc_num_bytes_gt' : 5.24e+08,
     'semispace_size_kb' : 1024,
     },
+
+Overview
+--------
+
+Conceptually, we want to take a list of (input, output) dictionaries,
+and produce a list of structured organized views of the provided data.
+The input dictionaries might have key/value entries for ``test``, ``input``,
+individual flags like ``donate``, and collective values like ``tags``. There
+would also probably be an entry for ``revision`` and/or ``date_taken``.
+An ``impl_lang`` key would also be helpful.
+
+There are also a few different ways we can slice and dice the input for visualizations:
+ * For each individual test, compare the effects of different flags.
+ * For each individual test, compare performance across different times/revisions
+   at the same flags.
+ * Compare output metrics as input size varies (for one or more benchmark impls)
+ * Do the same for groups of tests (i.e. different implementations of the same benchmark)
+   with a common scale for comparison.
+  * Group tests by implementation language
+
+For comparing flag effects across tests, we want::
+    [ {
+      xlabel:"...",
+      results: [
+        {legend_text:"...",
+          output_samples: [...]
+        } ] } ]
+Each distinct xlabel would be mapped to an arbitrary (hidden) x-value.
+
+Besides detailed visualizations, it would also be nice to have a compact, easy-to-digest
+summary of the overall status of selected implementations against each other:
+a table with results (perhaps small inline bar graphs) saying "A is X% faster than B" etc.
+
+

@@ -20,15 +20,19 @@ import os
 import sys
 import subprocess
 import itertools
-from plumbum.cmd import mkdir
+#from plumbum.cmd import mkdir
 import datetime
 import json
+
+def mkdir_p(d):
+  #mkdir('-p', d)
+  subprocess.call("mkdir -p %s" % d, shell=True)
 
 datestr = datetime.datetime.now().strftime('%Y-%m-%d@%H.%M.%S')
 _scripts_dir = os.path.dirname(sys.argv[0])
 
 def ensure_dir_exists(d):
-  mkdir('-p', d)
+  mkdir_p(d)
 
 def data_base_dir():
   return 'data'
@@ -115,8 +119,9 @@ def do_runs_for_gotest(testpath, inputstr, tags, flagsdict, total):
     for z in range(total):
       cmdstr = """%s %s -foster-runtime '{ "dump_json_stats_path" : "%s" }'  > /dev/null""" \
                  % (exec_path, inputstr, datapath(testpath, tags, "stats_%d.json" % z))
-      print ": $ " + cmdstr + " (%d of %d; tags=%s)" % (z + 1, total, tags)
+      #print ": $ " + cmdstr + " (%d of %d; tags=%s)" % (z + 1, total, tags)
       (rv, ms) = shell_out(cmdstr)
+      print testpath, inputstr, tags, ">>>> ", ms, "ms"
       timings_ms.append(ms)
     tj['py_run_ms'] = timings_ms
     with open(datapath(testpath, tags, 'timings.json'), 'a') as results:
@@ -137,7 +142,7 @@ def do_runs_for_gotest(testpath, inputstr, tags, flagsdict, total):
 #            ]),
 #('inlineSize', [(str(x), '--me-arg=--inline-size-limit=%d' % x) for x in range(0, 101)])
 
-all_factors = [
+all_factors = [factor + [('lang', [('foster', '')])] for factor in [
  [
    ('inline', [('yes', '--me-arg=--inline'), ]),
    ('LLVMopt', [('O2', '--optimize=O2')]),
@@ -150,7 +155,7 @@ all_factors = [
    ('abc', [('safe' , '')]),
    ('donate', [('yes', ''),]),
  ]
-]
+]]
 
 def compile_and_run_test(testpathfragment, extra_compile_args, inputstr,
                          tags, flagstrs,  flagsdict, num_iters):
@@ -160,8 +165,6 @@ def compile_and_run_test(testpathfragment, extra_compile_args, inputstr,
 gotests = [
   ('speed/micro/addtobits', '50000'),
   ('speed/micro/nbody',                               '50000'),
-  ('speed/micro/nbody-cont-manually-inlined',         '50000'),
-  ('speed/micro/nbody-cont-manually-inlined-mallocs', '50000'),
   ('speed/micro/nbody-loops',                         '50000'),
   ('speed/micro/nbody-loops-inlined',                 '50000'),
   ('speed/micro/nbody-loops-mallocs',                 '50000'),
@@ -238,7 +241,7 @@ def benchmark_shootout_original(sourcepath, flagsdict, tags, exe, argstr, num_it
     with open(datapath(sourcepath, tags, 'out.txt'), 'w') as out:
       (rv, ms) = shell_out(' '.join([exe, argstr]), stderr=out, stdout=out)
       assert rv == 0
-      print sourcepath, exe, ">>>> ", ms, "ms"
+      print sourcepath, exe, argstr, ">>>> ", ms, "ms"
       timings_ms.append(ms)
   tj['py_run_ms'] = timings_ms
 
@@ -250,17 +253,17 @@ def benchmark_shootout_originals():
   for (sourcepath, filename, argstr) in shootout_original_benchmarks:
     d = os.path.join(root_dir(), sourcepath)
     c = os.path.join(d, filename)
-    all_factors = [
+    all_factors = [factor + [('lang', [('other', '')])] for factor in [
       [
         ('LLVMopt', [('O3', '-O3')]),
-        ('sse',     [('yes', '-march=native -mfpmath=sse -msse3 -falign-labels=8')]),
+        ('sse',     [('yes', '-march=core2 -mfpmath=sse -msse3 -falign-labels=8')]),
       ],
       [
         ('LLVMopt', [('O2', '-O2'),
                      ('O0', '-O0')]),
         ('sse',     [('no', '')]),
       ],
-    ]
+    ]]
     def compile_and_run_shootout(tags, flagstrs, flagsdict, num_iters):
       exe = 'test_' + tags + ".exe"
       shell_out("gcc -pipe -Wall -Wno-unknown-pragmas %s %s -o %s -lm" % (' '.join(flagstrs), c, exe))
@@ -270,22 +273,24 @@ def benchmark_shootout_originals():
     shell_out("rm test_*.exe")
 
 shootout_benchmarks = [
-  ('speed/micro/addtobits', '50000'),
+   ('speed/micro/addtobits', '50000'),
 
-  ('speed/shootout/nbody',                 '100000'),
-  ('speed/shootout/nbody-loops',           '100000'),
-  ('speed/shootout/nbody-loops-inlined',   '100000'),
-  ('speed/shootout/nbody-loops-mallocs',   '100000'),
-  ('speed/shootout/nbody-loops-unsafe',    '100000'),
-  ('speed/shootout/nbody-loops-unchecked', '100000'),
+   ('speed/shootout/nbody',                            '100000'),
+   ('speed/shootout/nbody-loops',                      '100000'),
+   ('speed/shootout/nbody-loops-inlined',              '100000'),
+   ('speed/shootout/nbody-loops-mallocs',              '100000'),
+   ('speed/shootout/nbody-loops-unsafe',               '100000'),
+   ('speed/shootout/nbody-loops-unchecked',            '100000'),
+   ('speed/shootout/nbody-cont-manually-inlined',         '100000'),
+   ('speed/shootout/nbody-cont-manually-inlined-mallocs', '100000'),
 
-  ('speed/shootout/spectralnorm', '750'),
+   ('speed/shootout/spectralnorm', '750'),
 
-  ('speed/shootout/fannkuchredux',                         '10'),
-  ('speed/shootout/fannkuchredux-nogc',                    '10'),
-  ('speed/shootout/fannkuchredux-nogc-stackref',           '10'),
-  ('speed/shootout/fannkuchredux-nogc-stackref-unchecked', '10'),
-  ('speed/shootout/fannkuchredux-unchecked',               '10'),
+   ('speed/shootout/fannkuchredux',                         '10'),
+   ('speed/shootout/fannkuchredux-nogc',                    '10'),
+   ('speed/shootout/fannkuchredux-nogc-stackref',           '10'),
+   ('speed/shootout/fannkuchredux-nogc-stackref-unchecked', '10'),
+   ('speed/shootout/fannkuchredux-unchecked',               '10'),
 ]
 
 def benchmark_shootout_programs(num_iters=kNumIters):
@@ -300,13 +305,13 @@ def collect_all_timings():
   shell_out("echo [ > %s" % alltimings)
   shell_out("find %s -name 'timings.json' | xargs cat >> %s" % (data_dir(), alltimings))
   shell_out("echo ] >> %s" % alltimings)
+  print alltimings
 
 
 def main():
   ensure_dir_exists(data_dir())
-  #benchmark_shootout_originals()
+  benchmark_shootout_originals()
   benchmark_shootout_programs()
-  #benchmark_all_combinations(all_factors, compile_and_run_addtobits)
   collect_all_timings()
 
 if __name__ == '__main__':

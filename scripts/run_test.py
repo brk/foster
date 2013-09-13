@@ -100,7 +100,7 @@ def show_cmdlines(options):
   return options and options.show_cmdlines == True
 
 def optlevel(options):
-  if options and options.optlevel:
+  if options and options.optlevel is not "O0":
     # Right now fosteroptc only recognizes -O0, not -O2 or such.
     return []
   else:

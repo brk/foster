@@ -1,10 +1,16 @@
 #!/bin/sh
 
-R=$(readlink --canonicalize $(dirname `which $0`)/..)
+SD=$(dirname `which $0`)
+R=$(python $SD/normpath.py $SD/..)
 P=$1
 shift
 D=$R/test/$P
 T=$D/`basename $P`.foster
+
+if [ -z "$R" ]; then
+  echo "Unable to compute project root, exiting!"
+  exit 1
+fi
 
 cleanout () {
   rm -f gclog.txt
