@@ -156,47 +156,10 @@ def do_runs_for_gotest(testpath, inputstr, tags, flagsdict, total):
       json.dump(tj, results, indent=2, separators=(',', ':'))
       results.write(",\n")
 
-#  ('abc', [('safe',    ''),
-#           ('unsafe' , '--be-arg=-unsafe-disable-array-bounds-checks')]),
-#
-# ('inline', [('yes', '--me-arg=--inline'),
-#             ('no' , '--me-arg=--no-inline')
-#            ]),
-# ('LLVMopt', [('O2', '--optimize=O2')
-#             ,('O0', '--optimize=O0')
-#             ]),
-# ('donate', [('yes', ''),
-#             ('no' , '--me-arg=--no-donate')
-#            ]),
-#('inlineSize', [(str(x), '--me-arg=--inline-size-limit=%d' % x) for x in range(0, 101)])
-
-all_factors = [factor + [('lang', [('foster', '')])] for factor in [
- [
-   ('inline', [('yes', '--me-arg=--inline'), ]),
-   ('LLVMopt', [('O2', '--optimize=O2')]),
-   ('abc', [('unsafe' , '--be-arg=-unsafe-disable-array-bounds-checks')]),
-   ('donate', [('yes', '')]),
- ],
- [
-   ('inline', [ ('no' , '--me-arg=--no-inline') ]),
-   ('LLVMopt', [('O0', '--optimize=O0')]),
-   ('abc', [('safe' , '')]),
-   ('donate', [('yes', ''),]),
- ]
-]]
-
 def compile_and_run_test(testpathfragment, extra_compile_args, inputstr,
                          tags, flagstrs,  flagsdict, num_iters):
   gotest_with(testpathfragment, tags, flagstrs, extra_compile_args)
   do_runs_for_gotest(testpathfragment, inputstr, tags, flagsdict, num_iters)
-
-# --be-arg=--gc-track-alloc-sites
-# --be-arg=--dont-kill-dead-slots
-# --optc-arg=-O0
-# --optc-arg=-O2
-# --optc-arg=-Onone
-# --optc-arg=-no-specialize-memallocs
-# --optc-arg=-foster-insert-timing-checks
 
 def flags_of_factors(all_factors):
   return list(itertools.chain(*
@@ -236,24 +199,24 @@ def benchmark_all_combinations(all_factors, do_compile_and_run, num_iters=kNumIt
     print "Step %d of %d overall plan took %s, estimated time left: %s..." % (idx+1, numflags, str(d), str(r))
 
 shootout_original_benchmarks = [
-  ('third_party/shootout/nbody',         'nbody.gcc-2.c',         '250000'),
+  ('third_party/shootout/nbody',         'nbody.gcc-2.c',         '350000'),
   ('third_party/shootout/fannkuchredux', 'fannkuchredux.gcc-1.c', '10'),
-  ('third_party/shootout/spectralnorm',  'spectralnorm.gcc-3.c',  '750'),
+  ('third_party/shootout/spectralnorm',  'spectralnorm.gcc-3.c',  '850'),
 ]
 
 shootout_benchmarks = [
    ('speed/micro/addtobits', '50000'),
 
-   ('speed/shootout/nbody',                               '250000'),
-   ('speed/shootout/nbody-loops',                         '250000'),
-   ('speed/shootout/nbody-loops-inlined',                 '250000'),
-   ('speed/shootout/nbody-loops-mallocs',                 '250000'),
-   ('speed/shootout/nbody-loops-unsafe',                  '250000'),
-   ('speed/shootout/nbody-loops-unchecked',               '250000'),
-   ('speed/shootout/nbody-cont-manually-inlined',         '250000'),
-   ('speed/shootout/nbody-cont-manually-inlined-mallocs', '250000'),
+   ('speed/shootout/nbody',                               '350000'),
+   ('speed/shootout/nbody-loops',                         '350000'),
+   ('speed/shootout/nbody-loops-inlined',                 '350000'),
+   ('speed/shootout/nbody-loops-mallocs',                 '350000'),
+   ('speed/shootout/nbody-loops-unsafe',                  '350000'),
+   ('speed/shootout/nbody-loops-unchecked',               '350000'),
+   ('speed/shootout/nbody-cont-manually-inlined',         '350000'),
+   ('speed/shootout/nbody-cont-manually-inlined-mallocs', '350000'),
 
-   ('speed/shootout/spectralnorm', '750'),
+   ('speed/shootout/spectralnorm', '850'),
 
    ('speed/shootout/fannkuchredux',                         '10'),
    ('speed/shootout/fannkuchredux-nogc',                    '10'),
@@ -287,7 +250,9 @@ def benchmark_shootout_originals():
   for (sourcepath, filename, argstr) in shootout_original_benchmarks:
     d = os.path.join(root_dir(), sourcepath)
     c = os.path.join(d, filename)
-    all_factors = [factor + [('lang', [('other', '')])] for factor in [
+    all_factors = [factor + [('lang', [('other', '')]),
+                             ('date', [(datestr, '')]),
+                            ] for factor in [
       [
         ('LLVMopt', [('O3', '-O3')]),
         ('sse',     [('yes', '-march=core2 -mfpmath=sse -msse3 -falign-labels=8')]),
@@ -305,6 +270,45 @@ def benchmark_shootout_originals():
                                   exe, argstr, num_iters)
     benchmark_all_combinations(all_factors, compile_and_run_shootout)
     shell_out("rm test_*.exe")
+
+# --be-arg=--gc-track-alloc-sites
+# --be-arg=--dont-kill-dead-slots
+# --optc-arg=-O0
+# --optc-arg=-O2
+# --optc-arg=-Onone
+# --optc-arg=-no-specialize-memallocs
+# --optc-arg=-foster-insert-timing-checks
+
+#  ('abc', [('safe',    ''),
+#           ('unsafe' , '--be-arg=-unsafe-disable-array-bounds-checks')]),
+#
+# ('inline', [('yes', '--me-arg=--inline'),
+#             ('no' , '--me-arg=--no-inline')
+#            ]),
+# ('LLVMopt', [('O2', '--optimize=O2')
+#             ,('O0', '--optimize=O0')
+#             ]),
+# ('donate', [('yes', ''),
+#             ('no' , '--me-arg=--no-donate')
+#            ]),
+#('inlineSize', [(str(x), '--me-arg=--inline-size-limit=%d' % x) for x in range(0, 101)])
+
+all_factors = [factor + [('lang', [('foster', '')]),
+                         ('date', [(datestr, '')]),
+                        ] for factor in [
+ [
+   ('inline', [('yes', '--me-arg=--inline'), ]),
+   ('LLVMopt', [('O2', '--optimize=O2')]),
+   ('abc', [('unsafe' , '--be-arg=-unsafe-disable-array-bounds-checks')]),
+   ('donate', [('yes', '')]),
+ ],
+ [
+   ('inline', [ ('no' , '--me-arg=--no-inline') ]),
+   ('LLVMopt', [('O0', '--optimize=O0')]),
+   ('abc', [('safe' , '')]),
+   ('donate', [('yes', ''),]),
+ ]
+]]
 
 
 def benchmark_shootout_programs(num_iters=kNumIters):

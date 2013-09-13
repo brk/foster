@@ -200,7 +200,7 @@ def violin_plot(ax,data,pos, facecolor='y', bp=False, x_to_scale=False, rugplot=
       #ax.boxplot(data,notch=True,positions=[p], vert=True)
       ax.boxplot(d,notch=True,positions=[p], vert=True)
       #ax.boxplot(d, positions=pos)
-    if pb or rugplot:
+    if bp or rugplot:
       # plot invisible points at the corners of the violins,
       # because otherwise the fill_between colored area will be cut off
       # when matplotlib "focuses" on the box/rug plot markers.
@@ -209,7 +209,7 @@ def violin_plot(ax,data,pos, facecolor='y', bp=False, x_to_scale=False, rugplot=
 def proj(objs, key):
   return [obj[key] for obj in objs]
 
-def viz_datasets(datasets, x_positions, legend_labels=[], xlabels=[], outfile=None, noshow=False):
+def viz_datasets(datasets, x_positions, title, legend_labels=[], xlabels=[], outfile=None, noshow=False):
   pyplot.rc('font', size=10)
   if len(xlabels) > 6:
     w,h = (10,6)
@@ -252,6 +252,10 @@ def viz_datasets(datasets, x_positions, legend_labels=[], xlabels=[], outfile=No
             fancybox=True, shadow=True,
             prop = fontP)
   pyplot.margins(0.02, tight=True)
+
+  # change position to not conflict with legend
+  # (not supported in my old version of matplotlib)
+  #ax.set_title(title, loc='left')
 
   pyplot.savefig('bench-out.png')
   if outfile:
@@ -465,11 +469,9 @@ def viz_multiple_tests(unsorted_tests):
   assert len(ministat_outputs) == len(pos)
 
   unique_test_names = set(proj(tests, 'test'))
-  pos_for_test_names = compute_positions_for_names(unique_test_names)
+  pos_for_test_names = compute_positions_for_names(unique_test_names, zip(tests, datas))
   x_positions = pos_for_test_names.values()
   legend_labels = sorted(set(proj(tests, 'tags')))
-  #legend_labels = list(proj(tests, 'tags'))
-  print legend_labels
 
   datasets = [
     {
@@ -486,17 +488,19 @@ def viz_multiple_tests(unsorted_tests):
                     'datasets':datasets,
                     'legend_labels':legend_labels,
                     'outpng_name':gen_png_name(),
-                    'x_positions':x_positions})
+                    'x_positions':x_positions,
+                    'title':title_for(tests),
+                   })
 
 def viz_by_tags(tagnames, tests):
   datas = [
-            [   t['samples'][n]['outputs']['py_run_ms'] for n in range(len(t['samples'])) ]
+            [elapsed_runtime_ms(t['samples'][n]) for n in range(len(t['samples']))]
             for t in tests
           ]
   # We don't include any ministat comparisons because
   # comparing results from different tests for the same tags
   # doesn't make any sense! (unlike the reverse situation)
-  pos_for_names = compute_positions_for_names(tagnames)
+  pos_for_names = compute_positions_for_names(tagnames, zip(tests, datas))
   x_positions = pos_for_names.values()
   legend_labels = list(set(proj(tests, 'test')))
   datasets = [
@@ -515,7 +519,26 @@ def viz_by_tags(tagnames, tests):
                     'legend_labels':legend_labels,
                     'datasets':datasets,
                     'outpng_name':gen_png_name(),
-                    'x_positions':x_positions})
+                    'x_positions':x_positions,
+                    'title':title_for(tests),
+                   })
+
+def title_for(tests):
+  valset = {}
+  for d in proj(tests, 'flags'):
+    for (f, v) in d.iteritems():
+      if not f in valset:
+        valset[f] = [v]
+      elif len(valset[f]) > 1:
+        continue
+      elif not v in valset[f]:
+        valset[f].append(v)
+  singletons = {}
+  for (k, vs) in valset.iteritems():
+    if len(vs) == 1:
+      singletons[k] = vs[0]
+  title = '[%s]' % ','.join("%s=%s" % (k,v) for (k,v) in singletons.iteritems())
+  return title
 
 def indexof_v01(k, vs):
   return vs.index(k) / float(len(vs))
@@ -528,11 +551,13 @@ def format_output(outputs):
     xaxis_labels  = list(o['pos_for_names'].keys())
     #for mo in o['ministat_outputs']:
     #  print mo['output']
-    viz_datasets(o['datasets'], o['x_positions'], o['legend_labels'], xaxis_labels,
+    viz_datasets(o['datasets'], o['x_positions'], o['title'],
+                 o['legend_labels'], xaxis_labels,
                  o['outpng_name'], noshow=True)
 
   print >>open('out.html', 'w'), Template( """
     {% for o in outputs %}
+      <center><h3>{{ o.title }}</h3></center>
       <img src="{{ o.outpng_name }}"/>
       {% for mo in o.ministat_outputs %}
       <pre>{{ mo.output }}</pre><br>
@@ -541,12 +566,24 @@ def format_output(outputs):
     {% endfor %}
 """).render(outputs=outputs)
 
-def compute_positions_for_names(names):
-  """Given a list of (distinct) names, returns a dict mapping names to positions."""
+def compute_positions_for_names(names, testsdatas):
+  """Given a list of (distinct) names,
+     and statistics corresponding to those names,
+     returns a dict mapping names to positions."""
+  # compute the maximum sample for each name,
+  # which we will use to assign positions.
+  maxes = {}
+  for (t,d) in testsdatas:
+    m = max(max(xs) for xs in d)
+    maxes[t['test']] = max(m, maxes.get(t['test'], m))
+  sorted_pairs = sorted(maxes.items(), key=lambda p: p[1], reverse=True)
+  sorted_names = [p[0] for p in sorted_pairs]
+  assert set(sorted_names) == set(names)
+
   global tick_width
   k = 1
   pos_for_test_names = {}
-  for utn in names:
+  for utn in sorted_names:
     pos_for_test_names[utn] = k * tick_width
     k += 1
   return pos_for_test_names
