@@ -775,7 +775,7 @@ int cleanup() {
   if (json) allocator->dump_stats(json);
   delete allocator;
   fclose(gclog); gclog = NULL;
-  if (json) fprintf(json, "},\n");
+  if (json) fprintf(json, "}\n");
   if (json) fclose(json);
   return had_problems ? 99 : 0;
 }

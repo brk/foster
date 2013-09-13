@@ -20,12 +20,11 @@ import os
 import sys
 import subprocess
 import itertools
-#from plumbum.cmd import mkdir
 import datetime
 import json
+import yaml
 
 def mkdir_p(d):
-  #mkdir('-p', d)
   subprocess.call("mkdir -p %s" % d, shell=True)
 
 datestr = datetime.datetime.now().strftime('%Y-%m-%d@%H.%M.%S')
@@ -70,6 +69,10 @@ def root_dir():
 def obj_dir():
   return os.path.join(scripts_dir(), '..', '_obj')
 
+def load(jsonpath):
+  with open(jsonpath, 'r') as jsonfile:
+    return yaml.safe_load(jsonfile)
+
 kNumIters = 10
 
 
@@ -106,6 +109,28 @@ def gotest_with(testpath, tags, flagstrs, extra_cmdline_str=''):
     shell_out("cp %s %s" % (exec_for_testpath(testpath),
                             datapath(testpath, tags, 'exe.exe')))
 
+def intersection_of_sets(sets):
+  return set.intersection(*sets)
+
+def union_of_sets(sets):
+  return set.union(*sets)
+
+def zip_dicts(ds):
+  """
+  Transforms [{k1:v1,...}, {k1:v2,...}, ...]
+  into       {k1:[v1,v2,...], ...}
+  """
+  raw_keys = [set(d.keys()) for d in ds]
+  common_keys = intersection_of_sets(raw_keys)
+  all_keys    = union_of_sets(raw_keys)
+  uncommon_keys = all_keys - common_keys
+  if len(uncommon_keys) > 0:
+    print "zip_dicts() saw uncommon keys: ", uncommon_keys
+  d = {}
+  for k in common_keys:
+    d[k] = [e[k] for e in ds]
+  return d
+
 def do_runs_for_gotest(testpath, inputstr, tags, flagsdict, total):
   exec_path = exec_for_testpath(testpath)
   if not os.path.exists(exec_path):
@@ -115,15 +140,18 @@ def do_runs_for_gotest(testpath, inputstr, tags, flagsdict, total):
            'flags' : flagsdict,
            'test'  : testpath,
            'input' : inputstr, }
-    timings_ms = []
+    stats_seq = []
     for z in range(total):
+      stats_path = datapath(testpath, tags, "stats_%d.json" % z)
       cmdstr = """%s %s -foster-runtime '{ "dump_json_stats_path" : "%s" }'  > /dev/null""" \
-                 % (exec_path, inputstr, datapath(testpath, tags, "stats_%d.json" % z))
+                 % (exec_path, inputstr, stats_path)
       #print ": $ " + cmdstr + " (%d of %d; tags=%s)" % (z + 1, total, tags)
       (rv, ms) = shell_out(cmdstr)
       print testpath, inputstr, tags, ">>>> ", ms, "ms"
-      timings_ms.append(ms)
-    tj['py_run_ms'] = timings_ms
+      stats = load(stats_path)
+      stats['py_run_ms'] = ms
+      stats_seq.append(stats)
+    tj['outputs'] = zip_dicts(stats_seq)
     with open(datapath(testpath, tags, 'timings.json'), 'a') as results:
       json.dump(tj, results, indent=2, separators=(',', ':'))
       results.write(",\n")
@@ -162,16 +190,6 @@ def compile_and_run_test(testpathfragment, extra_compile_args, inputstr,
   gotest_with(testpathfragment, tags, flagstrs, extra_compile_args)
   do_runs_for_gotest(testpathfragment, inputstr, tags, flagsdict, num_iters)
 
-gotests = [
-  ('speed/micro/addtobits', '50000'),
-  ('speed/micro/nbody',                               '50000'),
-  ('speed/micro/nbody-loops',                         '50000'),
-  ('speed/micro/nbody-loops-inlined',                 '50000'),
-  ('speed/micro/nbody-loops-mallocs',                 '50000'),
-  ('speed/micro/nbody-loops-unchecked',               '50000'),
-  ('speed/micro/nbody-loops-unsafe',                  '50000'),
-]
-
 # --be-arg=--gc-track-alloc-sites
 # --be-arg=--dont-kill-dead-slots
 # --optc-arg=-O0
@@ -179,12 +197,6 @@ gotests = [
 # --optc-arg=-Onone
 # --optc-arg=-no-specialize-memallocs
 # --optc-arg=-foster-insert-timing-checks
-
-def compile_and_run_addtobits(tags, flagstrs, flagsdict, num_iters):
-  compile_and_run_test('speed/micro/addtobits',
-                       '--be-arg=-unsafe-disable-array-bounds-checks ',
-                       '50000',
-                       tags, flagstrs, flagsdict, num_iters)
 
 def flags_of_factors(all_factors):
   return list(itertools.chain(*
@@ -224,18 +236,40 @@ def benchmark_all_combinations(all_factors, do_compile_and_run, num_iters=kNumIt
     print "Step %d of %d overall plan took %s, estimated time left: %s..." % (idx+1, numflags, str(d), str(r))
 
 shootout_original_benchmarks = [
-  ('third_party/shootout/nbody',         'nbody.gcc-2.c',         '100000'),
+  ('third_party/shootout/nbody',         'nbody.gcc-2.c',         '250000'),
   ('third_party/shootout/fannkuchredux', 'fannkuchredux.gcc-1.c', '10'),
   ('third_party/shootout/spectralnorm',  'spectralnorm.gcc-3.c',  '750'),
+]
+
+shootout_benchmarks = [
+   ('speed/micro/addtobits', '50000'),
+
+   ('speed/shootout/nbody',                               '250000'),
+   ('speed/shootout/nbody-loops',                         '250000'),
+   ('speed/shootout/nbody-loops-inlined',                 '250000'),
+   ('speed/shootout/nbody-loops-mallocs',                 '250000'),
+   ('speed/shootout/nbody-loops-unsafe',                  '250000'),
+   ('speed/shootout/nbody-loops-unchecked',               '250000'),
+   ('speed/shootout/nbody-cont-manually-inlined',         '250000'),
+   ('speed/shootout/nbody-cont-manually-inlined-mallocs', '250000'),
+
+   ('speed/shootout/spectralnorm', '750'),
+
+   ('speed/shootout/fannkuchredux',                         '10'),
+   ('speed/shootout/fannkuchredux-nogc',                    '10'),
+   ('speed/shootout/fannkuchredux-nogc-stackref',           '10'),
+   ('speed/shootout/fannkuchredux-nogc-stackref-unchecked', '10'),
+   ('speed/shootout/fannkuchredux-unchecked',               '10'),
 ]
 
 def benchmark_shootout_original(sourcepath, flagsdict, tags, exe, argstr, num_iters):
   ensure_dir_exists(test_data_dir(sourcepath, tags))
   tj = { 'tags'  : tags,
-          'flags' : flagsdict,
-          'test'  : sourcepath,
-          'input' : argstr,
-        }
+         'flags' : flagsdict,
+         'test'  : sourcepath,
+         'input' : argstr,
+        'outputs': {},
+       }
   timings_ms = []
   for z in range(num_iters):
     with open(datapath(sourcepath, tags, 'out.txt'), 'w') as out:
@@ -243,7 +277,7 @@ def benchmark_shootout_original(sourcepath, flagsdict, tags, exe, argstr, num_it
       assert rv == 0
       print sourcepath, exe, argstr, ">>>> ", ms, "ms"
       timings_ms.append(ms)
-  tj['py_run_ms'] = timings_ms
+  tj['outputs']['py_run_ms'] = timings_ms
 
   with open(datapath(sourcepath, tags, 'timings.json'), 'a') as results:
     json.dump(tj, results, indent=2, separators=(',', ':'))
@@ -272,26 +306,6 @@ def benchmark_shootout_originals():
     benchmark_all_combinations(all_factors, compile_and_run_shootout)
     shell_out("rm test_*.exe")
 
-shootout_benchmarks = [
-   ('speed/micro/addtobits', '50000'),
-
-   ('speed/shootout/nbody',                            '100000'),
-   ('speed/shootout/nbody-loops',                      '100000'),
-   ('speed/shootout/nbody-loops-inlined',              '100000'),
-   ('speed/shootout/nbody-loops-mallocs',              '100000'),
-   ('speed/shootout/nbody-loops-unsafe',               '100000'),
-   ('speed/shootout/nbody-loops-unchecked',            '100000'),
-   ('speed/shootout/nbody-cont-manually-inlined',         '100000'),
-   ('speed/shootout/nbody-cont-manually-inlined-mallocs', '100000'),
-
-   ('speed/shootout/spectralnorm', '750'),
-
-   ('speed/shootout/fannkuchredux',                         '10'),
-   ('speed/shootout/fannkuchredux-nogc',                    '10'),
-   ('speed/shootout/fannkuchredux-nogc-stackref',           '10'),
-   ('speed/shootout/fannkuchredux-nogc-stackref-unchecked', '10'),
-   ('speed/shootout/fannkuchredux-unchecked',               '10'),
-]
 
 def benchmark_shootout_programs(num_iters=kNumIters):
   for (testfrag, argstr) in shootout_benchmarks:

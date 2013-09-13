@@ -82,8 +82,8 @@ def collect_relevant_tests(all_tests):
 # {
 #  "test":"speed/shootout/nbody-loops-inlined",
 #  "samples":[{"input":"200000",
-#              "py_run_ms":[...]},...
-#            ],
+#              "outputs": { "py_run_ms":[...], ... },
+#             }],
 #  "flags":{...},
 #  "tags":"[inline=yes,LLVMopt=O2,abc=unsafe,donate=yes]"
 # }
@@ -98,10 +98,18 @@ def coalesce_tests_inputs(raw_tests):
         'flags': test['flags'],
         'samples' : []
       }
-    sample = {
-      'input'     : test['input'],
-      'py_run_ms' : test['py_run_ms'],
-    }
+    print test
+    if 'outputs' in test:
+      sample = {
+        'input'     : test['input'],
+        'outputs'   : test['outputs'],
+      }
+    else:
+      sample = {
+        'input'     : test['input'],
+        'outputs'   : { 'py_run_ms' : test['py_run_ms'] },
+      }
+
     test_d[key]['samples'].append(sample)
 
   tests = []
@@ -113,7 +121,7 @@ def print_test(test):
   samples = test['samples']
   print test['test'], test['tags']
   for sample in samples:
-    print "\t", sample['input'], sample['py_run_ms']
+    print "\t", sample['input'], sample['outputs']
 
 def append_to(arr, key, val):
   if not key in arr:
@@ -156,7 +164,7 @@ def coalesce_tests(raw_tests):
   return { 'other' : t1 }
 
 # http://pyinsci.blogspot.com/2009/09/violin-plot-with-matplotlib.html
-def violin_plot(ax,data,pos, facecolor='y', bp=False, x_to_scale=False):
+def violin_plot(ax,data,pos, facecolor='y', bp=False, x_to_scale=False, rugplot=True):
   '''
   create violin plots on an axis
   '''
@@ -185,9 +193,18 @@ def violin_plot(ax,data,pos, facecolor='y', bp=False, x_to_scale=False):
     v = v/v.max()*w #scaling the violin to the available space
     ax.fill_betweenx(x,p,v+p,facecolor=facecolor,alpha=0.3)
     ax.fill_betweenx(x,p,-v+p,facecolor=facecolor,alpha=0.3)
+    if rugplot:
+      # plot translucent horizontal lines at each datapoint.
+      ax.plot([p for z in d], d, 'k_', markersize=10, alpha=0.5)
     if bp:
       #ax.boxplot(data,notch=True,positions=[p], vert=True)
-      ax.boxplot(data, positions=pos)
+      ax.boxplot(d,notch=True,positions=[p], vert=True)
+      #ax.boxplot(d, positions=pos)
+    if pb or rugplot:
+      # plot invisible points at the corners of the violins,
+      # because otherwise the fill_between colored area will be cut off
+      # when matplotlib "focuses" on the box/rug plot markers.
+      ax.plot([p+w, p+w, p-w, p-w], [m,M,m,M], 'b.', markersize=0, alpha=1)
 
 def proj(objs, key):
   return [obj[key] for obj in objs]
@@ -252,7 +269,7 @@ def viz(tests):
     if len(tests[0]['samples']) == 1:
       print "one test, one input"
       pos  = [1]
-      data = [tests[0]['samples'][0]['py_run_ms']]
+      data = [tests[0]['samples'][0]['outputs']['py_run_ms']]
 
       with open('tmp.txt', 'w') as f:
         for x in data[0]:
@@ -269,7 +286,7 @@ def viz(tests):
       # TODO: infer program growth order?
 
       pos  = [int(x) for x in proj(tests[0]['samples'], 'input')]
-      data = proj(tests[0]['samples'], 'py_run_ms')
+      data = proj(tests[0]['samples']['outputs'], 'py_run_ms')
 
       with open('tmp1.txt', 'w') as f:
         for x in data[0]:
@@ -392,6 +409,13 @@ def collect_ministat_output(all_fnames):
   print o
   return o
 
+def elapsed_runtime_ms(stats):
+  outputs = stats['outputs']
+  if 'Elapsed_runtime_ms' in outputs:
+    return outputs['Elapsed_runtime_ms']
+  if 'py_run_ms' in outputs:
+    return outputs['py_run_ms']
+  raise "Unable to get elapsed runtime from " + str(stats)
 def viz_multiple_tests(unsorted_tests):
   tests = sorted(unsorted_tests, key=lambda t: t['test'])
   names = set(t['test'] for t in tests)
@@ -406,8 +430,8 @@ def viz_multiple_tests(unsorted_tests):
 
   pos  = [int(x) for x in common_inputs]
   datas = [
-            [   t['samples'][n]['py_run_ms'] for n in range(len(t['samples']))
-             if t['samples'][n]['input'] in common_inputs]
+            [elapsed_runtime_ms(t['samples'][n]) for n in range(len(t['samples']))
+                             if t['samples'][n]['input'] in common_inputs]
             for t in tests
           ]
 
@@ -466,7 +490,7 @@ def viz_multiple_tests(unsorted_tests):
 
 def viz_by_tags(tagnames, tests):
   datas = [
-            [   t['samples'][n]['py_run_ms'] for n in range(len(t['samples'])) ]
+            [   t['samples'][n]['outputs']['py_run_ms'] for n in range(len(t['samples'])) ]
             for t in tests
           ]
   # We don't include any ministat comparisons because
