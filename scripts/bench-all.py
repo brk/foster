@@ -167,10 +167,9 @@ def flags_of_factors(all_factors):
                 for factors in all_factors)))
 
 # all_factors :: [ [ (tag, [(symbolic-tag-val, cmd-line-flag)] ) ] ]
-def benchmark_all_combinations(all_factors, do_compile_and_run, num_iters=kNumIters):
+def generate_all_combinations(all_factors, num_iters):
   allflags = flags_of_factors(all_factors)
-  print allflags
-  numflags = len(allflags)
+  plan = []
   # For example, flags might be the tuple
   # (('inline',  ('yes', '--me-arg=--inline')),
   #  ('LLVMopt', ('O2',  '--optimize=O2')),
@@ -179,24 +178,25 @@ def benchmark_all_combinations(all_factors, do_compile_and_run, num_iters=kNumIt
   # Then tags_tup would be ('inline=yes', 'LLVMopt=O2', 'donate=yes')
   # and  flagstrs would be ('--me-arg=--inline', '--optimize=O2', '')
   # and  tags     would be "[inline=yes,LLVMopt=O2,donate=yes]"
-  #
-  for idx, flags in enumerate(allflags):
-    start = walltime()
+  for flags in allflags:
     tags_tup, flagstrs = zip(*[format_flags(flgs) for flgs in flags])
     tags = format_tags(tags_tup)
     flagsdict = {}
     for (tag, (short, arg)) in flags:
       flagsdict[tag] = short
-    if True:
-      do_compile_and_run(tags, flagstrs, flagsdict, num_iters)
-    else:
-      print tags
-      print flagstrs
+    plan.append( (tags, flagstrs, flagsdict, num_iters) )
+  return plan
+
+def execute_plan(plan, do_compile_and_run, step_counter, total_steps):
+  for (tags, flagstrs, flagsdict, num_iters) in plan:
+    start = walltime()
+    do_compile_and_run(tags, flagstrs, flagsdict, num_iters)
     end = walltime()
     ms = elapsed(start, end)
     d = datetime.timedelta(milliseconds=ms)
-    r = datetime.timedelta(milliseconds=ms * (numflags - idx - 1))
-    print "Step %d of %d overall plan took %s, estimated time left: %s..." % (idx+1, numflags, str(d), str(r))
+    r = datetime.timedelta(milliseconds=ms * (total_steps - step_counter[0] - 1))
+    step_counter[0] += 1
+    print "Step %d of %d overall plan took %s, estimated time left: %s..." % (step_counter[0], total_steps, str(d), str(r))
 
 shootout_original_benchmarks = [
   ('third_party/shootout/nbody',         'nbody.gcc-2.c',         '350000'),
@@ -247,9 +247,8 @@ def benchmark_shootout_original(sourcepath, flagsdict, tags, exe, argstr, num_it
     results.write(",\n")
 
 def benchmark_shootout_originals():
+  nested_plans = []
   for (sourcepath, filename, argstr) in shootout_original_benchmarks:
-    d = os.path.join(root_dir(), sourcepath)
-    c = os.path.join(d, filename)
     all_factors = [factor + [('lang', [('other', '')]),
                              ('date', [(datestr, '')]),
                             ] for factor in [
@@ -263,12 +262,21 @@ def benchmark_shootout_originals():
         ('sse',     [('no', '')]),
       ],
     ]]
+    plan = generate_all_combinations(all_factors, kNumIters)
+    nested_plans.append((sourcepath, filename, argstr, plan))
+
+  total_steps = sum(len(plan) for (s,f,a, plan) in nested_plans)
+  step_counter = [0]
+
+  for (sourcepath, filename, argstr, plan) in nested_plans:
+    d = os.path.join(root_dir(), sourcepath)
+    c = os.path.join(d, filename)
     def compile_and_run_shootout(tags, flagstrs, flagsdict, num_iters):
       exe = 'test_' + tags + ".exe"
-      shell_out("gcc -pipe -Wall -Wno-unknown-pragmas %s %s -o %s -lm" % (' '.join(flagstrs), c, exe))
+      shell_out("gcc -pipe -Wall -Wno-unknown-pragmas %s %s -o %s -lm" % (' '.join(flagstrs), c, exe), showcmd=True)
       benchmark_shootout_original(sourcepath, flagsdict, tags,
                                   exe, argstr, num_iters)
-    benchmark_all_combinations(all_factors, compile_and_run_shootout)
+    execute_plan(plan, compile_and_run_shootout, step_counter, total_steps)
     shell_out("rm test_*.exe")
 
 # --be-arg=--gc-track-alloc-sites
@@ -316,7 +324,10 @@ def benchmark_shootout_programs(num_iters=kNumIters):
     def compile_and_run(tags, flagstrs, flagsdict, num_iters):
       compile_and_run_test(testfrag, '', argstr,
                            tags, flagstrs, flagsdict, num_iters)
-    benchmark_all_combinations(all_factors, compile_and_run)
+    plan = generate_all_combinations(all_factors, kNumIters)
+    total_steps = len(plan)
+    step_counter = [0]
+    execute_plan(plan, compile_and_run, step_counter, total_steps)
 
 def collect_all_timings():
   alltimings = os.path.join(data_dir(), 'all_timings.json')
