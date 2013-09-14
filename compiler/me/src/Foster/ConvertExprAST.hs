@@ -84,21 +84,18 @@ convertExprAST f expr =
                                                      return $ E_ArrayRead rng (ArrayIndex x y rng2 s)
     E_ArrayPoke    rng (ArrayIndex a b rng2 s) c -> do [x, y, z] <- mapM q [a, b, c]
                                                        return $ E_ArrayPoke rng (ArrayIndex x y rng2 s) z
-    E_Case         rng e bs     -> do e' <- q e
-                                      bs' <- mapM (\(pat, exp) -> do
-                                                          exp' <- q exp
-                                                          pat' <- convertPat f pat
-                                                          return (pat', exp' )) bs
-                                      return $ E_Case     rng  e' bs'
+    E_Case         rng e arms   -> do e'    <- q e
+                                      arms' <- mapM (\(CaseArm pat body guard [] rng) -> do
+                                                          body' <- q body
+                                                          pat'  <- convertPat f pat
+                                                          grd'  <- liftMaybe q guard
+                                                          return (CaseArm pat' body' grd' [] rng)) arms
+                                      return $ E_Case     rng  e' arms'
     E_LetRec       rng bnz e    -> liftM2 (E_LetRec       rng) (mapM (convertTermBinding f) bnz) (q e)
     E_LetAST       rng bnd e    -> liftM2 (E_LetAST       rng) (convertTermBinding f bnd) (q e)
     E_CallAST      rng b exprs  -> liftM2 (E_CallAST      rng) (q b) (mapM q exprs)
     E_FnAST        rng fn       -> liftM  (E_FnAST        rng) (convertFun f fn)
     E_KillProcess  rng a        -> liftM  (E_KillProcess  rng) (q a)
-
-liftMaybe :: Monad m => (a -> m b) -> Maybe a -> m (Maybe b)
-liftMaybe _ Nothing = return Nothing
-liftMaybe f (Just a) = do b <- f a ; return $ Just b
 
 liftBinding :: Monad m => (t1 -> m t2) -> ContextBinding t1 -> m (ContextBinding t2)
 liftBinding f (TermVarBinding s (TypedId t i, mb_cid)) = do

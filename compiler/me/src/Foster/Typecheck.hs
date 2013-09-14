@@ -1027,7 +1027,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
   debugDoc $ text "case scrutinee has type " <> pretty (typeAST ascrutinee)
   debugDoc $ text "metavar for overall type of case is " <> pretty u
   debugDoc $ text " exp ty is " <> pretty expTy
-  let checkBranch (pat, body) = do
+  let checkBranch (CaseArm pat body guard _ brng) = do
       debugDoc $ text "checking pattern with context ty " <+> pretty (typeAST ascrutinee) <+> string (highlightFirstLine $ annotRange rng)
       p <- checkPattern ctx pat (typeAST ascrutinee)
       debug $ "case branch pat: " ++ show p
@@ -1035,9 +1035,11 @@ tcRhoCase ctx rng scrutinee branches expTy = do
       debugDoc $ text "case branch generated bindings: " <> list (map pretty bindings)
       let ctxbindings = [varbind id ty | (TypedId ty id) <- bindings]
       verifyNonOverlappingBindings (annotRange rng) "case" ctxbindings
-      abody <- tcRho (prependContextBindings ctx ctxbindings) body expTy
+      let ctx' = prependContextBindings ctx ctxbindings
+      aguard <- liftMaybe (\g -> tcRho ctx' g (Check fosBoolType)) guard 
+      abody <- tcRho ctx' body expTy
       unify u (typeAST abody) ("Failed to unify all branches of case " ++ highlightFirstLine (annotRange rng))
-      return ((p, bindings), abody)
+      return (CaseArm p abody aguard bindings brng)
   abranches <- forM branches checkBranch
   matchExp expTy (AnnCase rng u ascrutinee abranches) "case"
  where

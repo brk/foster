@@ -122,10 +122,11 @@ blockId = fst
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-caseIf a b = [(pat True, a), (pat False, b)]
-         where pat :: forall a. Bool -> (Pattern MonoType, [a])
-               pat bval = (P_Bool (error "kn.if.srcrange")
-                                  boolMonoType bval, [])
+caseIf a b = [CaseArm (pat True)  a Nothing [] rng,
+              CaseArm (pat False) b Nothing [] rng]
+         where rng = MissingSourceRange "cfg.if.rng"
+               pat :: Bool -> Pattern MonoType
+               pat bval = P_Bool rng boolMonoType bval
 
 -- ||||||||||||||||||||||||| KNMono -> CFG ||||||||||||||||||||||{{{
 -- computeBlocks takes an expression and a contination,
@@ -232,15 +233,17 @@ computeBlocks expr idmaybe k = do
         --
         -- A case expression of overall type t, such as
         --
-        --      case scrutinee of p1 -> e1
-        --                     of p2 -> e2 ...
+        --      case scrutinee of p1       -> e1
+        --                     of p2 if g2 -> e2 ...
         --
         -- gets translated into (the moral equivalent of)
         --
         --      case scrutinee of p1 -> goto case_arm1
         --                     of p2 -> goto case_arm2 ...
         --  case_arm1: ev = [[e1]]; goto case_cont [ev]
-        --  case_arm2: ev = [[e2]]; goto case_cont [ev]
+        --  case_arm2: _t = [[g2]]; goto (_t ? a2gt : a2gf) []
+        --       a2gt: ev = [[e2]]; goto case_cont [ev]
+        --       a2gf: ... continue pattern matching ...
         --  case_cont [case_value]:
         --      ...
         --
@@ -250,26 +253,55 @@ computeBlocks expr idmaybe k = do
         -- more explicitly.
         KNCase t v bs -> do
             -- Compute the new block ids, along with their patterns.
-            bids <- mapM (\_ -> cfgFresh "case_arm") bs
-            let bbs = zip (map fst bs) bids
-            cfgEndWith (CFCase v bbs)
+            --bids <- mapM (\_ -> cfgFresh "case_arm") bs
 
+            let computeCaseIds arm = do
+                  bid <- cfgFresh "case_arm"
+                  tru <- liftMaybe (\_ -> cfgFresh "case_arm.tru") (caseArmGuard arm)
+                  fls <- liftMaybe (\_ -> cfgFresh "case_arm.fls") (caseArmGuard arm)
+                  return (arm, bid, tru, fls)
+            arms_bids <- mapM computeCaseIds bs
             case_cont <- cfgFresh "case_cont"
 
-            -- Fill in each arm's block with [[e]] (and a store at the end).
-            let computeCaseBlocks :: forall t. (KNMono, (t, BlockId)) -> CFG ()
-                computeCaseBlocks (e, (_, block_id)) = do
-                    cfgNewBlock block_id []
-                    computeBlocks e Nothing $ \var ->
-                        cfgEndWith (CFCont case_cont [var])
-            mapM_ computeCaseBlocks (zip (map snd bs) bbs)
+            let bbs = [CaseArm p bid tru b rng | (CaseArm p _ _ b rng, bid, tru, _fls) <- arms_bids]
+            --let bbs = [CaseArm p bid Nothing b rng | (CaseArm p _ _ b rng, bid) <- zip bs bids]
+
+            --let badArms = [arm | arm@(CaseArm _ _ (Just _) _ _) <- bs]
+            cfgEndWith (CFCase v bbs)
+
+            let computeCaseBlocks (arm, block_id, mb_tru, mb_fls) = do
+                    let e = caseArmBody arm
+                    case caseArmGuard arm of
+                      Nothing -> do
+                        -- Fill in each arm's block with [[e]] (and a store at the end).
+                        cfgNewBlock block_id []
+                        computeBlocks e Nothing $ \var ->
+                            cfgEndWith (CFCont case_cont [var])
+                      Just  g -> do
+                        let Just tru = mb_tru
+                        let Just fls = mb_fls
+                        cfgNewBlock block_id []
+                        computeBlocks g Nothing $ \guard ->
+                            cfgEndWith (CFCase guard (caseIf tru fls))
+
+                        -- We'll fill in the 'fls' block implementation later...
+                        cfgNewBlock fls []
+                        cfgEndWith (CFCont tru []) -- What do we do here?!? 
+                        -- We want to emit code to resume pattern-matching against
+                        -- the remaining contenders/rows of the match matrix,
+                        -- but the match matrix will not be determined until later.
+
+                        cfgNewBlock tru []
+                        computeBlocks e Nothing $ \var ->
+                            cfgEndWith (CFCont case_cont [var])
+            mapM_ computeCaseBlocks arms_bids
 
             -- The overall value of the case is the value stored in the slot.
             phi <- cfgFreshVarI idmaybe t ".case.phi"
             cfgNewBlock case_cont [phi]
             k phi
 
-        (KNCall srctail ty b vs) -> do
+        KNCall srctail ty b vs -> do
             -- We can't just compare [[b == fnvar]] because b might be a
             -- let-bound result of type-instantiating a polymorphic function.
             isTailCall <- cfgIsThisFnVar b
@@ -401,7 +433,7 @@ cfgIsThisFnVar b = do old <- get
 -- ||||||||||||||||||||||| CFG Data Types |||||||||||||||||||||||{{{
 data CFLast = CFCont        BlockId [MoVar] -- either ret or br
             | CFCall        BlockId MonoType MoVar [MoVar]
-            | CFCase        MoVar [PatternBinding BlockId MonoType]
+            | CFCase        MoVar [CaseArm Pattern BlockId MonoType]
             deriving (Show)
 
 data Insn e x where
@@ -439,7 +471,7 @@ blockTargetsOf (ILast last) =
     case last of
         CFCont b _           -> [b]
         CFCall b _ _ _       -> [b]
-        CFCase _ patsbids    -> [b | (_, b) <- patsbids]
+        CFCase _ arms        -> concatMap caseArmExprs arms
 
 type BasicBlock = Block Insn C C
 data BasicBlockGraph = BasicBlockGraph { bbgEntry :: BlockEntry
@@ -501,10 +533,14 @@ instance Pretty (Insn e x) where
 instance Pretty CFLast where
   pretty (CFCont bid     vs) = text "cont" <+> prettyBlockId bid <+>              list (map pretty vs)
   pretty (CFCall bid _ v vs) = text "call" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
-  pretty (CFCase v pats)     = align $
+  pretty (CFCase v arms)     = align $
                                text "case" <+> pretty v <$> indent 2
-                                  (vcat [ text "of" <+> fill 20 (pretty pat) <+> text "->" <+> prettyBlockId bid
-                                        | ((pat, _tys), bid) <- pats
+                                  (vcat [ text "of" <+> fill 20 (pretty pat)
+                                                    <+> (case guard of
+                                                           Nothing -> empty
+                                                           Just g  -> text "if" <+> prettyBlockId g)
+                                                    <+> text "->" <+> prettyBlockId bid
+                                        | (CaseArm pat bid guard _ _) <- arms
                                         ])
 
 instance Pretty t => Pretty (Letable t) where
@@ -581,8 +617,8 @@ instance TExpr BasicBlockGraph MonoType where
            go (ILast cflast)     (bvs,fvs) = case cflast of
                     CFCont _ vs          -> (bvs, insert fvs vs)
                     CFCall _ _ v vs      -> (bvs, insert fvs (v:vs))
-                    CFCase v patbinds    -> (insertV bvs pvs, Set.insert v fvs)
-                         where pvs = concatMap (\((_,vs),_) -> vs) patbinds
+                    CFCase v arms        -> (insertV bvs pvs, Set.insert v fvs)
+                         where pvs = concatMap caseArmBindings arms
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

@@ -28,7 +28,7 @@ data AnnExpr ty =
         | AnnIf         ExprAnnot ty (AnnExpr ty) (AnnExpr ty) (AnnExpr ty)
         | AnnUntil      ExprAnnot ty (AnnExpr ty) (AnnExpr ty)
         -- Creation of bindings
-        | AnnCase       ExprAnnot ty (AnnExpr ty) [PatternBinding (AnnExpr ty) ty]
+        | AnnCase       ExprAnnot ty (AnnExpr ty) [CaseArm Pattern (AnnExpr ty) ty]
         | AnnLetVar     ExprAnnot Ident (AnnExpr ty) (AnnExpr ty)
         -- We have separate syntax for a SCC of recursive functions
         -- because they are compiled differently from non-recursive closures.
@@ -143,7 +143,7 @@ instance Structured (AnnExpr TypeAST) where
       AnnArrayRead _rng _t ari             -> childrenOfArrayIndex ari
       AnnArrayPoke _rng _t ari c           -> childrenOfArrayIndex ari ++ [c]
       AnnTuple _rng _ exprs                -> exprs
-      AnnCase _rng _t e bs                 -> e:(map snd bs)
+      AnnCase _rng _t e bs                 -> e:(concatMap caseArmExprs bs)
       E_AnnVar {}                          -> []
       AnnPrimitive {}                      -> []
       E_AnnTyApp _rng _t a _argty          -> [a]
@@ -163,13 +163,13 @@ instance AExpr (AnnExpr TypeAST) where
                                                                    `butnot` ids
         AnnLetFuns _rng ids fns e -> (concatMap freeIdents fns ++ freeIdents e)
                                                                    `butnot` ids
-        AnnCase _rng _t e patbnds -> freeIdents e ++ (concatMap patBindingFreeIds patbnds)
+        AnnCase _rng _t e arms    -> freeIdents e ++ concatMap caseArmFreeIds arms
         E_AnnFn f                 -> freeIdents f
         E_AnnVar _rng (v, _)      -> [tidIdent v]
         _                         -> concatMap freeIdents (childrenOf e)
 
-patBindingFreeIds ((_, binds), expr) =
-  freeIdents expr `butnot` map tidIdent binds
+caseArmFreeIds arm =
+  concatMap freeIdents (caseArmExprs arm) `butnot` map tidIdent (caseArmBindings arm)
 
 -----------------------------------------------------------------------
 

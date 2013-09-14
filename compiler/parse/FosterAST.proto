@@ -141,10 +141,15 @@ message PBIf {
   required Expr else_expr = 4;
 }
 
+message CaseClause {
+  required Expr    pattern   = 1;
+  required Expr    body      = 2;
+  optional Expr    guard     = 3;
+}
+
 message PBCase {
-  required Expr    scrutinee = 1;
-  repeated Expr    pattern   = 2;
-  repeated Expr    branch    = 3;
+  required Expr       scrutinee = 1;
+  repeated CaseClause clauses   = 4;
 }
 
 message Decl {

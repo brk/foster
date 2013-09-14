@@ -15,6 +15,7 @@ import qualified Data.Map  as Map(lookup, size)
 
 import qualified Data.Text as T
 
+import Debug.Trace(trace)
 import Foster.Base
 
 import Text.PrettyPrint.ANSI.Leijen hiding (column)
@@ -56,7 +57,8 @@ type ClauseCol t = [SPattern t]
 data ClauseMatrix a t = ClauseMatrix [ClauseRow a t]
 data ClauseRow a t  = ClauseRow { rowOrigPat  :: (SPattern t)
                                 , rowPatterns :: [SPattern t]
-                                , rowAction   :: a }
+                                , rowAction   :: a
+                                , rowSourceRange :: SourceRange }
 
 data SPattern t = SP_Wildcard
                 | SP_Variable (TypedId t)
@@ -65,8 +67,8 @@ data SPattern t = SP_Wildcard
 
 type DataTypeSigs = Map DataTypeName DataTypeSig
 
-compilePatterns :: IntSizedBits t
-                => [((Pattern t, _binds), a)]
+compilePatterns :: (IntSizedBits t, Show t)
+                => [CaseArm Pattern a t]
                 -> DataTypeSigs
                 -> DecisionTree a t
 compilePatterns bs allSigs =
@@ -75,8 +77,8 @@ compilePatterns bs allSigs =
 
   matrix = ClauseMatrix $ map compilePatternRow bs
 
-  compilePatternRow ((p, _binds), a) = ClauseRow (compilePattern p)
-                                                 [compilePattern p] a
+  compilePatternRow (CaseArm p a _ _ r) = ClauseRow (compilePattern p)
+                                                    [compilePattern p] a r
 
   compilePattern :: IntSizedBits t => Pattern t -> SPattern t
   compilePattern p = case p of
@@ -117,16 +119,19 @@ compilePatterns bs allSigs =
                   P_Tuple     _rng ty _   -> ty
 
 -- "Compilation is defined by cases as follows."
-cc :: [Occurrence t] -> ClauseMatrix a t -> DataTypeSigs -> DecisionTree a t
+cc :: Show t => [Occurrence t] -> ClauseMatrix a t -> DataTypeSigs -> DecisionTree a t
 
 -- No row to match -> failure
 cc _ (ClauseMatrix []) _allSigs = DT_Fail
 
 -- If first row is all variables, match always succeeds.
 cc _occs cm _allSigs | allGuaranteedMatch (rowPatterns $ firstRow cm) =
+  --trace ("\nmatched first row with pattern " ++ highlightFirstLine (rowSourceRange r) ++
+  --       "\n, remaining rows are : " ++ show (map (highlightFirstLine . rowSourceRange) rest) ++ "\n") $
     DT_Leaf (rowAction r)
             (computeBindings (emptyOcc, rowOrigPat r))
       where r = firstRow cm
+            --(ClauseMatrix (_:rest)) = cm
             emptyOcc = []
             computeBindings :: (Occurrence t, SPattern t) -> [(TypedId t, Occurrence t)]
             computeBindings ( occ, SP_Variable v   ) = [(v, occ)]
@@ -150,10 +155,15 @@ cc occs cm allSigs =
                            cc (expand o1 c ++ orest)
                               (specialize (ctorInfoId c) cm) allSigs)
                      | c <- Set.toList headCtorInfos] in
-      if isSignature (Set.map ctorInfoId headCtorInfos) allSigs
-        then DT_Switch o1 caselist Nothing
-        else let ad = cc orest (defaultMatrix cm) allSigs in
-             DT_Switch o1 caselist (Just ad)
+      -- The selected column contains some set of constructors C1 .. Ck.
+      -- Pair each constructor with the clause matrix obtained from
+      -- specializing the current match matrix w/r/t that constructor,
+      -- and produce a Switch node examining the ctor of the i'th occurrence.
+      let defaultCase = if isSignature (Set.map ctorInfoId headCtorInfos) allSigs
+                         then Nothing
+                         else let ad = cc orest (defaultMatrix cm) allSigs in
+                              Just ad in
+      DT_Switch o1 caselist defaultCase
     else
       let o' = swapOcc i occs in
       let m' = swapCol i cm   in
@@ -216,14 +226,14 @@ specialize ctor (ClauseMatrix rows) =
         ((SP_Variable            _):_) -> True
         ((SP_Ctor (CtorInfo c _) _):_) -> c == ctor
 
-    specializeRow (ClauseRow orig []       a) _ctor = ClauseRow orig [] a
-    specializeRow (ClauseRow orig (p:rest) a)  ctor =
+    specializeRow (ClauseRow orig []       a rng) _ctor = ClauseRow orig [] a rng
+    specializeRow (ClauseRow orig (p:rest) a rng)  ctor =
       case p of
-        SP_Variable _ -> ClauseRow orig (wilds ++ rest) a
+        SP_Variable _ -> ClauseRow orig (wilds ++ rest) a rng
           where wilds = List.replicate (ctorArity ctor) (SP_Wildcard)
-        SP_Wildcard   -> ClauseRow orig (wilds ++ rest) a
+        SP_Wildcard   -> ClauseRow orig (wilds ++ rest) a rng
           where wilds = List.replicate (ctorArity ctor) (SP_Wildcard)
-        SP_Ctor (CtorInfo c _)  pats | c == ctor -> ClauseRow orig (pats ++ rest) a
+        SP_Ctor (CtorInfo c _)  pats | c == ctor -> ClauseRow orig (pats ++ rest) a rng
         SP_Ctor (CtorInfo c _) _pats -> error $ "specializeRow with unequal ctor?!? "
                                                ++ show c ++ " // " ++ show ctor
 
@@ -232,16 +242,16 @@ defaultMatrix (ClauseMatrix rows) =
   where
     defaultRow row =
       case row of
-        ClauseRow orig []                     a -> [ClauseRow orig []   a]
-        ClauseRow orig ((SP_Wildcard  ):rest) a -> [ClauseRow orig rest a]
-        ClauseRow orig ((SP_Variable _):rest) a -> [ClauseRow orig rest a]
-        ClauseRow _    ((SP_Ctor _   _):_   ) _ -> [] -- No row...
+        ClauseRow orig []                     a rng -> [ClauseRow orig []   a rng]
+        ClauseRow orig ((SP_Wildcard  ):rest) a rng -> [ClauseRow orig rest a rng]
+        ClauseRow orig ((SP_Variable _):rest) a rng -> [ClauseRow orig rest a rng]
+        ClauseRow _    ((SP_Ctor _   _):_   ) _   _ -> [] -- No row...
 
 column :: ClauseMatrix a t -> Int -> [SPattern t]
 column (ClauseMatrix rows) i = map (rowIndex i) rows
 
 rowIndex :: Int -> ClauseRow a t -> SPattern t
-rowIndex i (ClauseRow _ row _) = row !! i
+rowIndex i (ClauseRow _ row _ _) = row !! i
 
 swapListElements j k elts =
   [case n of
@@ -253,7 +263,7 @@ swapListElements j k elts =
 swapOcc :: Int -> [Occurrence t] -> [Occurrence t]
 swapOcc i occs = swapListElements i 0 occs
 
-swapRow i (ClauseRow orig pats a) = ClauseRow orig pats' a
+swapRow i (ClauseRow orig pats a rng) = ClauseRow orig pats' a rng
   where pats' = swapListElements i 0 pats
 
 swapCol :: Int -> ClauseMatrix a t -> ClauseMatrix a t

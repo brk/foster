@@ -639,17 +639,23 @@ Pattern* parsePattern(pTree t) {
                            getPatternAtomsFrom1(t));
 }
 
-// ^(CASE p stmts)
-CaseBranch parseCaseBranch(pTree t) {
-  CaseBranch b = std::make_pair(parsePattern(child(t, 0)),
-                                parseStmts(  child(t, 1)));
-  return b;
+// ^(CASE p e? stmts)
+CaseBranch* parseCaseBranch(pTree t) {
+  if (getChildCount(t) == 3) {
+    return new CaseBranch(parsePattern(child(t, 0)),
+                          ExprAST_from(child(t, 1)),
+                          parseStmts(  child(t, 2)));
+  } else {
+    return new CaseBranch(parsePattern(child(t, 0)),
+                          NULL,
+                          parseStmts(  child(t, 1)));
+  }
 }
 
 // ^(CASE e pmatch+)
 ExprAST* parseCase(pTree t) {
   ExprAST* scrutinee = ExprAST_from(child(t, 0));
-  std::vector<CaseBranch> branches;
+  std::vector<CaseBranch*> branches;
   for (size_t i = 1; i < getChildCount(t); ++i) {
     branches.push_back(parseCaseBranch(child(t, i)));
   }

@@ -107,6 +107,18 @@ data Pattern ty =
         | P_Int           SourceRange ty LiteralInt
         | P_Tuple         SourceRange ty [Pattern ty]
 
+data CaseArm pat expr ty = CaseArm { caseArmPattern :: pat ty
+                                   , caseArmBody    :: expr
+                                   , caseArmGuard   :: Maybe expr
+                                   , caseArmBindings:: [TypedId ty]
+                                   , caseArmRange   :: SourceRange
+                                   } deriving Show
+
+caseArmExprs arm = [caseArmBody arm] ++ caseArmGuardList arm
+  where
+    caseArmGuardList (CaseArm _ _ Nothing  _ _) = []
+    caseArmGuardList (CaseArm _ _ (Just e) _ _) = [e]
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||| Data Types |||||||||||||||||||||||||||||||{{{
 data DataType ty = DataType {
@@ -406,6 +418,10 @@ modifyIORef' r f = do
   let ! v' = f v
   writeIORef r v'
 
+liftMaybe :: Monad m => (a -> m b) -> Maybe a -> m (Maybe b)
+liftMaybe _ Nothing = return Nothing
+liftMaybe f (Just a) = do b <- f a ; return $ Just b
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- |||||||||||||||||||||||||| Idents |||||||||||||||||||||||||||{{{
 
@@ -416,8 +432,6 @@ data Ident = Ident        T.Text Uniq
            | GlobalSymbol T.Text
 
 data TypedId ty = TypedId { tidType :: ty, tidIdent :: Ident }
-
-type PatternBinding expr ty = ((Pattern ty, [TypedId ty]), expr)
 
 data FosterPrim ty = NamedPrim (TypedId ty) -- invariant: global symbol
                    | PrimOp { ilPrimOpName :: String
@@ -576,6 +590,22 @@ instance TExpr body t => TExpr (Fn body t) t where
     freeTypedIds f = let bodyvars =  freeTypedIds (fnBody f) in
                      let boundvars =              (fnVars f) in
                      bodyvars `butnot` boundvars
+
+prettyCase scrutinee arms = 
+            kwd "case" <+> pretty scrutinee
+            <$> indent 2 (vcat [ kwd "of" <+>
+                                        (hsep $ [{- fill 20 -} (pretty epat)]
+                                            ++  prettyGuard guard
+                                            ++ [text "->" <+> pretty body])
+                              | (CaseArm epat body guard _ _) <- arms
+                              ])
+            <$> end
+  where
+    prettyGuard Nothing  = []
+    prettyGuard (Just e) = [text "if" <+> pretty e]
+    kwd  s = dullblue  (text s)
+    lkwd s = dullwhite (text s)
+    end    = lkwd "end"
 
 instance TExpr (ArrayIndex (TypedId t)) t where
    freeTypedIds (ArrayIndex v1 v2 _ _) = [v1, v2]

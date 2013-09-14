@@ -219,10 +219,14 @@ data IExpr =
         | IUntil                SSTerm     SSTerm
         | ICall         Ident  [Ident]
         | ICallPrim     ILPrim [Ident]
-        | ICase         Ident  {-(DecisionTree KNExpr)-} [(Pattern TypeIL, SSTerm)] [Pattern TypeIL]
+        | ICase         Ident  {-(DecisionTree KNExpr)-} [CaseArm Pattern SSTerm TypeIL] [Pattern TypeIL]
+        | ICaseGuard    SSTerm SSTerm ShowableMachineState 
+                        Ident  [CaseArm Pattern SSTerm TypeIL] [Pattern TypeIL]
         | ITyApp        Ident  [TypeIL]
         | IAppCtor      CtorId [Ident]
         deriving (Show)
+
+data ShowableMachineState = SMS MachineState
 
 -- Values in the (intermediate) language are mostly standard.
 -- Coro values are the most interesting, as defined above.
@@ -270,8 +274,8 @@ ssTermOfExpr expr =
     KNDeref    _t a        -> SSTmExpr  $ IDeref (idOf a)
     KNStore    _t a b      -> SSTmExpr  $ IStore (idOf a) (idOf b)
     KNTyApp    _t v argtys -> SSTmExpr  $ ITyApp (idOf v) argtys
-    KNCase _t a bs {-dt-}  -> SSTmExpr  $ ICase (idOf a) {-dt-} [(p, tr e) |
-                                                              ((p, _), e) <- bs] []
+    KNCase _t a bs {-dt-}  -> SSTmExpr  $ ICase (idOf a) {-dt-} [CaseArm p (tr e) (fmap tr g) b r
+                                                                |CaseArm p e g b r <- bs] []
     KNAppCtor     _t cid vs-> SSTmExpr  $ IAppCtor cid (map idOf vs)
     KNKillProcess _t msg   -> SSTmExpr  $ error $ "prim kill-process: " ++ T.unpack msg
 
@@ -449,7 +453,7 @@ stepExpr gs expr = do
         error $ "Smallstep.hs: Pattern match failure when evaluating case expr!"
              ++ "\n\tFailing value: " ++ (show $ getval gs a)
              ++ "\n\tRejected patterns: " ++ (show (list $ map pretty rejectedPatterns))
-    ICase  a {- dt-} ((p, e):bs) rejectedPatterns ->
+    ICase  a {- dt-} ((CaseArm p e g _ _):bs) rejectedPatterns ->
        -- First, interpret the pattern list directly
        -- (using recursive calls to discard unmatched branches).
        case matchPattern p (getval gs a) of
@@ -460,13 +464,34 @@ stepExpr gs expr = do
            --case evalDecisionTree dt (getval gs a) of
            --   Just vv | vv == varsvals ->
                     let (vars, vals) = unzip varsvals in
-                    return $ withTerm (withExtendEnv gs vars vals) e
+                    let gs' = withExtendEnv gs vars vals in
+                    -- We've successfully matched a pattern and generated
+                    -- some bindings, but if there's a guard, we need to
+                    -- evaluate the guard before determining whether the
+                    -- overall case arm actually matched.
+                    return $ case g of
+                               Nothing -> withTerm gs' e
+                               Just ge -> withTerm gs' (SSTmExpr $ ICaseGuard ge e (SMS gs) a bs (p:rejectedPatterns))
            -- elsewise ->
            --       error $ "Direct pattern matching disagreed with decision tree!"
            --           ++ "\n" ++ show elsewise ++ " vs \n" ++ show varsvals
+
+    ICaseGuard ge e (SMS oldgs) a bs rejectedPatterns ->
+      -- This is a bit of a hack to properly evaluate guards on patterns,
+      -- since guards must evaluate in an extended environment, but if the guard fails,
+      -- the environment should be "rolled back" and pattern matching should continue
+      -- in the un-extended environment.
+      case ge of
+        SSTmValue (SSBool True)  -> return $ withTerm    gs e
+        SSTmValue (SSBool False) -> return $ withTerm oldgs (SSTmExpr $ ICase a bs rejectedPatterns)
+        SSTmValue _ -> error "case guard evaluated to non-boolean value"
+        SSTmExpr _  -> pushContext (withTerm gs ge)
+                                     (envOf gs, \t -> SSTmExpr $ ICaseGuard t e (SMS oldgs) a bs rejectedPatterns)
+        
     ICallPrim prim vs ->
         let args = map (getval gs) vs in
         case prim of
+          -- PrimArrayLiteral...
           NamedPrim (TypedId _ id) ->
                           evalNamedPrimitive (T.unpack $ identPrefix id) gs args
           PrimOp op ty -> return $
@@ -624,6 +649,11 @@ tryGetPrimCmp name =
     "<=u"      -> Just ((<=))
     ">=u"      -> Just ((>=))
     ">u"       -> Just ((>))
+    -- float variants
+    "<"        -> Just ((<))
+    "<="       -> Just ((<=))
+    ">="       -> Just ((>=))
+    ">"        -> Just ((>))
     _ -> Nothing
 
 tryGetFlonumPrimOp :: (Fractional a) => String -> Maybe (a -> a -> a)
@@ -878,16 +908,16 @@ evalNamedPrimitive "memcpy_i8_to_from_at_len" gs
                              return ([], gs' ))
              return $ withTerm gs' unit
 
--- This should supposedly be an Int64 not a Float,
--- but then it should really be an opaque sized value, not a concrete Int64.
+-- This should really be an opaque sized value, not a concrete Int64.
 evalNamedPrimitive "foster_getticks" gs [] = do
   t <- getTime
-  return $ withTerm gs (SSTmValue $ SSFloat t)
-
-evalNamedPrimitive "foster_getticks_elapsed" gs [SSFloat t1, SSFloat t2] = do
   -- "Convert" seconds to ticks by treating our abstract machine
   -- as a blazingly fast 2 MHz beast!
-  return $ withTerm gs (SSTmValue $ SSFloat ((t2 - t1) * 2000000.0))
+  let t64 = round (t * 2000000.0)
+  return $ withTerm gs (SSTmValue $ SSInt t64)
+
+evalNamedPrimitive "foster_getticks_elapsed" gs [SSInt t1, SSInt t2] = do
+  return $ withTerm gs (SSTmValue $ SSFloat (fromIntegral (t2 - t1)))
 
 evalNamedPrimitive prim _gs args = error $ "evalNamedPrimitive " ++ show prim
                                          ++ " not yet defined for args:\n"
@@ -1040,5 +1070,7 @@ instance Eq Coro
   where c1 == c2 = (coroLoc c1) == (coroLoc c2)
 
 instance Show (SSTerm -> SSTerm) where show _f = "<coro cont>"
+
+instance Show ShowableMachineState where show _ = "<machine state>"
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

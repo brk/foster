@@ -14,7 +14,7 @@ import qualified Data.Set as Set
 import Data.Set(Set)
 import Data.Map(Map)
 import Data.List(foldl' , isPrefixOf)
-import Data.Maybe(maybeToList)
+import Data.Maybe(maybeToList, isJust)
 
 import Foster.MonoType
 import Foster.Base
@@ -50,7 +50,7 @@ data KNExpr' ty =
         | KNIf          ty (TypedId ty)  (KNExpr' ty) (KNExpr' ty)
         | KNUntil       ty (KNExpr' ty)  (KNExpr' ty) SourceRange
         -- Creation of bindings
-        | KNCase        ty (TypedId ty) [PatternBinding (KNExpr' ty) ty]
+        | KNCase        ty (TypedId ty) [CaseArm Pattern (KNExpr' ty) ty]
         | KNLetVal      Ident      (KNExpr' ty)     (KNExpr' ty)
         | KNLetRec     [Ident]     [KNExpr' ty]     (KNExpr' ty)
         | KNLetFuns    [Ident] [Fn (KNExpr' ty) ty] (KNExpr' ty)
@@ -139,10 +139,14 @@ kNormalize mebTail expr =
                                   e'     <- gt e
                                   return $ KNLetRec ids exprs' e'
       AIUntil   t a b rng   -> do liftM2 (\a' b' -> KNUntil t a' b' rng) (gn a) (gn b)
-      AICase    t e bs      -> do e' <- gn e
-                                  ibs <- mapM gtp bs
-                                  nestedLets [return e'] (\[v] -> KNCase t v ibs)
-                                    where gtp (p, ae) = liftM (\ae' -> (p, ae')) (gt ae)
+      AICase    t e arms    -> do e' <- gn e
+                                  nestedLetsDo [return e'] (\[v] -> do
+                                    let gtp (CaseArm p e g b r) = do
+                                            e' <- gt e                 
+                                            g' <- liftMaybe gt g       
+                                            return (CaseArm p e' g' b r)
+                                    arms' <- mapM gtp arms
+                                    compileCaseArms arms' t v)
 
       AIIf      t  a b c    -> do a' <- gn a
                                   [ b', c' ] <- mapM gt [b, c]
@@ -164,6 +168,49 @@ kNormalize mebTail expr =
               _ -> error $ "knCall: Called var had non-function type!\n\t" ++
                                 show a ++
                                 show (showStructure (tidType a))
+        
+        compileCaseArms :: [CaseArm Pattern KNExpr TypeIL]
+                        -> TypeIL
+                        -> TypedId TypeIL
+                        -> KN KNExpr
+        compileCaseArms arms t v = do
+          let go (arm:arms) | isGuarded arm = go' [arm] arms
+              go allArms = uncurry go' (span (not . isGuarded) allArms)
+              -- Compile maximal chunks of un-guarded arms
+
+              go' clump arms = do
+                  kid <- knFresh "kont"
+                  let kty = FnTypeIL [] t FastCC FT_Proc
+                  let kontOf body = Fn {
+                          fnVar      = TypedId kty (GlobalSymbol (T.pack $ show kid))
+                        , fnVars     = []
+                        , fnBody     = body
+                        , fnIsRec    = Just False
+                        , fnAnnot    = ExprAnnot [] (MissingSourceRange $ "kont") []
+                        }
+                  body <- if null arms
+                              then return $ KNKillProcess t (T.pack $ "guarded pattern match failed")
+                              else go arms
+                  let kont = kontOf body
+                  let callkont = KNCall YesTail t (TypedId kty kid) []
+                  clump' <- case clump of
+                              [CaseArm p e (Just g' ) b r] -> do
+                                  e' <- nestedLets [return g'] (\[gv] ->
+                                                  KNIf boolTypeIL gv e callkont)
+                                  return [CaseArm p e' Nothing b r]
+                              _ -> return clump
+                  let msr   = MissingSourceRange "guardwild"
+                  let pwild = P_Wildcard msr (tidType v) 
+                  return $ KNLetFuns [kid] [kont]
+                          (KNCase t v (clump' ++ [CaseArm pwild callkont Nothing [] msr]))
+          if anyCaseArmIsGuarded arms
+            then go arms 
+            else return $ KNCase t v arms
+
+        isGuarded arm = isJust (caseArmGuard arm)
+
+        anyCaseArmIsGuarded [] = False
+        anyCaseArmIsGuarded (arm:arms) = isGuarded arm || anyCaseArmIsGuarded arms
 -- }}}|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 --------------------------------------------------------------------
@@ -356,7 +403,7 @@ collectFunctions knf = go [] (fnBody knf)
           KNIf            _ _ e1 e2   -> go (go xs e1) e2
           KNLetVal          _ e1 e2   -> go (go xs e1) e2
           KNUntil           _ e1 e2 _ -> go (go xs e1) e2
-          KNCase       _ _ patbinds -> let es = map snd patbinds in
+          KNCase       _ _ arms       -> let es = concatMap caseArmExprs arms in
                                        foldl' go xs es
           KNLetRec     _ es b       -> foldl' go xs (b:es)
           KNLetFuns    ids fns b ->
@@ -387,9 +434,9 @@ collectMentions knf = go Set.empty (fnBody knf)
           KNIf          _ v e1 e2   -> go (go (vv xs v) e1) e2
           KNUntil       _   e1 e2 _ -> go (go xs e1) e2
           KNLetVal      _   e1 e2   -> go (go xs e1) e2
-          KNCase        _ v patbinds -> let es = map snd patbinds in
+          KNCase        _ v arms    -> let es = concatMap caseArmExprs arms in
                                        foldl' go (vv xs v) es
-          KNLetRec     _ es b ->        foldl' go xs (b:es)
+          KNLetRec     _ es b ->       foldl' go xs (b:es)
           KNLetFuns    _ fns b -> Set.union xs $ go (Set.unions $ map collectMentions fns) b
 
 rebuildFnWith rebuilder addBindingsFor f =
@@ -417,7 +464,7 @@ rebuildWith rebuilder e = q e
       KNUntil       ty cond body rng -> KNUntil    ty   (q cond)  (q body) rng
       KNLetVal      id  e1   e2      -> KNLetVal   id   (q e1)    (q e2)
       KNLetRec      ids es   e       -> KNLetRec   ids (map q es) (q e)
-      KNCase        ty v patbinds    -> KNCase     ty v (map (\(p,e) -> (p, q e)) patbinds)
+      KNCase        ty v arms        -> KNCase     ty v (map (fmapCaseArm id q id) arms)
       KNLetFuns     ids fns e        -> mkLetFuns (rebuilder (zip ids fns)) (q e)
 
 mkLetFuns []       e = e
@@ -620,7 +667,7 @@ knLoopHeaderCensusFn activeids (id, fn) = do
 knLoopHeaderCensus :: Set Ident -> KNExpr' MonoType -> Hdr ()
 knLoopHeaderCensus activeids expr = go expr where
   go expr = case expr of
-    KNCase        _ _ patbinds -> do mapM_ (\(_,e) -> go e) patbinds
+    KNCase        _ _ patbinds -> do mapM_ go (concatMap caseArmExprs patbinds)
     KNUntil         _ e1 e2 _  -> do go e1 ; go e2
     KNIf          _ _ e1 e2    -> do go e1 ; go e2
     KNLetVal      id  e1 e2    -> do go e1
@@ -697,8 +744,7 @@ knLoopHeaders' expr = do
     KNCallPrim    {} -> expr
     KNAppCtor     {} -> expr
     KNUntil       ty e1 e2  rng -> KNUntil ty (q e1) (q e2) rng
-    KNCase        ty v patbinds -> let patbinds' = map (\(p,e) -> (p, q e)) patbinds in
-                                   KNCase ty v patbinds'
+    KNCase        ty v arms     -> KNCase ty v (map (fmapCaseArm id q id) arms)
     KNIf          ty v e1 e2    -> KNIf     ty v (q e1) (q e2)
     KNLetVal      id   e1 e2    -> KNLetVal id   (q e1) (q e2)
     KNLetRec      ids es  b     -> KNLetRec ids (map q es) (q b)
@@ -804,7 +850,7 @@ instance Show ty => Structured (KNExpr' ty) where
             KNAlloc      {}     -> text $ "KNAlloc     "
             KNDeref      {}     -> text $ "KNDeref     "
             KNStore      {}     -> text $ "KNStore     "
-            KNCase _t v bnds    -> text $ "KNCase      " ++ show v ++ " binding " ++ (show $ map fst bnds)
+            KNCase _t v arms    -> text $ "KNCase      " ++ show v ++ " binding " ++ (show $ map caseArmBindings arms)
             KNAllocArray {}     -> text $ "KNAllocArray "
             KNArrayRead  t _    -> text $ "KNArrayRead " ++ " :: " ++ show t
             KNArrayPoke  {}     -> text $ "KNArrayPoke "
@@ -821,7 +867,7 @@ instance Show ty => Structured (KNExpr' ty) where
             KNKillProcess {}        -> []
             KNUntil _t a b _        -> [a, b]
             KNTuple   _ vs _        -> map var vs
-            KNCase _ e bs           -> (var e):(map snd bs)
+            KNCase _ e arms         -> (var e):(concatMap caseArmExprs arms)
             KNLetFuns _ids fns e    -> map fnBody fns ++ [e]
             KNLetVal _x b  e        -> [b, e]
             KNLetRec _x bs e        -> bs ++ [e]
@@ -845,7 +891,7 @@ knSize expr = go expr (0, 0) where
                    case expr of
     KNUntil       _   e1 e2 _  -> go e2 (go e1 ta)
     KNIf          _ _ e1 e2    -> go e2 (go e1 ta)
-    KNCase        _ _ patbinds -> foldl' (\ta (_, e) -> go e ta) ta patbinds
+    KNCase        _ _ arms     -> foldl' (\ta e -> go e ta) ta (concatMap caseArmExprs arms)
     KNLetVal      _   e1 e2    -> go e2 (go e1 (t, a))
     KNLetRec     _ es b        -> foldl' (\ta e -> go e ta) (go b ta) es
     KNLetFuns    _ fns b       -> let n = length fns in
@@ -1023,8 +1069,12 @@ instance Pretty ty => Pretty (KNExpr' ty) where
             KNStore _ v1 v2     -> text "store" <+> prettyId v1 <+> text "to" <+> prettyId v2
             KNCase _t v bnds    -> align $
                                        kwd "case" <+> pretty v
-                                       <$> indent 2 (vcat [ kwd "of" <+> fill 20 (pretty pat) <+> text "->" <+> pretty expr
-                                                          | ((pat, _tys), expr) <- bnds
+                                       <$> indent 2 (vcat [ kwd "of" <+> fill 20 (pretty pat)
+                                                                     <+> (case guard of
+                                                                            Nothing -> empty
+                                                                            Just g  -> text "if" <+> pretty g)
+                                                                     <+> text "->" <+> pretty expr
+                                                          | (CaseArm pat expr guard _ _) <- bnds
                                                           ])
                                        <$> end
             KNAllocArray {}     -> text $ "KNAllocArray "
@@ -1144,7 +1194,7 @@ instance Error InlineError where
   noMsg    = InlineError "<no msg>"
   strMsg s = InlineError s
 
-shouldDEBUG = False
+shouldDEBUG = True
 
 debugDocLn d =
   if shouldDEBUG then putDocLn d
@@ -1509,7 +1559,7 @@ knInline' expr env = do
                   residualize $ KNIf ty v' e1' e2'
 
     KNCase        ty v patbinds -> do
-        let inlineArm ((!pat, !vars), !expr) = do
+        let inlineArm (CaseArm !pat !expr !guard !vars _rng) = do
                 !ops <- mapM (\v -> mkOpExpr (KNVar v) env) vars
                 let !ids  = map tidIdent vars
                 !ids'  <- mapM freshenId ids
@@ -1517,7 +1567,8 @@ knInline' expr env = do
                 !pat'  <- qp   (resVar env' ) pat
                 !vars' <- mapM (resVar env' ) vars
                 Rez !expr' <- knInline' expr env'
-                return ((pat' , vars' ), expr' )
+                -- TODO handle guard?
+                return (CaseArm pat' expr' guard vars' _rng)
 
         -- If something is known about v's value,
         -- select or discard the appropriate branches.
@@ -1873,16 +1924,18 @@ genIdsOf args = mapM genId args
 --      should become
 --        case (a,b) of (True, x) -> f(b)
 --      even thought it can't become simply ``f(b)`` because a might not be True.
---                   
+-- TODO handle guards?
 matchConstExpr :: ConstExpr
-               ->            [PatternBinding (KNExpr' MonoType) MonoType]
-               -> In (Either [PatternBinding (KNExpr' MonoType) MonoType]
+               ->            [CaseArm Pattern (KNExpr' MonoType) MonoType]
+               -> In (Either [CaseArm Pattern (KNExpr' MonoType) MonoType]
                              SrcExpr)
-matchConstExpr c patbinds = go patbinds
-  where go [] = return $ Left patbinds -- no match found
-        go (((p,_),e):rest) = case matchPatternWithConst p (IsConstant c) of
-                                Nothing       -> go rest
-                                Just bindings -> liftM Right (addBindings bindings e)
+matchConstExpr c arms = go arms
+  where go [] = return $ Left arms -- no match found
+        go (CaseArm pat e guard _ _:rest) =
+          let rv = matchPatternWithConst pat (IsConstant c) in
+          case (guard, rv) of
+               (Nothing, Just bindings) -> liftM Right (addBindings bindings e)
+               _                        -> go rest
 
         nullary True  = Just []
         nullary False = Nothing
@@ -1891,7 +1944,7 @@ matchConstExpr c patbinds = go patbinds
         matchPatternWithConst :: Pattern ty -> ConstStatus -> Maybe [(Ident, ConstStatus)]
         matchPatternWithConst p cs =
           case (cs, p) of
-            (_, P_Wildcard _ _  ) -> Just []
+            (_, P_Wildcard _ _  ) -> Nothing -- Matches trivially, but no binding so we don't care!
             (_, P_Variable _ tid) -> Just [(tidIdent tid, cs)]
             (IsVariable _, _)     -> Nothing -- can't match non-constants against concrete patterns.
             (IsConstant c, _)     -> matchConst c p
@@ -1902,7 +1955,7 @@ matchConstExpr c patbinds = go patbinds
                         (LitTuple _ args _, P_Tuple _ _ pats) ->
                             let parts = map (uncurry matchPatternWithConst) (zip pats args) in
                             let res = combineMaybeList parts in
-                            trace ("matched tuple const against tuple pat, parts = " ++ show parts ++ " ;;; res = " ++ show res) res
+                            trace ("matched tuple const against tuple pat " ++ show p ++ "\n, parts = " ++ show parts ++ " ;;; res = " ++ show res) res
                         (KnownCtor _ kid args, P_Ctor _ _ pats (CtorInfo cid _)) | kid == cid ->
                           case (args, pats) of
                             ([], []) -> Just []
@@ -1921,12 +1974,17 @@ evalPrim resty (PrimOp "==" _ty)
 evalPrim _ _ _ = Nothing
 -- }}}
 
+fmapCaseArm :: (p1 t1 -> p2 t2) -> (e1 -> e2) -> (t1 -> t2) -> CaseArm p1 e1 t1 -> CaseArm p2 e2 t2
+fmapCaseArm fp fe ft (CaseArm p e g b rng)
+                    = CaseArm (fp p) (fe e) (fmap fe g)
+                              [TypedId (ft t) id | TypedId t id <- b] rng
+
 -- When we inline a function body, it moves from a tail context to a non-tail
 -- context, so we must remove any direct tail-call annotations.
 removeTailCallAnnots :: KNExpr' MonoType -> KNExpr' MonoType
 removeTailCallAnnots expr = go expr where
   go expr = case expr of
-    KNCase        ty v patbinds -> KNCase    ty v (map (\(p,e) -> (p, go e)) patbinds)
+    KNCase        ty v arms     -> KNCase    ty v (map (fmapCaseArm id go id) arms)
     KNIf          ty v e1 e2    -> KNIf      ty v (go e1) (go e2)
     KNLetVal      id   e1 e2    -> KNLetVal  id       e1  (go e2)
     KNLetRec      ids  es  b    -> KNLetRec  ids      es  (go b)
@@ -1999,7 +2057,7 @@ cenSawCalled v = do
 inCensusFn :: KNExpr' MonoType -> InCen ()
 inCensusFn expr = go expr where
   go expr = case expr of
-    KNCase        _ _ patbinds -> do mapM_ (\(_,e) -> go e) patbinds
+    KNCase        _ _ arms     -> do mapM_ go (concatMap caseArmExprs arms)
     KNUntil         _ e1 e2 _  -> do go e1 ; go e2
     KNIf          _ _ e1 e2    -> do go e1 ; go e2
     KNLetVal      id  e1 e2    -> do go e1

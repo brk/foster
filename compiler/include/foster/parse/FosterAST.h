@@ -390,11 +390,18 @@ struct WildcardPattern : public Pattern {
   virtual void dump(DumpToProtobufPass* pass);
 };
 
-typedef std::pair<Pattern*, ExprAST*> CaseBranch;
+struct CaseBranch {
+  Pattern* pattern;
+  ExprAST* guard;
+  ExprAST* body;
+  explicit CaseBranch(Pattern* pattern, ExprAST* guard, ExprAST* body) :
+    pattern(pattern), guard(guard), body(body) {}
+};
+
 struct CaseExpr : public ExprAST {
-  std::vector<CaseBranch> branches;
+  std::vector<CaseBranch*> branches;
   explicit CaseExpr(ExprAST* scrutinee,
-                    const std::vector<CaseBranch>& branches,
+                    const std::vector<CaseBranch*>& branches,
                     const foster::SourceRange& sourceRange)
     : ExprAST("CaseExpr", sourceRange), branches(branches) {
     parts.push_back(scrutinee);

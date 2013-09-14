@@ -319,18 +319,13 @@ over time:
   Pattern match compilation produces a CFG with 70 nodes and 96 edges
   (this is in hg rev fd7a6df9ef17, from nested-tuple-patterns).
 
-  Several separate problems here:
-
-    * The first literal tested is 8. If is mtaches, we go on and test many
-      of the other subterms, completely unneccessarily. This amounts to an
-      unneeded doubling of the CFG.
-
-    * The decision tree for the above case analysis contains 28 leaf nodes,
-      even though there should only be 6 actual leaves.
-      zz, for example, is given 10 different
-      stack slots, all of which are only ever stored into once! This is
-      because there are 10 different copies of the ``-> 123`` branch.
-      Only two copies of the ``-> 7`` branch, though.
+  The main problem is that the decision tree for the above
+  case analysis contains 28 leaf nodes,
+  even though there should only be 6 actual leaves.
+  zz, for example, is given 10 different
+  stack slots, all of which are only ever stored into once! This is
+  because there are 10 different copies of the ``-> 123`` branch.
+  Only two copies of the ``-> 7`` branch, though.
 
 --------------------------
 
@@ -361,6 +356,50 @@ over time:
   formed, the error will be caught by LLVM, so it doesn't make sense for us to
   check explicitly.
 
+
+Pass Ordering Constraints: Pattern Matching
+-------------------------------------------
+
+As discussed below, we originally generated decision trees in the middle-end,
+and built CFGs from them in the backend. This was mostly because the frontend
+did not yet have a notion of CFG to represent the decision trees with. Decision
+tree compilation was done along with closure conversion; this permitted closure
+conversion to bind variables from the environment via a tuple pattern match.
+
+Later, the middle-end learned to build CFGs on its own.
+The play between pattern matching and the CFG was this:
+ * When converting pattern matches in K-normal-form expressions,
+   placeholder CFG block identifiers would be generated for the leaves
+   of the decision tree. Each such block would compute the appropriate
+   case arm's body expression value and jump to the continuation of the
+   pattern match.
+ * The resulting case expression, with block identifiers substituted for the
+   case arm body expressions, was used as a terminator in the CFG.
+ * Later on, pattern match compilation would build decision trees from nested
+   pattern matches.
+ * These decision trees, in turn, would be compiled to further CFG
+   structure, primarily to wrap the placeholder blocks with CFG nodes
+   to introduce the bindings scoped over the expression body.
+
+Unfortunately this scheme doesn't extend well to efficient compilation of
+guarded pattern matching. The reason is that when generating the initial CFG,
+we get stuck on how to handle guarded patterns. Ideally we want to generate
+the guard expression, followed by a branch to either the body expression or
+a sub-CFG corresponding to the rest of the viable pattern matches from the
+current state of the matching automaton. Unfortunately we can't do that, because
+it would involve a circular dependency across disjoint compiler stages.
+We could hack around it in super gross ways, such as generating a temporarily-invalid
+CFG (with a missing "false" block), or by deferring the CFG-ization of the body
+expression until we can generate the corresponding false-block logic.
+
+Instead, in the near term, we'll do a simple source-to-source translation
+before/at K-normalization to represent guarded pattern matches as linear
+chains of matches. This will be inefficient but non-disruptive to the
+existing limited infrastructure.
+
+Longer term, we can leverage our investment in contification optimizations
+to implement pattern match compilation as a source-to-source translation
+from nested to flat matches, as MLton does.
 
 K-Normalization and Let-Flattening
 ----------------------------------

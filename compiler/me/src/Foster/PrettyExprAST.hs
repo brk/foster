@@ -184,13 +184,7 @@ instance Pretty (ExprAST TypeP) where
             E_AllocAST annot e _rgn  -> withAnnot annot $ parens $ text "ref" <+> pretty e
             E_DerefAST annot e       -> withAnnot annot $ pretty e <> text "^"
             E_StoreAST annot e1 e2   -> withAnnot annot $ pretty e1 <+> text ">^" <+> pretty e2
-            E_Case annot scrut binds -> withAnnot annot $
-                                       align $
-                                       kwd "case" <+> pretty scrut
-                                       <$> indent 2 (vcat [ kwd "of" <+> {- fill 20 -} (pretty epat) <+> text "->" <+> pretty expr
-                                                          | (epat, expr) <- binds
-                                                          ])
-                                       <$> end
+            E_Case annot scrut arms  -> withAnnot annot $ prettyCase scrut arms
             E_CompilesAST annot Nothing  -> withAnnot annot $ text $ "E_CompilesAST NOTHING"
             E_CompilesAST annot (Just e) -> withAnnot annot $ parens $ text "__COMPILES__" <+> pretty e
             E_ArrayRead   annot ai   -> withAnnot annot $ pretty ai
@@ -202,3 +196,4 @@ instance Pretty (ExprAST TypeP) where
                                     withAnnot annot $
                                         group $ foldl1 seqcat (map pretty exprs)
             E_FnAST annot fn     -> withAnnot annot $ pretty fn
+

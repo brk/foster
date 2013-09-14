@@ -271,11 +271,11 @@ closureConvertBlocks bbg = do
         ILast (CFCont b vs)     -> do return $ mkLast $ CCLast (CCCont b (map llv vs))
         ILast (CFCall b t v vs) -> do id <- ilmFresh (T.pack ".call")
                                       return $ mkLast $ CCLast (CCCall b (monoToLL t) id (llv v) (map llv vs))
-        ILast (CFCase a pbs) -> do
+        ILast (CFCase a arms) -> do
            allSigs <- gets ilmCtors
-           let dt = compilePatterns pbs allSigs
+           let dt = compilePatterns arms allSigs
            let usedBlocks = eltsOfDecisionTree dt
-           let _unusedPats = [pat | (pat, bid) <- pbs
+           let _unusedPats = [pat | (CaseArm pat bid _ _ _) <- arms
                             , Set.notMember bid usedBlocks]
            -- TODO print warning if any unused patterns
            (BlockFin blocks id) <- compileDecisionTree a dt
@@ -434,9 +434,11 @@ closureOfKnFn infoMap (self_id, fn) = do
         newbody <- do
             let BasicBlockGraph bodyentry rk oldbodygraph = fnBody f
             let cfcase = CFCase envVar [
-                           ((P_Tuple norange t (map patVar varsOfClosure),
-                                                           varsOfClosure)
-                           , fst bodyentry) ]
+                           (CaseArm (P_Tuple norange t (map patVar varsOfClosure))
+                                    (fst bodyentry)
+                                    Nothing
+                                    varsOfClosure
+                                    norange) ]
                         where t        = tidType envVar
                               patVar a = P_Variable norange a
                               norange  = MissingSourceRange ""

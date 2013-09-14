@@ -176,13 +176,14 @@ monoFn subst (Fn v vs body isrec rng) = do
   body' <- monoKN subst body
   return (Fn (qv v) (map qv vs) body' isrec rng)
 
-monoPatternBinding :: MonoSubst -> PatternBinding (KNExpr' TypeIL) TypeIL
-                          -> Mono (PatternBinding (KNExpr' MonoType) MonoType)
-monoPatternBinding subst ((pat, vs), expr) = do
+monoPatternBinding :: MonoSubst -> CaseArm Pattern (KNExpr' TypeIL) TypeIL
+                          -> Mono (CaseArm Pattern (KNExpr' MonoType) MonoType)
+monoPatternBinding subst (CaseArm pat expr guard vs rng) = do
   let pat' = monoPattern subst pat
   let vs'  = map (mono subst) vs
-  expr' <- monoKN subst expr
-  return ((pat' , vs' ), expr' )
+  expr'  <-            monoKN subst  expr
+  guard' <- liftMaybe (monoKN subst) guard
+  return (CaseArm pat' expr' guard' vs' rng)
 
 monoPattern subst pattern =
  let mp = map (monoPattern subst) in
@@ -333,9 +334,9 @@ alphaRename fn = do
       KNArrayRead     t ai     -> liftM  (KNArrayRead     t) (renameArrayIndex ai)
       KNArrayPoke     t ai v   -> liftM2 (KNArrayPoke     t) (renameArrayIndex ai) (qv v)
       KNVar                  v -> liftM  KNVar                  (qv v)
-      KNCase          t v pats -> do pats' <- mapM renamePatternBinding pats
+      KNCase          t v arms -> do arms' <- mapM renameCaseArm arms
                                      v'    <- qv v
-                                     return $ KNCase       t v' pats'
+                                     return $ KNCase       t v' arms'
       KNUntil         t c b r  -> do [econd, ebody] <- mapM renameKN [c, b ]
                                      return $ KNUntil      t econd ebody r
       KNIf            t v e1 e2-> do [ethen, eelse] <- mapM renameKN [e1,e2]
@@ -353,11 +354,12 @@ alphaRename fn = do
                                      return $ KNLetFuns ids' fns' b'
       KNTyApp t v argtys       -> qv v >>= \v' -> return $ KNTyApp t v' argtys
 
-    renamePatternBinding ((pat, vs), expr) = do
+    renameCaseArm (CaseArm pat expr guard vs rng) = do
         pat' <- renamePattern pat
         vs' <- mapM qv vs -- TODO or renameV ?
-        expr' <- renameKN expr
-        return ((pat' , vs' ), expr' )
+        expr'  <-           renameKN expr
+        guard' <- liftMaybe renameKN guard
+        return (CaseArm pat' expr' guard' vs' rng)
 
     renamePattern pattern = do
      let mp = mapM renamePattern

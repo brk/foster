@@ -365,9 +365,13 @@ void CaseExpr::dump(DumpToProtobufPass* pass) {
   pb::PBCase* c = pass->current->mutable_pb_case();
   dumpChild(pass, c->mutable_scrutinee(), this->parts[0]);
   for (size_t i = 0; i < this->branches.size(); ++i) {
-    CaseBranch b = this->branches[i];
-    dumpPattern(pass, c->add_pattern(), b.first);
-    dumpChild(  pass, c->add_branch(), b.second);
+    CaseBranch* b = this->branches[i];
+    pb::CaseClause* clause = c->add_clauses();
+    dumpPattern(pass, clause->mutable_pattern(), b->pattern);
+    dumpChild(  pass, clause->mutable_body(),    b->body);
+    if (b->guard) {
+      dumpChild(pass, clause->mutable_guard(),   b->guard);
+    }
   }
 }
 

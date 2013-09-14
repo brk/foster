@@ -34,7 +34,7 @@ data AIExpr =
         | AIIf         TypeIL AIExpr AIExpr AIExpr
         | AIUntil      TypeIL AIExpr AIExpr SourceRange
         -- Creation of bindings
-        | AICase       TypeIL AIExpr [PatternBinding AIExpr TypeIL]
+        | AICase       TypeIL AIExpr [CaseArm Pattern AIExpr TypeIL]
         | AILetVar     Ident AIExpr AIExpr
         | AILetRec     [Ident] [AIExpr] AIExpr
         | AILetFuns    [Ident] [Fn AIExpr TypeIL] AIExpr
@@ -148,13 +148,14 @@ ail ctx ae =
                                          return $ AIArrayPoke ti (ArrayIndex x y rng s) z
         AnnTuple rng _ exprs       -> do aies <- mapM q exprs
                                          return $ AITuple aies (annotRange rng)
-        AnnCase _rng t e bs        -> do ti <- qt t
+        AnnCase _rng t e arms      -> do ti <- qt t
                                          ei <- q e
-                                         bsi <- mapM (\((p, vs),e) -> do
+                                         bsi <- mapM (\(CaseArm p e guard bindings rng) -> do
                                                      p' <- qp p
                                                      e' <- q e
-                                                     vs' <- mapM (aiVar ctx) vs
-                                                     return ((p', vs'), e')) bs
+                                                     guard' <- liftMaybe q guard
+                                                     bindings' <- mapM (aiVar ctx) bindings
+                                                     return (CaseArm p' e' guard' bindings' rng)) arms
                                          return $ AICase ti ei bsi
 
         E_AnnVar     _rng (v,_)   -> do v' <- aiVar ctx v

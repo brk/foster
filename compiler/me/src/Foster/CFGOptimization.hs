@@ -376,7 +376,7 @@ runCensusRewrites' uref bbg = do
                 ILast $ case (contifyCalls ci cflast) of
                   CFCont bid vs     -> CFCont (ret bid) vs
                   CFCall bid t v vs -> CFCall (ret bid) t v vs
-                  CFCase v arms     -> CFCase v (map (\(p,k) -> (p,ret k)) arms)
+                  CFCase v arms     -> CFCase v (map (\(CaseArm p e g b r) -> CaseArm p (ret e) (fmap ret g) b r) arms)
               rw insn = insn
           let g_old = bbgBody $ fnBody fn
           let g_new = mapGraph rw g_old

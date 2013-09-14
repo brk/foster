@@ -42,6 +42,7 @@ import Foster.Fepb.DataType as DataType
 import Foster.Fepb.DataCtor as DataCtor
 import Foster.Fepb.PBIf     as PBIf
 import Foster.Fepb.PBCase   as PBCase
+import Foster.Fepb.CaseClause as CaseClause
 import Foster.Fepb.PBValAbs as PBValAbs
 import Foster.Fepb.Expr     as PbExpr
 import Foster.Fepb.SourceModule as SourceModule
@@ -244,14 +245,21 @@ parsePattern pbexpr = do
               _ -> error $ "parsePattern called with non-matching tag/arg!"
                         ++ " " ++ show (PbExpr.tag pbexpr)
 
-parseCaseExpr pbexpr range = do
+parseCase pbexpr range = do
   case PbExpr.pb_case pbexpr of
     Nothing -> error "Unable to parse case expression without pb_case!"
     Just pbcase -> do
       expr <- parseExpr (PBCase.scrutinee pbcase)
-      patterns    <- mapM parsePattern (toList $ PBCase.pattern pbcase)
-      branchexprs <- mapM parseExpr    (toList $ PBCase.branch  pbcase)
-      return $ E_Case range expr (Prelude.zip patterns branchexprs)
+      arms <- mapM parseCaseArm (toList $ PBCase.clauses pbcase)
+      return $ E_Case range expr arms
+
+parseCaseArm clause = do
+  pattern <- parsePattern $ CaseClause.pattern clause
+  body    <- parseExpr    $ CaseClause.body    clause
+  guard   <- liftMaybe parseExpr $ CaseClause.guard   clause
+  -- TODO use range for whole clause, or expr + guard?
+  rng     <- parseRange   $ CaseClause.pattern clause
+  return $ CaseArm pattern body guard [] rng
 
 parseAnnot :: PbExpr.Expr -> FE ExprAnnot
 parseAnnot expr = do
@@ -290,7 +298,7 @@ parseExpr pbexpr = do
                 LET       -> parseLet
                 TY_APP    -> parseTyApp
                 TY_CHECK  -> parseTyCheck
-                CASE_EXPR -> parseCaseExpr
+                CASE_EXPR -> parseCase
                 COMPILES  -> parseCompiles
                 PAT_WILDCARD -> error "parseExpr called on pattern!"
                 PAT_VARIABLE -> error "parseExpr called on pattern!"
@@ -451,9 +459,10 @@ parseSourceModule sm = resolveFormatting m where
                                                         an <- ana
                                                         return $ E_ArrayPoke an (ArrayIndex x y rng2 s) z
        E_Case         _ e bs     -> do e' <- q e
-                                       bs' <- mapM (\(pat, exp) -> do
-                                                           exp' <- q exp
-                                                           return (pat, exp' )) bs
+                                       bs' <- mapM (\(CaseArm pat exp guard bindings rng) -> do
+                                                           exp'   <-           q exp
+                                                           guard' <- liftMaybe q guard
+                                                           return (CaseArm pat exp' guard' bindings rng)) bs
                                        an <- ana
                                        return $ E_Case an e' bs'
 

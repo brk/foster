@@ -16,6 +16,7 @@ where
 import Foster.Base(Expr(..), freeVars, identPrefix, Structured(..),
                    SourceRanged(..), TypedId(..), butnot, ArrayIndex(..),
                    AllocMemRegion, childrenOfArrayIndex,
+                   CaseArm(..), caseArmExprs,
                    ExprAnnot(..), annotRange, annotComments, showComments)
 import Foster.TypeAST(TypeAST, EPattern(..), E_VarAST(..))
 import Foster.Kind
@@ -41,7 +42,7 @@ data ExprSkel annot ty =
         | E_UntilAST      annot (ExprAST ty) (ExprAST ty)
         | E_SeqAST        annot (ExprAST ty) (ExprAST ty)
         -- Creation of bindings
-        | E_Case          annot (ExprAST ty) [(EPattern ty, ExprAST ty)]
+        | E_Case          annot (ExprAST ty) [CaseArm EPattern (ExprAST ty) ty]
         | E_LetAST        annot (TermBinding ty) (ExprAST ty)
         | E_LetRec        annot [TermBinding ty] (ExprAST ty)
         -- Use of bindings
@@ -134,7 +135,7 @@ instance Structured (ExprAST t) where
             E_TupleAST    _rng exprs     -> exprs
             E_TyApp       _rng a _t      -> [a]
             E_TyCheck     _rng a _t      -> [a]
-            E_Case        _rng e bs      -> e:(map snd bs)
+            E_Case        _rng e bs      -> e:(concatMap caseArmExprs bs)
             E_LetRec      _rng bnz e     -> [termBindingExpr bnd | bnd <- bnz] ++ [e]
             E_LetAST      _rng bnd e     -> (termBindingExpr bnd):[e]
        where     -- | Converts a right-leaning "list" of SeqAST nodes to a List
@@ -182,18 +183,21 @@ instance Expr (ExprAST TypeAST) where
                                 freeVars b ++ (freeVars e `butnot` [evarName v])
     E_LetRec _rng nest _ -> concatMap freeVars (childrenOf e) `butnot`
                                           [evarName v | TermBinding v _ <- nest]
-    E_Case _rng e pbinds -> freeVars e ++ (concatMap epatBindingFreeVars pbinds)
+    E_Case _rng e arms   -> freeVars e ++ (concatMap caseArmFreeVars arms)
     E_FnAST _rng f       -> let bodyvars  = freeVars (fnAstBody f) in
                             let boundvars = map (identPrefix.tidIdent) (fnFormals f) in
                             bodyvars `butnot` boundvars
     E_VarAST _rng v      -> [evarName v]
     _                    -> concatMap freeVars (childrenOf e)
 
-epatBindingFreeVars (pat, expr) =
-  freeVars expr `butnot` epatBoundNames pat
+freeVarsMb Nothing  = []
+freeVarsMb (Just e) = freeVars e
+
+caseArmFreeVars (CaseArm epat body guard _ _) =
+  (freeVars body ++ freeVarsMb guard) `butnot` epatBoundNames epat
   where epatBoundNames :: EPattern ty -> [T.Text]
-        epatBoundNames pat =
-          case pat of
+        epatBoundNames epat =
+          case epat of
             EP_Wildcard {}        -> []
             EP_Variable _rng evar -> [evarName evar]
             EP_Ctor     {}        -> []
