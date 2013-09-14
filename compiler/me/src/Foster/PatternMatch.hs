@@ -41,6 +41,17 @@ data DecisionTree a t
 -- Avoiding all these type parameters seems like a
 -- pretty good use case for parameterized modules!
 
+{-
+   A ClauseRow represents the patterns being matched for one arm of a case expression.
+
+   The rowAction is passed through to DT_Leaf when a row trivially matches.
+   The rowOrigPat is used for computing the bindings scoped to a DT_Leaf.
+        Regardless of what merged patterns end up in rowPatterns, the rowOriginalPat
+        is used to generate (variable, occurence-of-scrutinee) pairs.
+   The rowPatterns are used for representing the subterms of of the scrutinee being matched.
+
+-}
+
 type ClauseCol t = [SPattern t]
 data ClauseMatrix a t = ClauseMatrix [ClauseRow a t]
 data ClauseRow a t  = ClauseRow { rowOrigPat  :: (SPattern t)
@@ -55,14 +66,22 @@ data SPattern t = SP_Wildcard
 type DataTypeSigs = Map DataTypeName DataTypeSig
 
 compilePatterns :: IntSizedBits t
-                => [((Pattern t, _binds), a)]
+                => Maybe CtorId
+                -> [((Pattern t, _binds), a)]
                 -> DataTypeSigs
                 -> DecisionTree a t
-compilePatterns bs allSigs =
- cc [[]] (ClauseMatrix $ map compilePatternRow bs) allSigs where
+compilePatterns mbKnownCtorId bs allSigs =
+
+ cc [[]] matrix allSigs where
+
+  matrix = let rawMatrix = ClauseMatrix $ map compilePatternRow bs in
+           case mbKnownCtorId of
+                  Nothing -> rawMatrix
+                  Just c  -> specialize c rawMatrix
 
   compilePatternRow ((p, _binds), a) = ClauseRow (compilePattern p)
                                                  [compilePattern p] a
+
   compilePattern :: IntSizedBits t => Pattern t -> SPattern t
   compilePattern p = case p of
     (P_Wildcard _ _)       -> SP_Wildcard
@@ -110,15 +129,15 @@ cc _ (ClauseMatrix []) _allSigs = DT_Fail
 -- If first row is all variables, match always succeeds.
 cc _occs cm _allSigs | allGuaranteedMatch (rowPatterns $ firstRow cm) =
     DT_Leaf (rowAction r)
-            (computeBindings emptyOcc (rowOrigPat r))
+            (computeBindings (emptyOcc, rowOrigPat r))
       where r = firstRow cm
             emptyOcc = []
-            computeBindings :: Occurrence t -> SPattern t -> [(TypedId t, Occurrence t)]
-            computeBindings  occ (SP_Variable v   ) = [(v, occ)]
-            computeBindings _occ (SP_Wildcard     ) = []
-            computeBindings  occ (SP_Ctor ctorinfo pats) =
+            computeBindings :: (Occurrence t, SPattern t) -> [(TypedId t, Occurrence t)]
+            computeBindings ( occ, SP_Variable v   ) = [(v, occ)]
+            computeBindings (_occ, SP_Wildcard     ) = []
+            computeBindings ( occ, SP_Ctor ctorinfo pats) =
               let occs = expand occ ctorinfo (Prelude.length pats) in
-              concatMap (uncurry computeBindings) (zip occs pats)
+              concatMap computeBindings (zip occs pats)
 
 -- "In any other case, matrix P has at least one row and at least one
 -- column (m > 0, n > 0). Furthermore, there exists at least one
@@ -133,7 +152,7 @@ cc occs cm allSigs =
       let (o1:orest) = occs in
       let caselist = [ (ctorInfoId c,
                            cc (expand o1 c (ctorInfoArity c) ++ orest)
-                              (specialize c cm) allSigs)
+                              (specialize (ctorInfoId c) cm) allSigs)
                      | c <- Set.toList headCtorInfos] in
       if isSignature (Set.map ctorInfoId headCtorInfos) allSigs
         then DT_Switch o1 caselist Nothing
@@ -167,8 +186,24 @@ expand occ cid a = [occ ++ [(n, cid)] | n <- [0 .. a - 1]]
 
 ctorInfoArity (CtorInfo cid _) = ctorArity cid
 
-specialize :: CtorInfo t -> ClauseMatrix a t -> ClauseMatrix a t
-specialize (CtorInfo ctor _) (ClauseMatrix rows) =
+
+-- Specialization filters out rows which cannot match the given
+-- constructor, and generates new patterns for subterms of the constructor.
+-- The height of the matrix will not grow, but the width can grow or shrink.
+--
+-- As an example, the specialization w/r/t Nil of
+--    []      a     -> 1
+--    b      []     -> 2
+--    (c::d) (e::f) -> 3
+-- is
+--    a  -> 1
+--    [] -> 2
+-- and w/r/t Cons is
+--    b   _b2 []     -> 2
+--    c   d   (e::f) -> 3
+--
+specialize :: CtorId -> ClauseMatrix a t -> ClauseMatrix a t
+specialize ctor (ClauseMatrix rows) =
   ClauseMatrix [specializeRow row ctor | row <- rows
                                        , isCompatible row ctor]
   where

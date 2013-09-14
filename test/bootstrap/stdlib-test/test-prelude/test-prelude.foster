@@ -57,22 +57,50 @@ main = {
 
   expect_i32 4;
   print_i32 (bitlength-Word 8);
+
+  test-octet-to-ints !;
+
+
+  expect_text "8";
+  print_text (tmp_Text_of_UInt64 8);
+
+  expect_text "9";
+  print_text (tmp_Text_of_UInt64 9);
+
+  expect_text "10";
+  print_text (tmp_Text_of_UInt64 10);
+
+  expect_text "11";
+  print_text (tmp_Text_of_UInt64 11);
 };
 
 observeWordUnsignedWraparound :: { Int32 };
 observeWordUnsignedWraparound = {
-  let n0 = primitive_zext_i32_to_Word 3;
-      n1 = bitshl-Word n0 (primitive_zext_i32_to_Word 16);
-      n2 = bitshl-Word n1 (primitive_zext_i32_to_Word 16);
-      n3 = bitshl-Word n2 (primitive_zext_i32_to_Word 16);
-      n4 = bitshl-Word n3 (primitive_zext_i32_to_Word 16);
-  in
-    if n2 ==Word (primitive_zext_i32_to_Word 0)
+  n0 = primitive_zext_i32_to_Word 3;
+  n1 = bitshl-Word n0 16;
+  n2 = bitshl-Word n1 16;
+  n3 = bitshl-Word n2 16;
+  n4 = bitshl-Word n3 16;
+
+  if n2 ==Word 0
       then 32
-      else if n4 ==Word (primitive_zext_i32_to_Word 0)
-        then 64
-        else 128
-      end
-    end
+      else if n4 ==Word 0
+             then 64
+             else 128
+           end
   end
+};
+
+test-octet-to-ints = {
+  expect_i32 0;
+  print_i32 (octet4ToInt32 0 0 0 0);
+
+  expect_i32 1;
+  print_i32 (octet4ToInt32 0 0 0 1);
+
+  expect_i32 256;
+  print_i32 (octet4ToInt32 0 0 1 0);
+
+  expect_i32 65536;
+  print_i32 (octet4ToInt32 0 1 0 0);
 };

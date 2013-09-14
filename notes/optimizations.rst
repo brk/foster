@@ -74,6 +74,49 @@ Data Structure Elimination
 
 The following idioms should not involve runtime allocation::
 
-        case (x, ..., x) of ... end
+        case (x1, ..., xn) of ... end
 
-        let v = (x, ..., x) in case v of ... end end
+        let v = (x1, ..., xn) in case v of ... end end
+
+We can also generalize this in a few ways.
+First, this works for any single-constructor datatype, not just tuples.
+Furthermore, it doesn't really require a single-ctor type, either;
+as long as the head constructor of the scrutinee is known,
+we can statically prune the decision tree to eliminate impossible cases.
+For example::
+
+        case  B x1 ... xn
+          of $A ...
+          of $B c1 ... pn
+          of $B p1 ... pn
+          of $C ...
+        end
+
+can be treated the same as::
+
+        case (x1 ... xn)
+          of (c1 ... pn)
+          of (p1 ... pn)
+        end
+
+This is *almost* a simple case of inline substitution of subterms
+for scrutinee occurrences, combined with dead-code elimination to
+get rid of the possibly-unnecessary heap allocation. The subtlety
+is the we also want to involve some code motion in the case where
+the allocation is not eliminated::
+ 
+        let p = (v, w) in
+        case p of (C, d) -> ... use d ...
+               of pair   -> ... use pair ...
+
+should become:: 
+
+        case v,w of (C, d) -> ... use d ...
+                 of _      -> let p = (v, w) in
+                            ... use pair ...
+
+rather than::
+
+        let p = (v, w) in
+        case p of (C, d) -> ... use d ...
+               of pair   -> ... use pair ...

@@ -1502,7 +1502,7 @@ knInline' expr env = do
         -- otherwise, business as usual.
         mb_const <- extractConstExpr env v
         case mb_const of
-          Just (Lit (LitBool b)) -> knInline' (if b then e1 else e2) env
+          IsConstant (Lit _ (LitBool b)) -> knInline' (if b then e1 else e2) env
           _ -> do v'      <- q v
                   Rez e1' <- knInline' e1 env
                   Rez e2' <- knInline' e2 env
@@ -1524,7 +1524,9 @@ knInline' expr env = do
         -- TODO when are default branches inserted?
         mb_const <- extractConstExpr env v
         case mb_const of
-          Just c -> case matchConstExpr c patbinds of
+          IsConstant c -> do
+                   mr <- matchConstExpr c patbinds
+                   case trace ("match result for \n\t" ++ show c ++ " is\n\t" ++ show mr) mr of
                       Right e -> knInline' e env
                       Left patbinds0 -> do v' <- q v
                                            !patbinds' <- mapM inlineArm patbinds0
@@ -1818,40 +1820,103 @@ inlineBitcastedFunction v' tailq ty vs env = do
                                       (KNTyApp ty vres [])) env
 
 -- {{{ Online constant folding
-data ConstExpr = Lit            Literal
-               | NullaryCtor    CtorId
+data ConstExpr = Lit            MonoType Literal
+               | LitTuple       MonoType [ConstStatus] SourceRange
+               | KnownCtor      MonoType CtorId [ConstStatus]
                deriving Show
 
-extractConstExpr :: SrcEnv -> TypedId MonoType -> In (Maybe ConstExpr)
+data ConstStatus = IsConstant ConstExpr
+                 | IsVariable (TypedId MonoType)
+                 deriving Show
+
+extractConstExpr :: SrcEnv -> TypedId MonoType -> In ConstStatus
 extractConstExpr env var = go var where
  go v = case lookupVarOp env v of
             Just (VO_E ope) -> do
                  (e', _) <- visitE ope
                  case e' of
-                    KNLiteral _ lit    -> return $ Just $ Lit         lit
-                    KNAppCtor _ cid [] -> return $ Just $ NullaryCtor cid
-                    _                  -> return $ Nothing
+                    KNLiteral ty lit      -> return $ IsConstant $ Lit ty lit
+                    KNTuple   ty vars rng -> do results <- mapM go vars
+                                                return $ IsConstant $ LitTuple ty results rng
+                    KNAppCtor ty cid vars -> do results <- mapM go vars
+                                                return $ IsConstant $ KnownCtor ty cid results
+                    _                    -> return $ IsVariable v
                     -- TODO could recurse through binders
                     -- TODO could track const-ness of ctor args
-            _ -> return $ Nothing
+            _ -> return $ IsVariable v
 
-matchConstExpr :: ConstExpr -> [PatternBinding (KNExpr' MonoType) MonoType] -> (Either [PatternBinding (KNExpr' MonoType) MonoType] SrcExpr)
+addBindings [] e = return e
+addBindings ((id, cs):rest) e = do res <- addBindings rest e
+                                   e'  <- exprOfCS cs
+                                   return $ KNLetVal id e' res
+
+exprOfCS (IsVariable v) = return $ KNVar v
+exprOfCS (IsConstant (Lit ty lit)) = return $ KNLiteral ty lit
+exprOfCS (IsConstant (LitTuple ty args rng)) = do ids <- genIdsOf args ; return $ KNTuple ty ids rng
+exprOfCS (IsConstant (KnownCtor ty cid [])) = return $ KNAppCtor ty cid []
+exprOfCS (IsConstant (KnownCtor ty cid args)) = do ids <- genIdsOf args ; return $ KNAppCtor ty cid ids
+
+typeOfConst (Lit ty _) = ty
+typeOfConst (LitTuple ty _ _) = ty
+typeOfConst (KnownCtor ty _ _) = ty
+
+genIdsOf args = mapM genId args
+               where genId (IsVariable v) = return v
+                     genId (IsConstant c) = do id <- freshenId' (Ident (T.pack "genId") 0)
+                                               return (TypedId (typeOfConst c) id)
+
+-- Given a constant expression c, match against  (p1 -> e1) , ... , (pn -> en).
+-- If c matches some pattern pk, return ek.
+-- Otherwise, return the original full list of arms.
+-- TODO handle partial matches:
+--        case (a,b) of (True, x) -> f(x)
+--      should become
+--        case (a,b) of (True, x) -> f(b)
+--      even thought it can't become simply ``f(b)`` because a might not be True.
+--                   
+matchConstExpr :: ConstExpr
+               ->            [PatternBinding (KNExpr' MonoType) MonoType]
+               -> In (Either [PatternBinding (KNExpr' MonoType) MonoType]
+                             SrcExpr)
 matchConstExpr c patbinds = go patbinds
-  where go [] = Left patbinds -- no match found
-        go (((p,_),e):rest) = if matchPatternWithConst p c then Right e else go rest
+  where go [] = return $ Left patbinds -- no match found
+        go (((p,_),e):rest) = case matchPatternWithConst p (IsConstant c) of
+                                Nothing       -> go rest
+                                Just bindings -> liftM Right (addBindings bindings e)
 
-matchPatternWithConst :: Pattern ty -> ConstExpr -> Bool
-matchPatternWithConst p c =
-  case (c, p) of
-    (_, P_Wildcard _ _  ) -> True
-    -- (_, P_Variable _ tid) -> Just [(tidIdent tid, v)]
-    (Lit (LitInt  i1), P_Int  _ _ i2) -> litIntValue i1 == litIntValue i2
-    (Lit (LitBool b1), P_Bool _ _ b2) -> b1 == b2
-    (NullaryCtor vid, P_Ctor _ _ [] (CtorInfo cid _)) -> vid == cid
-    (_ , _) -> False
+        nullary True  = Just []
+        nullary False = Nothing
+
+        -- If the constant matches the pattern, return the list of bindings generated.
+        matchPatternWithConst :: Pattern ty -> ConstStatus -> Maybe [(Ident, ConstStatus)]
+        matchPatternWithConst p cs =
+          case (cs, p) of
+            (_, P_Wildcard _ _  ) -> Just []
+            (_, P_Variable _ tid) -> Just [(tidIdent tid, cs)]
+            (IsVariable _, _)     -> Nothing -- can't match non-constants against concrete patterns.
+            (IsConstant c, _)     -> matchConst c p
+              where matchConst c p =
+                      case (c, p) of
+                        (Lit _ (LitInt  i1), P_Int  _ _ i2) -> nullary $ litIntValue i1 == litIntValue i2
+                        (Lit _ (LitBool b1), P_Bool _ _ b2) -> nullary $ b1 == b2
+                        (LitTuple _ args _, P_Tuple _ _ pats) ->
+                            let parts = map (uncurry matchPatternWithConst) (zip pats args) in
+                            let res = combineMaybeList parts in
+                            trace ("matched tuple const against tuple pat, parts = " ++ show parts ++ " ;;; res = " ++ show res) res
+                        (KnownCtor _ kid args, P_Ctor _ _ pats (CtorInfo cid _)) | kid == cid ->
+                          case (args, pats) of
+                            ([], []) -> Just []
+                            _        -> combineMaybeList $ map (uncurry matchPatternWithConst) (zip pats args)
+                        (_ , _) -> nullary False
+
+        combineMaybeList :: [Maybe [t]] -> Maybe [t]
+        combineMaybeList mbs = go mbs []
+          where go []               acc = Just (concat acc)
+                go (Nothing:_)     _acc = Nothing
+                go ((Just xs):rest) acc = go rest (xs : acc)
 
 evalPrim resty (PrimOp "==" _ty)
-         [Just (Lit (LitInt i1)), Just (Lit (LitInt i2))]
+         [IsConstant (Lit _ (LitInt i1)), IsConstant (Lit _ (LitInt i2))]
                 = Just (KNLiteral resty (LitBool $ litIntValue i1 == litIntValue i2))
 evalPrim _ _ _ = Nothing
 -- }}}

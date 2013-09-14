@@ -18,6 +18,22 @@ cmpBoolTrueLT = { a : Bool => b : Bool =>
   end
 };
 
+cmpBoolTrueLTxAlt = { a : Bool => b : Bool =>
+  case (a, b)
+    of (True, False) -> LT !
+    of (False, True) -> GT !
+    of _ -> EQ !
+  end
+};
+
+// E.g. when comparing ordered pairs, we can stop
+// if the first components are unequal:
+// cmp (a,b) (x,y) = ordBindIfEq (cmp a x) { cmp x y }
+ordBindIfEq :: { Ord => { Ord } => Ord };
+ordBindIfEq = { b => f =>
+  if isEQ b then f ! else b end
+};
+
 ordInvert = { b : Ord =>
   case b
     of $LT -> GT !

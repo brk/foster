@@ -161,7 +161,7 @@ vListReverse = { forall a:Boxed, v =>
   helper-loop v (mkEmptyVList !)
 };
 
-// Uses O(1) stack and heap proportional to whatever f allocates.
+// Uses O(1) stack, and heap proportional to whatever f allocates.
 vListFoldl :: forall a:Boxed, e:Boxed, { VList e => { e => a => a } => a => a };
 vListFoldl = { forall a:Boxed e:Boxed, v => f => acc : a =>
   case vListSplit v
@@ -170,7 +170,7 @@ vListFoldl = { forall a:Boxed e:Boxed, v => f => acc : a =>
   end
 };
 
-// Uses O(n) stack and heap proportional to whatever f allocates.
+// Uses O(n) stack, and heap proportional to whatever f allocates.
 vListFoldr :: forall a:Boxed, e:Boxed, { VList e => { e => a => a } => a => a };
 vListFoldr = { forall a:Boxed e:Boxed, v => f => acc =>
   case vListSplit v

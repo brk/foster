@@ -5,6 +5,11 @@ type case List (a:Boxed)
   of $Cons a (List a)
 ;
 
+listSingleton :: forall t:Boxed, { t => List t };
+listSingleton =  { forall t:Boxed, x : t =>
+  Cons x (Nil !)
+};
+
 // Precondition: List is not empty.
 listHead! :: forall t:Boxed, { List t => t };
 listHead! = { forall t:Boxed, xs : List t =>
@@ -67,6 +72,16 @@ listMap = { forall a:Boxed e:Boxed, v => f =>
 listKeepIf :: forall a:Boxed, { List a => { a => Bool } => List a };
 listKeepIf = { forall a:Boxed, v => f =>
   listFoldl (listReverse v) { e => tail => if f e then Cons e tail else tail end } (Nil !);
+};
+
+listLength64 = { forall t:Boxed, xs : List t =>
+  REC go = { xs => acc =>
+    case xs
+      of $Nil -> acc
+      of $Cons x ys -> go ys (acc +Int64 1)
+    end
+  };
+  go xs 0
 };
 
 listLength = { forall t:Boxed, xs : List t =>

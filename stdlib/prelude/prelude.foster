@@ -1,5 +1,6 @@
 snafuinclude List "list";
 snafuinclude Ord  "ord";
+snafuinclude Text "text";
 
 either = { a : Bool => b : Bool => if a then True else b     end };
 both   = { a : Bool => b : Bool => if a then b    else False end };
@@ -171,16 +172,6 @@ highestBitMask-Word = { x0 =>
 
 /////
 
-assert :: { Bool => Text => () };
-assert = { cond : Bool => msg : Text =>
-  if cond then () else
-    print_text "Assert failed!";
-    print_text msg;
-    prim kill-entire-process "assert-failed";
-    ()
-  end
-};
-
 // Precondition: m >= n
 copyOfArrayTo :: forall t:Type,
                  { Array t => // of length m
@@ -194,77 +185,6 @@ copyOfArrayTo = { forall t:Type,
 };
 
 /////
-
-bytesConcatByCopy = { a : Array Int8 => alen : Int32 =>
-                      b : Array Int8 => blen : Int32 => len : Int32 =>
-  if blen ==Int32 0 then a else
-  // We do this somewhat-unsatisfactory dance of allocating a (mutable) array,
-  // then filling its contents in via an exposed memcpy primitive.
-  // It would be nicer to have (byte-)array concatenation be a primitive of the
-  // runtime, but that would require the compiler to statically provide the
-  // runtime with the typeinfo needed to call memalloc_array.
-  //
-  // It's also not great that using this in a loop gives O(n^2) asympotic
-  // complexity rather than O(n), because we don't over-allocate our arrays.
-  bytes = allocDArray len;
-  // bytes[0..whatever]    = a[0..alen]
-  memcpy_i8_to_at_from_len bytes 0    a alen;
-  // bytes[alen..whatever] = b[0..blen]
-  memcpy_i8_to_at_from_len bytes alen b blen;
-  bytes
-
-  end
-};
-
-mkTextConcat = { a : Text => b : Text =>
-  lensum = (textLength a) +Int32 (textLength b);
-  small  = 120; // we'll be willing to memcpy buffers smaller than this.
-
-  case (a, b)
-    of ($TextFragment ba na, $TextFragment bb nb) ->
-      // One optimization from the paper "Ropes: an alternative to strings":
-      // transparently flatten concatenations of small leaf nodes.
-      if lensum <=SInt32 small
-      then TextFragment (bytesConcatByCopy ba na bb nb lensum) lensum
-      else TextConcat a b lensum
-      end
-    // Un-implemented optimizations: perform similar flattening for
-    // ($TextConcat a ($TextFragment ab na) _, $TextFragment bb nb) ->
-    // and
-    // ($TextFragment ba na, $TextConcat ($TextFragment bb nb) c) ->
-    of (_                  , _) ->
-      TextConcat a b lensum
-  end
-};
-
-textLength = { t : Text =>
-  case t
-    of $TextFragment _ n -> n
-    of $TextConcat _ _ n -> n
-   end;
-};
-
-expect_text_bare = { s : Text =>
-  case s
-    of $TextFragment a n     -> prim_print_bytes_stderr a n; n
-    of $TextConcat   s1 s2 n -> expect_text_bare s1; expect_text_bare s2; n
-   end;
-};
-
-print_text_bare = { s : Text =>
-  case s
-    of $TextFragment a n     -> prim_print_bytes_stdout a n; n
-    of $TextConcat   s1 s2 n -> print_text_bare s1; print_text_bare s2; n
-   end;
-};
-
-expect_text = { s : Text =>
-  expect_text_bare s; expect_newline !; ()
-};
-
-print_text = { s : Text =>
-  print_text_bare s; print_newline !; ()
-};
 
 max-Int32 = { n : Int32 => m : Int32 => if n <SInt32 m then m else n end };
 max-SInt32 = { n : Int32 => m : Int32 => if n <SInt32 m then m else n end };
@@ -307,7 +227,8 @@ arrayEnumFrom = { forall t:Type,
                   k : Int64 =>
                   f : { t => Int64 => () } =>
   if k <SInt64 prim_arrayLength a
-    then f a[primitive_trunc_i64_i32 k] k; arrayEnumFrom a (incr64 k) f
+    then f a[primitive_trunc_i64_i32 k] k;
+         arrayEnumFrom a (incr64 k) f
     else ()
   end
 };
@@ -371,6 +292,35 @@ arrayIterReverse = { forall t:Type,
 
 min-Int32 = { a : Int32 => b : Int32 =>
   if a <SInt32 b then a else b end
+};
+
+// TODO improve error messages with
+//      min-SInt64 = { a : Int32 => b : Int32 =>
+min-SInt64 = { a : Int64 => b : Int64 =>
+  if a <SInt64 b then a else b end
+};
+
+min-UInt64 = { a : Int64 => b : Int64 =>
+  if a <UInt64 b then a else b end
+};
+
+minReprInt32 :: { Int32 };
+minReprInt32 = { -2`147`483`648 };
+
+maxReprInt32 :: { Int32 };
+maxReprInt32 = {  2`147`483`647 };
+
+minReprInt64 :: { Int64 };
+minReprInt64 = { -9`223`372`036`854`775`808 };
+
+maxReprInt64 :: { Int64 };
+maxReprInt64 = {  9`223`372`036`854`775`807 };
+
+octet4ToInt32 = { hi : Int8 => m1 : Int8 => m2 : Int8 => lo : Int8 =>
+  (((primitive_zext_i8_to_i32 hi) `bitshl-Int32` 24)  `bitor-Int32`
+   ((primitive_zext_i8_to_i32 m1) `bitshl-Int32` 16)) `bitor-Int32`
+  (((primitive_zext_i8_to_i32 m2) `bitshl-Int32` 8)   `bitor-Int32`
+    (primitive_zext_i8_to_i32 lo))
 };
 
 ////
@@ -453,6 +403,8 @@ tmp_Text_16_of_Int32_digit = { n:Int32 =>
 
 tmp_Text_of_Int32 = { n:Int32 => tmp_Text_of_Int64 (primitive_sext_i64_i32 n) };
 
+tmp_Text_of_Int8  = { n:Int8  => tmp_Text_of_Int64 (primitive_sext_i8_to_i64 n) };
+
 tmp_Text_2_of_Int8_nibble = { n : Int8 =>
   case n
     of 0  -> "0000"
@@ -509,7 +461,7 @@ textDrop = { d : Int32 => s : Text =>
   if d ==Int32 0 then s else
     case s
       // TODO resolve confusion between bytes/codepoints/glyphs.
-      of $TextFragment a n     -> TextFragment (dropBytes a d) (n -Int32 d)
+      of $TextFragment a n     -> TextFragment (dropRawBytes a d) (n -Int32 d)
       of $TextConcat   s1 s2 n ->
         if textLength s1 <=SInt32 d
           then             textDrop (d -Int32 textLength s1) s2
@@ -519,7 +471,7 @@ textDrop = { d : Int32 => s : Text =>
   end
 };
 
-dropBytes = { a : Array Int8 => d : Int32 =>
+dropRawBytes = { a : Array Int8 => d : Int32 =>
   alen = arrayLength32 a -Int32 d;
   bytes = allocDArray alen;
 
@@ -566,7 +518,7 @@ tmp_Text_of_Int64 = { n:Int64 =>
 
 tmp_Text_of_UInt64 = { n:Int64 =>
   REC go = { n:Int64 => t:Text =>
-    if n <=SInt64 10
+    if n <SInt64 10
       then mkTextConcat (tmp_Text_of_Int32_digit (primitive_trunc_i64_i32 n)) t
       else r = primitive_trunc_i64_i32 (srem-Int64 n 10);
            q =                          sdiv-Int64 n 10 ;
@@ -586,16 +538,4 @@ tmp_Text_of_SWord = { n:Word =>
 tmp_Text_of_UWord = { n:Word =>
   tmp_Text_of_UInt64 (primitive_zext_Word_to_i64 n)
 };
-
-minReprInt32 :: { Int32 };
-minReprInt32 = { -2`147`483`648 };
-
-maxReprInt32 :: { Int32 };
-maxReprInt32 = {  2`147`483`647 };
-
-minReprInt64 :: { Int64 };
-minReprInt64 = { -9`223`372`036`854`775`808 };
-
-maxReprInt64 :: { Int64 };
-maxReprInt64 = {  9`223`372`036`854`775`807 };
 

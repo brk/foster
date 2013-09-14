@@ -273,7 +273,8 @@ closureConvertBlocks bbg = do
                                       return $ mkLast $ CCLast (CCCall b (monoToLL t) id (llv v) (map llv vs))
         ILast (CFCase a pbs) -> do
            allSigs <- gets ilmCtors
-           let dt = compilePatterns pbs allSigs
+           let mbKnownCtorId = Nothing
+           let dt = compilePatterns mbKnownCtorId pbs allSigs
            let usedBlocks = eltsOfDecisionTree dt
            let _unusedPats = [pat | (pat, bid) <- pbs
                             , Set.notMember bid usedBlocks]
@@ -282,7 +283,7 @@ closureConvertBlocks bbg = do
            return $ (mkLast $ CCLast $ CCCont id []) |*><*| blocks
           where
             -- The decision tree we get from pattern-match compilation may
-            -- contain only a subset of the pattern branche.
+            -- contain only a subset of the pattern branches.
             eltsOfDecisionTree :: (Show a, Ord a) => DecisionTree a t -> Set a
             eltsOfDecisionTree DT_Fail = Set.empty
             eltsOfDecisionTree (DT_Leaf a _) = Set.singleton a

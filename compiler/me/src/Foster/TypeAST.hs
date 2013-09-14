@@ -298,6 +298,9 @@ gFosterPrimOpsTable = Map.fromList $
   ,(,) "primitive_zext_i32_to_i64"  $(,) (mkFnType [i32] [i64]  ) $ PrimOp "zext_i64" i32
   ,(,) "primitive_zext_Word_to_i64" $(,) (mkFnType [iw0] [i64]  ) $ PrimOp "zext_i64" iw0
   ,(,) "primitive_sext_i8_to_i32" $(,) (mkFnType [i8 ] [i32]     ) $ PrimOp "sext_i32" i8
+  ,(,) "primitive_zext_i8_to_i32" $(,) (mkFnType [i8 ] [i32]     ) $ PrimOp "zext_i32" i8
+  ,(,) "primitive_sext_i8_to_i64" $(,) (mkFnType [i8 ] [i64]     ) $ PrimOp "sext_i64" i8
+  ,(,) "primitive_zext_i8_to_i64" $(,) (mkFnType [i8 ] [i64]     ) $ PrimOp "zext_i64" i8
   ,(,) "primitive_trunc_i32_i8" $ (,) (mkFnType [i32] [i8 ]     ) $ PrimIntTrunc I32 I8
   ,(,) "primitive_trunc_i64_i32"$ (,) (mkFnType [i64] [i32]     ) $ PrimIntTrunc I64 I32
   ,(,) "primitive_trunc_i64_to_Word"$(,) (mkFnType [i64] [iw0]     ) $ PrimIntTrunc I64 (IWord 0)
