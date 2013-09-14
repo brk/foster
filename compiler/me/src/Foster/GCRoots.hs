@@ -13,7 +13,7 @@ import Compiler.Hoopl
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Text.PrettyPrint.Boxes as Boxes
 
-import Foster.Base(TExpr, TypedId(TypedId), freeTypedIds, Ident,
+import Foster.Base(TExpr, TypedId(TypedId), freeTypedIds, Ident, Occurrence,
                    tidType, tidIdent, typeOf, MayGC(GCUnknown), boolGC)
 import Foster.CFG(runWithUniqAndFuel, M, rebuildGraphM)
 import Foster.Config
@@ -26,7 +26,7 @@ import Debug.Trace(trace)
 import Data.Maybe(fromMaybe)
 import Data.Map(Map)
 import qualified Data.Set as Set
-import qualified Data.Map as Map(lookup, empty, elems, findWithDefault, insert,
+import qualified Data.Map as Map(lookup, empty, elems, findWithDefault, insert, toList,
            keys, assocs, delete, size, unionWith, fromList, insertWith, keysSet)
 import qualified Data.Text as T(pack)
 import Control.Monad(when, liftM)
@@ -329,8 +329,8 @@ insertDumbGCRoots bbgp dump = do
                                                (mkLast $ CCLast (CCCont b vs' )))
     CCLast (CCCall b t id v vs)  -> do withGCLoads (v:vs) (\(v' : vs' ) ->
                                                (mkLast $ CCLast (CCCall b t id v' vs' )))
-    CCLast (CCCase v arms mb occ) -> do withGCLoads [v] (\[v' ] ->
-                                               (mkLast $ CCLast (CCCase v' arms mb occ)))
+    CCLast (CCCase v arms mb)    -> do withGCLoads [v] (\[v' ] ->
+                                               (mkLast $ CCLast (CCCase v' arms mb)))
 
   fresh str = lift $ ccFreshId (T.pack str)
 
@@ -479,8 +479,8 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
                                                (mkLast $ CCLast (CCCont b vs' )))
     CCLast (CCCall b t id v vs)   -> do undoDeadGCLoads (v:vs) (\(v' : vs' ) ->
                                                (mkLast $ CCLast (CCCall b t id v' vs' )))
-    CCLast (CCCase v arms mb occ) -> do undoDeadGCLoads [v] (\[v' ] ->
-                                               (mkLast $ CCLast (CCCase v' arms mb occ)))
+    CCLast (CCCase v arms mb)     -> do undoDeadGCLoads [v] (\[v' ] ->
+                                               (mkLast $ CCLast (CCCase v' arms mb)))
     CCRebindId     {}             -> do return $ mkMiddle $ insn
 
   varForRoot_t root = let rv = varForRoot (trace ("varForRoot " ++ show root) root) in
@@ -527,9 +527,13 @@ isGCable v = case tidType v of
 -- a root is only killed if it is killed on all incoming paths.
 --
 -- The problem is that doing so does not form a valid lattice: as defined,
--- we would have ``_|_ \/ e = _|_`` instead of the needed ``_|_ \/ e = e``.
+-- we would have ``_|_ \/ e = _|_`` by definition of bottom=empty-set and
+-- join=intersection. What we instead need is ``_|_ \/ e = e`` (to be a
+-- proper lattice).
 -- Rather than tracking *killed* roots, we track *unkilled* roots, which thus
 -- allows us to form a proper lattice that tracks what roots don't need kills.
+-- Then the bottom element is all variables, and  we shrink when we xfer past
+-- a kill.
 --
 -- Things are a bit trickier still for eliminating redundant reloads. We want
 -- to track the set of available bindings corresponding to each (unkilled) root.
@@ -557,8 +561,8 @@ data AvailSet elts = UniverseMinus (Set.Set elts) | Avail (Set.Set elts)
 delAvails       (UniverseMinus elts) es = UniverseMinus (Set.union es elts)
 delAvails       (Avail         elts) es = Avail (availFrom elts (UniverseMinus es))
 
-addAvail        (Avail elts)         e  = Avail         (Set.insert e elts)
 addAvail        (UniverseMinus elts) e  = UniverseMinus (Set.delete e elts)
+addAvail        (Avail         elts) e  = Avail         (Set.insert e elts)
 
 availFrom    es (UniverseMinus elts)    = Set.difference   es elts
 availFrom    es (Avail         elts)    = Set.intersection es elts
@@ -578,10 +582,12 @@ availSmaller    (Avail _ )         (UniverseMinus s) | null (Set.toList s) = Tru
 availSmaller _ _ = error $ "GCRoots.hs: Can't compare sizes of Avail and UniverseMinus..."
 --availSmaller a u = error $ "Can't compare sizes of " ++ show a ++ " and " ++ show u
 
-
-data AvailMap = AvailMap (AvailSet LLRootVar)
-                         (Map LLRootVar (Set.Set LLVar)) deriving Show
-noAvailLoads = AvailMap (Avail Set.empty) Map.empty
+-- TODO explain intuition behind how AvailMap works...
+data AvailMap key val = AvailMap (AvailSet key)
+                                 (Map      key (Set.Set val)) deriving Show
+emptyAvailMap = AvailMap (Avail         Set.empty) Map.empty
+botAvailMap   = AvailMap (UniverseMinus Set.empty) Map.empty
+-- TODO write about the difference between these two defaults...
 
 intersectAvailMap (AvailMap oa om) (AvailMap na nm) =
   let
@@ -603,12 +609,20 @@ lookupAvailMap key (AvailMap a m) =
                Just vs -> vs
    else []
 
+concretizeAvail fk (Avail s)         = Avail (Set.map fk s)
+concretizeAvail fk (UniverseMinus s) = UniverseMinus (Set.map fk s)
+concretizeAvailMap fk fv (AvailMap a m) =
+  (concretizeAvail fk a
+  ,   Map.fromList [(fk k, fv v) | (k, v) <- Map.toList m
+                                 , availIn k a])
+
 type UnkilledRoots    = AvailSet LLRootVar
 type InitializedRoots = AvailSet LLRootVar
 data Avails = Avails { unkilledRoots :: UnkilledRoots
-                     , rootLoads     :: AvailMap
+                     , rootLoads     :: AvailMap LLRootVar LLVar
                      , initedRoots   :: InitializedRoots
-                     , availSubst    :: AvailMap
+                     , availSubst    :: AvailMap LLRootVar LLVar
+                     , availOccs     :: AvailMap (LLVar, Occurrence TypeLL) LLVar
                      }  -- note: AvailMap works because LLVar == LLRootVar...
                      deriving Show
 
@@ -636,13 +650,14 @@ availsXfer mayGCmap = mkFTransfer3 go go (distributeXfer availsLattice go)
     go (CCGCInit _ _   root) f =        f `unkill` root
     go (CCGCKill (Enabled _) roots) f = f `killin` roots
     go (CCGCKill     {}    ) f = f
-    go (CCLetVal _ letable ) f = ifgc (boolGC maygc)   f where maygc = canGC mayGCmap letable
+    go (CCLetVal id letable) f = ifgc (boolGC maygc)  xf where maygc = canGC mayGCmap letable
+                                                               xf = considerLet f id letable
     go (CCLetFuns    {}    ) f = ifgc True             f
     go (CCTupleStore {}    ) f = f
     go (CCRebindId _ v1 v2 ) f = f { availSubst = insertAvailMap v1 v2 (availSubst f) }
     go (CCLast       cclast) f = ifgc (canCCLastGC mayGCmap cclast) f
 
-    ifgc mayGC f = if mayGC then f { rootLoads = noAvailLoads }
+    ifgc mayGC f = if mayGC then f { rootLoads = emptyAvailMap }
                             else f -- when a GC might occur, all root loads
                                    -- become invalidated...
 
@@ -655,11 +670,19 @@ availsXfer mayGCmap = mkFTransfer3 go go (distributeXfer availsLattice go)
     unkill f root  = f { unkilledRoots = unkilledRoots f `addAvail`  root
                        , initedRoots   = initedRoots f   `addAvail`  root }
 
+    considerLet avails id (ILOccurrence ty v occ) = avails { availOccs = insertAvailMap (v, occ) (TypedId ty id) (availOccs avails) }
+    considerLet avails _ _ = avails
+
 availsRewrite :: forall m. FuelMonad m => RootLiveWhenGC -> Bool -> FwdRewrite m Insn' Avails
 availsRewrite allRoots doReuseRootSlots = mkFRewrite d
   where
     d :: Insn' e x -> Avails -> m (Maybe (Graph Insn' e x))
     d (CCLabel      {}       )   _    = return Nothing
+    d (CCLetVal id (ILOccurrence ty v occ)) a =
+        case lookupAvailMap (v, occ) (availOccs a) of
+              [] -> return Nothing
+              xs@(v' : _) -> return $ Just (mkMiddle $ CCRebindId (text "occ-reuse") (TypedId ty id) v' )
+
     d (CCLetVal     {}       )   _    = return Nothing
     d (CCLetFuns    {}       )   _    = return Nothing
     d (CCTupleStore {}       )   _    = return Nothing
@@ -737,7 +760,7 @@ availsRewrite allRoots doReuseRootSlots = mkFRewrite d
     s a v = case lookupAvailMap v (availSubst a) of
               [    ] -> v
               [ v' ] -> v'
-              [ v1, v2 ] -> trace ("GCRoots.hs: OOPS, " ++ show v ++ " mapped to two vars! choosing neither") v
+              [ _v1, _v2 ] -> trace ("GCRoots.hs: OOPS, " ++ show v ++ " mapped to two vars! choosing neither") v
               s -> error $ "GCRoots.hs: Expected avail. subst to map " ++ show v
                            ++ " to zero or one variables, but had " ++ show s
 
@@ -755,14 +778,14 @@ runAvails bbgp rootsLiveAtGCPoints mayGCmap doReuseRootSlots = do
         --       (Avail empty), i.e. top, for the entry block. Thus if/when we
         --       go back to the entry, we'll discard loads/inits from the body.
         --       See the commentary on AvailSet and AvailMap.
-        let init = Avails (UniverseMinus Set.empty) noAvailLoads (Avail Set.empty) noAvailLoads
+        let init = Avails (UniverseMinus Set.empty) emptyAvailMap (Avail Set.empty) emptyAvailMap emptyAvailMap
         (body' , _, _) <- analyzeAndRewriteFwd fwd (JustC [bbgpEntry bbgp])
                                                            (bbgpBody bbgp)
                            (mapSingleton blab init)
         return bbgp { bbgpBody = body' }
 
     --__fwd = debugFwdTransfers trace showing (\_ _ -> True) fwd
-    --_fwd = debugFwdJoins trace (\_ -> True) fwd
+    _fwd = debugFwdJoins trace (\_ -> True) fwd
     fwd = FwdPass { fp_lattice  = availsLattice
                   , fp_transfer = availsXfer mayGCmap
                   , fp_rewrite  = availsRewrite rootsLiveAtGCPoints doReuseRootSlots
@@ -774,19 +797,30 @@ runAvails bbgp rootsLiveAtGCPoints mayGCmap doReuseRootSlots = do
 availsLattice :: DataflowLattice Avails
 availsLattice = DataflowLattice
   { fact_name = "Availables"
-  , fact_bot  = Avails (UniverseMinus Set.empty) (AvailMap (UniverseMinus Set.empty) Map.empty)
-                       (UniverseMinus Set.empty) (AvailMap (UniverseMinus Set.empty) Map.empty)
+  , fact_bot  = Avails (UniverseMinus Set.empty) botAvailMap 
+                       (UniverseMinus Set.empty) botAvailMap botAvailMap
   , fact_join = add
   }
-    where add _lab (OldFact (Avails ok oa oi os)) (NewFact (Avails nk na ni ns))
-                 = (ch, Avails jk ja ji js)
+    where add _lab (OldFact (Avails ok oa oi os ox)) (NewFact (Avails nk na ni ns nx))
+                 = let r = (ch, Avails jk ja ji js jx)
+                       --fp (v, occ) = (tidIdent v, map fst occ)
+                       --sm = Set.map tidIdent
+                           in
+                       r   {-
+                   case c3 of
+                     False -> r
+                     _ -> trace ("changed@" ++ show _lab ++ ";\nox=" ++ show (concretizeAvailMap fp sm ox)
+                                                         ++ ";\nnx=" ++ show (concretizeAvailMap fp sm nx)
+                                                         ++ ";\njx=" ++ show (concretizeAvailMap fp sm jx)) r
+                                                         -}
             where
               jk = nk `intersectAvails` ok
               ji = ni `intersectAvails` oi
               (js, c1) = os `intersectAvailMap` ns
               (ja, c2) = oa `intersectAvailMap` na
+              (jx, c3) = ox `intersectAvailMap` nx
               ch = changeIf (availSmaller jk ok || availSmaller ji oi
-                                                || c1 || c2)
+                                                || c1 || c2 || c3)
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

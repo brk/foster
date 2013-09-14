@@ -456,12 +456,12 @@ struct LLSwitch : public LLTerminator {
   std::vector<CtorId> ctors;
   std::vector<std::string> blockids;
   std::string defaultCase;
-  LLOccurrence* occ;
-  LLSwitch(LLOccurrence* _occ,
+  LLVar* var;
+  LLSwitch(LLVar* _var,
            const std::vector<CtorId>& _ctors,
            const std::vector<std::string>& _ids,
            const std::string& _def)
-    : ctors(_ctors), blockids(_ids), defaultCase(_def), occ(_occ) {}
+    : ctors(_ctors), blockids(_ids), defaultCase(_def), var(_var) {}
 
   virtual void codegenTerminator(CodegenPass* pass);
 };

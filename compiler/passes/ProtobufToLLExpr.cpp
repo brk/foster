@@ -353,9 +353,7 @@ LLSwitch* parseSwitch(const pb::Terminator& b) {
   std::string def;
   if (sc.has_defcase()) { def = sc.defcase(); }
 
-  return new LLSwitch(
-      parseOccurrence(sc.occ()),
-      ctors, ids, def);
+  return new LLSwitch( parseTermVar(sc.var()), ctors, ids, def);
 }
 
 LLExpr* parseDeref(const pb::Letable& e) {

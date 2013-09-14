@@ -150,8 +150,6 @@ pointedToTypeOfVar v = case v of
 
 fnName f = identPrefix (tidIdent $ fnVar f)
 
-data ILDataCtor = ILDataCtor String Int (DataCtor TypeIL) deriving Show
-
 -----------------------------------------------------------------------
 
 instance Structured TypeIL where

@@ -73,7 +73,7 @@ data ILMiddle = ILLetVal      Ident   (Letable TypeLL) MayGC
 data ILLast = ILRetVoid
             | ILRet      LLVar
             | ILBr       BlockId [LLVar]
-            | ILCase     LLVar [(CtorId, BlockId)] (Maybe BlockId) (Occurrence TypeLL)
+            | ILCase     LLVar [(CtorId, BlockId)] (Maybe BlockId)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- TODO last-stand optimizations
@@ -342,8 +342,8 @@ flattenGraph bbgp mayGCmap = -- clean up any rebindings from gc root optz.
      frs (CCLabel be) = be
 
      fin :: Insn' O C -> ([ILMiddle], ILLast)
-     fin (CCLast (CCCont k vs)       ) = ([], cont k vs)
-     fin (CCLast (CCCase v bs mb occ)) = ([], ILCase v bs mb occ)
+     fin (CCLast (CCCont k vs)   ) = ([], cont k vs)
+     fin (CCLast (CCCase v bs mb)) = ([], ILCase v bs mb)
      -- [[f k vs]] ==> let x = f vs in [[k x]]
      fin (CCLast (CCCall k t id v vs)) =
         let maygc = Map.findWithDefault MayGC (tidIdent v) mayGCmap in
@@ -471,7 +471,7 @@ mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
           (CCLast    cclast    ) -> case cclast of
               CCCont b vs          -> CCLast (CCCont b (map s vs))
               CCCall b t id v vs   -> CCLast (CCCall b t id (s v) (map s vs))
-              CCCase v cs mb occ   -> CCLast (CCCase (s v) cs mb occ)
+              CCCase v cs mb       -> CCLast (CCCase (s v) cs mb)
 
      substForInClo :: VarSubstFor Closure
      substForInClo s clo =
@@ -496,15 +496,17 @@ showILProgramStructure (ILProgram procdefs _decls _dtypes _lines) =
     procVarDesc (TypedId ty id) = "( " ++ (show id) ++ " :: " ++ show ty ++ " ) "
 
     showBlock (Block blockid mids last) =
-            text (show blockid)
+            text ("vvvvvvvvvvvvvvvvvv")
+        <$> text (show blockid)
         <$> text (concatMap (\m -> "\t" ++ show m ++ "\n") mids)
-        <$> text (show last ++ "\n\n")
+        <$> text (show last ++ "\n^^^^^^^^^^^^^^\n")
 
 instance Show ILLast where
   show (ILRetVoid     ) = "ret void"
   show (ILRet v       ) = "ret " ++ show v
   show (ILBr  bid args) = "br " ++ show bid ++ " , " ++ show args
-  show (ILCase v arms _def _occ) = "case(" ++ show v ++ ")"
+  show (ILCase v arms def) = "case(" ++ show v ++ ")"
                                 ++ "\n" ++ concatMap (\arm -> "\t" ++ show arm ++ "\n") arms
+                                ++ show def
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

@@ -625,7 +625,7 @@ void LLSwitch::codegenTerminator(CodegenPass* pass) {
   ASSERT(ctors.size() >= 1);
 
   // Fetch the subterm of the scrutinee being inspected.
-  llvm::Value* inspected = this->occ->codegen(pass);
+  llvm::Value* inspected = this->var->codegen(pass);
   llvm::Value* tag = NULL;
 
   // All the ctors should have the same data type, now that we have at least

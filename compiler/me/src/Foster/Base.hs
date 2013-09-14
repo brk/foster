@@ -153,6 +153,19 @@ data DataTypeSig   = DataTypeSig (Map CtorName CtorId)
 -- A pair (n, c) in an occurrence means "field n of the struct type for ctor c".
 type FieldOfCtor ty = (Int, CtorInfo ty)
 type Occurrence ty = [FieldOfCtor ty]
+
+occType v occ = let
+                   go ty [] [] = ty
+                   go _ (k:offs) ((DataCtor _ _ _ types):dctors)
+                               = go (types !! k) offs dctors
+                   go ty offs dctors =
+                        error $ "occType: " ++ show ty
+                               ++ "; offs=" ++ show offs ++ "~~~" ++ show dctors
+
+                   (offs, infos) = unzip occ
+                in go (tidType v) offs (map ctorInfoDc infos)
+
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||| Literals |||||||||||||||||||||||||||||||||{{{
 data Literal = LitInt   LiteralInt

@@ -200,16 +200,17 @@ dumpLast (ILBr blockid args) =
     P'.defaultValue { PbTerminator.tag    = BLOCK_BR
                     , PbTerminator.block  = Just $ dumpBlockId blockid
                     , PbTerminator.args   = fromList $ map dumpVar args }
-dumpLast (ILCase var arms def occ) =
+dumpLast (ILCase var arms def) =
     P'.defaultValue { PbTerminator.tag    = BLOCK_CASE
-                    , PbTerminator.scase  = Just $ dumpSwitch var arms def occ }
+                    , PbTerminator.scase  = Just $ dumpSwitch var arms def }
 
-dumpSwitch var arms def occ =
+dumpSwitch var arms def =
     let (ctors, ids) = Prelude.unzip arms in
     P'.defaultValue { PbSwitch.ctors   = fromList (map dumpCtorId ctors)
                     , PbSwitch.blocks  = fromList (map dumpBlockId ids)
                     , PbSwitch.defCase = fmap dumpBlockId def
-                    , PbSwitch.occ   = Just $ dumpOccurrence var occ }
+                    , PbSwitch.var     = dumpVar var
+                    }
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||||||| Literals ||||||||||||||||||||||||||||{{{
@@ -427,16 +428,8 @@ dumpOccurrence var offsCtorInfos =
     P'.defaultValue { PbOccurrence.occ_offset = fromList $ map intToInt32 offs
                     , PbOccurrence.occ_ctors  = fromList $ map dumpCtorInfo infos
                     , PbOccurrence.scrutinee  = dumpVar var
-                    , PbOccurrence.type'      = Just $ dumpType $
-                                                  occType (tidType var)   offs
-                                                          (map ctorInfoDc infos)
+                    , PbOccurrence.type'      = Just $ dumpType $ occType var offsCtorInfos
                     }
-
-occType ty [] [] = ty
-occType _ (k:offs) ((DataCtor _ _ _ types):dctors) =
-                                                occType (types !! k) offs dctors
-occType ty offs dctors =
-        error $ "occType: " ++ show ty ++ "; offs=" ++ show offs ++ "~~~" ++ show dctors
 
 -----------------------------------------------------------------------
 dumpVar (TypedId t i) = dumpMoVar t i

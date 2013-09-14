@@ -216,7 +216,7 @@ message PbSwitch {
   repeated PbCtorId     ctors   = 1;
   repeated string       blocks  = 2;
   optional string       defCase = 3;
-  optional PbOccurrence occ     = 4;
+  required TermVar      var     = 4;
 }
 
 message PbCtorInfo {

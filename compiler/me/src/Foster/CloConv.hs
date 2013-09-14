@@ -95,7 +95,7 @@ data Proc blocks =
 
 data CCLast = CCCont        BlockId [LLVar] -- either ret or br
             | CCCall        BlockId TypeLL Ident LLVar [LLVar] -- add ident for later let-binding
-            | CCCase        LLVar [(CtorId, BlockId)] (Maybe BlockId) (Occurrence TypeLL)
+            | CCCase        LLVar [(CtorId, BlockId)] (Maybe BlockId)
             deriving (Show)
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -352,17 +352,20 @@ compileDecisionTree scrutinee (DT_Switch occ subtrees maybeDefaultDt) = do
            Just dt -> do (BlockFin dblockss did) <- compileDecisionTree scrutinee dt
                          return (dblockss, Just did)
         let (blockss, ids) = unzip (map splitBlockFin fins)
-        (id, block) <- ilmNewBlock ".dt.switch" [] $ (CCLast $
-                          mkSwitch (llv scrutinee) (zip ctors ids) maybeDefaultId (llOcc occ))
+        scrut_occ_id <- ilmFresh (T.pack "scrut.occ")
+        let scrut_occ = TypedId (occType scrutinee occ) scrut_occ_id
+        (id, block) <- ilmNewBlock ".dt.switch"
+                                  [emitOccurrence scrutinee (scrut_occ, occ)]
+                                  (CCLast $ mkSwitch (llv scrut_occ) (zip ctors ids) maybeDefaultId)
         let catClosedGraphs = foldr (|*><*|) emptyClosedGraph
         return $ BlockFin (blockGraph block |*><*| catClosedGraphs blockss |*><*| dblockss) id
 
 llOcc occ = map (\(i,c) -> (i, fmap monoToLL c)) occ
 
 emitOccurrence :: MoVar -> (TypedId MonoType, Occurrence MonoType) -> Insn' O O
-emitOccurrence scrutinee (v, occ) = CCLetVal (tidIdent v) ilocc
-           where ilocc = ILOccurrence (monoToLL $ tidType v)
-                                      (llv scrutinee) (llOcc occ)
+emitOccurrence scrutinee (v, occ) =
+    CCLetVal (tidIdent v) $ ILOccurrence (monoToLL $ tidType v)
+                                         (llv scrutinee) (llOcc occ)
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -496,10 +499,10 @@ closureConvertedProc procArgs f newbody = do
 
 -- Canonicalize single-consequent cases to unconditional branches,
 -- and use the first case as the default for exhaustive pattern matches.
--- mkSwitch :: LLVar -> [(CtorId, BlockId)] -> Maybe BlockId -> Occurrence TypeLL -> CCLast
-mkSwitch _ [arm]      Nothing _   = CCCont (snd arm) []
-mkSwitch v (a:arms)   Nothing occ = CCCase v arms (Just $ snd a) occ
-mkSwitch v    arms    def     occ = CCCase v arms def            occ
+-- mkSwitch :: LLVar -> [(CtorId, BlockId)] -> Maybe BlockId -> CCLast
+mkSwitch _ [arm]      Nothing = CCCont (snd arm) []
+mkSwitch v (a:arms)   Nothing = CCCase v arms (Just $ snd a)
+mkSwitch v    arms    def     = CCCase v arms def
 
 --------------------------------------------------------------------
 
@@ -601,8 +604,8 @@ instance Pretty CCLast where
         case tidType v of
           LLProcType _ _ _ -> text ("call (proc)") <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
           _                -> text ("call (func)") <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
-  pretty (CCCase v arms def occ) = align $
-    text "case" <+> prettyOccurrence v occ <$> indent 2
+  pretty (CCCase v arms def) = align $
+    text "case" <+> pretty v <$> indent 2
        ((vcat [ arm (text "of" <+> pretty ctor) bid
               | (ctor, bid) <- arms
               ]) <> (case def of Nothing -> empty
@@ -655,10 +658,10 @@ instance FosterNode Insn' where branchTo bid = CCLast $ CCCont bid []
 block'TargetsOf :: Insn' O C -> [BlockId]
 block'TargetsOf (CCLast last) =
     case last of
-        CCCont     b _              -> [b]
-        CCCall     b _ _ _ _        -> [b]
-        CCCase     _ cbs (Just b) _ -> b:map snd cbs
-        CCCase     _ cbs Nothing  _ ->   map snd cbs
+        CCCont     b _            -> [b]
+        CCCall     b _ _ _ _      -> [b]
+        CCCase     _ cbs (Just b) -> b:map snd cbs
+        CCCase     _ cbs Nothing  ->   map snd cbs
 
 
 instance IntSizedBits MonoType where
