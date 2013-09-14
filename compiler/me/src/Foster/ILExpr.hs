@@ -76,6 +76,13 @@ data ILLast = ILRetVoid
             | ILCase     LLVar [(CtorId, BlockId)] (Maybe BlockId) (Occurrence TypeLL)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+-- TODO last-stand optimizations
+--        * reuse avails infrastructure for inlining occ bindings
+--        * do liveness to eliminate dead bindings
+--          * should be done before allocations are made explicit,
+--            since otherwise we have to account for tuple stores not being "real" uses.
+--          * but maybe after cfg simplification...
+
 prepForCodegen :: ModuleIL CCBody TypeLL -> MayGCConstraints -> Compiled ILProgram
 prepForCodegen m mayGCconstraints0 = do
     let decls = map (\(s,t) -> LLExternDecl s t) (moduleILdecls m)

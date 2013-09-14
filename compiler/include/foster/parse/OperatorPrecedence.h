@@ -32,7 +32,7 @@ public:
   void initWith(const OperatorPrecedenceTable& other);
 
 private:
-  struct Impl;
+  class Impl;
   Impl* impl;
   OperatorPrecedenceTable& operator=(const OperatorPrecedenceTable& other);
   OperatorPrecedenceTable(const OperatorPrecedenceTable& other);

@@ -1,0 +1,32 @@
+main = {
+  expect_i32 2;
+  2 |> print_i32;
+
+  f = { { x => print_i32 x } };
+  expect_i32 3;
+  3 |> f ! ;
+
+  g = { x => print_i32 x };
+  expect_i32 4;
+  4 |> g;
+
+  expect_i32 7;
+  3 |> { x => x *Int32 2 }
+    |> { x => x +Int32 1 }
+    |> print_i32;
+
+  expect_i32 7;
+  (3 *Int32 2
+     +Int32 1)
+    |> print_i32;
+
+  part2 !;
+};
+
+part2 = {
+  expect_i32 21;
+  3 *Int32 2
+    +Int32 1
+    |> (*Int32) 3 |> print_i32;
+};
+

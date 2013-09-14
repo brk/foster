@@ -29,7 +29,10 @@ elapsed_time_n = { ff : { () } => n : Int32 =>
   loop n;
   t2 = foster_getticks !;
 
-  foster_getticks_elapsed t1 t2
+  if (t2 -Int64 t1) <=SInt64 (primitive_sext_i64_i32 n)
+    then prim kill-entire-process "problem with elapsed_time_n, too few ticks implies overoptimization";
+    else foster_getticks_elapsed t1 t2
+  end
 };
 
 
@@ -46,5 +49,10 @@ elapsed_ticks_n = { n => f =>
   t2 = foster_getticks !;
 
   t2 -Int64 t1
+};
+
+time-ratio = { slowthunk => fastthunk => n =>
+  elapsed_time_n slowthunk n `div-f64`
+  elapsed_time_n fastthunk n
 };
 

@@ -31,7 +31,7 @@
 // what the common names for precedence relations (left associative,
 // right associative, higher precedence, non-associative, etc)
 // boils down to is: for ops X and Y, what tree structure results
-// from parsing  a X b  Y c     and      b Y c X a)?
+// from parsing  a X b  Y c     and      b Y c X a?
 //
 // X tighter:   (a X b) Y c              b  Y (c X a)
 //
@@ -306,11 +306,15 @@ public:
     // a b + c == (a b) + c
     //tighter("juxtaposition", "+ * ** == < and");
 
+
+    tighter("!= * + - / < <= == > >= and or", "|>");
+
     // e.g. (a + b + c) == ((a + b) + c)
     // and  (a b c)     == ((a b) c)
     leftAssociativeSet("* /");
     leftAssociativeSet("+ -");
     leftAssociativeSet("and or");
+    leftAssociativeSet("|>");
 
     nonAssociativeSet("== !=");
     nonAssociativeSet("< <= > >=");

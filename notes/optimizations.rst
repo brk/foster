@@ -120,3 +120,75 @@ rather than::
         let p = (v, w) in
         case p of (C, d) -> ... use d ...
                of pair   -> ... use pair ...
+
+Pipe Operator
+~~~~~~~~~~~~~
+
+The pipe operator::
+    b |> bytesDrop todrop
+is syntax for::
+
+    (     bytesDrop todrop  b   )
+    (NOT (bytesDrop todrop) b  !)
+
+and::
+    (b |> bytesDrop todrop |> bytesTake reslen)
+    =~=
+    (b |> bytesDrop todrop) |> bytesTake reslen
+is syntax for::
+    bytesTake reslen (b |> bytesDrop todrop)
+    =~=
+    bytesTake reslen (bytesDrop todrop b)
+    
+
+Also, if the RHS is a variable, it is treated as a function call::
+    b |> f |> g  === g (f b)
+
+Thunk invocations are special cased::
+    b |> t !     === (t !) b
+rather than ``t b``, because the latter can be written ``b |> t``.
+
+This means that if we wanted e.g.::
+    (bytesDrop todrop) b
+instead of::
+    (bytesDrop todrop b)
+we can write either::
+     b |> { bytesDrop todrop } !
+or::
+     x = bytesDrop todrop; b |> x
+So currying isn't super smooth, and it's always a bit sad to
+forgo first-class composition operators, but it's low-overhead,
+and it seems easier to reliably reason about allocation
+behavior this way, compared to the alternative of defaulting
+to curried application with "standard" optimizations for recovering
+uncurried applictaions.
+
+Maybe another way of looking at this is via s-expr notation::
+    e |> (a ... z) ==> (a ... z e)
+    e |> (x)       ==> ((x) e)
+    e |> x         ==> (x e)
+
+Putting e in the first operand place ``(a e ... z)`` would also work,
+but using  ``e |> f x``  for   ``f e x``   competes with  ``e `f` x``.
+
+This is currently a built-in macro, but could be a user-defined macro
+with an appropriate macro system.
+
+Precedence (TODO)::
+    |> binds tighter than >^
+    |> binds looser than everything else?
+          x |> f `or` g
+                              (x |> f) `or` g   ?
+                                x |> (f `or` g)  ?
+
+          f x `or` g resolves as  (f x) `or` g
+                    rather than  (f `or` g) x
+
+
+                                  (f x) `or` g
+                                    (f `or` g) x
+
+                                  f :: x => t
+                                or :: (x => t) => g => r
+      Or no defined precedence, so must explicitly parenthesize?
+

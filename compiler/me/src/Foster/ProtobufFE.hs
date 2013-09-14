@@ -79,7 +79,13 @@ parseBool pbexpr annot = do
 
 parseCall pbexpr rng = do
     (base:args) <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
-    return $ E_CallAST rng base args
+    case base of
+      (E_VarAST _ (VarAST _ name)) | name == T.pack "|>" ->
+        case args of
+          [eexpr, E_CallAST _rng subbase subargs] | not (Prelude.null subargs)
+                        -> return $ E_CallAST rng subbase (subargs ++ [eexpr])
+          [eexpr, rest] -> return $ E_CallAST rng rest [eexpr]
+      _ -> return $ E_CallAST rng base args
 
 parseCallPrim pbexpr annot = do
     args <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
