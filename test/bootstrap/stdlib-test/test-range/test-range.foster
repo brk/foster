@@ -1,0 +1,155 @@
+snafuinclude Prelude "prelude";
+snafuinclude Range   "range";
+
+main = {
+  test_cmpRange 1 2 3 4         "Before";
+  test_cmpRange 3 4 1 2         "After";
+  test_cmpRange 1 2 2 4 "AdjacentBefore";
+  test_cmpRange 4 5 2 4 "AdjacentAfter";
+  test_cmpRange 0 2 1 4 "OverlapsBefore";
+  test_cmpRange 2 5 1 4 "OverlapsAfter";
+  test_cmpRange 1 2 1 4 "Subsumed";
+  test_cmpRange 1 2 1 2 "Subsumes";
+  test_cmpRange 1 4 1 2 "Subsumes";
+  test_cmpRange 1 2 0 4 "Subsumed";
+
+  // Should be illegal, ideally at compile-time:
+  //test_cmpRange 1 2 4 0 ":(";
+
+  testChunkBuilding !;
+};
+
+test_cmpRange = { a : Int32 => b => c => d => exp =>
+  expect_text exp;
+  print_text (textOfRangeChunkCmpResult
+                (cmpRange a b c d cmpSInt32));
+};
+
+// Returns a list of (offset, length, value) tuples
+// describing the list of bytes in the chunks.
+//
+// Invariant: adjacent chunks have been merged.
+//
+summarizeChunks :: { List Chunk => List (Int64, Int64, Int8) };
+summarizeChunks = { chunks =>
+  REC go = { i0 => // initial chunk offset (logical)
+             i  => // current chunk offset (logical)
+             b => // bytes
+             c => // current byte offset (physical)
+             v => // current byte value (b[i] == b[c - 1])
+             z => // length of current run of v's
+             rest =>
+    // ... [xxxxxxxxyyyyyyyyyyyyyzzzzzzzzzz] ...
+    //    i0        ^            ^
+    //       i=i0; c=8; v=x
+    //                    i=i0+7; c=8+14; v=y
+    if bytesLength b <=SInt64 c
+      then // no more bytes in this chunk, continue with the next one,
+           // Because of the not-adjacent invariant, we don't need to
+           // worry about propagating i/z/v for the next chunk.
+           Cons (i, z, v) (summarizeChunks rest)
+      else
+        w = bytesGet! c b;
+        d = c +Int64 1;
+        if w ==Int8 v
+          then go i0 i b d v (z +Int64 1) rest
+          else // Different byte value...
+               Cons (i, z, v)
+                    (go i0 (i0 +Int64 c) b d w 1 rest)
+        end
+    end
+  };
+
+  case chunks
+    of $Nil -> Nil !
+    of $Cons ($Chunk i b) rest ->
+      if bytesLength b ==Int64 0
+        then summarizeChunks rest
+        else go i i b 1 (bytesGet! 0 b) 1 rest
+      end
+  end
+};
+
+// TODO warn/error on duplicate function prototype declarations.
+
+textOfChunkSummaries :: { List (Int64, Int64, Int8) => Text };
+textOfChunkSummaries = { lst =>
+  listFoldl lst { smry => txt => mkTextConcat txt (textOfAChunkSummary smry) } "";
+};
+
+textOfAChunkSummary :: { (Int64, Int64, Int8) => Text };
+textOfAChunkSummary = { t =>
+  case t of (i, len, c) ->
+    mkTextConcat
+      (mkTextConcat
+        (mkTextConcat "(" (tmp_Text_of_Int64 i))
+        (mkTextConcat " " (tmp_Text_of_Int64 len)))
+      (mkTextConcat
+        (mkTextConcat " " (tmp_Text_of_Int8 c))
+        ")")
+  end
+};
+
+mkChunk = { off : Int64 => n : Int32 => v : Int8 =>
+  arr = newDArray n { o => v };
+  Chunk off (BytesFragment arr (primitive_sext_i64_i32 n))
+};
+
+testChunkBuilding = {
+  expect_text "(1 2 3)";
+  print_text (textOfAChunkSummary (1, 2, 3));
+
+  expect_text "(1 2 3)(4 5 6)";
+  print_text (textOfChunkSummaries 
+    (Cons (1, 2, 3) (Cons (4, 5, 6) (Nil !))));
+
+  
+  // TODO better error message
+  //expect_text "(1 2 3)";
+  //print_text (textOfAChunkSummary 
+  //  (summarizeChunks (listSingleton (mkChunk 1 2 3))));
+
+  expect_text "(1 2 3)";
+  print_text (textOfChunkSummaries
+    (summarizeChunks (listSingleton (mkChunk 1 2 3))));
+
+  expect_text "(10 2 4)(1 2 3)";
+  print_text (textOfChunkSummaries
+    (summarizeChunks 
+      (Cons (mkChunk 10 2 4) (listSingleton (mkChunk 1 2 3)))));
+  
+  expect_text "(1 2 3)(10 2 4)";
+  print_text (textOfChunkSummaries
+    (summarizeChunks 
+      (chunkInsert (mkChunk 1 2 3)
+        (chunkInsert (mkChunk 10 2 4) (Nil !)))));
+
+  expect_i64 2;
+  print_i64 (listLength64
+      (chunkInsert (mkChunk 10 2 4)
+        (chunkInsert (mkChunk 1 2 3) (Nil !))));
+
+  expect_text "(1 2 3)(10 2 4)";
+  print_text (textOfChunkSummaries
+    (summarizeChunks 
+      (chunkInsert (mkChunk 10 2 4)
+        (chunkInsert (mkChunk 1 2 3) (Nil !)))));
+
+  expect_i64 1;
+  print_i64 (listLength64
+      (chunkInsert (mkChunk 3 2 4)
+        (chunkInsert (mkChunk 1 2 3) (Nil !))));
+
+  expect_text "(1 2 3)(3 2 4)";
+  print_text (textOfChunkSummaries
+    (summarizeChunks 
+      (chunkInsert (mkChunk 3 2 4)
+        (chunkInsert (mkChunk 1 2 3) (Nil !)))));
+
+  expect_text "(1 4 3)";
+  print_text (textOfChunkSummaries
+    (summarizeChunks 
+      (chunkInsert (mkChunk 3 2 3)
+        (chunkInsert (mkChunk 1 2 3) (Nil !)))));
+};
+

@@ -1,0 +1,135 @@
+main = {
+  ()
+};
+
+// Based on the paper "RE derivatives re-examined"
+// http://www.cl.cam.ac.uk/~so294/documents/jfp09.pdf
+
+type case RE
+  of $RE_EmptySet
+  of $RE_EmptyString
+  of $RE_Symbol        sym
+  of $RE_Concat        RE RE
+  of $RE_Kleene        RE
+  of $RE_Alt           RE RE
+  of $RE_And           RE RE
+  of $RE_Not           RE
+  ;
+
+re_v = { re =>
+  case re
+    of $RE_EmptySet            -> RE_EmptySet !
+    of $RE_EmptyString         -> RE_EmptyString !
+    of $RE_Symbol        _     -> RE_EmptySet !
+    of $RE_Concat        r s   -> RE_And (re_v r) (re_v s)
+    of $RE_Kleene        r     -> RE_EmptyString !
+    of $RE_Alt           r s   -> RE_Alt (re_v r) (re_v s)
+    of $RE_And           r s   -> RE_And (re_v r) (re_v s)
+    of $RE_Not           r     ->
+      case re_v r
+        of $RE_EmptySet   -> RE_EmptyString !
+        of $RE_EmptySring -> RE_EmptySet    !
+      end
+  end;
+};
+
+re_d = { a => re =>
+  case re
+    of $RE_EmptySet            -> RE_EmptySet !
+    of $RE_EmptyString         -> RE_EmptySet !
+    of $RE_Symbol        x     ->
+                   if eq x a
+                     then RE_EmptyString !
+                     else RE_EmptySet    !
+                   end
+    of $RE_Concat        r s   -> RE_Alt (RE_Concat (re_d a r) s)
+                                         (RE_Concat (re_v   r) (re_d a s))
+    of $RE_Kleene        r     -> RE_Concat (re_d a r) (RE_Kleene r)
+    of $RE_Alt           r s   -> RE_Alt (re_d a r) (re_d a s)
+    of $RE_And           r s   -> RE_And (re_d a r) (re_d a s)
+    of $RE_Not           r     -> RE_Not (re_d a r)
+  end;
+};
+
+re_ds = { t => re =>
+  case textHeadTail t
+    of $None     -> re
+    of $Some u a -> re_ds a (re_d u a)
+  end
+};
+
+re_matches = { re => t =>
+  case textHeadTail t
+    of $None -> case re_v r
+                  of $RE_EmptyString -> True
+                  of _               -> False
+                end
+    of $Some a w -> re_matches (re_d a r) w
+  end
+};
+
+re_goto = { q => c => qq => d =>
+  let qc = re_d c q;
+  in
+     /* if exists q' in qq such that q' `re_equiv` qc
+          then (qq, d `union` { (q,c) |-> q' })
+          else let qq' = qq `union` { qc };
+                   d'  = d  `union` { (q,c) |-> qc };
+                in explore qq' d' qc end
+        end
+     */
+  end
+};
+
+/*
+re_explore = { qq => d => q =>
+  fold (goto q) (qq, d) epsilon
+};
+*/
+
+/*
+re_mkDFA = { re =>
+  let q0 = re_d ?? re;
+      (qq, d) = re_explore {q0} {} q0;
+      f = { q for q in qq if re_v q is empty };
+  in
+    (qq, q0, f, d)
+  end
+};
+*/
+
+re_equiv_approx = { rx => ry =>
+  case (rx, ry)
+    of ($RE_And r1 r2, r3) if { re_equal r1 r2 }
+                        `and` { re_equal r2 r3 } -> True
+    of ($RE_And r1 r2, $RE_And r3 r4) if
+                             { re_equal r1 r3 }
+                       `and` { re_equal r2 r4 } -> True
+
+    //   (r & s) & t ~~ r & (s & t)
+
+    of ($RE_And $RE_EmptySet _, $RE_EmptySet) -> True
+    of ($RE_And ($RE_Not $RE_EmptySet) r1, r2) | re_equal r1 r2 -> True
+
+
+    // all the RE_Alt rules...
+
+
+
+
+    //   (r . s) . t ~~ r . (s . t)
+
+    of ($RE_Concat $RE_EmptySet _, $RE_EmptySet) -> True
+    of ($RE_Concat _ $RE_EmptySet, $RE_EmptySet) -> True
+    of ($RE_Concat $RE_EmptyString r1, r2) | re_equal r1 r2 -> True
+    of ($RE_Concat r1 $RE_EmptyString, r2) | re_equal r1 r2 -> True
+
+    of ($RE_Kleene ($RE_Kleene r1), $RE_Kleene r2) | re_equal r1 r2 -> True
+    of ($RE_Kleene $RE_EmptyString, $RE_EmptyString) -> True
+    of ($RE_Kleene $RE_EmptySet   , $RE_EmptyString) -> True
+
+    of ($RE_Not ($RE_Not r1)   , r2) | re_equal r1 r2 -> True
+
+  end
+};
+

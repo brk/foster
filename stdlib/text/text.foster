@@ -1,0 +1,64 @@
+snafuinclude Bytes "bytes";
+
+mkTextConcat = { a : Text => b : Text =>
+  lensum = (textLength a) +Int32 (textLength b);
+  small  = 120; // we'll be willing to memcpy buffers smaller than this.
+
+  case (a, b)
+    of ($TextFragment ba na, $TextFragment bb nb) ->
+      // One optimization from the paper "Ropes: an alternative to strings":
+      // transparently flatten concatenations of small leaf nodes.
+      if lensum <=SInt32 small
+      then TextFragment (rawBytesConcatByCopy ba na bb nb lensum) lensum
+      else TextConcat a b lensum
+      end
+    // Un-implemented optimizations: perform similar flattening for
+    // ($TextConcat a ($TextFragment ab na) _, $TextFragment bb nb) ->
+    // and
+    // ($TextFragment ba na, $TextConcat ($TextFragment bb nb) c) ->
+    of (_                  , _) ->
+      TextConcat a b lensum
+  end
+};
+
+textLength = { t : Text =>
+  case t
+    of $TextFragment _ n -> n
+    of $TextConcat _ _ n -> n
+   end;
+};
+
+expect_text_bare = { s : Text =>
+  case s
+    of $TextFragment a n     -> prim_print_bytes_stderr a n; n
+    of $TextConcat   s1 s2 n -> expect_text_bare s1; expect_text_bare s2; n
+   end;
+};
+
+print_text_bare = { s : Text =>
+  case s
+    of $TextFragment a n     -> prim_print_bytes_stdout a n; n
+    of $TextConcat   s1 s2 n -> print_text_bare s1; print_text_bare s2; n
+   end;
+};
+
+expect_text = { s : Text =>
+  expect_text_bare s; expect_newline !; ()
+};
+
+print_text = { s : Text =>
+  print_text_bare s; print_newline !; ()
+};
+
+/////
+
+assert :: { Bool => Text => () };
+assert = { cond : Bool => msg : Text =>
+  if cond then () else
+    print_text "Assert failed!";
+    print_text msg;
+    prim kill-entire-process "assert-failed";
+    ()
+  end
+};
+

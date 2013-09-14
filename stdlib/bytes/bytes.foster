@@ -1,0 +1,168 @@
+
+// Immutable wrapper around Array Int8 with enhanced asymptotics
+// for common operations like concatenation of bytes and taking slices/views
+// of byte arrays.
+// Standard sequence types like VList are currently limited to boxed types.
+// TODO would a specialization of VList perform better?
+
+type case Bytes
+  of $BytesEmpty
+  of $BytesFragment (Array Int8) Int64
+  of $BytesConcat   Bytes Bytes  Int64
+          // possible-but-not-yet-enforced invariant: sub-bytes not BytesEmpty.
+  of $BytesOffset   Bytes Int64  Int64
+          // invariant: remaining len > 0
+          // invariant: sub-bytes not BytesOffset
+;
+
+
+rawBytesConcatByCopy = { a : Array Int8 => alen : Int32 =>
+                         b : Array Int8 => blen : Int32 => len : Int32 =>
+  if blen ==Int32 0 then a else
+    // We do this somewhat-unsatisfactory dance of allocating a (mutable) array,
+    // then filling its contents in via an exposed memcpy primitive.
+    // It would be nicer to have (byte-)array concatenation be a primitive of the
+    // runtime, but that would require the compiler to statically provide the
+    // runtime with the typeinfo needed to call memalloc_array.
+    //
+    // It's also not great that using this in a loop gives O(n^2) asympotic
+    // complexity rather than O(n), because we don't over-allocate our arrays.
+    bytes = allocDArray len;
+
+    // bytes[0..whatever]    = a[0..alen]
+    memcpy_i8_to_at_from_len bytes 0    a alen;
+
+    // bytes[alen..whatever] = b[0..blen]
+    memcpy_i8_to_at_from_len bytes alen b blen;
+
+    bytes
+  end
+};
+
+
+bytesOfRawArray :: { Array Int8 => Bytes };
+bytesOfRawArray = { a => BytesFragment a (prim_arrayLength a) };
+
+bytesLength :: { Bytes => Int64 };
+bytesLength = { ba =>
+  case ba
+    of $BytesEmpty          -> 0
+    of $BytesFragment _ len -> len
+    of $BytesConcat _ _ len -> len
+    of $BytesOffset _ _ len -> len
+  end
+};
+
+bytesConcat :: { Bytes => Bytes => Bytes };
+bytesConcat = { ba => bb =>
+  lena = bytesLength ba;
+  if lena ==Int64 0 then bb else
+    lenb = bytesLength bb;
+    if lenb ==Int64 0 then ba else
+      len = lena +Int64 lenb;
+      BytesConcat ba bb len
+    end
+  end
+};
+
+bytesConcatAlt :: { Bytes => Bytes => Bytes };
+bytesConcatAlt = { ba => bb =>
+  case (bytesLength ba, bytesLength bb)
+    of (0, _) -> bb
+    of (_, 0) -> ba
+    of (lena, lenb) -> BytesConcat ba bb (lena +Int64 lenb)
+  end
+};
+
+bytesDrop :: { Bytes => Int64 => Bytes };
+bytesDrop = { ba => n =>
+  if n ==Int64 0 then ba else
+    len = bytesLength ba -Int64 n;
+    if len <=SInt64 0
+      then BytesEmpty !
+      else case ba
+            // TODO could drop half a concat if n is big enough.
+            of $BytesConcat bb bc _ ->
+              if bytesLength bb <=SInt64 n
+                then bytesDrop bc (n -Int64 bytesLength bb)
+                else // rather than re-concat a projection of the drop,
+                     // and potentially do multiple allocations,
+                     // we'll just wrap the concat in an offset...
+                                      BytesOffset ba n            len
+              end
+            of $BytesOffset bb m _ -> BytesOffset bb (n +Int64 m) len
+            of _                   -> BytesOffset ba n            len
+          end
+    end
+  end
+};
+
+// Precondition: len >= 0
+// Postcondition: bytesLength (bytesTake b n) == min n (bytesLength b)
+bytesTake :: { Bytes => Int64 => Bytes };
+bytesTake = { ba => len =>
+  // [aaaaaaaaaaaaaaaa]
+  //          len
+  if len ==Int64 0 then BytesEmpty ! else
+  if len >=SInt64 bytesLength ba
+    then ba
+    else case ba
+           of $BytesFragment arr _ -> BytesFragment arr len
+           of $BytesOffset bb  m _ -> BytesOffset  bb m len
+           of $BytesConcat bb bc _ ->
+             lenFromC = len -Int64 bytesLength bb;
+             if lenFromC <=SInt64 0
+               then bytesTake bb len
+               else bytesConcat bb (bytesTake bc lenFromC)
+             end
+           of _ -> prim kill-entire-process "bytesTake invariant violated";
+         end
+  end
+  end
+};
+
+// Precondition: o is a valid index for b.
+bytesGet!    :: { Int64 => Bytes => Int8 };
+bytesGet! = { o => ba =>
+  case ba
+    of $BytesFragment arr _ -> arr[primitive_trunc_i64_i32 o];
+    of $BytesOffset bb m  _ -> bytesGet! (o +Int64 m) bb;
+    of $BytesConcat bb bc _ ->
+      afterdrop = o -Int64 bytesLength bb;
+      if afterdrop <SInt64 0
+        then bytesGet! o bb
+        else bytesGet! afterdrop bc
+      end
+    of $BytesEmpty          -> prim kill-entire-process "bytesGet! of BytesEmpty";
+  end
+};
+
+// Precondition: 0 is a valid index for b.
+bytesGet0! :: { Bytes => Int8 };
+bytesGet0! = { ba =>
+  case ba
+    of $BytesFragment arr _ -> arr[0];
+    of $BytesOffset bb m  _ -> bytesGet! m bb;
+    of $BytesConcat bb bc _ -> bytesGet0! bb;
+    of $BytesEmpty          -> prim kill-entire-process "bytesGet0! of BytesEmpty";
+  end
+};
+
+// Precondition: n is a valid index for b.
+// TODO would bytesGet o b = bytesGet0 (bytesDrop b o) be efficiently compiled?
+bytesGetAlt1! :: { Bytes => Int64 => Int8 };
+bytesGetAlt1! = { b => n =>
+  bytesGet0! (bytesDrop b n)
+};
+
+bytesGetAlt2! :: { Bytes => Int64 => Int8 };
+bytesGetAlt2! = { b => n =>
+  bytesGet! 0 (bytesDrop b n)
+};
+
+
+// bytesGet4LE :: { Bytes => Int64 => Int32 };
+// bytesGet8LE :: { Bytes => Int64 => Int64 };
+// bytesPackList  :: { List Int8 => Bytes };
+// bytesToUTF8 :: { Bytes => Text };
+// bytesOfUTF8 :: { Text => Bytes };
