@@ -273,8 +273,7 @@ closureConvertBlocks bbg = do
                                       return $ mkLast $ CCLast (CCCall b (monoToLL t) id (llv v) (map llv vs))
         ILast (CFCase a pbs) -> do
            allSigs <- gets ilmCtors
-           let mbKnownCtorId = Nothing
-           let dt = compilePatterns mbKnownCtorId pbs allSigs
+           let dt = compilePatterns pbs allSigs
            let usedBlocks = eltsOfDecisionTree dt
            let _unusedPats = [pat | (pat, bid) <- pbs
                             , Set.notMember bid usedBlocks]

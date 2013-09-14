@@ -66,18 +66,14 @@ data SPattern t = SP_Wildcard
 type DataTypeSigs = Map DataTypeName DataTypeSig
 
 compilePatterns :: IntSizedBits t
-                => Maybe CtorId
-                -> [((Pattern t, _binds), a)]
+                => [((Pattern t, _binds), a)]
                 -> DataTypeSigs
                 -> DecisionTree a t
-compilePatterns mbKnownCtorId bs allSigs =
+compilePatterns bs allSigs =
 
  cc [[]] matrix allSigs where
 
-  matrix = let rawMatrix = ClauseMatrix $ map compilePatternRow bs in
-           case mbKnownCtorId of
-                  Nothing -> rawMatrix
-                  Just c  -> specialize c rawMatrix
+  matrix = ClauseMatrix $ map compilePatternRow bs
 
   compilePatternRow ((p, _binds), a) = ClauseRow (compilePattern p)
                                                  [compilePattern p] a
@@ -136,7 +132,7 @@ cc _occs cm _allSigs | allGuaranteedMatch (rowPatterns $ firstRow cm) =
             computeBindings ( occ, SP_Variable v   ) = [(v, occ)]
             computeBindings (_occ, SP_Wildcard     ) = []
             computeBindings ( occ, SP_Ctor ctorinfo pats) =
-              let occs = expand occ ctorinfo (Prelude.length pats) in
+              let occs = expand occ ctorinfo in
               concatMap computeBindings (zip occs pats)
 
 -- "In any other case, matrix P has at least one row and at least one
@@ -151,7 +147,7 @@ cc occs cm allSigs =
       let headCtorInfos = Set.fromList (concatMap headCtorInfo spPatterns) in
       let (o1:orest) = occs in
       let caselist = [ (ctorInfoId c,
-                           cc (expand o1 c (ctorInfoArity c) ++ orest)
+                           cc (expand o1 c ++ orest)
                               (specialize (ctorInfoId c) cm) allSigs)
                      | c <- Set.toList headCtorInfos] in
       if isSignature (Set.map ctorInfoId headCtorInfos) allSigs
@@ -181,8 +177,13 @@ columnNumWithNonTrivialPattern cm =
                 then loop cm (n + 1)
                 else n
 
-expand :: Occurrence t -> CtorInfo t -> Int -> [Occurrence t]
-expand occ cid a = [occ ++ [(n, cid)] | n <- [0 .. a - 1]]
+-- Given an occurrence and a constructor (which must match the type of the occurrence),
+-- return a list of occurrences corresponding to the subterms of the constructor.
+expand :: Occurrence t -> CtorInfo t -> [Occurrence t]
+expand occ cinfo = [extendOccurrence occ n cinfo | n <- [0 .. ctorInfoArity cinfo - 1]]
+
+extendOccurrence :: Occurrence t -> Int -> CtorInfo t -> Occurrence t
+extendOccurrence occ n cinfo = occ ++ [(n, cinfo)]
 
 ctorInfoArity (CtorInfo cid _) = ctorArity cid
 
@@ -202,6 +203,7 @@ ctorInfoArity (CtorInfo cid _) = ctorArity cid
 --    b   _b2 []     -> 2
 --    c   d   (e::f) -> 3
 --
+-- Note that ``specialize`` should always be used with ``expand''!
 specialize :: CtorId -> ClauseMatrix a t -> ClauseMatrix a t
 specialize ctor (ClauseMatrix rows) =
   ClauseMatrix [specializeRow row ctor | row <- rows

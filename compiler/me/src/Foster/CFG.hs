@@ -501,7 +501,7 @@ instance Pretty (Insn e x) where
 instance Pretty CFLast where
   pretty (CFCont bid     vs) = text "cont" <+> prettyBlockId bid <+>              list (map pretty vs)
   pretty (CFCall bid _ v vs) = text "call" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
-  pretty (CFCase v pats)    = align $
+  pretty (CFCase v pats)     = align $
                                text "case" <+> pretty v <$> indent 2
                                   (vcat [ text "of" <+> fill 20 (pretty pat) <+> text "->" <+> prettyBlockId bid
                                         | ((pat, _tys), bid) <- pats
