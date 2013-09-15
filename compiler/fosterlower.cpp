@@ -40,6 +40,8 @@ namespace foster {
   extern bool gPrintLLVMImports; // in StandardPrelude.cpp
 }
 
+extern std::map<std::string, llvm::Type*> gDeclaredSymbolTypes;
+
 using namespace llvm;
 
 static cl::opt<string>
@@ -226,12 +228,18 @@ areDeclaredValueTypesOK(llvm::Module* mod,
     ASSERT(v) << "unable to find module entry for " << d->getName();
     llvm::Type* ty = t->getLLVMType();
     if (v->getType() != ty) {
-      EDiag() << "mismatch between declared and imported types"
-              << " for symbol " << d->getName() << ":\n"
-              << "Declared: " << str(t) << "\n"
-              << " in LLVM: " << str(ty) << "\n"
-              << "Imported: " << str(v->getType()) << "\n";
-      return false;
+      // TODO check to see if type are sanely bit-castable
+      //      (e.g. they only differ underneath a pointer...).
+      if (d->getName() == "foster_stdin_read_bytes") {
+        gDeclaredSymbolTypes[d->getName()] = ty;
+      } else {
+        EDiag() << "mismatch between declared and imported types"
+                << " for symbol " << d->getName() << ":\n"
+                << "Declared: " << str(t) << "\n"
+                << " in LLVM: " << str(ty) << "\n"
+                << "Imported: " << str(v->getType()) << "\n";
+        return false;
+      }
     }
 
   }

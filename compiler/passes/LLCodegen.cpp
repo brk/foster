@@ -229,11 +229,18 @@ llvm::Value* emitLoad(llvm::Value* v, llvm::StringRef suffix) {
   return emitNonVolatileLoad(v, v->getName() + suffix);
 }
 
-llvm::Function* CodegenPass::lookupFunctionOrDie(const std::string&
+std::map<std::string, llvm::Type*> gDeclaredSymbolTypes;
+
+llvm::Value* CodegenPass::lookupFunctionOrDie(const std::string&
                                                        fullyQualifiedSymbol) {
+  EDiag() << "looking up function " << fullyQualifiedSymbol;
   llvm::Function* f = mod->getFunction(fullyQualifiedSymbol);
   assertHaveFunctionNamed(f, fullyQualifiedSymbol, this);
-  return f;
+  if (llvm::Type* expTy = gDeclaredSymbolTypes[fullyQualifiedSymbol]) {
+    return builder.CreateBitCast(f, expTy);
+  } else {
+    return f;
+  }
 }
 
 llvm::Value* CodegenPass::emitFosterStringOfCString(Value* cstr, Value* sz) {
@@ -253,7 +260,7 @@ llvm::Value* CodegenPass::emitFosterStringOfCString(Value* cstr, Value* sz) {
 
   // TODO null terminate?
 
-  llvm::Function* textfragment = lookupFunctionOrDie("TextFragment");
+  llvm::Value* textfragment = lookupFunctionOrDie("TextFragment");
   llvm::CallInst* call = builder.CreateCall2(textfragment, hstr, sz);
   call->setCallingConv(llvm::CallingConv::Fast);
   return call;
