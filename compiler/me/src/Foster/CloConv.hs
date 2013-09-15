@@ -443,7 +443,7 @@ closureOfKnFn infoMap (self_id, fn) = do
                                     varsOfClosure
                                     norange) ]
                         where t        = tidType envVar
-                              patVar a = P_Variable norange a
+                              patVar a = P_Atom $ P_Variable norange a
                               norange  = MissingSourceRange ""
             -- We change the entry block of the new body (versus the old).
             lab <- freshLabel

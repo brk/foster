@@ -82,10 +82,10 @@ compilePatterns bs allSigs =
 
   compilePattern :: IntSizedBits t => Pattern t -> SPattern t
   compilePattern p = case p of
-    (P_Wildcard _ _)       -> SP_Wildcard
-    (P_Variable _ v)       -> SP_Variable v
-    (P_Bool     _ _ b)     -> SP_Ctor (boolCtor b)     []
-    (P_Int     _ ty i)     -> SP_Ctor (intCtor ty i)   []
+    (P_Atom (P_Wildcard _ _))   -> SP_Wildcard
+    (P_Atom (P_Variable _ v))   -> SP_Variable v
+    (P_Atom (P_Bool     _ _ b)) -> SP_Ctor (boolCtor b)     []
+    (P_Atom (P_Int     _ ty i)) -> SP_Ctor (intCtor ty i)   []
     (P_Ctor  _ _ pats nfo) -> SP_Ctor nfo              (map compilePattern pats)
     (P_Tuple _ _ pats)     -> SP_Ctor (tupleCtor pats) (map compilePattern pats)
     where
@@ -111,12 +111,12 @@ compilePatterns bs allSigs =
                                                ++ " bits into Int"++ show (litIntMinBits li)++"!"
           patternType :: Pattern ty -> ty
           patternType pattern = case pattern of
-                  P_Wildcard  _rng ty     -> ty
-                  P_Variable  _rng tid    -> tidType tid
-                  P_Ctor      _rng ty _ _ -> ty
-                  P_Bool      _rng ty _   -> ty
-                  P_Int       _rng ty _   -> ty
-                  P_Tuple     _rng ty _   -> ty
+                  P_Atom (P_Wildcard  _rng ty  )   -> ty
+                  P_Atom (P_Variable  _rng tid )   -> tidType tid
+                  P_Atom (P_Bool      _rng ty _)   -> ty
+                  P_Atom (P_Int       _rng ty _)   -> ty
+                  P_Ctor              _rng ty _ _  -> ty
+                  P_Tuple             _rng ty _    -> ty
 
 -- "Compilation is defined by cases as follows."
 cc :: Show t => [Occurrence t] -> ClauseMatrix a t -> DataTypeSigs -> DecisionTree a t

@@ -541,14 +541,14 @@ stepExpr gs expr = do
 matchPattern :: Pattern TypeIL -> SSValue -> Maybe [(Ident, SSValue)]
 matchPattern p v =
   case (v, p) of
-    (_, P_Wildcard _ _  ) -> trivialMatchSuccess
-    (_, P_Variable _ tid) -> Just [(tidIdent tid, v)]
+    (_, P_Atom (P_Wildcard _ _  )) -> trivialMatchSuccess
+    (_, P_Atom (P_Variable _ tid)) -> Just [(tidIdent tid, v)]
 
-    (SSInt i1, P_Int _ _ i2)   -> matchIf $ i1 == litIntValue i2
-    (_       , P_Int _ _ _ )   -> matchFailure
+    (SSInt i1, P_Atom (P_Int _ _ i2))   -> matchIf $ i1 == litIntValue i2
+    (_       , P_Atom (P_Int _ _ _ ))   -> matchFailure
 
-    (SSBool b1, P_Bool _ _ b2) -> matchIf $ b1 == b2
-    (_        , P_Bool _ _ _ ) -> matchFailure
+    (SSBool b1, P_Atom (P_Bool _ _ b2)) -> matchIf $ b1 == b2
+    (_        , P_Atom (P_Bool _ _ _ )) -> matchFailure
 
     (SSCtorVal vid vals, P_Ctor _ _ pats (CtorInfo cid _)) -> do
                                             _ <- matchIf $ vid == cid

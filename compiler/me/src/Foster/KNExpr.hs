@@ -72,7 +72,8 @@ data KNExpr' ty =
 -- When monmomorphizing, we use (KNTyApp t v [])
 -- to represent a bitcast to type t.
 
-type KNExpr = KNExpr' TypeIL
+type KNExpr     = KNExpr' TypeIL
+type KNExprFlat = KNExpr' TypeIL
 
 type KN = Compiled
 
@@ -200,7 +201,7 @@ kNormalize mebTail expr =
                                   return [CaseArm p e' Nothing b r]
                               _ -> return clump
                   let msr   = MissingSourceRange "guardwild"
-                  let pwild = P_Wildcard msr (tidType v) 
+                  let pwild = P_Atom $ P_Wildcard msr (tidType v) 
                   return $ KNLetFuns [kid] [kont]
                           (KNCase t v (clump' ++ [CaseArm pwild callkont Nothing [] msr]))
           if anyCaseArmIsGuarded arms
@@ -1009,14 +1010,19 @@ instance (Pretty body, Pretty t) => Pretty (ModuleIL body t) where
 
 prettyId (TypedId _ i) = text (show i)
 
-instance Pretty t => Pretty (Pattern t) where
+instance Pretty t => Pretty (PatternAtom t) where
   pretty p =
     case p of
         P_Wildcard      _rng _ty          -> text "_"
         P_Variable      _rng tid          -> prettyId tid
-        P_Ctor          _rng _ty pats cid -> parens (text "$" <> text (ctorCtorName $ ctorInfoId cid) <+> (hsep $ map pretty pats))
         P_Bool          _rng _ty b        -> text $ if b then "True" else "False"
         P_Int           _rng _ty li       -> text (litIntText li)
+
+instance Pretty t => Pretty (Pattern t) where
+  pretty p =
+    case p of
+        P_Atom          atom              -> pretty atom
+        P_Ctor          _rng _ty pats cid -> parens (text "$" <> text (ctorCtorName $ ctorInfoId cid) <+> (hsep $ map pretty pats))
         P_Tuple         _rng _ty pats     -> parens (hsep $ punctuate comma (map pretty pats))
 
 pr YesTail = "(tail)"
@@ -1322,13 +1328,18 @@ mkOpExpr e env = do
 qp :: (TypedId ty -> In (TypedId ty)) -> (Pattern ty) -> In (Pattern ty)
 qp subst pattern = do
  case pattern of
-   P_Wildcard rng t            -> return $ P_Wildcard rng t
-   P_Bool     rng t b          -> return $ P_Bool     rng t b
-   P_Int      rng t i          -> return $ P_Int      rng t i
-   P_Variable rng v            -> liftM   (P_Variable rng)   (subst v)
+   P_Atom           atom       -> liftM    P_Atom                 (qpa subst  atom)
    P_Tuple    rng t pats       -> liftM   (P_Tuple    rng t) (mapM (qp subst) pats)
    P_Ctor     rng t pats ctor  -> do p' <-                    mapM (qp subst) pats
                                      return $ P_Ctor  rng t p' ctor
+
+qpa :: (TypedId ty -> In (TypedId ty)) -> (PatternAtom ty) -> In (PatternAtom ty)
+qpa subst pattern = do
+ case pattern of
+   P_Wildcard  {}         -> return pattern
+   P_Bool      {}         -> return pattern
+   P_Int       {}         -> return pattern
+   P_Variable rng v       -> liftM (P_Variable rng) (subst v)
 
 summarizeVarOp (VO_E o) = summarize o
 summarizeVarOp (VO_F o) = summarize o
@@ -1944,14 +1955,14 @@ matchConstExpr c arms = go arms
         matchPatternWithConst :: Pattern ty -> ConstStatus -> Maybe [(Ident, ConstStatus)]
         matchPatternWithConst p cs =
           case (cs, p) of
-            (_, P_Wildcard _ _  ) -> Nothing -- Matches trivially, but no binding so we don't care!
-            (_, P_Variable _ tid) -> Just [(tidIdent tid, cs)]
+            (_, P_Atom (P_Wildcard _ _  )) -> Nothing -- Matches trivially, but no binding so we don't care!
+            (_, P_Atom (P_Variable _ tid)) -> Just [(tidIdent tid, cs)]
             (IsVariable _, _)     -> Nothing -- can't match non-constants against concrete patterns.
             (IsConstant c, _)     -> matchConst c p
               where matchConst c p =
                       case (c, p) of
-                        (Lit _ (LitInt  i1), P_Int  _ _ i2) -> nullary $ litIntValue i1 == litIntValue i2
-                        (Lit _ (LitBool b1), P_Bool _ _ b2) -> nullary $ b1 == b2
+                        (Lit _ (LitInt  i1), P_Atom (P_Int  _ _ i2)) -> nullary $ litIntValue i1 == litIntValue i2
+                        (Lit _ (LitBool b1), P_Atom (P_Bool _ _ b2)) -> nullary $ b1 == b2
                         (LitTuple _ args _, P_Tuple _ _ pats) ->
                             let parts = map (uncurry matchPatternWithConst) (zip pats args) in
                             let res = combineMaybeList parts in

@@ -185,15 +185,19 @@ monoPatternBinding subst (CaseArm pat expr guard vs rng) = do
   guard' <- liftMaybe (monoKN subst) guard
   return (CaseArm pat' expr' guard' vs' rng)
 
-monoPattern subst pattern =
- let mp = map (monoPattern subst) in
+monoPatternAtom subst pattern =
  case pattern of
    P_Wildcard rng t            -> P_Wildcard rng (monoType subst t)
    P_Variable rng v            -> P_Variable rng (mono     subst v)
-   P_Ctor     rng t pats ctor  -> P_Ctor     rng (monoType subst t) (mp pats) (monoCtorInfo subst ctor)
    P_Bool     rng t b          -> P_Bool     rng (monoType subst t) b
    P_Int      rng t i          -> P_Int      rng (monoType subst t) i
+
+monoPattern subst pattern =
+ let mp = map (monoPattern subst) in
+ case pattern of
+   P_Atom           atom       -> P_Atom         (monoPatternAtom subst atom)
    P_Tuple    rng t pats       -> P_Tuple    rng (monoType subst t) (mp pats)
+   P_Ctor     rng t pats ctor  -> P_Ctor     rng (monoType subst t) (mp pats) (monoCtorInfo subst ctor)
 
 monoCtorInfo subst (CtorInfo cid (DataCtor nm tag tyformals tys)) =
                    (CtorInfo cid (DataCtor nm tag tyformals tys'))
@@ -361,13 +365,17 @@ alphaRename fn = do
         guard' <- liftMaybe renameKN guard
         return (CaseArm pat' expr' guard' vs' rng)
 
+    renamePatternAtom pattern = do
+     case pattern of
+       P_Wildcard {}          -> return pattern
+       P_Bool     {}          -> return pattern
+       P_Int      {}          -> return pattern
+       P_Variable rng v       -> qv v >>= \v' -> return $ P_Variable rng v'
+
     renamePattern pattern = do
      let mp = mapM renamePattern
      case pattern of
-       P_Wildcard rng t            -> return $ P_Wildcard rng t
-       P_Bool     rng t b          -> return $ P_Bool     rng t b
-       P_Int      rng t i          -> return $ P_Int      rng t i
-       P_Variable rng v            -> qv v    >>= \v'    -> return $ P_Variable rng v'
+       P_Atom     atom             -> renamePatternAtom atom >>= \atom' -> return $ P_Atom atom'
        P_Ctor     rng t pats ctor  -> mp pats >>= \pats' -> return $ P_Ctor  rng t pats' ctor
        P_Tuple    rng t pats       -> mp pats >>= \pats' -> return $ P_Tuple rng t pats'
 

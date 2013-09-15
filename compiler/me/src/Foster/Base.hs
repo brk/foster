@@ -99,13 +99,21 @@ data EPattern ty =
         | EP_Int          SourceRange String
         | EP_Tuple        SourceRange [EPattern ty]
 
-data Pattern ty =
+data PatternAtom ty =
           P_Wildcard      SourceRange ty
         | P_Variable      SourceRange (TypedId ty)
-        | P_Ctor          SourceRange ty [Pattern ty] (CtorInfo ty)
         | P_Bool          SourceRange ty Bool
         | P_Int           SourceRange ty LiteralInt
+
+data Pattern ty =
+          P_Atom         (PatternAtom ty)
+        | P_Ctor          SourceRange ty [Pattern ty] (CtorInfo ty)
         | P_Tuple         SourceRange ty [Pattern ty]
+
+data PatternFlat ty =
+          PF_Atom        (PatternAtom ty)
+        | PF_Ctor         SourceRange ty [PatternAtom ty] (CtorInfo ty)
+        | PF_Tuple        SourceRange ty [PatternAtom ty]
 
 data CaseArm pat expr ty = CaseArm { caseArmPattern :: pat ty
                                    , caseArmBody    :: expr
@@ -564,13 +572,21 @@ instance (SourceRanged expr) => Show (CompilesResult expr) where
   show (CompilesResult (OK e))     = show (rangeOf e)
   show (CompilesResult (Errors _)) = "<...invalid term...>"
 
-instance Show (Pattern ty) where
+instance Show (PatternAtom ty) where
   show (P_Wildcard _ _)            = "P_Wildcard"
   show (P_Variable _ v)            = "P_Variable " ++ show (tidIdent v)
-  show (P_Ctor     _ _ _pats ctor) = "P_Ctor     " ++ show (ctorInfoId ctor)
   show (P_Bool     _ _ b)          = "P_Bool     " ++ show b
   show (P_Int      _ _ i)          = "P_Int      " ++ show (litIntText i)
+
+instance Show (Pattern ty) where
+  show (P_Atom atom) = show atom
+  show (P_Ctor     _ _ _pats ctor) = "P_Ctor     " ++ show (ctorInfoId ctor)
   show (P_Tuple    _ _ pats)       = "P_Tuple    " ++ show pats
+
+instance Show (PatternFlat ty) where
+  show (PF_Atom atom) = show atom
+  show (PF_Ctor     _ _ _pats ctor) = "PF_Ctor     " ++ show (ctorInfoId ctor)
+  show (PF_Tuple    _ _ pats)       = "PF_Tuple    " ++ show pats
 
 instance Pretty ty => Pretty (EPattern ty) where
   pretty (EP_Wildcard _)            = text "EP_Wildcard"
@@ -631,6 +647,8 @@ deriving instance Show LiteralInt
 deriving instance Show LiteralFloat
 deriving instance Show Literal
 
+deriving instance Functor PatternAtom
+deriving instance Functor PatternFlat
 deriving instance Functor Pattern
 deriving instance Functor TypedId
 deriving instance Functor AllocInfo

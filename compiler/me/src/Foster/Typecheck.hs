@@ -1048,18 +1048,18 @@ tcRhoCase ctx rng scrutinee branches expTy = do
     -- and record its type given a known type for the context in which
     -- the pattern appears.
     checkPattern ctx pattern ctxTy = case pattern of
-      EP_Wildcard r       -> do return $ P_Wildcard r ctxTy
+      EP_Wildcard r       -> do return $ P_Atom $ P_Wildcard r ctxTy
       EP_Variable r v     -> do checkSuspiciousPatternVariable r v
                                 id <- tcFreshT (evarName v)
-                                return $ P_Variable r (TypedId ctxTy id)
+                                return $ P_Atom $ P_Variable r (TypedId ctxTy id)
       EP_Bool     r b     -> do let boolexpr = E_BoolAST (ExprAnnot [] r  []) b
                                 annbool <- tcRho ctx boolexpr (Check ctxTy)
-                                return $ P_Bool r (typeAST annbool) b
+                                return $ P_Atom $ P_Bool r (typeAST annbool) b
       EP_Int      r str   -> do (AnnLiteral _ ty (LitInt int))
                                          <- typecheckInt (ExprAnnot [] r []) str
                                                          (Check ctxTy)
                                 tcLift $ putDocLn $ text ("P_Int " ++ str) <+> pretty ctxTy
-                                return $ P_Int r ty int
+                                return $ P_Atom $ P_Int r ty int
 
       EP_Ctor     r eps s -> do
         info@(CtorInfo cid (DataCtor _ _ tyformals types)) <- getCtorInfoForCtor ctx s
@@ -1119,10 +1119,10 @@ tcRhoCase ctx rng scrutinee branches expTy = do
                             ++ "\n\t" ++ show (pretty other)]
 
     extractPatternBindings :: Pattern TypeAST -> [TypedId Sigma]
-    extractPatternBindings (P_Wildcard    {}) = []
-    extractPatternBindings (P_Bool        {}) = []
-    extractPatternBindings (P_Int         {}) = []
-    extractPatternBindings (P_Variable _ tid) = [tid]
+    extractPatternBindings (P_Atom (P_Wildcard    {})) = []
+    extractPatternBindings (P_Atom (P_Bool        {})) = []
+    extractPatternBindings (P_Atom (P_Int         {})) = []
+    extractPatternBindings (P_Atom (P_Variable _ tid)) = [tid]
     extractPatternBindings (P_Ctor _ _ ps _)  = concatMap extractPatternBindings ps
     extractPatternBindings (P_Tuple _ _ ps)   = concatMap extractPatternBindings ps
 

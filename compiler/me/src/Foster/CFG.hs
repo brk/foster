@@ -126,7 +126,7 @@ caseIf a b = [CaseArm (pat True)  a Nothing [] rng,
               CaseArm (pat False) b Nothing [] rng]
          where rng = MissingSourceRange "cfg.if.rng"
                pat :: Bool -> Pattern MonoType
-               pat bval = P_Bool rng boolMonoType bval
+               pat bval = P_Atom $ P_Bool rng boolMonoType bval
 
 -- ||||||||||||||||||||||||| KNMono -> CFG ||||||||||||||||||||||{{{
 -- computeBlocks takes an expression and a contination,
