@@ -19,17 +19,21 @@ import Foster.CloConv
 import Foster.TypeLL
 import Foster.Letable
 import Foster.GCRoots
+import Foster.Avails
 
 import Data.Map(Map)
 import Data.List(zipWith4, foldl' )
-import Data.Maybe(maybeToList)
+import Data.Maybe(maybeToList, fromMaybe)
 import Control.Monad.State(evalState, State, get, gets, modify, lift)
-import qualified Data.Set as Set(toList, map)
+import qualified Data.Set as Set(toList, map, union, unions, difference,
+                                 member, Set, empty, size, fromList)
 import qualified Data.Map as Map(singleton, insertWith, lookup, empty, fromList,
                                         adjust,  insert, union, findWithDefault)
 import qualified Data.Text as T(pack, unpack)
 import qualified Data.Graph as Graph(stronglyConnComp)
 import Data.Graph(SCC(..))
+
+import Debug.Trace(trace)
 
 --------------------------------------------------------------------
 
@@ -83,12 +87,13 @@ data ILLast = ILRetVoid
 --            since otherwise we have to account for tuple stores not being "real" uses.
 --          * but maybe after cfg simplification...
 
-prepForCodegen :: ModuleIL CCBody TypeLL -> MayGCConstraints -> Compiled ILProgram
+prepForCodegen :: ModuleIL CCBody TypeLL -> MayGCConstraints -> Compiled (ILProgram, [Proc BasicBlockGraph' ])
 prepForCodegen m mayGCconstraints0 = do
     let decls = map (\(s,t) -> LLExternDecl s t) (moduleILdecls m)
     let dts = moduleILprimTypes m ++ moduleILdataTypes m
     let hprocs = flatten $ moduleILbody m
-    aprocs <- mapM explicateProc hprocs
+    combined <- mapM explicateProc hprocs
+    let (aprocs, preallocprocs) = unzip combined
 
     --let sccinput = [ (procIdent p, procIdent p, Set.toList s)
     --            | p <- aprocs, (m,s) <- maybeToList $
@@ -101,14 +106,16 @@ prepForCodegen m mayGCconstraints0 = do
     lift $ putStrLn $ "resolved maygc: " ++ show mayGCmap
 
     procs <- mapM (deHooplize mayGCmap) aprocs
-    return $ ILProgram procs decls dts (moduleILsourceLines m)
+    return $ (ILProgram procs decls dts (moduleILsourceLines m),
+              preallocprocs)
   where
    flatten :: CCBody -> [CCProc]
    flatten (CCB_Procs procs _) = procs
 
    explicateProc p = do
-     g' <- makeAllocationsExplicit (simplifyCFG $ procBlocks p)
-     return p { procBlocks = g' }
+     g0 <- runPreAllocationOptimizations (simplifyCFG $ procBlocks p)
+     g' <- makeAllocationsExplicit g0
+     return (p { procBlocks = g' }, p { procBlocks = g0 })
 
    deHooplize :: Map Ident MayGC -> Proc BasicBlockGraph' -> Compiled ILProcDef
    deHooplize mayGCmap p = do
@@ -479,6 +486,214 @@ mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
 
 type VarSubstFor a = (LLVar -> LLVar) -> a -> a
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+data TC = TCtup        [LLVar]
+        | TCtor CtorId [LLVar]
+
+-- TODO populate availTuples and availTuples' when binding ILTuple
+--      when rewriting occ nodes, check if we can peek through (via availTuples)
+-- TODO we can also use availTuples' to avoid redundant allocations of ctors
+
+-- |||||||||||| Pre-allocation redundancy elimination |||||||||||{{{
+data Avails = Avails { availSubst    :: AvailMap LLVar LLVar
+                     , availTuples   :: AvailMap Ident [LLVar]
+                     --, availTuples'  :: AvailMap [LLVar] LLVar
+                     , availOccs     :: AvailMap (LLVar, Occurrence TypeLL) LLVar
+                     }  -- note: AvailMap works here because LLVar == LLRootVar...
+                     deriving Show
+
+--instance Show Avails where show a = show (pretty a)
+--instance Pretty Avails where
+--  pretty (Avails uk lr fr) = text "(Avails unkilledRoots=" <> text (show uk)
+--                         <+> text "loadedRoots="   <> text (show uk)
+--                         <+> text "loadsForRoots=" <> text (show $ Map.map (Set.map tidIdent) fr) <> text ")"
+
+availsXfer :: FwdTransfer Insn' Avails
+availsXfer = mkFTransfer3 go go (distributeXfer availsLattice go)
+  where
+    go :: Insn' e x -> Avails -> Avails
+    go (CCLetVal id (ILOccurrence ty v occ)) f = f { availOccs = insertAvailMap (v, occ) (TypedId ty id) (availOccs f) }
+    go (CCLetVal id (ILTuple vs _)) f = f { availTuples = insertAvailMap id vs (availTuples f) }
+    go (CCRebindId _ v1 v2 ) f = f { availSubst = insertAvailMap v1 v2 (availSubst f) }
+    go _ f = f
+
+availsRewrite :: forall m. FuelMonad m => FwdRewrite m Insn' Avails
+availsRewrite = mkFRewrite d
+  where
+    d :: Insn' e x -> Avails -> m (Maybe (Graph Insn' e x))
+
+    d (CCLetVal id (ILOccurrence ty v occ)) a =
+      case lookupAvailMap (v, occ) (availOccs a) of
+        -- If we have  t = (v0, v1)
+        --             ...
+        --             o0 = occ t [0]
+        --             o1 = occ t [0]
+        -- we would like to rewrite it to
+        --             t = (v0, v1)
+        --             ...
+        --             o0 = occ t [0]
+        --             o1 = o0         <<<<
+        xs@(v' : _) -> return $ Just (mkMiddle $ CCRebindId (text "occ-reuse") (TypedId ty id) v' )
+        [] -> case (occ, lookupAvailMap (tidIdent v) (availTuples a)) of
+                -- If we have  t = (v0, v1)
+                --             ...
+                --             o0 = occ t [0]
+                -- we would like to rewrite it to
+                --             t = (v0, v1)
+                --             ...
+                --             o0 = v0   <<<<
+                ([(n, _)], [vs]) -> let vk = vs !! n in
+                                    trace ("replacing occ " ++ show (tidIdent v) ++ "&" ++ show n ++ " with " ++ show vk)
+                                      (return $ Just $ mkMiddle $ CCRebindId (text "static tuple lookup")
+                                                                             (TypedId (tidType vk) id)  vk)
+                _ -> return Nothing
+
+    d _ _ = return Nothing
+
+    {-
+    s a v = case lookupAvailMap v (availSubst a) of
+              [    ] -> v
+              [ v' ] -> v'
+              [ _v1, _v2 ] -> trace ("CFGOptimizations.hs: OOPS, " ++ show v ++ " mapped to two vars! choosing neither") v
+              s -> error $ "GCRoots.hs: Expected avail. subst to map " ++ show v
+                           ++ " to zero or one variables, but had " ++ show s
+-}
+runAvails :: BasicBlockGraph' -> Compiled BasicBlockGraph'
+runAvails bbgp = do
+         uref <- gets ccUniqRef
+         lift $ runWithUniqAndFuel uref infiniteFuel (go bbgp)
+  where
+    go :: BasicBlockGraph' -> M BasicBlockGraph'
+    go bbgp = do
+        let ((_,blab), _) = bbgpEntry bbgp
+        let init = Avails emptyAvailMap emptyAvailMap emptyAvailMap
+        (body' , _, _) <- analyzeAndRewriteFwd fwd (JustC [bbgpEntry bbgp])
+                                                           (bbgpBody bbgp)
+                           (mapSingleton blab init)
+        return bbgp { bbgpBody = body' }
+
+    --__fwd = debugFwdTransfers trace showing (\_ _ -> True) fwd
+    --_fwd = debugFwdJoins trace (\_ -> True) fwd
+    fwd = FwdPass { fp_lattice  = availsLattice
+                  , fp_transfer = availsXfer
+                  , fp_rewrite  = availsRewrite
+                  }
+
+--showing :: Insn' e x -> String
+--showing insn = show (pretty insn)
+
+availsLattice :: DataflowLattice Avails
+availsLattice = DataflowLattice
+  { fact_name = "Availables"
+  , fact_bot  = Avails botAvailMap botAvailMap botAvailMap
+  , fact_join = add
+  }
+    where add _lab (OldFact (Avails os ot ox)) (NewFact (Avails ns nt nx))
+                 = let r = (ch, Avails js jt jx)
+                       --fp (v, occ) = (tidIdent v, map fst occ)
+                       --sm = Set.map tidIdent
+                           in
+                       r   {-
+                   case c3 of
+                     False -> r
+                     _ -> trace ("changed@" ++ show _lab ++ ";\nox=" ++ show (concretizeAvailMap fp sm ox)
+                                                         ++ ";\nnx=" ++ show (concretizeAvailMap fp sm nx)
+                                                         ++ ";\njx=" ++ show (concretizeAvailMap fp sm jx)) r
+                                                         -}
+            where
+              (js, c1) = os `intersectAvailMap` ns
+              (jt, c2) = ot `intersectAvailMap` nt
+              (jx, c3) = ox `intersectAvailMap` nx
+              ch = changeIf (c1 || c2 || c3)
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+freeIdentsL :: Letable TypeLL -> [Ident]
+freeIdentsL letable = map tidIdent $ (freeTypedIds letable :: [LLVar])
+
+freeIdentsC :: Closure -> [Ident]
+freeIdentsC (Closure procvar envvar captvars _) = map tidIdent (procvar:envvar:captvars)
+
+-- |||||||||||||||||||| Liveness ||||||||||||||||||||||||||||||||{{{
+type Live = Set.Set Ident
+
+liveLattice :: DataflowLattice Live
+liveLattice = DataflowLattice
+  { fact_name = "Live variables"
+  , fact_bot  = Set.empty
+  , fact_join = add
+  }
+    where add _ (OldFact old) (NewFact new) = (ch, j)
+            where
+              j = new `Set.union` old
+              ch = changeIf (Set.size j > Set.size old)
+
+liveness :: BwdTransfer Insn' Live
+liveness = mkBTransfer go
+  where
+    go :: Insn' e x -> Fact x Live -> Live
+    go (CCLabel  {} ) s = s
+    go (CCLetVal  id letable ) s = Set.union   (without s [id]) (Set.fromList $ freeIdentsL letable)
+    go (CCLetFuns ids clzs   ) s = Set.unions ((without s ids):(map (Set.fromList . freeIdentsC) clzs))
+    go (CCGCLoad     v rv) s = insert (without s [tidIdent v]) [rv]
+    go (CCGCInit   _ v rv) s = insert (without s [tidIdent v]) [rv]
+    go (CCGCKill (Enabled _) vs) s = insert s (Set.toList vs)
+    go (CCGCKill Disabled   _vs) s = s
+    go (CCTupleStore vs v _) s = insert s (v:vs)
+    go (CCRebindId   _ v1 v2) s = insert (without s [tidIdent v1]) [v2]
+    go node@(CCLast last) fdb =
+          let s = Set.unions (map (fact fdb) (successors node)) in
+          case last of
+            (CCCont _         vs) -> insert s vs
+            (CCCall _ _ _id v vs) -> insert s (v:vs)
+            (CCCase v _ _)        -> insert s [v]
+
+    without s ids = Set.difference s (Set.fromList ids)
+    insert s vs = Set.union s (Set.fromList (map tidIdent vs))
+
+    fact :: FactBase Live -> Label -> Live
+    fact f l = fromMaybe (fact_bot liveLattice) $ lookupFact l f
+
+deadBindElim :: forall m . FuelMonad m => BwdRewrite m Insn' Live
+deadBindElim = mkBRewrite d
+  where
+    isDead id live = not (Set.member id live)
+
+    d :: Insn' e x -> Fact x Live -> m (Maybe (Graph Insn' e x))
+    d (CCLetVal id letable) live |
+      isDead id live && isPure letable = return $ Just emptyGraph
+    d (CCRebindId _ v _) live | isDead (tidIdent v) live
+                                       = return $ Just emptyGraph
+    d _ _ = return Nothing
+    -- TODO drop fns/closures?
+    --d (ILetFuns [id] [_])  live |
+    --  not (id `Set.member` live)                   = return $ Just emptyGraph
+    -- If LetFuns forms a SCC, then we can't drop any entry unless we can drop
+    -- every entry. However, if it's not a SCC, then we can drop any entry which
+    -- is dead and does not appear in any of the other functions.
+
+runLiveness :: BasicBlockGraph' -> Compiled BasicBlockGraph'
+runLiveness bbgp = do
+    uref <- gets ccUniqRef
+    lift $ runWithUniqAndFuel uref infiniteFuel (go bbgp)
+  where
+    go :: BasicBlockGraph' -> M BasicBlockGraph'
+    go bbgp = do
+        let ((_,blab), _) = bbgpEntry bbgp
+        (body' , _, _) <- analyzeAndRewriteBwd bwd (JustC [bbgpEntry bbgp])
+                                                           (bbgpBody bbgp)
+                                                           mapEmpty
+        return bbgp { bbgpBody = body' }
+
+    -- bwd' = debugBwdTransfers trace showing (\_ _ -> True) bwd
+    bwd = BwdPass { bp_lattice  = liveLattice
+                  , bp_transfer = liveness
+                  , bp_rewrite  = deadBindElim
+                  }
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+runPreAllocationOptimizations b0 = do
+  b1 <- runAvails b0
+  runLiveness b1
 
 -- ||||||||||||||||||||||||| Boilerplate ||||||||||||||||||||||||{{{
 showILProgramStructure :: ILProgram -> Doc

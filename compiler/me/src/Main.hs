@@ -43,7 +43,7 @@ import Foster.ILExpr(ILProgram, showILProgramStructure, prepForCodegen)
 import Foster.KNExpr(KNExpr', kNormalizeModule, knLoopHeaders, knSinkBlocks, knInline, knSize, renderKN)
 import Foster.Typecheck
 import Foster.Context
-import Foster.CloConv(closureConvertAndLift, renderCC)
+import Foster.CloConv(closureConvertAndLift, renderCC, CCBody(..))
 import Foster.Monomo
 import Foster.MonoType
 import Foster.KSmallstep
@@ -522,7 +522,13 @@ lowerModule ai_mod ctx_il = do
          _ <- liftIO $ renderCC ccmod True
          putDocLn $ (outLn "^^^ ===================================")
 
-     ilprog   <- prepForCodegen ccmod  constraints
+     (ilprog, prealloc) <- prepForCodegen ccmod  constraints
+     whenDumpIR "prealloc" $ do
+         putDocLn $ (outLn "/// Pre-allocation ====================")
+         _ <- liftIO (renderCC (ccmod { moduleILbody = let (CCB_Procs _ main) = moduleILbody ccmod in
+                                                         CCB_Procs prealloc main }) True )
+         putDocLn $ (outLn "^^^ ===================================")
+
      whenDumpIR "il" $ do
          putDocLn $ (outLn "/// ILProgram =========================")
          putDocLn (showILProgramStructure ilprog)

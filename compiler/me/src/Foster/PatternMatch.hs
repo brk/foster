@@ -292,9 +292,6 @@ isSignature ctorSet allSigs =
 
 deriving instance (Show a, Show t) => Show (DecisionTree a t)
 
-instance Eq (CtorInfo t) where
-  a == b = (ctorInfoId a) == (ctorInfoId b)
-
 instance Ord (CtorInfo t) where
   compare a b = compare (ctorInfoId a) (ctorInfoId b)
 

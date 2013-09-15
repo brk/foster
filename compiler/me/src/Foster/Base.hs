@@ -55,9 +55,9 @@ data VarNamespace = VarProc | VarLocal deriving Show
 data TailQ = YesTail | NotTail deriving Show
 data MayGC = GCUnknown String | MayGC | WillNotGC deriving (Eq, Show)
 
-data SafetyGuarantee = SG_Static | SG_Dynamic               deriving (Show)
+data SafetyGuarantee = SG_Static | SG_Dynamic               deriving (Show, Eq)
 data ArrayIndex expr = ArrayIndex expr expr SourceRange
-                                            SafetyGuarantee deriving (Show)
+                                            SafetyGuarantee deriving (Show, Eq)
 
 -- In contrast to meta type variables, the IORef for inferred types
 -- can contain a sigma, not just a tau. See Typecheck.hs for details.
@@ -180,16 +180,17 @@ data Literal = LitInt   LiteralInt
              | LitFloat LiteralFloat
              | LitText  T.Text
              | LitBool  Bool
+             deriving (Show, Eq)
 
 data LiteralInt = LiteralInt { litIntValue   :: Integer
                              , litIntMinBits :: Int
                              , litIntText    :: String
                              , litIntBase    :: Int
-                             }
+                             } deriving (Show, Eq)
 
 data LiteralFloat = LiteralFloat { litFloatValue   :: Double
                                  , litFloatText    :: String
-                                 }
+                                 } deriving (Show, Eq)
 
 instance Pretty Literal where
   pretty (LitInt int) = red     $ text (litIntText int)
@@ -243,6 +244,11 @@ data SourceRange = SourceRange { sourceRangeBegin :: ESourceLocation
                                , sourceRangeFile  :: Maybe String
                                }
                   | MissingSourceRange String
+
+instance Eq SourceRange where
+  (MissingSourceRange s1) == (MissingSourceRange s2) = s1 == s2
+  (SourceRange b1 e1 _ f1) == (SourceRange b2 e2 _ f2) = (b1, e1, f1) == (b2, e2, f2)
+  _ == _ = False
 
 beforeRangeStart _ (MissingSourceRange _) = False
         -- error "cannot compare source location to missing source range!"
@@ -333,7 +339,7 @@ annotRange (ExprAnnot _ rng _) = rng
 
 instance Show ExprAnnot where show (ExprAnnot _ rng _) = show rng
 
-data AllocationSource = AllocationSource String SourceRange deriving Show
+data AllocationSource = AllocationSource String SourceRange deriving (Show, Eq)
 
 
 data Comments = C { leading :: [Formatting], trailing :: [Formatting] } deriving Show
@@ -461,7 +467,7 @@ data FosterPrim ty = NamedPrim (TypedId ty) -- invariant: global symbol
                    | PrimIntTrunc IntSizeBits IntSizeBits -- from, to
                    | CoroPrim  CoroPrim ty ty
 
-data CoroPrim = CoroCreate | CoroInvoke | CoroYield
+data CoroPrim = CoroCreate | CoroInvoke | CoroYield deriving (Show, Eq)
 
 -- TODO distinguish stable pointers from lively pointers?
 --      stable-pointer-bit at compile time or runtime?
@@ -469,7 +475,7 @@ data CoroPrim = CoroCreate | CoroInvoke | CoroYield
 --                                 C/malloc/free heap,
 --                                 type-specific heaps, etc, etc...
 data AllocMemRegion = MemRegionStack
-                    | MemRegionGlobalHeap deriving Show
+                    | MemRegionGlobalHeap deriving (Show, Eq)
 
 memRegionMayGC :: AllocMemRegion -> MayGC
 memRegionMayGC MemRegionStack = WillNotGC
@@ -484,7 +490,7 @@ data AllocInfo t = AllocInfo { allocType      :: t
                              , allocZeroInit  :: ZeroInit
                              }
 
-data ZeroInit = DoZeroInit | NoZeroInit deriving Show
+data ZeroInit = DoZeroInit | NoZeroInit deriving (Show, Eq)
 
 type MayGCConstraint = (MayGC -- at most one direct constraint
                        ,Set.Set Ident) --any # of indirect constraints
@@ -620,7 +626,7 @@ instance TExpr body t => TExpr (Fn body t) t where
                      let boundvars =              (fnVars f) in
                      bodyvars `butnot` boundvars
 
-prettyCase scrutinee arms = 
+prettyCase scrutinee arms =
             kwd "case" <+> pretty scrutinee
             <$> indent 2 (vcat [ kwd "of" <+>
                                         (hsep $ [{- fill 20 -} (pretty epat)]
@@ -640,12 +646,15 @@ instance TExpr (ArrayIndex (TypedId t)) t where
    freeTypedIds (ArrayIndex v1 v2 _ _) = [v1, v2]
 
 deriving instance (Show ty) => Show (AllocInfo ty)
-deriving instance (Show ty) => Show (E_VarAST ty)
+deriving instance (Eq ty)   => Eq   (AllocInfo ty)
 deriving instance (Show ty) => Show (FosterPrim ty)
-deriving instance Show CoroPrim
-deriving instance Show LiteralInt
-deriving instance Show LiteralFloat
-deriving instance Show Literal
+deriving instance (Eq ty)   => Eq   (FosterPrim ty)
+deriving instance (Show ty) => Show (E_VarAST ty)
+deriving instance (Eq ty)   => Eq   (DataCtor ty)
+deriving instance Eq TypeFormalAST
+
+instance Eq (CtorInfo t) where
+  a == b = (ctorInfoId a) == (ctorInfoId b)
 
 deriving instance Functor PatternAtom
 deriving instance Functor PatternFlat

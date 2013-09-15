@@ -7,6 +7,7 @@ type case Ord
 
 notBool = { a:Bool => if a then False else True end };
 eqBool = { a:Bool => b:Bool => if a then b else notBool b end };
+notEqBool = { a:Bool => b => if a then notBool b else b end };
 
 cmpBoolTrueLT = { a : Bool => b : Bool =>
   if a then if b then EQ !

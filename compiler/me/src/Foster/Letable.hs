@@ -45,7 +45,7 @@ data Letable ty =
         | ILArrayPoke      (ArrayIndex (TypedId ty)) (TypedId ty)
         -- Others
         | ILBitcast     ty (TypedId ty) -- inserted during monomorphization
-        deriving (Functor, Show)
+        deriving (Functor, Show, Eq)
 
 instance TExpr (Letable ty) ty where
   freeTypedIds letable = case letable of
@@ -148,7 +148,7 @@ letableSize letable = case letable of
       ILArrayRead    {} -> 1
       ILArrayPoke    {} -> 1
 
-isPure :: Letable MonoType -> Bool
+isPure :: Letable t -> Bool
 isPure letable = case letable of
       ILLiteral      {} -> True
       ILTuple        {} -> True

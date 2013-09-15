@@ -69,7 +69,7 @@ data Closure = Closure { closureProcVar  :: LLVar
                        , closureEnvVar   :: LLVar
                        , closureCaptures :: [LLVar]
                        , closureAllocSrc :: AllocationSource
-                       } deriving Show
+                       } deriving (Eq, Show)
 type LLRootVar = LLVar
 data Enabled = Disabled | Enabled Bool -- bool: gc may happen in continuation.
 data Insn' e x where
