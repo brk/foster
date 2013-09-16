@@ -785,12 +785,14 @@ int cleanup() {
 void visitGCRootsWithStackMaps(void* start_frame,
                                gc_visitor_fn visitor) {
   enum { MAX_NUM_RET_ADDRS = 1024 };
+  // Garbage collection requires 16+ KB of stack space due to these arrays.
   ret_addr  retaddrs[MAX_NUM_RET_ADDRS];
   frameinfo frames[MAX_NUM_RET_ADDRS];
 
   // Collect frame pointers and return addresses
   // for the current call stack.
   int nFrames = foster_backtrace((frameinfo*) start_frame, frames, MAX_NUM_RET_ADDRS);
+
   const bool SANITY_CHECK_CUSTOM_BACKTRACE = false;
   if (SANITY_CHECK_CUSTOM_BACKTRACE) {
     // backtrace() fails when called from a coroutine's stack...

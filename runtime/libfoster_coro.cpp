@@ -55,7 +55,7 @@ void foster_coro_create(coro_func corofn,
   base::AutoLock locker(g_coro_create_mutex);
 #endif
 
-  long ssize = 16*1024;
+  long ssize = 8*1024*sizeof(void*);
   // TODO allocate small stacks that grow on demand
   // (via reallocation or stack segment chaining).
   // TODO use mark-sweep GC for coro stacks.
