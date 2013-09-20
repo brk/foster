@@ -8,14 +8,40 @@ namespace foster {
 namespace runtime {
 namespace gc {
 
+// {{{ Pointer menagerie
+
+// Macro from http://blog.nelhage.com/2010/10/using-haskells-newtype-in-c/
+#define NEWTYPE(tag, repr)                  \
+    typedef struct { repr val; } tag;       \
+    static inline tag make_##tag(repr v) {  \
+            return (tag){.val = v};         \
+    }                                       \
+    static inline repr tag##_val(tag v) {   \
+            return v.val;                   \
+    }
+
+NEWTYPE(unchecked_ptr, tidy*); // might be tagged
+
+inline tidy* untag(unchecked_ptr p) {
+  return unchecked_ptr_val(p);
+}
+
+inline bool is_null(unchecked_ptr maybe_tagged_ptr) {
+  // Since the pointer might be tagged, we can't simply
+  // do equality comparison against NULL...
+  const uintptr_t MAX_TAG_VALUE = 1023;
+  return uintptr_t(maybe_tagged_ptr.val) < uintptr_t(MAX_TAG_VALUE);
+}
+// }}}
+
 struct typemap;
 
-typedef void (*gc_visitor_fn)(tidy** root, const typemap* meta);
+typedef void (*gc_visitor_fn)(unchecked_ptr* root, const typemap* meta);
 
 void visitGCRootsWithStackMaps(void* start_frame,
                                gc_visitor_fn visitor);
 
-void copying_gc_root_visitor(tidy **root, const typemap* data);
+void copying_gc_root_visitor(unchecked_ptr* root, const typemap* data);
 bool isMetadataPointer(const void* data);
 
 const unsigned int FOSTER_GC_DEFAULT_ALIGNMENT = 16;      // 0b0..010000

@@ -32,8 +32,8 @@ data TypeIL =
 type AIVar = TypedId TypeIL
 type ILPrim = FosterPrim TypeIL
 
-kindOfTypeIL :: TypeIL -> Kind
-kindOfTypeIL x = case x of
+instance Kinded TypeIL where
+  kindOf x = case x of
     PrimIntIL   {}       -> KindAnySizeType
     PrimFloat64IL        -> KindAnySizeType
     TyVarIL   _ kind     -> kind
@@ -41,7 +41,7 @@ kindOfTypeIL x = case x of
     TupleTypeIL {}       -> KindPointerSized
     FnTypeIL    {}       -> KindPointerSized
     CoroTypeIL  {}       -> KindPointerSized
-    ForAllIL _ktvs rho   -> kindOfTypeIL rho
+    ForAllIL _ktvs rho   -> kindOf rho
     ArrayTypeIL {}       -> KindPointerSized
     PtrTypeIL   {}       -> KindPointerSized
 
@@ -125,16 +125,16 @@ ilOfPat ctx pat = case pat of
                                        ty' <- ilOf ctx ty
                                        return $ P_Tuple rng ty' pats'
 
-ilOfCtorInfo :: Context t -> CtorInfo TypeAST -> Tc (CtorInfo TypeIL)
-ilOfCtorInfo ctx (CtorInfo id dc) = do
+ilOfCtorInfo :: Context t -> CtorInfo () TypeAST -> Tc (CtorInfo () TypeIL)
+ilOfCtorInfo ctx (CtorInfo id dc repr) = do
   dc' <- ilOfDataCtor ctx dc
-  return $ CtorInfo id dc'
+  return $ CtorInfo id dc' repr
 
 ilOfDataCtor :: Context t -> DataCtor TypeAST -> Tc (DataCtor TypeIL)
-ilOfDataCtor ctx (DataCtor nm tag tyformals tys) = do
+ilOfDataCtor ctx (DataCtor nm tyformals tys) = do
   let extctx = extendTyCtx ctx (map convertTyFormal tyformals)
   tys' <- mapM (ilOf extctx) tys
-  return $ DataCtor nm tag tyformals tys'
+  return $ DataCtor nm tyformals tys'
 
 -----------------------------------------------------------------------
 

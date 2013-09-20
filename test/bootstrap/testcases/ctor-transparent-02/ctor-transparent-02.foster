@@ -1,0 +1,85 @@
+main = {
+  part1 !;
+  part2 !;
+  part3 !;
+  part4 !;
+};
+
+type case T1
+       of $C1a
+       of $C1b
+       ;
+
+part1 = {
+  t1 = (if 0 ==Int32 opaquely_i32 0
+          then C1a !
+          else C1b !
+        end);
+  force_gc_for_debugging_purposes !;
+  v = case t1
+	of $C1a -> 5
+	of $C1b -> 3
+      end;
+  expect_i32 5;
+  print_i32 v;
+};
+
+////////////////////////
+
+type case T2
+       of $C2b (Int32, Int32) Int32
+       of $C2c
+       of $C2d
+       ;
+
+part2 = {
+  t2 = (if 0 ==Int32 opaquely_i32 0
+          then C2b (1, 2) 4
+          else C2c !
+        end);
+  force_gc_for_debugging_purposes !;
+  v = case t2
+	of $C2b (a, b) c -> 3
+	of $C2c          -> 6
+	of $C2d          -> 5
+      end;
+  expect_i32 3;
+  print_i32 v;
+};
+
+part3 = {
+  t2 = (if 1 ==Int32 opaquely_i32 0
+          then C2b (1, 2) 4
+          else C2d !
+        end);
+  force_gc_for_debugging_purposes !;
+  v = case t2
+	of $C2b (a, b) c -> 3
+	of $C2c          -> 6
+	of $C2d          -> 4
+      end;
+  expect_i32 4;
+  print_i32 v;
+};
+
+////////////////////////
+
+type case T3
+       of $C3 (Int32, Int32) Int32
+       ;
+
+part4 = {
+  part4a (if 1 ==Int32 opaquely_i32 0
+          then C3 (1, 2) 4
+          else C3 (3, 5) 7
+        end);
+};
+
+part4a = { t3 =>
+  v = case t3
+	of $C3 _ c -> c
+      end;
+  expect_i32 7;
+  print_i32 v;
+};
+

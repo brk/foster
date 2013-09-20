@@ -235,7 +235,7 @@ GlobalVariable* emitTypeMap(
     llvm::Type*   ty,
     std::string   name,
     ArrayOrNot    arrayStatus,
-    int8_t        ctorId,
+    CtorRepr      ctorRepr,
     llvm::Module* mod,
     std::vector<int> skippedIndexVector) {
   // Careful! The indices here are relative to the values
@@ -254,8 +254,8 @@ GlobalVariable* emitTypeMap(
     }
   }
 
-  TypeSig sig = mkTypeSig(ty, arrayStatus, ctorId);
-  typeMapCache[sig] = constructTypeMap(ty, name, filteredOffsets, arrayStatus, ctorId, mod);
+  TypeSig sig = mkTypeSig(ty, arrayStatus, ctorRepr.smallId);
+  typeMapCache[sig] = constructTypeMap(ty, name, filteredOffsets, arrayStatus, ctorRepr.smallId, mod);
   return typeMapCache[sig];
 }
 
@@ -288,27 +288,27 @@ GlobalVariable* emitCoroTypeMap(StructTypeAST* typ, StructType* sty,
   // We skip the first entry, which is the stack pointer in the coro_context.
   // The pointer-to-function will be automatically skipped, and the remaining
   // pointers are precisely those which we want the GC to notice.
-  int8_t bogusCtor = -1;
+  CtorRepr bogusCtor; bogusCtor.isTransparent = false; bogusCtor.smallId = -1;
   std::vector<int> v; v.push_back(0); v.push_back(2); v.push_back(5);
   return emitTypeMap(typ, sty, ss.str(), NotArray, bogusCtor, mod, v);
 }
 
 void registerStructType(StructTypeAST* structty,
                         std::string desiredName,
-                        int8_t        ctorId,
+                        CtorRepr       ctorRepr,
                         llvm::Module* mod) {
   static std::map<TypeSig, bool> registeredTypes;
 
   llvm::Type* ty = structty->getLLVMType();
-  TypeSig sig = mkTypeSig(ty, NotArray, ctorId);
+  TypeSig sig = mkTypeSig(ty, NotArray, ctorRepr.smallId);
   if (registeredTypes[sig]) return;
 
   registeredTypes[sig] = true;
 
   std::string name = ParsingContext::freshName(desiredName);
   //mod->addTypeName(name, ty);
-  EDiag() << "TODO: registered type " << name << " = " << str(ty) << "; ctor id " << ctorId;
-  emitTypeMap(structty, ty, name, NotArray, ctorId, mod, std::vector<int>());
+  EDiag() << "TODO: registered type " << name << " = " << str(ty) << "; ctor id " << ctorRepr.smallId;
+  emitTypeMap(structty, ty, name, NotArray, ctorRepr, mod, std::vector<int>());
 }
 
 StructTypeAST*
@@ -364,22 +364,22 @@ bool isGenericClosureType(const llvm::Type* ty) {
 }
 
 llvm::GlobalVariable* getTypeMapForType(TypeAST* typ,
-                                        int8_t ctorId,
+                                        CtorRepr ctorRepr,
                                         llvm::Module* mod,
                                         ArrayOrNot arrayStatus) {
   llvm::Type* ty = typ->getLLVMType();
-  llvm::GlobalVariable* gv = typeMapCache[mkTypeSig(ty, arrayStatus, ctorId)];
+  llvm::GlobalVariable* gv = typeMapCache[mkTypeSig(ty, arrayStatus, ctorRepr.smallId)];
   if (gv) return gv;
 
   if (StructTypeAST* sty = isCoroStructType(typ)) {
     gv = emitCoroTypeMap(sty, llvm::dyn_cast<StructType>(ty), mod);
   } else if (/*!ty->isAbstract() &&*/ !ty->isAggregateType()) {
     gv = emitTypeMap(typ, ty, ParsingContext::freshName("gcatom"), arrayStatus,
-                     ctorId, mod, std::vector<int>());
+                     ctorRepr, mod, std::vector<int>());
     // emitTypeMap also sticks gv in typeMapForType
   } else if (isGenericClosureType(ty)) {
     gv = emitTypeMap(typ, ty, ParsingContext::freshName("genericClosure"), arrayStatus,
-                     ctorId, mod, std::vector<int>());
+                     ctorRepr, mod, std::vector<int>());
   }
 
   if (!gv) {

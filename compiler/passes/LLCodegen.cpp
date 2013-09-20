@@ -572,13 +572,13 @@ void addAndEmitTo(Function* f, BasicBlock* bb) {
 }
 
 ConstantInt* getTagForCtorId(const CtorId& c) {
-         if (c.typeName == "Bool")  { return builder.getInt1(c.smallId);
-  } else if (c.typeName == "Int32") { return builder.getInt32(c.smallId);
-  } else if (c.typeName == "Int64") { return builder.getInt64(c.smallId);
+         if (c.typeName == "Bool")  { return builder.getInt1( c.ctorRepr.smallId);
+  } else if (c.typeName == "Int32") { return builder.getInt32(c.ctorRepr.smallId);
+  } else if (c.typeName == "Int64") { return builder.getInt64(c.ctorRepr.smallId);
   } else if (c.typeName == "Word")  { return is32Bit()
-                                           ? builder.getInt32(c.smallId)
-                                           : builder.getInt64(c.smallId);
-  } else                            { return builder.getInt8(c.smallId); }
+                                           ? builder.getInt32(c.ctorRepr.smallId)
+                                           : builder.getInt64(c.ctorRepr.smallId);
+  } else                            { return builder.getInt8( c.ctorRepr.smallId); }
 }
 
 llvm::Value* emitCallGetCtorIdOf(CodegenPass* pass, llvm::Value* v) {
@@ -611,7 +611,7 @@ void codegenSwitch(CodegenPass* pass, LLSwitch* sw, llvm::Value* insp_tag) {
     ASSERT(si->getCondition()->getType() == onVal->getType())
         << "switch case and inspected value had different types!\n"
         << "SwitchCase ctor " << (i+1) << "/" << sw->ctors.size()
-           << ": " << c.typeName << "." << c.ctorName << "#" << c.smallId
+           << ": " << c.typeName << "." << c.ctorName << "#" << c.ctorRepr.smallId
         << "\ncond type: " << str(si->getCondition()->getType())
                       << "; val type: " << str(onVal->getType());
 
@@ -627,26 +627,25 @@ void codegenSwitch(CodegenPass* pass, LLSwitch* sw, llvm::Value* insp_tag) {
   }
 }
 
+llvm::Value* emitTagOfValue(CodegenPass* pass, llvm::Value* inspected,
+                            CtorTagRepresentation ctr) {
+  switch (ctr) {
+  case CTR_BareValue: return inspected;
+  case CTR_OutOfLine: return emitCallGetCtorIdOf(pass, inspected);
+  case CTR_MaskWith3: {
+    llvm::Value* truncated = builder.CreatePtrToInt(inspected, builder.getInt8Ty());
+                      return builder.CreateAnd(truncated, 0x7); }
+  default:
+    ASSERT(false) << "unknown tag representation in LLSwitch::codegen!"; return NULL;
+  }
+}
+
 void LLSwitch::codegenTerminator(CodegenPass* pass) {
   ASSERT(ctors.size() == blockids.size());
   ASSERT(ctors.size() >= 1);
 
-  // Fetch the subterm of the scrutinee being inspected.
   llvm::Value* inspected = this->var->codegen(pass);
-  llvm::Value* tag = NULL;
-
-  // All the ctors should have the same data type, now that we have at least
-  // one ctor, lookup its tag representation based on its associated type.
-  CtorTagRepresentation ctr = pass->dataTypeTagReprs[ctors[0].typeName];
-
-  switch (ctr) {
-  case CTR_BareValue: tag = inspected; break;
-  case CTR_OutOfLine: tag = emitCallGetCtorIdOf(pass, inspected); break;
-  case CTR_MaskWith3: ASSERT(false) << "inline ctor tag bits not yet supported"; break;
-  default: ASSERT(false) << "unknown tag representation in LLSwitch::codegen!";
-  }
-
-  codegenSwitch(pass, this, tag);
+  codegenSwitch(pass, this, emitTagOfValue(pass, inspected, this->ctr));
 }
 
 ///}}}//////////////////////////////////////////////////////////////
@@ -802,7 +801,7 @@ llvm::Value* LLKillProcess::codegen(CodegenPass* pass) {
 
 Value* allocateCell(CodegenPass* pass, TypeAST* type,
                     LLAllocate::MemRegion region,
-                    int8_t ctorId, std::string srclines, bool init) {
+                    CtorRepr ctorRepr, std::string srclines, bool init) {
   llvm::Type* ty = type->getLLVMType();
 
   switch (region) {
@@ -824,7 +823,7 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type,
     return CreateEntryAlloca(ty, "stackref");
 
   case LLAllocate::MEM_REGION_GLOBAL_HEAP:
-    return pass->emitMalloc(type, ctorId, srclines, init);
+    return pass->emitMalloc(type, ctorRepr, srclines, init);
 
   default:
     ASSERT(false); return NULL;
@@ -839,10 +838,18 @@ llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
   } else {
     if (const StructTypeAST* sty = this->type->castStructTypeAST()) {
       registerStructType(const_cast<StructTypeAST*>(sty),
-                         this->type_name,          this->ctorId, pass->mod);
+                         this->type_name, this->ctorRepr, pass->mod);
     }
-    return allocateCell(pass, this->type, this->region, this->ctorId,
-                              this->srclines, this->zero_init);
+    if (this->ctorRepr.isNullary) {
+      emitFakeComment("nullary ctor!");
+      llvm::Value* val = builder.getInt8(this->ctorRepr.smallId);
+      llvm::Type* ptrty = ptrTo(this->type->getLLVMType());
+      return builder.CreateIntToPtr(val, ptrty);
+      // return null pointer, or'ed with ctor smallId, bitcast to appropriate result.
+    } else {
+      return allocateCell(pass, this->type, this->region, this->ctorRepr,
+                                this->srclines, this->zero_init);
+    }
   }
 }
 
@@ -1049,6 +1056,11 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
     // a particular data constructor, emit a cast to that ctor's type.
     if (ctors[i].ctorStructType) {
       v = emitBitcast(v, ptrTo(ctors[i].ctorStructType->getLLVMType()));
+    }
+
+    if (ctors[i].ctorId.ctorRepr.isTransparent) {
+      emitFakeComment("eliding dereference due to transparent ctor representation");
+      continue;
     }
 
     v = getElementFromComposite(v, offsets[i], "switch_insp");

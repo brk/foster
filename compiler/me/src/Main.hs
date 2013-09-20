@@ -228,7 +228,7 @@ typecheckModule verboseMode modast tcenv0 = do
 
    extractCtorTypes :: DataType TypeAST -> [(String, TypeAST, CtorId)]
    extractCtorTypes dt = map nmCTy (dataTypeCtors dt)
-     where nmCTy dc@(DataCtor name _tag tyformals types) =
+     where nmCTy dc@(DataCtor name tyformals types) =
                  (T.unpack name, ctorTypeAST tyformals dtType types, cid)
                          where dtType = typeOfDataType dt name
                                cid    = ctorId (dataTypeName dt) dc
@@ -336,9 +336,9 @@ typecheckModule verboseMode modast tcenv0 = do
           cts <- mapM (convertDataCtor f) ctors
           return $ DataType dtName tyformals cts
             where
-              convertDataCtor f (DataCtor dataCtorName n tyformals types) = do
+              convertDataCtor f (DataCtor dataCtorName tyformals types) = do
                 tys <- mapM f types
-                return $ DataCtor dataCtorName n tyformals tys
+                return $ DataCtor dataCtorName tyformals tys
 
 dieOnError :: OutputOr t -> Compiled t
 dieOnError (OK     e) = return e
@@ -469,8 +469,9 @@ lowerModule ai_mod ctx_il = do
      flags    <- gets ccFlagVals
      let donate = getInliningDonate flags
      let insize = getInliningSize   flags
+     let ctoropt = getCtorOpt       flags
 
-     kmod <- kNormalizeModule ai_mod ctx_il
+     kmod <- kNormalizeModule ai_mod ctx_il ctoropt
      monomod0 <- monomorphize   kmod
      monomod2 <- knLoopHeaders  monomod0
      monomod4 <- (if inline then knInline insize donate else return) monomod2

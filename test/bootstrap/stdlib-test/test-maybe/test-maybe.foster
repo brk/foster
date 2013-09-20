@@ -1,0 +1,25 @@
+snafuinclude Maybe "maybe";
+snafuinclude Text  "text";
+
+main = {
+  tu = { 2 };
+  
+  part1 tu;
+  part2 tu;
+  part3 !;
+};
+
+part1 = { tu =>
+  expect_i32 2;
+  print_i32 ((unMaybe (Some tu)) !);
+};
+
+part2 = { tu =>
+  expect_text "True";
+  print_text (if (isSome (Some tu)) then "True" else "False" end);
+};
+
+part3 = {
+  expect_text "False";
+  print_text (if (isSome (None:[{Int32}] !)) then "True" else "False" end);
+};

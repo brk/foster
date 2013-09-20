@@ -13,30 +13,35 @@ import qualified Data.Text as T
 import Foster.Base
 import Foster.TypeAST
 
+withDataTypeCtors :: DataType ty -> (CtorId -> DataCtor ty -> Int -> res) -> [res]
+withDataTypeCtors dtype f =
+  [f (ctorId (dataTypeName dtype) ctor) ctor n
+   | (ctor, n) <- zip (dataTypeCtors dtype) [0..]]
+
 getDataTypes :: [DataType TypeAST] -> Map DataTypeName [DataType TypeAST]
 getDataTypes datatypes = Map.unionsWith (++) $ map single datatypes
   where
     single dt = Map.singleton (dataTypeName dt) [dt]
 
-getCtorInfo :: [DataType TypeAST] -> Map CtorName [CtorInfo TypeAST]
+getCtorInfo :: [DataType TypeAST] -> Map CtorName [CtorInfo () TypeAST]
 getCtorInfo datatypes = Map.unionsWith (++) $ map getCtorInfoList datatypes
   where
-    getCtorInfoList :: DataType TypeAST -> Map CtorName [CtorInfo TypeAST]
+    getCtorInfoList :: DataType TypeAST -> Map CtorName [CtorInfo () TypeAST]
     getCtorInfoList (DataType name _tyformals ctors) =
           Map.fromList $ map (buildCtorInfo name) ctors
 
     buildCtorInfo :: DataTypeName -> DataCtor TypeAST
-                  -> (CtorName, [CtorInfo TypeAST])
+                  -> (CtorName, [CtorInfo () TypeAST])
     buildCtorInfo name ctor =
-      case ctorIdFor name ctor of (n, c) -> (n, [CtorInfo c ctor])
+      case ctorIdFor name ctor of (n, c) -> (n, [CtorInfo c ctor ()])
 
 -----------------------------------------------------------------------
 
 ctorIdFor :: String -> DataCtor t -> (CtorName, CtorId)
 ctorIdFor tynm ctor = (dataCtorName ctor, ctorId tynm ctor)
 
-ctorId   tynm (DataCtor ctorName n _tyformals types) =
-  CtorId tynm (T.unpack ctorName) (Prelude.length types) n
+ctorId   tynm (DataCtor ctorName _tyformals types) =
+  CtorId tynm (T.unpack ctorName) (Prelude.length types)
 
 -----------------------------------------------------------------------
 

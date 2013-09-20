@@ -30,15 +30,15 @@ extern unsigned kDefaultHeapAlignment;
 llvm::GlobalVariable*
 emitTypeMap(llvm::Type* ty, std::string name,
             ArrayOrNot arrayStatus,
-            int8_t        ctorId,
+            CtorRepr   ctorRepr,
             llvm::Module* mod,
             std::vector<int> skippedOffsets);
 
 void registerStructType(StructTypeAST* structty,
                         std::string    desiredName,
-                        int8_t         ctorId,
+                        CtorRepr       ctorRepr,
                         llvm::Module*  mod);
-llvm::GlobalVariable* getTypeMapForType(TypeAST*, int8_t ctorId,
+llvm::GlobalVariable* getTypeMapForType(TypeAST*, CtorRepr ctorRepr,
                                         llvm::Module*, ArrayOrNot);
 
 inline llvm::PointerType* ptrTo(llvm::Type* t) {
@@ -73,7 +73,7 @@ llvm::Constant* getConstantArrayOfString(const std::string& s);
 ////////////////////////////////////////////////////////////////////
 
 inline bool operator<(const CtorId& a, const CtorId& b) {
-  if (a.smallId < b.smallId) return true;
+  if (a.ctorRepr.smallId < b.ctorRepr.smallId) return true;
   if (a.ctorName < b.ctorName) return true;
   if (a.typeName < b.typeName) return true;
   return false;
@@ -82,12 +82,6 @@ inline bool operator<(const CtorId& a, const CtorId& b) {
 inline bool operator<(const CtorInfo& a, const CtorInfo& b) {
   return a.ctorId < b.ctorId;
 }
-
-enum CtorTagRepresentation {
-  CTR_BareValue, // the default, for primitive types like unboxed integers.
-  CTR_OutOfLine,
-  CTR_MaskWith3 // mask to extract inline tag bits, eventually...
-};
 
 struct LLModule;
 struct LLExpr;
@@ -151,7 +145,7 @@ struct CodegenPass {
       return fosterBlocks[s];
   }
 
-  Value* emitMalloc(TypeAST* typ, int8_t ctorId,
+  Value* emitMalloc(TypeAST* typ, CtorRepr ctorRepr,
                                       std::string srclines, bool init);
 
   Value* emitArrayMalloc(TypeAST* elt_type, llvm::Value* n, bool init);

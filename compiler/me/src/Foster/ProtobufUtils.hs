@@ -23,3 +23,6 @@ u8fromString s = P'.Utf8 (UTF8.fromString s)
 intToInt32 :: Int -> P'.Int32
 intToInt32 i = fromInteger $ toInteger i
 
+intToInt64 :: Int -> P'.Int64
+intToInt64 i = fromInteger $ toInteger i
+

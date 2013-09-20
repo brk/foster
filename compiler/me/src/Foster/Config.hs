@@ -37,6 +37,7 @@ data Flag = Interpret String
           | ProgArg   String
           | Verbose
           | DumpPrims
+          | NoCtorOpt
           | NoInline
           | Inline
           | NoDonate

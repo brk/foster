@@ -357,7 +357,7 @@ class copying_gc {
       // Invariant: map is not null
       void scan_with_map(intr* body, const typemap* map, int depth) {
         for (int i = 0; i < map->numOffsets; ++i) {
-          parent->copy_or_update((tidy**) offset(body, map->offsets[i]),
+          parent->copy_or_update((unchecked_ptr*) offset(body, map->offsets[i]),
                                  depth);
         }
       }
@@ -508,7 +508,7 @@ public:
   }
 
   // Jones/Hosking/Moss refer to this function as "process(fld)".
-  void copy_or_update(tidy** root, int depth) {
+  void copy_or_update(unchecked_ptr* root, int depth) {
     //       |------------|            |------------|
     // root: |    body    |---\        |  size/meta |
     //       |------------|   |        |------------|
@@ -516,15 +516,16 @@ public:
     //                                ...          ...
     //                                 |            |
     //                                 |------------|
-    tidy* body = *root;
-    if (!body) return;
+    unchecked_ptr body_ = *root;
+    if (is_null(body_)) return;
+    tidy* body = untag(body_);
 
     heap_cell* obj = heap_cell::for_body(body);
     if (curr->contains(body)) {
-      *root = next->ss_copy(obj, depth);
+      *root = make_unchecked_ptr(next->ss_copy(obj, depth));
 
-      gc_assert(*root != NULL, "copying gc should not null out slots");
-      gc_assert(*root != body, "copying gc should return new pointers");
+      gc_assert(!is_null(*root),        "copying gc should not null out slots");
+      gc_assert(body  != untag(*root) , "copying gc should return new pointers");
     } else if (is_marked_as_stable(body)) {
       next->scan_cell(obj, depth);
     } else {
@@ -616,10 +617,11 @@ copying_gc* allocator = NULL;
 // This function statically references the global allocator.
 // Eventually we'll want a generational GC with thread-specific
 // allocators and (perhaps) type-specific allocators.
-void copying_gc_root_visitor(tidy** root, const typemap* slotname) {
+void copying_gc_root_visitor(unchecked_ptr* root, const typemap* slotname) {
   gc_assert(root != NULL, "someone passed a NULL root addr!");
   if (ENABLE_GCLOG) {
-    fprintf(gclog, "\t\tSTACK SLOT %p contains %p, slot name = %s\n", root, *root,
+    fprintf(gclog, "\t\tSTACK SLOT %p contains %p, slot name = %s\n", root,
+                      unchecked_ptr_val(*root),
                       (slotname ? ((const char*) slotname) : "<unknown slot>"));
   }
   allocator->copy_or_update(root, kFosterGCMaxDepth);
@@ -650,7 +652,7 @@ void copying_gc::gc() {
     if (ENABLE_GCLOG) {
       fprintf(gclog, "==========visiting current ccoro: %p\n", coro); fflush(gclog);
     }
-    copying_gc_root_visitor((tidy**)coro_slot, NULL);
+    copying_gc_root_visitor((unchecked_ptr*)coro_slot, NULL);
     if (ENABLE_GCLOG) {
       fprintf(gclog, "==========visited current ccoro: %p\n", coro); fflush(gclog);
     }
@@ -863,7 +865,7 @@ void visitGCRootsWithStackMaps(void* start_frame,
       void*         m = pc->offsetWithMetadata(a)->metadata;
       void*  rootaddr = offset(fp, off);
 
-      visitor((tidy**) rootaddr, (const typemap*) m);
+      visitor((unchecked_ptr*) rootaddr, (const typemap*) m);
     }
 
     gc_assert(pc->liveCountWithoutMetadata == 0,
@@ -1006,7 +1008,7 @@ bool isMetadataPointer(const void* meta) {
   if (GC_ASSERTIONS) {
     const typemap* map = (const typemap*) meta;
     bool is_corrupted = (
-          ((map->isCoro != 0)  && (map->isCoro != 1))
+          ((map->isCoro  != 0) && (map->isCoro  != 1))
        || ((map->isArray != 0) && (map->isArray != 1))
        || (map->numOffsets < 0)
        || (map->cell_size  < 0));

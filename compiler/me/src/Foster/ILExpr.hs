@@ -77,7 +77,7 @@ data ILMiddle = ILLetVal      Ident   (Letable TypeLL) MayGC
 data ILLast = ILRetVoid
             | ILRet      LLVar
             | ILBr       BlockId [LLVar]
-            | ILCase     LLVar [(CtorId, BlockId)] (Maybe BlockId)
+            | ILCase     LLVar [((CtorId, CtorRepr), BlockId)] (Maybe BlockId)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- TODO last-stand optimizations
@@ -154,14 +154,16 @@ makeAllocationsExplicit bbgp = do
             return $
               (mkMiddle $ CCLetVal id (ILAllocate info)) <*>
               (mkMiddle $ CCTupleStore vs (TypedId (LLPtrType t) id) memregion)
-    (CCLetVal id (ILAppCtor genty cid vs)) -> do
+    (CCLetVal id (ILAppCtor genty (cid, CR_Transparent) [v])) -> do
+            return $
+              (mkMiddle $ CCLetVal id  (ILBitcast genty v))
+    (CCLetVal id (ILAppCtor genty (cid, repr) vs)) -> do
             id' <- ccFreshId (T.pack "ctor-alloc")
             let tynm = ctorTypeName cid ++ "." ++ ctorCtorName cid
-            let tag  = ctorSmallInt cid
             let t = LLStructType (map tidType vs)
             let obj = (TypedId (LLPtrType t) id' )
             let memregion = MemRegionGlobalHeap
-            let info = AllocInfo t memregion tynm (Just tag) Nothing "ctor-allocator" NoZeroInit
+            let info = AllocInfo t memregion tynm (Just repr) Nothing "ctor-allocator" NoZeroInit
             return $
               (mkMiddle $ CCLetVal id' (ILAllocate info)) <*>
               (mkMiddle $ CCTupleStore vs obj memregion)  <*>

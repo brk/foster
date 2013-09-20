@@ -163,7 +163,7 @@ message PbAllocInfo {
   }
   required MemRegion mem_region = 1;
   required Type            type = 2;
-  optional  int32      ctor_tag = 6;
+  optional PbCtorRepr ctor_repr = 6;
   optional TermVar   array_size = 3;
   required string    alloc_site = 4;
   required string     type_name = 5;
@@ -217,6 +217,7 @@ message PbSwitch {
   repeated string       blocks  = 2;
   optional string       defCase = 3;
   required TermVar      var     = 4;
+  optional string       ctor_by = 5;
 }
 
 message PbCtorInfo {
@@ -227,7 +228,18 @@ message PbCtorInfo {
 message PbCtorId {
   required string ctor_type_name = 1;
   required string ctor_ctor_name = 2;
-  required  int32 ctor_local_id  = 3;
+  required PbCtorRepr  ctor_repr = 3;
+}
+
+message PbCtorRepr {
+  enum Tag {
+    CR_DEFAULT     = 1;
+    CR_NULLARY     = 2;
+    CR_TRANSPARENT = 3;
+    CR_VALUE       = 4;
+  }
+  required Tag   tag = 1;
+  optional int64 ctor_repr_tag = 2;
 }
 
 message PbOccurrence {

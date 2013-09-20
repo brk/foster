@@ -219,9 +219,9 @@ data IExpr =
         | IUntil                SSTerm     SSTerm
         | ICall         Ident  [Ident]
         | ICallPrim     ILPrim [Ident]
-        | ICase         Ident  {-(DecisionTree KNExpr)-} [CaseArm Pattern SSTerm TypeIL] [Pattern TypeIL]
+        | ICase         Ident  {-(DecisionTree KNExpr)-} [CaseArm PatternRepr SSTerm TypeIL] [PatternRepr TypeIL]
         | ICaseGuard    SSTerm SSTerm ShowableMachineState 
-                        Ident  [CaseArm Pattern SSTerm TypeIL] [Pattern TypeIL]
+                        Ident  [CaseArm PatternRepr SSTerm TypeIL] [PatternRepr TypeIL]
         | ITyApp        Ident  [TypeIL]
         | IAppCtor      CtorId [Ident]
         deriving (Show)
@@ -276,7 +276,7 @@ ssTermOfExpr expr =
     KNTyApp    _t v argtys -> SSTmExpr  $ ITyApp (idOf v) argtys
     KNCase _t a bs {-dt-}  -> SSTmExpr  $ ICase (idOf a) {-dt-} [CaseArm p (tr e) (fmap tr g) b r
                                                                 |CaseArm p e g b r <- bs] []
-    KNAppCtor     _t cid vs-> SSTmExpr  $ IAppCtor cid (map idOf vs)
+    KNAppCtor     _t cr vs -> SSTmExpr  $ IAppCtor (fst cr) (map idOf vs)
     KNKillProcess _t msg   -> SSTmExpr  $ error $ "prim kill-process: " ++ T.unpack msg
 
 -- ... which lifts in a  straightfoward way to procedure definitions.
@@ -538,32 +538,32 @@ stepExpr gs expr = do
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||||||| Pattern Matching ||||||||||||||||||||{{{
-matchPattern :: Pattern TypeIL -> SSValue -> Maybe [(Ident, SSValue)]
+matchPattern :: PatternRepr TypeIL -> SSValue -> Maybe [(Ident, SSValue)]
 matchPattern p v =
   case (v, p) of
-    (_, P_Atom (P_Wildcard _ _  )) -> trivialMatchSuccess
-    (_, P_Atom (P_Variable _ tid)) -> Just [(tidIdent tid, v)]
+    (_, PR_Atom (P_Wildcard _ _  )) -> trivialMatchSuccess
+    (_, PR_Atom (P_Variable _ tid)) -> Just [(tidIdent tid, v)]
 
-    (SSInt i1, P_Atom (P_Int _ _ i2))   -> matchIf $ i1 == litIntValue i2
-    (_       , P_Atom (P_Int _ _ _ ))   -> matchFailure
+    (SSInt i1, PR_Atom (P_Int _ _ i2))   -> matchIf $ i1 == litIntValue i2
+    (_       , PR_Atom (P_Int _ _ _ ))   -> matchFailure
 
-    (SSBool b1, P_Atom (P_Bool _ _ b2)) -> matchIf $ b1 == b2
-    (_        , P_Atom (P_Bool _ _ _ )) -> matchFailure
+    (SSBool b1, PR_Atom (P_Bool _ _ b2)) -> matchIf $ b1 == b2
+    (_        , PR_Atom (P_Bool _ _ _ )) -> matchFailure
 
-    (SSCtorVal vid vals, P_Ctor _ _ pats (CtorInfo cid _)) -> do
+    (SSCtorVal vid vals, PR_Ctor _ _ pats (CtorInfo cid _ _)) -> do
                                             _ <- matchIf $ vid == cid
                                             matchPatterns pats vals
-    (_                 , P_Ctor _ _ _ _) -> matchFailure
+    (_                 , PR_Ctor _ _ _ _) -> matchFailure
 
-    (SSTuple vals, P_Tuple _ _ pats) -> matchPatterns pats vals
-    (_, P_Tuple _ _ _) -> matchFailure
+    (SSTuple vals, PR_Tuple _ _ pats) -> matchPatterns pats vals
+    (_, PR_Tuple _ _ _) -> matchFailure
  where
    trivialMatchSuccess = Just []
    matchFailure        = Nothing
    matchIf cond = if cond then trivialMatchSuccess
                           else matchFailure
 
-matchPatterns :: [Pattern TypeIL] -> [SSValue] -> Maybe [(Ident, SSValue)]
+matchPatterns :: [PatternRepr TypeIL] -> [SSValue] -> Maybe [(Ident, SSValue)]
 matchPatterns pats vals = do
   matchLists <- mapM (\(p, v) -> matchPattern p v) (zip pats vals)
   return $ concat matchLists
@@ -1017,7 +1017,7 @@ expectString gs s = do
 
 textFragmentOf txt = SSCtorVal textFragmentCtor [SSByteString (TE.encodeUtf8 txt),
                                             SSInt $ fromIntegral (T.length txt)]
-  where textFragmentCtor = CtorId "Text" "TextFragment" 2 0 -- see Primitives.hs
+  where textFragmentCtor = CtorId "Text" "TextFragment" 2 -- see Primitives.hs
 
 arrayFrom :: MachineState -> [a] -> (Int -> a -> Integer) -> IO MachineState
 arrayFrom gs0 vals f = do

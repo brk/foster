@@ -115,8 +115,8 @@ monoKN subst e =
 
   KNTyApp _ _ [] -> error "Monomo.hs: cannot type-apply with no arguments!"
   KNTyApp t (TypedId (ForAllIL ktvs _rho) polybinder) argtys -> do
-    let generic t = case kindOfTypeIL t of KindPointerSized -> PtrTypeUnknown
-                                           _ -> qt t
+    let generic t = case kindOf t of KindPointerSized -> PtrTypeUnknown
+                                     _ -> qt t
     let monotys  = map generic argtys
     let extsubst = extendMonoSubst subst monotys ktvs
 
@@ -176,8 +176,8 @@ monoFn subst (Fn v vs body isrec rng) = do
   body' <- monoKN subst body
   return (Fn (qv v) (map qv vs) body' isrec rng)
 
-monoPatternBinding :: MonoSubst -> CaseArm Pattern (KNExpr' TypeIL) TypeIL
-                          -> Mono (CaseArm Pattern (KNExpr' MonoType) MonoType)
+monoPatternBinding :: MonoSubst -> CaseArm PatternRepr (KNExpr' TypeIL) TypeIL
+                          -> Mono (CaseArm PatternRepr (KNExpr' MonoType) MonoType)
 monoPatternBinding subst (CaseArm pat expr guard vs rng) = do
   let pat' = monoPattern subst pat
   let vs'  = map (mono subst) vs
@@ -195,12 +195,12 @@ monoPatternAtom subst pattern =
 monoPattern subst pattern =
  let mp = map (monoPattern subst) in
  case pattern of
-   P_Atom           atom       -> P_Atom         (monoPatternAtom subst atom)
-   P_Tuple    rng t pats       -> P_Tuple    rng (monoType subst t) (mp pats)
-   P_Ctor     rng t pats ctor  -> P_Ctor     rng (monoType subst t) (mp pats) (monoCtorInfo subst ctor)
+   PR_Atom           atom       -> PR_Atom         (monoPatternAtom subst atom)
+   PR_Tuple    rng t pats       -> PR_Tuple    rng (monoType subst t) (mp pats)
+   PR_Ctor     rng t pats ctor  -> PR_Ctor     rng (monoType subst t) (mp pats) (monoCtorInfo subst ctor)
 
-monoCtorInfo subst (CtorInfo cid (DataCtor nm tag tyformals tys)) =
-                   (CtorInfo cid (DataCtor nm tag tyformals tys'))
+monoCtorInfo subst (CtorInfo cid (DataCtor nm tyformals tys) repr) =
+                   (CtorInfo cid (DataCtor nm tyformals tys') repr)
                 where tys' = map (monoType subst') tys
                       subst' = extendSubstForFormals subst tyformals
 
@@ -215,8 +215,8 @@ monomorphizedDataTypes dts = map monomorphizedDataType dts
 
          monomorphizedDataCtor :: MonoSubst -> DataCtor TypeIL -> DataCtor MonoType
          monomorphizedDataCtor subst
-               (DataCtor name tag _tyformals types) =
-                DataCtor name tag [] (map (monoType subst) types)
+               (DataCtor name _tyformals types) =
+                DataCtor name [] (map (monoType subst) types)
 
 monoExternDecl (s, t) = (s, monoType emptyMonoSubst t)
 
@@ -375,9 +375,9 @@ alphaRename fn = do
     renamePattern pattern = do
      let mp = mapM renamePattern
      case pattern of
-       P_Atom     atom             -> renamePatternAtom atom >>= \atom' -> return $ P_Atom atom'
-       P_Ctor     rng t pats ctor  -> mp pats >>= \pats' -> return $ P_Ctor  rng t pats' ctor
-       P_Tuple    rng t pats       -> mp pats >>= \pats' -> return $ P_Tuple rng t pats'
+       PR_Atom     atom             -> renamePatternAtom atom >>= \atom' -> return $ PR_Atom atom'
+       PR_Ctor     rng t pats ctor  -> mp pats >>= \pats' -> return $ PR_Ctor  rng t pats' ctor
+       PR_Tuple    rng t pats       -> mp pats >>= \pats' -> return $ PR_Tuple rng t pats'
 
 
 data RenameState = RenameState {

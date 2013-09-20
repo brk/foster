@@ -35,6 +35,7 @@ import Foster.Bepb.BlockMiddle  as PbBlockMiddle
 import Foster.Bepb.TermVar      as PbTermVar
 import Foster.Bepb.PbCtorId     as PbCtorId
 import Foster.Bepb.PbDataCtor   as PbDataCtor
+import Foster.Bepb.PbCtorRepr   as PbCtorRepr
 import Foster.Bepb.PbCallInfo   as PbCallInfo
 import Foster.Bepb.PbCtorInfo   as PbCtorInfo
 import Foster.Bepb.RebindId     as PbRebindId
@@ -48,6 +49,7 @@ import Foster.Bepb.RootKill     as PbRootKill
 import Foster.Bepb.TupleStore   as PbTupleStore
 import Foster.Bepb.Letable.Tag
 import Foster.Bepb.PbCoroPrim.Tag
+import Foster.Bepb.PbCtorRepr.Tag
 import Foster.Bepb.TermVar.Tag
 import Foster.Bepb.Terminator.Tag
 import Foster.Bepb.Proc.Linkage
@@ -115,7 +117,7 @@ dumpProcType (ss, t, cc) =
       where stringOfCC FastCC = "fastcc"
             stringOfCC CCC    = "ccc"
 
-dumpDataCtor (DataCtor ctorName _smallId _tyformals types) =
+dumpDataCtor (DataCtor ctorName _tyformals types) =
   PbDataCtor { PbDataCtor.name  = textToPUtf8 ctorName
              , PbDataCtor.type' = fromList $ map dumpType types
              }
@@ -138,7 +140,7 @@ dumpAllocate (AllocInfo typ region typename maybe_tag maybe_array_size allocsite
     P'.defaultValue { PbAllocInfo.mem_region = dumpMemRegion region
                     , PbAllocInfo.type'      = dumpType      typ
                     , PbAllocInfo.type_name  = u8fromString  typename
-                    , PbAllocInfo.ctor_tag   = fmap intToInt32 maybe_tag
+                    , PbAllocInfo.ctor_repr  = fmap (dumpCtorRepr "dumpAllocate") maybe_tag
                     , PbAllocInfo.array_size = fmap dumpVar  maybe_array_size
                     , PbAllocInfo.alloc_site = u8fromString  allocsite
                     , PbAllocInfo.zero_init  = needsZeroInit zeroinit
@@ -206,11 +208,21 @@ dumpLast (ILCase var arms def) =
 
 dumpSwitch var arms def =
     let (ctors, ids) = Prelude.unzip arms in
-    P'.defaultValue { PbSwitch.ctors   = fromList (map dumpCtorId ctors)
+    P'.defaultValue { PbSwitch.ctors   = fromList (map (dumpCtorIdWithRepr "dumpSwitch") ctors)
                     , PbSwitch.blocks  = fromList (map dumpBlockId ids)
                     , PbSwitch.defCase = fmap dumpBlockId def
                     , PbSwitch.var     = dumpVar var
+                    , PbSwitch.ctor_by = Just $ u8fromString $ determineHowToFindObjectCtor ctors
                     }
+
+determineHowToFindObjectCtor ctors = go "INDIR" ctors
+  where go how [] = how
+        go how ((_, CR_Transparent):ctors) = go how     ctors
+        go how ((_, CR_Default _  ):ctors) = go how     ctors
+        go how ((_, CR_Tagged  _  ):ctors) = "MASK3"
+        go _   ((_, CR_Nullary _  ):ctors) = "MASK3"
+        go _   ((_, CR_Value   _  ):ctors) = "VALUE"
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||||||| Literals ||||||||||||||||||||||||||||{{{
@@ -405,22 +417,21 @@ dumpArrayLength t arr =
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||| Other Expressions ||||||||||||||||||||||{{{
-dumpCtorInfo (CtorInfo cid@(CtorId _dtn dtcn _arity ciid)
-                           (DataCtor dcn dcid _tyfs tys)) =
-  case (ciid == dcid, dtcn == T.unpack dcn) of
-    (_, False) -> error $ "Ctor info inconsistent, had different names for ctor id and data ctor."
-    (False, _) -> error $ "Ctor info inconsistent, had different tags for ctor id and data ctor."
-    (_,     _) -> -- ignore type formals...
-        P'.defaultValue { PbCtorInfo.ctor_id = dumpCtorId cid
+dumpCtorInfo (CtorInfo cid@(CtorId _dtn dtcn _arity)
+                           (DataCtor dcn _tyfs tys) repr) =
+  if dtcn == T.unpack dcn 
+    then -- ignore type formals...
+        P'.defaultValue { PbCtorInfo.ctor_id = dumpCtorIdWithRepr "dumpCtorInfo" (cid, repr)
                         , PbCtorInfo.ctor_struct_ty = if null tys
                                 then Nothing
                                 else Just $ dumpType (LLStructType tys)
                         }
+    else error $ "Ctor info inconsistent, had different names for ctor id and data ctor."
 
-dumpCtorId (CtorId dtn dtcn _arity ciid) =
+dumpCtorIdWithRepr from (CtorId dtn dtcn _arity, repr) =
     P'.defaultValue { PbCtorId.ctor_type_name = u8fromString dtn
                     , PbCtorId.ctor_ctor_name = u8fromString dtcn
-                    , PbCtorId.ctor_local_id  = intToInt32 ciid
+                    , PbCtorId.ctor_repr      = dumpCtorRepr from repr
                     }
 
 dumpOccurrence var offsCtorInfos =
@@ -429,6 +440,30 @@ dumpOccurrence var offsCtorInfos =
                     , PbOccurrence.occ_ctors  = fromList $ map dumpCtorInfo infos
                     , PbOccurrence.scrutinee  = dumpVar var
                     , PbOccurrence.type'      = Just $ dumpType $ occType var offsCtorInfos
+                    }
+
+dumpCtorRepr _ (CR_Tagged 0) =
+    P'.defaultValue { PbCtorRepr.tag = CR_DEFAULT
+                    , PbCtorRepr.ctor_repr_tag = Just $ intToInt64 0
+                    }
+
+dumpCtorRepr _ (CR_Default ciid) =
+    P'.defaultValue { PbCtorRepr.tag = CR_DEFAULT
+                    , PbCtorRepr.ctor_repr_tag = Just $ intToInt64 ciid
+                    }
+
+dumpCtorRepr _ (CR_Transparent) =
+    P'.defaultValue { PbCtorRepr.tag = CR_TRANSPARENT
+                    }
+
+dumpCtorRepr _ (CR_Nullary ciid) =
+    P'.defaultValue { PbCtorRepr.tag = CR_NULLARY
+                    , PbCtorRepr.ctor_repr_tag = Just $ intToInt64 ciid
+                    }
+
+dumpCtorRepr _ (CR_Value ciid) =
+    P'.defaultValue { PbCtorRepr.tag = CR_VALUE
+                    , PbCtorRepr.ctor_repr_tag = Just $ fromInteger ciid
                     }
 
 -----------------------------------------------------------------------

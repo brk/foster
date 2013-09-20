@@ -22,6 +22,7 @@ options =
  , Option []     ["no-inline"]  (NoArg  NoInline)         "disable inlining"
  , Option []     ["inline"]     (NoArg  Inline)           "enable inlining"
  , Option []     ["no-donate"]  (NoArg  NoDonate)         "diable inlining donation"
+ , Option []     ["no-ctor-opt"] (NoArg NoCtorOpt)        "diable ctor representation optimizations"
  , Option []     ["inline-size-limit"]
                                 (ReqArg InlineSize "SIZE")"size counter value for inlining"
  ]
@@ -40,6 +41,7 @@ getDumpFns       (flags, _) = foldr (\f a -> case f of DumpFn  arg -> arg:a   ; 
 getVerboseFlag   (flags, _) =       Verbose   `elem` flags
 getDumpIRFlag ir (flags, _) =       DumpIR ir `elem` flags
 getDumpPrimitives(flags, _) =       DumpPrims `elem` flags
+getCtorOpt       (flags, _) = (not $ NoCtorOpt `elem` flags)
 getInlining      (flags, _) = (not $ NoInline  `elem` flags) && (Inline  `elem` flags)
 getInliningDonate(flags, _) = (not $ NoDonate  `elem` flags)
 getInliningSize  (flags, _) = foldr (\f a -> case f of InlineSize s -> Just (read s :: Int) ; _ -> a) Nothing flags

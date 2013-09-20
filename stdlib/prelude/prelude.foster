@@ -199,6 +199,10 @@ text_maxdepth = { s : Text =>
    end;
 };
 
+textOfBool = { b : Bool =>
+  if b then "True" else "False" end
+};
+
 // Precondition: n in range 0..128.
 textOfASCII = { n : Int32 => textOfASCII8 (primitive_trunc_i32_i8 n) };
 

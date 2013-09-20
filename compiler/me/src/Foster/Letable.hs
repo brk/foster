@@ -6,7 +6,7 @@
 
 module Foster.Letable where
 
-import Foster.Base(Literal(..), CtorId, ArrayIndex(..),
+import Foster.Base(Literal(..), CtorId, CtorRepr(..), ArrayIndex(..),
                    AllocMemRegion, AllocInfo(..), Occurrence, AllocationSource,
                    FosterPrim(..), MayGC(..), memRegionMayGC,
                    TypedId(..), Ident(..),
@@ -31,7 +31,7 @@ data Letable ty =
         -- Varieties of applications
         | ILCallPrim    ty (FosterPrim ty) [TypedId ty]
         | ILCall        ty (TypedId    ty) [TypedId ty]
-        | ILAppCtor     ty CtorId          [TypedId ty]
+        | ILAppCtor     ty (CtorId, CtorRepr) [TypedId ty]
         -- Stack/heap slot allocation
         | ILAllocate    (AllocInfo ty)
         -- Mutable ref cells
@@ -170,7 +170,7 @@ isPure letable = case letable of
 canGC :: Map.Map Ident MayGC -> Letable ty -> MayGC
 canGC mayGCmap letable =
   case letable of
-         ILAppCtor     {} -> MayGC
+         ILAppCtor _ (_, repr) _ -> canCtorReprAppGC repr
          ILAlloc    _ amr -> memRegionMayGC amr
          ILAllocArray  {} -> MayGC
          ILAllocate info  -> memRegionMayGC (allocRegion info)
@@ -201,6 +201,12 @@ canGCPrim (NamedPrim (TypedId _ (GlobalSymbol name))) =
                                             else GCUnknown "canGCPrim:global"
 canGCPrim PrimArrayLiteral = MayGC
 canGCPrim _ = GCUnknown "canGCPrim:other"
+
+canCtorReprAppGC CR_Transparent = WillNotGC
+canCtorReprAppGC (CR_Default _) = MayGC
+canCtorReprAppGC (CR_Tagged  _) = MayGC
+canCtorReprAppGC (CR_Nullary _) = WillNotGC
+canCtorReprAppGC (CR_Value   _) = WillNotGC
 
 willNotGCGlobal name = name `elem` (map T.pack
                         ["expect_i1", "print_i1", "expect_i8", "print_i8"

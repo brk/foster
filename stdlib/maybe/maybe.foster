@@ -1,8 +1,8 @@
 
 // TODO switching from Boxed to Type fails...
 type case Maybe (a:Boxed)
-  of $None
   of $Some a
+  of $None
 ;
 
 /////

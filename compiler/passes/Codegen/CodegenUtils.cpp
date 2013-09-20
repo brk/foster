@@ -244,15 +244,15 @@ void emitRecordMallocCallsite(llvm::Module* m,
 
 llvm::Value*
 CodegenPass::emitMalloc(TypeAST* typ,
-                        int8_t ctorId,
+                        CtorRepr ctorRepr,
                         std::string srclines,
                         bool init) {
   llvm::Value* memalloc_cell = mod->getFunction("memalloc_cell");
   ASSERT(memalloc_cell != NULL) << "NO memalloc_cell IN MODULE! :(";
 
-  llvm::GlobalVariable* ti = getTypeMapForType(typ, ctorId, mod, NotArray);
+  llvm::GlobalVariable* ti = getTypeMapForType(typ, ctorRepr, mod, NotArray);
   ASSERT(ti != NULL) << "malloc must have type info for type " << str(typ)
-                     << "; ctor id " << ctorId;
+                     << "; ctor id " << ctorRepr.smallId;
   llvm::Type* typemap_type = memalloc_cell->getType()
                                             ->getContainedType(0)
                                             ->getContainedType(1);
@@ -283,12 +283,12 @@ CodegenPass::emitArrayMalloc(TypeAST* elt_type, llvm::Value* n, bool init) {
   llvm::Value* memalloc = mod->getFunction("memalloc_array");
   ASSERT(memalloc != NULL) << "NO memalloc_array IN MODULE! :(";
 
-  int8_t ctorId = -1;
+  CtorRepr ctorRepr; ctorRepr.smallId = -1; ctorRepr.isTransparent = false;
   // TODO this is bogus; we should have, at most, 3 flat array representations:
   // 1) (packed) non-struct POD
   // 2) GC-able pointers
   // 3) (maybe) unboxed structs, for types with a single ctor.
-  llvm::GlobalVariable* ti = getTypeMapForType(elt_type, ctorId, mod, YesArray);
+  llvm::GlobalVariable* ti = getTypeMapForType(elt_type, ctorRepr, mod, YesArray);
   ASSERT(ti != NULL);
   llvm::Type* typemap_type = memalloc->getType() // function ptr
                                             ->getContainedType(0) // function

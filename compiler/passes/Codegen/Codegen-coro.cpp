@@ -304,7 +304,7 @@ Value* CodegenPass::emitCoroCreateFn(
   BasicBlock* prevBB = builder.GetInsertBlock();
   this->addEntryBB(create);
 
-  int8_t bogusCtor = -1;
+  CtorRepr bogusCtor; bogusCtor.isTransparent = false; bogusCtor.smallId = -1;
   // foster_coro_i32_i32* ccoro = (foster_coro_i32_i32*) memalloc_cell(NULL);
   // foster_coro_i32_i32* fcoro = (foster_coro_i32_i32*) memalloc_cell(NULL);
   Value* ccoro_slot = this->storeAndMarkPointerAsGCRoot(this->emitMalloc(getSplitCoroTyp(retTyp ), bogusCtor, "ccoro", /*init*/ false));

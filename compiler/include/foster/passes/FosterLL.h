@@ -276,10 +276,18 @@ struct LLCall : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
+struct CtorRepr {
+  bool isTransparent;
+  bool isNullary;
+  int64_t smallId; // small in the common case, at least,
+                   // but must be large enough to fit any integer
+                   // constant that might be pattern-matched against.
+};
+
 struct CtorId {
   string typeName;
   string ctorName;
-  int smallId;
+  CtorRepr ctorRepr;
 };
 
 struct CtorInfo {
@@ -365,7 +373,7 @@ struct LLTupleStore : public LLMiddle {
 
 struct LLAllocate : public LLExpr {
   LLVar* arraySize; // NULL if not allocating an array
-  int8_t ctorId;
+  CtorRepr ctorRepr;
   std::string type_name;
   enum MemRegion {
       MEM_REGION_STACK
@@ -377,9 +385,9 @@ struct LLAllocate : public LLExpr {
   bool isStackAllocated() const { return region == MEM_REGION_STACK; }
 
   explicit LLAllocate(TypeAST* t, std::string tynm,
-                      int8_t c, LLVar* arrSize, MemRegion m,
+                      CtorRepr cr, LLVar* arrSize, MemRegion m,
                       std::string allocsite, bool zero_init)
-     : LLExpr("LLAllocate"), arraySize(arrSize), ctorId(c), type_name(tynm),
+     : LLExpr("LLAllocate"), arraySize(arrSize), ctorRepr(cr), type_name(tynm),
                              region(m), srclines(allocsite),
                              zero_init(zero_init) { this->type = t; }
   llvm::Value* codegenCell(CodegenPass* pass, bool init);
@@ -452,16 +460,24 @@ struct LLBr : public LLTerminator {
   virtual void codegenTerminator(CodegenPass* pass);
 };
 
+enum CtorTagRepresentation {
+  CTR_BareValue, // the default, for primitive types like unboxed integers.
+  CTR_OutOfLine,
+  CTR_MaskWith3 // mask to extract inline tag bits
+};
+
 struct LLSwitch : public LLTerminator {
   std::vector<CtorId> ctors;
   std::vector<std::string> blockids;
   std::string defaultCase;
   LLVar* var;
+  CtorTagRepresentation ctr;
   LLSwitch(LLVar* _var,
            const std::vector<CtorId>& _ctors,
            const std::vector<std::string>& _ids,
-           const std::string& _def)
-    : ctors(_ctors), blockids(_ids), defaultCase(_def), var(_var) {}
+           const std::string& _def,
+           CtorTagRepresentation _ctr)
+    : ctors(_ctors), blockids(_ids), defaultCase(_def), var(_var), ctr(_ctr) {}
 
   virtual void codegenTerminator(CodegenPass* pass);
 };

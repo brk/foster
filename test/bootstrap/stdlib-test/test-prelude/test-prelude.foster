@@ -72,6 +72,8 @@ main = {
 
   expect_text "11";
   print_text (tmp_Text_of_UInt64 11);
+
+  test-ord !;
 };
 
 observeWordUnsignedWraparound :: { Int32 };
@@ -104,3 +106,30 @@ test-octet-to-ints = {
   expect_i32 65536;
   print_i32 (octet4ToInt32 0 1 0 0);
 };
+
+test-ord = {
+  expect_text "LT";
+  print_text (textOfOrd (cmpBoolTrueLTxAlt True False));
+
+  expect_text "GT";
+  print_text (textOfOrd (cmpBoolTrueLTxAlt False True));
+
+  expect_text "EQ";
+  print_text (textOfOrd (cmpBoolTrueLTxAlt True True));
+
+  expect_text "EQ";
+  print_text (textOfOrd (cmpBoolTrueLTxAlt False False));
+
+  expect_text "LT";
+  print_text (textOfOrd (cmpBoolTrueLT True False));
+
+  expect_text "GT";
+  print_text (textOfOrd (cmpBoolTrueLT False True));
+
+  expect_text "EQ";
+  print_text (textOfOrd (cmpBoolTrueLT True True));
+
+  expect_text "EQ";
+  print_text (textOfOrd (cmpBoolTrueLT False False));
+};
+

@@ -238,11 +238,11 @@ ailInt rng int ty = do
 
 kindCheckSubsumption :: SourceRange -> ((TyVar, Kind), TypeIL) -> Tc ()
 kindCheckSubsumption rng ((tv, kind), ty) = do
-  if kindOfTypeIL ty `subkindOf` kind
+  if kindOf ty `subkindOf` kind
     then return ()
     else tcFails [text $ "Kind mismatch:" ++ highlightFirstLine rng
        ++ "Cannot instantiate type variable " ++ show tv ++ " of kind " ++ show kind
-       ++ "\nwith type " ++ show ty ++ " of kind " ++ show (kindOfTypeIL ty)]
+       ++ "\nwith type " ++ show ty ++ " of kind " ++ show (kindOf ty)]
 
 coroPrimFor s | s == T.pack "coro_create" = Just $ CoroCreate
 coroPrimFor s | s == T.pack "coro_invoke" = Just $ CoroInvoke

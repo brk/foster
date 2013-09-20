@@ -401,6 +401,134 @@ Longer term, we can leverage our investment in contification optimizations
 to implement pattern match compilation as a source-to-source translation
 from nested to flat matches, as MLton does.
 
+Data Structure Representation
+-----------------------------
+
+Given a type like::
+
+    case type T
+      of $C1
+      of $C2
+      of $C3 c3t1 ... c3tn
+
+Every value of type T has boxed kind, and
+the baseline representation for ``c1 = C1 ! ; c3 = C3 ... ;`` is::
+
+    c1:[_*]    [tagptr|~~~padding~~~]
+         +-------------^
+
+    c3:[_*]    [tagptr|c3t1|...|c3tn]
+         +-------------^
+
+All of the constructors are represented as word-sized values pointing to
+a tagged heap cell.
+The garbage collector uses the tag pointer to determine how to collect
+the tagged constructor cell, and pattern matching also uses the tag
+to determine what the "small id" of the constructor is. In theory
+
+There are a few representation optimizations that can be made in
+specific situations:
+
+  * (aka strict newtype) If T has a single constructor with a single field of the same
+    boxity as T itself, then C needs no direct runtime representation
+    (modulo perhaps maintaining metadata for debugging).
+      * This optimization also applies when T has at most one non-nullary ctor, but
+        **only** if the wrapped type in turn contains no nullary ctors.
+  * (aka c-like-struct) If T has a single constructor, it is eligible for unboxed
+    representation in certain situations, such as ref update...
+  * If the GC can handle pointers to static data, the constant constructors could be
+    made to point at preallocated values. This saves an allocation and keeps the
+    representation simple and uniform.
+  * If T has several non-nullary constructors, they (up to 8 of them = 3 bits, keeping
+    one bit spare for other purposes) can be represented as tagged pointers.
+    Tagging pointers implies that pattern matching is faster
+    (because it can sometimes avoid cache misses/memory indirection hits)
+    at the cost of a few extra ALU operations.
+  * If T has at most one non-nullary constructor, then the nullary constructors could
+    be represented as tagged null pointers (i.e. uint8 zext to intptr_t).
+    The non-nullary constructor gets the (effective) tag of zero.
+    This brings the cache-benefits of tagged pointers, without the extra ALU operations
+    needed to untag pointers before dereferencing them.
+
+TODO if we use only the low-order bits of each word, then we can only encode
+     up to 8 constructors (16 if we use all 4 low bits). We could use a segmented
+     representation to encode more constructors at slightly greater ALU cost.
+     For example, the most common constructors could be tagged in the low bits,
+     so that a simple (& 0b1111) would identify those constructors, while
+     (say) a masked value of 0b1111 would indicate that the remaining tag bits
+     are in the higher ~28 bits of the word.
+
+TODO is BIBOP actually "inefficient and clumsy" as Appel claims,
+     or is it advantageous because, for example, we wind up always
+     having the cache line for the descriptor at hand?
+
+For now, we'll implement a baseline optimized representation:
+nullary constructors will be represented as tagged (with a nonzero tag)
+small integers, plus the strict newtype optimization.
+
+Concretely, the standard representation is a tidy pointer to a tagged heap cell.
+Looking up ``x1``'s tag for pattern-matching requires an indirection::
+
+    type T1 
+      of $C1  a b
+      of $C1x a b
+
+    x1 = C1 a b
+               {[C1|a|b]}
+                   ^
+    x1 [*]---------+
+
+Transparent representation is compiled away in the middle-end for constructor
+applications.  When looking up occurrence information, the backend will insert
+bitcasts to resolve type mismatches (as it does with regular indirections)
+but will omit ``getelementptr``::
+
+    type T2
+      of $C2 T1
+
+    x2 = C2 x1
+               {[C1|a|b]}
+                   ^
+    x2 [*]---------+
+
+Nullary constructors can be represented more efficiently, such that
+no allocations are required and finding tag bits is a simple mask operation::
+
+    type T3
+      of $C3
+      of $C3x
+
+    x2 = C3 !
+
+    x2 [*] = [000000000000000|tag]
+
+One small complication is that the garbage collector must now recognize
+that such values are not actually pointers and should not be deref'ed.
+Another complication is that while the typemap info accessible through
+the tag pointer is not needed, there is other information -- such as
+strings to describe the value's type -- which is useful to have even
+if there is no associated physical heap cell. Conceptually that information
+should be recoverable through a runtime interface like ``(TypeRep, CtorTag) -> CtorMeta``.
+
+Data constructor representations have the following lifetime:
+  * A representation is assigned to constructors in KNExpr.hs
+  * This representation is propagated through the syntax tree, decorating patterns in match exprs.
+  * During pattern match compilation, we also introduce representations for primitive constructors
+    like booleans.
+  * A given LLSwitch expression in the backend must know the method it should use to
+    find the tag of the scrutinee: raw value (for integers), mask it (for nullary ctors),
+    or query the runtime (for untagged objects). 
+
+
+The GC then has a number of cases to consider:
+  * Tagged pointer (which may or may not be null when untagged)
+  * Pointer to start of heap cell (1 word before a tidy pointer) (``heap_cell*``)
+  * Tidy pointer (``tidy*``)
+  * Interior/untidy pointer (``intr*``)
+  * Untagged pointer
+  * Pointer into copying/noncopying/non-/foreign heap space
+
+
 K-Normalization and Let-Flattening
 ----------------------------------
 

@@ -95,7 +95,7 @@ data Proc blocks =
 
 data CCLast = CCCont        BlockId [LLVar] -- either ret or br
             | CCCall        BlockId TypeLL Ident LLVar [LLVar] -- add ident for later let-binding
-            | CCCase        LLVar [(CtorId, BlockId)] (Maybe BlockId)
+            | CCCase        LLVar [((CtorId, CtorRepr), BlockId)] (Maybe BlockId)
             deriving (Show)
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -437,13 +437,13 @@ closureOfKnFn infoMap (self_id, fn) = do
         newbody <- do
             let BasicBlockGraph bodyentry rk oldbodygraph = fnBody f
             let cfcase = CFCase envVar [
-                           (CaseArm (P_Tuple norange t (map patVar varsOfClosure))
+                           (CaseArm (PR_Tuple norange t (map patVar varsOfClosure))
                                     (fst bodyentry)
                                     Nothing
                                     varsOfClosure
                                     norange) ]
                         where t        = tidType envVar
-                              patVar a = P_Atom $ P_Variable norange a
+                              patVar a = PR_Atom $ P_Variable norange a
                               norange  = MissingSourceRange ""
             -- We change the entry block of the new body (versus the old).
             lab <- freshLabel
@@ -612,9 +612,6 @@ instance Pretty CCLast where
                                  Just bid -> line <> arm (text "default:") bid))
 
    where arm lhs bid = fill 20 lhs <+> text "->" <+> prettyBlockId bid
-
-instance Pretty CtorId where
-  pretty (CtorId tynm ctnm _ sm) = pretty tynm <> text "." <> pretty ctnm <> parens (pretty sm)
 
 prettyTypedVar v = pretty (tidIdent v) <+> text "::" <+> pretty (tidType v)
 

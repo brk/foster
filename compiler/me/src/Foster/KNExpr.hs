@@ -18,6 +18,8 @@ import Data.Maybe(maybeToList, isJust)
 
 import Foster.MonoType
 import Foster.Base
+import Foster.Kind
+import Foster.MainCtorHelpers(withDataTypeCtors)
 import Foster.Config
 import Foster.Context
 import Foster.TypeIL
@@ -50,7 +52,7 @@ data KNExpr' ty =
         | KNIf          ty (TypedId ty)  (KNExpr' ty) (KNExpr' ty)
         | KNUntil       ty (KNExpr' ty)  (KNExpr' ty) SourceRange
         -- Creation of bindings
-        | KNCase        ty (TypedId ty) [CaseArm Pattern (KNExpr' ty) ty]
+        | KNCase        ty (TypedId ty) [CaseArm PatternRepr (KNExpr' ty) ty]
         | KNLetVal      Ident      (KNExpr' ty)     (KNExpr' ty)
         | KNLetRec     [Ident]     [KNExpr' ty]     (KNExpr' ty)
         | KNLetFuns    [Ident] [Fn (KNExpr' ty) ty] (KNExpr' ty)
@@ -58,7 +60,7 @@ data KNExpr' ty =
         | KNVar         (TypedId ty)
         | KNCallPrim    ty (FosterPrim ty) [TypedId ty]
         | KNCall TailQ  ty (TypedId ty)    [TypedId ty]
-        | KNAppCtor     ty CtorId          [TypedId ty]
+        | KNAppCtor     ty (CtorId, CtorRepr) [TypedId ty]
         -- Mutable ref cells
         | KNAlloc       ty (TypedId ty) AllocMemRegion
         | KNDeref       ty (TypedId ty)
@@ -82,14 +84,22 @@ knFresh s = ccFreshId (T.pack s)
 
 --------------------------------------------------------------------
 
-kNormalizeModule :: (ModuleIL AIExpr TypeIL) -> Context TypeIL ->
+kNormalizeModule :: (ModuleIL AIExpr TypeIL) -> Context TypeIL -> Bool ->
            Compiled (ModuleIL KNExpr TypeIL)
-kNormalizeModule m ctx =
+kNormalizeModule m ctx shouldOptimizeCtorRepresentations =
     -- TODO move ctor wrapping earlier?
-    let knCtorFuncs = concatMap (kNormalCtors ctx) (moduleILprimTypes m ++
-                                                    moduleILdataTypes m) in
+    let pickCtorReprs = if shouldOptimizeCtorRepresentations
+                         then optimizedCtorRepresesentations
+                         else pickDefaultCtorRepresesentations in
+    let allDataTypes = moduleILprimTypes m ++ moduleILdataTypes m in
+    let ctorReprMap = Map.fromList (concatMap pickCtorReprs allDataTypes) in
+    let ctorRepr :: CtorId -> CtorRepr
+        ctorRepr cid = case Map.lookup cid ctorReprMap of
+                         Just repr -> repr
+                         Nothing   -> error $ "KNExpr.hs: unable to find ctor" in
+    let knCtorFuncs = concatMap (kNormalCtors ctx ctorRepr) allDataTypes in
     let knWrappedBody = do { ctors <- sequence knCtorFuncs
-                           ; body  <- kNormalize YesTail (moduleILbody m)
+                           ; body  <- kNormalize YesTail ctorRepr (moduleILbody m)
                            ; return $ wrapFns ctors body
                            } in
     do body' <- knWrappedBody
@@ -98,16 +108,16 @@ kNormalizeModule m ctx =
         wrapFns :: [Fn KNExpr TypeIL] -> KNExpr -> KNExpr
         wrapFns fs e = foldr (\f body -> KNLetFuns [fnIdent f] [f] body) e fs
 
-kNormalizeFn :: (Fn AIExpr TypeIL) -> KN (Fn KNExpr TypeIL)
-kNormalizeFn fn = do
-    knbody <- kNormalize YesTail (fnBody fn)
+kNormalizeFn :: (CtorId -> CtorRepr) -> Fn AIExpr TypeIL -> KN (Fn KNExpr TypeIL)
+kNormalizeFn ctorRepr fn = do
+    knbody <- kNormalize YesTail ctorRepr (fnBody fn)
     return $ fn { fnBody = knbody }
 
 -- ||||||||||||||||||||||| K-Normalization ||||||||||||||||||||||{{{
-kNormalize :: TailQ -> AIExpr -> KN KNExpr
-kNormalize mebTail expr =
-  let gt = kNormalize mebTail in
-  let gn = kNormalize NotTail in
+kNormalize :: TailQ -> (CtorId -> CtorRepr) -> AIExpr -> KN KNExpr
+kNormalize mebTail ctorRepr expr =
+  let gt = kNormalize mebTail ctorRepr in
+  let gn = kNormalize NotTail ctorRepr in
   case expr of
       AILiteral ty lit  -> return $ KNLiteral ty lit
       E_AIVar v         -> return $ KNVar v
@@ -126,7 +136,7 @@ kNormalize mebTail expr =
               nestedLets (map gn [a,b,c])
                                (\[x,y,z] -> KNArrayPoke (TupleTypeIL []) (ArrayIndex x y rng s) z)
 
-      AILetFuns ids fns a   -> do knFns <- mapM kNormalizeFn fns
+      AILetFuns ids fns a   -> do knFns <- mapM (kNormalizeFn ctorRepr) fns
                                   liftM (KNLetFuns ids knFns) (gt a)
 
       AITuple   es rng      -> do nestedLets (map gn es) (\vs ->
@@ -143,9 +153,10 @@ kNormalize mebTail expr =
       AICase    t e arms    -> do e' <- gn e
                                   nestedLetsDo [return e'] (\[v] -> do
                                     let gtp (CaseArm p e g b r) = do
+                                            let p' = fmapRepr ctorRepr p
                                             e' <- gt e                 
                                             g' <- liftMaybe gt g       
-                                            return (CaseArm p e' g' b r)
+                                            return (CaseArm p' e' g' b r)
                                     arms' <- mapM gtp arms
                                     compileCaseArms arms' t v)
 
@@ -153,7 +164,8 @@ kNormalize mebTail expr =
                                   [ b', c' ] <- mapM gt [b, c]
                                   nestedLets [return a'] (\[v] -> KNIf t v b' c')
       AICallPrim t p es -> do nestedLets (map gn es) (\vars -> KNCallPrim t p vars)
-      AIAppCtor  t c es -> do nestedLets (map gn es) (\vars -> KNAppCtor  t c vars)
+      AIAppCtor  t c es -> do let repr = ctorRepr c
+                              nestedLets (map gn es) (\vars -> KNAppCtor  t (c, repr) vars)
       AICall     t (E_AIVar v) es -> do nestedLetsDo (     map gn es) (\    vars  -> knCall t v  vars)
       AICall     t b           es -> do nestedLetsDo (gn b:map gn es) (\(vb:vars) -> knCall t vb vars)
 
@@ -170,7 +182,7 @@ kNormalize mebTail expr =
                                 show a ++
                                 show (showStructure (tidType a))
         
-        compileCaseArms :: [CaseArm Pattern KNExpr TypeIL]
+        compileCaseArms :: [CaseArm PatternRepr KNExpr TypeIL]
                         -> TypeIL
                         -> TypedId TypeIL
                         -> KN KNExpr
@@ -201,7 +213,7 @@ kNormalize mebTail expr =
                                   return [CaseArm p e' Nothing b r]
                               _ -> return clump
                   let msr   = MissingSourceRange "guardwild"
-                  let pwild = P_Atom $ P_Wildcard msr (tidType v) 
+                  let pwild = PR_Atom $ P_Wildcard msr (tidType v) 
                   return $ KNLetFuns [kid] [kont]
                           (KNCase t v (clump' ++ [CaseArm pwild callkont Nothing [] msr]))
           if anyCaseArmIsGuarded arms
@@ -212,6 +224,15 @@ kNormalize mebTail expr =
 
         anyCaseArmIsGuarded [] = False
         anyCaseArmIsGuarded (arm:arms) = isGuarded arm || anyCaseArmIsGuarded arms
+
+        fmapRepr ctorRepr p =
+          case p of
+            P_Atom a                  -> PR_Atom a
+            P_Tuple rng ty pats       -> PR_Tuple rng ty (map (fmapRepr ctorRepr) pats)
+            P_Ctor  rng ty pats cinfo -> let cid = ctorInfoId cinfo
+                                             cinfo' = cinfo { ctorInfoRepr = ctorRepr cid }
+                                         in PR_Ctor rng ty (map (fmapRepr ctorRepr) pats) cinfo'
+
 -- }}}|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 --------------------------------------------------------------------
@@ -338,6 +359,69 @@ nestedLets :: [KN KNExpr] -> ([AIVar] -> KNExpr) -> KN KNExpr
 nestedLets exprActions g = nestedLetsDo exprActions (\vars -> return $ g vars)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+
+data CtorVariety ty = SingleCtorWrappingSameBoxityType CtorId
+                    | AtMostOneNonNullaryCtor          [(CtorId, Int)] [(CtorId, Int)]
+                    | OtherCtorSituation               [(CtorId, Int)]
+
+ctorWrapsOneValueOfSameKind ctor = 
+    ctorWrapsOneValueOfKind ctor KindPointerSized -- all types are of pointer sized kind, for now.
+  where
+    ctorWrapsOneValueOfKind ctor kind =
+      case dataCtorTypes ctor of
+        [ty] -> kindOf ty == kind
+        _ -> False
+
+isNullaryCtor :: DataCtor ty -> Bool
+isNullaryCtor ctor = null (dataCtorTypes ctor)
+
+splitNullaryCtors :: [(CtorId, DataCtor ty, Int)] -> ( [CtorId], [CtorId] )
+splitNullaryCtors ctors =
+  ( [cid | (cid, ctor, _) <- ctors, not (isNullaryCtor ctor)]
+  , [cid | (cid, ctor, _) <- ctors,      isNullaryCtor ctor ] )
+
+classifyCtors :: Kinded ty => [(CtorId, DataCtor ty, Int)] -> CtorVariety ty
+classifyCtors [(cid, ctor, _)]
+                    | ctorWrapsOneValueOfSameKind ctor
+                    = SingleCtorWrappingSameBoxityType cid
+classifyCtors ctors =
+    case splitNullaryCtors ctors of
+      -- The non-nullary ctor gets a small-int of zero (so it has "no tag"),
+      -- and the nullary ctors get the remaining values.
+      -- The representation can be in the low bits of the pointer.
+      ([nonNullaryCtor], nullaryCtors) | length nullaryCtors <= 7 ->
+           AtMostOneNonNullaryCtor  [ (nonNullaryCtor, 0) ] (zip nullaryCtors [1..])
+
+      ([],               nullaryCtors) | length nullaryCtors <= 8 ->
+           AtMostOneNonNullaryCtor  []                      (zip nullaryCtors [0..])
+          
+      _ -> OtherCtorSituation [(cid, n) | (cid, _, n) <- ctors]
+
+pickDefaultCtorRepresesentations :: DataType TypeIL -> [(CtorId, CtorRepr)]
+pickDefaultCtorRepresesentations dtype =
+  withDataTypeCtors dtype (\cid ctor n -> (cid, CR_Default n))
+
+optimizedCtorRepresesentations :: DataType TypeIL -> [(CtorId, CtorRepr)]
+optimizedCtorRepresesentations dtype =
+  let ctors = withDataTypeCtors dtype (\cid ctor n -> (cid, ctor, n)) in
+  case classifyCtors ctors of
+    SingleCtorWrappingSameBoxityType cid ->
+      -- The constructor needs no runtime representation...
+      [(cid, CR_Transparent)]
+
+    AtMostOneNonNullaryCtor [] nullaryCids ->
+      [(cid, CR_Nullary n) | (cid, n) <- nullaryCids]
+
+    AtMostOneNonNullaryCtor [nnCid] nullaryCids ->
+      [(cid, CR_Tagged  n) | (cid, n) <- [nnCid]] ++
+      [(cid, CR_Nullary n) | (cid, n) <- nullaryCids]
+
+    AtMostOneNonNullaryCtor _nnCids _nullaryCids ->
+      error $ "KNExpr.hs cannot yet handle multiple non-nullary ctors"
+
+    OtherCtorSituation cidns ->
+      [(cid, CR_Default n) | (cid, n) <- cidns]
+
 -- Produces a list of (K-normalized) functions, eta-expansions of each ctor.
 -- Specifically, given a data type T (A1::K1) ... (An::Kn) with
 --   constructor C (T1::KT1) .. (Tn::KTn), we emit a procedure with type
@@ -349,16 +433,16 @@ nestedLets exprActions g = nestedLetsDo exprActions (\vars -> return $ g vars)
 -- while ``type case T3 (a:Boxed) of $T3C1 a``
 -- produces T3C1 :: forall b:Boxed, b -> T3 b
 --
-kNormalCtors :: Context TypeIL -> DataType TypeIL -> [KN (Fn KNExpr TypeIL)]
-kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
+kNormalCtors :: Context TypeIL -> (CtorId -> CtorRepr) -> DataType TypeIL -> [KN (Fn KNExpr TypeIL)]
+kNormalCtors ctx ctorRepr dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
   where
     kNormalCtor :: Context TypeIL -> DataType TypeIL -> DataCtor TypeIL
                 -> KN (Fn KNExpr TypeIL)
-    kNormalCtor ctx datatype _dc@(DataCtor cname small _tyformals tys) = do
+    kNormalCtor ctx datatype _dc@(DataCtor cname _tyformals tys) = do
       let dname = dataTypeName datatype
       let arity = Prelude.length tys
-      let cid   = CtorId dname (T.unpack cname) arity small
-      -- let info  = CtorInfo cid dc
+      let cid   = CtorId dname (T.unpack cname) arity
+      let rep   = ctorRepr cid
       let genFreshVarOfType t = do fresh <- knFresh ".autogen"
                                    return $ TypedId t fresh
       vars <- mapM genFreshVarOfType tys
@@ -367,7 +451,7 @@ kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
         Just (tid, _) -> return $
                Fn { fnVar   = tid
                   , fnVars  = vars
-                  , fnBody  = KNAppCtor (TyConAppIL dname []) cid vars -- TODO fix
+                  , fnBody  = KNAppCtor (TyConAppIL dname []) (cid, rep) vars -- TODO fix
                   , fnIsRec = Just False
                   , fnAnnot = ExprAnnot [] (MissingSourceRange $ "kNormalCtor " ++ show cid) []
                   }
@@ -1025,6 +1109,13 @@ instance Pretty t => Pretty (Pattern t) where
         P_Ctor          _rng _ty pats cid -> parens (text "$" <> text (ctorCtorName $ ctorInfoId cid) <+> (hsep $ map pretty pats))
         P_Tuple         _rng _ty pats     -> parens (hsep $ punctuate comma (map pretty pats))
 
+instance Pretty t => Pretty (PatternRepr t) where
+  pretty p =
+    case p of
+        PR_Atom          atom              -> pretty atom
+        PR_Ctor          _rng _ty pats cid -> parens (text "$" <> text (ctorCtorName $ ctorInfoId cid) <+> (hsep $ map pretty pats))
+        PR_Tuple         _rng _ty pats     -> parens (hsep $ punctuate comma (map pretty pats))
+
 pr YesTail = "(tail)"
 pr NotTail = "(non-tail)"
 
@@ -1325,13 +1416,13 @@ mkOpExpr e env = do
   return $ Opnd e env le oup inp
 
 -- Apply a variable substitution in a pattern.
-qp :: (TypedId ty -> In (TypedId ty)) -> (Pattern ty) -> In (Pattern ty)
+qp :: (TypedId ty -> In (TypedId ty)) -> (PatternRepr ty) -> In (PatternRepr ty)
 qp subst pattern = do
  case pattern of
-   P_Atom           atom       -> liftM    P_Atom                 (qpa subst  atom)
-   P_Tuple    rng t pats       -> liftM   (P_Tuple    rng t) (mapM (qp subst) pats)
-   P_Ctor     rng t pats ctor  -> do p' <-                    mapM (qp subst) pats
-                                     return $ P_Ctor  rng t p' ctor
+   PR_Atom           atom       -> liftM    PR_Atom                 (qpa subst  atom)
+   PR_Tuple    rng t pats       -> liftM   (PR_Tuple    rng t) (mapM (qp subst) pats)
+   PR_Ctor     rng t pats ctor  -> do p' <-                     mapM (qp subst) pats
+                                      return $ PR_Ctor  rng t p' ctor
 
 qpa :: (TypedId ty -> In (TypedId ty)) -> (PatternAtom ty) -> In (PatternAtom ty)
 qpa subst pattern = do
@@ -1884,7 +1975,7 @@ inlineBitcastedFunction v' tailq ty vs env = do
 -- {{{ Online constant folding
 data ConstExpr = Lit            MonoType Literal
                | LitTuple       MonoType [ConstStatus] SourceRange
-               | KnownCtor      MonoType CtorId [ConstStatus]
+               | KnownCtor      MonoType (CtorId, CtorRepr) [ConstStatus]
                deriving Show
 
 data ConstStatus = IsConstant ConstExpr
@@ -1937,8 +2028,8 @@ genIdsOf args = mapM genId args
 --      even thought it can't become simply ``f(b)`` because a might not be True.
 -- TODO handle guards?
 matchConstExpr :: ConstExpr
-               ->            [CaseArm Pattern (KNExpr' MonoType) MonoType]
-               -> In (Either [CaseArm Pattern (KNExpr' MonoType) MonoType]
+               ->            [CaseArm PatternRepr (KNExpr' MonoType) MonoType]
+               -> In (Either [CaseArm PatternRepr (KNExpr' MonoType) MonoType]
                              SrcExpr)
 matchConstExpr c arms = go arms
   where go [] = return $ Left arms -- no match found
@@ -1952,22 +2043,22 @@ matchConstExpr c arms = go arms
         nullary False = Nothing
 
         -- If the constant matches the pattern, return the list of bindings generated.
-        matchPatternWithConst :: Pattern ty -> ConstStatus -> Maybe [(Ident, ConstStatus)]
+        matchPatternWithConst :: PatternRepr ty -> ConstStatus -> Maybe [(Ident, ConstStatus)]
         matchPatternWithConst p cs =
           case (cs, p) of
-            (_, P_Atom (P_Wildcard _ _  )) -> Nothing -- Matches trivially, but no binding so we don't care!
-            (_, P_Atom (P_Variable _ tid)) -> Just [(tidIdent tid, cs)]
+            (_, PR_Atom (P_Wildcard _ _  )) -> Nothing -- Matches trivially, but no binding so we don't care!
+            (_, PR_Atom (P_Variable _ tid)) -> Just [(tidIdent tid, cs)]
             (IsVariable _, _)     -> Nothing -- can't match non-constants against concrete patterns.
             (IsConstant c, _)     -> matchConst c p
               where matchConst c p =
                       case (c, p) of
-                        (Lit _ (LitInt  i1), P_Atom (P_Int  _ _ i2)) -> nullary $ litIntValue i1 == litIntValue i2
-                        (Lit _ (LitBool b1), P_Atom (P_Bool _ _ b2)) -> nullary $ b1 == b2
-                        (LitTuple _ args _, P_Tuple _ _ pats) ->
+                        (Lit _ (LitInt  i1), PR_Atom (P_Int  _ _ i2)) -> nullary $ litIntValue i1 == litIntValue i2
+                        (Lit _ (LitBool b1), PR_Atom (P_Bool _ _ b2)) -> nullary $ b1 == b2
+                        (LitTuple _ args _, PR_Tuple _ _ pats) ->
                             let parts = map (uncurry matchPatternWithConst) (zip pats args) in
                             let res = combineMaybeList parts in
                             trace ("matched tuple const against tuple pat " ++ show p ++ "\n, parts = " ++ show parts ++ " ;;; res = " ++ show res) res
-                        (KnownCtor _ kid args, P_Ctor _ _ pats (CtorInfo cid _)) | kid == cid ->
+                        (KnownCtor _ (kid, _) args, PR_Ctor _ _ pats (CtorInfo cid _ _)) | kid == cid ->
                           case (args, pats) of
                             ([], []) -> Just []
                             _        -> combineMaybeList $ map (uncurry matchPatternWithConst) (zip pats args)

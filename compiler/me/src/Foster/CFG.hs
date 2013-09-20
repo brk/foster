@@ -125,8 +125,8 @@ blockId = fst
 caseIf a b = [CaseArm (pat True)  a Nothing [] rng,
               CaseArm (pat False) b Nothing [] rng]
          where rng = MissingSourceRange "cfg.if.rng"
-               pat :: Bool -> Pattern MonoType
-               pat bval = P_Atom $ P_Bool rng boolMonoType bval
+               pat :: Bool -> PatternRepr MonoType
+               pat bval = PR_Atom $ P_Bool rng boolMonoType bval
 
 -- ||||||||||||||||||||||||| KNMono -> CFG ||||||||||||||||||||||{{{
 -- computeBlocks takes an expression and a contination,
@@ -356,12 +356,11 @@ computeBlocks expr idmaybe k = do
       case bexp of
         KNLetVal     _ _  b -> allocInfoForKNExpr b
         KNLetFuns    _ _  b -> allocInfoForKNExpr b
-        KNAppCtor    _ cid vs ->
+        KNAppCtor    _ (cid,rep) vs ->
           let structty = StructType (map tidType vs) in
           let tynm = ctorTypeName cid ++ "." ++ ctorCtorName cid in
-          let tag  = ctorSmallInt cid in
           AllocInfo structty   MemRegionGlobalHeap   tynm
-                    (Just tag) Nothing "KNLetRecTmp" DoZeroInit
+                    (Just rep) Nothing "KNLetRecTmp" DoZeroInit
         KNCall _ _ base _ -> error $ "allocInfoForKNExpr can't handle " ++ show (textOf bexp 0) ++ " ;; " ++ show base
         _ -> error $ "allocInfoForKNExpr can't handle " ++ show (textOf bexp 0)
 
@@ -433,7 +432,7 @@ cfgIsThisFnVar b = do old <- get
 -- ||||||||||||||||||||||| CFG Data Types |||||||||||||||||||||||{{{
 data CFLast = CFCont        BlockId [MoVar] -- either ret or br
             | CFCall        BlockId MonoType MoVar [MoVar]
-            | CFCase        MoVar [CaseArm Pattern BlockId MonoType]
+            | CFCase        MoVar [CaseArm PatternRepr BlockId MonoType]
             deriving (Show)
 
 data Insn e x where
@@ -552,7 +551,9 @@ instance Pretty t => Pretty (Letable t) where
       ILOccurrence  _ v occ -> prettyOccurrence v occ
       ILCallPrim  _ p vs    -> (text "prim" <+> pretty p <+> hsep (map prettyId vs))
       ILCall      _ v vs    -> pretty v <+> hsep (map pretty vs)
-      ILAppCtor   _ c vs    -> (text "~" <> parens (text (ctorCtorName c) <+> hsep (map prettyId vs)))
+      ILAppCtor   _ (c,r) vs ->(parens (text (ctorCtorName c)
+                                        <>  text "~" <> text (show r)
+                                        <+> hsep (map prettyId vs)))
       ILAlloc     v rgn     -> text "(ref" <+> pretty v <+> comment (pretty rgn) <> text ")"
       ILDeref     _ v       -> pretty v <> text "^"
       ILStore     v1 v2     -> text "store" <+> pretty v1 <+> text "to" <+> pretty v2

@@ -319,9 +319,12 @@ parseDataType dt = do
     return $ Foster.Base.DataType (uToString $ DataType.name dt) tyformals ctors
  where
   parseDataCtor :: [TypeFormalAST] -> (Int, DataCtor.DataCtor) -> FE (Foster.Base.DataCtor TypeP)
-  parseDataCtor tyf (n, ct) = do
+  parseDataCtor tyf (_n, ct) = do
       let types = map parseType (toList $ DataCtor.type' ct)
-      return $ Foster.Base.DataCtor (pUtf8ToText $ DataCtor.name ct) n tyf types
+      -- The constructor tags assigned at this point are tentative;
+      -- they may be reassigned during K-normalization if datatype
+      -- representation optimization is enabled.
+      return $ Foster.Base.DataCtor (pUtf8ToText $ DataCtor.name ct) tyf types
 
 parseModule _name hash decls defns datatypes = do
     lines <- gets feModuleLines

@@ -31,8 +31,8 @@ data Context ty = Context { contextBindings   :: ContextBindings ty
                           , globalBindings    :: [ContextBinding ty]
                           , localTypeBindings :: Map String ty
                           , contextTypeBindings :: [(TyVar, Kind)]
-                          , contextCtorInfo   :: Map CtorName     [CtorInfo TypeAST]
-                          , contextDataTypes  :: Map DataTypeName [DataType TypeAST]
+                          , contextCtorInfo   :: Map CtorName     [CtorInfo () TypeAST]
+                          , contextDataTypes  :: Map DataTypeName [DataType    TypeAST]
                           }
 
 prependBinding :: ContextBindings ty -> ContextBinding ty -> ContextBindings ty

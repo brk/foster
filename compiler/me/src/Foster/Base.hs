@@ -107,12 +107,17 @@ data PatternAtom ty =
 
 data Pattern ty =
           P_Atom         (PatternAtom ty)
-        | P_Ctor          SourceRange ty [Pattern ty] (CtorInfo ty)
+        | P_Ctor          SourceRange ty [Pattern ty] (CtorInfo () ty)
         | P_Tuple         SourceRange ty [Pattern ty]
+
+data PatternRepr ty =
+          PR_Atom         (PatternAtom ty)
+        | PR_Ctor          SourceRange ty [PatternRepr ty] (CtorInfo CtorRepr ty)
+        | PR_Tuple         SourceRange ty [PatternRepr ty]
 
 data PatternFlat ty =
           PF_Atom        (PatternAtom ty)
-        | PF_Ctor         SourceRange ty [PatternAtom ty] (CtorInfo ty)
+        | PF_Ctor         SourceRange ty [PatternAtom ty] (CtorInfo () ty)
         | PF_Tuple        SourceRange ty [PatternAtom ty]
 
 data CaseArm pat expr ty = CaseArm { caseArmPattern :: pat ty
@@ -135,37 +140,47 @@ data DataType ty = DataType {
   , dataTypeCtors     :: [DataCtor ty]
   }
 
+-- CtorIds are created before typechecking.
+-- They are used to identify/disambiguate constructors.
+data CtorId       = CtorId { ctorTypeName :: DataTypeName
+                           , ctorCtorName :: String
+                           , ctorArity    :: Int
+                           } deriving (Show, Eq, Ord)
+
 data DataCtor ty = DataCtor { dataCtorName  :: CtorName
-                            , dataCtorSmall :: Int
                             , dataCtorDTTyF :: [TypeFormalAST]
                             , dataCtorTypes :: [ty]
                             }
+-- Note that CtorRepr can only be created after typechecking,
+-- because it depends on the result of kind (boxity) analysis.
+--
+-- We need to propagate the results of ctor analysis easily
+-- to KNExpr (where we generate wrappers, which will be no-ops
+-- for transparent constructors) and the backend (where we
+-- will eventually implement occurrences as no-ops
+-- for transparent constructors).
 
--- CtorIds are created before typechecking.
-data CtorId     = CtorId   { ctorTypeName :: DataTypeName
-                           , ctorCtorName :: String
-                           , ctorArity    :: Int
-                           , ctorSmallInt :: Int
-                           } deriving (Show, Eq)
+data CtorInfo repr ty = CtorInfo { ctorInfoId :: CtorId
+                                 , ctorInfoDc :: DataCtor ty
+                                 , ctorInfoRepr :: repr
+                                 } deriving Show -- for Typecheck
 
-data CtorInfo ty = CtorInfo { ctorInfoId :: CtorId
-                            , ctorInfoDc :: DataCtor ty
-                            } deriving Show -- for Typecheck
+type CtorRep = (CtorId, CtorRepr)
 
 type CtorName     = T.Text
 type DataTypeName = String
 
-data DataTypeSig   = DataTypeSig (Map CtorName CtorId)
+data DataTypeSig  = DataTypeSig (Map CtorName CtorId)
 
 -- Occurrences are generated in pattern matching (and pushed through to LLVM).
 -- A pair (n, c) in an occurrence means "field n of the struct type for ctor c".
-type FieldOfCtor ty = (Int, CtorInfo ty)
+type FieldOfCtor ty = (Int, CtorInfo CtorRepr ty)
 type Occurrence ty = [FieldOfCtor ty]
 
 occType v occ = let
                    go ty [] [] = ty
-                   go _ (k:offs) ((DataCtor _ _ _ types):dctors)
-                               = go (types !! k) offs dctors
+                   go _ (k:offs) (dc:dctors)
+                               = go ((dataCtorTypes dc) !! k) offs dctors
                    go ty offs dctors =
                         error $ "occType: " ++ show ty
                                ++ "; offs=" ++ show offs ++ "~~~" ++ show dctors
@@ -173,6 +188,12 @@ occType v occ = let
                    (offs, infos) = unzip occ
                 in go (tidType v) offs (map ctorInfoDc infos)
 
+data CtorRepr = CR_Default     Int -- tag via indirection through heap cell metadata
+              | CR_Nullary     Int -- small integer stored in low tag bits of null pointer.
+              | CR_Tagged      Int -- small integer stored in low tag bits of non-null pointer.
+              | CR_Value   Integer -- no runtime indirection around given value (unboxed)
+              | CR_Transparent     -- no runtime indirection around wrapped value (boxed)
+                deriving (Eq, Show, Ord)
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||| Literals |||||||||||||||||||||||||||||||||{{{
@@ -484,7 +505,7 @@ memRegionMayGC MemRegionGlobalHeap = MayGC
 data AllocInfo t = AllocInfo { allocType      :: t
                              , allocRegion    :: AllocMemRegion
                              , allocTypeName  :: String
-                             , allocCtorTag   :: Maybe Int
+                             , allocCtorRepr  :: Maybe CtorRepr
                              , allocArraySize :: Maybe (TypedId t)
                              , allocSite      :: String
                              , allocZeroInit  :: ZeroInit
@@ -524,9 +545,6 @@ instance SourceRanged expr => Pretty (CompilesResult expr)
 
 deriving instance (Show ty) => Show (DataType ty)
 deriving instance (Show ty) => Show (DataCtor ty)
-
-instance Ord CtorId where
-    compare a b = compare (show a) (show b)
 
 instance Ord Ident where
     compare (GlobalSymbol t1) (GlobalSymbol t2) = compare t1 t2
@@ -594,6 +612,11 @@ instance Show (PatternFlat ty) where
   show (PF_Ctor     _ _ _pats ctor) = "PF_Ctor     " ++ show (ctorInfoId ctor)
   show (PF_Tuple    _ _ pats)       = "PF_Tuple    " ++ show pats
 
+instance Show (PatternRepr ty) where
+  show (PR_Atom atom) = show atom
+  show (PR_Ctor     _ _ _pats ctor) = "PR_Ctor     " ++ show (ctorInfoId ctor)
+  show (PR_Tuple    _ _ pats)       = "PR_Tuple    " ++ show pats
+
 instance Pretty ty => Pretty (EPattern ty) where
   pretty (EP_Wildcard _)            = text "EP_Wildcard"
   pretty (EP_Variable _ v)          = text "EP_Variable " <> pretty v
@@ -620,6 +643,16 @@ instance Show ty => Show (EPattern ty) where
   show (EP_Bool     _ b)          = "EP_Bool     " ++ show b
   show (EP_Int      _ str)        = "EP_Int      " ++ str
   show (EP_Tuple    _ pats)       = "EP_Tuple    " ++ show pats
+
+instance Pretty CtorId where
+  pretty (CtorId tynm ctnm sm) = pretty tynm <> text "." <> pretty ctnm <> parens (pretty sm)
+
+instance Pretty CtorRepr where
+  pretty (CR_Default int) = text "#" <> pretty int
+  pretty (CR_Tagged  int) = text "#" <> pretty int
+  pretty (CR_Transparent) = text "#" <> text "~"
+  pretty (CR_Nullary int) = text "##" <> pretty int <> text "~"
+  pretty (CR_Value   int) = text "##" <> pretty int
 
 instance TExpr body t => TExpr (Fn body t) t where
     freeTypedIds f = let bodyvars =  freeTypedIds (fnBody f) in
@@ -653,16 +686,17 @@ deriving instance (Show ty) => Show (E_VarAST ty)
 deriving instance (Eq ty)   => Eq   (DataCtor ty)
 deriving instance Eq TypeFormalAST
 
-instance Eq (CtorInfo t) where
-  a == b = (ctorInfoId a) == (ctorInfoId b)
+instance (Eq repr) => Eq (CtorInfo repr t) where
+  a == b = (ctorInfoId a) == (ctorInfoId b) && ctorInfoRepr a == ctorInfoRepr b
 
 deriving instance Functor PatternAtom
+deriving instance Functor PatternRepr
 deriving instance Functor PatternFlat
 deriving instance Functor Pattern
 deriving instance Functor TypedId
 deriving instance Functor AllocInfo
 deriving instance Functor FosterPrim
-deriving instance Functor CtorInfo
+deriving instance Functor (CtorInfo repr)
 deriving instance Functor DataCtor
 deriving instance Functor DataType
 deriving instance Functor ArrayIndex

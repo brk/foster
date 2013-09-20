@@ -15,10 +15,12 @@ primitiveDataTypesP :: [DataType TypeP]
 primitiveDataTypesP = [
   (let tf = [] in
    DataType "Text" tf $
-        [DataCtor (T.pack "TextFragment") 0 tf [ArrayTypeP (PrimIntP I8)
-                                               ,PrimIntP I32]
-        ,DataCtor (T.pack "TextConcat"  ) 1 tf [TyConAppP "Text" []
-                                               ,TyConAppP "Text" []
-                                               ,PrimIntP I32]])
+        [DataCtor (T.pack "TextFragment") tf -- CR_Default 0
+            [ArrayTypeP (PrimIntP I8)
+            ,PrimIntP I32]
+        ,DataCtor (T.pack "TextConcat"  ) tf -- CR_Default 1
+            [TyConAppP "Text" []
+            ,TyConAppP "Text" []
+            ,PrimIntP I32]])
   ]
 
