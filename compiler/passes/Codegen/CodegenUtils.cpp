@@ -283,7 +283,7 @@ CodegenPass::emitArrayMalloc(TypeAST* elt_type, llvm::Value* n, bool init) {
   llvm::Value* memalloc = mod->getFunction("memalloc_array");
   ASSERT(memalloc != NULL) << "NO memalloc_array IN MODULE! :(";
 
-  CtorRepr ctorRepr; ctorRepr.smallId = -1; ctorRepr.isTransparent = false;
+  CtorRepr ctorRepr; ctorRepr.smallId = -1;
   // TODO this is bogus; we should have, at most, 3 flat array representations:
   // 1) (packed) non-struct POD
   // 2) GC-able pointers

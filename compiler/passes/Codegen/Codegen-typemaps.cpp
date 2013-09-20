@@ -288,7 +288,7 @@ GlobalVariable* emitCoroTypeMap(StructTypeAST* typ, StructType* sty,
   // We skip the first entry, which is the stack pointer in the coro_context.
   // The pointer-to-function will be automatically skipped, and the remaining
   // pointers are precisely those which we want the GC to notice.
-  CtorRepr bogusCtor; bogusCtor.isTransparent = false; bogusCtor.smallId = -1;
+  CtorRepr bogusCtor; bogusCtor.smallId = -1;
   std::vector<int> v; v.push_back(0); v.push_back(2); v.push_back(5);
   return emitTypeMap(typ, sty, ss.str(), NotArray, bogusCtor, mod, v);
 }

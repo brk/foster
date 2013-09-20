@@ -282,6 +282,7 @@ struct CtorRepr {
   int64_t smallId; // small in the common case, at least,
                    // but must be large enough to fit any integer
                    // constant that might be pattern-matched against.
+  CtorRepr() : isTransparent(false), isNullary(false), smallId(0) { }
 };
 
 struct CtorId {
