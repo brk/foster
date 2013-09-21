@@ -520,7 +520,7 @@ isGCable v = case tidType v of
                LLStructType _         -> False
                LLProcType _ _ _       -> False
                LLPtrType _            -> True -- could have further annotations on ptr types
-               LLTyConApp   {}        -> True
+               LLNamedType _          -> True -- TODO maybe not?
                LLCoroType _ _         -> True
                LLArrayType _          -> True
                LLPtrTypeUnknown       -> True

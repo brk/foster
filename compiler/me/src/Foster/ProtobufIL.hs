@@ -90,7 +90,7 @@ dumpType (LLPrimInt (IWord 1)) = dumpIntType (-64)
 dumpType (LLPrimInt size)    = dumpIntType (fromIntegral $ intSizeOf size)
 dumpType (LLPrimFloat64)     =
               P'.defaultValue { PbType.tag  = PbTypeTag.FLOAT64 }
-dumpType (LLTyConApp nm _tys)=
+dumpType (LLNamedType nm) =
               P'.defaultValue { PbType.tag  = PbTypeTag.NAMED
                               , PbType.name = Just $ u8fromString nm }
 dumpType (LLStructType types) =
@@ -419,7 +419,7 @@ dumpArrayLength t arr =
 -- ||||||||||||||||||||| Other Expressions ||||||||||||||||||||||{{{
 dumpCtorInfo (CtorInfo cid@(CtorId _dtn dtcn _arity)
                            (DataCtor dcn _tyfs tys) repr) =
-  if dtcn == T.unpack dcn 
+  if dtcn == T.unpack dcn
     then -- ignore type formals...
         P'.defaultValue { PbCtorInfo.ctor_id = dumpCtorIdWithRepr "dumpCtorInfo" (cid, repr)
                         , PbCtorInfo.ctor_struct_ty = if null tys
@@ -508,6 +508,7 @@ dumpILProgramToProtobuf m outpath = do
         let argtys = map tidType (CC.procVars proc) in
         (argtys, retty, FastCC)
 
+    dumpDataTypeDecl :: DataType TypeLL -> Decl
     dumpDataTypeDecl datatype =
         let name = dataTypeName datatype in
         Decl { Decl.name  = u8fromString name

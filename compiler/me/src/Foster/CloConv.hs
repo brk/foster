@@ -225,11 +225,16 @@ lambdaLift freeVars f = do
     ilmPutProc (closureConvertedProc liftedProcVars f newbody)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+-- TyConApp translates to LLNamedType and drops the arg types.
+-- This is because the LLVM backend constructs canonical types
+-- for each datatype before codegenning the module body, and
+-- references to the datatype (i.e. via TyConApp) simply look up
+-- the canonical type using the data type's name.
 monoToLL :: MonoType -> TypeLL
 monoToLL mt = case mt of
    PrimInt       isb            -> LLPrimInt       isb
    PrimFloat64                  -> LLPrimFloat64
-   TyConApp      dtn tys        -> LLTyConApp      dtn (map q tys)
+   TyConApp      dtn _tys       -> LLNamedType dtn
    TupleType     tys            -> llTupleType     (map q tys)
    StructType    tys            -> LLStructType    (map q tys)
    CoroType      s t            -> LLCoroType      (q s) (q t)
