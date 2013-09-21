@@ -301,10 +301,10 @@ struct DataCtorAST {
 };
 
 struct Data {
-  string name;
+  TypeFormal name;
   std::vector<DataCtorAST*> ctors;
   std::vector<TypeFormal> tyformals;
-  explicit Data(const string& name,
+  explicit Data(const TypeFormal name,
                  std::vector<TypeFormal> tyformals,
                  std::vector<DataCtorAST*> ctors)
   : name(name), ctors(ctors), tyformals(tyformals) {}

@@ -973,10 +973,11 @@ ModuleAST* parseTopLevel(pTree root_tree, std::string moduleName,
       // Make sure that fn types for top-level declarations are marked as procs.
       tryMarkTypeAsProc(typ);
       decls.push_back(new Decl(textOfVar(typevar), typ));
-    } else if (token == DATATYPE) { // ^(DATATYPE id ^(MU tyvar_decl*) ^(MU data_ctor*)
-      datas.push_back(new Data(textOf(child(c, 0)),
-                      parseTyFormals(child(c, 1), getBoxedKind()),
-                      parseDataCtors(child(c, 2))));
+    } else if (token == DATATYPE) { // ^(DATATYPE tyvar_decl ^(MU tyvar_decl*) ^(MU data_ctor*)
+      datas.push_back(new Data(
+                       parseTypeFormal(child(c, 0), getBoxedKind()),
+                       parseTyFormals(child(c, 1), getBoxedKind()),
+                       parseDataCtors(child(c, 2))));
     } else {
       EDiag() << "ANTLRtoFosterAST.cpp: "
               << "Unexpected top-level element with token ID " << token;

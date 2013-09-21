@@ -86,6 +86,8 @@ boolGC  WillNotGC    = False
 boolGC  MayGC        = True
 boolGC (GCUnknown _) = True
 
+typeFormalName (TypeFormalAST name _) = name
+
 -- |||||||||||||||||||||||||| Patterns ||||||||||||||||||||||||||{{{
 
 data E_VarAST ty = VarAST { evarMaybeType :: Maybe ty
@@ -135,7 +137,7 @@ caseArmExprs arm = [caseArmBody arm] ++ caseArmGuardList arm
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||| Data Types |||||||||||||||||||||||||||||||{{{
 data DataType ty = DataType {
-    dataTypeName      :: DataTypeName
+    dataTypeName      :: TypeFormalAST
   , dataTypeTyFormals :: [TypeFormalAST]
   , dataTypeCtors     :: [DataCtor ty]
   }
@@ -193,6 +195,7 @@ data CtorRepr = CR_Default     Int -- tag via indirection through heap cell meta
               | CR_Tagged      Int -- small integer stored in low tag bits of non-null pointer.
               | CR_Value   Integer -- no runtime indirection around given value (unboxed)
               | CR_Transparent     -- no runtime indirection around wrapped value (boxed)
+              | CR_TransparentU    -- no runtime indirection around wrapped value (unboxed)
                 deriving (Eq, Show, Ord)
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -650,7 +653,8 @@ instance Pretty CtorId where
 instance Pretty CtorRepr where
   pretty (CR_Default int) = text "#" <> pretty int
   pretty (CR_Tagged  int) = text "#" <> pretty int
-  pretty (CR_Transparent) = text "#" <> text "~"
+  pretty (CR_Transparent)  = text "#" <> text "~"
+  pretty (CR_TransparentU) = text "#{}"
   pretty (CR_Nullary int) = text "##" <> pretty int <> text "~"
   pretty (CR_Value   int) = text "##" <> pretty int
 

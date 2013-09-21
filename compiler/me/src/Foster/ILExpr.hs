@@ -157,6 +157,9 @@ makeAllocationsExplicit bbgp = do
     (CCLetVal id (ILAppCtor genty (cid, CR_Transparent) [v])) -> do
             return $
               (mkMiddle $ CCLetVal id  (ILBitcast genty v))
+    (CCLetVal id (ILAppCtor _genty (cid, CR_TransparentU) [v])) -> do
+            return $
+              (mkMiddle $ CCRebindId (text "TransparentU") (TypedId (tidType v) id) v)
     (CCLetVal id (ILAppCtor genty (cid, repr) vs)) -> do
             id' <- ccFreshId (T.pack "ctor-alloc")
             let tynm = ctorTypeName cid ++ "." ++ ctorCtorName cid

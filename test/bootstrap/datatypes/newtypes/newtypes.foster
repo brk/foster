@@ -1,0 +1,63 @@
+// TB lacks a kind annotation; we'll default to "boxed",
+// so values of type TB will be represented with a pointer indirection
+// to an Int32-containing heap cell.
+type case TB of $C Int32;
+
+// TC wraps a single type of kind Type, and is annotated with kind Type
+// itself, so values of type TU will be represented without a pointer
+// indirection at runtime.
+type case TU : Type of $D Int32;
+
+// Newtypes like TU also/still work with (phantom) type parameters.
+type case TP : Type (p:Boxed) of $E Int32;
+
+// Wrapping a boxed type with an unboxed constructor is legal
+// (and F below will not be represented at runtime) but
+// it's sort of silly because TS can be used in strictly fewer places than TB,
+// and the : Type annotation is not required to get the transparent constructor.
+type case TS : Type of $F TB;
+
+// Can't have multiple constructors
+//type case TBad1 : Type
+//       of $TBad1a Int32
+//       of $TBad1b Int32
+//     ;
+//
+// Can't have multiple fields
+//type case TBad2 : Type of
+//         $TBad2 Int32 Int32;
+
+main = {
+  foo (C 0) 0;
+  bar (D 0) 0;
+  baz (E 0) 0;
+  oof (F (C 0)) 0;
+};
+
+foo = { t => k =>
+  expect_i32 k;
+  case t
+    of $C n -> print_i32 n;
+  end
+};
+
+bar = { t => k =>
+  expect_i32 k;
+  case t
+    of $D n -> print_i32 n;
+  end
+};
+
+baz = { t : TP TU => k =>
+  expect_i32 k;
+  case t
+    of $E n -> print_i32 n;
+  end
+};
+
+oof = { t : TS => k =>
+  expect_i32 k;
+  case t
+    of $F ($C n) -> print_i32 n;
+  end
+};

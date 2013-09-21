@@ -131,7 +131,7 @@ void dumpDataCtor(DataCtorAST* cc, pb::DataCtor* c) {
 }
 
 void dumpDataCtors(Data* dd, pb::DataType* d) {
- d->set_name(dd->name);
+ dumpTypeFormal(&dd->name, d->mutable_name());
  for (size_t i = 0; i < dd->ctors.size(); ++i) {
    dumpDataCtor(dd->ctors[i], d->add_ctor());
  }

@@ -316,7 +316,7 @@ parseDataType dt = do
     let tyformals = map parseTypeFormal (toList $ DataType.tyformal dt)
     ctors <- mapM (parseDataCtor tyformals) $
                        Prelude.zip [0..] (toList $ DataType.ctor dt)
-    return $ Foster.Base.DataType (uToString $ DataType.name dt) tyformals ctors
+    return $ Foster.Base.DataType (parseTypeFormal $ DataType.name dt) tyformals ctors
  where
   parseDataCtor :: [TypeFormalAST] -> (Int, DataCtor.DataCtor) -> FE (Foster.Base.DataCtor TypeP)
   parseDataCtor tyf (_n, ct) = do

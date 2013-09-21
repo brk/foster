@@ -163,7 +163,7 @@ message Defn {
 }
 
 message DataType {
-  required string         name = 1;
+  required TypeFormal     name = 1;
   repeated DataCtor       ctor = 2;
   repeated TypeFormal tyformal = 3;
 }

@@ -80,7 +80,7 @@ llvm::Value* emitBitcast(llvm::Value* v, llvm::Type* dstTy, llvm::StringRef msg 
   }
   if (dstTy->isPointerTy() != srcTy->isPointerTy()) {
     builder.GetInsertBlock()->getParent()->dump();
-    ASSERT(false) << "cannot cast non-pointer " << str(srcTy) << " to " << str(dstTy) << "\n" << str(v);
+    ASSERT(false) << "cannot cast " << str(srcTy) << " to " << str(dstTy) << "\ndue to pointer-type mismatch\n" << str(v);
   }
   return builder.CreateBitCast(v, dstTy, msg);
 }
@@ -1055,7 +1055,12 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
     // If we know that the subterm at this position was created with
     // a particular data constructor, emit a cast to that ctor's type.
     if (ctors[i].ctorStructType) {
-      v = emitBitcast(v, ptrTo(ctors[i].ctorStructType->getLLVMType()));
+      if (v->getType()->isPointerTy()) {
+        v = emitBitcast(v, ptrTo(ctors[i].ctorStructType->getLLVMType()));
+      } else {
+        EDiag() << "not bitcasting for occ because of type mismatch between"
+                        << str(v) << " and ptr to " << str(ctors[i].ctorStructType);
+      }
     }
 
     if (ctors[i].ctorId.ctorRepr.isTransparent) {

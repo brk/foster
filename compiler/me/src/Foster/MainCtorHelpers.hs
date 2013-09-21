@@ -15,20 +15,20 @@ import Foster.TypeAST
 
 withDataTypeCtors :: DataType ty -> (CtorId -> DataCtor ty -> Int -> res) -> [res]
 withDataTypeCtors dtype f =
-  [f (ctorId (dataTypeName dtype) ctor) ctor n
+  [f (ctorId (typeFormalName $ dataTypeName dtype) ctor) ctor n
    | (ctor, n) <- zip (dataTypeCtors dtype) [0..]]
 
 getDataTypes :: [DataType TypeAST] -> Map DataTypeName [DataType TypeAST]
 getDataTypes datatypes = Map.unionsWith (++) $ map single datatypes
   where
-    single dt = Map.singleton (dataTypeName dt) [dt]
+    single dt = Map.singleton (typeFormalName $ dataTypeName dt) [dt]
 
 getCtorInfo :: [DataType TypeAST] -> Map CtorName [CtorInfo () TypeAST]
 getCtorInfo datatypes = Map.unionsWith (++) $ map getCtorInfoList datatypes
   where
     getCtorInfoList :: DataType TypeAST -> Map CtorName [CtorInfo () TypeAST]
-    getCtorInfoList (DataType name _tyformals ctors) =
-          Map.fromList $ map (buildCtorInfo name) ctors
+    getCtorInfoList (DataType formal _tyformals ctors) =
+          Map.fromList $ map (buildCtorInfo (typeFormalName formal)) ctors
 
     buildCtorInfo :: DataTypeName -> DataCtor TypeAST
                   -> (CtorName, [CtorInfo () TypeAST])
@@ -49,6 +49,7 @@ dataTypeSigs :: Show t => [DataType t] -> Map DataTypeName DataTypeSig
 dataTypeSigs datatypes = Map.fromList $ map ctorIdSet datatypes
  where
   ctorIdSet :: Show t => DataType t -> (DataTypeName, DataTypeSig)
-  ctorIdSet (DataType name _tyformals ctors) =
-      (name, DataTypeSig (Map.fromList $ map (ctorIdFor name) ctors))
+  ctorIdSet (DataType formal _tyformals ctors) =
+      (typeFormalName formal,
+       DataTypeSig (Map.fromList $ map (ctorIdFor (typeFormalName formal)) ctors))
 

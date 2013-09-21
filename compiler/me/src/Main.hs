@@ -224,14 +224,14 @@ typecheckModule verboseMode modast tcenv0 = do
    typeOfDataType :: DataType TypeAST -> CtorName -> TypeAST
    typeOfDataType dt _ctorName =
      let boundTyVarFor (TypeFormalAST name _kind) = TyVarAST $ BoundTyVar name in
-     TyConAppAST (dataTypeName dt) (map boundTyVarFor $ dataTypeTyFormals dt)
+     TyConAppAST (typeFormalName $ dataTypeName dt) (map boundTyVarFor $ dataTypeTyFormals dt)
 
    extractCtorTypes :: DataType TypeAST -> [(String, TypeAST, CtorId)]
    extractCtorTypes dt = map nmCTy (dataTypeCtors dt)
      where nmCTy dc@(DataCtor name tyformals types) =
                  (T.unpack name, ctorTypeAST tyformals dtType types, cid)
                          where dtType = typeOfDataType dt name
-                               cid    = ctorId (dataTypeName dt) dc
+                               cid    = ctorId (typeFormalName $ dataTypeName dt) dc
 
    -- TODO: if ctorArgTypes = [], no need to assign a function type for a const.
    ctorTypeAST [] dtType ctorArgTypes =

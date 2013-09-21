@@ -7,6 +7,7 @@
 module Foster.Primitives where
 
 import Foster.Base
+import Foster.Kind
 import Foster.ParsedType
 
 import qualified Data.Text as T
@@ -14,7 +15,7 @@ import qualified Data.Text as T
 primitiveDataTypesP :: [DataType TypeP]
 primitiveDataTypesP = [
   (let tf = [] in
-   DataType "Text" tf $
+   DataType (TypeFormalAST "Text" KindPointerSized) tf $
         [DataCtor (T.pack "TextFragment") tf -- CR_Default 0
             [ArrayTypeP (PrimIntP I8)
             ,PrimIntP I32]

@@ -49,8 +49,9 @@ decl_or_defn :
         ;
 
 // Or perhaps TYPE id OF (CASE ctor ...)+
-data_defn : TYPE CASE id ('(' tyformal ')')*
-                         data_ctor*             -> ^(DATATYPE id ^(MU tyformal*) ^(MU data_ctor*));
+data_defn : TYPE CASE nm=tyformal
+                         ('(' args+=tyformal ')')*
+                         data_ctor*             -> ^(DATATYPE $nm ^(MU $args*) ^(MU data_ctor*));
 data_ctor : OF dctor tatom*                     -> ^(OF dctor tatom*);
 
 opr     :       SYMBOL;

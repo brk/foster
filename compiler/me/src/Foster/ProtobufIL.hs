@@ -9,6 +9,7 @@ module Foster.ProtobufIL (
 ) where
 
 import Foster.Base
+import Foster.Kind
 import Foster.ILExpr
 import qualified Foster.CloConv as CC(Proc(..))
 import Foster.TypeLL
@@ -117,17 +118,6 @@ dumpProcType (ss, t, cc) =
       where stringOfCC FastCC = "fastcc"
             stringOfCC CCC    = "ccc"
 
-dumpDataCtor (DataCtor ctorName _tyformals types) =
-  PbDataCtor { PbDataCtor.name  = textToPUtf8 ctorName
-             , PbDataCtor.type' = fromList $ map dumpType types
-             }
-
-dumpDataType name ctors =
-    P'.defaultValue { PbType.tag  = PbTypeTag.DATATYPE
-                    , PbType.name = Just $ u8fromString name
-                    , PbType.ctor = fromList $ fmap dumpDataCtor ctors
-                    }
-
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 dumpMemRegion :: AllocMemRegion -> PbMemRegion.MemRegion
@@ -219,9 +209,10 @@ determineHowToFindObjectCtor ctors = go "INDIR" ctors
   where go how [] = how
         go how ((_, CR_Transparent):ctors) = go how     ctors
         go how ((_, CR_Default _  ):ctors) = go how     ctors
-        go how ((_, CR_Tagged  _  ):ctors) = "MASK3"
-        go _   ((_, CR_Nullary _  ):ctors) = "MASK3"
-        go _   ((_, CR_Value   _  ):ctors) = "VALUE"
+        go _   ((_, CR_Tagged  _  ):_) = "MASK3"
+        go _   ((_, CR_Nullary _  ):_) = "MASK3"
+        go _   ((_, CR_Value   _  ):_) = "VALUE"
+        go _   ((_, CR_TransparentU):_) = "VALUE"
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -447,12 +438,18 @@ dumpCtorRepr _ (CR_Tagged 0) =
                     , PbCtorRepr.ctor_repr_tag = Just $ intToInt64 0
                     }
 
+dumpCtorRepr _ (CR_Tagged _) = error $ "Runtime can't yet handle non-zero pointer tags."
+
 dumpCtorRepr _ (CR_Default ciid) =
     P'.defaultValue { PbCtorRepr.tag = CR_DEFAULT
                     , PbCtorRepr.ctor_repr_tag = Just $ intToInt64 ciid
                     }
 
 dumpCtorRepr _ (CR_Transparent) =
+    P'.defaultValue { PbCtorRepr.tag = CR_TRANSPARENT
+                    }
+
+dumpCtorRepr _ (CR_TransparentU) =
     P'.defaultValue { PbCtorRepr.tag = CR_TRANSPARENT
                     }
 
@@ -510,9 +507,9 @@ dumpILProgramToProtobuf m outpath = do
 
     dumpDataTypeDecl :: DataType TypeLL -> Decl
     dumpDataTypeDecl datatype =
-        let name = dataTypeName datatype in
-        Decl { Decl.name  = u8fromString name
-             , Decl.type' = dumpDataType name (dataTypeCtors datatype)
+        let formal = dataTypeName datatype in
+        Decl { Decl.name  = u8fromString (typeFormalName formal)
+             , Decl.type' = dumpDataType formal (dataTypeCtors datatype)
              }
 
     dumpDecl (LLExternDecl s t) =
@@ -520,3 +517,19 @@ dumpILProgramToProtobuf m outpath = do
              , Decl.type' = dumpType t
              }
 
+    dumpDataType (TypeFormalAST dtName KindPointerSized) ctors =
+        P'.defaultValue { PbType.tag  = PbTypeTag.DATATYPE
+                        , PbType.name = Just $ u8fromString dtName
+                        , PbType.ctor = fromList $ fmap dumpDataCtor ctors
+                        }
+     where
+        dumpDataCtor (DataCtor ctorName _tyformals types) =
+          PbDataCtor { PbDataCtor.name  = textToPUtf8 ctorName
+                     , PbDataCtor.type' = fromList $ map dumpType types
+                     }
+
+    dumpDataType (TypeFormalAST _dtName KindAnySizeType) [DataCtor _nm [] [ty]] =
+        dumpType ty
+
+    dumpDataType (TypeFormalAST dtName KindAnySizeType) ctors =
+            error $ "Don't yet know how to handle " ++ dtName ++ " : Type, with ctors..." ++ show ctors

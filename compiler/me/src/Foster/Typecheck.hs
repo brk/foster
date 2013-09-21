@@ -1036,7 +1036,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
       let ctxbindings = [varbind id ty | (TypedId ty id) <- bindings]
       verifyNonOverlappingBindings (annotRange rng) "case" ctxbindings
       let ctx' = prependContextBindings ctx ctxbindings
-      aguard <- liftMaybe (\g -> tcRho ctx' g (Check fosBoolType)) guard 
+      aguard <- liftMaybe (\g -> tcRho ctx' g (Check fosBoolType)) guard
       abody <- tcRho ctx' body expTy
       unify u (typeAST abody) ("Failed to unify all branches of case " ++ highlightFirstLine (annotRange rng))
       return (CaseArm p abody aguard bindings brng)
@@ -1506,7 +1506,7 @@ tcContext ctx = do
   let checkDataType (nm,dts) = do {
     case dts of
       [dt] -> do
-         sanityCheck (nm == dataTypeName dt) ("Data type name mismatch for " ++ nm)
+         sanityCheck (nm == typeFormalName (dataTypeName dt)) ("Data type name mismatch for " ++ nm)
          let tyformals = dataTypeTyFormals dt
          let extctx = extendTyCtx ctx (map convertTyFormal tyformals)
          case detectDuplicates (map dataCtorName (dataTypeCtors dt)) of

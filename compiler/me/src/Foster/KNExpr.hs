@@ -154,8 +154,8 @@ kNormalize mebTail ctorRepr expr =
                                   nestedLetsDo [return e'] (\[v] -> do
                                     let gtp (CaseArm p e g b r) = do
                                             let p' = fmapRepr ctorRepr p
-                                            e' <- gt e                 
-                                            g' <- liftMaybe gt g       
+                                            e' <- gt e
+                                            g' <- liftMaybe gt g
                                             return (CaseArm p' e' g' b r)
                                     arms' <- mapM gtp arms
                                     compileCaseArms arms' t v)
@@ -181,7 +181,7 @@ kNormalize mebTail ctorRepr expr =
               _ -> error $ "knCall: Called var had non-function type!\n\t" ++
                                 show a ++
                                 show (showStructure (tidType a))
-        
+
         compileCaseArms :: [CaseArm PatternRepr KNExpr TypeIL]
                         -> TypeIL
                         -> TypedId TypeIL
@@ -213,11 +213,11 @@ kNormalize mebTail ctorRepr expr =
                                   return [CaseArm p e' Nothing b r]
                               _ -> return clump
                   let msr   = MissingSourceRange "guardwild"
-                  let pwild = PR_Atom $ P_Wildcard msr (tidType v) 
+                  let pwild = PR_Atom $ P_Wildcard msr (tidType v)
                   return $ KNLetFuns [kid] [kont]
                           (KNCase t v (clump' ++ [CaseArm pwild callkont Nothing [] msr]))
           if anyCaseArmIsGuarded arms
-            then go arms 
+            then go arms
             else return $ KNCase t v arms
 
         isGuarded arm = isJust (caseArmGuard arm)
@@ -360,17 +360,14 @@ nestedLets exprActions g = nestedLetsDo exprActions (\vars -> return $ g vars)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 
-data CtorVariety ty = SingleCtorWrappingSameBoxityType CtorId
+data CtorVariety ty = SingleCtorWrappingSameBoxityType CtorId Kind
                     | AtMostOneNonNullaryCtor          [(CtorId, Int)] [(CtorId, Int)]
                     | OtherCtorSituation               [(CtorId, Int)]
 
-ctorWrapsOneValueOfSameKind ctor = 
-    ctorWrapsOneValueOfKind ctor KindPointerSized -- all types are of pointer sized kind, for now.
-  where
-    ctorWrapsOneValueOfKind ctor kind =
-      case dataCtorTypes ctor of
-        [ty] -> kindOf ty == kind
-        _ -> False
+ctorWrapsOneValueOfKind ctor kind =
+  case dataCtorTypes ctor of
+    [ty] -> kindOf ty `subkindOf` kind
+    _ -> False
 
 isNullaryCtor :: DataCtor ty -> Bool
 isNullaryCtor ctor = null (dataCtorTypes ctor)
@@ -380,11 +377,11 @@ splitNullaryCtors ctors =
   ( [cid | (cid, ctor, _) <- ctors, not (isNullaryCtor ctor)]
   , [cid | (cid, ctor, _) <- ctors,      isNullaryCtor ctor ] )
 
-classifyCtors :: Kinded ty => [(CtorId, DataCtor ty, Int)] -> CtorVariety ty
-classifyCtors [(cid, ctor, _)]
-                    | ctorWrapsOneValueOfSameKind ctor
-                    = SingleCtorWrappingSameBoxityType cid
-classifyCtors ctors =
+classifyCtors :: Kinded ty => [(CtorId, DataCtor ty, Int)] -> Kind -> CtorVariety ty
+classifyCtors [(cid, ctor, _)] dtypeKind
+                    | ctorWrapsOneValueOfKind ctor dtypeKind
+                    = SingleCtorWrappingSameBoxityType cid dtypeKind
+classifyCtors ctors _ =
     case splitNullaryCtors ctors of
       -- The non-nullary ctor gets a small-int of zero (so it has "no tag"),
       -- and the nullary ctors get the remaining values.
@@ -394,7 +391,7 @@ classifyCtors ctors =
 
       ([],               nullaryCtors) | length nullaryCtors <= 8 ->
            AtMostOneNonNullaryCtor  []                      (zip nullaryCtors [0..])
-          
+
       _ -> OtherCtorSituation [(cid, n) | (cid, _, n) <- ctors]
 
 pickDefaultCtorRepresesentations :: DataType TypeIL -> [(CtorId, CtorRepr)]
@@ -404,8 +401,12 @@ pickDefaultCtorRepresesentations dtype =
 optimizedCtorRepresesentations :: DataType TypeIL -> [(CtorId, CtorRepr)]
 optimizedCtorRepresesentations dtype =
   let ctors = withDataTypeCtors dtype (\cid ctor n -> (cid, ctor, n)) in
-  case classifyCtors ctors of
-    SingleCtorWrappingSameBoxityType cid ->
+  case classifyCtors ctors (kindOf $ dataTypeName dtype) of
+    SingleCtorWrappingSameBoxityType cid KindAnySizeType ->
+      -- The constructor needs no runtime representation, nor casts...
+      [(cid, CR_TransparentU)]
+
+    SingleCtorWrappingSameBoxityType cid _ ->
       -- The constructor needs no runtime representation...
       [(cid, CR_Transparent)]
 
@@ -441,7 +442,7 @@ kNormalCtors ctx ctorRepr dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dty
     kNormalCtor ctx datatype _dc@(DataCtor cname _tyformals tys) = do
       let dname = dataTypeName datatype
       let arity = Prelude.length tys
-      let cid   = CtorId dname (T.unpack cname) arity
+      let cid   = CtorId (typeFormalName dname) (T.unpack cname) arity
       let rep   = ctorRepr cid
       let genFreshVarOfType t = do fresh <- knFresh ".autogen"
                                    return $ TypedId t fresh
@@ -451,7 +452,7 @@ kNormalCtors ctx ctorRepr dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dty
         Just (tid, _) -> return $
                Fn { fnVar   = tid
                   , fnVars  = vars
-                  , fnBody  = KNAppCtor (TyConAppIL dname []) (cid, rep) vars -- TODO fix
+                  , fnBody  = KNAppCtor (TyConAppIL (typeFormalName dname) []) (cid, rep) vars -- TODO fix
                   , fnIsRec = Just False
                   , fnAnnot = ExprAnnot [] (MissingSourceRange $ "kNormalCtor " ++ show cid) []
                   }

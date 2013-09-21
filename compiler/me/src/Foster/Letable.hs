@@ -203,6 +203,7 @@ canGCPrim PrimArrayLiteral = MayGC
 canGCPrim _ = GCUnknown "canGCPrim:other"
 
 canCtorReprAppGC CR_Transparent = WillNotGC
+canCtorReprAppGC CR_TransparentU= WillNotGC
 canCtorReprAppGC (CR_Default _) = MayGC
 canCtorReprAppGC (CR_Tagged  _) = MayGC
 canCtorReprAppGC (CR_Nullary _) = WillNotGC
