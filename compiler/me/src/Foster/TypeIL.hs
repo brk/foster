@@ -55,7 +55,7 @@ instance Show TypeIL where
         FnTypeIL   s t cc cs -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
         CoroTypeIL s t       -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
         ForAllIL ktvs rho    -> "(ForAll " ++ show ktvs ++ ". " ++ show rho ++ ")"
-        TyVarIL     tv _     -> show tv
+        TyVarIL     tv kind  -> show tv ++ ":" ++ show kind
         ArrayTypeIL ty       -> "(Array " ++ show ty ++ ")"
         PtrTypeIL   ty       -> "(Ptr " ++ show ty ++ ")"
 

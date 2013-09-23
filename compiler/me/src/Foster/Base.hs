@@ -688,7 +688,6 @@ deriving instance (Show ty) => Show (FosterPrim ty)
 deriving instance (Eq ty)   => Eq   (FosterPrim ty)
 deriving instance (Show ty) => Show (E_VarAST ty)
 deriving instance (Eq ty)   => Eq   (DataCtor ty)
-deriving instance Eq TypeFormalAST
 
 instance (Eq repr) => Eq (CtorInfo repr t) where
   a == b = (ctorInfoId a) == (ctorInfoId b) && ctorInfoRepr a == ctorInfoRepr b
