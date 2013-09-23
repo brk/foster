@@ -1,5 +1,5 @@
 main = {
-  // this should be   print_i32 (fake (MyNil:[Boxxy] !));
+  // this should be   print_i32 (fake MyNil:[Boxxy]);
 
   // The MyNil function has type forall a, { MyList } rather than MyList.
   // Thus it needs a type instantiation (because there's no obvious choice

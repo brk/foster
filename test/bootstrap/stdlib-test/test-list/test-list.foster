@@ -6,7 +6,7 @@ main = {
   print_i32 (listLength (mkUnitListTo 5));
 
   expect_i32 0;
-  print_i32 (listLength (Nil:[()] !));
+  print_i32 (listLength Nil:[()]);
 
   lst =(Cons { 0 }
        (Cons { 1 }
@@ -14,7 +14,7 @@ main = {
        (Cons { 3 }
        (Cons { 4 }
        (Cons { 5 }
-       (Nil:[{Int64}] !)))))));
+        Nil:[{Int64}]))))));
 
   expect_text "[0, 1, 2, 3, 4, 5, ]";
   print_bil lst;
@@ -31,7 +31,7 @@ main = {
 
 mkUnitListTo = { n : Int32 =>
   if n ==Int32 0 then
-    Nil:[()] !
+    Nil:[()]
   else
     Cons () (mkUnitListTo (n -Int32 1))
   end
@@ -39,7 +39,7 @@ mkUnitListTo = { n : Int32 =>
 
 mkPairListTo = { n : Int32 =>
   if n ==Int32 0 then
-    Nil:[(Int32, Int32)] !
+    Nil:[(Int32, Int32)]
   else
     Cons (n, n) (mkPairListTo (n -Int32 1))
   end

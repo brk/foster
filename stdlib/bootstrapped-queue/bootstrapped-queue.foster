@@ -14,13 +14,13 @@ type case BootstrappedQueue (elem:Boxed)
 
 mkEmptyBootstrappedQueue :: forall a:Boxed, { BootstrappedQueue a };
 mkEmptyBootstrappedQueue = { forall a:Boxed,
-  BootstrappedQueueE !
+  BootstrappedQueueE
 };
 
 bootstrappedQueueHead :: forall a:Boxed, { BootstrappedQueue a => Maybe a };
 bootstrappedQueueHead = { forall a:Boxed, h =>
   case h
-    of $BootstrappedQueueE -> None !
+    of $BootstrappedQueueE -> None
     of $BootstrappedQueueQ _ ($Nil)      _ _ _ -> prim kill-entire-process "bqHead: invariant violated";
     of $BootstrappedQueueQ _ ($Cons x _) _ _ _ -> Some x
   end
@@ -29,7 +29,7 @@ bootstrappedQueueHead = { forall a:Boxed, h =>
 bootstrappedQueueTail :: forall a:Boxed, { BootstrappedQueue a => Maybe (BootstrappedQueue a) };
 bootstrappedQueueTail = { forall a:Boxed, h =>
   case h
-    of $BootstrappedQueueE -> None !
+    of $BootstrappedQueueE -> None
     of $BootstrappedQueueQ _ ($Nil)      _ _ _ -> prim kill-entire-process "bqTail: invariant violated";
     of $BootstrappedQueueQ lenfm ($Cons x f) m lenr r ->
         Some (bootstrappedQueueCheckQ (lenfm -Int32 1) f m lenr r)
@@ -39,7 +39,7 @@ bootstrappedQueueTail = { forall a:Boxed, h =>
 bootstrappedQueueSplit :: forall a:Boxed, { BootstrappedQueue a => Maybe (a, BootstrappedQueue a) };
 bootstrappedQueueSplit = { forall a:Boxed, h =>
   case h
-    of $BootstrappedQueueE -> None !
+    of $BootstrappedQueueE -> None
     of $BootstrappedQueueQ _ ($Nil)      _ _ _ -> prim kill-entire-process "bqSplit: invariant violated";
     of $BootstrappedQueueQ lenfm ($Cons x f) m lenr r ->
         Some (x, bootstrappedQueueCheckQ (lenfm -Int32 1) f m lenr r)
@@ -50,11 +50,11 @@ bootstrappedQueueSnoc :: forall a:Boxed, { a => BootstrappedQueue a => Bootstrap
 bootstrappedQueueSnoc = { forall a:Boxed, e => h =>
   case h
     of $BootstrappedQueueE ->
-        BootstrappedQueueQ 1 (Cons e (Nil !)) (BootstrappedQueueE !) 0 (Nil !)
-        // Note: replacing (BootstrappedQueueE !) with h results in an occurs
+        BootstrappedQueueQ 1 (Cons e Nil) BootstrappedQueueE 0 Nil
+        // Note: replacing BootstrappedQueueE with h results in an occurs
         // check error, even though they are the same value at runtime;
         // h                    :: BootstrappedQueue a
-        // BootstrappedQueueE ! :: forall elem, BootstrappedQueue elem
+        // BootstrappedQueueE :: forall elem, BootstrappedQueue elem
     of $BootstrappedQueueQ lenfm f m lenr r ->
         bootstrappedQueueCheckQ lenfm f m (lenr +Int32 1) (Cons e r)
   end
@@ -69,7 +69,7 @@ bootstrappedQueueCheckQ = { forall a:Boxed, lenfm => f => m => lenr => r =>
     then bootstrappedQueueCheckF lenfm f m lenr r
     else bootstrappedQueueCheckF (lenfm +Int32 lenr) f
                                  (bootstrappedQueueSnoc (delay { listReverse r }) m)
-                                 0                 (Nil !)
+                                 0                 Nil
   end
 };
 
@@ -81,7 +81,7 @@ bootstrappedQueueCheckF = { forall a:Boxed, lenfm => f => m => lenr => r =>
   case f
     of $Nil ->
         case m
-          of $BootstrappedQueueE -> BootstrappedQueueE !
+          of $BootstrappedQueueE -> BootstrappedQueueE
           of _ -> BootstrappedQueueQ lenfm (force (unMaybe (bootstrappedQueueHead m)))
                                                   (unMaybe (bootstrappedQueueTail m)) lenr r
         end

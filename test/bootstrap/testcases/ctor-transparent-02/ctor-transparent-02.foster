@@ -12,8 +12,8 @@ type case T1
 
 part1 = {
   t1 = (if 0 ==Int32 opaquely_i32 0
-          then C1a !
-          else C1b !
+          then C1a
+          else C1b
         end);
   force_gc_for_debugging_purposes !;
   v = case t1
@@ -35,7 +35,7 @@ type case T2
 part2 = {
   t2 = (if 0 ==Int32 opaquely_i32 0
           then C2b (1, 2) 4
-          else C2c !
+          else C2c
         end);
   force_gc_for_debugging_purposes !;
   v = case t2
@@ -50,7 +50,7 @@ part2 = {
 part3 = {
   t2 = (if 1 ==Int32 opaquely_i32 0
           then C2b (1, 2) 4
-          else C2d !
+          else C2d
         end);
   force_gc_for_debugging_purposes !;
   v = case t2

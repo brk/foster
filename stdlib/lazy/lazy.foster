@@ -41,7 +41,7 @@ force =  { forall a:Boxed, lazy : Lazy a =>
         // is invoked at most once. This would be trivial, except for the
         // workarounds being used for the first two invariants.
         of $LazyLazyT thunk ->
-                (LazyBusy !) >^ r;
+                LazyBusy >^ r;
                 case thunk ! of $LazyDelay r2 ->
                     (r2 ^) >^ r;
                     // It would be nice to avoid allocating more than necessary,

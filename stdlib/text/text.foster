@@ -1,5 +1,25 @@
 snafuinclude Bytes "bytes";
 
+incr64 = { n : Int64 => n +Int64 1 };
+
+arrayFoldFrom = { forall t:Type r:Type,
+                  a : Array t =>
+                  k : Int64 =>
+                  f : { t => Int64 => r => r } =>
+                  acc : r =>
+  if k <SInt64 prim_arrayLength a
+    then arrayFoldFrom a (incr64 k) f (f a[primitive_trunc_i64_i32 k] k acc)
+    else acc
+  end
+};
+
+arrayFold = { forall t:Type r:Type,
+              a : Array t =>
+              f : { t => Int64 => r => r } =>
+              acc : r =>
+  arrayFoldFrom a 0 f acc
+};
+
 mkTextConcat = { a : Text => b : Text =>
   lensum = (textLength a) +Int32 (textLength b);
   small  = 120; // we'll be willing to memcpy buffers smaller than this.
@@ -21,10 +41,23 @@ mkTextConcat = { a : Text => b : Text =>
   end
 };
 
+// TODO how to efficiently support an operation like textHeadTail/textSplit?
+// The challenge would be to efficiently support incremental iteration
+// through a Text with minimal allocation.
+
 textLength = { t : Text =>
   case t
     of $TextFragment _ n -> n
     of $TextConcat _ _ n -> n
+   end;
+};
+
+textFoldASCII = { forall a:Type, t : Text => f : { Int8 => a => a } => acc:a =>
+  case t
+    of $TextFragment a _ ->
+      arrayFold a { byte => idx => r => f byte r } acc
+    of $TextConcat s1 s2 _ ->
+      textFoldASCII s2 f (textFoldASCII s1 f acc);
    end;
 };
 

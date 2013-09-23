@@ -439,7 +439,7 @@ kNormalCtors ctx ctorRepr dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dty
   where
     kNormalCtor :: Context TypeIL -> DataType TypeIL -> DataCtor TypeIL
                 -> KN (Fn KNExpr TypeIL)
-    kNormalCtor ctx datatype _dc@(DataCtor cname _tyformals tys) = do
+    kNormalCtor ctx datatype (DataCtor cname tyformals tys) = do
       let dname = dataTypeName datatype
       let arity = Prelude.length tys
       let cid   = CtorId (typeFormalName dname) (T.unpack cname) arity
@@ -447,15 +447,28 @@ kNormalCtors ctx ctorRepr dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dty
       let genFreshVarOfType t = do fresh <- knFresh ".autogen"
                                    return $ TypedId t fresh
       vars <- mapM genFreshVarOfType tys
-      case termVarLookup cname (contextBindings ctx) of
-        Nothing -> error $ "Unable to find binder for constructor " ++ show cname
-        Just (tid, _) -> return $
+      let ret tid = let resty = case tidType tid of
+                                 FnTypeIL _ r _ _ -> r
+                                 ForAllIL _ (FnTypeIL _ r _ _) -> r in
+                    return
                Fn { fnVar   = tid
                   , fnVars  = vars
-                  , fnBody  = KNAppCtor (TyConAppIL (typeFormalName dname) []) (cid, rep) vars -- TODO fix
+                  , fnBody  = KNAppCtor resty (cid, rep) vars  -- tyformals
                   , fnIsRec = Just False
                   , fnAnnot = ExprAnnot [] (MissingSourceRange $ "kNormalCtor " ++ show cid) []
                   }
+      case termVarLookup cname (contextBindings ctx) of
+        Nothing -> case termVarLookup cname (nullCtorBindings ctx) of
+          Nothing -> error $ "Unable to find binder for constructor " ++ show cname
+          Just (TypedId ty id, _) ->
+                         -- This is rather ugly: nullary constructors,
+                         -- unlike their non-nullary counterparts, don't have
+                         -- function type, so we synthesize a fn type here.
+                         ret (TypedId (thunk ty) id)
+        Just (tid, _) -> ret tid
+
+thunk (ForAllIL ktvs rho) = ForAllIL ktvs (thunk rho)
+thunk ty = FnTypeIL [] ty FastCC FT_Proc
 
 -- |||||||||||||||||||||||||| Local Block Sinking |||||||||||||||{{{
 
@@ -1084,7 +1097,7 @@ instance (Pretty body, Pretty t) => Pretty (ModuleIL body t) where
             <$> vcat [showTyped (text s) t | (s, t) <- moduleILdecls m]
             <$> text "// end decls"
             <$> text "// begin datatypes"
-            <$> empty
+            <$> vsep (map pretty $ moduleILdataTypes m)
             <$> text "// end datatypes"
             <$> text "// begin prim types"
             <$> empty
@@ -1094,6 +1107,22 @@ instance (Pretty body, Pretty t) => Pretty (ModuleIL body t) where
             <$> text "// end functions"
 
 prettyId (TypedId _ i) = text (show i)
+
+instance Pretty TypeFormalAST where
+  pretty (TypeFormalAST name kind) =
+    text name <+> text ":" <+> pretty kind
+
+instance Pretty t => Pretty (DataType t) where
+  pretty dt =
+    text "type case" <+> pretty (dataTypeName dt) <+>
+         hsep (map (parens . pretty) (dataTypeTyFormals dt))
+     <$> indent 2 (vsep (map prettyDataTypeCtor (dataTypeCtors dt)))
+     <$> text ";"
+     <$> empty
+
+prettyDataTypeCtor dc =
+  text "of" <+> text "$" <> text (T.unpack $ dataCtorName dc)
+                        <+> hsep (map pretty (dataCtorTypes dc))
 
 instance Pretty t => Pretty (PatternAtom t) where
   pretty p =
@@ -1166,7 +1195,7 @@ instance Pretty ty => Pretty (KNExpr' ty) where
             KNDeref _ v         -> prettyId v <> text "^"
             KNStore _ v1 v2     -> text "store" <+> prettyId v1 <+> text "to" <+> prettyId v2
             KNCase _t v bnds    -> align $
-                                       kwd "case" <+> pretty v
+                                       kwd "case" <+> pretty v <+> text "::" <+> pretty (tidType v)
                                        <$> indent 2 (vcat [ kwd "of" <+> fill 20 (pretty pat)
                                                                      <+> (case guard of
                                                                             Nothing -> empty

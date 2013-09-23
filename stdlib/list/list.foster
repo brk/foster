@@ -7,7 +7,7 @@ type case List (a:Boxed)
 
 listSingleton :: forall t:Boxed, { t => List t };
 listSingleton =  { forall t:Boxed, x : t =>
-  Cons x (Nil !)
+  Cons x Nil
 };
 
 // Precondition: List is not empty.
@@ -34,11 +34,11 @@ listGet! = { forall t:Boxed, xs : List t => i : Int32 =>
 };
 
 listGet = { forall t:Boxed, xs : List t => i : Int32 =>
-  if i <SInt32 0 then None ! else
+  if i <SInt32 0 then None else
     // invariant: i >= 0.
     REC go = { xs => i =>
       case xs
-        of $Nil -> None !
+        of $Nil -> None
         of $Cons y ys ->
           if i ==Int32 0 then Some y else
             go ys (i -Int32 1)
@@ -66,12 +66,12 @@ listFoldr = { forall a:Boxed e:Boxed, v => f => acc : a =>
 
 listMap :: forall a:Boxed, e:Boxed, { List e => { e => a } => List a };
 listMap = { forall a:Boxed e:Boxed, v => f =>
-  listFoldl v { e => tail => Cons (f e) tail } (Nil !);
+  listFoldl v { e => tail => Cons (f e) tail } Nil;
 };
 
 listKeepIf :: forall a:Boxed, { List a => { a => Bool } => List a };
 listKeepIf = { forall a:Boxed, v => f =>
-  listFoldl (listReverse v) { e => tail => if f e then Cons e tail else tail end } (Nil !);
+  listFoldl (listReverse v) { e => tail => if f e then Cons e tail else tail end } Nil;
 };
 
 listLength64 = { forall t:Boxed, xs : List t =>
@@ -107,11 +107,11 @@ listReverse = { forall t:Boxed, xs : List t =>
       of $Cons x ys -> go ys (Cons x acc)
     end
   };
-  go xs (Nil !)
+  go xs Nil
 };
 
 listReverseAlt = { forall t:Boxed, xs : List t =>
-  listFoldl xs Cons (Nil !)
+  listFoldl xs Cons Nil
 };
 
 listAppend :: forall t:Boxed, { List t => List t => List t };

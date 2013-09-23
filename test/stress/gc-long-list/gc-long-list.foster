@@ -27,5 +27,5 @@ mkUnitListTo = { n : Int32 =>
       go (n -Int32 1) (Cons () acc)
     end
   };
-  go n (Nil:[()] !);
+  go n Nil:[()];
 };

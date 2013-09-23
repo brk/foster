@@ -12,7 +12,7 @@ type case RealtimeQueue (a:Boxed)
 realtimeQueueEmpty :: forall a:Boxed, { RealtimeQueue a };
 realtimeQueueEmpty = { forall a:Boxed,
   let snil = stream-nil-mediocre !; in
-    RealtimeQueue snil (Nil !) snil
+    RealtimeQueue snil Nil snil
   end
 };
 
@@ -43,7 +43,7 @@ realtimeQueueExec = { forall a:Boxed, q: RealtimeQueue a =>
   case q of $RealtimeQueue f r sched ->
     case force sched
       of $StreamNilV       -> let ff = realtimeQueueRotate f r sched;
-                               in RealtimeQueue ff (Nil !) ff end
+                               in RealtimeQueue ff Nil ff end
       of $StreamCons la ls -> RealtimeQueue f r ls
     end
   end
@@ -63,7 +63,7 @@ realtimeQueueHead :: forall a:Boxed, { RealtimeQueue a => Maybe a };
 realtimeQueueHead = { forall a:Boxed, q: RealtimeQueue a =>
   case q of $RealtimeQueue f r sched ->
     case force f
-      of $StreamNilV       -> None !
+      of $StreamNilV       -> None
       of $StreamCons la _  -> Some (force la)
     end
   end
@@ -74,7 +74,7 @@ realtimeQueueTail :: forall a:Boxed, { RealtimeQueue a => Maybe (RealtimeQueue a
 realtimeQueueTail = { forall a:Boxed, q: RealtimeQueue a =>
   case q of $RealtimeQueue f r sched ->
     case force f
-      of $StreamNilV       -> None !
+      of $StreamNilV       -> None
       of $StreamCons _  ls -> Some (realtimeQueueExec (RealtimeQueue ls r sched))
     end
   end

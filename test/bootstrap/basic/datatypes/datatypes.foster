@@ -3,13 +3,13 @@ main = {
   print_i32 (len (ones 6));
 
   expect_i32 0;
-  print_i32 (ex2 (Nil32 !));
+  print_i32 (ex2 Nil32);
 
   expect_i32 1;
-  print_i32 (ex2 (Cons32 0 (Nil32 !)));
+  print_i32 (ex2 (Cons32 0 Nil32));
 
   expect_i32 2;
-  print_i32 (ex2 (Cons32 0 (Cons32 1 (Nil32 !))));
+  print_i32 (ex2 (Cons32 0 (Cons32 1 Nil32)));
 
   badcase ! ;
 
@@ -20,7 +20,7 @@ main = {
 
 ones = { n : Int32 =>
   if n ==Int32 0
-   then Nil32 !
+   then Nil32
    else Cons32 n (ones (n -Int32 1))
   end
 };

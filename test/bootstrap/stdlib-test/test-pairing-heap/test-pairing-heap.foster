@@ -18,7 +18,7 @@ main = {
        (Cons { 9 }
        (Cons { 8 }
        (Cons { 7 }
-       (Nil:[{Int64}] !)))))))))));
+        Nil:[{Int64}]))))))))));
 
   cmpt = { f1 => f2 => cmpSInt64 (f1 !) (f2 !) };
 

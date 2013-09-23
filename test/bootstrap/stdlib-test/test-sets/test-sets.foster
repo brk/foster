@@ -14,7 +14,7 @@ main = {
        (Cons { 5 }
        (Cons { 6 }
        (Cons { 1 }
-       (Nil:[{Int64}] !))))))));
+        Nil:[{Int64}])))))));
 
   cmp = { f1 => f2 => cmpSInt64 (f1 !) (f2 !) };
 
@@ -28,9 +28,9 @@ main = {
 
   expect_text "[4, 5, 6, ]";
   print_bil (setToList
-     (setJoin { 4 } (SetTip !)
-                    (SetBin 2 { 5 } (SetTip !)
-                                    (setSingleton { 6 }))));
+     (setJoin { 4 } SetTip
+                   (SetBin 2 { 5 } SetTip
+                                   (setSingleton { 6 }))));
 
   s1 = (setOfList lst cmp);
   case setSplit { 3 } s1 cmp of (lo, hi) ->

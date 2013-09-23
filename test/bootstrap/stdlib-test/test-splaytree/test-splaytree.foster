@@ -36,7 +36,7 @@ main = {
 /*
   cmpt = { f1 => f2 => cmpSInt32 (f1 !) (f2 !) };
   cmpn = { n => { f2 => cmpSInt32 n (f2 !) } };
-  s = (SplayNil !);
+  s = SplayNil;
 */
 
   /*

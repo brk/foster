@@ -3,19 +3,19 @@ main = {
 
   test-explicit !;
 
-  //print_i32 (ex3 (Nil !));
+  //print_i32 (ex3 Nil);
   // Nil :: forall a, () -> List a
   // ex3 :: forall a, List a -> Int32
   // Nil () :: List ?x
   //    ex3 :: List ?y -> Int32
 
-  //print_i32 (ex3 (Cons (B32 0) (Nil !)));
+  //print_i32 (ex3 (Cons (B32 0) Nil));
 /*
   expect_i32 1;
-  print_i32 (ex2 (Cons (B32 0) (Nil:[B32] !)));
+  print_i32 (ex2 (Cons (B32 0) Nil:[B32]));
 
   expect_i32 2;
-  print_i32 (ex2 (Cons (B32 0) (Cons (B32 1) (Nil:[B32] !))));
+  print_i32 (ex2 (Cons (B32 0) (Cons (B32 1) Nil:[B32])));
 */
   ()
 };
@@ -23,7 +23,7 @@ main = {
 
 test-explicit = {
   n = 0;
-  o = Nil:[B32] ! ;
+  o = Nil:[B32]  ;
   z = ex3       o;
   w = ex3:[B32] o;
 
@@ -58,7 +58,7 @@ ex3 = { forall c:Type,
 //ones :: Int32 -> List B32;
 ones = { n : Int32 =>
   if n ==Int32 0
-   then Nil:[B32] !
+   then Nil:[B32]
    else Cons (B32 n) (ones (n -Int32 1))
   end
 };

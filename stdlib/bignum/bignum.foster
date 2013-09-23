@@ -139,8 +139,8 @@ intCmp =  { i => j =>
 intCmp64 :: { IntInf => Int64 => Ord };
 intCmp64 = { i => k =>
   case (intNeg i, k <SInt64 0)
-    of (True, False) -> LT !
-    of (False, True) -> GT !
+    of (True, False) -> LT
+    of (False, True) -> GT
     of (False,False) ->            natCmpU64 (intNat i) k
     of (True , True) -> ordInvert (natCmpU64 (intNat i) (negate-Int64 k))
   end

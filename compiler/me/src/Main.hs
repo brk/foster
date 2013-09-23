@@ -178,12 +178,14 @@ typecheckModule verboseMode modast tcenv0 = do
     let dts = moduleASTprimTypes modast ++ moduleASTdataTypes modast
     let fns = moduleASTfunctions modast
     let primBindings = computeContextBindings' primitiveDecls
+    let (nullCtors, nonNullCtors) = splitCtorTypes (concatMap extractCtorTypes dts)
     let declBindings = computeContextBindings' (moduleASTdecls modast) ++
-                       computeContextBindings (concatMap extractCtorTypes dts)
+                       computeContextBindings nonNullCtors
+    let nullCtorBindings = computeContextBindings nullCtors
     putDocLn $ (outLn "vvvv declBindings:====================")
     putDocLn $ (dullyellow (vcat $ map (text . show) declBindings))
 
-    let ctx0 = mkContext declBindings primBindings dts
+    let ctx0 = mkContext declBindings nullCtorBindings primBindings dts
     ctxErrsOrOK <- unTc tcenv0 (tcContext ctx0)
 
     case (detectDuplicates (map fnAstName fns), ctxErrsOrOK) of
@@ -203,12 +205,13 @@ typecheckModule verboseMode modast tcenv0 = do
       (dups, _) -> return (Errors [text $ "Unable to check module due to "
                                         ++ "duplicate bindings: " ++ show dups])
  where
-   mkContext declBindings primBindings datatypes =
-     Context declBindsMap primBindsMap verboseMode globalvars tyvarsMap [] ctorinfo dtypes
+   mkContext declBindings nullCtorBnds primBindings datatypes =
+     Context declBindsMap nullCtorsMap primBindsMap verboseMode globalvars tyvarsMap [] ctorinfo dtypes
        where globalvars   = declBindings ++ primBindings
              ctorinfo     = getCtorInfo  datatypes
              dtypes       = getDataTypes datatypes
              primBindsMap = Map.fromList $ map unbind primBindings
+             nullCtorsMap = Map.fromList $ map unbind nullCtorBnds
              declBindsMap = Map.fromList $ map unbind declBindings
              tyvarsMap    = Map.fromList []
              unbind (TermVarBinding s t) = (s, t)
@@ -226,19 +229,31 @@ typecheckModule verboseMode modast tcenv0 = do
      let boundTyVarFor (TypeFormalAST name _kind) = TyVarAST $ BoundTyVar name in
      TyConAppAST (typeFormalName $ dataTypeName dt) (map boundTyVarFor $ dataTypeTyFormals dt)
 
-   extractCtorTypes :: DataType TypeAST -> [(String, TypeAST, CtorId)]
+   splitCtorTypes :: [(String, Either TypeAST TypeAST, CtorId)] ->
+                    ([(String, TypeAST, CtorId)]
+                    ,[(String, TypeAST, CtorId)])
+   splitCtorTypes xs = go xs [] []
+     where go [] rl rr = (reverse rl, reverse rr)
+           go ((nm, Left  ty, cid):xs) rl rr = go xs ((nm, ty, cid):rl) rr
+           go ((nm, Right ty, cid):xs) rl rr = go xs rl ((nm, ty, cid):rr)
+
+   extractCtorTypes :: DataType TypeAST -> [(String, Either TypeAST TypeAST, CtorId)]
    extractCtorTypes dt = map nmCTy (dataTypeCtors dt)
      where nmCTy dc@(DataCtor name tyformals types) =
                  (T.unpack name, ctorTypeAST tyformals dtType types, cid)
                          where dtType = typeOfDataType dt name
                                cid    = ctorId (typeFormalName $ dataTypeName dt) dc
 
-   -- TODO: if ctorArgTypes = [], no need to assign a function type for a const.
+   -- Nullary constructors are constants; non-nullary ctors are functions.
+   ctorTypeAST [] dtType [] = Left dtType
    ctorTypeAST [] dtType ctorArgTypes =
-                       FnTypeAST ctorArgTypes dtType FastCC FT_Proc
+                            Right $ FnTypeAST ctorArgTypes dtType FastCC FT_Proc
 
    ctorTypeAST tyformals dt ctorArgTypes =
-      ForAllAST (map convertTyFormal tyformals) $ ctorTypeAST [] dt ctorArgTypes
+     let f = ForAllAST (map convertTyFormal tyformals) in
+     case ctorTypeAST [] dt ctorArgTypes of
+       Left ty  -> Left $ f ty
+       Right ty -> Right $ f ty
 
    buildCallGraphList :: [FnAST TypeAST] -> Set T.Text
                       -> [(FnAST TypeAST, T.Text, [T.Text])]
@@ -309,12 +324,13 @@ typecheckModule verboseMode modast tcenv0 = do
 
         liftContextM :: (Monad m, Show t1, Show t2)
                      => (t1 -> m t2) -> Context t1 -> m (Context t2)
-        liftContextM f (Context cb pb vb gb tyvars tybinds ctortypeast dtinfo) = do
+        liftContextM f (Context cb nb pb vb gb tyvars tybinds ctortypeast dtinfo) = do
           cb' <-mmapM (liftCXB f) cb
+          nb' <- mapM (liftCXB f) nb
           pb' <- mapM (liftCXB f) pb
           gb' <- mapM (liftBinding f) gb
           tyvars' <- mmapM f tyvars
-          return $ Context cb' pb' vb gb' tyvars' tybinds ctortypeast dtinfo
+          return $ Context cb' nb' pb' vb gb' tyvars' tybinds ctortypeast dtinfo
 
         liftTID :: Monad m => (t1 -> m t2) -> TypedId t1 -> m (TypedId t2)
         liftTID f (TypedId t i) = do t2 <- f t ; return $ TypedId t2 i

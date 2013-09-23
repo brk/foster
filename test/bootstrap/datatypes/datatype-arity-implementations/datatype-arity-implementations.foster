@@ -7,7 +7,7 @@ main = {
 t0 = {
   expect_i32 0;
   print_i32 (
-    case T1C0 !
+    case T1C0
       of $T1C0     -> 0
       of $T1C1 _   -> 1
       of $T1C2 _ _ -> 2

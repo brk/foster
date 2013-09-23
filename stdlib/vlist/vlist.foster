@@ -12,7 +12,7 @@ type case VListBase (a:Boxed)
 
 mkEmptyVList :: forall a:Boxed, { VList a };
 mkEmptyVList =  { forall a:Boxed,
-  VList 0 (VListBase (None !) (Nil !)) 0
+  VList 0 (VListBase None Nil) 0
 };
 
 vListCons :: forall a:Boxed, { a => VList a => VList a };
@@ -24,7 +24,7 @@ vListCons =  { forall a:Boxed, e => v =>
                   VList 1 (VListBase prev (Cons e elems)) 1
         else if size ==Int32 offset
              then pptr = Some base;
-                  VList 1 (VListBase pptr (Cons e (Nil !))) (size *Int32 2)
+                  VList 1 (VListBase pptr (Cons e Nil)) (size *Int32 2)
              else VList (offset +Int32 1)
                           (VListBase prev (Cons e elems))  size
              end
@@ -43,7 +43,7 @@ vListHead :: forall a:Boxed, { VList a => Maybe a };
 vListHead =  { forall a:Boxed, v =>
   case v of $VList offset ($VListBase prev elems) size ->
     case elems
-      of $Nil      -> None !
+      of $Nil      -> None
       of $Cons e _ -> Some e
     end
   end
@@ -54,7 +54,7 @@ vListLast =  { forall a:Boxed, v =>
   REC go = { base =>
     case base of $VListBase prev elems ->
       case (prev, elems)
-        of ($None, $Nil)      -> None !
+        of ($None, $Nil)      -> None
         of ($None, $Cons e _) -> Some e
         of ($Some base, _)    -> go base
       end
@@ -74,7 +74,7 @@ vListTail =  { forall a:Boxed, v =>
   case v of $VList offset ($VListBase prev elems) size ->
     new-off = offset -Int32 1;
     if size ==Int32 0
-      then None !
+      then None
       else
         if new-off ==Int32 0
           then case prev
@@ -120,7 +120,7 @@ vListGet =  { forall a:Boxed, v => i =>
   };
 
   if i >=UInt32 vListLength v
-    then None !
+    then None
     else
       case v of $VList offset ($VListBase prev elems) size ->
         if i ==Int32 0 // and, implicitly, |v| > 0, thus listHead! is ok.
@@ -143,7 +143,7 @@ vListSplit :: forall c:Boxed, { VList c => Maybe (c, VList c) };
 vListSplit = { forall c:Boxed, v =>
   case v of $VList offset ($VListBase prev elems) size ->
     if size ==Int32 0
-      then None !
+      then None
       else Some (vListHead! v, vListTail! v)
     end
   end
@@ -195,5 +195,5 @@ vListOfList = { forall a:Boxed, v =>
 
 listOfVList :: forall a:Boxed, { VList a => List a };
 listOfVList = { forall a:Boxed, v =>
-  vListFoldl (vListReverse v) Cons (Nil !)
+  vListFoldl (vListReverse v) Cons Nil
 };

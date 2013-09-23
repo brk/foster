@@ -11,20 +11,20 @@ type case PairingHeap (elem:Boxed)
 
 mkEmptyPairingHeap :: forall a:Boxed, { PairingHeap a };
 mkEmptyPairingHeap = { forall a:Boxed,
-  PairingHeapE !
+  PairingHeapE
 };
 
 /*
 // Mostly to set the stage for _alt_2, we can introduce a trivial unit arg:
 mkEmptyPairingHeap_alt_1 :: forall a:Boxed, { () => PairingHeap a };
 mkEmptyPairingHeap_alt_1 = { forall a:Boxed, unit =>
-  PairingHeapE !
+  PairingHeapE
 };
 
 // This definition makes sense, but I'm pretty sure it won't type check.
 mkEmptyPairingHeap_alt_2 :: { () => forall a:Boxed, PairingHeap a };
 mkEmptyPairingHeap_alt_2 = { unit =>
-  PairingHeapE !
+  PairingHeapE
 };
 */
 
@@ -43,21 +43,21 @@ pairingHeapMerge = { forall a:Boxed, cmp => pa => pb =>
 
 pairingHeapInsertSimple :: forall a:Boxed, { { a => a => Ord } => a => PairingHeap a => PairingHeap a };
 pairingHeapInsertSimple = { forall a:Boxed, cmp => e => h =>
-  pairingHeapMerge cmp (PairingHeapT e (Nil !)) h
+  pairingHeapMerge cmp (PairingHeapT e Nil) h
 };
 
 // TODO benchmark difference between pairingHeapInsertSimple and pairingHeapInsert.
-// The main benefit (once (Nil !) does not allocate) would be saving
+// The main benefit (once Nil does not allocate) would be saving
 // an allocation of a heap node on one branch.
 pairingHeapInsert :: forall a:Boxed, { { a => a => Ord } => a => PairingHeap a => PairingHeap a };
 pairingHeapInsert = { forall a:Boxed, cmp => e => h =>
   case h
-    of $PairingHeapE -> PairingHeapT e (Nil !)
+    of $PairingHeapE -> PairingHeapT e Nil
     of $PairingHeapT eb lb ->
       case cmp e eb
-        of $GT -> pa = PairingHeapT e (Nil !);
+        of $GT -> pa = PairingHeapT e Nil;
                   PairingHeapT eb (Cons pa lb)
-        of _   -> PairingHeapT e  (Cons h (Nil !))
+        of _   -> PairingHeapT e  (Cons h Nil)
       end
   end
 };
@@ -65,7 +65,7 @@ pairingHeapInsert = { forall a:Boxed, cmp => e => h =>
 pairingHeapMergePairs :: forall a:Boxed, { { a => a => Ord } => List (PairingHeap a) => PairingHeap a };
 pairingHeapMergePairs = { forall a:Boxed, cmp => l =>
   case l
-    of ($Nil)                   -> PairingHeapE !
+    of ($Nil)                   -> PairingHeapE
     of ($Cons h  ($Nil))        -> h
     of ($Cons h1 ($Cons h2 hs)) ->
       pairingHeapMerge cmp
@@ -77,7 +77,7 @@ pairingHeapMergePairs = { forall a:Boxed, cmp => l =>
 pairingHeapFindMin :: forall a:Boxed, { PairingHeap a => Maybe a };
 pairingHeapFindMin = { forall a:Boxed, h =>
   case h
-    of $PairingHeapE -> None !
+    of $PairingHeapE -> None
     of $PairingHeapT e _ -> Some e
   end
 };
@@ -85,7 +85,7 @@ pairingHeapFindMin = { forall a:Boxed, h =>
 pairingHeapDeleteMin :: forall a:Boxed, { { a => a => Ord } => PairingHeap a => Maybe (PairingHeap a) };
 pairingHeapDeleteMin = { forall a:Boxed, cmp => h =>
   case h
-    of $PairingHeapE -> None !
+    of $PairingHeapE -> None
     of $PairingHeapT _ l -> Some (pairingHeapMergePairs cmp l)
   end
 };
@@ -93,7 +93,7 @@ pairingHeapDeleteMin = { forall a:Boxed, cmp => h =>
 pairingHeapToSortedList :: forall a:Boxed, { { a => a => Ord } => PairingHeap a => List a };
 pairingHeapToSortedList = { forall a:Boxed, cmp => h =>
   case h
-    of $PairingHeapE -> Nil !
+    of $PairingHeapE -> Nil
     of $PairingHeapT e l -> Cons e (pairingHeapToSortedList cmp (pairingHeapMergePairs cmp l))
   end
 };
@@ -107,7 +107,7 @@ pairingHeapToSortedListIter = { forall a:Boxed, cmp => h =>
             go (pairingHeapMergePairs cmp l) (Cons e acc);
       end
   };
-  go h (Nil !)
+  go h Nil
 };
 
 pairingHeapFromList :: forall a:Boxed, { { a => a => Ord } => List a => PairingHeap a };

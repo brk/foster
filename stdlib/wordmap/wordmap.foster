@@ -20,7 +20,7 @@ type case WordMap (a:Boxed)
        ;
 
 wordMapEmpty :: forall a:Boxed, { WordMap a };
-wordMapEmpty = { forall a:Boxed, WordMapNil ! };
+wordMapEmpty = { forall a:Boxed, WordMapNil };
 
 // O(1)
 wordMapIsEmpty :: forall a:Boxed, { WordMap a => Bool };
@@ -73,10 +73,10 @@ wordMapLookup :: forall a:Boxed, { WordMap a => Word => Maybe a };
 wordMapLookup = { forall a:Boxed, s => k =>
   REC go = { s =>
       case s
-        of $WordMapNil                -> None !
+        of $WordMapNil                -> None
         of $WordMapTip kx x           ->
           if k ==Word kx then Some x
-                         else None !
+                         else None
           end
         of $WordMapBin _ m l r ->
           if wordMapZero k m
@@ -137,7 +137,7 @@ wordMapLookupLT :: forall a:Boxed, { WordMap a => k => Maybe a };
 wordMapLookupLT = { forall a:Boxed, s => k =>
   REC goNone = { s =>
       case s
-        of $WordMapNil                -> None !
+        of $WordMapNil                -> None
         of $WordMapBin _ kelt elt l r ->
           if isLT (cmp elt e)
             then goSome elt r
@@ -164,7 +164,7 @@ wordMapLookupGT :: forall a:Boxed, { WordMap a => a => Maybe k };
 wordMapLookupGT = { forall a:Boxed, s => e =>
   REC goNone = { s =>
       case s
-        of $WordMapNil           -> None !
+        of $WordMapNil           -> None
         of $WordMapBin _ kelt elt l r ->
           if isGT (cmp elt e)
             then goNone l
@@ -191,7 +191,7 @@ wordMapLookupLE :: forall a:Boxed, { WordMap a => a => Maybe k };
 wordMapLookupLE = { forall a:Boxed, s => e =>
   REC goNone = { s =>
       case s
-        of $WordMapNil           -> None !
+        of $WordMapNil           -> None
         of $WordMapBin _ kelt elt l r ->
           case cmp elt e
             of $LT -> goSome elt r
@@ -220,7 +220,7 @@ wordMapLookupGE :: forall a:Boxed, { WordMap a => a => Maybe k };
 wordMapLookupGE = { forall a:Boxed, s => e =>
   REC goNone = { s =>
       case s
-        of $WordMapNil           -> None !
+        of $WordMapNil           -> None
         of $WordMapBin _ kelt elt l r ->
           case cmp elt e
             of $LT -> goNone r
@@ -307,7 +307,7 @@ wordMapDelete = { forall a:Boxed, s => k =>
       case s
         of $WordMapNil            -> s
         of $WordMapTip ky _       -> if k ==Word ky
-                                       then WordMapNil !
+                                       then WordMapNil
                                        else s
                                      end
         of $WordMapBin p m l r ->
@@ -365,7 +365,7 @@ wordMapDifference = { forall a:Boxed, s1 => s2 =>
     of (_, $WordMapNil) -> s1
     of (_, $WordMapTip k _) -> wordMapDelete s1 k
     of ($WordMapTip k _, _) -> if wordMapContainsKey s2 k
-                                 then WordMapNil ! else s1 end
+                                 then WordMapNil else s1 end
     of ($WordMapBin p1 m1 l1 r1, $WordMapBin p2 m2 l2 r2) ->
       if wordMapShorter m1 m2 then
         if wordMapNoMatch p2 p1 m1 then wordMapJoin p1 s1 p2 s2 else
@@ -400,13 +400,13 @@ wordMapIntersection = { forall a:Boxed, s1 => s2 =>
     of (_, $WordMapNil) -> s2
     of (_, $WordMapTip k _) -> case wordMapLookup s1 k
                                  of $Some y -> WordMapTip k y
-                                 of $None   -> WordMapNil !
+                                 of $None   -> WordMapNil
                                end
     of ($WordMapTip k _, _) -> if wordMapContainsKey s2 k
-                                 then s1 else WordMapNil ! end
+                                 then s1 else WordMapNil end
     of ($WordMapBin p1 m1 l1 r1, $WordMapBin p2 m2 l2 r2) ->
       if wordMapShorter m1 m2 then
-        if wordMapNoMatch p2 p1 m1 then WordMapNil ! else
+        if wordMapNoMatch p2 p1 m1 then WordMapNil else
               if wordMapZero p2 m1
                 then wordMapIntersection l1 s2
                 else wordMapIntersection r1 s2
@@ -423,7 +423,7 @@ wordMapIntersection = { forall a:Boxed, s1 => s2 =>
         else
           if p1 ==Word p2
             then wordMapBin p1 m1 (wordMapIntersection l1 l2) (wordMapIntersection r1 r2)
-            else WordMapNil !
+            else WordMapNil
           end
         end
       end
@@ -472,11 +472,11 @@ wordMapSplitLookup = { forall a:Boxed, k => s =>
      end
    of $WordMapTip ky y  ->
      case cmpSWord k ky
-       of $LT -> (WordMapNil ! , None ! , s)
-       of $EQ -> (WordMapNil ! , Some y , WordMapNil !)
-       of $GT -> (s, None ! , WordMapNil !)
+       of $LT -> (WordMapNil, None  , s)
+       of $EQ -> (WordMapNil, Some y, WordMapNil)
+       of $GT -> (s, None, WordMapNil)
      end
-   of $WordMapNil -> (s, None ! , s)
+   of $WordMapNil -> (s, None , s)
   end
 };
 
@@ -485,8 +485,8 @@ wordMapSplitLookup_ = { forall a:Boxed, k => s =>
   case s
    of $WordMapBin p m l r ->
      if wordMapNoMatch k p m
-       then if k >SWord p then (s, None ! , WordMapNil !)
-                          else (WordMapNil ! , None ! , s) end
+       then if k >SWord p then (s, None, WordMapNil)
+                          else (WordMapNil, None, s) end
        else
          if wordMapZero k m
            then case wordMapSplitLookup k l of (lt,found,gt) -> (lt, found, wordMapUnion gt r) end
@@ -495,11 +495,11 @@ wordMapSplitLookup_ = { forall a:Boxed, k => s =>
      end
    of $WordMapTip ky y  ->
      case cmpSWord k ky
-       of $LT -> (WordMapNil ! , None ! , s)
-       of $EQ -> (WordMapNil ! , Some y , WordMapNil !)
-       of $GT -> (s, None ! , WordMapNil !)
+       of $LT -> (WordMapNil , None , s)
+       of $EQ -> (WordMapNil , Some y , WordMapNil)
+       of $GT -> (s, None , WordMapNil)
      end
-   of $WordMapNil -> (s, None ! , s)
+   of $WordMapNil -> (s, None , s)
   end
 };
 
@@ -558,7 +558,7 @@ wordMapWordMap :: forall a:Boxed, r:Boxed, { WordMap a => { v => r } => WordMap 
 wordMapWordMap = { forall a:Boxed r:Boxed, s => f =>
   REC go = { s =>
       case s
-        of $WordMapNil                 -> WordMapNil !
+        of $WordMapNil                 -> WordMapNil
         of $WordMapBin sz kelt elt l r -> WordMapBin sz kelt (f elt) (go l) (go r)
       end
   };
@@ -582,17 +582,17 @@ wordMapKeepIf = { forall a:Boxed, s => p =>
 
 wordMapToList :: forall a:Boxed, { WordMap a => List (Word, a) };
 wordMapToList = { forall a:Boxed, s =>
-  wordMapFoldrWithKey s { k => v => lst => Cons (k, v) lst } (Nil !)
+  wordMapFoldrWithKey s { k => v => lst => Cons (k, v) lst } Nil
 };
 
 wordMapToListDesc :: forall a:Boxed, { WordMap a => List (Word, a) };
 wordMapToListDesc = { forall a:Boxed, s =>
-  wordMapFoldlWithKey s { k => v => lst => Cons (k, v) lst } (Nil !)
+  wordMapFoldlWithKey s { k => v => lst => Cons (k, v) lst } Nil
 };
 
 wordMapOfList :: forall a:Boxed, { List (Word, a) => WordMap a };
 wordMapOfList = { forall a:Boxed, lst =>
-  listFoldl lst { p : (Word, a) => s : WordMap a => case p of (k, v) -> wordMapInsert k v s end } (WordMapNil !)
+  listFoldl lst { p : (Word, a) => s : WordMap a => case p of (k, v) -> wordMapInsert k v s end } WordMapNil
 };
 
 ////////////
@@ -650,9 +650,9 @@ wordMapSizeValid_ = { forall a:Boxed, s =>
               of ($Some nf  , $Some mf  ) ->
                 if (nf !) +Word (mf !) +Word 1 ==Word sz
                   then Some { sz }
-                  else None !
+                  else None
                 end
-              of _ -> None !
+              of _ -> None
             end
     end
   };
@@ -685,7 +685,7 @@ wordMapsBalanced = { forall a:Boxed, l => r =>
 
 /*
 wordMapShowTree = { forall a:Boxed, s : WordMap a => shw : { k => v => Text } =>
-  wordMapShowTreeRot (Nil !) (Nil !) s shw
+  wordMapShowTreeRot Nil Nil s shw
 };
 
 wordMapShowTreeRot = { forall a:Boxed, lbars : List Text => rbars : List Text => s : WordMap a => shw : { k => v => Text } =>

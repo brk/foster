@@ -26,6 +26,7 @@ data ContextBinding ty = TermVarBinding T.Text (CtxBound ty)
 
 type ContextBindings ty = Map T.Text (CtxBound ty)
 data Context ty = Context { contextBindings   :: ContextBindings ty
+                          , nullCtorBindings  :: ContextBindings ty
                           , primitiveBindings :: ContextBindings ty
                           , contextVerbose    :: Bool
                           , globalBindings    :: [ContextBinding ty]

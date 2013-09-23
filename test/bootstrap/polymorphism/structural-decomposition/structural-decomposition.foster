@@ -15,7 +15,7 @@ sizeS = { forall a:Boxed, seq:SDSeq a =>
 };
 
 main = {
-  s = (SDCons () (SDCons ((), ()) (SDNil !)));
+  s = (SDCons () (SDCons ((), ()) SDNil));
 
   expect_i32 3;
   print_i32 (sizeS s);

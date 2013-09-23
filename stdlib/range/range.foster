@@ -33,18 +33,18 @@ cmpRange :: forall t:Type, { t => t => t => t => { t => t => Ord }
                                => RangeChunkCmpResult };
 cmpRange = { forall t:Type, a => b => x => y => cmp =>
   case cmp b x
-    of $LT              -> Before !
-    of $EQ              -> AdjacentBefore !
+    of $LT              -> Before
+    of $EQ              -> AdjacentBefore
     of $GT              ->
     case cmp y a
-      of $LT            -> After !
-      of $EQ            -> AdjacentAfter !
+      of $LT            -> After
+      of $EQ            -> AdjacentAfter
       of $GT            ->
         case (cmp a x, cmp b y)
-          of ($LT, $LT) -> OverlapsBefore !
-          of (_  , $LT) -> Subsumed !
-          of ($GT, _  ) -> OverlapsAfter !
-          of (_  , _  ) -> Subsumes !
+          of ($LT, $LT) -> OverlapsBefore
+          of (_  , $LT) -> Subsumed
+          of ($GT, _  ) -> OverlapsAfter
+          of (_  , _  ) -> Subsumes
         end
     end
   end
@@ -57,14 +57,14 @@ cmpRangeAlt :: forall t:Type, { t => t => t => t => { t => t => Ord }
                                   => RangeChunkCmpResult };
 cmpRangeAlt = { forall t:Type, a => b => x => y => cmp =>
   case (cmp b x, cmp y a, cmp a x, cmp b y)
-    of ($LT, _,     _,   _) -> Before !
-    of ($EQ, _,     _,   _) -> AdjacentBefore !
-    of ($GT, $LT,   _,   _) -> After !
-    of ($GT, $EQ,   _,   _) -> AdjacentAfter !
-    of ($GT, $GT, $LT, $LT) -> OverlapsBefore !
-    of ($GT, $GT, _  , $LT) -> Subsumed !
-    of ($GT, $GT, $GT, _  ) -> OverlapsAfter !
-    of ($GT, $GT, _  , _  ) -> Subsumes !
+    of ($LT, _,     _,   _) -> Before
+    of ($EQ, _,     _,   _) -> AdjacentBefore
+    of ($GT, $LT,   _,   _) -> After
+    of ($GT, $EQ,   _,   _) -> AdjacentAfter
+    of ($GT, $GT, $LT, $LT) -> OverlapsBefore
+    of ($GT, $GT, _  , $LT) -> Subsumed
+    of ($GT, $GT, $GT, _  ) -> OverlapsAfter
+    of ($GT, $GT, _  , _  ) -> Subsumes
   end
 };
 
@@ -137,18 +137,18 @@ cmpRangePos :: forall t:Type, { t => t => t => { t => t => Ord }
                                => RangePosCmpResult };
 cmpRangePos = { forall t:Type, x => y => p => cmp =>
   case (cmp p x, cmp p y)
-    of ($LT    , _      ) -> BeforeRange ! 
-    of ( _     , $GT    ) -> AfterRange  ! 
-    of ( _     ,  _     ) -> WithinRange ! 
+    of ($LT    , _      ) -> BeforeRange
+    of ( _     , $GT    ) -> AfterRange
+    of ( _     ,  _     ) -> WithinRange
   end
 };
 
 cmpRangePosAlt :: forall t:Type, { t => t => t => { t => t => Ord }
                                => RangePosCmpResult };
 cmpRangePosAlt = { forall t:Type, x => y => p => cmp =>
-  if      isLT (cmp p x) then BeforeRange !
-  else if isGT (cmp p y) then AfterRange  !
-       else                   WithinRange !
+  if      isLT (cmp p x) then BeforeRange
+  else if isGT (cmp p y) then AfterRange
+       else                   WithinRange
        end
   end
 };
@@ -156,7 +156,7 @@ cmpRangePosAlt = { forall t:Type, x => y => p => cmp =>
 // Returns the largest contiguous chunk of bytes starting
 // at start and of length at most maxsize.
 chunkRangeCopy = { start => maxsize => chunks =>
-  
+
   // Take some or all of a chunk  [i .. i+|b|)
   // corresponding to the range
   // that overlaps with       [start .. start+maxsize)
@@ -166,7 +166,7 @@ chunkRangeCopy = { start => maxsize => chunks =>
   //  or
   //           [bbbb***************)
   //           i    start      s+reslen        s+m
-  // 
+  //
   // Precondition: start >= i
   //
   // TODO this should get inlined because it has only one call site
@@ -175,17 +175,17 @@ chunkRangeCopy = { start => maxsize => chunks =>
     todrop = start -Int64 i;
     actlen = bytesLength b -Int64 todrop;
     reslen = min-SInt64 actlen maxsize;
-    bytesTake (bytesDrop b todrop) reslen 
+    bytesTake (bytesDrop b todrop) reslen
   };
 
   REC startloop = { chunks =>
     case chunks
-      of $Nil -> BytesEmpty !
+      of $Nil -> BytesEmpty
       of $Cons ($Chunk i b) rest ->
         case cmpRangePos start (start +Int64 maxsize) i cmpSInt64
           of $BeforeRange -> startloop rest
-          of $AfterRange  -> BytesEmpty ! 
-          of $WithinRange -> copyloop chunks start maxsize (BytesEmpty !)
+          of $AfterRange  -> BytesEmpty
+          of $WithinRange -> copyloop chunks start maxsize BytesEmpty
         end
     end
   };
@@ -216,11 +216,11 @@ chunkRangeCopy = { start => maxsize => chunks =>
 // The sequence of returned bytes may be empty.
 chunkSplit = { start : Int64 => chunks =>
   case chunks
-    of $Nil -> (chunks, BytesEmpty !)
+    of $Nil -> (chunks, BytesEmpty)
     of $Cons ($Chunk i b) rest ->
       if i ==Int64 start
         then (rest  , b)
-        else (chunks, BytesEmpty !)
+        else (chunks, BytesEmpty)
       end
   end
 };
@@ -233,6 +233,6 @@ chunkAddMaybe = { i : Int64 => b : Bytes =>
   };
   if within i start len
     then Some (chunkInsert (Chunk i b) chunks)
-    else None !
+    else None
   end
 };

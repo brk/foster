@@ -1,93 +1,177 @@
-main = {
-  ()
-};
+snafuinclude vListInt32 "vlist-Int32";
 
-// Based on the paper "RE derivatives re-examined"
+// Based on the paper "Regular-expression derivatives re-examined"
 // http://www.cl.cam.ac.uk/~so294/documents/jfp09.pdf
 
+// The constructors of this datatype should be hidden,
+// since the outside world must use the smart constructors to
+// maintain the canonicalized-form invariant.
 type case RE
-  of $RE_EmptySet
-  of $RE_EmptyString
-  of $RE_Symbol        sym
-  of $RE_Concat        RE RE
-  of $RE_Kleene        RE
-  of $RE_Alt           RE RE
-  of $RE_And           RE RE
-  of $RE_Not           RE
+  of $RE_EmptySet             // ∅
+  of $RE_EmptyString          // ε
+  of $RE_Symbol        Int32  // a
+  of $RE_Concat        RE RE  // r·s
+  of $RE_Kleene        RE     // r*
+  of $RE_Alt           RE RE  // r + s (logical or; alternation)
+  of $RE_And           RE RE  // r & s (logical and)
+  of $RE_Not           RE     // ¬r
   ;
 
+re_Symbol = { s => RE_Symbol s };
+
+re_Concat = { r => s =>
+  case (r, s)
+    of ($RE_EmptyString, _) -> s
+    of (_, $RE_EmptyString) -> r
+    of ($RE_Concat x y,  _) -> re_Concat x (re_Concat y s)
+    of _ -> RE_Concat r s
+  end
+};
+
+re_Some = { r => re_Concat r (re_Kleene r) };
+
+re_And = { r => s =>
+  case (r, s)
+    of ($RE_EmptySet, _) -> r
+    of (_, $RE_EmptySet) -> s
+    of ($RE_Not ($RE_EmptySet), _) -> s
+    of (_, $RE_Not ($RE_EmptySet)) -> r
+    of ($RE_And x y,  _) -> re_And x (re_And y s)
+    of _ -> RE_And r s
+  end
+};
+
+re_Alt = { r => s =>
+  case (r, s)
+    of ($RE_EmptySet, _) -> s
+    of (_, $RE_EmptySet) -> r
+    of ($RE_Not ($RE_EmptySet), _) -> r
+    of (_, $RE_Not ($RE_EmptySet)) -> s
+    of ($RE_Alt x y,  _) -> re_Alt x (re_Alt y s)
+    of _ -> RE_Alt r s
+  end
+};
+re_Kleene = { r =>
+  case r
+    of $RE_EmptySet    -> RE_EmptyString
+    of $RE_EmptyString -> r
+    of $RE_Kleene k    -> r
+    of _               -> RE_Kleene r
+  end
+};
+
+re_Not = { r =>
+  case r
+    of $RE_Not k -> k
+    of _         -> RE_Not r
+  end
+};
+
+
+// Nullability: does re contain the empty string?
 re_v = { re =>
   case re
-    of $RE_EmptySet            -> RE_EmptySet !
-    of $RE_EmptyString         -> RE_EmptyString !
-    of $RE_Symbol        _     -> RE_EmptySet !
+    of $RE_EmptySet            -> RE_EmptySet
+    of $RE_EmptyString         -> RE_EmptyString
+    of $RE_Symbol        _     -> RE_EmptySet
     of $RE_Concat        r s   -> RE_And (re_v r) (re_v s)
-    of $RE_Kleene        r     -> RE_EmptyString !
+    of $RE_Kleene        r     -> RE_EmptyString
     of $RE_Alt           r s   -> RE_Alt (re_v r) (re_v s)
     of $RE_And           r s   -> RE_And (re_v r) (re_v s)
     of $RE_Not           r     ->
       case re_v r
-        of $RE_EmptySet   -> RE_EmptyString !
-        of $RE_EmptySring -> RE_EmptySet    !
+        of $RE_EmptySet    -> RE_EmptyString
+        of $RE_EmptyString -> RE_EmptySet
+        of $RE_And x s     -> RE_Alt x s
+        of $RE_Alt x s     -> RE_And x s
+        of _ -> prim kill-entire-process "re_v invariant violated";
       end
   end;
 };
 
-re_d = { a => re =>
+// Computes the same result as querying whether (re_v re) produces a regexp
+// which "evaluates" to the empty string, but performs fewer allocations
+// and may terminate earlier.
+re_nullable = { re =>
   case re
-    of $RE_EmptySet            -> RE_EmptySet !
-    of $RE_EmptyString         -> RE_EmptySet !
-    of $RE_Symbol        x     ->
-                   if eq x a
-                     then RE_EmptyString !
-                     else RE_EmptySet    !
-                   end
-    of $RE_Concat        r s   -> RE_Alt (RE_Concat (re_d a r) s)
-                                         (RE_Concat (re_v   r) (re_d a s))
-    of $RE_Kleene        r     -> RE_Concat (re_d a r) (RE_Kleene r)
-    of $RE_Alt           r s   -> RE_Alt (re_d a r) (re_d a s)
-    of $RE_And           r s   -> RE_And (re_d a r) (re_d a s)
-    of $RE_Not           r     -> RE_Not (re_d a r)
+    of $RE_EmptySet            -> False
+    of $RE_EmptyString         -> True
+    of $RE_Symbol        _     -> False
+    of $RE_Concat        r s   -> andand {re_nullable r} {re_nullable s}
+    of $RE_Kleene        r     -> True
+    of $RE_Alt           r s   -> oror   {re_nullable r} {re_nullable s}
+    of $RE_And           r s   -> andand {re_nullable r} {re_nullable s}
+    of $RE_Not           r     -> not    (re_nullable r)
   end;
 };
 
+// Brzozowski's derivative ∂ of re with respect to symbol a.
+re_d = { a => re =>
+  case re
+    of $RE_EmptySet            -> RE_EmptySet
+    of $RE_EmptyString         -> RE_EmptySet
+    of $RE_Symbol        x     ->
+                   if x ==Int32 a
+                     then RE_EmptyString
+                     else RE_EmptySet
+                   end
+    of $RE_Concat        r s   -> re_Alt (re_Concat (re_d a r) s)
+                                         (re_Concat (re_v   r) (re_d a s))
+    of $RE_Kleene        r     -> re_Concat (re_d a r) (re_Kleene r)
+    of $RE_Alt           r s   -> re_Alt (re_d a r) (re_d a s)
+    of $RE_And           r s   -> re_And (re_d a r) (re_d a s)
+    of $RE_Not           r     -> re_Not (re_d a r)
+  end;
+};
+
+re_ds_v :: { VListInt32 => RE => RE };
+re_ds_v = { v => re =>
+  case vListInt32Split v
+    of $None        -> re
+    of $Some (u, a) -> re_ds_v a (re_d u re)
+  end
+};
+
+textToVListInt32 = { t : Text =>
+  textFoldASCII t { ch => vl => vListInt32Cons (primitive_zext_i8_to_i32 ch) vl }
+                  (mkEmptyVListInt32 !) |> vListInt32Reverse;
+};
+
+// Extension of the derivative to strings (Text).
+re_ds :: { Text => RE => RE };
 re_ds = { t => re =>
-  case textHeadTail t
-    of $None     -> re
-    of $Some u a -> re_ds a (re_d u a)
-  end
+  re_ds_v (textToVListInt32 t) re
 };
 
+// TODO better error messages for mistakes like this:
+//   case re_v (re_ds t re) of
+//     $RE_EmptyString -> True
+//     _               -> False
+//   end
+
+// Boolean predicate to match regular expression against a Text string.
 re_matches = { re => t =>
-  case textHeadTail t
-    of $None -> case re_v r
-                  of $RE_EmptyString -> True
-                  of _               -> False
-                end
-    of $Some a w -> re_matches (re_d a r) w
-  end
+  re_nullable (re_ds t re)
 };
 
+/*
 re_goto = { q => c => qq => d =>
   let qc = re_d c q;
   in
-     /* if exists q' in qq such that q' `re_equiv` qc
-          then (qq, d `union` { (q,c) |-> q' })
-          else let qq' = qq `union` { qc };
-                   d'  = d  `union` { (q,c) |-> qc };
-                in explore qq' d' qc end
-        end
-     */
+     // if exists q' in qq such that q' `re_equiv` qc
+     //   then (qq, d `union` { (q,c) |-> q' })
+     //   else let qq' = qq `union` { qc };
+     //            d'  = d  `union` { (q,c) |-> qc };
+     //         in explore qq' d' qc end
+     // end
+     //
   end
 };
 
-/*
 re_explore = { qq => d => q =>
   fold (goto q) (qq, d) epsilon
 };
-*/
 
-/*
 re_mkDFA = { re =>
   let q0 = re_d ?? re;
       (qq, d) = re_explore {q0} {} q0;
@@ -98,38 +182,46 @@ re_mkDFA = { re =>
 };
 */
 
-re_equiv_approx = { rx => ry =>
-  case (rx, ry)
-    of ($RE_And r1 r2, r3) if { re_equal r1 r2 }
-                        `and` { re_equal r2 r3 } -> True
-    of ($RE_And r1 r2, $RE_And r3 r4) if
-                             { re_equal r1 r3 }
-                       `and` { re_equal r2 r4 } -> True
+// TODO:
+//  * Symbol sets
+//  * Regular vectors
+//  * Character classes
+//  * DFA construction
 
-    //   (r & s) & t ~~ r & (s & t)
+main = {
+  expect_i1 True;
+  print_i1 (re_matches (RE_EmptyString) "");
 
-    of ($RE_And $RE_EmptySet _, $RE_EmptySet) -> True
-    of ($RE_And ($RE_Not $RE_EmptySet) r1, r2) | re_equal r1 r2 -> True
+  expect_i1 True;
+  print_i1 (re_matches (RE_Symbol 97) "a");
+
+  expect_i1 False;
+  print_i1 (re_matches (re_Symbol 97) "aaa");
+
+  expect_i1 True;
+  print_i1 (re_matches (re_Kleene (re_Symbol 97)) "aaa");
+
+  print_i32 0;
+  expect_i32 0;
+
+  expect_i1 True;
+  print_i1 (re_matches (re_Concat (re_Symbol 97) (re_Symbol 97)) "aa");
+
+  expect_i1 True;
+  print_i1 (re_matches (re_Concat (re_Symbol 97) (re_Symbol 98)) "ab");
+
+  expect_i1 False;
+  print_i1 (re_matches (re_Concat (re_Symbol 97) (re_Symbol 98)) "ba");
+
+  expect_i1 True;
+  print_i1 (re_matches (re_Not (re_Concat (re_Symbol 97) (re_Symbol 98))) "ba");
 
 
-    // all the RE_Alt rules...
+  print_i32 1;
+  expect_i32 1;
 
-
-
-
-    //   (r . s) . t ~~ r . (s . t)
-
-    of ($RE_Concat $RE_EmptySet _, $RE_EmptySet) -> True
-    of ($RE_Concat _ $RE_EmptySet, $RE_EmptySet) -> True
-    of ($RE_Concat $RE_EmptyString r1, r2) | re_equal r1 r2 -> True
-    of ($RE_Concat r1 $RE_EmptyString, r2) | re_equal r1 r2 -> True
-
-    of ($RE_Kleene ($RE_Kleene r1), $RE_Kleene r2) | re_equal r1 r2 -> True
-    of ($RE_Kleene $RE_EmptyString, $RE_EmptyString) -> True
-    of ($RE_Kleene $RE_EmptySet   , $RE_EmptyString) -> True
-
-    of ($RE_Not ($RE_Not r1)   , r2) | re_equal r1 r2 -> True
-
-  end
+  expect_i1 False;
+  print_i1 (re_matches (re_Not (re_Concat (re_Symbol 97) (re_Symbol 98))) "ab");
 };
+
 

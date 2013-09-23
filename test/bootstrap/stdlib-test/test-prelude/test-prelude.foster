@@ -36,7 +36,7 @@ main = {
   print_text (text_of_BInt (B 12345));
 
   /*
-  let lst = Cons (B 1) (Cons (B 2) (Cons (B 3) (Nil !)));
+  let lst = Cons (B 1) (Cons (B 2) (Cons (B 3) Nil));
    in
      //expect_text "[1, 2, 3]";
      //print_text (text_of_list text_of_BInt lst);

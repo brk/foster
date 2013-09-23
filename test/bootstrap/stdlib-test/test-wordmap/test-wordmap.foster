@@ -24,7 +24,7 @@ main = {
        (Cons (5, { 5 })
        (Cons (6, { 6 })
        (Cons (1, { 7 })
-       (Nil !))))))));
+       Nil)))))));
 
   shwTextPair = { t1 => t2 => mkTextConcat "("
                               (mkTextConcat

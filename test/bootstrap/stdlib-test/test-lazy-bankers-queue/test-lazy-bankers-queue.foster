@@ -48,7 +48,7 @@ bankersQueueHead :: forall a:Boxed, { BankersQueue a => Maybe a };
 bankersQueueHead = { forall a:Boxed, q: BankersQueue a =>
   case q of $BankersQueue lenf f lenr r ->
     case force f
-      of $StreamNilV       -> None !
+      of $StreamNilV       -> None
       of $StreamCons la _  -> Some (force la)
     end
   end
@@ -60,7 +60,7 @@ bankersQueueTail :: forall a:Boxed, { BankersQueue a => Maybe (BankersQueue a) }
 bankersQueueTail = { forall a:Boxed, q: BankersQueue a =>
   case q of $BankersQueue lenf f lenr r ->
     case force f
-      of $StreamNilV       -> None !
+      of $StreamNilV       -> None
       of $StreamCons la ls -> Some (bankersQueueCheck
                                    (BankersQueue (lenf -Int32 1) ls lenr r))
     end

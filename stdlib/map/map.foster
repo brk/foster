@@ -17,7 +17,7 @@ type case Map (k:Boxed) (v:Boxed)
        ;
 
 mapEmpty :: forall k:Boxed, v:Boxed { Map k v };
-mapEmpty = { forall k:Boxed v:Boxed, MapTip ! };
+mapEmpty = { forall k:Boxed v:Boxed, MapTip };
 
 // O(1)
 mapIsEmpty :: forall k:Boxed, v:Boxed { Map k v => Bool };
@@ -30,7 +30,7 @@ mapIsEmpty = { forall k:Boxed v:Boxed, s =>
 
 // O(1)
 mapSingleton :: forall k:Boxed, v:Boxed { k => v => Map k v };
-mapSingleton = { forall k:Boxed v:Boxed, k => v => MapBin 1 k v (MapTip !) (MapTip !) };
+mapSingleton = { forall k:Boxed v:Boxed, k => v => MapBin 1 k v MapTip MapTip };
 
 // O(1)
 mapSize :: forall k:Boxed, v:Boxed { Map k v => Word };
@@ -71,7 +71,7 @@ mapLookup :: forall k:Boxed, v:Boxed v:Boxed, { Map k v => k => { k => k => Ord 
 mapLookup = { forall k:Boxed v:Boxed v:Boxed, s => k => cmp =>
   REC go = { s =>
       case s
-        of $MapTip                -> None !
+        of $MapTip                -> None
         of $MapBin _ kelt elt l r ->
           case cmp k kelt
             of $EQ -> Some elt
@@ -126,7 +126,7 @@ mapLookupLT :: forall k:Boxed, v:Boxed { Map k v => k => { k => k => Ord } => Ma
 mapLookupLT = { forall k:Boxed v:Boxed, s => k => cmp =>
   REC goNone = { s =>
       case s
-        of $MapTip                -> None !
+        of $MapTip                -> None
         of $MapBin _ kelt elt l r ->
           if isLT (cmp elt e)
             then goSome elt r
@@ -153,7 +153,7 @@ mapLookupGT :: forall k:Boxed, v:Boxed { Map k v => a => { k => k => Ord } => Ma
 mapLookupGT = { forall k:Boxed v:Boxed, s => e => cmp =>
   REC goNone = { s =>
       case s
-        of $MapTip           -> None !
+        of $MapTip           -> None
         of $MapBin _ kelt elt l r ->
           if isGT (cmp elt e)
             then goNone l
@@ -180,7 +180,7 @@ mapLookupLE :: forall k:Boxed, v:Boxed { Map k v => a => { k => k => Ord } => Ma
 mapLookupLE = { forall k:Boxed v:Boxed, s => e => cmp =>
   REC goNone = { s =>
       case s
-        of $MapTip           -> None !
+        of $MapTip           -> None
         of $MapBin _ kelt elt l r ->
           case cmp elt e
             of $LT -> goSome elt r
@@ -209,7 +209,7 @@ mapLookupGE :: forall k:Boxed, v:Boxed { Map k v => a => { k => k => Ord } => Ma
 mapLookupGE = { forall k:Boxed v:Boxed, s => e => cmp =>
   REC goNone = { s =>
       case s
-        of $MapTip           -> None !
+        of $MapTip           -> None
         of $MapBin _ kelt elt l r ->
           case cmp elt e
             of $LT -> goNone r
@@ -318,7 +318,7 @@ mapUnion = { forall k:Boxed v:Boxed, s1 => s2 => cmp =>
   case (s1, s2)
     of ($MapTip, _) -> s2
     of (_, $MapTip) -> s1
-    of _ -> mapHedgeUnion! (None !) (None !) s1 s2 cmp
+    of _ -> mapHedgeUnion! None None s1 s2 cmp
   end
 };
 
@@ -328,7 +328,7 @@ mapDifference = { forall k:Boxed v:Boxed, s1 => s2 => cmp =>
   case (s1, s2)
     of ($MapTip, _) -> s1
     of (_, $MapTip) -> s1
-    of _ -> mapHedgeDiff! (None !) (None !) s1 s2 cmp
+    of _ -> mapHedgeDiff! None None s1 s2 cmp
   end
 };
 
@@ -338,7 +338,7 @@ mapIntersection = { forall k:Boxed v:Boxed, s1 => s2 => cmp =>
   case (s1, s2)
     of ($MapTip, _) -> s1
     of (_, $MapTip) -> s2
-    of _ -> mapHedgeInter! (None !) (None !) s1 s2 cmp
+    of _ -> mapHedgeInter! None None s1 s2 cmp
   end
 };
 
@@ -540,7 +540,7 @@ mapMap :: forall k:Boxed, v:Boxed, r:Boxed, { Map k v => { v => r } => Map k r }
 mapMap = { forall k:Boxed v:Boxed r:Boxed, s => f =>
   REC go = { s =>
       case s
-        of $MapTip                 -> MapTip !
+        of $MapTip                 -> MapTip
         of $MapBin sz kelt elt l r -> MapBin sz kelt (f elt) (go l) (go r)
       end
   };
@@ -563,17 +563,17 @@ mapKeepIf = { forall k:Boxed v:Boxed, s => p =>
 
 mapToList :: forall k:Boxed, v:Boxed { Map k v => List (k, v) };
 mapToList = { forall k:Boxed v:Boxed, s =>
-  mapFoldr s { k => v => lst => Cons (k, v) lst } (Nil !)
+  mapFoldr s { k => v => lst => Cons (k, v) lst } Nil
 };
 
 mapToListDesc :: forall k:Boxed, v:Boxed { Map k v => List (k, v) };
 mapToListDesc = { forall k:Boxed v:Boxed, s =>
-  mapFoldl s { k => v => lst => Cons (k, v) lst } (Nil !)
+  mapFoldl s { k => v => lst => Cons (k, v) lst } Nil
 };
 
 mapOfList :: forall k:Boxed, v:Boxed { List (k, v) => { k => k => Ord } => Map k v };
 mapOfList = { forall k:Boxed v:Boxed, lst => cmp =>
-  listFoldl lst { p => s => case p of (k, v) -> mapInsert k v s cmp end } (MapTip !)
+  listFoldl lst { p => s => case p of (k, v) -> mapInsert k v s cmp end } MapTip
 };
 
 ////////////
@@ -637,7 +637,7 @@ mapBalanceL = { forall k:Boxed v:Boxed, k => x => l => r =>
       of $MapTip        ->
         case l
           of $MapTip                             -> MapBin 1 k x l l
-          of $MapBin _ _  _  ($MapTip) ($MapTip) -> MapBin 2 k x l (MapTip !)
+          of $MapBin _ _  _  ($MapTip) ($MapTip) -> MapBin 2 k x l MapTip
           of $MapBin _ lk lx ($MapTip) ($MapBin _ lrk lrx _ _) ->
               MapBin 3 lrk lrx (mapSingleton lk lx) (mapSingleton k x)
           of $MapBin _ lk lx ll ($MapTip) ->
@@ -648,10 +648,10 @@ mapBalanceL = { forall k:Boxed v:Boxed, k => x => l => r =>
                 // TODO hmm int overflow?
                 if lrs <UWord ((mapRatio !) *Word mapSize ll)
                   then MapBin (1 +Word ls) lk lx ll
-                      (MapBin (1 +Word lrs) k x lr (MapTip !))
+                      (MapBin (1 +Word lrs) k x lr MapTip)
                   else MapBin (1 +Word ls) lrk lrx
                       (MapBin (1 +Word mapSize ll +Word mapSize lrl) lk lx ll lrl)
-                      (MapBin (1 +Word mapSize lrr) k x lrr (MapTip !))
+                      (MapBin (1 +Word mapSize lrr) k x lrr MapTip)
                 end
              of _ -> prim kill-entire-process "mapBalanceL invariant (1) violated";
            end
@@ -689,7 +689,7 @@ mapBalanceR = { forall k:Boxed v:Boxed, k => x => l => r =>
     of $MapTip ->
       case r
         of $MapTip -> MapBin 1 k x l r
-        of $MapBin _ _ _ ($MapTip) ($MapTip) -> MapBin 2 k  x  (MapTip !) r
+        of $MapBin _ _ _ ($MapTip) ($MapTip) -> MapBin 2 k  x  MapTip r
         of $MapBin _ rk rx ($MapTip) rr      -> MapBin 3 rk rx (mapSingleton k x) rr
         of $MapBin _ rk rx ($MapBin _ rlk rlx _ _) ($MapTip) ->
             MapBin 3 rlk rlx (mapSingleton k x) (mapSingleton rk rx)
@@ -698,9 +698,9 @@ mapBalanceR = { forall k:Boxed v:Boxed, k => x => l => r =>
             of $MapBin rls rlk rlx rll rlr ->
              if rls <UWord ((mapRatio !) *Word mapSize rr)
                then MapBin (1 +Word rs) rk rx
-                   (MapBin (1 +Word rls) k x (MapTip !) rl) rr
+                   (MapBin (1 +Word rls) k x MapTip rl) rr
                else MapBin (1 +Word rs) rlk rlx
-                   (MapBin (1 +Word mapSize rll) k x (MapTip !) rll)
+                   (MapBin (1 +Word mapSize rll) k x MapTip rll)
                    (MapBin (1 +Word mapSize rr +Word mapSize rlr) rk rx rlr rr)
              end
             of _ -> prim kill-entire-process "mapBalanceR invariant (1) violated";
@@ -743,9 +743,9 @@ mapSizeValid_ = { forall k:Boxed v:Boxed, s =>
               of ($Some nf  , $Some mf  ) ->
                 if (nf !) +Word (mf !) +Word 1 ==Word sz
                   then Some { sz }
-                  else None !
+                  else None
                 end
-              of _ -> None !
+              of _ -> None
             end
     end
   };
@@ -776,7 +776,7 @@ mapsBalanced = { forall k:Boxed v:Boxed, l => r =>
 ////////////
 
 mapShowTree = { forall k:Boxed v:Boxed, s : Map k v => shw : { k => v => Text } =>
-  mapShowTreeRot (Nil !) (Nil !) s shw
+  mapShowTreeRot Nil Nil s shw
 };
 
 mapShowTreeRot = { forall k:Boxed v:Boxed, lbars : List Text => rbars : List Text => s : Map k v => shw : { k => v => Text } =>

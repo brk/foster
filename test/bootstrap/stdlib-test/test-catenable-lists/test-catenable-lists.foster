@@ -11,7 +11,7 @@ type case BatchedQueue (a:Boxed)
        ;
 
 bqEmpty :: forall a:Boxed, { BatchedQueue a };
-bqEmpty = { forall a:Boxed, BatchedQueue (Nil !) (Nil !) };
+bqEmpty = { forall a:Boxed, BatchedQueue Nil Nil };
 
 bqIsEmpty :: forall a:Boxed, { BatchedQueue a => Bool };
 bqIsEmpty = { forall a:Boxed, bq : BatchedQueue a =>
@@ -24,7 +24,7 @@ bqIsEmpty = { forall a:Boxed, bq : BatchedQueue a =>
 bqCheckf :: forall a:Boxed, { BatchedQueue a => BatchedQueue a };
 bqCheckf = { forall a:Boxed, bq : BatchedQueue a =>
   case bq
-    of $BatchedQueue ($Nil) r -> BatchedQueue (listReverse r) (Nil !)
+    of $BatchedQueue ($Nil) r -> BatchedQueue (listReverse r) Nil
     of _                      -> bq
   end
 };
@@ -39,7 +39,7 @@ bqSnoc = { forall a:Boxed, bq : BatchedQueue a => elt : a =>
 bqHead :: forall a:Boxed, { BatchedQueue a => Maybe a };
 bqHead = { forall a:Boxed, bq : BatchedQueue a =>
   case bq
-    of $BatchedQueue ($Nil)      _ -> None !
+    of $BatchedQueue ($Nil)      _ -> None
     of $BatchedQueue ($Cons x _) _ -> Some x
   end
 };
@@ -47,7 +47,7 @@ bqHead = { forall a:Boxed, bq : BatchedQueue a =>
 bqTail :: forall a:Boxed, { BatchedQueue a => Maybe (BatchedQueue a) };
 bqTail = { forall a:Boxed, bq : BatchedQueue a =>
   case bq
-    of $BatchedQueue ($Nil     ) _ -> None !
+    of $BatchedQueue ($Nil     ) _ -> None
     of $BatchedQueue ($Cons x f) r -> Some (bqCheckf (BatchedQueue f r))
   end
 };
@@ -78,7 +78,7 @@ catenableListHead :: forall a:Boxed, { CatenableList a => Maybe a };
 catenableListHead = { forall a:Boxed, c : CatenableList a =>
   case c
     of $CatenableListC x _ -> Some x
-    of _                   -> None !
+    of _                   -> None
    end
 };
 
@@ -86,7 +86,7 @@ catenableListTail :: forall a:Boxed, { CatenableList a => Maybe (CatenableList a
 catenableListTail = { forall a:Boxed, c : CatenableList a =>
   case c
     of $CatenableListC _ bq -> catenableLinkAll bq
-    of _                   -> None !
+    of _                   -> None
    end
 };
 
@@ -95,10 +95,10 @@ catenableListSplit = { forall a:Boxed, c : CatenableList a =>
   case c
     of $CatenableListC x bq ->
       case catenableLinkAll bq
-        of $None ->    Some (x, CatenableListE !)
+        of $None ->    Some (x, CatenableListE)
         of $Some xs -> Some (x, xs)
       end
-    of _ -> None !
+    of _ -> None
    end
 };
 
@@ -109,9 +109,9 @@ catenableListSplit = { forall a:Boxed, c : CatenableList a =>
 catenableListTail :: forall a:Boxed, { CatenableList a => Maybe (CatenableList a) };
 catenableListTail = { forall a:Boxed, c : CatenableList a =>
   case c
-    of $CatenableListC x q -> if bqIsEmpty q then Some (CatenableListE !)
+    of $CatenableListC x q -> if bqIsEmpty q then Some CatenableListE
                                              else catenableLinkAll q end
-    of _                   -> None !
+    of _                   -> None
    end
 };
 */
@@ -147,21 +147,21 @@ catenableLinkAll = { forall a:Boxed, q : BatchedQueue (CatenableList a) =>
                     of $Some cl -> Some (catenableListLink t cl)
              end
       end
-    of _ -> None !
+    of _ -> None
   end
 };
 
 catenableListToList :: forall a:Boxed, { CatenableList a => List a };
 catenableListToList = { forall a:Boxed, c =>
   case catenableListSplit c
-    of $None         -> Nil !
+    of $None         -> Nil
     of $Some (x, xs) -> Cons x (catenableListToList xs)
    end
 };
 
 catenableListOfList :: forall a:Boxed, { List a => CatenableList a };
 catenableListOfList = { forall a:Boxed, lst =>
-  listFoldl (listReverse lst) catenableListCons (CatenableListE !)
+  listFoldl (listReverse lst) catenableListCons CatenableListE
 };
 
 catenableListLift :: forall a:Boxed, { { List a => List a } => CatenableList a => CatenableList a };
@@ -194,7 +194,7 @@ main = {
        (Cons { 3 }
        (Cons { 4 }
        (Cons { 5 }
-       (Nil:[{Int64}] !)))))));
+        Nil:[{Int64}]))))));
 
   expect_text "[0, 1, 2, 3, 4, 5, ]";
   print_bil lst;

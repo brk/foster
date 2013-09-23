@@ -195,7 +195,7 @@ natCmpDigits = { a : Array Word => b : Array Word =>
          end
       };
 
-      if arrayLength32 a ==Int32 0 then EQ ! else
+      if arrayLength32 a ==Int32 0 then EQ else
         go a_first_used
       end
    end
@@ -214,7 +214,7 @@ natCmpU64 =  { n => b =>
             // overflow-reflecting intrinsics to use all 64 bits.
             //
             natCmp n (natFromInt64 b)
-    of _ -> GT !
+    of _ -> GT
   end
 };
 
@@ -226,7 +226,7 @@ natCmp =  { a => b =>
 natSub :: { NatInf => NatInf => Maybe NatInf };
 natSub =  { a => b =>
   case natCmp a b
-    of $LT -> None !
+    of $LT -> None
     of _ -> Some (natSub_precond a b);
   end
 };
@@ -1201,7 +1201,7 @@ natDivLarge = { uIn : Array Word => v0 : Array Word =>
 natDiv :: { NatInf => NatInf => Maybe (NatInf, NatInf) };
 natDiv =  { u => v =>
   if natIsZero v
-    then None !
+    then None
     else
       case natCmp u v
          of $LT -> Some (natFromInt32 0, u)

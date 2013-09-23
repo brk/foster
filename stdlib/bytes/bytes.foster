@@ -79,7 +79,7 @@ bytesDrop = { ba => n =>
   if n ==Int64 0 then ba else
     len = bytesLength ba -Int64 n;
     if len <=SInt64 0
-      then BytesEmpty !
+      then BytesEmpty
       else case ba
             // TODO could drop half a concat if n is big enough.
             of $BytesConcat bb bc _ ->
@@ -103,7 +103,7 @@ bytesTake :: { Bytes => Int64 => Bytes };
 bytesTake = { ba => len =>
   // [aaaaaaaaaaaaaaaa]
   //          len
-  if len ==Int64 0 then BytesEmpty ! else
+  if len ==Int64 0 then BytesEmpty else
   if len >=SInt64 bytesLength ba
     then ba
     else case ba

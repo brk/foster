@@ -61,7 +61,7 @@ summarizeChunks = { chunks =>
   };
 
   case chunks
-    of $Nil -> Nil !
+    of $Nil -> Nil
     of $Cons ($Chunk i b) rest ->
       if bytesLength b ==Int64 0
         then summarizeChunks rest
@@ -100,13 +100,13 @@ testChunkBuilding = {
   print_text (textOfAChunkSummary (1, 2, 3));
 
   expect_text "(1 2 3)(4 5 6)";
-  print_text (textOfChunkSummaries 
-    (Cons (1, 2, 3) (Cons (4, 5, 6) (Nil !))));
+  print_text (textOfChunkSummaries
+    (Cons (1, 2, 3) (Cons (4, 5, 6) Nil)));
 
-  
+
   // TODO better error message
   //expect_text "(1 2 3)";
-  //print_text (textOfAChunkSummary 
+  //print_text (textOfAChunkSummary
   //  (summarizeChunks (listSingleton (mkChunk 1 2 3))));
 
   expect_text "(1 2 3)";
@@ -115,41 +115,41 @@ testChunkBuilding = {
 
   expect_text "(10 2 4)(1 2 3)";
   print_text (textOfChunkSummaries
-    (summarizeChunks 
+    (summarizeChunks
       (Cons (mkChunk 10 2 4) (listSingleton (mkChunk 1 2 3)))));
-  
+
   expect_text "(1 2 3)(10 2 4)";
   print_text (textOfChunkSummaries
-    (summarizeChunks 
+    (summarizeChunks
       (chunkInsert (mkChunk 1 2 3)
-        (chunkInsert (mkChunk 10 2 4) (Nil !)))));
+        (chunkInsert (mkChunk 10 2 4) Nil))));
 
   expect_i64 2;
   print_i64 (listLength64
       (chunkInsert (mkChunk 10 2 4)
-        (chunkInsert (mkChunk 1 2 3) (Nil !))));
+        (chunkInsert (mkChunk 1 2 3) Nil)));
 
   expect_text "(1 2 3)(10 2 4)";
   print_text (textOfChunkSummaries
-    (summarizeChunks 
+    (summarizeChunks
       (chunkInsert (mkChunk 10 2 4)
-        (chunkInsert (mkChunk 1 2 3) (Nil !)))));
+        (chunkInsert (mkChunk 1 2 3) Nil))));
 
   expect_i64 1;
   print_i64 (listLength64
       (chunkInsert (mkChunk 3 2 4)
-        (chunkInsert (mkChunk 1 2 3) (Nil !))));
+        (chunkInsert (mkChunk 1 2 3) Nil)));
 
   expect_text "(1 2 3)(3 2 4)";
   print_text (textOfChunkSummaries
-    (summarizeChunks 
+    (summarizeChunks
       (chunkInsert (mkChunk 3 2 4)
-        (chunkInsert (mkChunk 1 2 3) (Nil !)))));
+        (chunkInsert (mkChunk 1 2 3) Nil))));
 
   expect_text "(1 4 3)";
   print_text (textOfChunkSummaries
-    (summarizeChunks 
+    (summarizeChunks
       (chunkInsert (mkChunk 3 2 3)
-        (chunkInsert (mkChunk 1 2 3) (Nil !)))));
+        (chunkInsert (mkChunk 1 2 3) Nil))));
 };
 

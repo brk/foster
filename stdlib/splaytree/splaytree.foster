@@ -8,7 +8,7 @@ type case SplayTree (a:Boxed)
 
 splay-empty :: forall a:Boxed, { SplayTree a };
 splay-empty = { forall a:Boxed,
-  SplayNil !
+  SplayNil
 };
 
 splay :: forall a:Boxed, { SplayTree a => { a => Ord } => SplayTree a };
@@ -110,7 +110,7 @@ splay-root = { forall a:Boxed,
                 t : SplayTree a =>
   case t
     of $SplayObj x _ _ -> Some x
-    of $SplayNil       -> None !
+    of $SplayNil       -> None
   end
 };
 
@@ -135,7 +135,7 @@ splay-insert = { forall a:Boxed,
                  v => t => cmp =>
   REC insert = { v => t =>
     case t
-      of $SplayNil -> (SplayObj v (SplayNil !) (SplayNil !))
+      of $SplayNil -> (SplayObj v SplayNil SplayNil)
       of $SplayObj q l r ->
         case cmp v q
           of $EQ -> SplayObj q l r

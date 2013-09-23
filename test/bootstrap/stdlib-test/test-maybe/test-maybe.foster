@@ -3,7 +3,7 @@ snafuinclude Text  "text";
 
 main = {
   tu = { 2 };
-  
+
   part1 tu;
   part2 tu;
   part3 !;
@@ -21,5 +21,5 @@ part2 = { tu =>
 
 part3 = {
   expect_text "False";
-  print_text (if (isSome (None:[{Int32}] !)) then "True" else "False" end);
+  print_text (if isSome None:[{Int32}] then "True" else "False" end);
 };

@@ -55,7 +55,7 @@ type case Stream (a:Boxed)
 
 /*
 stream-nil-mediocre ::   forall b:Boxed, { Lazy (Stream b) };
-stream-nil-mediocre  = { forall b:Boxed, LazyWrap ( StreamNilV ! ) };
+stream-nil-mediocre  = { forall b:Boxed, LazyWrap StreamNilV };
 */
 
 type case Foo (b:Boxed)
@@ -72,7 +72,7 @@ loopy = { forall a:Boxed, lazy : Lazy a =>
 case lazy
     of $LazyDelay r ->
       case r ^
-        of $LazyThunk thunk -> (LazyBusy !) >^ r;
+        of $LazyThunk thunk -> LazyBusy >^ r;
                                let v = (thunk !); in
                                  (LazyValue v) >^ r;
                                  v
@@ -96,7 +96,7 @@ catenableLinkAll = { forall a:Boxed, q : BatchedQueue (CatenableList a) =>
 bqHead :: forall a:Boxed, { BatchedQueue a => a => Maybe a };
 bqHead = { forall a:Boxed, bq : BatchedQueue a =>
   case bq
-    of $BatchedQueue ($Nil)      _ -> None !
+    of $BatchedQueue ($Nil)      _ -> None
     of $BatchedQueue ($Cons x _) _ -> Some x
   end
 };
@@ -129,14 +129,14 @@ eat-list = { n : Int32 => xs : List BInt => eat (n +Int32 1) (Cons (B n) xs) ; (
 /*
 type case Tree of $T Tree Int32 Tree
                of $TNil;
-tree-depth = { n : Int32 => if n ==Int32 0 then TNil !
+tree-depth = { n : Int32 => if n ==Int32 0 then TNil
                              else let k = n -Int32 1;
                                    in T (tree-depth k) n (tree-depth k) end
                             end };
 eat-tree = { n : Int32 => xs : Tree =>
         eat-tree (n +Int32 1) (T xs n (tree-depth n)); () };
 
-//eat-tree 0 (TNil !);
+//eat-tree 0 TNil;
 */
 
 

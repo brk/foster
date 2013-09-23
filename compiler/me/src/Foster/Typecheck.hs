@@ -143,8 +143,8 @@ isValue e = case e of
   AnnTuple   _ _   exprs -> all isValue exprs
   _ -> False
 
-checkForEscapingTypeVariables _ _   _   _     [] = return ()
-checkForEscapingTypeVariables e ann ctx sigma skol_tvs = do
+checkForEscapingTypeVariables _ _    _   _     [] = return ()
+checkForEscapingTypeVariables e _ann ctx sigma skol_tvs = do
     env_tys <- getEnvTypes ctx
     esc_tvs <- getFreeTyVars (sigma : env_tys)
     tcLift $ putStrLn $ "esc-chk: |env| = " ++ show (List.length env_tys)
@@ -269,10 +269,20 @@ tcSigmaVar ctx annot name = do
   debugDoc $ green (text "typecheckVar (sigma): ") <> text (T.unpack name ++ "...")
   -- Resolve the given name as either a variable or a primitive reference.
   case (termVarLookup name (contextBindings ctx)
+       ,termVarLookup name (nullCtorBindings ctx)
        ,tcSigmaPrim ctx annot name) of
-    (Just avar, _)       -> return $ E_AnnVar annot avar
-    (Nothing, Just prim) -> return prim
-    (Nothing, Nothing)   -> do
+    -- Regular variable (or non-nullary constructor, which we will
+    -- typecheck and codegen as a function (we'll generate the wrapper later).
+    (Just avar, _, _)       -> return $ E_AnnVar annot avar
+    -- Otherwise, first check to see if it's a nullary constructor,
+    -- in which case we synthesize a direct constructor application
+    -- rather than a regular variable reference.
+    (Nothing, Just (tid, mb_cid), _) -> return $
+        case mb_cid of
+          Nothing  -> error $ "Nullary ctor without cid?!?"
+          Just cid -> AnnAppCtor annot (tidType tid) cid []
+    (Nothing, Nothing, Just prim) -> return prim
+    (Nothing, Nothing, Nothing)   -> do
          msg <- getStructureContextMessage
          tcFails [text $ "Unknown variable " ++ T.unpack name
                   ++ showSourceRange (annotRange annot)
@@ -713,7 +723,7 @@ tcRhoTyApp ctx annot e t1tn expTy = do
 -- G |- t1 is an instance of t
 -- ------------------------------------------
 -- G |- e as t  ~~~>  a1 ::: t
-tcRhoTyCheck ctx annot e ty expTy = do
+tcRhoTyCheck ctx _annot e ty expTy = do
 -- {{{
     ann <- checkSigma ctx e ty
     matchExp expTy ann "tycheck"
@@ -763,13 +773,13 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
 
 mkAnnCall rng res_ty annbase args =
   case annbase of
-    E_AnnTyApp _ _ annprim@(AnnPrimitive _ _ (NamedPrim (TypedId _ (GlobalSymbol gs)))) [argty]
+    E_AnnTyApp _ _ annprim@(AnnPrimitive _ _ (NamedPrim (TypedId _ (GlobalSymbol gs)))) [_argty]
          | T.unpack gs == "prim_arrayLength"
       -> AnnCall rng res_ty annprim args
     E_AnnTyApp _ _ (AnnPrimitive _ _ (NamedPrim (TypedId _ (GlobalSymbol gs)))) [argty]
          | T.unpack gs == "allocDArray"
       -> AnnAllocArray rng res_ty arraySize argty where [arraySize] = args
-    E_AnnVar _rng (tid, Just cid)
+    E_AnnVar _rng (_tid, Just cid)
       -> AnnAppCtor rng res_ty cid  args
     _ -> AnnCall rng res_ty annbase args
 
@@ -921,7 +931,7 @@ tcSigmaFn ctx f expTyRaw = do
                        (MetaTyVar m) -> do
                             debugDoc $ text "zonked " <> pretty t <> text " to " <> pretty t <> text "; writing " <> pretty tv
                             writeTcMeta m (TyVarAST tv)
-                       y -> tcFails [text "expected ty param metavar to be un-unified, instead had " <> pretty tv]
+                       _ -> tcFails [text "expected ty param metavar to be un-unified, instead had " <> pretty tv]
                   ) (zip taus ktvs)
         -- Zonk the type to ensure that the meta vars are completely gone.
         debugDoc $ text "inferred raw overall type of polymorphic function: " <> pretty fnty0
@@ -1589,7 +1599,7 @@ instance (Pretty ty, Pretty repr) => Pretty (CtorInfo repr ty) where
   pretty (CtorInfo cid dc _) = parens (text "CtorInfo" <+> text (show cid) <+> pretty dc)
 
 instance Pretty ty => Pretty (DataCtor ty) where
-  pretty (DataCtor name tyformals ctortyargs) =
+  pretty (DataCtor name _tyformals _ctortyargs) =
         parens (text "DataCtor" <+> text (T.unpack name))
 
 instance Pretty ty => Pretty (DataType ty) where

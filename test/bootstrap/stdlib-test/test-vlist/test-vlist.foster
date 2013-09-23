@@ -1,5 +1,6 @@
 snafuinclude Prelude "prelude";
 snafuinclude Vlist   "vlist";
+snafuinclude VlistInt32   "vlist-Int32";
 snafuinclude Measure "bench/measure";
 
 type case BoxedInt64 of $BoxedInt64 Int64;
@@ -23,6 +24,11 @@ print_bil_vList = { v =>
 type case BoxedInt32 of $BoxedInt32 Int32;
 
 main = {
+  test-boxed-vlist !;
+  test-Int32-vlist !;
+};
+
+test-boxed-vlist = {
   lst =(Cons (BoxedInt64 0)
        (Cons (BoxedInt64 1)
        (Cons (BoxedInt64 2)
@@ -33,7 +39,7 @@ main = {
        (Cons (BoxedInt64 7)
        (Cons (BoxedInt64 8)
        (Cons (BoxedInt64 9)
-       (Nil !)))))))))));
+       Nil))))))))));
 
   expect_text "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, ]";
   print_bil lst;
@@ -46,14 +52,63 @@ main = {
 
 
   // TODO large VList runtime - why?
-  //print_i64 (elapsed_ticks_n 1 { foldRange 0 100    (Nil !) { e => t => Cons (BoxedInt32 e) t }; () });
-  //print_i64 (elapsed_ticks_n 1 { foldRange 0 1000   (Nil !) { e => t => Cons (BoxedInt32 e) t }; () });
-  //print_i64 (elapsed_ticks_n 1 { foldRange 0 10000  (Nil !) { e => t => Cons (BoxedInt32 e) t }; () });
+  //print_i64 (elapsed_ticks_n 1 { foldRange 0 100    Nil { e => t => Cons (BoxedInt32 e) t }; () });
+  //print_i64 (elapsed_ticks_n 1 { foldRange 0 1000   Nil { e => t => Cons (BoxedInt32 e) t }; () });
+  //print_i64 (elapsed_ticks_n 1 { foldRange 0 10000  Nil { e => t => Cons (BoxedInt32 e) t }; () });
   //
   //print_i64 (elapsed_ticks_n 1 { foldRange 0 100    (mkEmptyVList !) { e => t => vListCons (BoxedInt32 e) t }; () });
   //print_i64 (elapsed_ticks_n 1 { foldRange 0 1000   (mkEmptyVList !) { e => t => vListCons (BoxedInt32 e) t }; () });
   //print_i64 (elapsed_ticks_n 1 { foldRange 0 10000  (mkEmptyVList !) { e => t => vListCons (BoxedInt32 e) t }; () });
 
   // TODO need larger heap to run this test:
-  //print_i64 (elapsed_ticks_n 1 { foldRange 0 100000 (Nil !) { e => t => Cons (BoxedInt32 e) t }; () });
+  //print_i64 (elapsed_ticks_n 1 { foldRange 0 100000 Nil { e => t => Cons (BoxedInt32 e) t }; () });
+};
+
+
+print_uil = { lst =>
+  print_text_bare "[";
+  listInt32Foldl lst { i => unit => print_i64_bare (primitive_sext_i64_i32 i); print_text_bare ", "; () } ();
+  print_text "]";
+};
+
+print_uil_vList = { v =>
+  print_text_bare "[";
+  vListInt32Foldl v { i => unit => print_i64_bare (primitive_sext_i64_i32 i); print_text_bare ", "; () } ();
+  print_text "]";
+};
+
+test-Int32-vlist = {
+  lst =(ConsInt32 0
+       (ConsInt32 1
+       (ConsInt32 2
+       (ConsInt32 3
+       (ConsInt32 4
+       (ConsInt32 5
+       (ConsInt32 6
+       (ConsInt32 7
+       (ConsInt32 8
+       (ConsInt32 9
+       NilInt32))))))))));
+
+  expect_text "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, ]";
+  print_uil lst;
+
+  expect_text "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, ]";
+  print_uil_vList (vListInt32OfList lst);
+
+  expect_text "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, ]";
+  print_uil (listOfVListInt32 (vListInt32OfList lst));
+
+
+  // TODO large VList runtime - why?
+  //print_i64 (elapsed_ticks_n 1 { foldRange 0 100    Nil { e => t => Cons (BoxedInt32 e) t }; () });
+  //print_i64 (elapsed_ticks_n 1 { foldRange 0 1000   Nil { e => t => Cons (BoxedInt32 e) t }; () });
+  //print_i64 (elapsed_ticks_n 1 { foldRange 0 10000  Nil { e => t => Cons (BoxedInt32 e) t }; () });
+  //
+  //print_i64 (elapsed_ticks_n 1 { foldRange 0 100    (mkEmptyVList !) { e => t => vListCons (BoxedInt32 e) t }; () });
+  //print_i64 (elapsed_ticks_n 1 { foldRange 0 1000   (mkEmptyVList !) { e => t => vListCons (BoxedInt32 e) t }; () });
+  //print_i64 (elapsed_ticks_n 1 { foldRange 0 10000  (mkEmptyVList !) { e => t => vListCons (BoxedInt32 e) t }; () });
+
+  // TODO need larger heap to run this test:
+  //print_i64 (elapsed_ticks_n 1 { foldRange 0 100000 Nil { e => t => Cons (BoxedInt32 e) t }; () });
 };

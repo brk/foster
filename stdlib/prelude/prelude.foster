@@ -14,43 +14,43 @@ when   = { a : Bool => f : { () } => if a then f ! else () end };
 
 cmpSInt32 = { a : Int32 => b : Int32 =>
   if a ==Int32 b
-  then EQ !
-  else if a <SInt32 b then LT ! else GT ! end
+  then EQ
+  else if a <SInt32 b then LT else GT end
   end
 };
 
 cmpSInt64 = { a : Int64 => b : Int64 =>
   if a ==Int64 b
-  then EQ !
-  else if a <SInt64 b then LT ! else GT ! end
+  then EQ
+  else if a <SInt64 b then LT else GT end
   end
 };
 
 cmpUInt32 = { a : Int32 => b : Int32 =>
   if a ==Int32 b
-  then EQ !
-  else if a <UInt32 b then LT ! else GT ! end
+  then EQ
+  else if a <UInt32 b then LT else GT end
   end
 };
 
 cmpUInt64 = { a : Int64 => b : Int64 =>
   if a ==Int64 b
-  then EQ !
-  else if a <UInt64 b then LT ! else GT ! end
+  then EQ
+  else if a <UInt64 b then LT else GT end
   end
 };
 
 cmpUWord = { a : Word => b : Word =>
   if a ==Word b
-  then EQ !
-  else if a <UWord b then LT ! else GT ! end
+  then EQ
+  else if a <UWord b then LT else GT end
   end
 };
 
 cmpSWord = { a : Word => b : Word =>
   if a ==Word b
-  then EQ !
-  else if a <SWord b then LT ! else GT ! end
+  then EQ
+  else if a <SWord b then LT else GT end
   end
 };
 
@@ -223,8 +223,6 @@ arrayLength32 :: forall x:Type, { Array x => Int32 };
 arrayLength32 = { forall t:Type, a : Array t =>
   primitive_trunc_i64_i32 (prim_arrayLength a)
 };
-
-incr64 = { n : Int64 => n +Int64 1 };
 
 arrayEnumFrom = { forall t:Type,
                   a : Array t =>

@@ -10,7 +10,7 @@ ones = { n : Int32 =>
      else go (n -Int32 1) (ConsInt32 n acc)
     end
   };
-  go n (NilInt32 !)
+  go n NilInt32
 };
 
 len = { z : ListInt32 =>
@@ -37,27 +37,27 @@ main = {
   print_i32 (len (ones 6));
 /*
   expect_i32 0;
-  print_i32 (ex2 (Nil:[B32] !));
+  print_i32 (ex2 Nil:[B32]);
 
   expect_i32 1;
-  print_i32 (ex2 (Cons (B32 0) (Nil:[B32] !)));
+  print_i32 (ex2 (Cons (B32 0) Nil:[B32]));
 
   expect_i32 2;
-  print_i32 (ex2 (Cons (B32 0) (Cons (B32 1) (Nil:[B32] !))));
+  print_i32 (ex2 (Cons (B32 0) (Cons (B32 1) Nil:[B32])));
 */
 };
 
 // one :: Int32 -> ListB32
 ones = { n : Int32 =>
   if n ==Int32 0
-   then NilB32 !
+   then NilB32
    else ConsB32 (B32 n) (ones (n -Int32 1))
   end
 };
 
 //ones = { n : Int32 =>
 //  if n ==Int32 0
-//   then Nil !
+//   then Nil
 //   else Cons n (ones (n -Int32 1))
 //  end
 //};
