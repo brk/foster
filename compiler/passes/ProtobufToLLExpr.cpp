@@ -339,7 +339,9 @@ LLExpr* parseArrayLiteral(const pb::Letable& e) {
   return new LLArrayLiteral(TypeAST_from_pb(&e.elem_type()), arr, args);
 }
 
-LLOccurrence* parseOccurrence(const pb::PbOccurrence& o) {
+LLOccurrence* parseOccurrence(const pb::Letable& e) {
+  const pb::PbOccurrence& o = e.occ();
+
   LLOccurrence* rv = new LLOccurrence;
   for (int i = 0; i < o.occ_offset_size(); ++i) {
     rv->offsets.push_back(o.occ_offset(i));
@@ -348,9 +350,7 @@ LLOccurrence* parseOccurrence(const pb::PbOccurrence& o) {
     rv->ctors.push_back(parseCtorInfo(o.occ_ctors(i)));
   }
   rv->var = parseTermVar(o.scrutinee());
-  if (o.has_type()) {
-    rv->type = TypeAST_from_pb(& o.type());
-  }
+
   return rv;
 }
 
@@ -470,7 +470,7 @@ LLExpr* LLExpr_from_pb(const pb::Letable* pe) {
   case pb::Letable::IL_ARRAY_LENGTH:rv = parseArrayLength(e); break;
   case pb::Letable::IL_ARRAY_LITERAL:rv = parseArrayLiteral(e); break;
   case pb::Letable::IL_ALLOCATE:    rv = parseAllocate(e); break;
-  case pb::Letable::IL_OCCURRENCE:  rv = parseOccurrence(e.occ()); break;
+  case pb::Letable::IL_OCCURRENCE:  rv = parseOccurrence(e); break;
   case pb::Letable::IL_OBJECT_COPY: rv = parseObjectCopy(e); break;
   case pb::Letable::IL_KILL_PROCESS:rv = parseKillProcess(e); break;
 

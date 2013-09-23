@@ -430,7 +430,6 @@ dumpOccurrence var offsCtorInfos =
     P'.defaultValue { PbOccurrence.occ_offset = fromList $ map intToInt32 offs
                     , PbOccurrence.occ_ctors  = fromList $ map dumpCtorInfo infos
                     , PbOccurrence.scrutinee  = dumpVar var
-                    , PbOccurrence.type'      = Just $ dumpType $ occType var offsCtorInfos
                     }
 
 dumpCtorRepr _ (CR_Tagged 0) =
