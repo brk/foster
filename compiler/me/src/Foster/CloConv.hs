@@ -289,7 +289,7 @@ closureConvertBlocks bbg = do
             -- The decision tree we get from pattern-match compilation may
             -- contain only a subset of the pattern branches.
             eltsOfDecisionTree :: (Show a, Ord a) => DecisionTree a t -> Set a
-            eltsOfDecisionTree DT_Fail = Set.empty
+            eltsOfDecisionTree (DT_Fail   _) = Set.empty
             eltsOfDecisionTree (DT_Leaf a _) = Set.singleton a
             eltsOfDecisionTree (DT_Switch _ idsDts maybeDt) = Set.union
                (Set.unions (map (\(_, dt) -> eltsOfDecisionTree dt) idsDts))
@@ -328,8 +328,9 @@ compileDecisionTree :: MoVar -> DecisionTree BlockId MonoType -> ILM BlockFin
 -- nested pattern matching will load the same subterm multiple times:
 -- once on the path to a leaf, and once more inside the leaf itself.
 
-compileDecisionTree _scrutinee (DT_Fail) =
+compileDecisionTree _scrutinee (DT_Fail ranges) =
   error $ "can't do dt_FAIL yet, for scrutinee " ++ show _scrutinee
+            ++ "\n" ++ concatMap highlightFirstLine ranges
 
 compileDecisionTree _scrutinee (DT_Leaf armid []) = do
         return $ BlockFin emptyClosedGraph armid

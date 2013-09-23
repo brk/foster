@@ -31,7 +31,7 @@ heuristic.
 -}
 
 data DecisionTree a t
-    =  DT_Fail
+    =  DT_Fail [SourceRange]
     |  DT_Leaf  a                -- The expression/block id to evaluate/jump to.
          [(TypedId t, Occurrence t)]  -- Subterms of scrutinee to bind in leaf.
     |  DT_Switch
@@ -78,7 +78,7 @@ compilePatterns :: (IntSizedBits t, Show t)
                 -> DecisionTree a t
 compilePatterns bs allSigs =
 
- cc [[]] matrix allSigs where
+ cc [[]] matrix (ranges matrix) allSigs where
 
   matrix = ClauseMatrix $ map compilePatternRow bs
 
@@ -124,13 +124,13 @@ compilePatterns bs allSigs =
                   PR_Tuple             _rng ty _    -> ty
 
 -- "Compilation is defined by cases as follows."
-cc :: Show t => [Occurrence t] -> ClauseMatrix a t -> DataTypeSigs -> DecisionTree a t
+cc :: Show t => [Occurrence t] -> ClauseMatrix a t -> [SourceRange] -> DataTypeSigs -> DecisionTree a t
 
 -- No row to match -> failure
-cc _ (ClauseMatrix []) _allSigs = DT_Fail
+cc _ (ClauseMatrix []) rngs _allSigs = DT_Fail rngs
 
 -- If first row is all variables, match always succeeds.
-cc _occs cm _allSigs | allGuaranteedMatch (rowPatterns $ firstRow cm) =
+cc _occs cm _rngs _allSigs | allGuaranteedMatch (rowPatterns $ firstRow cm) =
   {-trace ("\nmatched first row with pattern " ++ highlightFirstLine (rowSourceRange r) ++
          "\n i.e.:  " ++ show (rowPatterns $ firstRow cm) ++
          "\n, remaining rows are : " ++ show (map (highlightFirstLine . rowSourceRange) rest) ++ "\n") $
@@ -151,7 +151,7 @@ cc _occs cm _allSigs | allGuaranteedMatch (rowPatterns $ firstRow cm) =
 -- column (m > 0, n > 0). Furthermore, there exists at least one
 -- column of which at least one pattern is not a wildcard. Select
 -- one such column i."
-cc occs cm allSigs =
+cc occs cm rngs allSigs =
   let i = columnNumWithNonTrivialPattern cm in
   if  i == 0
    then
@@ -160,7 +160,7 @@ cc occs cm allSigs =
       let (o1:orest) = occs in
       let caselist = [ ((ctorInfoId c, ctorInfoRepr c),
                            cc (expand o1 c ++ orest)
-                              (specialize c cm) allSigs)
+                              (specialize c cm) (ranges cm) allSigs)
                      | c <- Set.toList headCtorInfos] in
       -- The selected column contains some set of constructors C1 .. Ck.
       -- Pair each constructor with the clause matrix obtained from
@@ -168,13 +168,13 @@ cc occs cm allSigs =
       -- and produce a Switch node examining the ctor of the i'th occurrence.
       let defaultCase = if isSignature (Set.map ctorInfoId headCtorInfos) allSigs
                          then Nothing
-                         else let ad = cc orest (defaultMatrix cm) allSigs in
+                         else let ad = cc orest (defaultMatrix cm) (ranges cm) allSigs in
                               Just ad in
       DT_Switch o1 caselist defaultCase
     else
       let o' = swapOcc i occs in
       let m' = swapCol i cm   in
-      {- DT_Swap i $ -} cc o' m' allSigs
+      {- DT_Swap i $ -} cc o' m' rngs allSigs
 
 allGuaranteedMatch pats = List.all trivialMatch pats
                              where trivialMatch (SP_Wildcard  ) = True
@@ -275,6 +275,8 @@ column (ClauseMatrix rows) i = map (rowIndex i) rows
 rowIndex :: Int -> ClauseRow a t -> SPattern t
 rowIndex i (ClauseRow _ row _ _) = row !! i
 
+ranges (ClauseMatrix rows) = map (\(ClauseRow _ _ _ r) -> r) rows
+
 swapListElements j k elts =
   [case n of
     i | i == j -> elts !! k
@@ -322,13 +324,13 @@ instance Ord repr => Ord (CtorInfo repr t) where
 instance (Structured a, Show t) => Structured (DecisionTree a t) where
     textOf e _width =
       case e of
-        DT_Fail                  ->  text $ "DT_Fail      "
+        DT_Fail _                ->  text $ "DT_Fail      "
         DT_Leaf a idsoccs        -> (text $ "DT_Leaf    " ++ show idsoccs) <$> showStructure a
         DT_Switch  occ idsdts _  ->  text $ "DT_Switch    " ++ (show occ) ++ (show $ subIds idsdts)
                where   subIds idsDts          = map fst idsDts
     childrenOf e =
       case e of
-        DT_Fail                  -> []
+        DT_Fail {}               -> []
         DT_Leaf {}               -> []
         DT_Switch _occ idsdts md -> subDts idsdts md
                 where  subDts idsDts Nothing  = map snd idsDts
