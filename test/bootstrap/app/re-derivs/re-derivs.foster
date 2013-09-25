@@ -1,4 +1,4 @@
-snafuinclude vListInt32 "vlist-Int32";
+snafuinclude Vlist "vlist";
 
 // Based on the paper "Regular-expression derivatives re-examined"
 // http://www.cl.cam.ac.uk/~so294/documents/jfp09.pdf
@@ -124,23 +124,23 @@ re_d = { a => re =>
   end;
 };
 
-re_ds_v :: { VListInt32 => RE => RE };
+re_ds_v :: { VList => RE => RE };
 re_ds_v = { v => re =>
-  case vListInt32Split v
+  case vListSplit v
     of $None        -> re
     of $Some (u, a) -> re_ds_v a (re_d u re)
   end
 };
 
-textToVListInt32 = { t : Text =>
-  textFoldASCII t { ch => vl => vListInt32Cons (primitive_zext_i8_to_i32 ch) vl }
-                  (mkEmptyVListInt32 !) |> vListInt32Reverse;
+textToVList = { t : Text =>
+  textFoldASCII t { ch => vl => vListCons (primitive_zext_i8_to_i32 ch) vl }
+                  (mkEmptyVList !) |> vListReverse;
 };
 
 // Extension of the derivative to strings (Text).
 re_ds :: { Text => RE => RE };
 re_ds = { t => re =>
-  re_ds_v (textToVListInt32 t) re
+  re_ds_v (textToVList t) re
 };
 
 // TODO better error messages for mistakes like this:

@@ -11,17 +11,17 @@ snafuinclude List    "list";
   The relevant license file may be found in third_party/ghc/LICENSE.txt
  */
 
-type case Map (k:Boxed) (v:Boxed)
+type case Map (k:Type) (v:Type)
        of $MapBin Word k v (Map k v) (Map k v)
        of $MapTip
        ;
 
-mapEmpty :: forall k:Boxed, v:Boxed { Map k v };
-mapEmpty = { forall k:Boxed v:Boxed, MapTip };
+mapEmpty :: forall k:Type, v:Type { Map k v };
+mapEmpty = { forall k:Type v:Type, MapTip };
 
 // O(1)
-mapIsEmpty :: forall k:Boxed, v:Boxed { Map k v => Bool };
-mapIsEmpty = { forall k:Boxed v:Boxed, s =>
+mapIsEmpty :: forall k:Type, v:Type { Map k v => Bool };
+mapIsEmpty = { forall k:Type v:Type, s =>
   case s
     of $MapTip -> True
     of _       -> False
@@ -29,12 +29,12 @@ mapIsEmpty = { forall k:Boxed v:Boxed, s =>
 };
 
 // O(1)
-mapSingleton :: forall k:Boxed, v:Boxed { k => v => Map k v };
-mapSingleton = { forall k:Boxed v:Boxed, k => v => MapBin 1 k v MapTip MapTip };
+mapSingleton :: forall k:Type, v:Type { k => v => Map k v };
+mapSingleton = { forall k:Type v:Type, k => v => MapBin 1 k v MapTip MapTip };
 
 // O(1)
-mapSize :: forall k:Boxed, v:Boxed { Map k v => Word };
-mapSize = { forall k:Boxed v:Boxed, s =>
+mapSize :: forall k:Type, v:Type { Map k v => Word };
+mapSize = { forall k:Type v:Type, s =>
   case s
     of $MapTip            -> 0
     of $MapBin sz _ _ _ _ -> sz
@@ -44,15 +44,15 @@ mapSize = { forall k:Boxed v:Boxed, s =>
 // O(?)
 // Smart constructor which restores balance and size if necessary.
 // Precondition: [[mapsBalanced l r]]
-mapBin! :: forall k:Boxed, v:Boxed { k => v => Map k v => Map k v => Map k v };
-mapBin! = { forall k:Boxed v:Boxed, kx => x => l => r =>
+mapBin! :: forall k:Type, v:Type { k => v => Map k v => Map k v => Map k v };
+mapBin! = { forall k:Type v:Type, kx => x => l => r =>
   MapBin (1 +Word mapSize l +Word mapSize r) kx x l r
 };
 
 // O(?)
 // Smart constructor which restores balance and size if necessary.
-mapJoin :: forall k:Boxed, v:Boxed { k => v => Map k v => Map k v => Map k v };
-mapJoin = { forall k:Boxed v:Boxed, kx => x => l => r =>
+mapJoin :: forall k:Type, v:Type { k => v => Map k v => Map k v => Map k v };
+mapJoin = { forall k:Type v:Type, kx => x => l => r =>
   case (l, r)
     of ($MapTip, _) -> mapInsertMin kx x r
     of (_, $MapTip) -> mapInsertMax kx x l
@@ -67,8 +67,8 @@ mapJoin = { forall k:Boxed v:Boxed, kx => x => l => r =>
 
 // O(lg n)
 // May perform one allocation, depending on compiler-chosen data representation.
-mapLookup :: forall k:Boxed, v:Boxed v:Boxed, { Map k v => k => { k => k => Ord } => Maybe v };
-mapLookup = { forall k:Boxed v:Boxed v:Boxed, s => k => cmp =>
+mapLookup :: forall k:Type, v:Type v:Type, { Map k v => k => { k => k => Ord } => Maybe v };
+mapLookup = { forall k:Type v:Type v:Type, s => k => cmp =>
   REC go = { s =>
       case s
         of $MapTip                -> None
@@ -85,8 +85,8 @@ mapLookup = { forall k:Boxed v:Boxed v:Boxed, s => k => cmp =>
 
 // O(lg n)
 // Does not allocate.
-mapContainsKey :: forall k:Boxed, v:Boxed, { Map k v => k => { k => k => Ord } => Bool };
-mapContainsKey = { forall k:Boxed v:Boxed, s => k => cmp =>
+mapContainsKey :: forall k:Type, v:Type, { Map k v => k => { k => k => Ord } => Bool };
+mapContainsKey = { forall k:Type v:Type, s => k => cmp =>
   REC go = { s =>
       case s
         of $MapTip                -> False
@@ -103,8 +103,8 @@ mapContainsKey = { forall k:Boxed v:Boxed, s => k => cmp =>
 
 // O(lg  n)
 // Does not allocate.
-mapLookupWithDefault :: forall k:Boxed, v:Boxed v:Boxed, { Map k v => k => v => { k => k => Ord } => v };
-mapLookupWithDefault = { forall k:Boxed v:Boxed v:Boxed, s => k => v => cmp =>
+mapLookupWithDefault :: forall k:Type, v:Type v:Type, { Map k v => k => v => { k => k => Ord } => v };
+mapLookupWithDefault = { forall k:Type v:Type v:Type, s => k => v => cmp =>
   REC go = { s =>
       case s
         of $MapTip                -> v
@@ -122,8 +122,8 @@ mapLookupWithDefault = { forall k:Boxed v:Boxed v:Boxed, s => k => v => cmp =>
 /*
 // O(lg n)
 // Find largest element smaller than the given one.
-mapLookupLT :: forall k:Boxed, v:Boxed { Map k v => k => { k => k => Ord } => Maybe v };
-mapLookupLT = { forall k:Boxed v:Boxed, s => k => cmp =>
+mapLookupLT :: forall k:Type, v:Type { Map k v => k => { k => k => Ord } => Maybe v };
+mapLookupLT = { forall k:Type v:Type, s => k => cmp =>
   REC goNone = { s =>
       case s
         of $MapTip                -> None
@@ -149,8 +149,8 @@ mapLookupLT = { forall k:Boxed v:Boxed, s => k => cmp =>
 
 // O(lg n)
 // Find smallest element greater than the given one.
-mapLookupGT :: forall k:Boxed, v:Boxed { Map k v => a => { k => k => Ord } => Maybe k };
-mapLookupGT = { forall k:Boxed v:Boxed, s => e => cmp =>
+mapLookupGT :: forall k:Type, v:Type { Map k v => a => { k => k => Ord } => Maybe k };
+mapLookupGT = { forall k:Type v:Type, s => e => cmp =>
   REC goNone = { s =>
       case s
         of $MapTip           -> None
@@ -176,8 +176,8 @@ mapLookupGT = { forall k:Boxed v:Boxed, s => e => cmp =>
 
 // O(lg n)
 // Find largest element smaller or equal to the given one.
-mapLookupLE :: forall k:Boxed, v:Boxed { Map k v => a => { k => k => Ord } => Maybe k };
-mapLookupLE = { forall k:Boxed v:Boxed, s => e => cmp =>
+mapLookupLE :: forall k:Type, v:Type { Map k v => a => { k => k => Ord } => Maybe k };
+mapLookupLE = { forall k:Type v:Type, s => e => cmp =>
   REC goNone = { s =>
       case s
         of $MapTip           -> None
@@ -205,8 +205,8 @@ mapLookupLE = { forall k:Boxed v:Boxed, s => e => cmp =>
 
 // O(lg n)
 // Find smallest element greater or equal to the given one.
-mapLookupGE :: forall k:Boxed, v:Boxed { Map k v => a => { k => k => Ord } => Maybe k };
-mapLookupGE = { forall k:Boxed v:Boxed, s => e => cmp =>
+mapLookupGE :: forall k:Type, v:Type { Map k v => a => { k => k => Ord } => Maybe k };
+mapLookupGE = { forall k:Type v:Type, s => e => cmp =>
   REC goNone = { s =>
       case s
         of $MapTip           -> None
@@ -236,8 +236,8 @@ mapLookupGE = { forall k:Boxed v:Boxed, s => e => cmp =>
 // O(lg n)
 // If an element is equivalent to one already in the map,
 // the new element replaces the old one.
-mapInsert :: forall k:Boxed, v:Boxed { k => v => Map k v => { k => k => Ord } => Map k v };
-mapInsert = { forall k:Boxed v:Boxed, k : k => v : v => s => cmp =>
+mapInsert :: forall k:Type, v:Type { k => v => Map k v => { k => k => Ord } => Map k v };
+mapInsert = { forall k:Type v:Type, k : k => v : v => s => cmp =>
   REC go = { s =>
       case s
         of $MapTip            -> mapSingleton k v
@@ -257,8 +257,8 @@ mapInsert = { forall k:Boxed v:Boxed, k : k => v : v => s => cmp =>
 // O(lg n)
 // If an element is equivalent to one already in the map,
 // the original map is returned, not a new map.
-mapInsertR :: forall k:Boxed, v:Boxed { k => v => Map k v => { k => k => Ord } => Map k v };
-mapInsertR = { forall k:Boxed v:Boxed,  k => v => s => cmp =>
+mapInsertR :: forall k:Type, v:Type { k => v => Map k v => { k => k => Ord } => Map k v };
+mapInsertR = { forall k:Type v:Type,  k => v => s => cmp =>
   REC go = { s =>
       case s
         of $MapTip            -> mapSingleton k v
@@ -276,8 +276,8 @@ mapInsertR = { forall k:Boxed v:Boxed,  k => v => s => cmp =>
 // O(lg n)
 // If an element is equivalent to one already in the map,
 // the original map is returned, not a new map.
-mapDelete :: forall k:Boxed, v:Boxed { Map k v => k => { k => k => Ord } => Map k v };
-mapDelete = { forall k:Boxed v:Boxed, s => k => cmp =>
+mapDelete :: forall k:Type, v:Type { Map k v => k => { k => k => Ord } => Map k v };
+mapDelete = { forall k:Type v:Type, s => k => cmp =>
   REC go = { s =>
       case s
         of $MapTip                -> s
@@ -294,16 +294,16 @@ mapDelete = { forall k:Boxed v:Boxed, s => k => cmp =>
 
 ////////////
 
-mapInsertMin :: forall k:Boxed, v:Boxed { k => v => Map k v => Map k v };
-mapInsertMin = { forall k:Boxed v:Boxed, k => x => s =>
+mapInsertMin :: forall k:Type, v:Type { k => v => Map k v => Map k v };
+mapInsertMin = { forall k:Type v:Type, k => x => s =>
   case s
     of $MapTip            -> mapSingleton k x
     of $MapBin _ ky y l r -> mapBalanceL ky y (mapInsertMin k x l) r
   end
 };
 
-mapInsertMax :: forall k:Boxed, v:Boxed { k => v => Map k v => Map k v };
-mapInsertMax = { forall k:Boxed v:Boxed, k => x => s =>
+mapInsertMax :: forall k:Type, v:Type { k => v => Map k v => Map k v };
+mapInsertMax = { forall k:Type v:Type, k => x => s =>
   case s
     of $MapTip            -> mapSingleton k x
     of $MapBin _ ky y l r -> mapBalanceR ky y l (mapInsertMax k x r)
@@ -313,8 +313,8 @@ mapInsertMax = { forall k:Boxed v:Boxed, k => x => s =>
 ////////////
 
 // O(n+m)
-mapUnion :: forall k:Boxed, v:Boxed { Map k v => Map k v => { k => k => Ord } => Map k v };
-mapUnion = { forall k:Boxed v:Boxed, s1 => s2 => cmp =>
+mapUnion :: forall k:Type, v:Type { Map k v => Map k v => { k => k => Ord } => Map k v };
+mapUnion = { forall k:Type v:Type, s1 => s2 => cmp =>
   case (s1, s2)
     of ($MapTip, _) -> s2
     of (_, $MapTip) -> s1
@@ -323,8 +323,8 @@ mapUnion = { forall k:Boxed v:Boxed, s1 => s2 => cmp =>
 };
 
 // O(n+m)
-mapDifference :: forall k:Boxed, v:Boxed { Map k v => Map k v => { k => k => Ord } => Map k v };
-mapDifference = { forall k:Boxed v:Boxed, s1 => s2 => cmp =>
+mapDifference :: forall k:Type, v:Type { Map k v => Map k v => { k => k => Ord } => Map k v };
+mapDifference = { forall k:Type v:Type, s1 => s2 => cmp =>
   case (s1, s2)
     of ($MapTip, _) -> s1
     of (_, $MapTip) -> s1
@@ -333,8 +333,8 @@ mapDifference = { forall k:Boxed v:Boxed, s1 => s2 => cmp =>
 };
 
 // O(n+m)
-mapIntersection :: forall k:Boxed, v:Boxed { Map k v => Map k v => { k => k => Ord } => Map k v };
-mapIntersection = { forall k:Boxed v:Boxed, s1 => s2 => cmp =>
+mapIntersection :: forall k:Type, v:Type { Map k v => Map k v => { k => k => Ord } => Map k v };
+mapIntersection = { forall k:Type v:Type, s1 => s2 => cmp =>
   case (s1, s2)
     of ($MapTip, _) -> s1
     of (_, $MapTip) -> s2
@@ -343,8 +343,8 @@ mapIntersection = { forall k:Boxed v:Boxed, s1 => s2 => cmp =>
 };
 
 // O(n+m)
-mapIsSubmapOf :: forall k:Boxed, v:Boxed { Map k v => Map k v => { k => k => Ord } => Bool };
-mapIsSubmapOf = { forall k:Boxed v:Boxed, s1 => s2 => cmp =>
+mapIsSubmapOf :: forall k:Type, v:Type { Map k v => Map k v => { k => k => Ord } => Bool };
+mapIsSubmapOf = { forall k:Type v:Type, s1 => s2 => cmp =>
   REC go = { s1 => s2 =>
     case (s1, s2)
       of ($MapTip, _) -> True
@@ -359,16 +359,16 @@ mapIsSubmapOf = { forall k:Boxed v:Boxed, s1 => s2 => cmp =>
   { mapSize s1 <=UWord mapSize s2 } `andand` { go s1 s2 };
 };
 
-mapSplit :: forall k:Boxed, v:Boxed { k => Map k v => { k => k => Ord } => (Map k v, Map k v) };
-mapSplit = { forall k:Boxed v:Boxed, k => s => cmp =>
+mapSplit :: forall k:Type, v:Type { k => Map k v => { k => k => Ord } => (Map k v, Map k v) };
+mapSplit = { forall k:Type v:Type, k => s => cmp =>
   case mapSplitLookup k s cmp
     of (lt, _, gt) -> (lt, gt)
   end
 };
 
 // O(lg n)
-mapSplitLookup :: forall k:Boxed, v:Boxed { k => Map k v => { k => k => Ord } => (Map k v, Bool, Map k v) };
-mapSplitLookup = { forall k:Boxed v:Boxed, k => s => cmp =>
+mapSplitLookup :: forall k:Type, v:Type { k => Map k v => { k => k => Ord } => (Map k v, Bool, Map k v) };
+mapSplitLookup = { forall k:Type v:Type, k => s => cmp =>
   case s
     of $MapTip -> (s, False, s)
     of $MapBin _ ky y l r ->
@@ -386,8 +386,8 @@ mapSplitLookup = { forall k:Boxed v:Boxed, k => s => cmp =>
 
 ////////////
 
-mapHedgeUnion! :: forall k:Boxed, v:Boxed { Maybe k => Maybe k => Map k v => Map k v => { k => k => Ord } => Map k v };
-mapHedgeUnion! = { forall k:Boxed v:Boxed, blo => bhi => s1 => s2 => cmp =>
+mapHedgeUnion! :: forall k:Type, v:Type { Maybe k => Maybe k => Map k v => Map k v => { k => k => Ord } => Map k v };
+mapHedgeUnion! = { forall k:Type v:Type, blo => bhi => s1 => s2 => cmp =>
   case (s1, s2)
     of (_, $MapTip) -> s1
     of (_,       $MapBin 1 kx x _ _) -> mapInsertR kx x s1 cmp
@@ -401,8 +401,8 @@ mapHedgeUnion! = { forall k:Boxed v:Boxed, blo => bhi => s1 => s2 => cmp =>
   end
 };
 
-mapHedgeDiff! :: forall k:Boxed, v:Boxed { Maybe k => Maybe k => Map k v => Map k v => { k => k => Ord } => Map k v };
-mapHedgeDiff! = { forall k:Boxed v:Boxed, blo => bhi => s1 => s2 => cmp =>
+mapHedgeDiff! :: forall k:Type, v:Type { Maybe k => Maybe k => Map k v => Map k v => { k => k => Ord } => Map k v };
+mapHedgeDiff! = { forall k:Type v:Type, blo => bhi => s1 => s2 => cmp =>
   case (s1, s2)
     of ($MapTip, _) -> s1
     of ($MapBin _ kx x l r, $MapTip) -> mapJoin kx x (mapFilterGT blo l cmp)
@@ -415,8 +415,8 @@ mapHedgeDiff! = { forall k:Boxed v:Boxed, blo => bhi => s1 => s2 => cmp =>
   end
 };
 
-mapHedgeInter! :: forall k:Boxed, v:Boxed { Maybe k => Maybe k => Map k v => Map k v => { k => k => Ord } => Map k v };
-mapHedgeInter! = { forall k:Boxed v:Boxed, blo => bhi => s1 => s2 => cmp =>
+mapHedgeInter! :: forall k:Type, v:Type { Maybe k => Maybe k => Map k v => Map k v => { k => k => Ord } => Map k v };
+mapHedgeInter! = { forall k:Type v:Type, blo => bhi => s1 => s2 => cmp =>
   case (s1, s2)
     of ($MapTip, _) -> s1
     of (_, $MapTip) -> s2
@@ -431,8 +431,8 @@ mapHedgeInter! = { forall k:Boxed v:Boxed, blo => bhi => s1 => s2 => cmp =>
   end
 };
 
-mapTrim :: forall k:Boxed, v:Boxed { Maybe k => Maybe k => Map k v => { k => k => Ord } => Map k v };
-mapTrim = { forall k:Boxed v:Boxed, blo => bhi => s => cmp =>
+mapTrim :: forall k:Type, v:Type { Maybe k => Maybe k => Map k v => { k => k => Ord } => Map k v };
+mapTrim = { forall k:Type v:Type, blo => bhi => s => cmp =>
   case (blo, bhi)
     of ($None,    $None)    -> s
     of ($Some lx, $None)    -> REC greater = { t =>
@@ -469,8 +469,8 @@ mapTrim = { forall k:Boxed v:Boxed, blo => bhi => s => cmp =>
   end
 };
 
-mapFilterGT :: forall k:Boxed, v:Boxed { Maybe k => Map k v => { k => k => Ord } => Map k v };
-mapFilterGT = { forall k:Boxed v:Boxed, mb => s => cmp =>
+mapFilterGT :: forall k:Type, v:Type { Maybe k => Map k v => { k => k => Ord } => Map k v };
+mapFilterGT = { forall k:Type v:Type, mb => s => cmp =>
   case mb
     of $None -> s
     of $Some b ->
@@ -489,8 +489,8 @@ mapFilterGT = { forall k:Boxed v:Boxed, mb => s => cmp =>
   end
 };
 
-mapFilterLT :: forall k:Boxed, v:Boxed { Maybe k => Map k v => { k => k => Ord } => Map k v };
-mapFilterLT = { forall k:Boxed v:Boxed, mb => s => cmp =>
+mapFilterLT :: forall k:Type, v:Type { Maybe k => Map k v => { k => k => Ord } => Map k v };
+mapFilterLT = { forall k:Type v:Type, mb => s => cmp =>
   case mb
     of $None -> s
     of $Some b ->
@@ -512,8 +512,8 @@ mapFilterLT = { forall k:Boxed v:Boxed, mb => s => cmp =>
 ////////////
 
 // O(n)
-mapFoldl :: forall k:Boxed, v:Boxed, a:Boxed, { Map k v => { k => v => a => a } => a => a };
-mapFoldl = { forall k:Boxed v:Boxed a:Boxed, s => f => z =>
+mapFoldl :: forall k:Type, v:Type, a:Type, { Map k v => { k => v => a => a } => a => a };
+mapFoldl = { forall k:Type v:Type a:Type, s => f => z =>
   REC go = { s => acc =>
       case s
         of $MapTip                -> acc
@@ -524,8 +524,8 @@ mapFoldl = { forall k:Boxed v:Boxed a:Boxed, s => f => z =>
 };
 
 // O(n)
-mapFoldr :: forall k:Boxed, v:Boxed, a:Boxed, { Map k v => { k => v => a => a } => a => a };
-mapFoldr = { forall k:Boxed v:Boxed a:Boxed, s => f => z =>
+mapFoldr :: forall k:Type, v:Type, a:Type, { Map k v => { k => v => a => a } => a => a };
+mapFoldr = { forall k:Type v:Type a:Type, s => f => z =>
   REC go = { s => acc =>
       case s
         of $MapTip                -> acc
@@ -536,8 +536,8 @@ mapFoldr = { forall k:Boxed v:Boxed a:Boxed, s => f => z =>
 };
 
 // O(n)
-mapMap :: forall k:Boxed, v:Boxed, r:Boxed, { Map k v => { v => r } => Map k r };
-mapMap = { forall k:Boxed v:Boxed r:Boxed, s => f =>
+mapMap :: forall k:Type, v:Type, r:Type, { Map k v => { v => r } => Map k r };
+mapMap = { forall k:Type v:Type r:Type, s => f =>
   REC go = { s =>
       case s
         of $MapTip                 -> MapTip
@@ -548,8 +548,8 @@ mapMap = { forall k:Boxed v:Boxed r:Boxed, s => f =>
 };
 
 /*
-mapKeepIf :: forall k:Boxed, v:Boxed { Map k v => { a => Bool } => Map k v };
-mapKeepIf = { forall k:Boxed v:Boxed, s => p =>
+mapKeepIf :: forall k:Type, v:Type { Map k v => { a => Bool } => Map k v };
+mapKeepIf = { forall k:Type v:Type, s => p =>
   case s
     of $MapTip -> s
     of $MapBin _ kx x l r ->
@@ -561,25 +561,25 @@ mapKeepIf = { forall k:Boxed v:Boxed, s => p =>
 };
 */
 
-mapToList :: forall k:Boxed, v:Boxed { Map k v => List (k, v) };
-mapToList = { forall k:Boxed v:Boxed, s =>
+mapToList :: forall k:Type, v:Type { Map k v => List (k, v) };
+mapToList = { forall k:Type v:Type, s =>
   mapFoldr s { k => v => lst => Cons (k, v) lst } Nil
 };
 
-mapToListDesc :: forall k:Boxed, v:Boxed { Map k v => List (k, v) };
-mapToListDesc = { forall k:Boxed v:Boxed, s =>
+mapToListDesc :: forall k:Type, v:Type { Map k v => List (k, v) };
+mapToListDesc = { forall k:Type v:Type, s =>
   mapFoldl s { k => v => lst => Cons (k, v) lst } Nil
 };
 
-mapOfList :: forall k:Boxed, v:Boxed { List (k, v) => { k => k => Ord } => Map k v };
-mapOfList = { forall k:Boxed v:Boxed, lst => cmp =>
+mapOfList :: forall k:Type, v:Type { List (k, v) => { k => k => Ord } => Map k v };
+mapOfList = { forall k:Type v:Type, lst => cmp =>
   listFoldl lst { p => s => case p of (k, v) -> mapInsert k v s cmp end } MapTip
 };
 
 ////////////
 
-mapMerge :: forall k:Boxed, v:Boxed { Map k v => Map k v => Map k v };
-mapMerge = { forall k:Boxed v:Boxed, l => r =>
+mapMerge :: forall k:Type, v:Type { Map k v => Map k v => Map k v };
+mapMerge = { forall k:Type v:Type, l => r =>
   case (l, r)
     of ($MapTip, _) -> r
     of (_, $MapTip) -> l
@@ -593,8 +593,8 @@ mapMerge = { forall k:Boxed v:Boxed, l => r =>
 };
 
 // Like mapMerge, but assumes the maps are balanced.
-mapGlue! :: forall k:Boxed, v:Boxed { Map k v => Map k v => Map k v };
-mapGlue! = { forall k:Boxed v:Boxed, l => r =>
+mapGlue! :: forall k:Type, v:Type { Map k v => Map k v => Map k v };
+mapGlue! = { forall k:Type v:Type, l => r =>
   case (l, r)
     of ($MapTip, _) -> r
     of (_, $MapTip) -> l
@@ -607,8 +607,8 @@ mapGlue! = { forall k:Boxed v:Boxed, l => r =>
 };
 
 // Precondition: mapSize s > 0
-mapDeleteFindMin! :: forall k:Boxed, v:Boxed { Map k v => ((k, v), Map k v) };
-mapDeleteFindMin! = { forall k:Boxed v:Boxed, s =>
+mapDeleteFindMin! :: forall k:Type, v:Type { Map k v => ((k, v), Map k v) };
+mapDeleteFindMin! = { forall k:Type v:Type, s =>
   case s
     of $MapBin _ kelt elt ($MapTip) r -> ((kelt, elt), r)
     of $MapBin _ kelt elt l r ->
@@ -618,8 +618,8 @@ mapDeleteFindMin! = { forall k:Boxed v:Boxed, s =>
 };
 
 // Precondition: mapSize s > 0
-mapDeleteFindMax! :: forall k:Boxed, v:Boxed { Map k v => ((k, v), Map k v) };
-mapDeleteFindMax! = { forall k:Boxed v:Boxed, s =>
+mapDeleteFindMax! :: forall k:Type, v:Type { Map k v => ((k, v), Map k v) };
+mapDeleteFindMax! = { forall k:Type v:Type, s =>
   case s
     of $MapBin _ kelt elt l ($MapTip) -> ((kelt, elt), l)
     of $MapBin _ kelt elt l r ->
@@ -631,8 +631,8 @@ mapDeleteFindMax! = { forall k:Boxed v:Boxed, s =>
 mapRatio = { 2 };
 mapDelta = { 3 };
 
-mapBalanceL :: forall k:Boxed, v:Boxed { k => v => Map k v => Map k v => Map k v };
-mapBalanceL = { forall k:Boxed v:Boxed, k => x => l => r =>
+mapBalanceL :: forall k:Type, v:Type { k => v => Map k v => Map k v => Map k v };
+mapBalanceL = { forall k:Type v:Type, k => x => l => r =>
   case r
       of $MapTip        ->
         case l
@@ -683,8 +683,8 @@ mapBalanceL = { forall k:Boxed v:Boxed, k => x => l => r =>
 };
 
 
-mapBalanceR :: forall k:Boxed, v:Boxed { k => v => Map k v => Map k v => Map k v };
-mapBalanceR = { forall k:Boxed v:Boxed, k => x => l => r =>
+mapBalanceR :: forall k:Type, v:Type { k => v => Map k v => Map k v => Map k v };
+mapBalanceR = { forall k:Type v:Type, k => x => l => r =>
   case l
     of $MapTip ->
       case r
@@ -733,8 +733,8 @@ mapBalanceR = { forall k:Boxed v:Boxed, k => x => l => r =>
 ////////////
 
 // O(n)
-mapSizeValid_ :: forall k:Boxed, v:Boxed { Map k v => Bool };
-mapSizeValid_ = { forall k:Boxed v:Boxed, s =>
+mapSizeValid_ :: forall k:Type, v:Type { Map k v => Bool };
+mapSizeValid_ = { forall k:Type v:Type, s =>
   REC realsize = { s =>
     case s
       of $MapTip            -> Some { 0 }
@@ -755,16 +755,16 @@ mapSizeValid_ = { forall k:Boxed v:Boxed, s =>
   end
 };
 
-mapBalanced :: forall k:Boxed, v:Boxed { Map k v => Bool };
-mapBalanced = { forall k:Boxed v:Boxed, s =>
+mapBalanced :: forall k:Type, v:Type { Map k v => Bool };
+mapBalanced = { forall k:Type v:Type, s =>
   case s
     of $MapTip           -> True
     of $MapBin _ _ _ l r -> mapsBalanced l r
   end
 };
 
-mapsBalanced :: forall k:Boxed, v:Boxed { Map k v => Map k v => Bool };
-mapsBalanced = { forall k:Boxed v:Boxed, l => r =>
+mapsBalanced :: forall k:Type, v:Type { Map k v => Map k v => Bool };
+mapsBalanced = { forall k:Type v:Type, l => r =>
   sl = mapSize l;
   sr = mapSize r;
   andand { either (sl +Word sr <=UWord 1)
@@ -775,11 +775,11 @@ mapsBalanced = { forall k:Boxed v:Boxed, l => r =>
 
 ////////////
 
-mapShowTree = { forall k:Boxed v:Boxed, s : Map k v => shw : { k => v => Text } =>
+mapShowTree = { forall k:Type v:Type, s : Map k v => shw : { k => v => Text } =>
   mapShowTreeRot Nil Nil s shw
 };
 
-mapShowTreeRot = { forall k:Boxed v:Boxed, lbars : List Text => rbars : List Text => s : Map k v => shw : { k => v => Text } =>
+mapShowTreeRot = { forall k:Type v:Type, lbars : List Text => rbars : List Text => s : Map k v => shw : { k => v => Text } =>
   #associate   a `mkTextConcat` b `mkTextConcat` c
           as   (mkTextConcat (mkTextConcat a b) c)
   in

@@ -1,18 +1,18 @@
 snafuinclude Prelude "prelude";
 snafuinclude Maybe   "maybe";
 
-type case SplayTree (a:Boxed)
+type case SplayTree (a:Type)
   of $SplayNil
   of $SplayObj a (SplayTree a) (SplayTree a)
   ;
 
-splay-empty :: forall a:Boxed, { SplayTree a };
-splay-empty = { forall a:Boxed,
+splay-empty :: forall a:Type, { SplayTree a };
+splay-empty = { forall a:Type,
   SplayNil
 };
 
-splay :: forall a:Boxed, { SplayTree a => { a => Ord } => SplayTree a };
-splay = { forall a:Boxed,
+splay :: forall a:Type, { SplayTree a => { a => Ord } => SplayTree a };
+splay = { forall a:Type,
            t => cmp =>
 
   case t
@@ -95,8 +95,8 @@ splay = { forall a:Boxed,
 //splay-join :: forall a, { SplayTree a => SplayTree a => SplayTree a };
 
 
-splay-depth :: forall a:Boxed, { SplayTree a => Word };
-splay-depth = { forall a:Boxed,
+splay-depth :: forall a:Type, { SplayTree a => Word };
+splay-depth = { forall a:Type,
                 t =>
   case t
     of $SplayObj _ l r -> (max-SWord (splay-depth l)
@@ -105,8 +105,8 @@ splay-depth = { forall a:Boxed,
   end
 };
 
-splay-root :: forall a:Boxed, { SplayTree a => Maybe a };
-splay-root = { forall a:Boxed,
+splay-root :: forall a:Type, { SplayTree a => Maybe a };
+splay-root = { forall a:Type,
                 t : SplayTree a =>
   case t
     of $SplayObj x _ _ -> Some x
@@ -115,9 +115,9 @@ splay-root = { forall a:Boxed,
 };
 
 
-splay-lookup :: forall a:Boxed,
+splay-lookup :: forall a:Type,
                          { SplayTree a => { a => Ord } => (Bool, SplayTree a) };
-splay-lookup = { forall a:Boxed,
+splay-lookup = { forall a:Type,
                  t => cmp =>
   case splay t cmp
     of $SplayNil ->      (False,           t)
@@ -129,9 +129,9 @@ splay-lookup = { forall a:Boxed,
   end
 };
 
-splay-insert :: forall a:Boxed,
+splay-insert :: forall a:Type,
                        { a => SplayTree a => { a => a => Ord } => SplayTree a };
-splay-insert = { forall a:Boxed,
+splay-insert = { forall a:Type,
                  v => t => cmp =>
   REC insert = { v => t =>
     case t

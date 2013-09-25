@@ -1,18 +1,18 @@
 snafuinclude Maybe "maybe";
 
-type case List (a:Boxed)
+type case List (a:Type)
   of $Nil
   of $Cons a (List a)
 ;
 
-listSingleton :: forall t:Boxed, { t => List t };
-listSingleton =  { forall t:Boxed, x : t =>
+listSingleton :: forall t:Type, { t => List t };
+listSingleton =  { forall t:Type, x : t =>
   Cons x Nil
 };
 
 // Precondition: List is not empty.
-listHead! :: forall t:Boxed, { List t => t };
-listHead! = { forall t:Boxed, xs : List t =>
+listHead! :: forall t:Type, { List t => t };
+listHead! = { forall t:Type, xs : List t =>
   case xs
     of $Nil -> prim kill-entire-process "listHead! passed an empty list"
     of $Cons x _ -> x
@@ -20,8 +20,8 @@ listHead! = { forall t:Boxed, xs : List t =>
 };
 
 // Precondition: List is not empty.
-listTail! :: forall t:Boxed, { List t => List t };
-listTail! = { forall t:Boxed, xs : List t =>
+listTail! :: forall t:Type, { List t => List t };
+listTail! = { forall t:Type, xs : List t =>
   case xs
     of $Nil -> prim kill-entire-process "listTail! passed an empty list"
     of $Cons _ ys -> ys
@@ -29,11 +29,11 @@ listTail! = { forall t:Boxed, xs : List t =>
 };
 
 // Precondition: i >= 0, listLength xs > i
-listGet! = { forall t:Boxed, xs : List t => i : Int32 =>
+listGet! = { forall t:Type, xs : List t => i : Int32 =>
   unMaybe (listGet xs i)
 };
 
-listGet = { forall t:Boxed, xs : List t => i : Int32 =>
+listGet = { forall t:Type, xs : List t => i : Int32 =>
   if i <SInt32 0 then None else
     // invariant: i >= 0.
     REC go = { xs => i =>
@@ -50,8 +50,8 @@ listGet = { forall t:Boxed, xs : List t => i : Int32 =>
 };
 
 // Uses O(1) stack, and heap proportional to whatever f allocates.
-listFoldl :: forall a:Boxed, e:Boxed, { List e => { e => a => a } => a => a };
-listFoldl = { forall a:Boxed e:Boxed, v => f => acc : a =>
+listFoldl :: forall a:Type, e:Type, { List e => { e => a => a } => a => a };
+listFoldl = { forall a:Type e:Type, v => f => acc : a =>
   case v
     of $Nil            -> acc
     of $Cons head tail -> listFoldl tail f (f head acc)
@@ -59,22 +59,22 @@ listFoldl = { forall a:Boxed e:Boxed, v => f => acc : a =>
 };
 
 // Uses O(1) stack, and heap O(n) + whatever f allocates.
-listFoldr :: forall a:Boxed, e:Boxed, { List e => { e => a => a } => a => a };
-listFoldr = { forall a:Boxed e:Boxed, v => f => acc : a =>
+listFoldr :: forall a:Type, e:Type, { List e => { e => a => a } => a => a };
+listFoldr = { forall a:Type e:Type, v => f => acc : a =>
   listFoldl (listReverse v) f acc
 };
 
-listMap :: forall a:Boxed, e:Boxed, { List e => { e => a } => List a };
-listMap = { forall a:Boxed e:Boxed, v => f =>
+listMap :: forall a:Type, e:Type, { List e => { e => a } => List a };
+listMap = { forall a:Type e:Type, v => f =>
   listFoldl v { e => tail => Cons (f e) tail } Nil;
 };
 
-listKeepIf :: forall a:Boxed, { List a => { a => Bool } => List a };
-listKeepIf = { forall a:Boxed, v => f =>
+listKeepIf :: forall a:Type, { List a => { a => Bool } => List a };
+listKeepIf = { forall a:Type, v => f =>
   listFoldl (listReverse v) { e => tail => if f e then Cons e tail else tail end } Nil;
 };
 
-listLength64 = { forall t:Boxed, xs : List t =>
+listLength64 = { forall t:Type, xs : List t =>
   REC go = { xs => acc =>
     case xs
       of $Nil -> acc
@@ -84,7 +84,7 @@ listLength64 = { forall t:Boxed, xs : List t =>
   go xs 0
 };
 
-listLength = { forall t:Boxed, xs : List t =>
+listLength = { forall t:Type, xs : List t =>
   REC go = { xs => acc =>
     case xs
       of $Nil -> acc
@@ -95,12 +95,12 @@ listLength = { forall t:Boxed, xs : List t =>
 };
 
 /* Can't yet do this because of Boxed/Type kind mismatch
-listLengthAlt = { forall t:Boxed, xs : List t =>
+listLengthAlt = { forall t:Type, xs : List t =>
   listFoldl xs { e => len => 1 +Int32 len } 0
 };
 */
 
-listReverse = { forall t:Boxed, xs : List t =>
+listReverse = { forall t:Type, xs : List t =>
   REC go = { xs : List t => acc : List t =>
     case xs
       of $Nil -> acc
@@ -110,12 +110,12 @@ listReverse = { forall t:Boxed, xs : List t =>
   go xs Nil
 };
 
-listReverseAlt = { forall t:Boxed, xs : List t =>
+listReverseAlt = { forall t:Type, xs : List t =>
   listFoldl xs Cons Nil
 };
 
-listAppend :: forall t:Boxed, { List t => List t => List t };
-listAppend = { forall t:Boxed, xs => ys =>
+listAppend :: forall t:Type, { List t => List t => List t };
+listAppend = { forall t:Type, xs => ys =>
   REC go = { rev => acc =>
     case rev
       of $Nil -> acc
@@ -125,13 +125,13 @@ listAppend = { forall t:Boxed, xs => ys =>
   go (listReverse xs) ys
 };
 
-listAppendAlt :: forall t:Boxed, { List t => List t => List t };
-listAppendAlt = { forall t:Boxed, xs => ys =>
+listAppendAlt :: forall t:Type, { List t => List t => List t };
+listAppendAlt = { forall t:Type, xs => ys =>
   listFoldr xs Cons ys
 };
 
-listIter :: forall a:Boxed, { List a => { a => () } => () };
-listIter = { forall a:Boxed, v => f =>
+listIter :: forall a:Type, { List a => { a => () } => () };
+listIter = { forall a:Type, v => f =>
   case v
     of $Nil            -> ()
     of $Cons head tail -> f head; listIter tail f;

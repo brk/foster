@@ -5,20 +5,20 @@ snafuinclude Maybe "maybe";
 
 // Bootstrapped queues based on the code from Okasaki's book (p. 149).
 
-type case BootstrappedQueue (elem:Boxed)
+type case BootstrappedQueue (elem:Type)
       of $BootstrappedQueueE
       of $BootstrappedQueueQ Int32 (List elem)
                              (BootstrappedQueue (Lazy (List elem)))
                              Int32 (List elem)
       ;
 
-mkEmptyBootstrappedQueue :: forall a:Boxed, { BootstrappedQueue a };
-mkEmptyBootstrappedQueue = { forall a:Boxed,
+mkEmptyBootstrappedQueue :: forall a:Type, { BootstrappedQueue a };
+mkEmptyBootstrappedQueue = { forall a:Type,
   BootstrappedQueueE
 };
 
-bootstrappedQueueHead :: forall a:Boxed, { BootstrappedQueue a => Maybe a };
-bootstrappedQueueHead = { forall a:Boxed, h =>
+bootstrappedQueueHead :: forall a:Type, { BootstrappedQueue a => Maybe a };
+bootstrappedQueueHead = { forall a:Type, h =>
   case h
     of $BootstrappedQueueE -> None
     of $BootstrappedQueueQ _ ($Nil)      _ _ _ -> prim kill-entire-process "bqHead: invariant violated";
@@ -26,8 +26,8 @@ bootstrappedQueueHead = { forall a:Boxed, h =>
   end
 };
 
-bootstrappedQueueTail :: forall a:Boxed, { BootstrappedQueue a => Maybe (BootstrappedQueue a) };
-bootstrappedQueueTail = { forall a:Boxed, h =>
+bootstrappedQueueTail :: forall a:Type, { BootstrappedQueue a => Maybe (BootstrappedQueue a) };
+bootstrappedQueueTail = { forall a:Type, h =>
   case h
     of $BootstrappedQueueE -> None
     of $BootstrappedQueueQ _ ($Nil)      _ _ _ -> prim kill-entire-process "bqTail: invariant violated";
@@ -36,8 +36,8 @@ bootstrappedQueueTail = { forall a:Boxed, h =>
   end
 };
 
-bootstrappedQueueSplit :: forall a:Boxed, { BootstrappedQueue a => Maybe (a, BootstrappedQueue a) };
-bootstrappedQueueSplit = { forall a:Boxed, h =>
+bootstrappedQueueSplit :: forall a:Type, { BootstrappedQueue a => Maybe (a, BootstrappedQueue a) };
+bootstrappedQueueSplit = { forall a:Type, h =>
   case h
     of $BootstrappedQueueE -> None
     of $BootstrappedQueueQ _ ($Nil)      _ _ _ -> prim kill-entire-process "bqSplit: invariant violated";
@@ -46,8 +46,8 @@ bootstrappedQueueSplit = { forall a:Boxed, h =>
   end
 };
 
-bootstrappedQueueSnoc :: forall a:Boxed, { a => BootstrappedQueue a => BootstrappedQueue a };
-bootstrappedQueueSnoc = { forall a:Boxed, e => h =>
+bootstrappedQueueSnoc :: forall a:Type, { a => BootstrappedQueue a => BootstrappedQueue a };
+bootstrappedQueueSnoc = { forall a:Type, e => h =>
   case h
     of $BootstrappedQueueE ->
         BootstrappedQueueQ 1 (Cons e Nil) BootstrappedQueueE 0 Nil
@@ -60,11 +60,11 @@ bootstrappedQueueSnoc = { forall a:Boxed, e => h =>
   end
 };
 
-bootstrappedQueueCheckQ :: forall elem:Boxed, {
+bootstrappedQueueCheckQ :: forall elem:Type, {
    Int32 => (List elem) => (BootstrappedQueue (Lazy (List elem))) =>
    Int32 => (List elem) =>  BootstrappedQueue elem
 };
-bootstrappedQueueCheckQ = { forall a:Boxed, lenfm => f => m => lenr => r =>
+bootstrappedQueueCheckQ = { forall a:Type, lenfm => f => m => lenr => r =>
   if lenr <=SInt32 lenfm
     then bootstrappedQueueCheckF lenfm f m lenr r
     else bootstrappedQueueCheckF (lenfm +Int32 lenr) f
@@ -73,11 +73,11 @@ bootstrappedQueueCheckQ = { forall a:Boxed, lenfm => f => m => lenr => r =>
   end
 };
 
-bootstrappedQueueCheckF :: forall elem:Boxed, {
+bootstrappedQueueCheckF :: forall elem:Type, {
     Int32 => (List elem) => (BootstrappedQueue (Lazy (List elem))) =>
     Int32 => (List elem) =>  BootstrappedQueue elem
 };
-bootstrappedQueueCheckF = { forall a:Boxed, lenfm => f => m => lenr => r =>
+bootstrappedQueueCheckF = { forall a:Type, lenfm => f => m => lenr => r =>
   case f
     of $Nil ->
         case m

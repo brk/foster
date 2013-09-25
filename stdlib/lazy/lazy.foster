@@ -1,9 +1,8 @@
-type case Lazy (a:Boxed)
+type case Lazy (a:Type)
   of $LazyDelay (Ref (LazyThing a))
 ;
 
-type case LazyThing (a:Boxed)
-  //of $LazyThunk { a }
+type case LazyThing (a:Type)
   of $LazyValue   a
   of $LazyLazyV ( Lazy a )
   of $LazyLazyT { Lazy a }
@@ -11,17 +10,17 @@ type case LazyThing (a:Boxed)
 ;
 
 // lazily { expr }   is basically   delay { force expr }.
-lazily ::   forall a:Boxed, {     { Lazy a } => Lazy a };
-lazily =  { forall a:Boxed, thunk:{ Lazy a } => LazyDelay (ref (LazyLazyT thunk)) };
+lazily ::   forall a:Type, {     { Lazy a } => Lazy a };
+lazily =  { forall a:Type, thunk:{ Lazy a } => LazyDelay (ref (LazyLazyT thunk)) };
 
-delay :: forall a:Boxed, { { a } => Lazy a };
-delay =  { forall a:Boxed, thunk : { a } => lazily { eager (thunk !) } };
+delay :: forall a:Type, { { a } => Lazy a };
+delay =  { forall a:Type, thunk : { a } => lazily { eager (thunk !) } };
 
-eager :: forall a:Boxed, { a => Lazy a };
-eager =  { forall a:Boxed, v : a => LazyDelay (ref (LazyValue v)) };
+eager :: forall a:Type, { a => Lazy a };
+eager =  { forall a:Type, v : a => LazyDelay (ref (LazyValue v)) };
 
-force :: forall a:Boxed, { Lazy a => a };
-force =  { forall a:Boxed, lazy : Lazy a =>
+force :: forall a:Type, { Lazy a => a };
+force =  { forall a:Type, lazy : Lazy a =>
   case lazy
     of $LazyDelay r ->
       case r ^
@@ -141,9 +140,9 @@ force =  { forall a:Boxed, lazy : Lazy a =>
 // This alternate encoding of ``lazily`` as a derived form leads to space leaks,
 // as described in http://srfi.schemers.org/srfi-45/srfi-45.html
 //
-//lazily ::   forall a:Boxed, {     { Lazy a } => Lazy a };
-//lazily =  { forall a:Boxed, thunk:{ Lazy a } => delay { force (thunk !) } };
+//lazily ::   forall a:Type, {     { Lazy a } => Lazy a };
+//lazily =  { forall a:Type, thunk:{ Lazy a } => delay { force (thunk !) } };
 //
-//delay :: forall a:Boxed, { { a } => Lazy a };
-//delay =  { forall a:Boxed, thunk : { a } => LazyDelay (ref (LazyThunk thunk)) };
+//delay :: forall a:Type, { { a } => Lazy a };
+//delay =  { forall a:Type, thunk : { a } => LazyDelay (ref (LazyThunk thunk)) };
 

@@ -22,9 +22,6 @@ main = {
   p = { v:BInt => case v of $B n -> print_i32 n; v end };
   //simple-stream = (stream-nil-mediocre:[()] !);
 
-  print_i32 0;
-  expect_i32 0;
-
   expect_i32 10; expect_i32 11; expect_i32 12; expect_i32 13;
   stream-cutoff 4 (stream-map-mediocre p (stream-countup 10 B));
 

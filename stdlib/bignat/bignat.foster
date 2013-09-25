@@ -1,6 +1,5 @@
 snafuinclude Prelude "prelude";
 
-// TODO optimize away the NatInf constructor
 type case NatInf
       of $NatInf (Array Word)
       ;
