@@ -254,9 +254,10 @@ public:
           i32sForThisFunction++;
         }
 
-        if ((i32sForThisFunction % 2) != 0) {
-           AP.OutStreamer.AddComment("padding for alignment...");
+        if (((offsetsWithMetadata.size() + offsets.size()) % 2) != 0) {
+          AP.OutStreamer.AddComment("padding for alignment...");
           AP.EmitInt32(0);
+          i32sForThisFunction++;
         }
       }
       sNumStackMapBytesEmitted += i32sForThisFunction * sizeof(int32_t)
