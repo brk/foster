@@ -1,0 +1,23 @@
+snafuinclude Bytes "bytes";
+
+foster_stdin_read_bytes :: { Array Int8 => Ref Int32 => Int64 } @ { proc = true };
+
+type case IORead
+      of $IOReadDone  Bytes
+      of $IOReadMore  Bytes
+      of $IOReadLater Bytes
+      of $IOReadError Bytes
+;
+
+read_stdin_bytes = {
+  arr   = allocDArray:[Int8] 1024;
+  rstatus = (ref 0);
+  nread = foster_stdin_read_bytes arr rstatus;
+  bytes = bytesTake (bytesOfRawArray arr) nread;
+  case rstatus^
+    of 0 -> IOReadDone bytes
+    of 1 -> IOReadMore bytes
+    of 2 -> IOReadLater bytes
+    of _ -> IOReadError bytes
+  end
+};

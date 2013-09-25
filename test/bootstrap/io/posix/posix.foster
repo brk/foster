@@ -1,0 +1,13 @@
+// IN: 1 3 5 7
+
+snafuinclude Posix "io/posix";
+
+main = {
+  res = read_stdin_bytes !;
+  case res
+    of $IOReadDone bytes ->
+            expect_i64 7;
+            print_i64 (bytesLength bytes);
+    of _ -> print_i32 123456;
+  end
+};
