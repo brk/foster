@@ -137,7 +137,7 @@ void setTimingDescriptions() {
   using foster::gTimings;
   gTimings.describe("total", "Overall compiler runtime (ms)");
 
-  gTimings.describe("io.parse", "Time spent parsing input file (ms)");
+  gTimings.describe("io.proto", "Time spent parsing input protobuf file (ms)");
   gTimings.describe("io.file",  "Time spent doing non-parsing I/O (ms)");
   gTimings.describe("io.dot",   "Time spent writing DOT graphs (ms)");
   gTimings.describe("io.prettyprint", "Time spent in pretty-printing (ms)");
@@ -177,10 +177,12 @@ void linkTo(llvm::Module*& transient,
 
 LLModule* readLLProgramFromProtobuf(const string& pathstr,
                                    foster::bepb::Module& out_sm) {
-  std::fstream input(pathstr.c_str(), std::ios::in | std::ios::binary);
-  if (!out_sm.ParseFromIstream(&input)) {
-    EDiag() << "ParseFromIstream() failed!";
-    return NULL;
+  { ScopedTimer timer("io.proto");
+    std::fstream input(pathstr.c_str(), std::ios::in | std::ios::binary);
+    if (!out_sm.ParseFromIstream(&input)) {
+      EDiag() << "ParseFromIstream() failed!";
+      return NULL;
+    }
   }
 
   //const foster::InputTextBuffer* inputBuffer = gInputTextBuffer;
