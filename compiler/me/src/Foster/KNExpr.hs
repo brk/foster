@@ -225,13 +225,14 @@ kNormalize mebTail ctorRepr expr =
         anyCaseArmIsGuarded [] = False
         anyCaseArmIsGuarded (arm:arms) = isGuarded arm || anyCaseArmIsGuarded arms
 
+        fmapRepr :: (CtorId -> CtorRepr) -> Pattern ty -> PatternRepr ty
         fmapRepr ctorRepr p =
           case p of
-            P_Atom a                  -> PR_Atom a
-            P_Tuple rng ty pats       -> PR_Tuple rng ty (map (fmapRepr ctorRepr) pats)
-            P_Ctor  rng ty pats cinfo -> let cid = ctorInfoId cinfo
-                                             cinfo' = cinfo { ctorInfoRepr = ctorRepr cid }
-                                         in PR_Ctor rng ty (map (fmapRepr ctorRepr) pats) cinfo'
+            P_Atom a            -> PR_Atom a
+            P_Tuple rng ty pats -> PR_Tuple rng ty (map (fmapRepr ctorRepr) pats)
+            P_Ctor  rng ty pats (CtorInfo cid _) ->
+                        PR_Ctor rng ty (map (fmapRepr ctorRepr) pats) cinfo'
+                          where cinfo' = LLCtorInfo cid (ctorRepr cid) (map typeOf pats)
 
 -- }}}|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -1143,7 +1144,7 @@ instance Pretty t => Pretty (PatternRepr t) where
   pretty p =
     case p of
         PR_Atom          atom              -> pretty atom
-        PR_Ctor          _rng _ty pats cid -> parens (text "$" <> text (ctorCtorName $ ctorInfoId cid) <+> (hsep $ map pretty pats))
+        PR_Ctor          _rng _ty pats cid -> parens (text "$" <> text (ctorCtorName $ ctorLLInfoId cid) <+> (hsep $ map pretty pats))
         PR_Tuple         _rng _ty pats     -> parens (hsep $ punctuate comma (map pretty pats))
 
 pr YesTail = "(tail)"
@@ -2088,7 +2089,7 @@ matchConstExpr c arms = go arms
                             let parts = map (uncurry matchPatternWithConst) (zip pats args) in
                             let res = combineMaybeList parts in
                             trace ("matched tuple const against tuple pat " ++ show p ++ "\n, parts = " ++ show parts ++ " ;;; res = " ++ show res) res
-                        (KnownCtor _ (kid, _) args, PR_Ctor _ _ pats (CtorInfo cid _ _)) | kid == cid ->
+                        (KnownCtor _ (kid, _) args, PR_Ctor _ _ pats (LLCtorInfo cid _ _)) | kid == cid ->
                           case (args, pats) of
                             ([], []) -> Just []
                             _        -> combineMaybeList $ map (uncurry matchPatternWithConst) (zip pats args)

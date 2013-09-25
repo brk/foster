@@ -107,19 +107,38 @@ data PatternAtom ty =
         | P_Bool          SourceRange ty Bool
         | P_Int           SourceRange ty LiteralInt
 
+instance TypedWith (PatternAtom ty) ty where
+  typeOf (P_Wildcard  _rng ty  ) = ty
+  typeOf (P_Variable  _rng tid ) = tidType tid
+  typeOf (P_Bool      _rng ty _) = ty
+  typeOf (P_Int       _rng ty _) = ty
+
 data Pattern ty =
           P_Atom         (PatternAtom ty)
-        | P_Ctor          SourceRange ty [Pattern ty] (CtorInfo () ty)
+        | P_Ctor          SourceRange ty [Pattern ty] (CtorInfo ty)
         | P_Tuple         SourceRange ty [Pattern ty]
+
+instance TypedWith (Pattern ty) ty where
+ typeOf pattern = case pattern of
+      P_Atom          atom -> typeOf atom
+      P_Ctor  _rng ty _ _  -> ty
+      P_Tuple _rng ty _    -> ty
+
 
 data PatternRepr ty =
           PR_Atom         (PatternAtom ty)
-        | PR_Ctor          SourceRange ty [PatternRepr ty] (CtorInfo CtorRepr ty)
+        | PR_Ctor          SourceRange ty [PatternRepr ty] (LLCtorInfo ty)
         | PR_Tuple         SourceRange ty [PatternRepr ty]
+
+instance TypedWith (PatternRepr ty) ty where
+ typeOf pattern = case pattern of
+      PR_Atom          atom -> typeOf atom
+      PR_Ctor  _rng ty _ _  -> ty
+      PR_Tuple _rng ty _    -> ty
 
 data PatternFlat ty =
           PF_Atom        (PatternAtom ty)
-        | PF_Ctor         SourceRange ty [PatternAtom ty] (CtorInfo () ty)
+        | PF_Ctor         SourceRange ty [PatternAtom ty] (CtorInfo ty)
         | PF_Tuple        SourceRange ty [PatternAtom ty]
 
 data CaseArm pat expr ty = CaseArm { caseArmPattern :: pat ty
@@ -153,19 +172,16 @@ data DataCtor ty = DataCtor { dataCtorName  :: CtorName
                             , dataCtorDTTyF :: [TypeFormalAST]
                             , dataCtorTypes :: [ty]
                             }
--- Note that CtorRepr can only be created after typechecking,
--- because it depends on the result of kind (boxity) analysis.
---
+
+data CtorInfo ty = CtorInfo { ctorInfoId :: CtorId
+                            , ctorInfoDc :: DataCtor ty
+                            } deriving Show -- for Typecheck
+
 -- We need to propagate the results of ctor analysis easily
 -- to KNExpr (where we generate wrappers, which will be no-ops
 -- for transparent constructors) and the backend (where we
 -- will eventually implement occurrences as no-ops
 -- for transparent constructors).
-
-data CtorInfo repr ty = CtorInfo { ctorInfoId :: CtorId
-                                 , ctorInfoDc :: DataCtor ty
-                                 , ctorInfoRepr :: repr
-                                 } deriving Show -- for Typecheck
 
 data LLCtorInfo ty = LLCtorInfo { ctorLLInfoId   :: CtorId
                                 , ctorLLInfoRepr :: CtorRepr
@@ -196,6 +212,9 @@ occType v occ = let
                    (offs, infos) = unzip occ
                 in go (tidType v) offs (map ctorLLInfoTys infos)
 
+-- Note that CtorRepr can only be created after typechecking,
+-- because it depends on the result of kind (boxity) analysis.
+--
 data CtorRepr = CR_Default     Int -- tag via indirection through heap cell metadata
               | CR_Nullary     Int -- small integer stored in low tag bits of null pointer.
               | CR_Tagged      Int -- small integer stored in low tag bits of non-null pointer.
@@ -628,7 +647,7 @@ instance Show (PatternFlat ty) where
 
 instance Show (PatternRepr ty) where
   show (PR_Atom atom) = show atom
-  show (PR_Ctor     _ _ _pats ctor) = "PR_Ctor     " ++ show (ctorInfoId ctor)
+  show (PR_Ctor     _ _ _pats ctor) = "PR_Ctor     " ++ show (ctorLLInfoId ctor)
   show (PR_Tuple    _ _ pats)       = "PR_Tuple    " ++ show pats
 
 instance Pretty ty => Pretty (EPattern ty) where
@@ -700,8 +719,8 @@ deriving instance (Eq ty)   => Eq   (FosterPrim ty)
 deriving instance (Show ty) => Show (E_VarAST ty)
 deriving instance (Eq ty)   => Eq   (DataCtor ty)
 
-instance (Eq repr) => Eq (CtorInfo repr t) where
-  a == b = (ctorInfoId a) == (ctorInfoId b) && ctorInfoRepr a == ctorInfoRepr b
+instance Eq (CtorInfo t) where
+  a == b = (ctorInfoId a) == (ctorInfoId b)
 
 instance Ord (LLCtorInfo ty) where
   compare (LLCtorInfo c1 r1 _) (LLCtorInfo c2 r2 _) = compare (c1, r1) (c2, r2)
@@ -715,7 +734,7 @@ deriving instance Functor Pattern
 deriving instance Functor TypedId
 deriving instance Functor AllocInfo
 deriving instance Functor FosterPrim
-deriving instance Functor (CtorInfo repr)
+deriving instance Functor CtorInfo
 deriving instance Functor DataCtor
 deriving instance Functor DataType
 deriving instance Functor ArrayIndex

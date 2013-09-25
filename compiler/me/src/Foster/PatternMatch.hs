@@ -90,18 +90,16 @@ compilePatterns bs allSigs =
     (PR_Atom (P_Variable _ v))   -> SP_Variable v
     (PR_Atom (P_Bool     _ _ b)) -> SP_Ctor (boolCtor b)     []
     (PR_Atom (P_Int     _ ty i)) -> SP_Ctor (intCtor ty i)   []
-    (PR_Ctor  _ _ pats nfo) -> SP_Ctor (llCTI nfo pats) (map compilePattern pats)
+    (PR_Ctor  _ _ pats nfo) -> SP_Ctor            nfo   (map compilePattern pats)
     (PR_Tuple _ _ pats)     -> SP_Ctor (tupleCtor pats) (map compilePattern pats)
     where
-          llCTI (CtorInfo c _ r) pats =
-               LLCtorInfo c r (map patternType pats)
           ctorInfo tynm dcnm dctys repr =
              LLCtorInfo (CtorId tynm dcnm (Prelude.length $ dctys)) repr dctys
 
-          boolCtor False = ctorInfo "Bool"  "False" []                     (CR_Value 0)
-          boolCtor True  = ctorInfo "Bool"  "True"  []                     (CR_Value 1)
-          tupleCtor pats = ctorInfo "()"    "()"    (map patternType pats) (CR_Default 0)
-          intCtor ty li  = ctorInfo ctnm ("<"++ctnm++">") []               (CR_Value tag)
+          boolCtor False = ctorInfo "Bool"  "False" []                (CR_Value 0)
+          boolCtor True  = ctorInfo "Bool"  "True"  []                (CR_Value 1)
+          tupleCtor pats = ctorInfo "()"    "()"    (map typeOf pats) (CR_Default 0)
+          intCtor ty li  = ctorInfo ctnm ("<"++ctnm++">") []          (CR_Value tag)
                              where
                               isb  = intSizeBitsOf ty
                               bits = intSizeOf     isb
@@ -113,14 +111,6 @@ compilePatterns bs allSigs =
                                       then litIntValue li
                                       else error $ "cannot cram " ++ show bits
                                                ++ " bits into Int"++ show (litIntMinBits li)++"!"
-          patternType :: PatternRepr ty -> ty
-          patternType pattern = case pattern of
-                  PR_Atom (P_Wildcard  _rng ty  )   -> ty
-                  PR_Atom (P_Variable  _rng tid )   -> tidType tid
-                  PR_Atom (P_Bool      _rng ty _)   -> ty
-                  PR_Atom (P_Int       _rng ty _)   -> ty
-                  PR_Ctor              _rng ty _ _  -> ty
-                  PR_Tuple             _rng ty _    -> ty
 
 -- "Compilation is defined by cases as follows."
 cc :: Show t => [Occurrence t] -> ClauseMatrix a t -> [SourceRange] -> DataTypeSigs -> DecisionTree a t
@@ -314,10 +304,8 @@ isSignature ctorSet allSigs =
 
 deriving instance (Show a, Show t) => Show (DecisionTree a t)
 
-instance Ord repr => Ord (CtorInfo repr t) where
-  compare a b = case compare (ctorInfoId a) (ctorInfoId b) of
-                  EQ -> compare (ctorInfoRepr a) (ctorInfoRepr b)
-                  lg -> lg
+instance Ord (CtorInfo t) where
+  compare a b = compare (ctorInfoId a) (ctorInfoId b)
 
 instance (Structured a, Show t) => Structured (DecisionTree a t) where
     textOf e _width =

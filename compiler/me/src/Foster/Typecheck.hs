@@ -1072,7 +1072,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
                                 return $ P_Atom $ P_Int r ty int
 
       EP_Ctor     r eps s -> do
-        info@(CtorInfo cid (DataCtor _ tyformals types) _) <- getCtorInfoForCtor ctx s
+        info@(CtorInfo cid (DataCtor _ tyformals types)) <- getCtorInfoForCtor ctx s
         sanityCheck (ctorArity cid == List.length eps) $
               "Incorrect pattern arity: expected " ++
               (show $ ctorArity cid) ++ " pattern(s), but got "
@@ -1109,7 +1109,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
         ps <- sequence [checkPattern ctx p t | (p, t) <- zip eps ts]
         return $ P_Tuple r (TupleTypeAST ts) ps
     -----------------------------------------------------------------------
-    getCtorInfoForCtor :: Context Sigma -> T.Text -> Tc (CtorInfo () Sigma)
+    getCtorInfoForCtor :: Context Sigma -> T.Text -> Tc (CtorInfo Sigma)
     getCtorInfoForCtor ctx ctorName = do
       let ctorInfos = contextCtorInfo ctx
       case Map.lookup ctorName ctorInfos of
@@ -1595,8 +1595,8 @@ instance Pretty a => Pretty (Expected a) where
   pretty (Infer _) = text "<infer>"
   pretty (Check a) = pretty a
 
-instance (Pretty ty, Pretty repr) => Pretty (CtorInfo repr ty) where
-  pretty (CtorInfo cid dc _) = parens (text "CtorInfo" <+> text (show cid) <+> pretty dc)
+instance Pretty ty => Pretty (CtorInfo ty) where
+  pretty (CtorInfo cid dc) = parens (text "CtorInfo" <+> text (show cid) <+> pretty dc)
 
 instance Pretty ty => Pretty (DataCtor ty) where
   pretty (DataCtor name _tyformals _ctortyargs) =

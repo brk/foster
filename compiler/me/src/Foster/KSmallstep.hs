@@ -220,7 +220,7 @@ data IExpr =
         | ICall         Ident  [Ident]
         | ICallPrim     ILPrim [Ident]
         | ICase         Ident  {-(DecisionTree KNExpr)-} [CaseArm PatternRepr SSTerm TypeIL] [PatternRepr TypeIL]
-        | ICaseGuard    SSTerm SSTerm ShowableMachineState 
+        | ICaseGuard    SSTerm SSTerm ShowableMachineState
                         Ident  [CaseArm PatternRepr SSTerm TypeIL] [PatternRepr TypeIL]
         | ITyApp        Ident  [TypeIL]
         | IAppCtor      CtorId [Ident]
@@ -487,7 +487,7 @@ stepExpr gs expr = do
         SSTmValue _ -> error "case guard evaluated to non-boolean value"
         SSTmExpr _  -> pushContext (withTerm gs ge)
                                      (envOf gs, \t -> SSTmExpr $ ICaseGuard t e (SMS oldgs) a bs rejectedPatterns)
-        
+
     ICallPrim prim vs ->
         let args = map (getval gs) vs in
         case prim of
@@ -550,7 +550,7 @@ matchPattern p v =
     (SSBool b1, PR_Atom (P_Bool _ _ b2)) -> matchIf $ b1 == b2
     (_        , PR_Atom (P_Bool _ _ _ )) -> matchFailure
 
-    (SSCtorVal vid vals, PR_Ctor _ _ pats (CtorInfo cid _ _)) -> do
+    (SSCtorVal vid vals, PR_Ctor _ _ pats (LLCtorInfo cid _ _)) -> do
                                             _ <- matchIf $ vid == cid
                                             matchPatterns pats vals
     (_                 , PR_Ctor _ _ _ _) -> matchFailure

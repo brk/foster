@@ -210,11 +210,9 @@ monoPattern subst pattern =
    PR_Ctor     rng t pats ctor  -> PR_Ctor     rng (monoType subst t) (mp pats)
                                                    (monoCtorInfo subst ctor)
 
-monoCtorInfo subst (CtorInfo cid (DataCtor nm tyformals tys) repr) =
-                   (CtorInfo cid (DataCtor nm tyformals tys') repr)
-                where tys'   = map (monoType subst') tys
-                      subst' = extendSubstForFormals subst tyformals
-
+monoCtorInfo subst (LLCtorInfo cid repr tys) =
+                   (LLCtorInfo cid repr tys')
+                where tys'   = map (monoType subst) tys
 
 monomorphizedDataTypesFrom dts specs = concatMap monomorphizedDataTypes dts
  where monomorphizedDataType :: DataType TypeIL -> [MonoType] -> DataType MonoType
@@ -437,26 +435,15 @@ data RenameState = RenameState {
                    }
 type Renamed = StateT RenameState IO
 
--- TODO include kinds on type variables (IL), only subst for boxed kinds
-
 -- ||||||||||||||||| Monomorphic Type Substitution ||||||||||||||{{{
 
 type MonoSubst = Map TyVar MonoType
 emptyMonoSubst = Map.empty
 
+-- Extend the given substitution to map the given TypeFormalASTs to types.
 extendSubst subst formals tys =
   let btv (TypeFormalAST s k) = (BoundTyVar s, k) in
   extendMonoSubst subst tys (map btv formals)
-
-extendSubstForFormals subst formals =
-  let info (TypeFormalAST s k) =
-        case k of KindAnySizeType  -> []
-                  KindPointerSized -> [(PtrTypeUnknown, (BoundTyVar s, k))] in
-  let (tys, kvs) = unzip $ concatMap info formals in
-  -- Suppose formals was  (a1 : Boxed), (a2 : Type), (a3 : Boxed)
-  -- then tys = [PtrTypeUnknown,      PtrTypeUnknown]
-  -- and  kvs = [BoundTyVar a1 Boxed, BoundTyVar a3 Boxed]
-  extendMonoSubst subst tys kvs
 
 extendMonoSubst :: MonoSubst -> [MonoType] -> [(TyVar, Kind)] -> MonoSubst
 extendMonoSubst subst monotypes ktyvars =

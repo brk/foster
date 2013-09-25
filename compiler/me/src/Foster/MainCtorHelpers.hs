@@ -23,17 +23,17 @@ getDataTypes datatypes = Map.unionsWith (++) $ map single datatypes
   where
     single dt = Map.singleton (typeFormalName $ dataTypeName dt) [dt]
 
-getCtorInfo :: [DataType TypeAST] -> Map CtorName [CtorInfo () TypeAST]
+getCtorInfo :: [DataType TypeAST] -> Map CtorName [CtorInfo TypeAST]
 getCtorInfo datatypes = Map.unionsWith (++) $ map getCtorInfoList datatypes
   where
-    getCtorInfoList :: DataType TypeAST -> Map CtorName [CtorInfo () TypeAST]
+    getCtorInfoList :: DataType TypeAST -> Map CtorName [CtorInfo TypeAST]
     getCtorInfoList (DataType formal _tyformals ctors) =
           Map.fromList $ map (buildCtorInfo (typeFormalName formal)) ctors
 
     buildCtorInfo :: DataTypeName -> DataCtor TypeAST
-                  -> (CtorName, [CtorInfo () TypeAST])
+                  -> (CtorName, [CtorInfo TypeAST])
     buildCtorInfo name ctor =
-      case ctorIdFor name ctor of (n, c) -> (n, [CtorInfo c ctor ()])
+      case ctorIdFor name ctor of (n, c) -> (n, [CtorInfo c ctor])
 
 -----------------------------------------------------------------------
 

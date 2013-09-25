@@ -125,10 +125,10 @@ ilOfPat ctx pat = case pat of
                                        ty' <- ilOf ctx ty
                                        return $ P_Tuple rng ty' pats'
 
-ilOfCtorInfo :: Context t -> CtorInfo () TypeAST -> Tc (CtorInfo () TypeIL)
-ilOfCtorInfo ctx (CtorInfo id dc repr) = do
+ilOfCtorInfo :: Context t -> CtorInfo TypeAST -> Tc (CtorInfo TypeIL)
+ilOfCtorInfo ctx (CtorInfo id dc) = do
   dc' <- ilOfDataCtor ctx dc
-  return $ CtorInfo id dc' repr
+  return $ CtorInfo id dc'
 
 ilOfDataCtor :: Context t -> DataCtor TypeAST -> Tc (DataCtor TypeIL)
 ilOfDataCtor ctx (DataCtor nm tyformals tys) = do
