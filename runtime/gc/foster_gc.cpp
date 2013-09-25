@@ -1047,13 +1047,13 @@ void record_memalloc_cell(typemap* typeinfo, const char* srclines) {
   allocator->record_memalloc_cell(typeinfo, srclines);
 }
 
-void force_gc_for_debugging_purposes() {
-  allocator->force_gc_for_debugging_purposes();
-}
-
 // Extern symbol for gdb, not foster programs.
 void fflush_gclog() { fflush(gclog); }
 
+} // extern "C"
+
+void force_gc_for_debugging_purposes() {
+  allocator->force_gc_for_debugging_purposes();
 }
 
 } // namespace foster::runtime::gc
