@@ -23,6 +23,8 @@ extern "C" {
   extern stackmap_table foster__gcmaps;
 }
 
+static bool is_odd(int64_t x) { return 1 == (x % 2); }
+
 // Stack map registration walks through the stack maps emitted
 // by the Foster LLVM GC plugin
 void register_stackmaps(std::map<void*, const stackmap::PointCluster*>& clusterForAddress) {
@@ -41,9 +43,10 @@ void register_stackmaps(std::map<void*, const stackmap::PointCluster*>& clusterF
     fprintf(gclog, "  %d stackmap_ptr: %p; unaligned = %p\n", m, stackmap_ptr, unaligned_stackmap_ptr); fflush(gclog);
     const stackmap& s = *stackmap_ptr;
     int32_t numClusters = s.pointClusterCount;
+    int32_t _padding    = 0;
     fprintf(gclog, "  num clusters: %d\n", numClusters); fflush(gclog);
 
-    totalOffset += sizeof(s.pointClusterCount);
+    totalOffset += sizeof(s.pointClusterCount) + sizeof(_padding);
 
     for (int32_t i = 0; i < numClusters; ++i) {
       const stackmap::PointCluster* pc =
@@ -52,13 +55,16 @@ void register_stackmaps(std::map<void*, const stackmap::PointCluster*>& clusterF
 
       const stackmap::PointCluster& c = *pc;
       size_t sizesAndCounts = sizeof(int32_t) * 4; // sizes + counts
-      size_t liveOffset = totalOffset + sizesAndCounts;
+      size_t safeOffset = totalOffset + sizesAndCounts;
       totalOffset += sizesAndCounts
                    + sizeof(int32_t) * c.liveCountWithoutMetadata
-                   + OFFSET_WITH_METADATA_SIZE * c.liveCountWithMetadata;
+                   + sizeof(int32_t) * c.liveCountWithMetadata
+                   + sizeof(void*)   * c.liveCountWithMetadata
+                   + sizeof(void*)   * c.addressCount
+                   + (is_odd(c.liveCountWithoutMetadata +
+                             c.liveCountWithMetadata) ? sizeof(int32_t) : 0);
 
-      void** safePointAddresses = (void**) offset(ps, totalOffset);
-      totalOffset += sizeof(void*)   * c.addressCount;
+      void** safePointAddresses = (void**) offset(ps, safeOffset);
 
       fprintf(gclog, "  safePointAddrs: "); fflush(gclog);
       for (int i = 0; i < c.addressCount; ++i) {
@@ -79,11 +85,12 @@ void register_stackmaps(std::map<void*, const stackmap::PointCluster*>& clusterF
                      c.frameSize, c.addressCount,
                      c.liveCountWithMetadata, c.liveCountWithoutMetadata);
 
+      const int32_t*     lmo = c.getLiveOffsetWithMetaStart();
+      const void* const* lmm = c.getMetadataStart();
       for (int i = 0; i < c.liveCountWithMetadata; ++i) {
-        stackmap::OffsetWithMetadata* op = (stackmap::OffsetWithMetadata*)
-                              offset(ps, liveOffset + OFFSET_WITH_METADATA_SIZE * i);
-        fprintf(gclog, "      offset %d , meta %p = %s\n",
-                        op->offset, op->metadata, op->metadata);
+        int32_t      offset   = lmo[i];
+        const void*  metadata = lmm[i];
+        fprintf(gclog, "      offset %d , meta %p = %s\n", offset, metadata, metadata);
       }
       fprintf(gclog, "\n");
     }

@@ -43,8 +43,6 @@ const int inline gSEMISPACE_SIZE() { return __foster_globals.semispace_size; }
 
 /////////////////////////////////////////////////////////////////
 
-void register_stackmaps();
-
 #include "foster_gc_utils.h"
 
 #include <sstream>
@@ -859,10 +857,12 @@ void visitGCRootsWithStackMaps(void* start_frame,
         pc->liveCountWithMetadata, pc->liveCountWithoutMetadata);
     }
 
+    const void* const* ms = pc->getMetadataStart();
+    const int32_t    * lo = pc->getLiveOffsetWithMetaStart();
     int32_t frameSize = pc->frameSize;
     for (int a = 0; a < pc->liveCountWithMetadata; ++a) {
-      int32_t     off = pc->offsetWithMetadata(a)->offset;
-      void*         m = pc->offsetWithMetadata(a)->metadata;
+      int32_t     off = lo[a];
+      const void*   m = ms[a];
       void*  rootaddr = offset(fp, off);
 
       visitor((unchecked_ptr*) rootaddr, (const typemap*) m);

@@ -152,16 +152,19 @@ public:
       // struct {
       //   int32_t PointClusterCount;
       //   struct {
-      //     int32_t FrameSize;
-      //     int32_t AddressCount;
-      //     int32_t LiveCountWithMetadata;
-      //     int32_t LiveCountWithoutMetadata;
-      //     {int32_t,
-      //      void*} LiveOffsetsWithMetadata[LiveCountWithMetadata];
-      //     int32_t LiveOffsets[LiveCountWithoutMetadata];
-      //     void*   SafePointAddress[AddressCount];
+      //     int32_t frameSize;
+      //     int32_t addressCount;
+      //     int32_t liveCountWithMetadata;
+      //     int32_t liveCountWithoutMetadata;
+      //     void*   safePointAddresses[addressCount];
+      //     void*   metadata[liveCountWithMetadata];
+      //     int32_t liveOffsetsWithMetadata[liveCountWithMetadata];
+      //     int32_t liveOffsetsWithoutMetadata[liveCountWithoutMetadata];
       //   } PointCluster[PointClusterCount];
       // } __foster_gcmap_<FUNCTIONNAME>;
+      //
+      // Note that each point cluster is laid out to
+      // avoid misalignment without needing explicit padding.
 
       // Align to address width.
       AP.EmitAlignment(AddressAlignLog);
@@ -176,6 +179,9 @@ public:
       // Emit PointClusterCount.
       AP.OutStreamer.AddComment("safe point cluster count");
       AP.EmitInt32(clusters.size());
+
+      AP.OutStreamer.AddComment("padding before PointClusters");
+      AP.EmitInt32(0);
 
       size_t i32sForThisFunction = 1; // above
       size_t voidPtrsForThisFunction = 0;
@@ -212,6 +218,17 @@ public:
         AP.EmitInt32(offsets.size());
         i32sForThisFunction++;
 
+        unsigned IntPtrSize = AP.TM.getDataLayout()->getPointerSize();
+
+        // Emit the addresses of the safe points in the cluster.
+        for (Labels::iterator lit = labels.begin();
+                              lit != labels.end(); ++lit) {
+          AP.OutStreamer.AddComment("safe point address");
+          const unsigned addrSpace = 0;
+          AP.OutStreamer.EmitSymbolValue(*lit, IntPtrSize, addrSpace);
+          voidPtrsForThisFunction++;
+        }
+
         // Emit the stack offsets for the metadata-imbued roots in the cluster.
         for (RootOffsetsWithMetadata::iterator
                                    rit = offsetsWithMetadata.begin();
@@ -219,7 +236,11 @@ public:
           AP.OutStreamer.AddComment("metadata");
           AP.EmitGlobalConstant((*rit).second);
           voidPtrsForThisFunction++;
+        }
 
+        for (RootOffsetsWithMetadata::iterator
+                                   rit = offsetsWithMetadata.begin();
+                                   rit != offsetsWithMetadata.end(); ++rit) {
           AP.OutStreamer.AddComment("stack offset for metadata-imbued root");
           AP.EmitInt32((*rit).first);
           i32sForThisFunction++;
@@ -233,15 +254,9 @@ public:
           i32sForThisFunction++;
         }
 
-        unsigned IntPtrSize = AP.TM.getDataLayout()->getPointerSize();
-
-        // Emit the addresses of the safe points in the cluster.
-        for (Labels::iterator lit = labels.begin();
-                              lit != labels.end(); ++lit) {
-          AP.OutStreamer.AddComment("safe point address");
-          const unsigned addrSpace = 0;
-          AP.OutStreamer.EmitSymbolValue(*lit, IntPtrSize, addrSpace);
-          voidPtrsForThisFunction++;
+        if ((i32sForThisFunction % 2) != 0) {
+           AP.OutStreamer.AddComment("padding for alignment...");
+          AP.EmitInt32(0);
         }
       }
       sNumStackMapBytesEmitted += i32sForThisFunction * sizeof(int32_t)

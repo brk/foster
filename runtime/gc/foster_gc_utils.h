@@ -150,14 +150,6 @@ struct typemap {
 };
 
 struct stackmap {
-  struct OffsetWithMetadata {
-    void* metadata;
-    int32_t offset;
-  };
-  // GC maps emit structures without alignment, so we can't simply
-  // use sizeof(stackmap::OffsetWithMetadata), because that value
-  // includes padding.
-
   // A safe point is a location in the code stream where it is
   // safe for garbage collection to happen (that is, where the
   // code generator guarantees that any registers which might
@@ -168,27 +160,30 @@ struct stackmap {
   // this writing) calculate liveness information, all safe points
   // in the same function wind up with the same "live" variables.
   int32_t pointClusterCount;
+  int32_t _padding;
   struct PointCluster {
     // register_stackmaps() assumes it knows the layout of this struct!
     int32_t frameSize;
     int32_t addressCount;
     int32_t liveCountWithMetadata;
     int32_t liveCountWithoutMetadata;
-    OffsetWithMetadata
-            liveOffsetsWithMetadata[0];
-    int32_t liveOffsetsWithoutMetadata[0];
     void*   safePointAddresses[0];
+    void*   metadata[0];
+    int32_t liveOffsetsWithMetadata[0];
+    int32_t liveOffsetsWithoutMetadata[0];
+    // maybe one int32_t for padding...
 
-    // Use manual pointer arithmetic to avoid C's padding rules.
-    const OffsetWithMetadata* offsetWithMetadata(int i) const {
-      #define OFFSET_WITH_METADATA_SIZE (sizeof(void*) + sizeof(int32_t))
-      return (const OffsetWithMetadata*)
-                  offset((void*) liveOffsetsWithMetadata,
-                         i * OFFSET_WITH_METADATA_SIZE);
+    const void* const* getMetadataStart() const {
+      return &((void**)safePointAddresses)[addressCount];
     }
 
-    // TODO provide similar methods to find actual
-    // addresses of the other flexible arrays.
+    const int32_t* getLiveOffsetWithMetaStart() const {
+      return (int32_t*) &(getMetadataStart())[liveCountWithMetadata];
+    }
+
+    const int32_t* getLiveOffsetWithoutMetaStart() const {
+      return (int32_t*) &(getLiveOffsetWithMetaStart())[liveCountWithMetadata];
+    }
   };
   PointCluster pointClusters[0];
 };
