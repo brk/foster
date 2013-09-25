@@ -13,7 +13,7 @@ import Foster.Output
 import Data.IORef(IORef, readIORef, writeIORef)
 import Data.Set as Set(Set, fromList, toList, difference, insert, empty, member)
 import Data.Sequence as Seq(Seq, length, index, (><))
-import Data.Map as Map(Map)
+import Data.Map as Map(Map, fromListWith)
 import Data.List as List(replicate, intersperse)
 
 import Text.PrettyPrint.ANSI.Leijen
@@ -472,6 +472,11 @@ modifyIORef' r f = do
 liftMaybe :: Monad m => (a -> m b) -> Maybe a -> m (Maybe b)
 liftMaybe _ Nothing = return Nothing
 liftMaybe f (Just a) = do b <- f a ; return $ Just b
+
+-- Like Map.fromList, but retains every value.
+mapAllFromList :: Ord k => [(k, a)] -> Map k [a]
+mapAllFromList pairs =
+  Map.fromListWith (++) (map (\(k,a) -> (k, [a])) pairs)
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- |||||||||||||||||||||||||| Idents |||||||||||||||||||||||||||{{{
