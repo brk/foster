@@ -408,16 +408,12 @@ dumpArrayLength t arr =
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||| Other Expressions ||||||||||||||||||||||{{{
-dumpCtorInfo (CtorInfo cid@(CtorId _dtn dtcn _arity)
-                           (DataCtor dcn _tyfs tys) repr) =
-  if dtcn == T.unpack dcn
-    then -- ignore type formals...
-        P'.defaultValue { PbCtorInfo.ctor_id = dumpCtorIdWithRepr "dumpCtorInfo" (cid, repr)
-                        , PbCtorInfo.ctor_struct_ty = if null tys
-                                then Nothing
-                                else Just $ dumpType (LLStructType tys)
-                        }
-    else error $ "Ctor info inconsistent, had different names for ctor id and data ctor."
+dumpCtorInfo (LLCtorInfo cid repr tys) =
+    P'.defaultValue { PbCtorInfo.ctor_id = dumpCtorIdWithRepr "dumpCtorInfo" (cid, repr)
+                    , PbCtorInfo.ctor_struct_ty = if null tys
+                            then Nothing
+                            else Just $ dumpType (LLStructType tys)
+                    }
 
 dumpCtorIdWithRepr from (CtorId dtn dtcn _arity, repr) =
     P'.defaultValue { PbCtorId.ctor_type_name = u8fromString dtn

@@ -13,9 +13,6 @@ import qualified Data.Set  as Set(size, fromList, toList, map)
 import Data.Map(Map)
 import qualified Data.Map  as Map(lookup, size)
 
-import qualified Data.Text as T
-
-import Debug.Trace(trace)
 import Foster.Base
 
 import Text.PrettyPrint.ANSI.Leijen hiding (column)
@@ -62,13 +59,15 @@ data ClauseRow a t  = ClauseRow { rowOrigPat  :: (SPattern t)
 
 data SPattern t = SP_Wildcard
                 | SP_Variable (TypedId t)
-                | SP_Ctor     (CtorInfo CtorRepr t) [SPattern t]
+                | SP_Ctor     (LLCtorInfo t) [SPattern t]
                deriving (Show)
 
 instance Pretty (SPattern t) where
   pretty (SP_Wildcard) = text "_"
   pretty (SP_Variable tid) = pretty (tidIdent tid)
-  pretty (SP_Ctor cinfo pats) = parens (text ((show $ ctorInfoId cinfo) ++ (show $ ctorInfoRepr cinfo)) <+> hsep (map pretty pats))
+  pretty (SP_Ctor cinfo pats) = parens ((text (show $ ctorLLInfoId cinfo)
+                                      <> text (show $ ctorLLInfoRepr cinfo))
+                                     <+> hsep (map pretty pats))
 
 type DataTypeSigs = Map DataTypeName DataTypeSig
 
@@ -91,13 +90,13 @@ compilePatterns bs allSigs =
     (PR_Atom (P_Variable _ v))   -> SP_Variable v
     (PR_Atom (P_Bool     _ _ b)) -> SP_Ctor (boolCtor b)     []
     (PR_Atom (P_Int     _ ty i)) -> SP_Ctor (intCtor ty i)   []
-    (PR_Ctor  _ _ pats nfo) -> SP_Ctor nfo              (map compilePattern pats)
+    (PR_Ctor  _ _ pats nfo) -> SP_Ctor (llCTI nfo pats) (map compilePattern pats)
     (PR_Tuple _ _ pats)     -> SP_Ctor (tupleCtor pats) (map compilePattern pats)
     where
+          llCTI (CtorInfo c _ r) pats =
+               LLCtorInfo c r (map patternType pats)
           ctorInfo tynm dcnm dctys repr =
-             let dttyformals = [] in -- assume used only for simple data types
-             let dctor = DataCtor (T.pack dcnm) dttyformals dctys in
-             CtorInfo (CtorId tynm dcnm (Prelude.length $ dctys)) dctor repr
+             LLCtorInfo (CtorId tynm dcnm (Prelude.length $ dctys)) repr dctys
 
           boolCtor False = ctorInfo "Bool"  "False" []                     (CR_Value 0)
           boolCtor True  = ctorInfo "Bool"  "True"  []                     (CR_Value 1)
@@ -158,15 +157,15 @@ cc occs cm rngs allSigs =
       let spPatterns = cm `column` i in
       let headCtorInfos = Set.fromList (concatMap headCtorInfo spPatterns) in
       let (o1:orest) = occs in
-      let caselist = [ ((ctorInfoId c, ctorInfoRepr c),
-                           cc (expand o1 c ++ orest)
-                              (specialize c cm) (ranges cm) allSigs)
-                     | c <- Set.toList headCtorInfos] in
+      let caselist = [ ((c, r),
+                           cc (expand o1  llci ++ orest)
+                              (specialize (c,r) cm)  (ranges cm) allSigs)
+                     | llci@(LLCtorInfo c r _) <- Set.toList headCtorInfos] in
       -- The selected column contains some set of constructors C1 .. Ck.
       -- Pair each constructor with the clause matrix obtained from
       -- specializing the current match matrix w/r/t that constructor,
       -- and produce a Switch node examining the ctor of the i'th occurrence.
-      let defaultCase = if isSignature (Set.map ctorInfoId headCtorInfos) allSigs
+      let defaultCase = if isSignature (Set.map ctorLLInfoId headCtorInfos) allSigs
                          then Nothing
                          else let ad = cc orest (defaultMatrix cm) (ranges cm) allSigs in
                               Just ad in
@@ -184,6 +183,7 @@ allGuaranteedMatch pats = List.all trivialMatch pats
 firstRow (ClauseMatrix (r:_)) = r
 firstRow (ClauseMatrix []) = error "precondition violated for firstRow helper!"
 
+headCtorInfo :: SPattern ty -> [LLCtorInfo ty]
 headCtorInfo (SP_Wildcard    ) = []
 headCtorInfo (SP_Variable   _) = []
 headCtorInfo (SP_Ctor cinfo _) = [cinfo]
@@ -196,13 +196,13 @@ columnNumWithNonTrivialPattern cm =
 
 -- Given an occurrence and a constructor (which must match the type of the occurrence),
 -- return a list of occurrences corresponding to the subterms of the constructor.
-expand :: Occurrence t -> CtorInfo CtorRepr t -> [Occurrence t]
+expand :: Occurrence t -> LLCtorInfo t -> [Occurrence t]
 expand occ cinfo = [extendOccurrence occ n cinfo | n <- [0 .. ctorInfoArity cinfo - 1]]
 
-extendOccurrence :: Occurrence t -> Int -> CtorInfo CtorRepr t -> Occurrence t
+extendOccurrence :: Occurrence t -> Int -> LLCtorInfo t -> Occurrence t
 extendOccurrence occ n cinfo = occ ++ [(n, cinfo)]
 
-ctorInfoArity (CtorInfo cid _ _) = ctorArity cid
+ctorInfoArity (LLCtorInfo cid _ _) = ctorArity cid
 
 instance Pretty (ClauseMatrix a t) where
   pretty (ClauseMatrix rows) =
@@ -226,7 +226,7 @@ instance Pretty (ClauseMatrix a t) where
 --    c   d   (e::f) -> 3
 --
 -- Note that ``specialize`` should always be used with ``expand''!
-specialize :: CtorInfo CtorRepr t -> ClauseMatrix a t -> ClauseMatrix a t
+specialize :: (CtorId, CtorRepr) -> ClauseMatrix a t -> ClauseMatrix a t
 specialize cinfo (ClauseMatrix rows) =
 {-
   trace ("specialized\n" ++ show (pretty $ ClauseMatrix rows)
@@ -235,8 +235,8 @@ specialize cinfo (ClauseMatrix rows) =
                          ++ " and got\n" ++ show (pretty cm)) -}
   cm
   where
-    cm = ClauseMatrix [specializeRow row ctor | row <- rows
-                                       , isCompatible row cinfo]
+    cm = ClauseMatrix [specializeRow row cinfo | row <- rows
+                                               , isCompatible row cinfo]
     isCompatible row cinfo =
       case rowPatterns row of
         []               -> False
@@ -244,20 +244,18 @@ specialize cinfo (ClauseMatrix rows) =
         ((SP_Variable              _):_) -> True
         ((SP_Ctor cinfo' _):_) -> cinfo' `compatWith` cinfo
 
-    compatWith (CtorInfo c1 _ r1) (CtorInfo c2 _ r2) = c1 == c2 && r1 == r2
+    compatWith (LLCtorInfo c1 r1 _) (c2, r2) = c1 == c2 && r1 == r2
 
-    ctor = ctorInfoId cinfo
-
-    specializeRow (ClauseRow orig []       a rng) _ctor = ClauseRow orig [] a rng
-    specializeRow (ClauseRow orig (p:rest) a rng)  ctor =
+    specializeRow (ClauseRow orig []       a rng) _cinfo = ClauseRow orig [] a rng
+    specializeRow (ClauseRow orig (p:rest) a rng)  cinfo@(ctor, _) =
       case p of
         SP_Variable _ -> ClauseRow orig (wilds ++ rest) a rng
           where wilds = List.replicate (ctorArity ctor) (SP_Wildcard)
         SP_Wildcard   -> ClauseRow orig (wilds ++ rest) a rng
           where wilds = List.replicate (ctorArity ctor) (SP_Wildcard)
-        SP_Ctor (CtorInfo c _ _)  pats | c == ctor -> ClauseRow orig (pats ++ rest) a rng
-        SP_Ctor (CtorInfo c _ _) _pats -> error $ "specializeRow with unequal ctor?!? "
-                                               ++ show c ++ " // " ++ show ctor
+        SP_Ctor c pats | c `compatWith` cinfo -> ClauseRow orig (pats ++ rest) a rng
+        SP_Ctor _ _pats -> error $ "specializeRow with unequal ctor?!? "
+                                               ++ show "...c..." ++ " // " ++ show cinfo
 
 defaultMatrix (ClauseMatrix rows) =
   ClauseMatrix (concat [defaultRow row | row <- rows])

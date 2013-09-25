@@ -167,6 +167,12 @@ data CtorInfo repr ty = CtorInfo { ctorInfoId :: CtorId
                                  , ctorInfoRepr :: repr
                                  } deriving Show -- for Typecheck
 
+data LLCtorInfo ty = LLCtorInfo { ctorLLInfoId   :: CtorId
+                                , ctorLLInfoRepr :: CtorRepr
+                                , ctorLLInfoTys  :: [ty]
+                                }
+                     deriving (Show, Functor)
+
 type CtorRep = (CtorId, CtorRepr)
 
 type CtorName     = T.Text
@@ -176,19 +182,19 @@ data DataTypeSig  = DataTypeSig (Map CtorName CtorId)
 
 -- Occurrences are generated in pattern matching (and pushed through to LLVM).
 -- A pair (n, c) in an occurrence means "field n of the struct type for ctor c".
-type FieldOfCtor ty = (Int, CtorInfo CtorRepr ty)
+type FieldOfCtor ty = (Int, LLCtorInfo ty)
 type Occurrence ty = [FieldOfCtor ty]
 
 occType v occ = let
                    go ty [] [] = ty
-                   go _ (k:offs) (dc:dctors)
-                               = go ((dataCtorTypes dc) !! k) offs dctors
-                   go ty offs dctors =
+                   go _ (k:offs) (tys:tyss)
+                               = go (tys !! k) offs tyss
+                   go ty offs tyss =
                         error $ "occType: " ++ show ty
-                               ++ "; offs=" ++ show offs ++ "~~~" ++ show dctors
+                               ++ "; offs=" ++ show offs ++ "~~~" ++ show tyss
 
                    (offs, infos) = unzip occ
-                in go (tidType v) offs (map ctorInfoDc infos)
+                in go (tidType v) offs (map ctorLLInfoTys infos)
 
 data CtorRepr = CR_Default     Int -- tag via indirection through heap cell metadata
               | CR_Nullary     Int -- small integer stored in low tag bits of null pointer.
@@ -696,6 +702,11 @@ deriving instance (Eq ty)   => Eq   (DataCtor ty)
 
 instance (Eq repr) => Eq (CtorInfo repr t) where
   a == b = (ctorInfoId a) == (ctorInfoId b) && ctorInfoRepr a == ctorInfoRepr b
+
+instance Ord (LLCtorInfo ty) where
+  compare (LLCtorInfo c1 r1 _) (LLCtorInfo c2 r2 _) = compare (c1, r1) (c2, r2)
+instance Eq  (LLCtorInfo ty) where
+  c1 == c2 = compare c1 c2 == EQ
 
 deriving instance Functor PatternAtom
 deriving instance Functor PatternRepr
