@@ -813,15 +813,26 @@ tcRhoFn ctx f expTy = do
 -- {{{
 tcSigmaFn :: Context Sigma -> FnAST TypeAST -> Expected Sigma -> Tc (AnnExpr Sigma)
 tcSigmaFn ctx f expTyRaw = do
-  case (fnTyFormals f) of
-    []        -> tcRhoFnHelper ctx f expTyRaw
-    tyformals -> do
+  tcLift $ putStrLn $ "tcSigmaFn: nexpTyRaw is " ++ show expTyRaw
+  case (fnTyFormals f, expTyRaw) of
+    ([], Check (ForAllAST exp_ktvs _)) ->
+        -- Our function didn't have a forall, but its type annotation did.
+        -- We'll just copy the type parameters to the function and try again.
+        tcSigmaFn ctx (f { fnTyFormals = map mkTypeFormalAST exp_ktvs }) expTyRaw
+
+    ([], _) ->
+        -- Our function has no type parameters, and either it had no annotation
+        -- or we are inferring its type (and we'll infer a monotype).
+        tcRhoFnHelper ctx f expTyRaw
+
+    (tyformals, _) -> do
         let annot = fnAstAnnot f
         let rng   = annotRange annot
         let ktvs = map convertTyFormal tyformals
         taus <- genTauUnificationVarsLike ktvs (\n -> "fn type parameter " ++ show n ++ " for " ++ T.unpack (fnAstName f))
 
-        -- Extend the type environment with the forall-bound variables.
+        -- Extend the type environment with the forall-bound variables
+        -- declared in the function literal.
         let extendTypeBindingsWith ktvs =
               foldl' ins (localTypeBindings ctx) (zip taus ktvs)
                where ins m (mtv, (BoundTyVar nm, _k)) = Map.insert nm mtv m
@@ -953,6 +964,10 @@ tcSigmaFn ctx f expTyRaw = do
         debugDoc $ text "tcSigmaFn calling matchExp  expTyRaw = " <> pretty expTyRaw
         debugDoc $ text "tcSigmaFn calling matchExp, expTy'   = " <> pretty expTy'
         matchExp expTy' fn "tcSigmaFn"
+
+mkTypeFormalAST (BoundTyVar nm, kind) = TypeFormalAST nm kind
+mkTypeFormalAST (othervar, _kind) =
+    error $ "Whoops, expected only bound type variables!\n" ++ show othervar
 -- }}}
 
 
@@ -976,6 +991,7 @@ tcRhoFnHelper ctx f expTy = do
     annbody <- case expTy of
       Infer _    -> do inferSigma extCtx (fnAstBody f) "mono-fn body"
       Check fnty -> do let var_tys = map tidType uniquelyNamedFormals
+                       -- FOOBAR fnty might be a sigma; if so, what?
                        (arg_tys, body_ty) <- unifyFun fnty var_tys ("@" ++ highlightFirstLine rng)
                        _ <- sequence [subsCheckTy argty varty "mono-fn-arg" |
                                        (argty, varty) <- zip arg_tys var_tys]
