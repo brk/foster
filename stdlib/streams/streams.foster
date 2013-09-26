@@ -43,6 +43,14 @@ stream-is-nil  = { forall b:Type, s:Lazy (Stream b) =>
   end
 };
 
+stream-uncons ::   forall b:Type, { Lazy (Stream b) => Maybe (Lazy b) };
+stream-uncons  = { s =>
+  case force s of $StreamNilV     -> None
+               of $StreamCons v _ -> Some v
+  end
+};
+
+
 //stream-map-mediocre :: forall b:Type, c:Type, {
 //                        { b => c } =>     Lazy (Stream b) => Lazy (Stream c) };
 /*
@@ -77,9 +85,8 @@ stream-map-mediocre = { forall d:Type e:Type,
 };
 
 stream-countup :: forall a:Type,
-                 {   Int32 =>     { Int32 => a } => Lazy (Stream a) };
-stream-countup = { forall a:Type,
-                 n : Int32 => f : { Int32 => a } =>
+                 { Int32 => { Int32 => a } => Lazy (Stream a) };
+stream-countup = { n     => f =>
   lazily {
     stream-cons-mediocre (delay { f n })
                          (stream-countup (n +Int32 1) f)
@@ -141,7 +148,8 @@ stream-append = { forall v:Type, s1 : Lazy (Stream v) => s2 : Lazy (Stream v) =>
   };
 };
 
-stream-cutoff = { forall v:Type, n : Int32 => s : Lazy (Stream v) =>
+stream-cutoff :: forall v:Type, { Int32 => Lazy (Stream v) => List v };
+stream-cutoff = { n => s =>
   if n ==Int32 0 then Nil else
     case force s
       of $StreamNilV       -> Nil
