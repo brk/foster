@@ -199,9 +199,13 @@ def execute_plan(plan, do_compile_and_run, step_counter, total_steps):
     print "Step %d of %d overall plan took %s, estimated time left: %s..." % (step_counter[0], total_steps, str(d), str(r))
 
 shootout_original_benchmarks = [
-  ('third_party/shootout/nbody',         'nbody.gcc-2.c',         '350000'),
-  ('third_party/shootout/fannkuchredux', 'fannkuchredux.gcc-1.c', '10'),
-  ('third_party/shootout/spectralnorm',  'spectralnorm.gcc-3.c',  '850'),
+  ('third_party/shootout/nbody',         ['nbody.gcc-2.c'],         ['350000']),
+  ('third_party/shootout/fannkuchredux', ['fannkuchredux.gcc-1.c'], ['10']),
+  ('third_party/shootout/spectralnorm',  ['spectralnorm.gcc-3.c'],  ['850']),
+]
+
+other_third_party_benchmarks = [
+  ('third_party/siphash',  ['csiphash.c', 'csiphash_driver.c'], ['32', '1000000']),
 ]
 
 shootout_benchmarks = [
@@ -225,8 +229,9 @@ shootout_benchmarks = [
    ('speed/shootout/fannkuchredux-unchecked',               '10'),
 ]
 
-def benchmark_shootout_original(sourcepath, flagsdict, tags, exe, argstr, num_iters):
+def benchmark_third_party_code(sourcepath, flagsdict, tags, exe, argstrs, num_iters):
   ensure_dir_exists(test_data_dir(sourcepath, tags))
+  argstr = ' '.join(argstrs)
   tj = { 'tags'  : tags,
          'flags' : flagsdict,
          'test'  : sourcepath,
@@ -236,7 +241,7 @@ def benchmark_shootout_original(sourcepath, flagsdict, tags, exe, argstr, num_it
   timings_ms = []
   for z in range(num_iters):
     with open(datapath(sourcepath, tags, 'out.txt'), 'w') as out:
-      (rv, ms) = shell_out(' '.join([exe, argstr]), stderr=out, stdout=out)
+      (rv, ms) = shell_out(' '.join([exe] + argstrs), stderr=out, stdout=out)
       assert rv == 0
       print sourcepath, exe, argstr, ">>>> ", ms, "ms"
       timings_ms.append(ms)
@@ -246,9 +251,9 @@ def benchmark_shootout_original(sourcepath, flagsdict, tags, exe, argstr, num_it
     json.dump(tj, results, indent=2, separators=(',', ':'))
     results.write(",\n")
 
-def benchmark_shootout_originals():
+def benchmark_third_party(third_party_benchmarks):
   nested_plans = []
-  for (sourcepath, filename, argstr) in shootout_original_benchmarks:
+  for (sourcepath, filenames, argstrs) in third_party_benchmarks:
     all_factors = [factor + [('lang', [('other', '')]),
                              ('date', [(datestr, '')]),
                             ] for factor in [
@@ -263,21 +268,22 @@ def benchmark_shootout_originals():
       ],
     ]]
     plan = generate_all_combinations(all_factors, kNumIters)
-    nested_plans.append((sourcepath, filename, argstr, plan))
+    nested_plans.append((sourcepath, filenames, argstrs, plan))
 
   total_steps = sum(len(plan) for (s,f,a, plan) in nested_plans)
   step_counter = [0]
 
-  for (sourcepath, filename, argstr, plan) in nested_plans:
-    d = os.path.join(root_dir(), sourcepath)
-    c = os.path.join(d, filename)
+  for (sourcepath, filenames, argstrs, plan) in nested_plans:
+    d  =  os.path.join(root_dir(), sourcepath)
+    cs = [os.path.join(d, filename) for filename in filenames]
     def compile_and_run_shootout(tags, flagstrs, flagsdict, num_iters):
       exe = 'test_' + tags + ".exe"
-      shell_out("gcc -pipe -Wall -Wno-unknown-pragmas %s %s -o %s -lm" % (' '.join(flagstrs), c, exe), showcmd=True)
-      benchmark_shootout_original(sourcepath, flagsdict, tags,
-                                  exe, argstr, num_iters)
+      shell_out("gcc -pipe -Wall -Wno-unknown-pragmas %s %s -o %s -lm" % (' '.join(flagstrs), ' '.join(cs), exe), showcmd=True)
+      benchmark_third_party_code(sourcepath, flagsdict, tags,
+                                  exe, argstrs, num_iters)
     execute_plan(plan, compile_and_run_shootout, step_counter, total_steps)
     shell_out("rm test_*.exe")
+
 
 # --be-arg=--gc-track-alloc-sites
 # --be-arg=--dont-kill-dead-slots
@@ -339,7 +345,8 @@ def collect_all_timings():
 
 def main():
   ensure_dir_exists(data_dir())
-  benchmark_shootout_originals()
+  benchmark_third_party(other_third_party_benchmarks)
+  benchmark_third_party(shootout_original_benchmarks)
   benchmark_shootout_programs()
   collect_all_timings()
 

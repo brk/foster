@@ -121,6 +121,8 @@ Haskell:
 
       : *** : You must install hoopl from source via https://github.com/brk/packages-hoopl/
 
+Python:
+        pip install pyyaml
 
 Other libraries/tools:
         gperftools: https://code.google.com/p/gperftools/
