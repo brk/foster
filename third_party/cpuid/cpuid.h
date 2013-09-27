@@ -1,7 +1,7 @@
 #ifndef CPUID_H
 #define CPUID_H
 
-#define CPUID_VERSION_STRING "2010-06-14"
+#define CPUID_VERSION_STRING "2013-09-25"
 
 // Based on revision 036 (August 2009) of Intel's Application Note 485,
 // Intel (r) Processor Identification and the CPUID Instruction.
@@ -14,6 +14,8 @@
 #include <stdint.h>
 
 typedef unsigned int uint;
+typedef unsigned long long uint64;
+typedef          long long  int64;
 
 struct cpuid_info;
 
@@ -25,7 +27,8 @@ int cpuid_large_cache_size(cpuid_info&);
 /////////////////////////////////////////////////////////////////////
 
 struct tag_processor_features {
-  int threads; // total, or per core?
+  int max_logical_processors_per_physical_processor_package;
+  int     logical_processors_per_physical_processor_package;
 
   struct tag_monitor_features {
     int min_line_size;
@@ -57,7 +60,7 @@ inline const char* cache_type_str(int type) {
 
 struct tag_processor_cache_parameter_set {
   int reserved_APICS;
-  int sharing_threads;
+  int max_sharing_threads;
   bool fully_associative;
   bool self_initializing_cache_level;
   int cache_level;
@@ -73,11 +76,21 @@ struct tag_processor_cache_parameter_set {
   int size_in_bytes;
 };
 
+struct tag_processor_signature {
+  uint full_bit_string;
+  uint extended_family;
+  uint extended_model;
+  uint processor_type;
+  uint family_code;
+  uint model_number;
+  uint stepping_id;
+};
 
 struct cpuid_info {
   cpuid_info() {
     memset(brand_string, 0, sizeof(brand_string));
     memset(vendor_id,    0, sizeof(vendor_id));
+    memset(&processor_signature, 0xFF, sizeof(processor_signature));
     rdtsc_serialized_overhead_cycles = -1;
     rdtsc_unserialized_overhead_cycles = -1;
   }
@@ -93,6 +106,7 @@ struct cpuid_info {
   cache_parameters processor_cache_parameters;
 
   tag_processor_features           processor_features;
+  tag_processor_signature          processor_signature;
   tag_processor_cache_descriptors  processor_cache_descriptors;
 
   typedef std::map<std::string, bool> feature_flags;
