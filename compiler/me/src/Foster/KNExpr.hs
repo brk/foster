@@ -1754,7 +1754,7 @@ knInline' expr env = do
         op <- mkOpExpr bound env
         let env' = extendEnv [ id ] [ id' ] [ VO_E op ] env
         Rez body' <- knInline' body env'
-        (bound', size) <- visitE op
+        (bound', size) <- visitE (id, op)
         bumpSize size
         -- TODO mkLetVal if id' is dead and bound' is pure?
         residualize $ KNLetVal id' bound' body'
@@ -1766,7 +1766,7 @@ knInline' expr env = do
         let ops  = map (\(e,(r1,r2,r3)) -> (Opnd e env' r1 r2 r3)) (zip es refs)
             env' = extendEnv ids ids' (map VO_E ops) env
         Rez b'  <- knInline' b env'
-        expsiz' <- mapM visitE ops
+        expsiz' <- mapM visitE (zip ids' ops)
         occ_sts <- mapM getVarStatus ids'
         let (idses'', sizes) = unzip [((id, e'), size)
                                      | (id, (e', size), occst)
@@ -1975,8 +1975,8 @@ visitF (Opnd fn env loc_fn _ loc_ip) = do
       Rez body' <- knInline' (fnBody fn) env'
       return $ fn { fnBody = body' , fnVars = vs' }
 
-visitE :: Opnd SrcExpr -> In (ResExpr, Int)
-visitE (Opnd e env loc_e _ loc_ip) = do
+visitE :: ({-Res-}Ident, Opnd SrcExpr) -> In (ResExpr, Int)
+visitE (resid, Opnd e env loc_e _ loc_ip) = do
   ef <- readRef loc_e
   case ef of
     Unvisited -> do
@@ -1984,7 +1984,9 @@ visitE (Opnd e env loc_e _ loc_ip) = do
         ip <- readRef loc_ip
         case ip of
           IP_Limit 0 -> do
-            error $ "inner-pending true for expr...????"
+            debugDocLn $ text "inner-pending true for expr...????"
+                           <$> pretty e
+            return (KNVar (TypedId (typeKN e) resid), 0)
           IP_Limit k -> do
             (Rez e' , size) <-
                 inBracket_ (writeRef loc_ip (IP_Limit $ k - 1))
@@ -2044,7 +2046,7 @@ extractConstExpr :: SrcEnv -> TypedId MonoType -> In ConstStatus
 extractConstExpr env var = go var where
  go v = case lookupVarOp env v of
             Just (VO_E ope) -> do
-                 (e', _) <- visitE ope
+                 (e', _) <- visitE (tidIdent v, ope)
                  case e' of
                     KNLiteral ty lit      -> return $ IsConstant v $ Lit ty lit
                     KNTuple   ty vars rng -> do results <- mapM go vars
