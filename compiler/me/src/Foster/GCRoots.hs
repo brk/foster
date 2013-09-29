@@ -115,6 +115,11 @@ insertSmartGCRoots bbgp0 mayGCmap dump = do
   --      If we are configured to reuse root slots,
   --      this is where we do it.
   bbgp'5a <- runAvails bbgp'4 rootsLiveAtGCPoints mayGCmap gDoReuseRootSlots
+  -- TODO reusing root slots is buggy! :(
+  -- These test cases break:
+  --    bootstrap/app/pidigits
+  --    bootstrap/stdlib-test/test-lazy-real-time-queue          (when inlining)
+  --    bootstrap/stdlib-test/test-pairing-heap       (when inlining, sometimes)
 
   -- runAvails might have reused a root slot in a forwards pass, which might
   -- have invalidated liveness information (backwards pass). So we'll re-run the
