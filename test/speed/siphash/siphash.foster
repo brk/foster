@@ -1,0 +1,23 @@
+snafuinclude Prelude "prelude";
+snafuinclude Siphash "hash/siphash";
+
+cmdline-arg-or = { i => d =>
+  n0 = tmp_Int32_of_base_10_Text (get_cmdline_arg_n i);
+  if n0 ==Int32 0 then d else n0 end;
+};
+
+main = {
+  srclen = cmdline-arg-or 1 1;
+  rounds = cmdline-arg-or 2 1;
+
+  bytes = newDArray0:[Int8] srclen { n => primitive_trunc_i32_i8 n };
+  key   = newDArray0:[Int8] 16     { n => primitive_trunc_i32_i8 n };
+
+  REC go = { round => res =>
+    if round ==Int32 rounds then res else
+      go (round +Int32 1) (res `bitxor-Int64` siphash24 bytes key);
+    end
+  };
+
+  print_i64x (go 0 0);
+};

@@ -325,6 +325,11 @@ octet4ToInt32 = { hi : Int8 => m1 : Int8 => m2 : Int8 => lo : Int8 =>
     (primitive_zext_i8_to_i32 lo))
 };
 
+mergeInt32 = { hi : Int32 => lo : Int32 =>
+  ((primitive_zext_i32_to_i64 hi) `bitshl-Int64` 32)  `bitor-Int64`
+   (primitive_zext_i32_to_i64 lo)
+};
+
 ////
 
 // Returns True on success, otherwise False.
@@ -491,7 +496,8 @@ high32BitsOf64 = { n : Int64 =>
   primitive_trunc_i64_i32 (bitlshr-Int64 n 32)
 };
 
-splitInt64 = { n : Int64 =>
+splitInt64 :: { Int64 => (Int32, Int32) };
+splitInt64 = { n =>
   highbits = high32BitsOf64 n;
   lowbits  = high32BitsOf64 (bitshl-Int64 n 32);
   (highbits, lowbits)
