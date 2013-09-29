@@ -1712,7 +1712,7 @@ knInline' expr env = do
         -- otherwise, business as usual.
         mb_const <- extractConstExpr env v
         case mb_const of
-          IsConstant (Lit _ (LitBool b)) -> knInline' (if b then e1 else e2) env
+          IsConstant _ (Lit _ (LitBool b)) -> knInline' (if b then e1 else e2) env
           _ -> do v'      <- q v
                   Rez e1' <- knInline' e1 env
                   Rez e2' <- knInline' e2 env
@@ -1735,8 +1735,8 @@ knInline' expr env = do
         -- TODO when are default branches inserted?
         mb_const <- extractConstExpr env v
         case mb_const of
-          IsConstant c -> do
-                   mr <- matchConstExpr c patbinds
+          IsConstant v' c -> do
+                   mr <- matchConstExpr v' c patbinds
                    case trace ("match result for \n\t" ++ show c ++ " is\n\t" ++ show mr) mr of
                       Right e -> knInline' e env
                       Left patbinds0 -> do v' <- q v
@@ -2036,7 +2036,7 @@ data ConstExpr = Lit            MonoType Literal
                | KnownCtor      MonoType (CtorId, CtorRepr) [ConstStatus]
                deriving Show
 
-data ConstStatus = IsConstant ConstExpr
+data ConstStatus = IsConstant (TypedId MonoType) ConstExpr
                  | IsVariable (TypedId MonoType)
                  deriving Show
 
@@ -2046,90 +2046,108 @@ extractConstExpr env var = go var where
             Just (VO_E ope) -> do
                  (e', _) <- visitE ope
                  case e' of
-                    KNLiteral ty lit      -> return $ IsConstant $ Lit ty lit
+                    KNLiteral ty lit      -> return $ IsConstant v $ Lit ty lit
                     KNTuple   ty vars rng -> do results <- mapM go vars
-                                                return $ IsConstant $ LitTuple ty results rng
+                                                return $ IsConstant v $ LitTuple ty results rng
                     KNAppCtor ty cid vars -> do results <- mapM go vars
-                                                return $ IsConstant $ KnownCtor ty cid results
-                    _                    -> return $ IsVariable v
+                                                return $ IsConstant v $ KnownCtor ty cid results
+                    _                     -> return $ IsVariable v
                     -- TODO could recurse through binders
                     -- TODO could track const-ness of ctor args
             _ -> return $ IsVariable v
 
-addBindings [] e = return e
-addBindings ((id, cs):rest) e = do res <- addBindings rest e
-                                   e'  <- exprOfCS cs
-                                   return $ KNLetVal id e' res
+addBindings [] e = e
+addBindings ((id, cs):rest) e = KNLetVal id (exprOfCS cs) (addBindings rest e)
 
-exprOfCS (IsVariable v) = return $ KNVar v
-exprOfCS (IsConstant (Lit ty lit)) = return $ KNLiteral ty lit
-exprOfCS (IsConstant (LitTuple ty args rng)) = do ids <- genIdsOf args ; return $ KNTuple ty ids rng
-exprOfCS (IsConstant (KnownCtor ty cid [])) = return $ KNAppCtor ty cid []
-exprOfCS (IsConstant (KnownCtor ty cid args)) = do ids <- genIdsOf args ; return $ KNAppCtor ty cid ids
+exprOfCS (IsVariable v)                         = KNVar v
+exprOfCS (IsConstant _ (Lit ty lit))            = KNLiteral ty lit
+exprOfCS (IsConstant _ (KnownCtor ty cid []))   = KNAppCtor ty cid []
+exprOfCS (IsConstant _ (KnownCtor ty cid args)) = KNAppCtor ty cid (map varOfCS args)
+exprOfCS (IsConstant _ (LitTuple ty args rng))  = KNTuple ty (map varOfCS args) rng
 
-typeOfConst (Lit ty _) = ty
-typeOfConst (LitTuple ty _ _) = ty
-typeOfConst (KnownCtor ty _ _) = ty
+varOfCS (IsVariable v  ) = v
+varOfCS (IsConstant v _) = v
 
-genIdsOf args = mapM genId args
-               where genId (IsVariable v) = return v
-                     genId (IsConstant c) = do id <- freshenId' (Ident (T.pack "genId") 0)
-                                               return (TypedId (typeOfConst c) id)
+
+-- We'll iterate through the list of arms. Initially, our match status will be
+-- NoPossibleMatchYet because we haven't seen any arms at all. If e.g. the first
+-- arm we see is a definite match, we'll immediately return those bindings.
+-- If the first is a definite non-match, we'll discard it and continue.
+-- When we first see an arm which is neither a definite yes or no match,
+-- we'll change status to MatchPossible.
+-- This prevents us from turning
+--           case (v1, c2) of (c3, _) -> a    of (_, _) -> b  end
+-- into      case (v1, c2)                    of (_, _) -> b  end
+-- because we'll be in state MatchPossible (v1 ~?~ c3).
+--
+data MatchStatus = NoPossibleMatchYet | MatchPossible
+                   deriving Show
+
+data PatternMatchStatus = MatchDef [(Ident, ConstStatus)] | MatchAmbig | MatchNeg
+                          deriving Show
 
 -- Given a constant expression c, match against  (p1 -> e1) , ... , (pn -> en).
--- If c matches some pattern pk, return ek.
--- Otherwise, return the original full list of arms.
+-- If c definitely matches some pattern pk, return ek.
+-- Otherwise, return the list of arms which might possibly match c.
 -- TODO handle partial matches:
 --        case (a,b) of (True, x) -> f(x)
 --      should become
 --        case (a,b) of (True, x) -> f(b)
 --      even thought it can't become simply ``f(b)`` because a might not be True.
--- TODO handle guards?
-matchConstExpr :: ConstExpr
+matchConstExpr :: TypedId MonoType -> ConstExpr
                ->            [CaseArm PatternRepr (KNExpr' MonoType) MonoType]
                -> In (Either [CaseArm PatternRepr (KNExpr' MonoType) MonoType]
                              SrcExpr)
-matchConstExpr c arms = go arms
-  where go [] = return $ Left arms -- no match found
-        go (CaseArm pat e guard _ _:rest) =
-          let rv = matchPatternWithConst pat (IsConstant c) in
-          case (guard, rv) of
-               (Nothing, Just bindings) -> liftM Right (addBindings bindings e)
-               _                        -> go rest
+matchConstExpr v c arms = go arms [] NoPossibleMatchYet
+  where go [] reverseArmsWhichMightMatch _ =
+                 -- No conclusive match found, but we can still
+                 -- match against only those arms that we didn't rule out.
+                return $ Left (reverse reverseArmsWhichMightMatch)
 
-        nullary True  = Just []
-        nullary False = Nothing
+        go (arm@(CaseArm pat e guard _ _):rest) armsWhichMightMatch potentialMatch =
+          let rv = matchPatternWithConst pat (IsConstant v c) in
+          case (guard, rv, potentialMatch) of
+               (Nothing, MatchDef bindings, NoPossibleMatchYet)
+                                      -> return $ Right (addBindings bindings e)
+               -- We can (in theory) discard arms which definitely won't match,
+               -- but pattern match compilation would then think that the match
+               -- is incomplete and generate DT_Fail nodes unnecessarily.
+               (Nothing, MatchNeg, _) -> go rest (arm:armsWhichMightMatch) potentialMatch
+               _                      -> go rest (arm:armsWhichMightMatch) MatchPossible
+
+        nullary True  = MatchDef []
+        nullary False = MatchNeg
 
         -- If the constant matches the pattern, return the list of bindings generated.
-        matchPatternWithConst :: PatternRepr ty -> ConstStatus -> Maybe [(Ident, ConstStatus)]
+        matchPatternWithConst :: PatternRepr ty -> ConstStatus -> PatternMatchStatus
         matchPatternWithConst p cs =
           case (cs, p) of
-            (_, PR_Atom (P_Wildcard _ _  )) -> Nothing -- Matches trivially, but no binding so we don't care!
-            (_, PR_Atom (P_Variable _ tid)) -> Just [(tidIdent tid, cs)]
-            (IsVariable _, _)     -> Nothing -- can't match non-constants against concrete patterns.
-            (IsConstant c, _)     -> matchConst c p
+            (_, PR_Atom (P_Wildcard _ _  )) -> MatchDef []
+            (_, PR_Atom (P_Variable _ tid)) -> MatchDef [(tidIdent tid, cs)]
+            (IsVariable _  , _)     -> MatchAmbig
+            (IsConstant _ c, _)     -> matchConst c p
               where matchConst c p =
                       case (c, p) of
                         (Lit _ (LitInt  i1), PR_Atom (P_Int  _ _ i2)) -> nullary $ litIntValue i1 == litIntValue i2
                         (Lit _ (LitBool b1), PR_Atom (P_Bool _ _ b2)) -> nullary $ b1 == b2
                         (LitTuple _ args _, PR_Tuple _ _ pats) ->
                             let parts = map (uncurry matchPatternWithConst) (zip pats args) in
-                            let res = combineMaybeList parts in
+                            let res = concatMapStatuses parts in
                             trace ("matched tuple const against tuple pat " ++ show p ++ "\n, parts = " ++ show parts ++ " ;;; res = " ++ show res) res
                         (KnownCtor _ (kid, _) args, PR_Ctor _ _ pats (LLCtorInfo cid _ _)) | kid == cid ->
-                          case (args, pats) of
-                            ([], []) -> Just []
-                            _        -> combineMaybeList $ map (uncurry matchPatternWithConst) (zip pats args)
+                            concatMapStatuses $ map (uncurry matchPatternWithConst) (zip pats args)
                         (_ , _) -> nullary False
 
-        combineMaybeList :: [Maybe [t]] -> Maybe [t]
-        combineMaybeList mbs = go mbs []
-          where go []               acc = Just (concat acc)
-                go (Nothing:_)     _acc = Nothing
-                go ((Just xs):rest) acc = go rest (xs : acc)
+        concatMapStatuses :: [PatternMatchStatus] -> PatternMatchStatus
+        concatMapStatuses mbs = go mbs []
+          where go []               acc = MatchDef (concat acc)
+                go (MatchNeg:_)    _acc = MatchNeg
+                go (MatchAmbig:_)  _acc = MatchAmbig
+                go ((MatchDef xs):rest) acc = go rest (xs : acc)
 
 evalPrim resty (PrimOp "==" _ty)
-         [IsConstant (Lit _ (LitInt i1)), IsConstant (Lit _ (LitInt i2))]
+         [IsConstant _ (Lit _ (LitInt i1)),
+          IsConstant _ (Lit _ (LitInt i2))]
                 = Just (KNLiteral resty (LitBool $ litIntValue i1 == litIntValue i2))
 evalPrim _ _ _ = Nothing
 -- }}}
