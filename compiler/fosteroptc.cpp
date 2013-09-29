@@ -114,6 +114,10 @@ static cl::opt<bool>
 optNoSpecializeMemallocs("no-specialize-memallocs",
   cl::desc("[foster] Disable specialization of memallocs of common sizes."));
 
+static cl::opt<bool>
+optNoCoalesceLoads("no-coalesce-loads",
+  cl::desc("[foster] Disable coalescing loads of bit-or'ed values."));
+
 static cl::opt<string>
 optCFI("fosterc-cfi",
   cl::desc("[foster] CFI directives: {yes,no}, default to platform-specific behavior"));
@@ -328,6 +332,10 @@ void optimizeModuleAndRunPasses(Module* mod) {
   if (!optOptimizeZero) {
     AddOptimizationPasses(passes, fpasses, 2, false);
     AddStandardLinkPasses(passes);
+
+    if (!optNoCoalesceLoads) {
+      fpasses.add(foster::createBitcastLoadRecognizerPass());
+    }
   }
 
   // Add command line passes

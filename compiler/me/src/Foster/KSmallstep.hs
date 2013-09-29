@@ -21,15 +21,16 @@ import Data.Int
 import Data.Word
 import Data.DoubleWord
 import Data.Bits
+import Data.Char(toUpper)
 import Data.IORef(IORef, readIORef, newIORef)
 import Data.Array
+import Numeric
 import qualified Data.ByteString as BS
 import Text.Printf(printf)
 import Text.PrettyPrint.ANSI.Leijen
 import Criterion.Measurement(getTime)
 
 import Control.Exception(assert)
-
 
 import Foster.Base
 import Foster.TypeIL
@@ -491,7 +492,6 @@ stepExpr gs expr = do
     ICallPrim prim vs ->
         let args = map (getval gs) vs in
         case prim of
-          -- PrimArrayLiteral...
           NamedPrim (TypedId _ id) ->
                           evalNamedPrimitive (T.unpack $ identPrefix id) gs args
           PrimOp op ty -> return $
@@ -499,6 +499,14 @@ stepExpr gs expr = do
           PrimIntTrunc from to -> return $
               withTerm gs (SSTmValue $ evalPrimitiveIntTrunc from to args)
           CoroPrim prim _t1 _t2 -> evalCoroPrimitive prim gs args
+          PrimArrayLiteral -> let (base:vals) = args
+                                  go :: MachineState -> Int -> [SSValue] -> IO MachineState
+                                  go gs _ [] = return $ withTerm gs (SSTmValue base)
+                                  go gs n (val:vals) = do
+                                    gs' <- arrayPoke gs base n val
+                                    go gs' (n + 1) vals
+                              in
+                              go gs 0 vals
 
     ICall b vs ->
         let args = map (getval gs) vs in
@@ -517,7 +525,8 @@ stepExpr gs expr = do
         let (SSInt i) = getval gs idxvar in
         let n = (fromInteger i) :: Int in
         case getval gs base of
-          a@(SSArray _)      -> return $ withTerm gs (SSTmValue $ prim_arrayRead gs n a)
+          a@(SSArray _)      ->
+            return $ withTerm gs (SSTmValue $ prim_arrayRead gs n a)
           a@(SSByteString _) -> return $ withTerm gs (SSTmValue $ prim_arrayRead gs n a)
           other -> error $ "KSmallstep: Expected base of array read "
                         ++ "(" ++ show base ++ "["++ show idxvar++"])"
@@ -526,15 +535,13 @@ stepExpr gs expr = do
     IArrayPoke iv base idxvar ->
         let (SSInt i) = getval gs idxvar in
         let n = (fromInteger i) :: Int in
-        case getval gs base of
-          SSArray arr  -> prim_arrayPoke gs n arr (getval gs iv)
-          other -> error $ "Expected base of array write to be array value; had " ++ show other
+        arrayPoke gs (getval gs base) n (getval gs iv)
 
     IAllocArray sizeid -> do
         let (SSInt i) = getval gs sizeid
         -- The array cells are initially filled with constant zeros,
         -- regardless of what type we will eventually store.
-        arrayFrom gs [0 .. i] (\_ _ -> 0)
+        arrayOf gs [SSInt n | n <- [0 .. i - 1]]
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||||||| Pattern Matching ||||||||||||||||||||{{{
@@ -592,6 +599,11 @@ prim_arrayPoke gs n arr val = do
   let (SSLocation z) = arraySlotLocation arr n
   let gs' = modifyHeapWith gs z (\_ -> val)
   return $ withTerm gs' unit
+
+arrayPoke gs base n val =
+    case base of
+      SSArray arr  -> prim_arrayPoke gs n arr val
+      other -> error $ "Expected base of array write to be array value; had " ++ show other
 
 liftInt2 :: (Integral a) => (a -> a -> b) -> Integer -> Integer -> b
 liftInt2 f i1 i2 = f (fromInteger i1) (fromInteger i2)
@@ -753,7 +765,10 @@ evalPrimitiveIntOp I64 "bitnot" [SSInt i] = SSInt $ modifyIntWith i (complement 
 evalPrimitiveIntOp (IWord 0) "bitnot" [SSInt i] = SSInt $ modifyIntWith i (complement :: IntVW0 -> IntVW0)
 
 -- Extension (on Integers) is a no-op.
+--evalPrimitiveIntOp _ "sext_i8"  [SSInt i] | i >= -128 && i <= 127 = SSInt i
+--evalPrimitiveIntOp _ "zext_i8"  [SSInt i] | i >= 0    && i <= 255 = SSInt i
 evalPrimitiveIntOp _ "sext_i32" [SSInt i] = SSInt i
+evalPrimitiveIntOp _ "zext_i32" [SSInt i] = SSInt i
 evalPrimitiveIntOp _ "sext_i64" [SSInt i] = SSInt i
 evalPrimitiveIntOp _ "zext_i64" [SSInt i] = SSInt i
 evalPrimitiveIntOp _ "sext_Word" [SSInt i] = SSInt i
@@ -809,33 +824,8 @@ evalNamedPrimitive primName gs [val] | isExpectFunction primName =
       do expectStringNL gs (display val)
          return $ withTerm gs unit
 
-evalNamedPrimitive "print_i64_bare" gs [SSInt i] =
-      do printString gs (showBits 64 i)
-         return $ withTerm gs unit
-
-evalNamedPrimitive "expect_i64b" gs [SSInt i] =
-      do expectStringNL gs (showBits 64 i)
-         return $ withTerm gs unit
-
-evalNamedPrimitive "print_i64b" gs [SSInt i] =
-      do printStringNL gs (showBits 64 i)
-         return $ withTerm gs unit
-
-evalNamedPrimitive "expect_i32b" gs [SSInt i] =
-      do expectStringNL gs (showBits 32 i)
-         return $ withTerm gs unit
-
-evalNamedPrimitive "print_i32b" gs [SSInt i] =
-      do printStringNL gs (showBits 32 i)
-         return $ withTerm gs unit
-
-evalNamedPrimitive "expect_i8b" gs [SSInt i] =
-      do expectStringNL gs (showBits 8 i)
-         return $ withTerm gs unit
-
-evalNamedPrimitive "print_i8b" gs [SSInt i] =
-      do printStringNL gs (showBits 8 i)
-         return $ withTerm gs unit
+evalNamedPrimitive primName gs [SSInt i] | Just act <- lookupPrintInt i primName
+    = do act gs ; return $ withTerm gs unit
 
 evalNamedPrimitive "force_gc_for_debugging_purposes" gs _args =
          return $ withTerm gs unit
@@ -922,6 +912,25 @@ evalNamedPrimitive "foster_getticks_elapsed" gs [SSInt t1, SSInt t2] = do
 evalNamedPrimitive prim _gs args = error $ "evalNamedPrimitive " ++ show prim
                                          ++ " not yet defined for args:\n"
                                          ++ show args
+
+lookupPrintInt :: Integer -> String -> Maybe (MachineState -> IO ())
+lookupPrintInt i  "print_i64_bare" = Just (\gs -> printString   gs (showBits 64 i))
+lookupPrintInt i  "print_i64b" =    Just (\gs ->  printStringNL gs (showBits 64 i))
+lookupPrintInt i "expect_i64b" =    Just (\gs -> expectStringNL gs (showBits 64 i))
+lookupPrintInt i  "print_i32b" =    Just (\gs ->  printStringNL gs (showBits 32 i))
+lookupPrintInt i "expect_i32b" =    Just (\gs -> expectStringNL gs (showBits 32 i))
+lookupPrintInt i  "print_i16b" =    Just (\gs ->  printStringNL gs (showBits 16 i))
+lookupPrintInt i "expect_i16b" =    Just (\gs -> expectStringNL gs (showBits 16 i))
+lookupPrintInt i  "print_i8b"  =    Just (\gs ->  printStringNL gs (showBits  8 i))
+lookupPrintInt i "expect_i8b"  =    Just (\gs -> expectStringNL gs (showBits  8 i))
+lookupPrintInt i  "print_i64x" =    Just (\gs ->  printStringNL gs (map toUpper $ showHex i "_16"))
+lookupPrintInt i "expect_i64x" =    Just (\gs -> expectStringNL gs (map toUpper $ showHex i "_16"))
+lookupPrintInt i  "print_i32x" =    Just (\gs ->  printStringNL gs (map toUpper $ showHex i "_16"))
+lookupPrintInt i "expect_i32x" =    Just (\gs -> expectStringNL gs (map toUpper $ showHex i "_16"))
+lookupPrintInt i  "print_i16x" =    Just (\gs ->  printStringNL gs (map toUpper $ showHex i "_16"))
+lookupPrintInt i "expect_i16x" =    Just (\gs -> expectStringNL gs (map toUpper $ showHex i "_16"))
+lookupPrintInt i  "print_i8x"  =    Just (\gs ->  printStringNL gs (map toUpper $ showHex i "_16"))
+lookupPrintInt i "expect_i8x"  =    Just (\gs -> expectStringNL gs (map toUpper $ showHex i "_16"))
 
 -- ByteString -> Text -> String
 stringOfBytes = T.unpack . TE.decodeUtf8
@@ -1019,13 +1028,13 @@ textFragmentOf txt = SSCtorVal textFragmentCtor [SSByteString (TE.encodeUtf8 txt
                                             SSInt $ fromIntegral (T.length txt)]
   where textFragmentCtor = CtorId "Text" "TextFragment" 2 -- see Primitives.hs
 
-arrayFrom :: MachineState -> [a] -> (Int -> a -> Integer) -> IO MachineState
-arrayFrom gs0 vals f = do
-        (inits, gs2) <- mapFoldM (zip [0..] vals) gs0 $ \(n, a) -> \gs1 ->
-                              let (loc, gs2) = extendHeap gs1 (SSInt $ f n a) in
+arrayOf :: MachineState -> [SSValue] -> IO MachineState
+arrayOf gs0 vals = do
+        (locs, gs2) <- mapFoldM (zip [0..] vals) gs0 $ \(n, val) gs1 ->
+                              let (loc, gs2) = extendHeap gs1 val in
                               return ([(n, loc)], gs2)
         return $ withTerm gs2 (SSTmValue $ SSArray $
-                                         array (0, List.length inits - 1) inits)
+                                         array (0, List.length locs - 1) locs)
 --------------------------------------------------------------------
 
 showBits k n = -- k = 32, for example

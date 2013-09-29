@@ -150,6 +150,8 @@ primTyVars tyvars = map (\v -> (v, KindAnySizeType)) tyvars
 primitiveDecls =
     [(,) "expect_i32"  $ mkProcType [i32] []
     ,(,)  "print_i32"  $ mkProcType [i32] []
+    ,(,) "expect_i32x" $ mkProcType [i32] []
+    ,(,)  "print_i32x" $ mkProcType [i32] []
     ,(,) "expect_i64"  $ mkProcType [i64] []
     ,(,)  "print_i64"  $ mkProcType [i64] []
     ,(,) "expect_i64x" $ mkProcType [i64] []

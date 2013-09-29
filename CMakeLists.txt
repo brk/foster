@@ -411,6 +411,7 @@ add_library(fosterc_llvm STATIC
   compiler/llvm/passes/FosterMallocSpecializer.cpp
   compiler/llvm/passes/CallingConventionChecker.cpp
   compiler/llvm/passes/TimerCheckerInsertion.cpp
+  compiler/llvm/passes/BitcastLoadRecognizer.cpp
   compiler/llvm/passes/FosterPasses.cpp
   compiler/llvm/plugins/FosterGC.cpp
 )
