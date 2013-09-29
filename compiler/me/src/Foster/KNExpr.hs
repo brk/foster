@@ -1355,8 +1355,21 @@ debugDocLn d =
   if shouldDEBUG then putDocLn d
                  else return ()
 
-putDocLn d = liftIO $ putDoc $ d <> line
+                 {-
+putDocLn  d = liftIO $ putDoc $ d <> line
+putDocLn4 d = liftIO $ putDoc $ d <> line
+putDocLn5 d = liftIO $ putDoc $ d <> line
 putDocLn3 _ = return ()
+putDocLn6 _ = return ()
+putDocLn7 d = liftIO $ putDoc $ d <> line
+-}
+
+putDocLn  _d = return () -- liftIO $ putDoc $ _d <> line
+putDocLn4 _d = return () -- liftIO $ putDoc $ _d <> line
+putDocLn5 _d = return () -- liftIO $ putDoc $ _d <> line
+putDocLn3 _d = return () -- liftIO $ putDoc $ _d <> line
+putDocLn6 _d = return () -- liftIO $ putDoc $ _d <> line
+putDocLn7 _d = return () -- liftIO $ putDoc $ _d <> line
 
 -- Runs a, then runs b (which may throw an error),
 -- then (always) runs c (which should not throw an error),
@@ -1406,6 +1419,16 @@ data Opnd v = Opnd v SrcEnv (IORef (VisitStatus v)) (IORef OuterPending) (IORef 
 data VarOp = VO_E (Opnd     SrcExpr)
            | VO_F (Opnd (Fn SrcExpr MonoType))
 newtype Rez a = Rez a
+
+opndValue (Opnd v _ _ _ _) = v
+opndIsUnvisited (Opnd _ _ vr _ _) = do
+  vs <- readRef vr
+  case vs of
+    Unvisited  -> return True
+    Visited {} -> return False
+
+when True   action = do action
+when False _action = return ()
 
 residualizeCached :: a -> Int -> String -> In (Rez a)
 residualizeCached e size _ = do
@@ -1524,6 +1547,9 @@ bestEffortOpSize_ loc e = do
 -- {{{ Size counters and size limits...
 data SizeCounter = SizeCounter Int SizeLimit deriving Show
 
+instance Pretty SizeCounter where
+  pretty sc = text $ show sc
+
 bumpSize :: Int -> In ()
 bumpSize !d = do
   !r <- gets inSizeCntr
@@ -1532,6 +1558,7 @@ bumpSize !d = do
   !lim <- gets inSizeLimit
   case lim of
     Limit (limit, src) | v > limit -> do
+        putDocLn $ text $ "bumpSize failed; " ++ show x ++ " += " ++ show d ++ " >= " ++ show lim ++ " ;; " ++ src
         throwError (strMsg $ "bumpSize failed : " ++ show x ++ " + " ++ show d ++ "; " ++ src)
     _ -> writeRef r v
 
@@ -1625,7 +1652,7 @@ knInlineToplevel expr env = do
             env' = extendEnv ids ids' (map VO_F ops) env
 
         Rez b' <- knInlineToplevel body env'
-        mb_fns <- mapM visitF ops
+        mb_fns <- mapM (visitF "KNLetFuns") ops
         let pickFn (_ , Just (f, _)) = do return f
             pickFn (fn, Nothing)     = do return fn
         fns' <- mapM pickFn (zip fns mb_fns)
@@ -1637,7 +1664,7 @@ knInlineToplevel expr env = do
     KNCall tq ty v vs ->
         case lookupVarOp env v of
             Just (VO_F opf) -> do
-                 _ <- visitF opf -- don't inline away main, just process it!
+                 _ <- visitF "KNCall" opf -- don't inline away main, just process it!
                  rezM2 (KNCall tq ty) (q v) (mapM q vs)
             _ -> error $ "knInlineToplevel couldn't find function to inline for main!"
 
@@ -1676,7 +1703,18 @@ knInline' expr env = do
 
     KNCall tailq ty v vs -> do
       let resExpr s = do rezM2 (KNCall tailq ty) (qs ("KNCall v " ++ s) v) (mapM (qs "KNCall vs") vs)
-      debugDocLn $ text $ "saw call of var " ++ show (tidIdent v) ++ " ~?~> " ++ show (lookupVarMb v env) ++ ";; " ++ show (pretty $ KNCall tailq ty v vs)
+      (desc, smry) <- case lookupVarOp env v of
+                        Just (VO_E ope) -> do smry <- summarize ope
+                                              return ("(a known expr); summary: ",
+                                                        smry <$> pretty (opndValue ope))
+                        Nothing         -> do return ("Nothing", text "")
+                        Just (VO_F opf) -> do smry <- summarize opf
+                                              return ("(a known fn); summary: ",
+                                                       text "" <$> text "           " <> smry)
+      putDocLn7 $ text ("saw call of var " ++ show (tidIdent v)
+                                ++ " ~?~> " ++ show (lookupVarMb v env) ++ "  ")
+                           <>  text desc <+> smry
+                           <$> text "\t\t@ call site:  [[ " <> pretty expr <> text " ]]"
       case lookupVarOp env v of
         -- Peek through type applications...
         Just (VO_E (Opnd (KNTyApp _ v' []) _ _ _ _)) -> peekTyApps v'
@@ -1694,7 +1732,7 @@ knInline' expr env = do
         Just (VO_F opf) -> do
           let shouldNotInline nm = "noinline_" `isPrefixOf` nm
           if shouldNotInline (show $ tidIdent v)
-            then do _ <- visitF opf -- don't inline this function...
+            then do _ <- visitF "noinline" opf -- don't inline this function...
                     resExpr "noinline"
 
             else do handleCallOfKnownFunction tailq expr resExpr opf v vs env qs
@@ -1790,7 +1828,7 @@ knInline' expr env = do
 
         Rez b' <- knInline' b env'
 
-        mb_fns <- mapM visitF ops
+        mb_fns  <- mapM (visitF "KNLetFuns.2") ops
         occ_sts <- mapM getVarStatus ids'
         let fns' = map (\(fn, mb_fn) ->
                          case mb_fn of Just fsz -> fsz
@@ -1804,21 +1842,30 @@ knInline' expr env = do
         residualize $ mkLetFuns idfns'' b'
 
 handleCallOfKnownFunction tailq expr resExprA opf@(Opnd fn0 _ _ loc_op loc_ip) v vs env qs = do
+ smry <- summarize opf
+ putDocLn4 $ text "handleCallOfKnownFunction summarized" <+> text (show $ tidIdent v)
+        <$> text "        " <> smry
+        <$> text "        " <> text ("visiting fn opf (" ++ (show $ tidIdent v) ++ ")")
+        <$> text "               from call  [[" <+> pretty expr <+> text "]]"
  if isRec (fnIsRec fn0)
-  then resExprA "blah,rec"
+  then do
+     putDocLn4 $ text "                           residualizing rec call"
+     resExprA "blah,rec"
   else do
-   --smry <- summarize opf
-   --putDocLn3 $ smry <+> text ("visiting fn opf (" ++ (show $ tidIdent v) ++ ") from call\t") <> pretty expr
    qvs'   <- mapM (qs "known call vs") vs
-   mb_fn' <- visitF opf
+   mb_fn' <- visitF "handleCallOfKnownFunction" opf
    case mb_fn' of
     Nothing  -> do
       debugDocLn $ text "visited fn opf (failure!) from call\t" <> pretty expr
       resExprA "visitF failed"
 
     Just (fn' , _) -> do
-      --putDocLn $ text "visited fn opf from call\t" <> pretty expr
-      --putDocLn $ text "    " <> pretty fn'
+      smry' <- summarize opf
+      putDocLn3 $  text "visited fn opf " <> smry
+               <$> text "           ==> " <> smry'
+               <$> text "               from call  [[" <+> pretty expr <+> text "]], producing:"
+      putDocLn3 $ indent 32 $ pretty fn'
+
       inCenMap <- gets inCallPassCensus
       let inCen v = Map.lookup (tidIdent v) inCenMap
 
@@ -1827,15 +1874,18 @@ handleCallOfKnownFunction tailq expr resExprA opf@(Opnd fn0 _ _ loc_op loc_ip) v
       -- Also, the args will generally be unvisited
       sizeCounter <- computeSizeCounter v (inCen v) (map inCen vs) sizes
 
+      putDocLn3 $ text "handleCallOfKnownFunction trying to fold lambda from call [[" <+> pretty expr <+> text "]]"
+              <$> text "         with size counter: " <> pretty sizeCounter
+
       mb_e'  <- catchError (foldLambda' tailq fn' opf qvs' sizeCounter env)
-                           (\e -> do --putDocLn $ text "******* foldLambda aborted inlining of call(size limit " <> text (show sizeCounter) <> text " ): " <> pretty expr <> text (show e)
+                           (\e -> do putDocLn $ text "******* foldLambda aborted inlining of call(size limit " <> text (show sizeCounter) <> text " ): " <> pretty expr <> text (show e)
                                      --putDocLn $ text "called fn was " <> pretty fn'
-                                     --putDocLn $ text $ show (tidIdent v) ++ " w/census " ++ show (inCen v)
-                                     --let ops = map (lookupVarOp' env) qvs'
-                                     --mapM_ (\(o,v) -> do smry <- summarizeVarOp o
-                                     --                    putDocLn $ text ("for original arg " ++ show (tidIdent v) ++ ", " ++ " w/census " ++ show (inCen v) ++ "; ") <> smry)
-                                     --      (zip ops vs)
-                                     --putDocLn $ text "called fn sized " <> text (show $ knSize (fnBody fn' ))
+                                     putDocLn $ text $ show (tidIdent v) ++ " w/census " ++ show (inCen v)
+                                     let ops = map (lookupVarOp' env) qvs'
+                                     mapM_ (\(o,v) -> do smry <- summarizeVarOp o
+                                                         putDocLn $ text ("for original arg " ++ show (tidIdent v) ++ ", " ++ " w/census " ++ show (inCen v) ++ "; ") <> smry)
+                                           (zip ops vs)
+                                     putDocLn $ text "called fn sized " <> text (show $ knSize (fnBody fn' ))
                                      return Nothing)
       case mb_e' of
          Just (Rez e', esize) -> do
@@ -1858,7 +1908,8 @@ handleCallOfKnownFunction tailq expr resExprA opf@(Opnd fn0 _ _ loc_op loc_ip) v
               --  --residualizeCached e' size
 
               (_, _, _) -> do
-                --putDocLn $ text ("residualizing e' for call ") <> pretty e'
+                putDocLn3 $  text "residualizing call [[" <+> pretty expr <+> text "]] into:"
+                         <$> indent 16 (pretty e' )
                 residualizeCached e' esize (show $ pretty e')
 {-
               (True, _, _) -> do
@@ -1884,7 +1935,7 @@ handleCallOfKnownFunction tailq expr resExprA opf@(Opnd fn0 _ _ loc_op loc_ip) v
                 return v
                 --residualizeCached e' size
 -}
-         Nothing -> do putDocLn3 $ text "lambda folding [" <> pretty expr <> text "] failed; residualizing call instead."
+         Nothing -> do putDocLn4 $ text "lambda folding [" <> pretty expr <> text "] failed; residualizing call instead."
                        resExprA "kNothing"
   where
     isRec (Just True) = True
@@ -1893,7 +1944,7 @@ handleCallOfKnownFunction tailq expr resExprA opf@(Opnd fn0 _ _ loc_op loc_ip) v
     -- input are residual vars, not src vars, fwiw
     foldLambda' :: TailQ -> (Fn ResExpr MonoType) -> Opnd (Fn SrcExpr MonoType)
                 -> [TypedId MonoType] -> SizeCounter -> SrcEnv -> In (Maybe (Rez ResExpr, Int))
-    foldLambda' tailq fn' (Opnd _ _ _ loc_op _) vs' sizeCounter env = do
+    foldLambda' tailq fn' opnd@(Opnd _ _ _ loc_op _) vs' sizeCounter env = do
       let fn   = fn'
       let env' = extendEnv ids ids' ops env
                     where
@@ -1906,13 +1957,15 @@ handleCallOfKnownFunction tailq expr resExprA opf@(Opnd fn0 _ _ loc_op loc_ip) v
       o_pending <- readRef loc_op
       case o_pending of
         OP_Limit 0 -> do
-          --putDocLn $ text $ "lambda folding failed due to outer-pending flag for " ++ show (tidIdent $ fnVar fn) ++ " with vars " ++ show (map tidIdent vs') ++ "..."
+          putDocLn $ text $ "lambda folding failed due to outer-pending flag for " ++ show (tidIdent $ fnVar fn) ++ " with vars " ++ show (map tidIdent vs') ++ "..."
           return Nothing
         OP_Limit k -> do
           let mangle = case tailq of YesTail -> id
                                      NotTail -> removeTailCallAnnots
-          --putDocLn $ text $ "strt lambda folding; setting outer-pending flag to " ++ show (k - 1) ++ " for " ++ show (tidIdent $ v0)
-          --liftIO $ putDoc $ pretty (mangle $ fnBody fn) <> text "\n"
+          putDocLn3 $ text "{{{{{{{{{{{{{{{{{{"
+          putDocLn3 $ text $ "strt lambda folding; setting outer-pending flag to "
+                              ++ show (k - 1) ++ " for " ++ show (tidIdent $ fnVar fn)
+          putDocLn3 $ indent 16 $ pretty (mangle $ fnBody fn)
 
           -- Attempt to inline the function body to produce e' ;
           -- if the intermediate result gets too big, the attempt will be
@@ -1927,20 +1980,43 @@ handleCallOfKnownFunction tailq expr resExprA opf@(Opnd fn0 _ _ loc_op loc_ip) v
                                           (knInline' (mangle $ fnBody fn) env'))
                          (if k == opLimitMax then writeRef loc_op $ OP_Limit k else return ())
           -}
-          (writeRef loc_op $ OP_Limit (k - 1))
+
+          -- We only need to fiddle with the outer-pending limit
+          -- on the *first* integration of a procedure. When we are
+          -- integrating a cached procedure, it's OK to integrate
+          -- another copy of that procedure.
+          -- This occurs in "manually unrolled" code like
+          --    hr = { ... k => ... k ... };   (( cached version ))
+          --    kk = { hr(1) ... ... };
+          --    hr(0) ... kk
+          -- When evaluating the hr(0) call, we'll attempt to inline the body
+          -- of hr with k bound to kk. Inlining will then attempt to inline kk,
+          -- which then looks at the hr(1) call. If we had set the outer-pending
+          -- flag when looking at hr(0), the hr(1) call would be needlessly
+          -- residualized instead of inlined.
+
+          firstVisit <- opndIsUnvisited opnd
+          --let firstVisit = True
+          when firstVisit (writeRef loc_op $ OP_Limit (k - 1))
+
           (Rez e' , size) <- withSizeCounter sizeCounter $
                                           (knInline' (mangle $ fnBody fn) env')
-          (if k == opLimitMax then writeRef loc_op $ OP_Limit k else return ())
-          --putDocLn $ text $ "done lambda folding; resetting outer-pending flag to " ++ show k ++ "for " ++ show (tidIdent $ v0)
-          --putDocLn $ pretty e'
+
+          when firstVisit
+            (if k == opLimitMax then writeRef loc_op $ OP_Limit k else return ())
+
+          putDocLn3 $ text $ "done lambda folding; resetting outer-pending flag to "
+                             ++ show k ++ " for " ++ show (tidIdent $ fnVar fn)
+          putDocLn3 $ indent 16 $ pretty e'
+          putDocLn3 $ text "}}}}}}}}}}}}}}}}}}"
           return $ Just (Rez e' , size)
 
 -- visitF and visitE return (thing, size), rather than Rez (thing, size),
 -- because the returned thing may not actually be residualized by the caller
 -- (for example, because the caller finds out it was dead).
 
-visitF :: Opnd (Fn SrcExpr MonoType) -> In (Maybe (Fn ResExpr MonoType, Int))
-visitF (Opnd fn env loc_fn _ loc_ip) = do
+visitF :: String -> Opnd (Fn SrcExpr MonoType) -> In (Maybe (Fn ResExpr MonoType, Int))
+visitF msg (Opnd fn env loc_fn _ loc_ip) = do
   ff <- readRef loc_fn
   case ff of
     Unvisited -> do
@@ -1950,8 +2026,9 @@ visitF (Opnd fn env loc_fn _ loc_ip) = do
             debugDocLn $ text $ "inner-pending limit reached for " ++ show (tidIdent $ fnVar fn)
             return Nothing
           IP_Limit k -> do
-            putDocLn3 $ text $ "visitF called, using no-limit, for fn  " ++ show (tidIdent $ fnVar fn)
-            debugDocLn $ pretty fn
+            putDocLn5 $ text "visitF(" <> text msg <> text ") called, using no-limit, for fn  "
+                    <>  text (show (tidIdent $ fnVar fn)) <> text "  which is:"
+                    <$> indent 16 (pretty fn)
             (fn' , size) <-
                 inBracket_ (writeRef loc_ip (IP_Limit (k - 1)))
                            (withSizeCounter (SizeCounter 0 NoLimit)
@@ -1960,8 +2037,8 @@ visitF (Opnd fn env loc_fn _ loc_ip) = do
             writeRef loc_fn (Visited fn' size)
             return $ Just (fn', size)
     Visited f size -> do
-      debugDocLn $ text $ "reusing cached result (size " ++ show size ++ " for fn " ++ show (tidIdent $ fnVar fn)
-      debugDocLn $ pretty f
+      putDocLn6 $ text $ "reusing cached result (size " ++ show size ++ " for fn " ++ show (tidIdent $ fnVar fn)
+      putDocLn6 $ indent 32 $ pretty f
       return $ Just (f, size)
  where
     knInlineFn' :: Fn SrcExpr MonoType -> SrcEnv -> In (Fn ResExpr MonoType)
