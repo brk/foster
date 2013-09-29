@@ -168,9 +168,6 @@ instance AExpr (AnnExpr TypeAST) where
         E_AnnVar _rng (v, _)      -> [tidIdent v]
         _                         -> concatMap freeIdents (childrenOf e)
 
-caseArmFreeIds arm =
-  concatMap freeIdents (caseArmExprs arm) `butnot` map tidIdent (caseArmBindings arm)
-
 -----------------------------------------------------------------------
 
 annExprAnnot :: AnnExpr ty -> ExprAnnot

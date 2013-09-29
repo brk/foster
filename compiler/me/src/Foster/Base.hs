@@ -153,6 +153,10 @@ caseArmExprs arm = [caseArmBody arm] ++ caseArmGuardList arm
     caseArmGuardList (CaseArm _ _ Nothing  _ _) = []
     caseArmGuardList (CaseArm _ _ (Just e) _ _) = [e]
 
+caseArmFreeIds arm =
+  concatMap freeIdents (caseArmExprs arm) `butnot`
+        map tidIdent  (caseArmBindings arm)
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||| Data Types |||||||||||||||||||||||||||||||{{{
 data DataType ty = DataType {
@@ -271,6 +275,11 @@ fnType :: Fn e t -> t
 fnType fn = tidType $ fnVar fn
 
 fnIdent fn = tidIdent $ fnVar fn
+
+-- A function is recursive if any of the program-level identifiers
+-- from the SCC it is bound in appears free in its body.
+-- This handles the singleton SCC case:
+computeIsFnRec fn id = id `elem` freeIdents fn
 
 data ModuleIL expr ty = ModuleIL {
           moduleILbody        :: expr

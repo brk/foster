@@ -17,6 +17,9 @@ import Data.Map(Map)
 data AvailSet elts = UniverseMinus (Set elts) | Avail (Set elts)
         deriving Show
 
+mapAvailSet f   (UniverseMinus elts) = (UniverseMinus $ Set.map f elts)
+mapAvailSet f   (Avail         elts) = (Avail         $ Set.map f elts)
+
 delAvails       (UniverseMinus elts) es = UniverseMinus (Set.union es elts)
 delAvails       (Avail         elts) es = Avail (availFrom elts (UniverseMinus es))
 

@@ -284,8 +284,8 @@ typecheckModule verboseMode modast tcenv0 = do
      -- Set fnIsRec flag on top-level functions.
      let tci oof -- :: OutputOr (Fn (AnnExpr TypeAST) TypeAST) -> Tc (Fn AIExpr TypeIL)
                = tcInject (\fn -> do
-                            let r = Just $ tidIdent (fnVar fn) `elem` freeIdents fn
-                            fnOf ctx_ast (fn { fnIsRec = r})) oof
+                            let r = computeIsFnRec fn (tidIdent $ fnVar fn)
+                            fnOf ctx_ast (fn { fnIsRec = Just r })) oof
      let tcis fns = mapM tci fns
      aiFns     <- mapM tcis (unfuns oo_annfns)
      let q = buildExprSCC aiFns

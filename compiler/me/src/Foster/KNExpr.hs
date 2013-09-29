@@ -858,7 +858,8 @@ knLoopHeaders' expr = do
           --
           -- For example, replace (rec fold = { f => x => ... fold f z ... };
           --                         in b end)
-          -- with                 (fun fold = { f => x' =>
+          -- with
+          --                      (fun fold = { f => x' =>
           --                         rec loop = { x => ... loop z ... };
           --                         in
           --                             loop x' end
@@ -872,12 +873,17 @@ knLoopHeaders' expr = do
                           , fnIsRec = Just True
                           , fnAnnot = ExprAnnot [] (annotRange $ fnAnnot fn) []
                           } in
-            -- The outer, non-recursive wrapper:
+            -- The outer wrapper may or may not still be recursive,
+            -- depending on whether it contained non-tail recursion:
+            let fn'isRec = computeIsFnRec fn id in
+            -- TODO should we create another wrapper to maintian the invariant
+            -- that the outermost fn bound to id is always non-recursive,
+            -- for inlining purposes?
             let fn' = Fn { fnVar   = fnVar fn
                          , fnVars  = renameUsefulArgs mt vs'
                          , fnBody  = KNLetFuns [ id' ] [ fn'' ]
                                          (KNCall YesTail (typeKN (fnBody fn)) v' (dropUselessArgs mt vs' ))
-                         , fnIsRec = Just False
+                         , fnIsRec = Just fn'isRec
                          , fnAnnot = fnAnnot fn
                          } in
             KNLetFuns [id ] [ fn' ] (qq (Map.delete id info) r b)
@@ -900,6 +906,17 @@ mkGlobal (TypedId t i) = mkGlobalWithType t i
 
 mkGlobalWithType ty (Ident t u) = TypedId ty (GlobalSymbol $ T.pack (T.unpack t ++ show u))
 mkGlobalWithType _  (GlobalSymbol _) = error $ "KNExpr.hs: mkGlobal(WithType) of global!"
+
+instance AExpr (KNExpr' MonoType) where
+    freeIdents e = case e of
+        KNLetVal   id  b   e -> freeIdents b ++ (freeIdents e `butnot` [id])
+        KNLetRec   ids xps e -> (concatMap freeIdents xps ++ freeIdents e)
+                                                                   `butnot` ids
+        KNLetFuns  ids fns e -> (concatMap freeIdents fns ++ freeIdents e)
+                                                                   `butnot` ids
+        KNCase  _t v arms    -> [tidIdent v] ++ concatMap caseArmFreeIds arms
+        KNVar      v         -> [tidIdent v]
+        _                    -> concatMap freeIdents (childrenOf e)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 
@@ -1025,8 +1042,8 @@ knSizeHead expr = case expr of
     KNTuple       {} -> 2 -- due to allocation + stores
     KNArrayRead   {} -> 2 -- due to (potential) bounds check
     KNArrayPoke   {} -> 2 -- due to (potential) bounds check
-    KNCall        {} -> 2 -- due to dyn. insn overhead, stack checks, etc
-    KNUntil       {} -> 2
+    KNCall        {} -> 4 -- due to dyn. insn overhead, stack checks, etc
+    KNUntil       {} -> 1
     KNCase        {} -> 2 -- TODO might be cheaper for let-style cases.
 
     KNAppCtor     {} -> 3 -- rather like a KNTuple, plus one store for the tag.
@@ -1169,6 +1186,15 @@ instance Pretty ty => Pretty (KNExpr' ty) where
                                       <+> text "="
                                       <+> (indent 0 $ pretty b) <+> lkwd "in"
                                    <$> pretty k
+
+            KNLetFuns ids fns k -> pretty k
+                                   <$> indent 1 (lkwd "wherefuns")
+                                   <$> indent 2 (vcat [text (show id) <+> text "="
+                                                                      <+> pretty fn
+                                                      | (id, fn) <- zip ids fns
+                                                      ])
+                                   -- <$> indent 2 end
+                                   {-
             KNLetFuns ids fns k -> text "letfuns"
                                    <$> indent 2 (vcat [text (show id) <+> text "="
                                                                       <+> pretty fn
@@ -1177,6 +1203,7 @@ instance Pretty ty => Pretty (KNExpr' ty) where
                                    <$> lkwd "in"
                                    <$> pretty k
                                    <$> end
+                                   -}
             KNLetRec  ids xps e -> text "rec"
                                    <$> indent 2 (vcat [text (show id) <+> text "="
                                                                       <+> pretty xpr

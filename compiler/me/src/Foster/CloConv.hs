@@ -11,7 +11,7 @@ import qualified Data.Text as T
 import qualified Data.List as List(and)
 import Data.Set(Set)
 import qualified Data.Set as Set(empty, singleton, union, unions, notMember,
-                                                             fromList, toList)
+                                                      size, fromList, toList)
 import Data.Map(Map)
 import qualified Data.Map as Map((!), insert, lookup, empty, fromList, elems)
 
@@ -592,10 +592,15 @@ instance Pretty (Insn' e x) where
                                         | (id,fn) <- zip ids fns])
   pretty (CCGCLoad  loadedvar root) = indent 4 $ dullwhite $ text "load from" <+> pretty root <+> text "to" <+> pretty loadedvar
   pretty (CCGCInit  _  srcvar root) = indent 4 $ dullgreen $ text "init root" <+> pretty root <+> text ":=" <+> pretty srcvar
-  pretty (CCGCKill  enabled  roots) = indent 4 $ (dullred  $ text "kill roots") <+> pretty roots <+> pretty enabled
+  pretty (CCGCKill  Disabled roots) = indent 4 $ (dullwhite $ text "kill roots") <+> prettyR roots <+> pretty Disabled
+  pretty (CCGCKill  enabled  roots) | Set.size roots == 0
+                                    = indent 4 $ (dullwhite $ text "kill roots") <+> prettyR roots <+> pretty enabled
+  pretty (CCGCKill  enabled  roots) = indent 4 $ (dullred  $ text "kill roots") <+> prettyR roots <+> pretty enabled
   pretty (CCTupleStore vs tid _memregion) = indent 4 $ text "stores " <+> pretty vs <+> text "to" <+> pretty tid
   pretty (CCRebindId d v1 v2) = indent 4 $ text "REPLACE " <+> pretty v1 <+> text "WITH" <+> pretty v2 <+> parens d
   pretty (CCLast    cclast     ) = pretty cclast
+
+prettyR roots = (if Set.size roots > 15 then text "..." else pretty roots) <> parens (pretty (Set.size roots))
 
 isProc ft = case ft of FnType _ _ _ FT_Proc -> True
                        _                    -> False
