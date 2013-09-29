@@ -99,6 +99,12 @@ def output_extension(to_asm):
 def show_cmdlines(options):
   return options and options.show_cmdlines == True
 
+def asm_verbose(to_asm):
+  if to_asm:
+    return ["-asm-verbose"]
+  else:
+    return []
+
 def optlevel(options):
   if options and options.optlevel is not "O0":
     # Right now fosteroptc only recognizes -O0, not -O2 or such.
@@ -162,6 +168,7 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     (s4, e4) = crun(['fosteroptc', finalpath + '.preopt.bc', '-dump-postopt',
                                          '-fosterc-time', '-o', finalpath + ext]
                     + optlevel(options)
+                    + asm_verbose(to_asm)
                     + options.optcargs)
 
     return (s4, to_asm, e1, e2, e3, e4)
@@ -323,7 +330,7 @@ def get_test_parser(usage):
                     help="Compile to assembly rather than object file.")
   parser.add_option("--interpret", action="store_true", dest="interpret", default=False,
                     help="Run using interpreter instead of compiling via LLVM")
-  parser.add_option("--optimize", dest="optlevel", default=False,
+  parser.add_option("--optimize", dest="optlevel", default="O0",
                     help="Enable optimizations in fosteroptc")
   parser.add_option("--profileme", dest="profileme", default=False,
                     help="Enable detailed profiling of compiler middle-end")
