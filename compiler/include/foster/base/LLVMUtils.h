@@ -9,7 +9,7 @@
 #include "llvm/Support/Path.h"
 #include "llvm/Support/TimeValue.h"
 
-#include "llvm/IRBuilder.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/ADT/StringSet.h"
 
 #include <iosfwd>

@@ -11,12 +11,12 @@
 #include "passes/FosterLL.h"
 #include "passes/CodegenPass-impl.h"
 
-#include "llvm/Attributes.h"
-#include "llvm/CallingConv.h"
-#include "llvm/LLVMContext.h"
-#include "llvm/Intrinsics.h"
+#include "llvm/IR/Attributes.h"
+#include "llvm/IR/CallingConv.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Intrinsics.h"
 
-#include "llvm/Metadata.h"
+#include "llvm/IR/Metadata.h"
 //#include "llvm/Analysis/DIBuilder.h"
 //#include "llvm/Support/Dwarf.h"
 
@@ -399,7 +399,7 @@ void LLProc::codegenProto(CodegenPass* pass) {
   // We must not inline foster__main, which is marked with our gc,
   // into its caller, which is a gc-less function!
   if (symbolName == kFosterMain || F->getName().find("noinline_llvm_") == 0) {
-    F->addFnAttr(llvm::Attributes::NoInline);
+    F->addFnAttr(llvm::Attribute::NoInline);
   }
 }
 

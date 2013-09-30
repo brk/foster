@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#include "llvm/Module.h"
+#include "llvm/IR/Module.h"
 #include "llvm/Linker.h"
 #include "llvm/ADT/Statistic.h"
 

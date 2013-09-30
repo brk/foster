@@ -8,9 +8,9 @@
 #include "base/Assert.h"
 #include "parse/FosterKindAST.h"
 
-#include "llvm/CallingConv.h"
-#include "llvm/DerivedTypes.h"
-#include "llvm/LLVMContext.h"
+#include "llvm/IR/CallingConv.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/LLVMContext.h"
 
 #include <map>
 #include <list>

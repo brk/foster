@@ -10,8 +10,8 @@
 #include "parse/FosterTypeAST.h"
 #include "parse/ParsingContext.h"
 
-#include "llvm/Intrinsics.h"
-#include "llvm/LLVMContext.h"
+#include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/LLVMContext.h"
 
 #include <string>
 

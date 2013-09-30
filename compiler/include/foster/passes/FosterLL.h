@@ -11,7 +11,7 @@
 #include "parse/FosterTypeAST.h"
 
 #include "llvm/ADT/APInt.h"
-#include "llvm/GlobalValue.h"
+#include "llvm/IR/GlobalValue.h"
 
 #include <vector>
 #include <string>

@@ -12,11 +12,11 @@
 
 #include "passes/CodegenPass-impl.h"
 
-#include "llvm/Attributes.h"
-#include "llvm/CallingConv.h"
-#include "llvm/LLVMContext.h"
+#include "llvm/IR/Attributes.h"
+#include "llvm/IR/CallingConv.h"
+#include "llvm/IR/LLVMContext.h"
 
-#include "llvm/Metadata.h"
+#include "llvm/IR/Metadata.h"
 //#include "llvm/Analysis/DIBuilder.h"
 #include "llvm/Support/Dwarf.h"
 
@@ -481,10 +481,8 @@ void generateInvokeYield(bool isYield,
   llvm::CallInst* transfer = builder.CreateCall2(coroTransfer,
                                 builder.CreateBitCast(sib_ctx_addr, coro_context_ptr_ty),
                                 builder.CreateBitCast(ctx_addr, coro_context_ptr_ty));
-  llvm::AttrBuilder ab; ab.addAttribute(llvm::Attributes::InReg);
-  llvm::Attributes inreg = llvm::Attributes::get(builder.getContext(), ab);
-  transfer->addAttribute(1, inreg);
-  transfer->addAttribute(2, inreg);
+  transfer->addAttribute(1, llvm::Attribute::InReg);
+  transfer->addAttribute(2, llvm::Attribute::InReg);
 
   //=================================================================
   //=================================================================
@@ -557,7 +555,7 @@ Value* CodegenPass::emitCoroInvokeFn(llvm::Type* retTy,
     //      than None, the basic-coro test segfaults after returning from
     //      coro_transfer or when using std::map to lookup stackmap entries.
     //      why?!?  :(
-    fn->addFnAttr(llvm::Attributes::NoInline);
+    fn->addFnAttr(llvm::Attribute::NoInline);
   }
 
   return fn;

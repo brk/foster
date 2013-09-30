@@ -5,11 +5,11 @@
 #define DEBUG_TYPE "gcmallocfinder"
 
 #include "llvm/Pass.h"
-#include "llvm/Function.h"
-#include "llvm/LLVMContext.h"
-#include "llvm/Instructions.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Instructions.h"
 
-#include "llvm/CallGraphSCCPass.h"
+#include "llvm/Analysis/CallGraphSCCPass.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/StringSwitch.h"
 

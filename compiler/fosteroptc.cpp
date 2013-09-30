@@ -1,22 +1,22 @@
 // Copyright (c) 2009 Ben Karel. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
-#include "llvm/Module.h"
+#include "llvm/IR/Module.h"
 #include "llvm/LinkAllPasses.h"
 #include "llvm/PassManager.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Config/config.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
 #include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
-#include "llvm/DataLayout.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Target/TargetOptions.h"
 
-#include "llvm/DefaultPasses.h"
 #include "llvm/Analysis/Verifier.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 
 #include "llvm/Analysis/LoopPass.h"
+#include "llvm/Analysis/TargetTransformInfo.h"
 
 #include "llvm/Support/Host.h"
 #include "llvm/Support/Signals.h"
@@ -474,6 +474,7 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
   } else {
     passes.add(new DataLayout(mod));
   }
+  tm->addAnalysisPasses(passes);
 
   llvm::raw_fd_ostream raw_out(filename.c_str(), err,
                                fdFlagsForObjectType(filetype));

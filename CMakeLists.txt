@@ -111,9 +111,8 @@ execute_process(COMMAND ${LLVM_CONFIG} --bindir OUTPUT_VARIABLE LLVM_BINDIR)
 string(REPLACE "\n" "" LLVM_BINDIR ${LLVM_BINDIR})
 
 # Collect the linker flags for us to link against LLVM
-set(LLVM_COMPONENTS_NEEDED core jit interpreter native linker executionengine
-  analysis ipo scalaropts bitwriter bitreader asmparser asmprinter instrumentation
-)
+set(LLVM_COMPONENTS_NEEDED all)
+
 execute_process(COMMAND
     ${LLVM_CONFIG} --ldflags --libs ${LLVM_COMPONENTS_NEEDED}
   OUTPUT_VARIABLE LLVM_LDFLAGS

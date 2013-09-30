@@ -6,12 +6,12 @@
 
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Utils/UnifyFunctionExitNodes.h"
-#include "llvm/Module.h"
-#include "llvm/Instructions.h"
-#include "llvm/Constants.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/Pass.h"
 #include "llvm/ADT/Statistic.h"
-#include "llvm/DataLayout.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Analysis/ConstantFolding.h"
 
@@ -109,6 +109,9 @@ bool SpecializeAllocations::runOnBasicBlock(BasicBlock &BB) {
                 ConstantStruct* cs = dyn_cast<ConstantStruct>(gv->getInitializer());
                 ConstantExpr* sze = dyn_cast<ConstantExpr>(cs->getOperand(0));
                 Constant* szc = ConstantFoldConstantExpression(sze, &TD);
+                if (szc && !llvm::isa<ConstantInt>(szc)) {
+                  szc = ConstantFoldConstantExpression(dyn_cast<ConstantExpr>(szc), &TD);
+                }
                 if (!szc) {
                   llvm::errs() << "FosterMallocSpecializer: Unable to evaluate allocated size!\n";
                   exit(1);
@@ -116,7 +119,10 @@ bool SpecializeAllocations::runOnBasicBlock(BasicBlock &BB) {
                 ConstantInt* sz = dyn_cast<ConstantInt>(szc);
                 if (!sz) {
                   llvm::errs() << "FosterMallocSpecializer: Unable to evaluate allocated size to integer!\n";
-                  exit(1);
+                  llvm::errs() << (*sze) << "\n";
+                  llvm::errs() << "was constant-folded by LLVM to:\n";
+                  llvm::errs() << (*szc) << "\n";
+                   exit(1);
                 }
 
                 // OK, we've computed the size of the allocation.

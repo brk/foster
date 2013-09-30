@@ -9,7 +9,7 @@
 #include "parse/FosterTypeAST.h"
 #include "parse/FosterAST.h"
 
-#include "llvm/Module.h"
+#include "llvm/IR/Module.h"
 
 #include <sstream>
 

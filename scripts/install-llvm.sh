@@ -4,7 +4,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-LLVM_VERSION=3.2
+LLVM_VERSION=3.3
 LLVM_V=${LLVM_VERSION}.src
 LLVM_ROOT=${HOME}/llvm
 
@@ -17,13 +17,17 @@ pushd src
         #svn co http://llvm.org/svn/llvm-project/cfe/trunk  llvm-${LLVM_VERSION}/tools/clang
 
         echo "downloading sources..."
+        #wget http://llvm.org/releases/${LLVM_VERSION}/llvm-${LLVM_V}.tar.gz
+        #wget http://llvm.org/releases/${LLVM_VERSION}/clang-${LLVM_V}.tar.gz
+        wget http://llvm.org/releases/${LLVM_VERSION}/cfe-${LLVM_V}.tar.gz
+        wget http://llvm.org/releases/${LLVM_VERSION}/compiler-rt-${LLVM_V}.tar.gz
         wget http://llvm.org/releases/${LLVM_VERSION}/llvm-${LLVM_V}.tar.gz
-        wget http://llvm.org/releases/${LLVM_VERSION}/clang-${LLVM_V}.tar.gz
         echo "unpacking sources..."
-        for proj in llvm clang; do
+        for proj in llvm cfe compiler-rt; do
           tar -xzf ${proj}-${LLVM_V}.tar.gz
         done
-        mv clang-${LLVM_V} llvm-${LLVM_V}/tools/clang
+        mv cfe-${LLVM_V}         llvm-${LLVM_V}/tools/clang
+        mv compiler-rt-${LLVM_V} llvm-${LLVM_V}/projects/compiler-rt
         echo "done unpacking sources..."
 popd
 }

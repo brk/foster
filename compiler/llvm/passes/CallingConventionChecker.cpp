@@ -3,10 +3,10 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "llvm/Pass.h"
-#include "llvm/Function.h"
-#include "llvm/LLVMContext.h"
-#include "llvm/Instructions.h"
-#include "llvm/IRBuilder.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/InstIterator.h"

@@ -9,7 +9,7 @@
 #include "parse/FosterTypeAST.h"
 #include "parse/ParsingContext.h"
 
-#include "llvm/Module.h"
+#include "llvm/IR/Module.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include "_generated_/fosterLexer.h"
