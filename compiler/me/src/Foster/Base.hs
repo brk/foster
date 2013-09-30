@@ -574,6 +574,7 @@ instance IntSized IntSizeBits
                        intOfSize I64 = 64
                        intOfSize (IWord 0) = 32 -- TODO this is hacky =/
                        intOfSize (IWord 1) = 64
+                       intOfSize (IWord w) = error $ "unsupported IWord key " ++ show w
 
 sizeOfBits :: Int -> IntSizeBits
 sizeOfBits 1           = I1
@@ -680,7 +681,14 @@ instance Pretty t => Pretty (FosterPrim t) where
   pretty (PrimOp nm _ty) = text nm
   pretty PrimArrayLiteral = text "prim mach-array-lit"
   pretty (PrimIntTrunc frm to) = text ("trunc from " ++ show frm ++ " to " ++ show to)
-  pretty (CoroPrim c t1 t2) = text "...coroprim..."
+  pretty (CoroPrim c t1 t2) = pretty c <> text ":[" <> pretty t1
+                                       <> text "," <+> pretty t2
+                                       <> text "]"
+
+instance Pretty CoroPrim where
+  pretty CoroCreate = text "CoroCreate"
+  pretty CoroInvoke = text "CoroInvoke"
+  pretty CoroYield  = text "CoroYield"
 
 instance Show ty => Show (EPattern ty) where
   show (EP_Wildcard _)            = "EP_Wildcard"

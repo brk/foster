@@ -402,7 +402,7 @@ classifyCtors ctors _ =
 
 pickDefaultCtorRepresesentations :: DataType TypeIL -> [(CtorId, CtorRepr)]
 pickDefaultCtorRepresesentations dtype =
-  withDataTypeCtors dtype (\cid ctor n -> (cid, CR_Default n))
+  withDataTypeCtors dtype (\cid _ctor n -> (cid, CR_Default n))
 
 optimizedCtorRepresesentations :: DataType TypeIL -> [(CtorId, CtorRepr)]
 optimizedCtorRepresesentations dtype =
@@ -445,7 +445,7 @@ kNormalCtors ctx ctorRepr dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dty
   where
     kNormalCtor :: Context TypeIL -> DataType TypeIL -> DataCtor TypeIL
                 -> KN (FnExprIL)
-    kNormalCtor ctx datatype (DataCtor cname tyformals tys) = do
+    kNormalCtor ctx datatype (DataCtor cname _tyformals tys) = do
       let dname = dataTypeName datatype
       let arity = Prelude.length tys
       let cid   = CtorId (typeFormalName dname) (T.unpack cname) arity
@@ -453,16 +453,16 @@ kNormalCtors ctx ctorRepr dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dty
       let genFreshVarOfType t = do fresh <- knFresh ".autogen"
                                    return $ TypedId t fresh
       vars <- mapM genFreshVarOfType tys
-      let ret tid = let resty = case tidType tid of
-                                 FnTypeIL _ r _ _ -> r
-                                 ForAllIL _ (FnTypeIL _ r _ _) -> r in
-                    return
+      let ret tid = return
                Fn { fnVar   = tid
                   , fnVars  = vars
-                  , fnBody  = KNAppCtor resty (cid, rep) vars  -- tyformals
+                  , fnBody  = KNAppCtor resty (cid, rep) vars
                   , fnIsRec = ()
                   , fnAnnot = ExprAnnot [] (MissingSourceRange $ "kNormalCtor " ++ show cid) []
-                  }
+                  } where resty =
+                            case tidType tid of
+                                 FnTypeIL _ r _ _ -> r
+                                 ForAllIL _ (FnTypeIL _ r _ _) -> r
       case termVarLookup cname (contextBindings ctx) of
         Nothing -> case termVarLookup cname (nullCtorBindings ctx) of
           Nothing -> error $ "Unable to find binder for constructor " ++ show cname
@@ -1106,6 +1106,7 @@ instance (Pretty t, Pretty rs) => Pretty (Fn rs (KNExpr' rs t) t) where
                     <$> indent 4 (pretty (fnBody fn))
                     <$> rbrace) <+> pretty (fnVar fn)
                                 <+> text "(rec?:" <+> pretty (fnIsRec fn) <+> text ")"
+                                <+> text "// :" <+> pretty (tidType $ fnVar fn)
 
 instance (Pretty body, Pretty t) => Pretty (ModuleIL body t) where
   pretty m = text "// begin decls"

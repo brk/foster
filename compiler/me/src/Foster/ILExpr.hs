@@ -154,10 +154,10 @@ makeAllocationsExplicit bbgp = do
             return $
               (mkMiddle $ CCLetVal id (ILAllocate info)) <*>
               (mkMiddle $ CCTupleStore vs (TypedId (LLPtrType t) id) memregion)
-    (CCLetVal id (ILAppCtor genty (cid, CR_Transparent) [v])) -> do
+    (CCLetVal id (ILAppCtor genty (_cid, CR_Transparent) [v])) -> do
             return $
               (mkMiddle $ CCLetVal id  (ILBitcast genty v))
-    (CCLetVal id (ILAppCtor _genty (cid, CR_TransparentU) [v])) -> do
+    (CCLetVal id (ILAppCtor _genty (_cid, CR_TransparentU) [v])) -> do
             return $
               (mkMiddle $ CCRebindId (text "TransparentU") (TypedId (tidType v) id) v)
     (CCLetVal id (ILAppCtor genty (cid, repr) vs)) -> do
@@ -210,6 +210,7 @@ makeClosureAllocationExplicit ids clos = do
   let generic_env_ptr_ty = LLPtrType (LLPrimInt I8)
   let generic_procty (LLProcType (_conc_env_ptr_type:rest) rt cc) =
                       LLProcType (generic_env_ptr_ty:rest) rt cc
+      generic_procty othertype = error $ "ILExpr.hs: generic_procty called for " ++ show othertype
 
   gen_proc_vars <- mapM (\procvar -> do
                           gen_proc_id <- ccFreshId (T.pack ".gen.proc")
@@ -538,7 +539,7 @@ availsRewrite = mkFRewrite d
         --             ...
         --             o0 = occ t [0]
         --             o1 = o0         <<<<
-        xs@(v' : _) -> return $ Just (mkMiddle $ CCRebindId (text "occ-reuse") (TypedId ty id) v' )
+        (v' : _) -> return $ Just (mkMiddle $ CCRebindId (text "occ-reuse") (TypedId ty id) v' )
         [] -> case (occ, lookupAvailMap (tidIdent v) (availTuples a)) of
                 -- If we have  t = (v0, v1)
                 --             ...
@@ -683,7 +684,6 @@ runLiveness bbgp = do
   where
     go :: BasicBlockGraph' -> M BasicBlockGraph'
     go bbgp = do
-        let ((_,blab), _) = bbgpEntry bbgp
         (body' , _, _) <- analyzeAndRewriteBwd bwd (JustC [bbgpEntry bbgp])
                                                            (bbgpBody bbgp)
                                                            mapEmpty

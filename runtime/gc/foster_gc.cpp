@@ -242,7 +242,7 @@ class copying_gc {
           if (arr) {
             cell_size = array_size_for(arr->num_elts(), map->cell_size);
             if (ENABLE_GCLOG) {
-              fprintf(gclog, "Collecting array of total size %lld (rounded up from %d + %lld = %lld), cell size %lld, len %lld...\n",
+              fprintf(gclog, "Collecting array of total size %lld (rounded up from %ld + %lld = %lld), cell size %lld, len %lld...\n",
                                   cell_size,
                                   sizeof(heap_array),  arr->num_elts() * map->cell_size,
                                   sizeof(heap_array) + arr->num_elts() * map->cell_size,

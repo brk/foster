@@ -386,6 +386,7 @@ parseSourceModule sm = resolveFormatting m where
 
    getPreFormatting :: ExprAnnot -> State [(ESourceLocation, Formatting)]
                                           ExprAnnot
+   getPreFormatting (ExprAnnot (_:_) _ _) = error $ "ExprAnnot should not have any pre-formatting yet!"
    getPreFormatting (ExprAnnot [] rng post) = do
      fs <- get
      let prefilter (_, NonHidden) = True
@@ -396,6 +397,7 @@ parseSourceModule sm = resolveFormatting m where
 
    getPostFormatting :: ExprAnnot -> State [(ESourceLocation, Formatting)]
                                            ExprAnnot
+   getPostFormatting (ExprAnnot _ _ (_:_)) = error $ "ExprAnnot should not have any post-formatting yet!"
    getPostFormatting (ExprAnnot pre0 rng []) = do
      fs <- get
      case fs of

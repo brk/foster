@@ -881,6 +881,7 @@ tcSigmaFn ctx f expTyRaw = do
                 debugDoc $ string "arg_tys: " <+> pretty arg_tys
                 debugDoc $ string "zipped : " <+> pretty (zip arg_tys var_tys)
                 let unMeta (MetaTyVar m) = m
+                    unMeta other = error $ "unMeta called with " ++ show other
                 _ <- mapM (checkAgainst (map unMeta taus)) (zip arg_tys var_tys)
                 var_tys'' <- mapM shZonkType var_tys
                 debugDoc $ string "var_tys'': " <+> pretty var_tys''
