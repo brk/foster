@@ -11,7 +11,8 @@ import Foster.Kind
 import Foster.Output
 
 import Data.IORef(IORef, readIORef, writeIORef)
-import Data.Set as Set(Set, fromList, toList, difference, insert, empty, member)
+import Data.Set as Set(Set, fromList, toList, difference, insert, empty, member,
+                                      null, intersection)
 import Data.Sequence as Seq(Seq, length, index, (><))
 import Data.Map as Map(Map, fromListWith)
 import Data.List as List(replicate, intersperse)
@@ -41,7 +42,6 @@ class IntSizedBits t where
     intSizeBitsOf :: t -> IntSizeBits
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
 data CompilesResult expr = CompilesResult (OutputOr expr)
 type Uniq = Int
 data CallConv = CCC | FastCC deriving (Eq, Show)
@@ -51,6 +51,7 @@ data IntSizeBits = I1 | I8 | I32 | I64
                  deriving (Eq, Show)
 
 data ProcOrFunc   = FT_Proc | FT_Func  deriving (Show, Eq)
+data RecStatus = YesRec | NotRec deriving (Eq, Ord, Show)
 data VarNamespace = VarProc | VarLocal deriving Show
 data TailQ = YesTail | NotTail deriving Show
 data MayGC = GCUnknown String | MayGC | WillNotGC deriving (Eq, Show)
@@ -264,22 +265,25 @@ data ModuleAST fnCtor ty = ModuleAST {
         , moduleASTprimTypes   :: [DataType ty]
      }
 
-data Fn expr ty = Fn { fnVar   :: TypedId ty
+data Fn rec expr ty
+                = Fn { fnVar   :: TypedId ty
                      , fnVars  :: [TypedId ty]
                      , fnBody  :: expr
-                     , fnIsRec :: Maybe Bool
+                     , fnIsRec :: rec
                      , fnAnnot :: ExprAnnot
                      } deriving Show -- For KNExpr and KSmallstep
 
-fnType :: Fn e t -> t
+fnType :: Fn r e t -> t
 fnType fn = tidType $ fnVar fn
 
 fnIdent fn = tidIdent $ fnVar fn
 
 -- A function is recursive if any of the program-level identifiers
 -- from the SCC it is bound in appears free in its body.
--- This handles the singleton SCC case:
-computeIsFnRec fn id = id `elem` freeIdents fn
+computeIsFnRec fn ids =
+  if Set.null (setIntersectLists (freeIdents fn) ids) then NotRec else YesRec
+         where setIntersectLists a b = Set.intersection (Set.fromList a)
+                                                        (Set.fromList b)
 
 data ModuleIL expr ty = ModuleIL {
           moduleILbody        :: expr
@@ -697,7 +701,7 @@ instance Pretty CtorRepr where
   pretty (CR_Nullary int) = text "##" <> pretty int <> text "~"
   pretty (CR_Value   int) = text "##" <> pretty int
 
-instance TExpr body t => TExpr (Fn body t) t where
+instance TExpr body t => TExpr (Fn rec body t) t where
     freeTypedIds f = let bodyvars =  freeTypedIds (fnBody f) in
                      let boundvars =              (fnVars f) in
                      bodyvars `butnot` boundvars

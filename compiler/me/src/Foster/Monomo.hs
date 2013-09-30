@@ -40,8 +40,8 @@ import Data.IORef
 -- On the way back up the tree, we'll replace each SCC of bindings
 -- with the generated monomorphic definitions.
 
-monomorphize :: ModuleIL (KNExpr' TypeIL  ) TypeIL
-   -> Compiled (ModuleIL (KNExpr' MonoType) MonoType)
+monomorphize :: ModuleIL (KNExpr' ()        TypeIL  ) TypeIL
+   -> Compiled (ModuleIL (KNExpr' RecStatus MonoType) MonoType)
 monomorphize (ModuleIL body decls dts primdts lines) = do
     uref      <- gets ccUniqRef
     wantedFns <- gets ccDumpFns
@@ -56,7 +56,7 @@ monomorphize (ModuleIL body decls dts primdts lines) = do
 mono :: Functor f => MonoSubst -> f TypeIL -> f MonoType
 mono subst v = fmap (monoType subst) v
 
-monoKN :: MonoSubst -> (KNExpr' TypeIL) -> Mono (KNExpr' MonoType)
+monoKN :: MonoSubst -> (KNExpr' () TypeIL) -> Mono (KNExpr' RecStatus MonoType)
 monoKN subst e =
  let qt = monoType subst
      qv = mono subst
@@ -100,7 +100,8 @@ monoKN subst e =
     c' <- monoMarkDataType c dtname args
     return $ KNAppCtor t' c' (map qv vs)
 
-  KNLetFuns     ids fns b  -> do
+  KNLetFuns     ids fns0 b  -> do
+    let fns = computeRecursivenessAnnotations fns0 ids
     let (monos, polys) = split (zip ids fns)
 
     when False $ liftIO $ do
@@ -180,14 +181,14 @@ monoKN subst e =
             -- -}
   KNTyApp _ _ _  -> do error $ "Expected polymorphic instantiation to affect a polymorphic variable!"
 
-monoFn :: MonoSubst -> Fn KNExpr TypeIL -> Mono (Fn (KNExpr' MonoType) MonoType)
+monoFn :: MonoSubst -> Fn RecStatus KNExpr TypeIL -> Mono MonoFn
 monoFn subst (Fn v vs body isrec rng) = do
   let qv = mono subst
   body' <- monoKN subst body
   return (Fn (qv v) (map qv vs) body' isrec rng)
 
-monoPatternBinding :: MonoSubst -> CaseArm PatternRepr (KNExpr' TypeIL) TypeIL
-                          -> Mono (CaseArm PatternRepr (KNExpr' MonoType) MonoType)
+monoPatternBinding :: MonoSubst -> CaseArm PatternRepr KNExpr TypeIL
+                          -> Mono (CaseArm PatternRepr KNMono MonoType)
 monoPatternBinding subst (CaseArm pat expr guard vs rng) = do
   let pat' = monoPattern subst pat
   let vs'  = map (mono subst) vs
@@ -278,7 +279,7 @@ idAppend id s = case id of (GlobalSymbol o) -> (GlobalSymbol $ beforeS o)
 -- we want to return an identifier for a suitably monomorphized version.
 -- If we've already monomorphized the function, we'll return its procid;
 -- otherwise, we'll monomorphize it first.
-monoInstantiate :: Fn KNExpr TypeIL -> {-Poly-} Ident
+monoInstantiate :: FnExprIL -> {-Poly-} Ident
                 -> [MonoType]       -> MonoSubst      -> MonoType
                 -> Mono ({- Mono -} Ident)
 monoInstantiate polydef polybinder
@@ -304,21 +305,21 @@ monoInstantiate polydef polybinder
   markSeen id = do state <- get
                    put state { monoSeenIds = Set.insert id (monoSeenIds state) }
 
-  replaceFnVar :: MonoProcId -> Fn KNExpr TypeIL -> Mono (Fn KNExpr TypeIL)
+  replaceFnVar :: MonoProcId -> Fn r KNExpr TypeIL -> Mono (Fn r KNExpr TypeIL)
   replaceFnVar moid fn = do
     whenMonoWanted (tidIdent $ fnVar fn) $ liftIO $ do
       putStrLn $ "polydef fn var:: " ++ show (fnVar fn)
       putStrLn $ "monodef fn var:: " ++ show (TypedId (tidType $ fnVar fn) moid)
     return fn { fnVar = TypedId (tidType $ fnVar fn) moid }
 
-showFnStructure :: Fn KNExpr TypeIL -> Doc
-showFnStructure (Fn fnvar args body _mb_isrec _srcrange) =
+showFnStructure :: Fn r KNExpr TypeIL -> Doc
+showFnStructure (Fn fnvar args body _ _srcrange) =
   pretty fnvar <+> text "=" <+>
                      text "{" <+> hsep (map pretty args)
                  <$> indent 2 (showStructure body)
                  <$> text "}" <> line
 
-alphaRename :: Fn KNExpr TypeIL -> Mono (Fn KNExpr TypeIL)
+alphaRename :: Fn r KNExpr TypeIL -> Mono (Fn r KNExpr TypeIL)
 alphaRename fn = do
   uref <- gets monoUniques
   renamed <- liftIO $ evalStateT (renameFn fn) (RenameState uref Map.empty)
@@ -362,7 +363,7 @@ alphaRename fn = do
                 Just v' -> return v'
                 Nothing -> return v
 
-    renameFn :: Fn KNExpr TypeIL -> Renamed (Fn KNExpr TypeIL)
+    renameFn :: Fn r KNExpr TypeIL -> Renamed (Fn r KNExpr TypeIL)
     renameFn (Fn v vs body isrec rng) = do
        (v' : vs') <- mapM renameV (v:vs)
        body' <- renameKN body
@@ -508,12 +509,14 @@ type MonoBinder = Ident
 type PolyBinder = Ident
 
 data MonoResult = MonoResult MonoProcId MonoFn
-type MonoFn = Fn (KNExpr' MonoType) MonoType
+
+type MonoFn   = Fn RecStatus KNMono MonoType
+type FnExprIL = Fn RecStatus KNExpr TypeIL
 
 type Mono = StateT MonoState IO
 
-split :: [(Ident, Fn KNExpr TypeIL)] -> ([(MonoBinder, Fn KNExpr TypeIL)]
-                                        ,[(PolyBinder, Fn KNExpr TypeIL)])
+split :: [(Ident, FnExprIL)] -> ([(MonoBinder, FnExprIL)]
+                                ,[(PolyBinder, FnExprIL)])
 split idsfns = ( [idfn | (idfn,False) <- aug]
                , [idfn | (idfn,True ) <- aug])
         where aug         = map tri idsfns
@@ -528,14 +531,14 @@ monoAddCtorOrigin id = do
   put state { monoOrigins = Map.union (monoOrigins state)
                                       (Map.fromList [(id, PolyOriginCtor)]) }
 
-monoAddOrigins :: [(PolyBinder, Fn KNExpr TypeIL)] -> Mono ()
+monoAddOrigins :: [(PolyBinder, FnExprIL)] -> Mono ()
 monoAddOrigins polys = do
   state <- get
   put state { monoOrigins = Map.union (monoOrigins state)
                                       (Map.fromList [(p, PolyOriginFn f)
                                                     |(p,f) <- polys]) }
 
-data PolyOrigin = PolyOriginFn (Fn KNExpr TypeIL)
+data PolyOrigin = PolyOriginFn FnExprIL
                 | PolyOriginCtor
 
 monoGetOrigin :: PolyBinder -> Mono (Maybe PolyOrigin)
@@ -564,5 +567,13 @@ whenMonoWanted id action = do
   if T.unpack (identPrefix id) `elem` wantedFns
     then action
     else return ()
+
+computeRecursivenessAnnotations fns ids = map annotate fns where
+  annotate fn = Fn { fnVar   = fnVar fn
+                   , fnVars  = fnVars fn
+                   , fnBody  = fnBody fn
+                   , fnIsRec = (computeIsFnRec fn ids)
+                   , fnAnnot = fnAnnot fn
+                   }
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||

@@ -210,7 +210,7 @@ data IExpr =
         | IAlloc  Ident
         | IDeref  Ident
         | IStore  Ident Ident
-        | ILetFuns     [Ident] [Fn KNExpr TypeIL] SSTerm
+        | ILetFuns     [Ident] [Fn () KNExpr TypeIL] SSTerm
         | ILetVal       Ident   SSTerm  SSTerm
         | ILetRec      [Ident] [SSTerm] SSTerm
         | IArrayRead    Ident   Ident
@@ -931,6 +931,7 @@ lookupPrintInt i  "print_i16x" =    Just (\gs ->  printStringNL gs (map toUpper 
 lookupPrintInt i "expect_i16x" =    Just (\gs -> expectStringNL gs (map toUpper $ showHex i "_16"))
 lookupPrintInt i  "print_i8x"  =    Just (\gs ->  printStringNL gs (map toUpper $ showHex i "_16"))
 lookupPrintInt i "expect_i8x"  =    Just (\gs -> expectStringNL gs (map toUpper $ showHex i "_16"))
+lookupPrintInt _ _ = Nothing
 
 -- ByteString -> Text -> String
 stringOfBytes = T.unpack . TE.decodeUtf8

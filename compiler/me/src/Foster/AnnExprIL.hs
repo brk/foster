@@ -37,7 +37,7 @@ data AIExpr =
         | AICase       TypeIL AIExpr [CaseArm Pattern AIExpr TypeIL]
         | AILetVar     Ident AIExpr AIExpr
         | AILetRec     [Ident] [AIExpr] AIExpr
-        | AILetFuns    [Ident] [Fn AIExpr TypeIL] AIExpr
+        | AILetFuns    [Ident] [Fn () AIExpr TypeIL] AIExpr
         -- Use of bindings
         | E_AIVar      (TypedId TypeIL)
         | AICallPrim   TypeIL ILPrim [AIExpr]
@@ -270,7 +270,7 @@ containsUnboxedPolymorphism ty = any containsUnboxedPolymorphism $ childrenOf ty
 tyvarBindersOf (ForAllIL ktvs _) = ktvs
 tyvarBindersOf _                 = []
 
-fnOf :: Context ty -> Fn (AnnExpr TypeAST) TypeAST -> Tc (Fn AIExpr TypeIL)
+fnOf :: Context ty -> Fn r (AnnExpr TypeAST) TypeAST -> Tc (Fn r AIExpr TypeIL)
 fnOf ctx f = do
     var <- aiVar ctx (fnVar f)
     let ft = tidType var

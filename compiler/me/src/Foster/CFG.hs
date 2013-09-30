@@ -28,7 +28,7 @@ module Foster.CFG
 
 import Foster.Base
 import Foster.MonoType
-import Foster.KNExpr(KNExpr'(..), typeKN)
+import Foster.KNExpr(KNExpr'(..), typeKN, KNMono, FnMono)
 import Foster.Letable(Letable(..))
 
 import Compiler.Hoopl
@@ -45,8 +45,6 @@ import Prelude hiding (id, last)
 
 data CFBody = CFB_LetFuns [Ident] [CFFn] CFBody
             | CFB_Call    TailQ MonoType MoVar [MoVar]
-
-type KNMono = KNExpr' MonoType
 
 -- Next stage: optimizeCFGs in CFGOptimizations.hs
 
@@ -68,21 +66,21 @@ computeCFGs uref expr =
     KNCall tq t v vs -> return $ CFB_Call tq t v vs
     _ -> error $ "computeCFGIO expected a series of KNLetFuns bindings! had " ++ show expr
 
-computeCFGIO :: IORef Uniq -> Fn (KNMono) MonoType -> IO CFFn
+computeCFGIO :: IORef Uniq -> FnMono -> IO CFFn
 computeCFGIO uref fn = do
   cfgState <- internalComputeCFG uref fn
   extractFunction cfgState fn
 
 -- A mirror image for internal use (when converting nested functions).
 -- As above, we thread through the updated unique value from the subcomputation!
-cfgComputeCFG :: Fn (KNMono) MonoType -> CFG CFFn
+cfgComputeCFG :: FnMono -> CFG CFFn
 cfgComputeCFG fn = do
   uref      <- gets cfgUniq
   cfgState  <- liftIO $ internalComputeCFG uref fn
   liftIO $ extractFunction cfgState fn
 
 -- A helper for the CFG functions above, to run computeBlocks.
-internalComputeCFG :: IORef Int -> Fn (KNMono) MonoType -> IO CFGState
+internalComputeCFG :: IORef Int -> FnMono -> IO CFGState
 internalComputeCFG uniqRef fn = do
   let state0 = CFGState uniqRef Nothing [] Nothing Nothing Nothing Map.empty
   execStateT runComputeBlocks state0
@@ -97,14 +95,14 @@ internalComputeCFG uniqRef fn = do
         computeBlocks (fnBody fn) Nothing (ret fn retcont)
 
     -- Make sure that the main function returns void.
-    ret :: forall ty expr. Fn expr ty -> BlockId -> MoVar -> CFG ()
+    ret :: forall ty expr. Fn RecStatus expr ty -> BlockId -> MoVar -> CFG ()
     ret f k v = if isMain f then cfgEndWith (CFCont k [])
                             else cfgEndWith (CFCont k [v])
-            where isMain :: forall ty expr. Fn expr ty -> Bool
+            where isMain :: forall ty expr. Fn RecStatus expr ty -> Bool
                   isMain f = (identPrefix $ tidIdent $ fnVar f) == T.pack "main"
 
 -- The other helper, to collect the scattered results and build the actual CFG.
-extractFunction :: CFGState -> Fn KNMono MonoType -> IO CFFn
+extractFunction :: CFGState -> Fn RecStatus KNMono MonoType -> IO CFFn
 extractFunction st fn = do
   let blocks = Prelude.reverse (cfgAllBlocks st)
   let elab    = entryLab blocks
@@ -286,7 +284,7 @@ computeBlocks expr idmaybe k = do
 
                         -- We'll fill in the 'fls' block implementation later...
                         cfgNewBlock fls []
-                        cfgEndWith (CFCont tru []) -- What do we do here?!? 
+                        cfgEndWith (CFCont tru []) -- What do we do here?!?
                         -- We want to emit code to resume pattern-matching against
                         -- the remaining contenders/rows of the match matrix,
                         -- but the match matrix will not be determined until later.
@@ -477,7 +475,7 @@ data BasicBlockGraph = BasicBlockGraph { bbgEntry :: BlockEntry
                                        , bbgRetK  :: BlockId
                                        , bbgBody  :: Graph Insn C C
                                        }
-type CFFn = Fn BasicBlockGraph MonoType
+type CFFn = Fn RecStatus BasicBlockGraph MonoType
 type BlockEntry = BlockEntry' MonoType
 type BlockEntry' t = (BlockId, [TypedId t])
 
@@ -495,10 +493,10 @@ prettyTypedVar (TypedId t i) = text (show i) <+> text "::" <+> pretty t
 showTyped :: Doc -> MonoType -> Doc
 showTyped d t = parens (d <+> text "::" <+> pretty t)
 
-fnFreeIds :: (Fn BasicBlockGraph MonoType) -> [MoVar]
+fnFreeIds :: (Fn RecStatus BasicBlockGraph MonoType) -> [MoVar]
 fnFreeIds fn = freeTypedIds fn
 
-instance Pretty (Fn BasicBlockGraph MonoType) where
+instance Pretty (Fn RecStatus BasicBlockGraph MonoType) where
   pretty fn = group (lbrace <+>
                          (align (vcat (map (\v -> showTyped (pretty v) (tidType v) <+> text "=>")
                                 (fnVars fn))))

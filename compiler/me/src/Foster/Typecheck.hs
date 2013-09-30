@@ -672,22 +672,13 @@ mkAnnLetFuns rng ids fns body =
                                                idset
       callGraphList = map (\(id, fn) -> ((fn, id), id, fnids fn)) (zip ids fns)
       theSCCs       = Graph.stronglyConnComp callGraphList
-      recon = foldr (\scc body ->
-          let markIsRec ids f = f { fnIsRec = Just r }
-                 where -- f is recursive if it has a free id from its SCC.
-                       r = not $ Set.null (setIntersectLists (freeIdents f) ids)
-                       setIntersectLists a b = Set.intersection (Set.fromList a)
-                                                                (Set.fromList b)
-              mkFuns ids rawfns =
-                let fns = map (markIsRec ids) rawfns in
-                AnnLetFuns rng ids fns body
-          in
+  in foldr (\scc body ->
+          let mkFuns ids fns = AnnLetFuns rng ids fns body in
           case scc of
                 Graph.AcyclicSCC (fn, id) -> mkFuns [id] [fn]
                 Graph.CyclicSCC fnids ->     mkFuns ids fns
                                               where (fns, ids) = unzip fnids
          ) body theSCCs
-  in recon
 -- }}}
 
 -- G |- e ::: forall a1::k1..an::kn, rho
@@ -960,7 +951,7 @@ tcSigmaFn ctx f expTyRaw = do
         -- Note we collect free vars in the old context, since we can't possibly
         -- capture the function's arguments from the environment!
         let fn = E_AnnFn $ Fn (TypedId fnty (GlobalSymbol $ fnAstName f))
-                              uniquelyNamedFormals annbody Nothing annot
+                              uniquelyNamedFormals annbody () annot
         debugDoc $ text "tcSigmaFn calling matchExp  expTyRaw = " <> pretty expTyRaw
         debugDoc $ text "tcSigmaFn calling matchExp, expTy'   = " <> pretty expTy'
         matchExp expTy' fn "tcSigmaFn"
@@ -1004,7 +995,7 @@ tcRhoFnHelper ctx f expTy = do
     -- Note we collect free vars in the old context, since we can't possibly
     -- capture the function's arguments from the environment!
     let fn = E_AnnFn $ Fn (TypedId fnty (GlobalSymbol $ fnAstName f))
-                          uniquelyNamedFormals annbody Nothing annot
+                          uniquelyNamedFormals annbody () annot
     matchExp expTy fn "tcRhoFn"
 -- }}}
 

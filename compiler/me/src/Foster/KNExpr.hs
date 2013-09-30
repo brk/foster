@@ -5,7 +5,8 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.KNExpr (kNormalizeModule, KNExpr, KNExpr'(..), TailQ(..), typeKN,
+module Foster.KNExpr (kNormalizeModule, KNExpr, KNMono, FnMono,
+                      KNExpr'(..), TailQ(..), typeKN,
                       knLoopHeaders, knSinkBlocks, knInline, knSize,
                       renderKN, renderKNM, renderKNF, renderKNFM) where
 import qualified Data.Text as T
@@ -43,23 +44,23 @@ import Data.IORef(IORef, newIORef, readIORef, writeIORef)
 -- | via a variant of K-normalization.  We also perform local block sinking,
 -- | in preparation for later contification.
 
-data KNExpr' ty =
+data KNExpr' r ty =
         -- Literals
           KNLiteral     ty Literal
         | KNTuple       ty [TypedId ty] SourceRange
         | KNKillProcess ty T.Text
         -- Control flow
-        | KNIf          ty (TypedId ty)  (KNExpr' ty) (KNExpr' ty)
-        | KNUntil       ty (KNExpr' ty)  (KNExpr' ty) SourceRange
+        | KNIf          ty (TypedId ty)    (KNExpr' r ty) (KNExpr' r ty)
+        | KNUntil       ty (KNExpr' r ty)  (KNExpr' r ty) SourceRange
         -- Creation of bindings
-        | KNCase        ty (TypedId ty) [CaseArm PatternRepr (KNExpr' ty) ty]
-        | KNLetVal      Ident      (KNExpr' ty)     (KNExpr' ty)
-        | KNLetRec     [Ident]     [KNExpr' ty]     (KNExpr' ty)
-        | KNLetFuns    [Ident] [Fn (KNExpr' ty) ty] (KNExpr' ty)
+        | KNCase        ty (TypedId ty) [CaseArm PatternRepr (KNExpr' r ty) ty]
+        | KNLetVal      Ident        (KNExpr' r ty)     (KNExpr' r ty)
+        | KNLetRec     [Ident]       [KNExpr' r ty]     (KNExpr' r ty)
+        | KNLetFuns    [Ident] [Fn r (KNExpr' r ty) ty] (KNExpr' r ty)
         -- Use of bindings
         | KNVar         (TypedId ty)
-        | KNCallPrim    ty (FosterPrim ty) [TypedId ty]
-        | KNCall TailQ  ty (TypedId ty)    [TypedId ty]
+        | KNCallPrim    ty (FosterPrim ty)    [TypedId ty]
+        | KNCall TailQ  ty (TypedId ty)       [TypedId ty]
         | KNAppCtor     ty (CtorId, CtorRepr) [TypedId ty]
         -- Mutable ref cells
         | KNAlloc       ty (TypedId ty) AllocMemRegion
@@ -74,8 +75,12 @@ data KNExpr' ty =
 -- When monmomorphizing, we use (KNTyApp t v [])
 -- to represent a bitcast to type t.
 
-type KNExpr     = KNExpr' TypeIL
-type KNExprFlat = KNExpr' TypeIL
+type KNExpr     = KNExpr' () TypeIL
+type KNExprFlat = KNExpr' () TypeIL
+type KNMono     = KNExpr' RecStatus MonoType
+
+type FnExprIL = Fn () KNExpr TypeIL
+type FnMono   = Fn RecStatus KNMono MonoType
 
 type KN = Compiled
 
@@ -105,10 +110,10 @@ kNormalizeModule m ctx shouldOptimizeCtorRepresentations =
     do body' <- knWrappedBody
        return m { moduleILbody = body' }
       where
-        wrapFns :: [Fn KNExpr TypeIL] -> KNExpr -> KNExpr
+        wrapFns :: [FnExprIL] -> KNExpr -> KNExpr
         wrapFns fs e = foldr (\f body -> KNLetFuns [fnIdent f] [f] body) e fs
 
-kNormalizeFn :: (CtorId -> CtorRepr) -> Fn AIExpr TypeIL -> KN (Fn KNExpr TypeIL)
+kNormalizeFn :: (CtorId -> CtorRepr) -> Fn () AIExpr TypeIL -> KN (FnExprIL)
 kNormalizeFn ctorRepr fn = do
     knbody <- kNormalize YesTail ctorRepr (fnBody fn)
     return $ fn { fnBody = knbody }
@@ -198,7 +203,7 @@ kNormalize mebTail ctorRepr expr =
                           fnVar      = TypedId kty (GlobalSymbol (T.pack $ show kid))
                         , fnVars     = []
                         , fnBody     = body
-                        , fnIsRec    = Just False
+                        , fnIsRec    = ()
                         , fnAnnot    = ExprAnnot [] (MissingSourceRange $ "kont") []
                         }
                   body <- if null arms
@@ -287,7 +292,7 @@ varOrThunk (a, targetType) = do
           return $ Fn { fnVar      = TypedId fnty (GlobalSymbol (T.pack $ show id))
                       , fnVars     = vars
                       , fnBody     = KNCall YesTail (fnTypeILRange fnty) v vars
-                      , fnIsRec    = Just False
+                      , fnIsRec    = ()
                       , fnAnnot    = ExprAnnot [] (MissingSourceRange $ "thunk for " ++ show v) []
                       }
         -- TODO the above ident/global check doesn't work correctly for
@@ -304,7 +309,7 @@ varOrThunk (a, targetType) = do
 -- ||||||||||||||||||||||| Let-Flattening |||||||||||||||||||||||{{{
 -- Because buildLet is applied bottom-to-top, we maintain the invariant
 -- that the bound form in the result is never a binder itself.
-buildLet :: Ident -> KNExpr' t -> KNExpr' t -> KNExpr' t
+buildLet :: Ident -> KNExpr' r t -> KNExpr' r t -> KNExpr' r t
 buildLet ident bound inexpr =
   case bound of
     -- Convert  let i = (let x = e in c) in inexpr
@@ -435,11 +440,11 @@ optimizedCtorRepresesentations dtype =
 -- while ``type case T3 (a:Boxed) of $T3C1 a``
 -- produces T3C1 :: forall b:Boxed, b -> T3 b
 --
-kNormalCtors :: Context TypeIL -> (CtorId -> CtorRepr) -> DataType TypeIL -> [KN (Fn KNExpr TypeIL)]
+kNormalCtors :: Context TypeIL -> (CtorId -> CtorRepr) -> DataType TypeIL -> [KN (FnExprIL)]
 kNormalCtors ctx ctorRepr dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
   where
     kNormalCtor :: Context TypeIL -> DataType TypeIL -> DataCtor TypeIL
-                -> KN (Fn KNExpr TypeIL)
+                -> KN (FnExprIL)
     kNormalCtor ctx datatype (DataCtor cname tyformals tys) = do
       let dname = dataTypeName datatype
       let arity = Prelude.length tys
@@ -455,7 +460,7 @@ kNormalCtors ctx ctorRepr dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dty
                Fn { fnVar   = tid
                   , fnVars  = vars
                   , fnBody  = KNAppCtor resty (cid, rep) vars  -- tyformals
-                  , fnIsRec = Just False
+                  , fnIsRec = ()
                   , fnAnnot = ExprAnnot [] (MissingSourceRange $ "kNormalCtor " ++ show cid) []
                   }
       case termVarLookup cname (contextBindings ctx) of
@@ -483,7 +488,7 @@ thunk ty = FnTypeIL [] ty FastCC FT_Proc
 --
 -- http://www.brics.dk/RS/99/27/BRICS-RS-99-27.pdf
 
-collectFunctions :: Fn (KNExpr' t) t -> [(Ident, Ident, Fn (KNExpr' t) t)]  -- (parent, binding, child)
+collectFunctions :: Fn r (KNExpr' r t) t -> [(Ident, Ident, Fn r (KNExpr' r t) t)]  -- (parent, binding, child)
 collectFunctions knf = go [] (fnBody knf)
   where go xs e = case e of
           KNLiteral       {} -> xs
@@ -511,7 +516,7 @@ collectFunctions knf = go [] (fnBody knf)
                  let ys      = concatMap collectFunctions fns in
                  xs ++ entries ++ go ys b
 
-collectMentions :: Fn (KNExpr' t) t -> Set (Ident, Ident) -- (caller, callee)
+collectMentions :: Fn r (KNExpr' r t) t -> Set (Ident, Ident) -- (caller, callee)
 collectMentions knf = go Set.empty (fnBody knf)
   where cc       = fnIdent knf
         uu xs vs = Set.union xs (Set.fromList [(cc, tidIdent v) | v <- vs])
@@ -576,7 +581,7 @@ mkLetRec bindings b = KNLetRec ids es b where (ids, es) = unzip bindings
 mkLetVals []            e = e
 mkLetVals ((id,b):rest) e = KNLetVal id b (mkLetVals rest e)
 
-knSinkBlocks :: ModuleIL (KNExpr' t) t -> KN (ModuleIL (KNExpr' t) t)
+knSinkBlocks :: ModuleIL (KNExpr' r t) t -> KN (ModuleIL (KNExpr' r t) t)
 knSinkBlocks m = do
   let rebuilder idsfns = [(id, localBlockSinking fn) | (id, fn) <- idsfns]
   return $ m { moduleILbody = rebuildWith rebuilder (moduleILbody m) }
@@ -588,7 +593,7 @@ knSinkBlocks m = do
 --
 -- Performing sinking after monomorphization allows each monomorphization
 -- of a given function to be separately sunk.
-localBlockSinking :: Fn (KNExpr' t) t -> Fn (KNExpr' t) t
+localBlockSinking :: Fn r (KNExpr' r t) t -> Fn r (KNExpr' r t) t
 localBlockSinking knf = rebuildFn knf
  where
   rebuildFn   = rebuildFnWith rebuilder addBindingsFor
@@ -764,7 +769,7 @@ knLoopHeaderCensusFn activeids (id, fn) = do
            , census  = Map.insert id (map Just vars)         (census st) }
   knLoopHeaderCensus activeids (fnBody fn)
 
-knLoopHeaderCensus :: Set Ident -> KNExpr' MonoType -> Hdr ()
+knLoopHeaderCensus :: Set Ident -> KNMono -> Hdr ()
 knLoopHeaderCensus activeids expr = go expr where
   go expr = case expr of
     KNCase        _ _ patbinds -> do mapM_ go (concatMap caseArmExprs patbinds)
@@ -801,8 +806,8 @@ knLoopHeaderCensus activeids expr = go expr where
     -- One potential improvement: track variable renamings.
     _ -> return ()
 
-isRec fn = case fnIsRec fn of Just True -> True
-                              _         -> False
+isRec fn = case fnIsRec fn of YesRec -> True
+                              NotRec -> False
 
 lookupId id = do
   st <- get
@@ -813,12 +818,12 @@ addIdRemapping id id' = do
   st <- get
   put $ st { varmap = Map.insert id id'' (varmap st) }
 
-knLoopHeaders ::          (ModuleIL (KNExpr' MonoType) MonoType)
-              -> Compiled (ModuleIL (KNExpr' MonoType) MonoType)
+knLoopHeaders ::          (ModuleIL KNMono MonoType)
+              -> Compiled (ModuleIL KNMono MonoType)
 knLoopHeaders m = do body' <- knLoopHeaders' (moduleILbody m)
                      return $ m { moduleILbody = body' }
 
-knLoopHeaders' :: KNExpr' MonoType -> Compiled (KNExpr' MonoType)
+knLoopHeaders' :: KNMono -> Compiled KNMono
 knLoopHeaders' expr = do
     HdrState h c r <- execStateT (knLoopHeaderCensus Set.empty expr)
                                  (HdrState Map.empty Map.empty Map.empty)
@@ -870,20 +875,17 @@ knLoopHeaders' expr = do
             let fn'' = Fn { fnVar   = mkGlobal v'
                           , fnVars  = dropUselessArgs mt (fnVars fn)
                           , fnBody  = (q $ fnBody fn)
-                          , fnIsRec = Just True
+                          , fnIsRec = YesRec
                           , fnAnnot = ExprAnnot [] (annotRange $ fnAnnot fn) []
                           } in
-            -- The outer wrapper may or may not still be recursive,
-            -- depending on whether it contained non-tail recursion:
-            let fn'isRec = computeIsFnRec fn id in
-            -- TODO should we create another wrapper to maintian the invariant
+            -- TODO should we create another wrapper to maintain the invariant
             -- that the outermost fn bound to id is always non-recursive,
             -- for inlining purposes?
             let fn' = Fn { fnVar   = fnVar fn
                          , fnVars  = renameUsefulArgs mt vs'
                          , fnBody  = KNLetFuns [ id' ] [ fn'' ]
                                          (KNCall YesTail (typeKN (fnBody fn)) v' (dropUselessArgs mt vs' ))
-                         , fnIsRec = Just fn'isRec
+                         , fnIsRec = computeIsFnRec fn' [id]
                          , fnAnnot = fnAnnot fn
                          } in
             KNLetFuns [id ] [ fn' ] (qq (Map.delete id info) r b)
@@ -907,7 +909,7 @@ mkGlobal (TypedId t i) = mkGlobalWithType t i
 mkGlobalWithType ty (Ident t u) = TypedId ty (GlobalSymbol $ T.pack (T.unpack t ++ show u))
 mkGlobalWithType _  (GlobalSymbol _) = error $ "KNExpr.hs: mkGlobal(WithType) of global!"
 
-instance AExpr (KNExpr' MonoType) where
+instance (Show t) => AExpr (KNExpr' rs t) where
     freeIdents e = case e of
         KNLetVal   id  b   e -> freeIdents b ++ (freeIdents e `butnot` [id])
         KNLetRec   ids xps e -> (concatMap freeIdents xps ++ freeIdents e)
@@ -923,7 +925,7 @@ instance AExpr (KNExpr' MonoType) where
 -- ||||||||||||||||||||||||| Boilerplate ||||||||||||||||||||||||{{{
 -- This is necessary due to transformations of AIIf and nestedLets
 -- introducing new bindings, which requires synthesizing a type.
-typeKN :: KNExpr' ty -> ty
+typeKN :: KNExpr' rs ty -> ty
 typeKN expr =
   case expr of
     KNLiteral       t _      -> t
@@ -949,7 +951,7 @@ typeKN expr =
 
 -- This instance is primarily needed as a prereq for KNExpr to be an AExpr,
 -- which ((childrenOf)) is needed in ILExpr for closedNamesOfKnFn.
-instance Show ty => Structured (KNExpr' ty) where
+instance Show ty => Structured (KNExpr' rs ty) where
     textOf e _width =
         case e of
             KNLiteral _  (LitText  _) -> text $ "KNString    "
@@ -1002,7 +1004,7 @@ instance Show ty => Structured (KNExpr' ty) where
             KNTyApp _t v _argty     -> [var v]
 
 
-knSize :: KNExpr' t -> (Int, Int) -- toplevel, cumulative
+knSize :: KNExpr' r t -> (Int, Int) -- toplevel, cumulative
 knSize expr = go expr (0, 0) where
   go expr (t, a) = let ta = let v = knSizeHead expr in (t + v, a + v) in
                    case expr of
@@ -1021,7 +1023,7 @@ knSize expr = go expr (0, 0) where
 -- The caller should maintain the invariant that
 -- the arguments to that constructor have already
 -- been individually accounted for.
-knSizeHead :: KNExpr' t -> Int
+knSizeHead :: KNExpr' r t -> Int
 knSizeHead expr = case expr of
     KNLiteral _ (LitText _) -> 2 -- text literals are dyn alloc'd, for now.
     KNLiteral     {} -> 0
@@ -1053,13 +1055,13 @@ knSizeHead expr = case expr of
 renderKN m put = if put then putDoc (pretty m) >>= (return . Left)
                         else return . Right $ show (pretty m)
 
-renderKNM :: (ModuleIL (KNExpr' MonoType) MonoType) -> String
+renderKNM :: (ModuleIL (KNMono) MonoType) -> String
 renderKNM m = show (pretty m)
 
-renderKNF :: (Fn (KNExpr' TypeIL) TypeIL) -> String
+renderKNF :: FnExprIL -> String
 renderKNF m = show (pretty m)
 
-renderKNFM :: (Fn (KNExpr' MonoType) MonoType) -> String
+renderKNFM :: FnMono -> String
 renderKNFM m = show (pretty m)
 
 showTyped :: Pretty t => Doc -> t -> Doc
@@ -1099,16 +1101,11 @@ kwd  s = dullblue  (text s)
 lkwd s = dullwhite (text s)
 end    = lkwd "end"
 
-instance Pretty t => Pretty (Fn (KNExpr' t) t) where
+instance (Pretty t, Pretty rs) => Pretty (Fn rs (KNExpr' rs t) t) where
   pretty fn = group (lbrace <+> (hsep (map (\v -> pretty v <+> text "=>") (fnVars fn)))
                     <$> indent 4 (pretty (fnBody fn))
                     <$> rbrace) <+> pretty (fnVar fn)
-                                <+> text "(rec?:" <+> prettyfnIsRec fn <+> text ")"
-
-prettyfnIsRec fn = p (fnIsRec fn)
-  where p Nothing      = text "Nothing"
-        p (Just True)  = text "True"
-        p (Just False) = text "False"
+                                <+> text "(rec?:" <+> pretty (fnIsRec fn) <+> text ")"
 
 instance (Pretty body, Pretty t) => Pretty (ModuleIL body t) where
   pretty m = text "// begin decls"
@@ -1167,7 +1164,9 @@ instance Pretty t => Pretty (PatternRepr t) where
 pr YesTail = "(tail)"
 pr NotTail = "(non-tail)"
 
-instance Pretty ty => Pretty (KNExpr' ty) where
+instance Pretty RecStatus where pretty rs = text $ show rs
+
+instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
   pretty e =
         case e of
             KNVar (TypedId _ (GlobalSymbol name))
@@ -1237,7 +1236,7 @@ instance Pretty ty => Pretty (KNExpr' ty) where
             KNArrayPoke  _ ai v -> prettyId v <+> text ">^" <+> pretty ai
             KNTuple      _ vs _ -> parens (hsep $ punctuate comma (map pretty vs))
 
-deriving instance (Show ty) => Show (KNExpr' ty) -- used elsewhere...
+deriving instance (Show ty, Show rs) => Show (KNExpr' rs ty) -- used elsewhere...
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -1408,16 +1407,18 @@ resVar env v = do
                                  return $ (TypedId (tidType v) id)
                    Nothing -> do return $ v
 
-type SrcExpr = (KNExpr' MonoType)
-type ResExpr = (KNExpr' MonoType)
+type SrcExpr = (KNExpr' RecStatus MonoType)
+type ResExpr = (KNExpr' RecStatus MonoType)
 data VisitStatus t = Unvisited | Visited t Int
 data SrcEnv = SrcEnv !(Map Ident VarOp)
                      !(Map Ident Ident)
+type SrcFn = Fn RecStatus SrcExpr MonoType
+type ResFn = Fn RecStatus ResExpr MonoType
 data OuterPending = OP_Limit Int
 data InnerPending = IP_Limit Int
 data Opnd v = Opnd v SrcEnv (IORef (VisitStatus v)) (IORef OuterPending) (IORef InnerPending)
-data VarOp = VO_E (Opnd     SrcExpr)
-           | VO_F (Opnd (Fn SrcExpr MonoType))
+data VarOp = VO_E (Opnd               SrcExpr)
+           | VO_F (Opnd (Fn RecStatus SrcExpr MonoType))
 newtype Rez a = Rez a
 
 opndValue (Opnd v _ _ _ _) = v
@@ -1847,7 +1848,7 @@ handleCallOfKnownFunction tailq expr resExprA opf@(Opnd fn0 _ _ loc_op loc_ip) v
         <$> text "        " <> smry
         <$> text "        " <> text ("visiting fn opf (" ++ (show $ tidIdent v) ++ ")")
         <$> text "               from call  [[" <+> pretty expr <+> text "]]"
- if isRec (fnIsRec fn0)
+ if isRec fn0
   then do
      putDocLn4 $ text "                           residualizing rec call"
      resExprA "blah,rec"
@@ -1894,7 +1895,7 @@ handleCallOfKnownFunction tailq expr resExprA opf@(Opnd fn0 _ _ loc_op loc_ip) v
                                return $ k == 0
             outerPending <- do OP_Limit k <- readRef loc_op
                                return $ k
-            case (innerPending, outerPending, isRec (fnIsRec fn') ) of
+            case (innerPending, outerPending, isRec fn' ) of
               --(False, opk, True) -> do
               --  -- call of recursive function; do we really want to unpeel it?
               --  putDocLn $ text ("\tlambda folding " ++ show (tidIdent v) ++ " failed due to it being a non-outer-pending recursive call... ")
@@ -1938,11 +1939,8 @@ handleCallOfKnownFunction tailq expr resExprA opf@(Opnd fn0 _ _ loc_op loc_ip) v
          Nothing -> do putDocLn4 $ text "lambda folding [" <> pretty expr <> text "] failed; residualizing call instead."
                        resExprA "kNothing"
   where
-    isRec (Just True) = True
-    isRec _           = False
-
     -- input are residual vars, not src vars, fwiw
-    foldLambda' :: TailQ -> (Fn ResExpr MonoType) -> Opnd (Fn SrcExpr MonoType)
+    foldLambda' :: TailQ -> ResFn -> Opnd SrcFn
                 -> [TypedId MonoType] -> SizeCounter -> SrcEnv -> In (Maybe (Rez ResExpr, Int))
     foldLambda' tailq fn' opnd@(Opnd _ _ _ loc_op _) vs' sizeCounter env = do
       let fn   = fn'
@@ -2015,7 +2013,7 @@ handleCallOfKnownFunction tailq expr resExprA opf@(Opnd fn0 _ _ loc_op loc_ip) v
 -- because the returned thing may not actually be residualized by the caller
 -- (for example, because the caller finds out it was dead).
 
-visitF :: String -> Opnd (Fn SrcExpr MonoType) -> In (Maybe (Fn ResExpr MonoType, Int))
+visitF :: String -> Opnd SrcFn -> In (Maybe (ResFn, Int))
 visitF msg (Opnd fn env loc_fn _ loc_ip) = do
   ff <- readRef loc_fn
   case ff of
@@ -2041,7 +2039,7 @@ visitF msg (Opnd fn env loc_fn _ loc_ip) = do
       putDocLn6 $ indent 32 $ pretty f
       return $ Just (f, size)
  where
-    knInlineFn' :: Fn SrcExpr MonoType -> SrcEnv -> In (Fn ResExpr MonoType)
+    knInlineFn' :: SrcFn -> SrcEnv -> In (ResFn)
     knInlineFn' fn env = do
       let vs = fnVars fn
       vs'   <- mapM freshenTid vs
@@ -2174,8 +2172,8 @@ data PatternMatchStatus = MatchDef [(Ident, ConstStatus)] | MatchAmbig | MatchNe
 --        case (a,b) of (True, x) -> f(b)
 --      even thought it can't become simply ``f(b)`` because a might not be True.
 matchConstExpr :: TypedId MonoType -> ConstExpr
-               ->            [CaseArm PatternRepr (KNExpr' MonoType) MonoType]
-               -> In (Either [CaseArm PatternRepr (KNExpr' MonoType) MonoType]
+               ->            [CaseArm PatternRepr (KNMono) MonoType]
+               -> In (Either [CaseArm PatternRepr (KNMono) MonoType]
                              SrcExpr)
 matchConstExpr v c arms = go arms [] NoPossibleMatchYet
   where go [] reverseArmsWhichMightMatch _ =
@@ -2238,7 +2236,7 @@ fmapCaseArm fp fe ft (CaseArm p e g b rng)
 
 -- When we inline a function body, it moves from a tail context to a non-tail
 -- context, so we must remove any direct tail-call annotations.
-removeTailCallAnnots :: KNExpr' MonoType -> KNExpr' MonoType
+removeTailCallAnnots :: KNMono -> KNMono
 removeTailCallAnnots expr = go expr where
   go expr = case expr of
     KNCase        ty v arms     -> KNCase    ty v (map (fmapCaseArm id go id) arms)
@@ -2272,7 +2270,7 @@ removeTailCallAnnots expr = go expr where
 type NumTimesCalled = Int
 type NumTimesPassed = Int
 
-inCensus :: KNExpr' MonoType -> Map Ident (NumTimesCalled, NumTimesPassed)
+inCensus :: KNMono -> Map Ident (NumTimesCalled, NumTimesPassed)
 inCensus expr =
     let InCenState c p _ = execState (inCensusFn expr)
                                      (InCenState Map.empty Map.empty Map.empty)
@@ -2311,7 +2309,7 @@ cenSawCalled v = do
   st <- get
   put $ st { cenCalled = Map.adjust (+1) id (cenCalled st) }
 
-inCensusFn :: KNExpr' MonoType -> InCen ()
+inCensusFn :: KNMono -> InCen ()
 inCensusFn expr = go expr where
   go expr = case expr of
     KNCase        _ _ arms     -> do mapM_ go (concatMap caseArmExprs arms)

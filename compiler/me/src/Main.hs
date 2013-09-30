@@ -134,7 +134,7 @@ typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
                     forM_ errs putDocLn
                     putDocP line
 
-        bindingForAnnFn :: Fn (AnnExpr TypeAST) TypeAST -> ContextBinding TypeAST
+        bindingForAnnFn :: Fn () (AnnExpr TypeAST) TypeAST -> ContextBinding TypeAST
         bindingForAnnFn f = TermVarBinding (identPrefix $ fnIdent f) (fnVar f, Nothing)
 
         -- Start with the most specific binding possible (i.e. sigma, not tau).
@@ -283,9 +283,7 @@ typecheckModule verboseMode modast tcenv0 = do
                     = map (map (fmapOO unFunAnn)) fns
      -- Set fnIsRec flag on top-level functions.
      let tci oof -- :: OutputOr (Fn (AnnExpr TypeAST) TypeAST) -> Tc (Fn AIExpr TypeIL)
-               = tcInject (\fn -> do
-                            let r = computeIsFnRec fn (tidIdent $ fnVar fn)
-                            fnOf ctx_ast (fn { fnIsRec = Just r })) oof
+               = tcInject (fnOf ctx_ast) oof
      let tcis fns = mapM tci fns
      aiFns     <- mapM tcis (unfuns oo_annfns)
      let q = buildExprSCC aiFns
@@ -293,7 +291,7 @@ typecheckModule verboseMode modast tcenv0 = do
                                                   (moduleASTsourceLines mAST)
      return (ctx_il, m)
        where
-        buildExprSCC :: [[Fn AIExpr TypeIL]] -> AIExpr
+        buildExprSCC :: [[Fn () AIExpr TypeIL]] -> AIExpr
         buildExprSCC [] = error "Main.hs: Can't build SCC of no functions!"
         buildExprSCC es = let call_of_main = AICall unit
                                               (E_AIVar (TypedId mainty (GlobalSymbol $ T.pack "main")))
@@ -301,7 +299,7 @@ typecheckModule verboseMode modast tcenv0 = do
                               unit   = TupleTypeIL []
                               mainty = FnTypeIL [unit] unit FastCC FT_Proc
                           in foldr build call_of_main es
-         where build :: [Fn AIExpr TypeIL] -> AIExpr -> AIExpr
+         where build :: [Fn () AIExpr TypeIL] -> AIExpr -> AIExpr
                build es body = case es of
                     [] -> body
                     _  -> AILetFuns (map fnIdent es) es body
@@ -559,7 +557,7 @@ lowerModule ai_mod ctx_il = do
      return ilprog
 
   where
-    cfgModule :: ModuleIL (KNExpr' MonoType) MonoType -> Compiled (ModuleIL CFBody MonoType)
+    cfgModule :: ModuleIL (KNExpr' RecStatus MonoType) MonoType -> Compiled (ModuleIL CFBody MonoType)
     cfgModule kmod = do
         uniqref <- gets ccUniqRef
         cfgBody <- liftIO $ computeCFGs uniqref (moduleILbody kmod)

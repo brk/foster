@@ -23,7 +23,7 @@ data AnnExpr ty =
         -- Literals
           AnnLiteral    ExprAnnot ty Literal
         | AnnTuple      ExprAnnot ([ty] -> ty) [AnnExpr ty]
-        | E_AnnFn       (Fn (AnnExpr ty) ty)
+        | E_AnnFn       (Fn () (AnnExpr ty) ty)
         -- Control flow
         | AnnIf         ExprAnnot ty (AnnExpr ty) (AnnExpr ty) (AnnExpr ty)
         | AnnUntil      ExprAnnot ty (AnnExpr ty) (AnnExpr ty)
@@ -32,7 +32,7 @@ data AnnExpr ty =
         | AnnLetVar     ExprAnnot Ident (AnnExpr ty) (AnnExpr ty)
         -- We have separate syntax for a SCC of recursive functions
         -- because they are compiled differently from non-recursive closures.
-        | AnnLetFuns    ExprAnnot [Ident] [Fn (AnnExpr ty) ty] (AnnExpr ty)
+        | AnnLetFuns    ExprAnnot [Ident] [Fn () (AnnExpr ty) ty] (AnnExpr ty)
         | AnnLetRec     ExprAnnot [Ident] [AnnExpr ty] (AnnExpr ty)
         -- Use of bindings
         | E_AnnVar      ExprAnnot (TypedId ty, Maybe CtorId)
@@ -119,7 +119,7 @@ instance Structured (AnnExpr TypeAST) where
       E_AnnTyApp _rng t _e argty -> text "AnnTyApp     ["  <> pretty argty <> text  "] :: " <> pretty t
       E_AnnFn annFn              -> text $ "AnnFn " ++ T.unpack (identPrefix $ fnIdent annFn) ++ " // "
         ++ (show $ fnBoundNames annFn) ++ " :: " ++ show (pretty (fnType annFn)) where
-                   fnBoundNames :: (Pretty t) => Fn e t -> [String]
+                   fnBoundNames :: (Pretty t) => Fn r e t -> [String]
                    fnBoundNames fn = map (show . pretty) (fnVars fn)
   childrenOf e =
     case e of
@@ -150,7 +150,7 @@ instance Structured (AnnExpr TypeAST) where
 
 -----------------------------------------------------------------------
 
-instance AExpr body => AExpr (Fn body t) where
+instance AExpr body => AExpr (Fn recStatus body t) where
     freeIdents f = let bodyvars =  freeIdents (fnBody f) in
                    let boundvars =  map tidIdent (fnVars f) in
                    bodyvars `butnot` boundvars

@@ -202,7 +202,6 @@ elimContInBBG uref bbg = runWithUniqAndFuel uref infiniteFuel (elimContInBBG' bb
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||| Census-based Rewrites |||||||||||||||||||{{{
-data RecStatus = YesRec | NotRec deriving (Eq, Ord, Show)
 data HowUsed = UnknownCall BlockId
              | KnownCall   BlockId {- provided cont; -}
                            (RecStatus,BlockId) {- of known fn entry point -}
@@ -260,12 +259,7 @@ getCensus bbg = let cf = getCensusFns bbg in
                                          [(v, UsedFirstClass) | v <- vs]
             (CFCase v _pats)    -> addUsed m [(v, UsedSecondClass)]
 
-    fnEntryId fn = let bbg = fnBody fn in
-                   let st = case fnIsRec fn of
-                              Just    True  -> YesRec
-                              Just    False -> NotRec
-                              Nothing       -> NotRec
-                   in (st, blockId $ bbgEntry bbg)
+    fnEntryId fn = (fnIsRec fn, blockId $ bbgEntry (fnBody fn))
 
     censusLetable letable m =
       case letable of
