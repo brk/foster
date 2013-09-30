@@ -360,7 +360,6 @@ endif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
 include(${PROJECT_SOURCE_DIR}/third_party/chromium_base/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/cpuid/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/gtest/CMakeLists.txt)
-include(${PROJECT_SOURCE_DIR}/third_party/imath/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/libcoro/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/fftw_cycle/CMakeLists.txt)
 
@@ -403,7 +402,6 @@ set_source_files_properties(
       PROPERTIES LANGUAGE CXX)
 
 add_library(fosterc_llvm STATIC
-  compiler/llvm/passes/ImathImprover.cpp
   compiler/llvm/passes/GCMallocFinder.cpp
   compiler/llvm/passes/GCRootSafetyChecker.cpp
   compiler/llvm/passes/EscapingAllocaFinder.cpp
@@ -451,7 +449,7 @@ target_link_libraries(fosterlower
   antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
 
 add_dependencies(fosterlower
-    foster_runtime_bc coro_wrapper_bc imath_wrapper_bc hs_me cycle)
+    foster_runtime_bc coro_wrapper_bc hs_me cycle)
 
 ############
 
@@ -460,7 +458,7 @@ target_link_libraries(fosteroptc
     fosterc_base fosterc_llvm ${LLVM_LDFLAGS})
 
 add_dependencies(fosteroptc
-    foster_runtime_bc coro_wrapper_bc imath_wrapper_bc hs_me)
+    foster_runtime_bc coro_wrapper_bc hs_me)
 
 ############
 

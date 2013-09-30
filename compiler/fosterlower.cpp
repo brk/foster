@@ -260,7 +260,6 @@ int main(int argc, char** argv) {
   llvm_shutdown_obj Y;
   ScopedTimer* wholeProgramTimer = new ScopedTimer("total");
   Module* libfoster_bc = NULL;
-  Module* imath_bc     = NULL;
   Module* coro_bc      = NULL;
   //llvm::Type* mp_int = NULL;
   foster::bepb::Module pbin;
@@ -367,7 +366,6 @@ int main(int argc, char** argv) {
 
   { ScopedTimer timer("llvm.link");
     linkTo(libfoster_bc, "libfoster", module);
-    //linkTo(imath_bc,     "imath",     module);
   }
 
   if (optDumpPostLinkedIR) {
@@ -394,7 +392,6 @@ cleanup:
 
   delete coro_bc;      coro_bc = NULL;
   delete libfoster_bc; libfoster_bc = NULL;
-  delete imath_bc;     imath_bc = NULL;
   delete module;       module = NULL;
 
   if (optPrintTimings) {

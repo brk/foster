@@ -33,7 +33,7 @@ def main():
     }
     for bin in ['fosterparse', 'fostercheck', 'fosterlower',
                 'libfoster.bc', 'libcpuid.a', 'libfoster_main.o',
-                'libchromium_base.a', 'libimath.a']:
+                'libchromium_base.a']:
         dirs[bin] = os.path.join(options.execute_from, bin)
 
     # running fosterparse on a source file produces a ParsedAST
