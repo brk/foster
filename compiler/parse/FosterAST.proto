@@ -166,11 +166,13 @@ message DataType {
   required TypeFormal     name = 1;
   repeated DataCtor       ctor = 2;
   repeated TypeFormal tyformal = 3;
+  optional SourceRange   range = 4;
 }
 
 message DataCtor {
   required string   name = 1;
   repeated Type     type = 2;
+  optional SourceRange range = 4;
 }
 
 message SourceModule {

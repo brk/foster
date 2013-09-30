@@ -217,21 +217,21 @@ monoCtorInfo subst (LLCtorInfo cid repr tys) =
 
 monomorphizedDataTypesFrom dts specs = concatMap monomorphizedDataTypes dts
  where monomorphizedDataType :: DataType TypeIL -> [MonoType] -> DataType MonoType
-       monomorphizedDataType (DataType name formals ctors) args =
+       monomorphizedDataType (DataType name formals ctors range) args =
                              (DataType (getMonoFormal name args) []
-                                       (map (monomorphizedCtor subst) ctors))
+                                       (map (monomorphizedCtor subst) ctors) range)
                                where
          subst = extendSubst emptyMonoSubst formals args
 
          monomorphizedCtor :: MonoSubst -> DataCtor TypeIL -> DataCtor MonoType
          monomorphizedCtor subst
-               (DataCtor name _tyformals types) =
-                DataCtor name [] (map (monoType subst) types)
+               (DataCtor name _tyformals types range) =
+                DataCtor name [] (map (monoType subst) types) range
 
        dtSpecMap = mapAllFromList specs
 
        monomorphizedDataTypes :: DataType TypeIL -> [DataType MonoType]
-       monomorphizedDataTypes dt@(DataType formal tyformals _) =
+       monomorphizedDataTypes dt@(DataType formal tyformals _ _range) =
          -- We'll always produce the "regular" version of the data type...
          let genericTys = [PtrTypeUnknown | _ <- tyformals] in
          let monotyss = case Map.lookup (typeFormalName formal) dtSpecMap of

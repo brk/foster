@@ -911,12 +911,11 @@ TypeAST* parseTypeAtom(pTree tree);
 // ^(OF dctor tatom*)
 DataCtorAST* parseDataCtor(pTree t) {
   //foster::SourceRange sourceRange = rangeOf(t);
-  DataCtorAST* c = new DataCtorAST();
-  c->name = parseCtor(child(t, 0))->getName();
+  std::vector<TypeAST*> types;
   for (size_t i = 1; i < getChildCount(t); ++i) {
-    c->types.push_back(parseTypeAtom(child(t, i)));
+    types.push_back(parseTypeAtom(child(t, i)));
   }
-  return c;
+  return new DataCtorAST(parseCtor(child(t, 0))->getName(), types, rangeOf(t));
 }
 
 // ^(MU data_ctor*)
@@ -977,7 +976,8 @@ ModuleAST* parseTopLevel(pTree root_tree, std::string moduleName,
       datas.push_back(new Data(
                        parseTypeFormal(child(c, 0), getBoxedKind()),
                        parseTyFormals(child(c, 1), getBoxedKind()),
-                       parseDataCtors(child(c, 2))));
+                       parseDataCtors(child(c, 2)),
+                       rangeOf(c)));
     } else {
       EDiag() << "ANTLRtoFosterAST.cpp: "
               << "Unexpected top-level element with token ID " << token;

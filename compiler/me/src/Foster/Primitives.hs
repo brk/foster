@@ -15,13 +15,16 @@ import qualified Data.Text as T
 primitiveDataTypesP :: [DataType TypeP]
 primitiveDataTypesP = [
   (let tf = [] in
-   DataType (TypeFormalAST "Text" KindPointerSized) tf $
+   DataType (TypeFormalAST "Text" KindPointerSized) tf
         [DataCtor (T.pack "TextFragment") tf -- CR_Default 0
             [ArrayTypeP (PrimIntP I8)
             ,PrimIntP I32]
+            (MissingSourceRange "Text.TextFragment")
         ,DataCtor (T.pack "TextConcat"  ) tf -- CR_Default 1
             [TyConAppP "Text" []
             ,TyConAppP "Text" []
-            ,PrimIntP I32]])
+            ,PrimIntP I32]
+            (MissingSourceRange "Text.TextFragment")]
+        (MissingSourceRange "Text"))
   ]
 

@@ -1080,7 +1080,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
                                 return $ P_Atom $ P_Int r ty int
 
       EP_Ctor     r eps s -> do
-        info@(CtorInfo cid (DataCtor _ tyformals types)) <- getCtorInfoForCtor ctx s
+        info@(CtorInfo cid (DataCtor _ tyformals types _crng)) <- getCtorInfoForCtor ctx s
         sanityCheck (ctorArity cid == List.length eps) $
               "Incorrect pattern arity: expected " ++
               (show $ ctorArity cid) ++ " pattern(s), but got "
@@ -1607,11 +1607,11 @@ instance Pretty ty => Pretty (CtorInfo ty) where
   pretty (CtorInfo cid dc) = parens (text "CtorInfo" <+> text (show cid) <+> pretty dc)
 
 instance Pretty ty => Pretty (DataCtor ty) where
-  pretty (DataCtor name _tyformals _ctortyargs) =
+  pretty (DataCtor name _tyformals _ctortyargs _range) =
         parens (text "DataCtor" <+> text (T.unpack name))
 
 instance Pretty ty => Pretty (DataType ty) where
-  pretty (DataType name tyformals dctors) =
+  pretty (DataType name tyformals dctors _range) =
         text "type case " <> pretty name <+> hsep (map pretty tyformals)
                 <$> vsep (map pretty dctors)
 

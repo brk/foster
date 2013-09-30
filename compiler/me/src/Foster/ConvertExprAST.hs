@@ -29,13 +29,13 @@ convertDecl f (s, ty) = do t <- f ty ; return (s, t)
 
 convertDataType :: (Show a, Show b) =>
                    (a -> Tc b) -> DataType a -> Tc (DataType b)
-convertDataType f (DataType dtName tyformals ctors) = do
+convertDataType f (DataType dtName tyformals ctors range) = do
   cts <- mapM convertDataCtor ctors
-  return $ DataType dtName tyformals cts
+  return $ DataType dtName tyformals cts range
     where
-      convertDataCtor (DataCtor dataCtorName formals types) = do
+      convertDataCtor (DataCtor dataCtorName formals types range) = do
         tys <- mapM f types
-        return $ DataCtor dataCtorName formals tys
+        return $ DataCtor dataCtorName formals tys range
 
 liftMaybeM :: Monad m => (a -> m b) -> Maybe a -> m (Maybe b)
 liftMaybeM f m = case m of Nothing ->         return Nothing

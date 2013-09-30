@@ -128,15 +128,21 @@ void dumpDataCtor(DataCtorAST* cc, pb::DataCtor* c) {
     DumpTypeToProtobufPass dt(c->add_type());
     cc->types[i]->dump(&dt);
   }
+  if (cc->sourceRange.isValid()) {
+    setSourceRange(c->mutable_range(), cc->sourceRange);
+  }
 }
 
-void dumpDataCtors(Data* dd, pb::DataType* d) {
+void dumpDataType(Data* dd, pb::DataType* d) {
  dumpTypeFormal(&dd->name, d->mutable_name());
  for (size_t i = 0; i < dd->ctors.size(); ++i) {
    dumpDataCtor(dd->ctors[i], d->add_ctor());
  }
  for (size_t i = 0; i < dd->tyformals.size(); ++i) {
    dumpTypeFormal(&dd->tyformals[i], d->add_tyformal());
+ }
+ if (dd->sourceRange.isValid()) {
+   setSourceRange(d->mutable_range(), dd->sourceRange);
  }
 }
 
@@ -159,7 +165,7 @@ void dumpModule(DumpToProtobufPass* pass,
   }
 
   for (size_t i = 0; i < mod->data_parts.size(); ++i) {
-    dumpDataCtors(mod->data_parts[i], sm.add_data_type());
+    dumpDataType(mod->data_parts[i], sm.add_data_type());
   }
 
   if (const foster::InputTextBuffer* buf = mod->buf) {

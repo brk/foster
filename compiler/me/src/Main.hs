@@ -239,7 +239,7 @@ typecheckModule verboseMode modast tcenv0 = do
 
    extractCtorTypes :: DataType TypeAST -> [(String, Either TypeAST TypeAST, CtorId)]
    extractCtorTypes dt = map nmCTy (dataTypeCtors dt)
-     where nmCTy dc@(DataCtor name tyformals types) =
+     where nmCTy dc@(DataCtor name tyformals types _range) =
                  (T.unpack name, ctorTypeAST tyformals dtType types, cid)
                          where dtType = typeOfDataType dt name
                                cid    = ctorId (typeFormalName $ dataTypeName dt) dc
@@ -344,15 +344,15 @@ typecheckModule verboseMode modast tcenv0 = do
         -- Wrinkle: need to extend the context used for checking ctors!
         convertDataTypeAST :: Context TypeAST ->
                               DataType TypeAST -> Tc (DataType TypeIL)
-        convertDataTypeAST ctx (DataType dtName tyformals ctors) = do
+        convertDataTypeAST ctx (DataType dtName tyformals ctors range) = do
           -- f :: TypeAST -> Tc TypeIL
           let f = ilOf (extendTyCtx ctx $ map convertTyFormal tyformals)
           cts <- mapM (convertDataCtor f) ctors
-          return $ DataType dtName tyformals cts
+          return $ DataType dtName tyformals cts range
             where
-              convertDataCtor f (DataCtor dataCtorName tyformals types) = do
+              convertDataCtor f (DataCtor dataCtorName tyformals types range) = do
                 tys <- mapM f types
-                return $ DataCtor dataCtorName tyformals tys
+                return $ DataCtor dataCtorName tyformals tys range
 
 dieOnError :: OutputOr t -> Compiled t
 dieOnError (OK     e) = return e

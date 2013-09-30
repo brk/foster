@@ -445,7 +445,7 @@ kNormalCtors ctx ctorRepr dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dty
   where
     kNormalCtor :: Context TypeIL -> DataType TypeIL -> DataCtor TypeIL
                 -> KN (FnExprIL)
-    kNormalCtor ctx datatype (DataCtor cname _tyformals tys) = do
+    kNormalCtor ctx datatype (DataCtor cname _tyformals tys range) = do
       let dname = dataTypeName datatype
       let arity = Prelude.length tys
       let cid   = CtorId (typeFormalName dname) (T.unpack cname) arity
@@ -458,7 +458,7 @@ kNormalCtors ctx ctorRepr dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dty
                   , fnVars  = vars
                   , fnBody  = KNAppCtor resty (cid, rep) vars
                   , fnIsRec = ()
-                  , fnAnnot = ExprAnnot [] (MissingSourceRange $ "kNormalCtor " ++ show cid) []
+                  , fnAnnot = ExprAnnot [] range []
                   } where resty =
                             case tidType tid of
                                  FnTypeIL _ r _ _ -> r

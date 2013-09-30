@@ -164,6 +164,7 @@ data DataType ty = DataType {
     dataTypeName      :: TypeFormalAST
   , dataTypeTyFormals :: [TypeFormalAST]
   , dataTypeCtors     :: [DataCtor ty]
+  , dataTypeRange     :: SourceRange
   }
 
 -- CtorIds are created before typechecking.
@@ -176,6 +177,7 @@ data CtorId       = CtorId { ctorTypeName :: DataTypeName
 data DataCtor ty = DataCtor { dataCtorName  :: CtorName
                             , dataCtorDTTyF :: [TypeFormalAST]
                             , dataCtorTypes :: [ty]
+                            , dataCtorRange :: SourceRange
                             }
 
 data CtorInfo ty = CtorInfo { ctorInfoId :: CtorId

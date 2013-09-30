@@ -518,12 +518,12 @@ dumpILProgramToProtobuf m outpath = do
                         , PbType.ctor = fromList $ fmap dumpDataCtor ctors
                         }
      where
-        dumpDataCtor (DataCtor ctorName _tyformals types) =
+        dumpDataCtor (DataCtor ctorName _tyformals types _range) =
           PbDataCtor { PbDataCtor.name  = textToPUtf8 ctorName
                      , PbDataCtor.type' = fromList $ map dumpType types
                      }
 
-    dumpDataType (TypeFormalAST _dtName KindAnySizeType) [DataCtor _nm [] [ty]] =
+    dumpDataType (TypeFormalAST _dtName KindAnySizeType) [DataCtor _nm [] [ty] _range] =
         dumpType ty
 
     dumpDataType (TypeFormalAST dtName KindAnySizeType) ctors =

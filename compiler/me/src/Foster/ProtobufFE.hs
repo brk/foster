@@ -269,13 +269,16 @@ parseAnnot expr = do
 parseRange :: PbExpr.Expr -> FE SourceRange
 parseRange pbexpr =
   case PbExpr.range pbexpr of
-    Nothing   -> do return $ MissingSourceRange (show $ PbExpr.tag pbexpr)
-    (Just r)  ->  do lines <- gets feModuleLines
-                     return $ SourceRange
-                       (parseSourceLocation (Pb.begin r))
-                       (parseSourceLocation (Pb.end   r))
-                       lines
-                       (fmap uToString (Pb.file_path r))
+    Nothing -> do return $ MissingSourceRange (show $ PbExpr.tag pbexpr)
+    Just r  -> do parseSourceRange r
+
+parseSourceRange r = do
+        lines <- gets feModuleLines
+        return $ SourceRange
+          (parseSourceLocation (Pb.begin r))
+          (parseSourceLocation (Pb.end   r))
+          lines
+          (fmap uToString (Pb.file_path r))
 
 parseSourceLocation :: Pb.SourceLocation -> ESourceLocation
 parseSourceLocation sr = -- This may fail for files of more than 2^29 lines.
@@ -313,18 +316,22 @@ parseExpr pbexpr = do
 
 parseDataType :: DataType.DataType -> FE (Foster.Base.DataType TypeP)
 parseDataType dt = do
+    let name      = parseTypeFormal $ DataType.name dt
     let tyformals = map parseTypeFormal (toList $ DataType.tyformal dt)
-    ctors <- mapM (parseDataCtor tyformals) $
-                       Prelude.zip [0..] (toList $ DataType.ctor dt)
-    return $ Foster.Base.DataType (parseTypeFormal $ DataType.name dt) tyformals ctors
+    ctors <- mapM (parseDataCtor tyformals) (toList $ DataType.ctor dt)
+    range <- case DataType.range dt of
+                Nothing -> return $ MissingSourceRange (show name)
+                Just r  -> parseSourceRange r
+    return $ Foster.Base.DataType name tyformals ctors range
  where
-  parseDataCtor :: [TypeFormalAST] -> (Int, DataCtor.DataCtor) -> FE (Foster.Base.DataCtor TypeP)
-  parseDataCtor tyf (_n, ct) = do
+  parseDataCtor :: [TypeFormalAST] -> DataCtor.DataCtor -> FE (Foster.Base.DataCtor TypeP)
+  parseDataCtor tyf ct = do
       let types = map parseType (toList $ DataCtor.type' ct)
-      -- The constructor tags assigned at this point are tentative;
-      -- they may be reassigned during K-normalization if datatype
-      -- representation optimization is enabled.
-      return $ Foster.Base.DataCtor (pUtf8ToText $ DataCtor.name ct) tyf types
+      let name  = pUtf8ToText $ DataCtor.name ct
+      range <- case DataCtor.range ct of
+            Nothing -> return $ MissingSourceRange (T.unpack name)
+            Just r  -> parseSourceRange r
+      return $ Foster.Base.DataCtor name tyf types range
 
 parseModule _name hash decls defns datatypes = do
     lines <- gets feModuleLines

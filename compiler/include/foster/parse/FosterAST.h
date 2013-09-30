@@ -298,16 +298,23 @@ struct Decl {
 struct DataCtorAST {
   string name;
   std::vector<TypeAST*> types;
+  foster::SourceRange sourceRange;
+  explicit DataCtorAST(const string& name,
+                       std::vector<TypeAST*> types,
+                       foster::SourceRange range)
+  : name(name), types(types), sourceRange(range) {}
 };
 
 struct Data {
   TypeFormal name;
   std::vector<DataCtorAST*> ctors;
   std::vector<TypeFormal> tyformals;
+  foster::SourceRange sourceRange;
   explicit Data(const TypeFormal name,
                  std::vector<TypeFormal> tyformals,
-                 std::vector<DataCtorAST*> ctors)
-  : name(name), ctors(ctors), tyformals(tyformals) {}
+                 std::vector<DataCtorAST*> ctors,
+                 foster::SourceRange range)
+  : name(name), ctors(ctors), tyformals(tyformals), sourceRange(range) {}
 };
 
 struct IfExprAST : public ExprAST {
