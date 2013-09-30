@@ -625,8 +625,9 @@ instance TExpr BasicBlockGraph MonoType where
 catClosedGraphs :: NonLocal i => [Graph i C C] -> Graph i C C
 catClosedGraphs = foldr (|*><*|) emptyClosedGraph
 
-mapGraphNodesM_ :: Monad m => (forall e x. Insn e x -> m ())
-                           -> BlockId -> Graph Insn C C -> m ()
+mapGraphNodesM_ :: (Monad m, FosterNode i, NonLocal i)
+                => (forall e x. i e x -> m ())
+                           -> BlockId -> Graph i C C -> m ()
 mapGraphNodesM_ a entrybid g = do
    let mapBlockM_ blk_cc = do {
       ; let (f, ms_blk, l) = blockSplit blk_cc

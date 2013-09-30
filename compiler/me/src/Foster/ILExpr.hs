@@ -346,7 +346,7 @@ flattenGraph bbgp mayGCmap = -- clean up any rebindings from gc root optz.
      mid (CCGCLoad v   fromroot)  = ILLetVal (tidIdent v) (ILDeref (tidType v) fromroot) WillNotGC
      mid (CCGCInit _ src toroot)  = ILGCRootInit src toroot
      mid (CCTupleStore vs tid r)  = ILTupleStore vs tid r
-     mid (CCRebindId {}         ) = error $ "Invariant violated: ILRebindId not eliminated!" -- ILRebindId (tidIdent v1) v2 -- (tidIdent v2) v1 -- ugh :-(
+     mid (CCRebindId {}         ) = error $ "Invariant violated: CCRebindId not eliminated!"
      mid (CCLetFuns {}          ) = error $ "Invariant violated: CCLetFuns should have been eliminated!"
      mid (CCGCKill  {}          ) = error $ "Invariant violated: GCKill should have been handled by `midmany`..."
 

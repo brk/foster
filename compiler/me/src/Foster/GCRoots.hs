@@ -15,7 +15,7 @@ import qualified Text.PrettyPrint.Boxes as Boxes
 
 import Foster.Base(TExpr, TypedId(TypedId), freeTypedIds, Ident, Occurrence,
                    tidType, tidIdent, typeOf, MayGC(GCUnknown), boolGC)
-import Foster.CFG(runWithUniqAndFuel, M, rebuildGraphM)
+import Foster.CFG(runWithUniqAndFuel, M, rebuildGraphM, mapGraphNodesM_)
 import Foster.Config
 import Foster.CloConv
 import Foster.TypeLL
@@ -28,10 +28,11 @@ import Data.Maybe(fromMaybe)
 import Data.Map(Map)
 import qualified Data.Set as Set
 import qualified Data.Map as Map(lookup, empty, elems, findWithDefault, insert,
-           keys, assocs, delete, fromList, keysSet)
+           keys, assocs, delete, fromList, keysSet, alter)
 import qualified Data.Text as T(pack)
 import Control.Monad(when, liftM)
-import Control.Monad.State(evalStateT, get, put, modify, StateT, lift, gets)
+import Control.Monad.State(evalStateT, get, put, modify, StateT, lift, gets,
+                           execState, State)
 
 -- | Explicit insertion (and optimization) of GC roots.
 
@@ -40,7 +41,7 @@ import Control.Monad.State(evalStateT, get, put, modify, StateT, lift, gets)
 --             pre-codegen preparations.
 
 showOptResults = False
-gDoReuseRootSlots = True
+gDoReuseRootSlots = True -- TODO measure effect of disabling this optimization.
 
 --------------------------------------------------------------------
 
@@ -92,9 +93,13 @@ type VariablesForGCRoots = Map RootVar LLVar
 -- Precondition: may-gc analysis has updated the annotations in the graph.
 insertSmartGCRoots :: BasicBlockGraph' -> Map Ident MayGC -> Bool -> Compiled ( BasicBlockGraph' , [RootVar] )
 insertSmartGCRoots bbgp0 mayGCmap dump = do
+  runRootConsistencyChecker "bbgp0" bbgp0
+
   --   1) Run a rewriting (non-dataflow) pass to insert root initializers
   --      at first uses, and insert disabled kill markers after each use.
   bbgp'1 <- insertDumbGCRoots bbgp0 dump
+
+  runRootConsistencyChecker "bbgp'1" bbgp'1
 
   --   2) Fold to compute the (root, initializing variable) relation/mapping.
   let gcr = computeGCRootsForVars bbgp'1
@@ -104,22 +109,24 @@ insertSmartGCRoots bbgp0 mayGCmap dump = do
   --      This pass also enables kills (after trimming out live roots).
   (bbgp'2 , rootsLiveAtGCPoints) <- runLiveAtGCPoint2 bbgp'1 mayGCmap
 
+  runRootConsistencyChecker "bbgp'2" bbgp'2
+
   --   4) Run a rewriting pass to remove actions referencing dead roots.
   bbgp'3  <- removeDeadGCRoots bbgp'2 (mapInverse gcr) rootsLiveAtGCPoints
+
+  runRootConsistencyChecker "bbgp'3" bbgp'3
 
   --   5) Run a rewriting (non-dataflow) pass to insert root kills for *every*
   --      root at *every* basic block.
   bbgp'4 <- insertDumbGCKills bbgp'3 dump (Map.elems gcr)
 
+  runRootConsistencyChecker "bbgp'4" bbgp'4
+
   --   6) Run a forwards pass to trim redundant kills.
   --      If we are configured to reuse root slots,
   --      this is where we do it.
-  bbgp'5a <- runAvails bbgp'4 rootsLiveAtGCPoints mayGCmap gDoReuseRootSlots
-  -- TODO reusing root slots is buggy! :(
-  -- These test cases break:
-  --    bootstrap/app/pidigits
-  --    bootstrap/stdlib-test/test-lazy-real-time-queue          (when inlining)
-  --    bootstrap/stdlib-test/test-pairing-heap       (when inlining, sometimes)
+  bbgp'5a0 <- runAvails bbgp'4 rootsLiveAtGCPoints mayGCmap gDoReuseRootSlots
+  bbgp'5a  <- runRebinds bbgp'5a0
 
   -- runAvails might have reused a root slot in a forwards pass, which might
   -- have invalidated liveness information (backwards pass). So we'll re-run the
@@ -131,6 +138,8 @@ insertSmartGCRoots bbgp0 mayGCmap dump = do
   lift $ when (showOptResults || dump) $ do
               putStrLn "difference from runAvails:"
               Boxes.printBox $ catboxes2 (bbgpBody bbgp'4) (bbgpBody bbgp'5d )
+
+  runRootConsistencyChecker "bbgp'5d" bbgp'5d
 
   let bbgp_final = bbgp'5d
   return ( bbgp_final , computeUsedRoots bbgp_final )
@@ -174,8 +183,8 @@ type RootLiveWhenGC = Set.Set LLVar
 type ContinuationMayGC = Bool
 type LiveAGC2 = (LiveGCRoots, RootLiveWhenGC, ContinuationMayGC)
 
--- When we see a load from a root, the root becomes live;
--- when we see a root init happen, the root becomes dead.
+-- When we see a load from a root, the root becomes live in prior nodes;
+-- when we see a root init happen, the root becomes dead in proor nodes.
 -- When we see an operation that may induce (copying) GC,
 -- we'll add the current set of live roots to the set of
 -- roots we keep.
@@ -190,7 +199,11 @@ liveAtGCPointXfer2 mayGCmap = mkBTransfer go
     go (CCLetVal  _ letable ) f = ifgc (boolGC maygc)   f where maygc = canGC mayGCmap letable
     go (CCLetFuns _ids _clos) f = ifgc True             f
     go (CCTupleStore   {}   ) f = ifgc False            f
-    go (CCRebindId     {}   ) f = ifgc False            f
+    go (CCRebindId     {}   ) _ =
+        error $ "GCRoots.hs: Backwards rewrite(liveAtGCPointXfer2) saw a rebind-id node,\n"
+             ++ "which has probably invalidated the computed results. Fix this by using\n"
+             ++ "a forwards rewriting pass to resolve & remove RebindId nodes before\n"
+             ++ "running a backwards analysis."
     go node@(CCLast    cclast) fdb =
           let f = combineLastFacts fdb node in
           ifgc (canCCLastGC mayGCmap cclast) f
@@ -284,6 +297,9 @@ boxify b = v Boxes.<> (h Boxes.// b Boxes.// h) Boxes.<> v
              where v = Boxes.vcat Boxes.left (take (Boxes.rows b + 2) (repeat (Boxes.char '|')))
                    h = Boxes.text $          (take (Boxes.cols b    ) (repeat '-'))
 
+
+-- |||||||||||||||||||| Dumb GC root insertion ||||||||||||||||||{{{
+
 -- Generate a GC root for each GCable variable in the body, and
 -- en masse, rewrite each use of a GCable variable to generate and
 -- use a load from the variable's associated root. Each use of a loaded variable
@@ -299,8 +315,6 @@ insertDumbGCRoots bbgp0 dump = do
    --                   CASE o OF ...
    -- we don't want to try to find a root for o!
    -- So we enforce the invariant that no active rebindings exist here.
-   -- Running runRebinds will leave the rebinding nodes themselves,
-   -- but they will be dead and we can safely ignore them.
    bbgp <- runRebinds bbgp0
    g'  <- evalStateT (rebuildGraphM (case bbgpEntry bbgp of (bid, _) -> bid)
                                     (bbgpBody bbgp) transform)
@@ -337,7 +351,7 @@ insertDumbGCRoots bbgp0 dump = do
                                           let s = makeSubstWith vs vs' in
                                           (mkMiddle $ CCLetFuns [id] [substVarsInClo s clo]) <*> ri)
     CCLetFuns ids _clos           -> do error $ "CCLetFuns should all become singletons!" ++ show ids
-    CCRebindId _doc _v1 _v2       -> do return $ mkMiddle $ insn
+    CCRebindId _doc _v1 _v2       -> do error $ "GCRoots.hs: insertDumbGCRoots saw unexpected CCRebindId: " ++ show (pretty insn)
     CCLast (CCCont b vs)          -> do withGCLoads vs (\vs'  ->
                                                (mkLast $ CCLast (CCCont b vs' )))
     CCLast (CCCall b t id v vs)  -> do withGCLoads (v:vs) (\(v' : vs' ) ->
@@ -350,6 +364,9 @@ insertDumbGCRoots bbgp0 dump = do
   substVarsInClo s (Closure proc env capts asrc) =
         Closure proc (s env) (map s capts) asrc
 
+  -- Return an empty graph if v doesn't need a GC root;
+  -- otherwise, return a singleton GC root initializer node,
+  -- and extend the substitution.
   maybeRootInitializer :: LLVar -> RootMapped (Graph Insn' O O)
   maybeRootInitializer v = do
     if not $ isGCable v
@@ -366,6 +383,7 @@ insertDumbGCRoots bbgp0 dump = do
   -- GC roots for variables which are subject to garbage collection.
   withGCLoads :: [LLVar] -> ([LLVar] -> Graph Insn' O x) -> RootMapped (Graph Insn' O x)
   withGCLoads vs mkG = do
+    -- TODO call maybeRootInitializers here?
     loadsAndVars <- mapM withGCLoad vs
     let (loads, vs' ) = unzip loadsAndVars
     return $ mkMiddles (concat loads) <*> mkG vs'
@@ -384,9 +402,9 @@ insertDumbGCRoots bbgp0 dump = do
                   ,CCGCKill Disabled (Set.fromList [root])]
                  , loadedvar)
 
-      withGCLoad_t :: LLVar -> RootMapped ([Insn' O O], LLVar)
-      withGCLoad_t v = do rv <- withGCLoad (trace ("withGCLoad " ++ show v) v)
-                          return $ trace ("withGCLoad " ++ show v ++ " ==> " ++ show (pretty rv)) rv
+      _withGCLoad_t :: LLVar -> RootMapped ([Insn' O O], LLVar)
+      _withGCLoad_t v = do rv <- withGCLoad (trace ("withGCLoad " ++ show v) v)
+                           return $ trace ("withGCLoad " ++ show v ++ " ==> " ++ show (pretty rv)) rv
 
       withGCLoad :: LLVar -> RootMapped ([Insn' O O], LLVar)
       withGCLoad v = if not $ isGCable v then return ([], v)
@@ -496,7 +514,7 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
                                                (mkLast $ CCLast (CCCase v' arms mb)))
     CCRebindId     {}             -> do return $ mkMiddle $ insn
 
-  varForRoot_t root = let rv = varForRoot (trace ("varForRoot " ++ show root) root) in
+  _varForRoot_t root = let rv = varForRoot (trace ("varForRoot " ++ show root) root) in
                       trace ("varForRoot " ++ show root ++ " ==> " ++ show (pretty rv)) rv
 
   varForRoot root = case Map.lookup root varsForGCRoots of
@@ -514,6 +532,8 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
                                           then v
                                           else varForRoot root
 
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
 fnty_of_procty pt@(LLProcType (env:_args) _rets _cc) =
       LLPtrType (LLStructType [pt, env])
 fnty_of_procty other = error $ "GCRoots.hs: fnty_of_procty undefined for " ++ show other
@@ -529,6 +549,7 @@ isGCable v = case tidType v of
                LLCoroType _ _         -> True
                LLArrayType _          -> True
                LLPtrTypeUnknown       -> True
+
 
 -- |||||||||||||||||||| Redundancy elimination ||||||||||||||||||{{{
 
@@ -628,7 +649,7 @@ availsRewrite allRoots doReuseRootSlots = mkFRewrite d
     d (CCLetVal id (ILOccurrence ty v occ)) a =
         case lookupAvailMap (v, occ) (availOccs a) of
               [] -> return Nothing
-              xs@(v' : _) -> return $ Just (mkMiddle $ CCRebindId (text "occ-reuse") (TypedId ty id) v' )
+              (v' : _) -> return $ Just (mkMiddle $ CCRebindId (text "occ-reuse") (TypedId ty id) v' )
 
     d (CCLetVal     {}       )   _    = return Nothing
     d (CCLetFuns    {}       )   _    = return Nothing
@@ -677,19 +698,20 @@ availsRewrite allRoots doReuseRootSlots = mkFRewrite d
                    let a2 = unkill a root in
                    let rv = Just $ mkMiddle (CCRebindId (text $ "gcinit" ++ if root /= root0 then "; root0 = " ++ show (tidIdent root0) else "; kr: " ++ show (killedRootsOfRightType)) root r)
                                <*> mkMiddle (CCGCInit j v r) in
-                   if True
+                   if True -- (head $ show (tidIdent root)) /= '.'
                     then return rv
                     else return $
-                     trace ("\navailsRewrite: adding gcinit for root " ++ show (tidIdent root)
-                                  ++ ";\n\tunkilled: " ++ show (unkilledRoots a)
-                                  ++ ";\n\tinited: "   ++ show (initedRoots a)
+                     trace ("\n\navailsRewrite: adding gcinit for root " ++ show (tidIdent root)
+                                  ++ ";\n\tunkilled: " ++ show (mapAvailSet tidIdent $ unkilledRoots a)
+                                  ++ ";\n\tinited: "   ++ show (mapAvailSet tidIdent $ initedRoots a)
                                   ++ ";\n\t    pretending to unkill " ++ show r
-                                  ++ ";\n\tunkilled(1): " ++ show (unkilledRoots a1)
-                                  ++ ";\n\tinited(1): "   ++ show (initedRoots a1)
+                                  ++ ";\n\tunkilled(1): " ++ show (mapAvailSet tidIdent $ unkilledRoots a1)
+                                  ++ ";\n\tinited(1): "   ++ show (mapAvailSet tidIdent $ initedRoots a1)
                                   ++ ";\n\t    pretending to unkill " ++ show root
-                                  ++ ";\n\tunkilled(2): " ++ show (unkilledRoots a2)
-                                  ++ ";\n\tinited(2): "   ++ show (initedRoots a2)
+                                  ++ ";\n\tunkilled(2): " ++ show (mapAvailSet tidIdent $ unkilledRoots a2)
+                                  ++ ";\n\tinited(2): "   ++ show (mapAvailSet tidIdent $ initedRoots a2)
                                   ++ ";\n\tallroots "  ++ show (allRoots)
+                                  ++ ";\n\tkRoRT: " ++ show (map tidIdent $ killedRootsOfRightType)
                                   ) rv
 
     d (CCGCKill Disabled    _)   _    = return Nothing
@@ -772,114 +794,123 @@ availsLattice = DataflowLattice
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 
--- |||||||||||||||||||||||| Rebind elimination ||||||||||||||||||{{{
+-- ||||||||||||||| GC Root Kill Consistency Checker |||||||||||||{{{
 
-data Rebinds = Rebinds { rebindSubst :: AvailMap LLRootVar LLVar }
-               deriving Show
+type LiveRoots = AvailSet LLRootVar
 
-rebindXfer :: FwdTransfer Insn' Rebinds
-rebindXfer = mkFTransfer3 go go (distributeXfer rebindLattice go)
+-- When we see a root get initialized, it is removed from the set of
+-- dead roots (going forwards). When we see a root get killed, it is
+-- added to the set of dead roots.
+liveRootsXfer :: String -> FwdTransfer Insn' LiveRoots
+liveRootsXfer msg = mkFTransfer3 go go (distributeXfer liveRootsLattice go)
   where
-    go :: Insn' e x -> Rebinds -> Rebinds
-    go (CCRebindId _ v1 v2 ) f = f { rebindSubst = insertAvailMap v1 v2 (rebindSubst f) }
-    go _ f = f
+    go :: Insn' e x -> LiveRoots -> LiveRoots
+    go (CCGCLoad var root) lives =
+         if root `availIn` lives
+            then lives
+            else error $ "GCRoots.hs: runRootConsistencyChecker @ " ++ msg
+                      ++ "\nDetected load from dead root: " ++ show root
+                      ++ "\nBound to variable: " ++ show var
+                      ++ "\nLive roots are: " ++ show lives
+    go (CCGCInit _ _   root)        lives = lives `addAvail`  root
+    go (CCGCKill (Enabled _) roots) lives = lives `delAvails` roots
+    go _ lives = lives
 
-rebindRewrite :: forall m. FuelMonad m => FwdRewrite m Insn' Rebinds
-rebindRewrite = mkFRewrite d
+liveRootsRewrite :: forall m. FuelMonad m => FwdRewrite m Insn' LiveRoots
+liveRootsRewrite = mkFRewrite d
   where
-    d :: Insn' e x -> Rebinds -> m (Maybe (Graph Insn' e x))
-    d (CCLabel      {}       )   _    = return Nothing
-    d (CCLetVal id letable) a =
-        let letable' = substVarsInLetable (s a) letable in
-        if  letable' == letable
-          then return Nothing
-          else return $ Just (mkMiddle $ CCLetVal id letable' )
-    d (CCLetFuns ids clos    )   a    =
-      let clos' = map (\(Closure p e capts asrc) ->
-                         Closure p (s a e) (map (s a) capts) asrc) clos in
-      if clos' == clos
-        then return Nothing
-        else return $ Just (mkMiddle $ CCLetFuns ids clos' )
-    d (CCTupleStore vs v amr )   a    =
-      let vs' = map (s a) vs in
-      if vs' == vs
-        then return Nothing
-        else return $ Just (mkMiddle $ CCTupleStore vs' v amr )
-    d (CCRebindId doc v1 v2) a =
-      let vs'@(v1' , v2' ) = (s a v1, s a v2) in
-      if vs' == (v1, v2)
-        then return Nothing
-        else return $ Just (mkMiddle $ CCRebindId doc v1' v2' )
-    d (CCGCLoad  v1 v2) a =
-      let vs'@(v1' , v2' ) = (s a v1, s a v2) in
-      if vs' == (v1, v2)
-        then return Nothing
-        else return $ Just (mkMiddle $ CCGCLoad v1' v2' )
-    d (CCGCInit j v root0)       a =
-      let vs'@(v' , r' ) = (s a v, s a root0) in
-      if vs' == (v, root0)
-        then return Nothing
-        else return $ Just (mkMiddle $ CCGCInit j v' r' )
-    d (CCGCKill disen roots)     a =
-        let roots' = Set.map (s a) roots in
-        if roots' == roots
-          then return Nothing
-          else return $ Just (mkMiddle $ CCGCKill disen roots' )
-    d (CCLast (CCCont bid vs)) a =
-      let vs' = map (s a) vs in
-      if vs' == vs
-        then return Nothing
-        else return $ Just (mkLast $ CCLast (CCCont bid vs' ))
-    d (CCLast (CCCall bid ty id v vs)) a =
-      let (v', vs' ) = (s a v, map (s a) vs) in
-      if (v', vs' ) == (v, vs)
-        then return Nothing
-        else return $ Just (mkLast $ CCLast (CCCall bid ty id v' vs' ))
-    d (CCLast (CCCase v cases def)) a =
-      let v' = s a v in
-      if v' == v
-        then return Nothing
-        else return $ Just (mkLast $ CCLast (CCCase v' cases def))
+    d :: Insn' e x -> LiveRoots -> m (Maybe (Graph Insn' e x))
+    d _ _ = return Nothing
 
-    s a v = case lookupAvailMap v (rebindSubst a) of
-              [    ] -> v
-              [ v' ] -> v'
-              [ _v1, _v2 ] -> trace ("GCRoots.hs: OOPS, " ++ show v ++ " rebound to two vars! choosing neither") v
-              s -> error $ "GCRoots.hs: Expected rebinds. subst to map " ++ show v
-                           ++ " to zero or one variables, but had " ++ show s
-
-runRebinds :: BasicBlockGraph' -> Compiled BasicBlockGraph'
-runRebinds bbgp = do
+runRootConsistencyChecker :: String -> BasicBlockGraph' -> Compiled ()
+runRootConsistencyChecker msg bbgp = do
          uref <- gets ccUniqRef
          lift $ runWithUniqAndFuel uref infiniteFuel (go bbgp)
   where
-    go :: BasicBlockGraph' -> M BasicBlockGraph'
+    go :: BasicBlockGraph' -> M ()
     go bbgp = do
         let ((_,blab), _) = bbgpEntry bbgp
-        let init = Rebinds emptyAvailMap
-        (body' , _, _) <- analyzeAndRewriteFwd fwd (JustC [bbgpEntry bbgp])
+        (_body , _, _) <- analyzeAndRewriteFwd fwd (JustC [bbgpEntry bbgp])
                                                            (bbgpBody bbgp)
-                           (mapSingleton blab init)
-        return bbgp { bbgpBody = body' }
+                           (mapSingleton blab $ Avail Set.empty) -- no live @ start
+        return ()
 
-    --__fwd = debugFwdTransfers trace showing (\_ _ -> True) fwd
-    --_fwd = debugFwdJoins trace (\_ -> True) fwd
-    fwd = FwdPass { fp_lattice  = rebindLattice
-                  , fp_transfer = rebindXfer
-                  , fp_rewrite  = rebindRewrite
+    fwd = FwdPass { fp_lattice  = liveRootsLattice
+                  , fp_transfer = liveRootsXfer msg
+                  , fp_rewrite  = liveRootsRewrite
                   }
 
-rebindLattice :: DataflowLattice Rebinds
-rebindLattice = DataflowLattice
-  { fact_name = "Rebindings"
-  , fact_bot  = Rebinds botAvailMap
+-- If we're tracking live roots, then we should use intersection
+--      (must be live in all branches); the initial condition is
+--      the empty set, representing that no roots are live initially;
+--      bottom is the universl set.
+
+liveRootsLattice :: DataflowLattice LiveRoots
+liveRootsLattice = DataflowLattice
+  { fact_name = "Root kill consistency checker"
+  , fact_bot  = (UniverseMinus Set.empty) -- bottom w/r/t intersection
   , fact_join = add
   }
-    where add _lab (OldFact (Rebinds ro)) (NewFact (Rebinds rn))
-                 = (ch, Rebinds rj)
+    where add _lab (OldFact (dra)) (NewFact (drb))
+                 = (ch, drr)
             where
-              (rj, c) = ro `intersectAvailMap` rn
-              ch = changeIf c
+              drr = dra `intersectAvails` drb
+              ch  = changeIf (availSmaller drr dra)
+
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+-- |||||||||||||||||||||||| Rebind elimination ||||||||||||||||||{{{
+
+-- Rebind elimination, *with removal*, is in some sense
+-- a forwards analysis and a backwards rewrite!
+
+runRebinds :: BasicBlockGraph' -> Compiled BasicBlockGraph'
+runRebinds bbgp = do
+  let (bid, _) = bbgpEntry bbgp
+  let m = execState (mapGraphNodesM_ am bid (bbgpBody bbgp)) Map.empty
+  g <- rebuildGraphM bid (bbgpBody bbgp) (d m)
+  return bbgp { bbgpBody = g }
+ where
+    am :: forall e x. Insn' e x -> State (Map LLVar [LLVar]) ()
+    am (CCRebindId _ v1 v2) = do modify $ Map.alter (ins v2) v1
+    am _ = return ()
+
+    ins v Nothing   = Just [v]
+    ins v (Just vs) = Just (v:vs)
+
+    d :: Monad m => Map LLRootVar [LLVar] -> Insn' e x -> m (Graph Insn' e x)
+    d _ insn@(CCLabel {})     = return (mkFirst insn)
+    d a (CCLetVal id letable) =
+        let letable' = substVarsInLetable (s a) letable in
+        return (mkMiddle $ CCLetVal id letable' )
+    d a (CCLetFuns ids clos    ) =
+      let clos' = map (\(Closure p e capts asrc) ->
+                         Closure p (s a e) (map (s a) capts) asrc) clos in
+      return (mkMiddle $ CCLetFuns ids clos' )
+    d a (CCTupleStore vs v amr ) =
+      return (mkMiddle $ CCTupleStore (map (s a) vs) (s a v) amr )
+    d _ insn@(CCRebindId {}) = trace ("Removing rebind node " ++ show (pretty insn)) return emptyGraph
+    d a (CCGCLoad  v1 v2) =
+      return (mkMiddle $ CCGCLoad (s a v1) (s a v2))
+    d a (CCGCInit j v root0)     =
+      return (mkMiddle $ CCGCInit j (s a v) (s a root0))
+    d a (CCGCKill disen roots)   =
+        return (mkMiddle $ CCGCKill disen (Set.map (s a) roots))
+    d a (CCLast (CCCont bid vs)) =
+      return (mkLast $ CCLast (CCCont bid (map (s a) vs) ))
+    d a (CCLast (CCCall bid ty id v vs)) =
+      let (v', vs' ) = (s a v, map (s a) vs) in
+      return (mkLast $ CCLast (CCCall bid ty id v' vs' ))
+    d a (CCLast (CCCase v cases def)) =
+      return (mkLast $ CCLast (CCCase (s a v) cases def))
+
+    s a v = case Map.lookup v a of
+              Nothing -> v
+              Just [ v' ] -> v'
+              Just [ _v1, _v2 ] -> trace ("GCRoots.hs: OOPS, " ++ show v ++ " rebound to two vars! choosing neither") v
+              s -> error $ "GCRoots.hs: Expected rebinds. subst to map " ++ show v
+                           ++ " to zero or one variables, but had " ++ show s
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 canCCLastGC mayGCmap (CCCall _ _ _ v _) =
