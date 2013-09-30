@@ -1038,7 +1038,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
   -- (B) Each pattern must check against the scrutinee type.
   -- (C) Each branch must check against the expected type,
   --     as well as successfully unify against the overall type.
-
+  -- (D) Each pattern must have the correct arity.
   ascrutinee <- inferRho ctx scrutinee "scrutinee"
   u <- newTcUnificationVarTau "case"
   debugDoc $ text "case scrutinee has type " <> pretty (typeAST ascrutinee)

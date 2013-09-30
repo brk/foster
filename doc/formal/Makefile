@@ -1,4 +1,4 @@
-OTT=/home/benkarel/tmp/ott_distro_0.20.1/bin/ott
+OTT=/home/benkarel/Code/ott_distro_0.20.3/bin/ott
 
 SOURCES = \
 	  foster.ott
