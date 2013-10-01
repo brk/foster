@@ -270,6 +270,8 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
           res[0]->index_offset != b->shift_offset + i) return false;
       if (res[i]->shift_offset != b->base_size    * i) return false;
     }
+    // TODO if we see shifts in the opposite order, we can generate
+    // a load followed by a bswap?
     return true;
   }
 
