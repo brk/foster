@@ -133,7 +133,7 @@ re_ds_v = { v => re =>
 };
 
 textToVList = { t : Text =>
-  textFoldASCII t { ch => vl => vListCons (primitive_zext_i8_to_i32 ch) vl }
+  textFoldASCII t { ch => vl => vListCons (zext_i8_to_i32 ch) vl }
                   (mkEmptyVList !) |> vListReverse;
 };
 

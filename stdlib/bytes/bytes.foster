@@ -125,7 +125,7 @@ bytesTake = { ba => len =>
 bytesGet!    :: { Int64 => Bytes => Int8 };
 bytesGet! = { o => ba =>
   case ba
-    of $BytesFragment arr _ -> arr[primitive_trunc_i64_i32 o];
+    of $BytesFragment arr _ -> arr[trunc_i64_to_i32 o];
     of $BytesOffset bb m  _ -> bytesGet! (o +Int64 m) bb;
     of $BytesConcat bb bc _ ->
       afterdrop = o -Int64 bytesLength bb;

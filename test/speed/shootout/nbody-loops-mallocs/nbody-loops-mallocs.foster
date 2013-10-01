@@ -119,16 +119,16 @@ advance = { bodies : Array Planet => i : Ref Int64
                                   => j : Ref Int64
                                   => l : Int64
                                   =>
-  (primitive_sext_i64_i32 0) >^ i;
-  (primitive_sext_i64_i32 0) >^ j;
+  (sext_i32_to_i64 0) >^ i;
+  (sext_i32_to_i64 0) >^ j;
   let c0 = { b1 : Planet => i : Int64 => bodies }; in
   until i^ ==Int64 l then
-    (i^ +Int64 (primitive_sext_i64_i32 1)) >^ j;
-    let b1 = prim subscript bodies (primitive_trunc_i64_i32 i^);
+    (i^ +Int64 (sext_i32_to_i64 1)) >^ j;
+    let b1 = prim subscript bodies (trunc_i64_to_i32 i^);
         c1 = { b2 : Planet => j : Int64 => b1 };
     in
       until j^ >=SInt64 l then
-        let b2 = prim subscript bodies (primitive_trunc_i64_i32 j^); in
+        let b2 = prim subscript bodies (trunc_i64_to_i32 j^); in
           let dx = px b1 -f64 px b2;
               dy = py b1 -f64 py b2;
               dz = pz b1 -f64 pz b2;
@@ -143,22 +143,22 @@ advance = { bodies : Array Planet => i : Ref Int64
             incrByFloat64 (vzr b2) (dz *f64 ma b1 *f64 mag);
             ()
           end;
-          (j^ +Int64 (primitive_sext_i64_i32 1)) >^ j;
+          (j^ +Int64 (sext_i32_to_i64 1)) >^ j;
         end
       end
     end;
-    (i^ +Int64 (primitive_sext_i64_i32 1)) >^ i;
+    (i^ +Int64 (sext_i32_to_i64 1)) >^ i;
   end;
   end;
 
   let c1 = { b : Planet => ign:Int64 => incrByFloat64 (pxr b) (vx b); }; in
-    (primitive_sext_i64_i32 0) >^ i;
+    (sext_i32_to_i64 0) >^ i;
     until i^ ==Int64 l then
-      let b = prim subscript bodies (primitive_trunc_i64_i32 i^); in
+      let b = prim subscript bodies (trunc_i64_to_i32 i^); in
         incrByFloat64 (pxr b) (vx b);
         incrByFloat64 (pyr b) (vy b);
         incrByFloat64 (pzr b) (vz b);
-        (i^ +Int64 (primitive_sext_i64_i32 1)) >^ i;
+        (i^ +Int64 (sext_i32_to_i64 1)) >^ i;
       end
     end
   end
@@ -205,9 +205,9 @@ main = {
   let n = (ref tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1));
       nbodies = 5;
       bodies = mkBodies nbodies;
-      i = (ref primitive_sext_i64_i32 0);
-      j = (ref primitive_sext_i64_i32 0);
-      l = primitive_sext_i64_i32 nbodies;
+      i = (ref sext_i32_to_i64 0);
+      j = (ref sext_i32_to_i64 0);
+      l = sext_i32_to_i64 nbodies;
       dt = 1.0e-02;
   in
       offset-momentum bodies;

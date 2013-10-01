@@ -7,15 +7,15 @@ check_tuples = fn (x : tuple { i32, i1 }, y : tuple { i32, i1 }) {
 }
 
 main = fn () {
-  check_tuples( llvm.uadd.with.overflow.i32(primitive_bitshl_i32(1, 30),
-                                            primitive_bitshl_i32(1, 30)),
-                tuple { primitive_bitshl_i32(1, 31), false } );
+  check_tuples( llvm.uadd.with.overflow.i32(bitshl_i32(1, 30),
+                                            bitshl_i32(1, 30)),
+                tuple { bitshl_i32(1, 31), false } );
 
-  check_tuples( llvm.uadd.with.overflow.i32(primitive_bitshl_i32(1, 31),
-                                            primitive_bitshl_i32(1, 31)),
+  check_tuples( llvm.uadd.with.overflow.i32(bitshl_i32(1, 31),
+                                            bitshl_i32(1, 31)),
                 tuple { 0, true } );
 
-  check_tuples( llvm.sadd.with.overflow.i32(primitive_bitshl_i32(1, 30),
-                                            primitive_bitshl_i32(1, 30)),
-                tuple { primitive_negate_i32(2147483648), true } );
+  check_tuples( llvm.sadd.with.overflow.i32(bitshl_i32(1, 30),
+                                            bitshl_i32(1, 30)),
+                tuple { negate_i32(2147483648), true } );
 }

@@ -8,7 +8,7 @@ arrayFoldFrom = { forall t:Type r:Type,
                   f : { t => Int64 => r => r } =>
                   acc : r =>
   if k <SInt64 prim_arrayLength a
-    then arrayFoldFrom a (incr64 k) f (f a[primitive_trunc_i64_i32 k] k acc)
+    then arrayFoldFrom a (incr64 k) f (f a[trunc_i64_to_i32 k] k acc)
     else acc
   end
 };

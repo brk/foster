@@ -285,7 +285,7 @@ tcSigmaVar ctx annot name = do
     (Nothing, Nothing, Nothing)   -> do
          msg <- getStructureContextMessage
          tcFails [text $ "Unknown variable " ++ T.unpack name
-                  ++ showSourceRange (annotRange annot)
+                  ++ showSourceRange (rangeOf annot)
                   ++ "ctx: "++ unlines (map show (Map.toList $ contextBindings ctx))
                   ++ "\nhist: " , msg]
 
@@ -323,7 +323,7 @@ tcRhoPrim ctx annot name expTy = do
        Nothing -> do
          msg <- getStructureContextMessage
          tcFails [text $ "Unknown variable " ++ T.unpack name
-                  ++ showSourceRange (annotRange annot)
+                  ++ showSourceRange (rangeOf annot)
                   ++ "ctx: "++ unlines (map show (Map.toList $ contextBindings ctx))
                   ++ "\nhist: " , msg]
 
@@ -352,7 +352,7 @@ tcRhoBool rng b expTy = do
                                       return ab
          Check  t -> tcFails [text $ "Unable to check Bool constant in context"
                                 ++ " expecting non-Bool type " ++ show t
-                                ++ showSourceRange (annotRange rng)]
+                                ++ showSourceRange (rangeOf rng)]
 -- }}}
 
 --  ------------------
@@ -368,7 +368,7 @@ tcRhoText rng b expTy = do
                                      return ab
          Check  t -> tcFails [text $ "Unable to check Text constant in context"
                                 ++ " expecting non-Text type " ++ show t
-                                ++ showSourceRange (annotRange rng)]
+                                ++ showSourceRange (rangeOf rng)]
 -- }}}
 
 --  e1 :: tau             ...           en :: tau
@@ -388,7 +388,7 @@ tcRhoArrayLit ctx rng args expTy = do
                                      return ab
          Check  t -> tcFails [text $ "Unable to check array constant in context"
                                 ++ " expecting non-array type " ++ show t
-                                ++ showSourceRange (annotRange rng)]
+                                ++ showSourceRange (rangeOf rng)]
   -- There's a problematic interaction going on here.
   -- Integer literals do not impose an immediate constraint
   -- on the types they check against, because the type of an integer
@@ -449,7 +449,7 @@ tcRhoDeref ctx rng e1 expTy = do
       RefTypeAST {} -> return ()
       MetaTyVar  {} -> return ()
       other -> tcFails [text $ "Expected deref-ed expr "
-                           ++ "to have ref type, had " ++ show other ++ highlightFirstLine (annotRange rng)]
+                           ++ "to have ref type, had " ++ show other ++ highlightFirstLine (rangeOf rng)]
     matchExp expTy (AnnDeref rng tau a1) "deref"
 -- }}}
 
@@ -477,7 +477,7 @@ tcRhoTuple ctx rng exprs expTy = do
      Check (MetaTyVar {}   ) -> tcTuple ctx rng exprs [Nothing | _ <- exprs]
      Check ty -> tcFailsMore [text $ "typecheck: tuple (" ++ show exprs ++ ") "
                              ++ "cannot check against non-tuple type " ++ show ty]
-   matchExp expTy tup (highlightFirstLine (annotRange rng))
+   matchExp expTy tup (highlightFirstLine (rangeOf rng))
   where
     tcTuple ctx rng exps typs = do
         exprs <- typecheckExprsTogether ctx exps typs
@@ -505,7 +505,7 @@ tcRhoTuple ctx rng exprs expTy = do
 tcRhoArrayRead :: ExprAnnot -> SafetyGuarantee -> AnnExpr Sigma -> AnnExpr Sigma -> Expected TypeAST -> Tc (AnnExpr Rho)
 -- {{{
 tcRhoArrayRead annot sg base aiexpr expTy = do
-  let rng = annotRange annot
+  let rng = rangeOf annot
   let ck t = do
         -- TODO check aiexpr type is compatible with Word
         unify (PrimIntAST I32) (typeAST aiexpr) "arrayread idx type"
@@ -540,7 +540,7 @@ tcRhoArrayPoke annot s v base i expTy = do
   let ck t = do
       -- TODO check aiexpr type is compatible with Word
       unify t (typeAST v) "arraypoke type"
-      let expr = AnnArrayPoke annot (TupleTypeAST []) (ArrayIndex base i (annotRange annot) s) v
+      let expr = AnnArrayPoke annot (TupleTypeAST []) (ArrayIndex base i (rangeOf annot) s) v
       matchExp expTy expr "arraypoke"
 
   case typeAST base of
@@ -554,7 +554,7 @@ tcRhoArrayPoke annot s v base i expTy = do
     baseType ->
       tcFails [text $ "Unable to arraypoke expression of type " ++ show baseType
                   ++ " (context expected type " ++ show expTy ++ ")"
-                  ++ highlightFirstLine (annotRange annot)]
+                  ++ highlightFirstLine (rangeOf annot)]
 -- }}}
 
 -----------------------------------------------------------------------
@@ -612,7 +612,7 @@ tcRhoLet ctx rng (TermBinding v e1) e2 mt = do
     --     let x = x; in x end
     -- will be caught by the usual variable scoping rules.
     errMsg = "Recursive bindings should use 'rec', not 'let':"
-           ++ highlightFirstLine (annotRange rng)
+           ++ highlightFirstLine (rangeOf rng)
 -- }}}
 
 {-
@@ -634,7 +634,7 @@ tcRhoLetRec ctx0 rng recBindings e mt = do
     -- Create an extended context for typechecking the bindings
     let ctxBindings = map (uncurry varbind) (zip ids unificationVars)
     let ctx = prependContextBindings ctx0 ctxBindings
-    verifyNonOverlappingBindings (annotRange rng) "rec" ctxBindings
+    verifyNonOverlappingBindings (rangeOf rng) "rec" ctxBindings
 
     -- Typecheck each binding
     tcbodies <- forM (zip unificationVars recBindings) $
@@ -744,14 +744,14 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
         annbase <- inferRho ctx base "called base"
         let fun_ty = typeAST annbase
         debugDoc $ text "call: fn type is " <> pretty fun_ty
-        (args_ty, res_ty) <- unifyFun fun_ty argexprs ("tSC("++tryGetVarName base++")" ++ highlightFirstLine (annotRange rng))
+        (args_ty, res_ty) <- unifyFun fun_ty argexprs ("tSC("++tryGetVarName base++")" ++ highlightFirstLine (rangeOf rng))
         debugDoc $ text "call: fn args ty is " <> pretty args_ty
         debug $ "call: arg exprs are " ++ show argexprs
         sanityCheck (eqLen argexprs args_ty) $
                 "tcSigmaCall expected equal # of arguments! Had "
                 ++ (show $ List.length argexprs) ++ "; expected "
                 ++ (show $ List.length args_ty)
-                ++ highlightFirstLine (annotRange rng)
+                ++ highlightFirstLine (rangeOf rng)
         args <- sequence [checkSigma ctx arg ty | (arg, ty) <- zip argexprs args_ty]
         debug $ "call: annargs: "
         debugDoc $ showStructure (AnnTuple rng TupleTypeAST args)
@@ -818,7 +818,7 @@ tcSigmaFn ctx f expTyRaw = do
 
     (tyformals, _) -> do
         let annot = fnAstAnnot f
-        let rng   = annotRange annot
+        let rng   = rangeOf annot
         let ktvs = map convertTyFormal tyformals
         taus <- genTauUnificationVarsLike ktvs (\n -> "fn type parameter " ++ show n ++ " for " ++ T.unpack (fnAstName f))
 
@@ -969,7 +969,7 @@ mkTypeFormalAST (othervar, _kind) =
 -- {{{
 tcRhoFnHelper ctx f expTy = do
     let annot = fnAstAnnot f
-    let rng = annotRange annot
+    let rng = rangeOf annot
     -- While we're munging, we'll also make sure the names are all distinct.
     uniquelyNamedFormals0 <- getUniquelyNamedFormals rng (fnFormals f) (fnAstName f)
     uniquelyNamedFormals <- mapM
@@ -1046,17 +1046,17 @@ tcRhoCase ctx rng scrutinee branches expTy = do
   debugDoc $ text "metavar for overall type of case is " <> pretty u
   debugDoc $ text " exp ty is " <> pretty expTy
   let checkBranch (CaseArm pat body guard _ brng) = do
-      debugDoc $ text "checking pattern with context ty " <+> pretty (typeAST ascrutinee) <+> string (highlightFirstLine $ annotRange rng)
+      debugDoc $ text "checking pattern with context ty " <+> pretty (typeAST ascrutinee) <+> string (highlightFirstLine $ rangeOf rng)
       p <- checkPattern ctx pat (typeAST ascrutinee)
       debug $ "case branch pat: " ++ show p
       let bindings = extractPatternBindings p
       debugDoc $ text "case branch generated bindings: " <> list (map pretty bindings)
       let ctxbindings = [varbind id ty | (TypedId ty id) <- bindings]
-      verifyNonOverlappingBindings (annotRange rng) "case" ctxbindings
+      verifyNonOverlappingBindings (rangeOf rng) "case" ctxbindings
       let ctx' = prependContextBindings ctx ctxbindings
       aguard <- liftMaybe (\g -> tcRho ctx' g (Check fosBoolType)) guard
       abody <- tcRho ctx' body expTy
-      unify u (typeAST abody) ("Failed to unify all branches of case " ++ highlightFirstLine (annotRange rng))
+      unify u (typeAST abody) ("Failed to unify all branches of case " ++ highlightFirstLine (rangeOf rng))
       return (CaseArm p abody aguard bindings brng)
   abranches <- forM branches checkBranch
   matchExp expTy (AnnCase rng u ascrutinee abranches) "case"
@@ -1302,7 +1302,7 @@ resolveType annot subst x =
     TyVarAST (SkolemTyVar _ _ _)   -> return x
     TyVarAST (BoundTyVar name)     -> case Map.lookup name subst of
                                          Nothing -> tcFails [text $ "Typecheck.hs: ill-formed type with free bound variable " ++ name,
-                                                             text $ highlightFirstLine (annotRange annot)]
+                                                             text $ highlightFirstLine (rangeOf annot)]
                                          Just ty -> return ty
     RefTypeAST    ty               -> liftM RefTypeAST   (q ty)
     ArrayTypeAST  ty               -> liftM ArrayTypeAST (q ty)

@@ -324,11 +324,11 @@ n2 = {
 };
 
 print_Wordb = { k =>
-  print_i64b (primitive_zext_Word_to_i64 k);
+  print_i64b (zext_Word_to_i64 k);
 };
 
 print_Wordx = { k =>
-  print_i64x (primitive_zext_Word_to_i64 k);
+  print_i64x (zext_Word_to_i64 k);
 };
 
 debug_nat_2 = { n =>
@@ -341,13 +341,13 @@ debug_nat_2 = { n =>
 
 testNatDivW = { i : Int64 => j : Int64 =>
   case uQuoRemInt64 i j of (lq, lr) ->
-    case foster_div_nat_digit_nz (natFromInt64 i) (primitive_trunc_i64_to_Word j)
+    case foster_div_nat_digit_nz (natFromInt64 i) (trunc_i64_to_Word j)
       of (q, r) ->
         expect_i64 lq;
         print_text (foster_nat_to_text_radix q 10);
 
         expect_i64 lr;
-        print_i64 (primitive_zext_Word_to_i64 r);
+        print_i64 (zext_Word_to_i64 r);
     end
   end
 };
@@ -368,10 +368,10 @@ testNatDiv = { i : Int64 => j : Int64 => exp_q : Text => exp_r : Text =>
 testNatMulAddWWW = { a : Word => b : Word => c : Word => e1 : Int64 => e0 : Int64 =>
   case natMulAddWWW a b c of (z1, z0) ->
     expect_i64 e1;
-    print_i64 (primitive_zext_Word_to_i64 z1);
+    print_i64 (zext_Word_to_i64 z1);
 
     expect_i64 e0;
-    print_i64 (primitive_zext_Word_to_i64 z0);
+    print_i64 (zext_Word_to_i64 z0);
   end;
 };
 
@@ -742,8 +742,8 @@ subInt64 = { hAr : Ref Int32 => lAr : Ref Int32 =>
 };
 
 reconstructInt64 = { a : Int32 => b : Int32 =>
-    bitor-Int64 (bitshl-Int64 (primitive_sext_i64_i32 a) 32)
-                (primitive_zext_i32_to_i64 b);
+    bitor-Int64 (bitshl-Int64 (sext_i32_to_i64 a) 32)
+                (zext_i32_to_i64 b);
 };
 
 testSubInt64 = { a : Int32 => b : Int32 => c : Int32 => d : Int32 =>

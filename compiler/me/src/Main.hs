@@ -607,9 +607,9 @@ dumpPrimitive (name, ((FnTypeAST args ret _ _), _primop)) = do
                            else parens (text str)
   putDocLn $ (fill 20 $ textid name)
              <> text " = {"
-                 <+> hsep [fill 10 (name <+> text ":" <+> pretty arg) <+> text "=>"
+                 <+> hsep [fill 12 (name <+> text ":" <+> pretty arg) <+> text "=>"
                           | (name, arg) <- namesArgs]
-                 <+> text "prim" <+> text name <+> hsep (map fst namesArgs)
+                 <+> fill 23 (text "prim" <+> text name <+> hsep (map fst namesArgs))
              <+> text "}; // :: " <> pretty ret
 
 dumpPrimitive (name, (_ty, _primop)) = error $ "Can't dump primitive " ++ name ++ " yet."

@@ -87,7 +87,7 @@ ail ctx ae =
                 return $ AILiteral boolTypeIL (LitBool (isOK oox))
         AnnKillProcess _rng t m -> do ti <- qt t
                                       return $ AIKillProcess ti m
-        AnnLiteral annot ty (LitInt int) -> do ailInt (annotRange annot) int ty
+        AnnLiteral annot ty (LitInt int) -> do ailInt (rangeOf annot) int ty
                                                ti <- qt ty
                                                return $ AILiteral ti (LitInt int)
         AnnLiteral _rng ty lit -> do ti <- qt ty
@@ -97,7 +97,7 @@ ail ctx ae =
                                      return $ AIIf    ti x y z
         AnnUntil rng  t  a b   -> do ti <- qt t
                                      [x,y]   <- mapM q [a,b]
-                                     return $ AIUntil ti x y (annotRange rng)
+                                     return $ AIUntil ti x y (rangeOf rng)
         -- For anonymous function literals
         E_AnnFn annFn        -> do fn_id <- tcFresh "lit_fn"
                                    aiFn <- fnOf ctx annFn
@@ -147,7 +147,7 @@ ail ctx ae =
                                          [x,y,z] <- mapM q [a,b,c]
                                          return $ AIArrayPoke ti (ArrayIndex x y rng s) z
         AnnTuple rng _ exprs       -> do aies <- mapM q exprs
-                                         return $ AITuple aies (annotRange rng)
+                                         return $ AITuple aies (rangeOf rng)
         AnnCase _rng t e arms      -> do ti <- qt t
                                          ei <- q e
                                          bsi <- mapM (\(CaseArm p e guard bindings rng) -> do
@@ -206,7 +206,7 @@ ail ctx ae =
 
                 origExprType <- qt (typeOf e)
                 let ktvs = tyvarBindersOf origExprType
-                mapM_ (kindCheckSubsumption (annotRange rng)) (zip ktvs argtys)
+                mapM_ (kindCheckSubsumption (rangeOf rng)) (zip ktvs argtys)
 
                 return $ E_AITyApp ti ae argtys
 

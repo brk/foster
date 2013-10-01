@@ -53,7 +53,7 @@ main = {
   expect_i1 True ; print_i1(2 *Int32 3   <=SInt32   5 +Int32 1);
   expect_i1 True ; print_i1(2 *Int32 3   ==Int32   5 +Int32 1);
 
-  // primitive_==Int32_i1
+  // ==Int32_i1
   //expect_i1 True ; print_i1(2 <SInt32 3   ==Int32   4 <=SInt32 5);
 
   expect_i32  25 ;  print_i32(2 +Int32 3 *Int32 4 +Int32 5 +Int32 6);

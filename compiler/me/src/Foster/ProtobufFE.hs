@@ -97,8 +97,8 @@ parseCallPrim pbexpr annot = do
       ("deref", [e]) -> return $ E_DerefAST annot e
       ("alloc",           [e]) -> return $ E_AllocAST annot e MemRegionGlobalHeap
       ("stackref-unsafe", [e]) -> return $ E_AllocAST annot e MemRegionStack
-      ("subscript",       [a,b]) -> return $ E_ArrayRead annot (ArrayIndex a b (annotRange annot) SG_Dynamic)
-      ("subscript-unsafe",[a,b]) -> return $ E_ArrayRead annot (ArrayIndex a b (annotRange annot) SG_Static)
+      ("subscript",       [a,b]) -> return $ E_ArrayRead annot (ArrayIndex a b (rangeOf annot) SG_Dynamic)
+      ("subscript-unsafe",[a,b]) -> return $ E_ArrayRead annot (ArrayIndex a b (rangeOf annot) SG_Static)
       ("store",[a,b])-> case b of -- a>^ c[d]
                            E_ArrayRead _ ari -> return $ E_ArrayPoke annot ari a
                            _                 -> return $ E_StoreAST annot a b
@@ -205,7 +205,7 @@ parseSeq pbexpr annot = do
         -- Convert a list of ExprASTs to a right-leaning "list" of SeqAST nodes.
         buildSeqs :: [ExprAST t] -> (ExprAST t)
         buildSeqs []    = error $ "ProtobufFE.parseSeq can't parse empty seq!"
-                                 ++ highlightFirstLine (annotRange annot)
+                                 ++ highlightFirstLine (rangeOf annot)
         buildSeqs [a]   = a
         buildSeqs (a:b) = E_SeqAST (ExprAnnot [] (MissingSourceRange "buildSeqs") [])
                                    a (buildSeqs b)

@@ -78,7 +78,7 @@ pidigits = { nn : Int32 =>
                 print_text_bare "             u': "; printIntInf u;
                 */
                 if gtIntInf dp u
-                  then     ns1 = ns0 *Int64 10 +Int64 (primitive_zext_Word_to_i64 (intLowWord t));
+                  then     ns1 = ns0 *Int64 10 +Int64 (zext_Word_to_i64 (intLowWord t));
                            i   = i0 +Int32 1;
                            ns  = if srem-Int32 i 10 ==Int32 0
                                     then print_i64_bare ns1;

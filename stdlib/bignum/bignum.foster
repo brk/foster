@@ -62,7 +62,7 @@ noinline_mkNegativeMinInt64 = {
 };
 
 noinline_mkNegativeMinInt32 = {
-  m64 = primitive_zext_i32_to_i64 (maxReprInt32 !);
+  m64 = zext_i32_to_i64 (maxReprInt32 !);
   IntInf (natFromInt64 (m64 +Int64 1)) True
 };
 

@@ -29,12 +29,12 @@ natCountBits = { i : NatInf =>
 
 noinline_llvm_arrLen32 :: forall x:Type, { Array x => Int32 };
 noinline_llvm_arrLen32 = { forall t:Type, a : Array t =>
-  primitive_trunc_i64_i32 (prim_arrayLength a)
+  trunc_i64_to_i32 (prim_arrayLength a)
 };
 
 arrLen32 :: forall x:Type, { Array x => Int32 };
 arrLen32 = { forall t:Type, a : Array t =>
-  primitive_trunc_i64_i32 (prim_arrayLength a)
+  trunc_i64_to_i32 (prim_arrayLength a)
 };
 
 mkNatInf = { a => NatInf a };
@@ -64,11 +64,11 @@ digitNumBits :: { Int32 };
 digitNumBits = { wordNumBits32 !  -Int32 4 };
 
 digitNumBitsWord :: { Word };
-digitNumBitsWord = { primitive_zext_i32_to_Word (digitNumBits !) };
+digitNumBitsWord = { zext_i32_to_Word (digitNumBits !) };
 
 digitNumBitsMask :: { Word };
 digitNumBitsMask = {
-  (bitshl-Word 1 (primitive_zext_i32_to_Word (digitNumBits !))
+  (bitshl-Word 1 (zext_i32_to_Word (digitNumBits !))
          -Word 1)
 };
 natFromInt64 :: { Int64 => NatInf };
@@ -79,8 +79,8 @@ natFromInt64 = { i =>
     if shiftAmount >=SInt32 64
       then 0
       else bitand-Word (digitNumBitsMask !)
-              (primitive_trunc_i64_to_Word (bitlshr-Int64 i
-                               (primitive_sext_i64_i32 shiftAmount)));
+              (trunc_i64_to_Word (bitlshr-Int64 i
+                               (sext_i32_to_i64 shiftAmount)));
     end
   };
 };

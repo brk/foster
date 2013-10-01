@@ -25,29 +25,29 @@ main = {
 
 t1 = {
   expect_i32 22222;
-  print_i32 (primitive_trunc_WordX2_i32
-                ((primitive_zext_i32_to_WordX2 (opaquely_i32 11111)) +WordX2
-                 (primitive_zext_i32_to_WordX2 11111)));
+  print_i32 (trunc_WordX2_to_i32
+                ((zext_i32_to_WordX2 (opaquely_i32 11111)) +WordX2
+                 (zext_i32_to_WordX2 11111)));
 
   expect_i32 0;
-  print_i32 (primitive_trunc_WordX2_i32
-                ((primitive_zext_i32_to_WordX2 (opaquely_i32 11111)) -WordX2
-                 (primitive_zext_i32_to_WordX2 11111)));
+  print_i32 (trunc_WordX2_to_i32
+                ((zext_i32_to_WordX2 (opaquely_i32 11111)) -WordX2
+                 (zext_i32_to_WordX2 11111)));
 
   expect_i32 22222;
-  print_i32 (primitive_trunc_WordX2_i32
-                ((primitive_zext_i32_to_WordX2 (opaquely_i32 11111)) *WordX2
-                 (primitive_zext_i32_to_WordX2 2)));
+  print_i32 (trunc_WordX2_to_i32
+                ((zext_i32_to_WordX2 (opaquely_i32 11111)) *WordX2
+                 (zext_i32_to_WordX2 2)));
 
   expect_i32 11111;
-  print_i32 (primitive_trunc_WordX2_i32
-                ((primitive_zext_i32_to_WordX2 (opaquely_i32 22222)) `sdiv-WordX2`
-                 (primitive_zext_i32_to_WordX2 2)));
+  print_i32 (trunc_WordX2_to_i32
+                ((zext_i32_to_WordX2 (opaquely_i32 22222)) `sdiv-WordX2`
+                 (zext_i32_to_WordX2 2)));
 };
 
 // compilation-only test
 c2 = {
-  if 16 ==Word (primitive_zext_i32_to_Word 0)
+  if 16 ==Word (zext_i32_to_Word 0)
       then 32
       else 64
   end

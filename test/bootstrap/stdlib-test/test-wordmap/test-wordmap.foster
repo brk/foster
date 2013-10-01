@@ -3,7 +3,7 @@ snafuinclude WordMaps "wordmap";
 print_i64_f_pair_bare = { p : (Word, { Int64 }) =>
   case p of (k, vf) ->
     print_text_bare "(";
-    print_i64_bare (primitive_zext_Word_to_i64 k);
+    print_i64_bare (zext_Word_to_i64 k);
     print_text_bare ",";
     print_i64_bare (vf !);
     print_text_bare ")";

@@ -36,16 +36,16 @@ digitNumBits :: { Int32 };
 digitNumBits = { wordNumBits32 !  -Int32 4 };
 
 digitNumBitsWord :: { Word };
-digitNumBitsWord = { primitive_zext_i32_to_Word (digitNumBits !) };
+digitNumBitsWord = { zext_i32_to_Word (digitNumBits !) };
 
 digitNumBitsMask :: { Word };
 digitNumBitsMask = {
-  (bitshl-Word 1 (primitive_zext_i32_to_Word (digitNumBits !))
+  (bitshl-Word 1 (zext_i32_to_Word (digitNumBits !))
          -Word 1)
 };
 addCarryOfWord :: { Word => Word };
 addCarryOfWord = { n =>
-  bitlshr-Word n (primitive_sext_i32_to_Word (digitNumBits !));
+  bitlshr-Word n (sext_i32_to_Word (digitNumBits !));
   // shift right (>>) by 60 for word size of i64
 };
 

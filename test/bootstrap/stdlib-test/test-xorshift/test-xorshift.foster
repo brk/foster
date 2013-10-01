@@ -2,9 +2,9 @@ snafuinclude Prelude  "prelude";
 snafuinclude Xorshift "prng/xorshift";
 
 print_point = { i => x =>
-  print_i64_bare (primitive_zext_i32_to_i64 i);
+  print_i64_bare (zext_i32_to_i64 i);
   print_text_bare ": ";
-  print_i64x (primitive_zext_i32_to_i64 x);
+  print_i64x (zext_i32_to_i64 x);
 };
 
 main = {

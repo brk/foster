@@ -398,8 +398,7 @@ data ExprAnnot = ExprAnnot
                         SourceRange  -- range of bare expr not incl. formatting.
                         [Formatting] -- trailing comments and/or blank lines.
 
-annotRange :: ExprAnnot -> SourceRange
-annotRange (ExprAnnot _ rng _) = rng
+instance SourceRanged ExprAnnot where rangeOf (ExprAnnot _ rng _) = rng
 
 instance Show ExprAnnot where show (ExprAnnot _ rng _) = show rng
 
@@ -585,14 +584,17 @@ sizeOfBits n | n <= 32 = I32
 sizeOfBits n | n <= 64 = I64
 sizeOfBits n = error $ "TypecheckInt.hs:sizeOfBits: Unsupported size: " ++ show n
 
-instance Pretty IntSizeBits    where pretty i = text (show $ intSizeOf i)
+instance Pretty IntSizeBits    where pretty (IWord 0) = text "Word"
+                                     pretty (IWord 1) = text "WordX2"
+                                     pretty I1 = text "Bool"
+                                     pretty i  = text ("Int" ++ show (intSizeOf i))
 instance Pretty Ident          where pretty id = text (show id)
 instance Pretty t => Pretty (TypedId t)
                                where pretty tid = pretty (tidIdent tid)
 instance SourceRanged expr => Pretty (CompilesResult expr)
                                where pretty cr = text (show cr)
 
-instance SourceRanged (Fn r e t) where rangeOf fn = annotRange (fnAnnot fn)
+instance SourceRanged (Fn r e t) where rangeOf fn = rangeOf (fnAnnot fn)
 
 deriving instance (Show ty) => Show (DataType ty)
 deriving instance (Show ty) => Show (DataCtor ty)

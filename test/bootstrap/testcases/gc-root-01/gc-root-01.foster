@@ -30,7 +30,7 @@ arrayEnumFromP = { forall t:Type,
                   a : Array t =>
                   k : Int64 =>
   if k <SInt64 prim_arrayLength a
-    then junk = a[primitive_trunc_i64_i32 k];
+    then junk = a[trunc_i64_to_i32 k];
          force_gc_for_debugging_purposes !;
          arrayEnumFromP a (k +Int64 1)
     else ()

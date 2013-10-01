@@ -196,6 +196,6 @@ annExprAnnot expr = case expr of
       AnnPrimitive annot _ _        -> annot
       E_AnnTyApp   annot _ _ _      -> annot
 
-instance SourceRanged (AnnExpr ty) where rangeOf e = annotRange (annExprAnnot e)
+instance SourceRanged (AnnExpr ty) where rangeOf e = rangeOf (annExprAnnot e)
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||

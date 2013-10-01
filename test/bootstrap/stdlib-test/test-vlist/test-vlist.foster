@@ -66,13 +66,13 @@ test-boxed-vlist = {
 
 print_uil = { lst =>
   print_text_bare "[";
-  listFoldl lst { i => unit => print_i64_bare (primitive_sext_i64_i32 i); print_text_bare ", "; () } ();
+  listFoldl lst { i => unit => print_i64_bare (sext_i32_to_i64 i); print_text_bare ", "; () } ();
   print_text "]";
 };
 
 print_uil_vList = { v =>
   print_text_bare "[";
-  vListFoldl v { i => unit => print_i64_bare (primitive_sext_i64_i32 i); print_text_bare ", "; () } ();
+  vListFoldl v { i => unit => print_i64_bare (sext_i32_to_i64 i); print_text_bare ", "; () } ();
   print_text "]";
 };
 

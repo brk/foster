@@ -74,11 +74,12 @@ main = {
   print_text (tmp_Text_of_UInt64 11);
 
   test-ord !;
+  test-int-primitives !;
 };
 
 observeWordUnsignedWraparound :: { Int32 };
 observeWordUnsignedWraparound = {
-  n0 = primitive_zext_i32_to_Word 3;
+  n0 = zext_i32_to_Word 3;
   n1 = bitshl-Word n0 16;
   n2 = bitshl-Word n1 16;
   n3 = bitshl-Word n2 16;
@@ -131,5 +132,13 @@ test-ord = {
 
   expect_text "EQ";
   print_text (textOfOrd (cmpBoolTrueLT False False));
+};
+
+test-int-primitives = {
+             2   |> expect_i32;
+  f64_to_i32 2.0 |> print_i32;
+
+           3 |> expect_i32;
+  1 +Int32 2 |> print_i32;
 };
 

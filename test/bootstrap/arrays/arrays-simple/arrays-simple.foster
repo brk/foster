@@ -23,7 +23,7 @@ arrays = {
   print_i32 a[opaquely_i32 1];
 };
 
-trunc32to8 = { n : Int32 => primitive_trunc_i32_i8 n; };
+trunc32to8 = { n : Int32 => trunc_i32_to_i8 n; };
 
 newDArray8 = { n : Int32 => f : { Int32 => Int8 } =>
   a = allocDArray:[Int8] n;

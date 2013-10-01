@@ -8,7 +8,7 @@ main = {
 noinline_t1 = {
   a = newDArray0_local:[Int32] 5 { i => i +Int32 1 };
   expect_i32 5;
-  print_i32 (primitive_trunc_i64_i32 (prim_arrayLength a));
+  print_i32 (trunc_i64_to_i32 (prim_arrayLength a));
 };
 
 // This test is to make sure that inlining

@@ -377,7 +377,7 @@ closureOfKnFn infoMap (self_id, fn) = do
     let procid        = TypedId (procType newproc) (procIdent newproc)
     return $ Closure procid (llv envVar) (map llv varsOfClosure)
                    (AllocationSource (show procid ++ ":")
-                                     (annotRange $ procAnnot newproc))
+                                     (rangeOf $ procAnnot newproc))
   where
     procType proc =
       let retty = procReturnType proc in

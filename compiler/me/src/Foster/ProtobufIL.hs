@@ -491,7 +491,7 @@ dumpILProgramToProtobuf m outpath = do
              , in_args    = fromList $ [dumpIdent (tidIdent v) | v <- CC.procVars p]
              , proctype   = dumpProcType (preProcType p)
              , Proc.blocks= fromList $ map (dumpBlock predmap) (CC.procBlocks p)
-             , Proc.lines = Just $ u8fromString (showSourceRange . annotRange $ CC.procAnnot p)
+             , Proc.lines = Just $ u8fromString (showSourceRange . rangeOf $ CC.procAnnot p)
              , Proc.linkage = Foster.Bepb.Proc.Linkage.Internal
              , Proc.gcroots = fromList $ map dumpVar gcroots
              }

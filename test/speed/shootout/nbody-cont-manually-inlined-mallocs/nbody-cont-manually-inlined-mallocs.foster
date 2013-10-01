@@ -106,14 +106,14 @@ energy = { bodies : Array Planet =>
           if k <SInt64 prim_arrayLength bodies
             then
              arrayIterFromF (incr64 k)
-               (let b1 = bodies[primitive_trunc_i64_i32 k];
+               (let b1 = bodies[trunc_i64_to_i32 k];
                     i  = k;
                 in
                    rec
                       arrayIterFromH = { k : Int64 => e : Float64 =>
                         if k <SInt64 prim_arrayLength bodies
                           then
-                              let b2 = bodies[primitive_trunc_i64_i32 k];
+                              let b2 = bodies[trunc_i64_to_i32 k];
                                   jj = k;
                                   dx = px b1 -f64 px b2;
                                   dy = py b1 -f64 py b2;
@@ -137,19 +137,19 @@ energy = { bodies : Array Planet =>
           end
         };
   in
-    arrayIterFromF (primitive_sext_i64_i32 0) 0.0;
+    arrayIterFromF (sext_i32_to_i64 0) 0.0;
   end
 };
 
 advance = { bodies : Array Planet =>
   rec arrayEnumFromF = { k : Int64 =>
           if k <SInt64 prim_arrayLength bodies
-            then let b1 = bodies[primitive_trunc_i64_i32 k];
+            then let b1 = bodies[trunc_i64_to_i32 k];
                      i  = k;
                  in
                      rec arrayEnumFromH = { k : Int64 =>
                           if k <SInt64 prim_arrayLength bodies
-                            then  let b2 = bodies[primitive_trunc_i64_i32 k];
+                            then  let b2 = bodies[trunc_i64_to_i32 k];
                                       jj = k;
 
                                       dx = px b1 -f64 px b2;
@@ -178,12 +178,12 @@ advance = { bodies : Array Planet =>
             else ()
           end
   }; in
-    arrayEnumFromF (primitive_sext_i64_i32 0)
+    arrayEnumFromF (sext_i32_to_i64 0)
   end;
 
   rec arrayEnumFromG = { k : Int64 =>
           if k <SInt64 prim_arrayLength bodies
-            then let b = bodies[primitive_trunc_i64_i32 k];
+            then let b = bodies[trunc_i64_to_i32 k];
                  in
                     incrByFloat64 (pxr b) (vx b);
                     incrByFloat64 (pyr b) (vy b);
@@ -194,7 +194,7 @@ advance = { bodies : Array Planet =>
           end
         };
   in
-    arrayEnumFromG (primitive_sext_i64_i32 0);
+    arrayEnumFromG (sext_i32_to_i64 0);
   end
 };
 

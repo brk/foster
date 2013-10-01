@@ -56,7 +56,7 @@ hpre ds = empty <+> hsep ds
 
 instance Pretty TypeAST where
     pretty x = case x of
-        PrimIntAST         size         -> text "Int" <> pretty size
+        PrimIntAST         size         -> pretty size
         PrimFloat64AST                  -> text "Float64"
         TyConAppAST  tcnm types         -> parens $ text tcnm <> hpre (map pretty types)
         TupleTypeAST      types         -> tupled $ map pretty types
@@ -295,26 +295,26 @@ flonumPrimitives tystr ty =
 
 -- These primitive names are known to the interpreter and compiler backends.
 gFosterPrimOpsTable = Map.fromList $
-  [(,) "not"                    $ (,) (mkFnType [i1]  [i1]      ) $ PrimOp "bitnot" i1
-  ,(,) "primitive_sext_i64_i32" $ (,) (mkFnType [i32] [i64]     ) $ PrimOp "sext_i64" i32
-  ,(,) "primitive_zext_i32_to_i64"  $(,) (mkFnType [i32] [i64]  ) $ PrimOp "zext_i64" i32
-  ,(,) "primitive_zext_Word_to_i64" $(,) (mkFnType [iw0] [i64]  ) $ PrimOp "zext_i64" iw0
-  ,(,) "primitive_sext_i8_to_i32" $(,) (mkFnType [i8 ] [i32]     ) $ PrimOp "sext_i32" i8
-  ,(,) "primitive_zext_i8_to_i32" $(,) (mkFnType [i8 ] [i32]     ) $ PrimOp "zext_i32" i8
-  ,(,) "primitive_sext_i8_to_i64" $(,) (mkFnType [i8 ] [i64]     ) $ PrimOp "sext_i64" i8
-  ,(,) "primitive_zext_i8_to_i64" $(,) (mkFnType [i8 ] [i64]     ) $ PrimOp "zext_i64" i8
-  ,(,) "primitive_trunc_i32_i8" $ (,) (mkFnType [i32] [i8 ]     ) $ PrimIntTrunc I32 I8
-  ,(,) "primitive_trunc_i64_i32"$ (,) (mkFnType [i64] [i32]     ) $ PrimIntTrunc I64 I32
-  ,(,) "primitive_trunc_i64_to_Word"$(,) (mkFnType [i64] [iw0]     ) $ PrimIntTrunc I64 (IWord 0)
-  ,(,) "primitive_trunc_Word_i32"  $ (,) (mkFnType [iw0] [i32]  ) $ PrimIntTrunc (IWord 0) I32
-  ,(,) "primitive_trunc_WordX2_i32"$ (,) (mkFnType [iw1] [i32]  ) $ PrimIntTrunc (IWord 1) I32
-  ,(,) "primitive_trunc_WordX2_Word" $(,) (mkFnType [iw1] [iw0] ) $ PrimIntTrunc (IWord 1) (IWord 0)
-  ,(,) "primitive_sext_i32_to_Word"  $(,) (mkFnType [i32] [iw0] ) $ PrimOp "sext_Word"   i32
-  ,(,) "primitive_zext_i32_to_Word"  $(,) (mkFnType [i32] [iw0] ) $ PrimOp "zext_Word"   i32
-  ,(,) "primitive_zext_i32_to_WordX2"$(,) (mkFnType [i32] [iw1] ) $ PrimOp "zext_WordX2" i32
-  ,(,) "primitive_zext_Word_to_WordX2"$(,) (mkFnType [iw0] [iw1] )$ PrimOp "zext_WordX2" iw0
-  ,(,) "primitive_f64_to_i32"    $(,) (mkFnType [f64] [i32]     ) $ PrimOp "fptosi_f64_i32" i32
-  ,(,) "primitive_i32_to_f64"    $(,) (mkFnType [i32] [f64]     ) $ PrimOp "sitofp_f64" i32
+  [(,) "not"                  $ (,) (mkFnType [i1]  [i1]  ) $ PrimOp "bitnot" i1
+  ,(,) "sext_i32_to_i64"      $ (,) (mkFnType [i32] [i64] ) $ PrimOp "sext_i64" i32
+  ,(,) "zext_i32_to_i64"      $ (,) (mkFnType [i32] [i64] ) $ PrimOp "zext_i64" i32
+  ,(,) "zext_Word_to_i64"     $ (,) (mkFnType [iw0] [i64] ) $ PrimOp "zext_i64" iw0
+  ,(,) "sext_i8_to_i32"       $ (,) (mkFnType [i8 ] [i32] ) $ PrimOp "sext_i32" i8
+  ,(,) "zext_i8_to_i32"       $ (,) (mkFnType [i8 ] [i32] ) $ PrimOp "zext_i32" i8
+  ,(,) "sext_i8_to_i64"       $ (,) (mkFnType [i8 ] [i64] ) $ PrimOp "sext_i64" i8
+  ,(,) "zext_i8_to_i64"       $ (,) (mkFnType [i8 ] [i64] ) $ PrimOp "zext_i64" i8
+  ,(,) "sext_i32_to_Word"     $ (,) (mkFnType [i32] [iw0] ) $ PrimOp "sext_Word"   i32
+  ,(,) "zext_i32_to_Word"     $ (,) (mkFnType [i32] [iw0] ) $ PrimOp "zext_Word"   i32
+  ,(,) "zext_i32_to_WordX2"   $ (,) (mkFnType [i32] [iw1] ) $ PrimOp "zext_WordX2" i32
+  ,(,) "zext_Word_to_WordX2"  $ (,) (mkFnType [iw0] [iw1] ) $ PrimOp "zext_WordX2" iw0
+  ,(,) "trunc_i32_to_i8"      $ (,) (mkFnType [i32] [i8 ] ) $ PrimIntTrunc I32 I8
+  ,(,) "trunc_i64_to_i32"     $ (,) (mkFnType [i64] [i32] ) $ PrimIntTrunc I64 I32
+  ,(,) "trunc_i64_to_Word"    $ (,) (mkFnType [i64] [iw0] ) $ PrimIntTrunc I64 (IWord 0)
+  ,(,) "trunc_Word_to_i32"    $ (,) (mkFnType [iw0] [i32] ) $ PrimIntTrunc (IWord 0) I32
+  ,(,) "trunc_WordX2_to_i32"  $ (,) (mkFnType [iw1] [i32] ) $ PrimIntTrunc (IWord 1) I32
+  ,(,) "trunc_WordX2_to_Word" $(,) (mkFnType [iw1] [iw0] ) $ PrimIntTrunc (IWord 1) (IWord 0)
+  ,(,) "f64_to_i32"    $(,) (mkFnType [f64] [i32]     ) $ PrimOp "fptosi_f64_i32" i32
+  ,(,) "i32_to_f64"    $(,) (mkFnType [i32] [f64]     ) $ PrimOp "sitofp_f64" i32
   ] ++ fixnumPrimitives I64
     ++ fixnumPrimitives I32
     ++ fixnumPrimitives I8

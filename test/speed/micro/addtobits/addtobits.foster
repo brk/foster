@@ -247,7 +247,7 @@ copyOfArrayTo__manually_inlined :: forall t:Type,
                  };
 copyOfArrayTo__manually_inlined = { forall t:Type,
                    a => n =>
-  //assert (arrayLength a >=UInt64 (primitive_zext_i32_to_i64 n)) "copyOfArrayTo";
+  //assert (arrayLength a >=UInt64 (zext_i32_to_i64 n)) "copyOfArrayTo";
   z = allocDArray n;
   REC loop = { x =>
     if x ==Int32 0 then () else
@@ -290,6 +290,6 @@ copyOfArrayTo_auto_inlined :: forall t:Type,
                  };
 copyOfArrayTo_auto_inlined = { forall t:Type,
                    a => n =>
-  //assert (arrayLength a >=UInt64 (primitive_zext_i32_to_i64 n)) "copyOfArrayTo";
+  //assert (arrayLength a >=UInt64 (zext_i32_to_i64 n)) "copyOfArrayTo";
   newDArray0:[t] n { i : Int32 => a[i] };
 };

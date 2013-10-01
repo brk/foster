@@ -17,7 +17,7 @@ import Foster.Base(Expr(..), freeVars, identPrefix, Structured(..),
                    SourceRanged(..), TypedId(..), butnot, ArrayIndex(..),
                    AllocMemRegion, childrenOfArrayIndex,
                    CaseArm(..), caseArmExprs,
-                   ExprAnnot(..), annotRange, annotComments, showComments)
+                   ExprAnnot(..), rangeOf, annotComments, showComments)
 import Foster.TypeAST(TypeAST, EPattern(..), E_VarAST(..))
 import Foster.Kind
 
@@ -173,7 +173,7 @@ exprAnnot e = case e of
       E_Case          annot _ _   -> annot
       E_MachArrayLit annot _ -> annot
 
-instance SourceRanged (ExprAST ty) where rangeOf e = annotRange (exprAnnot e)
+instance SourceRanged (ExprAST ty) where rangeOf e = rangeOf (exprAnnot e)
 
 -- The free-variable determination logic here is tested in
 --      test/bootstrap/testcases/rec-fn-detection

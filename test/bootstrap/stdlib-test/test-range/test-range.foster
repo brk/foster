@@ -92,7 +92,7 @@ textOfAChunkSummary = { t =>
 
 mkChunk = { off : Int64 => n : Int32 => v : Int8 =>
   arr = newDArray n { o => v };
-  Chunk off (BytesFragment arr (primitive_sext_i64_i32 n))
+  Chunk off (BytesFragment arr (sext_i32_to_i64 n))
 };
 
 testChunkBuilding = {

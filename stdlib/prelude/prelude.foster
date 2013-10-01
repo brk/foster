@@ -1,6 +1,10 @@
 snafuinclude List "list";
 snafuinclude Ord  "ord";
 snafuinclude Text "text";
+snafuinclude Primitives "primitives";
+
+// TODO test codegen of not_ vs primitive not
+not_   = { a : Bool => if a then False else True end };
 
 either = { a : Bool => b : Bool => if a then True else b     end };
 both   = { a : Bool => b : Bool => if a then b    else False end };
@@ -133,7 +137,7 @@ wordNumBits32 = {
 
 wordNumBits :: { Word };
 wordNumBits = {
-  primitive_sext_i32_to_Word (wordNumBits32 !)
+  sext_i32_to_Word (wordNumBits32 !)
 };
 
 /////
@@ -180,7 +184,7 @@ copyOfArrayTo :: forall t:Type,
                  };
 copyOfArrayTo = { forall t:Type,
                    a => n =>
-  assert (arrayLength a >=UInt64 (primitive_zext_i32_to_i64 n)) "copyOfArrayTo";
+  assert (arrayLength a >=UInt64 (zext_i32_to_i64 n)) "copyOfArrayTo";
   newDArray0:[t] n { i : Int32 => a[i] };
 };
 
@@ -204,7 +208,7 @@ textOfBool = { b : Bool =>
 };
 
 // Precondition: n in range 0..128.
-textOfASCII = { n : Int32 => textOfASCII8 (primitive_trunc_i32_i8 n) };
+textOfASCII = { n : Int32 => textOfASCII8 (trunc_i32_to_i8 n) };
 
 // Precondition: n in range 0..128.
 textOfASCII8 = { n : Int8 =>
@@ -221,7 +225,7 @@ arrayLength = { forall t:Type, a : Array t =>
 
 arrayLength32 :: forall x:Type, { Array x => Int32 };
 arrayLength32 = { forall t:Type, a : Array t =>
-  primitive_trunc_i64_i32 (prim_arrayLength a)
+  trunc_i64_to_i32 (prim_arrayLength a)
 };
 
 arrayEnumFrom = { forall t:Type,
@@ -229,7 +233,7 @@ arrayEnumFrom = { forall t:Type,
                   k : Int64 =>
                   f : { t => Int64 => () } =>
   if k <SInt64 prim_arrayLength a
-    then f a[primitive_trunc_i64_i32 k] k;
+    then f a[trunc_i64_to_i32 k] k;
          arrayEnumFrom a (incr64 k) f
     else ()
   end
@@ -319,15 +323,15 @@ maxReprInt64 :: { Int64 };
 maxReprInt64 = {  9`223`372`036`854`775`807 };
 
 octet4ToInt32 = { hi : Int8 => m1 : Int8 => m2 : Int8 => lo : Int8 =>
-  (((primitive_zext_i8_to_i32 hi) `bitshl-Int32` 24)  `bitor-Int32`
-   ((primitive_zext_i8_to_i32 m1) `bitshl-Int32` 16)) `bitor-Int32`
-  (((primitive_zext_i8_to_i32 m2) `bitshl-Int32` 8)   `bitor-Int32`
-    (primitive_zext_i8_to_i32 lo))
+  (((zext_i8_to_i32 hi) `bitshl-Int32` 24)  `bitor-Int32`
+   ((zext_i8_to_i32 m1) `bitshl-Int32` 16)) `bitor-Int32`
+  (((zext_i8_to_i32 m2) `bitshl-Int32` 8)   `bitor-Int32`
+    (zext_i8_to_i32 lo))
 };
 
 mergeInt32 = { hi : Int32 => lo : Int32 =>
-  ((primitive_zext_i32_to_i64 hi) `bitshl-Int64` 32)  `bitor-Int64`
-   (primitive_zext_i32_to_i64 lo)
+  ((zext_i32_to_i64 hi) `bitshl-Int64` 32)  `bitor-Int64`
+   (zext_i32_to_i64 lo)
 };
 
 ////
@@ -346,8 +350,8 @@ tmp_Text_bytes_iter_reverse = { t:Text =>
 };
 
 is_ascii_digit = { c : Int8 =>
-  if   c <=SInt8 (primitive_trunc_i32_i8 57)
-  then c >=SInt8 (primitive_trunc_i32_i8 48)
+  if   c <=SInt8 (trunc_i32_to_i8 57)
+  then c >=SInt8 (trunc_i32_to_i8 48)
   else False
   end
 };
@@ -360,7 +364,7 @@ tmp_Int32_of_base_10_Text = { t:Text =>
    //print_text "is_ascii_digit c:"; // hmm, causes crash...
    if is_ascii_digit c
      then
-       s = (primitive_sext_i8_to_i32 c) -Int32 48;
+       s = (sext_i8_to_i32 c) -Int32 48;
        (acc^ +Int32 (s *Int32 pow^)) >^ acc;
        (pow^           *Int32 base ) >^ pow;
        True
@@ -408,9 +412,9 @@ tmp_Text_16_of_Int32_digit = { n:Int32 =>
   end
 };
 
-tmp_Text_of_Int32 = { n:Int32 => tmp_Text_of_Int64 (primitive_sext_i64_i32 n) };
+tmp_Text_of_Int32 = { n:Int32 => tmp_Text_of_Int64 (sext_i32_to_i64 n) };
 
-tmp_Text_of_Int8  = { n:Int8  => tmp_Text_of_Int64 (primitive_sext_i8_to_i64 n) };
+tmp_Text_of_Int8  = { n:Int8  => tmp_Text_of_Int64 (sext_i8_to_i64 n) };
 
 tmp_Text_2_of_Int8_nibble = { n : Int8 =>
   case n
@@ -442,10 +446,10 @@ tmp_Text_2_of_UInt8 = { n:Int8 =>
 
 tmp_Text_2_of_UInt32 = { n:Int32 =>
   ttgo = { n:Int32 =>
-    n0 = primitive_trunc_i32_i8 n;
-    n1 = primitive_trunc_i32_i8 (bitlshr-Int32 n 8 );
-    n2 = primitive_trunc_i32_i8 (bitlshr-Int32 n 16);
-    n3 = primitive_trunc_i32_i8 (bitlshr-Int32 n 24);
+    n0 = trunc_i32_to_i8 n;
+    n1 = trunc_i32_to_i8 (bitlshr-Int32 n 8 );
+    n2 = trunc_i32_to_i8 (bitlshr-Int32 n 16);
+    n3 = trunc_i32_to_i8 (bitlshr-Int32 n 24);
 
      mkTextConcat (tmp_Text_2_of_UInt8 n3)
     (mkTextConcat (tmp_Text_2_of_UInt8 n2)
@@ -493,7 +497,7 @@ dropRawBytes = { a : Array Int8 => d : Int32 =>
 };
 
 high32BitsOf64 = { n : Int64 =>
-  primitive_trunc_i64_i32 (bitlshr-Int64 n 32)
+  trunc_i64_to_i32 (bitlshr-Int64 n 32)
 };
 
 splitInt64 :: { Int64 => (Int32, Int32) };
@@ -505,8 +509,8 @@ splitInt64 = { n =>
 
 tmp_Text_2_of_Word = { n:Word =>
   if wordNumBits32 ! ==Int32 32
-     then tmp_Text_2_of_UInt32 (primitive_trunc_Word_i32 n);
-     else tmp_Text_2_of_UInt64 (primitive_zext_Word_to_i64 n);
+     then tmp_Text_2_of_UInt32 (trunc_Word_to_i32 n);
+     else tmp_Text_2_of_UInt64 (zext_Word_to_i64 n);
   end
 };
 
@@ -527,8 +531,8 @@ tmp_Text_of_Int64 = { n:Int64 =>
 tmp_Text_of_UInt64 = { n:Int64 =>
   REC go = { n:Int64 => t:Text =>
     if n <SInt64 10
-      then mkTextConcat (tmp_Text_of_Int32_digit (primitive_trunc_i64_i32 n)) t
-      else r = primitive_trunc_i64_i32 (srem-Int64 n 10);
+      then mkTextConcat (tmp_Text_of_Int32_digit (trunc_i64_to_i32 n)) t
+      else r = trunc_i64_to_i32 (srem-Int64 n 10);
            q =                          sdiv-Int64 n 10 ;
            go q (mkTextConcat (tmp_Text_of_Int32_digit r) t);
     end
@@ -544,6 +548,6 @@ tmp_Text_of_SWord = { n:Word =>
 };
 
 tmp_Text_of_UWord = { n:Word =>
-  tmp_Text_of_UInt64 (primitive_zext_Word_to_i64 n)
+  tmp_Text_of_UInt64 (zext_Word_to_i64 n)
 };
 
