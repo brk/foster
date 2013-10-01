@@ -318,13 +318,35 @@ llvm::Value* getMaskedForShift(IRBuilder<>& b,
 }
 
 llvm::Value*
-createSqrt(IRBuilder<>& b, llvm::Value* v, const char* valname) {
+createIntrinsicCall(IRBuilder<>& b, llvm::Value* v,
+                    const char* valname, llvm::Intrinsic::ID id) {
   Type*  tys[] = { v->getType() };
   Module*    m = b.GetInsertBlock()->getParent()->getParent();
-  // We need to resolve the overloaded "type" of the sqrt intrinsic.
-  Value* sqrtv = llvm::Intrinsic::getDeclaration(m, llvm::Intrinsic::sqrt, tys);
+  Value* intrv = llvm::Intrinsic::getDeclaration(m, id, tys);
 
-  CallInst *CI = b.CreateCall(sqrtv, v, valname);
+  CallInst *CI = b.CreateCall(intrv, v, valname);
+  //b.SetInstDebugLocation(CI);
+  return CI;
+}
+
+llvm::Value*
+createCtlz(IRBuilder<>& b, llvm::Value* v, const char* valname) {
+  Type*  tys[] = { v->getType() };
+  Module*    m = b.GetInsertBlock()->getParent()->getParent();
+  Value* intrv = llvm::Intrinsic::getDeclaration(m, llvm::Intrinsic::ctlz, tys);
+  Value* is_zero_undef = b.getInt1(false);
+  CallInst *CI = b.CreateCall2(intrv, v, is_zero_undef, valname);
+  //b.SetInstDebugLocation(CI);
+  return CI;
+}
+
+
+llvm::Value*
+createFMulAdd(IRBuilder<>& b, llvm::Value* v1, llvm::Value* v2, llvm::Value* v3) {
+  Type*  tys[] = { v1->getType() };
+  Module*    m = b.GetInsertBlock()->getParent()->getParent();
+  Value* intrv = llvm::Intrinsic::getDeclaration(m, llvm::Intrinsic::fmuladd, tys);
+  CallInst *CI = b.CreateCall3(intrv, v1, v2, v3, "fmuladdtmp");
   //b.SetInstDebugLocation(CI);
   return CI;
 }
@@ -333,7 +355,7 @@ llvm::Value*
 CodegenPass::emitPrimitiveOperation(const std::string& op,
                                     IRBuilder<>& b,
                                     const std::vector<Value*>& args) {
-  Value* VL = args[0];
+  Value* VL = args.at(0);
        if (op == "negate") { return b.CreateNeg(VL, "negtmp", this->config.useNUW, this->config.useNSW); }
   else if (op == "bitnot") { return b.CreateNot(VL, "nottmp"); }
   else if (op == "sext_i64") { return b.CreateSExt(VL, b.getInt64Ty(), "sexti64tmp"); }
@@ -349,15 +371,19 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   else if (op == "trunc_i64"){ return b.CreateTrunc(VL, b.getInt64Ty(), "trunci64tmp"); }
   else if (op == "trunc_w0") { return b.CreateTrunc(VL, getWordTy(b),   "truncw0tmp"); }
   else if (op == "trunc_w1") { return b.CreateTrunc(VL, getWordX2Ty(b), "truncw1tmp"); }
-  else if (op == "fsqrt")    { return createSqrt(b, VL, "fsqrttmp"); }
+  else if (op == "ctlz")     { return createCtlz(b, VL, "ctlztmp"); }
+  else if (op == "ctpop")    { return createIntrinsicCall(b, VL, "ctpoptmp", llvm::Intrinsic::ctpop); }
+  else if (op == "fsqrt")    { return createIntrinsicCall(b, VL, "fsqrttmp", llvm::Intrinsic::sqrt); }
   else if (op == "fptosi_f64_i32") { return b.CreateFPToSI(VL, b.getInt32Ty(), "fptosi_f64_i32tmp"); }
   else if (op == "sitofp_f64")     { return b.CreateSIToFP(VL, b.getDoubleTy(), "sitofp_f64tmp"); }
 
-  Value* VR = args[1];
+  ASSERT(args.size() > 1) << "CodegenUtils.cpp missing implementation of " << op << "\n";
+
+  Value* VR = args.at(1);
 
   if (VL->getType() != VR->getType()) {
     b.GetInsertBlock()->getParent()->dump();
-    ASSERT(false) << "primop values did not have equal types\n"
+    ASSERT(false) << "primop values for " << op << " did not have equal types\n"
            << "VL: " << str(VL) << " :: " << str(VL->getType()) << "\n"
            << "VR: " << str(VR) << " :: " << str(VR->getType()) << "\n"
            << "32-bit: " << is32Bit() << "; " << str(getWordTy(b));
@@ -404,6 +430,11 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   else if (op == "bitshl")  { return b.CreateShl(VL,  getMaskedForShift(b, VL, VR), "shltmp", this->config.useNUW, this->config.useNSW); }
   else if (op == "bitlshr") { return b.CreateLShr(VL, getMaskedForShift(b, VL, VR), "lshrtmp"); }
   else if (op == "bitashr") { return b.CreateAShr(VL, getMaskedForShift(b, VL, VR), "ashrtmp"); }
+
+  ASSERT(args.size() > 2) << "CodegenUtils.cpp missing implementation of " << op << "\n";
+
+  Value* VT = args.at(2);
+       if (op == "fmuladd") { return createFMulAdd(b, VL, VR, VT); }
 
   ASSERT(false) << "unhandled op '" << op << "'";
   return NULL;

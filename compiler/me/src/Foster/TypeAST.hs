@@ -243,6 +243,9 @@ prettyOpName nm tystr =
     then nm ++ "-" ++ tystr  -- e.g. "bitand-Int32"
     else nm ++        tystr
 
+-- Note: we don't wrap LLVM's shift intrisics directly; we mask the shift
+-- value to avoid undefined values. For constant shift values, the mask will
+-- be trivially eliminated by LLVM.
 fixnumPrimitives bitsize =
   let iKK = PrimIntAST bitsize in
   let mkPrim nm ty = (prettyOpName nm (intSize bitsize), (ty, PrimOp nm iKK)) in
@@ -272,6 +275,8 @@ fixnumPrimitives bitsize =
   ,mkPrim "!="      $ mkFnType [iKK, iKK] [i1]
   ,mkPrim "negate"  $ mkFnType [iKK]      [iKK]
   ,mkPrim "bitnot"  $ mkFnType [iKK]      [iKK]
+  ,mkPrim "ctlz"    $ mkFnType [iKK]      [iKK]
+  ,mkPrim "ctpop"   $ mkFnType [iKK]      [iKK]
   ]
 
 -- For example, we'll have a function with external signature
@@ -291,6 +296,7 @@ flonumPrimitives tystr ty =
   ,mkPrim "=="      $ mkFnType [ty, ty] [i1]
   ,mkPrim "!="      $ mkFnType [ty, ty] [i1]
   ,mkPrim "sqrt"    $ mkFnType [ty]     [ty]
+  ,mkPrim "muladd"  $ mkFnType [ty, ty, ty] [ty]
   ]
 
 -- These primitive names are known to the interpreter and compiler backends.

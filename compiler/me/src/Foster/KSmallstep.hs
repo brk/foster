@@ -707,6 +707,9 @@ evalPrimitiveDoubleOp opName [SSFloat d1, SSFloat d2] =
           _ -> error $ "Smallstep.evalPrimitiveDoubleOp:"
                     ++ "Unknown primitive operation " ++ opName
 
+evalPrimitiveDoubleOp "fmuladd" [SSFloat d1, SSFloat d2, SSFloat d3] =
+    SSFloat (d1 * d2 + d3)
+
 evalPrimitiveDoubleOp opName args =
   error $ "Smallstep.evalPrimitiveDoubleOp " ++ opName ++ " " ++ show args
 
@@ -764,6 +767,16 @@ evalPrimitiveIntOp I8  "bitnot" [SSInt i] = SSInt $ modifyIntWith i (complement 
 evalPrimitiveIntOp I64 "bitnot" [SSInt i] = SSInt $ modifyIntWith i (complement :: Int64 -> Int64)
 evalPrimitiveIntOp (IWord 0) "bitnot" [SSInt i] = SSInt $ modifyIntWith i (complement :: IntVW0 -> IntVW0)
 
+evalPrimitiveIntOp I32       "ctpop" [SSInt i] = SSInt (ctpop i 32)
+evalPrimitiveIntOp I64       "ctpop" [SSInt i] = SSInt (ctpop i 64)
+evalPrimitiveIntOp I8        "ctpop" [SSInt i] = SSInt (ctpop i 8 )
+evalPrimitiveIntOp (IWord 0) "ctpop" [SSInt i] = SSInt (ctpop i 64)
+
+evalPrimitiveIntOp I32       "ctlz"  [SSInt i] = SSInt (ctlz i 32)
+evalPrimitiveIntOp I64       "ctlz"  [SSInt i] = SSInt (ctlz i 64)
+evalPrimitiveIntOp I8        "ctlz"  [SSInt i] = SSInt (ctlz i 8 )
+evalPrimitiveIntOp (IWord 0) "ctlz"  [SSInt i] = SSInt (ctlz i 64)
+
 -- Extension (on Integers) is a no-op.
 --evalPrimitiveIntOp _ "sext_i8"  [SSInt i] | i >= -128 && i <= 127 = SSInt i
 --evalPrimitiveIntOp _ "zext_i8"  [SSInt i] | i >= 0    && i <= 255 = SSInt i
@@ -787,6 +800,10 @@ evalPrimitiveIntOp size opName args =
   error $ "Smallstep.evalPrimitiveIntOp " ++ show size ++ " " ++ opName ++ " " ++ show args
 
 --------------------------------------------------------------------
+
+ctpop i n = fromIntegral $ length [x | x <- showBits n i , x == '1']
+
+ctlz  i n = fromIntegral $ length $ takeWhile (=='0') (showBits n i)
 
 trunc8  = fromInteger :: Integer -> Int8
 trunc32 = fromInteger :: Integer -> Int32
