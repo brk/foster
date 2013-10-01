@@ -11,7 +11,7 @@ import Control.Monad(liftM, forM_, forM, liftM, liftM2, when)
 
 import qualified Data.Text as T(Text, pack, unpack)
 import qualified Data.Map as Map(lookup, insert, elems, toList, null)
-import qualified Data.Set as Set(toList, fromList, intersection, null)
+import qualified Data.Set as Set(toList, fromList, intersection)
 import Data.IORef(newIORef,readIORef,writeIORef)
 import qualified Data.Graph as Graph(SCC(..), stronglyConnComp)
 
@@ -1449,7 +1449,9 @@ unify t1 t2 msg = do
   unify' 0 t1 t2 msg
 
 unify' !depth t1 t2 msg | depth == 512 =
-   error $ "unify hit depth 512 equating " ++ show t1 ++ " and " ++ show t2
+   error $ "unify hit depth 512 equating "
+        ++ show t1 ++ " and " ++ show t2 ++ "\n" ++ msg
+
 unify' !depth t1 t2 msg = do
   debugDoc $ green $ text $ "unify " ++ show t1 ++ " ?==? " ++ show t2 ++ " (" ++ msg ++ ")"
   case (t1, t2) of

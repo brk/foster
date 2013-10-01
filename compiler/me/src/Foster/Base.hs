@@ -592,6 +592,8 @@ instance Pretty t => Pretty (TypedId t)
 instance SourceRanged expr => Pretty (CompilesResult expr)
                                where pretty cr = text (show cr)
 
+instance SourceRanged (Fn r e t) where rangeOf fn = annotRange (fnAnnot fn)
+
 deriving instance (Show ty) => Show (DataType ty)
 deriving instance (Show ty) => Show (DataCtor ty)
 

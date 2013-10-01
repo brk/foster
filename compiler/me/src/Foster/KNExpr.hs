@@ -876,7 +876,7 @@ knLoopHeaders' expr = do
                           , fnVars  = dropUselessArgs mt (fnVars fn)
                           , fnBody  = (q $ fnBody fn)
                           , fnIsRec = YesRec
-                          , fnAnnot = ExprAnnot [] (annotRange $ fnAnnot fn) []
+                          , fnAnnot = ExprAnnot [] (rangeOf fn) []
                           } in
             -- TODO should we create another wrapper to maintain the invariant
             -- that the outermost fn bound to id is always non-recursive,

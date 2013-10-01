@@ -8,7 +8,6 @@
 module Foster.CloConv where
 
 import qualified Data.Text as T
-import qualified Data.List as List(and)
 import Data.Set(Set)
 import qualified Data.Set as Set(empty, singleton, union, unions, notMember,
                                                       size, fromList, toList)
@@ -153,47 +152,8 @@ closureConvertToplevel globalIds body = do
              -- variables, they can all be globalized as long as every use
              -- of their peers happens to be a direct call. So, we'll assume
              -- we can globalize, but enforce the side condition.
-             --
-             -- TODO the reason for the side condition is that coercing a
-             --      proc to a closure involves allocation, which we can skip
-             --      if we don't lambda lift. But we could take an alternate
-             --      approach: for each liftable proc, associate with it a
-             --      global-symbol trivial closure, allocated at startup time.
-             --      Then instead of an allocating coercion, we can just
-             --      reference the global variable instead.
              globalized' = Set.union globalized (Set.fromList ids)
-             gonnaLift   = null allUnliftables && noFirstClassUses fns
-             noFirstClassUses fns = List.and $ map onlySecondClassUses fns
-             onlySecondClassUses fn = let bbg = fnBody fn in
-                                      let allIds = foldGraphNodes collectBitcasts
-                                                           (bbgBody bbg) ids in
-                                        foldGraphNodes (checkUses allIds (bbgRetK bbg))
-                                                       (bbgBody bbg) True
-
-             checkUses :: [Ident] -> BlockId -> Insn e x -> Bool -> Bool
-             checkUses _      _    _   False = False
-             checkUses allIds retk insn True = case insn of
-                 ILabel {}                  -> True
-                 ILetVal id (ILBitcast _ v) -> id `elem` allIds || ok [v]
-                 ILetVal _ (ILCall _ _v vs) -> ok vs -- ignore v
-                 ILetVal _ l                -> ok (freeTypedIds l)
-                 ILetFuns _ fns             -> noFirstClassUses fns
-                 ILast (CFCont bid    vs)   -> bid /= retk || ok vs
-                 ILast (CFCall _ _ _v vs)   -> ok vs
-                 ILast (CFCase _ _)         -> True
-               where
-                 ok :: [MoVar] -> Bool
-                 ok vs =
-                    let usedFirstClass = [v | v <- vs, tidIdent v `elem` allIds] in
-                    if null usedFirstClass
-                       then True
-                       else trace ("ok:used first class: " ++ show usedFirstClass) False
-
-             -- Make sure we treat bitcasts of ids the same as the ids themselves.
-             collectBitcasts :: Insn e x -> [Ident] -> [Ident]
-             collectBitcasts insn ids = case insn of
-                 ILetVal id (ILBitcast _ v) | tidIdent v `elem` ids -> id:ids
-                 _ -> ids
+             gonnaLift   = null allUnliftables
          in
           let traced = if gonnaLift then id
                           else trace ("not gonna lift " ++ show ids ++

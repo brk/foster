@@ -1,5 +1,9 @@
 main = {
-  foo 5
+  x = foo 5;
+  x 5;
+
+  barf { n => print_i32 n };
+  barf x;
 };
 
 foo = { x : Int32 =>
@@ -11,6 +15,10 @@ bar = { x : Int32 =>
   expect_i32 x;
   r = (ref foo);
   ()
+};
+
+barf = { f : { Int32 => () } =>
+  f 0
 };
 
 /*
