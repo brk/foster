@@ -135,8 +135,8 @@ test-ord = {
 };
 
 test-int-primitives = {
-             2   |> expect_i32;
-  f64_to_i32 2.0 |> print_i32;
+              2   |> expect_i32;
+  f64-to-u32! 2.0 |> print_i32;
 
            3 |> expect_i32;
   1 +Int32 2 |> print_i32;

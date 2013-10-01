@@ -44,10 +44,10 @@ noinline_readInt32FromArrayInt8_offset = { arr => i =>
 };
 
 octet4ToInt32 = { hi : Int8 => m1 : Int8 => m2 : Int8 => lo : Int8 =>
-  (((primitive_zext_i8_to_i32 hi) `bitshl-Int32` 24)  `bitor-Int32`
-   ((primitive_zext_i8_to_i32 m1) `bitshl-Int32` 16)) `bitor-Int32`
-  (((primitive_zext_i8_to_i32 m2) `bitshl-Int32` 8)   `bitor-Int32`
-    (primitive_zext_i8_to_i32 lo))
+  (((zext_i8_to_i32 hi) `bitshl-Int32` 24)  `bitor-Int32`
+   ((zext_i8_to_i32 m1) `bitshl-Int32` 16)) `bitor-Int32`
+  (((zext_i8_to_i32 m2) `bitshl-Int32` 8)   `bitor-Int32`
+    (zext_i8_to_i32 lo))
 };
 
 noinline_readInt64FromArrayInt8 :: { Array Int8 => Int32 => Int64 };
@@ -65,7 +65,7 @@ noinline_readInt64FromArrayInt8 = { arr => i =>
 };
 
 mergeInt32 = { hi : Int32 => lo : Int32 =>
-  ((primitive_zext_i32_to_i64 hi) `bitshl-Int64` 32)  `bitor-Int64`
-   (primitive_zext_i32_to_i64 lo)
+  ((zext_i32_to_i64 hi) `bitshl-Int64` 32)  `bitor-Int64`
+   (zext_i32_to_i64 lo)
 };
 

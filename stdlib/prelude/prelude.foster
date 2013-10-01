@@ -551,3 +551,111 @@ tmp_Text_of_UWord = { n:Word =>
   tmp_Text_of_UInt64 (zext_Word_to_i64 n)
 };
 
+////
+
+f64-to-u32? = { a : Float64 =>
+  if a <f64 2147483647.5
+    then Some (f64-to-u32! a)
+    else None
+  end
+};
+
+f64-to-s32? = { a : Float64 =>
+  if both (a <f64 1073741820.5) (a >f64 -1073741820.5)
+    then Some (f64-to-s32! a)
+    else None
+  end
+};
+
+// Precondition: a < 2147483640.5
+f64-to-u32! = { a : Float64 => prim f64-to-u32-unsafe a };
+
+// Precondition: a < 1073741820.5 && a > -1073741820.5
+f64-to-s32! = { a : Float64 => prim f64-to-s32-unsafe a };
+
+////
+
+// Precondition: b != 0
+udiv!-Int32    = { a : Int32    => b : Int32    => prim udiv-unsafe-Int32 a b }; // :: Int32
+
+// Precondition: b != 0
+udiv!-Int64    = { a : Int64    => b : Int64    => prim udiv-unsafe-Int64 a b }; // :: Int64
+
+// Precondition: b != 0
+udiv!-Int8     = { a : Int8     => b : Int8     => prim udiv-unsafe-Int8 a b }; // :: Int8
+
+// Precondition: b != 0
+udiv!-Word     = { a : Word     => b : Word     => prim udiv-unsafe-Word a b }; // :: Word
+
+// Precondition: b != 0
+udiv!-WordX2   = { a : WordX2   => b : WordX2   => prim udiv-unsafe-WordX2 a b }; // :: WordX2
+
+// Precondition: b != 0
+urem!-Int32    = { a : Int32    => b : Int32    => prim urem-unsafe-Int32 a b }; // :: Int32
+
+// Precondition: b != 0
+urem!-Int64    = { a : Int64    => b : Int64    => prim urem-unsafe-Int64 a b }; // :: Int64
+
+// Precondition: b != 0
+urem!-Int8     = { a : Int8     => b : Int8     => prim urem-unsafe-Int8 a b }; // :: Int8
+
+// Precondition: b != 0
+urem!-Word     = { a : Word     => b : Word     => prim urem-unsafe-Word a b }; // :: Word
+
+// Precondition: b != 0
+urem!-WordX2   = { a : WordX2   => b : WordX2   => prim urem-unsafe-WordX2 a b }; // :: WordX2
+
+///
+
+// Precondition: b != 0
+sdiv!-Int32    = { a : Int32    => b : Int32    => prim udiv-unsafe-Int32 a b }; // :: Int32
+
+// Precondition: b != 0
+sdiv!-Int64    = { a : Int64    => b : Int64    => prim udiv-unsafe-Int64 a b }; // :: Int64
+
+// Precondition: b != 0
+sdiv!-Int8     = { a : Int8     => b : Int8     => prim udiv-unsafe-Int8 a b }; // :: Int8
+
+// Precondition: b != 0
+sdiv!-Word     = { a : Word     => b : Word     => prim udiv-unsafe-Word a b }; // :: Word
+
+// Precondition: b != 0
+sdiv!-WordX2   = { a : WordX2   => b : WordX2   => prim udiv-unsafe-WordX2 a b }; // :: WordX2
+
+// Precondition: b != 0
+srem!-Int32    = { a : Int32    => b : Int32    => prim urem-unsafe-Int32 a b }; // :: Int32
+
+// Precondition: b != 0
+srem!-Int64    = { a : Int64    => b : Int64    => prim urem-unsafe-Int64 a b }; // :: Int64
+
+// Precondition: b != 0
+srem!-Int8     = { a : Int8     => b : Int8     => prim urem-unsafe-Int8 a b }; // :: Int8
+
+// Precondition: b != 0
+srem!-Word     = { a : Word     => b : Word     => prim urem-unsafe-Word a b }; // :: Word
+
+// Precondition: b != 0
+srem!-WordX2   = { a : WordX2   => b : WordX2   => prim urem-unsafe-WordX2 a b }; // :: WordX2
+
+////
+
+urem-Int32  = { a : Int32  => b : Int32  => prim urem-unsafe-Int32  a b };
+urem-Int64  = { a : Int64  => b : Int64  => prim urem-unsafe-Int64  a b };
+urem-Int8   = { a : Int8   => b : Int8   => prim urem-unsafe-Int8   a b };
+urem-Word   = { a : Word   => b : Word   => prim urem-unsafe-Word   a b };
+urem-WordX2 = { a : WordX2 => b : WordX2 => prim urem-unsafe-WordX2 a b };
+udiv-Int32  = { a : Int32  => b : Int32  => prim udiv-unsafe-Int32  a b };
+udiv-Int64  = { a : Int64  => b : Int64  => prim udiv-unsafe-Int64  a b };
+udiv-Int8   = { a : Int8   => b : Int8   => prim udiv-unsafe-Int8   a b };
+udiv-Word   = { a : Word   => b : Word   => prim udiv-unsafe-Word   a b };
+udiv-WordX2 = { a : WordX2 => b : WordX2 => prim udiv-unsafe-WordX2 a b };
+srem-Int32  = { a : Int32  => b : Int32  => prim srem-unsafe-Int32  a b };
+srem-Int64  = { a : Int64  => b : Int64  => prim srem-unsafe-Int64  a b };
+srem-Int8   = { a : Int8   => b : Int8   => prim srem-unsafe-Int8   a b };
+srem-Word   = { a : Word   => b : Word   => prim srem-unsafe-Word   a b };
+srem-WordX2 = { a : WordX2 => b : WordX2 => prim srem-unsafe-WordX2 a b };
+sdiv-Int32  = { a : Int32  => b : Int32  => prim sdiv-unsafe-Int32  a b };
+sdiv-Int64  = { a : Int64  => b : Int64  => prim sdiv-unsafe-Int64  a b };
+sdiv-Int8   = { a : Int8   => b : Int8   => prim sdiv-unsafe-Int8   a b };
+sdiv-Word   = { a : Word   => b : Word   => prim sdiv-unsafe-Word   a b };
+sdiv-WordX2 = { a : WordX2 => b : WordX2 => prim sdiv-unsafe-WordX2 a b };

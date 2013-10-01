@@ -258,25 +258,25 @@ fixnumPrimitives bitsize =
   ,("<=S" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp "<=s" iKK))
   ,(">=S" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp ">=s" iKK))
   ] ++
-  [mkPrim "+"       $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "-"       $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "*"       $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "bitand"  $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "bitor"   $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "bitxor"  $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "bitshl"  $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "bitlshr" $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "bitashr" $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "srem"    $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "sdiv"    $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "urem"    $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "udiv"    $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "=="      $ mkFnType [iKK, iKK] [i1]
-  ,mkPrim "!="      $ mkFnType [iKK, iKK] [i1]
-  ,mkPrim "negate"  $ mkFnType [iKK]      [iKK]
-  ,mkPrim "bitnot"  $ mkFnType [iKK]      [iKK]
-  ,mkPrim "ctlz"    $ mkFnType [iKK]      [iKK]
-  ,mkPrim "ctpop"   $ mkFnType [iKK]      [iKK]
+  [mkPrim "+"           $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "-"           $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "*"           $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "bitand"      $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "bitor"       $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "bitxor"      $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "bitshl"      $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "bitlshr"     $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "bitashr"     $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "srem-unsafe" $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "sdiv-unsafe" $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "urem-unsafe" $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "udiv-unsafe" $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "=="          $ mkFnType [iKK, iKK] [i1]
+  ,mkPrim "!="          $ mkFnType [iKK, iKK] [i1]
+  ,mkPrim "negate"      $ mkFnType [iKK]      [iKK]
+  ,mkPrim "bitnot"      $ mkFnType [iKK]      [iKK]
+  ,mkPrim "ctlz"        $ mkFnType [iKK]      [iKK]
+  ,mkPrim "ctpop"       $ mkFnType [iKK]      [iKK]
   ]
 
 -- For example, we'll have a function with external signature
@@ -318,9 +318,13 @@ gFosterPrimOpsTable = Map.fromList $
   ,(,) "trunc_i64_to_Word"    $ (,) (mkFnType [i64] [iw0] ) $ PrimIntTrunc I64 (IWord 0)
   ,(,) "trunc_Word_to_i32"    $ (,) (mkFnType [iw0] [i32] ) $ PrimIntTrunc (IWord 0) I32
   ,(,) "trunc_WordX2_to_i32"  $ (,) (mkFnType [iw1] [i32] ) $ PrimIntTrunc (IWord 1) I32
-  ,(,) "trunc_WordX2_to_Word" $(,) (mkFnType [iw1] [iw0] ) $ PrimIntTrunc (IWord 1) (IWord 0)
-  ,(,) "f64_to_i32"    $(,) (mkFnType [f64] [i32]     ) $ PrimOp "fptosi_f64_i32" i32
-  ,(,) "i32_to_f64"    $(,) (mkFnType [i32] [f64]     ) $ PrimOp "sitofp_f64" i32
+  ,(,) "trunc_WordX2_to_Word" $ (,) (mkFnType [iw1] [iw0] ) $ PrimIntTrunc (IWord 1) (IWord 0)
+  ,(,) "f64-to-s32-unsafe"    $ (,) (mkFnType [f64] [i32] ) $ PrimOp "fptosi_f64_i32" i32
+  ,(,) "f64-to-u32-unsafe"    $ (,) (mkFnType [f64] [i32] ) $ PrimOp "fptoui_f64_i32" i32
+  ,(,) "f64-to-s64-unsafe"    $ (,) (mkFnType [f64] [i64] ) $ PrimOp "fptosi_f64_i64" i64
+  ,(,) "f64-to-u64-unsafe"    $ (,) (mkFnType [f64] [i64] ) $ PrimOp "fptoui_f64_i64" i64
+  ,(,) "s32-to-f64"    $(,) (mkFnType [i32] [f64]     ) $ PrimOp "sitofp_f64" i32
+  ,(,) "u32-to-f64"    $(,) (mkFnType [i32] [f64]     ) $ PrimOp "uitofp_f64" i32
   ] ++ fixnumPrimitives I64
     ++ fixnumPrimitives I32
     ++ fixnumPrimitives I8

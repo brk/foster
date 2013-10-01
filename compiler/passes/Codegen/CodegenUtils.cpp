@@ -375,7 +375,11 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   else if (op == "ctpop")    { return createIntrinsicCall(b, VL, "ctpoptmp", llvm::Intrinsic::ctpop); }
   else if (op == "fsqrt")    { return createIntrinsicCall(b, VL, "fsqrttmp", llvm::Intrinsic::sqrt); }
   else if (op == "fptosi_f64_i32") { return b.CreateFPToSI(VL, b.getInt32Ty(), "fptosi_f64_i32tmp"); }
+  else if (op == "fptoui_f64_i32") { return b.CreateFPToUI(VL, b.getInt32Ty(), "fptoui_f64_i32tmp"); }
+  else if (op == "fptosi_f64_i64") { return b.CreateFPToSI(VL, b.getInt64Ty(), "fptosi_f64_i64tmp"); }
+  else if (op == "fptoui_f64_i64") { return b.CreateFPToUI(VL, b.getInt64Ty(), "fptoui_f64_i64tmp"); }
   else if (op == "sitofp_f64")     { return b.CreateSIToFP(VL, b.getDoubleTy(), "sitofp_f64tmp"); }
+  else if (op == "uitofp_f64")     { return b.CreateUIToFP(VL, b.getDoubleTy(), "uitofp_f64tmp"); }
 
   ASSERT(args.size() > 1) << "CodegenUtils.cpp missing implementation of " << op << "\n";
 
@@ -394,40 +398,40 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
        if (op == "+") { return b.CreateAdd(VL, VR, "addtmp", this->config.useNUW, this->config.useNSW); }
   else if (op == "-") { return b.CreateSub(VL, VR, "subtmp", this->config.useNUW, this->config.useNSW); }
   else if (op == "*") { return b.CreateMul(VL, VR, "multmp", this->config.useNUW, this->config.useNSW); }
-  else if (op == "sdiv") { return b.CreateSDiv(VL, VR, "sdivtmp"); }
-  else if (op == "udiv") { return b.CreateUDiv(VL, VR, "udivtmp"); }
-  else if (op == "srem") { return b.CreateSRem(VL, VR, "sremtmp"); }
-  else if (op == "urem") { return b.CreateURem(VL, VR, "uremtmp"); }
-  else if (op == "frem") { return b.CreateFRem(VL, VR, "fremtmp"); }
-  else if (op == "f+") { return b.CreateFAdd(VL, VR, "faddtmp"); }
-  else if (op == "f-") { return b.CreateFSub(VL, VR, "fsubtmp"); }
-  else if (op == "fdiv"){return b.CreateFDiv(VL, VR, "fdivtmp"); }
-  else if (op == "f*") { return b.CreateFMul(VL, VR, "fmultmp"); }
+  else if (op == "sdiv-unsafe") { return b.CreateSDiv(VL, VR, "sdivtmp"); }
+  else if (op == "udiv-unsafe") { return b.CreateUDiv(VL, VR, "udivtmp"); }
+  else if (op == "srem-unsafe") { return b.CreateSRem(VL, VR, "sremtmp"); }
+  else if (op == "urem-unsafe") { return b.CreateURem(VL, VR, "uremtmp"); }
+  else if (op == "frem-unsafe") { return b.CreateFRem(VL, VR, "fremtmp"); }
+  else if (op == "f+"         ) { return b.CreateFAdd(VL, VR, "faddtmp"); }
+  else if (op == "f-"         ) { return b.CreateFSub(VL, VR, "fsubtmp"); }
+  else if (op == "fdiv"       ) { return b.CreateFDiv(VL, VR, "fdivtmp"); }
+  else if (op == "f*"         ) { return b.CreateFMul(VL, VR, "fmultmp"); }
 
-  else if (op ==  "<s"){ return b.CreateICmpSLT(VL, VR, "slttmp"); }
-  else if (op == "<=s"){ return b.CreateICmpSLE(VL, VR, "sletmp"); }
-  else if (op ==  ">s"){ return b.CreateICmpSGT(VL, VR, "sgttmp"); }
-  else if (op == ">=s"){ return b.CreateICmpSGE(VL, VR, "sgetmp"); }
-  else if (op ==  "<u"){ return b.CreateICmpULT(VL, VR, "ulttmp"); }
-  else if (op == "<=u"){ return b.CreateICmpULE(VL, VR, "uletmp"); }
-  else if (op ==  ">u"){ return b.CreateICmpUGT(VL, VR, "ugttmp"); }
-  else if (op == ">=u"){ return b.CreateICmpUGE(VL, VR, "ugetmp"); }
-  else if (op == "==") { return b.CreateICmpEQ(VL, VR, "eqtmp"); }
-  else if (op == "!=") { return b.CreateICmpNE(VL, VR, "netmp"); }
+  else if (op ==  "<s"        ) { return b.CreateICmpSLT(VL, VR, "slttmp"); }
+  else if (op == "<=s"        ) { return b.CreateICmpSLE(VL, VR, "sletmp"); }
+  else if (op ==  ">s"        ) { return b.CreateICmpSGT(VL, VR, "sgttmp"); }
+  else if (op == ">=s"        ) { return b.CreateICmpSGE(VL, VR, "sgetmp"); }
+  else if (op ==  "<u"        ) { return b.CreateICmpULT(VL, VR, "ulttmp"); }
+  else if (op == "<=u"        ) { return b.CreateICmpULE(VL, VR, "uletmp"); }
+  else if (op ==  ">u"        ) { return b.CreateICmpUGT(VL, VR, "ugttmp"); }
+  else if (op == ">=u"        ) { return b.CreateICmpUGE(VL, VR, "ugetmp"); }
+  else if (op == "=="         ) { return b.CreateICmpEQ(VL, VR, "eqtmp"); }
+  else if (op == "!="         ) { return b.CreateICmpNE(VL, VR, "netmp"); }
   // Use unordered (U) variants because we don't analyze for QNANs.
-  else if (op == "f<")  { return b.CreateFCmpULT(VL, VR, "fulttmp"); }
-  else if (op == "f<=") { return b.CreateFCmpULE(VL, VR, "fuletmp"); }
-  else if (op == "f>")  { return b.CreateFCmpUGT(VL, VR, "fugttmp"); }
-  else if (op == "f>=") { return b.CreateFCmpUGE(VL, VR, "fugetmp"); }
-  else if (op == "f==") { return b.CreateFCmpUEQ(VL, VR, "fueqtmp"); }
-  else if (op == "f!=") { return b.CreateFCmpUNE(VL, VR, "funetmp"); }
+  else if (op == "f<"         ) { return b.CreateFCmpULT(VL, VR, "fulttmp"); }
+  else if (op == "f<="        ) { return b.CreateFCmpULE(VL, VR, "fuletmp"); }
+  else if (op == "f>"         ) { return b.CreateFCmpUGT(VL, VR, "fugttmp"); }
+  else if (op == "f>="        ) { return b.CreateFCmpUGE(VL, VR, "fugetmp"); }
+  else if (op == "f=="        ) { return b.CreateFCmpUEQ(VL, VR, "fueqtmp"); }
+  else if (op == "f!="        ) { return b.CreateFCmpUNE(VL, VR, "funetmp"); }
   // TODO: ORD = no nans, UNO = either nans
 
-  else if (op == "bitand") { return b.CreateAnd(VL, VR, "bitandtmp"); }
-  else if (op == "bitor") {  return b.CreateOr( VL, VR, "bitortmp"); }
-  else if (op == "bitxor") { return b.CreateXor(VL, VR, "bitxortmp"); }
+  else if (op == "bitand" ) { return b.CreateAnd(VL, VR, "bitandtmp"); }
+  else if (op == "bitor"  ) {  return b.CreateOr( VL, VR, "bitortmp"); }
+  else if (op == "bitxor" ) { return b.CreateXor(VL, VR, "bitxortmp"); }
 
-  else if (op == "bitshl")  { return b.CreateShl(VL,  getMaskedForShift(b, VL, VR), "shltmp", this->config.useNUW, this->config.useNSW); }
+  else if (op == "bitshl" ) { return b.CreateShl(VL,  getMaskedForShift(b, VL, VR), "shltmp", this->config.useNUW, this->config.useNSW); }
   else if (op == "bitlshr") { return b.CreateLShr(VL, getMaskedForShift(b, VL, VR), "lshrtmp"); }
   else if (op == "bitashr") { return b.CreateAShr(VL, getMaskedForShift(b, VL, VR), "ashrtmp"); }
 

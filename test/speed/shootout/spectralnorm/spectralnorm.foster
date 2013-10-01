@@ -33,7 +33,7 @@ fA = { i : Int32 => j : Int32 =>
   let d = ((bitashr-Int32 ((i +Int32 j) *Int32 (i +Int32 j +Int32 1)) 1)
                                                   +Int32 i +Int32 1);
   in
-    div-f64 1.0 (i32_to_f64 d);
+    div-f64 1.0 (s32-to-f64 d);
   end
 };
 

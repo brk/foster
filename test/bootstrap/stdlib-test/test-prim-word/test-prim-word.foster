@@ -1,4 +1,4 @@
-//snafuinclude Word "prim-word";
+snafuinclude Prelude "prelude";
 
 // Types: Word, Word*2, Word/2
 //              WordX2  WordO2 (at C level)
