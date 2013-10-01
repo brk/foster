@@ -24,6 +24,11 @@ using namespace llvm;
 using namespace llvm::PatternMatch;
 using std::vector;
 
+// Inspired by the example seen in John Regehr's blog post
+//      http://blog.regehr.org/archives/959
+// which also happens to be useful in accelerating a variety
+// of bit-bashing code, such as siphash.
+
 STATISTIC(NumSpecialized, "Number of bitcast loads specialized");
 
 // Simple peephole optimizer to turn code like
