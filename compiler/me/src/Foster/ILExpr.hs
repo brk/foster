@@ -20,6 +20,7 @@ import Foster.TypeLL
 import Foster.Letable
 import Foster.GCRoots
 import Foster.Avails
+import Foster.Output(putDocLn)
 
 import Data.Map(Map)
 import Data.List(zipWith4, foldl' )
@@ -28,7 +29,7 @@ import Control.Monad.State(evalState, State, get, gets, modify, lift)
 import qualified Data.Set as Set(toList, map, union, unions, difference,
                                  member, Set, empty, size, fromList)
 import qualified Data.Map as Map(singleton, insertWith, lookup, empty, fromList,
-                                        adjust,  insert, union, findWithDefault)
+                                 adjust, insert, union, findWithDefault, toList)
 import qualified Data.Text as T(pack, unpack)
 import qualified Data.Graph as Graph(stronglyConnComp)
 import Data.Graph(SCC(..))
@@ -103,7 +104,8 @@ prepForCodegen m mayGCconstraints0 = do
     --lift $ putStrLn $ "maygc SCC input: " ++ show sccinput
     --lift $ putStrLn $ "maygc SCC: " ++ show scc
     let mayGCmap = resolveMayGC mayGCconstraints0 aprocs
-    lift $ putStrLn $ "resolved maygc: " ++ show mayGCmap
+    lift $ putDocLn $ text "resolved maygc:" <$>
+           indent 4 ( pretty (Map.toList $ mapAllFromList [(mgc,f) | (f,mgc) <- Map.toList mayGCmap]) )
 
     procs <- mapM (deHooplize mayGCmap) aprocs
     return $ (ILProgram procs decls dts (moduleILsourceLines m),
@@ -720,6 +722,8 @@ showILProgramStructure (ILProgram procdefs _decls _dtypes _lines) =
         <$> text (show blockid)
         <$> text (concatMap (\m -> "\t" ++ show m ++ "\n") mids)
         <$> text (show last ++ "\n^^^^^^^^^^^^^^\n")
+
+instance Pretty MayGC where pretty = text . show
 
 instance Show ILLast where
   show (ILRetVoid     ) = "ret void"

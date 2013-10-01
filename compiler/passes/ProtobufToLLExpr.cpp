@@ -57,10 +57,10 @@ CtorId parseCtorId(const pb::PbCtorId& c) { CtorId x;
   x.typeName = c.ctor_type_name();
   x.ctorName = c.ctor_ctor_name();
   x.ctorRepr = parseCtorRepr(c.ctor_repr());
-  EDiag() << "parsed ctor " << x.typeName               << "." << x.ctorName
-          << " ; repr "     << x.ctorRepr.isTransparent << ";"
-                            << x.ctorRepr.isNullary     << ";" << x.ctorRepr.smallId
-          << " ; tag = " << c.ctor_repr().tag() ;
+  //EDiag() << "parsed ctor " << x.typeName               << "." << x.ctorName
+  //        << " ; repr "     << x.ctorRepr.isTransparent << ";"
+  //                          << x.ctorRepr.isNullary     << ";" << x.ctorRepr.smallId
+  //        << " ; tag = " << c.ctor_repr().tag() ;
   return x;
 }
 
@@ -377,7 +377,7 @@ LLSwitch* parseSwitch(const pb::Terminator& b) {
   if (sc.ctor_by() == "MASK3") ctor_by = CTR_MaskWith3;
   if (sc.ctor_by() == "INDIR") ctor_by = CTR_OutOfLine;
   if (sc.ctor_by() == "VALUE") ctor_by = CTR_BareValue;
-  EDiag() << "switch on " << scrutinee->name << " with ctor by " << sc.ctor_by();
+  //EDiag() << "switch on " << scrutinee->name << " with ctor by " << sc.ctor_by();
 
   return new LLSwitch(scrutinee, ctors, ids, def, ctor_by);
 }

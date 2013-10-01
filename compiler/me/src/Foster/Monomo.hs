@@ -95,8 +95,9 @@ monoKN subst e =
                                  return $ KNLetRec      ids exprs' e'
   -- Here are the interesting bits:
   KNAppCtor       t c vs   -> do
+    -- Turn (ForAll [('a,KindAnySizeType)]. (TyConAppIL Maybe 'a:KindAnySizeType))
+    -- into                                   TyConApp "Maybe" [PtrTypeUnknown]
     let t'@(TyConApp dtname args) = qt t
-    liftIO $ putStrLn ("~~~~~~~ KNAppCtor turned " ++ show t ++ "\n into " ++ show (qt t))
     c' <- monoMarkDataType c dtname args
     return $ KNAppCtor t' c' (map qv vs)
 

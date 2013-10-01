@@ -233,7 +233,7 @@ std::map<std::string, llvm::Type*> gDeclaredSymbolTypes;
 
 llvm::Value* CodegenPass::lookupFunctionOrDie(const std::string&
                                                        fullyQualifiedSymbol) {
-  EDiag() << "looking up function " << fullyQualifiedSymbol;
+  //EDiag() << "looking up function " << fullyQualifiedSymbol;
   llvm::Function* f = mod->getFunction(fullyQualifiedSymbol);
   assertHaveFunctionNamed(f, fullyQualifiedSymbol, this);
   if (llvm::Type* expTy = gDeclaredSymbolTypes[fullyQualifiedSymbol]) {
@@ -414,7 +414,7 @@ void LLProc::codegenProc(CodegenPass* pass) {
   pass->addEntryBB(F);
   CodegenPass::ValueScope* scope = pass->newScope(this->getName());
 
-  EDiag() << "codegennign blocks for fn " << F->getName();
+  //EDiag() << "codegennign blocks for fn " << F->getName();
   this->codegenToFunction(pass, F);
   pass->popExistingScope(scope);
 }

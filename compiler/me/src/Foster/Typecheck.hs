@@ -804,7 +804,7 @@ tcRhoFn ctx f expTy = do
 -- {{{
 tcSigmaFn :: Context Sigma -> FnAST TypeAST -> Expected Sigma -> Tc (AnnExpr Sigma)
 tcSigmaFn ctx f expTyRaw = do
-  tcLift $ putStrLn $ "tcSigmaFn: nexpTyRaw is " ++ show expTyRaw
+  --tcLift $ putStrLn $ "tcSigmaFn: nexpTyRaw is " ++ show expTyRaw
   case (fnTyFormals f, expTyRaw) of
     ([], Check (ForAllAST exp_ktvs _)) ->
         -- Our function didn't have a forall, but its type annotation did.
@@ -1076,7 +1076,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
       EP_Int      r str   -> do (AnnLiteral _ ty (LitInt int))
                                          <- typecheckInt (ExprAnnot [] r []) str
                                                          (Check ctxTy)
-                                tcLift $ putDocLn $ text ("P_Int " ++ str) <+> pretty ctxTy
+                                --tcLift $ putDocLn $ text ("P_Int " ++ str) <+> pretty ctxTy
                                 return $ P_Atom $ P_Int r ty int
 
       EP_Ctor     r eps s -> do

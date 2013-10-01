@@ -889,7 +889,7 @@ runRebinds bbgp = do
       return (mkMiddle $ CCLetFuns ids clos' )
     d a (CCTupleStore vs v amr ) =
       return (mkMiddle $ CCTupleStore (map (s a) vs) (s a v) amr )
-    d _ insn@(CCRebindId {}) = trace ("Removing rebind node " ++ show (pretty insn)) return emptyGraph
+    d _ (CCRebindId {}) = return emptyGraph
     d a (CCGCLoad  v1 v2) =
       return (mkMiddle $ CCGCLoad (s a v1) (s a v2))
     d a (CCGCInit j v root0)     =
