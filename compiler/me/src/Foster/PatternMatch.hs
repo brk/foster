@@ -22,9 +22,9 @@ Straightforward implementation of pattern match compilation
 as laid out by Luc Maranget in his ML'08 paper
         Compiling Pattern Matching to Good Decision Trees
 
-For now, we do not enforce maximal sharing of decision subtrees,
-and use only the naive leftmost-outermost-first column selection
-heuristic.
+For now, we use only the naive leftmost-outermost-first
+column selection heuristic. Subtree sharing is implemented
+in CloConv.hs @ compileDecisionTree.
 -}
 
 data DecisionTree a t

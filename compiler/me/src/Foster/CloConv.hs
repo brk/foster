@@ -109,7 +109,7 @@ closureConvertAndLift dataSigs globalIds u m =
     -- We lambda lift top level functions, since we know a priori
     -- that they don't have any "real" free vars.
     -- Lambda lifting then closure converts any nested functions.
-    let initialState = ILMState u Map.empty Map.empty dataSigs in
+    let initialState = ILMState u Map.empty Map.empty Map.empty dataSigs in
     let (ccmain, st) = runState (closureConvertToplevel globalIds $ moduleILbody m)
                                                                  initialState in
     ModuleIL {
@@ -243,7 +243,7 @@ closureConvertBlocks bbg = do
            let _unusedPats = [pat | (CaseArm pat bid _ _ _) <- arms
                             , Set.notMember bid usedBlocks]
            -- TODO print warning if any unused patterns
-           (BlockFin blocks id) <- compileDecisionTree a dt
+           (BlockFin blocks id _) <- compileDecisionTree a dt
            return $ (mkLast $ CCLast $ CCCont id []) |*><*| blocks
           where
             -- The decision tree we get from pattern-match compilation may
@@ -277,10 +277,20 @@ closureConvertLetFuns ids fns = do
 
 data BlockFin = BlockFin BlockG           -- new blocks generated
                          BlockId          -- entry block for decision tree logic
+                         DT_Ord           -- subtree to use for hash-consing
 
 bogusVar (id, _) = TypedId (PrimInt I1) id
 
 -- ||||||||||||||||||||||||| Decision Tree Compilation ||||||||||{{{
+
+-- A specialized variant of DecisionTree, for easier hash-consing.
+data DT_Ord =
+               DTO_Leaf BlockId [(TypedId MonoType, Occurrence MonoType)]
+            |  DTO_Switch (Occurrence MonoType)
+                          [((CtorId, CtorRepr), DT_Ord)]
+                          (Maybe DT_Ord)
+               deriving (Eq, Ord)
+
 compileDecisionTree :: MoVar -> DecisionTree BlockId MonoType -> ILM BlockFin
 -- Translate an abstract decision tree to ILBlocks, also returning
 -- the label of the entry block into the decision tree logic.
@@ -293,7 +303,7 @@ compileDecisionTree _scrutinee (DT_Fail ranges) =
             ++ "\n" ++ concatMap highlightFirstLine ranges
 
 compileDecisionTree _scrutinee (DT_Leaf armid []) = do
-        return $ BlockFin emptyClosedGraph armid
+        return $ BlockFin emptyClosedGraph armid (DTO_Leaf armid [])
 
 -- Because of the way decision trees can be copied, we can end up with
 -- multiple DT_Leaf nodes for the same armid. Since we don't want to emit
@@ -303,28 +313,36 @@ compileDecisionTree _scrutinee (DT_Leaf armid []) = do
 compileDecisionTree scrutinee (DT_Leaf armid varoccs) = do
         wrappers <- gets ilmBlockWrappers
         case Map.lookup armid wrappers of
-           Just id -> do return $ BlockFin emptyClosedGraph id
+           Just id -> do return $ BlockFin emptyClosedGraph id (DTO_Leaf armid varoccs)
            Nothing -> do let binders = map (emitOccurrence scrutinee) varoccs
                          (id, block) <- ilmNewBlock ".leaf" binders (CCLast $ CCCont armid []) -- TODO
                          ilmAddWrapper armid id
-                         return $ BlockFin (blockGraph block) id
+                         return $ BlockFin block id (DTO_Leaf armid varoccs)
 
 compileDecisionTree scrutinee (DT_Switch occ subtrees maybeDefaultDt) = do
-        let splitBlockFin (BlockFin blocks id) = (blocks, id)
-        let (ctors, subdts) = unzip subtrees
-        fins  <- mapM (compileDecisionTree scrutinee) subdts
-        (dblockss, maybeDefaultId) <- case maybeDefaultDt of
-           Nothing -> do return (emptyClosedGraph, Nothing)
-           Just dt -> do (BlockFin dblockss did) <- compileDecisionTree scrutinee dt
-                         return (dblockss, Just did)
-        let (blockss, ids) = unzip (map splitBlockFin fins)
-        scrut_occ_id <- ilmFresh (T.pack "scrut.occ")
-        let scrut_occ = TypedId (occType scrutinee occ) scrut_occ_id
-        (id, block) <- ilmNewBlock ".dt.switch"
-                                  [emitOccurrence scrutinee (scrut_occ, occ)]
-                                  (CCLast $ mkSwitch (llv scrut_occ) (zip ctors ids) maybeDefaultId)
-        let catClosedGraphs = foldr (|*><*|) emptyClosedGraph
-        return $ BlockFin (blockGraph block |*><*| catClosedGraphs blockss |*><*| dblockss) id
+    let splitBlockFin (BlockFin blocks id dto) = (blocks, id, dto)
+
+    let (ctors, subdts) = unzip subtrees
+    fins  <- mapM (compileDecisionTree scrutinee) subdts
+    let (blockss, ids, subtrees' ) = unzip3 (map splitBlockFin fins)
+    (dblockss, maybeDefaultId, maybeDefaultDt' ) <- case maybeDefaultDt of
+       Nothing -> do return (emptyClosedGraph, Nothing, Nothing)
+       Just dt -> do (BlockFin dblockss did dto) <- compileDecisionTree scrutinee dt
+                     return (dblockss, Just did, Just dto)
+    let dto = DTO_Switch occ (zip ctors subtrees' ) maybeDefaultDt'
+    (id, blockg) <- do
+       cached <- gets ilmDecisionTrees
+       case Map.lookup dto cached of
+         Just id -> do return (id, emptyClosedGraph)
+         Nothing -> do scrut_occ_id <- ilmFresh (T.pack "scrut.occ")
+                       let scrut_occ = TypedId (occType scrutinee occ) scrut_occ_id
+                       (id, blockg) <- ilmNewBlock ".dt.switch"
+                         [emitOccurrence scrutinee (scrut_occ, occ)]
+                         (CCLast $ mkSwitch (llv scrut_occ) (zip ctors ids) maybeDefaultId)
+                       ilmAddDecisionTree dto id
+                       return (id, blockg)
+    let catClosedGraphs = foldr (|*><*|) emptyClosedGraph
+    return $ BlockFin (blockg |*><*| catClosedGraphs blockss |*><*| dblockss) id dto
 
 llOcc occ = map (\(i,c) -> (i, fmap monoToLL c)) occ
 
@@ -479,6 +497,7 @@ mkSwitch v    arms    def     = CCCase v arms def
 data ILMState = ILMState {
     ilmUniq          :: Uniq
   , ilmBlockWrappers :: Map BlockId BlockId          -- read-write
+  , ilmDecisionTrees :: Map DT_Ord  BlockId          -- read-write
   , ilmProcs         :: Map Ident   CCProc           -- read-write
   , ilmCtors         :: DataTypeSigs                 -- read-only per-program
 }
@@ -494,10 +513,14 @@ ilmFresh :: T.Text -> ILM Ident
 ilmFresh t = do u <- ilmNewUniq
                 return (Ident t u)
 
-ilmNewBlock :: String -> [Insn' O O] -> Insn' O C -> ILM (BlockId, Block')
+ilmNewBlock :: String -> [Insn' O O] -> Insn' O C -> ILM (BlockId, BlockG)
 ilmNewBlock s mids last = do u <- freshLabel
                              let id = (s, u)
-                             return $ (id, mkBlock' (id,[]) mids last)
+                             return $ (id, mkBlockG (id,[]) mids last)
+
+ilmAddDecisionTree dto id = do old <- get
+                               put old { ilmDecisionTrees = Map.insert dto id
+                                        (ilmDecisionTrees old) }
 
 ilmAddWrapper armid id = do old <- get
                             put (old { ilmBlockWrappers = Map.insert armid id

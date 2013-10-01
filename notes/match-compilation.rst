@@ -697,6 +697,10 @@ which illustrates the left-to-right nature of the occurrance checking:
 
 .. image:: t1a.dot.png
 
+With sharing of decision subtrees, the control flow graph is simplified:
+
+.. image:: t1b.dot.png
+
 LLVM
 """"
 
