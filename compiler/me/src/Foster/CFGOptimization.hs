@@ -551,5 +551,3 @@ collectMayGCConstraints_CFG bbg fnid = let (bid,_) = bbgEntry bbg in
                                 (maygc, Set.insert id indirs)) fnid
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-instance Pretty (Set Ident) where pretty s = list $ map pretty (Set.toList s)
-

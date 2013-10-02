@@ -614,7 +614,3 @@ dumpPrimitive (name, ((FnTypeAST args ret _ _), _primop)) = do
 
 dumpPrimitive (name, (_ty, _primop)) = error $ "Can't dump primitive " ++ name ++ " yet."
 
-whenDumpIR :: String -> IO () -> Compiled ()
-whenDumpIR ir action = do flags <- gets ccFlagVals
-                          let cond = getDumpIRFlag ir flags
-                          liftIO $ when cond action

@@ -88,6 +88,8 @@ data ILLast = ILRetVoid
 --            since otherwise we have to account for tuple stores not being "real" uses.
 --          * but maybe after cfg simplification...
 
+instance Pretty (Set.Set Ident) where pretty s = text "{" <> list (map pretty (Set.toList s)) <> text "}"
+
 prepForCodegen :: ModuleIL CCBody TypeLL -> MayGCConstraints -> Compiled (ILProgram, [Proc BasicBlockGraph' ])
 prepForCodegen m mayGCconstraints0 = do
     let decls = map (\(s,t) -> LLExternDecl s t) (moduleILdecls m)
@@ -96,16 +98,12 @@ prepForCodegen m mayGCconstraints0 = do
     combined <- mapM explicateProc hprocs
     let (aprocs, preallocprocs) = unzip combined
 
-    --let sccinput = [ (procIdent p, procIdent p, Set.toList s)
-    --            | p <- aprocs, (m,s) <- maybeToList $
-    --                                        Map.lookup (procIdent p) mayGCconstraints0
-    --          ]
-    --let scc = Graph.stronglyConnComp sccinput
-    --lift $ putStrLn $ "maygc SCC input: " ++ show sccinput
-    --lift $ putStrLn $ "maygc SCC: " ++ show scc
     let mayGCmap = resolveMayGC mayGCconstraints0 aprocs
-    lift $ putDocLn $ text "resolved maygc:" <$>
-           indent 4 ( pretty (Map.toList $ mapAllFromList [(mgc,f) | (f,mgc) <- Map.toList mayGCmap]) )
+
+    whenDumpIR "maygc" $ do
+      putDocLn $ text "resolved maygc:" <$>
+         indent 4 ( pretty (Map.toList $ mapAllFromList
+                                   [(mgc,f) | (f,mgc) <- Map.toList mayGCmap]) )
 
     procs <- mapM (deHooplize mayGCmap) aprocs
     return $ (ILProgram procs decls dts (moduleILsourceLines m),
@@ -257,14 +255,24 @@ makeClosureAllocationExplicit ids clos = do
                     ++ concat clo_tuplestores ++ env_tuplestores
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+-- MayGCConstraints essentially two disjoint maps, merged into one.
+-- There are functions which are definitely MayGC, and functions which
+-- are of unknown GC-status, along with the functions they call.
+-- Resolving the constraints means propagating the known-MayGC values
+-- up through the call graph. Any function which does not get thusly
+-- tainted can be assumed to not GC.
+
 resolveMayGC :: MayGCConstraints -> [ Proc BasicBlockGraph' ] -> Map Ident MayGC
 resolveMayGC constraints procs =
+  -- Compute the strongly-connected components of the MayGC constraint graph;
+  -- nodes are (proc, maygc) pairs, and edges are from the MayGCConstraints map.
   let scc = Graph.stronglyConnComp [ ((p,m), procIdent p, Set.toList s)
                 | p <- procs, (m,s) <- maybeToList $
                                             Map.lookup (procIdent p) constraints
             ] in
+  -- Traverse the SCCs, bottom up, propagating constraints.
   foldl' go Map.empty scc
-    where go :: (Map Ident MayGC -> SCC (Proc BasicBlockGraph' , MayGC) -> MayGCMap)
+    where go :: (MayGCMap -> SCC (Proc BasicBlockGraph' , MayGC) -> MayGCMap)
           go m (AcyclicSCC (p,mgc)) = let m' = collectMayGCConstraints_Proc p $
                                                 (Map.insert (procIdent p) mgc m)
                                       in Map.adjust unknownMeansNoGC (procIdent p) m'

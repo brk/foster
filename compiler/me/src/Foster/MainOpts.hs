@@ -6,8 +6,6 @@
 
 module Foster.MainOpts where
 
-import Foster.Config(Flag(..))
-
 import System.Console.GetOpt
 
 options :: [OptDescr Flag]
@@ -27,13 +25,6 @@ options =
                                 (ReqArg InlineSize "SIZE")"size counter value for inlining"
  ]
 
-parseOpts :: [String] -> IO ([Flag], [String])
-parseOpts argv =
-  case getOpt Permute options argv of
-    (o,n,[]  ) -> return (o,n)
-    (_,_,errs) -> ioError (userError (concat errs ++ usageInfo header options))
-  where header = "Usage: me [OPTION...] files..."
-
 -- Accessors to query the result of parsing options.
 getInterpretFlag (flags, _) = foldr (\f a -> case f of Interpret d -> Just d  ; _ -> a) Nothing flags
 getProgArgs      (flags, _) = foldr (\f a -> case f of ProgArg arg -> arg:a   ; _ -> a) []      flags
@@ -45,3 +36,18 @@ getCtorOpt       (flags, _) = (not $ NoCtorOpt `elem` flags)
 getInlining      (flags, _) = (not $ NoInline  `elem` flags) && (Inline  `elem` flags)
 getInliningDonate(flags, _) = (not $ NoDonate  `elem` flags)
 getInliningSize  (flags, _) = foldr (\f a -> case f of InlineSize s -> Just (read s :: Int) ; _ -> a) Nothing flags
+
+
+data Flag = Interpret String
+          | DumpIR    String
+          | DumpFn    String
+          | ProgArg   String
+          | Verbose
+          | DumpPrims
+          | NoCtorOpt
+          | NoInline
+          | Inline
+          | NoDonate
+          | InlineSize String
+          deriving Eq
+

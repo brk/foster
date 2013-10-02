@@ -7,9 +7,13 @@
 module Foster.Config where
 
 import Foster.Base(Uniq, Ident(..))
+import Foster.MainOpts
+
 import Data.IORef(IORef, modifyIORef, readIORef)
 import Control.Monad.State(StateT, gets, when, liftIO)
 import qualified Data.Text as T(Text)
+
+import System.Console.GetOpt
 
 type Compiled = StateT CompilerContext IO
 data CompilerContext = CompilerContext {
@@ -31,15 +35,16 @@ ccFreshId txt = do u <- ccUniq
 ccWhen :: (CompilerContext -> Bool) -> IO () -> Compiled ()
 ccWhen getter action = do cond <- gets getter ; liftIO $ when cond action
 
-data Flag = Interpret String
-          | DumpIR    String
-          | DumpFn    String
-          | ProgArg   String
-          | Verbose
-          | DumpPrims
-          | NoCtorOpt
-          | NoInline
-          | Inline
-          | NoDonate
-          | InlineSize String
-          deriving Eq
+whenDumpIR :: String -> IO () -> Compiled ()
+whenDumpIR ir action = do flags <- gets ccFlagVals
+                          let cond = getDumpIRFlag ir flags
+                          liftIO $ when cond action
+
+parseOpts :: [String] -> IO ([Flag], [String])
+parseOpts argv =
+  case getOpt Permute options argv of
+    (o,n,[]  ) -> return (o,n)
+    (_,_,errs) -> ioError (userError (concat errs ++ usageInfo header options))
+  where header = "Usage: me [OPTION...] files..."
+
+

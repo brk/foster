@@ -17,7 +17,12 @@ Once the first-time steps are done:
 $ make        # Recompile any updated files.
 $ ctest       # Run tests in mostly-quiet mode; test details will not be shown
 $ ctest -V    # Run tests in verbose mode; output from tests will be printed.
-$ ctest -V -R unittest      # Run only unit tests ("unittest" can be any regex)
+
+I usually run ``ctest -V`` to get the command line to run the Python test script.
+After running all the tests, you can look for trace messages from the middle-end
+with a command like this:
+
+$ cat test-tmpdir/*/compile.log.txt | grep '...' | sort | uniq
 
 ============================= Installation =================================
 Paths:
