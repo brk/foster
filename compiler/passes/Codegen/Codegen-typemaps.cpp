@@ -22,6 +22,7 @@
 
 using namespace llvm;
 
+using foster::DDiag;
 using foster::EDiag;
 using foster::builder;
 using foster::ParsingContext;
@@ -307,7 +308,7 @@ void registerStructType(StructTypeAST* structty,
 
   std::string name = ParsingContext::freshName(desiredName);
   //mod->addTypeName(name, ty);
-  EDiag() << "TODO: registered type " << name << " = " << str(ty) << "; ctor id " << ctorRepr.smallId;
+  DDiag() << "TODO: registered type " << name << " = " << str(ty) << "; ctor id " << ctorRepr.smallId;
   emitTypeMap(structty, ty, name, NotArray, ctorRepr, mod, std::vector<int>());
 }
 

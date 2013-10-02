@@ -51,7 +51,7 @@ noinline_foo2 = { i : Int32 =>
 
 noinline_foo3 = { i : Int32 =>
   case (if i <SInt32 0 then (0 -Int32 i, True)
-                      else (         i,False))
+                       else (         i,False) end)
    of (x, b) -> IntInf (natFromInt32 x) b
   end
 };

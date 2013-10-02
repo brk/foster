@@ -35,6 +35,7 @@
 using std::string;
 
 using foster::EDiag;
+using foster::DDiag;
 using foster::show;
 using foster::ParsingContext;
 
@@ -221,7 +222,7 @@ void display_pTree(pTree t, int nspaces) {
 ////////////////////////////////////////////////////////////////////
 
 const char* getDefaultCallingConvParse() {
-  //foster::EDiag() << "getDefaultCallingConvParse()";
+  //foster::DDiag() << "getDefaultCallingConvParse()";
   return foster::kDefaultFnLiteralCallingConvention;
 }
 
@@ -617,7 +618,7 @@ Pattern* parsePatternAtom(pTree t) {
   if ((token == PHRASE)
     || (token == TERM)) { ASSERT(false); }
 
-    if (token == CTOR ) { EDiag() << "Ctor text: " << textOfVar(child(t, 0)); return new CtorPattern(rangeOf(t), textOfVar(child(t, 0)), noPatterns()); }
+    if (token == CTOR ) { return new CtorPattern(rangeOf(t), textOfVar(child(t, 0)), noPatterns()); }
   if (token == WILDCARD) { return new WildcardPattern(rangeOf(t)); }
   if (token == TUPLE)    { return parseTuplePattern(t); }
   if (token == TERMNAME) { return new LiteralPattern(rangeOf(t), LiteralPattern::LP_VAR, parseTermVar(t)); }
@@ -983,7 +984,7 @@ ModuleAST* parseTopLevel(pTree root_tree, std::string moduleName,
               << "Unexpected top-level element with token ID " << token;
       //display_pTree(c, 8);
       //display_pTree(root_tree, 4);
-      EDiag() << show(rangeOf(c));
+      DDiag() << show(rangeOf(c));
     }
   }
   return new ModuleAST(decls, defns, datas, moduleName, hash);

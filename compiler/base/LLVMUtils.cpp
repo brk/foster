@@ -73,7 +73,7 @@ validateFileOrDir(const std::string& pathstr,
   llvm::sys::PathWithStatus path(pathstr);
 
   if (path.empty()) {
-    EDiag() << "Error: need an " << inp << " filename!";
+    EDiag() << "need an " << inp << " filename!";
     exit(1);
   }
 
@@ -92,9 +92,9 @@ validateFileOrDir(const std::string& pathstr,
 
   if (status->isDir != want_dir) {
     if (want_dir) {
-      EDiag() << "Error: " << inp << " must be a directory, not a file!";
+      EDiag() << inp << " must be a directory, not a file!";
     } else {
-      EDiag() << "Error: " << inp << " must be a file, not a directory!";
+      EDiag() << inp << " must be a file, not a directory!";
     }
     exit(1);
   }
@@ -163,7 +163,7 @@ void dumpModuleToFile(llvm::Module* mod, const std::string& filename) {
     CommentWriter cw;
     mod->print(LLpreASM, &cw);
   } else {
-    foster::EDiag() << "Error dumping module to " << filename << "\n"
+    foster::EDiag() << "when dumping module to " << filename << "\n"
                     << errInfo << "\n";
     exit(1);
   }
@@ -175,7 +175,7 @@ void dumpModuleToBitcode(llvm::Module* mod, const std::string& filename) {
 
   raw_fd_ostream out(filename.c_str(), errInfo, raw_fd_ostream::F_Binary);
   if (!errInfo.empty()) {
-    foster::EDiag() << "Error when preparing to write bitcode to " << filename
+    foster::EDiag() << "when preparing to write bitcode to " << filename
         << "\n" << errInfo;
     exit(1);
   }

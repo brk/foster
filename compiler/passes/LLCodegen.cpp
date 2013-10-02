@@ -33,6 +33,7 @@ using llvm::dyn_cast;
 
 using foster::builder;
 using foster::EDiag;
+using foster::DDiag;
 
 using std::vector;
 
@@ -233,7 +234,7 @@ std::map<std::string, llvm::Type*> gDeclaredSymbolTypes;
 
 llvm::Value* CodegenPass::lookupFunctionOrDie(const std::string&
                                                        fullyQualifiedSymbol) {
-  //EDiag() << "looking up function " << fullyQualifiedSymbol;
+  //DDiag() << "looking up function " << fullyQualifiedSymbol;
   llvm::Function* f = mod->getFunction(fullyQualifiedSymbol);
   assertHaveFunctionNamed(f, fullyQualifiedSymbol, this);
   if (llvm::Type* expTy = gDeclaredSymbolTypes[fullyQualifiedSymbol]) {
@@ -414,7 +415,7 @@ void LLProc::codegenProc(CodegenPass* pass) {
   pass->addEntryBB(F);
   CodegenPass::ValueScope* scope = pass->newScope(this->getName());
 
-  //EDiag() << "codegennign blocks for fn " << F->getName();
+  //DDiag() << "codegennign blocks for fn " << F->getName();
   this->codegenToFunction(pass, F);
   pass->popExistingScope(scope);
 }
@@ -979,7 +980,7 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
 
   Value* heapmem; Value* _len;
   if (tryBindArray(heap_arr, /*out*/ heapmem, /*out*/ _len)) {
-    EDiag() << "memcpying from global to heap";
+    DDiag() << "memcpying from global to heap";
     // Memcpy from global to heap.
     //
 
@@ -1099,7 +1100,7 @@ bool isPointerToUnknown(Type* ty) {
 }
 
 bool matchesExceptForUnknownPointers(Type* aty, Type* ety) {
-  //EDiag() << "matchesExceptForUnknownPointers ? " << str(aty) << " =?= " << str(ety);
+  //DDiag() << "matchesExceptForUnknownPointers ? " << str(aty) << " =?= " << str(ety);
   if (aty == ety) return true;
   if (aty->isPointerTy() && ety->isPointerTy()) {
     if (isPointerToUnknown(ety)) { return true; }
@@ -1125,7 +1126,7 @@ llvm::Value* emitFnArgCoercions(llvm::Value* argV, llvm::Type* expectedType) {
   // of the environments of mutually recursive closures.
   if (  argV->getType() != expectedType
     &&  argV->getType() == getGenericClosureEnvType()->getLLVMType()) {
-    EDiag() << "emitting bitcast gen2spec (exp: " << str(expectedType)
+    DDiag() << "emitting bitcast gen2spec (exp: " << str(expectedType)
             << "); (actual: " << str(argV->getType()) << ")";
     argV = emitBitcast(argV, expectedType, "gen2spec");
   }
@@ -1133,7 +1134,7 @@ llvm::Value* emitFnArgCoercions(llvm::Value* argV, llvm::Type* expectedType) {
   // This occurs in polymorphic code.
   if ((argV->getType() != expectedType)
       && matchesExceptForUnknownPointers(argV->getType(), expectedType)) {
-    EDiag() << "matched " << str(argV->getType()) << " to " << str(expectedType);
+    DDiag() << "matched " << str(argV->getType()) << " to " << str(expectedType);
     argV = emitBitcast(argV, expectedType, "spec2gen");
   }
 
