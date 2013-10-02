@@ -44,36 +44,44 @@ extern std::map<std::string, llvm::Type*> gDeclaredSymbolTypes;
 
 using namespace llvm;
 
+static cl::OptionCategory FosterOptCat("Foster-specific Options", "");
+
 static cl::opt<string>
-optInputPath(cl::Positional, cl::desc("<input file>"));
+optInputPath(cl::Positional, cl::desc("<input file>"), cl::cat(FosterOptCat));
 
 // Given -o foo, fosterlower will write foo.preopt.bc
 static cl::opt<string>
 optOutputName("o",
-  cl::desc("[foster] Base name of output file"),
-  cl::init("out"));
+  cl::desc("Base name of output file"),
+  cl::init("out"),
+  cl::cat(FosterOptCat));
 
 static cl::opt<string>
 optOutdirName("outdir",
-  cl::desc("[foster] Output directory for output and dump files"),
-  cl::init("fc-output"));
+  cl::desc("Output directory for output and dump files"),
+  cl::init("fc-output"),
+  cl::cat(FosterOptCat));
 
 static cl::opt<string>
 optBitcodeLibsDir("bitcodelibs",
-  cl::desc("[foster] Path to _bitcodelibs_ directory"),
-  cl::init("_bitcodelibs_"));
+  cl::desc("Path to _bitcodelibs_ directory"),
+  cl::init("_bitcodelibs_"),
+  cl::cat(FosterOptCat));
 
 static cl::opt<bool>
 optEmitDebugInfo("g",
-  cl::desc("[foster] Emit debug information in generated LLVM IR"));
+  cl::desc("Emit debug information in generated LLVM IR"),
+  cl::cat(FosterOptCat));
 
 static cl::opt<bool>
 optTrackAllocSites("gc-track-alloc-sites",
-  cl::desc("[foster] Inform the GC of which program locations are allocating"));
+  cl::desc("Inform the GC of which program locations are allocating"),
+  cl::cat(FosterOptCat));
 
 static cl::opt<bool>
 optDontKillDeadSlots("dont-kill-dead-slots",
-  cl::desc("[foster] Disable nulling-out of statically dead GC root slots"));
+  cl::desc("Disable nulling-out of statically dead GC root slots"),
+  cl::cat(FosterOptCat));
 
 // Note: bootstrap/testcases/lifetime-no-inline-crash fails when run thusly:
 //   ./gotest.sh bootstrap/testcases/lifetime-no-inline-crash -I ../stdlib --me-arg=--no-inline --optimize=O2 --asm --be-arg=--enable-lifetime-info
@@ -90,42 +98,53 @@ optDontKillDeadSlots("dont-kill-dead-slots",
 // generated markers to emit explicit stores for killing dead stack slots.
 static cl::opt<bool>
 optEnableLifetimeInfo("enable-lifetime-info",
-  cl::desc("[foster] Enable lifetime info for GC roots"));
+  cl::desc("Enable lifetime info for GC roots"),
+  cl::cat(FosterOptCat));
 
 static cl::opt<bool>
 optDisableAllArrayBoundsChecks("unsafe-disable-array-bounds-checks",
-  cl::desc("[foster] Unsafely omit array bounds checking"));
+  cl::desc("Unsafely omit array bounds checking"),
+  cl::cat(FosterOptCat));
+
 static cl::opt<bool>
 optForceNUW("unsafe-use-nuw",
-  cl::desc("[foster] Forcibly tag all relevant LLVM instructions with nuw"));
+  cl::desc("Forcibly tag all relevant LLVM instructions with nuw"),
+  cl::cat(FosterOptCat));
 
 static cl::opt<bool>
 optForceNSW("unsafe-use-nsw",
-  cl::desc("[foster] Forcibly tag all relevant LLVM instructions with nsw"));
+  cl::desc("Forcibly tag all relevant LLVM instructions with nsw"),
+  cl::cat(FosterOptCat));
 
 static cl::opt<bool>
 optDisableGC("unsafe-disable-gc",
-  cl::desc("[foster] Disable all GC-related code generation (UNSAFE!)"));
+  cl::desc("Disable all GC-related code generation (UNSAFE!)"),
+  cl::cat(FosterOptCat));
 
 static cl::opt<bool>
 optDumpPreLinkedIR("dump-prelinked",
-  cl::desc("[foster] Dump LLVM IR before linking with standard library"));
+  cl::desc("Dump LLVM IR before linking with standard library"),
+  cl::cat(FosterOptCat));
 
 static cl::opt<bool>
 optDumpPostLinkedIR("dump-postlinked",
-  cl::desc("[foster] Dump LLVM IR after linking with standard library"));
+  cl::desc("Dump LLVM IR after linking with standard library"),
+  cl::cat(FosterOptCat));
 
 static cl::opt<bool>
 optDumpStats("dump-stats",
-  cl::desc("[foster] Dump timing and other statistics from compilation"));
+  cl::desc("Dump timing and other statistics from compilation"),
+  cl::cat(FosterOptCat));
 
 static cl::opt<bool>
 optPrintTimings("fosterc-time",
-  cl::desc("[foster] Print timing measurements of compiler passes"));
+  cl::desc("Print timing measurements of compiler passes"),
+  cl::cat(FosterOptCat));
 
 static cl::opt<bool>
 optPrintLLVMImports("foster-print-llvm-imports",
-  cl::desc("[foster] Print imported symbols from imported LLVM modules"));
+  cl::desc("Print imported symbols from imported LLVM modules"),
+  cl::cat(FosterOptCat));
 
 void printVersionInfo() {
   llvm::outs() << "Foster version: " << FOSTER_VERSION_STR;

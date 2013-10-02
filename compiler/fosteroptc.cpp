@@ -69,61 +69,77 @@ void printVersionInfo() {
 
 const char kDefaultOutputExtension[] = ".s";
 
+static cl::OptionCategory FosterOptCat("Foster-specific Options", "");
+
 static cl::opt<string>
-optInputPath(cl::Positional, cl::desc("<input file.bc/ll>"));
+optInputPath(cl::Positional, cl::desc("<input file.bc/ll>"), cl::cat(FosterOptCat));
 
 static cl::opt<string>
 optOutputName("o",
-  cl::desc("[foster] Output file, with optional extension {s,o,obj}, default 's'"));
+  cl::desc("Output file, with optional extension {s,o,obj}, default 's'"),
+  cl::cat(FosterOptCat));
 
 static string gOutputNameBase;
 
 static cl::opt<bool>
 optDumpPostOptIR("dump-postopt",
-  cl::desc("[foster] Dump LLVM IR after linking and optimization passes"));
+  cl::desc("Dump LLVM IR after linking and optimization passes"),
+  cl::cat(FosterOptCat));
 
 static cl::opt<bool>
 optCleanupOnly("cleanup-only",
-  cl::desc("[foster] Run cleanup passes only"));
+  cl::desc("Run cleanup passes only"),
+  cl::cat(FosterOptCat),
+  cl::cat(FosterOptCat));
 
 static cl::opt<bool>
 optInternalize("foster-internalize",
-  cl::desc("[foster] Internalize and strip unreferenced globals"));
+  cl::desc("Internalize and strip unreferenced globals"),
+  cl::cat(FosterOptCat));
 
 static cl::opt<bool>
 optInsertTimerChecks("foster-insert-timing-checks",
-  cl::desc("[foster] Insert timing checks at loop backedges"));
+  cl::desc("Insert timing checks at loop backedges"),
+  cl::cat(FosterOptCat));
 
 static cl::opt<bool>
 optDumpStats("dump-stats",
-  cl::desc("[foster] Dump timing and other statistics from compilation"));
+  cl::desc("Dump timing and other statistics from compilation"),
+  cl::cat(FosterOptCat));
 
 static cl::opt<bool>
 optPrintTimings("fosterc-time",
-  cl::desc("[foster] Print timing measurements of compiler passes"));
+  cl::desc("Print timing measurements of compiler passes"),
+  cl::cat(FosterOptCat));
 
 static cl::opt<bool>
 optOptimizeZero("O0",
-  cl::desc("[foster] Disable most optimization passes after linking with standard library"));
+  cl::desc("Disable most optimization passes after linking with standard library"),
+  cl::cat(FosterOptCat));
 
 static cl::opt<bool>
 optDisableAllOptimizations("Onone",
-  cl::desc("[foster] Disable all optimization passes after linking with standard library"));
+  cl::desc("Disable all optimization passes after linking with standard library"),
+  cl::cat(FosterOptCat));
 
 static cl::opt<bool>
 optNoSpecializeMemallocs("no-specialize-memallocs",
-  cl::desc("[foster] Disable specialization of memallocs of common sizes."));
+  cl::desc("Disable specialization of memallocs of common sizes."),
+  cl::cat(FosterOptCat));
 
 static cl::opt<bool>
 optNoCoalesceLoads("no-coalesce-loads",
-  cl::desc("[foster] Disable coalescing loads of bit-or'ed values."));
+  cl::desc("Disable coalescing loads of bit-or'ed values."),
+  cl::cat(FosterOptCat));
 
 static cl::opt<string>
 optCFI("fosterc-cfi",
-  cl::desc("[foster] CFI directives: {yes,no}, default to platform-specific behavior"));
+  cl::desc("CFI directives: {yes,no}, default to platform-specific behavior"),
+  cl::cat(FosterOptCat));
 
 static cl::list<const PassInfo*, bool, PassNameParser>
-cmdLinePassList(cl::desc("Optimizations available:"));
+cmdLinePassList(cl::desc("Optimizations available:"),
+  cl::cat(FosterOptCat));
 
 void setTimingDescriptions() {
   using foster::gTimings;
