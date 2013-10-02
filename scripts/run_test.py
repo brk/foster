@@ -332,7 +332,7 @@ def get_test_parser(usage):
                     help="Run using interpreter instead of compiling via LLVM")
   parser.add_option("--optimize", dest="optlevel", default="O0",
                     help="Enable optimizations in fosteroptc")
-  parser.add_option("--profileme", dest="profileme", default=False,
+  parser.add_option("--profileme", dest="profileme", action="store_true", default=False,
                     help="Enable detailed profiling of compiler middle-end")
   parser.add_option("--profile", dest="profile", action="store_true", default=False,
                     help="Enable profiling of generated executable")

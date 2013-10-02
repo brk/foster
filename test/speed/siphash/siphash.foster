@@ -10,8 +10,8 @@ main = {
   srclen = cmdline-arg-or 1 1;
   rounds = cmdline-arg-or 2 1;
 
-  bytes = newDArray0:[Int8] srclen { n => primitive_trunc_i32_i8 n };
-  key   = newDArray0:[Int8] 16     { n => primitive_trunc_i32_i8 n };
+  bytes = newDArray0:[Int8] srclen { n => trunc_i32_to_i8 n };
+  key   = newDArray0:[Int8] 16     { n => trunc_i32_to_i8 n };
 
   REC go = { round => res =>
     if round ==Int32 rounds then res else

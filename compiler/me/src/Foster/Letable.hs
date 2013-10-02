@@ -215,22 +215,24 @@ canCtorReprAppGC (CR_Tagged  _) = MayGC
 canCtorReprAppGC (CR_Nullary _) = WillNotGC
 canCtorReprAppGC (CR_Value   _) = WillNotGC
 
-willNotGCGlobal name = name `elem` (map T.pack
-                        ["expect_i1", "print_i1"
-                        ,"expect_i8", "print_i8", "print_i8b"
-                        ,"expect_i64" , "print_i64" , "expect_i32", "print_i32"
-                        ,"expect_i32b", "print_i32b"
-                        ,"expect_i64b", "print_i64b"
-                        ,"expect_i32x", "print_i32x"
-                        ,"expect_i64x", "print_i64x"
-                        ,"print_i64_bare"
-                        ,"memcpy_i8_to_from_at_len"
-                        ,"memcpy_i8_to_at_from_len"
-                        ,"expect_newline", "print_newline"
-                        ,"prim_arrayLength"
-                        ,"prim_print_bytes_stdout"
-                        ,"prim_print_bytes_stderr"
-                        ,"print_float_p9f64", "expect_float_p9f64"
-                        ,"foster_stdin_read_bytes"
-                        ,"foster_getticks"
-                        ,"foster_getticks_elapsed"])
+globalsKnownToNotGC = map T.pack
+                    ["expect_i1", "print_i1"
+                    ,"expect_i8", "print_i8", "print_i8b"
+                    ,"expect_i64" , "print_i64" , "expect_i32", "print_i32"
+                    ,"expect_i32b", "print_i32b"
+                    ,"expect_i64b", "print_i64b"
+                    ,"expect_i32x", "print_i32x"
+                    ,"expect_i64x", "print_i64x"
+                    ,"print_i64_bare"
+                    ,"memcpy_i8_to_from_at_len"
+                    ,"memcpy_i8_to_at_from_len"
+                    ,"expect_newline", "print_newline"
+                    ,"prim_arrayLength"
+                    ,"prim_print_bytes_stdout"
+                    ,"prim_print_bytes_stderr"
+                    ,"print_float_p9f64", "expect_float_p9f64"
+                    ,"foster_stdin_read_bytes"
+                    ,"foster_getticks"
+                    ,"foster_getticks_elapsed"
+                    ]
+willNotGCGlobal name = name `elem` globalsKnownToNotGC

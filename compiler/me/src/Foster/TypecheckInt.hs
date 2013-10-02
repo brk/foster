@@ -7,10 +7,9 @@ module Foster.TypecheckInt(typecheckInt, typecheckRat, sanityCheck) where
 
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T
-import qualified Data.Bits as Bits(shiftR)
 import Data.Char(toLower)
 import Data.Maybe(fromJust)
-import qualified Data.List as List(length, elemIndex, reverse)
+import qualified Data.List as List(elemIndex, reverse)
 
 import Foster.Base
 import Foster.Context
@@ -74,23 +73,16 @@ typecheckInt annot originalText expTy = do
             let activeBits =
                  if integerValue == -2147483648 then 32 -- handle edge cases directly
                    else if integerValue == -9223372036854775808 then 64
-                     else List.length (bitStringOf nat)
-                                                 + (if negated then 1 else 0) in
+                     else bitLengthOf nat + (if negated then 1 else 0) in
             LiteralInt integerValue activeBits originalText base
+
+        bitLengthOf n = go n 1 where go n k = if n < 2^k then k else go n (k+1)
 
         -- Precondition: string contains only valid hex digits.
         parseRadixRev :: Integer -> String -> Integer
         parseRadixRev _ ""     = 0
         parseRadixRev r (c:cs) = (fromIntegral $ fromJust (indexOf c))
                                + (r * parseRadixRev r cs)
-
-        -- | Example: bitStringOf 21 == "10101"
-        bitStringOf = List.reverse . reverseBitStringOf where
-            reverseBitStringOf n
-                | n <  0    = error "bitStringOf: non-negative number!"
-                | n <= 1    = show n
-                | otherwise = lowBitOf n ++ reverseBitStringOf (Bits.shiftR n 1)
-                        where lowBitOf n = if even n then "1" else "0"
 
 typecheckRat :: ExprAnnot -> String -> Maybe TypeAST -> Tc (AnnExpr Rho)
 typecheckRat annot originalText _expTyTODO = do

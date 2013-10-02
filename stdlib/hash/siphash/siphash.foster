@@ -15,7 +15,7 @@ readInt64FromArrayInt8 = { arr => i =>
 };
 
 read-rem = { len_rem => offset : Int32 => bytes =>
-  r = primitive_trunc_i64_i32 len_rem;
+  r = trunc_i64_to_i32 len_rem;
   idx = { n => if n <UInt32 r then bytes[offset +Int32 n] else 0 end };
   a = idx 0;
   b = idx 1;

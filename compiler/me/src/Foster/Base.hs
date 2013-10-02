@@ -238,10 +238,10 @@ data Literal = LitInt   LiteralInt
              | LitBool  Bool
              deriving (Show, Eq)
 
-data LiteralInt = LiteralInt { litIntValue   :: Integer
-                             , litIntMinBits :: Int
-                             , litIntText    :: String
-                             , litIntBase    :: Int
+data LiteralInt = LiteralInt { litIntValue   :: !Integer
+                             , litIntMinBits :: !Int
+                             , litIntText    :: !String
+                             , litIntBase    :: !Int
                              } deriving (Show, Eq)
 
 data LiteralFloat = LiteralFloat { litFloatValue   :: Double
