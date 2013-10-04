@@ -1319,7 +1319,7 @@ knInline :: Maybe Int -> Bool -> (ModuleIL SrcExpr MonoType)
 knInline mbDefaultSizeLimit shouldDonate knmod = do
   uniq <- gets ccUniqRef
   sizectr <- liftIO $ newIORef 0
-  let defaultSizeLimit = case mbDefaultSizeLimit of Nothing -> 42
+  let defaultSizeLimit = case mbDefaultSizeLimit of Nothing -> 42 * 2
                                                     Just  x -> x
   let e  = moduleILbody knmod
   let et = runErrorT (knInlineToplevel e (SrcEnv Map.empty Map.empty))
@@ -2211,7 +2211,8 @@ matchConstExpr v c arms = go arms [] NoPossibleMatchYet
                         (LitTuple _ args _, PR_Tuple _ _ pats) ->
                             let parts = map (uncurry matchPatternWithConst) (zip pats args) in
                             let res = concatMapStatuses parts in
-                            trace ("matched tuple const against tuple pat " ++ show p ++ "\n, parts = " ++ show parts ++ " ;;; res = " ++ show res) res
+                            res
+                            --trace ("matched tuple const against tuple pat " ++ show p ++ "\n, parts = " ++ show parts ++ " ;;; res = " ++ show res) res
                         (KnownCtor _ (kid, _) args, PR_Ctor _ _ pats (LLCtorInfo cid _ _)) | kid == cid ->
                             concatMapStatuses $ map (uncurry matchPatternWithConst) (zip pats args)
                         (_ , _) -> nullary False
