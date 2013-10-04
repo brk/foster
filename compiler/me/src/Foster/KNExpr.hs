@@ -1319,11 +1319,12 @@ knInline :: Maybe Int -> Bool -> (ModuleIL SrcExpr MonoType)
 knInline mbDefaultSizeLimit shouldDonate knmod = do
   uniq <- gets ccUniqRef
   sizectr <- liftIO $ newIORef 0
+  currlvl <- liftIO $ newIORef 0
   let defaultSizeLimit = case mbDefaultSizeLimit of Nothing -> 42 * 2
                                                     Just  x -> x
   let e  = moduleILbody knmod
   let et = runErrorT (knInlineToplevel e (SrcEnv Map.empty Map.empty))
-  let st = evalStateT et (InlineState uniq Map.empty sizectr NoLimit
+  let st = evalStateT et (InlineState uniq currlvl Map.empty sizectr NoLimit
                                      (inCensus e) defaultSizeLimit shouldDonate)
   result <- liftIO st
   case result of
@@ -1336,6 +1337,7 @@ knInline mbDefaultSizeLimit shouldDonate knmod = do
 type In          = ErrorT InlineError (StateT InlineState IO)
 data InlineState = InlineState {
     inUniqRef  :: IORef Uniq
+  , inCurrentLevel :: IORef Int
   , inVarCount :: Map Ident (IORef Int)
   , inSizeCntr :: IORef Int
   , inSizeLimit :: SizeLimit
@@ -1564,6 +1566,22 @@ bumpSize !d = do
         throwError (strMsg $ "bumpSize failed : " ++ show x ++ " + " ++ show d ++ "; " ++ src)
     _ -> writeRef r v
 
+knInLevel :: In Int
+knInLevel = do
+  st <- get
+  let levelref = inCurrentLevel st
+  readRef levelref
+
+withRaisedLevel :: In a -> In a
+withRaisedLevel action = do
+  st <- get
+  let levelref = inCurrentLevel st
+  old <- readRef levelref
+  writeRef levelref (old + 1)
+  result <- action
+  writeRef levelref  old
+  return result
+
 withSizeCounter :: SizeCounter -> In a -> In (a, Int)
 withSizeCounter (SizeCounter sz lim) action = do
   st <- get
@@ -1678,7 +1696,7 @@ knInline' expr env = do
   let qs _str v = do --liftIO $ putStrLn $ "resVar << " ++ str ++ "\t;\t" ++ show (tidIdent v)
                      resVar env v
   let q v = resVar env v
-  case expr of
+  withRaisedLevel $ case expr of
     KNLiteral     {} -> residualize expr
     KNKillProcess {} -> residualize expr
     KNArrayRead ty (ArrayIndex v1 v2 rng sg)    -> (mapM q [v1,v2   ]) >>= \[q1,q2]    -> residualize $ KNArrayRead ty (ArrayIndex q1 q2 rng sg)
