@@ -57,8 +57,8 @@ void setSourceRange(pb::SourceRange* pbr,
                     const foster::SourceRange& r) {
   if (r.source) {
     llvm::sys::Path p(r.source->getPath());
-    makePathAbsolute(p); // TODO perhaps all paths should be stored absolute...?
-    //pbr->set_file_path(p.str());
+    //makePathAbsolute(p); // TODO perhaps all paths should be stored absolute...?
+    pbr->set_file_path(p.str());
   }
 
   if (r.begin != foster::SourceLocation::getInvalidLocation()) {
