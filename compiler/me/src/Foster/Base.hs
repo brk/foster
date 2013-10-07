@@ -16,6 +16,7 @@ import Data.Set as Set(Set, fromList, toList, difference, insert, empty, member,
 import Data.Sequence as Seq(Seq, length, index, (><))
 import Data.Map as Map(Map, fromListWith)
 import Data.List as List(replicate, intersperse)
+import qualified Data.Graph as Graph(SCC(..), stronglyConnComp)
 
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
@@ -570,6 +571,23 @@ type MayGCConstraint = (MayGC -- at most one direct constraint
                        ,Set.Set Ident) --any # of indirect constraints
 type MayGCConstraints = Map Ident MayGCConstraint
 
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+-- {{{ Split up a sequence of function bindings into minimal SCCs.
+mkFunctionSCCs :: AExpr fn => [Ident] -> [fn] -> expr ->
+                             ([Ident] -> [fn] -> expr -> expr) -> expr
+mkFunctionSCCs ids fns body k =
+  let idset    = Set.fromList ids
+      fnids fn = Set.toList $ Set.intersection (Set.fromList (freeIdents fn))
+                                               idset
+      callGraphList = map (\(id, fn) -> ((fn, id), id, fnids fn)) (zip ids fns)
+      theSCCs       = Graph.stronglyConnComp callGraphList
+  in foldr (\scc body ->
+          let mkFuns ids fns = k ids fns body in
+          case scc of
+                Graph.AcyclicSCC (fn, id) -> mkFuns [id] [fn]
+                Graph.CyclicSCC fnids ->     mkFuns ids fns
+                                              where (fns, ids) = unzip fnids
+         ) body theSCCs
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||||||||| Instances ||||||||||||||||||||||||||{{{
 

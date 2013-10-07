@@ -11,9 +11,8 @@ import Control.Monad(liftM, forM_, forM, liftM, liftM2, when)
 
 import qualified Data.Text as T(Text, pack, unpack)
 import qualified Data.Map as Map(lookup, insert, elems, toList, null)
-import qualified Data.Set as Set(toList, fromList, intersection)
+import qualified Data.Set as Set(toList, fromList)
 import Data.IORef(newIORef,readIORef,writeIORef)
-import qualified Data.Graph as Graph(SCC(..), stronglyConnComp)
 
 import Foster.Base
 import Foster.TypeAST
@@ -661,24 +660,7 @@ tcRhoLetRec ctx0 rng recBindings e mt = do
                       where notAnnFn (E_AnnFn _) = False
                             notAnnFn _           = True
         sanityCheck (null nonfns) "Recursive bindings should only contain functions!"
-        return $ mkAnnLetFuns rng ids fns e'
--- }}}
-
--- Split up a sequence of function bindings into minimal SCCs.
--- {{{
-mkAnnLetFuns rng ids fns body =
-  let idset    = Set.fromList ids
-      fnids fn = Set.toList $ Set.intersection (Set.fromList (freeIdents fn))
-                                               idset
-      callGraphList = map (\(id, fn) -> ((fn, id), id, fnids fn)) (zip ids fns)
-      theSCCs       = Graph.stronglyConnComp callGraphList
-  in foldr (\scc body ->
-          let mkFuns ids fns = AnnLetFuns rng ids fns body in
-          case scc of
-                Graph.AcyclicSCC (fn, id) -> mkFuns [id] [fn]
-                Graph.CyclicSCC fnids ->     mkFuns ids fns
-                                              where (fns, ids) = unzip fnids
-         ) body theSCCs
+        return $ mkFunctionSCCs ids fns e' (AnnLetFuns rng)
 -- }}}
 
 -- G |- e ::: forall a1::k1..an::kn, rho
