@@ -1262,6 +1262,13 @@ deriving instance (Show ty, Show rs) => Show (KNExpr' rs ty) -- used elsewhere..
 --    sites. We also eliminate the context parameter, since occurrences are
 --    second class, thus arguments are flattened out by definition.
 --
+--  * The original motivation for the "demand-driven" aspect of their algorithm
+--    (i.e. not looking at operands until required) was to wait until it was
+--    known what context each operand should be eval'd in (Boolean/Value/...).
+--    Because we have no contexts, it is better for us to eagerly rather than
+--    lazily evaluate operands to calls. The main advantage of doing so is that
+--    we can be more parsimonious about when to try folding a call or not.
+--
 --  * We conservatively track variable reference counts with mutable state.
 --    We can have false positives (variable appears referenced but is not)
 --    if an occurrence is residualized and then the inlining attempt is aborted.
@@ -1313,6 +1320,19 @@ deriving instance (Show ty, Show rs) => Show (KNExpr' rs ty) -- used elsewhere..
 --    size thresholds, for example being more generous with calls involving
 --    many parameters, in recognition that call site overhead varies thusly.
 --
+--  * We only need to fiddle with the outer-pending limit
+--    on the *first* integration of a procedure. When we are
+--    integrating a cached procedure, it's OK to integrate
+--    another copy of that procedure.
+--    This occurs in "manually unrolled" code like
+--       hr = { ... k => ... k ... };   (( cached version ))
+--       kk = { hr(1) ... ... };
+--       hr(0) ... kk
+--    When evaluating the hr(0) call, we'll attempt to inline the body
+--    of hr with k bound to kk. Inlining will then attempt to inline kk,
+--    which then looks at the hr(1) call. If we had set the outer-pending
+--    flag when looking at hr(0), the hr(1) call would be needlessly
+--    residualized instead of inlined.
 
 knInline :: Maybe Int -> Bool -> (ModuleIL SrcExpr MonoType)
                      -> Compiled (ModuleIL ResExpr MonoType)
@@ -1603,7 +1623,12 @@ getLimitedSizeCounter lim src = do
             NoLimit  -> do -- putDocLn $ text $ "getLimitedSizeCounter creating fresh counter"
                            return $ SizeCounter 0 (Limit (lim, src))
 
-computeSizeCounter :: TypedId MonoType -> (Maybe (Int, Int)) -> [Maybe (Int, Int)] -> [Int] -> In SizeCounter
+-- Use census-based information to compute an appropriate size counter
+-- at each inlining site. Functions which are called once should always
+-- be inlined at their known call site. If donation is enabled, the size
+-- counter should grow proportionally to the sizes of the function's arguments.
+computeSizeCounter :: TypedId MonoType -> Maybe (Int, Int)
+                                      -> [Maybe (Int, Int)] -> [Int] -> In SizeCounter
 computeSizeCounter _v vinfo arginfo argsizes = do
   if vinfo == Just (1, 0)
     then -- If a function is called once, we can inline it without a size limit.
@@ -1626,7 +1651,7 @@ data SizeLimit = NoLimit | Limit (Int, String) deriving Show
 -- just treat variables uniformly.
 inNewVar :: ResId -> In ()
 inNewVar id = do st <- get
-                 r  <- liftIO $ newIORef 0
+                 r  <- newRef 0
                  put $ st { inVarCount = Map.insert id r (inVarCount st) }
 
 sawVar id = do vcm <- gets inVarCount
@@ -1891,7 +1916,6 @@ handleCallOfKnownFunction tailq expr resExprA opf@(Opnd fn0 _ _ loc_op loc_ip) v
 
       sizes <- mapM (bestEffortOpSize . lookupVarOp' env) qvs'
       -- Note: here, we're using the original vars, not the fresh ones.
-      -- Also, the args will generally be unvisited
       sizeCounter <- computeSizeCounter v (inCen v) (map inCen vs) sizes
 
       putDocLn3 $ text "handleCallOfKnownFunction trying to fold lambda from call [[" <+> pretty expr <+> text "]]"
@@ -2103,7 +2127,7 @@ inlineBitcastedFunction v' tailq ty vs env = do
     -- with a type mismatch (not just those that are PtrTypeUnknown),
     -- and possibly also the result.
     let (FnType tys tyr _ _) = tidType v'
-    binders_ref <- liftIO $ newIORef []
+    binders_ref <- newRef []
     vs' <- mapM (\(ty, vorig) -> do
       if ty == tidType vorig
            then return vorig
@@ -2151,6 +2175,19 @@ extractConstExpr env var = go var where
                     -- TODO could recurse through binders
                     -- TODO could track const-ness of ctor args
             _ -> return $ IsVariable v
+
+extractConstExpr' :: SrcEnv -> TypedId MonoType -> In ConstStatus
+extractConstExpr' env var = go var where
+ go v = case lookupVarOp' env v of
+            (VO_E ope) -> do
+                 (e', _) <- visitE (tidIdent v, ope)
+                 case e' of
+                    KNLiteral ty lit      -> return $ IsConstant v $ Lit ty lit
+                    KNTuple   ty vars rng -> do results <- mapM go vars
+                                                return $ IsConstant v $ LitTuple ty results rng
+                    KNAppCtor ty cid vars -> do results <- mapM go vars
+                                                return $ IsConstant v $ KnownCtor ty cid results
+                    _                     -> return $ IsVariable v
 
 addBindings [] e = e
 addBindings ((id, cs):rest) e = KNLetVal id (exprOfCS cs) (addBindings rest e)
@@ -2246,6 +2283,15 @@ evalPrim resty (PrimOp "==" _ty)
          [IsConstant _ (Lit _ (LitInt i1)),
           IsConstant _ (Lit _ (LitInt i2))]
                 = Just (KNLiteral resty (LitBool $ litIntValue i1 == litIntValue i2))
+
+evalPrim resty (PrimOp  ext _ty)
+         [IsConstant _ (Lit _ (LitInt i1))] | ("zext_" `isPrefixOf` ext && litIntValue i1 >= 0)
+                                           || ("sext_" `isPrefixOf` ext)
+                = Just (KNLiteral resty (LitInt i1))
+-- TODO + , - , div , cmp , shifts , bitwise
+-- TODO truncation?
+-- TODO negate
+-- TODO ...
 evalPrim _ _ _ = Nothing
 -- }}}
 
