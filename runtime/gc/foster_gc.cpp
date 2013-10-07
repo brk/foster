@@ -15,6 +15,8 @@
 
 #include "base/time.h"
 #include "base/threading/platform_thread.h"
+#include "base/metrics/histogram.h"
+#include "base/metrics/statistics_recorder.h"
 
 // for getrlimit
 #include <sys/time.h>
@@ -28,8 +30,9 @@
 // can do effective dead-code elimination. If we were JIT compiling
 // the GC we could (re-)specialize these config vars at runtime...
 #define ENABLE_GCLOG 0
+#define FOSTER_GC_ALLOC_HISTOGRAMS    0
 #define GC_ASSERTIONS 0
-#define TRACK_NUM_ALLOCATIONS         0
+#define TRACK_NUM_ALLOCATIONS         1
 #define TRACK_BYTES_KEPT_ENTRIES      0
 #define TRACK_BYTES_ALLOCATED_ENTRIES 0
 #define GC_BEFORE_EVERY_MEMALLOC_CELL 0
@@ -40,6 +43,8 @@
 
 const int kFosterGCMaxDepth = 1024;
 const int inline gSEMISPACE_SIZE() { return __foster_globals.semispace_size; }
+
+const bool wantWeirdCrashToHappen = false;
 
 /////////////////////////////////////////////////////////////////
 
@@ -174,6 +179,14 @@ class copying_gc {
         return free_size() > num_bytes;
       }
 
+      void allocate_cell_prechecked_histogram(int N) {
+        if (N > 128) {
+          HISTOGRAM_CUSTOM_COUNTS("gc-alloc-large", N, 129, 33000000, 50);
+        } else {
+          HISTOGRAM_ENUMERATION("gc-alloc-small", N, 128);
+        }
+      }
+
       // {{{ Prechecked allocation functions
       template <int N>
       tidy* allocate_cell_prechecked_N(typemap* typeinfo) {
@@ -181,6 +194,8 @@ class copying_gc {
         //fprintf(gclog, "this=%p, memsetting %d bytes at %p (ti=%p)\n", this, int(typeinfo->cell_size), bump, typeinfo); fflush(gclog);
         if (DEBUG_INITIALIZE_ALLOCATIONS) { memset(bump, 0xAA, N); }
         if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(N); }
+        if (TRACK_NUM_ALLOCATIONS) { ++parent->num_allocations; }
+        if (FOSTER_GC_ALLOC_HISTOGRAMS) { HISTOGRAM_ENUMERATION("gc-alloc-small", N, 128); }
         incr_by(bump, N);
         allot->set_meta(typeinfo);
         //fprintf(gclog, "alloc'd %d, bump = %p, low bits: %x\n", int(typeinfo->cell_size), bump, intptr_t(bump) & 0xF);
@@ -192,6 +207,10 @@ class copying_gc {
         //fprintf(gclog, "this=%p, memsetting %d bytes at %p (ti=%p)\n", this, int(typeinfo->cell_size), bump, typeinfo); fflush(gclog);
         if (DEBUG_INITIALIZE_ALLOCATIONS) { memset(bump, 0xAA, typeinfo->cell_size); }
         if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(typeinfo->cell_size); }
+        if (TRACK_NUM_ALLOCATIONS) { ++parent->num_allocations; }
+        if (!wantWeirdCrashToHappen && FOSTER_GC_ALLOC_HISTOGRAMS) {
+          allocate_cell_prechecked_histogram((int) typeinfo->cell_size);
+        }
         incr_by(bump, typeinfo->cell_size);
         allot->set_meta(typeinfo);
         //fprintf(gclog, "alloc'd %d, bump = %p, low bits: %x\n", int(typeinfo->cell_size), bump, intptr_t(bump) & 0xF);
@@ -209,6 +228,7 @@ class copying_gc {
         allot->set_meta(arr_elt_typeinfo);
         allot->set_num_elts(num_elts);
         if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(total_bytes); }
+        if (TRACK_NUM_ALLOCATIONS) { ++parent->num_allocations; }
         return allot->body_addr();
       }
       // }}}
@@ -549,8 +569,16 @@ public:
 
   // {{{ Allocation, in various flavors & specializations.
   void* allocate_cell(typemap* typeinfo) {
-    if (TRACK_NUM_ALLOCATIONS) { ++num_allocations; }
     int64_t cell_size = typeinfo->cell_size; // includes space for cell header.
+
+    if (wantWeirdCrashToHappen && FOSTER_GC_ALLOC_HISTOGRAMS) {
+        // odd -- having this code here seems to cause llvm to miscompile
+        // this function (it removes the bounds check from can_allocate_bytes)
+        // at high optimzation levels, but only if we do inlining in foster-me,
+        // and if we don't do it in allocate_cell_prechecked
+        // ... wtf is going on???
+        curr->allocate_cell_prechecked_histogram(17);
+    }
 
     if (curr->can_allocate_bytes(cell_size)) {
       return curr->allocate_cell_prechecked(typeinfo);
@@ -561,7 +589,6 @@ public:
 
   template <int N>
   void* allocate_cell_N(typemap* typeinfo) {
-    if (TRACK_NUM_ALLOCATIONS) { ++num_allocations; }
     if (curr->can_allocate_bytes(N)) {
       return curr->allocate_cell_prechecked_N<N>(typeinfo);
     } else {
@@ -589,9 +616,12 @@ public:
   }
 
   void* allocate_array(typemap* elt_typeinfo, int64_t n, bool init) {
-    if (TRACK_NUM_ALLOCATIONS) { ++num_allocations; }
     int64_t slot_size = elt_typeinfo->cell_size; // note the name change!
     int64_t req_bytes = array_size_for(n, slot_size);
+
+    if (false && FOSTER_GC_ALLOC_HISTOGRAMS) {
+      HISTOGRAM_CUSTOM_COUNTS("gc-alloc-array", (int) req_bytes, 1, 33000000, 128);
+    }
 
     if (curr->can_allocate_bytes(req_bytes)) {
       return curr->allocate_array_prechecked(elt_typeinfo, n, req_bytes, init);
@@ -634,6 +664,8 @@ base::TimeTicks    init_start;
 extern "C" foster_generic_coro** __foster_get_current_coro_slot();
 
 void copying_gc::gc() {
+  //fprintf(stdout, "gc();\n");
+  //fprintf(stderr, "gc();\n");
   base::TimeTicks begin = base::TimeTicks::HighResNow();
   ++this->num_collections;
   if (ENABLE_GCLOG) {
@@ -720,6 +752,7 @@ void initialize(void* stack_highest_addr) {
   gclog = fopen("gclog.txt", "w");
   fprintf(gclog, "----------- gclog ------------\n");
 
+  base::StatisticsRecorder::Initialize();
   allocator = new copying_gc(gSEMISPACE_SIZE());
 
   // ASSUMPTION: stack segments grow down, and are linear...
@@ -772,6 +805,12 @@ int cleanup() {
   gclog_time("Initlzn_runtime",  init_elapsed, json);
   gclog_time("     GC_runtime",    gc_elapsed, json);
   gclog_time("Mutator_runtime",   mut_elapsed, json);
+  if (FOSTER_GC_ALLOC_HISTOGRAMS) {
+    fprintf(gclog, "stats recorder active? %d\n", base::StatisticsRecorder::IsActive());
+    std::string output;
+    base::StatisticsRecorder::WriteGraph("", &output);
+    fprintf(gclog, "%s\n", output.c_str());
+  }
   bool had_problems = allocator->had_problems();
   if (json) allocator->dump_stats(json);
   delete allocator;
