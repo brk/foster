@@ -342,6 +342,12 @@ rangeSpanOf defaultRange allRanges =
                                           (sourceRangeLines b)
                                           (sourceRangeFile  b)
 
+sourceLineStart :: SourceRange -> String
+sourceLineStart (MissingSourceRange s) = "<missing range: " ++ s ++ ">"
+sourceLineStart (SourceRange _begin _end _lines Nothing) = "<unknown file>"
+sourceLineStart (SourceRange begin _end _lines (Just filepath)) =
+    filepath ++ ":" ++ show (sourceLocationLine begin)
+
 showSourceRange :: SourceRange -> String
 showSourceRange (MissingSourceRange s) = "<missing range: " ++ s ++ ">"
 showSourceRange (SourceRange begin end lines _filepath) =

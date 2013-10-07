@@ -99,7 +99,7 @@ ail ctx ae =
                                      [x,y]   <- mapM q [a,b]
                                      return $ AIUntil ti x y (rangeOf rng)
         -- For anonymous function literals
-        E_AnnFn annFn        -> do fn_id <- tcFresh "lit_fn"
+        E_AnnFn annFn        -> do fn_id <- tcFresh $ "lit_fn." ++ sourceLineStart (rangeOf annFn) ++ "..."
                                    aiFn <- fnOf ctx annFn
                                    let (TypedId t _) = fnVar aiFn
                                    let fnvar = E_AIVar $ (TypedId t fn_id)

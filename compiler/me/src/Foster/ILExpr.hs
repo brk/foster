@@ -142,7 +142,7 @@ makeAllocationsExplicit bbgp = do
     (CCLetVal id (ILAlloc v memregion)) -> do
             id' <- ccFreshId (T.pack "ref-alloc")
             let t = tidType v
-            let info = AllocInfo t memregion "ref" Nothing Nothing "ref-allocator" NoZeroInit
+            let info = AllocInfo t memregion "ref" Nothing Nothing ("ref-allocator:"++show t) NoZeroInit
             return $
               (mkMiddle $ CCLetVal id  (ILAllocate info)) <*>
               (mkMiddle $ CCLetVal id' (ILStore v (TypedId (LLPtrType t) id)))
@@ -150,7 +150,7 @@ makeAllocationsExplicit bbgp = do
     (CCLetVal  id (ILTuple vs _allocsrc)) -> do
             let t = LLStructType (map tidType vs)
             let memregion = MemRegionGlobalHeap
-            let info = AllocInfo t memregion "tup" Nothing Nothing "tup-allocator" NoZeroInit
+            let info = AllocInfo t memregion "tup" Nothing Nothing ("tup-allocator:"++show vs) NoZeroInit
             return $
               (mkMiddle $ CCLetVal id (ILAllocate info)) <*>
               (mkMiddle $ CCTupleStore vs (TypedId (LLPtrType t) id) memregion)
@@ -166,7 +166,7 @@ makeAllocationsExplicit bbgp = do
             let t = LLStructType (map tidType vs)
             let obj = (TypedId (LLPtrType t) id' )
             let memregion = MemRegionGlobalHeap
-            let info = AllocInfo t memregion tynm (Just repr) Nothing "ctor-allocator" NoZeroInit
+            let info = AllocInfo t memregion tynm (Just repr) Nothing ("ctor-allocator:"++show cid) NoZeroInit
             return $
               (mkMiddle $ CCLetVal id' (ILAllocate info)) <*>
               (mkMiddle $ CCTupleStore vs obj memregion)  <*>
@@ -233,7 +233,7 @@ makeClosureAllocationExplicit ids clos = do
            let t = LLStructType (map tidType vs) in
            let envvar = TypedId (LLPtrType t) envid in
            let ealloc = ILAllocate (AllocInfo t memregion "env" Nothing Nothing
-                                                "env-allocator" DoZeroInit) in
+                          ("env-allocator:"++show (tidIdent (closureProcVar clo))) DoZeroInit) in
            (CCLetVal envid ealloc , CCTupleStore vs envvar memregion, envvar)
   let cloAllocsAndStores cloid gen_proc_var clo env_gen_id =
            let bitcast = ILBitcast (tidType gen_proc_var) (closureProcVar clo) in
@@ -243,7 +243,7 @@ makeClosureAllocationExplicit ids clos = do
            let t' = fnty_of_procty (generic_procty (tidType (closureProcVar clo))) in
            let clovar = TypedId t' cloid in
            let calloc = ILAllocate (AllocInfo t memregion "clo" Nothing Nothing
-                                                "clo-allocator" DoZeroInit) in
+                         ("clo-allocator:"++show (tidIdent (closureProcVar clo))) DoZeroInit) in
            (CCLetVal cloid calloc
            , [CCLetVal (tidIdent gen_proc_var) bitcast
              ,CCTupleStore vs clovar memregion])
