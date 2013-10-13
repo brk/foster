@@ -131,8 +131,10 @@ monoKN subst e =
     let monotys  = map generic argtys
     let extsubst = extendMonoSubst subst monotys ktvs
 
-    let t'  = monoType subst    t
-    let t'' = monoType extsubst _rho
+    -- For example:              polybinder :: forall x:Type, x => Maybe x
+    let t'  = monoType subst    t    --  t'  = NatInf(Mo) => Maybe NatInf
+    let t'' = monoType extsubst _rho --  t'' = PtrTypeUnk => Maybe PtrTypeUnk
+    --                                   t   = NatInf(IL) => Maybe NatInf
 
     -- If we're polymorphically instantiating a global symbol
     -- (i.e. a proc) then we can statically look up the proc
@@ -141,7 +143,7 @@ monoKN subst e =
     mb_polydef <- monoGetOrigin polybinder
     case mb_polydef of
        Just (PolyOriginCtor      ) -> do
-          return $ KNTyApp t' (TypedId t'' polybinder) []
+          return $ bitcast t' (TypedId t'' polybinder)
 
        Just (PolyOriginFn polydef) -> do
           monobinder <- monoInstantiate polydef polybinder monotys extsubst t''
@@ -154,7 +156,7 @@ monoKN subst e =
           -- We need to bitcast the proc we generate because we're
           -- sharing similarly-kinded instantiations, but we want for
           -- the translated return type of id:[T] to be T, not void*.
-          return $ KNTyApp t' (TypedId t'' monobinder) []
+          return $ bitcast t' (TypedId t'' monobinder)
           -- The real type of the value associated with monoid is not t',
           -- it's really [monotys/ktvs]rho... but we can cheat, for now.
        -- If we're polymorphically instantiating something with a statically
@@ -167,7 +169,7 @@ monoKN subst e =
        Nothing ->
           --return $ KNTyApp t' (TypedId t' polybinder) []
           if List.all (\(_tv, kind) -> kind == KindPointerSized) ktvs
-            then return $ KNTyApp t' (TypedId t' polybinder) []
+            then return $ bitcast t' (TypedId t'' polybinder)
             else error $ "Cannot instantiate unknown function " ++ show polybinder ++ "'s type variables "
                ++ show ktvs
                ++ " with types "
@@ -241,6 +243,12 @@ monomorphizedDataTypesFrom dts specs = concatMap monomorphizedDataTypes dts
                             Nothing -> []
                             Just m  -> m
          in map (monomorphizedDataType dt) (monotyss `eqSetInsert` genericTys)
+
+-- :: (KNExpr' RecStatus MonoType)
+bitcast ty v =
+  if ty == tidType v
+    then KNVar v
+    else KNTyApp ty v []
 
 type EqSet t = [t]
 eqSetInsert :: Eq t => [t] -> t -> [t]
