@@ -480,7 +480,9 @@ public:
     fprintf(stats, "'num_collections' : %" PRId64 ",\n", num_collections);
     if (TRACK_NUM_ALLOCATIONS) {
     fprintf(stats, "'num_allocations' : %.3g,\n", double(num_allocations));
-    fprintf(stats, "'avg_alloc_size' : %d,\n", int(approx_bytes / double(num_allocations)));
+    fprintf(stats, "'avg_alloc_size' : %d,\n", (num_allocations == 0)
+                                                  ? 0
+                                                  : int(approx_bytes / double(num_allocations)));
     }
     fprintf(stats, "'alloc_num_bytes_gt' : %.3g,\n", approx_bytes);
     fprintf(stats, "'semispace_size_kb' : %d,\n", gSEMISPACE_SIZE() / 1024);
