@@ -809,6 +809,10 @@ knLoopHeaderCensus activeids expr = go expr where
 isRec fn = case fnIsRec fn of YesRec -> True
                               NotRec -> False
 
+isPure (KNVar   {}) = True
+isPure (KNTyApp {}) = True
+isPure _ = False
+
 lookupId id = do
   st <- get
   return $ Map.findWithDefault id id (varmap st)
@@ -851,7 +855,12 @@ knLoopHeaders' expr = do
     KNUntil       ty e1 e2  rng -> KNUntil ty (q e1) (q e2) rng
     KNCase        ty v arms     -> KNCase ty v (map (fmapCaseArm id q id) arms)
     KNIf          ty v e1 e2    -> KNIf     ty v (q e1) (q e2)
-    KNLetVal      id   e1 e2    -> KNLetVal id   (q e1) (q e2)
+    KNLetVal      id   e1 e2    -> let e1' = q e1
+                                       e2' = q e2
+                                       knz = KNLiteral (PrimInt I1) (LitBool False)
+                                   in if isPure e1' && not (id `elem` freeIdents e2')
+                                       then KNLetVal id knz e2' -- see {note 1}
+                                       else KNLetVal id e1' e2'
     KNLetRec      ids es  b     -> KNLetRec ids (map q es) (q b)
     KNLetFuns     [id] [fn] b ->
         case qv id of
@@ -903,6 +912,19 @@ knLoopHeaders' expr = do
         (YesTail, Just ((id, _), mt)) ->
              KNCall YesTail ty (TypedId (tidType v) id) (dropUselessArgs mt vs)
         _ -> expr
+
+-- {note 1}::
+-- The issue at play is that recursive polymorphic functions will recurse via
+-- a type application. So if ``r`` is a recursive function binding, its
+-- recursive calls will look like::
+--      x = r:[...] ; ... ; x ...
+--    id^   e1^      e2^
+-- When we insert loop headers, ``q e2`` will replace the tail call of ``x``
+-- with `` ; ... ; loop.hdr ...``. The issue then is that ``x`` is now dead,
+-- and if we don't drop its binding, then ``r`` will be counted as recursive
+-- even though it shouldn't be... which then impedes inlining opportunities
+-- later on down the road. So for pure bindings, we check to see if they are
+-- dead and should be dropped.
 
 mkGlobal (TypedId t i) = mkGlobalWithType t i
 
