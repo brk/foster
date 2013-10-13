@@ -162,12 +162,15 @@ computeBlocks expr idmaybe k = do
             computeBlocks expr idmaybe k
 
         KNLetVal id bexp cont -> do
-            -- exp could be a KNCase, so it must be processed by computeBlocks.
+            -- exp could be a KNCase or KNLetVal,
+            -- so it must be processed by computeBlocks.
             -- Because we want the result from processing expr to be let-bound
             -- to an identifier of our choosing (rather than the sub-call's
             -- choosing, that is), we provide it explicitly as idmaybe.
-            computeBlocks bexp (Just id) $ \_var -> return ()
-            computeBlocks cont idmaybe k
+            computeBlocks     bexp (Just id) $ \var ->
+              if id /= tidIdent var
+                then computeBlocks (KNLetVal id (KNVar var) cont) idmaybe k -- didn't get var we expected, must rebind
+                else computeBlocks                          cont  idmaybe k
 
         KNLetRec [id] [bexp] e -> do
             -- With KNLetFuns, we maintain a special binding form for SCCs of
