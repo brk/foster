@@ -1765,7 +1765,10 @@ knInline' expr env = do
              Nothing -> rezM1 (KNCallPrim ty prim) (mapM q vs)
 
     KNCall tailq ty v vs -> do
-      let resExpr s = do rezM2 (KNCall tailq ty) (qs ("KNCall v " ++ s) v) (mapM (qs "KNCall vs") vs)
+      let resExpr s = do --putDocLn $ text "resExpr " <> text s <$> indent 4 (pretty expr)
+                         rezM2 (KNCall tailq ty) (qs ("KNCall v " ++ s) v) (mapM (qs "KNCall vs") vs)
+      let resExprA s = do --putDocLn $ text "resExprA " <> text s <$> indent 4 (pretty expr)
+                          rezM2 (KNCall tailq ty) (qs ("KNCall v " ++ s) v) (mapM (qs "KNCall vs") vs)
       (desc, smry) <- case lookupVarOp env v of
                         Just (VO_E ope) -> do smry <- summarize ope
                                               return ("(a known expr); summary: ",
@@ -1778,27 +1781,46 @@ knInline' expr env = do
                                 ++ " ~?~> " ++ show (lookupVarMb v env) ++ "  ")
                            <>  text desc <+> smry
                            <$> text "\t\t@ call site:  [[ " <> pretty expr <> text " ]]"
+
+      -- ``v`` is the binding for the function;
+      -- ``v'`` is the alias at which it is called.
+      -- Checking both names permits a hacky form of per-call-site inlining prevention.
+      let maybeInlineCall opf v v' = do
+          let shouldNotInline nm = "noinline_" `isPrefixOf` nm
+          if shouldNotInline (show $ tidIdent v) || shouldNotInline (show $ tidIdent v')
+            then do _ <- visitF "noinline" opf -- don't inline this function...
+                    resExpr "noinline"
+
+            else do handleCallOfKnownFunction tailq expr resExprA opf v vs env qs
+
       case lookupVarOp env v of
         -- Peek through type applications...
         Just (VO_E (Opnd (KNTyApp _ v' []) _ _ _ _)) -> peekTyApps v'
           where peekTyApps v' =
                   case lookupVarOp env v' of
                     Just (VO_E (Opnd (KNTyApp _ v'' []) _ _ _ _)) -> peekTyApps v''
-                    Just (VO_E  _) -> resExpr "Just_VO_E"
-                    Nothing        -> resExpr "Nothing"
+                    Just (VO_E  _) -> resExpr "tv-Just_VO_E"
+                    Nothing        -> resExpr "tv-Nothing"
                     Just (VO_F _) -> inlineBitcastedFunction v' tailq ty vs env
 
+        -- ...and variable rebindings...
+        Just (VO_E (Opnd (KNVar v'0) _ _ _ _)) -> peekRebinding v'0
+          where peekRebinding v' = do
+                  liftIO $ putStrLn $ "peeking through " ++ show v'
+                  case lookupVarOp env v' of
+                    Just (VO_E (Opnd (KNVar v'') _ _ _ _)) ->
+                        if tidIdent v' == tidIdent v''
+                          then do resExpr "formal" -- formal parameters are self-bound when inlinig
+                          else peekRebinding v''
+                    Just (VO_E  _)  -> do resExpr "xv-Just_VO_E"
+                    Nothing         -> do resExpr "xv-Nothing"
+                    Just (VO_F opf) -> maybeInlineCall opf v v'
+
         -- If the callee isn't a known function, we can't possibly inline it.
-        Just (VO_E _)   -> do resExpr "Just_VO_E_"
-        Nothing         -> do resExpr "Nothing"
+        Just (VO_E _oe) -> do resExpr "ne-Just_VO_E_"
+        Nothing         -> do resExpr "ne-Nothing"
 
-        Just (VO_F opf) -> do
-          let shouldNotInline nm = "noinline_" `isPrefixOf` nm
-          if shouldNotInline (show $ tidIdent v)
-            then do _ <- visitF "noinline" opf -- don't inline this function...
-                    resExpr "noinline"
-
-            else do handleCallOfKnownFunction tailq expr resExpr opf v vs env qs
+        Just (VO_F opf) -> do maybeInlineCall opf v v
 
     KNUntil       ty e1 e2 rng -> do
         Rez e1' <- knInline' e1 env
@@ -1908,7 +1930,7 @@ knInline' expr env = do
         mapM_ bumpSize szs''
         residualize $ mkLetFuns idfns'' b'
 
-handleCallOfKnownFunction tailq expr resExprA opf@(Opnd fn0 _ _ loc_op loc_ip) v vs env qs = do
+handleCallOfKnownFunction tailq expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
  smry <- summarize opf
  putDocLn4 $ text "handleCallOfKnownFunction summarized" <+> text (show $ tidIdent v)
         <$> text "        " <> smry
@@ -1916,8 +1938,7 @@ handleCallOfKnownFunction tailq expr resExprA opf@(Opnd fn0 _ _ loc_op loc_ip) v
         <$> text "               from call  [[" <+> pretty expr <+> text "]]"
  if isRec fn0
   then do
-     putDocLn4 $ text "                           residualizing rec call"
-     resExprA "blah,rec"
+     resExprA (show $ text "  residualizing rec call of [[ " <> pretty expr <> text " ]]")
   else do
    qvs'   <- mapM (qs "known call vs") vs
    mb_fn' <- visitF "handleCallOfKnownFunction" opf
