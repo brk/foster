@@ -44,7 +44,7 @@ import Data.IORef
 import Prelude hiding (id, last)
 
 data CFBody = CFB_LetFuns [Ident] [CFFn] CFBody
-            | CFB_Call    TailQ MonoType MoVar [MoVar]
+            | CFB_Call    MonoType MoVar [MoVar]
 
 -- Next stage: optimizeCFGs in CFGOptimizations.hs
 
@@ -63,7 +63,7 @@ computeCFGs uref expr =
     -- We've kept a placeholder call to the main function here until now,
     -- but at this point we can get rid of it, since we're convering to a
     -- flat-list representation with an implicit call to main.
-    KNCall tq t v vs -> return $ CFB_Call tq t v vs
+    KNCall _tq t v vs -> return $ CFB_Call t v vs
     _ -> error $ "computeCFGIO expected a series of KNLetFuns bindings! had " ++ show expr
 
 computeCFGIO :: IORef Uniq -> FnMono -> IO CFFn

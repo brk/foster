@@ -132,7 +132,7 @@ closureConvertToplevel globalIds body = do
        -- (via the ILM monad) a list of all procs generated, including those
        -- from nested functions.
        cvt :: Set Ident -> CFBody -> ILM CCMain
-       cvt _ (CFB_Call tc t v vs) = return (CCMain tc (monoToLL t) (llv v) (map llv vs))
+       cvt _ (CFB_Call t v vs) = return (CCMain YesTail (monoToLL t) (llv v) (map llv vs))
 
        cvt globalized (CFB_LetFuns ids fns body) =
          let
