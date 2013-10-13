@@ -591,6 +591,11 @@ mkFunctionSCCs ids fns body k =
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||||||||| Instances ||||||||||||||||||||||||||{{{
 
+instance AExpr body => AExpr (Fn recStatus body t) where
+    freeIdents f = let bodyvars =  freeIdents (fnBody f) in
+                   let boundvars =  map tidIdent (fnVars f) in
+                   bodyvars `butnot` boundvars
+
 instance IntSized IntSizeBits
  where intSizeOf = intOfSize where
                        intOfSize I1 = 1

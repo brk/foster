@@ -8,7 +8,7 @@ module Foster.Monomo (monomorphize) where
 
 import Foster.Base
 import Foster.Kind
-import Foster.KNExpr
+import Foster.KNUtil
 import Foster.Config
 import Foster.TypeIL
 import Foster.MonoType
@@ -290,7 +290,7 @@ idAppend id s = case id of (GlobalSymbol o) -> (GlobalSymbol $ beforeS o)
 -- we want to return an identifier for a suitably monomorphized version.
 -- If we've already monomorphized the function, we'll return its procid;
 -- otherwise, we'll monomorphize it first.
-monoInstantiate :: FnExprIL -> {-Poly-} Ident
+monoInstantiate :: FnExprIL' -> {-Poly-} Ident
                 -> [MonoType]       -> MonoSubst      -> MonoType
                 -> Mono ({- Mono -} Ident)
 monoInstantiate polydef polybinder
@@ -316,136 +316,17 @@ monoInstantiate polydef polybinder
   markSeen id = do state <- get
                    put state { monoSeenIds = Set.insert id (monoSeenIds state) }
 
-  replaceFnVar :: MonoProcId -> Fn r KNExpr TypeIL -> Mono (Fn r KNExpr TypeIL)
+  replaceFnVar :: Show t => MonoProcId -> Fn r KNExpr t -> Mono (Fn r KNExpr t)
   replaceFnVar moid fn = do
     whenMonoWanted (tidIdent $ fnVar fn) $ liftIO $ do
       putStrLn $ "polydef fn var:: " ++ show (fnVar fn)
       putStrLn $ "monodef fn var:: " ++ show (TypedId (tidType $ fnVar fn) moid)
     return fn { fnVar = TypedId (tidType $ fnVar fn) moid }
 
-showFnStructure :: Fn r KNExpr TypeIL -> Doc
-showFnStructure (Fn fnvar args body _ _srcrange) =
-  pretty fnvar <+> text "=" <+>
-                     text "{" <+> hsep (map pretty args)
-                 <$> indent 2 (showStructure body)
-                 <$> text "}" <> line
-
-alphaRename :: Fn r KNExpr TypeIL -> Mono (Fn r KNExpr TypeIL)
+alphaRename :: Fn r (KNExpr' r2 t) t -> Mono (Fn r (KNExpr' r2 t) t)
 alphaRename fn = do
-  uref <- gets monoUniques
-  renamed <- liftIO $ evalStateT (renameFn fn) (RenameState uref Map.empty)
-
-  whenMonoWanted (tidIdent $ fnVar fn) $ liftIO $ do
-      putDoc $ text "fn:      " <$> showFnStructure fn
-      putDoc $ text "renamed: " <$> showFnStructure renamed
-
-  return renamed
-   where
-    renameV :: TypedId TypeIL -> Renamed (TypedId TypeIL)
-    renameV tid@(TypedId _ (GlobalSymbol _)) = return tid
-    renameV     (TypedId t id) = do
-      state <- get
-      case Map.lookup id (renameMap state) of
-        Nothing  -> do id' <- renameI id
-                       return (TypedId t id' )
-        Just _u' -> error "can't rename a variable twice!"
-
-    renameI id@(GlobalSymbol _) = return id
-    renameI id@(Ident s _)      = do u' <- fresh
-                                     let id' = Ident s u'
-                                     remap id id'
-                                     return id'
-      where
-        fresh :: Renamed Uniq
-        fresh = do uref <- gets renameUniq ; mutIORef uref (+1)
-
-        mutIORef :: IORef a -> (a -> a) -> Renamed a
-        mutIORef r f = liftIO $ modifyIORef r f >> readIORef r
-
-        remap id id' = do state <- get
-                          put state { renameMap = Map.insert id id' (renameMap state) }
-
-    qv :: TypedId t -> Renamed (TypedId t)
-    qv (TypedId t i) = do i' <- qi i ; return $ TypedId t i'
-
-    qi v@(GlobalSymbol _) = return v
-    qi v = do state <- get
-              case Map.lookup v (renameMap state) of
-                Just v' -> return v'
-                Nothing -> return v
-
-    renameFn :: Fn r KNExpr TypeIL -> Renamed (Fn r KNExpr TypeIL)
-    renameFn (Fn v vs body isrec rng) = do
-       (v' : vs') <- mapM renameV (v:vs)
-       body' <- renameKN body
-       return (Fn v' vs' body' isrec rng)
-
-    renameArrayIndex (ArrayIndex v1 v2 rng s) =
-      mapM qv [v1,v2] >>= \[v1' , v2' ] -> return $ ArrayIndex v1' v2' rng s
-
-    renameKN :: KNExpr -> Renamed KNExpr
-    renameKN e =
-      case e of
-      KNLiteral       {}       -> return e
-      KNKillProcess   {}       -> return e
-      KNTuple         t vs a   -> mapM qv vs     >>= \vs' -> return $ KNTuple t vs' a
-      KNCall       tc t v vs   -> mapM qv (v:vs) >>= \(v':vs') -> return $ KNCall tc t v' vs'
-      KNCallPrim      t p vs   -> liftM  (KNCallPrim      t p) (mapM qv vs)
-      KNAppCtor       t c vs   -> liftM  (KNAppCtor       t c) (mapM qv vs)
-      KNAllocArray    t v      -> liftM  (KNAllocArray    t) (qv v)
-      KNAlloc         t v _rgn -> liftM  (\v' -> KNAlloc  t v' _rgn) (qv v)
-      KNDeref         t v      -> liftM  (KNDeref         t) (qv v)
-      KNStore         t v1 v2  -> liftM2 (KNStore         t) (qv v1) (qv v2)
-      KNArrayRead     t ai     -> liftM  (KNArrayRead     t) (renameArrayIndex ai)
-      KNArrayPoke     t ai v   -> liftM2 (KNArrayPoke     t) (renameArrayIndex ai) (qv v)
-      KNVar                  v -> liftM  KNVar                  (qv v)
-      KNCase          t v arms -> do arms' <- mapM renameCaseArm arms
-                                     v'    <- qv v
-                                     return $ KNCase       t v' arms'
-      KNUntil         t c b r  -> do [econd, ebody] <- mapM renameKN [c, b ]
-                                     return $ KNUntil      t econd ebody r
-      KNIf            t v e1 e2-> do [ethen, eelse] <- mapM renameKN [e1,e2]
-                                     v' <- qv v
-                                     return $ KNIf         t v' ethen eelse
-      KNLetVal       id e   b  -> do id' <- renameI id
-                                     [e' , b' ] <- mapM renameKN [e, b]
-                                     return $ KNLetVal id' e'  b'
-      KNLetRec     ids exprs e -> do ids' <- mapM renameI ids
-                                     (e' : exprs' ) <- mapM renameKN (e:exprs)
-                                     return $ KNLetRec ids' exprs'  e'
-      KNLetFuns     ids fns b  -> do ids' <- mapM renameI ids
-                                     fns' <- mapM renameFn fns
-                                     b'   <- renameKN b
-                                     return $ KNLetFuns ids' fns' b'
-      KNTyApp t v argtys       -> qv v >>= \v' -> return $ KNTyApp t v' argtys
-
-    renameCaseArm (CaseArm pat expr guard vs rng) = do
-        pat' <- renamePattern pat
-        vs' <- mapM qv vs -- TODO or renameV ?
-        expr'  <-           renameKN expr
-        guard' <- liftMaybe renameKN guard
-        return (CaseArm pat' expr' guard' vs' rng)
-
-    renamePatternAtom pattern = do
-     case pattern of
-       P_Wildcard {}          -> return pattern
-       P_Bool     {}          -> return pattern
-       P_Int      {}          -> return pattern
-       P_Variable rng v       -> qv v >>= \v' -> return $ P_Variable rng v'
-
-    renamePattern pattern = do
-     let mp = mapM renamePattern
-     case pattern of
-       PR_Atom     atom             -> renamePatternAtom atom >>= \atom' -> return $ PR_Atom atom'
-       PR_Ctor     rng t pats ctor  -> mp pats >>= \pats' -> return $ PR_Ctor  rng t pats' ctor
-       PR_Tuple    rng t pats       -> mp pats >>= \pats' -> return $ PR_Tuple rng t pats'
-
-
-data RenameState = RenameState {
-                       renameUniq :: IORef Uniq
-                     , renameMap  :: Map Ident Ident
-                   }
-type Renamed = StateT RenameState IO
+   uref <- gets monoUniques
+   liftIO $ alphaRename' fn uref
 
 -- ||||||||||||||||| Monomorphic Type Substitution ||||||||||||||{{{
 
@@ -521,13 +402,13 @@ type PolyBinder = Ident
 
 data MonoResult = MonoResult MonoProcId MonoFn
 
-type MonoFn   = Fn RecStatus KNMono MonoType
-type FnExprIL = Fn RecStatus KNExpr TypeIL
+type MonoFn    = Fn RecStatus KNMono MonoType
+type FnExprIL' = Fn RecStatus KNExpr TypeIL
 
 type Mono = StateT MonoState IO
 
-split :: [(Ident, FnExprIL)] -> ([(MonoBinder, FnExprIL)]
-                                ,[(PolyBinder, FnExprIL)])
+split :: [(Ident, FnExprIL')] -> ([(MonoBinder, FnExprIL')]
+                                 ,[(PolyBinder, FnExprIL')])
 split idsfns = ( [idfn | (idfn,False) <- aug]
                , [idfn | (idfn,True ) <- aug])
         where aug         = map tri idsfns
@@ -542,14 +423,14 @@ monoAddCtorOrigin id = do
   put state { monoOrigins = Map.union (monoOrigins state)
                                       (Map.fromList [(id, PolyOriginCtor)]) }
 
-monoAddOrigins :: [(PolyBinder, FnExprIL)] -> Mono ()
+monoAddOrigins :: [(PolyBinder, FnExprIL')] -> Mono ()
 monoAddOrigins polys = do
   state <- get
   put state { monoOrigins = Map.union (monoOrigins state)
                                       (Map.fromList [(p, PolyOriginFn f)
                                                     |(p,f) <- polys]) }
 
-data PolyOrigin = PolyOriginFn FnExprIL
+data PolyOrigin = PolyOriginFn FnExprIL'
                 | PolyOriginCtor
 
 monoGetOrigin :: PolyBinder -> Mono (Maybe PolyOrigin)

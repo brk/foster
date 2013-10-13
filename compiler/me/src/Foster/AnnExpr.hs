@@ -150,11 +150,6 @@ instance Structured (AnnExpr TypeAST) where
 
 -----------------------------------------------------------------------
 
-instance AExpr body => AExpr (Fn recStatus body t) where
-    freeIdents f = let bodyvars =  freeIdents (fnBody f) in
-                   let boundvars =  map tidIdent (fnVars f) in
-                   bodyvars `butnot` boundvars
-
 instance AExpr (AnnExpr TypeAST) where
     freeIdents e = case e of
         AnnPrimitive {}     -> []

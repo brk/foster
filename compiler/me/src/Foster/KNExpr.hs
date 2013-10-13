@@ -20,6 +20,7 @@ import Data.Maybe(maybeToList, isJust)
 import Foster.MonoType
 import Foster.Base
 import Foster.Kind
+import Foster.KNUtil
 import Foster.MainCtorHelpers(withDataTypeCtors)
 import Foster.Config
 import Foster.Context
@@ -39,48 +40,6 @@ import Control.Monad.State(gets, liftIO, evalStateT, execStateT, StateT,
                            liftM, liftM2, get, put, lift)
 import Control.Monad.Error(ErrorT, runErrorT, Error(..), MonadError, throwError, catchError)
 import Data.IORef(IORef, newIORef, readIORef, writeIORef)
-
--- | Foster.KNExpr binds all intermediate values to named variables
--- | via a variant of K-normalization.  We also perform local block sinking,
--- | in preparation for later contification.
-
-data KNExpr' r ty =
-        -- Literals
-          KNLiteral     ty Literal
-        | KNTuple       ty [TypedId ty] SourceRange
-        | KNKillProcess ty T.Text
-        -- Control flow
-        | KNIf          ty (TypedId ty)    (KNExpr' r ty) (KNExpr' r ty)
-        | KNUntil       ty (KNExpr' r ty)  (KNExpr' r ty) SourceRange
-        -- Creation of bindings
-        | KNCase        ty (TypedId ty) [CaseArm PatternRepr (KNExpr' r ty) ty]
-        | KNLetVal      Ident        (KNExpr' r ty)     (KNExpr' r ty)
-        | KNLetRec     [Ident]       [KNExpr' r ty]     (KNExpr' r ty)
-        | KNLetFuns    [Ident] [Fn r (KNExpr' r ty) ty] (KNExpr' r ty)
-        -- Use of bindings
-        | KNVar         (TypedId ty)
-        | KNCallPrim    ty (FosterPrim ty)    [TypedId ty]
-        | KNCall TailQ  ty (TypedId ty)       [TypedId ty]
-        | KNAppCtor     ty (CtorId, CtorRepr) [TypedId ty]
-        -- Mutable ref cells
-        | KNAlloc       ty (TypedId ty) AllocMemRegion
-        | KNDeref       ty (TypedId ty)
-        | KNStore       ty (TypedId ty) (TypedId ty)
-        -- Array operations
-        | KNAllocArray  ty (TypedId ty)
-        | KNArrayRead   ty (ArrayIndex (TypedId ty))
-        | KNArrayPoke   ty (ArrayIndex (TypedId ty)) (TypedId ty)
-        | KNTyApp       ty (TypedId ty) [ty]
-
--- When monmomorphizing, we use (KNTyApp t v [])
--- to represent a bitcast to type t.
-
-type KNExpr     = KNExpr' () TypeIL
-type KNExprFlat = KNExpr' () TypeIL
-type KNMono     = KNExpr' RecStatus MonoType
-
-type FnExprIL = Fn () KNExpr TypeIL
-type FnMono   = Fn RecStatus KNMono MonoType
 
 type KN = Compiled
 
@@ -931,147 +890,8 @@ mkGlobal (TypedId t i) = mkGlobalWithType t i
 mkGlobalWithType ty (Ident t u) = TypedId ty (GlobalSymbol $ T.pack (T.unpack t ++ show u))
 mkGlobalWithType _  (GlobalSymbol _) = error $ "KNExpr.hs: mkGlobal(WithType) of global!"
 
-instance (Show t) => AExpr (KNExpr' rs t) where
-    freeIdents e = case e of
-        KNLetVal   id  b   e -> freeIdents b ++ (freeIdents e `butnot` [id])
-        KNLetRec   ids xps e -> (concatMap freeIdents xps ++ freeIdents e)
-                                                                   `butnot` ids
-        KNLetFuns  ids fns e -> (concatMap freeIdents fns ++ freeIdents e)
-                                                                   `butnot` ids
-        KNCase  _t v arms    -> [tidIdent v] ++ concatMap caseArmFreeIds arms
-        KNVar      v         -> [tidIdent v]
-        _                    -> concatMap freeIdents (childrenOf e)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-
--- ||||||||||||||||||||||||| Boilerplate ||||||||||||||||||||||||{{{
--- This is necessary due to transformations of AIIf and nestedLets
--- introducing new bindings, which requires synthesizing a type.
-typeKN :: KNExpr' rs ty -> ty
-typeKN expr =
-  case expr of
-    KNLiteral       t _      -> t
-    KNTuple         t _  _   -> t
-    KNKillProcess   t _      -> t
-    KNCall        _ t _ _    -> t
-    KNCallPrim      t _ _    -> t
-    KNAppCtor       t _ _    -> t
-    KNAllocArray    t _      -> t
-    KNIf            t _ _ _  -> t
-    KNUntil         t _ _ _  -> t
-    KNAlloc         t _ _rgn -> t
-    KNDeref         t _      -> t
-    KNStore         t _ _    -> t
-    KNArrayRead     t _      -> t
-    KNArrayPoke     t _ _    -> t
-    KNCase          t _ _    -> t
-    KNLetVal        _ _ e    -> typeKN e
-    KNLetRec        _ _ e    -> typeKN e
-    KNLetFuns       _ _ e    -> typeKN e
-    KNVar                  v -> tidType v
-    KNTyApp overallType _tm _tyArgs -> overallType
-
--- This instance is primarily needed as a prereq for KNExpr to be an AExpr,
--- which ((childrenOf)) is needed in ILExpr for closedNamesOfKnFn.
-instance Show ty => Structured (KNExpr' rs ty) where
-    textOf e _width =
-        case e of
-            KNLiteral _  (LitText  _) -> text $ "KNString    "
-            KNLiteral _  (LitBool  b) -> text $ "KNBool      " ++ (show b)
-            KNLiteral ty (LitInt int) -> text $ "KNInt       " ++ (litIntText int) ++ " :: " ++ show ty
-            KNLiteral ty (LitFloat f) -> text $ "KNFloat     " ++ (litFloatText f) ++ " :: " ++ show ty
-            KNCall tail t _ _   -> text $ "KNCall " ++ show tail ++ " :: " ++ show t
-            KNCallPrim t prim _ -> text $ "KNCallPrim  " ++ (show prim) ++ " :: " ++ show t
-            KNAppCtor  t cid  _ -> text $ "KNAppCtor   " ++ (show cid) ++ " :: " ++ show t
-            KNLetVal   x b    _ -> text $ "KNLetVal    " ++ (show x) ++ " :: " ++ (show $ typeKN b) ++ " = ... in ... "
-            KNLetRec   _ _    _ -> text $ "KNLetRec    "
-            KNLetFuns ids fns _ -> text $ "KNLetFuns   " ++ (show $ zip ids (map fnVar fns))
-            KNIf      t  _ _ _  -> text $ "KNIf        " ++ " :: " ++ show t
-            KNUntil   t  _ _ _  -> text $ "KNUntil     " ++ " :: " ++ show t
-            KNAlloc      {}     -> text $ "KNAlloc     "
-            KNDeref      {}     -> text $ "KNDeref     "
-            KNStore      {}     -> text $ "KNStore     "
-            KNCase _t v arms    -> text $ "KNCase      " ++ show v ++ " binding " ++ (show $ map caseArmBindings arms)
-            KNAllocArray {}     -> text $ "KNAllocArray "
-            KNArrayRead  t _    -> text $ "KNArrayRead " ++ " :: " ++ show t
-            KNArrayPoke  {}     -> text $ "KNArrayPoke "
-            KNTuple   _ vs _    -> text $ "KNTuple     (size " ++ (show $ length vs) ++ ")"
-            KNVar (TypedId t (GlobalSymbol name))
-                                -> text $ "KNVar(Global):   " ++ T.unpack name ++ " :: " ++ show t
-            KNVar (TypedId t i) -> text $ "KNVar(Local):   " ++ show i ++ " :: " ++ show t
-            KNTyApp t _e argty  -> text $ "KNTyApp     " ++ show argty ++ "] :: " ++ show t
-            KNKillProcess t m   -> text $ "KNKillProcess " ++ show m ++ " :: " ++ show t
-    childrenOf expr =
-        let var v = KNVar v in
-        case expr of
-            KNLiteral {}            -> []
-            KNKillProcess {}        -> []
-            KNUntil _t a b _        -> [a, b]
-            KNTuple   _ vs _        -> map var vs
-            KNCase _ e arms         -> (var e):(concatMap caseArmExprs arms)
-            KNLetFuns _ids fns e    -> map fnBody fns ++ [e]
-            KNLetVal _x b  e        -> [b, e]
-            KNLetRec _x bs e        -> bs ++ [e]
-            KNCall  _  _t  v vs     -> [var v] ++ [var v | v <- vs]
-            KNCallPrim _t _v vs     ->            [var v | v <- vs]
-            KNAppCtor  _t _c vs     ->            [var v | v <- vs]
-            KNIf       _t v b c     -> [var v, b, c]
-            KNAlloc _ v _rgn        -> [var v]
-            KNAllocArray _ v        -> [var v]
-            KNDeref      _ v        -> [var v]
-            KNStore      _ v w      -> [var v, var w]
-            KNArrayRead _t ari      -> map var $ childrenOfArrayIndex ari
-            KNArrayPoke _t ari i    -> map var $ childrenOfArrayIndex ari ++ [i]
-            KNVar _                 -> []
-            KNTyApp _t v _argty     -> [var v]
-
-
-knSize :: KNExpr' r t -> (Int, Int) -- toplevel, cumulative
-knSize expr = go expr (0, 0) where
-  go expr (t, a) = let ta = let v = knSizeHead expr in (t + v, a + v) in
-                   case expr of
-    KNUntil       _   e1 e2 _  -> go e2 (go e1 ta)
-    KNIf          _ _ e1 e2    -> go e2 (go e1 ta)
-    KNCase        _ _ arms     -> foldl' (\ta e -> go e ta) ta (concatMap caseArmExprs arms)
-    KNLetVal      _   e1 e2    -> go e2 (go e1 (t, a))
-    KNLetRec     _ es b        -> foldl' (\ta e -> go e ta) (go b ta) es
-    KNLetFuns    _ fns b       -> let n = length fns in
-                                  let ta' @ (t', _ ) = go b ta in
-                                  let (_, bodies) = foldl' (\ta fn -> go (fnBody fn) ta) ta' fns in
-                                  (t' + n, n + bodies)
-    _ -> ta
-
--- Only count the effect of the head constructor.
--- The caller should maintain the invariant that
--- the arguments to that constructor have already
--- been individually accounted for.
-knSizeHead :: KNExpr' r t -> Int
-knSizeHead expr = case expr of
-    KNLiteral _ (LitText _) -> 2 -- text literals are dyn alloc'd, for now.
-    KNLiteral     {} -> 0
-    KNVar         {} -> 0
-    KNKillProcess {} -> 0
-    KNTyApp       {} -> 0
-    KNLetVal      {} -> 0
-
-    KNAllocArray  {} -> 1
-    KNAlloc       {} -> 1
-    KNStore       {} -> 1
-    KNDeref       {} -> 1
-    KNCallPrim    {} -> 1
-    KNIf          {} -> 1
-    KNLetRec      {} -> 1
-    KNLetFuns     {} -> 1
-
-    KNTuple       {} -> 2 -- due to allocation + stores
-    KNArrayRead   {} -> 2 -- due to (potential) bounds check
-    KNArrayPoke   {} -> 2 -- due to (potential) bounds check
-    KNCall        {} -> 4 -- due to dyn. insn overhead, stack checks, etc
-    KNUntil       {} -> 1
-    KNCase        {} -> 2 -- TODO might be cheaper for let-style cases.
-
-    KNAppCtor     {} -> 3 -- rather like a KNTuple, plus one store for the tag.
--- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||||| Pretty-printing ||||||||||||||||||||{{{
 renderKN m put = if put then putDoc (pretty m) >>= (return . Left)
@@ -1258,8 +1078,6 @@ instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
             KNArrayRead  _ ai   -> pretty ai
             KNArrayPoke  _ ai v -> prettyId v <+> text ">^" <+> pretty ai
             KNTuple      _ vs _ -> parens (hsep $ punctuate comma (map pretty vs))
-
-deriving instance (Show ty, Show rs) => Show (KNExpr' rs ty) -- used elsewhere...
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -1478,8 +1296,8 @@ opndIsUnvisited (Opnd _ _ vr _ _) = do
 when True   action = do action
 when False _action = return ()
 
-residualizeCached :: a -> Int -> String -> In (Rez a)
-residualizeCached e size _ = do
+residualizeCached :: a -> Int -> In (Rez a)
+residualizeCached e size = do
                    bumpSize size
                    return (Rez e)
 
@@ -1998,55 +1816,18 @@ handleCallOfKnownFunction tailq expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs
                                      return Nothing)
       case mb_e' of
          Just (Rez e', esize) -> do
-            --putDocLn $ text "inlined epxr of size " <> pretty esize <> text " from call\t" <> pretty expr
-            innerPending <- do IP_Limit k <- readRef loc_ip
-                               return $ k == 0
-            outerPending <- do OP_Limit k <- readRef loc_op
-                               return $ k
-            case (innerPending, outerPending, isRec fn' ) of
-              --(False, opk, True) -> do
-              --  -- call of recursive function; do we really want to unpeel it?
-              --  putDocLn $ text ("\tlambda folding " ++ show (tidIdent v) ++ " failed due to it being a non-outer-pending recursive call... ")
-              --  --putDocLn $ text ("\t??? lambda folding " ++ show (tidIdent v) ++ " at outer-pending level " ++ show opk)
-              --  !r <- gets inSizeCntr
-              --  !x0 <- readRef r
-              --  v <- resExprA "unpeel-loop"
-              --  !x1 <- readRef r
-              --  putDocLn $ text $ "\tsize went from " ++ show x0 ++ " to " ++ show x1
-              --  return v
-              --  --residualizeCached e' size
+            --when (shouldInspect (fnIdent fn')) $ do
+            --    putDocLn $ indent 8 (pretty expr)
+            --    putDocLn $ indent 16 (pretty e')
+            residualizeCached e' esize
 
-              (_, _, _) -> do
-                putDocLn3 $  text "residualizing call [[" <+> pretty expr <+> text "]] into:"
-                         <$> indent 16 (pretty e' )
-                residualizeCached e' esize (show $ pretty e')
-{-
-              (True, _, _) -> do
-                -- if so, we're loop unrolling...
-                 --liftIO $ putDoc $ text "\tlambda folding [" <> pretty expr <> text "] failed due to inner pending flag " <> text "\n"
-                 --resExprA "unroll-loop"
-                --putDocLn $ text ("residualizing e' for call ") <> pretty e'
-                residualizeCached e' esize (show $ pretty e')
+         Nothing -> do
+            --when (shouldInspect (fnIdent fn')) $ do
+            --    putDocLn $ text "lambda folding [" <> pretty expr <> text "] failed; residualizing call instead."
 
-              (_, _, False) -> do -- non-recursive calls should always be inlined (if not too big)
-                --putDocLn $ text ("residualizing e' for call ") <> pretty e'
-                residualizeCached e' esize (show $ pretty e')
-
-              (_, opk, True) -> do
-                -- call of recursive function; do we really want to unpeel it?
-                putDocLn $ text ("\tlambda folding " ++ show (tidIdent v) ++ " failed due to it being a non-outer-pending recursive call... ")
-                --putDocLn $ text ("\t??? lambda folding " ++ show (tidIdent v) ++ " at outer-pending level " ++ show opk)
-                !r <- gets inSizeCntr
-                !x0 <- readRef r
-                v <- resExprA "unpeel-loop"
-                !x1 <- readRef r
-                putDocLn $ text $ "\tsize went from " ++ show x0 ++ " to " ++ show x1
-                return v
-                --residualizeCached e' size
--}
-         Nothing -> do putDocLn4 $ text "lambda folding [" <> pretty expr <> text "] failed; residualizing call instead."
-                       resExprA "kNothing"
+            resExprA "kNothing"
   where
+
     -- input are residual vars, not src vars, fwiw
     foldLambda' :: TailQ -> ResFn -> Opnd SrcFn
                 -> [TypedId MonoType] -> SizeCounter -> SrcEnv -> In (Maybe (Rez ResExpr, Int))
