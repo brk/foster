@@ -1,5 +1,5 @@
 -----------------------------------------------------------------------------
--- Copyright (c) 2012 Ben Karel. All rights reserved.
+-- Copyright (c) 2012 Ben Karel. All rights reserved (except for ccTime).
 -- Use of this source code is governed by a BSD-style license that can be
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
@@ -12,6 +12,8 @@ import Foster.MainOpts
 import Data.IORef(IORef, modifyIORef, readIORef)
 import Control.Monad.State(StateT, gets, when, liftIO)
 import qualified Data.Text as T(Text)
+
+import Data.Time.Clock.POSIX (getPOSIXTime)
 
 import System.Console.GetOpt
 
@@ -31,6 +33,15 @@ ccUniq = do uref <- gets ccUniqRef
 ccFreshId :: T.Text -> Compiled Ident
 ccFreshId txt = do u <- ccUniq
                    return $ Ident txt u
+
+-- `time` from Criterion.Measurement, for actions wrapping IO.
+ccTime :: Compiled a -> Compiled (Double, a)
+ccTime act = do
+  start  <- liftIO $ realToFrac `fmap` getPOSIXTime
+  result <- act
+  end    <- liftIO $ realToFrac `fmap` getPOSIXTime
+  let !delta = end - start
+  return (delta, result)
 
 ccWhen :: (CompilerContext -> Bool) -> IO () -> Compiled ()
 ccWhen getter action = do cond <- gets getter ; liftIO $ when cond action

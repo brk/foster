@@ -397,7 +397,7 @@ runCompiler pb_program flagVals outfile = do
                       tcUnificationVars = varlist,
                               tcParents = [],
                    tcMetaIntConstraints = icmap }
-   (il_time, ilprog) <- time $ evalStateT (compile pb_program tcenv)
+   (nc_time, (in_time, cp_time, ilprog)) <- time $ evalStateT (compile pb_program tcenv)
                     CompilerContext {
                            ccVerbose  = getVerboseFlag flagVals
                          , ccFlagVals = flagVals
@@ -406,10 +406,12 @@ runCompiler pb_program flagVals outfile = do
                          , ccUniqRef  = uniqref
                     }
    (pb_time, _) <- time $ dumpILProgramToProtobuf ilprog outfile
-   putStrLn $ "compilation time: " ++ secs il_time
+   putStrLn $ "compilation time: " ++ secs (nc_time - (cp_time + in_time))
+   putStrLn $ "inlining    time: " ++ secs in_time
+   putStrLn $ "codegenprep time: " ++ secs cp_time
    putStrLn $ "protobufout time: " ++ secs pb_time
 
-compile :: WholeProgram -> TcEnv -> Compiled ILProgram
+compile :: WholeProgram -> TcEnv -> Compiled (Double, Double, ILProgram)
 compile pb_program tcenv =
     (return $ parseWholeProgram pb_program)
      >>= mergeModules -- temporary hack
@@ -477,7 +479,9 @@ typecheckSourceModule tcenv sm = do
 
 lowerModule :: ModuleIL AIExpr TypeIL
             -> Context TypeIL
-            -> Compiled ILProgram
+            -> Compiled (Double -- inlining time
+                        ,Double -- codegen prep
+                        ,ILProgram)
 lowerModule ai_mod ctx_il = do
      inline   <- gets ccInline
      flags    <- gets ccFlagVals
@@ -485,10 +489,11 @@ lowerModule ai_mod ctx_il = do
      let insize = getInliningSize   flags
      let ctoropt = getCtorOpt       flags
 
+
      kmod <- kNormalizeModule ai_mod ctx_il ctoropt
      monomod0 <- monomorphize   kmod
      monomod2 <- knLoopHeaders  monomod0
-     monomod4 <- (if inline then knInline insize donate else return) monomod2
+     (in_time, monomod4) <- ccTime $ (if inline then knInline insize donate else return) monomod2
      monomod  <- knSinkBlocks   monomod4
 
      whenDumpIR "kn" $ do
@@ -537,7 +542,7 @@ lowerModule ai_mod ctx_il = do
          _ <- liftIO $ renderCC ccmod True
          putDocLn $ (outLn "^^^ ===================================")
 
-     (ilprog, prealloc) <- prepForCodegen ccmod  constraints
+     (cp_time, (ilprog, prealloc)) <- ccTime $ prepForCodegen ccmod  constraints
      whenDumpIR "prealloc" $ do
          putDocLn $ (outLn "/// Pre-allocation ====================")
          _ <- liftIO (renderCC (ccmod { moduleILbody = let (CCB_Procs _ main) = moduleILbody ccmod in
@@ -554,7 +559,7 @@ lowerModule ai_mod ctx_il = do
 
      maybeInterpretKNormalModule kmod
 
-     return ilprog
+     return (in_time, cp_time, ilprog)
 
   where
     cfgModule :: ModuleIL (KNExpr' RecStatus MonoType) MonoType -> Compiled (ModuleIL CFBody MonoType)
