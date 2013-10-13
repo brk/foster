@@ -11,12 +11,13 @@ import Foster.Base
 
 import Foster.MonoType
 import Foster.TypeIL
+import Foster.Kind
 
 import Text.PrettyPrint.ANSI.Leijen
 
 import Data.List(foldl')
 import Data.Map(Map)
-import Data.Map as Map(insert, lookup, empty)
+import qualified Data.Map as Map(insert, lookup, empty)
 import qualified Data.Text as T
 import Control.Monad.State(evalStateT, get, gets, put,
                                StateT, liftIO, liftM, liftM2)
@@ -337,5 +338,193 @@ knSizeHead expr = case expr of
     KNCase        {} -> 2 -- TODO might be cheaper for let-style cases.
 
     KNAppCtor     {} -> 3 -- rather like a KNTuple, plus one store for the tag.
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+-- ||||||||||||||||||||||||| Pretty-printing ||||||||||||||||||||{{{
+renderKN m put = if put then putDoc (pretty m) >>= (return . Left)
+                        else return . Right $ show (pretty m)
+
+renderKNM :: (ModuleIL (KNMono) MonoType) -> String
+renderKNM m = show (pretty m)
+
+renderKNF :: FnExprIL -> String
+renderKNF m = show (pretty m)
+
+renderKNFM :: FnMono -> String
+renderKNFM m = show (pretty m)
+
+showTyped :: Pretty t => Doc -> t -> Doc
+showTyped d t = parens (d <+> text "::" <+> pretty t)
+
+showUnTyped d _ = d
+
+comment d = text "/*" <+> d <+> text "*/"
+
+instance Pretty TypeIL where
+  pretty t = text (show t)
+
+instance Pretty MonoType where
+  pretty t = case t of
+          PrimInt        isb          -> text "Int" <> pretty isb
+          PrimFloat64                 -> text "Float64"
+          TyConApp       dt ts        -> text "(" <> pretty dt <+> tupled (map pretty ts) <> text "]"
+          TupleType      ts           -> tupled (map pretty ts)
+          StructType     ts           -> text "#" <> tupled (map pretty ts)
+          FnType         ts r _cc _pf -> text "{" <+> hsep [pretty t <+> text "=>" | t <- ts]
+                                                  <+> pretty r <+> text "}"
+          CoroType      _s _r         -> text "Coro..."
+          ArrayType      t            -> text "Array" <+> pretty t
+          PtrType        t            -> text "Ref" <+> pretty t
+          PtrTypeUnknown              -> text "?"
+
+instance Pretty AllocMemRegion where
+  pretty rgn = text (show rgn)
+
+instance Pretty t => Pretty (ArrayIndex (TypedId t)) where
+  pretty (ArrayIndex b i _rng safety) =
+    prettyId b <> brackets (prettyId i) <+> comment (text $ show safety)
+
+-- (<//>) ?vs? align (x <$> y)
+
+kwd  s = dullblue  (text s)
+lkwd s = dullwhite (text s)
+end    = lkwd "end"
+
+instance (Pretty t, Pretty rs) => Pretty (Fn rs (KNExpr' rs t) t) where
+  pretty fn = group (lbrace <+> (hsep (map (\v -> pretty v <+> text "=>") (fnVars fn)))
+                    <$> indent 4 (pretty (fnBody fn))
+                    <$> rbrace) <+> pretty (fnVar fn)
+                                <+> text "(rec?:" <+> pretty (fnIsRec fn) <+> text ")"
+                                <+> text "// :" <+> pretty (tidType $ fnVar fn)
+
+instance (Pretty body, Pretty t) => Pretty (ModuleIL body t) where
+  pretty m = text "// begin decls"
+            <$> vcat [showTyped (text s) t | (s, t) <- moduleILdecls m]
+            <$> text "// end decls"
+            <$> text "// begin datatypes"
+            <$> vsep (map pretty $ moduleILdataTypes m)
+            <$> text "// end datatypes"
+            <$> text "// begin prim types"
+            <$> empty
+            <$> text "// end prim types"
+            <$> text "// begin functions"
+            <$> pretty (moduleILbody m)
+            <$> text "// end functions"
+
+prettyId (TypedId _ i) = text (show i)
+
+instance Pretty TypeFormalAST where
+  pretty (TypeFormalAST name kind) =
+    text name <+> text ":" <+> pretty kind
+
+instance Pretty t => Pretty (DataType t) where
+  pretty dt =
+    text "type case" <+> pretty (dataTypeName dt) <+>
+         hsep (map (parens . pretty) (dataTypeTyFormals dt))
+     <$> indent 2 (vsep (map prettyDataTypeCtor (dataTypeCtors dt)))
+     <$> text ";"
+     <$> empty
+
+prettyDataTypeCtor dc =
+  text "of" <+> text "$" <> text (T.unpack $ dataCtorName dc)
+                        <+> hsep (map pretty (dataCtorTypes dc))
+
+instance Pretty t => Pretty (PatternAtom t) where
+  pretty p =
+    case p of
+        P_Wildcard      _rng _ty          -> text "_"
+        P_Variable      _rng tid          -> prettyId tid
+        P_Bool          _rng _ty b        -> text $ if b then "True" else "False"
+        P_Int           _rng _ty li       -> text (litIntText li)
+
+instance Pretty t => Pretty (Pattern t) where
+  pretty p =
+    case p of
+        P_Atom          atom              -> pretty atom
+        P_Ctor          _rng _ty pats cid -> parens (text "$" <> text (ctorCtorName $ ctorInfoId cid) <+> (hsep $ map pretty pats))
+        P_Tuple         _rng _ty pats     -> parens (hsep $ punctuate comma (map pretty pats))
+
+instance Pretty t => Pretty (PatternRepr t) where
+  pretty p =
+    case p of
+        PR_Atom          atom              -> pretty atom
+        PR_Ctor          _rng _ty pats cid -> parens (text "$" <> text (ctorCtorName $ ctorLLInfoId cid) <+> (hsep $ map pretty pats))
+        PR_Tuple         _rng _ty pats     -> parens (hsep $ punctuate comma (map pretty pats))
+
+pr YesTail = "(tail)"
+pr NotTail = "(non-tail)"
+
+instance Pretty RecStatus where pretty rs = text $ show rs
+
+instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
+  pretty e =
+        case e of
+            KNVar (TypedId _ (GlobalSymbol name))
+                                -> (text $ "G:" ++ T.unpack name)
+                       --showTyped (text $ "G:" ++ T.unpack name) t
+            KNVar (TypedId t i) -> prettyId (TypedId t i)
+            KNTyApp t e argtys  -> showTyped (pretty e <> text ":[" <> hsep (punctuate comma (map pretty argtys)) <> text "]") t
+            KNKillProcess t m   -> text ("KNKillProcess " ++ show m ++ " :: ") <> pretty t
+            KNLiteral _ lit     -> pretty lit
+            KNCall _tail t v [] -> showUnTyped (prettyId v <+> text "!") t
+            KNCall _tail t v vs -> showUnTyped (prettyId v <+> hsep (map pretty vs)) t <+> text "/*" <+> text (pr _tail) <+> text "*/"
+            KNCallPrim t prim vs-> showUnTyped (text "prim" <+> pretty prim <+> hsep (map prettyId vs)) t
+            KNAppCtor  t cid  vs-> showUnTyped (text "~" <> parens (text (show cid)) <> hsep (map prettyId vs)) t
+            KNLetVal   x b    k -> lkwd "let"
+                                      <+> fill 8 (text (show x))
+                                      <+> text "="
+                                      <+> (indent 0 $ pretty b) <+> lkwd "in"
+                                   <$> pretty k
+
+            KNLetFuns ids fns k -> pretty k
+                                   <$> indent 1 (lkwd "wherefuns")
+                                   <$> indent 2 (vcat [text (show id) <+> text "="
+                                                                      <+> pretty fn
+                                                      | (id, fn) <- zip ids fns
+                                                      ])
+                                   -- <$> indent 2 end
+                                   {-
+            KNLetFuns ids fns k -> text "letfuns"
+                                   <$> indent 2 (vcat [text (show id) <+> text "="
+                                                                      <+> pretty fn
+                                                      | (id, fn) <- zip ids fns
+                                                      ])
+                                   <$> lkwd "in"
+                                   <$> pretty k
+                                   <$> end
+                                   -}
+            KNLetRec  ids xps e -> text "rec"
+                                   <$> indent 2 (vcat [text (show id) <+> text "="
+                                                                      <+> pretty xpr
+                                                      | (id, xpr) <- zip ids xps
+                                                      ])
+                                   <$> lkwd "in"
+                                   <$> pretty e
+                                   <$> end
+            KNIf     _t v b1 b2 -> kwd "if" <+> prettyId v
+                                   <$> nest 2 (kwd "then" <+> (indent 0 $ pretty b1))
+                                   <$> nest 2 (kwd "else" <+> (indent 0 $ pretty b2))
+                                   <$> end
+            KNUntil  _t c b _sr -> kwd "until" <+> pretty c <//> lkwd "then"
+                                   <$> nest 2 (pretty b)
+                                   <$> end
+            KNAlloc _ v rgn     -> text "(ref" <+> prettyId v <+> comment (pretty rgn) <> text ")"
+            KNDeref _ v         -> prettyId v <> text "^"
+            KNStore _ v1 v2     -> text "store" <+> prettyId v1 <+> text "to" <+> prettyId v2
+            KNCase _t v bnds    -> align $
+                                       kwd "case" <+> pretty v <+> text "::" <+> pretty (tidType v)
+                                       <$> indent 2 (vcat [ kwd "of" <+> fill 20 (pretty pat)
+                                                                     <+> (case guard of
+                                                                            Nothing -> empty
+                                                                            Just g  -> text "if" <+> pretty g)
+                                                                     <+> text "->" <+> pretty expr
+                                                          | (CaseArm pat expr guard _ _) <- bnds
+                                                          ])
+                                       <$> end
+            KNAllocArray {}     -> text $ "KNAllocArray "
+            KNArrayRead  _ ai   -> pretty ai
+            KNArrayPoke  _ ai v -> prettyId v <+> text ">^" <+> pretty ai
+            KNTuple      _ vs _ -> parens (hsep $ punctuate comma (map pretty vs))
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
