@@ -1388,7 +1388,7 @@ putDocLn6 _ = return ()
 putDocLn7 d = liftIO $ putDoc $ d <> line
 -}
 
-putDocLn  _d = return () -- liftIO $ putDoc $ _d <> line
+putDocLn  _d = liftIO $ putDoc $ _d <> line
 putDocLn4 _d = return () -- liftIO $ putDoc $ _d <> line
 putDocLn5 _d = return () -- liftIO $ putDoc $ _d <> line
 putDocLn3 _d = return () -- liftIO $ putDoc $ _d <> line
@@ -1627,7 +1627,7 @@ withSizeCounter (SizeCounter sz lim) action = do
                   action
                   (put $ st { inSizeCntr = oldszref, inSizeLimit = oldszlim })
   size <- readRef szref
-  return (v, size)
+  return (v, size - sz)
 
 getLimitedSizeCounter :: Int -> String -> In SizeCounter
 getLimitedSizeCounter lim src = do
@@ -1717,6 +1717,8 @@ knInlineToplevel expr env = do
             pickFn (fn, Nothing)     = do return fn
         fns' <- mapM pickFn (zip fns mb_fns)
         occ_sts <- mapM getVarStatus ids'
+        let irrel_ids = [(id, id') | (id, id' , occst) <- zip3 ids ids' occ_sts, not (relevant occst id' ) ]
+        liftIO $ putDocLn $ text "toplevel dead ids: " <> pretty irrel_ids
         return $ Rez $ mkLetFuns [(id, fn) | (id, fn, occst)
                                  <- zip3 ids' fns' occ_sts
                                  , relevant occst id] b'
@@ -1867,6 +1869,8 @@ knInline' expr env = do
         Rez b'  <- knInline' b env'
         expsiz' <- mapM visitE (zip ids' ops)
         occ_sts <- mapM getVarStatus ids'
+        let irrel_ids = [(id, id') | (id, id' , occst) <- zip3 ids ids' occ_sts, not (relevant occst id' ) ]
+        liftIO $ putDocLn $ text "letrec dead ids: " <> pretty irrel_ids
         let (idses'', sizes) = unzip [((id, e'), size)
                                      | (id, (e', size), occst)
                                      <- zip3 ids' expsiz' occ_sts
@@ -1891,6 +1895,8 @@ knInline' expr env = do
 
         mb_fns  <- mapM (visitF "KNLetFuns.2") ops
         occ_sts <- mapM getVarStatus ids'
+        let irrel_ids = [(id, id') | (id, id' , occst) <- zip3 ids ids' occ_sts, not (relevant occst id' ) ]
+        liftIO $ putDocLn $ text "letfuns dead ids: " <> pretty irrel_ids
         let fns' = map (\(fn, mb_fn) ->
                          case mb_fn of Just fsz -> fsz
                                        Nothing -> error $ "KNExpr.hs: One or more recursive functions failed to residualize during inlining!"
@@ -2114,10 +2120,10 @@ visitE (resid, Opnd e env loc_e _ loc_ip) = do
   ef <- readRef loc_e
   case ef of
     Unvisited -> do
-        --liftIO $ putStrLn $ "\nvisited opnd " ++ show (pretty e) ++ ", it was Unvisited..."
         ip <- readRef loc_ip
         case ip of
           IP_Limit 0 -> do
+            -- bootstrap/testcases/rec-ctor-fns triggers this code path.
             debugDocLn $ text "inner-pending true for expr...????"
                            <$> pretty e
             return (KNVar (TypedId (typeKN e) resid), 0)
@@ -2130,7 +2136,6 @@ visitE (resid, Opnd e env loc_e _ loc_ip) = do
             writeRef loc_e (Visited e' size)
             return (e', size)
     Visited r size -> do
-        --liftIO $ putStrLn $ "visited opnd " ++ show (pretty e) ++ ", it was Visited:\n" ++ show (pretty r)
         return (r, size)
 
 inlineBitcastedFunction :: TypedId MonoType -> TailQ -> MonoType
