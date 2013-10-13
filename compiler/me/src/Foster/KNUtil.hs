@@ -166,8 +166,8 @@ alphaRename' fn uref = do
       KNTyApp t v argtys       -> qv v >>= \v' -> return $ KNTyApp t v' argtys
 
     renameCaseArm (CaseArm pat expr guard vs rng) = do
-        pat' <- renamePattern pat
-        vs' <- mapM qv vs -- TODO or renameV ?
+        pat'   <- renamePattern pat
+        vs'    <- mapM qv vs
         expr'  <-           renameKN expr
         guard' <- liftMaybe renameKN guard
         return (CaseArm pat' expr' guard' vs' rng)
@@ -177,7 +177,7 @@ alphaRename' fn uref = do
        P_Wildcard {}          -> return pattern
        P_Bool     {}          -> return pattern
        P_Int      {}          -> return pattern
-       P_Variable rng v       -> qv v >>= \v' -> return $ P_Variable rng v'
+       P_Variable rng v       -> liftM (P_Variable rng) (renameV v)
 
     renamePattern pattern = do
      let mp = mapM renamePattern
