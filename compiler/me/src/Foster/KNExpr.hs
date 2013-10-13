@@ -1185,8 +1185,9 @@ knInline mbDefaultSizeLimit shouldDonate knmod = do
                                                     Just  x -> x
   let e  = moduleILbody knmod
   let et = runErrorT (knInlineToplevel e (SrcEnv Map.empty Map.empty))
+  cenRef <- newRef $ inCensus e
   let st = evalStateT et (InlineState uniq currlvl effort Map.empty sizectr NoLimit
-                                     (inCensus e) defaultSizeLimit shouldDonate)
+                                      cenRef defaultSizeLimit shouldDonate)
   result <- liftIO st
   case result of
     Right (Rez expr') -> return $ knmod { moduleILbody = expr' }
@@ -1203,7 +1204,7 @@ data InlineState = InlineState {
   , inVarCount :: Map Ident (IORef Int)
   , inSizeCntr :: IORef Int
   , inSizeLimit :: SizeLimit
-  , inCallPassCensus :: Map Ident (Int, Int)
+  , inCallPassCensus :: IORef (Map Ident (Int, Int))
   , inDefaultSizeLimit :: Int
   , inShouldDonate :: Bool
 }
@@ -1264,6 +1265,14 @@ freshenId' (Ident name _) = do
 freshenTid tid = do
         id <- freshenId (tidIdent tid)
         return $ TypedId (tidType tid) id
+
+updateCensus id id' = do
+  r <- gets inCallPassCensus
+  m <- readRef r
+  --liftIO $ putStrLn $ "!!!!!!!!!!! updating census " ++ show id ++ " ~~> " ++ show id' ++ "  ==  " ++ show (Map.lookup id m)
+  case Map.lookup id m of
+   Nothing -> return ()
+   Just v  -> writeRef r (Map.insert id' v m)
 
 -- resVar :: Env -> SrcVar -> In ResVar
 resVar env v = do
@@ -1794,7 +1803,7 @@ handleCallOfKnownFunction tailq expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs
                <$> text "               from call  [[" <+> pretty expr <+> text "]], producing:"
       putDocLn3 $ indent 32 $ pretty fn'
 
-      inCenMap <- gets inCallPassCensus
+      inCenMap <- gets inCallPassCensus >>= readRef
       let inCen v = Map.lookup (tidIdent v) inCenMap
 
       sizes <- mapM (bestEffortOpSize . lookupVarOp' env) qvs'
@@ -2183,7 +2192,7 @@ type NumTimesPassed = Int
 
 inCensus :: KNMono -> Map Ident (NumTimesCalled, NumTimesPassed)
 inCensus expr =
-    let InCenState c p _ = execState (inCensusFn expr)
+    let InCenState c p _ = execState (inCensusExpr expr)
                                      (InCenState Map.empty Map.empty Map.empty)
     in Map.unionWith (\(a,b) (c,d) -> (a+c, b+d))
                      (Map.map (\v -> (v, 0)) c)
@@ -2220,8 +2229,13 @@ cenSawCalled v = do
   st <- get
   put $ st { cenCalled = Map.adjust (+1) id (cenCalled st) }
 
-inCensusFn :: KNMono -> InCen ()
-inCensusFn expr = go expr where
+inCensusFn :: Fn RecStatus KNMono MonoType -> InCen ()
+inCensusFn fn = do
+  mapM_ (cenSawCandidate . tidIdent) (fnVars fn)
+  inCensusExpr $ fnBody fn
+
+inCensusExpr :: KNMono -> InCen ()
+inCensusExpr expr = go expr where
   go expr = case expr of
     KNCase        _ _ arms     -> do mapM_ go (concatMap caseArmExprs arms)
     KNUntil         _ e1 e2 _  -> do go e1 ; go e2
@@ -2235,11 +2249,14 @@ inCensusFn expr = go expr where
                                        _ -> return ()
                                      go e2
     KNLetRec      _   es  b    -> do mapM_ go es ; go b
+    {-
     KNLetFuns     [id] fns@[fn] b | not (isRec fn) -> do
                                      cenSawCandidate id
                                      mapM_ (go . fnBody) fns
                                      go b
-    KNLetFuns    _ids fns b    -> do mapM_ (go . fnBody) fns
+                                     -}
+    KNLetFuns     ids fns b    -> do mapM_ cenSawCandidate ids
+                                     mapM_ inCensusFn fns
                                      go b
 
     KNCall   _ _ v vs -> do cenSawCalled v
