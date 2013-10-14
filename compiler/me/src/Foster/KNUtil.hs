@@ -56,6 +56,10 @@ data KNExpr' r ty =
         | KNArrayRead   ty (ArrayIndex (TypedId ty))
         | KNArrayPoke   ty (ArrayIndex (TypedId ty)) (TypedId ty)
         | KNTyApp       ty (TypedId ty) [ty]
+        | KNInlined     Int Int Int (KNExpr' r ty) (KNExpr' r ty) -- old, new
+                     --          ^ "after" time of inlining new
+                     --      ^ "before" time of inlining new
+                     --  ^ time of first processing opnd
 
 -- When monmomorphizing, we use (KNTyApp t v [])
 -- to represent a bitcast to type t.
@@ -165,6 +169,7 @@ alphaRename' fn uref = do
                                      b'   <- renameKN b
                                      return $ KNLetFuns ids' fns' b'
       KNTyApp t v argtys       -> qv v >>= \v' -> return $ KNTyApp t v' argtys
+      KNInlined t0 tb tn old new -> do renameKN new >>= return . (KNInlined t0 tb tn old)
 
     renameCaseArm (CaseArm pat expr guard vs rng) = do
         pat'   <- renamePattern pat
@@ -201,7 +206,7 @@ type Renamed = StateT RenameState IO
 
 deriving instance (Show ty, Show rs) => Show (KNExpr' rs ty) -- used elsewhere...
 
-instance (Show t) => AExpr (KNExpr' rs t) where
+instance (Show t, Show rs) => AExpr (KNExpr' rs t) where
     freeIdents e = case e of
         KNLetVal   id  b   e -> freeIdents b ++ (freeIdents e `butnot` [id])
         KNLetRec   ids xps e -> (concatMap freeIdents xps ++ freeIdents e)
@@ -210,6 +215,7 @@ instance (Show t) => AExpr (KNExpr' rs t) where
                                                                    `butnot` ids
         KNCase  _t v arms    -> [tidIdent v] ++ concatMap caseArmFreeIds arms
         KNVar      v         -> [tidIdent v]
+        KNInlined _t0 _to _tn _old new   -> freeIdents new
         _                    -> concatMap freeIdents (childrenOf e)
 
 -- This is necessary due to transformations of AIIf and nestedLets
@@ -237,10 +243,11 @@ typeKN expr =
     KNLetFuns       _ _ e    -> typeKN e
     KNVar                  v -> tidType v
     KNTyApp overallType _tm _tyArgs -> overallType
+    KNInlined _t0 _ _ _ new -> typeKN new
 
 -- This instance is primarily needed as a prereq for KNExpr to be an AExpr,
 -- which ((childrenOf)) is needed in ILExpr for closedNamesOfKnFn.
-instance Show ty => Structured (KNExpr' rs ty) where
+instance (Show ty, Show rs) => Structured (KNExpr' rs ty) where
     textOf e _width =
         case e of
             KNLiteral _  (LitText  _) -> text $ "KNString    "
@@ -268,6 +275,7 @@ instance Show ty => Structured (KNExpr' rs ty) where
             KNVar (TypedId t i) -> text $ "KNVar(Local):   " ++ show i ++ " :: " ++ show t
             KNTyApp t _e argty  -> text $ "KNTyApp     " ++ show argty ++ "] :: " ++ show t
             KNKillProcess t m   -> text $ "KNKillProcess " ++ show m ++ " :: " ++ show t
+            KNInlined _t0 _to _tn old new   -> text "KNInlined " <> text (show old)
     childrenOf expr =
         let var v = KNVar v in
         case expr of
@@ -291,6 +299,7 @@ instance Show ty => Structured (KNExpr' rs ty) where
             KNArrayPoke _t ari i    -> map var $ childrenOfArrayIndex ari ++ [i]
             KNVar _                 -> []
             KNTyApp _t v _argty     -> [var v]
+            KNInlined _t0 _to _tn _old new      -> [new]
 
 
 knSize :: KNExpr' r t -> (Int, Int) -- toplevel, cumulative
@@ -306,6 +315,7 @@ knSize expr = go expr (0, 0) where
                                   let ta' @ (t', _ ) = go b ta in
                                   let (_, bodies) = foldl' (\ta fn -> go (fnBody fn) ta) ta' fns in
                                   (t' + n, n + bodies)
+    KNInlined _t0 _to _tn _old new -> go new (t, a)
     _ -> ta
 
 -- Only count the effect of the head constructor.
@@ -338,6 +348,7 @@ knSizeHead expr = case expr of
     KNCase        {} -> 2 -- TODO might be cheaper for let-style cases.
 
     KNAppCtor     {} -> 3 -- rather like a KNTuple, plus one store for the tag.
+    KNInlined _t0 _ _ _ new  -> knSizeHead new
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||||| Pretty-printing ||||||||||||||||||||{{{
@@ -456,9 +467,13 @@ pr NotTail = "(non-tail)"
 
 instance Pretty RecStatus where pretty rs = text $ show rs
 
+desc (t0, tb, tn) = text "t_opnd=" <> pretty t0 <> text "; t_before="<>pretty tb<>text "; t_after="<>pretty tn<>text "; t_elapsed="<>pretty (tn - tb)
+
 instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
   pretty e =
         case e of
+            KNInlined t0 tb tn old new -> dullgreen (text "inlined") <+> dullwhite (pretty old) <+> text "//" <+> desc (t0, tb, tn)
+                                   <$> indent 1 (pretty new)
             KNVar (TypedId _ (GlobalSymbol name))
                                 -> (text $ "G:" ++ T.unpack name)
                        --showTyped (text $ "G:" ++ T.unpack name) t

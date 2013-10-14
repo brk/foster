@@ -462,6 +462,7 @@ collectFunctions knf = go [] (fnBody knf)
           KNArrayRead     {} -> xs
           KNArrayPoke     {} -> xs
           KNTyApp         {} -> xs
+          KNInlined _t0 _to _tn _old new -> go xs new
           KNIf            _ _ e1 e2   -> go (go xs e1) e2
           KNLetVal          _ e1 e2   -> go (go xs e1) e2
           KNUntil           _ e1 e2 _ -> go (go xs e1) e2
@@ -500,6 +501,7 @@ collectMentions knf = go Set.empty (fnBody knf)
                                        foldl' go (vv xs v) es
           KNLetRec     _ es b ->       foldl' go xs (b:es)
           KNLetFuns    _ fns b -> Set.union xs $ go (Set.unions $ map collectMentions fns) b
+          KNInlined _t0 _to _tn _old new -> go xs new
 
 rebuildFnWith rebuilder addBindingsFor f =
          let rebuiltBody = rebuildWith rebuilder (fnBody f) in
@@ -528,6 +530,7 @@ rebuildWith rebuilder e = q e
       KNLetRec      ids es   e       -> KNLetRec   ids (map q es) (q e)
       KNCase        ty v arms        -> KNCase     ty v (map (fmapCaseArm id q id) arms)
       KNLetFuns     ids fns e        -> mkLetFuns (rebuilder (zip ids fns)) (q e)
+      KNInlined _t0 _to _tn _old new -> KNInlined _t0 _to _tn _old (q new)
 
 mkLetFuns []       e = e
 mkLetFuns bindings e = KNLetFuns ids fns e where (ids, fns) = unzip bindings
@@ -810,6 +813,7 @@ knLoopHeaders' expr = do
     KNDeref       {} -> expr
     KNCallPrim    {} -> expr
     KNAppCtor     {} -> expr
+    KNInlined _t0 _to _tn _old new -> q tailq new
     KNUntil       ty e1 e2  rng -> KNUntil ty (q NotTail e1) (q NotTail e2) rng
     KNCase        ty v arms     -> KNCase ty v (map (fmapCaseArm id (q tailq) id) arms)
     KNIf          ty v e1 e2    -> KNIf     ty v (q tailq e1) (q tailq e2)
@@ -1117,7 +1121,7 @@ resVar env v = do
 
 type SrcExpr = (KNExpr' RecStatus MonoType)
 type ResExpr = (KNExpr' RecStatus MonoType)
-data VisitStatus t = Unvisited | Visited t Int
+data VisitStatus t = Unvisited | Visited !t !Int !Int -- size, timestamp
 data SrcEnv = SrcEnv !(Map Ident VarOp)
                      !(Map Ident Ident)
 type SrcFn = Fn RecStatus SrcExpr MonoType
@@ -1198,7 +1202,7 @@ mkOpRefs = do
   return (lexp, oup, inp)
 
 mkOpExpr msg e env = do
-  liftIO $ putStrLn $ "mkOpExpr " ++ msg
+  --putDocLn $ text "mkOpExpr " <> text msg
   (le, oup, inp) <- mkOpRefs
   return $ Opnd e env le oup inp
 
@@ -1233,7 +1237,7 @@ summarize (Opnd _ _ loc_fn loc_op loc_ip) = do
            text "op=" <> pretty lop <> text "; " <>
            text "ip=" <> pretty lip <> text "; " <>
            text "cf=" <> (case lfn of
-                           Visited _ size -> text "Visited@" <> pretty size
+                           Visited _ size _ -> text "Visited@" <> pretty size
                            _ -> text "Unvisited") <> text "; " <>
            text ("lim=" ++ show l) <> text "; "
 
@@ -1245,33 +1249,33 @@ bestEffortOpSize (VO_F (Opnd f _ loc _ _)) = bestEffortOpSize_ loc (fnBody f)
 bestEffortOpSize_ loc e = do
   r <- readRef loc
   case r of
-    Visited _ size -> return size
-    _              -> return size where (_, size) = knSize e
+    Visited _ size _ -> return size
+    _                -> return size where (_, size) = knSize e
 
 maybeCachedOpSize (VO_E (Opnd _ _ loc _ _)) = do
   r <- readRef loc
   case r of
-    Visited _ size -> return $ Just size
-    _              -> return $ Nothing
+    Visited _ size _ -> return $ Just size
+    _                -> return $ Nothing
 maybeCachedOpSize (VO_F (Opnd _ _ loc _ _)) = do
   r <- readRef loc
   case r of
-    Visited _ size -> return $ Just size
-    _              -> return $ Nothing
+    Visited _ size _ -> return $ Just size
+    _                -> return $ Nothing
 
 data MbCachedEF = MCEF_0 | MCEF_E ResExpr | MCEF_F ResFn
 
 maybeCachedEF (VO_E (Opnd _ _ loc _ _)) = do
   r <- readRef loc
   case r of
-    Visited val _ -> return $ MCEF_E val
-    _             -> return $ MCEF_0
+    Visited val _ _ -> return $ MCEF_E val
+    _               -> return $ MCEF_0
 
 maybeCachedEF   (VO_F (Opnd _ _ loc _ _)) = do
   r <- readRef loc
   case r of
-    Visited val _ -> return $ MCEF_F val
-    _             -> return $ MCEF_0
+    Visited val _ _ -> return $ MCEF_F val
+    _               -> return $ MCEF_0
 -- }}}
 
 -- {{{ Size counters and size limits...
@@ -1279,6 +1283,12 @@ data SizeCounter = SizeCounter Int SizeLimit deriving Show
 
 instance Pretty SizeCounter where
   pretty sc = text $ show sc
+
+getSize :: In Int
+getSize = do
+  !r <- gets inSizeCntr
+  !x <- readRef r
+  return x
 
 canBumpSizeBy :: Int -> In (Bool, Int, Maybe Int)
 canBumpSizeBy d = do
@@ -1480,6 +1490,8 @@ knInline' expr env = do
   let q v = resVar env v
   knBumpTotalEffort
   withRaisedLevel $ case expr of
+    KNInlined _t0 _to _tn _old new -> do Rez new' <- knInline' new env
+                                         return $ Rez $ KNInlined _t0 _to _tn _old new'
     KNLiteral     {} -> residualize expr
     KNKillProcess {} -> residualize expr
     KNArrayRead ty (ArrayIndex v1 v2 rng sg)    -> (mapM q [v1,v2   ]) >>= \[q1,q2]    -> residualize $ KNArrayRead ty (ArrayIndex q1 q2 rng sg)
@@ -1801,18 +1813,11 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
          -- instead. If the attempt succeeds, we must explicitly return the
          -- size, because it must be accounted for in the current size counter.
 
-         {-
-         (Rez e' , size) <-
-             inBracket_ (writeRef loc_op $ OP_Limit (k - 1))
-                        (withSizeCounter limitedSizeCounter $
-                                         (knInline' (fnBody fn) env'))
-                        (if k == opLimitMax then writeRef loc_op $ OP_Limit k else return ())
-         -}
-
+         before <- knTotalEffort
          visitStatus <- opndVisitStatus opnd
-         let (_firstVisit, cachedsize) = case visitStatus of
-                                          Unvisited   -> (True, 0)
-                                          Visited _ n -> (False, n)
+         let (_firstVisit, cachedsize, t0) = case visitStatus of
+                                          Unvisited      -> (True, 0, before)
+                                          Visited _ n t0 -> (False, n, t0)
 
          let isVariable (IsConstant {}) = False
              isVariable (IsVariable {}) = True
@@ -1828,14 +1833,11 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
                                     return $ mcefHead mbe) vs'
          constnts <- mapM (extractConstExpr env) vs'
 
-
          let noConstants = all isVariable constnts || (null vs')
          (notTooBig, currsz, mblim) <- canBumpSizeBy cachedsize
          let tooBig = not notTooBig
-
-
-         inDebugStr ("foldLamba.A of " ++ show (fnIdent fn' ) ++ " ; " ++ show mb_vars
-                    ++ "\n               " ++ show constnts ++ " //// " ++ show (noConstants, tooBig, currsz, cachedsize, mblim))
+         --inDebugStr ("foldLamba.A of " ++ show (fnIdent fn' ) ++ " ; " ++ show mb_vars
+         --          ++ "\n               " ++ show constnts ++ " //// " ++ show (noConstants, tooBig, currsz, cachedsize, mblim))
          --inDebugStr ("foldLamba.B of " ++ show (fnIdent fn' ) ++ " ; " ++ show constnts)
 
          let inlineit = do
@@ -1872,16 +1874,20 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
              if ".x!3135" `isPrefixOf` show (pretty expr)
                then do r <- readRef loc_vis
                        putDocLn $ indent 4 (case r of
-                                                Visited v _ -> pretty v
+                                                Visited v _ _ -> pretty v
                                                 _   -> text "wtf unvisited??")
                else return ()
 
-             return $ Just (Rez e' , size)
+             return $ Just (Rez (KNInlined t0 before after expr e' ), size)
 
          case (noConstants, tooBig) of
            (True, True) -> do
+              -- If there are no constant arguments being passed to the target,
+              -- it won't shrink during inlining, so we can avoid doing the
+              -- work of processing it if we know it would fail to residualize.
               liftIO $ putStrLn $ "not lambda folding due to assumed size of " ++ show (tidIdent $ fnVar fn) ++ " with vars " ++ show (map tidIdent vs') ++ "..."
               return Nothing
+              {-
            (True, False) -> do
              -- If we decline to inline calls which have no constant args and
              -- are not too big, we will miss out on many opportunities to
@@ -1889,14 +1895,33 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
 
              -- Simply wrapping the body with args (instead of running knInline')
              -- reduces inlining time roughly in half on pidigits...
+             --  ... but also seems to sometimes cause infinite loops/space leaks???
+             --  ... hmm, inlined size is 2x rather than 0.5x...
               r <- readRef loc_vis
               let cachedFn = case r of
                                 Visited v _ -> v
                                 _   -> error $ "KNExpr.hs: no cached fn, sadness"
               uref <- gets inUniqRef
               renamed <- liftIO $ alphaRename' cachedFn uref
-              let wrapped = knElimRebinds $ wrapBodyWithArgs renamed (map KNVar vs' )
-              return $ Just (Rez wrapped, cachedsize)
+              let wrapped = knElimRebinds . mangle $ wrapBodyWithArgs renamed (map KNVar vs' )
+
+              mb_rw <- inlineit
+              case mb_rw of
+                Nothing -> do
+                  putDocLn $ text "inlineit returned Nothing, but we want to wrap body for " <> pretty expr
+                  return Nothing
+                Just (Rez w, c) -> do
+                  if (knSize wrapped) == (knSize w) then
+                    return $ Just (Rez wrapped, cachedsize)
+                  else do
+                    putDocLn $ text "inlineit returned thing of different size for " <> pretty expr
+                    putDocLn $ indent 8 $ text "inlineit size was " <> pretty c
+                    putDocLn $ indent 8 $ text "wrapped  size was " <> pretty cachedsize
+                    putDocLn $ indent 8 $ text "inlineit knSize was " <> pretty (knSize w)
+                    putDocLn $ indent 8 $ text "wrapped  knSize was " <> pretty (knSize wrapped)
+                    return $ Just (Rez w, c)
+
+              --return $ Just (Rez wrapped, cachedsize)
                 {-
                     putDocLn3 $ text "********* call had no constants, and wasn't too big to inline... but called too many times"
                             <$> indent 8 (pretty expr)
@@ -1908,6 +1933,7 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
                      -- but this yields terrible performance, not surprisingly.
                     return Nothing
                     -}
+                    -- -}
            _ -> do inlineit
 
 -- visitF and visitE return (thing, size), rather than Rez (thing, size),
@@ -1940,10 +1966,10 @@ visitF msg (Opnd fn env loc_fn _ loc_ip) = do
             when (shouldInspect (fnIdent fn)) $ do
                 putDocLn $ text ("}visitED "++show (fnIdent fn)++ " with no limit (for the first time)")
                         <$> indent 16 (pretty fn' )
-
-            writeRef loc_fn (Visited fn' size)
+            after <- knTotalEffort
+            writeRef loc_fn (Visited fn' size after)
             return $ Just (fn', size)
-    Visited f size -> do
+    Visited f size _ -> do
       putDocLn6 $ text $ "reusing cached result (size " ++ show size ++ " for fn " ++ show (tidIdent $ fnVar fn)
       putDocLn6 $ indent 32 $ pretty f
       return $ Just (f, size)
@@ -1956,9 +1982,9 @@ visitF msg (Opnd fn env loc_fn _ loc_ip) = do
           ope <- mkOpExpr ("knInlineFn' " ++ show (tidIdent v')) (KNVar v' ) env
           return $ extendEnv [tidIdent v] [tidIdent v' ] [ VO_E ope ] env
       env' <- foldlM foldEnv env (zip vs vs' )
-      inDebugStr ("knInlineFn' being called on " ++ show (fnIdent fn))
+      --inDebugStr ("knInlineFn' being called on " ++ show (fnIdent fn))
       Rez body' <- knInline' (fnBody fn) env'
-      inDebugStr ("knInlineFn' called on " ++ show (fnIdent fn))
+      --inDebugStr ("knInlineFn' called on " ++ show (fnIdent fn))
       return $ fn { fnBody = body' , fnVars = vs' }
 
 wrapBodyWithArgs fn args =
@@ -1997,7 +2023,7 @@ visitE (resid, Opnd e env loc_e _ loc_ip) = do
                 zr <- gets inSizeCntr
                 z  <- readRef zr
                 if canInlineMuch e then do
-                    liftIO $ putStrLn $ "visiting expr bound to " ++ show resid ++ " with limit " ++ show x
+                    --liftIO $ putStrLn $ "visiting expr bound to " ++ show resid ++ " with limit " ++ show x
                     if snd (knSize e) > 4
                       then do putDocLn $ indent 8 $ text "too big, size=" <> pretty (knSize e)
                       else do putDocLn $ indent 8 $ pretty e
@@ -2012,9 +2038,10 @@ visitE (resid, Opnd e env loc_e _ loc_ip) = do
                                             (SizeCounter z x)
                                             (knInline' e env))
                            (writeRef loc_ip (IP_Limit k))
-            writeRef loc_e (Visited e' size)
+            after <- knTotalEffort
+            writeRef loc_e (Visited e' size after)
             return (e', size)
-    Visited r size -> do
+    Visited r size _ -> do
         return (r, size)
 
 inlineBitcastedFunction :: TypedId MonoType -> MonoType
@@ -2234,6 +2261,7 @@ knElimRebinds expr = go Map.empty expr where
             KNArrayPoke  t ai v -> KNArrayPoke  t (qai ai) (qv v)
             KNTuple      t vs s -> KNTuple      t (map qv vs) s
             KNCase   _t v bnds  -> KNCase   _t (qv v ) (map qb bnds)
+            KNInlined _t0 _to _tn _old new  -> KNInlined _t0 _to _tn _old (q new)
 fmapCaseArm :: (p1 t1 -> p2 t2) -> (e1 -> e2) -> (t1 -> t2) -> CaseArm p1 e1 t1 -> CaseArm p2 e2 t2
 fmapCaseArm fp fe ft (CaseArm p e g b rng)
                     = CaseArm (fp p) (fe e) (fmap fe g)

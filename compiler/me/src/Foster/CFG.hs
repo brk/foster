@@ -132,6 +132,8 @@ caseIf a b = [CaseArm (pat True)  a Nothing [] rng,
 computeBlocks :: TailQ -> KNMono -> Maybe Ident -> (MoVar -> CFG ()) -> CFG ()
 computeBlocks tailq expr idmaybe k = do
     case expr of
+        KNInlined _t0 _to _tn _old new -> computeBlocks tailq new idmaybe k
+
         KNIf t v a b -> do -- Compile [if v then ...] as [case v of ...].
             computeBlocks tailq (KNCase t v $ caseIf a b) idmaybe k
 
