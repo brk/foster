@@ -19,7 +19,7 @@ import Data.Map(Map)
 import Data.Set(Set)
 
 import qualified Data.Char as Char(isAlphaNum)
-import Data.IORef(IORef, newIORef, readIORef)
+import Data.IORef(IORef, newIORef, readIORef, writeIORef)
 import Data.Traversable(mapM)
 import Prelude hiding (mapM)
 import Control.Monad.State(forM, when, forM_, evalStateT, gets,
@@ -578,7 +578,9 @@ lowerModule ai_mod ctx_il = do
             u0 <- readIORef uniqref
             let tmBindingId (TermVarBinding _ (tid, _)) = tidIdent tid
                 globals = map tmBindingId (globalBindings ctx_il)
-            return $ closureConvertAndLift dataSigs globals u0 cfgmod
+            let (rv, u') = closureConvertAndLift dataSigs globals u0 cfgmod
+            writeIORef uniqref u'
+            return rv
 
     maybeInterpretKNormalModule kmod = do
         flagVals <- gets ccFlagVals

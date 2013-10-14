@@ -104,7 +104,7 @@ closureConvertAndLift :: DataTypeSigs
                       -> [Ident]
                       -> Uniq
                       -> ModuleIL CFBody MonoType
-                      -> ModuleIL CCBody TypeLL
+                      -> (ModuleIL CCBody TypeLL, Uniq)
 closureConvertAndLift dataSigs globalIds u m =
     -- We lambda lift top level functions, since we know a priori
     -- that they don't have any "real" free vars.
@@ -112,13 +112,13 @@ closureConvertAndLift dataSigs globalIds u m =
     let initialState = ILMState u Map.empty Map.empty Map.empty dataSigs in
     let (ccmain, st) = runState (closureConvertToplevel globalIds $ moduleILbody m)
                                                                  initialState in
-    ModuleIL {
+    (ModuleIL {
           moduleILbody        = CCB_Procs (Map.elems $ ilmProcs st) ccmain
         , moduleILdecls       = map (\(s,t) -> (s, monoToLL t)) (moduleILdecls m)
         , moduleILdataTypes   = map (fmap monoToLL) (moduleILdataTypes m)
         , moduleILprimTypes   = map (fmap monoToLL) (moduleILprimTypes m)
         , moduleILsourceLines = moduleILsourceLines m
-        }
+        }, (ilmUniq st))
 
 closureConvertToplevel :: [Ident] -> CFBody -> ILM CCMain
 closureConvertToplevel globalIds body = do
