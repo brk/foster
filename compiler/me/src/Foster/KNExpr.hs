@@ -1765,17 +1765,14 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
      -- vs'   are the function's actuals (residual vars)
      -- ops   are the corresponding operand structures.
      o_pending <- readRef loc_op
-     case o_pending of
-       OP_Limit 0 -> do
-         putDocLn $ text $ "lambda folding failed due to outer-pending flag for " ++ show (tidIdent $ fnVar fn) ++ " with vars " ++ show (map tidIdent vs') ++ "..."
+     case (o_pending, isRec fn && (\(OP_Limit k) -> k) o_pending <= 1) of
+       (_, True)  -> do
+         putDocLn $ text $ ":( :( :( lambda folding aborted for recursive function " ++ show (pretty expr)
          return Nothing
-       OP_Limit k -> do
-         let mangle = case tailq of YesTail -> id
-                                    NotTail -> removeTailCallAnnots
-         putDocLn3 $ text "{{{{{{{{{{{{{{{{{{"
-         putDocLn3 $ text $ "strt lambda folding; setting outer-pending flag to "
-                             ++ show (k - 1) ++ " for " ++ show (tidIdent $ fnVar fn)
-         putDocLn3 $ indent 16 $ pretty (mangle $ fnBody fn)
+       (OP_Limit 0, _) -> do
+         putDocLn $ text $ ":( :( :( lambda folding failed due to outer-pending flag for " ++ show (tidIdent $ fnVar fn) ++ " with vars " ++ show (map tidIdent vs') ++ "..."
+         return Nothing
+       (OP_Limit k, _) -> do
 
          -- Attempt to inline the function body to produce e' ;
          -- if the intermediate result gets too big, the attempt will be
