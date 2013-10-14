@@ -845,7 +845,11 @@ natLShdTo = { a => n => res =>
     //                   i <= k and n + k cannot oveflow.
   };
   // Zero out the bottom digits:
-  foldRange 0 n () { k => unit => 0 >^ res[k]; unit };
+
+  //TODO this fails if we don't fully inline:
+  //  foldRange 0 n () { k => unit => 0 >^ res[k]; unit };
+  foldRange:[Int32] 0 n 0 { k => zero => 0 >^ res[k]; 0 };
+  ()
 };
 
 natLShd_A :: { Array Word => Int32 => Array Word };
