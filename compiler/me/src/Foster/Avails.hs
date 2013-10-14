@@ -9,8 +9,8 @@ module Foster.Avails where
 import qualified Data.Set as Set(union, insert, delete, size, intersection,
                                  difference, singleton, empty, toList, map,
                                  null)
-import qualified Data.Map as Map(insertWith, unionWith, empty, toList,
-                                 size, lookup, fromList)
+import qualified Data.Map.Strict as Map(insertWith, unionWith, empty, toList,
+                                        size, lookup, fromList)
 import Data.Set(Set)
 import Data.Map(Map)
 
