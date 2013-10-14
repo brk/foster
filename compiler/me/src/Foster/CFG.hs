@@ -63,7 +63,7 @@ computeCFGs uref expr =
     -- We've kept a placeholder call to the main function here until now,
     -- but at this point we can get rid of it, since we're convering to a
     -- flat-list representation with an implicit call to main.
-    KNCall _tq t v vs -> return $ CFB_Call t v vs
+    KNCall t v vs -> return $ CFB_Call t v vs
     _ -> error $ "computeCFGIO expected a series of KNLetFuns bindings! had " ++ show expr
 
 computeCFGIO :: IORef Uniq -> FnMono -> IO CFFn
@@ -92,7 +92,7 @@ internalComputeCFG uniqRef fn = do
         cfgSetRetCont retcont
         cfgSetFnVar (fnVar fn)
         cfgNewBlock header (fnVars fn)
-        computeBlocks (fnBody fn) Nothing (ret fn retcont)
+        computeBlocks YesTail (fnBody fn) Nothing (ret fn retcont)
 
     -- Make sure that the main function returns void.
     ret :: forall ty expr. Fn RecStatus expr ty -> BlockId -> MoVar -> CFG ()
@@ -129,11 +129,11 @@ caseIf a b = [CaseArm (pat True)  a Nothing [] rng,
 -- ||||||||||||||||||||||||| KNMono -> CFG ||||||||||||||||||||||{{{
 -- computeBlocks takes an expression and a contination,
 -- which determines what to do with the let-bound result of the expression.
-computeBlocks :: KNMono -> Maybe Ident -> (MoVar -> CFG ()) -> CFG ()
-computeBlocks expr idmaybe k = do
+computeBlocks :: TailQ -> KNMono -> Maybe Ident -> (MoVar -> CFG ()) -> CFG ()
+computeBlocks tailq expr idmaybe k = do
     case expr of
         KNIf t v a b -> do -- Compile [if v then ...] as [case v of ...].
-            computeBlocks (KNCase t v $ caseIf a b) idmaybe k
+            computeBlocks tailq (KNCase t v $ caseIf a b) idmaybe k
 
         KNUntil _t a b rng -> do
             [until_test, until_body, until_cont] <- mapM cfgFresh
@@ -141,25 +141,25 @@ computeBlocks expr idmaybe k = do
             cfgEndWith (CFCont until_test [])
 
             cfgNewBlock until_test []
-            computeBlocks a Nothing $ \var -> cfgEndWith
+            computeBlocks NotTail a Nothing $ \var -> cfgEndWith
                                      (CFCase var (caseIf until_cont until_body))
 
             cfgNewBlock until_body []
-            computeBlocks b Nothing $ \_ -> cfgEndWith (CFCont until_test [])
+            computeBlocks NotTail b Nothing $ \_ -> cfgEndWith (CFCont until_test [])
 
             cfgNewBlock until_cont []
             cfgAddLet idmaybe (ILTuple [] (AllocationSource "until" rng))
                               (TupleType []) >>= k
 
         -- Perform on-demand let-flattening, which enables a CPS tranform with a mostly-first-order flavor.
-        KNLetVal id (KNLetVal  x   e   c) b -> computeBlocks (KNLetVal x e      (KNLetVal id c b)) idmaybe k
-        KNLetVal id (KNLetFuns ids fns a) b -> computeBlocks (KNLetFuns ids fns (KNLetVal id a b)) idmaybe k
+        KNLetVal id (KNLetVal  x   e   c) b -> computeBlocks tailq (KNLetVal x e      (KNLetVal id c b)) idmaybe k
+        KNLetVal id (KNLetFuns ids fns a) b -> computeBlocks tailq (KNLetFuns ids fns (KNLetVal id a b)) idmaybe k
 
         KNLetVal id (KNVar v) expr -> do
             cont <- cfgFresh "rebind_cont"
             cfgEndWith (CFCont cont [v])
             cfgNewBlock      cont [TypedId (tidType v) id]
-            computeBlocks expr idmaybe k
+            computeBlocks tailq expr idmaybe k
 
         KNLetVal id bexp cont -> do
             -- exp could be a KNCase or KNLetVal,
@@ -167,10 +167,10 @@ computeBlocks expr idmaybe k = do
             -- Because we want the result from processing expr to be let-bound
             -- to an identifier of our choosing (rather than the sub-call's
             -- choosing, that is), we provide it explicitly as idmaybe.
-            computeBlocks     bexp (Just id) $ \var ->
+            computeBlocks NotTail bexp (Just id) $ \var ->
               if id /= tidIdent var
-                then computeBlocks (KNLetVal id (KNVar var) cont) idmaybe k -- didn't get var we expected, must rebind
-                else computeBlocks                          cont  idmaybe k
+                then computeBlocks tailq (KNLetVal id (KNVar var) cont) idmaybe k -- didn't get var we expected, must rebind
+                else computeBlocks tailq                          cont  idmaybe k
 
         KNLetRec [id] [bexp] e -> do
             -- With KNLetFuns, we maintain a special binding form for SCCs of
@@ -202,7 +202,7 @@ computeBlocks expr idmaybe k = do
 
             -- Emit code to evaluate the expressions (bound to temporaries).
             tmpgen <- cfgFreshId ".rec.tmp.gen"
-            computeBlocks bexp (Just tmpgen) $ \_var -> return ()
+            computeBlocks NotTail bexp (Just tmpgen) $ \_var -> return ()
 
             -- Overwrite the id-bound blocks with the temporary values.
             tmpid <- cfgFreshId ".rec.tmp"
@@ -214,7 +214,7 @@ computeBlocks expr idmaybe k = do
             cfgAddMiddle (ILetVal tupstorid (ILObjectCopy tmp obj))
 
             -- Emit code to evaluate the body of the letrec.
-            computeBlocks e idmaybe k
+            computeBlocks tailq e idmaybe k
             -- Paper references:
             --  * "Fixing Letrec"
             --  * "Compilation of Extended Recursion in Call-by-value Functional Languages"
@@ -224,7 +224,7 @@ computeBlocks expr idmaybe k = do
         KNLetFuns ids fns e -> do
             funs <- mapM cfgComputeCFG fns
             cfgAddMiddle (ILetFuns ids $ funs)
-            computeBlocks e idmaybe k
+            computeBlocks tailq e idmaybe k
 
         -- Cases are translated very straightforwardly here; we put off
         -- fancier pattern match compilation for later. Giving each arm's
@@ -276,13 +276,13 @@ computeBlocks expr idmaybe k = do
                       Nothing -> do
                         -- Fill in each arm's block with [[e]] (and a store at the end).
                         cfgNewBlock block_id []
-                        computeBlocks e Nothing $ \var ->
+                        computeBlocks tailq e Nothing $ \var ->
                             cfgEndWith (CFCont case_cont [var])
                       Just  g -> do
                         let Just tru = mb_tru
                         let Just fls = mb_fls
                         cfgNewBlock block_id []
-                        computeBlocks g Nothing $ \guard ->
+                        computeBlocks NotTail g Nothing $ \guard ->
                             cfgEndWith (CFCase guard (caseIf tru fls))
 
                         -- We'll fill in the 'fls' block implementation later...
@@ -293,7 +293,7 @@ computeBlocks expr idmaybe k = do
                         -- but the match matrix will not be determined until later.
 
                         cfgNewBlock tru []
-                        computeBlocks e Nothing $ \var ->
+                        computeBlocks tailq e Nothing $ \var ->
                             cfgEndWith (CFCont case_cont [var])
             mapM_ computeCaseBlocks arms_bids
 
@@ -302,11 +302,11 @@ computeBlocks expr idmaybe k = do
             cfgNewBlock case_cont [phi]
             k phi
 
-        KNCall srctail ty b vs -> do
+        KNCall ty b vs -> do
             -- We can't just compare [[b == fnvar]] because b might be a
             -- let-bound result of type-instantiating a polymorphic function.
             isTailCall <- cfgIsThisFnVar b
-            case (srctail, isTailCall) of
+            case (tailq, isTailCall) of
                 -- Direct tail recursion becomes a jump
                 -- (reassigning the arg slots).
                 (YesTail, True) -> do
@@ -362,7 +362,7 @@ computeBlocks expr idmaybe k = do
           let tynm = ctorTypeName cid ++ "." ++ ctorCtorName cid in
           AllocInfo structty   MemRegionGlobalHeap   tynm
                     (Just rep) Nothing "KNLetRecTmp" DoZeroInit
-        KNCall _ _ base _ -> error $ "allocInfoForKNExpr can't handle " ++ show (textOf bexp 0) ++ " ;; " ++ show base
+        KNCall _ base _ -> error $ "allocInfoForKNExpr can't handle " ++ show (textOf bexp 0) ++ " ;; " ++ show base
         _ -> error $ "allocInfoForKNExpr can't handle " ++ show (textOf bexp 0)
 
     cfgFreshVarI idmaybe t n = do

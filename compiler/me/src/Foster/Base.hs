@@ -54,7 +54,7 @@ data IntSizeBits = I1 | I8 | I32 | I64
 data ProcOrFunc   = FT_Proc | FT_Func  deriving (Show, Eq)
 data RecStatus = YesRec | NotRec deriving (Eq, Ord, Show)
 data VarNamespace = VarProc | VarLocal deriving Show
-data TailQ = YesTail | NotTail deriving Show
+data TailQ = YesTail | NotTail deriving (Eq, Show)
 data MayGC = GCUnknown String | MayGC | WillNotGC deriving (Eq, Show, Ord)
 
 data SafetyGuarantee = SG_Static | SG_Dynamic               deriving (Show, Eq)

@@ -262,7 +262,7 @@ ssTermOfExpr expr =
     KNLetFuns ids funs e   -> SSTmExpr  $ ILetFuns   ids funs           (tr e)
     KNLetVal x b e         -> SSTmExpr  $ ILetVal      x (tr b)         (tr e)
     KNLetRec ids exprs e   -> SSTmExpr  $ ILetRec    ids (map tr exprs) (tr e)
-    KNCall  _  _t b vs     -> SSTmExpr  $ ICall (idOf b) (map idOf vs)
+    KNCall     _t b vs     -> SSTmExpr  $ ICall (idOf b) (map idOf vs)
     KNCallPrim _t b vs     -> SSTmExpr  $ ICallPrim b (map idOf vs)
     KNIf       _t  v b c   -> SSTmExpr  $ IIf      (idOf v) (tr b) (tr c)
     KNUntil    _t  a b _   -> SSTmExpr  $ IUntil            (tr a) (tr b)

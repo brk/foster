@@ -139,7 +139,7 @@ kNormalize mebTail ctorRepr expr =
           case (tidType a) of
               FnTypeIL tys _ _ _ -> do
                   let args = map varOrThunk (zip vs tys)
-                  nestedLets args (\xs -> KNCall mebTail t a xs)
+                  nestedLets args (\xs -> KNCall t a xs)
               _ -> error $ "knCall: Called var had non-function type!\n\t" ++
                                 show a ++
                                 show (showStructure (tidType a))
@@ -167,7 +167,7 @@ kNormalize mebTail ctorRepr expr =
                               then return $ KNKillProcess t (T.pack $ "guarded pattern match failed")
                               else go arms
                   let kont = kontOf body
-                  let callkont = KNCall YesTail t (TypedId kty kid) []
+                  let callkont = KNCall t (TypedId kty kid) []
                   clump' <- case clump of
                               [CaseArm p e (Just g' ) b r] -> do
                                   e' <- nestedLets [return g'] (\[gv] ->
@@ -248,7 +248,7 @@ varOrThunk (a, targetType) = do
           vars <- argVarsWithTypes (fnTypeILDomain fnty)
           return $ Fn { fnVar      = TypedId fnty (GlobalSymbol (T.pack $ show id))
                       , fnVars     = vars
-                      , fnBody     = KNCall YesTail (fnTypeILRange fnty) v vars
+                      , fnBody     = KNCall (fnTypeILRange fnty) v vars
                       , fnIsRec    = ()
                       , fnAnnot    = ExprAnnot [] (MissingSourceRange $ "thunk for " ++ show v) []
                       }
@@ -492,7 +492,7 @@ collectMentions knf = go Set.empty (fnBody knf)
           KNAlloc       _ v _  -> vv xs v
           KNTyApp       _ v _  -> vv xs v
           KNStore     _  v1 v2 -> vv (vv xs v1) v2
-          KNCall      _ _ v vs -> vv (uu xs vs) v
+          KNCall        _ v vs -> vv (uu xs vs) v
           KNIf          _ v e1 e2   -> go (go (vv xs v) e1) e2
           KNUntil       _   e1 e2 _ -> go (go xs e1) e2
           KNLetVal      _   e1 e2   -> go (go xs e1) e2
@@ -724,15 +724,16 @@ knLoopHeaderCensusFn activeids (id, fn) = do
   st <- get
   put $ st { headers = Map.insert id ((id' , vars' ), False) (headers st)
            , census  = Map.insert id (map Just vars)         (census st) }
-  knLoopHeaderCensus activeids (fnBody fn)
+  knLoopHeaderCensus YesTail activeids (fnBody fn)
 
-knLoopHeaderCensus :: Set Ident -> KNMono -> Hdr ()
-knLoopHeaderCensus activeids expr = go expr where
-  go expr = case expr of
+knLoopHeaderCensus :: TailQ -> Set Ident -> KNMono -> Hdr ()
+knLoopHeaderCensus tailq activeids expr = go' tailq expr where
+  go        expr = go' tailq expr
+  go' tailq expr = case expr of
     KNCase        _ _ patbinds -> do mapM_ go (concatMap caseArmExprs patbinds)
-    KNUntil         _ e1 e2 _  -> do go e1 ; go e2
+    KNUntil         _ e1 e2 _  -> do go' NotTail e1 ; go' NotTail e2
     KNIf          _ _ e1 e2    -> do go e1 ; go e2
-    KNLetVal      id  e1 e2    -> do go e1
+    KNLetVal      id  e1 e2    -> do go' NotTail e1
                                      case e1 of
                                        (KNTyApp _ v _)
                                          -> addIdRemapping id (tidIdent v)
@@ -740,7 +741,7 @@ knLoopHeaderCensus activeids expr = go expr where
                                          -> addIdRemapping id (tidIdent v)
                                        _ -> return ()
                                      go e2
-    KNLetRec      _   es  b    -> do mapM_ go es ; go b
+    KNLetRec      _   es  b    -> do mapM_ (go' NotTail) es ; go b
     KNLetFuns     ids@[_] fns@[fn] b | isRec fn -> do
                                      mapM_ (knLoopHeaderCensusFn (Set.union activeids
                                                                    (Set.fromList ids)))
@@ -749,9 +750,9 @@ knLoopHeaderCensus activeids expr = go expr where
                                      -- include the bound ids, so calls in the
                                      -- body will be ignored.
                                      go b
-    KNLetFuns    _ids fns b    -> do mapM_ (knLoopHeaderCensus activeids . fnBody) fns
+    KNLetFuns    _ids fns b    -> do mapM_ (knLoopHeaderCensus YesTail activeids . fnBody) fns
                                      go b
-    KNCall YesTail _ v vs -> do
+    KNCall _ v vs | tailq == YesTail -> do -- TODO only for tail calls...
       id <- lookupId (tidIdent v)
       if Set.member id activeids
         then do st <- get
@@ -786,13 +787,13 @@ knLoopHeaders m = do body' <- knLoopHeaders' (moduleILbody m)
 
 knLoopHeaders' :: KNMono -> Compiled KNMono
 knLoopHeaders' expr = do
-    HdrState h c r <- execStateT (knLoopHeaderCensus Set.empty expr)
+    HdrState h c r <- execStateT (knLoopHeaderCensus YesTail Set.empty expr)
                                  (HdrState Map.empty Map.empty Map.empty)
     let info = computeInfo c h
     --liftIO $ putStrLn $ show info
-    return $ qq info r expr
+    return $ qq info r YesTail expr
  where
-  qq info r expr =
+  qq info r tailq expr =
    let qv id = Map.lookup (Map.findWithDefault id id r ) info in
    let q = qq info r in
    case expr of
@@ -809,19 +810,19 @@ knLoopHeaders' expr = do
     KNDeref       {} -> expr
     KNCallPrim    {} -> expr
     KNAppCtor     {} -> expr
-    KNUntil       ty e1 e2  rng -> KNUntil ty (q e1) (q e2) rng
-    KNCase        ty v arms     -> KNCase ty v (map (fmapCaseArm id q id) arms)
-    KNIf          ty v e1 e2    -> KNIf     ty v (q e1) (q e2)
-    KNLetVal      id   e1 e2    -> let e1' = q e1
-                                       e2' = q e2
+    KNUntil       ty e1 e2  rng -> KNUntil ty (q NotTail e1) (q NotTail e2) rng
+    KNCase        ty v arms     -> KNCase ty v (map (fmapCaseArm id (q tailq) id) arms)
+    KNIf          ty v e1 e2    -> KNIf     ty v (q tailq e1) (q tailq e2)
+    KNLetVal      id   e1 e2    -> let e1' = q NotTail e1
+                                       e2' = q tailq   e2
                                        knz = KNLiteral (PrimInt I1) (LitBool False)
                                    in if isPure e1' && not (id `elem` freeIdents e2')
                                        then KNLetVal id knz e2' -- see {note 1}
                                        else KNLetVal id e1' e2'
-    KNLetRec      ids es  b     -> KNLetRec ids (map q es) (q b)
+    KNLetRec      ids es  b     -> KNLetRec ids (map (q NotTail) es) (q tailq b)
     KNLetFuns     [id] [fn] b ->
         case qv id of
-          Nothing -> KNLetFuns [id] [fn { fnBody = (q $ fnBody fn) }] (q b)
+          Nothing -> KNLetFuns [id] [fn { fnBody = (q YesTail $ fnBody fn) }] (q tailq b)
 
           -- If we have a single recursive function (as detected earlier),
           -- we should wrap its body with a minimal loop,
@@ -840,7 +841,7 @@ knLoopHeaders' expr = do
             -- The inner, recursive body
             let fn'' = Fn { fnVar   = mkGlobal v'
                           , fnVars  = dropUselessArgs mt (fnVars fn)
-                          , fnBody  = (q $ fnBody fn)
+                          , fnBody  = (q YesTail $ fnBody fn)
                           , fnIsRec = YesRec
                           , fnAnnot = ExprAnnot [] (rangeOf fn) []
                           } in
@@ -850,24 +851,24 @@ knLoopHeaders' expr = do
             let fn' = Fn { fnVar   = fnVar fn
                          , fnVars  = renameUsefulArgs mt vs'
                          , fnBody  = KNLetFuns [ id' ] [ fn'' ]
-                                         (KNCall YesTail (typeKN (fnBody fn)) v' (dropUselessArgs mt vs' ))
+                                         (KNCall (typeKN (fnBody fn)) v' (dropUselessArgs mt vs' ))
                          , fnIsRec = computeIsFnRec fn' [id]
                          , fnAnnot = fnAnnot fn
                          } in
-            KNLetFuns [id ] [ fn' ] (qq (Map.delete id info) r b)
+            KNLetFuns [id ] [ fn' ] (qq (Map.delete id info) r tailq b)
 
     KNLetFuns     ids fns b     ->
         -- If we have a nest of recursive functions,
         -- the replacements should only happen locally, not intra-function.
         -- (TODO)
-        KNLetFuns ids (map (\fn -> fn { fnBody = q (fnBody fn) }) fns) (q b)
+        KNLetFuns ids (map (\fn -> fn { fnBody = q YesTail (fnBody fn) }) fns) (q tailq b)
 
     -- If we see a *tail* call to a recursive function, replace it with
     -- the appropriate pre-computed call to the corresponding loop header.
-    KNCall tailq ty v vs ->
+    KNCall ty v vs ->
       case (tailq, qv (tidIdent v)) of
         (YesTail, Just ((id, _), mt)) ->
-             KNCall YesTail ty (TypedId (tidType v) id) (dropUselessArgs mt vs)
+             KNCall ty (TypedId (tidType v) id) (dropUselessArgs mt vs)
         _ -> expr
 
 -- {note 1}::
@@ -1443,11 +1444,11 @@ knInlineToplevel expr env = do
                                  <- zip3 ids' fns' occ_sts
                                  , relevant occst id] b'
 
-    KNCall tq ty v vs ->
+    KNCall ty v vs ->
         case lookupVarOp env v of
             Just (VO_F opf) -> do
                  _ <- visitF "KNCall" opf -- don't inline away main, just process it!
-                 rezM2 (KNCall tq ty) (q v) (mapM q vs)
+                 rezM2 (KNCall ty) (q v) (mapM q vs)
             _ -> error $ "knInlineToplevel couldn't find function to inline for main!"
 
     _ -> error $ "knInlineToplevel expected a series of KNLetFuns bindings! had " ++ show expr
@@ -1484,11 +1485,11 @@ knInline' expr env = do
              Just e  -> residualize e
              Nothing -> rezM1 (KNCallPrim ty prim) (mapM q vs)
 
-    KNCall tailq ty v vs -> do
+    KNCall ty v vs -> do
       let resExpr s = do --putDocLn $ text "resExpr " <> text s <$> indent 4 (pretty expr)
-                         rezM2 (KNCall tailq ty) (qs ("KNCall v " ++ s) v) (mapM (qs "KNCall vs") vs)
+                         rezM2 (KNCall ty) (qs ("KNCall v " ++ s) v) (mapM (qs "KNCall vs") vs)
       let resExprA s = do --putDocLn $ text "resExprA " <> text s <$> indent 4 (pretty expr)
-                          rezM2 (KNCall tailq ty) (qs ("KNCall v " ++ s) v) (mapM (qs "KNCall vs") vs)
+                          rezM2 (KNCall ty) (qs ("KNCall v " ++ s) v) (mapM (qs "KNCall vs") vs)
       (desc, smry) <- case lookupVarOp env v of
                         Just (VO_E ope) -> do smry <- summarize ope
                                               return ("(a known expr); summary: ",
@@ -1512,7 +1513,7 @@ knInline' expr env = do
             then do _ <- visitF "noinline" opf -- don't inline this function...
                     resExpr "noinline"
 
-            else do handleCallOfKnownFunction tailq expr resExprA opf v vs env qs
+            else do handleCallOfKnownFunction expr resExprA opf v vs env qs
 
       case lookupVarOp env v of
         -- Peek through type applications...
@@ -1522,7 +1523,7 @@ knInline' expr env = do
                     Just (VO_E (Opnd (KNTyApp _ v'' []) _ _ _ _)) -> peekTyApps v''
                     Just (VO_E  _) -> resExpr "tv-Just_VO_E"
                     Nothing        -> resExpr "tv-Nothing"
-                    Just (VO_F _) -> inlineBitcastedFunction v' tailq ty vs env
+                    Just (VO_F _) -> inlineBitcastedFunction v' ty vs env
 
         -- ...and variable rebindings...
         Just (VO_E (Opnd (KNVar v'0) _ _ _ _)) -> peekRebinding v'0
@@ -1652,7 +1653,7 @@ knInline' expr env = do
         mapM_ bumpSize (zip szs'' (map Just $ zip ids' ids))
         residualize $ mkLetFuns idfns'' b'
 
-handleCallOfKnownFunction tailq expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
+handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
  smry <- summarize opf
  when (shouldInspect (tidIdent v) || shouldInspect (fnIdent fn0)) $ do
      putDocLn $ text "handleCallOfKnownFunction summarized" <+> text (show $ tidIdent v)
@@ -1694,7 +1695,7 @@ handleCallOfKnownFunction tailq expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs
         then do putDocLn $ text "calling FoldLambda on " <> pretty (fnIdent fn')
                             <$> indent 8 (pretty fn')
         else do return ()
-      mb_e'  <- catchError (foldLambda' tailq fn' opf v qvs' sizeCounter env)
+      mb_e'  <- catchError (foldLambda' fn' opf v qvs' sizeCounter env)
                            (\e -> do putDocLn $ text "******* foldLambda aborted inlining of call(size limit " <> text (show sizeCounter) <> text " ): " <> pretty expr <> text (show e)
                                      --putDocLn $ text "called fn was " <> pretty fn'
                                      putDocLn $ text $ show (tidIdent v) ++ " w/census " ++ show (inCen v)
@@ -1750,9 +1751,9 @@ handleCallOfKnownFunction tailq expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs
         KNLetFuns     {} -> "KNLetFuns     " ++ show (knSize x)
 
     -- input are residual vars, not src vars, fwiw
-    foldLambda' :: TailQ -> ResFn -> Opnd SrcFn -> TypedId MonoType
+    foldLambda' :: ResFn -> Opnd SrcFn -> TypedId MonoType
                 -> [TypedId MonoType] -> SizeCounter -> SrcEnv -> In (Maybe (Rez ResExpr, Int))
-    foldLambda' tailq fn' opnd@(Opnd _ _ loc_vis loc_op _) v vs' sizeCounter env = do
+    foldLambda' fn' opnd@(Opnd _ _ loc_vis loc_op _) v vs' sizeCounter env = do
      let fn   = fn'
      let env' = extendEnv ids ids' ops env
                    where
@@ -1820,6 +1821,7 @@ handleCallOfKnownFunction tailq expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs
            then do
               liftIO $ putStrLn $ "not lambda folding due to assumed size of " ++ show (tidIdent $ fnVar fn) ++ " with vars " ++ show (map tidIdent vs') ++ "..."
               return Nothing
+
            else do
              when firstVisit (writeRef loc_op $ OP_Limit (k - 1))
 
@@ -1940,9 +1942,9 @@ visitE (resid, Opnd e env loc_e _ loc_ip) = do
     Visited r size -> do
         return (r, size)
 
-inlineBitcastedFunction :: TypedId MonoType -> TailQ -> MonoType
+inlineBitcastedFunction :: TypedId MonoType -> MonoType
                         -> [TypedId MonoType] -> SrcEnv -> In (Rez ResExpr)
-inlineBitcastedFunction v' tailq ty vs env = do
+inlineBitcastedFunction v' ty vs env = do
     -- Some of the formal parameters to the underlying function
     -- may be generically typed. Elsewhere in the compiler, we'll
     -- insert bitcasts around the called function, but when we're
@@ -1966,11 +1968,11 @@ inlineBitcastedFunction v' tailq ty vs env = do
     -- drop the pending bitcast. But we don't need to do tht if the bitcast
     -- would be a no-op. Incidentally, this highlights a slight tension:
     -- fully monomorphizing avoids the need for bitcasts, but risks code blowup.
-    if ty == tyr then do knInline' (mkLetVals binders $ KNCall tailq ty  v' vs') env
+    if ty == tyr then do knInline' (mkLetVals binders $ KNCall ty  v' vs') env
                  else do newid <- freshenId (Ident (T.pack "castres") (error "newid"))
                          let vres = TypedId tyr newid
                          knInline' (KNLetVal newid
-                                      (mkLetVals binders $ KNCall NotTail tyr v' vs')
+                                      (mkLetVals binders $ KNCall tyr v' vs')
                                       (KNTyApp ty vres [])) env
 
 -- {{{ Online constant folding
@@ -2118,23 +2120,47 @@ evalPrim resty (PrimOp  ext _ty)
 evalPrim _ _ _ = Nothing
 -- }}}
 
+
+knElimRebinds :: KNExpr' r t -> KNExpr' r t
+knElimRebinds expr = go Map.empty expr where
+  go :: Map Ident (TypedId t) -> KNExpr' r t -> KNExpr' r t
+  go m expr =
+    let q e' = go m e' in
+    let qv v = case Map.lookup (tidIdent v) m of
+                Just v' -> v'
+                Nothing -> v in -- :: TypedId t -> TypedId t
+    let qai (ArrayIndex v1 v2 sr sg) = ArrayIndex (qv v1) (qv v2) sr sg in
+    let qf fn = fn { fnBody = q (fnBody fn) } in
+    let qb (CaseArm _pat body mb_guard _binds _rng) =
+            CaseArm _pat (q body) (fmap q mb_guard) _binds _rng
+            -- We don't replace variables in patterns, because they are binders,
+            -- not occurrences.
+    in case expr of
+            KNVar v -> KNVar (qv v)
+            KNLetVal   x (KNVar v) k -> go (Map.insert x v m) k
+            KNLetVal   x b    k -> KNLetVal x (q b) (q k)
+            KNTyApp t v argtys  -> KNTyApp t (qv v) argtys
+            KNKillProcess t m   -> KNKillProcess t m
+            KNLiteral t lit     -> KNLiteral t lit
+            KNCall    t v vs    -> KNCall   t (qv v) (map qv vs)
+            KNCallPrim t prim vs-> KNCallPrim t prim (map qv vs)
+            KNAppCtor  t cid  vs-> KNAppCtor  t cid  (map qv vs)
+            KNLetFuns ids fns k -> KNLetFuns ids (map qf fns) (q k)
+            KNLetRec  ids xps e -> KNLetRec  ids (map q xps)  (q e)
+            KNIf     _t v b1 b2 -> KNIf     _t (qv v) (q b1) (q b2)
+            KNUntil  _t c b _sr -> KNUntil  _t (q c ) (q b ) _sr
+            KNAlloc  _t v rgn   -> KNAlloc  _t (qv v ) rgn
+            KNDeref  _t v       -> KNDeref  _t (qv v )
+            KNStore  _t v1 v2   -> KNStore  _t (qv v1) (qv v2)
+            KNAllocArray t v    -> KNAllocArray t (qv v)
+            KNArrayRead  t ai   -> KNArrayRead  t (qai ai)
+            KNArrayPoke  t ai v -> KNArrayPoke  t (qai ai) (qv v)
+            KNTuple      t vs s -> KNTuple      t (map qv vs) s
+            KNCase   _t v bnds  -> KNCase   _t (qv v ) (map qb bnds)
 fmapCaseArm :: (p1 t1 -> p2 t2) -> (e1 -> e2) -> (t1 -> t2) -> CaseArm p1 e1 t1 -> CaseArm p2 e2 t2
 fmapCaseArm fp fe ft (CaseArm p e g b rng)
                     = CaseArm (fp p) (fe e) (fmap fe g)
                               [TypedId (ft t) id | TypedId t id <- b] rng
-
--- When we inline a function body, it moves from a tail context to a non-tail
--- context, so we must remove any direct tail-call annotations.
-removeTailCallAnnots :: KNMono -> KNMono
-removeTailCallAnnots expr = go expr where
-  go expr = case expr of
-    KNCase        ty v arms     -> KNCase    ty v (map (fmapCaseArm id go id) arms)
-    KNIf          ty v e1 e2    -> KNIf      ty v (go e1) (go e2)
-    KNLetVal      id   e1 e2    -> KNLetVal  id       e1  (go e2)
-    KNLetRec      ids  es  b    -> KNLetRec  ids      es  (go b)
-    KNLetFuns     ids  fns b    -> KNLetFuns ids     fns  (go b)
-    KNCall _ ty v vs -> KNCall NotTail ty v vs
-    _ -> expr
 
 -- The non-local exits in the Chez Scheme inlining algorithm
 -- would be very nice to implement using coroutines!
@@ -2228,7 +2254,7 @@ inCensusExpr expr = go expr where
                                      mapM_ inCensusFn fns
                                      go b
 
-    KNCall   _ _ v vs -> do cenSawCalled v
+    KNCall     _ v vs -> do cenSawCalled v
                             mapM_ cenSawPassed vs
 
     KNAppCtor     _ _ vs -> mapM_ cenSawPassed vs
