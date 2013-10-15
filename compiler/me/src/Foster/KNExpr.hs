@@ -16,6 +16,7 @@ import Data.Set(Set)
 import Data.Map(Map)
 import Data.List(foldl' , isPrefixOf, isInfixOf)
 import Data.Maybe(maybeToList, isJust)
+import Data.Int
 
 import Foster.MonoType
 import Foster.Base
@@ -2205,11 +2206,43 @@ evalPrim resty (PrimOp  ext _ty)
          [IsConstant _ (Lit _ (LitInt i1))] | ("zext_" `isPrefixOf` ext && litIntValue i1 >= 0)
                                            || ("sext_" `isPrefixOf` ext)
                 = Just (KNLiteral resty (LitInt i1))
--- TODO + , - , div , cmp , shifts , bitwise
+evalPrim resty (PrimOp  ext _ty)
+         [IsConstant _ (Lit _ (LitInt i1))] | ("zext_" `isPrefixOf` ext && litIntValue i1 >= 0)
+                                           || ("sext_" `isPrefixOf` ext)
+                = Just (KNLiteral resty (LitInt i1))
+evalPrim resty (PrimOp  "+" (PrimInt iN))
+         [IsConstant _ (Lit _ (LitInt i1))
+         ,IsConstant _ (Lit _ (LitInt i2))]
+   | iN == I8  = Just (KNLiteral resty (mkLitInt $ i1 `addInt8` i2))
+   | iN == I32 = Just (KNLiteral resty (mkLitInt $ i1 `addInt32` i2))
+   | iN == I64 = Just (KNLiteral resty (mkLitInt $ i1 `addInt64` i2))
+evalPrim resty (PrimOp  "-" (PrimInt iN))
+         [IsConstant _ (Lit _ (LitInt i1))
+         ,IsConstant _ (Lit _ (LitInt i2))]
+   | iN == I8  = Just (KNLiteral resty (mkLitInt $ i1 `subInt8` i2))
+   | iN == I32 = Just (KNLiteral resty (mkLitInt $ i1 `subInt32` i2))
+   | iN == I64 = Just (KNLiteral resty (mkLitInt $ i1 `subInt64` i2))
+-- TODO div , cmp , shifts , bitwise
 -- TODO truncation?
 -- TODO negate
 -- TODO ...
 evalPrim _ _ _ = Nothing
+--evalPrim _ primop _ = trace ("evalPrim " ++ show primop) Nothing
+-- }}}
+
+-- {{{
+mkLitInt :: (Integral a, Show a) => a -> Literal
+mkLitInt x = LitInt $ mkLiteralIntWithTextAndBase (toInteger x) (show x) 10
+
+wrap2 :: Num num => LiteralInt -> LiteralInt -> (num -> num -> num) -> num
+wrap2 liA liB op = op (fromInteger $ litIntValue liA) (fromInteger $ litIntValue liB)
+
+addInt8  a b = wrap2 a b (+) :: Int8
+addInt32 a b = wrap2 a b (+) :: Int32
+addInt64 a b = wrap2 a b (+) :: Int64
+subInt8  a b = wrap2 a b (-) :: Int8
+subInt32 a b = wrap2 a b (-) :: Int32
+subInt64 a b = wrap2 a b (-) :: Int64
 -- }}}
 
 

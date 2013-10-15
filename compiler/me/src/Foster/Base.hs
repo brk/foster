@@ -249,6 +249,16 @@ data LiteralFloat = LiteralFloat { litFloatValue   :: Double
                                  , litFloatText    :: String
                                  } deriving (Show, Eq)
 
+mkLiteralIntWithTextAndBase integerValue originalText base =
+  LiteralInt     integerValue activeBits originalText base
+    where
+        activeBits =
+             if integerValue == -2147483648 then 32 -- handle edge cases directly
+               else if integerValue == -9223372036854775808 then 64
+                 else bitLengthOf (abs integerValue) + signOf integerValue
+        bitLengthOf n = go n 1 where go n k = if n < 2^k then k else go n (k+1)
+        signOf x = if x < 0 then 1 else 0
+
 instance Pretty Literal where
   pretty (LitInt int) = red     $ text (litIntText int)
   pretty (LitFloat f) = dullred $ text (litFloatText f)
