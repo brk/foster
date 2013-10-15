@@ -127,10 +127,10 @@ advance = { bodies : Array Planet => i : Ref Int64
                                   =>
   (sext_i32_to_i64 0) >^ i;
   (sext_i32_to_i64 0) >^ j;
-  until i^ ==Int64 l then
+  until { i^ ==Int64 l } {
     (i^ +Int64 (sext_i32_to_i64 1)) >^ j;
     let b1 = prim subscript bodies (trunc_i64_to_i32 i^); in
-      until j^ >=SInt64 l then
+      until { j^ >=SInt64 l } {
         let b2 = prim subscript bodies (trunc_i64_to_i32 j^); in
           let dx = px b1 -f64 px b2;
               dy = py b1 -f64 py b2;
@@ -148,20 +148,20 @@ advance = { bodies : Array Planet => i : Ref Int64
           end;
           (j^ +Int64 (sext_i32_to_i64 1)) >^ j;
         end
-      end
+      }
     end;
     (i^ +Int64 (sext_i32_to_i64 1)) >^ i;
-  end;
+  };
 
   (sext_i32_to_i64 0) >^ i;
-  until i^ ==Int64 l then
+  until { i^ ==Int64 l } {
     let b = prim subscript bodies (trunc_i64_to_i32 i^); in
       incrByFloat64 (pxr b) (vx b);
       incrByFloat64 (pyr b) (vy b);
       incrByFloat64 (pzr b) (vz b);
       (i^ +Int64 (sext_i32_to_i64 1)) >^ i;
     end
-  end
+  }
 };
 
 offset-momentum = { bodies : Array Planet =>

@@ -252,11 +252,6 @@ void IfExprAST::dump(DumpToProtobufPass* pass) {
   dumpChild(pass, if_->mutable_else_expr(), this->getElseExpr());
 }
 
-void UntilExpr::dump(DumpToProtobufPass* pass) {
-  processExprAST(pass->current, this, pb::Expr::UNTIL);
-  dumpChildren(pass, this);
-}
-
 void SeqAST::dump(DumpToProtobufPass* pass) {
   if (this->parts.size() == 1) {
     this->parts[0]->dump(pass);

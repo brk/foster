@@ -8,12 +8,13 @@ main = {
 
 newDArray32 = { n : Int32 => f : { Int32 => Int32 } =>
   a = allocDArray:[Int32] n;
-  x = (ref n);
-
-  until x^ ==Int32 0 then
-      f x^      >^ a[x^ -Int32  1];
-       (x^ -Int32 1) >^ x
-  end;
+  REC go = { x =>
+    if x ==Int32 0 then () else
+      f x >^ a[x -Int32  1];
+      go (x -Int32 1)
+    end
+  };
+  go n;
   a
 };
 
@@ -27,11 +28,13 @@ trunc32to8 = { n : Int32 => trunc_i32_to_i8 n; };
 
 newDArray8 = { n : Int32 => f : { Int32 => Int8 } =>
   a = allocDArray:[Int8] n;
-  x = (ref n);
-  until x^ ==Int32 0 then
-      f x^           >^ a[x^ -Int32  1];
-       (x^ -Int32 1) >^ x
-  end;
+  REC go = { x =>
+    if x ==Int32 0 then () else
+      f x >^ a[x -Int32  1];
+      go (x -Int32 1)
+    end
+  };
+  go n;
   a
 };
 

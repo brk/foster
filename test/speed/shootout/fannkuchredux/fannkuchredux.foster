@@ -35,19 +35,19 @@ tk = { maxn : Int32 =>
             c = (ref 0);
             done = (ref False);
         in
-          until done^ then
+          until { done^ } {
             0    >^ xo;
             t[0] >^ yo;
-            until xo^ >=SInt32 yo^ then
+            until { xo^ >=SInt32 yo^ } {
               t[xo^] >^ c;
               t[yo^] >^ t[xo^];
               incrBy xo 1;
               c^ >^ t[yo^];
               decrBy yo 1;
-            end;
+            };
             incrBy i 1;
             (t[t[0]] ==Int32 0) >^ done;
-          end;
+          };
           i^
         end
       };
@@ -55,7 +55,7 @@ tk = { maxn : Int32 =>
     repeatRange 0 16 { k : Int32 => k >^ s[k]; () };
     repeatRange 0 16 { k : Int32 => 0 >^ c[k]; () };
 
-    until maxn <=SInt32 i^ then
+    until { maxn <=SInt32 i^ } {
       rotate i^;
       if c[i^] >=SInt32 i^ then
         0 >^ c[i^];
@@ -74,7 +74,7 @@ tk = { maxn : Int32 =>
           end
         else () end
       end
-    end
+    }
   end
 };
 

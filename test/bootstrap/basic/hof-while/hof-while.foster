@@ -1,56 +1,29 @@
+
+main = {
+  noinline_llvm_variant-one !;
+  noinline_llvm_variant-two !;
+
+  niters = opaquely_i32 100`000`000;
+  two    = opaquely_i32           2;
+
+  expect_i32 niters;
+  print_i32 (noinline_llvm_stress-hof niters two);
+};
+
+noinline_llvm_stress-hof = { n => k => // 100 mm iters => 1000 ms without inlining
+  x = (ref 0);
+  hof-while { x^ <SInt32 n } {
+     (x^ +Int32 (k -Int32 1)) >^ x
+  };
+  x^
+};
+
 hof-while = { t : {Bool} => b : { () } =>
   if t ! then b ! ; hof-while t b
           else () end
 };
 
-main = {
-  variant-one !;
-  variant-two !;
-  //stress-hof !;
-  //stress-native !;
-  //stress-native (ref (opaquely_i32 0));
-};
-
-// Our overly-conservative reloading discipline from heap allocation with
-// a moving collector forces LLVM to emit silly code like this:
-// .LBB11_7:                               # %until_body.L49.i
-//                                         #   in Loop: Header=BB11_8 Depth=1
-// 	incl	%ecx
-// 	movl	%ecx, (%eax)
-// .LBB11_8:                               # %until_body.L49.i
-//                                         # =>This Inner Loop Header: Depth=1
-// 	movl	-8(%ebp), %eax
-// 	movl	(%eax), %ecx
-// 	cmpl	$100000000, %ecx        # imm = 0x5F5E100
-// 	jne	.LBB11_7
-//
-// which increases the loop's run time from ~85ms to ~250ms
-// for 100m iters on my box.
-//
-// Simply using stack allocation causes LLVM to optimize away the whole loop,
-// but manually adding [call void asm sideeffect "", ""()] triggers emission
-// of an actual tight loop in the generated assembly:
-//.LBB11_9:                               # %until_body.L56.i
-//      decl	%ecx
-//      jne	.LBB11_9
-//
-stress-native = {
-  x = (ref 0);
-  n = opaquely_i32 10`000`000;
-  until (x^ ==Int32 n) then
-        (x^ +Int32 1) >^ x;
-  end;
-};
-
-stress-hof = { // 100 mm iters => 1000 ms without inlining
-  x = (ref 0);
-  n = opaquely_i32 10`000`000;
-  hof-while { x^ <SInt32 n } {
-     (x^ +Int32 1) >^ x
-  };
-};
-
-variant-one = {
+noinline_llvm_variant-one = {
   expect_i32 0;
   expect_i32 1;
   expect_i32 2;
@@ -62,7 +35,7 @@ variant-one = {
   }
 };
 
-variant-two = {
+noinline_llvm_variant-two = {
   expect_i32 0;
   expect_i32 1;
   expect_i32 2;

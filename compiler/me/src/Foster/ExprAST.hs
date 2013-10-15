@@ -39,7 +39,6 @@ data ExprSkel annot ty =
         | E_MachArrayLit  annot [ExprAST ty]
         -- Control flow
         | E_IfAST         annot (ExprAST ty) (ExprAST ty) (ExprAST ty)
-        | E_UntilAST      annot (ExprAST ty) (ExprAST ty)
         | E_SeqAST        annot (ExprAST ty) (ExprAST ty)
         -- Creation of bindings
         | E_Case          annot (ExprAST ty) [CaseArm EPattern (ExprAST ty) ty]
@@ -92,7 +91,6 @@ instance Structured (ExprAST t) where
             E_PrimAST _rng nm      -> text $ "PrimAST      " ++ nm                             ++ (exprCmnts e)
             E_CompilesAST {}       -> text $ "CompilesAST  "                                   ++ (exprCmnts e)
             E_IfAST       {}       -> text $ "IfAST        "                                   ++ (exprCmnts e)
-            E_UntilAST _rng _ _    -> text $ "UntilAST     "                                   ++ (exprCmnts e)
             E_FnAST    _rng f      -> text $ "FnAST        " ++ T.unpack (fnAstName f)         ++ (exprCmnts e)
             E_LetRec      {}       -> text $ "LetRec       "                                   ++ (exprCmnts e)
             E_LetAST   _rng bnd _  -> text $ "LetAST       " ++ T.unpack (termBindingName bnd) ++ (exprCmnts e)
@@ -124,7 +122,6 @@ instance Structured (ExprAST t) where
             E_CompilesAST _rng (Just e)  -> [e]
             E_CallAST     _rng b exprs   -> b:exprs
             E_IfAST       _rng    a b c  -> [a, b, c]
-            E_UntilAST    _rng a b       -> [a, b]
             E_FnAST       _rng f         -> [fnAstBody f]
             E_SeqAST      _rng  _a _b    -> unbuildSeqs e
             E_AllocAST    _rng a _       -> [a]
@@ -160,7 +157,6 @@ exprAnnot e = case e of
       E_CompilesAST   annot _     -> annot
       E_KillProcess   annot _     -> annot
       E_IfAST         annot _ _ _ -> annot
-      E_UntilAST      annot _ _   -> annot
       E_SeqAST        annot _ _   -> annot
       E_AllocAST      annot _ _   -> annot
       E_DerefAST      annot _     -> annot

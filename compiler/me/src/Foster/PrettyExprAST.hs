@@ -110,7 +110,6 @@ prettyAtom e =
     E_TupleAST    {} -> pretty e
     E_FnAST       {} -> pretty e
     E_IfAST       {} -> pretty e
-    E_UntilAST    {} -> pretty e
     E_Case        {} -> pretty e
     E_LetAST      {} -> pretty e
     E_LetRec      {} -> pretty e
@@ -174,10 +173,6 @@ instance Pretty (ExprAST TypeP) where
                                        kwd "if" <+> pretty c
                                    <$> nest 2 (kwd "then" <+> pretty b1)
                                    <$> nest 2 (kwd "else" <+> pretty b2)
-                                   <$> end
-            E_UntilAST annot c b -> withAnnot annot $
-                                   kwd "until" <+> pretty c <//> lkwd "then"
-                                   <$> nest 2 (pretty b)
                                    <$> end
             E_IntAST   annot intstr  -> withAnnot annot $ red     $ text intstr
             E_RatAST   annot fltstr  -> withAnnot annot $ dullred $ text fltstr

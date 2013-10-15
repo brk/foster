@@ -26,7 +26,6 @@ data AnnExpr ty =
         | E_AnnFn       (Fn () (AnnExpr ty) ty)
         -- Control flow
         | AnnIf         ExprAnnot ty (AnnExpr ty) (AnnExpr ty) (AnnExpr ty)
-        | AnnUntil      ExprAnnot ty (AnnExpr ty) (AnnExpr ty)
         -- Creation of bindings
         | AnnCase       ExprAnnot ty (AnnExpr ty) [CaseArm Pattern (AnnExpr ty) ty]
         | AnnLetVar     ExprAnnot Ident (AnnExpr ty) (AnnExpr ty)
@@ -72,7 +71,6 @@ instance TypedWith (AnnExpr ty) ty where
      AnnCompiles _ t _     -> t
      AnnKillProcess _ t _  -> t
      AnnIf _rng t _ _ _    -> t
-     AnnUntil _rng t _ _   -> t
      AnnLetVar _rng _ _ b  -> typeOf b
      AnnLetRec _rng _ _ b  -> typeOf b
      AnnLetFuns _rng _ _ e -> typeOf e
@@ -101,7 +99,6 @@ instance Structured (AnnExpr TypeAST) where
       AnnCompiles _rng _ cr      -> text "AnnCompiles  " <> pretty cr
       AnnKillProcess _rng t msg  -> text "AnnKillProcess " <> string (show msg) <> text  " :: " <> pretty t
       AnnIf       _rng t _ _ _   -> text "AnnIf         :: " <> pretty t
-      AnnUntil    _rng t _ _     -> text "AnnUntil      :: " <> pretty t
       AnnLetVar   _rng id _a _b  -> text "AnnLetVar    " <> pretty id
       AnnLetRec   _rng ids _ _   -> text "AnnLetRec    " <> list (map pretty ids)
       AnnLetFuns  _rng ids _ _   -> text "AnnLetFuns   " <> list (map pretty ids)
@@ -130,7 +127,6 @@ instance Structured (AnnExpr TypeAST) where
       AnnCompiles  _rng _ (CompilesResult (Errors _)) -> []
       AnnKillProcess {}                    -> []
       AnnIf        _rng _t  a b c          -> [a, b, c]
-      AnnUntil     _rng _t  a b            -> [a, b]
       E_AnnFn annFn                        -> [fnBody annFn]
       AnnLetVar    _rng _ a b              -> [a, b]
       AnnLetRec    _rng _ exprs e          -> exprs ++ [e]
@@ -173,7 +169,6 @@ annExprAnnot expr = case expr of
       AnnCompiles  annot _ _        -> annot
       AnnKillProcess annot _ _      -> annot
       AnnIf        annot _ _ _ _    -> annot
-      AnnUntil     annot _ _ _      -> annot
       E_AnnFn      f                -> fnAnnot f
       AnnLetVar    annot _ _ _      -> annot
       AnnLetRec    annot _ _ _      -> annot

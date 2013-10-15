@@ -137,22 +137,6 @@ computeBlocks tailq expr idmaybe k = do
         KNIf t v a b -> do -- Compile [if v then ...] as [case v of ...].
             computeBlocks tailq (KNCase t v $ caseIf a b) idmaybe k
 
-        KNUntil _t a b rng -> do
-            [until_test, until_body, until_cont] <- mapM cfgFresh
-                                      ["until_test", "until_body", "until_cont"]
-            cfgEndWith (CFCont until_test [])
-
-            cfgNewBlock until_test []
-            computeBlocks NotTail a Nothing $ \var -> cfgEndWith
-                                     (CFCase var (caseIf until_cont until_body))
-
-            cfgNewBlock until_body []
-            computeBlocks NotTail b Nothing $ \_ -> cfgEndWith (CFCont until_test [])
-
-            cfgNewBlock until_cont []
-            cfgAddLet idmaybe (ILTuple [] (AllocationSource "until" rng))
-                              (TupleType []) >>= k
-
         -- Perform on-demand let-flattening, which enables a CPS tranform with a mostly-first-order flavor.
         KNLetVal id (KNLetVal  x   e   c) b -> computeBlocks tailq (KNLetVal x e      (KNLetVal id c b)) idmaybe k
         KNLetVal id (KNLetFuns ids fns a) b -> computeBlocks tailq (KNLetFuns ids fns (KNLetVal id a b)) idmaybe k

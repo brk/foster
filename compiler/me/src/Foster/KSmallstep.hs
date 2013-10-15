@@ -217,7 +217,6 @@ data IExpr =
         | IArrayPoke    Ident   Ident Ident
         | IAllocArray   Ident
         | IIf           Ident   SSTerm     SSTerm
-        | IUntil                SSTerm     SSTerm
         | ICall         Ident  [Ident]
         | ICallPrim     ILPrim [Ident]
         | ICase         Ident  {-(DecisionTree KNExpr)-} [CaseArm PatternRepr SSTerm TypeIL] [PatternRepr TypeIL]
@@ -265,7 +264,6 @@ ssTermOfExpr expr =
     KNCall     _t b vs     -> SSTmExpr  $ ICall (idOf b) (map idOf vs)
     KNCallPrim _t b vs     -> SSTmExpr  $ ICallPrim b (map idOf vs)
     KNIf       _t  v b c   -> SSTmExpr  $ IIf      (idOf v) (tr b) (tr c)
-    KNUntil    _t  a b _   -> SSTmExpr  $ IUntil            (tr a) (tr b)
     KNArrayRead _t (ArrayIndex a b _ _)
                            -> SSTmExpr  $ IArrayRead (idOf a) (idOf b)
     KNArrayPoke _t (ArrayIndex b i _ _) v
@@ -513,13 +511,6 @@ stepExpr gs expr = do
         case getval gs b of
            SSFunc func -> return (callFunc gs func args withTerm)
            v -> error $ "Cannot call non-function value " ++ display v
-
-    IUntil c b ->
-      let v = (Ident (T.pack "!untilval") 0) in
-      return $ withTerm gs (SSTmExpr $
-        ILetVal v c (SSTmExpr $ IIf v unit
-                    (SSTmExpr $ ILetVal (Ident (T.pack "_") 0) b
-                                        (SSTmExpr $ IUntil c b))))
 
     IArrayRead base idxvar ->
         let (SSInt i) = getval gs idxvar in

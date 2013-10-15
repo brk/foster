@@ -18,7 +18,7 @@ tokens {
   TYPE='type';
   COMPILES='__COMPILES__';
 
-  VAL_APP; UNTIL; FORMALS;
+  VAL_APP; FORMALS;
   BINDING; ABINDING; LETS; LETREC; SEQ; STMTS;
   LIT_NUM; BOOL; STRING;
   DECL; DEFN; PARSE_DECL;
@@ -131,7 +131,6 @@ atom    :       // syntactically "closed" terms
   | ifexpr
   | parse_in
   | 'case' e (OF pmatch)+ 'end'         -> ^(CASE e pmatch+) // pattern matching
-  | 'until' e 'then' stmts 'end'        -> ^(UNTIL e stmts)
   | '(' ')'                             -> ^(TUPLE)
   | '(' COMPILES e ')'                  -> ^(COMPILES e)
   | '(' 'ref' e ')'                     -> ^(REF e)     // allocation

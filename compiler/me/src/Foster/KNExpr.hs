@@ -111,7 +111,6 @@ kNormalize mebTail ctorRepr expr =
                                   exprs' <- mapM gn exprs
                                   e'     <- gt e
                                   return $ KNLetRec ids exprs' e'
-      AIUntil   t a b rng   -> do liftM2 (\a' b' -> KNUntil t a' b' rng) (gn a) (gn b)
       AICase    t e arms    -> do e' <- gn e
                                   nestedLetsDo [return e'] (\[v] -> do
                                     let gtp (CaseArm p e g b r) = do
@@ -465,7 +464,6 @@ collectFunctions knf = go [] (fnBody knf)
           KNInlined _t0 _to _tn _old new -> go xs new
           KNIf            _ _ e1 e2   -> go (go xs e1) e2
           KNLetVal          _ e1 e2   -> go (go xs e1) e2
-          KNUntil           _ e1 e2 _ -> go (go xs e1) e2
           KNCase       _ _ arms       -> let es = concatMap caseArmExprs arms in
                                        foldl' go xs es
           KNLetRec     _ es b       -> foldl' go xs (b:es)
@@ -495,7 +493,6 @@ collectMentions knf = go Set.empty (fnBody knf)
           KNStore     _  v1 v2 -> vv (vv xs v1) v2
           KNCall        _ v vs -> vv (uu xs vs) v
           KNIf          _ v e1 e2   -> go (go (vv xs v) e1) e2
-          KNUntil       _   e1 e2 _ -> go (go xs e1) e2
           KNLetVal      _   e1 e2   -> go (go xs e1) e2
           KNCase        _ v arms    -> let es = concatMap caseArmExprs arms in
                                        foldl' go (vv xs v) es
@@ -525,7 +522,6 @@ rebuildWith rebuilder e = q e
       KNArrayPoke   {} -> x
       KNTyApp       {} -> x
       KNIf          ty v ethen eelse -> KNIf       ty v (q ethen) (q eelse)
-      KNUntil       ty cond body rng -> KNUntil    ty   (q cond)  (q body) rng
       KNLetVal      id  e1   e2      -> KNLetVal   id   (q e1)    (q e2)
       KNLetRec      ids es   e       -> KNLetRec   ids (map q es) (q e)
       KNCase        ty v arms        -> KNCase     ty v (map (fmapCaseArm id q id) arms)
@@ -734,7 +730,6 @@ knLoopHeaderCensus tailq activeids expr = go' tailq expr where
   go        expr = go' tailq expr
   go' tailq expr = case expr of
     KNCase        _ _ patbinds -> do mapM_ go (concatMap caseArmExprs patbinds)
-    KNUntil         _ e1 e2 _  -> do go' NotTail e1 ; go' NotTail e2
     KNIf          _ _ e1 e2    -> do go e1 ; go e2
     KNLetVal      id  e1 e2    -> do go' NotTail e1
                                      case e1 of
@@ -814,7 +809,6 @@ knLoopHeaders' expr = do
     KNCallPrim    {} -> expr
     KNAppCtor     {} -> expr
     KNInlined _t0 _to _tn _old new -> q tailq new
-    KNUntil       ty e1 e2  rng -> KNUntil ty (q NotTail e1) (q NotTail e2) rng
     KNCase        ty v arms     -> KNCase ty v (map (fmapCaseArm id (q tailq) id) arms)
     KNIf          ty v e1 e2    -> KNIf     ty v (q tailq e1) (q tailq e2)
     KNLetVal      id   e1 e2    -> let e1' = q NotTail e1
@@ -1575,11 +1569,6 @@ knInline' expr env = do
 
         Just (VO_F opf) -> do maybeInlineCall opf v v
 
-    KNUntil       ty e1 e2 rng -> do
-        Rez e1' <- knInline' e1 env
-        Rez e2' <- knInline' e2 env
-        residualize $ KNUntil ty e1' e2' rng
-
     KNIf          ty v e1 e2 -> do
         -- If something is known about v's value,
         -- select either e1 or e2 appropriately;
@@ -1777,7 +1766,6 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
         KNArrayPoke   {} -> "KNArrayPoke   " ++ show (knSize x)
         KNTyApp       {} -> "KNTyApp       " ++ show (knSize x)
         KNIf          {} -> "KNIf          " ++ show (knSize x)
-        KNUntil       {} -> "KNUntil       " ++ show (knSize x)
         KNLetVal      {} -> "KNLetVal      " ++ show (knSize x)
         KNLetRec      {} -> "KNLetRec      " ++ show (knSize x)
         KNCase        {} -> "KNCase        " ++ show (knSize x)
@@ -2252,7 +2240,6 @@ knElimRebinds expr = go Map.empty expr where
             KNLetFuns ids fns k -> KNLetFuns ids (map qf fns) (q k)
             KNLetRec  ids xps e -> KNLetRec  ids (map q xps)  (q e)
             KNIf     _t v b1 b2 -> KNIf     _t (qv v) (q b1) (q b2)
-            KNUntil  _t c b _sr -> KNUntil  _t (q c ) (q b ) _sr
             KNAlloc  _t v rgn   -> KNAlloc  _t (qv v ) rgn
             KNDeref  _t v       -> KNDeref  _t (qv v )
             KNStore  _t v1 v2   -> KNStore  _t (qv v1) (qv v2)
@@ -2338,7 +2325,6 @@ inCensusExpr :: KNMono -> InCen ()
 inCensusExpr expr = go expr where
   go expr = case expr of
     KNCase        _ _ arms     -> do mapM_ go (concatMap caseArmExprs arms)
-    KNUntil         _ e1 e2 _  -> do go e1 ; go e2
     KNIf          _ _ e1 e2    -> do go e1 ; go e2
     KNLetVal      id  e1 e2    -> do go e1
                                      case e1 of

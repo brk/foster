@@ -83,8 +83,6 @@ monoKN subst e =
   -- but are still basically trivially inductive.
   KNCase          t v pats -> do pats' <- mapM (monoPatternBinding subst) pats
                                  return $ KNCase          (qt t) (qv v) pats'
-  KNUntil         t c b r  -> do [econd, ebody] <- mapM (monoKN subst) [c, b ]
-                                 return $ KNUntil      (qt t) econd ebody r
   KNIf            t v e1 e2-> do [ethen, eelse] <- mapM (monoKN subst) [e1,e2]
                                  return $ KNIf         (qt t) (qv v) ethen eelse
   KNLetVal       id e   b  -> do case e of KNAppCtor {} -> monoAddCtorOrigin id

@@ -525,13 +525,6 @@ ExprAST* parseIf(pTree tree) {
                        rangeOf(tree));
 }
 
-// ^(UNTIL e stmts)
-ExprAST* parseUntil(pTree tree) {
-  return new UntilExpr(ExprAST_from(child(tree, 0)),
-                       parseStmts(child(tree, 1)),
-                       rangeOf(tree));
-}
-
 ExprAST* parseRef(pTree tree) {
   return CallPrimAST::one("alloc", ExprAST_from(child(tree, 0)), rangeOf(tree));
 }
@@ -672,7 +665,6 @@ ExprAST* parseAtom(pTree tree) {
   if (token == TUPLE)    { return parseTuple(tree); }
   if (token == TYANNOT)  { return parseTyCheck(tree); }
   if (token == PARSE_DECL){return parseParseDecl(tree); }
-  if (token == UNTIL)    { return parseUntil(tree); }
   if (token == TERMNAME) { return parseTermVar(tree); }
   if (token == LIT_NUM)  { return parseNumFrom(tree); }
   if (token == IF)       { return parseIf(tree); }

@@ -160,10 +160,6 @@ parseIf pbexpr annot =
                eelse <- parseExpr (PBIf.else_expr pbif)
                return (E_IfAST annot eif ethen eelse)
 
-parseUntil pbexpr range = do
-    [a, b] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
-    return $ E_UntilAST range a b
-
 parseInt :: PbExpr.Expr -> ExprAnnot -> FE (ExprAST TypeP)
 parseInt pbexpr annot = do
     return $ E_IntAST annot (uToString $ getVal pbexpr PbExpr.string_value)
@@ -291,7 +287,6 @@ parseExpr pbexpr = do
                 PB_INT  -> parseInt
                 PB_RAT  -> parseRat
                 IF      -> parseIf
-                UNTIL   -> parseUntil
                 BOOL    -> parseBool
                 VAR     -> parseEVar
                 Foster.Fepb.Expr.Tag.VAL_ABS -> parseValAbs
@@ -452,7 +447,6 @@ parseSourceModule sm = resolveFormatting m where
        E_KillProcess  _ e        -> liftM2' E_KillProcess ana (q e)
        E_CompilesAST  _ me       -> liftM2' E_CompilesAST ana (liftMaybeM q me)
        E_IfAST        _ a b c    -> liftM4' E_IfAST       ana (q a) (q b) (q c)
-       E_UntilAST     _ a b      -> liftM3' E_UntilAST    ana (q a) (q b)
        E_SeqAST       _ a b      -> liftM3' E_SeqAST      ana (q a) (q b)
        E_AllocAST     _ a rgn    -> liftM3' E_AllocAST    ana (q a) (return rgn)
        E_DerefAST     _ a        -> liftM2' E_DerefAST    ana (q a)

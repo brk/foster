@@ -47,27 +47,27 @@ tk = { maxn : Int32 =>
         0 >^ rc;
         False >^ done;
 
-        until done^ then
+        until { done^ } {
           0                           >^ xo;
           (prim subscript-unsafe t 0) >^ yo;
-          until xo^ >=SInt32 yo^ then
+          until { xo^ >=SInt32 yo^ } {
             (prim subscript-unsafe t xo^) >^ rc;
             (prim subscript-unsafe t yo^) >^
             (prim subscript-unsafe t xo^);
             incrBy xo 1;
             rc^ >^ (prim subscript-unsafe t yo^);
             decrBy yo 1;
-          end;
+          };
           incrBy ri 1;
           ((prim subscript-unsafe t (prim subscript-unsafe t 0)) ==Int32 0) >^ done;
-        end;
+        };
         ri^
       };
   in
     repeatRange 0 16 { k : Int32 => k >^ s[k]; () };
     repeatRange 0 16 { k : Int32 => 0 >^ c[k]; () };
 
-    until maxn <=SInt32 i^ then
+    until { maxn <=SInt32 i^ } {
       rotate i^;
       if (prim subscript-unsafe c i^) >=SInt32 i^ then
         0 >^ (prim subscript-unsafe c i^);
@@ -87,7 +87,7 @@ tk = { maxn : Int32 =>
           end
         else () end
       end
-    end
+    }
   end
   end
   end

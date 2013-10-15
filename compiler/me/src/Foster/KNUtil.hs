@@ -36,7 +36,6 @@ data KNExpr' r ty =
         | KNKillProcess ty T.Text
         -- Control flow
         | KNIf          ty (TypedId ty)    (KNExpr' r ty) (KNExpr' r ty)
-        | KNUntil       ty (KNExpr' r ty)  (KNExpr' r ty) SourceRange
         -- Creation of bindings
         | KNCase        ty (TypedId ty) [CaseArm PatternRepr (KNExpr' r ty) ty]
         | KNLetVal      Ident        (KNExpr' r ty)     (KNExpr' r ty)
@@ -153,8 +152,6 @@ alphaRename' fn uref = do
       KNCase          t v arms -> do arms' <- mapM renameCaseArm arms
                                      v'    <- qv v
                                      return $ KNCase       t v' arms'
-      KNUntil         t c b r  -> do [econd, ebody] <- mapM renameKN [c, b ]
-                                     return $ KNUntil      t econd ebody r
       KNIf            t v e1 e2-> do [ethen, eelse] <- mapM renameKN [e1,e2]
                                      v' <- qv v
                                      return $ KNIf         t v' ethen eelse
@@ -231,7 +228,6 @@ typeKN expr =
     KNAppCtor       t _ _    -> t
     KNAllocArray    t _      -> t
     KNIf            t _ _ _  -> t
-    KNUntil         t _ _ _  -> t
     KNAlloc         t _ _rgn -> t
     KNDeref         t _      -> t
     KNStore         t _ _    -> t
@@ -261,7 +257,6 @@ instance (Show ty, Show rs) => Structured (KNExpr' rs ty) where
             KNLetRec   _ _    _ -> text $ "KNLetRec    "
             KNLetFuns ids fns _ -> text $ "KNLetFuns   " ++ (show $ zip ids (map fnVar fns))
             KNIf      t  _ _ _  -> text $ "KNIf        " ++ " :: " ++ show t
-            KNUntil   t  _ _ _  -> text $ "KNUntil     " ++ " :: " ++ show t
             KNAlloc      {}     -> text $ "KNAlloc     "
             KNDeref      {}     -> text $ "KNDeref     "
             KNStore      {}     -> text $ "KNStore     "
@@ -281,7 +276,6 @@ instance (Show ty, Show rs) => Structured (KNExpr' rs ty) where
         case expr of
             KNLiteral {}            -> []
             KNKillProcess {}        -> []
-            KNUntil _t a b _        -> [a, b]
             KNTuple   _ vs _        -> map var vs
             KNCase _ e arms         -> (var e):(concatMap caseArmExprs arms)
             KNLetFuns _ids fns e    -> map fnBody fns ++ [e]
@@ -306,7 +300,6 @@ knSize :: KNExpr' r t -> (Int, Int) -- toplevel, cumulative
 knSize expr = go expr (0, 0) where
   go expr (t, a) = let ta = let v = knSizeHead expr in (t + v, a + v) in
                    case expr of
-    KNUntil       _   e1 e2 _  -> go e2 (go e1 ta)
     KNIf          _ _ e1 e2    -> go e2 (go e1 ta)
     KNCase        _ _ arms     -> foldl' (\ta e -> go e ta) ta (concatMap caseArmExprs arms)
     KNLetVal      _   e1 e2    -> go e2 (go e1 (t, a))
@@ -344,7 +337,6 @@ knSizeHead expr = case expr of
     KNArrayRead   {} -> 2 -- due to (potential) bounds check
     KNArrayPoke   {} -> 2 -- due to (potential) bounds check
     KNCall        {} -> 4 -- due to dyn. insn overhead, stack checks, etc
-    KNUntil       {} -> 1
     KNCase        {} -> 2 -- TODO might be cheaper for let-style cases.
 
     KNAppCtor     {} -> 3 -- rather like a KNTuple, plus one store for the tag.
@@ -519,9 +511,6 @@ instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
             KNIf     _t v b1 b2 -> kwd "if" <+> prettyId v
                                    <$> nest 2 (kwd "then" <+> (indent 0 $ pretty b1))
                                    <$> nest 2 (kwd "else" <+> (indent 0 $ pretty b2))
-                                   <$> end
-            KNUntil  _t c b _sr -> kwd "until" <+> pretty c <//> lkwd "then"
-                                   <$> nest 2 (pretty b)
                                    <$> end
             KNAlloc _ v rgn     -> text "(ref" <+> prettyId v <+> comment (pretty rgn) <> text ")"
             KNDeref _ v         -> prettyId v <> text "^"

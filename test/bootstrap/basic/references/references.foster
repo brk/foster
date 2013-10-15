@@ -4,7 +4,6 @@ main = {
   ref-if    !;
   tuprefs1  !;
   tuprefs2  !;
-  ref-until !;
   hof-until !;
 
   expect_i1 False; print_i1 (__COMPILES__ 0 >^ 0);
@@ -78,18 +77,5 @@ hof-until = {
   hof-until-case { r^ ==Int32 16 } {
             print_i32 r^; (r^ +Int32 1) >^ r;
   };
-};
-
-ref-until = {
-  expect_i32 3;
-  expect_i32 3;
-  expect_i32 2;
-  expect_i32 1;
-  r = (ref opaquely_i32 3);
-  print_i32 r^;
-  until r^ ==Int32 0 then
-    print_i32 r^;
-    (r^ -Int32 1) >^ r;
-  end
 };
 

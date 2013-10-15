@@ -32,7 +32,6 @@ data AIExpr =
         | AIKillProcess TypeIL T.Text
         -- Control flow
         | AIIf         TypeIL AIExpr AIExpr AIExpr
-        | AIUntil      TypeIL AIExpr AIExpr SourceRange
         -- Creation of bindings
         | AICase       TypeIL AIExpr [CaseArm Pattern AIExpr TypeIL]
         | AILetVar     Ident AIExpr AIExpr
@@ -95,9 +94,6 @@ ail ctx ae =
         AnnIf   _rng  t  a b c -> do ti <- qt t
                                      [x,y,z] <- mapM q [a,b,c]
                                      return $ AIIf    ti x y z
-        AnnUntil rng  t  a b   -> do ti <- qt t
-                                     [x,y]   <- mapM q [a,b]
-                                     return $ AIUntil ti x y (rangeOf rng)
         -- For anonymous function literals
         E_AnnFn annFn        -> do fn_id <- tcFresh $ "lit_fn." ++ sourceLineStart (rangeOf annFn) ++ "..."
                                    aiFn <- fnOf ctx annFn

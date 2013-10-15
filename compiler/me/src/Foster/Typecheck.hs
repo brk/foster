@@ -225,7 +225,6 @@ tcRho ctx expr expTy = do
       E_StoreAST rng e1 e2           -> tcRhoStore    ctx rng   e1 e2      expTy
       E_DerefAST rng e1              -> tcRhoDeref    ctx rng   e1         expTy
       E_SeqAST rng a b               -> tcRhoSeq      ctx rng   a b        expTy
-      E_UntilAST rng cond body       -> tcRhoUntil    ctx rng   cond body  expTy
       E_ArrayRead rng (ArrayIndex a b _ s) -> do -- a[b]
               ta <- inferRho ctx a "array read base"
               tb <- inferRho ctx b "array read index"
@@ -572,17 +571,6 @@ tcRhoIf ctx rng a b c expTy = do
     unify (typeAST eb) (typeAST ec) "IfAST: types of branches didn't match"
     -- TODO use subsumption instead of unification?
     return (AnnIf rng (typeAST eb) ea eb ec)
--- }}}
-
---  G |- cond ::: Bool
---  G |- body ::: sigma
---  ------------------------------------
---  G |- until cond then body end ::: ()
--- {{{
-tcRhoUntil ctx rng cond body expTy = do
-      acond <- tcRho ctx cond (Check fosBoolType)
-      abody <- inferSigma ctx body "until"
-      matchExp expTy (AnnUntil rng (TupleTypeAST []) acond abody) "until"
 -- }}}
 
 --  G         |- e1 ::: t1

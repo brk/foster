@@ -1002,7 +1002,7 @@ natDivLTM_BB = { a : Array Word => b : Array Word =>
   expect_text "|b| = "; print_i32 (natCountBits_A b);
   expect_text "n   = "; print_i32 n32;
   */
-  until (decrWord n <SWord -1) then
+  until { decrWord n <SWord -1 } {
     /*
     expect_text "..."; print_text "...";
     expect_text "q  = "; print_A q^;
@@ -1020,7 +1020,7 @@ natDivLTM_BB = { a : Array Word => b : Array Word =>
     end;
     natShr_A tb^ 1 >^ tb;
     natShr_A tq^ 1 >^ tq;
-  end;
+  };
   /*
     expect_text "..."; print_text "...";
     expect_text "q  = "; print_A q^;
@@ -1054,10 +1054,11 @@ natDivLTM_NBB = { a : Array Word => b : Array Word =>
 
     (natLShd_A y^ (n -Int32 t)) >^ y;
 
-    until isGE (natCmpDigits x^ y^) then
+    until { isGE (natCmpDigits x^ y^) }
+    {
       (q[n -Int32 t] +Word 1) >^ q[n -Int32 t];
       (foster_nat_sub_digits x^ y^) >^ x;
-    end;
+    };
 
     (natRShd_A y^ (n -Int32 t)) >^ y;
 

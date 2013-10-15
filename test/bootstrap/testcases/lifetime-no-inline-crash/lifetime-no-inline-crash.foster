@@ -49,14 +49,14 @@ newDArray0 = { forall v:Type,
                 n : Int32 =>
                 f : { Int32 => v } =>
   a = allocDArray:[v] n;
-  x = (ref n);
-
-  until x^ ==Int32 0 then
-    let y  = x^ -Int32 1; in
+  REC go = { x =>
+    if x ==Int32 0 then () else
+       y  = x -Int32 1;
       (f y) >^ a[y];
-         y  >^ x
+      go y
     end
-  end;
+  };
+  go n;
   a
 };
 

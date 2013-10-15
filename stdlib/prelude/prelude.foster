@@ -14,6 +14,14 @@ andand = { a : { Bool } => b : { Bool } => if a ! then b !  else False end };
 
 when   = { a : Bool => f : { () } => if a then f ! else () end };
 
+while = { cond : { Bool } => body : { () } =>
+  if cond ! then body ! ; while cond body else () end
+};
+
+until = { cond : { Bool } => body : { () } =>
+  if cond ! then () else body ! ; until cond body end
+};
+
 /////
 
 cmpSInt32 = { a : Int32 => b : Int32 =>
@@ -260,10 +268,10 @@ newDArray = { forall v:Type,
   a = allocDArray:[v] n;
   x = (ref n);
 
-  until x^ ==Int32 0 then
+  until { x^ ==Int32 0 } {
       f x^      >^ a[x^ -Int32  1];
        (x^ -Int32 1) >^ x
-  end;
+  };
   a
 };
 
@@ -274,12 +282,11 @@ newDArray0 = { forall v:Type,
   a = allocDArray:[v] n;
   x = (ref n);
 
-  until x^ ==Int32 0 then
-    let y  = x^ -Int32 1; in
+  until { x^ ==Int32 0 } {
+      y = x^ -Int32 1;
       (f y) >^ a[y];
          y  >^ x
-    end
-  end;
+  };
   a
 };
 

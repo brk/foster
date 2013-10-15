@@ -71,7 +71,6 @@ convertExprAST f expr =
     E_PrimAST      rng nm       -> return $ (E_PrimAST    rng) nm
     E_CompilesAST  rng me       -> liftM  (E_CompilesAST  rng) (liftMaybeM q me)
     E_IfAST        rng    a b c -> liftM3 (E_IfAST        rng)   (q a) (q b) (q c)
-    E_UntilAST     rng a b      -> liftM2 (E_UntilAST     rng)   (q a) (q b)
     E_SeqAST       rng a b      -> liftM2 (E_SeqAST       rng)   (q a) (q b)
     E_AllocAST     rng a rgn    -> liftM2 (E_AllocAST     rng)   (q a) (return rgn)
     E_DerefAST     rng a        -> liftM  (E_DerefAST     rng)   (q a)
