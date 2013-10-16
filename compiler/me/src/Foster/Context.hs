@@ -6,7 +6,7 @@
 
 module Foster.Context where
 
-import Data.IORef(IORef,newIORef,readIORef,writeIORef,modifyIORef)
+import Data.IORef(IORef,newIORef,readIORef,writeIORef)
 import Data.Map(Map)
 import Data.List(foldl')
 import qualified Data.Map as Map
