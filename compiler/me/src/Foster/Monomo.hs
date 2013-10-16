@@ -121,8 +121,10 @@ monoKN subst e =
     (monoids, monofns) <- monoGatherVersions ids
 
     return $ mkFunctionSCCs monoids monofns
-                 (KNLetFuns ids'    fns'    b')
-                  KNLetFuns
+                 (mkKNLetFuns ids'    fns'    b')
+                  mkKNLetFuns
+            where mkKNLetFuns []  []  b = b
+                  mkKNLetFuns ids fns b = KNLetFuns ids fns b
 
   KNTyApp _ _ [] -> error "Monomo.hs: cannot type-apply with no arguments!"
   KNTyApp t (TypedId (ForAllIL ktvs _rho) polybinder) argtys -> do
