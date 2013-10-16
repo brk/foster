@@ -6,10 +6,10 @@
 
 module Foster.Config where
 
-import Foster.Base(Uniq, Ident(..))
+import Foster.Base(Uniq, Ident(..), modifyIORef')
 import Foster.MainOpts
 
-import Data.IORef(IORef, modifyIORef, readIORef)
+import Data.IORef(IORef, readIORef)
 import Control.Monad.State(StateT, gets, when, liftIO)
 import qualified Data.Text as T(Text)
 
@@ -28,7 +28,7 @@ data CompilerContext = CompilerContext {
 
 ccUniq :: Compiled Uniq
 ccUniq = do uref <- gets ccUniqRef
-            liftIO $ modifyIORef uref (+1) >> readIORef uref
+            liftIO $ modifyIORef' uref (+1) >> readIORef uref
 
 ccFreshId :: T.Text -> Compiled Ident
 ccFreshId txt = do u <- ccUniq

@@ -40,7 +40,7 @@ import qualified Data.Set as Set
 import Data.Map(Map)
 import Data.Set(Set)
 import Control.Monad.State
-import Data.IORef
+import Data.IORef hiding (modifyIORef')
 import Prelude hiding (id, last)
 
 data CFBody = CFB_LetFuns [Ident] [CFFn] CFBody
@@ -403,7 +403,7 @@ cfgNewUniq :: CFG Uniq
 cfgNewUniq = do uref <- gets cfgUniq ; mutIORef uref (+1)
   where
     mutIORef :: IORef a -> (a -> a) -> CFG a
-    mutIORef r f = liftIO $ modifyIORef r f >> readIORef r
+    mutIORef r f = liftIO $ modifyIORef' r f >> readIORef r
 
 cfgSetHeader header   = do old <- get ; put old { cfgHeader = Just header }
 cfgSetRetCont retcont = do old <- get ; put old { cfgRetCont = Just retcont }
