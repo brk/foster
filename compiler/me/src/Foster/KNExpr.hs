@@ -982,6 +982,11 @@ mkGlobalWithType _  (GlobalSymbol _) = error $ "KNExpr.hs: mkGlobal(WithType) of
 --    which then looks at the hr(1) call. If we had set the outer-pending
 --    flag when looking at hr(0), the hr(1) call would be needlessly
 --    residualized instead of inlined.
+--
+--  * Census information is not kept consistent with inlining results.
+--    In particular, if a leaf has a single call site, it will be inlined
+--    without a size limit at every point the call site is inlined.
+
 
 knInline :: Maybe Int -> Bool -> (ModuleIL SrcExpr MonoType)
                      -> Compiled (ModuleIL ResExpr MonoType)
