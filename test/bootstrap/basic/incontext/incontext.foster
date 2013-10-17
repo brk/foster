@@ -6,13 +6,13 @@ main = {
   f4 !;
   f5 !;
   f6 !;
-  
+
   expect_i1 False;
   print_i1 (__COMPILES__ f3 () ()); // "typecheckExprsTogether: had different number of values (2) and expected types (0)"
-  
+
   expect_i1 False;
   print_i1 (__COMPILES__ f1 { x : Int32 => y : Int32 => () }); // "Lengths of tuples must agree! Had [x!72 :: (PrimIntAST I32),y!73 :: (PrimIntAST I32)] and [(PrimIntAST I32)]"
-  
+
   expect_i1 False;
   print_i1 (__COMPILES__ x); // "Unknown variable x"
 
@@ -27,14 +27,14 @@ f3 = {
 
   expect_i1 False;
   print_i1 (__COMPILES__ () ()); // "called expression had unexpected type"
-  
+
   expect_i1 False;
   print_i1 (__COMPILES__ (polyid ()) ()); // "called expression had unexpected type"
-  
+
   // TODO: re-trigger this error
   // expect_i1 False;
   // print_i1 (__COMPILES__ polyid:[] ()); // "Tried to instantiate a sigma with no types!"
-  
+
   expect_i1 False;
   print_i1 (__COMPILES__ polyid:[Int32] ()); // "tuple ([]) cannot check against non-tuple type (PrimIntAST I32)"
 
@@ -43,7 +43,7 @@ f3 = {
 
   expect_i1 True;
   print_i1 (__COMPILES__ polyid 0);
-  
+
  // expect_i1 True;
  // print_i1 (__COMPILES__ (polyid polyid) 0);
 };
@@ -53,19 +53,19 @@ polyid = { forall t:Type, x:t => x };
 f1 = { f : { Int32 => () } =>
   expect_i1 True;
   print_i1 (__COMPILES__ f 0);
- 
+
   expect_i1 False;
   print_i1 (__COMPILES__ f "");
-  
+
   expect_i1 False;
   print_i1 (__COMPILES__ f True);
 
   expect_i1 False;
   print_i1 (__COMPILES__ f 0.0);
-  
+
   expect_i1 False;
   print_i1 (__COMPILES__ f ());
-   
+
   expect_i1 False;
   print_i1 (__COMPILES__ f { 0 }); // "Context of function literal expects non-function type: (PrimIntAST I32)"
 };
@@ -74,34 +74,34 @@ f2 = { r : Ref Int32 =>
 
   expect_i1 True;
   print_i1 (__COMPILES__ 0    >^ r);
-                        
-  expect_i1 False;      
+
+  expect_i1 False;
   print_i1 (__COMPILES__ ""   >^ r);
-                        
-  expect_i1 False;      
+
+  expect_i1 False;
   print_i1 (__COMPILES__ True >^ r);
-                        
-  expect_i1 False;      
+
+  expect_i1 False;
   print_i1 (__COMPILES__ 0.0  >^ r);
-                        
-  expect_i1 False;      
+
+  expect_i1 False;
   print_i1 (__COMPILES__ ()   >^ r);
-  
-  expect_i1 False;      
+
+  expect_i1 False;
   print_i1 (__COMPILES__ { 0 } >^ r); // "Unification failure triggered when typechecking source line:"
-  
+
   expect_i1 True;
   print_i1 (__COMPILES__ { pf : { ?? MTV => Int32 } => print_i32 (pf 0) } );
-  
+
   expect_i1 False;
   print_i1 (__COMPILES__ { pf : () => pf : () => () } ); // "Error when checking <anon_fn_5: had duplicated bindings: ["pf"]"
 
   expect_i1 True;
   print_i1 (__COMPILES__ r ^ +Int32 0);
-  
+
   expect_i1 True;
   print_i1 (__COMPILES__ f2 (ref r^));
-  
+
   expect_i1 False;
   print_i1 (__COMPILES__ 0 ^); // "Expected deref-ed expr to have ref type, had (PrimIntAST I32)"
 
@@ -116,47 +116,38 @@ f2 = { r : Ref Int32 =>
 
   expect_i1 True;
   print_i1 (__COMPILES__ if True then () else () end);
-  
-  expect_i1 True;
-  print_i1 (__COMPILES__ until True then () end);
-  
-  expect_i1 False;
-  print_i1 (__COMPILES__ until "oops" then () end); // "Unable to check Text constant in context expecting non-Text type (PrimIntAST I1)"
 
   expect_i1 False;
-  print_i1 (__COMPILES__ until r then r; () end); // "E_Until: type of until conditional wasn't boolean"
-  
-  expect_i1 False;
   print_i1 (__COMPILES__ if True then r else () end);
-  
+
   expect_i1 False;
   print_i1 (__COMPILES__ let f = { f ! }; in () end); // "Recursive bindings should use 'rec', not 'let':"
-  
+
   expect_i1 True;
   print_i1 (__COMPILES__ rec f = { x : Bool => if x then () else f True end }; in f end); // "Recursive bindings should use 'rec', not 'let':"
-  
+
   expect_i1 False;
   print_i1 (__COMPILES__ rec f = { f }; in f end); // "Occurs check for (~!86:letrec_f) failed in (() => (~!86:letrec_f) @{FT_Func})"
 
   expect_i1 False;
   print_i1 (__COMPILES__ case True ^ of _ -> () end); // "Unable to check Bool constant in context expecting non-Bool type (Ref (~!97:ref_type))"
-  
+
 };
 
 f4 = {
   expect_i1 True;
   print_i1 (__COMPILES__ case True of _ -> () end);
-  
+
   expect_i1 False;
   print_i1 (__COMPILES__ case True of true -> () end); // "Error: this matches a variable, not a boolean constant!"
-  
+
   expect_i1 True;
   print_i1 (__COMPILES__ case True of b -> b end);
-  
+
   expect_i1 True;
-  print_i1 (__COMPILES__ case True of True -> () 
+  print_i1 (__COMPILES__ case True of True -> ()
                                    of False -> () end);
-  
+
   expect_i1 True;
   print_i1 (__COMPILES__ case 0 of 0 -> 1
                                 of v -> v end);
@@ -165,7 +156,7 @@ f4 = {
   print_i1 (__COMPILES__ case (True, 0) of (False, 0) -> 1
                                         of (True, 1) -> 2
                                         of (x, y) -> y end);
-                                        
+
   expect_i1 False;
   print_i1 (__COMPILES__ case (True, 0) of (False, 0) -> 1
                                         of (True, 1, 2) -> 2
@@ -175,7 +166,7 @@ f4 = {
 f5 = {
   expect_i1 False;
   print_i1 (__COMPILES__ (1, 2)[0]); // "ArrayReading tuples is not allowed; use pattern matching instead!"
-  
+
   expect_i1 True;
   print_i1 (__COMPILES__
         let x = 0;
@@ -183,7 +174,7 @@ f5 = {
         in
           p x;
         end);
-  
+
   // The reason the following example fails is that the claim of unboxed
   // polymorphism is bogus. Given our current compilation scheme, the
   // outer (monomorphic) function cannot produce a value which can be
@@ -194,14 +185,14 @@ f5 = {
     // Try using boxed polymorphism instead:
   expect_i1 True;
   print_i1 (__COMPILES__ { { forall t:Boxed, x : t => x } });
-  
+
   ()
 };
 
 f6 = {
   //{ forall t:Type, x : t => x };
-  
-  
+
+
    print_i32 123456;
  expect_i32 123456;
 
@@ -231,16 +222,16 @@ f6 = {
     end
   };
   */
-  
-  
+
+
   // TODO: Monomorphization (Monomo.hs:monoSubsLookup) found no monotype for variable 't
   //{ forall t:Boxed, x : Int32 => { y : t => 0 } };
   //{ forall t:Boxed, x : Int32 => { y : t => 0 } } :[Text];
-  
-  
+
+
   // TODO trigger "Type not polymorphic enough!"
   // TODO trigger tv `elem` bound
-  
+
   ()
 };
 
