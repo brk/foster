@@ -564,10 +564,15 @@ lowerModule ai_mod ctx_il = do
   where
     cfgModule :: ModuleIL (KNExpr' RecStatus MonoType) MonoType -> Compiled (ModuleIL CFBody MonoType)
     cfgModule kmod = do
+        cfgIdsRef <- liftIO $ newIORef []
         uniqref <- gets ccUniqRef
         cfgBody <- liftIO $ computeCFGs uniqref (moduleILbody kmod)
-        cfgBody' <- optimizeCFGs cfgBody
-        return $ kmod { moduleILbody = cfgBody' }
+        cfgBody' <- optimizeCFGs cfgBody cfgIdsRef
+        cfgIds <- liftIO $ readIORef cfgIdsRef
+        let dups = detectDuplicates cfgIds
+        if null dups
+          then return $ kmod { moduleILbody = cfgBody' }
+          else error $ "Main.hs: detected duplicate functions being CFGized: " ++ show dups
 
     closureConvert cfgmod = do
         uniqref <- gets ccUniqRef

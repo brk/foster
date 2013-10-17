@@ -92,7 +92,18 @@ alphaRename' fn uref = do
   return renamed
    where
     renameV :: TypedId t -> Renamed (TypedId t)
-    renameV tid@(TypedId _ (GlobalSymbol _)) = return tid
+    renameV tid@(TypedId ty id@(GlobalSymbol t)) = do
+        -- We want to rename any locally-bound functions that might have
+        -- been duplicated by monomorphization.
+        if T.pack "<anon_fn" `T.isInfixOf` t ||
+           T.pack ".kn.thunk" `T.isPrefixOf` t
+          then do state <- get
+                  case Map.lookup id (renameMap state) of
+                    Nothing  -> do id' <- renameI id
+                                   return (TypedId ty id' )
+                    Just _u' -> error "can't rename a global variable twice!"
+          else return tid
+
     renameV     (TypedId t id) = do
       state <- get
       case Map.lookup id (renameMap state) of
@@ -100,25 +111,26 @@ alphaRename' fn uref = do
                        return (TypedId t id' )
         Just _u' -> error "can't rename a variable twice!"
 
-    renameI id@(GlobalSymbol _) = return id
+    renameI id@(GlobalSymbol t) = do u' <- fresh
+                                     let id' = GlobalSymbol $ t `T.append` T.pack (show u')
+                                     remap id id'
+                                     return id'
     renameI id@(Ident s _)      = do u' <- fresh
                                      let id' = Ident s u'
                                      remap id id'
                                      return id'
-      where
-        fresh :: Renamed Uniq
-        fresh = do uref <- gets renameUniq ; mutIORef uref (+1)
+    fresh :: Renamed Uniq
+    fresh = do uref <- gets renameUniq ; mutIORef uref (+1)
 
-        mutIORef :: IORef a -> (a -> a) -> Renamed a
-        mutIORef r f = liftIO $ modifyIORef' r f >> readIORef r
+    mutIORef :: IORef a -> (a -> a) -> Renamed a
+    mutIORef r f = liftIO $ modifyIORef' r f >> readIORef r
 
-        remap id id' = do state <- get
-                          put state { renameMap = Map.insert id id' (renameMap state) }
+    remap id id' = do state <- get
+                      put state { renameMap = Map.insert id id' (renameMap state) }
 
     qv :: TypedId t -> Renamed (TypedId t)
     qv (TypedId t i) = do i' <- qi i ; return $ TypedId t i'
 
-    qi v@(GlobalSymbol _) = return v
     qi v = do state <- get
               case Map.lookup v (renameMap state) of
                 Just v' -> return v'
@@ -368,7 +380,7 @@ instance Pretty TypeIL where
 
 instance Pretty MonoType where
   pretty t = case t of
-          PrimInt        isb          -> text "Int" <> pretty isb
+          PrimInt        isb          -> pretty isb
           PrimFloat64                 -> text "Float64"
           TyConApp       dt ts        -> text "(" <> pretty dt <+> tupled (map pretty ts) <> text "]"
           TupleType      ts           -> tupled (map pretty ts)
@@ -385,7 +397,7 @@ instance Pretty AllocMemRegion where
 
 instance Pretty t => Pretty (ArrayIndex (TypedId t)) where
   pretty (ArrayIndex b i _rng safety) =
-    prettyId b <> brackets (prettyId i) <+> comment (text $ show safety)
+    prettyId b <> brackets (prettyId i) <+> comment (text $ show safety) <+> pretty (tidType b)
 
 -- (<//>) ?vs? align (x <$> y)
 
@@ -526,8 +538,8 @@ instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
                                                           ])
                                        <$> end
             KNAllocArray {}     -> text $ "KNAllocArray "
-            KNArrayRead  _ ai   -> pretty ai
-            KNArrayPoke  _ ai v -> prettyId v <+> text ">^" <+> pretty ai
+            KNArrayRead  t ai   -> pretty ai <+> pretty t
+            KNArrayPoke  t ai v -> prettyId v <+> text ">^" <+> pretty ai <+> pretty t
             KNTuple      _ vs _ -> parens (hsep $ punctuate comma (map pretty vs))
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||

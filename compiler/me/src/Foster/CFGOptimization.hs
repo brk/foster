@@ -25,18 +25,19 @@ import Data.Set(Set)
 import Data.Maybe(fromMaybe, fromJust, isJust)
 import Data.List(nubBy, last)
 import Control.Monad.State
-import Data.IORef
+import Data.IORef hiding (modifyIORef')
 import Prelude hiding (id, last)
 
-optimizeCFGs :: CFBody -> Compiled CFBody
-optimizeCFGs c@(CFB_Call {}) = return c
-optimizeCFGs (CFB_LetFuns ids cffns cfbody) = do
-          cffns'  <- mapM optimizeCFFn cffns
-          cfbody' <- optimizeCFGs cfbody
+optimizeCFGs :: CFBody -> IORef [Ident] -> Compiled CFBody
+optimizeCFGs c@(CFB_Call {}) _ = return c
+optimizeCFGs (CFB_LetFuns ids cffns cfbody) r = do
+          cffns'  <- mapM (optimizeCFFn r) cffns
+          cfbody' <- optimizeCFGs cfbody r
           return $ CFB_LetFuns ids cffns' cfbody'
 
-optimizeCFFn :: CFFn -> Compiled CFFn
-optimizeCFFn fn = do
+optimizeCFFn :: IORef [Ident] -> CFFn -> Compiled CFFn
+optimizeCFFn r fn = do
+  liftIO $ modifyIORef' r (fnIdent fn :)
   wantedFns <- gets ccDumpFns
   uref      <- gets ccUniqRef
 
@@ -45,7 +46,7 @@ optimizeCFFn fn = do
                      -- ,runLiveness
                       ]
 
-  bbg  <- mapFunctions optimizeCFFn (fnBody fn)
+  bbg  <- mapFunctions (optimizeCFFn r) (fnBody fn)
   bbgs <- liftIO $ scanlM (\bbg opt -> opt uref bbg) bbg optimizations
 
   let catboxes bbgs = Boxes.hsep 1 Boxes.left $ map (boxify . measure . annotate) $
@@ -55,6 +56,7 @@ optimizeCFFn fn = do
 
   when True $ liftIO $ do
       putStrLn $ " CFG size was " ++ show (cfgSize bbg) ++ " for " ++ show (tidIdent $ fnVar fn)
+
   when (fn `isWanted` wantedFns) $ liftIO $ do
       putStrLn "BEFORE/AFTER"
       -- Discards duplicates before annotating
