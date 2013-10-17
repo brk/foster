@@ -62,7 +62,7 @@ kNormalizeModule m ctx shouldOptimizeCtorRepresentations =
                          Nothing   -> error $ "KNExpr.hs: unable to find ctor" in
     let knCtorFuncs = concatMap (kNormalCtors ctx ctorRepr) allDataTypes in
     let knWrappedBody = do { ctors <- sequence knCtorFuncs
-                           ; body  <- kNormalize YesTail ctorRepr (moduleILbody m)
+                           ; body  <- kNormalize ctorRepr (moduleILbody m)
                            ; return $ wrapFns ctors body
                            } in
     do body' <- knWrappedBody
@@ -73,63 +73,62 @@ kNormalizeModule m ctx shouldOptimizeCtorRepresentations =
 
 kNormalizeFn :: (CtorId -> CtorRepr) -> Fn () AIExpr TypeIL -> KN (FnExprIL)
 kNormalizeFn ctorRepr fn = do
-    knbody <- kNormalize YesTail ctorRepr (fnBody fn)
+    knbody <- kNormalize ctorRepr (fnBody fn)
     return $ fn { fnBody = knbody }
 
 -- ||||||||||||||||||||||| K-Normalization ||||||||||||||||||||||{{{
-kNormalize :: TailQ -> (CtorId -> CtorRepr) -> AIExpr -> KN KNExpr
-kNormalize mebTail ctorRepr expr =
-  let gt = kNormalize mebTail ctorRepr in
-  let gn = kNormalize NotTail ctorRepr in
+kNormalize :: (CtorId -> CtorRepr) -> AIExpr -> KN KNExpr
+kNormalize ctorRepr expr =
+  let go = kNormalize ctorRepr in
   case expr of
       AILiteral ty lit  -> return $ KNLiteral ty lit
       E_AIVar v         -> return $ KNVar v
       AIKillProcess t m -> return $ KNKillProcess t m
 
-      AIAllocArray t a      -> do nestedLets [gn a] (\[x] -> KNAllocArray (ArrayTypeIL t) x)
-      AIAlloc a rgn         -> do nestedLets [gn a] (\[x] -> KNAlloc (PtrTypeIL $ tidType x) x rgn)
-      AIDeref   a           -> do nestedLets [gn a] (\[x] -> KNDeref (pointedToTypeOfVar x) x)
-      E_AITyApp t a argtys  -> do nestedLets [gn a] (\[x] -> KNTyApp t x argtys)
+      AIAllocArray t a      -> do nestedLets [go a] (\[x] -> KNAllocArray (ArrayTypeIL t) x)
+      AIAlloc a rgn         -> do nestedLets [go a] (\[x] -> KNAlloc (PtrTypeIL $ tidType x) x rgn)
+      AIDeref   a           -> do nestedLets [go a] (\[x] -> KNDeref (pointedToTypeOfVar x) x)
+      E_AITyApp t a argtys  -> do nestedLets [go a] (\[x] -> KNTyApp t x argtys)
 
-      AIStore      a b  -> do nestedLetsDo [gn a, gn b] (\[x,y] -> knStore x y)
+      AIStore      a b  -> do nestedLetsDo [go a, go b] (\[x,y] -> knStore x y)
       AIArrayRead  t (ArrayIndex a b rng s) ->
-              nestedLets (map gn [a, b])
+              nestedLets (map go [a, b])
                                (\[x, y] -> KNArrayRead t (ArrayIndex x y rng s))
       AIArrayPoke _t (ArrayIndex a b rng s) c -> do
-              nestedLets (map gn [a,b,c])
+              nestedLets (map go [a,b,c])
                                (\[x,y,z] -> KNArrayPoke (TupleTypeIL []) (ArrayIndex x y rng s) z)
 
       AILetFuns ids fns a   -> do knFns <- mapM (kNormalizeFn ctorRepr) fns
-                                  liftM (KNLetFuns ids knFns) (gt a)
+                                  liftM (KNLetFuns ids knFns) (go a)
 
-      AITuple   es rng      -> do nestedLets (map gn es) (\vs ->
+      AITuple   es rng      -> do nestedLets (map go es) (\vs ->
                                     KNTuple (TupleTypeIL (map tidType vs)) vs rng)
 
-      AILetVar id a b       -> do liftM2 (buildLet id) (gn a) (gt b)
+      AILetVar id a b       -> do liftM2 (buildLet id) (go a) (go b)
       AILetRec ids exprs e  -> do -- Unlike with LetVal, we can't float out the
                                   -- inner bindings, because they're presuambly
                                   -- defined in terms of the ids being bound.
-                                  exprs' <- mapM gn exprs
-                                  e'     <- gt e
+                                  exprs' <- mapM go exprs
+                                  e'     <- go e
                                   return $ KNLetRec ids exprs' e'
-      AICase    t e arms    -> do e' <- gn e
+      AICase    t e arms    -> do e' <- go e
                                   nestedLetsDo [return e'] (\[v] -> do
                                     let gtp (CaseArm p e g b r) = do
                                             let p' = fmapRepr ctorRepr p
-                                            e' <- gt e
-                                            g' <- liftMaybe gt g
+                                            e' <- go e
+                                            g' <- liftMaybe go g
                                             return (CaseArm p' e' g' b r)
                                     arms' <- mapM gtp arms
                                     compileCaseArms arms' t v)
 
-      AIIf      t  a b c    -> do a' <- gn a
-                                  [ b', c' ] <- mapM gt [b, c]
+      AIIf      t  a b c    -> do a' <- go a
+                                  [ b', c' ] <- mapM go [b, c]
                                   nestedLets [return a'] (\[v] -> KNIf t v b' c')
-      AICallPrim t p es -> do nestedLets (map gn es) (\vars -> KNCallPrim t p vars)
+      AICallPrim t p es -> do nestedLets (map go es) (\vars -> KNCallPrim t p vars)
       AIAppCtor  t c es -> do let repr = ctorRepr c
-                              nestedLets (map gn es) (\vars -> KNAppCtor  t (c, repr) vars)
-      AICall     t (E_AIVar v) es -> do nestedLetsDo (     map gn es) (\    vars  -> knCall t v  vars)
-      AICall     t b           es -> do nestedLetsDo (gn b:map gn es) (\(vb:vars) -> knCall t vb vars)
+                              nestedLets (map go es) (\vars -> KNAppCtor  t (c, repr) vars)
+      AICall     t (E_AIVar v) es -> do nestedLetsDo (     map go es) (\    vars  -> knCall t v  vars)
+      AICall     t b           es -> do nestedLetsDo (go b:map go es) (\(vb:vars) -> knCall t vb vars)
 
   where knStore x y = do
             let q = varOrThunk (x, pointedToType $ tidType y)
@@ -169,10 +168,12 @@ kNormalize mebTail ctorRepr expr =
                   let kont = kontOf body
                   let callkont = KNCall t (TypedId kty kid) []
                   clump' <- case clump of
+                              -- Single arm with guard?
                               [CaseArm p e (Just g' ) b r] -> do
                                   e' <- nestedLets [return g'] (\[gv] ->
                                                   KNIf boolTypeIL gv e callkont)
                                   return [CaseArm p e' Nothing b r]
+                              -- Otherwise, one or more arms without guards.
                               _ -> return clump
                   let msr   = MissingSourceRange "guardwild"
                   let pwild = PR_Atom $ P_Wildcard msr (tidType v)
@@ -322,7 +323,7 @@ nestedLets :: [KN KNExpr] -> ([AIVar] -> KNExpr) -> KN KNExpr
 nestedLets exprActions g = nestedLetsDo exprActions (\vars -> return $ g vars)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-
+-- ||||||||||||||||||||| Constructor Munging ||||||||||||||||||||{{{
 data CtorVariety ty = SingleCtorWrappingSameBoxityType CtorId Kind
                     | AtMostOneNonNullaryCtor          [(CtorId, Int)] [(CtorId, Int)]
                     | OtherCtorSituation               [(CtorId, Int)]
@@ -429,6 +430,7 @@ kNormalCtors ctx ctorRepr dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dty
                          -- function type, so we synthesize a fn type here.
                          ret (TypedId (thunk ty) id)
         Just (tid, _) -> ret tid
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 thunk (ForAllIL ktvs rho) = ForAllIL ktvs (thunk rho)
 thunk ty = FnTypeIL [] ty FastCC FT_Proc
