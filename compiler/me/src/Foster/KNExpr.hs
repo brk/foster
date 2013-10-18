@@ -112,15 +112,7 @@ kNormalize ctorRepr expr =
                                   e'     <- go e
                                   return $ KNLetRec ids exprs' e'
       AICase    t e arms    -> do e' <- go e
-                                  nestedLetsDo [return e'] (\[v] -> do
-                                    let gtp (CaseArm p e g b r) = do
-                                            let p' = fmapRepr ctorRepr p
-                                            e' <- go e
-                                            g' <- liftMaybe go g
-                                            return (CaseArm p' e' g' b r)
-                                    arms' <- mapM gtp arms
-                                    compileCaseArms arms' t v)
-
+                                  nestedLetsDo [return e'] (\[v] -> compileCaseArms arms t v ctorRepr)
       AIIf      t  a b c    -> do a' <- go a
                                   [ b', c' ] <- mapM go [b, c]
                                   nestedLets [return a'] (\[v] -> KNIf t v b' c')
@@ -143,11 +135,27 @@ kNormalize ctorRepr expr =
                                 show a ++
                                 show (showStructure (tidType a))
 
-        compileCaseArms :: [CaseArm PatternRepr KNExpr TypeIL]
+        -- We currently perform the following source-to-source transformation
+        -- on the result of a normalized pattern match:
+        --  * Guard splitting:
+        --      Every arm with a guard is split into its own pattern match.
+        --      The body of the arm turns into
+        --          if guard then body else continue-matching !
+        --      where continue-matching ! is a lambda containing the
+        --      translation of the remaining arms.
+        compileCaseArms :: [CaseArm Pattern AIExpr TypeIL]
                         -> TypeIL
                         -> TypedId TypeIL
+                        -> (CtorId -> CtorRepr)
                         -> KN KNExpr
-        compileCaseArms arms t v = do
+        compileCaseArms arms t v ctorRepr = do
+          let gtp (CaseArm p e g b r) = do
+                let p' = fmapRepr ctorRepr p
+                e' <- kNormalize ctorRepr e
+                g' <- liftMaybe (kNormalize ctorRepr) g
+                return (CaseArm p' e' g' b r)
+          arms' <- mapM gtp arms
+
           let go (arm:arms) | isGuarded arm = go' [arm] arms
               go allArms = uncurry go' (span (not . isGuarded) allArms)
               -- Compile maximal chunks of un-guarded arms
@@ -180,8 +188,8 @@ kNormalize ctorRepr expr =
                   return $ KNLetFuns [kid] [kont]
                           (KNCase t v (clump' ++ [CaseArm pwild callkont Nothing [] msr]))
           if anyCaseArmIsGuarded arms
-            then go arms
-            else return $ KNCase t v arms
+            then go arms'
+            else return $ KNCase t v arms'
 
         isGuarded arm = isJust (caseArmGuard arm)
 
