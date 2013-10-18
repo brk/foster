@@ -520,7 +520,7 @@ prependedTo str txt = T.pack str `T.append` txt
 
 -- Re-implement strict version of modifyIORef for compatibility with
 -- older implementations of the Haskell base library.
-modifyIORef' r f = do
+modIORef' r f = do
   v <- readIORef r
   let ! v' = f v
   writeIORef r v'

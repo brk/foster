@@ -85,7 +85,7 @@ interpret :: IORef Int -> MachineState -> IO MachineState
 interpret stepsTaken gs =
   case (coroStack $ stCoro gs) of
     [] -> do return gs
-    _  -> do modifyIORef' stepsTaken (+1)
+    _  -> do modIORef' stepsTaken (+1)
              (interpret stepsTaken =<< step gs)
 
 -- Stepping an expression is unsurprising.

@@ -163,7 +163,7 @@ newTcUnificationVar_ q desc = do
         -- variables created, for introspection/debugging/statistics wankery.
         tcRecordUnificationVar :: MetaTyVar TypeAST -> Tc (MetaTyVar TypeAST)
         tcRecordUnificationVar m = Tc $ \env ->
-                        do modifyIORef' (tcUnificationVars env) (m:); retOK m
+                        do modIORef' (tcUnificationVars env) (m:); retOK m
 
 -- Runs the given action with the given expression added to the "call stack";
 -- this is used to keep track of the path to the current expression during
@@ -192,7 +192,7 @@ instance Ord (MetaTyVar TypeAST) where
 
 tcUpdateIntConstraint :: MetaTyVar TypeAST -> Int -> Tc ()
 tcUpdateIntConstraint km n = Tc $ \env -> do
-  modifyIORef' (tcMetaIntConstraints env) (Map.insertWith max km n)
+  modIORef' (tcMetaIntConstraints env) (Map.insertWith max km n)
   retOK ()
 
 instance Show (MetaTyVar TypeAST) where show m = show (pretty (MetaTyVar m))

@@ -25,7 +25,7 @@ import Data.Set(Set)
 import Data.Maybe(fromMaybe, fromJust, isJust)
 import Data.List(nubBy, last)
 import Control.Monad.State
-import Data.IORef hiding (modifyIORef')
+import Data.IORef
 import Prelude hiding (id, last)
 
 optimizeCFGs :: CFBody -> IORef [Ident] -> Compiled CFBody
@@ -37,7 +37,7 @@ optimizeCFGs (CFB_LetFuns ids cffns cfbody) r = do
 
 optimizeCFFn :: IORef [Ident] -> CFFn -> Compiled CFFn
 optimizeCFFn r fn = do
-  liftIO $ modifyIORef' r (fnIdent fn :)
+  liftIO $ modIORef' r (fnIdent fn :)
   wantedFns <- gets ccDumpFns
   uref      <- gets ccUniqRef
 

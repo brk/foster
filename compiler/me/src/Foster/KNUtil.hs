@@ -21,7 +21,7 @@ import qualified Data.Map as Map(insert, lookup, empty)
 import qualified Data.Text as T
 import Control.Monad.State(evalStateT, get, gets, put,
                                StateT, liftIO, liftM, liftM2)
-import Data.IORef hiding (modifyIORef')
+import Data.IORef
 
 --------------------------------------------------------------------
 
@@ -123,7 +123,7 @@ alphaRename' fn uref = do
     fresh = do uref <- gets renameUniq ; mutIORef uref (+1)
 
     mutIORef :: IORef a -> (a -> a) -> Renamed a
-    mutIORef r f = liftIO $ modifyIORef' r f >> readIORef r
+    mutIORef r f = liftIO $ modIORef' r f >> readIORef r
 
     remap id id' = do state <- get
                       put state { renameMap = Map.insert id id' (renameMap state) }

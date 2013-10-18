@@ -1192,7 +1192,7 @@ readRef  r   = liftIO $ readIORef  r
 writeRef r v = liftIO $ writeIORef r v
 newRef     v = liftIO $ newIORef     v
 newUniq = do uref <- gets inUniqRef
-             liftIO $ modifyIORef' uref (+1) >> readIORef uref
+             liftIO $ modIORef' uref (+1) >> readIORef uref
 
 
 opLimitMax = 1
@@ -1415,7 +1415,7 @@ inNewVar id = do st <- get
 sawVar id = do vcm <- gets inVarCount
                case Map.lookup id vcm of
                  Nothing -> error $ "sawVar had no count for " ++ show id
-                 Just r -> do liftIO $ modifyIORef' r (+1)
+                 Just r -> do liftIO $ modIORef' r (+1)
 
 getVarStatus id = do vcm <- gets inVarCount
                      case Map.lookup id vcm of
@@ -2058,7 +2058,7 @@ inlineBitcastedFunction v' ty vs env = do
                       let e = KNTyApp ty vorig []
                       newid <- freshenId' (Ident (T.pack "castarg") 0)
                       inNewVar newid
-                      liftIO $ modifyIORef' binders_ref (++[(newid, e)])
+                      liftIO $ modIORef' binders_ref (++[(newid, e)])
                       return $ TypedId ty newid
                    ) (zip tys vs)
     binders <- liftIO $ readIORef binders_ref
