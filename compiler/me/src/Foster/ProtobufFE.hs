@@ -47,7 +47,7 @@ import Foster.Fepb.PBValAbs as PBValAbs
 import Foster.Fepb.Expr     as PbExpr
 import Foster.Fepb.SourceModule as SourceModule
 import Foster.Fepb.WholeProgram as WholeProgram
-import Foster.Fepb.Expr.Tag(Tag(IF, LET, VAR, SEQ, UNTIL, TY_CHECK,
+import Foster.Fepb.Expr.Tag(Tag(IF, LET, VAR, SEQ, TY_CHECK,
                                 BOOL, CALL, CALLPRIM, TY_APP, STRING, -- MODULE,
                                 PB_INT, PB_RAT,
                                 CASE_EXPR, COMPILES, VAL_ABS,
