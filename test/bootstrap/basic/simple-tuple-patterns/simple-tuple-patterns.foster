@@ -7,6 +7,7 @@ main = {
   t10 !;
   t11 !;
   t12 !;
+  t13 !;
   case-gcroots !;
 };
 
@@ -94,6 +95,14 @@ t12 = {
     end;
 };
 
+t13 = {
+  expect_i32 5;
+  print_i32
+    case (opaquely_i32 5, (1, opaquely_i32 2))
+      of (3, (a, b)) -> a +Int32 b
+      of z      -> case z of (w, _) -> w end
+    end;
+};
 
 let-gcroot = {
     let r = (ref 2);

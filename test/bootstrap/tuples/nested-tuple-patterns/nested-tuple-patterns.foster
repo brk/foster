@@ -23,11 +23,11 @@ t1 = { e : Int32 =>
 };
 
 t2 = {
-  expect_i32 6;
+  expect_i32 4;
   print_i32
     case (1, (22, 3))
       of (x, (9, q)) -> 7
-      of (a, qq    ) -> 6
+      of (a, (_, w)) -> a +Int32 w
     end;
 };
 
