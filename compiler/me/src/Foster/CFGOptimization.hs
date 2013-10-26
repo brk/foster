@@ -283,6 +283,19 @@ getCensus bbg = let cf = getCensusFns bbg in
         ILAllocate {}            -> m -- Might have been introduced by KNLetRec.
         ILCall         _ v _vs   -> error $ "census encountered non-tail ILCall of " ++ show v
 
+type EquivalentBlockIds = Map.Map BlockId BlockId
+
+collectEquivalentBlockIds :: BasicBlockGraph -> EquivalentBlockIds
+collectEquivalentBlockIds bbg = execState (mapM go blocks) Map.empty
+  where
+    blocks = preorder_dfs (mkLast (branchTo (fst $ bbgEntry bbg)) |*><*| bbgBody bbg)
+
+    go block = let (h, b, t) = blockSplit block in
+               case (h, blockToList b, t) of
+                 (ILabel (eb, evars), [], ILast (CFCont cb cvars))
+                    | evars == cvars -> modify (Map.insert eb cb)
+                 (_, _, _) -> return ()
+
 data ContInfo = NoConts
               | OneCont BlockId BlockId
               | ManyConts
@@ -292,6 +305,26 @@ runCensusRewrites' :: IORef Uniq -> BasicBlockGraph -> IO BasicBlockGraph
 runCensusRewrites' uref bbg = do
      runWithUniqAndFuel uref infiniteFuel (go (getCensus bbg) bbg)
   where
+        equivBlockIds = collectEquivalentBlockIds bbg
+
+        sharedTrivialCont [] = Nothing
+        sharedTrivialCont (first:others) =
+          case first of
+            KnownCall bid0 (_, fn_ent) ->
+                let
+                    try bids [] = bids
+                    try bids ((KnownCall bid' (_, fn_ent')):others)
+                        | fn_ent == fn_ent'
+                        = try (bid' : bids) others
+                    try _ _ = []
+
+                    nextbids = [Map.lookup bid equivBlockIds
+                               | bid <- try [bid0] others] in
+                case Set.toList $ Set.fromList nextbids of
+                    [Just commonbid] -> Just (OneCont commonbid fn_ent)
+                    _ -> Nothing
+            _ -> Nothing
+
         go :: Census -> BasicBlockGraph -> M BasicBlockGraph
         go ci bbg = do
           let (bid,_) = bbgEntry bbg
@@ -310,7 +343,8 @@ runCensusRewrites' uref bbg = do
             Just [TailRecursion, KnownCall bid (_, fn_ent)] -> OneCont bid fn_ent
             Just [KnownCall bid (_, fn_ent), TailRecursion] -> OneCont bid fn_ent
 
-            Just _others -> {- trace ("getKnownCall returning ManyConts for " ++ show id ++ " due to " ++ show others) -}
+            Just others | Just result <- sharedTrivialCont others -> result
+            Just _others -> --trace ("getKnownCall returning ManyConts for " ++ show id ++ " due to " ++ show _others)
                             ManyConts
             Nothing -> NoConts
 
