@@ -143,8 +143,9 @@ def do_runs_for_gotest(testpath, inputstr, tags, flagsdict, total):
     stats_seq = []
     for z in range(total):
       stats_path = datapath(testpath, tags, "stats_%d.json" % z)
-      cmdstr = """%s %s -foster-runtime '{ "dump_json_stats_path" : "%s" }'  > /dev/null""" \
-                 % (exec_path, inputstr, stats_path)
+      os_stats_path = datapath(testpath, tags, "os_stats_%d.json" % z)
+      cmdstr = """time-json --output %s %s %s -foster-runtime '{ "dump_json_stats_path" : "%s" }'  > /dev/null""" \
+                 % (os_stats_path, exec_path, inputstr, stats_path)
       #print ": $ " + cmdstr + " (%d of %d; tags=%s)" % (z + 1, total, tags)
       (rv, ms) = shell_out(cmdstr)
       print testpath, inputstr, tags, ">>>> ", ms, "ms"
