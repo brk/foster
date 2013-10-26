@@ -445,6 +445,16 @@ thunk ty = FnTypeIL [] ty FastCC FT_Proc
 
 -- |||||||||||||||||||||||||| Local Block Sinking |||||||||||||||{{{
 
+-- This transformation re-locates functions according to their dominator tree.
+--
+-- Block sinking is needed for contification to work properly;
+-- without it, a contifiable function would get contified into an outer scope,
+-- which doesn't work (since functions eventually get lifted to toplevel).
+--
+-- Performing sinking after monomorphization allows each monomorphization
+-- of a given function to be separately sunk.
+--
+--
 -- The block-sinking transformation here is loosely based on the
 -- presentation in the paper
 --
@@ -553,13 +563,6 @@ knSinkBlocks m = do
   let rebuilder idsfns = [(id, localBlockSinking fn) | (id, fn) <- idsfns]
   return $ m { moduleILbody = rebuildWith rebuilder (moduleILbody m) }
 
--- We perform (function-)local block sinking after monomorphization.
--- Block sinking is needed for contification to work properly;
--- without it, a contifiable function would get contified into an outer scope,
--- which doesn't work (since functions eventually get lifted to toplevel).
---
--- Performing sinking after monomorphization allows each monomorphization
--- of a given function to be separately sunk.
 localBlockSinking :: Fn r (KNExpr' r t) t -> Fn r (KNExpr' r t) t
 localBlockSinking knf = rebuildFn knf
  where
@@ -623,21 +626,21 @@ localBlockSinking knf = rebuildFn knf
           doms = Map.fromList [(n2b node, n2b ndom)
                               | (node, ndom) <- Graph.iDom callGraph root]
 
-  -- Remove bindings which are being relocated.
+  -- Remove original bindings, if they are being relocated elsewhere.
   rebuilder idsfns =
-      [(id, fn)
-      |(id, fn) <- map (\(id, fn) -> (id, rebuildFn fn)) idsfns,
+      [(id, rebuildFn fn)
+      |(id, fn) <- idsfns,
        Set.notMember (fnIdent fn) shouldBeRelocated]
     where
         shouldBeRelocated = Set.fromList $ map (\((_id, fn), _) -> fnIdent fn)
                                                relocationTargetsList
 
+  -- Add new bindings for functions which should be relocated.
   addBindingsFor f body = mkLetFuns newfns body
         where
-          newfns = Map.findWithDefault [] (fnIdent f) newBindingsForFn
-          newBindingsForFn  = Map.unionsWith (++)
-                              [Map.singleton dom [(id, f)]
-                              | ((id, f), dom) <- relocationTargetsList]
+          newfns   = [(id, rebuildFn fn)
+                     | ((id, fn), dom) <- relocationTargetsList
+                     , dom == fnIdent f]
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||||| Loop Headers |||||||||||||||||||||||{{{
