@@ -838,7 +838,7 @@ evalNamedPrimitive primName gs [SSInt i] | Just act <- lookupPrintInt i primName
 evalNamedPrimitive "force_gc_for_debugging_purposes" gs _args =
          return $ withTerm gs unit
 
-evalNamedPrimitive "opaquely_i32" gs [val] =
+evalNamedPrimitive opaq gs [val] | opaq `elem` ["opaquely_i32", "opaquely_i64"] =
          return $ withTerm gs (SSTmValue $ val)
 
 evalNamedPrimitive "print_newline" gs [] =

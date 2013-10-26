@@ -170,6 +170,7 @@ primitiveDecls =
     ,(,)  "print_i64b" $ mkProcType [i64] []
 
     ,(,) "opaquely_i32" $ mkProcType [i32] [i32]
+    ,(,) "opaquely_i64" $ mkProcType [i64] [i64]
     ,(,) "get_cmdline_arg_n" $ mkProcType [i32] [fosStringType]
 
     ,(,) "expect_newline" $ mkProcType [] []
