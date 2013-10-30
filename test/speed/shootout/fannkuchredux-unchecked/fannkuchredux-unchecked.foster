@@ -47,7 +47,7 @@ tk = { maxn : Int32 =>
         0 >^ rc;
         False >^ done;
 
-        until { done^ } {
+        REC loop = { if done^ then () else
           0                           >^ xo;
           (prim subscript-unsafe t 0) >^ yo;
           until { xo^ >=SInt32 yo^ } {
@@ -60,7 +60,8 @@ tk = { maxn : Int32 =>
           };
           incrBy ri 1;
           ((prim subscript-unsafe t (prim subscript-unsafe t 0)) ==Int32 0) >^ done;
-        };
+          end
+        }; loop !;
         ri^
       };
   in

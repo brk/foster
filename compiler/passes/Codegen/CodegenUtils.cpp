@@ -258,11 +258,11 @@ CodegenPass::emitMalloc(TypeAST* typ,
                                             ->getContainedType(1);
   llvm::Value* typemap = builder.CreateBitCast(ti, typemap_type);
 
-  llvm::Value* linesgv = (srclines.empty())
-              ? llvm::ConstantPointerNull::get(builder.getInt8PtrTy())
-              : builder.CreateBitCast(this->getGlobalString(srclines),
-                                               builder.getInt8PtrTy());
   if (this->config.trackAllocSites) {
+    llvm::Value* linesgv = (srclines.empty())
+                ? llvm::ConstantPointerNull::get(builder.getInt8PtrTy())
+                : builder.CreateBitCast(this->getGlobalString(srclines),
+                                                 builder.getInt8PtrTy());
     emitRecordMallocCallsite(mod, typemap, linesgv);
   }
 

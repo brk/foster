@@ -335,8 +335,7 @@ insertDumbGCRoots bbgp0 dump = do
     CCGCLoad  {}                  -> do return $ mkMiddle $ insn
     CCGCInit  {}                  -> do return $ mkMiddle $ insn
     CCGCKill  {}                  -> do return $ mkMiddle $ insn
-    CCTupleStore vs v r           -> do {- trace ("isGCable " ++ show v ++ " :" ++ show (isGCable v)) $ -}
-                                         withGCLoads (v:vs) (\(v' : vs' ) ->
+    CCTupleStore vs v r           -> do withGCLoads (v:vs) (\(v' : vs' ) ->
                                           mkMiddle $ CCTupleStore vs' v' r)
     CCLetVal id val               -> do ri <- maybeRootInitializer (TypedId (typeOf val) id)
                                         let vs = freeTypedIds val
@@ -416,6 +415,18 @@ insertDumbGCRoots bbgp0 dump = do
                                  let root = TypedId (tidType v) rootid
                                  put (Map.insert v root gcr)
                                  retLoaded root
+
+  -- Filter out non-pointer-typed variables from live set.
+  isGCable v = case tidType v of
+                 LLPrimInt _            -> False
+                 LLPrimFloat64          -> False
+                 LLStructType _         -> False
+                 LLProcType _ _ _       -> False
+                 LLPtrType _            -> True -- could have further annotations on ptr types
+                 LLNamedType _          -> True -- TODO maybe not?
+                 LLCoroType _ _         -> True
+                 LLArrayType _          -> True
+                 LLPtrTypeUnknown       -> True
 
 -- There's one unusual subtlety here: in addition to generating (disabled)
 -- kill markers after each load from a root, we also generate markers at the
@@ -537,19 +548,6 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
 fnty_of_procty pt@(LLProcType (env:_args) _rets _cc) =
       LLPtrType (LLStructType [pt, env])
 fnty_of_procty other = error $ "GCRoots.hs: fnty_of_procty undefined for " ++ show other
-
--- Filter out non-pointer-typed variables from live set.
-isGCable v = case tidType v of
-               LLPrimInt _            -> False
-               LLPrimFloat64          -> False
-               LLStructType _         -> False
-               LLProcType _ _ _       -> False
-               LLPtrType _            -> True -- could have further annotations on ptr types
-               LLNamedType _          -> True -- TODO maybe not?
-               LLCoroType _ _         -> True
-               LLArrayType _          -> True
-               LLPtrTypeUnknown       -> True
-
 
 -- |||||||||||||||||||| Redundancy elimination ||||||||||||||||||{{{
 

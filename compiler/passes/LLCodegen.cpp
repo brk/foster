@@ -806,23 +806,24 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type,
   llvm::Type* ty = type->getLLVMType();
 
   switch (region) {
-  case LLAllocate::MEM_REGION_STACK:
-    // TODO this allocates a slot, not a cell...
-    // TODO init
-    //
-    ASSERT(!containsGCablePointers(type, ty));
-    // If the allocated type is POD, this is fine.
-    // But if the allocated type can contain pointers which must be treated
-    // as roots by the GC, we must enforce a few extra invariants (which are
-    // not currently enforced):
-    //  1) We must allocate a cell, not a slot, to store the type.
-    //  2) We must allocate a slot, pointing to the stack cell, marked gcroot.
-    //  3) We must ensure that no load from the cell persists across a safe pt.
-    //  4) We must ensure that the GC does update the pointers within the cell.
-    //  5) We must(?) ensure that the GC does not attempt to copy the stack
-    //     cell to the heap.
-    return CreateEntryAlloca(ty, "stackref");
+  case LLAllocate::MEM_REGION_STACK: {
+    // TODO We could optimize the treatment of stack-allocated pointer-free data
+    // by *not* using a gcroot, and allocating a slot instead of a cell (i.e. no
+    // type map).
 
+    //ASSERT(!containsGCablePointers(type, ty));
+
+    // We enforce the invariant that the GC will scan but not attempt to copy
+    // stack-allocated cells to the heap, by marking stack memory regions
+    // as "stable" in foster_gc.cpp.
+    llvm::GlobalVariable* ti = getTypeMapForType(type, ctorRepr, pass->mod, NotArray);
+    llvm::Type* typemap_type = ti->getType();
+    llvm::StructType* sty = llvm::StructType::get(typemap_type, ty, NULL);
+    llvm::Value* cell = CreateEntryAlloca(sty, "stackref");
+    llvm::Value* slot = getPointerToIndex(cell, builder.getInt32(1), "stackref_slot");
+    builder.CreateStore(ti, getPointerToIndex(cell, builder.getInt32(0), "stackref_meta"));
+    return slot;
+  }
   case LLAllocate::MEM_REGION_GLOBAL_HEAP:
     return pass->emitMalloc(type, ctorRepr, srclines, init);
 

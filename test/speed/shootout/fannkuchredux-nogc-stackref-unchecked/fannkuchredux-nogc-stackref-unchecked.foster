@@ -36,11 +36,11 @@ tk = { maxn : Int32 =>
 
       flip = {
         let
-          xo   = (prim stackref 0);
-          yo   = (prim stackref (prim subscript-unsafe t 0));
-          ri   = (prim stackref 1);
-          rc   = (prim stackref 0);
-          done = (prim stackref False);
+          xo   = (prim stackref-unsafe 0);
+          yo   = (prim stackref-unsafe (prim subscript-unsafe t 0));
+          ri   = (prim stackref-unsafe 1);
+          rc   = (prim stackref-unsafe 0);
+          done = (prim stackref-unsafe False);
         in
         flip-helper 0 maxn;
         1 >^ ri;
@@ -48,6 +48,7 @@ tk = { maxn : Int32 =>
         False >^ done;
 
         until { done^ } {
+        REC loop = { if done^ then () else
           0                           >^ xo;
           (prim subscript-unsafe t 0) >^ yo;
           until { xo^ >=SInt32 yo^ } {
@@ -60,7 +61,8 @@ tk = { maxn : Int32 =>
           };
           incrBy ri 1;
           ((prim subscript-unsafe t (prim subscript-unsafe t 0)) ==Int32 0) >^ done;
-        };
+          end
+        }; loop !;
         ri^
         end
       };
