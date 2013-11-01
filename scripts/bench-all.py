@@ -311,10 +311,16 @@ def benchmark_third_party(third_party_benchmarks):
 all_factors = [factor + [('lang', [('foster', '')]),
                          ('date', [(datestr, '')]),
                         ] for factor in [
- [
+ [ # full optimization, showing limits of array bounds checking
    ('inline', [('yes', '--me-arg=--inline'), ]),
    ('LLVMopt', [('O2', '--optimize=O2')]),
    ('abc', [('unsafe' , '--be-arg=-unsafe-disable-array-bounds-checks')]),
+   ('donate', [('yes', '')]),
+ ],
+ [ # full optimization, retaining safety
+   ('inline', [('yes', '--me-arg=--inline'), ]),
+   ('LLVMopt', [('O2', '--optimize=O2')]),
+   ('abc', [('safe' , '')]),
    ('donate', [('yes', '')]),
  ],
  [

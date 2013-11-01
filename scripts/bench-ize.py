@@ -19,6 +19,8 @@ from scipy.stats import gaussian_kde
 from numpy import arange
 from matplotlib.font_manager import FontProperties
 
+from longest_common_substring import lcs
+
 options = None
 tick_width = 10
 interactive = True
@@ -182,9 +184,9 @@ def violin_plot(ax,data,pos, facecolor='y', bp=False, x_to_scale=False, rugplot=
   #print "w1:", w1
   #print "w2:", w2
   #print "dist_pos:", dist_pos
-  #print "len(pos):", len(pos)
 
   for d,p in zip(data,pos):
+    d = [float(x) for x in d] # kde chokes on ints...
     k = gaussian_kde(d) #calculates the kernel density
     m = k.dataset.min() #lower bound of violin
     M = k.dataset.max() #upper bound of violin
@@ -537,16 +539,23 @@ def title_for(tests):
   for (k, vs) in valset.iteritems():
     if len(vs) == 1:
       singletons[k] = vs[0]
-  title = '[%s]' % ','.join("%s=%s" % (k,v) for (k,v) in singletons.iteritems())
+  cs_tags = ','.join("%s=%s" % (k,v) for (k,v) in singletons.iteritems())
+  title = '%s [%s]' % (testname_of(tests), cs_tags)
   return title
+
+def testname_of(tests):
+  testname = lcs(proj(tests, 'test'))
+  if testname.startswith('/'):
+    testname = testname[1:]
+  return testname
 
 def indexof_v01(k, vs):
   return vs.index(k) / float(len(vs))
 
-def display_results():
-  format_output(todisplay)
+def display_results(output_path='out.html'):
+  format_output(todisplay, output_path)
 
-def format_output(outputs):
+def format_output(outputs, output_path):
   for o in outputs:
     xaxis_labels  = list(o['pos_for_names'].keys())
     #for mo in o['ministat_outputs']:
@@ -555,7 +564,7 @@ def format_output(outputs):
                  o['legend_labels'], xaxis_labels,
                  o['outpng_name'], noshow=True)
 
-  print >>open('out.html', 'w'), Template( """
+  print >>open(output_path, 'w'), Template( """
     {% for o in outputs %}
       <center><h3>{{ o.title }}</h3></center>
       <img src="{{ o.outpng_name }}"/>
@@ -639,10 +648,12 @@ def give_overview(all_tests):
       last_tst = tst
 
 def accumulate_results(all_tests):
+  print "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
   raw_tests = collect_relevant_tests(all_tests)
   organized = coalesce_tests(raw_tests)
   # organized is a dict with one key: 'byname', 'bytags', or 'other'
   # 'byname' and 'bytags' map to a dict; 'other' maps to a list.
+  print "=================================="
   print organized
   if 'other' in organized:
     tests = organized['other']
@@ -701,7 +712,8 @@ def set_default_options():
 if __name__ == "__main__":
   parser = get_test_parser("""usage: %prog [options] <test_path>\n""")
   (options, args) = parser.parse_args()
-  all_tests = load('all_timings.json')
+  assert len(args) > 0
+  all_tests = load(args[0])
   if options.overview:
     give_overview(all_tests)
   else:
