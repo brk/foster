@@ -10,6 +10,7 @@ import yaml
 import subprocess
 from jinja2 import Template
 from collections import defaultdict
+import itertools
 
 from optparse import OptionParser
 
@@ -235,7 +236,10 @@ def viz_datasets(datasets, x_positions, title, legend_labels=[], xlabels=[], out
 
   #ax.set_title(tests[0]['test'])
   ax.set_xlabel('test')
-  ax.set_ylabel('runtime (ms) [py]')
+  if options.normalize:
+    ax.set_ylabel('runtime (normalized) [py]')
+  else:
+    ax.set_ylabel('runtime (ms) [py]')
   ax.xaxis.set_ticks(x_positions)
   ax.xaxis.set_smart_bounds(True)
   if xlabels and len(xlabels) > 0:
@@ -422,6 +426,7 @@ def elapsed_runtime_ms(stats):
   if 'py_run_ms' in outputs:
     return outputs['py_run_ms']
   raise "Unable to get elapsed runtime from " + str(stats)
+
 def viz_multiple_tests(unsorted_tests):
   tests = sorted(unsorted_tests, key=lambda t: t['test'])
   names = set(t['test'] for t in tests)
@@ -475,6 +480,13 @@ def viz_multiple_tests(unsorted_tests):
   x_positions = pos_for_test_names.values()
   legend_labels = sorted(set(proj(tests, 'tags')))
 
+  if options.normalize:
+    # datas :: [[ [sample] ]]
+    samples_lists = list(itertools.chain.from_iterable(datas))
+    samples       = list(itertools.chain.from_iterable(samples_lists))
+    normalize_to_value = float(min(samples))
+    datas = [ [ [float(x) / normalize_to_value for x in samples ]
+                 for samples in samples_lists] for samples_lists in datas]
   datasets = [
     {
       'data': datas[k],
@@ -698,6 +710,9 @@ def get_test_parser(usage):
                     help="Consider only tests with these argstrs")
   parser.add_option("--format", action="store", dest="format", default=None,
                     help="Output format (eventually: html, png, txt, ...). Currently unimplemented.")
+  parser.add_option("--normalize", action="store_true", dest="normalize", default=False,
+                    help="Whether to use normalized instead of absolute measurements in graphs.")
+  # Note: normalization doesn't apply to ministat output, for example...
   parser.add_option("--overview", action="store_true", dest="overview", default=False,
                     help="Give an overview of what tests & tags have timings available.")
   return parser
