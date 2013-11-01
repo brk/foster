@@ -26,6 +26,8 @@ options = None
 tick_width = 10
 interactive = True
 
+ignore_third_party = False
+
 todisplay = []
 
 _png_name_id = 0
@@ -57,18 +59,23 @@ def matches_any(subj, needles):
 def should_consider(test):
   if len(options.tests) > 0:
     if not matches_any(test['test'], options.tests):
+      print "dropping ", test['test'], " for not matching ", options.tests
       return False
   if len(options.tags) > 0:
     if not matches_any(test['tags'], options.tags):
+      print "dropping ", test['test'], test['tags'], " for not matching ", options.tags
       return False
   if len(options.argstrs) > 0:
     if not matches_any(test['input'], options.argstrs):
       return False
+  if ignore_third_party and matches_any(test['test'], ["third_party/"]):
+    return False
   return True
 
 def collect_relevant_tests(all_tests):
   tests = []
   for test in all_tests:
+    #print_test(test)
     if should_consider(test):
       tests.append(test)
   return tests
@@ -101,7 +108,7 @@ def coalesce_tests_inputs(raw_tests):
         'flags': test['flags'],
         'samples' : []
       }
-    print test
+    #print test
     if 'outputs' in test:
       sample = {
         'input'     : test['input'],
@@ -133,7 +140,7 @@ def append_to(arr, key, val):
 
 def coalesce_tests(raw_tests):
   t1 = coalesce_tests_inputs(raw_tests)
-  if options.compare_tags:
+  if options.group_by_name:
     byname = {}
     for t in t1:
       name = t['test']
@@ -275,7 +282,7 @@ def viz(tests):
   # With one test and multiple integer inputs, plot the py_run_ms values against the input.
   # With multiple tests and one input, show (independent) violin plots for each test.
   # With multiple tests and multiple inputs, show (independent) violin plots for the .
-  if len(tests) == 1:
+  if len(tests) == 1 and False:
     if len(tests[0]['samples']) == 1:
       print "one test, one input"
       pos  = [1]
@@ -314,15 +321,6 @@ def viz(tests):
       ax.set_ylabel('runtime (ms) [py]')
       ax.xaxis.set_ticks(pos)
       show()
-  elif len(tests) == 2:
-    print "two tests"
-    t1 = tests[0]
-    t2 = tests[1]
-    if t1['test'] == t2['test']:
-      viz_multiple_tests(tests)
-    else:
-      print "don't know how to compare different tests!"
-    pass
   else:
     viz_multiple_tests(tests)
 
@@ -416,7 +414,7 @@ def collect_ministat_output(all_fnames):
     fnames = [all_fnames[0]] + tail_fnames
     subprocess.call("ministat %s > ministat_out.txt" % ' '.join(fnames), shell=True)
     o += reformat_ministat_output(open('ministat_out.txt', 'r').readlines())
-  print o
+  #print o
   return o
 
 def elapsed_runtime_ms(stats):
@@ -438,6 +436,10 @@ def viz_multiple_tests(unsorted_tests):
   if len(dropped_inputs) > 0:
     print "dropped inputs: ", dropped_inputs
   # same test, different tags: take intersection of inputs
+
+  if len(common_inputs) == 0:
+    print "Skipping tests", names, "because there were no common inputs."
+    return
 
   pos  = [int(x) for x in common_inputs]
   datas = [
@@ -476,7 +478,7 @@ def viz_multiple_tests(unsorted_tests):
   assert len(ministat_outputs) == len(pos)
 
   unique_test_names = set(proj(tests, 'test'))
-  pos_for_test_names = compute_positions_for_names(unique_test_names, zip(tests, datas))
+  pos_for_test_names = compute_positions_for_names(unique_test_names, zip(tests, datas), 'test')
   x_positions = pos_for_test_names.values()
   legend_labels = sorted(set(proj(tests, 'tags')))
 
@@ -503,7 +505,7 @@ def viz_multiple_tests(unsorted_tests):
                     'legend_labels':legend_labels,
                     'outpng_name':gen_png_name(),
                     'x_positions':x_positions,
-                    'title':title_for(tests),
+                    'title':title_for(legend_labels, tests),
                    })
 
 def viz_by_tags(tagnames, tests):
@@ -514,7 +516,7 @@ def viz_by_tags(tagnames, tests):
   # We don't include any ministat comparisons because
   # comparing results from different tests for the same tags
   # doesn't make any sense! (unlike the reverse situation)
-  pos_for_names = compute_positions_for_names(tagnames, zip(tests, datas))
+  pos_for_names = compute_positions_for_names(tagnames, zip(tests, datas), 'tags')
   x_positions = pos_for_names.values()
   legend_labels = list(set(proj(tests, 'test')))
   datasets = [
@@ -534,10 +536,10 @@ def viz_by_tags(tagnames, tests):
                     'datasets':datasets,
                     'outpng_name':gen_png_name(),
                     'x_positions':x_positions,
-                    'title':title_for(tests),
+                    'title':title_for(legend_labels, tests),
                    })
 
-def title_for(tests):
+def title_for(labels, tests):
   valset = {}
   for d in proj(tests, 'flags'):
     for (f, v) in d.iteritems():
@@ -552,11 +554,11 @@ def title_for(tests):
     if len(vs) == 1:
       singletons[k] = vs[0]
   cs_tags = ','.join("%s=%s" % (k,v) for (k,v) in singletons.iteritems())
-  title = '%s [%s]' % (testname_of(tests), cs_tags)
+  title = '%s [%s]' % (testname_of(labels), cs_tags)
   return title
 
-def testname_of(tests):
-  testname = lcs(proj(tests, 'test'))
+def testname_of(labels):
+  testname = lcs(labels)
   if testname.startswith('/'):
     testname = testname[1:]
   return testname
@@ -587,7 +589,7 @@ def format_output(outputs, output_path):
     {% endfor %}
 """).render(outputs=outputs)
 
-def compute_positions_for_names(names, testsdatas):
+def compute_positions_for_names(names, testsdatas, key):
   """Given a list of (distinct) names,
      and statistics corresponding to those names,
      returns a dict mapping names to positions."""
@@ -596,7 +598,7 @@ def compute_positions_for_names(names, testsdatas):
   maxes = {}
   for (t,d) in testsdatas:
     m = max(max(xs) for xs in d)
-    maxes[t['test']] = max(m, maxes.get(t['test'], m))
+    maxes[t[key]] = max(m, maxes.get(t[key], m))
   sorted_pairs = sorted(maxes.items(), key=lambda p: p[1], reverse=True)
   sorted_names = [p[0] for p in sorted_pairs]
   assert set(sorted_names) == set(names)
@@ -660,13 +662,10 @@ def give_overview(all_tests):
       last_tst = tst
 
 def accumulate_results(all_tests):
-  print "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
   raw_tests = collect_relevant_tests(all_tests)
   organized = coalesce_tests(raw_tests)
   # organized is a dict with one key: 'byname', 'bytags', or 'other'
   # 'byname' and 'bytags' map to a dict; 'other' maps to a list.
-  print "=================================="
-  print organized
   if 'other' in organized:
     tests = organized['other']
     print_tests(tests)
@@ -692,7 +691,10 @@ def accumulate_results(all_tests):
     tests = []
     for tagtests in nontrivials.values():
       tests.extend(tagtests)
-    viz_by_tags(tagnames, tests)
+    if len(tests) > 0:
+      viz_by_tags(tagnames, tests)
+    else:
+      print "No tags had more than one associated test!"
   else:
     print "organized by '%s', not sure what to do!" % str(organized)
 
@@ -704,7 +706,7 @@ def get_test_parser(usage):
                     help="Consider only these tags (key-value pairs)")
   parser.add_option("--group-by-tags", action="store_true", dest="group_by_tags", default=False,
                     help="TODO")
-  parser.add_option("--compare-tags", action="store_true", dest="compare_tags", default=False,
+  parser.add_option("--group-by-name", action="store_true", dest="group_by_name", default=False,
                     help="TODO")
   parser.add_option("--argstr", action="append", dest="argstrs", default=[],
                     help="Consider only tests with these argstrs")
@@ -721,17 +723,22 @@ def use_default_options():
   return options.tests == [] and options.tags == [] and options.argstrs == []
 
 def set_default_options():
-  options.tests = ['spectralnorm', 'fannkuchredux', 'nbody', 'addtobits']
-  options.compare_tags = True
+  options.tests = ['spectralnorm', 'fannkuchredux', 'nbody', 'addtobits', 'siphash']
+  options.group_by_name = True
 
 if __name__ == "__main__":
   parser = get_test_parser("""usage: %prog [options] <test_path>\n""")
   (options, args) = parser.parse_args()
   assert len(args) > 0
-  all_tests = load(args[0])
+  all_tests = itertools.chain.from_iterable(map(load, args))
+
   if options.overview:
     give_overview(all_tests)
   else:
+    if len(args) > 1:
+      # Comparing multiple runs; toss third party results
+      ignore_third_party = True
+
     if use_default_options():
       set_default_options()
     accumulate_results(all_tests)
