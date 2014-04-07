@@ -331,6 +331,7 @@ computeBlocks tailq expr idmaybe k = do
          KNAllocArray t v    -> ILAllocArray t v
          KNArrayRead  t ari  -> ILArrayRead  t ari
          KNArrayPoke  _ ari c-> ILArrayPoke  ari c
+         KNArrayLit t arr vals -> ILArrayLit t arr vals
          KNTyApp      t v [] -> ILBitcast    t v
          KNTyApp          {} -> error $ "knToLetable saw tyapp that was not "
                                       ++ "eliminated by monomorphization: "

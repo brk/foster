@@ -50,6 +50,7 @@ data AIExpr =
         | AIAllocArray TypeIL AIExpr
         | AIArrayRead  TypeIL (ArrayIndex AIExpr)
         | AIArrayPoke  TypeIL (ArrayIndex AIExpr) AIExpr
+        | AIArrayLit   TypeIL AIExpr [Either Literal AIExpr]
         -- Terms indexed by types
         | E_AITyApp { aiTyAppOverallType :: TypeIL
                     , aiTyAppExpr        :: AIExpr
@@ -127,9 +128,9 @@ ail ctx ae =
         -- would be stale. Thus we make the array allocation explicit here.
         AnnArrayLit  _rng t exprs  -> do ti <- qt t
                                          let (ArrayTypeIL ati) = ti
-                                         ais <- mapM q exprs
+                                         ais <- mapRightM q exprs
                                          let arr = AIAllocArray ati (AILiteral i64 litint)
-                                         return $ AICallPrim ti PrimArrayLiteral (arr:ais) where {
+                                         return $ AIArrayLit ti arr ais where {
           n = length exprs
         ; i64 = PrimIntIL I64
         ; litint = LitInt (LiteralInt (fromIntegral n) 32 (show n) 10)
@@ -252,7 +253,6 @@ ilPrim ctx prim =
                             return $ NamedPrim tid'
     PrimOp    nm ty   -> do ty' <- ilOf ctx ty
                             return $ PrimOp nm ty'
-    PrimArrayLiteral   ->   return $ PrimArrayLiteral
     PrimIntTrunc i1 i2 ->   return $ PrimIntTrunc i1 i2
     CoroPrim {} -> error $ "Shouldn't yet have constructed CoroPrim!"
 

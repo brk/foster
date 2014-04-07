@@ -45,6 +45,7 @@ import Foster.Fepb.PBCase   as PBCase
 import Foster.Fepb.CaseClause as CaseClause
 import Foster.Fepb.PBValAbs as PBValAbs
 import Foster.Fepb.Expr     as PbExpr
+import Foster.Fepb.PBArrEntries as PBArrEntries
 import Foster.Fepb.SourceModule as SourceModule
 import Foster.Fepb.WholeProgram as WholeProgram
 import Foster.Fepb.Expr.Tag(Tag(IF, LET, VAR, SEQ, TY_CHECK,
@@ -88,11 +89,15 @@ parseCall pbexpr rng = do
           [eexpr, rest] -> return $ E_CallAST rng rest [eexpr]
       _ -> return $ E_CallAST rng base args
 
+processArrayValue :: ExprAST TypeP -> ArrayEntry (ExprAST TypeP)
+processArrayValue (E_IntAST annot t) = AE_Int annot t
+processArrayValue expr = AE_Expr expr
+
 parseCallPrim pbexpr annot = do
     args <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
     let primname = getName "prim" $ PbExpr.string_value pbexpr
     case (T.unpack primname, args) of
-      ("mach-array-literal", _) -> return $ E_MachArrayLit annot args
+      ("mach-array-literal", _) -> do return $ E_MachArrayLit annot (map processArrayValue args)
       ("tuple",  _ ) -> return $ E_TupleAST annot args
       ("deref", [e]) -> return $ E_DerefAST annot e
       ("alloc",           [e]) -> return $ E_AllocAST annot e MemRegionGlobalHeap
@@ -442,8 +447,7 @@ parseSourceModule sm = resolveFormatting m where
        E_RatAST       _ txt      -> liftM2' E_RatAST      ana (return txt)
        E_VarAST       _ v        -> liftM2' E_VarAST      ana (return v)
        E_PrimAST      _ nm       -> liftM2' E_PrimAST     ana (return nm)
-       E_MachArrayLit _ args     -> liftM2' E_MachArrayLit ana (mapM q args)
-
+       E_MachArrayLit _ args     -> liftM2' E_MachArrayLit ana (mapArrayEntryM q args)
        E_KillProcess  _ e        -> liftM2' E_KillProcess ana (q e)
        E_CompilesAST  _ me       -> liftM2' E_CompilesAST ana (liftMaybeM q me)
        E_IfAST        _ a b c    -> liftM4' E_IfAST       ana (q a) (q b) (q c)

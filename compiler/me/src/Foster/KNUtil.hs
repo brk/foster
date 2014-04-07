@@ -54,6 +54,7 @@ data KNExpr' r ty =
         | KNAllocArray  ty (TypedId ty)
         | KNArrayRead   ty (ArrayIndex (TypedId ty))
         | KNArrayPoke   ty (ArrayIndex (TypedId ty)) (TypedId ty)
+        | KNArrayLit    ty (TypedId ty) [Either Literal (TypedId ty)]
         | KNTyApp       ty (TypedId ty) [ty]
         | KNInlined     Int Int Int (KNExpr' r ty) (KNExpr' r ty) -- old, new
                      --          ^ "after" time of inlining new
@@ -160,6 +161,7 @@ alphaRename' fn uref = do
       KNStore         t v1 v2  -> liftM2 (KNStore         t) (qv v1) (qv v2)
       KNArrayRead     t ai     -> liftM  (KNArrayRead     t) (renameArrayIndex ai)
       KNArrayPoke     t ai v   -> liftM2 (KNArrayPoke     t) (renameArrayIndex ai) (qv v)
+      KNArrayLit    t arr vals -> liftM2 (KNArrayLit      t) (qv arr) (mapRightM qv vals)
       KNVar                  v -> liftM  KNVar                  (qv v)
       KNCase          t v arms -> do arms' <- mapM renameCaseArm arms
                                      v'    <- qv v
@@ -245,6 +247,7 @@ typeKN expr =
     KNStore         t _ _    -> t
     KNArrayRead     t _      -> t
     KNArrayPoke     t _ _    -> t
+    KNArrayLit      t _ _    -> t
     KNCase          t _ _    -> t
     KNLetVal        _ _ e    -> typeKN e
     KNLetRec        _ _ e    -> typeKN e
@@ -276,6 +279,7 @@ instance (Show ty, Show rs) => Structured (KNExpr' rs ty) where
             KNAllocArray {}     -> text $ "KNAllocArray "
             KNArrayRead  t _    -> text $ "KNArrayRead " ++ " :: " ++ show t
             KNArrayPoke  {}     -> text $ "KNArrayPoke "
+            KNArrayLit   {}     -> text $ "KNArrayLit  "
             KNTuple   _ vs _    -> text $ "KNTuple     (size " ++ (show $ length vs) ++ ")"
             KNVar (TypedId t (GlobalSymbol name))
                                 -> text $ "KNVar(Global):   " ++ T.unpack name ++ " :: " ++ show t
@@ -303,6 +307,7 @@ instance (Show ty, Show rs) => Structured (KNExpr' rs ty) where
             KNStore      _ v w      -> [var v, var w]
             KNArrayRead _t ari      -> map var $ childrenOfArrayIndex ari
             KNArrayPoke _t ari i    -> map var $ childrenOfArrayIndex ari ++ [i]
+            KNArrayLit  _t arr vals -> [var arr] ++ [var v | Right v <- vals] -- TODO should reconstruct exprs for literals
             KNVar _                 -> []
             KNTyApp _t v _argty     -> [var v]
             KNInlined _t0 _to _tn _old new      -> [new]
@@ -353,6 +358,7 @@ knSizeHead expr = case expr of
 
     KNAppCtor     {} -> 3 -- rather like a KNTuple, plus one store for the tag.
     KNInlined _t0 _ _ _ new  -> knSizeHead new
+    KNArrayLit _ty _arr vals -> 2 + length vals
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||||| Pretty-printing ||||||||||||||||||||{{{
@@ -540,6 +546,7 @@ instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
             KNAllocArray {}     -> text $ "KNAllocArray "
             KNArrayRead  t ai   -> pretty ai <+> pretty t
             KNArrayPoke  t ai v -> prettyId v <+> text ">^" <+> pretty ai <+> pretty t
+            KNArrayLit   _t _arr _vals -> text "<...array literal...>"
             KNTuple      _ vs _ -> parens (hsep $ punctuate comma (map pretty vs))
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||

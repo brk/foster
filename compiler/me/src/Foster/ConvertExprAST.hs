@@ -63,7 +63,7 @@ convertExprAST :: Monad m => (x -> m z) -> ExprAST x -> m (ExprAST z)
 convertExprAST f expr =
   let q = convertExprAST f in
   case expr of
-    E_MachArrayLit rng es       -> liftM  (E_MachArrayLit rng) (mapM q es)
+    E_MachArrayLit rng es       -> liftM  (E_MachArrayLit rng) (mapArrayEntryM q es)
     E_StringAST    rng s        -> return $ (E_StringAST  rng) s
     E_BoolAST      rng b        -> return $ (E_BoolAST    rng) b
     E_IntAST       rng txt      -> return $ (E_IntAST     rng) txt

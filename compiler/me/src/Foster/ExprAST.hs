@@ -15,7 +15,7 @@ where
 
 import Foster.Base(Expr(..), freeVars, identPrefix, Structured(..),
                    SourceRanged(..), TypedId(..), butnot, ArrayIndex(..),
-                   AllocMemRegion, childrenOfArrayIndex,
+                   AllocMemRegion, childrenOfArrayIndex, ArrayEntry,
                    CaseArm(..), caseArmExprs,
                    ExprAnnot(..), rangeOf, annotComments, showComments)
 import Foster.TypeAST(TypeAST, EPattern(..), E_VarAST(..))
@@ -36,7 +36,7 @@ data ExprSkel annot ty =
         | E_RatAST        annot String
         | E_TupleAST      annot [ExprAST ty]
         | E_FnAST         annot (FnAST ty)
-        | E_MachArrayLit  annot [ExprAST ty]
+        | E_MachArrayLit  annot [ArrayEntry (ExprAST ty)]
         -- Control flow
         | E_IfAST         annot (ExprAST ty) (ExprAST ty) (ExprAST ty)
         | E_SeqAST        annot (ExprAST ty) (ExprAST ty)

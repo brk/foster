@@ -85,6 +85,9 @@ kNormalize ctorRepr expr =
       E_AIVar v         -> return $ KNVar v
       AIKillProcess t m -> return $ KNKillProcess t m
 
+      AIArrayLit t arr vals -> do nestedLetsDo [go arr] (\[arr'] -> do
+                                    letsForArrayValues vals go (\vals' -> return $ KNArrayLit t arr' vals'))
+
       AIAllocArray t a      -> do nestedLets [go a] (\[x] -> KNAllocArray (ArrayTypeIL t) x)
       AIAlloc a rgn         -> do nestedLets [go a] (\[x] -> KNAlloc (PtrTypeIL $ tidType x) x rgn)
       AIDeref   a           -> do nestedLets [go a] (\[x] -> KNDeref (pointedToTypeOfVar x) x)
@@ -329,6 +332,40 @@ nestedLetsDo exprActions g = do exprs <- sequence exprActions
 --       As a result, we get many spurious pattern match warnings.
 nestedLets :: [KN KNExpr] -> ([AIVar] -> KNExpr) -> KN KNExpr
 nestedLets exprActions g = nestedLetsDo exprActions (\vars -> return $ g vars)
+
+
+letsForArrayValues :: [Either Literal AIExpr] -> (AIExpr -> KN KNExpr) ->
+                                                 ([Either Literal AIVar] -> KN KNExpr)
+                                                 -> KN KNExpr
+letsForArrayValues vals normalize mkArray = do
+                                kvals <- mapRightM normalize vals
+                                nestedLets' kvals [] mkArray
+  where
+    nestedLets' :: [Either Literal KNExpr] -> [Either Literal AIVar] -> ([Either Literal AIVar] -> KN KNExpr) -> KN KNExpr
+    nestedLets' []     vars k = k (reverse vars)
+    nestedLets' (ei:es) vars k =
+        case ei of
+          -- No point in doing  let var1 = var2 in e...
+          -- Instead, pass var2 to k instead of var1.
+          Right (KNVar v) -> nestedLets' es (Right v:vars) k
+
+          -- We also don't particularly want to do something like
+          --    let var2 = (letfun var1 = {...} in var1) in e ...
+          -- because it would be later flattened out to
+          --    let var1 = fn in (let var2 = var1 in e...)
+          Right (KNLetFuns ids fns (KNVar v)) -> do
+            innerlet <- nestedLets' es (Right v:vars) k
+            return $ KNLetFuns ids fns innerlet
+
+          Right e -> do
+            x        <- knFresh ".x"
+            let v = TypedId (typeKN e) x
+            innerlet <- nestedLets' es (Right v:vars) k
+            return $ buildLet x e innerlet
+
+          Left lit -> do
+            nestedLets' es (Left lit:vars) k
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||| Constructor Munging ||||||||||||||||||||{{{
@@ -481,6 +518,7 @@ collectFunctions knf = go [] (fnBody knf)
           KNAllocArray    {} -> xs
           KNArrayRead     {} -> xs
           KNArrayPoke     {} -> xs
+          KNArrayLit      {} -> xs
           KNTyApp         {} -> xs
           KNInlined _t0 _to _tn _old new -> go xs new
           KNIf            _ _ e1 e2   -> go (go xs e1) e2
@@ -504,6 +542,7 @@ collectMentions knf = go Set.empty (fnBody knf)
           KNAllocArray  {} -> xs -- next few cases can't be fn-valued due to type checking.
           KNArrayRead   {} -> xs
           KNArrayPoke   {} -> xs
+          KNArrayLit    {} -> xs
           KNDeref       {} -> xs
           KNTuple       _ vs _ -> uu xs vs
           KNAppCtor     _ _ vs -> uu xs vs
@@ -541,6 +580,7 @@ rebuildWith rebuilder e = q e
       KNAllocArray  {} -> x
       KNArrayRead   {} -> x
       KNArrayPoke   {} -> x
+      KNArrayLit    {} -> x
       KNTyApp       {} -> x
       KNIf          ty v ethen eelse -> KNIf       ty v (q ethen) (q eelse)
       KNLetVal      id  e1   e2      -> KNLetVal   id   (q e1)    (q e2)
@@ -817,6 +857,7 @@ knLoopHeaders' expr = do
     KNAllocArray  {} -> expr
     KNArrayRead   {} -> expr
     KNArrayPoke   {} -> expr
+    KNArrayLit    {} -> expr
     KNAlloc       {} -> expr
     KNStore       {} -> expr
     KNDeref       {} -> expr
@@ -1509,6 +1550,7 @@ knInline' expr env = do
     KNKillProcess {} -> residualize expr
     KNArrayRead ty (ArrayIndex v1 v2 rng sg)    -> (mapM q [v1,v2   ]) >>= \[q1,q2]    -> residualize $ KNArrayRead ty (ArrayIndex q1 q2 rng sg)
     KNArrayPoke ty (ArrayIndex v1 v2 rng sg) v3 -> (mapM q [v1,v2,v3]) >>= \[q1,q2,q3] -> residualize $ KNArrayPoke ty (ArrayIndex q1 q2 rng sg) q3
+    KNArrayLit  ty arr vals -> (q arr) >>= \arr'  -> residualize $ KNArrayLit ty arr' vals -- NOTE: we don't inline array elements!
     KNAllocArray ty v      -> (q v)       >>= \zv -> residualize $ KNAllocArray ty zv
     KNDeref      ty v      -> (q v)       >>= \zv -> residualize $ KNDeref      ty zv
     KNAlloc      ty v mem  -> (q v)       >>= \zv -> residualize $ KNAlloc      ty zv mem
@@ -1761,7 +1803,6 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
   where
     primop (NamedPrim tid) = show (tidIdent tid)
     primop (PrimOp nm _)   = nm
-    primop PrimArrayLiteral = "array-lit"
     primop (PrimIntTrunc _ _) = "trunc"
     primop (CoroPrim _ _ _) = "coroprim"
 
@@ -1783,6 +1824,7 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
         KNAllocArray  {} -> "KNAllocArray  " ++ show (knSize x)
         KNArrayRead   {} -> "KNArrayRead   " ++ show (knSize x)
         KNArrayPoke   {} -> "KNArrayPoke   " ++ show (knSize x)
+        KNArrayLit    {} -> "KNArrayLit    " ++ show (knSize x)
         KNTyApp       {} -> "KNTyApp       " ++ show (knSize x)
         KNIf          {} -> "KNIf          " ++ show (knSize x)
         KNLetVal      {} -> "KNLetVal      " ++ show (knSize x)
@@ -2297,6 +2339,7 @@ knElimRebinds expr = go Map.empty expr where
             KNAllocArray t v    -> KNAllocArray t (qv v)
             KNArrayRead  t ai   -> KNArrayRead  t (qai ai)
             KNArrayPoke  t ai v -> KNArrayPoke  t (qai ai) (qv v)
+            KNArrayLit   t arr vals -> KNArrayLit t (qv arr) (mapRight qv vals)
             KNTuple      t vs s -> KNTuple      t (map qv vs) s
             KNCase   _t v bnds  -> KNCase   _t (qv v ) (map qb bnds)
             KNInlined _t0 _to _tn _old new  -> KNInlined _t0 _to _tn _old (q new)

@@ -332,7 +332,6 @@ mkAnnPrimitive annot tid =
         Just (NamedPrim tid)      -> NamedPrim tid
         Just (PrimOp nm ty)       -> PrimOp nm ty
         Just (PrimIntTrunc i1 i2) -> PrimIntTrunc i1 i2
-        Just PrimArrayLiteral     -> PrimArrayLiteral
         Just (CoroPrim {}       ) -> error $ "mkAnnPrim saw unexpected CoroPrim"
         Nothing                   -> NamedPrim tid
 
@@ -369,6 +368,15 @@ tcRhoText rng b expTy = do
                                 ++ showSourceRange (rangeOf rng)]
 -- }}}
 
+
+tcRhoArrayValue ctx tau (AE_Int annot str) = do
+  AnnLiteral _ _ literal <- checkRho ctx (E_IntAST annot str) tau
+  return (Left literal)
+
+tcRhoArrayValue ctx tau (AE_Expr expr) = do
+  ae <- checkRho ctx expr tau
+  return $ Right ae
+
 --  e1 :: tau             ...           en :: tau
 --  ---------------------------------------------------
 --  G |- prim mach-array-literal e1 ... en :: Array tau
@@ -376,7 +384,8 @@ tcRhoArrayLit ctx rng args expTy = do
 -- {{{
     tau <- newTcUnificationVarTau $ "prim array type"
     let ty = ArrayTypeAST tau
-    args' <- mapM (\arg -> checkRho ctx arg tau) args
+    --args' <- mapM (\arg -> checkRho ctx arg tau) args
+    args' <- mapM (tcRhoArrayValue ctx tau) args
     let ab = AnnArrayLit rng ty args'
     case expTy of
          Infer r                     -> update r (return ab)

@@ -132,7 +132,7 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     else:
       interpret = []
 
-    ghc_rts_args = ["-smeGCstats.txt"]
+    ghc_rts_args = ["-smeGCstats.txt", "-K400M"]
 
     if options and options.profileme:
       ghc_rts_args.append("-p")
@@ -358,7 +358,11 @@ if __name__ == "__main__":
                 --me-arg=--dump-ir=cfg   will print closure-conv IR
                 --me-arg=--dump-ir=mono  will print monomo. IR
                 --be-arg=--gc-track-alloc-sites
+                --be-arg=--unsafe-disable-array-bounds-checks
                 --optc-arg=--help        will display optimization flags
+                --profileme              will enable profiling of the middle-end; then do `hp2ps -e8in -c me.hp`
+                --asm
+                --show-cmdlines
 """)
   (options, args) = parser.parse_args()
 

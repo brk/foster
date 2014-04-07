@@ -138,6 +138,10 @@ instance Pretty Formatting where
 withAnnot (ExprAnnot pre _ post) doc =
   hsep $ map pretty pre ++ [doc <> hsep (map pretty post)]
 
+instance Pretty (ArrayEntry (ExprAST TypeP)) where
+  pretty (AE_Int _annot str) = pretty str
+  pretty (AE_Expr ex) = pretty ex
+
 instance Pretty (ExprAST TypeP) where
   pretty e =
         case e of

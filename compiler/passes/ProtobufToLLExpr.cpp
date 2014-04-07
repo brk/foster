@@ -329,12 +329,23 @@ LLExpr* parseArrayLength(const pb::Letable& e) {
   return new LLArrayLength(parseTermVar( e.parts(0)));
 }
 
+LLExpr* parseArrayEntry(const pb::PbArrayEntry& e) {
+  ASSERT(e.has_var() || e.has_lit());
+  if (e.has_var()) {
+    return parseTermVar(e.var());
+  }
+  if (e.has_lit()) {
+    return LLExpr_from_pb(&e.lit()); // TODO should eventually support float/bool too
+  }
+}
+
 LLExpr* parseArrayLiteral(const pb::Letable& e) {
   ASSERT(e.has_elem_type());
-  std::vector<LLVar*> args;
+  std::vector<LLExpr*> args;
   LLVar* arr = parseTermVar(e.parts(0));
-  for (int i = 1; i < e.parts_size(); ++i) {
-    args.push_back(parseTermVar(e.parts(i)));
+  const pb::PbArrayLiteral lit = e.array_lit();
+  for (int i = 0; i < lit.entries_size(); ++i) {
+    args.push_back(parseArrayEntry(lit.entries(i)));
   }
   return new LLArrayLiteral(TypeAST_from_pb(&e.elem_type()), arr, args);
 }

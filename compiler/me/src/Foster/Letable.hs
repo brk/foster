@@ -9,7 +9,7 @@ module Foster.Letable where
 import Foster.Base(Literal(..), CtorId, CtorRepr(..), ArrayIndex(..),
                    AllocMemRegion, AllocInfo(..), Occurrence, AllocationSource,
                    FosterPrim(..), MayGC(..), memRegionMayGC,
-                   TypedId(..), Ident(..),
+                   TypedId(..), Ident(..), mapRight,
                    TExpr(freeTypedIds), TypedWith(..))
 import Foster.MonoType
 import Foster.TypeLL
@@ -43,6 +43,7 @@ data Letable ty =
         | ILAllocArray  ty (TypedId ty)
         | ILArrayRead   ty (ArrayIndex (TypedId ty))
         | ILArrayPoke      (ArrayIndex (TypedId ty)) (TypedId ty)
+        | ILArrayLit    ty (TypedId ty) [Either Literal (TypedId ty)]
         -- Others
         | ILBitcast     ty (TypedId ty) -- inserted during monomorphization
         deriving (Functor, Show, Eq)
@@ -64,6 +65,7 @@ instance TExpr (Letable ty) ty where
       ILAllocArray _ v  -> [v]
       ILArrayRead _ ai  -> freeTypedIds ai
       ILArrayPoke   ai v-> (v):(freeTypedIds ai)
+      ILArrayLit _ arr vals -> arr:[val | Right val <- vals]
       ILAllocate _      -> []
 
 instance TypedWith (Letable MonoType) MonoType where
@@ -83,6 +85,7 @@ instance TypedWith (Letable MonoType) MonoType where
       ILAllocArray t _  -> t
       ILArrayRead  t _  -> t
       ILArrayPoke   {}  -> TupleType []
+      ILArrayLit t _ _  -> t -- or arrayOf t?
       ILAllocate info   -> PtrType (allocType info)
 
 instance TypedWith (Letable TypeLL) TypeLL where
@@ -102,6 +105,7 @@ instance TypedWith (Letable TypeLL) TypeLL where
       ILAllocArray t _  -> t
       ILArrayRead t _   -> t
       ILArrayPoke   _ _ -> LLPtrType (LLStructType [])
+      ILArrayLit  t _ _ -> t
       ILAllocate info   -> LLPtrType (allocType info)
 
 isPurePrim _ = False -- TODO: recognize pure primitives
@@ -125,6 +129,7 @@ substVarsInLetable s letable = case letable of
   ILAllocArray  t v                        -> ILAllocArray  t (s v)
   ILArrayRead   t (ArrayIndex v1 v2 rng a) -> ILArrayRead   t (ArrayIndex (s v1) (s v2) rng a)
   ILArrayPoke  (ArrayIndex v1 v2 rng a) v3 -> ILArrayPoke  (ArrayIndex (s v1) (s v2) rng a) (s v3)
+  ILArrayLit    t arr vals -> ILArrayLit t (s arr) (mapRight s vals)
 
 -- | Some letables are trivial (literals, bitcasts), others not so much.
 --   It remains to be seen whether deref/store should be counted or not.
@@ -147,6 +152,7 @@ letableSize letable = case letable of
       ILAllocArray   {} -> 1
       ILArrayRead    {} -> 1
       ILArrayPoke    {} -> 1
+      ILArrayLit _ _ vals -> length vals
 
 isPure :: Letable t -> Bool
 isPure letable = case letable of
@@ -166,6 +172,7 @@ isPure letable = case letable of
       ILAllocArray   {} -> True
       ILArrayRead    {} -> True
       ILArrayPoke    {} -> False -- as with store
+      ILArrayLit     {} -> True -- as with tuples
 
 canGC :: Map.Map Ident MayGC -> Letable ty -> MayGC
 canGC mayGCmap letable =
@@ -189,6 +196,7 @@ canGC mayGCmap letable =
          ILBitcast     {} -> WillNotGC
          ILArrayRead   {} -> WillNotGC
          ILArrayPoke   {} -> WillNotGC
+         ILArrayLit    {} -> MayGC
          ILObjectCopy  {} -> WillNotGC
 
 canGCLit lit = case lit of
@@ -205,7 +213,6 @@ canGCPrim (PrimOp       {}) = WillNotGC
 canGCPrim (NamedPrim (TypedId _ (GlobalSymbol name))) =
                     if willNotGCGlobal name then WillNotGC
                                             else GCUnknown "canGCPrim:global"
-canGCPrim PrimArrayLiteral = MayGC
 canGCPrim _ = GCUnknown "canGCPrim:other"
 
 canCtorReprAppGC CR_Transparent = WillNotGC

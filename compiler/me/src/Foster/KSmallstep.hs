@@ -215,6 +215,7 @@ data IExpr =
         | ILetRec      [Ident] [SSTerm] SSTerm
         | IArrayRead    Ident   Ident
         | IArrayPoke    Ident   Ident Ident
+        | IArrayLit     Ident  [SSTerm]
         | IAllocArray   Ident
         | IIf           Ident   SSTerm     SSTerm
         | ICall         Ident  [Ident]
@@ -268,6 +269,7 @@ ssTermOfExpr expr =
                            -> SSTmExpr  $ IArrayRead (idOf a) (idOf b)
     KNArrayPoke _t (ArrayIndex b i _ _) v
                            -> SSTmExpr  $ IArrayPoke (idOf v) (idOf b) (idOf i)
+    KNArrayLit _t arr vals -> SSTmExpr  $ IArrayLit  (idOf arr) (map arrEntry vals)
     KNAllocArray _ety n    -> SSTmExpr  $ IAllocArray (idOf n)
     KNAlloc    _t a _rgn   -> SSTmExpr  $ IAlloc (idOf a)
     KNDeref    _t a        -> SSTmExpr  $ IDeref (idOf a)
@@ -277,6 +279,10 @@ ssTermOfExpr expr =
                                                                 |CaseArm p e g b r <- bs] []
     KNAppCtor     _t cr vs -> SSTmExpr  $ IAppCtor (fst cr) (map idOf vs)
     KNKillProcess _t msg   -> SSTmExpr  $ error $ "prim kill-process: " ++ T.unpack msg
+
+arrEntry (Right var) = SSTmExpr $ IVar $ tidIdent var
+arrEntry (Left (LitInt lit)) = SSTmValue $ SSInt $ litIntValue lit
+arrEntry other = error $ "KSmallstep.hs: Unsupported array entry type: " ++ show other
 
 -- ... which lifts in a  straightfoward way to procedure definitions.
 ssFunc f =
@@ -487,6 +493,18 @@ stepExpr gs expr = do
         SSTmExpr _  -> pushContext (withTerm gs ge)
                                      (envOf gs, \t -> SSTmExpr $ ICaseGuard t e (SMS oldgs) a bs rejectedPatterns)
 
+    IArrayLit arr entries ->
+      let args = map (evalTerm gs) entries
+          base = getval gs arr
+          go :: MachineState -> Int -> [SSValue] -> IO MachineState
+          go gs _ [] = return $ withTerm gs (SSTmValue base)
+          go gs n (val:vals) = do
+            gs' <- arrayPoke gs base n val
+            go gs' (n + 1) vals
+      in
+      go gs 0 args
+
+
     ICallPrim prim vs ->
         let args = map (getval gs) vs in
         case prim of
@@ -497,14 +515,6 @@ stepExpr gs expr = do
           PrimIntTrunc from to -> return $
               withTerm gs (SSTmValue $ evalPrimitiveIntTrunc from to args)
           CoroPrim prim _t1 _t2 -> evalCoroPrimitive prim gs args
-          PrimArrayLiteral -> let (base:vals) = args
-                                  go :: MachineState -> Int -> [SSValue] -> IO MachineState
-                                  go gs _ [] = return $ withTerm gs (SSTmValue base)
-                                  go gs n (val:vals) = do
-                                    gs' <- arrayPoke gs base n val
-                                    go gs' (n + 1) vals
-                              in
-                              go gs 0 vals
 
     ICall b vs ->
         let args = map (getval gs) vs in
@@ -575,7 +585,7 @@ type IntVW1 = Int128
 arraySlotLocation arr n = SSLocation (arr ! n)
 
 prim_arrayLength :: SSValue -> Int
-prim_arrayLength (SSArray a) = let (b,e) = bounds a in e - b
+prim_arrayLength (SSArray a) = let (b,e) = bounds a in e - b + 1
 prim_arrayLength (SSByteString bs) = BS.length bs
 prim_arrayLength _ = error "prim_arrayLength got non-array value!"
 

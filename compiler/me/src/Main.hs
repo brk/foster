@@ -422,7 +422,7 @@ compile pb_program tcenv =
 mergeModules :: WholeProgramAST FnAST TypeP
               -> Compiled (ModuleAST FnAST TypeP)
 mergeModules (WholeProgramAST modules) = do
-  liftIO $ putDocLn (pretty (head modules))
+  --liftIO $ putDocLn (pretty (head modules))
   return (foldr1 mergedModules modules)
   -- Modules are listed in reverse dependency order, conveniently.
   -- TODO track explicit module dependency graph, decompose to DAG, etc.

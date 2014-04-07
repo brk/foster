@@ -48,6 +48,8 @@ import Foster.Bepb.Module       as Module
 import Foster.Bepb.RootInit     as PbRootInit
 import Foster.Bepb.RootKill     as PbRootKill
 import Foster.Bepb.TupleStore   as PbTupleStore
+import Foster.Bepb.PbArrayEntry as PbArrayEntry
+import Foster.Bepb.PbArrayLiteral as PbArrayLiteral
 import Foster.Bepb.Letable.Tag
 import Foster.Bepb.PbCoroPrim.Tag
 import Foster.Bepb.PbCtorRepr.Tag
@@ -312,6 +314,22 @@ dumpExpr _ x@(ILArrayPoke (ArrayIndex b i rng sg) v) =
                     , PbLetable.prim_op_name = Just $ u8fromString $ highlightFirstLine rng
                     , PbLetable.type' = Just $ dumpType (typeOf x)  }
 
+dumpExpr _ _x@(ILArrayLit ty arr vals) =
+          let
+                (LLArrayType ety) = ty
+                dumpArrayValue (Right var) = P'.defaultValue { PbArrayEntry.var = Just $ dumpVar var }
+                dumpArrayValue (Left lit)  = P'.defaultValue { PbArrayEntry.lit = Just $ dumpLiteral ety lit }
+          in
+          P'.defaultValue {
+                      PbLetable.tag       = IL_ARRAY_LITERAL
+                    , PbLetable.type'     = Just $ dumpType ty
+                    , PbLetable.elem_type = Just $ dumpType ety
+                    , PbLetable.parts     = fromList [dumpVar arr]
+                    , PbLetable.array_lit = Just $ P'.defaultValue {
+                         PbArrayLiteral.entries = fromList (map dumpArrayValue vals)
+                      }
+          }
+
 dumpExpr maygc (ILCall t base args)
         = dumpCall t (dumpVar base)          args maygc ccs
   where stringOfCC FastCC = "fastcc"
@@ -340,15 +358,6 @@ dumpExpr _ (ILCallPrim t (PrimIntTrunc _from to) args)
         truncOp (IWord 0) = "trunc_w0"
         truncOp (IWord 1) = "trunc_w1"
         truncOp (IWord x) = error $ "Protobuf.hs: truncOp can't handle Word " ++ show x
-
-dumpExpr _ (ILCallPrim ty PrimArrayLiteral args)
-        = let (LLArrayType ety) = ty in
-          P'.defaultValue {
-                      PbLetable.tag       = IL_ARRAY_LITERAL
-                    , PbLetable.type'     = Just $ dumpType ty
-                    , PbLetable.elem_type = Just $ dumpType ety
-                    , PbLetable.parts     = fromList (map dumpVar args)
-          }
 
 dumpExpr _ (ILAppCtor _ _cinfo _) = error $ "ProtobufIL.hs saw ILAppCtor, which"
                                        ++ " should have been translated away..."

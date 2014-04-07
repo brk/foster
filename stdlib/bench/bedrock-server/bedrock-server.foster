@@ -26,18 +26,26 @@ foldRange = { forall t:Type,
   go fst init;
 };
 
+// The protobuf-haskell package takes nearly 15s to parse the 4MB protocol buffer
+// produced by the large array below, and requires extra stack space to avoid
+// running out of room...
+
 bedrock-server = {
   input : Array Int32 =>
   data  : Array Int32 =>
 
-  foldRange 0 (arrayLength32 input) Nil { pos => acc =>
+  inputLength = arrayLength32 input;
+
+  REC loop = { pos => acc =>
+   if pos >=SInt32 inputLength then acc else
     case prim subscript input pos
       of 0 ->
         index = prim subscript input (pos +Int32 1);
         valueLowerBound = prim subscript input (pos +Int32 2);
 
         val = prim subscript data index;
-        Cons (if val >=UInt32 valueLowerBound then 1 else 0 end) acc
+        loop (pos +Int32 3)
+            (Cons (if val >=UInt32 valueLowerBound then 1 else 0 end) acc)
 
       of 1 ->
         lowerBound = prim subscript input (pos +Int32 1);
@@ -51,21 +59,26 @@ bedrock-server = {
                 end
               };
 
-        Cons val acc
+        loop (pos +Int32 3)
+            (Cons val acc)
 
       of _ ->
         indexLowerBound = prim subscript input (pos +Int32 1);
         valueUpperBound = prim subscript input (pos +Int32 2);
 
-        foldRange indexLowerBound (arrayLength32 data) acc { i => accp =>
-          di = prim subscript data i;
-          if di <=UInt32 valueUpperBound
-            then Cons di accp
-            else accp
-          end
-        };
+        loop (pos +Int32 3)
+            (foldRange indexLowerBound (arrayLength32 data) acc { i => accp =>
+              di = prim subscript data i;
+              if di <=UInt32 valueUpperBound
+                then Cons di accp
+                else accp
+              end
+            });
     end
+   end
   };
+
+  loop 0 Nil
 };
 
 main = {
@@ -111,7 +124,6 @@ main = {
 0 107982 259912901 0 109655 30238628 2 18676 307060644 0 38051 144592696 1 676741890 656557088
 0 79878 452243127 0 2749 690878200 1 275173577 127761234 1 413571967 362563225 2 13592 557460684
 ;
-
 
   data = prim mach-array-literal
 89809344 994326685 290180182 366831641 332180439 641907500 781944104 930807020 308219921 844678370
@@ -673,7 +685,6 @@ main = {
 981145341 628092852 8830932 354257100 912641865 672174959 206102352 727889718 227543032 65608192
 880661354 494437087 449412142 753226400 379310957 325204153 822570451 357520751 911039813 379097213
 552147748 932313834 604678176 47826121 212513760 481651196 243977977 793259888 702927375 166542699
-/* HERO
 3079706 388798996 134016874 808810576 19086040 261020951 402995367 447516798 850790408 570304177
 97988740 964538553 718610860 295423394 502901694 532755112 557763536 757306645 45458256 971860684
 748596490 119917248 36002210 252808909 73775158 541827425 838717670 209182064 42946871 166553978
@@ -11115,10 +11126,10 @@ main = {
 852229084 531291780 638123716 593584970 422454839 934097412 259622329 689433431 412095836 321140237
 481493371 427634691 555909866 279227308 290736757 876151437 180609433 11654381 377612961 147277895
 312355924 371474175 684600842 355829881 538698383 724584224 451619149 756847825 691081546 444088934
-*/
        ;
 
   output = bedrock-server input data;
+
   REC loop = { xs =>
     case xs
       of $Nil -> ()

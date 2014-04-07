@@ -18,12 +18,12 @@ import qualified Data.Text as T
 import Text.PrettyPrint.ANSI.Leijen
 
 import Data.Map(Map)
-import Data.Map as Map(insert, lookup, alter, fromList, union, empty)
+import Data.Map as Map(lookup, alter, fromList, union, empty)
 import Data.Set(Set)
 import Data.Set as Set(member, insert, empty)
 import Data.List as List(all)
-import Control.Monad(liftM, liftM2, when)
-import Control.Monad.State(evalStateT, runStateT, get, gets, put, StateT, liftIO)
+import Control.Monad(when)
+import Control.Monad.State(runStateT, get, gets, put, StateT, liftIO)
 import Data.IORef
 
 -- This monomorphization pass is similar in structure to MLton's;
@@ -78,6 +78,7 @@ monoKN subst e =
   KNStore         t v1 v2  -> return $ KNStore         (qt t) (qv v1) (qv v2)
   KNArrayRead     t ai     -> return $ KNArrayRead     (qt t) (qa ai)
   KNArrayPoke     t ai v   -> return $ KNArrayPoke     (qt t) (qa ai) (qv v)
+  KNArrayLit      t arr vals -> return $ KNArrayLit    (qt t) (qv arr) (mapRight qv vals)
   KNVar                  v -> return $ KNVar                  (qv v)
   -- The cases involving sub-expressions are syntactically heavier,
   -- but are still basically trivially inductive.

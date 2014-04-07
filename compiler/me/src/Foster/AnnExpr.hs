@@ -44,7 +44,7 @@ data AnnExpr ty =
         | AnnStore      ExprAnnot ty (AnnExpr ty) (AnnExpr ty)
         -- Array operations
         | AnnAllocArray ExprAnnot ty (AnnExpr ty) ty
-        | AnnArrayLit   ExprAnnot ty [AnnExpr ty]
+        | AnnArrayLit   ExprAnnot ty [Either Literal (AnnExpr ty)]
         | AnnArrayRead  ExprAnnot ty (ArrayIndex (AnnExpr ty))
         | AnnArrayPoke  ExprAnnot ty (ArrayIndex (AnnExpr ty)) (AnnExpr ty)
         -- Terms indexed by types
@@ -135,7 +135,7 @@ instance Structured (AnnExpr TypeAST) where
       AnnDeref     _rng _t a               -> [a]
       AnnStore     _rng _t a b             -> [a, b]
       AnnAllocArray _rng _ e _             -> [e]
-      AnnArrayLit  _rng _t exprs           -> exprs
+      AnnArrayLit  _rng _t exprs           -> rights exprs
       AnnArrayRead _rng _t ari             -> childrenOfArrayIndex ari
       AnnArrayPoke _rng _t ari c           -> childrenOfArrayIndex ari ++ [c]
       AnnTuple _rng _ exprs                -> exprs
@@ -143,6 +143,11 @@ instance Structured (AnnExpr TypeAST) where
       E_AnnVar {}                          -> []
       AnnPrimitive {}                      -> []
       E_AnnTyApp _rng _t a _argty          -> [a]
+
+rights :: [Either a b] -> [b]
+rights [] = []
+rights (x:xs) = case x of Left _  -> rights xs
+                          Right z -> z:(rights xs)
 
 -----------------------------------------------------------------------
 

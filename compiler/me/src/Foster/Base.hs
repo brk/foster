@@ -249,6 +249,8 @@ data LiteralFloat = LiteralFloat { litFloatValue   :: Double
                                  , litFloatText    :: String
                                  } deriving (Show, Eq)
 
+powersOfTwo = [2^k | k <- [1..]]
+
 mkLiteralIntWithTextAndBase integerValue originalText base =
   LiteralInt     integerValue activeBits originalText base
     where
@@ -256,7 +258,8 @@ mkLiteralIntWithTextAndBase integerValue originalText base =
              if integerValue == -2147483648 then 32 -- handle edge cases directly
                else if integerValue == -9223372036854775808 then 64
                  else bitLengthOf (abs integerValue) + signOf integerValue
-        bitLengthOf n = go n 1 where go n k = if n < 2^k then k else go n (k+1)
+        bitLengthOf n = go 1 powersOfTwo where
+                        go k (pow2k:pows) = if n < pow2k then k else go (k+1) pows
         signOf x = if x < 0 then 1 else 0
 
 instance Pretty Literal where
@@ -534,6 +537,23 @@ mapAllFromList :: Ord k => [(k, a)] -> Map k [a]
 mapAllFromList pairs =
   Map.fromListWith (++) (map (\(k,a) -> (k, [a])) pairs)
 
+data ArrayEntry e = AE_Int ExprAnnot String
+                  | AE_Expr e
+                  deriving Show
+
+mapArrayEntryM :: Monad m => (a -> m b) -> [ArrayEntry a] -> m [ArrayEntry b]
+mapArrayEntryM action lst = mapM (\ei -> case ei of AE_Int a s -> return (AE_Int a s)
+                                                    AE_Expr e  -> action e >>= return . AE_Expr) lst
+
+mapRight :: (a -> b) -> [Either x a] -> [Either x b]
+mapRight action lst = map (\ei -> case ei of Left x -> Left x
+                                             Right a -> Right $ action a) lst
+
+mapRightM :: Monad m => (a -> m b) -> [Either x a] -> m [Either x b]
+mapRightM action lst = mapM (\ei -> case ei of Left x -> return (Left x)
+                                               Right a -> action a >>= return . Right) lst
+
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- |||||||||||||||||||||||||| Idents |||||||||||||||||||||||||||{{{
 
@@ -548,7 +568,6 @@ data TypedId ty = TypedId { tidType :: ty, tidIdent :: Ident }
 data FosterPrim ty = NamedPrim (TypedId ty) -- invariant: global symbol
                    | PrimOp { ilPrimOpName :: String
                             , ilPrimOpType :: ty }
-                   | PrimArrayLiteral
                    | PrimIntTrunc IntSizeBits IntSizeBits -- from, to
                    | CoroPrim  CoroPrim ty ty
 
@@ -724,7 +743,6 @@ instance Pretty ty => Pretty (E_VarAST ty) where
 instance Pretty t => Pretty (FosterPrim t) where
   pretty (NamedPrim (TypedId _ i)) = text (show i)
   pretty (PrimOp nm _ty) = text nm
-  pretty PrimArrayLiteral = text "prim mach-array-lit"
   pretty (PrimIntTrunc frm to) = text ("trunc from " ++ show frm ++ " to " ++ show to)
   pretty (CoroPrim c t1 t2) = pretty c <> text ":[" <> pretty t1
                                        <> text "," <+> pretty t2

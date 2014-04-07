@@ -280,6 +280,7 @@ getCensus bbg = let cf = getCensusFns bbg in
         ILArrayRead  _t (ArrayIndex v1 v2 _rng _s) -> addUsed m [(v1, UsedFirstClass), (v2, UsedFirstClass)]
         ILArrayPoke  (ArrayIndex v1 v2 _rng _s) v3 -> addUsed m [(v1, UsedFirstClass), (v2, UsedFirstClass),
                                                                  (v3, UsedFirstClass)]
+        ILArrayLit _t arr vals -> addUsed m ([(arr, UsedFirstClass)] ++ [(v, UsedFirstClass) | Right v <- vals])
         ILAllocate {}            -> m -- Might have been introduced by KNLetRec.
         ILCall         _ v _vs   -> error $ "census encountered non-tail ILCall of " ++ show v
 
