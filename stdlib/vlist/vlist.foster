@@ -2,6 +2,13 @@ snafuinclude List "list";
 snafuinclude Maybe "maybe";
 snafuinclude Prelude "prelude";
 
+// Implementation of Phil Bagwell's VList data structure:
+//   http://en.wikipedia.org/wiki/VList
+// paper:
+//   http://infoscience.epfl.ch/record/64410/files/techlists.pdf
+
+// For now, the underlying storage is a List rather than any form of array.
+
 type case VList (a:Type)
        of $VList Int32 (VListBase a) Int32
        ;
@@ -9,6 +16,10 @@ type case VList (a:Type)
 type case VListBase (a:Type)
        of $VListBase (Maybe (VListBase a)) (List a)
        ;
+
+// The first integer in a VList is called "offset" but really caches the
+// length of the list in the associated base, so that we know when to
+// extend the base chain.
 
 mkEmptyVList :: forall a:Type, { VList a };
 mkEmptyVList =  { forall a:Type,
@@ -110,7 +121,7 @@ vListGet =  { forall a:Type, v => i =>
     case base of ($VListBase prev elems) ->
       case prev
         of $Some prevbase ->
-          if i >=SInt32 newsize
+          if idx >=SInt32 newsize
             then helper-loop (idx -Int32 newsize) (newsize `sdiv-Int32` 2) prevbase
             else listGet elems idx
           end
@@ -163,20 +174,56 @@ vListReverse = { forall a:Type, v =>
 
 // Uses O(1) stack, and heap proportional to whatever f allocates.
 vListFoldl :: forall a:Type, e:Type, { VList e => { e => a => a } => a => a };
-vListFoldl = { forall a:Type e:Type, v => f => acc : a =>
+vListFoldl = { v => f => acc =>
+  REC foldBase = { mb_base : Maybe (VListBase e) => acc : a =>
+    case mb_base
+     of $None                         -> acc
+     of $Some ($VListBase prev elems) -> foldBase prev (listFoldl elems f acc)
+    end
+  };
+
+  case v of $VList offset base size -> foldBase (Some base) acc end
+};
+
+// Uses O(1) stack, and heap proportional to whatever f allocates.
+vListFoldlAlt :: forall a:Type, e:Type, { VList e => { e => a => a } => a => a };
+vListFoldlAlt = { v => f => acc =>
   case vListSplit v
     of $None              -> acc
-    of $Some (head, tail) -> vListFoldl tail f (f head acc)
+    of $Some (head, tail) -> vListFoldlAlt tail f (f head acc)
   end
 };
 
-// Uses O(n) stack, and heap proportional to whatever f allocates.
-vListFoldr :: forall a:Type, e:Type, { VList e => { e => a => a } => a => a };
-vListFoldr = { forall a:Type e:Type, v => f => acc =>
-  case vListSplit v
-    of $None -> acc
-    of $Some (head, tail) -> f head (vListFoldr tail f acc)
+listShow = { forall t:Type, x : List t => show : { t => Text } =>
+  REC go = { txt => xs =>
+    case xs of $Nil -> mkTextConcat txt ")"
+            of $Cons v zs -> go (mkTextConcat txt (mkTextConcat " " (show v))) zs
+    end
+  };
+
+  case x of $Nil -> "()"
+         of $Cons v xs -> go (mkTextConcat "(list " (show v)) xs
   end
+};
+
+// Uses O(log n) stack, and heap O(n) + proportional to whatever f allocates.
+vListFoldr :: forall a:Type, e:Type, { VList e => { e => a => a } => a => a };
+vListFoldr = { v => f => acc =>
+  REC foldBase = { mb_base : Maybe (VListBase e) => acc : a =>
+    case mb_base
+     of $None                         -> acc
+     of $Some ($VListBase prev elems) -> listFoldr elems f (foldBase prev acc)
+    end
+  };
+
+  case v of $VList offset base size -> foldBase (Some base) acc end
+};
+
+// Uses O(1) stack, and heap O(n) + proportional to whatever f allocates.
+// The constant factor is roughly 5x worse than vListFoldr.
+vListFoldrAlt :: forall a:Type, e:Type, { VList e => { e => a => a } => a => a };
+vListFoldrAlt = { forall a:Type e:Type, v => f => acc =>
+  vListFoldl (vListReverse v) f acc
 };
 
 // Note: the order in which the elements are mapped over
@@ -188,12 +235,10 @@ vListMap = { forall a:Type e:Type, v => f =>
 
 vListOfList :: forall a:Type, { List a => VList a };
 vListOfList = { forall a:Type, v =>
-  // Because we fold from the left, the left-most element is the first
-  // one vConsed onto vNil, so it becomes the last element of the new list.
-  listFoldl (listReverse v) vListCons (mkEmptyVList !)
+  listFoldr v vListCons (mkEmptyVList !)
 };
 
 listOfVList :: forall a:Type, { VList a => List a };
 listOfVList = { forall a:Type, v =>
-  vListFoldl (vListReverse v) Cons Nil
+  vListFoldr v Cons Nil
 };

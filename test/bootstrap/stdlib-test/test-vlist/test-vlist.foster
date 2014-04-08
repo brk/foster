@@ -98,16 +98,60 @@ test-Int32-vlist = {
   expect_text "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, ]";
   print_uil (listOfVList (vListOfList lst));
 
+  expect_maybe_i32 = { mi =>
+    case mi of $None ->   expect_text "<None>";
+            of $Some i -> expect_i32 i;
+    end
+  };
+  print_maybe_i32 = { mi =>
+    case mi of $None -> print_text "<None>";
+            of $Some i -> print_i32 i;
+    end
+  };
 
-  // TODO large VList runtime - why?
+  v = vListOfList lst;
+  expect_maybe_i32 (Some 0);
+  print_maybe_i32 (vListGet v 0);
+
+  expect_maybe_i32 (Some 1);
+  print_maybe_i32 (vListGet v 1);
+
+  expect_maybe_i32 (Some 2);
+  print_maybe_i32 (vListGet v 2);
+
+  expect_maybe_i32 (Some 3);
+  print_maybe_i32 (vListGet v 3);
+
+  expect_maybe_i32 (Some 4);
+  print_maybe_i32 (vListGet v 4);
+
+  expect_maybe_i32 (Some 5);
+  print_maybe_i32 (vListGet v 5);
+
+  expect_maybe_i32 (Some 6);
+  print_maybe_i32 (vListGet v 6);
+
+  expect_maybe_i32 (Some 7);
+  print_maybe_i32 (vListGet v 7);
+
+  expect_maybe_i32 (Some 8);
+  print_maybe_i32 (vListGet v 8);
+
+  expect_maybe_i32 (Some 9);
+  print_maybe_i32 (vListGet v 9);
+
+  //// TODO large VList runtime - why?
+  //print_text "scaling of list operations:";
   //print_i64 (elapsed_ticks_n 1 { foldRange 0 100    Nil { e => t => Cons (BoxedInt32 e) t }; () });
   //print_i64 (elapsed_ticks_n 1 { foldRange 0 1000   Nil { e => t => Cons (BoxedInt32 e) t }; () });
   //print_i64 (elapsed_ticks_n 1 { foldRange 0 10000  Nil { e => t => Cons (BoxedInt32 e) t }; () });
-  //
+  ////print_i64 (elapsed_ticks_n 1 { foldRange 0 100000 Nil { e => t => Cons (BoxedInt32 e) t }; () });
+  ////
+  //print_text "scaling of VList operations:";
   //print_i64 (elapsed_ticks_n 1 { foldRange 0 100    (mkEmptyVList !) { e => t => vListCons (BoxedInt32 e) t }; () });
   //print_i64 (elapsed_ticks_n 1 { foldRange 0 1000   (mkEmptyVList !) { e => t => vListCons (BoxedInt32 e) t }; () });
   //print_i64 (elapsed_ticks_n 1 { foldRange 0 10000  (mkEmptyVList !) { e => t => vListCons (BoxedInt32 e) t }; () });
-
-  // TODO need larger heap to run this test:
-  //print_i64 (elapsed_ticks_n 1 { foldRange 0 100000 Nil { e => t => Cons (BoxedInt32 e) t }; () });
+  //
+  //// TODO need larger heap to run this test:
+  ////print_i64 (elapsed_ticks_n 1 { foldRange 0 100000 Nil { e => t => Cons (BoxedInt32 e) t }; () });
 };

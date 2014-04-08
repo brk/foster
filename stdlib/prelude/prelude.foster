@@ -100,6 +100,13 @@ foldRange = { forall t:Type,
 
 /////
 
+arrayFoldl :: forall t:Type, a:Type, { Array t => { t => a => a } => a => a };
+arrayFoldl = { arr => f => acc =>
+  foldRange 0 (arrayLength32 arr) acc { n : Int32 => acc => f arr[n] acc }
+};
+
+/////
+
 bitlength-Int64 :: { Int64 => Int32 };
 bitlength-Int64 = { k =>
   rec go = { x => acc =>
@@ -236,21 +243,34 @@ arrayLength32 = { forall t:Type, a : Array t =>
   trunc_i64_to_i32 (prim_arrayLength a)
 };
 
+arrayLengthWord :: forall x:Type, { Array x => Word };
+arrayLengthWord = { forall t:Type, a : Array t =>
+  trunc_i64_to_Word (prim_arrayLength a)
+};
+
+arrayEnumFromTo = { forall t:Type,
+                  a : Array t =>
+                  k : Int64 =>
+                  x : Int64 =>
+                  f : { t => Int64 => () } =>
+  if k <SInt64 x
+    then f a[trunc_i64_to_i32 k] k;
+         arrayEnumFromTo a (incr64 k) x f
+    else ()
+  end
+};
+
 arrayEnumFrom = { forall t:Type,
                   a : Array t =>
                   k : Int64 =>
                   f : { t => Int64 => () } =>
-  if k <SInt64 prim_arrayLength a
-    then f a[trunc_i64_to_i32 k] k;
-         arrayEnumFrom a (incr64 k) f
-    else ()
-  end
+  arrayEnumFromTo a k (arrayLength a) f
 };
 
 arrayEnum = { forall t:Type,
               a : Array t =>
               f : { t => Int64 => () } =>
-  arrayEnumFrom a 0 f
+  arrayEnumFromTo a 0 (arrayLength a) f
 };
 
 /*

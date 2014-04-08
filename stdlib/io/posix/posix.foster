@@ -9,8 +9,10 @@ type case IORead
       of $IOReadError Bytes
 ;
 
-read_stdin_bytes = {
-  arr   = allocDArray:[Int8] 1024;
+
+read_stdin_bytes :: { Int32 => IORead };
+read_stdin_bytes = { size =>
+  arr   = allocDArray:[Int8] size;
   rstatus = (ref 0);
   nread = foster_stdin_read_bytes arr rstatus;
   bytes = bytesTake (bytesOfRawArray arr) nread;

@@ -74,6 +74,22 @@ listKeepIf = { forall a:Type, v => f =>
   listFoldl (listReverse v) { e => tail => if f e then Cons e tail else tail end } Nil;
 };
 
+// Precondition: n <= listLength xs
+listDrop! = { forall t:Type, n : Int32 => xs : List t =>
+  if n >SInt32 0
+    then listDrop! (n -Int32 1) (listTail! xs)
+    else xs
+  end
+};
+
+// This function converges to Nil.
+listDrop = { forall t:Type, n : Int32 => xs : List t =>
+  if n >SInt32 0
+    then listDrop (n -Int32 1) (case xs of $Nil -> xs of $Cons z zs -> zs end)
+    else xs
+  end
+};
+
 listLength64 = { forall t:Type, xs : List t =>
   REC go = { xs => acc =>
     case xs
