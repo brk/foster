@@ -9,3 +9,13 @@
 * Semispace memory is initialized to 0x66, so a SIGSEGV crash with an address of
   mostly 6's means a read of uninitialized memory.
 * When semispace memory is cleared, it is changed to 0xFE.
+* To see where allocations are coming from, compile with
+  ``--be-arg=-gc-track-alloc-sites``.
+  This will cause the compiler to emit calls to ``record_memalloc_cell`` before
+  each allocation, which will in turn cause dump_stats() to emit extra information
+  about call site distribution. By default, dump_stats() goes to ``gclog.txt``.
+* Inlining is disabled by default, even with ``--optimize=O2`` (because
+  ``--optimize`` is for the backend (LLVM), not the middle end (Haskell).
+  Use ``--me-arg=--inline`` to enable it.
+* To see monomorphized, inlined, and loop-headered variants of the input program,
+  use ``--me-arg=--dump-ir=mono``.
