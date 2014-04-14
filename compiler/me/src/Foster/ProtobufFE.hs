@@ -84,8 +84,11 @@ parseCall pbexpr rng = do
     case base of
       (E_VarAST _ (VarAST _ name)) | name == T.pack "|>" ->
         case args of
+          -- foo froz |> bar baz ~~~> bar baz (foo froz)
           [eexpr, E_CallAST _rng subbase subargs] | not (Prelude.null subargs)
                         -> return $ E_CallAST rng subbase (subargs ++ [eexpr])
+          -- foo |> bar !   ~~~> (bar !) foo
+          -- foo |> bar     ~~~> (bar  ) foo
           [eexpr, rest] -> return $ E_CallAST rng rest [eexpr]
       _ -> return $ E_CallAST rng base args
 
