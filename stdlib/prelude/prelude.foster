@@ -2,6 +2,8 @@ snafuinclude List "list";
 snafuinclude Ord  "ord";
 snafuinclude Text "text";
 snafuinclude Primitives "primitives";
+snafuinclude PreludeFixnums "prelude-fixnums";
+snafuinclude PreludeFolds   "prelude-folds";
 
 // TODO test codegen of not_ vs primitive not
 not_   = { a : Bool => if a then False else True end };
@@ -63,76 +65,6 @@ cmpSWord = { a : Word => b : Word =>
   if a ==Word b
   then EQ
   else if a <SWord b then LT else GT end
-  end
-};
-
-/////
-
-// Precondition: fst >= fin
-//
-foldRangeDown = { forall t:Type,
-              fst : Int32 =>
-              fin : Int32 =>
-              init : t =>
-              iter : { Int32 => t => t } =>
-  REC frd =  { n : Int32 => acc : t =>
-                if n >=SInt32 fin then
-                  frd (n -Int32 1) (iter n acc)
-                else acc end
-            };
-  frd fst init
-};
-
-// Precondition: fst <= fin
-//
-foldRange = { forall t:Type,
-              fst : Int32 =>
-              fin : Int32 =>
-              init : t =>
-              iter : { Int32 => t => t } =>
-  REC go = { n : Int32 => acc : t =>
-      if n >=SInt32 fin then acc else
-        go (n +Int32 1) (iter n acc)
-      end
-  };
-  go fst init;
-};
-
-/////
-
-arrayFoldl :: forall t:Type, a:Type, { Array t => { t => a => a } => a => a };
-arrayFoldl = { arr => f => acc =>
-  foldRange 0 (arrayLength32 arr) acc { n : Int32 => acc => f arr[n] acc }
-};
-
-/////
-
-bitlength-Int64 :: { Int64 => Int32 };
-bitlength-Int64 = { k =>
-  rec go = { x => acc =>
-                 if x ==Int64 0
-                   then acc
-                   else go (bitlshr-Int64 x 1) (acc +Int32 1)
-                 end
-           };
-  in
-    go k 0
-  end
-};
-
-// TODO should this be called wordCountBits instead?
-// Note: this function implements the function called _BitScanReverse,
-//       which is equal to llvm.ctlz(0, 0) - llvm.ctlz(k, 0).
-bitlength-Word :: { Word => Int32 };
-bitlength-Word = { k =>
-  rec go = { x => acc =>
-                 if x ==Word 0
-                   then acc
-                   else go (bitlshr-Word x 1) (acc +Int32 1)
-                 end
-           };
-  in
-    go k 0
   end
 };
 
@@ -231,55 +163,7 @@ textOfASCII8 = { n : Int8 =>
   TextFragment a 1
 };
 
-////
-
-arrayLength :: forall x:Type, { Array x => Int64 };
-arrayLength = { forall t:Type, a : Array t =>
-  prim_arrayLength a
-};
-
-arrayLength32 :: forall x:Type, { Array x => Int32 };
-arrayLength32 = { forall t:Type, a : Array t =>
-  trunc_i64_to_i32 (prim_arrayLength a)
-};
-
-arrayLengthWord :: forall x:Type, { Array x => Word };
-arrayLengthWord = { forall t:Type, a : Array t =>
-  trunc_i64_to_Word (prim_arrayLength a)
-};
-
-arrayEnumFromTo = { forall t:Type,
-                  a : Array t =>
-                  k : Int64 =>
-                  x : Int64 =>
-                  f : { t => Int64 => () } =>
-  if k <SInt64 x
-    then f a[trunc_i64_to_i32 k] k;
-         arrayEnumFromTo a (incr64 k) x f
-    else ()
-  end
-};
-
-arrayEnumFrom = { forall t:Type,
-                  a : Array t =>
-                  k : Int64 =>
-                  f : { t => Int64 => () } =>
-  arrayEnumFromTo a k (arrayLength a) f
-};
-
-arrayEnum = { forall t:Type,
-              a : Array t =>
-              f : { t => Int64 => () } =>
-  arrayEnumFromTo a 0 (arrayLength a) f
-};
-
-/*
-arrayEach = { forall t:Type,
-              a : Array t =>
-              f : { t => () } =>
-  arrayEnum a { ign:Int64 => v:t => f v };
-};
-*/
+/////
 
 // Initializes slot a[k] with f (k + 1)
 newDArray = { forall v:Type,
@@ -335,30 +219,6 @@ min-SInt64 = { a : Int64 => b : Int64 =>
 
 min-UInt64 = { a : Int64 => b : Int64 =>
   if a <UInt64 b then a else b end
-};
-
-minReprInt32 :: { Int32 };
-minReprInt32 = { -2`147`483`648 };
-
-maxReprInt32 :: { Int32 };
-maxReprInt32 = {  2`147`483`647 };
-
-minReprInt64 :: { Int64 };
-minReprInt64 = { -9`223`372`036`854`775`808 };
-
-maxReprInt64 :: { Int64 };
-maxReprInt64 = {  9`223`372`036`854`775`807 };
-
-octet4ToInt32 = { hi : Int8 => m1 : Int8 => m2 : Int8 => lo : Int8 =>
-  (((zext_i8_to_i32 hi) `bitshl-Int32` 24)  `bitor-Int32`
-   ((zext_i8_to_i32 m1) `bitshl-Int32` 16)) `bitor-Int32`
-  (((zext_i8_to_i32 m2) `bitshl-Int32` 8)   `bitor-Int32`
-    (zext_i8_to_i32 lo))
-};
-
-mergeInt32 = { hi : Int32 => lo : Int32 =>
-  ((zext_i32_to_i64 hi) `bitshl-Int64` 32)  `bitor-Int64`
-   (zext_i32_to_i64 lo)
 };
 
 ////
@@ -524,7 +384,18 @@ dropRawBytes = { a : Array Int8 => d : Int32 =>
 };
 
 high32BitsOf64 = { n : Int64 =>
-  trunc_i64_to_i32 (bitlshr-Int64 n 32)
+  bitlshr-Int64 n 32 |> trunc_i64_to_i32
+};
+
+high16BitsOf32 = { n : Int32 =>
+  bitlshr-Int32 n 16
+};
+
+splitInt32 :: { Int32 => (Int32, Int32) };
+splitInt32 = { n =>
+  highbits = high16BitsOf32 n;
+  lowbits  = high16BitsOf32 (bitshl-Int32 n 16);
+  (highbits, lowbits)
 };
 
 splitInt64 :: { Int64 => (Int32, Int32) };
@@ -600,89 +471,3 @@ f64-to-u32! = { a : Float64 => prim f64-to-u32-unsafe a };
 // Precondition: a < 1073741820.5 && a > -1073741820.5
 f64-to-s32! = { a : Float64 => prim f64-to-s32-unsafe a };
 
-////
-
-// Precondition: b != 0
-udiv!-Int32    = { a : Int32    => b : Int32    => prim udiv-unsafe-Int32 a b }; // :: Int32
-
-// Precondition: b != 0
-udiv!-Int64    = { a : Int64    => b : Int64    => prim udiv-unsafe-Int64 a b }; // :: Int64
-
-// Precondition: b != 0
-udiv!-Int8     = { a : Int8     => b : Int8     => prim udiv-unsafe-Int8 a b }; // :: Int8
-
-// Precondition: b != 0
-udiv!-Word     = { a : Word     => b : Word     => prim udiv-unsafe-Word a b }; // :: Word
-
-// Precondition: b != 0
-udiv!-WordX2   = { a : WordX2   => b : WordX2   => prim udiv-unsafe-WordX2 a b }; // :: WordX2
-
-// Precondition: b != 0
-urem!-Int32    = { a : Int32    => b : Int32    => prim urem-unsafe-Int32 a b }; // :: Int32
-
-// Precondition: b != 0
-urem!-Int64    = { a : Int64    => b : Int64    => prim urem-unsafe-Int64 a b }; // :: Int64
-
-// Precondition: b != 0
-urem!-Int8     = { a : Int8     => b : Int8     => prim urem-unsafe-Int8 a b }; // :: Int8
-
-// Precondition: b != 0
-urem!-Word     = { a : Word     => b : Word     => prim urem-unsafe-Word a b }; // :: Word
-
-// Precondition: b != 0
-urem!-WordX2   = { a : WordX2   => b : WordX2   => prim urem-unsafe-WordX2 a b }; // :: WordX2
-
-///
-
-// Precondition: b != 0
-sdiv!-Int32    = { a : Int32    => b : Int32    => prim udiv-unsafe-Int32 a b }; // :: Int32
-
-// Precondition: b != 0
-sdiv!-Int64    = { a : Int64    => b : Int64    => prim udiv-unsafe-Int64 a b }; // :: Int64
-
-// Precondition: b != 0
-sdiv!-Int8     = { a : Int8     => b : Int8     => prim udiv-unsafe-Int8 a b }; // :: Int8
-
-// Precondition: b != 0
-sdiv!-Word     = { a : Word     => b : Word     => prim udiv-unsafe-Word a b }; // :: Word
-
-// Precondition: b != 0
-sdiv!-WordX2   = { a : WordX2   => b : WordX2   => prim udiv-unsafe-WordX2 a b }; // :: WordX2
-
-// Precondition: b != 0
-srem!-Int32    = { a : Int32    => b : Int32    => prim urem-unsafe-Int32 a b }; // :: Int32
-
-// Precondition: b != 0
-srem!-Int64    = { a : Int64    => b : Int64    => prim urem-unsafe-Int64 a b }; // :: Int64
-
-// Precondition: b != 0
-srem!-Int8     = { a : Int8     => b : Int8     => prim urem-unsafe-Int8 a b }; // :: Int8
-
-// Precondition: b != 0
-srem!-Word     = { a : Word     => b : Word     => prim urem-unsafe-Word a b }; // :: Word
-
-// Precondition: b != 0
-srem!-WordX2   = { a : WordX2   => b : WordX2   => prim urem-unsafe-WordX2 a b }; // :: WordX2
-
-////
-
-urem-Int32  = { a : Int32  => b : Int32  => prim urem-unsafe-Int32  a b };
-urem-Int64  = { a : Int64  => b : Int64  => prim urem-unsafe-Int64  a b };
-urem-Int8   = { a : Int8   => b : Int8   => prim urem-unsafe-Int8   a b };
-urem-Word   = { a : Word   => b : Word   => prim urem-unsafe-Word   a b };
-urem-WordX2 = { a : WordX2 => b : WordX2 => prim urem-unsafe-WordX2 a b };
-udiv-Int32  = { a : Int32  => b : Int32  => prim udiv-unsafe-Int32  a b };
-udiv-Int64  = { a : Int64  => b : Int64  => prim udiv-unsafe-Int64  a b };
-udiv-Int8   = { a : Int8   => b : Int8   => prim udiv-unsafe-Int8   a b };
-udiv-Word   = { a : Word   => b : Word   => prim udiv-unsafe-Word   a b };
-udiv-WordX2 = { a : WordX2 => b : WordX2 => prim udiv-unsafe-WordX2 a b };
-srem-Int32  = { a : Int32  => b : Int32  => prim srem-unsafe-Int32  a b };
-srem-Int64  = { a : Int64  => b : Int64  => prim srem-unsafe-Int64  a b };
-srem-Int8   = { a : Int8   => b : Int8   => prim srem-unsafe-Int8   a b };
-srem-Word   = { a : Word   => b : Word   => prim srem-unsafe-Word   a b };
-srem-WordX2 = { a : WordX2 => b : WordX2 => prim srem-unsafe-WordX2 a b };
-sdiv-Int32  = { a : Int32  => b : Int32  => prim sdiv-unsafe-Int32  a b };
-sdiv-Int64  = { a : Int64  => b : Int64  => prim sdiv-unsafe-Int64  a b };
-sdiv-Int8   = { a : Int8   => b : Int8   => prim sdiv-unsafe-Int8   a b };
-sdiv-Word   = { a : Word   => b : Word   => prim sdiv-unsafe-Word   a b };
-sdiv-WordX2 = { a : WordX2 => b : WordX2 => prim sdiv-unsafe-WordX2 a b };

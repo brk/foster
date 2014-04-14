@@ -1,0 +1,98 @@
+
+// Precondition: fst >= fin
+//
+foldRangeDown = { forall t:Type,
+              fst : Int32 =>
+              fin : Int32 =>
+              init : t =>
+              iter : { Int32 => t => t } =>
+  REC frd =  { n : Int32 => acc : t =>
+                if n >=SInt32 fin then
+                  frd (n -Int32 1) (iter n acc)
+                else acc end
+            };
+  frd fst init
+};
+
+// Precondition: fst <= fin
+//
+foldRange = { forall t:Type,
+              fst : Int32 =>
+              fin : Int32 =>
+              init : t =>
+              iter : { Int32 => t => t } =>
+  REC go = { n : Int32 => acc : t =>
+      if n >=SInt32 fin then acc else
+        go (n +Int32 1) (iter n acc)
+      end
+  };
+  go fst init;
+};
+
+/////
+
+arrayFoldl :: forall t:Type, a:Type, { Array t => { t => a => a } => a => a };
+arrayFoldl = { arr => f => acc =>
+  arrayFoldlFrom arr 0 f acc
+};
+
+arrayFoldlFrom :: forall t:Type, a:Type, { Array t => Int32 => { t => a => a } => a => a };
+arrayFoldlFrom = { arr => offset => f => acc =>
+  arrayFoldlFromTo arr offset (arrayLength32 arr) f acc
+};
+
+arrayFoldlFromTo :: forall t:Type, a:Type, { Array t => Int32 => Int32 => { t => a => a } => a => a };
+arrayFoldlFromTo = { arr => offset => len => f => acc =>
+  foldRange offset len acc { n : Int32 => acc => f arr[n] acc }
+};
+
+////
+
+arrayLength :: forall x:Type, { Array x => Int64 };
+arrayLength = { forall t:Type, a : Array t =>
+  prim_arrayLength a
+};
+
+arrayLength32 :: forall x:Type, { Array x => Int32 };
+arrayLength32 = { forall t:Type, a : Array t =>
+  trunc_i64_to_i32 (prim_arrayLength a)
+};
+
+arrayLengthWord :: forall x:Type, { Array x => Word };
+arrayLengthWord = { forall t:Type, a : Array t =>
+  trunc_i64_to_Word (prim_arrayLength a)
+};
+
+arrayEnumFromTo = { forall t:Type,
+                  a : Array t =>
+                  k : Int64 =>
+                  x : Int64 =>
+                  f : { t => Int64 => () } =>
+  if k <SInt64 x
+    then f a[trunc_i64_to_i32 k] k;
+         arrayEnumFromTo a (incr64 k) x f
+    else ()
+  end
+};
+
+arrayEnumFrom = { forall t:Type,
+                  a : Array t =>
+                  k : Int64 =>
+                  f : { t => Int64 => () } =>
+  arrayEnumFromTo a k (arrayLength a) f
+};
+
+arrayEnum = { forall t:Type,
+              a : Array t =>
+              f : { t => Int64 => () } =>
+  arrayEnumFromTo a 0 (arrayLength a) f
+};
+
+/*
+arrayEach = { forall t:Type,
+              a : Array t =>
+              f : { t => () } =>
+  arrayEnum a { ign:Int64 => v:t => f v };
+};
+*/
+

@@ -143,3 +143,22 @@ Other libraries/tools:
 
         hprotoc:    http://hackage.haskell.org/package/hprotoc
 
+Networking
+==========
+
+On Linux:
+
+        sudo ip tuntap add tun8 mode tun  # For IP-format frames
+        sudo ip link   set tun8 up
+        sudo ip addr   add 192.168.0.2/24 dev tun8
+        Process open()s /dev/net/tun, then calls ioctl() with TUNSETIFF
+                to get a fd for tun8
+        (once a process is blocked reading from tun8:)
+        ping 192.168.0.42 # if we ping 0.2 the kernel delivers packets to lo
+
+On Mac OS X, first install tuntaposx <http://tuntaposx.sourceforge.net/>, then:
+
+        Process open()s /dev/tun8
+        Process calls system(sudo ifconfig tun8 192.168.0.41 192.168.0.42)
+        ping 192.168.0.42
+

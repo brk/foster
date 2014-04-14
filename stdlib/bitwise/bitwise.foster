@@ -43,8 +43,16 @@ bitmerge-Int32 = { mask:Int32 => a:Int32 => b:Int32 =>
 //      fin - start <= 32
 //            start <= 32
 bitfield-Int32 = { n:Int32 => start:Int32 => fin:Int32 =>
-  bitand-Int32 (bitnot-Int32 (bitshl-Int32 -1 (fin -Int32 start)))
-               (bitashr-Int32 n start);
+  bitfield-len-Int32 n start (fin -Int32 start)
+};
+
+// Preconditions:
+//      len + start <= 32
+//            start <= 32
+// Example: bitfield-len-Int32 1110111001100_2 3 8 == 10111001_2
+bitfield-len-Int32 = { n:Int32 => start:Int32 => len:Int32 =>
+  bitand-Int32 (bitnot-Int32 (bitshl-Int32 -1 len))
+               (bitlshr-Int32 n start);
 };
 
 any-common-bits-Int32 = { j : Int32 => k : Int32 =>
@@ -137,4 +145,36 @@ bit-field-reverse-Int32 = { n : Int32 => start : Int32 => fin : Int32 =>
 
   bitor-Int32 (bitshl-Int32 (bit-reverse-Int32 width zn) start)
               (bitand-Int32 (bitnot-Int32 (bitshl-Int32 mask start)) n)
+};
+
+
+/////
+
+bitlength-Int64 :: { Int64 => Int32 };
+bitlength-Int64 = { k =>
+  rec go = { x => acc =>
+                 if x ==Int64 0
+                   then acc
+                   else go (bitlshr-Int64 x 1) (acc +Int32 1)
+                 end
+           };
+  in
+    go k 0
+  end
+};
+
+// TODO should this be called wordCountBits instead?
+// Note: this function implements the function called _BitScanReverse,
+//       which is equal to llvm.ctlz(0, 0) - llvm.ctlz(k, 0).
+bitlength-Word :: { Word => Int32 };
+bitlength-Word = { k =>
+  rec go = { x => acc =>
+                 if x ==Word 0
+                   then acc
+                   else go (bitlshr-Word x 1) (acc +Int32 1)
+                 end
+           };
+  in
+    go k 0
+  end
 };

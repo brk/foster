@@ -7,12 +7,19 @@
 
 #include <stdint.h>
 
+#include "build/build_config.h" // from Chromium, for OS_* defintions.
+
 // This file exists to provide symbols to link
 // libfoster_main.cpp::main() to libfoster
 
 struct coro_context;
 extern "C" {
 void foster_coro_destroy(coro_context* ctx);
+
+struct foster_bytes {
+   int64_t cap;
+   int8_t bytes[0];
+};
 }
 
 namespace foster {

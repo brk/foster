@@ -1,0 +1,478 @@
+snafuinclude Posix "io/posix";
+snafuinclude Text  "text";
+snafuinclude Bitwise "bitwise";
+snafuinclude Prelude "prelude";
+
+// Note: this program can't really be run through the go_test.sh/run_test.py
+// wrappers, because they buffer the output, which is the only indication
+// that anything is happening here!
+
+type case IPAddr
+  of $IPAddr Int8 Int8 Int8 Int8;
+
+type case ICMPDatagram
+  of $ICMPDatagramEcho Int8 // type: req = 8, rep = 0
+                       Int32 // checksum
+                       Int32 // ident
+                       Int32 // seqnum
+                       Bytes // optional data
+                 ;
+
+////
+type case BytesBuilder
+  of $BytesBuilder (Array Int8) (Ref Int32);
+
+newBytesBuilder = { size : Int32 =>
+   BytesBuilder (allocDArray:[Int8] size) (ref 0)
+};
+
+incr = { r:Ref Int32 => (r^ +Int32 1) >^ r; };
+
+bytesBuilderAppendInt8 :: { Int8 => BytesBuilder => BytesBuilder };
+bytesBuilderAppendInt8 = { i => bb =>
+  case bb of $BytesBuilder arr r -> i >^ arr[r^]; incr r; bb end
+};
+
+bytesBuilderAppendInt16BE :: { Int32 => BytesBuilder => BytesBuilder };
+bytesBuilderAppendInt16BE = { i => bb =>
+  bytesBuilderAppendInt8 (trunc_i32_to_i8 (bitlshr-Int32 i 8)) bb |>
+  bytesBuilderAppendInt8 (trunc_i32_to_i8 i)
+};
+
+bytesBuilderAppendInt32BE :: { Int32 => BytesBuilder => BytesBuilder };
+bytesBuilderAppendInt32BE = { i => bb =>                     bb |>
+  bytesBuilderAppendInt8 (trunc_i32_to_i8 (bitlshr-Int32 i 24)) |>
+  bytesBuilderAppendInt8 (trunc_i32_to_i8 (bitlshr-Int32 i 16)) |>
+  bytesBuilderAppendInt8 (trunc_i32_to_i8 (bitlshr-Int32 i  8)) |>
+  bytesBuilderAppendInt8 (trunc_i32_to_i8 i)
+};
+
+bytesBuilderCurrentPosition :: { BytesBuilder => Int32 };
+bytesBuilderCurrentPosition = { bb =>
+  case bb of $BytesBuilder arr r -> r^ end
+};
+
+bytesBuilderAppendBytes :: { Bytes => BytesBuilder => BytesBuilder };
+bytesBuilderAppendBytes = { bytes => bb =>
+  bytesFoldlBytes bytes bytesBuilderAppendInt8 bb
+};
+
+writeInt16BEtoOffset = { arr => offset => val : Int32 =>
+    (trunc_i32_to_i8 (val `bitlshr-Int32` 8)) >^ arr[offset];
+    (trunc_i32_to_i8  val)                    >^ arr[offset +Int32 1];
+};
+
+bytesBuilderComputeChecksumToOffset :: { Int32 => BytesBuilder => BytesBuilder };
+bytesBuilderComputeChecksumToOffset = { offset => bb =>
+  case bb of $BytesBuilder arr r ->
+    onesComplementSum arr r^ |> writeInt16BEtoOffset arr offset;
+  end;
+
+  bb
+};
+
+bytesBuilderFreeze :: { BytesBuilder => Array Int8 };
+bytesBuilderFreeze =  { bb =>
+  case bb of $BytesBuilder arr r -> arr end
+};
+
+////
+
+bytesFlatten :: { Bytes => Array Int8 };
+bytesFlatten = { bytes =>
+  newBytesBuilder (bytesLength32 bytes) |>
+  bytesBuilderAppendBytes bytes |>
+  bytesBuilderFreeze
+};
+
+////
+
+show-ICMP-datagram = { icmpdg =>
+  case icmpdg
+    of $ICMPDatagramEcho typ cksm ident seqnum data ->
+        print_text "ICMP echo; ident & seqnum are:";
+        print_i32  ident;
+        print_i32  seqnum;
+  end;
+  icmpdg
+};
+
+unparse-ICMP-datagram-response = { icmpdg =>
+  case icmpdg
+    of $ICMPDatagramEcho typ _ ident seqnum data ->
+        // assume typ == 8, for req...
+        size = bytesLength32 data +Int32 8;
+        bb = newBytesBuilder size;
+        rsp = 0;
+
+        bytesBuilderAppendInt8    rsp bb |>
+        bytesBuilderAppendInt8    0      |>
+        bytesBuilderAppendInt16BE 0      |> // cksm, to be overwritten
+        bytesBuilderAppendInt16BE ident  |>
+        bytesBuilderAppendInt16BE seqnum |>
+        bytesBuilderAppendBytes   data   |>
+        bytesBuilderComputeChecksumToOffset 2 |>
+        bytesBuilderFreeze;
+  end
+};
+
+parse-ICMP-datagram = { bytes =>
+  typ  = bytesGet! 0 bytes;
+  code = parseBits bytes  8  8;
+  cksm = parseBits bytes 16 16;
+
+  mkEcho = {
+     ident  = parseBits bytes 32 16;
+     seqnum = parseBits bytes 48 16;
+     ICMPDatagramEcho typ cksm ident seqnum (bytesDrop32 bytes 8)
+  };
+  case typ
+    of 8 -> mkEcho !;
+    of 0 -> mkEcho !;
+    of 3 -> prim kill-entire-process "can't yet parse ICMP unreachables";
+    of _ -> print_text "parsed icmp type:";
+            print_i8 typ;
+            prim kill-entire-process "can't yet parse ICMP message...";
+  end
+};
+
+mkIPAddr :: { Int32 => Int32 => Int32 => Int32 => IPAddr };
+mkIPAddr = { a => b => c => d =>
+  IPAddr (trunc_i32_to_i8 a) (trunc_i32_to_i8 b)
+         (trunc_i32_to_i8 c) (trunc_i32_to_i8 d);
+};
+
+type case IPDatagram // ...fragment
+  of $IPv4Datagram Bool // don't fragment
+                   Bool // more fragments
+                   Int32 // ident
+                   Int32 // fragoff
+                   Int32 // ttl
+                   Int32 // protocol
+                   IPAddr // src
+                   IPAddr // dst
+                   () // options
+                   Bytes // data
+                   ;
+
+parse-IPv4-datagram :: { Bytes => IPDatagram };
+parse-IPv4-datagram = { bytes =>
+  // Note: in choosing bit offsets, the canonical IP ordering has bit zero as
+  // the most significant, but for our purposes it's easier to have bit 0 as
+  // the least significant. This only matters when selecting a sub-byte's worth
+  // of bits at a time. This matters for vers, hlen, and frgo.
+  vers = parseBits bytes 0    4;
+  hlen = parseBits bytes 4    4;
+  svty = parseBits bytes 8    8;
+  tlen = parseBits bytes 16  16;
+  iden = parseBits bytes 32  16;
+  dnfr = parseBits bytes 49   1;
+  mrfr = parseBits bytes 50   1;
+  frgo = parseBits bytes 51  13;
+  ttlv = parseBits bytes 64   8;
+  prot = parseBits bytes 72   8;
+  chks = parseBits bytes 80  16;
+  srca = parseBits bytes 96   8;
+  srcb = parseBits bytes 104  8;
+  srcc = parseBits bytes 112  8;
+  srcd = parseBits bytes 120  8;
+  dsta = parseBits bytes 128  8;
+  dstb = parseBits bytes 136  8;
+  dstc = parseBits bytes 144  8;
+  dstd = parseBits bytes 152  8;
+
+  // assume vers == 4
+  opts = ();
+  hdrlen_in_32_bit_words = hlen;
+  hdrlen_in_bytes = hdrlen_in_32_bit_words *Int32 4;
+  payload = bytesDrop32 bytes hdrlen_in_bytes;
+
+  IPv4Datagram (dnfr ==Int32 1) (mrfr ==Int32 1)
+               iden frgo ttlv prot
+               (mkIPAddr srca srcb srcc srcd)
+               (mkIPAddr dsta dstb dstc dstd)
+               opts
+               payload
+};
+
+show-IPAddr = { addr =>
+  case addr of $IPAddr a b c d ->
+    print_i64_bare (zext_i8_to_i64 a);
+    print_text_bare ".";
+    print_i64_bare (zext_i8_to_i64 b);
+    print_text_bare ".";
+    print_i64_bare (zext_i8_to_i64 c);
+    print_text_bare ".";
+    print_i8 d;
+  end
+};
+
+show-IPv4-datagram = { datagram =>
+  case datagram of $IPv4Datagram df mf ident fragoff ttl proto src dst _opts data ->
+    print_text "ipv4 datagram with payload of size";
+    print_i64 (bytesLength data);
+    print_text "from IP";
+    show-IPAddr src;
+    print_text "  to IP";
+    show-IPAddr dst;
+    print_text_bare "message protocol: ";
+    print_text (case proto
+                  of 6  -> "TCP"
+                  of 17 -> "UDP"
+                  of 1  -> "ICMP"
+                  of _  -> "<unknown protocol>" end);
+  end;
+  datagram
+};
+
+// Precondition: bitlength <= 24
+// Precondition: bitoffset/8..+bitlength/8 are valid indices for bytes.
+parseBits :: { Bytes => Int32 => Int32 => Int32 };
+parseBits = { bytes => bitoffset => bitlength =>
+  byteoffset = bitoffset `udiv!-Int32` 8;
+  bitoffrem  = bitoffset `urem!-Int32` 8;
+
+  byteoffset64 = zext_i32_to_i64 byteoffset;
+
+  numArrayPaddingBytes = bytesLength bytes -Int64 byteoffset64;
+  i = case numArrayPaddingBytes
+        of 1 -> bytesGet1HI! bytes byteoffset64;
+        of 2 -> bytesGet2HI! bytes byteoffset64;
+        of 3 -> bytesGet3HI! bytes byteoffset64;
+        of _ -> bytesGet4HI! bytes byteoffset64;
+      end;
+  bitfield-left-Int32 i bitoffrem bitlength
+};
+
+bitfield-left-Int32 = { i : Int32 => off-right => len =>
+  off-left = off-right +Int32 len;
+  bitfield-len-Int32 i (32 -Int32 off-left) len
+};
+
+test-parseBits = {
+  bytes = bytesOfRawArray (prim mach-array-literal 0 0111`1101_2 0011`0110_2 (-1));
+  expect_i32                0; print_i32 (parseBits bytes 0  8);
+  expect_i32      0111`1101_2; print_i32 (parseBits bytes 8  8);
+  expect_i32      0111`11_2;   print_i32 (parseBits bytes 8  6);
+  expect_i32         1`1101_2; print_i32 (parseBits bytes 11 5);
+  expect_i32         1`1101`001_2;    print_i32 (parseBits bytes 11 8);
+
+  bytes = bytesOfRawArray (prim mach-array-literal 45_16);
+  expect_i32 4; print_i32 (parseBits bytes 0  4);
+  expect_i32 5; print_i32 (parseBits bytes 4  4);
+
+  expect_i32 5; print_i32 (bitfield-len-Int32 45_16 0 4);
+  expect_i32 4; print_i32 (bitfield-len-Int32 45_16 4 4);
+  expect_i32 10001_2; print_i32 (bitfield-len-Int32 11000101_2 2 5);
+  expect_i32  0001_2; print_i32 (bitfield-len-Int32 11000101_2 2 4);
+  expect_i32  0010_2; print_i32 (bitfield-len-Int32 11000101_2 1 4);
+  expect_i32  0101_2; print_i32 (bitfield-len-Int32 11000101_2 0 4);
+  expect_i32 45_16; print_i32 1000101_2;
+
+  bytes = bytesOfRawArray (prim mach-array-literal 45_16 255 255 255 255 255);
+  expect_i32 4; print_i32 (parseBits bytes 0  4);
+  expect_i32 5; print_i32 (parseBits bytes 4  4);
+
+  bytes = bytesOfRawArray (prim mach-array-literal 12_16 34_16 56_16 78_16 9A_16);
+  // [9a 78 56 34 12]
+  //                ^index 0
+  expect_i32 1; print_i32 (parseBits bytes 0  4);
+  expect_i32 2; print_i32 (parseBits bytes 4  4);
+  expect_i32 3; print_i32 (parseBits bytes 8  4);
+  expect_i32 4; print_i32 (parseBits bytes 12  4);
+
+  expect_i32   12_16; print_i32 (parseBits bytes 0  8);
+  //expect_i32 3412_16; print_i32 (parseBits bytes 0  16);
+  //expect_i32 1234_16; print_i32 (bytesGet2BE! bytes 0);
+
+
+  bytes = bytesOfRawArray (prim mach-array-literal 0 0 1111`0000_2 1011`0001_2 255 255);
+  expect_i32b 1`0000`1011`0001_2; print_i32b (parseBits bytes 19 13);
+};
+
+onesComplementSum = { arr : Array Int8 => len : Int32 =>
+  REC go = { idx => acc =>
+    case len -Int32 idx
+      of 0 -> acc
+      of 1 -> acc +Int32 ((zext_i8_to_i32 arr[idx]) `bitshl-Int32` 8)
+      of _ -> v16 = ((zext_i8_to_i32 arr[idx]) `bitshl-Int32` 8) +Int32
+                     (zext_i8_to_i32 arr[idx +Int32 1]);
+              acc +Int32 v16 |> go (idx +Int32 2)
+    end
+  };
+  case splitInt32 (go 0 0) of (hi, lo) -> bitnot-Int32 (hi +Int32 lo) end;
+};
+
+test-onesComplementSum = {
+  expect_i32 (bitnot-Int32 0ddf2_16);
+  print_i32 (onesComplementSum (prim mach-array-literal 00 01 0f2_16 03 0f4_16 0f5_16 0f6_16 0f7_16) 8);
+
+  expect_i32 (bitnot-Int32 56571);
+  print_i32 (onesComplementSum (prim mach-array-literal 00 01 0f2_16 03 0f4_16 0f5_16 0f6_16 0) 8);
+
+  expect_i32 (bitnot-Int32 56571);
+  print_i32 (onesComplementSum (prim mach-array-literal 00 01 0f2_16 03 0f4_16 0f5_16 0f6_16) 7);
+};
+
+test-bytesFlatten = {
+  arr16 = allocDArray:[Int8] 16;
+  0 >^ arr16[0];
+  1 >^ arr16[1];
+  2 >^ arr16[2];
+  3 >^ arr16[3];
+  4 >^ arr16[4];
+  5 >^ arr16[5];
+  6 >^ arr16[6];
+  7 >^ arr16[7];
+  bytes16 = bytesOfRawArray arr16;
+
+  rt = { bytes => bytesOfRawArray (bytesFlatten bytes) };
+
+  go = { txt => bytes =>
+    expect_text txt;
+    expect-bytes bytes;
+    print_text txt;
+    show-bytes (rt bytes);
+  };
+  go "bytes16 full"   bytes16;
+  go "bytes16 take4:" (bytesTake bytes16 4);
+  go "bytes16 drop4:" (bytesDrop bytes16 4);
+  go "bytes16 drop4take4:" (bytesTake (bytesDrop bytes16 4) 4);
+  go "bytes16 take8drop4:" (bytesDrop (bytesTake bytes16 8) 4);
+  go "catted:" (bytesConcat (bytesTake (bytesDrop bytes16 4) 4)
+                            (bytesDrop (bytesTake bytes16 8) 4));
+};
+
+main = {
+  loop-reading-tuntap !;
+  //test-parseBits !;
+  //test-onesComplementSum !;
+  //test-bytesFlatten !;
+  0
+};
+
+loop-reading-tuntap = {
+  print_text "reading tuntap fd";
+  fd = foster_posix_get_tuntap_fd !;
+  print_text "fd acquired...";
+
+  size = 2000;
+  arr = allocDArray:[Int8] size;
+  rstatus = (ref 0);
+
+  REC loop = { n =>
+  if n ==Int32 0 then () else
+    nread = foster_posix_read_bytes fd arr 0 rstatus;
+    print_text "read this many bytes from tun:";
+    print_i64 nread;
+    print_text "with status";
+    print_i32 rstatus^;
+
+    bytes = bytesTake (bytesOfRawArray arr) nread;
+
+    response = bytes |> parse-IPv4-datagram
+                  // |> show-IPv4-datagram
+                     |> construct-IPv4-datagram-response
+                     |> unparse-IPv4-datagram;
+
+    print_text "writing response back to fd...";
+    nwrote = foster_posix_write_bytes fd response 0 (arrayLength response) rstatus;
+    print_text "wrote this many bytes to tun:";
+    print_i64 nwrote;
+    print_text "with status";
+    print_i32 rstatus^;
+
+    loop (n -Int32 1);
+    end
+  };
+
+  loop 12;
+
+};
+
+construct-IPv4-datagram-response :: { IPDatagram => IPDatagram };
+construct-IPv4-datagram-response = { datagram =>
+  case datagram of $IPv4Datagram df mf ident fragoff ttl proto src dst _opts data ->
+    case proto
+      of 6  -> prim kill-entire-process "can't yet construct IPv4 datagram response for this proto (6)"
+      of 17 -> prim kill-entire-process "can't yet construct IPv4 datagram response for this proto (17)"
+      of 1  -> parse-ICMP-datagram data
+          // |> show-ICMP-datagram
+          |> unparse-ICMP-datagram-response |> { arr =>
+            print_text "constructed IPv4 datagram for ICMP response...";
+            IPv4Datagram df mf (ident +Int32 1) 0 ttl proto dst src _opts (bytesOfRawArray arr)
+          }
+      of _  -> prim kill-entire-process "can't yet construct IPv4 datagram response for this proto (?)"
+    end
+  end
+};
+
+bytesBuilderAppendIPAddr = { ipaddr => bb =>
+  case ipaddr of $IPAddr a b c d ->
+    bb |> bytesBuilderAppendInt8 a
+       |> bytesBuilderAppendInt8 b
+       |> bytesBuilderAppendInt8 c
+       |> bytesBuilderAppendInt8 d
+  end
+};
+
+unparse-IPv4-datagram :: { IPDatagram => Array Int8 };
+unparse-IPv4-datagram = { datagram =>
+  arr = case datagram of $IPv4Datagram df mf ident fragoff ttl proto src dst _opts data ->
+        ttl8 = trunc_i32_to_i8 ttl;
+        prt8 = trunc_i32_to_i8 proto;
+        flagfrg = (fragoff `bitor-Int32` (if df then bitshl-Int32 1 14 else 0 end))
+                           `bitor-Int32` (if mf then bitshl-Int32 1 13 else 0 end);
+
+        size = bytesLength32 data +Int32 20;
+
+        bb = newBytesBuilder size;
+        cksm = 0; // for now...
+        verslen = 45_16; // vers=4, len=5 (*4 = 20)
+                                       bb |>
+        bytesBuilderAppendInt8    verslen |>
+        bytesBuilderAppendInt8    0       |> // TOS = normal
+        bytesBuilderAppendInt16BE size    |>
+        bytesBuilderAppendInt16BE ident   |>
+        bytesBuilderAppendInt16BE flagfrg |>
+        bytesBuilderAppendInt8    ttl8    |>
+        bytesBuilderAppendInt8    prt8    |>
+        bytesBuilderAppendInt16BE cksm    |>
+        bytesBuilderAppendIPAddr  src     |>
+        bytesBuilderAppendIPAddr  dst     |>
+        bytesBuilderComputeChecksumToOffset 10 |>
+        bytesBuilderAppendBytes   data    |>
+        bytesBuilderFreeze;
+  end;
+
+  dg = parse-IPv4-datagram (bytesOfRawArray arr);
+
+  arr
+};
+
+print_i8x = { b => print_i32x (zext_i8_to_i32 b) };
+expect_i8x = { b => expect_i32x (zext_i8_to_i32 b) };
+
+show-bytes = { bytes =>
+  REC go = { n =>
+    if n ==Int64 bytesLength bytes
+      then ()
+      else print_i8x (bytesGet! n bytes);
+           go (n +Int64 1)
+    end
+  };
+  go 0;
+};
+
+expect-bytes = { bytes =>
+  REC go = { n =>
+    if n ==Int64 bytesLength bytes
+      then ()
+      else expect_i8x (bytesGet! n bytes);
+           go (n +Int64 1)
+    end
+  };
+  go 0;
+};
+
+

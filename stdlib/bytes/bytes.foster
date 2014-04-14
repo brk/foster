@@ -1,3 +1,5 @@
+snafuinclude PreludeFixnums "prelude-fixnums";
+snafuinclude PreludeFolds   "prelude-folds";
 
 // Immutable wrapper around Array Int8 with enhanced asymptotics
 // for common operations like concatenation of bytes and taking slices/views
@@ -14,7 +16,6 @@ type case Bytes
           // invariant: remaining len > 0
           // invariant: sub-bytes not BytesOffset
 ;
-
 
 rawBytesConcatByCopy = { a : Array Int8 => alen : Int32 =>
                          b : Array Int8 => blen : Int32 => len : Int32 =>
@@ -52,6 +53,9 @@ bytesLength = { ba =>
     of $BytesOffset _ _ len -> len
   end
 };
+
+bytesLength32 :: { Bytes => Int32 };
+bytesLength32 =  { bytes => bytesLength bytes |> lossless_trunc_i64_to_i32  };
 
 bytesConcat :: { Bytes => Bytes => Bytes };
 bytesConcat = { ba => bb =>
@@ -97,6 +101,9 @@ bytesDrop = { ba => n =>
   end
 };
 
+bytesDrop32 :: { Bytes => Int32 => Bytes };
+bytesDrop32 = { ba => n => bytesDrop ba (zext_i32_to_i64 n) };
+
 // Precondition: len >= 0
 // Postcondition: bytesLength (bytesTake b n) == min n (bytesLength b)
 bytesTake :: { Bytes => Int64 => Bytes };
@@ -119,6 +126,36 @@ bytesTake = { ba => len =>
          end
   end
   end
+};
+
+// Precondition: o is a valid index for b.
+bytesFoldlBytes :: forall a:Type, { Bytes => { Int8 => a => a } => a => a };
+bytesFoldlBytes = { ba => f => acc =>
+  // TODO(opt) this helper can't be contified (due to multiple continuations),
+  // so it will result in dynamic allocation,
+  // but its closure will be empty, meaning it could have been split out into
+  // a top-level function, thus avoiding dynamic allocation of an empty closure.
+  // That capability should be added to the contification pass,
+  // or the closure-conversion pass, or something...
+  REC go = { bytes => f => offset : Int64 => len : Int64 => acc =>
+      case bytes
+        of $BytesFragment arr _ ->
+            arrayFoldlFromTo arr (lossless_trunc_i64_to_i32 offset)
+                                 (lossless_trunc_i64_to_i32 (len +Int64 offset)) f acc
+        of $BytesOffset bb m len -> go bb f (offset +Int64 m) len acc
+        of $BytesConcat bb bc _ ->
+          bblen = bytesLength bb;
+          afterdrop = offset -Int64 bblen;
+          if afterdrop <SInt64 0
+             // offset - bblen < 0 ==> bblen > offset ==>  bblen - offset > 0
+            then go bb f offset bblen acc |>
+                 go bc f 0 (len -Int64 bytesLength bb)
+            else go bc f afterdrop (len -Int64 bytesLength bb) acc
+          end
+        of $BytesEmpty -> acc
+      end
+  };
+  go ba f 0 (bytesLength ba) acc
 };
 
 // Precondition: o is a valid index for b.
@@ -160,9 +197,129 @@ bytesGetAlt2! = { b => n =>
   bytesGet! 0 (bytesDrop b n)
 };
 
-
-// bytesGet4LE :: { Bytes => Int64 => Int32 };
-// bytesGet8LE :: { Bytes => Int64 => Int64 };
 // bytesPackList  :: { List Int8 => Bytes };
 // bytesToUTF8 :: { Bytes => Text };
 // bytesOfUTF8 :: { Text => Bytes };
+
+// Precondition: i..i+7 are valid indices for bytes.
+bytesGet8LE! :: { Bytes => Int64 => Int64 };
+bytesGet8LE! = { bytes => i =>
+  a = bytesGet! (i +Int64 0) bytes;
+  b = bytesGet! (i +Int64 1) bytes;
+  c = bytesGet! (i +Int64 2) bytes;
+  d = bytesGet! (i +Int64 3) bytes;
+  e = bytesGet! (i +Int64 4) bytes;
+  f = bytesGet! (i +Int64 5) bytes;
+  g = bytesGet! (i +Int64 6) bytes;
+  h = bytesGet! (i +Int64 7) bytes;
+  mergeInt32 (octet4ToInt32 h g f e)
+             (octet4ToInt32 d c b a)
+};
+
+bytesGet8LE!Alt = { bytes => i =>
+  mergeInt32 (bytesGet4LE! bytes (i +Int64 4))
+             (bytesGet4LE! bytes  i          )
+};
+
+// Precondition: i..i+3 are valid indices for bytes.
+bytesGet4LE! :: { Bytes => Int64 => Int32 };
+bytesGet4LE! = { bytes => i =>
+  a = bytesGet! (i +Int64 0) bytes;
+  b = bytesGet! (i +Int64 1) bytes;
+  c = bytesGet! (i +Int64 2) bytes;
+  d = bytesGet! (i +Int64 3) bytes;
+  octet4ToInt32 d c b a
+};
+
+// Precondition: i..i+2 are valid indices for bytes.
+bytesGet3LE! :: { Bytes => Int64 => Int32 };
+bytesGet3LE! = { bytes => i =>
+  a = bytesGet! (i +Int64 0) bytes;
+  b = bytesGet! (i +Int64 1) bytes;
+  c = bytesGet! (i +Int64 2) bytes;
+  octet4ToInt32 0 c b a
+};
+
+// Precondition: i..i+1 are valid indices for bytes.
+bytesGet2LE! :: { Bytes => Int64 => Int32 };
+bytesGet2LE! = { bytes => i =>
+  a = bytesGet! (i +Int64 0) bytes;
+  b = bytesGet! (i +Int64 1) bytes;
+  octet4ToInt32 0 0 b a
+};
+
+// Precondition: i is a valid index for bytes.
+bytesGet1LE! :: { Bytes => Int64 => Int32 };
+bytesGet1LE! = { bytes => i =>
+  a = bytesGet! i bytes;
+  octet4ToInt32 0 0 0 a
+};
+
+// Precondition: i..i+3 are valid indices for bytes.
+bytesGet4BE! :: { Bytes => Int64 => Int32 };
+bytesGet4BE! = { bytes => i =>
+  a = bytesGet! (i +Int64 0) bytes;
+  b = bytesGet! (i +Int64 1) bytes;
+  c = bytesGet! (i +Int64 2) bytes;
+  d = bytesGet! (i +Int64 3) bytes;
+  octet4ToInt32 a b c d
+};
+
+// Precondition: i..i+2 are valid indices for bytes.
+bytesGet3BE! :: { Bytes => Int64 => Int32 };
+bytesGet3BE! = { bytes => i =>
+  a = bytesGet! (i +Int64 0) bytes;
+  b = bytesGet! (i +Int64 1) bytes;
+  c = bytesGet! (i +Int64 2) bytes;
+  octet4ToInt32 0 a b c
+};
+
+// Precondition: i..i+1 are valid indices for bytes.
+bytesGet2BE! :: { Bytes => Int64 => Int32 };
+bytesGet2BE! = { bytes => i =>
+  a = bytesGet! (i +Int64 0) bytes;
+  b = bytesGet! (i +Int64 1) bytes;
+  octet4ToInt32 0 0 a b
+};
+
+// Precondition: i is a valid index for bytes.
+bytesGet1BE! :: { Bytes => Int64 => Int32 };
+bytesGet1BE! = { bytes => i =>
+  a = bytesGet! i bytes;
+  octet4ToInt32 0 0 0 a
+};
+
+// Precondition: i..i+3 are valid indices for bytes.
+bytesGet4HI! :: { Bytes => Int64 => Int32 };
+bytesGet4HI! = { bytes => i =>
+  a = bytesGet! (i +Int64 0) bytes;
+  b = bytesGet! (i +Int64 1) bytes;
+  c = bytesGet! (i +Int64 2) bytes;
+  d = bytesGet! (i +Int64 3) bytes;
+  octet4ToInt32 a b c d
+};
+
+// Precondition: i..i+2 are valid indices for bytes.
+bytesGet3HI! :: { Bytes => Int64 => Int32 };
+bytesGet3HI! = { bytes => i =>
+  a = bytesGet! (i +Int64 0) bytes;
+  b = bytesGet! (i +Int64 1) bytes;
+  c = bytesGet! (i +Int64 2) bytes;
+  octet4ToInt32 a b c 0
+};
+
+// Precondition: i..i+1 are valid indices for bytes.
+bytesGet2HI! :: { Bytes => Int64 => Int32 };
+bytesGet2HI! = { bytes => i =>
+  a = bytesGet! (i +Int64 0) bytes;
+  b = bytesGet! (i +Int64 1) bytes;
+  octet4ToInt32 a b 0 0
+};
+
+// Precondition: i is a valid index for bytes.
+bytesGet1HI! :: { Bytes => Int64 => Int32 };
+bytesGet1HI! = { bytes => i =>
+  a = bytesGet! i bytes;
+  octet4ToInt32 a 0 0 0
+};
+

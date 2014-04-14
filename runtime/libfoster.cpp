@@ -211,12 +211,6 @@ class FosterSchedulingTimerThread : public base::SimpleThread {
 };
 // }}}
 
-extern "C"
-struct foster_bytes {
-   int64_t cap;
-   int8_t bytes[0];
-};
-
 // primitive defined by the compiler itself
 extern "C" void* foster_emit_string_of_cstring(const char*, int32_t);
 
@@ -461,22 +455,6 @@ extern double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 int64_t foster_getticks() { return __foster_getticks(); }
 double  foster_getticks_elapsed(int64_t t1, int64_t t2) {
   return __foster_getticks_elapsed(t1, t2);
-}
-
-int64_t foster_stdin_read_bytes(foster_bytes* to, int32_t* status) {
-  size_t nread = fread(to->bytes, 1, uint32_t(to->cap), stdin);
-  if (feof(stdin) != 0) {
-    *status = 0; // DONE
-  } else if (ferror(stdin) != 0) {
-    if (errno == EAGAIN) {
-      *status = 2; // LATER
-    } else {
-      *status = 3; // ERROR
-    }
-  } else {
-    *status = 1; // MORE
-  }
-  return int64_t(nread);
 }
 
 // We want to perform aggressive link time optimization of
