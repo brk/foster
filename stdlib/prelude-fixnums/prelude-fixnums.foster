@@ -12,10 +12,14 @@ maxReprInt64 :: { Int64 };
 maxReprInt64 = {  9`223`372`036`854`775`807 };
 
 octet4ToInt32 = { hi : Int8 => m1 : Int8 => m2 : Int8 => lo : Int8 =>
-  (((zext_i8_to_i32 hi) `bitshl-Int32` 24)  `bitor-Int32`
-   ((zext_i8_to_i32 m1) `bitshl-Int32` 16)) `bitor-Int32`
-  (((zext_i8_to_i32 m2) `bitshl-Int32` 8)   `bitor-Int32`
-    (zext_i8_to_i32 lo))
+  octet4x32ToInt32 (zext_i8_to_i32 hi) (zext_i8_to_i32 m1) (zext_i8_to_i32 m2) (zext_i8_to_i32 lo)
+};
+
+octet4x32ToInt32 = { hi : Int32 => m1 : Int32 => m2 : Int32 => lo : Int32 =>
+  ((hi `bitshl-Int32` 24)  `bitor-Int32`
+   (m1 `bitshl-Int32` 16)) `bitor-Int32`
+  ((m2 `bitshl-Int32` 8)   `bitor-Int32`
+    lo)
 };
 
 mergeInt32 = { hi : Int32 => lo : Int32 =>

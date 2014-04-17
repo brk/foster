@@ -2,6 +2,30 @@ snafuinclude Ord "ord";
 snafuinclude List "list";
 snafuinclude Prelude "prelude";
 
+/////
+
+// This module implements reassembly of bytes positioned in some abstract space
+// (i.e. a TCP retransmit queue).
+//
+// The external interface comprises the following two functions:
+
+// The first two parameters describe a chunk (a contiguous sequence of bytes,
+// conceptually located at a given position). The next two describe a window
+// which delimits the bytes of interest (as start & len);
+// anything outside of this range will be truncated.
+//
+// O(n) where n is the length of the input list.
+chunkAddMaybe :: { Int64 => Bytes => Int64 => Int64 =>
+                   List Chunk => Maybe (List Chunk) };
+
+// Given a position and some chunks (as built up by chunkAddMaybe),
+// split off the longest contiguous sequence of bytes from that position.
+//
+// O(1).
+chunkSplit :: { Int64 => List Chunk => (List Chunk, Bytes) };
+
+/////
+
 type case RangeChunkCmpResult
   of $Before         //  [aaaaaa]  [bbbbbb]
   of $AdjacentBefore //   [aaaaaa][bbbbbb]
@@ -225,14 +249,14 @@ chunkSplit = { start : Int64 => chunks =>
   end
 };
 
-chunkAddMaybe = { i : Int64 => b : Bytes =>
+chunkAddMaybe = { i : Int64 => bytes =>
                   start => len =>
                   chunks : List Chunk =>
   within = { n => min => len =>
     both (n >=SInt64 min) (n <=SInt64 (min +Int64 len))
   };
   if within i start len
-    then Some (chunkInsert (Chunk i b) chunks)
+    then Some (chunkInsert (Chunk i bytes) chunks)
     else None
   end
 };

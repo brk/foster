@@ -1,24 +1,26 @@
 snafuinclude Posix "io/posix";
 snafuinclude Text  "text";
+snafuinclude Map   "map";
+snafuinclude Range   "range";
 snafuinclude Bitwise "bitwise";
 snafuinclude Prelude "prelude";
+
+/////
+
+// A proof of concept networking stack implementation.
+// Based on Stevens, [RFC 793], and [netsem].
+
+// [netsem]     http://www.cl.cam.ac.uk/~pes20/Netsem/alldoc.pdf
+// [RFC 793]    http://tools.ietf.org/html/rfc793
+
+/////
 
 // Note: this program can't really be run through the go_test.sh/run_test.py
 // wrappers, because they buffer the output, which is the only indication
 // that anything is happening here!
 
-type case IPAddr
-  of $IPAddr Int8 Int8 Int8 Int8;
+/////
 
-type case ICMPDatagram
-  of $ICMPDatagramEcho Int8 // type: req = 8, rep = 0
-                       Int32 // checksum
-                       Int32 // ident
-                       Int32 // seqnum
-                       Bytes // optional data
-                 ;
-
-////
 type case BytesBuilder
   of $BytesBuilder (Array Int8) (Ref Int32);
 
@@ -62,10 +64,10 @@ writeInt16BEtoOffset = { arr => offset => val : Int32 =>
     (trunc_i32_to_i8  val)                    >^ arr[offset +Int32 1];
 };
 
-bytesBuilderComputeChecksumToOffset :: { Int32 => BytesBuilder => BytesBuilder };
-bytesBuilderComputeChecksumToOffset = { offset => bb =>
+bytesBuilderComputeChecksumToOffset :: { Int32 => Int32 => BytesBuilder => BytesBuilder };
+bytesBuilderComputeChecksumToOffset = { init => offset => bb =>
   case bb of $BytesBuilder arr r ->
-    onesComplementSum arr r^ |> writeInt16BEtoOffset arr offset;
+    onesComplementSum init arr r^ |> writeInt16BEtoOffset arr offset;
   end;
 
   bb
@@ -76,7 +78,7 @@ bytesBuilderFreeze =  { bb =>
   case bb of $BytesBuilder arr r -> arr end
 };
 
-////
+/////
 
 bytesFlatten :: { Bytes => Array Int8 };
 bytesFlatten = { bytes =>
@@ -85,7 +87,48 @@ bytesFlatten = { bytes =>
   bytesBuilderFreeze
 };
 
-////
+/////
+
+type case IPAddr
+  of $IPAddr Int8 Int8 Int8 Int8 Int32;
+
+mkIPAddr :: { Int32 => Int32 => Int32 => Int32 => IPAddr };
+mkIPAddr = { a => b => c => d =>
+  IPAddr (trunc_i32_to_i8 a) (trunc_i32_to_i8 b)
+         (trunc_i32_to_i8 c) (trunc_i32_to_i8 d) (octet4x32ToInt32 a b c d);
+};
+
+cmpIPAddr = { ia => ib =>
+  case ia of $IPAddr _ _ _ _ mergedA ->
+  case ib of $IPAddr _ _ _ _ mergedB ->
+    cmpUInt32 mergedA mergedB
+  end
+  end
+};
+
+show-IPAddr = { addr =>
+  case addr of $IPAddr a b c d _ ->
+    print_i64_bare (zext_i8_to_i64 a);
+    print_text_bare ".";
+    print_i64_bare (zext_i8_to_i64 b);
+    print_text_bare ".";
+    print_i64_bare (zext_i8_to_i64 c);
+    print_text_bare ".";
+    print_i8 d;
+  end
+};
+
+combined-IPAddr = { addr => case addr of $IPAddr _ _ _ _ w -> w end };
+
+/////
+
+type case ICMPDatagram
+  of $ICMPDatagramEcho Int8 // type: req = 8, rep = 0
+                       Int32 // checksum
+                       Int32 // ident
+                       Int32 // seqnum
+                       Bytes // optional data
+                 ;
 
 show-ICMP-datagram = { icmpdg =>
   case icmpdg
@@ -111,7 +154,7 @@ unparse-ICMP-datagram-response = { icmpdg =>
         bytesBuilderAppendInt16BE ident  |>
         bytesBuilderAppendInt16BE seqnum |>
         bytesBuilderAppendBytes   data   |>
-        bytesBuilderComputeChecksumToOffset 2 |>
+        bytesBuilderComputeChecksumToOffset 0 2 |>
         bytesBuilderFreeze;
   end
 };
@@ -136,11 +179,7 @@ parse-ICMP-datagram = { bytes =>
   end
 };
 
-mkIPAddr :: { Int32 => Int32 => Int32 => Int32 => IPAddr };
-mkIPAddr = { a => b => c => d =>
-  IPAddr (trunc_i32_to_i8 a) (trunc_i32_to_i8 b)
-         (trunc_i32_to_i8 c) (trunc_i32_to_i8 d);
-};
+/////
 
 type case IPDatagram // ...fragment
   of $IPv4Datagram Bool // don't fragment
@@ -157,10 +196,6 @@ type case IPDatagram // ...fragment
 
 parse-IPv4-datagram :: { Bytes => IPDatagram };
 parse-IPv4-datagram = { bytes =>
-  // Note: in choosing bit offsets, the canonical IP ordering has bit zero as
-  // the most significant, but for our purposes it's easier to have bit 0 as
-  // the least significant. This only matters when selecting a sub-byte's worth
-  // of bits at a time. This matters for vers, hlen, and frgo.
   vers = parseBits bytes 0    4;
   hlen = parseBits bytes 4    4;
   svty = parseBits bytes 8    8;
@@ -195,17 +230,6 @@ parse-IPv4-datagram = { bytes =>
                payload
 };
 
-show-IPAddr = { addr =>
-  case addr of $IPAddr a b c d ->
-    print_i64_bare (zext_i8_to_i64 a);
-    print_text_bare ".";
-    print_i64_bare (zext_i8_to_i64 b);
-    print_text_bare ".";
-    print_i64_bare (zext_i8_to_i64 c);
-    print_text_bare ".";
-    print_i8 d;
-  end
-};
 
 show-IPv4-datagram = { datagram =>
   case datagram of $IPv4Datagram df mf ident fragoff ttl proto src dst _opts data ->
@@ -225,7 +249,557 @@ show-IPv4-datagram = { datagram =>
   datagram
 };
 
-// Precondition: bitlength <= 24
+/////
+
+type case TCPFlags
+  of $TCPFlags Bool // urg
+               Bool // ack
+               Bool // psh
+               Bool // rst
+               Bool // syn
+               Bool // fin
+               ;
+
+type case TCPSegment
+  of $TCPSegment Int32 // srcport
+                 Int32 // dstport
+                 Int32 // seqnum
+                 Int32 // acknum
+                 TCPFlags
+                 Int32 // wndsize
+                 Int32 // urgptr
+                 () // options
+                 Bytes // data
+                 ;
+
+parse-TCP-segment :: { Bytes => TCPSegment };
+parse-TCP-segment = { bytes =>
+  srcport = parseBits bytes 0    16;
+  dstport = parseBits bytes 16   16;
+  seqnum  = parseBits bytes 32   32;
+  acknum  = parseBits bytes 64   32;
+  hdrlen  = parseBits bytes 96    4;
+  flags   = parse-TCP-flags bytes;
+  wndsize = parseBits bytes 112  16;
+  chksum  = parseBits bytes 128  16;
+  urgptr  = parseBits bytes 144  16;
+
+  opts = (); // TODO actually parse options.
+
+  hdrlen_in_32_bit_words = hdrlen;
+  hdrlen_in_bytes = hdrlen_in_32_bit_words *Int32 4;
+  payload = bytesDrop32 bytes hdrlen_in_bytes;
+
+  TCPSegment srcport dstport seqnum acknum flags
+             wndsize urgptr opts payload
+};
+
+parse-TCP-flags = { bytes =>
+  urg = parseBits bytes 106 1 |> trueIfOne;
+  ack = parseBits bytes 107 1 |> trueIfOne;
+  psh = parseBits bytes 108 1 |> trueIfOne;
+  rst = parseBits bytes 109 1 |> trueIfOne;
+  syn = parseBits bytes 110 1 |> trueIfOne;
+  fin = parseBits bytes 111 1 |> trueIfOne;
+  TCPFlags urg ack psh rst syn fin
+};
+
+trueIfOne = { n => n ==Int32 1 };
+
+show-TCP-segment = { segment =>
+  case segment of $TCPSegment srcport dstport seqnum acknum flags wndsz urgptr _opts data ->
+    print_text "tcp segment with payload of size";
+    print_i64 (bytesLength data);
+    print_text "from src port";
+    print_i32 srcport;
+    print_text "  to dst port";
+    print_i32 dstport;
+    print_text "  seqnum";
+    print_i32 seqnum;
+    print_text "  acknum";
+    print_i32 acknum;
+    print_text "flags:";
+    case flags of $TCPFlags urg ack psh rst syn fin ->
+      print_text_bare " urg: "; print_i1 urg;
+      print_text_bare " ack: "; print_i1 ack;
+      print_text_bare " psh: "; print_i1 psh;
+      print_text_bare " rst: "; print_i1 rst;
+      print_text_bare " syn: "; print_i1 syn;
+      print_text_bare " fin: "; print_i1 fin;
+    end;
+  end;
+  segment
+};
+
+/////
+
+type case TCPControlBlock
+       of $TCPControlBlock
+            (Ref Int32) // snd_una
+            (Ref Int32) // snd_max
+            (Ref Int32) // snd_nxt
+            (Ref Int32) // snd_wnd
+            (Ref Int32) // snd_urg
+            (Ref Int32) // snd_lst_wnd_s
+            (Ref Int32) // snd_lst_wnd_a
+            Int32 // snd_iss
+            (Ref Int32) // rcv_nxt
+            (Ref Int32) // rcv_wnd
+            (Ref Int32) // rcv_urg
+            Int32 // rcv_iss
+            ;
+
+/////
+
+getRcvNxt = { cb => case cb of $TCPControlBlock snd_una snd_max snd_nxt snd_wnd snd_urg snd_lst_wnd_s snd_lst_wnd_a snd_iss rcv_nxt rcv_wnd rcv_urg rcv_iss -> rcv_nxt^ end };
+getRcvWnd = { cb => case cb of $TCPControlBlock snd_una snd_max snd_nxt snd_wnd snd_urg snd_lst_wnd_s snd_lst_wnd_a snd_iss rcv_nxt rcv_wnd rcv_urg rcv_iss -> rcv_wnd^ end };
+getSndNxt = { cb => case cb of $TCPControlBlock snd_una snd_max snd_nxt snd_wnd snd_urg snd_lst_wnd_s snd_lst_wnd_a snd_iss rcv_nxt rcv_wnd rcv_urg rcv_iss -> snd_nxt^ end };
+getSndMax = { cb => case cb of $TCPControlBlock snd_una snd_max snd_nxt snd_wnd snd_urg snd_lst_wnd_s snd_lst_wnd_a snd_iss rcv_nxt rcv_wnd rcv_urg rcv_iss -> snd_max^ end };
+getSndUna = { cb => case cb of $TCPControlBlock snd_una snd_max snd_nxt snd_wnd snd_urg snd_lst_wnd_s snd_lst_wnd_a snd_iss rcv_nxt rcv_wnd rcv_urg rcv_iss -> snd_una^ end };
+getSndWnd = { cb => case cb of $TCPControlBlock snd_una snd_max snd_nxt snd_wnd snd_urg snd_lst_wnd_s snd_lst_wnd_a snd_iss rcv_nxt rcv_wnd rcv_urg rcv_iss -> snd_wnd^ end };
+getSndUrg = { cb => case cb of $TCPControlBlock snd_una snd_max snd_nxt snd_wnd snd_urg snd_lst_wnd_s snd_lst_wnd_a snd_iss rcv_nxt rcv_wnd rcv_urg rcv_iss -> snd_urg^ end };
+getSndLW1 = { cb => case cb of $TCPControlBlock snd_una snd_max snd_nxt snd_wnd snd_urg snd_lst_wnd_s snd_lst_wnd_a snd_iss rcv_nxt rcv_wnd rcv_urg rcv_iss -> snd_lst_wnd_s^ end };
+getSndLW2 = { cb => case cb of $TCPControlBlock snd_una snd_max snd_nxt snd_wnd snd_urg snd_lst_wnd_s snd_lst_wnd_a snd_iss rcv_nxt rcv_wnd rcv_urg rcv_iss -> snd_lst_wnd_a^ end };
+
+
+setRcvNxt = { cb => v => case cb of $TCPControlBlock snd_una snd_max snd_nxt snd_wnd snd_urg snd_lst_wnd_s snd_lst_wnd_a snd_iss rcv_nxt rcv_wnd rcv_urg rcv_iss -> v >^ rcv_nxt end };
+setRcvWnd = { cb => v => case cb of $TCPControlBlock snd_una snd_max snd_nxt snd_wnd snd_urg snd_lst_wnd_s snd_lst_wnd_a snd_iss rcv_nxt rcv_wnd rcv_urg rcv_iss -> v >^ rcv_wnd end };
+setSndNxt = { cb => v => case cb of $TCPControlBlock snd_una snd_max snd_nxt snd_wnd snd_urg snd_lst_wnd_s snd_lst_wnd_a snd_iss rcv_nxt rcv_wnd rcv_urg rcv_iss -> v >^ snd_nxt end };
+setSndMax = { cb => v => case cb of $TCPControlBlock snd_una snd_max snd_nxt snd_wnd snd_urg snd_lst_wnd_s snd_lst_wnd_a snd_iss rcv_nxt rcv_wnd rcv_urg rcv_iss -> v >^ snd_max end };
+setSndUna = { cb => v => case cb of $TCPControlBlock snd_una snd_max snd_nxt snd_wnd snd_urg snd_lst_wnd_s snd_lst_wnd_a snd_iss rcv_nxt rcv_wnd rcv_urg rcv_iss -> v >^ snd_una end };
+setSndWnd = { cb => v => case cb of $TCPControlBlock snd_una snd_max snd_nxt snd_wnd snd_urg snd_lst_wnd_s snd_lst_wnd_a snd_iss rcv_nxt rcv_wnd rcv_urg rcv_iss -> v >^ snd_wnd end };
+setSndUrg = { cb => v => case cb of $TCPControlBlock snd_una snd_max snd_nxt snd_wnd snd_urg snd_lst_wnd_s snd_lst_wnd_a snd_iss rcv_nxt rcv_wnd rcv_urg rcv_iss -> v >^ snd_urg end };
+setSndLW1 = { cb => v => case cb of $TCPControlBlock snd_una snd_max snd_nxt snd_wnd snd_urg snd_lst_wnd_s snd_lst_wnd_a snd_iss rcv_nxt rcv_wnd rcv_urg rcv_iss -> v >^ snd_lst_wnd_s end };
+setSndLW2 = { cb => v => case cb of $TCPControlBlock snd_una snd_max snd_nxt snd_wnd snd_urg snd_lst_wnd_s snd_lst_wnd_a snd_iss rcv_nxt rcv_wnd rcv_urg rcv_iss -> v >^ snd_lst_wnd_a end };
+
+tcpControlBlock = { conn =>
+  case conn
+    of $TCPConnClosed         -> prim kill-entire-process "tcpControlBlock cant get control block";
+    of $TCPConnListen         -> prim kill-entire-process "tcpControlBlock cant get control block";
+    of $TCPConnSynSent        -> prim kill-entire-process "tcpControlBlock cant get control block";
+    of $TCPConnSynRcvd     cb -> cb
+    of $TCPConnEstablished cb -> cb
+    of $TCPConnFinWait1       -> prim kill-entire-process "tcpControlBlock cant get control block";
+    of $TCPConnFinWait2       -> prim kill-entire-process "tcpControlBlock cant get control block";
+    of $TCPConnCloseWait      -> prim kill-entire-process "tcpControlBlock cant get control block";
+    of $TCPConnClosing        -> prim kill-entire-process "tcpControlBlock cant get control block";
+    of $TCPConnLastAck        -> prim kill-entire-process "tcpControlBlock cant get control block";
+    of $TCPConnTimeWait       -> prim kill-entire-process "tcpControlBlock cant get control block";
+  end
+};
+
+/////
+
+type case TCPConnection
+       of $TCPConnClosed
+       of $TCPConnListen
+       of $TCPConnSynSent
+       of $TCPConnSynRcvd     TCPControlBlock
+       of $TCPConnEstablished TCPControlBlock
+       of $TCPConnFinWait1
+       of $TCPConnFinWait2
+       of $TCPConnCloseWait
+       of $TCPConnClosing
+       of $TCPConnLastAck
+       of $TCPConnTimeWait
+       ;
+
+type case TCPConnId
+       of $TCPConnId IPAddr Int32 IPAddr Int32 // src/dst ip & port
+       ;
+
+cmpTCPConnId = { ca => cb =>
+  case ca of $TCPConnId srcaa srcpa dstaa dstpa ->
+  case cb of $TCPConnId srcab srcpb dstab dstpb ->
+    case cmpUInt32 srcpa srcpb
+      of $EQ -> case cmpUInt32 dstpa dstpb
+                  of $EQ -> case cmpIPAddr srcaa srcab
+                              of $EQ -> cmpIPAddr dstaa dstab
+                              of neq -> neq
+                            end
+                  of neq -> neq
+                end
+      of neq -> neq
+    end
+  end
+  end
+};
+
+tcpConnIdDestPort = { tci =>
+  case tci of $TCPConnId _ _ _ dstport -> dstport end
+};
+
+/////
+
+type case TCPStack
+       of $TCPStack (Ref (Map TCPConnId TCPConnection))
+       ;
+
+tcpStackConnections = { tcpstack =>
+  case tcpstack of $TCPStack connmapref -> connmapref end
+};
+
+/////
+
+refUpdate = { forall t:Type, r : Ref t => f : { t => t } =>
+  f r^ >^ r;
+};
+
+tcpLookupConnection :: { TCPStack => TCPConnId => Maybe TCPConnection };
+tcpLookupConnection = { tcpstack => connid =>
+  mapLookup (tcpStackConnections tcpstack)^ connid cmpTCPConnId
+};
+
+tcpUpdateConnection :: { TCPStack => TCPConnId => TCPConnection => () };
+tcpUpdateConnection = { tcpstack => connid => conn =>
+  refUpdate (tcpStackConnections tcpstack) { m => mapInsert connid conn m cmpTCPConnId };
+};
+
+tcpGetListenerForPort :: { TCPStack => Int32 => Maybe () };
+tcpGetListenerForPort = { tcpstack => dstport =>
+  Some () // for now, always listening on every port...
+};
+
+/////
+
+tcpFlagsUrg = { flags => case flags of $TCPFlags urg ack psh rst syn fin -> urg end };
+tcpFlagsPsh = { flags => case flags of $TCPFlags urg ack psh rst syn fin -> psh end };
+
+make-TCP-reset-packet-for = { segment =>
+  case segment of $TCPSegment srcport dstport seqnum acknum flags wndsz urgptr _opts data ->
+                   TCPSegment dstport srcport 0 (seqnum +Int32 1) (TCPFlags (tcpFlagsUrg flags) True False True False False)
+                                                                   0    0      _opts (bytesEmpty !)
+  end
+};
+
+make-TCP-ack-packet-for = { connid => cb =>
+  case connid of $TCPConnId _ srcport _ dstport ->
+     TCPSegment dstport srcport (getSndNxt cb) (getRcvNxt cb)
+                        (TCPFlags False True False False False False)
+                                (getSndWnd cb) (getSndUrg cb) () (bytesEmpty !)
+  end
+};
+
+/////
+
+create-new-TCP-connection = { tcpstack => connid => segment =>
+  case segment of $TCPSegment s_srcport s_dstport s_seqnum s_acknum s_flags s_wndptr s_urgptr _opts s_data ->
+    /*
+       "[1] SND.NXT is set to ISS+1 and SND.UNA to ISS.
+        [2] Set RCV.NXT to SEG.SEQ+1,
+        [3] IRS is set to SEG.SEQ
+        and any other control or text should be queued for processing later.
+        [4] ISS should be selected
+        [5] and a SYN segment sent of the form:
+
+        [6] <SEQ=ISS><ACK=RCV.NXT><CTL=SYN,ACK>
+
+        The connection
+        state should be changed to SYN-RECEIVED.  Note that any other
+        incoming control or data (combined with SYN) will be processed
+        in the SYN-RECEIVED state, but processing of SYN and ACK should
+        not be repeated."
+    */
+
+    initial_segment_start = 100; // [4] // todo fix
+    acknum = s_seqnum +Int32 1; // [2]
+    rcv_wnd = 65535;
+    rcv_urg = 0;
+    conn = TCPConnSynRcvd (TCPControlBlock
+                (ref  initial_segment_start)           // [1]
+                (ref (initial_segment_start +Int32 1))
+                (ref (initial_segment_start +Int32 1)) // [1]
+                (ref s_wndptr)
+                (ref s_urgptr)
+                (ref s_wndptr)
+                (ref s_wndptr)
+                initial_segment_start
+
+                (ref acknum)
+                (ref rcv_wnd)
+                (ref rcv_urg)
+                s_seqnum // [3]
+              );
+
+    tcpUpdateConnection tcpstack connid conn;
+
+    TCPSegment
+          s_dstport
+          s_srcport
+          initial_segment_start // [6]
+          acknum // [6]
+          (TCPFlags (tcpFlagsUrg s_flags) True   // urg, ack
+                    (tcpFlagsPsh s_flags) False  // psh, rst
+                    True                  False) // syn, fin
+          rcv_wnd
+          rcv_urg
+           _opts
+          s_data
+  end
+};
+
+handle-TCP-initial-syn = { tcpstack => mb_conn => connid => segment =>
+  case mb_conn
+    of $None      ->
+        case tcpGetListenerForPort tcpstack (tcpConnIdDestPort connid)
+          of $None   -> Some (make-TCP-reset-packet-for segment)
+          of $Some _ -> Some (create-new-TCP-connection tcpstack connid segment);
+        end
+    of $Some conn    -> Some (make-TCP-reset-packet-for segment);
+  end
+};
+
+handle-TCP-ack = { tcpstack => mb_conn => connid => fin => s_seqnum => s_acknum => s_wndsz => data =>
+  case mb_conn
+    of $None     -> print_text "ack without connection; TODO generate rst"; None
+    of $Some ($TCPConnSynRcvd tcb) ->
+                    TCPConnEstablished tcb |> tcpUpdateConnection tcpstack connid; None
+    of $Some conn -> deliver-in-3 tcpstack conn connid fin s_seqnum s_acknum s_wndsz data
+  end
+};
+
+deliver-in-3 = { tcpstack => conn => connid => fin => s_seqnum => s_acknum => s_wndsz => data =>
+  case conn
+    of $TCPConnClosed  -> None
+    of $TCPConnListen  -> TCPConnClosed |> tcpUpdateConnection tcpstack connid; None
+    of $TCPConnSynSent -> TCPConnClosed |> tcpUpdateConnection tcpstack connid; None
+    of _ ->
+        if invalid-ack-in-syn-rcvd conn
+          then print_text "invalid ack in syn-rcvd; closing connection. rst?";
+               TCPConnClosed |> tcpUpdateConnection tcpstack connid; None
+          else
+            cb   = tcpControlBlock conn;
+
+            seq  = s_seqnum; // Precondition: SYN was not set.
+            rseq = seq +Int32 bytesLength32 data;
+
+            we-sent-a-fin = getSndMax cb >UInt32 (getSndUna cb +Int32 send-q-end-seqnum cb);
+            our-fin-acked = both we-sent-a-fin (s_acknum >=UInt32 getSndMax cb);
+
+            // TODO RFC 1323
+
+            rcv_wndx = 1500; // TODO
+            right-edge = getRcvNxt cb +Int32 rcv_wndx;
+            segment-off-right-hand-edge = both (rcv_wndx !=Int32 0)
+                (both (seq >=UInt32 right-edge) (rseq >UInt32 right-edge));
+
+            if segment-off-right-hand-edge
+              then None // drop the packet. (TODO: rst?)
+              else deliver-in-3-ackstuff tcpstack conn connid fin s_seqnum s_acknum s_wndsz data cb
+            end
+        end
+  end
+};
+
+send-q-end-seqnum = { cb =>
+  0 // Pretend there's nothing to send, for now...
+};
+
+deliver-in-3-ackstuff = { tcpstack => conn => connid => fin => s_seqnum => s_acknum => s_wndsz => data => cb =>
+  win = s_wndsz; // TODO scaling
+
+  has-no-data = bytesLength32 data ==Int32 0;
+  maybe-dup-ack = all3 has-no-data
+                       (win ==Int32 getSndWnd cb)
+                       (have-outstanding-unacked-data cb);
+  case (maybe-dup-ack, s_acknum <=UInt32 getSndUna cb)
+    of (True, True) ->
+         // Duplicate acknowledgement
+         // TODO RFC 2581 & 2582...
+         print_text "dup ack";
+         None
+    of (False, True) ->
+         // TODO: Old acknowledgement; reset dup ack counter.
+
+         // Skip newackstuff, go straight to datastuff.
+         deliver-in-3-datastuff   tcpstack conn connid fin s_seqnum s_acknum s_wndsz data cb
+    of _ ->
+         deliver-in-3-newackstuff tcpstack conn connid fin s_seqnum s_acknum s_wndsz data cb
+  end
+};
+
+have-outstanding-unacked-data = { cb => False };
+
+deliver-in-3-newackstuff = { tcpstack => conn => connid => fin => s_seqnum => s_acknum => s_wndsz => data => cb =>
+  if s_acknum >UInt32 getSndMax cb
+    then print_text "dropping packet due to silly acknum";
+         print_i32 s_acknum;
+         print_i32 (getSndMax cb);
+         None
+    else
+         // TODO handle bad retransmits
+         //      calc est rtt
+         // handle ourfinisacked case
+
+         wndx = getSndWnd cb -Int32 (s_acknum -Int32 (getSndUna cb));
+
+         setSndWnd cb wndx;
+         setSndUna cb s_acknum;
+         setSndNxt cb (max-UInt32 s_acknum (getSndNxt cb));
+
+         // TODO update snd q
+
+         deliver-in-3-datastuff tcpstack conn connid fin s_seqnum s_acknum s_wndsz data cb;
+  end
+};
+
+deliver-in-3-datastuff = { tcpstack => conn => connid => fin => s_seqnum => s_acknum => s_wndsz => data => cb =>
+  acked = True;
+  update-snd-wnd = both (both acked (huh cb s_seqnum s_acknum s_wndsz fin conn)) // TODO wndsz or wndptr?
+                        (s_seqnum <=UInt32 (getRcvNxt cb +Int32 getRcvWnd cb));
+
+  // TODO need to think carefully about whether these should be SInt or UInt...
+  rhs-trimmed = min-UInt32 (getRcvNxt cb) (s_seqnum +Int32 bytesLength32 data);
+  seq-trimmed = max-UInt32 s_seqnum rhs-trimmed;
+
+  when update-snd-wnd {
+    setSndWnd cb s_wndsz;
+    setSndLW1 cb seq-trimmed;
+    setSndLW2 cb s_acknum;
+  };
+
+  rcv-to-seqnum = getRcvNxt cb -Int32 s_seqnum;
+  trim-amt-left = if rcv-to-seqnum >SInt32 0
+                   then min-UInt32 rcv-to-seqnum (bytesLength32 data)
+                   else 0 end;
+  data-trimmed-left = bytesDrop32 data trim-amt-left;
+  seq-trimmed = s_seqnum +Int32 trim-amt-left;
+
+  data-trimmed = bytesTake32 data-trimmed-left (getRcvWnd cb);
+
+  print_text "trimmed data from _ to _ bytes:";
+  print_i32 (bytesLength32 data);
+  print_i32 (bytesLength32 data-trimmed);
+
+  same-length = { a => b => bytesLength32 a ==Int32 bytesLength32 b };
+  fin-trimmed = both fin (same-length data-trimmed data-trimmed-left);
+
+  if all3 (seq-trimmed ==Int32 getRcvNxt cb)
+          (getRcvWnd cb >UInt32 0)
+          ((seq-trimmed +Int32
+              (bytesLength32 data-trimmed
+                 +Int32 (if fin-trimmed then 1 else 0))) >UInt32 getRcvNxt cb)
+    then
+      have-stuff-to-ack = either (bytesLength32 data-trimmed >=UInt32 0) fin-trimmed;
+      delay-ack = False; // TODO
+
+      chunks0 = Nil;
+      chunks1 = case chunkAddMaybe (zext_i32_to_i64 seq-trimmed) data-trimmed
+                                   (getRcvNxt cb |> zext_i32_to_i64)
+                                   (getRcvWnd cb |> zext_i32_to_i64)
+                                   chunks0
+                  of $Some c -> c
+                  of $None   -> prim kill-entire-process "failed to add chunk... :(";
+                end;
+
+      // TODO fix this.
+      fin-reass = both fin-trimmed (bytesLength32 data-trimmed ==Int32 0);
+
+      case chunkSplit (zext_i32_to_i64 (getRcvNxt cb)) chunks1 of (chunks, bytes) ->
+        if both (not fin-reass) (bytesLength32 bytes ==Int32 0) then
+          print_text "chunksplit returned empty bytes, hmmm...";
+          None
+        else
+          print_text "reassembled this many bytes: _";
+          print_i32  (bytesLength32 bytes);
+
+          setRcvNxt cb (seq-trimmed  +Int32 bytesLength32 bytes +Int32 (if fin-reass then 1 else 0 end));
+          setRcvWnd cb (getRcvWnd cb -Int32 bytesLength32 bytes);
+          Some (make-TCP-ack-packet-for connid cb);
+        end
+      end
+    else
+      if both (both (seq-trimmed >UInt32 getRcvNxt cb)
+                    (seq-trimmed <UInt32 (getRcvNxt cb +Int32 getRcvWnd cb)))
+              (both ((bytesLength32 data-trimmed +Int32 (if fin-trimmed then 1 else 0)) >UInt32 0)
+                    (getRcvWnd cb >UInt32 0))
+        then
+          print_text "future reassembling";
+          None
+        else
+          if both (seq-trimmed ==Int32 getRcvNxt cb)
+                  ((bytesLength32 data +Int32 (if fin-trimmed then 1 else 0)) ==Int32 0)
+            then
+              print_text "no data";
+              None
+            else
+              print_text "other cases?";
+              None
+          end
+      end
+  end
+};
+
+all3 = { a => b => c => both (both a b) c };
+
+huh = { cb => seqnum => acknum => wnd => fin => conn =>
+  {       getSndLW1 cb <UInt32 seqnum } `oror`
+  { { both (getSndLW1 cb ==Int32 seqnum)
+           (either (getSndLW2 cb <UInt32 acknum)
+                  ((getSndLW2 cb ==Int32 acknum) `either` (wnd >UInt32 (getSndWnd cb)))) }
+    `oror` { { isSynRcvd conn } `andand` { not_ fin } } }
+};
+
+isSynRcvd = { conn =>
+  case conn of $TCPConnSynRcvd _ -> True
+            of _                 -> False end
+};
+
+/////
+
+invalid-ack-in-syn-rcvd = { conn =>
+  False // TODO
+};
+
+/////
+
+handle-TCP-rst = { tcpstack => mb_conn => connid =>
+  case mb_conn
+    of $None      -> None // drop packet, nothing to reset.
+    of $Some conn ->
+        print_text "TODO: handle rst";
+        None
+    /*
+  In all states except SYN-SENT, all reset (RST) segments are validated
+  by checking their SEQ-fields.  A reset is valid if its sequence number
+  is in the window.  In the SYN-SENT state (a RST received in response
+  to an initial SYN), the RST is acceptable if the ACK field
+  acknowledges the SYN.
+
+  The receiver of a RST first validates it, then changes state.  If the
+  receiver was in the LISTEN state, it ignores it.  If the receiver was
+  in SYN-RECEIVED state and had previously been in the LISTEN state,
+  then the receiver returns to the LISTEN state, otherwise the receiver
+  aborts the connection and goes to the CLOSED state.  If the receiver
+  was in any other state, it aborts the connection and advises the user
+  and goes to the CLOSED state.
+  */
+  end
+};
+
+/////
+
+handle-TCP-segment :: { TCPStack => IPAddr => IPAddr => TCPSegment => Maybe TCPSegment };
+handle-TCP-segment = { tcpstack => src => dst => segment =>
+  case segment of $TCPSegment srcport dstport seqnum acknum flags wndsz urgptr _opts data ->
+    connid = TCPConnId src srcport dst dstport;
+    mb_conn = tcpLookupConnection tcpstack connid;
+
+                           // urg   ack   psh   rst   syn   fin
+    case flags of $TCPFlags   urg   False psh   rst   syn   True  -> print_text "fin without ack: invalid       "; None // fin without ack: invalid
+               of $TCPFlags   urg   ack   psh   True  syn   _     -> handle-TCP-rst         tcpstack mb_conn connid
+               of $TCPFlags   urg   False psh   False True  _     -> handle-TCP-initial-syn tcpstack mb_conn connid segment
+               of $TCPFlags   urg   True  psh   False True  _     -> print_text "syn+ack                        "; None // syn+ack
+               of $TCPFlags   urg   True  psh   False False fin   -> handle-TCP-ack         tcpstack mb_conn connid fin seqnum acknum wndsz data
+               of $TCPFlags   urg   False psh   False False _     -> print_text "nothing besides urg/psh, maybe."; None // nothing besides urg/psh, maybe.
+               of $TCPFlags   urg   ack   psh   rst   True  True  -> print_text "dropping syn+fin packet..."; None
+    end
+  end
+};
+
+/////
+
+// Precondition: bitlength <= 24 || bitlength == 32
 // Precondition: bitoffset/8..+bitlength/8 are valid indices for bytes.
 parseBits :: { Bytes => Int32 => Int32 => Int32 };
 parseBits = { bytes => bitoffset => bitlength =>
@@ -234,14 +808,19 @@ parseBits = { bytes => bitoffset => bitlength =>
 
   byteoffset64 = zext_i32_to_i64 byteoffset;
 
-  numArrayPaddingBytes = bytesLength bytes -Int64 byteoffset64;
-  i = case numArrayPaddingBytes
-        of 1 -> bytesGet1HI! bytes byteoffset64;
-        of 2 -> bytesGet2HI! bytes byteoffset64;
-        of 3 -> bytesGet3HI! bytes byteoffset64;
-        of _ -> bytesGet4HI! bytes byteoffset64;
-      end;
-  bitfield-left-Int32 i bitoffrem bitlength
+  if bitlength ==Int32 32
+    then            // TODO assert that bitoffrem ==Int32 0.
+                    bytesGet4HI! bytes byteoffset64;
+    else
+      numArrayPaddingBytes = bytesLength bytes -Int64 byteoffset64;
+      i = case numArrayPaddingBytes
+            of 1 -> bytesGet1HI! bytes byteoffset64;
+            of 2 -> bytesGet2HI! bytes byteoffset64;
+            of 3 -> bytesGet3HI! bytes byteoffset64;
+            of _ -> bytesGet4HI! bytes byteoffset64;
+          end;
+      bitfield-left-Int32 i bitoffrem bitlength
+  end
 };
 
 bitfield-left-Int32 = { i : Int32 => off-right => len =>
@@ -290,28 +869,38 @@ test-parseBits = {
   expect_i32b 1`0000`1011`0001_2; print_i32b (parseBits bytes 19 13);
 };
 
-onesComplementSum = { arr : Array Int8 => len : Int32 =>
+onesComplementSumIncremental16 = { w16 : Int32 => acc : Int32 =>
+  acc +Int32 w16
+};
+
+onesComplementSumIncremental32 = { w32 : Int32 => acc : Int32 =>
+ case splitInt32 w32 of (hi, lo) ->
+   acc |> onesComplementSumIncremental16 hi |> onesComplementSumIncremental16 lo
+ end
+};
+
+onesComplementSum = { init : Int32 => arr : Array Int8 => len : Int32 =>
   REC go = { idx => acc =>
     case len -Int32 idx
       of 0 -> acc
-      of 1 -> acc +Int32 ((zext_i8_to_i32 arr[idx]) `bitshl-Int32` 8)
+      of 1 -> onesComplementSumIncremental16 acc ((zext_i8_to_i32 arr[idx]) `bitshl-Int32` 8)
       of _ -> v16 = ((zext_i8_to_i32 arr[idx]) `bitshl-Int32` 8) +Int32
                      (zext_i8_to_i32 arr[idx +Int32 1]);
-              acc +Int32 v16 |> go (idx +Int32 2)
+              onesComplementSumIncremental16 acc v16 |> go (idx +Int32 2)
     end
   };
-  case splitInt32 (go 0 0) of (hi, lo) -> bitnot-Int32 (hi +Int32 lo) end;
+  case splitInt32 (go 0 init) of (hi, lo) -> bitnot-Int32 (hi +Int32 lo) end;
 };
 
 test-onesComplementSum = {
   expect_i32 (bitnot-Int32 0ddf2_16);
-  print_i32 (onesComplementSum (prim mach-array-literal 00 01 0f2_16 03 0f4_16 0f5_16 0f6_16 0f7_16) 8);
+  print_i32 (onesComplementSum 0 (prim mach-array-literal 00 01 0f2_16 03 0f4_16 0f5_16 0f6_16 0f7_16) 8);
 
   expect_i32 (bitnot-Int32 56571);
-  print_i32 (onesComplementSum (prim mach-array-literal 00 01 0f2_16 03 0f4_16 0f5_16 0f6_16 0) 8);
+  print_i32 (onesComplementSum 0 (prim mach-array-literal 00 01 0f2_16 03 0f4_16 0f5_16 0f6_16 0) 8);
 
   expect_i32 (bitnot-Int32 56571);
-  print_i32 (onesComplementSum (prim mach-array-literal 00 01 0f2_16 03 0f4_16 0f5_16 0f6_16) 7);
+  print_i32 (onesComplementSum 0 (prim mach-array-literal 00 01 0f2_16 03 0f4_16 0f5_16 0f6_16) 7);
 };
 
 test-bytesFlatten = {
@@ -360,8 +949,14 @@ loop-reading-tuntap = {
   arr = allocDArray:[Int8] size;
   rstatus = (ref 0);
 
+  tcpstack = TCPStack (ref (mapEmpty !));
+
   REC loop = { n =>
   if n ==Int32 0 then () else
+
+    print_text "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^";
+    print_text "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv";
+
     nread = foster_posix_read_bytes fd arr 0 rstatus;
     print_text "read this many bytes from tun:";
     print_i64 nread;
@@ -370,17 +965,23 @@ loop-reading-tuntap = {
 
     bytes = bytesTake (bytesOfRawArray arr) nread;
 
-    response = bytes |> parse-IPv4-datagram
+    mb_resp = bytes |> parse-IPv4-datagram
                   // |> show-IPv4-datagram
-                     |> construct-IPv4-datagram-response
-                     |> unparse-IPv4-datagram;
+                     |> construct-IPv4-datagram-response tcpstack
+                     |> liftMaybe unparse-IPv4-datagram;
 
-    print_text "writing response back to fd...";
-    nwrote = foster_posix_write_bytes fd response 0 (arrayLength response) rstatus;
-    print_text "wrote this many bytes to tun:";
-    print_i64 nwrote;
-    print_text "with status";
-    print_i32 rstatus^;
+    case mb_resp
+      of $None ->
+            print_text "no response from networking stack for this packet.";
+      of $Some response ->
+            print_text "writing response back to fd...";
+            nwrote = foster_posix_write_bytes fd response 0 (arrayLength response) rstatus;
+            print_text "wrote this many bytes to tun:";
+            print_i64 nwrote;
+            print_text "with status";
+            print_i32 rstatus^;
+
+    end;
 
     loop (n -Int32 1);
     end
@@ -390,25 +991,37 @@ loop-reading-tuntap = {
 
 };
 
-construct-IPv4-datagram-response :: { IPDatagram => IPDatagram };
-construct-IPv4-datagram-response = { datagram =>
+liftMaybe = { forall a:Type b:Type, f : { a => b } => mb : Maybe a =>
+  case mb of $None    -> None
+          of $Some va -> Some (f va)
+  end
+};
+
+construct-IPv4-datagram-response :: { TCPStack => IPDatagram => Maybe IPDatagram };
+construct-IPv4-datagram-response = { tcpstack => datagram =>
   case datagram of $IPv4Datagram df mf ident fragoff ttl proto src dst _opts data ->
     case proto
-      of 6  -> prim kill-entire-process "can't yet construct IPv4 datagram response for this proto (6)"
+      of 6  -> data
+           |>  parse-TCP-segment
+           |>   show-TCP-segment
+           |> handle-TCP-segment tcpstack src dst
+           |> liftMaybe { seg => seg |> unparse-TCP-segment dst src |> { arr =>
+                 IPv4Datagram df mf (ident +Int32 1) 0 ttl proto dst src _opts (bytesOfRawArray arr)
+                }
+              }
       of 17 -> prim kill-entire-process "can't yet construct IPv4 datagram response for this proto (17)"
       of 1  -> parse-ICMP-datagram data
           // |> show-ICMP-datagram
           |> unparse-ICMP-datagram-response |> { arr =>
-            print_text "constructed IPv4 datagram for ICMP response...";
             IPv4Datagram df mf (ident +Int32 1) 0 ttl proto dst src _opts (bytesOfRawArray arr)
-          }
+          } |> Some
       of _  -> prim kill-entire-process "can't yet construct IPv4 datagram response for this proto (?)"
     end
   end
 };
 
 bytesBuilderAppendIPAddr = { ipaddr => bb =>
-  case ipaddr of $IPAddr a b c d ->
+  case ipaddr of $IPAddr a b c d _ ->
     bb |> bytesBuilderAppendInt8 a
        |> bytesBuilderAppendInt8 b
        |> bytesBuilderAppendInt8 c
@@ -418,7 +1031,7 @@ bytesBuilderAppendIPAddr = { ipaddr => bb =>
 
 unparse-IPv4-datagram :: { IPDatagram => Array Int8 };
 unparse-IPv4-datagram = { datagram =>
-  arr = case datagram of $IPv4Datagram df mf ident fragoff ttl proto src dst _opts data ->
+  case datagram of $IPv4Datagram df mf ident fragoff ttl proto src dst _opts data ->
         ttl8 = trunc_i32_to_i8 ttl;
         prt8 = trunc_i32_to_i8 proto;
         flagfrg = (fragoff `bitor-Int32` (if df then bitshl-Int32 1 14 else 0 end))
@@ -440,14 +1053,56 @@ unparse-IPv4-datagram = { datagram =>
         bytesBuilderAppendInt16BE cksm    |>
         bytesBuilderAppendIPAddr  src     |>
         bytesBuilderAppendIPAddr  dst     |>
-        bytesBuilderComputeChecksumToOffset 10 |>
+        bytesBuilderComputeChecksumToOffset 0 10 |>
         bytesBuilderAppendBytes   data    |>
         bytesBuilderFreeze;
-  end;
+  end
+};
 
-  dg = parse-IPv4-datagram (bytesOfRawArray arr);
+unparse-TCP-flags = { flags =>
+  case flags of $TCPFlags urg ack psh rst syn fin ->
+                   if urg then 32 else 0 end
+    |> bitor-Int32 if ack then 16 else 0 end
+    |> bitor-Int32 if psh then  8 else 0 end
+    |> bitor-Int32 if rst then  4 else 0 end
+    |> bitor-Int32 if syn then  2 else 0 end
+    |> bitor-Int32 if fin then  1 else 0 end
+  end
+};
 
-  arr
+// TODO
+unparse-TCP-segment :: { IPAddr => IPAddr => TCPSegment => Array Int8 };
+unparse-TCP-segment = { src => dst => segment =>
+  case segment of $TCPSegment srcport dstport seqnum acknum flags wndsz urgptr _opts data ->
+
+        size = bytesLength32 data +Int32 20;
+
+        hdrlen_in_32_bit_words = 5;
+        hdrflgs = (hdrlen_in_32_bit_words `bitshl-Int32` 12)
+                  |> bitor-Int32 (unparse-TCP-flags flags);
+
+        phc = // pseudo-header-checksum
+              0 |> onesComplementSumIncremental32 (combined-IPAddr src)
+                |> onesComplementSumIncremental32 (combined-IPAddr dst)
+                |> onesComplementSumIncremental16 6 // TCP protocol
+                |> onesComplementSumIncremental16 size;
+
+        bb = newBytesBuilder size;
+        cksm = 0; // for now...
+        verslen = 45_16; // vers=4, len=5 (*4 = 20)
+                                       bb |>
+        bytesBuilderAppendInt16BE srcport |>
+        bytesBuilderAppendInt16BE dstport |>
+        bytesBuilderAppendInt32BE seqnum  |>
+        bytesBuilderAppendInt32BE acknum  |>
+        bytesBuilderAppendInt16BE hdrflgs |>
+        bytesBuilderAppendInt16BE wndsz   |>
+        bytesBuilderAppendInt16BE cksm    |>
+        bytesBuilderAppendInt16BE urgptr  |>
+        bytesBuilderComputeChecksumToOffset phc 16 |>
+        bytesBuilderAppendBytes   data    |>
+        bytesBuilderFreeze;
+  end
 };
 
 print_i8x = { b => print_i32x (zext_i8_to_i32 b) };

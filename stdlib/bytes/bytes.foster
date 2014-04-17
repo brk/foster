@@ -40,6 +40,8 @@ rawBytesConcatByCopy = { a : Array Int8 => alen : Int32 =>
   end
 };
 
+bytesEmpty :: { Bytes };
+bytesEmpty = { BytesEmpty };
 
 bytesOfRawArray :: { Array Int8 => Bytes };
 bytesOfRawArray = { a => BytesFragment a (prim_arrayLength a) };
@@ -103,6 +105,9 @@ bytesDrop = { ba => n =>
 
 bytesDrop32 :: { Bytes => Int32 => Bytes };
 bytesDrop32 = { ba => n => bytesDrop ba (zext_i32_to_i64 n) };
+
+bytesTake32 :: { Bytes => Int32 => Bytes };
+bytesTake32 = { ba => n => bytesTake ba (zext_i32_to_i64 n) };
 
 // Precondition: len >= 0
 // Postcondition: bytesLength (bytesTake b n) == min n (bytesLength b)

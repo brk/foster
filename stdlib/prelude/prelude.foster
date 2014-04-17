@@ -70,6 +70,14 @@ cmpSWord = { a : Word => b : Word =>
 
 /////
 
+// Precondition: mn <=UInt32 mx
+clamp-UInt32! = { mn => mx => v => v |> min-UInt32 mx |> max-UInt32 mn };
+
+// Precondition: mn <=SInt32 mx
+clamp-SInt32! = { mn => mx => v => v |> min-SInt32 mx |> max-SInt32 mn };
+
+/////
+
 // Specialization of popcount(-1 :: Word).
 // Assumption: Word is either 32 or 64 bits.
 wordNumBits32 :: { Int32 };
@@ -137,16 +145,23 @@ copyOfArrayTo = { forall t:Type,
 
 /////
 
-max-Int32 = { n : Int32 => m : Int32 => if n <SInt32 m then m else n end };
+max-UInt32 = { n : Int32 => m : Int32 => if n <UInt32 m then m else n end };
 max-SInt32 = { n : Int32 => m : Int32 => if n <SInt32 m then m else n end };
 max-SInt64 = { n : Int64 => m : Int64 => if n <SInt64 m then m else n end };
 max-SWord  = { n : Word  => m : Word  => if n <SWord  m then m else n end };
+
+// TODO improve error messages with
+//      min-SInt64 = { a : Int32 => b : Int32 => ...
+min-UInt32 = { n : Int32 => m : Int32 => if n <UInt32 m then n else m end };
+min-SInt32 = { n : Int32 => m : Int32 => if n <SInt32 m then n else m end };
+min-SInt64 = { n : Int64 => m : Int64 => if n <SInt64 m then n else m end };
+min-SWord  = { n : Word  => m : Word  => if n <SWord  m then n else m end };
 
 text_maxdepth = { s : Text =>
   case s
     of $TextFragment a n     -> 0
     of $TextConcat   s1 s2 n -> 1 +Int32
-                               (max-Int32 (text_maxdepth s1) (text_maxdepth s2))
+                               (max-UInt32 (text_maxdepth s1) (text_maxdepth s2))
    end;
 };
 
@@ -203,22 +218,6 @@ arrayIterReverse = { forall t:Type,
   then if f a[n] then arrayIterReverse a (n -Int32 1) f
                  else False end
   else True end
-};
-
-////
-
-min-Int32 = { a : Int32 => b : Int32 =>
-  if a <SInt32 b then a else b end
-};
-
-// TODO improve error messages with
-//      min-SInt64 = { a : Int32 => b : Int32 =>
-min-SInt64 = { a : Int64 => b : Int64 =>
-  if a <SInt64 b then a else b end
-};
-
-min-UInt64 = { a : Int64 => b : Int64 =>
-  if a <UInt64 b then a else b end
 };
 
 ////

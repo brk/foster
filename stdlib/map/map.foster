@@ -16,11 +16,11 @@ type case Map (k:Type) (v:Type)
        of $MapTip
        ;
 
-mapEmpty :: forall k:Type, v:Type { Map k v };
-mapEmpty = { forall k:Type v:Type, MapTip };
+mapEmpty :: forall k:Type, v:Type, { Map k v };
+mapEmpty = { MapTip };
 
 // O(1)
-mapIsEmpty :: forall k:Type, v:Type { Map k v => Bool };
+mapIsEmpty :: forall k:Type, v:Type, { Map k v => Bool };
 mapIsEmpty = { forall k:Type v:Type, s =>
   case s
     of $MapTip -> True
@@ -29,11 +29,11 @@ mapIsEmpty = { forall k:Type v:Type, s =>
 };
 
 // O(1)
-mapSingleton :: forall k:Type, v:Type { k => v => Map k v };
+mapSingleton :: forall k:Type, v:Type, { k => v => Map k v };
 mapSingleton = { forall k:Type v:Type, k => v => MapBin 1 k v MapTip MapTip };
 
 // O(1)
-mapSize :: forall k:Type, v:Type { Map k v => Word };
+mapSize :: forall k:Type, v:Type, { Map k v => Word };
 mapSize = { forall k:Type v:Type, s =>
   case s
     of $MapTip            -> 0
@@ -41,17 +41,16 @@ mapSize = { forall k:Type v:Type, s =>
   end
 };
 
-// O(?)
-// Smart constructor which restores balance and size if necessary.
+// O(1)
 // Precondition: [[mapsBalanced l r]]
-mapBin! :: forall k:Type, v:Type { k => v => Map k v => Map k v => Map k v };
+mapBin! :: forall k:Type, v:Type, { k => v => Map k v => Map k v => Map k v };
 mapBin! = { forall k:Type v:Type, kx => x => l => r =>
   MapBin (1 +Word mapSize l +Word mapSize r) kx x l r
 };
 
 // O(?)
 // Smart constructor which restores balance and size if necessary.
-mapJoin :: forall k:Type, v:Type { k => v => Map k v => Map k v => Map k v };
+mapJoin :: forall k:Type, v:Type, { k => v => Map k v => Map k v => Map k v };
 mapJoin = { forall k:Type v:Type, kx => x => l => r =>
   case (l, r)
     of ($MapTip, _) -> mapInsertMin kx x r
@@ -67,8 +66,8 @@ mapJoin = { forall k:Type v:Type, kx => x => l => r =>
 
 // O(lg n)
 // May perform one allocation, depending on compiler-chosen data representation.
-mapLookup :: forall k:Type, v:Type v:Type, { Map k v => k => { k => k => Ord } => Maybe v };
-mapLookup = { forall k:Type v:Type v:Type, s => k => cmp =>
+mapLookup :: forall k:Type, v:Type, { Map k v => k => { k => k => Ord } => Maybe v };
+mapLookup = { forall k:Type v:Type, s => k => cmp =>
   REC go = { s =>
       case s
         of $MapTip                -> None
@@ -103,8 +102,8 @@ mapContainsKey = { forall k:Type v:Type, s => k => cmp =>
 
 // O(lg  n)
 // Does not allocate.
-mapLookupWithDefault :: forall k:Type, v:Type v:Type, { Map k v => k => v => { k => k => Ord } => v };
-mapLookupWithDefault = { forall k:Type v:Type v:Type, s => k => v => cmp =>
+mapLookupWithDefault :: forall k:Type, v:Type, { Map k v => k => v => { k => k => Ord } => v };
+mapLookupWithDefault = { forall k:Type v:Type, s => k => v => cmp =>
   REC go = { s =>
       case s
         of $MapTip                -> v
@@ -122,7 +121,7 @@ mapLookupWithDefault = { forall k:Type v:Type v:Type, s => k => v => cmp =>
 /*
 // O(lg n)
 // Find largest element smaller than the given one.
-mapLookupLT :: forall k:Type, v:Type { Map k v => k => { k => k => Ord } => Maybe v };
+mapLookupLT :: forall k:Type, v:Type, { Map k v => k => { k => k => Ord } => Maybe v };
 mapLookupLT = { forall k:Type v:Type, s => k => cmp =>
   REC goNone = { s =>
       case s
@@ -149,7 +148,7 @@ mapLookupLT = { forall k:Type v:Type, s => k => cmp =>
 
 // O(lg n)
 // Find smallest element greater than the given one.
-mapLookupGT :: forall k:Type, v:Type { Map k v => a => { k => k => Ord } => Maybe k };
+mapLookupGT :: forall k:Type, v:Type, { Map k v => a => { k => k => Ord } => Maybe k };
 mapLookupGT = { forall k:Type v:Type, s => e => cmp =>
   REC goNone = { s =>
       case s
@@ -176,7 +175,7 @@ mapLookupGT = { forall k:Type v:Type, s => e => cmp =>
 
 // O(lg n)
 // Find largest element smaller or equal to the given one.
-mapLookupLE :: forall k:Type, v:Type { Map k v => a => { k => k => Ord } => Maybe k };
+mapLookupLE :: forall k:Type, v:Type, { Map k v => a => { k => k => Ord } => Maybe k };
 mapLookupLE = { forall k:Type v:Type, s => e => cmp =>
   REC goNone = { s =>
       case s
@@ -205,7 +204,7 @@ mapLookupLE = { forall k:Type v:Type, s => e => cmp =>
 
 // O(lg n)
 // Find smallest element greater or equal to the given one.
-mapLookupGE :: forall k:Type, v:Type { Map k v => a => { k => k => Ord } => Maybe k };
+mapLookupGE :: forall k:Type, v:Type, { Map k v => a => { k => k => Ord } => Maybe k };
 mapLookupGE = { forall k:Type v:Type, s => e => cmp =>
   REC goNone = { s =>
       case s
@@ -236,7 +235,7 @@ mapLookupGE = { forall k:Type v:Type, s => e => cmp =>
 // O(lg n)
 // If an element is equivalent to one already in the map,
 // the new element replaces the old one.
-mapInsert :: forall k:Type, v:Type { k => v => Map k v => { k => k => Ord } => Map k v };
+mapInsert :: forall k:Type, v:Type, { k => v => Map k v => { k => k => Ord } => Map k v };
 mapInsert = { forall k:Type v:Type, k : k => v : v => s => cmp =>
   REC go = { s =>
       case s
@@ -257,7 +256,7 @@ mapInsert = { forall k:Type v:Type, k : k => v : v => s => cmp =>
 // O(lg n)
 // If an element is equivalent to one already in the map,
 // the original map is returned, not a new map.
-mapInsertR :: forall k:Type, v:Type { k => v => Map k v => { k => k => Ord } => Map k v };
+mapInsertR :: forall k:Type, v:Type, { k => v => Map k v => { k => k => Ord } => Map k v };
 mapInsertR = { forall k:Type v:Type,  k => v => s => cmp =>
   REC go = { s =>
       case s
@@ -276,7 +275,7 @@ mapInsertR = { forall k:Type v:Type,  k => v => s => cmp =>
 // O(lg n)
 // If an element is equivalent to one already in the map,
 // the original map is returned, not a new map.
-mapDelete :: forall k:Type, v:Type { Map k v => k => { k => k => Ord } => Map k v };
+mapDelete :: forall k:Type, v:Type, { Map k v => k => { k => k => Ord } => Map k v };
 mapDelete = { forall k:Type v:Type, s => k => cmp =>
   REC go = { s =>
       case s
@@ -294,7 +293,7 @@ mapDelete = { forall k:Type v:Type, s => k => cmp =>
 
 ////////////
 
-mapInsertMin :: forall k:Type, v:Type { k => v => Map k v => Map k v };
+mapInsertMin :: forall k:Type, v:Type, { k => v => Map k v => Map k v };
 mapInsertMin = { forall k:Type v:Type, k => x => s =>
   case s
     of $MapTip            -> mapSingleton k x
@@ -302,7 +301,7 @@ mapInsertMin = { forall k:Type v:Type, k => x => s =>
   end
 };
 
-mapInsertMax :: forall k:Type, v:Type { k => v => Map k v => Map k v };
+mapInsertMax :: forall k:Type, v:Type, { k => v => Map k v => Map k v };
 mapInsertMax = { forall k:Type v:Type, k => x => s =>
   case s
     of $MapTip            -> mapSingleton k x
@@ -313,7 +312,7 @@ mapInsertMax = { forall k:Type v:Type, k => x => s =>
 ////////////
 
 // O(n+m)
-mapUnion :: forall k:Type, v:Type { Map k v => Map k v => { k => k => Ord } => Map k v };
+mapUnion :: forall k:Type, v:Type, { Map k v => Map k v => { k => k => Ord } => Map k v };
 mapUnion = { forall k:Type v:Type, s1 => s2 => cmp =>
   case (s1, s2)
     of ($MapTip, _) -> s2
@@ -323,7 +322,7 @@ mapUnion = { forall k:Type v:Type, s1 => s2 => cmp =>
 };
 
 // O(n+m)
-mapDifference :: forall k:Type, v:Type { Map k v => Map k v => { k => k => Ord } => Map k v };
+mapDifference :: forall k:Type, v:Type, { Map k v => Map k v => { k => k => Ord } => Map k v };
 mapDifference = { forall k:Type v:Type, s1 => s2 => cmp =>
   case (s1, s2)
     of ($MapTip, _) -> s1
@@ -333,7 +332,7 @@ mapDifference = { forall k:Type v:Type, s1 => s2 => cmp =>
 };
 
 // O(n+m)
-mapIntersection :: forall k:Type, v:Type { Map k v => Map k v => { k => k => Ord } => Map k v };
+mapIntersection :: forall k:Type, v:Type, { Map k v => Map k v => { k => k => Ord } => Map k v };
 mapIntersection = { forall k:Type v:Type, s1 => s2 => cmp =>
   case (s1, s2)
     of ($MapTip, _) -> s1
@@ -343,7 +342,7 @@ mapIntersection = { forall k:Type v:Type, s1 => s2 => cmp =>
 };
 
 // O(n+m)
-mapIsSubmapOf :: forall k:Type, v:Type { Map k v => Map k v => { k => k => Ord } => Bool };
+mapIsSubmapOf :: forall k:Type, v:Type, { Map k v => Map k v => { k => k => Ord } => Bool };
 mapIsSubmapOf = { forall k:Type v:Type, s1 => s2 => cmp =>
   REC go = { s1 => s2 =>
     case (s1, s2)
@@ -359,7 +358,7 @@ mapIsSubmapOf = { forall k:Type v:Type, s1 => s2 => cmp =>
   { mapSize s1 <=UWord mapSize s2 } `andand` { go s1 s2 };
 };
 
-mapSplit :: forall k:Type, v:Type { k => Map k v => { k => k => Ord } => (Map k v, Map k v) };
+mapSplit :: forall k:Type, v:Type, { k => Map k v => { k => k => Ord } => (Map k v, Map k v) };
 mapSplit = { forall k:Type v:Type, k => s => cmp =>
   case mapSplitLookup k s cmp
     of (lt, _, gt) -> (lt, gt)
@@ -367,7 +366,7 @@ mapSplit = { forall k:Type v:Type, k => s => cmp =>
 };
 
 // O(lg n)
-mapSplitLookup :: forall k:Type, v:Type { k => Map k v => { k => k => Ord } => (Map k v, Bool, Map k v) };
+mapSplitLookup :: forall k:Type, v:Type, { k => Map k v => { k => k => Ord } => (Map k v, Bool, Map k v) };
 mapSplitLookup = { forall k:Type v:Type, k => s => cmp =>
   case s
     of $MapTip -> (s, False, s)
@@ -386,7 +385,7 @@ mapSplitLookup = { forall k:Type v:Type, k => s => cmp =>
 
 ////////////
 
-mapHedgeUnion! :: forall k:Type, v:Type { Maybe k => Maybe k => Map k v => Map k v => { k => k => Ord } => Map k v };
+mapHedgeUnion! :: forall k:Type, v:Type, { Maybe k => Maybe k => Map k v => Map k v => { k => k => Ord } => Map k v };
 mapHedgeUnion! = { forall k:Type v:Type, blo => bhi => s1 => s2 => cmp =>
   case (s1, s2)
     of (_, $MapTip) -> s1
@@ -401,7 +400,7 @@ mapHedgeUnion! = { forall k:Type v:Type, blo => bhi => s1 => s2 => cmp =>
   end
 };
 
-mapHedgeDiff! :: forall k:Type, v:Type { Maybe k => Maybe k => Map k v => Map k v => { k => k => Ord } => Map k v };
+mapHedgeDiff! :: forall k:Type, v:Type, { Maybe k => Maybe k => Map k v => Map k v => { k => k => Ord } => Map k v };
 mapHedgeDiff! = { forall k:Type v:Type, blo => bhi => s1 => s2 => cmp =>
   case (s1, s2)
     of ($MapTip, _) -> s1
@@ -415,7 +414,7 @@ mapHedgeDiff! = { forall k:Type v:Type, blo => bhi => s1 => s2 => cmp =>
   end
 };
 
-mapHedgeInter! :: forall k:Type, v:Type { Maybe k => Maybe k => Map k v => Map k v => { k => k => Ord } => Map k v };
+mapHedgeInter! :: forall k:Type, v:Type, { Maybe k => Maybe k => Map k v => Map k v => { k => k => Ord } => Map k v };
 mapHedgeInter! = { forall k:Type v:Type, blo => bhi => s1 => s2 => cmp =>
   case (s1, s2)
     of ($MapTip, _) -> s1
@@ -431,7 +430,7 @@ mapHedgeInter! = { forall k:Type v:Type, blo => bhi => s1 => s2 => cmp =>
   end
 };
 
-mapTrim :: forall k:Type, v:Type { Maybe k => Maybe k => Map k v => { k => k => Ord } => Map k v };
+mapTrim :: forall k:Type, v:Type, { Maybe k => Maybe k => Map k v => { k => k => Ord } => Map k v };
 mapTrim = { forall k:Type v:Type, blo => bhi => s => cmp =>
   case (blo, bhi)
     of ($None,    $None)    -> s
@@ -469,7 +468,7 @@ mapTrim = { forall k:Type v:Type, blo => bhi => s => cmp =>
   end
 };
 
-mapFilterGT :: forall k:Type, v:Type { Maybe k => Map k v => { k => k => Ord } => Map k v };
+mapFilterGT :: forall k:Type, v:Type, { Maybe k => Map k v => { k => k => Ord } => Map k v };
 mapFilterGT = { forall k:Type v:Type, mb => s => cmp =>
   case mb
     of $None -> s
@@ -489,7 +488,7 @@ mapFilterGT = { forall k:Type v:Type, mb => s => cmp =>
   end
 };
 
-mapFilterLT :: forall k:Type, v:Type { Maybe k => Map k v => { k => k => Ord } => Map k v };
+mapFilterLT :: forall k:Type, v:Type, { Maybe k => Map k v => { k => k => Ord } => Map k v };
 mapFilterLT = { forall k:Type v:Type, mb => s => cmp =>
   case mb
     of $None -> s
@@ -548,7 +547,7 @@ mapMap = { forall k:Type v:Type r:Type, s => f =>
 };
 
 /*
-mapKeepIf :: forall k:Type, v:Type { Map k v => { a => Bool } => Map k v };
+mapKeepIf :: forall k:Type, v:Type, { Map k v => { a => Bool } => Map k v };
 mapKeepIf = { forall k:Type v:Type, s => p =>
   case s
     of $MapTip -> s
@@ -561,24 +560,24 @@ mapKeepIf = { forall k:Type v:Type, s => p =>
 };
 */
 
-mapToList :: forall k:Type, v:Type { Map k v => List (k, v) };
+mapToList :: forall k:Type, v:Type, { Map k v => List (k, v) };
 mapToList = { forall k:Type v:Type, s =>
   mapFoldr s { k => v => lst => Cons (k, v) lst } Nil
 };
 
-mapToListDesc :: forall k:Type, v:Type { Map k v => List (k, v) };
+mapToListDesc :: forall k:Type, v:Type, { Map k v => List (k, v) };
 mapToListDesc = { forall k:Type v:Type, s =>
   mapFoldl s { k => v => lst => Cons (k, v) lst } Nil
 };
 
-mapOfList :: forall k:Type, v:Type { List (k, v) => { k => k => Ord } => Map k v };
+mapOfList :: forall k:Type, v:Type, { List (k, v) => { k => k => Ord } => Map k v };
 mapOfList = { forall k:Type v:Type, lst => cmp =>
   listFoldl lst { p => s => case p of (k, v) -> mapInsert k v s cmp end } MapTip
 };
 
 ////////////
 
-mapMerge :: forall k:Type, v:Type { Map k v => Map k v => Map k v };
+mapMerge :: forall k:Type, v:Type, { Map k v => Map k v => Map k v };
 mapMerge = { forall k:Type v:Type, l => r =>
   case (l, r)
     of ($MapTip, _) -> r
@@ -593,7 +592,7 @@ mapMerge = { forall k:Type v:Type, l => r =>
 };
 
 // Like mapMerge, but assumes the maps are balanced.
-mapGlue! :: forall k:Type, v:Type { Map k v => Map k v => Map k v };
+mapGlue! :: forall k:Type, v:Type, { Map k v => Map k v => Map k v };
 mapGlue! = { forall k:Type v:Type, l => r =>
   case (l, r)
     of ($MapTip, _) -> r
@@ -607,7 +606,7 @@ mapGlue! = { forall k:Type v:Type, l => r =>
 };
 
 // Precondition: mapSize s > 0
-mapDeleteFindMin! :: forall k:Type, v:Type { Map k v => ((k, v), Map k v) };
+mapDeleteFindMin! :: forall k:Type, v:Type, { Map k v => ((k, v), Map k v) };
 mapDeleteFindMin! = { forall k:Type v:Type, s =>
   case s
     of $MapBin _ kelt elt ($MapTip) r -> ((kelt, elt), r)
@@ -618,7 +617,7 @@ mapDeleteFindMin! = { forall k:Type v:Type, s =>
 };
 
 // Precondition: mapSize s > 0
-mapDeleteFindMax! :: forall k:Type, v:Type { Map k v => ((k, v), Map k v) };
+mapDeleteFindMax! :: forall k:Type, v:Type, { Map k v => ((k, v), Map k v) };
 mapDeleteFindMax! = { forall k:Type v:Type, s =>
   case s
     of $MapBin _ kelt elt l ($MapTip) -> ((kelt, elt), l)
@@ -631,7 +630,7 @@ mapDeleteFindMax! = { forall k:Type v:Type, s =>
 mapRatio = { 2 };
 mapDelta = { 3 };
 
-mapBalanceL :: forall k:Type, v:Type { k => v => Map k v => Map k v => Map k v };
+mapBalanceL :: forall k:Type, v:Type, { k => v => Map k v => Map k v => Map k v };
 mapBalanceL = { forall k:Type v:Type, k => x => l => r =>
   case r
       of $MapTip        ->
@@ -683,7 +682,7 @@ mapBalanceL = { forall k:Type v:Type, k => x => l => r =>
 };
 
 
-mapBalanceR :: forall k:Type, v:Type { k => v => Map k v => Map k v => Map k v };
+mapBalanceR :: forall k:Type, v:Type, { k => v => Map k v => Map k v => Map k v };
 mapBalanceR = { forall k:Type v:Type, k => x => l => r =>
   case l
     of $MapTip ->
@@ -733,7 +732,7 @@ mapBalanceR = { forall k:Type v:Type, k => x => l => r =>
 ////////////
 
 // O(n)
-mapSizeValid_ :: forall k:Type, v:Type { Map k v => Bool };
+mapSizeValid_ :: forall k:Type, v:Type, { Map k v => Bool };
 mapSizeValid_ = { forall k:Type v:Type, s =>
   REC realsize = { s =>
     case s
@@ -755,7 +754,7 @@ mapSizeValid_ = { forall k:Type v:Type, s =>
   end
 };
 
-mapBalanced :: forall k:Type, v:Type { Map k v => Bool };
+mapBalanced :: forall k:Type, v:Type, { Map k v => Bool };
 mapBalanced = { forall k:Type v:Type, s =>
   case s
     of $MapTip           -> True
@@ -763,7 +762,7 @@ mapBalanced = { forall k:Type v:Type, s =>
   end
 };
 
-mapsBalanced :: forall k:Type, v:Type { Map k v => Map k v => Bool };
+mapsBalanced :: forall k:Type, v:Type, { Map k v => Map k v => Bool };
 mapsBalanced = { forall k:Type v:Type, l => r =>
   sl = mapSize l;
   sr = mapSize r;

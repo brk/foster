@@ -622,7 +622,7 @@ end // case
 // natDiv
 
 shlVU = { z : Array Word => x : Array Word => s : Word =>
-  n = min-Int32 (arrayLength32 z) (arrayLength32 x);
+  n = min-UInt32 (arrayLength32 z) (arrayLength32 x);
   if n ==Int32 0 then 0
   else
     s_hat = zext_i32_to_Word (wordNumBits32 !) -Word s;
@@ -645,7 +645,7 @@ shlVU = { z : Array Word => x : Array Word => s : Word =>
 };
 
 shrVU = { z : Array Word => x : Array Word => s : Word =>
-  n = min-Int32 (arrayLength32 z) (arrayLength32 x);
+  n = min-UInt32 (arrayLength32 z) (arrayLength32 x);
   if n ==Int32 0 then 0
   else
     s_hat = zext_i32_to_Word (wordNumBits32 !) -Word s;
@@ -964,8 +964,8 @@ natCountBits_A = { a =>
 
 natBitAnd_A :: { Array Word => Array Word => Array Word };
 natBitAnd_A = { a => b =>
-  dd = newDArray0 (min-Int32 (arrayLength32 a) (arrayLength32 b))
-                 { i : Int32 => bitand-Word a[i] b[i] };
+  dd = newDArray0 (min-UInt32 (arrayLength32 a) (arrayLength32 b))
+                  { i : Int32 => bitand-Word a[i] b[i] };
   trimLeadingZeroWords dd
 };
 
