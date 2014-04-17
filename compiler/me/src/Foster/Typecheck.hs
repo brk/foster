@@ -284,7 +284,7 @@ tcSigmaVar ctx annot name = do
          msg <- getStructureContextMessage
          tcFails [text $ "Unknown variable " ++ T.unpack name
                   ++ showSourceRange (rangeOf annot)
-                  ++ "ctx: "++ unlines (map show (Map.toList $ contextBindings ctx))
+                  -- ++ "ctx: "++ unlines (map show (Map.toList $ contextBindings ctx))
                   ++ "\nhist: " , msg]
 
 -- To get a rho-type from a variable with a forall type,
