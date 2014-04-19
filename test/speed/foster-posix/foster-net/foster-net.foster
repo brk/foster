@@ -377,8 +377,8 @@ tcpControlBlock = { conn =>
     of $TCPConnClosed         -> prim kill-entire-process "tcpControlBlock cant get control block";
     of $TCPConnListen         -> prim kill-entire-process "tcpControlBlock cant get control block";
     of $TCPConnSynSent        -> prim kill-entire-process "tcpControlBlock cant get control block";
-    of $TCPConnSynRcvd     cb -> cb
-    of $TCPConnEstablished cb -> cb
+    of $TCPConnSynRcvd     cb _ -> cb
+    of $TCPConnEstablished cb _ -> cb
     of $TCPConnFinWait1       -> prim kill-entire-process "tcpControlBlock cant get control block";
     of $TCPConnFinWait2       -> prim kill-entire-process "tcpControlBlock cant get control block";
     of $TCPConnCloseWait      -> prim kill-entire-process "tcpControlBlock cant get control block";
@@ -388,14 +388,30 @@ tcpControlBlock = { conn =>
   end
 };
 
+tcpConnectionHandler = { conn =>
+  case conn
+    of $TCPConnClosed                -> None
+    of $TCPConnListen                -> None
+    of $TCPConnSynSent               -> None
+    of $TCPConnSynRcvd     _ handler -> Some handler
+    of $TCPConnEstablished _ handler -> Some handler
+    of $TCPConnFinWait1              -> None
+    of $TCPConnFinWait2              -> None
+    of $TCPConnCloseWait             -> None
+    of $TCPConnClosing               -> None
+    of $TCPConnLastAck               -> None
+    of $TCPConnTimeWait              -> None
+  end
+};
+
 /////
 
 type case TCPConnection
        of $TCPConnClosed
        of $TCPConnListen
        of $TCPConnSynSent
-       of $TCPConnSynRcvd     TCPControlBlock
-       of $TCPConnEstablished TCPControlBlock
+       of $TCPConnSynRcvd     TCPControlBlock (Coro Bytes TCPConnCont)
+       of $TCPConnEstablished TCPControlBlock (Coro Bytes TCPConnCont)
        of $TCPConnFinWait1
        of $TCPConnFinWait2
        of $TCPConnCloseWait
@@ -431,12 +447,27 @@ tcpConnIdDestPort = { tci =>
 
 /////
 
+type case TCPConnCont of $TCPContStop
+                      of $TCPContMore
+                      ;
+
 type case TCPStack
        of $TCPStack (Ref (Map TCPConnId TCPConnection))
+                    (Ref (Map Int32     { TCPConnId => Coro Bytes TCPConnCont } ))
        ;
 
 tcpStackConnections = { tcpstack =>
-  case tcpstack of $TCPStack connmapref -> connmapref end
+  case tcpstack of $TCPStack connmapref _ -> connmapref end
+};
+
+tcpStackPortHandlers = { tcpstack =>
+  case tcpstack of $TCPStack _ porthandlersref -> porthandlersref end
+};
+
+tcpStackRegisterPortHandler = { tcpstack => port => handler =>
+  r = tcpStackPortHandlers tcpstack;
+  // This overwrites any previously registered handlers. Oh well.
+  mapInsert port handler r^ cmpUInt32 >^ r;
 };
 
 /////
@@ -455,9 +486,9 @@ tcpUpdateConnection = { tcpstack => connid => conn =>
   refUpdate (tcpStackConnections tcpstack) { m => mapInsert connid conn m cmpTCPConnId };
 };
 
-tcpGetListenerForPort :: { TCPStack => Int32 => Maybe () };
+tcpGetListenerForPort :: { TCPStack => Int32 => Maybe { TCPConnId => Coro Bytes TCPConnCont } };
 tcpGetListenerForPort = { tcpstack => dstport =>
-  Some () // for now, always listening on every port...
+  mapLookup (tcpStackPortHandlers tcpstack)^ dstport cmpUInt32;
 };
 
 /////
@@ -482,7 +513,7 @@ make-TCP-ack-packet-for = { connid => cb =>
 
 /////
 
-create-new-TCP-connection = { tcpstack => connid => segment =>
+create-new-TCP-connection = { tcpstack => connid => segment => handler =>
   case segment of $TCPSegment s_srcport s_dstport s_seqnum s_acknum s_flags s_wndptr s_urgptr _opts s_data ->
     /*
        "[1] SND.NXT is set to ISS+1 and SND.UNA to ISS.
@@ -519,7 +550,7 @@ create-new-TCP-connection = { tcpstack => connid => segment =>
                 (ref rcv_wnd)
                 (ref rcv_urg)
                 s_seqnum // [3]
-              );
+              ) handler;
 
     tcpUpdateConnection tcpstack connid conn;
 
@@ -542,8 +573,8 @@ handle-TCP-initial-syn = { tcpstack => mb_conn => connid => segment =>
   case mb_conn
     of $None      ->
         case tcpGetListenerForPort tcpstack (tcpConnIdDestPort connid)
-          of $None   -> Some (make-TCP-reset-packet-for segment)
-          of $Some _ -> Some (create-new-TCP-connection tcpstack connid segment);
+          of $None          -> Some (make-TCP-reset-packet-for segment)
+          of $Some listener -> Some (create-new-TCP-connection tcpstack connid segment (listener connid));
         end
     of $Some conn    -> Some (make-TCP-reset-packet-for segment);
   end
@@ -552,8 +583,8 @@ handle-TCP-initial-syn = { tcpstack => mb_conn => connid => segment =>
 handle-TCP-ack = { tcpstack => mb_conn => connid => fin => s_seqnum => s_acknum => s_wndsz => data =>
   case mb_conn
     of $None     -> print_text "ack without connection; TODO generate rst"; None
-    of $Some ($TCPConnSynRcvd tcb) ->
-                    TCPConnEstablished tcb |> tcpUpdateConnection tcpstack connid; None
+    of $Some ($TCPConnSynRcvd tcb handler) ->
+           TCPConnEstablished tcb handler |> tcpUpdateConnection tcpstack connid; None
     of $Some conn -> deliver-in-3 tcpstack conn connid fin s_seqnum s_acknum s_wndsz data
   end
 };
@@ -678,7 +709,7 @@ deliver-in-3-datastuff = { tcpstack => conn => connid => fin => s_seqnum => s_ac
           (getRcvWnd cb >UInt32 0)
           ((seq-trimmed +Int32
               (bytesLength32 data-trimmed
-                 +Int32 (if fin-trimmed then 1 else 0))) >UInt32 getRcvNxt cb)
+                 +Int32 (if fin-trimmed then 1 else 0 end))) >UInt32 getRcvNxt cb)
     then
       have-stuff-to-ack = either (bytesLength32 data-trimmed >=UInt32 0) fin-trimmed;
       delay-ack = False; // TODO
@@ -702,6 +733,11 @@ deliver-in-3-datastuff = { tcpstack => conn => connid => fin => s_seqnum => s_ac
         else
           print_text "reassembled this many bytes: _";
           print_i32  (bytesLength32 bytes);
+
+          stop-eh = case tcpConnectionHandler conn
+                      of $None -> TCPContStop
+                      of $Some handler -> coro_invoke handler bytes
+                    end;
 
           setRcvNxt cb (seq-trimmed  +Int32 bytesLength32 bytes +Int32 (if fin-reass then 1 else 0 end));
           setRcvWnd cb (getRcvWnd cb -Int32 bytesLength32 bytes);
@@ -741,8 +777,8 @@ huh = { cb => seqnum => acknum => wnd => fin => conn =>
 };
 
 isSynRcvd = { conn =>
-  case conn of $TCPConnSynRcvd _ -> True
-            of _                 -> False end
+  case conn of $TCPConnSynRcvd _ _ -> True
+            of _                   -> False end
 };
 
 /////
@@ -940,6 +976,30 @@ main = {
   0
 };
 
+// Needs to do UTF8 input validation.
+// TODO: http://bjoern.hoehrmann.de/utf-8/decoder/dfa/
+textOfBytes = { b : Bytes =>
+  TextFragment (bytesFlatten b) (bytesLength32 b)
+};
+
+handler = { connid : TCPConnId =>
+    coro_create { bytes : Bytes =>
+      REC loop = { n => bytes =>
+        print_text "loop iteration";
+        print_i32 n;
+        print_text "bytes length:";
+        print_i32 (bytesLength32 bytes);
+        // TODO actually, the HTTP header should be parsed as bytes, not text...
+        print_text (textOfBytes bytes);
+        altbytes = coro_yield:[Bytes,TCPConnCont] TCPContMore;
+        loop (n +Int32 1) altbytes;
+      };
+      loop 0 bytes;
+      TCPContStop
+    }
+};
+
+
 loop-reading-tuntap = {
   print_text "reading tuntap fd";
   fd = foster_posix_get_tuntap_fd !;
@@ -949,7 +1009,10 @@ loop-reading-tuntap = {
   arr = allocDArray:[Int8] size;
   rstatus = (ref 0);
 
-  tcpstack = TCPStack (ref (mapEmpty !));
+  tcpstack = TCPStack (ref (mapEmpty !))
+                      (ref (mapEmpty !));
+
+  tcpStackRegisterPortHandler tcpstack 80 handler;
 
   REC loop = { n =>
   if n ==Int32 0 then () else
