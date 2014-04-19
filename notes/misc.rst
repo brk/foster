@@ -19,3 +19,10 @@
   Use ``--me-arg=--inline`` to enable it.
 * To see monomorphized, inlined, and loop-headered variants of the input program,
   use ``--me-arg=--dump-ir=mono``.
+
+* To convert a UTF-8 encoded string (say, as copied from a web page) into the
+  corresponding byte sequence expressed as a Foster machine literal array,
+  use a snippet of Python code in http://repl.it/languages/Python/ like so::
+      def arra(s):
+        print "prim mach-array-literal " + ' '.join(str(ord(x)) for x in list(s))
+  and its length via ``len(s.decode('utf-8'))``.

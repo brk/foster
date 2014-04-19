@@ -63,6 +63,8 @@ arrayLengthWord = { forall t:Type, a : Array t =>
   trunc_i64_to_Word (prim_arrayLength a)
 };
 
+incr64 = { n : Int64 => n +Int64 1 };
+
 arrayEnumFromTo = { forall t:Type,
                   a : Array t =>
                   k : Int64 =>
@@ -95,4 +97,23 @@ arrayEach = { forall t:Type,
   arrayEnum a { ign:Int64 => v:t => f v };
 };
 */
+
+arrayFoldFrom = { forall t:Type r:Type,
+                  a : Array t =>
+                  k : Int64 =>
+                  f : { t => Int64 => r => r } =>
+                  acc : r =>
+  if k <SInt64 prim_arrayLength a
+    then arrayFoldFrom a (incr64 k) f (f a[trunc_i64_to_i32 k] k acc)
+    else acc
+  end
+};
+
+arrayFold = { forall t:Type r:Type,
+              a : Array t =>
+              f : { t => Int64 => r => r } =>
+              acc : r =>
+  arrayFoldFrom a 0 f acc
+};
+
 
