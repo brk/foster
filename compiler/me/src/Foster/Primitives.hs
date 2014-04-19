@@ -24,7 +24,13 @@ primitiveDataTypesP = [
             [TyConAppP "Text" []
             ,TyConAppP "Text" []
             ,PrimIntP I32]
-            (MissingSourceRange "Text.TextFragment")]
-        (MissingSourceRange "Text"))
+            (MissingSourceRange "Text.TextConcat")]
+        (MissingSourceRange "Text")),
+
+  (let tf = [TypeFormalAST "o" KindAnySizeType,
+             TypeFormalAST "i" KindAnySizeType] in
+   DataType (TypeFormalAST "Coro" KindPointerSized) tf
+        []
+        (MissingSourceRange "Coro"))
   ]
 

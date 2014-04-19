@@ -455,6 +455,7 @@ desugarParsedModule tcenv m = do
           TyConAppP "Float64" [] -> return $ PrimFloat64AST
           TyConAppP "Array"  [t] -> liftM  ArrayTypeAST            (q t)
           TyConAppP "Ref"    [t] -> liftM  RefTypeAST              (q t)
+          TyConAppP "Coro" [o,i] -> liftM2 CoroTypeAST       (q o) (q i)
           TyConAppP    tc types  -> liftM (TyConAppAST tc) (mapM q types)
           TupleTypeP      types  -> liftM  TupleTypeAST    (mapM q types)
           RefTypeP       t       -> liftM  RefTypeAST              (q t)
