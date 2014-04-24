@@ -45,7 +45,6 @@ import Foster.Fepb.PBCase   as PBCase
 import Foster.Fepb.CaseClause as CaseClause
 import Foster.Fepb.PBValAbs as PBValAbs
 import Foster.Fepb.Expr     as PbExpr
-import Foster.Fepb.PBArrEntries as PBArrEntries
 import Foster.Fepb.SourceModule as SourceModule
 import Foster.Fepb.WholeProgram as WholeProgram
 import Foster.Fepb.Expr.Tag(Tag(IF, LET, VAR, SEQ, TY_CHECK,

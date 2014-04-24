@@ -337,6 +337,7 @@ LLExpr* parseArrayEntry(const pb::PbArrayEntry& e) {
   if (e.has_lit()) {
     return LLExpr_from_pb(&e.lit()); // TODO should eventually support float/bool too
   }
+  return NULL; // can't happen
 }
 
 LLExpr* parseArrayLiteral(const pb::Letable& e) {

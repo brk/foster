@@ -40,6 +40,10 @@ namespace foster {
   extern bool gPrintLLVMImports; // in StandardPrelude.cpp
 }
 
+// Some stdlib functions, such as those with byte array parameters,
+// will have a mismatch in their supposed vs actual LLVM types.
+// We record these special cases here when loading the stdlib,
+// and bitcast the function on each access.
 extern std::map<std::string, llvm::Type*> gDeclaredSymbolTypes;
 
 using namespace llvm;
@@ -70,7 +74,7 @@ optBitcodeLibsDir("bitcodelibs",
 
 static cl::opt<bool>
 optEmitDebugInfo("g",
-  cl::desc("Emit debug information in generated LLVM IR"),
+  cl::desc("Emit debug information in generated LLVM IR (not yet implemented)"),
   cl::cat(FosterOptCat));
 
 static cl::opt<bool>
