@@ -26,3 +26,4 @@
       def arra(s):
         print "prim mach-array-literal " + ' '.join(str(ord(x)) for x in list(s))
   and its length via ``len(s.decode('utf-8'))``.
+* Can't yet mix ``|>`` sugar with primitive applications.

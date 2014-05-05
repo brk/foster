@@ -20,8 +20,22 @@ main = {
   //expect_text "n2"; print_text "n2";
   //n2 !;
   n3_c !;
+
+  if (wordNumBits32 !) ==Int32 32 then
+    case splitCarry 0`EDcc`cccc_16 0`baaa`aaaa_16
+      of (hi, lo) -> print_Wordx hi;
+                     print_Wordx lo;
+                     expect_Wordx 0`Dccc`cccb_16;
+                     expect_Wordx 0`0aaa`aaaa_16;
+    end
+  else () end;
+
   ()
 };
+
+////////
+
+expect_Wordx = { w : Word => expect_i64x (zext_Word_to_i64 w); };
 
 ////////
 

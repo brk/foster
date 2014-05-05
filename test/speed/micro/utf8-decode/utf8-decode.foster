@@ -8,34 +8,44 @@ arrayLength32 = { forall t:Type, a : Array t =>
 
 mk-UTF-8-decoder-v1 = {
   utf8d = prim mach-array-literal
-      0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0  // 00..1f
-      0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0  // 20..3f
-      0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0  // 40..5f
-      0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0  // 60..7f
-      1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9  // 80..9f
-      7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7  // a0..bf
-      8 8 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2  // c0..df
-      10 3 3 3 3 3 3 3 3 3 3 3 3 4 3 3  // e0..ef
-      11 6 6 6 5 8 8 8 8 8 8 8 8 8 8 8  // f0..ff
-       0 1 2 3 5 8 7 1 1 1 4 6 1 1 1 1  // s0..s0
-      1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 1 1 0 1 0 1 1 1 1 1 1  // s1..s2
-      1 2 1 1 1 1 1 2 1 2 1 1 1 1 1 1 1 1 1 1 1 1 1 2 1 1 1 1 1 1 1 1  // s3..s4
-      1 2 1 1 1 1 1 1 1 2 1 1 1 1 1 1 1 1 1 1 1 1 1 3 1 3 1 1 1 1 1 1  // s5..s6
-      1 3 1 1 1 1 1 3 1 3 1 1 1 1 1 1 1 3 1 1 1 1 1 1 1 1 1 1 1 1 1 1  // s7..s8
-      ;
+          // The first part of the table maps bytes to character classes that
+          // to reduce the size of the transition table and create bitmasks.
+           0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+           0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+           0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+           0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+           1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1   9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9
+           7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7   7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7
+           8 8 2 2 2 2 2 2 2 2 2 2 2 2 2 2   2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2
+          10 3 3 3 3 3 3 3 3 3 3 3 3 4 3 3  11 6 6 6 5 8 8 8 8 8 8 8 8 8 8 8
+          ;
+   utf8s = prim mach-array-literal // length: 108
+           0 12 24 36 60 96 84 12 12 12 48 72  12 12 12 12 12 12 12 12 12 12 12 12
+          12  0 12 12 12 12 12  0 12  0 12 12  12 24 12 12 12 12 12 24 12 24 12 12
+          12 12 12 12 12 12 12 24 12 12 12 12  12 24 12 12 12 12 12 12 12 24 12 12
+          12 12 12 12 12 12 12 36 12 36 12 12  12 36 12 12 12 12 12 36 12 36 12 12
+          12 36 12 12 12 12 12 12 12 12 12 12 ;
 
-  { state : Int32 => codep : Int32 => byte : Int32 =>
+  // Precondition: state >= 0 and state <= 96.
+  // Precondition: byte <UInt32 256 and byte >UInt32 0.
+  { state : Int32 => codep : Int32 => byte8 : Int8 =>
     kUTF8-ACCEPT = 0;
-    kUTF8-REJECT = 1;
+    kUTF8-REJECT = 12;
 
-    typex = prim subscript utf8d byte |> zext_i8_to_i32;
+    byte32 = zext_i8_to_i32 byte8;
+
+    // Invariant: typex >= 0 and typex <= 11.
+    // Since |utf8d| = 256, this subscript is statically safe.
+    typex = prim subscript utf8d byte32 |> zext_i8_to_i32;
+
     codepx = if state !=Int32 kUTF8-ACCEPT
-               then (byte  `bitand-Int32`  63) `bitor-Int32`
-                    (codep `bitshl-Int32`   6)
-               else (255 `bitlshr-Int32` typex) `bitand-Int32` byte
+               then (byte32 `bitand-Int32` 11`1111_2) `bitor-Int32`
+                    (codep  `bitshl-Int32`   6)
+               else (255 `bitlshr-Int32` typex) `bitand-Int32` byte32
              end;
 
-    statex = prim subscript utf8d (256 +Int32 (state *Int32 16) +Int32 typex) |> zext_i8_to_i32;
+    // 96 + 11 < 108, so this subscript is statically safe.
+    statex = prim subscript utf8s (state +Int32 typex) |> zext_i8_to_i32;
     (statex, codepx)
   }
 };
@@ -56,6 +66,22 @@ countCodePoints-v1 = { decoder => bytearr =>
   loop 0 0 0 0
 };
 
+/*
+is-UTF-8-v1 = { decoder => bytearr =>
+  maxidx = arrayLength32 bytearr;
+  REC loop = { idx => st =>
+    if idx <UInt32 maxidx
+      then b = bytearr[idx];
+           case decoder st 0 b of (stx, cpx) ->
+             loop (idx +Int32 1) stx
+           end
+      else st ==Int32 0 // kUTF8-ACCEPT
+    end
+  };
+  loop 0 0
+};
+*/
+
 test-v1 = {
 
   d1 = mk-UTF-8-decoder-v1 !;
@@ -72,6 +98,13 @@ test-v1 = {
   expect_i32 0; // overlong encoding
   print_i32 (countCodePoints-v1 d1 (prim mach-array-literal 0C0_16 0AF_16 02F_16));
 
+  /*
+  expect_i1 True;
+  print_i1 (is-UTF-8-v1 d1 (prim mach-array-literal 02F_16        02F_16));
+
+  expect_i1 False; // overlong encoding
+  print_i1 (is-UTF-8-v1 d1 (prim mach-array-literal 0C0_16 0AF_16 02F_16));
+  */
 };
 
 /////

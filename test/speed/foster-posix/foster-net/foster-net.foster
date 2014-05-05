@@ -747,14 +747,14 @@ deliver-in-3-datastuff = { tcpstack => conn => connid => fin => s_seqnum => s_ac
     else
       if both (both (seq-trimmed >UInt32 getRcvNxt cb)
                     (seq-trimmed <UInt32 (getRcvNxt cb +Int32 getRcvWnd cb)))
-              (both ((bytesLength32 data-trimmed +Int32 (if fin-trimmed then 1 else 0)) >UInt32 0)
+              (both ((bytesLength32 data-trimmed +Int32 (if fin-trimmed then 1 else 0 end)) >UInt32 0)
                     (getRcvWnd cb >UInt32 0))
         then
           print_text "future reassembling";
           None
         else
           if both (seq-trimmed ==Int32 getRcvNxt cb)
-                  ((bytesLength32 data +Int32 (if fin-trimmed then 1 else 0)) ==Int32 0)
+                  ((bytesLength32 data +Int32 (if fin-trimmed then 1 else 0 end)) ==Int32 0)
             then
               print_text "no data";
               None

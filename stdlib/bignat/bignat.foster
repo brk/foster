@@ -1,4 +1,5 @@
 snafuinclude Prelude "prelude";
+snafuinclude Bitwise "bitwise";
 
 type case NatInf
       of $NatInf (Array Word)
@@ -31,6 +32,9 @@ mkNatVia = { n => f =>
   mkNatInf (newDArray0:[Word] n f);
 };
 
+wordNumBitsWord :: { Word };
+wordNumBitsWord = { zext_i32_to_Word (wordNumBits32 !) };
+
 // The representation of Word can be either Int32 or Int64,
 // minus four bits to make overflow handling portable without
 // relying on intrinsics.
@@ -42,7 +46,7 @@ digitNumBitsWord = { zext_i32_to_Word (digitNumBits !) };
 
 digitNumBitsMask :: { Word };
 digitNumBitsMask = {
-  (bitshl-Word 1 (zext_i32_to_Word (digitNumBits !))
+  (bitshl-Word 1 (digitNumBitsWord !)
          -Word 1)
 };
 
@@ -61,8 +65,10 @@ natDigitsUsed = { n =>
   arrayLength32 (natDigits n) // just array size, since we don't over-allocate.
 };
 
+word64Mask = { (bitshl-Int64 1 60) -Int64 1 };
+
 isValidWord64 = { i : Int64 =>
-  i ==Int64 (bitand-Int64 i ((bitshl-Int64 1 60) -Int64 1 ))
+  i ==Int64 (bitand-Int64 i (word64Mask !))
 };
 
 isValidDigit = { i : Word =>
@@ -113,7 +119,7 @@ addCarryOfWord = { n =>
 
 subCarryOfWord :: { Word => Word };
 subCarryOfWord = { n =>
-  bitlshr-Word n (sext_i32_to_Word (wordNumBits32 ! -Int32 1));
+  bitlshr-Word n ((wordNumBitsWord !) -Word 1);
   // shift right (>>) by foster_MP_SIGN_BITSHIFT = 63 for i64
 };
 
@@ -326,20 +332,24 @@ sqrInt64 = { x : Int64 =>
   end
 };
 
+expect_Word = { w : Word => expect_i64 (zext_Word_to_i64 w); };
 print_Word = { w : Word => print_i64 (zext_Word_to_i64 w); };
 
 splitCarry = { hi : Word => lo : Word =>
-  // Propagate carry:  [0|0|  c   ][b|  a  | ]  ====>
+  // Propagate carry:  [0|0|  c   ][b|   a   ]  ====>
   //                               [0|  c  |b]  (and a as well).
   // i.e. shift (hi,lo) by DIGIT_BIT, returning shifted bits too.
   foster_MP_MASK   = digitNumBitsMask !;
   foster_DIGIT_BIT = digitNumBitsWord !;
   reslo = bitand-Word lo foster_MP_MASK;
-  reshi = bitor-Word
-           (bitlshr-Word lo foster_DIGIT_BIT)
-            (bitshl-Word hi (zext_i32_to_Word (wordNumBits32 !)
-                                                  -Word foster_DIGIT_BIT));
+  reshi = combine lo foster_DIGIT_BIT
+                  hi ((wordNumBitsWord !) -Word foster_DIGIT_BIT);
   (reshi, reslo)
+};
+
+combine = { x => xshift => y => yshift =>
+  bitor-Word (bitlshr-Word x xshift)
+              (bitshl-Word y yshift)
 };
 
 natAddMulVVW = { z : Array Word => zo : Int32 => x : Array Word => y : Word =>
@@ -538,8 +548,7 @@ natMulDigit_A = { a : Array Word => k : Word =>
           // i.e. shift (hi,lo) by DIGIT_BIT.
           bitor-Word
             (bitlshr-Word rlo foster_DIGIT_BIT)
-             (bitshl-Word rhi (zext_i32_to_Word (wordNumBits32 !)
-                                                  -Word foster_DIGIT_BIT))
+             (bitshl-Word rhi ((wordNumBitsWord !) -Word foster_DIGIT_BIT))
         end
   };
 
@@ -625,7 +634,7 @@ shlVU = { z : Array Word => x : Array Word => s : Word =>
   n = min-UInt32 (arrayLength32 z) (arrayLength32 x);
   if n ==Int32 0 then 0
   else
-    s_hat = zext_i32_to_Word (wordNumBits32 !) -Word s;
+    s_hat = (wordNumBitsWord !) -Word s;
     w1    = x[n -Int32 1];
     c     = bitlshr-Word w1 s_hat;
 
@@ -633,8 +642,7 @@ shlVU = { z : Array Word => x : Array Word => s : Word =>
         if i ==Int32 0 then w0 else
           ip = i -Int32 1;
           w1 = x[ip];
-          (bitor-Word (bitshl-Word w0 s)
-                      (bitlshr-Word w1 s_hat)) >^ z[i];
+          (combine  w1 s_hat  w0 s) >^ z[i];
           loop ip w1
         end
     };
@@ -648,7 +656,7 @@ shrVU = { z : Array Word => x : Array Word => s : Word =>
   n = min-UInt32 (arrayLength32 z) (arrayLength32 x);
   if n ==Int32 0 then 0
   else
-    s_hat = zext_i32_to_Word (wordNumBits32 !) -Word s;
+    s_hat = (wordNumBitsWord !) -Word s;
     w1    = x[0];
     c     = bitshl-Word w1 s_hat;
 
@@ -656,8 +664,7 @@ shrVU = { z : Array Word => x : Array Word => s : Word =>
       if i ==Int32 (n -Int32 1) then w0 else
         ip = i +Int32 1;
         w1 = x[ip];
-        (bitor-Word (bitlshr-Word w0 s)
-                    (bitshl-Word w1 s_hat)) >^ z[i];
+        (combine  w0 s  w1 s_hat) >^ z[i];
         loop ip w1
       end
     };
@@ -764,9 +771,8 @@ divWW = { u1 : Word => u0 : Word => v : Word =>
   vn1 = bitlshr-Word v w_W2;
   vn0 = bitand-Word  v w_M2;
 
-  w_W = zext_i32_to_Word (wordNumBits32 !);
-  un32 = bitor-Word (bitshl-Word u1 s)
-                    (bitlshr-Word u0 (w_W -Word s));
+  s_hat = (wordNumBitsWord !) -Word s;
+  un32 = combine  u0 s_hat  u1 s;
   un10 = bitshl-Word u0 s;
   un1  = bitlshr-Word un10 w_W2;
   un0  = bitand-Word  un10 w_M2;
@@ -1068,8 +1074,7 @@ natDivLTM_NBB = { a : Array Word => b : Array Word =>
         it1 = i -Int32 t -Int32 1;
         qit =
            if x^[i] ==Word y^[i]
-             then bitshl-Word 1
-                      (zext_i32_to_Word (digitNumBits !))
+             then bitshl-Word 1 (digitNumBitsWord !)
              else
                maskW = zext_Word_to_WordX2 (digitNumBitsMask !);
                tmp0 = bitshl-WordX2

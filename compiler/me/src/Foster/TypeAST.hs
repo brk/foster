@@ -242,7 +242,7 @@ intSize (IWord x) = error $ "Unable to handle Word " ++ show x
 prettyOpName nm tystr =
   if Char.isLetter (head nm)
     then nm ++ "-" ++ tystr  -- e.g. "bitand-Int32"
-    else nm ++        tystr
+    else nm ++        tystr  -- e.g. "+Int32"
 
 -- Note: we don't wrap LLVM's shift intrisics directly; we mask the shift
 -- value to avoid undefined values. For constant shift values, the mask will
