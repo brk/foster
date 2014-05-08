@@ -27,3 +27,6 @@
         print "prim mach-array-literal " + ' '.join(str(ord(x)) for x in list(s))
   and its length via ``len(s.decode('utf-8'))``.
 * Can't yet mix ``|>`` sugar with primitive applications.
+* Case analysis on literal tuples will not result in runtime allocation,
+  so long as the value of the tuple is never captured.
+  This capacity subsumes built-in control flow operators like ``&&`` and ``||`` in C.

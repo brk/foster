@@ -330,6 +330,50 @@ createIntrinsicCall(IRBuilder<>& b, llvm::Value* v,
 }
 
 llvm::Value*
+createIntrinsicCall2(IRBuilder<>& b, llvm::Value* v1, llvm::Value* v2,
+                    const char* valname, llvm::Intrinsic::ID id) {
+  Type*  tys[] = { v1->getType() };
+  Module*    m = b.GetInsertBlock()->getParent()->getParent();
+  Value* intrv = llvm::Intrinsic::getDeclaration(m, id, tys);
+
+  CallInst *CI = b.CreateCall2(intrv, v1, v2, valname);
+  //b.SetInstDebugLocation(CI);
+  return CI;
+}
+
+llvm::Value*
+createCheckedOp(CodegenPass* pass,
+                IRBuilder<>& b, llvm::Value* v1, llvm::Value* v2,
+                    const char* valname, llvm::Intrinsic::ID id) {
+  unsigned  arr[] = { 1 };
+  llvm::Value* agg = createIntrinsicCall2(b, v1, v2, valname, id);
+  llvm::Value* overflow_bit = b.CreateExtractValue(agg, arr);
+
+  llvm::Function* F = b.GetInsertBlock()->getParent();
+
+  llvm::BasicBlock* bb_ok  = BasicBlock::Create(b.getContext(), "check.ok", F);
+  llvm::BasicBlock* bb_err = BasicBlock::Create(b.getContext(), "check.fail", F);
+
+  b.CreateCondBr(overflow_bit, bb_ok, bb_err);
+
+  b.SetInsertPoint(bb_err);
+  std::string s;
+  llvm::raw_string_ostream ss(s);
+  ss << "invariant violated for " << llvm::Intrinsic::getName(id)
+     << "(" << str(v1->getType()) << ")"
+     << "; try running under gdb and break on `foster__assert_failed`";
+  llvm::Value* msg = builder.CreateBitCast(pass->getGlobalString(ss.str()),
+                                                 builder.getInt8PtrTy());
+  llvm::CallInst* c = b.CreateCall(pass->lookupFunctionOrDie("foster__assert_failed"), msg);
+  b.CreateUnreachable();
+
+  b.SetInsertPoint(bb_ok);
+  unsigned  arr0[] = { 0 };
+  llvm::Value* result = b.CreateExtractValue(agg, arr0, valname);
+  return result;
+}
+
+llvm::Value*
 createCtlz(IRBuilder<>& b, llvm::Value* v, const char* valname) {
   Type*  tys[] = { v->getType() };
   Module*    m = b.GetInsertBlock()->getParent()->getParent();
@@ -339,7 +383,6 @@ createCtlz(IRBuilder<>& b, llvm::Value* v, const char* valname) {
   //b.SetInstDebugLocation(CI);
   return CI;
 }
-
 
 llvm::Value*
 createFMulAdd(IRBuilder<>& b, llvm::Value* v1, llvm::Value* v2, llvm::Value* v3) {
@@ -398,6 +441,12 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
        if (op == "+") { return b.CreateAdd(VL, VR, "addtmp", this->config.useNUW, this->config.useNSW); }
   else if (op == "-") { return b.CreateSub(VL, VR, "subtmp", this->config.useNUW, this->config.useNSW); }
   else if (op == "*") { return b.CreateMul(VL, VR, "multmp", this->config.useNUW, this->config.useNSW); }
+  else if (op == "+uc") { return createCheckedOp(this, b, VL, VR, "addtmp", llvm::Intrinsic::uadd_with_overflow); }
+  else if (op == "*uc") { return createCheckedOp(this, b, VL, VR, "multmp", llvm::Intrinsic::umul_with_overflow); }
+  else if (op == "-uc") { return createCheckedOp(this, b, VL, VR, "subtmp", llvm::Intrinsic::usub_with_overflow); }
+  else if (op == "+sc") { return createCheckedOp(this, b, VL, VR, "addtmp", llvm::Intrinsic::sadd_with_overflow); }
+  else if (op == "*sc") { return createCheckedOp(this, b, VL, VR, "multmp", llvm::Intrinsic::smul_with_overflow); }
+  else if (op == "-sc") { return createCheckedOp(this, b, VL, VR, "subtmp", llvm::Intrinsic::ssub_with_overflow); }
   else if (op == "sdiv-unsafe") { return b.CreateSDiv(VL, VR, "sdivtmp"); }
   else if (op == "udiv-unsafe") { return b.CreateUDiv(VL, VR, "udivtmp"); }
   else if (op == "srem-unsafe") { return b.CreateSRem(VL, VR, "sremtmp"); }

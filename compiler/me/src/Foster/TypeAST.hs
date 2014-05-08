@@ -262,6 +262,12 @@ fixnumPrimitives bitsize =
   [mkPrim "+"           $ mkFnType [iKK, iKK] [iKK]
   ,mkPrim "-"           $ mkFnType [iKK, iKK] [iKK]
   ,mkPrim "*"           $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "+uc"         $ mkFnType [iKK, iKK] [iKK] -- checked variants
+  ,mkPrim "-uc"         $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "*uc"         $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "+sc"         $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "-sc"         $ mkFnType [iKK, iKK] [iKK]
+  ,mkPrim "*sc"         $ mkFnType [iKK, iKK] [iKK]
   ,mkPrim "bitand"      $ mkFnType [iKK, iKK] [iKK]
   ,mkPrim "bitor"       $ mkFnType [iKK, iKK] [iKK]
   ,mkPrim "bitxor"      $ mkFnType [iKK, iKK] [iKK]
@@ -314,6 +320,7 @@ gFosterPrimOpsTable = Map.fromList $
   ,(,) "zext_i32_to_Word"     $ (,) (mkFnType [i32] [iw0] ) $ PrimOp "zext_Word"   i32
   ,(,) "zext_i32_to_WordX2"   $ (,) (mkFnType [i32] [iw1] ) $ PrimOp "zext_WordX2" i32
   ,(,) "zext_Word_to_WordX2"  $ (,) (mkFnType [iw0] [iw1] ) $ PrimOp "zext_WordX2" iw0
+  ,(,) "sext_Word_to_WordX2"  $ (,) (mkFnType [iw0] [iw1] ) $ PrimOp "sext_WordX2" iw0
   ,(,) "trunc_i32_to_i8"      $ (,) (mkFnType [i32] [i8 ] ) $ PrimIntTrunc I32 I8
   ,(,) "trunc_i64_to_i32"     $ (,) (mkFnType [i64] [i32] ) $ PrimIntTrunc I64 I32
   ,(,) "trunc_i64_to_Word"    $ (,) (mkFnType [i64] [iw0] ) $ PrimIntTrunc I64 (IWord 0)

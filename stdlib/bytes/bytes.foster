@@ -57,7 +57,7 @@ bytesLength = { ba =>
 };
 
 bytesLength32 :: { Bytes => Int32 };
-bytesLength32 =  { bytes => bytesLength bytes |> lossless_trunc_i64_to_i32  };
+bytesLength32 =  { bytes => bytesLength bytes |> cast_i64_to_i32  };
 
 bytesConcat :: { Bytes => Bytes => Bytes };
 bytesConcat = { ba => bb =>
@@ -145,8 +145,8 @@ bytesFoldlBytes = { ba => f => acc =>
   REC go = { bytes => f => offset : Int64 => len : Int64 => acc =>
       case bytes
         of $BytesFragment arr _ ->
-            arrayFoldlFromTo arr (lossless_trunc_i64_to_i32 offset)
-                                 (lossless_trunc_i64_to_i32 (len +Int64 offset)) f acc
+            arrayFoldlFromTo arr (cast_i64_to_i32 offset)
+                                 (cast_i64_to_i32 (len +Int64 offset)) f acc
         of $BytesOffset bb m len -> go bb f (offset +Int64 m) len acc
         of $BytesConcat bb bc _ ->
           bblen = bytesLength bb;
