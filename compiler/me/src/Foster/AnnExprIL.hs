@@ -4,14 +4,14 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.AnnExprIL (AIExpr(..), fnOf, collectIntConstraints) where
+module Foster.AnnExprIL (AIExpr(..), TypeIL(..), AIVar, boolTypeIL, stringTypeIL,
+                         fnOf, collectIntConstraints, ilOf) where
 
 import Foster.Base
 import Foster.Kind
 import Foster.Context
 import Foster.AnnExpr
-import Foster.TypeIL
-import Foster.TypeAST(TypeAST, TypeAST'(PrimIntAST, MetaTyVar))
+import Foster.TypeTC
 
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T
@@ -39,7 +39,7 @@ data AIExpr =
         | AILetFuns    [Ident] [Fn () AIExpr TypeIL] AIExpr
         -- Use of bindings
         | E_AIVar      (TypedId TypeIL)
-        | AICallPrim   TypeIL ILPrim [AIExpr]
+        | AICallPrim   TypeIL (FosterPrim TypeIL) [AIExpr]
         | AICall       TypeIL AIExpr [AIExpr]
         | AIAppCtor    TypeIL CtorId [AIExpr]
         -- Mutable ref cells
@@ -56,7 +56,7 @@ data AIExpr =
                     , aiTyAppExpr        :: AIExpr
                     , aiTyAppArgTypes    :: [TypeIL] }
 
-collectIntConstraints :: AnnExpr TypeAST -> Tc ()
+collectIntConstraints :: AnnExpr TypeTC -> Tc ()
 collectIntConstraints ae =
     case ae of
         AnnCompiles _ _ty (CompilesResult ooe) -> do
@@ -70,13 +70,13 @@ collectIntConstraints ae =
           -- un-constrained meta ty vars, while leaving constrained ones alone.
           ty' <- shallowZonk ty
           case ty' of
-            MetaTyVar m -> do
+            MetaTyVarTC m -> do
                     tcUpdateIntConstraint m (litIntMinBits int)
             _ -> do return ()
 
         _ -> mapM_ collectIntConstraints (childrenOf ae)
 
-ail :: Context ty -> AnnExpr TypeAST -> Tc AIExpr
+ail :: Context ty -> AnnExpr TypeTC -> Tc AIExpr
 ail ctx ae =
     let q  = ail  ctx in
     let qt = ilOf ctx in
@@ -221,10 +221,10 @@ ailInt rng int ty = do
   --    we should update the int's meta type variable
   --    with the smallest type that accomodates the int.
   case ty of
-    PrimIntAST isb -> do
+    PrimIntTC isb -> do
       sanityCheckIntLiteralNotOversized rng isb int
 
-    MetaTyVar m -> do
+    MetaTyVarTC m -> do
       mty <- readTcMeta m
       case mty of
         Just t -> do ailInt rng int t
@@ -246,7 +246,7 @@ coroPrimFor s | s == T.pack "coro_invoke" = Just $ CoroInvoke
 coroPrimFor s | s == T.pack "coro_yield"  = Just $ CoroYield
 coroPrimFor _ = Nothing
 
-ilPrim :: Context ty -> FosterPrim TypeAST -> Tc (FosterPrim TypeIL)
+ilPrim :: Context ty -> FosterPrim TypeTC -> Tc (FosterPrim TypeIL)
 ilPrim ctx prim =
   case prim of
     NamedPrim tid     -> do tid' <- aiVar ctx tid
@@ -266,7 +266,7 @@ containsUnboxedPolymorphism ty = any containsUnboxedPolymorphism $ childrenOf ty
 tyvarBindersOf (ForAllIL ktvs _) = ktvs
 tyvarBindersOf _                 = []
 
-fnOf :: Context ty -> Fn r (AnnExpr TypeAST) TypeAST -> Tc (Fn r AIExpr TypeIL)
+fnOf :: Context ty -> Fn r (AnnExpr TypeTC) TypeTC -> Tc (Fn r AIExpr TypeIL)
 fnOf ctx f = do
     var <- aiVar ctx (fnVar f)
     let ft = tidType var
@@ -287,3 +287,160 @@ fnOf ctx f = do
                 , fnAnnot = fnAnnot f
                 }
 
+ilOf :: Context t -> TypeTC -> Tc TypeIL
+ilOf ctx typ = do
+  let q = ilOf ctx
+  case typ of
+     TyConAppTC  dtname tys -> do iltys <- mapM q tys
+                                  return $ TyConAppIL dtname iltys
+     PrimIntTC  size     -> do return $ PrimIntIL size
+     PrimFloat64TC       -> do return $ PrimFloat64IL
+     TupleTypeTC  types  -> do tys <- mapM q types
+                               return $ TupleTypeIL tys
+     FnTypeTC  ss t p cc cs -> do (y:xs) <- mapM q (t:ss)
+                                  p' <- mapMaybePreconditionM (ail ctx) p
+                                  return $ FnTypeIL xs y p' cc cs
+     CoroTypeTC  s t     -> do [x,y] <- mapM q [s,t]
+                               return $ CoroTypeIL x y
+     RefTypeTC  ty       -> do t <- q ty
+                               return $ PtrTypeIL   t
+     ArrayTypeTC   ty    -> do t <- q ty
+                               return $ ArrayTypeIL t
+     ForAllTC  ktvs rho  -> do t <- (ilOf $ extendTyCtx ctx ktvs) rho
+                               return $ ForAllIL ktvs t
+     TyVarTC  tv@(SkolemTyVar _ _ k) -> return $ TyVarIL tv k
+     TyVarTC  tv@(BoundTyVar _) ->
+        case Prelude.lookup tv (contextTypeBindings ctx) of
+          Nothing -> tcFails [text "Unable to find kind of type variable " <> pretty typ]
+          Just k  -> return $ TyVarIL tv k
+     MetaTyVarTC m -> do
+        mty <- readTcMeta m
+        case mty of
+          Nothing -> if False -- TODO this is dangerous, can violate type correctness
+                      then return $ TupleTypeIL []
+                      else tcFails [text $ "Found un-unified unification variable "
+                                ++ show (mtvUniq m) ++ "(" ++ mtvDesc m ++ ")!"]
+          Just t  -> q t
+
+aiVar ctx (TypedId t i) = do ty <- ilOf ctx t
+                             return $ TypedId ty i
+
+
+-----------------------------------------------------------------------
+
+ilOfPatAtom :: Context t -> PatternAtom TypeTC -> Tc (PatternAtom TypeIL)
+ilOfPatAtom ctx atom = case atom of
+    P_Wildcard  rng ty           -> do ty' <- ilOf ctx ty
+                                       return $ P_Wildcard  rng ty'
+    P_Variable  rng tid          -> do tid' <- aiVar ctx tid
+                                       return $ P_Variable rng tid'
+    P_Bool      rng ty bval      -> do ty' <- ilOf ctx ty
+                                       return $ P_Bool rng ty' bval
+    P_Int       rng ty ival      -> do ty' <- ilOf ctx ty
+                                       return $ P_Int  rng ty' ival
+
+ilOfPat :: Context t -> Pattern TypeTC -> Tc (Pattern TypeIL)
+ilOfPat ctx pat = case pat of
+    P_Atom      atom -> return . P_Atom =<< (ilOfPatAtom ctx atom)
+    P_Ctor      rng ty pats ctor -> do pats' <- mapM (ilOfPat ctx) pats
+                                       ty' <- ilOf ctx ty
+                                       ctor' <- ilOfCtorInfo ctx ctor
+                                       return $ P_Ctor rng ty' pats' ctor'
+    P_Tuple     rng ty pats      -> do pats' <- mapM (ilOfPat ctx) pats
+                                       ty' <- ilOf ctx ty
+                                       return $ P_Tuple rng ty' pats'
+
+ilOfCtorInfo :: Context t -> CtorInfo TypeTC -> Tc (CtorInfo TypeIL)
+ilOfCtorInfo ctx (CtorInfo id dc) = do
+  dc' <- ilOfDataCtor ctx dc
+  return $ CtorInfo id dc'
+
+ilOfDataCtor :: Context t -> DataCtor TypeTC -> Tc (DataCtor TypeIL)
+ilOfDataCtor ctx (DataCtor nm tyformals tys range) = do
+  let extctx = extendTyCtx ctx (map convertTyFormal tyformals)
+  tys' <- mapM (ilOf extctx) tys
+  return $ DataCtor nm tyformals tys' range
+
+
+
+
+type RhoIL = TypeIL
+data TypeIL =
+           PrimIntIL       IntSizeBits
+         | PrimFloat64IL
+         | TyConAppIL      DataTypeName [TypeIL]
+         | TupleTypeIL     [TypeIL]
+         | FnTypeIL        { fnTypeILDomain :: [TypeIL]
+                           , fnTypeILRange  :: TypeIL
+                           , fnTypeILPrecond :: MaybePrecondition AIExpr
+                           , fnTypeILCallConv :: CallConv
+                           , fnTypeILProcOrFunc :: ProcOrFunc }
+         | CoroTypeIL      TypeIL  TypeIL
+         | ForAllIL        [(TyVar, Kind)] RhoIL
+         | TyVarIL           TyVar  Kind
+         | ArrayTypeIL     TypeIL
+         | PtrTypeIL       TypeIL
+
+type AIVar = TypedId TypeIL
+
+boolTypeIL = PrimIntIL I1
+stringTypeIL = TyConAppIL "Text" []
+
+fnReturnType f@(FnTypeIL {}) = fnTypeILRange f
+fnReturnType (ForAllIL _ f@(FnTypeIL {})) = fnTypeILRange f
+fnReturnType other = error $
+    "Unexpected non-function type in fnReturnType: " ++ show other
+
+instance Show TypeIL where
+    show x = case x of
+        TyConAppIL nam types -> "(TyConAppIL " ++ nam
+                                      ++ joinWith " " ("":map show types) ++ ")"
+        PrimIntIL size       -> "(PrimIntIL " ++ show size ++ ")"
+        PrimFloat64IL        -> "(PrimFloat64IL)"
+        TupleTypeIL types    -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
+        FnTypeIL   s t _precond cc cs -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
+        CoroTypeIL s t       -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
+        ForAllIL ktvs rho    -> "(ForAll " ++ show ktvs ++ ". " ++ show rho ++ ")"
+        TyVarIL     tv kind  -> show tv ++ ":" ++ show kind
+        ArrayTypeIL ty       -> "(Array " ++ show ty ++ ")"
+        PtrTypeIL   ty       -> "(Ptr " ++ show ty ++ ")"
+
+instance Structured TypeIL where
+    textOf e _width =
+        case e of
+            TyConAppIL nam _types -> text $ "TyConAppIL " ++ nam
+            PrimIntIL     size    -> text $ "PrimIntIL " ++ show size
+            PrimFloat64IL         -> text $ "PrimFloat64IL"
+            TupleTypeIL   {}      -> text $ "TupleTypeIL"
+            FnTypeIL      {}      -> text $ "FnTypeIL"
+            CoroTypeIL    {}      -> text $ "CoroTypeIL"
+            ForAllIL ktvs _rho    -> text $ "ForAllIL " ++ show ktvs
+            TyVarIL       {}      -> text $ "TyVarIL "
+            ArrayTypeIL   {}      -> text $ "ArrayTypeIL"
+            PtrTypeIL     {}      -> text $ "PtrTypeIL"
+
+    childrenOf e =
+        case e of
+            TyConAppIL _nam types  -> types
+            PrimIntIL       {}     -> []
+            PrimFloat64IL          -> []
+            TupleTypeIL     types  -> types
+            FnTypeIL  ss t _precond _cc _cs -> ss++[t]
+            CoroTypeIL s t         -> [s,t]
+            ForAllIL  _ktvs rho    -> [rho]
+            TyVarIL        _tv _   -> []
+            ArrayTypeIL     ty     -> [ty]
+            PtrTypeIL       ty     -> [ty]
+
+instance Kinded TypeIL where
+  kindOf x = case x of
+    PrimIntIL   {}       -> KindAnySizeType
+    PrimFloat64IL        -> KindAnySizeType
+    TyVarIL   _ kind     -> kind
+    TyConAppIL  {}       -> KindPointerSized
+    TupleTypeIL {}       -> KindPointerSized
+    FnTypeIL    {}       -> KindPointerSized
+    CoroTypeIL  {}       -> KindPointerSized
+    ForAllIL _ktvs rho   -> kindOf rho
+    ArrayTypeIL {}       -> KindPointerSized
+    PtrTypeIL   {}       -> KindPointerSized

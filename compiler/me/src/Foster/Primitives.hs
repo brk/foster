@@ -15,7 +15,7 @@ import qualified Data.Text as T
 primitiveDataTypesP :: [DataType TypeP]
 primitiveDataTypesP = [
   (let tf = [] in
-   DataType (TypeFormalAST "Text" KindPointerSized) tf
+   DataType (TypeFormal "Text" KindPointerSized) tf
         [DataCtor (T.pack "TextFragment") tf -- CR_Default 0
             [ArrayTypeP (PrimIntP I8)
             ,PrimIntP I32]
@@ -27,9 +27,9 @@ primitiveDataTypesP = [
             (MissingSourceRange "Text.TextConcat")]
         (MissingSourceRange "Text")),
 
-  (let tf = [TypeFormalAST "o" KindAnySizeType,
-             TypeFormalAST "i" KindAnySizeType] in
-   DataType (TypeFormalAST "Coro" KindPointerSized) tf
+  (let tf = [TypeFormal "o" KindAnySizeType,
+             TypeFormal "i" KindAnySizeType] in
+   DataType (TypeFormal "Coro" KindPointerSized) tf
         []
         (MissingSourceRange "Coro"))
   ]

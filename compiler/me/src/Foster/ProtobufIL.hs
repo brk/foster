@@ -521,7 +521,7 @@ dumpILProgramToProtobuf m outpath = do
              , Decl.type' = dumpType t
              }
 
-    dumpDataType (TypeFormalAST dtName KindPointerSized) ctors =
+    dumpDataType (TypeFormal dtName KindPointerSized) ctors =
         P'.defaultValue { PbType.tag  = PbTypeTag.DATATYPE
                         , PbType.name = Just $ u8fromString dtName
                         , PbType.ctor = fromList $ fmap dumpDataCtor ctors
@@ -532,8 +532,8 @@ dumpILProgramToProtobuf m outpath = do
                      , PbDataCtor.type' = fromList $ map dumpType types
                      }
 
-    dumpDataType (TypeFormalAST _dtName KindAnySizeType) [DataCtor _nm [] [ty] _range] =
+    dumpDataType (TypeFormal _dtName KindAnySizeType) [DataCtor _nm [] [ty] _range] =
         dumpType ty
 
-    dumpDataType (TypeFormalAST dtName KindAnySizeType) ctors =
+    dumpDataType (TypeFormal dtName KindAnySizeType) ctors =
             error $ "Don't yet know how to handle " ++ dtName ++ " : Type, with ctors..." ++ show ctors

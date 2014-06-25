@@ -14,9 +14,9 @@ import qualified Data.List as List(elemIndex, reverse)
 import Foster.Base
 import Foster.Context
 import Foster.AnnExpr
-import Foster.TypeAST
+import Foster.TypeTC
 
-typecheckInt :: ExprAnnot -> String -> Expected TypeAST -> Tc (AnnExpr (Rho' Wrapped_ExprAST))
+typecheckInt :: ExprAnnot -> String -> Expected TypeTC -> Tc (AnnExpr RhoTC)
 typecheckInt annot originalText expTy = do
     let goodBases = [2, 8, 10, 16]
     let maxBits = 64
@@ -78,10 +78,10 @@ typecheckInt annot originalText expTy = do
         parseRadixRev r (c:cs) = (fromIntegral $ fromJust (indexOf c))
                                + (r * parseRadixRev r cs)
 
-typecheckRat :: ExprAnnot -> String -> Maybe TypeAST -> Tc (AnnExpr (Rho' Wrapped_ExprAST))
+typecheckRat :: ExprAnnot -> String -> Maybe TypeTC -> Tc (AnnExpr RhoTC)
 typecheckRat annot originalText _expTyTODO = do
   --tcLift $ putStrLn $ "typecheckRat: " ++ originalText ++ " :?: " ++ show _expTyTODO
   -- TODO: be more discriminating about float vs rational numbers?
   let val = (read originalText) :: Double
-  return (AnnLiteral annot PrimFloat64AST (LitFloat $ LiteralFloat val originalText))
+  return (AnnLiteral annot PrimFloat64TC (LitFloat $ LiteralFloat val originalText))
 

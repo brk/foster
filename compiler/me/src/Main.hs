@@ -32,15 +32,17 @@ import Foster.CFGOptimization
 import Foster.Fepb.WholeProgram(WholeProgram)
 import Foster.ProtobufFE(parseWholeProgram)
 import Foster.ProtobufIL(dumpILProgramToProtobuf)
+import Foster.TypeTC
 import Foster.ExprAST
 import Foster.TypeAST
 import Foster.ParsedType
 import Foster.PrettyExprAST()
 import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn))
-import Foster.AnnExprIL(AIExpr(AILetFuns, AICall, E_AIVar), fnOf, collectIntConstraints)
-import Foster.TypeIL(TypeIL(TupleTypeIL, FnTypeIL), ilOf)
+import Foster.AnnExprIL(AIExpr(AILetFuns, AICall, E_AIVar), fnOf, ilOf,
+                     collectIntConstraints, TypeIL(TupleTypeIL, FnTypeIL))
 import Foster.ILExpr(ILProgram, showILProgramStructure, prepForCodegen)
-import Foster.KNExpr(KNExpr', kNormalizeModule, knLoopHeaders, knSinkBlocks, knInline, knSize, renderKN)
+import Foster.KNExpr(KNExpr', kNormalizeModule, knLoopHeaders, knSinkBlocks,
+                     knInline, kNormalize, knSize, renderKN, mkCtorReprFn)
 import Foster.Typecheck
 import Foster.Context
 import Foster.CloConv(closureConvertAndLift, renderCC, CCBody(..))
@@ -65,18 +67,19 @@ pair2binding (nm, ty, mcid) = TermVarBinding nm (TypedId ty (GlobalSymbol nm), m
 -- and the resulting context should include the computed types of each
 -- function in the SCC.
 typecheckFnSCC :: Bool -> Bool
-               -> Graph.SCC (FnAST TypeAST)  ->   (Context TypeAST, TcEnv)
-               -> IO ([OutputOr (AnnExpr Sigma)], (Context TypeAST, TcEnv))
+               -> Graph.SCC (FnAST TypeAST)    ->   (Context TypeTC, TcEnv)
+               -> IO ([OutputOr (AnnExpr SigmaTC)], (Context TypeTC, TcEnv))
 typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
     let fns = Graph.flattenSCC scc
 
     -- Generate a binding (for functions without user-provided declarations)
     -- before doing any typechecking, so that if a function fails to typecheck,
     -- we'll have the best binding on hand to use for subsequent typechecking.
-    let genBinding fn = do
+    let genBinding :: FnAST TypeAST -> IO (ContextBinding TypeTC)
+        genBinding fn = do
         OK binding <-
             case termVarLookup (fnAstName fn) (contextBindings ctx) of
-                Nothing  -> do unTc tcenv $ bindingForFnAST fn
+                Nothing  -> do unTc tcenv $ bindingForFnAST ctx fn
                 Just cxb -> do return (OK $ TermVarBinding (fnAstName fn) cxb)
         return binding
 
@@ -109,7 +112,7 @@ typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
     -- undefined-symbol errors when checking subsequent SCCs.
     let (goodexprs, errsAndASTs) = split tcResults
     let newctx = prependContextBindings ctx $ (map bindingOf errsAndASTs) ++
-                                   [bindingForAnnFn f |(E_AnnFn f) <- goodexprs]
+                                  [bindingForAnnFn f | (E_AnnFn f) <- goodexprs]
 
     if null errsAndASTs
      then return $ (,) (map OK goodexprs) (newctx, tcenv)
@@ -123,7 +126,7 @@ typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
         split fnsAndASTs = (,) [expr        | (OK expr,     _ast) <- fnsAndASTs]
                                [(errs, ast) | (Errors errs,  ast) <- fnsAndASTs]
 
-        inspect :: OutputOr (AnnExpr TypeAST) -> (ExprAST TypeAST, a) -> IO ()
+        inspect :: OutputOr (AnnExpr TypeTC) -> (ExprAST TypeAST, a) -> IO ()
         inspect typechecked (ast, _) =
             case typechecked of
                 OK e -> do
@@ -135,32 +138,35 @@ typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
                     forM_ errs putDocLn
                     putDocP line
 
-        bindingForAnnFn :: Fn () (AnnExpr TypeAST) TypeAST -> ContextBinding TypeAST
+        bindingForAnnFn :: Fn () (AnnExpr ty) ty -> ContextBinding ty
         bindingForAnnFn f = TermVarBinding (identPrefix $ fnIdent f) (fnVar f, Nothing)
 
         -- Start with the most specific binding possible (i.e. sigma, not tau).
         -- Otherwise, if we blindly used a meta type variable, we'd be unable
         -- to type check a recursive & polymorphic function.
-        bindingForFnAST :: (FnAST TypeAST) -> Tc (ContextBinding TypeAST)
-        bindingForFnAST f = do t <- fnTypeTemplate f
-                               return $ pair2binding (fnAstName f, t, Nothing)
+        bindingForFnAST :: Context TypeTC -> FnAST TypeAST -> Tc (ContextBinding TypeTC)
+        bindingForFnAST ctx f = do
+            t <- fnTypeTemplate ctx f
+            return $ pair2binding (fnAstName f, t, Nothing)
 
-        typeTemplateSigma :: Maybe Sigma -> String -> Tc Sigma
+        typeTemplateSigma :: Maybe SigmaTC -> String -> Tc SigmaTC
         typeTemplateSigma Nothing    name = newTcUnificationVarSigma name
         typeTemplateSigma (Just ty) _name = return ty
 
-        annVarTemplate :: TypedId Sigma -> Tc Sigma
-        annVarTemplate v = typeTemplateSigma (Just $ tidType v) (show $ tidIdent v)
+        annVarTemplate :: Context TypeTC -> TypedId Sigma -> Tc SigmaTC
+        annVarTemplate ctx v = do s <- tcType ctx $ tidType v
+                                  typeTemplateSigma (Just s) (show $ tidIdent v)
 
-        fnTypeTemplate :: (FnAST TypeAST) -> Tc TypeAST
-        fnTypeTemplate f = do
+        fnTypeTemplate :: Context TypeTC -> FnAST TypeAST -> Tc TypeTC
+        fnTypeTemplate ctx f = do
           retTy  <- newTcUnificationVarSigma ("ret type for " ++ (T.unpack $ fnAstName f))
-          argTys <- mapM annVarTemplate (fnFormals f)
+          argTys <- mapM (annVarTemplate ctx) (fnFormals f)
           let procOrFunc = if fnWasToplevel f then FT_Proc else FT_Func
-          let fnTy = FnTypeAST argTys retTy Nothing FastCC procOrFunc
+          let precond = NoPrecondition "fnTypeTemplate2"
+          let fnTy = FnTypeTC argTys retTy precond FastCC procOrFunc
           case fnTyFormals f of
             []        -> return $ fnTy
-            tyformals -> return $ ForAllAST (map convertTyFormal tyformals) fnTy
+            tyformals -> return $ ForAllTC (map convertTyFormal tyformals) fnTy
 
 -- | Typechecking a module proceeds as follows:
 -- |  #. Build separate binding lists for the globally-defined primitiveDecls
@@ -179,36 +185,47 @@ typecheckModule verboseMode modast tcenv0 = do
     let dts = moduleASTprimTypes modast ++ moduleASTdataTypes modast
     let fns = moduleASTfunctions modast
     let primBindings = computeContextBindings' primitiveDecls
-    let (nullCtors, nonNullCtors) = splitCtorTypes (concatMap extractCtorTypes dts)
+    let allCtorTypes = concatMap extractCtorTypes dts
+    let (nullCtors, nonNullCtors) = splitCtorTypes allCtorTypes
     let declBindings = computeContextBindings' (moduleASTdecls modast) ++
                        computeContextBindings nonNullCtors
     let nullCtorBindings = computeContextBindings nullCtors
     putDocLn $ (outLn "vvvv declBindings:====================")
     putDocLn $ (dullyellow (vcat $ map (text . show) declBindings))
 
-    let ctx0 = mkContext declBindings nullCtorBindings primBindings dts
-    ctxErrsOrOK <- unTc tcenv0 (tcContext ctx0)
+    case detectDuplicates $ map fnAstName fns of
+      [] -> do
+        let primOpMap = Map.fromList [(T.pack nm, prim)
+                            | (nm, (_, prim)) <- Map.toList gFosterPrimOpsTable]
+        let ctxTC0 = mkContext [] [] [] Map.empty []
+        let ctxAS1 = mkContext (computeContextBindings nonNullCtors) nullCtorBindings primBindings
+                                                                          primOpMap dts
+        let ctxAST = mkContext declBindings nullCtorBindings primBindings primOpMap dts
+        ctxErrsOrOK <- unTc tcenv0 (do ctxTC1 <- tcContext ctxTC0 ctxAS1
+                                       tcContext ctxTC1 ctxAST)
 
-    case (detectDuplicates (map fnAstName fns), ctxErrsOrOK) of
-      ([], OK _) -> do
-        -- declBindings includes datatype constructors and some (?) functions.
-        let callGraphList = buildCallGraphList fns (Set.fromList $ map fnAstName fns)
-        let sortedFns = Graph.stronglyConnComp callGraphList -- :: [SCC FnAST]
-        when verboseMode $ do
-                putStrLn $ "Function SCC list : " ++
-                 (unlines $ map show [(name, frees) | (_, name, frees) <- callGraphList])
-        let showASTs     = verboseMode
-        let showAnnExprs = verboseMode
-        (annFnSCCs, (ctx, tcenv)) <- mapFoldM' sortedFns (ctx0, tcenv0)
-                                          (typecheckFnSCC showASTs showAnnExprs)
-        unTc tcenv (convertTypeILofAST modast ctx annFnSCCs)
-      ([], Errors os) -> return (Errors os)
-      (dups, _) -> return (Errors [text $ "Unable to check module due to "
-                                        ++ "duplicate bindings: " ++ show dups])
+        case ctxErrsOrOK of
+          OK ctxTC -> do
+            -- declBindings includes datatype constructors and some (?) functions.
+            let callGraphList = buildCallGraphList fns (Set.fromList $ map fnAstName fns)
+            let sortedFns = Graph.stronglyConnComp callGraphList -- :: [SCC FnAST]
+            when verboseMode $ do
+                    putStrLn $ "Function SCC list : " ++
+                     (unlines $ map show [(name, frees) | (_, name, frees) <- callGraphList])
+            let showASTs     = verboseMode
+            let showAnnExprs = verboseMode
+            (annFnSCCs, (ctx, tcenv)) <- mapFoldM' sortedFns (ctxTC, tcenv0)
+                                              (typecheckFnSCC showASTs showAnnExprs)
+            unTc tcenv (convertTypeILofAST modast ctx annFnSCCs)
+          Errors os -> return (Errors os)
+      dups -> return (Errors [text $ "Unable to check module due to "
+                                  ++ "duplicate bindings: " ++ show dups])
  where
-   mkContext declBindings nullCtorBnds primBindings datatypes =
-     Context declBindsMap nullCtorsMap primBindsMap verboseMode globalvars tyvarsMap [] ctorinfo dtypes
-       where globalvars   = declBindings ++ primBindings
+   mkContext :: [ContextBinding t] -> [ContextBinding t]
+             -> [ContextBinding t] -> (Map T.Text (FosterPrim t)) -> [DataType t] -> Context t
+   mkContext declBindings nullCtorBnds primBindings primOpMap datatypes =
+     Context declBindsMap nullCtorsMap primBindsMap primOpMap verboseMode globalvars tyvarsMap [] ctorinfo dtypes
+       where globalvars   = map (\(TermVarBinding _ (tid, _)) -> tidIdent tid) $ declBindings ++ primBindings
              ctorinfo     = getCtorInfo  datatypes
              dtypes       = getDataTypes datatypes
              primBindsMap = Map.fromList $ map unbind primBindings
@@ -227,7 +244,7 @@ typecheckModule verboseMode modast tcenv0 = do
    -- returns the type   T A1 .. An   (with A1..An free).
    typeOfDataType :: DataType TypeAST -> CtorName -> TypeAST
    typeOfDataType dt _ctorName =
-     let boundTyVarFor (TypeFormalAST name _kind) = TyVarAST $ BoundTyVar name in
+     let boundTyVarFor (TypeFormal name _kind) = TyVarAST $ BoundTyVar name in
      TyConAppAST (typeFormalName $ dataTypeName dt) (map boundTyVarFor $ dataTypeTyFormals dt)
 
    splitCtorTypes :: [(String, Either TypeAST TypeAST, CtorId)] ->
@@ -248,7 +265,7 @@ typecheckModule verboseMode modast tcenv0 = do
    -- Nullary constructors are constants; non-nullary ctors are functions.
    ctorTypeAST [] dtType [] = Left dtType
    ctorTypeAST [] dtType ctorArgTypes =
-                            Right $ FnTypeAST ctorArgTypes dtType Nothing FastCC FT_Proc
+                            Right $ FnTypeAST ctorArgTypes dtType (NoPrecondition "ctorTypeAST") FastCC FT_Proc
 
    ctorTypeAST tyformals dt ctorArgTypes =
      let f = ForAllAST (map convertTyFormal tyformals) in
@@ -268,28 +285,31 @@ typecheckModule verboseMode modast tcenv0 = do
             -- remove recursive function name calls
             Set.toList $ Set.filter (\name -> fnAstName f /= name) nonPrimitives
 
+   -- The functions from the module have already been converted;
+   -- now we just need to convert the rest of the module...
    convertTypeILofAST :: ModuleAST FnAST TypeAST
-                      -> Context TypeAST
-                      -> [[OutputOr (AnnExpr TypeAST)]]
+                      -> Context TypeTC
+                      -> [[OutputOr (AnnExpr TypeTC)]]
                       -> Tc (Context TypeIL, ModuleIL AIExpr TypeIL)
-   convertTypeILofAST mAST ctx_ast oo_annfns = do
+   convertTypeILofAST mAST ctx_tc oo_annfns = do
      mapM_ (tcInject collectIntConstraints) (concat oo_annfns)
      tcApplyIntConstraints
 
-     ctx_il    <- liftContextM   (ilOf ctx_ast) ctx_ast
-     decls     <- mapM (convertDecl (ilOf ctx_ast)) (externalModuleDecls mAST)
-     primtypes <- mapM (convertDataTypeAST ctx_ast) (moduleASTprimTypes mAST)
-     datatypes <- mapM (convertDataTypeAST ctx_ast) (moduleASTdataTypes mAST)
+     -- We've already typechecked the functions, so no need to re-process them...
+     mTC <- convertModule (tcType ctx_tc) $ mAST { moduleASTfunctions = [] }
+     ctx_il    <- liftContextM   (ilOf ctx_tc) ctx_tc
+     decls     <- mapM (convertDecl (ilOf ctx_tc)) (externalModuleDecls mTC)
+     primtypes <- mapM (convertDataTypeAST ctx_tc) (moduleASTprimTypes mTC)
+     datatypes <- mapM (convertDataTypeAST ctx_tc) (moduleASTdataTypes mTC)
      let unfuns fns -- :: [[OutputOr (AnnExpr TypeAST)]] -> [[OutputOr (Fn (AnnExpr TypeAST) TypeAST)]]
                     = map (map (fmapOO unFunAnn)) fns
      -- Set fnIsRec flag on top-level functions.
      let tci oof -- :: OutputOr (Fn (AnnExpr TypeAST) TypeAST) -> Tc (Fn AIExpr TypeIL)
-               = tcInject (fnOf ctx_ast) oof
+               = tcInject (fnOf ctx_tc) oof
      let tcis fns = mapM tci fns
      aiFns     <- mapM tcis (unfuns oo_annfns)
      let q = buildExprSCC aiFns
-     let m = ModuleIL q decls datatypes primtypes
-                                                  (moduleASTsourceLines mAST)
+     let m = ModuleIL q decls datatypes primtypes (moduleASTsourceLines mAST)
      return (ctx_il, m)
        where
         buildExprSCC :: [[Fn () AIExpr TypeIL]] -> AIExpr
@@ -298,7 +318,7 @@ typecheckModule verboseMode modast tcenv0 = do
                                               (E_AIVar (TypedId mainty (GlobalSymbol $ T.pack "main")))
                                               []
                               unit   = TupleTypeIL []
-                              mainty = FnTypeIL [unit] unit Nothing FastCC FT_Proc
+                              mainty = FnTypeIL [unit] unit (NoPrecondition "buildExprSCC") FastCC FT_Proc
                           in foldr build call_of_main es
          where build :: [Fn () AIExpr TypeIL] -> AIExpr -> AIExpr
                build es body = case es of
@@ -321,30 +341,9 @@ typecheckModule verboseMode modast tcenv0 = do
         fmapOO  f (OK e)     = OK (f e)
         fmapOO _f (Errors o) = Errors o
 
-        liftContextM :: (Monad m, Show t1, Show t2)
-                     => (t1 -> m t2) -> Context t1 -> m (Context t2)
-        liftContextM f (Context cb nb pb vb gb tyvars tybinds ctortypeast dtinfo) = do
-          cb' <-mmapM (liftCXB f) cb
-          nb' <- mapM (liftCXB f) nb
-          pb' <- mapM (liftCXB f) pb
-          gb' <- mapM (liftBinding f) gb
-          tyvars' <- mmapM f tyvars
-          return $ Context cb' nb' pb' vb gb' tyvars' tybinds ctortypeast dtinfo
-
-        liftTID :: Monad m => (t1 -> m t2) -> TypedId t1 -> m (TypedId t2)
-        liftTID f (TypedId t i) = do t2 <- f t ; return $ TypedId t2 i
-
-        liftCXB :: Monad m => (t1 -> m t2) -> CtxBound t1 -> m (CtxBound t2)
-        liftCXB f (tid, mb_ci) = do tid' <- liftTID f tid; return (tid' , mb_ci)
-
-        mmapM :: (Monad m, Ord k) => (a -> m b) -> Map k a -> m (Map k b)
-        mmapM f ka = do
-          kbl <- mapM (\(k, a) -> do b <- f a ; return (k, b)) (Map.toList ka)
-          return $ Map.fromList kbl
-
         -- Wrinkle: need to extend the context used for checking ctors!
-        convertDataTypeAST :: Context TypeAST ->
-                              DataType TypeAST -> Tc (DataType TypeIL)
+        convertDataTypeAST :: Context TypeTC ->
+                              DataType TypeTC -> Tc (DataType TypeIL)
         convertDataTypeAST ctx (DataType dtName tyformals ctors range) = do
           -- f :: TypeAST -> Tc TypeIL
           let f = ilOf (extendTyCtx ctx $ map convertTyFormal tyformals)
@@ -362,8 +361,8 @@ dieOnError (Errors errs) = liftIO $ do
     forM_ errs putDocLn
     error "compilation failed"
 
-isTau :: TypeAST -> Bool
-isTau (ForAllAST {}) = False
+isTau :: TypeTC -> Bool
+isTau (ForAllTC {}) = False
 isTau t = all isTau (childrenOf t)
 
 -----------------------------------------------------------------------
@@ -466,12 +465,9 @@ desugarParsedModule tcenv m = do
           TyVarP     tv          -> do return $ TyVarAST tv
           FnTypeP      s t p cc cs -> do s' <- mapM q s
                                          t' <- q t
-                                         p' <- case p of
-                                                 Nothing -> return Nothing
-                                                 Just pp ->
-                                                    convertExprAST q pp >>= return . Just . Wrapped_ExprAST
+                                         p' <- mapMaybePreconditionM (convertExprAST q) p
                                          return $ FnTypeAST      s' t' p' cc cs
-          MetaPlaceholder desc -> do newTcUnificationVarTau desc
+          MetaPlaceholder desc -> return $ MetaPlaceholderAST desc
 
 typecheckSourceModule :: TcEnv ->  ModuleAST FnAST TypeAST
                       -> Compiled (ModuleIL AIExpr TypeIL, Context TypeIL)
@@ -495,9 +491,11 @@ lowerModule ai_mod ctx_il = do
      let insize = getInliningSize   flags
      let ctoropt = getCtorOpt       flags
 
+     let (_, ctorRepr) = mkCtorReprFn ai_mod ctoropt
+     let knorm = kNormalize ctorRepr
 
      kmod <- kNormalizeModule ai_mod ctx_il ctoropt
-     monomod0 <- monomorphize   kmod
+     monomod0 <- monomorphize   kmod knorm
      runStaticChecks monomod0
      monomod2 <- knLoopHeaders  monomod0
      (in_time, monomod4) <- ccTime $ (if inline then knInline insize donate else return) monomod2
@@ -588,8 +586,7 @@ lowerModule ai_mod ctx_il = do
                             moduleILdataTypes cfgmod
             let dataSigs = dataTypeSigs datatypes
             u0 <- readIORef uniqref
-            let tmBindingId (TermVarBinding _ (tid, _)) = tidIdent tid
-                globals = map tmBindingId (globalBindings ctx_il)
+            let globals = globalIdents ctx_il
             let (rv, u') = closureConvertAndLift dataSigs globals u0 cfgmod
             writeIORef uniqref u'
             return rv
@@ -604,7 +601,7 @@ lowerModule ai_mod ctx_il = do
                 return ()
 
 showGeneratedMetaTypeVariables :: (Show ty) =>
-                               IORef [MetaTyVar TypeAST] -> Context ty -> Compiled ()
+                               IORef [MetaTyVar TypeTC] -> Context ty -> Compiled ()
 showGeneratedMetaTypeVariables varlist ctx_il =
   ccWhen ccVerbose $ do
     metaTyVars <- readIORef varlist
@@ -613,8 +610,8 @@ showGeneratedMetaTypeVariables varlist ctx_il =
         t <- readIORef (mtvRef mtv)
         let wasTau = fmap isTau t /= Just False
         if mtvConstraint mtv == MTVTau && not wasTau
-         then putDocLn (text $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t) -- error $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t ++ " wasn't a tau!"
-         else putDocLn (text $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t)
+         then putDocLn (text $ "\t" ++ show (MetaTyVarTC mtv) ++ " :: " ++ show t) -- error $ "\t" ++ show (MetaTyVar mtv) ++ " :: " ++ show t ++ " wasn't a tau!"
+         else putDocLn (text $ "\t" ++ show (MetaTyVarTC mtv) ++ " :: " ++ show t)
     putDocLn $ (outLn "vvvv contextBindings:====================")
     putDocLn $ (dullyellow $ vcat $ map (text . show) (Map.toList $ contextBindings ctx_il))
 

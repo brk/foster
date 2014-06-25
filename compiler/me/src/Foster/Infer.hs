@@ -1,6 +1,6 @@
 module Foster.Infer(
     tcUnifyTypes
-  , parSubstTy
+  , parSubstTcTy
   , tySubst
   , extractSubstTypes
 ) where
@@ -12,75 +12,76 @@ import Data.Maybe(fromMaybe)
 import Text.PrettyPrint.ANSI.Leijen
 
 import Foster.Base
-import Foster.TypeAST
+import Foster.TypeTC
 import Foster.Context
+import Foster.PrettyAnnExpr
 
 ----------------------
 
-type TypeSubst = Map Uniq TypeAST
+type TypeSubst = Map Uniq TypeTC
 
 type UnifySoln = Maybe TypeSubst
 
-data TypeConstraint = TypeConstrEq TypeAST TypeAST
+data TypeConstraint = TypeConstrEq TypeTC TypeTC
 
 emptyTypeSubst = Map.empty
 
 ----------------------
 
-extractSubstTypes :: [MetaTyVar TypeAST] -> TypeSubst -> Tc [TypeAST]
+extractSubstTypes :: [MetaTyVar TypeTC] -> TypeSubst -> Tc [TypeTC]
 extractSubstTypes metaVars tysub = do
     mapM lookup metaVars where
          lookup m =
-               fromMaybe (return $ MetaTyVar m)
+               fromMaybe (return $ MetaTyVarTC m)
                          (fmap return $ Map.lookup (mtvUniq m) tysub)
 
 assocFilterOut :: Eq a => [(a,b)] -> [a] -> [(a,b)]
 assocFilterOut lst keys = [(a,b) | (a,b) <- lst, not(List.elem a keys)]
 
 -- Substitute each element of prv with its corresponding element from nxt.
-parSubstTy :: [(TyVar, TypeAST)] -> TypeAST -> TypeAST
-parSubstTy prvNextPairs ty =
-    let q = parSubstTy prvNextPairs in
+parSubstTcTy :: [(TyVar, TypeTC)] -> TypeTC -> TypeTC
+parSubstTcTy prvNextPairs ty =
+    let q = parSubstTcTy prvNextPairs in
     case ty of
-        TyVarAST tv          -> fromMaybe ty $ List.lookup tv prvNextPairs
-        MetaTyVar  {}        -> ty
-        PrimIntAST _         -> ty
-        PrimFloat64AST       -> ty
-        TyConAppAST nm tys   -> TyConAppAST nm (map q tys)
-        TupleTypeAST types   -> TupleTypeAST (map q types)
-        RefTypeAST   t       -> RefTypeAST   (q t)
-        ArrayTypeAST t       -> ArrayTypeAST (q t)
-        FnTypeAST ss t p cc cs -> FnTypeAST    (map q ss) (q t) p cc cs -- TODO unify calling convention?
-        CoroTypeAST s t      -> CoroTypeAST (q s) (q t)
-        ForAllAST ktvs rho   ->
+        TyVarTC  tv          -> fromMaybe ty $ List.lookup tv prvNextPairs
+        MetaTyVarTC {}       -> ty
+        PrimIntTC  _         -> ty
+        PrimFloat64TC        -> ty
+        TyConAppTC  nm tys   -> TyConAppTC  nm (map q tys)
+        TupleTypeTC  types   -> TupleTypeTC  (map q types)
+        RefTypeTC    t       -> RefTypeTC    (q t)
+        ArrayTypeTC  t       -> ArrayTypeTC  (q t)
+        FnTypeTC  ss t p cc cs -> FnTypeTC     (map q ss) (q t) p cc cs -- TODO unify calling convention?
+        CoroTypeTC  s t      -> CoroTypeTC  (q s) (q t)
+        ForAllTC  ktvs rho   ->
                 let prvNextPairs' = prvNextPairs `assocFilterOut` (map fst ktvs)
-                in  ForAllAST ktvs (parSubstTy prvNextPairs' rho)
+                in  ForAllTC  ktvs (parSubstTcTy prvNextPairs' rho)
 
 -- Replaces types for meta type variables (unification variables)
 -- according to the given type substitution.
-tySubst :: TypeSubst -> TypeAST -> TypeAST
+tySubst :: TypeSubst -> TypeTC -> TypeTC
 tySubst subst ty =
     let q = tySubst subst in
     case ty of
-        MetaTyVar m            -> Map.findWithDefault ty (mtvUniq m) subst
-        PrimIntAST   {}        -> ty
-        PrimFloat64AST         -> ty
-        TyVarAST     {}        -> ty
-        TyConAppAST  nm tys    -> TyConAppAST  nm (map q tys)
-        RefTypeAST    t        -> RefTypeAST   (q t)
-        ArrayTypeAST  t        -> ArrayTypeAST (q t)
-        TupleTypeAST types     -> TupleTypeAST (map q types)
-        FnTypeAST ss t p cc cs -> FnTypeAST    (map q ss) (q t) p cc cs
-        CoroTypeAST s t        -> CoroTypeAST (q s) (q t)
-        ForAllAST tvs rho      -> ForAllAST tvs (q rho)
+        MetaTyVarTC m          -> Map.findWithDefault ty (mtvUniq m) subst
+        PrimIntTC    {}        -> ty
+        PrimFloat64TC          -> ty
+        TyVarTC      {}        -> ty
+        TyConAppTC   nm tys    -> TyConAppTC   nm (map q tys)
+        RefTypeTC     t        -> RefTypeTC    (q t)
+        ArrayTypeTC   t        -> ArrayTypeTC  (q t)
+        TupleTypeTC  types     -> TupleTypeTC  (map q types)
+        FnTypeTC  ss t p cc cs -> FnTypeTC     (map q ss) (q t) p cc cs
+        CoroTypeTC  s t        -> CoroTypeTC  (q s) (q t)
+        ForAllTC  tvs rho      -> ForAllTC  tvs (q rho)
 
 -------------------------------------------------
-illegal (TyVarAST (BoundTyVar _)) = True
-illegal (ForAllAST {})            = True
+illegal (TyVarTC (BoundTyVar _)) = True
+illegal (ForAllTC {})            = True
 illegal _                        = False
 -------------------------------------------------
 
-tcUnifyTypes :: TypeAST -> TypeAST -> Tc UnifySoln
+tcUnifyTypes :: TypeTC -> TypeTC -> Tc UnifySoln
 tcUnifyTypes t1 t2 = tcUnify [TypeConstrEq t1 t2]
   where
     tcUnify :: [TypeConstraint] -> Tc UnifySoln
@@ -92,7 +93,7 @@ tcUnifyMoreTypes tys1 tys2 constraints tysub =
 tcUnifyLoop :: [TypeConstraint] -> TypeSubst -> Tc UnifySoln
 tcUnifyLoop [] tysub = return $ Just tysub
 
-tcUnifyLoop ((TypeConstrEq (PrimIntAST I32) (PrimIntAST I32)):constraints) tysub
+tcUnifyLoop ((TypeConstrEq (PrimIntTC  I32) (PrimIntTC  I32)):constraints) tysub
   = tcUnifyLoop constraints tysub
 
 tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
@@ -104,20 +105,20 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
         ,text "t1::", showStructure t1, text "t2::", showStructure t2]
   else
    case (t1, t2) of
-    (PrimFloat64AST, PrimFloat64AST) -> tcUnifyLoop constraints tysub
-    ((PrimIntAST n1), (PrimIntAST n2)) ->
+    (PrimFloat64TC , PrimFloat64TC ) -> tcUnifyLoop constraints tysub
+    ((PrimIntTC  n1), (PrimIntTC  n2)) ->
       if n1 == n2 then tcUnifyLoop constraints tysub
                   else do msg <- getStructureContextMessage
                           tcFailsMore [text $ "Unable to unify different primitive types: "
                                        ++ show n1 ++ " vs " ++ show n2
                                        , msg]
 
-    ((TyVarAST tv1), (TyVarAST tv2)) ->
+    ((TyVarTC  tv1), (TyVarTC  tv2)) ->
        if tv1 == tv2 then tcUnifyLoop constraints tysub
                      else tcFailsMore [text $ "Unable to unify different type variables: "
                                        ++ show tv1 ++ " vs " ++ show tv2]
 
-    ((TyConAppAST nm1 tys1), (TyConAppAST nm2 tys2)) ->
+    ((TyConAppTC  nm1 tys1), (TyConAppTC  nm2 tys2)) ->
       if nm1 == nm2
         then tcUnifyMoreTypes tys1 tys2 constraints tysub
         else do msg <- getStructureContextMessage
@@ -125,7 +126,7 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                                   ++ nm1 ++ " vs " ++ nm2,
                              msg]
 
-    ((TupleTypeAST tys1), (TupleTypeAST tys2)) ->
+    ((TupleTypeTC  tys1), (TupleTypeTC  tys2)) ->
         if List.length tys1 /= List.length tys2
           then tcFailsMore [text $ "Unable to unify tuples of different lengths"
                            ++ " ("   ++ show (List.length tys1)
@@ -136,23 +137,23 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
     -- Mismatches between unitary tuple types probably indicate
     -- parsing/function argument handling mismatch.
 
-    ((FnTypeAST as1 a1 p1 _cc1 _), (FnTypeAST as2 a2 p2 _cc2 _)) -> do
+    ((FnTypeTC  as1 a1 p1 _cc1 _), (FnTypeTC  as2 a2 p2 _cc2 _)) -> do
         case (p1, p2) of
-          (Nothing, Nothing) -> return ()
+          (NoPrecondition _, NoPrecondition _) -> return ()
           _ -> tcLift $ do putStrLn $ "TODO: type inference `unifying' preconditions"
-                           putStrLn $ "\t" ++ show p1
+                           putStrLn $ "\t" ++ show (pretty p1)
                            putStrLn $ "and"
-                           putStrLn $ "\t" ++ show p2
+                           putStrLn $ "\t" ++ show (pretty p2)
         if List.length as1 /= List.length as2
           then tcFailsMore [string "Unable to unify functions of different arity!\n"
                            <> pretty as1 <> string "\nvs\n" <> pretty as2]
           else tcUnifyLoop ([TypeConstrEq a b | (a, b) <- zip as1 as2]
                          ++ (TypeConstrEq a1 a2):constraints) tysub
 
-    ((CoroTypeAST a1 a2), (CoroTypeAST b1 b2)) ->
+    ((CoroTypeTC  a1 a2), (CoroTypeTC  b1 b2)) ->
         tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
 
-    ((ForAllAST ktyvars1 rho1), (ForAllAST ktyvars2 rho2)) ->
+    ((ForAllTC  ktyvars1 rho1), (ForAllTC  ktyvars2 rho2)) ->
         let (tyvars1, kinds1) = unzip ktyvars1 in
         let (tyvars2, kinds2) = unzip ktyvars2 in
         if List.length tyvars1 /= List.length tyvars2
@@ -160,17 +161,17 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
          else if kinds1 /= kinds2
           then tcFails [text $ "Unable to unify foralls with differently-kinded type variables"]
           else let t1 = rho1 in
-               let tySubst = zip tyvars2 (map (\(tv,_) -> TyVarAST tv) ktyvars1) in
-               let t2 = parSubstTy tySubst rho2 in
+               let tySubst = zip tyvars2 (map (\(tv,_) -> TyVarTC  tv) ktyvars1) in
+               let t2 = parSubstTcTy tySubst rho2 in
                tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
-    ((MetaTyVar m), ty) -> tcUnifyVar m ty tysub constraints
-    (ty, (MetaTyVar m)) -> tcUnifyVar m ty tysub constraints
+    ((MetaTyVarTC m), ty) -> tcUnifyVar m ty tysub constraints
+    (ty, (MetaTyVarTC m)) -> tcUnifyVar m ty tysub constraints
 
-    ((RefTypeAST t1), (RefTypeAST t2)) ->
+    ((RefTypeTC  t1), (RefTypeTC  t2)) ->
         tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
-    ((ArrayTypeAST t1), (ArrayTypeAST t2)) ->
+    ((ArrayTypeTC  t1), (ArrayTypeTC  t2)) ->
         tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
     _otherwise -> do
@@ -180,13 +181,10 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
         ,text "t1::", showStructure t1, text "t2::", showStructure t2
         ,msg]
 
-instance Show TypeAST where show t = show (pretty t)
-instance Show (Wrapped_ExprAST) where show (Wrapped_ExprAST e) = show e
-
-tcUnifyVar :: MetaTyVar TypeAST -> TypeAST -> TypeSubst -> [TypeConstraint] -> Tc UnifySoln
+tcUnifyVar :: MetaTyVar TypeTC  -> TypeTC  -> TypeSubst -> [TypeConstraint] -> Tc UnifySoln
 
 -- Ignore attempts to unify a meta type variable with itself.
-tcUnifyVar m1 (MetaTyVar m2) tysub constraints | m1 == m2
+tcUnifyVar m1 (MetaTyVarTC m2) tysub constraints | m1 == m2
   = tcUnifyLoop constraints tysub
 
 tcUnifyVar m ty tysub constraints = do

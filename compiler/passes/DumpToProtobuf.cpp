@@ -222,6 +222,9 @@ void dumpValAbs(DumpToProtobufPass* pass, pb::PBValAbs* target,
   for (size_t i = 0; i < valabs->tyVarFormals.size(); ++i) {
     dumpTypeFormal(&valabs->tyVarFormals[i], target->add_type_formals());
   }
+  if (valabs->precond) {
+    dumpChild(pass, target->mutable_precond(), valabs->precond);
+  }
   if (valabs->resultType) {
     ASSERT(false) << "result type annotations on functions aren't used.";
     //DumpToProtobufPass dt(target->mutable_result_type());
@@ -420,7 +423,7 @@ void FnTypeAST::dump(DumpToProtobufPass* pass) {
   fnty->set_calling_convention(this->getCallingConventionName());
 
   if (this->getPrecond()) {
-    dumpValAbs(pass, fnty->mutable_precond(), this->getPrecond());
+    dumpChild(pass, fnty->mutable_precond(), this->getPrecond());
   }
 
   if (this->getReturnType()) {

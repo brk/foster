@@ -19,11 +19,11 @@ data TypeP =
          | TupleTypeP     [TypeP]
          | FnTypeP        { fnTypeDomain :: [TypeP]
                           , fnTypeRange  :: TypeP
-                          , fnTypePrecond :: Maybe (ExprAST TypeP)
+                          , fnTypePrecond :: MaybePrecondition (ExprAST TypeP)
                           , fnTypeCallConv :: CallConv
                           , fnTypeProcOrFunc :: ProcOrFunc }
          | CoroTypeP      TypeP TypeP
-         | ForAllP        [TypeFormalAST] TypeP
+         | ForAllP        [TypeFormal] TypeP
          | TyVarP         TyVar
          | RefTypeP       TypeP
          | ArrayTypeP     TypeP

@@ -28,7 +28,7 @@ module Foster.CFG
 
 import Foster.Base
 import Foster.MonoType
-import Foster.KNExpr(KNExpr'(..), typeKN, KNMono, FnMono)
+import Foster.KNExpr(KNExpr'(..), typeKN, FnMono)
 import Foster.Letable(Letable(..))
 
 import Compiler.Hoopl

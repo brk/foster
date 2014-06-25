@@ -340,7 +340,9 @@ void foster__boundscheck64_failed(int64_t idx, int64_t len, const char* srclines
 }
 
 void foster__boundscheck64(int64_t idx, int64_t len, const char* srclines) {
-  if (idx < 0 || idx >= len) {
+  // We have the invariant that len > 0 (as a signed value), which means that
+  // (idx < 0 || idx >= len) has the same result as (idx >=u len)
+  if (uint64_t(idx) >= uint64_t(len)) {
     foster__boundscheck64_failed(idx, len, srclines);
   }
 }

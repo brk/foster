@@ -5,17 +5,17 @@
 -----------------------------------------------------------------------------
 
 module Foster.TypeAST(
-  TypeAST, TypeAST'(..), IntSizeBits(..), AnnVar, Wrapped_ExprAST(..)
-, MetaTyVar(..), Sigma, Rho, Tau, MTVQ(..), Sigma', Rho', Tau'
-, fosBoolType, fosStringType
+  TypeAST(..), IntSizeBits(..), AnnVar
+, MetaTyVar(..), Sigma, Rho, Tau, MTVQ(..)
+, fosBoolType, fosStringType, gFosterPrimOpsTable, primitiveDecls
 , minimalTupleAST
 , mkFnType, convertTyFormal
-, gFosterPrimOpsTable, primitiveDecls
 )
 where
 
-import Data.Map as Map(fromList, toList)
+import Data.Map as Map(fromList, toList, Map)
 import Data.Char as Char(isLetter)
+
 import Text.PrettyPrint.ANSI.Leijen
 
 import Foster.Base
@@ -24,33 +24,26 @@ import Foster.ExprAST
 
 type AnnVar = TypedId TypeAST
 
-type Sigma' = TypeAST'
-type Rho'   = TypeAST' -- No top-level ForAll
-type Tau'   = TypeAST' -- No ForAlls anywhere
+type Sigma = TypeAST
+type Rho   = TypeAST -- No top-level ForAll
+type Tau   = TypeAST -- No ForAlls anywhere
 
-type Sigma = Sigma' Wrapped_ExprAST
-type Rho = Rho' Wrapped_ExprAST
-type Tau = Tau' Wrapped_ExprAST
-
-type TypeAST = TypeAST' (Wrapped_ExprAST)
-newtype Wrapped_ExprAST = Wrapped_ExprAST (ExprAST TypeAST)
-
-data TypeAST' precond =
+data TypeAST =
            PrimIntAST       IntSizeBits
          | PrimFloat64AST
-         | TyConAppAST      DataTypeName [Sigma' precond]
-         | TupleTypeAST     [Sigma' precond]
-         | CoroTypeAST      (Sigma' precond) (Sigma' precond)
-         | RefTypeAST       (Sigma' precond)
-         | ArrayTypeAST     (Sigma' precond)
-         | FnTypeAST        { fnTypeDomain :: [Sigma' precond]
-                            , fnTypeRange  ::  Sigma' precond
-                            , fnTypePrecond :: Maybe precond
+         | TyConAppAST      DataTypeName [Sigma]
+         | TupleTypeAST     [Sigma]
+         | CoroTypeAST      (Sigma) (Sigma)
+         | RefTypeAST       (Sigma)
+         | ArrayTypeAST     (Sigma)
+         | FnTypeAST        { fnTypeDomain :: [Sigma]
+                            , fnTypeRange  ::  Sigma
+                            , fnTypePrecond :: MaybePrecondition (ExprAST TypeAST)
                             , fnTypeCallConv :: CallConv
                             , fnTypeProcOrFunc :: ProcOrFunc }
-         | ForAllAST        [(TyVar, Kind)] (Rho' precond)
+         | ForAllAST        [(TyVar, Kind)] (Rho)
          | TyVarAST         TyVar
-         | MetaTyVar        (MetaTyVar (TypeAST' precond))
+         | MetaPlaceholderAST String
 
 instance Eq (MetaTyVar t) where
   m1 == m2 = case (mtvUniq m1 == mtvUniq m2, mtvRef m1 == mtvRef m2) of
@@ -69,16 +62,17 @@ instance Pretty TypeAST where
         PrimFloat64AST                  -> text "Float64"
         TyConAppAST  tcnm types         -> parens $ text tcnm <> hpre (map pretty types)
         TupleTypeAST      types         -> tupled $ map pretty types
-        FnTypeAST    s t p cc cs        -> text "(" <> pretty s <> text " =" <> text (briefCC cc) <> text "> " <> pretty t <> text " @{" <> text (show cs) <> text "})"
+        FnTypeAST    s t _precond cc cs -> text "(" <> pretty s <> text " =" <> text (briefCC cc) <> text "> " <> pretty t <> text " @{" <> text (show cs) <> text "})"
         CoroTypeAST  s t                -> text "(Coro " <> pretty s <> text " " <> pretty t <> text ")"
         ForAllAST  tvs rho              -> text "(forall " <> hsep (prettyTVs tvs) <> text ". " <> pretty rho <> text ")"
         TyVarAST   tv                   -> text (show tv)
-        MetaTyVar m                     -> text "(~(" <> pretty (descMTVQ (mtvConstraint m)) <> text ")!" <> text (show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")")
+        -- MetaTyVar m                     -> text "(~(" <> pretty (descMTVQ (mtvConstraint m)) <> text ")!" <> text (show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")")
         RefTypeAST    ty                -> text "(Ref " <> pretty ty <> text ")"
         ArrayTypeAST  ty                -> text "(Array " <> pretty ty <> text ")"
 
 prettyTVs tvs = map (\(tv,k) -> parens (pretty tv <+> text "::" <+> pretty k)) tvs
 
+instance Show TypeAST where show x = show (pretty x)
   {-
 instance Show TypeAST where
     show x = case x of
@@ -109,7 +103,7 @@ instance Structured TypeAST where
             CoroTypeAST  _ _               -> text $ "CoroTypeAST"
             ForAllAST  tvs _rho            -> text $ "ForAllAST " ++ show tvs
             TyVarAST   tv                  -> text $ "TyVarAST " ++ show tv
-            MetaTyVar m                    -> text $ "MetaTyVar " ++ mtvDesc m
+            -- MetaTyVar m                    -> text $ "MetaTyVar " ++ mtvDesc m
             RefTypeAST    _                -> text $ "RefTypeAST"
             ArrayTypeAST  _                -> text $ "ArrayTypeAST"
 
@@ -123,22 +117,23 @@ instance Structured TypeAST where
             CoroTypeAST  s t               -> [s, t]
             ForAllAST  _tvs rho            -> [rho]
             TyVarAST   _tv                 -> []
-            MetaTyVar _                    -> []
+            -- MetaTyVar _                    -> []
             RefTypeAST    ty               -> [ty]
             ArrayTypeAST  ty               -> [ty]
 
-convertTyFormal (TypeFormalAST name kind) = (BoundTyVar name, kind)
-
-fosBoolType = i1
+fosBoolType = PrimIntAST I1
 fosStringType = TyConAppAST "Text" []
 
 minimalTupleAST []    = TupleTypeAST []
 minimalTupleAST [arg] = arg
 minimalTupleAST args  = TupleTypeAST args
 
-mkProcType args rets = FnTypeAST args (minimalTupleAST rets) Nothing CCC    FT_Proc
-mkFnType   args rets = FnTypeAST args (minimalTupleAST rets) Nothing FastCC FT_Func
+mkProcType args rets = FnTypeAST args (minimalTupleAST rets) (NoPrecondition "mkProcType") CCC    FT_Proc
+mkFnType   args rets = FnTypeAST args (minimalTupleAST rets) (NoPrecondition "mkFnType")   FastCC FT_Func
 mkCoroType args rets = CoroTypeAST (minimalTupleAST args) (minimalTupleAST rets)
+
+--------------------------------------------------------------------------------
+
 i8  = PrimIntAST I8
 i32 = PrimIntAST I32
 i64 = PrimIntAST I64
@@ -176,7 +171,7 @@ primitiveDecls =
 
     ,(,) "opaquely_i32" $ mkProcType [i32] [i32]
     ,(,) "opaquely_i64" $ mkProcType [i64] [i64]
-    ,(,) "get_cmdline_arg_n" $ mkProcType [i32] [fosStringType]
+    ,(,) "get_cmdline_arg_n" $ mkProcType [i32] [TyConAppAST "Text" []]
 
     ,(,) "expect_newline" $ mkProcType [] []
     ,(,) "print_newline" $ mkProcType [] []
@@ -189,8 +184,8 @@ primitiveDecls =
     ,(,) "prim_print_bytes_stdout" $ mkProcType [ArrayTypeAST i8, i32] []
     ,(,) "prim_print_bytes_stderr" $ mkProcType [ArrayTypeAST i8, i32] []
 
-    ,(,) "print_float_p9f64"       $ mkProcType [PrimFloat64AST] []
-    ,(,) "expect_float_p9f64"      $ mkProcType [PrimFloat64AST] []
+    ,(,) "print_float_p9f64"       $ mkProcType [f64] []
+    ,(,) "expect_float_p9f64"      $ mkProcType [f64] []
 
     -- Calls to this function are internally transformed to AIAllocArray nodes.
     -- forall a, i32 -> Array a
@@ -312,6 +307,7 @@ flonumPrimitives tystr ty =
   ]
 
 -- These primitive names are known to the interpreter and compiler backends.
+gFosterPrimOpsTable :: Map.Map String (TypeAST, FosterPrim TypeAST)
 gFosterPrimOpsTable = Map.fromList $
   [(,) "not"                  $ (,) (mkFnType [i1]  [i1]  ) $ PrimOp "bitnot" i1
   ,(,) "sext_i32_to_i64"      $ (,) (mkFnType [i32] [i64] ) $ PrimOp "sext_i64" i32

@@ -11,27 +11,26 @@ import qualified Data.Map as Map(fromList, unionsWith, singleton)
 import qualified Data.Text as T
 
 import Foster.Base
-import Foster.TypeAST
 
 withDataTypeCtors :: DataType ty -> (CtorId -> DataCtor ty -> Int -> res) -> [res]
 withDataTypeCtors dtype f =
   [f (ctorId (typeFormalName $ dataTypeName dtype) ctor) ctor n
    | (ctor, n) <- zip (dataTypeCtors dtype) [0..]]
 
-getDataTypes :: [DataType TypeAST] -> Map DataTypeName [DataType TypeAST]
+getDataTypes :: [DataType t] -> Map DataTypeName [DataType t]
 getDataTypes datatypes = Map.unionsWith (++) $ map single datatypes
   where
     single dt = Map.singleton (typeFormalName $ dataTypeName dt) [dt]
 
-getCtorInfo :: [DataType TypeAST] -> Map CtorName [CtorInfo TypeAST]
+getCtorInfo :: [DataType t] -> Map CtorName [CtorInfo t]
 getCtorInfo datatypes = Map.unionsWith (++) $ map getCtorInfoList datatypes
   where
-    getCtorInfoList :: DataType TypeAST -> Map CtorName [CtorInfo TypeAST]
+    getCtorInfoList :: DataType t -> Map CtorName [CtorInfo t]
     getCtorInfoList (DataType formal _tyformals ctors _range) =
           Map.fromList $ map (buildCtorInfo (typeFormalName formal)) ctors
 
-    buildCtorInfo :: DataTypeName -> DataCtor TypeAST
-                  -> (CtorName, [CtorInfo TypeAST])
+    buildCtorInfo :: DataTypeName -> DataCtor t
+                  -> (CtorName, [CtorInfo t])
     buildCtorInfo name ctor =
       case ctorIdFor name ctor of (n, c) -> (n, [CtorInfo c ctor])
 

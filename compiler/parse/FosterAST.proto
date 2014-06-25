@@ -54,7 +54,7 @@ message FnType {
   required Type ret_type  = 2;
   optional string calling_convention = 3;
   optional bool   is_closure = 4;
-  optional PBValAbs  precond = 5;
+  optional Expr   precond = 5;
 }
 
 message Formal {
@@ -123,6 +123,7 @@ message PBValAbs {
   repeated Formal     formals     = 1;
   //optional Type     result_type = 2;
   repeated TypeFormal type_formals = 3;
+  optional Expr       precond     = 4;
 }
 
 message PBLet {

@@ -5,8 +5,8 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.KNExpr (kNormalizeModule, KNExpr, KNMono, FnMono,
-                      KNExpr'(..), TailQ(..), typeKN,
+module Foster.KNExpr (kNormalizeModule, KNExpr, KNMono, FnMono, mkCtorReprFn,
+                      KNExpr'(..), TailQ(..), typeKN, kNormalize,
                       knLoopHeaders, knSinkBlocks, knInline, knSize,
                       renderKN, renderKNM, renderKNF, renderKNFM) where
 import qualified Data.Text as T
@@ -51,17 +51,10 @@ kNormalizeModule :: (ModuleIL AIExpr TypeIL) -> Context TypeIL -> Bool ->
            Compiled (ModuleIL KNExpr TypeIL)
 kNormalizeModule m ctx shouldOptimizeCtorRepresentations =
     -- TODO move ctor wrapping earlier?
-    let pickCtorReprs = if shouldOptimizeCtorRepresentations
-                         then optimizedCtorRepresesentations
-                         else pickDefaultCtorRepresesentations in
-    let allDataTypes = moduleILprimTypes m ++ moduleILdataTypes m in
-    let ctorReprMap = Map.fromList (concatMap pickCtorReprs allDataTypes) in
-    let ctorRepr :: CtorId -> CtorRepr
-        ctorRepr cid = case Map.lookup cid ctorReprMap of
-                         Just repr -> repr
-                         Nothing   -> error $ "KNExpr.hs: unable to find ctor" in
-    let knCtorFuncs = concatMap (kNormalCtors ctx ctorRepr) allDataTypes in
-    let knWrappedBody = do { ctors <- sequence knCtorFuncs
+    let (allDataTypes,
+         ctorRepr)    = mkCtorReprFn m shouldOptimizeCtorRepresentations
+        knCtorFuncs   = concatMap (kNormalCtors ctx ctorRepr) allDataTypes
+        knWrappedBody = do { ctors <- sequence knCtorFuncs
                            ; body  <- kNormalize ctorRepr (moduleILbody m)
                            ; return $ wrapFns ctors body
                            } in
@@ -70,6 +63,19 @@ kNormalizeModule m ctx shouldOptimizeCtorRepresentations =
       where
         wrapFns :: [FnExprIL] -> KNExpr -> KNExpr
         wrapFns fs e = foldr (\f body -> KNLetFuns [fnIdent f] [f] body) e fs
+
+mkCtorReprFn :: Kinded t => ModuleIL e t -> Bool -> ([DataType t], CtorId -> CtorRepr)
+mkCtorReprFn m shouldOptimizeCtorRepresentations =
+    (allDataTypes,
+     \cid -> case Map.lookup cid ctorReprMap of
+                         Just repr -> repr
+                         Nothing   -> error $ "KNExpr.hs: unable to find ctor")
+      where
+        ctorReprMap = Map.fromList (concatMap pickCtorReprs allDataTypes)
+        allDataTypes = moduleILprimTypes m ++ moduleILdataTypes m
+        pickCtorReprs = if shouldOptimizeCtorRepresentations
+                                 then optimizedCtorRepresesentations
+                                 else pickDefaultCtorRepresesentations
 
 kNormalizeFn :: (CtorId -> CtorRepr) -> Fn () AIExpr TypeIL -> KN (FnExprIL)
 kNormalizeFn ctorRepr fn = do
@@ -166,7 +172,7 @@ kNormalize ctorRepr expr =
 
               go' clump arms = do
                   kid <- knFresh "kont"
-                  let kty = FnTypeIL [] t Nothing FastCC FT_Proc
+                  let kty = FnTypeIL [] t (NoPrecondition "casearm") FastCC FT_Proc
                   let kontOf body = Fn {
                           fnVar      = TypedId kty (GlobalSymbol (T.pack $ show kid))
                         , fnVars     = []
@@ -404,11 +410,11 @@ classifyCtors ctors _ =
 
       _ -> OtherCtorSituation [(cid, n) | (cid, _, n) <- ctors]
 
-pickDefaultCtorRepresesentations :: DataType TypeIL -> [(CtorId, CtorRepr)]
+pickDefaultCtorRepresesentations :: DataType t -> [(CtorId, CtorRepr)]
 pickDefaultCtorRepresesentations dtype =
   withDataTypeCtors dtype (\cid _ctor n -> (cid, CR_Default n))
 
-optimizedCtorRepresesentations :: DataType TypeIL -> [(CtorId, CtorRepr)]
+optimizedCtorRepresesentations :: Kinded t => DataType t -> [(CtorId, CtorRepr)]
 optimizedCtorRepresesentations dtype =
   let ctors = withDataTypeCtors dtype (\cid ctor n -> (cid, ctor, n)) in
   case classifyCtors ctors (kindOf $ dataTypeName dtype) of
@@ -479,7 +485,7 @@ kNormalCtors ctx ctorRepr dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dty
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 thunk (ForAllIL ktvs rho) = ForAllIL ktvs (thunk rho)
-thunk ty = FnTypeIL [] ty Nothing FastCC FT_Proc
+thunk ty = FnTypeIL [] ty (NoPrecondition "thunk") FastCC FT_Proc
 
 -- |||||||||||||||||||||||||| Local Block Sinking |||||||||||||||{{{
 

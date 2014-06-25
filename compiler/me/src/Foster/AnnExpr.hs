@@ -86,7 +86,7 @@ instance TypedWith (AnnExpr ty) ty where
      AnnPrimitive _rng t _ -> t
      E_AnnTyApp _rng substitutedTy _tm _tyArgs -> substitutedTy
 
-instance Structured (AnnExpr TypeAST) where
+instance Pretty ty => Structured (AnnExpr ty) where
   textOf e _width =
     case e of
       AnnLiteral _ _  (LitText _)  -> text "AnnText      "
@@ -151,7 +151,7 @@ rights (x:xs) = case x of Left _  -> rights xs
 
 -----------------------------------------------------------------------
 
-instance AExpr (AnnExpr TypeAST) where
+instance (Structured ty, Pretty ty) => AExpr (AnnExpr ty) where
     freeIdents e = case e of
         AnnPrimitive {}     -> []
         AnnLetVar _rng  id  b   e -> freeIdents b ++ (freeIdents e `butnot` [id])

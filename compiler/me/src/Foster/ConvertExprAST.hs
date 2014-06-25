@@ -19,10 +19,11 @@ convertVar f (TypedId t i) = do ty <- f t
                                 return $ TypedId ty i
 
 convertFun :: Monad m => (a -> m b) -> FnAST a -> m (FnAST b)
-convertFun f (FnAST rng nm tyformals formals body toplevel) = do
+convertFun f (FnAST rng nm tyformals formals body mbprecond toplevel) = do
     formals' <- mapM (convertVar f) formals
     body'    <- convertExprAST f body
-    return $ FnAST rng nm tyformals formals' body' toplevel
+    mbprecond' <- mapMaybePreconditionM (convertExprAST f) mbprecond
+    return $ FnAST rng nm tyformals formals' body' mbprecond' toplevel
 
 convertDecl :: Monad m => (a -> m b) -> (String, a) -> m (String, b)
 convertDecl f (s, ty) = do t <- f ty ; return (s, t)
@@ -63,7 +64,7 @@ convertExprAST :: Monad m => (x -> m z) -> ExprAST x -> m (ExprAST z)
 convertExprAST f expr =
   let q = convertExprAST f in
   case expr of
-    E_MachArrayLit rng es       -> liftM  (E_MachArrayLit rng) (mapArrayEntryM q es)
+    E_MachArrayLit rng es       -> liftM  (E_MachArrayLit rng) (mapM (liftArrayEntryM q) es)
     E_StringAST    rng s        -> return $ (E_StringAST  rng) s
     E_BoolAST      rng b        -> return $ (E_BoolAST    rng) b
     E_IntAST       rng txt      -> return $ (E_IntAST     rng) txt
@@ -96,8 +97,4 @@ convertExprAST f expr =
     E_FnAST        rng fn       -> liftM  (E_FnAST        rng) (convertFun f fn)
     E_KillProcess  rng a        -> liftM  (E_KillProcess  rng) (q a)
 
-liftBinding :: Monad m => (t1 -> m t2) -> ContextBinding t1 -> m (ContextBinding t2)
-liftBinding f (TermVarBinding s (TypedId t i, mb_cid)) = do
-  t2 <- f t
-  return $ TermVarBinding s (TypedId t2 i, mb_cid)
 

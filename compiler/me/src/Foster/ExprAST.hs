@@ -7,13 +7,13 @@
 module Foster.ExprAST(
   ExprAST, ExprSkel(..), exprAnnot
 , FnAST(..)
-, TypeFormalAST(..) -- TODO remove?
+, TypeFormal(..) -- TODO remove?
 , TermBinding(..)
 , termBindingName
 )
 where
 
-import Foster.Base(Structured(..),
+import Foster.Base(Structured(..), MaybePrecondition,
                    SourceRanged(..), TypedId(..), ArrayIndex(..),
                    AllocMemRegion, childrenOfArrayIndex, ArrayEntry,
                    CaseArm(..), caseArmExprs, EPattern(..), E_VarAST(..),
@@ -64,9 +64,10 @@ data ExprSkel annot ty =
 
 data FnAST ty  = FnAST { fnAstAnnot    :: ExprAnnot
                        , fnAstName     :: T.Text
-                       , fnTyFormals   :: [TypeFormalAST]
+                       , fnTyFormals   :: [TypeFormal]
                        , fnFormals     :: [TypedId ty]
                        , fnAstBody     :: ExprAST ty
+                       , fnAstPrecond  :: MaybePrecondition (ExprAST ty)
                        , fnWasToplevel :: Bool
                        } deriving (Show)
 

@@ -78,7 +78,7 @@ instance Pretty (FnAST TypeP) where
 
 prettyTyFormals [] = empty
 prettyTyFormals tyfs = empty <+> text "forall" <+> hsep (map prettyTyFormal tyfs) <+> text ","
-  where prettyTyFormal (TypeFormalAST name kind) =
+  where prettyTyFormal (TypeFormal name kind) =
                                           text name <+> text ":" <+> pretty kind
 
 instance Pretty (ModuleAST FnAST TypeP) where

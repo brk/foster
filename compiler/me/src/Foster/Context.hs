@@ -6,6 +6,7 @@
 
 module Foster.Context where
 
+import Control.Monad.State(liftM, liftM2)
 import Data.IORef(IORef,newIORef,readIORef,writeIORef)
 import Data.Map(Map)
 import Data.List(foldl')
@@ -17,6 +18,7 @@ import Foster.Base
 import Foster.Kind
 import Foster.ExprAST
 import Foster.TypeAST
+import Foster.TypeTC
 
 import Text.PrettyPrint.ANSI.Leijen
 import Foster.Output
@@ -28,13 +30,14 @@ type ContextBindings ty = Map T.Text (CtxBound ty)
 data Context ty = Context { contextBindings   :: ContextBindings ty
                           , nullCtorBindings  :: ContextBindings ty
                           , primitiveBindings :: ContextBindings ty
+                          , primitiveOperations :: Map T.Text (FosterPrim ty)
                           , contextVerbose    :: Bool
-                          , globalBindings    :: [ContextBinding ty]
+                          , globalIdents       :: [Ident]
                           , localTypeBindings :: Map String ty
                           , contextTypeBindings :: [(TyVar, Kind)]
-                          , contextCtorInfo   :: Map CtorName     [CtorInfo TypeAST]
-                          , contextDataTypes  :: Map DataTypeName [DataType TypeAST]
-                          }
+                          , contextCtorInfo   :: Map CtorName     [CtorInfo ty]
+                          , contextDataTypes  :: Map DataTypeName [DataType ty]
+                          } deriving Show
 
 prependBinding :: ContextBindings ty -> ContextBinding ty -> ContextBindings ty
 prependBinding m (TermVarBinding nm cxb) = Map.insert nm cxb m
@@ -59,7 +62,52 @@ typeVarLookup name bindings = Map.lookup name bindings
 extendTyCtx ctx ktvs = ctx { contextTypeBindings =
                      ktvs ++ contextTypeBindings ctx }
 
---prependTypeBindings :: Context ty ->
+liftContextM :: (Monad m, Show t1, Show t2)
+             => (t1 -> m t2) -> Context t1 -> m (Context t2)
+liftContextM f (Context cb nb pb primops vb gb tyvars tybinds ctortypeast dtinfo) = do
+  cb' <- mmapM (liftCXB f) cb
+  nb' <- mmapM (liftCXB f) nb
+  pb' <- mmapM (liftCXB f) pb
+  po' <- mmapM (liftPrimOp f) primops
+  tyvars' <- mmapM f tyvars
+  ct' <- mmapM (mapM (liftCtorInfo f)) ctortypeast
+  dt' <- mmapM (mapM (liftDataType f)) dtinfo
+  return $ Context cb' nb' pb' po' vb gb tyvars' tybinds ct' dt'
+
+mmapM :: (Monad m, Ord k) => (a -> m b) -> Map k a -> m (Map k b)
+mmapM f ka = do
+  kbl <- mapM (\(k, a) -> do b <- f a ; return (k, b)) (Map.toList ka)
+  return $ Map.fromList kbl
+
+liftTID :: Monad m => (t1 -> m t2) -> TypedId t1 -> m (TypedId t2)
+liftTID f (TypedId t i) = do t2 <- f t ; return $ TypedId t2 i
+
+liftCXB :: Monad m => (t1 -> m t2) -> CtxBound t1 -> m (CtxBound t2)
+liftCXB f (tid, mb_ci) = do tid' <- liftTID f tid; return (tid' , mb_ci)
+
+liftCtorInfo :: Monad m => (t1 -> m t2) -> CtorInfo t1 -> m (CtorInfo t2)
+liftCtorInfo f (CtorInfo cid datactor) =
+  liftM (CtorInfo cid) (liftDataCtor f datactor)
+
+liftDataType :: Monad m => (t1 -> m t2) -> DataType t1 -> m (DataType t2)
+liftDataType f (DataType nm formals ctors srcrange) =
+  liftM (\cs' ->DataType nm formals cs' srcrange) (mapM (liftDataCtor f) ctors)
+
+liftDataCtor :: Monad m => (t1 -> m t2) -> DataCtor t1 -> m (DataCtor t2)
+liftDataCtor f (DataCtor dataCtorName formals types range) = do
+  liftM (\tys-> DataCtor dataCtorName formals tys  range) (mapM f types)
+
+liftPrimOp f primop =
+  case primop of
+    NamedPrim tid      -> liftM NamedPrim (liftTID f tid)
+    PrimOp s ty        -> liftM (PrimOp s) (f ty)
+    PrimIntTrunc s1 s2 -> return $ PrimIntTrunc s1 s2
+    CoroPrim p t1 t2   -> liftM2 (CoroPrim p) (f t1) (f t2)
+
+liftBinding :: Monad m => (t1 -> m t2) -> ContextBinding t1 -> m (ContextBinding t2)
+liftBinding f (TermVarBinding s (TypedId t i, mb_cid)) = do
+  t2 <- f t
+  return $ TermVarBinding s (TypedId t2 i, mb_cid)
 
 -- Based on "Practical type inference for arbitrary rank types."
 -- One significant difference is that we do not include the Gamma context
@@ -69,9 +117,9 @@ extendTyCtx ctx ktvs = ctx { contextTypeBindings =
 --   of functions to be type checked in the same Gamma context. But
 --   we do need to thread the supply of unique variables through...
 data TcEnv = TcEnv { tcEnvUniqs        :: IORef Uniq
-                   , tcUnificationVars :: IORef [MetaTyVar TypeAST]
+                   , tcUnificationVars :: IORef [MetaTyVar TypeTC]
                    , tcParents         :: [ExprAST TypeAST]
-                   , tcMetaIntConstraints :: IORef (Map (MetaTyVar TypeAST) Int)
+                   , tcMetaIntConstraints :: IORef (Map (MetaTyVar TypeTC) Int)
                    }
 
 newtype Tc a = Tc (TcEnv -> IO (OutputOr a))
@@ -131,11 +179,11 @@ writeTcMeta m v = do
   tcLift $ writeIORef (mtvRef m) (Just v)
 
 -- A "shallow" alternative to zonking which only peeks at the topmost tycon
-shallowZonk :: TypeAST -> Tc TypeAST
-shallowZonk (MetaTyVar m) = do
+shallowZonk :: TypeTC -> Tc TypeTC
+shallowZonk (MetaTyVarTC m) = do
          mty <- readTcMeta m
          case mty of
-             Nothing -> return (MetaTyVar m)
+             Nothing -> return (MetaTyVarTC m)
              Just ty -> do ty' <- shallowZonk ty
                            writeTcMeta m ty'
                            return ty'
@@ -152,16 +200,16 @@ newTcRef v = tcLift $ newIORef v
 newTcUnificationVarSigma d = newTcUnificationVar_ MTVSigma d
 newTcUnificationVarTau   d = newTcUnificationVar_ MTVTau d
 
-newTcUnificationVar_ :: MTVQ -> String -> Tc TypeAST
+newTcUnificationVar_ :: MTVQ -> String -> Tc TypeTC
 newTcUnificationVar_ q desc = do
     u    <- newTcUniq
     ref  <- newTcRef Nothing
     meta <- tcRecordUnificationVar (Meta q desc u ref)
-    return (MetaTyVar meta)
+    return (MetaTyVarTC meta)
       where
         -- The typechecking environment maintains a list of all the unification
         -- variables created, for introspection/debugging/statistics wankery.
-        tcRecordUnificationVar :: MetaTyVar TypeAST -> Tc (MetaTyVar TypeAST)
+        tcRecordUnificationVar :: MetaTyVar TypeTC -> Tc (MetaTyVar TypeTC)
         tcRecordUnificationVar m = Tc $ \env ->
                         do modIORef' (tcUnificationVars env) (m:); retOK m
 
@@ -187,22 +235,22 @@ tcFresh s = tcFreshT (T.pack s)
 tcGetCurrentHistory :: Tc [ExprAST TypeAST]
 tcGetCurrentHistory = Tc $ \env -> do retOK $ Prelude.reverse $ tcParents env
 
-instance Ord (MetaTyVar TypeAST) where
+instance Ord (MetaTyVar ty) where
   compare m1 m2 = compare (mtvUniq m1) (mtvUniq m2)
 
-tcUpdateIntConstraint :: MetaTyVar TypeAST -> Int -> Tc ()
+tcUpdateIntConstraint :: MetaTyVar TypeTC -> Int -> Tc ()
 tcUpdateIntConstraint km n = Tc $ \env -> do
   modIORef' (tcMetaIntConstraints env) (Map.insertWith max km n)
   retOK ()
 
-instance Show (MetaTyVar TypeAST) where show m = show (pretty (MetaTyVar m))
+instance Show (MetaTyVar TypeTC)  where show m = show (MetaTyVarTC m)
 
 tcApplyIntConstraints :: Tc ()
 tcApplyIntConstraints = Tc $ \env -> do
   map <- readIORef (tcMetaIntConstraints env)
   mapM_ (\(m, neededBits) -> do putStrLn $ "applying int constraint: " ++ show m ++ " ~ " ++ show neededBits
                                 writeIORef (mtvRef m)
-                                    (Just $ PrimIntAST $ sizeOfBits neededBits))
+                                    (Just $ PrimIntTC $ sizeOfBits neededBits))
         (Map.toList map)
   retOK ()
 

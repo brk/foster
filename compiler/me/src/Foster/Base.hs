@@ -56,10 +56,20 @@ data RecStatus = YesRec | NotRec deriving (Eq, Ord, Show)
 data VarNamespace = VarProc | VarLocal deriving Show
 data TailQ = YesTail | NotTail deriving (Eq, Show)
 data MayGC = GCUnknown String | MayGC | WillNotGC deriving (Eq, Show, Ord)
-
+data MaybePrecondition expr = NoPrecondition String | HavePrecondition expr deriving (Show, Eq)
 data SafetyGuarantee = SG_Static | SG_Dynamic               deriving (Show, Eq)
 data ArrayIndex expr = ArrayIndex expr expr SourceRange
                                             SafetyGuarantee deriving (Show, Eq)
+
+liftArrayIndexM f (ArrayIndex e1 e2 sr sg) = do
+  e1' <- f e1 ; e2' <- f e2 ; return $ ArrayIndex e1' e2' sr sg
+
+mapMaybePreconditionM _ (NoPrecondition s) = return (NoPrecondition s)
+mapMaybePreconditionM f (HavePrecondition p) = f p >>= return . HavePrecondition
+
+instance Pretty expr => Pretty (MaybePrecondition expr) where
+  pretty (NoPrecondition _) = PP.empty
+  pretty (HavePrecondition p) = text "#precondition" <+> pretty p
 
 -- In contrast to meta type variables, the IORef for inferred types
 -- can contain a sigma, not just a tau. See Typecheck.hs for details.
@@ -67,6 +77,8 @@ data Expected t = Infer (IORef t) | Check t
 
 data TyVar = BoundTyVar  String -- bound by a ForAll, that is
            | SkolemTyVar String Uniq Kind
+
+convertTyFormal (TypeFormal name kind) = (BoundTyVar name, kind)
 
 instance Pretty TyVar where
   pretty (BoundTyVar name) = text "'" <> text name
@@ -88,7 +100,7 @@ boolGC  WillNotGC    = False
 boolGC  MayGC        = True
 boolGC (GCUnknown _) = True
 
-typeFormalName (TypeFormalAST name _) = name
+typeFormalName (TypeFormal name _) = name
 
 -- |||||||||||||||||||||||||| Patterns ||||||||||||||||||||||||||{{{
 
@@ -162,8 +174,8 @@ caseArmFreeIds arm =
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||| Data Types |||||||||||||||||||||||||||||||{{{
 data DataType ty = DataType {
-    dataTypeName      :: TypeFormalAST
-  , dataTypeTyFormals :: [TypeFormalAST]
+    dataTypeName      :: TypeFormal
+  , dataTypeTyFormals :: [TypeFormal]
   , dataTypeCtors     :: [DataCtor ty]
   , dataTypeRange     :: SourceRange
   }
@@ -176,7 +188,7 @@ data CtorId       = CtorId { ctorTypeName :: DataTypeName
                            } deriving (Show, Eq, Ord)
 
 data DataCtor ty = DataCtor { dataCtorName  :: CtorName
-                            , dataCtorDTTyF :: [TypeFormalAST]
+                            , dataCtorDTTyF :: [TypeFormal]
                             , dataCtorTypes :: [ty]
                             , dataCtorRange :: SourceRange
                             }
@@ -544,9 +556,10 @@ data ArrayEntry e = AE_Int ExprAnnot String
                   | AE_Expr e
                   deriving Show
 
-mapArrayEntryM :: Monad m => (a -> m b) -> [ArrayEntry a] -> m [ArrayEntry b]
-mapArrayEntryM action lst = mapM (\ei -> case ei of AE_Int a s -> return (AE_Int a s)
-                                                    AE_Expr e  -> action e >>= return . AE_Expr) lst
+liftArrayEntryM :: Monad m => (a -> m b) -> ArrayEntry a -> m (ArrayEntry b)
+liftArrayEntryM action ei =
+  case ei of AE_Int a s -> return (AE_Int a s)
+             AE_Expr e  -> action e >>= return . AE_Expr
 
 mapRight :: (a -> b) -> [Either x a] -> [Either x b]
 mapRight action lst = map (\ei -> case ei of Left x -> Left x
@@ -565,6 +578,10 @@ identPrefix (Ident name _)      = name
 
 data Ident = Ident        T.Text Uniq
            | GlobalSymbol T.Text
+
+fmapIdent :: (T.Text -> T.Text) -> Ident -> Ident
+fmapIdent tt (Ident t u)      = Ident        (tt t) u
+fmapIdent tt (GlobalSymbol t) = GlobalSymbol (tt t)
 
 data TypedId ty = TypedId { tidType :: ty, tidIdent :: Ident }
 
@@ -731,6 +748,28 @@ instance Show (PatternRepr ty) where
   show (PR_Ctor     _ _ _pats ctor) = "PR_Ctor     " ++ show (ctorLLInfoId ctor)
   show (PR_Tuple    _ _ pats)       = "PR_Tuple    " ++ show pats
 
+instance Pretty t => Pretty (Pattern t) where
+  pretty p =
+    case p of
+        P_Atom          atom              -> pretty atom
+        P_Ctor          _rng _ty pats cid -> parens (text "$" <> text (ctorCtorName $ ctorInfoId cid) <+> (hsep $ map pretty pats))
+        P_Tuple         _rng _ty pats     -> parens (hsep $ punctuate comma (map pretty pats))
+
+instance Pretty t => Pretty (PatternAtom t) where
+  pretty p =
+    case p of
+        P_Wildcard      _rng _ty          -> text "_"
+        P_Variable      _rng tid          -> text (show . tidIdent $ tid)
+        P_Bool          _rng _ty b        -> text $ if b then "True" else "False"
+        P_Int           _rng _ty li       -> text (litIntText li)
+
+instance Pretty t => Pretty (PatternRepr t) where
+  pretty p =
+    case p of
+        PR_Atom          atom              -> pretty atom
+        PR_Ctor          _rng _ty pats cid -> parens (text "$" <> text (ctorCtorName $ ctorLLInfoId cid) <+> (hsep $ map pretty pats))
+        PR_Tuple         _rng _ty pats     -> parens (hsep $ punctuate comma (map pretty pats))
+
 instance Pretty ty => Pretty (EPattern ty) where
   pretty (EP_Wildcard _)            = text "EP_Wildcard"
   pretty (EP_Variable _ v)          = text "EP_Variable " <> pretty v
@@ -780,6 +819,7 @@ instance TExpr body t => TExpr (Fn rec body t) t where
                      let boundvars =              (fnVars f) in
                      bodyvars `butnot` boundvars
 
+prettyCase :: (Pretty expr, Pretty (pat ty)) => expr -> [CaseArm pat expr ty] -> Doc
 prettyCase scrutinee arms =
             kwd "case" <+> pretty scrutinee
             <$> indent 2 (vcat [ kwd "of" <+>

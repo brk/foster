@@ -9,7 +9,7 @@ module Foster.KNUtil where
 
 import Foster.Base
 
-import Foster.TypeIL
+import Foster.AnnExprIL(TypeIL(..))
 import Foster.Kind
 
 import Text.PrettyPrint.ANSI.Leijen
@@ -411,8 +411,8 @@ instance (Pretty body, Pretty t) => Pretty (ModuleIL body t) where
 
 prettyId (TypedId _ i) = text (show i)
 
-instance Pretty TypeFormalAST where
-  pretty (TypeFormalAST name kind) =
+instance Pretty TypeFormal where
+  pretty (TypeFormal name kind) =
     text name <+> text ":" <+> pretty kind
 
 instance Pretty t => Pretty (DataType t) where
@@ -426,28 +426,6 @@ instance Pretty t => Pretty (DataType t) where
 prettyDataTypeCtor dc =
   text "of" <+> text "$" <> text (T.unpack $ dataCtorName dc)
                         <+> hsep (map pretty (dataCtorTypes dc))
-
-instance Pretty t => Pretty (PatternAtom t) where
-  pretty p =
-    case p of
-        P_Wildcard      _rng _ty          -> text "_"
-        P_Variable      _rng tid          -> prettyId tid
-        P_Bool          _rng _ty b        -> text $ if b then "True" else "False"
-        P_Int           _rng _ty li       -> text (litIntText li)
-
-instance Pretty t => Pretty (Pattern t) where
-  pretty p =
-    case p of
-        P_Atom          atom              -> pretty atom
-        P_Ctor          _rng _ty pats cid -> parens (text "$" <> text (ctorCtorName $ ctorInfoId cid) <+> (hsep $ map pretty pats))
-        P_Tuple         _rng _ty pats     -> parens (hsep $ punctuate comma (map pretty pats))
-
-instance Pretty t => Pretty (PatternRepr t) where
-  pretty p =
-    case p of
-        PR_Atom          atom              -> pretty atom
-        PR_Ctor          _rng _ty pats cid -> parens (text "$" <> text (ctorCtorName $ ctorLLInfoId cid) <+> (hsep $ map pretty pats))
-        PR_Tuple         _rng _ty pats     -> parens (hsep $ punctuate comma (map pretty pats))
 
 pr YesTail = "(tail)"
 pr NotTail = "(non-tail)"

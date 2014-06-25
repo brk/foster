@@ -19,7 +19,7 @@ data MonoType =
          | StructType    [MonoType]
          | FnType        { monoFnTypeDomain :: [MonoType]
                          , monoFnTypeRange  :: MonoType
-                         , monoFnPrecondition :: Maybe ()
+                         , monoFnPrecondition :: MaybePrecondition KNMono
                          , monoFnTypeCallConv :: CallConv
                          , monoFnTypeProcOrFunc :: ProcOrFunc }
          | CoroType      MonoType MonoType

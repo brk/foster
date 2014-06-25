@@ -139,11 +139,14 @@ atom    :       // syntactically "closed" terms
   ;
 
 val_abs :
+    ('#precondition' tuple)?
     '{' ('forall' tyformal* ',')?
         (formal '=>')*
          stmts?
     '}'                                 -> ^(VAL_ABS ^(FORMALS formal*)
-                                                     ^(MU tyformal*) stmts?)
+                                                     ^(MU tyformal*)
+                                                     ^(MU tuple?)
+                                                     stmts?)
                   // value + type abstraction (terms indexed by terms and types)
     ;
 

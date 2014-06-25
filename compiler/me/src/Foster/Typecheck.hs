@@ -3,19 +3,22 @@
 -- Use of this source code is governed by a BSD-style license that can be
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
-module Foster.Typecheck(tcSigmaToplevel, tcContext) where
+module Foster.Typecheck(tcSigmaToplevel, tcContext, tcType) where
 
-import qualified Data.List as List(length, zip)
+import qualified Data.List as List(length, zip, elem, lookup)
 import Data.List(foldl', (\\))
+import Data.Maybe(fromMaybe)
 import Control.Monad(liftM, forM_, forM, liftM, liftM2, when)
 
 import qualified Data.Text as T(Text, pack, unpack)
+import Data.Map(Map)
 import qualified Data.Map as Map(lookup, insert, elems, toList, null)
 import qualified Data.Set as Set(toList, fromList)
 import Data.IORef(newIORef,readIORef,writeIORef)
 
 import Foster.Base
 import Foster.TypeAST
+import Foster.TypeTC
 import Foster.ExprAST
 import Foster.AnnExpr
 import Foster.Infer
@@ -78,21 +81,24 @@ data TCWanted = TCSigma | TCRho deriving Show
 
 -----------------------------------------------------------------------
 
+tcSigmaToplevel :: ContextBinding TypeTC -> Context TypeTC -> Term -> Tc (AnnExpr SigmaTC)
 tcSigmaToplevel (TermVarBinding txt (tid, _)) ctx ast = do
 -- {{{
     -- Make sure the (potentially user-supplied) type annotation is well-formed.
+    {- TODO
     tcTypeWellFormed ("in the type declaration for " ++ T.unpack txt)
                      ctx (tidType tid)
+                     -}
 
     debugDoc $ text "tcSigmaToplevel deferring to checkSigmaDirect with expected type"
             <$> (pretty (tidType tid)) <> line
     e <- checkSigmaDirect ctx ast (tidType tid)
-    debugDoc $ text "tcSigmaToplevel returned expression with type " <> pretty (typeAST e)
+    debugDoc $ text "tcSigmaToplevel returned expression with type " <> pretty (typeTC e)
 
     return e
 -- }}}
 
-inferSigma :: Context TypeAST -> Term -> String -> Tc (AnnExpr Sigma)
+inferSigma :: Context SigmaTC -> Term -> String -> Tc (AnnExpr SigmaTC)
 -- {{{
 -- Special-case variables and function literals
 -- to avoid a redundant instantation + generalization
@@ -110,7 +116,7 @@ inferSigma ctx e msg = do
     return e'
 -- }}}
 
-checkSigma :: Context TypeAST -> Term -> Sigma -> Tc (AnnExpr Sigma)
+checkSigma :: Context SigmaTC -> Term -> SigmaTC -> Tc (AnnExpr SigmaTC)
 -- {{{
 checkSigma ctx e sigma = do
     (skol_tvs, rho) <- skolemize sigma
@@ -124,14 +130,15 @@ checkSigma ctx e sigma = do
 -- }}}
 
 -- {{{
+doQuantificationCheck :: AnnExpr SigmaTC -> Context SigmaTC -> Tc ()
 doQuantificationCheck e' ctx = do
-    debug $ "inferSigma inferred :: " ++ show (typeAST e')
+    debug $ "inferSigma inferred :: " ++ show (typeTC e')
     env_tys <- getEnvTypes ctx
     env_tvs <- collectUnboundUnificationVars env_tys
-    res_tvs <- collectUnboundUnificationVars [typeAST e']
+    res_tvs <- collectUnboundUnificationVars [typeTC e']
     let forall_tvs = res_tvs \\ env_tvs
     sanityCheck (null forall_tvs || not (isValue e' )) $
-        "inferSigma ought to quantify over the escaping meta type variables " ++ show (map MetaTyVar forall_tvs)
+        "inferSigma ought to quantify over the escaping meta type variables " ++ show (map MetaTyVarTC forall_tvs)
 
 isValue e = case e of
   AnnLiteral      {} -> True
@@ -159,19 +166,19 @@ checkForEscapingTypeVariables e _ann ctx sigma skol_tvs = do
 -- }}}
 
 
-checkSigmaDirect :: Context TypeAST -> Term -> Sigma -> Tc (AnnExpr Sigma)
+checkSigmaDirect :: Context SigmaTC -> Term -> SigmaTC -> Tc (AnnExpr SigmaTC)
 -- {{{
-checkSigmaDirect ctx (E_FnAST _rng fn) sigma@(ForAllAST {}) = do
+checkSigmaDirect ctx (E_FnAST _rng fn) sigma@(ForAllTC {}) = do
     tcSigmaFn ctx fn (Check sigma)
 
-checkSigmaDirect _ctx _ (ForAllAST {}) =
+checkSigmaDirect _ctx _ (ForAllTC {}) =
     tcFails [text $ "checkSigmaDirect: can't check a sigma type against an "
                 ++ "arbitrary expression"]
 
 checkSigmaDirect ctx e rho = checkRho ctx e rho
 -- }}}
 
-checkRho :: Context Sigma -> Term -> Rho -> Tc (AnnExpr Rho)
+checkRho :: Context SigmaTC -> Term -> RhoTC -> Tc (AnnExpr RhoTC)
 -- Invariant: the Rho is always in weak-prenex form
 -- {{{
 checkRho ctx e ty = do
@@ -180,7 +187,7 @@ checkRho ctx e ty = do
     tcRho ctx e (Check ty)
 -- }}}
 
-inferRho :: Context Sigma -> Term -> String -> Tc (AnnExpr Rho)
+inferRho :: Context SigmaTC -> Term -> String -> Tc (AnnExpr RhoTC)
 -- {{{
 inferRho ctx e msg = do
     ref <- newTcRef (error $ "inferRho: empty result: " ++ msg)
@@ -192,13 +199,21 @@ inferRho ctx e msg = do
     debug $ "tcRho (" ++ msg ++"): " ++ highlightFirstLine (rangeOf e)
     ty <- tcLift $ readIORef ref
     debug $ "inferRho (" ++ msg ++")" ++ highlightFirstLine (rangeOf e) ++ " :: " ++ show ty
-    debug $ "inferRho (" ++ msg ++")" ++ highlightFirstLine (rangeOf e) ++ " :: " ++ show (typeAST a)
-    sanityCheck (isRho $ typeAST a) ("inferRho wound up with a sigma type!" ++ highlightFirstLine (rangeOf a))
+    debug $ "inferRho (" ++ msg ++")" ++ highlightFirstLine (rangeOf e) ++ " :: " ++ show (typeTC a)
+    sanityCheck (isRho $ typeTC a) ("inferRho wound up with a sigma type!" ++ highlightFirstLine (rangeOf a))
     return a
 
 -- }}}
 
-tcRho :: Context Sigma -> Term -> Expected Rho -> Tc (AnnExpr Rho)
+minimalTupleTC []    = TupleTypeTC []
+minimalTupleTC [arg] = arg
+minimalTupleTC args  = TupleTypeTC args
+
+mkProcTypeTC args rets = FnTypeTC args (minimalTupleTC rets) (NoPrecondition "mkProcTypeTC") CCC    FT_Proc
+mkFnTypeTC   args rets = FnTypeTC args (minimalTupleTC rets) (NoPrecondition "mkFnTypeTC")   FastCC FT_Func
+mkCoroTypeTC args rets = CoroTypeTC (minimalTupleTC args) (minimalTupleTC rets)
+
+tcRho :: Context SigmaTC -> Term -> Expected RhoTC -> Tc (AnnExpr RhoTC)
 -- Invariant: if the second argument is (Check rho),
 -- 	      then rho is in weak-prenex form
 tcRho ctx expr expTy = do
@@ -206,14 +221,14 @@ tcRho ctx expr expTy = do
   tcWithScope expr $ do
     case expr of
       E_CallAST   rng (E_PrimAST _ name@"assert-invariants") argtup -> do
-        args <- mapM (\arg -> checkSigma ctx arg fosBoolType) argtup
-        let unitType = TupleTypeAST []
-        let fnty = mkFnType (map (\_ -> fosBoolType) argtup) [unitType]
+        args <- mapM (\arg -> checkSigma ctx arg boolTypeTC) argtup
+        let unitType = TupleTypeTC []
+        let fnty = mkFnTypeTC (map (\_ -> boolTypeTC) argtup) [unitType]
         let prim = NamedPrim (TypedId fnty (Ident (T.pack name) 1))
         let primcall = AnnCall rng unitType (AnnPrimitive rng fnty prim) args
         id <- tcFresh "assert-invariants-thunk"
-        let thunk = Fn (TypedId (mkFnType [] [unitType]) id) [] primcall () rng
-        matchExp expTy (AnnLetFuns rng [id] [thunk] (AnnTuple rng TupleTypeAST [])) name
+        let thunk = Fn (TypedId (mkFnTypeTC [] [unitType]) id) [] primcall () rng
+        matchExp expTy (AnnLetFuns rng [id] [thunk] (AnnTuple rng TupleTypeTC [])) name
 
       E_VarAST    rng v              -> tcRhoVar      ctx rng (evarName v)      expTy
       E_PrimAST   rng nm             -> tcRhoPrim     ctx rng (T.pack  nm)      expTy
@@ -241,7 +256,7 @@ tcRho ctx expr expTy = do
               tcRhoArrayRead rng s ta tb expTy
       E_ArrayPoke rng (ArrayIndex b c _ s) a -> do -- a >^ b[c]
               ta <- inferRho ctx a "array poke val"
-              tb <- checkRho ctx b (ArrayTypeAST (typeAST ta))
+              tb <- checkRho ctx b (ArrayTypeTC (typeTC ta))
               tc <- inferRho ctx c "array poke idx"
               tcRhoArrayPoke rng s ta tb tc expTy
       E_CompilesAST rng maybe_expr -> do
@@ -250,7 +265,7 @@ tcRho ctx expr expTy = do
                       Just  e -> tcIntrospect (inferSigma ctx e "compiles")
           -- Note: we infer a sigma, not a rho, because we don't want to
           -- instantiate a sigma with meta vars and then never bind them.
-          matchExp expTy (AnnCompiles rng fosBoolType (CompilesResult result)) "compiles"
+          matchExp expTy (AnnCompiles rng boolTypeTC (CompilesResult result)) "compiles"
       E_KillProcess rng (E_StringAST _ msg) -> do
           tau <- case expTy of
              (Check t) -> return t
@@ -258,9 +273,10 @@ tcRho ctx expr expTy = do
           matchExp expTy (AnnKillProcess rng tau msg) "kill-process"
       E_KillProcess _rng _ -> tcFails [text $ "prim kill-process requires a string literal"]
 
+matchExp :: Expected SigmaTC -> AnnExpr SigmaTC -> String -> Tc (AnnExpr SigmaTC)
 matchExp expTy ann msg =
      case expTy of
-         Check s@(ForAllAST {}) -> do
+         Check s@(ForAllTC {}) -> do
                        debug $ "matchExp[Check]("++msg++") deferring to subsCheck"
                        subsCheck ann s msg
          Check t -> do debug $ "matchExp[Check]("++msg++") deferring to subsCheckRho"
@@ -273,6 +289,7 @@ matchExp expTy ann msg =
 --  G contains v ::: s             G has v as primitive
 --  ------------------     or      -----------------------
 --  G |- v ~~> v ::: s             G |- v ~~> prim v ::: s
+tcSigmaVar :: Context SigmaTC -> ExprAnnot -> T.Text -> Tc (AnnExpr SigmaTC)
 tcSigmaVar ctx annot name = do
   debugDoc $ green (text "typecheckVar (sigma): ") <> text (T.unpack name ++ "...")
   -- Resolve the given name as either a variable or a primitive reference.
@@ -294,7 +311,7 @@ tcSigmaVar ctx annot name = do
          msg <- getStructureContextMessage
          tcFails [text $ "Unknown variable " ++ T.unpack name
                   ++ showSourceRange (rangeOf annot)
-                  -- ++ "ctx: "++ unlines (map show (Map.toList $ contextBindings ctx))
+                  ++ "ctx: "++ unlines (map show (Map.toList $ contextBindings ctx))
                   ++ "\nhist: " , msg]
 
 -- To get a rho-type from a variable with a forall type,
@@ -312,14 +329,9 @@ tcRhoVar ctx rng name expTy = do
      debugDoc $ green (text "typecheckVar (rho): ") <> text (T.unpack name ++ " :?: " ++ show expTy)
      v_sigma <- tcSigmaVar ctx rng name
      ann_var <- inst v_sigma "tcRhoVar"
-     debugDoc $ green (text "typecheckVar v_sigma: ") <> text (T.unpack name ++ " :: " ++ show (typeAST v_sigma))
-     debugDoc $ green (text "typecheckVar ann_var: ") <> text (T.unpack name ++ " :: " ++ show (typeAST ann_var))
+     debugDoc $ green (text "typecheckVar v_sigma: ") <> text (T.unpack name ++ " :: " ++ show (typeTC v_sigma))
+     debugDoc $ green (text "typecheckVar ann_var: ") <> text (T.unpack name ++ " :: " ++ show (typeTC ann_var))
      matchExp expTy ann_var "var"
-
-tcSigmaPrim ctx annot name = do
-  case termVarLookup name (primitiveBindings ctx) of
-    Just (avar, _) -> Just $ mkAnnPrimitive annot avar
-    Nothing        -> Nothing
 
 tcRhoPrim ctx annot name expTy = do
      case tcSigmaPrim ctx annot name of
@@ -335,10 +347,17 @@ tcRhoPrim ctx annot name expTy = do
                   ++ "ctx: "++ unlines (map show (Map.toList $ contextBindings ctx))
                   ++ "\nhist: " , msg]
 
-mkAnnPrimitive annot tid =
+tcSigmaPrim :: Context SigmaTC -> ExprAnnot -> T.Text -> Maybe (AnnExpr SigmaTC)
+tcSigmaPrim ctx annot name = do
+  case termVarLookup name (primitiveBindings ctx) of
+    Just (avar, _) -> Just $  mkAnnPrimitive annot ctx avar
+    Nothing        -> Nothing
+
+mkAnnPrimitive :: ExprAnnot -> Context SigmaTC -> TypedId SigmaTC -> AnnExpr SigmaTC
+mkAnnPrimitive annot ctx tid =
   AnnPrimitive annot (tidType tid) $
-    case fmap snd $ Map.lookup (T.unpack $ identPrefix $ tidIdent tid)
-                               gFosterPrimOpsTable of
+    case Map.lookup (identPrefix $ tidIdent tid)
+                    (primitiveOperations ctx) of
         Just (NamedPrim tid)      -> NamedPrim tid
         Just (PrimOp nm ty)       -> PrimOp nm ty
         Just (PrimIntTrunc i1 i2) -> PrimIntTrunc i1 i2
@@ -348,15 +367,15 @@ mkAnnPrimitive annot tid =
 -- Now, a bunch of straightforward rules:
 
 --  -----------------------------------------
---  G |- true :: Bool      G |- false :: Bool
+--  G |- True :: Bool      G |- False :: Bool
 tcRhoBool rng b expTy = do
 -- {{{
-    let ab = AnnLiteral rng (PrimIntAST I1) (LitBool b)
+    let ab = AnnLiteral rng boolTypeTC (LitBool b)
     case expTy of
-         Infer  r               -> update r (return ab)
-         Check  (PrimIntAST I1) -> return ab
-         Check  m@MetaTyVar {}  -> do unify m (PrimIntAST I1) "bool literal"
-                                      return ab
+         Infer  r              -> update r (return ab)
+         Check  (PrimIntTC I1) -> return ab
+         Check  m@MetaTyVarTC {}  -> do unify m boolTypeTC "bool literal"
+                                        return ab
          Check  t -> tcFails [text $ "Unable to check Bool constant in context"
                                 ++ " expecting non-Bool type " ++ show t
                                 ++ showSourceRange (rangeOf rng)]
@@ -366,13 +385,13 @@ tcRhoBool rng b expTy = do
 --  G |- "..." :: Text
 tcRhoText rng b expTy = do
 -- {{{
-    let ty = TyConAppAST "Text" []
+    let ty = TyConAppTC "Text" []
     let ab = AnnLiteral rng ty (LitText b)
     case expTy of
          Infer r                        -> update r (return ab)
-         Check  (TyConAppAST "Text" []) -> return ab
-         Check  m@MetaTyVar {} -> do unify m ty "text literal"
-                                     return ab
+         Check  (TyConAppTC "Text" []) -> return ab
+         Check  m@MetaTyVarTC {} -> do unify m ty "text literal"
+                                       return ab
          Check  t -> tcFails [text $ "Unable to check Text constant in context"
                                 ++ " expecting non-Text type " ++ show t
                                 ++ showSourceRange (rangeOf rng)]
@@ -393,16 +412,16 @@ tcRhoArrayValue ctx tau (AE_Expr expr) = do
 tcRhoArrayLit ctx rng args expTy = do
 -- {{{
     tau <- newTcUnificationVarTau $ "prim array type"
-    let ty = ArrayTypeAST tau
+    let ty = ArrayTypeTC tau
     --args' <- mapM (\arg -> checkRho ctx arg tau) args
     args' <- mapM (tcRhoArrayValue ctx tau) args
     let ab = AnnArrayLit rng ty args'
     case expTy of
          Infer r                     -> update r (return ab)
-         Check  (ArrayTypeAST rho' ) -> do unify tau rho' "mach-array literal"
-                                           return ab
-         Check  m@MetaTyVar {} -> do unify m ty "mach-array literal"
-                                     return ab
+         Check  (ArrayTypeTC rho' ) -> do unify tau rho' "mach-array literal"
+                                          return ab
+         Check  m@MetaTyVarTC {} -> do unify m ty "mach-array literal"
+                                       return ab
          Check  t -> tcFails [text $ "Unable to check array constant in context"
                                 ++ " expecting non-array type " ++ show t
                                 ++ showSourceRange (rangeOf rng)]
@@ -433,10 +452,10 @@ tcRhoSeq ctx rng a b expTy = do
     eb <- tcRho ctx b expTy
     -- Temporary hack to avoid unbound type variables but permit
     -- sequencing of arbitrary types.
-    zt <- zonkType (typeAST ea)
+    zt <- zonkType (typeTC ea)
     case zt of
-      m@MetaTyVar {} -> unify m (TupleTypeAST []) "seq-unit"
-      _              -> return ()
+      m@MetaTyVarTC {} -> unify m (TupleTypeTC []) "seq-unit"
+      _                -> return ()
     return (AnnLetVar rng id ea eb)
 -- }}}
 
@@ -448,8 +467,8 @@ tcRhoSeq ctx rng a b expTy = do
 tcRhoStore ctx rng e1 e2 expTy = do
 -- {{{
     a1 <- inferRho ctx e1 "store"
-    a2 <- checkRho ctx e2 (RefTypeAST (typeAST a1))
-    matchExp expTy (AnnStore rng (TupleTypeAST []) a1 a2) "store"
+    a2 <- checkRho ctx e2 (RefTypeTC (typeTC a1))
+    matchExp expTy (AnnStore rng (TupleTypeTC []) a1 a2) "store"
 -- }}}
 
 
@@ -461,10 +480,10 @@ tcRhoDeref ctx rng e1 expTy = do
     tau <- case expTy of
              (Check t) -> return t
              (Infer _) -> newTcUnificationVarTau $ "deref_type"
-    a1 <- tcRho ctx e1 (Check $ RefTypeAST tau)
-    case typeAST a1 of
-      RefTypeAST {} -> return ()
-      MetaTyVar  {} -> return ()
+    a1 <- tcRho ctx e1 (Check $ RefTypeTC tau)
+    case typeTC a1 of
+      RefTypeTC    {} -> return ()
+      MetaTyVarTC  {} -> return ()
       other -> tcFails [text $ "Expected deref-ed expr "
                            ++ "to have ref type, had " ++ show other ++ highlightFirstLine (rangeOf rng)]
     matchExp expTy (AnnDeref rng tau a1) "deref"
@@ -475,9 +494,9 @@ tcRhoDeref ctx rng e1 expTy = do
 --  G |- ref_l e1 ::: Ref tau
 tcRhoAlloc ctx rng e1 rgn expTy = do
 -- {{{
-    ea <- case expTy of Check (RefTypeAST t) -> tcRho ctx e1 (Check t)
-                        _                    -> inferRho ctx e1 "alloc"
-    matchExp expTy (AnnAlloc rng (RefTypeAST (typeOf ea)) ea rgn) "alloc"
+    ea <- case expTy of Check (RefTypeTC t) -> tcRho ctx e1 (Check t)
+                        _                   -> inferRho ctx e1 "alloc"
+    matchExp expTy (AnnAlloc rng (RefTypeTC (typeTC ea)) ea rgn) "alloc"
 -- }}}
 
 --  G |- e1 ::: t1
@@ -485,20 +504,20 @@ tcRhoAlloc ctx rng e1 rgn expTy = do
 --  G |- en ::: tn
 --  ------------------------------------
 --  G |- (e1, ..., en) ::: (t1, ..., tn)
-tcRhoTuple :: Context Sigma -> ExprAnnot -> [Term] -> Expected TypeAST -> Tc (AnnExpr Rho)
+tcRhoTuple :: Context SigmaTC -> ExprAnnot -> [Term] -> Expected TypeTC -> Tc (AnnExpr RhoTC)
 -- {{{
 tcRhoTuple ctx rng exprs expTy = do
    tup <- case expTy of
-     Infer _                 -> tcTuple ctx rng exprs [Nothing | _ <- exprs]
-     Check (TupleTypeAST ts) -> tcTuple ctx rng exprs [Just t  | t <- ts]
-     Check (MetaTyVar {}   ) -> tcTuple ctx rng exprs [Nothing | _ <- exprs]
+     Infer _                -> tcTuple ctx rng exprs [Nothing | _ <- exprs]
+     Check (TupleTypeTC ts) -> tcTuple ctx rng exprs [Just t  | t <- ts]
+     Check (MetaTyVarTC {}) -> tcTuple ctx rng exprs [Nothing | _ <- exprs]
      Check ty -> tcFailsMore [text $ "typecheck: tuple (" ++ show exprs ++ ") "
                              ++ "cannot check against non-tuple type " ++ show ty]
    matchExp expTy tup (highlightFirstLine (rangeOf rng))
   where
     tcTuple ctx rng exps typs = do
         exprs <- typecheckExprsTogether ctx exps typs
-        return $ AnnTuple rng TupleTypeAST exprs
+        return $ AnnTuple rng TupleTypeTC exprs
 
     -- Typechecks each expression in the same context
     typecheckExprsTogether ctx exprs expectedTypes = do
@@ -519,29 +538,29 @@ tcRhoTuple ctx rng exprs expTy = do
 -- G |- e1 ::: Array t
 -- ---------------------  e2 ::: t2 where t2 is a word-like type
 -- G |- e1 [ e2 ]  ::: t
-tcRhoArrayRead :: ExprAnnot -> SafetyGuarantee -> AnnExpr Sigma -> AnnExpr Sigma -> Expected TypeAST -> Tc (AnnExpr Rho)
+tcRhoArrayRead :: ExprAnnot -> SafetyGuarantee -> AnnExpr SigmaTC -> AnnExpr SigmaTC -> Expected RhoTC -> Tc (AnnExpr RhoTC)
 -- {{{
 tcRhoArrayRead annot sg base aiexpr expTy = do
   let rng = rangeOf annot
   let ck t = do
         -- TODO check aiexpr type is compatible with Word
-        unify (PrimIntAST I32) (typeAST aiexpr) "arrayread idx type"
+        unify (PrimIntTC I32) (typeTC aiexpr) "arrayread idx type"
         let expr = AnnArrayRead annot t (ArrayIndex base aiexpr rng sg)
         matchExp expTy expr "arrayread"
 
-  case typeAST base of
-    ArrayTypeAST t -> do ck t
-    TupleTypeAST _ ->
+  case typeTC base of
+    ArrayTypeTC t -> do ck t
+    TupleTypeTC _ ->
         tcFails [text $ "ArrayReading tuples is not allowed; use"
                    ++ " pattern matching instead!" ++ highlightFirstLine rng]
-    MetaTyVar _ -> do
+    MetaTyVarTC _ -> do
         t <- case expTy of
               Check t -> return t
               Infer _ -> newTcUnificationVarTau $ "arrayread_type"
-        unify (ArrayTypeAST t) (typeAST base) "arrayread type"
+        unify (ArrayTypeTC t) (typeTC base) "arrayread type"
         ck t
     _ ->
-        tcFails [text $ "Unable to arrayread expression of non-array type " ++ show (typeAST base)
+        tcFails [text $ "Unable to arrayread expression of non-array type " ++ show (typeTC base)
                     ++ " (context expected type " ++ show expTy ++ ")"
                     ++ highlightFirstLine rng]
 -- }}}
@@ -556,16 +575,16 @@ tcRhoArrayPoke annot s v base i expTy = do
 -- {{{
   let ck t = do
       -- TODO check aiexpr type is compatible with Word
-      unify t (typeAST v) "arraypoke type"
-      let expr = AnnArrayPoke annot (TupleTypeAST []) (ArrayIndex base i (rangeOf annot) s) v
+      unify t (typeTC v) "arraypoke type"
+      let expr = AnnArrayPoke annot (TupleTypeTC []) (ArrayIndex base i (rangeOf annot) s) v
       matchExp expTy expr "arraypoke"
 
-  case typeAST base of
-    ArrayTypeAST t ->
+  case typeTC base of
+    ArrayTypeTC t ->
         ck t
-    MetaTyVar _ -> do
+    MetaTyVarTC _ -> do
         t <- newTcUnificationVarTau $ "arraypoke_type"
-        unify (ArrayTypeAST t) (typeAST base) "arraypoke type"
+        unify (ArrayTypeTC t) (typeTC base) "arraypoke type"
         ck t
 
     baseType ->
@@ -584,12 +603,12 @@ tcRhoArrayPoke annot s v base i expTy = do
 --  G |- if e1 then e2 else e3 end ::: t2
 -- {{{
 tcRhoIf ctx rng a b c expTy = do
-    ea <- tcRho ctx a (Check fosBoolType)
+    ea <- tcRho ctx a (Check boolTypeTC)
     eb <- tcRho ctx b expTy
     ec <- tcRho ctx c expTy
-    unify (typeAST eb) (typeAST ec) "IfAST: types of branches didn't match"
+    unify (typeTC eb) (typeTC ec) "IfAST: types of branches didn't match"
     -- TODO use subsumption instead of unification?
-    return (AnnIf rng (typeAST eb) ea eb ec)
+    return (AnnIf rng (typeTC eb) ea eb ec)
 -- }}}
 
 --  G         |- e1 ::: t1
@@ -602,8 +621,9 @@ tcRhoLet ctx rng (TermBinding v e1) e2 mt = do
     id <- tcFreshT boundName
     a1 <- case maybeVarType of
                  Nothing -> inferSigma ctx e1 "let"
-                 Just  t -> checkSigma ctx e1 t
-    let ctx' = prependContextBindings ctx [bindingForVar $ TypedId (typeAST a1) id]
+                 Just ta -> do t <- tcType ctx ta
+                               checkSigma ctx e1 t
+    let ctx' = prependContextBindings ctx [bindingForVar $ TypedId (typeTC a1) id]
     a2 <- tcRho ctx' e2 mt
     return (AnnLetVar rng id a1 a2)
   where
@@ -628,8 +648,8 @@ tcRhoLet ctx rng (TermBinding v e1) e2 mt = do
    in e end
 -}
 -- {{{
-tcRhoLetRec :: Context Sigma -> ExprAnnot -> [TermBinding TypeAST]
-                -> Term -> Expected TypeAST -> Tc (AnnExpr Rho)
+tcRhoLetRec :: Context SigmaTC -> ExprAnnot -> [TermBinding TypeAST]
+                -> Term -> Expected TypeTC  -> Tc (AnnExpr RhoTC)
 tcRhoLetRec ctx0 rng recBindings e mt = do
     -- Generate unification variables for the overall type of
     -- each binding.
@@ -648,9 +668,10 @@ tcRhoLetRec ctx0 rng recBindings e mt = do
            vExpTy <- case evarMaybeType v of
              Nothing -> do r <- tcLift $ newIORef (error "case branch")
                            return (Infer r)
-             Just  t -> do return (Check t)
+             Just ta -> do t <- tcType ctx ta
+                           return (Check t)
            b' <- tcRho ctx b vExpTy
-           unify u (typeAST b') ("recursive binding " ++ T.unpack (evarName v))
+           unify u (typeTC b') ("recursive binding " ++ T.unpack (evarName v))
            return b'
        )
 
@@ -674,20 +695,23 @@ tcRhoLetRec ctx0 rng recBindings e mt = do
 -- G |- t_n <::: k_n                          (checked later)
 -- ------------------------------------------
 -- G |- e :[ t1..tn ]  ::: rho{t1..tn/a1..an}
-tcRhoTyApp ctx annot e t1tn expTy = do
+tcRhoTyApp :: Context SigmaTC -> ExprAnnot -> Term -> [TypeAST] -> Expected RhoTC -> Tc (AnnExpr RhoTC)
+tcRhoTyApp ctx annot e tsAST expTy = do
 -- {{{
     debug $ "ty app: inferring sigma type for base..."
     aeSigma <- inferSigma ctx e "tyapp"
-    debug $ "ty app: base has type " ++ show (typeAST aeSigma)
-    case (t1tn, typeAST aeSigma) of
-      ([]  , _           ) -> matchExp expTy aeSigma "empty-tyapp"
-      (t1tn, ForAllAST {}) -> do let resolve = resolveType annot (localTypeBindings ctx)
-                                 debug $ "local type bindings: " ++ show (localTypeBindings ctx)
-                                 debug $ "********raw type arguments: " ++ show t1tn
-                                 types <- mapM resolve t1tn
-                                 expr <- instWith annot aeSigma types
-                                 matchExp expTy expr "tyapp"
-      (_        , MetaTyVar _ ) -> do
+    debug $ "ty app: base has type " ++ show (typeTC aeSigma)
+    case (tsAST, typeTC aeSigma) of
+      ([]   , _           ) -> matchExp expTy aeSigma "empty-tyapp"
+      (tsAST, ForAllTC  {}) -> do
+         t1tn <- mapM (tcType ctx) tsAST
+         let resolve = resolveType annot (localTypeBindings ctx)
+         debug $ "local type bindings: " ++ show (localTypeBindings ctx)
+         debug $ "********raw type arguments: " ++ show t1tn
+         types <- mapM resolve t1tn
+         expr <- instWith annot aeSigma types
+         matchExp expTy expr "tyapp"
+      (_        , MetaTyVarTC _ ) -> do
         tcFails [text $ "Cannot instantiate unknown type of term:"
                 ,text $ highlightFirstLine $ rangeOf aeSigma
                 ,text $ "Try adding an explicit type annotation."
@@ -703,8 +727,9 @@ tcRhoTyApp ctx annot e t1tn expTy = do
 -- G |- t1 is an instance of t
 -- ------------------------------------------
 -- G |- e as t  ~~~>  a1 ::: t
-tcRhoTyCheck ctx _annot e ty expTy = do
+tcRhoTyCheck ctx _annot e tya expTy = do
 -- {{{
+    ty  <- tcType ctx tya
     ann <- checkSigma ctx e ty
     matchExp expTy ann "tycheck"
 -- }}}
@@ -716,9 +741,9 @@ tcRhoTyCheck ctx _annot e ty expTy = do
 -- ------------------------------------------
 -- G |- b e1 ... en ~~> f a1 ... an ::: sr
 -- {{{
-tcRhoCall :: Context Sigma -> ExprAnnot
+tcRhoCall :: Context SigmaTC -> ExprAnnot
               -> ExprAST TypeAST -> [ExprAST TypeAST]
-              -> Expected TypeAST -> Tc (AnnExpr Rho)
+              -> Expected SigmaTC -> Tc (AnnExpr RhoTC)
 tcRhoCall ctx rng base argstup exp_ty = do
    -- TODO think harder about when it's safe to push exp_ty down
    debug $ "tcRhoCall " ++ show exp_ty
@@ -729,9 +754,11 @@ tcRhoCall ctx rng base argstup exp_ty = do
 tryGetVarName (E_VarAST _ v) = T.unpack $ evarName v
 tryGetVarName _ = ""
 
+tcSigmaCall :: Context SigmaTC -> ExprAnnot -> ExprAST TypeAST
+            -> [ExprAST TypeAST] -> Expected SigmaTC -> Tc (AnnExpr SigmaTC)
 tcSigmaCall ctx rng base argexprs exp_ty = do
         annbase <- inferRho ctx base "called base"
-        let fun_ty = typeAST annbase
+        let fun_ty = typeTC annbase
         debugDoc $ text "call: fn type is " <> pretty fun_ty
         (args_ty, res_ty, _precond) <- unifyFun fun_ty argexprs ("tSC("++tryGetVarName base++")" ++ highlightFirstLine (rangeOf rng))
         debugDoc $ text "call: fn args ty is " <> pretty args_ty
@@ -743,12 +770,12 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
                 ++ highlightFirstLine (rangeOf rng)
         args <- sequence [checkSigma ctx arg ty | (arg, ty) <- zip argexprs args_ty]
         debug $ "call: annargs: "
-        debugDoc $ showStructure (AnnTuple rng TupleTypeAST args)
+        debugDoc $ showStructure (AnnTuple rng TupleTypeTC args)
         debugDoc $ text "call: res_ty is " <> pretty res_ty
         debugDoc $ text "call: exp_ty is " <> pretty exp_ty
         debugDoc $ text "tcRhoCall deferring to instSigma"
         let app = mkAnnCall rng res_ty annbase args
-        debugDoc $ text "call: overall ty is " <> pretty (typeAST app)
+        debugDoc $ text "call: overall ty is " <> pretty (typeTC app)
         matchExp exp_ty app "tcSigmaCall"
 
 mkAnnCall rng res_ty annbase args =
@@ -763,16 +790,16 @@ mkAnnCall rng res_ty annbase args =
       -> AnnAppCtor rng res_ty cid  args
     _ -> AnnCall rng res_ty annbase args
 
-unifyFun :: Rho -> [a] -> String -> Tc ([Sigma], Rho, Maybe (Wrapped_ExprAST))
-unifyFun (FnTypeAST args res p _cc _cs) _args _msg = return (args, res, p)
-unifyFun (ForAllAST {}) _ str = tcFails [text $ "invariant violated: sigma passed to unifyFun!"
+unifyFun :: RhoTC -> [a] -> String -> Tc ([SigmaTC], RhoTC, MaybePrecondition (AnnExpr TypeTC))
+unifyFun (FnTypeTC args res p _cc _cs) _args _msg = return (args, res, p)
+unifyFun (ForAllTC {}) _ str = tcFails [text $ "invariant violated: sigma passed to unifyFun!"
                                         ,text $ "For now, lambdas given forall types must be annotated with forall markers."
                                         ,text str]
 unifyFun tau args msg = do
         arg_tys <- mapM (\_ -> newTcUnificationVarTau "fn args ty") args
         res_ty <- newTcUnificationVarTau ("fn res ty:" ++ msg)
-        unify tau (FnTypeAST arg_tys res_ty Nothing FastCC FT_Func) "unifyFun"
-        return (arg_tys, res_ty, Nothing)
+        unify tau (FnTypeTC arg_tys res_ty (NoPrecondition "unifyFun") FastCC FT_Func) "unifyFun"
+        return (arg_tys, res_ty, (NoPrecondition "unifyFunRet"))
 -- }}}
 
 -- G{x1 : t1}...{xn : tn} |- e ::: tb
@@ -782,7 +809,7 @@ unifyFun tau args msg = do
 -- {{{
 tcRhoFn ctx f expTy = do
   sigma <- tcSigmaFn ctx f expTy
-  debug $ "tcRhoFn instantiating " ++ show (typeAST sigma)
+  debug $ "tcRhoFn instantiating " ++ show (typeTC sigma)
   inst sigma "tcRhoFn"
 -- }}}
 
@@ -791,25 +818,25 @@ tcRhoFn ctx f expTy = do
 -- G |- { forall a1:k1, ..., an:kn, x1 : t1 => ... => xn : tn => e } :::
 --        forall a1:k1, ..., an:kn,    { t1 => ... =>      tn => tb }
 -- {{{
-tcSigmaFn :: Context Sigma -> FnAST TypeAST -> Expected Sigma -> Tc (AnnExpr Sigma)
-tcSigmaFn ctx f expTyRaw = do
+tcSigmaFn :: Context SigmaTC -> FnAST TypeAST -> Expected SigmaTC -> Tc (AnnExpr SigmaTC)
+tcSigmaFn ctx fnAST expTyRaw = do
   --tcLift $ putStrLn $ "tcSigmaFn: nexpTyRaw is " ++ show expTyRaw
-  case (fnTyFormals f, expTyRaw) of
-    ([], Check (ForAllAST exp_ktvs _)) ->
+  case (fnTyFormals fnAST, expTyRaw) of
+    ([], Check (ForAllTC exp_ktvs _)) ->
         -- Our function didn't have a forall, but its type annotation did.
         -- We'll just copy the type parameters to the function and try again.
-        tcSigmaFn ctx (f { fnTyFormals = map mkTypeFormalAST exp_ktvs }) expTyRaw
+        tcSigmaFn ctx (fnAST { fnTyFormals = map mkTypeFormal exp_ktvs }) expTyRaw
 
     ([], _) ->
         -- Our function has no type parameters, and either it had no annotation
         -- or we are inferring its type (and we'll infer a monotype).
-        tcRhoFnHelper ctx f expTyRaw
+        tcRhoFnHelper ctx fnAST expTyRaw
 
     (tyformals, _) -> do
-        let annot = fnAstAnnot f
+        let annot = fnAstAnnot fnAST
         let rng   = rangeOf annot
         let ktvs = map convertTyFormal tyformals
-        taus <- genTauUnificationVarsLike ktvs (\n -> "fn type parameter " ++ show n ++ " for " ++ T.unpack (fnAstName f))
+        taus <- genTauUnificationVarsLike ktvs (\n -> "fn type parameter " ++ show n ++ " for " ++ T.unpack (fnAstName fnAST))
 
         -- Extend the type environment with the forall-bound variables
         -- declared in the function literal.
@@ -821,7 +848,7 @@ tcSigmaFn ctx f expTyRaw = do
         let extTyCtx = ctx { localTypeBindings = extendTypeBindingsWith ktvs }
 
 
-        debugDoc $ text "tcSigmaFn: f is " <> pretty (show f)
+        debugDoc $ text "tcSigmaFn: f is " <> pretty (show fnAST)
         debugDoc $ text "tcSigmaFn: expTyRaw is " <> pretty expTyRaw
         debugDoc $ text "tcSigmaFn: tyformals is " <> pretty tyformals
         debugDoc $ text "tcSigmaFn: ktvs is " <> pretty ktvs
@@ -829,7 +856,7 @@ tcSigmaFn ctx f expTyRaw = do
 
         mb_rho <-
           case expTyRaw of
-            Check (ForAllAST exp_ktvs exp_rho_raw) -> do
+            Check (ForAllTC exp_ktvs exp_rho_raw) -> do
               -- Suppose we have something like
               -- f ::  forall a:Boxed, { List a }         [exp_ktvs = a]
               -- f =  { forall b:Boxed,   Nil ! }         [    ktvs = b]
@@ -851,7 +878,7 @@ tcSigmaFn ctx f expTyRaw = do
         debugDoc $ text "tcSigmaFn: mb_rho is " <> pretty mb_rho
 
         -- While we're munging, we'll also make sure the names are all distinct.
-        uniquelyNamedFormals0 <- getUniquelyNamedFormals rng (fnFormals f) (fnAstName f)
+        uniquelyNamedFormals0 <- getUniquelyNamedFormals ctx rng (fnFormals fnAST) (fnAstName fnAST)
         uniquelyNamedFormals <- mapM
                           (retypeTID (resolveType annot $ localTypeBindings extTyCtx))
                           uniquelyNamedFormals0
@@ -869,7 +896,7 @@ tcSigmaFn ctx f expTyRaw = do
                 (arg_tys, body_ty, _precond) <- unifyFun exp_rho' var_tys ("poly-fn-lit" ++ highlightFirstLine rng)
                 debugDoc $ string "arg_tys: " <+> pretty arg_tys
                 debugDoc $ string "zipped : " <+> pretty (zip arg_tys var_tys)
-                let unMeta (MetaTyVar m) = m
+                let unMeta (MetaTyVarTC m) = m
                     unMeta other = error $ "unMeta called with " ++ show other
                 _ <- mapM (checkAgainst (map unMeta taus)) (zip arg_tys var_tys)
                 var_tys'' <- mapM shZonkType var_tys
@@ -878,10 +905,10 @@ tcSigmaFn ctx f expTyRaw = do
                 debugDoc $ string "metaOf var_tys'': " <+> pretty (show $ collectAllUnificationVars $ map unMBS var_tys'')
                 -- mvar_tys'' <- mapM shZonkMetaType (collectAllUnificationVars var_tys)
 
-                checkRho extCtx (fnAstBody f) body_ty
+                checkRho extCtx (fnAstBody fnAST) body_ty
 
           -- for Infer or for Check of a non-ForAll type
-          Nothing      -> inferSigma extCtx (fnAstBody f) "poly-fn body"
+          Nothing      -> inferSigma extCtx (fnAstBody fnAST) "poly-fn body"
            {-
              -- TODO: if we permitted functions with un-annotated parameters,
              -- we'd want to use the expected function type to guide their types.
@@ -906,10 +933,11 @@ tcSigmaFn ctx f expTyRaw = do
          -}
 
         debugDoc $ text "inferred raw type of body of polymorphic function: "
-                        <> pretty (typeAST annbody)
+                        <> pretty (typeTC annbody)
 
-        let fnty0 = ForAllAST ktvs $
-                fnTypeTemplate f argtys (typeAST annbody) FastCC
+        let precond = NoPrecondition "tcSigmaFnX"
+        let fnty0 = ForAllTC ktvs $
+                fnTypeTemplate fnAST argtys (typeTC annbody) precond FastCC
                  where argtys = map tidType uniquelyNamedFormals
 
         -- The function type is expressed in terms of meta type variables,
@@ -920,9 +948,9 @@ tcSigmaFn ctx f expTyRaw = do
         _ <- mapM (\(t, (tv, _)) -> do
                      t' <- shallowZonk t
                      case t' of
-                       (MetaTyVar m) -> do
+                       (MetaTyVarTC m) -> do
                             debugDoc $ text "zonked " <> pretty t <> text " to " <> pretty t <> text "; writing " <> pretty tv
-                            writeTcMeta m (TyVarAST tv)
+                            writeTcMeta m (TyVarTC tv)
                        _ -> tcFails [text "expected ty param metavar to be un-unified, instead had " <> pretty tv]
                   ) (zip taus ktvs)
         -- Zonk the type to ensure that the meta vars are completely gone.
@@ -940,14 +968,14 @@ tcSigmaFn ctx f expTyRaw = do
 
         -- Note we collect free vars in the old context, since we can't possibly
         -- capture the function's arguments from the environment!
-        let fn = E_AnnFn $ Fn (TypedId fnty (GlobalSymbol $ fnAstName f))
+        let fn = E_AnnFn $ Fn (TypedId fnty (GlobalSymbol $ fnAstName fnAST))
                               uniquelyNamedFormals annbody () annot
         debugDoc $ text "tcSigmaFn calling matchExp  expTyRaw = " <> pretty expTyRaw
         debugDoc $ text "tcSigmaFn calling matchExp, expTy'   = " <> pretty expTy'
         matchExp expTy' fn "tcSigmaFn"
 
-mkTypeFormalAST (BoundTyVar nm, kind) = TypeFormalAST nm kind
-mkTypeFormalAST (othervar, _kind) =
+mkTypeFormal (BoundTyVar nm, kind) = TypeFormal nm kind
+mkTypeFormal (othervar, _kind) =
     error $ "Whoops, expected only bound type variables!\n" ++ show othervar
 -- }}}
 
@@ -956,11 +984,12 @@ mkTypeFormalAST (othervar, _kind) =
 -- ---------------------------------------------------------------------
 -- G |- { x1 : t1 => ... => xn : tn => e } ::: { t1 => ... => tn => tb }
 -- {{{
+tcRhoFnHelper :: Context SigmaTC -> FnAST TypeAST -> Expected RhoTC -> Tc (AnnExpr SigmaTC)
 tcRhoFnHelper ctx f expTy = do
     let annot = fnAstAnnot f
     let rng = rangeOf annot
     -- While we're munging, we'll also make sure the names are all distinct.
-    uniquelyNamedFormals0 <- getUniquelyNamedFormals rng (fnFormals f) (fnAstName f)
+    uniquelyNamedFormals0 <- getUniquelyNamedFormals ctx rng (fnFormals f) (fnAstName f)
     uniquelyNamedFormals <- mapM
                       (retypeTID (resolveType annot $ localTypeBindings ctx))
                       uniquelyNamedFormals0
@@ -969,17 +998,26 @@ tcRhoFnHelper ctx f expTy = do
     let extCtx = extendContext ctx uniquelyNamedFormals
 
     -- Check or infer the type of the body.
-    annbody <- case expTy of
-      Infer _    -> do inferSigma extCtx (fnAstBody f) "mono-fn body"
+    (annbody, precond) <- case expTy of
+      Infer _    -> do annbody <- inferSigma extCtx (fnAstBody f) "mono-fn body"
+                       -- TODO this is wrong: fnAstPrecond is a bare expression,
+                       --   but the returned precond should be in fn-form...
+                       precond <- mapMaybePreconditionM (\p -> inferRho   extCtx p "mono-fn precond") (fnAstPrecond f)
+                       return (annbody, precond)
       Check fnty -> do let var_tys = map tidType uniquelyNamedFormals
                        -- FOOBAR fnty might be a sigma; if so, what?
-                       (arg_tys, body_ty, _precond) <- unifyFun fnty var_tys ("@" ++ highlightFirstLine rng)
+                       (arg_tys, body_ty, precond0) <- unifyFun fnty var_tys ("@" ++ highlightFirstLine rng)
                        _ <- sequence [subsCheckTy argty varty "mono-fn-arg" |
                                        (argty, varty) <- zip arg_tys var_tys]
                        -- TODO is there an arg translation?
-                       checkRho extCtx (fnAstBody f) body_ty
+                       annbody <- checkRho extCtx (fnAstBody f) body_ty
+                       precond <- case (fnAstPrecond f, precond0) of
+                                    (NoPrecondition {}, p) -> return p
+                                    (HavePrecondition e, NoPrecondition {}) -> do tcFails [text "function literal had precondition but its context expected a fn type with no precondition"]
+                                    (HavePrecondition {}, HavePrecondition {}) -> tcFails [text "function literal had precondition in both expr and type"]
+                       return (annbody, precond)
 
-    let fnty = fnTypeTemplate f argtys (typeAST annbody) FastCC
+    let fnty = fnTypeTemplate f argtys (typeTC annbody) precond FastCC
                 where argtys = map tidType uniquelyNamedFormals
 
     -- Note we collect free vars in the old context, since we can't possibly
@@ -990,22 +1028,24 @@ tcRhoFnHelper ctx f expTy = do
 -- }}}
 
 -- {{{ Helpers for type-checking function literals.
-extendContext :: Context Sigma -> [AnnVar] -> Context Sigma
+extendContext :: Context SigmaTC -> [TypedId TypeTC] -> Context SigmaTC
 extendContext ctx protoFormals =
                  prependContextBindings ctx (map bindingForVar protoFormals)
 
-fnTypeTemplate f argtypes retty cc =
+fnTypeTemplate :: FnAST TypeAST -> [TypeTC] -> TypeTC
+               -> MaybePrecondition (AnnExpr TypeTC) -> CallConv -> TypeTC
+fnTypeTemplate f argtypes retty precond cc =
   -- Compute "base" function type, ignoring any type parameters.
   let procOrFunc = if fnWasToplevel f then FT_Proc else FT_Func in
-  FnTypeAST argtypes retty Nothing cc procOrFunc
+  FnTypeTC argtypes retty precond cc procOrFunc
 
 -- | Verify that the given formals have distinct names,
 -- | and return unique'd versions of each.
-getUniquelyNamedFormals :: SourceRange -> [TypedId TypeAST] -> T.Text -> Tc [TypedId TypeAST]
-getUniquelyNamedFormals rng rawFormals fnProtoName = do
+getUniquelyNamedFormals :: Context TypeTC -> SourceRange -> [TypedId TypeAST] -> T.Text -> Tc [TypedId TypeTC]
+getUniquelyNamedFormals ctx rng rawFormals fnProtoName = do
     verifyNonOverlappingBindings rng (T.unpack fnProtoName)
      [TermVarBinding (identPrefix $ tidIdent v) undefined | v <- rawFormals]
-    mapM uniquelyName rawFormals
+    mapM (\x -> uniquelyName x >>= tcTid ctx) rawFormals
   where
     uniquelyName :: TypedId t -> Tc (TypedId t)
     uniquelyName (TypedId ty id) = do
@@ -1018,10 +1058,37 @@ getUniquelyNamedFormals rng rawFormals fnProtoName = do
         rename (GlobalSymbol name) _u =
                 tcFails [text $ "Cannot rename global symbol " ++ show name]
 
+tcTid :: Context TypeTC -> TypedId TypeAST -> Tc (TypedId TypeTC)
+tcTid ctx (TypedId ty id) = do
+  ty' <- tcType ctx ty
+  return $ TypedId ty' id
+
+tcType :: Context TypeTC -> TypeAST -> Tc TypeTC
+tcType ctx typ = do
+  let q = tcType ctx
+  case typ of
+        MetaPlaceholderAST nm -> newTcUnificationVarTau nm
+        PrimIntAST         sz -> return $ PrimIntTC sz
+        PrimFloat64AST        -> return $ PrimFloat64TC
+        TyVarAST      tv      -> return $ TyVarTC tv
+        RefTypeAST    ty      -> liftM   RefTypeTC   (q ty)
+        ArrayTypeAST  ty      -> liftM   ArrayTypeTC (q ty)
+        TupleTypeAST  types   -> liftM   TupleTypeTC (mapM q types)
+        CoroTypeAST   s r     -> liftM2  CoroTypeTC  (q s) (q r)
+        TyConAppAST nm types  -> liftM  (TyConAppTC nm) (mapM q types)
+        ForAllAST  tvs rho    -> liftM  (ForAllTC tvs) (q rho)
+        FnTypeAST ss r precond cc ft -> do
+          ss' <- mapM q ss
+          r'  <- q r
+          let precondType = FnTypeTC ss' (PrimIntTC I1) (NoPrecondition "precond-of-precond") cc ft
+          precond' <- mapMaybePreconditionM (\p -> checkRho ctx p precondType) precond
+          return $ FnTypeTC ss' r' precond' cc ft
 -- }}}
 
 
 -- {{{ CASE scrutinee OF branches END
+tcRhoCase :: Context SigmaTC -> ExprAnnot -> ExprAST TypeAST
+          -> [CaseArm EPattern Term TypeAST] -> Expected RhoTC -> Tc (AnnExpr RhoTC)
 tcRhoCase ctx rng scrutinee branches expTy = do
   -- (A) The expected type applies to the branches,
   --     not to the scrutinee.
@@ -1031,26 +1098,26 @@ tcRhoCase ctx rng scrutinee branches expTy = do
   -- (D) Each pattern must have the correct arity.
   ascrutinee <- inferRho ctx scrutinee "scrutinee"
   u <- newTcUnificationVarTau "case"
-  debugDoc $ text "case scrutinee has type " <> pretty (typeAST ascrutinee)
+  debugDoc $ text "case scrutinee has type " <> pretty (typeTC ascrutinee)
   debugDoc $ text "metavar for overall type of case is " <> pretty u
   debugDoc $ text " exp ty is " <> pretty expTy
   let checkBranch (CaseArm pat body guard _ brng) = do
-      debugDoc $ text "checking pattern with context ty " <+> pretty (typeAST ascrutinee) <+> string (highlightFirstLine $ rangeOf rng)
-      p <- checkPattern ctx pat (typeAST ascrutinee)
+      debugDoc $ text "checking pattern with context ty " <+> pretty (typeTC ascrutinee) <+> string (highlightFirstLine $ rangeOf rng)
+      p <- checkPattern ctx pat (typeTC ascrutinee)
       debug $ "case branch pat: " ++ show p
       let bindings = extractPatternBindings p
       debugDoc $ text "case branch generated bindings: " <> list (map pretty bindings)
       let ctxbindings = [varbind id ty | (TypedId ty id) <- bindings]
       verifyNonOverlappingBindings (rangeOf rng) "case" ctxbindings
       let ctx' = prependContextBindings ctx ctxbindings
-      aguard <- liftMaybe (\g -> tcRho ctx' g (Check fosBoolType)) guard
+      aguard <- liftMaybe (\g -> tcRho ctx' g (Check boolTypeTC)) guard
       abody <- tcRho ctx' body expTy
-      unify u (typeAST abody) ("Failed to unify all branches of case " ++ highlightFirstLine (rangeOf rng))
+      unify u (typeTC abody) ("Failed to unify all branches of case " ++ highlightFirstLine (rangeOf rng))
       return (CaseArm p abody aguard bindings brng)
   abranches <- forM branches checkBranch
   matchExp expTy (AnnCase rng u ascrutinee abranches) "case"
  where
-    checkPattern :: Context Sigma -> EPattern TypeAST -> TypeAST -> Tc (Pattern TypeAST)
+    checkPattern :: Context SigmaTC -> EPattern TypeAST -> TypeTC -> Tc (Pattern TypeTC)
     -- Make sure that each pattern has the proper arity,
     -- and record its type given a known type for the context in which
     -- the pattern appears.
@@ -1061,7 +1128,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
                                 return $ P_Atom $ P_Variable r (TypedId ctxTy id)
       EP_Bool     r b     -> do let boolexpr = E_BoolAST (ExprAnnot [] r  []) b
                                 annbool <- tcRho ctx boolexpr (Check ctxTy)
-                                return $ P_Atom $ P_Bool r (typeAST annbool) b
+                                return $ P_Atom $ P_Bool r (typeTC annbool) b
       EP_Int      r str   -> do (AnnLiteral _ ty (LitInt int))
                                          <- typecheckInt (ExprAnnot [] r []) str
                                                          (Check ctxTy)
@@ -1078,7 +1145,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
               "Invariant violated: constructor arity did not match # types!"
               ++ showSourceRange r
 
-        ty@(TyConAppAST _ metas) <-
+        ty@(TyConAppTC _ metas) <-
                             generateTypeSchemaForDataType ctx (ctorTypeName cid)
         let ktvs = map convertTyFormal tyformals
         ts <- mapM (\ty -> instSigmaWith ktvs ty metas) types
@@ -1096,17 +1163,17 @@ tcRhoCase ctx rng scrutinee branches expTy = do
 
       EP_Tuple     r eps  -> do
         ts <- case ctxTy of
-                TupleTypeAST ts -> return ts
+                TupleTypeTC ts -> return ts
                 _ -> do ts <- sequence [newTcUnificationVarTau "tup" | _ <- eps]
-                        unify ctxTy (TupleTypeAST ts) "tuple-pattern"
+                        unify ctxTy (TupleTypeTC ts) "tuple-pattern"
                         return ts
         sanityCheck (eqLen eps ts) $
                 "Cannot match pattern against tuple type of "
              ++ "different length." ++ showSourceRange r
         ps <- sequence [checkPattern ctx p t | (p, t) <- zip eps ts]
-        return $ P_Tuple r (TupleTypeAST ts) ps
+        return $ P_Tuple r (TupleTypeTC ts) ps
     -----------------------------------------------------------------------
-    getCtorInfoForCtor :: Context Sigma -> T.Text -> Tc (CtorInfo Sigma)
+    getCtorInfoForCtor :: Context SigmaTC -> T.Text -> Tc (CtorInfo SigmaTC)
     getCtorInfoForCtor ctx ctorName = do
       let ctorInfos = contextCtorInfo ctx
       case Map.lookup ctorName ctorInfos of
@@ -1115,17 +1182,17 @@ tcRhoCase ctx rng scrutinee branches expTy = do
                                     ++ " too few definitions for $" ++ T.unpack ctorName
                                     ++ "\n\t" ++ show (pretty elsewise)]
 
-    generateTypeSchemaForDataType :: Context Sigma -> DataTypeName -> Tc TypeAST
+    generateTypeSchemaForDataType :: Context SigmaTC -> DataTypeName -> Tc RhoTC
     generateTypeSchemaForDataType ctx typeName = do
       case Map.lookup typeName (contextDataTypes ctx) of
         Just [dt] -> do
           formals <- mapM (\_ -> newTcUnificationVarTau "dt-tyformal") (dataTypeTyFormals dt)
-          return $ TyConAppAST typeName formals
+          return $ TyConAppTC typeName formals
         other -> tcFails [text $ "Typecheck.generateTypeSchemaForDataType: Too many or"
                             ++ " too few definitions for $" ++ typeName
                             ++ "\n\t" ++ show (pretty other)]
 
-    extractPatternBindings :: Pattern TypeAST -> [TypedId Sigma]
+    extractPatternBindings :: Pattern t -> [TypedId t]
     extractPatternBindings (P_Atom (P_Wildcard    {})) = []
     extractPatternBindings (P_Atom (P_Bool        {})) = []
     extractPatternBindings (P_Atom (P_Int         {})) = []
@@ -1143,9 +1210,9 @@ tcRhoCase ctx rng scrutinee branches expTy = do
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-subsCheckTy :: Sigma -> Sigma -> String -> Tc ()
+subsCheckTy :: SigmaTC -> SigmaTC -> String -> Tc ()
 -- {{{
-subsCheckTy sigma1 sigma2@(ForAllAST {}) msg = do
+subsCheckTy sigma1 sigma2@(ForAllTC {}) msg = do
   (skols, rho) <- skolemize sigma2
   debug $ "subsCheckTy deferring to subsCheckRhoTy"
   subsCheckRhoTy sigma1 rho
@@ -1158,49 +1225,51 @@ subsCheckTy sigma1 sigma2@(ForAllAST {}) msg = do
 
 subsCheckTy sigma1 rho2 _msg = subsCheckRhoTy sigma1 rho2
 
-subsCheckRhoTy :: Sigma -> Rho -> Tc ()
-subsCheckRhoTy (ForAllAST ktvs rho) rho2 = do -- Rule SPEC
+instance Show (AnnExpr TypeTC) where show e = show (pretty e)
+
+subsCheckRhoTy :: SigmaTC -> RhoTC -> Tc ()
+subsCheckRhoTy (ForAllTC ktvs rho) rho2 = do -- Rule SPEC
              taus <- genTauUnificationVarsLike ktvs (\n -> "instSigma type parameter " ++ show n)
              rho1 <- instSigmaWith ktvs rho taus
              subsCheckRhoTy rho1 rho2
-subsCheckRhoTy rho1 (FnTypeAST as2 r2 p2 _ _) = unifyFun rho1 as2 "subsCheckRhoTy" >>= \(as1, r1, p1) -> subsCheckFunTy as1 r1 p1 as2 r2 p2
-subsCheckRhoTy (FnTypeAST as1 r1 p1 _ _) rho2 = unifyFun rho2 as1 "subsCheckRhoTy" >>= \(as2, r2, p2) -> subsCheckFunTy as1 r1 p1 as2 r2 p2
+subsCheckRhoTy rho1 (FnTypeTC as2 r2 p2 _ _) = unifyFun rho1 as2 "subsCheckRhoTy" >>= \(as1, r1, p1) -> subsCheckFunTy as1 r1 p1 as2 r2 p2
+subsCheckRhoTy (FnTypeTC as1 r1 p1 _ _) rho2 = unifyFun rho2 as1 "subsCheckRhoTy" >>= \(as2, r2, p2) -> subsCheckFunTy as1 r1 p1 as2 r2 p2
 subsCheckRhoTy tau1 tau2 -- Rule MONO
      = unify tau1 tau2 "subsCheckRho" -- Revert to ordinary unification
 -- }}}
 
-subsCheck :: (AnnExpr Sigma) -> Sigma -> String -> Tc (AnnExpr Sigma)
+subsCheck :: (AnnExpr SigmaTC) -> SigmaTC -> String -> Tc (AnnExpr SigmaTC)
 -- {{{
-subsCheck esigma sigma2@(ForAllAST {}) msg = do
+subsCheck esigma sigma2@(ForAllTC {}) msg = do
   (skols, rho) <- skolemize sigma2
   debug $ "subsCheck skolemized sigma to " ++ show rho ++ " via " ++ show skols
                                             ++ ", now deferring to subsCheckRho"
   _ <- subsCheckRho esigma rho
-  esc_tvs <- getFreeTyVars [typeAST esigma, sigma2]
+  esc_tvs <- getFreeTyVars [typeTC esigma, sigma2]
   let bad_tvs = filter (`elem` esc_tvs) skols
-  sanityCheck (null bad_tvs) ("subsCheck(" ++ msg ++ "): Type\n" ++ show (typeAST esigma) ++
+  sanityCheck (null bad_tvs) ("subsCheck(" ++ msg ++ "): Type\n" ++ show (typeTC esigma) ++
                        " not as polymorphic as\n" ++ show sigma2 ++
                        "\nbad type variables: " ++ show bad_tvs)
   return esigma
 
 subsCheck _esigma _rho2 _msg = tcFails [text $ "rho passed to subsCheck!"]
 
-subsCheckRho :: AnnExpr Sigma -> Rho -> Tc (AnnExpr Rho)
+subsCheckRho :: AnnExpr SigmaTC -> RhoTC -> Tc (AnnExpr RhoTC)
 subsCheckRho esigma rho2 = do
-  case (typeAST esigma, rho2) of
-    (_, ForAllAST {}) -> do tcFails [text $ "violated invariant: sigma passed to subsCheckRho"]
-    (ForAllAST {}, _) -> do -- Rule SPEC
-        debug $ "subsCheckRho instantiating " ++ show (typeAST esigma)
+  case (typeTC esigma, rho2) of
+    (_, ForAllTC {}) -> do tcFails [text $ "violated invariant: sigma passed to subsCheckRho"]
+    (ForAllTC {}, _) -> do -- Rule SPEC
+        debug $ "subsCheckRho instantiating " ++ show (typeTC esigma)
         erho <- inst esigma "subsCheckRho"
-        debug $ "subsCheckRho instantiated to " ++ show (typeAST erho)
+        debug $ "subsCheckRho instantiated to " ++ show (typeTC erho)
         debug $ "subsCheckRho inst. type against " ++ show rho2
         subsCheckRho erho rho2
 
-    (rho1, FnTypeAST as2 r2 p2 _ _) -> do debug $ "subsCheckRho fn 1"
+    (rho1, FnTypeTC  as2 r2 p2 _ _) -> do debug $ "subsCheckRho fn 1"
                                           (as1, r1, p1) <- unifyFun rho1 as2 "sCR1"
                                           subsCheckFunTy as1 r1 p1 as2 r2 p2
                                           return esigma
-    (FnTypeAST as1 r1 p1 _ _, _)    -> do debug "subsCheckRho fn 2"
+    (FnTypeTC  as1 r1 p1 _ _, _)    -> do debug "subsCheckRho fn 2"
                                           (as2, r2, p2) <- unifyFun rho2 as1 "sCR2"
                                           debug $ "&&&&&& r1: " ++ show r1
                                           debug $ "&&&&&& r2: " ++ show r2
@@ -1226,55 +1295,55 @@ subsCheckFunTy as1 r1 p1 as2 r2 p2 = do
         debug $ "subsCheckFunTy res: " ++ show r1 ++ " ?<=? " ++ show r2
         subsCheckTy r1 r2 "sCFTr"
         case (p1, p2) of
-          (Nothing, Nothing) -> return ()
+          (NoPrecondition _, NoPrecondition _) -> return ()
           _ -> do tcLift $ putStrLn $ "subsCheckFunTy: precond1 = " ++ show p1
                   tcLift $ putStrLn $ "subsCheckFunTy: precond2 = " ++ show p2
                   return ()
         return ()
 -- }}}
 
-instSigma :: AnnExpr Sigma -> Expected Rho -> Tc (AnnExpr Rho)
+instSigma :: AnnExpr SigmaTC -> Expected RhoTC -> Tc (AnnExpr RhoTC)
 -- Invariant: if the second argument is (Check rho),
 -- 	      then rho is in weak-prenex form
 instSigma e1 (Check t2) = do {
-                             ; debug $ "instSigma " ++ show (typeAST e1) ++ " :?: " ++ show t2
+                             ; debug $ "instSigma " ++ show (typeTC e1) ++ " :?: " ++ show t2
                              ; debug $ "instSigma deferring to subsCheckRho"
                              ; subsCheckRho e1 t2
                              }
 instSigma e1 (Infer r)  = do { e <- inst e1 "instSigma"
-                             ; debug $ "instSigma " ++ show (typeAST e1) ++ " -inst-> " ++ show (typeAST e)
-                             ; tcLift $ writeIORef r (typeAST e)
+                             ; debug $ "instSigma " ++ show (typeTC e1) ++ " -inst-> " ++ show (typeTC e)
+                             ; tcLift $ writeIORef r (typeTC e)
                              ; return e }
 
-inst :: AnnExpr Sigma -> String -> Tc (AnnExpr Rho)
+inst :: AnnExpr SigmaTC -> String -> Tc (AnnExpr RhoTC)
 -- Transform a Sigma type into a Rho type by instantiating the ForAll's
 -- type parameters with unification variables.
 -- {{{
 inst base msg = do
-  --zonked <- shallowZonk (typeAST base)
-  zonked <- return (typeAST base)
+  --zonked <- shallowZonk (typeTC base)
+  zonked <- return (typeTC base)
   case zonked of
-     ForAllAST ktvs _rho -> do
+     ForAllTC ktvs _rho -> do
        taus <- genTauUnificationVarsLike ktvs (\n -> "inst("++msg++") type parameter " ++ vname base n)
        instWith (annExprAnnot base) base taus
      _rho -> return base
 
-instWith :: ExprAnnot -> AnnExpr Sigma -> [Tau] -> Tc (AnnExpr Rho)
+instWith :: ExprAnnot -> AnnExpr SigmaTC -> [TauTC] -> Tc (AnnExpr RhoTC)
 instWith _          aexpSigma [] = do
-        sanityCheck (isRho $ typeAST aexpSigma)
+        sanityCheck (isRho $ typeTC aexpSigma)
                      "Tried to instantiate a sigma with no types!"
         return aexpSigma
 
 instWith rng aexpSigma taus = do
-    instRho <- tryInstSigmaWith (typeAST aexpSigma) taus
+    instRho <- tryInstSigmaWith (typeTC aexpSigma) taus
     return $ E_AnnTyApp rng instRho aexpSigma taus
 
 tryInstSigmaWith sigma taus = do
   --zonked <- shallowZonk sigma
   zonked <- return sigma
   case zonked of
-     ForAllAST ktvs rho -> instSigmaWith ktvs rho taus
-     rho                -> return rho
+     ForAllTC ktvs rho -> instSigmaWith ktvs rho taus
+     rho               -> return rho
 
 instSigmaWith ktvs rho taus = do
     sanityCheck (eqLen taus ktvs)
@@ -1283,84 +1352,85 @@ instSigmaWith ktvs rho taus = do
                 ++ show (List.length taus) ++ " types!")
     let tyvarsAndTys = List.zip (tyvarsOf ktvs) taus
     zonked <- zonkType rho -- Do a deep zonk to ensure we don't miss any vars.
-    return $ parSubstTy tyvarsAndTys zonked
+    return $ parSubstTcTy tyvarsAndTys zonked
 -- }}}
 
 -- {{{
+resolveType :: ExprAnnot -> Map String TypeTC -> TypeTC -> Tc TypeTC
 resolveType annot subst x =
   let q = resolveType annot subst in
   case x of
-    PrimIntAST  _                  -> return x
-    PrimFloat64AST                 -> return x
-    MetaTyVar   _                  -> return x
-    TyVarAST (SkolemTyVar _ _ _)   -> return x
-    TyVarAST (BoundTyVar name)     -> case Map.lookup name subst of
+    PrimIntTC   _                  -> return x
+    PrimFloat64TC                  -> return x
+    MetaTyVarTC   _                -> return x
+    TyVarTC  (SkolemTyVar _ _ _)   -> return x
+    TyVarTC  (BoundTyVar name)     -> case Map.lookup name subst of
                                          Nothing -> tcFails [text $ "Typecheck.hs: ill-formed type with free bound variable " ++ name,
                                                              text $ highlightFirstLine (rangeOf annot)]
                                          Just ty -> return ty
-    RefTypeAST    ty               -> liftM RefTypeAST   (q ty)
-    ArrayTypeAST  ty               -> liftM ArrayTypeAST (q ty)
-    FnTypeAST   ss t p cc cs       -> do (t':ss') <- mapM q (t:ss)
-                                         return $ FnTypeAST ss' t' p cc cs
-    CoroTypeAST  s t               -> liftM2 CoroTypeAST (q s) (q t)
-    TyConAppAST   tc  types        -> liftM (TyConAppAST tc) (mapM q types)
-    TupleTypeAST      types        -> liftM  TupleTypeAST    (mapM q types)
-    ForAllAST     ktvs rho         -> liftM (ForAllAST ktvs) (resolveType annot subst' rho)
+    RefTypeTC     ty               -> liftM RefTypeTC    (q ty)
+    ArrayTypeTC   ty               -> liftM ArrayTypeTC  (q ty)
+    FnTypeTC    ss t p cc cs       -> do (t':ss') <- mapM q (t:ss)
+                                         return $ FnTypeTC  ss' t' p cc cs
+    CoroTypeTC   s t               -> liftM2 CoroTypeTC  (q s) (q t)
+    TyConAppTC    tc  types        -> liftM (TyConAppTC  tc) (mapM q types)
+    TupleTypeTC       types        -> liftM  TupleTypeTC     (mapM q types)
+    ForAllTC      ktvs rho         -> liftM (ForAllTC  ktvs) (resolveType annot subst' rho)
                                        where
                                         subst' = foldl' ins subst ktvs
-                                        ins m (tv@(BoundTyVar nm), _k) = Map.insert nm (TyVarAST tv) m
+                                        ins m (tv@(BoundTyVar nm), _k) = Map.insert nm (TyVarTC  tv) m
                                         ins _     (SkolemTyVar {}, _k) = error "ForAll bound a skolem!"
 -- }}}
 
 -- Turns a type like (forall t, T1 t -> T2 t) into (T1 ~s) -> (T2 ~s)
 -- where ~s denotes a skolem type variable. Also returns the generated tyvars.
-skolemize :: TypeAST -> Tc ([TyVar], Rho)
+skolemize :: TypeTC -> Tc ([TyVar], RhoTC)
 -- {{{
-skolemize (ForAllAST ktvs rho) = do
+skolemize (ForAllTC ktvs rho) = do
      skolems <- mapM newTcSkolem ktvs
      let tyvarsAndTys = List.zip (tyvarsOf ktvs)
-                                 (map TyVarAST skolems)
-     return (skolems, parSubstTy tyvarsAndTys rho)
+                                 (map TyVarTC skolems)
+     return (skolems, parSubstTcTy tyvarsAndTys rho)
 skolemize ty = return ([], ty)
 -- }}}
 
-getFreeTyVars :: [TypeAST] -> Tc [TyVar]
+getFreeTyVars :: [TypeTC] -> Tc [TyVar]
 -- {{{
 getFreeTyVars xs = do zs <- mapM zonkType xs
                       return $ Set.toList (Set.fromList $ concatMap (go []) zs)
                  where
-  go :: [TyVar] -> Sigma -> [TyVar]
+  go :: [TyVar] -> SigmaTC -> [TyVar]
   go bound x =
     case x of
-        PrimIntAST _          -> []
-        PrimFloat64AST        -> []
-        TyConAppAST _nm types -> concatMap (go bound) types
-        TupleTypeAST types    -> concatMap (go bound) types
-        FnTypeAST ss r p _ _  -> concatMap (go bound) (r:ss)
-        CoroTypeAST s r       -> concatMap (go bound) [s,r]
-        ForAllAST  tvs rho    -> go (tyvarsOf tvs ++ bound) rho
-        TyVarAST   tv         -> if tv `elem` bound then [] else [tv]
-        MetaTyVar     {}      -> []
-        RefTypeAST    ty      -> (go bound) ty
-        ArrayTypeAST  ty      -> (go bound) ty
+        PrimIntTC _          -> []
+        PrimFloat64TC        -> []
+        TyConAppTC _nm types -> concatMap (go bound) types
+        TupleTypeTC types    -> concatMap (go bound) types
+        FnTypeTC ss r p _ _  -> concatMap (go bound) (r:ss)
+        CoroTypeTC s r       -> concatMap (go bound) [s,r]
+        ForAllTC  tvs rho    -> go (tyvarsOf tvs ++ bound) rho
+        TyVarTC   tv         -> if tv `elem` bound then [] else [tv]
+        MetaTyVarTC  {}      -> []
+        RefTypeTC    ty      -> (go bound) ty
+        ArrayTypeTC  ty      -> (go bound) ty
 -- }}}
 
-unMBS :: MetaBindStatus -> TypeAST
+unMBS :: MetaBindStatus -> TypeTC
 unMBS (NonMeta t) = t
-unMBS (MetaUnbound m  ) = MetaTyVar m
+unMBS (MetaUnbound m  ) = MetaTyVarTC m
 unMBS (MetaBoundTo _ t) = t
 
 instance Pretty MetaBindStatus where pretty mbs = string (show mbs)
 
-data MetaBindStatus = NonMeta TypeAST
-                    | MetaUnbound (MetaTyVar TypeAST)
-                    | MetaBoundTo (MetaTyVar TypeAST) TypeAST
+data MetaBindStatus = NonMeta TypeTC
+                    | MetaUnbound (MetaTyVar TypeTC)
+                    | MetaBoundTo (MetaTyVar TypeTC) TypeTC
                     deriving Show
 
-shZonkType :: TypeAST -> Tc MetaBindStatus
+shZonkType :: TypeTC -> Tc MetaBindStatus
 shZonkType x = do
     case x of
-        MetaTyVar m -> do shZonkMetaType m
+        MetaTyVarTC m -> do shZonkMetaType m
         _ -> return (NonMeta x)
 
 shZonkMetaType m = do
@@ -1371,29 +1441,29 @@ shZonkMetaType m = do
 
 -- As in the paper, zonking recursively eliminates indirections
 -- from instantiated meta type variables.
-zonkType :: TypeAST -> Tc TypeAST
+zonkType :: TypeTC -> Tc TypeTC
 -- {{{
 zonkType x = do
     case x of
-        MetaTyVar m -> do mty <- readTcMeta m
-                          case mty of
-                            Nothing -> do debugDoc $ string "unable to zonk meta " <> pretty x
-                                          return x
-                            Just ty -> do ty' <- zonkType ty
-                                          writeTcMeta m ty'
-                                          return ty'
-        PrimIntAST     {}     -> return x
-        PrimFloat64AST        -> return x
-        TyVarAST       {}     -> return x
-        TyConAppAST  nm types -> liftM (TyConAppAST nm) (mapM zonkType types)
-        TupleTypeAST    types -> liftM (TupleTypeAST  ) (mapM zonkType types)
-        ForAllAST    tvs  rho -> liftM (ForAllAST tvs ) (zonkType rho)
-        RefTypeAST       ty   -> liftM (RefTypeAST    ) (zonkType ty)
-        ArrayTypeAST     ty   -> do debug $ "zonking array ty: " ++ show ty
-                                    liftM (ArrayTypeAST  ) (zonkType ty)
-        CoroTypeAST s r       -> liftM2 (CoroTypeAST  ) (zonkType s) (zonkType r)
-        FnTypeAST ss r p cc cs  -> do ss' <- mapM zonkType ss ; r' <- zonkType r
-                                      return $ FnTypeAST ss' r' p cc cs
+        MetaTyVarTC m -> do mty <- readTcMeta m
+                            case mty of
+                              Nothing -> do debugDoc $ string "unable to zonk meta " <> pretty x
+                                            return x
+                              Just ty -> do ty' <- zonkType ty
+                                            writeTcMeta m ty'
+                                            return ty'
+        PrimIntTC     {}      -> return x
+        PrimFloat64TC         -> return x
+        TyVarTC       {}      -> return x
+        TyConAppTC  nm types  -> liftM (TyConAppTC nm) (mapM zonkType types)
+        TupleTypeTC    types  -> liftM (TupleTypeTC  ) (mapM zonkType types)
+        ForAllTC    tvs  rho  -> liftM (ForAllTC tvs ) (zonkType rho)
+        RefTypeTC       ty    -> liftM (RefTypeTC    ) (zonkType ty)
+        ArrayTypeTC     ty    -> do debug $ "zonking array ty: " ++ show ty
+                                    liftM (ArrayTypeTC  ) (zonkType ty)
+        CoroTypeTC s r        -> liftM2 (CoroTypeTC  ) (zonkType s) (zonkType r)
+        FnTypeTC ss r p cc cs -> do ss' <- mapM zonkType ss ; r' <- zonkType r
+                                    return $ FnTypeTC ss' r' p cc cs
 -- }}}
 
 -- Sad hack:
@@ -1409,9 +1479,9 @@ zonkType x = do
 --    poly2b :: forall b:Boxed, { b => Int32 };
 --    poly2b = { forall b:Boxed, tmp :?? T => 0 };
 -- ... SADFACE
-checkAgainst taus (ety, MetaTyVar m) = do
+checkAgainst taus (ety, MetaTyVarTC m) = do
   debugDoc $ string "checkAgainst ety: " <+> pretty ety
-  debugDoc $ string "checkAgainst cty: " <+> pretty (MetaTyVar m)
+  debugDoc $ string "checkAgainst cty: " <+> pretty (MetaTyVarTC m)
   let tryOverwrite = do
         mty <- readTcMeta m
         case mty of
@@ -1420,7 +1490,7 @@ checkAgainst taus (ety, MetaTyVar m) = do
             Just  _ -> do return ()
 
   case ety of
-    MetaTyVar em ->
+    MetaTyVarTC em ->
       if em `elem` taus then do ty' <- zonkType ety
                                 debugDoc $ string "checkAgainst: ety ~> " <+> pretty ty'
                                 --tryOverwrite
@@ -1434,7 +1504,7 @@ checkAgainst _ (_, _) = return ()
 -- is printed along with the unification failure error message.
 -- If unification succeeds, each unification variable in the two
 -- types is updated according to the unification solution.
-unify :: TypeAST -> TypeAST -> String -> Tc ()
+unify :: TypeTC -> TypeTC -> String -> Tc ()
 unify t1 t2 msg = do
   --z1 <- zonkType t1
   --z2 <- zonkType t2
@@ -1449,7 +1519,7 @@ unify' !depth t1 t2 msg | depth == 512 =
 unify' !depth t1 t2 msg = do
   debugDoc $ green $ text $ "unify " ++ show t1 ++ " ?==? " ++ show t2 ++ " (" ++ msg ++ ")"
   case (t1, t2) of
-    (MetaTyVar m1, MetaTyVar m2) -> do
+    (MetaTyVarTC m1, MetaTyVarTC m2) -> do
       mt1 <- readTcMeta m1
       mt2 <- readTcMeta m2
       debugDoc $ text $ show t1 ++ " ~> " ++ show mt1
@@ -1467,57 +1537,63 @@ unify' !depth t1 t2 msg = do
          (Just x1, Just x2)          -> do unify' (depth + 1) x1 x2 msg
          -- The unification var m1 has no bound type, but it's being
          -- associated with var m2, so we'll peek through m2.
-         (Nothing, Just (MetaTyVar m2)) -> do
+         (Nothing, Just (MetaTyVarTC m2)) -> do
                          mt2 <- readTcMeta m2
                          case mt2 of
-                             Just x2 -> do debugDoc $ pretty (MetaTyVar m2) <+> text "~>" <+> pretty x2
-                                           unify' (depth + 1) (MetaTyVar m) x2 msg
-                             Nothing -> writeTcMeta m (MetaTyVar m2)
+                             Just x2 -> do debugDoc $ pretty (MetaTyVarTC m2) <+> text "~>" <+> pretty x2
+                                           unify' (depth + 1) (MetaTyVarTC m) x2 msg
+                             Nothing -> writeTcMeta m (MetaTyVarTC m2)
          (Nothing, Just x2) -> do unbounds <- collectUnboundUnificationVars [x2]
                                   case m `elem` unbounds of
                                      False   -> writeTcMeta m x2
                                      True    -> occurdCheck m x2
   where
-     occurdCheck m t = tcFails [text $ "Occurs check for " ++ show (MetaTyVar m)
+     occurdCheck m t = tcFails [text $ "Occurs check for " ++ show (MetaTyVarTC m)
                                    ++ " failed in " ++ show t
                                ,string msg]
 -- }}}
 
 -- {{{ Well-formedness checks
 -- The judgement   G |- T
-tcTypeWellFormed :: String -> Context TypeAST -> TypeAST -> Tc ()
+tcTypeWellFormed :: String -> Context SigmaTC -> TypeTC -> Tc ()
 tcTypeWellFormed msg ctx typ = do
   let q = tcTypeWellFormed msg ctx
   case typ of
-        PrimIntAST _          -> return ()
-        PrimFloat64AST        -> return ()
-        MetaTyVar     _       -> return ()
-        TyConAppAST nm types  -> case Map.lookup nm (contextDataTypes ctx) of
+        PrimIntTC      {}     -> return ()
+        PrimFloat64TC         -> return ()
+        MetaTyVarTC    {}     -> return ()
+        TyConAppTC  nm types  -> case Map.lookup nm (contextDataTypes ctx) of
                                    Just  _ -> mapM_ q types
                                    Nothing -> tcFails [text $ "Unknown type "
                                                         ++ nm ++ " " ++ msg]
-        TupleTypeAST types    -> mapM_ q types
-        FnTypeAST ss r p _ _  -> mapM_ q (r:ss)
-        CoroTypeAST s r       -> mapM_ q [s,r]
-        RefTypeAST    ty      -> q ty
-        ArrayTypeAST  ty      -> q ty
-        ForAllAST  tvs rho    -> tcTypeWellFormed msg (extendTyCtx ctx tvs) rho
-        TyVarAST (SkolemTyVar {}) -> return ()
-        TyVarAST tv@(BoundTyVar _) ->
+        TupleTypeTC  types    -> mapM_ q types
+        FnTypeTC  ss r _precond _ _  -> mapM_ q (r:ss)
+        CoroTypeTC  s r       -> mapM_ q [s,r]
+        RefTypeTC     ty      -> q ty
+        ArrayTypeTC   ty      -> q ty
+        ForAllTC   tvs rho    -> tcTypeWellFormed msg (extendTyCtx ctx tvs) rho
+        TyVarTC  (SkolemTyVar {}) -> return ()
+        TyVarTC  tv@(BoundTyVar _) ->
                  case Prelude.lookup tv (contextTypeBindings ctx) of
                    Nothing -> tcFails [text $ "Unbound type variable "
                                            ++ show tv ++ " " ++ msg]
                    Just  _ -> return ()
 
-tcContext :: Context TypeAST -> Tc ()
-tcContext ctx = do
-  sanityCheck (Map.null $ localTypeBindings ctx)
+tcContext :: Context TypeTC -> Context TypeAST -> Tc (Context SigmaTC)
+tcContext emptyCtx ctxAST = do
+  sanityCheck (Map.null $ localTypeBindings ctxAST)
         "Expected to start typechecking with an empty lexical type environment"
-  sanityCheck (null $ contextTypeBindings ctx)
+  sanityCheck (null $ contextTypeBindings ctxAST)
         "Expected to start typechecking with an empty lexical type environment"
-  --
+
+  tcLift $ putStrLn "converting Context TypeAST to Context TypeTC"
+  tcLift $ putStrLn (show ctxAST)
+  ctx <- liftContextM (tcType emptyCtx) ctxAST
+  tcLift $ putStrLn "done converting Context TypeAST to Context TypeTC"
+
   -- For now, we disallow mutually recursive data types
-  let checkDataType (nm,dts) = do {
+  let checkDataType :: (String, [DataType TypeTC]) -> Tc ()
+      checkDataType (nm,dts) = do {
     case dts of
       [dt] -> do
          sanityCheck (nm == typeFormalName (dataTypeName dt)) ("Data type name mismatch for " ++ nm)
@@ -1530,36 +1606,40 @@ tcContext ctx = do
       _ -> tcFails [text $ "Data type name " ++ nm
                        ++ " didn't map to a single data type!"]
   }
+
   mapM_ checkDataType (Map.toList $ contextDataTypes ctx)
 
-tcDataCtor dtname ctx dc = do
-  let msg = "in field of data constructor " ++ T.unpack (dataCtorName dc)
-        ++ " of type " ++ dtname
-  mapM_ (tcTypeWellFormed msg ctx) (dataCtorTypes dc)
+  return ctx
+
+
+tcDataCtor :: String -> Context SigmaTC -> DataCtor TypeTC -> Tc ()
+tcDataCtor dtname ctx (DataCtor nm tyfs tys rng) = do
+  let msg = "in field of data constructor " ++ T.unpack nm ++ " of type " ++ dtname
+  mapM_ (tcTypeWellFormed msg ctx) tys
 -- }}}
 
 -- {{{ Miscellaneous helpers.
-collectUnboundUnificationVars :: [TypeAST] -> Tc [MetaTyVar TypeAST]
+collectUnboundUnificationVars :: [TypeTC] -> Tc [MetaTyVar TypeTC]
 collectUnboundUnificationVars xs = do
   xs' <- mapM zonkType xs
   return $ [m | m <- collectAllUnificationVars xs' , not $ isForIntLit m]
     where isForIntLit m = mtvDesc m == "int-lit"
 
-collectAllUnificationVars :: [TypeAST] -> [MetaTyVar TypeAST]
+collectAllUnificationVars :: [TypeTC] -> [MetaTyVar TypeTC]
 collectAllUnificationVars xs = Set.toList (Set.fromList (concatMap go xs))
   where go x =
           case x of
-            PrimIntAST _          -> []
-            PrimFloat64AST        -> []
-            TyConAppAST _nm types -> concatMap go types
-            TupleTypeAST types    -> concatMap go types
-            FnTypeAST ss r _ _ _  -> concatMap go (r:ss) -- TODO recurse in expr?
-            CoroTypeAST s r       -> concatMap go [s,r]
-            ForAllAST _tvs rho    -> go rho
-            TyVarAST  _tv         -> []
-            MetaTyVar     m       -> [m]
-            RefTypeAST    ty      -> go ty
-            ArrayTypeAST  ty      -> go ty
+            PrimIntTC  _          -> []
+            PrimFloat64TC         -> []
+            TyConAppTC  _nm types -> concatMap go types
+            TupleTypeTC  types    -> concatMap go types
+            FnTypeTC  ss r _ _ _  -> concatMap go (r:ss) -- TODO recurse in expr?
+            CoroTypeTC  s r       -> concatMap go [s,r]
+            ForAllTC  _tvs rho    -> go rho
+            TyVarTC   _tv         -> []
+            MetaTyVarTC   m       -> [m]
+            RefTypeTC     ty      -> go ty
+            ArrayTypeTC   ty      -> go ty
 
 vname (E_AnnVar _rng (av, _)) n = show n ++ " for " ++ T.unpack (identPrefix $ tidIdent av)
 vname _                       n = show n
@@ -1567,7 +1647,7 @@ vname _                       n = show n
 varbind id ty = TermVarBinding (identPrefix id) (TypedId ty id, Nothing)
 bindingForVar (TypedId ty id) = varbind id ty
 
-genTauUnificationVarsLike :: [a] -> (Int -> String) -> Tc [TypeAST]
+genTauUnificationVarsLike :: [a] -> (Int -> String) -> Tc [TypeTC]
 genTauUnificationVarsLike spine namegen = do
   sequence [newTcUnificationVarTau (namegen n) | (_, n) <- zip spine [1..]]
 
@@ -1588,8 +1668,8 @@ verifyNonOverlappingBindings rng name binders = do
 
 tyvarsOf ktyvars = map (\(tv,_k) -> tv) ktyvars
 
-isRho (ForAllAST _ _) = False
-isRho _               = True
+isRho (ForAllTC _ _) = False
+isRho _              = True
 
 instance Show a => Show (Expected a) where
   show (Infer _) = "<infer>"
@@ -1611,8 +1691,8 @@ instance Pretty ty => Pretty (DataType ty) where
         text "type case " <> pretty name <+> hsep (map pretty tyformals)
                 <$> vsep (map pretty dctors)
 
-instance Pretty TypeFormalAST where
-  pretty (TypeFormalAST name kind) = text name <> text " :: " <> pretty kind
+instance Pretty TypeFormal where
+  pretty (TypeFormal name kind) = text name <> text " :: " <> pretty kind
 
 retypeTID :: (t1 -> Tc t2) -> TypedId t1 -> Tc (TypedId t2)
 retypeTID f (TypedId t1 id) = f t1 >>= \t2 -> return (TypedId t2 id)
@@ -1626,7 +1706,7 @@ expMaybe (Infer _) = Nothing
 expMaybe (Check t) = Just t
 
 update r e_action = do e <- e_action
-                       tcLift $ writeIORef r (typeAST e)
+                       tcLift $ writeIORef r (typeTC e)
                        return e
 
 type Term = ExprAST TypeAST
@@ -1635,9 +1715,6 @@ tcVERBOSE = False
 
 debug    s = do when tcVERBOSE (tcLift $ putStrLn s)
 debugDoc d = do when tcVERBOSE (tcLift $ putDocLn d)
-
-typeAST :: AnnExpr TypeAST -> TypeAST
-typeAST = typeOf
 
 -- The free-variable determination logic here is tested in
 --      test/bootstrap/testcases/rec-fn-detection
@@ -1668,4 +1745,7 @@ caseArmFreeVars (CaseArm epat body guard _ _) =
             EP_Bool     {}        -> []
             EP_Int      {}        -> []
             EP_Tuple    _rng pats -> concatMap epatBoundNames pats
+
+typeTC :: AnnExpr TypeTC -> TypeTC
+typeTC = typeOf
 -- }}}

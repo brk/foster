@@ -31,7 +31,7 @@ import Foster.Fepb.FnType   as PbFnType
 import Foster.Fepb.Type.Tag as PbTypeTag
 import Foster.Fepb.Type     as PbType
 import Foster.Fepb.Formal   as PbFormal
-import Foster.Fepb.TypeFormal as PbTypeFormal
+import qualified Foster.Fepb.TypeFormal as PbTypeFormal
 import qualified Foster.Fepb.TermBinding    as PbTermBinding
 import Foster.Fepb.Kind     as PbKind
 import Foster.Fepb.Kind.Tag as PbKindTag
@@ -45,7 +45,6 @@ import Foster.Fepb.PBCase   as PBCase
 import Foster.Fepb.CaseClause as CaseClause
 import Foster.Fepb.PBValAbs as PBValAbs
 import Foster.Fepb.Expr     as PbExpr
-import Foster.Fepb.PBArrEntries as PBArrEntries
 import Foster.Fepb.SourceModule as SourceModule
 import Foster.Fepb.WholeProgram as WholeProgram
 import Foster.Fepb.Expr.Tag(Tag(IF, LET, VAR, SEQ, TY_CHECK,
@@ -135,11 +134,11 @@ parseKind pbkind =
         PbKindTag.KIND_TYPE ->  KindAnySizeType
         PbKindTag.KIND_BOXED -> KindPointerSized
 
-parseTypeFormal :: TypeFormal -> TypeFormalAST
+parseTypeFormal :: PbTypeFormal.TypeFormal -> TypeFormal
 parseTypeFormal pbtyformal =
     let name = uToString $ PbTypeFormal.name pbtyformal in
     let kind = parseKind $ PbTypeFormal.kind pbtyformal in
-    TypeFormalAST name kind
+    TypeFormal name kind
 
 parseFn pbexpr = do annot <- parseAnnot pbexpr
                     bodies <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
@@ -154,7 +153,11 @@ parseFn pbexpr = do annot <- parseAnnot pbexpr
                     let tyformals = map parseTypeFormal $
                                         toList $ PBValAbs.type_formals valabs
                     parsedFormals <- mapM parseFormal formals
+                    precond <- case PBValAbs.precond valabs of
+                                Just e -> liftM HavePrecondition (parseExpr e)
+                                Nothing -> return $ NoPrecondition (show name)
                     return $ (FnAST annot name tyformals parsedFormals body
+                               precond
                                False) -- assume closure until proven otherwise
   where
      parseFormal (Formal u t) = do pt <- parseType t
@@ -332,7 +335,7 @@ parseDataType dt = do
                 Just r  -> parseSourceRange r
     return $ Foster.Base.DataType name tyformals ctors range
  where
-  parseDataCtor :: [TypeFormalAST] -> DataCtor.DataCtor -> FE (Foster.Base.DataCtor TypeP)
+  parseDataCtor :: [TypeFormal] -> DataCtor.DataCtor -> FE (Foster.Base.DataCtor TypeP)
   parseDataCtor tyf ct = do
       types <- mapM parseType (toList $ DataCtor.type' ct)
       let name  = pUtf8ToText $ DataCtor.name ct
@@ -460,7 +463,7 @@ parseSourceModule sm = resolveFormatting m where
        E_RatAST       _ txt      -> liftM2' E_RatAST      ana (return txt)
        E_VarAST       _ v        -> liftM2' E_VarAST      ana (return v)
        E_PrimAST      _ nm       -> liftM2' E_PrimAST     ana (return nm)
-       E_MachArrayLit _ args     -> liftM2' E_MachArrayLit ana (mapArrayEntryM q args)
+       E_MachArrayLit _ args     -> liftM2' E_MachArrayLit ana (mapM (liftArrayEntryM q) args)
        E_KillProcess  _ e        -> liftM2' E_KillProcess ana (q e)
        E_CompilesAST  _ me       -> liftM2' E_CompilesAST ana (liftMaybeM q me)
        E_IfAST        _ a b c    -> liftM4' E_IfAST       ana (q a) (q b) (q c)
@@ -535,11 +538,8 @@ parseFnTy fty = do
  argtypes <- mapM parseType (toList $ PbFnType.arg_types fty)
  rettype  <- parseType $ PbFnType.ret_type fty
  precond <- case PbFnType.precond fty of
-              Nothing -> return Nothing
-              {-
-              Just pp -> do annot <- parseAnnot pp
-                            liftM Just $ parseValAbs pp annot
-                            -}
+              Nothing -> return (NoPrecondition "parseFnTy")
+              Just pp -> liftM HavePrecondition (parseExpr pp)
  return $
   FnTypeP argtypes rettype precond
             (parseCallConv (fmap uToString $ PbFnType.calling_convention fty))

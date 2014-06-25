@@ -33,7 +33,7 @@ import Criterion.Measurement(getTime)
 import Control.Exception(assert)
 
 import Foster.Base
-import Foster.TypeIL
+import Foster.AnnExprIL(TypeIL(..))
 import Foster.KNExpr
 
 -- Relatively simple small-step "definitional" interpreter.
@@ -219,7 +219,7 @@ data IExpr =
         | IAllocArray   Ident
         | IIf           Ident   SSTerm     SSTerm
         | ICall         Ident  [Ident]
-        | ICallPrim     ILPrim [Ident]
+        | ICallPrim     (FosterPrim TypeIL) [Ident]
         | ICase         Ident  {-(DecisionTree KNExpr)-} [CaseArm PatternRepr SSTerm TypeIL] [PatternRepr TypeIL]
         | ICaseGuard    SSTerm SSTerm ShowableMachineState
                         Ident  [CaseArm PatternRepr SSTerm TypeIL] [PatternRepr TypeIL]

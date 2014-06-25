@@ -407,23 +407,27 @@ std::vector<TypeFormal> parseTyFormals(pTree t, KindAST* defaultKind) {
   return names;
 }
 
-// ^(VAL_ABS ^(FORMALS formals) ^(MU tyvar_decl*) stmts?)
+ExprAST* parseTuple(pTree t) {
+  if (getChildCount(t) == 1) {
+    return ExprAST_from(child(t, 0));
+  } return new CallPrimAST("tuple", getExprs(t), rangeOf(t));
+}
+
+// ^(VAL_ABS ^(FORMALS formals) ^(MU tyvar_decl*) ^(MU tuple?) stmts?)
 ValAbs* parseValAbs(pTree tree) {
   std::vector<Formal> formals;
   parseFormals(formals, child(tree, 0));
   std::vector<TypeFormal> tyVarFormals = parseTyFormals(child(tree, 1),
                                                         getDefaultKind());
+  pTree tprecond = child(tree, 2);
+  ExprAST* precond = (tprecond && getChildCount(tprecond) == 1)
+                       ? parseTuple(child(tprecond, 0))
+                       : NULL;
   TypeAST* resultType = NULL;
-  ExprAST* resultSeq = getChildCount(tree) == 3
-                         ? parseStmts(child(tree, 2))
+  ExprAST* resultSeq = getChildCount(tree) == 4
+                         ? parseStmts(child(tree, 3))
                          : new SeqAST(Exprs(), rangeOf(tree));
-  return new ValAbs(formals, tyVarFormals, resultSeq, resultType, rangeOf(tree));
-}
-
-ExprAST* parseTuple(pTree t) {
-  if (getChildCount(t) == 1) {
-    return ExprAST_from(child(t, 0));
-  } return new CallPrimAST("tuple", getExprs(t), rangeOf(t));
+  return new ValAbs(formals, tyVarFormals, resultSeq, resultType, precond, rangeOf(tree));
 }
 
 ExprAST* parseTyCheck(pTree t) {
@@ -1019,7 +1023,7 @@ TypeAST* parseFuncType(pTree tree) {
   std::vector<TypeAST*> types = getTypes(child(tree, 0));
   TypeAST* rt = types.back(); types.pop_back();
 
-  pTree tprecond = child(tree, 2);
+  pTree tprecond = child(tree, 1);
   ValAbs* precond = (tprecond && getChildCount(tprecond) == 1)
                        ? parseValAbs(child(tprecond, 0))
                        : NULL;

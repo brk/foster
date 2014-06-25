@@ -6,6 +6,11 @@ arrayLength32 = { forall t:Type, a : Array t =>
 };
 
 
+mk-UTF-8-decoder-v1 :: { #precondition
+                         { state => typep => char8 =>  state <=UInt32 96 }
+                         // #postcondition
+                         // { pr => case pr of (s,_) -> s <=UInt32 96 }
+                         { Int32 => Int32 => Int8  => (Int32, Int32) } };
 mk-UTF-8-decoder-v1 = {
   utf8d = prim mach-array-literal
           // The first part of the table maps bytes to character classes that
@@ -26,10 +31,8 @@ mk-UTF-8-decoder-v1 = {
           12 12 12 12 12 12 12 36 12 36 12 12  12 36 12 12 12 12 12 36 12 36 12 12
           12 36 12 12 12 12 12 12 12 12 12 12 ;
 
-  // Precondition: state >= 0 and state <= 96.
-  // #preconditions (state >=UInt32 0, let s = state in s <=UInt32 96 end)
   { state : Int32 => codep : Int32 => byte8 : Int8 =>
-    //prim assert-invariants (state >=UInt32 0) (state <=UInt32 96);
+    //prim assert-invariants (state <=UInt32 96);
 
     kUTF8-ACCEPT = 0;
     kUTF8-REJECT = 12;
@@ -54,17 +57,18 @@ mk-UTF-8-decoder-v1 = {
 };
 
 countCodePoints-v1 = { decoder => bytearr =>
-  maxidx = arrayLength32 bytearr;
+  //maxidx = arrayLength32 bytearr;
+  maxidx = trunc_i64_to_i32 (prim_arrayLength bytearr);
   REC loop = { idx => st => ct => cp =>
     if idx <UInt32 maxidx
       then b = bytearr[idx];
+           // TODO i don't think we're checking the precondition of decoder here...
            case decoder st cp b of (stx, cpx) ->
              ctx = ct +Int32 (if stx ==Int32 0 then 1 else 0 end);
              loop (idx +Int32 1) stx ctx cpx
            end
       else ct
     end
-
   };
   loop 0 0 0 0
 };
