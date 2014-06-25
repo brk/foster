@@ -13,6 +13,8 @@ import Foster.Config
 import Foster.TypeIL
 import Foster.MonoType
 
+import Foster.TypeAST(Wrapped_ExprAST(..))
+
 import qualified Data.Text as T
 
 import Text.PrettyPrint.ANSI.Leijen
@@ -80,6 +82,7 @@ monoKN subst e =
   KNArrayPoke     t ai v   -> return $ KNArrayPoke     (qt t) (qa ai) (qv v)
   KNArrayLit      t arr vals -> return $ KNArrayLit    (qt t) (qv arr) (mapRight qv vals)
   KNVar                  v -> return $ KNVar                  (qv v)
+  KNInlined {} -> error $ "Monomo.hs expects inlining to run after monomorphization!"
   -- The cases involving sub-expressions are syntactically heavier,
   -- but are still basically trivially inductive.
   KNCase          t v pats -> do pats' <- mapM (monoPatternBinding subst) pats
@@ -345,18 +348,24 @@ extendMonoSubst subst monotypes ktyvars =
   let ext = Prelude.zip (map tyvarOf ktyvars) monotypes in
   Map.union (Map.fromList ext) subst
 
+--convertPrecond :: Wrapped_ExprAST -> ()
+--convertPrecond   (Wrapped_ExprAST _p) = ()
+
+convertPrecond :: () -> ()
+convertPrecond () = ()
+
 monoType :: MonoSubst -> TypeIL -> MonoType
 monoType subst ty =
   let q = monoType subst in
   case ty of
-     TyConAppIL nam types -> TyConApp nam (map q types)
-     PrimIntIL size       -> PrimInt size
-     PrimFloat64IL        -> PrimFloat64
-     TupleTypeIL types    -> TupleType (map q types)
-     FnTypeIL  ss t cc cs -> FnType    (map q ss) (q t) cc cs
-     CoroTypeIL s t       -> CoroType (q s) (q t)
-     ArrayTypeIL ty       -> ArrayType (q ty)
-     PtrTypeIL ty         -> PtrType   (q ty)
+     TyConAppIL nam types   -> TyConApp nam (map q types)
+     PrimIntIL size         -> PrimInt size
+     PrimFloat64IL          -> PrimFloat64
+     TupleTypeIL types      -> TupleType (map q types)
+     FnTypeIL  ss t p cc cs -> FnType    (map q ss) (q t) (fmap convertPrecond p) cc cs
+     CoroTypeIL s t         -> CoroType  (q s) (q t)
+     ArrayTypeIL ty         -> ArrayType (q ty)
+     PtrTypeIL ty           -> PtrType   (q ty)
      -- Type checking should prevent us from trying to instantiate a Boxed
      -- variable with anything but a boxed type.
      ForAllIL ktvs rho    -> monoType (extendMonoSubst subst

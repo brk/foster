@@ -135,13 +135,17 @@ atom    :       // syntactically "closed" terms
   | '(' COMPILES e ')'                  -> ^(COMPILES e)
   | '(' 'ref' e ')'                     -> ^(REF e)     // allocation
   | tuple
-  | '{' ('forall' tyformal* ',')?
+  | val_abs
+  ;
+
+val_abs :
+    '{' ('forall' tyformal* ',')?
         (formal '=>')*
          stmts?
     '}'                                 -> ^(VAL_ABS ^(FORMALS formal*)
                                                      ^(MU tyformal*) stmts?)
                   // value + type abstraction (terms indexed by terms and types)
-  ;
+    ;
 
 parse_in :
 	'#associate' e 'as' e 'in' stmts 'end' -> ^(PARSE_DECL e e stmts)
@@ -192,8 +196,9 @@ tatom :
   | '??' a                              -> ^(TYPE_PLACEHOLDER a)
   | '(' ')'                             -> ^(TUPLE)
   | '(' t (',' t)* ')'                  -> ^(TUPLE t+)  // tuples (products) (sugar: (a,b,c) == Tuple3 a b c)
-  | '{'    t  ('=>' t)* '}'
-   ('@' '{' tannots '}')?               -> ^(FUNC_TYPE ^(TUPLE t+) tannots?)  // description of terms indexed by terms
+  | ('#precondition' val_abs)?
+    '{'    t  ('=>' t)* '}'
+   ('@' '{' tannots '}')?               -> ^(FUNC_TYPE ^(TUPLE t+) ^(MU val_abs?) tannots?)  // description of terms indexed by terms
 //      | ':{'        (a ':' k '->')+ t '}'     -> ^(TYPE_TYP_ABS a k t)        // type-level abstractions
 //  | tctor                                -> ^(TYPE_CTOR tctor)                  // type constructor constant
   // The dollar sign is required to distinguish type constructors

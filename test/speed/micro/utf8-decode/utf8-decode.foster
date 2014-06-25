@@ -27,16 +27,19 @@ mk-UTF-8-decoder-v1 = {
           12 36 12 12 12 12 12 12 12 12 12 12 ;
 
   // Precondition: state >= 0 and state <= 96.
-  // Precondition: byte <UInt32 256 and byte >UInt32 0.
+  // #preconditions (state >=UInt32 0, let s = state in s <=UInt32 96 end)
   { state : Int32 => codep : Int32 => byte8 : Int8 =>
+    //prim assert-invariants (state >=UInt32 0) (state <=UInt32 96);
+
     kUTF8-ACCEPT = 0;
     kUTF8-REJECT = 12;
 
     byte32 = zext_i8_to_i32 byte8;
 
-    // Invariant: typex >= 0 and typex <= 11.
     // Since |utf8d| = 256, this subscript is statically safe.
     typex = prim subscript utf8d byte32 |> zext_i8_to_i32;
+
+    prim assert-invariants (typex >=UInt32 0) (typex <=UInt32 11);
 
     codepx = if state !=Int32 kUTF8-ACCEPT
                then (byte32 `bitand-Int32` 11`1111_2) `bitor-Int32`

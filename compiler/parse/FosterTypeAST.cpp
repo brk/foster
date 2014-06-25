@@ -95,10 +95,12 @@ RefTypeAST* RefTypeAST::get(TypeAST* baseType) {
 
 FnTypeAST::FnTypeAST(TypeAST* returnType,
                      const std::vector<TypeAST*>& argTypes,
+                     ValAbs* precond,
                      std::map<string, string> _annots)
     : TypeAST("FnType", NULL, SourceRange::getEmptyRange()),
       returnType(returnType),
       argTypes(argTypes),
+      precond(precond),
       annots(_annots) {
   ASSERT(returnType) << "FnTypeAST() needs non-NULL return type";
   getCallingConventionID(); // ensure we have a valid calling convention...

@@ -42,8 +42,8 @@ instance Pretty TypeP where
           PrimIntP       isb          -> text "Int" <> pretty isb
           TyConAppP      dt ts        -> text "[TyCon" <+> tupled (map pretty ts) <> text "]"
           TupleTypeP     ts           -> tupled (map pretty ts)
-          FnTypeP        ts r cc pf   -> text "{" <+> hsep [pretty t <+> text "=>" | t <- ts]
-                                                  <+> pretty r <+> text "}"
+          FnTypeP        ts r p cc pf -> text "{" <+> hsep [pretty t <+> text "=>" | t <- ts]
+                                                  <+> pretty r <+> text "}" -- TODO pp precond
           CoroTypeP      s  r         -> text "Coro ..."
           ArrayTypeP     t            -> text "Array" <+> pretty t
           RefTypeP       t            -> text "Ref" <+> pretty t

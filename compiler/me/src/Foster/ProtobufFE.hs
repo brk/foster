@@ -100,6 +100,7 @@ parseCallPrim pbexpr annot = do
     args <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
     let primname = getName "prim" $ PbExpr.string_value pbexpr
     case (T.unpack primname, args) of
+      ("assert-invariants", _) -> return $ mkPrimCall "assert-invariants" args annot
       ("mach-array-literal", _) -> do return $ E_MachArrayLit annot (map processArrayValue args)
       ("tuple",  _ ) -> return $ E_TupleAST annot args
       ("deref", [e]) -> return $ E_DerefAST annot e
@@ -114,11 +115,13 @@ parseCallPrim pbexpr annot = do
                                                 return $ E_KillProcess annot s
       (name, args) ->
         case Map.lookup name gFosterPrimOpsTable of
-          Just _ ->
-            let emptyAnnot = ExprAnnot [] (MissingSourceRange "prim") [] in
-            return $ E_CallAST annot (E_PrimAST emptyAnnot name) args
+          Just _ -> return $ mkPrimCall name args annot
           Nothing ->
             error $ "ProtobufFE: unknown primitive/arg combo " ++ show primname
+
+mkPrimCall name args annot =
+    let emptyAnnot = ExprAnnot [] (MissingSourceRange "prim") [] in
+    E_CallAST annot (E_PrimAST emptyAnnot name) args
 
 parseCompiles pbexpr range = do
     let numChildren = Seq.length $ PbExpr.parts pbexpr
@@ -150,11 +153,12 @@ parseFn pbexpr = do annot <- parseAnnot pbexpr
                     let formals = toList $ PBValAbs.formals valabs
                     let tyformals = map parseTypeFormal $
                                         toList $ PBValAbs.type_formals valabs
-                    return $ (FnAST annot name tyformals
-                               (map parseFormal formals) body
+                    parsedFormals <- mapM parseFormal formals
+                    return $ (FnAST annot name tyformals parsedFormals body
                                False) -- assume closure until proven otherwise
   where
-     parseFormal (Formal u t) = TypedId (parseType t) (Ident (pUtf8ToText u) 0)
+     parseFormal (Formal u t) = do pt <- parseType t
+                                   return $ TypedId pt (Ident (pUtf8ToText u) 0)
 
 parseValAbs pbexpr range = liftM (E_FnAST range) (parseFn pbexpr)
 
@@ -216,18 +220,19 @@ parseSeq pbexpr annot = do
 
 parseTyApp pbexpr range = do
     [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
-    let tys = map parseType (toList $ PbExpr.ty_app_arg_type pbexpr)
+    tys <- mapM parseType (toList $ PbExpr.ty_app_arg_type pbexpr)
     return $ E_TyApp range  body tys
 
 parseTyCheck pbexpr range = do
     [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
-    let Just ty = fmap parseType (PbExpr.type' pbexpr)
+    Just ty <- mapMaybeM parseType (PbExpr.type' pbexpr)
     return $ E_TyCheck range body ty
 
-parseEVar pbexpr range = do return $ E_VarAST range (parseVar pbexpr)
+parseEVar pbexpr range = liftM (E_VarAST range) (parseVar pbexpr)
 
-parseVar pbexpr = do VarAST (fmap parseType (PbExpr.type' pbexpr))
-                            (getName "var" $ PbExpr.string_value pbexpr)
+parseVar pbexpr = do
+    mb_pt <- mapMaybeM parseType (PbExpr.type' pbexpr)
+    return $ VarAST mb_pt (getName "var" $ PbExpr.string_value pbexpr)
 
 parsePattern :: PbExpr.Expr -> FE (EPattern TypeP)
 parsePattern pbexpr = do
@@ -329,19 +334,24 @@ parseDataType dt = do
  where
   parseDataCtor :: [TypeFormalAST] -> DataCtor.DataCtor -> FE (Foster.Base.DataCtor TypeP)
   parseDataCtor tyf ct = do
-      let types = map parseType (toList $ DataCtor.type' ct)
+      types <- mapM parseType (toList $ DataCtor.type' ct)
       let name  = pUtf8ToText $ DataCtor.name ct
       range <- case DataCtor.range ct of
             Nothing -> return $ MissingSourceRange (T.unpack name)
             Just r  -> parseSourceRange r
       return $ Foster.Base.DataCtor name tyf types range
 
+parseModule :: String -> String -> [Decl] -> [Defn] -> [DataType.DataType] -> FE (ModuleAST FnAST TypeP)
 parseModule _name hash decls defns datatypes = do
     lines <- gets feModuleLines
     funcs <- sequence $ [(parseFn e)  | (Defn _nm e) <- defns]
     dtypes <- mapM parseDataType datatypes
+    let processDecl (Decl nm t) = do
+              pt <- parseType t
+              return (uToString nm, pt)
+    processedDecls <- mapM processDecl decls
     return $ ModuleAST hash (map toplevel funcs)
-                [(uToString nm, parseType t) | (Decl nm t) <- decls]
+                processedDecls
                 dtypes
                 lines
                 primitiveDataTypesP
@@ -493,22 +503,23 @@ parseWholeProgram pgm =
   let mods = map parseSourceModule (toList $ WholeProgram.modules pgm) in
   WholeProgramAST mods
 
-parseType :: Type -> TypeP
+parseType :: Type -> FE TypeP
 parseType t =
     case PbType.tag t of
          PbTypeTag.TYVAR ->
                 let name@(c:_) = T.unpack (getName "type name" $ PbType.name t) in
-                if Just True == PbType.is_placeholder t
+                return $
+                 if Just True == PbType.is_placeholder t
                   then MetaPlaceholder name
                   else if isLower c then TyVarP (BoundTyVar name)
                                     else TyConAppP name []
          PbTypeTag.FN -> fromMaybe (error "Protobuf node tagged FN without fnty field!")
                                    (fmap parseFnTy $ PbType.fnty t)
-         PbTypeTag.TUPLE -> TupleTypeP [parseType p | p <- toList $ PbType.type_parts t]
-         PbTypeTag.TYPE_TYP_APP ->
-                 let (base:types) = [parseType p | p <- toList $ PbType.type_parts t] in
+         PbTypeTag.TUPLE -> liftM TupleTypeP $ sequence [parseType p | p <- toList $ PbType.type_parts t]
+         PbTypeTag.TYPE_TYP_APP -> do
+                 (base:types) <- sequence [parseType p | p <- toList $ PbType.type_parts t]
                  case base of
-                   TyConAppP nm [] -> TyConAppP nm types
+                   TyConAppP nm [] -> return $ TyConAppP nm types
                    _ -> error $ "ProtobufFE.parseType -- expected base of TYPE_TYP_APP to be TyConAppAST"
 
          PbTypeTag.REF       -> error "Ref types not yet implemented"
@@ -516,13 +527,21 @@ parseType t =
          PbTypeTag.CARRAY    -> error "Parsing for CARRAY type not yet implemented"
          PbTypeTag.FORALL_TY -> let [ty] = toList $ PbType.type_parts t in
                                 let tyformals = toList $ PbType.tyformals t in
-                                ForAllP (map parseTypeFormal tyformals)
-                                        (parseType ty)
+                                liftM (ForAllP (map parseTypeFormal tyformals))
+                                               (parseType ty)
 
-parseFnTy :: FnType -> TypeP
-parseFnTy fty =
-  FnTypeP (map parseType (toList $ PbFnType.arg_types fty))
-            (parseType $ PbFnType.ret_type fty)
+parseFnTy :: FnType -> FE TypeP
+parseFnTy fty = do
+ argtypes <- mapM parseType (toList $ PbFnType.arg_types fty)
+ rettype  <- parseType $ PbFnType.ret_type fty
+ precond <- case PbFnType.precond fty of
+              Nothing -> return Nothing
+              {-
+              Just pp -> do annot <- parseAnnot pp
+                            liftM Just $ parseValAbs pp annot
+                            -}
+ return $
+  FnTypeP argtypes rettype precond
             (parseCallConv (fmap uToString $ PbFnType.calling_convention fty))
             (ftFuncIfClosureElseProc fty)
   where ftFuncIfClosureElseProc fty =

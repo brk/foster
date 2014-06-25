@@ -13,12 +13,11 @@ module Foster.ExprAST(
 )
 where
 
-import Foster.Base(Expr(..), freeVars, identPrefix, Structured(..),
-                   SourceRanged(..), TypedId(..), butnot, ArrayIndex(..),
+import Foster.Base(Structured(..),
+                   SourceRanged(..), TypedId(..), ArrayIndex(..),
                    AllocMemRegion, childrenOfArrayIndex, ArrayEntry,
-                   CaseArm(..), caseArmExprs,
+                   CaseArm(..), caseArmExprs, EPattern(..), E_VarAST(..),
                    ExprAnnot(..), rangeOf, annotComments, showComments)
-import Foster.TypeAST(TypeAST, EPattern(..), E_VarAST(..))
 import Foster.Kind
 
 import Text.PrettyPrint.ANSI.Leijen
@@ -171,35 +170,8 @@ exprAnnot e = case e of
 
 instance SourceRanged (ExprAST ty) where rangeOf e = rangeOf (exprAnnot e)
 
--- The free-variable determination logic here is tested in
---      test/bootstrap/testcases/rec-fn-detection
-instance Expr (ExprAST TypeAST) where
-  freeVars e = case e of
-    E_LetAST _rng (TermBinding v b) e ->
-                                freeVars b ++ (freeVars e `butnot` [evarName v])
-    E_LetRec _rng nest _ -> concatMap freeVars (childrenOf e) `butnot`
-                                          [evarName v | TermBinding v _ <- nest]
-    E_Case _rng e arms   -> freeVars e ++ (concatMap caseArmFreeVars arms)
-    E_FnAST _rng f       -> let bodyvars  = freeVars (fnAstBody f) in
-                            let boundvars = map (identPrefix.tidIdent) (fnFormals f) in
-                            bodyvars `butnot` boundvars
-    E_VarAST _rng v      -> [evarName v]
-    _                    -> concatMap freeVars (childrenOf e)
-
-freeVarsMb Nothing  = []
-freeVarsMb (Just e) = freeVars e
-
-caseArmFreeVars (CaseArm epat body guard _ _) =
-  (freeVars body ++ freeVarsMb guard) `butnot` epatBoundNames epat
-  where epatBoundNames :: EPattern ty -> [T.Text]
-        epatBoundNames epat =
-          case epat of
-            EP_Wildcard {}        -> []
-            EP_Variable _rng evar -> [evarName evar]
-            EP_Ctor     {}        -> []
-            EP_Bool     {}        -> []
-            EP_Int      {}        -> []
-            EP_Tuple    _rng pats -> concatMap epatBoundNames pats
-
+instance Pretty Kind where
+  pretty KindAnySizeType = text "Type"
+  pretty KindPointerSized = text "Boxed"
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

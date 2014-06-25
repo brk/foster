@@ -50,7 +50,7 @@ parSubstTy prvNextPairs ty =
         TupleTypeAST types   -> TupleTypeAST (map q types)
         RefTypeAST   t       -> RefTypeAST   (q t)
         ArrayTypeAST t       -> ArrayTypeAST (q t)
-        FnTypeAST ss t cc cs -> FnTypeAST    (map q ss) (q t) cc cs -- TODO unify calling convention?
+        FnTypeAST ss t p cc cs -> FnTypeAST    (map q ss) (q t) p cc cs -- TODO unify calling convention?
         CoroTypeAST s t      -> CoroTypeAST (q s) (q t)
         ForAllAST ktvs rho   ->
                 let prvNextPairs' = prvNextPairs `assocFilterOut` (map fst ktvs)
@@ -70,7 +70,7 @@ tySubst subst ty =
         RefTypeAST    t        -> RefTypeAST   (q t)
         ArrayTypeAST  t        -> ArrayTypeAST (q t)
         TupleTypeAST types     -> TupleTypeAST (map q types)
-        FnTypeAST ss t cc cs   -> FnTypeAST    (map q ss) (q t) cc cs
+        FnTypeAST ss t p cc cs -> FnTypeAST    (map q ss) (q t) p cc cs
         CoroTypeAST s t        -> CoroTypeAST (q s) (q t)
         ForAllAST tvs rho      -> ForAllAST tvs (q rho)
 
@@ -136,12 +136,18 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
     -- Mismatches between unitary tuple types probably indicate
     -- parsing/function argument handling mismatch.
 
-    ((FnTypeAST as1 a2 _cc1 _), (FnTypeAST bs1 b2 _cc2 _)) ->
-        if List.length as1 /= List.length bs1
+    ((FnTypeAST as1 a1 p1 _cc1 _), (FnTypeAST as2 a2 p2 _cc2 _)) -> do
+        case (p1, p2) of
+          (Nothing, Nothing) -> return ()
+          _ -> tcLift $ do putStrLn $ "TODO: type inference `unifying' preconditions"
+                           putStrLn $ "\t" ++ show p1
+                           putStrLn $ "and"
+                           putStrLn $ "\t" ++ show p2
+        if List.length as1 /= List.length as2
           then tcFailsMore [string "Unable to unify functions of different arity!\n"
-                           <> pretty as1 <> string "\nvs\n" <> pretty bs1]
-          else tcUnifyLoop ([TypeConstrEq a b | (a, b) <- zip as1 bs1]
-                         ++ (TypeConstrEq a2 b2):constraints) tysub
+                           <> pretty as1 <> string "\nvs\n" <> pretty as2]
+          else tcUnifyLoop ([TypeConstrEq a b | (a, b) <- zip as1 as2]
+                         ++ (TypeConstrEq a1 a2):constraints) tysub
 
     ((CoroTypeAST a1 a2), (CoroTypeAST b1 b2)) ->
         tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
@@ -173,6 +179,9 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
         [string "Unable to unify\n\t" <> pretty t1 <> string "\nand\n\t" <> pretty t2
         ,text "t1::", showStructure t1, text "t2::", showStructure t2
         ,msg]
+
+instance Show TypeAST where show t = show (pretty t)
+instance Show (Wrapped_ExprAST) where show (Wrapped_ExprAST e) = show e
 
 tcUnifyVar :: MetaTyVar TypeAST -> TypeAST -> TypeSubst -> [TypeConstraint] -> Tc UnifySoln
 

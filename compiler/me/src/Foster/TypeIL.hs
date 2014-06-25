@@ -10,8 +10,11 @@ import Foster.Base
 import Foster.Kind
 import Foster.TypeAST
 import Foster.Context
+import Foster.AnnExpr(AnnExpr)
 
 import Text.PrettyPrint.ANSI.Leijen
+
+newtype Wrapped_ExprIL = Wrapped_ExprIL (AnnExpr TypeIL)
 
 type RhoIL = TypeIL
 data TypeIL =
@@ -21,6 +24,7 @@ data TypeIL =
          | TupleTypeIL     [TypeIL]
          | FnTypeIL        { fnTypeILDomain :: [TypeIL]
                            , fnTypeILRange  :: TypeIL
+                           , fnTypeILPrecond :: Maybe () -- Wrapped_ExprIL
                            , fnTypeILCallConv :: CallConv
                            , fnTypeILProcOrFunc :: ProcOrFunc }
          | CoroTypeIL      TypeIL  TypeIL
@@ -52,7 +56,7 @@ instance Show TypeIL where
         PrimIntIL size       -> "(PrimIntIL " ++ show size ++ ")"
         PrimFloat64IL        -> "(PrimFloat64IL)"
         TupleTypeIL types    -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
-        FnTypeIL   s t cc cs -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
+        FnTypeIL   s t _precond cc cs -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
         CoroTypeIL s t       -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
         ForAllIL ktvs rho    -> "(ForAll " ++ show ktvs ++ ". " ++ show rho ++ ")"
         TyVarIL     tv kind  -> show tv ++ ":" ++ show kind
@@ -64,6 +68,16 @@ instance Show TypeIL where
 -- and lifts the data type using ilOf, which in turn gets called on the types
 -- of the data constructors, which can include TyConApps putting us in a loop!
 
+{-
+convertPrecond :: AnnExpr TypeAST -> Tc (AnnExpr TypeIL)
+convertPrecond e = do
+  error "..."
+
+convertPrecondWrapped :: Wrapped_ExprAST -> Tc Wrapped_ExprIL
+convertPrecondWrapped (Wrapped_ExprAST e) = do
+  convertPrecond e >>= return . Wrapped_ExprIL
+-}
+
 ilOf :: Context t -> TypeAST -> Tc TypeIL
 ilOf ctx typ = do
   let q = ilOf ctx
@@ -74,8 +88,9 @@ ilOf ctx typ = do
      PrimFloat64AST      -> do return $ PrimFloat64IL
      TupleTypeAST types  -> do tys <- mapM q types
                                return $ TupleTypeIL tys
-     FnTypeAST ss t cc cs-> do (y:xs) <- mapM q (t:ss)
-                               return $ FnTypeIL xs y cc cs
+     FnTypeAST ss t p cc cs -> do (y:xs) <- mapM q (t:ss)
+                                  p' <- return $ Just () -- mapMaybeM convertPrecond p
+                                  return $ FnTypeIL xs y p' cc cs
      CoroTypeAST s t     -> do [x,y] <- mapM q [s,t]
                                return $ CoroTypeIL x y
      RefTypeAST ty       -> do t <- q ty
@@ -176,7 +191,7 @@ instance Structured TypeIL where
             PrimIntIL       {}     -> []
             PrimFloat64IL          -> []
             TupleTypeIL     types  -> types
-            FnTypeIL  ss t _cc _cs -> ss++[t]
+            FnTypeIL  ss t _precond _cc _cs -> ss++[t]
             CoroTypeIL s t         -> [s,t]
             ForAllIL  _ktvs rho    -> [rho]
             TyVarIL        _tv _   -> []

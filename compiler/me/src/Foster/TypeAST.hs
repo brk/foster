@@ -5,8 +5,8 @@
 -----------------------------------------------------------------------------
 
 module Foster.TypeAST(
-  TypeAST(..), EPattern(..), E_VarAST(..), IntSizeBits(..), AnnVar
-, MetaTyVar(..), Sigma, Rho, Tau, MTVQ(..)
+  TypeAST, TypeAST'(..), IntSizeBits(..), AnnVar, Wrapped_ExprAST(..)
+, MetaTyVar(..), Sigma, Rho, Tau, MTVQ(..), Sigma', Rho', Tau'
 , fosBoolType, fosStringType
 , minimalTupleAST
 , mkFnType, convertTyFormal
@@ -20,28 +20,37 @@ import Text.PrettyPrint.ANSI.Leijen
 
 import Foster.Base
 import Foster.Kind
+import Foster.ExprAST
 
 type AnnVar = TypedId TypeAST
 
-type Sigma = TypeAST
-type Rho   = TypeAST -- No top-level ForAll
-type Tau   = TypeAST -- No ForAlls anywhere
+type Sigma' = TypeAST'
+type Rho'   = TypeAST' -- No top-level ForAll
+type Tau'   = TypeAST' -- No ForAlls anywhere
 
-data TypeAST =
+type Sigma = Sigma' Wrapped_ExprAST
+type Rho = Rho' Wrapped_ExprAST
+type Tau = Tau' Wrapped_ExprAST
+
+type TypeAST = TypeAST' (Wrapped_ExprAST)
+newtype Wrapped_ExprAST = Wrapped_ExprAST (ExprAST TypeAST)
+
+data TypeAST' precond =
            PrimIntAST       IntSizeBits
          | PrimFloat64AST
-         | TyConAppAST      DataTypeName [Sigma]
-         | TupleTypeAST     [Sigma]
-         | CoroTypeAST      Sigma Sigma
-         | RefTypeAST       Sigma
-         | ArrayTypeAST     Sigma
-         | FnTypeAST        { fnTypeDomain :: [Sigma]
-                            , fnTypeRange  :: Sigma
+         | TyConAppAST      DataTypeName [Sigma' precond]
+         | TupleTypeAST     [Sigma' precond]
+         | CoroTypeAST      (Sigma' precond) (Sigma' precond)
+         | RefTypeAST       (Sigma' precond)
+         | ArrayTypeAST     (Sigma' precond)
+         | FnTypeAST        { fnTypeDomain :: [Sigma' precond]
+                            , fnTypeRange  ::  Sigma' precond
+                            , fnTypePrecond :: Maybe precond
                             , fnTypeCallConv :: CallConv
                             , fnTypeProcOrFunc :: ProcOrFunc }
-         | ForAllAST        [(TyVar, Kind)] Rho
+         | ForAllAST        [(TyVar, Kind)] (Rho' precond)
          | TyVarAST         TyVar
-         | MetaTyVar        (MetaTyVar TypeAST)
+         | MetaTyVar        (MetaTyVar (TypeAST' precond))
 
 instance Eq (MetaTyVar t) where
   m1 == m2 = case (mtvUniq m1 == mtvUniq m2, mtvRef m1 == mtvRef m2) of
@@ -60,7 +69,7 @@ instance Pretty TypeAST where
         PrimFloat64AST                  -> text "Float64"
         TyConAppAST  tcnm types         -> parens $ text tcnm <> hpre (map pretty types)
         TupleTypeAST      types         -> tupled $ map pretty types
-        FnTypeAST    s t cc cs          -> text "(" <> pretty s <> text " =" <> text (briefCC cc) <> text "> " <> pretty t <> text " @{" <> text (show cs) <> text "})"
+        FnTypeAST    s t p cc cs        -> text "(" <> pretty s <> text " =" <> text (briefCC cc) <> text "> " <> pretty t <> text " @{" <> text (show cs) <> text "})"
         CoroTypeAST  s t                -> text "(Coro " <> pretty s <> text " " <> pretty t <> text ")"
         ForAllAST  tvs rho              -> text "(forall " <> hsep (prettyTVs tvs) <> text ". " <> pretty rho <> text ")"
         TyVarAST   tv                   -> text (show tv)
@@ -69,10 +78,6 @@ instance Pretty TypeAST where
         ArrayTypeAST  ty                -> text "(Array " <> pretty ty <> text ")"
 
 prettyTVs tvs = map (\(tv,k) -> parens (pretty tv <+> text "::" <+> pretty k)) tvs
-
-instance Pretty Kind where
-  pretty KindAnySizeType = text "Type"
-  pretty KindPointerSized = text "Boxed"
 
   {-
 instance Show TypeAST where
@@ -100,7 +105,7 @@ instance Structured TypeAST where
             PrimFloat64AST                 -> text $ "PrimFloat64"
             TyConAppAST    tc  _           -> text $ "TyConAppAST " ++ tc
             TupleTypeAST       _           -> text $ "TupleTypeAST"
-            FnTypeAST    _ _  _  _         -> text $ "FnTypeAST"
+            FnTypeAST    _ _  _ _ _        -> text $ "FnTypeAST"
             CoroTypeAST  _ _               -> text $ "CoroTypeAST"
             ForAllAST  tvs _rho            -> text $ "ForAllAST " ++ show tvs
             TyVarAST   tv                  -> text $ "TyVarAST " ++ show tv
@@ -114,7 +119,7 @@ instance Structured TypeAST where
             PrimFloat64AST                 -> []
             TyConAppAST   _tc types        -> types
             TupleTypeAST      types        -> types
-            FnTypeAST   ss t _ _           -> ss ++ [t]
+            FnTypeAST   ss t _ _ _         -> ss ++ [t]
             CoroTypeAST  s t               -> [s, t]
             ForAllAST  _tvs rho            -> [rho]
             TyVarAST   _tv                 -> []
@@ -131,8 +136,8 @@ minimalTupleAST []    = TupleTypeAST []
 minimalTupleAST [arg] = arg
 minimalTupleAST args  = TupleTypeAST args
 
-mkProcType args rets = FnTypeAST args (minimalTupleAST rets) CCC    FT_Proc
-mkFnType   args rets = FnTypeAST args (minimalTupleAST rets) FastCC FT_Func
+mkProcType args rets = FnTypeAST args (minimalTupleAST rets) Nothing CCC    FT_Proc
+mkFnType   args rets = FnTypeAST args (minimalTupleAST rets) Nothing FastCC FT_Func
 mkCoroType args rets = CoroTypeAST (minimalTupleAST args) (minimalTupleAST rets)
 i8  = PrimIntAST I8
 i32 = PrimIntAST I32

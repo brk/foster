@@ -9,7 +9,6 @@ module Foster.KNUtil where
 
 import Foster.Base
 
-import Foster.MonoType
 import Foster.TypeIL
 import Foster.Kind
 
@@ -66,10 +65,8 @@ data KNExpr' r ty =
 
 type KNExpr     = KNExpr' () TypeIL
 type KNExprFlat = KNExpr' () TypeIL
-type KNMono     = KNExpr' RecStatus MonoType
 
 type FnExprIL = Fn () KNExpr TypeIL
-type FnMono   = Fn RecStatus KNMono MonoType
 
 --------------------------------------------------------------------
 
@@ -365,14 +362,8 @@ knSizeHead expr = case expr of
 renderKN m put = if put then putDoc (pretty m) >>= (return . Left)
                         else return . Right $ show (pretty m)
 
-renderKNM :: (ModuleIL (KNMono) MonoType) -> String
-renderKNM m = show (pretty m)
-
 renderKNF :: FnExprIL -> String
 renderKNF m = show (pretty m)
-
-renderKNFM :: FnMono -> String
-renderKNFM m = show (pretty m)
 
 showTyped :: Pretty t => Doc -> t -> Doc
 showTyped d t = parens (d <+> text "::" <+> pretty t)
@@ -383,20 +374,6 @@ comment d = text "/*" <+> d <+> text "*/"
 
 instance Pretty TypeIL where
   pretty t = text (show t)
-
-instance Pretty MonoType where
-  pretty t = case t of
-          PrimInt        isb          -> pretty isb
-          PrimFloat64                 -> text "Float64"
-          TyConApp       dt ts        -> text "(" <> pretty dt <+> tupled (map pretty ts) <> text "]"
-          TupleType      ts           -> tupled (map pretty ts)
-          StructType     ts           -> text "#" <> tupled (map pretty ts)
-          FnType         ts r _cc _pf -> text "{" <+> hsep [pretty t <+> text "=>" | t <- ts]
-                                                  <+> pretty r <+> text "}"
-          CoroType      _s _r         -> text "Coro..."
-          ArrayType      t            -> text "Array" <+> pretty t
-          PtrType        t            -> text "Ref" <+> pretty t
-          PtrTypeUnknown              -> text "?"
 
 instance Pretty AllocMemRegion where
   pretty rgn = text (show rgn)

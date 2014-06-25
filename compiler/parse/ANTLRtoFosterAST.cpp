@@ -408,7 +408,7 @@ std::vector<TypeFormal> parseTyFormals(pTree t, KindAST* defaultKind) {
 }
 
 // ^(VAL_ABS ^(FORMALS formals) ^(MU tyvar_decl*) stmts?)
-ExprAST* parseValAbs(pTree tree) {
+ValAbs* parseValAbs(pTree tree) {
   std::vector<Formal> formals;
   parseFormals(formals, child(tree, 0));
   std::vector<TypeFormal> tyVarFormals = parseTyFormals(child(tree, 1),
@@ -1014,13 +1014,18 @@ void parseAnnots(std::map<string, string>& annots,
   }
 }
 
-// ^(FUNC_TYPE ^(TUPLE t+) tannots?)
+// ^(FUNC_TYPE ^(TUPLE t+) ^(MU val_abs?) tannots?)
 TypeAST* parseFuncType(pTree tree) {
   std::vector<TypeAST*> types = getTypes(child(tree, 0));
   TypeAST* rt = types.back(); types.pop_back();
 
+  pTree tprecond = child(tree, 2);
+  ValAbs* precond = (tprecond && getChildCount(tprecond) == 1)
+                       ? parseValAbs(child(tprecond, 0))
+                       : NULL;
+
   std::map<string, string> annots;
-  if (getChildCount(tree) == 2) {
+  if (getChildCount(tree) == 3) {
     parseAnnots(annots, child(tree, 1));
   }
 
@@ -1030,7 +1035,7 @@ TypeAST* parseFuncType(pTree tree) {
   if (annots["callconv"] == "") {
     annots["callconv"] = isProc ? "ccc" : "fastcc";
   }
-  return new FnTypeAST(rt, types, annots);
+  return new FnTypeAST(rt, types, precond, annots);
 }
 
 // ^(TYPEVAR a)

@@ -130,8 +130,9 @@ kNormalize ctorRepr expr =
             nestedLets [q] (\[z] -> KNStore (TupleTypeIL []) z y)
 
         knCall t a vs =
-          case (tidType a) of
-              FnTypeIL tys _ _ _ -> do
+          case tidType a of
+              ft@(FnTypeIL {}) -> do
+                  let tys  = fnTypeILDomain ft
                   let args = map varOrThunk (zip vs tys)
                   nestedLets args (\xs -> KNCall t a xs)
               _ -> error $ "knCall: Called var had non-function type!\n\t" ++
@@ -165,7 +166,7 @@ kNormalize ctorRepr expr =
 
               go' clump arms = do
                   kid <- knFresh "kont"
-                  let kty = FnTypeIL [] t FastCC FT_Proc
+                  let kty = FnTypeIL [] t Nothing FastCC FT_Proc
                   let kontOf body = Fn {
                           fnVar      = TypedId kty (GlobalSymbol (T.pack $ show kid))
                         , fnVars     = []
@@ -241,10 +242,10 @@ varOrThunk (a, targetType) = do
     unForAll             t  = t
     needsClosureWrapper a ty =
       case (tidType a, unForAll ty) of
-        (                      FnTypeIL x y z FT_Proc,  FnTypeIL _ _ _ FT_Func) ->
-            Just $             FnTypeIL x y z FT_Func
-        (          ForAllIL t (FnTypeIL x y z FT_Proc), FnTypeIL _ _ _ FT_Func) ->
-            Just $ ForAllIL t (FnTypeIL x y z FT_Func)
+        (                      FnTypeIL x y p z FT_Proc,  FnTypeIL _ _ _ _ FT_Func) ->
+            Just $             FnTypeIL x y p z FT_Func
+        (          ForAllIL t (FnTypeIL x y p z FT_Proc), FnTypeIL _ _ _ _ FT_Func) ->
+            Just $ ForAllIL t (FnTypeIL x y p z FT_Func)
         _ -> Nothing
 
     withThunkFor :: AIVar -> TypeIL -> KN KNExpr
@@ -464,8 +465,8 @@ kNormalCtors ctx ctorRepr dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dty
                   , fnAnnot = ExprAnnot [] range []
                   } where resty =
                             case tidType tid of
-                                 FnTypeIL _ r _ _ -> r
-                                 ForAllIL _ (FnTypeIL _ r _ _) -> r
+                                 FnTypeIL _ r _ _ _ -> r
+                                 ForAllIL _ (FnTypeIL _ r _ _ _) -> r
       case termVarLookup cname (contextBindings ctx) of
         Nothing -> case termVarLookup cname (nullCtorBindings ctx) of
           Nothing -> error $ "Unable to find binder for constructor " ++ show cname
@@ -478,7 +479,7 @@ kNormalCtors ctx ctorRepr dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dty
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 thunk (ForAllIL ktvs rho) = ForAllIL ktvs (thunk rho)
-thunk ty = FnTypeIL [] ty FastCC FT_Proc
+thunk ty = FnTypeIL [] ty Nothing FastCC FT_Proc
 
 -- |||||||||||||||||||||||||| Local Block Sinking |||||||||||||||{{{
 
@@ -2102,7 +2103,7 @@ inlineBitcastedFunction v' ty vs env = do
     -- inlining, that won't work -- we need to bitcast every parameter
     -- with a type mismatch (not just those that are PtrTypeUnknown),
     -- and possibly also the result.
-    let (FnType tys tyr _ _) = tidType v'
+    let (FnType tys tyr _ _ _) = tidType v'
     binders_ref <- newRef []
     vs' <- mapM (\(ty, vorig) -> do
       if ty == tidType vorig

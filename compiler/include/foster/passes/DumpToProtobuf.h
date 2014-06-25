@@ -8,18 +8,15 @@
 #include "_generated_/FosterAST.pb.h"
 
 struct DumpToProtobufPass {
-  foster::fepb::Expr* current;
-  DumpToProtobufPass() : current(NULL) {}
+  foster::fepb::Expr* exp;
+  foster::fepb::Type* typ;
+  DumpToProtobufPass() : exp(NULL), typ(NULL) {}
+  DumpToProtobufPass(foster::fepb::Expr* exp, foster::fepb::Type* typ) : exp(exp), typ(typ) {}
 };
 
 void dumpModule(DumpToProtobufPass* p,
                 foster::fepb::SourceModule& sm,
                 ModuleAST* mod);
-
-struct DumpTypeToProtobufPass {
-  foster::fepb::Type* current;
-  DumpTypeToProtobufPass(foster::fepb::Type* current) : current(current) {}
-};
 
 #endif // header guard
 

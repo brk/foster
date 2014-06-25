@@ -11,7 +11,7 @@ import Foster.Kind
 import Foster.Context
 import Foster.AnnExpr
 import Foster.TypeIL
-import Foster.TypeAST(TypeAST(PrimIntAST, MetaTyVar))
+import Foster.TypeAST(TypeAST, TypeAST'(PrimIntAST, MetaTyVar))
 
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T

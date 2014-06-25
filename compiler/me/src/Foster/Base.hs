@@ -467,6 +467,9 @@ showStructure e = showStructureP e "" False
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||||||||| Utilities ||||||||||||||||||||||||||{{{
 
+mapMaybeM _ Nothing = return Nothing
+mapMaybeM f (Just x) = f x >>= return . Just
+
 -- | Does what it says on the tin: monadic foldl'
 foldlM :: (Monad m) => (a -> b -> m a) -> a -> [b] -> m a
 foldlM _ a      [] = return a

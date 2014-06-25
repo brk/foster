@@ -46,6 +46,7 @@ import Foster.Context
 import Foster.CloConv(closureConvertAndLift, renderCC, CCBody(..))
 import Foster.Monomo
 import Foster.MonoType
+import Foster.KNStaticChecks
 import Foster.KSmallstep
 import Foster.MainCtorHelpers
 import Foster.ConvertExprAST
@@ -156,7 +157,7 @@ typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
           retTy  <- newTcUnificationVarSigma ("ret type for " ++ (T.unpack $ fnAstName f))
           argTys <- mapM annVarTemplate (fnFormals f)
           let procOrFunc = if fnWasToplevel f then FT_Proc else FT_Func
-          let fnTy = FnTypeAST argTys retTy FastCC procOrFunc
+          let fnTy = FnTypeAST argTys retTy Nothing FastCC procOrFunc
           case fnTyFormals f of
             []        -> return $ fnTy
             tyformals -> return $ ForAllAST (map convertTyFormal tyformals) fnTy
@@ -247,7 +248,7 @@ typecheckModule verboseMode modast tcenv0 = do
    -- Nullary constructors are constants; non-nullary ctors are functions.
    ctorTypeAST [] dtType [] = Left dtType
    ctorTypeAST [] dtType ctorArgTypes =
-                            Right $ FnTypeAST ctorArgTypes dtType FastCC FT_Proc
+                            Right $ FnTypeAST ctorArgTypes dtType Nothing FastCC FT_Proc
 
    ctorTypeAST tyformals dt ctorArgTypes =
      let f = ForAllAST (map convertTyFormal tyformals) in
@@ -297,7 +298,7 @@ typecheckModule verboseMode modast tcenv0 = do
                                               (E_AIVar (TypedId mainty (GlobalSymbol $ T.pack "main")))
                                               []
                               unit   = TupleTypeIL []
-                              mainty = FnTypeIL [unit] unit FastCC FT_Proc
+                              mainty = FnTypeIL [unit] unit Nothing FastCC FT_Proc
                           in foldr build call_of_main es
          where build :: [Fn () AIExpr TypeIL] -> AIExpr -> AIExpr
                build es body = case es of
@@ -390,7 +391,7 @@ main = do
 
 
 runCompiler pb_program flagVals outfile = do
-   uniqref <- newIORef 1
+   uniqref <- newIORef 2
    varlist <- newIORef []
    icmap   <- newIORef Map.empty
    let tcenv = TcEnv {       tcEnvUniqs = uniqref,
@@ -463,9 +464,13 @@ desugarParsedModule tcenv m = do
           CoroTypeP    s t       -> liftM2 CoroTypeAST       (q s) (q t)
           ForAllP    tvs t       -> liftM (ForAllAST $ map convertTyFormal tvs) (q t)
           TyVarP     tv          -> do return $ TyVarAST tv
-          FnTypeP      s t cc cs -> do s' <- mapM q s
-                                       t' <- q t
-                                       return $ FnTypeAST      s' t' cc cs
+          FnTypeP      s t p cc cs -> do s' <- mapM q s
+                                         t' <- q t
+                                         p' <- case p of
+                                                 Nothing -> return Nothing
+                                                 Just pp ->
+                                                    convertExprAST q pp >>= return . Just . Wrapped_ExprAST
+                                         return $ FnTypeAST      s' t' p' cc cs
           MetaPlaceholder desc -> do newTcUnificationVarTau desc
 
 typecheckSourceModule :: TcEnv ->  ModuleAST FnAST TypeAST
@@ -493,13 +498,14 @@ lowerModule ai_mod ctx_il = do
 
      kmod <- kNormalizeModule ai_mod ctx_il ctoropt
      monomod0 <- monomorphize   kmod
+     runStaticChecks monomod0
      monomod2 <- knLoopHeaders  monomod0
      (in_time, monomod4) <- ccTime $ (if inline then knInline insize donate else return) monomod2
      monomod  <- knSinkBlocks   monomod4
 
      whenDumpIR "kn" $ do
          putDocLn (outLn $ "vvvv k-normalized :====================")
-         putDocLn (showStructure (moduleILbody kmod))
+         putDocLn (showStructure (moduleILbody monomod0))
          _ <- liftIO $ renderKN kmod True
          return ()
 
@@ -612,7 +618,8 @@ showGeneratedMetaTypeVariables varlist ctx_il =
     putDocLn $ (outLn "vvvv contextBindings:====================")
     putDocLn $ (dullyellow $ vcat $ map (text . show) (Map.toList $ contextBindings ctx_il))
 
-dumpPrimitive (name, ((FnTypeAST args ret _ _), _primop)) = do
+dumpPrimitive :: (String, (TypeAST, FosterPrim TypeAST)) -> IO ()
+dumpPrimitive (name, ((FnTypeAST args ret _precond _ _), _primop)) = do
   let allNames = "abcdefghijklmnop"
   let namesArgs = [(text (name:[]) , arg) | (name, arg) <- zip allNames args]
   let textid str = if Char.isAlphaNum (head str)

@@ -519,7 +519,7 @@ FnTypeAST* parseProcType(const bepb::ProcType& fnty) {
     << "must provide calling convention for all function types!";
   std::map<std::string, std::string> annots;
   annots["callconv"] = fnty.calling_convention();
-  return new FnTypeAST(retTy, argTypes, annots);
+  return new FnTypeAST(retTy, argTypes, NULL, annots);
 }
 
 

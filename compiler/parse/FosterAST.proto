@@ -54,6 +54,7 @@ message FnType {
   required Type ret_type  = 2;
   optional string calling_convention = 3;
   optional bool   is_closure = 4;
+  optional PBValAbs  precond = 5;
 }
 
 message Formal {
@@ -85,7 +86,7 @@ message Expr {
     BOOL      = 18;
     LET       = 19;
     VAL_ABS   = 21;
-    UNTIL     = 22;
+
     CALL      = 23;
     CALLPRIM  = 33;
     SEQ       = 24;

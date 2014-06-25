@@ -519,7 +519,7 @@ struct LLProcStringOfCStringPrim : public LLProcPrimBase {
       argTypes.push_back(TypeAST::i(32));
       std::map<std::string, std::string> annots; annots["callconv"] = "ccc";
       this->type = new FnTypeAST(foster::ParsingContext::lookupType("Text"),
-                                                              argTypes, annots);
+                                 argTypes, NULL, annots);
   }
   virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) {
     Function::arg_iterator AI = F->arg_begin();
@@ -538,7 +538,7 @@ struct LLProcGetCmdlineArgPrim : public LLProcPrimBase {
       argTypes.push_back(TypeAST::i(32));
       std::map<std::string, std::string> annots; annots["callconv"] = "ccc";
       this->type = new FnTypeAST(foster::ParsingContext::lookupType("Text"),
-                                                              argTypes, annots);
+                                 argTypes, NULL, annots);
   }
   virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) {
     Function::arg_iterator AI = F->arg_begin();
