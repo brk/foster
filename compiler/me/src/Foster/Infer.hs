@@ -10,6 +10,7 @@ import qualified Data.Map as Map(lookup, empty, insert, findWithDefault, singlet
 import qualified Data.List as List(length, elem, lookup)
 import Data.Maybe(fromMaybe)
 import Text.PrettyPrint.ANSI.Leijen
+import Data.IORef(readIORef, writeIORef)
 
 import Foster.Base
 import Foster.TypeTC
@@ -44,18 +45,19 @@ parSubstTcTy prvNextPairs ty =
     let q = parSubstTcTy prvNextPairs in
     case ty of
         TyVarTC  tv          -> fromMaybe ty $ List.lookup tv prvNextPairs
-        MetaTyVarTC {}       -> ty
-        PrimIntTC  _         -> ty
-        PrimFloat64TC        -> ty
-        TyConAppTC  nm tys   -> TyConAppTC  nm (map q tys)
-        TupleTypeTC  types   -> TupleTypeTC  (map q types)
+        MetaTyVarTC   {}     -> ty
+        PrimIntTC     {}     -> ty
+        PrimFloat64TC {}     -> ty
+        TyConAppTC  nm tys rr -> TyConAppTC  nm (map q tys) rr
+        TupleTypeTC  types rr -> TupleTypeTC  (map q types) rr
         RefTypeTC    t       -> RefTypeTC    (q t)
-        ArrayTypeTC  t       -> ArrayTypeTC  (q t)
+        ArrayTypeTC  t    rr -> ArrayTypeTC  (q t) rr
         FnTypeTC  ss t cc cs -> FnTypeTC     (map q ss) (q t) cc cs -- TODO unify calling convention?
         CoroTypeTC  s t      -> CoroTypeTC  (q s) (q t)
         ForAllTC  ktvs rho   ->
                 let prvNextPairs' = prvNextPairs `assocFilterOut` (map fst ktvs)
                 in  ForAllTC  ktvs (parSubstTcTy prvNextPairs' rho)
+        RefinedTypeTC nm t e -> RefinedTypeTC nm (q t) e -- TODO recurse in e?
 
 -- Replaces types for meta type variables (unification variables)
 -- according to the given type substitution.
@@ -64,22 +66,61 @@ tySubst subst ty =
     let q = tySubst subst in
     case ty of
         MetaTyVarTC m          -> Map.findWithDefault ty (mtvUniq m) subst
-        PrimIntTC    {}        -> ty
-        PrimFloat64TC          -> ty
-        TyVarTC      {}        -> ty
-        TyConAppTC   nm tys    -> TyConAppTC   nm (map q tys)
+        PrimIntTC     {}       -> ty
+        PrimFloat64TC {}       -> ty
+        TyVarTC       {}       -> ty
+        TyConAppTC   nm tys rr -> TyConAppTC   nm (map q tys) rr
         RefTypeTC     t        -> RefTypeTC    (q t)
-        ArrayTypeTC   t        -> ArrayTypeTC  (q t)
-        TupleTypeTC  types     -> TupleTypeTC  (map q types)
+        ArrayTypeTC   t     rr -> ArrayTypeTC  (q t) rr
+        TupleTypeTC  types  rr -> TupleTypeTC  (map q types) rr
         FnTypeTC  ss t cc cs   -> FnTypeTC     (map q ss) (q t) cc cs
         CoroTypeTC  s t        -> CoroTypeTC  (q s) (q t)
         ForAllTC  tvs rho      -> ForAllTC  tvs (q rho)
+        RefinedTypeTC nm t e   -> RefinedTypeTC nm (q t) e
 
 -------------------------------------------------
 illegal (TyVarTC (BoundTyVar _)) = True
 illegal (ForAllTC {})            = True
 illegal _                        = False
 -------------------------------------------------
+
+mbGetRefinement ty = case ty of
+    PrimIntTC   _               rr -> Just rr
+    PrimFloat64TC               rr -> Just rr
+    ArrayTypeTC   _             rr -> Just rr
+    TyConAppTC    _  _types     rr -> Just rr
+    TupleTypeTC      _types     rr -> Just rr
+    _ -> Nothing
+
+refineRefinement (NoRefinement nope) (nm,_) = do
+     msg <- getStructureContextMessage
+     tcFailsMore [text $ "Infer.hs: Unable to unify refinement for " ++ nm ++ " due to no-refinement from " ++ nope
+                 , msg]
+refineRefinement (MbRefinement r) v = do
+  mbr <- tcLift $ readIORef r
+  case mbr of
+    Nothing -> tcLift $ writeIORef r (Just v)
+    Just v' -> tcAddRefinementImplicationConstraint v v'
+
+tcUnifyRefinements   (NoRefinement _)   (NoRefinement _) = return ()
+tcUnifyRefinements n@(NoRefinement _) m@(MbRefinement _) = tcUnifyRefinements m n
+tcUnifyRefinements (MbRefinement r) (NoRefinement nope) = do
+ mbr <- tcLift $ readIORef r
+ case mbr of
+   Nothing -> return ()
+   Just (nm,_) -> do
+     msg <- getStructureContextMessage
+     tcFailsMore [text $ "Unable to unify refinement for " ++ nm ++ " due to no-refinement from " ++ nope
+                 , msg]
+tcUnifyRefinements (MbRefinement r1) (MbRefinement r2) = do
+ mbr1 <- tcLift $ readIORef r1
+ mbr2 <- tcLift $ readIORef r2
+ case (mbr1, mbr2) of
+   (Nothing, Nothing) -> return ()
+   (Just (nm1,_), Just (nm2,_)) ->
+     tcLift $ putStrLn $ "~~~~~~ TODO check refinements eq: " ++ show (nm1, nm2)
+   (v1, Nothing) -> tcLift $ writeIORef r2 v1
+   (Nothing, v2) -> tcLift $ writeIORef r1 v2
 
 tcUnifyTypes :: TypeTC -> TypeTC -> Tc UnifySoln
 tcUnifyTypes t1 t2 = tcUnify [TypeConstrEq t1 t2]
@@ -93,8 +134,9 @@ tcUnifyMoreTypes tys1 tys2 constraints tysub =
 tcUnifyLoop :: [TypeConstraint] -> TypeSubst -> Tc UnifySoln
 tcUnifyLoop [] tysub = return $ Just tysub
 
-tcUnifyLoop ((TypeConstrEq (PrimIntTC  I32) (PrimIntTC  I32)):constraints) tysub
-  = tcUnifyLoop constraints tysub
+tcUnifyLoop ((TypeConstrEq (PrimIntTC  I32 rr1) (PrimIntTC  I32 rr2)):constraints) tysub
+  = do tcUnifyRefinements rr1 rr2
+       tcUnifyLoop constraints tysub
 
 tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
  --tcLift $ putStrLn ("tcUnifyLoop: t1 = " ++ show t1 ++ "; t2 = " ++ show t2)
@@ -105,9 +147,12 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
         ,text "t1::", showStructure t1, text "t2::", showStructure t2]
   else
    case (t1, t2) of
-    (PrimFloat64TC , PrimFloat64TC ) -> tcUnifyLoop constraints tysub
-    ((PrimIntTC  n1), (PrimIntTC  n2)) ->
-      if n1 == n2 then tcUnifyLoop constraints tysub
+    (PrimFloat64TC rr1, PrimFloat64TC rr2) -> do
+      tcUnifyRefinements rr1 rr2
+      tcUnifyLoop constraints tysub
+    ((PrimIntTC  n1 rr1), (PrimIntTC  n2 rr2)) ->
+      if n1 == n2 then do tcUnifyRefinements rr1 rr2
+                          tcUnifyLoop constraints tysub
                   else do msg <- getStructureContextMessage
                           tcFailsMore [text $ "Unable to unify different primitive types: "
                                        ++ show n1 ++ " vs " ++ show n2
@@ -118,21 +163,23 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                      else tcFailsMore [text $ "Unable to unify different type variables: "
                                        ++ show tv1 ++ " vs " ++ show tv2]
 
-    ((TyConAppTC  nm1 tys1), (TyConAppTC  nm2 tys2)) ->
+    ((TyConAppTC  nm1 tys1 rr1), (TyConAppTC  nm2 tys2 rr2)) ->
       if nm1 == nm2
-        then tcUnifyMoreTypes tys1 tys2 constraints tysub
+        then do tcUnifyRefinements rr1 rr2
+                tcUnifyMoreTypes tys1 tys2 constraints tysub
         else do msg <- getStructureContextMessage
                 tcFailsMore [text $ "Unable to unify different type constructors: "
                                   ++ nm1 ++ " vs " ++ nm2,
                              msg]
 
-    ((TupleTypeTC  tys1), (TupleTypeTC  tys2)) ->
+    ((TupleTypeTC  tys1 rr1), (TupleTypeTC  tys2 rr2)) ->
         if List.length tys1 /= List.length tys2
           then tcFailsMore [text $ "Unable to unify tuples of different lengths"
                            ++ " ("   ++ show (List.length tys1)
                            ++ " vs " ++ show (List.length tys2)
                            ++ ")."]
-          else tcUnifyMoreTypes tys1 tys2 constraints tysub
+          else do tcUnifyRefinements rr1 rr2
+                  tcUnifyMoreTypes tys1 tys2 constraints tysub
 
     -- Mismatches between unitary tuple types probably indicate
     -- parsing/function argument handling mismatch.
@@ -169,8 +216,17 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
     ((RefTypeTC  t1), (RefTypeTC  t2)) ->
         tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
-    ((ArrayTypeTC  t1), (ArrayTypeTC  t2)) ->
+    ((ArrayTypeTC  t1 rr1), (ArrayTypeTC  t2 rr2)) -> do
+        tcUnifyRefinements rr1 rr2
         tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
+
+    ((RefinedTypeTC n1 t1 e1), ty) | Just rr <- mbGetRefinement ty -> do
+      refineRefinement rr (n1, e1)
+      tcUnifyLoop ((TypeConstrEq t1 ty):constraints) tysub
+
+    (ty, (RefinedTypeTC n1 t1 e1)) | Just rr <- mbGetRefinement ty -> do
+      refineRefinement rr (n1, e1)
+      tcUnifyLoop ((TypeConstrEq ty t1):constraints) tysub
 
     _otherwise -> do
       msg <- getStructureContextMessage

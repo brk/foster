@@ -19,6 +19,7 @@ import Foster.Kind
 import Foster.ExprAST
 import Foster.TypeAST
 import Foster.TypeTC
+import Foster.AnnExpr (AnnExpr)
 
 import Text.PrettyPrint.ANSI.Leijen
 import Foster.Output
@@ -120,6 +121,7 @@ data TcEnv = TcEnv { tcEnvUniqs        :: IORef Uniq
                    , tcUnificationVars :: IORef [MetaTyVar TypeTC]
                    , tcParents         :: [ExprAST TypeAST]
                    , tcMetaIntConstraints :: IORef (Map (MetaTyVar TypeTC) Int)
+                   , tcRefinementImplicationConstraints :: IORef [( (String, AnnExpr TypeTC), (String, AnnExpr TypeTC) )]
                    }
 
 newtype Tc a = Tc (TcEnv -> IO (OutputOr a))
@@ -250,8 +252,12 @@ tcApplyIntConstraints = Tc $ \env -> do
   map <- readIORef (tcMetaIntConstraints env)
   mapM_ (\(m, neededBits) -> do putStrLn $ "applying int constraint: " ++ show m ++ " ~ " ++ show neededBits
                                 writeIORef (mtvRef m)
-                                    (Just $ PrimIntTC $ sizeOfBits neededBits))
+                                    (Just $ PrimIntTC (sizeOfBits neededBits) (NoRefinement "tcApplyIntConstraints")))
         (Map.toList map)
+  retOK ()
+
+tcAddRefinementImplicationConstraint v v' = Tc $ \env -> do
+  modIORef' (tcRefinementImplicationConstraints env) (\cs -> (v, v') : cs)
   retOK ()
 
 -- The type says it all: run a Tc action, and capture any errors explicitly.

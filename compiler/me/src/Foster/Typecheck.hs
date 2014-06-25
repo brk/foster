@@ -205,9 +205,9 @@ inferRho ctx e msg = do
 
 -- }}}
 
-minimalTupleTC []    = TupleTypeTC []
+minimalTupleTC []    = TupleTypeTC []   (NoRefinement "minimalTupleTC")
 minimalTupleTC [arg] = arg
-minimalTupleTC args  = TupleTypeTC args
+minimalTupleTC args  = TupleTypeTC args (NoRefinement "minimalTupleTC")
 
 mkProcTypeTC args rets = FnTypeTC args (minimalTupleTC rets) CCC    FT_Proc
 mkFnTypeTC   args rets = FnTypeTC args (minimalTupleTC rets) FastCC FT_Func
@@ -222,13 +222,13 @@ tcRho ctx expr expTy = do
     case expr of
       E_CallAST   rng (E_PrimAST _ name@"assert-invariants") argtup -> do
         args <- mapM (\arg -> checkSigma ctx arg boolTypeTC) argtup
-        let unitType = TupleTypeTC []
+        let unitType = TupleTypeTC [] (NoRefinement "tcRhoUnitType")
         let fnty = mkFnTypeTC (map (\_ -> boolTypeTC) argtup) [unitType]
         let prim = NamedPrim (TypedId fnty (Ident (T.pack name) 1))
         let primcall = AnnCall rng unitType (AnnPrimitive rng fnty prim) args
         id <- tcFresh "assert-invariants-thunk"
         let thunk = Fn (TypedId (mkFnTypeTC [] [unitType]) id) [] primcall () rng
-        matchExp expTy (AnnLetFuns rng [id] [thunk] (AnnTuple rng TupleTypeTC [])) name
+        matchExp expTy (AnnLetFuns rng [id] [thunk] (AnnTuple rng (\tys -> TupleTypeTC tys (NoRefinement "assert-invariants")) [])) name
 
       E_VarAST    rng v              -> tcRhoVar      ctx rng (evarName v)      expTy
       E_PrimAST   rng nm             -> tcRhoPrim     ctx rng (T.pack  nm)      expTy
@@ -256,7 +256,8 @@ tcRho ctx expr expTy = do
               tcRhoArrayRead rng s ta tb expTy
       E_ArrayPoke rng (ArrayIndex b c _ s) a -> do -- a >^ b[c]
               ta <- inferRho ctx a "array poke val"
-              tb <- checkRho ctx b (ArrayTypeTC (typeTC ta))
+              rr <- genRefinementVar
+              tb <- checkRho ctx b (ArrayTypeTC (typeTC ta) rr)
               tc <- inferRho ctx c "array poke idx"
               tcRhoArrayPoke rng s ta tb tc expTy
       E_CompilesAST rng maybe_expr -> do
@@ -370,12 +371,14 @@ mkAnnPrimitive annot ctx tid =
 --  G |- True :: Bool      G |- False :: Bool
 tcRhoBool rng b expTy = do
 -- {{{
-    let ab = AnnLiteral rng boolTypeTC (LitBool b)
+    let ty rr = PrimIntTC I1 rr
+    let ab rr = AnnLiteral rng (ty rr) (LitBool b)
     case expTy of
-         Infer  r              -> update r (return ab)
-         Check  (PrimIntTC I1) -> return ab
-         Check  m@MetaTyVarTC {}  -> do unify m boolTypeTC "bool literal"
-                                        return ab
+         Infer  r              -> update r (liftM ab genRefinementVar)
+         Check  (PrimIntTC I1 rr) -> return $ ab rr
+         Check  m@MetaTyVarTC {}  -> do rr <- genRefinementVar
+                                        unify m (ty rr) "bool literal"
+                                        return $ ab rr
          Check  t -> tcFails [text $ "Unable to check Bool constant in context"
                                 ++ " expecting non-Bool type " ++ show t
                                 ++ showSourceRange (rangeOf rng)]
@@ -385,13 +388,14 @@ tcRhoBool rng b expTy = do
 --  G |- "..." :: Text
 tcRhoText rng b expTy = do
 -- {{{
-    let ty = TyConAppTC "Text" []
-    let ab = AnnLiteral rng ty (LitText b)
+    let ty rr = TyConAppTC "Text" [] rr
+    let ab rr = AnnLiteral rng (ty rr) (LitText b)
     case expTy of
-         Infer r                        -> update r (return ab)
-         Check  (TyConAppTC "Text" []) -> return ab
-         Check  m@MetaTyVarTC {} -> do unify m ty "text literal"
-                                       return ab
+         Infer r                          -> update r (liftM ab genRefinementVar)
+         Check  (TyConAppTC "Text" [] rr) -> return $ ab rr
+         Check  m@MetaTyVarTC {} -> do rr <- genRefinementVar
+                                       unify m (ty rr) "text literal"
+                                       return $ ab rr
          Check  t -> tcFails [text $ "Unable to check Text constant in context"
                                 ++ " expecting non-Text type " ++ show t
                                 ++ showSourceRange (rangeOf rng)]
@@ -412,14 +416,16 @@ tcRhoArrayValue ctx tau (AE_Expr expr) = do
 tcRhoArrayLit ctx rng args expTy = do
 -- {{{
     tau <- newTcUnificationVarTau $ "prim array type"
-    let ty = ArrayTypeTC tau
+    rr <- genRefinementVar
+    let ty = ArrayTypeTC tau rr
     --args' <- mapM (\arg -> checkRho ctx arg tau) args
+    -- TODO handle/check rr against lit values?
     args' <- mapM (tcRhoArrayValue ctx tau) args
     let ab = AnnArrayLit rng ty args'
     case expTy of
          Infer r                     -> update r (return ab)
-         Check  (ArrayTypeTC rho' ) -> do unify tau rho' "mach-array literal"
-                                          return ab
+         Check  (ArrayTypeTC rho' rr') -> do unify tau rho' "mach-array literal"
+                                             return ab
          Check  m@MetaTyVarTC {} -> do unify m ty "mach-array literal"
                                        return ab
          Check  t -> tcFails [text $ "Unable to check array constant in context"
@@ -454,7 +460,7 @@ tcRhoSeq ctx rng a b expTy = do
     -- sequencing of arbitrary types.
     zt <- zonkType (typeTC ea)
     case zt of
-      m@MetaTyVarTC {} -> unify m (TupleTypeTC []) "seq-unit"
+      m@MetaTyVarTC {} -> unify m (TupleTypeTC [] (NoRefinement "tcRhoSeq")) "seq-unit"
       _                -> return ()
     return (AnnLetVar rng id ea eb)
 -- }}}
@@ -468,7 +474,7 @@ tcRhoStore ctx rng e1 e2 expTy = do
 -- {{{
     a1 <- inferRho ctx e1 "store"
     a2 <- checkRho ctx e2 (RefTypeTC (typeTC a1))
-    matchExp expTy (AnnStore rng (TupleTypeTC []) a1 a2) "store"
+    matchExp expTy (AnnStore rng (TupleTypeTC [] (NoRefinement "tcRhoStore")) a1 a2) "store"
 -- }}}
 
 
@@ -507,17 +513,18 @@ tcRhoAlloc ctx rng e1 rgn expTy = do
 tcRhoTuple :: Context SigmaTC -> ExprAnnot -> [Term] -> Expected TypeTC -> Tc (AnnExpr RhoTC)
 -- {{{
 tcRhoTuple ctx rng exprs expTy = do
+   rr' <- genRefinementVar
    tup <- case expTy of
-     Infer _                -> tcTuple ctx rng exprs [Nothing | _ <- exprs]
-     Check (TupleTypeTC ts) -> tcTuple ctx rng exprs [Just t  | t <- ts]
-     Check (MetaTyVarTC {}) -> tcTuple ctx rng exprs [Nothing | _ <- exprs]
+     Infer _                   -> tcTuple ctx rng exprs [Nothing | _ <- exprs] rr'
+     Check (TupleTypeTC ts rr) -> tcTuple ctx rng exprs [Just t  | t <- ts] rr
+     Check (MetaTyVarTC {})    -> tcTuple ctx rng exprs [Nothing | _ <- exprs] rr'
      Check ty -> tcFailsMore [text $ "typecheck: tuple (" ++ show exprs ++ ") "
                              ++ "cannot check against non-tuple type " ++ show ty]
    matchExp expTy tup (highlightFirstLine (rangeOf rng))
   where
-    tcTuple ctx rng exps typs = do
+    tcTuple ctx rng exps typs rr = do
         exprs <- typecheckExprsTogether ctx exps typs
-        return $ AnnTuple rng TupleTypeTC exprs
+        return $ AnnTuple rng (\tys -> TupleTypeTC tys rr) exprs
 
     -- Typechecks each expression in the same context
     typecheckExprsTogether ctx exprs expectedTypes = do
@@ -542,23 +549,24 @@ tcRhoArrayRead :: ExprAnnot -> SafetyGuarantee -> AnnExpr SigmaTC -> AnnExpr Sig
 -- {{{
 tcRhoArrayRead annot sg base aiexpr expTy = do
   let rng = rangeOf annot
-  let ck t = do
+  let ck t rr = do
         -- TODO check aiexpr type is compatible with Word
-        unify (PrimIntTC I32) (typeTC aiexpr) "arrayread idx type"
+        unify (PrimIntTC I32 rr) (typeTC aiexpr) "arrayread idx type"
         let expr = AnnArrayRead annot t (ArrayIndex base aiexpr rng sg)
         matchExp expTy expr "arrayread"
 
   case typeTC base of
-    ArrayTypeTC t -> do ck t
-    TupleTypeTC _ ->
+    ArrayTypeTC t rr -> do ck t rr
+    TupleTypeTC _ _ ->
         tcFails [text $ "ArrayReading tuples is not allowed; use"
                    ++ " pattern matching instead!" ++ highlightFirstLine rng]
     MetaTyVarTC _ -> do
         t <- case expTy of
               Check t -> return t
               Infer _ -> newTcUnificationVarTau $ "arrayread_type"
-        unify (ArrayTypeTC t) (typeTC base) "arrayread type"
-        ck t
+        rr <- genRefinementVar
+        unify (ArrayTypeTC t rr) (typeTC base) "arrayread type"
+        ck t rr
     _ ->
         tcFails [text $ "Unable to arrayread expression of non-array type " ++ show (typeTC base)
                     ++ " (context expected type " ++ show expTy ++ ")"
@@ -576,15 +584,16 @@ tcRhoArrayPoke annot s v base i expTy = do
   let ck t = do
       -- TODO check aiexpr type is compatible with Word
       unify t (typeTC v) "arraypoke type"
-      let expr = AnnArrayPoke annot (TupleTypeTC []) (ArrayIndex base i (rangeOf annot) s) v
+      let expr = AnnArrayPoke annot (TupleTypeTC [] (NoRefinement "tcRhoArrayPoke"))
+                                    (ArrayIndex base i (rangeOf annot) s) v
       matchExp expTy expr "arraypoke"
 
   case typeTC base of
-    ArrayTypeTC t ->
+    ArrayTypeTC t _rr ->
         ck t
     MetaTyVarTC _ -> do
         t <- newTcUnificationVarTau $ "arraypoke_type"
-        unify (ArrayTypeTC t) (typeTC base) "arraypoke type"
+        unify (ArrayTypeTC t (NoRefinement "tcRhoArrayPokeMTV")) (typeTC base) "arraypoke type"
         ck t
 
     baseType ->
@@ -770,7 +779,7 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
                 ++ highlightFirstLine (rangeOf rng)
         args <- sequence [checkSigma ctx arg ty | (arg, ty) <- zip argexprs args_ty]
         debug $ "call: annargs: "
-        debugDoc $ showStructure (AnnTuple rng TupleTypeTC args)
+        debugDoc $ showStructure (AnnTuple rng (\tys -> TupleTypeTC tys (NoRefinement "tcSigmaCall")) args)
         debugDoc $ text "call: res_ty is " <> pretty res_ty
         debugDoc $ text "call: exp_ty is " <> pretty exp_ty
         debugDoc $ text "tcRhoCall deferring to instSigma"
@@ -1069,14 +1078,14 @@ tcType ctx typ = do
   let q = tcType ctx
   case typ of
         MetaPlaceholderAST nm -> newTcUnificationVarTau nm
-        PrimIntAST         sz -> return $ PrimIntTC sz
-        PrimFloat64AST        -> return $ PrimFloat64TC
+        PrimIntAST         sz -> liftM (PrimIntTC sz ) genRefinementVar
+        PrimFloat64AST        -> liftM (PrimFloat64TC) genRefinementVar
         TyVarAST      tv      -> return $ TyVarTC tv
         RefTypeAST    ty      -> liftM   RefTypeTC   (q ty)
-        ArrayTypeAST  ty      -> liftM   ArrayTypeTC (q ty)
-        TupleTypeAST  types   -> liftM   TupleTypeTC (mapM q types)
+        ArrayTypeAST  ty      -> liftM2  ArrayTypeTC (q ty) genRefinementVar
+        TupleTypeAST  types   -> liftM2  TupleTypeTC (mapM q types) genRefinementVar
         CoroTypeAST   s r     -> liftM2  CoroTypeTC  (q s) (q r)
-        TyConAppAST nm types  -> liftM  (TyConAppTC nm) (mapM q types)
+        TyConAppAST nm types  -> liftM2 (TyConAppTC nm) (mapM q types) genRefinementVar
         ForAllAST  tvs rho    -> liftM  (ForAllTC tvs) (q rho)
         FnTypeAST ss r cc ft -> do
           ss' <- mapM q ss
@@ -1094,7 +1103,7 @@ tcType ctx typ = do
 
           let extCtx = extendContext ctx uniquelyNamedFormals
           ty' <- q ty
-          e' <- checkRho extCtx e (PrimIntTC I1)
+          e' <- checkRho extCtx e (PrimIntTC I1 (NoRefinement "bool-of-refinement"))
           return $ RefinedTypeTC nm ty' e'
 -- }}}
 
@@ -1158,7 +1167,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
               "Invariant violated: constructor arity did not match # types!"
               ++ showSourceRange r
 
-        ty@(TyConAppTC _ metas) <-
+        ty@(TyConAppTC _ metas _rrTODO) <-
                             generateTypeSchemaForDataType ctx (ctorTypeName cid)
         let ktvs = map convertTyFormal tyformals
         ts <- mapM (\ty -> instSigmaWith ktvs ty metas) types
@@ -1175,16 +1184,20 @@ tcRhoCase ctx rng scrutinee branches expTy = do
         return $ P_Ctor r ty ps info
 
       EP_Tuple     r eps  -> do
-        ts <- case ctxTy of
-                TupleTypeTC ts -> return ts
-                _ -> do ts <- sequence [newTcUnificationVarTau "tup" | _ <- eps]
-                        unify ctxTy (TupleTypeTC ts) "tuple-pattern"
-                        return ts
+        tupty <-
+          case ctxTy of
+            TupleTypeTC {} -> return ctxTy
+            _ -> do ts <- sequence [newTcUnificationVarTau "tup" | _ <- eps]
+                    rr <- genRefinementVar
+                    let ty = TupleTypeTC ts rr
+                    unify ctxTy ty "tuple-pattern"
+                    return ty
+        let ts = case tupty of TupleTypeTC ts _ -> ts
         sanityCheck (eqLen eps ts) $
                 "Cannot match pattern against tuple type of "
              ++ "different length." ++ showSourceRange r
         ps <- sequence [checkPattern ctx p t | (p, t) <- zip eps ts]
-        return $ P_Tuple r (TupleTypeTC ts) ps
+        return $ P_Tuple r tupty ps
     -----------------------------------------------------------------------
     getCtorInfoForCtor :: Context SigmaTC -> T.Text -> Tc (CtorInfo SigmaTC)
     getCtorInfoForCtor ctx ctorName = do
@@ -1199,8 +1212,9 @@ tcRhoCase ctx rng scrutinee branches expTy = do
     generateTypeSchemaForDataType ctx typeName = do
       case Map.lookup typeName (contextDataTypes ctx) of
         Just [dt] -> do
+          rr <- genRefinementVar
           formals <- mapM (\_ -> newTcUnificationVarTau "dt-tyformal") (dataTypeTyFormals dt)
-          return $ TyConAppTC typeName formals
+          return $ TyConAppTC typeName formals rr
         other -> tcFails [text $ "Typecheck.generateTypeSchemaForDataType: Too many or"
                             ++ " too few definitions for $" ++ typeName
                             ++ "\n\t" ++ show (pretty other)]
@@ -1368,21 +1382,21 @@ resolveType :: ExprAnnot -> Map String TypeTC -> TypeTC -> Tc TypeTC
 resolveType annot subst x =
   let q = resolveType annot subst in
   case x of
-    PrimIntTC   _                  -> return x
-    PrimFloat64TC                  -> return x
+    PrimIntTC   _                _ -> return x
+    PrimFloat64TC                _ -> return x
     MetaTyVarTC   _                -> return x
     TyVarTC  (SkolemTyVar _ _ _)   -> return x
     TyVarTC  (BoundTyVar name)     -> case Map.lookup name subst of
                                          Nothing -> tcFails [text $ "Typecheck.hs: ill-formed type with free bound variable " ++ name,
                                                              text $ highlightFirstLine (rangeOf annot)]
                                          Just ty -> return ty
-    RefTypeTC     ty               -> liftM RefTypeTC    (q ty)
-    ArrayTypeTC   ty               -> liftM ArrayTypeTC  (q ty)
+    RefTypeTC     ty               -> liftM  RefTypeTC    (q ty)
+    ArrayTypeTC   ty            rr -> liftM2 ArrayTypeTC  (q ty) (return rr)
     FnTypeTC    ss t cc cs         -> do (t':ss') <- mapM q (t:ss)
                                          return $ FnTypeTC  ss' t' cc cs
     CoroTypeTC   s t               -> liftM2 CoroTypeTC  (q s) (q t)
-    TyConAppTC    tc  types        -> liftM (TyConAppTC  tc) (mapM q types)
-    TupleTypeTC       types        -> liftM  TupleTypeTC     (mapM q types)
+    TyConAppTC    tc  types     rr -> liftM2 (TyConAppTC  tc) (mapM q types) (return rr)
+    TupleTypeTC       types     rr -> liftM2  TupleTypeTC     (mapM q types) (return rr)
     RefinedTypeTC nm ty e          -> liftM (\t -> RefinedTypeTC nm t e) (q ty)
     ForAllTC      ktvs rho         -> liftM (ForAllTC  ktvs) (resolveType annot subst' rho)
                                        where
@@ -1411,18 +1425,18 @@ getFreeTyVars xs = do zs <- mapM zonkType xs
   go :: [TyVar] -> SigmaTC -> [TyVar]
   go bound x =
     case x of
-        PrimIntTC _          -> []
-        PrimFloat64TC        -> []
-        TyConAppTC _nm types -> concatMap (go bound) types
-        TupleTypeTC types    -> concatMap (go bound) types
-        FnTypeTC ss r   _ _  -> concatMap (go bound) (r:ss)
-        CoroTypeTC s r       -> concatMap (go bound) [s,r]
-        ForAllTC  tvs rho    -> go (tyvarsOf tvs ++ bound) rho
-        TyVarTC   tv         -> if tv `elem` bound then [] else [tv]
-        MetaTyVarTC  {}      -> []
-        RefTypeTC    ty      -> (go bound) ty
-        ArrayTypeTC  ty      -> (go bound) ty
-        RefinedTypeTC _ ty _ -> (go bound) ty -- TODO handle tyvars in expr?
+        PrimIntTC         {} -> []
+        PrimFloat64TC     {} -> []
+        TyConAppTC _nm types _rr -> concatMap (go bound) types
+        TupleTypeTC types    _rr -> concatMap (go bound) types
+        FnTypeTC ss r   _ _      -> concatMap (go bound) (r:ss)
+        CoroTypeTC s r           -> concatMap (go bound) [s,r]
+        ForAllTC  tvs rho        -> go (tyvarsOf tvs ++ bound) rho
+        TyVarTC   tv             -> if tv `elem` bound then [] else [tv]
+        MetaTyVarTC  {}          -> []
+        RefTypeTC    ty          -> (go bound) ty
+        ArrayTypeTC  ty      _rr -> (go bound) ty
+        RefinedTypeTC _ ty _     -> (go bound) ty -- TODO handle tyvars in expr?
 -- }}}
 
 unMBS :: MetaBindStatus -> TypeTC
@@ -1462,19 +1476,19 @@ zonkType x = do
                               Just ty -> do ty' <- zonkType ty
                                             writeTcMeta m ty'
                                             return ty'
-        PrimIntTC     {}      -> return x
-        PrimFloat64TC         -> return x
-        TyVarTC       {}      -> return x
-        TyConAppTC  nm types  -> liftM (TyConAppTC nm) (mapM zonkType types)
-        TupleTypeTC    types  -> liftM (TupleTypeTC  ) (mapM zonkType types)
-        ForAllTC    tvs  rho  -> liftM (ForAllTC tvs ) (zonkType rho)
-        RefTypeTC       ty    -> liftM (RefTypeTC    ) (zonkType ty)
-        ArrayTypeTC     ty    -> do debug $ "zonking array ty: " ++ show ty
-                                    liftM (ArrayTypeTC  ) (zonkType ty)
-        CoroTypeTC s r        -> liftM2 (CoroTypeTC  ) (zonkType s) (zonkType r)
-        RefinedTypeTC nm ty e -> liftM (\t -> RefinedTypeTC nm t e) (zonkType ty)
-        FnTypeTC ss r   cc cs -> do ss' <- mapM zonkType ss ; r' <- zonkType r
-                                    return $ FnTypeTC ss' r' cc cs
+        PrimIntTC     {}        -> return x
+        PrimFloat64TC {}        -> return x
+        TyVarTC       {}        -> return x
+        TyConAppTC  nm types rr -> liftM2 (TyConAppTC nm) (mapM zonkType types) (return rr)
+        TupleTypeTC    types rr -> liftM2 (TupleTypeTC  ) (mapM zonkType types) (return rr)
+        ForAllTC    tvs  rho    -> liftM  (ForAllTC tvs ) (zonkType rho)
+        RefTypeTC       ty      -> liftM  (RefTypeTC    ) (zonkType ty)
+        ArrayTypeTC     ty   rr -> do debug $ "zonking array ty: " ++ show ty
+                                      liftM2 (ArrayTypeTC  ) (zonkType ty) (return rr)
+        CoroTypeTC s r          -> liftM2 (CoroTypeTC  ) (zonkType s) (zonkType r)
+        RefinedTypeTC nm ty e   -> liftM (\t -> RefinedTypeTC nm t e) (zonkType ty)
+        FnTypeTC ss r   cc cs   -> do ss' <- mapM zonkType ss ; r' <- zonkType r
+                                      return $ FnTypeTC ss' r' cc cs
 -- }}}
 
 -- Sad hack:
@@ -1571,17 +1585,18 @@ tcTypeWellFormed msg ctx typ = do
   let q = tcTypeWellFormed msg ctx
   case typ of
         PrimIntTC      {}     -> return ()
-        PrimFloat64TC         -> return ()
+        PrimFloat64TC  {}     -> return ()
         MetaTyVarTC    {}     -> return ()
-        TyConAppTC  nm types  -> case Map.lookup nm (contextDataTypes ctx) of
+        TyConAppTC  nm types _rr ->
+                            case Map.lookup nm (contextDataTypes ctx) of
                                    Just  _ -> mapM_ q types
                                    Nothing -> tcFails [text $ "Unknown type "
                                                         ++ nm ++ " " ++ msg]
-        TupleTypeTC  types    -> mapM_ q types
+        TupleTypeTC types _rr -> mapM_ q types
         FnTypeTC  ss r   _ _  -> mapM_ q (r:ss)
         CoroTypeTC  s r       -> mapM_ q [s,r]
         RefTypeTC     ty      -> q ty
-        ArrayTypeTC   ty      -> q ty
+        ArrayTypeTC   ty  _rr -> q ty
         ForAllTC   tvs rho    -> tcTypeWellFormed msg (extendTyCtx ctx tvs) rho
         TyVarTC  (SkolemTyVar {}) -> return ()
         TyVarTC  tv@(BoundTyVar _) ->
@@ -1640,18 +1655,18 @@ collectAllUnificationVars :: [TypeTC] -> [MetaTyVar TypeTC]
 collectAllUnificationVars xs = Set.toList (Set.fromList (concatMap go xs))
   where go x =
           case x of
-            PrimIntTC  _          -> []
-            PrimFloat64TC         -> []
-            TyConAppTC  _nm types -> concatMap go types
-            TupleTypeTC  types    -> concatMap go types
-            FnTypeTC  ss r   _ _  -> concatMap go (r:ss)
-            CoroTypeTC  s r       -> concatMap go [s,r]
-            ForAllTC  _tvs rho    -> go rho
-            TyVarTC   _tv         -> []
-            MetaTyVarTC   m       -> [m]
-            RefTypeTC     ty      -> go ty
-            ArrayTypeTC   ty      -> go ty
-            RefinedTypeTC _ ty _  -> go ty
+            PrimIntTC  _          _ -> []
+            PrimFloat64TC         _ -> []
+            TyConAppTC  _nm types _ -> concatMap go types
+            TupleTypeTC  types    _ -> concatMap go types
+            FnTypeTC  ss r   _ _    -> concatMap go (r:ss)
+            CoroTypeTC  s r         -> concatMap go [s,r]
+            ForAllTC  _tvs rho      -> go rho
+            TyVarTC   _tv           -> []
+            MetaTyVarTC   m         -> [m]
+            RefTypeTC     ty        -> go ty
+            ArrayTypeTC   ty      _ -> go ty
+            RefinedTypeTC _ ty _    -> go ty
 
 vname (E_AnnVar _rng (av, _)) n = show n ++ " for " ++ T.unpack (identPrefix $ tidIdent av)
 vname _                       n = show n
@@ -1669,6 +1684,9 @@ genSigmaUnificationVarsLike spine namegen = do
   sequence [newTcUnificationVarSigma (namegen n) | (_, n) <- zip spine [1..]]
 -}
 
+genRefinementVar = do
+  r <- newTcRef Nothing
+  return $ MbRefinement r
 
 verifyNonOverlappingBindings :: SourceRange -> String -> [ContextBinding ty] -> Tc ()
 verifyNonOverlappingBindings rng name binders = do

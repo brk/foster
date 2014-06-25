@@ -1,9 +1,12 @@
 // Port of http://bjoern.hoehrmann.de/utf-8/decoder/dfa/ from C to Foster.
 
+/*
+// TODO: fix bug where module fails to compile if unused function has type annotation.
 arrayLength32 :: forall x:Type, { Array x => Int32 };
 arrayLength32 = { a : Array x =>
   trunc_i64_to_i32 (prim_arrayLength a)
 };
+*/
 
 
 /*
@@ -13,8 +16,8 @@ mk-UTF-8-decoder-v1 :: { #precondition
                          // { pr => case pr of (s,_) -> s <=UInt32 96 }
                          { Int32 => Int32 => Int8  => (Int32, Int32) } };
                          */
-mk-UTF-8-decoder-v1 :: { { % state : Int32 : state <=UInt32 96
-                         => Int32 => Int8  => (% s : Int32 : s <=UInt32 96, Int32) } };
+mk-UTF-8-decoder-v1 :: { { % rstate : Int32 : rstate <=UInt32 96
+                         => Int32 => Int8  => (% rs : Int32 : rs <=UInt32 96, Int32) } };
 mk-UTF-8-decoder-v1 = {
   utf8d = prim mach-array-literal
           // The first part of the table maps bytes to character classes that

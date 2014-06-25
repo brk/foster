@@ -391,11 +391,13 @@ main = do
 runCompiler pb_program flagVals outfile = do
    uniqref <- newIORef 2
    varlist <- newIORef []
+   rics    <- newIORef []
    icmap   <- newIORef Map.empty
    let tcenv = TcEnv {       tcEnvUniqs = uniqref,
                       tcUnificationVars = varlist,
                               tcParents = [],
-                   tcMetaIntConstraints = icmap }
+                   tcMetaIntConstraints = icmap,
+     tcRefinementImplicationConstraints = rics }
    (nc_time, (in_time, cp_time, ilprog)) <- time $ evalStateT (compile pb_program tcenv)
                     CompilerContext {
                            ccVerbose  = getVerboseFlag flagVals

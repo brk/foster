@@ -107,6 +107,7 @@ smtType (PrimInt I1) = tBool
 smtType (PrimInt sz) = tBitVec (fromIntegral $ intSizeOf sz)
 smtType (ArrayType _) = smtArray
 smtType (TupleType tys) = TApp (smtI ("FosterTuple" ++ show (length tys))) (map smtType tys)
+smtType (RefinedType _ ty _) = smtType ty
 smtType ty = error $ "smtType can't yet handle " ++ show ty
 
 smtArray = TApp (smtI "FosterArray") []
