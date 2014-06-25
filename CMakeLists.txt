@@ -245,11 +245,13 @@ add_custom_command(
         ${CMAKE_CXX_COMPILER} -g
           ${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
           -I ${PROJECT_SOURCE_DIR}/runtime/gc/
+          -I ${PROJECT_SOURCE_DIR}/third_party/chromium_base/
                 -c -o ${LIBRARY_OUTPUT_PATH}/libfoster_main.o
   COMMAND
         ${CLANG} -g -emit-llvm
           ${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
           -I ${PROJECT_SOURCE_DIR}/runtime/gc/
+          -I ${PROJECT_SOURCE_DIR}/third_party/chromium_base/
                 -c -o ${PROJECT_BINARY_DIR}/_bitcodelibs_/libfoster_main.bc
   DEPENDS
         ${LIBRARY_OUTPUT_PATH}
