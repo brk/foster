@@ -38,12 +38,12 @@ data TypeAST =
          | ArrayTypeAST     (Sigma)
          | FnTypeAST        { fnTypeDomain :: [Sigma]
                             , fnTypeRange  ::  Sigma
-                            , fnTypePrecond :: MaybePrecondition (ExprAST TypeAST)
                             , fnTypeCallConv :: CallConv
                             , fnTypeProcOrFunc :: ProcOrFunc }
          | ForAllAST        [(TyVar, Kind)] (Rho)
          | TyVarAST         TyVar
          | MetaPlaceholderAST String
+         | RefinedTypeAST   String TypeAST (ExprAST TypeAST)
 
 instance Eq (MetaTyVar t) where
   m1 == m2 = case (mtvUniq m1 == mtvUniq m2, mtvRef m1 == mtvRef m2) of
@@ -62,13 +62,14 @@ instance Pretty TypeAST where
         PrimFloat64AST                  -> text "Float64"
         TyConAppAST  tcnm types         -> parens $ text tcnm <> hpre (map pretty types)
         TupleTypeAST      types         -> tupled $ map pretty types
-        FnTypeAST    s t _precond cc cs -> text "(" <> pretty s <> text " =" <> text (briefCC cc) <> text "> " <> pretty t <> text " @{" <> text (show cs) <> text "})"
+        FnTypeAST    s t  cc cs         -> text "(" <> pretty s <> text " =" <> text (briefCC cc) <> text "> " <> pretty t <> text " @{" <> text (show cs) <> text "})"
         CoroTypeAST  s t                -> text "(Coro " <> pretty s <> text " " <> pretty t <> text ")"
         ForAllAST  tvs rho              -> text "(forall " <> hsep (prettyTVs tvs) <> text ". " <> pretty rho <> text ")"
         TyVarAST   tv                   -> text (show tv)
         -- MetaTyVar m                     -> text "(~(" <> pretty (descMTVQ (mtvConstraint m)) <> text ")!" <> text (show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")")
         RefTypeAST    ty                -> text "(Ref " <> pretty ty <> text ")"
         ArrayTypeAST  ty                -> text "(Array " <> pretty ty <> text ")"
+        RefinedTypeAST _nm ty _e        -> text "(Refined " <> pretty ty <> text ")"
 
 prettyTVs tvs = map (\(tv,k) -> parens (pretty tv <+> text "::" <+> pretty k)) tvs
 
@@ -99,13 +100,14 @@ instance Structured TypeAST where
             PrimFloat64AST                 -> text $ "PrimFloat64"
             TyConAppAST    tc  _           -> text $ "TyConAppAST " ++ tc
             TupleTypeAST       _           -> text $ "TupleTypeAST"
-            FnTypeAST    _ _  _ _ _        -> text $ "FnTypeAST"
+            FnTypeAST    _ _    _ _        -> text $ "FnTypeAST"
             CoroTypeAST  _ _               -> text $ "CoroTypeAST"
             ForAllAST  tvs _rho            -> text $ "ForAllAST " ++ show tvs
             TyVarAST   tv                  -> text $ "TyVarAST " ++ show tv
             -- MetaTyVar m                    -> text $ "MetaTyVar " ++ mtvDesc m
             RefTypeAST    _                -> text $ "RefTypeAST"
             ArrayTypeAST  _                -> text $ "ArrayTypeAST"
+            RefinedTypeAST {}              -> text $ "RefinedTypeAST"
 
     childrenOf e =
         case e of
@@ -113,13 +115,14 @@ instance Structured TypeAST where
             PrimFloat64AST                 -> []
             TyConAppAST   _tc types        -> types
             TupleTypeAST      types        -> types
-            FnTypeAST   ss t _ _ _         -> ss ++ [t]
+            FnTypeAST   ss t   _ _         -> ss ++ [t]
             CoroTypeAST  s t               -> [s, t]
             ForAllAST  _tvs rho            -> [rho]
             TyVarAST   _tv                 -> []
             -- MetaTyVar _                    -> []
             RefTypeAST    ty               -> [ty]
             ArrayTypeAST  ty               -> [ty]
+            RefinedTypeAST _ ty _          -> [ty]
 
 fosBoolType = PrimIntAST I1
 fosStringType = TyConAppAST "Text" []
@@ -128,8 +131,8 @@ minimalTupleAST []    = TupleTypeAST []
 minimalTupleAST [arg] = arg
 minimalTupleAST args  = TupleTypeAST args
 
-mkProcType args rets = FnTypeAST args (minimalTupleAST rets) (NoPrecondition "mkProcType") CCC    FT_Proc
-mkFnType   args rets = FnTypeAST args (minimalTupleAST rets) (NoPrecondition "mkFnType")   FastCC FT_Func
+mkProcType args rets = FnTypeAST args (minimalTupleAST rets) CCC    FT_Proc
+mkFnType   args rets = FnTypeAST args (minimalTupleAST rets) FastCC FT_Func
 mkCoroType args rets = CoroTypeAST (minimalTupleAST args) (minimalTupleAST rets)
 
 --------------------------------------------------------------------------------

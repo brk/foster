@@ -15,7 +15,7 @@ import Foster.ProtobufUtils(pUtf8ToText)
 
 import Data.Traversable(fmapDefault)
 import Data.Sequence as Seq
-import Data.Maybe(fromMaybe)
+import Data.Maybe(fromMaybe, fromJust)
 import Data.Foldable(toList)
 import qualified Data.Map as Map(lookup)
 
@@ -532,16 +532,18 @@ parseType t =
                                 let tyformals = toList $ PbType.tyformals t in
                                 liftM (ForAllP (map parseTypeFormal tyformals))
                                                (parseType ty)
+         PbTypeTag.REFINED_TY -> do
+           refinement <- parseExpr $ fromJust $ PbType.refinement t
+           underlying <- parseType $ fromJust $ PbType.ref_underlying_type t
+           return $ RefinedTypeP (T.unpack $ getName "refined binder" $ PbType.name t)
+                                 underlying refinement
 
 parseFnTy :: FnType -> FE TypeP
 parseFnTy fty = do
  argtypes <- mapM parseType (toList $ PbFnType.arg_types fty)
  rettype  <- parseType $ PbFnType.ret_type fty
- precond <- case PbFnType.precond fty of
-              Nothing -> return (NoPrecondition "parseFnTy")
-              Just pp -> liftM HavePrecondition (parseExpr pp)
  return $
-  FnTypeP argtypes rettype precond
+  FnTypeP argtypes rettype
             (parseCallConv (fmap uToString $ PbFnType.calling_convention fty))
             (ftFuncIfClosureElseProc fty)
   where ftFuncIfClosureElseProc fty =

@@ -246,15 +246,14 @@ struct ValAbs : public ExprAST {
   std::vector<Formal> formals;
   std::vector<TypeFormal> tyVarFormals;
   TypeAST* resultType;
-  ExprAST* precond;
   string name;
   explicit ValAbs(std::vector<Formal> formals,
                   std::vector<TypeFormal> tyformals,
                   ExprAST* body,
                   TypeAST* resultType,
-                  ExprAST* precond, foster::SourceRange sourceRange)
+                  foster::SourceRange sourceRange)
   : ExprAST("ValAbs", sourceRange), formals(formals), tyVarFormals(tyformals),
-    resultType(resultType), precond(precond) {
+    resultType(resultType) {
      parts.push_back(body);
   }
 

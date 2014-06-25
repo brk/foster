@@ -51,7 +51,7 @@ parSubstTcTy prvNextPairs ty =
         TupleTypeTC  types   -> TupleTypeTC  (map q types)
         RefTypeTC    t       -> RefTypeTC    (q t)
         ArrayTypeTC  t       -> ArrayTypeTC  (q t)
-        FnTypeTC  ss t p cc cs -> FnTypeTC     (map q ss) (q t) p cc cs -- TODO unify calling convention?
+        FnTypeTC  ss t cc cs -> FnTypeTC     (map q ss) (q t) cc cs -- TODO unify calling convention?
         CoroTypeTC  s t      -> CoroTypeTC  (q s) (q t)
         ForAllTC  ktvs rho   ->
                 let prvNextPairs' = prvNextPairs `assocFilterOut` (map fst ktvs)
@@ -71,7 +71,7 @@ tySubst subst ty =
         RefTypeTC     t        -> RefTypeTC    (q t)
         ArrayTypeTC   t        -> ArrayTypeTC  (q t)
         TupleTypeTC  types     -> TupleTypeTC  (map q types)
-        FnTypeTC  ss t p cc cs -> FnTypeTC     (map q ss) (q t) p cc cs
+        FnTypeTC  ss t cc cs   -> FnTypeTC     (map q ss) (q t) cc cs
         CoroTypeTC  s t        -> CoroTypeTC  (q s) (q t)
         ForAllTC  tvs rho      -> ForAllTC  tvs (q rho)
 
@@ -137,13 +137,7 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
     -- Mismatches between unitary tuple types probably indicate
     -- parsing/function argument handling mismatch.
 
-    ((FnTypeTC  as1 a1 p1 _cc1 _), (FnTypeTC  as2 a2 p2 _cc2 _)) -> do
-        case (p1, p2) of
-          (NoPrecondition _, NoPrecondition _) -> return ()
-          _ -> tcLift $ do putStrLn $ "TODO: type inference `unifying' preconditions"
-                           putStrLn $ "\t" ++ show (pretty p1)
-                           putStrLn $ "and"
-                           putStrLn $ "\t" ++ show (pretty p2)
+    ((FnTypeTC  as1 a1 _cc1 _), (FnTypeTC  as2 a2 _cc2 _)) -> do
         if List.length as1 /= List.length as2
           then tcFailsMore [string "Unable to unify functions of different arity!\n"
                            <> pretty as1 <> string "\nvs\n" <> pretty as2]
@@ -164,6 +158,10 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                let tySubst = zip tyvars2 (map (\(tv,_) -> TyVarTC  tv) ktyvars1) in
                let t2 = parSubstTcTy tySubst rho2 in
                tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
+
+    ((RefinedTypeTC n1 t1 e1), (RefinedTypeTC n2 t2 e2)) ->
+      -- TODO make sure that n/e match...
+      tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
     ((MetaTyVarTC m), ty) -> tcUnifyVar m ty tysub constraints
     (ty, (MetaTyVarTC m)) -> tcUnifyVar m ty tysub constraints

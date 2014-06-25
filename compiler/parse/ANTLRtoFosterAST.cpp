@@ -413,21 +413,18 @@ ExprAST* parseTuple(pTree t) {
   } return new CallPrimAST("tuple", getExprs(t), rangeOf(t));
 }
 
-// ^(VAL_ABS ^(FORMALS formals) ^(MU tyvar_decl*) ^(MU tuple?) stmts?)
+// ^(VAL_ABS ^(FORMALS formals) ^(MU tyvar_decl*) stmts?)
 ValAbs* parseValAbs(pTree tree) {
   std::vector<Formal> formals;
   parseFormals(formals, child(tree, 0));
   std::vector<TypeFormal> tyVarFormals = parseTyFormals(child(tree, 1),
                                                         getDefaultKind());
-  pTree tprecond = child(tree, 2);
-  ExprAST* precond = (tprecond && getChildCount(tprecond) == 1)
-                       ? parseTuple(child(tprecond, 0))
-                       : NULL;
+  const int stmtIndex = 2;
   TypeAST* resultType = NULL;
-  ExprAST* resultSeq = getChildCount(tree) == 4
-                         ? parseStmts(child(tree, 3))
+  ExprAST* resultSeq = getChildCount(tree) == (stmtIndex + 1)
+                         ? parseStmts(child(tree, stmtIndex))
                          : new SeqAST(Exprs(), rangeOf(tree));
-  return new ValAbs(formals, tyVarFormals, resultSeq, resultType, precond, rangeOf(tree));
+  return new ValAbs(formals, tyVarFormals, resultSeq, resultType, rangeOf(tree));
 }
 
 ExprAST* parseTyCheck(pTree t) {
@@ -1112,6 +1109,14 @@ TypeAST* parseForallType(pTree tree) {
                            rangeOf(tree));
 }
 
+// ^(REFINED name ty expr)
+TypeAST* parseRefinedType(pTree tree) {
+  return new RefinedTypeAST(textOfVar(child(tree, 0)),
+                            TypeAST_from(child(tree, 1)),
+                            ExprAST_from(child(tree, 2)),
+                            rangeOf(tree));
+}
+
 TypeAST* TypeAST_from(pTree tree) {
   if (!tree) return NULL;
 
@@ -1122,6 +1127,7 @@ TypeAST* TypeAST_from(pTree tree) {
   if (token == TYPE_ATOM)    { return parseTypeAtom(child(tree, 0)); }
   if (token == TYPE_TYP_APP) { return parseTypeTypeApp(tree); }
   if (token == FORALL_TYPE)  { return parseForallType(tree); }
+  if (token == REFINED)      { return parseRefinedType(tree); }
 
   string name = str(tree->getToken(tree));
   foster::EDiag() << "returning NULL TypeAST for tree token " << name

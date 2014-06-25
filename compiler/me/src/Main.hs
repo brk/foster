@@ -162,8 +162,7 @@ typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
           retTy  <- newTcUnificationVarSigma ("ret type for " ++ (T.unpack $ fnAstName f))
           argTys <- mapM (annVarTemplate ctx) (fnFormals f)
           let procOrFunc = if fnWasToplevel f then FT_Proc else FT_Func
-          let precond = NoPrecondition "fnTypeTemplate2"
-          let fnTy = FnTypeTC argTys retTy precond FastCC procOrFunc
+          let fnTy = FnTypeTC argTys retTy FastCC procOrFunc
           case fnTyFormals f of
             []        -> return $ fnTy
             tyformals -> return $ ForAllTC (map convertTyFormal tyformals) fnTy
@@ -265,7 +264,7 @@ typecheckModule verboseMode modast tcenv0 = do
    -- Nullary constructors are constants; non-nullary ctors are functions.
    ctorTypeAST [] dtType [] = Left dtType
    ctorTypeAST [] dtType ctorArgTypes =
-                            Right $ FnTypeAST ctorArgTypes dtType (NoPrecondition "ctorTypeAST") FastCC FT_Proc
+                            Right $ FnTypeAST ctorArgTypes dtType FastCC FT_Proc
 
    ctorTypeAST tyformals dt ctorArgTypes =
      let f = ForAllAST (map convertTyFormal tyformals) in
@@ -318,7 +317,7 @@ typecheckModule verboseMode modast tcenv0 = do
                                               (E_AIVar (TypedId mainty (GlobalSymbol $ T.pack "main")))
                                               []
                               unit   = TupleTypeIL []
-                              mainty = FnTypeIL [unit] unit (NoPrecondition "buildExprSCC") FastCC FT_Proc
+                              mainty = FnTypeIL [unit] unit FastCC FT_Proc
                           in foldr build call_of_main es
          where build :: [Fn () AIExpr TypeIL] -> AIExpr -> AIExpr
                build es body = case es of
@@ -463,10 +462,12 @@ desugarParsedModule tcenv m = do
           CoroTypeP    s t       -> liftM2 CoroTypeAST       (q s) (q t)
           ForAllP    tvs t       -> liftM (ForAllAST $ map convertTyFormal tvs) (q t)
           TyVarP     tv          -> do return $ TyVarAST tv
-          FnTypeP      s t p cc cs -> do s' <- mapM q s
-                                         t' <- q t
-                                         p' <- mapMaybePreconditionM (convertExprAST q) p
-                                         return $ FnTypeAST      s' t' p' cc cs
+          FnTypeP      s t cc cs -> do s' <- mapM q s
+                                       t' <- q t
+                                       return $ FnTypeAST      s' t' cc cs
+          RefinedTypeP nm t e -> do t' <- q t
+                                    e' <- convertExprAST q e
+                                    return $ RefinedTypeAST nm t' e'
           MetaPlaceholder desc -> return $ MetaPlaceholderAST desc
 
 typecheckSourceModule :: TcEnv ->  ModuleAST FnAST TypeAST
@@ -616,7 +617,7 @@ showGeneratedMetaTypeVariables varlist ctx_il =
     putDocLn $ (dullyellow $ vcat $ map (text . show) (Map.toList $ contextBindings ctx_il))
 
 dumpPrimitive :: (String, (TypeAST, FosterPrim TypeAST)) -> IO ()
-dumpPrimitive (name, ((FnTypeAST args ret _precond _ _), _primop)) = do
+dumpPrimitive (name, ((FnTypeAST args ret _ _), _primop)) = do
   let allNames = "abcdefghijklmnop"
   let namesArgs = [(text (name:[]) , arg) | (name, arg) <- zip allNames args]
   let textid str = if Char.isAlphaNum (head str)

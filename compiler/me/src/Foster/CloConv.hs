@@ -201,8 +201,8 @@ monoToLL mt = case mt of
    ArrayType     t              -> LLArrayType     (q t)
    PtrType       t              -> LLPtrType       (q t)
    PtrTypeUnknown               -> LLPtrTypeUnknown
-   FnType     d r _p cc FT_Proc -> LLProcType (map q d)  (q r) cc
-   FnType     d r _p cc FT_Func -> LLPtrType (LLStructType [procty,envty])
+   FnType     d r cc FT_Proc -> LLProcType (map q d)  (q r) cc
+   FnType     d r cc FT_Func -> LLPtrType (LLStructType [procty,envty])
                               where procty = LLProcType (envty:(map q d)) (q r) cc
                                     envty  = LLPtrType (LLPrimInt I8)
  where q = monoToLL
@@ -260,7 +260,7 @@ closureConvertBlocks bbg = do
 closureConvertLetFuns :: [Ident] -> [CFFn] -> ILM [Closure]
 closureConvertLetFuns ids fns = do
     let mkProcType ft id = case ft of
-                 FnType s t p cc FT_Func -> FnType s t p cc FT_Proc
+                 FnType s t cc FT_Func -> FnType s t cc FT_Proc
                  other -> error $ "CloConv.hs: mkProcType given non-function type?? " ++ show id ++ " ; " ++ show other
 
     let mkProcVar  (TypedId ft id) = TypedId (mkProcType ft id) id
@@ -476,7 +476,7 @@ closureOfKnFn infoMap (self_id, fn) = do
 closureConvertedProc :: [MoVar] -> CFFn -> BasicBlockGraph' -> ILM CCProc
 closureConvertedProc procArgs f newbody = do
   case fnVar f of
-    TypedId (FnType _ ftrange _ _ _) id ->
+    TypedId (FnType _ ftrange _ _) id ->
        return $ Proc (monoToLL ftrange) id (map llv procArgs) (fnAnnot f) newbody
     tid -> error $ "Expected closure converted proc to have fntype, had " ++ show tid
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -585,10 +585,10 @@ instance Pretty (Insn' e x) where
 
 prettyR roots = (if Set.size roots > 15 then text "..." else pretty roots) <> parens (pretty (Set.size roots))
 
-isProc ft = case ft of FnType _ _ _ _ FT_Proc -> True
+isProc ft = case ft of FnType _ _ _ FT_Proc -> True
                        _                      -> False
 
-isFunc ft = case ft of FnType _ _ _ _ FT_Func     -> True
+isFunc ft = case ft of FnType _ _ _ FT_Func     -> True
                        PtrType (StructType (t:_)) -> isProc t
                        _                          -> False
 

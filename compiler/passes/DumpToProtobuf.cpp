@@ -222,9 +222,6 @@ void dumpValAbs(DumpToProtobufPass* pass, pb::PBValAbs* target,
   for (size_t i = 0; i < valabs->tyVarFormals.size(); ++i) {
     dumpTypeFormal(&valabs->tyVarFormals[i], target->add_type_formals());
   }
-  if (valabs->precond) {
-    dumpChild(pass, target->mutable_precond(), valabs->precond);
-  }
   if (valabs->resultType) {
     ASSERT(false) << "result type annotations on functions aren't used.";
     //DumpToProtobufPass dt(target->mutable_result_type());
@@ -422,10 +419,6 @@ void FnTypeAST::dump(DumpToProtobufPass* pass) {
 
   fnty->set_calling_convention(this->getCallingConventionName());
 
-  if (this->getPrecond()) {
-    dumpChild(pass, fnty->mutable_precond(), this->getPrecond());
-  }
-
   if (this->getReturnType()) {
     dumpChild(pass, fnty->mutable_ret_type(), this->getReturnType());
   }
@@ -491,5 +484,12 @@ void ForallTypeAST::dump(DumpToProtobufPass* pass) {
   }
   pass->typ->mutable_type_parts()->Reserve(1);
   dumpChild(pass, pass->typ->add_type_parts(), this->quant);
+}
+
+void RefinedTypeAST::dump(DumpToProtobufPass* pass) {
+  setTagAndRange(pass->typ, this, pb::Type::REFINED_TY);
+  pass->typ->set_name(this->name);
+  dumpChild(pass, pass->typ->mutable_ref_underlying_type(), this->underlyingType);
+  dumpChild(pass, pass->typ->mutable_refinement(), this->refinement);
 }
 

@@ -32,6 +32,7 @@ message Type {
     CARRAY = 6;
     FORALL_TY = 7;
     TYPE_TYP_APP = 8;
+    REFINED_TY = 9;
   }
 
   optional SourceRange range = 1;
@@ -47,6 +48,8 @@ message Type {
   optional uint64 carray_size = 19;
 
   repeated TypeFormal tyformals = 20; // for FORALL_TY
+
+  optional Expr   refinement = 5;
 }
 
 message FnType {
@@ -54,7 +57,6 @@ message FnType {
   required Type ret_type  = 2;
   optional string calling_convention = 3;
   optional bool   is_closure = 4;
-  optional Expr   precond = 5;
 }
 
 message Formal {

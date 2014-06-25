@@ -89,7 +89,7 @@ mkSymbolicVar :: TypedId MonoType -> SymDecl
 mkSymbolicVar v = d
   where id = tidIdent v
         d  = case tidType v of
-                FnType dom rng _precond _ _ ->
+                FnType dom rng _ _ ->
                       SymDecl (nm id) (map smtType dom) (smtType rng)
                 ty -> SymDecl (nm id) []                (smtType ty)
 
@@ -172,13 +172,29 @@ checkModuleExprs expr facts =
 checkFn fn facts = do
   evalStateT (checkFn' fn facts) (SCState Map.empty)
 
+{-
+reconstructMonoFnPrecondition fn types =
+  let ts1 = map (\t -> case t of RefinedType nm ty e -> Just (nm, e)
+                              of _ -> Nothing) types
+  if List.all isNothing ts1
+    then Nothing
+    else let vars = [] in
+         let body = error "reconstructed body" in
+         Just (Fn (fnVar fn) vars body NotRec (error "ExprAnnotReconstr"))
+-}
+
 checkFn' fn facts0 = do
-  -- If the function has a precondition, assert it as a path fact
-  -- within the function body.
+  -- Assert any refinements associated with the function's args
+  -- within the scope of the function body.
+  liftIO $ putStrLn $ show $ (fnType fn)
+  liftIO $ putStrLn $ show $ (fnVars fn)
+  {-
   facts <- case monoFnPrecondition (fnType fn) of
                     NoPrecondition _ -> return facts0
                     HavePrecondition pf -> do e <- smtEvalApp facts0 (unLetFn pf) (fnVars fn)
                                               return $ mergeSMTExprAsPathFact e facts0
+                                              -}
+  facts <- return facts0
   -- Before processing the body, add declarations for the function formals,
   -- and record the preconditions associated with any function-typed formals.
   let facts' = foldl' addSymbolicVar facts (fnVars fn)
@@ -362,10 +378,12 @@ checkBody expr facts =
     KNCall ty v vs -> do
         -- Do any of the called function's args have preconditions?
         case tidType v of
-          FnType formals _ _precond _ _ -> do
+          FnType formals _ _ _ -> do
             forM_ (zip formals vs) $ \(formalTy, arg) -> do
               case formalTy of
                 FnType {} ->
+                  liftIO $ putStrLn "check precondition implication (TODO!)"
+                  {-
                   case (monoFnPrecondition formalTy, monoFnPrecondition (tidType arg)) of
                     (HavePrecondition pf, HavePrecondition pa) -> do
                       skolems <- mapM genSkolem (monoFnTypeDomain formalTy)
@@ -377,6 +395,7 @@ checkBody expr facts =
                                   putStrLn $ "precondition implication " ++ show (SMT.pp thm) ++ ": "
                                   putZ3Result res
                     _ -> return ()
+                  -}
                 _ -> return ()
           _ -> return ()
 
@@ -428,10 +447,12 @@ fromJust Nothing = error $ "can't unJustify Nothing"
 
 recordIfHasFnPrecondition facts id ty =
   case ty of
+{-
     FnType {} ->
       case monoFnPrecondition ty of
         NoPrecondition from -> return $ facts
         HavePrecondition pe -> return $ facts { fnPreconds = Map.insert id (mkPrecondGen facts $ unLetFn pe) (fnPreconds facts) }
+        -}
     _ -> return $ facts
 
 mkPrecondGen :: Facts -> (Fn RecStatus KNMono MonoType) -> ([MoVar] -> SC SMTExpr)

@@ -12,9 +12,14 @@ import Foster.AnnExpr(AnnExpr)
 
 import Text.PrettyPrint.ANSI.Leijen
 
+import Data.IORef(IORef)
+
 type RhoTC = TypeTC
 type TauTC = TypeTC
 type SigmaTC = TypeTC
+
+-- "Refinement ref"
+type RR = (IORef (Maybe (String, AnnExpr TypeTC)))
 
 data TypeTC =
            PrimIntTC       IntSizeBits
@@ -26,12 +31,13 @@ data TypeTC =
          | ArrayTypeTC     TypeTC
          | FnTypeTC        { fnTypeTCDomain :: [TypeTC]
                            , fnTypeTCRange  :: TypeTC
-                           , fnTypeTCPrecond :: MaybePrecondition (AnnExpr TypeTC)
                            , fnTypeTCCallConv :: CallConv
                            , fnTypeTCProcOrFunc :: ProcOrFunc }
          | ForAllTC        [(TyVar, Kind)] RhoTC
          | TyVarTC           TyVar
          | MetaTyVarTC     (MetaTyVar TypeTC)
+         | RefinedTypeTC   String TypeTC (AnnExpr TypeTC)
+
 {-
 instance Kinded TypeTC where
   kindOf x = case x of
@@ -61,13 +67,14 @@ instance Pretty TypeTC where
         PrimFloat64TC                   -> text "Float64"
         TyConAppTC   tcnm types         -> parens $ text tcnm <> hpre (map pretty types)
         TupleTypeTC       types         -> tupled $ map pretty types
-        FnTypeTC     s t _precond cc cs -> text "(" <> pretty s <> text " =" <> text (briefCC cc) <> text "> " <> pretty t <> text " @{" <> text (show cs) <> text "})"
+        FnTypeTC     s t  cc cs         -> text "(" <> pretty s <> text " =" <> text (briefCC cc) <> text "> " <> pretty t <> text " @{" <> text (show cs) <> text "})"
         CoroTypeTC   s t                -> text "(Coro " <> pretty s <> text " " <> pretty t <> text ")"
         ForAllTC   tvs rho              -> text "(forall " <> hsep (prettyTVs tvs) <> text ". " <> pretty rho <> text ")"
         TyVarTC    tv                   -> text (show tv)
         MetaTyVarTC m                   -> text "(~(" <> pretty (descMTVQ (mtvConstraint m)) <> text ")!" <> text (show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")")
         RefTypeTC     ty                -> text "(Ref " <> pretty ty <> text ")"
         ArrayTypeTC   ty                -> text "(Array " <> pretty ty <> text ")"
+        RefinedTypeTC _ ty _            -> text "(Refined " <> pretty ty <> text ")"
 
 instance Show TypeTC where
     show x = case x of
@@ -76,13 +83,14 @@ instance Show TypeTC where
         PrimIntTC size       -> "(PrimIntTC " ++ show size ++ ")"
         PrimFloat64TC        -> "(PrimFloat64TC)"
         TupleTypeTC types    -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
-        FnTypeTC   s t _precond cc cs -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
+        FnTypeTC   s t cc cs -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
         CoroTypeTC s t       -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
         ForAllTC ktvs rho    -> "(ForAll " ++ show ktvs ++ ". " ++ show rho ++ ")"
         TyVarTC     tv       -> show tv
         ArrayTypeTC ty       -> "(Array " ++ show ty ++ ")"
         RefTypeTC   ty       -> "(Ptr " ++ show ty ++ ")"
         MetaTyVarTC _        -> "(MetaTyVar)"
+        RefinedTypeTC {}     -> "(RefinedTypeTC)"
 
 boolTypeTC = PrimIntTC I1
 stringTypeTC = TyConAppTC "Text" []
@@ -113,6 +121,7 @@ instance Structured TypeTC where
             ArrayTypeTC   {}      -> text $ "ArrayTypeTC"
             RefTypeTC     {}      -> text $ "RefTypeTC"
             MetaTyVarTC   {}      -> text $ "MetaTyVarTC"
+            RefinedTypeTC {}      -> text $ "RefinedTypeTC"
 
     childrenOf e =
         case e of
@@ -120,13 +129,14 @@ instance Structured TypeTC where
             PrimIntTC       {}     -> []
             PrimFloat64TC          -> []
             TupleTypeTC     types  -> types
-            FnTypeTC  ss t _precond _cc _cs -> ss++[t]
+            FnTypeTC  ss t _cc _cs -> ss++[t]
             CoroTypeTC s t         -> [s,t]
             ForAllTC  _ktvs rho    -> [rho]
             TyVarTC        _tv     -> []
             ArrayTypeTC     ty     -> [ty]
             RefTypeTC       ty     -> [ty]
             MetaTyVarTC     {}     -> []
+            RefinedTypeTC _ ty _   -> [ty]
 
 fnReturnTypeTC f@(FnTypeTC {}) = fnTypeTCRange f
 fnReturnTypeTC (ForAllTC _ f@(FnTypeTC {})) = fnTypeTCRange f

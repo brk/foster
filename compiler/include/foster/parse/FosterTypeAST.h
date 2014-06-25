@@ -345,5 +345,27 @@ public:
   TypeAST* getQuantifiedType() const { return quant; }
 };
 
+class ExprAST;
+
+class RefinedTypeAST : public TypeAST {
+  std::string   name;
+  TypeAST* underlyingType;
+  ExprAST* refinement;
+
+public:
+  explicit RefinedTypeAST(std::string name,
+                          TypeAST* underlyingType,
+                          ExprAST* refinement,
+                          const SourceRange& sourceRange)
+    : TypeAST("RefType", NULL, sourceRange),
+      name(name), underlyingType(underlyingType), refinement(refinement) {}
+
+  virtual void show(PrettyPrintTypePass* pass);
+  virtual void dump(DumpToProtobufPass* pass);
+  virtual llvm::Type* getLLVMType() const;
+
+  TypeAST*& getElementType() { return underlyingType; }
+};
+
 #endif // header guard
 

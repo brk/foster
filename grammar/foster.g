@@ -28,7 +28,7 @@ tokens {
   REF; TUPLE; VAL_ABS; TYP_ABS; TYPE_ATOM; TYANNOT;
   TYPE_TYP_APP; TYPE_TYP_ABS;
   KIND_TYPE; KIND_TYOP; KIND_TYPE_BOXED; FORALL_TYPE;
-  FUNC_TYPE;
+  FUNC_TYPE; REFINED;
   TYPE_CTOR; DATATYPE; CTOR; TYPE_PLACEHOLDER;
   FORMAL; MODULE; WILDCARD; SNAFUINCLUDE; QNAME;
 
@@ -139,13 +139,11 @@ atom    :       // syntactically "closed" terms
   ;
 
 val_abs :
-    ('#precondition' tuple)?
     '{' ('forall' tyformal* ',')?
         (formal '=>')*
          stmts?
     '}'                                 -> ^(VAL_ABS ^(FORMALS formal*)
                                                      ^(MU tyformal*)
-                                                     ^(MU tuple?)
                                                      stmts?)
                   // value + type abstraction (terms indexed by terms and types)
     ;
@@ -188,7 +186,12 @@ letrec : 'rec' (binding ';')+ 'in' stmts 'end' -> ^(LETREC ^(MU binding+) stmts)
 
 ////////////////////////////////////////////////////////////////////////////////
 
-t : tatom (            -> ^(TYPE_ATOM    tatom)        // atomic types
+// "refined type"
+t  : '%' xid ':' tp ':' e -> ^(REFINED xid tp e)
+   | tp;
+
+tp // "type phrase"
+  : tatom (            -> ^(TYPE_ATOM    tatom)        // atomic types
           | tatom+     -> ^(TYPE_TYP_APP tatom tatom+) // type-level application
           )
   | 'forall' (tyformalr ',')+ t  -> ^(FORALL_TYPE tyformalr+ t) // description of terms indexed by types;

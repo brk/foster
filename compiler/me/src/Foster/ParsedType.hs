@@ -19,13 +19,13 @@ data TypeP =
          | TupleTypeP     [TypeP]
          | FnTypeP        { fnTypeDomain :: [TypeP]
                           , fnTypeRange  :: TypeP
-                          , fnTypePrecond :: MaybePrecondition (ExprAST TypeP)
                           , fnTypeCallConv :: CallConv
                           , fnTypeProcOrFunc :: ProcOrFunc }
          | CoroTypeP      TypeP TypeP
          | ForAllP        [TypeFormal] TypeP
          | TyVarP         TyVar
          | RefTypeP       TypeP
+         | RefinedTypeP   String TypeP (ExprAST TypeP)
          | ArrayTypeP     TypeP
          | MetaPlaceholder String
 
@@ -39,13 +39,14 @@ instance Show TypeP where
         PrimIntP         size         -> "(PrimIntP " ++ show size ++ ")"
         TyConAppP    tc types         -> "(TyCon: " ++ show tc ++ joinWith " " ("":map show types) ++ ")"
         TupleTypeP      types         -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
-        FnTypeP    s t p cc cs        -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
+        FnTypeP    s t cc cs          -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
         CoroTypeP  s t                -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
         ForAllP  tvs rho              -> "(ForAll " ++ show tvs ++ ". " ++ show rho ++ ")"
         TyVarP   tv                   -> show tv
         RefTypeP    ty                -> "(Ref " ++ show ty ++ ")"
         ArrayTypeP  ty                -> "(Array " ++ show ty ++ ")"
         MetaPlaceholder s             -> "??" ++ s
+        RefinedTypeP nm ty e          -> "(Refined " ++ nm ++ " : " ++ show ty ++ " : ... )"
 
 instance Structured TypeP where
     textOf e _width =
@@ -53,24 +54,26 @@ instance Structured TypeP where
             PrimIntP     size            -> text $ "PrimIntP " ++ show size
             TyConAppP    tc  _           -> text $ "TyConAppP " ++ tc
             TupleTypeP       _           -> text $ "TupleTypeP"
-            FnTypeP    _ _  _  _ _       -> text $ "FnTypeP"
+            FnTypeP    _ _   _ _         -> text $ "FnTypeP"
             CoroTypeP  _ _               -> text $ "CoroTypeP"
             ForAllP  tvs _rho            -> text $ "ForAllP " ++ show tvs
             TyVarP   tv                  -> text $ "TyVarP " ++ show tv
             RefTypeP    _                -> text $ "RefTypeP"
             ArrayTypeP  _                -> text $ "ArrayTypeP"
-            MetaPlaceholder s            -> text $ "MetaPlaceholder " ++ s
+            MetaPlaceholder s            -> text $ "MetaPlaceholder "
+            RefinedTypeP nm ty e         -> text $ "RefinedTypeP"
 
     childrenOf e =
         case e of
             PrimIntP         _           -> []
             TyConAppP   _tc types        -> types
             TupleTypeP      types        -> types
-            FnTypeP    ss t _ _ _        -> (t:ss)
+            FnTypeP    ss t _ _          -> (t:ss)
             CoroTypeP  s t               -> [s, t]
             ForAllP  _tvs rho            -> [rho]
             TyVarP   _tv                 -> []
             RefTypeP    ty               -> [ty]
             ArrayTypeP  ty               -> [ty]
             MetaPlaceholder _            -> []
+            RefinedTypeP _ ty _          -> [ty]
 

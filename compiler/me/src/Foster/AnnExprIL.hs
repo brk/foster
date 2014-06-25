@@ -297,9 +297,11 @@ ilOf ctx typ = do
      PrimFloat64TC       -> do return $ PrimFloat64IL
      TupleTypeTC  types  -> do tys <- mapM q types
                                return $ TupleTypeIL tys
-     FnTypeTC  ss t p cc cs -> do (y:xs) <- mapM q (t:ss)
-                                  p' <- mapMaybePreconditionM (ail ctx) p
-                                  return $ FnTypeIL xs y p' cc cs
+     FnTypeTC  ss t cc cs -> do (y:xs) <- mapM q (t:ss)
+                                return $ FnTypeIL xs y cc cs
+     RefinedTypeTC nm ty e -> do ty' <- ilOf ctx ty
+                                 e' <- ail ctx e
+                                 return $ RefinedTypeIL nm ty' e'
      CoroTypeTC  s t     -> do [x,y] <- mapM q [s,t]
                                return $ CoroTypeIL x y
      RefTypeTC  ty       -> do t <- q ty
@@ -372,7 +374,6 @@ data TypeIL =
          | TupleTypeIL     [TypeIL]
          | FnTypeIL        { fnTypeILDomain :: [TypeIL]
                            , fnTypeILRange  :: TypeIL
-                           , fnTypeILPrecond :: MaybePrecondition AIExpr
                            , fnTypeILCallConv :: CallConv
                            , fnTypeILProcOrFunc :: ProcOrFunc }
          | CoroTypeIL      TypeIL  TypeIL
@@ -380,6 +381,7 @@ data TypeIL =
          | TyVarIL           TyVar  Kind
          | ArrayTypeIL     TypeIL
          | PtrTypeIL       TypeIL
+         | RefinedTypeIL   String TypeIL AIExpr
 
 type AIVar = TypedId TypeIL
 
@@ -398,12 +400,13 @@ instance Show TypeIL where
         PrimIntIL size       -> "(PrimIntIL " ++ show size ++ ")"
         PrimFloat64IL        -> "(PrimFloat64IL)"
         TupleTypeIL types    -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
-        FnTypeIL   s t _precond cc cs -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
+        FnTypeIL   s t cc cs -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
         CoroTypeIL s t       -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
         ForAllIL ktvs rho    -> "(ForAll " ++ show ktvs ++ ". " ++ show rho ++ ")"
         TyVarIL     tv kind  -> show tv ++ ":" ++ show kind
         ArrayTypeIL ty       -> "(Array " ++ show ty ++ ")"
         PtrTypeIL   ty       -> "(Ptr " ++ show ty ++ ")"
+        RefinedTypeIL _ ty _ -> "(Refined " ++ show ty ++ ")"
 
 instance Structured TypeIL where
     textOf e _width =
@@ -418,6 +421,7 @@ instance Structured TypeIL where
             TyVarIL       {}      -> text $ "TyVarIL "
             ArrayTypeIL   {}      -> text $ "ArrayTypeIL"
             PtrTypeIL     {}      -> text $ "PtrTypeIL"
+            RefinedTypeIL {}      -> text $ "RefinedTypeIL"
 
     childrenOf e =
         case e of
@@ -425,12 +429,13 @@ instance Structured TypeIL where
             PrimIntIL       {}     -> []
             PrimFloat64IL          -> []
             TupleTypeIL     types  -> types
-            FnTypeIL  ss t _precond _cc _cs -> ss++[t]
+            FnTypeIL  ss t _cc _cs -> ss++[t]
             CoroTypeIL s t         -> [s,t]
             ForAllIL  _ktvs rho    -> [rho]
             TyVarIL        _tv _   -> []
             ArrayTypeIL     ty     -> [ty]
             PtrTypeIL       ty     -> [ty]
+            RefinedTypeIL _ ty _   -> [ty]
 
 instance Kinded TypeIL where
   kindOf x = case x of
@@ -444,3 +449,4 @@ instance Kinded TypeIL where
     ForAllIL _ktvs rho   -> kindOf rho
     ArrayTypeIL {}       -> KindPointerSized
     PtrTypeIL   {}       -> KindPointerSized
+    RefinedTypeIL _ ty _ -> kindOf ty

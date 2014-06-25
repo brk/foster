@@ -142,6 +142,15 @@ void ForallTypeAST::show(PrettyPrintTypePass* pass){
   pass->scan(PPToken(")"));
 }
 
+void RefinedTypeAST::show(PrettyPrintTypePass* pass){
+  pass->scan(PPToken("% "));
+  pass->scan(PPToken(this->name));
+  pass->scan(PPToken(" : "));
+  pass->emit(this->underlyingType);
+  pass->scan(PPToken(" : "));
+  pass->scan(PPToken("...(refinement)..."));
+}
+
 namespace foster {
 
 void prettyPrintType(const TypeAST* t,

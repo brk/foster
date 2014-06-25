@@ -376,10 +376,10 @@ monoType subst ty =
      PrimIntIL size         -> return $ PrimInt size
      PrimFloat64IL          -> return $ PrimFloat64
      TupleTypeIL types      -> liftM TupleType (mapM q types)
-     FnTypeIL  ss t p cc cs -> do ss' <- mapM q ss
-                                  t'  <- q t
-                                  p'  <- mapMaybePreconditionM (convertPrecond subst) p
-                                  return $ FnType ss' t' p' cc cs
+     FnTypeIL  ss t cc cs -> do ss' <- mapM q ss
+                                t'  <- q t
+                                return $ FnType ss' t' cc cs
+     RefinedTypeIL nm ty e  -> liftM2 (RefinedType nm) (q ty) (convertPrecond subst e)
      CoroTypeIL s t         -> liftM2 CoroType  (q s) (q t)
      ArrayTypeIL ty         -> liftM  ArrayType (q ty)
      PtrTypeIL ty           -> liftM  PtrType   (q ty)

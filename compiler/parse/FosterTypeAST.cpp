@@ -337,3 +337,10 @@ llvm::Type* ForallTypeAST::getLLVMType() const {
   ASSERT(false) << "No getLLVMType() for ForallTypeAST!";
   return NULL;
 }
+
+/////////////////////////////////////////////////////////////////////
+
+llvm::Type* RefinedTypeAST::getLLVMType() const {
+  ASSERT(false) << "No getLLVMType() for RefinedTypeAST!";
+  return NULL;
+}
