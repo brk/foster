@@ -31,6 +31,7 @@ import qualified Data.Map as Map(lookup, empty, elems, findWithDefault, insert,
            keys, assocs, delete, fromList, keysSet, alter)
 import qualified Data.Text as T(pack)
 import Control.Monad(when, liftM)
+import Control.Monad.IO.Class(liftIO)
 import Control.Monad.State(evalStateT, get, put, modify, StateT, lift, gets,
                            execState, State)
 
@@ -135,7 +136,7 @@ insertSmartGCRoots bbgp0 mayGCmap dump = do
   bbgp'5c  <- removeDeadGCRoots bbgp'5b (mapInverse gcr) rootsLiveAtGCPoints'5b
   bbgp'5d <- runAvails bbgp'5c rootsLiveAtGCPoints'5b mayGCmap False
 
-  lift $ when (showOptResults || dump) $ do
+  liftIO $ when (showOptResults || dump) $ do
               putStrLn "difference from runAvails:"
               Boxes.printBox $ catboxes2 (bbgpBody bbgp'4) (bbgpBody bbgp'5d )
 
@@ -239,7 +240,7 @@ runLiveAtGCPoint2 :: BasicBlockGraph' -> Map Ident MayGC ->
                                Compiled (BasicBlockGraph' , RootLiveWhenGC)
 runLiveAtGCPoint2 bbgp mayGCmap
                        = do uref <- gets ccUniqRef
-                            lift $ runWithUniqAndFuel uref infiniteFuel (go bbgp)
+                            liftIO $ runWithUniqAndFuel uref infiniteFuel (go bbgp)
   where
     go :: BasicBlockGraph' -> M (BasicBlockGraph' ,RootLiveWhenGC)
     go bbgp = do
@@ -320,7 +321,7 @@ insertDumbGCRoots bbgp0 dump = do
                                     (bbgpBody bbgp) transform)
                              Map.empty
 
-   lift $ when (showOptResults || dump) $ do Boxes.printBox $ catboxes2 (bbgpBody bbgp) g'
+   liftIO $ when (showOptResults || dump) $ do Boxes.printBox $ catboxes2 (bbgpBody bbgp) g'
 
    return bbgp { bbgpBody =  g' }
 
@@ -457,7 +458,7 @@ insertDumbGCKills :: BasicBlockGraph' -> Bool -> [RootVar] -> Compiled BasicBloc
 insertDumbGCKills bbgp dump allroots = do
    g'  <- rebuildGraphM (case bbgpEntry bbgp of (bid, _) -> bid)
                                     (bbgpBody bbgp) transform
-   lift $ when (showOptResults || dump) $ do Boxes.printBox $ catboxes2 (bbgpBody bbgp) g'
+   liftIO $ when (showOptResults || dump) $ do Boxes.printBox $ catboxes2 (bbgpBody bbgp) g'
    return bbgp { bbgpBody =  g' }
  where
   transform :: forall e x. Insn' e x -> Compiled (Graph Insn' e x)
@@ -494,7 +495,7 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
                                     (bbgpBody bbgp) transform
    g' <- evalStateT mappedAction Map.empty
 
-   lift $ when showOptResults $ Boxes.printBox $ catboxes2 (bbgpBody bbgp) g'
+   liftIO $ when showOptResults $ Boxes.printBox $ catboxes2 (bbgpBody bbgp) g'
 
    return bbgp { bbgpBody =  g' }
  where
@@ -735,7 +736,7 @@ runAvails :: BasicBlockGraph' -> RootLiveWhenGC -> Map Ident MayGC -> Bool
                                                 -> Compiled BasicBlockGraph'
 runAvails bbgp rootsLiveAtGCPoints mayGCmap doReuseRootSlots = do
          uref <- gets ccUniqRef
-         lift $ runWithUniqAndFuel uref infiniteFuel (go bbgp)
+         liftIO $ runWithUniqAndFuel uref infiniteFuel (go bbgp)
   where
     go :: BasicBlockGraph' -> M BasicBlockGraph'
     go bbgp = do
@@ -823,7 +824,7 @@ liveRootsRewrite = mkFRewrite d
 runRootConsistencyChecker :: String -> BasicBlockGraph' -> Compiled ()
 runRootConsistencyChecker msg bbgp = do
          uref <- gets ccUniqRef
-         lift $ runWithUniqAndFuel uref infiniteFuel (go bbgp)
+         liftIO $ runWithUniqAndFuel uref infiniteFuel (go bbgp)
   where
     go :: BasicBlockGraph' -> M ()
     go bbgp = do

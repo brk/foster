@@ -24,6 +24,8 @@ import Data.Traversable(mapM)
 import Prelude hiding (mapM)
 import Control.Monad.State(forM, when, forM_, evalStateT, gets,
                            liftIO, liftM, liftM2)
+import Control.Monad.Error(runErrorT)
+import System.Exit(exitFailure)
 
 import Foster.Base
 import Foster.Config
@@ -55,7 +57,8 @@ import Foster.ConvertExprAST
 import Foster.MainOpts
 
 import Foster.Output
-import Text.PrettyPrint.ANSI.Leijen
+import Text.PrettyPrint.ANSI.Leijen((<+>), (<>), pretty, text, line, hsep,
+                                    fill, parens, vcat, list, red, dullyellow)
 import Criterion.Measurement(time, secs)
 
 -----------------------------------------------------------------------
@@ -398,7 +401,7 @@ runCompiler pb_program flagVals outfile = do
                               tcParents = [],
                    tcMetaIntConstraints = icmap,
      tcRefinementImplicationConstraints = rics }
-   (nc_time, (in_time, cp_time, ilprog)) <- time $ evalStateT (compile pb_program tcenv)
+   (nc_time, mb_errs) <- time $ runErrorT $ evalStateT (compile pb_program tcenv)
                     CompilerContext {
                            ccVerbose  = getVerboseFlag flagVals
                          , ccFlagVals = flagVals
@@ -406,11 +409,20 @@ runCompiler pb_program flagVals outfile = do
                          , ccInline   = getInlining flagVals
                          , ccUniqRef  = uniqref
                     }
-   (pb_time, _) <- time $ dumpILProgramToProtobuf ilprog outfile
-   putStrLn $ "compilation time: " ++ secs (nc_time - (cp_time + in_time))
-   putStrLn $ "inlining    time: " ++ secs in_time
-   putStrLn $ "codegenprep time: " ++ secs cp_time
-   putStrLn $ "protobufout time: " ++ secs pb_time
+   case mb_errs of
+     Left  errs -> do
+       putStrLn $ "compilation time: " ++ secs (nc_time)
+       putDocLn $ red $ text "Compilation failed: "
+       forM_ errs putDocLn
+       putDocP line
+       exitFailure
+
+     Right (in_time, cp_time, ilprog) -> do
+       (pb_time, _) <- time $ dumpILProgramToProtobuf ilprog outfile
+       putStrLn $ "compilation time: " ++ secs (nc_time - (cp_time + in_time))
+       putStrLn $ "inlining    time: " ++ secs in_time
+       putStrLn $ "codegenprep time: " ++ secs cp_time
+       putStrLn $ "protobufout time: " ++ secs pb_time
 
 compile :: WholeProgram -> TcEnv -> Compiled (Double, Double, ILProgram)
 compile pb_program tcenv =

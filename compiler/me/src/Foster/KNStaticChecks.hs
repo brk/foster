@@ -19,8 +19,10 @@ import Foster.KNUtil
 import Foster.Config
 
 import Text.PrettyPrint.ANSI.Leijen
+import qualified Text.PrettyPrint.HughesPJ as HughesPJ(Doc)
 import qualified Data.Text as T
 
+import Control.Monad.Error(throwError)
 import Control.Monad.State(gets, liftIO, evalStateT, execStateT, StateT,
                            execState, State, forM, forM_,
                            liftM, liftM2, get, put, lift)
@@ -156,6 +158,21 @@ scGetFact id = do
   sc <- get
   return $ Map.lookup id (scExtraFacts sc)
 
+-- Errors will be propagated, while unsat (success) results are trivial...
+scRunZ3 :: KNMono -> HughesPJ.Doc -> SC ()
+scRunZ3 expr doc = lift $ do
+  res <- liftIO $ runZ3 (show doc)
+  case res of
+    Left x -> throwError [text x]
+    Right ["unsat", "unsat"] -> return ()
+    Right strs -> throwError ([text "Unable to verify precondition associated with expression",
+                               pretty expr,
+                               string (show doc)] ++ map text strs)
+  return ()
+
+putZ3Result (Left x) = putStrLn x
+putZ3Result (Right strs) = mapM_ (putStrLn . ("\t"++)) strs
+
 runStaticChecks :: ModuleIL KNMono MonoType -> Compiled ()
 runStaticChecks m = do
   checkModuleExprs (moduleILbody m) (Facts Map.empty [] [] Set.empty)
@@ -243,9 +260,6 @@ smtI s = SMT.I (SMT.N s) []
 
 smtArraySizeOf x = app (smtI "foster$arraySizeOf") [x]
 
-putZ3Result (Left x) = putStrLn x
-putZ3Result (Right strs) = mapM_ (putStrLn . ("\t"++)) strs
-
 fnMap = Map.fromList    [("==", (===))
                         ,("!=", (=/=))
                         ,("+", bvadd)
@@ -323,9 +337,7 @@ checkBody expr facts =
         --let precond = (sign_extend 32 (smtVar i)) `inRangeCO` (litOfSize 0 I64, smtArraySizeOf (smtVar a))
         let precond = bvult (zero_extend 32 (smtVar i)) (smtArraySizeOf (smtVar a))
         let thm = scriptImplyingBy' precond facts
-        liftIO $ do res <- runZ3 (show $ SMT.pp thm)
-                    putStrLn $ "precondition for " ++ show (SMT.pp thm) ++ ": "
-                    putZ3Result res
+        scRunZ3 expr (SMT.pp thm)
         -- If the array has an annotation, use it.
         mb_f <- scGetFact (tidIdent a)
         case mb_f of
@@ -360,9 +372,7 @@ checkBody expr facts =
     KNCallPrim _ (NamedPrim tid) vs | primName tid `elem` ["assert-invariants"] -> do
         let precond = smtAll (map smtVar vs)
         let thm = scriptImplyingBy' precond facts
-        liftIO $ do res <- runZ3 (show $ SMT.pp thm)
-                    putStrLn $ "precondition for " ++ show (SMT.pp thm) ++ ": "
-                    putZ3Result res
+        scRunZ3 expr (SMT.pp thm)
         return $ Nothing
 
     KNCallPrim _ (NamedPrim tid) [v] | primName tid `elem` ["prim_arrayLength"] -> do
@@ -395,9 +405,7 @@ checkBody expr facts =
     KNCallPrim (PrimInt _) (PrimOp "sdiv-unsafe" (PrimInt sz)) vs -> do
         let precond [s1, s2] = s2 =/= (litOfSize 0 sz)
         let thm = scriptImplyingBy' (precond (smtVars vs)) facts
-        liftIO $ do res <- runZ3 (show $ SMT.pp thm)
-                    putStrLn $ "precondition for " ++ show (SMT.pp thm) ++ ": "
-                    putZ3Result res
+        scRunZ3 expr (SMT.pp thm)
         return $ withDecls facts $ \x -> return $ smtId x === lift2 bvsdiv (smtVars vs)
 
     KNCallPrim _ty prim vs -> do
@@ -436,7 +444,7 @@ checkBody expr facts =
                       smt_a <- (mkPrecondGen facts $ unLetFn pa) skolems
                       let smte = mergeSMTExpr (\ef ea -> ef SMT.==> ea) smt_f smt_a
                       let thm  = scriptImplyingBy smte facts
-                      liftIO $ do res <- runZ3 (show $ SMT.pp thm)
+                      liftIO $ do res <- ccRunZ3 (SMT.pp thm)
                                   putStrLn $ "precondition implication " ++ show (SMT.pp thm) ++ ": "
                                   putZ3Result res
                     _ -> return ()
@@ -457,10 +465,7 @@ checkBody expr facts =
             --liftIO $ putStrLn $ show (SMT.pp smtprecond)
             --let thm = scriptImplyingBy expr (mergeFactsForCompilation facts efacts)
             let thm = scriptImplyingBy (SMTExpr e decls idfacts)  facts
-            liftIO $ do res <- runZ3 (show $ SMT.pp thm)
-                        putStrLn $ "precondition for " ++ show (SMT.pp thm) ++ ": "
-                        putZ3Result res
-
+            scRunZ3 expr (SMT.pp thm)
             return Nothing
 
     KNLetVal      id   e1 e2    -> do

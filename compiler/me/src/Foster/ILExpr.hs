@@ -25,7 +25,8 @@ import Foster.Output(putDocLn)
 import Data.Map(Map)
 import Data.List(zipWith4, foldl' )
 import Data.Maybe(maybeToList, fromMaybe)
-import Control.Monad.State(evalState, State, get, gets, modify, lift)
+import Control.Monad.State(evalState, State, get, gets, modify)
+import Control.Monad.IO.Class(liftIO)
 import qualified Data.Set as Set(toList, map, union, unions, difference,
                                  member, Set, empty, size, fromList)
 import qualified Data.Map as Map(singleton, insertWith, lookup, empty, fromList,
@@ -577,7 +578,7 @@ availsRewrite = mkFRewrite d
 runAvails :: BasicBlockGraph' -> Compiled BasicBlockGraph'
 runAvails bbgp = do
          uref <- gets ccUniqRef
-         lift $ runWithUniqAndFuel uref infiniteFuel (go bbgp)
+         liftIO $ runWithUniqAndFuel uref infiniteFuel (go bbgp)
   where
     go :: BasicBlockGraph' -> M BasicBlockGraph'
     go bbgp = do
@@ -690,7 +691,7 @@ deadBindElim = mkBRewrite d
 runLiveness :: BasicBlockGraph' -> Compiled BasicBlockGraph'
 runLiveness bbgp = do
     uref <- gets ccUniqRef
-    lift $ runWithUniqAndFuel uref infiniteFuel (go bbgp)
+    liftIO $ runWithUniqAndFuel uref infiniteFuel (go bbgp)
   where
     go :: BasicBlockGraph' -> M BasicBlockGraph'
     go bbgp = do

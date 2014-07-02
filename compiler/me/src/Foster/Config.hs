@@ -11,13 +11,16 @@ import Foster.MainOpts
 
 import Data.IORef(IORef, readIORef)
 import Control.Monad.State(StateT, gets, when, liftIO)
+import Control.Monad.Error(ErrorT, Error(..))
+import Control.Monad.Trans.Error(ErrorList(..))
 import qualified Data.Text as T(Text)
 
 import Data.Time.Clock.POSIX (getPOSIXTime)
 
+import Text.PrettyPrint.ANSI.Leijen(Doc, text)
 import System.Console.GetOpt
 
-type Compiled = StateT CompilerContext IO
+type Compiled = StateT CompilerContext (ErrorT CompilerFailures IO)
 data CompilerContext = CompilerContext {
         ccVerbose   :: Bool
       , ccUniqRef   :: IORef Uniq
@@ -25,6 +28,11 @@ data CompilerContext = CompilerContext {
       , ccInline    :: Bool
       , ccDumpFns   :: [String]
 }
+
+type CompilerFailures = [Doc]
+
+instance Error Doc where strMsg s = text s
+instance ErrorList Doc where listMsg s = [text s]
 
 ccUniq :: Compiled Uniq
 ccUniq = do uref <- gets ccUniqRef
