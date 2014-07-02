@@ -20,7 +20,7 @@ type SigmaTC = TypeTC
 
 -- "Refinement status"
 data RR = NoRefinement String
-        | MbRefinement (IORef (Maybe (String, AnnExpr TypeTC)))
+        | MbRefinement (IORef (Maybe (Ident, AnnExpr TypeTC)))
 
 data TypeTC =
            PrimIntTC       IntSizeBits             RR
@@ -37,7 +37,7 @@ data TypeTC =
          | ForAllTC        [(TyVar, Kind)] RhoTC
          | TyVarTC           TyVar
          | MetaTyVarTC     (MetaTyVar TypeTC)
-         | RefinedTypeTC   String TypeTC (AnnExpr TypeTC)
+         | RefinedTypeTC   (TypedId TypeTC) (AnnExpr TypeTC)
 
 {-
 instance Kinded TypeTC where
@@ -75,7 +75,7 @@ instance Pretty TypeTC where
         MetaTyVarTC m                   -> text "(~(" <> pretty (descMTVQ (mtvConstraint m)) <> text ")!" <> text (show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")")
         RefTypeTC     ty                -> text "(Ref " <> pretty ty <> text ")"
         ArrayTypeTC   ty              _ -> text "(Array " <> pretty ty <> text ")"
-        RefinedTypeTC _ ty _            -> text "(Refined " <> pretty ty <> text ")"
+        RefinedTypeTC v _               -> text "(Refined " <> pretty (tidType v) <> text ")"
 
 instance Show TypeTC where
     show x = case x of
@@ -137,7 +137,7 @@ instance Structured TypeTC where
             ArrayTypeTC     ty    _ -> [ty]
             RefTypeTC       ty      -> [ty]
             MetaTyVarTC     {}      -> []
-            RefinedTypeTC _ ty _    -> [ty]
+            RefinedTypeTC v _       -> [tidType v]
 
 fnReturnTypeTC f@(FnTypeTC {}) = fnTypeTCRange f
 fnReturnTypeTC (ForAllTC _ f@(FnTypeTC {})) = fnTypeTCRange f

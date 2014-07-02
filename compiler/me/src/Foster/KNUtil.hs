@@ -107,7 +107,7 @@ alphaRename' fn uref = do
       case Map.lookup id (renameMap state) of
         Nothing  -> do id' <- renameI id
                        return (TypedId t id' )
-        Just _u' -> error "can't rename a variable twice!"
+        Just _u' -> error $ "KNUtil.hs: can't rename a variable twice! " ++ show id
 
     renameI id@(GlobalSymbol t) = do u' <- fresh
                                      let id' = GlobalSymbol $ t `T.append` T.pack (show u')

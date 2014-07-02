@@ -217,7 +217,8 @@ tcRho :: Context SigmaTC -> Term -> Expected RhoTC -> Tc (AnnExpr RhoTC)
 -- Invariant: if the second argument is (Check rho),
 -- 	      then rho is in weak-prenex form
 tcRho ctx expr expTy = do
-  debugDoc $ green (text "typecheck: ") <> textOf expr 0 <> text (" <=? " ++ show expTy)
+ debugDoc2 $ green (text "typecheck: ") <> textOf expr 0 <> text (" <=? " ++ show expTy)
+ logged'' (show $ textOf expr 0 ) $
   tcWithScope expr $ do
     case expr of
       E_CallAST   rng (E_PrimAST _ name@"assert-invariants") argtup -> do
@@ -1097,14 +1098,15 @@ tcType ctx typ = do
           let annot  = ExprAnnot [] rng []
           let formal = TypedId ty (Ident (T.pack nm) 0)
           uniquelyNamedFormals0 <- getUniquelyNamedFormals ctx rng [formal] (T.pack $ "refinement " ++ nm)
-          uniquelyNamedFormals <- mapM
+          [uniquelyNamedFormal] <- mapM
                       (retypeTID (resolveType annot $ localTypeBindings ctx))
                       uniquelyNamedFormals0
 
-          let extCtx = extendContext ctx uniquelyNamedFormals
-          ty' <- q ty
+          let extCtx = extendContext ctx [uniquelyNamedFormal]
           e' <- checkRho extCtx e (PrimIntTC I1 (NoRefinement "bool-of-refinement"))
-          return $ RefinedTypeTC nm ty' e'
+          ty' <- q ty
+          -- TODO if we don't replace the type component, it leads to circularity...
+          return $ RefinedTypeTC (TypedId ty' (tidIdent uniquelyNamedFormal)) e'
 -- }}}
 
 
@@ -1262,7 +1264,7 @@ subsCheckRhoTy (ForAllTC ktvs rho) rho2 = do -- Rule SPEC
 subsCheckRhoTy rho1 (FnTypeTC as2 r2 _ _) = unifyFun rho1 as2 "subsCheckRhoTy" >>= \(as1, r1) -> subsCheckFunTy as1 r1 as2 r2
 subsCheckRhoTy (FnTypeTC as1 r1 _ _) rho2 = unifyFun rho2 as1 "subsCheckRhoTy" >>= \(as2, r2) -> subsCheckFunTy as1 r1 as2 r2
 subsCheckRhoTy tau1 tau2 -- Rule MONO
-     = unify tau1 tau2 "subsCheckRho" -- Revert to ordinary unification
+     = logged' ("subsCheckRhoTy " ++ show (pretty (tau1, tau2))) $ unify tau1 tau2 "subsCheckRho" -- Revert to ordinary unification
 -- }}}
 
 subsCheck :: (AnnExpr SigmaTC) -> SigmaTC -> String -> Tc (AnnExpr SigmaTC)
@@ -1306,7 +1308,7 @@ subsCheckRho esigma rho2 = do
     -- shallow, not deep, skolemization due to being a strict language.
 
     (rho1, _) -> do -- Rule MONO
-        unify rho1 rho2 ("subsCheckRho[" ++ show rho2 ++ "]" ++ show (showStructure esigma)) -- Revert to ordinary unification
+        logged esigma ("subsCheckRho " ++ show (pretty (rho1, rho2))) $ unify rho1 rho2 ("subsCheckRho[" ++ show rho2 ++ "]" ++ show (showStructure esigma)) -- Revert to ordinary unification
         return esigma
 -- }}}
 
@@ -1397,7 +1399,7 @@ resolveType annot subst x =
     CoroTypeTC   s t               -> liftM2 CoroTypeTC  (q s) (q t)
     TyConAppTC    tc  types     rr -> liftM2 (TyConAppTC  tc) (mapM q types) (return rr)
     TupleTypeTC       types     rr -> liftM2  TupleTypeTC     (mapM q types) (return rr)
-    RefinedTypeTC nm ty e          -> liftM (\t -> RefinedTypeTC nm t e) (q ty)
+    RefinedTypeTC (TypedId ty id) e -> liftM (\t -> RefinedTypeTC (TypedId t id) e) (q ty)
     ForAllTC      ktvs rho         -> liftM (ForAllTC  ktvs) (resolveType annot subst' rho)
                                        where
                                         subst' = foldl' ins subst ktvs
@@ -1436,7 +1438,7 @@ getFreeTyVars xs = do zs <- mapM zonkType xs
         MetaTyVarTC  {}          -> []
         RefTypeTC    ty          -> (go bound) ty
         ArrayTypeTC  ty      _rr -> (go bound) ty
-        RefinedTypeTC _ ty _     -> (go bound) ty -- TODO handle tyvars in expr?
+        RefinedTypeTC v _        -> (go bound) (tidType v) -- TODO handle tyvars in expr?
 -- }}}
 
 unMBS :: MetaBindStatus -> TypeTC
@@ -1486,7 +1488,7 @@ zonkType x = do
         ArrayTypeTC     ty   rr -> do debug $ "zonking array ty: " ++ show ty
                                       liftM2 (ArrayTypeTC  ) (zonkType ty) (return rr)
         CoroTypeTC s r          -> liftM2 (CoroTypeTC  ) (zonkType s) (zonkType r)
-        RefinedTypeTC nm ty e   -> liftM (\t -> RefinedTypeTC nm t e) (zonkType ty)
+        RefinedTypeTC (TypedId ty id) e   -> liftM (\t -> RefinedTypeTC (TypedId t id) e) (zonkType ty)
         FnTypeTC ss r   cc cs   -> do ss' <- mapM zonkType ss ; r' <- zonkType r
                                       return $ FnTypeTC ss' r' cc cs
 -- }}}
@@ -1666,7 +1668,7 @@ collectAllUnificationVars xs = Set.toList (Set.fromList (concatMap go xs))
             MetaTyVarTC   m         -> [m]
             RefTypeTC     ty        -> go ty
             ArrayTypeTC   ty      _ -> go ty
-            RefinedTypeTC _ ty _    -> go ty
+            RefinedTypeTC v _    -> go (tidType v)
 
 vname (E_AnnVar _rng (av, _)) n = show n ++ " for " ++ T.unpack (identPrefix $ tidIdent av)
 vname _                       n = show n
@@ -1745,6 +1747,7 @@ tcVERBOSE = False
 
 debug    s = do when tcVERBOSE (tcLift $ putStrLn s)
 debugDoc d = do when tcVERBOSE (tcLift $ putDocLn d)
+debugDoc2 d = do tcLift $ putDocLn d
 
 -- The free-variable determination logic here is tested in
 --      test/bootstrap/testcases/rec-fn-detection
@@ -1778,4 +1781,22 @@ caseArmFreeVars (CaseArm epat body guard _ _) =
 
 typeTC :: AnnExpr TypeTC -> TypeTC
 typeTC = typeOf
+
+logged'' msg action = do
+  tcLift $ putStrLn $ "{ " ++ msg
+  rv <- action
+  tcLift $ putStrLn $ "} :: " ++ show (pretty $ typeTC rv)
+  return rv
+
+logged' msg action = do
+  tcLift $ putStrLn $ "{ " ++ msg
+  rv <- action
+  tcLift $ putStrLn $ "}"
+  return rv
+
+logged expr msg action = do
+  tcLift $ putStrLn $ "{ " ++ msg
+  rv <- action
+  tcLift $ putStrLn $ "} :: " ++ show (pretty $ typeTC expr)
+  return rv
 -- }}}

@@ -16,8 +16,8 @@ mk-UTF-8-decoder-v1 :: { #precondition
                          // { pr => case pr of (s,_) -> s <=UInt32 96 }
                          { Int32 => Int32 => Int8  => (Int32, Int32) } };
                          */
-mk-UTF-8-decoder-v1 :: { { % rstate : Int32 : rstate <=UInt32 96
-                         => Int32 => Int8  => (% rs : Int32 : rs <=UInt32 96, Int32) } };
+mk-UTF-8-decoder-v1 :: { { % rstate : Int64 : rstate <=UInt64 96
+                         => Int32 => Int8  => (% rs : Int64 : rs <=UInt64 96, Int32) } };
 mk-UTF-8-decoder-v1 = {
   utf8d = prim mach-array-literal
           // The first part of the table maps bytes to character classes that
@@ -38,8 +38,8 @@ mk-UTF-8-decoder-v1 = {
           12 12 12 12 12 12 12 36 12 36 12 12  12 36 12 12 12 12 12 36 12 36 12 12
           12 36 12 12 12 12 12 12 12 12 12 12 ;
 
-  { state : Int32 => codep : Int32 => byte8 : Int8 =>
-    //prim assert-invariants (state <=UInt32 96);
+  { state : Int64 => codep : Int32 => byte8 : Int8 =>
+    prim assert-invariants (state <=UInt64 127);
 
     kUTF8-ACCEPT = 0;
     kUTF8-REJECT = 12;
@@ -51,14 +51,15 @@ mk-UTF-8-decoder-v1 = {
 
     prim assert-invariants (typex >=UInt32 0) (typex <=UInt32 11);
 
-    codepx = if state !=Int32 kUTF8-ACCEPT
+    codepx = if state !=Int64 kUTF8-ACCEPT
                then (byte32 `bitand-Int32` 11`1111_2) `bitor-Int32`
                     (codep  `bitshl-Int32`   6)
                else (255 `bitlshr-Int32` typex) `bitand-Int32` byte32
              end;
 
     // 96 + 11 < 108, so this subscript is statically safe.
-    statex = prim subscript utf8s (state +Int32 typex) |> zext_i8_to_i32;
+    state32 = trunc_i64_to_i32 state;
+    statex = prim subscript utf8s (state32 +Int32 typex) |> zext_i8_to_i64;
     (statex, codepx)
   }
 };
@@ -71,7 +72,8 @@ countCodePoints-v1 = { decoder => bytearr =>
       then b = bytearr[idx];
            // TODO i don't think we're checking the precondition of decoder here...
            case decoder st cp b of (stx, cpx) ->
-             ctx = ct +Int32 (if stx ==Int32 0 then 1 else 0 end);
+             prim assert-invariants (stx <=UInt64 126);
+             ctx = ct +Int32 (if stx ==Int64 0 then 1 else 0 end);
              loop (idx +Int32 1) stx ctx cpx
            end
       else ct

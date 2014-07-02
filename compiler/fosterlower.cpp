@@ -246,6 +246,7 @@ areDeclaredValueTypesOK(llvm::Module* mod,
       v = f;
     }
 
+    if (v) {
     ASSERT(v) << "unable to find module entry for " << d->getName();
     llvm::Type* ty = t->getLLVMType();
     if (v->getType() != ty) {
@@ -263,6 +264,7 @@ areDeclaredValueTypesOK(llvm::Module* mod,
                 << "Imported: " << str(v->getType()) << "\n";
         return false;
       }
+    }
     }
 
   }

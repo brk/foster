@@ -25,7 +25,7 @@ data MonoType =
          | ArrayType     MonoType
          | PtrType       MonoType
          | PtrTypeUnknown
-         | RefinedType   String MonoType KNMono
+         | RefinedType   (TypedId MonoType) KNMono
          deriving (Show, Eq)
 
 instance Eq KNMono where e1 == e2 = show e1 == show e2
@@ -55,7 +55,7 @@ instance Pretty MonoType where
           ArrayType      t            -> text "Array" <+> pretty t
           PtrType        t            -> text "Ref" <+> pretty t
           PtrTypeUnknown              -> text "?"
-          RefinedType nm ty _e        -> text "%" <+> text nm <+> text ":" <+> pretty ty
+          RefinedType v _e        -> text "%" <+> pretty v
 
 type FnMono   = Fn RecStatus KNMono MonoType
 type KNMono     = KNExpr' RecStatus MonoType

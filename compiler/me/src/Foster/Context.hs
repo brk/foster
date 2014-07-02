@@ -121,7 +121,7 @@ data TcEnv = TcEnv { tcEnvUniqs        :: IORef Uniq
                    , tcUnificationVars :: IORef [MetaTyVar TypeTC]
                    , tcParents         :: [ExprAST TypeAST]
                    , tcMetaIntConstraints :: IORef (Map (MetaTyVar TypeTC) Int)
-                   , tcRefinementImplicationConstraints :: IORef [( (String, AnnExpr TypeTC), (String, AnnExpr TypeTC) )]
+                   , tcRefinementImplicationConstraints :: IORef [( (Ident, AnnExpr TypeTC), (Ident, AnnExpr TypeTC) )]
                    }
 
 newtype Tc a = Tc (TcEnv -> IO (OutputOr a))

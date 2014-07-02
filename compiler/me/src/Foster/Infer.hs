@@ -57,7 +57,7 @@ parSubstTcTy prvNextPairs ty =
         ForAllTC  ktvs rho   ->
                 let prvNextPairs' = prvNextPairs `assocFilterOut` (map fst ktvs)
                 in  ForAllTC  ktvs (parSubstTcTy prvNextPairs' rho)
-        RefinedTypeTC nm t e -> RefinedTypeTC nm (q t) e -- TODO recurse in e?
+        RefinedTypeTC (TypedId t id) e -> RefinedTypeTC (TypedId (q t) id) e -- TODO recurse in e?
 
 -- Replaces types for meta type variables (unification variables)
 -- according to the given type substitution.
@@ -76,7 +76,7 @@ tySubst subst ty =
         FnTypeTC  ss t cc cs   -> FnTypeTC     (map q ss) (q t) cc cs
         CoroTypeTC  s t        -> CoroTypeTC  (q s) (q t)
         ForAllTC  tvs rho      -> ForAllTC  tvs (q rho)
-        RefinedTypeTC nm t e   -> RefinedTypeTC nm (q t) e
+        RefinedTypeTC (TypedId t id) e   -> RefinedTypeTC (TypedId (q t) id) e
 
 -------------------------------------------------
 illegal (TyVarTC (BoundTyVar _)) = True
@@ -94,13 +94,13 @@ mbGetRefinement ty = case ty of
 
 refineRefinement (NoRefinement nope) (nm,_) = do
      msg <- getStructureContextMessage
-     tcFailsMore [text $ "Infer.hs: Unable to unify refinement for " ++ nm ++ " due to no-refinement from " ++ nope
+     tcFailsMore [text $ "Infer.hs: Unable to unify refinement for " ++ show nm ++ " due to no-refinement from " ++ nope
                  , msg]
 refineRefinement (MbRefinement r) v = do
   mbr <- tcLift $ readIORef r
   case mbr of
-    Nothing -> tcLift $ writeIORef r (Just v)
-    Just v' -> tcAddRefinementImplicationConstraint v v'
+    Nothing -> do tcLift $ putStrLn $ "refineRefinement writing ref" ++ show (fst v) ; tcLift $ writeIORef r (Just v)
+    Just v' -> do tcLift $ putStrLn "refineRefinement implcnstrnt" ; tcAddRefinementImplicationConstraint v v'
 
 tcUnifyRefinements   (NoRefinement _)   (NoRefinement _) = return ()
 tcUnifyRefinements n@(NoRefinement _) m@(MbRefinement _) = tcUnifyRefinements m n
@@ -110,7 +110,7 @@ tcUnifyRefinements (MbRefinement r) (NoRefinement nope) = do
    Nothing -> return ()
    Just (nm,_) -> do
      msg <- getStructureContextMessage
-     tcFailsMore [text $ "Unable to unify refinement for " ++ nm ++ " due to no-refinement from " ++ nope
+     tcFailsMore [text $ "Unable to unify refinement for " ++ show nm ++ " due to no-refinement from " ++ nope
                  , msg]
 tcUnifyRefinements (MbRefinement r1) (MbRefinement r2) = do
  mbr1 <- tcLift $ readIORef r1
@@ -119,9 +119,12 @@ tcUnifyRefinements (MbRefinement r1) (MbRefinement r2) = do
    (Nothing, Nothing) -> return ()
    (Just (nm1,_), Just (nm2,_)) ->
      tcLift $ putStrLn $ "~~~~~~ TODO check refinements eq: " ++ show (nm1, nm2)
-   (v1, Nothing) -> tcLift $ writeIORef r2 v1
-   (Nothing, v2) -> tcLift $ writeIORef r1 v2
-
+   -- Unidirectional refinement propagation!
+   (v1, Nothing) -> do tcLift $ putStrLn $ "tcUnifyRefinments writing ref r2..." ++ show (fmap fst v1) ; tcLift $ writeIORef r2 v1
+        {-
+   (Nothing, v2) -> do tcLift $ putStrLn $ "tcUnifyRefinments writing ref r1..." ++ show (fmap fst v2) ; tcLift $ writeIORef r1 v2
+-}
+   _ -> return ()
 tcUnifyTypes :: TypeTC -> TypeTC -> Tc UnifySoln
 tcUnifyTypes t1 t2 = tcUnify [TypeConstrEq t1 t2]
   where
@@ -206,7 +209,7 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                let t2 = parSubstTcTy tySubst rho2 in
                tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
-    ((RefinedTypeTC n1 t1 e1), (RefinedTypeTC n2 t2 e2)) ->
+    ((RefinedTypeTC (TypedId t1 n1) e1), (RefinedTypeTC (TypedId t2 n2) e2)) ->
       -- TODO make sure that n/e match...
       tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
@@ -220,11 +223,11 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
         tcUnifyRefinements rr1 rr2
         tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
-    ((RefinedTypeTC n1 t1 e1), ty) | Just rr <- mbGetRefinement ty -> do
+    ((RefinedTypeTC (TypedId t1 n1) e1), ty) | Just rr <- mbGetRefinement ty -> do
       refineRefinement rr (n1, e1)
       tcUnifyLoop ((TypeConstrEq t1 ty):constraints) tysub
 
-    (ty, (RefinedTypeTC n1 t1 e1)) | Just rr <- mbGetRefinement ty -> do
+    (ty, (RefinedTypeTC (TypedId t1 n1) e1)) | Just rr <- mbGetRefinement ty -> do
       refineRefinement rr (n1, e1)
       tcUnifyLoop ((TypeConstrEq ty t1):constraints) tysub
 

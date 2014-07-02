@@ -298,9 +298,10 @@ withRefinement ctx rr action = do
       mbr <- tcLift $ readIORef r
       case mbr of
         Nothing -> return ty
-        Just (nm, e) -> do
+        Just (id, e) -> do
+          tcLift $ putStrLn $ "withRefinement producing refinement type for " ++ show id
           e' <- ail ctx e
-          return $ RefinedTypeIL nm ty e'
+          return $ RefinedTypeIL (TypedId ty id) e'
 
 ilOf :: Context t -> TypeTC -> Tc TypeIL
 ilOf ctx typ = do
@@ -315,9 +316,9 @@ ilOf ctx typ = do
                                                          return $ TupleTypeIL tys
      FnTypeTC  ss t cc cs -> do (y:xs) <- mapM q (t:ss)
                                 return $ FnTypeIL xs y cc cs
-     RefinedTypeTC nm ty e -> do ty' <- ilOf ctx ty
-                                 e' <- ail ctx e
-                                 return $ RefinedTypeIL nm ty' e'
+     RefinedTypeTC v e    -> do v' <- aiVar ctx v
+                                e' <- ail ctx e
+                                return $ RefinedTypeIL v' e'
      CoroTypeTC  s t     -> do [x,y] <- mapM q [s,t]
                                return $ CoroTypeIL x y
      RefTypeTC  ty       -> do t <- q ty
@@ -398,7 +399,7 @@ data TypeIL =
          | TyVarIL           TyVar  Kind
          | ArrayTypeIL     TypeIL
          | PtrTypeIL       TypeIL
-         | RefinedTypeIL   String TypeIL AIExpr
+         | RefinedTypeIL   (TypedId TypeIL) AIExpr
 
 type AIVar = TypedId TypeIL
 
@@ -423,7 +424,7 @@ instance Show TypeIL where
         TyVarIL     tv kind  -> show tv ++ ":" ++ show kind
         ArrayTypeIL ty       -> "(Array " ++ show ty ++ ")"
         PtrTypeIL   ty       -> "(Ptr " ++ show ty ++ ")"
-        RefinedTypeIL _ ty _ -> "(Refined " ++ show ty ++ ")"
+        RefinedTypeIL v _    -> "(Refined " ++ show (tidType v) ++ ")"
 
 instance Structured TypeIL where
     textOf e _width =
@@ -452,7 +453,7 @@ instance Structured TypeIL where
             TyVarIL        _tv _   -> []
             ArrayTypeIL     ty     -> [ty]
             PtrTypeIL       ty     -> [ty]
-            RefinedTypeIL _ ty _   -> [ty]
+            RefinedTypeIL   v  _   -> [tidType v]
 
 instance Kinded TypeIL where
   kindOf x = case x of
@@ -466,4 +467,4 @@ instance Kinded TypeIL where
     ForAllIL _ktvs rho   -> kindOf rho
     ArrayTypeIL {}       -> KindPointerSized
     PtrTypeIL   {}       -> KindPointerSized
-    RefinedTypeIL _ ty _ -> kindOf ty
+    RefinedTypeIL v _    -> kindOf (tidType v)

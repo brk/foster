@@ -18,6 +18,7 @@ import Foster.Base
 import Foster.KNUtil
 import Foster.Config
 
+import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T
 
 import Control.Monad.State(gets, liftIO, evalStateT, execStateT, StateT,
@@ -107,7 +108,7 @@ smtType (PrimInt I1) = tBool
 smtType (PrimInt sz) = tBitVec (fromIntegral $ intSizeOf sz)
 smtType (ArrayType _) = smtArray
 smtType (TupleType tys) = TApp (smtI ("FosterTuple" ++ show (length tys))) (map smtType tys)
-smtType (RefinedType _ ty _) = smtType ty
+smtType (RefinedType v _) = smtType (tidType v)
 smtType ty = error $ "smtType can't yet handle " ++ show ty
 
 smtArray = TApp (smtI "FosterArray") []
@@ -187,15 +188,32 @@ reconstructMonoFnPrecondition fn types =
 checkFn' fn facts0 = do
   -- Assert any refinements associated with the function's args
   -- within the scope of the function body.
-  liftIO $ putStrLn $ show $ (fnType fn)
-  liftIO $ putStrLn $ show $ (fnVars fn)
-  {-
-  facts <- case monoFnPrecondition (fnType fn) of
-                    NoPrecondition _ -> return facts0
-                    HavePrecondition pf -> do e <- smtEvalApp facts0 (unLetFn pf) (fnVars fn)
-                                              return $ mergeSMTExprAsPathFact e facts0
-                                              -}
-  facts <- return facts0
+
+  -- Example of a fnVar:  state : (% rstate : Int32 : rstate < 10)
+  -- So we convert the refinement type into a predicate, and pass the variable
+  -- as the argument, thus producing the path fact (state < 10).
+  -- To handle dependent refinements, each predicate takes all the fnvars...
+  let (relevantFormals, relevantActuals) =
+        unzip $ Prelude.concat [case tidType v of RefinedType v' _ -> [(v', v)]
+                                                  _                -> []
+                               | v <- fnVars fn]
+      mbFnOfRefinement rt@(RefinedType {}) = [fnOfRefinement rt]
+      mbFnOfRefinement _                   = []
+
+      fnOfRefinement (RefinedType _ body) =
+          Fn (fnVar fn) relevantFormals body NotRec (ExprAnnot [] (MissingSourceRange "fnOfRefinement") [])
+
+      refinements = concatMap mbFnOfRefinement (map tidType $ fnVars fn)
+      foldPathFact facts f = do e <- smtEvalApp facts f relevantActuals
+                                return $ mergeSMTExprAsPathFact e facts
+  liftIO $ putStrLn $ "%%%%%%%%%%%%%%%%%%%%%%%%%%%"
+  liftIO $ putStrLn $ show $ map pretty refinements
+  liftIO $ putStrLn $ show $ fnVars fn
+  liftIO $ putStrLn $ show relevantFormals
+  liftIO $ putStrLn $ show relevantActuals
+  facts <- foldlM foldPathFact facts0 refinements
+  --facts <- return facts0
+
   -- Before processing the body, add declarations for the function formals,
   -- and record the preconditions associated with any function-typed formals.
   let facts' = foldl' addSymbolicVar facts (fnVars fn)
@@ -255,6 +273,31 @@ staticArrayValueBounds (Left (LitInt li):entries) = go entries (Just (litIntValu
 
 withDecls :: Facts -> (Ident -> SC SMT.Expr) -> Maybe (Ident -> SC SMTExpr)
 withDecls facts f = Just $ \x -> do e <- f x ; return $ SMTExpr e (symbolicDecls facts) (identFacts facts)
+
+withBindings :: TypedId MonoType -> [TypedId MonoType] -> Facts -> SC Facts
+withBindings fnv vs facts0 = do
+  let (relevantFormals, relevantActuals) =
+        unzip $ Prelude.concat [case tidType v of RefinedType v' _ -> [(v', v)]
+                                                  _                -> []
+                               | v <- vs]
+      mbFnOfRefinement rt@(RefinedType {}) = [fnOfRefinement rt]
+      mbFnOfRefinement _                   = []
+
+      fnOfRefinement (RefinedType _ body) =
+          Fn fnv relevantFormals body NotRec (ExprAnnot [] (MissingSourceRange "fnOfRefinement") [])
+
+      refinements = concatMap mbFnOfRefinement (map tidType vs)
+      foldPathFact facts f = do e <- smtEvalApp facts f relevantActuals
+                                return $ mergeSMTExprAsPathFact e facts
+  facts <- foldlM foldPathFact facts0 refinements
+  --facts <- return facts0
+
+  -- Before processing the body, add declarations for the function formals,
+  -- and record the preconditions associated with any function-typed formals.
+  let facts' = foldl' addSymbolicVar facts vs
+  --facts''  <- foldlM recordIfTidHasFnPrecondition facts' (fnVars fn)
+  return facts'
+
 
 genSkolem ty = liftM (TypedId ty) (lift $ ccFreshId $ T.pack ".skolem")
 
@@ -367,7 +410,8 @@ checkBody expr facts =
         -- TODO: better path conditions for individual arms
         _ <- forM arms $ \arm -> do
             case caseArmGuard arm of
-                Nothing -> checkBody (caseArmBody arm) facts
+                Nothing -> do facts' <- withBindings v (caseArmBindings arm) facts
+                              checkBody (caseArmBody arm) facts'
                 Just g -> error $ "can't yet support case arms with guards in KNStaticChecks"
         return Nothing
         --error $ "checkBody cannot yet support KNCase" -- KNCase ty v (map (fmapCaseArm id (q tailq) id) arms)

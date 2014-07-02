@@ -370,7 +370,8 @@ extendMonoSubst subst monotypes ktyvars =
 
 monoType :: MonoSubst -> TypeIL -> Mono MonoType
 monoType subst ty =
-  let q = monoType subst in
+  let q = monoType subst
+      qv (TypedId ty id) = do ty' <- q ty ; return (TypedId ty' id) in
   case ty of
      TyConAppIL nam types   -> liftM (TyConApp nam) (mapM q types)
      PrimIntIL size         -> return $ PrimInt size
@@ -379,7 +380,7 @@ monoType subst ty =
      FnTypeIL  ss t cc cs -> do ss' <- mapM q ss
                                 t'  <- q t
                                 return $ FnType ss' t' cc cs
-     RefinedTypeIL nm ty e  -> liftM2 (RefinedType nm) (q ty) (convertPrecond subst e)
+     RefinedTypeIL v e      -> liftM2 RefinedType (qv v) (convertPrecond subst e)
      CoroTypeIL s t         -> liftM2 CoroType  (q s) (q t)
      ArrayTypeIL ty         -> liftM  ArrayType (q ty)
      PtrTypeIL ty           -> liftM  PtrType   (q ty)
