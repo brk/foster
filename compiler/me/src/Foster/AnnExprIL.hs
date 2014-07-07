@@ -18,7 +18,6 @@ import qualified Data.Text as T
 
 import Data.IORef(readIORef)
 import Control.Monad(when)
-import Control.Monad.State(lift)
 
 -- Changes between AnnExpr and AnnExprIL:
 -- * Type annotation changes from TypeAST to TypeIL, which
@@ -231,6 +230,8 @@ ailInt rng int ty = do
       case mty of
         Just t -> do ailInt rng int t
         Nothing -> do tcFails [text "Int literal should have had type inferred for it!"]
+
+    RefinedTypeTC v _ -> ailInt rng int (tidType v)
 
     _ -> do tcFails [text "Unable to assign integer literal the type" <+> pretty ty
                   ,string (highlightFirstLine rng)]
