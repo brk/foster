@@ -12,6 +12,8 @@ import Data.Map(Map)
 import qualified Data.Set as Set
 import Data.Set(Set)
 import Data.List(foldl')
+import Data.Maybe(fromMaybe)
+import Data.IORef(writeIORef)
 
 import Foster.MonoType
 import Foster.Base
@@ -22,9 +24,9 @@ import Text.PrettyPrint.ANSI.Leijen
 import qualified Text.PrettyPrint.HughesPJ as HughesPJ(Doc)
 import qualified Data.Text as T
 
-import Control.Monad.Error(throwError)
+import Control.Monad.Error(throwError, catchError, runErrorT, ErrorT)
 import Control.Monad.State(gets, liftIO, evalStateT, execStateT, StateT,
-                           execState, State, forM, forM_,
+                           execState, State, forM, forM_, runStateT,
                            liftM, liftM2, get, put, lift)
 
 import qualified SMTLib2 as SMT
@@ -53,7 +55,7 @@ smtExprAddPathFacts (SMTExpr e s m) ps = SMTExpr e s (ps ++ m)
 smtExprLift  f (SMTExpr e s m) = SMTExpr (f e) s m
 smtExprLiftM f (SMTExpr e s m) = liftM (\e' -> SMTExpr e' s m) (f e)
 
-data Facts = Facts { fnPreconds :: Map Ident ([MoVar] -> SC SMTExpr)
+data Facts = Facts { fnPreconds :: Map Ident [[MoVar] -> SC SMTExpr]
                    , identFacts :: [(Ident, SMT.Expr)]
                    , pathFacts  :: [SMT.Expr]
                    , symbolicDecls :: Set SymDecl
@@ -191,17 +193,6 @@ checkModuleExprs expr facts =
 checkFn fn facts = do
   evalStateT (checkFn' fn facts) (SCState Map.empty)
 
-{-
-reconstructMonoFnPrecondition fn types =
-  let ts1 = map (\t -> case t of RefinedType nm ty e -> Just (nm, e)
-                              of _ -> Nothing) types
-  if List.all isNothing ts1
-    then Nothing
-    else let vars = [] in
-         let body = error "reconstructed body" in
-         Just (Fn (fnVar fn) vars body NotRec (error "ExprAnnotReconstr"))
--}
-
 checkFn' fn facts0 = do
   -- Assert any refinements associated with the function's args
   -- within the scope of the function body.
@@ -290,6 +281,10 @@ withDecls facts f = Just $ \x -> do e <- f x ; return $ SMTExpr e (symbolicDecls
 
 withBindings :: TypedId MonoType -> [TypedId MonoType] -> Facts -> SC Facts
 withBindings fnv vs facts0 = do
+  -- For example, given f = { x : (% z : Int32 : ...) => y : Int32 => x + y }
+  -- the relevant formals are [z] and the relevant actuals are [x].
+  -- The computed refinements would be [ { z => ... } ]
+  -- TODO pick better names for the relevants...
   let (relevantFormals, relevantActuals) =
         unzip $ Prelude.concat [case tidType v of RefinedType v' _ -> [(v', v)]
                                                   _                -> []
@@ -304,7 +299,6 @@ withBindings fnv vs facts0 = do
       foldPathFact facts f = do e <- smtEvalApp facts f relevantActuals
                                 return $ mergeSMTExprAsPathFact e facts
   facts <- foldlM foldPathFact facts0 refinements
-  --facts <- return facts0
 
   -- Before processing the body, add declarations for the function formals,
   -- and record the preconditions associated with any function-typed formals.
@@ -312,6 +306,23 @@ withBindings fnv vs facts0 = do
   --facts''  <- foldlM recordIfTidHasFnPrecondition facts' (fnVars fn)
   return facts'
 
+computeRefinements :: TypedId MonoType -> [FnMono]
+computeRefinements fnv =
+  let relevantFormals =
+        Prelude.concat [case t of RefinedType t' _ -> [t']
+                                  _ -> []
+                       | t <- ts]
+      ts = monoFnTypeDomain (tidType fnv)
+
+      mbFnOfRefinement rt@(RefinedType {}) = [fnOfRefinement rt]
+      mbFnOfRefinement _                   = []
+
+      fnOfRefinement (RefinedType _ body) =
+          Fn fnv relevantFormals body NotRec (ExprAnnot [] (MissingSourceRange "fnOfRefinement") [])
+
+      refinements = concatMap mbFnOfRefinement ts
+  in
+  refinements
 
 genSkolem ty = liftM (TypedId ty) (lift $ ccFreshId $ T.pack ".skolem")
 
@@ -321,8 +332,8 @@ primName tid = T.unpack (identPrefix (tidIdent tid))
 checkBody :: KNMono -> Facts -> SC (Maybe (Ident -> SC SMTExpr))
 checkBody expr facts =
   case expr of
-    KNLiteral (PrimInt sz) (LitInt i) -> do
-        return $ withDecls facts $ \x -> return $ smtId x === litOfSize (fromInteger $ litIntValue i) sz
+    KNLiteral ty (LitInt i) -> do
+        return $ withDecls facts $ \x -> return $ smtId x === litOfSize (fromInteger $ litIntValue i) (intSizeBitsOf ty)
     KNLiteral _ (LitBool b) ->
         return $ withDecls facts $ \x -> return $ smtId x === (if b then SMT.true else SMT.false)
     KNLiteral     {} -> do liftIO $ putStrLn $ "no constraint for literal " ++ show expr
@@ -453,19 +464,21 @@ checkBody expr facts =
           _ -> return ()
 
         -- Does the called function have a precondition?
-        case getMbFnPrecondition facts (tidIdent v) of
-          Nothing -> do
+        case fromMaybe [] $ getMbFnPreconditions facts (tidIdent v) of
+          [] -> do
             liftIO $ putStrLn $ "TODO: call of function with result type " ++ show ty ++ " ; " ++ show (tidIdent v)
             liftIO $ putStrLn $ "           (no precond)"
             return Nothing
-          Just fp -> do
+          fps -> do
             liftIO $ putStrLn $ "TODO: call of function with result type " ++ show ty ++ " ; " ++ show (tidIdent v)
             liftIO $ putStrLn $ "           (have precond)"
-            SMTExpr e decls idfacts <- fp vs
-            --liftIO $ putStrLn $ show (SMT.pp smtprecond)
-            --let thm = scriptImplyingBy expr (mergeFactsForCompilation facts efacts)
-            let thm = scriptImplyingBy (SMTExpr e decls idfacts)  facts
-            scRunZ3 expr (SMT.pp thm)
+            let checkPrecond fp = do
+                SMTExpr e decls idfacts <- fp vs
+                --liftIO $ putStrLn $ show (SMT.pp smtprecond)
+                --let thm = scriptImplyingBy expr (mergeFactsForCompilation facts efacts)
+                let thm = scriptImplyingBy (SMTExpr e decls idfacts)  facts
+                scRunZ3 expr (SMT.pp thm)
+            mapM_ checkPrecond fps
             return Nothing
 
     KNLetVal      id   e1 e2    -> do
@@ -492,17 +505,33 @@ checkBody expr facts =
     KNLetFuns     ids fns b     ->
         error $ "KNStaticChecks.hs: checkBody can't yet support recursive function nests."
 
+    KNCompiles (KNCompilesResult resvar) _t e -> do
+        res <- scIntrospect (checkBody e facts)
+        case res of
+          Left  {} -> do liftIO $ writeIORef resvar False
+                         return $ Nothing
+          Right {} -> do return $ Nothing
+
+runCompiled :: Compiled x -> CompilerContext -> IO (Either CompilerFailures x)
+runCompiled action state = runErrorT $ evalStateT action state
+
+compiledIntrospect :: Compiled x -> Compiled (Either CompilerFailures x)
+compiledIntrospect action = do state <- get
+                               liftIO $ runCompiled action state
+
+scIntrospect :: SC x -> SC (Either CompilerFailures x)
+scIntrospect action = do state <- get
+                         lift $ compiledIntrospect (evalStateT action state)
+
 fromJust (Just a) = a
 fromJust Nothing = error $ "can't unJustify Nothing"
 
 recordIfHasFnPrecondition facts id ty =
   case ty of
-{-
     FnType {} ->
-      case monoFnPrecondition ty of
-        NoPrecondition from -> return $ facts
-        HavePrecondition pe -> return $ facts { fnPreconds = Map.insert id (mkPrecondGen facts $ unLetFn pe) (fnPreconds facts) }
-        -}
+      case computeRefinements (TypedId ty id) of
+        [] -> return $ facts
+        preconds -> return $ facts { fnPreconds = Map.insert id (map (mkPrecondGen facts) preconds) (fnPreconds facts) }
     _ -> return $ facts
 
 mkPrecondGen :: Facts -> (Fn RecStatus KNMono MonoType) -> ([MoVar] -> SC SMTExpr)
@@ -530,7 +559,7 @@ bareSMTExpr e = SMTExpr e Set.empty []
 
 varsEq (v1, v2) = smtVar v1 === smtVar v2
 
-getMbFnPrecondition facts id = Map.lookup id (fnPreconds facts)
+getMbFnPreconditions facts id = Map.lookup id (fnPreconds facts)
 
 unLetFn (KNLetFuns _ [fn] _) = fn
 unLetFn _ = error $ "unLetFn given non-fn value"

@@ -7,6 +7,7 @@
 
 module Foster.KNExpr (kNormalizeModule, KNExpr, KNMono, FnMono, mkCtorReprFn,
                       KNExpr'(..), TailQ(..), typeKN, kNormalize,
+                      KNCompilesResult(..),
                       knLoopHeaders, knSinkBlocks, knInline, knSize,
                       renderKN, renderKNM, renderKNF, renderKNFM) where
 import qualified Data.Text as T
@@ -17,6 +18,7 @@ import Data.Map(Map)
 import Data.List(foldl' , isPrefixOf, isInfixOf)
 import Data.Maybe(maybeToList, isJust)
 import Data.Int
+import Data.IORef(newIORef)
 
 import Foster.MonoType
 import Foster.Base
@@ -130,6 +132,9 @@ kNormalize ctorRepr expr =
                               nestedLets (map go es) (\vars -> KNAppCtor  t (c, repr) vars)
       AICall     t (E_AIVar v) es -> do nestedLetsDo (     map go es) (\    vars  -> knCall t v  vars)
       AICall     t b           es -> do nestedLetsDo (go b:map go es) (\(vb:vars) -> knCall t vb vars)
+      AICompiles t e              -> do e' <- go e
+                                        r <- liftIO $ newIORef True
+                                        return $ KNCompiles (KNCompilesResult r) t e'
 
   where knStore x y = do
             let q = varOrThunk (x, pointedToType $ tidType y)
@@ -527,6 +532,7 @@ collectFunctions knf = go [] (fnBody knf)
           KNArrayPoke     {} -> xs
           KNArrayLit      {} -> xs
           KNTyApp         {} -> xs
+          KNCompiles _r _t e -> go xs e
           KNInlined _t0 _to _tn _old new -> go xs new
           KNIf            _ _ e1 e2   -> go (go xs e1) e2
           KNLetVal          _ e1 e2   -> go (go xs e1) e2
@@ -565,6 +571,7 @@ collectMentions knf = go Set.empty (fnBody knf)
                                        foldl' go (vv xs v) es
           KNLetRec     _ es b ->       foldl' go xs (b:es)
           KNLetFuns    _ fns b -> Set.union xs $ go (Set.unions $ map collectMentions fns) b
+          KNCompiles _r _t e             -> go xs e
           KNInlined _t0 _to _tn _old new -> go xs new
 
 rebuildFnWith rebuilder addBindingsFor f =
@@ -594,6 +601,7 @@ rebuildWith rebuilder e = q e
       KNLetRec      ids es   e       -> KNLetRec   ids (map q es) (q e)
       KNCase        ty v arms        -> KNCase     ty v (map (fmapCaseArm id q id) arms)
       KNLetFuns     ids fns e        -> mkLetFuns (rebuilder (zip ids fns)) (q e)
+      KNCompiles _r _t e             -> KNCompiles _r _t (q e)
       KNInlined _t0 _to _tn _old new -> KNInlined _t0 _to _tn _old (q new)
 
 mkLetFuns []       e = e
@@ -870,6 +878,7 @@ knLoopHeaders' expr = do
     KNDeref       {} -> expr
     KNCallPrim    {} -> expr
     KNAppCtor     {} -> expr
+    KNCompiles r t e -> KNCompiles r t (q tailq e)
     KNInlined _t0 _to _tn _old new -> q tailq new
     KNCase        ty v arms     -> KNCase ty v (map (fmapCaseArm id (q tailq) id) arms)
     KNIf          ty v e1 e2    -> KNIf     ty v (q tailq e1) (q tailq e2)
@@ -1551,6 +1560,8 @@ knInline' expr env = do
   let q v = resVar env v
   knBumpTotalEffort
   withRaisedLevel $ case expr of
+    KNCompiles _r _t e -> do Rez e' <- knInline' e env
+                             return $ Rez $ KNCompiles _r _t e'
     KNInlined _t0 _to _tn _old new -> do Rez new' <- knInline' new env
                                          return $ Rez $ KNInlined _t0 _to _tn _old new'
     KNLiteral     {} -> residualize expr
@@ -2349,6 +2360,7 @@ knElimRebinds expr = go Map.empty expr where
             KNArrayLit   t arr vals -> KNArrayLit t (qv arr) (mapRight qv vals)
             KNTuple      t vs s -> KNTuple      t (map qv vs) s
             KNCase   _t v bnds  -> KNCase   _t (qv v ) (map qb bnds)
+            KNCompiles _r _t e  -> KNCompiles _r _t (q e)
             KNInlined _t0 _to _tn _old new  -> KNInlined _t0 _to _tn _old (q new)
 fmapCaseArm :: (p1 t1 -> p2 t2) -> (e1 -> e2) -> (t1 -> t2) -> CaseArm p1 e1 t1 -> CaseArm p2 e2 t2
 fmapCaseArm fp fe ft (CaseArm p e g b rng)

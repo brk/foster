@@ -54,7 +54,9 @@ data KNExpr' r ty =
         | KNArrayRead   ty (ArrayIndex (TypedId ty))
         | KNArrayPoke   ty (ArrayIndex (TypedId ty)) (TypedId ty)
         | KNArrayLit    ty (TypedId ty) [Either Literal (TypedId ty)]
+        -- Others
         | KNTyApp       ty (TypedId ty) [ty]
+        | KNCompiles    KNCompilesResult ty (KNExpr' r ty)
         | KNInlined     Int Int Int (KNExpr' r ty) (KNExpr' r ty) -- old, new
                      --          ^ "after" time of inlining new
                      --      ^ "before" time of inlining new
@@ -177,6 +179,7 @@ alphaRename' fn uref = do
                                      b'   <- renameKN b
                                      return $ KNLetFuns ids' fns' b'
       KNTyApp t v argtys       -> qv v >>= \v' -> return $ KNTyApp t v' argtys
+      KNCompiles r t e         -> liftM (KNCompiles r t) (renameKN e)
       KNInlined t0 tb tn old new -> do renameKN new >>= return . (KNInlined t0 tb tn old)
 
     renameCaseArm (CaseArm pat expr guard vs rng) = do
@@ -211,6 +214,9 @@ type Renamed = StateT RenameState IO
 
 
 -- ||||||||||||||||||||||||| Boilerplate ||||||||||||||||||||||||{{{
+
+newtype KNCompilesResult = KNCompilesResult (IORef Bool)
+instance Show KNCompilesResult where show _ = ""
 
 deriving instance (Show ty, Show rs) => Show (KNExpr' rs ty) -- used elsewhere...
 
@@ -251,6 +257,7 @@ typeKN expr =
     KNLetFuns       _ _ e    -> typeKN e
     KNVar                  v -> tidType v
     KNTyApp overallType _tm _tyArgs -> overallType
+    KNCompiles _ t _           -> t
     KNInlined _t0 _ _ _ new -> typeKN new
 
 -- This instance is primarily needed as a prereq for KNExpr to be an AExpr,
@@ -283,7 +290,8 @@ instance (Show ty, Show rs) => Structured (KNExpr' rs ty) where
             KNVar (TypedId t i) -> text $ "KNVar(Local):   " ++ show i ++ " :: " ++ show t
             KNTyApp t _e argty  -> text $ "KNTyApp     " ++ show argty ++ "] :: " ++ show t
             KNKillProcess t m   -> text $ "KNKillProcess " ++ show m ++ " :: " ++ show t
-            KNInlined _t0 _to _tn old new   -> text "KNInlined " <> text (show old)
+            KNCompiles _r _t _e -> text $ "KNCompiles    "
+            KNInlined _t0 _to _tn old _new   -> text "KNInlined " <> text (show old)
     childrenOf expr =
         let var v = KNVar v in
         case expr of
@@ -307,6 +315,7 @@ instance (Show ty, Show rs) => Structured (KNExpr' rs ty) where
             KNArrayLit  _t arr vals -> [var arr] ++ [var v | Right v <- vals] -- TODO should reconstruct exprs for literals
             KNVar _                 -> []
             KNTyApp _t v _argty     -> [var v]
+            KNCompiles _ _ e        -> [e]
             KNInlined _t0 _to _tn _old new      -> [new]
 
 
@@ -356,6 +365,7 @@ knSizeHead expr = case expr of
     KNAppCtor     {} -> 3 -- rather like a KNTuple, plus one store for the tag.
     KNInlined _t0 _ _ _ new  -> knSizeHead new
     KNArrayLit _ty _arr vals -> 2 + length vals
+    KNCompiles    {} -> 0 -- Becomes a boolean literal
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||||| Pretty-printing ||||||||||||||||||||{{{
@@ -503,6 +513,7 @@ instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
             KNArrayPoke  t ai v -> prettyId v <+> text ">^" <+> pretty ai <+> pretty t
             KNArrayLit   _t _arr _vals -> text "<...array literal...>"
             KNTuple      _ vs _ -> parens (hsep $ punctuate comma (map pretty vs))
+            KNCompiles _r _t e  -> parens (text "__COMPILES__" <+> pretty e)
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

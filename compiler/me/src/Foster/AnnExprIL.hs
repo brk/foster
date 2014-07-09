@@ -12,6 +12,7 @@ import Foster.Kind
 import Foster.Context
 import Foster.AnnExpr
 import Foster.TypeTC
+import Foster.Output(OutputOr(OK))
 
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T
@@ -56,6 +57,8 @@ data AIExpr =
         | E_AITyApp { aiTyAppOverallType :: TypeIL
                     , aiTyAppExpr        :: AIExpr
                     , aiTyAppArgTypes    :: [TypeIL] }
+        -- Others
+        | AICompiles   TypeIL AIExpr
 
 collectIntConstraints :: AnnExpr TypeTC -> Tc ()
 collectIntConstraints ae =
@@ -85,7 +88,11 @@ ail ctx ae =
     case ae of
         AnnCompiles _rng _ty (CompilesResult ooe) -> do
                 oox <- tcIntrospect (tcInject q ooe)
-                return $ AILiteral boolTypeIL (LitBool (isOK oox))
+                case oox of
+                  OK expr ->
+                       return $ AICompiles boolTypeIL expr
+                  _ -> return $ AILiteral boolTypeIL (LitBool False)
+
         AnnKillProcess _rng t m -> do ti <- qt t
                                       return $ AIKillProcess ti m
         AnnLiteral annot ty (LitInt int) -> do ailInt (rangeOf annot) int ty

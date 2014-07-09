@@ -655,11 +655,6 @@ block'TargetsOf (CCLast last) =
         CCCase     _ cbs (Just b) -> b:map snd cbs
         CCCase     _ cbs Nothing  ->   map snd cbs
 
-
-instance IntSizedBits MonoType where
-        intSizeBitsOf (PrimInt isb) = isb
-        intSizeBitsOf _ = error $ "Unable to compute IntSizedBits for non-PrimInt type"
-
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 

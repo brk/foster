@@ -28,7 +28,7 @@ module Foster.CFG
 
 import Foster.Base
 import Foster.MonoType
-import Foster.KNExpr(KNExpr'(..), typeKN, FnMono)
+import Foster.KNExpr(KNExpr'(..), typeKN, KNCompilesResult(..))
 import Foster.Letable(Letable(..))
 
 import Compiler.Hoopl
@@ -315,6 +315,11 @@ computeBlocks tailq expr idmaybe k = do
                     k res
 
         KNVar v -> k v
+
+        KNCompiles (KNCompilesResult r) t _e -> do
+          b <- liftIO $ readIORef r
+          computeBlocks tailq (KNLiteral t (LitBool b)) idmaybe k
+
         _ -> do cfgAddLet idmaybe (knToLetable expr) (typeKN expr) >>= k
   where
     knToLetable :: KNMono -> Letable MonoType

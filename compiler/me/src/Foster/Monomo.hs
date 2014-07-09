@@ -95,6 +95,7 @@ monoKN subst e =
   KNArrayPoke     t ai v   -> liftM3 KNArrayPoke     (qt t) (qa ai) (qv v)
   KNArrayLit      t arr vals -> liftM3 KNArrayLit    (qt t) (qv arr) (mapRightM qv vals)
   KNVar                  v -> liftM  KNVar                  (qv v)
+  KNCompiles    r t e       -> liftM2 (KNCompiles r) (qt t) (monoKN subst e)
   KNInlined {} -> error $ "Monomo.hs expects inlining to run after monomorphization!"
   -- The cases involving sub-expressions are syntactically heavier,
   -- but are still basically trivially inductive.
