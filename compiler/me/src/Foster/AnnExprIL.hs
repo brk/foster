@@ -12,13 +12,14 @@ import Foster.Kind
 import Foster.Context
 import Foster.AnnExpr
 import Foster.TypeTC
-import Foster.Output(OutputOr(OK))
+import Foster.Output(OutputOr(..))
 
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T
 
 import Data.IORef(readIORef)
 import Control.Monad(when)
+import Control.Monad.Trans(lift)
 
 -- Changes between AnnExpr and AnnExprIL:
 -- * Type annotation changes from TypeAST to TypeIL, which
@@ -91,7 +92,8 @@ ail ctx ae =
                 case oox of
                   OK expr ->
                        return $ AICompiles boolTypeIL expr
-                  _ -> return $ AILiteral boolTypeIL (LitBool False)
+                  Errors _ -> do
+                       return $ AILiteral  boolTypeIL (LitBool False)
 
         AnnKillProcess _rng t m -> do ti <- qt t
                                       return $ AIKillProcess ti m

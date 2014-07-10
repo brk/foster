@@ -5,7 +5,7 @@
 -----------------------------------------------------------------------------
 module Foster.Typecheck(tcSigmaToplevel, tcContext, tcType) where
 
-import qualified Data.List as List(length, zip, elem, lookup)
+import qualified Data.List as List(length, zip)
 import Data.List(foldl', (\\))
 import Data.Maybe(fromMaybe)
 import Control.Monad(liftM, forM_, forM, liftM, liftM2, when)
@@ -221,16 +221,6 @@ tcRho ctx expr expTy = do
  logged'' (show $ textOf expr 0 ) $
   tcWithScope expr $ do
     case expr of
-      E_CallAST   rng (E_PrimAST _ name@"assert-invariants") argtup -> do
-        args <- mapM (\arg -> checkSigma ctx arg boolTypeTC) argtup
-        let unitType = TupleTypeTC [] (NoRefinement "tcRhoUnitType")
-        let fnty = mkFnTypeTC (map (\_ -> boolTypeTC) argtup) [unitType]
-        let prim = NamedPrim (TypedId fnty (Ident (T.pack name) 1))
-        let primcall = AnnCall rng unitType (AnnPrimitive rng fnty prim) args
-        id <- tcFresh "assert-invariants-thunk"
-        let thunk = Fn (TypedId (mkFnTypeTC [] [unitType]) id) [] primcall () rng
-        matchExp expTy (AnnLetFuns rng [id] [thunk] (AnnTuple rng (\tys -> TupleTypeTC tys (NoRefinement "assert-invariants")) [])) name
-
       E_VarAST    rng v              -> tcRhoVar      ctx rng (evarName v)      expTy
       E_PrimAST   rng nm             -> tcRhoPrim     ctx rng (T.pack  nm)      expTy
       E_IntAST    rng txt ->            typecheckInt rng txt expTy   >>= (\v -> matchExp expTy v "tcInt")
@@ -766,6 +756,17 @@ tryGetVarName _ = ""
 
 tcSigmaCall :: Context SigmaTC -> ExprAnnot -> ExprAST TypeAST
             -> [ExprAST TypeAST] -> Expected SigmaTC -> Tc (AnnExpr SigmaTC)
+
+tcSigmaCall ctx rng (E_PrimAST _ name@"assert-invariants") argtup exp_ty = do
+    args <- mapM (\arg -> checkSigma ctx arg boolTypeTC) argtup
+    let unitType = TupleTypeTC [] (NoRefinement "tcRhoUnitType")
+    let fnty = mkFnTypeTC (map (\_ -> boolTypeTC) argtup) [unitType]
+    let prim = NamedPrim (TypedId fnty (Ident (T.pack name) 1))
+    let primcall = AnnCall rng unitType (AnnPrimitive rng fnty prim) args
+    id <- tcFresh "assert-invariants-thunk"
+    let thunk = Fn (TypedId (mkFnTypeTC [] [unitType]) id) [] primcall () rng
+    matchExp exp_ty (AnnLetFuns rng [id] [thunk] (AnnTuple rng (\tys -> TupleTypeTC tys (NoRefinement "assert-invariants")) [])) name
+
 tcSigmaCall ctx rng base argexprs exp_ty = do
         annbase <- inferRho ctx base "called base"
         let fun_ty = typeTC annbase
