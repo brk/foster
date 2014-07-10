@@ -1600,6 +1600,7 @@ tcTypeWellFormed msg ctx typ = do
         CoroTypeTC  s r       -> mapM_ q [s,r]
         RefTypeTC     ty      -> q ty
         ArrayTypeTC   ty  _rr -> q ty
+        RefinedTypeTC v _expr -> q (tidType v)
         ForAllTC   tvs rho    -> tcTypeWellFormed msg (extendTyCtx ctx tvs) rho
         TyVarTC  (SkolemTyVar {}) -> return ()
         TyVarTC  tv@(BoundTyVar _) ->
