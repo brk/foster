@@ -5,7 +5,7 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.KNStaticChecks where
+module Foster.KNStaticChecks (runStaticChecks) where
 
 import qualified Data.Map as Map
 import Data.Map(Map)
@@ -220,7 +220,6 @@ checkFn' fn facts0 = do
   liftIO $ putStrLn $ show relevantFormals
   liftIO $ putStrLn $ show relevantActuals
   facts <- foldlM foldPathFact facts0 refinements
-  --facts <- return facts0
 
   -- Before processing the body, add declarations for the function formals,
   -- and record the preconditions associated with any function-typed formals.
@@ -277,7 +276,9 @@ staticArrayValueBounds (Left (LitInt li):entries) = go entries (Just (litIntValu
                                                    go xs (Just (min x mn, max x mx))
 
 withDecls :: Facts -> (Ident -> SC SMT.Expr) -> Maybe (Ident -> SC SMTExpr)
-withDecls facts f = Just $ \x -> do e <- f x ; return $ SMTExpr e (symbolicDecls facts) (identFacts facts)
+withDecls facts f = Just $
+    \x -> do e <- f x
+             return $ SMTExpr e (symbolicDecls facts) (identFacts facts)
 
 withBindings :: TypedId MonoType -> [TypedId MonoType] -> Facts -> SC Facts
 withBindings fnv vs facts0 = do
@@ -488,7 +489,9 @@ checkBody expr facts =
                         checkBody e2 (addSymbolicVar facts (TypedId (typeKN e1) id))
           Just f  -> do liftIO $ putStrLn $ "have fact for id binding " ++ show id
                         newfact <- f id
-                        checkBody e2 (addIdentFact facts id newfact (typeKN e1))
+                        let facts' = addIdentFact facts id newfact (typeKN e1)
+                        whenRefined (typeKN e1) $ validateRefinement facts facts' id
+                        checkBody e2 facts'
 
     KNLetFuns     [id] [fn] b | identPrefix id == T.pack "assert-invariants-thunk" -> do
         checkFn'  fn facts
@@ -523,8 +526,30 @@ scIntrospect :: SC x -> SC (Either CompilerFailures x)
 scIntrospect action = do state <- get
                          lift $ compiledIntrospect (evalStateT action state)
 
-fromJust (Just a) = a
-fromJust Nothing = error $ "can't unJustify Nothing"
+whenRefined ty f =
+  case ty of
+    RefinedType v e -> f v e
+    _               -> return ()
+
+-- For a binding id : (% v : expr) = blah,
+-- we must ensure that the value computed by blah
+-- will satisfy the refinement expr.
+validateRefinement facts facts' id v expr = do
+  -- Conjure up a name for the overall value of the refinement expr.
+  resid <- lift $ ccFreshId $ T.pack "letres"
+  -- Compute an SMT expression representing ``expr'',
+  -- in an environment unaffected by ``blah``.
+  mb_f2 <- checkBody expr facts
+  (SMTExpr body decls idfacts) <- (trueOr mb_f2) resid
+  -- Assert the truthiness of the refinement expr,
+  -- given that id and v are the same.
+  let idfacts' = extendIdFacts resid body [(id, tidIdent v)] idfacts
+  let smtexpr = SMTExpr (smtId resid) decls idfacts'
+  -- Note this starts from facts', not facts.
+  -- The latter *is* affected by ``blah``.
+  let facts''  = foldl' addSymbolicVar facts'  [v, TypedId (PrimInt I1) resid]
+  let thm = scriptImplyingBy smtexpr facts''
+  scRunZ3 expr (SMT.pp thm)
 
 recordIfHasFnPrecondition facts id ty =
   case ty of
@@ -547,19 +572,20 @@ compilePreconditionFn fn facts argVars = do
   facts'' <- foldlM recordIfTidHasFnPrecondition facts' (fnVars fn)
   bodyf <- checkBody (fnBody fn) facts''
   (SMTExpr body decls idfacts) <- (trueOr bodyf) resid
-  let idfacts' = foldl' (\idfacts (av,fv) -> (tidIdent av, varsEq (av,fv)) : idfacts)
-                        ((resid, body):idfacts)
-                        (zip argVars (fnVars fn))
+  let idfacts' = extendIdFacts resid body (zip (map tidIdent argVars)
+                                               (map tidIdent $ fnVars fn)) idfacts
   return $ SMTExpr (smtId resid) decls idfacts'
+
+extendIdFacts resid body equalIds idfacts =
+    foldl' (\idfacts (av,fv) -> (av, idsEq (av,fv)) : idfacts)
+           ((resid, body):idfacts)
+           equalIds
 
 trueOr Nothing  = \id -> return $ bareSMTExpr (smtId id === SMT.true)
 trueOr (Just f) = f
 
 bareSMTExpr e = SMTExpr e Set.empty []
 
-varsEq (v1, v2) = smtVar v1 === smtVar v2
+idsEq  (v1, v2) = smtId  v1 === smtId  v2
 
 getMbFnPreconditions facts id = Map.lookup id (fnPreconds facts)
-
-unLetFn (KNLetFuns _ [fn] _) = fn
-unLetFn _ = error $ "unLetFn given non-fn value"

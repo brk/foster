@@ -61,6 +61,36 @@ data AIExpr =
         -- Others
         | AICompiles   TypeIL AIExpr
 
+instance TypedWith AIExpr TypeIL where
+  typeOf ai = case ai of
+     AILiteral  t _     -> t
+     AITuple  exprs _rng -> TupleTypeIL $ map typeOf exprs
+     -- E_AIFn annFn         -> fnType annFn
+     AICall {- _rng -} t _ _    -> t
+     AICallPrim t _ _ -> t
+     AIAppCtor {- _rng -} t _ _ -> t
+     AICompiles {- _rng -} t _     -> t
+     AIKillProcess {- _rng -} t _  -> t
+     AIIf {- _rng -} t _ _ _    -> t
+     AILetVar {- _rng -} _ _ b  -> typeOf b
+     AILetRec {- _rng -} _ _ b  -> typeOf b
+     AILetFuns {- _rng -} _ _ e -> typeOf e
+     AIAlloc {- _rng -} e _   -> typeOf e
+     AIDeref {- _rng -} e     -> unPtr $ typeOf e
+     AIStore {- _rng -} e _   -> typeOf e
+     AIArrayLit   {- _rng -} t _ _ -> t
+     AIArrayRead  {- _rng -} t _   -> t
+     AIArrayPoke  {- _rng -} t _ _ -> t
+     AIAllocArray {- _rng -} t _   -> t
+     AICase {- _rng -} t _ _    -> t
+     E_AIVar {- _rng -} tid -> tidType tid
+     -- AIPrimitive _rng t _ -> t
+     E_AITyApp {} -> aiTyAppOverallType ai
+
+unPtr (PtrTypeIL t) = t
+unPtr (RefinedTypeIL (TypedId t id) e) = RefinedTypeIL (TypedId (unPtr t) id) e
+unPtr t = error $ "Non-ref-type passed to unPtr in AnnExprIL.hs"
+
 collectIntConstraints :: AnnExpr TypeTC -> Tc ()
 collectIntConstraints ae =
     case ae of

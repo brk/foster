@@ -507,7 +507,7 @@ lowerModule ai_mod ctx_il = do
      let ctoropt = getCtorOpt       flags
 
      let (_, ctorRepr) = mkCtorReprFn ai_mod ctoropt
-     let knorm = kNormalize ctorRepr
+     let knorm = kNormalize ctorRepr -- For normalizing expressions in types.
 
      kmod <- kNormalizeModule ai_mod ctx_il ctoropt
      monomod0 <- monomorphize   kmod knorm

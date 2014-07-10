@@ -81,7 +81,15 @@ mkCtorReprFn m shouldOptimizeCtorRepresentations =
 
 kNormalizeFn :: (CtorId -> CtorRepr) -> Fn () AIExpr TypeIL -> KN (FnExprIL)
 kNormalizeFn ctorRepr fn = do
-    knbody <- kNormalize ctorRepr (fnBody fn)
+    -- Enforce the invariant that the return value of the function is let-bound
+    -- (that is, the function returns a variable). This is useful in checking
+    -- static refinements of return types.
+    id <- ccFreshId $ T.pack "xr"
+    let t = typeOf (fnBody fn)
+    liftIO $ putStrLn $ "typeOf fn body is? " ++ show t
+    let body = AILetVar id (fnBody fn) (E_AIVar (TypedId t id))
+    knbody <- kNormalize ctorRepr body
+    --knbody <- kNormalize ctorRepr (fnBody fn)
     return $ fn { fnBody = knbody }
 
 -- ||||||||||||||||||||||| K-Normalization ||||||||||||||||||||||{{{
@@ -300,6 +308,13 @@ buildLet ident bound inexpr =
     -- Convert  let f = letfuns g = ... in g in <<f>>
     --     to   letfuns g = ... in let f = g in <<f>>
     KNLetFuns ids fns a -> KNLetFuns ids fns (buildLet ident a inexpr)
+
+    -- Convert  let i = x in i
+    --      to  x
+    KNVar _ ->
+      case inexpr of
+        KNVar v | tidIdent v == ident -> bound
+        _                             -> KNLetVal ident bound inexpr
 
     _ -> KNLetVal ident bound inexpr
 
