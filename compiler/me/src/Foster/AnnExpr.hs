@@ -8,7 +8,7 @@
 module Foster.AnnExpr (AnnExpr(..), annExprAnnot) where
 
 import Foster.Base
-import Foster.TypeAST
+import Foster.TypeAST()
 
 import Text.PrettyPrint.ANSI.Leijen
 import Foster.Output(OutputOr(..))
