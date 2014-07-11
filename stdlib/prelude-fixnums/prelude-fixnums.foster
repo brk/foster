@@ -53,25 +53,25 @@ cast_i64_to_Word     = { a : Int64    =>
   end
 };
 
-cast_Word_to_i32     = { a : Int64    =>
+cast_Word_to_i32     = { a : Word    =>
   res = trunc_Word_to_i32 a;
-  if zext_i32_to_Word res ==Int64 a
+  if zext_i32_to_Word res ==Word a
     then res
     else prim kill-entire-process "cast_Word_to_i32 invariant violated"
   end
 };
 
-cast_WordX2_to_Word     = { a : Int64    =>
+cast_WordX2_to_Word     = { a : WordX2    =>
   res = trunc_WordX2_to_Word a;
-  if zext_Word_to_WordX2 res ==Int64 a
+  if zext_Word_to_WordX2 res ==WordX2 a
     then res
     else prim kill-entire-process "cast_WordX2_to_Word invariant violated"
   end
 };
 
-cast_WordX2_to_i32     = { a : Int64    =>
+cast_WordX2_to_i32     = { a : WordX2    =>
   res = trunc_WordX2_to_i32 a;
-  if zext_i32_to_WordX2 res ==Int64 a
+  if zext_i32_to_WordX2 res ==WordX2 a
     then res
     else prim kill-entire-process "cast_WordX2_to_i32 invariant violated"
   end
