@@ -46,6 +46,10 @@
 (<UWord)             = { a : Word     => b : Word     => prim <UWord a b         }; // :: Bool
 (<UWordX2)           = { a : WordX2   => b : WordX2   => prim <UWordX2 a b       }; // :: Bool
 (<f64)               = { a : Float64  => b : Float64  => prim <f64 a b           }; // :: Bool
+
+(==WordX2) :: { % a : WordX2 : True
+             => % b : WordX2 : True
+             => % rv : Bool : prim ==Bool rv (prim ==WordX2 a b) };
 (==Int32)            = { a : Int32    => b : Int32    => prim ==Int32 a b        }; // :: Bool
 (==Int64)            = { a : Int64    => b : Int64    => prim ==Int64 a b        }; // :: Bool
 (==Int8)             = { a : Int8     => b : Int8     => prim ==Int8 a b         }; // :: Bool
@@ -132,11 +136,11 @@ negate-Word          = { a : Word     => prim negate-Word a      }; // :: Word
 negate-WordX2        = { a : WordX2   => prim negate-WordX2 a    }; // :: WordX2
 not                  = { a : Bool     => prim not a              }; // :: Bool
 s32-to-f64           = { a : Int32    => prim s32-to-f64 a       }; // :: Float64
-sdiv-unsafe-Int32    = { a : Int32    => b : Int32    => prim sdiv-unsafe-Int32 a b }; // :: Int32
-sdiv-unsafe-Int64    = { a : Int64    => b : Int64    => prim sdiv-unsafe-Int64 a b }; // :: Int64
-sdiv-unsafe-Int8     = { a : Int8     => b : Int8     => prim sdiv-unsafe-Int8 a b }; // :: Int8
-sdiv-unsafe-Word     = { a : Word     => b : Word     => prim sdiv-unsafe-Word a b }; // :: Word
-sdiv-unsafe-WordX2   = { a : WordX2   => b : WordX2   => prim sdiv-unsafe-WordX2 a b }; // :: WordX2
+sdiv-Int32!    = { a : Int32    => b : % b : Int32  : b !=Int32  0  => prim sdiv-unsafe-Int32 a b }; // :: Int32
+sdiv-Int64!    = { a : Int64    => b : % b : Int64  : b !=Int64  0  => prim sdiv-unsafe-Int64 a b }; // :: Int64
+sdiv-Int8!     = { a : Int8     => b : % b : Int8   : b !=Int8   0  => prim sdiv-unsafe-Int8 a b }; // :: Int8
+sdiv-Word!     = { a : Word     => b : % b : Word   : b !=Word   0  => prim sdiv-unsafe-Word a b }; // :: Word
+sdiv-WordX2!   = { a : WordX2   => b : % b : WordX2 : b !=WordX2 0  => prim sdiv-unsafe-WordX2 a b }; // :: WordX2
 sext_i32_to_Word     = { a : Int32    => prim sext_i32_to_Word a }; // :: Word
 sext_i32_to_i64      = { a : Int32    => prim sext_i32_to_i64 a  }; // :: Int64
 sext_i8_to_i32       = { a : Int8     => prim sext_i8_to_i32 a   }; // :: Int32

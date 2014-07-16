@@ -779,6 +779,8 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
                 ++ (show $ List.length argexprs) ++ "; expected "
                 ++ (show $ List.length args_ty)
                 ++ highlightFirstLine (rangeOf rng)
+        tcLift $ putStrLn $ "tcSigmaCall of " ++ show base
+        tcLift $ putStrLn $ show (zip argexprs args_ty)
         args <- sequence [checkSigma ctx arg ty | (arg, ty) <- zip argexprs args_ty]
         debug $ "call: annargs: "
         debugDoc $ showStructure (AnnTuple rng (\tys -> TupleTypeTC tys (NoRefinement "tcSigmaCall")) args)
@@ -999,10 +1001,28 @@ tcRhoFnHelper ctx f expTy = do
     let annot = fnAstAnnot f
     let rng = rangeOf annot
     -- While we're munging, we'll also make sure the names are all distinct.
-    uniquelyNamedFormals0 <- getUniquelyNamedFormals ctx rng (fnFormals f) (fnAstName f)
+
+    -- Add the refinement vars to the context, so that they are in-scope
+    -- when checking type refinements.
+    -- TODO use levels or something so that function bodies can't refer to
+    --      refinement variables from exprs (unless embedded in refn. types).
+    tcLift $ putStrLn $ "beginning RV section in tcRhoFnHelper..."
+    refinementVars <- mapM (\v -> case tidType v of
+                                     RefinedTypeAST nm t e -> do
+                                            id <- tcFresh nm
+                                            t' <- tcType ctx t
+                                            return [TypedId t' id]
+                                     _ ->   return [])
+                          (fnFormals f)
+    let ctx' = extendContext ctx (concat refinementVars)
+    uniquelyNamedFormals0 <- getUniquelyNamedFormals ctx' rng (fnFormals f) (fnAstName f)
     uniquelyNamedFormals <- mapM
                       (retypeTID (resolveType annot $ localTypeBindings ctx))
                       uniquelyNamedFormals0
+
+    tcLift $ putStrLn $ "ending RV section in tcRhoFnHelper, starting body..."
+    tcLift $ putStrLn $ "mode is " ++ (case expTy of Infer _ -> "infer"
+                                                     Check fnty -> "check against " ++ show fnty)
 
     -- Extend the variable environment with the function arg's types.
     let extCtx = extendContext ctx uniquelyNamedFormals
@@ -1017,6 +1037,7 @@ tcRhoFnHelper ctx f expTy = do
       Check fnty -> do let var_tys = map tidType uniquelyNamedFormals
                        -- FOOBAR fnty might be a sigma; if so, what?
                        (arg_tys, body_ty) <- unifyFun fnty var_tys ("@" ++ highlightFirstLine rng)
+                       tcLift $ putStrLn $ "checking subsumption betweeen " ++ show (zip arg_tys var_tys)
                        _ <- sequence [subsCheckTy argty varty "mono-fn-arg" |
                                        (argty, varty) <- zip arg_tys var_tys]
                        -- TODO is there an arg translation?
@@ -1090,11 +1111,27 @@ tcType ctx typ = do
         TyConAppAST nm types  -> liftM2 (TyConAppTC nm) (mapM q types) genRefinementVar
         ForAllAST  tvs rho    -> liftM  (ForAllTC tvs) (q rho)
         FnTypeAST ss r cc ft -> do
-          ss' <- mapM q ss
-          r'  <- q r
+          let rng    = MissingSourceRange $ "refinement for fn type..."
+          let annot  = ExprAnnot [] rng []
+          let formals = concatMap (\t ->
+                           case t of
+                             RefinedTypeAST nm t' _ ->
+                               [TypedId t' (Ident (T.pack nm) 0)]
+                             _ -> []) ss
+          uniquelyNamedFormals0 <- getUniquelyNamedFormals ctx rng formals (T.pack $ "refinement for fn type...")
+          uniquelyNamedFormals <- mapM
+                      (retypeTID (resolveType annot $ localTypeBindings ctx))
+                      uniquelyNamedFormals0
+          let extCtx = extendContext ctx uniquelyNamedFormals
+
+          ss' <- mapM (tcType extCtx) ss
+          r'  <-       tcType extCtx  r
           return $ FnTypeTC ss' r' cc ft
         RefinedTypeAST nm ty e -> do
+          -- TODO: the caller must be responsible for setting up a suitably
+          --       extended context, in order to support dependent refinements.
           -- Make sure that the refinement has type bool (with a suitably extended context).
+          {-
           let rng    = MissingSourceRange $ "refinement " ++ nm
           let annot  = ExprAnnot [] rng []
           let formal = TypedId ty (Ident (T.pack nm) 0)
@@ -1104,10 +1141,18 @@ tcType ctx typ = do
                       uniquelyNamedFormals0
 
           let extCtx = extendContext ctx [uniquelyNamedFormal]
+          -}
+          let extCtx = ctx
           e' <- checkRho extCtx e (PrimIntTC I1 (NoRefinement "bool-of-refinement"))
           ty' <- q ty
           -- TODO if we don't replace the type component, it leads to circularity...
-          return $ RefinedTypeTC (TypedId ty' (tidIdent uniquelyNamedFormal)) e'
+          --return $ RefinedTypeTC (TypedId ty' (tidIdent uniquelyNamedFormal)) e'
+
+          -- If the caller already defined an ident, use it, otherwise create our own.
+          id <- case termVarLookup (T.pack nm) (contextBindings ctx) of
+                  Just (v, _) -> return (tidIdent v)
+                  _           -> tcFresh nm
+          return $ RefinedTypeTC (TypedId ty' id) e'
 -- }}}
 
 
@@ -1745,11 +1790,11 @@ update r e_action = do e <- e_action
 
 type Term = ExprAST TypeAST
 
-tcVERBOSE = False
+tcVERBOSE = True
 
 debug    s = do when tcVERBOSE (tcLift $ putStrLn s)
 debugDoc d = do when tcVERBOSE (tcLift $ putDocLn d)
-debugDoc2 d = do tcLift $ putDocLn d
+debugDoc2 d = do when True (tcLift $ putDocLn d)
 
 -- The free-variable determination logic here is tested in
 --      test/bootstrap/testcases/rec-fn-detection

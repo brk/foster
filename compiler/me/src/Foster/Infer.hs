@@ -99,8 +99,17 @@ refineRefinement (NoRefinement nope) (nm,_) = do
 refineRefinement (MbRefinement r) v = do
   mbr <- tcLift $ readIORef r
   case mbr of
-    Nothing -> do tcLift $ putStrLn $ "refineRefinement writing ref" ++ show (fst v) ; tcLift $ writeIORef r (Just v)
+    Nothing -> do tcLift $ putStrLn $ "refineRefinement writing ref " ++ show (fst v)
+                  tcLift $ writeIORef r (Just v)
     Just v' -> do tcLift $ putStrLn "refineRefinement implcnstrnt" ; tcAddRefinementImplicationConstraint v v'
+
+constrainRefinement (MbRefinement r) v = do
+  mbr <- tcLift $ readIORef r
+  case mbr of
+    Nothing -> do return ()
+    Just v' -> do tcLift $ putStrLn "refineRefinement implcnstrnt" ;
+                  tcAddRefinementImplicationConstraint v v'
+
 
 tcUnifyRefinements   (NoRefinement _)   (NoRefinement _) = return ()
 tcUnifyRefinements n@(NoRefinement _) m@(MbRefinement _) = tcUnifyRefinements m n
@@ -228,7 +237,7 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
       tcUnifyLoop ((TypeConstrEq t1 ty):constraints) tysub
 
     (ty, (RefinedTypeTC (TypedId t1 n1) e1)) | Just rr <- mbGetRefinement ty -> do
-      refineRefinement rr (n1, e1)
+      constrainRefinement rr (n1, e1)
       tcUnifyLoop ((TypeConstrEq ty t1):constraints) tysub
 
     _otherwise -> do
@@ -245,10 +254,10 @@ tcUnifyVar m1 (MetaTyVarTC m2) tysub constraints | m1 == m2
   = tcUnifyLoop constraints tysub
 
 tcUnifyVar m ty tysub constraints = do
-    --do
-    --  tcm <- readTcMeta m
-    --  tcLift $ putStrLn $ "================ Unifying meta var " ++ show (pretty $ MetaTyVar m) ++ " :: " ++ show (pretty tcm)
-    --                 ++ "\n============================= with " ++ show (pretty $ ty)
+    do
+      tcm <- readTcMeta m
+      tcLift $ putStrLn $ "================ Unifying meta var " ++ show (pretty $ MetaTyVarTC m) ++ " :: " ++ show (pretty tcm)
+                     ++ "\n============================= with " ++ show (pretty $ ty)
     let tysub' = Map.insert (mtvUniq m) ty tysub
     tcUnifyLoop (tySubstConstraints constraints (Map.singleton (mtvUniq m) ty)) tysub'
       where
