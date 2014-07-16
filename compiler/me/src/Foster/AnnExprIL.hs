@@ -19,7 +19,6 @@ import qualified Data.Text as T
 
 import Data.IORef(readIORef)
 import Control.Monad(when)
-import Control.Monad.Trans(lift)
 
 -- Changes between AnnExpr and AnnExprIL:
 -- * Type annotation changes from TypeAST to TypeIL, which
@@ -89,7 +88,7 @@ instance TypedWith AIExpr TypeIL where
 
 unPtr (PtrTypeIL t) = t
 unPtr (RefinedTypeIL (TypedId t id) e) = RefinedTypeIL (TypedId (unPtr t) id) e
-unPtr t = error $ "Non-ref-type passed to unPtr in AnnExprIL.hs"
+unPtr _ = error $ "Non-ref-type passed to unPtr in AnnExprIL.hs"
 
 collectIntConstraints :: AnnExpr TypeTC -> Tc ()
 collectIntConstraints ae =
@@ -371,7 +370,7 @@ ilOf ctx typ = do
      TyVarTC  tv@(SkolemTyVar _ _ k) -> return $ TyVarIL tv k
      TyVarTC  tv@(BoundTyVar _) ->
         case Prelude.lookup tv (contextTypeBindings ctx) of
-          Nothing -> tcFails [text "Unable to find kind of type variable " <> pretty typ]
+          Nothing -> return $ TyVarIL tv KindAnySizeType -- tcFails [text "Unable to find kind of type variable " <> pretty typ]
           Just k  -> return $ TyVarIL tv k
      MetaTyVarTC m -> do
         mty <- readTcMeta m

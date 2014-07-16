@@ -376,7 +376,7 @@ renderKNF :: FnExprIL -> String
 renderKNF m = show (pretty m)
 
 showTyped :: Pretty t => Doc -> t -> Doc
-showTyped d t = parens (d <+> text "::" <+> pretty t)
+showTyped d t = parens (parens d <+> text "::" <+> pretty t)
 
 showUnTyped d _ = d
 
@@ -455,9 +455,9 @@ instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
             KNVar (TypedId t i) -> prettyId (TypedId t i)
             KNTyApp t e argtys  -> showTyped (pretty e <> text ":[" <> hsep (punctuate comma (map pretty argtys)) <> text "]") t
             KNKillProcess t m   -> text ("KNKillProcess " ++ show m ++ " :: ") <> pretty t
-            KNLiteral _ lit     -> pretty lit
-            KNCall     t v [] -> showUnTyped (prettyId v <+> text "!") t
-            KNCall     t v vs -> showUnTyped (prettyId v <+> hsep (map pretty vs)) t
+            KNLiteral t lit     -> showTyped (pretty lit) t
+            KNCall     t v [] -> showTyped (prettyId v <+> text "!") t
+            KNCall     t v vs -> showTyped (prettyId v <+> hsep (map pretty vs)) t
             KNCallPrim t prim vs-> showUnTyped (text "prim" <+> pretty prim <+> hsep (map prettyId vs)) t
             KNAppCtor  t cid  vs-> showUnTyped (text "~" <> parens (text (show cid)) <> hsep (map prettyId vs)) t
             KNLetVal   x b    k -> lkwd "let"

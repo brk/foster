@@ -165,7 +165,7 @@ scRunZ3 :: KNMono -> HughesPJ.Doc -> SC ()
 scRunZ3 expr doc = lift $ do
   res <- liftIO $ runZ3 (show doc)
   case res of
-    Left x -> throwError [text x]
+    Left x -> throwError [text x, pretty expr, string (show doc)]
     Right ["unsat", "unsat"] -> return ()
     Right strs -> throwError ([text "Unable to verify precondition associated with expression",
                                pretty expr,
@@ -219,13 +219,18 @@ checkFn' fn facts0 = do
   liftIO $ putStrLn $ show $ fnVars fn
   liftIO $ putStrLn $ show relevantFormals
   liftIO $ putStrLn $ show relevantActuals
+
+
   facts <- foldlM foldPathFact facts0 refinements
 
   -- Before processing the body, add declarations for the function formals,
   -- and record the preconditions associated with any function-typed formals.
   let facts' = foldl' addSymbolicVar facts (fnVars fn)
   facts''  <- foldlM recordIfTidHasFnPrecondition facts' (fnVars fn)
+
+  liftIO $ putStrLn $ "checking body " ++ (show (pretty (fnBody fn)))
   smtexpr <- checkBody (fnBody fn) facts''
+  liftIO $ putStrLn $ "... checked body"
   -- We need to add declarations for the function variables to both the facts
   -- environment (for use in checks within the function) and the result
   -- (for use in checks outside the function definition).
@@ -464,6 +469,7 @@ checkBody expr facts =
                 _ -> return ()
           _ -> return ()
 
+        liftIO $ putStrLn $ "KNCall " ++ show (pretty expr)
         -- Does the called function have a precondition?
         case fromMaybe [] $ getMbFnPreconditions facts (tidIdent v) of
           [] -> do
@@ -475,7 +481,7 @@ checkBody expr facts =
             liftIO $ putStrLn $ "           (have precond)"
             let checkPrecond fp = do
                 SMTExpr e decls idfacts <- fp vs
-                --liftIO $ putStrLn $ show (SMT.pp smtprecond)
+                liftIO $ putStrLn $ show (SMT.pp e)
                 --let thm = scriptImplyingBy expr (mergeFactsForCompilation facts efacts)
                 let thm = scriptImplyingBy (SMTExpr e decls idfacts)  facts
                 scRunZ3 expr (SMT.pp thm)
@@ -483,6 +489,7 @@ checkBody expr facts =
             return Nothing
 
     KNLetVal      id   e1 e2    -> do
+        liftIO $ putStrLn $ "letval checking bound expr for " ++ show id
         mb_f <- checkBody e1 facts
         case mb_f of
           Nothing -> do liftIO $ putStrLn $ "  no fact for id binding " ++ show id
@@ -490,7 +497,9 @@ checkBody expr facts =
           Just f  -> do liftIO $ putStrLn $ "have fact for id binding " ++ show id
                         newfact <- f id
                         let facts' = addIdentFact facts id newfact (typeKN e1)
+                        liftIO $ putStrLn $ "letval validating refinement: " ++ show (pretty (typeKN e1))
                         whenRefined (typeKN e1) $ validateRefinement facts facts' id
+                        liftIO $ putStrLn $ "letval validated refinement, checking letval body"
                         checkBody e2 facts'
 
     KNLetFuns     [id] [fn] b | identPrefix id == T.pack "assert-invariants-thunk" -> do

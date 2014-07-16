@@ -60,7 +60,7 @@ instance Pretty MonoType where
           ArrayType      t            -> text "Array" <+> pretty t
           PtrType        t            -> text "Ref" <+> pretty t
           PtrTypeUnknown              -> text "?"
-          RefinedType v _e        -> text "%" <+> pretty v
+          RefinedType v e        -> parens (text "%" <+> pretty v <+> text ":" <+> pretty e)
 
 type FnMono   = Fn RecStatus KNMono MonoType
 type KNMono     = KNExpr' RecStatus MonoType
