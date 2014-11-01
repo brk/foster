@@ -20,7 +20,7 @@ type SigmaTC = TypeTC
 
 -- "Refinement status"
 data RR = NoRefinement String
-        | MbRefinement (IORef (Maybe (Ident, AnnExpr TypeTC)))
+        | MbRefinement (Uniq, IORef (Maybe (Ident, AnnExpr TypeTC)))
 
 data TypeTC =
            PrimIntTC       IntSizeBits             RR
@@ -38,6 +38,20 @@ data TypeTC =
          | TyVarTC           TyVar
          | MetaTyVarTC     (MetaTyVar TypeTC)
          | RefinedTypeTC   (TypedId TypeTC) (AnnExpr TypeTC)
+
+maybeRRofTC x = case x of
+        PrimIntTC          _size     rr -> Just rr
+        PrimFloat64TC                rr -> Just rr
+        TyConAppTC  _tcnm _types     rr -> Just rr
+        TupleTypeTC       _types     rr -> Just rr
+        FnTypeTC     _s _t _cc _cs      -> Nothing
+        CoroTypeTC   _s _t              -> Nothing
+        ForAllTC   _tvs _rho            -> Nothing
+        TyVarTC    _tv                  -> Nothing
+        MetaTyVarTC _                   -> Nothing
+        RefTypeTC     _ty               -> Nothing
+        ArrayTypeTC   _ty            rr -> Just rr
+        RefinedTypeTC _ _               -> Nothing
 
 {-
 instance Kinded TypeTC where
@@ -62,9 +76,13 @@ prettyTVs tvs = map (\(tv,k) -> parens (pretty tv <+> text "::" <+> pretty k)) t
 descMTVQ MTVSigma = "S"
 descMTVQ MTVTau   = "R"
 
+instance Show RR where
+  show (NoRefinement str) = "(NoRefinement " ++ str ++ ")"
+  show (MbRefinement (u,_)) = "(MbRefinement " ++ show u ++ " ...)"
+
 instance Pretty TypeTC where
     pretty x = case x of
-        PrimIntTC          size       _ -> pretty size
+        PrimIntTC          size     _rr -> pretty size <+> text (show _rr)
         PrimFloat64TC                 _ -> text "Float64"
         TyConAppTC   tcnm types       _ -> parens $ text tcnm <> hpre (map pretty types)
         TupleTypeTC       types       _ -> tupled $ map pretty types
@@ -91,7 +109,7 @@ instance Show TypeTC where
         ArrayTypeTC ty       _ -> "(Array " ++ show ty ++ ")"
         RefTypeTC   ty         -> "(Ptr " ++ show ty ++ ")"
         MetaTyVarTC _          -> "(MetaTyVar)"
-        RefinedTypeTC {}       -> "(RefinedTypeTC)"
+        RefinedTypeTC v _      -> "(RefinedTypeTC " ++ show v ++ ")"
 
 boolTypeTC = PrimIntTC I1           (NoRefinement "boolTypeTC")
 stringTypeTC = TyConAppTC "Text" [] (NoRefinement "stringTypeTC")

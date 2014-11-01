@@ -12,7 +12,7 @@ import System.Environment(getArgs,getProgName)
 
 import qualified Data.ByteString.Lazy as L(readFile)
 import qualified Data.Text as T
-import qualified Data.Map as Map(fromList, toList, empty)
+import qualified Data.Map as Map(fromList, toList, empty, size)
 import qualified Data.Set as Set(filter, toList, fromList, notMember, intersection)
 import qualified Data.Graph as Graph(SCC, flattenSCC, stronglyConnComp)
 import Data.Map(Map)
@@ -138,7 +138,10 @@ typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
             case typechecked of
                 OK e -> do
                     when showASTs     $ (putDocLn $ showStructure ast)
-                    when showAnnExprs $ (putDocLn $ showStructure e)
+                    when showAnnExprs $ do
+                        putStrLn $ "[[[[[["
+                        putDocLn $ showStructure e
+                        putStrLn $ "]]]]]]"
                 Errors errs -> do
                     putDocLn $ showStructure ast
                     putDocLn $ red $ text "Typecheck error: "
@@ -213,7 +216,7 @@ typecheckModule verboseMode modast tcenv0 = do
                     putStrLn $ "Function SCC list : " ++
                      (unlines $ map show [(name, frees) | (_, name, frees) <- callGraphList])
             let showASTs     = verboseMode
-            let showAnnExprs = verboseMode
+            let showAnnExprs = verboseMode || True
             (annFnSCCs, (ctx, tcenv)) <- mapFoldM' sortedFns (ctxTC, tcenv0)
                                               (typecheckFnSCC showASTs showAnnExprs)
             unTc tcenv (convertTypeILofAST modast ctx annFnSCCs)
@@ -392,13 +395,13 @@ main = do
 runCompiler pb_program flagVals outfile = do
    uniqref <- newIORef 2
    varlist <- newIORef []
-   rics    <- newIORef []
+   subcnst <- newIORef []
    icmap   <- newIORef Map.empty
    let tcenv = TcEnv {       tcEnvUniqs = uniqref,
                       tcUnificationVars = varlist,
                               tcParents = [],
                    tcMetaIntConstraints = icmap,
-     tcRefinementImplicationConstraints = rics }
+               tcSubsumptionConstraints = subcnst }
    (nc_time, mb_errs) <- time $ runErrorT $ evalStateT (compile pb_program tcenv)
                     CompilerContext {
                            ccVerbose  = getVerboseFlag flagVals
@@ -407,6 +410,32 @@ runCompiler pb_program flagVals outfile = do
                          , ccInline   = getInlining flagVals
                          , ccUniqRef  = uniqref
                     }
+
+   let mbToList Nothing = []
+       mbToList (Just x) = [x]
+   let
+        metaTyVarPeekIO :: TypeTC -> IO TypeTC
+        metaTyVarPeekIO (MetaTyVarTC m) = do
+                 mty <- readIORef (mtvRef m)
+                 case mty of
+                     Nothing -> return (MetaTyVarTC m)
+                     Just ty -> return ty
+        metaTyVarPeekIO t = return t
+
+   subsumptionConstraintsRaw <- readIORef subcnst
+   subsumptionConstraints    <- mapM (\(t1, t2) -> do t1' <- metaTyVarPeekIO t1
+                                                      t2' <- metaTyVarPeekIO t2
+                                                      return (t1' , t2' )) subsumptionConstraintsRaw
+   let allSCtypes = concat [[t1,t2] | (t1, t2) <- subsumptionConstraints]
+   let iorefs = Map.fromList [(u,r) | t <- allSCtypes, (MbRefinement (u,r)) <- mbToList (maybeRRofTC t)]
+   let showSubsumptionConstraint (t1, t2) = do
+            let m1 = maybeRRofTC t1
+            let m2 = maybeRRofTC t2
+            liftIO $ putStrLn $ show (t1, m1, t2, m2)
+   mapM_ showSubsumptionConstraint subsumptionConstraints
+
+   liftIO $ putStrLn $ "have this many subsumption constraints: " ++ show (length subsumptionConstraints)
+   liftIO $ putStrLn $ "have this many subsumption iorefs: " ++ show (Map.size iorefs)
    case mb_errs of
      Left  errs -> do
        putStrLn $ "compilation time: " ++ secs (nc_time)

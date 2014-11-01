@@ -78,6 +78,32 @@ data TCWanted = TCSigma | TCRho deriving Show
 --     constructor (& thus, what representation) it needs to pre-allocate.
 --     OCaml avoids this by making constructors second-class;
 --     SML   avoids this by disallowing constructors on the RHS of letrec.
+--
+--   * matchExp calls either subsCheck or subsCheckRho as appropriate.
+--      subsCheck
+--          skolemize
+--          subsCheckRho
+--      subsCheckRho
+--          inst -> subsCheckRho
+--
+--          unifyFun -> subsCheckFunTy
+--
+--          unify
+--
+--      subsCheckRhoTy
+--          unifyFun
+--          subsCheckFunTy
+--          unify
+--      subsCheckFunTy
+--          subsCheckTy
+--      subsCheckTy
+--          skolemize -> subsCheckRhoTy
+--          subsCheckRhoTy
+--      instSigma
+--      inst
+--      instWith
+--      tryInstSigmaWith
+--      instSigmaWith
 
 -----------------------------------------------------------------------
 
@@ -1329,7 +1355,9 @@ subsCheckRhoTy (ForAllTC ktvs rho) rho2 = do -- Rule SPEC
 subsCheckRhoTy rho1 (FnTypeTC as2 r2 _ _) = unifyFun rho1 as2 "subsCheckRhoTy" >>= \(as1, r1) -> subsCheckFunTy as1 r1 as2 r2
 subsCheckRhoTy (FnTypeTC as1 r1 _ _) rho2 = unifyFun rho2 as1 "subsCheckRhoTy" >>= \(as2, r2) -> subsCheckFunTy as1 r1 as2 r2
 subsCheckRhoTy tau1 tau2 -- Rule MONO
-     = logged' ("subsCheckRhoTy " ++ show (pretty (tau1, tau2))) $ unify tau1 tau2 "subsCheckRho" -- Revert to ordinary unification
+     = do
+          tcAddSubsumptionConstraint tau1 tau2 $ "subsCheckRhoTy[mono]... "
+          logged' ("subsCheckRhoTy " ++ show (pretty (tau1, tau2))) $ unify tau1 tau2 "subsCheckRho" -- Revert to ordinary unification
 -- }}}
 
 subsCheck :: (AnnExpr SigmaTC) -> SigmaTC -> String -> Tc (AnnExpr SigmaTC)
@@ -1373,6 +1401,7 @@ subsCheckRho esigma rho2 = do
     -- shallow, not deep, skolemization due to being a strict language.
 
     (rho1, _) -> do -- Rule MONO
+        tcAddSubsumptionConstraint rho1 rho2 $ "subsCheckRho[mono] for " ++ show (showStructure esigma)
         logged esigma ("subsCheckRho " ++ show (pretty (rho1, rho2))) $ unify rho1 rho2 ("subsCheckRho[" ++ show rho2 ++ "]" ++ show (showStructure esigma)) -- Revert to ordinary unification
         return esigma
 -- }}}
@@ -1753,8 +1782,9 @@ genSigmaUnificationVarsLike spine namegen = do
 -}
 
 genRefinementVar = do
+  u <- newTcUniq
   r <- newTcRef Nothing
-  return $ MbRefinement r
+  return $ MbRefinement (u, r)
 
 verifyNonOverlappingBindings :: SourceRange -> String -> [ContextBinding ty] -> Tc ()
 verifyNonOverlappingBindings rng name binders = do

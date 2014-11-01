@@ -335,7 +335,7 @@ withRefinement ctx rr action = do
   ty <- action
   case rr of
     NoRefinement _ -> return ty
-    MbRefinement r -> do
+    MbRefinement (_u,r) -> do
       mbr <- tcLift $ readIORef r
       case mbr of
         Nothing -> return ty

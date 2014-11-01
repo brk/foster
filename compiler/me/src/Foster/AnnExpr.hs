@@ -112,7 +112,7 @@ instance Pretty ty => Structured (AnnExpr ty) where
       AnnTuple  {}               -> text "AnnTuple     "
       AnnCase   {}               -> text "AnnCase      "
       AnnPrimitive _r _ p        -> text "AnnPrimitive " <> pretty p
-      E_AnnVar _r (tid, _)       -> text "AnnVar       " <> pretty tid
+      E_AnnVar _r (tid, _)       -> text "AnnVar       " <> pretty tid <> text " :: " <> pretty (tidType tid)
       E_AnnTyApp _rng t _e argty -> text "AnnTyApp     ["  <> pretty argty <> text  "] :: " <> pretty t
       E_AnnFn annFn              -> text $ "AnnFn " ++ T.unpack (identPrefix $ fnIdent annFn) ++ " // "
         ++ (show $ fnBoundNames annFn) ++ " :: " ++ show (pretty (fnType annFn)) where

@@ -1,29 +1,4 @@
-//sdiv-Int32!    = { a : Int32    => b : Int32 => prim sdiv-unsafe-Int32 a b }; // :: Int32
-
-foo :: { % aa : Int32 : True
-      => % bb : Int32 : bb >UInt32 0
-      => Int32 };
-foo =  { a => b => a };
-
-main = { print_i32 (foo 0 1); };
-
-/*
-(==WordX2) :: { % aa : WordX2 : True
-             => % bb : WordX2 : True
-             => % rv : Bool : prim ==Bool rv (prim ==WordX2 aa bb) };
-
-(==WordX2)           = { a : WordX2   => b : WordX2   => prim ==WordX2 a b       }; // :: Bool
-
-sdiv-WordX2 = { ax : WordX2 => bx : WordX2 => z = bx ==WordX2 0; if z then prim kill-entire-process "sdiv-WordX2 failed" else prim sdiv-unsafe-WordX2 ax bx end  };
-
-
-//snafuinclude PreludeFixnums "prelude-fixnums";
-//snafuinclude Primitives "primitives";
-main = {
-  expect_i32 2;
-  print_i32 (sdiv-WordX2 8 4);
-};
-*/
+main = { 0 };
 
 
 /*snafuinclude Prelude "prelude";
