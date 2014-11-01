@@ -1027,12 +1027,13 @@ TypeAST* parseFuncType(pTree tree) {
 
   std::map<string, string> annots;
   if (getChildCount(tree) == 3) {
-    parseAnnots(annots, child(tree, 1));
+    parseAnnots(annots, child(tree, 2));
   }
 
   // Lambdas default to fastcc, procs default to ccc.
   bool isProc = annots.find("proc") != annots.end()
              && annots["proc"] == "true";
+
   if (annots["callconv"] == "") {
     annots["callconv"] = isProc ? "ccc" : "fastcc";
   }
