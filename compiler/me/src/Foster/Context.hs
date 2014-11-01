@@ -175,9 +175,9 @@ sanityCheck cond msg = if cond then return () else tcFails [red (text msg)]
 readTcMeta :: MetaTyVar ty -> Tc (Maybe ty)
 readTcMeta m = tcLift $ readIORef (mtvRef m)
 
-writeTcMeta :: MetaTyVar ty -> ty -> Tc ()
+writeTcMeta :: Show ty => MetaTyVar ty -> ty -> Tc ()
 writeTcMeta m v = do
-  --tcLift $ putStrLn $ "=========== Writing meta type variable: " ++ show (MetaTyVar m) ++ " := " ++ show v
+  --tcLift $ putStrLn $ "=========== Writing meta type variable: " ++ show ((mtvDesc m, mtvUniq m)) ++ " := " ++ show v
   tcLift $ writeIORef (mtvRef m) (Just v)
 
 -- A "shallow" alternative to zonking which only peeks at the topmost tycon
@@ -187,9 +187,14 @@ shallowZonk (MetaTyVarTC m) = do
          case mty of
              Nothing -> return (MetaTyVarTC m)
              Just ty -> do ty' <- shallowZonk ty
-                           writeTcMeta m ty'
+                           writeTcMetaTC m ty'
                            return ty'
 shallowZonk t = return t
+
+shallowStripRefinedTypeTC (RefinedTypeTC v _) = tidType v
+shallowStripRefinedTypeTC t                   = t
+
+writeTcMetaTC m t = writeTcMeta m (shallowStripRefinedTypeTC t)
 
 newTcSkolem (tv, k) = do u <- newTcUniq
                          return (SkolemTyVar (nameOf tv) u k)

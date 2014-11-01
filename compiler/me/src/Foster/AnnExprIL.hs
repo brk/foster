@@ -20,6 +20,8 @@ import qualified Data.Text as T
 import Data.IORef(readIORef)
 import Control.Monad(when)
 
+import Debug.Trace(trace)
+
 -- Changes between AnnExpr and AnnExprIL:
 -- * Type annotation changes from TypeAST to TypeIL, which
 --   primarily means we've eliminated all unification variables.
@@ -379,7 +381,7 @@ ilOf ctx typ = do
                       then return $ TupleTypeIL []
                       else tcFails [text $ "Found un-unified unification variable "
                                 ++ show (mtvUniq m) ++ "(" ++ mtvDesc m ++ ")!"]
-          Just t  -> q t
+          Just t  -> trace ("meta ty var : " ++ show t ++ " =====> " ++ show (shallowStripRefinedTypeTC t)) $ q ( shallowStripRefinedTypeTC t)
 
 aiVar ctx (TypedId t i) = do ty <- ilOf ctx t
                              return $ TypedId ty i

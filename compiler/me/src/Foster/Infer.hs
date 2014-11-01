@@ -92,48 +92,6 @@ mbGetRefinement ty = case ty of
     TupleTypeTC      _types     rr -> Just rr
     _ -> Nothing
 
-refineRefinement (NoRefinement nope) (nm,_) = do
-     msg <- getStructureContextMessage
-     tcFailsMore [text $ "Infer.hs: Unable to unify refinement for " ++ show nm ++ " due to no-refinement from " ++ nope
-                 , msg]
-refineRefinement (MbRefinement r) v = do
-  mbr <- tcLift $ readIORef r
-  case mbr of
-    Nothing -> do tcLift $ putStrLn $ "refineRefinement writing ref " ++ show (fst v)
-                  tcLift $ writeIORef r (Just v)
-    Just v' -> do tcLift $ putStrLn "refineRefinement implcnstrnt" ; tcAddRefinementImplicationConstraint v v'
-
-constrainRefinement (MbRefinement r) v = do
-  mbr <- tcLift $ readIORef r
-  case mbr of
-    Nothing -> do return ()
-    Just v' -> do tcLift $ putStrLn "refineRefinement implcnstrnt" ;
-                  tcAddRefinementImplicationConstraint v v'
-
-
-tcUnifyRefinements   (NoRefinement _)   (NoRefinement _) = return ()
-tcUnifyRefinements n@(NoRefinement _) m@(MbRefinement _) = tcUnifyRefinements m n
-tcUnifyRefinements (MbRefinement r) (NoRefinement nope) = do
- mbr <- tcLift $ readIORef r
- case mbr of
-   Nothing -> return ()
-   Just (nm,_) -> do
-     msg <- getStructureContextMessage
-     tcFailsMore [text $ "Unable to unify refinement for " ++ show nm ++ " due to no-refinement from " ++ nope
-                 , msg]
-tcUnifyRefinements (MbRefinement r1) (MbRefinement r2) = do
- mbr1 <- tcLift $ readIORef r1
- mbr2 <- tcLift $ readIORef r2
- case (mbr1, mbr2) of
-   (Nothing, Nothing) -> return ()
-   (Just (nm1,_), Just (nm2,_)) ->
-     tcLift $ putStrLn $ "~~~~~~ TODO check refinements eq: " ++ show (nm1, nm2)
-   -- Unidirectional refinement propagation!
-   (v1, Nothing) -> do tcLift $ putStrLn $ "tcUnifyRefinments writing ref r2..." ++ show (fmap fst v1) ; tcLift $ writeIORef r2 v1
-        {-
-   (Nothing, v2) -> do tcLift $ putStrLn $ "tcUnifyRefinments writing ref r1..." ++ show (fmap fst v2) ; tcLift $ writeIORef r1 v2
--}
-   _ -> return ()
 tcUnifyTypes :: TypeTC -> TypeTC -> Tc UnifySoln
 tcUnifyTypes t1 t2 = tcUnify [TypeConstrEq t1 t2]
   where
@@ -146,10 +104,6 @@ tcUnifyMoreTypes tys1 tys2 constraints tysub =
 tcUnifyLoop :: [TypeConstraint] -> TypeSubst -> Tc UnifySoln
 tcUnifyLoop [] tysub = return $ Just tysub
 
-tcUnifyLoop ((TypeConstrEq (PrimIntTC  I32 rr1) (PrimIntTC  I32 rr2)):constraints) tysub
-  = do tcUnifyRefinements rr1 rr2
-       tcUnifyLoop constraints tysub
-
 tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
  --tcLift $ putStrLn ("tcUnifyLoop: t1 = " ++ show t1 ++ "; t2 = " ++ show t2)
  if illegal t1 || illegal t2
@@ -159,12 +113,11 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
         ,text "t1::", showStructure t1, text "t2::", showStructure t2]
   else
    case (t1, t2) of
-    (PrimFloat64TC rr1, PrimFloat64TC rr2) -> do
-      tcUnifyRefinements rr1 rr2
+    (PrimFloat64TC _rr1, PrimFloat64TC _rr2) -> do
       tcUnifyLoop constraints tysub
-    ((PrimIntTC  n1 rr1), (PrimIntTC  n2 rr2)) ->
-      if n1 == n2 then do tcUnifyRefinements rr1 rr2
-                          tcUnifyLoop constraints tysub
+
+    ((PrimIntTC  n1 _rr1), (PrimIntTC  n2 _rr2)) ->
+      if n1 == n2 then do tcUnifyLoop constraints tysub
                   else do msg <- getStructureContextMessage
                           tcFailsMore [text $ "Unable to unify different primitive types: "
                                        ++ show n1 ++ " vs " ++ show n2
@@ -175,23 +128,21 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                      else tcFailsMore [text $ "Unable to unify different type variables: "
                                        ++ show tv1 ++ " vs " ++ show tv2]
 
-    ((TyConAppTC  nm1 tys1 rr1), (TyConAppTC  nm2 tys2 rr2)) ->
+    ((TyConAppTC  nm1 tys1 _rr1), (TyConAppTC  nm2 tys2 _rr2)) ->
       if nm1 == nm2
-        then do tcUnifyRefinements rr1 rr2
-                tcUnifyMoreTypes tys1 tys2 constraints tysub
+        then do tcUnifyMoreTypes tys1 tys2 constraints tysub
         else do msg <- getStructureContextMessage
                 tcFailsMore [text $ "Unable to unify different type constructors: "
                                   ++ nm1 ++ " vs " ++ nm2,
                              msg]
 
-    ((TupleTypeTC  tys1 rr1), (TupleTypeTC  tys2 rr2)) ->
+    ((TupleTypeTC  tys1 _rr1), (TupleTypeTC  tys2 _rr2)) ->
         if List.length tys1 /= List.length tys2
           then tcFailsMore [text $ "Unable to unify tuples of different lengths"
                            ++ " ("   ++ show (List.length tys1)
                            ++ " vs " ++ show (List.length tys2)
                            ++ ")."]
-          else do tcUnifyRefinements rr1 rr2
-                  tcUnifyMoreTypes tys1 tys2 constraints tysub
+          else do tcUnifyMoreTypes tys1 tys2 constraints tysub
 
     -- Mismatches between unitary tuple types probably indicate
     -- parsing/function argument handling mismatch.
@@ -228,17 +179,14 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
     ((RefTypeTC  t1), (RefTypeTC  t2)) ->
         tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
-    ((ArrayTypeTC  t1 rr1), (ArrayTypeTC  t2 rr2)) -> do
-        tcUnifyRefinements rr1 rr2
+    ((ArrayTypeTC  t1 _rr1), (ArrayTypeTC  t2 _rr2)) -> do
         tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
-    ((RefinedTypeTC (TypedId t1 n1) e1), ty) | Just rr <- mbGetRefinement ty -> do
-      refineRefinement rr (n1, e1)
-      tcUnifyLoop ((TypeConstrEq t1 ty):constraints) tysub
+    ((RefinedTypeTC v _), ty) -> do
+      tcUnifyLoop ((TypeConstrEq (tidType v) ty):constraints) tysub
 
-    (ty, (RefinedTypeTC (TypedId t1 n1) e1)) | Just rr <- mbGetRefinement ty -> do
-      constrainRefinement rr (n1, e1)
-      tcUnifyLoop ((TypeConstrEq ty t1):constraints) tysub
+    (ty, (RefinedTypeTC v _)) -> do
+      tcUnifyLoop ((TypeConstrEq ty (tidType v)):constraints) tysub
 
     _otherwise -> do
       msg <- getStructureContextMessage
@@ -254,10 +202,12 @@ tcUnifyVar m1 (MetaTyVarTC m2) tysub constraints | m1 == m2
   = tcUnifyLoop constraints tysub
 
 tcUnifyVar m ty tysub constraints = do
+{-
     do
       tcm <- readTcMeta m
       tcLift $ putStrLn $ "================ Unifying meta var " ++ show (pretty $ MetaTyVarTC m) ++ " :: " ++ show (pretty tcm)
                      ++ "\n============================= with " ++ show (pretty $ ty)
+                     -}
     let tysub' = Map.insert (mtvUniq m) ty tysub
     tcUnifyLoop (tySubstConstraints constraints (Map.singleton (mtvUniq m) ty)) tysub'
       where

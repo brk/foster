@@ -42,8 +42,11 @@ data TypeAST =
                             , fnTypeProcOrFunc :: ProcOrFunc }
          | ForAllAST        [(TyVar, Kind)] (Rho)
          | TyVarAST         TyVar
-         | MetaPlaceholderAST String
+         | MetaPlaceholderAST MTVQ String
          | RefinedTypeAST   String TypeAST (ExprAST TypeAST)
+
+-- For MetaPlaceholderAST, user-written placeholders can only be tau's, but we
+-- must be able to generate sigmas for function type skeletons and such
 
 instance Eq (MetaTyVar t) where
   m1 == m2 = case (mtvUniq m1 == mtvUniq m2, mtvRef m1 == mtvRef m2) of
@@ -70,6 +73,7 @@ instance Pretty TypeAST where
         RefTypeAST    ty                -> text "(Ref " <> pretty ty <> text ")"
         ArrayTypeAST  ty                -> text "(Array " <> pretty ty <> text ")"
         RefinedTypeAST _nm ty _e        -> text "(Refined " <> pretty ty <> text ")"
+        MetaPlaceholderAST _ nm         -> text "(.meta " <> text nm <> text ")"
 
 prettyTVs tvs = map (\(tv,k) -> parens (pretty tv <+> text "::" <+> pretty k)) tvs
 
@@ -108,6 +112,7 @@ instance Structured TypeAST where
             RefTypeAST    _                -> text $ "RefTypeAST"
             ArrayTypeAST  _                -> text $ "ArrayTypeAST"
             RefinedTypeAST {}              -> text $ "RefinedTypeAST"
+            MetaPlaceholderAST mtvq _      -> text $ "MetaPlaceholderAST " ++ descMTVQ mtvq
 
     childrenOf e =
         case e of
@@ -123,6 +128,7 @@ instance Structured TypeAST where
             RefTypeAST    ty               -> [ty]
             ArrayTypeAST  ty               -> [ty]
             RefinedTypeAST _ ty _          -> [ty]
+            MetaPlaceholderAST {}          -> []
 
 fosBoolType = PrimIntAST I1
 fosStringType = TyConAppAST "Text" []

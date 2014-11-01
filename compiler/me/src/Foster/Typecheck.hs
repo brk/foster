@@ -779,9 +779,12 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
                 ++ (show $ List.length argexprs) ++ "; expected "
                 ++ (show $ List.length args_ty)
                 ++ highlightFirstLine (rangeOf rng)
-        tcLift $ putStrLn $ "tcSigmaCall of " ++ show base
-        tcLift $ putStrLn $ show (zip argexprs args_ty)
-        args <- sequence [checkSigma ctx arg ty | (arg, ty) <- zip argexprs args_ty]
+        --tcLift $ putStrLn $ "tcSigmaCall of " ++ show base
+        --tcLift $ putStrLn $ show (zip argexprs args_ty)
+
+        -- Strip refinements; just because a formal parameter has a given refinement,
+        -- doesn't mean that the actual will necessarily follow the same refinement!
+        args <- sequence [checkSigma ctx arg (shallowStripRefinedTypeTC ty) | (arg, ty) <- zip argexprs args_ty]
         debug $ "call: annargs: "
         debugDoc $ showStructure (AnnTuple rng (\tys -> TupleTypeTC tys (NoRefinement "tcSigmaCall")) args)
         debugDoc $ text "call: res_ty is " <> pretty res_ty
@@ -822,7 +825,7 @@ unifyFun tau args msg = do
 -- {{{
 tcRhoFn ctx f expTy = do
   sigma <- tcSigmaFn ctx f expTy
-  debug $ "tcRhoFn instantiating " ++ show (typeTC sigma)
+  debug $ "**********************tcRhoFn instantiating " ++ show (typeTC sigma)
   inst sigma "tcRhoFn"
 -- }}}
 
@@ -833,7 +836,7 @@ tcRhoFn ctx f expTy = do
 -- {{{
 tcSigmaFn :: Context SigmaTC -> FnAST TypeAST -> Expected SigmaTC -> Tc (AnnExpr SigmaTC)
 tcSigmaFn ctx fnAST expTyRaw = do
-  --tcLift $ putStrLn $ "tcSigmaFn: nexpTyRaw is " ++ show expTyRaw
+  tcLift $ putStrLn $ "****************tcSigmaFn: nexpTyRaw is " ++ show expTyRaw ++ " for " ++ show (fnAstName fnAST)
   case (fnTyFormals fnAST, expTyRaw) of
     ([], Check (ForAllTC exp_ktvs _)) ->
         -- Our function didn't have a forall, but its type annotation did.
@@ -962,7 +965,7 @@ tcSigmaFn ctx fnAST expTyRaw = do
                      case t' of
                        (MetaTyVarTC m) -> do
                             debugDoc $ text "zonked " <> pretty t <> text " to " <> pretty t <> text "; writing " <> pretty tv
-                            writeTcMeta m (TyVarTC tv)
+                            writeTcMetaTC m (TyVarTC tv)
                        _ -> tcFails [text "expected ty param metavar to be un-unified, instead had " <> pretty tv]
                   ) (zip taus ktvs)
         -- Zonk the type to ensure that the meta vars are completely gone.
@@ -991,6 +994,14 @@ mkTypeFormal (othervar, _kind) =
     error $ "Whoops, expected only bound type variables!\n" ++ show othervar
 -- }}}
 
+mbFreshRefinementVar :: Context SigmaTC -> TypeAST -> Tc [TypedId TypeTC]
+mbFreshRefinementVar ctx tv = do
+  case tv of
+    RefinedTypeAST nm t _e -> do
+         id <- tcFresh nm
+         t' <- tcType ctx t
+         return [TypedId t' id]
+    _ -> return []
 
 -- G{x1 : t1}...{xn : tn} |- e ::: tb
 -- ---------------------------------------------------------------------
@@ -1007,14 +1018,8 @@ tcRhoFnHelper ctx f expTy = do
     -- TODO use levels or something so that function bodies can't refer to
     --      refinement variables from exprs (unless embedded in refn. types).
     tcLift $ putStrLn $ "beginning RV section in tcRhoFnHelper..."
-    refinementVars <- mapM (\v -> case tidType v of
-                                     RefinedTypeAST nm t e -> do
-                                            id <- tcFresh nm
-                                            t' <- tcType ctx t
-                                            return [TypedId t' id]
-                                     _ ->   return [])
-                          (fnFormals f)
-    let ctx' = extendContext ctx (concat refinementVars)
+    refinementVars <- concatMapM (mbFreshRefinementVar ctx) (map tidType $ fnFormals f)
+    let ctx' = extendContext ctx refinementVars
     uniquelyNamedFormals0 <- getUniquelyNamedFormals ctx' rng (fnFormals f) (fnAstName f)
     uniquelyNamedFormals <- mapM
                       (retypeTID (resolveType annot $ localTypeBindings ctx))
@@ -1041,6 +1046,7 @@ tcRhoFnHelper ctx f expTy = do
                        _ <- sequence [subsCheckTy argty varty "mono-fn-arg" |
                                        (argty, varty) <- zip arg_tys var_tys]
                        -- TODO is there an arg translation?
+                       tcLift $ putStrLn $ "checking body of " ++ show (fnAstName f) ++ " against type " ++ show body_ty
                        annbody <- checkRho extCtx (fnAstBody f) body_ty
                        {-
                        precond <- case (fnAstPrecond f, precond0) of
@@ -1053,6 +1059,8 @@ tcRhoFnHelper ctx f expTy = do
 
     let fnty = fnTypeTemplate f argtys (typeTC annbody) FastCC
                 where argtys = map tidType uniquelyNamedFormals
+
+    tcLift $ putStrLn $ "fnty for " ++ (show (fnAstName f)) ++ " is " ++ show fnty
 
     -- Note we collect free vars in the old context, since we can't possibly
     -- capture the function's arguments from the environment!
@@ -1100,7 +1108,8 @@ tcType :: Context TypeTC -> TypeAST -> Tc TypeTC
 tcType ctx typ = do
   let q = tcType ctx
   case typ of
-        MetaPlaceholderAST nm -> newTcUnificationVarTau nm
+        MetaPlaceholderAST MTVTau   nm -> newTcUnificationVarTau nm
+        MetaPlaceholderAST MTVSigma nm -> newTcUnificationVarSigma nm
         PrimIntAST         sz -> liftM (PrimIntTC sz ) genRefinementVar
         PrimFloat64AST        -> liftM (PrimFloat64TC) genRefinementVar
         TyVarAST      tv      -> return $ TyVarTC tv
@@ -1123,25 +1132,35 @@ tcType ctx typ = do
                       (retypeTID (resolveType annot $ localTypeBindings ctx))
                       uniquelyNamedFormals0
           let extCtx = extendContext ctx uniquelyNamedFormals
-
           ss' <- mapM (tcType extCtx) ss
-          r'  <-       tcType extCtx  r
+          -- The binding for the function's return type, if any, should
+          -- be in-scope for its refinement.
+          extCtx' <- case r of
+                       RefinedTypeAST nm r' _ -> do
+                            unf0 <- getUniquelyNamedFormals extCtx rng [TypedId r' (Ident (T.pack nm) 0)] (T.pack "refinement for fn return type...")
+                            unf  <- mapM (retypeTID (resolveType annot $ localTypeBindings ctx)) unf0
+                            return $ extendContext extCtx unf
+                       _ -> return extCtx
+          r'  <-       tcType extCtx' r
           return $ FnTypeTC ss' r' cc ft
         RefinedTypeAST nm ty e -> do
           -- TODO: the caller must be responsible for setting up a suitably
           --       extended context, in order to support dependent refinements.
           -- Make sure that the refinement has type bool (with a suitably extended context).
           {-
-          let rng    = MissingSourceRange $ "refinement " ++ nm
-          let annot  = ExprAnnot [] rng []
-          let formal = TypedId ty (Ident (T.pack nm) 0)
-          uniquelyNamedFormals0 <- getUniquelyNamedFormals ctx rng [formal] (T.pack $ "refinement " ++ nm)
-          [uniquelyNamedFormal] <- mapM
-                      (retypeTID (resolveType annot $ localTypeBindings ctx))
-                      uniquelyNamedFormals0
+           extCtx <- case termVarLookup (T.pack nm) (contextBindings ctx) of
+                      Just _ -> return ctx
+                      Nothing -> do
+                          let rng    = MissingSourceRange $ "refinement " ++ nm
+                          let annot  = ExprAnnot [] rng []
+                          let formal = TypedId ty (Ident (T.pack nm) 0)
+                          uniquelyNamedFormals0 <- getUniquelyNamedFormals ctx rng [formal] (T.pack $ "refinement " ++ nm)
+                          [uniquelyNamedFormal] <- mapM
+                                      (retypeTID (resolveType annot $ localTypeBindings ctx))
+                                      uniquelyNamedFormals0
 
-          let extCtx = extendContext ctx [uniquelyNamedFormal]
-          -}
+                          return $ extendContext ctx [uniquelyNamedFormal]
+-}
           let extCtx = ctx
           e' <- checkRho extCtx e (PrimIntTC I1 (NoRefinement "bool-of-refinement"))
           ty' <- q ty
@@ -1521,8 +1540,8 @@ zonkType x = do
                             case mty of
                               Nothing -> do debugDoc $ string "unable to zonk meta " <> pretty x
                                             return x
-                              Just ty -> do ty' <- zonkType ty
-                                            writeTcMeta m ty'
+                              Just ty -> do ty' <- zonkType ty >>= return
+                                            writeTcMetaTC m ty'
                                             return ty'
         PrimIntTC     {}        -> return x
         PrimFloat64TC {}        -> return x
@@ -1559,7 +1578,7 @@ checkAgainst taus (ety, MetaTyVarTC m) = do
         mty <- readTcMeta m
         case mty of
             Nothing -> do ty' <- zonkType ety
-                          writeTcMeta m ty'
+                          writeTcMetaTC m ty'
             Just  _ -> do return ()
 
   case ety of
@@ -1615,11 +1634,11 @@ unify' !depth t1 t2 msg = do
                          case mt2 of
                              Just x2 -> do debugDoc $ pretty (MetaTyVarTC m2) <+> text "~>" <+> pretty x2
                                            unify' (depth + 1) (MetaTyVarTC m) x2 msg
-                             Nothing -> writeTcMeta m (MetaTyVarTC m2)
+                             Nothing -> writeTcMetaTC m (MetaTyVarTC m2)
          (Nothing, Just x2) -> do unbounds <- collectUnboundUnificationVars [x2]
                                   case m `elem` unbounds of
-                                     False   -> writeTcMeta m x2
-                                     True    -> occurdCheck m x2
+                                     False   -> writeTcMetaTC m x2
+                                     True    -> occurdCheck   m x2
   where
      occurdCheck m t = tcFails [text $ "Occurs check for " ++ show (MetaTyVarTC m)
                                    ++ " failed in " ++ show t
@@ -1790,11 +1809,11 @@ update r e_action = do e <- e_action
 
 type Term = ExprAST TypeAST
 
-tcVERBOSE = True
+tcVERBOSE = False
 
 debug    s = do when tcVERBOSE (tcLift $ putStrLn s)
 debugDoc d = do when tcVERBOSE (tcLift $ putDocLn d)
-debugDoc2 d = do when True (tcLift $ putDocLn d)
+debugDoc2 d = do when tcVERBOSE (tcLift $ putDocLn d)
 
 -- The free-variable determination logic here is tested in
 --      test/bootstrap/testcases/rec-fn-detection
@@ -1830,20 +1849,20 @@ typeTC :: AnnExpr TypeTC -> TypeTC
 typeTC = typeOf
 
 logged'' msg action = do
-  tcLift $ putStrLn $ "{ " ++ msg
+  --tcLift $ putStrLn $ "{ " ++ msg
   rv <- action
-  tcLift $ putStrLn $ "} :: " ++ show (pretty $ typeTC rv)
+  --tcLift $ putStrLn $ "} :: " ++ show (pretty $ typeTC rv)
   return rv
 
 logged' msg action = do
-  tcLift $ putStrLn $ "{ " ++ msg
+  --tcLift $ putStrLn $ "{ " ++ msg
   rv <- action
-  tcLift $ putStrLn $ "}"
+  --tcLift $ putStrLn $ "}"
   return rv
 
 logged expr msg action = do
-  tcLift $ putStrLn $ "{ " ++ msg
+  --tcLift $ putStrLn $ "{ " ++ msg
   rv <- action
-  tcLift $ putStrLn $ "} :: " ++ show (pretty $ typeTC expr)
+  --tcLift $ putStrLn $ "} :: " ++ show (pretty $ typeTC expr)
   return rv
 -- }}}

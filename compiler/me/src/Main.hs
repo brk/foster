@@ -80,11 +80,15 @@ typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
     -- we'll have the best binding on hand to use for subsequent typechecking.
     let genBinding :: FnAST TypeAST -> IO (ContextBinding TypeTC)
         genBinding fn = do
-        OK binding <-
+        oo_binding <-
             case termVarLookup (fnAstName fn) (contextBindings ctx) of
                 Nothing  -> do unTc tcenv $ bindingForFnAST ctx fn
                 Just cxb -> do return (OK $ TermVarBinding (fnAstName fn) cxb)
-        return binding
+        case oo_binding of
+          OK binding  -> return binding
+          Errors errs -> error $ show (fnAstName fn) ++ " ;; " ++
+                                 show (termVarLookup (fnAstName fn) (contextBindings ctx))
+                                 ++ " \n " ++ show errs
 
     bindings <- mapM genBinding fns
     let extCtx = prependContextBindings ctx bindings
@@ -152,23 +156,16 @@ typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
             t <- fnTypeTemplate ctx f
             return $ pair2binding (fnAstName f, t, Nothing)
 
-        typeTemplateSigma :: Maybe SigmaTC -> String -> Tc SigmaTC
-        typeTemplateSigma Nothing    name = newTcUnificationVarSigma name
-        typeTemplateSigma (Just ty) _name = return ty
-
-        annVarTemplate :: Context TypeTC -> TypedId Sigma -> Tc SigmaTC
-        annVarTemplate ctx v = do s <- tcType ctx $ tidType v
-                                  typeTemplateSigma (Just s) (show $ tidIdent v)
-
         fnTypeTemplate :: Context TypeTC -> FnAST TypeAST -> Tc TypeTC
-        fnTypeTemplate ctx f = do
-          retTy  <- newTcUnificationVarSigma ("ret type for " ++ (T.unpack $ fnAstName f))
-          argTys <- mapM (annVarTemplate ctx) (fnFormals f)
-          let procOrFunc = if fnWasToplevel f then FT_Proc else FT_Func
-          let fnTy = FnTypeTC argTys retTy FastCC procOrFunc
-          case fnTyFormals f of
-            []        -> return $ fnTy
-            tyformals -> return $ ForAllTC (map convertTyFormal tyformals) fnTy
+        fnTypeTemplate ctx f = tcType ctx fnTyAST
+          where
+           fnTyAST0 = FnTypeAST (map tidType $ fnFormals f)
+                                (MetaPlaceholderAST MTVSigma ("ret type for " ++ (T.unpack $ fnAstName f)))
+                                FastCC
+                                (if fnWasToplevel f then FT_Proc else FT_Func)
+           fnTyAST = case fnTyFormals f of
+                         [] -> fnTyAST0
+                         tyformals -> ForAllAST (map convertTyFormal tyformals) fnTyAST0
 
 -- | Typechecking a module proceeds as follows:
 -- |  #. Build separate binding lists for the globally-defined primitiveDecls
@@ -184,6 +181,7 @@ typecheckModule :: Bool
                 -> TcEnv
                 -> IO (OutputOr (Context TypeIL, ModuleIL AIExpr TypeIL))
 typecheckModule verboseMode modast tcenv0 = do
+    putStrLn $ show (moduleASTdecls modast)
     let dts = moduleASTprimTypes modast ++ moduleASTdataTypes modast
     let fns = moduleASTfunctions modast
     let primBindings = computeContextBindings' primitiveDecls
@@ -482,7 +480,7 @@ desugarParsedModule tcenv m = do
           RefinedTypeP nm t e -> do t' <- q t
                                     e' <- convertExprAST q e
                                     return $ RefinedTypeAST nm t' e'
-          MetaPlaceholder desc -> return $ MetaPlaceholderAST desc
+          MetaPlaceholder desc -> return $ MetaPlaceholderAST MTVTau desc
 
 typecheckSourceModule :: TcEnv ->  ModuleAST FnAST TypeAST
                       -> Compiled (ModuleIL AIExpr TypeIL, Context TypeIL)
