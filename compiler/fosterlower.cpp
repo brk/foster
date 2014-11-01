@@ -69,6 +69,11 @@ optBitcodeLibsDir("bitcodelibs",
   cl::cat(FosterOptCat));
 
 static cl::opt<bool>
+optStandalone("standalone",
+  cl::desc("Produce a standalone LLVM IR file, don't link in anything else"),
+  cl::cat(FosterOptCat));
+
+static cl::opt<bool>
 optEmitDebugInfo("g",
   cl::desc("Emit debug information in generated LLVM IR"),
   cl::cat(FosterOptCat));
@@ -304,7 +309,7 @@ int main(int argc, char** argv) {
 
   llvm::Module* module = new Module(mainModulePath.str().c_str(), getGlobalContext());
 
-  {
+  if (!optStandalone) {
     coro_bc = readLLVMModuleFromPath(optBitcodeLibsDir + "/gc_bc/libfoster_coro.bc");
     linkTo(coro_bc, "libfoster_coro", module);
 
@@ -330,7 +335,7 @@ int main(int argc, char** argv) {
   }
 
   // TODO mark foster__assert as alwaysinline
-  {
+  if (!optStandalone) {
     // These are "special" functions in that they need a declaration, but
     // their definition should not be available after linking against libfoster.
     llvm::Type* i32 = foster::builder.getInt32Ty();
@@ -341,8 +346,10 @@ int main(int argc, char** argv) {
         FunctionType::get(i64, llvm::makeArrayRef(i64), /*isVarArg=*/ false));
   }
 
-  libfoster_bc = readLLVMModuleFromPath(optBitcodeLibsDir + "/foster_runtime.bc");
-  foster::putModuleFunctionsInScope(libfoster_bc, module);
+  if (!optStandalone) {
+    libfoster_bc = readLLVMModuleFromPath(optBitcodeLibsDir + "/foster_runtime.bc");
+    foster::putModuleFunctionsInScope(libfoster_bc, module);
+  }
 
   //================================================================
   foster::ParsingContext::insertType("Foster$GenericClosureEnvPtr",
@@ -366,6 +373,7 @@ int main(int argc, char** argv) {
     config.emitLifetimeInfo  = optEnableLifetimeInfo;
     config.disableAllArrayBoundsChecks
                              =  optDisableAllArrayBoundsChecks;
+    config.standalone        = optStandalone;
 
     foster::codegenLL(prog, module, config);
   }
@@ -389,7 +397,8 @@ int main(int argc, char** argv) {
     foster::runWarningPasses(*module);
   }
 
-  { ScopedTimer timer("llvm.link");
+  if (!optStandalone) {
+    ScopedTimer timer("llvm.link");
     linkTo(libfoster_bc, "libfoster", module);
   }
 

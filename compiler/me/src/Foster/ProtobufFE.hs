@@ -344,8 +344,10 @@ parseDataType dt = do
             Just r  -> parseSourceRange r
       return $ Foster.Base.DataCtor name tyf types range
 
-parseModule :: String -> String -> [Decl] -> [Defn] -> [DataType.DataType] -> FE (ModuleAST FnAST TypeP)
-parseModule _name hash decls defns datatypes = do
+parseModule :: String -> String -> [Decl] -> [Defn]
+            -> [DataType.DataType]
+            -> [Foster.Base.DataType TypeP] -> FE (ModuleAST FnAST TypeP)
+parseModule _name hash decls defns datatypes primDatatypes = do
     lines <- gets feModuleLines
     funcs <- sequence $ [(parseFn e)  | (Defn _nm e) <- defns]
     dtypes <- mapM parseDataType datatypes
@@ -357,7 +359,7 @@ parseModule _name hash decls defns datatypes = do
                 processedDecls
                 dtypes
                 lines
-                primitiveDataTypesP
+                primDatatypes
   where
     toplevel :: FnAST t -> FnAST t
     toplevel f | fnWasToplevel f =
@@ -365,15 +367,16 @@ parseModule _name hash decls defns datatypes = do
                     "should not have their top-level bit set before we do it!"
     toplevel f = f { fnWasToplevel = True }
 
-parseSourceModule :: SourceModule -> ModuleAST FnAST TypeP
-parseSourceModule sm = resolveFormatting m where
+parseSourceModule :: Bool -> SourceModule -> ModuleAST FnAST TypeP
+parseSourceModule standalone sm = resolveFormatting m where
    m =
      evalState
       (parseModule (uToString $ SourceModule.self_name sm)
                    (uToString $ SourceModule.hash sm)
                    (toList    $ SourceModule.decl sm)
                    (toList    $ SourceModule.defn sm)
-                   (toList    $ SourceModule.data_type sm))
+                   (toList    $ SourceModule.data_type sm)
+                   (if standalone then [] else primitiveDataTypesP))
       (FEState (sourceLines sm))
 
    formatting = map p $ toList $ SourceModule.formatting sm
@@ -501,9 +504,10 @@ parseSourceModule sm = resolveFormatting m where
    liftMaybeM f m = case m of Nothing ->         return Nothing
                               Just t  -> f t >>= return.Just
 
-parseWholeProgram :: WholeProgram -> WholeProgramAST FnAST TypeP
-parseWholeProgram pgm =
-  let mods = map parseSourceModule (toList $ WholeProgram.modules pgm) in
+parseWholeProgram :: WholeProgram -> Bool -> WholeProgramAST FnAST TypeP
+parseWholeProgram pgm standalone =
+  let mods = map (parseSourceModule standalone)
+                 (toList $ WholeProgram.modules pgm) in
   WholeProgramAST mods
 
 parseType :: Type -> FE TypeP

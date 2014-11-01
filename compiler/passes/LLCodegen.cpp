@@ -293,7 +293,7 @@ void registerKnownDataTypes(const std::vector<LLDecl*> datatype_decls,
 }
 
 void createGCMapsSymbolIfNeeded(CodegenPass* pass) {
-  if (!pass->config.useGC) {
+  if (!pass->config.useGC && !pass->config.standalone) {
     // The runtime needs a "foster__gcmaps" symbol for linking to succeed.
     // If we're not letting the GC plugin run, we'll need to emit it ourselves.
     new llvm::GlobalVariable(
@@ -308,11 +308,32 @@ void createGCMapsSymbolIfNeeded(CodegenPass* pass) {
   }
 }
 
+void addExternDecls(const std::vector<LLDecl*> decls,
+                    CodegenPass* pass) {
+  for (size_t i = 0; i < decls.size(); ++i) {
+     LLDecl* d = decls[i];
+     const std::string& declName = d->getName();
+     TypeAST* fosterType = d->getType();
+     if (const FnTypeAST* fnty = fosterType->castFnTypeAST()) {
+       pass->mod->getOrInsertFunction(declName, fnty->getLLVMFnType());
+     } else {
+       pass->mod->getOrInsertGlobal(declName, fosterType->getLLVMType());
+     }
+  }
+}
+
 ///}}}//////////////////////////////////////////////////////////////
 
 void LLModule::codegenModule(CodegenPass* pass) {
   registerKnownDataTypes(datatype_decls, pass);
-  extendWithImplementationSpecificProcs(pass, procs);
+
+  if (pass->config.standalone) {
+    addExternDecls(extern_val_decls, pass);
+  }
+
+  if (!pass->config.standalone) {
+    extendWithImplementationSpecificProcs(pass, procs);
+  }
 
   // Ensure that the llvm::Function*s are created for all the function
   // prototypes, so that mutually recursive function references resolve.
@@ -383,6 +404,11 @@ void LLProc::codegenProto(CodegenPass* pass) {
   if (symbolName == kFosterMain) {
     // No args, returning void...
     FT = llvm::FunctionType::get(builder.getVoidTy(), false);
+    linkage = llvm::GlobalValue::ExternalLinkage;
+    cc      = llvm::CallingConv::C;
+  }
+
+  if (pass->config.standalone) {
     linkage = llvm::GlobalValue::ExternalLinkage;
     cc      = llvm::CallingConv::C;
   }

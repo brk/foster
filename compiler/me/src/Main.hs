@@ -423,8 +423,9 @@ runCompiler pb_program flagVals outfile = do
        putStrLn $ "protobufout time: " ++ secs pb_time
 
 compile :: WholeProgram -> TcEnv -> Compiled (Double, Double, ILProgram)
-compile pb_program tcenv =
-    (return $ parseWholeProgram pb_program)
+compile pb_program tcenv = do
+    flags <- gets ccFlagVals
+    (return $ parseWholeProgram pb_program (getStandaloneFlag flags))
      >>= mergeModules -- temporary hack
      >>= desugarParsedModule tcenv
      >>= typecheckSourceModule tcenv

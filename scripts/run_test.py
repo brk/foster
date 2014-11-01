@@ -163,13 +163,16 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
                          '-bitcodelibs', mkpath(options.bindir, '_bitcodelibs_')]
                     + options.beargs)
 
-    # Running opt on a Module produces a Module
-    # Running llc on a Module produces an assembly file
-    (s4, e4) = crun(['fosteroptc', finalpath + '.preopt.bc', '-dump-postopt',
-                                         '-fosterc-time', '-o', finalpath + ext]
-                    + optlevel(options)
-                    + asm_verbose(to_asm)
-                    + options.optcargs)
+    if options.standalone:
+      (s4, e4) = (s3, 0)
+    else:
+      # Running opt on a Module produces a Module
+      # Running llc on a Module produces an assembly file
+      (s4, e4) = crun(['fosteroptc', finalpath + '.preopt.bc', '-dump-postopt',
+                                           '-fosterc-time', '-o', finalpath + ext]
+                      + optlevel(options)
+                      + asm_verbose(to_asm)
+                      + options.optcargs)
 
     return (s4, to_asm, e1, e2, e3, e4)
 
@@ -238,11 +241,14 @@ def run_one_test(testpath, paths, tmpdir, progargs):
         else: # fosteroptc emitted a .o directly.
           as_elapsed = 0
 
-
-        rv, ld_elapsed = link_to_executable(finalpath, exepath, paths, testpath)
-        rv, rn_elapsed = run_command([exepath] + progargs, paths, testpath,
-                                     stdout=actual, stderr=expected, stdin=infile,
-                                     showcmd=True, strictrv=False)
+        if options.standalone:
+          ld_elapsed = 0
+          rn_elapsed = 0
+        else:
+          rv, ld_elapsed = link_to_executable(finalpath, exepath, paths, testpath)
+          rv, rn_elapsed = run_command([exepath] + progargs, paths, testpath,
+                                       stdout=actual, stderr=expected, stdin=infile,
+                                       showcmd=True, strictrv=False)
 
   if rv == 0:
     did_fail = run_diff(exp_filename, act_filename)
@@ -344,6 +350,8 @@ def get_test_parser(usage):
                     help="Pass through arg to back-end (optc).")
   parser.add_option("--prog-arg", action="append", dest="progargs", default=[],
                     help="Pass through command line arguments to program")
+  parser.add_option("--standalone", action="store_true", dest="standalone", default=False,
+                    help="Just compile, don't link...")
   parser.add_option("-I", dest="importpath", action="store", default=None,
                     help="Set import path")
   return parser
@@ -376,5 +384,11 @@ if __name__ == "__main__":
 
   tmpdir = os.path.join(options.bindir, 'test-tmpdir')
   ensure_dir_exists(tmpdir)
+
+  if options.standalone:
+    options.beargs.append("--unsafe-disable-gc")
+    # unsafe-disable-array-bounds-checks
+    options.beargs.append("--standalone")
+    options.meargs.append("--standalone")
 
   main(testpath, get_paths(options, tmpdir), tmpdir, options.progargs)

@@ -45,6 +45,7 @@ struct CodegenPassConfig {
   bool killDeadSlots;
   bool emitLifetimeInfo;
   bool disableAllArrayBoundsChecks;
+  bool standalone;
 };
 
 std::ostream& operator<<(std::ostream& out, LLExpr& expr);
