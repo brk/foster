@@ -479,6 +479,8 @@ showStructure e = showStructureP e "" False
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||||||||| Utilities ||||||||||||||||||||||||||{{{
 
+concatMapM f vs = do vs' <- mapM f vs ; return $ concat vs'
+
 mapMaybeM _ Nothing = return Nothing
 mapMaybeM f (Just x) = f x >>= return . Just
 

@@ -81,6 +81,8 @@ mkCtorReprFn m shouldOptimizeCtorRepresentations =
 
 kNormalizeFn :: (CtorId -> CtorRepr) -> Fn () AIExpr TypeIL -> KN (FnExprIL)
 kNormalizeFn ctorRepr fn = do
+{- TODO: if we do this, we must tweak the tail-call heuristics to mark
+         the RHS of the introduced let bindings as a tail-call context...
     -- Enforce the invariant that the return value of the function is let-bound
     -- (that is, the function returns a variable). This is useful in checking
     -- static refinements of return types.
@@ -90,6 +92,9 @@ kNormalizeFn ctorRepr fn = do
     let body = AILetVar id (fnBody fn) (E_AIVar (TypedId t id))
     knbody <- kNormalize ctorRepr body
     --knbody <- kNormalize ctorRepr (fnBody fn)
+    return $ fn { fnBody = knbody }
+-}
+    knbody <- kNormalize ctorRepr (fnBody fn)
     return $ fn { fnBody = knbody }
 
 -- ||||||||||||||||||||||| K-Normalization ||||||||||||||||||||||{{{

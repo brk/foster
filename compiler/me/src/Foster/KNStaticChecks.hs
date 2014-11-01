@@ -82,6 +82,9 @@ smtVar tid = smtId (tidIdent tid)
 
 smtVars tids = map smtVar tids
 
+smtNameI :: SMT.Ident -> SMT.Name
+smtNameI (SMT.I nm _) = nm
+
 addIdentFact facts id (SMTExpr expr _ _) ty =
   addSymbolicVar facts' (TypedId ty id)
     where facts' = facts { identFacts = (id, expr):(identFacts facts) }
@@ -113,6 +116,7 @@ smtType (PrimInt sz) = tBitVec (fromIntegral $ intSizeOf sz)
 smtType (ArrayType _) = smtArray
 smtType (TupleType tys) = TApp (smtI ("FosterTuple" ++ show (length tys))) (map smtType tys)
 smtType (RefinedType v _) = smtType (tidType v)
+smtType (TyConApp nm tys) = TApp (smtI nm) (map smtType tys)
 smtType ty = error $ "smtType can't yet handle " ++ show ty
 
 smtArray = TApp (smtI "FosterArray") []
@@ -127,24 +131,25 @@ scriptImplyingBy' pred facts = scriptImplyingBy (bareSMTExpr pred) facts
 scriptImplyingBy :: SMTExpr -> Facts -> Script
 scriptImplyingBy (SMTExpr pred declset idfacts) facts =
   let preconds = map snd $ idfacts ++ (identFacts facts) in
+  let alldecls = Set.toList $ Set.union declset (symbolicDecls facts) in
+  let tydecls  = [CmdDeclareType nm arity | (nm, arity) <-
+                    uniquesWithoutPrims
+                     [(smtNameI id, fromIntegral $ length tys)
+                     | SymDecl _ [] (TApp id tys) <- alldecls]] in
   Script $ [CmdSetOption (OptProduceModels True)
            ,CmdSetLogic (SMT.N "QF_AUFBV")
            ,CmdDeclareType (SMT.N "FosterArray") 0
-           ,CmdDeclareType (SMT.N "FosterTuple0") 0
-           ,CmdDeclareType (SMT.N "FosterTuple2") 2
-           ,CmdDeclareType (SMT.N "FosterTuple3") 3
-           ,CmdDeclareType (SMT.N "FosterTuple4") 4
-           ,CmdDeclareType (SMT.N "FosterTuple5") 5
-           ,CmdDeclareType (SMT.N "FosterTuple6") 6
-           ,CmdDeclareType (SMT.N "FosterTuple7") 7
-           ,CmdDeclareType (SMT.N "FosterTuple8") 8
            ,CmdDeclareFun (SMT.N "foster$arraySizeOf") [smtArray] (tBitVec 64)
            ]
-        ++ map (\(SymDecl nm tys ty) -> CmdDeclareFun nm tys ty)
-               (Set.toList $ Set.union declset (symbolicDecls facts))
+        ++ tydecls
+        ++ map (\(SymDecl nm tys ty) -> CmdDeclareFun nm tys ty) alldecls
         ++ map CmdAssert (pathFacts facts ++ preconds)
         ++ [CmdAssert $ SMT.not pred]
         ++ [CmdCheckSat]
+
+uniquesWithoutPrims pairs =
+    pairs `butnot` [(SMT.N "Bool", 0), (SMT.N "BitVec", 0),
+                    (SMT.N "FosterArray", 0)]
 ------
 
 type SC = StateT SCState Compiled
@@ -182,13 +187,14 @@ runStaticChecks m = do
 checkModuleExprs :: KNMono -> Facts -> Compiled ()
 checkModuleExprs expr facts =
   case expr of
-    KNLetFuns     [id] [fn] b -> do
-        facts' <- recordIfHasFnPrecondition facts id (fnType fn)
-        checkFn fn facts'
+    KNLetFuns     ids fns b -> do
+        facts' <- foldlM (\facts (id, fn) -> recordIfHasFnPrecondition facts id (fnType fn))
+                           facts (zip ids fns)
+        mapM_ (\fn -> checkFn fn facts') fns
         checkModuleExprs b facts'
     KNCall {} ->
       return ()
-    _ -> error $ "Unexpected expression in checkModuleExprs"
+    _ -> error $ "Unexpected expression in checkModuleExprs: " ++ show expr
 
 checkFn fn facts = do
   evalStateT (checkFn' fn facts) (SCState Map.empty)
@@ -350,7 +356,7 @@ checkBody expr facts =
     KNTuple       {} -> return Nothing
     KNAllocArray  {} -> return Nothing
 
-    KNArrayRead ty (ArrayIndex a i _ _)   -> do
+    KNArrayRead ty (ArrayIndex a i _ SG_Static) -> do
         --let precond = (sign_extend 32 (smtVar i)) `inRangeCO` (litOfSize 0 I64, smtArraySizeOf (smtVar a))
         let precond = bvult (zero_extend 32 (smtVar i)) (smtArraySizeOf (smtVar a))
         let thm = scriptImplyingBy' precond facts
@@ -362,6 +368,16 @@ checkBody expr facts =
                         return Nothing
           Just f -> do liftIO $ putStrLn $ "have a constraint on output of array read: " ++ show (f (tidIdent a))
                        return $ withDecls facts $ \x -> return $ f x
+
+    KNArrayRead ty (ArrayIndex a i _ SG_Dynamic) -> do
+        -- If the array has an annotation, use it.
+        mb_f <- scGetFact (tidIdent a)
+        case mb_f of
+          Nothing -> do liftIO $ putStrLn $ "no constraint on output of array read"
+                        return Nothing
+          Just f -> do liftIO $ putStrLn $ "have a constraint on output of array read: " ++ show (f (tidIdent a))
+                       return $ withDecls facts $ \x -> return $ f x
+
 
     KNArrayPoke ty (ArrayIndex a i _ _) v -> return Nothing
 
@@ -473,7 +489,7 @@ checkBody expr facts =
         -- Does the called function have a precondition?
         case fromMaybe [] $ getMbFnPreconditions facts (tidIdent v) of
           [] -> do
-            liftIO $ putStrLn $ "TODO: call of function with result type " ++ show ty ++ " ; " ++ show (tidIdent v)
+            liftIO $ putStrLn $ "TODO: call of function with result type " ++ show ty ++ " ; " ++ show (v)
             liftIO $ putStrLn $ "           (no precond)"
             return Nothing
           fps -> do
@@ -507,15 +523,14 @@ checkBody expr facts =
         checkBody b  facts
         return Nothing
 
-    KNLetFuns     [id] [fn] b -> do
-        facts' <- recordIfHasFnPrecondition facts id (fnType fn)
-        checkFn'  fn facts'
-        checkBody b  facts'
-
     KNLetRec      ids es  b     ->
         error $ "KNStaticChecks.hs: checkBody can't yet support recursive non-function bindings."
-    KNLetFuns     ids fns b     ->
-        error $ "KNStaticChecks.hs: checkBody can't yet support recursive function nests."
+
+    KNLetFuns     ids fns b     -> do
+        facts' <- foldlM (\facts (id, fn) -> recordIfHasFnPrecondition facts id (fnType fn))
+                           facts (zip ids fns)
+        mapM_ (\fn -> checkFn' fn facts') fns
+        checkBody b facts'
 
     KNCompiles (KNCompilesResult resvar) _t e -> do
         res <- scIntrospect (checkBody e facts)

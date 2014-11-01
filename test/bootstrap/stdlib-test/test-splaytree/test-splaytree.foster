@@ -9,7 +9,8 @@ spaces = { n : Int32 =>
   go n ""
 };
 
-show-splay-tree = { forall a:Boxed, st => fmt : { a => Text } =>
+// TODO try removing the type annotation on `st`...
+show-splay-tree = { forall a:Boxed, st : SplayTree a => fmt : { a => Text } =>
   REC go = { st => depth =>
     case st
       of $SplayNil ->

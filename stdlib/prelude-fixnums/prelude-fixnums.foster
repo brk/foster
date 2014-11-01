@@ -78,7 +78,7 @@ cast_WordX2_to_i32     = { a : WordX2    =>
 };
 
 ////
-/*
+
 // Precondition: b != 0
 udiv!-Int32    = { a : Int32    => b : Int32    => prim udiv-unsafe-Int32 a b }; // :: Int32
 
@@ -143,27 +143,24 @@ srem!-WordX2   = { a : WordX2   => b : WordX2   => prim urem-unsafe-WordX2 a b }
 
 ////
 
-urem-Int32  = { a : Int32  => b : Int32  => prim urem-unsafe-Int32  a b };
-urem-Int64  = { a : Int64  => b : Int64  => prim urem-unsafe-Int64  a b };
-urem-Int8   = { a : Int8   => b : Int8   => prim urem-unsafe-Int8   a b };
-urem-Word   = { a : Word   => b : Word   => prim urem-unsafe-Word   a b };
-urem-WordX2 = { a : WordX2 => b : WordX2 => prim urem-unsafe-WordX2 a b };
-udiv-Int32  = { a : Int32  => b : Int32  => prim udiv-unsafe-Int32  a b };
-udiv-Int64  = { a : Int64  => b : Int64  => prim udiv-unsafe-Int64  a b };
-udiv-Int8   = { a : Int8   => b : Int8   => prim udiv-unsafe-Int8   a b };
-udiv-Word   = { a : Word   => b : Word   => prim udiv-unsafe-Word   a b };
-udiv-WordX2 = { a : WordX2 => b : WordX2 => prim udiv-unsafe-WordX2 a b };
-srem-Int32  = { a : Int32  => b : Int32  => prim srem-unsafe-Int32  a b };
-srem-Int64  = { a : Int64  => b : Int64  => prim srem-unsafe-Int64  a b };
-srem-Int8   = { a : Int8   => b : Int8   => prim srem-unsafe-Int8   a b };
-srem-Word   = { a : Word   => b : Word   => prim srem-unsafe-Word   a b };
-srem-WordX2 = { a : WordX2 => b : WordX2 => prim srem-unsafe-WordX2 a b };
-
-sdiv-Int32  = { a : Int32  => b : Int32  => if b ==Int32  0 then prim kill-entire-process "sdiv-Int32 failed" else prim sdiv-unsafe-Int32  a b end };
-sdiv-Int64  = { a : Int64  => b : Int64  => if b ==Int64  0 then prim kill-entire-process "sdiv-Int64 failed" else prim sdiv-unsafe-Int64  a b end };
-sdiv-Int8   = { a : Int8   => b : Int8   => if b ==Int8   0 then prim kill-entire-process "sdiv-Int8  failed" else prim sdiv-unsafe-Int8   a b end };
-sdiv-Word   = { a : Word   => b : Word   => if b ==Word   0 then prim kill-entire-process "sdiv-Word  failed" else prim sdiv-unsafe-Word   a b end };
-
-*/
-sdiv-WordX2 = { ax : WordX2 => bx : WordX2 => z = bx ==WordX2 0; if z then prim kill-entire-process "sdiv-WordX2 failed" else prim sdiv-unsafe-WordX2 ax bx end  };
+urem-Int32  = { a : Int32  => b : Int32  => if prim ==Int32  b 0 then prim kill-entire-process "urem-Int32 failed" else prim urem-unsafe-Int32  a b end };
+urem-Int64  = { a : Int64  => b : Int64  => if prim ==Int64  b 0 then prim kill-entire-process "urem-Int64 failed" else prim urem-unsafe-Int64  a b end };
+urem-Int8   = { a : Int8   => b : Int8   => if prim ==Int8   b 0 then prim kill-entire-process "urem-Int8  failed" else prim urem-unsafe-Int8   a b end };
+urem-Word   = { a : Word   => b : Word   => if prim ==Word   b 0 then prim kill-entire-process "urem-Word  failed" else prim urem-unsafe-Word   a b end };
+urem-WordX2 = { a : WordX2 => b : WordX2 => if prim ==WordX2 b 0 then prim kill-entire-process "urem-WordX2 failed" else prim urem-unsafe-WordX2 a b end  };
+udiv-Int32  = { a : Int32  => b : Int32  => if prim ==Int32  b 0 then prim kill-entire-process "udiv-Int32 failed" else prim udiv-unsafe-Int32  a b end };
+udiv-Int64  = { a : Int64  => b : Int64  => if prim ==Int64  b 0 then prim kill-entire-process "udiv-Int64 failed" else prim udiv-unsafe-Int64  a b end };
+udiv-Int8   = { a : Int8   => b : Int8   => if prim ==Int8   b 0 then prim kill-entire-process "udiv-Int8  failed" else prim udiv-unsafe-Int8   a b end };
+udiv-Word   = { a : Word   => b : Word   => if prim ==Word   b 0 then prim kill-entire-process "udiv-Word  failed" else prim udiv-unsafe-Word   a b end };
+udiv-WordX2 = { a : WordX2 => b : WordX2 => if prim ==WordX2 b 0 then prim kill-entire-process "udiv-WordX2 failed" else prim udiv-unsafe-WordX2 a b end  };
+srem-Int32  = { a : Int32  => b : Int32  => if prim ==Int32  b 0 then prim kill-entire-process "srem-Int32 failed" else prim srem-unsafe-Int32  a b end };
+srem-Int64  = { a : Int64  => b : Int64  => if prim ==Int64  b 0 then prim kill-entire-process "srem-Int64 failed" else prim srem-unsafe-Int64  a b end };
+srem-Int8   = { a : Int8   => b : Int8   => if prim ==Int8   b 0 then prim kill-entire-process "srem-Int8  failed" else prim srem-unsafe-Int8   a b end };
+srem-Word   = { a : Word   => b : Word   => if prim ==Word   b 0 then prim kill-entire-process "srem-Word  failed" else prim srem-unsafe-Word   a b end };
+srem-WordX2 = { a : WordX2 => b : WordX2 => if prim ==WordX2 b 0 then prim kill-entire-process "srem-WordX2 failed" else prim srem-unsafe-WordX2 a b end  };
+sdiv-Int32  = { a : Int32  => b : Int32  => if prim ==Int32  b 0 then prim kill-entire-process "sdiv-Int32 failed" else prim sdiv-unsafe-Int32  a b end };
+sdiv-Int64  = { a : Int64  => b : Int64  => if prim ==Int64  b 0 then prim kill-entire-process "sdiv-Int64 failed" else prim sdiv-unsafe-Int64  a b end };
+sdiv-Int8   = { a : Int8   => b : Int8   => if prim ==Int8   b 0 then prim kill-entire-process "sdiv-Int8  failed" else prim sdiv-unsafe-Int8   a b end };
+sdiv-Word   = { a : Word   => b : Word   => if prim ==Word   b 0 then prim kill-entire-process "sdiv-Word  failed" else prim sdiv-unsafe-Word   a b end };
+sdiv-WordX2 = { a : WordX2 => b : WordX2 => if prim ==WordX2 b 0 then prim kill-entire-process "sdiv-WordX2 failed" else prim sdiv-unsafe-WordX2 a b end  };
 

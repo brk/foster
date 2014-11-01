@@ -3,7 +3,7 @@
 snafuinclude Posix "io/posix";
 
 main = {
-  res = read_stdin_bytes !;
+  res = read_stdin_bytes 512;
   case res
     of $IOReadDone bytes ->
             expect_i64 7;

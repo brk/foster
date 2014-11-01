@@ -1,4 +1,5 @@
 snafuinclude Prelude "prelude";
+snafuinclude Bitwise "bitwise";
 
 type case BInt of $B Int32;
 
@@ -19,10 +20,10 @@ text_of_BInt = { b:BInt => case b of $B n -> tmp_Text_of_Int32 n end };
 
 main = {
   expect_i32 5;
-  print_i32 (srem-Int32 105 10);
+  print_i32 (prim srem-unsafe-Int32 105 10);
 
   expect_i32 10;
-  print_i32 (sdiv-Int32 105 10);
+  print_i32 (prim sdiv-unsafe-Int32 105 10);
 
   expect_text "123";
   print_text (text_of_BInt (B 123));
