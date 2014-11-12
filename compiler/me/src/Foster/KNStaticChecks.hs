@@ -44,6 +44,8 @@ instance Eq  SymDecl where (==)    (SymDecl n1 _ _) (SymDecl n2 _ _) = (==)    n
 
 data SMTExpr = SMTExpr SMT.Expr (Set SymDecl) [(Ident, SMT.Expr)]
 
+instance Pretty SMT.Expr where pretty e = string (show $ SMT.pp e)
+
 mergeSMTExpr f (SMTExpr e1 s1 m1) (SMTExpr e2 s2 m2) =
     SMTExpr (f e1 e2) (Set.union s1 s2) (m1 ++ m2)
 
@@ -89,9 +91,19 @@ addIdentFact facts id (SMTExpr expr _ _) ty =
   addSymbolicVar facts' (TypedId ty id)
     where facts' = facts { identFacts = (id, expr):(identFacts facts) }
 
+addIdentFact'' facts id expr ty =
+  addSymbolicVar facts' (TypedId ty id)
+    where facts' = facts { identFacts = (id, expr):(identFacts facts) }
+
 addIdentFact' id (SMTExpr expr decls idfacts) ty =
  addSymbolicVar' (SMTExpr expr decls idfacts' ) (TypedId ty id)
     where idfacts' = (id, expr):idfacts
+
+addIdentFact''' facts id expr =
+    facts { identFacts = (id, expr):(identFacts facts) }
+
+addIdentFacts''' facts idfacts =
+    facts { identFacts = idfacts ++ identFacts facts }
 
 mkSymbolicVar :: TypedId MonoType -> SymDecl
 mkSymbolicVar v = d
@@ -102,6 +114,7 @@ mkSymbolicVar v = d
                 ty -> SymDecl (nm id) []                (smtType ty)
 
 addSymbolicVar facts v = facts { symbolicDecls = Set.insert (mkSymbolicVar v) (symbolicDecls facts) }
+addSymbolicDecls facts decls = facts { symbolicDecls = Set.union decls (symbolicDecls facts) }
 
 addSymbolicVar' :: SMTExpr -> TypedId MonoType -> SMTExpr
 addSymbolicVar' (SMTExpr e decls idfacts) v = SMTExpr e (Set.insert (mkSymbolicVar v) decls) idfacts
@@ -254,7 +267,9 @@ checkFn' fn facts0 = do
           Fn (fnVar fn) relevantFormals body NotRec (ExprAnnot [] (MissingSourceRange "fnOfRefinement") [])
 
       refinements = concatMap mbFnOfRefinement (map tidType $ fnVars fn)
-      foldPathFact facts f = do e <- smtEvalApp facts f relevantActuals
+      foldPathFact facts f = do liftIO $ putStrLn $ "checkFn' calling smtEvalApp... {"
+                                e <- smtEvalApp facts f relevantActuals
+                                liftIO $ putStrLn $ "checkFn' called  smtEvalApp... }"
                                 return $ mergeSMTExprAsPathFact e facts
   liftIO $ putStrLn $ "%%%%%%%%%%%%%%%%%%%%%%%%%%%"
   liftIO $ putStrLn $ show $ map pretty refinements
@@ -344,7 +359,9 @@ withBindings fnv vs facts0 = do
           Fn fnv relevantFormals body NotRec (ExprAnnot [] (MissingSourceRange "fnOfRefinement") [])
 
       refinements = concatMap mbFnOfRefinement (map tidType vs)
-      foldPathFact facts f = do e <- smtEvalApp facts f relevantActuals
+      foldPathFact facts f = do liftIO $ putStrLn $ "withBindings calling smtEvalApp... { "
+                                e <- smtEvalApp facts f relevantActuals
+                                liftIO $ putStrLn $ "withBindings called  smtEvalApp... } "
                                 return $ mergeSMTExprAsPathFact e facts
   facts <- foldlM foldPathFact facts0 refinements
 
@@ -354,6 +371,15 @@ withBindings fnv vs facts0 = do
   --facts''  <- foldlM recordIfTidHasFnPrecondition facts' (fnVars fn)
   return facts'
 
+-- Given a variable with function type { t1 => ... => tn }
+-- returns a list of functions, one per refined type in the signature;
+-- each function corresponds to one refined parameter.
+-- For example, for the type { Int32 => % b : Int32 : p(b) => Int32 }
+-- we would return [ { _ => b => p(b) } ]
+--
+-- These functions are used to generate a precond with
+-- mkPrecondGen/compilePreconditionFn, then stored in the fnPreconds map.
+-- TODO handle return type refinements...?
 computeRefinements :: TypedId MonoType -> [FnMono]
 computeRefinements fnv =
   let
@@ -380,6 +406,24 @@ primName tid = T.unpack (identPrefix (tidIdent tid))
 -- Returns an SMT expression summarizing the given expression.
 checkBody :: KNMono -> Facts -> SC (Maybe (Ident -> SC SMTExpr))
 checkBody expr facts =
+  -- Calling scRunZ3 corresponds to checking/validating a precondition/assertion.
+  --
+  -- The ``facts`` variable holds assertions tied to control flow rather than
+  -- value bindings. For example, ``if v then e1 else e2 end``
+  -- checks ``e2`` after extending ``facts`` with the assertion ``not v``.
+  --
+  -- Returning something of the form
+  --    ``withDecls facts $ \x -> return (foo x)``
+  -- means that the given expression (if bound to x) satisifes the property (foo x).
+  -- For example:
+  --   * The literal 10 satisfies (x == 10).
+  --   * A read from an array in which all values are bounded by y satisfies (x <= y).
+  --   * A literal of length y satisfies (arrayLength x == y)
+  --
+  -- Checking of ``x = e1; e2`` proceeds as follows:
+  --    * If checking ``e1`` reveals that it satisfies property foo
+  --
+  --    * Otherwise, ``e2`` is checked with a declaration for ``x``.
   case expr of
     KNLiteral ty (LitInt i) -> do
         return $ withDecls facts $ \x -> return $ smtId x === litOfSize (fromInteger $ litIntValue i) (intSizeBitsOf ty)
@@ -524,6 +568,7 @@ checkBody expr facts =
 
         liftIO $ putStrLn $ "KNCall " ++ show (pretty expr)
         -- Does the called function have a precondition?
+        -- See also mkPrecondGen / compilePreconditionFn
         case fromMaybe [] $ getMbFnPreconditions facts (tidIdent v) of
           [] -> do
             liftIO $ putStrLn $ "TODO: call of function with result type " ++ show ty ++ " ; " ++ show (v)
@@ -534,25 +579,82 @@ checkBody expr facts =
             liftIO $ putStrLn $ "           (have precond)"
             let checkPrecond fp = do
                 SMTExpr e decls idfacts <- fp vs
-                liftIO $ putStrLn $ show (SMT.pp e)
+                liftIO $ putStrLn $ "checkPrecond[ " ++ show vs ++ " ] " ++ show (SMT.pp e) ++ ";;;;;" ++ show idfacts
                 --let thm = scriptImplyingBy expr (mergeFactsForCompilation facts efacts)
                 let thm = scriptImplyingBy (SMTExpr e decls idfacts)  facts
+                liftIO $ putStrLn $ "fn precond checking this script:"
+                liftIO $ putStrLn $ show (SMT.pp thm)
                 scRunZ3 expr (SMT.pp thm)
             mapM_ checkPrecond fps
             return Nothing
 
     KNLetVal      id   e1 e2    -> do
         liftIO $ putStrLn $ "letval checking bound expr for " ++ show id
+        liftIO $ putStrLn $ "    " ++ show e1
+
+        facts0 <-
+         case typeKN e1 of
+          RefinedType v e args -> do
+              liftIO $ putStrLn $ "*#*#*#*#*#*#**#*#*#* bound a refined var, adding a fact? " ++ show args
+              liftIO $ putStrLn $ show id
+              liftIO $ putStrLn $ show v
+              liftIO $ putStrLn $ show e
+              -- Conjure up a name for the overall value of the refinement expr.
+
+              resid <- lift $ ccFreshId $ T.pack ".true"
+              -- Compute an SMT expression representing ``expr'',
+              -- in an environment unaffected by ``blah``.
+
+              liftIO $ putStrLn $ "KNLetVal -> RefinedType -> pre check"
+              mb_f2 <- checkBody e facts
+              liftIO $ putStrLn $ "KNLetVal -> RefinedType -> mid check"
+              (SMTExpr body decls idfacts) <- (trueOr mb_f2) resid
+
+              liftIO $ putStrLn $ "KNLetVal -> RefinedType -> post check"
+              liftIO $ putStrLn $ show (id, tidIdent v)
+              liftIO $ putStrLn $ show $ text "     body:    " <> pretty body
+              liftIO $ putStrLn $ show $ text "     idfacts: " <> pretty idfacts
+
+              let idfacts' = extendIdFacts resid body [(id, tidIdent v)] idfacts
+
+              let facts'0 = addSymbolicVar facts v
+              let facts'1 = addSymbolicVar facts'0 (TypedId (PrimInt I1) resid)
+              let facts'2 = addIdentFacts''' facts'1 idfacts'
+              let facts'3 = addSymbolicDecls facts'2 decls
+              return $ facts'3 `withPathFact` (smtId resid)
+
+              --return $ (addSymbolicVar ( ) v) `withPathFact` (smtId resid)
+              {-return $ (flip addSymbolicVar v $
+                         addIdentFact'''
+                          (addIdentFact'' facts resid body (PrimInt I1))
+                          id (idsEq (id, tidIdent v))) `withPathFact` (smtId resid)-}
+{-
+              -- Assert the truthiness of the refinement expr,
+              -- given that id and v are the same.
+              let idfacts' = extendIdFacts resid body [(id, tidIdent v)] idfacts
+              let smtexpr = SMTExpr (smtId resid) decls idfacts'
+              -- Note this starts from facts', not facts.
+              -- The latter *is* affected by ``blah``.
+              let facts''  = foldl' addSymbolicVar facts'  [v, TypedId (PrimInt I1) resid]
+              let thm = scriptImplyingBy smtexpr facts''
+              scRunZ3 expr (SMT.pp thm)
+              -}
+          _ -> return facts
+
         mb_f <- checkBody e1 facts
         case mb_f of
           Nothing -> do liftIO $ putStrLn $ "  no fact for id binding " ++ show id
-                        checkBody e2 (addSymbolicVar facts (TypedId (typeKN e1) id))
+                        liftIO $ putStrLn $ "       with type " ++ show (pretty (typeKN e1))
+                        checkBody e2 (addSymbolicVar facts0 (TypedId (typeKN e1) id))
           Just f  -> do liftIO $ putStrLn $ "have fact for id binding " ++ show id
-                        newfact <- f id
-                        let facts' = addIdentFact facts id newfact (typeKN e1)
-                        liftIO $ putStrLn $ "letval validating refinement: " ++ show (pretty (typeKN e1))
+                        newfact@(SMTExpr _body _decls _idfacts) <- f id
+                        liftIO $ putStrLn $ "        body: " ++ show (pretty _body)
+                        liftIO $ putStrLn $ "        idfacts: " ++ show (pretty _idfacts)
+                        let facts' = addIdentFact facts0 id newfact (typeKN e1)
+                        whenRefined (typeKN e1) $ \_v _e ->
+                            liftIO $ putStrLn $ "letval validating refinement: " ++ show (pretty (typeKN e1)) ++ show (pretty (_v, _e))
                         whenRefined (typeKN e1) $ validateRefinement facts facts' id
-                        liftIO $ putStrLn $ "letval validated refinement, checking letval body"
+                        liftIO $ putStrLn $ "letval checking letval body after binding " ++ show id
                         checkBody e2 facts'
 
     KNLetFuns     [id] [fn] b | identPrefix id == T.pack "assert-invariants-thunk" -> do
@@ -614,7 +716,8 @@ validateRefinement facts facts' id v expr = do
 
 recordIfHasFnPrecondition facts id ty =
   case ty of
-    FnType {} ->
+    FnType {} -> do
+      liftIO $ putStrLn $ "computeRefinements for " ++ show (TypedId ty id) ++ " was " ++ show (computeRefinements (TypedId ty id))
       case computeRefinements (TypedId ty id) of
         [] -> return $ facts
         preconds -> return $ facts { fnPreconds = Map.insert id (map (mkPrecondGen facts) preconds) (fnPreconds facts) }
@@ -628,6 +731,7 @@ mkPrecondGen facts fn = \argVars -> do
 
 -- Implicit precondition: fn is alpha-renamed.
 compilePreconditionFn fn facts argVars = do
+  liftIO $ putStrLn $ "compilePreconditionFn<" ++ show (length argVars) ++ " vs " ++ show (length (fnVars fn)) ++ " # " ++ show argVars ++ "> ;; " ++ show fn
   resid <- lift $ ccFreshId $ identPrefix $ fmapIdent (T.append (T.pack "res$")) $ tidIdent (fnVar fn)
   let facts' = foldl' addSymbolicVar facts ((TypedId (PrimInt I1) resid):(argVars ++ fnVars fn))
   facts'' <- foldlM recordIfTidHasFnPrecondition facts' (fnVars fn)
@@ -637,6 +741,8 @@ compilePreconditionFn fn facts argVars = do
                                                (map tidIdent $ fnVars fn)) idfacts
   return $ SMTExpr (smtId resid) decls idfacts'
 
+-- Adds ``body`` as an associated fact of ``resid``,
+-- and adds pairwise equality facts assoc w/ ``map fst equalIds``.
 extendIdFacts resid body equalIds idfacts =
     foldl' (\idfacts (av,fv) -> (av, idsEq (av,fv)) : idfacts)
            ((resid, body):idfacts)
