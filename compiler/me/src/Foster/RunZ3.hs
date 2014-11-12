@@ -36,7 +36,8 @@ data SMTConfig = SMTConfig {
 -- | A script, to be passed to the solver.
 data SMTScript = SMTScript {
           scriptBody  :: String        -- ^ Initial feed
-        , scriptModel :: Maybe String  -- ^ Optional continuation script, if the result is sat
+        , scriptModel     :: Maybe String  -- ^ Optional continuation script, if the result is sat
+        , scriptAntiModel :: Maybe String  -- ^ Optional continuation script, if the result is unsat
         }
 
 -- | An SMT engine
@@ -84,27 +85,6 @@ pipeProcess cfg nm execName opts script cleanErrs = do
   where clean = reverse . dropWhile isSpace . reverse . dropWhile isSpace
         line  = replicate 78 '='
 
--- | A standard solver interface. If the solver is SMT-Lib compliant, then this function should suffice in
--- communicating with it.
-standardSolver :: SMTConfig -> SMTScript -> (String -> String) -> ([String] -> a) -> ([String] -> a) -> IO a
-standardSolver config script cleanErrs failure success = do
-    let msg      = when (verbose config) . putStrLn . ("** " ++)
-        smtSolver= solver config
-        exec     = executable smtSolver
-        opts     = options smtSolver
-        isTiming = timing config
-        nmSolver = name smtSolver
-    msg $ "Calling: " ++ show (unwords (exec:opts))
-    case smtFile config of
-      Nothing -> return ()
-      Just f  -> do msg $ "Saving the generated script in file: " ++ show f
-                    writeFile f (scriptBody script)
-    contents <- pipeProcess config nmSolver exec opts script cleanErrs
-    msg $ nmSolver ++ " output:\n" ++ either id (intercalate "\n") contents
-    case contents of
-      Left e   -> return $ failure (lines e)
-      Right xs -> return $ success (mergeSExpr xs)
-
 h1 :: C.SomeException -> IO String
 h1 _ = return ""
 
@@ -112,7 +92,7 @@ h1 _ = return ""
 -- and can speak SMT-Lib2 (just a little).
 runSolver :: SMTConfig -> FilePath -> [String] -> SMTScript -> IO (ExitCode, String, String)
 runSolver cfg execPath opts script
- | isNothing $ scriptModel script
+ | isNothing (scriptModel script) && isNothing (scriptAntiModel script)
  = let checkCmd | useSMTLib2 cfg = '\n' : satCmd cfg
                 | True           = ""
    in readProcessWithExitCode execPath opts (scriptBody script ++ checkCmd)
@@ -140,38 +120,29 @@ runSolver cfg execPath opts script
                                             else (ex,          r ++ "\n" ++ out, err)
                 return (send, ask, cleanUp)
       mapM_ send (lines (scriptBody script))
+
       r <- ask $ satCmd cfg
-      when (any (`isPrefixOf` r) ["sat", "unknown"]) $ do
+      r' <- case (any (`isPrefixOf` r) ["unsat"]) of
+              True | Just sam <- scriptAntiModel script -> do
+                let mls = lines sam
+                when (verbose cfg) $ do putStrLn "** Sending the following anti-model extraction commands:"
+                                        mapM_ putStrLn mls
+                mapM_ send mls
+                ask $ satCmd cfg
+              _ ->
+                return r
+
+      when (any (`isPrefixOf` r') ["sat", "unknown"]) $ do
         let mls = lines (fromJust (scriptModel script))
         when (verbose cfg) $ do putStrLn "** Sending the following model extraction commands:"
                                 mapM_ putStrLn mls
         mapM_ send mls
       cleanUp r
 
--- | In case the SMT-Lib solver returns a response over multiple lines, compress them so we have
--- each S-Expression spanning only a single line. We'll ignore things line parentheses inside quotes
--- etc., as it should not be an issue
-mergeSExpr :: [String] -> [String]
-mergeSExpr []       = []
-mergeSExpr (x:xs)
- | d == 0 = x : mergeSExpr xs
- | True   = let (f, r) = grab d xs in unwords (x:f) : mergeSExpr r
- where d = parenDiff x
-       parenDiff :: String -> Int
-       parenDiff = go 0
-         where go i ""       = i
-               go i ('(':cs) = let i'= i+1 in i' `seq` go i' cs
-               go i (')':cs) = let i'= i-1 in i' `seq` go i' cs
-               go i (_  :cs) = go i cs
-       grab i ls
-         | i <= 0    = ([], ls)
-       grab _ []     = ([], [])
-       grab i (l:ls) = let (a, b) = grab (i+parenDiff l) ls in (l:a, b)
-
-runZ3 :: String -> IO (Either String [String])
-runZ3 smtlib2cmd = do
+runZ3 :: String -> Maybe String -> IO (Either String [String])
+runZ3 smtlib2cmd anticmd = do
   let z3solver = SMTSolver "z3" "z3" ["-T:1"] id
   let cfg = SMTConfig False False Nothing Nothing 10 16 [] "(check-sat)" Nothing True z3solver
-  let scr = SMTScript smtlib2cmd (Just "(get-model)")
+  let scr = SMTScript smtlib2cmd (Just "(get-model)") anticmd
   pipeProcess cfg "z3" "z3" ["-smt2", "-in"] scr id
 

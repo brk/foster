@@ -144,8 +144,40 @@ scriptImplyingBy (SMTExpr pred declset idfacts) facts =
         ++ tydecls
         ++ map (\(SymDecl nm tys ty) -> CmdDeclareFun nm tys ty) alldecls
         ++ map CmdAssert (pathFacts facts ++ preconds)
+        ++ [CmdPush 1]
         ++ [CmdAssert $ SMT.not pred]
-        ++ [CmdCheckSat]
+
+-- As we traverse the input expression, we build up a collection of path facts
+-- and id-associated facts (which are, morally, path facts), which we can
+-- collectively term F. When it comes time to check an individual precondition,
+-- p, we want to make sure that the following formula holds for all possible
+-- assignments of values to free variables: [[ F => p ]].
+-- The S in SMT stands for "satisfiability", which is to say finding one such
+-- assignment (called a "model"), whereas we want "validity" -- which is to say,
+-- intuitively, we want to be told that there is no un-satisfying assignment.
+--
+-- To bridge this gap, we do a small trick:
+-- We ask the SMT solver about [[ not (F => p) ]]; if it finds a satisfying
+-- assignment, then we know that the same assignment would invalidate our
+-- original formula. But if the SMT solver reports that no such assignment
+-- exists, then we know that [[ F => p ]] is valid.
+--
+-- Since the context F may be large, we also have a second trick up our sleeve:
+-- we use material implication and de Bruijn laws to turn
+-- [[ not (F => p) ]] into [[ not (not F or p) ]] into [[ F and (not p) ]].
+--
+-- A more compact way of showing this chain of reasoning:
+--      forall models, F => p                    =>
+--      not (not (forall models, F => p))        =>
+--      not (exists model , not (F => p))        =>
+--      not (exists model , not (not F or p))    =>
+--      not (exists model , F && not p)
+--
+-- We can also look at just the context, F. If the SMT solver reports that
+-- F by itself is unsatisfiable, then any choice of (negated) predicate will
+-- appear to be valid. Intuitively this corresponds to dead code paths, as the
+-- "B" branch of ``if true then A else B`` will have a path fact of
+-- ``true = false`` which is obviously inconsistent.
 
 uniquesWithoutPrims pairs =
     pairs `butnot` [(SMT.N "Bool", 0), (SMT.N "BitVec", 0),
@@ -168,10 +200,14 @@ scGetFact id = do
 -- Errors will be propagated, while unsat (success) results are trivial...
 scRunZ3 :: KNMono -> HughesPJ.Doc -> SC ()
 scRunZ3 expr doc = lift $ do
-  res <- liftIO $ runZ3 (show doc)
+  res <- liftIO $ runZ3 (show doc) (Just "(pop 1)\n(check-sat)")
   case res of
     Left x -> throwError [text x, pretty expr, string (show doc)]
-    Right ["unsat", "unsat"] -> return ()
+    Right ("unsat":"sat":_) -> return ()
+    Right ["unsat","unsat"] -> do
+        liftIO $ putStrLn $ "WARNING: scRunZ3 returning OK due to inconsistent context..."
+        liftIO $ putStrLn $ "   This is either dead code or a buggy implementation of our SMT query generation."
+        return ()
     Right strs -> throwError ([text "Unable to verify precondition associated with expression",
                                pretty expr,
                                string (show doc)] ++ map text strs)
