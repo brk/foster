@@ -260,20 +260,6 @@ tcApplyIntConstraints = Tc $ \env -> do
         (Map.toList map)
   retOK ()
 
-tcAddSubsumptionConstraint t t' msg = Tc $ \env -> do
-  let mbr1 = maybeRRofTC t
-  let mbr2 = maybeRRofTC t'
-  putStrLn $ msg
-  putStrLn $ "      " ++ show t  ++ " ;; " ++ show mbr1
-  putStrLn $ "         <=? "
-  putStrLn $ "      " ++ show t' ++ " ;; " ++ show mbr2
-  putStrLn $ "-----------------"
-  case (mbr1, mbr2) of
-    (Just (MbRefinement (u1, _)), Just (MbRefinement (u2, _))) | u1 == u2
-      -> return ()
-    _ -> modIORef' (tcSubsumptionConstraints env) (\cs -> (t, t') : cs)
-  retOK ()
-
 -- The type says it all: run a Tc action, and capture any errors explicitly.
 tcIntrospect :: Tc a -> Tc (OutputOr a)
 tcIntrospect action = Tc $ \env -> do unTc env action >>= retOK

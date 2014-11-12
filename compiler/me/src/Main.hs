@@ -12,7 +12,7 @@ import System.Environment(getArgs,getProgName)
 
 import qualified Data.ByteString.Lazy as L(readFile)
 import qualified Data.Text as T
-import qualified Data.Map as Map(fromList, toList, empty, size)
+import qualified Data.Map as Map(fromList, toList, empty)
 import qualified Data.Set as Set(filter, toList, fromList, notMember, intersection)
 import qualified Data.Graph as Graph(SCC, flattenSCC, stronglyConnComp)
 import Data.Map(Map)
@@ -411,31 +411,6 @@ runCompiler pb_program flagVals outfile = do
                          , ccUniqRef  = uniqref
                     }
 
-   let mbToList Nothing = []
-       mbToList (Just x) = [x]
-   let
-        metaTyVarPeekIO :: TypeTC -> IO TypeTC
-        metaTyVarPeekIO (MetaTyVarTC m) = do
-                 mty <- readIORef (mtvRef m)
-                 case mty of
-                     Nothing -> return (MetaTyVarTC m)
-                     Just ty -> return ty
-        metaTyVarPeekIO t = return t
-
-   subsumptionConstraintsRaw <- readIORef subcnst
-   subsumptionConstraints    <- mapM (\(t1, t2) -> do t1' <- metaTyVarPeekIO t1
-                                                      t2' <- metaTyVarPeekIO t2
-                                                      return (t1' , t2' )) subsumptionConstraintsRaw
-   let allSCtypes = concat [[t1,t2] | (t1, t2) <- subsumptionConstraints]
-   let iorefs = Map.fromList [(u,r) | t <- allSCtypes, (MbRefinement (u,r)) <- mbToList (maybeRRofTC t)]
-   let showSubsumptionConstraint (t1, t2) = do
-            let m1 = maybeRRofTC t1
-            let m2 = maybeRRofTC t2
-            liftIO $ putStrLn $ show (t1, m1, t2, m2)
-   mapM_ showSubsumptionConstraint subsumptionConstraints
-
-   liftIO $ putStrLn $ "have this many subsumption constraints: " ++ show (length subsumptionConstraints)
-   liftIO $ putStrLn $ "have this many subsumption iorefs: " ++ show (Map.size iorefs)
    case mb_errs of
      Left  errs -> do
        putStrLn $ "compilation time: " ++ secs (nc_time)

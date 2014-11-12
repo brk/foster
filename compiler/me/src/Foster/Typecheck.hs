@@ -1378,7 +1378,6 @@ subsCheckRhoTy rho1 (FnTypeTC as2 r2 _ _) = unifyFun rho1 as2 "subsCheckRhoTy" >
 subsCheckRhoTy (FnTypeTC as1 r1 _ _) rho2 = unifyFun rho2 as1 "subsCheckRhoTy" >>= \(as2, r2) -> subsCheckFunTy as1 r1 as2 r2
 subsCheckRhoTy tau1 tau2 -- Rule MONO
      = do
-          tcAddSubsumptionConstraint tau1 tau2 $ "subsCheckRhoTy[mono]... "
           logged' ("subsCheckRhoTy " ++ show (pretty (tau1, tau2))) $ unify tau1 tau2 "subsCheckRho" -- Revert to ordinary unification
 -- }}}
 
@@ -1423,7 +1422,6 @@ subsCheckRho esigma rho2 = do
     -- shallow, not deep, skolemization due to being a strict language.
 
     (rho1, _) -> do -- Rule MONO
-        tcAddSubsumptionConstraint rho1 rho2 $ "subsCheckRho[mono] for " ++ show (showStructure esigma)
         logged esigma ("subsCheckRho " ++ show (pretty (rho1, rho2))) $ unify rho1 rho2 ("subsCheckRho[" ++ show rho2 ++ "]" ++ show (showStructure esigma)) -- Revert to ordinary unification
         return esigma
 -- }}}
