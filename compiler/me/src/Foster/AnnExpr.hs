@@ -22,7 +22,7 @@ import qualified Data.Text as T
 data AnnExpr ty =
         -- Literals
           AnnLiteral    ExprAnnot ty Literal
-        | AnnTuple      ExprAnnot ([ty] -> ty) [AnnExpr ty]
+        | AnnTuple      ExprAnnot ty [AnnExpr ty]
         | E_AnnFn       (Fn () (AnnExpr ty) ty)
         -- Control flow
         | AnnIf         ExprAnnot ty (AnnExpr ty) (AnnExpr ty) (AnnExpr ty)
@@ -64,7 +64,7 @@ data AnnExpr ty =
 instance TypedWith (AnnExpr ty) ty where
   typeOf annexpr = case annexpr of
      AnnLiteral  _ t _     -> t
-     AnnTuple  _ tf exprs  -> tf (map typeOf exprs)
+     AnnTuple  _ t _exprs  -> t
      E_AnnFn annFn         -> fnType annFn
      AnnCall _rng t _ _    -> t
      AnnAppCtor _rng t _ _ -> t

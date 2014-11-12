@@ -541,7 +541,8 @@ tcRhoTuple ctx rng exprs expTy = do
   where
     tcTuple ctx rng exps typs rr = do
         exprs <- typecheckExprsTogether ctx exps typs
-        return $ AnnTuple rng (\tys -> TupleTypeTC tys rr) exprs
+        let tys = map typeTC exprs
+        return $ AnnTuple rng (TupleTypeTC tys rr) exprs
 
     -- Typechecks each expression in the same context
     typecheckExprsTogether ctx exprs expectedTypes = do
@@ -791,7 +792,7 @@ tcSigmaCall ctx rng (E_PrimAST _ name@"assert-invariants") argtup exp_ty = do
     let primcall = AnnCall rng unitType (AnnPrimitive rng fnty prim) args
     id <- tcFresh "assert-invariants-thunk"
     let thunk = Fn (TypedId (mkFnTypeTC [] [unitType]) id) [] primcall () rng
-    matchExp exp_ty (AnnLetFuns rng [id] [thunk] (AnnTuple rng (\tys -> TupleTypeTC tys (NoRefinement "assert-invariants")) [])) name
+    matchExp exp_ty (AnnLetFuns rng [id] [thunk] (AnnTuple rng (TupleTypeTC [] (NoRefinement "assert-invariants")) [])) name
 
 tcSigmaCall ctx rng base argexprs exp_ty = do
         annbase <- inferRho ctx base "called base"
@@ -812,8 +813,8 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
         -- doesn't mean that the actual will necessarily follow the same refinement!
         args <- sequence [checkSigma ctx arg (shallowStripRefinedTypeTC ty) | (arg, ty) <- zip argexprs args_ty]
         debug $ "call: annargs: "
-        debugDoc $ showStructure (AnnTuple rng (\tys -> TupleTypeTC tys (NoRefinement "tcSigmaCall")) args)
-        debugDoc $ text "call: res_ty is " <> pretty res_ty
+        debugDoc $ showStructure (AnnTuple rng (TupleTypeTC (map typeTC args) (NoRefinement "tcSigmaCall")) args)
+        debugDoc $ text "call: res_ty  is " <> pretty res_ty
         debugDoc $ text "call: exp_ty is " <> pretty exp_ty
         debugDoc $ text "tcRhoCall deferring to instSigma"
         let app = mkAnnCall rng res_ty annbase args
