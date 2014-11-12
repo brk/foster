@@ -515,5 +515,39 @@ instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
             KNTuple      _ vs _ -> parens (hsep $ punctuate comma (map pretty vs))
             KNCompiles _r _t e  -> parens (text "__COMPILES__" <+> pretty e)
 
+knSubst :: Map Ident Ident -> KNExpr' r t -> KNExpr' r t
+knSubst m expr =
+  let qv (TypedId t id) = case Map.lookup id m of Nothing  -> TypedId t id
+                                                  Just id' -> TypedId t id'
+      qCaseArm (CaseArm pat e guard vs rng) =
+          CaseArm pat (knSubst m e) (fmap (knSubst m) guard) (map qv vs) rng
+  in
+  case expr of
+      KNLiteral       {}       -> expr
+      KNKillProcess   {}       -> expr
+      KNTuple         t vs a   -> KNTuple t (map qv vs) a
+      KNCall          t v vs   -> KNCall t (qv v) (map qv vs)
+      KNCallPrim      t p vs   -> KNCallPrim      t p (map qv vs)
+      KNAppCtor       t c vs   -> KNAppCtor       t c (map qv vs)
+      KNAllocArray    t v      -> KNAllocArray    t (qv v)
+      KNAlloc         t v _rgn -> KNAlloc  t (qv v) _rgn
+      KNDeref         t v      -> KNDeref         t (qv v)
+      KNStore         t v1 v2  -> KNStore         t (qv v1) (qv v2)
+      KNArrayRead     t ai     -> KNArrayRead     t (mapArrayIndex qv ai)
+      KNArrayPoke     t ai v   -> KNArrayPoke     t (mapArrayIndex qv ai) (qv v)
+      KNArrayLit    t arr vals -> KNArrayLit      t (qv arr) (mapRight qv vals)
+      KNVar                  v -> KNVar                  (qv v)
+      KNCase          t v arms -> KNCase       t (qv v) (map qCaseArm arms)
+      KNIf            t v e1 e2-> KNIf t (qv v) (knSubst m e1) (knSubst m e2)
+      KNLetVal       id e   b  -> KNLetVal id (knSubst m e) (knSubst m  b)
+      KNLetRec     ids exprs e -> KNLetRec ids (map (knSubst m) exprs) (knSubst m e)
+      KNLetFuns     ids fns b  -> error "knSubst not yet implemented for KNLetFuns"
+      KNTyApp t v argtys       -> KNTyApp t (qv v) argtys
+      KNCompiles r t e         -> KNCompiles r t (knSubst m e)
+      KNInlined t0 tb tn old new -> KNInlined t0 tb tn old (knSubst m new)
+
+mapArrayIndex f (ArrayIndex v1 v2 rng s) =
+  let v1' = f v1
+      v2' = f v2 in ArrayIndex v1' v2' rng s
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

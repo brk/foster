@@ -28,6 +28,7 @@ import Control.Monad(when, liftM, liftM2, liftM3, liftM4)
 import Control.Monad.State(evalStateT, get, gets, put, StateT, liftIO, lift)
 import Data.IORef
 
+import Debug.Trace(trace)
 -- This monomorphization pass is similar in structure to MLton's;
 -- a previous worklist-based version was modeled on BitC's polyinstantiator.
 --
@@ -85,7 +86,6 @@ monoKN subst e =
   KNLiteral       t lit    -> liftM2 KNLiteral       (qt t) (return lit)
   KNTuple         t vs a   -> liftM3 KNTuple         (qt t) (mapM qv vs) (return a)
   KNKillProcess   t s      -> liftM2 KNKillProcess   (qt t) (return s)
-  KNCall          t v vs   -> liftM3 KNCall          (qt t) (qv v) (mapM qv vs)
   KNCallPrim      t p vs   -> liftM3 KNCallPrim      (qt t) (qp p) (mapM qv vs)
   KNAllocArray    t v      -> liftM2 KNAllocArray    (qt t) (qv v)
   KNAlloc         t v _rgn -> liftM3 KNAlloc         (qt t) (qv v) (return _rgn)
@@ -93,9 +93,15 @@ monoKN subst e =
   KNStore         t v1 v2  -> liftM3 KNStore         (qt t) (qv v1) (qv v2)
   KNArrayRead     t ai     -> liftM2 KNArrayRead     (qt t) (qa ai)
   KNArrayPoke     t ai v   -> liftM3 KNArrayPoke     (qt t) (qa ai) (qv v)
-  KNArrayLit      t arr vals -> liftM3 KNArrayLit    (qt t) (qv arr) (mapRightM qv vals)
+  KNArrayLit      t arr xs -> liftM3 KNArrayLit      (qt t) (qv arr) (mapRightM qv xs)
   KNVar                  v -> liftM  KNVar                  (qv v)
-  KNCompiles    r t e       -> liftM2 (KNCompiles r) (qt t) (monoKN subst e)
+  KNCompiles    r t e      -> liftM2 (KNCompiles r) (qt t) (monoKN subst e)
+  KNCall          t v vs   -> do t' <- qt t
+                                 let t'' = substRefinementArgs v t' vs
+                                 liftIO $ putStrLn "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"
+                                 liftIO $ putStrLn $ show t'
+                                 liftIO $ putStrLn $ show t''
+                                 liftM2 (KNCall t'') (qv v) (mapM qv vs)
   KNInlined {} -> error $ "Monomo.hs expects inlining to run after monomorphization!"
   -- The cases involving sub-expressions are syntactically heavier,
   -- but are still basically trivially inductive.
@@ -203,6 +209,12 @@ monoKN subst e =
                ++ " (higher-rank polymorphism)...\n"
             -- -}
   KNTyApp _ _ _  -> do error $ "Expected polymorphic instantiation to affect a polymorphic variable!"
+
+-- TODO this probably needs to traverse inside types to find refinements...
+substRefinementArgs _v (RefinedType v e args) xs =
+    trace ("subst in call to " ++ show _v ++ " ..... " ++ show args ++ " with " ++ show xs) $
+                       RefinedType v (knSubst (Map.fromList (zip args (map tidIdent xs))) e) args
+substRefinementArgs _a t _xs = t
 
 monoFn :: MonoSubst -> Fn RecStatus KNExpr TypeIL -> Mono MonoFn
 monoFn subst (Fn v vs body isrec rng) = do

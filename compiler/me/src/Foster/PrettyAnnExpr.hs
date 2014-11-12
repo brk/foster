@@ -7,7 +7,6 @@
 module Foster.PrettyAnnExpr where
 
 import Foster.Base
-import Foster.Kind
 import Foster.AnnExpr
 import Foster.TypeTC
 
