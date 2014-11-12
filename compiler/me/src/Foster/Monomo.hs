@@ -381,7 +381,9 @@ monoType subst ty =
      FnTypeIL  ss t cc cs -> do ss' <- mapM q ss
                                 t'  <- q t
                                 return $ FnType ss' t' cc cs
-     RefinedTypeIL v e      -> liftM2 RefinedType (qv v) (convertPrecond subst e)
+     RefinedTypeIL v e args -> do v' <- qv v
+                                  e' <- convertPrecond subst e
+                                  return $ RefinedType v' e' args
      CoroTypeIL s t         -> liftM2 CoroType  (q s) (q t)
      ArrayTypeIL ty         -> liftM  ArrayType (q ty)
      PtrTypeIL ty           -> liftM  PtrType   (q ty)

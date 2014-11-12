@@ -12,7 +12,7 @@ import Control.Monad(liftM, forM_, forM, liftM, liftM2, when)
 
 import qualified Data.Text as T(Text, pack, unpack)
 import Data.Map(Map)
-import qualified Data.Map as Map(lookup, insert, elems, toList, null)
+import qualified Data.Map as Map(lookup, insert, elems, toList, fromList, null)
 import qualified Data.Set as Set(toList, fromList)
 import Data.IORef(newIORef,readIORef,writeIORef)
 
@@ -1127,13 +1127,14 @@ getUniquelyNamedFormals ctx rng rawFormals fnProtoName = do
                 tcFails [text $ "Cannot rename global symbol " ++ show name]
 
 tcTid :: Context TypeTC -> TypedId TypeAST -> Tc (TypedId TypeTC)
-tcTid ctx (TypedId ty id) = do
-  ty' <- tcType ctx ty
-  return $ TypedId ty' id
+tcTid ctx v = fmapM_TID (tcType ctx) v
 
 tcType :: Context TypeTC -> TypeAST -> Tc TypeTC
-tcType ctx typ = do
-  let q = tcType ctx
+tcType ctx typ = tcType' ctx [] typ
+
+tcType' :: Context TypeTC -> [Ident] -> TypeAST -> Tc TypeTC
+tcType' ctx refinementArgs typ = do
+  let q = tcType' ctx refinementArgs
   case typ of
         MetaPlaceholderAST MTVTau   nm -> newTcUnificationVarTau nm
         MetaPlaceholderAST MTVSigma nm -> newTcUnificationVarSigma nm
@@ -1154,12 +1155,19 @@ tcType ctx typ = do
                              RefinedTypeAST nm t' _ ->
                                [TypedId t' (Ident (T.pack nm) 0)]
                              _ -> []) ss
+
+          let fakeRefinementArgs = mkRefinementArgs ss
+          -- These args will have bogus uniq values; the code below
+          -- generates the real uniqs, which we will substitute in...
+
           uniquelyNamedFormals0 <- getUniquelyNamedFormals ctx rng formals (T.pack $ "refinement for fn type...")
           uniquelyNamedFormals <- mapM
                       (retypeTID (resolveType annot $ localTypeBindings ctx))
                       uniquelyNamedFormals0
           let extCtx = extendContext ctx uniquelyNamedFormals
-          ss' <- mapM (tcType extCtx) ss
+          let refinementArgs' = fakeRefinementArgs `replacingUniquesWith` (map tidIdent uniquelyNamedFormals)
+
+          ss' <- mapM (tcType' extCtx refinementArgs') ss
           -- The binding for the function's return type, if any, should
           -- be in-scope for its refinement.
           extCtx' <- case r of
@@ -1168,7 +1176,7 @@ tcType ctx typ = do
                             unf  <- mapM (retypeTID (resolveType annot $ localTypeBindings ctx)) unf0
                             return $ extendContext extCtx unf
                        _ -> return extCtx
-          r'  <-       tcType extCtx' r
+          r'  <- tcType' extCtx' refinementArgs' r
           return $ FnTypeTC ss' r' cc ft
         RefinedTypeAST nm ty e -> do
           -- TODO: the caller must be responsible for setting up a suitably
@@ -1198,7 +1206,20 @@ tcType ctx typ = do
           id <- case termVarLookup (T.pack nm) (contextBindings ctx) of
                   Just (v, _) -> return (tidIdent v)
                   _           -> tcFresh nm
-          return $ RefinedTypeTC (TypedId ty' id) e'
+          -- We don't know what our refinement args are;
+          -- the top-level will provide them...
+          return $ RefinedTypeTC (TypedId ty' id) e' refinementArgs
+
+mkRefinementArgs types =
+    map (\t -> case t of
+                 RefinedTypeAST nm _ _ -> Ident (T.pack nm) 0
+                 _                     -> Ident (T.pack "_") (-1))
+        types
+
+replacingUniquesWith fakes reals =
+  let m = Map.fromList [(txt, uniq) | Ident txt uniq <- reals] in
+  map (\x@(Ident t _) -> case Map.lookup t m of Nothing -> x
+                                                Just u  -> Ident t u) fakes
 -- }}}
 
 
@@ -1494,12 +1515,16 @@ resolveType annot subst x =
     CoroTypeTC   s t               -> liftM2 CoroTypeTC  (q s) (q t)
     TyConAppTC    tc  types     rr -> liftM2 (TyConAppTC  tc) (mapM q types) (return rr)
     TupleTypeTC       types     rr -> liftM2  TupleTypeTC     (mapM q types) (return rr)
-    RefinedTypeTC (TypedId ty id) e -> liftM (\t -> RefinedTypeTC (TypedId t id) e) (q ty)
+    RefinedTypeTC v e args -> do v' <- fmapM_TID q v
+                                 return $ RefinedTypeTC v' e args
     ForAllTC      ktvs rho         -> liftM (ForAllTC  ktvs) (resolveType annot subst' rho)
                                        where
                                         subst' = foldl' ins subst ktvs
                                         ins m (tv@(BoundTyVar nm), _k) = Map.insert nm (TyVarTC  tv) m
                                         ins _     (SkolemTyVar {}, _k) = error "ForAll bound a skolem!"
+
+fmapM_TID f (TypedId t id) = do t' <- f t
+                                return $ TypedId t' id
 -- }}}
 
 -- Turns a type like (forall t, T1 t -> T2 t) into (T1 ~s) -> (T2 ~s)
@@ -1533,7 +1558,7 @@ getFreeTyVars xs = do zs <- mapM zonkType xs
         MetaTyVarTC  {}          -> []
         RefTypeTC    ty          -> (go bound) ty
         ArrayTypeTC  ty      _rr -> (go bound) ty
-        RefinedTypeTC v _        -> (go bound) (tidType v) -- TODO handle tyvars in expr?
+        RefinedTypeTC v _e _args -> (go bound) (tidType v) -- TODO handle tyvars in expr/args?
 -- }}}
 
 unMBS :: MetaBindStatus -> TypeTC
@@ -1583,7 +1608,7 @@ zonkType x = do
         ArrayTypeTC     ty   rr -> do debug $ "zonking array ty: " ++ show ty
                                       liftM2 (ArrayTypeTC  ) (zonkType ty) (return rr)
         CoroTypeTC s r          -> liftM2 (CoroTypeTC  ) (zonkType s) (zonkType r)
-        RefinedTypeTC (TypedId ty id) e   -> liftM (\t -> RefinedTypeTC (TypedId t id) e) (zonkType ty)
+        RefinedTypeTC (TypedId ty id) e __args   -> liftM (\t -> RefinedTypeTC (TypedId t id) e __args) (zonkType ty)
         FnTypeTC ss r   cc cs   -> do ss' <- mapM zonkType ss ; r' <- zonkType r
                                       return $ FnTypeTC ss' r' cc cs
 -- }}}
@@ -1694,7 +1719,7 @@ tcTypeWellFormed msg ctx typ = do
         CoroTypeTC  s r       -> mapM_ q [s,r]
         RefTypeTC     ty      -> q ty
         ArrayTypeTC   ty  _rr -> q ty
-        RefinedTypeTC v _expr -> q (tidType v)
+        RefinedTypeTC v _e  _ -> q (tidType v)
         ForAllTC   tvs rho    -> tcTypeWellFormed msg (extendTyCtx ctx tvs) rho
         TyVarTC  (SkolemTyVar {}) -> return ()
         TyVarTC  tv@(BoundTyVar _) ->
@@ -1764,7 +1789,7 @@ collectAllUnificationVars xs = Set.toList (Set.fromList (concatMap go xs))
             MetaTyVarTC   m         -> [m]
             RefTypeTC     ty        -> go ty
             ArrayTypeTC   ty      _ -> go ty
-            RefinedTypeTC v _    -> go (tidType v)
+            RefinedTypeTC v _ _     -> go (tidType v)
 
 vname (E_AnnVar _rng (av, _)) n = show n ++ " for " ++ T.unpack (identPrefix $ tidIdent av)
 vname _                       n = show n

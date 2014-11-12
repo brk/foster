@@ -25,14 +25,14 @@ data MonoType =
          | ArrayType     MonoType
          | PtrType       MonoType
          | PtrTypeUnknown
-         | RefinedType   (TypedId MonoType) KNMono
+         | RefinedType   (TypedId MonoType) KNMono [Ident]
          deriving (Show, Eq)
 
 instance Eq KNMono where e1 == e2 = show e1 == show e2
 
 instance IntSizedBits MonoType where
         intSizeBitsOf (PrimInt isb) = isb
-        intSizeBitsOf (RefinedType v _) = intSizeBitsOf (tidType v)
+        intSizeBitsOf (RefinedType v _ _) = intSizeBitsOf (tidType v)
         intSizeBitsOf _ = error $ "Unable to compute IntSizedBits for non-PrimInt type"
 
 extractFnType (FnType _ _ cc pf) = (cc, pf)
@@ -60,7 +60,7 @@ instance Pretty MonoType where
           ArrayType      t            -> text "Array" <+> pretty t
           PtrType        t            -> text "Ref" <+> pretty t
           PtrTypeUnknown              -> text "?"
-          RefinedType v e        -> parens (text "%" <+> pretty v <+> text ":" <+> pretty e)
+          RefinedType v e args        -> parens (text "%" <+> pretty v <+> text ":" <+> pretty e <+> text "/" <+> pretty args)
 
 type FnMono   = Fn RecStatus KNMono MonoType
 type KNMono     = KNExpr' RecStatus MonoType

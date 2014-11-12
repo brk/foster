@@ -57,7 +57,9 @@ parSubstTcTy prvNextPairs ty =
         ForAllTC  ktvs rho   ->
                 let prvNextPairs' = prvNextPairs `assocFilterOut` (map fst ktvs)
                 in  ForAllTC  ktvs (parSubstTcTy prvNextPairs' rho)
-        RefinedTypeTC (TypedId t id) e -> RefinedTypeTC (TypedId (q t) id) e -- TODO recurse in e?
+        RefinedTypeTC v e args -> RefinedTypeTC (fmap q v) e args -- TODO recurse in e?
+
+fmapTID f (TypedId t id) = TypedId (f t) id
 
 -- Replaces types for meta type variables (unification variables)
 -- according to the given type substitution.
@@ -76,7 +78,7 @@ tySubst subst ty =
         FnTypeTC  ss t cc cs   -> FnTypeTC     (map q ss) (q t) cc cs
         CoroTypeTC  s t        -> CoroTypeTC  (q s) (q t)
         ForAllTC  tvs rho      -> ForAllTC  tvs (q rho)
-        RefinedTypeTC (TypedId t id) e   -> RefinedTypeTC (TypedId (q t) id) e
+        RefinedTypeTC v e args -> RefinedTypeTC (fmap q v) e args
 
 -------------------------------------------------
 illegal (TyVarTC (BoundTyVar _)) = True
@@ -169,7 +171,7 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                let t2 = parSubstTcTy tySubst rho2 in
                tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
-    ((RefinedTypeTC (TypedId t1 n1) e1), (RefinedTypeTC (TypedId t2 n2) e2)) ->
+    ((RefinedTypeTC (TypedId t1 n1) e1 _), (RefinedTypeTC (TypedId t2 n2) e2 _)) ->
       -- TODO make sure that n/e match...
       tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
@@ -182,10 +184,10 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
     ((ArrayTypeTC  t1 _rr1), (ArrayTypeTC  t2 _rr2)) -> do
         tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
-    ((RefinedTypeTC v _), ty) -> do
+    ((RefinedTypeTC v _ _), ty) -> do
       tcUnifyLoop ((TypeConstrEq (tidType v) ty):constraints) tysub
 
-    (ty, (RefinedTypeTC v _)) -> do
+    (ty, (RefinedTypeTC v _ _)) -> do
       tcUnifyLoop ((TypeConstrEq ty (tidType v)):constraints) tysub
 
     _otherwise -> do

@@ -89,7 +89,7 @@ instance TypedWith AIExpr TypeIL where
      E_AITyApp {} -> aiTyAppOverallType ai
 
 unPtr (PtrTypeIL t) = t
-unPtr (RefinedTypeIL (TypedId t id) e) = RefinedTypeIL (TypedId (unPtr t) id) e
+unPtr (RefinedTypeIL v e args) = RefinedTypeIL (fmap unPtr v) e args
 unPtr _ = error $ "Non-ref-type passed to unPtr in AnnExprIL.hs"
 
 collectIntConstraints :: AnnExpr TypeTC -> Tc ()
@@ -271,7 +271,7 @@ ailInt rng int ty = do
         Just t -> do ailInt rng int t
         Nothing -> do tcFails [text "Int literal should have had type inferred for it!"]
 
-    RefinedTypeTC v _ -> ailInt rng int (tidType v)
+    RefinedTypeTC v _ _ -> ailInt rng int (tidType v)
 
     _ -> do tcFails [text "Unable to assign integer literal the type" <+> pretty ty
                   ,string (highlightFirstLine rng)]
@@ -342,7 +342,7 @@ withRefinement ctx rr action = do
         Just (id, e) -> do
           tcLift $ putStrLn $ "withRefinement producing refinement type for " ++ show id
           e' <- ail ctx e
-          return $ RefinedTypeIL (TypedId ty id) e'
+          return $ RefinedTypeIL (TypedId ty id) e' [] -- TODO is this right?
 
 ilOf :: Context t -> TypeTC -> Tc TypeIL
 ilOf ctx typ = do
@@ -357,9 +357,9 @@ ilOf ctx typ = do
                                                          return $ TupleTypeIL tys
      FnTypeTC  ss t cc cs -> do (y:xs) <- mapM q (t:ss)
                                 return $ FnTypeIL xs y cc cs
-     RefinedTypeTC v e    -> do v' <- aiVar ctx v
-                                e' <- ail ctx e
-                                return $ RefinedTypeIL v' e'
+     RefinedTypeTC v e __args -> do v' <- aiVar ctx v
+                                    e' <- ail ctx e
+                                    return $ RefinedTypeIL v' e' __args
      CoroTypeTC  s t     -> do [x,y] <- mapM q [s,t]
                                return $ CoroTypeIL x y
      RefTypeTC  ty       -> do t <- q ty
@@ -440,7 +440,7 @@ data TypeIL =
          | TyVarIL           TyVar  Kind
          | ArrayTypeIL     TypeIL
          | PtrTypeIL       TypeIL
-         | RefinedTypeIL   (TypedId TypeIL) AIExpr
+         | RefinedTypeIL   (TypedId TypeIL) AIExpr [Ident]
 
 type AIVar = TypedId TypeIL
 
@@ -465,7 +465,7 @@ instance Show TypeIL where
         TyVarIL     tv kind  -> show tv ++ ":" ++ show kind
         ArrayTypeIL ty       -> "(Array " ++ show ty ++ ")"
         PtrTypeIL   ty       -> "(Ptr " ++ show ty ++ ")"
-        RefinedTypeIL v _    -> "(Refined " ++ show (tidType v) ++ ")"
+        RefinedTypeIL v _ _  -> "(Refined " ++ show (tidType v) ++ ")"
 
 instance Structured TypeIL where
     textOf e _width =
@@ -494,7 +494,7 @@ instance Structured TypeIL where
             TyVarIL        _tv _   -> []
             ArrayTypeIL     ty     -> [ty]
             PtrTypeIL       ty     -> [ty]
-            RefinedTypeIL   v  _   -> [tidType v]
+            RefinedTypeIL   v  _ _ -> [tidType v]
 
 instance Kinded TypeIL where
   kindOf x = case x of
@@ -508,4 +508,4 @@ instance Kinded TypeIL where
     ForAllIL _ktvs rho   -> kindOf rho
     ArrayTypeIL {}       -> KindPointerSized
     PtrTypeIL   {}       -> KindPointerSized
-    RefinedTypeIL v _    -> kindOf (tidType v)
+    RefinedTypeIL v _ _  -> kindOf (tidType v)

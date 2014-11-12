@@ -115,7 +115,7 @@ smtType (PrimInt I1) = tBool
 smtType (PrimInt sz) = tBitVec (fromIntegral $ intSizeOf sz)
 smtType (ArrayType _) = smtArray
 smtType (TupleType tys) = TApp (smtI ("FosterTuple" ++ show (length tys))) (map smtType tys)
-smtType (RefinedType v _) = smtType (tidType v)
+smtType (RefinedType v _ _) = smtType (tidType v)
 smtType (TyConApp nm tys) = TApp (smtI nm) (map smtType tys)
 smtType ty = error $ "smtType can't yet handle " ++ show ty
 
@@ -244,13 +244,13 @@ checkFn' fn facts0 = do
   -- as the argument, thus producing the path fact (state < 10).
   -- To handle dependent refinements, each predicate takes all the fnvars...
   let (relevantFormals, relevantActuals) =
-        unzip $ Prelude.concat [case tidType v of RefinedType v' _ -> [(v', v)]
-                                                  _                -> []
+        unzip $ Prelude.concat [case tidType v of RefinedType v' _ _ -> [(v', v)]
+                                                  _                  -> []
                                | v <- fnVars fn]
       mbFnOfRefinement rt@(RefinedType {}) = [fnOfRefinement rt]
       mbFnOfRefinement _                   = []
 
-      fnOfRefinement (RefinedType _ body) =
+      fnOfRefinement (RefinedType _ body _) =
           Fn (fnVar fn) relevantFormals body NotRec (ExprAnnot [] (MissingSourceRange "fnOfRefinement") [])
 
       refinements = concatMap mbFnOfRefinement (map tidType $ fnVars fn)
@@ -334,13 +334,13 @@ withBindings fnv vs facts0 = do
   -- The computed refinements would be [ { z => ... } ]
   -- TODO pick better names for the relevants...
   let (relevantFormals, relevantActuals) =
-        unzip $ Prelude.concat [case tidType v of RefinedType v' _ -> [(v', v)]
-                                                  _                -> []
+        unzip $ Prelude.concat [case tidType v of RefinedType v' _ _ -> [(v', v)]
+                                                  _                  -> []
                                | v <- vs]
       mbFnOfRefinement rt@(RefinedType {}) = [fnOfRefinement rt]
       mbFnOfRefinement _                   = []
 
-      fnOfRefinement (RefinedType _ body) =
+      fnOfRefinement (RefinedType _ body _) =
           Fn fnv relevantFormals body NotRec (ExprAnnot [] (MissingSourceRange "fnOfRefinement") [])
 
       refinements = concatMap mbFnOfRefinement (map tidType vs)
@@ -356,18 +356,19 @@ withBindings fnv vs facts0 = do
 
 computeRefinements :: TypedId MonoType -> [FnMono]
 computeRefinements fnv =
-  let relevantFormals =
-        Prelude.concat [case t of RefinedType t' _ -> [t']
-                                  _ -> []
-                       | t <- ts]
-      ts = monoFnTypeDomain (tidType fnv)
+  let
+      ts   = monoFnTypeDomain (tidType fnv)
+      frsh = Ident (T.pack "_") 0 -- Well, fresh enough...?
 
-      mbFnOfRefinement rt@(RefinedType {}) = [fnOfRefinement rt]
+      mbFnOfRefinement (RefinedType v e _) = [fnOfRefinement v e]
       mbFnOfRefinement _                   = []
 
-      fnOfRefinement (RefinedType _ body) =
-          Fn fnv relevantFormals body NotRec (ExprAnnot [] (MissingSourceRange "fnOfRefinement") [])
+      fnOfRefinement _ body =
+          Fn fnv (map refinedVarOrFresh ts) body NotRec
+                (ExprAnnot [] (MissingSourceRange "fnOfRefinement") [])
 
+      refinedVarOrFresh t = case t of RefinedType rv _ _ -> rv
+                                      _                  -> TypedId t frsh
       refinements = concatMap mbFnOfRefinement ts
   in
   refinements
@@ -588,8 +589,8 @@ scIntrospect action = do state <- get
 
 whenRefined ty f =
   case ty of
-    RefinedType v e -> f v e
-    _               -> return ()
+    RefinedType v e _ -> f v e
+    _                 -> return ()
 
 -- For a binding id : (% v : expr) = blah,
 -- we must ensure that the value computed by blah

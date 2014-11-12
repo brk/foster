@@ -190,8 +190,8 @@ shallowZonk (MetaTyVarTC m) = do
                            return ty'
 shallowZonk t = return t
 
-shallowStripRefinedTypeTC (RefinedTypeTC v _) = tidType v
-shallowStripRefinedTypeTC t                   = t
+shallowStripRefinedTypeTC (RefinedTypeTC v _ _) = tidType v
+shallowStripRefinedTypeTC t                     = t
 
 writeTcMetaTC m t = writeTcMeta m (shallowStripRefinedTypeTC t)
 

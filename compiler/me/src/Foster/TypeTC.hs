@@ -37,7 +37,7 @@ data TypeTC =
          | ForAllTC        [(TyVar, Kind)] RhoTC
          | TyVarTC           TyVar
          | MetaTyVarTC     (MetaTyVar TypeTC)
-         | RefinedTypeTC   (TypedId TypeTC) (AnnExpr TypeTC)
+         | RefinedTypeTC   (TypedId TypeTC) (AnnExpr TypeTC) [Ident]
 
 maybeRRofTC x = case x of
         PrimIntTC          _size     rr -> Just rr
@@ -51,7 +51,7 @@ maybeRRofTC x = case x of
         MetaTyVarTC _                   -> Nothing
         RefTypeTC     _ty               -> Nothing
         ArrayTypeTC   _ty            rr -> Just rr
-        RefinedTypeTC _ _               -> Nothing
+        RefinedTypeTC _ _ _             -> Nothing
 
 {-
 instance Kinded TypeTC where
@@ -93,7 +93,7 @@ instance Pretty TypeTC where
         MetaTyVarTC m                   -> text "(~(" <> pretty (descMTVQ (mtvConstraint m)) <> text ")!" <> text (show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")")
         RefTypeTC     ty                -> text "(Ref " <> pretty ty <> text ")"
         ArrayTypeTC   ty              _ -> text "(Array " <> pretty ty <> text ")"
-        RefinedTypeTC v _               -> text "(Refined " <> pretty (tidType v) <> text ")"
+        RefinedTypeTC v _ args          -> text "(Refined " <> pretty (tidType v) <> text " / " <> pretty args <> text ")"
 
 instance Show TypeTC where
     show x = case x of
@@ -109,7 +109,7 @@ instance Show TypeTC where
         ArrayTypeTC ty       _ -> "(Array " ++ show ty ++ ")"
         RefTypeTC   ty         -> "(Ptr " ++ show ty ++ ")"
         MetaTyVarTC _          -> "(MetaTyVar)"
-        RefinedTypeTC v _      -> "(RefinedTypeTC " ++ show v ++ ")"
+        RefinedTypeTC v _  _   -> "(RefinedTypeTC " ++ show v ++ ")"
 
 boolTypeTC = PrimIntTC I1           (NoRefinement "boolTypeTC")
 stringTypeTC = TyConAppTC "Text" [] (NoRefinement "stringTypeTC")
@@ -155,7 +155,7 @@ instance Structured TypeTC where
             ArrayTypeTC     ty    _ -> [ty]
             RefTypeTC       ty      -> [ty]
             MetaTyVarTC     {}      -> []
-            RefinedTypeTC v _       -> [tidType v]
+            RefinedTypeTC v _ _     -> [tidType v]
 
 fnReturnTypeTC f@(FnTypeTC {}) = fnTypeTCRange f
 fnReturnTypeTC (ForAllTC _ f@(FnTypeTC {})) = fnTypeTCRange f

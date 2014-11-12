@@ -201,7 +201,7 @@ monoToLL mt = case mt of
    ArrayType     t              -> LLArrayType     (q t)
    PtrType       t              -> LLPtrType       (q t)
    PtrTypeUnknown               -> LLPtrTypeUnknown
-   RefinedType v _              -> q (tidType v)
+   RefinedType v _ _            -> q (tidType v)
    FnType     d r cc FT_Proc -> LLProcType (map q d)  (q r) cc
    FnType     d r cc FT_Func -> LLPtrType (LLStructType [procty,envty])
                               where procty = LLProcType (envty:(map q d)) (q r) cc
