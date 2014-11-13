@@ -106,8 +106,7 @@ int main(int argc, char** argv) {
 
   foster::validateInputFile(optInputPath);
   foster::validateOutputFile(optOutputPath);
-  llvm::sys::Path inPath(optInputPath);
-  const foster::InputFile infile(inPath);
+  const foster::InputFile infile(optInputPath);
 
   unsigned numParseErrors = 0;
 

@@ -30,6 +30,10 @@ int  cleanup();
 
 uint8_t ctor_id_of(void* body);
 
+namespace gc {
+struct typemap;
+}
+
 } // namespace foster::runtime
 } // namespace foster
 
@@ -38,8 +42,8 @@ uint8_t ctor_id_of(void* body);
 extern "C" {
 
 // Interface to foster's memory allocator; see gc/foster_gc_allocate.cpp
-void* memalloc_cell(void* typeinfo);
-void* memalloc_array(void* typeinfo, int64_t n);
+void* memalloc_cell(foster::runtime::gc::typemap* typeinfo);
+void* memalloc_array(foster::runtime::gc::typemap* typeinfo, int64_t n, int8_t init);
 void foster__assert(bool, const char*);
 
 }

@@ -68,7 +68,7 @@ ProcessIterator::ProcessIterator(const ProcessFilter* filter)
   // but trying to find where we were in a constantly changing list is basically
   // impossible.
 
-  int mib[] = { CTL_KERN, KERN_PROC, KERN_PROC_UID, geteuid() };
+  int mib[] = { CTL_KERN, KERN_PROC, KERN_PROC_UID, static_cast<int>(geteuid()) };
 
   // Since more processes could start between when we get the size and when
   // we get the list, we do a loop to keep trying until we get it.
@@ -605,9 +605,9 @@ void CrMallocErrorBreak() {
       "Terminating process due to a potential for future heap corruption: "
       "errno=";
   char errnobuf[] = {
-    '0' + ((errno / 100) % 10),
-    '0' + ((errno / 10) % 10),
-    '0' + (errno % 10),
+    static_cast<char>('0' + (errno / 100) % 10),
+    static_cast<char>('0' + (errno / 10) % 10),
+    static_cast<char>('0' + errno % 10),
     '\000'
   };
   COMPILE_ASSERT(ELAST <= 999, errno_too_large_to_encode);

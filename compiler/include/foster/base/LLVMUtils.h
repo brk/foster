@@ -22,8 +22,7 @@ namespace llvm {
   class Value;
   class CallInst;
   class raw_ostream;
-  class FunctionPassManager;
-  namespace sys { class Path; }
+  namespace legacy { class FunctionPassManager; }
 }
 
 #define FOSTER_VERSION_STR "0.0.6"
@@ -43,7 +42,7 @@ void initializeKnownNonAllocatingFQNames(llvm::StringSet<>& names);
 void validateInputFile(const std::string& pathstr);
 void validateOutputFile(const std::string& pathstr);
 
-void runFunctionPassesOverModule(llvm::FunctionPassManager& fpasses,
+void runFunctionPassesOverModule(llvm::legacy::FunctionPassManager& fpasses,
                                  llvm::Module* mod);
 
 void ensureDirectoryExists(const std::string& pathstr);
@@ -57,7 +56,7 @@ extern llvm::IRBuilder<> builder;
 
 } // namespace foster
 
-void makePathAbsolute(llvm::sys::Path& path);
+std::string makePathAbsolute(std::string path);
 
 const char* llvmValueTag(llvm::Value* v);
 llvm::CallInst* markAsNonAllocating(llvm::CallInst* callInst);

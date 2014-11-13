@@ -9,7 +9,7 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/CallSite.h"
+#include "llvm/IR/CallSite.h"
 #include "llvm/ADT/StringSwitch.h"
 
 #include "llvm/Analysis/LoopInfo.h"

@@ -5,20 +5,19 @@
 #include "base/Assert.h"
 #include "base/InputTextBuffer.h"
 
-#include "llvm/ADT/OwningPtr.h"
 #include "llvm/Support/MemoryBuffer.h"
 
 using llvm::MemoryBuffer;
 using llvm::StringRef;
 
 #include "llvm/Support/Path.h"
-#include "llvm/Support/system_error.h"
-using llvm::error_code;
+#include <vector>
+// #include "llvm/Support/system_error.h"
 
 namespace foster {
 
 struct InputTextBuffer::Impl {
-  llvm::OwningPtr<MemoryBuffer> buf;
+  std::unique_ptr<MemoryBuffer> buf;
   std::vector<StringRef> lineCache;
 
   void initializeLineCache() {
@@ -51,11 +50,10 @@ struct InputTextBuffer::Impl {
   }
 };
 
-InputTextBuffer::InputTextBuffer(const llvm::sys::Path& path) {
-  llvm::OwningPtr<MemoryBuffer> membuf;
-  error_code err = MemoryBuffer::getFile(path.str(), membuf);
-  ASSERT(!err) << "error message is: " << err.message();
-  impl = new Impl(membuf.take());
+InputTextBuffer::InputTextBuffer(const std::string& path) {
+  auto membuf = MemoryBuffer::getFile(path);
+  ASSERT(membuf) << "error message is: " << membuf.getError().message();
+  impl = new Impl(membuf->release());
 }
 
 InputTextBuffer::InputTextBuffer(const char* data, size_t length) {

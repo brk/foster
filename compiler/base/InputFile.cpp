@@ -12,16 +12,16 @@
 
 namespace foster {
 
-InputFile::InputFile(llvm::sys::Path path) : path(path) {
+InputFile::InputFile(std::string path) : path(path) {
   buf = new InputTextBuffer(path);
 }
 
-std::string InputFile::getShortName() const {
-  if (!this) {
+std::string getShortName(const InputFile* f) {
+  if (!f) {
     return "<unknown file>";
   }
 
-  return path.str();
+  return f->getPath();
 }
 
 } // namespace foster

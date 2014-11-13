@@ -9,8 +9,8 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/StringSwitch.h"
-#include "llvm/Support/InstIterator.h"
-#include "llvm/Support/CallSite.h"
+#include "llvm/IR/InstIterator.h"
+#include "llvm/IR/CallSite.h"
 
 #include "base/GenericGraph.h"
 

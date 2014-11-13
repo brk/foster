@@ -30,7 +30,7 @@ class NSString;
 
 // Adapted from NSPathUtilities.h and NSObjCRuntime.h.
 #if __LP64__ || NS_BUILD_32_LIKE_64
-typedef unsigned long NSSearchPathDirectory;
+//typedef unsigned long NSSearchPathDirectory;
 typedef unsigned long NSSearchPathDomainMask;
 #else
 typedef unsigned int NSSearchPathDirectory;

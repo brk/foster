@@ -3,12 +3,13 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
 #include "llvm/IR/Module.h"
-#include "llvm/Linker.h"
+#include "llvm/Linker/Linker.h"
 #include "llvm/ADT/Statistic.h"
 
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/PrettyStackTrace.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Signals.h"
 
@@ -289,7 +290,6 @@ int main(int argc, char** argv) {
   ScopedTimer* wholeProgramTimer = new ScopedTimer("total");
   Module* libfoster_bc = NULL;
   Module* coro_bc      = NULL;
-  //llvm::Type* mp_int = NULL;
   foster::bepb::Module pbin;
 
   cl::SetVersionPrinter(&printVersionInfo);
@@ -302,12 +302,11 @@ int main(int argc, char** argv) {
 
   foster::initializeLLVM();
 
-  llvm::sys::Path mainModulePath(optInputPath);
-  makePathAbsolute(mainModulePath);
+  std::string mainModulePath = makePathAbsolute(optInputPath);
 
   foster::ParsingContext::pushNewContext();
 
-  llvm::Module* module = new Module(mainModulePath.str().c_str(), getGlobalContext());
+  llvm::Module* module = new Module(mainModulePath.c_str(), getGlobalContext());
 
   if (!optStandalone) {
     coro_bc = readLLVMModuleFromPath(optBitcodeLibsDir + "/gc_bc/libfoster_coro.bc");
@@ -410,7 +409,8 @@ int main(int argc, char** argv) {
 
   if (optDumpStats) {
     string err;
-    llvm::raw_fd_ostream out(outdirFile(optOutputName + "lower.stats.txt").c_str(), err);
+    llvm::raw_fd_ostream out(outdirFile(optOutputName + "lower.stats.txt").c_str(),
+                             err, llvm::sys::fs::OpenFlags::F_None);
     llvm::PrintStatistics(out);
   }
 

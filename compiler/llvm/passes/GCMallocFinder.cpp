@@ -189,7 +189,7 @@ char GCMallocFinder::ID = 0;
 INITIALIZE_PASS_BEGIN(GCMallocFinder, "foster-gcmallocfinder",
                 "Identifies (non-)allocating functions.",
                 false, false)
-INITIALIZE_AG_DEPENDENCY(CallGraph)
+INITIALIZE_PASS_DEPENDENCY(CallGraphWrapperPass)
 INITIALIZE_PASS_END(GCMallocFinder, "foster-gcmallocfinder",
                 "Identifies (non-)allocating functions.",
                 false, false)

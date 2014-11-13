@@ -12,15 +12,16 @@
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Target/TargetOptions.h"
 
-#include "llvm/Analysis/Verifier.h"
+#include "llvm/IR/Verifier.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 
 #include "llvm/Analysis/LoopPass.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/Signals.h"
-#include "llvm/Support/PassNameParser.h"
+// #include "llvm/Support/PassNameParser.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/PrettyStackTrace.h"
@@ -132,14 +133,11 @@ optNoCoalesceLoads("no-coalesce-loads",
   cl::desc("Disable coalescing loads of bit-or'ed values."),
   cl::cat(FosterOptCat));
 
-static cl::opt<string>
-optCFI("fosterc-cfi",
-  cl::desc("CFI directives: {yes,no}, default to platform-specific behavior"),
-  cl::cat(FosterOptCat));
-
+/*
 static cl::list<const PassInfo*, bool, PassNameParser>
 cmdLinePassList(cl::desc("Optimizations available:"),
   cl::cat(FosterOptCat));
+*/
 
 void setTimingDescriptions() {
   using foster::gTimings;
@@ -206,7 +204,6 @@ namespace  {
     }
     Builder.DisableUnitAtATime = false;
     Builder.DisableUnrollLoops = OptLevel == 0;
-    Builder.DisableSimplifyLibCalls = false;
 
     MPM.add(createVerifierPass());                // Verify that input is correct
     Builder.populateFunctionPassManager(FPM);
@@ -312,24 +309,10 @@ namespace  {
   }
 } // namespace
 
-DataLayout* getDataLayoutForModule(Module* mod) {
-  const string& layout = mod->getDataLayout();
-  if (layout.empty()) return NULL;
-  return new DataLayout(layout);
-}
-
 void optimizeModuleAndRunPasses(Module* mod) {
   ScopedTimer timer("llvm.opt");
   PassManager passes;
   FunctionPassManager fpasses(mod);
-
-  DataLayout* td = getDataLayoutForModule(mod);
-  if (td) {
-    passes.add(td);
-    fpasses.add(new DataLayout(*td));
-  } else {
-    llvm::outs() << "Warning: no target data for module!" << "\n";
-  }
 
   { PassManager passes_first;
     passes_first.add(llvm::createVerifierPass());
@@ -340,7 +323,6 @@ void optimizeModuleAndRunPasses(Module* mod) {
     ScopedTimer timer("llvm.opt.memalloc");
     FunctionPassManager fpasses_first(mod);
     // Run this one before inlining, otherwise we won't see the mallocs!
-    fpasses_first.add(new DataLayout(*td));
     fpasses_first.add(foster::createMemallocSpecializerPass());
     foster::runFunctionPassesOverModule(fpasses_first, mod);
   }
@@ -354,6 +336,7 @@ void optimizeModuleAndRunPasses(Module* mod) {
     }
   }
 
+  /*
   // Add command line passes
   for (size_t i = 0; i < cmdLinePassList.size(); ++i) {
     const PassInfo* pi = cmdLinePassList[i];
@@ -365,6 +348,7 @@ void optimizeModuleAndRunPasses(Module* mod) {
                 << "'" << pi->getPassName() << "'" << "\n";
     }
   }
+  */
 
   if (optInsertTimerChecks) {
     fpasses.add(new llvm::LoopInfo());
@@ -389,12 +373,12 @@ void runInternalizePasses(Module* mod) {
   passes.run(*mod);
 }
 
-int fdFlagsForObjectType(TargetMachine::CodeGenFileType filetype) {
-  int flags = 0;
+llvm::sys::fs::OpenFlags
+fdFlagsForObjectType(TargetMachine::CodeGenFileType filetype) {
   if (filetype == TargetMachine::CGFT_ObjectFile) {
-    flags |= raw_fd_ostream::F_Binary;
+    return llvm::sys::fs::OpenFlags::F_None;
   }
-  return flags;
+  return llvm::sys::fs::OpenFlags::F_Text;
 }
 
 #if defined(LLVM_HOSTTRIPLE)
@@ -414,11 +398,6 @@ void configureTargetDependentOptions(const llvm::Triple& triple,
     // Applications on Mac OS X (x86) must be compiled with relocatable symbols,
     // which is -mdynamic-no-pic (GCC) or -relocation-model=dynamic-no-pic (llc).
     relocModel = llvm::Reloc::DynamicNoPIC;
-
-    if (optCFI.empty() && filetype == TargetMachine::CGFT_AssemblyFile) {
-      // Mac OS X system assembler doesn't support .cfi directives yet
-      optCFI = "no";
-    }
   }
 
   // Ensure we always compile with -disable-fp-elim
@@ -479,17 +458,10 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
     exit(1);
   }
 
-  tm->setMCUseCFI(optCFI != "no");
   tm->setAsmVerbosityDefault(true);
   // TODO don't use .loc directives for OS X 10.5 and prior.
 
   PassManager passes;
-  // Use specific target data if available, else generic target data.
-  if (const DataLayout* td = tm->getDataLayout()) {
-    passes.add(new DataLayout(*td));
-  } else {
-    passes.add(new DataLayout(mod));
-  }
   tm->addAnalysisPasses(passes);
 
   llvm::raw_fd_ostream raw_out(filename.c_str(), err,
@@ -549,10 +521,8 @@ int main(int argc, char** argv) {
   foster::initializeLLVM();
   calculateOutputNames();
 
-  llvm::sys::Path mainModulePath(optInputPath);
-  makePathAbsolute(mainModulePath);
-
-  llvm::Module* module = readLLVMModuleFromPath(mainModulePath.str());
+  auto mainModulePath = makePathAbsolute(optInputPath);
+  llvm::Module* module = readLLVMModuleFromPath(mainModulePath);
 
   if (optCleanupOnly) {
     foster::runCleanupPasses(*module);
@@ -578,7 +548,8 @@ int main(int argc, char** argv) {
 
   if (optDumpStats) {
     string err;
-    llvm::raw_fd_ostream out((gOutputNameBase + ".optc.stats.txt").c_str(), err);
+    llvm::raw_fd_ostream out((gOutputNameBase + ".optc.stats.txt").c_str(),
+                             err, llvm::sys::fs::OpenFlags::F_None);
     llvm::PrintStatistics(out);
   }
 

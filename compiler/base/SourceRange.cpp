@@ -101,7 +101,7 @@ void SourceRange::highlightWithCaret(raw_ostream& out,
 
   if (isEmpty()) {
     std::string filename = (source)
-                          ? source->getShortName()
+                          ? getShortName(source)
                           : "{memory}";
     out << "<" << filename
         << ":" << begin.line << "::" << begin.column

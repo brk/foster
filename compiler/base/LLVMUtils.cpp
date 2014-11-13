@@ -6,6 +6,8 @@
 #include "base/LLVMUtils.h"
 
 #include <map>
+#include <iostream>
+#include <ostream>
 
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -14,7 +16,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/PassManager.h"
-#include "llvm/Assembly/AssemblyAnnotationWriter.h"
+#include "llvm/IR/AssemblyAnnotationWriter.h"
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/Support/FormattedStream.h"
@@ -29,7 +31,8 @@
 using namespace llvm;
 
 std::ostream& operator<<(std::ostream& out, llvm::Type& ty) {
-  return out << str(&ty);
+  out << str(&ty);
+  return out;
 }
 
 std::string str(llvm::Type* ty) {
@@ -70,27 +73,19 @@ void
 validateFileOrDir(const std::string& pathstr,
                   const char* inp,
                   bool want_dir) {
-  llvm::sys::PathWithStatus path(pathstr);
-
-  if (path.empty()) {
+  if (pathstr.empty()) {
     EDiag() << "need an " << inp << " filename!";
     exit(1);
   }
 
-  std::string err;
-  const llvm::sys::FileStatus* status
-         = path.getFileStatus(/*forceUpdate=*/ false, &err);
-  if (!status) {
-    if (err.empty()) {
-      EDiag() << "Error occurred when reading " << inp << " path '"
-              << pathstr << "'";
-    } else {
-      EDiag() << "Error validating " << inp << " path: " << err;
-    }
+  llvm::sys::fs::file_status st;
+  if(llvm::sys::fs::status(pathstr, st)) {
+    EDiag() << "Error occurred when reading " << inp << " path '"
+            << pathstr << "'";
     exit(1);
   }
 
-  if (status->isDir != want_dir) {
+  if (llvm::sys::fs::is_directory(st) != want_dir) {
     if (want_dir) {
       EDiag() << inp << " must be a directory, not a file!";
     } else {
@@ -106,11 +101,12 @@ validateInputFile(const std::string& pathstr) {
 }
 
 void validateOutputFile(const std::string& pathstr) {
-  llvm::sys::Path outputPath(pathstr);
-  validateFileOrDir(outputPath.getDirname(), "output", true);
+  llvm::SmallString<128> outputPath(pathstr);
+  llvm::sys::path::remove_filename(outputPath);
+  validateFileOrDir(outputPath.str(), "output", true);
 }
 
-void runFunctionPassesOverModule(llvm::FunctionPassManager& fpasses,
+void runFunctionPassesOverModule(llvm::legacy::FunctionPassManager& fpasses,
                                  Module* mod) {
   fpasses.doInitialization();
   for (Module::iterator it = mod->begin(); it != mod->end(); ++it) {
@@ -120,9 +116,9 @@ void runFunctionPassesOverModule(llvm::FunctionPassManager& fpasses,
 }
 
 void ensureDirectoryExists(const std::string& pathstr) {
-  llvm::sys::Path p(pathstr);
-  if (!p.isDirectory()) {
-    p.createDirectoryOnDisk(true, NULL);
+  if (llvm::sys::fs::create_directory(pathstr, true)) {
+    foster::EDiag() << "unable to create directory " << pathstr << "\n";
+    exit(1);
   }
 }
 
@@ -158,7 +154,7 @@ struct CommentWriter : public llvm::AssemblyAnnotationWriter {
 
 void dumpModuleToFile(llvm::Module* mod, const std::string& filename) {
   std::string errInfo;
-  llvm::raw_fd_ostream LLpreASM(filename.c_str(), errInfo);
+  llvm::raw_fd_ostream LLpreASM(filename.c_str(), errInfo, llvm::sys::fs::OpenFlags::F_RW);
   if (errInfo.empty()) {
     CommentWriter cw;
     mod->print(LLpreASM, &cw);
@@ -171,9 +167,9 @@ void dumpModuleToFile(llvm::Module* mod, const std::string& filename) {
 
 void dumpModuleToBitcode(llvm::Module* mod, const std::string& filename) {
   std::string errInfo;
-  sys::RemoveFileOnSignal(sys::Path(filename), &errInfo);
+  sys::RemoveFileOnSignal(filename, &errInfo);
 
-  raw_fd_ostream out(filename.c_str(), errInfo, raw_fd_ostream::F_Binary);
+  raw_fd_ostream out(filename.c_str(), errInfo, llvm::sys::fs::OpenFlags::F_RW);
   if (!errInfo.empty()) {
     foster::EDiag() << "when preparing to write bitcode to " << filename
         << "\n" << errInfo;
@@ -202,11 +198,11 @@ void initializeKnownNonAllocatingFQNames(llvm::StringSet<>& names) {
 
 } // namespace foster
 
-void makePathAbsolute(llvm::sys::Path& path) {
-  llvm::SmallString<128> pathstr(path.str());
-  llvm::error_code err = llvm::sys::fs::make_absolute(pathstr);
-  ASSERT(err == llvm::errc::success) << err.message();
-  path.set(pathstr);
+std::string makePathAbsolute(std::string path) {
+  llvm::SmallString<128> pathstr(path);
+  std::error_code err = llvm::sys::fs::make_absolute(pathstr);
+  ASSERT(!err) << err.message();
+  return pathstr.str();
 }
 
 const char* llvmValueTag(llvm::Value* v) {

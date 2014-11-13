@@ -7,7 +7,7 @@ cmake_policy(VERSION 2.8.0)
 
 set(LIBRARY_OUTPUT_PATH ${PROJECT_BINARY_DIR}/_nativelibs_)
 
-set(LLVM_VERSION 3.2)
+set(LLVM_VERSION 3.5)
 
 # ~~~~~~~~~~~~~~~~~~~~ ANTLR ~~~~~~~~~~~~~~~~~~~~~
 
@@ -48,6 +48,7 @@ find_program(LLVM_CONFIG NAMES llvm-config
   PATHS
     $ENV{HOME}/llvm/${LLVM_VERSION}/bin
     $ENV{HOME}/sw/local/llvm-${LLVM_VERSION}/bin
+    /usr/lib/llvm-${LLVM_VERSION}/bin
   DOC "llvm-config")
 
 # Get flags for LLVM
@@ -73,6 +74,10 @@ set (NO_RTTI_FLAG "-fno-rtti")
 set (NDEBUG_FLAG "-DNDEBUG")
 string(REPLACE ${NO_RTTI_FLAG} "" LLVM_CFLAGS "${LLVM_CFLAGS}")
 string(REPLACE ${NDEBUG_FLAG} "" LLVM_CFLAGS "${LLVM_CFLAGS}")
+# Note: we unconditionally remove this flag here
+# (because we can't compile C-only code with it)
+# and unconditionally add it to CXXFLAGS later.
+string(REPLACE "-std=c++11" "" LLVM_CFLAGS "${LLVM_CFLAGS}")
 
 # Make sure we don't have any extraneous newlines in generated Makefiles
 #
@@ -97,12 +102,13 @@ endif (${LLVM_ORIGINAL_CFLAGS} MATCHES         ${NDEBUG_FLAG})
 # we instead compile the foster runtime with clang++ to bitcode, then link the
 # foster runtime bitcode in along with the bitcode for a program to run it.
 #
-find_program(CLANG NAMES clang++ clang
+find_program(CLANG NAMES clang++-${LLVM_VERSION} clang++
   PATHS
         /usr/bin
         $ENV{HOME}/llvm/${LLVM_VERSION}/bin
   DOC "C++ compiler to emit LLVM bytecode: clang++")
 
+set(CMAKE_CXX_COMPILER ${CLANG})
 
 execute_process(COMMAND ${LLVM_CONFIG} --bindir OUTPUT_VARIABLE LLVM_BINDIR)
 
@@ -114,12 +120,16 @@ string(REPLACE "\n" "" LLVM_BINDIR ${LLVM_BINDIR})
 set(LLVM_COMPONENTS_NEEDED all)
 
 execute_process(COMMAND
-    ${LLVM_CONFIG} --ldflags --libs ${LLVM_COMPONENTS_NEEDED}
+    ${LLVM_CONFIG} --libs ${LLVM_COMPONENTS_NEEDED}
+  OUTPUT_VARIABLE LLVM_LDFLAGS
+)
+execute_process(COMMAND
+    ${LLVM_CONFIG} --libs ${LLVM_COMPONENTS_NEEDED} --ldflags  --system-libs
   OUTPUT_VARIABLE LLVM_LDFLAGS
 )
 
 # Make sure that the linker flags are one physical line
-string(REPLACE "\n" "" LLVM_LDFLAGS "${LLVM_LDFLAGS}")
+string(REPLACE "\n" " " LLVM_LDFLAGS "${LLVM_LDFLAGS}")
 string(STRIP "${LLVM_LDFLAGS}" LLVM_LDFLAGS)
 
 find_package(Threads REQUIRED)
@@ -353,6 +363,8 @@ link_directories(${LLVM_LD_PATH} ${ANTLR_LIBDIR})
 
 add_definitions(${LLVM_CFLAGS} "-ggdb")
 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+
 if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
   # Only works with the GNU Gold linker
   set(CMAKE_EXE_LINKER_FLAGS
@@ -450,6 +462,8 @@ target_link_libraries(fosterlower
   fosterc_parse fosterc_passes fosterc_parse fosterc_base
   fosterc_llvm fosterc_fosteril_pb
   antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
+
+message(${LLVM_LDFLAGS})
 
 add_dependencies(fosterlower
     foster_runtime_bc coro_wrapper_bc hs_me cycle)

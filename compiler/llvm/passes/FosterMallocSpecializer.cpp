@@ -33,7 +33,6 @@ public:
   const char* getPassName() const { return "SpecializeAllocations"; }
 
   virtual void getAnalysisUsage(AnalysisUsage &AU) const {
-    AU.addRequired<DataLayout>();
     AU.setPreservesCFG();
 
     // TODO should add more preserved transforms here.
@@ -87,7 +86,7 @@ bool SpecializeAllocations::runOnBasicBlock(BasicBlock &BB) {
   assert(memalloc && memalloc_16 && "Pass not initialized!");
 
   BasicBlock::InstListType &BBIL = BB.getInstList();
-  const DataLayout &TD = getAnalysis<DataLayout>();
+  const DataLayout* TD = BB.getParent()->getDataLayout();
 
   for (BasicBlock::iterator I = BB.begin(), E = BB.end(); I != E; ++I) {
     if (llvm::CallInst* call = llvm::dyn_cast<CallInst>(I)) {
@@ -108,9 +107,9 @@ bool SpecializeAllocations::runOnBasicBlock(BasicBlock &BB) {
                 GlobalVariable* gv = dyn_cast<GlobalVariable>(ac->getOperand(0));
                 ConstantStruct* cs = dyn_cast<ConstantStruct>(gv->getInitializer());
                 ConstantExpr* sze = dyn_cast<ConstantExpr>(cs->getOperand(0));
-                Constant* szc = ConstantFoldConstantExpression(sze, &TD);
+                Constant* szc = ConstantFoldConstantExpression(sze, TD);
                 if (szc && !llvm::isa<ConstantInt>(szc)) {
-                  szc = ConstantFoldConstantExpression(dyn_cast<ConstantExpr>(szc), &TD);
+                  szc = ConstantFoldConstantExpression(dyn_cast<ConstantExpr>(szc), TD);
                 }
                 if (!szc) {
                   llvm::errs() << "FosterMallocSpecializer: Unable to evaluate allocated size!\n";

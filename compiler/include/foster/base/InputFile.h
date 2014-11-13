@@ -8,28 +8,23 @@
 #ifndef FOSTER_INPUT_FILE_H
 #define FOSTER_INPUT_FILE_H
 
-namespace llvm {
-  namespace sys {
-    class Path;
-  }
-}
-
 namespace foster {
 
 class InputTextBuffer;
 
 class InputFile {
-  llvm::sys::Path path;
+  std::string path;
   InputTextBuffer* buf;
 
 public:
   // precondition: file specified by filePath exists, and is readable
-  InputFile(llvm::sys::Path path);
+  InputFile(std::string path);
 
   InputTextBuffer* getBuffer() const { return buf; }
-  const llvm::sys::Path& getPath() const { return path; }
-  std::string getShortName() const;
+  const std::string& getPath() const { return path; }
 };
+
+std::string getShortName(const InputFile*);
 
 } // namespace foster
 

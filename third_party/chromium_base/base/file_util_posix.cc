@@ -24,6 +24,7 @@
 
 #if defined(OS_MACOSX)
 #include <AvailabilityMacros.h>
+typedef unsigned long NSSearchPathDirectory;
 #include "base/mac/foundation_util.h"
 #elif !defined(OS_ANDROID)
 #include <glib.h>

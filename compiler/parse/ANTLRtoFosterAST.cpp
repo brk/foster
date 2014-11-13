@@ -1258,7 +1258,7 @@ namespace foster {
     void createParser(foster::ANTLRContext& ctx,
                       const foster::InputFile& infile) {
       createParser(ctx,
-                   infile.getPath().str(),
+                   infile.getPath(),
                    infile.getBuffer());
     }
 
@@ -1281,7 +1281,7 @@ namespace foster {
     sprintf(hashcstr, "%08" PRIx64 "%08" PRIx64,
                      Uint128Low64(hash), Uint128High64(hash));
     std::string hashstr(hashcstr);
-    printf("Hash of file %s is %s\n", file.getShortName().c_str(), hashcstr);
+    printf("Hash of file %s is %s\n", getShortName(&file).c_str(), hashcstr);
 
     ANTLRContext* ctx = new ANTLRContext();
     createParser(*ctx, file);
@@ -1295,7 +1295,7 @@ namespace foster {
     fosterParser_module_return langAST = ctx->psr->module(ctx->psr);
     *outNumANTLRErrors += ctx->psr->pParser->rec->state->errorCount;
 
-    ModuleAST* m = parseTopLevel(langAST.tree, file.getShortName(), hashstr, out_imports);
+    ModuleAST* m = parseTopLevel(langAST.tree, getShortName(&file), hashstr, out_imports);
     m->buf = file.getBuffer();
     m->hiddenTokens = ParsingContext::getHiddenTokens();
 
@@ -1354,8 +1354,7 @@ namespace foster {
     llvm::sys::path::append(path, llvm::sys::path::stem(spath));
     llvm::sys::path::replace_extension(path, "foster");
     if (llvm::sys::fs::exists(path.str())) {
-      llvm::sys::Path fpath(path.str());
-      return new foster::InputFile(fpath);
+      return new foster::InputFile(path.str());
     } else {
       return NULL;
     }

@@ -5,7 +5,7 @@
 #ifndef FOSTER_GENERIC_GRAPH_TRAITS_H
 #define FOSTER_GENERIC_GRAPH_TRAITS_H
 
-#include "llvm/Support/CFG.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/Support/GraphWriter.h"
 
 // Implicitly included by base/GenericGraph.h

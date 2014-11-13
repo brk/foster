@@ -56,12 +56,12 @@ struct EscapingAllocaFinder : public FunctionPass {
       for (llvm::Value::use_iterator uit = alloca->use_begin();
                                      uit != alloca->use_end();
                                      ++uit) {
-        llvm::User* use = *uit;
-        if (llvm::isa<StoreInst>(use)) {
-          llvm::Value* v = use->getOperand(0)->stripPointerCasts();
-          llvm::Value* dest = use->getOperand(1);
-          if (llvm::isa<LoadInst>(v)) {
-            v = llvm::dyn_cast<LoadInst>(v)->getOperand(0);
+        llvm::Value* use = *uit;
+        if (llvm::StoreInst* st = llvm::dyn_cast<StoreInst>(use)) {
+          llvm::Value* v = st->getOperand(0)->stripPointerCasts();
+          llvm::Value* dest = st->getOperand(1);
+          if (llvm::LoadInst* liv = llvm::dyn_cast<LoadInst>(v)) {
+            v = liv->getOperand(0);
             if (taintedSlots.count(v) > 0) {
               taintedSlots.insert(dest);
               break;

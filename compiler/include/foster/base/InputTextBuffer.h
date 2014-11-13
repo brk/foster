@@ -13,9 +13,6 @@
 
 namespace llvm {
   class MemoryBuffer;
-  namespace sys {
-    class Path;
-  }
 }
 
 namespace foster {
@@ -23,7 +20,7 @@ namespace foster {
 class InputTextBuffer {
 public:
   // precondition: file specified by filePath exists, and is readable
-  InputTextBuffer(const llvm::sys::Path& path);
+  InputTextBuffer(const std::string& path);
 
   // Copies the data in the given buffer.
   InputTextBuffer(const char* data, size_t length);

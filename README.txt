@@ -41,7 +41,7 @@ Ubuntu 10.10:
 	(universe)
 		binutils-gold	cmake-curses-gui	mercurial
 					libffi-dev
-		ccache		ack-grep
+		ccache		ack-grep        libedit-dev
 
                 libprotobuf6 (7 on newer Ubuntus)
                 protobuf-compiler       libprotobuf-dev

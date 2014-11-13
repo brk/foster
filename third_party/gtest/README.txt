@@ -1,5 +1,5 @@
 URL: http://code.google.com/p/googletest/
-Version: 1.5.0
+Version: 1.7.0
 Description: Google C++ Testing Framework
 License: New BSD
 License File: COPYING

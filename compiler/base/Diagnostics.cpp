@@ -96,7 +96,7 @@ DDiag::~DDiag() {}
     }
 
     if (sourceFile) {
-      out << sourceFile->getShortName();
+      out << getShortName(sourceFile);
     } else if (sourceBuffer) {
       out << "{-memory-}";
     } else {

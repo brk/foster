@@ -197,7 +197,7 @@ bool handleNoViableAlt(pANTLR3_EXCEPTION ex,
                         const string& tokenText,
                         const SourceRange& r) {
   const char* approxPosition = describeApproximateStartPosition(r);
-  errs() << r.source->getShortName() << ":"
+  errs() << getShortName(r.source) << ":"
          << "error: got stuck parsing near the " << approxPosition
          << " of line " << (r.begin.line + 1) << ":\n\n"
          << r << "\n";
@@ -210,7 +210,7 @@ bool handleMismatchedToken(pANTLR3_EXCEPTION ex,
                         const string& tokenText,
                         const SourceRange& r) {
   const char* approxPosition = describeApproximateStartPosition(r);
-  errs() << r.source->getShortName() << ":"
+  errs() << getShortName(r.source) << ":"
          << "error: unexpected token near the " << approxPosition
          << " of line " << (r.begin.line + 1) << ":\n\n"
          << r << "\n";
@@ -223,7 +223,7 @@ bool handleGenericError(pANTLR3_EXCEPTION ex,
                         const string& tokenText,
                         const SourceRange& r) {
   const char* approxPosition = describeApproximateStartPosition(r);
-  errs() << r.source->getShortName() << ":"
+  errs() << getShortName(r.source) << ":"
          << "generic error: " << ((const char*) ex->message)
          << " near the " << approxPosition
          << " of line " << (r.begin.line + 1) << ":\n\n"
@@ -237,7 +237,7 @@ bool handleUnwantedToken(pANTLR3_EXCEPTION ex,
                         const string& tokenText,
                         const SourceRange& r) {
   const char* approxPosition = describeApproximateStartPosition(r);
-  errs() << r.source->getShortName() << ":"
+  errs() << getShortName(r.source) << ":"
          << "error: " << ((const char*) ex->message)
          << " " << tokenText
          << " near the " << approxPosition

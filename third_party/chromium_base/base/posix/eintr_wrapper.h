@@ -21,7 +21,7 @@
 
 #if defined(NDEBUG)
 #define HANDLE_EINTR(x) ({ \
-  typeof(x) eintr_wrapper_result; \
+  __typeof__(x) eintr_wrapper_result; \
   do { \
     eintr_wrapper_result = (x); \
   } while (eintr_wrapper_result == -1 && errno == EINTR); \
@@ -32,7 +32,7 @@
 
 #define HANDLE_EINTR(x) ({ \
   int eintr_wrapper_counter = 0; \
-  typeof(x) eintr_wrapper_result; \
+  __typeof__(x) eintr_wrapper_result; \
   do { \
     eintr_wrapper_result = (x); \
   } while (eintr_wrapper_result == -1 && errno == EINTR && \

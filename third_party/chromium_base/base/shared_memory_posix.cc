@@ -20,6 +20,7 @@
 #include "base/utf_string_conversions.h"
 
 #if defined(OS_MACOSX)
+typedef unsigned long NSSearchPathDirectory;
 #include "base/mac/foundation_util.h"
 #endif  // OS_MACOSX
 

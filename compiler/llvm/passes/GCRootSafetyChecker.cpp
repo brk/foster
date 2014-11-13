@@ -10,8 +10,8 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/StringSwitch.h"
-#include "llvm/Support/InstIterator.h"
-#include "llvm/Support/CallSite.h"
+#include "llvm/IR/InstIterator.h"
+#include "llvm/IR/CallSite.h"
 
 #include "base/GenericGraph.h"
 
@@ -106,7 +106,7 @@ struct GCRootSafetyChecker : public FunctionPass {
       for (llvm::Value::use_iterator uit = gcroot->use_begin();
                                      uit != gcroot->use_end();
                                      ++uit) {
-        llvm::User* use = *uit;
+        llvm::Value* use = (*uit);
         if (llvm::isa<LoadInst>(use)) {
           gcroot_loads.insert(use);
           for (llvm::Value::use_iterator uit2 = use->use_begin();

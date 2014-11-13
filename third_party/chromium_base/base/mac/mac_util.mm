@@ -457,7 +457,8 @@ bool WasLaunchedAsLoginOrResumeItem() {
 
   long long temp = [[process_info objectForKey:@"ParentPSN"] longLongValue];
   ProcessSerialNumber parent_psn =
-      { (temp >> 32) & 0x00000000FFFFFFFFLL, temp & 0x00000000FFFFFFFFLL };
+      { static_cast<UInt32>((temp >> 32) & 0x00000000FFFFFFFFLL),
+        static_cast<UInt32>( temp        & 0x00000000FFFFFFFFLL) };
 
   scoped_nsobject<NSDictionary> parent_info(
       CFToNSCast(ProcessInformationCopyDictionary(&parent_psn,
