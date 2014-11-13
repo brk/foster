@@ -680,7 +680,12 @@ void LLSwitch::codegenTerminator(CodegenPass* pass) {
 llvm::Value* LLBitcast::codegen(CodegenPass* pass) {
   llvm::Value* v = var->codegen(pass);
   llvm::Type* tgt = getLLVMType(this->type);
-  return (v->getType() == tgt) ? v : emitBitcast(v, tgt);
+  if (v->getType()->isVoidTy() && tgt == getUnitType()->getLLVMType()) {
+    // Can't cast a void value to a unit value,
+    // but we can manufacture a unit ptr...
+    return llvm::ConstantPointerNull::getNullValue(tgt);
+    //return v;
+  } else return (v->getType() == tgt) ? v : emitBitcast(v, tgt);
 }
 
 void LLGCRootInit::codegenMiddle(CodegenPass* pass) {
