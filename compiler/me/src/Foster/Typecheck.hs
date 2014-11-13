@@ -1082,6 +1082,10 @@ tcRhoFnHelper ctx f expTy = do
                                     (HavePrecondition {}, HavePrecondition {}) -> tcFails [text "function literal had precondition in both expr and type"]
                        return (annbody, precond)
                        -}
+
+                       --return (E_AnnTyApp (annExprAnnot annbody) (typeTC annbody) annbody [])
+                       --return (E_AnnTyApp (annExprAnnot annbody) body_ty annbody [])
+
                        return annbody
 
     let fnty = fnTypeTemplate f argtys (typeTC annbody) FastCC

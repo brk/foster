@@ -150,7 +150,14 @@ monoKN subst e =
             where mkKNLetFuns []  []  b = b
                   mkKNLetFuns ids fns b = KNLetFuns ids fns b
 
-  KNTyApp _ _ [] -> error "Monomo.hs: cannot type-apply with no arguments!"
+  KNTyApp t v [] -> do -- coercion, rather than a type application per se.
+    liftIO $ putStrLn $ "Monomorphizing coercion..."
+    liftIO $ putStrLn $ show t
+    liftIO $ putStrLn $ show v
+    t' <- qt t
+    v' <- qv v
+    return $ KNTyApp t' v' []
+
   KNTyApp t (TypedId (ForAllIL ktvs _rho) polybinder) argtys -> do
     monotys <- mapM generic argtys
     let extsubst = extendMonoSubst subst monotys ktvs

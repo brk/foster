@@ -2,6 +2,30 @@ main = {
   x = foo 5;
   x 5;
 
+  barf { n => print_i32 n; 0 };
+  barf x;
+};
+
+foo = { x : Int32 =>
+  print_i32 x;
+  bar
+};
+
+bar = { x : Int32 =>
+  expect_i32 x;
+  r = (ref foo);
+  0
+};
+
+barf = { f : { Int32 => Int32 } =>
+  f 0
+};
+
+/*
+main = {
+  x = foo 5;
+  x 5;
+
   barf { n => print_i32 n };
   barf x;
 };
@@ -20,6 +44,8 @@ bar = { x : Int32 =>
 barf = { f : { Int32 => () } =>
   f 0
 };
+*/
+
 
 /*
 foo = { x : Int32 =>
