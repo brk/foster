@@ -226,6 +226,16 @@ public:
   void setBody(const std::vector<TypeAST*>& argTypes);
 };
 
+class VoidTypeAST : public TypeAST {
+  explicit VoidTypeAST()
+    : TypeAST("VoidType", NULL, SourceRange::getEmptyRange()) {}
+
+public:
+  virtual void show(PrettyPrintTypePass* pass);
+  virtual void dump(DumpToProtobufPass* pass);
+  virtual llvm::Type* getLLVMType() const;
+};
+
 class TupleTypeAST : public IndexableTypeAST {
   StructTypeAST* structType;
 

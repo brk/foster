@@ -103,6 +103,10 @@ void ArrayTypeAST::show(PrettyPrintTypePass* pass){
   pass->scan(PPToken(")"));
 }
 
+void VoidTypeAST::show(PrettyPrintTypePass* pass) {
+  pass->scan(PPToken("void"));
+}
+
 void TupleTypeAST::show(PrettyPrintTypePass* pass){
   pass->scan(PPToken(" {{ "));
   for (int i = 0; i < this->getNumContainedTypes(); ++i) {

@@ -129,14 +129,6 @@ llvm::FunctionType* FnTypeAST::getLLVMFnType() const {
   }
 
   llvm::Type* retTy = returnType->getLLVMType();
-
-  // TODO conflict here between polymorphism (which needs
-  // a uniform ABI) and C-compatibility (which says that
-  // procs returning unit should be marked void?
-  if (typesEq(retTy, getUnitType()->getLLVMType())) {
-    retTy = llvm::Type::getVoidTy(retTy->getContext());
-  }
-
   return llvm::FunctionType::get(retTy,
                                  loweredArgTypes,
                                  /*isVarArg=*/ false);
@@ -168,6 +160,12 @@ llvm::CallingConv::ID FnTypeAST::getCallingConventionID() const {
     ASSERT(false) << "Unknown calling convention: " << cc;
     return llvm::CallingConv::C;
   }
+}
+
+/////////////////////////////////////////////////////////////////////
+
+llvm::Type* VoidTypeAST::getLLVMType() const {
+  return llvm::Type::getVoidTy(llvm::getGlobalContext());
 }
 
 /////////////////////////////////////////////////////////////////////

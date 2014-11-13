@@ -452,6 +452,10 @@ void ArrayTypeAST::dump(DumpToProtobufPass* pass) {
   ASSERT(false);
 }
 
+void VoidTypeAST::dump(DumpToProtobufPass* pass) {
+  ASSERT(false);
+}
+
 void TupleTypeAST::dump(DumpToProtobufPass* pass) {
   setTagAndRange(pass->typ, this, pb::Type::TUPLE);
   pass->typ->mutable_type_parts()->Reserve(this->getNumContainedTypes());

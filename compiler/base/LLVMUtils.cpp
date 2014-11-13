@@ -268,8 +268,7 @@ bool isFunctionPointerTy(llvm::Type* p) {
 bool typesEq(llvm::Type* t1, llvm::Type* t2) { return (t1 == t2); }
 
 bool isPointerToType(llvm::Type* p, llvm::Type* t) {
-  // Use == instead of typesEq to avoid bottomless mutual recursion.
-  return p->isPointerTy() && (t == p->getContainedType(0));
+  return p->isPointerTy() && typesEq(p->getContainedType(0), t);
 }
 
 void storeNullPointerToSlot(llvm::Value* slot) {
