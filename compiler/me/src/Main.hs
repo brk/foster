@@ -76,8 +76,8 @@ typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
     let fns = Graph.flattenSCC scc
 
     -- Generate a binding (for functions without user-provided declarations)
-    -- before doing any typechecking, so that if a function fails to typecheck,
-    -- we'll have the best binding on hand to use for subsequent typechecking.
+    -- before doing any typechecking, so that SCC-recursive calls aren't left
+    -- out in the cold.
     let genBinding :: FnAST TypeAST -> IO (ContextBinding TypeTC)
         genBinding fn = do
         oo_binding <-
@@ -384,8 +384,7 @@ main = do
     rest -> do
       flagVals <- parseOpts rest
       if getDumpPrimitives flagVals
-        then do
-           mapM_ dumpPrimitive (Map.toList gFosterPrimOpsTable)
+        then dumpAllPrimitives
         else do
            self <- getProgName
            return (error $ "Usage: " ++ self
@@ -633,19 +632,23 @@ showGeneratedMetaTypeVariables varlist ctx_il =
     putDocLn $ (outLn "vvvv contextBindings:====================")
     putDocLn $ (dullyellow $ vcat $ map (text . show) (Map.toList $ contextBindings ctx_il))
 
-dumpPrimitive :: (String, (TypeAST, FosterPrim TypeAST)) -> IO ()
-dumpPrimitive (name, ((FnTypeAST args ret _ _), _primop)) = do
-  let allNames = "abcdefghijklmnop"
-  let namesArgs = [(text (name:[]) , arg) | (name, arg) <- zip allNames args]
-  let textid str = if Char.isAlphaNum (head str)
-                           then         text str
-                           else parens (text str)
-  putDocLn $ (fill 20 $ textid name)
-             <> text " = {"
-                 <+> hsep [fill 12 (name <+> text ":" <+> pretty arg) <+> text "=>"
-                          | (name, arg) <- namesArgs]
-                 <+> fill 23 (text "prim" <+> text name <+> hsep (map fst namesArgs))
-             <+> text "}; // :: " <> pretty ret
 
-dumpPrimitive (name, (_ty, _primop)) = error $ "Can't dump primitive " ++ name ++ " yet."
+dumpAllPrimitives = do
+  mapM_ dumpPrimitive (Map.toList gFosterPrimOpsTable)
+ where
+    dumpPrimitive :: (String, (TypeAST, FosterPrim TypeAST)) -> IO ()
+    dumpPrimitive (name, ((FnTypeAST args ret _ _), _primop)) = do
+      let allNames = "abcdefghijklmnop"
+      let namesArgs = [(text (name:[]) , arg) | (name, arg) <- zip allNames args]
+      let textid str = if Char.isAlphaNum (head str)
+                               then         text str
+                               else parens (text str)
+      putDocLn $ (fill 20 $ textid name)
+                 <> text " = {"
+                     <+> hsep [fill 12 (name <+> text ":" <+> pretty arg) <+> text "=>"
+                              | (name, arg) <- namesArgs]
+                     <+> fill 23 (text "prim" <+> text name <+> hsep (map fst namesArgs))
+                 <+> text "}; // :: " <> pretty ret
+
+    dumpPrimitive (name, (_ty, _primop)) = error $ "Can't dump primitive " ++ name ++ " yet."
 
