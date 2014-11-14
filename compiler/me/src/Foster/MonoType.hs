@@ -47,6 +47,12 @@ type MoPrim = FosterPrim MonoType
 
 data MoExternDecl = MoExternDecl String MonoType deriving (Show)
 
+instance Pretty CallConv where pretty CCC    = text "ccc"
+                               pretty FastCC = text "fastcc"
+
+instance Pretty ProcOrFunc where pretty FT_Proc = text "proc"
+                                 pretty FT_Func = text "func"
+
 instance Pretty MonoType where
   pretty t = case t of
           PrimInt        isb          -> pretty isb
@@ -55,7 +61,7 @@ instance Pretty MonoType where
           TupleType      ts           -> tupled (map pretty ts)
           StructType     ts           -> text "#" <> tupled (map pretty ts)
           FnType         ts r _cc _pf -> text "{" <+> hsep [pretty t <+> text "=>" | t <- ts]
-                                                  <+> pretty r <+> text "}"
+                                                  <+> pretty r <+> text "}" <> text "@" <> pretty (_cc,_pf)
           CoroType      _s _r         -> text "Coro..."
           ArrayType      t            -> text "Array" <+> pretty t
           PtrType        t            -> text "Ref" <+> pretty t
