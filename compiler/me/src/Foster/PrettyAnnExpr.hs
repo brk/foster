@@ -191,6 +191,9 @@ instance Pretty (AnnExpr TypeTC) where
             AnnArrayLit   annot _ entries -> withAnnot annot $ text "AnnArrayLit"
             AnnArrayRead  annot _ ai      -> withAnnot annot $ pretty ai
             AnnArrayPoke  annot _ ai e    -> withAnnot annot $ pretty e <+> text ">^" <+> pretty ai
+            AnnKillProcess {} -> text "<<<AnnKillProcess>>>"
+            AnnCompiles    {} -> text "<<<AnnCompiles>>>"
+            E_AnnTyApp annot t e ts -> withAnnot annot $ showTyped (pretty e <> text ":" <> pretty ts) t
 {-
             E_ArrayPoke   annot ai e -> withAnnot annot $ pretty e <+> text ">^" <+> pretty ai
             E_MachArrayLit annot args -> withAnnot annot $ text "prim mach-array-literal" <+> hsep (map pretty args)
