@@ -347,7 +347,7 @@ void foster__boundscheck64(int64_t idx, int64_t len, const char* srclines) {
   }
 }
 
-int force_gc_for_debugging_purposes() {
+int32_t force_gc_for_debugging_purposes() {
   gc::force_gc_for_debugging_purposes(); return 0;
 }
 

@@ -229,7 +229,7 @@ primitiveDecls =
                          (ForAllAST (primTyVars [a, b])
                             (mkFnType [TyVarAST b] [TyVarAST a]))
 
-    ,(,) "force_gc_for_debugging_purposes" $ mkFnType [] []
+    ,(,) "force_gc_for_debugging_purposes" $ mkFnType [] [i32]
     ,(,) "llvm_readcyclecounter" $ mkFnType [] [i64]
 
     -- TODO this is not correct for Solaris, AIX, or SGI/Irix,
