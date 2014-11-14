@@ -1,5 +1,5 @@
 module Foster.Infer(
-    tcUnifyTypes
+    tcUnifyTypes, tcUnifyFT, tcUnifyCC
   , parSubstTcTy
   , tySubst
   , extractSubstTypes
@@ -11,11 +11,11 @@ import qualified Data.List as List(length, elem, lookup)
 import Data.Maybe(fromMaybe)
 import Text.PrettyPrint.ANSI.Leijen
 import Data.IORef(readIORef, writeIORef)
+import Data.UnionFind.IO(descriptor, setDescriptor, equivalent, union)
 
 import Foster.Base
 import Foster.TypeTC
 import Foster.Context
-import Foster.PrettyAnnExpr
 
 ----------------------
 
@@ -94,15 +94,46 @@ mbGetRefinement ty = case ty of
     TupleTypeTC      _types     rr -> Just rr
     _ -> Nothing
 
+-------------------------------------------------
+
+tcUnifyThings :: Eq t => Unifiable t -> Unifiable t -> (t -> t -> Tc ()) -> Tc ()
+tcUnifyThings thing1 thing2 errAction = do
+  let uni ft (_,r) = do
+        mbx <- tcLift $ descriptor r
+        case mbx of
+          Nothing -> do tcLift $ setDescriptor r (Just ft)
+          Just ft' -> tcUnifyThings (UniConst ft) (UniConst ft' ) errAction
+  case (thing1, thing2) of
+    (UniConst ft1, UniConst ft2) ->
+      if ft1 == ft2 then return ()
+                    else errAction ft1 ft2
+    (UniConst ft1, UniVar v) -> uni ft1 v
+    (UniVar v, UniConst ft2) -> uni ft2 v
+    (UniVar (_,p), UniVar (_,q)) -> do eq <- tcLift $ equivalent p q
+                                       if not eq then tcLift $ union p q
+                                                 else return ()
+
+-- Only warn, don't throw an error, if we try to unify a proc with a func.
+-- This happens for code like ``listFoldl xs Cons Nil`` where ``listFoldl``
+-- expects functions but ``Cons`` and ``Nil`` are procs.  Later on we'll
+-- detect such mismatches and insert thunks to mediate the disconnect.
+tcUnifyFT uft1 uft2 = tcUnifyThings uft1 uft2
+     (\_ _ -> tcLift $ putDoc $ text "WARNING: unable to unify disparate proc/func annotations" <> line)
+
+-- Likewise, code like ``run-it read_i32`` will cause a CCC/FastCC mismatch,
+-- which will be papered over with a proc wrapper.
+tcUnifyCC ucc1 ucc2 = tcUnifyThings ucc1 ucc2
+     (\_ _ -> tcLift $ putDoc $ text "WARNING: unable to unify disparate calling conventions" <> line)
+
+-------------------------------------------------
+
 tcUnifyTypes :: TypeTC -> TypeTC -> Tc UnifySoln
-tcUnifyTypes t1 t2 = tcUnify [TypeConstrEq t1 t2]
-  where
-    tcUnify :: [TypeConstraint] -> Tc UnifySoln
-    tcUnify constraints = tcUnifyLoop constraints emptyTypeSubst
+tcUnifyTypes t1 t2 = tcUnifyLoop [TypeConstrEq t1 t2] emptyTypeSubst
 
 tcUnifyMoreTypes tys1 tys2 constraints tysub =
  tcUnifyLoop ([TypeConstrEq a b | (a, b) <- zip tys1 tys2] ++ constraints) tysub
 
+-------------------------------------------------
 tcUnifyLoop :: [TypeConstraint] -> TypeSubst -> Tc UnifySoln
 tcUnifyLoop [] tysub = return $ Just tysub
 
@@ -149,12 +180,14 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
     -- Mismatches between unitary tuple types probably indicate
     -- parsing/function argument handling mismatch.
 
-    ((FnTypeTC  as1 a1 _cc1 _), (FnTypeTC  as2 a2 _cc2 _)) -> do
+    ((FnTypeTC  as1 a1 cc1 ft1), (FnTypeTC  as2 a2 cc2 ft2)) -> do
         if List.length as1 /= List.length as2
           then tcFailsMore [string "Unable to unify functions of different arity!\n"
                            <> pretty as1 <> string "\nvs\n" <> pretty as2]
-          else tcUnifyLoop ([TypeConstrEq a b | (a, b) <- zip as1 as2]
-                         ++ (TypeConstrEq a1 a2):constraints) tysub
+          else do tcUnifyCC cc1 cc2
+                  tcUnifyFT ft1 ft2
+                  tcUnifyLoop ([TypeConstrEq a b | (a, b) <- zip as1 as2]
+                            ++ (TypeConstrEq a1 a2):constraints) tysub
 
     ((CoroTypeTC  a1 a2), (CoroTypeTC  b1 b2)) ->
         tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub

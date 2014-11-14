@@ -13,6 +13,7 @@ import Foster.AnnExpr(AnnExpr)
 import Text.PrettyPrint.ANSI.Leijen
 
 import Data.IORef(IORef)
+import Data.UnionFind.IO(Point)
 
 type RhoTC = TypeTC
 type TauTC = TypeTC
@@ -21,6 +22,9 @@ type SigmaTC = TypeTC
 -- "Refinement status"
 data RR = NoRefinement String
         | MbRefinement (Uniq, IORef (Maybe (Ident, AnnExpr TypeTC)))
+
+data Unifiable ty = UniConst ty
+                  | UniVar (Uniq, Point (Maybe ty))
 
 data TypeTC =
            PrimIntTC       IntSizeBits             RR
@@ -32,8 +36,8 @@ data TypeTC =
          | ArrayTypeTC     TypeTC                  RR
          | FnTypeTC        { fnTypeTCDomain :: [TypeTC]
                            , fnTypeTCRange  :: TypeTC
-                           , fnTypeTCCallConv :: CallConv
-                           , fnTypeTCProcOrFunc :: ProcOrFunc }
+                           , fnTypeTCCallConv :: Unifiable CallConv
+                           , fnTypeTCProcOrFunc :: Unifiable ProcOrFunc }
          | ForAllTC        [(TyVar, Kind)] RhoTC
          | TyVarTC           TyVar
          | MetaTyVarTC     (MetaTyVar TypeTC)
@@ -80,13 +84,20 @@ instance Show RR where
   show (NoRefinement str) = "(NoRefinement " ++ str ++ ")"
   show (MbRefinement (u,_)) = "(MbRefinement " ++ show u ++ " ...)"
 
+instance Show ty => Show (Unifiable ty) where
+  show (UniConst v)   = show v
+  show (UniVar (u,_)) = "(UniVar " ++ show u ++ " ...)"
+
+uni_briefCC (UniConst v) = briefCC v
+uni_briefCC v = show v
+
 instance Pretty TypeTC where
     pretty x = case x of
         PrimIntTC          size     _rr -> pretty size <+> text (show _rr)
         PrimFloat64TC                 _ -> text "Float64"
         TyConAppTC   tcnm types       _ -> parens $ text tcnm <> hpre (map pretty types)
         TupleTypeTC       types       _ -> tupled $ map pretty types
-        FnTypeTC     s t  cc cs         -> text "(" <> pretty s <> text " =" <> text (briefCC cc) <> text "> " <> pretty t <> text " @{" <> text (show cs) <> text "})"
+        FnTypeTC     s t  cc cs         -> text "(" <> pretty s <> text " =" <> text (uni_briefCC cc) <> text "> " <> pretty t <> text " @{" <> text (show cs) <> text "})"
         CoroTypeTC   s t                -> text "(Coro " <> pretty s <> text " " <> pretty t <> text ")"
         ForAllTC   tvs rho              -> text "(forall " <> hsep (prettyTVs tvs) <> text ". " <> pretty rho <> text ")"
         TyVarTC    tv                   -> text (show tv)
@@ -102,7 +113,7 @@ instance Show TypeTC where
         PrimIntTC size       _ -> "(PrimIntTC " ++ show size ++ ")"
         PrimFloat64TC        _ -> "(PrimFloat64TC)"
         TupleTypeTC types    _ -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
-        FnTypeTC   s t cc cs   -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
+        FnTypeTC   s t cc cs   -> "(" ++ show s ++ " =" ++ uni_briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
         CoroTypeTC s t         -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
         ForAllTC ktvs rho      -> "(ForAll " ++ show ktvs ++ ". " ++ show rho ++ ")"
         TyVarTC     tv         -> show tv

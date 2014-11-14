@@ -112,7 +112,11 @@ kNormalize ctorRepr expr =
       AIAllocArray t a      -> do nestedLets [go a] (\[x] -> KNAllocArray (ArrayTypeIL t) x)
       AIAlloc a rgn         -> do nestedLets [go a] (\[x] -> KNAlloc (PtrTypeIL $ tidType x) x rgn)
       AIDeref   a           -> do nestedLets [go a] (\[x] -> KNDeref (pointedToTypeOfVar x) x)
-      E_AITyApp t a argtys  -> do nestedLets [go a] (\[x] -> KNTyApp t x argtys)
+      E_AITyApp t a argtys  -> do nestedLetsDo [go a] (\[x] -> do
+                                   -- If there is a proc/func mismatch represented
+                                   -- by this tyapp, insert a thunk wrapper.
+                                   nestedLets [varOrThunk (x, t)] $
+                                                         \[x'] -> KNTyApp t x' argtys)
 
       AIStore      a b  -> do nestedLetsDo [go a, go b] (\[x,y] -> knStore x y)
       AIArrayRead  t (ArrayIndex a b rng s) ->

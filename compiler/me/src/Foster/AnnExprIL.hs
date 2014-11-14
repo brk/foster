@@ -18,6 +18,7 @@ import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T
 
 import Data.IORef(readIORef)
+import Data.UnionFind.IO(descriptor)
 import Control.Monad(when)
 
 import Debug.Trace(trace)
@@ -248,6 +249,16 @@ ail ctx ae =
 
                 return $ E_AITyApp ti ae argtys
 
+unUnified :: Unifiable v -> v -> Tc v
+unUnified uni defaultValue =
+  case uni of
+    UniConst x -> return x
+    UniVar (_u,v) -> do
+        mbx <- tcLift $ descriptor v
+        case mbx of
+          Just x -> return x
+          Nothing -> return defaultValue
+
 sanityCheckIntLiteralNotOversized rng isb int =
     sanityCheck (intSizeOf isb >= litIntMinBits int) $
        "Int constraint violated; context-imposed exact size (in bits) was " ++ show (intSizeOf isb)
@@ -356,7 +367,13 @@ ilOf ctx typ = do
      TupleTypeTC  types rr -> withRefinement ctx rr $ do tys <- mapM q types
                                                          return $ TupleTypeIL tys
      FnTypeTC  ss t cc cs -> do (y:xs) <- mapM q (t:ss)
-                                return $ FnTypeIL xs y cc cs
+                                -- Un-unified placeholders occur for loops,
+                                -- where there are no external constraints on
+                                -- the loop's calling convention or representation.
+                                -- So, give reasonable default values here.
+                                cc' <- unUnified cc FastCC
+                                cs' <- unUnified cs FT_Func
+                                return $ FnTypeIL xs y cc' cs'
      RefinedTypeTC v e __args -> do v' <- aiVar ctx v
                                     e' <- ail ctx e
                                     return $ RefinedTypeIL v' e' __args
