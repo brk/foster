@@ -554,7 +554,7 @@ instance Pretty t => Pretty (Letable t) where
       ILArrayRead  _t (ArrayIndex v1 v2 _rng _s)  -> text "ILArrayRead" <+> prettyId v1 <> text "[" <> prettyId v2 <> text "]"
       ILArrayPoke  (ArrayIndex _v1 _v2 _rng _s) _v3 -> text $ "ILArrayPoke..."
       ILArrayLit _ _v _vals -> text $ "ILArrayLit..."
-      ILBitcast   _ v       -> text "bitcast " <+> pretty v <+> text "to" <+> text "..."
+      ILBitcast   t v       -> text "bitcast " <+> pretty v <+> text "to" <+> pretty t
       ILAllocate _info      -> text "allocate ..." -- <+> pretty (allocType info)
       ILObjectCopy from to  -> text "copy object" <+> pretty from <+> text "to" <+> pretty to
 
