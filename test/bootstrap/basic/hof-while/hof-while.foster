@@ -1,4 +1,15 @@
 
+hof-while :: { { Bool } => { () } => () };
+hof-while = { t => b =>
+  if t ! then b ! ; hof-while t b
+          else () end
+};
+
+main = { 0 };
+
+/*
+
+
 main = {
   noinline_llvm_variant-one !;
   noinline_llvm_variant-two !;
@@ -54,3 +65,4 @@ noinline_llvm_variant-two = {
 //   if t ! then b !; hof-while-unit t b
 //           else () end
 // };
+*/

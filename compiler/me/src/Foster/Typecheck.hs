@@ -1080,18 +1080,9 @@ tcRhoFnHelper ctx f expTy = do
                        -- TODO is there an arg translation?
                        tcLift $ putStrLn $ "checking body of " ++ show (fnAstName f) ++ " against type " ++ show body_ty
                        annbody <- checkRho extCtx (fnAstBody f) body_ty
-                       {-
-                       precond <- case (fnAstPrecond f, precond0) of
-                                    (NoPrecondition {}, p) -> return p
-                                    (HavePrecondition e, NoPrecondition {}) -> do tcFails [text "function literal had precondition but its context expected a fn type with no precondition"]
-                                    (HavePrecondition {}, HavePrecondition {}) -> tcFails [text "function literal had precondition in both expr and type"]
-                       return (annbody, precond)
-                       -}
 
-                       --return (E_AnnTyApp (annExprAnnot annbody) (typeTC annbody) annbody [])
-                       --return (E_AnnTyApp (annExprAnnot annbody) body_ty annbody [])
-
-                       return annbody
+                       return $ pushedTypeCoercion body_ty annbody
+                       --return annbody
 
     let fnty = fnTypeTemplate f argtys (typeTC annbody) (UniConst FastCC)
                 where argtys = map tidType uniquelyNamedFormals
@@ -1103,6 +1094,23 @@ tcRhoFnHelper ctx f expTy = do
     let fn = E_AnnFn $ Fn (TypedId fnty (GlobalSymbol $ fnAstName f))
                           uniquelyNamedFormals annbody () annot
     matchExp expTy fn "tcRhoFn"
+-- }}}
+
+-- {{{
+pushedTypeCoercion overallType expr =
+  let
+      fmapCaseArm fn arm = arm { caseArmBody = fn (caseArmBody arm) }
+      go expr =
+          case expr of -- TODO the AnnCall case should wrap b, casting to a modified function type
+              AnnCall _r _t b exprs                -> AnnCall _r overallType b exprs
+              AnnCase _rng _t e bs                 -> AnnCase _rng overallType e (map (fmapCaseArm go) bs)
+              AnnIf        _rng _ a b c            -> AnnIf _rng overallType a (go b) (go c)
+              AnnLetVar    _rng id  b c            -> AnnLetVar  _rng id b (go c)
+              AnnLetRec    _rng ids exprs e        -> AnnLetRec  _rng ids exprs (go e)
+              AnnLetFuns   _rng ids fns   e        -> AnnLetFuns _rng ids fns   (go e)
+              _ -> E_AnnTyApp (annExprAnnot expr) overallType expr []
+  in -- TODO no need to insert a wrapper if the types are the same...
+     go expr
 -- }}}
 
 -- {{{ Helpers for type-checking function literals.
