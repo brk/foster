@@ -391,15 +391,19 @@ tcRhoBool rng b expTy = do
 -- {{{
     let ty rr = PrimIntTC I1 rr
     let ab rr = AnnLiteral rng (ty rr) (LitBool b)
-    case expTy of
-         Infer  r              -> update r (liftM ab genRefinementVar)
-         Check  (PrimIntTC I1 rr) -> return $ ab rr
-         Check  m@MetaTyVarTC {}  -> do rr <- genRefinementVar
-                                        unify m (ty rr) "bool literal"
-                                        return $ ab rr
-         Check  t -> tcFails [text $ "Unable to check Bool constant in context"
+    let check t =
+          case t of
+            PrimIntTC I1 rr -> return $ ab rr
+            m@MetaTyVarTC {} -> do rr <- genRefinementVar
+                                   unify m (ty rr) "bool literal"
+                                   return $ ab rr
+            RefinedTypeTC v _ _ -> check (tidType v)
+            _ -> tcFails [text $ "Unable to check Bool constant in context"
                                 ++ " expecting non-Bool type " ++ show t
                                 ++ showSourceRange (rangeOf rng)]
+    case expTy of
+         Infer r -> update r (liftM ab genRefinementVar)
+         Check t -> check t
 -- }}}
 
 --  ------------------
@@ -408,15 +412,19 @@ tcRhoText rng b expTy = do
 -- {{{
     let ty rr = TyConAppTC "Text" [] rr
     let ab rr = AnnLiteral rng (ty rr) (LitText b)
+    let check t =
+          case t of
+             (TyConAppTC "Text" [] rr) -> return $ ab rr
+             m@MetaTyVarTC {} -> do rr <- genRefinementVar
+                                    unify m (ty rr) "text literal"
+                                    return $ ab rr
+             RefinedTypeTC v _ _ -> check (tidType v)
+             t -> tcFails [text $ "Unable to check Text constant in context"
+                                    ++ " expecting non-Text type " ++ show t
+                                    ++ showSourceRange (rangeOf rng)]
     case expTy of
-         Infer r                          -> update r (liftM ab genRefinementVar)
-         Check  (TyConAppTC "Text" [] rr) -> return $ ab rr
-         Check  m@MetaTyVarTC {} -> do rr <- genRefinementVar
-                                       unify m (ty rr) "text literal"
-                                       return $ ab rr
-         Check  t -> tcFails [text $ "Unable to check Text constant in context"
-                                ++ " expecting non-Text type " ++ show t
-                                ++ showSourceRange (rangeOf rng)]
+         Infer r -> update r (liftM ab genRefinementVar)
+         Check t -> check t
 -- }}}
 
 
