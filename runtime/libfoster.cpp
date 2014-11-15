@@ -254,10 +254,6 @@ namespace runtime {
 void initialize(int argc, char** argv, void* stack_base) {
   parse_runtime_options(argc, argv);
 
-  cpuid_introspect(__foster_globals.x86_cpuid_info);
-  //int cachesmall = cpuid_small_cache_size(__foster_globals.x86_cpuid_info);
-  //int cachelarge = cpuid_large_cache_size(__foster_globals.x86_cpuid_info);
-
   // TODO Initialize one default coro context per thread.
   __foster_vCPUs.push_back(new FosterVirtualCPU());
   __foster_vCPUs[0]->install_signal_stack();

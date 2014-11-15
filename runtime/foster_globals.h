@@ -14,8 +14,6 @@
 typedef void* id;
 #endif
 
-#include "cpuid.h"
-
 #include <vector>
 #include <string>
 
@@ -28,8 +26,6 @@ struct FosterGlobals {
   // One timer thread for the whole runtime, not per-vCPU.
   base::SimpleThread*    scheduling_timer_thread;
   id                     scheduling_timer_thread_autorelease_pool;
-
-  cpuid_info             x86_cpuid_info;
 };
 
 extern FosterGlobals __foster_globals;

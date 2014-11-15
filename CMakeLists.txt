@@ -373,7 +373,6 @@ endif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
 
 #####################################################################
 include(${PROJECT_SOURCE_DIR}/third_party/chromium_base/CMakeLists.txt)
-include(${PROJECT_SOURCE_DIR}/third_party/cpuid/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/gtest/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/libcoro/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/fftw_cycle/CMakeLists.txt)
@@ -463,8 +462,6 @@ target_link_libraries(fosterlower
   fosterc_llvm fosterc_fosteril_pb
   antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
 
-message(${LLVM_LDFLAGS})
-
 add_dependencies(fosterlower
     foster_runtime_bc coro_wrapper_bc hs_me cycle)
 
@@ -480,7 +477,6 @@ add_dependencies(fosteroptc
 ############
 
 add_dependencies(foster_runtime_bc chromium_base)
-add_dependencies(foster_runtime_bc cpuid)
 add_dependencies(foster_runtime_bc coro)
 
 
