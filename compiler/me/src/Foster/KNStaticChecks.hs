@@ -489,6 +489,8 @@ checkBody expr facts =
     KNCallPrim _ (NamedPrim tid) vs | primName tid `elem` ["assert-invariants"] -> do
         let precond = smtAll (map smtVar vs)
         let thm = scriptImplyingBy' precond facts
+        liftIO $ putStrLn "assert-invariants checking the following script:"
+        liftIO $ putStrLn $ show (SMT.pp thm)
         scRunZ3 expr (SMT.pp thm)
         return $ Nothing
 

@@ -104,7 +104,7 @@ instance Pretty TypeTC where
         MetaTyVarTC m                   -> text "(~(" <> pretty (descMTVQ (mtvConstraint m)) <> text ")!" <> text (show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")")
         RefTypeTC     ty                -> text "(Ref " <> pretty ty <> text ")"
         ArrayTypeTC   ty              _ -> text "(Array " <> pretty ty <> text ")"
-        RefinedTypeTC v _ args          -> text "(Refined " <> pretty (tidType v) <> text " / " <> pretty args <> text ")"
+        RefinedTypeTC v _ args          -> text "(Refined " <> parens (pretty v <+> text "::" <> pretty (tidType v)) <> text " / " <> pretty args <> text ")"
 
 instance Show TypeTC where
     show x = case x of

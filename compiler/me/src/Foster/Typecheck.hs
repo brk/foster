@@ -938,10 +938,22 @@ tcSigmaFn ctx fnAST expTyRaw = do
         annbody <- case mb_rho of
           Just exp_rho' -> do
                 let var_tys = map tidType uniquelyNamedFormals
-                debugDoc $ string "var_tys: " <+> pretty var_tys
                 var_tys' <- mapM shZonkType var_tys
                 debugDoc $ string "var_tys': " <+> pretty var_tys'
                 (arg_tys, body_ty, _cc, _ft) <- unifyFun exp_rho' var_tys ("poly-fn-lit" ++ highlightFirstLine rng)
+
+                case (any tcContainsRefinements arg_tys,
+                      any tcContainsRefinements var_tys ) of
+                   (True, True) ->
+                     tcFails [text $ "Cannot yet check a function which has refinements"
+                             ++ " on both its explicit argument bindings and its type signature."]
+                   (ar, vr) -> do
+                     tcLift $ putDocLn $ string "!!!!!!!!!!!!!!!!!!!!!!!! (sigma)"
+                     tcLift $ putDocLn $ text (show $ fnAstName fnAST)
+                     tcLift $ putDocLn $ text "args/vars refined: " <> pretty (ar,vr)
+                     tcLift $ putDocLn $ string "var_tys: " <+> pretty var_tys
+                     tcLift $ putDocLn $ string "arg_tys: " <+> pretty arg_tys
+
                 debugDoc $ string "arg_tys: " <+> pretty arg_tys
                 debugDoc $ string "zipped : " <+> pretty (zip arg_tys var_tys)
                 let unMeta (MetaTyVarTC m) = m
@@ -1075,6 +1087,23 @@ tcRhoFnHelper ctx f expTy = do
                        -- FOOBAR fnty might be a sigma; if so, what?
                        (arg_tys, body_ty, _cc, _ft) <- unifyFun fnty var_tys ("@" ++ highlightFirstLine rng)
                        tcLift $ putStrLn $ "checking subsumption betweeen " ++ show (zip arg_tys var_tys)
+
+                       case (filter tcContainsRefinements arg_tys,
+                             filter tcContainsRefinements var_tys ) of
+                           (ars@(_:_), vrs@(_:_)) ->
+                             tcFails [text $ "Cannot yet check a function (" ++ T.unpack (fnAstName f) ++ ") which has refinements"
+                                               ++ " on both its explicit argument bindings and its type signature."
+                                     , indent 2 (text "Refined signature types:" <+> indent 2 (pretty ars))
+                                     , indent 2 (text "Refined variable types:" <+> indent 2 (pretty vrs))
+                                     , string $ highlightFirstLine rng]
+                           (ar, vr) -> do
+                             tcLift $ putDocLn $ string "!!!!!!!!!!!!!!!!!!!!!!!! (rho)"
+                             tcLift $ putDocLn $ text (show $ fnAstName f)
+                             tcLift $ putDocLn $ text "args/vars refined: " <> pretty (ar,vr)
+                             tcLift $ putDocLn $ string "var_tys: " <+> pretty var_tys
+                             tcLift $ putDocLn $ string "arg_tys: " <+> pretty arg_tys
+
+
                        _ <- sequence [subsCheckTy argty varty "mono-fn-arg" |
                                        (argty, varty) <- zip arg_tys var_tys]
                        -- TODO is there an arg translation?
@@ -1744,6 +1773,23 @@ tcTypeWellFormed msg ctx typ = do
                    Nothing -> tcFails [text $ "Unbound type variable "
                                            ++ show tv ++ " " ++ msg]
                    Just  _ -> return ()
+
+tcContainsRefinements :: TypeTC -> Bool
+tcContainsRefinements typ =
+  case typ of
+        RefinedTypeTC {} -> True
+        PrimIntTC      {}      -> False
+        PrimFloat64TC  {}      -> False
+        MetaTyVarTC    {}      -> False
+        TyConAppTC _nm tys _rr -> any tcContainsRefinements tys
+        TupleTypeTC    tys _rr -> any tcContainsRefinements tys
+        FnTypeTC   ss r   _ _  -> any tcContainsRefinements (r:ss)
+        CoroTypeTC  s r        -> any tcContainsRefinements [s,r]
+        RefTypeTC     ty       -> tcContainsRefinements ty
+        ArrayTypeTC   ty  _rr  -> tcContainsRefinements ty
+        ForAllTC  _tvs rho     -> tcContainsRefinements rho
+        TyVarTC  (SkolemTyVar {})   -> False
+        TyVarTC  _tv@(BoundTyVar _) -> False -- or do we need to look at the context?
 
 tcContext :: Context TypeTC -> Context TypeAST -> Tc (Context SigmaTC)
 tcContext emptyCtx ctxAST = do
