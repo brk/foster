@@ -37,6 +37,9 @@ import SMTLib2.BitVector
 
 import Foster.RunZ3 (runZ3)
 
+newtype CommentedScript = CommentedScript [CommentOrCommand]
+data CommentOrCommand = Cmnt String | Cmds [Command]
+
 data SymDecl = SymDecl SMT.Name [SMT.Type] SMT.Type
 
 instance Ord SymDecl where compare (SymDecl n1 _ _) (SymDecl n2 _ _) = compare n1 n2
@@ -141,27 +144,32 @@ smtTruncToSize i v = extract (fromIntegral i - 1) 0 v
 litOfSize num I1 = if num == 0 then SMT.false else SMT.true
 litOfSize num sz = bv num (fromIntegral $ intSizeOf sz)
 
-scriptImplyingBy' :: SMT.Expr -> Facts -> Script
+scriptImplyingBy' :: SMT.Expr -> Facts -> CommentedScript
 scriptImplyingBy' pred facts = scriptImplyingBy (bareSMTExpr pred) facts
 
-scriptImplyingBy :: SMTExpr -> Facts -> Script
+scriptImplyingBy :: SMTExpr -> Facts -> CommentedScript
 scriptImplyingBy (SMTExpr pred declset idfacts) facts =
-  let preconds = map snd $ idfacts ++ (identFacts facts) in
   let alldecls = Set.toList $ Set.union declset (symbolicDecls facts) in
   let tydecls  = [CmdDeclareType nm arity | (nm, arity) <-
                     uniquesWithoutPrims
                      [(smtNameI id, fromIntegral $ length tys)
                      | SymDecl _ [] (TApp id tys) <- alldecls]] in
-  Script $ [CmdSetOption (OptProduceModels True)
+  CommentedScript $ [Cmds $
+           [CmdSetOption (OptProduceModels True)
            ,CmdSetLogic (SMT.N "QF_AUFBV")
            ,CmdDeclareType (SMT.N "FosterArray") 0
            ,CmdDeclareFun (SMT.N "foster$arraySizeOf") [smtArray] (tBitVec 64)
            ]
         ++ tydecls
         ++ map (\(SymDecl nm tys ty) -> CmdDeclareFun nm tys ty) alldecls
-        ++ map CmdAssert (pathFacts facts ++ preconds)
-        ++ [CmdPush 1]
-        ++ [CmdAssert $ SMT.not pred]
+      ] ++ [Cmnt "path facts"]
+        ++ [Cmds $ map CmdAssert (pathFacts facts)]
+        ++ [Cmnt "facts preconds"]
+        ++ [Cmds $ map CmdAssert (map snd $ identFacts facts)]
+        ++ [Cmnt "expr preconds"]
+        ++ [Cmds $ map CmdAssert (map snd $ idfacts)]
+        ++ [Cmds $ [CmdPush 1]
+                ++ [CmdAssert $ SMT.not pred]]
 
 -- As we traverse the input expression, we build up a collection of path facts
 -- and id-associated facts (which are, morally, path facts), which we can
@@ -213,9 +221,18 @@ scGetFact id = do
   sc <- get
   return $ Map.lookup id (scExtraFacts sc)
 
+instance Pretty CommentOrCommand where
+  pretty (Cmds cmds) = string (show $ SMT.pp $ Script cmds)
+  pretty (Cmnt str) = text ";" <+> string str
+
+prettyCommentedScript :: CommentedScript -> Doc
+prettyCommentedScript (CommentedScript items) =
+  vsep $ map pretty items
+
 -- Errors will be propagated, while unsat (success) results are trivial...
-scRunZ3 :: KNMono -> HughesPJ.Doc -> SC ()
-scRunZ3 expr doc = lift $ do
+scRunZ3 :: KNMono -> CommentedScript -> SC ()
+scRunZ3 expr script = lift $ do
+  let doc = prettyCommentedScript script
   res <- liftIO $ runZ3 (show doc) (Just "(pop 1)\n(check-sat)")
   case res of
     Left x -> throwError [text x, pretty expr, string (show doc)]
@@ -443,8 +460,7 @@ checkBody expr facts =
     KNArrayRead ty (ArrayIndex a i _ SG_Static) -> do
         --let precond = (sign_extend 32 (smtVar i)) `inRangeCO` (litOfSize 0 I64, smtArraySizeOf (smtVar a))
         let precond = bvult (zero_extend 32 (smtVar i)) (smtArraySizeOf (smtVar a))
-        let thm = scriptImplyingBy' precond facts
-        scRunZ3 expr (SMT.pp thm)
+        scRunZ3 expr $ scriptImplyingBy' precond facts
         -- If the array has an annotation, use it.
         mb_f <- scGetFact (tidIdent a)
         case mb_f of
@@ -490,8 +506,8 @@ checkBody expr facts =
         let precond = smtAll (map smtVar vs)
         let thm = scriptImplyingBy' precond facts
         liftIO $ putStrLn "assert-invariants checking the following script:"
-        liftIO $ putStrLn $ show (SMT.pp thm)
-        scRunZ3 expr (SMT.pp thm)
+        liftIO $ putStrLn $ show (prettyCommentedScript thm)
+        scRunZ3 expr thm
         return $ Nothing
 
     KNCallPrim _ (NamedPrim tid) [v] | primName tid `elem` ["prim_arrayLength"] -> do
@@ -523,8 +539,7 @@ checkBody expr facts =
 
     KNCallPrim (PrimInt _) (PrimOp "sdiv-unsafe" (PrimInt sz)) vs -> do
         let precond [s1, s2] = s2 =/= (litOfSize 0 sz)
-        let thm = scriptImplyingBy' (precond (smtVars vs)) facts
-        scRunZ3 expr (SMT.pp thm)
+        scRunZ3 expr $ scriptImplyingBy' (precond (smtVars vs)) facts
         return $ withDecls facts $ \x -> return $ smtId x === lift2 bvsdiv (smtVars vs)
 
     KNCallPrim _ty prim vs -> do
@@ -588,8 +603,8 @@ checkBody expr facts =
                 --let thm = scriptImplyingBy expr (mergeFactsForCompilation facts efacts)
                 let thm = scriptImplyingBy (SMTExpr e decls idfacts)  facts
                 liftIO $ putStrLn $ "fn precond checking this script:"
-                liftIO $ putStrLn $ show (SMT.pp thm)
-                scRunZ3 expr (SMT.pp thm)
+                liftIO $ putStrLn $ show (prettyCommentedScript thm)
+                scRunZ3 expr thm
             mapM_ checkPrecond fps
             return Nothing
 
@@ -716,8 +731,7 @@ validateRefinement facts facts' id v expr = do
   -- Note this starts from facts', not facts.
   -- The latter *is* affected by ``blah``.
   let facts''  = foldl' addSymbolicVar facts'  [v, TypedId (PrimInt I1) resid]
-  let thm = scriptImplyingBy smtexpr facts''
-  scRunZ3 expr (SMT.pp thm)
+  scRunZ3 expr $ scriptImplyingBy smtexpr facts''
 
 recordIfHasFnPrecondition facts id ty =
   case ty of
