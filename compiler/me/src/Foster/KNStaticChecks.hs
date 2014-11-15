@@ -136,6 +136,9 @@ smtArray = TApp (smtI "FosterArray") []
 
 smtTruncToSize i v = extract (fromIntegral i - 1) 0 v
 
+-- Oddly, Z3 equates type Bool with type (_ BitVec 1),
+-- but doesn't equate the literals for the two types!
+litOfSize num I1 = if num == 0 then SMT.false else SMT.true
 litOfSize num sz = bv num (fromIntegral $ intSizeOf sz)
 
 scriptImplyingBy' :: SMT.Expr -> Facts -> Script
