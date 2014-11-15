@@ -4,6 +4,9 @@
 
 #include "foster_gc.h"
 
+#include <inttypes.h>
+#include <cstring> // for size_t
+
 namespace foster {
 namespace runtime {
 namespace gc {

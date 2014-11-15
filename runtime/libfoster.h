@@ -7,8 +7,6 @@
 
 #include <stdint.h>
 
-#include "build/build_config.h" // from Chromium, for OS_* defintions.
-
 // This file exists to provide symbols to link
 // libfoster_main.cpp::main() to libfoster
 

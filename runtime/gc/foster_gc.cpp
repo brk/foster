@@ -2,27 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-#include <cstdlib>
-#include <cstdio>
-#include <cstring>
-#include <cstddef> // for offsetof
-
 #include "libfoster.h"
 #include "foster_gc.h"
 #include "libfoster_gc_roots.h"
 #include "foster_globals.h"
 #include "stat_tracker.h"
 
-#include "base/time.h"
-#include "base/threading/platform_thread.h"
+#include "base/time.h" // for TimeTicks, TimeDelta
 #include "base/metrics/histogram.h"
 #include "base/metrics/statistics_recorder.h"
+#ifdef FOSTER_MULTITHREADED
+#include "base/threading/platform_thread.h"
+#endif
 
-// for getrlimit
-#include <sys/time.h>
-#include <sys/resource.h>
-
-#include "execinfo.h"
+#include <sys/resource.h> // for getrlimit, RLIMIT_STACK
+#include "execinfo.h" // for backtrace
 
 #define TRACE do { fprintf(gclog, "%s::%d\n", __FILE__, __LINE__); fflush(gclog); } while (0)
 

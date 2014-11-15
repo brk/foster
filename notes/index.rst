@@ -12,6 +12,7 @@ Foster Notes
    test
    features
    compiler
+   runtime
    closures
    syntax
    arrays
