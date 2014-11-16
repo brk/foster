@@ -109,7 +109,7 @@ data TCWanted = TCSigma | TCRho deriving Show
 -----------------------------------------------------------------------
 
 tcSigmaToplevel :: ContextBinding TypeTC -> Context TypeTC -> Term -> Tc (AnnExpr SigmaTC)
-tcSigmaToplevel (TermVarBinding txt (tid, _)) ctx ast = do
+tcSigmaToplevel (TermVarBinding _txt (tid, _)) ctx ast = do
 -- {{{
     -- Make sure the (potentially user-supplied) type annotation is well-formed.
     {- TODO
@@ -236,9 +236,9 @@ minimalTupleTC []    = TupleTypeTC []   (NoRefinement "minimalTupleTC")
 minimalTupleTC [arg] = arg
 minimalTupleTC args  = TupleTypeTC args (NoRefinement "minimalTupleTC")
 
-mkProcTypeTC args rets = FnTypeTC args (minimalTupleTC rets) (UniConst CCC)    (UniConst FT_Proc)
+--mkProcTypeTC args rets = FnTypeTC args (minimalTupleTC rets) (UniConst CCC)    (UniConst FT_Proc)
 mkFnTypeTC   args rets = FnTypeTC args (minimalTupleTC rets) (UniConst FastCC) (UniConst FT_Func)
-mkCoroTypeTC args rets = CoroTypeTC (minimalTupleTC args) (minimalTupleTC rets)
+--mkCoroTypeTC args rets = CoroTypeTC (minimalTupleTC args) (minimalTupleTC rets)
 
 tcRho :: Context SigmaTC -> Term -> Expected RhoTC -> Tc (AnnExpr RhoTC)
 -- Invariant: if the second argument is (Check rho),
@@ -450,8 +450,8 @@ tcRhoArrayLit ctx rng args expTy = do
     let ab = AnnArrayLit rng ty args'
     case expTy of
          Infer r                     -> update r (return ab)
-         Check  (ArrayTypeTC rho' rr') -> do unify tau rho' "mach-array literal"
-                                             return ab
+         Check  (ArrayTypeTC rho _rr) -> do unify tau rho "mach-array literal"
+                                            return ab
          Check  m@MetaTyVarTC {} -> do unify m ty "mach-array literal"
                                        return ab
          Check  t -> tcFails [text $ "Unable to check array constant in context"
@@ -934,10 +934,9 @@ tcSigmaFn ctx fnAST expTyRaw = do
         debugDoc $ text "tcSigmaFn: mb_rho is " <> pretty mb_rho
 
         -- While we're munging, we'll also make sure the names are all distinct.
-        uniquelyNamedFormals0 <- getUniquelyNamedFormals ctx rng (fnFormals fnAST) (fnAstName fnAST)
-        uniquelyNamedFormals <- mapM
-                          (retypeTID (resolveType annot $ localTypeBindings extTyCtx))
-                          uniquelyNamedFormals0
+        uniquelyNamedFormals <- getUniquelyNamedAndRetypedFormals' ctx annot
+                                       (fnFormals fnAST) (fnAstName fnAST)
+                                       (localTypeBindings extTyCtx)
 
         -- Extend the variable environment with the function arg's types.
         let extCtx = extendContext extTyCtx uniquelyNamedFormals
@@ -1072,10 +1071,10 @@ tcRhoFnHelper ctx f expTy = do
     tcLift $ putStrLn $ "beginning RV section in tcRhoFnHelper..."
     refinementVars <- concatMapM (mbFreshRefinementVar ctx) (map tidType $ fnFormals f)
     let ctx' = extendContext ctx refinementVars
-    uniquelyNamedFormals0 <- getUniquelyNamedFormals ctx' rng (fnFormals f) (fnAstName f)
-    uniquelyNamedFormals <- mapM
-                      (retypeTID (resolveType annot $ localTypeBindings ctx))
-                      uniquelyNamedFormals0
+
+    uniquelyNamedFormals <- getUniquelyNamedAndRetypedFormals' ctx' annot
+                               (fnFormals f) (fnAstName f)
+                               (localTypeBindings ctx)
 
     tcLift $ putStrLn $ "ending RV section in tcRhoFnHelper, starting body..."
     tcLift $ putStrLn $ "mode is " ++ (case expTy of Infer _ -> "infer"
@@ -1094,7 +1093,7 @@ tcRhoFnHelper ctx f expTy = do
       Check fnty -> do let var_tys = map tidType uniquelyNamedFormals
                        -- FOOBAR fnty might be a sigma; if so, what?
                        (arg_tys, body_ty, _cc, _ft) <- unifyFun fnty var_tys ("@" ++ highlightFirstLine rng)
-                       tcLift $ putStrLn $ "checking subsumption betweeen " ++ show (zip arg_tys var_tys)
+                       tcLift $ putDocLn $ text "checking subsumption betweeen " <$> indent 4 (pretty (zip arg_tys var_tys))
 
                        case (filter tcContainsRefinements arg_tys,
                              filter tcContainsRefinements var_tys ) of
@@ -1161,13 +1160,12 @@ fnTypeTemplate f argtypes retty cc =
   let procOrFunc = if fnWasToplevel f then FT_Proc else FT_Func in
   FnTypeTC argtypes retty cc (UniConst procOrFunc)
 
--- | Verify that the given formals have distinct names,
--- | and return unique'd versions of each.
-getUniquelyNamedFormals :: Context TypeTC -> SourceRange -> [TypedId TypeAST] -> T.Text -> Tc [TypedId TypeTC]
-getUniquelyNamedFormals ctx rng rawFormals fnProtoName = do
-    verifyNonOverlappingBindings rng (T.unpack fnProtoName)
-     [TermVarBinding (identPrefix $ tidIdent v) undefined | v <- rawFormals]
-    mapM (\x -> uniquelyName x >>= tcTid ctx) rawFormals
+-- Verify that the given formals have distinct names.
+getUniquelyNamedFormals :: SourceRange -> [TypedId ty] -> T.Text -> Tc [TypedId ty]
+getUniquelyNamedFormals rng rawFormals fnProtoName = do
+    verifyNamesAreDistinct rng (T.unpack fnProtoName)
+                               (map (identPrefix . tidIdent) rawFormals)
+    mapM uniquelyName rawFormals
   where
     uniquelyName :: TypedId t -> Tc (TypedId t)
     uniquelyName (TypedId ty id) = do
@@ -1180,8 +1178,13 @@ getUniquelyNamedFormals ctx rng rawFormals fnProtoName = do
         rename (GlobalSymbol name) _u =
                 tcFails [text $ "Cannot rename global symbol " ++ show name]
 
-tcTid :: Context TypeTC -> TypedId TypeAST -> Tc (TypedId TypeTC)
-tcTid ctx v = fmapM_TID (tcType ctx) v
+-- | Verify that the given formals have distinct names,
+-- | and return unique'd versions of each.
+getUniquelyNamedAndRetypedFormals' ctx annot rawFormals fnProtoName  tybinds = do
+    ufs'0 <- getUniquelyNamedFormals (rangeOf annot) rawFormals fnProtoName
+    mapM retypeAndResolve ufs'0
+   where retypeAndResolve v = do
+            fmapM_TID (tcType ctx) v >>= retypeTID (resolveType annot tybinds)
 
 tcType :: Context TypeTC -> TypeAST -> Tc TypeTC
 tcType ctx typ = tcType' ctx [] typ
@@ -1214,10 +1217,10 @@ tcType' ctx refinementArgs typ = do
           -- These args will have bogus uniq values; the code below
           -- generates the real uniqs, which we will substitute in...
 
-          uniquelyNamedFormals0 <- getUniquelyNamedFormals ctx rng formals (T.pack $ "refinement for fn type...")
-          uniquelyNamedFormals <- mapM
-                      (retypeTID (resolveType annot $ localTypeBindings ctx))
-                      uniquelyNamedFormals0
+          uniquelyNamedFormals <- getUniquelyNamedAndRetypedFormals' ctx annot
+                                   formals (T.pack $ "refinement for fn type...")
+                                   (localTypeBindings ctx)
+
           let extCtx = extendContext ctx uniquelyNamedFormals
           let refinementArgs' = fakeRefinementArgs `replacingUniquesWith` (map tidIdent uniquelyNamedFormals)
 
@@ -1226,8 +1229,9 @@ tcType' ctx refinementArgs typ = do
           -- be in-scope for its refinement.
           extCtx' <- case r of
                        RefinedTypeAST nm r' _ -> do
-                            unf0 <- getUniquelyNamedFormals extCtx rng [TypedId r' (Ident (T.pack nm) 0)] (T.pack "refinement for fn return type...")
-                            unf  <- mapM (retypeTID (resolveType annot $ localTypeBindings ctx)) unf0
+                            unf <- getUniquelyNamedAndRetypedFormals' ctx annot
+                                       [TypedId r' (Ident (T.pack nm) 0)] (T.pack "refinement for fn return type...")
+                                       (localTypeBindings ctx)
                             return $ extendContext extCtx unf
                        _ -> return extCtx
           r'  <- tcType' extCtx' refinementArgs' r
@@ -1243,7 +1247,7 @@ tcType' ctx refinementArgs typ = do
                           let rng    = MissingSourceRange $ "refinement " ++ nm
                           let annot  = ExprAnnot [] rng []
                           let formal = TypedId ty (Ident (T.pack nm) 0)
-                          uniquelyNamedFormals0 <- getUniquelyNamedFormals ctx rng [formal] (T.pack $ "refinement " ++ nm)
+                          uniquelyNamedFormals0 <- getUniquelyNamedAndRetypedFormals ctx rng [formal] (T.pack $ "refinement " ++ nm)
                           [uniquelyNamedFormal] <- mapM
                                       (retypeTID (resolveType annot $ localTypeBindings ctx))
                                       uniquelyNamedFormals0
@@ -1353,20 +1357,18 @@ tcRhoCase ctx rng scrutinee branches expTy = do
         return $ P_Ctor r ty ps info
 
       EP_Tuple     r eps  -> do
-        tupty <-
+        (ts, rr) <-
           case ctxTy of
-            TupleTypeTC {} -> return ctxTy
+            TupleTypeTC ts rr -> return (ts, rr)
             _ -> do ts <- sequence [newTcUnificationVarTau "tup" | _ <- eps]
                     rr <- genRefinementVar
-                    let ty = TupleTypeTC ts rr
-                    unify ctxTy ty "tuple-pattern"
-                    return ty
-        let ts = case tupty of TupleTypeTC ts _ -> ts
+                    unify ctxTy (TupleTypeTC ts rr) "tuple-pattern"
+                    return (ts, rr)
         sanityCheck (eqLen eps ts) $
                 "Cannot match pattern against tuple type of "
              ++ "different length." ++ showSourceRange r
         ps <- sequence [checkPattern ctx p t | (p, t) <- zip eps ts]
-        return $ P_Tuple r tupty ps
+        return $ P_Tuple r (TupleTypeTC ts rr) ps
     -----------------------------------------------------------------------
     getCtorInfoForCtor :: Context SigmaTC -> T.Text -> Tc (CtorInfo SigmaTC)
     getCtorInfoForCtor ctx ctorName = do
@@ -1833,12 +1835,14 @@ tcContext emptyCtx ctxAST = do
 
 
 tcDataCtor :: String -> Context SigmaTC -> DataCtor TypeTC -> Tc ()
-tcDataCtor dtname ctx (DataCtor nm tyfs tys rng) = do
+tcDataCtor dtname ctx (DataCtor nm _tyfs tys _rng) = do
   let msg = "in field of data constructor " ++ T.unpack nm ++ " of type " ++ dtname
   mapM_ (tcTypeWellFormed msg ctx) tys
 -- }}}
 
 -- {{{ Miscellaneous helpers.
+
+
 collectUnboundUnificationVars :: [TypeTC] -> Tc [MetaTyVar TypeTC]
 collectUnboundUnificationVars xs = do
   xs' <- mapM zonkType xs
@@ -1888,13 +1892,20 @@ genRefinementVar = do
   r <- newTcRef Nothing
   return $ MbRefinement (u, r)
 
-verifyNonOverlappingBindings :: SourceRange -> String -> [ContextBinding ty] -> Tc ()
-verifyNonOverlappingBindings rng name binders = do
-    case detectDuplicates [name | (TermVarBinding name _) <- binders] of
+bindingName :: ContextBinding ty -> T.Text
+bindingName (TermVarBinding nm _) = nm
+
+verifyNamesAreDistinct :: SourceRange -> String -> [T.Text] -> Tc ()
+verifyNamesAreDistinct rng name names = do
+    case detectDuplicates names of
         []   -> return ()
         dups -> tcFails [text $ "Error when checking " ++ name ++ ": "
                               ++ "had duplicated bindings: " ++ show dups
                               ++ highlightFirstLine rng]
+
+verifyNonOverlappingBindings :: SourceRange -> String -> [ContextBinding ty] -> Tc ()
+verifyNonOverlappingBindings rng name binders = do
+    verifyNamesAreDistinct rng name (map bindingName binders)
 
 tyvarsOf ktyvars = map (\(tv,_k) -> tv) ktyvars
 
