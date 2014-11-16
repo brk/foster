@@ -17,9 +17,8 @@ import Foster.Output(OutputOr(..))
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T
 
-import Data.IORef(readIORef)
 import Data.UnionFind.IO(descriptor)
-import Control.Monad(when)
+import Control.Monad(when, liftM)
 
 import Debug.Trace(trace)
 
@@ -273,7 +272,7 @@ ailInt rng int ty = do
   --    we should update the int's meta type variable
   --    with the smallest type that accomodates the int.
   case ty of
-    PrimIntTC isb _rr -> do
+    PrimIntTC isb -> do
       sanityCheckIntLiteralNotOversized rng isb int
 
     MetaTyVarTC m -> do
@@ -341,31 +340,17 @@ fnOf ctx f = do
                 , fnAnnot = fnAnnot f
                 }
 
-withRefinement :: Context t -> RR -> Tc TypeIL -> Tc TypeIL
-withRefinement ctx rr action = do
-  ty <- action
-  case rr of
-    NoRefinement _ -> return ty
-    MbRefinement (_u,r) -> do
-      mbr <- tcLift $ readIORef r
-      case mbr of
-        Nothing -> return ty
-        Just (id, e) -> do
-          tcLift $ putStrLn $ "withRefinement producing refinement type for " ++ show id
-          e' <- ail ctx e
-          return $ RefinedTypeIL (TypedId ty id) e' [] -- TODO is this right?
-
 ilOf :: Context t -> TypeTC -> Tc TypeIL
 ilOf ctx typ = do
   let q = ilOf ctx
   case typ of
-     TyConAppTC  dtname tys rr -> withRefinement ctx rr $ do
+     TyConAppTC  dtname tys -> do
                                      iltys <- mapM q tys
                                      return $ TyConAppIL dtname iltys
-     PrimIntTC  size    rr -> withRefinement ctx rr $ do return $ PrimIntIL size
-     PrimFloat64TC      rr -> withRefinement ctx rr $ do return $ PrimFloat64IL
-     TupleTypeTC  types rr -> withRefinement ctx rr $ do tys <- mapM q types
-                                                         return $ TupleTypeIL tys
+     PrimIntTC  size    -> do return $ PrimIntIL size
+     PrimFloat64TC      -> do return $ PrimFloat64IL
+     TupleTypeTC  types -> do tys <- mapM q types
+                              return $ TupleTypeIL tys
      FnTypeTC  ss t cc cs -> do (y:xs) <- mapM q (t:ss)
                                 -- Un-unified placeholders occur for loops,
                                 -- where there are no external constraints on
@@ -379,11 +364,8 @@ ilOf ctx typ = do
                                     return $ RefinedTypeIL v' e' __args
      CoroTypeTC  s t     -> do [x,y] <- mapM q [s,t]
                                return $ CoroTypeIL x y
-     RefTypeTC  ty       -> do t <- q ty
-                               return $ PtrTypeIL   t
-     ArrayTypeTC   ty rr -> withRefinement ctx rr $ do
-                               t <- q ty
-                               return $ ArrayTypeIL t
+     RefTypeTC  ty       -> do liftM PtrTypeIL (q ty)
+     ArrayTypeTC   ty    -> do liftM ArrayTypeIL (q ty)
      ForAllTC  ktvs rho  -> do t <- (ilOf $ extendTyCtx ctx ktvs) rho
                                return $ ForAllIL ktvs t
      TyVarTC  tv@(SkolemTyVar _ _ k) -> return $ TyVarIL tv k

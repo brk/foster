@@ -10,7 +10,6 @@ import qualified Data.Map as Map(lookup, empty, insert, findWithDefault, singlet
 import qualified Data.List as List(length, elem, lookup)
 import Data.Maybe(fromMaybe)
 import Text.PrettyPrint.ANSI.Leijen
-import Data.IORef(readIORef, writeIORef)
 import Data.UnionFind.IO(descriptor, setDescriptor, equivalent, union)
 
 import Foster.Base
@@ -48,18 +47,16 @@ parSubstTcTy prvNextPairs ty =
         MetaTyVarTC   {}     -> ty
         PrimIntTC     {}     -> ty
         PrimFloat64TC {}     -> ty
-        TyConAppTC  nm tys rr -> TyConAppTC  nm (map q tys) rr
-        TupleTypeTC  types rr -> TupleTypeTC  (map q types) rr
+        TyConAppTC  nm tys   -> TyConAppTC  nm (map q tys)
+        TupleTypeTC  types   -> TupleTypeTC  (map q types)
         RefTypeTC    t       -> RefTypeTC    (q t)
-        ArrayTypeTC  t    rr -> ArrayTypeTC  (q t) rr
+        ArrayTypeTC  t       -> ArrayTypeTC  (q t)
         FnTypeTC  ss t cc cs -> FnTypeTC     (map q ss) (q t) cc cs -- TODO unify calling convention?
         CoroTypeTC  s t      -> CoroTypeTC  (q s) (q t)
         ForAllTC  ktvs rho   ->
                 let prvNextPairs' = prvNextPairs `assocFilterOut` (map fst ktvs)
                 in  ForAllTC  ktvs (parSubstTcTy prvNextPairs' rho)
         RefinedTypeTC v e args -> RefinedTypeTC (fmap q v) e args -- TODO recurse in e?
-
-fmapTID f (TypedId t id) = TypedId (f t) id
 
 -- Replaces types for meta type variables (unification variables)
 -- according to the given type substitution.
@@ -71,10 +68,10 @@ tySubst subst ty =
         PrimIntTC     {}       -> ty
         PrimFloat64TC {}       -> ty
         TyVarTC       {}       -> ty
-        TyConAppTC   nm tys rr -> TyConAppTC   nm (map q tys) rr
+        TyConAppTC   nm tys    -> TyConAppTC   nm (map q tys)
         RefTypeTC     t        -> RefTypeTC    (q t)
-        ArrayTypeTC   t     rr -> ArrayTypeTC  (q t) rr
-        TupleTypeTC  types  rr -> TupleTypeTC  (map q types) rr
+        ArrayTypeTC   t        -> ArrayTypeTC  (q t)
+        TupleTypeTC  types     -> TupleTypeTC  (map q types)
         FnTypeTC  ss t cc cs   -> FnTypeTC     (map q ss) (q t) cc cs
         CoroTypeTC  s t        -> CoroTypeTC  (q s) (q t)
         ForAllTC  tvs rho      -> ForAllTC  tvs (q rho)
@@ -84,16 +81,6 @@ tySubst subst ty =
 illegal (TyVarTC (BoundTyVar _)) = True
 illegal (ForAllTC {})            = True
 illegal _                        = False
--------------------------------------------------
-
-mbGetRefinement ty = case ty of
-    PrimIntTC   _               rr -> Just rr
-    PrimFloat64TC               rr -> Just rr
-    ArrayTypeTC   _             rr -> Just rr
-    TyConAppTC    _  _types     rr -> Just rr
-    TupleTypeTC      _types     rr -> Just rr
-    _ -> Nothing
-
 -------------------------------------------------
 
 tcUnifyThings :: Eq t => Unifiable t -> Unifiable t -> (t -> t -> Tc ()) -> Tc ()
@@ -146,10 +133,10 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
         ,text "t1::", showStructure t1, text "t2::", showStructure t2]
   else
    case (t1, t2) of
-    (PrimFloat64TC _rr1, PrimFloat64TC _rr2) -> do
+    (PrimFloat64TC, PrimFloat64TC) -> do
       tcUnifyLoop constraints tysub
 
-    ((PrimIntTC  n1 _rr1), (PrimIntTC  n2 _rr2)) ->
+    ((PrimIntTC  n1), (PrimIntTC  n2)) ->
       if n1 == n2 then do tcUnifyLoop constraints tysub
                   else do msg <- getStructureContextMessage
                           tcFailsMore [text $ "Unable to unify different primitive types: "
@@ -161,7 +148,7 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                      else tcFailsMore [text $ "Unable to unify different type variables: "
                                        ++ show tv1 ++ " vs " ++ show tv2]
 
-    ((TyConAppTC  nm1 tys1 _rr1), (TyConAppTC  nm2 tys2 _rr2)) ->
+    ((TyConAppTC  nm1 tys1), (TyConAppTC  nm2 tys2)) ->
       if nm1 == nm2
         then do tcUnifyMoreTypes tys1 tys2 constraints tysub
         else do msg <- getStructureContextMessage
@@ -169,7 +156,7 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                                   ++ nm1 ++ " vs " ++ nm2,
                              msg]
 
-    ((TupleTypeTC  tys1 _rr1), (TupleTypeTC  tys2 _rr2)) ->
+    ((TupleTypeTC  tys1), (TupleTypeTC  tys2)) ->
         if List.length tys1 /= List.length tys2
           then tcFailsMore [text $ "Unable to unify tuples of different lengths"
                            ++ " ("   ++ show (List.length tys1)
@@ -214,7 +201,7 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
     ((RefTypeTC  t1), (RefTypeTC  t2)) ->
         tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
-    ((ArrayTypeTC  t1 _rr1), (ArrayTypeTC  t2 _rr2)) -> do
+    ((ArrayTypeTC  t1), (ArrayTypeTC  t2)) -> do
         tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
     ((RefinedTypeTC v _ _), ty) -> do

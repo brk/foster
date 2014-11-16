@@ -256,7 +256,7 @@ tcApplyIntConstraints = Tc $ \env -> do
   map <- readIORef (tcMetaIntConstraints env)
   mapM_ (\(m, neededBits) -> do putStrLn $ "applying int constraint: " ++ show m ++ " ~ " ++ show neededBits
                                 writeIORef (mtvRef m)
-                                    (Just $ PrimIntTC (sizeOfBits neededBits) (NoRefinement "tcApplyIntConstraints")))
+                                    (Just $ PrimIntTC (sizeOfBits neededBits)))
         (Map.toList map)
   retOK ()
 
