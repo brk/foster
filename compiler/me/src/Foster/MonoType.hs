@@ -60,7 +60,7 @@ instance Pretty MonoType where
           TyConApp       dt ts        -> text "(" <> pretty dt <+> tupled (map pretty ts) <> text "]"
           TupleType      ts           -> tupled (map pretty ts)
           StructType     ts           -> text "#" <> tupled (map pretty ts)
-          FnType         ts r _cc _pf -> text "{" <+> hsep [pretty t <+> text "=>" | t <- ts]
+          FnType         ts r _cc _pf -> text "{" <+> group (align (hsep [pretty t <+> text "=>" <> softbreak | t <- ts]))
                                                   <+> pretty r <+> text "}" <> text "@" <> pretty (_cc,_pf)
           CoroType      _s _r         -> text "Coro..."
           ArrayType      t            -> text "Array" <+> pretty t
