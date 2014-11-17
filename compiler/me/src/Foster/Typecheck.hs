@@ -797,7 +797,7 @@ tcSigmaCall ctx rng (E_PrimAST _ name@"assert-invariants") argtup exp_ty = do
 tcSigmaCall ctx rng base argexprs exp_ty = do
         annbase <- inferRho ctx base "called base"
         let fun_ty = typeTC annbase
-        (args_ty, res_ty, _cc, _) <- unifyFun fun_ty argexprs ("tSC("++tryGetVarName base++")" ++ highlightFirstLine (rangeOf rng))
+        (args_ty, res_ty, _cc, _) <- unifyFun fun_ty (length argexprs) ("tSC("++tryGetVarName base++")" ++ highlightFirstLine (rangeOf rng))
         debugDoc $ text "tcSigmaCall: fn type of" <+> pretty annbase <+> text "is " <> pretty fun_ty <+> text ";; cc=" <+> text (show _cc)
         debugDoc $ string (highlightFirstLine (rangeOf rng))
 
@@ -835,13 +835,13 @@ mkAnnCall rng res_ty annbase args =
       -> AnnAppCtor rng res_ty cid  args
     _ -> AnnCall rng res_ty annbase args
 
-unifyFun :: RhoTC -> [a] -> String -> Tc ([SigmaTC], RhoTC, Unifiable CallConv, Unifiable ProcOrFunc)
-unifyFun (FnTypeTC args res cc ft) _args _msg = return (args, res, cc, ft)
+unifyFun :: RhoTC -> Int -> String -> Tc ([SigmaTC], RhoTC, Unifiable CallConv, Unifiable ProcOrFunc)
+unifyFun (FnTypeTC args res cc ft) _ _msg = return (args, res, cc, ft)
 unifyFun (ForAllTC {}) _ str = tcFails [text $ "invariant violated: sigma passed to unifyFun!"
                                         ,text $ "For now, lambdas given forall types must be annotated with forall markers."
                                         ,text str]
-unifyFun tau args msg = do
-        arg_tys <- mapM (\_ -> newTcUnificationVarTau "fn args ty") args
+unifyFun tau nargs msg = do
+        arg_tys <- mapM (\_ -> newTcUnificationVarTau "fn args ty") (replicate nargs ())
         res_ty <- newTcUnificationVarTau ("fn res ty:" ++ msg)
         cc <- genUnifiableVar
         ft <- genUnifiableVar
@@ -915,14 +915,9 @@ tcSigmaFn ctx fnAST expTyRaw = do
               sanityCheck (eqLen ktvs exp_ktvs)
                          ("tcSigmaFn: expected same number of formals for "
                           ++ show ktvs ++ " and " ++ show exp_ktvs)
-              debugDoc $ text "tcSigmaFn: exp_ktvs is " <> pretty exp_ktvs
-              debugDoc $ text "tcSigmaFn: exp_rho_raw is " <> pretty exp_rho_raw
               exp_rho' <- resolveType annot (extendTypeBindingsWith exp_ktvs) exp_rho_raw
-              debugDoc $ text "tcSigmaFn: exp_rho' is " <> pretty exp_rho'
               return $ Just exp_rho'
             _ -> return $ Nothing
-
-        debugDoc $ text "tcSigmaFn: mb_rho is " <> pretty mb_rho
 
         -- While we're munging, we'll also make sure the names are all distinct.
         uniquelyNamedFormals <- getUniquelyNamedAndRetypedFormals' ctx annot
@@ -934,11 +929,11 @@ tcSigmaFn ctx fnAST expTyRaw = do
 
         -- Check or infer the type of the body.
         annbody <- case mb_rho of
+          -- for Infer or for Check of a non-ForAll type
+          Nothing       -> inferSigma extCtx (fnAstBody fnAST) "poly-fn body"
           Just exp_rho' -> do
                 let var_tys = map tidType uniquelyNamedFormals
-                var_tys' <- mapM shZonkType var_tys
-                debugDoc $ string "var_tys': " <+> pretty var_tys'
-                (arg_tys, body_ty, _cc, _ft) <- unifyFun exp_rho' var_tys ("poly-fn-lit" ++ highlightFirstLine rng)
+                (arg_tys, body_ty, _cc, _ft) <- unifyFun exp_rho' (length var_tys) ("poly-fn-lit" ++ highlightFirstLine rng)
 
                 case (any tcContainsRefinements arg_tys,
                       any tcContainsRefinements var_tys ) of
@@ -952,6 +947,8 @@ tcSigmaFn ctx fnAST expTyRaw = do
                      tcLift $ putDocLn $ string "var_tys: " <+> pretty var_tys
                      tcLift $ putDocLn $ string "arg_tys: " <+> pretty arg_tys
 
+                     mapM_ (tcSelectTy annot) (zip arg_tys var_tys)
+
                 debugDoc $ string "arg_tys: " <+> pretty arg_tys
                 debugDoc $ string "zipped : " <+> pretty (zip arg_tys var_tys)
                 let unMeta (MetaTyVarTC m) = m
@@ -964,31 +961,6 @@ tcSigmaFn ctx fnAST expTyRaw = do
                 -- mvar_tys'' <- mapM shZonkMetaType (collectAllUnificationVars var_tys)
 
                 checkRho extCtx (fnAstBody fnAST) body_ty
-
-          -- for Infer or for Check of a non-ForAll type
-          Nothing      -> inferSigma extCtx (fnAstBody fnAST) "poly-fn body"
-           {-
-             -- TODO: if we permitted functions with un-annotated parameters,
-             -- we'd want to use the expected function type to guide their types.
-
-             if isRho ckfnty
-              then do
-                  let var_tys = map tidType uniquelyNamedFormals
-                  (arg_tys, body_ty) <- unifyFun ckfnty var_tys "poly-fn-lit"
-                  vartys1 <- mapM shallowZonk var_tys
-                  debug $ "&&&& before: " ++ show (zip arg_tys vartys1)
-                  _ <- sequence [subsCheckTy argty varty "poly-fn-arg" |
-                                          (argty, varty) <- zip arg_tys var_tys]
-                  vartys2 <- mapM shallowZonk var_tys
-                  debug $ "&&&& after: " ++ show (zip arg_tys vartys2)
-                  -- TODO is there an arg translation?
-                  checkSigma extCtx (fnAstBody f) body_ty
-              else
-                 -- Can't call unifyFun because ckfnty may be polymorphic.
-                 tcFails [text $ "not yet checking poly fn literals against polymorphic types"
-                         ,out $ "expected type is:"
-                         ,showStructure ckfnty]
-         -}
 
         debugDoc $ text "inferred raw type of body of polymorphic function: "
                         <> pretty (typeTC annbody)
@@ -1059,69 +1031,112 @@ tcRhoFnHelper ctx f expTy = do
     -- when checking type refinements.
     -- TODO use levels or something so that function bodies can't refer to
     --      refinement variables from exprs (unless embedded in refn. types).
-    tcLift $ putStrLn $ "beginning RV section in tcRhoFnHelper..."
     refinementVars <- concatMapM (mbFreshRefinementVar ctx) (map tidType $ fnFormals f)
     let ctx' = extendContext ctx refinementVars
 
-    uniquelyNamedFormals <- getUniquelyNamedAndRetypedFormals' ctx' annot
-                               (fnFormals f) (fnAstName f)
-                               (localTypeBindings ctx)
+    --tcLift $ putStrLn $ "mode is " ++ (case expTy of Infer _ -> "infer"
+    --                                                 Check fnty -> "check against " ++ show fnty)
 
-    tcLift $ putStrLn $ "ending RV section in tcRhoFnHelper, starting body..."
-    tcLift $ putStrLn $ "mode is " ++ (case expTy of Infer _ -> "infer"
-                                                     Check fnty -> "check against " ++ show fnty)
+    uniquelyNamedFormals <- getUniquelyNamedAndRetypedFormals' ctx' annot
+                                                  (fnFormals f) (fnAstName f)
+                                                  (localTypeBindings ctx)
+
+    (mbExpBodyTy, uniquelyNamedBinders) <- case expTy of
+       Infer _    -> do
+                           return (Nothing, uniquelyNamedFormals)
+       Check fnty -> do
+                           -- |arg_tys| are the corresponding arguments expected
+                           -- by the context (or a type annotation on the binder'
+                           -- for this function).
+                           (arg_tys, body_ty, _cc, _ft) <- unifyFun fnty (length uniquelyNamedFormals) ("@" ++ highlightFirstLine rng)
+
+                           -- |var_tys| are the types written down by the programmer
+                           -- on the function's argument variables.
+                           let var_tys = map tidType uniquelyNamedFormals
+
+                           -- It's perhaps a little bit counter-intuitive, but
+                           -- the var_tys are the "expected" types, and the
+                           -- external annotations are the "actual" types. One
+                           -- way of looking at this is that we can alter the
+                           -- types associated with the function's arg vars,
+                           -- but we can't alter the context's expectations.
+
+                           tcLift $ putDocLn $ text "checking subsumption betweeen " <$> indent 4 (pretty (zip arg_tys var_tys))
+                           _ <- sequence [subsCheckTy argty varty "mono-fn-arg" |
+                                           (argty, varty) <- zip arg_tys var_tys]
+
+                           case (filter tcContainsRefinements arg_tys,
+                                 filter tcContainsRefinements var_tys ) of
+                               (ars@(_:_), vrs@(_:_)) ->
+                                 tcFails [text $ "Cannot yet check a function (" ++ T.unpack (fnAstName f) ++ ") which has refinements"
+                                                   ++ " on both its explicit argument bindings and its type signature."
+                                         , indent 2 (text "Refined signature types:" <+> indent 2 (pretty ars))
+                                         , indent 2 (text "Refined variable types:" <+> indent 2 (pretty vrs))
+                                         , string $ highlightFirstLine rng]
+                               (ar, vr) -> do
+                                 tcLift $ putDocLn $ string "!!!!!!!!!!!!!!!!!!!!!!!! (rho)"
+                                 tcLift $ putDocLn $ text (show $ fnAstName f)
+                                 tcLift $ putDocLn $ text "args/vars refined: " <> pretty (ar,vr)
+                                 tcLift $ putDocLn $ string "var_tys: " <+> pretty var_tys
+                                 tcLift $ putDocLn $ string "arg_tys: " <+> pretty arg_tys
+
+                           -- TODO select between arg_tys and var_tys,
+                           -- use to re-type the uniquelynamedformals...
+
+                           -- TODO this can result in losing annotations...
+                           -- If we have something like
+                           --       foo :: { % ra : T : e(ra) }
+                           --       foo = { a : % rb : T : p(rb) }
+                           -- we will completely drop p(rb)!
+                           let pickBetween (mb_argty, mb_varty) = do
+                                   case (mb_argty, mb_varty) of
+                                     -- If the argty is a meta variable, we might get more specific error messages
+                                     -- by using the definitely-not-less-specific varty.
+                                     (Just (MetaTyVarTC {}), Just varty) -> return varty
+                                     -- Otherwise, the argty should have at least as much information as the varty,
+                                     -- since the fnTypeTemplate definition in Main.hs will copy the varty's types.
+                                     (Just argty, Just _) -> return argty
+                                     (_, Just varty) -> return varty -- Mismatch, will be caught later by matchExp
+                                     _ -> error $ "zipTogether lied"
+
+                           pickedTys <- mapM pickBetween (zipTogether arg_tys var_tys)
+                           let uniquelyNamedBinders =
+                                        map (\(TypedId _ id, ty) -> TypedId ty id)
+                                            (zip uniquelyNamedFormals pickedTys)
+
+                           return (Just body_ty, uniquelyNamedBinders)
 
     -- Extend the variable environment with the function arg's types.
-    let extCtx = extendContext ctx uniquelyNamedFormals
+    let extCtx = extendContext ctx uniquelyNamedBinders
 
     -- Check or infer the type of the body.
-    annbody <- case expTy of
-      Infer _    -> do annbody <- inferSigma extCtx (fnAstBody f) "mono-fn body"
-                       -- TODO this is wrong: fnAstPrecond is a bare expression,
-                       --   but the returned precond should be in fn-form...
-                       --precond <- mapMaybePreconditionM (\p -> inferRho   extCtx p "mono-fn precond") (fnAstPrecond f)
-                       return annbody
-      Check fnty -> do let var_tys = map tidType uniquelyNamedFormals
-                       -- FOOBAR fnty might be a sigma; if so, what?
-                       (arg_tys, body_ty, _cc, _ft) <- unifyFun fnty var_tys ("@" ++ highlightFirstLine rng)
-                       tcLift $ putDocLn $ text "checking subsumption betweeen " <$> indent 4 (pretty (zip arg_tys var_tys))
-
-                       case (filter tcContainsRefinements arg_tys,
-                             filter tcContainsRefinements var_tys ) of
-                           (ars@(_:_), vrs@(_:_)) ->
-                             tcFails [text $ "Cannot yet check a function (" ++ T.unpack (fnAstName f) ++ ") which has refinements"
-                                               ++ " on both its explicit argument bindings and its type signature."
-                                     , indent 2 (text "Refined signature types:" <+> indent 2 (pretty ars))
-                                     , indent 2 (text "Refined variable types:" <+> indent 2 (pretty vrs))
-                                     , string $ highlightFirstLine rng]
-                           (ar, vr) -> do
-                             tcLift $ putDocLn $ string "!!!!!!!!!!!!!!!!!!!!!!!! (rho)"
-                             tcLift $ putDocLn $ text (show $ fnAstName f)
-                             tcLift $ putDocLn $ text "args/vars refined: " <> pretty (ar,vr)
-                             tcLift $ putDocLn $ string "var_tys: " <+> pretty var_tys
-                             tcLift $ putDocLn $ string "arg_tys: " <+> pretty arg_tys
-
-
-                       _ <- sequence [subsCheckTy argty varty "mono-fn-arg" |
-                                       (argty, varty) <- zip arg_tys var_tys]
-                       -- TODO is there an arg translation?
-                       tcLift $ putStrLn $ "checking body of " ++ show (fnAstName f) ++ " against type " ++ show body_ty
-                       annbody <- checkRho extCtx (fnAstBody f) body_ty
-
-                       return $ pushedTypeCoercion body_ty annbody
-                       --return annbody
+    annbody <- case mbExpBodyTy of
+      Nothing      -> do inferSigma extCtx (fnAstBody f) "mono-fn body"
+      Just body_ty -> do annbody <- checkRho extCtx (fnAstBody f) body_ty
+                         return $ pushedTypeCoercion body_ty annbody
 
     let fnty = fnTypeTemplate f argtys (typeTC annbody) (UniConst FastCC)
-                where argtys = map tidType uniquelyNamedFormals
+                where argtys = map tidType uniquelyNamedBinders
 
     tcLift $ putStrLn $ "fnty for " ++ (show (fnAstName f)) ++ " is " ++ show fnty
 
     -- Note we collect free vars in the old context, since we can't possibly
     -- capture the function's arguments from the environment!
     let fn = E_AnnFn $ Fn (TypedId fnty (GlobalSymbol $ fnAstName f))
-                          uniquelyNamedFormals annbody () annot
+                          uniquelyNamedBinders annbody () annot
     matchExp expTy fn "tcRhoFn"
 -- }}}
+
+tcSelectTy annot (argty, varty) = do
+    case (argty, varty) of
+       (_, MetaTyVarTC {}) -> do return ()
+       (MetaTyVarTC {}, _) -> do
+         tcFails [text "didn't expect argty to be meta ty var without varty also being the same..."
+                 , prettyWithLineNumbers (rangeOf annot)
+                 , text "arg ty:" <+> pretty argty
+                 , text "var ty:" <+> pretty varty
+                 ]
+       _ -> return ()
 
 -- {{{
 pushedTypeCoercion overallType expr =
@@ -1419,8 +1434,8 @@ subsCheckRhoTy (ForAllTC ktvs rho) rho2 = do -- Rule SPEC
              taus <- genTauUnificationVarsLike ktvs (\n -> "instSigma type parameter " ++ show n)
              rho1 <- instSigmaWith ktvs rho taus
              subsCheckRhoTy rho1 rho2
-subsCheckRhoTy rho1 (FnTypeTC as2 r2 cc2 ft2) = unifyFun rho1 as2 "subsCheckRhoTy" >>= \(as1, r1, cc1, ft1) -> subsCheckFunTy as1 r1 cc1 ft1 as2 r2 cc2 ft2
-subsCheckRhoTy (FnTypeTC as1 r1 cc1 ft1) rho2 = unifyFun rho2 as1 "subsCheckRhoTy" >>= \(as2, r2, cc2, ft2) -> subsCheckFunTy as1 r1 cc1 ft1 as2 r2 cc2 ft2
+subsCheckRhoTy rho1 (FnTypeTC as2 r2 cc2 ft2) = unifyFun rho1 (length as2) "subsCheckRhoTy" >>= \(as1, r1, cc1, ft1) -> subsCheckFunTy as1 r1 cc1 ft1 as2 r2 cc2 ft2
+subsCheckRhoTy (FnTypeTC as1 r1 cc1 ft1) rho2 = unifyFun rho2 (length as1) "subsCheckRhoTy" >>= \(as2, r2, cc2, ft2) -> subsCheckFunTy as1 r1 cc1 ft1 as2 r2 cc2 ft2
 subsCheckRhoTy tau1 tau2 -- Rule MONO
      = do
           logged' ("subsCheckRhoTy " ++ show (pretty (tau1, tau2))) $ unify tau1 tau2 "subsCheckRho" -- Revert to ordinary unification
@@ -1454,11 +1469,11 @@ subsCheckRho esigma rho2 = do
         subsCheckRho erho rho2
 
     (rho1, FnTypeTC as2 r2 cc2 ft2) -> do debug $ "subsCheckRho fn 1"
-                                          (as1, r1, cc1, ft1) <- unifyFun rho1 as2 "sCR1"
+                                          (as1, r1, cc1, ft1) <- unifyFun rho1 (length as2) "sCR1"
                                           subsCheckFunTy as1 r1 cc1 ft1 as2 r2 cc2 ft2
                                           return esigma
     (FnTypeTC as1 r1 cc1 ft1, _)    -> do debug "subsCheckRho fn 2"
-                                          (as2, r2, cc2, ft2) <- unifyFun rho2 as1 "sCR2"
+                                          (as2, r2, cc2, ft2) <- unifyFun rho2 (length as1) "sCR2"
                                           debug $ "&&&&&& r1: " ++ show r1
                                           debug $ "&&&&&& r2: " ++ show r2
                                           subsCheckFunTy as1 r1 cc1 ft1 as2 r2 cc2 ft2

@@ -19,6 +19,7 @@ import Foster.MonoType
 import Foster.Base
 import Foster.KNUtil
 import Foster.Config
+import Foster.Output(putDocLn)
 
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Text.PrettyPrint.HughesPJ as HughesPJ(Doc)
@@ -257,13 +258,14 @@ checkModuleExprs :: KNMono -> Facts -> Compiled ()
 checkModuleExprs expr facts =
   case expr of
     KNLetFuns     ids fns b -> do
-        facts' <- foldlM (\facts (id, fn) -> recordIfHasFnPrecondition facts id (fnType fn))
+        facts' <- foldlM (\facts (id, fn) -> recordIfHasFnPrecondition facts (TypedId (fnType fn) id))
                            facts (zip ids fns)
         mapM_ (\fn -> checkFn fn facts') fns
         checkModuleExprs b facts'
     KNCall {} ->
       return ()
     _ -> error $ "Unexpected expression in checkModuleExprs: " ++ show expr
+
 
 checkFn fn facts = do
   evalStateT (checkFn' fn facts) (SCState Map.empty)
@@ -303,7 +305,7 @@ checkFn' fn facts0 = do
   -- Before processing the body, add declarations for the function formals,
   -- and record the preconditions associated with any function-typed formals.
   let facts' = foldl' addSymbolicVar facts (fnVars fn)
-  facts''  <- foldlM recordIfTidHasFnPrecondition facts' (fnVars fn)
+  facts''  <- foldlM recordIfHasFnPrecondition facts' (fnVars fn)
 
   liftIO $ putStrLn $ "checking body " ++ (show (pretty (fnBody fn)))
   smtexpr <- checkBody (fnBody fn) facts''
@@ -317,9 +319,6 @@ smtEvalApp facts fn args = do
   -- skolems <- mapM genSkolem (map tidType args)
   smt_f <- (mkPrecondGen facts fn) args
   return $ smt_f
-
-recordIfTidHasFnPrecondition facts tid =
-   recordIfHasFnPrecondition facts (tidIdent tid) (tidType tid)
 
 withPathFact facts pathfact = facts { pathFacts = pathfact : pathFacts facts }
 
@@ -686,7 +685,7 @@ checkBody expr facts =
         error $ "KNStaticChecks.hs: checkBody can't yet support recursive non-function bindings."
 
     KNLetFuns     ids fns b     -> do
-        facts' <- foldlM (\facts (id, fn) -> recordIfHasFnPrecondition facts id (fnType fn))
+        facts' <- foldlM (\facts (id, fn) -> recordIfHasFnPrecondition facts (TypedId (fnType fn) id))
                            facts (zip ids fns)
         mapM_ (\fn -> checkFn' fn facts') fns
         checkBody b facts'
@@ -733,11 +732,12 @@ validateRefinement facts facts' id v expr = do
   let facts''  = foldl' addSymbolicVar facts'  [v, TypedId (PrimInt I1) resid]
   scRunZ3 expr $ scriptImplyingBy smtexpr facts''
 
-recordIfHasFnPrecondition facts id ty =
+recordIfHasFnPrecondition facts v@(TypedId ty id) =
   case ty of
     FnType {} -> do
-      liftIO $ putStrLn $ "computeRefinements for " ++ show (TypedId ty id) ++ " was " ++ show (computeRefinements (TypedId ty id))
-      case computeRefinements (TypedId ty id) of
+      liftIO $ putDocLn $ text $ "computeRefinements for " ++ show v ++ " was "
+      liftIO $ putDocLn $ indent 4 $ pretty (computeRefinements v)
+      case computeRefinements v of
         [] -> return $ facts
         preconds -> return $ facts { fnPreconds = Map.insert id (map (mkPrecondGen facts) preconds) (fnPreconds facts) }
     _ -> return $ facts
@@ -753,7 +753,7 @@ compilePreconditionFn fn facts argVars = do
   liftIO $ putStrLn $ "compilePreconditionFn<" ++ show (length argVars) ++ " vs " ++ show (length (fnVars fn)) ++ " # " ++ show argVars ++ "> ;; " ++ show fn
   resid <- lift $ ccFreshId $ identPrefix $ fmapIdent (T.append (T.pack "res$")) $ tidIdent (fnVar fn)
   let facts' = foldl' addSymbolicVar facts ((TypedId (PrimInt I1) resid):(argVars ++ fnVars fn))
-  facts'' <- foldlM recordIfTidHasFnPrecondition facts' (fnVars fn)
+  facts'' <- foldlM recordIfHasFnPrecondition facts' (fnVars fn)
   bodyf <- checkBody (fnBody fn) facts''
   (SMTExpr body decls idfacts) <- (trueOr bodyf) resid
   let idfacts' = extendIdFacts resid body (zip (map tidIdent argVars)

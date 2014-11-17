@@ -1,11 +1,14 @@
 
 main = {
-  f1 { x : Int32 => () };
-  f2 (ref 0);
+  //f1 { x : Int32 => () };
+  //f2 (ref 0);
   f3 !;
-  f4 !;
-  f5 !;
-  f6 !;
+  //f4 !;
+  //f5 !;
+  //f6 !;
+
+  expect_i32 7000;
+  print_i32 7000;
 
   expect_i1 False;
   print_i1 (__COMPILES__ f3 () ()); // "typecheckExprsTogether: had different number of values (2) and expected types (0)"
@@ -35,11 +38,17 @@ f3 = {
   // expect_i1 False;
   // print_i1 (__COMPILES__ polyid:[] ()); // "Tried to instantiate a sigma with no types!"
 
+  expect_i32 3333;
+  print_i32 3333;
+
   expect_i1 False;
   print_i1 (__COMPILES__ polyid:[Int32] ()); // "tuple ([]) cannot check against non-tuple type (PrimIntAST I32)"
 
   expect_i1 True;
   print_i1 (__COMPILES__ polyid:[Int32] 0);
+
+  expect_i32 3335;
+  print_i32 3335;
 
   expect_i1 True;
   print_i1 (__COMPILES__ polyid 0);
