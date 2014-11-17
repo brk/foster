@@ -374,6 +374,11 @@ sourceLineStart (SourceRange _begin _end _lines Nothing) = "<unknown file>"
 sourceLineStart (SourceRange begin _end _lines (Just filepath)) =
     filepath ++ ":" ++ show (sourceLocationLine begin)
 
+prettyWithLineNumbers :: SourceRange -> Doc
+prettyWithLineNumbers (MissingSourceRange s) = text $ "<missing range: " ++ s ++ ">"
+prettyWithLineNumbers (SourceRange begin end lines _filepath) =
+        line <> showSourceLinesNumbered begin end lines <> line
+
 showSourceRange :: SourceRange -> String
 showSourceRange (MissingSourceRange s) = "<missing range: " ++ s ++ ">"
 showSourceRange (SourceRange begin end lines _filepath) =
@@ -400,6 +405,12 @@ showSourceLines (ESourceLocation bline bcol) (ESourceLocation eline ecol) lines 
         then joinWith "\n" [sourceLine lines bline, highlightLineRange bcol ecol]
         else joinWith "\n" [sourceLine lines n | n <- [bline..eline]]
 
+showSourceLinesNumbered (ESourceLocation bline bcol) (ESourceLocation eline ecol) lines =
+    if bline == eline
+        then vsep [sourceLineNumbered lines bline, text $ highlightLineRange bcol ecol]
+        else vsep [sourceLineNumbered lines n | n <- [bline..eline]]
+
+
 -- Generates a string of spaces and twiddles which underlines
 -- a given range of characters.
 highlightLineRange :: Int -> Int -> String
@@ -419,6 +430,10 @@ sourceLine (SourceLines seq) n =
         then "<no line " ++ show n ++ " of "
                          ++ (show $ Seq.length seq) ++ ">"
         else (T.unpack $ Seq.index seq n)
+
+sourceLineNumbered :: SourceLines -> Int -> Doc
+sourceLineNumbered (SourceLines seq) n =
+    pretty (n + 1) <> text ":" <> text "    " <> text (T.unpack $ Seq.index seq n)
 
 data Formatting = Comment    {-SourceRange-} String
                 | BlankLine
@@ -571,6 +586,11 @@ mapRightM :: Monad m => (a -> m b) -> [Either x a] -> m [Either x b]
 mapRightM action lst = mapM (\ei -> case ei of Left x -> return (Left x)
                                                Right a -> action a >>= return . Right) lst
 
+zipTogether :: [a] -> [b] -> [(Maybe a, Maybe b)]
+zipTogether []     []     = []
+zipTogether (x:xs) []     = (Just x, Nothing) : zipTogether xs []
+zipTogether []     (y:ys) = (Nothing, Just y) : zipTogether [] ys
+zipTogether (x:xs) (y:ys) = (Just x,  Just y) : zipTogether xs ys
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- |||||||||||||||||||||||||| Idents |||||||||||||||||||||||||||{{{
