@@ -18,6 +18,8 @@
 #include <net/if.h> // for ifreq
 
 #include <linux/if_tun.h> // for IFF_TUN
+#elif defined(OS_MACOSX)
+#include <fcntl.h> // for O_RDWR
 #endif
 
 // Definitions of functions which are meant to be exposed to Foster code
@@ -103,9 +105,7 @@ void foster__perror(const char* msg) {
 int64_t foster_posix_get_tuntap_fd() {
   int fd;
 
-#ifdef OS_MACOSX
-#error TODO set up tuntap code for OS X
-#else
+#ifdef OS_LINUX
   fd = open("/dev/net/tun", O_RDWR);
   if (fd < 0) {
     foster__perror("foster_posix_get_tuntap_fd failed to open /dev/net/tun");
@@ -120,6 +120,13 @@ int64_t foster_posix_get_tuntap_fd() {
     close(fd);
     foster__perror("foster_posix_get_tuntap_fd failed to connect to tun8");
   }
+#elif defined(OS_MACOSX)
+  fd = open("/dev/tun8", O_RDWR);
+  if (fd < 0) {
+    foster__perror("foster_posix_get_tuntap_fd failed to open /dev/tun8");
+  }
+#else
+#error Haven't yet coded support for tun/tap on this platform...
 #endif
 
   return int64_t(fd);
