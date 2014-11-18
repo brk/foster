@@ -7,91 +7,86 @@ tk = { maxn : Int32 =>
        maxflips : Ref Int32 =>
        checksum : Ref Int32 =>
 
-  let i = (ref 0);
-      c = allocDArray:[Int32] 16;
-      s = allocDArray:[Int32] 16;
-      t = allocDArray:[Int32] 16;
-      odd = (ref False); in
+  i = (ref 0);
+  c = allocDArray:[Int32] 16;
+  s = allocDArray:[Int32] 16;
+  t = allocDArray:[Int32] 16;
+  odd = (ref False);
 
-  rec rotate-helper = { i : Int32 => n : Int32 =>
+  REC rotate-helper = { i : Int32 => n : Int32 =>
         if i <SInt32 n then
           (prim subscript-unsafe s (i +Int32 1)) >^
           (prim subscript-unsafe s i);
           rotate-helper (i +Int32 1) n;
         else () end
       };
-      flip-helper = { i : Int32 => n : Int32 =>
+
+  rotate = { n : Int32 =>
+               ec = (prim subscript-unsafe s 0);
+               rotate-helper 0 n;
+               ec >^ (prim subscript-unsafe s n);
+           };
+
+  REC flip-helper = { i : Int32 => n : Int32 =>
         if i <SInt32 n then
           (prim subscript-unsafe s i) >^ (prim subscript-unsafe t i);
           flip-helper (i +Int32 1) n;
         else () end
-      }; in
-
-   let rotate = { n : Int32 =>
-        let ec = (prim subscript-unsafe s 0); in
-          rotate-helper 0 n;
-          ec >^ (prim subscript-unsafe s n);
-        end
       };
 
-      xo = (ref 0);
-      yo = (ref (prim subscript-unsafe t 0));
-      ri = (ref 1);
-      rc = (ref 0);
-      done = (ref False);
+  xo = (ref 0);
+  yo = (ref (prim subscript-unsafe t 0));
+  ri = (ref 1);
+  rc = (ref 0);
+  done = (ref False);
 
-      flip = {
-        flip-helper 0 maxn;
+  flip = {
+    flip-helper 0 maxn;
 
-        1 >^ ri;
-        0 >^ rc;
-        False >^ done;
+    1 >^ ri;
+    0 >^ rc;
+    False >^ done;
 
-        REC loop = { if done^ then () else
-          0                           >^ xo;
-          (prim subscript-unsafe t 0) >^ yo;
-          until { xo^ >=SInt32 yo^ } {
-            (prim subscript-unsafe t xo^) >^ rc;
-            (prim subscript-unsafe t yo^) >^
-            (prim subscript-unsafe t xo^);
-            incrBy xo 1;
-            rc^ >^ (prim subscript-unsafe t yo^);
-            decrBy yo 1;
-          };
-          incrBy ri 1;
-          ((prim subscript-unsafe t (prim subscript-unsafe t 0)) ==Int32 0) >^ done;
-          end
-        }; loop !;
-        ri^
+    until { done^ } {
+      0                           >^ xo;
+      (prim subscript-unsafe t 0) >^ yo;
+      until { xo^ >=SInt32 yo^ } {
+        (prim subscript-unsafe t xo^) >^ rc;
+        (prim subscript-unsafe t yo^) >^
+        (prim subscript-unsafe t xo^);
+        incrBy xo 1;
+        rc^ >^ (prim subscript-unsafe t yo^);
+        decrBy yo 1;
       };
-  in
-    repeatRange 0 16 { k : Int32 => k >^ s[k]; () };
-    repeatRange 0 16 { k : Int32 => 0 >^ c[k]; () };
+      incrBy ri 1;
+      ((prim subscript-unsafe t (prim subscript-unsafe t 0)) ==Int32 0) >^ done;
+    };
+    ri^
+  };
 
-    until { maxn <=SInt32 i^ } {
-      rotate i^;
-      if (prim subscript-unsafe c i^) >=SInt32 i^ then
-        0 >^ (prim subscript-unsafe c i^);
-        incrBy i 1;
-      else
-        ((prim subscript-unsafe c i^) +Int32 1) >^ (prim subscript-unsafe c i^);
-        1 >^ i;
-        not odd^ >^ odd;
-        if (prim subscript-unsafe s 0) >SInt32 0 then
-          let f = if (prim subscript-unsafe s (prim subscript-unsafe s 0))
-                                        ==Int32 0 then 1 else flip ! end; in
-            if f >SInt32 maxflips^ then f >^ maxflips; () else () end;
-            if odd^ then checksum^ -Int32 f
-                    else checksum^ +Int32 f
-            end >^ checksum;
-            ()
-          end
-        else () end
-      end
-    }
-  end
-  end
-  end
+  repeatRange 0 16 { k : Int32 => k >^ s[k]; () };
+  repeatRange 0 16 { k : Int32 => 0 >^ c[k]; () };
+
+  until { maxn <=SInt32 i^ } {
+    rotate i^;
+    if (prim subscript-unsafe c i^) >=SInt32 i^ then
+      0 >^ (prim subscript-unsafe c i^);
+      incrBy i 1;
+    else
+      ((prim subscript-unsafe c i^) +Int32 1) >^ (prim subscript-unsafe c i^);
+      1 >^ i;
+      not odd^ >^ odd;
+      if (prim subscript-unsafe s 0) >SInt32 0 then
+          f = if (prim subscript-unsafe s (prim subscript-unsafe s 0))
+                                      ==Int32 0 then 1 else flip ! end;
+          if f >SInt32 maxflips^ then f >^ maxflips; () else () end;
+          if odd^ then checksum^ -Int32 f
+                  else checksum^ +Int32 f
+          end >^ checksum;
+          ()
+      else () end
+    end
+  }
 };
 
 in-range = { n : Int32 => a : Int32 => z : Int32 =>
@@ -105,10 +100,10 @@ repeatRange = { e : Int32 => n : Int32 => f : { Int32 => () } =>
 };
 
 main = {
-  let n = tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1);
-      maxflips = (ref 0);
-      checksum = (ref 0);
-  in
+    n = tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1);
+    maxflips = (ref 0);
+    checksum = (ref 0);
+
     if in-range n 3 15 then
       tk n maxflips checksum;
 
@@ -122,5 +117,4 @@ main = {
       print_text "usage: <prog> number";
       ()
     end
-  end
 };
