@@ -367,6 +367,7 @@ if __name__ == "__main__":
                 --me-arg=--dump-ir=mono  will print monomo. IR
                 --be-arg=--gc-track-alloc-sites
                 --be-arg=--unsafe-disable-array-bounds-checks
+                --optc-arg=-no-coalesce-loads
                 --optc-arg=--help        will display optimization flags
                 --profileme              will enable profiling of the middle-end; then do `hp2ps -e8in -c me.hp`
                 --asm

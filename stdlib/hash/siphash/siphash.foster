@@ -1,5 +1,25 @@
 snafuinclude Prelude "prelude";
 
+// The Foster compiler is able to entirely remove the function literals
+// involved in the half-/double-round computations.
+// This means that the only overhead of optimized Foster code, relative to
+// the original C code, is in array bounds checks.
+//
+// With coalescing of loads disabled, we see roughly 30% overhead from the
+// baseline.
+// Full array bounds checking (8 checks for readInt) incurs an additional 30%
+// overhead, and (as the code is currently written/structured) disables
+// load coalescing, for roughly 60% total overhead.
+//
+// However, if the Foster compiler were a tiny bit smarter, *and* the programmer
+// re-ordered the loads to happen in *descending* index order instead of
+// *ascending* order, then we could (in theory) emit a single check that
+// index (i +Int32 7) is valid, thereby making the other 7 checks redundant.
+// And that, in turn, would enable load coalescing, since the 8 loads would
+// all occur without any interfering checks!
+// One inconvenient aspect is that this also requires a precondition that
+// the base index (i) is non-negative.
+
 readInt64FromArrayInt8 :: { Array Int8 => Int32 => Int64 };
 readInt64FromArrayInt8 = { arr => i =>
   a = arr[i +Int32 0];
