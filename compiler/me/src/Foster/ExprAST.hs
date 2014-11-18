@@ -13,7 +13,7 @@ module Foster.ExprAST(
 )
 where
 
-import Foster.Base(Structured(..), MaybePrecondition,
+import Foster.Base(Structured(..),
                    SourceRanged(..), TypedId(..), ArrayIndex(..),
                    AllocMemRegion, childrenOfArrayIndex, ArrayEntry,
                    CaseArm(..), caseArmExprs, EPattern(..), E_VarAST(..),

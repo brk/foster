@@ -106,6 +106,7 @@ parseCallPrim pbexpr annot = do
       ("alloc",           [e]) -> return $ E_AllocAST annot e MemRegionGlobalHeap
       ("stackref-unsafe", [e]) -> return $ E_AllocAST annot e MemRegionStack
       ("subscript",  [a,b]) -> return $ E_ArrayRead annot (ArrayIndex a b (rangeOf annot) SG_Dynamic)
+      ("subscript-unsafe",  [a,b]) -> return $ E_ArrayRead annot (ArrayIndex a b (rangeOf annot) SG_Unsafe)
       ("subscript-static",  [a,b]) -> return $ E_ArrayRead annot (ArrayIndex a b (rangeOf annot) SG_Static)
       ("store",[a,b])-> case b of -- a>^ c[d]
                            E_ArrayRead _ ari -> return $ E_ArrayPoke annot ari a

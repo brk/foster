@@ -56,20 +56,12 @@ data RecStatus = YesRec | NotRec deriving (Eq, Ord, Show)
 data VarNamespace = VarProc | VarLocal deriving Show
 data TailQ = YesTail | NotTail deriving (Eq, Show)
 data MayGC = GCUnknown String | MayGC | WillNotGC deriving (Eq, Show, Ord)
-data MaybePrecondition expr = NoPrecondition String | HavePrecondition expr deriving (Show, Eq)
-data SafetyGuarantee = SG_Static | SG_Dynamic               deriving (Show, Eq)
+data SafetyGuarantee = SG_Static | SG_Dynamic | SG_Unsafe                   deriving (Show, Eq)
 data ArrayIndex expr = ArrayIndex expr expr SourceRange
                                             SafetyGuarantee deriving (Show, Eq)
 
 liftArrayIndexM f (ArrayIndex e1 e2 sr sg) = do
   e1' <- f e1 ; e2' <- f e2 ; return $ ArrayIndex e1' e2' sr sg
-
-mapMaybePreconditionM _ (NoPrecondition s) = return (NoPrecondition s)
-mapMaybePreconditionM f (HavePrecondition p) = f p >>= return . HavePrecondition
-
-instance Pretty expr => Pretty (MaybePrecondition expr) where
-  pretty (NoPrecondition _) = PP.empty
-  pretty (HavePrecondition p) = text "#precondition" <+> pretty p
 
 -- In contrast to meta type variables, the IORef for inferred types
 -- can contain a sigma, not just a tau. See Typecheck.hs for details.

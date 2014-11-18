@@ -476,7 +476,7 @@ checkBody expr facts =
           Just f -> do liftIO $ putStrLn $ "have a constraint on output of array read: " ++ show (f (tidIdent a))
                        return $ withDecls facts $ \x -> return $ f x
 
-    KNArrayRead _ty (ArrayIndex a _i _ SG_Dynamic) -> do
+    KNArrayRead _ty (ArrayIndex a _i _ _sg) -> do
         -- If the array has an annotation, use it.
         mb_f <- scGetFact (tidIdent a)
         case mb_f of

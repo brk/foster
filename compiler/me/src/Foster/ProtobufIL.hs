@@ -65,6 +65,7 @@ import qualified Data.Text as T
 
 stringSG SG_Static  = u8fromString "static"
 stringSG SG_Dynamic = u8fromString "dynamic"
+stringSG SG_Unsafe  = u8fromString "static"
 
 dumpBlockId (str, lab) = u8fromString (str ++ "." ++ show lab)
 
