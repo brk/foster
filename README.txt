@@ -24,6 +24,10 @@ with a command like this:
 
 $ cat test-tmpdir/*/compile.log.txt | grep '...' | sort | uniq
 
+Other commands of interest:
+
+$ make hs_clean    # Delete just the Haskell-generated .o files
+
 ============================= Installation =================================
 Paths:
   You'll want to append $PATH_TO_FOSTER/scripts to $PATH and $PYTHONPATH,

@@ -44,6 +44,7 @@ find_program(HPROTOC NAMES hprotoc
     $ENV{HOME}/.cabal/bin
   DOC "hprotoc: Protobuf compiler for Haskell")
 
+# ~~~~~~~~~~~~~~~~~~~~~~~~~ LLVM ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 find_program(LLVM_CONFIG NAMES llvm-config
   PATHS
     $ENV{HOME}/llvm/${LLVM_VERSION}/bin
@@ -120,10 +121,6 @@ string(REPLACE "\n" "" LLVM_BINDIR ${LLVM_BINDIR})
 set(LLVM_COMPONENTS_NEEDED all)
 
 execute_process(COMMAND
-    ${LLVM_CONFIG} --libs ${LLVM_COMPONENTS_NEEDED}
-  OUTPUT_VARIABLE LLVM_LDFLAGS
-)
-execute_process(COMMAND
     ${LLVM_CONFIG} --libs ${LLVM_COMPONENTS_NEEDED} --ldflags  --system-libs
   OUTPUT_VARIABLE LLVM_LDFLAGS
 )
@@ -166,38 +163,19 @@ add_custom_command(
   OUTPUT
           ${GENERATED}/FosterAST.pb.h
           ${GENERATED}/FosterAST.pb.cc
-          ${GENERATED}/FosterAST_pb2.py
           ${GENERATED}/FosterIL.pb.h
           ${GENERATED}/FosterIL.pb.cc
   COMMAND ${PROTOBUF_PROTOC_EXECUTABLE}
           -I ${PROJECT_SOURCE_DIR}/compiler/parse/
           ${PROJECT_SOURCE_DIR}/compiler/parse/FosterAST.proto
           --cpp_out=${GENERATED}
-          --python_out=${GENERATED}
   COMMAND ${PROTOBUF_PROTOC_EXECUTABLE}
           -I ${PROJECT_SOURCE_DIR}/compiler/parse/
           ${PROJECT_SOURCE_DIR}/compiler/parse/FosterIL.proto
           --cpp_out=${GENERATED}
-          --python_out=${GENERATED}
   DEPENDS
           ${PROJECT_SOURCE_DIR}/compiler/parse/FosterAST.proto
           ${PROJECT_SOURCE_DIR}/compiler/parse/FosterIL.proto
-  )
-
-
-add_custom_command(
-  OUTPUT
-          ${GENERATED}/LLVM.pb.h
-          ${GENERATED}/LLVM.pb.cc
-          ${GENERATED}/LLVM_pb2.py
-  COMMAND ${PROTOBUF_PROTOC_EXECUTABLE}
-          -I ${PROJECT_SOURCE_DIR}/compiler/llvm/
-          ${PROJECT_SOURCE_DIR}/compiler/llvm/LLVM.proto
-          --cpp_out=${GENERATED}
-          --python_out=${GENERATED}
-
-  DEPENDS
-          ${PROJECT_SOURCE_DIR}/compiler/llvm/LLVM.proto
   )
 
 #-------------------------------------------------------------------
@@ -268,6 +246,11 @@ add_custom_command(
         ${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
 )
 
+# The .py file here is basically `touch` with a hardcoded path.
+# The intention here was that we could store/overwrite compile-time
+# config flags for the runtime/GC in a way that's more easily amenable
+# to automated re-configuration than source editing or command line flags
+# or such.
 add_custom_command(
   OUTPUT ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc_reconfig-inl.h
   COMMAND
@@ -287,7 +270,7 @@ set(LIBFOSTER_CPP_SOURCES
         ${PROJECT_SOURCE_DIR}/runtime/foster_globals.cpp
 )
 
-# Use clang or llvm-g++ to build libfoster.bc
+# Use clang to build libfoster.bc
 add_custom_command(
   OUTPUT ${PROJECT_BINARY_DIR}/_bitcodelibs_/foster_runtime.bc
   COMMAND
@@ -311,27 +294,6 @@ add_custom_command(
 add_custom_target(foster_runtime_bc DEPENDS
         ${PROJECT_BINARY_DIR}/_bitcodelibs_/foster_runtime.bc
         ${LIBRARY_OUTPUT_PATH}/libfoster_main.o)
-
-
-#-----------------------------------------------------------
-
-#add_custom_command(
-#  OUTPUT
-#        ${PROJECT_BINARY_DIR}/_bitcodelibs_/cycle-wrapper.bc
-#  COMMAND
-#        ${CLANG} -x c
-#          ${PROJECT_SOURCE_DIR}/third_party/fftw_cycle/cycle-wrapper.c
-#          -I ${PROJECT_BINARY_DIR}
-#          -c -emit-llvm
-#          -o ${PROJECT_BINARY_DIR}/_bitcodelibs_/cycle-wrapper.bc
-#  DEPENDS
-#          ${PROJECT_BINARY_DIR}/_bitcodelibs_
-#          ${PROJECT_SOURCE_DIR}/third_party/fftw_cycle/cycle-wrapper.c
-#)
-#
-#add_custom_target(cycle_wrapper_bc DEPENDS
-#        ${PROJECT_BINARY_DIR}/_bitcodelibs_/cycle-wrapper.bc
-#        cycle)
 
 #-----------------------------------------------------------
 
@@ -373,7 +335,6 @@ endif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
 
 #####################################################################
 include(${PROJECT_SOURCE_DIR}/third_party/chromium_base/CMakeLists.txt)
-include(${PROJECT_SOURCE_DIR}/third_party/gtest/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/libcoro/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/fftw_cycle/CMakeLists.txt)
 
@@ -408,12 +369,15 @@ add_library(fosterc_parse STATIC
 )
 add_dependencies(fosterc_parse fosterc_base)
 
-# Avoid GCC complaints that -Woverloaded-virtual
-# only applies to C++ code, not regular C code.
+set(ANTLR_C_FLAGS "-Wno-parentheses-equality -Wno-unused-variable
+ 		   -Wno-trigraphs -Wno-unused-function
+ 		   -Wno-tautological-compare -std=gnu11")
+string(REPLACE "\n" "" ANTLR_C_FLAGS ${ANTLR_C_FLAGS})
+# gnu11 disables trigraphs...
 set_source_files_properties(
       ${GENERATED}/fosterParser.c
       ${GENERATED}/fosterLexer.c
-      PROPERTIES LANGUAGE CXX)
+  COMPILE_FLAGS "${ANTLR_C_FLAGS}")
 
 add_library(fosterc_llvm STATIC
   compiler/llvm/passes/GCMallocFinder.cpp
@@ -496,16 +460,9 @@ set_target_properties(fosterc_llvm fosterc_base
 
 #####################################################################
 
-enable_testing()
-
-add_test(bootstrap
-  python ${PROJECT_SOURCE_DIR}/scripts/run_all.py
-         ${PROJECT_SOURCE_DIR}/test/bootstrap
-         --bindir ${PROJECT_BINARY_DIR}
-         -I ../stdlib
+add_custom_target(regress
+  COMMAND python ${PROJECT_SOURCE_DIR}/scripts/run_all.py
+	     ${PROJECT_SOURCE_DIR}/test/bootstrap
+	     --bindir ${PROJECT_BINARY_DIR}
+	     -I ${PROJECT_SOURCE_DIR}/stdlib
   )
-
-# Look for non-silent diff -u output
-set(CTEST_CUSTOM_ERROR_MATCH ${CTEST_CUSTOM_ERROR_MATCH}
-  "[1-9][0-9] tests failed")
-

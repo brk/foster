@@ -18,12 +18,13 @@
 
 using foster::SourceRange;
 
-class TypeAST;
-class FnTypeAST;
-class RefTypeAST;
-class StructTypeAST;
+struct ExprAST;
+class  TypeAST;
+class  FnTypeAST;
+class  RefTypeAST;
+class  StructTypeAST;
 
-class ValAbs;
+struct ValAbs;
 
 // This is the (prefix) struct type for a foster coro.
 extern llvm::Type* foster_generic_coro_t;
@@ -354,8 +355,6 @@ public:
   virtual llvm::Type* getLLVMType() const;
   TypeAST* getQuantifiedType() const { return quant; }
 };
-
-class ExprAST;
 
 class RefinedTypeAST : public TypeAST {
   std::string   name;
