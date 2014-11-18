@@ -18,7 +18,6 @@ import Data.Map(Map)
 import Data.List(foldl' , isPrefixOf, isInfixOf)
 import Data.Maybe(maybeToList, isJust)
 import Data.Int
-import Data.IORef(newIORef)
 
 import Foster.MonoType
 import Foster.Base

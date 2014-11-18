@@ -22,13 +22,11 @@ import Foster.Config
 import Foster.Output(putDocLn)
 
 import Text.PrettyPrint.ANSI.Leijen
-import qualified Text.PrettyPrint.HughesPJ as HughesPJ(Doc)
 import qualified Data.Text as T
 
-import Control.Monad.Error(throwError, catchError, runErrorT, ErrorT)
-import Control.Monad.State(gets, liftIO, evalStateT, execStateT, StateT,
-                           execState, State, forM, forM_, runStateT,
-                           liftM, liftM2, get, put, lift)
+import Control.Monad.Error(throwError, runErrorT, ErrorT)
+import Control.Monad.State(gets, liftIO, evalStateT, StateT,
+                           forM, forM_, get, put, lift)
 
 import qualified SMTLib2 as SMT
 import           SMTLib2(app, Script(..), Command(..), Option(..), Type(..))
@@ -37,6 +35,8 @@ import           SMTLib2.Core(tBool, (===), (=/=))
 import SMTLib2.BitVector
 
 import Foster.RunZ3 (runZ3)
+
+--------------------------------------------------------------------
 
 newtype CommentedScript = CommentedScript [CommentOrCommand]
 data CommentOrCommand = Cmnt String | Cmds [Command]
@@ -49,17 +49,29 @@ instance Eq  SymDecl where (==)    (SymDecl n1 _ _) (SymDecl n2 _ _) = (==)    n
 data SMTExpr = SMTExpr SMT.Expr (Set SymDecl) [(Ident, SMT.Expr)]
 
 instance Pretty SMT.Expr where pretty e = string (show $ SMT.pp e)
+instance Pretty SMTExpr where
+    pretty (SMTExpr e decls idfacts) =
+          parens (text "SMTExpr" <+> pretty e <$>
+                    indent 2 (vsep
+                         [hang 4 $ text "decls =" <$> pretty (Set.toList decls)
+                         ,hang 4 $ text "idfacts =" <$> pretty idfacts]))
+instance Pretty SMT.Name where pretty x = string (show x)
+instance Pretty SMT.Type where pretty x = string (show x)
+instance Pretty SymDecl where
+    pretty (SymDecl nm tys ty) =
+          parens (text "SymDecl" <+> pretty nm <+> pretty tys <+> pretty ty)
 
-mergeSMTExpr f (SMTExpr e1 s1 m1) (SMTExpr e2 s2 m2) =
-    SMTExpr (f e1 e2) (Set.union s1 s2) (m1 ++ m2)
+
+--mergeSMTExpr f (SMTExpr e1 s1 m1) (SMTExpr e2 s2 m2) =
+--    SMTExpr (f e1 e2) (Set.union s1 s2) (m1 ++ m2)
 
 mergeSMTExprAsPathFact (SMTExpr e s m) (Facts preconds identfacts pathfacts decls) =
   Facts preconds (m ++ identfacts) (e:pathfacts) (Set.union s decls)
 
-smtExprAddPathFacts (SMTExpr e s m) ps = SMTExpr e s (ps ++ m)
+--smtExprAddPathFacts (SMTExpr e s m) ps = SMTExpr e s (ps ++ m)
 
-smtExprLift  f (SMTExpr e s m) = SMTExpr (f e) s m
-smtExprLiftM f (SMTExpr e s m) = liftM (\e' -> SMTExpr e' s m) (f e)
+--smtExprLift  f (SMTExpr e s m) = SMTExpr (f e) s m
+--smtExprLiftM f (SMTExpr e s m) = liftM (\e' -> SMTExpr e' s m) (f e)
 
 data Facts = Facts { fnPreconds :: Map Ident [[MoVar] -> SC SMTExpr]
                    , identFacts :: [(Ident, SMT.Expr)]
@@ -91,23 +103,16 @@ smtVars tids = map smtVar tids
 smtNameI :: SMT.Ident -> SMT.Name
 smtNameI (SMT.I nm _) = nm
 
+insertIdentFact id expr idfacts =
+  -- trace (show (text "insertIdentFact" <+> indent 4 (vsep [pretty (id,expr), pretty idfacts]))) $
+  (id, expr):idfacts
+
 addIdentFact facts id (SMTExpr expr _ _) ty =
   addSymbolicVar facts' (TypedId ty id)
-    where facts' = facts { identFacts = (id, expr):(identFacts facts) }
-
-addIdentFact'' facts id expr ty =
-  addSymbolicVar facts' (TypedId ty id)
-    where facts' = facts { identFacts = (id, expr):(identFacts facts) }
-
-addIdentFact' id (SMTExpr expr decls idfacts) ty =
- addSymbolicVar' (SMTExpr expr decls idfacts' ) (TypedId ty id)
-    where idfacts' = (id, expr):idfacts
+    where facts' = addIdentFact''' facts id expr
 
 addIdentFact''' facts id expr =
-    facts { identFacts = (id, expr):(identFacts facts) }
-
-addIdentFacts''' facts idfacts =
-    facts { identFacts = idfacts ++ identFacts facts }
+    facts { identFacts = insertIdentFact id expr (identFacts facts) }
 
 mkSymbolicVar :: TypedId MonoType -> SymDecl
 mkSymbolicVar v = d
@@ -247,9 +252,6 @@ scRunZ3 expr script = lift $ do
                                string (show doc)] ++ map text strs)
   return ()
 
-putZ3Result (Left x) = putStrLn x
-putZ3Result (Right strs) = mapM_ (putStrLn . ("\t"++)) strs
-
 runStaticChecks :: ModuleIL KNMono MonoType -> Compiled ()
 runStaticChecks m = do
   checkModuleExprs (moduleILbody m) (Facts Map.empty [] [] Set.empty)
@@ -282,32 +284,34 @@ checkFn' fn facts0 = do
         unzip $ Prelude.concat [case tidType v of RefinedType v' _ _ -> [(v', v)]
                                                   _                  -> []
                                | v <- fnVars fn]
-      mbFnOfRefinement rt@(RefinedType {}) = [fnOfRefinement rt]
-      mbFnOfRefinement _                   = []
 
-      fnOfRefinement (RefinedType _ body _) =
-          Fn (fnVar fn) relevantFormals body NotRec (ExprAnnot [] (MissingSourceRange "fnOfRefinement") [])
+      mbFnOfRefinement (RefinedType _ body _) =
+          [Fn (fnVar fn) relevantFormals body NotRec
+           (ExprAnnot [] (MissingSourceRange "fnOfRefinement") [])]
+      mbFnOfRefinement _                   = []
 
       refinements = concatMap mbFnOfRefinement (map tidType $ fnVars fn)
       foldPathFact facts f = do liftIO $ putStrLn $ "checkFn' calling smtEvalApp... {"
                                 e <- smtEvalApp facts f relevantActuals
                                 liftIO $ putStrLn $ "checkFn' called  smtEvalApp... }"
+                                liftIO $ putDocLn $ pretty e
                                 return $ mergeSMTExprAsPathFact e facts
   liftIO $ putStrLn $ "%%%%%%%%%%%%%%%%%%%%%%%%%%%"
-  liftIO $ putStrLn $ show $ map pretty refinements
-  liftIO $ putStrLn $ show $ fnVars fn
-  liftIO $ putStrLn $ show relevantFormals
-  liftIO $ putStrLn $ show relevantActuals
+  liftIO $ putStrLn $ "refinements: " ++ show (map pretty refinements)
+  liftIO $ putStrLn $ "fnVars fn:   " ++ show (fnVars fn)
+  liftIO $ putStrLn $ "relevantFormals: " ++ show relevantFormals
+  liftIO $ putStrLn $ "relevantActuals: " ++ show relevantActuals
 
-
+  -- Generates equalities between the refinements and the actuals
+  -- (freshly-generated versions thereof for each refinement predicate).
   facts <- foldlM foldPathFact facts0 refinements
 
   -- Before processing the body, add declarations for the function formals,
   -- and record the preconditions associated with any function-typed formals.
-  let facts' = foldl' addSymbolicVar facts (fnVars fn)
+  let facts' = foldl' addSymbolicVar facts (relevantFormals ++ fnVars fn)
   facts''  <- foldlM recordIfHasFnPrecondition facts' (fnVars fn)
 
-  liftIO $ putStrLn $ "checking body " ++ (show (pretty (fnBody fn)))
+  liftIO $ putDoc $ text "checking body " <$> indent 2 (pretty (fnBody fn)) <> line
   smtexpr <- checkBody (fnBody fn) facts''
   liftIO $ putStrLn $ "... checked body"
   -- We need to add declarations for the function variables to both the facts
@@ -320,11 +324,13 @@ smtEvalApp facts fn args = do
   smt_f <- (mkPrecondGen facts fn) args
   return $ smt_f
 
-withPathFact facts pathfact = facts { pathFacts = pathfact : pathFacts facts }
+withPathFact  facts pathfact  = withPathFacts facts [pathfact]
+withPathFacts facts pathfacts = facts { pathFacts = pathfacts ++ pathFacts facts }
 
 lift2 f [x, y] = f x y
+lift2 _ _ = error "KNStaticChecks.hs: lift2 passed a non-binary list of arguments"
 
-inRangeCO x (a, b) = bvsge x a `SMT.and` bvslt x b
+-- inRangeCO x (a, b) = bvsge x a `SMT.and` bvslt x b
 inRangeCC x (a, b) = bvsge x a `SMT.and` bvsle x b
 
 smtI s = SMT.I (SMT.N s) []
@@ -355,7 +361,10 @@ staticArrayValueBounds (Left (LitInt li):entries) = go entries (Just (litIntValu
         go ((Right _):_) _ = Nothing
         go (Left (LitInt li):xs) (Just (mn, mx)) = let x = litIntValue li in
                                                    go xs (Just (min x mn, max x mx))
+        go _ _ =           error "KNStaticChecks.hs: staticArrayValueBounds expects literal int entries."
+staticArrayValueBounds _ = error "KNStaticChecks.hs: staticArrayValueBounds expects literal int entries."
 
+-- Wraps the SMT.Expr produced by ``f`` with the current facts to make an SMTExpr.
 withDecls :: Facts -> (Ident -> SC SMT.Expr) -> Maybe (Ident -> SC SMTExpr)
 withDecls facts f = Just $
     \x -> do e <- f x
@@ -371,11 +380,10 @@ withBindings fnv vs facts0 = do
         unzip $ Prelude.concat [case tidType v of RefinedType v' _ _ -> [(v', v)]
                                                   _                  -> []
                                | v <- vs]
-      mbFnOfRefinement rt@(RefinedType {}) = [fnOfRefinement rt]
-      mbFnOfRefinement _                   = []
 
-      fnOfRefinement (RefinedType _ body _) =
-          Fn fnv relevantFormals body NotRec (ExprAnnot [] (MissingSourceRange "fnOfRefinement") [])
+      mbFnOfRefinement (RefinedType _ body _) =
+        [Fn fnv relevantFormals body NotRec (ExprAnnot [] (MissingSourceRange "fnOfRefinement") [])]
+      mbFnOfRefinement _                   = []
 
       refinements = concatMap mbFnOfRefinement (map tidType vs)
       foldPathFact facts f = do liftIO $ putStrLn $ "withBindings calling smtEvalApp... { "
@@ -418,7 +426,7 @@ computeRefinements fnv =
   in
   refinements
 
-genSkolem ty = liftM (TypedId ty) (lift $ ccFreshId $ T.pack ".skolem")
+--genSkolem ty = liftM (TypedId ty) (lift $ ccFreshId $ T.pack ".skolem")
 
 primName tid = T.unpack (identPrefix (tidIdent tid))
 
@@ -456,7 +464,7 @@ checkBody expr facts =
     KNTuple       {} -> return Nothing
     KNAllocArray  {} -> return Nothing
 
-    KNArrayRead ty (ArrayIndex a i _ SG_Static) -> do
+    KNArrayRead _ty (ArrayIndex a i _ SG_Static) -> do
         --let precond = (sign_extend 32 (smtVar i)) `inRangeCO` (litOfSize 0 I64, smtArraySizeOf (smtVar a))
         let precond = bvult (zero_extend 32 (smtVar i)) (smtArraySizeOf (smtVar a))
         scRunZ3 expr $ scriptImplyingBy' precond facts
@@ -468,7 +476,7 @@ checkBody expr facts =
           Just f -> do liftIO $ putStrLn $ "have a constraint on output of array read: " ++ show (f (tidIdent a))
                        return $ withDecls facts $ \x -> return $ f x
 
-    KNArrayRead ty (ArrayIndex a i _ SG_Dynamic) -> do
+    KNArrayRead _ty (ArrayIndex a _i _ SG_Dynamic) -> do
         -- If the array has an annotation, use it.
         mb_f <- scGetFact (tidIdent a)
         case mb_f of
@@ -478,7 +486,7 @@ checkBody expr facts =
                        return $ withDecls facts $ \x -> return $ f x
 
 
-    KNArrayPoke ty (ArrayIndex a i _ _) v -> return Nothing
+    KNArrayPoke _ty (ArrayIndex _a _i _ _) _v -> return Nothing
 
     KNArrayLit (ArrayType (PrimInt sz)) _v entries -> do
         {- TODO: attach this condition to the array itself, so that
@@ -547,16 +555,16 @@ checkBody expr facts =
 
     KNAppCtor     {} -> return Nothing
     KNInlined _t0 _to _tn _old new -> checkBody new facts
-    KNCase        ty v arms     -> do
+    KNCase       _ty v arms     -> do
         -- TODO: better path conditions for individual arms
         _ <- forM arms $ \arm -> do
             case caseArmGuard arm of
                 Nothing -> do facts' <- withBindings v (caseArmBindings arm) facts
                               checkBody (caseArmBody arm) facts'
-                Just g -> error $ "can't yet support case arms with guards in KNStaticChecks"
+                Just _g -> error $ "can't yet support case arms with guards in KNStaticChecks"
         return Nothing
         --error $ "checkBody cannot yet support KNCase" -- KNCase ty v (map (fmapCaseArm id (q tailq) id) arms)
-    KNIf          ty v e1 e2    -> do
+    KNIf        _ty v e1 e2    -> do
         _ <- checkBody e1 (facts `withPathFact` (        (smtVar v)))
         _ <- checkBody e2 (facts `withPathFact` (SMT.not (smtVar v)))
         return Nothing
@@ -611,55 +619,12 @@ checkBody expr facts =
         liftIO $ putStrLn $ "letval checking bound expr for " ++ show id
         liftIO $ putStrLn $ "    " ++ show e1
 
-        facts0 <-
-         case typeKN e1 of
-          RefinedType v e args -> do
-              liftIO $ putStrLn $ "*#*#*#*#*#*#**#*#*#* bound a refined var, adding a fact? " ++ show args
-              liftIO $ putStrLn $ show id
-              liftIO $ putStrLn $ show v
-              liftIO $ putStrLn $ show e
-              -- Conjure up a name for the overall value of the refinement expr.
+        facts0 <- case typeKN e1 of
+                      RefinedType v e _ -> do
+                           compileRefinementBoundTo id v e facts
+                      _ -> return facts
 
-              resid <- lift $ ccFreshId $ T.pack ".true"
-              -- Compute an SMT expression representing ``expr'',
-              -- in an environment unaffected by ``blah``.
-
-              liftIO $ putStrLn $ "KNLetVal -> RefinedType -> pre check"
-              mb_f2 <- checkBody e facts
-              liftIO $ putStrLn $ "KNLetVal -> RefinedType -> mid check"
-              (SMTExpr body decls idfacts) <- (trueOr mb_f2) resid
-
-              liftIO $ putStrLn $ "KNLetVal -> RefinedType -> post check"
-              liftIO $ putStrLn $ show (id, tidIdent v)
-              liftIO $ putStrLn $ show $ text "     body:    " <> pretty body
-              liftIO $ putStrLn $ show $ text "     idfacts: " <> pretty idfacts
-
-              let idfacts' = extendIdFacts resid body [(id, tidIdent v)] idfacts
-
-              let facts'0 = addSymbolicVar facts v
-              let facts'1 = addSymbolicVar facts'0 (TypedId (PrimInt I1) resid)
-              let facts'2 = addIdentFacts''' facts'1 idfacts'
-              let facts'3 = addSymbolicDecls facts'2 decls
-              return $ facts'3 `withPathFact` (smtId resid)
-
-              --return $ (addSymbolicVar ( ) v) `withPathFact` (smtId resid)
-              {-return $ (flip addSymbolicVar v $
-                         addIdentFact'''
-                          (addIdentFact'' facts resid body (PrimInt I1))
-                          id (idsEq (id, tidIdent v))) `withPathFact` (smtId resid)-}
-{-
-              -- Assert the truthiness of the refinement expr,
-              -- given that id and v are the same.
-              let idfacts' = extendIdFacts resid body [(id, tidIdent v)] idfacts
-              let smtexpr = SMTExpr (smtId resid) decls idfacts'
-              -- Note this starts from facts', not facts.
-              -- The latter *is* affected by ``blah``.
-              let facts''  = foldl' addSymbolicVar facts'  [v, TypedId (PrimInt I1) resid]
-              let thm = scriptImplyingBy smtexpr facts''
-              scRunZ3 expr (SMT.pp thm)
-              -}
-          _ -> return facts
-
+        -- Note: we intentionally use facts and not facts0 here...
         mb_f <- checkBody e1 facts
         case mb_f of
           Nothing -> do liftIO $ putStrLn $ "  no fact for id binding " ++ show id
@@ -681,7 +646,7 @@ checkBody expr facts =
         checkBody b  facts
         return Nothing
 
-    KNLetRec      ids es  b     ->
+    KNLetRec      _ids _es _b     ->
         error $ "KNStaticChecks.hs: checkBody can't yet support recursive non-function bindings."
 
     KNLetFuns     ids fns b     -> do
@@ -749,6 +714,8 @@ mkPrecondGen facts fn = \argVars -> do
   lift $ evalStateT (compilePreconditionFn fn' facts argVars) (SCState Map.empty)
 
 -- Implicit precondition: fn is alpha-renamed.
+compilePreconditionFn :: Fn RecStatus KNMono MonoType -> Facts
+                      -> [TypedId MonoType] -> SC SMTExpr
 compilePreconditionFn fn facts argVars = do
   liftIO $ putStrLn $ "compilePreconditionFn<" ++ show (length argVars) ++ " vs " ++ show (length (fnVars fn)) ++ " # " ++ show argVars ++ "> ;; " ++ show fn
   resid <- lift $ ccFreshId $ identPrefix $ fmapIdent (T.append (T.pack "res$")) $ tidIdent (fnVar fn)
@@ -759,6 +726,22 @@ compilePreconditionFn fn facts argVars = do
   let idfacts' = extendIdFacts resid body (zip (map tidIdent argVars)
                                                (map tidIdent $ fnVars fn)) idfacts
   return $ SMTExpr (smtId resid) decls idfacts'
+
+compileRefinementBoundTo id v0 e0 facts = do
+  uref <- lift $ gets ccUniqRef
+  (Fn v [] e _ _) <- liftIO $ alphaRename' (Fn v0 [] e0 undefined undefined) uref
+  mb_f2 <- checkBody e facts
+  resid <- lift $ ccFreshId $ T.pack ".true"
+  (SMTExpr body decls idfacts) <- (trueOr mb_f2) resid
+  let idfacts' = extendIdFacts resid body [(id, tidIdent v)] idfacts
+  --let facts'0 = addSymbolicVar facts v
+  --let facts'1 = addSymbolicVar facts'0 (TypedId (PrimInt I1) resid)
+  let facts'1 = foldl' addSymbolicVar facts [v, TypedId (PrimInt I1) resid]
+  let lostFacts = (identFacts facts'1) `butnot` idfacts'
+  let facts'2 = if null lostFacts then facts'1 { identFacts = idfacts' }
+                                  else error $ "dont wanna lose these facts! : " ++ (show lostFacts)
+  let facts'3 = addSymbolicDecls facts'2 decls
+  return $ facts'3 `withPathFact` (smtId resid)
 
 -- Adds ``body`` as an associated fact of ``resid``,
 -- and adds pairwise equality facts assoc w/ ``map fst equalIds``.
