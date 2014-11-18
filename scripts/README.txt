@@ -77,7 +77,6 @@ TODO
 ----
 
 * fit.py
-* foster.py -- I think this is a vestigial file.
 * inspect-fn.py -- A little tool to dump some stats about LLVM assembly;
                    it currently just dumps gcroot-related info.
                    See also ``extract-fn.sh`` as a wrapper around

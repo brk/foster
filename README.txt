@@ -14,19 +14,22 @@ $ ccmake .. -G "Unix Makefiles"
 
 Once the first-time steps are done:
 
-$ make        # Recompile any updated files.
-$ ctest       # Run tests in mostly-quiet mode; test details will not be shown
-$ ctest -V    # Run tests in verbose mode; output from tests will be printed.
+$ make            # Recompile any updated files.
+$ make regress    # Run regression tests
 
-I usually run ``ctest -V`` to get the command line to run the Python test script.
-After running all the tests, you can look for trace messages from the middle-end
-with a command like this:
+After running regression tests, you can look for trace messages
+from the middle-end with a command like this:
 
 $ cat test-tmpdir/*/compile.log.txt | grep '...' | sort | uniq
 
-Other commands of interest:
+Other commands of interest, from _obj:
 
 $ make hs_clean    # Delete just the Haskell-generated .o files
+$ make list_regression_tests
+
+From project root:
+
+$ scripts/countlines.sh  # Give an overview of where code is, volume-wise.
 
 ============================= Installation =================================
 Paths:
