@@ -1,14 +1,17 @@
 Pattern Match Compilation
 -------------------------
 
-Pattern matching occurs in stages. In the future, we can make more of the process
-be a source-to-source translation by leveraging guaranteed contification optimization.
+Compilation of nested pattern matches to flat decision trees
+occurs during the conversion to K-normal form. In the past, this occurred
+during closure conversion, as a transformation on control flow graphs. However,
+the advantage of using K-normal form instead of control flow graphs is that
+the process of pattern matching remains expressible as a source-to-source
+transformation. Thanks to guaranteeed contification, the lambda-based
+indirections used to avoid code blowup do not induce extra overhead beyond the
+original CFG-oriented scheme.
 
-Apart from alpha-renaming and type annotations, pattern matches don't change much
-until CFG building. In particular, K-normal form retains expressions as RHSes of
-pattern matches. When we build a CFG, however, we replace each arm's expression
-with a label for the code to execute.
-
+.. note::
+        The examples below are holdovers from the CFG-based days...
 
 A Medium Example
 ~~~~~~~~~~~~~~~~
@@ -701,7 +704,82 @@ With sharing of decision subtrees, the control flow graph is simplified:
 
 .. image:: t1b.dot.png
 
-LLVM
-""""
+.. note ::
+        As the images above show, the decision trees we currently generate are
+        too "balanced" -- it should be possible to reach the first two cases
+        with one or two tests, respectively, but the current tree always uses
+        three tests.
 
+.. LLVM
+.. """"
+
+
+Source-to-Source Pattern Matching
+---------------------------------
+
+A graph showing a partial dependency tree of the implementation of
+source-to-source pattern matching:
+
+.. graphviz::
+
+    digraph g {
+    # pre -> dependent
+
+    subgraph cluster_knexpr { label = "KNExpr";
+    tyPattern -> compileCaseArms
+    compileCaseArms -> tyPatternRepr
+
+    subgraph cluster_patternmatch {  label = "PatternMatch";
+
+    compilePatterns -> compilePattern
+    compilePatterns -> cc
+    cc -> tyVarOcc
+    cc -> tyLLCtorInfo
+    cc -> tyDecisionTreeSw
+
+    tyDecisionTreeSw -> tyVarOcc
+    tyDecisionTreeSw -> tyDecisionTreeArm
+    }
+
+    tyDecisionTreeArm -> compiledDecisionTree
+    tyPatternRepr -> compilePatterns
+    compiledDecisionTree -> computeNamesForOccurrencesIn ->   hashConsDecisionTreeToDTO
+    hashConsDecisionTreeToDTO -> knExprOfDTO -> wrapWithKonts
+
+    tyDecisionTreeArm -> computeNamesForOccurrencesIn
+    tyDecisionTreeArm -> hashConsDecisionTreeToDTO
+
+    tyDecisionTreeSw -> hashConsDecisionTreeToDTO
+
+    tyDecisionTreeSw -> tyLLCtorInfo
+
+    compilePattern -> tyLLCtorInfo
+
+    }
+
+    subgraph cluster_knexpr2 {  label = "KNExpr2 (CaseArmFlat KNCall)";
+    tyKNExpr -> tyPatternFlat
+    }
+
+    wrapWithKonts -> tyKNExpr
+
+    subgraph cluster_cfg {  label = "CFG (CaseArmFlat BlockId)";
+      tyPatternFlat -> cfCase
+      tyKNExpr -> cfCase
+    }
+
+    cfCase -> closureConvertBlocks
+
+    subgraph cluster_cloconv {  label = "CloConv (ILCaseArm)";
+    closureConvertBlocks -> ilmTargetOf -> ilCaseArm
+    }
+
+    tyCaseArm -> compileCaseArms
+    tyCaseArmFlat -> ilmTargetOf
+    tyKNExpr -> tyCaseArmFlat
+    compiledDecisionTree -> tyCaseArmFlat
+
+    tyLLCtorInfo -> ilCaseArm
+
+    }
 
