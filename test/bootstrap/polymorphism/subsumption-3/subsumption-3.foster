@@ -1,0 +1,26 @@
+main = {
+  expect_i1 True;
+  print_i1 (__COMPILES__
+      {
+      runST : forall a:Boxed, {  (forall s:Boxed, { s => a }) => a }
+      =>
+      newRef : forall x:Boxed y:Boxed, { y => { x => (x, y) } }
+      =>
+
+      ()
+    });
+
+  expect_i1 False;
+  print_i1 (__COMPILES__
+          {
+          runST : forall a:Boxed, {  (forall s:Boxed, { s => a }) => a }
+          =>
+          newRef : forall x:Boxed y:Boxed, { y => { x => (x, y) } }
+          =>
+
+          runST (newRef ());
+          ()
+        }
+    );
+};
+

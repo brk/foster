@@ -1,0 +1,54 @@
+main = {
+  test-assert-bool-lits !;
+  test-assert-bool-unrefined True False;
+  //test-assert-bool-refined True False;
+  test-assert-bool-refined-alt !;
+};
+
+test-assert-bool-lits = {
+  expect_i1 True;
+  print_i1 (__COMPILES__ prim assert-invariants True);
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ prim assert-invariants False);
+};
+
+test-assert-bool-unrefined = { tru : Bool => fls : Bool =>
+  expect_i1 False;
+  print_i1 (__COMPILES__ prim assert-invariants tru);
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ prim assert-invariants fls);
+};
+
+/*
+//test-assert-bool-refined = { tru : % t : Bool : prim ==Bool t True
+//                          => fls : % f : Bool : prim ==Bool f False
+//                          =>
+test-assert-bool-refined :: { % t : Bool : prim ==Bool t True
+                          =>  % f : Bool : prim ==Bool f False => () };
+test-assert-bool-refined = { tru => fls =>
+  expect_i1 True;
+  print_i1 (__COMPILES__ prim assert-invariants tru);
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ prim assert-invariants fls);
+};
+*/
+
+ret-true :: { % t : Bool : prim ==Bool t True };
+ret-true = { True };
+
+ret-false :: { % f : Bool : prim ==Bool f False };
+ret-false = { False };
+
+test-assert-bool-refined-alt = {
+  tru = ret-true !;
+  fls = ret-false !;
+
+  expect_i1 True;
+  print_i1 (__COMPILES__ prim assert-invariants tru);
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ prim assert-invariants fls);
+};

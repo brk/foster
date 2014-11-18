@@ -1,0 +1,8 @@
+main = {
+  print_i32 2;
+  expect_i32 (case 0
+                of _ if False -> 1
+                of _ if True  -> 2
+                of _          -> 3
+              end);
+};

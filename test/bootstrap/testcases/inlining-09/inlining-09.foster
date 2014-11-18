@@ -1,0 +1,81 @@
+snafuinclude Primitives "primitives";
+
+main = {
+  intCountBits (noinline_foo !);
+};
+
+
+
+
+intNat :: { IntInf => NatInf };
+intNat = { i => case i of $IntInf n _ -> n end };
+
+noinline_foo = {
+  a = prim mach-array-literal 0;
+  IntInf (NatInf a) True
+};
+
+type case NatInf
+      of $NatInf (Array Word)
+      ;
+
+natDigits :: { NatInf => Array Word };
+natDigits = { n =>
+  case n of $NatInf a -> a end
+};
+
+natCountBits = { i : NatInf =>
+  natCountBits_A (natDigits i)
+};
+
+wordNumBits32 :: { Int32 };
+wordNumBits32 = {
+    if 0 ==Word bitxor-Word (-1) 0FFFF`FFFF_16
+      then 32
+      else 64
+    end
+};
+
+arrayLength32 :: forall x:Type, { Array x => Int32 };
+arrayLength32 = { forall t:Type, a : Array t =>
+  trunc_i64_to_i32 (prim_arrayLength a)
+};
+
+digitNumBits :: { Int32 };
+digitNumBits = { wordNumBits32 !  -Int32 4 };
+
+natCountBits_A :: { Array Word => Int32 };
+natCountBits_A = { a =>
+  fin = arrayLength32 a -Int32 1;
+
+  // Count the bits used in the digits up to,
+  // but not including, the last one.
+  r0 = fin *Int32 (digitNumBits !);
+
+  // Add the number of bits needed for the last digit.
+  r0  +Int32 (bitlength-Word a[fin]);
+};
+
+// TODO should this be called wordCountBits instead?
+// Note: this function implements the function called _BitScanReverse,
+//       which is equal to llvm.ctlz(0, 0) - llvm.ctlz(k, 0).
+bitlength-Word :: { Word => Int32 };
+bitlength-Word = { k =>
+  rec go = { x => acc =>
+                 if x ==Word 0
+                   then acc
+                   else go (bitlshr-Word x 1) (acc +Int32 1)
+                 end
+           };
+  in
+    go k 0
+  end
+};
+
+type case IntInf
+      of $IntInf NatInf Bool
+      ;
+
+intCountBits = { i : IntInf =>
+  natCountBits (intNat i)
+};

@@ -1,0 +1,123 @@
+main = {
+/*
+  expect_i1 True;
+  print_i1 (__COMPILES__ foo3a 1);
+  expect_i1 True;
+  print_i1 (__COMPILES__ foo3b 1);
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ foo3a 0);
+  expect_i1 False;
+  print_i1 (__COMPILES__ foo3b 0);
+
+  //fx = { x : Int32 => x };
+  //bar1 fx;
+  //bar1 foo3;
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ prim assert-invariants (0 >UInt32 0));
+
+  expect_i32 0;
+  print_i32 0;
+
+  expect_i1 True;
+  print_i1 (__COMPILES__ prim assert-invariants (0 >=UInt32 0));
+
+  if 0 >UInt32 0
+   then prim assert-invariants (0 >UInt32 0); // unsat (true... or dead code)
+   else ()
+  end;
+*/
+
+ ()
+
+};
+
+// Refinements of return values (postconditions); implicit dependency.
+/*
+pairi :: { % pa : Int32 : True =>
+           (% ra : Int32 : ra >UInt32 2
+           ,       Int32) };
+pairi = { a => (a +Int32 1, 0) };
+*/
+
+
+resi-f :: { % pa : Int32 : True =>
+          % ra : Int32 : ra >UInt32 2 };
+resi-f = { a =>
+  a +Int32 1;
+};
+
+
+/*
+resi-t :: { % pa : Int32 : pa ==Int32 1 =>
+            % ra : Int32 : ra ==Int32 2 };
+resi-t = { a =>
+  rv = a +Int32 1;
+  rv
+};
+*/
+
+/*
+// This looks kosher but it's not, due to overflow when ``a`` is 0xFF...FF.
+resi-ff :: { % pa : Int32 : pa >UInt32 1 =>
+             % ra : Int32 : ra >UInt32 2 };
+resi-ff = { a =>
+  rv = a +Int32 1;
+  rv
+};
+*/
+
+/*
+// Refinements of return values (postconditions); explicit dependency.
+paird :: { % pa : Int32 : True =>
+           (% ra : Int32 : ra >UInt32 pa
+           ,       Int32) };
+paird = { a => (a +Int32 1, 0) };
+*/
+
+/*
+foo3a :: { % zz : Int32 : zz >UInt32 0 => Int32 };
+foo3a = { yy : Int32 =>
+  prim assert-invariants (yy >=UInt32 0);
+  0
+};
+
+foo3b = { yy : % zz : Int32 : zz >UInt32 0 =>
+  prim assert-invariants (yy >=UInt32 0);
+  0
+};
+*/
+
+/*
+bar1 = { fz : #precondition { qq => qq >=UInt32 0 }
+              { Int32 => Int32 }
+        =>
+  fz 0 // should succeed: (0 >= 0)
+};
+*/
+
+
+/*
+bar2 = { f : { % x : Int32 : x !=Int32 255 => Int32 }
+        =>
+  bad f;
+};
+
+// encoding of "no precondition"
+bad = { f : #precondition { x => x ==Int32 x }
+            { % x : Int32 : x ==Int32 x => Int32 }
+        =>
+  f 0
+};
+*/
+
+
+/*
+foo = { x : Int32 =>
+  if prim ==Int32 x 0
+    then 0
+    else prim sdiv-unsafe-Int32 4 x
+  end
+};
+*/

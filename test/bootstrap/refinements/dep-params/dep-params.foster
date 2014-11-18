@@ -1,0 +1,27 @@
+foo :: { % aa : Int32 : True
+      => % bb : Int32 : bb >UInt32 aa
+      => % rv : Int32 : True };
+foo =  { a => b => 42 };
+
+bar :: { % xx : Int32 : True
+      =>        ()
+      => % yy : Int32 : True
+      => % zz : Int32 : yy >UInt32 xx };
+bar =  { a => b => c => 43 };
+
+main = {
+  //expect_i1 True;
+  //print_i1 (__COMPILES__ foo 0 1);
+
+  //expect_i1 False;
+  //print_i1 (__COMPILES__ foo 3 2);
+
+  /*
+  expect_i1 True;
+  print_i1 (__COMPILES__ bar 0 1);
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ bar 3 2);
+  */
+  ()
+};
