@@ -153,11 +153,7 @@ parseFn pbexpr = do annot <- parseAnnot pbexpr
                     let tyformals = map parseTypeFormal $
                                         toList $ PBValAbs.type_formals valabs
                     parsedFormals <- mapM parseFormal formals
-                    precond <- case PBValAbs.precond valabs of
-                                Just e -> liftM HavePrecondition (parseExpr e)
-                                Nothing -> return $ NoPrecondition (show name)
                     return $ (FnAST annot name tyformals parsedFormals body
-                               precond
                                False) -- assume closure until proven otherwise
   where
      parseFormal (Formal u t) = do pt <- parseType t

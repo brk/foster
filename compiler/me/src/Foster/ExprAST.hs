@@ -67,7 +67,6 @@ data FnAST ty  = FnAST { fnAstAnnot    :: ExprAnnot
                        , fnTyFormals   :: [TypeFormal]
                        , fnFormals     :: [TypedId ty]
                        , fnAstBody     :: ExprAST ty
-                       , fnAstPrecond  :: MaybePrecondition (ExprAST ty)
                        , fnWasToplevel :: Bool
                        } deriving (Show)
 

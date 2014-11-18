@@ -19,11 +19,10 @@ convertVar f (TypedId t i) = do ty <- f t
                                 return $ TypedId ty i
 
 convertFun :: Monad m => (a -> m b) -> FnAST a -> m (FnAST b)
-convertFun f (FnAST rng nm tyformals formals body mbprecond toplevel) = do
+convertFun f (FnAST rng nm tyformals formals body toplevel) = do
     formals' <- mapM (convertVar f) formals
     body'    <- convertExprAST f body
-    mbprecond' <- mapMaybePreconditionM (convertExprAST f) mbprecond
-    return $ FnAST rng nm tyformals formals' body' mbprecond' toplevel
+    return $ FnAST rng nm tyformals formals' body' toplevel
 
 convertDecl :: Monad m => (a -> m b) -> (String, a) -> m (String, b)
 convertDecl f (s, ty) = do t <- f ty ; return (s, t)
