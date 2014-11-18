@@ -96,7 +96,7 @@ instance Show TypeTC where
         TyVarTC     tv         -> show tv
         ArrayTypeTC ty         -> "(Array " ++ show ty ++ ")"
         RefTypeTC   ty         -> "(Ptr " ++ show ty ++ ")"
-        MetaTyVarTC _          -> "(MetaTyVar)"
+        MetaTyVarTC _          -> "(MetaTyVar" ++ show (pretty x) ++ ")"
         RefinedTypeTC v _  _   -> "(RefinedTypeTC " ++ show v ++ ")"
 
 boolTypeTC = PrimIntTC I1

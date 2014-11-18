@@ -17,6 +17,7 @@ options =
  , Option []     ["dump-fn"]    (ReqArg DumpFn      "FN") "dump a particular fn"
  , Option []     ["standalone"] (NoArg  Standalone)       "no extra/hidden code"
  , Option []     ["verbose"]    (NoArg  Verbose)          "verbose mode"
+ , Option []     ["interactive"](NoArg  Interactive)      "interactive mode (pause on errors)"
  , Option []     ["dump-prims"] (NoArg  DumpPrims)        "dump primitive bindings"
  , Option []     ["no-inline"]  (NoArg  NoInline)         "disable inlining"
  , Option []     ["inline"]     (NoArg  Inline)           "enable inlining"
@@ -31,6 +32,7 @@ getInterpretFlag (flags, _) = foldr (\f a -> case f of Interpret d -> Just d  ; 
 getProgArgs      (flags, _) = foldr (\f a -> case f of ProgArg arg -> arg:a   ; _ -> a) []      flags
 getDumpFns       (flags, _) = foldr (\f a -> case f of DumpFn  arg -> arg:a   ; _ -> a) []      flags
 getVerboseFlag   (flags, _) =       Verbose   `elem` flags
+getInteractiveFlag(flags, _) =      Interactive `elem` flags
 getStandaloneFlag (flags, _) =      Standalone `elem` flags
 getDumpIRFlag ir (flags, _) =       DumpIR ir `elem` flags
 getDumpPrimitives(flags, _) =       DumpPrims `elem` flags
@@ -45,6 +47,7 @@ data Flag = Interpret String
           | DumpFn    String
           | ProgArg   String
           | Verbose
+          | Interactive
           | Standalone
           | DumpPrims
           | NoCtorOpt

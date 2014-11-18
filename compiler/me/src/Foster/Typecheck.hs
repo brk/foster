@@ -1073,6 +1073,8 @@ tcRhoFnHelper ctx f expTy = do
                                          , indent 2 (text "Refined signature types:" <+> indent 2 (pretty ars))
                                          , indent 2 (text "Refined variable types:" <+> indent 2 (pretty vrs))
                                          , string $ highlightFirstLine rng]
+                                         -- When we remove this check, we should un-comment one of the tests in
+                                         -- bootstrap/testscase/test-fn-precond-2
                                (ar, vr) -> do
                                  tcLift $ putDocLn $ string "!!!!!!!!!!!!!!!!!!!!!!!! (rho)"
                                  tcLift $ putDocLn $ text (show $ fnAstName f)
@@ -1702,7 +1704,7 @@ checkAgainst taus (ety, MetaTyVarTC m) = do
                                 debugDoc $ string "checkAgainst: ety ~> " <+> pretty ty'
                                 --tryOverwrite
                                 return ()
-                        else return ()
+                        else tryOverwrite
     _ -> tryOverwrite
 checkAgainst _ (_, _) = return ()
 

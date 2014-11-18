@@ -69,10 +69,10 @@ pair2binding (nm, ty, mcid) = TermVarBinding nm (TypedId ty (GlobalSymbol nm), m
 -- Every function in the SCC should typecheck against the input context,
 -- and the resulting context should include the computed types of each
 -- function in the SCC.
-typecheckFnSCC :: Bool -> Bool
+typecheckFnSCC :: Bool -> Bool -> Bool
                -> Graph.SCC (FnAST TypeAST)    ->   (Context TypeTC, TcEnv)
                -> IO ([OutputOr (AnnExpr SigmaTC)], (Context TypeTC, TcEnv))
-typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
+typecheckFnSCC showASTs showAnnExprs pauseOnErrors scc (ctx, tcenv) = do
     let fns = Graph.flattenSCC scc
 
     -- Generate a binding (for functions without user-provided declarations)
@@ -147,6 +147,10 @@ typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
                     putDocLn $ red $ text "Typecheck error: "
                     forM_ errs putDocLn
                     putDocP line
+                    when pauseOnErrors $ do
+                        putStrLn "Press ENTER to continue..."
+                        _ <- getLine
+                        return ()
 
         bindingForAnnFn :: Fn () (AnnExpr ty) ty -> ContextBinding ty
         bindingForAnnFn f = TermVarBinding (identPrefix $ fnIdent f) (fnVar f, Nothing)
@@ -179,11 +183,11 @@ typecheckFnSCC showASTs showAnnExprs scc (ctx, tcenv) = do
 -- |  #. Make sure that all unification variables have been properly eliminated,
 -- |     or else we consider type checking to have failed
 -- |     (no implicit instantiation at the moment!)
-typecheckModule :: Bool
+typecheckModule :: Bool -> Bool
                 -> ModuleAST FnAST TypeAST
                 -> TcEnv
                 -> IO (OutputOr (Context TypeIL, ModuleIL AIExpr TypeIL))
-typecheckModule verboseMode modast tcenv0 = do
+typecheckModule verboseMode pauseOnErrors modast tcenv0 = do
     putStrLn $ show (moduleASTdecls modast)
     let dts = moduleASTprimTypes modast ++ moduleASTdataTypes modast
     let fns = moduleASTfunctions modast
@@ -218,7 +222,7 @@ typecheckModule verboseMode modast tcenv0 = do
             let showASTs     = verboseMode
             let showAnnExprs = verboseMode || True
             (annFnSCCs, (ctx, tcenv)) <- mapFoldM' sortedFns (ctxTC, tcenv0)
-                                              (typecheckFnSCC showASTs showAnnExprs)
+                                              (typecheckFnSCC showASTs showAnnExprs pauseOnErrors)
             unTc tcenv (convertTypeILofAST modast ctx annFnSCCs)
           Errors os -> return (Errors os)
       dups -> return (Errors [text $ "Unable to check module due to "
@@ -490,8 +494,10 @@ typecheckSourceModule :: TcEnv ->  ModuleAST FnAST TypeAST
                       -> Compiled (ModuleIL AIExpr TypeIL, Context TypeIL)
 typecheckSourceModule tcenv sm = do
     verboseMode <- gets ccVerbose
+    flags <- gets ccFlagVals
+    let pauseOnErrors = getInteractiveFlag flags
     liftIO $ putStrLn $ "Verbose mode: " ++ show verboseMode
-    (ctx_il, ai_mod) <- (liftIO $ typecheckModule verboseMode sm tcenv)
+    (ctx_il, ai_mod) <- (liftIO $ typecheckModule verboseMode pauseOnErrors sm tcenv)
                       >>= dieOnError
     showGeneratedMetaTypeVariables (tcUnificationVars tcenv) ctx_il
     return (ai_mod, ctx_il)

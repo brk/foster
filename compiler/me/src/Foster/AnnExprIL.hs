@@ -380,7 +380,8 @@ ilOf ctx typ = do
                       then return $ TupleTypeIL []
                       else tcFails [text $ "Found un-unified unification variable "
                                 ++ show (mtvUniq m) ++ "(" ++ mtvDesc m ++ ")!"]
-          Just t  -> trace ("meta ty var : " ++ show t ++ " =====> " ++ show (shallowStripRefinedTypeTC t)) $ q ( shallowStripRefinedTypeTC t)
+          Just t  -> let t' = shallowStripRefinedTypeTC t in
+                     trace ("meta ty var : " ++ show t ++ " =====> " ++ show t') $ q t'
 
 aiVar ctx (TypedId t i) = do ty <- ilOf ctx t
                              return $ TypedId ty i
