@@ -70,6 +70,49 @@ summarizeChunks = { chunks =>
   end
 };
 
+
+summarizeChunksAlt :: { List Chunk => List (Int64, Int64, Int8) };
+summarizeChunksAlt = { chunks =>
+  REC go = { i0 => // initial chunk offset (logical)
+             i  => // current chunk offset (logical)
+             b => // bytes
+             c => // current byte offset (physical)
+             v => // current byte value (b[i] == b[c - 1])
+             z => // length of current run of v's
+             rest =>
+    REC gow = { ii => cc => vv => zz =>
+    // ... [xxxxxxxxyyyyyyyyyyyyyzzzzzzzzzz] ...
+    //    i0        ^            ^
+    //       i=i0; c=8; v=x
+    //                    i=i0+7; c=8+14; v=y
+    if bytesLength b <=SInt64 cc
+      then // no more bytes in this chunk, continue with the next one,
+           // Because of the not-adjacent invariant, we don't need to
+           // worry about propagating i/z/v for the next chunk.
+           Cons (ii, zz, vv) (summarizeChunksAlt rest)
+      else
+        w = bytesGet! cc b;
+        d = c +Int64 1;
+        if w ==Int8 vv
+          then gow ii d vv (z +Int64 1)
+          else // Different byte value...
+               Cons (ii, zz, vv)
+                    (gow (i0 +Int64 c) d w 1)
+        end
+    end
+    }; gow i c v z
+  };
+
+  case chunks
+    of $Nil -> Nil
+    of $Cons ($Chunk i b) rest ->
+      if bytesLength b ==Int64 0
+        then summarizeChunks rest
+        else go i i b 1 (bytesGet! 0 b) 1 rest
+      end
+  end
+};
+
 // TODO warn/error on duplicate function prototype declarations.
 
 textOfChunkSummaries :: { List (Int64, Int64, Int8) => Text };
@@ -139,6 +182,13 @@ testChunkBuilding = {
   print_i64 (listLength64
       (chunkInsert (mkChunk 3 2 4)
         (chunkInsert (mkChunk 1 2 3) Nil)));
+
+  expect_text "(1 2 3)(3 2 4)";
+  print_text (textOfChunkSummaries
+                (Cons (1, 2, 3) (Cons (3, 2, 4) Nil)));
+
+  expect_text "AdjacentAfter";
+  print_text (cmpChunks (mkChunk 3 2 4) (mkChunk 1 2 3) |> textOfRangeChunkCmpResult);
 
   expect_text "(1 2 3)(3 2 4)";
   print_text (textOfChunkSummaries
