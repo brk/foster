@@ -1,8 +1,3 @@
-main = { 0 };
-
-
-/*snafuinclude Prelude "prelude";
-
 // Types: Word, Word*2, Word/2
 //              WordX2  WordO2 (at C level)
 //
@@ -48,6 +43,9 @@ t1 = {
                  (zext_i32_to_WordX2 2)));
 };
 
+sdiv-WordX2 = { a : WordX2 => b : WordX2 => if prim ==WordX2 b 0 then prim kill-entire-process "sdiv-WordX2 failed" else prim sdiv-unsafe-WordX2 a b end  };
+
+
 // compilation-only test
 c2 = {
   if 16 ==Word (zext_i32_to_Word 0)
@@ -62,4 +60,4 @@ c3 = { w : Word =>
     of _ -> 1
   end
 };
-*/
+

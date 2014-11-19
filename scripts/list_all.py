@@ -3,8 +3,6 @@ import os
 import os.path
 import sys
 
-from parse_args import parse_args
-
 def collect_all_tests(bootstrap_dir):
   rv = []
   for root, dirs, files in os.walk(bootstrap_dir, topdown=False):
@@ -23,7 +21,7 @@ def _main(bootstrap_dir):
     print testpath
 
 if __name__ == "__main__":
-  for var,val in parse_args("bootstrap_path").items():
-    exec "%s = '%s'" % (var, val)
+  assert len(sys.argv) == 2
+  bootstrap_path = sys.argv[1]
   bootstrap_dir = os.path.abspath(bootstrap_path)
   _main(bootstrap_dir)

@@ -37,7 +37,8 @@ Paths:
   probably in .bashrc or equivalent.
 
 Ubuntu 10.10:
-	Dependencies: CMake, ANTLR3 C runtime, Java, LLVM, Google protobuf
+	Dependencies: CMake, ANTLR3 C runtime, Java, LLVM,
+                      Google protobuf, z3
 
    You can install llvm by executing   bash scripts/install-llvm.sh
 

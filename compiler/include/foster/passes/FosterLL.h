@@ -195,6 +195,9 @@ public:
     int bitsLLVMneeds = (std::max)(intSizeForNBits(bitSize),
                                    (unsigned) cleanTextBase10.size());
     int ourSize = intSizeForNBits(bitsLLVMneeds);
+    ASSERT(ourSize > 0) << "Support for arbitrary-precision ints "
+                  << "(bit size " << bitsLLVMneeds << ") not yet implemented "
+                  << "for integer " << cleanTextBase10;
     ASSERT(abs(bitSize) <= ourSize) << "Integer '" << cleanTextBase10 << "' had "
                                << bitSize << " bits; needed " << ourSize;
     apint = new llvm::APInt(ourSize, cleanTextBase10, 10);
@@ -211,7 +214,7 @@ public:
     if (n <= 16) return 16;
     if (n <= 32) return 32;
     if (n <= 64) return 64;
-    ASSERT(false) << "Support for arbitrary-precision ints not yet implemented.";
+    if (n == 128) return 128;
     return 0;
   }
 };

@@ -53,15 +53,7 @@ namespace foster {
 namespace runtime {
 namespace gc {
 
-FILE* gclog = NULL;
-
-void gc_assert(bool cond, const char* msg) {
-  if (GC_ASSERTIONS) {
-    foster_assert(cond, msg);
-  }
-}
-
-// {{{
+// {{{ Type definitions for GC globals
 struct memory_range {
   void* base;
   void* bound;
@@ -78,8 +70,33 @@ struct allocator_range {
   memory_range range;
   bool         stable;
 };
+// }}}
+
+// {{{ Global data used by the GC
+FILE* gclog = NULL;
+
+class copying_gc;
+copying_gc* allocator = NULL;
 
 std::vector<allocator_range> allocator_ranges;
+
+// TODO de-globalize these
+base::TimeTicks gc_time;
+base::TimeTicks runtime_start;
+base::TimeTicks    init_start;
+
+typedef void* ret_addr;
+typedef void* frameptr;
+typedef std::map<frameptr, const stackmap::PointCluster*> ClusterMap;
+ClusterMap clusterForAddress;
+// }}}
+
+// {{{ Internal utility functions
+void gc_assert(bool cond, const char* msg) {
+  if (GC_ASSERTIONS) {
+    foster_assert(cond, msg);
+  }
+}
 
 bool is_marked_as_stable(tidy* body) {
   for (int i = 0, j = allocator_ranges.size(); i < j; ++i) {
@@ -89,13 +106,6 @@ bool is_marked_as_stable(tidy* body) {
   }
   return false;
 }
-// }}}
-
-////////////////////////////////////////////////////////////////////
-
-void inspect_typemap(const typemap* ti);
-
-void scanCoroStack(foster_generic_coro* coro, gc_visitor_fn visitor);
 
 inline bool
 isCoroBelongingToOtherThread(const typemap* map, heap_cell* cell) {
@@ -113,7 +123,17 @@ isCoroBelongingToOtherThread(const typemap* map, heap_cell* cell) {
 
   return false;
 }
+// }}}
 
+////////////////////////////////////////////////////////////////////
+
+// {{{
+void inspect_typemap(const typemap* ti);
+
+void scanCoroStack(foster_generic_coro* coro, gc_visitor_fn visitor);
+// }}}
+
+// {{{ copying_gc
 class copying_gc {
   class semispace {
   public:
@@ -384,7 +404,7 @@ class copying_gc {
         if (map) scan_with_map_and_arr(cell, map, arr, depth);
       }
 
-    private:
+  private:
       intr* from_tidy(tidy* t) { return (intr*) t; }
   };
 
@@ -396,6 +416,8 @@ class copying_gc {
       bytes_req_per_alloc[idx]++;
     }
   }
+
+  // {{{ Copying GC data members
 
   // An efficiently-encoded int->int map...
   // A value of v at index k in [index 0..TRACK_BYTES_ALLOCATED_ENTRIES)
@@ -426,6 +448,8 @@ class copying_gc {
       std::vector<heap_cell*> ptrs;
   };
   worklist worklist;
+
+  // }}}
 
   void gc();
 
@@ -636,8 +660,7 @@ public:
   }
   // }}}
 }; // copying_gc
-
-copying_gc* allocator = NULL;
+// }}}
 
 // This function statically references the global allocator.
 // Eventually we'll want a generational GC with thread-specific
@@ -651,11 +674,6 @@ void copying_gc_root_visitor(unchecked_ptr* root, const typemap* slotname) {
   }
   allocator->copy_or_update(root, kFosterGCMaxDepth);
 }
-
-// TODO de-globalize these
-base::TimeTicks gc_time;
-base::TimeTicks runtime_start;
-base::TimeTicks    init_start;
 
 extern "C" foster_generic_coro** __foster_get_current_coro_slot();
 
@@ -710,11 +728,6 @@ void copying_gc::worklist::process(copying_gc::semispace* next) {
   }
 }
 
-typedef void* ret_addr;
-typedef void* frameptr;
-typedef std::map<frameptr, const stackmap::PointCluster*> ClusterMap;
-ClusterMap clusterForAddress;
-
 void register_stackmaps(ClusterMap&);
 
 size_t get_default_stack_size() {
@@ -725,6 +738,7 @@ size_t get_default_stack_size() {
   return (size_t) rlim.rlim_cur;
 }
 
+// {{{ get_static_data_range
 #if OS_LINUX
 // http://stackoverflow.com/questions/4308996/finding-the-address-range-of-the-data-segment
 extern "C" char etext, end;
@@ -742,7 +756,9 @@ void get_static_data_range(memory_range& r) {
 #else
 #error TODO: Use Win32 to find boundaries of data segment range.
 #endif
+// }}}
 
+// {{{ GC startup & shutdown
 void initialize(void* stack_highest_addr) {
   init_start = base::TimeTicks::HighResNow();
   gclog = fopen("gclog.txt", "w");
@@ -815,9 +831,13 @@ int cleanup() {
   if (json) fclose(json);
   return had_problems ? 99 : 0;
 }
+// }}}
 
 #include "foster_gc_backtrace_x86-inl.h"
 
+// {{{ ``mapM visitor (callStackFromAddr start_frame)``
+// Note that ``visitor`` is ``copying_gc_root_visitor`` which just forwards
+// to the copy_or_update() method of the global ``allocator`` pointer.
 void visitGCRootsWithStackMaps(void* start_frame,
                                gc_visitor_fn visitor) {
   enum { MAX_NUM_RET_ADDRS = 1024 };
@@ -908,10 +928,11 @@ void visitGCRootsWithStackMaps(void* start_frame,
                   "TODO: scan pointer w/o metadata");
   }
 }
+// }}}
 
 /////////////////////////////////////////////////////////////////
 ////////////////////// coro functions ///////////////////////////
-/////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////{{{
 
 // coro_transfer (using CORO_ASM) pushes a fixed number
 // of registers on the stack before switching stacks and jumping.
@@ -1021,8 +1042,9 @@ void scanCoroStack(foster_generic_coro* coro,
   }
 }
 
-/////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////}}}
 
+//  {{{ Debugging utilities
 void inspect_typemap(const typemap* ti) {
   fprintf(gclog, "typemap: %p\n", ti); fflush(gclog);
   if (!ti) return;
@@ -1038,7 +1060,9 @@ void inspect_typemap(const typemap* ti) {
     fflush(gclog);
   }
 }
+// }}}
 
+// {{{ Pointer classification utilities
 bool isMetadataPointer(const void* meta) {
   if (uint64_t(meta) < uint64_t(1<<16)) return false;
   if (GC_ASSERTIONS) {
@@ -1056,11 +1080,13 @@ bool isMetadataPointer(const void* meta) {
   }
   return true;
 }
+// }}}
 
 /////////////////////////////////////////////////////////////////
 
 extern "C" {
 
+// {{{ Allocation interface used by generated code
 void* memalloc_cell(typemap* typeinfo) {
   if (GC_BEFORE_EVERY_MEMALLOC_CELL) {
     allocator->force_gc_for_debugging_purposes();
@@ -1082,8 +1108,9 @@ void* memalloc_array(typemap* typeinfo, int64_t n, int8_t init) {
 void record_memalloc_cell(typemap* typeinfo, const char* srclines) {
   allocator->record_memalloc_cell(typeinfo, srclines);
 }
+// }}}
 
-// Extern symbol for gdb, not foster programs.
+// Extern symbol for gdb, not direct use by generated code.
 void fflush_gclog() { fflush(gclog); }
 
 } // extern "C"
