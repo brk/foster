@@ -141,10 +141,9 @@ class copying_gc {
       semispace(int64_t size, copying_gc* parent) : parent(parent) {
         range.base  = malloc(size);
         range.bound = offset(range.base, size);
-        reset_bump();
         memset(range.base, 0x66, size);
 
-        genericClosureMarker = NULL;
+        reset_bump();
       }
 
       ~semispace() {
@@ -155,8 +154,6 @@ class copying_gc {
       memory_range range;
       void* bump;
       copying_gc* parent;
-
-      char* genericClosureMarker;
 
   public:
       void realign_bump() {
@@ -178,17 +175,12 @@ class copying_gc {
       bool contains(void* ptr) const { return range.contains(ptr); }
 
       void clear() {
-        fprintf(gclog, "clearing mem from %p to %p, bump = %p\n", range.base, range.bound, bump);
-        fflush(gclog);
+        fprintf(gclog, "clearing mem from %p to %p, bump = %p\n", range.base, range.bound, bump); fflush(gclog);
         memset(range.base, 0xFE, range.size());
       }
 
       int64_t used_size() const { return distance(range.base, bump); }
-      int64_t free_size() const {
-        //fprintf(gclog, "this=%p, bump = %p, low bits: %x\n", this, bump, intptr_t(bump) & 0xf);
-        //fflush(gclog);
-        return distance(bump, range.bound);
-      }
+      int64_t free_size() const { return distance(bump, range.bound); }
 
       bool can_allocate_bytes(int64_t num_bytes) {
         return free_size() > num_bytes;

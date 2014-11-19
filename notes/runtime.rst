@@ -36,6 +36,6 @@ Coroutines currently use (well, ``#ifdef``'ed out):
 
 ``foster_gc.cpp`` uses:
 
-* ``free``, ``new``, ``fprintf``, ``fflush``, ``std::map``
+* ``malloc``, ``free``, ``new``, ``fprintf``, ``fflush``, ``std::map``
 * ``offsetof``,  ``getrlimit``, ``backtrace``, ``memset``
 * ``base/time.h``, ``base/metrics/histogram.h``, ``base/metrics/statistics_recorder.h``

@@ -265,7 +265,6 @@ set(LIBFOSTER_CPP_SOURCES
         ${PROJECT_SOURCE_DIR}/runtime/libfoster_coro.cpp
         ${PROJECT_SOURCE_DIR}/runtime/libfoster_posix.cpp
         ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc.cpp
-        ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc_utils.h
         ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc_stackmaps.cpp
         ${PROJECT_SOURCE_DIR}/runtime/foster_globals.cpp
 )
@@ -285,6 +284,7 @@ add_custom_command(
     ${LIBFOSTER_CPP_SOURCES}
     ${PROJECT_BINARY_DIR}/_bitcodelibs_
     ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
+    ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc_utils.h
     ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc_reconfig-inl.h
 )
 # We could attach the command to build libfoster.bc directly

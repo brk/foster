@@ -47,7 +47,8 @@ def compile_source(src):
   defines = ' -D'.join(['', coro_method])
   flags = debug_flag + defines
   cmd = "%s %s %s %s -emit-llvm -c -o %s" % (clang, src, includes, flags, outbc)
-  print cmd
+  if options.verbose:
+    print cmd
   subprocess.call(cmd.split(" "))
   return outbc
 
@@ -57,7 +58,8 @@ def link_all(all_bcs):
   # avoid multiply-defined symbols when everything comes together at the end.
   bcs = [bc for bc in all_bcs if not (bc.endswith("libfoster_coro.bc") or bc.endswith(".h"))]
   cmd = "%s %s -o %s" % (llvmld, " ".join(bcs), outbc)
-  print cmd
+  if options.verbose:
+    print cmd
   return subprocess.call(cmd.split(" "))
 
 def get_libfoster_parser(usage):
