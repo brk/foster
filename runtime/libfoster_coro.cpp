@@ -8,11 +8,6 @@
 
 #include <cstring> // for memset
 
-#ifdef FOSTER_MULTITHREADED
-#include "base/synchronization/lock.h"
-base::Lock g_coro_create_mutex;
-#endif
-
 using namespace foster::runtime;
 
 #define TRACE do { fprintf(stdout, "%s::%d\n", __FILE__, __LINE__); fflush(stdout); } while (0)
@@ -51,10 +46,6 @@ void foster_coro_ensure_self_reference(foster_generic_coro* coro) {
 // corofn :: void* -> void
 void foster_coro_create(coro_func corofn,
                         void* arg) {
-#ifdef FOSTER_MULTITHREADED
-  base::AutoLock locker(g_coro_create_mutex);
-#endif
-
   long ssize = 8*1024*sizeof(void*);
   // TODO allocate small stacks that grow on demand
   // (via reallocation or stack segment chaining).

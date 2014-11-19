@@ -23,23 +23,20 @@ namespace gc {
             return v.val;                   \
     }
 
-NEWTYPE(unchecked_ptr, tidy*); // might be tagged
+NEWTYPE(unchecked_ptr, tidy*); // unchecked in the sense of "might be tagged".
+
+template<typename T>
+inline T mask_ptr(T p, uintptr_t mask) {
+  return T(uintptr_t(p) & mask);
+}
 
 inline tidy* untag(unchecked_ptr p) {
-  return unchecked_ptr_val(p);
+  return mask_ptr(unchecked_ptr_val(p), ~((1 << 10) - 1));
 }
 
-inline bool is_null(unchecked_ptr maybe_tagged_ptr) {
-  // Since the pointer might be tagged, we can't simply
-  // do equality comparison against NULL...
-  const uintptr_t MAX_TAG_VALUE = 1023;
-  return uintptr_t(maybe_tagged_ptr.val) < uintptr_t(MAX_TAG_VALUE);
-}
 // }}}
 
 struct typemap;
-
-bool isMetadataPointer(const void* data);
 
 const unsigned int FOSTER_GC_DEFAULT_ALIGNMENT = 16;      // 0b0..010000
 const unsigned int FOSTER_GC_DEFAULT_ALIGNMENT_MASK = 15; // 0b0..001111
@@ -81,9 +78,9 @@ struct heap_cell {
   //======================================
   tidy*   body_addr() { return (tidy*) &body; }
   int64_t cell_size() { return size; }
-  meta*   get_meta() { return (meta*) size; }
+  const typemap* get_meta() { return reinterpret_cast<const typemap*>(size); }
 
-  void set_meta(typemap* data) { size = (HEAP_CELL_HEADER_TYPE) data; }
+  void set_meta(const typemap* data) { size = (HEAP_CELL_HEADER_TYPE) data; }
   void set_cell_size(int64_t sz) { size = sz; }
 
   bool is_forwarded() {
@@ -115,7 +112,7 @@ struct heap_array {
   void set_num_elts(int64_t n) { arsz = n; }
   meta* get_meta() { return (meta*) data; }
 
-  void set_meta(typemap* m) { data = (HEAP_CELL_HEADER_TYPE) m; }
+  void set_meta(const typemap* m) { data = (HEAP_CELL_HEADER_TYPE) m; }
   bool is_forwarded() {
     return (((uint64_t) get_meta()) & FORWARDED_BIT) != 0;
   }

@@ -11,9 +11,6 @@
 #include "base/time.h" // for TimeTicks, TimeDelta
 #include "base/metrics/histogram.h"
 #include "base/metrics/statistics_recorder.h"
-#ifdef FOSTER_MULTITHREADED
-#include "base/threading/platform_thread.h"
-#endif
 
 #include <sys/resource.h> // for getrlimit, RLIMIT_STACK
 #include "execinfo.h" // for backtrace
@@ -100,27 +97,10 @@ void gc_assert(bool cond, const char* msg) {
 
 bool is_marked_as_stable(tidy* body) {
   for (int i = 0, j = allocator_ranges.size(); i < j; ++i) {
-    if (allocator_ranges[i].range.contains((void*) body)) {
+    if (allocator_ranges[i].range.contains(static_cast<void*>(body))) {
       return allocator_ranges[i].stable;
     }
   }
-  return false;
-}
-
-inline bool
-isCoroBelongingToOtherThread(const typemap& map, heap_cell* cell) {
-  #ifdef FOSTER_MULTITHREADED
-  if (map.isCoro) {
-    foster_generic_coro* coro = (foster_generic_coro*) cell->body_addr();
-    if (coro_status(coro) == FOSTER_CORO_RUNNING) {
-      // Don't scan a coroutine if it's being run by another thread!
-      if (coro_owner_thread(coro) != PlatformThread::CurrentId()) {
-        return true;
-      }
-    }
-  }
-  #endif
-
   return false;
 }
 // }}}
@@ -196,43 +176,43 @@ class copying_gc {
 
       // {{{ Prechecked allocation functions
       template <int N>
-      tidy* allocate_cell_prechecked_N(typemap* typeinfo) {
-        heap_cell* allot = (heap_cell*) bump;
+      tidy* allocate_cell_prechecked_N(const typemap* map) {
+        heap_cell* allot = static_cast<heap_cell*>(bump);
         //fprintf(gclog, "this=%p, memsetting %d bytes at %p (ti=%p)\n", this, int(typeinfo->cell_size), bump, typeinfo); fflush(gclog);
         if (DEBUG_INITIALIZE_ALLOCATIONS) { memset(bump, 0xAA, N); }
         if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(N); }
         if (TRACK_NUM_ALLOCATIONS) { ++parent->num_allocations; }
         if (FOSTER_GC_ALLOC_HISTOGRAMS) { HISTOGRAM_ENUMERATION("gc-alloc-small", N, 128); }
         incr_by(bump, N);
-        allot->set_meta(typeinfo);
+        allot->set_meta(map);
         //fprintf(gclog, "alloc'd %d, bump = %p, low bits: %x\n", int(typeinfo->cell_size), bump, intptr_t(bump) & 0xF);
         return allot->body_addr();
       }
 
-      tidy* allocate_cell_prechecked(typemap* typeinfo) {
-        heap_cell* allot = (heap_cell*) bump;
+      tidy* allocate_cell_prechecked(const typemap* map) {
+        heap_cell* allot = static_cast<heap_cell*>(bump);
         //fprintf(gclog, "this=%p, memsetting %d bytes at %p (ti=%p)\n", this, int(typeinfo->cell_size), bump, typeinfo); fflush(gclog);
-        if (DEBUG_INITIALIZE_ALLOCATIONS) { memset(bump, 0xAA, typeinfo->cell_size); }
-        if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(typeinfo->cell_size); }
+        if (DEBUG_INITIALIZE_ALLOCATIONS) { memset(bump, 0xAA, map->cell_size); }
+        if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(map->cell_size); }
         if (TRACK_NUM_ALLOCATIONS) { ++parent->num_allocations; }
         if (!wantWeirdCrashToHappen && FOSTER_GC_ALLOC_HISTOGRAMS) {
-          allocate_cell_prechecked_histogram((int) typeinfo->cell_size);
+          allocate_cell_prechecked_histogram((int) map->cell_size);
         }
-        incr_by(bump, typeinfo->cell_size);
-        allot->set_meta(typeinfo);
+        incr_by(bump, map->cell_size);
+        allot->set_meta(map);
         //fprintf(gclog, "alloc'd %d, bump = %p, low bits: %x\n", int(typeinfo->cell_size), bump, intptr_t(bump) & 0xF);
         return allot->body_addr();
       }
 
-      tidy* allocate_array_prechecked(typemap* arr_elt_typeinfo,
+      tidy* allocate_array_prechecked(const typemap* arr_elt_map,
                                       int64_t  num_elts,
                                       int64_t  total_bytes,
                                       bool     init) {
-        heap_array* allot = (heap_array*) bump;
+        heap_array* allot = static_cast<heap_array*>(bump);
         if (init) memset(bump, 0x00, total_bytes);
         incr_by(bump, total_bytes);
         //fprintf(gclog, "alloc'a %d, bump = %p, low bits: %x\n", int(total_bytes), bump, intptr_t(bump) & 0xF);
-        allot->set_meta(arr_elt_typeinfo);
+        allot->set_meta(arr_elt_map);
         allot->set_num_elts(num_elts);
         if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(total_bytes); }
         if (TRACK_NUM_ALLOCATIONS) { ++parent->num_allocations; }
@@ -241,49 +221,40 @@ class copying_gc {
       // }}}
 
       // {{{ metadata helpers
+      const typemap* tryGetTypemap(heap_cell* cell);
       inline void get_cell_metadata(heap_cell* cell,
-                                    const void*    & meta,
                                     heap_array*    & arr ,
                                     const typemap* & map,
                                     int64_t        & cell_size) {
-        meta = cell->get_meta();
-        gc_assert(meta != NULL, "cannot copy cell lacking metadata");
+        cell_size = cell->cell_size();
+        gc_assert(cell_size > 0, "cannot copy cell lacking metadata or length");
 
-        if (isMetadataPointer(meta)) {
-          map = (const typemap*) meta;
+        if ((map = tryGetTypemap(cell))) {
           if (ENABLE_GCLOG) { inspect_typemap(map); }
-
           if (map->isArray) {
             arr = heap_array::from_heap_cell(cell);
           }
         }
 
-        get_cell_size(meta, arr, map, cell_size);
-      }
-
-      inline void get_cell_size(const void*      meta,
-                                heap_array*      arr ,
-                                const typemap*   map,
-                                int64_t        & cell_size) {
-        if (map) {
-          if (arr) {
-            cell_size = array_size_for(arr->num_elts(), map->cell_size);
-            if (ENABLE_GCLOG) {
-              fprintf(gclog, "Collecting array of total size %lld (rounded up from %lld + %lld = %lld), cell size %lld, len %lld...\n",
-                                  cell_size,
-                                  int64_t(sizeof(heap_array)),
-                                                       arr->num_elts() * map->cell_size,
-                                  sizeof(heap_array) + arr->num_elts() * map->cell_size,
-                                  map->cell_size,
-                                  arr->num_elts());
-            }
-          } else {
-            // probably an actual pointer
-            cell_size = map->cell_size;
-          }
+        // {{{
+        if (!map) {
+          cell_size = cell->cell_size();
+        } else if (!arr) {
+          // probably an actual pointer
+          cell_size = map->cell_size;
         } else {
-          cell_size = int64_t(meta);
+          cell_size = array_size_for(arr->num_elts(), map->cell_size);
+          if (ENABLE_GCLOG) {
+            fprintf(gclog, "Collecting array of total size %lld (rounded up from %lld + %lld = %lld), cell size %lld, len %lld...\n",
+                                cell_size,
+                                int64_t(sizeof(heap_array)),
+                                                     arr->num_elts() * map->cell_size,
+                                sizeof(heap_array) + arr->num_elts() * map->cell_size,
+                                map->cell_size,
+                                arr->num_elts());
+          }
         }
+        // }}}
       }
       // }}}
 
@@ -291,7 +262,6 @@ class copying_gc {
       // Returns body of newly allocated cell.
       tidy* ss_copy(heap_cell* cell, int remaining_depth) {
         tidy*       result = NULL;
-        const void* meta = NULL;
         heap_array* arr = NULL;
         const typemap* map = NULL;
         int64_t cell_size;
@@ -302,7 +272,7 @@ class copying_gc {
           goto return_result;
         }
 
-        get_cell_metadata(cell, meta, arr, map, cell_size);
+        get_cell_metadata(cell, arr, map, cell_size);
 
         // {{{ assertions etc
         gc_assert(cell_size >= 16, "cell size must be at least 16!");
@@ -321,12 +291,9 @@ class copying_gc {
           }
         }
 
-        if (map) {
-         if (isCoroBelongingToOtherThread(*map, cell)) {
-            // Don't copy or scan a coroutine if
-            // it belongs to a different thread!
-            return cell->body_addr();
-          }
+        if (false /*map && isCoroBelongingToOtherThread(*map, cell)*/) {
+          // Don't copy or scan a coroutine if it belongs to another thread!
+          return cell->body_addr();
         }
         // }}}
 
@@ -385,11 +352,10 @@ class copying_gc {
       }
 
       inline void scan_cell(heap_cell* cell, int depth) {
-        const void* meta = NULL;
         heap_array* arr = NULL;
         const typemap* map = NULL;
         int64_t cell_size;
-        get_cell_metadata(cell, meta, arr, map, cell_size);
+        get_cell_metadata(cell, arr, map, cell_size);
         // Without metadata for the cell, there's not much we can do...
         if (map) scan_with_map_and_arr(cell, *map, arr, depth);
       }
@@ -500,16 +466,15 @@ public:
     //                                ...          ...
     //                                 |            |
     //                                 |------------|
-    unchecked_ptr body_ = *root;
-    if (is_null(body_)) return;
-    tidy* body = untag(body_);
+    tidy* body = untag(*root);
+    if (!body) return;
 
     heap_cell* obj = heap_cell::for_body(body);
     if (curr->contains(body)) {
       *root = make_unchecked_ptr(next->ss_copy(obj, depth));
 
-      gc_assert(!is_null(*root),        "copying gc should not null out slots");
-      gc_assert(body  != untag(*root) , "copying gc should return new pointers");
+      gc_assert(NULL != untag(*root), "copying gc should not null out slots");
+      gc_assert(body != untag(*root), "copying gc should return new pointers");
     } else if (is_marked_as_stable(body)) {
       next->scan_cell(obj, depth);
     } else {
@@ -1046,10 +1011,10 @@ void inspect_typemap(const typemap* ti) {
 // }}}
 
 // {{{ Pointer classification utilities
-bool isMetadataPointer(const void* meta) {
-  if (uint64_t(meta) < uint64_t(1<<16)) return false;
+const typemap* tryGetTypemap(heap_cell* cell) {
+  if (uint64_t(cell->cell_size()) < uint64_t(1<<16)) return nullptr;
+  const typemap* map = cell->get_meta();
   if (GC_ASSERTIONS) {
-    const typemap* map = (const typemap*) meta;
     bool is_corrupted = (
           ((map->isCoro  != 0) && (map->isCoro  != 1))
        || ((map->isArray != 0) && (map->isArray != 1))
@@ -1057,11 +1022,10 @@ bool isMetadataPointer(const void* meta) {
        || (map->cell_size  < 0));
     if (is_corrupted) {
       inspect_typemap(map);
-      printf("meta: %p\n", meta);
-      gc_assert(!is_corrupted, "isMetadataPointer() found corrupted meta");
+      gc_assert(!is_corrupted, "tryGetTypemap() found corrupted typemap");
     }
   }
-  return true;
+  return map;
 }
 // }}}
 
@@ -1106,7 +1070,8 @@ void force_gc_for_debugging_purposes() {
 
 uint8_t ctor_id_of(void* constructed) {
   gc::heap_cell* cell = gc::heap_cell::for_body((gc::tidy*) constructed);
-  gc::typemap* map = (gc::typemap*) cell->get_meta();
+  const gc::typemap* map = tryGetTypemap(cell);
+  gc_assert(map, "foster_ctor_id_of() was unable to get a usable typemap");
   int8_t ctorId = map->ctorId;
   if (ctorId < 0) {
     fprintf(gc::gclog, "foster_ctor_id_of inspected bogus ctor id %d\n", ctorId);
