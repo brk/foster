@@ -111,6 +111,7 @@ bool is_marked_as_stable(tidy* body) {
 void inspect_typemap(const typemap* ti);
 void visitGCRoots(void* start_frame, copying_gc* visitor);
 void coro_visitGCRoots(foster_generic_coro* coro, copying_gc* visitor);
+const typemap* tryGetTypemap(heap_cell* cell);
 // }}}
 
 // {{{ copying_gc
@@ -221,7 +222,6 @@ class copying_gc {
       // }}}
 
       // {{{ metadata helpers
-      const typemap* tryGetTypemap(heap_cell* cell);
       inline void get_cell_metadata(heap_cell* cell,
                                     heap_array*    & arr ,
                                     const typemap* & map,
@@ -262,15 +262,11 @@ class copying_gc {
       // Returns body of newly allocated cell.
       tidy* ss_copy(heap_cell* cell, int remaining_depth) {
         tidy*       result = NULL;
-        heap_array* arr = NULL;
+        heap_array*    arr = NULL;
         const typemap* map = NULL;
         int64_t cell_size;
 
-        //fprintf(gclog, "cell meta for %p is %p\n", cell, cell->get_meta());
-
-        if (cell->is_forwarded()) {
-          goto return_result;
-        }
+        if (cell->is_forwarded()) { goto return_result; }
 
         get_cell_metadata(cell, arr, map, cell_size);
 
@@ -303,9 +299,13 @@ class copying_gc {
           memcpy(new_addr, cell, cell_size);
           cell->set_forwarded_body(new_addr->body_addr());
 
+          // We now have a cell in the new semispace, but any pointer fields
+          // it had are still pointing back to the old semispace.
+          // We'll scan it to update those fields in place.
+
           // Copy depth-first, but not so much that we blow the stack...
           if (remaining_depth > 0) {
-            if (map) {
+            if (map) { // No map means no pointers to scan!
               if (arr) arr = heap_array::from_heap_cell(new_addr);
               scan_with_map_and_arr(new_addr, *map, arr, remaining_depth - 1);
             }
@@ -459,7 +459,7 @@ public:
 
   // Jones/Hosking/Moss refer to this function as "process(fld)".
   void copy_or_update(unchecked_ptr* root, int depth) {
-    //       |------------|            |------------|
+    //       |------------|       obj: |------------|
     // root: |    body    |---\        |  size/meta |
     //       |------------|   |        |------------|
     //                        \------> |            |

@@ -11,6 +11,9 @@ namespace foster {
 namespace runtime {
 namespace gc {
 
+const unsigned int FOSTER_GC_DEFAULT_ALIGNMENT = 16;      // 0b0..010000
+const unsigned int FOSTER_GC_DEFAULT_ALIGNMENT_MASK = 15; // 0b0..001111
+
 // {{{ Pointer menagerie
 
 // Macro from http://blog.nelhage.com/2010/10/using-haskells-newtype-in-c/
@@ -27,20 +30,17 @@ NEWTYPE(unchecked_ptr, tidy*); // unchecked in the sense of "might be tagged".
 
 template<typename T>
 inline T mask_ptr(T p, uintptr_t mask) {
-  return T(uintptr_t(p) & mask);
+  return T(uintptr_t(p) & (~ mask));
 }
 
 inline tidy* untag(unchecked_ptr p) {
-  return mask_ptr(unchecked_ptr_val(p), ~((1 << 10) - 1));
+  //return mask_ptr(unchecked_ptr_val(p), FOSTER_GC_DEFAULT_ALIGNMENT_MASK);
+  return unchecked_ptr_val(p); // not using tagged ptrs yet...
 }
 
 // }}}
 
 struct typemap;
-
-const unsigned int FOSTER_GC_DEFAULT_ALIGNMENT = 16;      // 0b0..010000
-const unsigned int FOSTER_GC_DEFAULT_ALIGNMENT_MASK = 15; // 0b0..001111
-
 
 // E.g. if powerOf2 is 4, performs the following mapping:
 // 0 -> 0      1 -> 4
