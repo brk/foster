@@ -39,12 +39,6 @@ inline bool is_null(unchecked_ptr maybe_tagged_ptr) {
 
 struct typemap;
 
-typedef void (*gc_visitor_fn)(unchecked_ptr* root, const typemap* meta);
-
-void visitGCRootsWithStackMaps(void* start_frame,
-                               gc_visitor_fn visitor);
-
-void copying_gc_root_visitor(unchecked_ptr* root, const typemap* data);
 bool isMetadataPointer(const void* data);
 
 const unsigned int FOSTER_GC_DEFAULT_ALIGNMENT = 16;      // 0b0..010000

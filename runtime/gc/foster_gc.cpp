@@ -108,9 +108,9 @@ bool is_marked_as_stable(tidy* body) {
 }
 
 inline bool
-isCoroBelongingToOtherThread(const typemap* map, heap_cell* cell) {
+isCoroBelongingToOtherThread(const typemap& map, heap_cell* cell) {
   #ifdef FOSTER_MULTITHREADED
-  if (map->isCoro) {
+  if (map.isCoro) {
     foster_generic_coro* coro = (foster_generic_coro*) cell->body_addr();
     if (coro_status(coro) == FOSTER_CORO_RUNNING) {
       // Don't scan a coroutine if it's being run by another thread!
@@ -129,12 +129,13 @@ isCoroBelongingToOtherThread(const typemap* map, heap_cell* cell) {
 
 // {{{
 void inspect_typemap(const typemap* ti);
-
-void scanCoroStack(foster_generic_coro* coro, gc_visitor_fn visitor);
+void visitGCRoots(void* start_frame, copying_gc* visitor);
+void coro_visitGCRoots(foster_generic_coro* coro, copying_gc* visitor);
 // }}}
 
 // {{{ copying_gc
 class copying_gc {
+  // {{{ semispace
   class semispace {
   public:
       semispace(int64_t size, copying_gc* parent) : parent(parent) {
@@ -329,7 +330,7 @@ class copying_gc {
         }
 
         if (map) {
-         if (isCoroBelongingToOtherThread(map, cell)) {
+         if (isCoroBelongingToOtherThread(*map, cell)) {
             // Don't copy or scan a coroutine if
             // it belongs to a different thread!
             return cell->body_addr();
@@ -338,7 +339,7 @@ class copying_gc {
         // }}}
 
         {
-          heap_cell* new_addr = (heap_cell*) bump;
+          heap_cell* new_addr = static_cast<heap_cell*>(bump);
           incr_by(bump, cell_size);
           memcpy(new_addr, cell, cell_size);
           cell->set_forwarded_body(new_addr->body_addr());
@@ -347,7 +348,7 @@ class copying_gc {
           if (remaining_depth > 0) {
             if (map) {
               if (arr) arr = heap_array::from_heap_cell(new_addr);
-              scan_with_map_and_arr(new_addr, map, arr, remaining_depth - 1);
+              scan_with_map_and_arr(new_addr, *map, arr, remaining_depth - 1);
             }
           } else {
             parent->worklist.add(new_addr);
@@ -363,34 +364,30 @@ class copying_gc {
       } // end ss_copy
 
 
-      // Invariant: map is not null
-      void scan_with_map_and_arr(heap_cell* cell, const typemap* map,
+      void scan_with_map_and_arr(heap_cell* cell, const typemap& map,
                                  heap_array* arr, int depth) {
-        //fprintf(gclog, "copying %lld cell %p, map np %d, name %s\n",
-        //  cell_size, cell, map->numEntries, map->name); fflush(gclog);
-
+        //fprintf(gclog, "copying %lld cell %p, map np %d, name %s\n", cell_size, cell, map.numEntries, map.name); fflush(gclog);
         if (arr) {
           // TODO for byte arrays and such, we can skip this loop...
           int64_t numcells = arr->num_elts();
           for (int64_t cellnum = 0; cellnum < numcells; ++cellnum) {
             //fprintf(gclog, "num cells in array: %lld, curr: %lld\n", numcells, cellnum);
-            scan_with_map(arr->elt_body(cellnum, map->cell_size), map, depth);
+            scan_with_map(arr->elt_body(cellnum, map.cell_size), map, depth);
           }
         } else {
             scan_with_map(from_tidy(cell->body_addr()), map, depth);
         }
 
-        if (map->isCoro) {
-          foster_generic_coro* coro = (foster_generic_coro*) cell->body_addr();
-          scanCoroStack(coro, copying_gc_root_visitor);
+        if (map.isCoro) {
+          foster_generic_coro* coro = reinterpret_cast<foster_generic_coro*>(cell->body_addr());
+          coro_visitGCRoots(coro, parent);
         }
       }
 
 
-      // Invariant: map is not null
-      void scan_with_map(intr* body, const typemap* map, int depth) {
-        for (int i = 0; i < map->numOffsets; ++i) {
-          parent->copy_or_update((unchecked_ptr*) offset(body, map->offsets[i]),
+      void scan_with_map(intr* body, const typemap& map, int depth) {
+        for (int i = 0; i < map.numOffsets; ++i) {
+          parent->copy_or_update((unchecked_ptr*) offset(body, map.offsets[i]),
                                  depth);
         }
       }
@@ -401,21 +398,14 @@ class copying_gc {
         const typemap* map = NULL;
         int64_t cell_size;
         get_cell_metadata(cell, meta, arr, map, cell_size);
-        if (map) scan_with_map_and_arr(cell, map, arr, depth);
+        // Without metadata for the cell, there's not much we can do...
+        if (map) scan_with_map_and_arr(cell, *map, arr, depth);
       }
 
   private:
       intr* from_tidy(tidy* t) { return (intr*) t; }
   };
-
-  void record_bytes_allocated(int64_t num_bytes) {
-    int64_t idx = num_bytes / FOSTER_GC_DEFAULT_ALIGNMENT;
-    if (idx >= bytes_req_per_alloc.size() - 1) {
-      bytes_req_per_alloc.back()++;
-    } else {
-      bytes_req_per_alloc[idx]++;
-    }
-  }
+  // }}} semispace
 
   // {{{ Copying GC data members
 
@@ -462,6 +452,15 @@ class copying_gc {
     std::swap(curr, next);
   }
 
+  void record_bytes_allocated(int64_t num_bytes) {
+    int64_t idx = num_bytes / FOSTER_GC_DEFAULT_ALIGNMENT;
+    if (idx >= bytes_req_per_alloc.size() - 1) {
+      bytes_req_per_alloc.back()++;
+    } else {
+      bytes_req_per_alloc[idx]++;
+    }
+  }
+
 public:
   copying_gc(int64_t size) {
     // {{{
@@ -490,60 +489,14 @@ public:
     dump_stats(NULL);
   }
 
-  void dump_stats(FILE* json) {
-    // {{{
-    FILE* stats = json ? json : gclog;
-
-    double approx_bytes = double(num_collections * gSEMISPACE_SIZE());
-    fprintf(stats, "'num_collections' : %" PRId64 ",\n", num_collections);
-    if (TRACK_NUM_ALLOCATIONS) {
-    fprintf(stats, "'num_allocations' : %.3g,\n", double(num_allocations));
-    fprintf(stats, "'avg_alloc_size' : %d,\n", (num_allocations == 0)
-                                                  ? 0
-                                                  : int(approx_bytes / double(num_allocations)));
+  void visit_root(unchecked_ptr* root, const char* slotname) {
+    gc_assert(root != NULL, "someone passed a NULL root addr!");
+    if (ENABLE_GCLOG) {
+      fprintf(gclog, "\t\tSTACK SLOT %p contains %p, slot name = %s\n", root,
+                        unchecked_ptr_val(*root),
+                        (slotname ? slotname : "<unknown slot>"));
     }
-    fprintf(stats, "'alloc_num_bytes_gt' : %.3g,\n", approx_bytes);
-    fprintf(stats, "'semispace_size_kb' : %d,\n", gSEMISPACE_SIZE() / 1024);
-
-    if (TRACK_BYTES_KEPT_ENTRIES) {
-    int64_t mn = bytes_kept_per_gc.compute_min(),
-            mx = bytes_kept_per_gc.compute_max(),
-            aa = bytes_kept_per_gc.compute_avg_arith();
-    fprintf(stats, "'min_bytes_kept' : %8" PRId64 ",\n", mn);
-    fprintf(stats, "'max_bytes_kept' : %8" PRId64 ",\n", mx);
-    fprintf(stats, "'avg_bytes_kept' : %8" PRId64 ",\n", aa);
-    fprintf(stats, "'min_bytes_kept_percent' : %.2g%%,\n", double(mn * 100.0)/double(gSEMISPACE_SIZE()));
-    fprintf(stats, "'max_bytes_kept_percent' : %.2g%%,\n", double(mx * 100.0)/double(gSEMISPACE_SIZE()));
-    fprintf(stats, "'avg_bytes_kept_percent' : %.2g%%,\n", double(aa * 100.0)/double(gSEMISPACE_SIZE()));
-    }
-    if (TRACK_BYTES_ALLOCATED_ENTRIES) {
-      for (int i = 0; i < bytes_req_per_alloc.size() - 1; ++i) {
-        int sz = i * FOSTER_GC_DEFAULT_ALIGNMENT;
-        fprintf(stats, "allocs_of_size_%4d: %12" PRId64 ",\n", sz, bytes_req_per_alloc[i]);
-      }
-      fprintf(stats,  "allocs_of_size_more: %12" PRId64 ",\n", bytes_req_per_alloc.back());
-    }
-
-    if (!this->alloc_site_counters.empty()) {
-      fprintf(stats, "'allocation_sites' : [\n");
-      std::map<std::pair<const char*, typemap*>, int64_t>::iterator it;
-      for (it  = this->alloc_site_counters.begin();
-            it != this->alloc_site_counters.end(); ++it) {
-        fprintf(stats, "{ 'typemap' : %p , 'allocations' : %12" PRId64 ",\n", it->first.second, it->second);
-        fprintf(stats, "  'from' : \"%s\" },\n", it->first.first);
-      }
-      fprintf(stats, "],\n");
-    }
-    // }}}
-
-  }
-
-  bool had_problems() { return saw_bad_pointer; }
-
-  void force_gc_for_debugging_purposes() { this->gc(); }
-
-  void record_memalloc_cell(typemap* typeinfo, const char* srclines) {
-    this->alloc_site_counters[std::make_pair(srclines, typeinfo)]++;
+    this->copy_or_update(root, kFosterGCMaxDepth);
   }
 
   // Jones/Hosking/Moss refer to this function as "process(fld)".
@@ -659,21 +612,64 @@ public:
     }
   }
   // }}}
+
+  // {{{
+  bool had_problems() { return saw_bad_pointer; }
+
+  void force_gc_for_debugging_purposes() { this->gc(); }
+
+  void record_memalloc_cell(typemap* typeinfo, const char* srclines) {
+    this->alloc_site_counters[std::make_pair(srclines, typeinfo)]++;
+  }
+
+  void dump_stats(FILE* json) {
+    FILE* stats = json ? json : gclog;
+
+    double approx_bytes = double(num_collections * gSEMISPACE_SIZE());
+    fprintf(stats, "'num_collections' : %" PRId64 ",\n", num_collections);
+    if (TRACK_NUM_ALLOCATIONS) {
+    fprintf(stats, "'num_allocations' : %.3g,\n", double(num_allocations));
+    fprintf(stats, "'avg_alloc_size' : %d,\n", (num_allocations == 0)
+                                                  ? 0
+                                                  : int(approx_bytes / double(num_allocations)));
+    }
+    fprintf(stats, "'alloc_num_bytes_gt' : %.3g,\n", approx_bytes);
+    fprintf(stats, "'semispace_size_kb' : %d,\n", gSEMISPACE_SIZE() / 1024);
+
+    if (TRACK_BYTES_KEPT_ENTRIES) {
+    int64_t mn = bytes_kept_per_gc.compute_min(),
+            mx = bytes_kept_per_gc.compute_max(),
+            aa = bytes_kept_per_gc.compute_avg_arith();
+    fprintf(stats, "'min_bytes_kept' : %8" PRId64 ",\n", mn);
+    fprintf(stats, "'max_bytes_kept' : %8" PRId64 ",\n", mx);
+    fprintf(stats, "'avg_bytes_kept' : %8" PRId64 ",\n", aa);
+    fprintf(stats, "'min_bytes_kept_percent' : %.2g%%,\n", double(mn * 100.0)/double(gSEMISPACE_SIZE()));
+    fprintf(stats, "'max_bytes_kept_percent' : %.2g%%,\n", double(mx * 100.0)/double(gSEMISPACE_SIZE()));
+    fprintf(stats, "'avg_bytes_kept_percent' : %.2g%%,\n", double(aa * 100.0)/double(gSEMISPACE_SIZE()));
+    }
+    if (TRACK_BYTES_ALLOCATED_ENTRIES) {
+      for (int i = 0; i < bytes_req_per_alloc.size() - 1; ++i) {
+        int sz = i * FOSTER_GC_DEFAULT_ALIGNMENT;
+        fprintf(stats, "allocs_of_size_%4d: %12" PRId64 ",\n", sz, bytes_req_per_alloc[i]);
+      }
+      fprintf(stats,  "allocs_of_size_more: %12" PRId64 ",\n", bytes_req_per_alloc.back());
+    }
+
+    if (!this->alloc_site_counters.empty()) {
+      fprintf(stats, "'allocation_sites' : [\n");
+      std::map<std::pair<const char*, typemap*>, int64_t>::iterator it;
+      for (it  = this->alloc_site_counters.begin();
+            it != this->alloc_site_counters.end(); ++it) {
+        fprintf(stats, "{ 'typemap' : %p , 'allocations' : %12" PRId64 ",\n", it->first.second, it->second);
+        fprintf(stats, "  'from' : \"%s\" },\n", it->first.first);
+      }
+      fprintf(stats, "],\n");
+    }
+  }
+  // }}}
+
 }; // copying_gc
 // }}}
-
-// This function statically references the global allocator.
-// Eventually we'll want a generational GC with thread-specific
-// allocators and (perhaps) type-specific allocators.
-void copying_gc_root_visitor(unchecked_ptr* root, const typemap* slotname) {
-  gc_assert(root != NULL, "someone passed a NULL root addr!");
-  if (ENABLE_GCLOG) {
-    fprintf(gclog, "\t\tSTACK SLOT %p contains %p, slot name = %s\n", root,
-                      unchecked_ptr_val(*root),
-                      (slotname ? ((const char*) slotname) : "<unknown slot>"));
-  }
-  allocator->copy_or_update(root, kFosterGCMaxDepth);
-}
 
 extern "C" foster_generic_coro** __foster_get_current_coro_slot();
 
@@ -688,8 +684,7 @@ void copying_gc::gc() {
 
   worklist.initialize();
 
-  visitGCRootsWithStackMaps(__builtin_frame_address(0),
-                            copying_gc_root_visitor);
+  visitGCRoots(__builtin_frame_address(0), this);
 
   foster_generic_coro** coro_slot = __foster_get_current_coro_slot();
   foster_generic_coro*  coro = *coro_slot;
@@ -697,7 +692,7 @@ void copying_gc::gc() {
     if (ENABLE_GCLOG) {
       fprintf(gclog, "==========visiting current ccoro: %p\n", coro); fflush(gclog);
     }
-    copying_gc_root_visitor((unchecked_ptr*)coro_slot, NULL);
+    this->visit_root((unchecked_ptr*)coro_slot, NULL);
     if (ENABLE_GCLOG) {
       fprintf(gclog, "==========visited current ccoro: %p\n", coro); fflush(gclog);
     }
@@ -728,8 +723,6 @@ void copying_gc::worklist::process(copying_gc::semispace* next) {
   }
 }
 
-void register_stackmaps(ClusterMap&);
-
 size_t get_default_stack_size() {
   struct rlimit rlim;
   getrlimit(RLIMIT_STACK, &rlim);
@@ -759,6 +752,8 @@ void get_static_data_range(memory_range& r) {
 // }}}
 
 // {{{ GC startup & shutdown
+void register_stackmaps(ClusterMap&); // see foster_gc_stackmaps.cpp
+
 void initialize(void* stack_highest_addr) {
   init_start = base::TimeTicks::HighResNow();
   gclog = fopen("gclog.txt", "w");
@@ -835,11 +830,8 @@ int cleanup() {
 
 #include "foster_gc_backtrace_x86-inl.h"
 
-// {{{ ``mapM visitor (callStackFromAddr start_frame)``
-// Note that ``visitor`` is ``copying_gc_root_visitor`` which just forwards
-// to the copy_or_update() method of the global ``allocator`` pointer.
-void visitGCRootsWithStackMaps(void* start_frame,
-                               gc_visitor_fn visitor) {
+// {{{ Walks the call stack, calling visitor->visit_root() along the way.
+void visitGCRoots(void* start_frame, copying_gc* visitor) {
   enum { MAX_NUM_RET_ADDRS = 1024 };
   // Garbage collection requires 16+ KB of stack space due to these arrays.
   ret_addr  retaddrs[MAX_NUM_RET_ADDRS];
@@ -921,7 +913,8 @@ void visitGCRootsWithStackMaps(void* start_frame,
       const void*   m = ms[a];
       void*  rootaddr = offset(fp, off);
 
-      visitor((unchecked_ptr*) rootaddr, (const typemap*) m);
+      visitor->visit_root(static_cast<unchecked_ptr*>(rootaddr),
+                          static_cast<const char*>(m));
     }
 
     gc_assert(pc->liveCountWithoutMetadata == 0,
@@ -946,7 +939,7 @@ void* coro_topmost_frame_pointer(foster_generic_coro* coro) {
   // the id of the thread running them, so that other threads will
   // know not to scan underneath another running thread.
   gc_assert(coro_status(coro) == FOSTER_CORO_SUSPENDED
-             || coro_status(coro) == FOSTER_CORO_DORMANT,
+         || coro_status(coro) == FOSTER_CORO_DORMANT,
            "can only get topmost frame pointer from "
            "suspended or dormant coro!");
   void** sp = coro_ctx(coro).sp;
@@ -993,11 +986,11 @@ void coro_dump(foster_generic_coro* coro) {
 extern "C"
 void foster_coro_ensure_self_reference(foster_generic_coro* coro);
 
-void scanCoroStack(foster_generic_coro* coro,
-                   gc_visitor_fn visitor) {
+// A thin wrapper around visitGCRoots.
+void coro_visitGCRoots(foster_generic_coro* coro, copying_gc* visitor) {
   coro_dump(coro);
-  if (!coro) return;
-  if (foster::runtime::coro_status(coro) == FOSTER_CORO_INVALID
+  if (!coro
+   || foster::runtime::coro_status(coro) == FOSTER_CORO_INVALID
    || foster::runtime::coro_status(coro) == FOSTER_CORO_DEAD
    || foster::runtime::coro_status(coro) == FOSTER_CORO_RUNNING) {
     // No need to scan the coro's stack...
@@ -1023,8 +1016,6 @@ void scanCoroStack(foster_generic_coro* coro,
   // pointers into the stack from both types of coro, but
   // the ccoro pointer will point higher up the stack!
 
-  // TODO mark stack so it won't be swept away
-
   // extract frame pointer from ctx, and visit its stack.
   void* frameptr = coro_topmost_frame_pointer(coro);
   gc_assert(frameptr != NULL, "(c)coro frame ptr shouldn't be NULL!");
@@ -1034,7 +1025,7 @@ void scanCoroStack(foster_generic_coro* coro,
         coro, foster::runtime::coro_fn(coro), coro_status_name(coro), frameptr);
   }
 
-  visitGCRootsWithStackMaps(frameptr, visitor);
+  visitGCRoots(frameptr, visitor);
 
   if (ENABLE_GCLOG) {
     fprintf(gclog, "========= scanned ccoro stack from %p\n", frameptr);
