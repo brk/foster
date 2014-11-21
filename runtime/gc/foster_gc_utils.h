@@ -76,7 +76,7 @@ struct heap_cell {
   HEAP_CELL_HEADER_TYPE size;
   unsigned char         body[0];
   //======================================
-  tidy*   body_addr() { return (tidy*) &body; }
+  tidy*   body_addr() { return reinterpret_cast<tidy*>(&body); }
   int64_t cell_size() { return size; }
   const typemap* get_meta() { return reinterpret_cast<const typemap*>(size); }
 
@@ -84,17 +84,17 @@ struct heap_cell {
   void set_cell_size(int64_t sz) { size = sz; }
 
   bool is_forwarded() {
-    return (((uint64_t) cell_size()) & FORWARDED_BIT) != 0;
+    return (uint64_t(cell_size()) & FORWARDED_BIT) != 0;
   }
   void set_forwarded_body(tidy* newbody) {
-    size = ((HEAP_CELL_HEADER_TYPE) newbody) | FORWARDED_BIT;
+    size = HEAP_CELL_HEADER_TYPE(newbody) | FORWARDED_BIT;
   }
   tidy* get_forwarded_body() {
-    return (tidy*) (((uint64_t) cell_size()) & ~FORWARDED_BIT);
+    return (tidy*) (uint64_t(cell_size()) & ~FORWARDED_BIT);
   }
 
   static heap_cell* for_body(tidy* ptr) {
-    return (heap_cell*) offset((void*)ptr, -((intptr_t)HEAP_CELL_HEADER_SIZE));
+    return (heap_cell*) offset((void*)ptr, -(intptr_t(HEAP_CELL_HEADER_SIZE)));
   }
 };
 
@@ -103,7 +103,7 @@ struct heap_array {
   int64_t               arsz;
   unsigned char         elts[0];
   //======================================
-  tidy* body_addr() { return (tidy*) &arsz; }
+  tidy* body_addr() { return reinterpret_cast<tidy*>(&arsz); }
   intr* elt_body(int64_t cellnum, int64_t cellsz) {
     return (intr*) offset((void*)&elts, cellnum * cellsz);
     // TODO invariant which means cellnum * cellsz will not overflow?
@@ -114,17 +114,17 @@ struct heap_array {
 
   void set_meta(const typemap* m) { data = (HEAP_CELL_HEADER_TYPE) m; }
   bool is_forwarded() {
-    return (((uint64_t) get_meta()) & FORWARDED_BIT) != 0;
+    return (uint64_t(get_meta()) & FORWARDED_BIT) != 0;
   }
   void set_forwarded_body(tidy* newbody) {
-    set_meta((typemap*) (((uint64_t) newbody) | FORWARDED_BIT));
+    set_meta((typemap*) (uint64_t(newbody) | FORWARDED_BIT));
   }
   tidy* get_forwarded_body() {
-    return (tidy*) (((uint64_t) get_meta()) & ~FORWARDED_BIT);
+    return (tidy*) (uint64_t(get_meta()) & ~FORWARDED_BIT);
   }
 
   static heap_array* from_heap_cell(heap_cell* ptr) {
-    return (heap_array*) ptr;
+    return reinterpret_cast<heap_array*>(ptr);
   }
 };
 

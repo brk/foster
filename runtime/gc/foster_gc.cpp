@@ -240,8 +240,7 @@ class copying_gc {
         if (!map) {
           cell_size = cell->cell_size();
         } else if (!arr) {
-          // probably an actual pointer
-          cell_size = map->cell_size;
+          cell_size = map->cell_size; // probably an actual pointer
         } else {
           cell_size = array_size_for(arr->num_elts(), map->cell_size);
           if (ENABLE_GCLOG) {
