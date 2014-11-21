@@ -163,22 +163,27 @@ struct CallAST : public ExprAST {
   virtual void dump(DumpToProtobufPass* pass);
 };
 
-// 'prim' id args
+// 'prim' id :[types]? args
 struct CallPrimAST : public ExprAST {
   std::string primname;
-  CallPrimAST(std::string primname, Exprs args, foster::SourceRange sourceRange)
-      : ExprAST("CallPrimAST", sourceRange), primname(primname) {
+  std::vector<TypeAST*> types;
+
+  CallPrimAST(std::string primname, Exprs args, std::vector<TypeAST*> types,
+              foster::SourceRange sourceRange)
+      : ExprAST("CallPrimAST", sourceRange), primname(primname), types(types) {
     for (size_t i = 0; i < args.size(); ++i) parts.push_back(args[i]);
   }
   virtual void dump(DumpToProtobufPass* pass);
   static CallPrimAST* one(const char* nm, ExprAST* e, foster::SourceRange sr) {
+    std::vector<TypeAST*> _types;
     Exprs args; args.push_back(e);
-    return new CallPrimAST(nm, args, sr);
+    return new CallPrimAST(nm, args, _types, sr);
   }
   static CallPrimAST* two(const char* nm, ExprAST* e1, ExprAST* e2,
                           foster::SourceRange sr) {
+    std::vector<TypeAST*> _types;
     Exprs args; args.push_back(e1); args.push_back(e2);
-    return new CallPrimAST(nm, args, sr);
+    return new CallPrimAST(nm, args, _types, sr);
   }
 };
 

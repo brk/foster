@@ -407,10 +407,12 @@ std::vector<TypeFormal> parseTyFormals(pTree t, KindAST* defaultKind) {
   return names;
 }
 
+std::vector<TypeAST*> noTypes() { std::vector<TypeAST*> types; return types; }
+
 ExprAST* parseTuple(pTree t) {
   if (getChildCount(t) == 1) {
     return ExprAST_from(child(t, 0));
-  } return new CallPrimAST("tuple", getExprs(t), rangeOf(t));
+  } return new CallPrimAST("tuple", getExprs(t), noTypes(), rangeOf(t));
 }
 
 // ^(VAL_ABS ^(FORMALS formals) ^(MU tyvar_decl*) stmts?)
@@ -748,11 +750,22 @@ ExprAST* parseCall(pTree tree) {
 ExprAST* parsePrimApp(pTree tree) {
   ASSERT(getChildCount(tree) >= 1) << "prim app with no name?!?";
   string name = textOf(child(tree, 0));
+
+  std::vector<TypeAST*> types;
+  // ^(MU ^(VAL_TYPE_APP ...)?)
+  pTree _mu = child(tree, 1);
+  if (getChildCount(_mu) == 1) {
+    pTree _tyapp = child(_mu, 0);
+    for (size_t i = 0; i < getChildCount(_tyapp); ++i) {
+      types.push_back(TypeAST_from(child(_tyapp, i)));
+    }
+  }
+
   Exprs exprs;
-  for (size_t i = 1; i < getChildCount(tree); ++i) {
+  for (size_t i = 2; i < getChildCount(tree); ++i) {
     exprs.push_back(parseLValue(child(tree, i)));
   }
-  return new CallPrimAST(name, exprs, rangeOf(tree));
+  return new CallPrimAST(name, exprs, types, rangeOf(tree));
 }
 
 // ^(PHRASE '-'? lvalue+) | ^(PRIMAPP id lvalue*)

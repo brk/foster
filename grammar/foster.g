@@ -108,9 +108,10 @@ binop   : opr          -> opr
 binops  : (binop phrase)+;
 
 phrase  :       '-'?   lvalue+                  -> ^(PHRASE '-'?  lvalue+)
-        |       'prim' nopr lvalue*             -> ^(PRIMAPP nopr lvalue*);
+        |       'prim' nopr tyapp? lvalue*      -> ^(PRIMAPP nopr ^(MU tyapp?) lvalue*);
 lvalue  :              atom suffix*             -> ^(LVALUE atom suffix*);
 
+tyapp : type_application;
 type_application
         :	':[' t (',' t)* ']'          -> ^(VAL_TYPE_APP t+) // type application
         |	':['  ']'                    -> ^(VAL_TYPE_APP)    // nullary type application

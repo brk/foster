@@ -34,8 +34,8 @@ inline T mask_ptr(T p, uintptr_t mask) {
 }
 
 inline tidy* untag(unchecked_ptr p) {
-  //return mask_ptr(unchecked_ptr_val(p), FOSTER_GC_DEFAULT_ALIGNMENT_MASK);
-  return unchecked_ptr_val(p); // not using tagged ptrs yet...
+  // Enum-like ctors are represented as small integers...
+  return mask_ptr(unchecked_ptr_val(p), FOSTER_GC_DEFAULT_ALIGNMENT_MASK);
 }
 
 // }}}

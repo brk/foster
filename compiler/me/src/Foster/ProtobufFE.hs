@@ -96,7 +96,8 @@ processArrayValue (E_IntAST annot t) = AE_Int annot t
 processArrayValue expr = AE_Expr expr
 
 parseCallPrim pbexpr annot = do
-    args <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
+    args   <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
+    let tys = map  parseType (toList $ PbExpr.ty_app_arg_type pbexpr)
     let primname = getName "prim" $ PbExpr.string_value pbexpr
     case (T.unpack primname, args) of
       ("assert-invariants", _) -> return $ mkPrimCall "assert-invariants" args annot
