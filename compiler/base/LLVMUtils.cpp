@@ -64,6 +64,7 @@ initializeLLVM() {
   // target's ASM printer, so we have to do it ourselves.
   #if LLVM_NATIVE_ARCH == X86Target
     LLVMInitializeX86AsmPrinter();
+    LLVMInitializeX86AsmParser();
   #else
     llvm::errs() << "Warning: not initializing any asm printer!\n";
   #endif

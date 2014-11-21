@@ -307,6 +307,8 @@ ilPrim ctx prim =
     PrimOp    nm ty   -> do ty' <- ilOf ctx ty
                             return $ PrimOp nm ty'
     PrimIntTrunc i1 i2 ->   return $ PrimIntTrunc i1 i2
+    PrimInlineAsm ty s c x -> do ty' <- ilOf ctx ty
+                                 return $ PrimInlineAsm ty' s c x
     CoroPrim {} -> error $ "Shouldn't yet have constructed CoroPrim!"
 
 containsUnboxedPolymorphism :: TypeIL -> Bool

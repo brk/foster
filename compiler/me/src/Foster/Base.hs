@@ -604,6 +604,7 @@ data FosterPrim ty = NamedPrim (TypedId ty) -- invariant: global symbol
                             , ilPrimOpType :: ty }
                    | PrimIntTrunc IntSizeBits IntSizeBits -- from, to
                    | CoroPrim  CoroPrim ty ty
+                   | PrimInlineAsm ty T.Text T.Text Bool
 
 data CoroPrim = CoroCreate | CoroInvoke | CoroYield deriving (Show, Eq)
 
@@ -803,6 +804,7 @@ instance Pretty t => Pretty (FosterPrim t) where
   pretty (CoroPrim c t1 t2) = pretty c <> text ":[" <> pretty t1
                                        <> text "," <+> pretty t2
                                        <> text "]"
+  pretty (PrimInlineAsm _ cnt _cns _haseffects) = text "inline-asm" <+> text (show cnt)
 
 instance Pretty CoroPrim where
   pretty CoroCreate = text "CoroCreate"

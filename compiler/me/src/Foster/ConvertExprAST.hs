@@ -68,7 +68,7 @@ convertExprAST f expr =
     E_BoolAST      rng b        -> return $ (E_BoolAST    rng) b
     E_IntAST       rng txt      -> return $ (E_IntAST     rng) txt
     E_RatAST       rng txt      -> return $ (E_RatAST     rng) txt
-    E_PrimAST      rng nm       -> return $ (E_PrimAST    rng) nm
+    E_PrimAST      rng nm ls ts -> liftM    (E_PrimAST    rng nm ls) (mapM f ts)
     E_CompilesAST  rng me       -> liftM  (E_CompilesAST  rng) (liftMaybeM q me)
     E_IfAST        rng    a b c -> liftM3 (E_IfAST        rng)   (q a) (q b) (q c)
     E_SeqAST       rng a b      -> liftM2 (E_SeqAST       rng)   (q a) (q b)

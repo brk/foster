@@ -67,6 +67,7 @@ monoPrim subst prim = do
        PrimOp nm ty       -> liftM (PrimOp nm) (qt ty)
        PrimIntTrunc i1 i2 -> return $ PrimIntTrunc i1 i2
        CoroPrim   p t1 t2 -> liftM2 (CoroPrim p) (qt t1) (qt t2)
+       PrimInlineAsm ty cnt cns fx -> qt ty >>= \ty' -> return $ PrimInlineAsm ty' cnt cns fx
 
 monoVar :: MonoSubst -> TypedId TypeIL -> Mono (TypedId MonoType)
 monoVar subst v = do

@@ -196,6 +196,8 @@ primitiveDecls =
     ,(,) "print_float_p9f64"       $ mkProcType [f64] []
     ,(,) "expect_float_p9f64"      $ mkProcType [f64] []
 
+    ,(,) "prim_do_some_asm" $ (mkProcType [] [])
+
     -- Calls to this function are internally transformed to AIAllocArray nodes.
     -- forall a, i32 -> Array a
     ,(,) "allocDArray" $ let a = BoundTyVar "a" in

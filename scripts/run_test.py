@@ -171,7 +171,7 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
       (s4, e4) = crun(['fosteroptc', finalpath + '.preopt.bc', '-dump-postopt',
                                            '-fosterc-time', '-o', finalpath + ext]
                       + optlevel(options)
-                      + asm_verbose(to_asm)
+#                      + asm_verbose(to_asm)
                       + options.optcargs)
 
     return (s4, to_asm, e1, e2, e3, e4)
@@ -235,7 +235,9 @@ def run_one_test(testpath, paths, tmpdir, progargs):
         rv, to_asm, fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed = \
                 compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir)
 
-        if to_asm:
+        if to_asm: # TODO we should use clang as configured by cmake
+                   # since it can emit asm that other/older toolchains will choke on
+                   # especially on Mac OS X...
           rv, as_elapsed = run_command('gcc -g %s.s -c -o %s.o' % (finalpath, finalpath), paths, testpath,
                                        showcmd=show_cmdlines(options))
         else: # fosteroptc emitted a .o directly.

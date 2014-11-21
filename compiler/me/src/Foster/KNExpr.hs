@@ -1844,8 +1844,9 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
   where
     primop (NamedPrim tid) = show (tidIdent tid)
     primop (PrimOp nm _)   = nm
-    primop (PrimIntTrunc _ _) = "trunc"
-    primop (CoroPrim _ _ _) = "coroprim"
+    primop (PrimIntTrunc  {}) = "trunc"
+    primop (CoroPrim      {}) = "coroprim"
+    primop (PrimInlineAsm {}) = "inline-asm"
 
     mcefHead MCEF_0 = "Nothing" -- E.g. formal with no associated operand.
     mcefHead (MCEF_F _) = "<function>"

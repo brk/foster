@@ -111,7 +111,21 @@ LLExpr* parseCoroPrim(const pb::PbCoroPrim& p) {
   }
 }
 
+LLExpr* parseCallAsm(const pb::Letable& e) {
+  const pb::PbCallAsm& c = e.call_asm();
+
+  std::vector<LLVar*> args;
+  for (int i = 0; i < e.parts_size(); ++i) {
+    args.push_back(parseTermVar(e.parts(i)));
+  }
+  FnTypeAST* ty = parseProcType(c.asm_proctype());
+  return new LLCallInlineAsm(ty, c.asm_contents(),
+               c.constraints(), c.has_side_effects(), args);
+}
+
 LLExpr* parseCall(const pb::Letable& e) {
+  if (e.has_call_asm()) return parseCallAsm(e);
+
   ASSERT(e.parts_size() >= 1);
   ASSERT(e.has_call_info());
   const pb::PbCallInfo& c = e.call_info();

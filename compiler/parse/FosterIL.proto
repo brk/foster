@@ -107,6 +107,7 @@ message Letable {
   repeated TermVar     parts = 1;
   required Tag           tag = 2;
   optional Type         type = 3;
+
   repeated string      names = 6;
   optional PBInt      pb_int = 17;
   optional double       dval = 18;
@@ -116,6 +117,7 @@ message Letable {
 
   optional PbAllocInfo   alloc_info = 25;
   optional PbCallInfo     call_info = 26;
+  optional PbCallAsm      call_asm  = 27;
 
   optional PbOccurrence       occ = 28;
   optional string    prim_op_name = 30;
@@ -131,6 +133,13 @@ message PbCallInfo {
   required bool     call_may_trigger_gc = 26;
   required bool     call_is_a_tail_call = 22;
   required string             call_conv = 27;
+}
+
+message PbCallAsm {
+  required bool     has_side_effects = 1;
+  required string   asm_contents     = 2;
+  required string   constraints      = 3;
+  required ProcType asm_proctype     = 4;
 }
 
 message PbArrayLiteral {

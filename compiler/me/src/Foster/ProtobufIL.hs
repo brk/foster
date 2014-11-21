@@ -38,6 +38,7 @@ import Foster.Bepb.PbCtorId     as PbCtorId
 import Foster.Bepb.PbDataCtor   as PbDataCtor
 import Foster.Bepb.PbCtorRepr   as PbCtorRepr
 import Foster.Bepb.PbCallInfo   as PbCallInfo
+import Foster.Bepb.PbCallAsm    as PbCallAsm
 import Foster.Bepb.PbCtorInfo   as PbCtorInfo
 import Foster.Bepb.RebindId     as PbRebindId
 import Foster.Bepb.PbAllocInfo  as PbAllocInfo
@@ -340,6 +341,22 @@ dumpExpr maygc (ILCall t base args)
 dumpExpr _ (ILCallPrim t (NamedPrim (TypedId _ (GlobalSymbol gs))) [arr])
         | gs == T.pack "prim_arrayLength"
         = dumpArrayLength t arr
+
+dumpExpr _ (ILCallPrim t (PrimInlineAsm fty contents constraints sideeffects) args)
+        =
+    let (d, r, cc) = case fty of
+         LLPtrType (LLStructType [LLProcType (_:d) r cc, _]) -> (d,r,cc) in
+    P'.defaultValue { PbLetable.tag   = IL_CALL
+                    , PbLetable.parts = fromList $ fmap dumpVar args
+                    , PbLetable.type' = Just $ dumpType t
+                    , PbLetable.call_asm = Just $
+          P'.defaultValue { 
+                            PbCallAsm.constraints  = u8fromString (T.unpack constraints)
+                          , PbCallAsm.asm_contents = u8fromString (T.unpack contents)
+                          , PbCallAsm.has_side_effects = sideeffects
+                          , PbCallAsm.asm_proctype = dumpProcType (d, r, cc)
+                          }
+                    }
 
 dumpExpr maygc (ILCallPrim t (NamedPrim base) args)
         = dumpCall t (dumpGlobalSymbol base) args maygc "ccc"

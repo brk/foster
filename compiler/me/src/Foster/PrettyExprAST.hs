@@ -153,7 +153,8 @@ instance Pretty (ExprAST TypeP) where
             E_KillProcess annot exp -> withAnnot annot $ text "prim kill-entire-process" <+> pretty exp
             E_StringAST   annot s   -> withAnnot annot $ dquotes (text $ T.unpack s)
             E_BoolAST     annot b   -> withAnnot annot $ text $ show b
-            E_PrimAST     annot nm  -> withAnnot annot $ text nm
+            E_PrimAST     annot nm []   _ -> withAnnot annot $ text nm
+            E_PrimAST     annot nm lits _ -> withAnnot annot $ text nm <+> pretty lits
             E_CallAST annot e []    -> withAnnot annot $ pretty e <+> text "!"
             E_CallAST annot e [e1,e2] | isOperator e
                                     -> withAnnot annot $ pretty e1 <+> pretty e <+> pretty e2

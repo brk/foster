@@ -97,10 +97,10 @@ processArrayValue expr = AE_Expr expr
 
 parseCallPrim pbexpr annot = do
     args   <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
-    let tys = map  parseType (toList $ PbExpr.ty_app_arg_type pbexpr)
+    tys    <- mapM parseType (toList $ PbExpr.ty_app_arg_type pbexpr)
     let primname = getName "prim" $ PbExpr.string_value pbexpr
     case (T.unpack primname, args) of
-      ("assert-invariants", _) -> return $ mkPrimCall "assert-invariants" args annot
+      ("assert-invariants", _) -> return $ mkPrimCall "assert-invariants" [] [] args annot
       ("mach-array-literal", _) -> do return $ E_MachArrayLit annot (map processArrayValue args)
       ("tuple",  _ ) -> return $ E_TupleAST annot args
       ("deref", [e]) -> return $ E_DerefAST annot e
@@ -114,15 +114,24 @@ parseCallPrim pbexpr annot = do
                            _                 -> return $ E_StoreAST annot a b
       ("kill-entire-process",  [s@(E_StringAST {})]) ->
                                                 return $ E_KillProcess annot s
+      ("inline-asm", _) ->
+        case (tys, args) of
+          ([_], E_StringAST _ cnt : E_StringAST _ cns : E_BoolAST _ sideeffects : args' ) -> do
+            let prim = (E_PrimAST annot "inline-asm"
+                           [LitText cnt, LitText cns, LitBool sideeffects] tys)
+            return $ E_CallAST annot prim args'
+          _ -> error $ "ProtobufFE: inline-asm requires a fn type, two string literals, and a bool"
+
       (name, args) ->
-        case Map.lookup name gFosterPrimOpsTable of
-          Just _ -> return $ mkPrimCall name args annot
-          Nothing ->
+        case (tys, Map.lookup name gFosterPrimOpsTable) of
+          ([], Just _) -> return $ mkPrimCall name [] [] args annot
+          _ ->
             error $ "ProtobufFE: unknown primitive/arg combo " ++ show primname
 
-mkPrimCall name args annot =
+mkPrimCall :: String -> [Literal] -> [TypeP] -> [ExprAST TypeP] -> ExprAnnot -> ExprAST TypeP
+mkPrimCall name lits tys args annot =
     let emptyAnnot = ExprAnnot [] (MissingSourceRange "prim") [] in
-    E_CallAST annot (E_PrimAST emptyAnnot name) args
+    E_CallAST annot (E_PrimAST emptyAnnot name lits tys) args
 
 parseCompiles pbexpr range = do
     let numChildren = Seq.length $ PbExpr.parts pbexpr
@@ -463,7 +472,7 @@ parseSourceModule standalone sm = resolveFormatting m where
        E_IntAST       _ txt      -> liftM2' E_IntAST      ana (return txt)
        E_RatAST       _ txt      -> liftM2' E_RatAST      ana (return txt)
        E_VarAST       _ v        -> liftM2' E_VarAST      ana (return v)
-       E_PrimAST      _ nm       -> liftM2' E_PrimAST     ana (return nm)
+       E_PrimAST      _ nm ls ts -> liftM4' E_PrimAST     ana (return nm) (return ls) (return ts)
        E_MachArrayLit _ args     -> liftM2' E_MachArrayLit ana (mapM (liftArrayEntryM q) args)
        E_KillProcess  _ e        -> liftM2' E_KillProcess ana (q e)
        E_CompilesAST  _ me       -> liftM2' E_CompilesAST ana (liftMaybeM q me)

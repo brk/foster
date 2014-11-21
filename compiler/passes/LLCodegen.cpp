@@ -15,6 +15,7 @@
 #include "llvm/IR/CallingConv.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/InlineAsm.h"
 
 #include "llvm/IR/Metadata.h"
 //#include "llvm/Analysis/DIBuilder.h"
@@ -1123,6 +1124,16 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
 llvm::Value* LLCallPrimOp::codegen(CodegenPass* pass) {
   return pass->emitPrimitiveOperation(this->op, builder,
                                       codegenAll(pass, this->args));
+}
+
+llvm::Value* LLCallInlineAsm::codegen(CodegenPass* pass) {
+  auto vs = codegenAll(pass, this->args);
+  llvm::InlineAsm* iasm = llvm::InlineAsm::get(this->ty->getLLVMFnType(),
+                                               this->asmString,
+                                               this->constraints,
+                                               this->hasSideEffects);
+  auto callInst = builder.CreateCall(iasm, llvm::makeArrayRef(vs), "asmres");
+  return callInst;
 }
 
 // Returns null if no bitcast is needed, else returns the type to bitcast to.

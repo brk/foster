@@ -13,7 +13,7 @@ module Foster.ExprAST(
 )
 where
 
-import Foster.Base(Structured(..),
+import Foster.Base(Structured(..), Literal,
                    SourceRanged(..), TypedId(..), ArrayIndex(..),
                    AllocMemRegion, childrenOfArrayIndex, ArrayEntry,
                    CaseArm(..), caseArmExprs, EPattern(..), E_VarAST(..),
@@ -45,7 +45,7 @@ data ExprSkel annot ty =
         | E_LetRec        annot [TermBinding ty] (ExprAST ty)
         -- Use of bindings
         | E_VarAST        annot (E_VarAST ty)
-        | E_PrimAST       annot String
+        | E_PrimAST       annot String [Literal] [ty]
         | E_CallAST       annot (ExprAST ty) [ExprAST ty]
         -- Mutable ref cells
         | E_AllocAST      annot (ExprAST ty) AllocMemRegion
@@ -87,7 +87,7 @@ instance Structured (ExprAST t) where
             E_IntAST    _rng txt   -> text $ "IntAST       " ++ txt                            ++ (exprCmnts e)
             E_RatAST    _rng txt   -> text $ "RatAST       " ++ txt                            ++ (exprCmnts e)
             E_CallAST _rng b _args -> text $ "CallAST      " ++ tryGetCallNameE b              ++ (exprCmnts e)
-            E_PrimAST _rng nm      -> text $ "PrimAST      " ++ nm                             ++ (exprCmnts e)
+            E_PrimAST _rng nm _ _  -> text $ "PrimAST      " ++ nm                             ++ (exprCmnts e)
             E_CompilesAST {}       -> text $ "CompilesAST  "                                   ++ (exprCmnts e)
             E_IfAST       {}       -> text $ "IfAST        "                                   ++ (exprCmnts e)
             E_FnAST    _rng f      -> text $ "FnAST        " ++ T.unpack (fnAstName f)         ++ (exprCmnts e)
@@ -151,7 +151,7 @@ exprAnnot e = case e of
       E_FnAST         annot _     -> annot
       E_LetAST        annot _ _   -> annot
       E_LetRec        annot _ _   -> annot
-      E_PrimAST       annot _     -> annot
+      E_PrimAST       annot _ _ _ -> annot
       E_CallAST       annot _ _   -> annot
       E_CompilesAST   annot _     -> annot
       E_KillProcess   annot _     -> annot

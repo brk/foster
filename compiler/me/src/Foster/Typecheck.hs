@@ -249,7 +249,10 @@ tcRho ctx expr expTy = do
   tcWithScope expr $ do
     case expr of
       E_VarAST    rng v              -> tcRhoVar      ctx rng (evarName v)      expTy
-      E_PrimAST   rng nm             -> tcRhoPrim     ctx rng (T.pack  nm)      expTy
+      E_PrimAST   rng nm [] []       -> tcRhoPrim     ctx rng (T.pack  nm)      expTy
+      E_PrimAST   rng "inline-asm" [LitText s, LitText c, LitBool x] [ty] -> do
+        ty' <- tcType ctx ty
+        matchExp expTy (AnnPrimitive rng ty' (PrimInlineAsm ty' s c x)) "inline-asm"
       E_IntAST    rng txt ->            typecheckInt rng txt expTy   >>= (\v -> matchExp expTy v "tcInt")
       E_RatAST    rng txt -> (typecheckRat rng txt (expMaybe expTy)) >>= (\v -> matchExp expTy v "tcRat")
       E_BoolAST   rng b              -> tcRhoBool         rng   b          expTy
@@ -380,6 +383,7 @@ mkAnnPrimitive annot ctx tid =
         Just (PrimOp nm ty)       -> PrimOp nm ty
         Just (PrimIntTrunc i1 i2) -> PrimIntTrunc i1 i2
         Just (CoroPrim {}       ) -> error $ "mkAnnPrim saw unexpected CoroPrim"
+        Just (PrimInlineAsm {}  ) -> error $ "mkAnnPrim saw unexpected PrimInlineAsm"
         Nothing                   -> NamedPrim tid
 
 -- Now, a bunch of straightforward rules:
@@ -784,7 +788,7 @@ tryGetVarName _ = ""
 tcSigmaCall :: Context SigmaTC -> ExprAnnot -> ExprAST TypeAST
             -> [ExprAST TypeAST] -> Expected SigmaTC -> Tc (AnnExpr SigmaTC)
 
-tcSigmaCall ctx rng (E_PrimAST _ name@"assert-invariants") argtup exp_ty = do
+tcSigmaCall ctx rng (E_PrimAST _ name@"assert-invariants" _ _) argtup exp_ty = do
     args <- mapM (\arg -> checkSigma ctx arg boolTypeTC) argtup
     let unitType = TupleTypeTC []
     let fnty = mkFnTypeTC (map (\_ -> boolTypeTC) argtup) [unitType]

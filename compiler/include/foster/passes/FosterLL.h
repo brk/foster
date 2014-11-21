@@ -308,6 +308,24 @@ struct LLCallPrimOp : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
+struct LLCallInlineAsm : public LLExpr {
+  std::vector<LLVar*> args;
+  std::string asmString;
+  std::string constraints;
+  bool hasSideEffects;
+  FnTypeAST* ty;
+
+  LLCallInlineAsm(FnTypeAST*  _ty,
+                  std::string _asmString,
+                  std::string _constraints,
+                  bool        _hasSideEffects,
+                  std::vector<LLVar*>& _args)
+  : LLExpr("LLCallInlineAsm"), args(_args), asmString(_asmString),
+      constraints(_constraints),
+      hasSideEffects(_hasSideEffects), ty(_ty) { }
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
 struct LLUnitValue : public LLExpr {
   explicit LLUnitValue() : LLExpr("LLUnitValue") {}
   virtual llvm::Value* codegen(CodegenPass* pass);

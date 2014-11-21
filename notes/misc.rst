@@ -30,3 +30,11 @@
 * Case analysis on literal tuples will not result in runtime allocation,
   so long as the value of the tuple is never captured.
   This capacity subsumes built-in control flow operators like ``&&`` and ``||`` in C.
+
+* Inline asm syntax::
+
+    prim inline-asm :[ { () } ]
+                    "cli ; sti"
+                    ""
+                    True;
+
