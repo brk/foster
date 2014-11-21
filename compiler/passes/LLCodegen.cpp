@@ -246,9 +246,6 @@ llvm::Value* CodegenPass::lookupFunctionOrDie(const std::string&
 }
 
 llvm::Value* CodegenPass::emitFosterStringOfCString(Value* cstr, Value* sz) {
-  // Text literals in the code are codegenned as calls to the
-  // Text.TextFragment constructor. Currently all strings are heap-allocated,
-  // even constant literal strings.
   bool init = false; // because we'll immediately memcpy.
   Value* hstr = this->emitArrayMalloc(TypeAST::i(8), sz, init);
   // This variable is dead after being passed to the TextFragment function,
@@ -781,9 +778,42 @@ llvm::Value* LLFloat::codegen(CodegenPass* pass) {
 }
 
 llvm::Value* LLText::codegen(CodegenPass* pass) {
-  Value* gstr = pass->getGlobalString(this->stringValue);
-  size_t size = this->stringValue.size();
-  return pass->emitFosterStringOfCString(gstr, builder.getInt32(size));
+  llvm::Constant* sz64 = llvm::ConstantInt::get(builder.getInt64Ty(), this->stringValue.size());
+  llvm::Constant* sz32 = llvm::ConstantInt::get(builder.getInt32Ty(), this->stringValue.size());
+
+  // the array header starts 16-byte aligned, but the data starts
+  // 8 bytes later...
+  unsigned align = 8;
+
+  std::vector<llvm::Constant*> tidy_vals;
+  tidy_vals.push_back(sz64);
+  tidy_vals.push_back(getConstantArrayOfString(this->stringValue));
+  auto const_arr_tidy = llvm::ConstantStruct::getAnon(tidy_vals);
+
+  CtorRepr ctorRepr; ctorRepr.smallId = -1;
+  std::vector<llvm::Constant*> cell_vals;
+  cell_vals.push_back(getTypeMapForType(TypeAST::i(8), ctorRepr, pass->mod, YesArray));
+  cell_vals.push_back(const_arr_tidy);
+  auto const_arr_cell = llvm::ConstantStruct::getAnon(cell_vals);
+
+  llvm::GlobalVariable* arrayGlobal = new llvm::GlobalVariable(
+      /*Module=*/      *(pass->mod),
+      /*Type=*/        const_arr_cell->getType(),
+      /*isConstant=*/  true,
+      /*Linkage=*/     llvm::GlobalValue::PrivateLinkage,
+      /*Initializer=*/ const_arr_cell,
+      /*Name=*/        ".str_cell");
+  arrayGlobal->setAlignment(align);
+
+  Value* hstr = builder.CreateBitCast(
+                  getPointerToIndex(arrayGlobal, builder.getInt32(1), "cellptr"),
+                  ArrayTypeAST::getZeroLengthTypeRef(TypeAST::i(8)), "str_ptr");
+
+  Value* textfragment = pass->lookupFunctionOrDie("TextFragment");
+
+  llvm::CallInst* call = builder.CreateCall2(textfragment, hstr, sz32);
+  call->setCallingConv(llvm::CallingConv::Fast);
+  return call;
 }
 
 llvm::Value* LLValueVar::codegen(CodegenPass* pass) {
@@ -1160,12 +1190,11 @@ llvm::Value* LLCallPrimOp::codegen(CodegenPass* pass) {
 
 llvm::Value* LLCallInlineAsm::codegen(CodegenPass* pass) {
   auto vs = codegenAll(pass, this->args);
-  llvm::InlineAsm* iasm = llvm::InlineAsm::get(this->ty->getLLVMFnType(),
-                                               this->asmString,
-                                               this->constraints,
-                                               this->hasSideEffects);
-  auto callInst = builder.CreateCall(iasm, llvm::makeArrayRef(vs), "asmres");
-  return callInst;
+  auto iasm = llvm::InlineAsm::get(this->ty->getLLVMFnType(),
+                                   this->asmString,
+                                   this->constraints,
+                                   this->hasSideEffects);
+  return builder.CreateCall(iasm, llvm::makeArrayRef(vs), "asmres");
 }
 
 // Returns null if no bitcast is needed, else returns the type to bitcast to.
@@ -1264,7 +1293,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
 
   // Give the instruction a name, if we can...
 
-  llvm::CallInst* callInst = builder.CreateCall(FV, llvm::makeArrayRef(valArgs));
+  auto callInst = builder.CreateCall(FV, llvm::makeArrayRef(valArgs));
   callInst->setCallingConv(callingConv);
   trySetName(callInst, "calltmp");
 
