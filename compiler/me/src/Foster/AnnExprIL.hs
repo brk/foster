@@ -51,7 +51,7 @@ data AIExpr =
         | AIDeref      AIExpr
         | AIStore      AIExpr AIExpr
         -- Array operations
-        | AIAllocArray TypeIL AIExpr
+        | AIAllocArray TypeIL AIExpr AllocMemRegion
         | AIArrayRead  TypeIL (ArrayIndex AIExpr)
         | AIArrayPoke  TypeIL (ArrayIndex AIExpr) AIExpr
         | AIArrayLit   TypeIL AIExpr [Either Literal AIExpr]
@@ -82,7 +82,7 @@ instance TypedWith AIExpr TypeIL where
      AIArrayLit   {- _rng -} t _ _ -> t
      AIArrayRead  {- _rng -} t _   -> t
      AIArrayPoke  {- _rng -} t _ _ -> t
-     AIAllocArray {- _rng -} t _   -> t
+     AIAllocArray {- _rng -} t _ _ -> t
      AICase {- _rng -} t _ _    -> t
      E_AIVar {- _rng -} tid -> tidType tid
      -- AIPrimitive _rng t _ -> t
@@ -162,15 +162,20 @@ ail ctx ae =
                                          return $ AIStore x y
         AnnAllocArray _rng _ e aty -> do ta <- qt aty
                                          x <- q e
-                                         return $ AIAllocArray ta x
+                                         return $ AIAllocArray ta x MemRegionGlobalHeap
         -- In order for GC root placement to work properly, all allocations
         -- must be explicit in the IR; primitives cannot perform a GC op
         -- before they use all their args, because if they did, the args
         -- would be stale. Thus we make the array allocation explicit here.
         AnnArrayLit  _rng t exprs  -> do ti <- qt t
-                                         let (ArrayTypeIL ati) = ti
                                          ais <- mapRightM q exprs
-                                         let arr = AIAllocArray ati (AILiteral i64 litint)
+                                         let isLiteral (Left _) = True
+                                             isLiteral _        = False
+
+                                             amr = if all isLiteral exprs then MemRegionGlobalData
+                                                                          else MemRegionGlobalHeap
+                                             (ArrayTypeIL ati) = ti
+                                             arr = AIAllocArray ati (AILiteral i64 litint) amr
                                          return $ AIArrayLit ti arr ais where {
           n = length exprs
         ; i64 = PrimIntIL I64

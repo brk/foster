@@ -170,6 +170,8 @@ LLAllocate::MemRegion parseMemRegion(const pb::PbAllocInfo& a) {
       target_region = LLAllocate::MEM_REGION_STACK; break;
   case           pb::PbAllocInfo::MEM_REGION_GLOBAL_HEAP:
       target_region = LLAllocate::MEM_REGION_GLOBAL_HEAP; break;
+  case           pb::PbAllocInfo::MEM_REGION_GLOBAL_DATA:
+      target_region = LLAllocate::MEM_REGION_GLOBAL_DATA; break;
   default: ASSERT(false) << "Unknown target region for AllocInfo.";
   }
   return target_region;

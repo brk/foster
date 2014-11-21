@@ -614,11 +614,13 @@ data CoroPrim = CoroCreate | CoroInvoke | CoroYield deriving (Show, Eq)
 --                                 C/malloc/free heap,
 --                                 type-specific heaps, etc, etc...
 data AllocMemRegion = MemRegionStack
+                    | MemRegionGlobalData
                     | MemRegionGlobalHeap deriving (Show, Eq)
 
 memRegionMayGC :: AllocMemRegion -> MayGC
 memRegionMayGC MemRegionStack = WillNotGC
 memRegionMayGC MemRegionGlobalHeap = MayGC
+memRegionMayGC MemRegionGlobalData = WillNotGC
 
 data AllocInfo t = AllocInfo { allocType      :: t
                              , allocRegion    :: AllocMemRegion

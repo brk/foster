@@ -179,6 +179,7 @@ message PbAllocInfo {
   enum MemRegion {
     MEM_REGION_STACK       = 1;
     MEM_REGION_GLOBAL_HEAP = 2;
+    MEM_REGION_GLOBAL_DATA = 3;
   }
   required MemRegion mem_region = 1;
   required Type            type = 2;

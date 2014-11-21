@@ -128,6 +128,7 @@ dumpMemRegion :: AllocMemRegion -> PbMemRegion.MemRegion
 dumpMemRegion amr = case amr of
     MemRegionStack      -> PbMemRegion.MEM_REGION_STACK
     MemRegionGlobalHeap -> PbMemRegion.MEM_REGION_GLOBAL_HEAP
+    MemRegionGlobalData -> PbMemRegion.MEM_REGION_GLOBAL_DATA
 
 dumpAllocate :: AllocInfo TypeLL -> PbAllocInfo
 dumpAllocate (AllocInfo typ region typename maybe_tag maybe_array_size allocsite zeroinit) =
@@ -281,14 +282,14 @@ dumpExpr _ (ILAllocate info) =
                     , PbLetable.type' = Just $ dumpType (allocType info)
                     , PbLetable.alloc_info = Just $ dumpAllocate info }
 
-dumpExpr _  (ILAllocArray (LLArrayType elt_ty) size) =
+dumpExpr _  (ILAllocArray (LLArrayType elt_ty) size memregion) =
     P'.defaultValue { PbLetable.parts = fromList []
                     , PbLetable.tag   = IL_ALLOCATE
                     , PbLetable.type' = Just $ dumpType elt_ty
                     , PbLetable.alloc_info = Just $ dumpAllocate
-                       (AllocInfo elt_ty MemRegionGlobalHeap "xarrayx"
+                       (AllocInfo elt_ty memregion "xarrayx"
                                   Nothing (Just size)  "...array..." NoZeroInit) }
-dumpExpr _  (ILAllocArray nonArrayType _) =
+dumpExpr _  (ILAllocArray nonArrayType _ _) =
          error $ "ProtobufIL.hs: Can't dump ILAllocArray with non-array type "
               ++ show nonArrayType
 
@@ -350,7 +351,7 @@ dumpExpr _ (ILCallPrim t (PrimInlineAsm fty contents constraints sideeffects) ar
                     , PbLetable.parts = fromList $ fmap dumpVar args
                     , PbLetable.type' = Just $ dumpType t
                     , PbLetable.call_asm = Just $
-          P'.defaultValue { 
+          P'.defaultValue {
                             PbCallAsm.constraints  = u8fromString (T.unpack constraints)
                           , PbCallAsm.asm_contents = u8fromString (T.unpack contents)
                           , PbCallAsm.has_side_effects = sideeffects

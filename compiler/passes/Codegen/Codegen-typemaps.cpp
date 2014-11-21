@@ -240,7 +240,7 @@ GlobalVariable* emitTypeMap(
     llvm::Module* mod,
     std::vector<int> skippedIndexVector) {
   // Careful! The indices here are relative to the values
-  // returend by countPointersInType(), not the indicies
+  // returned by countPointersInType(), not the indices
   // in the type of those pointers.
   std::set<int> skippedOffsets(skippedIndexVector.begin(),
                                skippedIndexVector.end());

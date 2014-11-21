@@ -30,6 +30,9 @@ main =  {
 part2 = {
   x = prim mach-array-literal 1 2;
 
+  expect_i32 2;
+  print_i64 (prim_arrayLength x);
+
   expect_i32 1;
   print_i64 x[0];
 
@@ -39,7 +42,6 @@ part2 = {
 
 part3 = {
   x = prim mach-array-literal { True } { False };
-  //x = prim mach-array-literal { 1 } { 2 };
 
   expect_i1 True;
   print_i1 (x[0] !);

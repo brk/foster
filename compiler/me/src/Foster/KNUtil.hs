@@ -50,7 +50,7 @@ data KNExpr' r ty =
         | KNDeref       ty (TypedId ty)
         | KNStore       ty (TypedId ty) (TypedId ty)
         -- Array operations
-        | KNAllocArray  ty (TypedId ty)
+        | KNAllocArray  ty (TypedId ty) AllocMemRegion
         | KNArrayRead   ty (ArrayIndex (TypedId ty))
         | KNArrayPoke   ty (ArrayIndex (TypedId ty)) (TypedId ty)
         | KNArrayLit    ty (TypedId ty) [Either Literal (TypedId ty)]
@@ -154,8 +154,8 @@ alphaRename' fn uref = do
       KNCall          t v vs   -> mapM qv (v:vs) >>= \(v':vs') -> return $ KNCall t v' vs'
       KNCallPrim      t p vs   -> liftM  (KNCallPrim      t p) (mapM qv vs)
       KNAppCtor       t c vs   -> liftM  (KNAppCtor       t c) (mapM qv vs)
-      KNAllocArray    t v      -> liftM  (KNAllocArray    t) (qv v)
-      KNAlloc         t v _rgn -> liftM  (\v' -> KNAlloc  t v' _rgn) (qv v)
+      KNAllocArray    t v amr  -> liftM2 (KNAllocArray    t) (qv v) (return amr)
+      KNAlloc         t v amr  -> liftM2 (KNAlloc         t) (qv v) (return amr)
       KNDeref         t v      -> liftM  (KNDeref         t) (qv v)
       KNStore         t v1 v2  -> liftM2 (KNStore         t) (qv v1) (qv v2)
       KNArrayRead     t ai     -> liftM  (KNArrayRead     t) (renameArrayIndex ai)
@@ -243,7 +243,7 @@ typeKN expr =
     KNCall          t _ _    -> t
     KNCallPrim      t _ _    -> t
     KNAppCtor       t _ _    -> t
-    KNAllocArray    t _      -> t
+    KNAllocArray    t _ _    -> t
     KNIf            t _ _ _  -> t
     KNAlloc         t _ _rgn -> t
     KNDeref         t _      -> t
@@ -307,7 +307,7 @@ instance (Show ty, Show rs) => Structured (KNExpr' rs ty) where
             KNAppCtor  _t _c vs     ->            [var v | v <- vs]
             KNIf       _t v b c     -> [var v, b, c]
             KNAlloc _ v _rgn        -> [var v]
-            KNAllocArray _ v        -> [var v]
+            KNAllocArray _ v _      -> [var v]
             KNDeref      _ v        -> [var v]
             KNStore      _ v w      -> [var v, var w]
             KNArrayRead _t ari      -> map var $ childrenOfArrayIndex ari
@@ -529,8 +529,8 @@ knSubst m expr =
       KNCall          t v vs   -> KNCall t (qv v) (map qv vs)
       KNCallPrim      t p vs   -> KNCallPrim      t p (map qv vs)
       KNAppCtor       t c vs   -> KNAppCtor       t c (map qv vs)
-      KNAllocArray    t v      -> KNAllocArray    t (qv v)
-      KNAlloc         t v _rgn -> KNAlloc  t (qv v) _rgn
+      KNAllocArray    t v amr  -> KNAllocArray    t (qv v) amr
+      KNAlloc         t v amr  -> KNAlloc         t (qv v) amr
       KNDeref         t v      -> KNDeref         t (qv v)
       KNStore         t v1 v2  -> KNStore         t (qv v1) (qv v2)
       KNArrayRead     t ai     -> KNArrayRead     t (mapArrayIndex qv ai)

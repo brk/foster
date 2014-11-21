@@ -867,8 +867,11 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type,
 llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
   if (this->arraySize != NULL) {
     Value* array_size = this->arraySize->codegen(pass);
-    ASSERT(this->region == LLAllocate::MEM_REGION_GLOBAL_HEAP);
-    return pass->emitArrayMalloc(this->type, array_size, this->zero_init);
+    if (this->region == LLAllocate::MEM_REGION_GLOBAL_HEAP) {
+      return pass->emitArrayMalloc(this->type, array_size, this->zero_init);
+    } else {
+      return emitFakeComment("LLAllocate non-heap array");
+    }
   } else {
     if (const StructTypeAST* sty = this->type->castStructTypeAST()) {
       registerStructType(const_cast<StructTypeAST*>(sty),
@@ -986,54 +989,83 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
   //
   std::vector<llvm::Constant*> vals;
   std::vector<std::pair<llvm::Value*, unsigned> > ncvals;
-  llvm::Type* elem_ty = this->elem_type->getLLVMType();
+  llvm::Type* elt_ty = this->elem_type->getLLVMType();
   for (unsigned i = 0; i < this->args.size(); ++i) {
     llvm::Value* v = this->args[i]->codegen(pass);
     if (llvm::Constant* c = llvm::dyn_cast<llvm::Constant>(v)) {
       vals.push_back(c);
     } else {
-      vals.push_back(getNullOrZero(elem_ty));
+      vals.push_back(getNullOrZero(elt_ty));
       ncvals.push_back(std::make_pair(v, i));
     }
   }
-  llvm::ArrayType* ty = llvm::ArrayType::get(elem_ty, vals.size());
+  llvm::ArrayType* ty = llvm::ArrayType::get(elt_ty, vals.size());
   llvm::Constant* const_arr = llvm::ConstantArray::get(ty, vals);
 
-  llvm::GlobalVariable* arrayGlobal = new llvm::GlobalVariable(
+  // If there are no non-constant values, then the array can be
+  // allocated globally instead of on the heap, and we won't need
+  // to copy any values.
+  if (ncvals.empty()) {
+
+    std::vector<llvm::Constant*> tidy_vals;
+    tidy_vals.push_back(llvm::ConstantInt::get(builder.getInt64Ty(), vals.size()));
+    tidy_vals.push_back(const_arr);
+    auto const_arr_tidy = llvm::ConstantStruct::getAnon(tidy_vals);
+
+    CtorRepr ctorRepr; ctorRepr.smallId = -1;
+    std::vector<llvm::Constant*> cell_vals;
+    cell_vals.push_back(getTypeMapForType(this->elem_type, ctorRepr, pass->mod, YesArray));
+    cell_vals.push_back(const_arr_tidy);
+    auto const_arr_cell = llvm::ConstantStruct::getAnon(cell_vals);
+
+    llvm::GlobalVariable* arrayGlobal = new llvm::GlobalVariable(
+        /*Module=*/      *(pass->mod),
+        /*Type=*/        const_arr_cell->getType(),
+        /*isConstant=*/  true,
+        /*Linkage=*/     llvm::GlobalValue::PrivateLinkage,
+        /*Initializer=*/ const_arr_cell,
+        /*Name=*/        ".arr_cell");
+    arrayGlobal->setAlignment(align);
+
+    return builder.CreateBitCast(getPointerToIndex(arrayGlobal, builder.getInt32(1), "cellptr"),
+                                 ArrayTypeAST::getZeroLengthTypeRef(this->elem_type), "arr_ptr");
+  } else {
+    llvm::GlobalVariable* arrayGlobal = new llvm::GlobalVariable(
       /*Module=*/      *(pass->mod),
       /*Type=*/        const_arr->getType(),
       /*isConstant=*/  true,
       /*Linkage=*/     llvm::GlobalValue::PrivateLinkage,
       /*Initializer=*/ const_arr,
       /*Name=*/        ".arr");
-  arrayGlobal->setAlignment(align);
+    arrayGlobal->setAlignment(align);
 
-  // Load the heap array which our forebears allocated unto us.
-  llvm::Value* heap_arr = this->arr->codegen(pass);
+    // Load the heap array which our forebears allocated unto us.
+    llvm::Value* heap_arr = this->arr->codegen(pass);
 
-  Value* heapmem; Value* _len;
-  if (tryBindArray(heap_arr, /*out*/ heapmem, /*out*/ _len)) {
-    DDiag() << "memcpying from global to heap";
-    // Memcpy from global to heap.
-    //
+    Value* heapmem; Value* _len;
+    if (tryBindArray(heap_arr, /*out*/ heapmem, /*out*/ _len)) {
+      DDiag() << "memcpying from global to heap";
+      // Memcpy from global to heap.
+      //
 
-    int64_t size_in_bytes = (elem_ty->getPrimitiveSizeInBits() / 8)
-                          * this->args.size();
-    builder.CreateMemCpy(heapmem, arrayVariableToPointer(arrayGlobal),
-                                  size_in_bytes, align);
+      int64_t size_in_bytes = (elt_ty->getPrimitiveSizeInBits() / 8)
+                            * this->args.size();
+      builder.CreateMemCpy(heapmem, arrayVariableToPointer(arrayGlobal),
+                                    size_in_bytes, align);
 
-    // Copy any non-constant values to the heap array
-    //
-    llvm::Type* i32 = builder.getInt32Ty();
-    for (unsigned i = 0; i < ncvals.size(); ++i) {
-      unsigned k  = ncvals[i].second;
-      Value* val  = ncvals[i].first;
-      Value* slot = getPointerToIndex(heapmem, llvm::ConstantInt::get(i32, k), "arr_slot");
-      builder.CreateStore(val, slot, /*isVolatile=*/ false);
-    }
-  } else { ASSERT(false); }
+      // Copy any non-constant values to the heap array
+      //
+      llvm::Type* i32 = builder.getInt32Ty();
+      for (unsigned i = 0; i < ncvals.size(); ++i) {
+        unsigned k  = ncvals[i].second;
+        Value* val  = ncvals[i].first;
+        Value* slot = getPointerToIndex(heapmem, llvm::ConstantInt::get(i32, k), "arr_slot");
+        builder.CreateStore(val, slot, /*isVolatile=*/ false);
+      }
+    } else { ASSERT(false); }
 
-  return heap_arr;
+    return heap_arr;
+  }
 }
 
 ///}}}//////////////////////////////////////////////////////////////

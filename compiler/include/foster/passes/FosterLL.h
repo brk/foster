@@ -401,6 +401,7 @@ struct LLAllocate : public LLExpr {
   enum MemRegion {
       MEM_REGION_STACK
     , MEM_REGION_GLOBAL_HEAP
+    , MEM_REGION_GLOBAL_DATA
   } region;
   std::string srclines;
   bool zero_init;
