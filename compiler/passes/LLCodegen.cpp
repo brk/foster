@@ -777,33 +777,56 @@ llvm::Value* LLFloat::codegen(CodegenPass* pass) {
   return llvm::ConstantFP::get(getLLVMType(this->type), this->doubleValue);
 }
 
+llvm::Constant* emitConstantArrayTidy(uint64_t size,
+                                      llvm::Constant* arrValues) {
+    std::vector<llvm::Constant*> tidy_vals;
+    tidy_vals.push_back(llvm::ConstantInt::get(builder.getInt64Ty(), size));
+    tidy_vals.push_back(arrValues);
+    return llvm::ConstantStruct::getAnon(tidy_vals);
+}
+
+llvm::GlobalVariable* emitPrivateGlobal(CodegenPass* pass,
+                                 llvm::Constant* val,
+                                 const std::string& name,
+                                 unsigned alignment) {
+  llvm::GlobalVariable* globalVar = new llvm::GlobalVariable(
+      /*Module=*/      *(pass->mod),
+      /*Type=*/        val->getType(),
+      /*isConstant=*/  true,
+      /*Linkage=*/     llvm::GlobalValue::PrivateLinkage,
+      /*Initializer=*/ val,
+      /*Name=*/        name);
+  globalVar->setAlignment(alignment);
+
+  return globalVar;
+}
+
+llvm::GlobalVariable* emitGlobalCell(CodegenPass* pass,
+                                     llvm::GlobalVariable* typemap,
+                                     llvm::Constant* body,
+                                     const std::string& name,
+                                     unsigned alignment = 8) {
+  std::vector<llvm::Constant*> cell_vals;
+  cell_vals.push_back(typemap);
+  cell_vals.push_back(body);
+  auto const_cell = llvm::ConstantStruct::getAnon(cell_vals);
+
+  return emitPrivateGlobal(pass, const_cell, name, alignment);
+}
+
 llvm::Value* LLText::codegen(CodegenPass* pass) {
   llvm::Constant* sz64 = llvm::ConstantInt::get(builder.getInt64Ty(), this->stringValue.size());
   llvm::Constant* sz32 = llvm::ConstantInt::get(builder.getInt32Ty(), this->stringValue.size());
 
-  // the array header starts 16-byte aligned, but the data starts
-  // 8 bytes later...
-  unsigned align = 8;
-
   std::vector<llvm::Constant*> tidy_vals;
   tidy_vals.push_back(sz64);
   tidy_vals.push_back(getConstantArrayOfString(this->stringValue));
-  auto const_arr_tidy = llvm::ConstantStruct::getAnon(tidy_vals);
 
   CtorRepr ctorRepr; ctorRepr.smallId = -1;
-  std::vector<llvm::Constant*> cell_vals;
-  cell_vals.push_back(getTypeMapForType(TypeAST::i(8), ctorRepr, pass->mod, YesArray));
-  cell_vals.push_back(const_arr_tidy);
-  auto const_arr_cell = llvm::ConstantStruct::getAnon(cell_vals);
-
-  llvm::GlobalVariable* arrayGlobal = new llvm::GlobalVariable(
-      /*Module=*/      *(pass->mod),
-      /*Type=*/        const_arr_cell->getType(),
-      /*isConstant=*/  true,
-      /*Linkage=*/     llvm::GlobalValue::PrivateLinkage,
-      /*Initializer=*/ const_arr_cell,
-      /*Name=*/        ".str_cell");
-  arrayGlobal->setAlignment(align);
+  auto arrayGlobal = emitGlobalCell(pass,
+                                    getTypeMapForType(TypeAST::i(8), ctorRepr, pass->mod, YesArray),
+                                    llvm::ConstantStruct::getAnon(tidy_vals),
+                                    ".str_cell");
 
   Value* hstr = builder.CreateBitCast(
                   getPointerToIndex(arrayGlobal, builder.getInt32(1), "cellptr"),
@@ -811,7 +834,7 @@ llvm::Value* LLText::codegen(CodegenPass* pass) {
 
   Value* textfragment = pass->lookupFunctionOrDie("TextFragment");
 
-  llvm::CallInst* call = builder.CreateCall2(textfragment, hstr, sz32);
+  auto call = builder.CreateCall2(textfragment, hstr, sz32);
   call->setCallingConv(llvm::CallingConv::Fast);
   return call;
 }
@@ -1036,38 +1059,19 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
   // allocated globally instead of on the heap, and we won't need
   // to copy any values.
   if (ncvals.empty()) {
-
-    std::vector<llvm::Constant*> tidy_vals;
-    tidy_vals.push_back(llvm::ConstantInt::get(builder.getInt64Ty(), vals.size()));
-    tidy_vals.push_back(const_arr);
-    auto const_arr_tidy = llvm::ConstantStruct::getAnon(tidy_vals);
+    auto const_arr_tidy = emitConstantArrayTidy(vals.size(), const_arr);
 
     CtorRepr ctorRepr; ctorRepr.smallId = -1;
-    std::vector<llvm::Constant*> cell_vals;
-    cell_vals.push_back(getTypeMapForType(this->elem_type, ctorRepr, pass->mod, YesArray));
-    cell_vals.push_back(const_arr_tidy);
-    auto const_arr_cell = llvm::ConstantStruct::getAnon(cell_vals);
-
-    llvm::GlobalVariable* arrayGlobal = new llvm::GlobalVariable(
-        /*Module=*/      *(pass->mod),
-        /*Type=*/        const_arr_cell->getType(),
-        /*isConstant=*/  true,
-        /*Linkage=*/     llvm::GlobalValue::PrivateLinkage,
-        /*Initializer=*/ const_arr_cell,
-        /*Name=*/        ".arr_cell");
-    arrayGlobal->setAlignment(align);
+    auto arrayGlobal = emitGlobalCell(pass,
+                          getTypeMapForType(this->elem_type, ctorRepr, pass->mod, YesArray),
+                          const_arr_tidy,
+                          ".arr_cell",
+                          align);
 
     return builder.CreateBitCast(getPointerToIndex(arrayGlobal, builder.getInt32(1), "cellptr"),
                                  ArrayTypeAST::getZeroLengthTypeRef(this->elem_type), "arr_ptr");
   } else {
-    llvm::GlobalVariable* arrayGlobal = new llvm::GlobalVariable(
-      /*Module=*/      *(pass->mod),
-      /*Type=*/        const_arr->getType(),
-      /*isConstant=*/  true,
-      /*Linkage=*/     llvm::GlobalValue::PrivateLinkage,
-      /*Initializer=*/ const_arr,
-      /*Name=*/        ".arr");
-    arrayGlobal->setAlignment(align);
+    llvm::GlobalVariable* arrayGlobal = emitPrivateGlobal(pass, const_arr, ".arr", align);
 
     // Load the heap array which our forebears allocated unto us.
     llvm::Value* heap_arr = this->arr->codegen(pass);
