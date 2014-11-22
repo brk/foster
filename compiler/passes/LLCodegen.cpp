@@ -164,18 +164,6 @@ void assertValueHasExpectedType(llvm::Value* argV, llvm::Type* expectedType,
               << "\nargV = " << str(argV);
 }
 
-void assertValueHasExpectedType(llvm::Value* v, TypeAST* expectedType) {
-  ASSERT(v);
-  if (expectedType) {
-    llvm::Type* ty = getLLVMType(expectedType);
-    if (!typesEq(v->getType(), ty)) {
-      ASSERT(false) << "********* expected type " << str(ty)
-                           << "; had type " << str(v->getType())
-                           << "\n for value " << str(v);
-    }
-  }
-}
-
 void assertHaveCallableType(LLExpr* base, llvm::Type* FT, llvm::Value* FV) {
   ASSERT(FT) << "call to uncallable something "
              << base->tag << "\t" << base->type->tag
