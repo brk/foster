@@ -156,10 +156,11 @@ scriptImplyingBy' pred facts = scriptImplyingBy (bareSMTExpr pred) facts
 scriptImplyingBy :: SMTExpr -> Facts -> CommentedScript
 scriptImplyingBy (SMTExpr pred declset idfacts) facts =
   let alldecls = Set.toList $ Set.union declset (symbolicDecls facts) in
+  let alldecltys = concatMap (\(SymDecl _nm targs tret) -> tret:targs) alldecls in
   let tydecls  = [CmdDeclareType nm arity | (nm, arity) <-
                     uniquesWithoutPrims
                      [(smtNameI id, fromIntegral $ length tys)
-                     | SymDecl _ [] (TApp id tys) <- alldecls]] in
+                     | (TApp id tys) <- alldecltys]] in
   CommentedScript $ [Cmds $
            [CmdSetOption (OptProduceModels True)
            ,CmdSetLogic (SMT.N "QF_AUFBV")
@@ -229,7 +230,7 @@ scGetFact id = do
 
 instance Pretty CommentOrCommand where
   pretty (Cmds cmds) = string (show $ SMT.pp $ Script cmds)
-  pretty (Cmnt str) = text ";" <+> string str
+  pretty (Cmnt str) = vcat [text ";" <+> text line | line <- lines str]
 
 prettyCommentedScript :: CommentedScript -> Doc
 prettyCommentedScript (CommentedScript items) =
@@ -248,9 +249,15 @@ scRunZ3 expr script = lift $ do
         liftIO $ putStrLn $ "   This is either dead code or a buggy implementation of our SMT query generation."
         return ()
     Right strs -> throwError ([text "Unable to verify precondition associated with expression",
-                               pretty expr,
+                               case maybeSourceRangeOf expr of
+                                   Just sr -> prettyWithLineNumbers sr
+                                   Nothing -> pretty expr,
                                string (show doc)] ++ map text strs)
   return ()
+
+maybeSourceRangeOf (KNCallPrim sr _ _ _) = Just sr
+maybeSourceRangeOf (KNTuple _ _ sr) = Just sr
+maybeSourceRangeOf _ = Nothing
 
 runStaticChecks :: ModuleIL KNMono MonoType -> Compiled ()
 runStaticChecks m = do
@@ -411,17 +418,17 @@ computeRefinements :: TypedId MonoType -> [FnMono]
 computeRefinements fnv =
   let
       ts   = monoFnTypeDomain (tidType fnv)
-      frsh = Ident (T.pack "_") 0 -- Well, fresh enough...?
+      frsh idx = Ident (T.pack $ "_" ++ show idx) 0 -- Well, fresh enough...?
 
       mbFnOfRefinement (RefinedType v e _) = [fnOfRefinement v e]
       mbFnOfRefinement _                   = []
 
       fnOfRefinement _ body =
-          Fn fnv (map refinedVarOrFresh ts) body NotRec
+          Fn fnv (map refinedVarOrFresh (zip ts [0..])) body NotRec
                 (ExprAnnot [] (MissingSourceRange "fnOfRefinement") [])
 
-      refinedVarOrFresh t = case t of RefinedType rv _ _ -> rv
-                                      _                  -> TypedId t frsh
+      refinedVarOrFresh (t,idx) = case t of RefinedType rv _ _ -> rv
+                                            _                  -> TypedId t (frsh idx)
       refinements = concatMap mbFnOfRefinement ts
   in
   refinements
@@ -506,10 +513,10 @@ checkBody expr facts =
     KNStore       {} -> return Nothing
     KNDeref       {} -> return Nothing
 
-    KNCallPrim _ (NamedPrim tid) _  | primName tid `elem` ["print_i32", "expect_i32"] -> do
+    KNCallPrim _ _ (NamedPrim tid) _  | primName tid `elem` ["print_i32", "expect_i32"] -> do
         return $ Nothing
 
-    KNCallPrim _ (NamedPrim tid) vs | primName tid `elem` ["assert-invariants"] -> do
+    KNCallPrim _ _ (NamedPrim tid) vs | primName tid `elem` ["assert-invariants"] -> do
         let precond = smtAll (map smtVar vs)
         let thm = scriptImplyingBy' precond facts
         liftIO $ putStrLn "assert-invariants checking the following script:"
@@ -517,39 +524,39 @@ checkBody expr facts =
         scRunZ3 expr thm
         return $ Nothing
 
-    KNCallPrim _ (NamedPrim tid) [v] | primName tid `elem` ["prim_arrayLength"] -> do
+    KNCallPrim _ _ (NamedPrim tid) [v] | primName tid `elem` ["prim_arrayLength"] -> do
         return $ withDecls facts $ \x -> return $ smtId x === smtArraySizeOf (smtVar v)
 
-    KNCallPrim (PrimInt szr) (PrimOp ('s':'e':'x':'t':'_':_) (PrimInt szi)) [v] -> do
+    KNCallPrim _ (PrimInt szr) (PrimOp ('s':'e':'x':'t':'_':_) (PrimInt szi)) [v] -> do
         return $ withDecls facts $ \x -> return $ smtId x === sign_extend (fromIntegral $ intSizeOf szr - intSizeOf szi) (smtVar v)
 
-    KNCallPrim (PrimInt szr) (PrimOp ('z':'e':'x':'t':'_':_) (PrimInt szi)) [v] -> do
+    KNCallPrim _ (PrimInt szr) (PrimOp ('z':'e':'x':'t':'_':_) (PrimInt szi)) [v] -> do
         return $ withDecls facts $ \x -> return $ smtId x === zero_extend (fromIntegral $ intSizeOf szr - intSizeOf szi) (smtVar v)
 
-    KNCallPrim _ (PrimOp opname (PrimInt _)) vs | Just op <- Map.lookup opname fnMap -> do
+    KNCallPrim _ _ (PrimOp opname (PrimInt _)) vs | Just op <- Map.lookup opname fnMap -> do
         return $ withDecls facts $ \x -> return $ smtId x === lift2 op (smtVars vs)
 
-    KNCallPrim _ (PrimOp "bitshl" (PrimInt _)) vs -> do
+    KNCallPrim _ _ (PrimOp "bitshl" (PrimInt _)) vs -> do
         -- TODO check 2nd var <= sz
         return $ withDecls facts $ \x -> return $ smtId x === lift2 bvshl (smtVars vs)
 
-    KNCallPrim _ (PrimOp "bitlshr" (PrimInt _)) vs -> do
+    KNCallPrim _ _ (PrimOp "bitlshr" (PrimInt _)) vs -> do
         -- TODO check 2nd var <= sz
         return $ withDecls facts $ \x -> return $ smtId x === lift2 bvlshr (smtVars vs)
 
-    KNCallPrim _ (PrimOp "bitashr" (PrimInt _)) vs -> do
+    KNCallPrim _ _ (PrimOp "bitashr" (PrimInt _)) vs -> do
         -- TODO check 2nd var <= sz
         return $ withDecls facts $ \x -> return $ smtId x === lift2 bvashr (smtVars vs)
 
-    KNCallPrim _ (PrimIntTrunc _ tosz) [v] -> do
+    KNCallPrim _ _ (PrimIntTrunc _ tosz) [v] -> do
         return $ withDecls facts $ \x -> return $ smtId x === smtTruncToSize (intSizeOf tosz) (smtVar v)
 
-    KNCallPrim (PrimInt _) (PrimOp "sdiv-unsafe" (PrimInt sz)) vs -> do
+    KNCallPrim _ (PrimInt _) (PrimOp "sdiv-unsafe" (PrimInt sz)) vs -> do
         let precond [s1, s2] = s2 =/= (litOfSize 0 sz)
         scRunZ3 expr $ scriptImplyingBy' (precond (smtVars vs)) facts
         return $ withDecls facts $ \x -> return $ smtId x === lift2 bvsdiv (smtVars vs)
 
-    KNCallPrim _ty prim vs -> do
+    KNCallPrim _ _ty prim vs -> do
         liftIO $ putStrLn $ "TODO: checkBody attributes for call prim " ++ show prim ++ " $ " ++ show vs
         return Nothing
 
@@ -563,7 +570,7 @@ checkBody expr facts =
                               checkBody (caseArmBody arm) facts'
                 Just _g -> error $ "can't yet support case arms with guards in KNStaticChecks"
         return Nothing
-        --error $ "checkBody cannot yet support KNCase" -- KNCase ty v (map (fmapCaseArm id (q tailq) id) arms)
+
     KNIf        _ty v e1 e2    -> do
         _ <- checkBody e1 (facts `withPathFact` (        (smtVar v)))
         _ <- checkBody e2 (facts `withPathFact` (SMT.not (smtVar v)))

@@ -43,7 +43,7 @@ data AIExpr =
         | AILetFuns    [Ident] [Fn () AIExpr TypeIL] AIExpr
         -- Use of bindings
         | E_AIVar      (TypedId TypeIL)
-        | AICallPrim   TypeIL (FosterPrim TypeIL) [AIExpr]
+        | AICallPrim   SourceRange TypeIL (FosterPrim TypeIL) [AIExpr]
         | AICall       TypeIL AIExpr [AIExpr]
         | AIAppCtor    TypeIL CtorId [AIExpr]
         -- Mutable ref cells
@@ -68,7 +68,7 @@ instance TypedWith AIExpr TypeIL where
      AITuple  exprs _rng -> TupleTypeIL $ map typeOf exprs
      -- E_AIFn annFn         -> fnType annFn
      AICall {- _rng -} t _ _    -> t
-     AICallPrim t _ _ -> t
+     AICallPrim _ t _ _ -> t
      AIAppCtor {- _rng -} t _ _ -> t
      AICompiles {- _rng -} t _     -> t
      AIKillProcess {- _rng -} t _  -> t
@@ -211,7 +211,7 @@ ail ctx ae =
                                          argsi <- mapM q args
                                          return $ AIAppCtor ti cid argsi
 
-        AnnCall _range t b args -> do
+        AnnCall annot t b args -> do
             ti <- qt t
             argsi <- mapM q args
             case b of
@@ -219,7 +219,7 @@ ail ctx ae =
                 -- will be flagged as errors in `ail`.
                 AnnPrimitive _rng _ prim -> do
                    prim' <- ilPrim ctx prim
-                   return $ AICallPrim ti prim' argsi
+                   return $ AICallPrim (rangeOf annot) ti prim' argsi
 
                 -- Now that we can see type applications,
                 -- we can build coroutine primitive nodes.
@@ -228,7 +228,7 @@ ail ctx ae =
                    case (coroPrimFor primName, apptys) of
                      (Just coroPrim, [argty, retty]) -> do
                        [aty, rty] <- mapM qt [argty, retty]
-                       return $ AICallPrim ti (CoroPrim coroPrim aty rty) argsi
+                       return $ AICallPrim (rangeOf annot) ti (CoroPrim coroPrim aty rty) argsi
                      _otherwise -> do
                        -- v[types](args) ~~>> let <fresh> = v[types] in <fresh>(args)
                        apptysi <- mapM qt apptys
@@ -237,7 +237,7 @@ ail ctx ae =
                        oti <- qt ot
                        x <- tcFreshT $ "appty_" `prependedTo` primName
                        return $ AILetVar x (E_AITyApp oti (E_AIVar tid') apptysi)
-                                          $ AICallPrim ti prim' argsi
+                                          $ AICallPrim (rangeOf annot) ti prim' argsi
 
                 _else -> do bi <- q b
                             return $ AICall ti bi argsi

@@ -42,7 +42,7 @@ data KNExpr' r ty =
         | KNLetFuns    [Ident] [Fn r (KNExpr' r ty) ty] (KNExpr' r ty)
         -- Use of bindings
         | KNVar         (TypedId ty)
-        | KNCallPrim    ty (FosterPrim ty)    [TypedId ty]
+        | KNCallPrim    SourceRange ty (FosterPrim ty)    [TypedId ty]
         | KNCall        ty (TypedId ty)       [TypedId ty]
         | KNAppCtor     ty (CtorId, CtorRepr) [TypedId ty]
         -- Mutable ref cells
@@ -152,7 +152,7 @@ alphaRename' fn uref = do
       KNKillProcess   {}       -> return e
       KNTuple         t vs a   -> mapM qv vs     >>= \vs' -> return $ KNTuple t vs' a
       KNCall          t v vs   -> mapM qv (v:vs) >>= \(v':vs') -> return $ KNCall t v' vs'
-      KNCallPrim      t p vs   -> liftM  (KNCallPrim      t p) (mapM qv vs)
+      KNCallPrim   sr t p vs   -> liftM  (KNCallPrim   sr t p) (mapM qv vs)
       KNAppCtor       t c vs   -> liftM  (KNAppCtor       t c) (mapM qv vs)
       KNAllocArray    t v amr  -> liftM2 (KNAllocArray    t) (qv v) (return amr)
       KNAlloc         t v amr  -> liftM2 (KNAlloc         t) (qv v) (return amr)
@@ -241,7 +241,7 @@ typeKN expr =
     KNTuple         t _  _   -> t
     KNKillProcess   t _      -> t
     KNCall          t _ _    -> t
-    KNCallPrim      t _ _    -> t
+    KNCallPrim    _ t _ _    -> t
     KNAppCtor       t _ _    -> t
     KNAllocArray    t _ _    -> t
     KNIf            t _ _ _  -> t
@@ -270,7 +270,7 @@ instance (Show ty, Show rs) => Structured (KNExpr' rs ty) where
             KNLiteral ty (LitInt int) -> text $ "KNInt       " ++ (litIntText int) ++ " :: " ++ show ty
             KNLiteral ty (LitFloat f) -> text $ "KNFloat     " ++ (litFloatText f) ++ " :: " ++ show ty
             KNCall     t _ _    -> text $ "KNCall :: " ++ show t
-            KNCallPrim t prim _ -> text $ "KNCallPrim  " ++ (show prim) ++ " :: " ++ show t
+            KNCallPrim _ t p  _ -> text $ "KNCallPrim  " ++ (show p) ++ " :: " ++ show t
             KNAppCtor  t cid  _ -> text $ "KNAppCtor   " ++ (show cid) ++ " :: " ++ show t
             KNLetVal   x b    _ -> text $ "KNLetVal    " ++ (show x) ++ " :: " ++ (show $ typeKN b) ++ " = ... in ... "
             KNLetRec   _ _    _ -> text $ "KNLetRec    "
@@ -303,7 +303,7 @@ instance (Show ty, Show rs) => Structured (KNExpr' rs ty) where
             KNLetVal _x b  e        -> [b, e]
             KNLetRec _x bs e        -> bs ++ [e]
             KNCall     _t  v vs     -> [var v] ++ [var v | v <- vs]
-            KNCallPrim _t _v vs     ->            [var v | v <- vs]
+            KNCallPrim _sr _t _v vs ->            [var v | v <- vs]
             KNAppCtor  _t _c vs     ->            [var v | v <- vs]
             KNIf       _t v b c     -> [var v, b, c]
             KNAlloc _ v _rgn        -> [var v]
@@ -458,7 +458,7 @@ instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
             KNLiteral t lit     -> showTyped (pretty lit) t
             KNCall     t v [] -> showTyped (prettyId v <+> text "!") t
             KNCall     t v vs -> showTyped (prettyId v <+> hsep (map pretty vs)) t
-            KNCallPrim t prim vs-> showUnTyped (text "prim" <+> pretty prim <+> hsep (map prettyId vs)) t
+            KNCallPrim _ t p vs -> showUnTyped (text "prim" <+> pretty p <+> hsep (map prettyId vs)) t
             KNAppCtor  t cid  vs-> showUnTyped (text "~" <> parens (text (show cid)) <> hsep (map prettyId vs)) t
             KNLetVal   x b    k -> lkwd "let"
                                       <+> fill 8 (text (show x))
@@ -527,7 +527,7 @@ knSubst m expr =
       KNKillProcess   {}       -> expr
       KNTuple         t vs a   -> KNTuple t (map qv vs) a
       KNCall          t v vs   -> KNCall t (qv v) (map qv vs)
-      KNCallPrim      t p vs   -> KNCallPrim      t p (map qv vs)
+      KNCallPrim   sr t p vs   -> KNCallPrim   sr t p (map qv vs)
       KNAppCtor       t c vs   -> KNAppCtor       t c (map qv vs)
       KNAllocArray    t v amr  -> KNAllocArray    t (qv v) amr
       KNAlloc         t v amr  -> KNAlloc         t (qv v) amr

@@ -263,7 +263,7 @@ ssTermOfExpr expr =
     KNLetVal x b e         -> SSTmExpr  $ ILetVal      x (tr b)         (tr e)
     KNLetRec ids exprs e   -> SSTmExpr  $ ILetRec    ids (map tr exprs) (tr e)
     KNCall     _t b vs     -> SSTmExpr  $ ICall (idOf b) (map idOf vs)
-    KNCallPrim _t b vs     -> SSTmExpr  $ ICallPrim b (map idOf vs)
+    KNCallPrim _ _t b vs   -> SSTmExpr  $ ICallPrim b (map idOf vs)
     KNIf       _t  v b c   -> SSTmExpr  $ IIf      (idOf v) (tr b) (tr c)
     KNArrayRead _t (ArrayIndex a b _ _)
                            -> SSTmExpr  $ IArrayRead (idOf a) (idOf b)
@@ -515,6 +515,7 @@ stepExpr gs expr = do
           PrimIntTrunc from to -> return $
               withTerm gs (SSTmValue $ evalPrimitiveIntTrunc from to args)
           CoroPrim prim _t1 _t2 -> evalCoroPrimitive prim gs args
+          PrimInlineAsm {} -> error $ "KSmallstep.hs: Interpreter cannot handle inline asm!"
 
     ICall b vs ->
         let args = map (getval gs) vs in

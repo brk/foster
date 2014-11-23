@@ -87,7 +87,7 @@ monoKN subst e =
   KNLiteral       t lit    -> liftM2 KNLiteral       (qt t) (return lit)
   KNTuple         t vs a   -> liftM3 KNTuple         (qt t) (mapM qv vs) (return a)
   KNKillProcess   t s      -> liftM2 KNKillProcess   (qt t) (return s)
-  KNCallPrim      t p vs   -> liftM3 KNCallPrim      (qt t) (qp p) (mapM qv vs)
+  KNCallPrim   sr t p vs   -> liftM3(KNCallPrim sr)  (qt t) (qp p) (mapM qv vs)
   KNAllocArray    t v amr  -> liftM3 KNAllocArray    (qt t) (qv v) (return amr)
   KNAlloc         t v amr  -> liftM3 KNAlloc         (qt t) (qv v) (return amr)
   KNDeref         t v      -> liftM2 KNDeref         (qt t) (qv v)

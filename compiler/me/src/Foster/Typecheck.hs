@@ -1199,11 +1199,13 @@ getUniquelyNamedAndRetypedFormals' ctx annot rawFormals fnProtoName  tybinds = d
             fmapM_TID (tcType ctx) v >>= retypeTID (resolveType annot tybinds)
 
 tcType :: Context TypeTC -> TypeAST -> Tc TypeTC
-tcType ctx typ = tcType' ctx [] typ
+tcType ctx typ = tcType' ctx [] RIS_False typ
 
-tcType' :: Context TypeTC -> [Ident] -> TypeAST -> Tc TypeTC
-tcType' ctx refinementArgs typ = do
-  let q = tcType' ctx refinementArgs
+data IsRefinementInScope = RIS_True | RIS_False deriving Show
+
+tcType' :: Context TypeTC -> [Ident] -> IsRefinementInScope -> TypeAST -> Tc TypeTC
+tcType' ctx refinementArgs ris typ = do
+  let q = tcType' ctx refinementArgs RIS_False
   case typ of
         MetaPlaceholderAST MTVTau   nm -> newTcUnificationVarTau nm
         MetaPlaceholderAST MTVSigma nm -> newTcUnificationVarSigma nm
@@ -1236,7 +1238,11 @@ tcType' ctx refinementArgs typ = do
           let extCtx = extendContext ctx uniquelyNamedFormals
           let refinementArgs' = fakeRefinementArgs `replacingUniquesWith` (map tidIdent uniquelyNamedFormals)
 
-          ss' <- mapM (tcType' extCtx refinementArgs') ss
+          --tcLift $ putDocLn $ text "tcType' checking " <> pretty typ <+>
+          --                     text "w/ context extended with" <+> pretty uniquelyNamedFormals
+          --                     <+> text "and refinement args" <+> pretty refinementArgs'
+
+          ss' <- mapM (tcType' extCtx refinementArgs' RIS_True) ss
           -- The binding for the function's return type, if any, should
           -- be in-scope for its refinement.
           extCtx' <- case r of
@@ -1246,45 +1252,36 @@ tcType' ctx refinementArgs typ = do
                                        (localTypeBindings ctx)
                             return $ extendContext extCtx unf
                        _ -> return extCtx
-          r'  <- tcType' extCtx' refinementArgs' r
+          r'  <- tcType' extCtx' refinementArgs' RIS_False r
           return $ FnTypeTC ss' r' (UniConst cc) (UniConst ft)
         RefinedTypeAST nm ty e -> do
-          -- TODO: the caller must be responsible for setting up a suitably
-          --       extended context, in order to support dependent refinements.
-          -- Make sure that the refinement has type bool (with a suitably extended context).
-          {-
-           extCtx <- case termVarLookup (T.pack nm) (contextBindings ctx) of
-                      Just _ -> return ctx
-                      Nothing -> do
-                          let rng    = MissingSourceRange $ "refinement " ++ nm
-                          let annot  = ExprAnnot [] rng []
-                          let formal = TypedId ty (Ident (T.pack nm) 0)
-                          uniquelyNamedFormals0 <- getUniquelyNamedAndRetypedFormals ctx rng [formal] (T.pack $ "refinement " ++ nm)
-                          [uniquelyNamedFormal] <- mapM
-                                      (retypeTID (resolveType annot $ localTypeBindings ctx))
-                                      uniquelyNamedFormals0
+          (ctx' , id) <-
+                 case ris of
+                    RIS_True ->
+                      case termVarLookup (T.pack nm) (contextBindings ctx) of
+                          Just (v, _) -> return (ctx, tidIdent v)
+                          _           -> tcFails [text "unable to find refinement type var in context"]
+                    RIS_False -> do
+                      -- The caller did not extend the context with this refinement,
+                      -- so we should do it ourselves.
+                      let rng    = MissingSourceRange $ "refinement " ++ nm
+                      let annot  = ExprAnnot [] rng []
+                      let formal = TypedId ty (Ident (T.pack nm) 0)
+                      [unf] <- getUniquelyNamedAndRetypedFormals' ctx annot
+                                   [formal] (T.pack "refinement for fn return type...")
+                                   (localTypeBindings ctx)
+                      return (extendContext ctx [unf], tidIdent unf)
 
-                          return $ extendContext ctx [uniquelyNamedFormal]
--}
-          let extCtx = ctx
-          e' <- checkRho extCtx e (PrimIntTC I1)
-          ty' <- q ty
-          -- TODO if we don't replace the type component, it leads to circularity...
-          --return $ RefinedTypeTC (TypedId ty' (tidIdent uniquelyNamedFormal)) e'
-
-          -- If the caller already defined an ident, use it, otherwise create our own.
-          id <- case termVarLookup (T.pack nm) (contextBindings ctx) of
-                  Just (v, _) -> return (tidIdent v)
-                  _           -> tcFresh nm
-          -- We don't know what our refinement args are;
-          -- the top-level will provide them...
+          e' <- checkRho ctx' e (PrimIntTC I1)
+          ty' <- tcType' ctx' refinementArgs RIS_False ty
           return $ RefinedTypeTC (TypedId ty' id) e' refinementArgs
 
 mkRefinementArgs types =
-    map (\t -> case t of
+    map (\(t, idx) ->
+            case t of
                  RefinedTypeAST nm _ _ -> Ident (T.pack nm) 0
-                 _                     -> Ident (T.pack "_") (-1))
-        types
+                 _                     -> Ident (T.pack $ "_" ++ show idx) (-1))
+        (zip types [0..])
 
 replacingUniquesWith fakes reals =
   let m = Map.fromList [(txt, uniq) | Ident txt uniq <- reals] in

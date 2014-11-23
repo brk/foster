@@ -143,7 +143,7 @@ kNormalize ctorRepr expr =
       AIIf      t  a b c    -> do a' <- go a
                                   [ b', c' ] <- mapM go [b, c]
                                   nestedLets [return a'] (\[v] -> KNIf t v b' c')
-      AICallPrim t p es -> do nestedLets (map go es) (\vars -> KNCallPrim t p vars)
+      AICallPrim sr t p es -> do nestedLets (map go es) (\vars -> KNCallPrim sr t p vars)
       AIAppCtor  t c es -> do let repr = ctorRepr c
                               nestedLets (map go es) (\vars -> KNAppCtor  t (c, repr) vars)
       AICall     t (E_AIVar v) es -> do nestedLetsDo (     map go es) (\    vars  -> knCall t v  vars)
@@ -582,7 +582,7 @@ collectMentions knf = go Set.empty (fnBody knf)
           KNDeref       {} -> xs
           KNTuple       _ vs _ -> uu xs vs
           KNAppCtor     _ _ vs -> uu xs vs
-          KNCallPrim    _ _ vs -> uu xs vs
+          KNCallPrim  _ _ _ vs -> uu xs vs
           KNVar           v    -> vv xs v
           KNAlloc       _ v _  -> vv xs v
           KNTyApp       _ v _  -> vv xs v
@@ -1603,14 +1603,14 @@ knInline' expr env = do
 
     KNAppCtor     ty cid vs  -> rezM1 (KNAppCtor ty cid) (mapM q vs)
 
-    KNCallPrim    ty prim vs -> do
+    KNCallPrim sr ty prim vs -> do
         -- If enough is known about the values to the prim,
         -- we might be able to partially evaluate it.
 
         mb_consts <- mapM (extractConstExpr env) vs
         case evalPrim ty prim mb_consts of
              Just e  -> residualize e
-             Nothing -> rezM1 (KNCallPrim ty prim) (mapM q vs)
+             Nothing -> rezM1 (KNCallPrim sr ty prim) (mapM q vs)
 
     KNCall ty v vs -> do
       let resExpr s = do --putDocLn $ text "resExpr " <> text s <$> indent 4 (pretty expr)
@@ -1857,7 +1857,7 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
         KNLiteral     {} -> "KNLiteral     " ++ show (knSize x)
         KNTuple       {} -> "KNTuple       " ++ show (knSize x)
         KNKillProcess {} -> "KNKillProcess " ++ show (knSize x)
-        KNCallPrim _ p _ -> "KNCallPrim    " ++      (primop p) -- is zext_* constant enough?
+        KNCallPrim _ _ p _ -> "KNCallPrim    " ++      (primop p) -- is zext_* constant enough?
         KNCall        {} -> "KNCall        " ++ show (knSize x)
         KNAppCtor     {} -> "KNAppCtor     " ++ show (knSize x)
         KNAlloc       {} -> "KNAlloc       " ++ show (knSize x)
@@ -2370,7 +2370,7 @@ knElimRebinds expr = go Map.empty expr where
             KNKillProcess t m   -> KNKillProcess t m
             KNLiteral t lit     -> KNLiteral t lit
             KNCall    t v vs    -> KNCall   t (qv v) (map qv vs)
-            KNCallPrim t prim vs-> KNCallPrim t prim (map qv vs)
+            KNCallPrim sr t p vs-> KNCallPrim sr t p (map qv vs)
             KNAppCtor  t cid  vs-> KNAppCtor  t cid  (map qv vs)
             KNLetFuns ids fns k -> KNLetFuns ids (map qf fns) (q k)
             KNLetRec  ids xps e -> KNLetRec  ids (map q xps)  (q e)
@@ -2486,7 +2486,7 @@ inCensusExpr expr = go expr where
                             mapM_ cenSawPassed vs
 
     KNAppCtor     _ _ vs -> mapM_ cenSawPassed vs
-    KNCallPrim    _ _ vs -> mapM_ cenSawPassed vs
+    KNCallPrim  _ _ _ vs -> mapM_ cenSawPassed vs
     KNTuple       _ vs _ -> mapM_ cenSawPassed vs
     KNVar           v    -> mapM_ cenSawPassed [v]
     KNAlloc       _ v _  -> mapM_ cenSawPassed [v]

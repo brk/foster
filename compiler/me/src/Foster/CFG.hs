@@ -328,7 +328,7 @@ computeBlocks tailq expr idmaybe k = do
          KNLiteral    t lit  -> ILLiteral    t lit
          KNVar        _v     -> error $ "can't make Letable from KNVar!"
          KNTuple    _ vs rng -> ILTuple      vs (AllocationSource "tuple" rng)
-         KNCallPrim   t p vs -> ILCallPrim   t p vs
+         KNCallPrim _ t p vs -> ILCallPrim   t p vs
          KNAppCtor    t c vs -> ILAppCtor    t c vs
          KNAlloc    _ v rgn  -> ILAlloc      v rgn
          KNDeref    t v      -> ILDeref      t v
