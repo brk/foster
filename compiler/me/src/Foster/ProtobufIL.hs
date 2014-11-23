@@ -178,6 +178,7 @@ dumpTupleStore (ILTupleStore vs v r) =
                    , storage_indir = case r of
                                        MemRegionStack      -> False
                                        MemRegionGlobalHeap -> True
+                                       MemRegionGlobalData -> error $ "should not tuple-store to global data!"
     }
 dumpTupleStore other = error $ "dumpTupleStore called on non-tuple-store value: " ++ show other
 
