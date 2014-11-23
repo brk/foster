@@ -1220,7 +1220,6 @@ tcType' ctx refinementArgs ris typ = do
         ForAllAST  tvs rho    -> liftM  (ForAllTC tvs) (q rho)
         FnTypeAST ss r cc ft -> do
           let rng    = MissingSourceRange $ "refinement for fn type..."
-          let annot  = ExprAnnot [] rng []
           let formals = concatMap (\t ->
                            case t of
                              RefinedTypeAST nm t' _ ->
@@ -1231,7 +1230,7 @@ tcType' ctx refinementArgs ris typ = do
           -- These args will have bogus uniq values; the code below
           -- generates the real uniqs, which we will substitute in...
 
-          uniquelyNamedFormals <- getUniquelyNamedAndRetypedFormals' ctx annot
+          uniquelyNamedFormals <- getUniquelyNamedAndRetypedFormals' ctx (annotForRange rng)
                                    formals (T.pack $ "refinement for fn type...")
                                    (localTypeBindings ctx)
 
@@ -1247,7 +1246,7 @@ tcType' ctx refinementArgs ris typ = do
           -- be in-scope for its refinement.
           extCtx' <- case r of
                        RefinedTypeAST nm r' _ -> do
-                            unf <- getUniquelyNamedAndRetypedFormals' ctx annot
+                            unf <- getUniquelyNamedAndRetypedFormals' ctx (annotForRange rng)
                                        [TypedId r' (Ident (T.pack nm) 0)] (T.pack "refinement for fn return type...")
                                        (localTypeBindings ctx)
                             return $ extendContext extCtx unf
@@ -1265,9 +1264,8 @@ tcType' ctx refinementArgs ris typ = do
                       -- The caller did not extend the context with this refinement,
                       -- so we should do it ourselves.
                       let rng    = MissingSourceRange $ "refinement " ++ nm
-                      let annot  = ExprAnnot [] rng []
                       let formal = TypedId ty (Ident (T.pack nm) 0)
-                      [unf] <- getUniquelyNamedAndRetypedFormals' ctx annot
+                      [unf] <- getUniquelyNamedAndRetypedFormals' ctx (annotForRange rng)
                                    [formal] (T.pack "refinement for fn return type...")
                                    (localTypeBindings ctx)
                       return (extendContext ctx [unf], tidIdent unf)
@@ -1330,11 +1328,11 @@ tcRhoCase ctx rng scrutinee branches expTy = do
       EP_Variable r v     -> do checkSuspiciousPatternVariable r v
                                 id <- tcFreshT (evarName v)
                                 return $ P_Atom $ P_Variable r (TypedId ctxTy id)
-      EP_Bool     r b     -> do let boolexpr = E_BoolAST (ExprAnnot [] r  []) b
+      EP_Bool     r b     -> do let boolexpr = E_BoolAST (annotForRange r) b
                                 annbool <- tcRho ctx boolexpr (Check ctxTy)
                                 return $ P_Atom $ P_Bool r (typeTC annbool) b
       EP_Int      r str   -> do (AnnLiteral _ ty (LitInt int))
-                                         <- typecheckInt (ExprAnnot [] r []) str
+                                         <- typecheckInt (annotForRange r) str
                                                          (Check ctxTy)
                                 --tcLift $ putDocLn $ text ("P_Int " ++ str) <+> pretty ctxTy
                                 return $ P_Atom $ P_Int r ty int

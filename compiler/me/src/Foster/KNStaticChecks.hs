@@ -294,7 +294,7 @@ checkFn' fn facts0 = do
 
       mbFnOfRefinement (RefinedType _ body _) =
           [Fn (fnVar fn) relevantFormals body NotRec
-           (ExprAnnot [] (MissingSourceRange "fnOfRefinement") [])]
+           (annotForRange (MissingSourceRange "fnOfRefinement"))]
       mbFnOfRefinement _                   = []
 
       refinements = concatMap mbFnOfRefinement (map tidType $ fnVars fn)
@@ -389,7 +389,7 @@ withBindings fnv vs facts0 = do
                                | v <- vs]
 
       mbFnOfRefinement (RefinedType _ body _) =
-        [Fn fnv relevantFormals body NotRec (ExprAnnot [] (MissingSourceRange "fnOfRefinement") [])]
+        [Fn fnv relevantFormals body NotRec (annotForRange (MissingSourceRange "fnOfRefinement"))]
       mbFnOfRefinement _                   = []
 
       refinements = concatMap mbFnOfRefinement (map tidType vs)
@@ -425,7 +425,7 @@ computeRefinements fnv =
 
       fnOfRefinement _ body =
           Fn fnv (map refinedVarOrFresh (zip ts [0..])) body NotRec
-                (ExprAnnot [] (MissingSourceRange "fnOfRefinement") [])
+                (annotForRange (MissingSourceRange "fnOfRefinement"))
 
       refinedVarOrFresh (t,idx) = case t of RefinedType rv _ _ -> rv
                                             _                  -> TypedId t (frsh idx)

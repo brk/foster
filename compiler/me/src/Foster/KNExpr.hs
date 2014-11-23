@@ -199,7 +199,7 @@ kNormalize ctorRepr expr =
                         , fnVars     = []
                         , fnBody     = body
                         , fnIsRec    = ()
-                        , fnAnnot    = ExprAnnot [] (MissingSourceRange $ "kont") []
+                        , fnAnnot    = annotForRange (MissingSourceRange $ "kont")
                         }
                   body <- if null arms
                               then return $ KNKillProcess t (T.pack $ "guarded pattern match failed")
@@ -290,7 +290,7 @@ varOrThunk (a, targetType) = do
                       , fnVars     = vars
                       , fnBody     = KNCall (fnTypeILRange fnty) v vars
                       , fnIsRec    = ()
-                      , fnAnnot    = ExprAnnot [] (MissingSourceRange $ "thunk for " ++ show v) []
+                      , fnAnnot    = annotForRange (MissingSourceRange $ "thunk for " ++ show v)
                       }
         -- TODO the above ident/global check doesn't work correctly for
         -- global polymorphic functions, which are first type-instantiated
@@ -496,7 +496,7 @@ kNormalCtors ctx ctorRepr dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dty
                   , fnVars  = vars
                   , fnBody  = KNAppCtor resty (cid, rep) vars
                   , fnIsRec = ()
-                  , fnAnnot = ExprAnnot [] range []
+                  , fnAnnot = annotForRange range
                   } where resty =
                             case tidType tid of
                                  FnTypeIL _ r _ _ -> r
@@ -935,7 +935,7 @@ knLoopHeaders' expr = do
                           , fnVars  = dropUselessArgs mt (fnVars fn)
                           , fnBody  = (q YesTail $ fnBody fn)
                           , fnIsRec = YesRec
-                          , fnAnnot = ExprAnnot [] (rangeOf fn) []
+                          , fnAnnot = annotForRange (rangeOf fn)
                           } in
             -- TODO should we create another wrapper to maintain the invariant
             -- that the outermost fn bound to id is always non-recursive,

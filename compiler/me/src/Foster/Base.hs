@@ -437,6 +437,8 @@ data ExprAnnot = ExprAnnot
                         SourceRange  -- range of bare expr not incl. formatting.
                         [Formatting] -- trailing comments and/or blank lines.
 
+annotForRange sr = ExprAnnot [] sr []
+
 instance SourceRanged ExprAnnot where rangeOf (ExprAnnot _ rng _) = rng
 
 instance Show ExprAnnot where show (ExprAnnot _ rng _) = show rng

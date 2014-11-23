@@ -130,7 +130,7 @@ parseCallPrim pbexpr annot = do
 
 mkPrimCall :: String -> [Literal] -> [TypeP] -> [ExprAST TypeP] -> ExprAnnot -> ExprAST TypeP
 mkPrimCall name lits tys args annot =
-    let emptyAnnot = ExprAnnot [] (MissingSourceRange "prim") [] in
+    let emptyAnnot = annotForRange (MissingSourceRange "prim") in
     E_CallAST annot (E_PrimAST emptyAnnot name lits tys) args
 
 parseCompiles pbexpr range = do
@@ -225,7 +225,7 @@ parseSeq pbexpr annot = do
         buildSeqs []    = error $ "ProtobufFE.parseSeq can't parse empty seq!"
                                  ++ highlightFirstLine (rangeOf annot)
         buildSeqs [a]   = a
-        buildSeqs (a:b) = E_SeqAST (ExprAnnot [] (MissingSourceRange "buildSeqs") [])
+        buildSeqs (a:b) = E_SeqAST (annotForRange (MissingSourceRange "buildSeqs"))
                                    a (buildSeqs b)
 
 parseTyApp pbexpr range = do
@@ -283,7 +283,7 @@ parseCaseArm clause = do
 parseAnnot :: PbExpr.Expr -> FE ExprAnnot
 parseAnnot expr = do
   rng <- parseRange expr
-  return $ ExprAnnot [] rng []
+  return $ annotForRange rng
 
 parseRange :: PbExpr.Expr -> FE SourceRange
 parseRange pbexpr =
