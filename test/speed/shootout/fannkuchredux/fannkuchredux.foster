@@ -103,7 +103,7 @@ main = {
       ()
       // printf("%d\nPfannkuchen(%d) = %d\n", checksum, max_n, maxflips);
     else
-      print_text "usage: <prog> number";
+      print_text "usage: <prog> number-from-3-to-15";
       ()
     end
   end

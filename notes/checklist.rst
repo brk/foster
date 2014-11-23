@@ -15,12 +15,12 @@ One possible completion of http://colinm.org/language_checklist.html ::
     [*] Garbage collection is free                [ ] Computers have infinite memory
     [*] Nobody really needs:
         [*] concurrency  [*] a REPL  [*] debugger support  [*] IDE support  [ ] I/O
-        [*] to interact with code not written in your language
+        [*] to interact with code not written in your language  [*] modules
     [ ] The entire world speaks 7-bit ASCII
     [*] Scaling up to large software projects will be easy
     [*] Convincing programmers to adopt a new language will be easy
     [ ] Convincing programmers to adopt a language-specific IDE will be easy
-    [*] Programmers love writing lots of boilerplate
+    [ ] Programmers love writing lots of boilerplate
     [ ] Specifying behaviors as "undefined" means that programmers won't rely on them
     [ ] "Spooky action at a distance" makes programming more fun
 
@@ -28,9 +28,9 @@ One possible completion of http://colinm.org/language_checklist.html ::
     [?] comprehensible syntax  [+] semicolons  [-] significant whitespace  [-] macros
     [-] implicit type conversion  [+] explicit casting  [+] type inference
     [?] goto  [-] exceptions  [+] closures  [+] tail recursion  [+] coroutines
-    [-] reflection  [-] subtyping  [-] multiple inheritance  [-] operator overloading
+    [-] reflection  [?] subtyping  [-] multiple inheritance  [-] operator overloading
     [+] algebraic datatypes  [+] recursive types  [+] polymorphic types
-    [-] covariant array typing  [-] monads  [-] dependent types
+    [-] covariant array typing  [-] monads  [?] dependent types
     [+] infix operators  [+] nested comments  [-] multi-line strings  [-] regexes
     [+] call-by-value  [-] call-by-name  [-] call-by-reference  [-] call-cc
 
@@ -49,7 +49,7 @@ One possible completion of http://colinm.org/language_checklist.html ::
     [ ] Interpreted languages will never be as fast as C
     [*] Compiled languages will never be "extensible"
     [ ] Writing a compiler that understands English is AI-complete
-    [ ] Your language relies on an optimization which has never been shown possible
+    [?] Your language relies on an optimization which has never been shown possible
     [ ] There are less than 100 programmers on Earth smart enough to use your language
     [ ] ____________________________ takes exponential time
     [ ] ____________________________ is known to be undecidable

@@ -26,6 +26,14 @@ until = { cond : { Bool } => body : { () } =>
 
 /////
 
+cmdline-arg-or :: { Int32 => Int32 => Int32 };
+cmdline-arg-or = { i => d =>
+  n0 = tmp_Int32_of_base_10_Text (get_cmdline_arg_n i);
+  if n0 ==Int32 0 then d else n0 end;
+};
+
+/////
+
 cmpSInt32 = { a : Int32 => b : Int32 =>
   if a ==Int32 b
   then EQ

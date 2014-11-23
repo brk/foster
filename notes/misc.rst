@@ -1,3 +1,6 @@
+Miscellanous Tidbits of Knowledge
+=================================
+
 * Stack-allocated structures are no faster to access than heap-allocated structures,
   at least given a decent calling convention where args are passed in registers.
   Given a function that takes ``S* a`` and allocates a local ``S b``, a read from
@@ -5,6 +8,7 @@
   ``-16(%rbp)``.
 
 * If a Foster program silently fails, check ``gclog.txt``.
+* If the return value is 99, it means the GC detected an error while running.
 * The GC heap size can be configured with ``--foster-runtime '{"gc_semispace_size_kb":400}'``
 * Semispace memory is initialized to 0x66, so a SIGSEGV crash with an address of
   mostly 6's means a read of uninitialized memory.
@@ -30,7 +34,14 @@
 * Case analysis on literal tuples will not result in runtime allocation,
   so long as the value of the tuple is never captured.
   This capacity subsumes built-in control flow operators like ``&&`` and ``||`` in C.
-
+* Shift amounts are silently masked to avoid undefined behavior.
+* Arithmetic operations (``+``, ``-``, ``*``) come in several variants:
+  * Regular, which has 2s-complement overflow semantics,
+    and thus does not distinguish between signed & unsigned bit patterns.
+  * Checked, in signed/unsigned variants, which immediately terminates the program
+    if/when an overflow occurs.
+  * TODO: use an SMT solver to identify when a checked variant could be
+          optimized to a raw operation, and vice versa.
 * Inline asm syntax::
 
     prim inline-asm :[ { () } ]

@@ -4002,7 +4002,7 @@ main = {
   x3 = x4 +Int32 k;
   x2 = x3 +Int32 k;
   x1 = x2 +Int32 k;
-  x0 = 0;
+  x0 = opaquely_i32 0;
 
   expect_i32 (k *Int32 k);
   print_i32 (x0 +Int32 x1);

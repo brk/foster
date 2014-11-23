@@ -9,6 +9,7 @@ Foster Notes
 .. toctree::
    :maxdepth: 2
 
+   misc
    test
    features
    compiler
@@ -23,6 +24,7 @@ Foster Notes
    inlining
    bench
    todo
+   checklist
 
 .. Indices and tables
 .. ==================

@@ -242,6 +242,12 @@ void emitRecordMallocCallsite(llvm::Module* m,
   markAsNonAllocating(builder.CreateCall2(rmc, typemap, srclines));
 }
 
+// |arg| is a 1-based index (0 is the fn return value).
+llvm::Type* getFunctionTypeArgType(llvm::Type* fn_ptr_ty, int arg) {
+ return fn_ptr_ty->getContainedType(0) // function
+                 ->getContainedType(arg);
+}
+
 llvm::Value*
 CodegenPass::emitMalloc(TypeAST* typ,
                         CtorRepr ctorRepr,
@@ -253,9 +259,7 @@ CodegenPass::emitMalloc(TypeAST* typ,
   llvm::GlobalVariable* ti = getTypeMapForType(typ, ctorRepr, mod, NotArray);
   ASSERT(ti != NULL) << "malloc must have type info for type " << str(typ)
                      << "; ctor id " << ctorRepr.smallId;
-  llvm::Type* typemap_type = memalloc_cell->getType()
-                                            ->getContainedType(0)
-                                            ->getContainedType(1);
+  llvm::Type* typemap_type = getFunctionTypeArgType(memalloc_cell->getType(), 1);
   llvm::Value* typemap = builder.CreateBitCast(ti, typemap_type);
 
   if (this->config.trackAllocSites) {
@@ -277,7 +281,6 @@ CodegenPass::emitMalloc(TypeAST* typ,
   return builder.CreateBitCast(mem, ptrTo(ty), "ptr");
 }
 
-
 llvm::Value*
 CodegenPass::emitArrayMalloc(TypeAST* elt_type, llvm::Value* n, bool init) {
   llvm::Value* memalloc = mod->getFunction("memalloc_array");
@@ -290,14 +293,11 @@ CodegenPass::emitArrayMalloc(TypeAST* elt_type, llvm::Value* n, bool init) {
   // 3) (maybe) unboxed structs, for types with a single ctor.
   llvm::GlobalVariable* ti = getTypeMapForType(elt_type, ctorRepr, mod, YesArray);
   ASSERT(ti != NULL);
-  llvm::Type* typemap_type = memalloc->getType() // function ptr
-                                            ->getContainedType(0) // function
-                                            ->getContainedType(1); // first arg
+  llvm::Type* typemap_type = getFunctionTypeArgType(memalloc->getType(), 1);
   llvm::Value* typemap = builder.CreateBitCast(ti, typemap_type);
   llvm::Value* num_elts = signExtend(n, builder.getInt64Ty());
-  llvm::Value* vinit   = builder.getInt8(init);
-  llvm::CallInst* mem = builder.CreateCall3(memalloc, typemap, num_elts, vinit, "arrmem");
-
+  llvm::CallInst* mem = builder.CreateCall3(memalloc, typemap, num_elts,
+                                            builder.getInt8(init), "arrmem");
   return builder.CreateBitCast(mem,
                   ArrayTypeAST::getZeroLengthTypeRef(elt_type), "arr_ptr");
 }
@@ -364,13 +364,12 @@ createCheckedOp(CodegenPass* pass,
      << "; try running under gdb and break on `foster__assert_failed`";
   llvm::Value* msg = builder.CreateBitCast(pass->getGlobalString(ss.str()),
                                                  builder.getInt8PtrTy());
-  llvm::CallInst* c = b.CreateCall(pass->lookupFunctionOrDie("foster__assert_failed"), msg);
+  b.CreateCall(pass->lookupFunctionOrDie("foster__assert_failed"), msg);
   b.CreateUnreachable();
 
   b.SetInsertPoint(bb_ok);
   unsigned  arr0[] = { 0 };
-  llvm::Value* result = b.CreateExtractValue(agg, arr0, valname);
-  return result;
+  return b.CreateExtractValue(agg, arr0, valname);
 }
 
 llvm::Value*

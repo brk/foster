@@ -177,20 +177,25 @@ scale = { bodies : Array Planet => s : Float64 =>
 };
 
 main = {
-  let n = (ref tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1));
+      n = cmdline-arg-or 1 10;
       nbodies = 5;
       bodies = mkBodies nbodies;
       dt = 1.0e-02;
-  in
+
       offset-momentum bodies;
 
       print_float_p9f64 (energy bodies);
 
       scale bodies dt;
-      repeat n^ { advance bodies };
+      repeat n { advance bodies };
       scale bodies (div-f64 1.0 dt);
 
       print_float_p9f64 (energy bodies);
-  end
+
+      case n
+        of 10 -> expect_text "-0.169075164";
+                 expect_text "-0.169073022";
+        of _  -> ()
+      end
 };
 

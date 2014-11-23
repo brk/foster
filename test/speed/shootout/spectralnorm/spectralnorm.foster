@@ -49,14 +49,13 @@ repeatRange = { e : Int32 => n : Int32 => f : { Int32 => () } =>
 };
 
 main = {
-  let n   = tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1);
-      u   = (allocDArray:[Float64] n);
-      v   = (allocDArray:[Float64] n);
-      tmp = (allocDArray:[Float64] n);
-      vv  = (ref 0.0);
-      vBv = (ref 0.0);
+    n   = cmdline-arg-or 1 100;
+    u   = (allocDArray:[Float64] n);
+    v   = (allocDArray:[Float64] n);
+    tmp = (allocDArray:[Float64] n);
+    vv  = (ref 0.0);
+    vBv = (ref 0.0);
 
-  in
     repeatRange 0 n { i : Int32 => 1.0 >^ u[i]; () };
     repeatRange 1 10 { i : Int32 => mulAtAv n u v tmp; mulAtAv n v u tmp; () };
     repeatRange 0 n { i : Int32 =>
@@ -65,6 +64,9 @@ main = {
       ()
     };
 
+    case n
+      of 100 -> expect_text "1.274219991";
+      of _   -> ()
+    end;
     print_float_p9f64 (sqrt-f64 (div-f64 vBv^ vv^));
-  end
 };

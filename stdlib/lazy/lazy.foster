@@ -13,16 +13,16 @@ type case LazyThing (a:Type)
 
 // lazily { expr }   is basically   delay { force expr }.
 lazily ::   forall a:Type, {     { Lazy a } => Lazy a };
-lazily =  { forall a:Type, thunk:{ Lazy a } => LazyDelay (ref (LazyLazyT thunk)) };
+lazily =  { thunk => LazyDelay (ref (LazyLazyT thunk)) };
 
 delay :: forall a:Type, { { a } => Lazy a };
-delay =  { forall a:Type, thunk : { a } => lazily { eager (thunk !) } };
+delay =  { thunk => lazily { eager (thunk !) } };
 
 eager :: forall a:Type, { a => Lazy a };
-eager =  { forall a:Type, v : a => LazyDelay (ref (LazyValue v)) };
+eager =  { v => LazyDelay (ref (LazyValue v)) };
 
 force :: forall a:Type, { Lazy a => a };
-force =  { forall a:Type, lazy : Lazy a =>
+force =  { lazy =>
   case lazy
     of $LazyDelay r ->
       case r ^

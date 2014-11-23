@@ -55,7 +55,7 @@ textOfRangeChunkCmpResult = { o : RangeChunkCmpResult =>
 //
 cmpRange :: forall t:Type, { t => t => t => t => { t => t => Ord }
                                => RangeChunkCmpResult };
-cmpRange = { forall t:Type, a => b => x => y => cmp =>
+cmpRange = { a => b => x => y => cmp =>
   case cmp b x
     of $LT              -> Before
     of $EQ              -> AdjacentBefore
@@ -79,7 +79,7 @@ cmpRange = { forall t:Type, a => b => x => y => cmp =>
 // but doing so requires knowing that cmp is a pure function.
 cmpRangeAlt :: forall t:Type, { t => t => t => t => { t => t => Ord }
                                   => RangeChunkCmpResult };
-cmpRangeAlt = { forall t:Type, a => b => x => y => cmp =>
+cmpRangeAlt = { a => b => x => y => cmp =>
   case (cmp b x, cmp y a, cmp a x, cmp b y)
     of ($LT, _,     _,   _) -> Before
     of ($EQ, _,     _,   _) -> AdjacentBefore
