@@ -5,12 +5,15 @@ main = {
   srclen = cmdline-arg-or 1 1;
   rounds = cmdline-arg-or 2 1;
 
+  print_i32 srclen;
+  expect_i32 rounds;
+
   bytes = newDArray0:[Int8] srclen { n => trunc_i32_to_i8 n };
   key   = newDArray0:[Int8] 16     { n => trunc_i32_to_i8 n };
 
   REC go = { round => res =>
     if round ==Int32 rounds then res else
-      go (round +Int32 1) (res `bitxor-Int64` siphash24 bytes key);
+      go (round +Int32 1) (res `bitxor-Int64` opaquely_i64 (noinline_llvm_siphash24 bytes key)) ;
     end
   };
 

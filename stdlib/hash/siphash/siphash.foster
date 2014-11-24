@@ -20,8 +20,12 @@ snafuinclude Prelude "prelude";
 // One inconvenient aspect is that this also requires a precondition that
 // the base index (i) is non-negative.
 
+// Precondition: i +Int32 7 < arrayLength32 arr
+// Precondition: 0 <= i
 readInt64FromArrayInt8 :: { Array Int8 => Int32 => Int64 };
 readInt64FromArrayInt8 = { arr => i =>
+// 1.91 - 1.94 s
+/*
   a = arr[i +Int32 0];
   b = arr[i +Int32 1];
   c = arr[i +Int32 2];
@@ -30,10 +34,51 @@ readInt64FromArrayInt8 = { arr => i =>
   f = arr[i +Int32 5];
   g = arr[i +Int32 6];
   h = arr[i +Int32 7];
+  */
+// 1.84 - 1.91 s
+/*
+  h = arr[i +Int32 7];
+  g = arr[i +Int32 6];
+  f = arr[i +Int32 5];
+  e = arr[i +Int32 4];
+  d = arr[i +Int32 3];
+  c = arr[i +Int32 2];
+  b = arr[i +Int32 1];
+  a = arr[i +Int32 0];
+*/
+/*
+  // 1.42 s
+  h = prim subscript        arr (i +Int32 7);
+  g = prim subscript-unsafe arr (i +Int32 6);
+  f = prim subscript-unsafe arr (i +Int32 5);
+  e = prim subscript-unsafe arr (i +Int32 4);
+  d = prim subscript-unsafe arr (i +Int32 3);
+  c = prim subscript-unsafe arr (i +Int32 2);
+  b = prim subscript-unsafe arr (i +Int32 1);
+  a = prim subscript-unsafe arr (i +Int32 0);
+*/
+  // 1.34 s
+  // TODO: what is causing the extra ~15% overhead? vs Clang -O2
+  h = prim subscript-unsafe arr (i +Int32 7);
+  g = prim subscript-unsafe arr (i +Int32 6);
+  f = prim subscript-unsafe arr (i +Int32 5);
+  e = prim subscript-unsafe arr (i +Int32 4);
+  d = prim subscript-unsafe arr (i +Int32 3);
+  c = prim subscript-unsafe arr (i +Int32 2);
+  b = prim subscript-unsafe arr (i +Int32 1);
+  a = prim subscript-unsafe arr (i +Int32 0);
+
+  // All subscript checks disabled: 1.39s (??) -- 9-14 switches, 88 waits
+  // All subscript checks and GC support disabled: 10 switches, 85 waits
+  // GCC -  O2: 1.42 s
+  // Clang -O2: 1.18 s , 4-8 switches, 9 waits
   mergeInt32 (octet4ToInt32 h g f e)
              (octet4ToInt32 d c b a)
 };
 
+// Precondition: n <UInt32 r => offset +Int32 n < arrayLength32 bytes
+//          ==>                 offset +Int32 r < arrayLength32 bytes
+//          ==>   zext_i32_to_i64 offset +Int64 len_rem < arrayLength bytes
 read-rem = { len_rem => offset : Int32 => bytes =>
   r = trunc_i64_to_i32 len_rem;
   idx = { n => if n <UInt32 r then bytes[offset +Int32 n] else 0 end };
@@ -80,8 +125,8 @@ debug = { a => b => c => d =>
   print_text "";
 };
 
-noinline_siphash24 :: { Array Int8 => Array Int8 => Int64 };
-noinline_siphash24 = { bytes => key =>
+noinline_llvm_siphash24 :: { Array Int8 => Array Int8 => Int64 };
+noinline_llvm_siphash24 = { bytes => key =>
          siphash24 bytes key
 };
 
@@ -96,8 +141,17 @@ siphash24 = { bytes => key =>
   v2 = k0 `bitxor-Int64` 6c7967656e657261_16;
   v3 = k1 `bitxor-Int64` 7465646279746573_16;
 
+  // Invariant: len_rem + offset == arrayLength32 bytes
+  // Invariant: 0 <= offset
   REC go_sh = { len_rem => offset : Int32 => v0 => v1 => v2 => v3 =>
     if len_rem >=UInt64 8 then
+      //     len_rem + offset == arrayLength32 bytes
+      //  && len_rem >= 8
+      // ==> offset + len_rem == arrayLength32 bytes
+      //  &&          len_rem < 7
+      // ==> offset + 7       <  arrayLength32 bytes
+      // Precondition: offset +Int32 7 < arrayLength32 bytes
+      // Precondition: 0 <= offset
       mi = readInt64FromArrayInt8 bytes offset;
       double-round v0 v1 v2 (v3 `bitxor-Int64` mi) { v0 => v1 => v2 => v3 =>
         lenrem = len_rem -Int64 8;
