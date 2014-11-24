@@ -31,7 +31,6 @@ data Context ty = Context { contextBindings   :: ContextBindings ty
                           , nullCtorBindings  :: ContextBindings ty
                           , primitiveBindings :: ContextBindings ty
                           , primitiveOperations :: Map T.Text (FosterPrim ty)
-                          , contextVerbose    :: Bool
                           , globalIdents       :: [Ident]
                           , localTypeBindings :: Map String ty
                           , contextTypeBindings :: [(TyVar, Kind)]
@@ -64,7 +63,7 @@ extendTyCtx ctx ktvs = ctx { contextTypeBindings =
 
 liftContextM :: (Monad m, Show t1, Show t2)
              => (t1 -> m t2) -> Context t1 -> m (Context t2)
-liftContextM f (Context cb nb pb primops vb gb tyvars tybinds ctortypeast dtinfo) = do
+liftContextM f (Context cb nb pb primops gb tyvars tybinds ctortypeast dtinfo) = do
   cb' <- mmapM (liftCXB f) cb
   nb' <- mmapM (liftCXB f) nb
   pb' <- mmapM (liftCXB f) pb
@@ -72,7 +71,7 @@ liftContextM f (Context cb nb pb primops vb gb tyvars tybinds ctortypeast dtinfo
   tyvars' <- mmapM f tyvars
   ct' <- mmapM (mapM (liftCtorInfo f)) ctortypeast
   dt' <- mmapM (mapM (liftDataType f)) dtinfo
-  return $ Context cb' nb' pb' po' vb gb tyvars' tybinds ct' dt'
+  return $ Context cb' nb' pb' po' gb tyvars' tybinds ct' dt'
 
 mmapM :: (Monad m, Ord k) => (a -> m b) -> Map k a -> m (Map k b)
 mmapM f ka = do
@@ -103,6 +102,8 @@ liftPrimOp f primop =
     PrimOp s ty        -> liftM (PrimOp s) (f ty)
     PrimIntTrunc s1 s2 -> return $ PrimIntTrunc s1 s2
     CoroPrim p t1 t2   -> liftM2 (CoroPrim p) (f t1) (f t2)
+    PrimInlineAsm t cnt cns fx -> do t' <- f t
+                                     return $ PrimInlineAsm t' cnt cns fx
 
 liftBinding :: Monad m => (t1 -> m t2) -> ContextBinding t1 -> m (ContextBinding t2)
 liftBinding f (TermVarBinding s (TypedId t i, mb_cid)) = do

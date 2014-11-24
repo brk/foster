@@ -231,7 +231,7 @@ typecheckModule verboseMode pauseOnErrors modast tcenv0 = do
    mkContext :: [ContextBinding t] -> [ContextBinding t]
              -> [ContextBinding t] -> (Map T.Text (FosterPrim t)) -> [DataType t] -> Context t
    mkContext declBindings nullCtorBnds primBindings primOpMap datatypes =
-     Context declBindsMap nullCtorsMap primBindsMap primOpMap verboseMode globalvars tyvarsMap [] ctorinfo dtypes
+     Context declBindsMap nullCtorsMap primBindsMap primOpMap globalvars tyvarsMap [] ctorinfo dtypes
        where globalvars   = map (\(TermVarBinding _ (tid, _)) -> tidIdent tid) $ declBindings ++ primBindings
              ctorinfo     = getCtorInfo  datatypes
              dtypes       = getDataTypes datatypes

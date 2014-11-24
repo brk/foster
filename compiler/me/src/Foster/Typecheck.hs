@@ -231,14 +231,7 @@ inferRho ctx e msg = do
     return a
 
 -- }}}
-
-minimalTupleTC []    = TupleTypeTC []
-minimalTupleTC [arg] = arg
-minimalTupleTC args  = TupleTypeTC args
-
---mkProcTypeTC args rets = FnTypeTC args (minimalTupleTC rets) (UniConst CCC)    (UniConst FT_Proc)
-mkFnTypeTC   args rets = FnTypeTC args (minimalTupleTC rets) (UniConst FastCC) (UniConst FT_Func)
---mkCoroTypeTC args rets = CoroTypeTC (minimalTupleTC args) (minimalTupleTC rets)
+mkFnTypeTC args ret = FnTypeTC args ret (UniConst FastCC) (UniConst FT_Func)
 
 tcRho :: Context SigmaTC -> Term -> Expected RhoTC -> Tc (AnnExpr RhoTC)
 -- Invariant: if the second argument is (Check rho),
@@ -791,11 +784,11 @@ tcSigmaCall :: Context SigmaTC -> ExprAnnot -> ExprAST TypeAST
 tcSigmaCall ctx rng (E_PrimAST _ name@"assert-invariants" _ _) argtup exp_ty = do
     args <- mapM (\arg -> checkSigma ctx arg boolTypeTC) argtup
     let unitType = TupleTypeTC []
-    let fnty = mkFnTypeTC (map (\_ -> boolTypeTC) argtup) [unitType]
+    let fnty = mkFnTypeTC [boolTypeTC | _ <- argtup] unitType
     let prim = NamedPrim (TypedId fnty (Ident (T.pack name) 1))
     let primcall = AnnCall rng unitType (AnnPrimitive rng fnty prim) args
     id <- tcFresh "assert-invariants-thunk"
-    let thunk = Fn (TypedId (mkFnTypeTC [] [unitType]) id) [] primcall () rng
+    let thunk = Fn (TypedId (mkFnTypeTC [] unitType) id) [] primcall () rng
     matchExp exp_ty (AnnLetFuns rng [id] [thunk] (AnnTuple rng (TupleTypeTC []) [])) name
 
 tcSigmaCall ctx rng base argexprs exp_ty = do
@@ -1220,22 +1213,20 @@ tcType' ctx refinementArgs ris typ = do
         ForAllAST  tvs rho    -> liftM  (ForAllTC tvs) (q rho)
         FnTypeAST ss r cc ft -> do
           let rng    = MissingSourceRange $ "refinement for fn type..."
-          let formals = concatMap (\t ->
+          let refinedFormals = concatMap (\t ->
                            case t of
                              RefinedTypeAST nm t' _ ->
                                [TypedId t' (Ident (T.pack nm) 0)]
                              _ -> []) ss
 
-          let fakeRefinementArgs = mkRefinementArgs ss
-          -- These args will have bogus uniq values; the code below
-          -- generates the real uniqs, which we will substitute in...
-
-          uniquelyNamedFormals <- getUniquelyNamedAndRetypedFormals' ctx (annotForRange rng)
-                                   formals (T.pack $ "refinement for fn type...")
+          uniqRefinedFormals <- getUniquelyNamedAndRetypedFormals' ctx (annotForRange rng)
+                                   refinedFormals (T.pack $ "refinement for fn type...")
                                    (localTypeBindings ctx)
 
-          let extCtx = extendContext ctx uniquelyNamedFormals
-          let refinementArgs' = fakeRefinementArgs `replacingUniquesWith` (map tidIdent uniquelyNamedFormals)
+          let extCtx = extendContext ctx uniqRefinedFormals
+
+          let refinementArgs' = mkRefinementArgs ss `replacingUniquesWith`
+                                 (map tidIdent uniqRefinedFormals)
 
           --tcLift $ putDocLn $ text "tcType' checking " <> pretty typ <+>
           --                     text "w/ context extended with" <+> pretty uniquelyNamedFormals

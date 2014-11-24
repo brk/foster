@@ -5,7 +5,7 @@
 -----------------------------------------------------------------------------
 
 module Foster.TypeAST(
-  TypeAST(..), IntSizeBits(..), AnnVar
+  TypeAST(..), IntSizeBits(..)
 , MetaTyVar(..), Sigma, Rho, Tau, MTVQ(..)
 , fosBoolType, fosStringType, gFosterPrimOpsTable, primitiveDecls
 , minimalTupleAST
@@ -21,8 +21,6 @@ import Text.PrettyPrint.ANSI.Leijen
 import Foster.Base
 import Foster.Kind
 import Foster.ExprAST
-
-type AnnVar = TypedId TypeAST
 
 type Sigma = TypeAST
 type Rho   = TypeAST -- No top-level ForAll
