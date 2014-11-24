@@ -43,24 +43,7 @@ data CommentOrCommand = Cmnt String | Cmds [Command]
 
 data SymDecl = SymDecl SMT.Name [SMT.Type] SMT.Type
 
-instance Ord SymDecl where compare (SymDecl n1 _ _) (SymDecl n2 _ _) = compare n1 n2
-instance Eq  SymDecl where (==)    (SymDecl n1 _ _) (SymDecl n2 _ _) = (==)    n1 n2
-
 data SMTExpr = SMTExpr SMT.Expr (Set SymDecl) [(Ident, SMT.Expr)]
-
-instance Pretty SMT.Expr where pretty e = string (show $ SMT.pp e)
-instance Pretty SMTExpr where
-    pretty (SMTExpr e decls idfacts) =
-          parens (text "SMTExpr" <+> pretty e <$>
-                    indent 2 (vsep
-                         [hang 4 $ text "decls =" <$> pretty (Set.toList decls)
-                         ,hang 4 $ text "idfacts =" <$> pretty idfacts]))
-instance Pretty SMT.Name where pretty x = string (show x)
-instance Pretty SMT.Type where pretty x = string (show x)
-instance Pretty SymDecl where
-    pretty (SymDecl nm tys ty) =
-          parens (text "SymDecl" <+> pretty nm <+> pretty tys <+> pretty ty)
-
 
 mergeSMTExprAsPathFact (SMTExpr e s m) (Facts preconds identfacts pathfacts decls) =
   Facts preconds (m ++ identfacts) (e:pathfacts) (Set.union s decls)
@@ -71,18 +54,8 @@ data Facts = Facts { fnPreconds :: Map Ident [[MoVar] -> SC SMTExpr]
                    , symbolicDecls :: Set SymDecl
                    }
 ------
-{-
-mergeFactsForCompilation (Facts _ _ pfs1 decls1) (Facts _ _ pfs2 decls2) =
-  Facts Map.empty Map.empty (pfs1 ++ pfs2) (mergeDecls decls1 decls2 [] Set.empty)
-    where mergeDecls []   [] merged _    = merged
-          mergeDecls [] rest merged seen = mergeDecls rest [] merged seen
-          mergeDecls (t@(nm, _, _):rest) others merged seen =
-            if Set.member nm seen
-              then mergeDecls rest others   merged  seen
-              else mergeDecls rest others (t:merged) (Set.insert nm seen)
-              -}
-------
 
+-- {{{ Utility functions for SMT names and types
 nm id = SMT.N (map cleanChar $ show id)
   where cleanChar c = case c of
                          '.' -> '_'
@@ -102,6 +75,33 @@ smtVars tids = map smtVar tids
 smtNameI :: SMT.Ident -> SMT.Name
 smtNameI (SMT.I nm _) = nm
 
+smtType :: MonoType -> SMT.Type
+smtType (PrimInt I1) = tBool
+smtType (PrimInt sz) = tBitVec (fromIntegral $ intSizeOf sz)
+smtType (ArrayType _) = smtArray
+smtType (TupleType tys) = TApp (smtI ("FosterTuple" ++ show (length tys))) (map smtType tys)
+smtType (RefinedType v _ _) = smtType (tidType v)
+smtType (TyConApp nm tys) = TApp (smtI nm) (map smtType tys)
+smtType ty = error $ "smtType can't yet handle " ++ show ty
+
+smtArray = TApp (smtI "FosterArray") []
+
+smtTruncToSize i v = extract (fromIntegral i - 1) 0 v
+
+-- Oddly, Z3 equates type Bool with type (_ BitVec 1),
+-- but doesn't equate the literals for the two types!
+litOfSize num I1 = if num == 0 then SMT.false else SMT.true
+litOfSize num sz = bv num (fromIntegral $ intSizeOf sz)
+
+-- inRangeCO x (a, b) = bvsge x a `SMT.and` bvslt x b
+inRangeCC x (a, b) = bvsge x a `SMT.and` bvsle x b
+
+smtI s = SMT.I (SMT.N s) []
+
+smtArraySizeOf x = app (smtI "foster$arraySizeOf") [x]
+-- }}}
+
+-- {{{ Adding ident facts etc
 insertIdentFact id expr idfacts =
   -- trace (show (text "insertIdentFact" <+> indent 4 (vsep [pretty (id,expr), pretty idfacts]))) $
   (id, expr):idfacts
@@ -130,32 +130,22 @@ addSymbolicVar'' :: (Maybe (Ident -> SC SMTExpr)) -> TypedId MonoType -> (Maybe 
 addSymbolicVar'' Nothing _ = Nothing
 addSymbolicVar'' (Just f) v = Just (\id -> do e <- f id ; return $ addSymbolicVar' e v)
 
-smtType :: MonoType -> SMT.Type
-smtType (PrimInt I1) = tBool
-smtType (PrimInt sz) = tBitVec (fromIntegral $ intSizeOf sz)
-smtType (ArrayType _) = smtArray
-smtType (TupleType tys) = TApp (smtI ("FosterTuple" ++ show (length tys))) (map smtType tys)
-smtType (RefinedType v _ _) = smtType (tidType v)
-smtType (TyConApp nm tys) = TApp (smtI nm) (map smtType tys)
-smtType ty = error $ "smtType can't yet handle " ++ show ty
-
-smtArray = TApp (smtI "FosterArray") []
-
-smtTruncToSize i v = extract (fromIntegral i - 1) 0 v
-
--- Oddly, Z3 equates type Bool with type (_ BitVec 1),
--- but doesn't equate the literals for the two types!
-litOfSize num I1 = if num == 0 then SMT.false else SMT.true
-litOfSize num sz = bv num (fromIntegral $ intSizeOf sz)
+withPathFact :: Facts -> SMT.Expr -> Facts
+withPathFact  facts pathfact  = withPathFacts facts [pathfact]
+withPathFacts facts pathfacts = facts { pathFacts = pathfacts ++ pathFacts facts }
+-- }}}
 
 scriptImplyingBy' :: SMT.Expr -> Facts -> CommentedScript
 scriptImplyingBy' pred facts = scriptImplyingBy (bareSMTExpr pred) facts
 
 scriptImplyingBy :: SMTExpr -> Facts -> CommentedScript
 scriptImplyingBy (SMTExpr pred declset idfacts) facts =
-  let alldecls = Set.toList $ Set.union declset (symbolicDecls facts) in
-  let alldecltys = concatMap (\(SymDecl _nm targs tret) -> tret:targs) alldecls in
-  let tydecls  = [CmdDeclareType nm arity | (nm, arity) <-
+  let uniquesWithoutPrims pairs =
+        pairs `butnot` [(SMT.N "Bool", 0), (SMT.N "BitVec", 0),
+                        (SMT.N "FosterArray", 0)]
+      alldecls = Set.toList $ Set.union declset (symbolicDecls facts)
+      alldecltys = concatMap (\(SymDecl _nm targs tret) -> tret:targs) alldecls
+      tydecls  = [CmdDeclareType nm arity | (nm, arity) <-
                     uniquesWithoutPrims
                      [(smtNameI id, fromIntegral $ length tys)
                      | (TApp id tys) <- alldecltys]] in
@@ -208,9 +198,6 @@ scriptImplyingBy (SMTExpr pred declset idfacts) facts =
 -- "B" branch of ``if true then A else B`` will have a path fact of
 -- ``true = false`` which is obviously inconsistent.
 
-uniquesWithoutPrims pairs =
-    pairs `butnot` [(SMT.N "Bool", 0), (SMT.N "BitVec", 0),
-                    (SMT.N "FosterArray", 0)]
 ------
 
 type SC = StateT SCState Compiled
@@ -226,13 +213,7 @@ scGetFact id = do
   sc <- get
   return $ Map.lookup id (scExtraFacts sc)
 
-instance Pretty CommentOrCommand where
-  pretty (Cmds cmds) = string (show $ SMT.pp $ Script cmds)
-  pretty (Cmnt str) = vcat [text ";" <+> text line | line <- lines str]
-
-prettyCommentedScript :: CommentedScript -> Doc
-prettyCommentedScript (CommentedScript items) =
-  vsep $ map pretty items
+------
 
 -- Errors will be propagated, while unsat (success) results are trivial...
 scRunZ3 :: KNMono -> CommentedScript -> SC ()
@@ -327,18 +308,8 @@ checkFn' fn facts0 = do
 smtEvalApp facts fn args = do
   (mkPrecondGen facts fn) args
 
-withPathFact  facts pathfact  = withPathFacts facts [pathfact]
-withPathFacts facts pathfacts = facts { pathFacts = pathfacts ++ pathFacts facts }
-
 lift2 f [x, y] = f x y
 lift2 _ _ = error "KNStaticChecks.hs: lift2 passed a non-binary list of arguments"
-
--- inRangeCO x (a, b) = bvsge x a `SMT.and` bvslt x b
-inRangeCC x (a, b) = bvsge x a `SMT.and` bvsle x b
-
-smtI s = SMT.I (SMT.N s) []
-
-smtArraySizeOf x = app (smtI "foster$arraySizeOf") [x]
 
 fnMap = Map.fromList    [("==", (===))
                         ,("!=", (=/=))
@@ -352,10 +323,6 @@ fnMap = Map.fromList    [("==", (===))
                         ,("<=u", bvule) ,("<=s", bvsle)
                         ,(">=u", bvuge) ,(">=s", bvsge)
                         ]
-
-instance Pretty (Either Literal (TypedId MonoType))
-  where pretty (Left lit) = pretty lit
-        pretty (Right v) = pretty v
 
 smtAll [expr] = expr
 smtAll exprs = SMT.app (smtI "and") exprs
@@ -466,10 +433,6 @@ checkBody expr facts =
     KNLiteral     {} -> do liftIO $ putStrLn $ "no constraint for literal " ++ show expr
                            return Nothing
     KNVar v -> return $ withDecls facts $ \x -> return $ smtId x === smtVar v
-    KNKillProcess {} -> return Nothing
-    KNTyApp       {} -> return Nothing
-    KNTuple       {} -> return Nothing
-    KNAllocArray  {} -> return Nothing
 
     KNArrayRead _ty (ArrayIndex a i _ SG_Static) -> do
         --let precond = (sign_extend 32 (smtVar i)) `inRangeCO` (litOfSize 0 I64, smtArraySizeOf (smtVar a))
@@ -558,10 +521,6 @@ checkBody expr facts =
         return $ Nothing
 
     KNArrayLit {} -> return Nothing
-
-    KNAlloc       {} -> return Nothing
-    KNStore       {} -> return Nothing
-    KNDeref       {} -> return Nothing
 
     KNCallPrim _ _ (NamedPrim tid) _  | primName tid `elem` ["print_i32", "expect_i32"] -> do
         return $ Nothing
@@ -699,7 +658,6 @@ checkBody expr facts =
     KNLetFuns     [id] [fn] b | identPrefix id == T.pack "assert-invariants-thunk" -> do
         checkFn'  fn facts
         checkBody b  facts
-        return Nothing
 
     KNLetRec      _ids _es _b     ->
         error $ "KNStaticChecks.hs: checkBody can't yet support recursive non-function bindings."
@@ -717,16 +675,26 @@ checkBody expr facts =
                          return $ Nothing
           Right {} -> do return $ Nothing
 
-runCompiled :: Compiled x -> CompilerContext -> IO (Either CompilerFailures x)
-runCompiled action state = runErrorT $ evalStateT action state
+    KNAlloc       {} -> return Nothing
+    KNStore       {} -> return Nothing
+    KNDeref       {} -> return Nothing
 
-compiledIntrospect :: Compiled x -> Compiled (Either CompilerFailures x)
-compiledIntrospect action = do state <- get
-                               liftIO $ runCompiled action state
+    KNKillProcess {} -> return Nothing
+    KNTyApp       {} -> return Nothing
+    KNTuple       {} -> return Nothing
+    KNAllocArray  {} -> return Nothing
 
 scIntrospect :: SC x -> SC (Either CompilerFailures x)
 scIntrospect action = do state <- get
                          lift $ compiledIntrospect (evalStateT action state)
+  where
+    compiledIntrospect :: Compiled x -> Compiled (Either CompilerFailures x)
+    compiledIntrospect action = do state <- get
+                                   liftIO $ runCompiled action state
+
+    runCompiled :: Compiled x -> CompilerContext -> IO (Either CompilerFailures x)
+    runCompiled action state = runErrorT $ evalStateT action state
+
 
 whenRefined ty f =
   case ty of
@@ -811,3 +779,34 @@ bareSMTExpr e = SMTExpr e Set.empty []
 idsEq  (v1, v2) = smtId  v1 === smtId  v2
 
 getMbFnPreconditions facts id = Map.lookup id (fnPreconds facts)
+
+-- {{{ Pretty-printing and other instances
+instance Ord SymDecl where compare (SymDecl n1 _ _) (SymDecl n2 _ _) = compare n1 n2
+instance Eq  SymDecl where (==)    (SymDecl n1 _ _) (SymDecl n2 _ _) = (==)    n1 n2
+
+instance Pretty SMT.Expr where pretty e = string (show $ SMT.pp e)
+instance Pretty SMTExpr where
+    pretty (SMTExpr e decls idfacts) =
+          parens (text "SMTExpr" <+> pretty e <$>
+                    indent 2 (vsep
+                         [hang 4 $ text "decls =" <$> pretty (Set.toList decls)
+                         ,hang 4 $ text "idfacts =" <$> pretty idfacts]))
+instance Pretty SMT.Name where pretty x = string (show x)
+instance Pretty SMT.Type where pretty x = string (show x)
+instance Pretty SymDecl where
+    pretty (SymDecl nm tys ty) =
+          parens (text "SymDecl" <+> pretty nm <+> pretty tys <+> pretty ty)
+
+instance Pretty CommentOrCommand where
+  pretty (Cmds cmds) = string (show $ SMT.pp $ Script cmds)
+  pretty (Cmnt str) = vcat [text ";" <+> text line | line <- lines str]
+
+instance Pretty (Either Literal (TypedId MonoType))
+  where pretty (Left lit) = pretty lit
+        pretty (Right v) = pretty v
+
+
+prettyCommentedScript :: CommentedScript -> Doc
+prettyCommentedScript (CommentedScript items) =
+  vsep $ map pretty items
+-- }}}
