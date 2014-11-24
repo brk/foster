@@ -3,6 +3,9 @@ main = {
   test-assert-bool-unrefined True False;
   //test-assert-bool-refined True False;
   test-assert-bool-refined-alt !;
+  test-more-bools !;
+
+  test-refined-array-literals !;
 };
 
 test-assert-bool-lits = {
@@ -52,3 +55,63 @@ test-assert-bool-refined-alt = {
   expect_i1 False;
   print_i1 (__COMPILES__ prim assert-invariants fls);
 };
+
+test-refined-array-literals = {
+  // Unconstrained type; should it be Int32 or Int64 or ... ?
+  expect_i1 False;
+  print_i1 (__COMPILES__ prim mach-array-literal 1 2 3);
+
+  expect_i1 True;
+  print_i1 (__COMPILES__ prim mach-array-literal :[Int32] 1 2 3);
+
+  expect_i1 True;
+  print_i1 (__COMPILES__ prim mach-array-literal :[(% v : Int32 : v <=SInt32 3)] 1 2 3);
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ prim mach-array-literal :[(% v : Int32 : v <=SInt32 4)] 1 2 5);
+
+  zzz = 4;
+  expect_i1 False;
+  print_i1 (__COMPILES__ prim mach-array-literal
+                                 :[(% v : Int32 : v <=SInt32 3)]
+                                 1 2 zzz);
+
+  yyy = 2;
+  expect_i1 True;
+  print_i1 (__COMPILES__ prim mach-array-literal
+                                 :[(% v : Int32 : v <=SInt32 3)]
+                                 1 2 yyy);
+
+  expect_i1 True;
+  print_i1 (__COMPILES__ prim mach-array-literal :[(% v : Bool : v)] True True);
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ prim mach-array-literal :[(% v : Bool : v)] True False);
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ { x : % b : Bool : b => () } False);
+
+  expect_i1 True;
+  print_i1 (__COMPILES__ { x : % b : Bool : b => () } True);
+
+};
+
+test-more-bools = {
+  expect_i1 True;
+  print_i1 (__COMPILES__ foo True);
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ foo False);
+
+  expect_i1 True;
+  print_i1 (__COMPILES__ bar True);
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ bar False);
+};
+
+foo :: { % b : Bool : b => () };
+foo = { v => () };
+
+bar :: { % b : Bool : prim ==Bool b True => () };
+bar = { v => () };

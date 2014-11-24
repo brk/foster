@@ -62,16 +62,8 @@ instance Pretty SymDecl where
           parens (text "SymDecl" <+> pretty nm <+> pretty tys <+> pretty ty)
 
 
---mergeSMTExpr f (SMTExpr e1 s1 m1) (SMTExpr e2 s2 m2) =
---    SMTExpr (f e1 e2) (Set.union s1 s2) (m1 ++ m2)
-
 mergeSMTExprAsPathFact (SMTExpr e s m) (Facts preconds identfacts pathfacts decls) =
   Facts preconds (m ++ identfacts) (e:pathfacts) (Set.union s decls)
-
---smtExprAddPathFacts (SMTExpr e s m) ps = SMTExpr e s (ps ++ m)
-
---smtExprLift  f (SMTExpr e s m) = SMTExpr (f e) s m
---smtExprLiftM f (SMTExpr e s m) = liftM (\e' -> SMTExpr e' s m) (f e)
 
 data Facts = Facts { fnPreconds :: Map Ident [[MoVar] -> SC SMTExpr]
                    , identFacts :: [(Ident, SMT.Expr)]
@@ -90,7 +82,14 @@ mergeFactsForCompilation (Facts _ _ pfs1 decls1) (Facts _ _ pfs2 decls2) =
               else mergeDecls rest others (t:merged) (Set.insert nm seen)
               -}
 ------
-nm id = SMT.N (show id)
+
+nm id = SMT.N (map cleanChar $ show id)
+  where cleanChar c = case c of
+                         '.' -> '_'
+                         '/' -> '_'
+                         '!' -> '_'
+                         ':' -> '_'
+                         _ -> c
 
 ident :: Ident -> SMT.Ident
 ident id = SMT.I (nm id) []
@@ -466,7 +465,7 @@ checkBody expr facts =
         return $ withDecls facts $ \x -> return $ smtId x === (if b then SMT.true else SMT.false)
     KNLiteral     {} -> do liftIO $ putStrLn $ "no constraint for literal " ++ show expr
                            return Nothing
-    KNVar         {} -> return Nothing
+    KNVar v -> return $ withDecls facts $ \x -> return $ smtId x === smtVar v
     KNKillProcess {} -> return Nothing
     KNTyApp       {} -> return Nothing
     KNTuple       {} -> return Nothing
