@@ -1,6 +1,8 @@
 // Note: the -unsafe primitives do not get checked variants here,
 // since the regular variants should perform the appropriate checks.
 
+// We could check shifts for debugging, even if not needed for safety.
+
 /// {{{ Negate
 negate-Int8         = { a : Int8    =>
   if a ==Int8 (bitnot-Int8 0)

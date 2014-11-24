@@ -432,21 +432,16 @@ checkBody expr facts =
         return $ withDecls facts $ \x -> return $ smtId x === (if b then SMT.true else SMT.false)
     KNLiteral     {} -> do liftIO $ putStrLn $ "no constraint for literal " ++ show expr
                            return Nothing
+
     KNVar v -> return $ withDecls facts $ \x -> return $ smtId x === smtVar v
 
-    KNArrayRead _ty (ArrayIndex a i _ SG_Static) -> do
-        --let precond = (sign_extend 32 (smtVar i)) `inRangeCO` (litOfSize 0 I64, smtArraySizeOf (smtVar a))
-        let precond = bvult (zero_extend 32 (smtVar i)) (smtArraySizeOf (smtVar a))
-        scRunZ3 expr $ scriptImplyingBy' precond facts
-        -- If the array has an annotation, use it.
-        mb_f <- scGetFact (tidIdent a)
-        case mb_f of
-          Nothing -> do liftIO $ putStrLn $ "no constraint on output of array read"
-                        return Nothing
-          Just f -> do liftIO $ putStrLn $ "have a constraint on output of array read: " ++ show (f (tidIdent a))
-                       return $ withDecls facts $ \x -> return $ f x
+    KNArrayRead _ty (ArrayIndex a i _ sg) -> do
+        case sg of
+          SG_Static -> do
+                  let precond = bvult (zero_extend 32 (smtVar i)) (smtArraySizeOf (smtVar a))
+                  scRunZ3 expr $ scriptImplyingBy' precond facts
+          _ -> return ()
 
-    KNArrayRead _ty (ArrayIndex a _i _ _sg) -> do
         -- If the array has an annotation, use it.
         mb_f <- scGetFact (tidIdent a)
         case mb_f of
@@ -473,10 +468,10 @@ checkBody expr facts =
     KNArrayLit (ArrayType (RefinedType v e _ids)) _v entries -> do
         let resid = Ident (T.pack ".xyz") 0
             go entry = do
-              liftIO $ putDocLn $ text "obeysRefinement"
-              liftIO $ putDocLn $ text "         v:" <+> indent 2 (pretty v    )
-              liftIO $ putDocLn $ text "         e:" <+> indent 2 (pretty e    )
-              liftIO $ putDocLn $ text "     entry:" <+> indent 2 (pretty entry)
+              --liftIO $ putDocLn $ text "obeysRefinement"
+              --liftIO $ putDocLn $ text "         v:" <+> indent 2 (pretty v    )
+              --liftIO $ putDocLn $ text "         e:" <+> indent 2 (pretty e    )
+              --liftIO $ putDocLn $ text "     entry:" <+> indent 2 (pretty entry)
 
               mb_f2 <- checkBody e facts
               SMTExpr body decls idfacts <- (trueOr mb_f2) resid
@@ -484,6 +479,7 @@ checkBody expr facts =
               let smtRepr (Right v) = smtVar v
                   smtRepr (Left (LitInt li)) =
                             litOfSize (fromInteger $ litIntValue li) (intSizeBitsOf (tidType v))
+                  smtRepr (Left lit) = error $ "KNStaticChecks: smtRepr can't yet handle " ++ show lit
 
               let idfacts' = extendIdFacts resid body [] idfacts
                   facts'1 = foldl' addSymbolicVar facts [v, TypedId (PrimInt I1) resid]
@@ -494,43 +490,23 @@ checkBody expr facts =
                   lostFacts = (identFacts facts'1) `butnot` idfacts'
 
               let thm = scriptImplyingBy' (smtId resid) facts'4
-              liftIO $ putStrLn "mach-array-lit w/ refinement type checking the following script:"
-              liftIO $ putDocLn $ indent 4 (prettyCommentedScript thm)
+              --liftIO $ putStrLn "mach-array-lit w/ refinement type checking the following script:"
+              --liftIO $ putDocLn $ indent 4 (prettyCommentedScript thm)
               scRunZ3 expr thm
-{-
-              uref <- lift $ gets ccUniqRef
-              (Fn v [] e _ _) <- liftIO $ alphaRename' (Fn v0 [] e0 undefined undefined) uref
-              mb_f2 <- checkBody e facts
-              resid <- lift $ ccFreshId $ T.pack ".true"
-              (SMTExpr body decls idfacts) <- (trueOr mb_f2) resid
-              let idfacts' = extendIdFacts resid body [(id, tidIdent v)] idfacts
-              let facts'1 = foldl' addSymbolicVar facts [v, TypedId (PrimInt I1) resid]
-              let lostFacts = (identFacts facts'1) `butnot` idfacts'
-              let facts'2 = if null lostFacts then facts'1 { identFacts = idfacts' }
-                                              else error $ "dont wanna lose these facts! : " ++ (show lostFacts)
-              let facts'3 = addSymbolicDecls facts'2 decls
-              return $ facts'3 `withPathFact` (smtId resid)
-
-              let thm = scriptImplyingBy' SMT.true facts''
-              liftIO $ putStrLn "mach-array-lit w/ refinement type checking the following script:"
-              liftIO $ putStrLn $ show (prettyCommentedScript thm)
-
-              -}
-              return ()
         mapM_ go entries
-        return $ Nothing
 
-    KNArrayLit {} -> return Nothing
+        return $ withDecls facts $ \x ->
+            return $ (smtArraySizeOf (smtId x) === litOfSize (fromIntegral $ length entries) I64)
+
+    KNArrayLit _ty _v entries ->
+        return $ withDecls facts $ \x ->
+            return $ (smtArraySizeOf (smtId x) === litOfSize (fromIntegral $ length entries) I64)
 
     KNCallPrim _ _ (NamedPrim tid) _  | primName tid `elem` ["print_i32", "expect_i32"] -> do
         return $ Nothing
 
     KNCallPrim _ _ (NamedPrim tid) vs | primName tid `elem` ["assert-invariants"] -> do
-        let precond = smtAll (map smtVar vs)
-        let thm = scriptImplyingBy' precond facts
-        liftIO $ putStrLn "assert-invariants checking the following script:"
-        liftIO $ putStrLn $ show (prettyCommentedScript thm)
-        scRunZ3 expr thm
+        scRunZ3 expr $ scriptImplyingBy' (smtAll (map smtVar vs)) facts
         return $ Nothing
 
     KNCallPrim _ _ (NamedPrim tid) [v] | primName tid `elem` ["prim_arrayLength"] -> do
@@ -567,7 +543,6 @@ checkBody expr facts =
         liftIO $ putStrLn $ "TODO: checkBody attributes for call prim " ++ show prim ++ " $ " ++ show vs
         return Nothing
 
-    KNAppCtor     {} -> return Nothing
     KNInlined _t0 _to _tn _old new -> checkBody new facts
     KNCase       _ty v arms     -> do
         -- TODO: better path conditions for individual arms
@@ -579,9 +554,14 @@ checkBody expr facts =
         return Nothing
 
     KNIf        _ty v e1 e2    -> do
-        _ <- checkBody e1 (facts `withPathFact` (        (smtVar v)))
-        _ <- checkBody e2 (facts `withPathFact` (SMT.not (smtVar v)))
-        return Nothing
+        mbf1 <- checkBody e1 (facts `withPathFact` (        (smtVar v)))
+        mbf2 <- checkBody e2 (facts `withPathFact` (SMT.not (smtVar v)))
+        let combine x = do
+                se1 <- (trueOr mbf1) x
+                se2 <- (trueOr mbf2) x
+                return $ smtExprOr (smtExprAnd' se1 (smtVar v))
+                                   (smtExprAnd' se2 (SMT.not (smtVar v)))
+        return $ Just combine
 
     KNCall ty v vs -> do
         -- Do any of the called function's args have preconditions?
@@ -630,13 +610,15 @@ checkBody expr facts =
             return Nothing
 
     KNLetVal      id   e1 e2    -> do
-        liftIO $ putStrLn $ "letval checking bound expr for " ++ show id
-        liftIO $ putStrLn $ "    " ++ show e1
+        --liftIO $ putStrLn $ "letval checking bound expr for " ++ show id
+        --liftIO $ putDocLn $ indent 8 (pretty e1)
 
-        facts0 <- case typeKN e1 of
-                      RefinedType v e _ -> do
-                           compileRefinementBoundTo id v e facts
-                      _ -> return facts
+        facts0' <- whenRefinedElse (typeKN e1) (compileRefinementBoundTo id facts) facts
+        facts0 <- return facts
+
+        liftIO $ putDocLn $ text "facts: " <> align (pretty facts)
+
+        liftIO $ putDocLn $ text "facts0': " <> align (pretty facts0' )
 
         -- Note: we intentionally use facts and not facts0 here...
         mb_f <- checkBody e1 facts
@@ -646,13 +628,13 @@ checkBody expr facts =
                         checkBody e2 (addSymbolicVar facts0 (TypedId (typeKN e1) id))
           Just f  -> do liftIO $ putStrLn $ "have fact for id binding " ++ show id
                         newfact@(SMTExpr _body _decls _idfacts) <- f id
-                        liftIO $ putStrLn $ "        body: " ++ show (pretty _body)
-                        liftIO $ putStrLn $ "        idfacts: " ++ show (pretty _idfacts)
+                        --liftIO $ putDocLn $ text "        body: " <> align (pretty _body)
+                        --liftIO $ putDocLn $ text "        idfacts: " <> align (pretty _idfacts)
                         let facts' = addIdentFact facts0 id newfact (typeKN e1)
                         whenRefined (typeKN e1) $ \_v _e ->
                             liftIO $ putStrLn $ "letval validating refinement: " ++ show (pretty (typeKN e1)) ++ show (pretty (_v, _e))
                         whenRefined (typeKN e1) $ validateRefinement facts facts' id
-                        liftIO $ putStrLn $ "letval checking letval body after binding " ++ show id
+                        --liftIO $ putStrLn $ "letval checking letval body after binding " ++ show id
                         checkBody e2 facts'
 
     KNLetFuns     [id] [fn] b | identPrefix id == T.pack "assert-invariants-thunk" -> do
@@ -675,14 +657,17 @@ checkBody expr facts =
                          return $ Nothing
           Right {} -> do return $ Nothing
 
+    KNAppCtor     {} -> return Nothing
+
     KNAlloc       {} -> return Nothing
     KNStore       {} -> return Nothing
     KNDeref       {} -> return Nothing
 
-    KNKillProcess {} -> return Nothing
     KNTyApp       {} -> return Nothing
     KNTuple       {} -> return Nothing
     KNAllocArray  {} -> return Nothing
+
+    KNKillProcess {} -> return $ withDecls facts $ \_x -> return SMT.false
 
 scIntrospect :: SC x -> SC (Either CompilerFailures x)
 scIntrospect action = do state <- get
@@ -696,10 +681,11 @@ scIntrospect action = do state <- get
     runCompiled action state = runErrorT $ evalStateT action state
 
 
-whenRefined ty f =
+whenRefined ty f = whenRefinedElse ty f ()
+whenRefinedElse ty f d =
   case ty of
     RefinedType v e _ -> f v e
-    _                 -> return ()
+    _                 -> return d
 
 -- For a binding id : (% v : expr) = blah,
 -- we must ensure that the value computed by blah
@@ -750,7 +736,7 @@ compilePreconditionFn fn facts argVars = do
                                                (map tidIdent $ fnVars fn)) idfacts
   return $ SMTExpr (smtId resid) decls idfacts'
 
-compileRefinementBoundTo id v0 e0 facts = do
+compileRefinementBoundTo id facts v0 e0  = do
   uref <- lift $ gets ccUniqRef
   (Fn v [] e _ _) <- liftIO $ alphaRename' (Fn v0 [] e0 undefined undefined) uref
   mb_f2 <- checkBody e facts
@@ -770,6 +756,11 @@ extendIdFacts resid body equalIds idfacts =
     foldl' (\idfacts (av,fv) -> (av, idsEq (av,fv)) : idfacts)
            ((resid, body):idfacts)
            equalIds
+
+smtExprOr   (SMTExpr e1 d1 f1) (SMTExpr e2 d2 f2) =
+             SMTExpr (SMT.or e1 e2) (Set.union d1 d2) (f1 ++ f2)
+
+smtExprAnd' (SMTExpr e decls idfacts) e' = SMTExpr (SMT.and e e') decls idfacts
 
 trueOr Nothing  = \id -> return $ bareSMTExpr (smtId id === SMT.true)
 trueOr (Just f) = f
@@ -805,6 +796,13 @@ instance Pretty (Either Literal (TypedId MonoType))
   where pretty (Left lit) = pretty lit
         pretty (Right v) = pretty v
 
+instance Pretty Facts where
+  pretty facts =
+    parens (text "Facts"
+              <$> text "fnPreconds:" <+> pretty (Map.keys $ fnPreconds facts)
+              <$> text "identFacts:" <+> pretty (identFacts facts)
+              <$> text "pathFacts:" <+> pretty (pathFacts facts)
+              <$> text "symbolicDecls:" <+> pretty (Set.toList $ symbolicDecls facts))
 
 prettyCommentedScript :: CommentedScript -> Doc
 prettyCommentedScript (CommentedScript items) =

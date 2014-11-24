@@ -6,6 +6,19 @@ main = {
   test-more-bools !;
 
   test-refined-array-literals !;
+
+  test-assert-ifs !;
+};
+
+test-assert-ifs = {
+  expect_i1 True;
+  print_i1 (__COMPILES__ prim assert-invariants if True then True else False end);
+
+  expect_i1 True;
+  print_i1 (__COMPILES__ prim assert-invariants if False then False else True end);
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ prim assert-invariants if False then True else False end);
 };
 
 test-assert-bool-lits = {
