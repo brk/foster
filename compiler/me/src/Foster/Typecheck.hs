@@ -250,7 +250,7 @@ tcRho ctx expr expTy = do
       E_RatAST    rng txt -> (typecheckRat rng txt (expMaybe expTy)) >>= (\v -> matchExp expTy v "tcRat")
       E_BoolAST   rng b              -> tcRhoBool         rng   b          expTy
       E_StringAST rng txt            -> tcRhoText         rng   txt        expTy
-      E_MachArrayLit rng args        -> tcRhoArrayLit ctx rng   args       expTy
+      E_MachArrayLit rng mbt args    -> tcRhoArrayLit ctx rng   mbt args   expTy
       E_CallAST   rng base argtup    -> tcRhoCall     ctx rng   base argtup expTy
       E_TupleAST  rng exprs          -> tcRhoTuple    ctx rng   exprs      expTy
       E_IfAST   rng a b c            -> tcRhoIf       ctx rng   a b c      expTy
@@ -433,12 +433,17 @@ tcRhoArrayValue ctx tau (AE_Expr expr) = do
 --  e1 :: tau             ...           en :: tau
 --  ---------------------------------------------------
 --  G |- prim mach-array-literal e1 ... en :: Array tau
-tcRhoArrayLit ctx rng args expTy = do
+tcRhoArrayLit ctx rng mbt args expTy = do
 -- {{{
-    tau <- newTcUnificationVarTau $ "prim array type"
+    tau <- case mbt of
+             Nothing -> newTcUnificationVarTau $ "prim array type"
+             Just t  -> do t0 <- tcType ctx t
+                           t' <- resolveType rng (localTypeBindings ctx) t0
+                           if isTau t'
+                            then return t'
+                            else
+                              tcFails [text "rho array lit must have tau type; had", pretty t]
     let ty = ArrayTypeTC tau
-    --args' <- mapM (\arg -> checkRho ctx arg tau) args
-    -- TODO handle/check rr against lit values?
     args' <- mapM (tcRhoArrayValue ctx tau) args
     let ab = AnnArrayLit rng ty args'
     case expTy of

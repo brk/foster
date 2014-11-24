@@ -35,7 +35,7 @@ data ExprSkel annot ty =
         | E_RatAST        annot String
         | E_TupleAST      annot [ExprAST ty]
         | E_FnAST         annot (FnAST ty)
-        | E_MachArrayLit  annot [ArrayEntry (ExprAST ty)]
+        | E_MachArrayLit  annot (Maybe ty) [ArrayEntry (ExprAST ty)]
         -- Control flow
         | E_IfAST         annot (ExprAST ty) (ExprAST ty) (ExprAST ty)
         | E_SeqAST        annot (ExprAST ty) (ExprAST ty)
@@ -166,7 +166,7 @@ exprAnnot e = case e of
       E_TyApp         annot _ _   -> annot
       E_TyCheck       annot _ _   -> annot
       E_Case          annot _ _   -> annot
-      E_MachArrayLit annot _ -> annot
+      E_MachArrayLit  annot _ _   -> annot
 
 instance SourceRanged (ExprAST ty) where rangeOf e = rangeOf (exprAnnot e)
 

@@ -38,6 +38,10 @@ data TypeTC =
          | MetaTyVarTC     (MetaTyVar TypeTC)
          | RefinedTypeTC   (TypedId TypeTC) (AnnExpr TypeTC) [Ident]
 
+isTau :: TypeTC -> Bool
+isTau (ForAllTC {}) = False
+isTau t = all isTau (childrenOf t)
+
 {-
 instance Kinded TypeTC where
   kindOf x = case x of

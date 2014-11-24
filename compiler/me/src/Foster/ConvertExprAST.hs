@@ -37,11 +37,7 @@ convertDataType f (DataType dtName tyformals ctors range) = do
         tys <- mapM f types
         return $ DataCtor dataCtorName formals tys range
 
-liftMaybeM :: Monad m => (a -> m b) -> Maybe a -> m (Maybe b)
-liftMaybeM f m = case m of Nothing ->         return Nothing
-                           Just t  -> f t >>= return.Just
-
-convertEVar f (VarAST mt name) = do ft <- liftMaybeM f mt; return $ VarAST ft name
+convertEVar f (VarAST mt name) = do ft <- mapMaybeM f mt; return $ VarAST ft name
 
 convertPat :: Monad m => (a -> m b) -> EPattern a -> m (EPattern b)
 convertPat f pat = case pat of
@@ -63,13 +59,13 @@ convertExprAST :: Monad m => (x -> m z) -> ExprAST x -> m (ExprAST z)
 convertExprAST f expr =
   let q = convertExprAST f in
   case expr of
-    E_MachArrayLit rng es       -> liftM  (E_MachArrayLit rng) (mapM (liftArrayEntryM q) es)
+    E_MachArrayLit rng mbt es   -> liftM2 (E_MachArrayLit rng) (mapMaybeM f mbt) (mapM (liftArrayEntryM q) es)
     E_StringAST    rng s        -> return $ (E_StringAST  rng) s
     E_BoolAST      rng b        -> return $ (E_BoolAST    rng) b
     E_IntAST       rng txt      -> return $ (E_IntAST     rng) txt
     E_RatAST       rng txt      -> return $ (E_RatAST     rng) txt
     E_PrimAST      rng nm ls ts -> liftM    (E_PrimAST    rng nm ls) (mapM f ts)
-    E_CompilesAST  rng me       -> liftM  (E_CompilesAST  rng) (liftMaybeM q me)
+    E_CompilesAST  rng me       -> liftM  (E_CompilesAST  rng) (mapMaybeM q me)
     E_IfAST        rng    a b c -> liftM3 (E_IfAST        rng)   (q a) (q b) (q c)
     E_SeqAST       rng a b      -> liftM2 (E_SeqAST       rng)   (q a) (q b)
     E_AllocAST     rng a rgn    -> liftM2 (E_AllocAST     rng)   (q a) (return rgn)

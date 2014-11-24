@@ -368,10 +368,6 @@ dieOnError (Errors errs) = liftIO $ do
     forM_ errs putDocLn
     error "compilation failed"
 
-isTau :: TypeTC -> Bool
-isTau (ForAllTC {}) = False
-isTau t = all isTau (childrenOf t)
-
 -----------------------------------------------------------------------
 
 main = do

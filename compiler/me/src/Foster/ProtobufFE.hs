@@ -99,9 +99,17 @@ parseCallPrim pbexpr annot = do
     args   <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
     tys    <- mapM parseType (toList $ PbExpr.ty_app_arg_type pbexpr)
     let primname = getName "prim" $ PbExpr.string_value pbexpr
+    case (T.unpack primname, Prelude.null tys) of
+      ("mach-array-literal", _) -> return ()
+      ("inline-asm", _) -> return ()
+      (_, True) -> return ()
+      (p, False) -> error $ "ProtobuFE: cannot put type annotation on primitive '" ++ p ++ "'"
     case (T.unpack primname, args) of
       ("assert-invariants", _) -> return $ mkPrimCall "assert-invariants" [] [] args annot
-      ("mach-array-literal", _) -> do return $ E_MachArrayLit annot (map processArrayValue args)
+      ("mach-array-literal", _) -> case tys of
+                                    []   -> return $ E_MachArrayLit annot Nothing   (map processArrayValue args)
+                                    [ty] -> return $ E_MachArrayLit annot (Just ty) (map processArrayValue args)
+                                    _    -> error $ "ProtobufFE: prim mach-array-literal takes at most one type argument"
       ("tuple",  _ ) -> return $ E_TupleAST annot args
       ("deref", [e]) -> return $ E_DerefAST annot e
       ("alloc",           [e]) -> return $ E_AllocAST annot e MemRegionGlobalHeap
@@ -473,7 +481,7 @@ parseSourceModule standalone sm = resolveFormatting m where
        E_RatAST       _ txt      -> liftM2' E_RatAST      ana (return txt)
        E_VarAST       _ v        -> liftM2' E_VarAST      ana (return v)
        E_PrimAST      _ nm ls ts -> liftM4' E_PrimAST     ana (return nm) (return ls) (return ts)
-       E_MachArrayLit _ args     -> liftM2' E_MachArrayLit ana (mapM (liftArrayEntryM q) args)
+       E_MachArrayLit _ mbt args -> liftM3' E_MachArrayLit ana (return mbt) (mapM (liftArrayEntryM q) args)
        E_KillProcess  _ e        -> liftM2' E_KillProcess ana (q e)
        E_CompilesAST  _ me       -> liftM2' E_CompilesAST ana (liftMaybeM q me)
        E_IfAST        _ a b c    -> liftM4' E_IfAST       ana (q a) (q b) (q c)

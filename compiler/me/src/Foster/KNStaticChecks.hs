@@ -108,8 +108,7 @@ insertIdentFact id expr idfacts =
   (id, expr):idfacts
 
 addIdentFact facts id (SMTExpr expr _ _) ty =
-  addSymbolicVar facts' (TypedId ty id)
-    where facts' = addIdentFact''' facts id expr
+  addSymbolicVar (addIdentFact''' facts id expr) (TypedId ty id)
 
 addIdentFact''' facts id expr =
     facts { identFacts = insertIdentFact id expr (identFacts facts) }
@@ -327,9 +326,7 @@ checkFn' fn facts0 = do
   return $ foldl' addSymbolicVar'' smtexpr (fnVars fn)
 
 smtEvalApp facts fn args = do
-  -- skolems <- mapM genSkolem (map tidType args)
-  smt_f <- (mkPrecondGen facts fn) args
-  return $ smt_f
+  (mkPrecondGen facts fn) args
 
 withPathFact  facts pathfact  = withPathFacts facts [pathfact]
 withPathFacts facts pathfacts = facts { pathFacts = pathfacts ++ pathFacts facts }
@@ -356,6 +353,10 @@ fnMap = Map.fromList    [("==", (===))
                         ,("<=u", bvule) ,("<=s", bvsle)
                         ,(">=u", bvuge) ,(">=s", bvsge)
                         ]
+
+instance Pretty (Either Literal (TypedId MonoType))
+  where pretty (Left lit) = pretty lit
+        pretty (Right v) = pretty v
 
 smtAll [expr] = expr
 smtAll exprs = SMT.app (smtI "and") exprs
@@ -507,6 +508,56 @@ checkBody expr facts =
                     scAddFact x arrayReadResultConstraint
                     return $ (smtArraySizeOf (smtId x) === litOfSize (fromIntegral $ length entries) I64)
 
+    KNArrayLit (ArrayType (RefinedType v e _ids)) _v entries -> do
+        let resid = Ident (T.pack ".xyz") 0
+            go entry = do
+              liftIO $ putDocLn $ text "obeysRefinement"
+              liftIO $ putDocLn $ text "         v:" <+> indent 2 (pretty v    )
+              liftIO $ putDocLn $ text "         e:" <+> indent 2 (pretty e    )
+              liftIO $ putDocLn $ text "     entry:" <+> indent 2 (pretty entry)
+
+              mb_f2 <- checkBody e facts
+              SMTExpr body decls idfacts <- (trueOr mb_f2) resid
+
+              let smtRepr (Right v) = smtVar v
+                  smtRepr (Left (LitInt li)) =
+                            litOfSize (fromInteger $ litIntValue li) (intSizeBitsOf (tidType v))
+
+              let idfacts' = extendIdFacts resid body [] idfacts
+                  facts'1 = foldl' addSymbolicVar facts [v, TypedId (PrimInt I1) resid]
+                  facts'2 = if null lostFacts then facts'1 { identFacts = idfacts' }
+                                              else error $ "xdont wanna lose these facts! : " ++ (show (pretty lostFacts))
+                  facts'3 = addSymbolicDecls facts'2 decls
+                  facts'4 = facts'3 `withPathFact` (smtVar v === smtRepr entry)
+                  lostFacts = (identFacts facts'1) `butnot` idfacts'
+
+              let thm = scriptImplyingBy' (smtId resid) facts'4
+              liftIO $ putStrLn "mach-array-lit w/ refinement type checking the following script:"
+              liftIO $ putDocLn $ indent 4 (prettyCommentedScript thm)
+              scRunZ3 expr thm
+{-
+              uref <- lift $ gets ccUniqRef
+              (Fn v [] e _ _) <- liftIO $ alphaRename' (Fn v0 [] e0 undefined undefined) uref
+              mb_f2 <- checkBody e facts
+              resid <- lift $ ccFreshId $ T.pack ".true"
+              (SMTExpr body decls idfacts) <- (trueOr mb_f2) resid
+              let idfacts' = extendIdFacts resid body [(id, tidIdent v)] idfacts
+              let facts'1 = foldl' addSymbolicVar facts [v, TypedId (PrimInt I1) resid]
+              let lostFacts = (identFacts facts'1) `butnot` idfacts'
+              let facts'2 = if null lostFacts then facts'1 { identFacts = idfacts' }
+                                              else error $ "dont wanna lose these facts! : " ++ (show lostFacts)
+              let facts'3 = addSymbolicDecls facts'2 decls
+              return $ facts'3 `withPathFact` (smtId resid)
+
+              let thm = scriptImplyingBy' SMT.true facts''
+              liftIO $ putStrLn "mach-array-lit w/ refinement type checking the following script:"
+              liftIO $ putStrLn $ show (prettyCommentedScript thm)
+
+              -}
+              return ()
+        mapM_ go entries
+        return $ Nothing
+
     KNArrayLit {} -> return Nothing
 
     KNAlloc       {} -> return Nothing
@@ -536,16 +587,14 @@ checkBody expr facts =
     KNCallPrim _ _ (PrimOp opname (PrimInt _)) vs | Just op <- Map.lookup opname fnMap -> do
         return $ withDecls facts $ \x -> return $ smtId x === lift2 op (smtVars vs)
 
+    -- No need to check the shift width because the backend will apply a mask.
     KNCallPrim _ _ (PrimOp "bitshl" (PrimInt _)) vs -> do
-        -- TODO check 2nd var <= sz
         return $ withDecls facts $ \x -> return $ smtId x === lift2 bvshl (smtVars vs)
 
     KNCallPrim _ _ (PrimOp "bitlshr" (PrimInt _)) vs -> do
-        -- TODO check 2nd var <= sz
         return $ withDecls facts $ \x -> return $ smtId x === lift2 bvlshr (smtVars vs)
 
     KNCallPrim _ _ (PrimOp "bitashr" (PrimInt _)) vs -> do
-        -- TODO check 2nd var <= sz
         return $ withDecls facts $ \x -> return $ smtId x === lift2 bvashr (smtVars vs)
 
     KNCallPrim _ _ (PrimIntTrunc _ tosz) [v] -> do
@@ -700,7 +749,7 @@ validateRefinement facts facts' id v expr = do
   let idfacts' = extendIdFacts resid body [(id, tidIdent v)] idfacts
   let smtexpr = SMTExpr (smtId resid) decls idfacts'
   -- Note this starts from facts', not facts.
-  -- The latter *is* affected by ``blah``.
+  -- Unlike facts, facts' *is* affected by ``blah``.
   let facts''  = foldl' addSymbolicVar facts'  [v, TypedId (PrimInt I1) resid]
   scRunZ3 expr $ scriptImplyingBy smtexpr facts''
 
@@ -741,8 +790,6 @@ compileRefinementBoundTo id v0 e0 facts = do
   resid <- lift $ ccFreshId $ T.pack ".true"
   (SMTExpr body decls idfacts) <- (trueOr mb_f2) resid
   let idfacts' = extendIdFacts resid body [(id, tidIdent v)] idfacts
-  --let facts'0 = addSymbolicVar facts v
-  --let facts'1 = addSymbolicVar facts'0 (TypedId (PrimInt I1) resid)
   let facts'1 = foldl' addSymbolicVar facts [v, TypedId (PrimInt I1) resid]
   let lostFacts = (identFacts facts'1) `butnot` idfacts'
   let facts'2 = if null lostFacts then facts'1 { identFacts = idfacts' }
