@@ -128,13 +128,6 @@ mkSymbolicVar v = d
 addSymbolicVar facts v = facts { symbolicDecls = Set.insert (mkSymbolicVar v) (symbolicDecls facts) }
 addSymbolicDecls facts decls = facts { symbolicDecls = Set.union decls (symbolicDecls facts) }
 
-addSymbolicVar' :: SMTExpr -> TypedId MonoType -> SMTExpr
-addSymbolicVar' (SMTExpr e decls idfacts) v = SMTExpr e (Set.insert (mkSymbolicVar v) decls) idfacts
-
-addSymbolicVar'' :: (Maybe (Ident -> SC SMTExpr)) -> TypedId MonoType -> (Maybe (Ident -> SC SMTExpr))
-addSymbolicVar'' Nothing _ = Nothing
-addSymbolicVar'' (Just f) v = Just (\id -> do e <- f id ; return $ addSymbolicVar' e v)
-
 withPathFact :: Facts -> SMT.Expr -> Facts
 withPathFact  facts pathfact  = withPathFacts facts [pathfact]
 withPathFacts facts pathfacts = facts { pathFacts = pathfacts ++ pathFacts facts }
@@ -305,10 +298,8 @@ checkFn' fn facts0 = do
   liftIO $ putDoc $ text "checking body " <$> indent 2 (pretty (fnBody fn)) <> line
   smtexpr <- checkBody (fnBody fn) facts''
   liftIO $ putStrLn $ "... checked body"
-  -- We need to add declarations for the function variables to both the facts
-  -- environment (for use in checks within the function) and the result
-  -- (for use in checks outside the function definition).
-  return $ foldl' addSymbolicVar'' smtexpr (fnVars fn)
+
+  return smtexpr
 
 smtEvalApp facts fn args = do
   (mkPrecondGen facts fn) args
@@ -404,10 +395,6 @@ computeRefinements fnv =
       refinements = concatMap mbFnOfRefinement ts
   in
   refinements
-
---genSkolem ty = liftM (TypedId ty) (lift $ ccFreshId $ T.pack ".skolem")
-
-primName tid = T.unpack (identPrefix (tidIdent tid))
 
 -- Returns an SMT expression summarizing the given expression.
 checkBody :: KNMono -> Facts -> SC (Maybe (Ident -> SC SMTExpr))
@@ -687,6 +674,7 @@ scIntrospect action = do state <- get
 
 
 whenRefined ty f = whenRefinedElse ty f ()
+
 whenRefinedElse ty f d =
   case ty of
     RefinedType v e _ -> f v e
@@ -775,6 +763,8 @@ bareSMTExpr e = SMTExpr e Set.empty []
 idsEq  (v1, v2) = smtId  v1 === smtId  v2
 
 getMbFnPreconditions facts id = Map.lookup id (fnPreconds facts)
+
+primName tid = T.unpack (identPrefix (tidIdent tid))
 
 -- {{{ Pretty-printing and other instances
 instance Ord SymDecl where compare (SymDecl n1 _ _) (SymDecl n2 _ _) = compare n1 n2
