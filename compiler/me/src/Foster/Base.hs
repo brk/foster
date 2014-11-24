@@ -399,7 +399,8 @@ showSourceLines (ESourceLocation bline bcol) (ESourceLocation eline ecol) lines 
 
 showSourceLinesNumbered (ESourceLocation bline bcol) (ESourceLocation eline ecol) lines =
     if bline == eline
-        then vsep [sourceLineNumbered lines bline, text $ highlightLineRange bcol ecol]
+        then vsep [sourceLineNumbered lines bline
+                  ,lineNumberPadding <> text (highlightLineRange bcol ecol)]
         else vsep [sourceLineNumbered lines n | n <- [bline..eline]]
 
 
@@ -425,7 +426,9 @@ sourceLine (SourceLines seq) n =
 
 sourceLineNumbered :: SourceLines -> Int -> Doc
 sourceLineNumbered (SourceLines seq) n =
-    pretty (n + 1) <> text ":" <> text "    " <> text (T.unpack $ Seq.index seq n)
+    fill 8 (pretty (n + 1) <> text ":") <> text (T.unpack $ Seq.index seq n)
+
+lineNumberPadding = fill 8 PP.empty
 
 data Formatting = Comment    {-SourceRange-} String
                 | BlankLine
