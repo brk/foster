@@ -40,6 +40,8 @@ Miscellanous Tidbits of Knowledge
     and thus does not distinguish between signed & unsigned bit patterns.
   * Checked, in signed/unsigned variants, which immediately terminates the program
     if/when an overflow occurs.
+  * The checked variants may be used explicitly (such as ``+ucInt32`` and ``-scWord``),
+    or the prelude file ``primitives-checked`` may be included to rebind the default bindings.
   * TODO: use an SMT solver to identify when a checked variant could be
           optimized to a raw operation, and vice versa.
 * Inline asm syntax::
