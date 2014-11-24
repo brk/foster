@@ -117,6 +117,9 @@ execute_process(COMMAND ${LLVM_CONFIG} --bindir OUTPUT_VARIABLE LLVM_BINDIR)
 # and CMake will report an error here.
 string(REPLACE "\n" "" LLVM_BINDIR ${LLVM_BINDIR})
 
+string(REPLACE "++" "" CLANG_C ${CLANG})
+set(CMAKE_C_COMPILER ${CLANG_C})
+
 # Collect the linker flags for us to link against LLVM
 set(LLVM_COMPONENTS_NEEDED all)
 
