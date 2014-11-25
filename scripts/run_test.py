@@ -177,11 +177,12 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     return (s4, to_asm, e1, e2, e3, e4)
 
 def link_to_executable(finalpath, exepath, paths, testpath):
-    return run_command('g++ %(finalpath)s.o %(staticlibs)s %(linkflags)s -o %(exepath)s %(rpath)s' % {
+    return run_command('%(cxx)s %(finalpath)s.o %(staticlibs)s %(linkflags)s -o %(exepath)s %(rpath)s' % {
                          'finalpath' : finalpath,
                          'staticlibs': get_static_libs(),
                          'linkflags' : get_link_flags(),
                          'exepath'   : exepath,
+                         'cxx'       : options.cxxpath,
                          'rpath'     : rpath(nativelib_dir())
                        },  paths, testpath, showcmd=show_cmdlines(options))
 
@@ -238,7 +239,7 @@ def run_one_test(testpath, paths, tmpdir, progargs):
         if to_asm: # TODO we should use clang as configured by cmake
                    # since it can emit asm that other/older toolchains will choke on
                    # especially on Mac OS X...
-          rv, as_elapsed = run_command('gcc -g %s.s -c -o %s.o' % (finalpath, finalpath), paths, testpath,
+          rv, as_elapsed = run_command('%s -g %s.s -c -o %s.o' % (options.cxxpath, finalpath, finalpath), paths, testpath,
                                        showcmd=show_cmdlines(options))
         else: # fosteroptc emitted a .o directly.
           as_elapsed = 0
@@ -354,6 +355,8 @@ def get_test_parser(usage):
                     help="Pass through command line arguments to program")
   parser.add_option("--standalone", action="store_true", dest="standalone", default=False,
                     help="Just compile, don't link...")
+  parser.add_option("--cxxpath", dest="cxxpath", action="store", default="g++",
+                    help="Set C++ compiler/linker path")
   parser.add_option("-I", dest="importpath", action="store", default=None,
                     help="Set import path")
   return parser

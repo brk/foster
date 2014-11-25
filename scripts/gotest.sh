@@ -16,11 +16,15 @@ cleanout () {
   rm -f gclog.txt
 }
 
+cxxpath () {
+  cat $R/_obj/CMakeCache.txt | grep CXX_COMPILER:FILEPATH | sed 's/CMAKE_CXX_COMPILER:FILEPATH=//'
+}
+
 echo "testing $D"
 if [ -d $D ]; then
  make -C $R/_obj fosteroptc fosterparse fosterlower me && cleanout && \
  echo python $R/scripts/run_test.py --show-cmdlines ${T} "$@" && \
-      python $R/scripts/run_test.py --show-cmdlines ${T} "$@" --bindir=$R/_obj --me-arg=--interactive
+      python $R/scripts/run_test.py --show-cmdlines ${T} "$@" --bindir=$R/_obj --me-arg=--interactive --cxxpath=`cxxpath`
 else
   echo "Make new test $T? y/[n]"
   read CONFIRM
