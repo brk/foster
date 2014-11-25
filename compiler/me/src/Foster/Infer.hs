@@ -83,22 +83,31 @@ illegal (ForAllTC {})            = True
 illegal _                        = False
 -------------------------------------------------
 
-tcUnifyThings :: Eq t => Unifiable t -> Unifiable t -> (t -> t -> Tc ()) -> Tc ()
+tcUnifyThings :: (Eq t, Show t) => Unifiable t -> Unifiable t -> (t -> t -> Tc ()) -> Tc ()
 tcUnifyThings thing1 thing2 errAction = do
   let uni ft (_,r) = do
         mbx <- tcLift $ descriptor r
         case mbx of
           Nothing -> do tcLift $ setDescriptor r (Just ft)
           Just ft' -> tcUnifyThings (UniConst ft) (UniConst ft' ) errAction
+      cmp ft1 ft2 =
+          if ft1 == ft2 then return ()
+                        else errAction ft1 ft2
   case (thing1, thing2) of
-    (UniConst ft1, UniConst ft2) ->
-      if ft1 == ft2 then return ()
-                    else errAction ft1 ft2
+    (UniConst ft1, UniConst ft2) -> cmp ft1 ft2
     (UniConst ft1, UniVar v) -> uni ft1 v
     (UniVar v, UniConst ft2) -> uni ft2 v
-    (UniVar (_,p), UniVar (_,q)) -> do eq <- tcLift $ equivalent p q
-                                       if not eq then tcLift $ union p q
-                                                 else return ()
+    (UniVar (_,p), UniVar (_,q)) -> do
+       eq <- tcLift $ equivalent p q
+       if eq
+        then return ()
+        else do
+           mbp <- tcLift $ descriptor p
+           mbq <- tcLift $ descriptor q
+           case (mbp, mbq) of
+             (Just ft1, Just ft2) -> cmp ft1 ft2
+             (Just _,   Nothing)  -> tcLift $ union q p
+             _                    -> tcLift $ union p q
 
 -- Only warn, don't throw an error, if we try to unify a proc with a func.
 -- This happens for code like ``listFoldl xs Cons Nil`` where ``listFoldl``
