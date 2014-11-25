@@ -48,6 +48,8 @@ data SMTExpr = SMTExpr SMT.Expr (Set SymDecl) [(Ident, SMT.Expr)]
 mergeSMTExprAsPathFact (SMTExpr e s m) (Facts preconds identfacts pathfacts decls) =
   Facts preconds (m ++ identfacts) (e:pathfacts) (Set.union s decls)
 
+liftSMTExpr (SMTExpr e s m) f = SMTExpr (f e) s m
+
 data Facts = Facts { fnPreconds :: Map Ident [[MoVar] -> SC SMTExpr]
                    , identFacts :: [(Ident, SMT.Expr)]
                    , pathFacts  :: [SMT.Expr]
@@ -112,7 +114,7 @@ insertIdentFact id expr idfacts =
   (id, expr):idfacts
 
 addIdentFact facts id (SMTExpr expr _ _) ty =
-  addSymbolicVar (addIdentFact''' facts id expr) (TypedId ty id)
+  addSymbolicVars (addIdentFact''' facts id expr) [TypedId ty id]
 
 addIdentFact''' facts id expr =
     facts { identFacts = insertIdentFact id expr (identFacts facts) }
@@ -125,7 +127,7 @@ mkSymbolicVar v = d
                       SymDecl (nm id) (map smtType dom) (smtType rng)
                 ty -> SymDecl (nm id) []                (smtType ty)
 
-addSymbolicVar facts v = facts { symbolicDecls = Set.insert (mkSymbolicVar v) (symbolicDecls facts) }
+addSymbolicVars facts vs = facts { symbolicDecls = Set.union (Set.fromList (map mkSymbolicVar vs)) (symbolicDecls facts) }
 addSymbolicDecls facts decls = facts { symbolicDecls = Set.union decls (symbolicDecls facts) }
 
 withPathFact :: Facts -> SMT.Expr -> Facts
@@ -214,27 +216,38 @@ scGetFact id = do
 ------
 
 -- Errors will be propagated, while unsat (success) results are trivial...
-scRunZ3 :: KNMono -> CommentedScript -> SC ()
+scRunZ3 :: KNMonoLike monolike => monolike -> CommentedScript -> SC ()
 scRunZ3 expr script = lift $ do
   let doc = prettyCommentedScript script
   res <- liftIO $ runZ3 (show doc) (Just "(pop 1)\n(check-sat)")
   case res of
-    Left x -> throwError [text x, pretty expr, string (show doc)]
+    Left x -> throwError [text x, knMonoLikePretty expr, string (show doc)]
     Right ("unsat":"sat":_) -> return ()
     Right ["unsat","unsat"] -> do
         liftIO $ putStrLn $ "WARNING: scRunZ3 returning OK due to inconsistent context..."
         liftIO $ putStrLn $ "   This is either dead code or a buggy implementation of our SMT query generation."
         return ()
-    Right strs -> throwError ([text "Unable to verify precondition associated with expression",
+    Right strs -> throwError ([text "Unable to verify precondition or postcondition associated with expression",
                                case maybeSourceRangeOf expr of
                                    Just sr -> prettyWithLineNumbers sr
-                                   Nothing -> pretty expr,
+                                   Nothing -> knMonoLikePretty expr,
                                string (show doc)] ++ map text strs)
   return ()
 
-maybeSourceRangeOf (KNCallPrim sr _ _ _) = Just sr
-maybeSourceRangeOf (KNTuple _ _ sr) = Just sr
-maybeSourceRangeOf _ = Nothing
+class KNMonoLike e where
+  maybeSourceRangeOf :: e -> Maybe SourceRange
+  knMonoLikePretty :: e -> Doc
+
+instance KNMonoLike (Fn RecStatus KNMono MonoType) where
+  knMonoLikePretty e = pretty e
+  maybeSourceRangeOf fn = Just (rangeOf $ fnAnnot fn)
+
+instance KNMonoLike KNMono where
+  knMonoLikePretty e = pretty e
+
+  maybeSourceRangeOf (KNCallPrim sr _ _ _) = Just sr
+  maybeSourceRangeOf (KNTuple _ _ sr) = Just sr
+  maybeSourceRangeOf _ = Nothing
 
 runStaticChecks :: ModuleIL KNMono MonoType -> Compiled ()
 runStaticChecks m = do
@@ -283,11 +296,6 @@ checkFn' fn facts0 = do
                                 liftIO $ putStrLn $ "checkFn' called  smtEvalApp... }"
                                 liftIO $ putDocLn $ pretty e
                                 return $ mergeSMTExprAsPathFact e facts
-  liftIO $ putStrLn $ "%%%%%%%%%%%%%%%%%%%%%%%%%%%"
-  liftIO $ putStrLn $ "refinements: " ++ show (map pretty refinements)
-  liftIO $ putStrLn $ "fnVars fn:   " ++ show (fnVars fn)
-  liftIO $ putStrLn $ "relevantFormals: " ++ show relevantFormals
-  liftIO $ putStrLn $ "relevantActuals: " ++ show relevantActuals
 
   -- Generates equalities between the refinements and the actuals
   -- (freshly-generated versions thereof for each refinement predicate).
@@ -295,14 +303,48 @@ checkFn' fn facts0 = do
 
   -- Before processing the body, add declarations for the function formals,
   -- and record the preconditions associated with any function-typed formals.
-  let facts' = foldl' addSymbolicVar facts (relevantFormals ++ fnVars fn)
+  let facts' = addSymbolicVars facts (relevantFormals ++ fnVars fn)
   facts''  <- foldlM recordIfHasFnPrecondition facts' (fnVars fn)
 
   liftIO $ putDoc $ text "checking body " <$> indent 2 (pretty (fnBody fn)) <> line
-  smtexpr <- checkBody (fnBody fn) facts''
+  f <- checkBody (fnBody fn) facts''
   liftIO $ putStrLn $ "... checked body"
 
-  return smtexpr
+  liftIO $ putStrLn $ "%%%%%%%%%%%%%%%%%%%%%%%%%%%"
+  liftIO $ putStrLn $ "refinements: " ++ show (map pretty refinements)
+  liftIO $ putStrLn $ "fnVars fn:   " ++ show (fnVars fn)
+  liftIO $ putStrLn $ "relevantFormals: " ++ show relevantFormals
+  liftIO $ putStrLn $ "relevantActuals: " ++ show relevantActuals
+  whenRefined (monoFnTypeRange $ fnType fn) $ \v e -> do
+    -- An expression summarizing our static knowledge of the fn body/return value.
+    se <- trueOr f (tidIdent v)
+
+    -- An expression of the form (v == ...)
+    let postcondId = Ident (T.pack ".postcond") 0
+    f' <- checkBody e facts''
+    se' <- trueOr f' postcondId
+
+
+    -- Checking the postcond e results in an expression of the form
+    -- (postcondId = [[e]]); we `and` this with the id itself to effectively
+    -- assert [[e]].
+    let thm = scriptImplyingBy (liftSMTExpr se (\body -> body SMT.==> smtId postcondId))
+                               ((mergeSMTExprAsPathFact se' facts'')
+                                 `addSymbolicVars` [v, TypedId boolMonoType postcondId])
+    liftIO $ putStrLn $ ""
+    liftIO $ putStrLn $ ""
+    liftIO $ putStrLn $ "FN RETURN TYPE IS REFINED..."
+    liftIO $ putDocLn $ pretty se
+    liftIO $ putDocLn $ pretty se'
+    liftIO $ putDocLn $ pretty v
+    liftIO $ putDocLn $ pretty e
+    liftIO $ putDocLn $ prettyCommentedScript thm
+    liftIO $ putStrLn $ ""
+    liftIO $ putStrLn $ ""
+
+    scRunZ3 fn thm
+
+  return f
 
 smtEvalApp facts fn args = do
   (mkPrecondGen facts fn) args
@@ -449,7 +491,7 @@ checkBody expr facts =
                   smtRepr (Left lit) = error $ "KNStaticChecks: smtRepr can't yet handle " ++ show lit
 
               let idfacts' = extendIdFacts resid body [] idfacts
-                  facts'1 = foldl' addSymbolicVar facts [v, TypedId (PrimInt I1) resid]
+                  facts'1 = addSymbolicVars facts [v, TypedId (PrimInt I1) resid]
                   facts'2 = if null lostFacts then facts'1 { identFacts = idfacts' }
                                               else error $ "xdont wanna lose these facts! : " ++ (show (pretty lostFacts))
                   facts'3 = addSymbolicDecls facts'2 decls
@@ -583,7 +625,7 @@ checkBody expr facts =
         case mb_f of
           Nothing -> do liftIO $ putStrLn $ "  no fact for id binding " ++ show id
                         liftIO $ putStrLn $ "       with type " ++ show (pretty (typeKN e1))
-                        checkBody e2 (addSymbolicVar facts' (TypedId (typeKN e1) id))
+                        checkBody e2 (addSymbolicVars facts' [TypedId (typeKN e1) id])
           Just f  -> do liftIO $ putStrLn $ "have fact for id binding " ++ show id
                         newfact <- f id
                         checkBody e2 (addIdentFact facts' id newfact (typeKN e1))
@@ -652,7 +694,8 @@ recordIfHasFnPrecondition facts v@(TypedId ty id) =
 mkPrecondGen :: Facts -> (Fn RecStatus KNMono MonoType) -> ([MoVar] -> SC SMTExpr)
 mkPrecondGen facts fn = \argVars -> do
   uref <- lift $ gets ccUniqRef
-  fn' <- liftIO $ alphaRename' fn uref
+  --fn' <- liftIO $ alphaRename' fn uref
+  let fn' = fn
   lift $ evalStateT (compilePreconditionFn fn' facts argVars) (SCState Map.empty)
 
 -- Implicit precondition: fn is alpha-renamed.
@@ -661,7 +704,7 @@ compilePreconditionFn :: Fn RecStatus KNMono MonoType -> Facts
 compilePreconditionFn fn facts argVars = do
   liftIO $ putStrLn $ "compilePreconditionFn<" ++ show (length argVars) ++ " vs " ++ show (length (fnVars fn)) ++ " # " ++ show argVars ++ "> ;; " ++ show fn
   resid <- lift $ ccFreshId $ identPrefix $ fmapIdent (T.append (T.pack "res$")) $ tidIdent (fnVar fn)
-  let facts' = foldl' addSymbolicVar facts ((TypedId (PrimInt I1) resid):(argVars ++ fnVars fn))
+  let facts' = addSymbolicVars facts ((TypedId (PrimInt I1) resid):(argVars ++ fnVars fn))
   facts'' <- foldlM recordIfHasFnPrecondition facts' (fnVars fn)
   bodyf <- checkBody (fnBody fn) facts''
   (SMTExpr body decls idfacts) <- (trueOr bodyf) resid
@@ -676,7 +719,7 @@ compileRefinementBoundTo id facts v0 e0  = do
   resid <- lift $ ccFreshId $ T.pack ".true"
   (SMTExpr body decls idfacts) <- (trueOr mb_f2) resid
   let idfacts' = extendIdFacts resid body [(id, tidIdent v)] idfacts
-  let facts'1 = foldl' addSymbolicVar facts [v, TypedId (PrimInt I1) resid]
+  let facts'1 = addSymbolicVars facts [v, TypedId (PrimInt I1) resid]
   let lostFacts = (identFacts facts'1) `butnot` idfacts'
   let facts'2 = if null lostFacts then facts'1 { identFacts = idfacts' }
                                   else error $ "dont wanna lose these facts! : " ++ (show lostFacts)
@@ -690,8 +733,10 @@ extendIdFacts resid body equalIds idfacts =
            ((resid, body):idfacts)
            equalIds
 
-smtExprOr   (SMTExpr e1 d1 f1) (SMTExpr e2 d2 f2) =
-             SMTExpr (SMT.or e1 e2) (Set.union d1 d2) (f1 ++ f2)
+smtExprOr e1 e2 = smtExprMergeWith SMT.or e1 e2
+
+smtExprMergeWith combine (SMTExpr e1 d1 f1) (SMTExpr e2 d2 f2) =
+             SMTExpr (combine e1 e2) (Set.union d1 d2) (f1 ++ f2)
 
 smtExprAnd' (SMTExpr e decls idfacts) e' = SMTExpr (SMT.and e e') decls idfacts
 

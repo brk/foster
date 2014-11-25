@@ -847,7 +847,7 @@ unifyFun tau nargs msg = do
         res_ty <- newTcUnificationVarTau ("fn res ty:" ++ msg)
         cc <- genUnifiableVar
         ft <- genUnifiableVar
-        unify tau (FnTypeTC arg_tys res_ty cc ft) "unifyFun"
+        unify tau (FnTypeTC arg_tys res_ty cc ft) ("unifyFun(" ++ msg ++ ")")
         return (arg_tys, res_ty, cc, ft)
 -- }}}
 
@@ -930,9 +930,10 @@ tcSigmaFn ctx fnAST expTyRaw = do
         let extCtx = extendContext extTyCtx uniquelyNamedFormals
 
         -- Check or infer the type of the body.
-        annbody <- case mb_rho of
+        (annbody, body_ty) <- case mb_rho of
           -- for Infer or for Check of a non-ForAll type
-          Nothing       -> inferSigma extCtx (fnAstBody fnAST) "poly-fn body"
+          Nothing       -> do annbody <- inferSigma extCtx (fnAstBody fnAST) "poly-fn body"
+                              return (annbody, typeTC annbody)
           Just exp_rho' -> do
                 let var_tys = map tidType uniquelyNamedFormals
                 (arg_tys, body_ty, _cc, _ft) <- unifyFun exp_rho' (length var_tys) ("poly-fn-lit" ++ highlightFirstLine rng)
@@ -962,14 +963,15 @@ tcSigmaFn ctx fnAST expTyRaw = do
                 debugDoc $ string "metaOf var_tys'': " <+> pretty (show $ collectAllUnificationVars $ map unMBS var_tys'')
                 -- mvar_tys'' <- mapM shZonkMetaType (collectAllUnificationVars var_tys)
 
-                checkRho extCtx (fnAstBody fnAST) body_ty
+                annbody <- checkRho extCtx (fnAstBody fnAST) body_ty
+                return (annbody, body_ty)
 
         debugDoc $ text "inferred raw type of body of polymorphic function: "
                         <> pretty (typeTC annbody)
 
         let fnty0 = ForAllTC ktvs $
-                fnTypeTemplate fnAST argtys (typeTC annbody) (UniConst FastCC)
-                 where argtys = map tidType uniquelyNamedFormals
+                fnTypeTemplate fnAST argtys body_ty
+                  where argtys = map tidType uniquelyNamedFormals
 
         -- The function type is expressed in terms of meta type variables,
         -- which have now served their purpose and must be replaced by
@@ -1116,13 +1118,18 @@ tcRhoFnHelper ctx f expTy = do
     -- Check or infer the type of the body.
     annbody <- case mbExpBodyTy of
       Nothing      -> do inferSigma extCtx (fnAstBody f) "mono-fn body"
-      Just body_ty -> do annbody <- checkRho extCtx (fnAstBody f) body_ty
-                         return $ pushedTypeCoercion body_ty annbody
+      Just body_ty -> do checkRho extCtx (fnAstBody f) body_ty
 
-    let fnty = fnTypeTemplate f argtys (typeTC annbody) (UniConst FastCC)
+    let fnty = fnTypeTemplate f argtys retty
                 where argtys = map tidType uniquelyNamedBinders
+                      retty  = case mbExpBodyTy of
+                                 Nothing -> typeTC annbody
+                                 Just rt -> rt
+
+    fnty' <- zonkType fnty
 
     tcLift $ putStrLn $ "fnty for " ++ (show (fnAstName f)) ++ " is " ++ show fnty
+    tcLift $ putStrLn $ "zonked fnty for " ++ (show (fnAstName f)) ++ " is " ++ show fnty'
 
     -- Note we collect free vars in the old context, since we can't possibly
     -- capture the function's arguments from the environment!
@@ -1142,33 +1149,16 @@ tcSelectTy annot (argty, varty) = do
                  ]
        _ -> return ()
 
--- {{{
-pushedTypeCoercion overallType expr =
-  let
-      fmapCaseArm fn arm = arm { caseArmBody = fn (caseArmBody arm) }
-      go expr =
-          case expr of -- TODO the AnnCall case should wrap b, casting to a modified function type
-              AnnCall _r _t b exprs                -> AnnCall _r overallType b exprs
-              AnnCase _rng _t e bs                 -> AnnCase _rng overallType e (map (fmapCaseArm go) bs)
-              AnnIf        _rng _ a b c            -> AnnIf _rng overallType a (go b) (go c)
-              AnnLetVar    _rng id  b c            -> AnnLetVar  _rng id b (go c)
-              AnnLetRec    _rng ids exprs e        -> AnnLetRec  _rng ids exprs (go e)
-              AnnLetFuns   _rng ids fns   e        -> AnnLetFuns _rng ids fns   (go e)
-              _ -> E_AnnTyApp (annExprAnnot expr) overallType expr []
-  in -- TODO no need to insert a wrapper if the types are the same...
-     go expr
--- }}}
-
 -- {{{ Helpers for type-checking function literals.
 extendContext :: Context SigmaTC -> [TypedId TypeTC] -> Context SigmaTC
 extendContext ctx protoFormals =
                  prependContextBindings ctx (map bindingForVar protoFormals)
 
-fnTypeTemplate :: FnAST TypeAST -> [TypeTC] -> TypeTC -> Unifiable CallConv -> TypeTC
-fnTypeTemplate f argtypes retty cc =
+fnTypeTemplate :: FnAST TypeAST -> [TypeTC] -> TypeTC -> TypeTC
+fnTypeTemplate f argtypes retty =
   -- Compute "base" function type, ignoring any type parameters.
   let procOrFunc = if fnWasToplevel f then FT_Proc else FT_Func in
-  FnTypeTC argtypes retty cc (UniConst procOrFunc)
+  FnTypeTC argtypes retty (UniConst FastCC) (UniConst procOrFunc)
 
 -- Verify that the given formals have distinct names.
 getUniquelyNamedFormals :: SourceRange -> [TypedId ty] -> T.Text -> Tc [TypedId ty]
