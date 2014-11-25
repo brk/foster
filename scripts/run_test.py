@@ -99,8 +99,14 @@ def output_extension(to_asm):
 def show_cmdlines(options):
   return options and options.show_cmdlines == True
 
+def file_size(path):
+  try:
+    return os.stat(path).st_size
+  except:
+    return 0
+
 def optlevel(options):
-  if options and options.optlevel is not "O0":
+  if options and options.backend_optimize:
     # Right now fosteroptc only recognizes -O0, not -O2 or such.
     return []
   else:
@@ -185,7 +191,8 @@ def aggregate_results(results):
     result = dict(failed=False, label="<aggregate results>",
                   total_elapsed=0, compile_elapsed=0, overhead=0,
                   fp_elapsed=0, fm_elapsed=0, fl_elapsed=0,
-                  fc_elapsed=0, as_elapsed=0, ld_elapsed=0, rn_elapsed=0)
+                  fc_elapsed=0, as_elapsed=0, ld_elapsed=0, rn_elapsed=0,
+                  inbytes=0, outbytes=0, inbytes_per_sec=0, outbytes_per_sec=0)
     for res in results:
         for field in fields:
             result[field] += res[field]
@@ -203,6 +210,9 @@ def print_result_table(res):
       100.0*x/float(res['compile_elapsed'])
         for x in list((res['fp_elapsed'], res['fm_elapsed'], res['fl_elapsed'],
                        res['fc_elapsed'], res['as_elapsed'], res['ld_elapsed'])))
+    if options.print_bytes_per_sec:
+      print "input protobuf %d bytes (%3.0f per second); a.out %d bytes (%3.0f per second)" % \
+            (res['inbytes'], res['inbytes_per_sec'], res['outbytes'], res['outbytes_per_sec'])
     print "".join("-" for x in range(60))
 
 def run_diff(a, b):
@@ -243,6 +253,9 @@ def run_one_test(testpath, paths, tmpdir, progargs):
                                        stdout=actual, stderr=expected, stdin=infile,
                                        showcmd=True, strictrv=False)
 
+  inbytes  = file_size(os.path.join(tmpdir, '_out.parsed.pb'))
+  outbytes = file_size(os.path.join(tmpdir, '_out.checked.pb'))
+
   if rv == 0:
     did_fail = run_diff(exp_filename, act_filename)
     if (not did_fail) and options and options.interpret:
@@ -258,6 +271,9 @@ def run_one_test(testpath, paths, tmpdir, progargs):
   result = dict(failed=did_fail, label=testname(testpath),
                 total_elapsed=total_elapsed,
                 compile_elapsed=compile_elapsed, overhead=overhead,
+                inbytes=inbytes, outbytes=outbytes,
+                inbytes_per_sec=float(inbytes)/(float(fm_elapsed) / 1000.0),
+                outbytes_per_sec=float(outbytes)/(float(fm_elapsed) / 1000.0),
     fp_elapsed=fp_elapsed, fm_elapsed=fm_elapsed, fl_elapsed=fl_elapsed,
     fc_elapsed=fc_elapsed, as_elapsed=as_elapsed, ld_elapsed=ld_elapsed, rn_elapsed=rn_elapsed)
   infile.close()
@@ -329,10 +345,12 @@ def get_test_parser(usage):
                     help="Compile to assembly rather than object file.")
   parser.add_option("--interpret", action="store_true", dest="interpret", default=False,
                     help="Run using interpreter instead of compiling via LLVM")
-  parser.add_option("--optimize", dest="optlevel", default="O0",
+  parser.add_option("--backend-optimize", dest="backend_optimize", action="store_true", default=False,
                     help="Enable optimizations in fosteroptc")
   parser.add_option("--profileme", dest="profileme", action="store_true", default=False,
                     help="Enable detailed profiling of compiler middle-end")
+  parser.add_option("--no_bytes_per_sec", dest="print_bytes_per_sec", action="store_false", default=True,
+                    help="Disable printing of bytes-per-second for input protobuf and output executable")
   parser.add_option("--profile", dest="profile", action="store_true", default=False,
                     help="Enable profiling of generated executable")
   parser.add_option("--me-arg", action="append", dest="meargs", default=[],
@@ -365,6 +383,7 @@ if __name__ == "__main__":
                 --optc-arg=-no-coalesce-loads
                 --optc-arg=--help        will display optimization flags
                 --profileme              will enable profiling of the middle-end; then do `hp2ps -e8in -c me.hp`
+                --backend-optimize       enables LLVM optimizations
                 --asm
                 --show-cmdlines
 """)
