@@ -56,6 +56,7 @@ import Foster.MainCtorHelpers
 import Foster.ConvertExprAST
 import Foster.MainOpts
 
+import Text.Printf(printf)
 import Foster.Output
 import Text.PrettyPrint.ANSI.Leijen((<+>), (<>), pretty, text, line, hsep,
                                     fill, parens, vcat, list, red, dullyellow)
@@ -370,16 +371,19 @@ dieOnError (Errors errs) = liftIO $ do
 
 -----------------------------------------------------------------------
 
+readAndParseProtobuf infile = do
+  protobuf <- L.readFile infile
+  case messageGet protobuf of
+    Left msg -> error $ "Failed to parse protocol buffer.\n" ++ msg
+    Right (pb_program, _) -> return pb_program
+
 main = do
   args <- getArgs
   case args of
     (infile : outfile : rest) -> do
-       protobuf <- L.readFile infile
        flagVals <- parseOpts rest
-       case messageGet protobuf of
-        Left msg -> error $ "Failed to parse protocol buffer.\n" ++ msg
-        Right (pb_program, _) ->
-          runCompiler pb_program flagVals outfile
+       (pi_time, pb_program) <- ioTime $ readAndParseProtobuf infile
+       runCompiler pi_time pb_program flagVals outfile
 
     rest -> do
       flagVals <- parseOpts rest
@@ -391,7 +395,7 @@ main = do
                    ++ " path/to/infile.pb path/to/outfile.pb")
 
 
-runCompiler pb_program flagVals outfile = do
+runCompiler pi_time pb_program flagVals outfile = do
    uniqref <- newIORef 2
    varlist <- newIORef []
    subcnst <- newIORef []
@@ -418,14 +422,29 @@ runCompiler pb_program flagVals outfile = do
        putDocP line
        exitFailure
 
-     Right (in_time, cp_time, ilprog) -> do
+     Right (RWT in_time cp_time sc_time ilprog) -> do
        (pb_time, _) <- time $ dumpILProgramToProtobuf ilprog outfile
-       putStrLn $ "compilation time: " ++ secs (nc_time - (cp_time + in_time))
-       putStrLn $ "inlining    time: " ++ secs in_time
-       putStrLn $ "codegenprep time: " ++ secs cp_time
-       putStrLn $ "protobufout time: " ++ secs pb_time
+       let ct_time = (nc_time - (cp_time + in_time + sc_time))
+       let pct f1 f2 = (100.0 * f1) / f2
+       let fmt_pct time = let p = pct time nc_time
+                              n = if p < 10.0 then 2 else if p < 100.0 then 1 else 0
+                              padding = fill n (text "") in
+                          padding <> parens (text (printf "%.1f" p) <> text "%")
+       let fmt str time = text str <+> (fill 11 $ text $ secs time) <+> fmt_pct time
+       putDocLn $ vcat $ [fmt "static-chk  time:" sc_time
+                         ,fmt "inlining    time:" in_time
+                         ,fmt "codegenprep time:" cp_time
+                         ,fmt "'other'     time:" ct_time
+                         ,fmt "sum elapsed time:" nc_time
+                         ,text ""
+                         ,fmt "protobuf-in time:" pi_time
+                         ,fmt "protobufout time:" pb_time
+                         ,text "overall wall-clock time:" <+> text (secs $ pi_time + pb_time + nc_time)
+                         ]
 
-compile :: WholeProgram -> TcEnv -> Compiled (Double, Double, ILProgram)
+data ResultWithTimings = RWT Double Double Double ILProgram
+
+compile :: WholeProgram -> TcEnv -> Compiled ResultWithTimings
 compile pb_program tcenv = do
     flags <- gets ccFlagVals
     (return $ parseWholeProgram pb_program (getStandaloneFlag flags))
@@ -500,9 +519,7 @@ typecheckSourceModule tcenv sm = do
 
 lowerModule :: ModuleIL AIExpr TypeIL
             -> Context TypeIL
-            -> Compiled (Double -- inlining time
-                        ,Double -- codegen prep
-                        ,ILProgram)
+            -> Compiled ResultWithTimings
 lowerModule ai_mod ctx_il = do
      inline   <- gets ccInline
      flags    <- gets ccFlagVals
@@ -515,9 +532,9 @@ lowerModule ai_mod ctx_il = do
 
      kmod <- kNormalizeModule ai_mod ctx_il ctoropt
      monomod0 <- monomorphize   kmod knorm
-     runStaticChecks monomod0
+     (sc_time, _) <- ioTime $ runStaticChecks monomod0
      monomod2 <- knLoopHeaders  monomod0
-     (in_time, monomod4) <- ccTime $ (if inline then knInline insize donate else return) monomod2
+     (in_time, monomod4) <- ioTime $ (if inline then knInline insize donate else return) monomod2
      monomod  <- knSinkBlocks   monomod4
 
      whenDumpIR "kn" $ do
@@ -566,7 +583,7 @@ lowerModule ai_mod ctx_il = do
          _ <- liftIO $ renderCC ccmod True
          putDocLn $ (outLn "^^^ ===================================")
 
-     (cp_time, (ilprog, prealloc)) <- ccTime $ prepForCodegen ccmod  constraints
+     (cp_time, (ilprog, prealloc)) <- ioTime $ prepForCodegen ccmod  constraints
      whenDumpIR "prealloc" $ do
          putDocLn $ (outLn "/// Pre-allocation ====================")
          _ <- liftIO (renderCC (ccmod { moduleILbody = let (CCB_Procs _ main) = moduleILbody ccmod in
@@ -583,7 +600,7 @@ lowerModule ai_mod ctx_il = do
 
      maybeInterpretKNormalModule kmod
 
-     return (in_time, cp_time, ilprog)
+     return (RWT in_time cp_time sc_time ilprog)
 
   where
     cfgModule :: ModuleIL (KNExpr' RecStatus MonoType) MonoType -> Compiled (ModuleIL CFBody MonoType)

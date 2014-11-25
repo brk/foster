@@ -13,6 +13,7 @@ import Data.IORef(IORef, readIORef)
 import Control.Monad.State(StateT, gets, when, liftIO)
 import Control.Monad.Error(ErrorT, Error(..))
 import Control.Monad.Trans.Error(ErrorList(..))
+import Control.Monad.IO.Class(MonadIO)
 import qualified Data.Text as T(Text)
 
 import Data.Time.Clock.POSIX (getPOSIXTime)
@@ -43,8 +44,8 @@ ccFreshId txt = do u <- ccUniq
                    return $ Ident txt u
 
 -- `time` from Criterion.Measurement, for actions wrapping IO.
-ccTime :: Compiled a -> Compiled (Double, a)
-ccTime act = do
+ioTime :: MonadIO m => m a -> m (Double, a)
+ioTime act = do
   start  <- liftIO $ realToFrac `fmap` getPOSIXTime
   result <- act
   end    <- liftIO $ realToFrac `fmap` getPOSIXTime
