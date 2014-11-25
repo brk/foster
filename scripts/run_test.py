@@ -99,12 +99,6 @@ def output_extension(to_asm):
 def show_cmdlines(options):
   return options and options.show_cmdlines == True
 
-def asm_verbose(to_asm):
-  if to_asm:
-    return ["-asm-verbose"]
-  else:
-    return []
-
 def optlevel(options):
   if options and options.optlevel is not "O0":
     # Right now fosteroptc only recognizes -O0, not -O2 or such.
@@ -114,8 +108,7 @@ def optlevel(options):
 
 def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     finalname = os.path.basename(finalpath)
-    to_asm = options and options.asm
-    ext = output_extension(to_asm)
+    ext = output_extension(options.asm)
 
     # Getting tee functionality in Python is a pain in the behind
     # so we just disable logging when running with --show-cmdlines.
@@ -147,34 +140,33 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
                 stdout=compilelog, stderr=compilelog, strictrv=True)
 
     # running fosterparse on a source file produces a ParsedAST
-    (s1, e1) = crun(['fosterparse', testpath, parse_output] + importpath)
+    e1 = crun(['fosterparse', testpath, parse_output] + importpath)
 
     # running fostercheck on a ParsedAST produces an ElaboratedAST
     prog_args = [arg for _arg in options.progargs or []
                      for arg in ['--prog-arg', _arg]]
-    (s2, e2) = crun(['fostercheck', parse_output, check_output] +
+    e2 = crun(['fostercheck', parse_output, check_output] +
                      ["+RTS"] + ghc_rts_args + ["-RTS"] +
                      interpret + options.meargs + prog_args)
 
     # running fosterlower on a ParsedAST produces a bitcode Module
     # linking a bunch of Modules produces a Module
-    (s3, e3) = crun(['fosterlower', check_output, '-o', finalname,
+    e3 = crun(['fosterlower', check_output, '-o', finalname,
                          '-outdir', tmpdir, '-dump-prelinked', '-fosterc-time',
                          '-bitcodelibs', mkpath(options.bindir, '_bitcodelibs_')]
                     + options.beargs)
 
     if options.standalone:
-      (s4, e4) = (s3, 0)
+      e4 = 0
     else:
       # Running opt on a Module produces a Module
       # Running llc on a Module produces an assembly file
-      (s4, e4) = crun(['fosteroptc', finalpath + '.preopt.bc', '-dump-postopt',
+      e4 = crun(['fosteroptc', finalpath + '.preopt.bc', '-dump-postopt',
                                            '-fosterc-time', '-o', finalpath + ext]
                       + optlevel(options)
-#                      + asm_verbose(to_asm)
                       + options.optcargs)
 
-    return (s4, to_asm, e1, e2, e3, e4)
+    return (e1, e2, e3, e4)
 
 def link_to_executable(finalpath, exepath, paths, testpath):
     return run_command('%(cxx)s %(finalpath)s.o %(staticlibs)s %(linkflags)s -o %(exepath)s %(rpath)s' % {
@@ -233,13 +225,11 @@ def run_one_test(testpath, paths, tmpdir, progargs):
         finalpath = os.path.join(tmpdir, 'out')
         exepath   = os.path.join(tmpdir, 'a.out')
 
-        rv, to_asm, fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed = \
+        fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed = \
                 compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir)
 
-        if to_asm: # TODO we should use clang as configured by cmake
-                   # since it can emit asm that other/older toolchains will choke on
-                   # especially on Mac OS X...
-          rv, as_elapsed = run_command('%s -g %s.s -c -o %s.o' % (options.cxxpath, finalpath, finalpath), paths, testpath,
+        if options.asm:
+          as_elapsed = run_command('%s -g %s.s -c -o %s.o' % (options.cxxpath, finalpath, finalpath), paths, testpath,
                                        showcmd=show_cmdlines(options))
         else: # fosteroptc emitted a .o directly.
           as_elapsed = 0
@@ -248,7 +238,7 @@ def run_one_test(testpath, paths, tmpdir, progargs):
           ld_elapsed = 0
           rn_elapsed = 0
         else:
-          rv, ld_elapsed = link_to_executable(finalpath, exepath, paths, testpath)
+          ld_elapsed = link_to_executable(finalpath, exepath, paths, testpath)
           rv, rn_elapsed = run_command([exepath] + progargs, paths, testpath,
                                        stdout=actual, stderr=expected, stdin=infile,
                                        showcmd=True, strictrv=False)

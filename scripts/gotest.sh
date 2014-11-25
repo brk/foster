@@ -30,7 +30,7 @@ else
   read CONFIRM
   if [ "$CONFIRM" = "y" ]; then
     mkdir -p $D
-    vim ${T}
+    ${EDITOR} ${T}
   else
     echo "_${CONFIRM}_"
   fi

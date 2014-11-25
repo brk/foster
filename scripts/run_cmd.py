@@ -67,6 +67,9 @@ def run_command(cmd, paths, testpath, showcmd=False, stdout=None, stderr=None, s
 
   (rv, ms) = run_cmd(arglist, showcmd=showcmd, stdout=stdout, stderr=stderr, stdin=stdin)
 
-  if strictrv and rv != 0:
-    raise TestFailed(cmd, testpath)
+  if strictrv:
+    if rv != 0:
+      raise TestFailed(cmd, testpath)
+    else:
+      return ms
   return (rv, ms)
