@@ -549,8 +549,8 @@ checkBody expr facts =
         mbf1 <- checkBody e1 (facts `withPathFact` (        (smtVar v)))
         mbf2 <- checkBody e2 (facts `withPathFact` (SMT.not (smtVar v)))
         let combine x = do
-                se1 <- (trueOr mbf1) x
-                se2 <- (trueOr mbf2) x
+                se1 <- (maybeM mbf1) x
+                se2 <- (maybeM mbf2) x
                 return $ smtExprOr (smtExprAnd' se1 (smtVar v))
                                    (smtExprAnd' se2 (SMT.not (smtVar v)))
         return $ Just combine
@@ -721,10 +721,15 @@ smtExprOr e1 e2 = smtExprMergeWith SMT.or e1 e2
 smtExprMergeWith combine (SMTExpr e1 d1 f1) (SMTExpr e2 d2 f2) =
              SMTExpr (combine e1 e2) (Set.union d1 d2) (f1 ++ f2)
 
-smtExprAnd' (SMTExpr e decls idfacts) e' = SMTExpr (SMT.and e e') decls idfacts
+smtExprAnd' Nothing e' = bareSMTExpr e'
+smtExprAnd' (Just (SMTExpr e decls idfacts)) e' = SMTExpr (SMT.and e e') decls idfacts
 
 trueOr Nothing  = \id -> return $ bareSMTExpr (smtId id === SMT.true)
 trueOr (Just f) = f
+
+maybeM :: Maybe (t -> SC rv) -> (t -> SC (Maybe rv))
+maybeM Nothing = \_ -> return Nothing
+maybeM (Just f) = \id -> do rv <- f id ; return (Just rv)
 
 bareSMTExpr e = SMTExpr e Set.empty []
 

@@ -1,70 +1,94 @@
 main = {
-/*
   expect_i1 True;
-  print_i1 (__COMPILES__ foo3a 1);
-  expect_i1 True;
-  print_i1 (__COMPILES__ foo3b 1);
+  print_i1 (__COMPILES__ expgt2 4);
 
   expect_i1 False;
-  print_i1 (__COMPILES__ foo3a 0);
-  expect_i1 False;
-  print_i1 (__COMPILES__ foo3b 0);
-
-  //fx = { x : Int32 => x };
-  //bar1 fx;
-  //bar1 foo3;
+  print_i1 (__COMPILES__ expgt2 0);
 
   expect_i1 False;
   print_i1 (__COMPILES__ prim assert-invariants (0 >UInt32 0));
 
-  expect_i32 0;
-  print_i32 0;
-
   expect_i1 True;
   print_i1 (__COMPILES__ prim assert-invariants (0 >=UInt32 0));
 
-  if 0 >UInt32 0
-   then prim assert-invariants (0 >UInt32 0); // unsat (true... or dead code)
+  zgtz = 0 >UInt32 0;
+  ifres = if zgtz
+   then prim assert-invariants (1 >UInt32 1); // unsat (true... or dead code)
    else ()
   end;
+
+ fx = { x : Int32 => x };
+ expect_i1 True;
+ print_i1 (__COMPILES__ bar1g fx);
+
+ expect_i1 True;
+ print_i1 (__COMPILES__ bar1g expgt2);
+
+ // DISABLED_TEST
+ // Need to properly implement implication of refinements...
+ //expect_i1 False;
+ //print_i1 (__COMPILES__ bar1g expgt4);
+ //test-fn-implication !;
+
+ test-bar1 !;
+
+ expect_i32 1111111;
+ print_i32  1111111;
+
+ /*
+ // DISABLED_TEST
+ // Embedded refinements are currently ignored :(
+ expect_i1 False;
+ print_i1 (__COMPILES__ ( { (0, 0) } as
+                          { (% ra : Int32 : ra >UInt32 2
+                            ,       Int32) }) );
 */
+
+ expect_i1 False;
+ print_i1 (__COMPILES__ ( { 0 } as
+                          { % ra : Int32 : ra >UInt32 2 }) );
+
+ expect_i1 True;
+ print_i1 (__COMPILES__ ( { 3 } as
+                          { % ra : Int32 : ra >UInt32 2 }) );
+
+ expect_i1 True;
+ print_i1 (__COMPILES__ ( { (3, 0) } as
+                          { (% ra : Int32 : ra >UInt32 2
+                            ,       Int32) }) );
+
+ case pairi !
+   of (a, b) ->
+        expect_i1 True;
+        print_i1 (__COMPILES__ prim assert-invariants (a >UInt32 2));
+
+        expect_i1 False;
+        print_i1 (__COMPILES__ prim assert-invariants (b >UInt32 2));
+ end;
+
+ expect_i1 True;
+ print_i1 (__COMPILES__
+               { x : Int32 =>
+                if prim ==Int32 x 0
+                  then 0
+                  else prim sdiv-unsafe-Int32 4 x
+                end
+              });
+
+ expect_i1 False;
+ print_i1 (__COMPILES__
+               { x : Int32 =>
+                  prim sdiv-unsafe-Int32 4 x
+               });
 
  ()
 
 };
 
 // Refinements of return values (postconditions); implicit dependency.
-/*
-pairi :: { % pa : Int32 : True =>
-           (% ra : Int32 : ra >UInt32 2
+pairi :: { (% ra : Int32 : ra >UInt32 2
            ,       Int32) };
-pairi = { a => (a +Int32 1, 0) };
-*/
-
-
-resi-f :: { % pa : Int32 : True =>
-          % ra : Int32 : ra >UInt32 2 };
-resi-f = { a => 3 };
-
-
-/*
-resi-t :: { % pa : Int32 : pa ==Int32 1 =>
-            % ra : Int32 : ra ==Int32 2 };
-resi-t = { a =>
-  rv = a +Int32 1;
-  rv
-};
-*/
-
-/*
-// This looks kosher but it's not, due to overflow when ``a`` is 0xFF...FF.
-resi-ff :: { % pa : Int32 : pa >UInt32 1 =>
-             % ra : Int32 : ra >UInt32 2 };
-resi-ff = { a =>
-  rv = a +Int32 1;
-  rv
-};
-*/
+pairi = { (0, 0) };
 
 /*
 // Refinements of return values (postconditions); explicit dependency.
@@ -74,48 +98,67 @@ paird :: { % pa : Int32 : True =>
 paird = { a => (a +Int32 1, 0) };
 */
 
+resi-f :: { % pa : Int32 : True =>
+          % ra : Int32 : ra >UInt32 2 };
+resi-f = { a => 3 };
+
+
+resi-t :: { % pa : Int32 : pa ==Int32 1 =>
+            % ra : Int32 : ra ==Int32 2 };
+resi-t = { a =>
+  a +Int32 1;
+};
+
 /*
-foo3a :: { % zz : Int32 : zz >UInt32 0 => Int32 };
-foo3a = { yy : Int32 =>
-  prim assert-invariants (yy >=UInt32 0);
+// This looks kosher but it's not, due to overflow when ``a`` is 0xFF...FF.
+resi-ff :: { % pa : Int32 : pa >UInt32 1 =>
+             % ra : Int32 : ra >UInt32 2 };
+resi-ff = { a =>
+  a +Int32 1;
+};
+*/
+
+expgt2 :: { % zz : Int32 : zz >UInt32 2 => Int32 };
+expgt2 = { yy =>
+  prim assert-invariants (yy >=UInt32 1);
   0
 };
 
-foo3b = { yy : % zz : Int32 : zz >UInt32 0 =>
-  prim assert-invariants (yy >=UInt32 0);
+expgt4 :: { % zz : Int32 : zz >UInt32 4 => Int32 };
+expgt4 = { yy =>
+  prim assert-invariants (yy >=UInt32 1);
   0
 };
-*/
 
-/*
-bar1 = { fz : #precondition { qq => qq >=UInt32 0 }
-              { Int32 => Int32 }
-        =>
-  fz 0 // should succeed: (0 >= 0)
-};
-*/
-
-
-/*
-bar2 = { f : { % x : Int32 : x !=Int32 255 => Int32 }
-        =>
-  bad f;
+bar1g :: { { (% qq : Int32 : qq >=UInt32 3) => Int32 } => Int32 };
+bar1g = { fz =>
+  fz 3 // should succeed: (3 >= 3)
 };
 
-// encoding of "no precondition"
-bad = { f : #precondition { x => x ==Int32 x }
-            { % x : Int32 : x ==Int32 x => Int32 }
-        =>
-  f 0
-};
-*/
+test-bar1 = {
+  expect_i1 True;
+  print_i1 (__COMPILES__
+  { fz : { (% qq : Int32 : qq >=UInt32 3) => Int32 }  =>
+    fz 3 // should succeed: (3 >= 3)
+  });
 
-
-/*
-foo = { x : Int32 =>
-  if prim ==Int32 x 0
-    then 0
-    else prim sdiv-unsafe-Int32 4 x
-  end
+  expect_i1 False;
+  print_i1 (__COMPILES__
+  { fz : { % qq : Int32 : qq >=UInt32 2 => Int32 } =>
+    fz 0 // should fail: (0 >/= 2)
+  });
 };
-*/
+
+test-fn-implication = {
+  expects_noprecond = { f : { % x : Int32 : True => Int32 } =>
+    f 0
+  };
+
+  expect_i1 False;
+  print_i1 (__COMPILES__
+   { haveprecond : { (% x : Int32 : x !=Int32 255) => Int32 }
+          =>
+     expects_noprecond haveprecond });
+
+};
+

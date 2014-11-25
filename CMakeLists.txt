@@ -485,3 +485,7 @@ add_custom_target(list_regression_tests
   COMMAND python ${PROJECT_SOURCE_DIR}/scripts/list_all.py
 	     ${PROJECT_SOURCE_DIR}/test/bootstrap
   )
+
+add_custom_target(list_disabled_tests
+  COMMAND ${PROJECT_SOURCE_DIR}/scripts/fack DISABLED_TEST --after-context=3
+  )
