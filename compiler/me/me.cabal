@@ -9,7 +9,9 @@ maintainer:
 build-depends: ansi-terminal -any, array -any, base -any,
                bytestring -any, containers -any, filepath >=1.1.0.3, fgl -any,
                mtl -any, protocol-buffers -any, hoopl >=3.9.0.0,
-               protocol-buffers-descriptor -any, text -any, utf8-string -any
+               protocol-buffers-descriptor -any, text -any, utf8-string -any,
+               criterion -any, hoopl ==3.10.0.1, ansi-wl-pprint -any, time -any,
+               data-dword -any, boxes -any
 stability:
 homepage:
 package-url:
@@ -36,7 +38,7 @@ pkgconfig-depends:
 frameworks:
 c-sources:
 extensions: MultiParamTypeClasses FlexibleInstances
-            DeriveDataTypeable
+            DeriveDataTypeable DeriveFunctor BangPatterns TypeSynonymInstances
 extra-libraries:
 extra-lib-dirs:
 includes:
