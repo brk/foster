@@ -20,7 +20,7 @@ type case Xor1x32State
       of $Xor1x32State Int32
          ;
 
-xorshift-nonzero-Int32 = { x => if x ==Int32 0 then 1 else x };
+xorshift-nonzero-Int32 = { x => if x ==Int32 0 then 1 else x end };
 
 xor1x32MakeState :: { Int32 => Xor1x32State };
 xor1x32MakeState = { x => Xor1x32State (xorshift-nonzero-Int32 x) };
@@ -44,7 +44,7 @@ type case Xor1x64State
       of $Xor1x64State Int64
          ;
 
-xorshift-nonzero-Int64 = { x => if x ==Int64 0 then 1 else x };
+xorshift-nonzero-Int64 = { x => if x ==Int64 0 then 1 else x end };
 
 xor1x64MakeState :: { Int64 => Xor1x64State };
 xor1x64MakeState = { x => Xor1x64State (xorshift-nonzero-Int64 x) };

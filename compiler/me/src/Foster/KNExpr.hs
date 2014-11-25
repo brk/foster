@@ -356,7 +356,7 @@ nestedLetsDo exprActions g = do exprs <- sequence exprActions
             return $ KNLetFuns ids fns innerlet
 
           _otherwise -> do
-            x        <- knFresh ".x"
+            x        <- knFresh (tmpForExpr e)
             let v = TypedId (typeKN e) x
             innerlet <- nestedLets' es (v:vars) k
             return $ buildLet x e innerlet
@@ -393,7 +393,7 @@ letsForArrayValues vals normalize mkArray = do
             return $ KNLetFuns ids fns innerlet
 
           Right e -> do
-            x        <- knFresh ".x"
+            x        <- knFresh (tmpForExpr e)
             let v = TypedId (typeKN e) x
             innerlet <- nestedLets' es (Right v:vars) k
             return $ buildLet x e innerlet
@@ -401,6 +401,10 @@ letsForArrayValues vals normalize mkArray = do
           Left lit -> do
             nestedLets' es (Left lit:vars) k
 
+-- Give constants distinct-looking binders from non-constants;
+-- this is mostly to aid debugging of failing SMT scripts.
+tmpForExpr (KNLiteral {}) = ".const"
+tmpForExpr _              = ".x"
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||| Constructor Munging ||||||||||||||||||||{{{
