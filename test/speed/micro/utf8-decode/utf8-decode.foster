@@ -9,13 +9,6 @@ arrayLength32 = { a : Array x =>
 */
 
 
-/*
-mk-UTF-8-decoder-v1 :: { #precondition
-                         { state => typep => char8 =>  state <=UInt32 96 }
-                         // #postcondition
-                         // { pr => case pr of (s,_) -> s <=UInt32 96 }
-                         { Int32 => Int32 => Int8  => (Int32, Int32) } };
-                         */
 mk-UTF-8-decoder-v1 :: { { % rstate : Int64 : rstate <=UInt64 96
                          => Int32 => Int8  => (% rs : Int64 : rs <=UInt64 96, Int32) } };
 mk-UTF-8-decoder-v1 = {
@@ -64,10 +57,16 @@ mk-UTF-8-decoder-v1 = {
   }
 };
 
+countCodePoints-v1 :: {
+       { % rstate : Int64 : rstate <=UInt64 96
+            => Int32 => Int8
+            => (% rs : Int64 : rs <=UInt64 96, Int32) }
+       => Array Int8
+       => Int32 };
 countCodePoints-v1 = { decoder => bytearr =>
-  //maxidx = arrayLength32 bytearr;
   maxidx = trunc_i64_to_i32 (prim_arrayLength bytearr);
-  REC loop = { idx => st => ct => cp =>
+  REC loop = { idx => st : (%rst : Int64 : rst <=UInt64 96)
+                   => ct => cp =>
     if idx <UInt32 maxidx
       then b = bytearr[idx];
            // TODO i don't think we're checking the precondition of decoder here...

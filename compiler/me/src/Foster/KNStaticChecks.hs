@@ -270,81 +270,64 @@ checkFn fn facts = do
   evalStateT (checkFn' fn facts) (SCState Map.empty)
 
 checkFn' fn facts0 = do
-  -- Assert any refinements associated with the function's args
-  -- within the scope of the function body.
-
-  -- Example of a fnVar:  state : (% rstate : Int32 : rstate < 10)
-  -- So we convert the refinement type into a predicate, and pass the variable
-  -- as the argument, thus producing the path fact (state < 10).
-  -- To handle dependent refinements, each predicate takes all the fnvars...
-  let (relevantFormals, relevantActuals) =
-        unzip $ Prelude.concat [case tidType v of RefinedType v' _ _ -> [(v', v)]
-                                                  _                  -> []
-                               | v <- fnVars fn]
-
-      mbFnOfRefinement (RefinedType _ body _) =
-          [Fn (fnVar fn) relevantFormals body NotRec
-           (annotForRange (MissingSourceRange "fnOfRefinement"))]
-      mbFnOfRefinement _                   = []
-
-      -- For example, given f = { x : (% z : Int32 : ...) => y : Int32 => x + y }
-      -- the relevant formals are [z] and the relevant actuals are [x].
-      -- The computed refinements would be [ { z => ... } ]
-      refinements = concatMap mbFnOfRefinement (map tidType $ fnVars fn)
-      foldPathFact facts f = do liftIO $ putStrLn $ "checkFn' calling smtEvalApp... {"
-                                e <- smtEvalApp facts f relevantActuals
-                                liftIO $ putStrLn $ "checkFn' called  smtEvalApp... }"
-                                liftIO $ putDocLn $ pretty e
-                                return $ mergeSMTExprAsPathFact e facts
-
-  -- Generates equalities between the refinements and the actuals
-  -- (freshly-generated versions thereof for each refinement predicate).
-  facts <- foldlM foldPathFact facts0 refinements
-
-  -- Before processing the body, add declarations for the function formals,
-  -- and record the preconditions associated with any function-typed formals.
-  let facts' = addSymbolicVars facts (relevantFormals ++ fnVars fn)
+  facts'   <- withBindings (fnVar fn) (fnVars fn) facts0
   facts''  <- foldlM recordIfHasFnPrecondition facts' (fnVars fn)
 
   liftIO $ putDoc $ text "checking body " <$> indent 2 (pretty (fnBody fn)) <> line
   f <- checkBody (fnBody fn) facts''
   liftIO $ putStrLn $ "... checked body"
 
-  liftIO $ putStrLn $ "%%%%%%%%%%%%%%%%%%%%%%%%%%%"
-  liftIO $ putStrLn $ "refinements: " ++ show (map pretty refinements)
-  liftIO $ putStrLn $ "fnVars fn:   " ++ show (fnVars fn)
-  liftIO $ putStrLn $ "relevantFormals: " ++ show relevantFormals
-  liftIO $ putStrLn $ "relevantActuals: " ++ show relevantActuals
   whenRefined (monoFnTypeRange $ fnType fn) $ \v e -> do
     -- An expression summarizing our static knowledge of the fn body/return value.
     se <- trueOr f (tidIdent v)
 
-    -- An expression of the form (v == ...)
     let postcondId = Ident (T.pack ".postcond") 0
     f' <- checkBody e facts''
     se' <- trueOr f' postcondId
+    -- An expression of the form (v == ...)
 
-
-    -- Checking the postcond e results in an expression of the form
-    -- (postcondId = [[e]]); we `and` this with the id itself to effectively
-    -- assert [[e]].
     let thm = scriptImplyingBy (liftSMTExpr se (\body -> body SMT.==> smtId postcondId))
                                ((mergeSMTExprAsPathFact se' facts'')
                                  `addSymbolicVars` [v, TypedId boolMonoType postcondId])
-    liftIO $ putStrLn $ ""
-    liftIO $ putStrLn $ ""
-    liftIO $ putStrLn $ "FN RETURN TYPE IS REFINED..."
-    liftIO $ putDocLn $ pretty se
-    liftIO $ putDocLn $ pretty se'
-    liftIO $ putDocLn $ pretty v
-    liftIO $ putDocLn $ pretty e
-    liftIO $ putDocLn $ prettyCommentedScript thm
-    liftIO $ putStrLn $ ""
-    liftIO $ putStrLn $ ""
-
     scRunZ3 fn thm
 
   return f
+
+
+-- Return a modified facts environment which asserts (as path facts)
+-- any refinements associated with the given list of binders.
+withBindings :: TypedId MonoType -> [TypedId MonoType] -> Facts -> SC Facts
+withBindings fnv vs facts0 = do
+  -- For example, given f = { x : (% z : Int32 : ...) => y : Int32 => x + y }
+  -- the relevant formals are [z] and the relevant actuals are [x].
+  let (relevantFormals, relevantActuals) =
+        unzip $ Prelude.concat [case tidType v of RefinedType v' _ _ -> [(v', v)]
+                                                  _                  -> []
+                               | v <- vs]
+
+      -- To handle dependent refinements, each predicate takes all the fnvars...
+      mbFnOfRefinement (RefinedType _ body _) =
+        [Fn fnv relevantFormals body NotRec (annotForRange (MissingSourceRange "fnOfRefinement"))]
+      mbFnOfRefinement _                   = []
+
+      refinements = concatMap mbFnOfRefinement (map tidType vs)
+      foldPathFact facts f = do liftIO $ putStrLn $ "withBindings calling smtEvalApp... { "
+                                e <- smtEvalApp facts f relevantActuals
+                                liftIO $ putStrLn $ "withBindings called  smtEvalApp... } "
+                                return $ mergeSMTExprAsPathFact e facts
+  facts <- foldlM foldPathFact facts0 refinements
+
+  --liftIO $ putStrLn $ "%%%%%%%%%%%%%%%%%%%%%%%%%%%"
+  --liftIO $ putStrLn $ "refinements: " ++ show (map pretty refinements)
+  --liftIO $ putStrLn $ "fnVars fn:   " ++ show (fnVars fn)
+  --liftIO $ putStrLn $ "relevantFormals: " ++ show relevantFormals
+  --liftIO $ putStrLn $ "relevantActuals: " ++ show relevantActuals
+
+  -- Before processing the body, add declarations for the function formals,
+  -- and record the preconditions associated with any function-typed formals.
+  let facts' = addSymbolicVars facts vs
+  return facts'
+
 
 smtEvalApp facts fn args = do
   (mkPrecondGen facts fn) args
@@ -557,8 +540,8 @@ checkBody expr facts =
         -- TODO: better path conditions for individual arms
         _ <- forM arms $ \arm -> do
             case caseArmGuard arm of
-                Nothing -> do -- TODO: facts to integrate (caseArmBindings arm)?
-                              checkBody (caseArmBody arm) facts
+                Nothing -> do facts' <- withBindings v (caseArmBindings arm) facts
+                              checkBody (caseArmBody arm) facts'
                 Just _g -> error $ "can't yet support case arms with guards in KNStaticChecks"
         return Nothing
 
