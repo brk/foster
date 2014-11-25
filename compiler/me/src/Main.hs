@@ -58,7 +58,7 @@ import Foster.MainOpts
 
 import Text.Printf(printf)
 import Foster.Output
-import Text.PrettyPrint.ANSI.Leijen((<+>), (<>), pretty, text, line, hsep,
+import Text.PrettyPrint.ANSI.Leijen((<+>), (<>), (<$>), pretty, text, line, hsep,
                                     fill, parens, vcat, list, red, dullyellow)
 import Criterion.Measurement(time, secs)
 
@@ -189,7 +189,8 @@ typecheckModule :: Bool -> Bool
                 -> TcEnv
                 -> IO (OutputOr (Context TypeIL, ModuleIL AIExpr TypeIL))
 typecheckModule verboseMode pauseOnErrors modast tcenv0 = do
-    putStrLn $ show (moduleASTdecls modast)
+    when verboseMode $ do
+        putDocLn $ text "module AST decls:" <$> pretty (moduleASTdecls modast)
     let dts = moduleASTprimTypes modast ++ moduleASTdataTypes modast
     let fns = moduleASTfunctions modast
     let primBindings = computeContextBindings' primitiveDecls
@@ -221,7 +222,7 @@ typecheckModule verboseMode pauseOnErrors modast tcenv0 = do
                     putStrLn $ "Function SCC list : " ++
                      (unlines $ map show [(name, frees) | (_, name, frees) <- callGraphList])
             let showASTs     = verboseMode
-            let showAnnExprs = verboseMode || True
+            let showAnnExprs = verboseMode
             (annFnSCCs, (ctx, tcenv)) <- mapFoldM' sortedFns (ctxTC, tcenv0)
                                               (typecheckFnSCC showASTs showAnnExprs pauseOnErrors)
             unTc tcenv (convertTypeILofAST modast ctx annFnSCCs)
