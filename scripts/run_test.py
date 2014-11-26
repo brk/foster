@@ -133,6 +133,7 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
 
     ghc_rts_args = ["-smeGCstats.txt", "-K400M"]
 
+    # https://downloads.haskell.org/~ghc/7.6.2/docs/html/users_guide/prof-heap.html#rts-options-heap-prof
     if options and options.profileme:
       ghc_rts_args.append("-p")
       ghc_rts_args.append("-hc")
