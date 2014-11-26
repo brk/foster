@@ -42,8 +42,8 @@ struct TimerChecksInsertion : public FunctionPass {
   // If F is recursive, or makes calls to statically unknown functions,
   // we should insert a check at the entry.
   bool needsHeader(llvm::Function& F) {
-    for (Function::iterator BB = F.begin(); BB != F.end(); ++BB) {
-      for (BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
+    for (Function::iterator BB : F) {
+      for (BasicBlock::iterator I : *BB) {
         if (llvm::CallInst* call = llvm::dyn_cast<CallInst>(I)) {
           llvm::Value* Vtgt = call->getCalledValue();
           if (!Vtgt) {
@@ -95,8 +95,7 @@ struct TimerChecksInsertion : public FunctionPass {
     std::vector<BasicBlock*> headers;
 
     LoopInfo& LI = getAnalysis<LoopInfo>();
-    for (LoopInfo::iterator it = LI.begin(); it != LI.end(); ++it) {
-      const Loop* loop = *it;
+    for (auto loop : LI) {
       headers.push_back(loop->getHeader());
     }
 

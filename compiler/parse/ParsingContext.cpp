@@ -167,10 +167,12 @@ ParsingContext::getCurrentBindings() {
   std::list<std::string>& bcs =
   	 	 	  foster::gParsingContexts.top()->impl->bindingContexts;
   ASSERT(!bcs.empty());
-  std::list<std::string>::iterator it = bcs.begin();
-  std::string rv = *it; ++it;
-  for ( ; it != bcs.end(); ++it) {
-    rv += "___" + *it;
+
+  std::string rv;
+  for (auto it : bcs) {
+    if (rv.empty()) { rv = it; } else {
+      rv = rv + "___" + it;
+    }
   }
   return rv;
 }

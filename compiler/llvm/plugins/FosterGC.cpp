@@ -186,13 +186,12 @@ public:
       size_t i32sForThisFunction = 1; // above
       size_t voidPtrsForThisFunction = 0;
 
-      for (ClusterMap::iterator it = clusters.begin();
-                                it != clusters.end(); ++it) {
-        const FrameInfo& fi = (*it).first;
+      for (auto it : clusters) {
+        const FrameInfo& fi = it.first;
         int frameSize = fi.first;
         const RootOffsets& offsets = fi.second.first;
         const RootOffsetsWithMetadata& offsetsWithMetadata = fi.second.second;
-        const Labels& labels = (*it).second;
+        const Labels& labels = it.second;
 
         // TODO on x86_64 this makes the generated binary crash while
         // registering stackmaps, but the testing infrastructure currently
@@ -221,36 +220,30 @@ public:
         unsigned IntPtrSize = AP.TM.getDataLayout()->getPointerSize();
 
         // Emit the addresses of the safe points in the cluster.
-        for (Labels::iterator lit = labels.begin();
-                              lit != labels.end(); ++lit) {
+        for (auto label : labels) {
           AP.OutStreamer.AddComment("safe point address");
           const unsigned addrSpace = 0;
-          AP.OutStreamer.EmitSymbolValue(*lit, IntPtrSize, addrSpace);
+          AP.OutStreamer.EmitSymbolValue(label, IntPtrSize, addrSpace);
           voidPtrsForThisFunction++;
         }
 
         // Emit the stack offsets for the metadata-imbued roots in the cluster.
-        for (RootOffsetsWithMetadata::iterator
-                                   rit = offsetsWithMetadata.begin();
-                                   rit != offsetsWithMetadata.end(); ++rit) {
+        for (auto rit : offsetsWithMetadata) {
           AP.OutStreamer.AddComment("metadata");
-          AP.EmitGlobalConstant((*rit).second);
+          AP.EmitGlobalConstant(rit.second);
           voidPtrsForThisFunction++;
         }
 
-        for (RootOffsetsWithMetadata::iterator
-                                   rit = offsetsWithMetadata.begin();
-                                   rit != offsetsWithMetadata.end(); ++rit) {
+        for (auto rit : offsetsWithMetadata) {
           AP.OutStreamer.AddComment("stack offset for metadata-imbued root");
-          AP.EmitInt32((*rit).first);
+          AP.EmitInt32(rit.first);
           i32sForThisFunction++;
         }
 
         // Emit the stack offsets for the metadata-less roots in the cluster.
-        for (RootOffsets::iterator rit = offsets.begin();
-                                   rit != offsets.end(); ++rit) {
+        for (auto rit : offsets) {
           AP.OutStreamer.AddComment("stack offset for no-metadata root");
-          AP.EmitInt32(*rit);
+          AP.EmitInt32(rit);
           i32sForThisFunction++;
         }
 

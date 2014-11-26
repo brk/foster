@@ -79,9 +79,9 @@ public:
     }
 
     virtual T* lookup(const string& ident) {
-      typename Map::iterator it = val_of.find(ident);
+      auto it = val_of.find(ident);
       if (it != val_of.end()) {
-        return ((*it).second);
+        return it->second;
       }
 
       if (parent) {
@@ -93,8 +93,8 @@ public:
 
     void dump(llvm::raw_ostream& out) {
       out << "\t" << name << "(@ " << this << ")" << "\n";
-      for (const_iterator it = begin(); it != end(); ++it) {
-        out << "\t\t" << (*it).first << ": " << (*it).second << "\n";
+      for (auto it : val_of) {
+        out << "\t\t" << it.first << ": " << it.second << "\n";
       }
       if (parent) { parent->dump(out); }
     }

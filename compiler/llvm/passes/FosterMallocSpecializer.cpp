@@ -88,6 +88,7 @@ bool SpecializeAllocations::runOnBasicBlock(BasicBlock &BB) {
   BasicBlock::InstListType &BBIL = BB.getInstList();
   const DataLayout* TD = BB.getParent()->getDataLayout();
 
+  // Can't use range loop because we modify I in the loop...
   for (BasicBlock::iterator I = BB.begin(), E = BB.end(); I != E; ++I) {
     if (llvm::CallInst* call = llvm::dyn_cast<CallInst>(I)) {
       llvm::Function* F = call->getCalledFunction();

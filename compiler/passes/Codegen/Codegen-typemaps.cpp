@@ -75,8 +75,7 @@ OffsetSet countPointersInType(TypeAST* typ, Type* ty) {
       Constant* slotOffset = ConstantExpr::getOffsetOf(sty, i);
       OffsetSet sub = countPointersInType(stp->getContainedType(i),
                                             sty->getTypeAtIndex(i));
-      for (OffsetSet::iterator si = sub.begin(); si != sub.end(); ++si) {
-        Offset suboffset = *si;
+      for (Offset suboffset : sub) {
         rv.push_back(ConstantExpr::getAdd(suboffset, slotOffset));
       }
     }
@@ -202,10 +201,8 @@ GlobalVariable* constructTypeMap(llvm::Type*  ty,
 
 
   std::vector<Constant*> typeMapOffsets;
-  for (OffsetSet::const_iterator it =  pointerOffsets.begin();
-                                 it != pointerOffsets.end(); ++it) {
-    typeMapOffsets.push_back(ConstantExpr::getTruncOrBitCast(
-                                     *it, builder.getInt32Ty()));
+  for (auto it : pointerOffsets) {
+    typeMapOffsets.push_back(ConstantExpr::getTruncOrBitCast(it, builder.getInt32Ty()));
   }
 
   // TODO fix this

@@ -625,11 +625,9 @@ public:
 
     if (!this->alloc_site_counters.empty()) {
       fprintf(stats, "'allocation_sites' : [\n");
-      std::map<std::pair<const char*, typemap*>, int64_t>::iterator it;
-      for (it  = this->alloc_site_counters.begin();
-            it != this->alloc_site_counters.end(); ++it) {
-        fprintf(stats, "{ 'typemap' : %p , 'allocations' : %12" PRId64 ",\n", it->first.second, it->second);
-        fprintf(stats, "  'from' : \"%s\" },\n", it->first.first);
+      for (auto it : alloc_site_counters) {
+        fprintf(stats, "{ 'typemap' : %p , 'allocations' : %12" PRId64 ",\n", it.first.second, it.second);
+        fprintf(stats, "  'from' : \"%s\" },\n", it.first.first);
       }
       fprintf(stats, "],\n");
     }

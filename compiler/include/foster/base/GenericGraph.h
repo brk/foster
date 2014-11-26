@@ -145,8 +145,7 @@ public:
     unsigned sccId = 1;
     for (SCI it = llvm::scc_begin(this), e = llvm::scc_end(this); it != e; ++it) {
       SCC& scc = *it;
-      for (typename SCC::iterator cit = scc.begin(); cit != scc.end(); ++cit) {
-        Node* node = *cit;
+      for (auto node : scc) {
         sccIds[node->getIndex()] = sccId;
       }
       ++sccId;

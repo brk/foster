@@ -75,7 +75,7 @@ bool CallingConventionChecker::runOnBasicBlock(BasicBlock &BB) {
   bool Changed = false;
   bool sawSuspiciousCalls = false;
 
-  for (BasicBlock::iterator I = BB.begin(), E = BB.end(); I != E; ++I) {
+  for (BasicBlock::iterator I : BB) {
     if (llvm::CallInst* call = llvm::dyn_cast<CallInst>(I)) {
       llvm::Function* F = call->getCalledFunction();
       if (F) {

@@ -70,7 +70,7 @@ public:
   OperatorRelation get(const Operator& opa, const Operator& opb) {
     requireKnownOperator(opa);
     requireKnownOperator(opb);
-    OpTable::iterator it = table.find(OpPair(opa, opb));
+    auto it = table.find(OpPair(opa, opb));
     if (it == table.end()) {
       dumpOperatorRelation();
       ASSERT(false) << "Operator precedence table has no entry for "
@@ -82,15 +82,13 @@ public:
   // returns true if table is complete
   bool check() {
     bool tableComplete = true;
-    for (OpSet::iterator it = knownOperators.begin();
-                                         it != knownOperators.end(); ++it) {
-      for (OpSet::iterator it2 = knownOperators.begin();
-                                             it2 != knownOperators.end(); ++it2) {
-        OperatorRelation rel = table[ OpPair(*it, *it2) ];
+    for (auto it : knownOperators) {
+      for (auto it2 : knownOperators) {
+        OperatorRelation rel = table[ OpPair(it, it2) ];
         if (rel == kNoRelationSpecified) {
           tableComplete = false;
           EDiag() << "No relation specified between "
-                  << " \t" << *it << " and " << *it2;
+                  << " \t" << it << " and " << it2;
         }
       }
     }
@@ -131,7 +129,7 @@ private:
   }
 
   void requireNoPriorRelation(const Operator& a, const Operator& b, OperatorRelation r) {
-    OpTable::iterator it = table.find(OpPair(a, b));
+    auto it = table.find(OpPair(a, b));
     if (it != table.end()) {
       if ((*it).second != kNoRelationSpecified) {
         dumpOperatorRelation();
@@ -186,12 +184,8 @@ private:
     // new &&&&&&&&&&&&&&+&&&| filled in by
     // ops &&&&&&&&&&&&&&+&&&| leftAssoc/etc
 
-    for (OpSet::iterator it = knownOperators.begin();
-                         it != knownOperators.end(); ++it) {
-      const OperatorPrecedenceTable::Operator& z = *it;
-      for (vector<string>::const_iterator oit = ops.begin();
-                                    oit != ops.end(); ++oit) {
-        const string& x = *oit;
+    for (auto z : knownOperators) {
+      for (auto x : ops) {
         table[ OpPair(x, z) ] = table[ OpPair(knownOp, z) ];
         table[ OpPair(z, x) ] = table[ OpPair(z, knownOp) ];
         knownOperators.insert(x);
@@ -336,19 +330,16 @@ public:
 private:
   void dumpKnownOperators() {
     llvm::outs() << "Known operators:\n";
-    for (OpSet::iterator it = knownOperators.begin();
-                         it != knownOperators.end(); ++it) {
-      llvm::outs() << "\t" << *it << "\n";
+    for (auto it : knownOperators) {
+      llvm::outs() << "\t" << it << "\n";
     }
   }
 
   void dumpOperatorRelation() {
-    for (OpSet::iterator it = knownOperators.begin();
-                         it != knownOperators.end(); ++it) {
-      for (OpSet::iterator it2 = knownOperators.begin();
-                           it2 != knownOperators.end(); ++it2) {
-        const char* relstr = str(table[ OpPair(*it, *it2) ]);
-        llvm::outs() << *it << "\t" << relstr << "\t" << *it2 << "\n";
+    for (auto it : knownOperators) {
+      for (auto it2 : knownOperators) {
+        const char* relstr = str(table[ OpPair(it, it2) ]);
+        llvm::outs() << it << "\t" << relstr << "\t" << it2 << "\n";
       }
     }
   }

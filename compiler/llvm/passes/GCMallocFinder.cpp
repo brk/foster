@@ -94,9 +94,7 @@ struct GCMallocFinder : public CallGraphSCCPass {
   virtual bool runOnSCC(CallGraphSCC& scc) {
     std::vector<CallGraphNode::CallRecord> callsToMark;
 
-    for (CallGraphSCC::iterator sccit = scc.begin(), sccend = scc.end();
-                        sccit != sccend; ++sccit) {
-       const CallGraphNode* cgn = *sccit;
+    for (const CallGraphNode* cgn : scc) {
        if (!cgn) { continue; }
 
        Function* fn = cgn->getFunction();

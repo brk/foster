@@ -55,9 +55,7 @@ void putModuleMembersInScope(Module* m, Module* linkee) {
   // included (such as those that concreteize macro definitions), and
   // also those which should not be included (such as
   // force_these_symbols_to_be_included()).
-  for (Module::iterator it = m->begin(); it != m->end(); ++it) {
-    const Function& f = *it;
-
+  for (auto &f : *m) {
     llvm::StringRef name = f.getName();
     bool isCxxLinkage = name.startswith("_Z")
                      || name.startswith("__cxx_");
@@ -93,12 +91,11 @@ void putModuleMembersInScope(Module* m, Module* linkee) {
 
   // Don't link in functions that were just included to force
   // LLVM to include declarations in the module in the first place.
-  for (std::set<std::string>::iterator it = functionsToRemove.begin();
-                         it != functionsToRemove.end(); ++it) {
+  for (auto it : functionsToRemove) {
     if (gPrintLLVMImports) {
-      outs() << "not including function " << *it << "\n";
+      outs() << "not including function " << it << "\n";
     }
-    m->getFunctionList().erase(m->getFunction(*it));
+    m->getFunctionList().erase(m->getFunction(it));
   }
 }
 
@@ -131,9 +128,7 @@ void putFunctionInScope(const Function& f, Module* linkee) {
 void putModuleFunctionsInScope(Module* m, Module* linkee) {
   if (!m) return;
 
-  for (Module::iterator it = m->begin(); it != m->end(); ++it) {
-    const Function& f = *it;
-
+  for (auto &f : *m) {
     const llvm::StringRef name = f.getName();
     bool isCxxLinkage = name.startswith("_Z");
 

@@ -442,8 +442,7 @@ void CodegenPass::scheduleBlockCodegen(LLBlock* b) {
 
 // We shouldn't get any such things from the middle-end.
 void checkForUnusedEmptyBasicBlocks(llvm::Function* F) {
-  for(llvm::Function::iterator BB_it = F->begin();
-                               BB_it != F->end(); ++BB_it) {
+  for(llvm::Function::iterator BB_it : *F) {
     ASSERT(! (BB_it->empty() && BB_it->use_empty()) );
   }
 }

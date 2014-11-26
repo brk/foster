@@ -110,7 +110,7 @@ void validateOutputFile(const std::string& pathstr) {
 void runFunctionPassesOverModule(llvm::legacy::FunctionPassManager& fpasses,
                                  Module* mod) {
   fpasses.doInitialization();
-  for (Module::iterator it = mod->begin(); it != mod->end(); ++it) {
+  for (Module::iterator it : *mod) {
     fpasses.run(*it);
   }
   fpasses.doFinalization();
