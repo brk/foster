@@ -388,7 +388,10 @@ ilOf ctx typ = do
                       else tcFails [text $ "Found un-unified unification variable "
                                 ++ show (mtvUniq m) ++ "(" ++ mtvDesc m ++ ")!"]
           Just t  -> let t' = shallowStripRefinedTypeTC t in
-                     trace ("meta ty var : " ++ show t ++ " =====> " ++ show t') $ q t'
+                     -- TODO: strip refinements deeply
+                     if show t == show t'
+                       then q t'
+                       else error $ "meta ty var : " ++ show t ++ " =====> " ++ show t'
 
 aiVar ctx (TypedId t i) = do ty <- ilOf ctx t
                              return $ TypedId ty i
