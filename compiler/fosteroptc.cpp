@@ -83,6 +83,11 @@ optOutputName("o",
 static string gOutputNameBase;
 
 static cl::opt<bool>
+optDumpPreOptIR("dump-preopt",
+  cl::desc("Dump LLVM IR before linking and optimization passes"),
+  cl::cat(FosterOptCat));
+
+static cl::opt<bool>
 optDumpPostOptIR("dump-postopt",
   cl::desc("Dump LLVM IR after linking and optimization passes"),
   cl::cat(FosterOptCat));
@@ -406,7 +411,7 @@ void configureTargetDependentOptions(const llvm::Triple& triple,
 }
 
 void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
-  TargetMachine::CodeGenFileType filetype = TargetMachine::CGFT_ObjectFile;
+  auto filetype = TargetMachine::CGFT_ObjectFile;
   if (pystring::endswith(filename, ".s")) {
     filetype = TargetMachine::CGFT_AssemblyFile;
   } else if (pystring::endswith(filename, ".o")
@@ -417,14 +422,15 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
                   << " to end with .s or .o or .obj";
   }
 
-  ScopedTimer timer((filetype == TargetMachine::CGFT_AssemblyFile)
-                    ? "llvm.llc" : "llvm.llc+");
+  ScopedTimer timer((filetype == TargetMachine::CGFT_AssemblyFile) ? "llvm.llc"
+                   :(filetype == TargetMachine::CGFT_ObjectFile)   ? "llvm.llc+"
+                                                                   : "llvm.llc?");
 
   llvm::Triple triple(mod->getTargetTriple());
   if (triple.getTriple().empty()) {
     triple.setTriple(HOST_TRIPLE);
   }
-  llvm::TargetOptions* targetOptions = new llvm::TargetOptions();
+  auto targetOptions = new llvm::TargetOptions();
   configureTargetDependentOptions(triple, *targetOptions, filetype);
 
   const Target* target = NULL;
@@ -436,13 +442,12 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
     exit(1);
   }
 
-  CodeGenOpt::Level
-         cgOptLevel = optOptimizeZero
+  auto cgOptLevel = optOptimizeZero
                         ? CodeGenOpt::None
                         : CodeGenOpt::Aggressive;
 
-  CodeModel::Model cgModel = CodeModel::Default;
-  TargetMachine* tm = target->createTargetMachine(triple.getTriple(),
+  auto cgModel = CodeModel::Default;
+  auto tm = target->createTargetMachine(triple.getTriple(),
                                                  "", // CPU
                                                  "", // Features
                                                  *targetOptions,
@@ -459,7 +464,6 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
   }
 
   tm->setAsmVerbosityDefault(true);
-  // TODO don't use .loc directives for OS X 10.5 and prior.
 
   PassManager passes;
   tm->addAnalysisPasses(passes);
@@ -532,7 +536,9 @@ int main(int argc, char** argv) {
     runInternalizePasses(module);
     dumpModuleToFile(module,  (gOutputNameBase + ".internalized.ll"));
   } else {
-    dumpModuleToFile(module,  (gOutputNameBase + ".preopt.ll"));
+    if (optDumpPreOptIR) {
+      dumpModuleToFile(module,  (gOutputNameBase + ".preopt.ll"));
+    }
 
     if (!optDisableAllOptimizations) {
       foster::runWarningPasses(*module);

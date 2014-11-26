@@ -84,6 +84,9 @@ base::TimeTicks    init_start;
 
 typedef void* ret_addr;
 typedef void* frameptr;
+// I've looked at using std::unordered_map or google::sparsehash instead,
+// but both options lead to unacceptable binary bloat vs std::map,
+// because chromium_base (etc) already uses std::map...
 typedef std::map<frameptr, const stackmap::PointCluster*> ClusterMap;
 ClusterMap clusterForAddress;
 // }}}

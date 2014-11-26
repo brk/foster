@@ -13,6 +13,7 @@ import subprocess
 import sys
 import shutil
 import traceback
+import math
 
 from run_cmd import *
 
@@ -159,7 +160,7 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     # running fosterlower on a ParsedAST produces a bitcode Module
     # linking a bunch of Modules produces a Module
     e3 = crun(['fosterlower', check_output, '-o', finalname,
-                         '-outdir', tmpdir, '-dump-prelinked', '-fosterc-time',
+                         '-outdir', tmpdir, '-fosterc-time',
                          '-bitcodelibs', mkpath(options.bindir, '_bitcodelibs_')]
                     + options.beargs)
 
@@ -168,7 +169,7 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     else:
       # Running opt on a Module produces a Module
       # Running llc on a Module produces an assembly file
-      e4 = crun(['fosteroptc', finalpath + '.preopt.bc', '-dump-postopt',
+      e4 = crun(['fosteroptc', finalpath + '.preopt.bc',
                                            '-fosterc-time', '-o', finalpath + ext]
                       + optlevel(options)
                       + options.optcargs)
@@ -185,6 +186,13 @@ def link_to_executable(finalpath, exepath, paths, testpath):
                          'rpath'     : rpath(nativelib_dir())
                        },  paths, testpath, showcmd=show_cmdlines(options))
 
+# based on http://stackoverflow.com/questions/3758606/how-to-convert-byte-size-into-human-readable-format-in-java/3758880#3758880
+def humanized(n, limit=None):
+  base = 1024
+  if n < base or (limit is not None and n < limit): return str(n) + " B"
+  e = int(math.log(n) / math.log(base))
+  return "%.1f %sB" % (float(n) / base**e, "KMGTPE"[e - 1])
+
 def aggregate_results(results):
     fields = ["total_elapsed", "compile_elapsed", "overhead",
               "fp_elapsed", "fm_elapsed", "fl_elapsed",
@@ -192,8 +200,7 @@ def aggregate_results(results):
     result = dict(failed=False, label="<aggregate results>",
                   total_elapsed=0, compile_elapsed=0, overhead=0,
                   fp_elapsed=0, fm_elapsed=0, fl_elapsed=0,
-                  fc_elapsed=0, as_elapsed=0, ld_elapsed=0, rn_elapsed=0,
-                  inbytes=0, outbytes=0, inbytes_per_sec=0, outbytes_per_sec=0)
+                  fc_elapsed=0, as_elapsed=0, ld_elapsed=0, rn_elapsed=0)
     for res in results:
         for field in fields:
             result[field] += res[field]
@@ -211,9 +218,8 @@ def print_result_table(res):
       100.0*x/float(res['compile_elapsed'])
         for x in list((res['fp_elapsed'], res['fm_elapsed'], res['fl_elapsed'],
                        res['fc_elapsed'], res['as_elapsed'], res['ld_elapsed'])))
-    if options.print_bytes_per_sec:
-      print "input protobuf %d bytes (%3.0f per second); a.out %d bytes (%3.0f per second)" % \
-            (res['inbytes'], res['inbytes_per_sec'], res['outbytes'], res['outbytes_per_sec'])
+    if options.print_bytes_per_sec and 'inbytes' in res:
+      print """input protobuf %(inbytes)s (%(inbytes_per_sec)s/s); output protobuf %(ckbytes)s (%(ckbytes_per_sec)s/s); object file %(outbytes)s (%(outbytes_per_sec)s/s)""" % res
     print "".join("-" for x in range(60))
 
 def run_diff(a, b):
@@ -255,7 +261,8 @@ def run_one_test(testpath, paths, tmpdir, progargs):
                                        showcmd=True, strictrv=False)
 
   inbytes  = file_size(os.path.join(tmpdir, '_out.parsed.pb'))
-  outbytes = file_size(os.path.join(tmpdir, '_out.checked.pb'))
+  ckbytes = file_size(os.path.join(tmpdir, '_out.checked.pb'))
+  outbytes = file_size(os.path.join(tmpdir, finalpath + ".o"))
 
   if rv == 0:
     did_fail = run_diff(exp_filename, act_filename)
@@ -266,15 +273,19 @@ def run_one_test(testpath, paths, tmpdir, progargs):
   else:
     did_fail = True
 
+  def elapsed_per_sec(b, e): return humanized(float(b)/(float(e) / 1000.0))
   total_elapsed = elapsed_since(start)
   compile_elapsed = (as_elapsed + ld_elapsed + fp_elapsed + fm_elapsed + fl_elapsed + fc_elapsed)
   overhead = total_elapsed - (compile_elapsed + rn_elapsed)
   result = dict(failed=did_fail, label=testname(testpath),
                 total_elapsed=total_elapsed,
                 compile_elapsed=compile_elapsed, overhead=overhead,
-                inbytes=inbytes, outbytes=outbytes,
-                inbytes_per_sec=float(inbytes)/(float(fm_elapsed) / 1000.0),
-                outbytes_per_sec=float(outbytes)/(float(fm_elapsed) / 1000.0),
+                inbytes=humanized(inbytes, limit=10000),
+                ckbytes=humanized(ckbytes, limit=10000),
+                outbytes=humanized(outbytes, limit=10000),
+                inbytes_per_sec=elapsed_per_sec(inbytes, fp_elapsed),
+                ckbytes_per_sec=elapsed_per_sec(ckbytes, fm_elapsed),
+                outbytes_per_sec=elapsed_per_sec(outbytes, fl_elapsed + fc_elapsed),
     fp_elapsed=fp_elapsed, fm_elapsed=fm_elapsed, fl_elapsed=fl_elapsed,
     fc_elapsed=fc_elapsed, as_elapsed=as_elapsed, ld_elapsed=ld_elapsed, rn_elapsed=rn_elapsed)
   infile.close()
@@ -352,6 +363,8 @@ def get_test_parser(usage):
                     help="Enable detailed profiling of compiler middle-end")
   parser.add_option("--no_bytes_per_sec", dest="print_bytes_per_sec", action="store_false", default=True,
                     help="Disable printing of bytes-per-second for input protobuf and output executable")
+  parser.add_option("--no_extra_bitcode", dest="extrabitcode", action="store_false", default=True,
+                    help="Disable dumping of extra bitcode files (prelinked/postopt)")
   parser.add_option("--profile", dest="profile", action="store_true", default=False,
                     help="Enable profiling of generated executable")
   parser.add_option("--me-arg", action="append", dest="meargs", default=[],
@@ -400,6 +413,13 @@ if __name__ == "__main__":
 
   tmpdir = os.path.join(options.bindir, 'test-tmpdir')
   ensure_dir_exists(tmpdir)
+
+  # Dump extra files, but only when running directly,
+  # not when running via run_all.py
+  if options.extrabitcode:
+    options.optcargs.append('-dump-preopt')
+    options.optcargs.append('-dump-postopt')
+    options.beargs.append('-dump-prelinked')
 
   if options.standalone:
     options.beargs.append("--unsafe-disable-gc")

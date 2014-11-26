@@ -28,8 +28,6 @@ def invoke_antlr(antlr, outdir, grammarfile):
   output_file = os.path.join(outdir, in_tail)
   copy_and_rewrite(grammarfile, output_file, uncomment_language_C)
 
-  print "run_antlr.py: Using %s to process %s" % (antlr, output_file)
-
   cmd = "java -cp %s org.antlr.Tool %s" % (antlr, output_file)
   subprocess.call(cmd.split(" "))
 
