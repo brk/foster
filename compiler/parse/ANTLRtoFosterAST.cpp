@@ -1178,9 +1178,14 @@ namespace foster {
         ParsingContext::sawHiddenToken(tok); // note: WS not included.
       }
 
+#ifdef ANTLR3_USE_64BIT
+#define A3_MARKER_d PRId64
+#else
+#define A3_MARKER_d "d"
+#endif
       if (false) {
         pANTLR3_STRING txt = tok->getText(tok);
-        printf("FITS token: channel %d, index %" PRId64 ", type %3d, line %2d, char %2d, text '%s'\n",
+        printf("FITS token: channel %d, index %" A3_MARKER_d ", type %3d, line %2d, char %2d, text '%s'\n",
                 tok->channel, tok->index, tok->type, tok->line, tok->charPosition,
                         (tok->type == NL)
                                 ? "\\n"
