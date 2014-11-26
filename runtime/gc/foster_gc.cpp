@@ -89,11 +89,7 @@ ClusterMap clusterForAddress;
 // }}}
 
 // {{{ Internal utility functions
-void gc_assert(bool cond, const char* msg) {
-  if (GC_ASSERTIONS) {
-    foster_assert(cond, msg);
-  }
-}
+void gc_assert(bool cond, const char* msg);
 
 bool is_marked_as_stable(tidy* body) {
   for (int i = 0, j = allocator_ranges.size(); i < j; ++i) {
@@ -496,6 +492,9 @@ public:
     }
   }
 
+  bool owns(tidy* body) { return curr->contains(body)
+                              || next->contains(body); }
+
   // {{{ Allocation, in various flavors & specializations.
   void* allocate_cell(typemap* typeinfo) {
     int64_t cell_size = typeinfo->cell_size; // includes space for cell header.
@@ -751,10 +750,7 @@ void gclog_time(const char* msg, base::TimeDelta d, FILE* json) {
   }
 }
 
-// TODO: track bytes allocated, bytes clollected, max heap size,
-//       max slop (alloc - reserved), peak mem use; compute % GC time.
-
-int cleanup() {
+FILE* print_timing_stats() {
   base::TimeTicks fin = base::TimeTicks::HighResNow();
   base::TimeDelta total_elapsed = fin - init_start;
   base::TimeDelta  init_elapsed = runtime_start - init_start;
@@ -774,6 +770,14 @@ int cleanup() {
     base::StatisticsRecorder::WriteGraph("", &output);
     fprintf(gclog, "%s\n", output.c_str());
   }
+  return json;
+}
+
+// TODO: track bytes allocated, bytes collected, max heap size,
+//       max slop (alloc - reserved), peak mem use; compute % GC time.
+
+int cleanup() {
+  FILE* json = print_timing_stats();
   bool had_problems = allocator->had_problems();
   if (json) allocator->dump_stats(json);
   delete allocator;
@@ -992,6 +996,15 @@ void coro_visitGCRoots(foster_generic_coro* coro, copying_gc* visitor) {
 //////////////////////////////////////////////////////////////}}}
 
 //  {{{ Debugging utilities
+void gc_assert(bool cond, const char* msg) {
+  if (GC_ASSERTIONS) {
+    if (!cond) {
+      allocator->dump_stats(NULL);
+    }
+    foster_assert(cond, msg);
+  }
+}
+
 void inspect_typemap(const typemap* ti) {
   fprintf(gclog, "typemap: %p\n", ti); fflush(gclog);
   if (!ti) return;
@@ -1006,6 +1019,44 @@ void inspect_typemap(const typemap* ti) {
     fprintf(gclog, "\t@%d, ", ti->offsets[i]);
     fflush(gclog);
   }
+}
+
+void inspect_ptr_for_debugging_purposes(void* bodyvoid) {
+  fprintf(stdout, "inspect_ptr_for_debugging_purposes: %p\n", bodyvoid);
+  unchecked_ptr bodyu = make_unchecked_ptr(static_cast<tidy*>(bodyvoid));
+  tidy* body = untag(bodyu);
+  if (! body) {
+    fprintf(stdout, "body is (maybe tagged) null\n");
+  } else {
+    if (gc::allocator->owns(body)) {
+      fprintf(stdout, "\t...this pointer is owned by the main allocator");
+    } else if (is_marked_as_stable(body)) {
+      fprintf(stdout, "\t...this pointer is marked as stable");
+    } else {
+      fprintf(stdout, "\t...this pointer is not owned by the main allocator, nor marked as stable!");
+      goto done;
+    }
+
+    gc::heap_cell* cell = gc::heap_cell::for_body(body);
+    if (cell->is_forwarded()) {
+      fprintf(stdout, "cell is forwarded to %p\n", cell->get_forwarded_body());
+    } else {
+      if (const gc::typemap* ti = tryGetTypemap(cell)) {
+        //gc::inspect_typemap(stdout, ti);
+        int iters = ti->numOffsets > 128 ? 0 : ti->numOffsets;
+        for (int i = 0; i < iters; ++i) {
+          fprintf(stdout, "\t@%d : %p\n", ti->offsets[i], gc::offset(bodyvoid, ti->offsets[i]));
+          fflush(stdout);
+        }
+      } else {
+        fprintf(stdout, "\tcell has no typemap, size is %lld\n", cell->cell_size());
+      }
+    }
+  }
+
+done:
+  fprintf(stdout, "done inspecting ptr: %p\n", body);
+  fflush(stdout);
 }
 // }}}
 
