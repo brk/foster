@@ -64,7 +64,7 @@ tuprefs3 = {
 
 
 tuprefs1 = {
-  t = ((prim ref opaquely_i32 1), (prim ref 2));
+  t = (prim ref (opaquely_i32 1), prim ref 2);
   expect_i32 1;
   case t of (r, _) -> print_i32 r^ end;
 };
