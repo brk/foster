@@ -26,7 +26,7 @@ test2 = {
 };
 
 test3helper = {
-  t = ((ref 3), (ref 4));
+  t = ((prim ref 3), (prim ref 4));
   { expect_i32 3;
      // This closure captures t alone; if the first slot in the
      // closure env is ignored by the GC, then we should get junk

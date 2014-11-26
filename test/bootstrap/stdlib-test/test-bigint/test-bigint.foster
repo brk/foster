@@ -762,8 +762,8 @@ reconstructInt64 = { a : Int32 => b : Int32 =>
 
 testSubInt64 = { a : Int32 => b : Int32 => c : Int32 => d : Int32 =>
                  trueab : Int64 => truecd : Int64 => trueabmcd : Int64 =>
-  let ra = (ref a);
-      rb = (ref b);
+  let ra = (prim ref a);
+      rb = (prim ref b);
       ab = reconstructInt64 a b;
       cd = reconstructInt64 c d;
       abmcd = ab -Int64 cd;

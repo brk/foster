@@ -1,7 +1,7 @@
 
 main = {
   //f1 { x : Int32 => () };
-  //f2 (ref 0);
+  //f2 (prim ref 0);
   f3 !;
   //f4 !;
   //f5 !;
@@ -109,7 +109,7 @@ f2 = { r : Ref Int32 =>
   print_i1 (__COMPILES__ r ^ +Int32 0);
 
   expect_i1 True;
-  print_i1 (__COMPILES__ f2 (ref r^));
+  print_i1 (__COMPILES__ f2 (prim ref r^));
 
   expect_i1 False;
   print_i1 (__COMPILES__ 0 ^); // "Expected deref-ed expr to have ref type, had (PrimIntAST I32)"
@@ -209,7 +209,7 @@ f6 = {
   let u0 = { forall t:Type,  x : t => 0 };
       b0 = { forall t:Boxed, x : t => 0 };
       n0 = { forall t:Type,
-            let x = (ref 0);
+            let x = (prim ref 0);
                 p = { forall b:Boxed, z:b => 0 };
             in
               p x;

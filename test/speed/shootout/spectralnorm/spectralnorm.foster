@@ -53,8 +53,8 @@ main = {
     u   = (allocDArray:[Float64] n);
     v   = (allocDArray:[Float64] n);
     tmp = (allocDArray:[Float64] n);
-    vv  = (ref 0.0);
-    vBv = (ref 0.0);
+    vv  = (prim ref 0.0);
+    vBv = (prim ref 0.0);
 
     repeatRange 0 n { i : Int32 => 1.0 >^ u[i]; () };
     repeatRange 1 10 { i : Int32 => mulAtAv n u v tmp; mulAtAv n v u tmp; () };

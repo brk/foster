@@ -997,11 +997,11 @@ print_A = { a =>
 natDivLTM_BB = { a : Array Word => b : Array Word =>
   // assert b is non-zero...
   n32 = natCountBits_A a -Int32 natCountBits_A b;
-   n = (ref (sext_i32_to_Word n32));
-   q = (ref (natDigits (natFromInt32 0)));
-   r = (ref a);
-  tb = (ref (natMul2d_A b n32));
-  tq = (ref (natMul2d_A (natDigits (natFromInt32 1)) n32));
+   n = (prim ref (sext_i32_to_Word n32));
+   q = (prim ref (natDigits (natFromInt32 0)));
+   r = (prim ref a);
+  tb = (prim ref (natMul2d_A b n32));
+  tq = (prim ref (natMul2d_A (natDigits (natFromInt32 1)) n32));
 
   /*
   expect_text "|a| = "; print_i32 (natCountBits_A a);
@@ -1047,8 +1047,8 @@ natDivLTM_NBB = { a : Array Word => b : Array Word =>
               then ((digitNumBits !) -Int32 1) -Int32 norm0
               else 0
             end;
-    x = (ref (natMul2d_A a norm));
-    y = (ref (natMul2d_A b norm));
+    x = (prim ref (natMul2d_A a norm));
+    y = (prim ref (natMul2d_A b norm));
 
     // TODO why does this fail to infer Word?
     // We rely here on q being an immutable binding
@@ -1140,7 +1140,7 @@ natDivLarge = { uIn : Array Word => v0 : Array Word =>
 
   shift = (wordLeadingZeros v0[n -Int32 1]) -Word 4;
   v     = newDArray0 n { i => v0[i] }; // local, private scratchpad
-  qhatref = (ref 0);
+  qhatref = (prim ref 0);
 
     dbgW "uIn[0]" uIn[0];
     dbgW "uIn[1]" uIn[1];
@@ -1238,8 +1238,8 @@ uQuoRemInt64 = { i : Int64 => j : Int64 =>
 };
 
 tmp_nat_of_base_10_Text = { t:Text =>
-  acc = (ref (natFromInt32 0));
-  pow = (ref (natFromInt32 1));
+  acc = (prim ref (natFromInt32 0));
+  pow = (prim ref (natFromInt32 1));
   base = 10;
   ok = tmp_Text_bytes_iter_reverse t { c : Int8 =>
    if is_ascii_digit c

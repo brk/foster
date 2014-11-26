@@ -31,7 +31,7 @@ main = {
                 end;
           };
       //j0 = force_gc_for_debugging_purposes !;
-      cr  = (ref co);
+      cr  = (prim ref co);
   in
       print_i32 2222222;
     //force_gc_for_debugging_purposes !;

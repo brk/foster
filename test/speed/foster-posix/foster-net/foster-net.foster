@@ -25,7 +25,7 @@ type case BytesBuilder
   of $BytesBuilder (Array Int8) (Ref Int32);
 
 newBytesBuilder = { size : Int32 =>
-   BytesBuilder (allocDArray:[Int8] size) (ref 0)
+   BytesBuilder (allocDArray:[Int8] size) (prim ref 0)
 };
 
 incr = { r:Ref Int32 => (r^ +Int32 1) >^ r; };
@@ -537,18 +537,18 @@ create-new-TCP-connection = { tcpstack => connid => segment => handler =>
     rcv_wnd = 65535;
     rcv_urg = 0;
     conn = TCPConnSynRcvd (TCPControlBlock
-                (ref  initial_segment_start)           // [1]
-                (ref (initial_segment_start +Int32 1))
-                (ref (initial_segment_start +Int32 1)) // [1]
-                (ref s_wndptr)
-                (ref s_urgptr)
-                (ref s_wndptr)
-                (ref s_wndptr)
+                (prim ref  initial_segment_start)           // [1]
+                (prim ref (initial_segment_start +Int32 1))
+                (prim ref (initial_segment_start +Int32 1)) // [1]
+                (prim ref s_wndptr)
+                (prim ref s_urgptr)
+                (prim ref s_wndptr)
+                (prim ref s_wndptr)
                 initial_segment_start
 
-                (ref acknum)
-                (ref rcv_wnd)
-                (ref rcv_urg)
+                (prim ref acknum)
+                (prim ref rcv_wnd)
+                (prim ref rcv_urg)
                 s_seqnum // [3]
               ) handler;
 
@@ -1007,10 +1007,10 @@ loop-reading-tuntap = {
 
   size = 2000;
   arr = allocDArray:[Int8] size;
-  rstatus = (ref 0);
+  rstatus = (prim ref 0);
 
-  tcpstack = TCPStack (ref (mapEmpty !))
-                      (ref (mapEmpty !));
+  tcpstack = TCPStack (prim ref (mapEmpty !))
+                      (prim ref (mapEmpty !));
 
   tcpStackRegisterPortHandler tcpstack 80 handler;
 

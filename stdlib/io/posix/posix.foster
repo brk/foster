@@ -24,7 +24,7 @@ type case IORead
 read_stdin_bytes :: { Int32 => IORead };
 read_stdin_bytes = { size =>
   arr   = allocDArray:[Int8] size;
-  rstatus = (ref 0);
+  rstatus = (prim ref 0);
   nread = foster_stdin_read_bytes arr rstatus;
   bytes = bytesTake (bytesOfRawArray arr) nread;
   case rstatus^

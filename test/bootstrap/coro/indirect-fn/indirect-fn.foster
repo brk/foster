@@ -32,7 +32,7 @@ main = {
                 f2 !;
           };
   //j0 = force_gc_for_debugging_purposes !;
-  r  = (ref 0);
+  r  = (prim ref 0);
 
       print_i32 2222222;
     //force_gc_for_debugging_purposes !;

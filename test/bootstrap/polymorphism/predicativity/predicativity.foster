@@ -13,7 +13,7 @@ test1 = {
       sfi = { forall a:Boxed, x:{ Int32 => Int32 } => y:a => x };
       //sfi = { x:{ Int32 => Int32 } => y:Int32 => x };
       fii = sfi iid iid;
-      // r   = (ref fst);
+      // r   = (prim ref fst);
   in
     expect_i32 5; print_i32 (fii 5);
     //expect_i1 false; print_i1 (__COMPILES__ fst         0 0);

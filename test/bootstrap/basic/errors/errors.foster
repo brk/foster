@@ -58,9 +58,9 @@ main = {
 
   // >^ is, for now, a primitive unlike +, which means it
   // can't be implicitly turned into a first-class function value.
-  expect_i1 True ; print_i1 (__COMPILES__  2  >^ (ref 0));
-  expect_i1 False; print_i1 (__COMPILES__ (>^) 2 (ref 0));
-  2  >^ (ref 0);
+  expect_i1 True ; print_i1 (__COMPILES__  2  >^ (prim ref 0));
+  expect_i1 False; print_i1 (__COMPILES__ (>^) 2 (prim ref 0));
+  2  >^ (prim ref 0);
 
   // It doesn't make sense at the machine level
   // for a returned function to be unboxed polymorphic.

@@ -38,7 +38,7 @@ mar = { p : Planet => case p of $Planet _ _ _  _ _ _  v -> v end };
 mkPlanet = { px : Float64 => py : Float64 => pz : Float64 =>
              vx : Float64 => vy : Float64 => vz : Float64 =>
              mass : Float64 => // cfg sz 8
-  Planet (ref px) (ref py) (ref pz) (ref vx) (ref vy) (ref vz) (ref mass)
+  Planet (prim ref px) (prim ref py) (prim ref pz) (prim ref vx) (prim ref vy) (prim ref vz) (prim ref mass)
 };
 
 mkBodies = { nbodies : Int32 =>
@@ -107,7 +107,7 @@ dot_bodyPos = { b : Planet => // cfg sz 19
 };
 
 energy = { bodies : Array Planet => // (top-level) cfg size: 9; total: 53
-    e = (ref 0.0);
+    e = (prim ref 0.0);
     arrayEnum bodies { b1 : Planet => i : Int64 =>
       incrByFloat64 e (0.5 *f64 ma b1 *f64 dot_bodyPos b1);
       arrayEnumFrom bodies (incr64 i) { b2: Planet => jj : Int64 =>
@@ -150,9 +150,9 @@ advance = { bodies : Array Planet =>
 };
 
 offset-momentum = { bodies : Array Planet =>
-  let rx = (ref 0.0);
-      ry = (ref 0.0);
-      rz = (ref 0.0);
+  let rx = (prim ref 0.0);
+      ry = (prim ref 0.0);
+      rz = (prim ref 0.0);
   in
     arrayEnum bodies { b : Planet => ign:Int64 =>
       incrByFloat64 rx (vx b *f64 ma b);

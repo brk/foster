@@ -7,7 +7,7 @@ flip = { maxn : Int32 =>
 
   s = allocDArray:[Int32] 16;
   t = allocDArray:[Int32] 16;
-  done = (ref False);
+  done = (prim ref False);
 
   REC flip-helper-b = { i : Int32 => n : Int32 =>
     if i <SInt32 n then

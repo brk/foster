@@ -112,7 +112,7 @@ parseCallPrim pbexpr annot = do
                                     _    -> error $ "ProtobufFE: prim mach-array-literal takes at most one type argument"
       ("tuple",  _ ) -> return $ E_TupleAST annot args
       ("deref", [e]) -> return $ E_DerefAST annot e
-      ("alloc",           [e]) -> return $ E_AllocAST annot e MemRegionGlobalHeap
+      ("ref",             [e]) -> return $ E_AllocAST annot e MemRegionGlobalHeap
       ("stackref-unsafe", [e]) -> return $ E_AllocAST annot e MemRegionStack
       ("subscript",  [a,b]) -> return $ E_ArrayRead annot (ArrayIndex a b (rangeOf annot) SG_Dynamic)
       ("subscript-unsafe",  [a,b]) -> return $ E_ArrayRead annot (ArrayIndex a b (rangeOf annot) SG_Unsafe)

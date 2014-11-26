@@ -7,11 +7,11 @@ tk = { maxn : Int32 =>
        maxflips : Ref Int32 =>
        checksum : Ref Int32 =>
 
-  let i = (ref 0);
+  let i = (prim ref 0);
       c = allocDArray:[Int32] 16;
       s = allocDArray:[Int32] 16;
       t = allocDArray:[Int32] 16;
-      odd = (ref False); in
+      odd = (prim ref False); in
 
   rec rotate-helper = { i : Int32 => n : Int32 =>
         if i <SInt32 n then
@@ -34,11 +34,11 @@ tk = { maxn : Int32 =>
         end
       };
 
-      xo = (ref 0);
-      yo = (ref (prim subscript t 0));
-      ri = (ref 1);
-      rc = (ref 0);
-      done = (ref False);
+      xo = (prim ref 0);
+      yo = (prim ref (prim subscript t 0));
+      ri = (prim ref 1);
+      rc = (prim ref 0);
+      done = (prim ref False);
 
       flip = {
         flip-helper 0 maxn;
@@ -105,8 +105,8 @@ repeatRange = { e : Int32 => n : Int32 => f : { Int32 => () } =>
 
 main = {
   let n = tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1);
-      maxflips = (ref 0);
-      checksum = (ref 0);
+      maxflips = (prim ref 0);
+      checksum = (prim ref 0);
   in
     if in-range n 3 15 then
       tk n maxflips checksum;

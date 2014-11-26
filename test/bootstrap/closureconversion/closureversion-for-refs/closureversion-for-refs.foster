@@ -6,7 +6,7 @@ main = {
 test-rawfn-in-clo = {
   n    = 5;
   clo  = { x:Int32 => x +Int32 n };
-  cell = (ref clo);
+  cell = (prim ref clo);
 
   expect_i32 7;
   print_i32 (cell^ 2);

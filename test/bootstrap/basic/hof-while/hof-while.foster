@@ -22,7 +22,7 @@ main = {
 };
 
 noinline_llvm_stress-hof = { n => k => // 100 mm iters => 1000 ms without inlining
-  x = (ref 0);
+  x = (prim ref 0);
   hof-while { x^ <SInt32 n } {
      (x^ +Int32 (k -Int32 1)) >^ x
   };
@@ -38,7 +38,7 @@ noinline_llvm_variant-one = {
   expect_i32 0;
   expect_i32 1;
   expect_i32 2;
-  v = (ref 0);
+  v = (prim ref 0);
   n = opaquely_i32 3;
 
   hof-while { v^ <SInt32 n } {
@@ -50,7 +50,7 @@ noinline_llvm_variant-two = {
   expect_i32 0;
   expect_i32 1;
   expect_i32 2;
-  v = (ref 0);
+  v = (prim ref 0);
   n = opaquely_i32 3;
 
   hof-while { v^ <SInt32 n } {

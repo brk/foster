@@ -68,9 +68,9 @@ main = {
   // TODO use type & effect system to rule out this program statically?
   /*
   let q = {
-        let count = (ref 5);             // count :: Ref Int32
+        let count = (prim ref 5);             // count :: Ref Int32
             get-count = { B (count ^) }; // get-count :: { BInt }
-            pr = (ref (delay { B 33 })); // dummy value
+            pr = (prim ref (delay { B 33 })); // dummy value
              // hack to get around the fact that we syntactically
              // can't define recursive binding for a lazy value:
              //        rec p = delay { ... (force p) ... }; end

@@ -22,7 +22,7 @@ call_let = {
 };
 
 call_deref_b = {
-  let r = (ref (g 4));
+  let r = (prim ref (g 4));
    in
       expect_i32 4;
       print_i32 (r^ !);

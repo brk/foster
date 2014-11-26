@@ -25,7 +25,7 @@ tokens {
   TERMNAME; TYPENAME; TYPEVAR_DECL;
   TERM; PHRASE; PRIMAPP; LVALUE; SUBSCRIPT;
   VAL_TYPE_APP; DEREF; ASSIGN_TO;
-  REF; TUPLE; VAL_ABS; TYP_ABS; TYPE_ATOM; TYANNOT;
+  TUPLE; VAL_ABS; TYP_ABS; TYPE_ATOM; TYANNOT;
   TYPE_TYP_APP; TYPE_TYP_ABS;
   KIND_TYPE; KIND_TYOP; KIND_TYPE_BOXED; FORALL_TYPE;
   FUNC_TYPE; REFINED;
@@ -134,7 +134,6 @@ atom    :       // syntactically "closed" terms
   | 'case' e (OF pmatch)+ 'end'         -> ^(CASE e pmatch+) // pattern matching
   | '(' ')'                             -> ^(TUPLE)
   | '(' COMPILES e ')'                  -> ^(COMPILES e)
-  | '(' 'ref' e ')'                     -> ^(REF e)     // allocation
   | tuple
   | val_abs
   ;

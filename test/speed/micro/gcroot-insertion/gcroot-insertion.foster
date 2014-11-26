@@ -12,14 +12,14 @@ fn-no-gc = { n : Int32 => r : Ref Int32 =>
 //           across which the pointer must be stored.
 
 may-trigger-gc = {
-  let x = (ref 0);
+  let x = (prim ref 0);
       d = x ^  ;
   in  d  end
 };
 
 needs-gc-roots = { x0 : Ref Int32 =>
-  let x1 = (ref x0);
-      x2 = (ref 2 );
+  let x1 = (prim ref x0);
+      x2 = (prim ref 2 );
       d1 = x1 ^  ;
       d0 = d1 ^  ;
   in  d0 +Int32 (x2 ^) end
@@ -27,7 +27,7 @@ needs-gc-roots = { x0 : Ref Int32 =>
 
 no-gc-after-new = {
   let t = may-trigger-gc ! ;
-      n = (ref 0); in
+      n = (prim ref 0); in
     n^
   end
 };
@@ -37,7 +37,7 @@ no-gc-after-new = {
 //
 no-root-for-dead-ptrs = {
   expect_i32   42;
-  let r = (ref 42);
+  let r = (prim ref 42);
       d = r ^     ;
   in
     print_i32 d;
@@ -46,7 +46,7 @@ no-root-for-dead-ptrs = {
 };
 
 fn-late-reload = { k : Int32 =>
-  let r = (ref 2);
+  let r = (prim ref 2);
   in
     may-trigger-gc !;
     // r should not be reloaded here
@@ -58,14 +58,14 @@ fn-late-reload = { k : Int32 =>
 };
 
 main = {
-  fn-no-gc 30 (ref 30);
+  fn-no-gc 30 (prim ref 30);
   no-root-for-dead-ptrs ! ;
 
   expect_i32 0;
   print_i32 (no-gc-after-new !);
 
   expect_i32 5;
-  print_i32 (needs-gc-roots (ref 3));
+  print_i32 (needs-gc-roots (prim ref 3));
 
   expect_i32 4;
   print_i32 (fn-late-reload 4);

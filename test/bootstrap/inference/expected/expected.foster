@@ -1,6 +1,6 @@
 main = {
   expect_i32 0;
-  print_i32 (exp_ref_i32 (ref 0));
+  print_i32 (exp_ref_i32 (prim ref 0));
 
   expect_i32 0;
   print_i32 (exp_fun_i32 { 0 });

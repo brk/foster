@@ -28,7 +28,7 @@ main = {
          coro_yield:[Int32,{Int32}] { 7777 };
          9999
   };
-  r  = (ref 0);
+  r  = (prim ref 0);
 
     print_i32 2222222;
   force_gc_for_debugging_purposes !;

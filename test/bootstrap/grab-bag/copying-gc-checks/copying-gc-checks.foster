@@ -1,9 +1,9 @@
 main = {
-  no-gc (ref 0);
-  gc-before-use (ref 0);
-  gc-before-and-after-use (ref 0);
+  no-gc (prim ref 0);
+  gc-before-use (prim ref 0);
+  gc-before-and-after-use (prim ref 0);
 
-  x = (ref 0);
+  x = (prim ref 0);
     gc-pat-match (1, (x,x));
     gc-pat-match (2, (x,x));
     gc-pat-match (3, (x,x));

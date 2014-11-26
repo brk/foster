@@ -13,7 +13,7 @@ foo = { x : Int32 =>
 
 bar = { x : Int32 =>
   expect_i32 x;
-  r = (ref foo);
+  r = (prim ref foo);
   0
 };
 
@@ -37,7 +37,7 @@ foo = { x : Int32 =>
 
 bar = { x : Int32 =>
   expect_i32 x;
-  r = (ref foo);
+  r = (prim ref foo);
   ()
 };
 

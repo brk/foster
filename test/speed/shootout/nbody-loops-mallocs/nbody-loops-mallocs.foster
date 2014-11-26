@@ -29,7 +29,7 @@ mar = { p : Planet => case p of $Planet _ _ _  _ _ _  v -> v end };
 mkPlanet = { px : Float64 => py : Float64 => pz : Float64 =>
              vx : Float64 => vy : Float64 => vz : Float64 =>
              mass : Float64 =>
-  Planet (ref px) (ref py) (ref pz) (ref vx) (ref vy) (ref vz) (ref mass)
+  Planet (prim ref px) (prim ref py) (prim ref pz) (prim ref vx) (prim ref vy) (prim ref vz) (prim ref mass)
 };
 
 mkBodies = { nbodies : Int32 =>
@@ -98,7 +98,7 @@ dot_bodyPos = { b : Planet =>
 };
 
 energy = { bodies : Array Planet =>
-  let e = (ref 0.0); in
+  let e = (prim ref 0.0); in
     arrayEnum bodies { b1 : Planet => i : Int64 =>
       incrByFloat64 e (0.5 *f64 ma b1 *f64 dot_bodyPos b1);
       arrayEnumFrom bodies (incr64 i) { b2: Planet => jj : Int64 =>
@@ -165,9 +165,9 @@ advance = { bodies : Array Planet => i : Ref Int64
 };
 
 offset-momentum = { bodies : Array Planet =>
-  let rx = (ref 0.0);
-      ry = (ref 0.0);
-      rz = (ref 0.0);
+  let rx = (prim ref 0.0);
+      ry = (prim ref 0.0);
+      rz = (prim ref 0.0);
   in
     arrayEnum bodies { b : Planet => ign:Int64 =>
       incrByFloat64 rx (vx b *f64 ma b);
@@ -202,11 +202,11 @@ advance-loop = { n : Int32 => bodies : Array Planet
 };
 
 main = {
-  let n = (ref tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1));
+  let n = (prim ref tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1));
       nbodies = 5;
       bodies = mkBodies nbodies;
-      i = (ref sext_i32_to_i64 0);
-      j = (ref sext_i32_to_i64 0);
+      i = (prim ref sext_i32_to_i64 0);
+      j = (prim ref sext_i32_to_i64 0);
       l = sext_i32_to_i64 nbodies;
       dt = 1.0e-02;
   in

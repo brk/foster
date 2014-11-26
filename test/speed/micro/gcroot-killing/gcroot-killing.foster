@@ -1,6 +1,6 @@
 main = {
-  let r  = (ref 0);
-      r2 = (ref 0); // force r into root slot
+  let r  = (prim ref 0);
+      r2 = (prim ref 0); // force r into root slot
   in
     if 0 ==Int32 opaquely_i32 0
       then

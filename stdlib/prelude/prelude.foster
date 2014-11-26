@@ -193,7 +193,7 @@ newDArray = { forall v:Type,
                 n : Int32 =>
                 f : { Int32 => v } =>
   a = allocDArray:[v] n;
-  x = (ref n);
+  x = (prim ref n);
 
   until { x^ ==Int32 0 } {
       f x^      >^ a[x^ -Int32  1];
@@ -207,7 +207,7 @@ newDArray0 = { forall v:Type,
                 n : Int32 =>
                 f : { Int32 => v } =>
   a = allocDArray:[v] n;
-  x = (ref n);
+  x = (prim ref n);
 
   until { x^ ==Int32 0 } {
       y = x^ -Int32 1;
@@ -251,8 +251,8 @@ is_ascii_digit = { c : Int8 =>
 };
 
 tmp_Int32_of_base_10_Text = { t:Text =>
-  acc = (ref 0);
-  pow = (ref 1);
+  acc = (prim ref 0);
+  pow = (prim ref 1);
   base = 10;
   ok = tmp_Text_bytes_iter_reverse t { c : Int8 =>
    //print_text "is_ascii_digit c:"; // hmm, causes crash...

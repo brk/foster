@@ -528,10 +528,6 @@ ExprAST* parseIf(pTree tree) {
                        rangeOf(tree));
 }
 
-ExprAST* parseRef(pTree tree) {
-  return CallPrimAST::one("alloc", ExprAST_from(child(tree, 0)), rangeOf(tree));
-}
-
 // ^(COMPILES e)
 ExprAST* parseBuiltinCompiles(pTree t) {
  return new BuiltinCompilesExprAST(ExprAST_from(child(t, 0)), rangeOf(t));
@@ -671,7 +667,6 @@ ExprAST* parseAtom(pTree tree) {
   if (token == TERMNAME) { return parseTermVar(tree); }
   if (token == LIT_NUM)  { return parseNumFrom(tree); }
   if (token == IF)       { return parseIf(tree); }
-  if (token == REF)      { return parseRef(tree); }
   if (token == COMPILES) { return parseBuiltinCompiles(tree); }
   if (token == CASE)     { return parseCase(tree); }
   if (token == CTOR)     { return parseCtor(tree); }

@@ -105,7 +105,7 @@ t13 = {
 };
 
 let-gcroot = {
-    let r = (ref 2);
+    let r = (prim ref 2);
      in force_gc_for_debugging_purposes !;
         expect_i32 2;
         print_i32 r^;
@@ -116,7 +116,7 @@ case-gcroots = {
     let-gcroot !;
     // Make sure that the reference is not passed from
     // the case to the branch in a register (for coyping GC visibility).
-    case (ref 2)
+    case (prim ref 2)
       of r -> force_gc_for_debugging_purposes !;
               expect_i32 2;
               print_i32 r^;

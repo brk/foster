@@ -7,18 +7,18 @@ main = {
   hof-until !;
 
   expect_i1 False; print_i1 (__COMPILES__ 0 >^ 0);
-  expect_i1 False; print_i1 (__COMPILES__ let r = (ref 0); in r >^ r end);
+  expect_i1 False; print_i1 (__COMPILES__ let r = (prim ref 0); in r >^ r end);
 };
 
 
 tuprefs1 = {
-  t = ((ref opaquely_i32 1), (ref 2));
+  t = (prim ref (opaquely_i32 1), prim ref 2);
   expect_i32 1;
   case t of (r, _) -> print_i32 r^ end;
 };
 
 tuprefs2 = {
-  r = (ref (1, 2, 3, 4));
+  r = prim ref (1, 2, 3, 4);
   expect_i32 4;
   case r^ of (_, _, _, x) -> print_i32 x end;
   expect_i32 14;
@@ -27,7 +27,7 @@ tuprefs2 = {
 };
 
 simpler = {
-  r = (ref 0);
+  r = prim ref 0;
 
   expect_i32 0;
    print_i32 r^;
@@ -37,7 +37,7 @@ simpler = {
 };
 
 capture = {
-  r = (ref 0);
+  r = prim ref 0;
   f = { r^ };
 
   2 >^ r;
@@ -46,7 +46,7 @@ capture = {
 };
 
 ref-if = {
-  r = if 2 ==Int32 (opaquely_i32 2) then (ref 0) else (ref 1) end;
+  r = if 2 ==Int32 (opaquely_i32 2) then (prim ref 0) else (prim ref 1) end;
   expect_i32 0;
    print_i32 r^;
 };
@@ -64,7 +64,7 @@ hof-until-case = { c : {Bool} => b : { () } =>
 };
 
 hof-until = {
-  r = (ref 16);
+  r = (prim ref 16);
   expect_i32 16;
   expect_i32 15;
   expect_i32 14;

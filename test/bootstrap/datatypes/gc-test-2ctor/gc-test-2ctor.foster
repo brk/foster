@@ -3,7 +3,7 @@ type case V of $V1 Int32
 // we need two constructors, not one, to make sure we get bitcasts
 
 main = {
-  v = (ref (V1 0));
+  v = (prim ref (V1 0));
 
   case v^ of $V1 x -> expect_i32 x;
           of $V2   -> expect_i32 12345 end;

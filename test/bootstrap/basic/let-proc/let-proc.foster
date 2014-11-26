@@ -8,7 +8,7 @@ main = {
 g = { x : Int32 => { x } };
 
 call_deref_a = {
-  r = (ref g);
+  r = (prim ref g);
   gg = r^;
 
   expect_i32 3;
@@ -18,7 +18,7 @@ call_deref_a = {
 f = { x : Int32 => x };
 
 call_deref_b = {
-  r = (ref f);
+  r = (prim ref f);
   gg = r^;
 
   expect_i32 3;

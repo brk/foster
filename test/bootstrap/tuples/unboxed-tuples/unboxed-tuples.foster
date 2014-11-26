@@ -20,7 +20,7 @@ build-boxed = {
 
 build-unboxed-ref = {
   let t = prim tuple-unboxed 1 2 3;
-      a = (ref t); in
+      a = (prim ref t); in
      expect_i32 0;
      force_gc_for_debugging_purposes !;
      print_i32 0;
@@ -30,7 +30,7 @@ build-unboxed-ref = {
 /*
   This gets K-normalized to:
         let t = prim tuple 1 2 3;
-            a = (ref t); in ... end
+            a = (prim ref t); in ... end
   Which yields the following layout:
 
          stack    |   heap
@@ -41,7 +41,7 @@ build-unboxed-ref = {
                   |
 */
 build-boxed-ref = {
-  let a = (ref prim tuple 1 2 3); in
+  let a = (prim ref prim tuple 1 2 3); in
      expect_i32 0;
      force_gc_for_debugging_purposes !;
      print_i32 0;
