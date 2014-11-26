@@ -99,9 +99,9 @@ monoKN subst e =
   KNCompiles    r t e      -> liftM2 (KNCompiles r) (qt t) (monoKN subst e)
   KNCall          t v vs   -> do t' <- qt t
                                  let t'' = substRefinementArgs v t' vs
-                                 liftIO $ putStrLn "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"
-                                 liftIO $ putStrLn $ show t'
-                                 liftIO $ putStrLn $ show t''
+                                 --liftIO $ putStrLn "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"
+                                 --liftIO $ putStrLn $ show t'
+                                 --liftIO $ putStrLn $ show t''
                                  liftM2 (KNCall t'') (qv v) (mapM qv vs)
   KNInlined {} -> error $ "Monomo.hs expects inlining to run after monomorphization!"
   -- The cases involving sub-expressions are syntactically heavier,

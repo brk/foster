@@ -224,8 +224,8 @@ scRunZ3 expr script = lift $ do
     Left x -> throwError [text x, knMonoLikePretty expr, string (show doc)]
     Right ("unsat":"sat":_) -> return ()
     Right ["unsat","unsat"] -> do
-        liftIO $ putStrLn $ "WARNING: scRunZ3 returning OK due to inconsistent context..."
-        liftIO $ putStrLn $ "   This is either dead code or a buggy implementation of our SMT query generation."
+        dbgStr $ "WARNING: scRunZ3 returning OK due to inconsistent context..."
+        dbgStr $ "   This is either dead code or a buggy implementation of our SMT query generation."
         return ()
     Right strs -> throwError ([text "Unable to verify precondition or postcondition associated with expression",
                                case maybeSourceRangeOf expr of
@@ -265,6 +265,12 @@ checkModuleExprs expr facts =
       return ()
     _ -> error $ "Unexpected expression in checkModuleExprs: " ++ show expr
 
+    {-
+dbgStr x = liftIO $ putStrLn x
+dbgDoc x = liftIO $ putDocLn x
+-}
+dbgStr x = return ()
+dbgDoc x = return ()
 
 checkFn fn facts = do
   evalStateT (checkFn' fn facts) (SCState Map.empty)
@@ -273,9 +279,9 @@ checkFn' fn facts0 = do
   facts'   <- withBindings (fnVar fn) (fnVars fn) facts0
   facts''  <- foldlM recordIfHasFnPrecondition facts' (fnVars fn)
 
-  liftIO $ putDoc $ text "checking body " <$> indent 2 (pretty (fnBody fn)) <> line
+  dbgDoc $ text "checking body " <$> indent 2 (pretty (fnBody fn))
   f <- checkBody (fnBody fn) facts''
-  liftIO $ putStrLn $ "... checked body"
+  dbgStr $ "... checked body"
 
   whenRefined (monoFnTypeRange $ fnType fn) $ \v e -> do
     -- An expression summarizing our static knowledge of the fn body/return value.
@@ -311,17 +317,17 @@ withBindings fnv vs facts0 = do
       mbFnOfRefinement _                   = []
 
       refinements = concatMap mbFnOfRefinement (map tidType vs)
-      foldPathFact facts f = do liftIO $ putStrLn $ "withBindings calling smtEvalApp... { "
+      foldPathFact facts f = do dbgStr $ "withBindings calling smtEvalApp... { "
                                 e <- smtEvalApp facts f relevantActuals
-                                liftIO $ putStrLn $ "withBindings called  smtEvalApp... } "
+                                dbgStr $ "withBindings called  smtEvalApp... } "
                                 return $ mergeSMTExprAsPathFact e facts
   facts <- foldlM foldPathFact facts0 refinements
 
-  --liftIO $ putStrLn $ "%%%%%%%%%%%%%%%%%%%%%%%%%%%"
-  --liftIO $ putStrLn $ "refinements: " ++ show (map pretty refinements)
-  --liftIO $ putStrLn $ "fnVars fn:   " ++ show (fnVars fn)
-  --liftIO $ putStrLn $ "relevantFormals: " ++ show relevantFormals
-  --liftIO $ putStrLn $ "relevantActuals: " ++ show relevantActuals
+  --dbgStr $ "%%%%%%%%%%%%%%%%%%%%%%%%%%%"
+  --dbgStr $ "refinements: " ++ show (map pretty refinements)
+  --dbgStr $ "fnVars fn:   " ++ show (fnVars fn)
+  --dbgStr $ "relevantFormals: " ++ show relevantFormals
+  --dbgStr $ "relevantActuals: " ++ show relevantActuals
 
   -- Before processing the body, add declarations for the function formals,
   -- and record the preconditions associated with any function-typed formals.
@@ -422,7 +428,7 @@ checkBody expr facts =
         return $ withDecls facts $ \x -> return $ smtId x === litOfSize (fromInteger $ litIntValue i) (intSizeBitsOf ty)
     KNLiteral _ (LitBool b) ->
         return $ withDecls facts $ \x -> return $ smtId x === (if b then SMT.true else SMT.false)
-    KNLiteral     {} -> do liftIO $ putStrLn $ "no constraint for literal " ++ show expr
+    KNLiteral     {} -> do dbgStr $ "no constraint for literal " ++ show expr
                            return Nothing
 
     KNVar v -> return $ withDecls facts $ \x -> return $ smtId x === smtVar v
@@ -437,9 +443,9 @@ checkBody expr facts =
         -- If the array has an annotation, use it.
         mb_f <- scGetFact (tidIdent a)
         case mb_f of
-          Nothing -> do liftIO $ putStrLn $ "no constraint on output of array read"
+          Nothing -> do dbgStr $ "no constraint on output of array read"
                         return Nothing
-          Just f -> do liftIO $ putStrLn $ "have a constraint on output of array read: " ++ show (f (tidIdent a))
+          Just f -> do dbgStr $ "have a constraint on output of array read: " ++ show (f (tidIdent a))
                        return $ withDecls facts $ \x -> return $ f x
 
 
@@ -460,10 +466,10 @@ checkBody expr facts =
     KNArrayLit (ArrayType (RefinedType v e _ids)) _v entries -> do
         let resid = Ident (T.pack ".xyz") 0
             go entry = do
-              --liftIO $ putDocLn $ text "obeysRefinement"
-              --liftIO $ putDocLn $ text "         v:" <+> indent 2 (pretty v    )
-              --liftIO $ putDocLn $ text "         e:" <+> indent 2 (pretty e    )
-              --liftIO $ putDocLn $ text "     entry:" <+> indent 2 (pretty entry)
+              --dbgDoc $ text "obeysRefinement"
+              --dbgDoc $ text "         v:" <+> indent 2 (pretty v    )
+              --dbgDoc $ text "         e:" <+> indent 2 (pretty e    )
+              --dbgDoc $ text "     entry:" <+> indent 2 (pretty entry)
 
               mb_f2 <- checkBody e facts
               SMTExpr body decls idfacts <- (trueOr mb_f2) resid
@@ -482,8 +488,8 @@ checkBody expr facts =
                   lostFacts = (identFacts facts'1) `butnot` idfacts'
 
               let thm = scriptImplyingBy' (smtId resid) facts'4
-              --liftIO $ putStrLn "mach-array-lit w/ refinement type checking the following script:"
-              --liftIO $ putDocLn $ indent 4 (prettyCommentedScript thm)
+              --dbgStr "mach-array-lit w/ refinement type checking the following script:"
+              --dbgDoc $ indent 4 (prettyCommentedScript thm)
               scRunZ3 expr thm
         mapM_ go entries
 
@@ -532,7 +538,7 @@ checkBody expr facts =
         return $ withDecls facts $ \x -> return $ smtId x === lift2 bvsdiv (smtVars vs)
 
     KNCallPrim _ _ty prim vs -> do
-        liftIO $ putStrLn $ "TODO: checkBody attributes for call prim " ++ show prim ++ " $ " ++ show vs
+        dbgStr $ "TODO: checkBody attributes for call prim " ++ show prim ++ " $ " ++ show vs
         return Nothing
 
     KNInlined _t0 _to _tn _old new -> checkBody new facts
@@ -562,7 +568,7 @@ checkBody expr facts =
             forM_ (zip formals vs) $ \(formalTy, arg) -> do
               case formalTy of
                 FnType {} ->
-                  liftIO $ putStrLn "check precondition implication (TODO!)"
+                  dbgStr "check precondition implication (TODO!)"
                   {-
                   case (monoFnPrecondition formalTy, monoFnPrecondition (tidType arg)) of
                     (HavePrecondition pf, HavePrecondition pa) -> do
@@ -579,37 +585,37 @@ checkBody expr facts =
                 _ -> return ()
           _ -> return ()
 
-        liftIO $ putStrLn $ "KNCall " ++ show (pretty expr)
+        dbgStr $ "KNCall " ++ show (pretty expr)
         -- Does the called function have a precondition?
         -- See also mkPrecondGen / compilePreconditionFn
         case fromMaybe [] $ getMbFnPreconditions facts (tidIdent v) of
           [] -> do
-            liftIO $ putStrLn $ "TODO: call of function with result type " ++ show ty ++ " ; " ++ show (v)
-            liftIO $ putStrLn $ "           (no precond)"
+            dbgStr $ "TODO: call of function with result type " ++ show ty ++ " ; " ++ show (v)
+            dbgStr $ "           (no precond)"
             return Nothing
           fps -> do
-            liftIO $ putStrLn $ "TODO: call of function with result type " ++ show ty ++ " ; " ++ show (tidIdent v)
-            liftIO $ putStrLn $ "           (have precond)"
+            dbgStr $ "TODO: call of function with result type " ++ show ty ++ " ; " ++ show (tidIdent v)
+            dbgStr $ "           (have precond)"
             let checkPrecond fp = do
                 SMTExpr e decls idfacts <- fp vs
-                liftIO $ putStrLn $ "checkPrecond[ " ++ show vs ++ " ] " ++ show (SMT.pp e) ++ ";;;;;" ++ show idfacts
+                dbgStr $ "checkPrecond[ " ++ show vs ++ " ] " ++ show (SMT.pp e) ++ ";;;;;" ++ show idfacts
                 let thm = scriptImplyingBy (SMTExpr e decls idfacts)  facts
-                liftIO $ putStrLn $ "fn precond checking this script:"
-                liftIO $ putStrLn $ show (prettyCommentedScript thm)
+                dbgStr $ "fn precond checking this script:"
+                dbgStr $ show (prettyCommentedScript thm)
                 scRunZ3 expr thm
             mapM_ checkPrecond fps
             return Nothing
 
     KNLetVal      id   e1 e2    -> do
-        --liftIO $ putStrLn $ "letval checking bound expr for " ++ show id
-        --liftIO $ putDocLn $ indent 8 (pretty e1)
+        --dbgStr $ "letval checking bound expr for " ++ show id
+        --dbgDoc $ indent 8 (pretty e1)
         mb_f   <- checkBody e1 facts
         facts' <- whenRefinedElse (typeKN e1) (compileRefinementBoundTo id facts) facts
         case mb_f of
-          Nothing -> do liftIO $ putStrLn $ "  no fact for id binding " ++ show id
-                        liftIO $ putStrLn $ "       with type " ++ show (pretty (typeKN e1))
+          Nothing -> do dbgStr $ "  no fact for id binding " ++ show id
+                        dbgStr $ "       with type " ++ show (pretty (typeKN e1))
                         checkBody e2 (addSymbolicVars facts' [TypedId (typeKN e1) id])
-          Just f  -> do liftIO $ putStrLn $ "have fact for id binding " ++ show id
+          Just f  -> do dbgStr $ "have fact for id binding " ++ show id
                         newfact <- f id
                         checkBody e2 (addIdentFact facts' id newfact (typeKN e1))
 
@@ -667,8 +673,8 @@ whenRefinedElse ty f d =
 recordIfHasFnPrecondition facts v@(TypedId ty id) =
   case ty of
     FnType {} -> do
-      liftIO $ putDocLn $ text $ "computeRefinements for " ++ show v ++ " was "
-      liftIO $ putDocLn $ indent 4 $ pretty (computeRefinements v)
+      dbgDoc $ text $ "computeRefinements for " ++ show v ++ " was "
+      dbgDoc $ indent 4 $ pretty (computeRefinements v)
       case computeRefinements v of
         [] -> return $ facts
         preconds -> return $ facts { fnPreconds = Map.insert id (map (mkPrecondGen facts) preconds) (fnPreconds facts) }
@@ -685,7 +691,7 @@ mkPrecondGen facts fn = \argVars -> do
 compilePreconditionFn :: Fn RecStatus KNMono MonoType -> Facts
                       -> [TypedId MonoType] -> SC SMTExpr
 compilePreconditionFn fn facts argVars = do
-  liftIO $ putStrLn $ "compilePreconditionFn<" ++ show (length argVars) ++ " vs " ++ show (length (fnVars fn)) ++ " # " ++ show argVars ++ "> ;; " ++ show fn
+  dbgStr $ "compilePreconditionFn<" ++ show (length argVars) ++ " vs " ++ show (length (fnVars fn)) ++ " # " ++ show argVars ++ "> ;; " ++ show fn
   resid <- lift $ ccFreshId $ identPrefix $ fmapIdent (T.append (T.pack "res$")) $ tidIdent (fnVar fn)
   let facts' = addSymbolicVars facts ((TypedId (PrimInt I1) resid):(argVars ++ fnVars fn))
   facts'' <- foldlM recordIfHasFnPrecondition facts' (fnVars fn)

@@ -869,7 +869,7 @@ tcRhoFn ctx f expTy = do
 -- {{{
 tcSigmaFn :: Context SigmaTC -> FnAST TypeAST -> Expected SigmaTC -> Tc (AnnExpr SigmaTC)
 tcSigmaFn ctx fnAST expTyRaw = do
-  tcLift $ putStrLn $ "****************tcSigmaFn: nexpTyRaw is " ++ show expTyRaw ++ " for " ++ show (fnAstName fnAST)
+  debug2 $ "****************tcSigmaFn: nexpTyRaw is " ++ show expTyRaw ++ " for " ++ show (fnAstName fnAST)
   case (fnTyFormals fnAST, expTyRaw) of
     ([], Check (ForAllTC exp_ktvs _)) ->
         -- Our function didn't have a forall, but its type annotation did.
@@ -944,11 +944,11 @@ tcSigmaFn ctx fnAST expTyRaw = do
                      tcFails [text $ "Cannot yet check a function which has refinements"
                              ++ " on both its explicit argument bindings and its type signature."]
                    (ar, vr) -> do
-                     tcLift $ putDocLn $ string "!!!!!!!!!!!!!!!!!!!!!!!! (sigma)"
-                     tcLift $ putDocLn $ text (show $ fnAstName fnAST)
-                     tcLift $ putDocLn $ text "args/vars refined: " <> pretty (ar,vr)
-                     tcLift $ putDocLn $ string "var_tys: " <+> pretty var_tys
-                     tcLift $ putDocLn $ string "arg_tys: " <+> pretty arg_tys
+                     debugDoc3 $ string "!!!!!!!!!!!!!!!!!!!!!!!! (sigma)"
+                     debugDoc3 $ text (show $ fnAstName fnAST)
+                     debugDoc3 $ text "args/vars refined: " <> pretty (ar,vr)
+                     debugDoc3 $ string "var_tys: " <+> pretty var_tys
+                     debugDoc3 $ string "arg_tys: " <+> pretty arg_tys
 
                      mapM_ (tcSelectTy annot) (zip arg_tys var_tys)
 
@@ -1065,7 +1065,7 @@ tcRhoFnHelper ctx f expTy = do
                            -- types associated with the function's arg vars,
                            -- but we can't alter the context's expectations.
 
-                           tcLift $ putDocLn $ text "checking subsumption betweeen " <$> indent 4 (pretty (zip arg_tys var_tys))
+                           debugDoc3 $ text "checking subsumption betweeen " <$> indent 4 (pretty (zip arg_tys var_tys))
                            _ <- sequence [subsCheckTy argty varty "mono-fn-arg" |
                                            (argty, varty) <- zip arg_tys var_tys]
 
@@ -1080,11 +1080,11 @@ tcRhoFnHelper ctx f expTy = do
                                          -- When we remove this check, we should un-comment one of the tests in
                                          -- bootstrap/testscase/test-fn-precond-2
                                (ar, vr) -> do
-                                 tcLift $ putDocLn $ string "!!!!!!!!!!!!!!!!!!!!!!!! (rho)"
-                                 tcLift $ putDocLn $ text (show $ fnAstName f)
-                                 tcLift $ putDocLn $ text "args/vars refined: " <> pretty (ar,vr)
-                                 tcLift $ putDocLn $ string "var_tys: " <+> pretty var_tys
-                                 tcLift $ putDocLn $ string "arg_tys: " <+> pretty arg_tys
+                                 debugDoc3 $ string "!!!!!!!!!!!!!!!!!!!!!!!! (rho)"
+                                 debugDoc3 $ text (show $ fnAstName f)
+                                 debugDoc3 $ text "args/vars refined: " <> pretty (ar,vr)
+                                 debugDoc3 $ string "var_tys: " <+> pretty var_tys
+                                 debugDoc3 $ string "arg_tys: " <+> pretty arg_tys
 
                            -- TODO select between arg_tys and var_tys,
                            -- use to re-type the uniquelynamedformals...
@@ -1128,8 +1128,8 @@ tcRhoFnHelper ctx f expTy = do
 
     fnty' <- zonkType fnty
 
-    tcLift $ putStrLn $ "fnty for " ++ (show (fnAstName f)) ++ " is " ++ show fnty
-    tcLift $ putStrLn $ "zonked fnty for " ++ (show (fnAstName f)) ++ " is " ++ show fnty'
+    debug2 $ "fnty for " ++ (show (fnAstName f)) ++ " is " ++ show fnty
+    debug2 $ "zonked fnty for " ++ (show (fnAstName f)) ++ " is " ++ show fnty'
 
     -- Note we collect free vars in the old context, since we can't possibly
     -- capture the function's arguments from the environment!
@@ -1339,12 +1339,11 @@ tcRhoCase ctx rng scrutinee branches expTy = do
         ts <- mapM (\ty -> instSigmaWith ktvs ty metas) types
         ps <- sequence [checkPattern ctx p t | (p, t) <- zip eps ts]
 
-        when tcVERBOSE $ tcLift $ do
-          putStrLn $ "checkPattern for "   ++ show (pretty pattern)
-          putStrLn $ "*** P_Ctor -  ty   " ++ show (pretty ty     )
-          putStrLn $ "*** P_Ctor -  ty   " ++ show (pretty ctxTy  )
-          putStrLn $ "*** P_Ctor - metas " ++ show (pretty metas  )
-          putStrLn $ "*** P_Ctor - sgmas " ++ show (pretty ts     )
+        debug $ "checkPattern for "   ++ show (pretty pattern)
+        debug $ "*** P_Ctor -  ty   " ++ show (pretty ty     )
+        debug $ "*** P_Ctor -  ty   " ++ show (pretty ctxTy  )
+        debug $ "*** P_Ctor - metas " ++ show (pretty metas  )
+        debug $ "*** P_Ctor - sgmas " ++ show (pretty ts     )
 
         unify ty ctxTy ("checkPattern:P_Ctor " ++ show cid)
         return $ P_Ctor r ty ps info
@@ -1799,10 +1798,10 @@ tcContext emptyCtx ctxAST = do
   sanityCheck (null $ contextTypeBindings ctxAST)
         "Expected to start typechecking with an empty lexical type environment"
 
-  tcLift $ putStrLn "converting Context TypeAST to Context TypeTC"
-  tcLift $ putStrLn (show ctxAST)
+  debug2 "converting Context TypeAST to Context TypeTC"
+  debug2 (show ctxAST)
   ctx <- liftContextM (tcType emptyCtx) ctxAST
-  tcLift $ putStrLn "done converting Context TypeAST to Context TypeTC"
+  debug2 "done converting Context TypeAST to Context TypeTC"
 
   -- For now, we disallow mutually recursive data types
   let checkDataType :: (String, [DataType TypeTC]) -> Tc ()
@@ -1941,8 +1940,10 @@ type Term = ExprAST TypeAST
 tcVERBOSE = False
 
 debug    s = do when tcVERBOSE (tcLift $ putStrLn s)
+debug2   s = do when tcVERBOSE (tcLift $ putStrLn s)
 debugDoc d = do when tcVERBOSE (tcLift $ putDocLn d)
 debugDoc2 d = do when tcVERBOSE (tcLift $ putDocLn d)
+debugDoc3 d = do when tcVERBOSE (tcLift $ putDocLn d)
 
 -- The free-variable determination logic here is tested in
 --      test/bootstrap/testcases/rec-fn-detection
