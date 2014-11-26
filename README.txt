@@ -90,6 +90,17 @@ Ubuntu 10.10:
 	        sudo add-apt-repository ppa:chris-lea/node.js
 	        sudo apt-get install nodejs npm
 
+      For CVC4, add the following lines to /etc/apt/sources.list::
+
+          deb http://cvc4.cs.nyu.edu/debian/ unstable/
+          deb-src http://cvc4.cs.nyu.edu/debian/ unstable/
+
+      Then::
+
+          $ sudo apt-get update
+          $ sudo apt-get install cvc4 libcvc4-dev
+
+
 Mac OS X:
 	Interesting ports (via MacPorts):
 
