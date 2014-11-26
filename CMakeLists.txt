@@ -1,4 +1,35 @@
 cmake_minimum_required (VERSION 2.8)
+
+# We need to set up the compiler paths before calling project()...
+# ~~~~~~~~~~~~~~~~~~~~
+
+set(LLVM_VERSION 3.5)
+
+find_program(LLVM_CONFIG NAMES llvm-config llvm-config-${LLVM_VERSION}
+  PATHS
+    $ENV{HOME}/llvm/${LLVM_VERSION}/bin
+    $ENV{HOME}/sw/local/llvm-${LLVM_VERSION}/bin
+    /usr/lib/llvm-${LLVM_VERSION}/bin
+  DOC "llvm-config")
+
+execute_process(COMMAND ${LLVM_CONFIG} --bindir OUTPUT_VARIABLE LLVM_BINDIR)
+
+# If llvm-config isn't found, LLVM_BINDIR will be empty
+# and CMake will report an error here.
+string(REPLACE "\n" "" LLVM_BINDIR ${LLVM_BINDIR})
+
+find_program(CLANG NAMES clang++-${LLVM_VERSION} clang++
+  PATHS
+    ${LLVM_BINDIR}
+  DOC "C++ compiler to emit LLVM bytecode: clang++")
+
+string(REPLACE "++" "" CLANG_C ${CLANG})
+
+set(CMAKE_CXX_COMPILER ${CLANG})
+set(CMAKE_C_COMPILER ${CLANG_C})
+
+# ~~~~~~~~~~~~~~~~~~~~
+# ... Okay, now we can proceed.
 project (foster)
 
 cmake_policy(VERSION 2.8.0)
@@ -6,8 +37,6 @@ cmake_policy(VERSION 2.8.0)
 ####################### Configuration Rules ########################
 
 set(LIBRARY_OUTPUT_PATH ${PROJECT_BINARY_DIR}/_nativelibs_)
-
-set(LLVM_VERSION 3.5)
 
 # ~~~~~~~~~~~~~~~~~~~~ ANTLR ~~~~~~~~~~~~~~~~~~~~~
 
@@ -45,12 +74,6 @@ find_program(HPROTOC NAMES hprotoc
   DOC "hprotoc: Protobuf compiler for Haskell")
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~ LLVM ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-find_program(LLVM_CONFIG NAMES llvm-config
-  PATHS
-    $ENV{HOME}/llvm/${LLVM_VERSION}/bin
-    $ENV{HOME}/sw/local/llvm-${LLVM_VERSION}/bin
-    /usr/lib/llvm-${LLVM_VERSION}/bin
-  DOC "llvm-config")
 
 # Get flags for LLVM
 execute_process(COMMAND ${LLVM_CONFIG} --cxxflags
@@ -98,28 +121,6 @@ endif (${LLVM_ORIGINAL_CFLAGS} MATCHES         ${NO_RTTI_FLAG})
   set (LLVM_EXTRA_CFLAGS "${LLVM_EXTRA_CFLAGS} ${NDEBUG_FLAG}")
 endif (${LLVM_ORIGINAL_CFLAGS} MATCHES         ${NDEBUG_FLAG})
 
-# Hack for now: rather than running all programs JITted from the main fosterc
-# compiler binary (and embedding the foster runtime inside the foster compiler)
-# we instead compile the foster runtime with clang++ to bitcode, then link the
-# foster runtime bitcode in along with the bitcode for a program to run it.
-#
-find_program(CLANG NAMES clang++-${LLVM_VERSION} clang++
-  PATHS
-        /usr/bin
-        $ENV{HOME}/llvm/${LLVM_VERSION}/bin
-  DOC "C++ compiler to emit LLVM bytecode: clang++")
-
-set(CMAKE_CXX_COMPILER ${CLANG})
-
-execute_process(COMMAND ${LLVM_CONFIG} --bindir OUTPUT_VARIABLE LLVM_BINDIR)
-
-# If llvm-config isn't found, LLVM_BINDIR will be empty
-# and CMake will report an error here.
-string(REPLACE "\n" "" LLVM_BINDIR ${LLVM_BINDIR})
-
-string(REPLACE "++" "" CLANG_C ${CLANG})
-set(CMAKE_C_COMPILER ${CLANG_C})
-
 # Collect the linker flags for us to link against LLVM
 set(LLVM_COMPONENTS_NEEDED all)
 
@@ -133,6 +134,11 @@ string(REPLACE "\n" " " LLVM_LDFLAGS "${LLVM_LDFLAGS}")
 string(STRIP "${LLVM_LDFLAGS}" LLVM_LDFLAGS)
 
 find_package(Threads REQUIRED)
+
+# Rather than running all programs JITted from the main fosterc
+# compiler binary (and embedding the foster runtime inside the foster compiler)
+# we instead compile the foster runtime with clang++ to bitcode, then link the
+# foster runtime bitcode in along with the bitcode for a program to run it.
 
 # TODO: provide ${CMAKE_THREAD_LIBS_INIT} to compile scripts
 
@@ -461,6 +467,12 @@ set_target_properties(fosterc_llvm fosterc_base
   COMPILE_FLAGS ${LLVM_EXTRA_CFLAGS}
 )
 
+#####################################################################
+# https://github.com/martine/ninja/issues/174
+if (CMAKE_GENERATOR STREQUAL "Ninja")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fcolor-diagnostics")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fcolor-diagnostics")
+endif()
 #####################################################################
 
 add_custom_target(regress
