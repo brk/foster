@@ -515,6 +515,16 @@ public:
     }
   }
 
+  void* try_allocate_cell(typemap* typeinfo) {
+    int64_t cell_size = typeinfo->cell_size; // includes space for cell header.
+
+    if (curr->can_allocate_bytes(cell_size)) {
+      return curr->allocate_cell_prechecked(typeinfo);
+    } else {
+      return NULL;
+    }
+  }
+
   template <int N>
   void* allocate_cell_N(typemap* typeinfo) {
     if (curr->can_allocate_bytes(N)) {
@@ -1089,6 +1099,10 @@ void* memalloc_cell(typemap* typeinfo) {
     allocator->force_gc_for_debugging_purposes();
   }
   return allocator->allocate_cell(typeinfo);
+}
+
+void* try_memalloc_cell(typemap* typeinfo) {
+  return allocator->try_allocate_cell(typeinfo);
 }
 
 void* memalloc_cell_16(typemap* typeinfo) {
