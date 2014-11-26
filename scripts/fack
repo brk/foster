@@ -5,4 +5,4 @@
 SD=$(dirname `which $0`)/../scripts
 R=$(python $SD/normpath.py $SD/..)
 
-ack -a -G '.*.foster' $@ ${R}/stdlib ${R}/test
+ack -a -G '.*\.foster' $@ ${R}/stdlib ${R}/test
