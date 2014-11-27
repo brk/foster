@@ -41,7 +41,9 @@ import Data.Map(Map)
 import Data.Set(Set)
 import Control.Monad.State
 import Data.IORef
-import Prelude hiding (id, last)
+import Prelude (($), head, Ord, filter, (.), IO, Maybe(..), (+), concatMap,
+                error, map, foldr, fst, snd, zip, show, (++), length, (==), (||),
+                Int, Bool(..), String, Show, reverse, (/=))
 
 data CFBody = CFB_LetFuns [Ident] [CFFn] CFBody
             | CFB_Call    MonoType MoVar [MoVar]

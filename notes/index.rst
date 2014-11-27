@@ -17,6 +17,7 @@ Foster Notes
    closures
    syntax
    arrays
+   strings
    llvm
    mutation
    parallelism
