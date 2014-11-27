@@ -26,5 +26,5 @@ main = {
 
   //expect_i32 False; // with no explicit precedence specified, should fail:
   //print_i32 (__COMPILES__ (10 `minus` 5 `minus` 2));
-  // TODO fails via assert, should fail more gracefully...
+  // DISABLED_TEST fails via assert, TODO should fail more gracefully...
 };

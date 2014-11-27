@@ -265,6 +265,8 @@ Exprs getExprs(pTree tree) {
 
 enum StmtTag { StmtExprs, StmtLetBinds, StmtRecBinds };
 
+string str(char c) { return std::string(1, c); }
+
 string str(StmtTag t) {
   if (t == StmtRecBinds) return "StmtRecBinds";
   if (t == StmtLetBinds) return "StmtLetBinds";
@@ -537,37 +539,107 @@ ExprAST* parseBool(pTree t) {
   return new BoolAST(textOf(child(t, 0)), rangeOf(t));
 }
 
-std::string contentsOfStringWithQuotes(pTree t) {
-  return textOf(child(t, 0));
+// ^(STRING type contents)
+std::string contentsOfStringWithQuotesAndRawMarker(pTree t) {
+  return textOf(child(t, 1));
 }
 
-std::string contentsOfStringWithoutQuotes(pTree t) {
-  std::string s = contentsOfStringWithQuotes(t);
-  if (s.size() >= 6) {
-    std::string::const_iterator         i = s.begin();
-    std::string::const_reverse_iterator r = s.rbegin();
-    if (i[0] == '\'' && i[1] == '\'' && i[2] == '\''
-     && r[0] == '\'' && r[1] == '\'' && r[2] == '\'') {
-      return std::string(s.begin() + 3, s.end() - 3);
-    }
-    if (i[0] == '"' && i[1] == '"' && i[2] == '"'
-     && r[0] == '"' && r[1] == '"' && r[2] == '"') {
-      return std::string(s.begin() + 3, s.end() - 3);
-    }
-  }
-
-  char f = s[0]; char b = s[s.size() - 1];
-  if ((f == '\'' && b == '\'')
-    ||(f == '"'  && b == '"')) {
-    return std::string(s.begin() + 1, s.end() - 1);
-  }
-
-  EDiag() << "Unable to determine what kind of string this is!" << s;
-  return s;
+std::string contentsOfDoubleQuotedStringWithoutQuotes(pTree t) {
+  std::string s = textOf(t);
+  int offset = s[0] == 'r' ? 2 : 1;
+  ASSERT(s.size() > (offset + 1));
+  return std::string(s.begin() + offset, s.end() - 1);
+  EDiag() << "Unable to determine what kind of string this is!" << s << "\n" << show(rangeOf(t));
 }
 
+char hexbits(char x) {
+  if (isdigit(x)) return (x - '0');
+  if (islower(x)) return (x - 'a') + 10;
+  if (isupper(x)) return (x - 'A') + 10;
+  ASSERT(false) << "can't extract hex bits from char value " << int(x); return 0;
+}
+
+// ^(STRING type wholething)
 ExprAST* parseString(pTree t) {
-  return new StringAST(contentsOfStringWithQuotes(t), rangeOf(t));
+  std::string wholething = contentsOfStringWithQuotesAndRawMarker(t);
+
+  std::string quo = textOf(child(t, 0));
+  int quotes = (quo == "TDQU" || quo == "TRTK") ? 3 : 1;
+
+  // ANTLR puts us between a rock and a hard place when it comes to handling
+  // strings. If we use lexer rules to capture string syntax, ANTLR can enforce
+  // but not inform us of the internal structure of a legal string.
+  // However, if we use grammar rules, the grammar becomes ambigous
+  // (for example, wrapping an ident with quotes changes its parse class).
+  // So, we're forced to essentially re-parse the string here, looking for
+  // escape codes and such.
+  std::string::iterator it = wholething.begin(), end = wholething.end();
+  if (wholething[0] == 'r') {
+    // Raw string; don't interpret the contents in any way, shape, or form...
+    return new StringAST(std::string(wholething.begin() + quotes + 1,
+                                     wholething.end()   - quotes), false, rangeOf(t));
+  } else {
+    bool bytes = wholething[0] == 'b';
+    // Non-raw string: walk through it and interpret escape codes.
+    std::string parsed; parsed.reserve(wholething.size());
+    it += quotes + bytes; end -= quotes;
+    while (it != end) {
+      if (*it != '\\') {
+        if (*it == '\n' && quotes == 1) {
+          ASSERT(false) << "embedded newlines not allowed within single-delimiter strings"
+                        << show(rangeOf(t));
+        }
+        if (!(*it == '\n' && bytes)) { // byte literals ignore newlines
+          parsed.push_back(*it);
+        }
+        ++it;
+      } else {
+        ++it;
+        // Escape sequence started...
+             if (*it == 't')  { parsed.push_back('\t'); ++it; }
+        else if (*it == 'n')  { parsed.push_back('\n'); ++it; }
+        else if (*it == 'r')  { parsed.push_back('\r'); ++it; }
+        else if (*it == '"')  { parsed.push_back('"'); ++it; }
+        else if (*it == '\'') { parsed.push_back('\''); ++it; }
+        else if (*it == '\\') { parsed.push_back('\\'); ++it; }
+        else if (*it == 'x' && bytes) { ++it;
+            // This is appropriate for raw bytes, but not text (Unicode...)
+            char c_hi = *it; ++it;
+            char c_lo = *it; ++it;
+            char x_hi = hexbits(c_hi);
+            char x_lo = hexbits(c_lo);
+            char byte = ((x_hi << 4) | x_lo);
+            parsed.push_back(byte);
+        }
+        else if (*it == 'u' || *it == 'U') { ++it;
+          if (*it == '{') { ++it;
+            // pretty much arbitrary stuff until a matching '}'
+            std::string stuff;
+            while (*it != '}') {
+               stuff.push_back(*it); ++it;
+            }
+            ++it;
+            ASSERT(false) << "Handling arbitrary unicode names is a TODO!"
+                    << "\nparsed out:" << stuff
+                    << "\n" << show(rangeOf(t));
+          } else {
+            if (*it == '+') ++it;
+            // either two or four hex digits...
+            char d1 = *it; ++it;
+            char d2 = *it; ++it;
+
+            ASSERT(false) << "Can't yet handle unicode escapes... " << d1 << d2
+                    << "\n" << show(rangeOf(t));
+          }
+        } else {
+          ASSERT(false) << "unexpected escape code " << str(*it) << " in string: "
+                        << "\n" << wholething
+                        << "\n" << spaces(it - wholething.begin()) << "^";
+        }
+      }
+    }
+    return new StringAST(parsed, bytes, rangeOf(t));
+  }
 }
 
 Pattern* parsePattern(pTree t);
@@ -953,7 +1025,7 @@ ModuleAST* parseTopLevel(pTree root_tree, std::string moduleName,
   for (size_t i = 0; i < getChildCount(imports); ++i) {
     pTree imp = child(imports, i);
     std::string imp_name = textOf(child(imp, 0));
-    std::string imp_text = contentsOfStringWithoutQuotes(child(imp, 1));
+    std::string imp_text = contentsOfDoubleQuotedStringWithoutQuotes(child(imp, 1));
     out_imports.push(std::make_pair(imp_name, imp_text));
   }
 

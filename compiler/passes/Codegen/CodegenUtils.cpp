@@ -125,15 +125,8 @@ Value* getElementFromComposite(Value* compositeValue, int indexValue,
 
 ////////////////////////////////////////////////////////////////////
 
-Constant* getConstantArrayOfString(const std::string& s) {
-  std::vector<llvm::Constant*> vals;
-  llvm::Type* i8 = builder.getInt8Ty();
-  for (unsigned i = 0; i < s.size(); ++i) {
-    vals.push_back(llvm::ConstantInt::get(i8, s[i]));
-  }
-  vals.push_back(llvm::ConstantInt::get(i8, 0)); // null terminator
-  llvm::ArrayType* ty = llvm::ArrayType::get(i8, vals.size());
-  return llvm::ConstantArray::get(ty, vals);
+Constant* getConstantArrayOfString(llvm::StringRef s, bool addNull) {
+  return llvm::ConstantDataArray::getString(llvm::getGlobalContext(), s, addNull);
 }
 
 // Given a stack slot named s in a function called f,

@@ -186,7 +186,11 @@ void BoolAST::dump(DumpToProtobufPass* pass) {
 
 void StringAST::dump(DumpToProtobufPass* pass) {
   processExprAST(pass, this, pb::Expr::STRING);
-  pass->exp->set_string_value(this->stringValue);
+  if (wasBytes) {
+    pass->exp->set_bytes_value(this->stringValue);
+  } else {
+    pass->exp->set_string_value(this->stringValue);
+  }
 }
 
 void IntAST::dump(DumpToProtobufPass* pass) {

@@ -21,6 +21,7 @@ import qualified Data.Graph as Graph(SCC(..), stronglyConnComp)
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Text.PrettyPrint.ANSI.Leijen as PP
 import qualified Data.Text as T
+import qualified Data.ByteString as B
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -241,6 +242,7 @@ data Literal = LitInt   LiteralInt
              | LitFloat LiteralFloat
              | LitText  T.Text
              | LitBool  Bool
+             | LitByteArray B.ByteString
              deriving (Show, Eq)
 
 data LiteralInt = LiteralInt { litIntValue   :: !Integer
@@ -271,6 +273,7 @@ instance Pretty Literal where
   pretty (LitFloat f) = dullred $ text (litFloatText f)
   pretty (LitText  t) =  dquotes (text $ T.unpack t)
   pretty (LitBool  b) =           text (if b then "True" else "False")
+  pretty (LitByteArray b) = text "b" <> dquotes (text $ show b)
 
 data WholeProgramAST fnCtor ty = WholeProgramAST {
           programASTmodules    :: [ModuleAST fnCtor ty]
@@ -315,15 +318,15 @@ data ModuleIL expr ty = ModuleIL {
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||||||| Source Ranges ||||||||||||||||||||||||{{{
 
-data ESourceLocation = ESourceLocation { sourceLocationLine :: Int
-                                       , sourceLocationCol  :: Int
+data ESourceLocation = ESourceLocation { sourceLocationLine :: !Int
+                                       , sourceLocationCol  :: !Int
                                        } deriving (Eq, Show)
 
 -- Note: sourceRangeLines is *all* lines, not just those in the range.
-data SourceRange = SourceRange { sourceRangeBegin :: ESourceLocation
-                               , sourceRangeEnd   :: ESourceLocation
-                               , sourceRangeLines :: SourceLines
-                               , sourceRangeFile  :: Maybe String
+data SourceRange = SourceRange { sourceRangeBegin :: !ESourceLocation
+                               , sourceRangeEnd   :: !ESourceLocation
+                               , sourceRangeLines :: !SourceLines
+                               , sourceRangeFile  :: !(Maybe String)
                                }
                   | MissingSourceRange String
 

@@ -367,6 +367,10 @@ LLExpr* parseArrayLiteral(const pb::Letable& e) {
   return new LLArrayLiteral(TypeAST_from_pb(&e.elem_type()), arr, args);
 }
 
+LLExpr* parseByteArray(const pb::Letable& e) {
+  return new LLByteArray(e.bytes_value());
+}
+
 LLOccurrence* parseOccurrence(const pb::Letable& e) {
   const pb::PbOccurrence& o = e.occ();
 
@@ -497,6 +501,7 @@ LLExpr* LLExpr_from_pb(const pb::Letable* pe) {
   case pb::Letable::IL_ARRAY_POKE:  rv = parseArrayPoke(e); break;
   case pb::Letable::IL_ARRAY_LENGTH:rv = parseArrayLength(e); break;
   case pb::Letable::IL_ARRAY_LITERAL:rv = parseArrayLiteral(e); break;
+  case pb::Letable::IL_BYTE_ARRAY:  rv = parseByteArray(e); break;
   case pb::Letable::IL_ALLOCATE:    rv = parseAllocate(e); break;
   case pb::Letable::IL_OCCURRENCE:  rv = parseOccurrence(e); break;
   case pb::Letable::IL_OBJECT_COPY: rv = parseObjectCopy(e); break;

@@ -1,6 +1,45 @@
 Strings
 =======
 
+Syntax
+++++++
+
+We mostly adopt Python's string syntax::
+
+     "two \n lines"
+    r"one \n line with a backslash"
+    """triple quotes"""
+    r'''or triple ticks'''
+    """multi-line
+       strings ok"""
+
+Unicode escapes are currently parsed but not interpreted; I'd like to have a
+better story for these before committing to anything more concrete.
+The above literals all have type ``Text``. There are also byte-array literals,
+which have the same escape syntax, but extended with hex escapes::
+
+    b"the\x20space\x20between"    // b"the space between"
+    b"""ab
+    cd"""                         // b"abcd" ; newline not included
+
+Byte array literals have type ``Array Int8``. We could make them be ``Bytes``,
+but the downside is that we then have to teach the compiler about another
+hard-coded type. The main advantages are that we encourage higher-level programming,
+and also we can go from ``ByteFragment`` to a byte array without allocating, but
+it seems... trickier... to guarantee that ``bytesOfRawArray b"lah"`` will statically
+allocate the ``Bytes`` wrapper in addition to the bytes thsem
+
+For text literals, code generation will emit a static array and a call to the
+implictly-inserted function ``TextFragment`` with an automatically-computed length.
+Currently this means that each "dynamic execution" of a text literal results in a
+heap allocated pair, although the ``TextFragment`` constructor could certainly be
+statically allocated in the future.
+
+Byte arrays are statically allocated.
+
+Efficient Representations
++++++++++++++++++++++++++
+
 libc++ implements strings like so::
 
          { [ size_cap  ][ size_size ][  ptr_data ] } (long)

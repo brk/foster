@@ -112,7 +112,8 @@ message Expr {
   optional SourceRange range = 4;
 
   optional string string_value = 13; // used for int text, Var, named type decl, val abs
-  optional bool   bool_value   = 14;
+  optional bool     bool_value = 14;
+  optional bytes   bytes_value = 15;
 
   optional PBCase     pb_case    = 20;
   optional PBIf       pb_if      = 21;

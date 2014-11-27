@@ -1,6 +1,6 @@
 snafuinclude Sets "set";
 
-print_bil = { lst =>
+print_bil = { lst : List { Int64 } =>
   print_text_bare "[";
   listFoldl lst { f => unit => print_i64_bare (f !); print_text_bare ", "; () } ();
   print_text "]";
@@ -41,5 +41,59 @@ main = {
     print_bil (setToList hi);
   end;
 
+  test-set-insert lst cmp;
+
+  test-set-delete lst cmp;
+
+  expect_text """   +--6
++--5
+|  +--|
+4
+|  +--2
++--1
+   +--0
+""";
+
+  setShowTree (setOfList lst cmp) shw |> print_text;
 };
 
+test-set-insert = { lst => cmp =>
+  s = setOfList lst cmp;
+
+  expect_text "[0, 1, 2, 4, 5, 6, ]";
+  setInsert { 0 } s cmp |> setToList |> print_bil;
+
+  expect_text "[0, 1, 2, 3, 4, 5, 6, ]";
+  setInsert { 3 } s cmp |> setToList |> print_bil;
+
+  expect_text "[0, 1, 2, 4, 5, 6, 8, ]";
+  setInsert { 8 } s cmp |> setToList |> print_bil;
+
+  // Same tests, but with setInsertR
+
+  expect_text "[0, 1, 2, 4, 5, 6, ]";
+  setInsertR { 0 } s cmp |> setToList |> print_bil;
+
+  expect_text "[0, 1, 2, 3, 4, 5, 6, ]";
+  setInsertR { 3 } s cmp |> setToList |> print_bil;
+
+  expect_text "[0, 1, 2, 4, 5, 6, 8, ]";
+  setInsertR { 8 } s cmp |> setToList |> print_bil;
+};
+
+
+test-set-delete = { lst => cmp =>
+  s = setOfList lst cmp;
+
+  expect_text "[1, 2, 4, 5, 6, ]";
+  setDelete { 0 } s cmp |> setToList |> print_bil;
+
+  expect_text "[0, 1, 2, 4, 5, 6, ]";
+  setDelete { 3 } s cmp |> setToList |> print_bil;
+
+  expect_text "[0, 2, 4, 5, 6, ]";
+  setDelete { 1 } s cmp |> setToList |> print_bil;
+
+  expect_text "[0, 1, 5, 6, ]";
+  setDelete { 2 } s cmp |> { s => setDelete { 4 } s cmp } |> setToList |> print_bil;
+};

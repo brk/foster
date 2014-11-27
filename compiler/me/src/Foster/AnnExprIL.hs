@@ -20,8 +20,6 @@ import qualified Data.Text as T
 import Data.UnionFind.IO(descriptor)
 import Control.Monad(when, liftM)
 
-import Debug.Trace(trace)
-
 -- Changes between AnnExpr and AnnExprIL:
 -- * Type annotation changes from TypeAST to TypeIL, which
 --   primarily means we've eliminated all unification variables.

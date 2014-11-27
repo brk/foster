@@ -374,6 +374,13 @@ struct LLArrayLiteral : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
+// Conceptually redundant, but more efficient at representing large byte arrays.
+struct LLByteArray : public LLExpr {
+  std::string bytes;
+  explicit LLByteArray(std::string b) : LLExpr("LLByteArray"), bytes(b) {}
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
 struct LLLetVals : public LLMiddle {
   std::vector<std::string> names;
   std::vector<LLExpr*>     exprs;

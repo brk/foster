@@ -26,6 +26,7 @@ import Text.ProtocolBuffers(isSet,getVal)
 import Text.ProtocolBuffers.Basic(uToString)
 
 import qualified Data.Text as T
+import qualified Data.ByteString.Lazy as L(toStrict)
 
 import Foster.Fepb.FnType   as PbFnType
 import Foster.Fepb.Type.Tag as PbTypeTag
@@ -124,7 +125,7 @@ parseCallPrim pbexpr annot = do
                                                 return $ E_KillProcess annot s
       ("inline-asm", _) ->
         case (tys, args) of
-          ([_], E_StringAST _ cnt : E_StringAST _ cns : E_BoolAST _ sideeffects : args' ) -> do
+          ([_], E_StringAST _ (Left cnt) : E_StringAST _ (Left cns) : E_BoolAST _ sideeffects : args' ) -> do
             let prim = (E_PrimAST annot "inline-asm"
                            [LitText cnt, LitText cns, LitBool sideeffects] tys)
             return $ E_CallAST annot prim args'
@@ -198,12 +199,13 @@ parseRat :: PbExpr.Expr -> ExprAnnot -> FE (ExprAST TypeP)
 parseRat pbexpr annot = do
     return $ E_RatAST annot (uToString $ getVal pbexpr PbExpr.string_value)
 
--- String literals are parsed with leading and trailing " characters,
--- so we take tail . init to strip them off.
 parseString :: PbExpr.Expr -> ExprAnnot -> FE (ExprAST TypeP)
 parseString pbexpr annot = do
-    return $ E_StringAST annot (T.init . T.tail . pUtf8ToText $
-                                 getVal pbexpr PbExpr.string_value)
+    if isSet pbexpr PbExpr.bytes_value
+      then return $ E_StringAST annot (Right $ L.toStrict $
+                                  getVal pbexpr PbExpr.bytes_value)
+      else return $ E_StringAST annot (Left $ pUtf8ToText $
+                                  getVal pbexpr PbExpr.string_value)
 
 parseLet pbexpr annot = do
     parsePBLet annot

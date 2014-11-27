@@ -16,7 +16,7 @@ import Foster.TypeLL
 import Foster.Letable
 import Foster.ProtobufUtils
 
-import qualified Data.ByteString.Lazy as L(writeFile)
+import qualified Data.ByteString.Lazy as L(writeFile, fromStrict)
 import Data.Sequence as Seq(fromList)
 import Data.Map as Map(lookup)
 
@@ -238,6 +238,10 @@ dumpLiteral ty lit =
     LitFloat f -> P'.defaultValue { PbLetable.tag   = IL_FLOAT
                                   , PbLetable.type' = Just $ dumpType ty
                                   , PbLetable.dval  = Just $ litFloatValue f
+                                  }
+    LitByteArray a -> P'.defaultValue { PbLetable.tag   = IL_BYTE_ARRAY
+                                  , PbLetable.type' = Just $ dumpType ty
+                                  , PbLetable.bytes_value  = Just $ L.fromStrict a
                                   }
 
 mkPbInt ty int = PBInt.PBInt { clean = u8fromString (show $ litIntValue int)

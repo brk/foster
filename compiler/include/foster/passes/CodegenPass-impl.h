@@ -68,7 +68,7 @@ llvm::AllocaInst* stackSlotWithValue(llvm::Value* val,
 
 void extendWithImplementationSpecificProcs(CodegenPass* _pass,
                                            std::vector<LLProc*>& procs);
-llvm::Constant* getConstantArrayOfString(const std::string& s);
+llvm::Constant* getConstantArrayOfString(llvm::StringRef s, bool addNull=true);
 
 ////////////////////////////////////////////////////////////////////
 

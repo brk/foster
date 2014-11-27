@@ -204,6 +204,7 @@ canGCLit lit = case lit of
   LitInt       {} -> WillNotGC -- unless it's a bignum...
   LitBool      {} -> WillNotGC
   LitFloat     {} -> WillNotGC
+  LitByteArray {} -> WillNotGC
 
 orMayGC (Just WillNotGC) _ = WillNotGC
 orMayGC _            maygc = maygc

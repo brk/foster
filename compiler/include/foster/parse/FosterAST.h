@@ -132,8 +132,9 @@ struct BoolAST : public ExprAST {
 
 struct StringAST : public ExprAST {
   std::string stringValue;
-  explicit StringAST(string val, foster::SourceRange sourceRange)
-    : ExprAST("StringAST", sourceRange), stringValue(val) {}
+  bool wasBytes;
+  explicit StringAST(string val, bool bytes, foster::SourceRange sourceRange)
+    : ExprAST("StringAST", sourceRange), stringValue(val), wasBytes(bytes) {}
   virtual void dump(DumpToProtobufPass* pass);
 };
 

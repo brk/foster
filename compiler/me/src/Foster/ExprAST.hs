@@ -22,6 +22,7 @@ import Foster.Kind
 
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T
+import qualified Data.ByteString as B
 
 -----------------------------------------------------------------------
 
@@ -29,7 +30,7 @@ type ExprAST ty = ExprSkel ExprAnnot ty
 
 data ExprSkel annot ty =
         -- Literals
-          E_StringAST     annot T.Text
+          E_StringAST     annot (Either T.Text B.ByteString)
         | E_BoolAST       annot Bool
         | E_IntAST        annot String
         | E_RatAST        annot String

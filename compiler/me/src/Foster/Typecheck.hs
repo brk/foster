@@ -249,7 +249,7 @@ tcRho ctx expr expTy = do
       E_IntAST    rng txt ->            typecheckInt rng txt expTy   >>= (\v -> matchExp expTy v "tcInt")
       E_RatAST    rng txt -> (typecheckRat rng txt (expMaybe expTy)) >>= (\v -> matchExp expTy v "tcRat")
       E_BoolAST   rng b              -> tcRhoBool         rng   b          expTy
-      E_StringAST rng txt            -> tcRhoText         rng   txt        expTy
+      E_StringAST rng txtorbytes     -> tcRhoTextOrBytes  rng   txtorbytes expTy
       E_MachArrayLit rng mbt args    -> tcRhoArrayLit ctx rng   mbt args   expTy
       E_CallAST   rng base argtup    -> tcRhoCall     ctx rng   base argtup expTy
       E_TupleAST  rng exprs          -> tcRhoTuple    ctx rng   exprs      expTy
@@ -280,7 +280,7 @@ tcRho ctx expr expTy = do
           -- Note: we infer a sigma, not a rho, because we don't want to
           -- instantiate a sigma with meta vars and then never bind them.
           matchExp expTy (AnnCompiles rng boolTypeTC (CompilesResult result)) "compiles"
-      E_KillProcess rng (E_StringAST _ msg) -> do
+      E_KillProcess rng (E_StringAST _ (Left msg)) -> do
           tau <- case expTy of
              (Check t) -> return t
              (Infer _) -> newTcUnificationVarTau $ "kill-process"
@@ -405,6 +405,7 @@ tcRhoBool rng b expTy = do
 --  G |- "..." :: Text
 tcRhoText rng b expTy = do
 -- {{{
+-- {{{
     let ty = TyConAppTC "Text" []
     let ab = AnnLiteral rng ty (LitText b)
     let check t =
@@ -421,6 +422,27 @@ tcRhoText rng b expTy = do
          Check t -> check t
 -- }}}
 
+tcRhoTextOrBytes rng (Left txt) expTy = tcRhoText  rng txt expTy
+tcRhoTextOrBytes rng (Right bs) expTy = tcRhoBytes rng bs  expTy
+
+--  -------------------------
+--  G |- b"..." :: Array Int8
+tcRhoBytes rng bs expTy = do
+    let ty = ArrayTypeTC (PrimIntTC I8)
+    let ab = AnnLiteral rng ty (LitByteArray bs)
+    let check t =
+          case t of
+             ArrayTypeTC (PrimIntTC I8) -> return ab
+             m@MetaTyVarTC {} -> do unify m ty "byte array literal"
+                                    return ab
+             RefinedTypeTC v _ _ -> check (tidType v)
+             t -> tcFails [text $ "Unable to check byte array constant in context"
+                                    ++ " expecting non-byte-array type " ++ show t
+                                    ++ showSourceRange (rangeOf rng)]
+    case expTy of
+         Infer r -> update r (return ab)
+         Check t -> check t
+-- }}}
 
 tcRhoArrayValue ctx tau (AE_Int annot str) = do
   AnnLiteral _ _ literal <- checkRho ctx (E_IntAST annot str) tau

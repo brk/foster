@@ -801,27 +801,28 @@ llvm::GlobalVariable* emitGlobalCell(CodegenPass* pass,
   return emitPrivateGlobal(pass, const_cell, name, alignment);
 }
 
-llvm::Value* LLText::codegen(CodegenPass* pass) {
-  llvm::Constant* sz64 = llvm::ConstantInt::get(builder.getInt64Ty(), this->stringValue.size());
-  llvm::Constant* sz32 = llvm::ConstantInt::get(builder.getInt32Ty(), this->stringValue.size());
+llvm::Value* emitByteArray(CodegenPass* pass, llvm::StringRef bytes, llvm::StringRef cellname) {
+  // the array header starts 16-byte aligned, but the data starts
+  // 8 bytes later...
+  unsigned align = 8;
 
-  std::vector<llvm::Constant*> tidy_vals;
-  tidy_vals.push_back(sz64);
-  tidy_vals.push_back(getConstantArrayOfString(this->stringValue));
+  auto const_arr_tidy = emitConstantArrayTidy(bytes.size(), getConstantArrayOfString(bytes));
 
   CtorRepr ctorRepr; ctorRepr.smallId = -1;
   auto arrayGlobal = emitGlobalCell(pass,
-                                    getTypeMapForType(TypeAST::i(8), ctorRepr, pass->mod, YesArray),
-                                    llvm::ConstantStruct::getAnon(tidy_vals),
-                                    ".str_cell");
+                        getTypeMapForType(TypeAST::i(8), ctorRepr, pass->mod, YesArray),
+                        const_arr_tidy,
+                        cellname,
+                        align);
 
-  Value* hstr = builder.CreateBitCast(
-                  getPointerToIndex(arrayGlobal, builder.getInt32(1), "cellptr"),
-                  ArrayTypeAST::getZeroLengthTypeRef(TypeAST::i(8)), "str_ptr");
+  return builder.CreateBitCast(getPointerToIndex(arrayGlobal, builder.getInt32(1), "cellptr"),
+                                ArrayTypeAST::getZeroLengthTypeRef(TypeAST::i(8)), "arr_ptr");
+}
 
+llvm::Value* LLText::codegen(CodegenPass* pass) {
+  Value* hstr = emitByteArray(pass, this->stringValue, ".txt_cell");
   Value* textfragment = pass->lookupFunctionOrDie("TextFragment");
-
-  auto call = builder.CreateCall2(textfragment, hstr, sz32);
+  auto call = builder.CreateCall2(textfragment, hstr, builder.getInt32(this->stringValue.size()));
   call->setCallingConv(llvm::CallingConv::Fast);
   return call;
 }
@@ -1019,6 +1020,9 @@ llvm::Value* LLArrayLength::codegen(CodegenPass* pass) {
   return len;
 }
 
+llvm::Value* LLByteArray::codegen(CodegenPass* pass) {
+  return emitByteArray(pass, this->bytes, ".bytes_cell");
+}
 
 llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
   // the array header starts 16-byte aligned, but the data starts

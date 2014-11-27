@@ -151,7 +151,8 @@ instance Pretty (ExprAST TypeP) where
             E_TyApp  annot e argtys -> withAnnot annot $ pretty e <> text ":[" <> hsep (punctuate comma (map pretty argtys)) <> text "]"
             E_TyCheck annot e ty    -> withAnnot annot $ parens (pretty e <+> text "as" <+> pretty ty)
             E_KillProcess annot exp -> withAnnot annot $ text "prim kill-entire-process" <+> pretty exp
-            E_StringAST   annot s   -> withAnnot annot $ dquotes (text $ T.unpack s)
+            E_StringAST   annot (Left  t) -> withAnnot annot $ text "r" <> dquotes (text $ T.unpack t)
+            E_StringAST   annot (Right b) -> withAnnot annot $ text "b" <> dquotes (text $ "<...>")
             E_BoolAST     annot b   -> withAnnot annot $ text $ show b
             E_PrimAST     annot nm []   _ -> withAnnot annot $ text nm
             E_PrimAST     annot nm lits _ -> withAnnot annot $ text nm <+> pretty lits

@@ -39,7 +39,7 @@ tokens {
 module  :       imports* decl_or_defn* EOF   ->  ^(MODULE ^(SNAFUINCLUDE imports*)
                                                            decl_or_defn*);
 
-imports :       ('snafuinclude' id str ';')       -> ^(SNAFUINCLUDE id str);
+imports :       ('snafuinclude' id s=DQUO_STR ';')     -> ^(SNAFUINCLUDE id $s);
 
 decl_or_defn :
         x ( '::' t ';'                    -> ^(DECL x t)
@@ -274,34 +274,37 @@ fragment SYMBOL_SINGLE_START : '!' | '|'
         | '?' | '+' | '*';
 
 
+TICK  : '\'';
+TRTK  : '\'\'\''; // triple-tick
+DQUO  : '"'; // double-quote
+TDQU  : '"""'; // triple double-quote
+BACKSLASH : '\\';
 
-str                     :       s=STR -> ^(STRING $s);
+str :
+        s=TICK_STR -> ^(STRING TICK $s)
+      | s=DQUO_STR -> ^(STRING DQUO $s)
+      | s=TDQU_STR -> ^(STRING TDQU $s)
+      | s=TRTK_STR -> ^(STRING TRTK $s)
+      ;
 
-fragment TICK  : '\'';
-fragment TRTK  : '\'\'\''; // triple-tick
-fragment DQUO  : '"'; // double-quote
-fragment TDQU  : '"""'; // triple double-quote
-fragment BACKSLASH : '\\';
+TICK_STR : STR_TAG? TICK TICK_STR_CONTENTS TICK;
+DQUO_STR : STR_TAG? DQUO DQUO_STR_CONTENTS DQUO;
+TDQU_STR : STR_TAG? TDQU (options {greedy=false;} : (.))* TDQU;
+TRTK_STR : STR_TAG? TRTK (options {greedy=false;} : (.))* TRTK;
+
+fragment STR_TAG : 'r' | 'b';
+fragment TICK_STR_CONTENTS : (~(BACKSLASH|TICK))* ( ESC_SEQ (~(BACKSLASH|TICK)*) )* ;
+fragment DQUO_STR_CONTENTS : (~(BACKSLASH|DQUO))* ( ESC_SEQ (~(BACKSLASH|DQUO)*) )* ;
+
 
 // TODO single-mark strings should not contain newlines,
 // but to give better error messages, we delay checking
 // until post-processing.
-STR
-  // tick,
-  // stuff that's not a tick or an escape sequence,
-  // escape sequence, then chars that won't end the string
-  //                       or start another escape sequence,
-  // tick
-    : 'r'?
-    (  TICK (~(BACKSLASH|TICK))* ( ESC_SEQ (~(BACKSLASH|TICK)*) )* TICK
-    |  DQUO (~(BACKSLASH|DQUO))* ( ESC_SEQ (~(BACKSLASH|DQUO)*) )* DQUO
-    |  TDQU (options {greedy=false;} : (.))* TDQU
-    |  TRTK (options {greedy=false;} : (.))* TRTK
-    )
-    ;
 
 // Escape sequences are limited to \n, \t, \r, \", \', \\, and \u...
-fragment ESC_SEQ        :       '\\' ('t'|'n'|'r'|'"'|TICK|'\\') | UNICODE_ESC;
+// ... but the lexer is over-permissive because lexer errors are nasty.
+// Anyhow, raw strings don't have the restriction on what comes after backslash.
+ESC_SEQ        :       BACKSLASH (~('u'|'U'|'x')) | UNICODE_ESC | HEX_ESC;
 
 // Examples of Unicode escape sequences:
 //      \u0000
@@ -321,11 +324,13 @@ fragment ESC_SEQ        :       '\\' ('t'|'n'|'r'|'"'|TICK|'\\') | UNICODE_ESC;
 //      \u{0}           -- need at least two
 //      \u{12345789}    -- too long
 //      \u{foobity}     -- no such escape!
-fragment UNICODE_ESC : '\\' ('u' | 'U')
+fragment UNICODE_ESC : BACKSLASH ('u' | 'U')
         ( '+'? HEX_DIGIT HEX_DIGIT (HEX_DIGIT HEX_DIGIT)?
         | '{' UNICODE_INNER* '}');
 fragment UNICODE_INNER
   : ('a'..'z'|'A'..'Z'|'0'..'9'|'_'|' '|'+'|'-');
+
+fragment HEX_ESC : BACKSLASH 'x' HEX_DIGIT HEX_DIGIT;
 
 
 LINE_COMMENT    :       '//' ~('\n'|'\r')* '\r'? {$channel=HIDDEN;} ;

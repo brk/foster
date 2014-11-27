@@ -136,8 +136,10 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
 
     # https://downloads.haskell.org/~ghc/7.6.2/docs/html/users_guide/prof-heap.html#rts-options-heap-prof
     if options and options.profileme:
-      ghc_rts_args.append("-p")
-      ghc_rts_args.append("-hc")
+      ghc_rts_args.append("-p") # general time profile
+      ghc_rts_args.append("-hc") # space profile (by function)
+      #ghc_rts_args.append("-hy") # space profile (by type)
+      #ghc_rts_args.append("-hd") # space profile (by ctor)
 
     parse_output = os.path.join(tmpdir, '_out.parsed.pb')
     check_output = os.path.join(tmpdir, '_out.checked.pb')

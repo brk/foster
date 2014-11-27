@@ -1,5 +1,12 @@
 snafuinclude Bytes "bytes";
 
+// The definition of the Text datatype is hard-wired into the compiler,
+// but here it is for reference:
+//
+//   type case Text
+//         of $TextFragment Bytes     Int64 (length in ... bytes?)
+//         of $TextConcat   Text Text Int64
+
 mkTextConcat = { a : Text => b : Text =>
   lensum = (textLength a) +Int32 (textLength b);
   small  = 120; // we'll be willing to memcpy buffers smaller than this.

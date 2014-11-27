@@ -198,7 +198,7 @@ setLookupGE = { forall a:Type, s => e => cmp =>
 // If an element is equivalent to one already in the set,
 // the new element replaces the old one.
 setInsert :: forall a:Type, { a => Set a => { a => a => Ord } => Set a };
-setInsert = { forall a:Type, e : a => s => cmp =>
+setInsert = { e => s => cmp =>
   REC go = { s =>
       case s
         of $SetTip           -> setSingleton e
@@ -213,13 +213,11 @@ setInsert = { forall a:Type, e : a => s => cmp =>
   go s;
 };
 
-// TODO the e : a annotation is only needed due to a compiler bug (2013/03/15).
-
 // O(lg n)
 // If an element is equivalent to one already in the set,
 // the original set is returned, not a new set.
 setInsertR :: forall a:Type, { a => Set a => { a => a => Ord } => Set a };
-setInsertR = { forall a:Type, e : a => s => cmp =>
+setInsertR = { e => s => cmp =>
   REC go = { s =>
       case s
         of $SetTip           -> setSingleton e
@@ -237,8 +235,8 @@ setInsertR = { forall a:Type, e : a => s => cmp =>
 // O(lg n)
 // If an element is equivalent to one already in the set,
 // the original set is returned, not a new set.
-setDelete :: forall a:Type, { Set a => a => { a => a => Ord } => Set a };
-setDelete = { forall a:Type, s => e => cmp =>
+setDelete :: forall a:Type, { a => Set a => { a => a => Ord } => Set a };
+setDelete = { e => s => cmp =>
   REC go = { s =>
       case s
         of $SetTip           -> s
@@ -256,7 +254,7 @@ setDelete = { forall a:Type, s => e => cmp =>
 ////////////
 
 setInsertMin :: forall a:Type, { a => Set a => Set a };
-setInsertMin = { forall a:Type, x => s =>
+setInsertMin = { x => s =>
   case s
     of $SetTip         -> setSingleton x
     of $SetBin _ y l r -> setBalanceL y (setInsertMin x l) r
@@ -264,7 +262,7 @@ setInsertMin = { forall a:Type, x => s =>
 };
 
 setInsertMax :: forall a:Type, { a => Set a => Set a };
-setInsertMax = { forall a:Type, x => s =>
+setInsertMax = { x => s =>
   case s
     of $SetTip         -> setSingleton x
     of $SetBin _ y l r -> setBalanceR y l (setInsertMax x r)
@@ -275,7 +273,7 @@ setInsertMax = { forall a:Type, x => s =>
 
 // O(n+m)
 setUnion :: forall a:Type, { Set a => Set a => { a => a => Ord } => Set a };
-setUnion = { forall a:Type, s1 => s2 => cmp =>
+setUnion = { s1 => s2 => cmp =>
   case (s1, s2)
     of ($SetTip, _) -> s2
     of (_, $SetTip) -> s1
@@ -285,7 +283,7 @@ setUnion = { forall a:Type, s1 => s2 => cmp =>
 
 // O(n+m)
 setDifference :: forall a:Type, { Set a => Set a => { a => a => Ord } => Set a };
-setDifference = { forall a:Type, s1 => s2 => cmp =>
+setDifference = { s1 => s2 => cmp =>
   case (s1, s2)
     of ($SetTip, _) -> s1
     of (_, $SetTip) -> s1
@@ -295,7 +293,7 @@ setDifference = { forall a:Type, s1 => s2 => cmp =>
 
 // O(n+m)
 setIntersection :: forall a:Type, { Set a => Set a => { a => a => Ord } => Set a };
-setIntersection = { forall a:Type, s1 => s2 => cmp =>
+setIntersection = { s1 => s2 => cmp =>
   case (s1, s2)
     of ($SetTip, _) -> s1
     of (_, $SetTip) -> s2
@@ -305,7 +303,7 @@ setIntersection = { forall a:Type, s1 => s2 => cmp =>
 
 // O(n+m)
 setIsSubsetOf :: forall a:Type, { Set a => Set a => { a => a => Ord } => Bool };
-setIsSubsetOf = { forall a:Type, s1 => s2 => cmp =>
+setIsSubsetOf = { s1 => s2 => cmp =>
   REC go = { s1 => s2 =>
     case (s1, s2)
       of ($SetTip, _) -> True
@@ -321,7 +319,7 @@ setIsSubsetOf = { forall a:Type, s1 => s2 => cmp =>
 };
 
 setSplit :: forall a:Type, { a => Set a => { a => a => Ord } => (Set a, Set a) };
-setSplit = { forall a:Type, x => s => cmp =>
+setSplit = { x => s => cmp =>
   case setSplitMember x s cmp
     of (lt, _, gt) -> (lt, gt)
   end
@@ -329,7 +327,7 @@ setSplit = { forall a:Type, x => s => cmp =>
 
 // O(lg n)
 setSplitMember :: forall a:Type, { a => Set a => { a => a => Ord } => (Set a, Bool, Set a) };
-setSplitMember = { forall a:Type, x => s => cmp =>
+setSplitMember = { x => s => cmp =>
   case s
     of $SetTip -> (s, False, s)
     of $SetBin _ y l r ->
@@ -348,7 +346,7 @@ setSplitMember = { forall a:Type, x => s => cmp =>
 ////////////
 
 setHedgeUnion! :: forall a:Type, { Maybe a => Maybe a => Set a => Set a => { a => a => Ord } => Set a };
-setHedgeUnion! = { forall a:Type, blo => bhi => s1 => s2 => cmp =>
+setHedgeUnion! = { blo => bhi => s1 => s2 => cmp =>
   case (s1, s2)
     of (_, $SetTip) -> s1
     of (_,       $SetBin 1 x _ _) -> setInsertR x s1 cmp
@@ -362,7 +360,7 @@ setHedgeUnion! = { forall a:Type, blo => bhi => s1 => s2 => cmp =>
 };
 
 setHedgeDiff! :: forall a:Type, { Maybe a => Maybe a => Set a => Set a => { a => a => Ord } => Set a };
-setHedgeDiff! = { forall a:Type, blo => bhi => s1 => s2 => cmp =>
+setHedgeDiff! = { blo => bhi => s1 => s2 => cmp =>
   case (s1, s2)
     of ($SetTip, _) -> s1
     of ($SetBin _ x l r, $SetTip) -> setJoin x (setFilterGT blo l cmp)
@@ -375,7 +373,7 @@ setHedgeDiff! = { forall a:Type, blo => bhi => s1 => s2 => cmp =>
 };
 
 setHedgeInter! :: forall a:Type, { Maybe a => Maybe a => Set a => Set a => { a => a => Ord } => Set a };
-setHedgeInter! = { forall a:Type, blo => bhi => s1 => s2 => cmp =>
+setHedgeInter! = { blo => bhi => s1 => s2 => cmp =>
   case (s1, s2)
     of ($SetTip, _) -> s1
     of (_, $SetTip) -> s2
@@ -390,8 +388,9 @@ setHedgeInter! = { forall a:Type, blo => bhi => s1 => s2 => cmp =>
   end
 };
 
+// TODO verify that closure conversion is lifting the helpers so we don't allocate.
 setTrim :: forall a:Type, { Maybe a => Maybe a => Set a => { a => a => Ord } => Set a };
-setTrim = { forall a:Type, blo => bhi => s => cmp =>
+setTrim = { blo => bhi => s => cmp =>
   case (blo, bhi)
     of ($None,    $None)    -> s
     of ($Some lx, $None)    -> REC greater = { t =>
@@ -429,7 +428,7 @@ setTrim = { forall a:Type, blo => bhi => s => cmp =>
 };
 
 setFilterGT :: forall a:Type, { Maybe a => Set a => { a => a => Ord } => Set a };
-setFilterGT = { forall a:Type, mb => s => cmp =>
+setFilterGT = { mb => s => cmp =>
   case mb
     of $None -> s
     of $Some b ->
@@ -449,7 +448,7 @@ setFilterGT = { forall a:Type, mb => s => cmp =>
 };
 
 setFilterLT :: forall a:Type, { Maybe a => Set a => { a => a => Ord } => Set a };
-setFilterLT = { forall a:Type, mb => s => cmp =>
+setFilterLT = { mb => s => cmp =>
   case mb
     of $None -> s
     of $Some b ->
@@ -472,7 +471,7 @@ setFilterLT = { forall a:Type, mb => s => cmp =>
 
 // O(n)
 setFoldl :: forall a:Type, e:Type, { Set e => { e => a => a } => a => a };
-setFoldl = { forall a:Type e:Type, s => f => z =>
+setFoldl = { s => f => z =>
   REC go = { s => acc =>
       case s
         of $SetTip           -> acc
@@ -484,7 +483,7 @@ setFoldl = { forall a:Type e:Type, s => f => z =>
 
 // O(n)
 setFoldr :: forall a:Type, e:Type, { Set e => { e => a => a } => a => a };
-setFoldr = { forall a:Type e:Type, s => f => z =>
+setFoldr = { s => f => z =>
   REC go = { s => acc =>
       case s
         of $SetTip           -> acc
@@ -495,12 +494,12 @@ setFoldr = { forall a:Type e:Type, s => f => z =>
 };
 
 setMap :: forall a:Type, e:Type, { Set e => { e => a } => { a => a => Ord } => Set a };
-setMap = { forall a:Type e:Type, s => f => cmp =>
+setMap = { s => f => cmp =>
   setOfList (listMap (setToList s) f) cmp
 };
 
 setKeepIf :: forall a:Type, { Set a => { a => Bool } => Set a };
-setKeepIf = { forall a:Type, s => p =>
+setKeepIf = { s => p =>
   case s
     of $SetTip -> s
     of $SetBin _ x l r ->
@@ -512,24 +511,24 @@ setKeepIf = { forall a:Type, s => p =>
 };
 
 setToList :: forall a:Type, { Set a => List a };
-setToList = { forall a:Type, s =>
+setToList = { s =>
   setFoldr s Cons Nil
 };
 
 setToListDesc :: forall a:Type, { Set a => List a };
-setToListDesc = { forall a:Type, s =>
+setToListDesc = { s =>
   setFoldl s Cons Nil
 };
 
 setOfList :: forall a:Type, { List a => { a => a => Ord } => Set a };
-setOfList = { forall a:Type, lst => cmp =>
+setOfList = { lst => cmp =>
   listFoldl lst { e => s => setInsert e s cmp } SetTip
 };
 
 ////////////
 
 setMerge :: forall a:Type, { Set a => Set a => Set a };
-setMerge = { forall a:Type, l => r =>
+setMerge = { l => r =>
   case (l, r)
     of ($SetTip, _) -> r
     of (_, $SetTip) -> l
@@ -544,7 +543,7 @@ setMerge = { forall a:Type, l => r =>
 
 // Like setMerge, but assumes the sets are balanced.
 setGlue! :: forall a:Type, { Set a => Set a => Set a };
-setGlue! = { forall a:Type, l => r =>
+setGlue! = { l => r =>
   case (l, r)
     of ($SetTip, _) -> r
     of (_, $SetTip) -> l
@@ -558,7 +557,7 @@ setGlue! = { forall a:Type, l => r =>
 
 // Precondition: setSize s > 0
 setDeleteFindMin! :: forall a:Type, { Set a => (a, Set a) };
-setDeleteFindMin! = { forall a:Type, s =>
+setDeleteFindMin! = { s =>
   case s
     of $SetBin _ elt ($SetTip) r -> (elt, r)
     of $SetBin _ elt l r ->
@@ -569,7 +568,7 @@ setDeleteFindMin! = { forall a:Type, s =>
 
 // Precondition: setSize s > 0
 setDeleteFindMax! :: forall a:Type, { Set a => (a, Set a) };
-setDeleteFindMax! = { forall a:Type, s =>
+setDeleteFindMax! = { s =>
   case s
     of $SetBin _ elt l ($SetTip) -> (elt, l)
     of $SetBin _ elt l r ->
@@ -582,7 +581,7 @@ setRatio = { 2 };
 setDelta = { 3 };
 
 setBalanceL :: forall a:Type, { a => Set a => Set a => Set a };
-setBalanceL = { forall a:Type, x => l => r =>
+setBalanceL = { x => l => r =>
   case r
       of $SetTip        ->
         case l
@@ -634,7 +633,7 @@ setBalanceL = { forall a:Type, x => l => r =>
 
 
 setBalanceR :: forall a:Type, { a => Set a => Set a => Set a };
-setBalanceR = { forall a:Type, x => l => r =>
+setBalanceR = { x => l => r =>
   case l
     of $SetTip ->
       case r
@@ -684,7 +683,7 @@ setBalanceR = { forall a:Type, x => l => r =>
 
 // O(n)
 setSizeValid_ :: forall a:Type, { Set a => Bool };
-setSizeValid_ = { forall a:Type, s =>
+setSizeValid_ = { s =>
   REC realsize = { s =>
     case s
       of $SetTip          -> Some { 0 }
@@ -705,7 +704,7 @@ setSizeValid_ = { forall a:Type, s =>
 };
 
 setBalanced :: forall a:Type, { Set a => Bool };
-setBalanced = { forall a:Type, s =>
+setBalanced = { s =>
   case s
     of $SetTip -> True
     of $SetBin _ _ l r -> setsBalanced l r
@@ -713,7 +712,7 @@ setBalanced = { forall a:Type, s =>
 };
 
 setsBalanced :: forall a:Type, { Set a => Set a => Bool };
-setsBalanced = { forall a:Type, l => r =>
+setsBalanced = { l => r =>
   sl = setSize l;
   sr = setSize r;
   andand { either (sl +Word sr <=UWord 1)
@@ -724,7 +723,8 @@ setsBalanced = { forall a:Type, l => r =>
 
 ////////////
 
-setShowTree = { forall a:Type, s : Set a => shw : { a => Text } =>
+setShowTree :: forall a:Type, { Set a => { a => Text } => Text };
+setShowTree = { s => shw =>
   setShowTreeRot Nil Nil s shw
 };
 
@@ -743,6 +743,7 @@ setShowTreeRot = { forall a:Type, lbars : List Text => rbars : List Text => s : 
   end
 };
 
+setShowTreeWithBar :: { List Text => List Text };
 setShowTreeWithBar   = { bars => Cons "|  " bars };
 setShowTreeWithEmpty = { bars => Cons "   " bars };
 
