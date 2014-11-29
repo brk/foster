@@ -42,8 +42,8 @@ optIncludePath("I", cl::desc("Path to search for includes"),
                     cl::value_desc("include path"));
 
 static cl::opt<bool>
-optDumpStats("dump-stats",
-  cl::desc("[foster] Dump timing and other statistics from parsing"));
+optFSyntaxOnly("fsyntax-only",
+  cl::desc("[foster] Only parse; don't write any output (still need the dir though)"));
 
 static cl::opt<bool>
 optPrintTimings("fosterc-time",
@@ -97,7 +97,7 @@ void dumpWholeProgramToProtobuf(WholeProgramAST* pgm, const string& filename) {
   if (wp.SerializeToOstream(&out)) {
     // ok!
   } else {
-    EDiag() << "program serialization returned false\n";
+    EDiag() << "protocol buffer serialization returned false\n";
   }
 }
 
@@ -125,14 +125,14 @@ int main(int argc, char** argv) {
     return 4;
   }
 
-  dumpWholeProgramToProtobuf(pgmAST, optOutputPath);
+  if (!optFSyntaxOnly) {
+    ScopedTimer timer("io.write");
+    dumpWholeProgramToProtobuf(pgmAST, optOutputPath);
+  }
 
   if (optPrintTimings) {
     setTimingDescriptions();
     foster::gTimings.print("fosterparse");
-  }
-  if (optDumpStats) {
-    llvm::PrintStatistics(llvm::outs());
   }
   return 0;
 }

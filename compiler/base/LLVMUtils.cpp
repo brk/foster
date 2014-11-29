@@ -98,13 +98,14 @@ validateFileOrDir(const std::string& pathstr,
 
 void
 validateInputFile(const std::string& pathstr) {
-  validateFileOrDir(pathstr, "input", false);
+  validateFileOrDir(pathstr, "input file", false);
 }
 
 void validateOutputFile(const std::string& pathstr) {
   llvm::SmallString<128> outputPath(pathstr);
   llvm::sys::path::remove_filename(outputPath);
-  validateFileOrDir(outputPath.str(), "output", true);
+  if (outputPath.empty()) { outputPath = "./"; }
+  validateFileOrDir(outputPath.str(), "output dir", true);
 }
 
 void runFunctionPassesOverModule(llvm::legacy::FunctionPassManager& fpasses,
