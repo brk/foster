@@ -1,0 +1,17 @@
+snafuinclude Sipahash "hash/siphash";
+
+main = {
+  x64 = readInt64FromArrayInt8 b"\x00\x00\x00\x00\x12\x34\x56\x78" 0;
+  expect_i64x 78563412`00000000_16;
+  print_i64x x64;
+
+  x64 = readInt64FromArrayInt8 (prim mach-array-literal 0 0 0 0 12_16 34_16 56_16 78_16) 0;
+  expect_i64x 78563412`00000000_16;
+  print_i64x x64;
+
+  expect_i64x       563412aabbccdd78_16;
+  print_i64x (rot 78563412aabbccdd_16 8);
+
+  expect_i64x 9FAB721EAB581DA1_16;
+  print_i64x (siphash24 b"abcdefghijklmnopqrstuvwxyz" b"AbCdEfGh12345678");
+};

@@ -269,6 +269,7 @@ instance (Show ty, Show rs) => Structured (KNExpr' rs ty) where
             KNLiteral _  (LitBool  b) -> text $ "KNBool      " ++ (show b)
             KNLiteral ty (LitInt int) -> text $ "KNInt       " ++ (litIntText int) ++ " :: " ++ show ty
             KNLiteral ty (LitFloat f) -> text $ "KNFloat     " ++ (litFloatText f) ++ " :: " ++ show ty
+            KNLiteral ty (LitByteArray bs) -> text "KNBytes     " <> text "b" <> text (show bs)
             KNCall     t _ _    -> text $ "KNCall :: " ++ show t
             KNCallPrim _ t p  _ -> text $ "KNCallPrim  " ++ (show p) ++ " :: " ++ show t
             KNAppCtor  t cid  _ -> text $ "KNAppCtor   " ++ (show cid) ++ " :: " ++ show t

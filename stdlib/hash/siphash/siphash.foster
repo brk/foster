@@ -134,6 +134,7 @@ siphash24 :: { Array Int8 => Array Int8 => Int64 };
 siphash24 = { bytes => key =>
   k0 = readInt64FromArrayInt8 key 0;
   k1 = readInt64FromArrayInt8 key 8;
+
   b0 = arrayLength bytes `bitshl-Int64` 56;
 
   v0 = k0 `bitxor-Int64` 736f6d6570736575_16;
