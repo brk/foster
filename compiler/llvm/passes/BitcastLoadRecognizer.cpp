@@ -70,7 +70,7 @@ STATISTIC(NumSpecialized, "Number of bitcast loads specialized");
 struct Idx {
   Value* base;
   Value* origin;
-  int    gep_zeros;
+  std::vector<Value*> gep_offsets; // will be constants
   int    base_size;
   Value* index_base;
   int    index_offset;
@@ -110,20 +110,26 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
     }
   }
 
-  Value* tryGetGEP(Value* v, Value*& out_base, int& out_offset, int& gep_zeros) {
-    if (GetElementPtrInst* gep = dyn_cast<GetElementPtrInst>(v)) {
-      if (gep->getNumIndices() > 2)    return NULL;
+  Value* tryGetGEP(Value* v, Value*& out_base, int& out_offset, std::vector<Value*>& out_offsets) {
+    if (GEPOperator* gep = dyn_cast<GEPOperator>(v)) {
+      std::vector<Value*> gep_offsets;
       User::op_iterator idx = gep->idx_begin();
-      if (gep->getNumIndices() == 2) {
-        if (ConstantInt* c = dyn_cast<ConstantInt>(idx)) {
-          if (!c->isZero()) return NULL;
-        } else return NULL;
-        ++gep_zeros;
-        idx++;
+      for (int i = 0; i < gep->getNumIndices() - 1; ++i) {
+        if (Constant* c = dyn_cast<Constant>(idx)) {
+          gep_offsets.push_back(c);
+        } else {
+          //errs() << "\tgep had non-constant intermediate index\n";
+          return NULL;
+        }
+        ++idx;
       }
+      out_offsets = gep_offsets;
       matchGEP_Index(*idx, out_base, out_offset);
       return gep->getPointerOperand();
-    } else return NULL;
+    } else {
+      ASSERT(!isa<GetElementPtrInst>(v)) << "Ugh, need to handle both GEPOp and GEPInsn... :-(";
+      return NULL;
+    }
   }
 
   ConstantInt* ci32(int o) { return ConstantInt::get(Type::getInt32Ty(llvm::getGlobalContext()), o); }
@@ -132,8 +138,7 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
     IRBuilder<> b(getGlobalContext());
     b.SetInsertPoint(exp);
 
-    std::vector<llvm::Value*> offsets;
-    for (int i = 0; i < r0->gep_zeros; ++i) { offsets.push_back(ci32(0)); }
+    std::vector<llvm::Value*> offsets = r0->gep_offsets;
     offsets.push_back(b.CreateAdd(r0->index_base, ci32(r0->index_offset)));
     Value*    bufptr  = b.CreateGEP(r0->base, llvm::makeArrayRef(offsets), "buf.off");
     Value*    bufcast = b.CreateBitCast(bufptr, PointerType::get(newLoadType, 0),
@@ -158,7 +163,7 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
      Idx* rv = new Idx();
      rv-> base = NULL;
      rv-> base_size    = 0;
-     rv-> gep_zeros    = 0;
+     //implict ctor of rv-> gep_offsets;
      rv-> index_base   = NULL;
      rv-> index_offset = 0;
      rv-> shift_offset = shiftdelta;
@@ -168,12 +173,12 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
 
   void buildIdxBase(Value* v, Idx* idx) {
     idx->index_offset = -1;
-    Value* b = tryGetGEP(v, idx->index_base, idx->index_offset, idx->gep_zeros);
+    Value* b = tryGetGEP(v, idx->index_base, idx->index_offset, idx->gep_offsets);
     if (b && idx->index_offset != -1) {
-      //errs() << "base is b: " << *b << "\n";
+      //errs() << "buildIdxBase: base is b: " << *b << "\n";
       idx->base         = b;
     } else {
-      //errs() << "base is v: " << *v << "\n";
+      //errs() << "buildIdxBase: base is v: " << *v << "\n";
       idx->base         = v;
       idx->index_offset = 0;
     }
@@ -199,13 +204,17 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
       idx->base_size = sz(ld->getType());
       return buildIdxBase(ld->getPointerOperand(), idx);
     }
+
+    //errs() << "buildIdx didn't hit any happy cases for " << *v << "\n";
   }
 
   Value* stripZExt(Value* v) { Value* r;
      if (match(v, m_ZExt(m_Value(r)))) return r;
      return v;
-
   }
+
+  // strip off a left shift by constant (and record the constant in da)
+  // either way, return exp (stripped) in a.
   void matchOrSubtree(Value* exp, Value*& a, int& da) {
     ConstantInt* c = NULL;
     exp = stripZExt(exp);
@@ -218,7 +227,7 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
 
   bool matchOrSubtrees(Value* exp, Value*& a, Value*& b, int& da, int& db) {
     if (match(stripZExt(exp), (m_Or(m_Value(a), m_Value(b))))) {
-      matchOrSubtree(a, a, da);
+      matchOrSubtree(a, a, da); // both input and output, respectively...
       matchOrSubtree(b, b, db);
       return true;
     }
@@ -229,11 +238,12 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
   bool collectOrResults(Value* exp, int shiftdelta, vector<Idx*>& res, vector<Value*>& ors) {
     Value* a, * b; int da = 0; int db = 0;
     if (matchOrSubtrees(exp, a, b, da, db)) {
+      //errs() << "matchedOrSubtrees of " << *exp << " returned true\n";
       ors.push_back(stripZExt(exp));
       return collectOrResults(a, shiftdelta + da, res, ors)
           && collectOrResults(b, shiftdelta + db, res, ors);
     } else {
-      //errs() << "collectOrResults of " << *exp << "\n";
+      //errs() << "matchOrSubtrees of " << *exp << " returned false\n";
       Idx* r = newIdx(exp, shiftdelta);
       buildIdx(exp, r);
       res.push_back(r);
@@ -252,8 +262,8 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
 
   bool allHaveSameIndexBase(const vector<Idx*>& res) {
     for (int i = 1; i < res.size(); ++i) {
-      if (res[0]->index_base != res[i]->index_base) return false;
-      if (res[0]->gep_zeros  != res[i]->gep_zeros ) return false;
+      if (res[0]->index_base  != res[i]->index_base) return false;
+      if (res[0]->gep_offsets != res[i]->gep_offsets) return false;
     }
     return true;
   }
@@ -292,6 +302,8 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
                  || willBeDead.count(bo) > 0 ) {
          continue;
       }
+
+      //errs() << "*********** COLLECTING RESULTS FOR NODE **********" << *(bo) << "\n";
 
       vector<Idx*> indexes;
       vector<Value*> ors;
