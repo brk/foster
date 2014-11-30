@@ -134,7 +134,7 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
 
   ConstantInt* ci32(int o) { return ConstantInt::get(Type::getInt32Ty(llvm::getGlobalContext()), o); }
 
-  bool spec(Idx* r0, Type* newLoadType, Instruction* exp) {
+  void spec(Idx* r0, Type* newLoadType, Instruction* exp) {
     IRBuilder<> b(getGlobalContext());
     b.SetInsertPoint(exp);
 
@@ -156,7 +156,6 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
     //bufload->setAlignment(l0->getAlignment());
 
     NumSpecialized++;
-    return true;
   }
 
   Idx* newIdx(Value* v, int shiftdelta) {
