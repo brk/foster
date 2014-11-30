@@ -256,14 +256,14 @@ makeClosureAllocationExplicit ids clos = do
                     ++ concat clo_tuplestores ++ env_tuplestores
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
--- MayGCConstraints essentially two disjoint maps, merged into one.
+-- MayGCConstraints is essentially two disjoint maps, merged into one.
 -- There are functions which are definitely MayGC, and functions which
 -- are of unknown GC-status, along with the functions they call.
 -- Resolving the constraints means propagating the known-MayGC values
 -- up through the call graph. Any function which does not get thusly
 -- tainted can be assumed to not GC.
 
-resolveMayGC :: MayGCConstraints -> [ Proc BasicBlockGraph' ] -> Map Ident MayGC
+resolveMayGC :: MayGCConstraints -> [ Proc BasicBlockGraph' ] -> MayGCMap
 resolveMayGC constraints procs =
   -- Compute the strongly-connected components of the MayGC constraint graph;
   -- nodes are (proc, maygc) pairs, and edges are from the MayGCConstraints map.
@@ -310,8 +310,11 @@ collectMayGCConstraints_Proc proc m = foldGraphNodes go (bbgpBody $ procBlocks p
 
         go (CCLetFuns  _ _clos) _ = error $ "collecMayGCConstraints saw CCLetClosures!"
 
-        go (CCLast (CCCall _ _ _ v _ )) m = withGC m $ unknownMeansMayGC (Map.findWithDefault (GCUnknown "") (tidIdent v) m)
-        go (CCLetVal  _ letable)        m = withGC m $ unknownMeansMayGC (canGC m letable)
+        go (CCLast (CCCall _ _ _ v _ )) m = withGC m $ unknownMeansMayGC (Map.findWithDefault (GCUnknown "cmGC") (tidIdent v) m)
+        go (CCLetVal x (ILBitcast t v)) m = case Map.lookup (tidIdent v) m of
+                                               Nothing  -> withGC m $ unknownMeansMayGC (canGC m (ILBitcast t v))
+                                               Just mgc -> Map.insert x mgc m
+        go (CCLetVal _  letable)        m = withGC m $ unknownMeansMayGC (canGC m letable)
 
         withGC m WillNotGC     = m
         withGC m MayGC         = Map.adjust (\_ -> MayGC) (procIdent proc) m

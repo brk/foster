@@ -550,6 +550,14 @@ collectMayGCConstraints_CFG bbg fnid = let (bid,_) = bbgEntry bbg in
   where
         go :: forall e x. Insn e x -> MGCM ()
         go (ILabel  _    )    = return ()
+        -- This is a conservative approximation; we may not actually call v
+        -- through the ident it is bound to, but it's good enough for now...
+        -- The indirect constraint is a hack to ensure that the SCC/call graph
+        -- built during may-gc resolution will not be under-approximated.
+        -- The aliasing bit makes sure that calls to x are treated as being
+        -- GCUnknown rather than MayGC.
+        go (ILetVal x (ILBitcast _ v)) = do addIndirectConstraint (tidIdent v)
+                                            modify $ aliasing x v
         go (ILetVal _  lt)    = withGC $ canGC Map.empty lt
         go (ILetFuns ids fns) = collectMayGCConstraints_CFFns ids fns
            -- Note: the function bindings themselves don't (yet) contribute
@@ -559,6 +567,9 @@ collectMayGCConstraints_CFG bbg fnid = let (bid,_) = bbgEntry bbg in
                      CFCont {}      -> return ()
                      CFCase {}      -> return ()
                      CFCall _ _ v _ -> callGC (tidIdent v)
+
+        aliasing x v = \m -> Map.insert x (m Map.! (tidIdent v) `addAlias` v) m
+        addAlias (maygc, s) v = (maygc, Set.insert (tidIdent v) s)
 
         withGC WillNotGC     = return ()
         withGC MayGC         = modify $ Map.adjust (\_ -> (MayGC, Set.empty)) fnid

@@ -178,7 +178,7 @@ canGC :: Map.Map Ident MayGC -> Letable ty -> MayGC
 canGC mayGCmap letable =
   case letable of
          ILAppCtor _ (_, repr) _ -> canCtorReprAppGC repr
-         ILAlloc    _ amr -> memRegionMayGC amr
+         ILAlloc        _ amr -> memRegionMayGC amr
          ILAllocArray _ _ amr -> memRegionMayGC amr
          ILAllocate info  -> -- If the ctor is nullary, we won't GC...
                              -- otherwise, we defer to the alloc region.

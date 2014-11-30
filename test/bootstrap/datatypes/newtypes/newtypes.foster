@@ -17,6 +17,14 @@ type case TP : Type (p:Boxed) of $E Int32;
 // and the : Type annotation is not required to get the transparent constructor.
 type case TS : Type of $F TB;
 
+// Wrapping a boxed type with an implictly boxed constructor
+// should not result in heap allocation
+type case TX of $FX TB;
+
+// But if there are multiple constructors, even an enum ctor,
+// then there will be heap allocation...
+type case TY of $FY TB   of $FYN;
+
 // Can't have multiple constructors
 //type case TBad1 : Type
 //       of $TBad1a Int32
@@ -28,11 +36,22 @@ type case TS : Type of $F TB;
 //         $TBad2 Int32 Int32;
 
 main = {
-  foo (C 0) 0;
-  bar (D 0) 0;
-  baz (E 0) 0;
-  oof (F (C 0)) 0;
+  // Do allocations separately so it's easier to see
+  // which test-BLAH functions allocate and which don't.
+  call-tests (C 1) (C 2) (C 3);
 };
+
+call-tests = { c1 => c2 => c3 =>
+  test-foo !;
+  test-bar !;
+  test-baz !;
+  test-oof c2 2;
+  test-TX  c1;
+  test-TY  c2;
+};
+
+// Should result in an allocation.
+test-foo = { foo (C 0) 0 };
 
 foo = { t => k =>
   expect_i32 k;
@@ -41,6 +60,9 @@ foo = { t => k =>
   end
 };
 
+// Should not allocate
+test-bar = { bar (D 1) 1; };
+
 bar = { t => k =>
   expect_i32 k;
   case t
@@ -48,6 +70,8 @@ bar = { t => k =>
   end
 };
 
+// Also should not allocate
+test-baz = { baz (E 0) 0 };
 baz = { t : TP TU => k =>
   expect_i32 k;
   case t
@@ -55,9 +79,20 @@ baz = { t : TP TU => k =>
   end
 };
 
+// Should not allocate
+test-oof = { c => n => oof (F c) n };
 oof = { t : TS => k =>
   expect_i32 k;
   case t
     of $F ($C n) -> print_i32 n;
   end
+};
+
+test-TX = { c1 => use-TX 1 (FX c1) };
+use-TX = { n => tx => case tx of $FX tb -> foo tb n end };
+
+test-TY = { c2 => use-TY 2 (FY c2); use-TY 99999 FYN; };
+use-TY = { n => v => case v of $FY tb -> foo tb n
+                            of $FYN -> print_i32 123; expect_i32 123;
+                      end
 };

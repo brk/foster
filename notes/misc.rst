@@ -51,3 +51,24 @@ Miscellanous Tidbits of Knowledge
                     ""
                     True;
 
+  The required arguments are: an overall function type for the assembly code,
+  the text of the code itself, the text of the constraints on the assembly code,
+  a boolean indicting whether the assembly code has effects, and zero or more
+  arguments corresponding to the assembly code's "function parameters".
+* Calls in the LLVM IR can be marked as non-allocating in one of several ways:
+   * ``LLCall::codegen`` will mark calls as non-allocating, or insert a
+     pseudo-comment saying that the call may GC. These comments are stripped by
+     LLVM optimization, so they only appear in ``out.raw.ll``.
+     The may-gc information is derived from ``canGC`` in ``ILExpr.hs`` using
+     extra information from
+     ``(collectMayGCConstraints + resolveMayGC)``,
+     and threaded through ``ILLetVal``.
+     Pass ``--me-arg=--dump-ir=maygc`` to view the intermediate MayGC constraints.
+   * Our ``GCMallocFinder`` plugin will mark calls as non-allocating. The plugin
+     is called as a cleanup pass. By default, ``fosterlower`` runs the pass
+     between the ``raw`` and ``prelinked`` stages. ``fosteroptc`` will only run
+     the pass if passed the ``-cleanup-only`` flag. Pass ``--be-arg=-dump-stats``
+     to see how many calls were marked by the LLVM plugin via ``fosterlower``.
+     Note that stats are dumped to a text file in the compilation target dir,
+     not stdout.
+

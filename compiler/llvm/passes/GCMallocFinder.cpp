@@ -12,6 +12,7 @@
 #include "llvm/Analysis/CallGraphSCCPass.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/ADT/Statistic.h"
 
 #include "base/LLVMUtils.h"
 
@@ -36,6 +37,8 @@ using namespace llvm;
 namespace llvm {
   void initializeGCMallocFinderPass(llvm::PassRegistry&);
 }
+
+STATISTIC(NumMarkedAsNonAllocating, "Number of fn calls marked as non-allocating");
 
 namespace {
 struct GCMallocFinder : public CallGraphSCCPass {
@@ -171,6 +174,7 @@ struct GCMallocFinder : public CallGraphSCCPass {
 
       if (CallInst* ci = dyn_cast<CallInst>(V)) {
         markAsNonAllocating(ci);
+        ++NumMarkedAsNonAllocating;
       } else {
         llvm::outs() << "GCMallocFinder saw non-CallInst value "
                 << llvmValueTag(V) << "; " << *V << "\n";
