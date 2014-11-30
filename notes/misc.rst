@@ -71,4 +71,11 @@ Miscellanous Tidbits of Knowledge
      to see how many calls were marked by the LLVM plugin via ``fosterlower``.
      Note that stats are dumped to a text file in the compilation target dir,
      not stdout.
+* Newtype-style wrappers are supported: given a type definition like
+  ``type case TU : Type of $D Int32;``, calls to ``D`` will not allocate at
+  runtime (should erase completely before LLVM IR emission, actually).
+  Also, boxed newtype-style definitions like
+  ``type case TX of $FX TB;`` will have calls to ``FX`` translated into simple
+  bitcasts.
+
 
