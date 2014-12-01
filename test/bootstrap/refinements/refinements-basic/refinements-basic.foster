@@ -35,6 +35,8 @@ main = {
  expect_i32 1111111;
  print_i32  1111111;
 
+ test-global-poly-refined !;
+
  /*
  // DISABLED_TEST
  // Embedded refinements are currently ignored :(
@@ -162,3 +164,34 @@ test-fn-implication = {
 
 };
 
+test-global-poly-refined = {
+  test-global-poly-refinedA !;
+  //test-global-poly-refinedB !;
+};
+
+test-global-poly-refinedA = {
+  bc = arrlenA:[Int8];
+  ab = bc b"123";
+  prim assert-invariants (ab ==Int64 3);
+  ();
+};
+
+arrlenA :: forall t:Type, { % ra : Array t : True
+         => % rv : Int64 : rv ==Int64 prim_arrayLength:[t] ra };
+arrlenA = { a => prim_arrayLength a };
+
+
+// DISABLED_TEST
+// currently broken, eep :-(
+/*
+test-global-poly-refinedB = {
+  bc = arrlenB:[Int8];
+  ab = bc b"123";
+  prim assert-invariants (ab ==Int64 3);
+  ();
+};
+
+arrlenB :: forall t:Type, { % ra : Array t : True
+         => % rv : Int64 : rv ==Int64 prim_arrayLength ra };
+arrlenB = { a => prim_arrayLength a };
+*/
