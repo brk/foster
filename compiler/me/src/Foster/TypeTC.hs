@@ -38,6 +38,15 @@ data TypeTC =
          | MetaTyVarTC     (MetaTyVar TypeTC)
          | RefinedTypeTC   (TypedId TypeTC) (AnnExpr TypeTC) [Ident]
 
+-- The list of idents attached to RefinedTypeTC corresponds to the set of
+-- logical binders for the type, which should be a superset of the directly
+-- bound variable. For example, given an expression like
+--     { va : (% ra : ...) => vb : (%rb : ...) => ... }
+-- each refinement would get the list of logical binders [ra, rb].
+-- These binders are propagated to Monomo.hs, which uses substRefinementArgs
+-- to substitute actual args for refinement variables in the type of called
+-- functions.
+
 isTau :: TypeTC -> Bool
 isTau (ForAllTC {}) = False
 isTau t = all isTau (childrenOf t)

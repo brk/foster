@@ -37,6 +37,8 @@ main = {
 
  test-global-poly-refined !;
 
+ test-local-nonrec !;
+
  /*
  // DISABLED_TEST
  // Embedded refinements are currently ignored :(
@@ -163,6 +165,18 @@ test-fn-implication = {
      expects_noprecond haveprecond });
 
 };
+
+test-local-nonrec = {
+  go_sh = {   bt :  % rbt : Int64 : True
+           => len_rem : (% r_len_rem : Int64 : rbt ==Int64 r_len_rem +Int64 zext_i32_to_i64 0)
+           =>
+         123
+      };
+
+  expect_i32 123;
+  print_i32 (go_sh 0 0);
+};
+
 
 test-global-poly-refined = {
   test-global-poly-refinedA !;

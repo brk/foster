@@ -945,7 +945,7 @@ tcSigmaFn ctx fnAST expTyRaw = do
         -- While we're munging, we'll also make sure the names are all distinct.
         uniquelyNamedFormals <- getUniquelyNamedAndRetypedFormals' ctx annot
                                        (fnFormals fnAST) (fnAstName fnAST)
-                                       (localTypeBindings extTyCtx)
+                                       (localTypeBindings extTyCtx) []
 
         -- Extend the variable environment with the function arg's types.
         let extCtx = extendContext extTyCtx uniquelyNamedFormals
@@ -1093,7 +1093,7 @@ tcRhoFnHelper ctx f expTy = do
 
     uniquelyNamedFormals <- getUniquelyNamedAndRetypedFormals' ctx' annot
                                                   (fnFormals f) (fnAstName f)
-                                                  (localTypeBindings ctx)
+                                                  (localTypeBindings ctx) (map tidIdent refinementVars)
 
     (mbExpBodyTy, uniquelyNamedBinders) <- case expTy of
        Infer _    -> do
@@ -1211,11 +1211,12 @@ getUniquelyNamedFormals rng rawFormals fnProtoName = do
 
 -- | Verify that the given formals have distinct names,
 -- | and return unique'd versions of each.
-getUniquelyNamedAndRetypedFormals' ctx annot rawFormals fnProtoName  tybinds = do
+getUniquelyNamedAndRetypedFormals' ctx annot rawFormals fnProtoName  tybinds refinementArgs = do
     ufs'0 <- getUniquelyNamedFormals (rangeOf annot) rawFormals fnProtoName
     mapM retypeAndResolve ufs'0
    where retypeAndResolve v = do
-            fmapM_TID (tcType ctx) v >>= retypeTID (resolveType annot tybinds)
+            fmapM_TID (tcType' ctx refinementArgs ris) v >>= retypeTID (resolveType annot tybinds)
+         ris = if null refinementArgs then RIS_False else RIS_True
 
 tcType :: Context TypeTC -> TypeAST -> Tc TypeTC
 tcType ctx typ = tcType' ctx [] RIS_False typ
@@ -1262,7 +1263,7 @@ tcType' ctx refinementArgs ris typ = do
 
           uniqRefinedFormals <- getUniquelyNamedAndRetypedFormals' ctx (annotForRange rng)
                                    refinedFormals (T.pack $ "refinement for fn type...")
-                                   (localTypeBindings ctx)
+                                   (localTypeBindings ctx) []
 
           let extCtx = extendContext ctx uniqRefinedFormals
 
@@ -1280,7 +1281,7 @@ tcType' ctx refinementArgs ris typ = do
                        RefinedTypeAST nm r' _ -> do
                             unf <- getUniquelyNamedAndRetypedFormals' ctx (annotForRange rng)
                                        [TypedId r' (Ident (T.pack nm) 0)] (T.pack "refinement for fn return type...")
-                                       (localTypeBindings ctx)
+                                       (localTypeBindings ctx) []
                             return $ extendContext extCtx unf
                        _ -> return extCtx
           r'  <- tcType' extCtx' refinementArgs' RIS_False r
@@ -1299,7 +1300,7 @@ tcType' ctx refinementArgs ris typ = do
                       let formal = TypedId ty (Ident (T.pack nm) 0)
                       [unf] <- getUniquelyNamedAndRetypedFormals' ctx (annotForRange rng)
                                    [formal] (T.pack "refinement for fn return type...")
-                                   (localTypeBindings ctx)
+                                   (localTypeBindings ctx) []
                       return (extendContext ctx [unf], tidIdent unf)
 
           e' <- checkRho ctx' e (PrimIntTC I1)
