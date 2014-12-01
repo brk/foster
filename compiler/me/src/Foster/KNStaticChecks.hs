@@ -13,7 +13,7 @@ import qualified Data.Set as Set
 import Data.Set(Set)
 import Data.List(foldl')
 import Data.Maybe(fromMaybe)
-import Data.IORef(writeIORef)
+import Data.IORef(writeIORef, modifyIORef, IORef)
 
 import Foster.MonoType
 import Foster.Base
@@ -145,7 +145,8 @@ withPathFacts facts pathfacts = facts { pathFacts = pathfacts ++ pathFacts facts
 -- }}}
 
 -- According to de Moura at http://stackoverflow.com/questions/7411995/support-for-aufbv
--- it's better to use either UFBV or QF_AUFBV... the former is more useful for us.
+-- it's better to use either UFBV or QF_AUFBV, rather than AUFBV...
+-- the former is more useful for us.
 scriptImplyingBy' :: SMT.Expr -> Facts -> CommentedScript
 scriptImplyingBy' pred facts = scriptImplyingBy (bareSMTExpr pred) facts
 
@@ -214,6 +215,7 @@ scriptImplyingBy (SMTExpr pred declset idfacts) facts =
 type SC = StateT SCState Compiled
 data SCState = SCState {
   scExtraFacts :: Map Ident (Ident -> SMT.Expr)
+, scSMTStats :: IORef (Int, [Double])
 }
 
 scAddFact id k = do
@@ -228,9 +230,17 @@ scGetFact id = do
 
 -- Errors will be propagated, while unsat (success) results are trivial...
 scRunZ3 :: KNMonoLike monolike => monolike -> CommentedScript -> SC ()
-scRunZ3 expr script = lift $ do
+scRunZ3 expr script = do
+ smtStatsRef <- gets scSMTStats
+ lift $ do
   let doc = prettyCommentedScript script
-  res <- liftIO $ runZ3 (show doc) (Just "(pop 1)\n(check-sat)")
+  (time, res) <- liftIO $ ioTime $ runZ3 (show doc) (Just "(pop 1)\n(check-sat)")
+  liftIO $ if (time > 0.9)
+             then do
+                putDocLn $ text "the following script took more than 900ms to verify:"
+                putDocLn $ doc
+             else return ()
+  liftIO $ modifyIORef smtStatsRef (\(c, ts) -> (c + 1, time:ts))
   case res of
     Left x -> throwError [text x, knMonoLikePretty expr, string (show doc)]
     Right ("unsat":"sat":_) -> return ()
@@ -283,8 +293,10 @@ dbgDoc x = liftIO $ putDocLn x
 dbgStr x = return ()
 dbgDoc x = return ()
 
+checkFn :: (Fn RecStatus KNMono MonoType) -> Facts -> Compiled (Maybe (Ident -> SC SMTExpr))
 checkFn fn facts = do
-  evalStateT (checkFn' fn facts) (SCState Map.empty)
+  qref <- gets ccSMTStats
+  evalStateT (checkFn' fn facts) (SCState Map.empty qref)
 
 checkFn' fn facts0 = do
   facts'   <- withBindings (fnVar fn) (fnVars fn) facts0
@@ -713,7 +725,8 @@ mkPrecondGen facts fn = \argVars -> do
   uref <- lift $ gets ccUniqRef
   --fn' <- liftIO $ alphaRename' fn uref
   let fn' = fn
-  lift $ evalStateT (compilePreconditionFn fn' facts argVars) (SCState Map.empty)
+  sc <- get
+  lift $ evalStateT (compilePreconditionFn fn' facts argVars) (sc { scExtraFacts = Map.empty })
 
 -- Implicit precondition: fn is alpha-renamed.
 compilePreconditionFn :: Fn RecStatus KNMono MonoType -> Facts

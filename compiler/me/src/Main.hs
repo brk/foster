@@ -401,6 +401,7 @@ runCompiler pi_time pb_program flagVals outfile = do
    varlist <- newIORef []
    subcnst <- newIORef []
    icmap   <- newIORef Map.empty
+   smtStatsRef <- newIORef (0, [])
    let tcenv = TcEnv {       tcEnvUniqs = uniqref,
                       tcUnificationVars = varlist,
                               tcParents = [],
@@ -413,6 +414,7 @@ runCompiler pi_time pb_program flagVals outfile = do
                          , ccDumpFns  = getDumpFns flagVals
                          , ccInline   = getInlining flagVals
                          , ccUniqRef  = uniqref
+                         , ccSMTStats = smtStatsRef
                     }
 
    case mb_errs of
@@ -425,6 +427,7 @@ runCompiler pi_time pb_program flagVals outfile = do
 
      Right (RWT in_time cp_time sc_time ilprog) -> do
        (pb_time, _) <- time $ dumpILProgramToProtobuf ilprog outfile
+       (nqueries, querytime) <- readIORef smtStatsRef
        let ct_time = (nc_time - (cp_time + in_time + sc_time))
        let pct f1 f2 = (100.0 * f1) / f2
        let fmt_pct time = let p = pct time nc_time
@@ -432,7 +435,8 @@ runCompiler pi_time pb_program flagVals outfile = do
                               padding = fill n (text "") in
                           padding <> parens (text (printf "%.1f" p) <> text "%")
        let fmt str time = text str <+> (fill 11 $ text $ secs time) <+> fmt_pct time
-       putDocLn $ vcat $ [fmt "static-chk  time:" sc_time
+       putDocLn $ vcat $ [text "# SMT queries:" <+> pretty nqueries <+> text "taking" <+> pretty (map secs querytime)
+                         ,fmt "static-chk  time:" sc_time
                          ,fmt "inlining    time:" in_time
                          ,fmt "codegenprep time:" cp_time
                          ,fmt "'other'     time:" ct_time
@@ -533,6 +537,13 @@ lowerModule ai_mod ctx_il = do
 
      kmod <- kNormalizeModule ai_mod ctx_il ctoropt
      monomod0 <- monomorphize   kmod knorm
+
+     whenDumpIR "mono" $ do
+         putDocLn $ (outLn "/// Monomorphized program =============")
+         putDocLn $ (outLn $ "///               size: " ++ show (knSize (moduleILbody monomod0)))
+         _ <- liftIO $ renderKN monomod0 True
+         putDocLn $ (outLn "^^^ ===================================")
+
      (sc_time, _) <- ioTime $ runStaticChecks monomod0
      monomod2 <- knLoopHeaders  monomod0
      (in_time, monomod4) <- ioTime $ (if inline then knInline insize donate else return) monomod2
@@ -545,11 +556,6 @@ lowerModule ai_mod ctx_il = do
          return ()
 
      whenDumpIR "mono" $ do
-         putDocLn $ (outLn "/// Monomorphized program =============")
-         putDocLn $ (outLn $ "///               size: " ++ show (knSize (moduleILbody monomod0)))
-         _ <- liftIO $ renderKN monomod0 True
-         putDocLn $ (outLn "^^^ ===================================")
-
          putDocLn $ (outLn "/// Loop-headered program =============")
          putDocLn $ (outLn $ "///               size: " ++ show (knSize (moduleILbody monomod2)))
          _ <- liftIO $ renderKN monomod2 True
