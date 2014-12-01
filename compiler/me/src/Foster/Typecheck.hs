@@ -28,6 +28,8 @@ import Foster.Output(OutputOr(Errors), putDocLn)
 import Foster.PrettyAnnExpr()
 import Text.PrettyPrint.ANSI.Leijen
 
+import Debug.Trace(trace)
+
 data TCWanted = TCSigma | TCRho deriving Show
 
 -----------------------------------------------------------------------
@@ -325,7 +327,7 @@ tcSigmaVar ctx annot name = do
          msg <- getStructureContextMessage
          tcFails [text $ "Unknown variable " ++ T.unpack name
                   ++ showSourceRange (rangeOf annot)
-                  ++ "ctx: "++ unlines (map show (Map.toList $ contextBindings ctx))
+                  -- ++ "ctx: "++ unlines (map show (Map.toList $ contextBindings ctx))
                   ++ "\nhist: " , msg]
 
 -- To get a rho-type from a variable with a forall type,
@@ -342,7 +344,7 @@ tcSigmaVar ctx annot name = do
 tcRhoVar ctx rng name expTy = do
      debugDoc $ green (text "typecheckVar (rho): ") <> text (T.unpack name ++ " :?: " ++ show expTy)
      v_sigma <- tcSigmaVar ctx rng name
-     ann_var <- inst v_sigma "tcRhoVar"
+     ann_var <- inst v_sigma ("tcRhoVar[" ++ T.unpack name ++ "]")
      debugDoc $ green (text "typecheckVar v_sigma: ") <> text (T.unpack name ++ " :: " ++ show (typeTC v_sigma))
      debugDoc $ green (text "typecheckVar ann_var: ") <> text (T.unpack name ++ " :: " ++ show (typeTC ann_var))
      matchExp expTy ann_var "var"
@@ -432,7 +434,8 @@ tcRhoBytes rng bs expTy = do
     let ab = AnnLiteral rng ty (LitByteArray bs)
     let check t =
           case t of
-             ArrayTypeTC (PrimIntTC I8) -> return ab
+             ArrayTypeTC m -> do unify m (PrimIntTC I8) "byte array literal"
+                                 return ab
              m@MetaTyVarTC {} -> do unify m ty "byte array literal"
                                     return ab
              RefinedTypeTC v _ _ -> check (tidType v)
@@ -468,15 +471,18 @@ tcRhoArrayLit ctx rng mbt args expTy = do
     let ty = ArrayTypeTC tau
     args' <- mapM (tcRhoArrayValue ctx tau) args
     let ab = AnnArrayLit rng ty args'
-    case expTy of
-         Infer r                     -> update r (return ab)
-         Check  (ArrayTypeTC rho) -> do unify tau rho "mach-array literal"
-                                        return ab
-         Check  m@MetaTyVarTC {} -> do unify m ty "mach-array literal"
-                                       return ab
-         Check  t -> tcFails [text $ "Unable to check array constant in context"
+    let check t = case t of
+             (ArrayTypeTC rho) -> do unify tau rho "mach-array literal"
+                                     return ab
+             m@MetaTyVarTC {} -> do unify m ty "mach-array literal"
+                                    return ab
+             RefinedTypeTC v _ _ -> check (tidType v)
+             t -> tcFails [text $ "Unable to check array constant in context"
                                 ++ " expecting non-array type " ++ show t
                                 ++ showSourceRange (rangeOf rng)]
+    case expTy of
+         Infer r -> update r (return ab)
+         Check t -> check t
   -- There's a problematic interaction going on here.
   -- Integer literals do not impose an immediate constraint
   -- on the types they check against, because the type of an integer
@@ -601,18 +607,20 @@ tcRhoArrayRead annot sg base aiexpr expTy = do
         let expr = AnnArrayRead annot t (ArrayIndex base aiexpr rng sg)
         matchExp expTy expr "arrayread"
 
-  case typeTC base of
-    ArrayTypeTC t -> do ck t
-    MetaTyVarTC _ -> do
-        t <- case expTy of
-              Check t -> return t
-              Infer _ -> newTcUnificationVarTau $ "arrayread_type"
-        unify (ArrayTypeTC t) (typeTC base) "arrayread type"
-        ck t
-    _ ->
-        tcFails [text $ "Unable to arrayread expression of non-array type " ++ show (typeTC base)
-                    ++ " (context expected type " ++ show expTy ++ ")"
-                    ++ highlightFirstLine rng]
+  let check t = case t of
+        ArrayTypeTC t -> do ck t
+        MetaTyVarTC _ -> do
+            t <- case expTy of
+                  Check t -> return t
+                  Infer _ -> newTcUnificationVarTau $ "arrayread_type"
+            unify (ArrayTypeTC t) (typeTC base) "arrayread type"
+            ck t
+        RefinedTypeTC v _ _ -> check (tidType v)
+        _ ->
+            tcFails [text $ "Unable to arrayread expression of non-array type " ++ show (typeTC base)
+                        ++ " (context expected type " ++ show expTy ++ ")"
+                        ++ highlightFirstLine rng]
+  check (typeTC base)
 -- }}}
 
 -----------------------------------------------------------------------
@@ -630,18 +638,18 @@ tcRhoArrayPoke annot s v base i expTy = do
                                     (ArrayIndex base i (rangeOf annot) s) v
       matchExp expTy expr "arraypoke"
 
-  case typeTC base of
-    ArrayTypeTC t ->
-        ck t
-    MetaTyVarTC _ -> do
-        t <- newTcUnificationVarTau $ "arraypoke_type"
-        unify (ArrayTypeTC t) (typeTC base) "arraypoke type"
-        ck t
-
-    baseType ->
-      tcFails [text $ "Unable to arraypoke expression of type " ++ show baseType
-                  ++ " (context expected type " ++ show expTy ++ ")"
-                  ++ highlightFirstLine (rangeOf annot)]
+  let check t = case t of
+        ArrayTypeTC t -> ck t
+        MetaTyVarTC _ -> do
+            t <- newTcUnificationVarTau $ "arraypoke_type"
+            unify (ArrayTypeTC t) (typeTC base) "arraypoke type"
+            ck t
+        RefinedTypeTC v _ _ -> check (tidType v)
+        _ ->
+          tcFails [text $ "Unable to arraypoke expression of type " ++ show (typeTC base)
+                      ++ " (context expected type " ++ show expTy ++ ")"
+                      ++ highlightFirstLine (rangeOf annot)]
+  check (typeTC base)
 -- }}}
 
 -----------------------------------------------------------------------
@@ -905,19 +913,10 @@ tcSigmaFn ctx fnAST expTyRaw = do
 
     (tyformals, _) -> do
         let annot = fnAstAnnot fnAST
-        let rng   = rangeOf annot
         let ktvs = map convertTyFormal tyformals
         taus <- genTauUnificationVarsLike ktvs (\n -> "fn type parameter " ++ show n ++ " for " ++ T.unpack (fnAstName fnAST))
 
-        -- Extend the type environment with the forall-bound variables
-        -- declared in the function literal.
-        let extendTypeBindingsWith ktvs =
-              foldl' ins (localTypeBindings ctx) (zip taus ktvs)
-               where ins m (mtv, (BoundTyVar nm, _k)) = Map.insert nm mtv m
-                     ins _ (_ ,  (SkolemTyVar {}, _))= error "ForAll bound a skolem!"
-
-        let extTyCtx = ctx { localTypeBindings = extendTypeBindingsWith ktvs }
-
+        let extTyCtx = ctx { localTypeBindings = extendTypeBindingsWith ctx ktvs taus }
 
         debugDoc $ text "tcSigmaFn: f is " <> pretty (show fnAST)
         debugDoc $ text "tcSigmaFn: expTyRaw is " <> pretty expTyRaw
@@ -939,7 +938,7 @@ tcSigmaFn ctx fnAST expTyRaw = do
               sanityCheck (eqLen ktvs exp_ktvs)
                          ("tcSigmaFn: expected same number of formals for "
                           ++ show ktvs ++ " and " ++ show exp_ktvs)
-              exp_rho' <- resolveType annot (extendTypeBindingsWith exp_ktvs) exp_rho_raw
+              exp_rho' <- resolveType annot (extendTypeBindingsWith ctx exp_ktvs taus) exp_rho_raw
               return $ Just exp_rho'
             _ -> return $ Nothing
 
@@ -952,13 +951,13 @@ tcSigmaFn ctx fnAST expTyRaw = do
         let extCtx = extendContext extTyCtx uniquelyNamedFormals
 
         -- Check or infer the type of the body.
-        (annbody, body_ty) <- case mb_rho of
+        (annbody, body_ty, uniquelyNamedBinders) <- case mb_rho of
           -- for Infer or for Check of a non-ForAll type
           Nothing       -> do annbody <- inferSigma extCtx (fnAstBody fnAST) "poly-fn body"
-                              return (annbody, typeTC annbody)
+                              return (annbody, typeTC annbody, uniquelyNamedFormals)
           Just exp_rho' -> do
                 let var_tys = map tidType uniquelyNamedFormals
-                (arg_tys, body_ty, _cc, _ft) <- unifyFun exp_rho' (length var_tys) ("poly-fn-lit" ++ highlightFirstLine rng)
+                (arg_tys, body_ty, _cc, _ft) <- unifyFun exp_rho' (length var_tys) ("poly-fn-lit" ++ highlightFirstLine (rangeOf annot))
 
                 case (any tcContainsRefinements arg_tys,
                       any tcContainsRefinements var_tys ) of
@@ -985,15 +984,20 @@ tcSigmaFn ctx fnAST expTyRaw = do
                 debugDoc $ string "metaOf var_tys'': " <+> pretty (show $ collectAllUnificationVars $ map unMBS var_tys'')
                 -- mvar_tys'' <- mapM shZonkMetaType (collectAllUnificationVars var_tys)
 
+                pickedTys <- mapM pickBetween (zipTogether arg_tys var_tys)
+                let uniquelyNamedBinders =
+                             map (\(TypedId _ id, ty) -> TypedId ty id)
+                                 (zip uniquelyNamedFormals pickedTys)
+
                 annbody <- checkRho extCtx (fnAstBody fnAST) body_ty
-                return (annbody, body_ty)
+                return (annbody, body_ty, uniquelyNamedBinders)
 
         debugDoc $ text "inferred raw type of body of polymorphic function: "
                         <> pretty (typeTC annbody)
 
         let fnty0 = ForAllTC ktvs $
                 fnTypeTemplate fnAST argtys body_ty
-                  where argtys = map tidType uniquelyNamedFormals
+                  where argtys = map tidType uniquelyNamedBinders
 
         -- The function type is expressed in terms of meta type variables,
         -- which have now served their purpose and must be replaced by
@@ -1024,7 +1028,8 @@ tcSigmaFn ctx fnAST expTyRaw = do
         -- Note we collect free vars in the old context, since we can't possibly
         -- capture the function's arguments from the environment!
         let fn = E_AnnFn $ Fn (TypedId fnty (GlobalSymbol $ fnAstName fnAST))
-                              uniquelyNamedFormals annbody () annot
+                              uniquelyNamedBinders annbody () annot
+        debugDoc $ text "tcSigmaFn calling matchExp  uniquelyNamedFormals = " <> pretty (map tidType uniquelyNamedFormals)
         debugDoc $ text "tcSigmaFn calling matchExp  expTyRaw = " <> pretty expTyRaw
         debugDoc $ text "tcSigmaFn calling matchExp, expTy'   = " <> pretty expTy'
         matchExp expTy' fn "tcSigmaFn"
@@ -1032,6 +1037,29 @@ tcSigmaFn ctx fnAST expTyRaw = do
 mkTypeFormal (BoundTyVar nm, kind) = TypeFormal nm kind
 mkTypeFormal (othervar, _kind) =
     error $ "Whoops, expected only bound type variables!\n" ++ show othervar
+
+-- Extend the type environment with the forall-bound variables
+-- declared in the function literal.
+extendTypeBindingsWith ctx ktvs taus =
+      foldl' ins (localTypeBindings ctx) (zip taus ktvs)
+       where ins m (mtv, (BoundTyVar nm, _k)) = Map.insert nm mtv m
+             ins _ (_ ,  (SkolemTyVar {}, _))= error "ForAll bound a skolem!"
+
+-- TODO this can result in losing annotations...
+-- If we have something like
+--       foo :: { % ra : T : e(ra) }
+--       foo = { a : % rb : T : p(rb) }
+-- we will completely drop p(rb)!
+pickBetween (mb_argty, mb_varty) = do
+       case (mb_argty, mb_varty) of
+         -- If the argty is a meta variable, we might get more specific error messages
+         -- by using the definitely-not-less-specific varty.
+         (Just (MetaTyVarTC {}), Just varty) -> return varty
+         -- Otherwise, the argty should have at least as much information as the varty,
+         -- since the fnTypeTemplate definition in Main.hs will copy the varty's types.
+         (Just argty, Just _) -> return argty
+         (_, Just varty) -> return varty -- Mismatch, will be caught later by matchExp
+         _ -> error $ "zipTogether lied"
 -- }}}
 
 mbFreshRefinementVar :: Context SigmaTC -> TypeAST -> Tc [TypedId TypeTC]
@@ -1107,25 +1135,6 @@ tcRhoFnHelper ctx f expTy = do
                                  debugDoc3 $ text "args/vars refined: " <> pretty (ar,vr)
                                  debugDoc3 $ string "var_tys: " <+> pretty var_tys
                                  debugDoc3 $ string "arg_tys: " <+> pretty arg_tys
-
-                           -- TODO select between arg_tys and var_tys,
-                           -- use to re-type the uniquelynamedformals...
-
-                           -- TODO this can result in losing annotations...
-                           -- If we have something like
-                           --       foo :: { % ra : T : e(ra) }
-                           --       foo = { a : % rb : T : p(rb) }
-                           -- we will completely drop p(rb)!
-                           let pickBetween (mb_argty, mb_varty) = do
-                                   case (mb_argty, mb_varty) of
-                                     -- If the argty is a meta variable, we might get more specific error messages
-                                     -- by using the definitely-not-less-specific varty.
-                                     (Just (MetaTyVarTC {}), Just varty) -> return varty
-                                     -- Otherwise, the argty should have at least as much information as the varty,
-                                     -- since the fnTypeTemplate definition in Main.hs will copy the varty's types.
-                                     (Just argty, Just _) -> return argty
-                                     (_, Just varty) -> return varty -- Mismatch, will be caught later by matchExp
-                                     _ -> error $ "zipTogether lied"
 
                            pickedTys <- mapM pickBetween (zipTogether arg_tys var_tys)
                            let uniquelyNamedBinders =
@@ -1227,7 +1236,22 @@ tcType' ctx refinementArgs ris typ = do
         TupleTypeAST  types   -> liftM   TupleTypeTC (mapM q types)
         CoroTypeAST   s r     -> liftM2  CoroTypeTC  (q s) (q r)
         TyConAppAST nm types  -> liftM (TyConAppTC nm) (mapM q types)
-        ForAllAST  tvs rho    -> liftM  (ForAllTC tvs) (q rho)
+        ForAllAST ktvs rho    -> do taus <- genTauUnificationVarsLike ktvs (\n -> "tcType'forall param " ++ show n)
+                                    let xtvs = map (\(tv,_) -> TyVarTC tv) ktvs
+                                    let ctx' = ctx { localTypeBindings = extendTypeBindingsWith ctx ktvs taus }
+                                    rv <- liftM (ForAllTC ktvs) (tcType' ctx' refinementArgs RIS_False rho)
+                                    let tryOverwrite (tv, MetaTyVarTC m) = do
+                                            mty <- readTcMeta m
+                                            case mty of
+                                                Nothing -> do ty' <- zonkType tv
+                                                              writeTcMetaTC m ty'
+                                                Just  _ -> do tcFails [text "tcType' didn't expect unification variable associated"
+                                                                      ,text "with a bound type variable to get unified!"]
+                                        tryOverwrite (tv, tau) = do
+                                          tcFails [text "tcType'.tryOverwrite could not handle non-meta tau for type variable " <> pretty tv
+                                                  ,pretty tau]
+                                    mapM_ tryOverwrite (zip xtvs taus)
+                                    return rv
         FnTypeAST ss r cc ft -> do
           let rng    = MissingSourceRange $ "refinement for fn type..."
           let refinedFormals = concatMap (\t ->
@@ -1565,16 +1589,19 @@ instSigmaWith ktvs rho taus = do
 
 -- {{{
 resolveType :: ExprAnnot -> Map String TypeTC -> TypeTC -> Tc TypeTC
-resolveType annot subst x =
-  let q = resolveType annot subst in
+resolveType annot origSubst origType = go origSubst origType where
+ go subst x =
+  let q x = go subst x in
   case x of
     PrimIntTC   _                  -> return x
     PrimFloat64TC                  -> return x
     MetaTyVarTC   _                -> return x
     TyVarTC  (SkolemTyVar _ _ _)   -> return x
     TyVarTC  (BoundTyVar name)     -> case Map.lookup name subst of
-                                         Nothing -> tcFails [text $ "Typecheck.hs: ill-formed type with free bound variable " ++ name,
-                                                             text $ highlightFirstLine (rangeOf annot)]
+                                         Nothing -> tcFails [text $ "Typecheck.hs: ill-formed type with free bound variable " ++ name
+                                                            ,text "    " <> text "embedded within type " <> pretty origType
+                                                            ,text "    " <> text "with orig subst " <> pretty (Map.toList origSubst)
+                                                            ,text $ highlightFirstLine (rangeOf annot)]
                                          Just ty -> return ty
     RefTypeTC     ty               -> liftM  RefTypeTC    (q ty)
     ArrayTypeTC   ty               -> liftM  ArrayTypeTC  (q ty)
@@ -1585,7 +1612,7 @@ resolveType annot subst x =
     TupleTypeTC       types        -> liftM   TupleTypeTC     (mapM q types)
     RefinedTypeTC v e args -> do v' <- fmapM_TID q v
                                  return $ RefinedTypeTC v' e args
-    ForAllTC      ktvs rho         -> liftM (ForAllTC  ktvs) (resolveType annot subst' rho)
+    ForAllTC      ktvs rho         -> liftM (ForAllTC  ktvs) (go subst' rho)
                                        where
                                         subst' = foldl' ins subst ktvs
                                         ins m (tv@(BoundTyVar nm), _k) = Map.insert nm (TyVarTC  tv) m
@@ -1705,12 +1732,11 @@ checkAgainst taus (ety, MetaTyVarTC m) = do
             Just  _ -> do return ()
 
   case ety of
-    MetaTyVarTC em ->
-      if em `elem` taus then do ty' <- zonkType ety
-                                debugDoc $ string "checkAgainst: ety ~> " <+> pretty ty'
-                                --tryOverwrite
-                                return ()
-                        else tryOverwrite
+    MetaTyVarTC em | em `elem` taus -> do
+        ty' <- zonkType ety
+        debugDoc $ string "checkAgainst: ety ~> " <+> pretty ty'
+        --tryOverwrite
+        return ()
     _ -> tryOverwrite
 checkAgainst _ (_, _) = return ()
 

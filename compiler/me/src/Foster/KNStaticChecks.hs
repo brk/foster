@@ -23,6 +23,7 @@ import Foster.Output(putDocLn)
 
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T
+import qualified Data.ByteString as BS
 
 import Control.Monad.Error(throwError, runErrorT, ErrorT)
 import Control.Monad.State(gets, liftIO, evalStateT, StateT,
@@ -58,12 +59,19 @@ data Facts = Facts { fnPreconds :: Map Ident [[MoVar] -> SC SMTExpr]
 ------
 
 -- {{{ Utility functions for SMT names and types
-nm id = SMT.N (map cleanChar $ show id)
-  where cleanChar c = case c of
-                         '.' -> '_'
+nm :: Ident -> SMT.Name
+nm id = smtN (show id)
+
+smtN :: String -> SMT.Name
+smtN s = SMT.N (noLeadingDot $ map cleanChar s)
+  where noLeadingDot ('.':xs) = '_':xs
+        noLeadingDot other    = other
+        cleanChar c = case c of
                          '/' -> '_'
-                         '!' -> '_'
                          ':' -> '_'
+                         '[' -> '_'
+                         ']' -> '_'
+                         ' ' -> '_'
                          _ -> c
 
 ident :: Ident -> SMT.Ident
@@ -113,8 +121,9 @@ insertIdentFact id expr idfacts =
   -- trace (show (text "insertIdentFact" <+> indent 4 (vsep [pretty (id,expr), pretty idfacts]))) $
   (id, expr):idfacts
 
-addIdentFact facts id (SMTExpr expr _ _) ty =
-  addSymbolicVars (addIdentFact''' facts id expr) [TypedId ty id]
+addIdentFact facts id (SMTExpr expr decls _) ty =
+  addSymbolicDecls
+   (addSymbolicVars (addIdentFact''' facts id expr) [TypedId ty id]) decls
 
 addIdentFact''' facts id expr =
     facts { identFacts = insertIdentFact id expr (identFacts facts) }
@@ -135,6 +144,8 @@ withPathFact  facts pathfact  = withPathFacts facts [pathfact]
 withPathFacts facts pathfacts = facts { pathFacts = pathfacts ++ pathFacts facts }
 -- }}}
 
+-- According to de Moura at http://stackoverflow.com/questions/7411995/support-for-aufbv
+-- it's better to use either UFBV or QF_AUFBV... the former is more useful for us.
 scriptImplyingBy' :: SMT.Expr -> Facts -> CommentedScript
 scriptImplyingBy' pred facts = scriptImplyingBy (bareSMTExpr pred) facts
 
@@ -151,7 +162,7 @@ scriptImplyingBy (SMTExpr pred declset idfacts) facts =
                      | (TApp id tys) <- alldecltys]] in
   CommentedScript $ [Cmds $
            [CmdSetOption (OptProduceModels True)
-           ,CmdSetLogic (SMT.N "QF_AUFBV")
+           ,CmdSetLogic (SMT.N "UFBV")
            ,CmdDeclareType (SMT.N "FosterArray") 0
            ,CmdDeclareFun (SMT.N "foster$arraySizeOf") [smtArray] (tBitVec 64)
            ]
@@ -428,10 +439,23 @@ checkBody expr facts =
         return $ withDecls facts $ \x -> return $ smtId x === litOfSize (fromInteger $ litIntValue i) (intSizeBitsOf ty)
     KNLiteral _ (LitBool b) ->
         return $ withDecls facts $ \x -> return $ smtId x === (if b then SMT.true else SMT.false)
+    KNLiteral _ (LitByteArray bs) -> -- TODO: handle refinements?
+        return $ withDecls facts $ \x ->
+            return $ (smtArraySizeOf (smtId x) === litOfSize (fromIntegral $ BS.length bs) I64)
+
     KNLiteral     {} -> do dbgStr $ "no constraint for literal " ++ show expr
                            return Nothing
 
-    KNVar v -> return $ withDecls facts $ \x -> return $ smtId x === smtVar v
+    KNVar v ->
+       case tidType v of
+         -- Gotta eta-expand to comply with restrictions on SMT-LIB 2 formulae.
+         FnType ts _ _ _ -> do let ss = map (\c -> (c:[])) "abcdefghijklmnopqrstuvwxyz"
+                               let sts = let zipTruncating = zip in  zipTruncating ss ts
+                               let xs = map (\(s,_) -> app (SMT.I (smtN s) []) []) sts
+                               return $ withDecls (addSymbolicVars facts [v]) $ \x -> return $
+                                 SMT.Quant SMT.Forall [SMT.Bind (smtN s) (smtType t) | (s,t) <- sts]
+                                                      (SMT.app (ident x) xs === SMT.app (ident (tidIdent v)) xs)
+         _ -> return $ withDecls facts $ \x -> return $ smtId x === smtVar v
 
     KNArrayRead _ty (ArrayIndex a i _ sg) -> do
         case sg of
@@ -645,10 +669,14 @@ checkBody expr facts =
     KNStore       {} -> return Nothing
     KNDeref       {} -> return Nothing
 
-    KNTyApp       {} -> return Nothing
     KNTuple       {} -> return Nothing
     KNAllocArray  {} -> return Nothing
 
+    KNTyApp _t v _ts -> -- We don't return a fact saying (x === v) because
+                        -- doing so would produce invalid SMT when v is function-typed.
+                        -- Instead, we record a meta fact (even-more-meta, that is)
+                        -- of the correspondence...
+                        return Nothing
     KNKillProcess {} -> return $ withDecls facts $ \_x -> return SMT.false
 
 scIntrospect :: SC x -> SC (Either CompilerFailures x)
