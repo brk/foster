@@ -39,7 +39,7 @@ import Foster.RunZ3 (runZ3)
 
 --------------------------------------------------------------------
 
-newtype CommentedScript = CommentedScript [CommentOrCommand]
+data CommentedScript = CommentedScript [CommentOrCommand] SMT.Expr
 data CommentOrCommand = Cmnt String | Cmds [Command]
 
 data SymDecl = SymDecl SMT.Name [SMT.Type] SMT.Type
@@ -147,6 +147,9 @@ withPathFacts facts pathfacts = facts { pathFacts = pathfacts ++ pathFacts facts
 -- According to de Moura at http://stackoverflow.com/questions/7411995/support-for-aufbv
 -- it's better to use either UFBV or QF_AUFBV, rather than AUFBV...
 -- the former is more useful for us.
+-- Also, we carefully avoid doing multiple (check-sat)s per query or using
+-- push/pop, because those features trigger Z3's incremental solver, which does
+-- not accelerate bitvector queries, leading to 2+ orders of magnitude slowdown.
 scriptImplyingBy' :: SMT.Expr -> Facts -> CommentedScript
 scriptImplyingBy' pred facts = scriptImplyingBy (bareSMTExpr pred) facts
 
@@ -161,7 +164,7 @@ scriptImplyingBy (SMTExpr pred declset idfacts) facts =
                     uniquesWithoutPrims
                      [(smtNameI id, fromIntegral $ length tys)
                      | (TApp id tys) <- alldecltys]] in
-  CommentedScript $ [Cmds $
+  CommentedScript [Cmds $
            [CmdSetOption (OptProduceModels True)
            ,CmdSetLogic (SMT.N "UFBV")
            ,CmdDeclareType (SMT.N "FosterArray") 0
@@ -169,14 +172,14 @@ scriptImplyingBy (SMTExpr pred declset idfacts) facts =
            ]
         ++ tydecls
         ++ map (\(SymDecl nm tys ty) -> CmdDeclareFun nm tys ty) alldecls
-      ] ++ [Cmnt "path facts"]
-        ++ [Cmds $ map CmdAssert (pathFacts facts)]
-        ++ [Cmnt "facts preconds"]
-        ++ [Cmds $ map CmdAssert (map snd $ identFacts facts)]
-        ++ [Cmnt "expr preconds"]
-        ++ [Cmds $ map CmdAssert (map snd $ idfacts)]
-        ++ [Cmds $ [CmdPush 1]
-                ++ [CmdAssert $ SMT.not pred]]
+       ,Cmnt "path facts"
+       ,Cmds $ map CmdAssert (pathFacts facts)
+       ,Cmnt "facts preconds"
+       ,Cmds $ map CmdAssert (map snd $ identFacts facts)
+       ,Cmnt "expr preconds"
+       ,Cmds $ map CmdAssert (map snd $ idfacts)
+       ]
+       (SMT.not pred)
 
 -- As we traverse the input expression, we build up a collection of path facts
 -- and id-associated facts (which are, morally, path facts), which we can
@@ -215,7 +218,7 @@ scriptImplyingBy (SMTExpr pred declset idfacts) facts =
 type SC = StateT SCState Compiled
 data SCState = SCState {
   scExtraFacts :: Map Ident (Ident -> SMT.Expr)
-, scSMTStats :: IORef (Int, [Double])
+, scSMTStats :: IORef (Int, [(Double, Double)])
 }
 
 scAddFact id k = do
@@ -230,24 +233,33 @@ scGetFact id = do
 
 -- Errors will be propagated, while unsat (success) results are trivial...
 scRunZ3 :: KNMonoLike monolike => monolike -> CommentedScript -> SC ()
-scRunZ3 expr script = do
+scRunZ3 expr script@(CommentedScript items _) = do
  smtStatsRef <- gets scSMTStats
  lift $ do
   let doc = prettyCommentedScript script
-  (time, res) <- liftIO $ ioTime $ runZ3 (show doc) (Just "(pop 1)\n(check-sat)")
+  (time, res) <- liftIO $ ioTime $ runZ3 (show doc) (Just "(get-model)")
   liftIO $ if (time > 0.9)
              then do
                 putDocLn $ text "the following script took more than 900ms to verify:"
                 putDocLn $ doc
              else return ()
-  liftIO $ modifyIORef smtStatsRef (\(c, ts) -> (c + 1, time:ts))
   case res of
-    Left x -> throwError [text x, knMonoLikePretty expr, string (show doc)]
-    Right ("unsat":"sat":_) -> return ()
-    Right ["unsat","unsat"] -> do
-        dbgStr $ "WARNING: scRunZ3 returning OK due to inconsistent context..."
-        dbgStr $ "   This is either dead code or a buggy implementation of our SMT query generation."
-        return ()
+    Left x -> do throwError [text x, knMonoLikePretty expr, string (show doc)]
+    Right ["unsat"] -> do
+      -- Run the script again, but without the target asserted.
+      -- If the result remains unsat, then the context was inconsistent.
+      -- If the result becomes sat, then the context was not inconsistent.
+      (time', res') <- liftIO $ ioTime $ runZ3 (show $ vcat (map pretty items)) Nothing
+      case res' of
+        Left x -> throwError [text x, knMonoLikePretty expr, string (show doc)]
+        Right ["sat"] -> do liftIO $ modifyIORef smtStatsRef (\(c, ts) -> (c + 1, (time, time'):ts))
+                            return ()
+        Right ["unsat"] -> do
+         dbgStr $ "WARNING: scRunZ3 returning OK due to inconsistent context..."
+         dbgStr $ "   This is either dead code or a buggy implementation of our SMT query generation."
+         return ()
+        Right strs -> do
+         throwError $ [text "Removing the target assertion resulted in an invalid SMT query?!?"] ++ map text strs
     Right strs -> throwError ([text "Unable to verify precondition or postcondition associated with expression",
                                case maybeSourceRangeOf expr of
                                    Just sr -> prettyWithLineNumbers sr
@@ -820,6 +832,6 @@ instance Pretty Facts where
               <$> text "symbolicDecls:" <+> pretty (Set.toList $ symbolicDecls facts))
 
 prettyCommentedScript :: CommentedScript -> Doc
-prettyCommentedScript (CommentedScript items) =
-  vsep $ map pretty items
+prettyCommentedScript (CommentedScript items target) =
+  vsep (map pretty items) <$> pretty (Cmds [CmdAssert target])
 -- }}}

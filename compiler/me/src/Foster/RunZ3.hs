@@ -18,15 +18,7 @@ import System.IO          (hClose, hFlush, hPutStr, hGetContents, hGetLine)
 
 data SMTConfig = SMTConfig {
          verbose        :: Bool             -- ^ Debug mode
-       , timing         :: Bool             -- ^ Print timing information on how long different phases took (construction, solving, etc.)
-       , sBranchTimeOut :: Maybe Int        -- ^ How much time to give to the solver for each call of 'sBranch' check. (In seconds. Default: No limit.)
-       , timeOut        :: Maybe Int        -- ^ How much time to give to the solver. (In seconds. Default: No limit.)
-       , printBase      :: Int              -- ^ Print integral literals in this base (2, 8, and 10, and 16 are supported.)
-       , printRealPrec  :: Int              -- ^ Print algebraic real values with this precision. (SReal, default: 16)
-       , solverTweaks   :: [String]         -- ^ Additional lines of script to give to the solver (user specified)
        , satCmd         :: String           -- ^ Usually "(check-sat)". However, users might tweak it based on solver characteristics.
-       , smtFile        :: Maybe FilePath   -- ^ If Just, the generated SMT script will be put in this file (for debugging purposes mostly)
-       , useSMTLib2     :: Bool             -- ^ If True, we'll treat the solver as using SMTLib2 input format. Otherwise, SMTLib1
        , solver         :: SMTSolver        -- ^ The actual SMT solver.
        --, roundingMode   :: RoundingMode     -- ^ Rounding mode to use for floating-point conversions
        --, useLogic       :: Maybe Logic      -- ^ If Nothing, pick automatically. Otherwise, either use the given one, or use the custom string.
@@ -37,7 +29,6 @@ data SMTConfig = SMTConfig {
 data SMTScript = SMTScript {
           scriptBody  :: String        -- ^ Initial feed
         , scriptModel     :: Maybe String  -- ^ Optional continuation script, if the result is sat
-        , scriptAntiModel :: Maybe String  -- ^ Optional continuation script, if the result is unsat
         }
 
 -- | An SMT engine
@@ -92,9 +83,8 @@ h1 _ = return ""
 -- and can speak SMT-Lib2 (just a little).
 runSolver :: SMTConfig -> FilePath -> [String] -> SMTScript -> IO (ExitCode, String, String)
 runSolver cfg execPath opts script
- | isNothing (scriptModel script) && isNothing (scriptAntiModel script)
- = let checkCmd | useSMTLib2 cfg = '\n' : satCmd cfg
-                | True           = ""
+ | isNothing (scriptModel script)
+ = let checkCmd = '\n' : satCmd cfg
    in readProcessWithExitCode execPath opts (scriptBody script ++ checkCmd)
  | True
  = do (send, ask, cleanUp) <- do
@@ -122,17 +112,8 @@ runSolver cfg execPath opts script
       mapM_ send (lines (scriptBody script))
 
       r <- ask $ satCmd cfg
-      r' <- case (any (`isPrefixOf` r) ["unsat"]) of
-              True | Just sam <- scriptAntiModel script -> do
-                let mls = lines sam
-                when (verbose cfg) $ do putStrLn "** Sending the following anti-model extraction commands:"
-                                        mapM_ putStrLn mls
-                mapM_ send mls
-                ask $ satCmd cfg
-              _ ->
-                return r
 
-      when (any (`isPrefixOf` r') ["sat", "unknown"]) $ do
+      when (any (`isPrefixOf` r) ["sat", "unknown"]) $ do
         let mls = lines (fromJust (scriptModel script))
         when (verbose cfg) $ do putStrLn "** Sending the following model extraction commands:"
                                 mapM_ putStrLn mls
@@ -140,9 +121,9 @@ runSolver cfg execPath opts script
       cleanUp r
 
 runZ3 :: String -> Maybe String -> IO (Either String [String])
-runZ3 smtlib2cmd anticmd = do
+runZ3 smtlib2cmd mb_sat_cont = do
   let z3solver = SMTSolver "z3" "z3" ["-T:1"] id
-  let cfg = SMTConfig False False Nothing Nothing 10 16 [] "(check-sat)" Nothing True z3solver
-  let scr = SMTScript smtlib2cmd (Just "(get-model)") anticmd
+  let cfg = SMTConfig False "(check-sat)" z3solver
+  let scr = SMTScript smtlib2cmd mb_sat_cont
   pipeProcess cfg "z3" "z3" ["-smt2", "-in"] scr id
 

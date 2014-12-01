@@ -28,7 +28,7 @@ data CompilerContext = CompilerContext {
       , ccFlagVals  :: ([Flag], [String])
       , ccInline    :: Bool
       , ccDumpFns   :: [String]
-      , ccSMTStats  :: IORef (Int, [Double])
+      , ccSMTStats  :: IORef (Int, [(Double, Double)])
 }
 
 type CompilerFailures = [Doc]

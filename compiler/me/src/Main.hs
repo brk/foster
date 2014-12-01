@@ -435,7 +435,8 @@ runCompiler pi_time pb_program flagVals outfile = do
                               padding = fill n (text "") in
                           padding <> parens (text (printf "%.1f" p) <> text "%")
        let fmt str time = text str <+> (fill 11 $ text $ secs time) <+> fmt_pct time
-       putDocLn $ vcat $ [text "# SMT queries:" <+> pretty nqueries <+> text "taking" <+> pretty (map secs querytime)
+       let pairwise f = \(x,y) -> (f x, f y)
+       putDocLn $ vcat $ [text "# SMT queries:" <+> pretty nqueries <+> text "taking" <+> pretty (map (pairwise secs) querytime)
                          ,fmt "static-chk  time:" sc_time
                          ,fmt "inlining    time:" in_time
                          ,fmt "codegenprep time:" cp_time
