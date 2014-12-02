@@ -23,6 +23,7 @@ Foster Notes
    parallelism
    polymorphism
    inlining
+   space-safety
    bench
    todo
    checklist

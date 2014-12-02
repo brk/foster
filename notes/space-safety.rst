@@ -6,7 +6,7 @@ implementations of languages which do not allow manual memory management.
 
 They note that flat closures are safe for space by construction, but may
 involve copying more variables than needed.
-**Do they have empirical evidence supporting this claim?**
+**Has anyone collected empirical evidence to evaluate this claim?**
 
 They also say that stack allocation of closures violates SSC "because
 dead local variables remain in the stack frame until the function returns."
@@ -27,7 +27,7 @@ One example they give of a problematic function is::
 ``g``'s closure contains ``h``, ``u``, ``v``, and ``w``.
 
         "Under the standard stack implementation, ``g``'s frame would contain a
-        pointer to ``h``'s closure, and all four varaibles are kept live until
+        pointer to ``h``'s closure, and all four variables are kept live until
         ``g`` returns. But variable ``u`` reaches its last use at the first call
         to ``h``; keeping it live with the rest of the closure is clearly not
         space safe."
@@ -41,6 +41,10 @@ copying out its contents **also** won't help, because the caller of ``g``, who
 provided the environment pointer in the first place, has a copy of ``g``'s
 closure with the environment pointer. Thus ``g`` must cooperate with its caller
 to ensure space safety.
+
+(Obviously, in the general case, the environment slots cannot be modified
+directly, because doing so would lead to incorrect behavior on subsequent
+calls.)
 
 Block Sinking
 -------------
