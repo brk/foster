@@ -505,6 +505,7 @@ kNormalCtors ctx ctorRepr dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dty
                             case tidType tid of
                                  FnTypeIL _ r _ _ -> r
                                  ForAllIL _ (FnTypeIL _ r _ _) -> r
+                                 _ -> error $ "KNExpr.hs: kNormalCtor given non-function type!"
       case termVarLookup cname (contextBindings ctx) of
         Nothing -> case termVarLookup cname (nullCtorBindings ctx) of
           Nothing -> error $ "Unable to find binder for constructor " ++ show cname
@@ -743,7 +744,7 @@ localBlockSinking knf = rebuildFn knf
 --
 -- Adding loop headers has two benefits:
 --   1) Passing fewer arguments as loop arguments avoids unnecessary copies.
---   2) When inlining is applied, inlining a function wrapping a loop header
+--   2) When inlining is applied, inlining a function wrapped in a loop header
 --      corresponds to specializing the recursive function to its arguments,
 --      rather than merely unrolling the loop once.
 --
@@ -933,7 +934,7 @@ knLoopHeaders' expr = do
           --                             loop x' end
           --                       }; in b end)
           Just ((id' , vs' ), mt ) -> -- vs' is the complete list of fresh args
-            let v'  = TypedId (tidType (fnVar fn)) id' in
+            let v'  = TypedId (selectUsefulArgs id' mt (tidType (fnVar fn))) id' in
             -- The inner, recursive body
             let fn'' = Fn { fnVar   = mkGlobal v'
                           , fnVars  = dropUselessArgs mt (fnVars fn)
@@ -964,8 +965,17 @@ knLoopHeaders' expr = do
     KNCall ty v vs ->
       case (tailq, qv (tidIdent v)) of
         (YesTail, Just ((id, _), mt)) ->
-             KNCall ty (TypedId (tidType v) id) (dropUselessArgs mt vs)
+             KNCall ty (TypedId (selectUsefulArgs id mt (tidType v)) id) (dropUselessArgs mt vs)
         _ -> expr
+
+-- Drop formal param types from the function type if the corresponding
+-- value arg isn't getting passed any more. @see dropUselessArgs
+selectUsefulArgs :: Ident -> [Maybe (TypedId MonoType)] -> MonoType -> MonoType
+selectUsefulArgs _id' mt (FnType args rt cc pf) = let args' = (concatMap resolve (zip mt args)) in
+                                               FnType args' rt cc pf
+                                              where resolve (Nothing, t) = [t]
+                                                    resolve (Just  _, _) = []
+selectUsefulArgs id' _ ty = error $ "KNExpr.hs wasn't expecting a non-function type for selectUsefulArgs["++show id' ++"], but got " ++ show ty
 
 -- {note 1}::
 -- The issue at play is that recursive polymorphic functions will recurse via
