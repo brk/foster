@@ -556,7 +556,8 @@ checkBody expr facts =
         return $ Nothing
 
     KNCallPrim _ _ (NamedPrim tid) [v] | primName tid `elem` ["prim_arrayLength"] -> do
-        return $ withDecls facts $ \x -> return $ smtId x === smtArraySizeOf (smtVar v)
+        return $ withDecls facts $ \x -> return $ smtAll [smtId x === smtArraySizeOf (smtVar v)
+                                                         ,smtId x `bvsge` bv 0 64]
 
     KNCallPrim _ (PrimInt szr) (PrimOp ('s':'e':'x':'t':'_':_) (PrimInt szi)) [v] -> do
         return $ withDecls facts $ \x -> return $ smtId x === sign_extend (fromIntegral $ intSizeOf szr - intSizeOf szi) (smtVar v)
