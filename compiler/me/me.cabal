@@ -1,5 +1,5 @@
 name: me
-version: 0.0.2
+version: 0.0.3
 cabal-version: -any
 build-type: Simple
 license: BSD3
@@ -11,7 +11,7 @@ build-depends: ansi-terminal -any, array -any, base -any,
                mtl -any, protocol-buffers -any, hoopl >=3.9.0.0,
                protocol-buffers-descriptor -any, text -any, utf8-string -any,
                criterion -any, hoopl ==3.10.0.1, ansi-wl-pprint -any, time -any,
-               data-dword -any, boxes -any
+               data-dword -any, boxes -any, language-lua
 stability:
 homepage:
 package-url:

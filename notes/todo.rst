@@ -99,13 +99,9 @@ TODO: libraries, benchmarks, & applications
 * Strings - partially done
 * Hash tables
 * Sequences
-* Persistent maps
-* MP integers (started)
 * C interop story
   * GC design
-* 32-bit floats
-* Flonum vectors
-* Fixnum vectors
+* 32-bit floats - have literals and a few primops, not much else
 * Growable vectors
 * Parallel benchmarks?
 * Timing infrastructure
@@ -114,6 +110,10 @@ TODO: libraries, benchmarks, & applications
   * Non-GCed values are easy.
   * GCed values need to be registered with the GC when initialized.
   * Need to decide how to deal with module-level initialization in a sane way.
+  * Current status: constant arrays and strings are statically allocated;
+        they are a convenient special case because they don't reference
+        any sub-data and contain no mutable fields, which means they can never
+        point into any GC'd heap.
 
 * Primitive to determine aliasing between refs and/or arrays?
 
