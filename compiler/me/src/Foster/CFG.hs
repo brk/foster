@@ -500,6 +500,7 @@ instance Pretty (Fn RecStatus BasicBlockGraph MonoType) where
                     <$> indent 4 (pretty (fnBody fn))
                     <$> rbrace)
                      <+> text "free-ids" <+> text (show (map prettyTypedVar (fnFreeIds fn)))
+                     <$> text "::" <+> prettyTypedVar (fnVar fn)
 
 instance Pretty Label where pretty l = text (show l)
 
@@ -527,6 +528,7 @@ instance Pretty (Insn e x) where
 instance Pretty CFLast where
   pretty (CFCont bid     vs) = text "cont" <+> prettyBlockId bid <+>              list (map pretty vs)
   pretty (CFCall bid _ v vs) = text "call" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
+                                           <$> indent 6 (prettyTypedVar v)
   pretty (CFCase v arms)     = align $
                                text "case" <+> pretty v <$> indent 2
                                   (vcat [ text "of" <+> fill 20 (pretty pat)
