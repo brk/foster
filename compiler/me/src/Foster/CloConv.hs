@@ -12,7 +12,7 @@ import Data.Set(Set)
 import qualified Data.Set as Set(empty, singleton, union, unions, notMember,
                                                       size, fromList, toList)
 import Data.Map(Map)
-import qualified Data.Map as Map((!), insert, lookup, empty, fromList, elems)
+import qualified Data.Map as Map(insert, lookup, empty, fromList, elems)
 
 import Control.Monad.State
 
@@ -365,8 +365,10 @@ closureOfKnFn :: InfoMap
               -> ILM Closure
 closureOfKnFn infoMap (self_id, fn) = do
     let varsOfClosure = closedOverVarsOfKnFn
-
-    let envId  = snd (infoMap Map.! self_id)
+    let
+    let envId  = snd (case Map.lookup self_id infoMap of
+                             Just id -> id
+                             Nothing -> error $ "CloConv.hs: did not find info for " ++ show self_id)
     -- Note that this env var has a precise type! The other's is missing.
     let envVar = TypedId (TupleType $ map tidType varsOfClosure) envId
 

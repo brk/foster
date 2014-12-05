@@ -532,13 +532,14 @@ collectMayGCConstraints cfbody = execState (go cfbody) Map.empty
           collectMayGCConstraints_CFFns ids cffns
           go cfbody
 
+defaultMayGCConstraint = (GCUnknown "maygc-init", Set.empty)
+
 collectMayGCConstraints_CFFns :: [Ident] -> [CFFn] -> MGCM ()
 collectMayGCConstraints_CFFns ids fns = do
   mapM_ initializeMayGCConstraint ids
   mapM_ collectMayGCConstraints_CFFn fns
  where
-   initializeMayGCConstraint id = do
-      modify (Map.insert id (GCUnknown "maygc-init", Set.empty))
+   initializeMayGCConstraint id = modify (Map.insert id defaultMayGCConstraint)
 
 collectMayGCConstraints_CFFn :: CFFn -> MGCM ()
 collectMayGCConstraints_CFFn fn = collectMayGCConstraints_CFG (fnBody fn)
@@ -568,8 +569,9 @@ collectMayGCConstraints_CFG bbg fnid = let (bid,_) = bbgEntry bbg in
                      CFCase {}      -> return ()
                      CFCall _ _ v _ -> callGC (tidIdent v)
 
-        aliasing x v = \m -> Map.insert x (m Map.! (tidIdent v) `addAlias` v) m
+        aliasing x v = \m -> Map.insert x (looky m (tidIdent v) `addAlias` v) m
         addAlias (maygc, s) v = (maygc, Set.insert (tidIdent v) s)
+        looky m id = Map.findWithDefault defaultMayGCConstraint id m
 
         withGC WillNotGC     = return ()
         withGC MayGC         = modify $ Map.adjust (\_ -> (MayGC, Set.empty)) fnid
