@@ -66,13 +66,7 @@ smtN :: String -> SMT.Name
 smtN s = SMT.N (noLeadingDot $ map cleanChar s)
   where noLeadingDot ('.':xs) = '_':xs
         noLeadingDot other    = other
-        cleanChar c = case c of
-                         '/' -> '_'
-                         ':' -> '_'
-                         '[' -> '_'
-                         ']' -> '_'
-                         ' ' -> '_'
-                         _ -> c
+        cleanChar c = if c `elem` "/:[]() " then '_' else c
 
 ident :: Ident -> SMT.Ident
 ident id = SMT.I (nm id) []

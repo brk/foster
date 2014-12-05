@@ -48,20 +48,18 @@ arrayFoldlFromTo = { arr => offset => len => f => acc =>
 
 ////
 
-arrayLength :: forall x:Type, { Array x => Int64 };
-arrayLength = { forall t:Type, a : Array t =>
-  prim_arrayLength a
-};
+arrayLength :: forall x:Type, { % ra : Array x : True =>
+                                % rv : Int64 : rv ==Int64 prim_arrayLength:[x] ra };
+arrayLength = { a : Array x => prim_arrayLength a };
 
-arrayLength32 :: forall x:Type, { Array x => Int32 };
-arrayLength32 = { forall t:Type, a : Array t =>
-  trunc_i64_to_i32 (prim_arrayLength a)
-};
+arrayLength32 :: forall x:Type, { % ra : Array x : True =>
+                                  % rv : Int32 : rv ==Int32 trunc_i64_to_i32 (prim_arrayLength:[x] ra) };
+arrayLength32 = { a : Array x => trunc_i64_to_i32 (prim_arrayLength a) };
 
-arrayLengthWord :: forall x:Type, { Array x => Word };
-arrayLengthWord = { forall t:Type, a : Array t =>
-  trunc_i64_to_Word (prim_arrayLength a)
-};
+arrayLengthWord :: forall x:Type, { % ra : Array x : True =>
+                                    % rv : Word : rv ==Word trunc_i64_to_Word (prim_arrayLength:[x] ra) };
+arrayLengthWord = { a : Array x => trunc_i64_to_Word (prim_arrayLength a) };
+
 
 incr64 = { n : Int64 => n +Int64 1 };
 
