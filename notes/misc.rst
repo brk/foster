@@ -78,4 +78,6 @@ Miscellanous Tidbits of Knowledge
   ``type case TX of $FX TB;`` will have calls to ``FX`` translated into simple
   bitcasts.
 
+* Gotcha:
+  Functions referenced in refinements must have top-level type annotations.
 

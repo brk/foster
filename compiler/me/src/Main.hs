@@ -14,7 +14,7 @@ import qualified Data.ByteString.Lazy as L(readFile)
 import qualified Data.Text as T
 import qualified Data.Map as Map(fromList, toList, empty)
 import qualified Data.Set as Set(filter, toList, fromList, notMember, intersection)
-import qualified Data.Graph as Graph(SCC, flattenSCC, stronglyConnComp)
+import qualified Data.Graph as Graph(SCC, flattenSCC, stronglyConnComp, stronglyConnCompR)
 import Data.Map(Map)
 import Data.Set(Set)
 
@@ -175,6 +175,13 @@ typecheckFnSCC showASTs showAnnExprs pauseOnErrors scc (ctx, tcenv) = do
                          [] -> fnTyAST0
                          tyformals -> ForAllAST (map convertTyFormal tyformals) fnTyAST0
 
+typecheckAndFoldContextBindings :: Context TypeTC ->
+                                  [ContextBinding TypeAST] ->
+                               Tc (Context TypeTC)
+typecheckAndFoldContextBindings ctxTC0 bindings = do
+  bindings' <- mapM (liftBinding (tcType ctxTC0)) bindings
+  return $ prependContextBindings ctxTC0 bindings'
+
 -- | Typechecking a module proceeds as follows:
 -- |  #. Build separate binding lists for the globally-defined primitiveDecls
 -- |     and the module's top-level (function) declarations.
@@ -204,15 +211,18 @@ typecheckModule verboseMode pauseOnErrors modast tcenv0 = do
 
     case detectDuplicates $ map fnAstName fns of
       [] -> do
+        let declCG = buildCallGraphList' declBindings (Set.fromList $ map (\(TermVarBinding nm _) -> nm) declBindings)
+        let declBindings = topoSortBindingSCC $ Graph.stronglyConnCompR declCG -- :: [ [ContextBinding TypeAST] ]
+
         let primOpMap = Map.fromList [(T.pack nm, prim)
                             | (nm, (_, prim)) <- Map.toList gFosterPrimOpsTable]
         let ctxTC0 = mkContext [] [] [] Map.empty []
-        let ctxAS1 = mkContext (computeContextBindings nonNullCtors) nullCtorBindings primBindings
-                                                                          primOpMap dts
-        let ctxAST = mkContext declBindings nullCtorBindings primBindings primOpMap dts
-        ctxErrsOrOK <- unTc tcenv0 (do ctxTC1 <- tcContext ctxTC0 ctxAS1
-                                       tcContext ctxTC1 ctxAST)
+        let ctxAS1 = mkContext (computeContextBindings nonNullCtors)
+                               nullCtorBindings primBindings primOpMap dts
 
+        ctxErrsOrOK <- unTc tcenv0 $ do
+                         ctxTC1 <- tcContext ctxTC0 ctxAS1
+                         foldlM typecheckAndFoldContextBindings ctxTC1 declBindings
         case ctxErrsOrOK of
           OK ctxTC -> do
             -- declBindings includes datatype constructors and some (?) functions.
@@ -281,6 +291,19 @@ typecheckModule verboseMode pauseOnErrors modast tcenv0 = do
      case ctorTypeAST [] dt ctorArgTypes of
        Left ty  -> Left $ f ty
        Right ty -> Right $ f ty
+
+   buildCallGraphList' :: [ContextBinding TypeAST] -> Set T.Text
+                      -> [(ContextBinding TypeAST, T.Text, [T.Text])]
+   buildCallGraphList' bindings toplevels =
+     map (\binding -> (binding, bindingName binding, freeVariables binding)) bindings
+       where
+         bindingName   (TermVarBinding nm _     ) = nm
+         freeVariables (TermVarBinding nm (v, _)) =
+            let allCalledFns = Set.fromList $ freeVars v in
+            -- Remove everything that isn't a top-level binding.
+            let nonPrimitives = Set.intersection allCalledFns toplevels in
+            -- remove recursive function name calls
+            Set.toList $ Set.filter (\name -> nm /= name) nonPrimitives
 
    buildCallGraphList :: [FnAST TypeAST] -> Set T.Text
                       -> [(FnAST TypeAST, T.Text, [T.Text])]
@@ -370,6 +393,24 @@ dieOnError (Errors errs) = liftIO $ do
     forM_ errs putDocLn
     error "compilation failed"
 
+topoSortBindingSCC :: [Graph.SCC (ContextBinding TypeAST, T.Text, [T.Text])]
+                   -> [ [ContextBinding TypeAST] ]
+topoSortBindingSCC allSCCs =
+  -- First, pluck out all the SCCs which have no dependencies; they can all
+  -- be processed in parallel.
+  let go leafs nonleafs []         = (leafs, nonleafs)
+      go leafs nonleafs (scc:sccs) =
+         case Graph.flattenSCC scc of
+           [(binding, _, [])] -> go (binding:leafs) nonleafs sccs
+           [(_,      _,  _ )] -> go leafs (scc:nonleafs) sccs
+           nodes -> error $ "Main.hs: cannot yet handle recursive nest of type refinements at toplevel: "
+                            ++ show (map (\(_, nm, _) -> nm) nodes)
+      (leafs, sccs) = go [] [] allSCCs
+      flatten scc = map (\(binding, _, _) -> binding) (Graph.flattenSCC scc)
+  in
+    leafs : map flatten sccs
+
+
 -----------------------------------------------------------------------
 
 readAndParseProtobuf infile = do
@@ -435,8 +476,9 @@ runCompiler pi_time pb_program flagVals outfile = do
                               padding = fill n (text "") in
                           padding <> parens (text (printf "%.1f" p) <> text "%")
        let fmt str time = text str <+> (fill 11 $ text $ secs time) <+> fmt_pct time
-       let pairwise f = \(x,y) -> (f x, f y)
-       putDocLn $ vcat $ [text "# SMT queries:" <+> pretty nqueries <+> text "taking" <+> pretty (map (pairwise secs) querytime)
+       let pairwise f = \(x,y) -> (f x, f (x + y))
+       putDocLn $ vcat $ [text "                                            (initial query time, overall query time)"
+                         ,text "# SMT queries:" <+> pretty nqueries <+> text "taking" <+> pretty (map (pairwise secs) querytime)
                          ,fmt "static-chk  time:" sc_time
                          ,fmt "inlining    time:" in_time
                          ,fmt "codegenprep time:" cp_time
@@ -537,10 +579,18 @@ lowerModule ai_mod ctx_il = do
      let knorm = kNormalize ctorRepr -- For normalizing expressions in types.
 
      kmod <- kNormalizeModule ai_mod ctx_il ctoropt
+
+     whenDumpIR "kn" $ do
+         putDocLn (outLn $ "vvvv k-normalized :====================")
+         putDocLn (showStructure (moduleILbody kmod))
+         _ <- liftIO $ renderKN kmod True
+         return ()
+
      monomod0 <- monomorphize   kmod knorm
 
      whenDumpIR "mono" $ do
          putDocLn $ (outLn "/// Monomorphized program =============")
+         putDocLn (showStructure (moduleILbody monomod0))
          putDocLn $ (outLn $ "///               size: " ++ show (knSize (moduleILbody monomod0)))
          _ <- liftIO $ renderKN monomod0 True
          putDocLn $ (outLn "^^^ ===================================")
@@ -549,12 +599,6 @@ lowerModule ai_mod ctx_il = do
      monomod2 <- knLoopHeaders  monomod0
      (in_time, monomod4) <- ioTime $ (if inline then knInline insize donate else return) monomod2
      monomod  <- knSinkBlocks   monomod4
-
-     whenDumpIR "kn" $ do
-         putDocLn (outLn $ "vvvv k-normalized :====================")
-         putDocLn (showStructure (moduleILbody monomod0))
-         _ <- liftIO $ renderKN kmod True
-         return ()
 
      whenDumpIR "mono" $ do
          putDocLn $ (outLn "/// Loop-headered program =============")

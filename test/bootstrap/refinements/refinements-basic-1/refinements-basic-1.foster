@@ -128,3 +128,37 @@ foo = { v => () };
 
 bar :: { % b : Bool : prim ==Bool b True => () };
 bar = { v => () };
+
+
+
+
+
+arrayLength :: forall x:Type, { % ra : Array x : True =>
+                                % rv : Int64 : rv ==Int64 prim_arrayLength:[x] ra };
+arrayLength = { a : Array x => prim_arrayLength a };
+
+
+readInt64FromArrayInt8-v1 :: { % ra : Array Int8 : 0 <=SInt32 ri =>
+                               % ri : Int32 : let woo = arrayLength ra in (zext_i32_to_i64 ri +Int64 7) <SInt64 woo end
+                               => Int64 };
+readInt64FromArrayInt8-v1 = { a => i =>
+  alen = prim_arrayLength a;
+  inva = ((zext_i32_to_i64 i +Int64 7) <SInt64 alen);
+  prim assert-invariants inva;
+  0
+};
+
+/*
+readInt64FromArrayInt8-v1 :: { % ra : Array Int8 : 0 <=SInt32 ri =>
+                          //  % ri : Int32 : (zext_i32_to_i64 ri +Int64 7) <SInt64 prim_arrayLength ra
+                            % ri : Int32 : let woo = arrayLength ra in (zext_i32_to_i64 ri +Int64 7) <SInt64 woo end
+                          // TODO: this should also work but doesn't:
+                          //  % ri : Int32 : (ri +Int32 7) <SInt32 arrayLength32 ra
+                            => Int64 };
+readInt64FromArrayInt8-v1 = {  a => i =>
+  alen = prim_arrayLength a;
+  inva = ((zext_i32_to_i64 i +Int64 7) <SInt64 alen);
+  prim assert-invariants inva;
+  0
+};
+*/

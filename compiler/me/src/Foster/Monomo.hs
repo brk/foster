@@ -50,14 +50,14 @@ monomorphize (ModuleIL body decls dts primdts lines) knorm = do
     uref      <- gets ccUniqRef
     wantedFns <- gets ccDumpFns
     let monoState0 = MonoState Set.empty Map.empty Map.empty [] uref wantedFns knorm
-    evalStateT (do
-                   monobody <- monoKN emptyMonoSubst body
-                   specs    <- gets monoDTSpecs
-                   monodts     <- monomorphizedDataTypesFrom dts specs
-                   monoprimdts <- monomorphizedDataTypesFrom primdts []
-                   monodecls <- mapM monoExternDecl decls
-                   return $ ModuleIL monobody monodecls monodts monoprimdts lines)
-                              monoState0
+    flip evalStateT monoState0 $ do
+               monobody <- monoKN emptyMonoSubst False body
+               specs    <- gets monoDTSpecs
+               monodts     <- monomorphizedDataTypesFrom dts specs
+               monoprimdts <- monomorphizedDataTypesFrom primdts []
+               monodecls <- mapM monoExternDecl decls
+               return $ ModuleIL monobody monodecls monodts monoprimdts lines
+
 
 monoPrim :: MonoSubst -> FosterPrim TypeIL -> Mono (FosterPrim MonoType)
 monoPrim subst prim = do
@@ -73,12 +73,13 @@ monoVar :: MonoSubst -> TypedId TypeIL -> Mono (TypedId MonoType)
 monoVar subst v = do
   liftTID (monoType subst) v
 
-monoKN :: MonoSubst -> (KNExpr' () TypeIL) -> Mono (KNExpr' RecStatus MonoType)
-monoKN subst e =
+monoKN :: MonoSubst -> Bool -> (KNExpr' () TypeIL) -> Mono (KNExpr' RecStatus MonoType)
+monoKN subst inTypeExpr e =
  let qt = monoType subst
      qv = monoVar subst
      qp = monoPrim subst -- avoid need for RankNTypes...
      qa = liftArrayIndexM qv
+     qq = monoKN subst inTypeExpr
      generic t = case kindOf t of KindPointerSized -> return PtrTypeUnknown
                                   _                -> qt t
  in
@@ -96,7 +97,7 @@ monoKN subst e =
   KNArrayPoke     t ai v   -> liftM3 KNArrayPoke     (qt t) (qa ai) (qv v)
   KNArrayLit      t arr xs -> liftM3 KNArrayLit      (qt t) (qv arr) (mapRightM qv xs)
   KNVar                  v -> liftM  KNVar                  (qv v)
-  KNCompiles    r t e      -> liftM2 (KNCompiles r) (qt t) (monoKN subst e)
+  KNCompiles    r t e      -> liftM2 (KNCompiles r) (qt t) (qq e)
   KNCall          t v vs   -> do t' <- qt t
                                  let t'' = substRefinementArgs v t' vs
                                  --liftIO $ putStrLn "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"
@@ -108,12 +109,12 @@ monoKN subst e =
   -- but are still basically trivially inductive.
   KNCase          t v pats -> do liftM3 KNCase          (qt t) (qv v)
                                          (mapM (monoPatternBinding subst) pats)
-  KNIf            t v e1 e2-> do liftM4 KNIf (qt t) (qv v) (monoKN subst e1) (monoKN subst e2)
+  KNIf            t v e1 e2-> do liftM4 KNIf (qt t) (qv v) (qq e1) (qq e2)
   KNLetVal       id e   b  -> do case e of KNAppCtor {} -> monoAddCtorOrigin id
                                            _ -> return ()
-                                 [e' , b' ] <- mapM (monoKN subst) [e, b]
+                                 [e' , b' ] <- mapM qq [e, b]
                                  return $ KNLetVal      id e'  b'
-  KNLetRec     ids exprs e -> do (e' : exprs' ) <- mapM (monoKN subst) (e:exprs)
+  KNLetRec     ids exprs e -> do (e' : exprs' ) <- mapM qq (e:exprs)
                                  return $ KNLetRec      ids exprs' e'
   -- Here are the interesting bits:
   KNAppCtor       t c vs   -> do
@@ -141,7 +142,7 @@ monoKN subst e =
 
     -- Translate the body, which drives further
     -- instantiation of the polymorphics.
-    b' <- monoKN subst b
+    b' <- qq b
 
     (monoids, monofns) <- monoGatherVersions ids
 
@@ -199,8 +200,11 @@ monoKN subst e =
        -- variables, but we can use a trivial bitcast if all the type
        -- arguments happen to be pointer-sized.
        Nothing ->
-          --return $ KNTyApp t' (TypedId t' polybinder) []
-          if List.all (\(_tv, kind) -> kind == KindPointerSized) ktvs
+         if List.all (\(_tv, kind) -> kind == KindPointerSized) ktvs || inTypeExpr
+                 -- In a type expression, we're not actually going to pass any
+                 -- values at runtime, so even if we can't poly-instantiate an
+                 -- unknown definition, it's still okay. If all the parameters
+                 -- are pointer-sized, though, we can use a generic definition.
             then return $ bitcast t' (TypedId t'' polybinder)
             else error $ "Cannot instantiate unknown function " ++ show polybinder ++ "'s type variables "
                ++ show ktvs
@@ -208,6 +212,7 @@ monoKN subst e =
                ++ show argtys
                ++ "\ngenericized to "
                ++ show monotys
+               ++ " (of which at least one type is not pointer-sized). "
                ++ "\nFor now, polymorphic instantiation of non-pointer-sized types"
                ++ " is only allowed on functions at the top level!"
                ++ "\nThis is a silly restriction for local bindings,"
@@ -227,7 +232,7 @@ substRefinementArgs _a t _xs = t
 monoFn :: MonoSubst -> Fn RecStatus KNExpr TypeIL -> Mono MonoFn
 monoFn subst (Fn v vs body isrec rng) = do
   let qv = monoVar subst
-  body' <- monoKN subst body
+  body' <- monoKN subst False body
   v'  <- qv v
   vs' <- mapM qv vs
   return (Fn v' vs' body' isrec rng)
@@ -237,8 +242,8 @@ monoPatternBinding :: MonoSubst -> CaseArm PatternRepr KNExpr TypeIL
 monoPatternBinding subst (CaseArm pat expr guard vs rng) = do
   pat'   <- monoPattern subst pat
   vs'    <- mapM (monoVar subst) vs
-  expr'  <-            monoKN subst  expr
-  guard' <- liftMaybe (monoKN subst) guard
+  expr'  <-            monoKN subst False expr
+  guard' <- liftMaybe (monoKN subst False) guard
   return (CaseArm pat' expr' guard' vs' rng)
 
 monoPatternAtom subst pattern =
@@ -451,7 +456,7 @@ data MonoState = MonoState {
 convertPrecond :: MonoSubst -> AIExpr -> Mono KNMono
 convertPrecond subst expr = do
         ke <- monoAI expr
-        monoKN subst ke
+        monoKN subst True ke
 
 monoAI :: AIExpr -> Mono (KNExpr' () TypeIL)
 monoAI e = do

@@ -761,13 +761,13 @@ compileRefinementBoundTo id facts v0 e0  = do
   mb_f2 <- checkBody e facts
   resid <- lift $ ccFreshId $ T.pack ".true"
   (SMTExpr body decls idfacts) <- (trueOr mb_f2) resid
-  let idfacts' = extendIdFacts resid body [(id, tidIdent v)] idfacts
+  let idfacts' = extendIdFacts resid (SMT.and (smtId resid) body) [(id, tidIdent v)] idfacts
   let facts'1 = addSymbolicVars facts [v, TypedId (PrimInt I1) resid]
   let lostFacts = (identFacts facts'1) `butnot` idfacts'
   let facts'2 = if null lostFacts then facts'1 { identFacts = idfacts' }
                                   else error $ "dont wanna lose these facts! : " ++ (show lostFacts)
   let facts'3 = addSymbolicDecls facts'2 decls
-  return $ facts'3 `withPathFact` (smtId resid)
+  return $ facts'3
 
 -- Adds ``body`` as an associated fact of ``resid``,
 -- and adds pairwise equality facts assoc w/ ``map fst equalIds``.
