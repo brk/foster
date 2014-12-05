@@ -1994,6 +1994,9 @@ debugDoc d = do when tcVERBOSE (tcLift $ putDocLn d)
 debugDoc2 d = do when tcVERBOSE (tcLift $ putDocLn d)
 debugDoc3 d = do when tcVERBOSE (tcLift $ putDocLn d)
 
+instance Expr (TypedId TypeAST) where freeVars (TypedId ty id) = freeVars ty `butnot` freeVars id
+instance Expr Ident             where freeVars id = [identPrefix id]
+
 -- The free-variable determination logic here is tested in
 --      test/bootstrap/testcases/rec-fn-detection
 instance Expr (ExprAST TypeAST) where
@@ -2003,11 +2006,36 @@ instance Expr (ExprAST TypeAST) where
     E_LetRec _rng nest _ -> concatMap freeVars (childrenOf e) `butnot`
                                           [evarName v | TermBinding v _ <- nest]
     E_Case _rng e arms   -> freeVars e ++ (concatMap caseArmFreeVars arms)
-    E_FnAST _rng f       -> let bodyvars  = freeVars (fnAstBody f) in
+    E_FnAST _rng f       -> let typdvars  = concatMap refiVars (map tidType $ fnFormals f) in
+                            let typmvars  = concatMap freeVars (map tidType $ fnFormals f) in
+                            let bodyvars  = freeVars (fnAstBody f) in
                             let boundvars = map (identPrefix.tidIdent) (fnFormals f) in
-                            bodyvars `butnot` boundvars
-    E_VarAST _rng v      -> [evarName v]
+                            (typmvars `butnot` typdvars) ++ (bodyvars `butnot` boundvars)
+    E_VarAST _rng v      -> freeVars (evarMaybeType v) ++ [evarName v]
+    E_TyApp   _ e tys    -> freeVars e ++ concatMap freeVars tys
+    E_TyCheck _ e ty     -> freeVars e ++ freeVars ty
     _                    -> concatMap freeVars (childrenOf e)
+
+refiVars (RefinedTypeAST nm _ _) = [T.pack nm]
+refiVars _ = []
+
+instance Expr (Maybe TypeAST) where freeVars Nothing = []
+                                    freeVars (Just t) = freeVars t
+
+instance Expr TypeAST where
+  freeVars typ = case typ of
+        PrimIntAST            {} -> []
+        PrimFloat64AST           -> []
+        TyConAppAST      _ types -> concatMap freeVars types
+        TupleTypeAST       types -> concatMap freeVars types
+        FnTypeAST    s t _cc _cs -> concatMap freeVars (t:s)
+        CoroTypeAST  s t         -> concatMap freeVars [t,s]
+        ForAllAST  _tvs rho      -> freeVars rho
+        TyVarAST   {}            -> []
+        RefTypeAST    ty         -> freeVars ty
+        ArrayTypeAST  ty         -> freeVars ty
+        RefinedTypeAST  nm ty e  -> freeVars ty ++ (freeVars e `butnot` [T.pack nm])
+        MetaPlaceholderAST    {} -> []
 
 freeVarsMb Nothing  = []
 freeVarsMb (Just e) = freeVars e

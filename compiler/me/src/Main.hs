@@ -212,17 +212,17 @@ typecheckModule verboseMode pauseOnErrors modast tcenv0 = do
     case detectDuplicates $ map fnAstName fns of
       [] -> do
         let declCG = buildCallGraphList' declBindings (Set.fromList $ map (\(TermVarBinding nm _) -> nm) declBindings)
-        let declBindings = topoSortBindingSCC $ Graph.stronglyConnCompR declCG -- :: [ [ContextBinding TypeAST] ]
-
+        let globalids = map (\(TermVarBinding _ (tid, _)) -> tidIdent tid) $ declBindings ++ primBindings
+        let declBindings' = topoSortBindingSCC $ Graph.stronglyConnCompR declCG -- :: [ [ContextBinding TypeAST] ]
         let primOpMap = Map.fromList [(T.pack nm, prim)
                             | (nm, (_, prim)) <- Map.toList gFosterPrimOpsTable]
-        let ctxTC0 = mkContext [] [] [] Map.empty []
-        let ctxAS1 = mkContext (computeContextBindings nonNullCtors)
-                               nullCtorBindings primBindings primOpMap dts
 
         ctxErrsOrOK <- unTc tcenv0 $ do
+                         let ctxAS1 = mkContext (computeContextBindings nonNullCtors)
+                                         nullCtorBindings primBindings primOpMap globalids dts
+                         let ctxTC0 = mkContext [] [] [] Map.empty [] []
                          ctxTC1 <- tcContext ctxTC0 ctxAS1
-                         foldlM typecheckAndFoldContextBindings ctxTC1 declBindings
+                         foldlM typecheckAndFoldContextBindings ctxTC1 declBindings'
         case ctxErrsOrOK of
           OK ctxTC -> do
             -- declBindings includes datatype constructors and some (?) functions.
@@ -241,11 +241,10 @@ typecheckModule verboseMode pauseOnErrors modast tcenv0 = do
                                   ++ "duplicate bindings: " ++ show dups])
  where
    mkContext :: [ContextBinding t] -> [ContextBinding t]
-             -> [ContextBinding t] -> (Map T.Text (FosterPrim t)) -> [DataType t] -> Context t
-   mkContext declBindings nullCtorBnds primBindings primOpMap datatypes =
+             -> [ContextBinding t] -> (Map T.Text (FosterPrim t)) -> [Ident] -> [DataType t] -> Context t
+   mkContext declBindings nullCtorBnds primBindings primOpMap globalvars datatypes =
      Context declBindsMap nullCtorsMap primBindsMap primOpMap globalvars tyvarsMap [] ctorinfo dtypes
-       where globalvars   = map (\(TermVarBinding _ (tid, _)) -> tidIdent tid) $ declBindings ++ primBindings
-             ctorinfo     = getCtorInfo  datatypes
+       where ctorinfo     = getCtorInfo  datatypes
              dtypes       = getDataTypes datatypes
              primBindsMap = Map.fromList $ map unbind primBindings
              nullCtorsMap = Map.fromList $ map unbind nullCtorBnds
