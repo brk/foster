@@ -235,8 +235,7 @@ parseSeq pbexpr annot = do
         buildSeqs []    = error $ "ProtobufFE.parseSeq can't parse empty seq!"
                                  ++ highlightFirstLine (rangeOf annot)
         buildSeqs [a]   = a
-        buildSeqs (a:b) = E_SeqAST (annotForRange (MissingSourceRange "buildSeqs"))
-                                   a (buildSeqs b)
+        buildSeqs (a:b) = E_SeqAST annot a (buildSeqs b)
 
 parseTyApp pbexpr range = do
     [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)

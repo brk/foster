@@ -499,22 +499,36 @@ tcRhoArrayLit ctx rng mbt args expTy = do
 
 
 
---  G |- e1 ::: tau    (should perhaps later change to ())
+--  G |- e1 ::: tau     (unit or integer)
 --  G |- e2 ::: t2
 --  -------------------
 --  G |- e1 ; e2 ::: t2
 -- {{{
-tcRhoSeq ctx rng a b expTy = do
-    ea <- inferRho ctx a "seq" --(Check $ TupleTypeAST [])
+tcRhoSeq ctx annot a b expTy = do
+    ea <- inferRho ctx a "seq"
     id <- tcFresh ".seq"
     eb <- tcRho ctx b expTy
-    -- Temporary hack to avoid unbound type variables but permit
-    -- sequencing of arbitrary types.
-    zt <- zonkType (typeTC ea)
+    tcRhoSeqCheck (rangeOf a) (typeTC ea)
+    return (AnnLetVar annot id ea eb)
+
+tcRhoSeqCheck range ty = do
+    zt <- zonkType ty
     case zt of
       m@MetaTyVarTC {} -> unify m (TupleTypeTC []) "seq-unit"
-      _                -> return ()
-    return (AnnLetVar rng id ea eb)
+      TupleTypeTC []   -> return ()
+      PrimIntTC _      -> return ()
+      _ | isFnTyLike zt ->
+           tcFails [text "Sequenced expression returned a function type:"
+                   , indent 2 $ vcat [prettyWithLineNumbers range
+                                     ,text "Maybe you forgot a function call?"
+                                     ,text $ "If not, please add a value binding to make it clear "
+                                          ++ "that you want to ignore the function-valued result."]]
+      _ -> return () -- Eventually, warn...
+
+isFnTyLike (FnTypeTC {}) = True
+isFnTyLike (RefinedTypeTC v _ _) = isFnTyLike (tidType v)
+isFnTyLike (ForAllTC _ t) = isFnTyLike t
+isFnTyLike _ = False
 -- }}}
 
 

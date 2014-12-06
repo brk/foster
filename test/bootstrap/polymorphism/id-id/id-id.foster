@@ -5,7 +5,8 @@ test5 = { forall t:Boxed, x:t =>
   f = { y : t => y };
   g = id:[{ t => t }] f;
 
-  g x
+  ignore = g x;
+  ()
 };
 
 test4 = { forall t:Boxed, x:t =>
