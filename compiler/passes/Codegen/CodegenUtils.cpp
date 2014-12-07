@@ -163,6 +163,9 @@ void markGCRootWithMetadata(llvm::AllocaInst* stackslot, CodegenPass* pass,
 
   // Make sure that all the calls to llvm.gcroot() happen in the entry block.
   llvm::IRBuilder<> tmpBuilder(&entryBlock, pass->getCurrentAllocaPoint());
+  ASSERT(stackslot->getAllocatedType()->isPointerTy()) << "\n"
+              << "gc root slots must be pointers, not structs or such; had "
+              << "non-pointer type " << str(stackslot->getAllocatedType());
   llvm::Value* root = tmpBuilder.CreateBitCast(stackslot,
                          ptrTo(tmpBuilder.getInt8PtrTy()), "gcroot");
 
