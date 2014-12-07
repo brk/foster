@@ -93,6 +93,9 @@ Miscellanous Tidbits of Knowledge
       struct into a heap cell. But not representing with a pointer brings its
       own troubles; in particular, GC root slots must contain only pointers,
       not arbitrary struct types.
+      Also, if we store structs on the stack, we must be rather careful to
+      align things properly for GC'ing -- in particular, the *payload* must be
+      16-byte aligned, which in turn means that we need 16 bytes of padding...
 
 * Gotcha:
   Functions referenced in refinements must have top-level type annotations.

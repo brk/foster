@@ -1034,8 +1034,12 @@ void inspect_typemap(const typemap* ti) {
   }
 }
 
-void inspect_ptr_for_debugging_purposes(void* bodyvoid) {
-  fprintf(stdout, "inspect_ptr_for_debugging_purposes: %p\n", bodyvoid);
+extern "C" void inspect_ptr_for_debugging_purposes(void* bodyvoid) {
+  unsigned align = (!(intptr_t(bodyvoid) & 0x0f)) ? 16
+                 : (!(intptr_t(bodyvoid) & 0x07)) ? 8
+                 : (!(intptr_t(bodyvoid) & 0x03)) ? 4 : 0
+                 ;
+  fprintf(stdout, "inspect_ptr_for_debugging_purposes: %p  (alignment %d)\n", bodyvoid, align);
   unchecked_ptr bodyu = make_unchecked_ptr(static_cast<tidy*>(bodyvoid));
   tidy* body = untag(bodyu);
   if (! body) {
