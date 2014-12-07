@@ -700,9 +700,11 @@ size_t get_default_stack_size() {
 // {{{ get_static_data_range
 #if OS_LINUX
 // http://stackoverflow.com/questions/4308996/finding-the-address-range-of-the-data-segment
-extern "C" char etext, end;
+// Sadly, the etext symbol sometimes comes after certain rodata segments;
+// we take a conservative approach and include all the binary's text and data.
+extern "C" char __executable_start, end;
 void get_static_data_range(memory_range& r) {
-  r.base  = &etext;
+  r.base  = &__executable_start;
   r.bound = &end;
 }
 #elif OS_MACOSX

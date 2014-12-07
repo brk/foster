@@ -774,8 +774,7 @@ llvm::Constant* emitConstantArrayTidy(uint64_t size,
 
 llvm::GlobalVariable* emitPrivateGlobal(CodegenPass* pass,
                                  llvm::Constant* val,
-                                 const std::string& name,
-                                 unsigned alignment) {
+                                 const std::string& name) {
   llvm::GlobalVariable* globalVar = new llvm::GlobalVariable(
       /*Module=*/      *(pass->mod),
       /*Type=*/        val->getType(),
@@ -783,37 +782,53 @@ llvm::GlobalVariable* emitPrivateGlobal(CodegenPass* pass,
       /*Linkage=*/     llvm::GlobalValue::PrivateLinkage,
       /*Initializer=*/ val,
       /*Name=*/        name);
-  globalVar->setAlignment(alignment);
+  globalVar->setAlignment(16);
 
   return globalVar;
 }
 
-llvm::GlobalVariable* emitGlobalCell(CodegenPass* pass,
+llvm::GlobalVariable* emitGlobalArrayCell(CodegenPass* pass,
                                      llvm::GlobalVariable* typemap,
                                      llvm::Constant* body,
-                                     const std::string& name,
-                                     unsigned alignment = 8) {
+                                     const std::string& name) {
   std::vector<llvm::Constant*> cell_vals;
+  std::vector<llvm::Constant*> pad_vals;
+  if (is32Bit()) {
+    pad_vals.push_back(builder.getInt64(0)); // alignment padding
+    pad_vals.push_back(typemap);
+    pad_vals.push_back(builder.getInt32(0)); // padding for typemap
+  } else {
+    pad_vals.push_back(builder.getInt64(0)); // alignment padding
+    pad_vals.push_back(typemap);
+  }
+  cell_vals.push_back(llvm::ConstantStruct::getAnon(pad_vals));
+  cell_vals.push_back(body);
+  auto const_cell = llvm::ConstantStruct::getAnon(cell_vals);
+
+  return emitPrivateGlobal(pass, const_cell, name);
+}
+
+llvm::GlobalVariable* emitGlobalNonArrayCell(CodegenPass* pass,
+                                     llvm::GlobalVariable* typemap,
+                                     llvm::Constant* body,
+                                     const std::string& name) {
+  std::vector<llvm::Constant*> cell_vals;
+  cell_vals.push_back(builder.getInt64(0));
   cell_vals.push_back(typemap);
   cell_vals.push_back(body);
   auto const_cell = llvm::ConstantStruct::getAnon(cell_vals);
 
-  return emitPrivateGlobal(pass, const_cell, name, alignment);
+  return emitPrivateGlobal(pass, const_cell, name);
 }
 
 llvm::Value* emitByteArray(CodegenPass* pass, llvm::StringRef bytes, llvm::StringRef cellname) {
-  // the array header starts 16-byte aligned, but the data starts
-  // 8 bytes later...
-  unsigned align = 8;
-
   auto const_arr_tidy = emitConstantArrayTidy(bytes.size(), getConstantArrayOfString(bytes));
 
   CtorRepr ctorRepr; ctorRepr.smallId = -1;
-  auto arrayGlobal = emitGlobalCell(pass,
+  auto arrayGlobal = emitGlobalArrayCell(pass,
                         getTypeMapForType(TypeAST::i(8), ctorRepr, pass->mod, YesArray),
                         const_arr_tidy,
-                        cellname,
-                        align);
+                        cellname);
 
   return builder.CreateBitCast(getPointerToIndex(arrayGlobal, builder.getInt32(1), "cellptr"),
                                 ArrayTypeAST::getZeroLengthTypeRef(TypeAST::i(8)), "arr_ptr");
@@ -1025,10 +1040,6 @@ llvm::Value* LLByteArray::codegen(CodegenPass* pass) {
 }
 
 llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
-  // the array header starts 16-byte aligned, but the data starts
-  // 8 bytes later...
-  unsigned align = 8;
-
   // Allocate a global array, with zeros/nulls for non-literal elements.
   //
   std::vector<llvm::Constant*> vals;
@@ -1053,16 +1064,15 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
     auto const_arr_tidy = emitConstantArrayTidy(vals.size(), const_arr);
 
     CtorRepr ctorRepr; ctorRepr.smallId = -1;
-    auto arrayGlobal = emitGlobalCell(pass,
+    auto arrayGlobal = emitGlobalArrayCell(pass,
                           getTypeMapForType(this->elem_type, ctorRepr, pass->mod, YesArray),
                           const_arr_tidy,
-                          ".arr_cell",
-                          align);
+                          ".arr_cell");
 
     return builder.CreateBitCast(getPointerToIndex(arrayGlobal, builder.getInt32(1), "cellptr"),
                                  ArrayTypeAST::getZeroLengthTypeRef(this->elem_type), "arr_ptr");
   } else {
-    llvm::GlobalVariable* arrayGlobal = emitPrivateGlobal(pass, const_arr, ".arr", align);
+    llvm::GlobalVariable* arrayGlobal = emitPrivateGlobal(pass, const_arr, ".arr");
 
     // Load the heap array which our forebears allocated unto us.
     llvm::Value* heap_arr = this->arr->codegen(pass);
@@ -1076,7 +1086,7 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
       int64_t size_in_bytes = (elt_ty->getPrimitiveSizeInBits() / 8)
                             * this->args.size();
       builder.CreateMemCpy(heapmem, arrayVariableToPointer(arrayGlobal),
-                                    size_in_bytes, align);
+                                    size_in_bytes, 1);
 
       // Copy any non-constant values to the heap array
       //
