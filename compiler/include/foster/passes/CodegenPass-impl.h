@@ -27,14 +27,7 @@ enum ArrayOrNot {
 
 extern unsigned kDefaultHeapAlignment;
 
-llvm::GlobalVariable*
-emitTypeMap(llvm::Type* ty, std::string name,
-            ArrayOrNot arrayStatus,
-            CtorRepr   ctorRepr,
-            llvm::Module* mod,
-            std::vector<int> skippedOffsets);
-
-void registerStructType(StructTypeAST* structty,
+void registerStructType(const StructTypeAST* structty,
                         std::string    desiredName,
                         CtorRepr       ctorRepr,
                         llvm::Module*  mod);

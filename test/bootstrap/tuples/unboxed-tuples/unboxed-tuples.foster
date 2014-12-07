@@ -46,6 +46,7 @@ use-unboxed-A = { t =>
 
 return-unboxed-B = { b =>
   t =  get-unboxed-B 3 ; // if b then get-unboxed-B 3 else get-unboxed-B 4 end;
+  use-unboxed-B t 3;
   force_gc_for_debugging_purposes !;
   use-unboxed-B t 3;
 };

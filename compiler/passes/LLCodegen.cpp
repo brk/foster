@@ -110,6 +110,12 @@ llvm::Value* emitStore(llvm::Value* val,
   return NULL;
 }
 
+Value* emitCallToInspectPtr(CodegenPass* pass, Value* ptr) {
+   llvm::Value* rmc = pass->mod->getFunction("inspect_ptr_for_debugging_purposes");
+   ASSERT(rmc) << "couldnt find inspect_ptr_for_debugging_purposes";
+   return markAsNonAllocating(builder.CreateCall(rmc, builder.CreateBitCast(ptr, builder.getInt8PtrTy())));
+}
+
 std::vector<llvm::Value*>
 codegenAll(CodegenPass* pass, const std::vector<LLVar*>& args) {
   std::vector<llvm::Value*> vals;
@@ -456,14 +462,40 @@ void initializeBlockPhis(LLBlock* block) {
   }
 }
 
+Value* createUnboxedTuple(const std::vector<Value*>& vals);
+
+llvm::Value* allocateSlot(CodegenPass* pass, LLVar* rootvar) {
+  llvm::Type* ty = getLLVMType(rootvar->type);
+  if (ty->isPointerTy()) {
+    llvm::AllocaInst* slot = CreateEntryAlloca(ty, rootvar->getName());
+    if (pass->config.useGC) { markGCRoot(slot, pass); }
+    return slot;
+  } else {
+    // We need to wrap the non-pointer type with its metadata so the GC will
+    // know how to trace the stack slot.
+    CtorRepr ctorRepr; ctorRepr.smallId = -1;
+    if (const StructTypeAST* sty = rootvar->type->castStructTypeAST()) {
+      registerStructType(sty, "unboxed_tuple", ctorRepr, pass->mod);
+    }
+    llvm::GlobalVariable* typemap = getTypeMapForType(rootvar->type, ctorRepr, pass->mod, NotArray);
+    auto padded_ty = llvm::StructType::get(llvm::getGlobalContext(),
+                                            { builder.getInt64Ty(), builder.getInt64Ty(), ty });
+    llvm::AllocaInst* slot = CreateEntryAlloca(padded_ty, rootvar->getName());
+    slot->setAlignment(16);
+    if (pass->config.useGC) { markGCRoot(slot, pass); }
+    builder.CreateStore(builder.CreatePtrToInt(typemap, builder.getInt64Ty()),
+                        getPointerToIndex(slot, builder.getInt32(1), ""));
+    return getPointerToIndex(slot, builder.getInt32(2), "past_tymap");
+  }
+
+}
+
 void LLProcCFG::codegenToFunction(CodegenPass* pass, llvm::Function* F) {
   pass->fosterBlocks.clear();
 
   // Pre-allocate all our GC roots.
   for (size_t i = 0; i < gcroots.size(); ++i) {
-    llvm::AllocaInst* slot = CreateEntryAlloca(getLLVMType(gcroots[i]->type),
-                                               gcroots[i]->getName());
-    if (pass->config.useGC) { markGCRoot(slot, pass); }
+    Value* slot = allocateSlot(pass, gcroots[i]);
     pass->insertScopedValue(gcroots[i]->getName(), slot);
   }
 
@@ -1131,8 +1163,7 @@ void LLTupleStore::codegenMiddle(CodegenPass* pass) {
   copyValuesToStruct(codegenAll(pass, this->vars), tup_ptr);
 }
 
-Value* LLUnboxedTuple::codegen(CodegenPass* pass) {
-  auto vals = codegenAll(pass, this->vars);
+Value* createUnboxedTuple(const std::vector<Value*>& vals) {
   std::vector<llvm::Constant*> undefs;
   for (auto val : vals) { undefs.push_back(llvm::UndefValue::get(val->getType())); }
   // Rather than copying values to memory with GEP + store,
@@ -1140,6 +1171,10 @@ Value* LLUnboxedTuple::codegen(CodegenPass* pass) {
   Value* rv = llvm::ConstantStruct::getAnon(undefs);
   for (int i = 0; i < vals.size(); ++i) { rv = builder.CreateInsertValue(rv, vals[i], i); }
   return rv;
+}
+
+Value* LLUnboxedTuple::codegen(CodegenPass* pass) {
+  return createUnboxedTuple(codegenAll(pass, this->vars));
 }
 
 ///}}}//////////////////////////////////////////////////////////////

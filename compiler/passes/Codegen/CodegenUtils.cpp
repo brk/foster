@@ -150,9 +150,23 @@ Constant* getSlotName(llvm::AllocaInst* stackslot, CodegenPass* pass) {
 }
 
 ////////////////////////////////////////////////////////////////////
+Type* getSlotType(llvm::Value* v) { return v->getType()->getPointerElementType(); }
 
-void markGCRootWithMetadata(llvm::AllocaInst* stackslot, CodegenPass* pass,
+void markGCRootWithMetadata(llvm::Instruction* stackslot, CodegenPass* pass,
                             llvm::Value* meta) {
+  // If the original stack slot holds a bare struct type, we'll need to
+  // insert an additional slot to point to it, and we'll mark the second slot...
+  if (getSlotType(stackslot)->isStructTy()) {
+    // We're assuming that someone else (in particular, LLCodegen:allocateSlot())
+    // has taken care of wrapping the original struct with its typemap.
+
+    llvm::Value* in_stackslot = getPointerToIndex(stackslot, builder.getInt32(2), "in_stackslot");
+    llvm::AllocaInst* ptr_stackslot = CreateEntryAlloca(in_stackslot->getType(), "ptr_to_stackslot");
+    builder.CreateStore(in_stackslot, ptr_stackslot);
+
+    stackslot = ptr_stackslot;
+  }
+
   llvm::MDNode* metamdnode = llvm::MDNode::get(stackslot->getContext(),
                                 llvm::makeArrayRef(meta));
   stackslot->setMetadata("fostergcroot", metamdnode);
@@ -163,9 +177,9 @@ void markGCRootWithMetadata(llvm::AllocaInst* stackslot, CodegenPass* pass,
 
   // Make sure that all the calls to llvm.gcroot() happen in the entry block.
   llvm::IRBuilder<> tmpBuilder(&entryBlock, pass->getCurrentAllocaPoint());
-  ASSERT(stackslot->getAllocatedType()->isPointerTy()) << "\n"
+  ASSERT(getSlotType(stackslot)->isPointerTy()) << "\n"
               << "gc root slots must be pointers, not structs or such; had "
-              << "non-pointer type " << str(stackslot->getAllocatedType());
+              << "non-pointer type " << str(getSlotType(stackslot));
   llvm::Value* root = tmpBuilder.CreateBitCast(stackslot,
                          ptrTo(tmpBuilder.getInt8PtrTy()), "gcroot");
 

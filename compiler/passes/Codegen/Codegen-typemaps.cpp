@@ -38,7 +38,7 @@ bool isPointerToSized(Type* ty) {
   return ty->isPointerTy() && ty->getContainedType(0)->isSized();
 }
 
-bool isGarbageCollectible(TypeAST* typ, Type* ty) {
+bool isGarbageCollectible(const TypeAST* typ, Type* ty) {
   if (isPointerToSized(ty)) return true;
   return typ->isGarbageCollectible();
 }
@@ -46,7 +46,7 @@ bool isGarbageCollectible(TypeAST* typ, Type* ty) {
 // TODO vector of pointers now supported by LLVM...
 // will we allow vectors of pointers-to-GC-heap? probably unwise.
 
-OffsetSet countPointersInType(TypeAST* typ, Type* ty) {
+OffsetSet countPointersInType(const TypeAST* typ, Type* ty) {
   ASSERT(ty) << "Can't count pointers in a NULL type!";
 
   OffsetSet rv;
@@ -229,7 +229,7 @@ GlobalVariable* constructTypeMap(llvm::Type*  ty,
 // Computes the offsets of all pointers in the given type,
 // and constructs a type map using those offsets.
 GlobalVariable* emitTypeMap(
-    TypeAST*      typ,
+    const TypeAST* typ,
     llvm::Type*   ty,
     std::string   name,
     ArrayOrNot    arrayStatus,
@@ -291,7 +291,7 @@ GlobalVariable* emitCoroTypeMap(StructTypeAST* typ, StructType* sty,
   return emitTypeMap(typ, sty, ss.str(), NotArray, bogusCtor, mod, v);
 }
 
-void registerStructType(StructTypeAST* structty,
+void registerStructType(const StructTypeAST* structty,
                         std::string desiredName,
                         CtorRepr       ctorRepr,
                         llvm::Module* mod) {
