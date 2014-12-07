@@ -369,7 +369,7 @@ insertDumbGCRoots bbgp0 dump = do
   -- and extend the substitution.
   maybeRootInitializer :: LLVar -> RootMapped (Graph Insn' O O)
   maybeRootInitializer v = do
-    if not $ isGCable v
+    if not $ isGCable (tidType v)
       then return emptyGraph
       else do junkid <- fresh (show (tidIdent v) ++ ".junk")
               let junk = TypedId (LLPtrType (LLStructType [])) junkid
@@ -407,7 +407,7 @@ insertDumbGCRoots bbgp0 dump = do
                            return $ trace ("withGCLoad " ++ show v ++ " ==> " ++ show (pretty rv)) rv
 
       withGCLoad :: LLVar -> RootMapped ([Insn' O O], LLVar)
-      withGCLoad v = if not $ isGCable v then return ([], v)
+      withGCLoad v = if not $ isGCable (tidType v) then return ([], v)
        else do gcr <- get
                case Map.lookup v gcr of
                  Just root -> do retLoaded root
@@ -418,10 +418,10 @@ insertDumbGCRoots bbgp0 dump = do
                                  retLoaded root
 
   -- Filter out non-pointer-typed variables from live set.
-  isGCable v = case tidType v of
+  isGCable ty = case ty of
                  LLPrimInt _            -> False
                  LLPrimFloat64          -> False
-                 LLStructType _         -> False
+                 LLStructType tys       -> any isGCable tys
                  LLProcType _ _ _       -> False
                  LLPtrType _            -> True -- could have further annotations on ptr types
                  LLNamedType _          -> True -- TODO maybe not?

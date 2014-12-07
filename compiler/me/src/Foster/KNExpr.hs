@@ -123,13 +123,13 @@ kNormalize ctorRepr expr =
                                (\[x, y] -> KNArrayRead t (ArrayIndex x y rng s))
       AIArrayPoke _t (ArrayIndex a b rng s) c -> do
               nestedLets (map go [a,b,c])
-                               (\[x,y,z] -> KNArrayPoke (TupleTypeIL []) (ArrayIndex x y rng s) z)
+                               (\[x,y,z] -> KNArrayPoke unitTypeIL (ArrayIndex x y rng s) z)
 
       AILetFuns ids fns a   -> do knFns <- mapM (kNormalizeFn ctorRepr) fns
                                   liftM (KNLetFuns ids knFns) (go a)
 
-      AITuple   es rng      -> do nestedLets (map go es) (\vs ->
-                                    KNTuple (TupleTypeIL (map tidType vs)) vs rng)
+      AITuple kind es rng   -> do nestedLets (map go es) (\vs ->
+                                    KNTuple (TupleTypeIL kind (map tidType vs)) vs rng)
 
       AILetVar id a b       -> do liftM2 (buildLet id) (go a) (go b)
       AILetRec ids exprs e  -> do -- Unlike with LetVal, we can't float out the
@@ -154,7 +154,7 @@ kNormalize ctorRepr expr =
 
   where knStore x y = do
             let q = varOrThunk (x, pointedToType $ tidType y)
-            nestedLets [q] (\[z] -> KNStore (TupleTypeIL []) z y)
+            nestedLets [q] (\[z] -> KNStore unitTypeIL z y)
 
         knCall t a vs =
           case tidType a of

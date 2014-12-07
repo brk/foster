@@ -269,11 +269,14 @@ dumpExpr _ x@(ILObjectCopy from to) =
     P'.defaultValue { PbLetable.parts = fromList [dumpVar from, dumpVar to]
                     , PbLetable.tag   = IL_OBJECT_COPY
                     , PbLetable.type' = Just $ dumpType (typeOf x)  }
-dumpExpr _ x@(ILTuple [] _allocsrc) =
+dumpExpr _ x@(ILTuple _kindTODO [] _allocsrc) =
     P'.defaultValue { PbLetable.tag   = IL_UNIT
                     , PbLetable.type' = Just $ dumpType (typeOf x) }
-
-dumpExpr _ (ILTuple vs allocsrc) =
+dumpExpr _ x@(ILTuple KindAnySizeType vs _allocsrc) =
+    P'.defaultValue { PbLetable.parts = fromList $ map dumpVar vs
+                    , PbLetable.tag   = IL_UNBOXED_TUPLE
+                    , PbLetable.type' = Just $ dumpType (typeOf x) }
+dumpExpr _ (ILTuple _kind vs allocsrc) =
         error $ "ProtobufIL.hs: ILTuple " ++ show vs
             ++ "\n should have been eliminated!\n" ++ show allocsrc
 

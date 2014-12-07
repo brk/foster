@@ -103,6 +103,7 @@ message Letable {
     IL_ARRAY_LENGTH = 37;
     IL_ARRAY_LITERAL = 38;
     IL_NAMED_TYPE_DECL = 40;
+    IL_UNBOXED_TUPLE = 41;
     IL_KILL_PROCESS = 63;
   }
   repeated TermVar     parts = 1;

@@ -78,6 +78,22 @@ Miscellanous Tidbits of Knowledge
   ``type case TX of $FX TB;`` will have calls to ``FX`` translated into simple
   bitcasts.
 
+* For now, such wrappers cannot be generalized to unboxed structs.
+  There are several reasons for this -- no fundamental impediments, just
+  annoyingly unclear design decisions to settle:
+    * In LLVM's abstract semantics, values in SSA registers cannot be moved
+      by a GC. So an unboxed tuple must either not contain any GCable pointers,
+      or the tuple must be stored in memory.
+    * If the tuple is to be stored in memory: when should it be copied to/from
+      memory? Should an unboxed-struct function parameter be a SSA value which
+      is stored in every stack frame it is threaded through, or represented as
+      a pointer to a higher stack slot? (If it was pointing to a heap slot, it
+      would be a regular tuple, not a struct). If representing with a pointer,
+      we must be careful not to create dangling references when storing such a
+      struct into a heap cell. But not representing with a pointer brings its
+      own troubles; in particular, GC root slots must contain only pointers,
+      not arbitrary struct types.
+
 * Gotcha:
   Functions referenced in refinements must have top-level type annotations.
 

@@ -430,6 +430,14 @@ LLExpr* parseObjectCopy(const pb::Letable& e) {
       parseTermVar( e.parts(1)));
 }
 
+LLExpr* parseUnboxedTuple(const pb::Letable& e) {
+  std::vector<LLVar*> args;
+  for (int i = 0; i < e.parts_size(); ++i) {
+    args.push_back(parseTermVar(e.parts(i)));
+  }
+  return new LLUnboxedTuple(args);
+}
+
 LLExpr* parseKillProcess(const pb::Letable& e) {
   return new LLKillProcess(e.string_value());
 }
@@ -505,6 +513,7 @@ LLExpr* LLExpr_from_pb(const pb::Letable* pe) {
   case pb::Letable::IL_ALLOCATE:    rv = parseAllocate(e); break;
   case pb::Letable::IL_OCCURRENCE:  rv = parseOccurrence(e); break;
   case pb::Letable::IL_OBJECT_COPY: rv = parseObjectCopy(e); break;
+  case pb::Letable::IL_UNBOXED_TUPLE:rv =parseUnboxedTuple(e); break;
   case pb::Letable::IL_KILL_PROCESS:rv = parseKillProcess(e); break;
 
   default:

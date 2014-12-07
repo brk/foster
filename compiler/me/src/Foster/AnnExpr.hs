@@ -8,6 +8,7 @@
 module Foster.AnnExpr (AnnExpr(..), annExprAnnot) where
 
 import Foster.Base
+import Foster.Kind
 import Foster.TypeAST()
 
 import Text.PrettyPrint.ANSI.Leijen
@@ -22,7 +23,7 @@ import qualified Data.Text as T
 data AnnExpr ty =
         -- Literals
           AnnLiteral    ExprAnnot ty Literal
-        | AnnTuple      ExprAnnot ty [AnnExpr ty]
+        | AnnTuple      ExprAnnot ty Kind [AnnExpr ty]
         | E_AnnFn       (Fn () (AnnExpr ty) ty)
         -- Control flow
         | AnnIf         ExprAnnot ty (AnnExpr ty) (AnnExpr ty) (AnnExpr ty)
@@ -64,7 +65,7 @@ data AnnExpr ty =
 instance TypedWith (AnnExpr ty) ty where
   typeOf annexpr = case annexpr of
      AnnLiteral  _ t _     -> t
-     AnnTuple  _ t _exprs  -> t
+     AnnTuple _ t _ _exprs -> t
      E_AnnFn annFn         -> fnType annFn
      AnnCall _rng t _ _    -> t
      AnnAppCtor _rng t _ _ -> t
@@ -93,6 +94,7 @@ instance Pretty ty => Structured (AnnExpr ty) where
       AnnLiteral _ _  (LitBool b)  -> text "AnnBool      " <> pretty b
       AnnLiteral _ ty (LitInt int) -> text "AnnInt       " <> text (litIntText int) <> text " :: " <> pretty ty
       AnnLiteral _ ty (LitFloat f) -> text "AnnFloat     " <> text (litFloatText f) <> text " :: " <> pretty ty
+      AnnLiteral _ ty (LitByteArray _) -> text "AnnBytes     " <> text " :: " <> pretty ty
 
       AnnCall     _rng t _b _args-> text "AnnCall      :: " <> pretty t
       AnnAppCtor  _rng t _ _     -> text "AnnAppCtor   :: " <> pretty t
@@ -138,7 +140,7 @@ instance Pretty ty => Structured (AnnExpr ty) where
       AnnArrayLit  _rng _t exprs           -> rights exprs
       AnnArrayRead _rng _t ari             -> childrenOfArrayIndex ari
       AnnArrayPoke _rng _t ari c           -> childrenOfArrayIndex ari ++ [c]
-      AnnTuple _rng _ exprs                -> exprs
+      AnnTuple _rng _ _ exprs              -> exprs
       AnnCase _rng _t e bs                 -> e:(concatMap caseArmExprs bs)
       E_AnnVar {}                          -> []
       AnnPrimitive {}                      -> []
@@ -185,7 +187,7 @@ annExprAnnot expr = case expr of
       AnnAllocArray annot _ _ _     -> annot
       AnnArrayRead annot _ _        -> annot
       AnnArrayPoke annot _ _ _      -> annot
-      AnnTuple     annot _ _        -> annot
+      AnnTuple     annot _ _ _      -> annot
       AnnCase      annot _ _ _      -> annot
       E_AnnVar     annot _          -> annot
       AnnPrimitive annot _ _        -> annot

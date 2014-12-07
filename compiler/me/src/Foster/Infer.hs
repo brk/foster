@@ -1,5 +1,5 @@
 module Foster.Infer(
-    tcUnifyTypes, tcUnifyFT, tcUnifyCC
+    tcUnifyTypes, tcUnifyFT, tcUnifyCC, tcUnifyKinds
   , parSubstTcTy
   , tySubst
   , extractSubstTypes
@@ -48,7 +48,7 @@ parSubstTcTy prvNextPairs ty =
         PrimIntTC     {}     -> ty
         PrimFloat64TC {}     -> ty
         TyConAppTC  nm tys   -> TyConAppTC  nm (map q tys)
-        TupleTypeTC  types   -> TupleTypeTC  (map q types)
+        TupleTypeTC k  types -> TupleTypeTC k  (map q types)
         RefTypeTC    t       -> RefTypeTC    (q t)
         ArrayTypeTC  t       -> ArrayTypeTC  (q t)
         FnTypeTC  ss t cc cs -> FnTypeTC     (map q ss) (q t) cc cs -- TODO unify calling convention?
@@ -71,7 +71,7 @@ tySubst subst ty =
         TyConAppTC   nm tys    -> TyConAppTC   nm (map q tys)
         RefTypeTC     t        -> RefTypeTC    (q t)
         ArrayTypeTC   t        -> ArrayTypeTC  (q t)
-        TupleTypeTC  types     -> TupleTypeTC  (map q types)
+        TupleTypeTC k types    -> TupleTypeTC k (map q types)
         FnTypeTC  ss t cc cs   -> FnTypeTC     (map q ss) (q t) cc cs
         CoroTypeTC  s t        -> CoroTypeTC  (q s) (q t)
         ForAllTC  tvs rho      -> ForAllTC  tvs (q rho)
@@ -121,6 +121,9 @@ tcUnifyFT uft1 uft2 = tcUnifyThings uft1 uft2
 tcUnifyCC ucc1 ucc2 = tcUnifyThings ucc1 ucc2
      (\_ _ -> tcLift $ putDoc $ text "WARNING: unable to unify disparate calling conventions" <> line)
 
+tcUnifyKinds uk1 uk2 = tcUnifyThings uk1 uk2
+     (\k1 k2 -> tcFails [text "Unable to unify kinds " <> pretty k1 <+> text "and" <+> pretty k2])
+
 -------------------------------------------------
 
 tcUnifyTypes :: TypeTC -> TypeTC -> Tc UnifySoln
@@ -165,13 +168,14 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                                   ++ nm1 ++ " vs " ++ nm2,
                              msg]
 
-    ((TupleTypeTC  tys1), (TupleTypeTC  tys2)) ->
+    ((TupleTypeTC kind1 tys1), (TupleTypeTC kind2 tys2)) ->
         if List.length tys1 /= List.length tys2
           then tcFailsMore [text $ "Unable to unify tuples of different lengths"
                            ++ " ("   ++ show (List.length tys1)
                            ++ " vs " ++ show (List.length tys2)
                            ++ ")."]
-          else do tcUnifyMoreTypes tys1 tys2 constraints tysub
+          else do tcUnifyKinds kind1 kind2
+                  tcUnifyMoreTypes tys1 tys2 constraints tysub
 
     -- Mismatches between unitary tuple types probably indicate
     -- parsing/function argument handling mismatch.

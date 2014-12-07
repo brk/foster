@@ -191,7 +191,7 @@ instance Pretty (ExprAST TypeP) where
             E_CompilesAST annot (Just e) -> withAnnot annot $ parens $ text "__COMPILES__" <+> pretty e
             E_ArrayRead   annot ai   -> withAnnot annot $ pretty ai
             E_ArrayPoke   annot ai e -> withAnnot annot $ pretty e <+> text ">^" <+> pretty ai
-            E_TupleAST    annot es   -> withAnnot annot $ parens (hsep $ punctuate comma (map pretty es))
+            E_TupleAST    annot _ es -> withAnnot annot $ parens (hsep $ punctuate comma (map pretty es))
             E_SeqAST annot _  _  -> let exprs = childrenOf e in
                                     let seqcat l r = pretty l <> text ";"
                                                  <$> pretty r in

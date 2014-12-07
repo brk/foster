@@ -1121,6 +1121,17 @@ void LLTupleStore::codegenMiddle(CodegenPass* pass) {
   copyValuesToStruct(codegenAll(pass, this->vars), tup_ptr);
 }
 
+Value* LLUnboxedTuple::codegen(CodegenPass* pass) {
+  auto vals = codegenAll(pass, this->vars);
+  std::vector<llvm::Constant*> undefs;
+  for (auto val : vals) { undefs.push_back(llvm::UndefValue::get(val->getType())); }
+  // Rather than copying values to memory with GEP + store,
+  // we "copy" values to a struct value which starts out with undef members.
+  Value* rv = llvm::ConstantStruct::getAnon(undefs);
+  for (int i = 0; i < vals.size(); ++i) { rv = builder.CreateInsertValue(rv, vals[i], i); }
+  return rv;
+}
+
 ///}}}//////////////////////////////////////////////////////////////
 
 ////////////////////////////////////////////////////////////////////

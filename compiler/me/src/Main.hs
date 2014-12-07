@@ -41,7 +41,7 @@ import Foster.ParsedType
 import Foster.PrettyExprAST()
 import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn))
 import Foster.AnnExprIL(AIExpr(AILetFuns, AICall, E_AIVar), fnOf, ilOf,
-                     collectIntConstraints, TypeIL(TupleTypeIL, FnTypeIL))
+                     collectIntConstraints, TypeIL(FnTypeIL),  unitTypeIL)
 import Foster.ILExpr(ILProgram, showILProgramStructure, prepForCodegen)
 import Foster.KNExpr(KNExpr', kNormalizeModule, knLoopHeaders, knSinkBlocks,
                      knInline, kNormalize, knSize, renderKN, mkCtorReprFn)
@@ -345,11 +345,10 @@ typecheckModule verboseMode pauseOnErrors modast tcenv0 = do
        where
         buildExprSCC :: [[Fn () AIExpr TypeIL]] -> AIExpr
         buildExprSCC [] = error "Main.hs: Can't build SCC of no functions!"
-        buildExprSCC es = let call_of_main = AICall unit
+        buildExprSCC es = let call_of_main = AICall unitTypeIL
                                               (E_AIVar (TypedId mainty (GlobalSymbol $ T.pack "main")))
                                               []
-                              unit   = TupleTypeIL []
-                              mainty = FnTypeIL [unit] unit FastCC FT_Proc
+                              mainty = FnTypeIL [unitTypeIL] unitTypeIL FastCC FT_Proc
                           in foldr build call_of_main es
          where build :: [Fn () AIExpr TypeIL] -> AIExpr -> AIExpr
                build es body = case es of

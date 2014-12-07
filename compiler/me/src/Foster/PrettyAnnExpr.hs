@@ -155,9 +155,9 @@ prettySeq ids bounds prefix =
 instance Pretty (AnnExpr TypeTC) where
   pretty e =
         case e of
-            AnnLiteral annot _ lit -> withAnnot annot $ pretty lit
-            AnnTuple   annot _ es  -> withAnnot annot $ parens (hsep $ punctuate comma (map pretty es))
-            E_AnnFn    fn          ->                   pretty fn
+            AnnLiteral annot _ lit  -> withAnnot annot $ pretty lit
+            AnnTuple   annot _ _ es -> withAnnot annot $ parens (hsep $ punctuate comma (map pretty es))
+            E_AnnFn    fn           ->                   pretty fn
             AnnIf      annot _ c b1 b2 -> withAnnot annot $
                                                kwd "if" <+> pretty c
                                            <$> nest 2 (kwd "then" <+> pretty b1)

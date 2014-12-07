@@ -17,6 +17,7 @@ import Data.IORef(newIORef,readIORef,writeIORef)
 import Data.UnionFind.IO(fresh)
 
 import Foster.Base
+import Foster.Kind
 import Foster.TypeAST
 import Foster.TypeTC
 import Foster.ExprAST
@@ -175,7 +176,7 @@ isValue e = case e of
   AnnCompiles     {} -> True
   E_AnnTyApp _ _ a _ -> isValue a
   AnnAppCtor _ _ _ exprs -> all isValue exprs
-  AnnTuple   _ _   exprs -> all isValue exprs
+  AnnTuple   _ _ _ exprs -> all isValue exprs
   _ -> False
 
 checkForEscapingTypeVariables _ _    _   _     [] = return ()
@@ -254,7 +255,7 @@ tcRho ctx expr expTy = do
       E_StringAST rng txtorbytes     -> tcRhoTextOrBytes  rng   txtorbytes expTy
       E_MachArrayLit rng mbt args    -> tcRhoArrayLit ctx rng   mbt args   expTy
       E_CallAST   rng base argtup    -> tcRhoCall     ctx rng   base argtup expTy
-      E_TupleAST  rng exprs          -> tcRhoTuple    ctx rng   exprs      expTy
+      E_TupleAST  rng boxy exprs     -> tcRhoTuple    ctx rng   boxy exprs  expTy
       E_IfAST   rng a b c            -> tcRhoIf       ctx rng   a b c      expTy
       E_FnAST  _rng f                -> tcRhoFn       ctx       f          expTy
       E_LetRec rng bindings e        -> tcRhoLetRec   ctx rng   bindings e expTy
@@ -514,8 +515,8 @@ tcRhoSeq ctx annot a b expTy = do
 tcRhoSeqCheck range ty = do
     zt <- zonkType ty
     case zt of
-      m@MetaTyVarTC {} -> unify m (TupleTypeTC []) "seq-unit"
-      TupleTypeTC []   -> return ()
+      m@MetaTyVarTC {} -> unify m unitTypeTC "seq-unit"
+      TupleTypeTC _ [] -> return ()
       PrimIntTC _      -> return ()
       _ | isFnTyLike zt ->
            tcFails [text "Sequenced expression returned a function type:"
@@ -529,6 +530,8 @@ isFnTyLike (FnTypeTC {}) = True
 isFnTyLike (RefinedTypeTC v _ _) = isFnTyLike (tidType v)
 isFnTyLike (ForAllTC _ t) = isFnTyLike t
 isFnTyLike _ = False
+
+unitTypeTC = TupleTypeTC (UniConst KindPointerSized) []
 -- }}}
 
 
@@ -540,7 +543,7 @@ tcRhoStore ctx rng e1 e2 expTy = do
 -- {{{
     a1 <- inferRho ctx e1 "store"
     a2 <- checkRho ctx e2 (RefTypeTC (typeTC a1))
-    matchExp expTy (AnnStore rng (TupleTypeTC []) a1 a2) "store"
+    matchExp expTy (AnnStore rng unitTypeTC a1 a2) "store"
 -- }}}
 
 
@@ -576,13 +579,15 @@ tcRhoAlloc ctx rng e1 rgn expTy = do
 --  G |- en ::: tn
 --  ------------------------------------
 --  G |- (e1, ..., en) ::: (t1, ..., tn)
-tcRhoTuple :: Context SigmaTC -> ExprAnnot -> [Term] -> Expected TypeTC -> Tc (AnnExpr RhoTC)
+tcRhoTuple :: Context SigmaTC -> ExprAnnot -> Kind -> [Term] -> Expected TypeTC -> Tc (AnnExpr RhoTC)
 -- {{{
-tcRhoTuple ctx rng exprs expTy = do
+tcRhoTuple ctx rng kind exprs expTy = do
    tup <- case expTy of
      Infer _                -> tcTuple ctx rng exprs [Nothing | _ <- exprs]
-     Check (TupleTypeTC ts) -> tcTuple ctx rng exprs [Just t  | t <- ts]
      Check (MetaTyVarTC {}) -> tcTuple ctx rng exprs [Nothing | _ <- exprs]
+     Check (TupleTypeTC kind' ts) -> do
+                               tcUnifyKinds (UniConst kind) kind'
+                               tcTuple ctx rng exprs [Just t  | t <- ts]
      Check ty -> tcFailsMore [text $ "typecheck: tuple (" ++ show exprs ++ ") "
                              ++ "cannot check against non-tuple type " ++ show ty]
    matchExp expTy tup (highlightFirstLine (rangeOf rng))
@@ -590,7 +595,7 @@ tcRhoTuple ctx rng exprs expTy = do
     tcTuple ctx rng exps typs = do
         exprs <- typecheckExprsTogether ctx exps typs
         let tys = map typeTC exprs
-        return $ AnnTuple rng (TupleTypeTC tys) exprs
+        return $ AnnTuple rng (TupleTypeTC (UniConst kind) tys) kind exprs
 
     -- Typechecks each expression in the same context
     typecheckExprsTogether ctx exprs expectedTypes = do
@@ -648,7 +653,7 @@ tcRhoArrayPoke annot s v base i expTy = do
   let ck t = do
       -- TODO check aiexpr type is compatible with Word
       unify t (typeTC v) "arraypoke type"
-      let expr = AnnArrayPoke annot (TupleTypeTC [])
+      let expr = AnnArrayPoke annot unitTypeTC
                                     (ArrayIndex base i (rangeOf annot) s) v
       matchExp expTy expr "arraypoke"
 
@@ -832,13 +837,12 @@ tcSigmaCall :: Context SigmaTC -> ExprAnnot -> ExprAST TypeAST
 
 tcSigmaCall ctx rng (E_PrimAST _ name@"assert-invariants" _ _) argtup exp_ty = do
     args <- mapM (\arg -> checkSigma ctx arg boolTypeTC) argtup
-    let unitType = TupleTypeTC []
-    let fnty = mkFnTypeTC [boolTypeTC | _ <- argtup] unitType
+    let fnty = mkFnTypeTC [boolTypeTC | _ <- argtup] unitTypeTC
     let prim = NamedPrim (TypedId fnty (Ident (T.pack name) 1))
-    let primcall = AnnCall rng unitType (AnnPrimitive rng fnty prim) args
+    let primcall = AnnCall rng unitTypeTC (AnnPrimitive rng fnty prim) args
     id <- tcFresh "assert-invariants-thunk"
-    let thunk = Fn (TypedId (mkFnTypeTC [] unitType) id) [] primcall () rng
-    matchExp exp_ty (AnnLetFuns rng [id] [thunk] (AnnTuple rng (TupleTypeTC []) [])) name
+    let thunk = Fn (TypedId (mkFnTypeTC [] unitTypeTC) id) [] primcall () rng
+    matchExp exp_ty (AnnLetFuns rng [id] [thunk] (AnnTuple rng unitTypeTC KindPointerSized [])) name
 
 tcSigmaCall ctx rng base argexprs exp_ty = do
         annbase <- inferRho ctx base "called base"
@@ -861,7 +865,9 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
         -- doesn't mean that the actual will necessarily follow the same refinement!
         args <- sequence [checkSigma ctx arg (shallowStripRefinedTypeTC ty) | (arg, ty) <- zip argexprs args_ty]
         debug $ "call: annargs: "
-        debugDoc $ showStructure (AnnTuple rng (TupleTypeTC (map typeTC args)) args)
+        debugDoc $ showStructure (AnnTuple rng (TupleTypeTC (UniConst KindPointerSized)
+                                                            (map typeTC args))
+                                               KindPointerSized args)
         debugDoc $ text "call: res_ty  is " <> pretty res_ty
         debugDoc $ text "call: exp_ty is " <> pretty exp_ty
         debugDoc $ text "tcRhoCall deferring to instSigma"
@@ -1248,7 +1254,7 @@ tcType' ctx refinementArgs ris typ = do
         TyVarAST      tv      -> return $ TyVarTC tv
         RefTypeAST    ty      -> liftM   RefTypeTC   (q ty)
         ArrayTypeAST  ty      -> liftM   ArrayTypeTC (q ty)
-        TupleTypeAST  types   -> liftM   TupleTypeTC (mapM q types)
+        TupleTypeAST  types  -> liftM  (TupleTypeTC (UniConst KindPointerSized)) (mapM q types)
         CoroTypeAST   s r     -> liftM2  CoroTypeTC  (q s) (q r)
         TyConAppAST nm types  -> liftM (TyConAppTC nm) (mapM q types)
         ForAllAST ktvs rho    -> do taus <- genTauUnificationVarsLike ktvs (\n -> "tcType'forall param " ++ show n)
@@ -1410,17 +1416,18 @@ tcRhoCase ctx rng scrutinee branches expTy = do
         return $ P_Ctor r ty ps info
 
       EP_Tuple     r eps  -> do
-        ts <-
+        (ts, kind) <-
           case ctxTy of
-            TupleTypeTC ts -> return ts
+            TupleTypeTC kind ts -> return (ts, kind)
             _ -> do ts <- sequence [newTcUnificationVarTau "tup" | _ <- eps]
-                    unify ctxTy (TupleTypeTC ts) "tuple-pattern"
-                    return ts
+                    kind <- genUnifiableVar
+                    unify ctxTy (TupleTypeTC kind ts) "tuple-pattern"
+                    return (ts, kind)
         sanityCheck (eqLen eps ts) $
                 "Cannot match pattern against tuple type of "
              ++ "different length." ++ showSourceRange r
         ps <- sequence [checkPattern ctx p t | (p, t) <- zip eps ts]
-        return $ P_Tuple r (TupleTypeTC ts) ps
+        return $ P_Tuple r (TupleTypeTC kind ts) ps
     -----------------------------------------------------------------------
     getCtorInfoForCtor :: Context SigmaTC -> T.Text -> Tc (CtorInfo SigmaTC)
     getCtorInfoForCtor ctx ctorName = do
@@ -1624,7 +1631,7 @@ resolveType annot origSubst origType = go origSubst origType where
                                          return $ FnTypeTC  ss' t' cc cs
     CoroTypeTC   s t               -> liftM2 CoroTypeTC  (q s) (q t)
     TyConAppTC    tc  types        -> liftM  (TyConAppTC  tc) (mapM q types)
-    TupleTypeTC       types        -> liftM   TupleTypeTC     (mapM q types)
+    TupleTypeTC  kind types        -> liftM  (TupleTypeTC kind) (mapM q types)
     RefinedTypeTC v e args -> do v' <- fmapM_TID q v
                                  return $ RefinedTypeTC v' e args
     ForAllTC      ktvs rho         -> liftM (ForAllTC  ktvs) (go subst' rho)
@@ -1660,7 +1667,7 @@ getFreeTyVars xs = do zs <- mapM zonkType xs
         PrimIntTC         {} -> []
         PrimFloat64TC     {} -> []
         TyConAppTC _nm types     -> concatMap (go bound) types
-        TupleTypeTC types        -> concatMap (go bound) types
+        TupleTypeTC _k types     -> concatMap (go bound) types
         FnTypeTC ss r   _ _      -> concatMap (go bound) (r:ss)
         CoroTypeTC s r           -> concatMap (go bound) [s,r]
         ForAllTC  tvs rho        -> go (tyvarsOf tvs ++ bound) rho
@@ -1712,7 +1719,7 @@ zonkType x = do
         PrimFloat64TC {}        -> return x
         TyVarTC       {}        -> return x
         TyConAppTC  nm types    -> liftM  (TyConAppTC nm) (mapM zonkType types)
-        TupleTypeTC    types    -> liftM  (TupleTypeTC  ) (mapM zonkType types)
+        TupleTypeTC k  types    -> liftM  (TupleTypeTC k) (mapM zonkType types)
         ForAllTC    tvs  rho    -> liftM  (ForAllTC tvs ) (zonkType rho)
         RefTypeTC       ty      -> liftM  (RefTypeTC    ) (zonkType ty)
         ArrayTypeTC     ty      -> do debug $ "zonking array ty: " ++ show ty
@@ -1823,7 +1830,7 @@ tcTypeWellFormed msg ctx typ = do
                                    Just  _ -> mapM_ q types
                                    Nothing -> tcFails [text $ "Unknown type "
                                                         ++ nm ++ " " ++ msg]
-        TupleTypeTC types     -> mapM_ q types
+        TupleTypeTC _k types  -> mapM_ q types
         FnTypeTC  ss r   _ _  -> mapM_ q (r:ss)
         CoroTypeTC  s r       -> mapM_ q [s,r]
         RefTypeTC     ty      -> q ty
@@ -1845,7 +1852,7 @@ tcContainsRefinements typ =
         PrimFloat64TC  {}      -> False
         MetaTyVarTC    {}      -> False
         TyConAppTC _nm tys     -> any tcContainsRefinements tys
-        TupleTypeTC    tys     -> any tcContainsRefinements tys
+        TupleTypeTC _k tys     -> any tcContainsRefinements tys
         FnTypeTC   ss r   _ _  -> any tcContainsRefinements (r:ss)
         CoroTypeTC  s r        -> any tcContainsRefinements [s,r]
         RefTypeTC     ty       -> tcContainsRefinements ty
@@ -1909,7 +1916,7 @@ collectAllUnificationVars xs = Set.toList (Set.fromList (concatMap go xs))
             PrimIntTC  _            -> []
             PrimFloat64TC           -> []
             TyConAppTC  _nm types   -> concatMap go types
-            TupleTypeTC  types      -> concatMap go types
+            TupleTypeTC _k  types   -> concatMap go types
             FnTypeTC  ss r   _ _    -> concatMap go (r:ss)
             CoroTypeTC  s r         -> concatMap go [s,r]
             ForAllTC  _tvs rho      -> go rho

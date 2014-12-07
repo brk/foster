@@ -402,7 +402,8 @@ monoType subst ty =
      TyConAppIL nam types   -> liftM (TyConApp nam) (mapM q types)
      PrimIntIL size         -> return $ PrimInt size
      PrimFloat64IL          -> return $ PrimFloat64
-     TupleTypeIL types      -> liftM TupleType (mapM q types)
+     TupleTypeIL KindPointerSized types -> liftM TupleType  (mapM q types)
+     TupleTypeIL KindAnySizeType  types -> liftM StructType (mapM q types)
      FnTypeIL  ss t cc cs -> do ss' <- mapM q ss
                                 t'  <- q t
                                 return $ FnType ss' t' cc cs

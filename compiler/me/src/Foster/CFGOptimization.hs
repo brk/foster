@@ -269,7 +269,7 @@ getCensus bbg = let cf = getCensusFns bbg in
         ILKillProcess  {}        -> m
         ILOccurrence   {}        -> m
         ILBitcast      _ v       -> addUsed m [(v, UsedFirstClass)] -- conservatively :(
-        ILTuple        vs _asrc  -> addUsed m [(v, UsedFirstClass) | v <- vs]
+        ILTuple  _kind vs _asrc  -> addUsed m [(v, UsedFirstClass) | v <- vs]
         ILCallPrim     _ _ vs    -> addUsed m [(v, UsedFirstClass) | v <- vs]
         ILAppCtor      _ _ vs    -> addUsed m [(v, UsedFirstClass) | v <- vs]
         ILAlloc        v _rgn    -> addUsed m [(v, UsedFirstClass)]

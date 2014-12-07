@@ -1,30 +1,84 @@
 main = {
-  build-unboxed !;
+  //build-unboxed !;
+  //return-unboxed-A True;
+  return-unboxed-B (0 ==Int32 opaquely_i32 0);
 };
 
 build-unboxed = {
-  let a = prim tuple-unboxed 1 2 3; in
-     expect_i32 0;
-     force_gc_for_debugging_purposes !;
-     print_i32 0;
-  end
+  t = prim tuple-unboxed 1 2 3;
+  expect_i32 0;
+  force_gc_for_debugging_purposes !;
+  print_i32 0;
+  case t
+    of (a, b, c) ->
+      expect_i32 1;
+      print_i32 a;
+      expect_i32 2;
+      print_i32 b;
+      expect_i32 3;
+      print_i32 c;
+  end;
 };
 
+return-unboxed-A = { b =>
+  t1 = { prim tuple-unboxed 1 2 3 };
+  t2 = { prim tuple-unboxed 1 2 3 };
+  t =  if b then t1 else t2 end;
+  expect_i32 0;
+  force_gc_for_debugging_purposes !;
+  print_i32 0;
+  use-unboxed-A t;
+};
+
+use-unboxed-A = { t =>
+  case t !
+    of (a, b, c) ->
+      expect_i32 1;
+      print_i32 a;
+      expect_i32 2;
+      print_i32 b;
+      expect_i32 3;
+      print_i32 c;
+  end;
+};
+
+//////////////
+
+return-unboxed-B = { b =>
+  t =  get-unboxed-B 3 ; // if b then get-unboxed-B 3 else get-unboxed-B 4 end;
+  force_gc_for_debugging_purposes !;
+  use-unboxed-B t 3;
+};
+
+get-unboxed-B = { x => prim tuple-unboxed (1, 2) x };
+
+use-unboxed-B = { t => x =>
+  case t
+    of ((a, b), c) ->
+      expect_i32 1;
+      print_i32 a;
+      expect_i32 2;
+      print_i32 b;
+      expect_i32 x;
+      print_i32 c;
+  end;
+};
+
+//////////////
+
 build-boxed = {
-  let a = prim tuple 1 2 3; in
-     expect_i32 0;
-     force_gc_for_debugging_purposes !;
-     print_i32 0;
-  end
+  a = prim tuple 1 2 3;
+  expect_i32 0;
+  force_gc_for_debugging_purposes !;
+  print_i32 0;
 };
 
 build-unboxed-ref = {
-  let t = prim tuple-unboxed 1 2 3;
-      a = (prim ref t); in
-     expect_i32 0;
-     force_gc_for_debugging_purposes !;
-     print_i32 0;
-  end
+  t = prim tuple-unboxed 1 2 3;
+  a = (prim ref t);
+  expect_i32 0;
+  force_gc_for_debugging_purposes !;
+  print_i32 0;
 };
 
 /*
@@ -41,9 +95,10 @@ build-unboxed-ref = {
                   |
 */
 build-boxed-ref = {
-  let a = (prim ref prim tuple 1 2 3); in
+  let a = (prim ref (prim tuple 1 2 3)); in
      expect_i32 0;
      force_gc_for_debugging_purposes !;
      print_i32 0;
   end
 };
+

@@ -257,6 +257,7 @@ ssTermOfExpr expr =
     KNLiteral _ (LitInt   i) -> SSTmValue $ SSInt (litIntValue i)
     KNLiteral _ (LitFloat f) -> SSTmValue $ SSFloat (litFloatValue f)
     KNLiteral _ (LitText  s) -> SSTmValue $ textFragmentOf s
+    KNLiteral _ (LitByteArray bs) -> SSTmValue $ SSByteString bs
     KNVar        v         -> SSTmExpr  $ IVar (idOf v)
     KNTuple   _t vs _      -> SSTmExpr  $ ITuple (map idOf vs)
     KNLetFuns ids funs e   -> SSTmExpr  $ ILetFuns   ids funs           (tr e)

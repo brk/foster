@@ -34,7 +34,7 @@ data ExprSkel annot ty =
         | E_BoolAST       annot Bool
         | E_IntAST        annot String
         | E_RatAST        annot String
-        | E_TupleAST      annot [ExprAST ty]
+        | E_TupleAST      annot Kind [ExprAST ty]
         | E_FnAST         annot (FnAST ty)
         | E_MachArrayLit  annot (Maybe ty) [ArrayEntry (ExprAST ty)]
         -- Control flow
@@ -129,7 +129,7 @@ instance Structured (ExprAST t) where
             E_StoreAST    _rng a b       -> [a, b]
             E_ArrayRead   _rng ari       -> childrenOfArrayIndex ari
             E_ArrayPoke   _rng ari c     -> childrenOfArrayIndex ari ++ [c]
-            E_TupleAST    _rng exprs     -> exprs
+            E_TupleAST    _rng _ exprs   -> exprs
             E_TyApp       _rng a _t      -> [a]
             E_TyCheck     _rng a _t      -> [a]
             E_Case        _rng e bs      -> e:(concatMap caseArmExprs bs)
@@ -148,7 +148,7 @@ exprAnnot e = case e of
       E_BoolAST       annot _     -> annot
       E_IntAST        annot _     -> annot
       E_RatAST        annot _     -> annot
-      E_TupleAST      annot _     -> annot
+      E_TupleAST      annot _ _   -> annot
       E_FnAST         annot _     -> annot
       E_LetAST        annot _ _   -> annot
       E_LetRec        annot _ _   -> annot

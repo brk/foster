@@ -13,6 +13,7 @@ import Compiler.Hoopl
 import Text.PrettyPrint.ANSI.Leijen
 
 import Foster.Base
+import Foster.Kind
 import Foster.Config
 import Foster.CFG
 import Foster.CloConv
@@ -147,8 +148,10 @@ makeAllocationsExplicit bbgp = do
             return $
               (mkMiddle $ CCLetVal id  (ILAllocate info)) <*>
               (mkMiddle $ CCLetVal id' (ILStore v (TypedId (LLPtrType t) id)))
-    (CCLetVal _id (ILTuple [] _allocsrc)) -> return $ mkMiddle $ insn
-    (CCLetVal  id (ILTuple vs _allocsrc)) -> do
+    (CCLetVal _id (ILTuple _kind [] _allocsrc)) -> return $ mkMiddle $ insn
+    (CCLetVal _id (ILTuple KindAnySizeType _vs _allocsrc)) -> do
+            return $ mkMiddle $ insn
+    (CCLetVal  id (ILTuple KindPointerSized vs _allocsrc)) -> do
             let t = LLStructType (map tidType vs)
             let memregion = MemRegionGlobalHeap
             let info = AllocInfo t memregion "tup" Nothing Nothing ("tup-allocator:"++show vs) NoZeroInit
@@ -533,7 +536,7 @@ availsXfer = mkFTransfer3 go go (distributeXfer availsLattice go)
   where
     go :: Insn' e x -> Avails -> Avails
     go (CCLetVal id (ILOccurrence ty v occ)) f = f { availOccs = insertAvailMap (v, occ) (TypedId ty id) (availOccs f) }
-    go (CCLetVal id (ILTuple vs _)) f = f { availTuples = insertAvailMap id vs (availTuples f) }
+    go (CCLetVal id (ILTuple _kind vs _)) f = f { availTuples = insertAvailMap id vs (availTuples f) }
     go (CCRebindId _ v1 v2 ) f = f { availSubst = insertAvailMap v1 v2 (availSubst f) }
     go _ f = f
 

@@ -401,6 +401,13 @@ struct LLTupleStore : public LLMiddle {
   virtual void codegenMiddle(CodegenPass* pass);
 };
 
+struct LLUnboxedTuple : public LLExpr {
+  std::vector<LLVar*> vars;
+
+  explicit LLUnboxedTuple(const std::vector<LLVar*>& vars) : LLExpr("LLUnboxedTuple"), vars(vars) {}
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
 struct LLAllocate : public LLExpr {
   LLVar* arraySize; // NULL if not allocating an array
   CtorRepr ctorRepr;

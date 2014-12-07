@@ -13,6 +13,7 @@ import Foster.Base(Literal(..), CtorId, CtorRepr(..), ArrayIndex(..),
                    TExpr(freeTypedIds), TypedWith(..))
 import Foster.MonoType
 import Foster.TypeLL
+import Foster.Kind
 
 import qualified Data.Text as T
 
@@ -24,7 +25,7 @@ import qualified Data.Map as Map(Map, findWithDefault)
 
 data Letable ty =
           ILLiteral     ty Literal
-        | ILTuple       [TypedId ty] AllocationSource
+        | ILTuple       Kind [TypedId ty] AllocationSource
         | ILKillProcess ty T.Text
         -- Struct member lookup
         | ILOccurrence  ty (TypedId ty) (Occurrence ty)
@@ -51,7 +52,7 @@ data Letable ty =
 instance TExpr (Letable ty) ty where
   freeTypedIds letable = case letable of
       ILLiteral      {} -> []
-      ILTuple      vs _ -> vs
+      ILTuple    _ vs _ -> vs
       ILKillProcess  {} -> []
       ILOccurrence _ v _-> [v]
       ILCallPrim _ _ vs -> vs
@@ -71,7 +72,7 @@ instance TExpr (Letable ty) ty where
 instance TypedWith (Letable MonoType) MonoType where
   typeOf letable = case letable of
       ILLiteral     t _ -> t
-      ILTuple      vs _ -> TupleType (map tidType vs)
+      ILTuple    _ vs _ -> TupleType (map tidType vs)
       ILKillProcess t _ -> t
       ILOccurrence t _ _-> t
       ILCallPrim t _ _  -> t
@@ -91,7 +92,8 @@ instance TypedWith (Letable MonoType) MonoType where
 instance TypedWith (Letable TypeLL) TypeLL where
   typeOf letable = case letable of
       ILLiteral     t _ -> t
-      ILTuple      vs _ -> LLPtrType (LLStructType (map tidType vs))
+      ILTuple KindPointerSized vs _ -> LLPtrType (LLStructType (map tidType vs))
+      ILTuple KindAnySizeType  vs _ ->           (LLStructType (map tidType vs))
       ILKillProcess t _ -> t
       ILOccurrence t _ _-> t
       ILCallPrim t _ _  -> t
@@ -116,7 +118,7 @@ substVarsInLetable s letable = case letable of
   ILLiteral     {}                         -> letable
   ILKillProcess {}                         -> letable
   ILAllocate    {}                         -> letable
-  ILTuple       vs asrc                    -> ILTuple       (map s vs) asrc
+  ILTuple  kind vs asrc                    -> ILTuple  kind (map s vs) asrc
   ILOccurrence  t v occ                    -> ILOccurrence  t (s v) occ
   ILCallPrim    t p vs                     -> ILCallPrim    t p     (map s vs)
   ILCall        t v vs                     -> ILCall        t (s v) (map s vs)
@@ -187,7 +189,8 @@ canGC mayGCmap letable =
          ILCall     _ v _ -> -- Exists due to mergeAdjacentBlocks.
                              Map.findWithDefault (GCUnknown "") (tidIdent v) mayGCmap
          ILCallPrim _ p _ -> canGCPrim p
-         ILTuple    _ _   -> MayGC -- rather than stack allocating tuples, easier to just remove 'em probably.
+         ILTuple KindPointerSized _ _   -> MayGC -- rather than stack allocating tuples, easier to just remove 'em probably.
+         ILTuple KindAnySizeType  _ _   -> WillNotGC
          ILLiteral  _ lit -> canGCLit lit
          ILKillProcess {} -> WillNotGC
          ILOccurrence  {} -> WillNotGC

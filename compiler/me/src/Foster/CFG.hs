@@ -27,6 +27,7 @@ module Foster.CFG
 ) where
 
 import Foster.Base
+import Foster.Kind
 import Foster.MonoType
 import Foster.KNExpr(KNExpr'(..), typeKN, KNCompilesResult(..))
 import Foster.Letable(Letable(..))
@@ -329,7 +330,8 @@ computeBlocks tailq expr idmaybe k = do
       case expr of
          KNLiteral    t lit  -> ILLiteral    t lit
          KNVar        _v     -> error $ "can't make Letable from KNVar!"
-         KNTuple    _ vs rng -> ILTuple      vs (AllocationSource "tuple" rng)
+         KNTuple (TupleType {})  vs rng -> ILTuple KindPointerSized vs (AllocationSource "tuple" rng)
+         KNTuple (StructType {}) vs rng -> ILTuple KindAnySizeType  vs (AllocationSource "tuple" rng)
          KNCallPrim _ t p vs -> ILCallPrim   t p vs
          KNAppCtor    t c vs -> ILAppCtor    t c vs
          KNAlloc    _ v rgn  -> ILAlloc      v rgn
@@ -543,7 +545,8 @@ instance Pretty t => Pretty (Letable t) where
   pretty l =
     case l of
       ILLiteral   _ lit     -> pretty lit
-      ILTuple     vs _asrc  -> parens (hsep $ punctuate comma (map pretty vs))
+      ILTuple _knd vs _asrc -> (if _knd == KindAnySizeType then text "#" else text "") <>
+                                 parens (hsep $ punctuate comma (map pretty vs))
       ILKillProcess t m     -> text ("prim KillProcess " ++ show m ++ " :: ") <> pretty t
       ILOccurrence  _ v occ -> prettyOccurrence v occ
       ILCallPrim  _ p vs    -> (text "prim" <+> pretty p <+> hsep (map prettyId vs))

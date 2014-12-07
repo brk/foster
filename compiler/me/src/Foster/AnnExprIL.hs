@@ -5,7 +5,7 @@
 -----------------------------------------------------------------------------
 
 module Foster.AnnExprIL (AIExpr(..), TypeIL(..), AIVar, boolTypeIL, stringTypeIL,
-                         fnOf, collectIntConstraints, ilOf) where
+                         fnOf, collectIntConstraints, ilOf, unitTypeIL) where
 
 import Foster.Base
 import Foster.Kind
@@ -30,7 +30,7 @@ import Control.Monad(when, liftM)
 data AIExpr =
         -- Literals
           AILiteral    TypeIL Literal
-        | AITuple      [AIExpr] SourceRange
+        | AITuple      Kind [AIExpr] SourceRange
         | AIKillProcess TypeIL T.Text
         -- Control flow
         | AIIf         TypeIL AIExpr AIExpr AIExpr
@@ -63,7 +63,7 @@ data AIExpr =
 instance TypedWith AIExpr TypeIL where
   typeOf ai = case ai of
      AILiteral  t _     -> t
-     AITuple  exprs _rng -> TupleTypeIL $ map typeOf exprs
+     AITuple kind exprs _rng -> TupleTypeIL kind (map typeOf exprs)
      -- E_AIFn annFn         -> fnType annFn
      AICall {- _rng -} t _ _    -> t
      AICallPrim _ t _ _ -> t
@@ -187,8 +187,8 @@ ail ctx ae =
                                          ti <- qt t
                                          [x,y,z] <- mapM q [a,b,c]
                                          return $ AIArrayPoke ti (ArrayIndex x y rng s) z
-        AnnTuple rng _ exprs       -> do aies <- mapM q exprs
-                                         return $ AITuple aies (rangeOf rng)
+        AnnTuple rng _ kind exprs  -> do aies <- mapM q exprs
+                                         return $ AITuple kind aies (rangeOf rng)
         AnnCase _rng t e arms      -> do ti <- qt t
                                          ei <- q e
                                          bsi <- mapM (\(CaseArm p e guard bindings rng) -> do
@@ -354,8 +354,9 @@ ilOf ctx typ = do
                                      return $ TyConAppIL dtname iltys
      PrimIntTC  size    -> do return $ PrimIntIL size
      PrimFloat64TC      -> do return $ PrimFloat64IL
-     TupleTypeTC  types -> do tys <- mapM q types
-                              return $ TupleTypeIL tys
+     TupleTypeTC ukind types -> do tys <- mapM q types
+                                   kind <- unUnified ukind KindPointerSized
+                                   return $ TupleTypeIL kind tys
      FnTypeTC  ss t cc cs -> do (y:xs) <- mapM q (t:ss)
                                 -- Un-unified placeholders occur for loops,
                                 -- where there are no external constraints on
@@ -382,7 +383,7 @@ ilOf ctx typ = do
         mty <- readTcMeta m
         case mty of
           Nothing -> if False -- TODO this is dangerous, can violate type correctness
-                      then return $ TupleTypeIL []
+                      then return unitTypeIL
                       else tcFails [text $ "Found un-unified unification variable "
                                 ++ show (mtvUniq m) ++ "(" ++ mtvDesc m ++ ")!"]
           Just t  -> let t' = shallowStripRefinedTypeTC t in
@@ -438,7 +439,7 @@ data TypeIL =
            PrimIntIL       IntSizeBits
          | PrimFloat64IL
          | TyConAppIL      DataTypeName [TypeIL]
-         | TupleTypeIL     [TypeIL]
+         | TupleTypeIL     Kind [TypeIL]
          | FnTypeIL        { fnTypeILDomain :: [TypeIL]
                            , fnTypeILRange  :: TypeIL
                            , fnTypeILCallConv :: CallConv
@@ -466,7 +467,7 @@ instance Show TypeIL where
                                       ++ joinWith " " ("":map show types) ++ ")"
         PrimIntIL size       -> "(PrimIntIL " ++ show size ++ ")"
         PrimFloat64IL        -> "(PrimFloat64IL)"
-        TupleTypeIL types    -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
+        TupleTypeIL _bx typs -> "(" ++ joinWith ", " (map show typs) ++ ")"
         FnTypeIL   s t cc cs -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
         CoroTypeIL s t       -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
         ForAllIL ktvs rho    -> "(ForAll " ++ show ktvs ++ ". " ++ show rho ++ ")"
@@ -495,7 +496,7 @@ instance Structured TypeIL where
             TyConAppIL _nam types  -> types
             PrimIntIL       {}     -> []
             PrimFloat64IL          -> []
-            TupleTypeIL     types  -> types
+            TupleTypeIL _bx types  -> types
             FnTypeIL  ss t _cc _cs -> ss++[t]
             CoroTypeIL s t         -> [s,t]
             ForAllIL  _ktvs rho    -> [rho]
@@ -510,10 +511,12 @@ instance Kinded TypeIL where
     PrimFloat64IL        -> KindAnySizeType
     TyVarIL   _ kind     -> kind
     TyConAppIL  {}       -> KindPointerSized
-    TupleTypeIL {}       -> KindPointerSized
+    TupleTypeIL kind _   -> kind
     FnTypeIL    {}       -> KindPointerSized
     CoroTypeIL  {}       -> KindPointerSized
     ForAllIL _ktvs rho   -> kindOf rho
     ArrayTypeIL {}       -> KindPointerSized
     PtrTypeIL   {}       -> KindPointerSized
     RefinedTypeIL v _ _  -> kindOf (tidType v)
+
+unitTypeIL = TupleTypeIL KindPointerSized []

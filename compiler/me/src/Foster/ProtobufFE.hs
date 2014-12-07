@@ -111,7 +111,8 @@ parseCallPrim pbexpr annot = do
                                     []   -> return $ E_MachArrayLit annot Nothing   (map processArrayValue args)
                                     [ty] -> return $ E_MachArrayLit annot (Just ty) (map processArrayValue args)
                                     _    -> error $ "ProtobufFE: prim mach-array-literal takes at most one type argument"
-      ("tuple",  _ ) -> return $ E_TupleAST annot args
+      ("tuple",  _ ) -> return $ E_TupleAST annot KindPointerSized args
+      ("tuple-unboxed",  _ ) -> return $ E_TupleAST annot KindAnySizeType args
       ("deref", [e]) -> return $ E_DerefAST annot e
       ("ref",             [e]) -> return $ E_AllocAST annot e MemRegionGlobalHeap
       ("stackref-unsafe", [e]) -> return $ E_AllocAST annot e MemRegionStack
@@ -492,7 +493,7 @@ parseSourceModule standalone sm = resolveFormatting m where
        E_StoreAST     _ a b      -> liftM3' E_StoreAST    ana (q a) (q b)
        E_TyApp        _ a tys    -> liftM3' E_TyApp       ana (q a) (return tys)
        E_TyCheck      _ a ty     -> liftM3' E_TyCheck     ana (q a) (return ty )
-       E_TupleAST     _ exprs    -> liftM2' E_TupleAST    ana (mapM q exprs)
+       E_TupleAST     _ k  exprs -> liftM3' E_TupleAST    ana (return k) (mapM q exprs)
        E_LetRec       _ bnz e    -> liftM3' E_LetRec      ana (mapM convertTermBinding bnz) (q e)
        E_LetAST       _ bnd e    -> liftM3' E_LetAST      ana (convertTermBinding bnd) (q e)
        E_CallAST      _ b exprs  -> liftM3' E_CallAST     ana (q b) (mapM q exprs)
