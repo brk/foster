@@ -74,7 +74,7 @@ void dumpWholeProgramToProtobuf(WholeProgramAST* pgm, const string& filename) {
       }
     }
 
-    { ScopedTimer timer("io.protobuf.convert");
+    { ScopedTimer timer("io.protobuf.translate");
     DumpToProtobufPass p; dumpModule(&p, *sm, mod);
     }
 
@@ -91,7 +91,7 @@ void dumpWholeProgramToProtobuf(WholeProgramAST* pgm, const string& filename) {
     EDiag() << "Protobuf program message is not initialized!\n";
   }
 
-  ScopedTimer timer("io.protobuf.out");
+  ScopedTimer timer("io.protobuf.write");
   std::ofstream out(filename.c_str(),
                   std::ios::trunc | std::ios::binary);
   if (wp.SerializeToOstream(&out)) {

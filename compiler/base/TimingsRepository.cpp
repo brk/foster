@@ -16,19 +16,19 @@ void TimingsRepository::incr(const char* dottedpath, uint64_t n) {
   std::vector<string> parts;
   pystring::split(dottedpath, parts, ".");
 
-  locals[dottedpath] += n;
+  local_us[dottedpath] += n;
 
   string prefix;
   for (size_t i = 0; i < parts.size(); ++i) {
     if (i > 0) prefix += ".";
     prefix += parts[i];
-    totals[prefix] += n;
+    total_us[prefix] += n;
   }
 }
 
 void TimingsRepository::print(const std::string& title) {
   size_t maxTotalLength = 0;
-  for (auto it : totals) {
+  for (auto it : total_us) {
     const string& s = it.first;
     maxTotalLength = (std::max)(maxTotalLength, s.size());
   }
@@ -39,13 +39,13 @@ void TimingsRepository::print(const std::string& title) {
 
   llvm::outs() << "============== " << title << " =============\n";
   llvm::outs() << llvm::format(pathFormatString.c_str(), (const char*) "Category name")
-      << "    Total" << "  " << "Local" << "\n";
+      << "     Total" << "     " << "Local" << "\n";
 
-  for (auto it : totals) {
+  for (auto it : total_us) {
     const string& s = it.first;
     llvm::outs() << llvm::format(pathFormatString.c_str(), s.c_str())
-                << "  " << llvm::format("%5u", (unsigned) totals[s])
-                << "  "  << llvm::format("%5u", (unsigned) locals[s]);
+                << "  " << llvm::format("%5u ms", (unsigned) total_us[s] / 1000)
+                << "  " << llvm::format("%5u ms", (unsigned) local_us[s] / 1000);
     const string& d = descriptions[s];
     if (!d.empty()) {
       llvm::outs() << " -- " << d;

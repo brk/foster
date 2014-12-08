@@ -17,8 +17,8 @@ using std::string;
 namespace foster {
 
 class TimingsRepository {
-  std::map<string, uint64_t> totals;
-  std::map<string, uint64_t> locals;
+  std::map<string, uint64_t> total_us;
+  std::map<string, uint64_t> local_us;
   std::map<string, string> descriptions;
 
 public:
@@ -37,7 +37,7 @@ struct ScopedTimer {
      : stat(stat), start(llvm::sys::TimeValue::now()) {}
   ~ScopedTimer() {
     llvm::sys::TimeValue end = llvm::sys::TimeValue::now();
-    gTimings.incr(stat, (end - start).msec());
+    gTimings.incr(stat, (end - start).usec());
   }
 private:
   const char* stat;

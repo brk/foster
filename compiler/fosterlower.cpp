@@ -206,7 +206,7 @@ void linkTo(llvm::Module*& transient,
 
 LLModule* readLLProgramFromProtobuf(const string& pathstr,
                                    foster::bepb::Module& out_sm) {
-  { ScopedTimer timer("io.proto");
+  { ScopedTimer timer("io.proto.read");
     std::fstream input(pathstr.c_str(), std::ios::in | std::ios::binary);
     if (!out_sm.ParseFromIstream(&input)) {
       EDiag() << "ParseFromIstream() failed!";
@@ -214,11 +214,10 @@ LLModule* readLLProgramFromProtobuf(const string& pathstr,
     }
   }
 
-  //const foster::InputTextBuffer* inputBuffer = gInputTextBuffer;
-  //gInputTextBuffer = newInputBufferFromSourceModule(out_sm);
-
-  LLModule* prog = foster::LLModule_from_pb(out_sm);
-  //gInputTextBuffer = inputBuffer;
+  LLModule* prog = NULL;
+  { ScopedTimer timer("io.proto.translate");
+    prog = foster::LLModule_from_pb(out_sm);
+  }
 
   if (!prog) {
     EDiag() << "unable to parse program from LL module protobuf";
