@@ -1,3 +1,4 @@
+{-# Language BangPatterns #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2013 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -14,7 +15,7 @@ import qualified Data.Map.Strict as Map(insertWith, unionWith, empty, toList,
 import Data.Set(Set)
 import Data.Map(Map)
 
-data AvailSet elts = UniverseMinus (Set elts) | Avail (Set elts)
+data AvailSet elts = UniverseMinus !(Set elts) | Avail !(Set elts)
         deriving Show
 
 mapAvailSet f   (UniverseMinus elts) = (UniverseMinus $ Set.map f elts)
@@ -46,8 +47,8 @@ availSmaller _ _ = error $ "GCRoots.hs: Can't compare sizes of Avail and Univers
 
 
 
-data AvailMap key val = AvailMap (AvailSet key)
-                                 (Map      key (Set val)) deriving Show
+data AvailMap key val = AvailMap !(AvailSet key)
+                                 !(Map      key (Set val)) deriving Show
 emptyAvailMap = AvailMap (Avail         Set.empty) Map.empty
 botAvailMap   = AvailMap (UniverseMinus Set.empty) Map.empty
 -- Both of these maps are empty, but they have different properties.
@@ -55,8 +56,11 @@ botAvailMap   = AvailMap (UniverseMinus Set.empty) Map.empty
 
 intersectAvailMap (AvailMap oa om) (AvailMap na nm) =
   let
-       ja = na `intersectAvails` oa
-       jm = Map.unionWith Set.intersection om nm
+       !ja = na `intersectAvails` oa
+       !jm = if Map.size om >= Map.size nm
+              then Map.unionWith Set.intersection om nm
+              else Map.unionWith Set.intersection nm om
+
   in (AvailMap ja jm,  availSmaller ja oa || Map.size jm /= Map.size om)
 
 insertAvailMap key val (AvailMap a m) =
