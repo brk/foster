@@ -25,6 +25,7 @@ Foster Notes
    inlining
    space-safety
    bench
+   optimization-examples
    todo
    checklist
 
