@@ -211,12 +211,12 @@ struct ETypeCheckAST : public ExprAST {
   virtual void dump(DumpToProtobufPass* pass);
 };
 
-
+class Pattern;
 struct Binding {
-  string name;
+  Pattern* patt;
   ExprAST* body;
-  explicit Binding(const string& name, ExprAST* body)
-  : name(name), body(body) {}
+  explicit Binding(Pattern* patt, ExprAST* body)
+  : patt(patt), body(body) {}
 };
 
 struct LetAST : public ExprAST {

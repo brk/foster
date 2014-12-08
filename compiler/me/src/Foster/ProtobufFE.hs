@@ -212,20 +212,30 @@ parseLet pbexpr annot = do
     parsePBLet annot
                (fromMaybe (error "Protobuf node tagged LET without PbLet field!")
                           (PbExpr.pb_let pbexpr))
-      where parseBinding (PbTermBinding.TermBinding u e) = do
-                body <- parseExpr e
-                return (Foster.ExprAST.TermBinding (VarAST Nothing (pUtf8ToText u)) body)
+      where parseBinding isRecursive pbTermBinding = do
+                body <- parseExpr (PbTermBinding.body pbTermBinding)
+                case (isRecursive, PbTermBinding.name pbTermBinding, PbTermBinding.patt pbTermBinding) of
+                  (_, Just u, Nothing) ->
+                         return $ Left (Foster.ExprAST.TermBinding (VarAST Nothing (pUtf8ToText u)) body)
+                  (False, Nothing, Just p) -> do
+                         pattern <- parsePattern p
+                         return $ Right (pattern, body)
+                  _ ->   error $ "had both name and pattern, or a pattern in a recursive nest!?!"
             parsePBLet range pblet = do
-                bindings <- mapM parseBinding (toList $ PBLet.binding pblet)
+                let isRecursive = PBLet.is_recursive pblet
+                bindings <- mapM (parseBinding isRecursive) (toList $ PBLet.binding pblet)
                 body <- parseExpr (PBLet.body pblet)
-                if PBLet.is_recursive pblet
-                  then return $ E_LetRec  range bindings body
-                  else return $ buildLets range bindings body
+                if isRecursive
+                  then let bindings' = [tb | Left tb <- bindings] in
+                       return $ E_LetRec  range bindings' body
+                  else return $ buildLets range bindings  body
             buildLets range bindings expr =
                 case bindings of
                    []     -> error "parseLet requires at least one binding!" -- TODO show range
-                   (b:[]) -> E_LetAST range b expr
-                   (b:bs) -> E_LetAST range b (buildLets range bs expr)
+                   (Left b:[]) -> E_LetAST range b expr
+                   (Left b:bs) -> E_LetAST range b (buildLets range bs expr)
+                   (Right (p,b):[]) -> E_Case range b [CaseArm p expr Nothing [] (rangeOf range)]
+                   (Right (p,b):bs) -> E_Case range b [CaseArm p (buildLets range bs expr) Nothing [] (rangeOf range)]
 
 parseSeq pbexpr annot = do
     exprs <- mapM parseExpr $ toList (toList $ PbExpr.parts pbexpr)

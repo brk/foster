@@ -135,8 +135,9 @@ message PBLet {
 }
 
 message TermBinding {
-  required string name = 1;
-  required Expr   body = 2;
+  optional string name = 1;
+  optional Expr   patt = 2;
+  required Expr   body = 3;
 }
 
 message PBIf {

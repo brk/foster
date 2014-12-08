@@ -93,7 +93,13 @@ abinding : 'REC' idbinding -> ^(ABINDING 'rec' idbinding)
          |        pbinding -> ^(ABINDING        pbinding);
 
 idbinding : xid '=' e    -> ^(BINDING xid e);
-pbinding  : xid '=' e    -> ^(BINDING xid e);
+pbinding  : patbind '=' e    -> ^(BINDING patbind e);
+
+patbind :
+  xid                                      // variables
+  | '_'                  -> ^(WILDCARD)    // wildcards
+  | 'let' '(' p (',' p)* ')'   -> ^(TUPLE p+)    // tuples (products)
+  ;
 
 e       :
     opr? phrase

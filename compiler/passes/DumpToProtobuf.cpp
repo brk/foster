@@ -263,16 +263,27 @@ void SeqAST::dump(DumpToProtobufPass* pass) {
   }
 }
 
+bool tryGetBindingName(std::string& s, Binding& b);
+void dumpPattern(DumpToProtobufPass* pass,
+                 pb::Expr* target,
+                 Pattern*  pat);
+
 void LetAST::dump(DumpToProtobufPass* pass) {
   processExprAST(pass, this, pb::Expr::LET);
   pb::PBLet* let_ = pass->exp->mutable_pb_let();
   let_->set_is_recursive(this->isRecursive);
   for (size_t i = 0; i < this->bindings.size(); ++i) {
     pb::TermBinding* b = let_->add_binding();
-    b->set_name(this->bindings[i].name);
-    foster::ParsingContext::pushCurrentBinding(this->bindings[i].name);
-    dumpChild(pass, b->mutable_body(), this->bindings[i].body);
-    foster::ParsingContext::popCurrentBinding();
+    std::string mb_name;
+    if (tryGetBindingName(mb_name, this->bindings[i])) {
+      b->set_name(mb_name);
+      foster::ParsingContext::pushCurrentBinding(mb_name);
+      dumpChild(pass, b->mutable_body(), this->bindings[i].body);
+      foster::ParsingContext::popCurrentBinding();
+    } else {
+      dumpPattern(pass, b->mutable_patt(), this->bindings[i].patt);
+      dumpChild(pass, b->mutable_body(), this->bindings[i].body);
+    }
   }
   dumpChild(pass, let_->mutable_body(), this->parts[0]);
 }

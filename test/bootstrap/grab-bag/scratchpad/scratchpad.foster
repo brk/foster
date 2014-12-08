@@ -1,6 +1,12 @@
 main = {
   //itr { itr { print_i32 0 } 2 } 3;
   itr { expect_i32 0; print_i32 0 } 3;
+  let (a, b) = (1, 2);
+  print_i32 a;
+  expect_i32 1;
+  print_i32 b;
+  expect_i32 2;
+  ()
 };
 
 itr = { f => n =>

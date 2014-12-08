@@ -290,8 +290,11 @@ foster::SourceRange rangeOfTrees(const std::vector<pTree>& v) {
   return rangeFrom(v.front(), v.back());
 }
 
+Pattern* parsePattern(pTree t);
+Pattern* parsePatternAtom(pTree t);
+
 Binding parseBinding(pTree tree) {
-  return Binding(textOfVar(child(tree, 0)), ExprAST_from(child(tree, 1)));
+  return Binding(parsePatternAtom(child(tree, 0)), ExprAST_from(child(tree, 1)));
 }
 
 ExprAST* parseStmts_seq(const std::vector<pTree>& v, ExprAST* mb_last) {
@@ -641,9 +644,6 @@ ExprAST* parseString(pTree t) {
     return new StringAST(parsed, bytes, rangeOf(t));
   }
 }
-
-Pattern* parsePattern(pTree t);
-Pattern* parsePatternAtom(pTree t);
 
 std::vector<Pattern*> noPatterns() { std::vector<Pattern*> f; return f; }
 
@@ -1067,14 +1067,26 @@ ModuleAST* parseTopLevel(pTree root_tree, std::string moduleName,
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 
+bool tryGetBindingName(std::string& s, Binding& b) {
+  if (LiteralPattern* lp = dynamic_cast<LiteralPattern*>(b.patt)) {
+    if (lp->variety == LiteralPattern::LP_VAR) {
+      s = dynamic_cast<VariableAST*>(lp->pattern)->getName();
+      return true;
+    }
+  }
+  return false;
+}
+
 // ^(FUNC_TYPE t+)
 // ^(BINDING binding+)
 void parseAnnots(std::map<string, string>& annots,
                  pTree tree) {
   for (size_t i = 0; i < getChildCount(tree); ++i) {
     Binding b = parseBinding(child(tree, i));
-    string  k = b.name;
     string  v;
+    string  k;
+
+    ASSERT(tryGetBindingName(k, b)) << "for now, annots only support literal patterns.";
 
     if (VariableAST* q = dynamic_cast<VariableAST*>(b.body)) {
       v = q->getName();
