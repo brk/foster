@@ -692,9 +692,7 @@ void copying_gc::worklist::process(copying_gc::semispace* next) {
 size_t get_default_stack_size() {
   struct rlimit rlim;
   getrlimit(RLIMIT_STACK, &rlim);
-  //gc_assert(rlim.rlim_cur != RLIM_INFINITY);
-  // TODO: account for stack space already being used?
-  return (size_t) rlim.rlim_cur;
+  return (size_t) (rlim.rlim_cur != RLIM_INFINITY) ? rlim.rlim_cur : 0x080000;
 }
 
 // {{{ get_static_data_range
