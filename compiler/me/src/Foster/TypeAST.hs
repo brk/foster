@@ -196,8 +196,6 @@ primitiveDecls =
     ,(,) "print_float_p9f64"       $ mkProcType [f64] []
     ,(,) "expect_float_p9f64"      $ mkProcType [f64] []
 
-    ,(,) "prim_do_some_asm" $ (mkProcType [] [])
-
     -- Calls to this function are internally transformed to AIAllocArray nodes.
     -- forall a, i32 -> Array a
     ,(,) "allocDArray" $ let a = BoundTyVar "a" in
@@ -232,7 +230,6 @@ primitiveDecls =
                             (mkFnType [TyVarAST b] [TyVarAST a]))
 
     ,(,) "force_gc_for_debugging_purposes" $ mkFnType [] [i32]
-    ,(,) "llvm_readcyclecounter" $ mkFnType [] [i64]
 
     -- TODO this is not correct for Solaris, AIX, or SGI/Irix,
     -- which use structs for time results, and is misleading on
