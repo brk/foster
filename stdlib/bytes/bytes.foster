@@ -94,6 +94,8 @@ bytesDrop = { ba => n =>
                 else // rather than re-concat a projection of the drop,
                      // and potentially do multiple allocations,
                      // we'll just wrap the concat in an offset...
+                     // That is, we'll do (drop (Concat a b) n) -> drop b n'
+                     //           but not (drop (Concat a b) n) -> Concat (drop a n) b
                                       BytesOffset ba n            len
               end
             of $BytesOffset bb m _ -> BytesOffset bb (n +Int64 m) len
