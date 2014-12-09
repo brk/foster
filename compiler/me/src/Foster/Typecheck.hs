@@ -695,7 +695,7 @@ tcRhoIf ctx rng a b c expTy = do
 --  G |- let x = e1 in e2 ::: t2
 tcRhoLet ctx rng (TermBinding v e1) e2 mt = do
 -- {{{
-    sanityCheck (not $ isRecursiveFunction boundName e1) errMsg
+    sanityCheck (not $ isRecursiveFunction boundName e1) (errMsg boundName)
     id <- tcFreshT boundName
     a1 <- case maybeVarType of
                  Nothing -> inferSigma ctx e1 "let"
@@ -715,7 +715,7 @@ tcRhoLet ctx rng (TermBinding v e1) e2 mt = do
     -- shadowing is permissible, and erroneous definitions like
     --     let x = x; in x end
     -- will be caught by the usual variable scoping rules.
-    errMsg = "Recursive bindings should use 'rec', not 'let':"
+    errMsg boundName = "Recursive binding of " ++ show boundName ++ " should use 'REC':"
            ++ highlightFirstLine (rangeOf rng)
 -- }}}
 
