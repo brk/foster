@@ -898,6 +898,7 @@ evalNamedPrimitive "print_float_p9f64" gs [SSFloat f] =
       do printStringNL gs (printf "%.9f" f)
          return $ withTerm gs unit
 
+-- TODO implement the other memcpy variants
 evalNamedPrimitive "memcpy_i8_to_from_at_len" gs
          [SSArray arr, from_bs_or_arr, SSInt req_at_I, SSInt req_len_I] =
       do
