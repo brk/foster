@@ -15,7 +15,7 @@ where
 
 import Foster.Base(Structured(..), Literal,
                    SourceRanged(..), TypedId(..), ArrayIndex(..),
-                   AllocMemRegion, childrenOfArrayIndex, ArrayEntry,
+                   AllocMemRegion, childrenOfArrayIndex, ArrayEntry(..),
                    CaseArm(..), caseArmExprs, EPattern(..), E_VarAST(..),
                    ExprAnnot(..), rangeOf, annotComments, showComments)
 import Foster.Kind
@@ -117,7 +117,7 @@ instance Structured (ExprAST t) where
             E_PrimAST     {}             -> []
             E_KillProcess {}             -> []
             E_VarAST      {}             -> []
-            E_MachArrayLit {}     -> []
+            E_MachArrayLit _rng _ty entries -> [e | AE_Expr e <- entries]
             E_CompilesAST _rng Nothing   -> []
             E_CompilesAST _rng (Just e)  -> [e]
             E_CallAST     _rng b exprs   -> b:exprs
