@@ -136,7 +136,7 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
 
     # https://downloads.haskell.org/~ghc/7.6.2/docs/html/users_guide/prof-heap.html#rts-options-heap-prof
     if options and options.profileme:
-      ghc_rts_args.append("-p") # general time profile
+      ghc_rts_args.append("-p") # general time profile, written to me.prof
       ghc_rts_args.append("-hc") # space profile (by function)
       #ghc_rts_args.append("-hy") # space profile (by type)
       #ghc_rts_args.append("-hd") # space profile (by ctor)
@@ -257,8 +257,10 @@ def run_one_test(testpath, paths, tmpdir, progargs):
           ld_elapsed = 0
           rn_elapsed = 0
         else:
+          allprogargs = progargs + [arg for rtarg in options.progrtargs
+                                        for arg in ["--foster-runtime", rtarg]]
           ld_elapsed = link_to_executable(finalpath, exepath, paths, testpath)
-          rv, rn_elapsed = run_command([exepath] + progargs, paths, testpath,
+          rv, rn_elapsed = run_command([exepath] + allprogargs, paths, testpath,
                                        stdout=actual, stderr=expected, stdin=infile,
                                        showcmd=True, strictrv=False)
 
@@ -307,12 +309,12 @@ def classify_result(result, testpath):
   else:
     tests_passed.add(testpath)
 
-def main(testpath, paths, tmpdir, progargs):
+def main(testpath, paths, tmpdir):
   testdir = os.path.join(tmpdir, testname(testpath))
   if not os.path.isdir(testdir):
     os.makedirs(testdir)
 
-  result = run_one_test(testpath, paths, testdir, progargs)
+  result = run_one_test(testpath, paths, testdir, options.progargs)
   print_result_table(result)
   classify_result(result, testpath)
 
@@ -377,6 +379,8 @@ def get_test_parser(usage):
                     help="Pass through arg to back-end (optc).")
   parser.add_option("--prog-arg", action="append", dest="progargs", default=[],
                     help="Pass through command line arguments to program")
+  parser.add_option("--foster-runtime", action="append", dest="progrtargs", default=[],
+                    help="Pass through command line arguments to program runtime")
   parser.add_option("--standalone", action="store_true", dest="standalone", default=False,
                     help="Just compile, don't link...")
   parser.add_option("--cxxpath", dest="cxxpath", action="store", default="g++",
@@ -398,6 +402,7 @@ if __name__ == "__main__":
                 --be-arg=--unsafe-disable-array-bounds-checks
                 --optc-arg=-no-coalesce-loads
                 --optc-arg=--help        will display optimization flags
+                --prog-arg=--hallooooo
                 --profileme              will enable profiling of the middle-end; then do `hp2ps -e8in -c me.hp`
                 --backend-optimize       enables LLVM optimizations
                 --asm
@@ -429,4 +434,4 @@ if __name__ == "__main__":
     options.beargs.append("--standalone")
     options.meargs.append("--standalone")
 
-  main(testpath, get_paths(options, tmpdir), tmpdir, options.progargs)
+  main(testpath, get_paths(options, tmpdir), tmpdir)
