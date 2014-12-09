@@ -23,6 +23,7 @@
 #include "foster_globals.h"
 
 #include "base/atomicops.h"
+#include "base/time.h"
 
 #include <signal.h>
 
@@ -477,6 +478,43 @@ extern double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 int64_t foster_getticks() { return __foster_getticks(); }
 double  foster_getticks_elapsed(int64_t t1, int64_t t2) {
   return __foster_getticks_elapsed(t1, t2);
+}
+
+// Re-implementation of the ``secs`` function from Criterion.Measurement
+// (temporary expedient because we don't have much in the way of facilities
+//  for working with double values within foster yet...)
+// http://hackage.haskell.org/package/criterion which is under the BSD3 license.
+void* foster_fmttime_secs_raw(double secs) {
+  char buf[64] = { 0 };
+  char* ptr = &buf[0];
+  const char* unit = "s"; bool small = false;
+  if (secs < 0.0) { *ptr++ = '-'; secs = -secs; }
+
+       if (secs >= 1.0) { }
+  else if (secs >= 1e-3 ) { unit = "ms"; secs *= 1e3 ; }
+  else if (secs >= 1e-6 ) { unit = "μs"; secs *= 1e6 ; }
+  else if (secs >= 1e-9 ) { unit = "ns"; secs *= 1e9 ; }
+  else if (secs >= 1e-12) { unit = "ps"; secs *= 1e12; }
+  else if (secs >= 1e-15) { unit = "fs"; secs *= 1e15; }
+  else if (secs >= 1e-18) { unit = "as"; secs *= 1e18; }
+  else { small = true; }
+
+       if (secs == 0.0) { snprintf(ptr, 63, "0.0 s"); } // for Haskell compatibility...
+  else if (small)       { snprintf(ptr, 63, "%g s", secs); }
+  else if (secs >= 1e9) { snprintf(ptr, 63, "%.4g %s", secs, unit); }
+  else if (secs >= 1e3) { snprintf(ptr, 63, "%.0f %s", secs, unit); }
+  else if (secs >= 1e2) { snprintf(ptr, 63, "%.1f %s", secs, unit); }
+  else if (secs >= 1e1) { snprintf(ptr, 63, "%.2f %s", secs, unit); }
+  else                  { snprintf(ptr, 63, "%.3f %s", secs, unit); }
+
+  return foster_emit_string_of_cstring(buf, strlen(buf));
+}
+
+int64_t foster_gettime_microsecs() {
+  return base::TimeTicks::NowFromSystemTraceTime().ToInternalValue();
+}
+double  foster_gettime_elapsed_secs(int64_t early, int64_t later) {
+  return base::TimeDelta::FromMicroseconds(later - early).InSecondsF();
 }
 
 // We want to perform aggressive link time optimization of

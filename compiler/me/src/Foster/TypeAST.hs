@@ -237,6 +237,10 @@ primitiveDecls =
     ,(,) "foster_getticks"         $ mkFnType [] [i64]
     ,(,) "foster_getticks_elapsed" $ mkFnType [i64, i64] [f64]
 
+    ,(,) "foster_fmttime_secs"     $ mkFnType [f64] [TyConAppAST "Text" []]
+    ,(,) "foster_gettime_microsecs"    $ mkFnType [] [i64]
+    ,(,) "foster_gettime_elapsed_secs" $ mkFnType [i64, i64] [f64]
+
     ] ++ (map (\(name, (ty, _op)) -> (name, ty)) $ Map.toList gFosterPrimOpsTable)
 
 intSize I1  = "Bool"

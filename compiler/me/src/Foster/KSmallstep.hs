@@ -28,7 +28,7 @@ import Numeric
 import qualified Data.ByteString as BS
 import Text.Printf(printf)
 import Text.PrettyPrint.ANSI.Leijen
-import Criterion.Measurement(getTime)
+import Criterion.Measurement(getTime, secs)
 
 import Control.Exception(assert)
 
@@ -919,7 +919,7 @@ evalNamedPrimitive "memcpy_i8_to_from_at_len" gs
                              return ([], gs' ))
              return $ withTerm gs' unit
 
--- This should really be an opaque sized value, not a concrete Int64.
+-- {{{
 evalNamedPrimitive "foster_getticks" gs [] = do
   t <- getTime
   -- "Convert" seconds to ticks by treating our abstract machine
@@ -929,6 +929,20 @@ evalNamedPrimitive "foster_getticks" gs [] = do
 
 evalNamedPrimitive "foster_getticks_elapsed" gs [SSInt t1, SSInt t2] = do
   return $ withTerm gs (SSTmValue $ SSFloat (fromIntegral (t2 - t1)))
+-- }}}
+
+-- {{{
+evalNamedPrimitive "foster_gettime_microsecs" gs [] = do
+  t_secs <- getTime
+  let t_us = round (t_secs * 1e6)
+  return $ withTerm gs (SSTmValue $ SSInt t_us)
+
+evalNamedPrimitive "foster_gettime_elapsed_secs" gs [SSInt t1_us, SSInt t2_us] = do
+  return $ withTerm gs (SSTmValue $ SSFloat (fromIntegral (t2_us - t1_us) * 1e6))
+
+evalNamedPrimitive "foster_fmttime_secs" gs [SSFloat d] = do
+  return $ withTerm gs (SSTmValue $ textFragmentOf $ T.pack (secs d))
+-- }}}
 
 evalNamedPrimitive prim _gs args = error $ "evalNamedPrimitive " ++ show prim
                                          ++ " not yet defined for args:\n"

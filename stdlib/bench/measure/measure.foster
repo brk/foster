@@ -1,4 +1,28 @@
 
+elapsed-time :: forall a:Type, { { a } => (Float64, a) };
+elapsed-time = { fg =>
+  t1 = foster_gettime_microsecs !;
+  v = fg !;
+  t2 = foster_gettime_microsecs !;
+
+  (foster_gettime_elapsed_secs t1 t2, v)
+};
+
+// Ticks are quicker to read and higher-resolution than times,
+// but cannot be sensibly converted to human-readable times.
+// They are, however, useful for comparative measurements.
+elapsed-ticks :: forall a:Type, { { a } => (Float64, a) };
+elapsed-ticks = { fg =>
+  t1 = foster_getticks !;
+  v = fg !;
+  t2 = foster_getticks !;
+
+  (foster_getticks_elapsed t1 t2, v)
+};
+
+// Other functions, intended for more specialized benchmarking needs:
+
+noinline_elapsed_time_once :: { { () } => Float64 };
 noinline_elapsed_time_once = { fg : { () } =>
   t1 = foster_getticks !;
   fg !;
