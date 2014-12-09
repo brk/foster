@@ -702,13 +702,17 @@ instance SourceRanged (Fn r e t) where rangeOf fn = rangeOf (fnAnnot fn)
 deriving instance (Show ty) => Show (DataType ty)
 deriving instance (Show ty) => Show (DataCtor ty)
 
-instance Ord Ident where
-    compare (GlobalSymbol t1) (GlobalSymbol t2) = compare t1 t2
-    compare (Ident t1 u1)     (Ident t2 u2)     = case compare u1 u2 of
-                                                    EQ -> compare t1 t2
-                                                    cr -> cr
-    compare (GlobalSymbol _)  (Ident _  _ )     = LT
-    compare (Ident _ _)       (GlobalSymbol  _) = GT
+instance Ord Ident where compare = compareIdents
+
+-- Give a distinct name to the Ord instance so that profiles get a more informative name.
+compareIdents (GlobalSymbol t1) (GlobalSymbol t2) = compare t1 t2
+compareIdents (Ident t1 u1)     (Ident t2 u2)     = case compare u1 u2 of
+                                                      EQ -> let rv = compare t1 t2 in
+                                                            if rv == EQ then rv else
+                                                                error $ "Uniq ident failure! " ++ show ((Ident t1 u1) ,  (Ident t2 u2) )
+                                                      cr -> cr
+compareIdents (GlobalSymbol _)  (Ident _  _ )     = LT
+compareIdents (Ident _ _)       (GlobalSymbol  _) = GT
 
 instance Eq Ident where
     (GlobalSymbol t1) == (GlobalSymbol t2) = t1 == t2
@@ -723,7 +727,7 @@ instance Eq (TypedId t) where
        (==) (TypedId _ a) (TypedId _ b) = (==) a b
 
 instance Ord (TypedId t) where
-    compare (TypedId _ a) (TypedId _ b) = compare a b
+    compare (TypedId _ a) (TypedId _ b) = compareIdents a b
 
 instance (Show ty) => Show (TypedId ty)
   where show (TypedId ty id) = show id ++ " :: " ++ show ty
@@ -876,7 +880,10 @@ instance Eq (CtorInfo t) where
   a == b = (ctorInfoId a) == (ctorInfoId b)
 
 instance Ord (LLCtorInfo ty) where
-  compare (LLCtorInfo c1 r1 _) (LLCtorInfo c2 r2 _) = compare (c1, r1) (c2, r2)
+  compare = compareLLCtorInfo
+
+compareLLCtorInfo (LLCtorInfo c1 r1 _) (LLCtorInfo c2 r2 _) = compare (c1, r1) (c2, r2)
+
 instance Eq  (LLCtorInfo ty) where
   c1 == c2 = compare c1 c2 == EQ
 
