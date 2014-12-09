@@ -383,11 +383,13 @@ dropRawBytes = { a : Array Int8 => d : Int32 =>
   // bytes[0..alen]    = a[d..alen+d]
   memcpy_i8_to_from_at_len bytes a d    alen;
   bytes
+};
 
-/*
-  alen = arrayLength32 a -Int32 d;
-  newDArray0 alen { i => a[d +Int32 i] };
-  */
+takeRawBytes = { a : Array Int8 => alen : Int64 =>
+  bytes = allocDArray (cast_i64_to_i32 alen);
+  // bytes[0..alen]    = a[0..alen]
+  memcpy_i8_to_from_at_len bytes a 0 (cast_i64_to_i32 alen);
+  bytes
 };
 
 high32BitsOf64 = { n : Int64 =>
