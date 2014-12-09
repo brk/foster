@@ -418,6 +418,7 @@ readAndParseProtobuf infile = do
     Right (pb_program, _) -> return pb_program
 
 main = do
+  -- When we upgrade to criterion 1.0, we must call initializeTime here...
   args <- getArgs
   case args of
     (infile : outfile : rest) -> do
