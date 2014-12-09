@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
+#define DEBUG_TYPE "foster-codegen"
+
 #include "base/Assert.h"
 #include "base/Diagnostics.h"
 #include "base/LLVMUtils.h"
@@ -18,6 +20,7 @@
 #include "llvm/IR/InlineAsm.h"
 
 #include "llvm/IR/Metadata.h"
+#include "llvm/ADT/Statistic.h"
 //#include "llvm/Analysis/DIBuilder.h"
 //#include "llvm/Support/Dwarf.h"
 
@@ -37,6 +40,8 @@ using foster::EDiag;
 using foster::DDiag;
 
 using std::vector;
+
+STATISTIC(MEMCPY_FROM_GLOBAL_TO_HEAP, "[foster] statically emitted memcpy operations");
 
 namespace foster {
 
@@ -982,20 +987,6 @@ llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
 //////////////// Arrays ////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////{{{
 
-Value* asInt32(Value* v) {
-  if (v->getType()->isIntegerTy(32)) return v;
-  ASSERT(!v->getType()->isIntegerTy(64));
-
-  if (llvm::ConstantInt* ci = dyn_cast<llvm::ConstantInt>(v)) {
-    int32_t limit = ~int32_t(0);
-    return builder.getInt32(ci->getLimitedValue(limit));
-  } else {
-    ASSERT(false) << "dynamically sign-extending from " << str(v->getType())
-                  << " due to asInt32\n" << str(v);
-    return signExtend(v, builder.getInt32Ty());
-  }
-}
-
 bool tryBindArray(llvm::Value* base, Value*& arr, Value*& len) {
   // {i64, [0 x T]}*
   if (isPointerToStruct(base->getType())) {
@@ -1022,7 +1013,7 @@ Value* getArraySlot(Value* base, Value* idx, CodegenPass* pass,
     if (dynCheck && !pass->config.disableAllArrayBoundsChecks) {
       emitFosterArrayBoundsCheck(pass->mod, idx, len, srclines);
     }
-    return getPointerToIndex(arr, asInt32(idx), "arr_slot");
+    return getPointerToIndex(arr, idx, "arr_slot");
   } else {
     ASSERT(false) << "expected array, got " << str(base);
     return NULL;
@@ -1111,7 +1102,7 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
 
     Value* heapmem; Value* _len;
     if (tryBindArray(heap_arr, /*out*/ heapmem, /*out*/ _len)) {
-      DDiag() << "memcpying from global to heap";
+      MEMCPY_FROM_GLOBAL_TO_HEAP++;
       // Memcpy from global to heap.
       //
 
