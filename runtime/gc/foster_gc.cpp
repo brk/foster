@@ -148,8 +148,9 @@ class copying_gc {
         // resulting from allocation will be properly aligned.
         bump = range.base;
         realign_bump();
-        fprintf(gclog, "after reset, bump = %p, low bits: %x\n", bump,
-                                                    int(intptr_t(bump) & 0xf));
+        fprintf(gclog, "after reset, bump = %p, low bits: %x, size = %lld\n", bump,
+                                                    int(intptr_t(bump) & 0xf),
+                                                    get_size());
       }
 
       bool contains(void* ptr) const { return range.contains(ptr); }
@@ -161,6 +162,7 @@ class copying_gc {
 
       int64_t used_size() const { return distance(range.base, bump); }
       int64_t free_size() const { return distance(bump, range.bound); }
+      int64_t  get_size() const { return distance(range.base, range.bound); }
 
       bool can_allocate_bytes(int64_t num_bytes) {
         return free_size() > num_bytes;
@@ -545,7 +547,8 @@ public:
       fflush(gclog);
       return curr->allocate_cell_prechecked(typeinfo);
     } else {
-      fprintf(gclog, "working set exceeded heap size! aborting...\n"); fflush(gclog);
+      fprintf(gclog, "working set exceeded heap size of %lld bytes! aborting...\n", curr->get_size()); fflush(gclog);
+      fprintf(stderr, "working set exceeded heap size of %lld bytes! aborting...\n", curr->get_size()); fflush(stderr);
       exit(255); // TODO be more careful if we're allocating from a coro...
       return NULL;
     }
@@ -573,7 +576,8 @@ public:
         fflush(gclog);
         return curr->allocate_array_prechecked(elt_typeinfo, n, req_bytes, init);
       } else {
-        fprintf(gclog, "working set exceeded heap size! aborting...\n"); fflush(gclog);
+        fprintf(gclog, "working set exceeded heap size of %lld bytes! aborting...\n", curr->get_size()); fflush(gclog);
+        fprintf(stderr, "working set exceeded heap size of %lld bytes! aborting...\n", curr->get_size()); fflush(stderr);
         exit(255); // TODO be more careful if we're allocating from a coro...
         return NULL;
       }
