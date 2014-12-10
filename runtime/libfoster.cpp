@@ -354,6 +354,9 @@ int32_t force_gc_for_debugging_purposes() {
 void  print_i8(int8_t x) { fprint_i32(stdout, x); } // implicit conversion
 void expect_i8(int8_t x) { fprint_i32(stderr, x); } // implicit conversion
 
+void  print_i8x(int8_t x) { fprint_i32x(stdout, uint8_t(x)); }
+void expect_i8x(int8_t x) { fprint_i32x(stderr, uint8_t(x)); }
+
 void  print_i8b(int8_t x) { fprint_i8b(stdout, x); }
 void expect_i8b(int8_t x) { fprint_i8b(stderr, x); }
 

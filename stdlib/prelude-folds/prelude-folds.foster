@@ -29,6 +29,21 @@ foldRange = { forall t:Type,
   go fst init;
 };
 
+// Precondition: fst <= fin
+//
+foldRange64 = { forall t:Type,
+                  fst : Int64 =>
+                  fin : Int64 =>
+                  init : t =>
+                  iter : { Int64 => t => t } =>
+  REC go = { n : Int64 => acc : t =>
+      if n >=SInt64 fin then acc else
+        go (n +Int64 1) (iter n acc)
+      end
+  };
+  go fst init;
+};
+
 /////
 
 arrayFoldl :: forall t:Type, a:Type, { Array t => { t => a => a } => a => a };

@@ -1,3 +1,4 @@
+snafuinclude Ord "ord";
 
 minReprInt32 :: { Int32 };
 minReprInt32 = { -2`147`483`648 };
@@ -76,6 +77,42 @@ cast_WordX2_to_i32     = { a : WordX2    =>
     else prim kill-entire-process "cast_WordX2_to_i32 invariant violated"
   end
 };
+
+////
+
+max-UInt32 = { n : Int32 => m : Int32 => if n <UInt32 m then m else n end };
+max-SInt32 = { n : Int32 => m : Int32 => if n <SInt32 m then m else n end };
+max-UInt64 = { n : Int64 => m : Int64 => if n <UInt64 m then m else n end };
+max-SInt64 = { n : Int64 => m : Int64 => if n <SInt64 m then m else n end };
+max-SWord  = { n : Word  => m : Word  => if n <SWord  m then m else n end };
+
+// TODO improve error messages with
+//      min-SInt64 = { a : Int32 => b : Int32 => ...
+min-UInt32 = { n : Int32 => m : Int32 => if n <UInt32 m then n else m end };
+min-SInt32 = { n : Int32 => m : Int32 => if n <SInt32 m then n else m end };
+min-UInt64 = { n : Int64 => m : Int64 => if n <UInt64 m then n else m end };
+min-SInt64 = { n : Int64 => m : Int64 => if n <SInt64 m then n else m end };
+min-SWord  = { n : Word  => m : Word  => if n <SWord  m then n else m end };
+
+////
+
+cmp-UInt8  = { n : Int8  => m : Int8  => if n <UInt8 m then LT else
+                                         if m <UInt8 n then GT else EQ end end };
+
+cmp-SInt8  = { n : Int8  => m : Int8  => if n <SInt8 m then LT else
+                                         if m <SInt8 n then GT else EQ end end };
+
+cmp-UInt32 = { n : Int32 => m : Int32 => if n <UInt32 m then LT else
+                                         if m <UInt32 n then GT else EQ end end };
+
+cmp-SInt32 = { n : Int32 => m : Int32 => if n <SInt32 m then LT else
+                                         if m <SInt32 n then GT else EQ end end };
+
+cmp-UInt64 = { n : Int64 => m : Int64 => if n <UInt64 m then LT else
+                                         if m <UInt64 n then GT else EQ end end };
+
+cmp-SInt64 = { n : Int64 => m : Int64 => if n <SInt64 m then LT else
+                                         if m <SInt64 n then GT else EQ end end };
 
 ////
 

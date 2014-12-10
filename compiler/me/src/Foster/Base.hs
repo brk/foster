@@ -671,14 +671,14 @@ instance AExpr body => AExpr (Fn recStatus body t) where
                    bodyvars `butnot` boundvars
 
 instance IntSized IntSizeBits
- where intSizeOf = intOfSize where
-                       intOfSize I1 = 1
-                       intOfSize I8 = 8
-                       intOfSize I32 = 32
-                       intOfSize I64 = 64
-                       intOfSize (IWord 0) = 32 -- TODO this is hacky =/
-                       intOfSize (IWord 1) = 64
-                       intOfSize (IWord w) = error $ "unsupported IWord key " ++ show w
+ where
+       intSizeOf I1 = 1
+       intSizeOf I8 = 8
+       intSizeOf I32 = 32
+       intSizeOf I64 = 64
+       intSizeOf (IWord 0) = 32 -- TODO this is hacky =/
+       intSizeOf (IWord 1) = 64
+       intSizeOf (IWord w) = error $ "unsupported IWord key " ++ show w
 
 sizeOfBits :: Int -> IntSizeBits
 sizeOfBits 1           = I1

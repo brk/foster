@@ -169,6 +169,8 @@ primitiveDecls =
     ,(,)  "print_i1"   $ mkProcType [i1] []
     ,(,) "expect_i8"   $ mkProcType [i8] []
     ,(,)  "print_i8"   $ mkProcType [i8] []
+    ,(,) "expect_i8x"  $ mkProcType [i8] []
+    ,(,)  "print_i8x"  $ mkProcType [i8] []
     ,(,) "expect_i8b"  $ mkProcType [i8] []
     ,(,)  "print_i8b"  $ mkProcType [i8] []
     ,(,) "expect_i32b" $ mkProcType [i32] []

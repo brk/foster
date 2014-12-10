@@ -28,6 +28,7 @@ rawBytesConcatByCopy = { a : Array Int8 => alen : Int32 =>
     //
     // It's also not great that using this in a loop gives O(n^2) asympotic
     // complexity rather than O(n), because we don't over-allocate our arrays.
+
     bytes = allocDArray len;
 
     // bytes[0..whatever]    = a[0..alen]
@@ -328,5 +329,39 @@ bytesGet1HI! :: { Bytes => Int64 => Int32 };
 bytesGet1HI! = { bytes => i =>
   a = bytesGet! i bytes;
   octet4ToInt32 a 0 0 0
+};
+
+bytesFoldlBytes :: forall a:Type, { Bytes => { Int8 => a => a } => a => a };
+
+bytesEqual :: { Bytes => Bytes => Bool };
+bytesEqual = { b1 => b2 => isEQ (bytesCmp b1 b2) };
+
+bytesCmp :: { Bytes => Bytes => Ord };
+bytesCmp = { b1 => b2 =>
+  defaultVerdict = cmp-UInt64 (bytesLength b1) (bytesLength b2);
+  len            = min-UInt64 (bytesLength b1) (bytesLength b2);
+  REC go = { idx =>
+    if idx ==Int64 len
+      then defaultVerdict
+      else res = cmp-UInt8 (bytesGet! idx b1) (bytesGet! idx b2);
+           if isEQ res then go (idx +Int64 1) else res end
+    end
+  };
+  go 0
+};
+
+// TODO compare codegen with/without optimization...
+bytesCmpAlt :: { Bytes => Bytes => Ord };
+bytesCmpAlt = { b1 => b2 =>
+  defaultVerdict = cmp-UInt64 (bytesLength b1) (bytesLength b2);
+  len            = min-UInt64 (bytesLength b1) (bytesLength b2);
+  REC go = { idx =>
+    if idx ==Int64 len
+      then defaultVerdict
+      else ordBindIfEq (cmp-UInt8 (bytesGet! idx b1) (bytesGet! idx b2))
+                       { go (idx +Int64 1) }
+    end
+  };
+  go 0
 };
 

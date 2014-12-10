@@ -153,18 +153,6 @@ copyOfArrayTo = { forall t:Type,
 
 /////
 
-max-UInt32 = { n : Int32 => m : Int32 => if n <UInt32 m then m else n end };
-max-SInt32 = { n : Int32 => m : Int32 => if n <SInt32 m then m else n end };
-max-SInt64 = { n : Int64 => m : Int64 => if n <SInt64 m then m else n end };
-max-SWord  = { n : Word  => m : Word  => if n <SWord  m then m else n end };
-
-// TODO improve error messages with
-//      min-SInt64 = { a : Int32 => b : Int32 => ...
-min-UInt32 = { n : Int32 => m : Int32 => if n <UInt32 m then n else m end };
-min-SInt32 = { n : Int32 => m : Int32 => if n <SInt32 m then n else m end };
-min-SInt64 = { n : Int64 => m : Int64 => if n <SInt64 m then n else m end };
-min-SWord  = { n : Word  => m : Word  => if n <SWord  m then n else m end };
-
 text_maxdepth = { s : Text =>
   case s
     of $TextFragment a n     -> 0
@@ -302,7 +290,8 @@ tmp_Text_16_of_Int32_digit = { n:Int32 =>
     of 13 -> "D"
     of 14 -> "E"
     of 15 -> "F"
-    of _ -> "<error:value passed to tmp_Text_16_of_Int32_digit was too large>"
+    of _ -> "<error:value passed to tmp_Text_16_of_Int32_digit was too large:"
+                `mkTextConcat` (tmp_Text_of_Int32 n `mkTextConcat` ">")
   end
 };
 
@@ -385,11 +374,15 @@ dropRawBytes = { a : Array Int8 => d : Int32 =>
   bytes
 };
 
+// Returns the original array if no trimming is needed.
 takeRawBytes = { a : Array Int8 => alen : Int64 =>
-  bytes = allocDArray (cast_i64_to_i32 alen);
-  // bytes[0..alen]    = a[0..alen]
-  memcpy_i8_to_from_at_len bytes a 0 (cast_i64_to_i32 alen);
-  bytes
+  if alen ==Int64 arrayLength a
+    then a
+    else bytes = allocDArray (cast_i64_to_i32 alen);
+         // bytes[0..alen]    = a[0..alen]
+         memcpy_i8_to_from_at_len bytes a 0 (cast_i64_to_i32 alen);
+         bytes
+  end
 };
 
 high32BitsOf64 = { n : Int64 =>
@@ -440,7 +433,7 @@ tmp_Text_of_UInt64 = { n:Int64 =>
     if n <SInt64 10
       then mkTextConcat (tmp_Text_of_Int32_digit (trunc_i64_to_i32 n)) t
       else r = trunc_i64_to_i32 (srem-Int64 n 10);
-           q =                          sdiv-Int64 n 10 ;
+           q =                   sdiv-Int64 n 10 ;
            go q (mkTextConcat (tmp_Text_of_Int32_digit r) t);
     end
   };
