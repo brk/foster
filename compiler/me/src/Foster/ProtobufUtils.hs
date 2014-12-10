@@ -9,7 +9,7 @@ import Text.ProtocolBuffers.Basic(toUtf8)
 
 -- String conversions
 pUtf8ToText :: P'.Utf8 -> T.Text
-pUtf8ToText p = (L.toStrict . E.decodeUtf8 . P'.utf8) p
+pUtf8ToText !p = (L.toStrict . E.decodeUtf8 . P'.utf8) $! p
 
 textToPUtf8 :: T.Text -> P'.Utf8
 textToPUtf8 t = case (toUtf8 . E.encodeUtf8 . L.fromStrict) t of

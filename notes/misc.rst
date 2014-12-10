@@ -9,17 +9,21 @@ Miscellanous Tidbits of Knowledge
 
 * If a Foster program silently fails, check ``gclog.txt``.
 * If the return value is 99, it means the GC detected an error while running.
+  If the return value is 255, it means the GC ran out of heap space.
 * The GC heap size can be configured with ``--foster-runtime '{"gc_semispace_size_kb":400}'``
 * Semispace memory is initialized to 0x66, so a SIGSEGV crash with an address of
   mostly 6's means a read of uninitialized memory.
 * When semispace memory is cleared, it is changed to 0xFE.
+* To unsafely disable array bounds checking (e.g. to see how much speedup is
+  possible, without going to the trouble of establishing the necessary invariants)
+  use ``--be-arg=-unsafe-disable-array-bounds-checks``
 * To see where allocations are coming from, compile with
   ``--be-arg=-gc-track-alloc-sites``.
   This will cause the compiler to emit calls to ``record_memalloc_cell`` before
   each allocation, which will in turn cause dump_stats() to emit extra information
   about call site distribution. By default, dump_stats() goes to ``gclog.txt``.
-* Inlining is disabled by default, even with ``--optimize=O2`` (because
-  ``--optimize`` is for the backend (LLVM), not the middle end (Haskell).
+* Inlining is disabled by default (as its name suggests, ``--backend-optimize``
+  is for the backend (LLVM), not the middle end (Haskell).
   Use ``--me-arg=--inline`` to enable it.
 * To see monomorphized, inlined, and loop-headered variants of the input program,
   use ``--me-arg=--dump-ir=mono``.
@@ -97,6 +101,34 @@ Miscellanous Tidbits of Knowledge
       align things properly for GC'ing -- in particular, the *payload* must be
       16-byte aligned, which in turn means that we need 16 bytes of padding...
 
+
 * Gotcha:
   Functions referenced in refinements must have top-level type annotations.
+
+Profiling
+---------
+
+Every run of ``me`` will produce ``meGCStats.txt``, which says how many bytes
+were allocated and the relative time spent in mutator/GC/etc.
+
+Use ``--profileme`` to also enable various forms of profiling.
+By default, ``run_test.py`` passes ``-p`` for a time profile, and
+``-hc`` for a by-function space profile. Results go in ``me.prof`` and ``me.hp``
+respectively.
+
+``me.prof`` is a text file that can be viewed in ``vim`` etc. However, it
+contains many extraneous lines; run ``filter-me-prof me.prof`` to generate
+``me.prof.txt``.
+
+Run ``hp2ps -e8in -g -c me.hp && gv me.ps`` to view the profile via a generated
+``me.ps`` file.
+
+.. note:
+        See also https://downloads.haskell.org/~ghc/latest/docs/html/users_guide/hp2ps.html
+
+Performance-related notes
+-------------------------
+
+
+* The middle-end compiler takes 2m2s to build with -O2, and roughly 48s to build without optimization.
 

@@ -70,7 +70,7 @@ import Foster.Primitives
 -- optional PhoneType type      => (getVal phone_number type')
 -----------------------------------------------------------------------
 
-data FEState = FEState { feModuleLines :: SourceLines }
+data FEState = FEState { feModuleLines :: !SourceLines }
 type FE a = State FEState a
 
 getName _    (Just s) = pUtf8ToText s
@@ -417,7 +417,7 @@ parseSourceModule standalone sm = resolveFormatting m where
                                              Nothing -> error $ "PbFormatting.COMMENT without comment?")
 
    sourceLines :: SourceModule -> SourceLines
-   sourceLines sm = SourceLines (fmapDefault pUtf8ToText (SourceModule.line sm))
+   sourceLines sm = SourceLines $ fmapDefault pUtf8ToText (SourceModule.line sm)
 
    resolveFormatting :: ModuleAST FnAST TypeP -> ModuleAST FnAST TypeP
    resolveFormatting m =

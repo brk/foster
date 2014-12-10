@@ -416,7 +416,7 @@ highlightLineRange bcol ecol =
         then ""
         else (List.replicate bcol ' ') ++ (List.replicate len '~')
 
-data SourceLines = SourceLines (Seq T.Text)
+data SourceLines = SourceLines !(Seq T.Text)
 
 appendSourceLines (SourceLines s1) (SourceLines s2) = SourceLines (s1 >< s2)
 

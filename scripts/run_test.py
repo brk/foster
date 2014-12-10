@@ -134,12 +134,17 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
 
     ghc_rts_args = ["-smeGCstats.txt", "-K400M"]
 
-    # https://downloads.haskell.org/~ghc/7.6.2/docs/html/users_guide/prof-heap.html#rts-options-heap-prof
+    # https://downloads.haskell.org/~ghc/latest/docs/html/users_guide/prof-heap.html
     if options and options.profileme:
       ghc_rts_args.append("-p") # general time profile, written to me.prof
-      ghc_rts_args.append("-hc") # space profile (by function)
-      #ghc_rts_args.append("-hy") # space profile (by type)
-      #ghc_rts_args.append("-hd") # space profile (by ctor)
+      ghc_rts_args.append("-hc") # break down space used by function (cost center)
+      #ghc_rts_args.append("-hm") # break down space used by module (producer)
+      #ghc_rts_args.append("-hy") # break down space used by type
+      #ghc_rts_args.append("-hd") # break down space used by ctor
+      #ghc_rts_args.append("-hr") # break down space used by retainer
+
+      #ghc_rts_args.append("-hySet,[],ByteString,ARR_WORDS,Node") # restrict to given types
+      ghc_rts_args.append("-L50") # give longer labels
 
     parse_output = os.path.join(tmpdir, '_out.parsed.pb')
     check_output = os.path.join(tmpdir, '_out.checked.pb')
