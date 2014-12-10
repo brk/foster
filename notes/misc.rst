@@ -129,6 +129,6 @@ Run ``hp2ps -e8in -g -c me.hp && gv me.ps`` to view the profile via a generated
 Performance-related notes
 -------------------------
 
-
 * The middle-end compiler takes 2m2s to build with -O2, and roughly 48s to build without optimization.
+  The middle-end then runs about 30% faster, but serialization time is not affected at all.
 
