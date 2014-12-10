@@ -62,9 +62,6 @@ import Text.PrettyPrint.ANSI.Leijen((<+>), (<>), (<$>), pretty, text, line, hsep
                                     fill, parens, vcat, list, red, dullyellow)
 import Criterion.Measurement(time, secs)
 
------------------------------------------------------------------------
--- TODO shouldn't claim successful typechecks until we reach AnnExprIL.
-
 pair2binding (nm, ty, mcid) = TermVarBinding nm (TypedId ty (GlobalSymbol nm), mcid)
 
 -- Every function in the SCC should typecheck against the input context,
