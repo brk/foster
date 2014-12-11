@@ -893,6 +893,7 @@ evalNamedPrimitive "print_float_p9f64" gs [SSFloat f] =
       do printStringNL gs (printf "%.9f" f)
          return $ withTerm gs unit
 
+-- {{{
 -- to[req_at..whatever] = from[0..req_len]
 evalNamedPrimitive "memcpy_i8_to_at_from_len" gs
          [SSArray arr, SSInt req_at_I, from_bs_or_arr, SSInt req_len_I] =
@@ -908,8 +909,10 @@ evalNamedPrimitive "memcpy_i8_to_from_at_len" gs
 -- to[to_at..to_at+req_len] = from[from_at..from_at+req_len]
 evalNamedPrimitive "memcpy_i8_to_at_from_at_len" gs
          [SSArray arr, SSInt to_at_I, from_bs_or_arr, SSInt from_at_I, SSInt req_len_I] =
-      do
-         let min0 a b c = max 0 (min (min a b) c)
+   if isSameArray (SSArray arr) from_bs_or_arr
+    then error "memcpy_i8_to_from_at_len: arrays were aliased!"
+    else
+      do let min0 a b c = max 0 (min (min a b) c)
          let     to_len  = prim_arrayLength (SSArray arr)
          let   from_len  = prim_arrayLength from_bs_or_arr
          let    req_len  = min0 (fromInteger req_len_I) from_len to_len
@@ -928,6 +931,14 @@ evalNamedPrimitive "memcpy_i8_to_at_from_at_len" gs
                              gs' <- prim_arrayPoke gs to_idx arr val
                              return ([], gs' ))
              return $ withTerm gs' unit
+
+isSameArray (SSArray a) (SSArray b) =
+  case (elems a, elems b) of
+    ((x:_), (y:_)) -> x == y
+    _ -> False -- Either at least one empty array, in which case there are no
+               -- observations to show aliasing; else the arrays aren't aliased.
+isSameArray _ _ = False
+-- }}}
 
 -- {{{
 evalNamedPrimitive "foster_getticks" gs [] = do

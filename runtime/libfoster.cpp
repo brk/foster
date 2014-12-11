@@ -408,10 +408,9 @@ void memcpy_i8_to_from_at_len(foster_bytes* to, foster_bytes* from,
   // Note: from->cap is represented as i64 but for now there's an
   // invariant that its value is representable using (signed) i32,
   // so the truncation from int64_t to uint32_t is OK.
-  if (uint32_t(from->cap) < req_at) {
-    foster__assert(false,
+    foster__assert(uint32_t(from->cap) >= req_at,
                    "memcpy_i8_to_from_at_len can't copy negative # of bytes!");
-  } else {
+    foster__assert(to != from, "memcpy_i8_to_at_from_len: arrays must not be aliased");
     int32_t from_rem = uint32_t(from->cap) - req_at;
     req_len =      (std::min)(req_len, uint32_t(to->cap));
     uint32_t len = (std::min)(uint32_t(from_rem), req_len);
@@ -425,10 +424,9 @@ void memcpy_i8_to_at_from_len(foster_bytes* to,   uint32_t req_at,
   // Note: to->cap is represented as i64 but for now there's an
   // invariant that its value is representable using (signed) i32,
   // so the truncation from int64_t to uint32_t is OK.
-  if (uint32_t(to->cap) < req_at) {
-    foster__assert(false,
-                   "memcpy_i8_to_from_at_len can't copy negative # of bytes!");
-  } else {
+    foster__assert(uint32_t(to->cap) >= req_at,
+                               "memcpy_i8_to_from_at_len can't copy negative # of bytes!");
+    foster__assert(to != from, "memcpy_i8_to_at_from_len: arrays must not be aliased");
     int32_t to_rem = uint32_t(to->cap) - req_at;
     req_len =      (std::min)(req_len, uint32_t(from->cap));
     uint32_t len = (std::min)(uint32_t(to_rem), req_len);
@@ -443,7 +441,8 @@ int8_t memcpy_i8_to_at_from_at_len(foster_bytes* to,   int64_t   to_at,
                                    foster_bytes* from, int64_t from_at,
                                    int64_t req_len) {
   foster__assert((from->cap >= from_at) && (to->cap >= to_at),
-                   "memcpy_i8_to_from_at_len can't copy negative # of bytes!");
+                             "memcpy_i8_to_at_from_at_len can't copy negative # of bytes!");
+  foster__assert(to != from, "memcpy_i8_to_at_from_at_len: arrays must not be aliased");
   // guaranteed to be non-negative due to assertion invariant
   int64_t   to_rem = to->cap   - to_at;
   int64_t from_rem = from->cap - from_at;
