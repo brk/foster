@@ -4,6 +4,8 @@
 
 #include "base/InputFile.h"
 #include "base/InputTextBuffer.h"
+#include "base/strings/utf_string_conversion_utils.h"
+#include "base/third_party/icu/icu_utf.h"
 
 #include "parse/ANTLRtoFosterAST.h"
 #include "parse/FosterAST.h"
@@ -562,6 +564,27 @@ char hexbits(char x) {
   ASSERT(false) << "can't extract hex bits from char value " << int(x); return 0;
 }
 
+// Copied from chromium_base, since they don't export it for some reason.
+size_t WriteUnicodeCharacter(uint32_t code_point, std::string* output) {
+  if (code_point <= 0x7f) {
+    // Fast path the common case of one byte.
+    output->push_back(code_point);
+    return 1;
+  }
+
+  // CBU8_APPEND_UNSAFE can append up to 4 bytes.
+  size_t char_offset = output->length();
+  size_t original_char_offset = char_offset;
+  output->resize(char_offset + CBU8_MAX_LENGTH);
+
+  CBU8_APPEND_UNSAFE(&(*output)[0], char_offset, code_point);
+
+  // CBU8_APPEND_UNSAFE will advance our pointer past the inserted character, so
+  // it will represent the new length of the string.
+  output->resize(char_offset);
+  return char_offset - original_char_offset;
+}
+
 // ^(STRING type wholething)
 ExprAST* parseString(pTree t) {
   std::string wholething = contentsOfStringWithQuotesAndRawMarker(t);
@@ -614,25 +637,30 @@ ExprAST* parseString(pTree t) {
             char byte = ((x_hi << 4) | x_lo);
             parsed.push_back(byte);
         }
-        else if (*it == 'u' || *it == 'U') { ++it;
+        else if (*it == 'u') { ++it;
           if (*it == '{') { ++it;
             // pretty much arbitrary stuff until a matching '}'
             std::string stuff;
+            bool looksLikeHex = true;
             while (*it != '}') {
+               if (!  isxdigit(*it)) { looksLikeHex = false; }
                stuff.push_back(*it); ++it;
             }
             ++it;
-            ASSERT(false) << "Handling arbitrary unicode names is a TODO!"
+
+            ASSERT(looksLikeHex) << "Handling arbitrary unicode names is a TODO!"
                     << "\nparsed out:" << stuff
                     << "\n" << show(rangeOf(t));
-          } else {
-            if (*it == '+') ++it;
-            // either two or four hex digits...
-            char d1 = *it; ++it;
-            char d2 = *it; ++it;
+            ASSERT(stuff.size() <= 6) << "Unicode escapes can have at most 6 hex digits."
+                                      << "\n" << show(rangeOf(t));
 
-            ASSERT(false) << "Can't yet handle unicode escapes... " << d1 << d2
-                    << "\n" << show(rangeOf(t));
+            uint32_t codepoint = strtol(stuff.c_str(), NULL, 16);
+            ASSERT(base::IsValidCharacter(codepoint)) << "Unicode escapes must be valid characters!"
+                                                      << "\n" << show(rangeOf(t));
+            WriteUnicodeCharacter(codepoint, &parsed);
+          } else {
+            ASSERT(false) << "Unicode escapes require curly braces."
+                          << "\n" << show(rangeOf(t));
           }
         } else {
           ASSERT(false) << "unexpected escape code " << str(*it) << " in string: "

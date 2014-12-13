@@ -310,19 +310,14 @@ fragment DQUO_STR_CONTENTS : (~(BACKSLASH|DQUO))* ( ESC_SEQ (~(BACKSLASH|DQUO)*)
 // Escape sequences are limited to \n, \t, \r, \", \', \\, and \u...
 // ... but the lexer is over-permissive because lexer errors are nasty.
 // Anyhow, raw strings don't have the restriction on what comes after backslash.
-ESC_SEQ        :       BACKSLASH (~('u'|'U'|'x')) | UNICODE_ESC | HEX_ESC;
+ESC_SEQ        : BACKSLASH (~('u'|'x'))
+               | BACKSLASH 'u' '{' UNICODE_INNER* '}'
+               | BACKSLASH 'x' HEX_DIGIT HEX_DIGIT;
 
 // Examples of Unicode escape sequences:
-//      \u0000
-//      \U0000
 //      \u{00}
-//      \u00
-//      \u+00
-//      \U+00b1
 //      \u{00b1}
 //      \u{Plus-minus sign}     // U+00B1
-//      \U{123}
-//      \U{123456}
 // Non-examples (lexically)
 //      \u{&&}          -- invalid char in escape
 // Non-examples (post-processing)
@@ -330,14 +325,8 @@ ESC_SEQ        :       BACKSLASH (~('u'|'U'|'x')) | UNICODE_ESC | HEX_ESC;
 //      \u{0}           -- need at least two
 //      \u{12345789}    -- too long
 //      \u{foobity}     -- no such escape!
-fragment UNICODE_ESC : BACKSLASH ('u' | 'U')
-        ( '+'? HEX_DIGIT HEX_DIGIT (HEX_DIGIT HEX_DIGIT)?
-        | '{' UNICODE_INNER* '}');
 fragment UNICODE_INNER
   : ('a'..'z'|'A'..'Z'|'0'..'9'|'_'|' '|'+'|'-');
-
-fragment HEX_ESC : BACKSLASH 'x' HEX_DIGIT HEX_DIGIT;
-
 
 LINE_COMMENT    :       '//' ~('\n'|'\r')* '\r'? {$channel=HIDDEN;} ;
 

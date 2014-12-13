@@ -12,9 +12,13 @@ We mostly adopt Python's string syntax::
     r'''or triple ticks'''
     """multi-line
        strings ok"""
+    """plus-minus sign looks like this: \u{00b1}"""
 
-Unicode escapes are currently parsed but not interpreted; I'd like to have a
-better story for these before committing to anything more concrete.
+Unicode "named" escapes are currently parsed but not interpreted.
+Hexadecimal escapes are supported, and are always encoded in UTF-8.
+The specified codepoint must be an actual Unicode character, not a surrogate
+or non-character (such as the BOM).
+The curly braces are required.
 The above literals all have type ``Text``. There are also byte-array literals,
 which have the same escape syntax, but extended with hex escapes::
 

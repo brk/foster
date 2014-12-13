@@ -32,6 +32,8 @@ main = {
   print_text """a
 b""";
 
+  test-utf8-encoding !;
+
   test-byte-literals !;
 };
 
@@ -42,6 +44,20 @@ test-byte-literals = {
   expect_text "abcd";
   print-bytes b"""ab
 cd""";
+};
+
+test-utf8-encoding = {
+  expect_text "ab=cd";
+  print-bytes b"ab\x3dcd";
+
+  expect_text "ab\u{2B}cd";
+  print-bytes b"ab+cd";
+
+  expect_text "ab\u{000b1}cd";
+  print-bytes b"ab\xc2\xb1cd";
+
+  print-bytes b"PQ\xf0\x9d\x9b\xbbFX";
+  expect_text "PQ\u{1d6fb}FX";
 };
 
 print-bytes = { a : Array Int8 =>
