@@ -1085,10 +1085,11 @@ expectString gs s = do
   appendFile (errFile gs)  s
 
 --------------------------------------------------------------------
-
-textFragmentOf txt = SSCtorVal textFragmentCtor [SSByteString (TE.encodeUtf8 txt),
-                                            SSInt $ fromIntegral (T.length txt)]
+textFragmentOf txt = SSCtorVal textFragmentCtor [SSByteString bytes, SSInt len]
   where textFragmentCtor = CtorId "Text" "TextFragment" 2 -- see Primitives.hs
+        bytes = TE.encodeUtf8 txt
+        len   = fromIntegral $ BS.length bytes
+        -- Note: length in *bytes*, not Unicode chars!
 
 arrayOf :: MachineState -> [SSValue] -> IO MachineState
 arrayOf gs0 vals = do
