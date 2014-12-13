@@ -931,13 +931,6 @@ evalNamedPrimitive "memcpy_i8_to_at_from_at_len" gs
                              gs' <- prim_arrayPoke gs to_idx arr val
                              return ([], gs' ))
              return $ withTerm gs' unit
-
-isSameArray (SSArray a) (SSArray b) =
-  case (elems a, elems b) of
-    ((x:_), (y:_)) -> x == y
-    _ -> False -- Either at least one empty array, in which case there are no
-               -- observations to show aliasing; else the arrays aren't aliased.
-isSameArray _ _ = False
 -- }}}
 
 -- {{{
@@ -968,6 +961,13 @@ evalNamedPrimitive "foster_fmttime_secs" gs [SSFloat d] = do
 evalNamedPrimitive prim _gs args = error $ "evalNamedPrimitive " ++ show prim
                                          ++ " not yet defined for args:\n"
                                          ++ show args
+
+isSameArray (SSArray a) (SSArray b) =
+  case (elems a, elems b) of
+    ((x:_), (y:_)) -> x == y
+    _ -> False -- Either at least one empty array, in which case there are no
+               -- observations to show aliasing; else the arrays aren't aliased.
+isSameArray _ _ = False
 
 lookupPrintInt :: Integer -> String -> Maybe (MachineState -> IO ())
 lookupPrintInt i  "print_i64_bare" = Just (\gs -> printString   gs (showBits 64 i))
