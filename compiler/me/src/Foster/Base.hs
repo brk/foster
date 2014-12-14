@@ -318,13 +318,11 @@ data ModuleIL expr ty = ModuleIL {
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||||||| Source Ranges ||||||||||||||||||||||||{{{
 
-data ESourceLocation = ESourceLocation { sourceLocationLine :: !Int
-                                       , sourceLocationCol  :: !Int
-                                       } deriving (Eq, Show)
-
 -- Note: sourceRangeLines is *all* lines, not just those in the range.
-data SourceRange = SourceRange { sourceRangeBegin :: !ESourceLocation
-                               , sourceRangeEnd   :: !ESourceLocation
+data SourceRange = SourceRange { sourceRangeStartLine :: !Int
+                               , sourceRangeStartCol  :: !Int
+                               , sourceRangeEndLine   :: !Int
+                               , sourceRangeEndCol    :: !Int
                                , sourceRangeLines :: !SourceLines
                                , sourceRangeFile  :: !(Maybe String)
                                }
@@ -332,22 +330,8 @@ data SourceRange = SourceRange { sourceRangeBegin :: !ESourceLocation
 
 instance Eq SourceRange where
   (MissingSourceRange s1) == (MissingSourceRange s2) = s1 == s2
-  (SourceRange b1 e1 _ f1) == (SourceRange b2 e2 _ f2) = (b1, e1, f1) == (b2, e2, f2)
+  (SourceRange a b c d _ f1) == (SourceRange w x y z _ f2) = (a, b, c, d, f1) == (w, x, y, z, f2)
   _ == _ = False
-
-beforeRangeStart _ (MissingSourceRange _) = False
-        -- error "cannot compare source location to missing source range!"
-beforeRangeStart loc (SourceRange begin _ _ _) =
-         sourceLocationLine loc <  sourceLocationLine begin
-     || (sourceLocationLine loc == sourceLocationLine begin
-     &&  sourceLocationCol  loc <  sourceLocationCol  begin)
-
-beforeRangeEnd _ (MissingSourceRange _) = False
-        -- error "cannot compare source location to missing source range!"
-beforeRangeEnd loc (SourceRange _ end _ _) =
-         sourceLocationLine loc <  sourceLocationLine end
-     || (sourceLocationLine loc == sourceLocationLine end
-     &&  sourceLocationCol  loc <  sourceLocationCol  end)
 
 class SourceRanged a
   where rangeOf :: a -> SourceRange
@@ -356,33 +340,34 @@ class SourceRanged a
 rangeSpanOf :: SourceRanged a => SourceRange -> [a] -> SourceRange
 rangeSpanOf defaultRange allRanges =
     let ranges = map rangeOf allRanges in
-    rsp defaultRange [r | r@(SourceRange _ _ _ _) <- ranges]
+    rsp defaultRange [r | r@(SourceRange _ _ _ _ _ _) <- ranges]
   where rsp defaultRange [] = defaultRange
-        rsp __ ranges@(b:_) = SourceRange (sourceRangeBegin b)
-                                          (sourceRangeEnd $ last ranges)
+        rsp __ ranges@(b:_) = SourceRange (sourceRangeStartLine b)
+                                          (sourceRangeStartCol  b)
+                                          (sourceRangeEndLine $ last ranges)
+                                          (sourceRangeEndCol  $ last ranges)
                                           (sourceRangeLines b)
                                           (sourceRangeFile  b)
 
 sourceLineStart :: SourceRange -> String
 sourceLineStart (MissingSourceRange s) = "<missing range: " ++ s ++ ">"
-sourceLineStart (SourceRange _begin _end _lines Nothing) = "<unknown file>"
-sourceLineStart (SourceRange begin _end _lines (Just filepath)) =
-    filepath ++ ":" ++ show (sourceLocationLine begin)
+sourceLineStart (SourceRange _ _ _ _ _lines Nothing) = "<unknown file>"
+sourceLineStart (SourceRange bline bcol _ _ _lines (Just filepath)) =
+    filepath ++ ":" ++ show bline ++ ":" ++ show bcol
 
 prettyWithLineNumbers :: SourceRange -> Doc
 prettyWithLineNumbers (MissingSourceRange s) = text $ "<missing range: " ++ s ++ ">"
-prettyWithLineNumbers (SourceRange begin end lines _filepath) =
-        line <> showSourceLinesNumbered begin end lines <> line
+prettyWithLineNumbers (SourceRange bline bcol eline ecol lines _filepath) =
+        line <> showSourceLinesNumbered bline bcol eline ecol lines <> line
 
 showSourceRange :: SourceRange -> String
 showSourceRange (MissingSourceRange s) = "<missing range: " ++ s ++ ">"
-showSourceRange (SourceRange begin end lines _filepath) =
-         "\n" ++ showSourceLines begin end lines ++ "\n"
+showSourceRange (SourceRange bline bcol eline ecol lines _filepath) =
+         "\n" ++ showSourceLines bline bcol eline ecol lines ++ "\n"
 
 highlightFirstLine :: SourceRange -> String
 highlightFirstLine (MissingSourceRange s) = "<missing range: " ++ s ++ ">"
-highlightFirstLine (SourceRange (ESourceLocation bline bcol)
-                                (ESourceLocation eline ecol) lines _filepath) =
+highlightFirstLine (SourceRange bline bcol eline ecol lines _filepath) =
     "\n" ++ highlightLine bline bcol fcol lines ++ "\n"
       where fcol  = if lineb == linee then ecol else Prelude.length lineb
             lineb = sourceLine lines bline
@@ -395,17 +380,16 @@ highlightLine line bcol ecol lines =
 
 -- If a single line is specified, show it with highlighting;
 -- otherwise, show the lines spanning the two locations (inclusive).
-showSourceLines (ESourceLocation bline bcol) (ESourceLocation eline ecol) lines =
+showSourceLines bline bcol eline ecol lines =
     if bline == eline
         then joinWith "\n" [sourceLine lines bline, highlightLineRange bcol ecol]
         else joinWith "\n" [sourceLine lines n | n <- [bline..eline]]
 
-showSourceLinesNumbered (ESourceLocation bline bcol) (ESourceLocation eline ecol) lines =
+showSourceLinesNumbered bline bcol eline ecol lines =
     if bline == eline
         then vsep [sourceLineNumbered lines bline
                   ,lineNumberPadding <> text (highlightLineRange bcol ecol)]
         else vsep [sourceLineNumbered lines n | n <- [bline..eline]]
-
 
 -- Generates a string of spaces and twiddles which underlines
 -- a given range of characters.

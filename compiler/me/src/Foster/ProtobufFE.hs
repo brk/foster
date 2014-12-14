@@ -314,14 +314,12 @@ parseRange pbexpr =
 parseSourceRange r = do
         lines <- gets feModuleLines
         return $ SourceRange
-          (parseSourceLocation (Pb.begin r))
-          (parseSourceLocation (Pb.end   r))
+          (fromIntegral $ Pb.start_line r)
+          (fromIntegral $ Pb.start_col  r)
+          (fromIntegral $ Pb.final_line r)
+          (fromIntegral $ Pb.final_col  r)
           lines
-          (fmap uToString (Pb.file_path r))
-
-parseSourceLocation :: Pb.SourceLocation -> ESourceLocation
-parseSourceLocation sr = -- This may fail for files of more than 2^29 lines.
-    ESourceLocation (fromIntegral $ Pb.line sr) (fromIntegral $ Pb.column sr)
+          Nothing --(fmap uToString (Pb.source r))
 
 parseExpr :: PbExpr.Expr -> FE (ExprAST TypeP)
 parseExpr pbexpr = do
@@ -408,7 +406,7 @@ parseSourceModule standalone sm = resolveFormatting m where
 
    formatting = map p $ toList $ SourceModule.formatting sm
 
-     where p pbf = (,) (parseSourceLocation $ PbFormatting.f_loc pbf) $
+     where p pbf = (,) (PbFormatting.f_loc pbf) $
                     case PbFormatting.tag pbf of
                        NEWLINE -> BlankLine
                        NHIDDEN -> NonHidden
@@ -437,7 +435,7 @@ parseSourceModule standalone sm = resolveFormatting m where
                    keepuntil (x        :xs) = x : keepuntil xs
                    keepuntil [] = []
 
-   getPreFormatting :: ExprAnnot -> State [(ESourceLocation, Formatting)]
+   getPreFormatting :: ExprAnnot -> State [(Pb.SourceLocation, Formatting)]
                                           ExprAnnot
    getPreFormatting (ExprAnnot (_:_) _ _) = error $ "ExprAnnot should not have any pre-formatting yet!"
    getPreFormatting (ExprAnnot [] rng post) = do
@@ -448,7 +446,7 @@ parseSourceModule standalone sm = resolveFormatting m where
      put rest
      return (ExprAnnot (hiddens pre) rng post)
 
-   getPostFormatting :: ExprAnnot -> State [(ESourceLocation, Formatting)]
+   getPostFormatting :: ExprAnnot -> State [(Pb.SourceLocation, Formatting)]
                                            ExprAnnot
    getPostFormatting (ExprAnnot _ _ (_:_)) = error $ "ExprAnnot should not have any post-formatting yet!"
    getPostFormatting (ExprAnnot pre0 rng []) = do
@@ -468,7 +466,17 @@ parseSourceModule standalone sm = resolveFormatting m where
           put rest
           return (ExprAnnot (pre0 ++ hiddens pre) rng (map snd post))
 
-   attachFormattingFn :: FnAST TypeP -> State [(ESourceLocation, Formatting)]
+   beforeRangeStart _ (MissingSourceRange _) = False
+   beforeRangeStart loc (SourceRange bline bcol _ _ _ _) =
+            Pb.line loc <  fromIntegral bline
+        || (Pb.line loc == fromIntegral bline &&  Pb.column loc < fromIntegral bcol)
+
+   beforeRangeEnd _ (MissingSourceRange _) = False
+   beforeRangeEnd loc (SourceRange _ _ eline ecol _ _) =
+            Pb.line loc <  fromIntegral eline
+        || (Pb.line loc == fromIntegral eline &&  Pb.column loc < fromIntegral ecol)
+
+   attachFormattingFn :: FnAST TypeP -> State [(Pb.SourceLocation, Formatting)]
                                               (FnAST TypeP)
    attachFormattingFn fn = do
      a0 <- getPreFormatting  (fnAstAnnot fn)
@@ -480,7 +488,7 @@ parseSourceModule standalone sm = resolveFormatting m where
    convertTermBinding (TermBinding evar expr) =
                 liftM (TermBinding evar) (attachFormatting expr)
 
-   attachFormatting :: ExprAST TypeP -> State [(ESourceLocation, Formatting)]
+   attachFormatting :: ExprAST TypeP -> State [(Pb.SourceLocation, Formatting)]
                                               (ExprAST TypeP)
    attachFormatting expr = do
      let q = attachFormatting

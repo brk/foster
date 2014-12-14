@@ -1,14 +1,20 @@
 package foster.fepb;
 
+message FilePathID {
+  required int32 filepath_id = 1;
+}
+
 message SourceLocation {
-  required int32 line   = 1;
-  required int32 column = 2;
+  required int32      line    = 1;
+  required int32      column  = 2;
 }
 
 message SourceRange {
-  optional string         file_path = 1;
-  required SourceLocation begin     = 2;
-  required SourceLocation end       = 3;
+  optional string     source     = 1;
+  required int32      start_line = 2;
+  required int32      start_col  = 3;
+  required int32      final_line = 4;
+  required int32      final_col  = 5;
 }
 
 message Formatting {
@@ -17,8 +23,8 @@ message Formatting {
     NEWLINE = 2;
     NHIDDEN = 3;
   }
-  required Tag            tag     = 1;
-  optional string         comment = 2;
+  required Tag         tag     = 1;
+  optional string      comment = 2;
   required SourceLocation f_loc   = 3;
 }
 

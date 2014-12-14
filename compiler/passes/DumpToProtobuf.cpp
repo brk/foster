@@ -47,23 +47,19 @@ void dumpChildren(DumpToProtobufPass* pass, ExprAST* ast) {
   }
 }
 
-void setSourceLocation(pb::SourceLocation* pbloc,
-                       const foster::SourceLocation& loc) {
-  pbloc->set_column(loc.column);
-  pbloc->set_line(loc.line);
-}
-
 void setSourceRange(pb::SourceRange* pbr,
                     const foster::SourceRange& r) {
   if (r.source) {
-    pbr->set_file_path(r.source->getPath());
+    //pbr->set_source(r.source->getPath());
   }
 
   if (r.begin != foster::SourceLocation::getInvalidLocation()) {
-    setSourceLocation(pbr->mutable_begin(), r.begin);
+    pbr->set_start_line(r.begin.line);
+    pbr->set_start_col(r.begin.column);
   }
   if (r.end   != foster::SourceLocation::getInvalidLocation()) {
-    setSourceLocation(pbr->mutable_end(),   r.end);
+    pbr->set_final_line(r.end.line);
+    pbr->set_final_col(r.end.column);
   }
 }
 
