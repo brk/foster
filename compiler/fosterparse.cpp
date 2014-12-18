@@ -37,7 +37,7 @@ optInputPath(cl::Positional, cl::desc("<input file>"));
 static cl::opt<string>
 optOutputPath(cl::Positional, cl::desc("<output file>"));
 
-static cl::opt<string>
+static cl::list<string>
 optIncludePath("I", cl::desc("Path to search for includes"),
                     cl::value_desc("include path"));
 

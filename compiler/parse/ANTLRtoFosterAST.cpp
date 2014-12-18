@@ -1429,11 +1429,11 @@ namespace foster {
   }
 
 
-  foster::InputFile* resolveModulePath(const std::string& searchPath,
+  foster::InputFile* resolveModulePath(const std::vector<std::string>& searchPaths,
                                        const std::string& spath);
 
   WholeProgramAST* parseWholeProgram(const InputFile& startfile,
-                                     const std::string& searchPath,
+                                     const std::vector<std::string> searchPaths,
                                      unsigned* outNumANTLRErrors) {
     WholeProgramAST* pgm = new WholeProgramAST();
     *outNumANTLRErrors = 0;
@@ -1448,10 +1448,9 @@ namespace foster {
       std::string localname = imp.first;
       std::string imp_path  = imp.second;
       std::cout << "pending import: " << imp.first << " " << imp.second << std::endl;
-      if (foster::InputFile* f = resolveModulePath(searchPath, imp_path)) {
+      if (foster::InputFile* f = resolveModulePath(searchPaths, imp_path)) {
         parseModule(pgm, *f, outNumANTLRErrors, pending_imports);
       } else {
-        EDiag() << "Unable to resolve import path: " << imp_path;
         return NULL;
       }
     }
@@ -1463,26 +1462,53 @@ namespace foster {
     return pgm;
   }
 
+  void pathConcat(const std::string& searchPath,
+                  const std::string& spath, llvm::SmallString<256>& path) {
+      path.clear();
+
+      if (searchPath.empty()) {
+        llvm::sys::path::append(path, ".");
+      } else {
+        llvm::sys::path::append(path, searchPath);
+      }
+
+      llvm::sys::path::append(path, spath);
+  }
+
   // spath will be something like "foo/bar"
-  // We'll want to check for searchPath/foo/bar/bar.foster
-  foster::InputFile* resolveModulePath(const std::string& searchPath,
+  // We'll want to check for searchPath[i]/foo/bar.foster
+  //                and also searchPath[i]/foo/bar/bar.foster
+  foster::InputFile* resolveModulePath(const std::vector<std::string>& searchPaths,
                                        const std::string& spath) {
-    llvm::SmallString<256> path;
+    std::vector<std::string> failedPaths;
+    for (auto searchPath : searchPaths) {
+      llvm::SmallString<256> path;
+      // Start with searchPaths[i]/foo/bar
 
-    if (searchPath.empty()) {
-      llvm::sys::path::append(path, ".");
-    } else {
-      llvm::sys::path::append(path, searchPath);
-    }
+      // Try foo/bar.foster
+      pathConcat(searchPath, spath, path);
+      llvm::sys::path::replace_extension(path, "foster");
+      if (llvm::sys::fs::exists(path.str())) {
+        return new foster::InputFile(path.str());
+      } else {
+        failedPaths.push_back(path.str());
+      }
 
-    llvm::sys::path::append(path, spath);
-    llvm::sys::path::append(path, llvm::sys::path::stem(spath));
-    llvm::sys::path::replace_extension(path, "foster");
-    if (llvm::sys::fs::exists(path.str())) {
-      return new foster::InputFile(path.str());
-    } else {
-      return NULL;
+      // Try foo/bar/bar.foster
+      pathConcat(searchPath, spath, path);
+      llvm::sys::path::append(path, llvm::sys::path::stem(spath));
+      llvm::sys::path::replace_extension(path, "foster");
+      if (llvm::sys::fs::exists(path.str())) {
+        return new foster::InputFile(path.str());
+      } else {
+        failedPaths.push_back(path.str());
+      }
     }
+    EDiag() << "Unable to resolve import path: " << spath;
+    llvm::errs() << "  tried the following paths:\n";
+    for (auto p : failedPaths) { llvm::errs() << "    " << p << "\n"; }
+
+    return NULL;
   }
 
   ////////////////////////////////////////////////////////////////////

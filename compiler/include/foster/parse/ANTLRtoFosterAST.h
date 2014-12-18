@@ -19,7 +19,7 @@ struct ANTLRContext;
 class InputFile;
 
 WholeProgramAST* parseWholeProgram(const InputFile& file,
-                                   const std::string& searchPath,
+                                   const std::vector<std::string> searchPaths,
                                    unsigned* outNumANTLRErrors);
 
 } // namespace foster

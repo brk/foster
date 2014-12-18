@@ -113,6 +113,9 @@ def optlevel(options):
   else:
     return ['-O0']
 
+def insert_before_each(val, vals):
+  return [x for v in vals for x in [val, v]]
+
 def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     finalname = os.path.basename(finalpath)
     ext = output_extension(options.asm)
@@ -122,10 +125,7 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     if show_cmdlines(options):
       compilelog = None
 
-    if options and options.importpath:
-      importpath = ["-I", options.importpath]
-    else:
-      importpath = []
+    importpath = insert_before_each('-I', options.importpaths)
 
     if options and options.interpret:
       interpret = ["--interpret", tmpdir]
@@ -234,6 +234,12 @@ def run_diff(a, b):
   df_rv = subprocess.call(['diff', '-u', a, b])
   return df_rv != 0
 
+def get_prog_stdin(testpath, tmpdir):
+  if options.prog_stdin != "":
+    return open(options.prog_stdin, 'r')
+  else:
+    return extract_expected_input(testpath, tmpdir)
+
 def run_one_test(testpath, paths, tmpdir, progargs):
   ensure_dir_exists(tmpdir)
   start = walltime()
@@ -242,9 +248,9 @@ def run_one_test(testpath, paths, tmpdir, progargs):
   log_filename = os.path.join(tmpdir, "compile.log.txt")
   iact_filename = os.path.join(tmpdir, "istdout.txt")
   with open(exp_filename, 'w') as expected:
-    with open(act_filename, 'w') as actual:
-      with open(log_filename, 'w') as compilelog:
-        infile = extract_expected_input(testpath, tmpdir)
+   with open(act_filename, 'w') as actual:
+    with open(log_filename, 'w') as compilelog:
+     with get_prog_stdin(testpath, tmpdir) as infile:
 
         finalpath = os.path.join(tmpdir, 'out')
         exepath   = os.path.join(tmpdir, 'a.out')
@@ -384,14 +390,16 @@ def get_test_parser(usage):
                     help="Pass through arg to back-end (optc).")
   parser.add_option("--prog-arg", action="append", dest="progargs", default=[],
                     help="Pass through command line arguments to program")
+  parser.add_option("--with-stdin", action="store", dest="prog_stdin", default="",
+                    help="Provide explicit redirection for compiled program's stdin.")
   parser.add_option("--foster-runtime", action="append", dest="progrtargs", default=[],
                     help="Pass through command line arguments to program runtime")
   parser.add_option("--standalone", action="store_true", dest="standalone", default=False,
                     help="Just compile, don't link...")
   parser.add_option("--cxxpath", dest="cxxpath", action="store", default="g++",
                     help="Set C++ compiler/linker path")
-  parser.add_option("-I", dest="importpath", action="store", default=None,
-                    help="Set import path")
+  parser.add_option("-I", dest="importpaths", action="append", default=[],
+                    help="Add import path")
   return parser
 
 if __name__ == "__main__":
