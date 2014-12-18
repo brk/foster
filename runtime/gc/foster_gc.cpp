@@ -546,12 +546,7 @@ public:
       fprintf(gclog, "gc collection freed space for cell, now have %lld\n", curr->free_size());
       fflush(gclog);
       return curr->allocate_cell_prechecked(typeinfo);
-    } else {
-      fprintf(gclog, "working set exceeded heap size of %lld bytes! aborting...\n", curr->get_size()); fflush(gclog);
-      fprintf(stderr, "working set exceeded heap size of %lld bytes! aborting...\n", curr->get_size()); fflush(stderr);
-      exit(255); // TODO be more careful if we're allocating from a coro...
-      return NULL;
-    }
+    } else { oops_we_died_from_heap_starvation(); return NULL; }
   }
 
   static inline int64_t array_size_for(int64_t n, int64_t slot_size) {
@@ -575,13 +570,20 @@ public:
         fprintf(gclog, "gc collection freed space for array, now have %lld\n", curr->free_size());
         fflush(gclog);
         return curr->allocate_array_prechecked(elt_typeinfo, n, req_bytes, init);
-      } else {
-        fprintf(gclog, "working set exceeded heap size of %lld bytes! aborting...\n", curr->get_size()); fflush(gclog);
-        fprintf(stderr, "working set exceeded heap size of %lld bytes! aborting...\n", curr->get_size()); fflush(stderr);
-        exit(255); // TODO be more careful if we're allocating from a coro...
-        return NULL;
-      }
+      } else { oops_we_died_from_heap_starvation(); return NULL; }
     }
+  }
+
+  void oops_we_died_from_heap_starvation() {
+    print_heap_starvation_info(gclog);
+    print_heap_starvation_info(stderr);
+    exit(255); // TODO be more careful if we're allocating from a coro...
+  }
+
+  void print_heap_starvation_info(FILE* f) {
+    fprintf(f, "working set exceeded heap size of %lld bytes! aborting...\n", curr->get_size()); fflush(f);
+    fprintf(f, "    try running with a larger heap size using a flag like\n");
+    fprintf(f, "      --foster-runtime '{\"gc_semispace_size_kb\":64000}'\n");
   }
   // }}}
 
