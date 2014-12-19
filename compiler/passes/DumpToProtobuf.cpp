@@ -111,6 +111,10 @@ void dumpTypeFormal(const TypeFormal* formal, pb::TypeFormal* target) {
   target->set_name(formal->name);
   ASSERT(formal->kind) << "Formal type parameter " << formal->name << " must have kind!";
   dumpKind(target->mutable_kind(), formal->kind);
+  if (formal->sourceRange.isValid()) {
+    setSourceRange(target->mutable_range(), formal->sourceRange);
+  }
+
 }
 
 /////////////////////////////////////////////////////////////////////

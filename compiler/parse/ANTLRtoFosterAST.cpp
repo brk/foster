@@ -408,7 +408,7 @@ TypeFormal parseTypeFormal(pTree t, KindAST* defaultKind) {
   KindAST* kind = (getChildCount(t) == 2)
                 ? parseKind(child(t, 1))
                 : defaultKind;
-  return TypeFormal(varname, kind);
+  return TypeFormal(varname, kind, rangeOf(t));
 }
 
 // TYPEVAR_DECL name kind?

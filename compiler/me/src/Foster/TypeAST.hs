@@ -200,25 +200,25 @@ primitiveDecls =
 
     -- Calls to this function are internally transformed to AIAllocArray nodes.
     -- forall a, i32 -> Array a
-    ,(,) "allocDArray" $ let a = BoundTyVar "a" in
+    ,(,) "allocDArray" $ let a = BoundTyVar "a" (MissingSourceRange "allocDArray") in
                          ForAllAST (primTyVars [a])
                            (mkProcType [i32] [ArrayTypeAST (TyVarAST a)])
 
     -- forall a, Array a -> i64
-    ,(,) "prim_arrayLength" $ let a = BoundTyVar "a" in
+    ,(,) "prim_arrayLength" $ let a = BoundTyVar "a" (MissingSourceRange "prim_arrayLength") in
                          ForAllAST (primTyVars [a])
                            (mkProcType [ArrayTypeAST (TyVarAST a)] [i64])
 
     -- forall a b, (a -> b) -> Coro a b
-    ,(,) "coro_create" $ let a = BoundTyVar "a" in
-                         let b = BoundTyVar "b" in
+    ,(,) "coro_create" $ let a = BoundTyVar "a" (MissingSourceRange "coro_create") in
+                         let b = BoundTyVar "b" (MissingSourceRange "coro_create") in
                          (ForAllAST (primTyVars [a, b])
                            (mkFnType [mkFnType   [TyVarAST a] [TyVarAST b]]
                                      [mkCoroType [TyVarAST a] [TyVarAST b]]))
 
     -- forall a b, (Coro a b, a) -> b
-    ,(,) "coro_invoke" $ let a = BoundTyVar "a" in
-                         let b = BoundTyVar "b" in
+    ,(,) "coro_invoke" $ let a = BoundTyVar "a" (MissingSourceRange "coro_invoke") in
+                         let b = BoundTyVar "b" (MissingSourceRange "coro_invoke") in
                          (ForAllAST (primTyVars [a, b])
                             (mkFnType [(mkCoroType [TyVarAST a] [TyVarAST b]), (TyVarAST a)]
                                       [TyVarAST b]))
@@ -226,8 +226,8 @@ primitiveDecls =
     -- forall a b, (b -> a)
     -- (only not quite: a and b must be unifiable
     --  with the arg & return types of the containing function)
-    ,(,) "coro_yield"  $ let a = BoundTyVar "a" in
-                         let b = BoundTyVar "b" in
+    ,(,) "coro_yield"  $ let a = BoundTyVar "a" (MissingSourceRange "coro_yield") in
+                         let b = BoundTyVar "b" (MissingSourceRange "coro_yield") in
                          (ForAllAST (primTyVars [a, b])
                             (mkFnType [TyVarAST b] [TyVarAST a]))
 

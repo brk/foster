@@ -8,7 +8,6 @@ module Foster.ParsedType
 where
 
 import Foster.Base
-import Foster.Kind
 import Foster.ExprAST
 
 import Text.PrettyPrint.ANSI.Leijen(text)

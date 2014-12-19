@@ -200,7 +200,7 @@ writeTcMetaTC m t = writeTcMeta m (shallowStripRefinedTypeTC t)
 
 newTcSkolem (tv, k) = do u <- newTcUniq
                          return (SkolemTyVar (nameOf tv) u k)
-  where nameOf (BoundTyVar name)      = name
+  where nameOf (BoundTyVar name _)    = name
         nameOf (SkolemTyVar name _ _) = name
 
 newTcRef :: a -> Tc (IORef a)

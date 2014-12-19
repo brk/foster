@@ -7,13 +7,12 @@
 module Foster.ExprAST(
   ExprAST, ExprSkel(..), exprAnnot
 , FnAST(..)
-, TypeFormal(..) -- TODO remove?
 , TermBinding(..)
 , termBindingName
 )
 where
 
-import Foster.Base(Structured(..), Literal,
+import Foster.Base(Structured(..), Literal, TypeFormal,
                    SourceRanged(..), TypedId(..), ArrayIndex(..),
                    AllocMemRegion, childrenOfArrayIndex, ArrayEntry(..),
                    CaseArm(..), caseArmExprs, EPattern(..), E_VarAST(..),

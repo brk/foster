@@ -5,6 +5,8 @@
 #ifndef FOSTER_KIND_AST_H
 #define FOSTER_KIND_AST_H
 
+#include "base/SourceRange.h"
+
 #include <string>
 
 struct KindAST {
@@ -20,9 +22,9 @@ struct BaseKindAST : public KindAST {
 struct TypeFormal {
   std::string name; // pattern???
   KindAST* kind;
-  explicit TypeFormal(const std::string& name, KindAST* kind)
-  : name(name), kind(kind) {}
+  foster::SourceRange sourceRange;
+  explicit TypeFormal(const std::string& name, KindAST* kind, const foster::SourceRange& sourceRange)
+  : name(name), kind(kind), sourceRange(sourceRange) {}
 };
-
 
 #endif

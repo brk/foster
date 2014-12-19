@@ -78,9 +78,9 @@ tySubst subst ty =
         RefinedTypeTC v e args -> RefinedTypeTC (fmap q v) e args
 
 -------------------------------------------------
-illegal (TyVarTC (BoundTyVar _)) = True
-illegal (ForAllTC {})            = True
-illegal _                        = False
+illegal (TyVarTC (BoundTyVar {})) = True
+illegal (ForAllTC {})             = True
+illegal _                         = False
 -------------------------------------------------
 
 tcUnifyThings :: (Eq t, Show t) => Unifiable t -> Unifiable t -> (t -> t -> Tc ()) -> Tc ()

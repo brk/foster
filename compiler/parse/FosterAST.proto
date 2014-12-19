@@ -81,8 +81,9 @@ message Kind {
 }
 
 message TypeFormal {
-  required string name = 1;
-  required Kind   kind = 2;
+  required string      name  = 1;
+  required Kind        kind  = 2;
+  optional SourceRange range = 3;
 }
 
 message Expr {

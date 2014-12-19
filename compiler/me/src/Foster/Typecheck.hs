@@ -1054,7 +1054,7 @@ tcSigmaFn ctx fnAST expTyRaw = do
         debugDoc $ text "tcSigmaFn calling matchExp, expTy'   = " <> pretty expTy'
         matchExp expTy' fn "tcSigmaFn"
 
-mkTypeFormal (BoundTyVar nm, kind) = TypeFormal nm kind
+mkTypeFormal (BoundTyVar nm sr, kind) = TypeFormal nm sr kind
 mkTypeFormal (othervar, _kind) =
     error $ "Whoops, expected only bound type variables!\n" ++ show othervar
 
@@ -1062,7 +1062,7 @@ mkTypeFormal (othervar, _kind) =
 -- declared in the function literal.
 extendTypeBindingsWith ctx ktvs taus =
       foldl' ins (localTypeBindings ctx) (zip taus ktvs)
-       where ins m (mtv, (BoundTyVar nm, _k)) = Map.insert nm mtv m
+       where ins m (mtv, (BoundTyVar nm _sr, _k)) = Map.insert nm mtv m
              ins _ (_ ,  (SkolemTyVar {}, _))= error "ForAll bound a skolem!"
 
 -- TODO this can result in losing annotations...
@@ -1619,7 +1619,7 @@ resolveType annot origSubst origType = go origSubst origType where
     PrimFloat64TC                  -> return x
     MetaTyVarTC   _                -> return x
     TyVarTC  (SkolemTyVar _ _ _)   -> return x
-    TyVarTC  (BoundTyVar name)     -> case Map.lookup name subst of
+    TyVarTC  (BoundTyVar name _sr) -> case Map.lookup name subst of
                                          Nothing -> tcFails [text $ "Typecheck.hs: ill-formed type with free bound variable " ++ name
                                                             ,text "    " <> text "embedded within type " <> pretty origType
                                                             ,text "    " <> text "with orig subst " <> pretty (Map.toList origSubst)
@@ -1637,8 +1637,8 @@ resolveType annot origSubst origType = go origSubst origType where
     ForAllTC      ktvs rho         -> liftM (ForAllTC  ktvs) (go subst' rho)
                                        where
                                         subst' = foldl' ins subst ktvs
-                                        ins m (tv@(BoundTyVar nm), _k) = Map.insert nm (TyVarTC  tv) m
-                                        ins _     (SkolemTyVar {}, _k) = error "ForAll bound a skolem!"
+                                        ins m (tv@(BoundTyVar nm _sr), _k) = Map.insert nm (TyVarTC tv) m
+                                        ins _     (SkolemTyVar {},     _k) = error "ForAll bound a skolem!"
 
 fmapM_TID f (TypedId t id) = do t' <- f t
                                 return $ TypedId t' id
@@ -1838,7 +1838,7 @@ tcTypeWellFormed msg ctx typ = do
         RefinedTypeTC v _e  _ -> q (tidType v)
         ForAllTC   tvs rho    -> tcTypeWellFormed msg (extendTyCtx ctx tvs) rho
         TyVarTC  (SkolemTyVar {}) -> return ()
-        TyVarTC  tv@(BoundTyVar _) ->
+        TyVarTC  tv@(BoundTyVar _ _) ->
                  case Prelude.lookup tv (contextTypeBindings ctx) of
                    Nothing -> tcFails [text $ "Unbound type variable "
                                            ++ show tv ++ " " ++ msg]
@@ -1859,7 +1859,7 @@ tcContainsRefinements typ =
         ArrayTypeTC   ty       -> tcContainsRefinements ty
         ForAllTC  _tvs rho     -> tcContainsRefinements rho
         TyVarTC  (SkolemTyVar {})   -> False
-        TyVarTC  _tv@(BoundTyVar _) -> False -- or do we need to look at the context?
+        TyVarTC  _tv@(BoundTyVar _ _) -> False -- or do we need to look at the context?
 
 tcContext :: Context TypeTC -> Context TypeAST -> Tc (Context SigmaTC)
 tcContext emptyCtx ctxAST = do
@@ -1988,7 +1988,7 @@ instance Pretty ty => Pretty (DataType ty) where
                 <$> vsep (map pretty dctors)
 
 instance Pretty TypeFormal where
-  pretty (TypeFormal name kind) = text name <> text " :: " <> pretty kind
+  pretty (TypeFormal name _ kind) = text name <> text " :: " <> pretty kind
 
 retypeTID :: (t1 -> Tc t2) -> TypedId t1 -> Tc (TypedId t2)
 retypeTID f (TypedId t1 id) = f t1 >>= \t2 -> return (TypedId t2 id)

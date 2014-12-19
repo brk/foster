@@ -259,7 +259,7 @@ typecheckModule verboseMode pauseOnErrors modast tcenv0 = do
    -- returns the type   T A1 .. An   (with A1..An free).
    typeOfDataType :: DataType TypeAST -> CtorName -> TypeAST
    typeOfDataType dt _ctorName =
-     let boundTyVarFor (TypeFormal name _kind) = TyVarAST $ BoundTyVar name in
+     let boundTyVarFor (TypeFormal name sr _kind) = TyVarAST $ BoundTyVar name sr in
      TyConAppAST (typeFormalName $ dataTypeName dt) (map boundTyVarFor $ dataTypeTyFormals dt)
 
    splitCtorTypes :: [(String, Either TypeAST TypeAST, CtorId)] ->

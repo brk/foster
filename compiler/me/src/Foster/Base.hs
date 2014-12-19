@@ -68,13 +68,22 @@ liftArrayIndexM f (ArrayIndex e1 e2 sr sg) = do
 -- can contain a sigma, not just a tau. See Typecheck.hs for details.
 data Expected t = Infer (IORef t) | Check t
 
-data TyVar = BoundTyVar  String -- bound by a ForAll, that is
+data TyVar = BoundTyVar  String SourceRange -- bound by a ForAll, that is
            | SkolemTyVar String Uniq Kind
 
-convertTyFormal (TypeFormal name kind) = (BoundTyVar name, kind)
+data TypeFormal = TypeFormal String SourceRange Kind
+
+instance Eq  TypeFormal where (TypeFormal s1 _ k1) ==        (TypeFormal s2 _ k2) = (s1,k1) ==        (s2,k2)
+instance Ord TypeFormal where (TypeFormal s1 _ k1) `compare` (TypeFormal s2 _ k2) = (s1,k1) `compare` (s2,k2)
+instance Show TypeFormal where show (TypeFormal s _ k) = "(TypeFormal " ++ s ++ ":" ++ show k ++ ")"
+
+convertTyFormal (TypeFormal name sr kind) = (BoundTyVar name sr, kind)
+
+instance Kinded TypeFormal where
+  kindOf (TypeFormal _ _ kind) = kind
 
 instance Pretty TyVar where
-  pretty (BoundTyVar name) = text "'" <> text name
+  pretty (BoundTyVar name _) = text "'" <> text name
   pretty (SkolemTyVar name uniq _kind) = text "$" <> text name <> text ":" <> pretty uniq
 
 data MTVQ = MTVSigma | MTVTau deriving (Eq)
@@ -93,7 +102,7 @@ boolGC  WillNotGC    = False
 boolGC  MayGC        = True
 boolGC (GCUnknown _) = True
 
-typeFormalName (TypeFormal name _) = name
+typeFormalName (TypeFormal name _ _) = name
 
 -- |||||||||||||||||||||||||| Patterns ||||||||||||||||||||||||||{{{
 
@@ -736,20 +745,20 @@ instance (Show ty) => Show (TypedId ty)
   where show (TypedId ty id) = show id ++ " :: " ++ show ty
 
 instance Eq TyVar where
-  BoundTyVar s1      == BoundTyVar s2      = s1 == s2
+  BoundTyVar s1 _    == BoundTyVar s2 _    = s1 == s2
   SkolemTyVar _ u1 _ == SkolemTyVar _ u2 _ = u1 == u2
   _ == _ = False
 
 instance Ord TyVar where
-  BoundTyVar s1      `compare` BoundTyVar s2      = s1 `compare` s2
+  BoundTyVar s1 _    `compare` BoundTyVar s2 _    = s1 `compare` s2
   SkolemTyVar _ u1 _ `compare` SkolemTyVar _ u2 _ = u1 `compare` u2
-  BoundTyVar s1      `compare` SkolemTyVar s2 _ _ = s1 `compare` s2
-  SkolemTyVar s1 _ _ `compare` BoundTyVar s2      = s1 `compare` s2
+  BoundTyVar s1 _    `compare` SkolemTyVar s2 _ _ = s1 `compare` s2
+  SkolemTyVar s1 _ _ `compare` BoundTyVar s2 _    = s1 `compare` s2
 
 prettyOccurrence v occ = pretty v <> text "/" <> pretty (map fst occ)
 
 instance Show TyVar where
-    show (BoundTyVar x) = "'" ++ x
+    show (BoundTyVar x _) = "'" ++ x
     show (SkolemTyVar x u k) = "$" ++ x ++ "." ++ show u ++ "::" ++ show k
 
 instance Show SourceRange where

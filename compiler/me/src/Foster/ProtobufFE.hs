@@ -155,11 +155,12 @@ parseKind pbkind =
         PbKindTag.KIND_TYPE ->  KindAnySizeType
         PbKindTag.KIND_BOXED -> KindPointerSized
 
-parseTypeFormal :: PbTypeFormal.TypeFormal -> TypeFormal
-parseTypeFormal pbtyformal =
-    let name = uToString $ PbTypeFormal.name pbtyformal in
-    let kind = parseKind $ PbTypeFormal.kind pbtyformal in
-    TypeFormal name kind
+parseTypeFormal :: PbTypeFormal.TypeFormal -> FE TypeFormal
+parseTypeFormal pbtyformal = do
+    let name = uToString $ PbTypeFormal.name pbtyformal
+    let kind = parseKind $ PbTypeFormal.kind pbtyformal
+    sr <- parseRange (PbTypeFormal.range pbtyformal) ("typeformal:" ++ show name)
+    return $ TypeFormal name sr kind
 
 parseFn pbexpr = do annot <- parseAnnot pbexpr
                     bodies <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
@@ -170,10 +171,8 @@ parseFn pbexpr = do annot <- parseAnnot pbexpr
                     let valabs = case PbExpr.pb_val_abs pbexpr of
                                    Just v -> v
                                    Nothing -> error "Can't parse fn without PBValAbs!"
-                    let formals = toList $ PBValAbs.formals valabs
-                    let tyformals = map parseTypeFormal $
-                                        toList $ PBValAbs.type_formals valabs
-                    parsedFormals <- mapM parseFormal formals
+                    tyformals <- mapM parseTypeFormal $ toList $ PBValAbs.type_formals valabs
+                    parsedFormals <- mapM parseFormal $ toList $ PBValAbs.formals      valabs
                     return $ (FnAST annot name tyformals parsedFormals body
                                False) -- assume closure until proven otherwise
   where
@@ -266,7 +265,7 @@ parseVar pbexpr = do
 
 parsePattern :: PbExpr.Expr -> FE (EPattern TypeP)
 parsePattern pbexpr = do
-  range <- parseRange pbexpr
+  range <- parseRange (PbExpr.range pbexpr) (show $ PbExpr.tag pbexpr)
   case PbExpr.tag pbexpr of
     PAT_WILDCARD -> do return $ EP_Wildcard range
     PAT_TUPLE    -> do pats <- mapM parsePattern (toList $ PbExpr.parts pbexpr)
@@ -297,21 +296,19 @@ parseCaseArm clause = do
   body    <- parseExpr    $ CaseClause.body    clause
   guard   <- liftMaybe parseExpr $ CaseClause.guard   clause
   -- TODO use range for whole clause, or expr + guard?
-  rng     <- parseRange   $ CaseClause.pattern clause
+  rng     <- let pbexpr = CaseClause.pattern clause in
+             parseRange (PbExpr.range pbexpr) (show $ PbExpr.tag pbexpr)
   return $ CaseArm pattern body guard [] rng
 
 parseAnnot :: PbExpr.Expr -> FE ExprAnnot
-parseAnnot expr = do
-  rng <- parseRange expr
+parseAnnot pbexpr = do
+  rng <- parseRange (PbExpr.range pbexpr) (show $ PbExpr.tag pbexpr)
   return $ annotForRange rng
 
-parseRange :: PbExpr.Expr -> FE SourceRange
-parseRange pbexpr =
-  case PbExpr.range pbexpr of
-    Nothing -> do return $ MissingSourceRange (show $ PbExpr.tag pbexpr)
-    Just r  -> do parseSourceRange r
-
-parseSourceRange r = do
+parseRange mb_range msg =
+  case mb_range of
+    Nothing -> do return $ MissingSourceRange msg
+    Just r  -> do
         lines <- gets feModuleLines
         return $ SourceRange
           (fromIntegral $ Pb.start_line r)
@@ -319,7 +316,7 @@ parseSourceRange r = do
           (fromIntegral $ Pb.final_line r)
           (fromIntegral $ Pb.final_col  r)
           lines
-          Nothing --(fmap uToString (Pb.source r))
+          (fmap uToString (Pb.source r))
 
 parseExpr :: PbExpr.Expr -> FE (ExprAST TypeP)
 parseExpr pbexpr = do
@@ -352,21 +349,17 @@ parseExpr pbexpr = do
 
 parseDataType :: DataType.DataType -> FE (Foster.Base.DataType TypeP)
 parseDataType dt = do
-    let name      = parseTypeFormal $ DataType.name dt
-    let tyformals = map parseTypeFormal (toList $ DataType.tyformal dt)
+    name      <-      parseTypeFormal $ DataType.name dt
+    tyformals <- mapM parseTypeFormal (toList $ DataType.tyformal dt)
     ctors <- mapM (parseDataCtor tyformals) (toList $ DataType.ctor dt)
-    range <- case DataType.range dt of
-                Nothing -> return $ MissingSourceRange (show name)
-                Just r  -> parseSourceRange r
+    range <- parseRange (DataType.range dt) (show name)
     return $ Foster.Base.DataType name tyformals ctors range
  where
   parseDataCtor :: [TypeFormal] -> DataCtor.DataCtor -> FE (Foster.Base.DataCtor TypeP)
   parseDataCtor tyf ct = do
       types <- mapM parseType (toList $ DataCtor.type' ct)
       let name  = pUtf8ToText $ DataCtor.name ct
-      range <- case DataCtor.range ct of
-            Nothing -> return $ MissingSourceRange (T.unpack name)
-            Just r  -> parseSourceRange r
+      range <- parseRange (DataCtor.range ct) (T.unpack name)
       return $ Foster.Base.DataCtor name tyf types range
 
 parseModule :: String -> String -> [Decl] -> [Defn]
@@ -550,11 +543,12 @@ parseType t =
     case PbType.tag t of
          PbTypeTag.TYVAR ->
                 let name@(c:_) = T.unpack (getName "type name" $ PbType.name t) in
-                return $
-                 if Just True == PbType.is_placeholder t
-                  then MetaPlaceholder name
-                  else if isLower c then TyVarP (BoundTyVar name)
-                                    else TyConAppP name []
+                if Just True == PbType.is_placeholder t
+                  then return $ MetaPlaceholder name
+                  else if isLower c
+                    then do sr <- parseRange (PbType.range t) name
+                            return $ TyVarP (BoundTyVar name sr)
+                    else    return $ TyConAppP name []
          PbTypeTag.FN -> fromMaybe (error "Protobuf node tagged FN without fnty field!")
                                    (fmap parseFnTy $ PbType.fnty t)
          PbTypeTag.TUPLE -> liftM TupleTypeP $ sequence [parseType p | p <- toList $ PbType.type_parts t]
@@ -567,10 +561,9 @@ parseType t =
          PbTypeTag.REF       -> error "Ref types not yet implemented"
          PbTypeTag.CORO      -> error "Parsing for CORO type not yet implemented"
          PbTypeTag.CARRAY    -> error "Parsing for CARRAY type not yet implemented"
-         PbTypeTag.FORALL_TY -> let [ty] = toList $ PbType.type_parts t in
-                                let tyformals = toList $ PbType.tyformals t in
-                                liftM (ForAllP (map parseTypeFormal tyformals))
-                                               (parseType ty)
+         PbTypeTag.FORALL_TY -> do let [ty] = toList $ PbType.type_parts t
+                                   tyformals <- mapM parseTypeFormal $ toList $ PbType.tyformals t
+                                   liftM (ForAllP tyformals) (parseType ty)
          PbTypeTag.REFINED_TY -> do
            refinement <- parseExpr $ fromJust $ PbType.refinement t
            underlying <- parseType $ fromJust $ PbType.ref_underlying_type t

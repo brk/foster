@@ -423,7 +423,7 @@ instance (Pretty body, Pretty t) => Pretty (ModuleIL body t) where
 prettyId (TypedId _ i) = text (show i)
 
 instance Pretty TypeFormal where
-  pretty (TypeFormal name kind) =
+  pretty (TypeFormal name _sr kind) =
     text name <+> text ":" <+> pretty kind
 
 instance Pretty t => Pretty (DataType t) where

@@ -326,8 +326,8 @@ getMonoId id tys =
     else idAppend id (show tys)
 
 getMonoName nm tys = if allTypesAreBoxed tys then nm else nm ++ (show tys)
-getMonoFormal (TypeFormal name kind) tys =
-               TypeFormal (getMonoName name tys) kind
+getMonoFormal (TypeFormal name sr kind) tys =
+               TypeFormal (getMonoName name tys) sr kind
 
 allTypesAreBoxed tys =
           List.all (\t -> case t of { PtrTypeUnknown -> True ; _ -> False }) tys
@@ -385,7 +385,7 @@ emptyMonoSubst = Map.empty
 
 -- Extend the given substitution to map the given TypeFormals to types.
 extendSubst subst formals tys =
-  let btv (TypeFormal s k) = (BoundTyVar s, k) in
+  let btv (TypeFormal s sr k) = (BoundTyVar s sr, k) in
   extendMonoSubst subst tys (map btv formals)
 
 extendMonoSubst :: MonoSubst -> [MonoType] -> [(TyVar, Kind)] -> MonoSubst
@@ -429,11 +429,11 @@ monoSubstLookup _subst (SkolemTyVar  _ _ KindAnySizeType)  =
         --TyConApp ("BAD:SKOLEM TY VAR, ANY SIZE TYPE:"++nm) []
         error $ "Monomorphization (Monomo.hs:monoSubsLookup) "
              ++ "found a bad skolem type variable with non-pointer kind"
-monoSubstLookup subst tv@(BoundTyVar nm) =
+monoSubstLookup subst tv@(BoundTyVar nm sr) =
   case Map.lookup tv subst of
       Just monotype -> monotype
       Nothing -> if True
-                  then TyConApp ("AAAAAAmissing:"++nm) []
+                  then TyConApp ("AAAAAAmissing:" ++ nm ++ showSourceRange sr) []
                   else error $
                          "Monomorphization (Monomo.hs:monoSubsLookup) "
                       ++ "found no monotype for variable " ++ show tv
