@@ -365,6 +365,21 @@ showSourceRange (MissingSourceRange s) = "<missing range: " ++ s ++ ">"
 showSourceRange (SourceRange bline bcol eline ecol lines _filepath) =
          "\n" ++ showSourceLines bline bcol eline ecol lines ++ "\n"
 
+prettySourceRangeInfo :: SourceRange -> Doc
+prettySourceRangeInfo (MissingSourceRange s) = text $ "<missing range: " ++ s ++ ">"
+prettySourceRangeInfo (SourceRange bline bcol _eline _ecol _lines mb_filepath) =
+  let path = case mb_filepath of Nothing -> "<missing source file path>"
+                                 Just fp -> fp in
+  text path <> text ":" <> pretty (bline + 1) <> text ":" <> pretty bcol
+
+highlightFirstLineDoc :: SourceRange -> Doc
+highlightFirstLineDoc (MissingSourceRange s) = text $ "<missing range: " ++ s ++ ">"
+highlightFirstLineDoc (SourceRange bline bcol eline ecol lines _filepath) =
+    line <> highlightLineDoc bline bcol fcol lines <> line
+      where fcol  = if lineb == linee then ecol else Prelude.length lineb
+            lineb = sourceLine lines bline
+            linee = sourceLine lines eline
+
 highlightFirstLine :: SourceRange -> String
 highlightFirstLine (MissingSourceRange s) = "<missing range: " ++ s ++ ">"
 highlightFirstLine (SourceRange bline bcol eline ecol lines _filepath) =
@@ -377,6 +392,9 @@ highlightFirstLine (SourceRange bline bcol eline ecol lines _filepath) =
 -- otherwise, show the lines spanning the two locations (inclusive).
 highlightLine line bcol ecol lines =
     joinWith "\n" [sourceLine lines line, highlightLineRange bcol ecol]
+
+highlightLineDoc line bcol ecol lines =
+    vcat [text $ sourceLine lines line, text $ highlightLineRange bcol ecol]
 
 -- If a single line is specified, show it with highlighting;
 -- otherwise, show the lines spanning the two locations (inclusive).
