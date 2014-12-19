@@ -276,6 +276,12 @@ string str(StmtTag t) {
   return "UnknownStmtTag";
 }
 
+string str(const SourceRange& sr) {
+  string s;
+  llvm::raw_string_ostream ss(s); ss << sr;
+  return s;
+}
+
 StmtTag classifyStmt(pTree t) {
   if (typeOf(t) == ABINDING) {
     if (getChildCount(t) == 2) {
@@ -375,7 +381,7 @@ Formal parseFormal(pTree formal) {
   if (getChildCount(formal) == 2) {
     ty = TypeAST_from(child(formal, 1));
   } else {
-    NamedTypeAST* tv = new NamedTypeAST(ParsingContext::freshName(".inferred."),
+    NamedTypeAST* tv = new NamedTypeAST(ParsingContext::freshName(".inferred:\n" + str(rangeOf(formal))),
                                         NULL, rangeOf(formal));
     tv->is_placeholder = true;
     ty = tv;
