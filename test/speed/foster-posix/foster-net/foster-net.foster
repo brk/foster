@@ -4,6 +4,7 @@ snafuinclude Map   "map";
 snafuinclude Range   "range";
 snafuinclude Bitwise "bitwise";
 snafuinclude Prelude "prelude";
+snafuinclude TcpReassembly "net/tcp-reassembly";
 
 /////
 

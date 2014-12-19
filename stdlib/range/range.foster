@@ -1,40 +1,16 @@
 snafuinclude Ord "ord";
-snafuinclude List "list";
-snafuinclude Prelude "prelude";
 
-/////
-
-// This module implements reassembly of bytes positioned in some abstract space
-// (i.e. a TCP retransmit queue).
-//
-// The external interface comprises the following two functions:
-
-// The first two parameters describe a chunk (a contiguous sequence of bytes,
-// conceptually located at a given position). The next two describe a window
-// which delimits the bytes of interest (as start & len);
-// anything outside of this range will be truncated.
-//
-// O(n) where n is the length of the input list.
-chunkAddMaybe :: { Int64 => Bytes => Int64 => Int64 =>
-                   List Chunk => Maybe (List Chunk) };
-
-// Given a position and some chunks (as built up by chunkAddMaybe),
-// split off the longest contiguous sequence of bytes from that position.
-//
-// O(1).
-chunkSplit :: { Int64 => List Chunk => (List Chunk, Bytes) };
-
-/////
-
+// Assuming the endpoints are (ax,ay) and (bx,by),
+// with the precondition that ax <= ay and bx <= by:
 type case RangeChunkCmpResult
-  of $Before         //  [aaaaaa]  [bbbbbb]
-  of $AdjacentBefore //   [aaaaaa][bbbbbb]
-  of $After          //  [bbbbbb]  [aaaaaa]
-  of $AdjacentAfter  //   [bbbbbb][aaaaaa]
-  of $OverlapsBefore //    [aaaa[__]bbbb]
-  of $OverlapsAfter  //    [bbbb[__]aaaa]
-  of $Subsumes       //    [aaaa[bb]aaaa]   or  [[__]aaa]  or  [[__]]
-  of $Subsumed       //    [bbbb[aa]bbbb]   or  [[__]bbb]
+  of $Before         //  [aaaaaa]  [bbbbbb]                            ay <  bx
+  of $AdjacentBefore //   [aaaaaa][bbbbbb]                             ay == bx
+  of $After          //  [bbbbbb]  [aaaaaa]                            ax >  by           (and ay > bx)
+  of $AdjacentAfter  //   [bbbbbb][aaaaaa]                             ax == by           (and ay > bx)
+  of $OverlapsBefore //    [aaaa[__]bbbb]                              ax <  bx, ay <  by (and ay > bx)
+  of $OverlapsAfter  //    [bbbb[__]aaaa]                              ax >  bx, ay >= by (and ay > bx)
+  of $Subsumes       //    [aaaa[bb]aaaa]   or  [[__]aaa]  or  [[__]]  ax <= bx, ay >= by (and ay > bx)
+  of $Subsumed       //    [bbbb[aa]bbbb]   or  [[__]bbb]              ax >= bx, ay <  by (and ay > bx)
 ;
 
 textOfRangeChunkCmpResult = { o : RangeChunkCmpResult =>
@@ -100,61 +76,6 @@ type case RangePosCmpResult
 ;
 
 
-type case Chunk of $Chunk Int64 Bytes;
-
-cmpChunks = { chunka => chunkb =>
-  case chunka of $Chunk ia ba ->
-  case chunkb of $Chunk ib bb ->
-    cmpRange ia (ia +Int64 bytesLength ba)
-             ib (ib +Int64 bytesLength bb)
-             cmpSInt64;
-  end
-  end
-};
-
-// Postcondition: first chunk in list does not overlap with and
-// is not adjacent to the next chunk.
-chunkInsert = { chunk : Chunk => chunks : List Chunk =>
-  REC loop = { chunk => chunks =>
-    case chunks
-      of $Nil -> listSingleton chunk
-      of $Cons next rest ->
-        case cmpChunks chunk next
-          // TODO this case should codegen as (Cons chunk chunks)
-          of $Before         -> Cons chunk (Cons next  rest)
-          of $After          -> Cons next  (loop chunk rest)
-          of $AdjacentBefore -> loop (chunkMerge chunk next) rest
-          of $OverlapsBefore -> loop (chunkMerge chunk next) rest
-          of $AdjacentAfter  -> loop (chunkMerge next chunk) rest
-          of $OverlapsAfter  -> loop (chunkMerge next chunk) rest
-          of $Subsumes       -> loop chunk rest
-          of $Subsumed       -> Cons next  rest // == chunks
-        end
-    end
-  };
-  loop chunk chunks;
-};
-
-// Precondition: chunka overlaps with/adjacent to chunkb
-chunkMerge = { chunka => chunkb =>
-  case chunka of $Chunk ia ba ->
-  case chunkb of $Chunk ib bb ->
-    // {    [       }   ]
-    // ia   ib    ia+ba
-    //       ------- <- overlap
-    //               ===  <- brest
-    // {                ] <- result
-    overlap = (ia +Int64 bytesLength ba) -Int64 ib;
-    // assert ia <= ib
-    // assert overlap >= 0
-    // assert ib + overlap == ia +Int64 bytesLength ba,
-    brest = bytesDrop bb overlap;
-    Chunk ia (bytesConcat ba brest);
-  end
-  end
-};
-
-
 // Compare p to the range [x, y]
 // Precondition: x <= y
 cmpRangePos :: forall t:Type, { t => t => t => { t => t => Ord }
@@ -177,86 +98,3 @@ cmpRangePosAlt = { forall t:Type, x => y => p => cmp =>
   end
 };
 
-// Returns the largest contiguous chunk of bytes starting
-// at start and of length at most maxsize.
-chunkRangeCopy = { start => maxsize => chunks =>
-
-  // Take some or all of a chunk  [i .. i+|b|)
-  // corresponding to the range
-  // that overlaps with       [start .. start+maxsize)
-  //
-  // i.e.      [bbbb**********bbbbb)
-  //           i    start   s+m       when maxlen < reslen
-  //  or
-  //           [bbbb***************)
-  //           i    start      s+reslen        s+m
-  //
-  // Precondition: start >= i
-  //
-  // TODO this should get inlined because it has only one call site
-  //                                and it would form a closure otherwise.
-  pieceOfChunk = { i : Int64 => b => start : Int64 => maxsize : Int64 =>
-    todrop = start -Int64 i;
-    actlen = bytesLength b -Int64 todrop;
-    reslen = min-SInt64 actlen maxsize;
-    bytesTake (bytesDrop b todrop) reslen
-  };
-
-  REC startloop = { chunks =>
-    case chunks
-      of $Nil -> BytesEmpty
-      of $Cons ($Chunk i b) rest ->
-        case cmpRangePos start (start +Int64 maxsize) i cmpSInt64
-          of $BeforeRange -> startloop rest
-          of $AfterRange  -> BytesEmpty
-          of $WithinRange -> copyloop chunks start maxsize BytesEmpty
-        end
-    end
-  };
-
-  // Append the largest contiguous subrange of [start, start+maxsize)
-  // from the bytes available in |chunks|.
-  REC copyloop = { chunks => start => maxsize => accum : Bytes =>
-    case chunks
-      of $Nil -> accum
-      of $Cons ($Chunk i b) rest ->
-        if either (i <SInt64 start) (maxsize <=SInt64 0)
-          then accum
-          else bytes = pieceOfChunk i b start maxsize;
-               copyloop rest
-                        (start   +Int64 bytesLength bytes)
-                        (maxsize -Int64 bytesLength bytes)
-                        (bytesConcat accum bytes)
-        end
-    end
-  };
-
-  startloop chunks;
-};
-
-// Returns (newchunks, bytes) where bytes is the longest contiguous
-// sequence of bytes beginning at the start of the old (TCP) window,
-// and newchunks does not include that sequence of bytes.
-// The sequence of returned bytes may be empty.
-chunkSplit = { start : Int64 => chunks =>
-  case chunks
-    of $Nil -> (chunks, BytesEmpty)
-    of $Cons ($Chunk i b) rest ->
-      if i ==Int64 start
-        then (rest  , b)
-        else (chunks, BytesEmpty)
-      end
-  end
-};
-
-chunkAddMaybe = { i : Int64 => bytes =>
-                  start => len =>
-                  chunks : List Chunk =>
-  within = { n => min => len =>
-    both (n >=SInt64 min) (n <=SInt64 (min +Int64 len))
-  };
-  if within i start len
-    then Some (chunkInsert (Chunk i bytes) chunks)
-    else None
-  end
-};

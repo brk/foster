@@ -1,5 +1,6 @@
 snafuinclude Prelude "prelude";
 snafuinclude Range   "range";
+snafuinclude TcpReassembly   "net/tcp-reassembly";
 
 main = {
   test_cmpRange 1 2 3 4         "Before";
