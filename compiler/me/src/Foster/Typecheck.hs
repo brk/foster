@@ -1004,7 +1004,8 @@ tcSigmaFn ctx fnAST expTyRaw = do
                 debugDoc $ string "metaOf var_tys'': " <+> pretty (show $ collectAllUnificationVars $ map unMBS var_tys'')
                 -- mvar_tys'' <- mapM shZonkMetaType (collectAllUnificationVars var_tys)
 
-                pickedTys <- mapM pickBetween (zipTogether arg_tys var_tys)
+                pickedTys <- pickBetween (rangeOf (fnAstAnnot fnAST))
+                                         arg_tys var_tys
                 let uniquelyNamedBinders =
                              map (\(TypedId _ id, ty) -> TypedId ty id)
                                  (zip uniquelyNamedFormals pickedTys)
@@ -1070,16 +1071,24 @@ extendTypeBindingsWith ctx ktvs taus =
 --       foo :: { % ra : T : e(ra) }
 --       foo = { a : % rb : T : p(rb) }
 -- we will completely drop p(rb)!
-pickBetween (mb_argty, mb_varty) = do
-       case (mb_argty, mb_varty) of
-         -- If the argty is a meta variable, we might get more specific error messages
-         -- by using the definitely-not-less-specific varty.
-         (Just (MetaTyVarTC {}), Just varty) -> return varty
-         -- Otherwise, the argty should have at least as much information as the varty,
-         -- since the fnTypeTemplate definition in Main.hs will copy the varty's types.
-         (Just argty, Just _) -> return argty
-         (_, Just varty) -> return varty -- Mismatch, will be caught later by matchExp
-         _ -> error $ "zipTogether lied"
+pickBetween rng argtys vartys =
+  if Prelude.length argtys /= Prelude.length vartys
+    then tcFails [text "Expected this function to have" <+> pretty (Prelude.length argtys) <+>
+                           text "arguments, but it had" <+> pretty (Prelude.length vartys) <> text ":"
+                 , highlightFirstLineDoc rng]
+    else mapM picked (zipTogether argtys vartys)
+  where
+   picked (mb_argty, mb_varty) = do
+     case (mb_argty, mb_varty) of
+       -- If the argty is a meta variable, we might get more specific error messages
+       -- by using the definitely-not-less-specific varty.
+       (Just (MetaTyVarTC {}), Just varty) -> return varty
+       -- Otherwise, the argty should have at least as much information as the varty,
+       -- since the fnTypeTemplate definition in Main.hs will copy the varty's types.
+       (Just argty, Just _) -> return argty
+       (_, Just varty) -> return varty -- Mismatch, will be caught later by matchExp
+       _ -> tcFails [text "Invariant violated in Typecheck.hs:pickBetween while checking:"
+                    , highlightFirstLineDoc rng]
 -- }}}
 
 mbFreshRefinementVar :: Context SigmaTC -> TypeAST -> Tc [TypedId TypeTC]
@@ -1156,7 +1165,7 @@ tcRhoFnHelper ctx f expTy = do
                                  debugDoc3 $ string "var_tys: " <+> pretty var_tys
                                  debugDoc3 $ string "arg_tys: " <+> pretty arg_tys
 
-                           pickedTys <- mapM pickBetween (zipTogether arg_tys var_tys)
+                           pickedTys <- pickBetween rng arg_tys var_tys
                            let uniquelyNamedBinders =
                                         map (\(TypedId _ id, ty) -> TypedId ty id)
                                             (zip uniquelyNamedFormals pickedTys)
