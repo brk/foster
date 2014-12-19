@@ -12,6 +12,9 @@ type case Bytes
   of $BytesFragment (Array Int8) Int64
   of $BytesConcat   Bytes Bytes  Int64
           // possible-but-not-yet-enforced invariant: sub-bytes not BytesEmpty.
+          // invariant: (BytesConcat a b len) -> len == (bytesLength a) + (bytesLength b).
+          //    (note, due to bytesTake, the equivalent rules do not apply
+          //           for BytesFragment or BytesOffset).
   of $BytesOffset   Bytes Int64  Int64
           // invariant: remaining len > 0
           // invariant: sub-bytes not BytesOffset
@@ -155,6 +158,7 @@ bytesTake = { ba => len =>
   end
 };
 
+/*
 bytesFoldlBytes_Alt :: forall a:Type, { Bytes => { Int8 => a => a } => a => a };
 bytesFoldlBytes_Alt = { ba => f => acc =>
   // TODO(opt) this helper can't be contified (due to multiple continuations),
@@ -183,6 +187,7 @@ bytesFoldlBytes_Alt = { ba => f => acc =>
   };
   go ba f 0 (bytesLength ba) acc
 };
+*/
 
 bytesFoldlBytesFromLen :: forall a:Type, { Bytes => { Int8 => a => a }
                                      => Int64 => Int64 => a => a };
@@ -192,7 +197,7 @@ bytesFoldlBytesFromLen = { bytes => f => offset => len => acc =>
      of $BytesFragment arr xlen ->
            arrayFoldlFromTo64 arr offset (min-UInt64 xlen (len +Int64 offset)) f acc
      of $BytesOffset bb m xlen ->
-           bytesFoldlBytesFromLen bb f (offset +Int64 m) len acc
+           bytesFoldlBytesFromLen bb f (offset +Int64 m) (min-UInt64 xlen len) acc
      of $BytesConcat bb bc xlen ->
            bblen = bytesLength bb;
            if offset <SInt64 bblen
@@ -212,6 +217,57 @@ bytesFoldlBytes = { ba => f => acc =>
   bytesFoldlBytesFromLen ba f 0 (bytesLength ba) acc
 };
 
+bytesFoldlBytes_Alt2 :: forall a:Type, { Bytes => { Int8 => a => a } => a => a };
+bytesFoldlBytes_Alt2 = { ba => f => acc =>
+  // Nice, but can we guarantee that inlining will allow us to
+  // eliminate the allocation for the closure capturing f?
+  bytesFoldlFragmentsFromLen ba
+            { arr => off => len => acc => arrayFoldlFromTo64 arr off len f acc }
+            0 (bytesLength ba) acc;
+};
+
+bytesFoldlFragmentsFromLen :: forall a:Type, { Bytes => { Array Int8 => Int64 => Int64 => a => a }
+                                     => Int64 => Int64 => a => a };
+bytesFoldlFragmentsFromLen = { bytes => f => offset => len => acc =>
+ if len <=SInt64 0 then acc else
+   case bytes
+     of $BytesFragment arr xlen ->
+           target = offset +Int64 len; // this is the logical byte range we want
+           capped = min-UInt64 target xlen; // but it shouldn't fall beyond arr's
+                                            // physical boundaries
+           f arr offset capped acc
+     of $BytesOffset bb m xlen ->
+           bytesFoldlFragmentsFromLen bb f (offset +Int64 m) (min-UInt64 len xlen) acc
+     of $BytesConcat bb bc xlen ->
+           bblen = bytesLength bb;
+           if offset <SInt64 bblen
+           then // try both; second call gets negative len if bb contains the whole range
+             bytesFoldlFragmentsFromLen bb f offset len acc |>
+             bytesFoldlFragmentsFromLen bc f 0 (len -Int64 (bblen -Int64 offset))
+           else // skip bb, go straight to bc
+             bytesFoldlFragmentsFromLen bc f (offset -Int64 bblen) len acc
+           end
+     of $BytesEmpty -> acc
+   end
+ end
+};
+
+bytesFoldlFragments :: forall a:Type, { Bytes => { Array Int8 => Int64 => Int64 => a => a } => a => a };
+bytesFoldlFragments = { ba => f => acc =>
+  bytesFoldlFragmentsFromLen ba f 0 (bytesLength ba) acc
+};
+
+bytesFlatten :: { Bytes => Bytes };
+bytesFlatten = { bytes =>
+  rv = allocDArray (bytesLength32 bytes);
+  bytesFoldlFragments bytes { arr => fst => fin => acc =>
+      memcpy_i8_to_at_from_at_len rv  acc
+                                  arr fst  (fin -Int64 fst);
+      acc +Int64 (fin -Int64 fst)
+  } 0;
+  bytesOfRawArray rv
+};
+
 // Precondition: o is a valid index for b.
 bytesGet!    :: { Int64 => Bytes => Int8 };
 bytesGet! = { o => ba =>
@@ -220,9 +276,9 @@ bytesGet! = { o => ba =>
     of $BytesOffset bb m  _ -> bytesGet! (o +Int64 m) bb;
     of $BytesConcat bb bc _ ->
       afterdrop = o -Int64 bytesLength bb;
-      if afterdrop <SInt64 0
-        then bytesGet! o bb
-        else bytesGet! afterdrop bc
+      if afterdrop >=SInt64 0
+        then bytesGet! afterdrop bc
+        else bytesGet! o         bb
       end
     of $BytesEmpty          -> prim kill-entire-process "bytesGet! of BytesEmpty";
   end
@@ -407,5 +463,27 @@ bytesCmpAlt = { b1 => b2 =>
     end
   };
   go 0
+};
+
+bytesDescribe :: { Bytes => Text };
+bytesDescribe = { bytes =>
+  #associate   a `mkTextConcat` b `mkTextConcat` c
+          as   (mkTextConcat (mkTextConcat a b) c)
+  in
+  case bytes
+    of $BytesEmpty -> "BytesEmpty"
+    of $BytesFragment arr len ->
+        "(BytesFragment cap=" `mkTextConcat` (arrayLength arr |> tmp_Text_of_Int64) `mkTextConcat`
+                      " len=" `mkTextConcat` (len             |> tmp_Text_of_Int64) `mkTextConcat` ")"
+    of $BytesConcat a b len ->
+        "(BytesConcat len=" `mkTextConcat` (len |> tmp_Text_of_Int64) `mkTextConcat` " "
+                            `mkTextConcat` (bytesDescribe a)          `mkTextConcat` " "
+                            `mkTextConcat` (bytesDescribe b)          `mkTextConcat` ")"
+    of $BytesOffset b m len ->
+        "(BytesOffset off=" `mkTextConcat` (m   |> tmp_Text_of_Int64) `mkTextConcat`
+                    " len=" `mkTextConcat` (len |> tmp_Text_of_Int64) `mkTextConcat`
+                        " " `mkTextConcat` (bytesDescribe b)          `mkTextConcat` ")"
+  end
+  end
 };
 
