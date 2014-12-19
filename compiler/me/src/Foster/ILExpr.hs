@@ -283,8 +283,22 @@ resolveMayGC constraints procs =
           go m (CyclicSCC [(p,mgc)])= let m' = collectMayGCConstraints_Proc p $
                                                 (Map.insert (procIdent p) mgc m)
                                       in Map.adjust unknownMeansNoGC (procIdent p) m'
-          go _ (CyclicSCC pms) = let (ps,_mgcs) = unzip pms in
-                                 error $ "Can't yet handle CyclicCC: " ++ show (map procIdent ps)
+          go m (CyclicSCC pms) =
+            let (ps,mgcs) = unzip pms in
+            -- Start with a conservative estimate for the whole SCC's behavior.
+            let mgc = joinMayGCs mgcs in
+            let m'0 = foldl' (\m p -> Map.insert (procIdent p) mgc m)    m    ps in
+            let m's = foldl' (\m p -> collectMayGCConstraints_Proc p  m) m'0  ps in
+            foldl' (\m p -> Map.adjust unknownMeansNoGC (procIdent p) m) m's  ps
+
+          joinMayGCs mgcs = foldl1 joinMayGC mgcs
+
+          joinMayGC MayGC _ = MayGC
+          joinMayGC _ MayGC = MayGC
+          joinMayGC WillNotGC WillNotGC = WillNotGC
+          joinMayGC WillNotGC     (GCUnknown a)  = GCUnknown a
+          joinMayGC (GCUnknown a) WillNotGC      = GCUnknown a
+          joinMayGC (GCUnknown a) (GCUnknown b)  = GCUnknown (a ++ "+" ++ b)
 
 -- At this point, all allocation has been made explicit;
 -- if a known function has no constraints that imply it will GC,
