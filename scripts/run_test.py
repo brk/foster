@@ -270,7 +270,14 @@ def run_one_test(testpath, paths, tmpdir, progargs):
         else:
           allprogargs = progargs + insert_before_each("--foster-runtime", options.progrtargs)
           ld_elapsed = link_to_executable(finalpath, exepath, paths, testpath)
-          rv, rn_elapsed = run_command([exepath] + allprogargs, paths, testpath,
+
+          if options.exepath is not None:
+            shutil.copy2(exepath, options.exepath)
+            print "Try running:"
+            print  ''.join([options.exepath] + allprogargs)
+            rv, rn_elapsed = 0, 0
+          else:
+            rv, rn_elapsed = run_command([exepath] + allprogargs, paths, testpath,
                                        stdout=actual, stderr=expected, stdin=infile,
                                        showcmd=True, strictrv=False)
 
@@ -399,13 +406,15 @@ def get_test_parser(usage):
                     help="Set C++ compiler/linker path")
   parser.add_option("-I", dest="importpaths", action="append", default=[],
                     help="Add import path")
+  parser.add_option("-o", dest="exepath", action="store", default=None,
+                    help="Set path for output executable")
   return parser
 
 if __name__ == "__main__":
   parser = get_test_parser("""usage: %prog [options] <test_path>
 
    Notes:
-     * If using ./gotest.sh...
+     * If using ./gotest.sh or runfoster...
                 --me-arg=--verbose       will print (Ann)ASTs
                 --me-arg=--dump-ir=kn    will print k-normalized IR
                 --me-arg=--dump-ir=cfg   will print closure-conv IR
@@ -418,6 +427,8 @@ if __name__ == "__main__":
                 --profileme              will enable profiling of the middle-end; then do `hp2ps -e8in -c me.hp`
                 --backend-optimize       enables LLVM optimizations
                 --asm
+                -o <path>                copies generated executable to <path>
+                                            but does not run it
                 --show-cmdlines
 """)
   (options, args) = parser.parse_args()
