@@ -266,6 +266,7 @@ mkLiteralIntWithTextAndBase integerValue originalText base =
                  else bitLengthOf (abs integerValue) + signOf integerValue
         bitLengthOf n = go 1 powersOfTwo where
                         go k (pow2k:pows) = if n < pow2k then k else go (k+1) pows
+                        go _ [] = error "bitLengthOf invariant violated"
         signOf x = if x < 0 then 1 else 0
 
 instance Pretty Literal where
