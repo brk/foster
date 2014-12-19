@@ -167,7 +167,9 @@ tcFailsMore errs = do
   case reverse parents of -- parents returned in root-to-child order.
     []    -> tcFails $ errs ++ [text $ "[unscoped]"]
     (e:_) -> tcFails $ errs ++ [text $ "Unification failure triggered when " ++
-                  "typechecking source line:" ++ highlightFirstLine (rangeOf e)]
+                                       "typechecking source line:"
+                               ,prettySourceRangeInfo (rangeOf e)
+                               ,highlightFirstLineDoc (rangeOf e)]
 
 sanityCheck :: Bool -> String -> Tc ()
 sanityCheck cond msg = if cond then return () else tcFails [red (text msg)]

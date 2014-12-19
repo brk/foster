@@ -202,8 +202,10 @@ ail ctx ae =
         E_AnnVar     _rng (v,_)   -> do v' <- aiVar ctx v
                                         return $ E_AIVar v'
 
-        AnnPrimitive _rng _ p -> tcFails [string ("Primitives must be called directly!"
-                                         ++ "\n\tFound non-call use of ") <> pretty p]
+        AnnPrimitive annot _ p -> tcFails [text "Primitives must be called directly!"
+                                          ,text "\tFound non-call use of " <> pretty p
+                                          ,prettySourceRangeInfo (rangeOf annot)
+                                          ,highlightFirstLineDoc (rangeOf annot)]
 
         AnnAppCtor _rng t cid args -> do ti <- qt t
                                          argsi <- mapM q args
