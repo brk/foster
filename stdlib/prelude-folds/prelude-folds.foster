@@ -44,6 +44,21 @@ foldRange64 = { forall t:Type,
   go fst init;
 };
 
+// Precondition: fst <= fin
+//
+foldRangeWord = { forall t:Type,
+                  fst : Word =>
+                  fin : Word =>
+                  init : t =>
+                  iter : { Word => t => t } =>
+  REC go = { n : Word => acc : t =>
+      if n >=SWord fin then acc else
+        go (n +Word 1) (iter n acc)
+      end
+  };
+  go fst init;
+};
+
 /////
 
 arrayFoldl :: forall t:Type, a:Type, { Array t => { t => a => a } => a => a };
@@ -59,6 +74,12 @@ arrayFoldlFrom = { arr => offset => f => acc =>
 arrayFoldlFromTo :: forall t:Type, a:Type, { Array t => Int32 => Int32 => { t => a => a } => a => a };
 arrayFoldlFromTo = { arr => offset => len => f => acc =>
   foldRange offset len acc { n : Int32 => acc => f arr[n] acc }
+};
+
+arrayFoldlFromToWithIndex64 :: forall t:Type, a:Type, {
+              Array t => Int64 => Int64 => { Word => t => a => a } => a => a };
+arrayFoldlFromToWithIndex64 = { arr => offset => len => f => acc =>
+  foldRange64 offset len acc { n => acc => f (trunc_i64_to_Word n) arr[trunc_i64_to_i32 n] acc }
 };
 
 ////

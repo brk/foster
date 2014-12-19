@@ -44,6 +44,22 @@ rawBytesConcatByCopy = { a : Array Int8 => alen : Int32 =>
 bytesEmpty :: { Bytes };
 bytesEmpty = { BytesEmpty };
 
+bytesOfOne :: { Int8 => Bytes };
+bytesOfOne = { v0 =>
+  bytesOfRawArray (prim mach-array-literal v0)
+};
+
+bytesOfFour :: { Int8 => Int8 => Int8 => Int8 => Bytes };
+bytesOfFour = { v0 => v1 => v2 => v3 =>
+  bytesOfRawArray (prim mach-array-literal v0 v1 v2 v3)
+};
+
+bytesOfEight :: { Int8 => Int8 => Int8 => Int8 =>
+                  Int8 => Int8 => Int8 => Int8 => Bytes };
+bytesOfEight = { v0 => v1 => v2 => v3 => v4 => v5 => v6 => v7 =>
+  bytesOfRawArray (prim mach-array-literal v0 v1 v2 v3 v4 v5 v6 v7)
+};
+
 bytesOfRawArray :: { Array Int8 => Bytes };
 bytesOfRawArray = { a => BytesFragment a (prim_arrayLength a) };
 
@@ -59,6 +75,9 @@ bytesLength = { ba =>
 
 bytesLength32 :: { Bytes => Int32 };
 bytesLength32 =  { bytes => bytesLength bytes |> cast_i64_to_i32  };
+
+bytesLengthWord :: { Bytes => Word };
+bytesLengthWord =  { bytes => bytesLength bytes |> cast_i64_to_Word };
 
 bytesConcat :: { Bytes => Bytes => Bytes };
 bytesConcat = { ba => bb =>
@@ -136,7 +155,6 @@ bytesTake = { ba => len =>
   end
 };
 
-// Precondition: o is a valid index for b.
 bytesFoldlBytes :: forall a:Type, { Bytes => { Int8 => a => a } => a => a };
 bytesFoldlBytes = { ba => f => acc =>
   // TODO(opt) this helper can't be contified (due to multiple continuations),
@@ -164,6 +182,29 @@ bytesFoldlBytes = { ba => f => acc =>
       end
   };
   go ba f 0 (bytesLength ba) acc
+};
+
+bytesFoldlBytesWithIndexFromLen = { bytes => f => offset : Int64 => len : Int64 => acc =>
+  case bytes
+    of $BytesFragment arr _ ->
+          arrayFoldlFromToWithIndex64 arr offset (len +Int64 offset) f acc
+    of $BytesOffset bb m len -> bytesFoldlBytesWithIndexFromLen bb f (offset +Int64 m) len acc
+    of $BytesConcat bb bc _ ->
+      bblen = bytesLength bb;
+      afterdrop = offset -Int64 bblen;
+      if afterdrop <SInt64 0
+         // offset - bblen < 0 ==> bblen > offset ==>  bblen - offset > 0
+        then bytesFoldlBytesWithIndexFromLen bb f offset bblen acc |>
+             bytesFoldlBytesWithIndexFromLen bc f 0 (len -Int64 bytesLength bb)
+        else bytesFoldlBytesWithIndexFromLen bc f afterdrop (len -Int64 bytesLength bb) acc
+      end
+    of $BytesEmpty -> acc
+  end
+};
+
+bytesFoldlBytesWithIndex :: forall a:Type, { Bytes => { Word => Int8 => a => a } => a => a };
+bytesFoldlBytesWithIndex = { ba => f => acc =>
+  bytesFoldlBytesWithIndexFromLen ba f 0 (bytesLength ba) acc
 };
 
 // Precondition: o is a valid index for b.
@@ -330,8 +371,6 @@ bytesGet1HI! = { bytes => i =>
   a = bytesGet! i bytes;
   octet4ToInt32 a 0 0 0
 };
-
-bytesFoldlBytes :: forall a:Type, { Bytes => { Int8 => a => a } => a => a };
 
 bytesEqual :: { Bytes => Bytes => Bool };
 bytesEqual = { b1 => b2 => isEQ (bytesCmp b1 b2) };

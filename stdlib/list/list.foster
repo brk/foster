@@ -5,6 +5,9 @@ type case List (a:Type)
   of $Cons a (List a)
 ;
 
+listEmpty :: forall t:Type, { List t };
+listEmpty = { Nil:[t] };
+
 listSingleton :: forall t:Type, { t => List t };
 listSingleton =  { forall t:Type, x : t =>
   Cons x Nil
@@ -91,30 +94,15 @@ listDrop = { forall t:Type, n : Int32 => xs : List t =>
 };
 
 listLength64 = { forall t:Type, xs : List t =>
-  REC go = { xs => acc =>
-    case xs
-      of $Nil -> acc
-      of $Cons x ys -> go ys (acc +Int64 1)
-    end
-  };
-  go xs 0
+  listFoldl xs { _e => z => z +Int64 1 } 0
 };
 
 listLength = { forall t:Type, xs : List t =>
-  REC go = { xs => acc =>
-    case xs
-      of $Nil -> acc
-      of $Cons x ys -> go ys (acc +Int32 1)
-    end
-  };
-  go xs 0
+  listFoldl xs { _e => z => z +Int32 1 } 0
 };
 
-/* Can't yet do this because of Boxed/Type kind mismatch
-listLengthAlt = { forall t:Type, xs : List t =>
-  listFoldl xs { e => len => 1 +Int32 len } 0
-};
-*/
+listLengthWord :: forall t:Type,{ List t => Word };
+listLengthWord = { xs => listFoldl xs { _e : t => z => z +Word 1 } 0 };
 
 listReverse = { forall t:Type, xs : List t =>
   REC go = { xs : List t => acc : List t =>
@@ -130,8 +118,24 @@ listReverseAlt = { forall t:Type, xs : List t =>
   listFoldl xs Cons Nil
 };
 
+// Returns (prefix, postfix) such that either
+//      listLength prefix == n, or
+//      listLength prefix < n  and listLength postfix == 0
+// O(n) in time and heap space.
+listSplitAt = { forall t:Type, xs : List t => n : Word =>
+  REC go = { lst => n => acc =>
+    if n <=SWord 0
+      then (listReverse acc, lst)
+      else case lst
+             of $Nil -> (listReverse acc, lst)
+             of $Cons x xs -> go xs (n -Word 1) (Cons x acc)
+           end
+    end
+  }; go xs n (listEmpty !)
+};
+
 listAppend :: forall t:Type, { List t => List t => List t };
-listAppend = { forall t:Type, xs => ys =>
+listAppend = { xs => ys =>
   REC go = { rev => acc =>
     case rev
       of $Nil -> acc
@@ -146,10 +150,37 @@ listAppendAlt = { forall t:Type, xs => ys =>
   listFoldr xs Cons ys
 };
 
-listIter :: forall a:Type, { List a => { a => () } => () };
+listIter :: forall a:Type, { List a => { Word => a => () } => () };
 listIter = { forall a:Type, v => f =>
-  case v
-    of $Nil            -> ()
-    of $Cons head tail -> f head; listIter tail f;
-  end
+  REC go = { n => v =>
+              case v
+                of $Nil            -> ()
+                of $Cons head tail -> f n head; go (n +Word 1) tail;
+                // The addition cannot overflow iff lists are never circular...
+              end
+           };
+  go 0 v;
 };
+
+// Precondition: listLength xs == listLength ys.
+listZipSameLen :: forall a:Type, b:Type, { List a => List b => List (a, b) };
+listZipSameLen = { xs => ys =>
+  REC go = { xs => ys => acc =>
+    case (xs, ys)
+      of ($Nil, $Nil) -> acc
+      of ($Cons x xs_, $Cons y ys_) -> go xs_ ys_ (Cons (x, y) acc)
+      of _ -> prim kill-entire-process "listZipSameLen invariant violated!"
+    end
+  };
+  go (listReverse xs) (listReverse ys) (listEmpty !)
+};
+
+// Takes O(listLength ls) stack.
+listScanl :: forall a:Type, b:Type, { { b => a => b } => b => List a => List b };
+listScanl = { f => q => ls =>
+  Cons q (case ls
+            of $Nil -> Nil
+            of $Cons x xs -> listScanl f (f q x) xs
+          end)
+};
+

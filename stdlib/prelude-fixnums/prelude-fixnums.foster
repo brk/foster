@@ -62,6 +62,24 @@ cast_Word_to_i32     = { a : Word    =>
   end
 };
 
+
+cast_Word_to_i16     = { a : Word    =>
+  res = trunc_Word_to_i32 a `bitand-Int32` 0FFFF_16;
+  if zext_i32_to_Word res ==Word a
+    then res
+    else prim kill-entire-process "cast_Word_to_i16 invariant violated"
+  end
+};
+
+
+cast_Word_to_i8      = { a : Word    =>
+  res = trunc_Word_to_i8 a;
+  if zext_i8_to_Word res ==Word a
+    then res
+    else prim kill-entire-process "cast_Word_to_i8 invariant violated"
+  end
+};
+
 cast_WordX2_to_Word     = { a : WordX2    =>
   res = trunc_WordX2_to_Word a;
   if zext_Word_to_WordX2 res ==WordX2 a
