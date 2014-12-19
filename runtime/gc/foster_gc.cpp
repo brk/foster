@@ -599,7 +599,7 @@ public:
   void dump_stats(FILE* json) {
     FILE* stats = json ? json : gclog;
 
-    double approx_bytes = double(num_collections * gSEMISPACE_SIZE());
+    double approx_bytes = double((num_collections * curr->get_size()) + curr->used_size());
     fprintf(stats, "'num_collections' : %" PRId64 ",\n", num_collections);
     if (TRACK_NUM_ALLOCATIONS) {
     fprintf(stats, "'num_allocations' : %.3g,\n", double(num_allocations));
@@ -608,7 +608,7 @@ public:
                                                   : int(approx_bytes / double(num_allocations)));
     }
     fprintf(stats, "'alloc_num_bytes_gt' : %.3g,\n", approx_bytes);
-    fprintf(stats, "'semispace_size_kb' : %d,\n", gSEMISPACE_SIZE() / 1024);
+    fprintf(stats, "'semispace_size_kb' : %lld,\n", curr->get_size() / 1024);
 
     if (TRACK_BYTES_KEPT_ENTRIES) {
     int64_t mn = bytes_kept_per_gc.compute_min(),
@@ -617,9 +617,9 @@ public:
     fprintf(stats, "'min_bytes_kept' : %8" PRId64 ",\n", mn);
     fprintf(stats, "'max_bytes_kept' : %8" PRId64 ",\n", mx);
     fprintf(stats, "'avg_bytes_kept' : %8" PRId64 ",\n", aa);
-    fprintf(stats, "'min_bytes_kept_percent' : %.2g%%,\n", double(mn * 100.0)/double(gSEMISPACE_SIZE()));
-    fprintf(stats, "'max_bytes_kept_percent' : %.2g%%,\n", double(mx * 100.0)/double(gSEMISPACE_SIZE()));
-    fprintf(stats, "'avg_bytes_kept_percent' : %.2g%%,\n", double(aa * 100.0)/double(gSEMISPACE_SIZE()));
+    fprintf(stats, "'min_bytes_kept_percent' : %.2g%%,\n", double(mn * 100.0)/double(curr->get_size()));
+    fprintf(stats, "'max_bytes_kept_percent' : %.2g%%,\n", double(mx * 100.0)/double(curr->get_size()));
+    fprintf(stats, "'avg_bytes_kept_percent' : %.2g%%,\n", double(aa * 100.0)/double(curr->get_size()));
     }
     if (TRACK_BYTES_ALLOCATED_ENTRIES) {
       for (int i = 0; i < bytes_req_per_alloc.size() - 1; ++i) {
