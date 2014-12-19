@@ -247,6 +247,7 @@ primitiveDecls =
 
 intSize I1  = "Bool"
 intSize I8  = "Int8"
+--intSize I16 = "Int16"
 intSize I32 = "Int32"
 intSize I64 = "Int64"
 intSize (IWord 0) = "Word"
@@ -332,6 +333,8 @@ gFosterPrimOpsTable = Map.fromList $
   ,(,) "zext_i8_to_i32"       $ (,) (mkFnType [i8 ] [i32] ) $ PrimOp "zext_i32" i8
   ,(,) "sext_i8_to_i64"       $ (,) (mkFnType [i8 ] [i64] ) $ PrimOp "sext_i64" i8
   ,(,) "zext_i8_to_i64"       $ (,) (mkFnType [i8 ] [i64] ) $ PrimOp "zext_i64" i8
+  ,(,) "sext_i8_to_Word"      $ (,) (mkFnType [i8 ] [iw0] ) $ PrimOp "sext_Word"   i8
+  ,(,) "zext_i8_to_Word"      $ (,) (mkFnType [i8 ] [iw0] ) $ PrimOp "zext_Word"   i8
   ,(,) "sext_i32_to_Word"     $ (,) (mkFnType [i32] [iw0] ) $ PrimOp "sext_Word"   i32
   ,(,) "zext_i32_to_Word"     $ (,) (mkFnType [i32] [iw0] ) $ PrimOp "zext_Word"   i32
   ,(,) "zext_i32_to_WordX2"   $ (,) (mkFnType [i32] [iw1] ) $ PrimOp "zext_WordX2" i32
@@ -342,6 +345,7 @@ gFosterPrimOpsTable = Map.fromList $
   ,(,) "trunc_i64_to_i32"     $ (,) (mkFnType [i64] [i32] ) $ PrimIntTrunc I64 I32
   ,(,) "trunc_i64_to_Word"    $ (,) (mkFnType [i64] [iw0] ) $ PrimIntTrunc I64 (IWord 0)
   ,(,) "trunc_Word_to_i32"    $ (,) (mkFnType [iw0] [i32] ) $ PrimIntTrunc (IWord 0) I32
+  ,(,) "trunc_Word_to_i8"     $ (,) (mkFnType [iw0] [i8 ] ) $ PrimIntTrunc (IWord 0) I8
   ,(,) "trunc_WordX2_to_i32"  $ (,) (mkFnType [iw1] [i32] ) $ PrimIntTrunc (IWord 1) I32
   ,(,) "trunc_WordX2_to_Word" $ (,) (mkFnType [iw1] [iw0] ) $ PrimIntTrunc (IWord 1) (IWord 0)
   ,(,) "f64-to-s32-unsafe"    $ (,) (mkFnType [f64] [i32] ) $ PrimOp "fptosi_f64_i32" i32
