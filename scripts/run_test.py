@@ -268,8 +268,7 @@ def run_one_test(testpath, paths, tmpdir, progargs):
           ld_elapsed = 0
           rn_elapsed = 0
         else:
-          allprogargs = progargs + [arg for rtarg in options.progrtargs
-                                        for arg in ["--foster-runtime", rtarg]]
+          allprogargs = progargs + insert_before_each("--foster-runtime", options.progrtargs)
           ld_elapsed = link_to_executable(finalpath, exepath, paths, testpath)
           rv, rn_elapsed = run_command([exepath] + allprogargs, paths, testpath,
                                        stdout=actual, stderr=expected, stdin=infile,
