@@ -1,5 +1,6 @@
 snafuinclude Prelude "prelude";
 snafuinclude Bitwise "bitwise";
+snafuinclude Bytes   "bytes";
 
 type case BInt of $B Int32;
 
@@ -76,6 +77,7 @@ main = {
 
   test-ord !;
   test-int-primitives !;
+  test-bytes !;
 };
 
 observeWordUnsignedWraparound :: { Int32 };
@@ -141,5 +143,28 @@ test-int-primitives = {
 
            3 |> expect_i32;
   1 +Int32 2 |> print_i32;
+};
+
+test-bytes = {
+  bs = BytesConcat (BytesFragment b"12" 2) (BytesFragment b"34" 2) 4;
+  expect_i8x b"1"[0];
+  expect_i8x b"2"[0];
+  expect_i8x b"3"[0];
+  expect_i8x b"4"[0];
+  bytesFoldlBytes bs { b => unit => print_i8x b; () } ();
+
+  bs = BytesConcat (BytesFragment b"1234" 4) (BytesFragment b"5678" 4) 8;
+  expect_i8x b"3"[0];
+  expect_i8x b"4"[0];
+  expect_i8x b"5"[0];
+  expect_i8x b"6"[0];
+  bytesFoldlBytesFromLen bs { b => unit => print_i8x b; () } 2 4 ();
+
+  bs = BytesOffset (BytesConcat (BytesFragment b"1234" 4) (BytesFragment b"5678" 4) 8) 2 6;
+  expect_i8x b"4"[0];
+  expect_i8x b"5"[0];
+  expect_i8x b"6"[0];
+  expect_i8x b"7"[0];
+  bytesFoldlBytesFromLen bs { b => unit => print_i8x b; () } 1 4 ();
 };
 

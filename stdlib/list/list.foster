@@ -69,12 +69,13 @@ listFoldr = { forall a:Type e:Type, v => f => acc : a =>
 
 listMap :: forall a:Type, e:Type, { List e => { e => a } => List a };
 listMap = { forall a:Type e:Type, v => f =>
-  listFoldl v { e => tail => Cons (f e) tail } Nil;
+  listFoldl v { e => tail => Cons (f e) tail } Nil |> listReverse;
 };
 
+// Uses heap proportional to the size of the output list (not the input list).
 listKeepIf :: forall a:Type, { List a => { a => Bool } => List a };
 listKeepIf = { forall a:Type, v => f =>
-  listFoldl (listReverse v) { e => tail => if f e then Cons e tail else tail end } Nil;
+  listFoldl v { e => tail => if f e then Cons e tail else tail end } Nil |> listReverse;
 };
 
 // Precondition: n <= listLength xs
@@ -167,12 +168,24 @@ listZipSameLen :: forall a:Type, b:Type, { List a => List b => List (a, b) };
 listZipSameLen = { xs => ys =>
   REC go = { xs => ys => acc =>
     case (xs, ys)
-      of ($Nil, $Nil) -> acc
+      of ($Nil, $Nil) -> listReverse acc
       of ($Cons x xs_, $Cons y ys_) -> go xs_ ys_ (Cons (x, y) acc)
       of _ -> prim kill-entire-process "listZipSameLen invariant violated!"
     end
   };
-  go (listReverse xs) (listReverse ys) (listEmpty !)
+  go xs ys (listEmpty !)
+};
+
+listZipPrefix :: forall a:Type, b:Type, { List a => List b => List (a, b) };
+listZipPrefix = { xs => ys =>
+  REC go = { xs => ys => acc =>
+    case (xs, ys)
+      of ($Nil, _) -> listReverse acc
+      of (_, $Nil) -> listReverse acc
+      of ($Cons x xs_, $Cons y ys_) -> go xs_ ys_ (Cons (x, y) acc)
+    end
+  };
+  go xs ys (listEmpty !)
 };
 
 // Takes O(listLength ls) stack.

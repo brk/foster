@@ -155,8 +155,8 @@ bytesTake = { ba => len =>
   end
 };
 
-bytesFoldlBytes :: forall a:Type, { Bytes => { Int8 => a => a } => a => a };
-bytesFoldlBytes = { ba => f => acc =>
+bytesFoldlBytes_Alt :: forall a:Type, { Bytes => { Int8 => a => a } => a => a };
+bytesFoldlBytes_Alt = { ba => f => acc =>
   // TODO(opt) this helper can't be contified (due to multiple continuations),
   // so it will result in dynamic allocation,
   // but its closure will be empty, meaning it could have been split out into
@@ -171,12 +171,12 @@ bytesFoldlBytes = { ba => f => acc =>
         of $BytesOffset bb m len -> go bb f (offset +Int64 m) len acc
         of $BytesConcat bb bc _ ->
           bblen = bytesLength bb;
-          afterdrop = offset -Int64 bblen;
-          if afterdrop <SInt64 0
-             // offset - bblen < 0 ==> bblen > offset ==>  bblen - offset > 0
-            then go bb f offset bblen acc |>
-                 go bc f 0 (len -Int64 bytesLength bb)
-            else go bc f afterdrop (len -Int64 bytesLength bb) acc
+          if offset <SInt64 bblen
+            then // try both; second call gets negative len if bb contains the whole range
+                 go bb f offset len acc |>
+                 go bc f 0 (len -Int64 (bblen -Int64 offset))
+            else // skip bb, go straight to bc
+                 go bc f (offset -Int64 bblen) len acc
           end
         of $BytesEmpty -> acc
       end
@@ -184,27 +184,32 @@ bytesFoldlBytes = { ba => f => acc =>
   go ba f 0 (bytesLength ba) acc
 };
 
-bytesFoldlBytesWithIndexFromLen = { bytes => f => offset : Int64 => len : Int64 => acc =>
-  case bytes
-    of $BytesFragment arr _ ->
-          arrayFoldlFromToWithIndex64 arr offset (len +Int64 offset) f acc
-    of $BytesOffset bb m len -> bytesFoldlBytesWithIndexFromLen bb f (offset +Int64 m) len acc
-    of $BytesConcat bb bc _ ->
-      bblen = bytesLength bb;
-      afterdrop = offset -Int64 bblen;
-      if afterdrop <SInt64 0
-         // offset - bblen < 0 ==> bblen > offset ==>  bblen - offset > 0
-        then bytesFoldlBytesWithIndexFromLen bb f offset bblen acc |>
-             bytesFoldlBytesWithIndexFromLen bc f 0 (len -Int64 bytesLength bb)
-        else bytesFoldlBytesWithIndexFromLen bc f afterdrop (len -Int64 bytesLength bb) acc
-      end
-    of $BytesEmpty -> acc
-  end
+bytesFoldlBytesFromLen :: forall a:Type, { Bytes => { Int8 => a => a }
+                                     => Int64 => Int64 => a => a };
+bytesFoldlBytesFromLen = { bytes => f => offset => len => acc =>
+ if len <=SInt64 0 then acc else
+   case bytes
+     of $BytesFragment arr xlen ->
+           arrayFoldlFromTo64 arr offset (min-UInt64 xlen (len +Int64 offset)) f acc
+     of $BytesOffset bb m xlen ->
+           bytesFoldlBytesFromLen bb f (offset +Int64 m) len acc
+     of $BytesConcat bb bc xlen ->
+           bblen = bytesLength bb;
+           if offset <SInt64 bblen
+           then // try both; second call gets negative len if bb contains the whole range
+             bytesFoldlBytesFromLen bb f offset len acc |>
+             bytesFoldlBytesFromLen bc f 0 (len -Int64 (bblen -Int64 offset))
+           else // skip bb, go straight to bc
+             bytesFoldlBytesFromLen bc f (offset -Int64 bblen) len acc
+           end
+     of $BytesEmpty -> acc
+   end
+ end
 };
 
-bytesFoldlBytesWithIndex :: forall a:Type, { Bytes => { Word => Int8 => a => a } => a => a };
-bytesFoldlBytesWithIndex = { ba => f => acc =>
-  bytesFoldlBytesWithIndexFromLen ba f 0 (bytesLength ba) acc
+bytesFoldlBytes :: forall a:Type, { Bytes => { Int8 => a => a } => a => a };
+bytesFoldlBytes = { ba => f => acc =>
+  bytesFoldlBytesFromLen ba f 0 (bytesLength ba) acc
 };
 
 // Precondition: o is a valid index for b.
