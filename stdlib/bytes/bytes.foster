@@ -257,15 +257,30 @@ bytesFoldlFragments = { ba => f => acc =>
   bytesFoldlFragmentsFromLen ba f 0 (bytesLength ba) acc
 };
 
-bytesFlatten :: { Bytes => Bytes };
-bytesFlatten = { bytes =>
+bytesFlattenRaw :: { Bytes => Array Int8 };
+bytesFlattenRaw = { bytes =>
   rv = allocDArray (bytesLength32 bytes);
   bytesFoldlFragments bytes { arr => fst => fin => acc =>
       memcpy_i8_to_at_from_at_len rv  acc
                                   arr fst  (fin -Int64 fst);
       acc +Int64 (fin -Int64 fst)
   } 0;
-  bytesOfRawArray rv
+  rv
+};
+
+bytesFlatten :: { Bytes => Bytes };
+bytesFlatten = { bytes => bytes |> bytesFlattenRaw |> bytesOfRawArray };
+
+// Measures the physical (as opposed to logical) space used to represent
+// the given byte array.
+bytesGetCapacity :: { Bytes => Int64 };
+bytesGetCapacity = { bytes =>
+  bytesFoldlFragments bytes { arr => fst => fin => acc => acc +Int64 (arrayLength arr) } 0;
+};
+
+bytesGetNumFragments :: { Bytes => Int64 };
+bytesGetNumFragments = { bytes =>
+  bytesFoldlFragments bytes { arr => fst => fin => acc => acc +Int64 1 } 0;
 };
 
 // Precondition: o is a valid index for b.
