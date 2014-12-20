@@ -29,8 +29,9 @@ if [ -f $T ]; then
       python $R/scripts/run_test.py --show-cmdlines ${T} "$@" -I . -I $R/stdlib --bindir=$R/_obj --me-arg=--interactive --cxxpath=`cxxpath` || exit $?
 
  # If the files didn't exist before, they shouldn't exist after...
- [ -z "$gclog_exists" ]   && rm gclog.txt
- [ -z "$gcstats_exists" ] && rm meGCstats.txt
+ [ -z "$gclog_exists" ]   && rm -f gclog.txt
+ [ -z "$gcstats_exists" ] && rm -f meGCstats.txt
+ exit 0
 else
   echo "error: $T does not exist!"
   exit 1
