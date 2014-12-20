@@ -23,15 +23,19 @@ type case IORead
 
 read_stdin_bytes :: { Bytes };
 read_stdin_bytes = {
-  REC go = { prefix =>
-    case read_stdin_bytes_chunk 30`000 // roughly sqrt 2^30...
+  // Note: this implementation produces a linear chain of exponentially-growing
+  // fragments, such that access to the first byte from stdin requires
+  // traversing the whole "list" of chunks. For now, we don't call bytesFlatten
+  // ourselves, but callers may wish to do so...
+  REC go = { prefix => size =>
+    case read_stdin_bytes_chunk size // roughly sqrt 2^30...
       of $IOReadDone  bytes -> bytesConcat prefix bytes
-      of $IOReadMore  bytes -> go (bytesConcat prefix bytes)
-      of $IOReadLater bytes -> go (bytesConcat prefix bytes)
+      of $IOReadMore  bytes -> go (bytesConcat prefix bytes) (size *Int32 2)
+      of $IOReadLater bytes -> go (bytesConcat prefix bytes) (size *Int32 2)
       of $IOReadError _ -> prim kill-entire-process "read_stdin_bytes failed";
     end
   };
-  go BytesEmpty
+  go BytesEmpty 1024
 };
 
 read_stdin_bytes_chunk :: { Int32 => IORead };
