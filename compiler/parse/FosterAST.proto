@@ -150,7 +150,7 @@ message TermBinding {
 message PBIf {
   required Expr test_expr = 2;
   required Expr then_expr = 3;
-  required Expr else_expr = 4;
+  optional Expr else_expr = 4;
 }
 
 message CaseClause {

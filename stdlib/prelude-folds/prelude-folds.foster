@@ -112,7 +112,6 @@ arrayEnumFromTo = { forall t:Type,
   if k <SInt64 x
     then f a[trunc_i64_to_i32 k] k;
          arrayEnumFromTo a (incr64 k) x f
-    else ()
   end
 };
 

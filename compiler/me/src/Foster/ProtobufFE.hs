@@ -188,7 +188,9 @@ parseIf pbexpr annot =
         where parseFromPBIf pbif = do
                eif   <- parseExpr (PBIf.test_expr pbif)
                ethen <- parseExpr (PBIf.then_expr pbif)
-               eelse <- parseExpr (PBIf.else_expr pbif)
+               eelse <- case (PBIf.else_expr pbif) of
+                          Just eelse -> parseExpr eelse
+                          Nothing -> return (E_TupleAST annot KindPointerSized [])
                return (E_IfAST annot eif ethen eelse)
 
 parseInt :: PbExpr.Expr -> ExprAnnot -> FE (ExprAST TypeP)

@@ -251,7 +251,9 @@ void IfExprAST::dump(DumpToProtobufPass* pass) {
   pb::PBIf* if_ = pass->exp->mutable_pb_if();
   dumpChild(pass, if_->mutable_test_expr(), this->getTestExpr());
   dumpChild(pass, if_->mutable_then_expr(), this->getThenExpr());
-  dumpChild(pass, if_->mutable_else_expr(), this->getElseExpr());
+  if (this->getElseExpr()) {
+    dumpChild(pass, if_->mutable_else_expr(), this->getElseExpr());
+  }
 }
 
 void SeqAST::dump(DumpToProtobufPass* pass) {

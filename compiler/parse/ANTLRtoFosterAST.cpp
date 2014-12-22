@@ -535,9 +535,12 @@ VariableAST* parseTermVar(pTree t) {
 
 // ^(IF e stmts stmts)
 ExprAST* parseIf(pTree tree) {
+  ExprAST* elsepart = (getChildCount(tree) == 3)
+                     ? parseStmts(child(tree, 2))
+                     : NULL;
   return new IfExprAST(ExprAST_from(child(tree, 0)),
                        parseStmts(child(tree, 1)),
-                       parseStmts(child(tree, 2)),
+                       elsepart,
                        rangeOf(tree));
 }
 

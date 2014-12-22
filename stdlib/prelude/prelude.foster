@@ -14,10 +14,10 @@ both   = { a : Bool => b : Bool => if a then b    else False end };
 oror   = { a : { Bool } => b : { Bool } => if a ! then True else b !   end };
 andand = { a : { Bool } => b : { Bool } => if a ! then b !  else False end };
 
-when   = { a : Bool => f : { () } => if a then f ! else () end };
+when   = { a : Bool => f : { () } => if a then f ! end };
 
 while = { cond : { Bool } => body : { () } =>
-  if cond ! then body ! ; while cond body else () end
+  if cond ! then body ! ; while cond body end
 };
 
 until = { cond : { Bool } => body : { () } =>
@@ -184,8 +184,8 @@ newDArray = { forall v:Type,
   x = (prim ref n);
 
   until { x^ ==Int32 0 } {
-      f x^      >^ a[x^ -Int32  1];
-       (x^ -Int32 1) >^ x
+      f x^            >^ a[x^ -Int32  1];
+      ( x^ -Int32 1 ) >^ x
   };
   a
 };
@@ -194,16 +194,26 @@ newDArray = { forall v:Type,
 newDArray0 = { forall v:Type,
                 n : Int32 =>
                 f : { Int32 => v } =>
-  a = allocDArray:[v] n;
-  x = (prim ref n);
-
-  until { x^ ==Int32 0 } {
-      y = x^ -Int32 1;
-      (f y) >^ a[y];
-         y  >^ x
-  };
-  a
+  arrayFromRange32 0 n f
 };
+
+// For example, arrayFromRange32 2 5 f
+// will become  arrayMap [2,3,4] f
+arrayFromRange32 :: forall t:Type, { Int32 => Int32 => { Int32 => t } => Array t };
+arrayFromRange32 = { sm => lg => f =>
+  arr = allocDArray:[t] (lg -Int32 sm);
+  REC go = { n =>
+    if n >SInt32 0 then
+      i = n -Int32 1;
+      f  (i +Int32 sm) >^ arr[i];
+      go  i
+    end
+  };
+  go (lg -Int32 sm);
+  arr
+};
+
+
 
 // Returns True on success, otherwise False.
 arrayIterReverse = { forall t:Type,

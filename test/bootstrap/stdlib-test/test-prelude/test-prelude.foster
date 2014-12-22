@@ -78,6 +78,10 @@ main = {
   test-ord !;
   test-int-primitives !;
   test-bytes !;
+
+  expect_i1 True;
+  print_i1 (bytesEqual (bytesOfRawArray b"\x01\x02\x03")
+                       (arrayFromRange32 1 4 { n => n |> trunc_i32_to_i8 } |> bytesOfRawArray));
 };
 
 observeWordUnsignedWraparound :: { Int32 };

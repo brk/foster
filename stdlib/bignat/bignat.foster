@@ -375,7 +375,7 @@ natBasicMulA = { x : Array Word => y : Array Word =>
       r = natAddMulVVW z i x d;
       r >^ z[arrayLength32 x +Int32 i];
       ()
-    else () end
+    end
   };
   z
 };
