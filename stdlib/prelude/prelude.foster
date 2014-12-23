@@ -213,7 +213,10 @@ arrayFromRange32 = { sm => lg => f =>
   arr
 };
 
-
+arrayMap :: forall a:Type, b:Type, { Array a => { a => b } => Array b };
+arrayMap = { arr => f =>
+  arrayFromRange32 0 (arrayLength32 arr) { idx => f arr[idx] };
+};
 
 // Returns True on success, otherwise False.
 arrayIterReverse = { forall t:Type,

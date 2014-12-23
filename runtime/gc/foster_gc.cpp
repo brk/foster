@@ -632,7 +632,11 @@ public:
     if (!this->alloc_site_counters.empty()) {
       fprintf(stats, "'allocation_sites' : [\n");
       for (auto it : alloc_site_counters) {
-        fprintf(stats, "{ 'typemap' : %p , 'allocations' : %12" PRId64 ",\n", it.first.second, it.second);
+        typemap* map = it.first.second;
+        int64_t bytes_allocated = map->cell_size * it.second;
+        fprintf(stats, "{ 'typemap' : %p , 'allocations' : %12" PRId64 ", 'alloc_size':%" PRId64
+                        ", 'bytes_allocated': %10" PRId64 ", 'alloc_percent':%f,",
+                        map, it.second, map->cell_size, bytes_allocated, (double(bytes_allocated) * 100.0) / approx_bytes);
         fprintf(stats, "  'from' : \"%s\" },\n", it.first.first);
       }
       fprintf(stats, "],\n");

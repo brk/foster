@@ -5,14 +5,18 @@
 -----------------------------------------------------------------------------
 
 module Foster.AnnExprIL (AIExpr(..), TypeIL(..), AIVar, boolTypeIL, stringTypeIL,
-                         fnOf, collectIntConstraints, ilOf, unitTypeIL) where
+                         fnOf, collectIntConstraints, ilOf, unitTypeIL,
+                         convertDataTypeTC) where
 
 import Foster.Base
 import Foster.Kind
 import Foster.Context
 import Foster.AnnExpr
 import Foster.TypeTC
+import Foster.Infer(parSubstTcTy)
 import Foster.Output(OutputOr(..))
+
+import qualified Data.Map as Map(lookup, toList)
 
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T
@@ -110,7 +114,7 @@ collectIntConstraints ae =
 
         _ -> mapM_ collectIntConstraints (childrenOf ae)
 
-ail :: Context ty -> AnnExpr TypeTC -> Tc AIExpr
+ail :: Context TypeTC -> AnnExpr TypeTC -> Tc AIExpr
 ail ctx ae =
     let q  = ail  ctx in
     let qt = ilOf ctx in
@@ -304,7 +308,7 @@ coroPrimFor s | s == T.pack "coro_invoke" = Just $ CoroInvoke
 coroPrimFor s | s == T.pack "coro_yield"  = Just $ CoroYield
 coroPrimFor _ = Nothing
 
-ilPrim :: Context ty -> FosterPrim TypeTC -> Tc (FosterPrim TypeIL)
+ilPrim :: Context TypeTC -> FosterPrim TypeTC -> Tc (FosterPrim TypeIL)
 ilPrim ctx prim =
   case prim of
     NamedPrim tid     -> do tid' <- aiVar ctx tid
@@ -326,7 +330,7 @@ containsUnboxedPolymorphism ty = any containsUnboxedPolymorphism $ childrenOf ty
 tyvarBindersOf (ForAllIL ktvs _) = ktvs
 tyvarBindersOf _                 = []
 
-fnOf :: Context ty -> Fn r (AnnExpr TypeTC) TypeTC -> Tc (Fn r AIExpr TypeIL)
+fnOf :: Context TypeTC -> Fn r (AnnExpr TypeTC) TypeTC -> Tc (Fn r AIExpr TypeIL)
 fnOf ctx f = do
     var <- aiVar ctx (fnVar f)
     let ft = tidType var
@@ -347,13 +351,53 @@ fnOf ctx f = do
                 , fnAnnot = fnAnnot f
                 }
 
-ilOf :: Context t -> TypeTC -> Tc TypeIL
+-- Wrinkle: need to extend the context used for checking ctors!
+convertDataTypeTC :: Context TypeTC -> DataType TypeTC -> Tc (DataType TypeIL)
+convertDataTypeTC ctx (DataType dtName tyformals ctors range) = do
+  -- f :: TypeAST -> Tc TypeIL
+  let f = ilOf (extendTyCtx ctx $ map convertTyFormal tyformals)
+  cts <- mapM (convertDataCtor f) ctors
+  return $ DataType dtName tyformals cts range
+    where
+      convertDataCtor f (DataCtor dataCtorName tyformals types range) = do
+        tys <- mapM f types
+        return $ DataCtor dataCtorName tyformals tys range
+
+-- For datatypes which have been annotated as being unboxed (and are eligible
+-- to be so represented), we want to convert from a "data type name reference"
+-- to "directly unboxed tuple" representation, since the context which maps
+-- names to datatypes will not persist through the rest of the compilation pipeline.
+--
+dtUnboxedRepr dt =
+  case dataTypeName dt of
+    TypeFormal _ _ KindPointerSized -> Nothing
+    TypeFormal _ _ KindAnySizeType ->
+      case dataTypeCtors dt of
+        [ctor] -> Just $ \tys ->
+                       TupleTypeTC (UniConst KindAnySizeType)
+                          (map (substTypeTC tys (dataCtorDTTyF ctor))
+                               (dataCtorTypes ctor))
+        _ -> Nothing
+ where
+    substTypeTC :: [TypeTC] -> [TypeFormal] -> TypeTC -> TypeTC
+    substTypeTC tys formals = parSubstTcTy mapping
+      where mapping = [(BoundTyVar nm rng, ty)
+                      | (ty, TypeFormal nm rng _kind) <- zip tys formals]
+
+ilOf :: Context TypeTC -> TypeTC -> Tc TypeIL
 ilOf ctx typ = do
   let q = ilOf ctx
   case typ of
      TyConAppTC  dtname tys -> do
-                                     iltys <- mapM q tys
-                                     return $ TyConAppIL dtname iltys
+         case Map.lookup dtname (contextDataTypes ctx) of
+           Just [dt] -> case dtUnboxedRepr dt of
+             Nothing -> do iltys <- mapM q tys
+                           return $ TyConAppIL dtname iltys
+             Just rr -> do q $ rr tys
+           Nothing   -> tcFails [text "Unable to find data type " <+> text dtname
+                                ,text "contextDataTypes ="
+                                ,pretty (map fst $ Map.toList $ contextDataTypes ctx)
+                                ]
      PrimIntTC  size    -> do return $ PrimIntIL size
      PrimFloat64TC      -> do return $ PrimFloat64IL
      TupleTypeTC ukind types -> do tys <- mapM q types
@@ -377,7 +421,7 @@ ilOf ctx typ = do
      ForAllTC  ktvs rho  -> do t <- (ilOf $ extendTyCtx ctx ktvs) rho
                                return $ ForAllIL ktvs t
      TyVarTC  tv@(SkolemTyVar _ _ k) -> return $ TyVarIL tv k
-     TyVarTC  tv@(BoundTyVar _ sr) ->
+     TyVarTC  tv@(BoundTyVar _ _sr) ->
         case Prelude.lookup tv (contextTypeBindings ctx) of
           Nothing -> return $ TyVarIL tv KindAnySizeType -- tcFails [text "Unable to find kind of type variable " <> pretty typ]
           Just k  -> return $ TyVarIL tv k
@@ -400,7 +444,7 @@ aiVar ctx (TypedId t i) = do ty <- ilOf ctx t
 
 -----------------------------------------------------------------------
 
-ilOfPatAtom :: Context t -> PatternAtom TypeTC -> Tc (PatternAtom TypeIL)
+ilOfPatAtom :: Context TypeTC -> PatternAtom TypeTC -> Tc (PatternAtom TypeIL)
 ilOfPatAtom ctx atom = case atom of
     P_Wildcard  rng ty           -> do ty' <- ilOf ctx ty
                                        return $ P_Wildcard  rng ty'
@@ -411,7 +455,7 @@ ilOfPatAtom ctx atom = case atom of
     P_Int       rng ty ival      -> do ty' <- ilOf ctx ty
                                        return $ P_Int  rng ty' ival
 
-ilOfPat :: Context t -> Pattern TypeTC -> Tc (Pattern TypeIL)
+ilOfPat :: Context TypeTC -> Pattern TypeTC -> Tc (Pattern TypeIL)
 ilOfPat ctx pat = case pat of
     P_Atom      atom -> return . P_Atom =<< (ilOfPatAtom ctx atom)
     P_Ctor      rng ty pats ctor -> do pats' <- mapM (ilOfPat ctx) pats
@@ -422,12 +466,12 @@ ilOfPat ctx pat = case pat of
                                        ty' <- ilOf ctx ty
                                        return $ P_Tuple rng ty' pats'
 
-ilOfCtorInfo :: Context t -> CtorInfo TypeTC -> Tc (CtorInfo TypeIL)
+ilOfCtorInfo :: Context TypeTC -> CtorInfo TypeTC -> Tc (CtorInfo TypeIL)
 ilOfCtorInfo ctx (CtorInfo id dc) = do
   dc' <- ilOfDataCtor ctx dc
   return $ CtorInfo id dc'
 
-ilOfDataCtor :: Context t -> DataCtor TypeTC -> Tc (DataCtor TypeIL)
+ilOfDataCtor :: Context TypeTC -> DataCtor TypeTC -> Tc (DataCtor TypeIL)
 ilOfDataCtor ctx (DataCtor nm tyformals tys range) = do
   let extctx = extendTyCtx ctx (map convertTyFormal tyformals)
   tys' <- mapM (ilOf extctx) tys

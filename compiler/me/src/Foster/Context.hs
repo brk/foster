@@ -32,7 +32,7 @@ data Context ty = Context { contextBindings   :: ContextBindings ty
                           , primitiveBindings :: ContextBindings ty
                           , primitiveOperations :: Map T.Text (FosterPrim ty)
                           , globalIdents       :: [Ident]
-                          , localTypeBindings :: Map String ty
+                          , localTypeBindings :: Map String ty -- as introduced by, e.g. foralls.
                           , contextTypeBindings :: [(TyVar, Kind)]
                           , contextCtorInfo   :: Map CtorName     [CtorInfo ty]
                           , contextDataTypes  :: Map DataTypeName [DataType ty]

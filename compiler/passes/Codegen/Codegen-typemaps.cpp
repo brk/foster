@@ -383,6 +383,7 @@ llvm::GlobalVariable* getTypeMapForType(TypeAST* typ,
   if (!gv) {
     EDiag() << "No type map for type " << str(ty) << "\n"
             << "\tfoster_generic_coro_t is " << str(foster_generic_coro_t);
+    exit(1);
   }
 
   return gv;

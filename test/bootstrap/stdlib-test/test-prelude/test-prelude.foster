@@ -4,6 +4,9 @@ snafuinclude Bytes   "bytes";
 
 type case BInt of $B Int32;
 
+type case RecDT_A of $RecDT_A RecDT_B;
+type case RecDT_B of $RecDT_B RecDT_A;
+
 /*
 print_BInt_list = { xs:List BInt =>
   rec go = { xs : List BInt =>
@@ -78,10 +81,32 @@ main = {
   test-ord !;
   test-int-primitives !;
   test-bytes !;
+  test-misc-1 !;
+  test-misc-2 !;
+};
 
+test-misc-1 = {
   expect_i1 True;
   print_i1 (bytesEqual (bytesOfRawArray b"\x01\x02\x03")
                        (arrayFromRange32 1 4 { n => n |> trunc_i32_to_i8 } |> bytesOfRawArray));
+
+  expect_i1 True;
+  print_i1 (bytesEqual (bytesOfRawArray           b"\x01\x02\x03")
+                       (bytesOfRawArray (arrayMap b"\x00\x01\x02" { n => n +Int8 1 })));
+
+  expect_i32 5;
+  expect_i32 4;
+  expect_i32 3;
+  expect_i32 2;
+  foldRangeDown 5 2 () { x => unit => print_i32 x; () };
+};
+
+test-misc-2 = {
+  expect_i1 True;
+  print_i1 (__COMPILES__ { x : BInt => 0 });
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ { x : DoesNotExist => 0 });
 };
 
 observeWordUnsignedWraparound :: { Int32 };

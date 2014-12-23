@@ -562,5 +562,8 @@ dumpILProgramToProtobuf m outpath = do
     dumpDataType (TypeFormal _dtName _sr KindAnySizeType) [DataCtor _nm [] [ty] _range] =
         dumpType ty
 
+    dumpDataType (TypeFormal _dtName _sr KindAnySizeType) [DataCtor _nm []  tys _range] =
+        dumpType (LLStructType tys)
+
     dumpDataType (TypeFormal dtName _sr KindAnySizeType) ctors =
-            error $ "Don't yet know how to handle " ++ dtName ++ " : Type, with ctors..." ++ show ctors
+            error $ "ProtobufIL.hs: Don't yet know how to handle " ++ dtName ++ " : Type, with ctors..." ++ show ctors

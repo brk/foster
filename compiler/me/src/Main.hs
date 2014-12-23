@@ -41,7 +41,8 @@ import Foster.ParsedType
 import Foster.PrettyExprAST()
 import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn))
 import Foster.AnnExprIL(AIExpr(AILetFuns, AICall, E_AIVar), fnOf, ilOf,
-                     collectIntConstraints, TypeIL(FnTypeIL),  unitTypeIL)
+                     collectIntConstraints, TypeIL(FnTypeIL),  unitTypeIL,
+                     convertDataTypeTC)
 import Foster.ILExpr(ILProgram, showILProgramStructure, prepForCodegen)
 import Foster.KNExpr(KNExpr', kNormalizeModule, knLoopHeaders, knSinkBlocks,
                      knInline, kNormalize, knSize, renderKN, mkCtorReprFn)
@@ -327,8 +328,8 @@ typecheckModule verboseMode pauseOnErrors modast tcenv0 = do
      mTC <- convertModule (tcType ctx_tc) $ mAST { moduleASTfunctions = [] }
      ctx_il    <- liftContextM   (ilOf ctx_tc) ctx_tc
      decls     <- mapM (convertDecl (ilOf ctx_tc)) (externalModuleDecls mTC)
-     primtypes <- mapM (convertDataTypeAST ctx_tc) (moduleASTprimTypes mTC)
-     datatypes <- mapM (convertDataTypeAST ctx_tc) (moduleASTdataTypes mTC)
+     primtypes <- mapM (convertDataTypeTC ctx_tc) (moduleASTprimTypes mTC)
+     datatypes <- mapM (convertDataTypeTC ctx_tc) (moduleASTdataTypes mTC)
      let unfuns fns -- :: [[OutputOr (AnnExpr TypeAST)]] -> [[OutputOr (Fn (AnnExpr TypeAST) TypeAST)]]
                     = map (map (fmapOO unFunAnn)) fns
      -- Set fnIsRec flag on top-level functions.
@@ -367,19 +368,6 @@ typecheckModule verboseMode pauseOnErrors modast tcenv0 = do
         fmapOO :: (a -> b) -> OutputOr a -> OutputOr b
         fmapOO  f (OK e)     = OK (f e)
         fmapOO _f (Errors o) = Errors o
-
-        -- Wrinkle: need to extend the context used for checking ctors!
-        convertDataTypeAST :: Context TypeTC ->
-                              DataType TypeTC -> Tc (DataType TypeIL)
-        convertDataTypeAST ctx (DataType dtName tyformals ctors range) = do
-          -- f :: TypeAST -> Tc TypeIL
-          let f = ilOf (extendTyCtx ctx $ map convertTyFormal tyformals)
-          cts <- mapM (convertDataCtor f) ctors
-          return $ DataType dtName tyformals cts range
-            where
-              convertDataCtor f (DataCtor dataCtorName tyformals types range) = do
-                tys <- mapM f types
-                return $ DataCtor dataCtorName tyformals tys range
 
 dieOnError :: OutputOr t -> Compiled t
 dieOnError (OK     e) = return e

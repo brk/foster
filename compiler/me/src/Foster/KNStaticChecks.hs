@@ -83,7 +83,8 @@ smtType :: MonoType -> SMT.Type
 smtType (PrimInt I1) = tBool
 smtType (PrimInt sz) = tBitVec (fromIntegral $ intSizeOf sz)
 smtType (ArrayType _) = smtArray
-smtType (TupleType tys) = TApp (smtI ("FosterTuple" ++ show (length tys))) (map smtType tys)
+smtType (TupleType  tys) = TApp (smtI ("FosterTuple" ++ show (length tys))) (map smtType tys)
+smtType (StructType tys) = TApp (smtI ("FosterTuple" ++ show (length tys))) (map smtType tys)
 smtType (RefinedType v _ _) = smtType (tidType v)
 smtType (TyConApp nm tys) = TApp (smtI nm) (map smtType tys)
 smtType (PrimFloat64) = TApp (smtI "$Float64") []
@@ -91,7 +92,6 @@ smtType (PtrType t) = TApp (smtI "$Ptr") [smtType t]
 smtType (FnType ds rt _cc _pf) = TApp (smtI $ "$Fn$" ++ show (pretty rt)) (map smtType ds)
 smtType (PtrTypeUnknown) = TApp (smtI "$Ptr_") []
 smtType (CoroType a b) = TApp (smtI "$Coro") [smtType a, smtType b]
-smtType ty = error $ "smtType can't yet handle " ++ show ty
 
 smtArray = TApp (smtI "FosterArray") []
 

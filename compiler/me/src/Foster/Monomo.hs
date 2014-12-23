@@ -120,10 +120,15 @@ monoKN subst inTypeExpr e =
   KNAppCtor       t c vs   -> do
     -- Turn (ForAll [('a,KindAnySizeType)]. (TyConAppIL Maybe 'a:KindAnySizeType))
     -- into                                   TyConApp "Maybe" [PtrTypeUnknown]
-    t'@(TyConApp dtname args) <- qt t
-    c' <- monoMarkDataType c dtname args
-    vs' <- mapM qv vs
-    return $ KNAppCtor t' c' vs'
+    t' <- qt t
+    case t' of
+      StructType {} -> do
+        vs' <- mapM qv vs
+        return $ KNTuple t' vs' (MissingSourceRange $ "<unboxed ctor:" ++ show c ++ ">")
+      TyConApp dtname args -> do
+        c' <- monoMarkDataType c dtname args
+        vs' <- mapM qv vs
+        return $ KNAppCtor t' c' vs'
 
   KNLetFuns     ids fns0 b  -> do
     let fns = computeRecursivenessAnnotations fns0 ids
