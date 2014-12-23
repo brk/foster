@@ -21,8 +21,8 @@ type case IORead
 ;
 
 
-read_stdin_bytes :: { Bytes };
-read_stdin_bytes = {
+read_stdin_bytes_list :: { Bytes };
+read_stdin_bytes_list = {
   // Note: this implementation produces a linear chain of exponentially-growing
   // fragments, such that access to the first byte from stdin requires
   // traversing the whole "list" of chunks. For now, we don't call bytesFlatten
@@ -32,7 +32,7 @@ read_stdin_bytes = {
       of $IOReadDone  bytes -> bytesConcat prefix bytes
       of $IOReadMore  bytes -> go (bytesConcat prefix bytes) (size *Int32 2)
       of $IOReadLater bytes -> go (bytesConcat prefix bytes) (size *Int32 2)
-      of $IOReadError _ -> prim kill-entire-process "read_stdin_bytes failed";
+      of $IOReadError _ -> prim kill-entire-process "read_stdin_bytes_list failed";
     end
   };
   go BytesEmpty 1024

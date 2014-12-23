@@ -105,6 +105,7 @@ parseCallPrim pbexpr annot = do
       ("inline-asm", _) -> return ()
       (_, True) -> return ()
       (p, False) -> error $ "ProtobuFE: cannot put type annotation on primitive '" ++ p ++ "'"
+
     case (T.unpack primname, args) of
       ("assert-invariants", _) -> return $ mkPrimCall "assert-invariants" [] [] args annot
       ("mach-array-literal", _) -> case tys of

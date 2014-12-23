@@ -1,17 +1,18 @@
 
 // Precondition: fst >= fin
+// Folds fst, fst - 1, ..., fin + 1, fin.
 //
 foldRangeDown = { forall t:Type,
               fst : Int32 =>
               fin : Int32 =>
               init : t =>
               iter : { Int32 => t => t } =>
-  REC frd =  { n : Int32 => acc : t =>
-                if n >=SInt32 fin then
-                  frd (n -Int32 1) (iter n acc)
-                else acc end
+  REC go = { n : Int32 => acc : t =>
+                if n <SInt32 fin then acc else
+                  go (n -Int32 1) (iter n acc)
+                end
             };
-  frd fst init
+  go fst init
 };
 
 // Precondition: fst <= fin
@@ -85,6 +86,13 @@ arrayFoldlFromToWithIndex64 :: forall t:Type, a:Type, {
               Array t => Int64 => Int64 => { Word => t => a => a } => a => a };
 arrayFoldlFromToWithIndex64 = { arr => fst => fin => f => acc =>
   foldRange64 fst fin acc { n => acc => f (trunc_i64_to_Word n) arr[trunc_i64_to_i32 n] acc }
+};
+
+////
+
+arrayFoldr :: forall t:Type, a:Type, { Array t => { t => a => a } => a => a };
+arrayFoldr = { arr => f => acc =>
+  foldRangeDown (arrayLength32 arr -Int32 1) 0 acc { n : Int32 => acc => f arr[n] acc }
 };
 
 ////

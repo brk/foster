@@ -134,6 +134,12 @@ bytesDrop32 = { ba => n => bytesDrop ba (zext_i32_to_i64 n) };
 bytesTake32 :: { Bytes => Int32 => Bytes };
 bytesTake32 = { ba => n => bytesTake ba (zext_i32_to_i64 n) };
 
+bytesDropWord :: { Bytes => Word => Bytes };
+bytesDropWord = { ba => n => bytesDrop ba (zext_Word_to_i64 n) };
+
+bytesTakeWord :: { Bytes => Word => Bytes };
+bytesTakeWord = { ba => n => bytesTake ba (zext_Word_to_i64 n) };
+
 // Precondition: len >= 0
 // Postcondition: bytesLength (bytesTake b n) == min n (bytesLength b)
 bytesTake :: { Bytes => Int64 => Bytes };

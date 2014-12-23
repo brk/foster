@@ -27,6 +27,9 @@ Miscellanous Tidbits of Knowledge
   Use ``--me-arg=--inline`` to enable it.
 * To see monomorphized, inlined, and loop-headered variants of the input program,
   use ``--me-arg=--dump-ir=mono``.
+* Most allocations, (but currently not arrays) are zero-initialized on allocation.
+  A flag is threaded through from ``AllocInfo`` through to ``LLCodegen.cpp``.
+  For arrays, ``ProtobufIL.hs`` directly sets the flag when dumping arrays.
 
 * To convert a UTF-8 encoded string (say, as copied from a web page) into the
   corresponding byte sequence expressed as a Foster machine literal array,
