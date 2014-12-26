@@ -199,6 +199,7 @@ newDArray0 = { forall v:Type,
 
 // For example, arrayFromRange32 2 5 f
 // will become  arrayMap [2,3,4] f
+// The elements will be generated in decreasing order.
 arrayFromRange32 :: forall t:Type, { Int32 => Int32 => { Int32 => t } => Array t };
 arrayFromRange32 = { sm => lg => f =>
   arr = allocDArray:[t] (lg -Int32 sm);

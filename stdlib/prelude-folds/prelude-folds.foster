@@ -47,6 +47,7 @@ foldRange64 = { forall t:Type,
 
 // Precondition: fst <= fin
 //
+// Folds fst, fst + 1, ... , fin - 1
 foldRangeWord = { forall t:Type,
                   fst : Word =>
                   fin : Word =>

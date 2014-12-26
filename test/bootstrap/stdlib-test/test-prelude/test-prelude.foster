@@ -107,6 +107,11 @@ test-misc-2 = {
 
   expect_i1 False;
   print_i1 (__COMPILES__ { x : DoesNotExist => 0 });
+
+  expect_i32 0;
+  expect_i32 1;
+  expect_i32 2;
+  arrayFromRange32 0 3 { n => n } |> { a => arrayEnumFrom a 0 { n => i => print_i32 n } };
 };
 
 observeWordUnsignedWraparound :: { Int32 };
