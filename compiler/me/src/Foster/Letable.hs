@@ -9,7 +9,7 @@ module Foster.Letable where
 import Foster.Base(Literal(..), CtorId, CtorRepr(..), ArrayIndex(..),
                    AllocMemRegion, AllocInfo(..), Occurrence, AllocationSource,
                    FosterPrim(..), MayGC(..), memRegionMayGC,
-                   TypedId(..), Ident(..), mapRight,
+                   TypedId(..), Ident(..), mapRight, ZeroInit,
                    TExpr(freeTypedIds), TypedWith(..))
 import Foster.MonoType
 import Foster.TypeLL
@@ -41,7 +41,7 @@ data Letable ty =
         | ILStore       (TypedId ty) (TypedId ty)
         | ILObjectCopy  (TypedId ty) (TypedId ty)
         -- Array operations
-        | ILAllocArray  ty (TypedId ty) AllocMemRegion
+        | ILAllocArray  ty (TypedId ty) AllocMemRegion ZeroInit
         | ILArrayRead   ty (ArrayIndex (TypedId ty))
         | ILArrayPoke      (ArrayIndex (TypedId ty)) (TypedId ty)
         | ILArrayLit    ty (TypedId ty) [Either Literal (TypedId ty)]
@@ -63,7 +63,7 @@ instance TExpr (Letable ty) ty where
       ILStore      v v2 -> [v,v2]
       ILObjectCopy v v2 -> [v,v2]
       ILBitcast  _ v    -> [v]
-      ILAllocArray _ v _ -> [v]
+      ILAllocArray _ v _ _ -> [v]
       ILArrayRead _ ai  -> freeTypedIds ai
       ILArrayPoke   ai v-> (v):(freeTypedIds ai)
       ILArrayLit _ arr vals -> arr:[val | Right val <- vals]
@@ -83,7 +83,7 @@ instance TypedWith (Letable MonoType) MonoType where
       ILStore       {}  -> TupleType []
       ILObjectCopy  {}  -> TupleType []
       ILBitcast    t _  -> t
-      ILAllocArray t _ _ -> t
+      ILAllocArray t _ _ _ -> t
       ILArrayRead  t _  -> t
       ILArrayPoke   {}  -> TupleType []
       ILArrayLit t _ _  -> t -- or arrayOf t?
@@ -104,7 +104,7 @@ instance TypedWith (Letable TypeLL) TypeLL where
       ILStore      {}   -> LLPtrType (LLStructType [])
       ILObjectCopy {}   -> LLPtrType (LLStructType [])
       ILBitcast  t _    -> t
-      ILAllocArray t _ _ -> t
+      ILAllocArray t _ _ _ -> t
       ILArrayRead t _   -> t
       ILArrayPoke   _ _ -> LLPtrType (LLStructType [])
       ILArrayLit  t _ _ -> t
@@ -128,7 +128,7 @@ substVarsInLetable s letable = case letable of
   ILStore       v1 v2                      -> ILStore       (s v1) (s v2)
   ILObjectCopy  v1 v2                      -> ILObjectCopy  (s v1) (s v2)
   ILBitcast     t v                        -> ILBitcast     t (s v)
-  ILAllocArray  t v amr                    -> ILAllocArray  t (s v) amr
+  ILAllocArray  t v amr zi                 -> ILAllocArray  t (s v) amr zi
   ILArrayRead   t (ArrayIndex v1 v2 rng a) -> ILArrayRead   t (ArrayIndex (s v1) (s v2) rng a)
   ILArrayPoke  (ArrayIndex v1 v2 rng a) v3 -> ILArrayPoke  (ArrayIndex (s v1) (s v2) rng a) (s v3)
   ILArrayLit    t arr vals -> ILArrayLit t (s arr) (mapRight s vals)
@@ -180,8 +180,8 @@ canGC :: Map.Map Ident MayGC -> Letable ty -> MayGC
 canGC mayGCmap letable =
   case letable of
          ILAppCtor _ (_, repr) _ -> canCtorReprAppGC repr
-         ILAlloc        _ amr -> memRegionMayGC amr
-         ILAllocArray _ _ amr -> memRegionMayGC amr
+         ILAlloc        _ amr    -> memRegionMayGC amr
+         ILAllocArray _ _ amr  _ -> memRegionMayGC amr
          ILAllocate info  -> -- If the ctor is nullary, we won't GC...
                              -- otherwise, we defer to the alloc region.
                         fmap canCtorReprAppGC (allocCtorRepr info)

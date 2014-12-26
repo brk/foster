@@ -108,7 +108,7 @@ kNormalize ctorRepr expr =
       AIArrayLit t arr vals -> do nestedLetsDo [go arr] (\[arr'] -> do
                                     letsForArrayValues vals go (\vals' -> return $ KNArrayLit t arr' vals'))
 
-      AIAllocArray t a amr  -> do nestedLets [go a] (\[x] -> KNAllocArray (ArrayTypeIL t) x amr)
+      AIAllocArray t a amr zi -> do nestedLets [go a] (\[x] -> KNAllocArray (ArrayTypeIL t) x amr zi)
       AIAlloc a amr         -> do nestedLets [go a] (\[x] -> KNAlloc (PtrTypeIL $ tidType x) x amr)
       AIDeref   a           -> do nestedLets [go a] (\[x] -> KNDeref (pointedToTypeOfVar x) x)
       E_AITyApp t a argtys  -> do nestedLetsDo [go a] (\[x] -> do
@@ -1606,7 +1606,7 @@ knInline' expr env = do
     KNArrayRead ty (ArrayIndex v1 v2 rng sg)    -> (mapM q [v1,v2   ]) >>= \[q1,q2]    -> residualize $ KNArrayRead ty (ArrayIndex q1 q2 rng sg)
     KNArrayPoke ty (ArrayIndex v1 v2 rng sg) v3 -> (mapM q [v1,v2,v3]) >>= \[q1,q2,q3] -> residualize $ KNArrayPoke ty (ArrayIndex q1 q2 rng sg) q3
     KNArrayLit  ty arr vals -> (q arr) >>= \arr'  -> residualize $ KNArrayLit ty arr' vals -- NOTE: we don't inline array elements!
-    KNAllocArray ty v amr  -> (q v)       >>= \zv -> residualize $ KNAllocArray ty zv amr
+    KNAllocArray ty v amr zi -> (q v)       >>= \zv -> residualize $ KNAllocArray ty zv amr zi
     KNDeref      ty v      -> (q v)       >>= \zv -> residualize $ KNDeref      ty zv
     KNAlloc      ty v mem  -> (q v)       >>= \zv -> residualize $ KNAlloc      ty zv mem
     KNTyApp      ty v tys  -> (q v)       >>= \zv -> residualize $ KNTyApp      ty zv tys
@@ -2392,7 +2392,7 @@ knElimRebinds expr = go Map.empty expr where
             KNAlloc  _t v rgn   -> KNAlloc  _t (qv v ) rgn
             KNDeref  _t v       -> KNDeref  _t (qv v )
             KNStore  _t v1 v2   -> KNStore  _t (qv v1) (qv v2)
-            KNAllocArray t v rg -> KNAllocArray t (qv v) rg
+            KNAllocArray t v rg zi -> KNAllocArray t (qv v) rg zi
             KNArrayRead  t ai   -> KNArrayRead  t (qai ai)
             KNArrayPoke  t ai v -> KNArrayPoke  t (qai ai) (qv v)
             KNArrayLit   t arr vals -> KNArrayLit t (qv arr) (mapRight qv vals)

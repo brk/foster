@@ -337,7 +337,7 @@ computeBlocks tailq expr idmaybe k = do
          KNAlloc    _ v rgn  -> ILAlloc      v rgn
          KNDeref    t v      -> ILDeref      t v
          KNStore    _ a b    -> ILStore      a b
-         KNAllocArray t v rg -> ILAllocArray t v rg
+         KNAllocArray t v rg zi -> ILAllocArray t v rg zi
          KNArrayRead  t ari  -> ILArrayRead  t ari
          KNArrayPoke  _ ari c-> ILArrayPoke  ari c
          KNArrayLit t arr vals -> ILArrayLit t arr vals
@@ -557,7 +557,7 @@ instance Pretty t => Pretty (Letable t) where
       ILAlloc     v rgn     -> text "(ref" <+> pretty v <+> comment (pretty rgn) <> text ")"
       ILDeref     _ v       -> pretty v <> text "^"
       ILStore     v1 v2     -> text "store" <+> pretty v1 <+> text "to" <+> pretty v2
-      ILAllocArray _ _v _   -> text $ "ILAllocArray..."
+      ILAllocArray _ _v _ _ -> text $ "ILAllocArray..."
       ILArrayRead  _t (ArrayIndex v1 v2 _rng _s)  -> text "ILArrayRead" <+> prettyId v1 <> text "[" <> prettyId v2 <> text "]"
       ILArrayPoke  (ArrayIndex _v1 _v2 _rng _s) _v3 -> text $ "ILArrayPoke..."
       ILArrayLit _ _v _vals -> text $ "ILArrayLit..."

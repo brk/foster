@@ -187,7 +187,7 @@ instance Pretty (AnnExpr TypeTC) where
             AnnAlloc annot _ e _rgn  -> withAnnot annot $ parens $ text "ref" <+> pretty e
             AnnDeref annot _ e       -> withAnnot annot $ pretty e <> text "^"
             AnnStore annot _ e1 e2   -> withAnnot annot $ pretty e1 <+> text ">^" <+> pretty e2
-            AnnAllocArray annot _ e ty -> withAnnot annot $ text "AnnAllocArray"
+            AnnAllocArray annot _ e ty _  -> withAnnot annot $ text "AnnAllocArray"
             AnnArrayLit   annot _ entries -> withAnnot annot $ text "AnnArrayLit"
             AnnArrayRead  annot _ ai      -> withAnnot annot $ pretty ai
             AnnArrayPoke  annot _ ai e    -> withAnnot annot $ pretty e <+> text ">^" <+> pretty ai

@@ -290,14 +290,14 @@ dumpExpr _ (ILAllocate info) =
                     , PbLetable.type' = Just $ dumpType (allocType info)
                     , PbLetable.alloc_info = Just $ dumpAllocate info }
 
-dumpExpr _  (ILAllocArray (LLArrayType elt_ty) size memregion) =
+dumpExpr _  (ILAllocArray (LLArrayType elt_ty) size memregion zeroinit) =
     P'.defaultValue { PbLetable.parts = fromList []
                     , PbLetable.tag   = IL_ALLOCATE
                     , PbLetable.type' = Just $ dumpType elt_ty
                     , PbLetable.alloc_info = Just $ dumpAllocate
                        (AllocInfo elt_ty memregion "xarrayx"
-                                  Nothing (Just size)  "...array..." NoZeroInit) }
-dumpExpr _  (ILAllocArray nonArrayType _ _) =
+                                  Nothing (Just size)  "...array..." zeroinit) }
+dumpExpr _  (ILAllocArray nonArrayType _ _ _) =
          error $ "ProtobufIL.hs: Can't dump ILAllocArray with non-array type "
               ++ show nonArrayType
 

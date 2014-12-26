@@ -882,7 +882,7 @@ mkAnnCall rng res_ty annbase args =
       -> AnnCall rng res_ty annprim args
     E_AnnTyApp _ _ (AnnPrimitive _ _ (NamedPrim (TypedId _ (GlobalSymbol gs)))) [argty]
          | T.unpack gs == "allocDArray"
-      -> AnnAllocArray rng res_ty arraySize argty where [arraySize] = args
+      -> AnnAllocArray rng res_ty arraySize argty DoZeroInit where [arraySize] = args
     E_AnnVar _rng (_tid, Just cid)
       -> AnnAppCtor rng res_ty cid  args
     _ -> AnnCall rng res_ty annbase args

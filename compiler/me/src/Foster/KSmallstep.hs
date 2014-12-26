@@ -271,7 +271,7 @@ ssTermOfExpr expr =
     KNArrayPoke _t (ArrayIndex b i _ _) v
                            -> SSTmExpr  $ IArrayPoke (idOf v) (idOf b) (idOf i)
     KNArrayLit _t arr vals -> SSTmExpr  $ IArrayLit  (idOf arr) (map arrEntry vals)
-    KNAllocArray _ety n _  -> SSTmExpr  $ IAllocArray (idOf n)
+    KNAllocArray _ety n _ _ -> SSTmExpr  $ IAllocArray (idOf n)
     KNAlloc    _t a _rgn   -> SSTmExpr  $ IAlloc (idOf a)
     KNDeref    _t a        -> SSTmExpr  $ IDeref (idOf a)
     KNStore    _t a b      -> SSTmExpr  $ IStore (idOf a) (idOf b)
