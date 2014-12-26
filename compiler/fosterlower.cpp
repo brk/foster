@@ -263,7 +263,8 @@ areDeclaredValueTypesOK(llvm::Module* mod,
       //      (e.g. they only differ underneath a pointer...).
       if (d->getName() == "foster_stdin_read_bytes"
        || d->getName() == "foster_posix_read_bytes"
-       || d->getName() == "foster_posix_write_bytes") {
+       || d->getName() == "foster_posix_write_bytes"
+       || d->getName() == "foster_posix_write_bytes_to_file") {
         gDeclaredSymbolTypes[d->getName()] = ty;
       } else {
         EDiag() << "mismatch between declared and imported types"

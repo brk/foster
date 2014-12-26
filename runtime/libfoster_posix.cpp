@@ -81,18 +81,42 @@ int64_t foster_posix_write_bytes(int64_t       fd,
 
   ssize_t nwrote = write(int(fd), &from->bytes[bytes_offset], size_t(len));
 
-  if (nwrote == 0) {
-    *status = 0; // DONE
-  } else if (nwrote == -1) {
+  if (nwrote > 0) {
+    *status = (nwrote == len) ? 0 : 1; // DONE : MORE
+  } else {
     if (errno == EAGAIN) {
       *status = 2; // LATER
     } else {
       *status = 3; // ERROR
     }
-  } else {
-    *status = 1; // MORE
   }
   return int64_t(nwrote);
+}
+
+int64_t foster_posix_write_bytes_to_file(
+                                 foster_bytes* name,
+                                 foster_bytes* from,
+                                 int64_t       bytes_offset,
+                                 int64_t       len,
+                                 int32_t*      status) {
+  foster__assert(bytes_offset >= 0 && bytes_offset < from->cap, "byte offset out of range");
+  int64_t maxlen = from->cap - bytes_offset;
+  foster__assert(len >= 0 && len <= maxlen && maxlen <= SSIZE_MAX, "can't write that many bytes!");
+
+  FILE* f = fopen((const char*) &name->bytes[0], "w");
+  if (!f) {
+    *status = 3;
+    return 0;
+  }
+  int64_t nwrote = 0;
+  do {
+    nwrote += foster_posix_write_bytes(fileno(f), from, bytes_offset + nwrote, len - nwrote, status);
+  } while (*status == 1 && nwrote < len);
+
+  if (nwrote == len) { *status = 0; }
+
+  fclose(f);
+  return nwrote;
 }
 
 // noreturn

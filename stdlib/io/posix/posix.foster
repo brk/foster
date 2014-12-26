@@ -11,6 +11,10 @@ foster_stdin_read_bytes :: { Array Int8 => Ref Int32 => Int64 } @ { proc = true 
 foster_posix_read_bytes  :: { Int64 => Array Int8 => Int64 =>          Ref Int32 => Int64 } @ { proc = true };
 foster_posix_write_bytes :: { Int64 => Array Int8 => Int64 => Int64 => Ref Int32 => Int64 } @ { proc = true };
 
+foster_posix_write_bytes_to_file ::
+                       { Array Int8 => Array Int8 => Int64 => Int64 => Ref Int32 => Int64 } @ { proc = true };
+
+
 foster_posix_get_tuntap_fd :: { Int64 } @ { proc = true };
 
 type case IORead
@@ -49,5 +53,18 @@ read_stdin_bytes_chunk = { size =>
     of 1 -> IOReadMore bytes
     of 2 -> IOReadLater bytes
     of _ -> IOReadError bytes
+  end
+};
+
+
+write_bytes_chunk_to_file :: { Array Int8 => Array Int8 => Int64 };
+write_bytes_chunk_to_file = { name => bytes =>
+  wstatus = (prim ref 0);
+  nwrote = foster_posix_write_bytes_to_file name bytes 0 (prim_arrayLength bytes) wstatus;
+  case wstatus^
+    of 0 -> nwrote
+    of 1 -> prim kill-entire-process "write_bytes_chunk_to_file returned MORE";
+    of 2 -> prim kill-entire-process "write_bytes_chunk_to_file returned LATER";
+    of _ -> prim kill-entire-process "write_bytes_chunk_to_file returned ERROR";
   end
 };
