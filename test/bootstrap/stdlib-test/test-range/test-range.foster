@@ -191,7 +191,7 @@ testChunkBuilding = {
   expect_text "AdjacentAfter";
   print_text (cmpChunks (mkChunk 3 2 4) (mkChunk 1 2 3) |> textOfRangeChunkCmpResult);
 
-  expect_text "(1 2 3)(3 2 4)";
+  expect_text r"(1 2 3)(3 2 4)";
   print_text (textOfChunkSummaries
     (summarizeChunks
       (chunkInsert (mkChunk 3 2 4)
@@ -202,5 +202,11 @@ testChunkBuilding = {
     (summarizeChunks
       (chunkInsert (mkChunk 3 2 3)
         (chunkInsert (mkChunk 1 2 3) Nil))));
+
+  // single-line before
+  print_i32 0; // single-line same
+  /* multi-line
+     after */
+  expect_i32 0;
 };
 

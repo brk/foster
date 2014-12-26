@@ -31,7 +31,6 @@ import Foster.Base
 import Foster.Config
 import Foster.CFG
 import Foster.CFGOptimization
-import Foster.Fepb.WholeProgram(WholeProgram)
 import Foster.ProtobufFE(parseWholeProgram)
 import Foster.ProtobufIL(dumpILProgramToProtobuf)
 import Foster.TypeTC
@@ -409,7 +408,13 @@ main = do
     (infile : outfile : rest) -> do
        flagVals <- parseOpts rest
        (pi_time, pb_program) <- ioTime $ readAndParseProtobuf infile
-       runCompiler pi_time pb_program flagVals outfile
+       let wholeprog = parseWholeProgram pb_program (getStandaloneFlag flagVals)
+       if getFmtOnlyFlag flagVals
+         then do
+           let WholeProgramAST modules = wholeprog
+           liftIO $ putDocLn (pretty (head modules))
+         else
+           runCompiler pi_time wholeprog flagVals outfile
 
     rest -> do
       flagVals <- parseOpts rest
@@ -421,18 +426,19 @@ main = do
                    ++ " path/to/infile.pb path/to/outfile.pb")
 
 
-runCompiler pi_time pb_program flagVals outfile = do
+runCompiler pi_time wholeprog flagVals outfile = do
    uniqref <- newIORef 2
    varlist <- newIORef []
    subcnst <- newIORef []
    icmap   <- newIORef Map.empty
    smtStatsRef <- newIORef (0, [])
+
    let tcenv = TcEnv {       tcEnvUniqs = uniqref,
                       tcUnificationVars = varlist,
                               tcParents = [],
                    tcMetaIntConstraints = icmap,
                tcSubsumptionConstraints = subcnst }
-   (nc_time, mb_errs) <- time $ runErrorT $ evalStateT (compile pb_program tcenv)
+   (nc_time, mb_errs) <- time $ runErrorT $ evalStateT (compile wholeprog tcenv)
                     CompilerContext {
                            ccVerbose  = getVerboseFlag flagVals
                          , ccFlagVals = flagVals
@@ -476,19 +482,17 @@ runCompiler pi_time pb_program flagVals outfile = do
 
 data ResultWithTimings = RWT Double Double Double ILProgram
 
-compile :: WholeProgram -> TcEnv -> Compiled ResultWithTimings
-compile pb_program tcenv = do
-    flags <- gets ccFlagVals
-    (return $ parseWholeProgram pb_program (getStandaloneFlag flags))
+compile :: WholeProgramAST FnAST TypeP -> TcEnv -> Compiled ResultWithTimings
+compile wholeprog tcenv = do
+    (return wholeprog)
      >>= mergeModules -- temporary hack
      >>= desugarParsedModule tcenv
      >>= typecheckSourceModule tcenv
      >>= (uncurry lowerModule)
 
-mergeModules :: WholeProgramAST FnAST TypeP
-              -> Compiled (ModuleAST FnAST TypeP)
+mergeModules :: WholeProgramAST FnAST ty
+              -> Compiled (ModuleAST FnAST ty)
 mergeModules (WholeProgramAST modules) = do
-  --liftIO $ putDocLn (pretty (head modules))
   return (foldr1 mergedModules modules)
   -- Modules are listed in reverse dependency order, conveniently.
   -- TODO track explicit module dependency graph, decompose to DAG, etc.

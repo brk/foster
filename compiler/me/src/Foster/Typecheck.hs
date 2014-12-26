@@ -252,7 +252,7 @@ tcRho ctx expr expTy = do
       E_IntAST    rng txt ->            typecheckInt rng txt expTy   >>= (\v -> matchExp expTy v "tcInt")
       E_RatAST    rng txt -> (typecheckRat rng txt (expMaybe expTy)) >>= (\v -> matchExp expTy v "tcRat")
       E_BoolAST   rng b              -> tcRhoBool         rng   b          expTy
-      E_StringAST rng txtorbytes     -> tcRhoTextOrBytes  rng   txtorbytes expTy
+      E_StringAST rng _r txtorbytes  -> tcRhoTextOrBytes  rng   txtorbytes expTy
       E_MachArrayLit rng mbt args    -> tcRhoArrayLit ctx rng   mbt args   expTy
       E_CallAST   rng base argtup    -> tcRhoCall     ctx rng   base argtup expTy
       E_TupleAST  rng boxy exprs     -> tcRhoTuple    ctx rng   boxy exprs  expTy
@@ -283,7 +283,7 @@ tcRho ctx expr expTy = do
           -- Note: we infer a sigma, not a rho, because we don't want to
           -- instantiate a sigma with meta vars and then never bind them.
           matchExp expTy (AnnCompiles rng boolTypeTC (CompilesResult result)) "compiles"
-      E_KillProcess rng (E_StringAST _ (Left msg)) -> do
+      E_KillProcess rng (E_StringAST _ _ (SS_Text msg)) -> do
           tau <- case expTy of
              (Check t) -> return t
              (Infer _) -> newTcUnificationVarTau $ "kill-process"
@@ -425,8 +425,8 @@ tcRhoText rng b expTy = do
          Check t -> check t
 -- }}}
 
-tcRhoTextOrBytes rng (Left txt) expTy = tcRhoText  rng txt expTy
-tcRhoTextOrBytes rng (Right bs) expTy = tcRhoBytes rng bs  expTy
+tcRhoTextOrBytes rng (SS_Text txt) expTy = tcRhoText  rng txt expTy
+tcRhoTextOrBytes rng (SS_Bytes bs) expTy = tcRhoBytes rng bs  expTy
 
 --  -------------------------
 --  G |- b"..." :: Array Int8

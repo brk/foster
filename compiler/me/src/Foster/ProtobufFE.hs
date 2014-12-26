@@ -127,7 +127,7 @@ parseCallPrim pbexpr annot = do
                                                 return $ E_KillProcess annot s
       ("inline-asm", _) ->
         case (tys, args) of
-          ([_], E_StringAST _ (Left cnt) : E_StringAST _ (Left cns) : E_BoolAST _ sideeffects : args' ) -> do
+          ([_], E_StringAST _ _ (SS_Text cnt) : E_StringAST _ _ (SS_Text cns) : E_BoolAST _ sideeffects : args' ) -> do
             let prim = (E_PrimAST annot "inline-asm"
                            [LitText cnt, LitText cns, LitBool sideeffects] tys)
             return $ E_CallAST annot prim args'
@@ -163,7 +163,7 @@ parseTypeFormal pbtyformal = do
     sr <- parseRange (PbTypeFormal.range pbtyformal) ("typeformal:" ++ show name)
     return $ TypeFormal name sr kind
 
-parseFn pbexpr = do annot <- parseAnnot pbexpr
+parseFn pbexpr = do annot <- parseRangeOf pbexpr >>= return . annotForRange
                     bodies <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
                     let body = case bodies of
                                [b] -> b
@@ -204,11 +204,11 @@ parseRat pbexpr annot = do
 
 parseString :: PbExpr.Expr -> ExprAnnot -> FE (ExprAST TypeP)
 parseString pbexpr annot = do
-    if isSet pbexpr PbExpr.bytes_value
-      then return $ E_StringAST annot (Right $ L.toStrict $
-                                  getVal pbexpr PbExpr.bytes_value)
-      else return $ E_StringAST annot (Left $ pUtf8ToText $
-                                  getVal pbexpr PbExpr.string_value)
+    let wasRaw = getVal pbexpr PbExpr.bool_value
+    let str = if isSet pbexpr PbExpr.bytes_value
+               then SS_Bytes $ L.toStrict $ getVal pbexpr PbExpr.bytes_value
+               else SS_Text $ pUtf8ToText $ getVal pbexpr PbExpr.string_value
+    return $ E_StringAST annot wasRaw str
 
 parseLet pbexpr annot = do
     parsePBLet annot
@@ -239,16 +239,19 @@ parseLet pbexpr annot = do
                    (Right (p,b):[]) -> E_Case range b [CaseArm p expr Nothing [] (rangeOf range)]
                    (Right (p,b):bs) -> E_Case range b [CaseArm p (buildLets range bs expr) Nothing [] (rangeOf range)]
 
-parseSeq pbexpr annot = do
+parseSeq pbexpr _annot = do
     exprs <- mapM parseExpr $ toList (toList $ PbExpr.parts pbexpr)
-    return $ buildSeqs exprs
+    semis <- mapM parseSourceRange $ toList $ PbExpr.seq_ranges pbexpr
+
+    return $ buildSeqs exprs semis
       where
         -- Convert a list of ExprASTs to a right-leaning "list" of SeqAST nodes.
-        buildSeqs :: [ExprAST t] -> (ExprAST t)
-        buildSeqs []    = error $ "ProtobufFE.parseSeq can't parse empty seq!"
-                                 ++ highlightFirstLine (rangeOf annot)
-        buildSeqs [a]   = a
-        buildSeqs (a:b) = E_SeqAST annot a (buildSeqs b)
+        buildSeqs :: [ExprAST t] -> [SourceRange] -> (ExprAST t)
+        buildSeqs []  _ = error $ "ProtobufFE.parseSeq can't parse empty seq!"
+                                 ++ highlightFirstLine (rangeOf _annot)
+        buildSeqs [a] _ = a
+        buildSeqs (a:b) (semi:semis) = E_SeqAST (annotForRange semi) a (buildSeqs b semis)
+        buildSeqs _ [] = error $ "ProtobufFE.parseSeq: expected non-empty list of semis!"
 
 parseTyApp pbexpr range = do
     [body] <- mapM parseExpr (toList $ PbExpr.parts pbexpr)
@@ -303,23 +306,24 @@ parseCaseArm clause = do
              parseRange (PbExpr.range pbexpr) (show $ PbExpr.tag pbexpr)
   return $ CaseArm pattern body guard [] rng
 
-parseAnnot :: PbExpr.Expr -> FE ExprAnnot
-parseAnnot pbexpr = do
-  rng <- parseRange (PbExpr.range pbexpr) (show $ PbExpr.tag pbexpr)
-  return $ annotForRange rng
+parseRangeOf :: PbExpr.Expr -> FE SourceRange
+parseRangeOf pbexpr = do
+  parseRange (PbExpr.range pbexpr) (show $ PbExpr.tag pbexpr)
 
 parseRange mb_range msg =
   case mb_range of
     Nothing -> do return $ MissingSourceRange msg
-    Just r  -> do
-        lines <- gets feModuleLines
-        return $ SourceRange
-          (fromIntegral $ Pb.start_line r)
-          (fromIntegral $ Pb.start_col  r)
-          (fromIntegral $ Pb.final_line r)
-          (fromIntegral $ Pb.final_col  r)
-          lines
-          (fmap uToString (Pb.source r))
+    Just r  -> do parseSourceRange r
+
+parseSourceRange r = do
+    lines <- gets feModuleLines
+    return $ SourceRange
+      (fromIntegral $ Pb.start_line r)
+      (fromIntegral $ Pb.start_col  r)
+      (fromIntegral $ Pb.final_line r)
+      (fromIntegral $ Pb.final_col  r)
+      lines
+      (fmap uToString (Pb.source r))
 
 parseExpr :: PbExpr.Expr -> FE (ExprAST TypeP)
 parseExpr pbexpr = do
@@ -347,8 +351,8 @@ parseExpr pbexpr = do
                 PAT_TUPLE    -> error "parseExpr called on pattern!"
 
                 --otherwise -> error $ "parseExpr saw unknown tag: " ++ (show $ PbExpr.tag pbexpr) ++ "\n"
-    annot <- parseAnnot pbexpr
-    fn pbexpr annot
+    rng <- parseRangeOf pbexpr
+    fn pbexpr (annotForRange rng)
 
 parseDataType :: DataType.DataType -> FE (Foster.Base.DataType TypeP)
 parseDataType dt = do
@@ -413,6 +417,11 @@ parseSourceModule standalone sm = resolveFormatting m where
    sourceLines :: SourceModule -> SourceLines
    sourceLines sm = SourceLines $ fmapDefault pUtf8ToText (SourceModule.line sm)
 
+   -- The front-end produces an abstract syntax tree with position information
+   -- but without "hidden" tokens like newlines and comments. Such tokens are
+   -- instead produced in a separate list, off to the side. Our task is then to
+   -- take each hidden token and attach it to the parsed AST, based on the range
+   -- information embedded in the AST and the hidden tokens.
    resolveFormatting :: ModuleAST FnAST TypeP -> ModuleAST FnAST TypeP
    resolveFormatting m =
      m { moduleASTfunctions = evalState
@@ -421,16 +430,7 @@ parseSourceModule standalone sm = resolveFormatting m where
 
    hiddens ps = Prelude.filter (\x -> case x of NonHidden -> False
                                                 _         -> True) $
-                               processNewlines (map snd ps)
-      where
-           processNewlines xs = drop1st xs
-             where drop1st   [] = []
-                   drop1st   (BlankLine:xs) =     keepuntil xs
-                   drop1st   (x        :xs) = x : drop1st   xs
-                   keepuntil (NonHidden:xs) =     drop1st   xs
-                   keepuntil (x        :xs) = x : keepuntil xs
-                   keepuntil [] = []
-
+                               map snd ps
    getPreFormatting :: ExprAnnot -> State [(Pb.SourceLocation, Formatting)]
                                           ExprAnnot
    getPreFormatting (ExprAnnot (_:_) _ _) = error $ "ExprAnnot should not have any pre-formatting yet!"
@@ -454,13 +454,16 @@ parseSourceModule standalone sm = resolveFormatting m where
               prefilter (_, NonHidden) = True
               prefilter (loc, _ ) = loc `beforeRangeEnd` rng
 
+              (post, rest) = span prefilter fs
+{-
               onlyComments (_, Comment _) = True
               onlyComments (_, _)         = False
 
               (pre, rest0) = span prefilter fs
               (post, rest) = span onlyComments rest0
+              -}
           put rest
-          return (ExprAnnot (pre0 ++ hiddens pre) rng (map snd post))
+          return (ExprAnnot (pre0) rng (hiddens post))
 
    beforeRangeStart _ (MissingSourceRange _) = False
    beforeRangeStart loc (SourceRange bline bcol _ _ _ _) =
@@ -471,6 +474,10 @@ parseSourceModule standalone sm = resolveFormatting m where
    beforeRangeEnd loc (SourceRange _ _ eline ecol _ _) =
             Pb.line loc <  fromIntegral eline
         || (Pb.line loc == fromIntegral eline &&  Pb.column loc < fromIntegral ecol)
+
+   rangeSpanNextLine (SourceRange sl sc el _ec lines file) =
+                      SourceRange sl sc (el + 1) 0 lines file
+   rangeSpanNextLine sr = sr
 
    attachFormattingFn :: FnAST TypeP -> State [(Pb.SourceLocation, Formatting)]
                                               (FnAST TypeP)
@@ -486,12 +493,19 @@ parseSourceModule standalone sm = resolveFormatting m where
 
    attachFormatting :: ExprAST TypeP -> State [(Pb.SourceLocation, Formatting)]
                                               (ExprAST TypeP)
+   attachFormatting (E_SeqAST annot a b) = do
+     a' <- attachFormatting a
+     ExprAnnot pre  rng [] <- getPreFormatting annot
+     ExprAnnot pre' _ post <- getPostFormatting (ExprAnnot pre (rangeSpanNextLine rng) [])
+     b' <- attachFormatting b
+     return $ E_SeqAST (ExprAnnot pre' rng post) a' b'
+
    attachFormatting expr = do
      let q = attachFormatting
      a0 <- getPreFormatting (exprAnnot expr)
      let ana = getPostFormatting a0 -- "annotation action"
      case expr of
-       E_StringAST    _ s        -> liftM2' E_StringAST   ana (return s)
+       E_StringAST    _ r s      -> liftM3' E_StringAST   ana (return r) (return s)
        E_BoolAST      _ b        -> liftM2' E_BoolAST     ana (return b)
        E_IntAST       _ txt      -> liftM2' E_IntAST      ana (return txt)
        E_RatAST       _ txt      -> liftM2' E_RatAST      ana (return txt)
@@ -501,7 +515,7 @@ parseSourceModule standalone sm = resolveFormatting m where
        E_KillProcess  _ e        -> liftM2' E_KillProcess ana (q e)
        E_CompilesAST  _ me       -> liftM2' E_CompilesAST ana (liftMaybeM q me)
        E_IfAST        _ a b c    -> liftM4' E_IfAST       ana (q a) (q b) (q c)
-       E_SeqAST       _ a b      -> liftM3' E_SeqAST      ana (q a) (q b)
+       E_SeqAST {}               -> undefined
        E_AllocAST     _ a rgn    -> liftM3' E_AllocAST    ana (q a) (return rgn)
        E_DerefAST     _ a        -> liftM2' E_DerefAST    ana (q a)
        E_StoreAST     _ a b      -> liftM3' E_StoreAST    ana (q a) (q b)

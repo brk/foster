@@ -95,17 +95,6 @@ pANTLR3_COMMON_TOKEN getStartToken(pTree tree) {
   pANTLR3_COMMON_TOKEN tok = ParsingContext::getStartToken(tree);
   if (tok) return tok;
 
-  // Some nodes we're okay with having no token info for...
-  /*
-  if (getChildCount(tree) == 0) {
-    int tag = typeOf(tree);
-    if (tag == OUT || tag == IN || tag == BODY
-     || tag == ANTLR3_TOKEN_INVALID) {
-      return NULL;
-    }
-  }
-  */
-
   // Usually, ANTLR will have annotated the tree directly;
   // however, in some cases, only subtrees will have token
   // information. In such cases, we search along the edge of the
@@ -114,6 +103,9 @@ pANTLR3_COMMON_TOKEN getStartToken(pTree tree) {
   while (!tok && getChildCount(node) > 0) {
     node = child(node, 0);
     tok = ParsingContext::getStartToken(node);
+  }
+  if (!tok) {
+    tok = tree->getToken(tree);
   }
   if (!tok) {
     llvm::outs() << "Warning: unable to find start token for ANTLR parse tree"
@@ -128,20 +120,13 @@ pANTLR3_COMMON_TOKEN getEndToken(pTree tree) {
   pANTLR3_COMMON_TOKEN tok = ParsingContext::getEndToken(tree);
   if (tok) return tok;
 
-  /*
-  if (getChildCount(tree) == 0) {
-    int tag = typeOf(tree);
-    if (tag == OUT || tag == IN || tag == BODY
-     || tag == ANTLR3_TOKEN_INVALID) {
-      return NULL;
-    }
-  }
-  */
-
   pTree node = tree;
   while (!tok && getChildCount(node) > 0) {
     node = child(node, getChildCount(node) - 1);
     tok = ParsingContext::getEndToken(node);
+  }
+  if (!tok) {
+    tok = tree->getToken(tree);
   }
   if (!tok) {
     llvm::outs() << "Warning: unable to find end token for ANTLR parse tree"
@@ -294,8 +279,10 @@ StmtTag classifyStmt(pTree t) {
   }
 }
 
-foster::SourceRange rangeOfTrees(const std::vector<pTree>& v) {
-  return rangeFrom(v.front(), v.back());
+typedef std::vector<std::pair<pTree, pTree> > Statements;
+
+foster::SourceRange rangeOfTrees(const Statements& v) {
+  return rangeFrom(v.front().first, v.back().first);
 }
 
 Pattern* parsePattern(pTree t);
@@ -305,29 +292,44 @@ Binding parseBinding(pTree tree) {
   return Binding(parsePatternAtom(child(tree, 0)), ExprAST_from(child(tree, 1)));
 }
 
-ExprAST* parseStmts_seq(const std::vector<pTree>& v, ExprAST* mb_last) {
+ExprAST* parseStmts_seq(const Statements& v, ExprAST* mb_last) {
   assert(!v.empty());
   Exprs e;
-  for (unsigned i = 0; i < v.size(); ++i) { e.push_back(ExprAST_from(v[i])); }
+  std::vector<foster::SourceRange> semis;
+  for (unsigned i = 0; i < v.size(); ++i) {
+    e.push_back(ExprAST_from(v[i].first));
+    if (v[i].second) { semis.push_back(rangeOf(v[i].second)); }
+  }
   if (mb_last) e.push_back(mb_last);
-  return new SeqAST(e, rangeOfTrees(v));
+  return new SeqAST(e, semis, rangeOfTrees(v));
+}
+
+pTree semi(pTree tree, int n) {
+  if ((n + 1) >= getChildCount(tree)) return NULL;
+  return child(child(tree, n + 1), 0);
+}
+
+pTree stmt(pTree tree, int n) {
+  if (n == 0) return child(tree, 0);
+  return child(child(tree, n), 1);
 }
 
 // ugh...
+// ^(STMTS stmt_ ^(MU semi stmt_)+)
 ExprAST* parseStmts(pTree tree) {
   if (getChildCount(tree) == 1 && typeOf(child(tree, 0)) != ABINDING) {
     return ExprAST_from(child(tree, 0));
   }
+  std::vector<std::pair<StmtTag, Statements> > sections;
 
-  std::vector<std::pair<StmtTag, std::vector<pTree> > > sections;
-
+  // Collect contiguous slices of similar (rec vs non-rec) statements.
   for (unsigned i = 0; i < getChildCount(tree);      ) {
-    StmtTag t = classifyStmt(child(tree, i));
-    std::vector<pTree> section;
+    StmtTag t = classifyStmt(stmt(tree, i));
+    Statements section;
     do {
-      section.push_back(child(tree, i));
+      section.push_back(std::make_pair(stmt(tree, i), semi(tree, i)));
       ++i;
-    } while (i < getChildCount(tree) && classifyStmt(child(tree, i)) == t);
+    } while (i < getChildCount(tree) && classifyStmt(stmt(tree, i)) == t);
     sections.push_back(std::make_pair(t, section));
   }
 
@@ -339,7 +341,7 @@ ExprAST* parseStmts(pTree tree) {
         << show(rangeOf(tree));
   }
 
-  std::vector<pTree>& end_asts = sections.back().second;
+  std::vector<std::pair<pTree, pTree>>& end_asts = sections.back().second;
   ExprAST* acc = parseStmts_seq(end_asts, NULL);
 
   // Walk backwards over sections, accumulating.
@@ -351,7 +353,7 @@ ExprAST* parseStmts(pTree tree) {
     case StmtRecBinds: // fallthrough
     case StmtLetBinds:
       for (unsigned x = 0; x < sections[i].second.size(); ++x) {
-        pTree c = sections[i].second[x];
+        pTree c = sections[i].second[x].first;
         int offset = isRec ? 1 : 0;
         bindings.push_back(parseBinding(child(c, offset)));
       }
@@ -366,10 +368,6 @@ ExprAST* parseStmts(pTree tree) {
   }
 
   return acc;
-}
-
-ExprAST* parseSeq(pTree tree) {
-  return new SeqAST(getExprs(tree), rangeOf(tree));
 }
 
 ExprAST* parseParenExpr(pTree tree) {
@@ -434,11 +432,12 @@ ValAbs* parseValAbs(pTree tree) {
   parseFormals(formals, child(tree, 0));
   std::vector<TypeFormal> tyVarFormals = parseTyFormals(child(tree, 1),
                                                         getDefaultKind());
+  std::vector<foster::SourceRange> semis;
   const int stmtIndex = 2;
   TypeAST* resultType = NULL;
   ExprAST* resultSeq = getChildCount(tree) == (stmtIndex + 1)
                          ? parseStmts(child(tree, stmtIndex))
-                         : new SeqAST(Exprs(), rangeOf(tree));
+                         : new SeqAST(Exprs(), semis, rangeOf(tree));
   return new ValAbs(formals, tyVarFormals, resultSeq, resultType, rangeOf(tree));
 }
 
@@ -612,10 +611,14 @@ ExprAST* parseString(pTree t) {
   if (wholething[0] == 'r') {
     // Raw string; don't interpret the contents in any way, shape, or form...
     return new StringAST(std::string(wholething.begin() + quotes + 1,
-                                     wholething.end()   - quotes), false, rangeOf(t));
+                                     wholething.end()   - quotes), true, false, rangeOf(t));
+  } else if (wholething[0] == 'b' && wholething[1] == 'r') {
+    // Raw bytes; don't interpret the contents in any way, shape, or form...
+    return new StringAST(std::string(wholething.begin() + quotes + 2,
+                                     wholething.end()   - quotes), true, true, rangeOf(t));
   } else {
     bool bytes = wholething[0] == 'b';
-    // Non-raw string: walk through it and interpret escape codes.
+    // Non-raw string/bytes: walk through it and interpret escape codes.
     std::string parsed; parsed.reserve(wholething.size());
     it += quotes + bytes; end -= quotes;
     while (it != end) {
@@ -678,7 +681,7 @@ ExprAST* parseString(pTree t) {
         }
       }
     }
-    return new StringAST(parsed, bytes, rangeOf(t));
+    return new StringAST(parsed, false, bytes, rangeOf(t));
   }
 }
 

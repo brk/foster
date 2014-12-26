@@ -127,6 +127,7 @@ message Expr {
   optional PBLet      pb_let     = 22;
   optional PBValAbs   pb_val_abs = 23;
   repeated Type ty_app_arg_type = 29; // AnnTyApp
+  repeated SourceRange seq_ranges = 30;
 }
 
 message PBValAbs {

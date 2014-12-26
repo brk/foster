@@ -60,7 +60,7 @@ convertExprAST f expr =
   let q = convertExprAST f in
   case expr of
     E_MachArrayLit rng mbt es   -> liftM2 (E_MachArrayLit rng) (mapMaybeM f mbt) (mapM (liftArrayEntryM q) es)
-    E_StringAST    rng s        -> return $ (E_StringAST  rng) s
+    E_StringAST    rng r s      -> return $ (E_StringAST  rng) r s
     E_BoolAST      rng b        -> return $ (E_BoolAST    rng) b
     E_IntAST       rng txt      -> return $ (E_IntAST     rng) txt
     E_RatAST       rng txt      -> return $ (E_RatAST     rng) txt

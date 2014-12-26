@@ -132,9 +132,10 @@ struct BoolAST : public ExprAST {
 
 struct StringAST : public ExprAST {
   std::string stringValue;
+  bool wasRaw;
   bool wasBytes;
-  explicit StringAST(string val, bool bytes, foster::SourceRange sourceRange)
-    : ExprAST("StringAST", sourceRange), stringValue(val), wasBytes(bytes) {}
+  explicit StringAST(string val, bool raw, bool bytes, foster::SourceRange sourceRange)
+    : ExprAST("StringAST", sourceRange), stringValue(val), wasRaw(raw), wasBytes(bytes) {}
   virtual void dump(DumpToProtobufPass* pass);
 };
 
@@ -233,8 +234,10 @@ struct LetAST : public ExprAST {
 };
 
 struct SeqAST : public ExprAST {
-  explicit SeqAST(Exprs exprs, foster::SourceRange sourceRange)
-    : ExprAST("SeqAST", sourceRange) { this->parts = exprs; }
+  std::vector<foster::SourceRange> semis;
+  explicit SeqAST(Exprs exprs, std::vector<foster::SourceRange> semis,
+                                           foster::SourceRange sourceRange)
+    : ExprAST("SeqAST", sourceRange), semis(semis) { this->parts = exprs; }
   virtual void dump(DumpToProtobufPass* pass);
 };
 

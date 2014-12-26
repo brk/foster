@@ -6,7 +6,7 @@
 
 module Foster.ExprAST(
   ExprAST, ExprSkel(..), exprAnnot
-, FnAST(..)
+, FnAST(..), SourceString(..)
 , TermBinding(..)
 , termBindingName
 )
@@ -26,10 +26,13 @@ import qualified Data.ByteString as B
 -----------------------------------------------------------------------
 
 type ExprAST ty = ExprSkel ExprAnnot ty
+data SourceString = SS_Text  T.Text
+                  | SS_Bytes B.ByteString
+                  deriving (Eq, Show)
 
 data ExprSkel annot ty =
         -- Literals
-          E_StringAST     annot (Either T.Text B.ByteString)
+          E_StringAST     annot Bool SourceString
         | E_BoolAST       annot Bool
         | E_IntAST        annot String
         | E_RatAST        annot String
@@ -82,7 +85,7 @@ instance Structured (ExprAST t) where
         let tryGetCallNameE (E_VarAST _rng (VarAST _mt v)) = T.unpack v
             tryGetCallNameE _                              = "" in
         case e of
-            E_StringAST _rng _s    -> text $ "StringAST    "                                   ++ (exprCmnts e)
+            E_StringAST _rng _r _s -> text $ "StringAST    "                                   ++ (exprCmnts e)
             E_BoolAST   _rng  b    -> text $ "BoolAST      " ++ (show b)                       ++ (exprCmnts e)
             E_IntAST    _rng txt   -> text $ "IntAST       " ++ txt                            ++ (exprCmnts e)
             E_RatAST    _rng txt   -> text $ "RatAST       " ++ txt                            ++ (exprCmnts e)
@@ -143,7 +146,7 @@ exprCmnts e = showComments $ annotComments (exprAnnot e)
 
 exprAnnot :: ExprSkel annot ty -> annot
 exprAnnot e = case e of
-      E_StringAST     annot _     -> annot
+      E_StringAST     annot _ _   -> annot
       E_BoolAST       annot _     -> annot
       E_IntAST        annot _     -> annot
       E_RatAST        annot _     -> annot

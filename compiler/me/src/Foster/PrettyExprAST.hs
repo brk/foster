@@ -7,7 +7,6 @@
 module Foster.PrettyExprAST where
 
 import Foster.Base
-import Foster.Kind
 import Foster.ExprAST
 import Foster.ParsedType
 
@@ -26,8 +25,11 @@ showUnTyped d _ = d
 comment d = text "/*" <+> d <+> text "*/"
 
 instance Pretty e => Pretty (ArrayIndex e) where
-  pretty (ArrayIndex b i _rng SG_Static) = pretty b <> brackets (pretty i)
   pretty (ArrayIndex b i _rng SG_Dynamic) =
+    pretty b <> brackets (pretty i)
+  pretty (ArrayIndex b i _rng SG_Static) =
+    text "prim array-subscript" <+> pretty b <+> pretty i
+  pretty (ArrayIndex b i _rng SG_Unsafe) =
     text "prim array-subscript-unsafe" <+> pretty b <+> pretty i
 
 -- (<//>) ?vs? align (x <$> y)
@@ -40,15 +42,15 @@ end    = lkwd "end"
 instance Pretty TypeP where
   pretty t = case t of
           PrimIntP       isb          -> text "Int" <> pretty isb
-          TyConAppP      dt ts        -> text "[TyCon" <+> tupled (map pretty ts) <> text "]"
+          TyConAppP      dt ts        -> parens $ pretty dt <+> sep (map pretty ts)
           TupleTypeP     ts           -> tupled (map pretty ts)
           FnTypeP        ts r cc pf   -> text "{" <+> hsep [pretty t <+> text "=>" | t <- ts]
                                                   <+> pretty r <+> text "}"
           CoroTypeP      s  r         -> text "Coro ..."
-          ArrayTypeP     t            -> text "Array" <+> pretty t
-          RefTypeP       t            -> text "Ref" <+> pretty t
+          ArrayTypeP     t            -> parens $ text "Array" <+> pretty t
+          RefTypeP       t            -> parens $ text "Ref" <+> pretty t
           ForAllP        tyfs rho     -> text "forall ..." <+> pretty rho
-          TyVarP         tv           -> text "tyvar"
+          TyVarP         tv           -> pretty tv
           MetaPlaceholder str         -> text ("?? " ++ str)
           RefinedTypeP nm ty e -> text "%" <+> text nm <+> text ":" <+> pretty ty <+> text ":" <+> pretty e
 
@@ -69,8 +71,7 @@ prettyTopLevelFn fn =
 instance Pretty (FnAST TypeP) where
   pretty fn =
       group (lbrace <> prettyTyFormals (fnTyFormals fn) <> args (fnFormals fn)
-                    </> nest 4 (group $
-                                  linebreak <> pretty (fnAstBody fn))
+                    <+> nest 4 (group $ pretty (fnAstBody fn))
                     <$> rbrace)
     where args []  = empty
           args frm = empty <+> hsep (map (\v -> prettyFnFormal v <+> text "=>") frm)
@@ -130,14 +131,21 @@ isOperator (E_VarAST _ evar) = not . isAlpha . T.head $ evarName evar
 isOperator _                 = False
 
 instance Pretty Formatting where
-  pretty BlankLine   = text "/*nl*/"
+  pretty BlankLine   = {-text "~" <>-} linebreak
   -- Egads, is there no way of *forcing* a linebreak with wl-pprint?
   pretty (Comment ('/':'/':s)) = text "/*" <> text s <+> text "*/"
-  pretty (Comment s) = string s
+  pretty (Comment s) = string s -- comment markers already included
   pretty NonHidden   = error $ "NonHidden should have been removed by parser..."
 
 withAnnot (ExprAnnot pre _ post) doc =
-  hsep $ map pretty pre ++ [doc <> hsep (map pretty post)]
+      hcat (map pretty pre)
+      <>
+      doc
+      <>
+      hcat (map pretty post)
+
+wasRaw False = empty
+wasRaw True  = text "r"
 
 instance Pretty (ArrayEntry (ExprAST TypeP)) where
   pretty (AE_Int _annot str) = pretty str
@@ -151,15 +159,15 @@ instance Pretty (ExprAST TypeP) where
             E_TyApp  annot e argtys -> withAnnot annot $ pretty e <> text ":[" <> hsep (punctuate comma (map pretty argtys)) <> text "]"
             E_TyCheck annot e ty    -> withAnnot annot $ parens (pretty e <+> text "as" <+> pretty ty)
             E_KillProcess annot exp -> withAnnot annot $ text "prim kill-entire-process" <+> pretty exp
-            E_StringAST   annot (Left  t) -> withAnnot annot $ text "r" <> dquotes (text $ T.unpack t)
-            E_StringAST   annot (Right b) -> withAnnot annot $ text "b" <> dquotes (text $ "<...>")
+            E_StringAST   annot r (SS_Text  t) -> withAnnot annot $             wasRaw r <> dquotes (text $ T.unpack t)
+            E_StringAST   annot r (SS_Bytes b) -> withAnnot annot $ text "b" <> wasRaw r <> dquotes (text $ "<.!.>")
             E_BoolAST     annot b   -> withAnnot annot $ text $ show b
             E_PrimAST     annot nm []   _ -> withAnnot annot $ text nm
             E_PrimAST     annot nm lits _ -> withAnnot annot $ text nm <+> pretty lits
             E_CallAST annot e []    -> withAnnot annot $ pretty e <+> text "!"
             E_CallAST annot e [e1,e2] | isOperator e
                                     -> withAnnot annot $ pretty e1 <+> pretty e <+> pretty e2
-            E_CallAST annot e es    -> withAnnot annot $ pretty e <+> hsep (map prettyAtom es)
+            E_CallAST annot e es    -> withAnnot annot $ pretty e <+> align (hsep (map prettyAtom es))
             E_LetAST  annot (TermBinding evar bound) expr ->
                                        withAnnot annot $
                                       lkwd "let"
@@ -192,10 +200,7 @@ instance Pretty (ExprAST TypeP) where
             E_ArrayRead   annot ai   -> withAnnot annot $ pretty ai
             E_ArrayPoke   annot ai e -> withAnnot annot $ pretty e <+> text ">^" <+> pretty ai
             E_TupleAST    annot _ es -> withAnnot annot $ parens (hsep $ punctuate comma (map pretty es))
-            E_SeqAST annot _  _  -> let exprs = childrenOf e in
-                                    let seqcat l r = pretty l <> text ";"
-                                                 <$> pretty r in
-                                    withAnnot annot $
-                                        group $ foldl1 seqcat (map pretty exprs)
+            E_SeqAST (ExprAnnot pre _ post) l r -> pretty l <> text ";" <+> (vcat $ map pretty $ pre ++ post)
+                                                <> pretty r
             E_FnAST annot fn     -> withAnnot annot $ pretty fn
 

@@ -113,6 +113,15 @@ def optlevel(options):
   else:
     return ['-O0']
 
+class StopAfterMiddle(Exception):
+    def __str__(self):
+        return repr(self.value)
+
+def should_stop_after_middle():
+  if '--fmt' in options.meargs:
+    return True
+  return False
+
 def insert_before_each(val, vals):
   return [x for v in vals for x in [val, v]]
 
@@ -164,6 +173,9 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
                      ["+RTS"] + ghc_rts_args + ["-RTS"] +
                      interpret + options.meargs + prog_args)
 
+    if should_stop_after_middle():
+      raise StopAfterMiddle()
+
     # running fosterlower on a ParsedAST produces a bitcode Module
     # linking a bunch of Modules produces a Module
     e3 = crun(['fosterlower', check_output, '-o', finalname,
@@ -172,14 +184,14 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
                     + options.beargs)
 
     if options.standalone:
-      e4 = 0
-    else:
-      # Running opt on a Module produces a Module
-      # Running llc on a Module produces an assembly file
-      e4 = crun(['fosteroptc', finalpath + '.preopt.bc',
-                                           '-fosterc-time', '-o', finalpath + ext]
-                      + optlevel(options)
-                      + options.optcargs)
+      return (e1, e2, e3, 0)
+
+    # Running opt on a Module produces a Module
+    # Running llc on a Module produces an assembly file
+    e4 = crun(['fosteroptc', finalpath + '.preopt.bc',
+                                         '-fosterc-time', '-o', finalpath + ext]
+                    + optlevel(options)
+                    + options.optcargs)
 
     return (e1, e2, e3, e4)
 
@@ -281,6 +293,7 @@ def run_one_test(testpath, paths, tmpdir, progargs):
                                        stdout=actual, stderr=expected, stdin=infile,
                                        showcmd=True, strictrv=False)
 
+
   inbytes  = file_size(os.path.join(tmpdir, '_out.parsed.pb'))
   ckbytes = file_size(os.path.join(tmpdir, '_out.checked.pb'))
   outbytes = file_size(os.path.join(tmpdir, finalpath + ".o"))
@@ -331,9 +344,12 @@ def main(testpath, paths, tmpdir):
   if not os.path.isdir(testdir):
     os.makedirs(testdir)
 
-  result = run_one_test(testpath, paths, testdir, options.progargs)
-  print_result_table(result)
-  classify_result(result, testpath)
+  try:
+    result = run_one_test(testpath, paths, testdir, options.progargs)
+    print_result_table(result)
+    classify_result(result, testpath)
+  except StopAfterMiddle:
+    pass
 
 def mkpath(root, prog):
   if os.path.isabs(prog):

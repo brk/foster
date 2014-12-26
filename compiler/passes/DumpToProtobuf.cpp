@@ -186,6 +186,7 @@ void BoolAST::dump(DumpToProtobufPass* pass) {
 
 void StringAST::dump(DumpToProtobufPass* pass) {
   processExprAST(pass, this, pb::Expr::STRING);
+  pass->exp->set_bool_value(this->wasRaw);
   if (wasBytes) {
     pass->exp->set_bytes_value(this->stringValue);
   } else {
@@ -261,6 +262,9 @@ void SeqAST::dump(DumpToProtobufPass* pass) {
     this->parts[0]->dump(pass);
   } else {
     processExprAST(pass, this, pb::Expr::SEQ);
+    for (int i = 0; i < this->semis.size(); ++i) {
+      setSourceRange(pass->exp->add_seq_ranges(), this->semis[i]);
+    }
     dumpChildren(pass, this);
   }
 }
