@@ -49,6 +49,7 @@ namespace {
 CtorRepr parseCtorRepr(const pb::PbCtorRepr& c) { CtorRepr x;
   x.isTransparent = c.tag() == pb::PbCtorRepr::CR_TRANSPARENT;
   x.isNullary     = c.tag() == pb::PbCtorRepr::CR_NULLARY;
+  x.isBoxed       = (!c.has_is_boxed()) || c.is_boxed();
   x.smallId       = c.ctor_repr_tag();
   return x;
 }

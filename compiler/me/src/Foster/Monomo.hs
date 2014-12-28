@@ -284,9 +284,9 @@ monomorphizedDataTypesFrom dts specs = do
 
          monomorphizedCtor :: MonoSubst -> DataCtor TypeIL -> Mono (DataCtor MonoType)
          monomorphizedCtor subst
-                   (DataCtor name _tyformals types range) = do
+                   (DataCtor name _tyformals types repr range) = do
            types' <- mapM (monoType subst) types
-           return $ DataCtor name [] types' range
+           return $ DataCtor name [] types' repr range
 
        dtSpecMap = mapAllFromList specs
 

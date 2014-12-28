@@ -1400,7 +1400,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
                                 return $ P_Atom $ P_Int r ty int
 
       EP_Ctor     r eps s -> do
-        info@(CtorInfo cid (DataCtor _ tyformals types _crng)) <- getCtorInfoForCtor ctx s
+        info@(CtorInfo cid (DataCtor _ tyformals types _repr _crng)) <- getCtorInfoForCtor ctx s
         sanityCheck (ctorArity cid == List.length eps) $
               "Incorrect pattern arity: expected " ++
               (show $ ctorArity cid) ++ " pattern(s), but got "
@@ -1440,8 +1440,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
     -----------------------------------------------------------------------
     getCtorInfoForCtor :: Context SigmaTC -> T.Text -> Tc (CtorInfo SigmaTC)
     getCtorInfoForCtor ctx ctorName = do
-      let ctorInfos = contextCtorInfo ctx
-      case Map.lookup ctorName ctorInfos of
+      case Map.lookup ctorName (contextCtorInfo ctx) of
         Just [info] -> return info
         elsewise -> tcFails [text $ "Typecheck.getCtorInfoForCtor: Too many or"
                                     ++ " too few definitions for $" ++ T.unpack ctorName
@@ -1904,7 +1903,7 @@ tcContext emptyCtx ctxAST = do
 
 
 tcDataCtor :: String -> Context SigmaTC -> DataCtor TypeTC -> Tc ()
-tcDataCtor dtname ctx (DataCtor nm _tyfs tys _rng) = do
+tcDataCtor dtname ctx (DataCtor nm _tyfs tys _repr _rng) = do
   let msg = "in field of data constructor " ++ T.unpack nm ++ " of type " ++ dtname
   mapM_ (tcTypeWellFormed msg ctx) tys
 -- }}}
@@ -1988,7 +1987,7 @@ instance Pretty ty => Pretty (CtorInfo ty) where
   pretty (CtorInfo cid dc) = parens (text "CtorInfo" <+> text (show cid) <+> pretty dc)
 
 instance Pretty ty => Pretty (DataCtor ty) where
-  pretty (DataCtor name _tyformals _ctortyargs _range) =
+  pretty (DataCtor name _tyformals _ctortyargs _repr _range) =
         parens (text "DataCtor" <+> text (T.unpack name))
 
 instance Pretty ty => Pretty (DataType ty) where

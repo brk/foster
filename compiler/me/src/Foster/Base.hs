@@ -72,6 +72,7 @@ data TyVar = BoundTyVar  String SourceRange -- bound by a ForAll, that is
            | SkolemTyVar String Uniq Kind
 
 data TypeFormal = TypeFormal String SourceRange Kind
+typeFormalName (TypeFormal name _ _) = name
 
 instance Eq  TypeFormal where (TypeFormal s1 _ k1) ==        (TypeFormal s2 _ k2) = (s1,k1) ==        (s2,k2)
 instance Ord TypeFormal where (TypeFormal s1 _ k1) `compare` (TypeFormal s2 _ k2) = (s1,k1) `compare` (s2,k2)
@@ -101,8 +102,6 @@ briefCC FastCC = ""
 boolGC  WillNotGC    = False
 boolGC  MayGC        = True
 boolGC (GCUnknown _) = True
-
-typeFormalName (TypeFormal name _ _) = name
 
 -- |||||||||||||||||||||||||| Patterns ||||||||||||||||||||||||||{{{
 
@@ -192,8 +191,15 @@ data CtorId       = CtorId { ctorTypeName :: DataTypeName
 data DataCtor ty = DataCtor { dataCtorName  :: CtorName
                             , dataCtorDTTyF :: [TypeFormal]
                             , dataCtorTypes :: [ty]
+                            , dataCtorRepr  :: Maybe CtorRepr
                             , dataCtorRange :: SourceRange
                             }
+
+unDataCtorRepr :: Show ty => String -> DataCtor ty -> CtorRepr
+unDataCtorRepr msg dc =
+    case dataCtorRepr dc of
+      Just repr -> repr
+      Nothing -> error $ msg ++ "\n" ++ "Missing ctor repr for " ++ show dc
 
 data CtorInfo ty = CtorInfo { ctorInfoId :: CtorId
                             , ctorInfoDc :: DataCtor ty

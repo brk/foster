@@ -5,7 +5,7 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.KNExpr (kNormalizeModule, KNExpr, KNMono, FnMono, mkCtorReprFn,
+module Foster.KNExpr (kNormalizeModule, KNExpr, KNMono, FnMono,
                       KNExpr'(..), TailQ(..), typeKN, kNormalize,
                       KNCompilesResult(..),
                       knLoopHeaders, knSinkBlocks, knInline, knSize,
@@ -21,9 +21,7 @@ import Data.Int
 
 import Foster.MonoType
 import Foster.Base
-import Foster.Kind
 import Foster.KNUtil
-import Foster.MainCtorHelpers(withDataTypeCtors)
 import Foster.Config
 import Foster.Context
 import Foster.TypeIL
@@ -48,38 +46,21 @@ knFresh s = ccFreshId (T.pack s)
 
 --------------------------------------------------------------------
 
-kNormalizeModule :: (ModuleIL AIExpr TypeIL) -> Context TypeIL -> Bool ->
+kNormalizeModule :: (ModuleIL AIExpr TypeIL) -> Context TypeIL -> (Map String (DataType TypeIL)) ->
            Compiled (ModuleIL KNExpr TypeIL)
-kNormalizeModule m ctx shouldOptimizeCtorRepresentations =
-    -- TODO move ctor wrapping earlier?
-    let (allDataTypes,
-         ctorRepr)    = mkCtorReprFn m shouldOptimizeCtorRepresentations
-        knCtorFuncs   = concatMap (kNormalCtors ctx ctorRepr) allDataTypes
-        knWrappedBody = do { ctors <- sequence knCtorFuncs
-                           ; body  <- kNormalize ctorRepr (moduleILbody m)
-                           ; return $ wrapFns ctors body
-                           } in
-    do body' <- knWrappedBody
-       return m { moduleILbody = body' }
+kNormalizeModule m ctx dtypeMap = do
+    let allDataTypes = moduleILprimTypes m ++ moduleILdataTypes m
+    body' <- do { ctors <- sequence $ concatMap (kNormalCtors ctx) allDataTypes
+                ; body  <- kNormalize dtypeMap (moduleILbody m)
+                ; return $ wrapFns ctors body
+                }
+    return m { moduleILbody = body' }
       where
         wrapFns :: [FnExprIL] -> KNExpr -> KNExpr
         wrapFns fs e = foldr (\f body -> KNLetFuns [fnIdent f] [f] body) e fs
 
-mkCtorReprFn :: Kinded t => ModuleIL e t -> Bool -> ([DataType t], CtorId -> CtorRepr)
-mkCtorReprFn m shouldOptimizeCtorRepresentations =
-    (allDataTypes,
-     \cid -> case Map.lookup cid ctorReprMap of
-                         Just repr -> repr
-                         Nothing   -> error $ "KNExpr.hs: unable to find ctor")
-      where
-        ctorReprMap = Map.fromList (concatMap pickCtorReprs allDataTypes)
-        allDataTypes = moduleILprimTypes m ++ moduleILdataTypes m
-        pickCtorReprs = if shouldOptimizeCtorRepresentations
-                                 then optimizedCtorRepresesentations
-                                 else pickDefaultCtorRepresesentations
-
-kNormalizeFn :: (CtorId -> CtorRepr) -> Fn () AIExpr TypeIL -> KN (FnExprIL)
-kNormalizeFn ctorRepr fn = do
+kNormalizeFn :: (Map String (DataType TypeIL)) -> Fn () AIExpr TypeIL -> KN (FnExprIL)
+kNormalizeFn dtypeMap fn = do
 {- TODO: if we do this, we must tweak the tail-call heuristics to mark
          the RHS of the introduced let bindings as a tail-call context...
     -- Enforce the invariant that the return value of the function is let-bound
@@ -93,13 +74,13 @@ kNormalizeFn ctorRepr fn = do
     --knbody <- kNormalize ctorRepr (fnBody fn)
     return $ fn { fnBody = knbody }
 -}
-    knbody <- kNormalize ctorRepr (fnBody fn)
+    knbody <- kNormalize dtypeMap (fnBody fn)
     return $ fn { fnBody = knbody }
 
 -- ||||||||||||||||||||||| K-Normalization ||||||||||||||||||||||{{{
-kNormalize :: (CtorId -> CtorRepr) -> AIExpr -> KN KNExpr
-kNormalize ctorRepr expr =
-  let go = kNormalize ctorRepr in
+kNormalize :: (Map String (DataType TypeIL)) -> AIExpr -> KN KNExpr
+kNormalize dtypeMap expr =
+  let go = kNormalize dtypeMap in
   case expr of
       AILiteral ty lit  -> return $ KNLiteral ty lit
       E_AIVar v         -> return $ KNVar v
@@ -125,7 +106,7 @@ kNormalize ctorRepr expr =
               nestedLets (map go [a,b,c])
                                (\[x,y,z] -> KNArrayPoke unitTypeIL (ArrayIndex x y rng s) z)
 
-      AILetFuns ids fns a   -> do knFns <- mapM (kNormalizeFn ctorRepr) fns
+      AILetFuns ids fns a   -> do knFns <- mapM (kNormalizeFn dtypeMap) fns
                                   liftM (KNLetFuns ids knFns) (go a)
 
       AITuple kind es rng   -> do nestedLets (map go es) (\vs ->
@@ -139,12 +120,12 @@ kNormalize ctorRepr expr =
                                   e'     <- go e
                                   return $ KNLetRec ids exprs' e'
       AICase    t e arms    -> do e' <- go e
-                                  nestedLetsDo [return e'] (\[v] -> compileCaseArms arms t v ctorRepr)
+                                  nestedLetsDo [return e'] (\[v] -> compileCaseArms arms t v)
       AIIf      t  a b c    -> do a' <- go a
                                   [ b', c' ] <- mapM go [b, c]
                                   nestedLets [return a'] (\[v] -> KNIf t v b' c')
       AICallPrim sr t p es -> do nestedLets (map go es) (\vars -> KNCallPrim sr t p vars)
-      AIAppCtor  t c es -> do let repr = ctorRepr c
+      AIAppCtor  t c es -> do let repr = lookupCtorRepr c
                               nestedLets (map go es) (\vars -> KNAppCtor  t (c, repr) vars)
       AICall     t (E_AIVar v) es -> do nestedLetsDo (     map go es) (\    vars  -> knCall t v  vars)
       AICall     t b           es -> do nestedLetsDo (go b:map go es) (\(vb:vars) -> knCall t vb vars)
@@ -177,13 +158,12 @@ kNormalize ctorRepr expr =
         compileCaseArms :: [CaseArm Pattern AIExpr TypeIL]
                         -> TypeIL
                         -> TypedId TypeIL
-                        -> (CtorId -> CtorRepr)
                         -> KN KNExpr
-        compileCaseArms arms t v ctorRepr = do
+        compileCaseArms arms t v = do
           let gtp (CaseArm p e g b r) = do
-                let p' = fmapRepr ctorRepr p
-                e' <- kNormalize ctorRepr e
-                g' <- liftMaybe (kNormalize ctorRepr) g
+                let p' = fmapRepr p
+                e' <- kNormalize dtypeMap e
+                g' <- liftMaybe (kNormalize dtypeMap) g
                 return (CaseArm p' e' g' b r)
           arms' <- mapM gtp arms
 
@@ -227,14 +207,21 @@ kNormalize ctorRepr expr =
         anyCaseArmIsGuarded [] = False
         anyCaseArmIsGuarded (arm:arms) = isGuarded arm || anyCaseArmIsGuarded arms
 
-        fmapRepr :: (CtorId -> CtorRepr) -> Pattern ty -> PatternRepr ty
-        fmapRepr ctorRepr p =
+        lookupCtorRepr cid =
+          case Map.lookup (ctorTypeName cid) dtypeMap of
+            Just dt -> let [ctor] = filter (\ctor -> dataCtorName ctor == T.pack (ctorCtorName cid))
+                                           (dataTypeCtors dt) in
+                       unDataCtorRepr "lookupCtorRepr" ctor
+            Nothing   -> error $ "lookupCtorRepr failed for " ++ show cid
+
+        fmapRepr :: Show ty => Pattern ty -> PatternRepr ty
+        fmapRepr p =
           case p of
             P_Atom a            -> PR_Atom a
-            P_Tuple rng ty pats -> PR_Tuple rng ty (map (fmapRepr ctorRepr) pats)
-            P_Ctor  rng ty pats (CtorInfo cid _) ->
-                        PR_Ctor rng ty (map (fmapRepr ctorRepr) pats) cinfo'
-                          where cinfo' = LLCtorInfo cid (ctorRepr cid) (map typeOf pats)
+            P_Tuple rng ty pats -> PR_Tuple rng ty (map fmapRepr pats)
+            P_Ctor  rng ty pats (CtorInfo cid _dc) ->
+                        PR_Ctor rng ty (map fmapRepr pats) cinfo'
+                          where cinfo' = LLCtorInfo cid (lookupCtorRepr cid) (map typeOf pats)
 
 -- }}}|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -408,69 +395,6 @@ tmpForExpr _              = ".x"
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||| Constructor Munging ||||||||||||||||||||{{{
-data CtorVariety ty = SingleCtorWrappingSameBoxityType CtorId Kind
-                    | AtMostOneNonNullaryCtor          [(CtorId, Int)] [(CtorId, Int)]
-                    | OtherCtorSituation               [(CtorId, Int)]
-
-ctorWrapsOneValueOfKind ctor kind =
-  case dataCtorTypes ctor of
-    [ty] -> kindOf ty `subkindOf` kind
-    _ -> False
-
-isNullaryCtor :: DataCtor ty -> Bool
-isNullaryCtor ctor = null (dataCtorTypes ctor)
-
-splitNullaryCtors :: [(CtorId, DataCtor ty, Int)] -> ( [CtorId], [CtorId] )
-splitNullaryCtors ctors =
-  ( [cid | (cid, ctor, _) <- ctors, not (isNullaryCtor ctor)]
-  , [cid | (cid, ctor, _) <- ctors,      isNullaryCtor ctor ] )
-
-classifyCtors :: Kinded ty => [(CtorId, DataCtor ty, Int)] -> Kind -> CtorVariety ty
-classifyCtors [(cid, ctor, _)] dtypeKind
-                    | ctorWrapsOneValueOfKind ctor dtypeKind
-                    = SingleCtorWrappingSameBoxityType cid dtypeKind
-classifyCtors ctors _ =
-    case splitNullaryCtors ctors of
-      -- The non-nullary ctor gets a small-int of zero (so it has "no tag"),
-      -- and the nullary ctors get the remaining values.
-      -- The representation can be in the low bits of the pointer.
-      ([nonNullaryCtor], nullaryCtors) | length nullaryCtors <= 7 ->
-           AtMostOneNonNullaryCtor  [ (nonNullaryCtor, 0) ] (zip nullaryCtors [1..])
-
-      ([],               nullaryCtors) | length nullaryCtors <= 8 ->
-           AtMostOneNonNullaryCtor  []                      (zip nullaryCtors [0..])
-
-      _ -> OtherCtorSituation [(cid, n) | (cid, _, n) <- ctors]
-
-pickDefaultCtorRepresesentations :: DataType t -> [(CtorId, CtorRepr)]
-pickDefaultCtorRepresesentations dtype =
-  withDataTypeCtors dtype (\cid _ctor n -> (cid, CR_Default n))
-
-optimizedCtorRepresesentations :: Kinded t => DataType t -> [(CtorId, CtorRepr)]
-optimizedCtorRepresesentations dtype =
-  let ctors = withDataTypeCtors dtype (\cid ctor n -> (cid, ctor, n)) in
-  case classifyCtors ctors (kindOf $ dataTypeName dtype) of
-    SingleCtorWrappingSameBoxityType cid KindAnySizeType ->
-      -- The constructor needs no runtime representation, nor casts...
-      [(cid, CR_TransparentU)]
-
-    SingleCtorWrappingSameBoxityType cid _ ->
-      -- The constructor needs no runtime representation...
-      [(cid, CR_Transparent)]
-
-    AtMostOneNonNullaryCtor [] nullaryCids ->
-      [(cid, CR_Nullary n) | (cid, n) <- nullaryCids]
-
-    AtMostOneNonNullaryCtor [nnCid] nullaryCids ->
-      [(cid, CR_Tagged  n) | (cid, n) <- [nnCid]] ++
-      [(cid, CR_Nullary n) | (cid, n) <- nullaryCids]
-
-    AtMostOneNonNullaryCtor _nnCids _nullaryCids ->
-      error $ "KNExpr.hs cannot yet handle multiple non-nullary ctors"
-
-    OtherCtorSituation cidns ->
-      [(cid, CR_Default n) | (cid, n) <- cidns]
-
 -- Produces a list of (K-normalized) functions, eta-expansions of each ctor.
 -- Specifically, given a data type T (A1::K1) ... (An::Kn) with
 --   constructor C (T1::KT1) .. (Tn::KTn), we emit a procedure with type
@@ -482,23 +406,22 @@ optimizedCtorRepresesentations dtype =
 -- while ``type case T3 (a:Boxed) of $T3C1 a``
 -- produces T3C1 :: forall b:Boxed, b -> T3 b
 --
-kNormalCtors :: Context TypeIL -> (CtorId -> CtorRepr) -> DataType TypeIL -> [KN (FnExprIL)]
-kNormalCtors ctx ctorRepr dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
+kNormalCtors :: Context TypeIL -> DataType TypeIL -> [KN (FnExprIL)]
+kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
   where
     kNormalCtor :: Context TypeIL -> DataType TypeIL -> DataCtor TypeIL
                 -> KN (FnExprIL)
-    kNormalCtor ctx datatype (DataCtor cname _tyformals tys range) = do
+    kNormalCtor ctx datatype (DataCtor cname _tyformals tys (Just repr) range) = do
       let dname = dataTypeName datatype
       let arity = Prelude.length tys
       let cid   = CtorId (typeFormalName dname) (T.unpack cname) arity
-      let rep   = ctorRepr cid
       let genFreshVarOfType t = do fresh <- knFresh ".autogen"
                                    return $ TypedId t fresh
       vars <- mapM genFreshVarOfType tys
       let ret tid = return
                Fn { fnVar   = tid
                   , fnVars  = vars
-                  , fnBody  = KNAppCtor resty (cid, rep) vars
+                  , fnBody  = KNAppCtor resty (cid, repr) vars
                   , fnIsRec = ()
                   , fnAnnot = annotForRange range
                   } where resty =

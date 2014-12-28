@@ -39,6 +39,18 @@ main = {
   // Do allocations separately so it's easier to see
   // which test-BLAH functions allocate and which don't.
   call-tests (C 1) (C 2) (C 3);
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ {
+        baz = { t : TP TU => k =>
+          expect_i32 k;
+          case t
+            of $E n -> print_i32 n;
+          end
+        };
+        test-baz = { baz (E:[TU] 0) 0 };
+        ()
+  });
 };
 
 call-tests = { c1 => c2 => c3 =>
@@ -53,9 +65,9 @@ call-tests = { c1 => c2 => c3 =>
 // Should result in an allocation.
 test-foo = { foo (C 0) 0 };
 
-foo = { t => k =>
+foo = { tfoo => k =>
   expect_i32 k;
-  case t
+  case tfoo
     of $C n -> print_i32 n;
   end
 };
@@ -63,27 +75,38 @@ foo = { t => k =>
 // Should not allocate
 test-bar = { bar (D 1) 1; };
 
-bar = { t => k =>
+bar = { tbar => k =>
   expect_i32 k;
-  case t
+  case tbar
     of $D n -> print_i32 n;
   end
 };
 
 // Also should not allocate
-test-baz = { baz (E 0) 0 };
-baz = { t : TP TU => k =>
+//test-baz = { baz (E 0) 0 };
+/*
+test-baz = { baz (E:[TB] 0) 0 };
+baz = { t : TP TB => k =>
   expect_i32 k;
   case t
+    of $E n -> print_i32 n;
+  end
+};
+*/
+
+test-baz = { baz (E 0) 0 };
+baz = { tbaz : TP () => k =>
+  expect_i32 k;
+  case tbaz
     of $E n -> print_i32 n;
   end
 };
 
 // Should not allocate
 test-oof = { c => n => oof (F c) n };
-oof = { t : TS => k =>
+oof = { toof : TS => k =>
   expect_i32 k;
-  case t
+  case toof
     of $F ($C n) -> print_i32 n;
   end
 };

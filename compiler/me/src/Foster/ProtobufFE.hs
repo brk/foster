@@ -367,7 +367,7 @@ parseDataType dt = do
       types <- mapM parseType (toList $ DataCtor.type' ct)
       let name  = pUtf8ToText $ DataCtor.name ct
       range <- parseRange (DataCtor.range ct) (T.unpack name)
-      return $ Foster.Base.DataCtor name tyf types range
+      return $ Foster.Base.DataCtor name tyf types Nothing range
 
 parseModule :: String -> String -> [Decl] -> [Defn]
             -> [DataType.DataType]

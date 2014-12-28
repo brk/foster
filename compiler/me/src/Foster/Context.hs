@@ -93,8 +93,8 @@ liftDataType f (DataType nm formals ctors srcrange) =
   liftM (\cs' ->DataType nm formals cs' srcrange) (mapM (liftDataCtor f) ctors)
 
 liftDataCtor :: Monad m => (t1 -> m t2) -> DataCtor t1 -> m (DataCtor t2)
-liftDataCtor f (DataCtor dataCtorName formals types range) = do
-  liftM (\tys-> DataCtor dataCtorName formals tys  range) (mapM f types)
+liftDataCtor f (DataCtor dataCtorName formals types repr range) = do
+  liftM (\tys-> DataCtor dataCtorName formals tys   repr range) (mapM f types)
 
 liftPrimOp f primop =
   case primop of
@@ -122,6 +122,7 @@ data TcEnv = TcEnv { tcEnvUniqs        :: IORef Uniq
                    , tcParents         :: [ExprAST TypeAST]
                    , tcMetaIntConstraints :: IORef (Map (MetaTyVar TypeTC) Int)
                    , tcSubsumptionConstraints :: IORef [(TypeTC, TypeTC)]
+                   , tcUseOptimizedCtorReprs :: Bool
                    }
 
 newtype Tc a = Tc (TcEnv -> IO (OutputOr a))
@@ -243,6 +244,8 @@ tcFresh s = tcFreshT (T.pack s)
 
 tcGetCurrentHistory :: Tc [ExprAST TypeAST]
 tcGetCurrentHistory = Tc $ \env -> do retOK $ Prelude.reverse $ tcParents env
+
+tcShouldUseOptimizedCtorReprs = Tc $ \env -> do retOK $ tcUseOptimizedCtorReprs env
 
 instance Ord (MetaTyVar ty) where
   compare m1 m2 = compare (mtvUniq m1) (mtvUniq m2)

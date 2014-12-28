@@ -263,6 +263,7 @@ message PbCtorRepr {
   }
   required Tag   tag = 1;
   optional int64 ctor_repr_tag = 2;
+  optional bool  is_boxed = 3;
 }
 
 message PbOccurrence {

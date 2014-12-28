@@ -44,7 +44,7 @@ import Foster.AnnExprIL(AIExpr(AILetFuns, AICall, E_AIVar), fnOf, ilOf,
                      convertDataTypeTC)
 import Foster.ILExpr(ILProgram, showILProgramStructure, prepForCodegen)
 import Foster.KNExpr(KNExpr', kNormalizeModule, knLoopHeaders, knSinkBlocks,
-                     knInline, kNormalize, knSize, renderKN, mkCtorReprFn)
+                     knInline, kNormalize, knSize, renderKN)
 import Foster.Typecheck
 import Foster.Context
 import Foster.CloConv(closureConvertAndLift, renderCC, CCBody(..))
@@ -272,7 +272,7 @@ typecheckModule verboseMode pauseOnErrors modast tcenv0 = do
 
    extractCtorTypes :: DataType TypeAST -> [(String, Either TypeAST TypeAST, CtorId)]
    extractCtorTypes dt = map nmCTy (dataTypeCtors dt)
-     where nmCTy dc@(DataCtor name tyformals types _range) =
+     where nmCTy dc@(DataCtor name tyformals types _repr _range) =
                  (T.unpack name, ctorTypeAST tyformals dtType types, cid)
                          where dtType = typeOfDataType dt name
                                cid    = ctorId (typeFormalName $ dataTypeName dt) dc
@@ -437,7 +437,8 @@ runCompiler pi_time wholeprog flagVals outfile = do
                       tcUnificationVars = varlist,
                               tcParents = [],
                    tcMetaIntConstraints = icmap,
-               tcSubsumptionConstraints = subcnst }
+               tcSubsumptionConstraints = subcnst,
+                tcUseOptimizedCtorReprs = getCtorOpt flagVals }
    (nc_time, mb_errs) <- time $ runErrorT $ evalStateT (compile wholeprog tcenv)
                     CompilerContext {
                            ccVerbose  = getVerboseFlag flagVals
@@ -561,12 +562,12 @@ lowerModule ai_mod ctx_il = do
      flags    <- gets ccFlagVals
      let donate = getInliningDonate flags
      let insize = getInliningSize   flags
-     let ctoropt = getCtorOpt       flags
+     let dtypes = moduleILdataTypes ai_mod ++ moduleILprimTypes ai_mod
+     let dtypeMap = Map.fromList [(typeFormalName (dataTypeName dt), dt) | dt <- dtypes]
 
-     let (_, ctorRepr) = mkCtorReprFn ai_mod ctoropt
-     let knorm = kNormalize ctorRepr -- For normalizing expressions in types.
+     let knorm = kNormalize dtypeMap -- For normalizing expressions in types.
 
-     kmod <- kNormalizeModule ai_mod ctx_il ctoropt
+     kmod <- kNormalizeModule ai_mod ctx_il dtypeMap
 
      whenDumpIR "kn" $ do
          putDocLn (outLn $ "vvvv k-normalized :====================")

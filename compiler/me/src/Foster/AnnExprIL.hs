@@ -13,10 +13,11 @@ import Foster.Kind
 import Foster.Context
 import Foster.AnnExpr
 import Foster.TypeTC
+import Foster.MainCtorHelpers(withDataTypeCtors)
 import Foster.Infer(parSubstTcTy)
 import Foster.Output(OutputOr(..))
 
-import qualified Data.Map as Map(lookup, toList)
+import qualified Data.Map as Map(Map, lookup, toList, fromList)
 
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T
@@ -254,7 +255,7 @@ ail ctx ae =
 
                 origExprType <- qt (typeOf e)
                 let ktvs = tyvarBindersOf origExprType
-                mapM_ (kindCheckSubsumption (rangeOf rng)) (zip ktvs argtys)
+                mapM_ (kindCheckSubsumption (rangeOf rng)) (zip3 ktvs raw_argtys (map kindOf argtys))
 
                 return $ E_AITyApp ti ae argtys
 
@@ -296,13 +297,13 @@ ailInt rng int ty = do
     _ -> do tcFails [text "Unable to assign integer literal the type" <+> pretty ty
                   ,string (highlightFirstLine rng)]
 
-kindCheckSubsumption :: SourceRange -> ((TyVar, Kind), TypeIL) -> Tc ()
-kindCheckSubsumption rng ((tv, kind), ty) = do
-  if kindOf ty `subkindOf` kind
+kindCheckSubsumption :: SourceRange -> ((TyVar, Kind), TypeTC, Kind) -> Tc ()
+kindCheckSubsumption rng ((tv, tvkind), ty, tykind) = do
+  if tykind `subkindOf` tvkind
     then return ()
     else tcFails [text $ "Kind mismatch:" ++ highlightFirstLine rng
-       ++ "Cannot instantiate type variable " ++ show tv ++ " of kind " ++ show kind
-       ++ "\nwith type " ++ show ty ++ " of kind " ++ show (kindOf ty)]
+       ++ "Cannot instantiate type variable " ++ show tv ++ " of kind " ++ show tvkind
+       ++ "\nwith type " ++ show ty ++ " of kind " ++ show tykind]
 
 coroPrimFor s | s == T.pack "coro_create" = Just $ CoroCreate
 coroPrimFor s | s == T.pack "coro_invoke" = Just $ CoroInvoke
@@ -358,11 +359,82 @@ convertDataTypeTC ctx (DataType dtName tyformals ctors range) = do
   -- f :: TypeAST -> Tc TypeIL
   let f = ilOf (extendTyCtx ctx $ map convertTyFormal tyformals)
   cts <- mapM (convertDataCtor f) ctors
-  return $ DataType dtName tyformals cts range
+
+  optrep <- tcShouldUseOptimizedCtorReprs
+  let dt = DataType dtName tyformals cts range
+  let reprMap = Map.fromList $ optimizedCtorRepresesentations dt
+  return $ dt { dataTypeCtors = withDataTypeCtors dt (getCtorRepr reprMap optrep) }
     where
-      convertDataCtor f (DataCtor dataCtorName tyformals types range) = do
+      convertDataCtor f (DataCtor dataCtorName tyformals types repr range) = do
         tys <- mapM f types
-        return $ DataCtor dataCtorName tyformals tys range
+        return $ DataCtor dataCtorName tyformals tys repr range
+
+      getCtorRepr :: Map.Map CtorId CtorRepr -> Bool -> CtorId -> DataCtor TypeIL -> Int -> DataCtor TypeIL
+      getCtorRepr _ _     _cid dc _n | Just _ <- dataCtorRepr dc = dc
+      getCtorRepr _ False _cid dc  n = dc { dataCtorRepr = Just (CR_Default n) }
+      getCtorRepr m True   cid dc  n = case Map.lookup cid m of
+                                         Just repr -> dc { dataCtorRepr = Just repr }
+                                         Nothing   -> dc { dataCtorRepr = Just (CR_Default n) }
+
+      optimizedCtorRepresesentations :: Kinded t => DataType t -> [(CtorId, CtorRepr)]
+      optimizedCtorRepresesentations dtype =
+        let ctors = withDataTypeCtors dtype (\cid ctor n -> (cid, ctor, n)) in
+        case classifyCtors ctors (kindOf $ dataTypeName dtype) of
+          SingleCtorWrappingSameBoxityType cid KindAnySizeType ->
+            -- The constructor needs no runtime representation, nor casts...
+            [(cid, CR_TransparentU)]
+
+          SingleCtorWrappingSameBoxityType cid _ ->
+            -- The constructor needs no runtime representation...
+            [(cid, CR_Transparent)]
+
+          AtMostOneNonNullaryCtor [] nullaryCids ->
+            [(cid, CR_Nullary n) | (cid, n) <- nullaryCids]
+
+          AtMostOneNonNullaryCtor [nnCid] nullaryCids ->
+            [(cid, CR_Tagged  n) | (cid, n) <- [nnCid]] ++
+            [(cid, CR_Nullary n) | (cid, n) <- nullaryCids]
+
+          AtMostOneNonNullaryCtor _nnCids _nullaryCids ->
+            error $ "KNExpr.hs cannot yet handle multiple non-nullary ctors"
+
+          OtherCtorSituation cidns ->
+            [(cid, CR_Default n) | (cid, n) <- cidns]
+
+      ctorWrapsOneValueOfKind ctor kind =
+        case dataCtorTypes ctor of
+          [ty] -> kindOf ty `subkindOf` kind
+          _ -> False
+
+      isNullaryCtor :: DataCtor ty -> Bool
+      isNullaryCtor ctor = null (dataCtorTypes ctor)
+
+      splitNullaryCtors :: [(CtorId, DataCtor ty, Int)] -> ( [CtorId], [CtorId] )
+      splitNullaryCtors ctors =
+        ( [cid | (cid, ctor, _) <- ctors, not (isNullaryCtor ctor)]
+        , [cid | (cid, ctor, _) <- ctors,      isNullaryCtor ctor ] )
+
+      classifyCtors :: Kinded ty => [(CtorId, DataCtor ty, Int)] -> Kind -> CtorVariety ty
+      classifyCtors [(cid, ctor, _)] dtypeKind
+                          | ctorWrapsOneValueOfKind ctor dtypeKind
+                          = SingleCtorWrappingSameBoxityType cid dtypeKind
+      classifyCtors ctors _ =
+          case splitNullaryCtors ctors of
+            -- The non-nullary ctor gets a small-int of zero (so it has "no tag"),
+            -- and the nullary ctors get the remaining values.
+            -- The representation can be in the low bits of the pointer.
+            ([nonNullaryCtor], nullaryCtors) | length nullaryCtors <= 7 ->
+                 AtMostOneNonNullaryCtor  [ (nonNullaryCtor, 0) ] (zip nullaryCtors [1..])
+
+            ([],               nullaryCtors) | length nullaryCtors <= 8 ->
+                 AtMostOneNonNullaryCtor  []                      (zip nullaryCtors [0..])
+
+            _ -> OtherCtorSituation [(cid, n) | (cid, _, n) <- ctors]
+
+
+data CtorVariety ty = SingleCtorWrappingSameBoxityType CtorId Kind
+                    | AtMostOneNonNullaryCtor          [(CtorId, Int)] [(CtorId, Int)]
+                    | OtherCtorSituation               [(CtorId, Int)]
 
 -- For datatypes which have been annotated as being unboxed (and are eligible
 -- to be so represented), we want to convert from a "data type name reference"
@@ -473,10 +545,10 @@ ilOfCtorInfo ctx (CtorInfo id dc) = do
   return $ CtorInfo id dc'
 
 ilOfDataCtor :: Context TypeTC -> DataCtor TypeTC -> Tc (DataCtor TypeIL)
-ilOfDataCtor ctx (DataCtor nm tyformals tys range) = do
+ilOfDataCtor ctx (DataCtor nm tyformals tys repr range) = do
   let extctx = extendTyCtx ctx (map convertTyFormal tyformals)
   tys' <- mapM (ilOf extctx) tys
-  return $ DataCtor nm tyformals tys' range
+  return $ DataCtor nm tyformals tys' repr range
 
 
 
@@ -514,7 +586,8 @@ instance Show TypeIL where
                                       ++ joinWith " " ("":map show types) ++ ")"
         PrimIntIL size       -> "(PrimIntIL " ++ show size ++ ")"
         PrimFloat64IL        -> "(PrimFloat64IL)"
-        TupleTypeIL _bx typs -> "(" ++ joinWith ", " (map show typs) ++ ")"
+        TupleTypeIL KindPointerSized typs ->  "(" ++ joinWith ", " (map show typs) ++ ")"
+        TupleTypeIL KindAnySizeType  typs -> "#(" ++ joinWith ", " (map show typs) ++ ")"
         FnTypeIL   s t cc cs -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
         CoroTypeIL s t       -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
         ForAllIL ktvs rho    -> "(ForAll " ++ show ktvs ++ ". " ++ show rho ++ ")"

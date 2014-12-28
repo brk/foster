@@ -486,6 +486,7 @@ bytesCmpAlt = { b1 => b2 =>
   go 0
 };
 
+/*
 bytesDescribe :: { Bytes => Text };
 bytesDescribe = { bytes =>
   #associate   a `mkTextConcat` b `mkTextConcat` c
@@ -507,4 +508,5 @@ bytesDescribe = { bytes =>
   end
   end
 };
+*/
 

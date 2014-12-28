@@ -283,11 +283,21 @@ struct LLCall : public LLExpr {
 struct CtorRepr {
   bool isTransparent;
   bool isNullary;
+  bool isBoxed;
   int64_t smallId; // small in the common case, at least,
                    // but must be large enough to fit any integer
                    // constant that might be pattern-matched against.
-  CtorRepr() : isTransparent(false), isNullary(false), smallId(0) { }
+  CtorRepr() : isTransparent(false), isNullary(false), isBoxed(true), smallId(0) { }
 };
+
+inline std::string str(const CtorRepr& r) {
+  std::string rv;
+  if (r.isTransparent) rv += "Transparent";
+  if (r.isNullary) rv += "Nullary";
+  if (!r.isTransparent && !r.isNullary) rv += "Default";
+  if (r.isBoxed) rv += "Boxed"; else rv += "Unboxed";
+  return rv;
+}
 
 struct CtorId {
   string typeName;

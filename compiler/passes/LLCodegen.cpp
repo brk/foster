@@ -1196,13 +1196,17 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
       if (v->getType()->isPointerTy()) {
         v = emitBitcast(v, ptrTo(ctors[i].ctorStructType->getLLVMType()));
       } else {
-        EDiag() << "not bitcasting for occ because of type mismatch between"
-                        << str(v) << " and ptr to " << str(ctors[i].ctorStructType);
+        const CtorRepr& r = ctors[i].ctorId.ctorRepr;
+        if (r.isTransparent && !r.isBoxed) {
+        } else {
+          EDiag() << "not bitcasting for occ with repr " << str(ctors[i].ctorId.ctorRepr) << " because of type mismatch between"
+                  << str(v) << " :: " << str(v->getType()) << " and ptr to " << str(ctors[i].ctorStructType);
+        }
       }
     }
 
-    if (ctors[i].ctorId.ctorRepr.isTransparent) {
-      emitFakeComment("eliding dereference due to transparent ctor representation");
+    if (ctors[i].ctorId.ctorRepr.isTransparent && ctors[i].ctorId.ctorRepr.isBoxed) {
+      emitFakeComment("eliding dereference due to transparent ctor representation of " + ctors[i].ctorId.ctorName);
       continue;
     }
 

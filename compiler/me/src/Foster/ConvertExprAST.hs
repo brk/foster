@@ -9,10 +9,10 @@ import Control.Monad.State(liftM, liftM2, liftM3)
 convertModule :: (Show a, Show b) =>
                  (a -> Tc b) -> ModuleAST FnAST a -> Tc (ModuleAST FnAST b)
 convertModule f (ModuleAST hash funs decls dts lines primdts) = do
-         funs'  <- mapM (convertFun      f) funs
-         decls' <- mapM (convertDecl     f) decls
-         prims' <- mapM (convertDataType f) primdts
-         dts'   <- mapM (convertDataType f) dts
+         funs'  <- mapM (convertFun          f) funs
+         decls' <- mapM (convertDecl         f) decls
+         prims' <- mapM (convertDataTypeAST f) primdts
+         dts'   <- mapM (convertDataTypeAST f) dts
          return $ ModuleAST hash funs' decls' dts' lines prims'
 
 convertVar f (TypedId t i) = do ty <- f t
@@ -27,15 +27,15 @@ convertFun f (FnAST rng nm tyformals formals body toplevel) = do
 convertDecl :: Monad m => (a -> m b) -> (String, a) -> m (String, b)
 convertDecl f (s, ty) = do t <- f ty ; return (s, t)
 
-convertDataType :: (Show a, Show b) =>
+convertDataTypeAST :: (Show a, Show b) =>
                    (a -> Tc b) -> DataType a -> Tc (DataType b)
-convertDataType f (DataType dtName tyformals ctors range) = do
+convertDataTypeAST f (DataType dtName tyformals ctors range) = do
   cts <- mapM convertDataCtor ctors
   return $ DataType dtName tyformals cts range
     where
-      convertDataCtor (DataCtor dataCtorName formals types range) = do
+      convertDataCtor (DataCtor dataCtorName formals types repr range) = do
         tys <- mapM f types
-        return $ DataCtor dataCtorName formals tys range
+        return $ DataCtor dataCtorName formals tys repr range
 
 convertEVar f (VarAST mt name) = do ft <- mapMaybeM f mt; return $ VarAST ft name
 

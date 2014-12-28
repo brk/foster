@@ -437,6 +437,7 @@ instance Pretty t => Pretty (DataType t) where
 prettyDataTypeCtor dc =
   text "of" <+> text "$" <> text (T.unpack $ dataCtorName dc)
                         <+> hsep (map pretty (dataCtorTypes dc))
+                        <+> text "// repr:" <+> text (show (dataCtorRepr dc))
 
 pr YesTail = "(tail)"
 pr NotTail = "(non-tail)"

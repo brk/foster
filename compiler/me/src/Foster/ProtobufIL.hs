@@ -482,6 +482,7 @@ dumpCtorRepr _ (CR_Transparent) =
 
 dumpCtorRepr _ (CR_TransparentU) =
     P'.defaultValue { PbCtorRepr.tag = CR_TRANSPARENT
+                    , PbCtorRepr.is_boxed = Just False
                     }
 
 dumpCtorRepr _ (CR_Nullary ciid) =
@@ -554,15 +555,15 @@ dumpILProgramToProtobuf m outpath = do
                         , PbType.ctor = fromList $ fmap dumpDataCtor ctors
                         }
      where
-        dumpDataCtor (DataCtor ctorName _tyformals types _range) =
+        dumpDataCtor (DataCtor ctorName _tyformals types _repr _range) =
           PbDataCtor { PbDataCtor.name  = textToPUtf8 ctorName
                      , PbDataCtor.type' = fromList $ map dumpType types
                      }
 
-    dumpDataType (TypeFormal _dtName _sr KindAnySizeType) [DataCtor _nm [] [ty] _range] =
+    dumpDataType (TypeFormal _dtName _sr KindAnySizeType) [DataCtor _nm [] [ty] _repr _range] =
         dumpType ty
 
-    dumpDataType (TypeFormal _dtName _sr KindAnySizeType) [DataCtor _nm []  tys _range] =
+    dumpDataType (TypeFormal _dtName _sr KindAnySizeType) [DataCtor _nm []  tys _repr _range] =
         dumpType (LLStructType tys)
 
     dumpDataType (TypeFormal dtName _sr KindAnySizeType) ctors =
