@@ -1418,7 +1418,7 @@ namespace foster {
     sprintf(hashcstr, "%08" PRIx64 "%08" PRIx64,
                      Uint128Low64(hash), Uint128High64(hash));
     std::string hashstr(hashcstr);
-    printf("Hash of file %s is %s\n", getShortName(&file).c_str(), hashcstr);
+    //printf("Hash of file %s is %s\n", getShortName(&file).c_str(), hashcstr);
 
     ANTLRContext* ctx = new ANTLRContext();
     createParser(*ctx, file);
@@ -1459,7 +1459,7 @@ namespace foster {
                                       pending_imports.pop();
       std::string localname = imp.first;
       std::string imp_path  = imp.second;
-      std::cout << "pending import: " << imp.first << " " << imp.second << std::endl;
+      //std::cout << "pending import: " << imp.first << " " << imp.second << std::endl;
       if (foster::InputFile* f = resolveModulePath(searchPaths, imp_path)) {
         parseModule(pgm, *f, outNumANTLRErrors, pending_imports);
       } else {

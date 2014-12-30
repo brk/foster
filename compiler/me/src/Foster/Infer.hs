@@ -114,12 +114,14 @@ tcUnifyThings thing1 thing2 errAction = do
 -- expects functions but ``Cons`` and ``Nil`` are procs.  Later on we'll
 -- detect such mismatches and insert thunks to mediate the disconnect.
 tcUnifyFT uft1 uft2 = tcUnifyThings uft1 uft2
-     (\_ _ -> tcLift $ putDoc $ text "WARNING: unable to unify disparate proc/func annotations" <> line)
+     (\_ _ -> tcWhenVerbose $
+        tcLift $ putDoc $ text "WARNING: unable to unify disparate proc/func annotations" <> line)
 
 -- Likewise, code like ``run-it read_i32`` will cause a CCC/FastCC mismatch,
 -- which will be papered over with a proc wrapper.
 tcUnifyCC ucc1 ucc2 = tcUnifyThings ucc1 ucc2
-     (\_ _ -> tcLift $ putDoc $ text "WARNING: unable to unify disparate calling conventions" <> line)
+     (\_ _ -> tcWhenVerbose $
+        tcLift $ putDoc $ text "WARNING: unable to unify disparate calling conventions" <> line)
 
 tcUnifyKinds uk1 uk2 = tcUnifyThings uk1 uk2
      (\k1 k2 -> tcFails [text "Unable to unify kinds " <> pretty k1 <+> text "and" <+> pretty k2])

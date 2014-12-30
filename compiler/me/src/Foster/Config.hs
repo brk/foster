@@ -29,6 +29,7 @@ data CompilerContext = CompilerContext {
       , ccInline    :: Bool
       , ccDumpFns   :: [String]
       , ccSMTStats  :: IORef (Int, [(Double, Double)])
+      , ccCFGSizes  :: IORef [(String, (Int, Int), (Int, Int) )]
 }
 
 type CompilerFailures = [Doc]
@@ -43,6 +44,11 @@ ccUniq = do uref <- gets ccUniqRef
 ccFreshId :: T.Text -> Compiled Ident
 ccFreshId txt = do u <- ccUniq
                    return $ Ident txt u
+
+ccRecordCFGSizes :: (String, (Int, Int), (Int, Int)) -> Compiled ()
+ccRecordCFGSizes entry = do
+  r <- gets ccCFGSizes
+  liftIO $ modIORef' r (entry:)
 
 -- `time` from Criterion.Measurement, for actions wrapping IO.
 ioTime :: MonadIO m => m a -> m (Double, a)

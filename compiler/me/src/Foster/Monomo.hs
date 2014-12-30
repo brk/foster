@@ -230,7 +230,7 @@ monoKN subst inTypeExpr e =
 
 -- TODO this probably needs to traverse inside types to find refinements...
 substRefinementArgs _v (RefinedType v e args) xs =
-    trace ("subst in call to " ++ show _v ++ " ..... " ++ show args ++ " with " ++ show xs) $
+    --trace ("subst in call to " ++ show _v ++ " ..... " ++ show args ++ " with " ++ show xs) $
                        RefinedType v (knSubst (Map.fromList (zip args (map tidIdent xs))) e) args
 substRefinementArgs _a t _xs = t
 

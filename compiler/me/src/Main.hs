@@ -203,8 +203,10 @@ typecheckModule verboseMode pauseOnErrors modast tcenv0 = do
     let declBindings = computeContextBindings' (moduleASTdecls modast) ++
                        computeContextBindings nonNullCtors
     let nullCtorBindings = computeContextBindings nullCtors
-    putDocLn $ (outLn "vvvv declBindings:====================")
-    putDocLn $ (dullyellow (vcat $ map (text . show) declBindings))
+
+    when verboseMode $ do
+        putDocLn $ (outLn "vvvv declBindings:====================")
+        putDocLn $ (dullyellow (vcat $ map (text . show) declBindings))
 
     case detectDuplicates $ map fnAstName fns of
       [] -> do
@@ -432,13 +434,15 @@ runCompiler pi_time wholeprog flagVals outfile = do
    subcnst <- newIORef []
    icmap   <- newIORef Map.empty
    smtStatsRef <- newIORef (0, [])
+   cfgSizesRef <- newIORef []
 
    let tcenv = TcEnv {       tcEnvUniqs = uniqref,
                       tcUnificationVars = varlist,
                               tcParents = [],
                    tcMetaIntConstraints = icmap,
                tcSubsumptionConstraints = subcnst,
-                tcUseOptimizedCtorReprs = getCtorOpt flagVals }
+                tcUseOptimizedCtorReprs = getCtorOpt flagVals,
+                          tcVerboseMode = getVerboseFlag flagVals }
    (nc_time, mb_errs) <- time $ runErrorT $ evalStateT (compile wholeprog tcenv)
                     CompilerContext {
                            ccVerbose  = getVerboseFlag flagVals
@@ -447,6 +451,7 @@ runCompiler pi_time wholeprog flagVals outfile = do
                          , ccInline   = getInlining flagVals
                          , ccUniqRef  = uniqref
                          , ccSMTStats = smtStatsRef
+                         , ccCFGSizes = cfgSizesRef
                     }
 
    case mb_errs of
@@ -548,7 +553,6 @@ typecheckSourceModule tcenv sm = do
     verboseMode <- gets ccVerbose
     flags <- gets ccFlagVals
     let pauseOnErrors = getInteractiveFlag flags
-    liftIO $ putStrLn $ "Verbose mode: " ++ show verboseMode
     (ctx_il, ai_mod) <- (liftIO $ typecheckModule verboseMode pauseOnErrors sm tcenv)
                       >>= dieOnError
     showGeneratedMetaTypeVariables (tcUnificationVars tcenv) ctx_il

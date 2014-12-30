@@ -123,6 +123,7 @@ data TcEnv = TcEnv { tcEnvUniqs        :: IORef Uniq
                    , tcMetaIntConstraints :: IORef (Map (MetaTyVar TypeTC) Int)
                    , tcSubsumptionConstraints :: IORef [(TypeTC, TypeTC)]
                    , tcUseOptimizedCtorReprs :: Bool
+                   , tcVerboseMode           :: Bool
                    }
 
 newtype Tc a = Tc (TcEnv -> IO (OutputOr a))
@@ -155,6 +156,10 @@ tcOnError (Just o) m k = Tc $ \env -> do result <- unTc env m
                                          case result of
                                            OK expr -> unTc env (k expr)
                                            Errors ss -> return (Errors (o:ss))
+
+tcWhenVerbose :: Tc () -> Tc ()
+tcWhenVerbose action = Tc $ \env ->
+  if tcVerboseMode env then unTc env action else retOK ()
 
 tcLift :: IO a -> Tc a
 tcLift action = Tc $ \_env -> action >>= retOK
@@ -260,8 +265,7 @@ instance Show (MetaTyVar TypeTC)  where show m = show (MetaTyVarTC m)
 tcApplyIntConstraints :: Tc ()
 tcApplyIntConstraints = Tc $ \env -> do
   map <- readIORef (tcMetaIntConstraints env)
-  mapM_ (\(m, neededBits) -> do putStrLn $ "applying int constraint: " ++ show m ++ " ~ " ++ show neededBits
-                                writeIORef (mtvRef m)
+  mapM_ (\(m, neededBits) -> do writeIORef (mtvRef m)
                                     (Just $ PrimIntTC (sizeOfBits neededBits)))
         (Map.toList map)
   retOK ()

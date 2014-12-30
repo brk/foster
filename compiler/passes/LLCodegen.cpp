@@ -1271,7 +1271,7 @@ bool matchesExceptForUnknownPointers(Type* aty, Type* ety) {
   return true;
 }
 
-llvm::Value* emitFnArgCoercions(llvm::Value* argV, llvm::Type* expectedType) {
+llvm::Value* emitFnArgCoercions(Value* argV, llvm::Type* expectedType, Value* FV) {
   // This is a an artifact produced by the mutual recursion
   // of the environments of mutually recursive closures.
   if (  argV->getType() != expectedType
@@ -1284,7 +1284,8 @@ llvm::Value* emitFnArgCoercions(llvm::Value* argV, llvm::Type* expectedType) {
   // This occurs in polymorphic code.
   if ((argV->getType() != expectedType)
       && matchesExceptForUnknownPointers(argV->getType(), expectedType)) {
-    DDiag() << "matched " << str(argV->getType()) << " to " << str(expectedType);
+    // Example: matched { i64, [0 x i8] }* to %struct.foster_bytes* in call to prim_print_bytes_stdout
+    //DDiag() << "matched " << str(argV->getType()) << " to " << str(expectedType) << " in call to " << FV->getName();
     argV = emitBitcast(argV, expectedType, "spec2gen");
   }
 
@@ -1330,7 +1331,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   for (size_t i = 0; i < this->args.size(); ++i) {
     llvm::Type* expectedType = FT->getParamType(valArgs.size());
     llvm::Value* argV = this->args[i]->codegen(pass);
-    argV = emitFnArgCoercions(argV, expectedType);
+    argV = emitFnArgCoercions(argV, expectedType, FV);
     assertValueHasExpectedType(argV, expectedType, FV);
     valArgs.push_back(argV);
   }

@@ -580,7 +580,7 @@ availsRewrite = mkFRewrite d
                 --             ...
                 --             o0 = v0   <<<<
                 ([(n, _)], [vs]) -> let vk = vs !! n in
-                                    trace ("replacing occ " ++ show (tidIdent v) ++ "&" ++ show n ++ " with " ++ show vk)
+                                    --trace ("replacing occ " ++ show (tidIdent v) ++ "&" ++ show n ++ " with " ++ show vk)
                                       (return $ Just $ mkMiddle $ CCRebindId (text "static tuple lookup")
                                                                              (TypedId (tidType vk) id)  vk)
                 _ -> return Nothing

@@ -46,6 +46,8 @@ optimizeCFFn r fn = do
                      -- ,runLiveness
                       ]
 
+  -- Depth-first optimization: first optimize every sub-function,
+  -- then work on the function body itself.
   bbg  <- mapFunctions (optimizeCFFn r) (fnBody fn)
   bbgs <- liftIO $ scanlM (\bbg opt -> opt uref bbg) bbg optimizations
 
@@ -53,9 +55,6 @@ optimizeCFFn r fn = do
                         (nubBy sndEq $ zip [1..] $ map (show . pretty) bbgs)
        where sndEq (_, a) (_, b) = a == b
              annotate (n, s) = s ++ "\n        (stage " ++ show n ++ ")"
-
-  when True $ liftIO $ do
-      putStrLn $ " CFG size was " ++ show (cfgSize bbg) ++ " for " ++ show (tidIdent $ fnVar fn)
 
   when (fn `isWanted` wantedFns) $ liftIO $ do
       putStrLn "BEFORE/AFTER"
@@ -70,6 +69,7 @@ optimizeCFFn r fn = do
       Boxes.printBox $ catboxes $ map blockGraph $
                          preorder_dfs $ mkLast (jumpTo bbg') |*><*| bbgBody bbg'
 
+  ccRecordCFGSizes (show (tidIdent $ fnVar fn), cfgSize bbg, cfgSize bbg' )
 
   return $ fn { fnBody = bbg' }
     where
