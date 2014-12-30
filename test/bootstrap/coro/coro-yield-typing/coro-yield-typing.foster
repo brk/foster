@@ -25,6 +25,7 @@ main = {
          print_i32 5555555;
          force_gc_for_debugging_purposes !;
          print_i32 6666666;
+         // This should be a type error but it isn't yet.
          coro_yield:[Int32,{Int32}] { 7777 };
          9999
   };

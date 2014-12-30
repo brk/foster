@@ -24,13 +24,14 @@ import Data.Bits
 import Data.Char(toUpper)
 import Data.IORef(IORef, readIORef, newIORef)
 import Data.Array
-import Numeric
+import Numeric(showHex)
 import qualified Data.ByteString as BS
 import Text.Printf(printf)
 import Text.PrettyPrint.ANSI.Leijen
 import Criterion.Measurement(getTime, secs)
 
 import Control.Exception(assert)
+import System.Timeout(timeout)
 
 import Foster.Base
 import Foster.AnnExprIL(TypeIL(..))
@@ -72,11 +73,17 @@ interpretKNormalMod kmod tmpDir cmdLineArgs = do
   _ <- writeFile (outFile globalState) ""
   _ <- writeFile (errFile globalState) ""
 
+  let fiveSeconds = 5 * 1000 * 1000
   stepsTaken <- newIORef 0
-  val <- interpret stepsTaken globalState
+  mbval <- timeout fiveSeconds $ interpret stepsTaken globalState
   numSteps <- readIORef stepsTaken
-  putStrLn ("Interpreter finished in " ++ show numSteps ++ " steps.")
-  return val
+  case mbval of
+    Just val -> do
+      putStrLn ("Interpreter finished in " ++ show numSteps ++ " steps.")
+      return $ Just val
+    Nothing -> do
+      putStrLn ("Interpreter timed out after " ++ show numSteps ++ " steps.")
+      return Nothing
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||||||  Running  |||||||||||||||||||||||||{{{
@@ -280,6 +287,7 @@ ssTermOfExpr expr =
                                                                 |CaseArm p e g b r <- bs] []
     KNAppCtor     _t cr vs -> SSTmExpr  $ IAppCtor (fst cr) (map idOf vs)
     KNKillProcess _t msg   -> SSTmExpr  $ error $ "prim kill-process: " ++ T.unpack msg
+    KNCompiles {} -> SSTmValue $ SSBool True -- TODO maybe have __COMPILES__ take a default parameter for us to return?
 
 arrEntry (Right var) = SSTmExpr $ IVar $ tidIdent var
 arrEntry (Left (LitInt lit)) = SSTmValue $ SSInt $ litIntValue lit
@@ -790,11 +798,17 @@ evalPrimitiveIntOp _  sext [SSInt i] | "sext_" `isPrefixOf` sext = SSInt i
 evalPrimitiveIntOp sz zext [SSInt i] | "zext_" `isPrefixOf` zext = SSInt (unsigned (intSizeOf sz) i)
 
 evalPrimitiveIntOp I32 "sitofp_f64"     [SSInt i] = SSFloat (fromIntegral i)
+evalPrimitiveIntOp I32 "uitofp_f64"     [SSInt i] = SSFloat (fromIntegral i)
 evalPrimitiveIntOp I32 "fptosi_f64_i32" [SSFloat f] =
   let ft = truncate f in
   let fi = toInteger (trunc32 ft) in
   if ft == fi then SSInt fi
               else error $ "Smallstep.fptosi: Can't fit in an Int32: " ++ show f
+evalPrimitiveIntOp I32 "fptoui_f64_i32" [SSFloat f] =
+  let ft = truncate f in
+  let fi = toInteger (trunc32 ft) in
+  if ft == fi then SSInt fi
+              else error $ "Smallstep.fptoui: Can't fit in an Int32: " ++ show f
 
 evalPrimitiveIntOp size opName args =
   error $ "Smallstep.evalPrimitiveIntOp " ++ show size ++ " " ++ opName ++ " " ++ show args
@@ -831,12 +845,12 @@ packBytes gs a n = let locs = List.take (fromInteger n) (elems a) in
 
 evalNamedPrimitive :: String -> MachineState -> [SSValue] -> IO MachineState
 
-evalNamedPrimitive primName gs [val] | isPrintFunction primName =
-      do printStringNL gs (display val)
+evalNamedPrimitive primName gs [val] | Just fmt <- isPrintFunction primName =
+      do printStringNL gs (fmt val)
          return $ withTerm gs unit
 
-evalNamedPrimitive primName gs [val] | isExpectFunction primName =
-      do expectStringNL gs (display val)
+evalNamedPrimitive primName gs [val] | Just fmt <- isExpectFunction primName =
+      do expectStringNL gs (fmt val)
          return $ withTerm gs unit
 
 evalNamedPrimitive primName gs [SSInt i] | Just act <- lookupPrintInt i primName
@@ -970,7 +984,7 @@ isSameArray (SSArray a) (SSArray b) =
 isSameArray _ _ = False
 
 lookupPrintInt :: Integer -> String -> Maybe (MachineState -> IO ())
-lookupPrintInt i  "print_i64_bare" = Just (\gs -> printString   gs (showBits 64 i))
+lookupPrintInt i  "print_i64_bare" = Just (\gs -> printString   gs (showSigned 64 i))
 lookupPrintInt i  "print_i64b" =    Just (\gs ->  printStringNL gs (showBits 64 i))
 lookupPrintInt i "expect_i64b" =    Just (\gs -> expectStringNL gs (showBits 64 i))
 lookupPrintInt i  "print_i32b" =    Just (\gs ->  printStringNL gs (showBits 32 i))
@@ -991,6 +1005,15 @@ lookupPrintInt _ _ = Nothing
 
 showHexy :: (Integral x, Show x) => x -> x -> String
 showHexy bitwidth n = showHex (unsigned bitwidth n) "_16"
+
+showSigned :: Integer -> Integer -> String
+showSigned bitwidth n =
+  let maxpos = 2 ^ (bitwidth - 1)
+      maxnat = 2 ^ bitwidth in
+  case (n >= maxpos, n < -maxpos) of
+    (True, _) -> showSigned bitwidth $ n - maxnat
+    (_, True) -> showSigned bitwidth $ n + maxnat
+    _ -> show n
 
 unsigned bitwidth n = if n >= 0 then n else (2 ^ bitwidth) + n
 
@@ -1107,19 +1130,19 @@ showBits k n = -- k = 32, for example
 
 isPrintFunction name =
   case name of
-    "print_i64"  -> True
-    "print_i32"  -> True
-    "print_i8"   -> True
-    "print_i1"   -> True
-    _ -> False
+    "print_i64"  -> Just $ \(SSInt i) -> showSigned 64 i
+    "print_i32"  -> Just $ \(SSInt i) -> showSigned 32 i
+    "print_i8"   -> Just $ \(SSInt i) -> showSigned 8  i
+    "print_i1"   -> Just $ display
+    _ -> Nothing
 
 isExpectFunction name =
   case name of
-    "expect_i64" -> True
-    "expect_i32" -> True
-    "expect_i8"  -> True
-    "expect_i1"  -> True
-    _ -> False
+    "expect_i64" -> Just $ \(SSInt i) -> showSigned 64 i
+    "expect_i32" -> Just $ \(SSInt i) -> showSigned 32 i
+    "expect_i8"  -> Just $ \(SSInt i) -> showSigned 8  i
+    "expect_i1"  -> Just $ display
+    _ -> Nothing
 
 display :: SSValue -> String
 display (SSBool True )  = "true"

@@ -20,7 +20,7 @@ main = {
   lst =(Cons ({ 0 }, { 0 })
        (Cons ({ 1 }, { 1 })
        (Cons ({ 2 }, { 2 })
-       (Cons ({ 4 }, { 4 })
+       (Cons ({ 4 }, { -4 })
        (Cons ({ 5 }, { 5 })
        (Cons ({ 6 }, { 6 })
        (Cons ({ 1 }, { 7 })
@@ -35,10 +35,10 @@ main = {
   shw = { kf => vf => shwTextPair (tmp_Text_of_Int64 (kf !))
                                   (tmp_Text_of_Int64 (vf !)) };
 
-  expect_text "[(0,0), (1,1), (2,2), (4,4), (5,5), (6,6), (1,7), ]";
+  expect_text "[(0,0), (1,1), (2,2), (4,-4), (5,5), (6,6), (1,7), ]";
   print_pbil lst;
 
-  expect_text "[(0,0), (1,7), (2,2), (4,4), (5,5), (6,6), ]";
+  expect_text "[(0,0), (1,7), (2,2), (4,-4), (5,5), (6,6), ]";
   print_pbil (mapToList (mapOfList lst cmp));
 
 };
