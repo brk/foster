@@ -169,10 +169,11 @@ reference the symbols they import.
 
 Once LLVM ``Module``\s have been generated for each module imported by Foo, the
 final stages of the driver pipeline take over:
-  * The entire collection of ``Module``\s are linked and (re-)optimized
-  * then spit out to a ``.s`` and/or a ``.o``
-  * and finally linked to any native libraries (``.a``/``.o``/``.lib``/``.so``)
-  * producing a native executable
+
+* The entire collection of ``Module``\s are linked and (re-)optimized
+* then spit out to a ``.s`` and/or a ``.o``
+* and finally linked to any native libraries (``.a``/``.o``/``.lib``/``.so``)
+* producing a native executable
 
 
 .. Who is responsible for searching the file system to find module impls?
@@ -368,18 +369,19 @@ conversion to bind variables from the environment via a tuple pattern match.
 
 Later, the middle-end learned to build CFGs on its own.
 The play between pattern matching and the CFG was this:
- * When converting pattern matches in K-normal-form expressions,
-   placeholder CFG block identifiers would be generated for the leaves
-   of the decision tree. Each such block would compute the appropriate
-   case arm's body expression value and jump to the continuation of the
-   pattern match.
- * The resulting case expression, with block identifiers substituted for the
-   case arm body expressions, was used as a terminator in the CFG.
- * Later on, pattern match compilation would build decision trees from nested
-   pattern matches.
- * These decision trees, in turn, would be compiled to further CFG
-   structure, primarily to wrap the placeholder blocks with CFG nodes
-   to introduce the bindings scoped over the expression body.
+
+* When converting pattern matches in K-normal-form expressions,
+  placeholder CFG block identifiers would be generated for the leaves
+  of the decision tree. Each such block would compute the appropriate
+  case arm's body expression value and jump to the continuation of the
+  pattern match.
+* The resulting case expression, with block identifiers substituted for the
+  case arm body expressions, was used as a terminator in the CFG.
+* Later on, pattern match compilation would build decision trees from nested
+  pattern matches.
+* These decision trees, in turn, would be compiled to further CFG
+  structure, primarily to wrap the placeholder blocks with CFG nodes
+  to introduce the bindings scoped over the expression body.
 
 Unfortunately this scheme doesn't extend well to efficient compilation of
 guarded pattern matching. The reason is that when generating the initial CFG,
@@ -429,28 +431,31 @@ to determine what the "small id" of the constructor is. In theory
 There are a few representation optimizations that can be made in
 specific situations:
 
-  * (aka strict newtype) If T has a single constructor with a single field of the same
-    boxity as T itself, then C needs no direct runtime representation
-    (modulo perhaps maintaining metadata for debugging).
-      * This optimization also applies when T has at most one non-nullary ctor, but
-        **only** if the wrapped type in turn contains no nullary ctors.
-  * (aka c-like-struct) If T has a single constructor, it is eligible for unboxed
-    representation in certain situations, such as ref update...
-  * If the GC can handle pointers to static data, the constant constructors could be
-    made to point at preallocated values. This saves an allocation and keeps the
-    representation simple and uniform.
-  * If T has several non-nullary constructors, they (up to 8 of them = 3 bits, keeping
-    one bit spare for other purposes) can be represented as tagged pointers.
-    Tagging pointers implies that pattern matching is faster
-    (because it can sometimes avoid cache misses/memory indirection hits)
-    at the cost of a few extra ALU operations.
-  * If T has at most one non-nullary constructor, then the nullary constructors could
-    be represented as tagged null pointers (i.e. uint8 zext to intptr_t).
-    The non-nullary constructor gets the (effective) tag of zero.
-    This brings the cache-benefits of tagged pointers, without the extra ALU operations
-    needed to untag pointers before dereferencing them.
+* (aka strict newtype) If T has a single constructor with a single field of the same
+  boxity as T itself, then C needs no direct runtime representation
+  (modulo perhaps maintaining metadata for debugging).
 
-TODO if we use only the low-order bits of each word, then we can only encode
+   * This optimization also applies when T has at most one non-nullary ctor, but
+     **only** if the wrapped type in turn contains no nullary ctors.
+
+* (aka c-like-struct) If T has a single constructor, it is eligible for unboxed
+  representation in certain situations, such as ref update...
+* If the GC can handle pointers to static data, the constant constructors could be
+  made to point at preallocated values. This saves an allocation and keeps the
+  representation simple and uniform.
+* If T has several non-nullary constructors, they (up to 8 of them = 3 bits, keeping
+  one bit spare for other purposes) can be represented as tagged pointers.
+  Tagging pointers implies that pattern matching is faster
+  (because it can sometimes avoid cache misses/memory indirection hits)
+  at the cost of a few extra ALU operations.
+* If T has at most one non-nullary constructor, then the nullary constructors could
+  be represented as tagged null pointers (i.e. uint8 zext to intptr_t).
+  The non-nullary constructor gets the (effective) tag of zero.
+  This brings the cache-benefits of tagged pointers, without the extra ALU operations
+  needed to untag pointers before dereferencing them.
+
+.. todo::
+     if we use only the low-order bits of each word, then we can only encode
      up to 8 constructors (16 if we use all 4 low bits). We could use a segmented
      representation to encode more constructors at slightly greater ALU cost.
      For example, the most common constructors could be tagged in the low bits,
@@ -458,7 +463,7 @@ TODO if we use only the low-order bits of each word, then we can only encode
      (say) a masked value of 0b1111 would indicate that the remaining tag bits
      are in the higher ~28 bits of the word.
 
-TODO is BIBOP actually "inefficient and clumsy" as Appel claims,
+.. todo:: is BIBOP actually "inefficient and clumsy" as Appel claims,
      or is it advantageous because, for example, we wind up always
      having the cache line for the descriptor at hand?
 
@@ -670,22 +675,23 @@ Once upon a time, we monomorphized closure-converted procedures,
 directly before codegenning, and did not bother alpha-converting
 duplicated definitions. This turned out to be a bad choice
 for a number of reasons:
-  * Monomorphization was complicated by the need to manually restore
-    proper scope for type subsitututions which had been destroyed when
-    closure conversion lifted all closed procedures to a flat top-level.
-  * Related to the above point, because we didn't drop unreachable monomorphic
-    definitions but did drop un-instantiated polymorphic definitions,
-    monomorphization needed to know the original top-level procedures
-    to ensure that polymorphic definitions only referenced from unreachable
-    monomorphic functions wouldn't disappear.
-  * Partly because we didn't do any alpha-conversion or variable substitution
-    after K-normalization, a monomorphized program was somewhat second-class,
-    and we wound up leaning on the LLVM backend to cover our sins, so to speak.
-  * Related to the above point, GC root slots remained purely a backend concern.
-    In turn, because LLVM doesn't provide a reusable liveness pass, this meant
-    that use of GC root slots and reloads thereof remained unoptimized.
-    Profiling of inital microbenchmarks revealed that GC root slot overhead
-    was a limiting performance factor in some cases.
+
+* Monomorphization was complicated by the need to manually restore
+  proper scope for type subsitututions which had been destroyed when
+  closure conversion lifted all closed procedures to a flat top-level.
+* Related to the above point, because we didn't drop unreachable monomorphic
+  definitions but did drop un-instantiated polymorphic definitions,
+  monomorphization needed to know the original top-level procedures
+  to ensure that polymorphic definitions only referenced from unreachable
+  monomorphic functions wouldn't disappear.
+* Partly because we didn't do any alpha-conversion or variable substitution
+  after K-normalization, a monomorphized program was somewhat second-class,
+  and we wound up leaning on the LLVM backend to cover our sins, so to speak.
+* Related to the above point, GC root slots remained purely a backend concern.
+  In turn, because LLVM doesn't provide a reusable liveness pass, this meant
+  that use of GC root slots and reloads thereof remained unoptimized.
+  Profiling of inital microbenchmarks revealed that GC root slot overhead
+  was a limiting performance factor in some cases.
 
 We have since moved monomorphization to happen
 between K-normalization and CPS conversion & optimization.
@@ -719,12 +725,13 @@ We cannot generate GC root slots until after monomorphization due to
 unboxed polymorphism, because whether or not a given parameter needs
 a gcroot depends on how its type parameters are instantiated.
 There are a few potential solutions:
-  * Monomorphize before closure conversion.
-  * Monomorphize after closure conversion, and have the middle-end
-    do a separate analysis of monomorphic and polymorphic core.
-  * Monomorphize after closure conversion, and leave stack slot
-    generation to the backend. Easy but inefficient: gcroots are
-    worth optimizing!
+
+* Monomorphize before closure conversion.
+* Monomorphize after closure conversion, and have the middle-end
+  do a separate analysis of monomorphic and polymorphic core.
+* Monomorphize after closure conversion, and leave stack slot
+  generation to the backend. Easy but inefficient: gcroots are
+  worth optimizing!
 
 The duplication involved in monomorphization requires consistent
 alpha-renaming, which also affects closed-over variables. This is
@@ -760,14 +767,16 @@ Extending The Language
 
 Currently, language extensions require the following modifications:
 
-1. Edit grammar/foster.g with new syntax rules.
-2. Edit compiler/parse/ANTLRtoFosterAST.cpp and
+#. Edit grammar/foster.g with new syntax rules.
+#. Edit compiler/parse/ANTLRtoFosterAST.cpp and
      (probably) compiler/include/foster/parse/FosterAST.h
-3. Protocol buffer handing:
-  * compiler/parse/FosterAST.proto
-  * compiler/passes/DumpToProtobuf.cpp
-4. Middle-end, to whatever degree is needed.
-5. Back-end, maybe: compiler/fosterlower.cpp
+#. Protocol buffer handing:
+
+  * ``compiler/parse/FosterAST.proto``
+  * ``compiler/passes/DumpToProtobuf.cpp``
+
+#. Middle-end, to whatever degree is needed.
+#. Back-end, maybe: ``compiler/fosterlower.cpp``
 
 Compiler Details
 ================
@@ -775,7 +784,6 @@ Compiler Details
 .. toctree::
 
         closureconversion
-        fosterlower
         compiled-examples
         coro
         gc
@@ -784,7 +792,6 @@ Compiler Details
         recursive-bindings
 
 .. include:: closureconversion.rst
-.. include:: fosterlower.rst
 .. include:: compiled-examples.rst
 .. include:: coro.rst
 .. include:: gc.rst
@@ -847,12 +854,13 @@ with a typing rule::
 
 Now the type system can be given clear rules to enforce safety for
 stack-allocated references. Unfortunately, there are two costs:
-  #. Majorly, the restrictions for safety prevent *any* function from closing
-     over a stackref. As a result, it becomes impossible for a function
-     implementing a nested loop to close over a stackref from the outer loop.
-  #. Minorly, we need separate primitives for loads from stackrefs vs heaprefs,
-     because they involve separate types, and we wouldn't know which type
-     to infer for a metavariable.
+
+#. Majorly, the restrictions for safety prevent *any* function from closing
+   over a stackref. As a result, it becomes impossible for a function
+   implementing a nested loop to close over a stackref from the outer loop.
+#. Minorly, we need separate primitives for loads from stackrefs vs heaprefs,
+   because they involve separate types, and we wouldn't know which type
+   to infer for a metavariable.
 
 Here's an example of real code which would run afoul of the major restriction::
 
@@ -1137,22 +1145,25 @@ Emscripten
 The Emscripten project gets us (maybe)
 90% of the way to running Foster in a browser.
 The main obstacles remaining:
- * The runtime currently dynamically links to ``chromium_base``,
-   instead of statically linking it in, mainly for compilation-speed reasons.
-   Several possible fixes:
-    * link statically against ``chromium_base.bc``
-      instead of dynamically against ``chromium_base.so``
-    * reduce dependency on chromium_base by re-implementing in C++ or foster
-    * create a JS-specific platform analogue to ``chromium_base``.
- * Currently emscripten does not support stack switching, which means we can't
-   use coroutines. But at least programs which do not use coroutines will still
-   work, and there has been some work by others on compiling delimited
-   continuations to JS:
-     http://users-cs.au.dk/danvy/sfp12/papers/thivierge-feeley-paper-sfp12.pdf
- * The garbage collector uses a custom backtrace function.
-   Maybe emscripten has a port of libunwind?
- * An eventual implementation of parallelism would probably need to be adapted
-   from a shared-state to the pure message passing capabilities provided by JS.
+
+* The runtime currently dynamically links to ``chromium_base``,
+  instead of statically linking it in, mainly for compilation-speed reasons.
+  Several possible fixes:
+
+   * link statically against ``chromium_base.bc``
+     instead of dynamically against ``chromium_base.so``
+   * reduce dependency on chromium_base by re-implementing in C++ or foster
+   * create a JS-specific platform analogue to ``chromium_base``.
+
+* Currently emscripten does not support stack switching, which means we can't
+  use coroutines. But at least programs which do not use coroutines will still
+  work, and there has been some work by others on
+  `compiling delimited continuations to JS
+  <http://users-cs.au.dk/danvy/sfp12/papers/thivierge-feeley-paper-sfp12.pdf>`_.
+* The garbage collector uses a custom backtrace function.
+  Maybe emscripten has a port of libunwind?
+* An eventual implementation of parallelism would probably need to be adapted
+  from a shared-state to the pure message passing capabilities provided by JS.
 
 On the one hand, compiling directly from Foster IR to JS, bypassing LLVM
 entirely, would enable support for coroutines and **might** result in faster

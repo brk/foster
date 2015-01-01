@@ -14,11 +14,8 @@ Foster Notes
    features
    compiler
    runtime
-   closures
-   syntax
    arrays
    strings
-   llvm
    mutation
    parallelism
    polymorphism
