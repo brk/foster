@@ -177,8 +177,8 @@ coming up with a completely satisfactory solution to compiling System F.
 Polymorphic Recursion
 +++++++++++++++++++++
 
-Consider the following code adapted from
-http://www.church-project.org/reports/electronic/Hal+Kfo:BUCS-TR-2004-004.pdf
+Consider the following code adapted from `the Church project
+<http://www.church-project.org/reports/electronic/Hal+Kfo:BUCS-TR-2004-004.pdf>`_::
 
     type case T a
            of Empty
@@ -262,6 +262,48 @@ base types like ``Char`` and ``Float`` boxed rather than unboxed.
 This meshes well with making integers arbitrary-precision by default,
 with fixnums as unboxed types.
 
+Generalization, Meta Type Variables, and Big Lambdas
+++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+The following code type-checks in Haskell::
+
+    foo x = bar x
+    bar (_ :: [b]) = ()
+
+Haskell will implictly generalize the type of ``foo`` to ``forall a. [a] -> ()``.
+
+However, if we add a type annotation to ``foo``, like so::
+
+    foo :: x -> ()
+    foo x = bar x
+    bar (_ :: [b]) = ()
+
+the code no longer typechecks. The reason is that ``x`` denotes an opaque type,
+rather than a type meta variable. Unification would produce ``x = [b]`` which
+is an error.
+
+In Foster, at least for now, the situation is reversed. In the first example,
+instead of implicitly generalizing ``foo`` to have a polymorphic type,
+we give ``foo`` a non-polymorphic type involving a unification variable.
+(One downside is that using an un-annotated ``foo`` polymorphically will result
+in a sub-optimial error message, although that is a fixable problem).
+To get polymorphic behavior, ``foo`` must be given an explicit polymorphic binder,
+which can be done using a type annotation::
+
+    foo :: forall t:Type, { t => () };
+    foo = { x => () };
+
+or on the value-level lambda directly::
+
+    foo = { forall t:Type, x : t => () };
+
+Note that ``{ forall t:Type, x => () }`` results in ``x`` getting a type metavariable,
+rather than the presuambly-intended behavior of getting the bound type variable ``t``.
+
+The major advantage of this approach is that every language-level type variable has
+an explicit binding site, which in turn means that scoped type variables are trivially
+supported, rather than the situation in Haskell, where they are a non-standard extension.
+
 Links
 +++++
 
@@ -269,8 +311,7 @@ Links
      <http://www.church-project.org/reports/electronic/Tur+Dim+Mul+Wel:CPPFT-1997.pdf>
   * Programming Examples Needing Polymorphic Recursion
     <http://www.church-project.org/reports/electronic/Hal+Kfo:BUCS-TR-2004-004.pdf>
-  * Polymorphism by Polyinstantiation
-     <http://www.bitc-lang.org/docs/bitc/polyinst.html>
+  * `Polymorphism by Polyinstantiation <http://www.bitc-lang.org/docs/bitc/polyinst.html>`_
     (and associated bibliography)
   * JGM's lecture notes on polymorphism
      <http://www.eecs.harvard.edu/~greg/cs256sp2005/lec15.txt>

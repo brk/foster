@@ -790,6 +790,7 @@ Compiler Details
         optimizations
         match-compilation
         recursive-bindings
+        c-types
 
 .. include:: closureconversion.rst
 .. include:: compiled-examples.rst
@@ -798,6 +799,7 @@ Compiler Details
 .. include:: optimizations.rst
 .. include:: match-compilation.rst
 .. include:: recursive-bindings.rst
+.. include:: c-types.rst
 
 Stack Allocation
 ----------------

@@ -1,6 +1,6 @@
-In Haskell, Int is defined in such a way that it can be implemented via
+In Haskell, ``Int`` is defined in such a way that it can be implemented via
 bit-stealing of a machine word on 32-bit platforms.
-This means that CInt must be a separate type.
+This means that ``CInt`` must be a separate type.
 
 Different languages have different naming conventions. C gets by with
 simple symbol names (plus a calling convention).
@@ -18,10 +18,10 @@ For expedience, we can start by focusing only on Clang.
 
 The question is then: how can we unambiguously represent
 C-compatible types (for, let's say, the integral types, pointers, function
-pointers, void, void*) in Foster?
+pointers, ``void``, ``void*``) in Foster?
 
 Clang Struct Lowerings
-======================
+----------------------
 
 Clang and llvm-gcc do not always lower struct types identically, and
 the LLVM generated does not always correspond to the most straightforward
@@ -45,6 +45,7 @@ Clang and llvm-g++ to ``type { i64, double }``, passed directly by value in both
 directions.
 
 Proposed reverse-engineered lowering rules:
+
 #. Use the standard C alignment rules to calculate the size and offsets for each
    structure field.
 #. If the size of the structure fits within a native machine word, lower
@@ -52,7 +53,7 @@ Proposed reverse-engineered lowering rules:
 #. If no field of the structure crosses a machine word boundary, and the size
    of the struct is at most two machine words,
    lower the struct to a pair of machine words. Use integer or floating-point
-   types as dicated by the original source: double becomes double,
-   2 x float becomes double,
+   types as dicated by the original source: ``double`` becomes ``double``,
+   ``2 x float`` becomes ``double``,
    any combination of integer + float types becomes integer.
 #. Otherwise, pass the struct via sret/byval parameters.
