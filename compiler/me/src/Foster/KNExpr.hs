@@ -1077,27 +1077,17 @@ data InlineState = InlineState {
   , inShouldDonate :: Bool
 }
 
-data FoldStatus = FoldTooBig Int -- size (stopped before inlining)
-                | FoldEffort Doc | FoldSize SizeCounter -- (stopped while inlining)
-                | FoldOuterPending | FoldRecursive
-
 data FoldResult = FoldFail FoldStatus SrcExpr (Maybe Int) -- cost
                 | FoldInto (Rez ResExpr) Int SrcExpr Int -- size, cost
-
-foldCost (FoldFail   _ _ mb_cost) = mb_cost
-foldCost (FoldInto _ _ _    cost) = Just cost
-
-instance Pretty FoldStatus where
-    pretty (FoldTooBig      size) = text "too big, size=" <> pretty size
-    pretty (FoldSize sizecounter) = text "size    limit hit" <+> pretty sizecounter
-    pretty (FoldEffort       doc) = text "effort  limit hit" <+> doc
-    pretty FoldOuterPending       = text "outer pending hit"
-    pretty FoldRecursive          = text "recursiveness    "
 
 instance Pretty FoldResult where
     pretty (FoldFail    status expr cost) = pretty status <+> parens (pretty expr) <+> text "at cost" <+> pretty cost
     pretty (FoldInto _rez size expr cost) = pretty_status <+> parens (pretty expr) <+> text "at cost" <+> pretty cost
                                       where pretty_status = text "success, size=" <> pretty size
+
+foldCost :: FoldResult -> Maybe Int
+foldCost (FoldFail   _ _ mb_cost) = mb_cost
+foldCost (FoldInto _ _ _    cost) = Just cost
 
 foldResultFailed (FoldInto {}) = False
 foldResultFailed (FoldFail {}) = True
@@ -1370,11 +1360,6 @@ maybeCachedEF   (VO_F (Opnd _ _ loc _ _)) = do
 -- }}}
 
 -- {{{ Size counters and size limits...
-data SizeCounter = SizeCounter Int SizeLimit deriving Show
-
-instance Pretty SizeCounter where
-  pretty sc = text $ show sc
-
 getSize :: In Int
 getSize = do
   !r <- gets inSizeCntr
@@ -1498,8 +1483,6 @@ computeSizeCounter _v vinfo arginfo argsizes = do
       defaultSizeLimit <- gets inDefaultSizeLimit
       getLimitedSizeCounter (defaultSizeLimit + donate)
                             ("computeSizeCounter(+"++show donate++"):" ++ show (tidIdent _v))
-
-data SizeLimit = NoLimit | Limit (Int, String) deriving Show
 -- }}}
 
 -- {{{ Variable tracking
@@ -1564,8 +1547,8 @@ knInlineToplevel expr env = do
                 liftIO $ putStrLn $ "toplevel fn " ++ show id ++ " cost " ++ show (after - before)
                 return mbfn
         mb_fns <- mapM doVisitFn (zip ids ops)
-        let pickFn (_ , Just (f, _)) = do return f
-            pickFn (fn, Nothing)     = do return fn
+        let pickFn (_ , Cached _ f _) = do return f
+            pickFn (fn, Failed _)     = do return fn
         fns' <- mapM pickFn (zip fns mb_fns)
         occ_sts <- mapM getVarStatus ids'
         let irrel_ids = [(id, id') | (id, id' , occst) <- zip3 ids ids' occ_sts, not (relevant occst id' ) ]
@@ -1720,8 +1703,8 @@ knInline' expr env = do
         --  then liftIO $ putDocLn $ text "letfuns dead ids: " <> pretty irrel_ids
         --  else return ()
         let fns' = map (\(fn, mb_fn) ->
-                         case mb_fn of Just (f,sz) -> (f,sz)
-                                       Nothing -> error $ "KNExpr.hs: One or more recursive functions failed to residualize during inlining!"
+                         case mb_fn of Cached _ f sz -> (f,sz)
+                                       Failed _ -> error $ "KNExpr.hs: One or more recursive functions failed to residualize during inlining!"
                                                        ++ "\n" ++ show (tidIdent $ fnVar fn))
                    (zip fns mb_fns)
         let (idfns'', szs'') = unzip [((id, fn), sz)
@@ -1740,10 +1723,12 @@ knInline' expr env = do
              Nothing -> rezM1 (KNCallPrim sr ty prim) (mapM q vs)
 
     KNCall ty v vs -> do
-      let resExpr s = do --putDocLn $ text "resExpr " <> text s <$> indent 4 (pretty expr)
-                         rezM2 (\v xs -> KNNotInlined s (KNCall ty v xs)) (qs ("KNCall v " ++ s) v) (mapM (qs "KNCall vs") vs)
-      let resExprA s = do --putDocLn $ text "resExprA " <> text s <$> indent 4 (pretty expr)
-                          rezM2 (\v xs -> KNNotInlined s (KNCall ty v xs)) (qs ("KNCall v " ++ s) v) (mapM (qs "KNCall vs") vs)
+      let resExpr s why = do --putDocLn $ text "resExpr " <> text s <$> indent 4 (pretty expr)
+                             eff <- knTotalEffort
+                             rezM2 (\v xs -> KNNotInlined (s,(why,eff,Nothing)) (KNCall ty v xs)) (qs ("KNCall v " ++ show s) v) (mapM (qs "KNCall vs") vs)
+      let resExprA s why mb_cost = do --putDocLn $ text "resExprA " <> text s <$> indent 4 (pretty expr)
+                          eff <- knTotalEffort
+                          rezM2 (\v xs -> KNNotInlined (s,(why,eff,mb_cost)) (KNCall ty v xs)) (qs ("KNCall v " ++ show s) v) (mapM (qs "KNCall vs") vs)
       (desc, smry) <- case lookupVarOp env v of
                         Just (VO_E ope) -> do smry <- summarize ope
                                               return ("(a known expr); summary: ",
@@ -1765,7 +1750,7 @@ knInline' expr env = do
           let shouldNotInline nm = "noinline_" `isPrefixOf` nm
           if shouldNotInline (show $ tidIdent v) || shouldNotInline (show $ tidIdent v')
             then do _ <- visitF "noinline" opf -- don't inline this function...
-                    resExpr "noinline"
+                    resExpr "noinline" FoldCallSiteOptOut
 
             else do handleCallOfKnownFunction expr resExprA opf v vs env qs
 
@@ -1775,8 +1760,8 @@ knInline' expr env = do
           where peekTyApps v' =
                   case lookupVarOp env v' of
                     Just (VO_E (Opnd (KNTyApp _ v'' []) _ _ _ _)) -> peekTyApps v''
-                    Just (VO_E  _) -> resExpr "tv-Just_VO_E"
-                    Nothing        -> resExpr "tv-Nothing"
+                    Just (VO_E  _) -> resExpr "tv-Just_VO_E" FoldNoBinding
+                    Nothing        -> resExpr "tv-Nothing"   FoldNoBinding
                     Just (VO_F _) -> inlineBitcastedFunction v' ty vs env
 
         -- ...and variable rebindings...
@@ -1787,19 +1772,19 @@ knInline' expr env = do
                     Just (VO_E (Opnd (KNVar v'') _ _ _ _)) ->
                         if tidIdent v' == tidIdent v''
                           then do putDocLn4 $ text $ "var op was self-bound, residualizing call"
-                                  resExpr "formal" -- formal parameters are self-bound when inlinig
+                                  resExpr "formal" FoldNoBinding -- formal parameters are self-bound when inlining
                           else do putDocLn4 $ text $ "peeking in turn through rebinding to " ++ show v''
                                   peekRebinding v''
                     Just (VO_E  _)  -> do putDocLn4 $ text $ "var op was VO_E (residualizing call)"
-                                          resExpr "xv-Just_VO_E"
+                                          resExpr "xv-Just_VO_E" FoldNoBinding
                     Nothing         -> do putDocLn4 $ text $ "var op was Nothing (residualizing call)"
-                                          resExpr "xv-Nothing"
+                                          resExpr "xv-Nothing"   FoldNoBinding
                     Just (VO_F opf) -> do putDocLn4 $ text $ "var op was VO_F (maybe inlining call)"
                                           maybeInlineCall opf v v'
 
         -- If the callee isn't a known function, we can't possibly inline it.
-        Just (VO_E _oe) -> do resExpr "ne-Just_VO_E_"
-        Nothing         -> do resExpr "ne-Nothing"
+        Just (VO_E _oe) -> do resExpr "ne-Just_VO_E_" FoldNoBinding
+        Nothing         -> do resExpr "ne-Nothing"    FoldNoBinding
 
         Just (VO_F opf) -> do maybeInlineCall opf v v
 
@@ -1818,11 +1803,11 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
    qvs'   <- mapM (qs "known call vs") vs
    mb_fn' <- visitF "handleCallOfKnownFunction" opf
    case mb_fn' of
-    Nothing  -> do
+    Failed cost -> do
       debugDocLn $ text "visited fn opf (failure!) from call\t" <> pretty expr
-      resExprA "visitF failed"
+      resExprA "visitF failed" FoldInnerPending (Just cost)
 
-    Just (fn' , _) -> do
+    Cached _ fn' _ -> do
       smry' <- summarize opf
       --putDocLn3 $  text "visited fn opf " <> smry
       --         <$> text "           ==> " <> smry'
@@ -1875,11 +1860,11 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
             --    putDocLn $ indent 16 (pretty e')
             residualizeCached e' esize
 
-         FoldFail {} -> do
+         FoldFail why _ cost -> do
             --when (shouldInspect (fnIdent fn')) $ do
             --    putDocLn $ text "lambda folding [" <> pretty expr <> text "] failed; residualizing call instead."
 
-            resExprA "kNothing"
+            resExprA "kNothing" why cost
   where
     primop (NamedPrim tid) = show (tidIdent tid)
     primop (PrimOp nm _)   = nm
@@ -2070,8 +2055,10 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
 -- visitF and visitE return (thing, size), rather than Rez (thing, size),
 -- because the returned thing may not actually be residualized by the caller
 -- (for example, because the caller finds out it was dead).
+data VisitFResult = Cached Bool ResFn Int -- first-cached, size
+                  | Failed Int -- cost
 
-visitF :: String -> Opnd SrcFn -> In (Maybe (ResFn, Int))
+visitF :: String -> Opnd SrcFn -> In VisitFResult
 visitF msg (Opnd fn env loc_fn _ loc_ip) = do
   ff <- readRef loc_fn
   case ff of
@@ -2080,7 +2067,7 @@ visitF msg (Opnd fn env loc_fn _ loc_ip) = do
         case ip of
           IP_Limit 0 -> do
             debugDocLn $ text $ "inner-pending limit reached for " ++ show (tidIdent $ fnVar fn)
-            return Nothing
+            return $ Failed (error "cant yet compute cost of inner-pending failure")
           IP_Limit k -> do
             putDocLn5 $ text "visitF(" <> text msg <> text ") called... using no-limit, for fn  "
                     <>  text (show (tidIdent $ fnVar fn)) <> text "  which is:"
@@ -2099,11 +2086,11 @@ visitF msg (Opnd fn env loc_fn _ loc_ip) = do
                         <$> indent 16 (pretty fn' )
             after <- knTotalEffort
             writeRef loc_fn (Visited fn' size after)
-            return $ Just (fn', size)
+            return $ Cached True fn' size
     Visited f size _ -> do
       --putDocLn6 $ text $ "reusing cached result (size " ++ show size ++ " for fn " ++ show (tidIdent $ fnVar fn)
       --putDocLn6 $ indent 32 $ pretty f
-      return $ Just (f, size)
+      return $ Cached False f size
  where
     knInlineFn' :: SrcFn -> SrcEnv -> In (ResFn)
     knInlineFn' fn env = do

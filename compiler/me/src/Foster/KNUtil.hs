@@ -57,11 +57,22 @@ data KNExpr' r ty =
         -- Others
         | KNTyApp       ty (TypedId ty) [ty]
         | KNCompiles    KNCompilesResult ty (KNExpr' r ty)
-        | KNNotInlined  String (KNExpr' r ty)
+        | KNNotInlined  (String, (FoldStatus, Int, Maybe Int)) (KNExpr' r ty)
         | KNInlined     Int Int Int (KNExpr' r ty) (KNExpr' r ty) -- old, new
                      --          ^ "after" time of inlining new
                      --      ^ "before" time of inlining new
                      --  ^ time of first processing opnd
+
+-- {{{ Inlining-related definitions
+data FoldStatus = FoldTooBig Int -- size (stopped before inlining)
+                | FoldEffort Doc | FoldSize SizeCounter -- (stopped while inlining)
+                | FoldOuterPending | FoldInnerPending | FoldRecursive
+                | FoldCallSiteOptOut | FoldNoBinding deriving Show
+
+data SizeCounter = SizeCounter Int SizeLimit deriving Show
+
+data SizeLimit = NoLimit | Limit (Int, String) deriving Show
+-- }}}
 
 -- When monmomorphizing, we use (KNTyApp t v [])
 -- to represent a bitcast to type t.
@@ -455,7 +466,12 @@ desc (t0, tb, tn) = text "t_opnd=" <> pretty t0 <> text "; t_before="<>pretty tb
 instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
   pretty e =
         case e of
-            KNNotInlined msg e -> dullred (text "notinlined") <+> pretty e <+> text "//" <+> string msg
+            KNNotInlined (msg,(why,at_effort,mb_cost)) e ->
+                dullred (text "notinlined") <+> dquotes (pretty msg) <+> parens (pretty why) <+> text "@" <> pretty at_effort
+                   <+> case mb_cost of
+                          Nothing -> empty
+                          Just cost -> text "at cost" <+> pretty cost
+                   <$>  pretty e
             KNInlined t0 tb tn old new -> dullgreen (text "inlined") <+> dullwhite (pretty old) <+> text "//" <+> desc (t0, tb, tn)
                                    <$> indent 1 (pretty new)
             KNVar (TypedId _ (GlobalSymbol name))
@@ -523,6 +539,19 @@ instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
             KNArrayLit   _t _arr _vals -> text "<...array literal...>"
             KNTuple      _ vs _ -> parens (hsep $ punctuate comma (map pretty vs))
             KNCompiles _r _t e  -> parens (text "__COMPILES__" <+> pretty e)
+
+instance Pretty FoldStatus where
+    pretty (FoldTooBig      size) = text "too big, size=" <> pretty size
+    pretty (FoldSize sizecounter) = text "size    limit hit" <+> pretty sizecounter
+    pretty (FoldEffort       doc) = text "effort  limit hit" <+> doc
+    pretty FoldOuterPending       = text "outer pending hit"
+    pretty FoldInnerPending       = text "inner pending hit"
+    pretty FoldRecursive          = text "recursiveness    "
+    pretty FoldCallSiteOptOut     = text "call site opt-out"
+    pretty FoldNoBinding          = text "no def for callee"
+
+instance Pretty SizeCounter where
+  pretty sc = text $ show sc
 
 knSubst :: Map Ident Ident -> KNExpr' r t -> KNExpr' r t
 knSubst m expr =

@@ -381,6 +381,7 @@ mkOfKN m expr = do
     KNTyApp  ty v argtys   -> do qv  v  >>= \v'  -> return $ MKTyApp       nu ty v' argtys
     KNCompiles res ty expr -> do liftM  (MKCompiles nu res ty) (mkOfKN m expr)
     KNInlined _t0 _to _tn _old new -> go new
+    KNNotInlined _ expr -> go expr
   rv <- go expr
   writeOrdRef selfLink (Just rv)
   return selfLink

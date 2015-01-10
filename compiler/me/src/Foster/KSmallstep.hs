@@ -288,6 +288,8 @@ ssTermOfExpr expr =
     KNAppCtor     _t cr vs -> SSTmExpr  $ IAppCtor (fst cr) (map idOf vs)
     KNKillProcess _t msg   -> SSTmExpr  $ error $ "prim kill-process: " ++ T.unpack msg
     KNCompiles {} -> SSTmValue $ SSBool True -- TODO maybe have __COMPILES__ take a default parameter for us to return?
+    KNInlined     _ _ _ _ e -> ssTermOfExpr e
+    KNNotInlined        _ e -> ssTermOfExpr e
 
 arrEntry (Right var) = SSTmExpr $ IVar $ tidIdent var
 arrEntry (Left (LitInt lit)) = SSTmValue $ SSInt $ litIntValue lit
