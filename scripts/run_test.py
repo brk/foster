@@ -125,6 +125,25 @@ def should_stop_after_middle():
 def insert_before_each(val, vals):
   return [x for v in vals for x in [val, v]]
 
+def get_ghc_rts_args():
+  ghc_rts_args = ["-smeGCstats.txt", "-K400M"]
+
+  if options and options.stacktraces:
+    ghc_rts_args.append('-xc') # Produce stack traces
+
+  # https://downloads.haskell.org/~ghc/latest/docs/html/users_guide/prof-heap.html
+  if options and options.profileme:
+    ghc_rts_args.append("-p") # general time profile, written to me.prof
+    ghc_rts_args.append("-hc") # break down space used by function (cost center)
+    #ghc_rts_args.append("-hm") # break down space used by module (producer)
+    #ghc_rts_args.append("-hy") # break down space used by type
+    #ghc_rts_args.append("-hd") # break down space used by ctor
+    #ghc_rts_args.append("-hr") # break down space used by retainer
+
+    #ghc_rts_args.append("-hySet,[],ByteString,ARR_WORDS,Node") # restrict to given types
+    ghc_rts_args.append("-L50") # give longer labels
+  return ghc_rts_args
+
 def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     finalname = os.path.basename(finalpath)
     ext = output_extension(options.asm)
@@ -141,19 +160,7 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     else:
       interpret = []
 
-    ghc_rts_args = ["-smeGCstats.txt", "-K400M"]
-
-    # https://downloads.haskell.org/~ghc/latest/docs/html/users_guide/prof-heap.html
-    if options and options.profileme:
-      ghc_rts_args.append("-p") # general time profile, written to me.prof
-      ghc_rts_args.append("-hc") # break down space used by function (cost center)
-      #ghc_rts_args.append("-hm") # break down space used by module (producer)
-      #ghc_rts_args.append("-hy") # break down space used by type
-      #ghc_rts_args.append("-hd") # break down space used by ctor
-      #ghc_rts_args.append("-hr") # break down space used by retainer
-
-      #ghc_rts_args.append("-hySet,[],ByteString,ARR_WORDS,Node") # restrict to given types
-      ghc_rts_args.append("-L50") # give longer labels
+    ghc_rts_args = get_ghc_rts_args()
 
     parse_output = os.path.join(tmpdir, '_out.parsed.pb')
     check_output = os.path.join(tmpdir, '_out.checked.pb')
@@ -418,6 +425,8 @@ def get_test_parser(usage):
                     help="Pass through command line arguments to program runtime")
   parser.add_option("--standalone", action="store_true", dest="standalone", default=False,
                     help="Just compile, don't link...")
+  parser.add_option("--stacktraces", action="store_true", dest="stacktraces", default=False,
+                    help="Have the middle-end produce stack traces on error")
   parser.add_option("--cxxpath", dest="cxxpath", action="store", default="g++",
                     help="Set C++ compiler/linker path")
   parser.add_option("-I", dest="importpaths", action="append", default=[],
