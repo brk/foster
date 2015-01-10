@@ -23,6 +23,7 @@ options =
  , Option []     ["no-inline"]  (NoArg  NoInline)         "disable inlining"
  , Option []     ["inline"]     (NoArg  Inline)           "enable inlining"
  , Option []     ["no-donate"]  (NoArg  NoDonate)         "diable inlining donation"
+ , Option []     ["shrink"]     (NoArg  Shrink)           "enable shrinking"
  , Option []     ["no-ctor-opt"] (NoArg NoCtorOpt)        "diable ctor representation optimizations"
  , Option []     ["inline-size-limit"]
                                 (ReqArg InlineSize "SIZE")"size counter value for inlining"
@@ -38,6 +39,7 @@ getStandaloneFlag (flags, _) =       Standalone  `elem` flags
 getDumpIRFlag ir (flags, _) =        DumpIR ir   `elem` flags
 getDumpPrimitives(flags, _) =        DumpPrims   `elem` flags
 getFmtOnlyFlag   (flags, _) =        FmtOnly     `elem` flags
+getShrinkFlag    (flags, _) =        Shrink      `elem` flags
 getCtorOpt       (flags, _) = (not $ NoCtorOpt   `elem` flags)
 getInlining      (flags, _) = (not $ NoInline    `elem` flags) && (Inline  `elem` flags)
 getInliningDonate(flags, _) = (not $ NoDonate    `elem` flags)
@@ -56,6 +58,7 @@ data Flag = Interpret String
           | NoCtorOpt
           | NoInline
           | Inline
+          | Shrink
           | NoDonate
           | InlineSize String
           deriving Eq

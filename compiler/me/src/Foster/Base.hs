@@ -610,6 +610,7 @@ zipTogether (x:xs) []     = (Just x, Nothing) : zipTogether xs []
 zipTogether []     (y:ys) = (Nothing, Just y) : zipTogether [] ys
 zipTogether (x:xs) (y:ys) = (Just x,  Just y) : zipTogether xs ys
 
+whenNotM cond action = do b <- cond ; if b then return () else action
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- |||||||||||||||||||||||||| Idents |||||||||||||||||||||||||||{{{
 

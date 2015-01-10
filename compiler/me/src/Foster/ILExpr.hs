@@ -36,8 +36,6 @@ import qualified Data.Text as T(pack, unpack)
 import qualified Data.Graph as Graph(stronglyConnComp)
 import Data.Graph(SCC(..))
 
-import Debug.Trace(trace)
-
 --------------------------------------------------------------------
 
 -- | This pass does three things in prepration for handing of to LLVM:

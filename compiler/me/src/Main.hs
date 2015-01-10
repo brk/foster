@@ -55,6 +55,7 @@ import Foster.KSmallstep
 import Foster.MainCtorHelpers
 import Foster.ConvertExprAST
 import Foster.MainOpts
+import Foster.MKNExpr
 
 import Text.Printf(printf)
 import Foster.Output
@@ -462,7 +463,7 @@ runCompiler pi_time wholeprog flagVals outfile = do
        putDocP line
        exitFailure
 
-     Right (RWT in_time cp_time sc_time ilprog) -> do
+     Right (RWT in_time sr_time cp_time sc_time ilprog) -> do
        (pb_time, _) <- time $ dumpILProgramToProtobuf ilprog outfile
        (nqueries, querytime) <- readIORef smtStatsRef
        let ct_time = (nc_time - (cp_time + in_time + sc_time))
@@ -477,6 +478,7 @@ runCompiler pi_time wholeprog flagVals outfile = do
                          ,text "# SMT queries:" <+> pretty nqueries <+> text "taking" <+> pretty (map (pairwise secs) querytime)
                          ,fmt "static-chk  time:" sc_time
                          ,fmt "inlining    time:" in_time
+                         ,fmt "shrinking   time:" sr_time
                          ,fmt "codegenprep time:" cp_time
                          ,fmt "'other'     time:" ct_time
                          ,fmt "sum elapsed time:" nc_time
@@ -486,7 +488,7 @@ runCompiler pi_time wholeprog flagVals outfile = do
                          ,text "overall wall-clock time:" <+> text (secs $ pi_time + pb_time + nc_time)
                          ]
 
-data ResultWithTimings = RWT Double Double Double ILProgram
+data ResultWithTimings = RWT Double Double Double Double ILProgram
 
 compile :: WholeProgramAST FnAST TypeP -> TcEnv -> Compiled ResultWithTimings
 compile wholeprog tcenv = do
@@ -590,7 +592,22 @@ lowerModule ai_mod ctx_il = do
 
      (sc_time, _) <- ioTime $ runStaticChecks monomod0
      monomod2 <- knLoopHeaders  monomod0
-     (in_time, monomod4) <- ioTime $ (if inline then knInline insize donate else return) monomod2
+
+     (mkn_time, monomod3) <- ioTime $ do
+       if getShrinkFlag flags
+        then do
+             assocBinders <- sequence [do r <- newOrdRef Nothing
+                                          let id  = GlobalSymbol $ T.pack s
+                                          let tid = TypedId ty id
+                                          let b = MKBound tid r
+                                          return (id, b) | (s, ty) <- moduleILdecls monomod2]
+             let binders = Map.fromList assocBinders
+             mk <- mkOfKN binders (moduleILbody monomod2)
+             kn <- mknInline mk
+             return $ monomod2 { moduleILbody = kn }
+        else return $ monomod2
+
+     (in_time, monomod4) <- ioTime $ (if inline then knInline insize donate else return) monomod3
      monomod  <- knSinkBlocks   monomod4
 
      whenDumpIR "mono" $ do
@@ -641,11 +658,14 @@ lowerModule ai_mod ctx_il = do
          putDocLn $ (outLn "^^^ ===================================")
 
      liftIO $ putDocLn $ (text $ "/// Mono    size: " ++ show (knSize (moduleILbody monomod0)))
-     liftIO $ putDocLn $ (text $ "/// Inlined size: " ++ show (knSize (moduleILbody monomod4)))
+     when (getShrinkFlag flags) $
+       liftIO $ putDocLn $ (text $ "/// Shrunk  size: " ++ show (knSize (moduleILbody monomod3)))
+     when (getInlining flags) $
+       liftIO $ putDocLn $ (text $ "/// Inlined size: " ++ show (knSize (moduleILbody monomod4)))
 
      maybeInterpretKNormalModule kmod
 
-     return (RWT in_time cp_time sc_time ilprog)
+     return (RWT in_time mkn_time cp_time sc_time ilprog)
 
   where
     cfgModule :: ModuleIL (KNExpr' RecStatus MonoType) MonoType -> Compiled (ModuleIL CFBody MonoType)
