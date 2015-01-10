@@ -16,7 +16,7 @@ Other possibilities:
   * Eliminate overflow by producing double-width results
      - "Overflow" checks then become dynamically-checked non-lossy truncations,
        which are a useful primitive in their own right.
-     - However, they woudl almost always need to be used in combination in real code, I think...
+     - However, they would almost always need to be used in combination in real code, I think...
      - Unlike with Python, there is still a distinction between differently-sized integer types.
   * Perform static checks to eliminate edge cases
      - Is this really feasible? What languages have tried this?

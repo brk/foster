@@ -83,6 +83,7 @@ main = {
   test-bytes !;
   test-misc-1 !;
   test-misc-2 !;
+  test-div-mod !;
 };
 
 test-misc-1 = {
@@ -295,4 +296,66 @@ test-bytes-flattening = {
   expect_i8x b"7"[0]; print_i8x (bytesGet! 9 bsf );
 };
 
+test-div-mod = {
+  expect_i32 0;
+  print_i32 (sdiv-Int32 1 2);
+
+  expect_i32 0;
+  print_i32 (udiv-Int32 1 2);
+
+  expect_i32 0;
+  print_i32 (sdiv-Int32 1 -2);
+
+  expect_i32 0;
+  print_i32 (sdiv-Int32 1 4294967294);
+
+  expect_i32 0;
+  print_i32 (udiv-Int32 1 -2);
+
+  expect_i32 2147483647;
+  print_i32 (udiv-Int32 -1 2);
+
+  expect_i32 2147483647;
+  print_i32 (udiv-Int32 4294967295 2);
+
+  expect_i32 0;
+  print_i32 (sdiv-Int32 -1 2);
+
+  expect_i32 0; // T-division
+  print_i32 (sdiv-Int32 -1 -2);
+
+  expect_i32 1;
+  print_i32 (ediv-Int32 -1 -2);
+
+  expect_i32 1; // see below
+  print_i32 (udiv-Int32 -1 -2);
+
+  expect_i32 1;
+  print_i32 (udiv-Int32 4294967295 4294967294);
+
+
+  expect_i32 1;
+  print_i32 (sdiv-Int32 4 3);
+
+  expect_i32 1;
+  print_i32 (udiv-Int32 4 3);
+
+  expect_i32 -1;
+  print_i32 (sdiv-Int32 4 -3);
+
+  expect_i32 1431655764;
+  print_i32 (udiv-Int32 -4 3);
+
+  expect_i32 -1;
+  print_i32 (sdiv-Int32 -4 3);
+
+  expect_i32 0;
+  print_i32 (udiv-Int32 4 -3);
+
+  expect_i32 1;
+  print_i32 (sdiv-Int32 -4 -3);
+
+  expect_i32 0;
+  print_i32 (udiv-Int32 -4 -3);
+};
 

@@ -219,3 +219,24 @@ sdiv-Int8   = { a : Int8   => b : Int8   => if prim ==Int8   b 0 then prim kill-
 sdiv-Word   = { a : Word   => b : Word   => if prim ==Word   b 0 then prim kill-entire-process "sdiv-Word  failed" else prim sdiv-unsafe-Word   a b end };
 sdiv-WordX2 = { a : WordX2 => b : WordX2 => if prim ==WordX2 b 0 then prim kill-entire-process "sdiv-WordX2 failed" else prim sdiv-unsafe-WordX2 a b end  };
 
+////
+
+// Euclidean division,
+// based on Daan Leijen's paper "Division and Modulus for Computer Scientists"
+//    http://research.microsoft.com/pubs/151917/divmodnote.pdf
+
+ediv-Int32 =  { a : Int32 => b : Int32 =>
+  q = a `sdiv-Int32` b;
+  r = a `srem-Int32` b;
+  i = if r >=SInt32 0 then 0 else if b >SInt32 0 then 1 else -1 end end;
+  q -Int32 i
+};
+
+erem-Int32 =  { a : Int32 => b : Int32 =>
+  q = a `sdiv-Int32` b;
+  r = a `srem-Int32` b;
+  i = if r >=SInt32 0 then 0 else if b >SInt32 0 then 1 else -1 end end;
+  r +Int32 (i *Int32 b)
+};
+
+

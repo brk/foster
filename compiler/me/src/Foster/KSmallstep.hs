@@ -647,8 +647,8 @@ tryGetFixnumPrimOp k name =
     "*"           -> POR_Signed   (*)
     "+"           -> POR_Signed   (+)
     "-"           -> POR_Signed   (-)
-    "sdiv-unsafe" -> POR_Signed   div
-    "udiv-unsafe" -> POR_Unsigned div
+    "sdiv-unsafe" -> POR_Signed   quot -- not div! (which is F-division)
+    "udiv-unsafe" -> POR_Unsigned quot
     "srem-unsafe" -> POR_Signed   rem
     "urem-unsafe" -> POR_Unsigned rem
     "bitxor"      -> POR_Unsigned xor
