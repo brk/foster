@@ -9,7 +9,7 @@ module Foster.Config where
 import Foster.Base(Uniq, Ident(..), modIORef')
 import Foster.MainOpts
 
-import Data.IORef(IORef, readIORef)
+import Data.IORef(IORef, readIORef, newIORef, writeIORef)
 import Control.Monad.State(StateT, gets, when, liftIO)
 import Control.Monad.Error(ErrorT, Error(..))
 import Control.Monad.Trans.Error(ErrorList(..))
@@ -36,6 +36,25 @@ type CompilerFailures = [Doc]
 
 instance Error Doc where strMsg s = text s
 instance ErrorList Doc where listMsg s = [text s]
+
+data OrdRef a = OrdRef { ordRefUniq :: Uniq, ordRef :: IORef a }
+
+newOrdRef :: a -> Compiled (OrdRef a)
+newOrdRef a = do
+  u <- ccUniq
+  r <- liftIO $ newIORef a
+  return $ OrdRef u r
+
+readOrdRef :: OrdRef a -> Compiled a
+readOrdRef  r = liftIO $ readIORef (ordRef r)
+
+writeOrdRef :: OrdRef a -> a -> Compiled ()
+writeOrdRef r v = liftIO $ writeIORef (ordRef r) v
+
+modOrdRef' r f = liftIO $ modIORef' r f
+
+instance Eq  (OrdRef a) where (==)    x y = (==)    (ordRefUniq x) (ordRefUniq y)
+instance Ord (OrdRef a) where compare x y = compare (ordRefUniq x) (ordRefUniq y)
 
 ccUniq :: Compiled Uniq
 ccUniq = do uref <- gets ccUniqRef
