@@ -1046,7 +1046,11 @@ knInline mbDefaultSizeLimit shouldDonate knmod = do
   liftIO $ putDocLn4 $ text "census was:" <$> pretty (Map.toList $ inCensus e)
   --do foldResults <- readRef foldResultsRef
   --   liftIO $ putDocLn $ text "failed unfoldings :" <$> pretty [fr | fr <- reverse foldResults, foldResultFailed fr]
-  --   liftIO $ putDocLn $ text "total count of attempted unfoldings was:" <$> pretty (length foldResults)
+  --   liftIO $ putDocLn $ text "non-zero-cost unfoldings costs :" <$> pretty [fr | fr <- reverse foldResults, foldCost fr /= Just 0]
+  --   liftIO $ putDocLn $ text "non-zero-cost unfoldings count :" <> pretty (length [fr | fr <- reverse foldResults, foldCost fr /= Just 0])
+  --   liftIO $ putDocLn $ text "total count of attempted unfoldings was:" <> pretty (length foldResults)
+  --do liftIO $ putDocLn $ text "non-zero-cost unfolding average cost: " <> pretty (expended `div` length [foldCost fr | fr <- reverse foldResults, foldCost fr /= Just 0])
+  --   liftIO $ putDocLn $ text "average effort per unfold attempt: " <> pretty (expended `div` length foldResults)
   do liftIO $ putDocLn $ text "total number of callsites in src program: " <> pretty (countCallSites e)
      liftIO $ putDocLn $ text "total effort expended while inlining: " <> pretty expended
      liftIO $ putDocLn $ text "average effort per call site: " <> pretty (expended `div` countCallSites e)
@@ -1077,8 +1081,11 @@ data FoldStatus = FoldTooBig Int -- size (stopped before inlining)
                 | FoldEffort Doc | FoldSize SizeCounter -- (stopped while inlining)
                 | FoldOuterPending | FoldRecursive
 
-data FoldResult = FoldFail FoldStatus SrcExpr Int -- cost
+data FoldResult = FoldFail FoldStatus SrcExpr (Maybe Int) -- cost
                 | FoldInto (Rez ResExpr) Int SrcExpr Int -- size, cost
+
+foldCost (FoldFail   _ _ mb_cost) = mb_cost
+foldCost (FoldInto _ _ _    cost) = Just cost
 
 instance Pretty FoldStatus where
     pretty (FoldTooBig      size) = text "too big, size=" <> pretty size
@@ -1142,8 +1149,10 @@ inBracket_ msg a b c0 = do
   t0 <- knTotalEffort
   let c = do
             t1 <- knTotalEffort
-            _ <- if (t1 - t0) > 700 || msg == "visitF:nolimit:foster_nat_add_digits"
-                    || msg == "withSizeCounter:visitF:nolimit:foster_nat_add_digits"
+            _ <- if ((t1 - t0) > 700 || msg == "visitF:nolimit:foster_nat_add_digits"
+                    || msg == "withSizeCounter:visitF:nolimit:foster_nat_add_digits")
+                    && (msg /= "withRaisedLevel")
+                    && (msg /= "withSizeCounter:visitE:")
               then liftIO $ putStrLn $ "total effort in bracket call went from " ++ show t0 ++ " to " ++ show t1 ++ " : + " ++ show (t1 - t0) ++ " ; " ++ msg
               else return ()
             c0
@@ -1844,8 +1853,8 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
                                      putDocLn6 $ text "called fn sized " <> text (show $ knSize (fnBody fn' ))
                                      effortAfter <- knTotalEffort
                                      return $ case e of
-                                       InlineErrorSize   {}  -> FoldFail (FoldSize sizeCounter) expr (effortAfter - effortBefore)
-                                       InlineErrorEffort doc -> FoldFail (FoldEffort doc)       expr (effortAfter - effortBefore))
+                                       InlineErrorSize   {}  -> FoldFail (FoldSize sizeCounter) expr (Just $ effortAfter - effortBefore)
+                                       InlineErrorEffort doc -> FoldFail (FoldEffort doc)       expr (Just $ effortAfter - effortBefore))
       effortAfter <- knTotalEffort
 
       do st <- get
@@ -1924,10 +1933,10 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
      case (o_pending, isRec fn && (\(OP_Limit k) -> k) o_pending <= 1) of
        (_, True)  -> do
          putDocLn6 $ text $ ":( :( :( lambda folding aborted for recursive function " ++ show (pretty expr)
-         return $ FoldFail FoldRecursive expr 0
+         return $ FoldFail FoldRecursive expr (Just 0)
        (OP_Limit 0, _) -> do
          putDocLn6 $ text $ ":( :( :( lambda folding failed due to outer-pending flag for " ++ show (tidIdent $ fnVar fn) ++ " with vars " ++ show (map tidIdent vs') ++ "..."
-         return $ FoldFail FoldOuterPending expr 0
+         return $ FoldFail FoldOuterPending expr Nothing
        (OP_Limit k, _) -> do
 
          -- Attempt to inline the function body to produce e' ;
@@ -2008,7 +2017,7 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
               -- it won't shrink during inlining, so we can avoid doing the
               -- work of processing it if we know it would fail to residualize.
               putDocLn4 $ text $ "not lambda folding due to assumed size of " ++ show (tidIdent $ fnVar fn) ++ " with vars " ++ show (map tidIdent vs') ++ "..."
-              return $ FoldFail (FoldTooBig cachedsize) expr 0
+              return $ FoldFail (FoldTooBig cachedsize) expr (Just 0)
               {-
            (True, False) -> do
              -- If we decline to inline calls which have no constant args and
