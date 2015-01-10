@@ -1029,6 +1029,7 @@ knInline mbDefaultSizeLimit shouldDonate knmod = do
   sizectr <- newRef 0
   currlvl <- newRef 0
   effort  <- newRef 0
+  --foldResultsRef <- newRef []
   let defaultSizeLimit = case mbDefaultSizeLimit of Nothing -> 42 * 2
                                                     Just  x -> x
   let e  = moduleILbody knmod
@@ -1043,9 +1044,13 @@ knInline mbDefaultSizeLimit shouldDonate knmod = do
   liftIO $ putDocLn  $ text "------------------------------------"
   liftIO $ putDocLn4 $ text "stkref was:" <$> pretty stk
   liftIO $ putDocLn4 $ text "census was:" <$> pretty (Map.toList $ inCensus e)
+  --do foldResults <- readRef foldResultsRef
+  --   liftIO $ putDocLn $ text "failed unfoldings :" <$> pretty [fr | fr <- reverse foldResults, foldResultFailed fr]
+  --   liftIO $ putDocLn $ text "total count of attempted unfoldings was:" <$> pretty (length foldResults)
   do liftIO $ putDocLn $ text "total number of callsites in src program: " <> pretty (countCallSites e)
      liftIO $ putDocLn $ text "total effort expended while inlining: " <> pretty expended
      liftIO $ putDocLn $ text "average effort per call site: " <> pretty (expended `div` countCallSites e)
+
   case result of
     Right (Rez expr') -> return $ knmod { moduleILbody = expr' }
     Left err -> do liftIO $ putStrLn $ show err
@@ -1060,6 +1065,7 @@ data InlineState = InlineState {
   , inCurrentLevel :: IORef Int
   , inEffortTotal  :: IORef Int
   , inVarCount :: Map Ident (IORef Int)
+  -- , inFoldResults :: IORef [FoldResult]
   , inSizeCntr :: IORef Int
   , inSizeLimit :: SizeLimit
   , inCallPassCensus :: IORef (Map Ident (Int, Int))
@@ -1067,10 +1073,33 @@ data InlineState = InlineState {
   , inShouldDonate :: Bool
 }
 
-data InlineError = InlineError String deriving Show
+data FoldStatus = FoldTooBig Int -- size (stopped before inlining)
+                | FoldEffort Doc | FoldSize SizeCounter -- (stopped while inlining)
+                | FoldOuterPending | FoldRecursive
+
+data FoldResult = FoldFail FoldStatus SrcExpr Int -- cost
+                | FoldInto (Rez ResExpr) Int SrcExpr Int -- size, cost
+
+instance Pretty FoldStatus where
+    pretty (FoldTooBig      size) = text "too big, size=" <> pretty size
+    pretty (FoldSize sizecounter) = text "size    limit hit" <+> pretty sizecounter
+    pretty (FoldEffort       doc) = text "effort  limit hit" <+> doc
+    pretty FoldOuterPending       = text "outer pending hit"
+    pretty FoldRecursive          = text "recursiveness    "
+
+instance Pretty FoldResult where
+    pretty (FoldFail    status expr cost) = pretty status <+> parens (pretty expr) <+> text "at cost" <+> pretty cost
+    pretty (FoldInto _rez size expr cost) = pretty_status <+> parens (pretty expr) <+> text "at cost" <+> pretty cost
+                                      where pretty_status = text "success, size=" <> pretty size
+
+foldResultFailed (FoldInto {}) = False
+foldResultFailed (FoldFail {}) = True
+
+data InlineError = InlineErrorSize String
+                 | InlineErrorEffort Doc deriving Show
 instance Error InlineError where
-  noMsg    = InlineError "<no msg>"
-  strMsg s = InlineError s
+  noMsg    = InlineErrorSize "<no msg>"
+  strMsg s = InlineErrorSize s
 
 shouldDEBUG = False
 
@@ -1362,7 +1391,7 @@ bumpSize !(d, mb_ids) = do
   case lim of
     Limit (limit, src) | v > limit -> do
         inDebugStr $ "bumpSize failed; " ++ show x ++ " += " ++ show d ++ " >= " ++ show lim ++ " ;; " ++ show mb_ids
-        throwError (strMsg $ "bumpSize failed : " ++ show x ++ " + " ++ show d ++ "; " ++ src ++ " ;; " ++ show mb_ids)
+        throwError (InlineErrorSize $ "bumpSize failed : " ++ show x ++ " + " ++ show d ++ "; " ++ src ++ " ;; " ++ show mb_ids)
     _ -> writeRef r v
 
 inDebugStr s = do
@@ -1776,10 +1805,7 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
             <$> text "               from call  [[" <+> pretty expr <+> text "]]"
  -- TODO this inhibits useful inlining opportunities
  -- but without it we infinitely loop on .e.g.  bootstrap/testcases/inlining-01
- if False && isRec fn0
-  then do
-     resExprA (show $ text "  residualizing rec call of [[ " <> pretty expr <> text " ]]")
-  else do
+ do
    qvs'   <- mapM (qs "known call vs") vs
    mb_fn' <- visitF "handleCallOfKnownFunction" opf
    case mb_fn' of
@@ -1807,7 +1833,7 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
       --putDocLn7 $ text "handleCallOfKnownFunction trying to fold lambda from call [[" <+> pretty expr <+> text "]]"
       --        <$> text "         with size counter: " <> pretty sizeCounter
 
-      mb_e'  <- catchError (foldLambda' fn' opf v qvs' sizeCounter env)
+      fr_e'  <- catchError (foldLambda' expr fn' opf v qvs' sizeCounter env)
                            (\e -> do putDocLn6 $ text "******* foldLambda aborted inlining of call(size limit " <> text (show sizeCounter) <> text " ): " <> pretty expr <> text (show e)
                                      --putDocLn $ text "called fn was " <> pretty fn'
                                      putDocLn6 $ text $ show (tidIdent v) ++ " w/census " ++ show (inCen v)
@@ -1816,7 +1842,10 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
                                                          putDocLn $ text ("for original arg " ++ show (tidIdent v) ++ ", " ++ " w/census " ++ show (inCen v) ++ "; ") <> smry)
                                            (zip ops vs)
                                      putDocLn6 $ text "called fn sized " <> text (show $ knSize (fnBody fn' ))
-                                     return Nothing)
+                                     effortAfter <- knTotalEffort
+                                     return $ case e of
+                                       InlineErrorSize   {}  -> FoldFail (FoldSize sizeCounter) expr (effortAfter - effortBefore)
+                                       InlineErrorEffort doc -> FoldFail (FoldEffort doc)       expr (effortAfter - effortBefore))
       effortAfter <- knTotalEffort
 
       do st <- get
@@ -1827,17 +1856,17 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
                 <> text "   with size counter: " <> pretty sizeCounter
                 <$> text "level: " <> pretty levelBefore
                 <> text "   ;; effort delta: " <> pretty (effortAfter - effortBefore)
-                <> text "   ;; resulting size " <> pretty (case mb_e' of Just (_, esize) -> esize
-                                                                         Nothing -> 0)
+                <> text "   ;; resulting size " <> pretty (case fr_e' of FoldInto _ esize _ _ -> esize
+                                                                         FoldFail {} -> 0)
 
-      case mb_e' of
-         Just (Rez e', esize) -> do
+      case fr_e' of
+         FoldInto (Rez e') esize _ _ -> do
             --when (shouldInspect (fnIdent fn')) $ do
             --    putDocLn $ indent 8 (pretty expr)
             --    putDocLn $ indent 16 (pretty e')
             residualizeCached e' esize
 
-         Nothing -> do
+         FoldFail {} -> do
             --when (shouldInspect (fnIdent fn')) $ do
             --    putDocLn $ text "lambda folding [" <> pretty expr <> text "] failed; residualizing call instead."
 
@@ -1876,9 +1905,9 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
         KNLetFuns     {} -> "KNLetFuns     " ++ show (knSize x)
 
     -- input are residual vars, not src vars, fwiw
-    foldLambda' :: ResFn -> Opnd SrcFn -> TypedId MonoType
-                -> [TypedId MonoType] -> SizeCounter -> SrcEnv -> In (Maybe (Rez ResExpr, Int))
-    foldLambda' fn' opnd@(Opnd _ _ loc_vis loc_op _) v vs' sizeCounter env = withPendingFold expr $ do
+    foldLambda' :: SrcExpr -> ResFn -> Opnd SrcFn -> TypedId MonoType
+                -> [TypedId MonoType] -> SizeCounter -> SrcEnv -> In FoldResult
+    foldLambda' expr fn' opnd@(Opnd _ _ loc_vis loc_op _) v vs' sizeCounter env = withPendingFold expr $ do
      let fn   = fn'
      let env' = extendEnv ids ids' ops env
                    where
@@ -1889,14 +1918,16 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
      -- ids   are the function's formals;
      -- vs'   are the function's actuals (residual vars)
      -- ops   are the corresponding operand structures.
+
+     before <- knTotalEffort
      o_pending <- readRef loc_op
      case (o_pending, isRec fn && (\(OP_Limit k) -> k) o_pending <= 1) of
        (_, True)  -> do
          putDocLn6 $ text $ ":( :( :( lambda folding aborted for recursive function " ++ show (pretty expr)
-         return Nothing
+         return $ FoldFail FoldRecursive expr 0
        (OP_Limit 0, _) -> do
          putDocLn6 $ text $ ":( :( :( lambda folding failed due to outer-pending flag for " ++ show (tidIdent $ fnVar fn) ++ " with vars " ++ show (map tidIdent vs') ++ "..."
-         return Nothing
+         return $ FoldFail FoldOuterPending expr 0
        (OP_Limit k, _) -> do
 
          -- Attempt to inline the function body to produce e' ;
@@ -1905,7 +1936,6 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
          -- instead. If the attempt succeeds, we must explicitly return the
          -- size, because it must be accounted for in the current size counter.
 
-         before <- knTotalEffort
          visitStatus <- opndVisitStatus opnd
          let (_firstVisit, cachedsize, t0) = case visitStatus of
                                           Unvisited      -> (True, 0, before)
@@ -1969,7 +1999,8 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
                                                                 <+> text "for size-" <> pretty size
                                                                 <+> text "call" <+> pretty expr)
 
-             return $ Just (Rez (KNInlined t0 before after expr e' ), size)
+             return $ FoldInto (Rez (KNInlined t0 before after expr e' )) size
+                                 expr (after - before)
 
          case (noConstants, tooBig) of
            (True, True) -> do
@@ -1977,7 +2008,7 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
               -- it won't shrink during inlining, so we can avoid doing the
               -- work of processing it if we know it would fail to residualize.
               putDocLn4 $ text $ "not lambda folding due to assumed size of " ++ show (tidIdent $ fnVar fn) ++ " with vars " ++ show (map tidIdent vs') ++ "..."
-              return Nothing
+              return $ FoldFail (FoldTooBig cachedsize) expr 0
               {-
            (True, False) -> do
              -- If we decline to inline calls which have no constant args and
