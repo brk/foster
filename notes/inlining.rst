@@ -389,3 +389,173 @@ So: it looks like there is, in fact, a performance gain when raising the inlinin
 Incidentally, this demonstrates the value of tools like ``ministat`` to clearly show
 statistically significant performance differences on the order of milliseconds.
 
+
+More Intuition
+--------------
+
+Input program::
+
+    main = {
+      foo !;
+      bar !;
+    };
+
+    foo = { bar ! };
+    bar = {
+      quux True;
+      quux False;
+    };
+    quux = { b =>
+      expect_i32 1;
+      print_i32 (if b then 0 else 1 end +Int32 if b then 1 else 0 end);
+    };
+
+    refed_by_unrefed = { print_i32 3; };
+    unrefed = { refed_by_unrefed !; };
+
+Inlined, with annotations, and dropping dead functions.
+As you can see, everything except main was completely eliminated::
+
+    notinlined main !
+     wherefuns
+      main = {
+          let .seq!39  = inlined foo ! // t_opnd=81; t_before=81; t_after=111; t_elapsed=30
+                          inlined bar ! // t_opnd=52; t_before=52; t_after=81; t_elapsed=29
+                           let .x!72    = True in
+                           let .seq!73  = inlined quux .x!34 // t_opnd=23; t_before=23; t_after=36; t_elapsed=13
+                                           let .x!74    = 1 in
+                                           let .seq!75  = prim expect_i32 .x!74 in
+                                           let .x!76    = 0 in
+                                           let .x!77    = 1 in
+                                           let .x!78    = prim + .x!76 .x!77 in
+                                           prim print_i32 .x!78 in
+                           let .x!79    = False in
+                           inlined quux .x!35 // t_opnd=23; t_before=39; t_after=52; t_elapsed=13
+                            let .x!80    = 1 in
+                            let .seq!81  = prim expect_i32 .x!80 in
+                            let .x!82    = 1 in
+                            let .x!83    = 0 in
+                            let .x!84    = prim + .x!82 .x!83 in
+                            prim print_i32 .x!84 in
+          inlined bar ! // t_opnd=52; t_before=112; t_after=141; t_elapsed=29
+           let .x!85    = True in
+           let .seq!86  = inlined quux .x!34 // t_opnd=23; t_before=23; t_after=36; t_elapsed=13
+                           let .x!87    = 1 in
+                           let .seq!88  = prim expect_i32 .x!87 in
+                           let .x!89    = 0 in
+                           let .x!90    = 1 in
+                           let .x!91    = prim + .x!89 .x!90 in
+                           prim print_i32 .x!91 in
+           let .x!92    = False in
+           inlined quux .x!35 // t_opnd=23; t_before=39; t_after=52; t_elapsed=13
+            let .x!93    = 1 in
+            let .seq!94  = prim expect_i32 .x!93 in
+            let .x!95    = 1 in
+            let .x!96    = 0 in
+            let .x!97    = prim + .x!95 .x!96 in
+            prim print_i32 .x!97
+      } main (rec?: NotRec ) // : {  () }
+
+The intermediate states for foo and bar are::
+
+     wherefuns
+      foo = {
+          inlined bar ! // t_opnd=52; t_before=52; t_after=81; t_elapsed=29
+           let .x!45    = True in
+           let .seq!46  = inlined quux .x!23 // t_opnd=23; t_before=23; t_after=36; t_elapsed=13
+                           let .x!47    = 1 in
+                           let .seq!48  = prim expect_i32 .x!47 in
+                           let .x!49    = 0 in
+                           let .x!50    = 1 in
+                           let .x!51    = 1 in
+                           prim print_i32 .x!51 in
+           let .x!52    = False in
+           inlined quux .x!24 // t_opnd=23; t_before=39; t_after=52; t_elapsed=13
+            let .x!53    = 1 in
+            let .seq!54  = prim expect_i32 .x!53 in
+            let .x!55    = 1 in
+            let .x!56    = 0 in
+            let .x!57    = 1 in
+            prim print_i32 .x!57
+      } foo (rec?: NotRec ) // : {  () }
+     wherefuns
+      bar = {
+          let .x!26    = True in
+          let .seq!27  = inlined quux .x!23 // t_opnd=23; t_before=23; t_after=36; t_elapsed=13
+                          let .x!34    = 1 in
+                          let .seq!35  = prim expect_i32 .x!34 in
+                          let .x!36    = 0 in
+                          let .x!37    = 1 in
+                          let .x!38    = 1 in
+                          prim print_i32 .x!38 in
+          let .x!39    = False in
+          inlined quux .x!24 // t_opnd=23; t_before=39; t_after=52; t_elapsed=13
+           let .x!40    = 1 in
+           let .seq!41  = prim expect_i32 .x!40 in
+           let .x!42    = 1 in
+           let .x!43    = 0 in
+           let .x!44    = 1 in
+           prim print_i32 .x!44
+      } bar (rec?: NotRec ) // : {  () }
+     wherefuns
+      quux = { b!42 =>
+          let .x!43    = 1 in
+          let .seq!44  = prim expect_i32 .x!43 in
+          let .x!45    = if b!42
+                         then 0
+                         else 1
+                         end in
+          let .x!46    = if b!42
+                         then 1
+                         else 0
+                         end in
+          let .x!47    = prim + .x!45 .x!46 in
+          prim print_i32 .x!47
+      } quux (rec?: NotRec ) // : { IntBool => () }
+
+The computed AST "sizes" are 10 for quux, but only 5 for foo and bar,
+thanks to the inliner's constant propagation shrinking the AST.
+
+The rough order of operations performed by the inliner is::
+
+    saw toplevel fun bindings of [TextFragment]
+    saw toplevel fun bindings of [TextConcat]
+    saw toplevel fun bindings of [refed_by_unrefed]
+    saw toplevel fun bindings of [unrefed]
+    saw toplevel fun bindings of [quux]
+    saw toplevel fun bindings of [bar]
+    saw toplevel fun bindings of [foo]
+    saw toplevel fun bindings of [main]
+    visitF called on main    (main is special cased to not be inlined, only visited)
+            the body of main is
+                        let .seq!11  = foo ! in
+                        bar !
+    saw call of foo          ; visitF called on foo with no size limit.
+    saw call of bar  (in foo); visitF called on bar with no size limit.
+    saw call of quux         ; visitF called on quux with no size limit.
+    visitF produces unmodified residual code for quux, and caches it.
+    foldLambda tries to integrate the residual code (with an effort limit), and succeeds, expending 13 effort.
+    visitF is called on quux again, for the second call in bar, and reuses the cached result.
+    foldLambda integrates the cached result, expending 13 effort.
+
+    Now the inliner returns to the call of bar. visitF has cached the body with two inlined calls to quux.
+    foldLambda inlines the cached version of bar, and is charged 29 effort for the processing of the quux calls.
+    The body of foo is now cached, with the call to bar inlined away.
+
+    Next, the inliner returns to the call of foo. Because foo is called only once, it gets inlined with no size limit.
+    The inliner must re-process the body of foo, which takes 30 effort.
+    Next, the inliner examines the call to bar in main, reusing the cached result, expending another 29 effort.
+
+If we inflated quux to require 85 effort to inline (slightly more than half of the effort limit of 150),
+then bar will never be inlined because the effort limit will be exceeded during its processing in foldLambda.
+So when foo is visited, it will see an un-inlined call to bar, which it will attempt to inline, again, and fail, again.
+When foo is inlined, it will again try and fail to inline bar, so main is left with two un-inlined calls to bar.
+
+This illustrates a systematic inefficiency: some functions will never be successfully inlined,
+and any attempt to inline them is wasted. If a visited nullary function fails to inline due to
+the effort limit (rather than the size limit) then trying to inline it further merely wastes effort.
+
+If we make quux take just under half the effort limit, and have foo call both bar and quux,
+then foo will contain both calls (since neither violates the effort limit on its own),
+but foo will never be inlined (because its body violates the effort limit).
+
