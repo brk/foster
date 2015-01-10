@@ -600,8 +600,8 @@ object (and possibly their types, if statically known).
 
 The GC must know how large an object is in order to
 
-1. copy it
-2. advance to the next object
+ #. copy it
+ #. advance to the next object
 
 For arrays, only the used portion must be copied, though the entire portion
 may be copied. Advancing to the next object requires knowing the allocated size.
@@ -614,6 +614,30 @@ If an array containing pointers is mutated, the mutated segment should be
 marked (with a scheme such as card marking) to ensure that no
 inter-generational pointers are lost, and also that writes have
 bounded cost, never O(n) cost.
+
+Integers
+--------
+
+John Regehr has written about integers in programming languages a few times:
+http://blog.regehr.org/archives/641 and http://blog.regehr.org/archives/642
+
+There are a few choices he outlines:
+ #. undefined overflow semantics: enables some optimizations (which ones?),
+    but not a feasible option in a safe language
+ #. two's complement overflow semantics: reasonably efficient, kills some
+    optimzation opportunities; biggest flaw is that overflowed results are
+    usually very far from mathematically accurate result
+ #. forbid overflow by dynamically extending precision (bignums); downside is
+    that computing correct results may require allocation.
+ #. forbid overflow by dynamically trapping when an imprecise result would be
+    calculated (as-if-infinitely-ranged)
+ #. forbid overflow by statically analyzing integer ranges and only allowing
+    operations that can be proven not to overflow.
+ #. reduce instances of overflow by using larger fixed-precision types.
+
+I actually don't think #4 (the AIR model) makes a lot of sense; for domains
+where allocation is unacceptable, wouldn't trapping also be unacceptable?
+If you can't handle either, that just leaves static analysis or explicit wraparound.
 
 
 Robustness
