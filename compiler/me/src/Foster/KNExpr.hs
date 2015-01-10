@@ -1067,7 +1067,7 @@ instance Error InlineError where
   noMsg    = InlineError "<no msg>"
   strMsg s = InlineError s
 
-shouldDEBUG = True
+shouldDEBUG = False
 
 debugDocLn d =
   if shouldDEBUG then putDocLn d
@@ -1081,13 +1081,22 @@ putDocLn3 _ = return ()
 putDocLn6 _ = return ()
 putDocLn7 d = liftIO $ putDoc $ d <> line
 -}
-
+{-
 putDocLn  _d = liftIO $ putDoc $ _d <> line
 putDocLn4 _d = liftIO $ putDoc $ _d <> line
 putDocLn5 _d = liftIO $ putDoc $ _d <> line
 putDocLn3 _d = liftIO $ putDoc $ _d <> line
 putDocLn6 _d = liftIO $ putDoc $ _d <> line
 putDocLn7 _d = liftIO $ putDoc $ _d <> line
+-}
+
+putDocLn  _ = return ()
+putDocLn3 _ = return ()
+putDocLn4 _ = return ()
+putDocLn5 _ = return ()
+putDocLn6 _ = return ()
+putDocLn7 _ = return ()
+--putDocLn7 _d = liftIO $ putDoc $ _d <> line
 
 -- Runs a, then runs b (which may throw an error),
 -- then (always) runs c (which should not throw an error),
@@ -1434,7 +1443,7 @@ computeSizeCounter :: TypedId MonoType -> Maybe (Int, Int)
 computeSizeCounter _v vinfo arginfo argsizes = do
   if vinfo == Just (1, 0)
     then do -- If a function is called once, we can inline it without a size limit.
-            liftIO $ putStrLn $ "inlining " ++ show (tidIdent _v) ++ " with no size limit due to census"
+            putDocLn4 $ text $ "inlining " ++ show (tidIdent _v) ++ " with no size limit due to census"
             return (SizeCounter 0 NoLimit)
     else do
       shouldDonate <- gets inShouldDonate
@@ -1542,9 +1551,9 @@ knInline' expr env = do
                              return $ Rez $ KNCompiles _r _t e'
     KNInlined _t0 _to _tn _old new -> do Rez new' <- knInline' new env
                                          return $ Rez $ KNInlined _t0 _to _tn _old new'
-    -- We must re-process some un-inlined calls, for example because we have
+    -- We must re-process un-inlined calls, for example because we have
     -- introduced bindings for variables which were unbound when this expression
-    -- was first inlined.
+    -- was first processed.
     KNNotInlined _x e -> do Rez e' <- knInline' e env
                             return $ Rez $ KNNotInlined _x e'
     KNLiteral     {} -> residualize expr
@@ -1611,7 +1620,7 @@ knInline' expr env = do
         -- the let binding, whichever comes first.
         id' <- freshenId id
         op <- mkOpExpr ("knletval:"++show id) bound env
-        (bound', size) <- visitE (id, op)
+        (bound', size) <- visitE (id, op) -- TODO move this down?
 
         let env' = extendEnv [ id ] [ id' ] [ VO_E op ] env
         Rez body' <- knInline' body env'
@@ -1729,19 +1738,19 @@ knInline' expr env = do
         -- ...and variable rebindings...
         Just (VO_E (Opnd (KNVar v'0) _ _ _ _)) -> peekRebinding v'0
           where peekRebinding v' = do
-                  liftIO $ putStrLn $ "peeking through " ++ show v'
+                  putDocLn4 $ text $ "peeking through " ++ show v'
                   case lookupVarOp env v' of
                     Just (VO_E (Opnd (KNVar v'') _ _ _ _)) ->
                         if tidIdent v' == tidIdent v''
-                          then do liftIO $ putStrLn $ "var op was self-bound, residualizing call"
+                          then do putDocLn4 $ text $ "var op was self-bound, residualizing call"
                                   resExpr "formal" -- formal parameters are self-bound when inlinig
-                          else do liftIO $ putStrLn $ "peeking in turn through rebinding to " ++ show v''
+                          else do putDocLn4 $ text $ "peeking in turn through rebinding to " ++ show v''
                                   peekRebinding v''
-                    Just (VO_E  _)  -> do liftIO $ putStrLn $ "var op was VO_E (residualizing call)"
+                    Just (VO_E  _)  -> do putDocLn4 $ text $ "var op was VO_E (residualizing call)"
                                           resExpr "xv-Just_VO_E"
-                    Nothing         -> do liftIO $ putStrLn $ "var op was Nothing (residualizing call)"
+                    Nothing         -> do putDocLn4 $ text $ "var op was Nothing (residualizing call)"
                                           resExpr "xv-Nothing"
-                    Just (VO_F opf) -> do liftIO $ putStrLn $ "var op was VO_F (maybe inlining call)"
+                    Just (VO_F opf) -> do putDocLn4 $ text $ "var op was VO_F (maybe inlining call)"
                                           maybeInlineCall opf v v'
 
         -- If the callee isn't a known function, we can't possibly inline it.
@@ -1787,7 +1796,9 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
       -- Note: here, we're using the original vars, not the fresh ones.
       sizeCounter <- computeSizeCounter v (inCen v) (map inCen vs) sizes
 
-      --putDocLn3 $ text "handleCallOfKnownFunction trying to fold lambda from call [[" <+> pretty expr <+> text "]]"
+      effortBefore <- knTotalEffort
+      levelBefore  <- knInLevel
+      --putDocLn7 $ text "handleCallOfKnownFunction trying to fold lambda from call [[" <+> pretty expr <+> text "]]"
       --        <$> text "         with size counter: " <> pretty sizeCounter
 
       mb_e'  <- catchError (foldLambda' fn' opf v qvs' sizeCounter env)
@@ -1800,6 +1811,19 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
                                            (zip ops vs)
                                      putDocLn $ text "called fn sized " <> text (show $ knSize (fnBody fn' ))
                                      return Nothing)
+      effortAfter <- knTotalEffort
+
+      do st <- get
+         let levelref = inCurrentLevel st
+         writeRef levelref levelBefore
+
+      putDocLn7 $ text "attempt to fold lambda from call [[" <+> pretty expr <+> text "]]"
+                <> text "   with size counter: " <> pretty sizeCounter
+                <$> text "level: " <> pretty levelBefore
+                <> text "   ;; effort delta: " <> pretty (effortAfter - effortBefore)
+                <> text "   ;; resulting size " <> pretty (case mb_e' of Just (_, esize) -> esize
+                                                                         Nothing -> 0)
+
       case mb_e' of
          Just (Rez e', esize) -> do
             --when (shouldInspect (fnIdent fn')) $ do
@@ -1946,7 +1970,7 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
               -- If there are no constant arguments being passed to the target,
               -- it won't shrink during inlining, so we can avoid doing the
               -- work of processing it if we know it would fail to residualize.
-              liftIO $ putStrLn $ "not lambda folding due to assumed size of " ++ show (tidIdent $ fnVar fn) ++ " with vars " ++ show (map tidIdent vs') ++ "..."
+              putDocLn4 $ text $ "not lambda folding due to assumed size of " ++ show (tidIdent $ fnVar fn) ++ " with vars " ++ show (map tidIdent vs') ++ "..."
               return Nothing
               {-
            (True, False) -> do
@@ -2016,7 +2040,7 @@ visitF msg (Opnd fn env loc_fn _ loc_ip) = do
                     <>  text (show (tidIdent $ fnVar fn)) <> text "  which is:"
                     <$> indent 16 (pretty fn)
             (fn' , size) <- do
-                --liftIO $ putStrLn $ "{visiting "++show (fnIdent fn)++ " with no limit (for the first time)"
+                putDocLn7 $ text $ "{{{visiting "++show (fnIdent fn)++ " with no limit (for the first time)"
                 inBracket_ (show (fnIdent fn))
                            (writeRef loc_ip (IP_Limit (k - 1)))
                            (withSizeCounter ("visitF:nolimit:"++show (fnIdent fn))
@@ -2024,8 +2048,8 @@ visitF msg (Opnd fn env loc_fn _ loc_ip) = do
                                             (knInlineFn' fn env))
                            (writeRef loc_ip (IP_Limit k))
 
-            when (shouldInspect (fnIdent fn)) $ do
-                putDocLn $ text ("}visitED "++show (fnIdent fn)++ " with no limit (for the first time)")
+            when (True || shouldInspect (fnIdent fn)) $ do
+                putDocLn7 $ text ("}}}visitED "++show (fnIdent fn)++ " with no limit (for the first time)")
                         <$> indent 16 (pretty fn' )
             after <- knTotalEffort
             writeRef loc_fn (Visited fn' size after)
