@@ -57,6 +57,7 @@ data KNExpr' r ty =
         -- Others
         | KNTyApp       ty (TypedId ty) [ty]
         | KNCompiles    KNCompilesResult ty (KNExpr' r ty)
+        | KNNotInlined  String (KNExpr' r ty)
         | KNInlined     Int Int Int (KNExpr' r ty) (KNExpr' r ty) -- old, new
                      --          ^ "after" time of inlining new
                      --      ^ "before" time of inlining new
@@ -181,6 +182,7 @@ alphaRename' fn uref = do
       KNTyApp t v argtys       -> qv v >>= \v' -> return $ KNTyApp t v' argtys
       KNCompiles r t e         -> liftM (KNCompiles r t) (renameKN e)
       KNInlined t0 tb tn old new -> do renameKN new >>= return . (KNInlined t0 tb tn old)
+      KNNotInlined x e -> do renameKN e >>= return . (KNNotInlined x)
 
     renameCaseArm (CaseArm pat expr guard vs rng) = do
         pat'   <- renamePattern pat
@@ -259,6 +261,7 @@ typeKN expr =
     KNTyApp overallType _tm _tyArgs -> overallType
     KNCompiles _ t _           -> t
     KNInlined _t0 _ _ _ new -> typeKN new
+    KNNotInlined _ e -> typeKN e
 
 -- This instance is primarily needed as a prereq for KNExpr to be an AExpr,
 -- which ((childrenOf)) is needed in ILExpr for closedNamesOfKnFn.
@@ -293,6 +296,7 @@ instance (Show ty, Show rs) => Structured (KNExpr' rs ty) where
             KNKillProcess t m   -> text $ "KNKillProcess " ++ show m ++ " :: " ++ show t
             KNCompiles _r _t _e -> text $ "KNCompiles    "
             KNInlined _t0 _to _tn old _new   -> text "KNInlined " <> text (show old)
+            KNNotInlined _ e -> text "KNNotInlined " <> text (show e)
     childrenOf expr =
         let var v = KNVar v in
         case expr of
@@ -318,6 +322,7 @@ instance (Show ty, Show rs) => Structured (KNExpr' rs ty) where
             KNTyApp _t v _argty     -> [var v]
             KNCompiles _ _ e        -> [e]
             KNInlined _t0 _to _tn _old new      -> [new]
+            KNNotInlined _ e -> [e]
 
 
 knSize :: KNExpr' r t -> (Int, Int) -- toplevel, cumulative
@@ -365,6 +370,7 @@ knSizeHead expr = case expr of
 
     KNAppCtor     {} -> 3 -- rather like a KNTuple, plus one store for the tag.
     KNInlined _t0 _ _ _ new  -> knSizeHead new
+    KNNotInlined _ e -> knSizeHead e
     KNArrayLit _ty _arr vals -> 2 + length vals
     KNCompiles    {} -> 0 -- Becomes a boolean literal
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -449,6 +455,7 @@ desc (t0, tb, tn) = text "t_opnd=" <> pretty t0 <> text "; t_before="<>pretty tb
 instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
   pretty e =
         case e of
+            KNNotInlined msg e -> dullred (text "notinlined") <+> pretty e <+> text "//" <+> string msg
             KNInlined t0 tb tn old new -> dullgreen (text "inlined") <+> dullwhite (pretty old) <+> text "//" <+> desc (t0, tb, tn)
                                    <$> indent 1 (pretty new)
             KNVar (TypedId _ (GlobalSymbol name))
@@ -547,6 +554,7 @@ knSubst m expr =
       KNTyApp t v argtys       -> KNTyApp t (qv v) argtys
       KNCompiles r t e         -> KNCompiles r t (knSubst m e)
       KNInlined t0 tb tn old new -> KNInlined t0 tb tn old (knSubst m new)
+      KNNotInlined x e -> KNNotInlined x (knSubst m e)
 
 mapArrayIndex f (ArrayIndex v1 v2 rng s) =
   let v1' = f v1

@@ -485,6 +485,7 @@ collectFunctions knf = go [] (fnBody knf)
           KNTyApp         {} -> xs
           KNCompiles _r _t e -> go xs e
           KNInlined _t0 _to _tn _old new -> go xs new
+          KNNotInlined _ e -> go xs e
           KNIf            _ _ e1 e2   -> go (go xs e1) e2
           KNLetVal          _ e1 e2   -> go (go xs e1) e2
           KNCase       _ _ arms       -> let es = concatMap caseArmExprs arms in
@@ -524,6 +525,7 @@ collectMentions knf = go Set.empty (fnBody knf)
           KNLetFuns    _ fns b -> Set.union xs $ go (Set.unions $ map collectMentions fns) b
           KNCompiles _r _t e             -> go xs e
           KNInlined _t0 _to _tn _old new -> go xs new
+          KNNotInlined x e -> go xs e
 
 rebuildFnWith rebuilder addBindingsFor f =
          let rebuiltBody = rebuildWith rebuilder (fnBody f) in
@@ -554,6 +556,7 @@ rebuildWith rebuilder e = q e
       KNLetFuns     ids fns e        -> mkLetFuns (rebuilder (zip ids fns)) (q e)
       KNCompiles _r _t e             -> KNCompiles _r _t (q e)
       KNInlined _t0 _to _tn _old new -> KNInlined _t0 _to _tn _old (q new)
+      KNNotInlined x e -> KNNotInlined x (q e)
 
 mkLetFuns []       e = e
 mkLetFuns bindings e = KNLetFuns ids fns e where (ids, fns) = unzip bindings
@@ -831,6 +834,7 @@ knLoopHeaders' expr = do
     KNAppCtor     {} -> expr
     KNCompiles r t e -> KNCompiles r t (q tailq e)
     KNInlined _t0 _to _tn _old new -> q tailq new
+    KNNotInlined _x e -> q tailq e
     KNCase        ty v arms     -> KNCase ty v (map (fmapCaseArm id (q tailq) id) arms)
     KNIf          ty v e1 e2    -> KNIf     ty v (q tailq e1) (q tailq e2)
     KNLetVal      id   e1 e2    -> let e1' = q NotTail e1
@@ -1029,10 +1033,13 @@ knInline mbDefaultSizeLimit shouldDonate knmod = do
                                                     Just  x -> x
   let e  = moduleILbody knmod
   let et = runErrorT (knInlineToplevel e (SrcEnv Map.empty Map.empty))
+  stkRef <- newRef []
   cenRef <- newRef $ inCensus e
-  let st = evalStateT et (InlineState uniq currlvl effort Map.empty sizectr NoLimit
+  let st = evalStateT et (InlineState uniq stkRef currlvl effort Map.empty sizectr NoLimit
                                       cenRef defaultSizeLimit shouldDonate)
   result <- liftIO st
+  stk <- liftIO $ readIORef stkRef
+  liftIO $ putDocLn $ text "stkref was:" <$> pretty stk
   liftIO $ putDocLn $ text "census was:" <$> pretty (Map.toList $ inCensus e)
   case result of
     Right (Rez expr') -> return $ knmod { moduleILbody = expr' }
@@ -1044,6 +1051,7 @@ knInline mbDefaultSizeLimit shouldDonate knmod = do
 type In          = ErrorT InlineError (StateT InlineState IO)
 data InlineState = InlineState {
     inUniqRef  :: IORef Uniq
+  , inCurrentPendings :: IORef [KNExpr' RecStatus MonoType]
   , inCurrentLevel :: IORef Int
   , inEffortTotal  :: IORef Int
   , inVarCount :: Map Ident (IORef Int)
@@ -1345,7 +1353,7 @@ bumpSize !(d, mb_ids) = do
 inDebugStr s = do
   lvl <- knInLevel
   --putDocLn $ indent (lvl * 2) (text s)
-  liftIO $ putStrLn $ (show lvl) ++ " " ++ s
+  liftIO $ putStrLn $ "@ lvl " ++ (show lvl) ++ ": " ++ s
 {-
 inDebug doc = do
   lvl <- knInLevel
@@ -1379,6 +1387,16 @@ withRaisedLevel action = do
   writeRef levelref (old + 1)
   result <- action
   writeRef levelref  old
+  return result
+
+withPendingFold :: KNExpr' RecStatus MonoType -> In a -> In a
+withPendingFold pending action = do
+  st <- get
+  let stackref = inCurrentPendings st
+  old <- readRef stackref
+  writeRef stackref (pending:old)
+  result <- action
+  writeRef stackref old
   return result
 
 addSizeLimit :: SizeLimit -> Int -> SizeLimit
@@ -1524,6 +1542,11 @@ knInline' expr env = do
                              return $ Rez $ KNCompiles _r _t e'
     KNInlined _t0 _to _tn _old new -> do Rez new' <- knInline' new env
                                          return $ Rez $ KNInlined _t0 _to _tn _old new'
+    -- We must re-process some un-inlined calls, for example because we have
+    -- introduced bindings for variables which were unbound when this expression
+    -- was first inlined.
+    KNNotInlined _x e -> do Rez e' <- knInline' e env
+                            return $ Rez $ KNNotInlined _x e'
     KNLiteral     {} -> residualize expr
     KNKillProcess {} -> residualize expr
     KNArrayRead ty (ArrayIndex v1 v2 rng sg)    -> (mapM q [v1,v2   ]) >>= \[q1,q2]    -> residualize $ KNArrayRead ty (ArrayIndex q1 q2 rng sg)
@@ -1539,74 +1562,6 @@ knInline' expr env = do
     KNVar v -> rezM1 KNVar (qs "KNVar" v)
 
     KNAppCtor     ty cid vs  -> rezM1 (KNAppCtor ty cid) (mapM q vs)
-
-    KNCallPrim sr ty prim vs -> do
-        -- If enough is known about the values to the prim,
-        -- we might be able to partially evaluate it.
-
-        mb_consts <- mapM (extractConstExpr env) vs
-        case evalPrim ty prim mb_consts of
-             Just e  -> residualize e
-             Nothing -> rezM1 (KNCallPrim sr ty prim) (mapM q vs)
-
-    KNCall ty v vs -> do
-      let resExpr s = do --putDocLn $ text "resExpr " <> text s <$> indent 4 (pretty expr)
-                         rezM2 (KNCall ty) (qs ("KNCall v " ++ s) v) (mapM (qs "KNCall vs") vs)
-      let resExprA s = do --putDocLn $ text "resExprA " <> text s <$> indent 4 (pretty expr)
-                          rezM2 (KNCall ty) (qs ("KNCall v " ++ s) v) (mapM (qs "KNCall vs") vs)
-      (desc, smry) <- case lookupVarOp env v of
-                        Just (VO_E ope) -> do smry <- summarize ope
-                                              return ("(a known expr); summary: ",
-                                                        smry <$> pretty (opndOldValue ope))
-                        Nothing         -> do return ("Nothing", text "")
-                        Just (VO_F opf) -> do smry <- summarize opf
-                                              return ("(a known fn); summary: ",
-                                                       text "rec:" <> pretty (fnIsRec (opndOldValue opf))
-                                                   <$> text "           " <> smry)
-      putDocLn7 $ text ("saw call of var " ++ show (tidIdent v)
-                                ++ " ~?~> " ++ show (lookupVarMb v env) ++ "  ")
-                           <>  text desc <+> smry
-                           <$> text "\t\t@ call site:  [[ " <> pretty expr <> text " ]]"
-
-      -- ``v`` is the binding for the function;
-      -- ``v'`` is the alias at which it is called.
-      -- Checking both names permits a hacky form of per-call-site inlining prevention.
-      let maybeInlineCall opf v v' = do
-          let shouldNotInline nm = "noinline_" `isPrefixOf` nm
-          if shouldNotInline (show $ tidIdent v) || shouldNotInline (show $ tidIdent v')
-            then do _ <- visitF "noinline" opf -- don't inline this function...
-                    resExpr "noinline"
-
-            else do handleCallOfKnownFunction expr resExprA opf v vs env qs
-
-      case lookupVarOp env v of
-        -- Peek through type applications...
-        Just (VO_E (Opnd (KNTyApp _ v' []) _ _ _ _)) -> peekTyApps v'
-          where peekTyApps v' =
-                  case lookupVarOp env v' of
-                    Just (VO_E (Opnd (KNTyApp _ v'' []) _ _ _ _)) -> peekTyApps v''
-                    Just (VO_E  _) -> resExpr "tv-Just_VO_E"
-                    Nothing        -> resExpr "tv-Nothing"
-                    Just (VO_F _) -> inlineBitcastedFunction v' ty vs env
-
-        -- ...and variable rebindings...
-        Just (VO_E (Opnd (KNVar v'0) _ _ _ _)) -> peekRebinding v'0
-          where peekRebinding v' = do
-                  liftIO $ putStrLn $ "peeking through " ++ show v'
-                  case lookupVarOp env v' of
-                    Just (VO_E (Opnd (KNVar v'') _ _ _ _)) ->
-                        if tidIdent v' == tidIdent v''
-                          then do resExpr "formal" -- formal parameters are self-bound when inlinig
-                          else peekRebinding v''
-                    Just (VO_E  _)  -> do resExpr "xv-Just_VO_E"
-                    Nothing         -> do resExpr "xv-Nothing"
-                    Just (VO_F opf) -> maybeInlineCall opf v v'
-
-        -- If the callee isn't a known function, we can't possibly inline it.
-        Just (VO_E _oe) -> do resExpr "ne-Just_VO_E_"
-        Nothing         -> do resExpr "ne-Nothing"
-
-        Just (VO_F opf) -> do maybeInlineCall opf v v
 
     KNIf          ty v e1 e2 -> do
         -- If something is known about v's value,
@@ -1697,10 +1652,20 @@ knInline' expr env = do
 
         Rez b' <- knInline' b env'
 
+        liftIO $ do
+          putDocLn $ text "KNLetFuns " <> pretty ids
+          putDocLn $ indent 8 $ text "inlined"
+          putDocLn $ indent 16 $ pretty b
+          putDocLn $ indent 8 $ text "to"
+          putDocLn $ indent 16 $ pretty b'
+          putDocLn $ indent 8 $ text "; now looking at the fns bound to " <> pretty ids
+
         mb_fns  <- mapM (visitF "KNLetFuns.2") ops
         occ_sts <- mapM getVarStatus ids'
-        let irrel_ids = [(id, id') | (id, id' , occst) <- zip3 ids ids' occ_sts, not (relevant occst id' ) ]
-        liftIO $ putDocLn $ text "letfuns dead ids: " <> pretty irrel_ids
+        --let irrel_ids = [(id, id') | (id, id' , occst) <- zip3 ids ids' occ_sts, not (relevant occst id' ) ]
+        --if (not $ null $ irrel_ids)
+        --  then liftIO $ putDocLn $ text "letfuns dead ids: " <> pretty irrel_ids
+        --  else return ()
         let fns' = map (\(fn, mb_fn) ->
                          case mb_fn of Just (f,sz) -> (f,sz)
                                        Nothing -> error $ "KNExpr.hs: One or more recursive functions failed to residualize during inlining!"
@@ -1711,6 +1676,79 @@ knInline' expr env = do
                                      , notDead occst]
         mapM_ bumpSize (zip szs'' (map Just $ zip ids' ids))
         residualize $ mkLetFuns idfns'' b'
+
+    KNCallPrim sr ty prim vs -> do
+        -- If enough is known about the values to the prim,
+        -- we might be able to partially evaluate it.
+
+        mb_consts <- mapM (extractConstExpr env) vs
+        case evalPrim ty prim mb_consts of
+             Just e  -> residualize e
+             Nothing -> rezM1 (KNCallPrim sr ty prim) (mapM q vs)
+
+    KNCall ty v vs -> do
+      let resExpr s = do --putDocLn $ text "resExpr " <> text s <$> indent 4 (pretty expr)
+                         rezM2 (\v xs -> KNNotInlined s (KNCall ty v xs)) (qs ("KNCall v " ++ s) v) (mapM (qs "KNCall vs") vs)
+      let resExprA s = do --putDocLn $ text "resExprA " <> text s <$> indent 4 (pretty expr)
+                          rezM2 (\v xs -> KNNotInlined s (KNCall ty v xs)) (qs ("KNCall v " ++ s) v) (mapM (qs "KNCall vs") vs)
+      (desc, smry) <- case lookupVarOp env v of
+                        Just (VO_E ope) -> do smry <- summarize ope
+                                              return ("(a known expr); summary: ",
+                                                        smry <$> pretty (opndOldValue ope))
+                        Nothing         -> do return ("Nothing", text "")
+                        Just (VO_F opf) -> do smry <- summarize opf
+                                              return ("(a known fn); summary: ",
+                                                       text "rec:" <> pretty (fnIsRec (opndOldValue opf))
+                                                   <$> text "           " <> smry)
+      --putDocLn7 $ text ("saw call of var " ++ show (tidIdent v)
+      --                          ++ " ~?~> " ++ show (lookupVarMb v env) ++ "  ")
+      --                     <>  text desc <+> smry
+      --                     <$> text "\t\t@ call site:  [[ " <> pretty expr <> text " ]]"
+
+      -- ``v`` is the binding for the function;
+      -- ``v'`` is the alias at which it is called.
+      -- Checking both names permits a hacky form of per-call-site inlining prevention.
+      let maybeInlineCall opf v v' = do
+          let shouldNotInline nm = "noinline_" `isPrefixOf` nm
+          if shouldNotInline (show $ tidIdent v) || shouldNotInline (show $ tidIdent v')
+            then do _ <- visitF "noinline" opf -- don't inline this function...
+                    resExpr "noinline"
+
+            else do handleCallOfKnownFunction expr resExprA opf v vs env qs
+
+      case lookupVarOp env v of
+        -- Peek through type applications...
+        Just (VO_E (Opnd (KNTyApp _ v' []) _ _ _ _)) -> peekTyApps v'
+          where peekTyApps v' =
+                  case lookupVarOp env v' of
+                    Just (VO_E (Opnd (KNTyApp _ v'' []) _ _ _ _)) -> peekTyApps v''
+                    Just (VO_E  _) -> resExpr "tv-Just_VO_E"
+                    Nothing        -> resExpr "tv-Nothing"
+                    Just (VO_F _) -> inlineBitcastedFunction v' ty vs env
+
+        -- ...and variable rebindings...
+        Just (VO_E (Opnd (KNVar v'0) _ _ _ _)) -> peekRebinding v'0
+          where peekRebinding v' = do
+                  liftIO $ putStrLn $ "peeking through " ++ show v'
+                  case lookupVarOp env v' of
+                    Just (VO_E (Opnd (KNVar v'') _ _ _ _)) ->
+                        if tidIdent v' == tidIdent v''
+                          then do liftIO $ putStrLn $ "var op was self-bound, residualizing call"
+                                  resExpr "formal" -- formal parameters are self-bound when inlinig
+                          else do liftIO $ putStrLn $ "peeking in turn through rebinding to " ++ show v''
+                                  peekRebinding v''
+                    Just (VO_E  _)  -> do liftIO $ putStrLn $ "var op was VO_E (residualizing call)"
+                                          resExpr "xv-Just_VO_E"
+                    Nothing         -> do liftIO $ putStrLn $ "var op was Nothing (residualizing call)"
+                                          resExpr "xv-Nothing"
+                    Just (VO_F opf) -> do liftIO $ putStrLn $ "var op was VO_F (maybe inlining call)"
+                                          maybeInlineCall opf v v'
+
+        -- If the callee isn't a known function, we can't possibly inline it.
+        Just (VO_E _oe) -> do resExpr "ne-Just_VO_E_"
+        Nothing         -> do resExpr "ne-Nothing"
+
+        Just (VO_F opf) -> do maybeInlineCall opf v v
 
 handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
  smry <- summarize opf
@@ -1736,10 +1774,10 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
 
     Just (fn' , _) -> do
       smry' <- summarize opf
-      putDocLn3 $  text "visited fn opf " <> smry
-               <$> text "           ==> " <> smry'
-               <$> text "               from call  [[" <+> pretty expr <+> text "]], producing:"
-      putDocLn3 $ indent 32 $ pretty fn'
+      --putDocLn3 $  text "visited fn opf " <> smry
+      --         <$> text "           ==> " <> smry'
+      --         <$> text "               from call  [[" <+> pretty expr <+> text "]], producing:"
+      --putDocLn3 $ indent 32 $ pretty fn'
 
       inCenMap <- gets inCallPassCensus >>= readRef
       let inCen v = Map.lookup (tidIdent v) inCenMap
@@ -1749,13 +1787,9 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
       -- Note: here, we're using the original vars, not the fresh ones.
       sizeCounter <- computeSizeCounter v (inCen v) (map inCen vs) sizes
 
-      putDocLn3 $ text "handleCallOfKnownFunction trying to fold lambda from call [[" <+> pretty expr <+> text "]]"
-              <$> text "         with size counter: " <> pretty sizeCounter
+      --putDocLn3 $ text "handleCallOfKnownFunction trying to fold lambda from call [[" <+> pretty expr <+> text "]]"
+      --        <$> text "         with size counter: " <> pretty sizeCounter
 
-      if (show (fnIdent fn') == "mkTextConcat")
-        then do putDocLn $ text "calling FoldLambda on " <> pretty (fnIdent fn')
-                            <$> indent 8 (pretty fn')
-        else do return ()
       mb_e'  <- catchError (foldLambda' fn' opf v qvs' sizeCounter env)
                            (\e -> do putDocLn $ text "******* foldLambda aborted inlining of call(size limit " <> text (show sizeCounter) <> text " ): " <> pretty expr <> text (show e)
                                      --putDocLn $ text "called fn was " <> pretty fn'
@@ -1814,7 +1848,7 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
     -- input are residual vars, not src vars, fwiw
     foldLambda' :: ResFn -> Opnd SrcFn -> TypedId MonoType
                 -> [TypedId MonoType] -> SizeCounter -> SrcEnv -> In (Maybe (Rez ResExpr, Int))
-    foldLambda' fn' opnd@(Opnd _ _ loc_vis loc_op _) v vs' sizeCounter env = do
+    foldLambda' fn' opnd@(Opnd _ _ loc_vis loc_op _) v vs' sizeCounter env = withPendingFold expr $ do
      let fn   = fn'
      let env' = extendEnv ids ids' ops env
                    where
@@ -1851,10 +1885,10 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
              isVariable (IsVariable {}) = True
 
          putDocLn3 $ text "{{{{{{{{{{{{{{{{{{"
-         putDocLn3 $ text "strt lambda folding for call " <+> pretty expr
-         putDocLn3 $ text $ "            setting outer-pending flag to "
-                             ++ show (k - 1) ++ " for " ++ show (tidIdent $ fnVar fn) ++ " ;; " ++ show (_firstVisit, cachedsize)
-         putDocLn3 $ indent 16 $ pretty (fnBody fn)
+         --putDocLn3 $ text "strt lambda folding for call " <+> pretty expr
+         --putDocLn3 $ text $ "            setting outer-pending flag to "
+         --                  ++ show (k - 1) ++ " for " ++ show (tidIdent $ fnVar fn) ++ " ;; " ++ show (_firstVisit, cachedsize)
+         --putDocLn3 $ indent 16 $ pretty (fnBody fn)
 
          mb_sizes <- mapM (maybeCachedOpSize . lookupVarOp' env) vs'
          mb_vars  <- mapM (\v -> do mbe <- maybeCachedEF (lookupVarOp' env v)
@@ -1872,6 +1906,12 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
              let needsOuterPendingGuard = _firstVisit || isRec fn
              when needsOuterPendingGuard (writeRef loc_op $ OP_Limit (k - 1))
              before <- knTotalEffort
+             stkref <- gets inCurrentPendings
+             stk <- readRef stkref
+             putDocLn3 $ text "attemping lambda fold of [[" <+> pretty expr <+> text "]] with current effort " <>
+                            pretty before <> text " and stack " <> pretty stk
+                       <$> indent 8 (text ("body of called lambda " ++ show (fnIdent fn') ++ " is:"))
+                       <$> indent 8 (pretty (fnBody fn))
              (Rez e' , size) <-
                 inBracket_' "bracket'" (return ())
                             (withSizeCounter ("foldLambda:"++show (fnIdent fn' )++" "++show (map tidIdent vs' )  ++ " ; " ++ show mb_sizes)
@@ -1891,20 +1931,13 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
              putDocLn3 $ text $ "done lambda folding; resetting outer-pending flag to "
                                 ++ show k ++ " for " ++ show (tidIdent $ fnVar fn)
              putDocLn3 $ indent 8 $ text "for call  " <+> pretty expr
-             putDocLn3 $ indent 16 $ pretty e'
+             -- putDocLn3 $ indent 16 $ pretty e'
              putDocLn3 $ text "}}}}}}}}}}}}}}}}}}"
 
              after <- knTotalEffort
              when noConstants $ putDocLn (text "no-constant ok     inlining effort was " <> pretty (after - before)
                                                                 <+> text "for size-" <> pretty size
                                                                 <+> text "call" <+> pretty expr)
-
-             if ".x!3135" `isPrefixOf` show (pretty expr)
-               then do r <- readRef loc_vis
-                       putDocLn $ indent 4 (case r of
-                                                Visited v _ _ -> pretty v
-                                                _   -> text "wtf unvisited??")
-               else return ()
 
              return $ Just (Rez (KNInlined t0 before after expr e' ), size)
 
@@ -1979,7 +2012,7 @@ visitF msg (Opnd fn env loc_fn _ loc_ip) = do
             debugDocLn $ text $ "inner-pending limit reached for " ++ show (tidIdent $ fnVar fn)
             return Nothing
           IP_Limit k -> do
-            putDocLn5 $ text "visitF(" <> text msg <> text ") called, using no-limit, for fn  "
+            putDocLn5 $ text "visitF(" <> text msg <> text ") called... using no-limit, for fn  "
                     <>  text (show (tidIdent $ fnVar fn)) <> text "  which is:"
                     <$> indent 16 (pretty fn)
             (fn' , size) <- do
@@ -1998,8 +2031,8 @@ visitF msg (Opnd fn env loc_fn _ loc_ip) = do
             writeRef loc_fn (Visited fn' size after)
             return $ Just (fn', size)
     Visited f size _ -> do
-      putDocLn6 $ text $ "reusing cached result (size " ++ show size ++ " for fn " ++ show (tidIdent $ fnVar fn)
-      putDocLn6 $ indent 32 $ pretty f
+      --putDocLn6 $ text $ "reusing cached result (size " ++ show size ++ " for fn " ++ show (tidIdent $ fnVar fn)
+      --putDocLn6 $ indent 32 $ pretty f
       return $ Just (f, size)
  where
     knInlineFn' :: SrcFn -> SrcEnv -> In (ResFn)
@@ -2050,12 +2083,14 @@ visitE (resid, Opnd e env loc_e _ loc_ip) = do
                 x <- gets inSizeLimit
                 zr <- gets inSizeCntr
                 z  <- readRef zr
+                {-
                 if canInlineMuch e then do
                     --liftIO $ putStrLn $ "visiting expr bound to " ++ show resid ++ " with limit " ++ show x
                     if snd (knSize e) > 4
                       then do putDocLn $ indent 8 $ text "too big, size=" <> pretty (knSize e)
                       else do putDocLn $ indent 8 $ pretty e
                   else do return ()
+                  -}
 
                 -- Inline e with the same size limit that's currently in place,
                 -- but don't modify the current size counter until/unless we
@@ -2323,6 +2358,7 @@ knElimRebinds expr = go Map.empty expr where
             KNCase   _t v bnds  -> KNCase   _t (qv v ) (map qb bnds)
             KNCompiles _r _t e  -> KNCompiles _r _t (q e)
             KNInlined _t0 _to _tn _old new  -> KNInlined _t0 _to _tn _old (q new)
+            KNNotInlined x e -> KNNotInlined x (q e)
 fmapCaseArm :: (p1 t1 -> p2 t2) -> (e1 -> e2) -> (t1 -> t2) -> CaseArm p1 e1 t1 -> CaseArm p2 e2 t2
 fmapCaseArm fp fe ft (CaseArm p e g b rng)
                     = CaseArm (fp p) (fe e) (fmap fe g)
