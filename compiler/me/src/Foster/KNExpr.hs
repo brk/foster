@@ -1038,9 +1038,13 @@ knInline mbDefaultSizeLimit shouldDonate knmod = do
   let st = evalStateT et (InlineState uniq stkRef currlvl effort Map.empty sizectr NoLimit
                                       cenRef defaultSizeLimit shouldDonate)
   result <- liftIO st
-  stk <- liftIO $ readIORef stkRef
+  expended <- readRef effort
+  stk <- readRef stkRef
   liftIO $ putDocLn $ text "stkref was:" <$> pretty stk
   liftIO $ putDocLn $ text "census was:" <$> pretty (Map.toList $ inCensus e)
+  liftIO $ putDocLn $ text "total number of callsites in src program: " <> pretty (countCallSites e)
+  liftIO $ putDocLn $ text "total effort expended while inlining: " <> pretty expended
+  liftIO $ putDocLn $ text "average effort per call site: " <> pretty (expended `div` countCallSites e)
   case result of
     Right (Rez expr') -> return $ knmod { moduleILbody = expr' }
     Left err -> do liftIO $ putStrLn $ show err
@@ -2494,4 +2498,15 @@ inCensusExpr expr = go expr where
     -- One potential improvement: track variable renamings.
     _ -> return ()
 
+-- }}}
+
+
+-- {{{||||||||||||||||||||||  Counting src call sites  |||||||||||||||
+countCallSites :: KNMono -> Int
+countCallSites expr = execState (go expr) 0 where
+  go expr = case expr of
+    KNCall {} -> do n <- get
+                    let !x = n + 1
+                    put x
+    _ -> mapM_ go (childrenOf expr)
 -- }}}
