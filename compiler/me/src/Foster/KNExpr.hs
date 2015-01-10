@@ -1040,11 +1040,12 @@ knInline mbDefaultSizeLimit shouldDonate knmod = do
   result <- liftIO st
   expended <- readRef effort
   stk <- readRef stkRef
-  liftIO $ putDocLn $ text "stkref was:" <$> pretty stk
-  liftIO $ putDocLn $ text "census was:" <$> pretty (Map.toList $ inCensus e)
-  liftIO $ putDocLn $ text "total number of callsites in src program: " <> pretty (countCallSites e)
-  liftIO $ putDocLn $ text "total effort expended while inlining: " <> pretty expended
-  liftIO $ putDocLn $ text "average effort per call site: " <> pretty (expended `div` countCallSites e)
+  liftIO $ putDocLn  $ text "------------------------------------"
+  liftIO $ putDocLn4 $ text "stkref was:" <$> pretty stk
+  liftIO $ putDocLn4 $ text "census was:" <$> pretty (Map.toList $ inCensus e)
+  do liftIO $ putDocLn $ text "total number of callsites in src program: " <> pretty (countCallSites e)
+     liftIO $ putDocLn $ text "total effort expended while inlining: " <> pretty expended
+     liftIO $ putDocLn $ text "average effort per call site: " <> pretty (expended `div` countCallSites e)
   case result of
     Right (Rez expr') -> return $ knmod { moduleILbody = expr' }
     Left err -> do liftIO $ putStrLn $ show err
@@ -1094,7 +1095,8 @@ putDocLn6 _d = liftIO $ putDoc $ _d <> line
 putDocLn7 _d = liftIO $ putDoc $ _d <> line
 -}
 
-putDocLn  _ = return ()
+putDocLn  _d = liftIO $ putDoc $ _d <> line
+--putDocLn  _ = return ()
 putDocLn3 _ = return ()
 putDocLn4 _ = return ()
 putDocLn5 _ = return ()
@@ -1529,7 +1531,7 @@ knInlineToplevel expr env = do
         fns' <- mapM pickFn (zip fns mb_fns)
         occ_sts <- mapM getVarStatus ids'
         let irrel_ids = [(id, id') | (id, id' , occst) <- zip3 ids ids' occ_sts, not (relevant occst id' ) ]
-        liftIO $ putDocLn $ text "toplevel dead ids: " <> pretty irrel_ids
+        liftIO $ putDocLn3 $ text "toplevel dead ids: " <> pretty irrel_ids
         return $ Rez $ mkLetFuns [(id, fn) | (id, fn, occst)
                                  <- zip3 ids' fns' occ_sts
                                  , relevant occst id] b'
@@ -1642,7 +1644,7 @@ knInline' expr env = do
         expsiz' <- mapM visitE (zip ids' ops)
         occ_sts <- mapM getVarStatus ids'
         let irrel_ids = [(id, id') | (id, id' , occst) <- zip3 ids ids' occ_sts, not (relevant occst id' ) ]
-        liftIO $ putDocLn $ text "letrec dead ids: " <> pretty irrel_ids
+        liftIO $ putDocLn3 $ text "letrec dead ids: " <> pretty irrel_ids
         let (idses'', sizes) = unzip [((id, e'), size)
                                      | (id, (e', size), occst)
                                      <- zip3 ids' expsiz' occ_sts
@@ -1666,12 +1668,12 @@ knInline' expr env = do
         Rez b' <- knInline' b env'
 
         liftIO $ do
-          putDocLn $ text "KNLetFuns " <> pretty ids
-          putDocLn $ indent 8 $ text "inlined"
-          putDocLn $ indent 16 $ pretty b
-          putDocLn $ indent 8 $ text "to"
-          putDocLn $ indent 16 $ pretty b'
-          putDocLn $ indent 8 $ text "; now looking at the fns bound to " <> pretty ids
+          putDocLn4 $ text "KNLetFuns " <> pretty ids
+          putDocLn4 $ indent 8 $ text "inlined"
+          putDocLn4 $ indent 16 $ pretty b
+          putDocLn4 $ indent 8 $ text "to"
+          putDocLn4 $ indent 16 $ pretty b'
+          putDocLn4 $ indent 8 $ text "; now looking at the fns bound to " <> pretty ids
 
         mb_fns  <- mapM (visitF "KNLetFuns.2") ops
         occ_sts <- mapM getVarStatus ids'
@@ -1766,7 +1768,7 @@ knInline' expr env = do
 handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
  smry <- summarize opf
  when (shouldInspect (tidIdent v) || shouldInspect (fnIdent fn0)) $ do
-     putDocLn $ text "handleCallOfKnownFunction summarized" <+> text (show $ tidIdent v)
+     putDocLn5 $ text "handleCallOfKnownFunction summarized" <+> text (show $ tidIdent v)
             <$> text "        " <> smry
             <$> text "        " <> pretty (fnIdent fn0)
             <$> text "        " <> pretty (fnIsRec fn0)
@@ -1806,14 +1808,14 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
       --        <$> text "         with size counter: " <> pretty sizeCounter
 
       mb_e'  <- catchError (foldLambda' fn' opf v qvs' sizeCounter env)
-                           (\e -> do putDocLn $ text "******* foldLambda aborted inlining of call(size limit " <> text (show sizeCounter) <> text " ): " <> pretty expr <> text (show e)
+                           (\e -> do putDocLn6 $ text "******* foldLambda aborted inlining of call(size limit " <> text (show sizeCounter) <> text " ): " <> pretty expr <> text (show e)
                                      --putDocLn $ text "called fn was " <> pretty fn'
-                                     putDocLn $ text $ show (tidIdent v) ++ " w/census " ++ show (inCen v)
+                                     putDocLn6 $ text $ show (tidIdent v) ++ " w/census " ++ show (inCen v)
                                      let ops = map (lookupVarOp' env) qvs'
                                      mapM_ (\(o,v) -> do smry <- summarizeVarOp o
                                                          putDocLn $ text ("for original arg " ++ show (tidIdent v) ++ ", " ++ " w/census " ++ show (inCen v) ++ "; ") <> smry)
                                            (zip ops vs)
-                                     putDocLn $ text "called fn sized " <> text (show $ knSize (fnBody fn' ))
+                                     putDocLn6 $ text "called fn sized " <> text (show $ knSize (fnBody fn' ))
                                      return Nothing)
       effortAfter <- knTotalEffort
 
@@ -1890,10 +1892,10 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
      o_pending <- readRef loc_op
      case (o_pending, isRec fn && (\(OP_Limit k) -> k) o_pending <= 1) of
        (_, True)  -> do
-         putDocLn $ text $ ":( :( :( lambda folding aborted for recursive function " ++ show (pretty expr)
+         putDocLn6 $ text $ ":( :( :( lambda folding aborted for recursive function " ++ show (pretty expr)
          return Nothing
        (OP_Limit 0, _) -> do
-         putDocLn $ text $ ":( :( :( lambda folding failed due to outer-pending flag for " ++ show (tidIdent $ fnVar fn) ++ " with vars " ++ show (map tidIdent vs') ++ "..."
+         putDocLn6 $ text $ ":( :( :( lambda folding failed due to outer-pending flag for " ++ show (tidIdent $ fnVar fn) ++ " with vars " ++ show (map tidIdent vs') ++ "..."
          return Nothing
        (OP_Limit k, _) -> do
 
@@ -1948,7 +1950,7 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
                             (\fail -> do if fail
                                            then do
                                              after <- knTotalEffort
-                                             when noConstants $ putDocLn (text "no-constant failed inlining effort was " <> pretty (after - before)
+                                             when noConstants $ putDocLn6 (text "no-constant failed inlining effort was " <> pretty (after - before)
                                                                 <+> text "for cachedsize-" <> pretty cachedsize
                                                                 <+> text "call" <+> pretty expr <+> text " ;;;; " <> text (show (currsz, mblim)))
                                            else return ()
@@ -1963,7 +1965,7 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
              putDocLn3 $ text "}}}}}}}}}}}}}}}}}}"
 
              after <- knTotalEffort
-             when noConstants $ putDocLn (text "no-constant ok     inlining effort was " <> pretty (after - before)
+             when noConstants $ putDocLn6 (text "no-constant ok     inlining effort was " <> pretty (after - before)
                                                                 <+> text "for size-" <> pretty size
                                                                 <+> text "call" <+> pretty expr)
 
