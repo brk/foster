@@ -142,8 +142,8 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
  --tcLift $ putStrLn ("tcUnifyLoop: t1 = " ++ show t1 ++ "; t2 = " ++ show t2)
  if illegal t1 || illegal t2
   then tcFailsMore
-        [string ("Bound type variables cannot be unified!\n" ++
-               "Unable to unify\n\t") <> pretty t1 <> string "\nand\n\t" <> pretty t2
+        [text "Bound type variables cannot be unified! Unable to unify"
+        ,text "\t" <> pretty t1 <> string "\nand\n\t" <> pretty t2
         ,text "t1::", showStructure t1, text "t2::", showStructure t2]
   else
    case (t1, t2) of

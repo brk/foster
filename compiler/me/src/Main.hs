@@ -159,19 +159,8 @@ typecheckFnSCC showASTs showAnnExprs pauseOnErrors scc (ctx, tcenv) = do
         -- to type check a recursive & polymorphic function.
         bindingForFnAST :: Context TypeTC -> FnAST TypeAST -> Tc (ContextBinding TypeTC)
         bindingForFnAST ctx f = do
-            t <- fnTypeTemplate ctx f
+            t <- fnTypeShallow ctx f
             return $ pair2binding (fnAstName f, t, Nothing)
-
-        fnTypeTemplate :: Context TypeTC -> FnAST TypeAST -> Tc TypeTC
-        fnTypeTemplate ctx f = tcType ctx fnTyAST
-          where
-           fnTyAST0 = FnTypeAST (map tidType $ fnFormals f)
-                                (MetaPlaceholderAST MTVSigma ("ret type for " ++ (T.unpack $ fnAstName f)))
-                                FastCC
-                                (if fnWasToplevel f then FT_Proc else FT_Func)
-           fnTyAST = case fnTyFormals f of
-                         [] -> fnTyAST0
-                         tyformals -> ForAllAST (map convertTyFormal tyformals) fnTyAST0
 
 typecheckAndFoldContextBindings :: Context TypeTC ->
                                   [ContextBinding TypeAST] ->
