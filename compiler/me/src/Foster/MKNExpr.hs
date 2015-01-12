@@ -551,9 +551,9 @@ data RedexSituation t =
 classifyRedex _ Nothing _ = return CallOfUnknownFunction
 classifyRedex callee (Just fn) args = do
   callee_singleton <- freeOccIsSingleton callee
-  case callee_singleton of
-    True -> return $ CallOfSingletonFunction fn
-    False -> do
+  case (callee_singleton, mkfnIsRec fn) of
+    (True, NotRec) -> return $ CallOfSingletonFunction fn
+    _ -> do
       donationss <- mapM (\(arg, binder) -> do
                          argsingle <- freeOccIsSingleton arg
                          argfn     <- freeOccIsSingleton arg
