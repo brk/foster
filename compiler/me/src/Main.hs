@@ -616,7 +616,7 @@ lowerModule ai_mod ctx_il = do
          _ <- liftIO $ renderKN monomod2 True
          putDocLn $ (outLn "^^^ ===================================")
 
-         when inline $ do
+         when (inline || getShrinkFlag flags) $ do
            putDocLn $ (outLn "/// Inlined       program =============")
            putDocLn $ (outLn $ "///               size: " ++ show (knSize (moduleILbody monomod4)))
            _ <- liftIO $ renderKN monomod4 True
