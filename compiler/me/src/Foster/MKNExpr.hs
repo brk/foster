@@ -18,7 +18,7 @@ import qualified Data.Text as T
 import qualified Data.Map as Map
 import Data.Map(Map)
 import qualified Data.List as List(foldl')
-import Data.Maybe(catMaybes)
+import Data.Maybe(catMaybes, isJust)
 
 import System.IO(openFile, hClose, IOMode(..))
 
@@ -546,25 +546,29 @@ data RedexSituation t =
        CallOfUnknownFunction
      | CallOfSingletonFunction (MKFn (Subterm t) t)
      | CallOfDonatableFunction (MKFn (Subterm t) t)
-     | SomethingElse
+     | SomethingElse           (MKFn (Subterm t) t)
 
-classifyRedex _ Nothing _ = return CallOfUnknownFunction
-classifyRedex callee (Just fn) args = do
+classifyRedex callee args knownFns = do
+  mb_fn <- lookupBinding callee knownFns
+  classifyRedex' callee mb_fn args knownFns
+
+classifyRedex' _ Nothing _ _ = return CallOfUnknownFunction
+classifyRedex' callee (Just fn) args knownFns = do
   callee_singleton <- freeOccIsSingleton callee
   case (callee_singleton, mkfnIsRec fn) of
     (True, NotRec) -> return $ CallOfSingletonFunction fn
     _ -> do
       donationss <- mapM (\(arg, binder) -> do
                          argsingle <- freeOccIsSingleton arg
-                         argfn     <- freeOccIsSingleton arg
+                         argboundfn <- lookupBinding arg knownFns
                          bindsingle <- binderIsSingletonOrDead binder
-                         if argsingle && argfn && bindsingle
+                         if argsingle && isJust argboundfn && bindsingle
                            then return [(arg, binder)]
                            else return []
                          ) (zip args (mkfnVars fn))
       let donations = concat donationss
       if null donations
-        then return $ SomethingElse
+        then return $ SomethingElse fn
         else return $ CallOfDonatableFunction fn
 -- }}}
 
@@ -694,24 +698,41 @@ mknInline subterm = do
                 go gas
              Just (mredex, _parent) -> case mredex of
                MKCall _up _ty callee args -> do
-                 mb_fn <- lookupBinding callee knownFns
-                 situation <- classifyRedex callee mb_fn args
+                 situation <- classifyRedex callee args knownFns
                  case situation of
-                   CallOfUnknownFunction -> do return ()
+                   CallOfUnknownFunction -> do
+                     --do redex <- knOfMK mredex
+                     --   liftIO $ putDocLn $ text "CallOfUnknownFunction: " <+> pretty redex
+                     return ()
                    CallOfSingletonFunction fn -> do
+                     --do redex <- knOfMK mredex
+                     --   liftIO $ putDocLn $ text "CallOfSingletonFunction: " <+> pretty redex
                      newbody <- betaReduceOnlyCall fn args >>= readLink "CallOfSingleton"
                      replaceWith mredex newbody
                      killBinding callee knownFns
                    CallOfDonatableFunction fn -> do
+                     --do redex <- knOfMK mredex
+                     --   liftIO $ putDocLn $ text "CallOfDonatableFunction: " <+> pretty redex
                      flags <- gets ccFlagVals
                      if getInliningDonate flags
                        then do
                          fn' <- copyMKFn fn
                          newbody <- betaReduceOnlyCall fn' args >>= readLink "CallOfDonatable"
                          replaceWith mredex newbody
+                         killOccurrence callee
                          collectRedexes wr kr fr newbody
                        else return ()
-                   SomethingElse -> do return ()
+                   SomethingElse _fn -> do
+                     --do redex <- knOfMK mredex
+                     --   liftIO $ putDocLn $ text "SomethingElse: " <+> pretty redex
+                     if shouldInlineRedex mredex _fn
+                       then do
+                             fn' <- copyMKFn _fn
+                             newbody <- betaReduceOnlyCall fn' args >>= readLink "CallOfDonatable"
+                             replaceWith mredex newbody
+                             killOccurrence callee
+                             collectRedexes wr kr fr newbody
+                       else return ()
                  go (gas - 1)
 
                MKCallPrim _up _ty _prim _args _rng -> do
@@ -734,8 +755,34 @@ mknInline subterm = do
 
     return kn1
 
+shouldInlineRedex _mredex _fn =
+  -- TODO use per-call-site annotation, when we have such things.
+  let id = tidIdent (boundVar (mkfnVar _fn)) in
+  T.pack "doinline_" `T.isInfixOf` identPrefix id
+
 replaceWith :: MKTerm ty -> MKTerm ty -> Compiled ()
 replaceWith target newterm = writeOrdRef (selfLink target) (Just newterm)
+
+killOccurrence fo = do
+    isSingleton <- dlcIsSingleton fo
+    if isSingleton
+     then return ()
+     else do
+       n <- dlcNext fo
+       p <- dlcPrev fo
+       writeOrdRef (dlcNextRef p) n
+       writeOrdRef (dlcPrevRef n) p
+
+    -- Make sure binder doesn't point to fo
+    MKBound _ r <- freeBinder fo
+    mb_fo' <- readOrdRef r
+    case mb_fo' of
+      Just fo' | dlcIsSameNode fo fo' -> do
+        if isSingleton
+          then writeOrdRef r Nothing
+          else do fo'' <- dlcNext fo
+                  writeOrdRef r $ Just fo''
+      _ -> return ()
 
 killBinding fo knownFns = do
     binding@(MKBound _ r') <- freeBinder fo
