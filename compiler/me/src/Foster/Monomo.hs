@@ -149,9 +149,15 @@ monoKN subst inTypeExpr e =
     -- instantiation of the polymorphics.
     b' <- qq b
 
+    (polyids, polyfns) <- do let (polyids, polyfns) = unzip polys
+                             polyfns' <- mapM (monoFn subst) polyfns
+                             return (polyids, polyfns' )
     (monoids, monofns) <- monoGatherVersions ids
 
-    return $ mkFunctionSCCs monoids monofns
+    -- We keep the polymorphic versions around in case they have been
+    -- referenceed without being instantiated. If they are dead, they
+    -- will be trivially removed during shrinking.
+    return $ mkFunctionSCCs (polyids ++ monoids) (polyfns ++ monofns)
                  (mkKNLetFuns ids'    fns'    b')
                   mkKNLetFuns
             where mkKNLetFuns []  []  b = b
@@ -324,8 +330,8 @@ monoExternDecl (s, t) = liftM (\t' -> (s, t')) (monoType emptyMonoSubst t)
 -- Monomorphized polymorphic values get different names.
 -- The variant in which every type is an opaque pointer keeps the original
 -- name; the other variants get distinct names.
-getMonoId :: {-Poly-} Ident -> [MonoType] -> {-Mono-}  Ident
-getMonoId id tys =
+cvtMonoId :: {-Poly-} Ident -> [MonoType] -> {-Mono-}  Ident
+cvtMonoId id tys =
   if allTypesAreBoxed tys
     then id
     else idAppend id (show tys)
@@ -351,10 +357,10 @@ monoInstantiate :: FnExprIL' -> {-Poly-} Ident
 monoInstantiate polydef polybinder
                 monotys subst      ty' = do
   let polyprocid = tidIdent $ fnVar polydef
-  let monoprocid = getMonoId polyprocid monotys
-  let monobinder = getMonoId polybinder monotys
+  monoprocid <- lift $ ccRefreshLocal $ cvtMonoId polyprocid monotys
+  monobinder <- lift $ ccRefreshLocal $ cvtMonoId polybinder monotys
   have <- seen monoprocid
-  if have
+  if have || polybinder == monobinder
    then return monobinder
    else do  markSeen monoprocid
             monodef  <- replaceFnVar monoprocid polydef >>= alphaRename
@@ -438,7 +444,8 @@ monoSubstLookup subst tv@(BoundTyVar nm sr) =
   case Map.lookup tv subst of
       Just monotype -> monotype
       Nothing -> if True
-                  then TyConApp ("AAAAAAmissing:" ++ nm ++ showSourceRange sr) []
+                  then --TyConApp ("AAAAAAmissing:" ++ nm ++ showSourceRange sr) []
+                       PtrTypeUnknown
                   else error $
                          "Monomorphization (Monomo.hs:monoSubsLookup) "
                       ++ "found no monotype for variable " ++ show tv

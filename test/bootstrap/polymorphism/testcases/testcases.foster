@@ -2,6 +2,36 @@ main = {
   t0 !;
   t1 !;
   t2 !;
+
+  test_dead_poly !;
+  test_mono_poly_order !;
+  test_mono_poly_unused !;
+};
+
+test_dead_poly = {
+  // If we try to monomorphize this unnecessarily, we should get an error.
+  REC polyid = { forall t:Boxed, aaa:t => () };
+  ()
+};
+
+test_mono_poly_order = {
+  // * Mutually recursive nest.
+  // * A instantiates B, but B does not instantiate A.
+  REC polyA = { forall t:Boxed, aaa:t => if False then z = polyB:[Int32] 0; () else () end };
+  REC polyB = { forall t:Type,  qqq:t => f = polyA; f (); () };
+  a = polyB True; // body instantiates B at Bool
+  // polyA needs instantiation of B at Int32, but it hasn't been demanded
+  // from recursive instantation so far, unless we process polymorphic bodies
+  // before collecting monomorphic instantiations.
+  ()
+};
+
+test_mono_poly_unused = {
+  REC unusedMonoRec = { x : () => () };
+  unusedMono = { x : () => () };
+  REC unusedPolyRec = { forall t:Boxed, x : t => () };
+  unusedPoly = { forall t:Boxed, x : t => () };
+  ()
 };
 
 f = { forall ft:Boxed,

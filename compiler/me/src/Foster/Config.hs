@@ -64,6 +64,11 @@ ccFreshId :: T.Text -> Compiled Ident
 ccFreshId txt = do u <- ccUniq
                    return $ Ident txt u
 
+ccRefreshLocal :: Ident -> Compiled Ident
+ccRefreshLocal (GlobalSymbol t) = return $ GlobalSymbol t
+ccRefreshLocal (Ident t _) = do u <- ccUniq
+                                return $ Ident t u
+
 ccRecordCFGSizes :: (String, (Int, Int), (Int, Int)) -> Compiled ()
 ccRecordCFGSizes entry = do
   r <- gets ccCFGSizes
