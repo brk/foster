@@ -7,6 +7,7 @@
 
 #include <antlr3defs.h>
 #include <string>
+#include <vector>
 #include <iosfwd>
 
 typedef pANTLR3_BASE_TREE pTree;
