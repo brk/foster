@@ -86,65 +86,65 @@ bool SpecializeAllocations::runOnBasicBlock(BasicBlock &BB) {
   assert(memalloc && memalloc_16 && "Pass not initialized!");
 
   BasicBlock::InstListType &BBIL = BB.getInstList();
-  const DataLayout* TD = BB.getParent()->getDataLayout();
+  const DataLayout& TD = BB.getParent()->getParent()->getDataLayout();
 
   // Can't use range loop because we modify I in the loop...
   for (BasicBlock::iterator I = BB.begin(), E = BB.end(); I != E; ++I) {
     if (llvm::CallInst* call = llvm::dyn_cast<CallInst>(I)) {
+
       llvm::Function* F = call->getCalledFunction();
 
-      if (F == memalloc) {
-        errs() << "FosterMallocSpecializer wasn't expecting "
-               << "direct call of memalloc!";
-        exit(1);
-      } else {
-        ConstantExpr* cc = dyn_cast<ConstantExpr>(call->getCalledValue());
-        if (cc && cc->isCast()) {
-          if (Function* F = llvm::dyn_cast<Function>(cc->getOperand(0))) {
-            if (F == memalloc) {
-              // We expect both the memalloc and arg to be bitcasts.
-              ConstantExpr* ac = dyn_cast<ConstantExpr>(call->getArgOperand(0));
-              if (ac && ac->isCast()) {
-                GlobalVariable* gv = dyn_cast<GlobalVariable>(ac->getOperand(0));
-                ConstantStruct* cs = dyn_cast<ConstantStruct>(gv->getInitializer());
-                ConstantExpr* sze = dyn_cast<ConstantExpr>(cs->getOperand(0));
-                Constant* szc = ConstantFoldConstantExpression(sze, TD);
-                if (szc && !llvm::isa<ConstantInt>(szc)) {
-                  szc = ConstantFoldConstantExpression(dyn_cast<ConstantExpr>(szc), TD);
-                }
-                if (!szc) {
-                  llvm::errs() << "FosterMallocSpecializer: Unable to evaluate allocated size!\n";
-                  exit(1);
-                }
-                ConstantInt* sz = dyn_cast<ConstantInt>(szc);
-                if (!sz) {
-                  llvm::errs() << "FosterMallocSpecializer: Unable to evaluate allocated size to integer!\n";
-                  llvm::errs() << (*sze) << "\n";
-                  llvm::errs() << "was constant-folded by LLVM to:\n";
-                  llvm::errs() << (*szc) << "\n";
-                   exit(1);
-                }
+      // The memalloc might be bitcasted
+      ConstantExpr* cc = dyn_cast<ConstantExpr>(call->getCalledValue());
+      if (cc && cc->isCast()) {
+        F = llvm::dyn_cast<Function>(cc->getOperand(0));
+      }
 
-                // OK, we've computed the size of the allocation.
-                // Let's see if we can specialize it...
-                if (sz->getSExtValue() == 16) {
-                  // Replace call to memalloc with call to memalloc_16.
-                  Constant* mem16 = ConstantExpr::getBitCast(memalloc_16,
-                                                             cc->getType());
-                  CallInst* newcall = CallInst::Create(mem16, ac, "mem16_", I);
-                  call->replaceAllUsesWith(newcall);
-                  I = --BBIL.erase(I); // remove & delete the old memalloc call.
-                  Changed = true;
-                } else {
-                  //llvm::errs() << "found allocation of size not-16\n";
-                }
-              } else {
-                errs() << "FosterMallocSpecializer wasn't expecting "
-                       << "direct call of memalloc!";
-                exit(1);
-              }
-            }
+      if (F == memalloc) {
+        ConstantExpr* ac = dyn_cast<ConstantExpr>(call->getArgOperand(0));
+        if (ac && ac->isCast()) {
+          GlobalVariable* gv = dyn_cast<GlobalVariable>(ac->getOperand(0));
+          ConstantStruct* cs = dyn_cast<ConstantStruct>(gv->getInitializer());
+          ConstantExpr* sze = dyn_cast<ConstantExpr>(cs->getOperand(0));
+          Constant* szc = ConstantFoldConstantExpression(sze, TD);
+          if (szc && !llvm::isa<ConstantInt>(szc)) {
+            szc = ConstantFoldConstantExpression(dyn_cast<ConstantExpr>(szc), TD);
           }
+          if (!szc) {
+            llvm::errs() << "FosterMallocSpecializer: Unable to evaluate allocated size!\n";
+            exit(1);
+          }
+          ConstantInt* sz = dyn_cast<ConstantInt>(szc);
+          if (!sz) {
+            llvm::errs() << "FosterMallocSpecializer: Unable to evaluate allocated size to integer!\n";
+            llvm::errs() << (*sze) << "\n";
+            llvm::errs() << "was constant-folded by LLVM to:\n";
+            llvm::errs() << (*szc) << "\n";
+              exit(1);
+          }
+
+          // OK, we've computed the size of the allocation.
+          // Let's see if we can specialize it...
+          if (sz->getSExtValue() == 16) {
+            // Replace call to memalloc with call to memalloc_16.
+            Constant* mem16 = ConstantExpr::getBitCast(memalloc_16,
+                                                        call->getCalledValue()->getType());
+            CallInst* newcall = CallInst::Create(mem16, ac, "mem16_", I);
+            call->replaceAllUsesWith(newcall);
+            I = --BBIL.erase(I); // remove & delete the old memalloc call.
+            Changed = true;
+          } else {
+            llvm::errs() << "found allocation of size not-16\n";
+          }
+        } else {
+          if (ac && !ac->isCast()) {
+            errs() << "FosterMallocSpecializer wasn't expecting "
+                    << "direct call of (non-bit-casted) memalloc!";
+          } else {
+            errs() << "FosterMallocSpecializer wasn't able to find the called function! "
+                    << call;
+          }
+          exit(1);
         }
       }
     }

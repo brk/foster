@@ -259,7 +259,7 @@ llvm::Value* CodegenPass::emitFosterStringOfCString(Value* cstr, Value* sz) {
   // TODO null terminate?
 
   llvm::Value* textfragment = lookupFunctionOrDie("TextFragment");
-  llvm::CallInst* call = builder.CreateCall2(textfragment, hstr, sz);
+  llvm::CallInst* call = builder.CreateCall(textfragment, { hstr, sz });
   call->setCallingConv(llvm::CallingConv::Fast);
   return call;
 }
@@ -539,6 +539,15 @@ void LLProcCFG::codegenToFunction(CodegenPass* pass, llvm::Function* F) {
   }
 
   checkForUnusedEmptyBasicBlocks(F);
+
+  // Mark function to disable frame pointer elimination
+  // so that GC is easier/more reliable.
+  // TODO this can be skipped for functions which (transitively)
+  //      cannot trigger a GC.
+  auto Attrs = F->getAttributes();
+  Attrs = Attrs.addAttribute(F->getContext(), llvm::AttributeSet::FunctionIndex,
+                             "no-frame-pointer-elim", "true");
+  F->setAttributes(Attrs);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -874,7 +883,7 @@ llvm::Value* emitByteArray(CodegenPass* pass, llvm::StringRef bytes, llvm::Strin
 llvm::Value* LLText::codegen(CodegenPass* pass) {
   Value* hstr = emitByteArray(pass, this->stringValue, ".txt_cell");
   Value* textfragment = pass->lookupFunctionOrDie("TextFragment");
-  auto call = builder.CreateCall2(textfragment, hstr, builder.getInt32(this->stringValue.size()));
+  auto call = builder.CreateCall(textfragment, { hstr, builder.getInt32(this->stringValue.size()) });
   call->setCallingConv(llvm::CallingConv::Fast);
   return call;
 }
@@ -1143,7 +1152,10 @@ void copyValuesToStruct(const std::vector<llvm::Value*>& vals,
         << "\n" << str(tup_ptr);
 
   for (size_t i = 0; i < vals.size(); ++i) {
-    Value* dst = builder.CreateConstGEP2_32(tup_ptr, 0, i, "gep");
+    llvm::outs() << "storing " << str(vals[i]) << " of type " << str(vals[i]->getType()) << " to slot " << i << " of " << str(tup_ptr) << "\n";
+    llvm::outs().flush();
+    //Value* dst = builder.CreateConstGEP2_32(vals[i]->getType(), tup_ptr, 0, i, "gep");
+    Value* dst = builder.CreateConstGEP2_32(nullptr, tup_ptr, 0, i, "gep");
     emitStore(vals[i], dst);
   }
 }

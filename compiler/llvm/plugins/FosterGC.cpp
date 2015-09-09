@@ -66,11 +66,11 @@ void EmitSymbol(const llvm::Twine& symStr,
                 const llvm::MCAsmInfo& MAI) {
 
   llvm::SmallString<128> mangledName;
-  AP.Mang->getNameWithPrefix(mangledName, symStr);
+  AP.Mang->getNameWithPrefix(mangledName, symStr, AP.getDataLayout());
 
-  MCSymbol* sym = AP.OutContext.GetOrCreateSymbol(mangledName);
-  AP.OutStreamer.EmitSymbolAttribute(sym, llvm::MCSA_Global);
-  AP.OutStreamer.EmitLabel(sym);
+  MCSymbol* sym = AP.OutContext.getOrCreateSymbol(mangledName);
+  AP.OutStreamer->EmitSymbolAttribute(sym, llvm::MCSA_Global);
+  AP.OutStreamer->EmitLabel(sym);
 }
 
 typedef std::set<MCSymbol*> Labels;
@@ -115,10 +115,10 @@ ClusterMap computeClusters(GCFunctionInfo& MD) {
 
 class FosterGCPrinter : public llvm::GCMetadataPrinter {
 public:
-  void beginAssembly(llvm::AsmPrinter &AP) {
+  void beginAssembly(llvm::Module &M, llvm::GCModuleInfo &Info, llvm::AsmPrinter &AP) {
   }
 
-  void finishAssembly(llvm::AsmPrinter &AP) {
+  void finishAssembly(llvm::Module &M, llvm::GCModuleInfo &Info, llvm::AsmPrinter &AP) {
     const llvm::MCAsmInfo &MAI = *(AP.MAI);
 
     // Set up for emitting addresses.
@@ -133,16 +133,16 @@ public:
     }
 
     // Put this in the data section.
-    AP.OutStreamer.SwitchSection(AP.getObjFileLowering().getDataSection());
+    AP.OutStreamer->SwitchSection(AP.getObjFileLowering().getDataSection());
 
     // Emit a label and count of function maps
     AP.EmitAlignment(AddressAlignLog);
     EmitSymbol(kFosterGCMapsSymbolName, AP, MAI);
-    AP.OutStreamer.AddComment("number of function gc maps");
-    AP.EmitInt32(end() - begin());
+    AP.OutStreamer->AddComment("number of function gc maps");
+    AP.EmitInt32(Info.funcinfo_end() - Info.funcinfo_begin());
 
     // For each function...
-    for (iterator FI = begin(), FE = end(); FI != FE; ++FI) {
+    for (auto FI = Info.funcinfo_begin(), FE = Info.funcinfo_end(); FI != FE; ++FI) {
       sNumStackMapsEmitted++;
 
       GCFunctionInfo &MD = **FI;
@@ -177,10 +177,10 @@ public:
       ClusterMap clusters = computeClusters(MD);
 
       // Emit PointClusterCount.
-      AP.OutStreamer.AddComment("safe point cluster count");
+      AP.OutStreamer->AddComment("safe point cluster count");
       AP.EmitInt32(clusters.size());
 
-      AP.OutStreamer.AddComment("padding before PointClusters");
+      AP.OutStreamer->AddComment("padding before PointClusters");
       AP.EmitInt32(0);
 
       size_t i32sForThisFunction = 1; // above
@@ -199,21 +199,21 @@ public:
         //AP.EmitAlignment(AddressAlignLog);
 
         // Emit the stack frame size.
-        AP.OutStreamer.AddComment("stack frame size");
+        AP.OutStreamer->AddComment("stack frame size");
         AP.EmitInt32(frameSize);
         i32sForThisFunction++;
 
         // Emit the count of addresses in the cluster.
-        AP.OutStreamer.AddComment("count of addresses");
+        AP.OutStreamer->AddComment("count of addresses");
         AP.EmitInt32(labels.size());
         i32sForThisFunction++;
 
         // Emit the count of live roots in the cluster.
-        AP.OutStreamer.AddComment("count of live roots with metadata");
+        AP.OutStreamer->AddComment("count of live roots with metadata");
         AP.EmitInt32(offsetsWithMetadata.size());
         i32sForThisFunction++;
 
-        AP.OutStreamer.AddComment("count of live roots w/o metadata");
+        AP.OutStreamer->AddComment("count of live roots w/o metadata");
         AP.EmitInt32(offsets.size());
         i32sForThisFunction++;
 
@@ -221,34 +221,34 @@ public:
 
         // Emit the addresses of the safe points in the cluster.
         for (auto label : labels) {
-          AP.OutStreamer.AddComment("safe point address");
+          AP.OutStreamer->AddComment("safe point address");
           const unsigned addrSpace = 0;
-          AP.OutStreamer.EmitSymbolValue(label, IntPtrSize, addrSpace);
+          AP.OutStreamer->EmitSymbolValue(label, IntPtrSize, addrSpace);
           voidPtrsForThisFunction++;
         }
 
         // Emit the stack offsets for the metadata-imbued roots in the cluster.
         for (auto rit : offsetsWithMetadata) {
-          AP.OutStreamer.AddComment("metadata");
+          AP.OutStreamer->AddComment("metadata");
           AP.EmitGlobalConstant(rit.second);
           voidPtrsForThisFunction++;
         }
 
         for (auto rit : offsetsWithMetadata) {
-          AP.OutStreamer.AddComment("stack offset for metadata-imbued root");
+          AP.OutStreamer->AddComment("stack offset for metadata-imbued root");
           AP.EmitInt32(rit.first);
           i32sForThisFunction++;
         }
 
         // Emit the stack offsets for the metadata-less roots in the cluster.
         for (auto rit : offsets) {
-          AP.OutStreamer.AddComment("stack offset for no-metadata root");
+          AP.OutStreamer->AddComment("stack offset for no-metadata root");
           AP.EmitInt32(rit);
           i32sForThisFunction++;
         }
 
         if (((offsetsWithMetadata.size() + offsets.size()) % 2) != 0) {
-          AP.OutStreamer.AddComment("padding for alignment...");
+          AP.OutStreamer->AddComment("padding for alignment...");
           AP.EmitInt32(0);
           i32sForThisFunction++;
         }

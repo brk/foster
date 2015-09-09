@@ -70,6 +70,7 @@ public:
   DiagBase& operator<<(const char* str) { add(str); return *this; }
   DiagBase& operator<<(const std::string& str) { add(str); return *this; }
   DiagBase& operator<<(const SourceRangeHighlighter& h) { add(h); return *this; }
+  // TODO support std::error_code
 
 private:
   DiagBase(const DiagBase&);

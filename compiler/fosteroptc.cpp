@@ -3,7 +3,6 @@
 // found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 #include "llvm/IR/Module.h"
 #include "llvm/LinkAllPasses.h"
-#include "llvm/PassManager.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Config/config.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
@@ -40,6 +39,7 @@
 #include <fstream>
 
 using namespace llvm;
+using namespace llvm::legacy;
 
 using foster::ScopedTimer;
 using foster::SourceRange;
@@ -162,7 +162,7 @@ void setTimingDescriptions() {
 Module* readLLVMModuleFromPath(string path) {
   foster::validateInputFile(path);
   ScopedTimer timer("io.file.readmodule");
-  Module* module = foster::readLLVMModuleFromPath(path);
+  Module* module = foster::readLLVMModuleFromPath(path).release();
   ASSERT(module != NULL);
   return module;
 }
@@ -356,7 +356,7 @@ void optimizeModuleAndRunPasses(Module* mod) {
   */
 
   if (optInsertTimerChecks) {
-    fpasses.add(new llvm::LoopInfo());
+    fpasses.add(new llvm::LoopInfoWrapperPass());
     fpasses.add(foster::createTimerChecksInsertionPass());
   }
 
@@ -404,10 +404,6 @@ void configureTargetDependentOptions(const llvm::Triple& triple,
     // which is -mdynamic-no-pic (GCC) or -relocation-model=dynamic-no-pic (llc).
     relocModel = llvm::Reloc::DynamicNoPIC;
   }
-
-  // Ensure we always compile with -disable-fp-elim
-  // to enable simple stack walking for the GC.
-  targetOptions.NoFramePointerElim = true;
 }
 
 void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
@@ -434,8 +430,8 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
   configureTargetDependentOptions(triple, *targetOptions, filetype);
 
   const Target* target = NULL;
-  string err;
-  target = llvm::TargetRegistry::lookupTarget(triple.getTriple(), err);
+  string errstr;
+  target = llvm::TargetRegistry::lookupTarget(triple.getTriple(), errstr);
   if (!target) {
     llvm::errs() << "Error: unable to pick a target for compiling to assembly"
               << "\n";
@@ -463,19 +459,15 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
     exit(1);
   }
 
-  tm->setAsmVerbosityDefault(true);
+  tm->Options.MCOptions.AsmVerbose = true;
 
   PassManager passes;
-  tm->addAnalysisPasses(passes);
+  passes.add(createTargetTransformInfoWrapperPass(tm->getTargetIRAnalysis()));
 
-  llvm::raw_fd_ostream raw_out(filename.c_str(), err,
-                               fdFlagsForObjectType(filetype));
-  ASSERT(err.empty()) << "Error when opening file to print output to:\n\t"
-                      << err;
-
-  llvm::formatted_raw_ostream out(raw_out,
-      llvm::formatted_raw_ostream::PRESERVE_STREAM);
-
+  std::error_code err;
+  llvm::raw_fd_ostream out(filename.c_str(), err,
+                           fdFlagsForObjectType(filetype));
+  ASSERT(!err) << "Error when opening file to print output to: " << filename;
 
   bool disableVerify = true;
   if (tm->addPassesToEmitFile(passes, out, filetype,
@@ -553,7 +545,7 @@ int main(int argc, char** argv) {
   }
 
   if (optDumpStats) {
-    string err;
+    std::error_code err;
     llvm::raw_fd_ostream out((gOutputNameBase + ".optc.stats.txt").c_str(),
                              err, llvm::sys::fs::OpenFlags::F_None);
     llvm::PrintStatistics(out);

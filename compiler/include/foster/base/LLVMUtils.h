@@ -9,6 +9,7 @@
 #include "llvm/Support/Path.h"
 #include "llvm/Support/TimeValue.h"
 
+#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/ADT/StringSet.h"
 
@@ -48,7 +49,7 @@ void runFunctionPassesOverModule(llvm::legacy::FunctionPassManager& fpasses,
 void ensureDirectoryExists(const std::string& pathstr);
 
 
-llvm::Module* readLLVMModuleFromPath(const std::string& path);
+std::unique_ptr<llvm::Module> readLLVMModuleFromPath(const std::string& path);
 void dumpModuleToBitcode(llvm::Module* mod, const std::string& filename);
 void dumpModuleToFile(llvm::Module* mod, const std::string& filename);
 

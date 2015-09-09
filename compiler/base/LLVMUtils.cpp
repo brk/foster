@@ -6,6 +6,7 @@
 #include "base/LLVMUtils.h"
 
 #include <map>
+#include <sstream>
 #include <iostream>
 #include <ostream>
 
@@ -15,7 +16,6 @@
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/LLVMContext.h"
-#include "llvm/PassManager.h"
 #include "llvm/IR/AssemblyAnnotationWriter.h"
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/Bitcode/ReaderWriter.h"
@@ -124,9 +124,9 @@ void ensureDirectoryExists(const std::string& pathstr) {
   }
 }
 
-Module* readLLVMModuleFromPath(const std::string& path) {
+std::unique_ptr<Module> readLLVMModuleFromPath(const std::string& path) {
   llvm::SMDiagnostic diag;
-  return llvm::ParseIRFile(path, diag, llvm::getGlobalContext());
+  return llvm::parseIRFile(path, diag, llvm::getGlobalContext());
 }
 
 struct CommentWriter : public llvm::AssemblyAnnotationWriter {
@@ -155,26 +155,29 @@ struct CommentWriter : public llvm::AssemblyAnnotationWriter {
 };
 
 void dumpModuleToFile(llvm::Module* mod, const std::string& filename) {
-  std::string errInfo;
+  std::error_code errInfo;
   llvm::raw_fd_ostream LLpreASM(filename.c_str(), errInfo, llvm::sys::fs::OpenFlags::F_RW);
-  if (errInfo.empty()) {
+  if (!errInfo) {
     CommentWriter cw;
     mod->print(LLpreASM, &cw);
   } else {
+    std::string s; std::stringstream ss(s); ss << errInfo;
     foster::EDiag() << "when dumping module to " << filename << "\n"
-                    << errInfo << "\n";
+                    << ss.str() << "\n";
     exit(1);
   }
 }
 
 void dumpModuleToBitcode(llvm::Module* mod, const std::string& filename) {
-  std::string errInfo;
-  sys::RemoveFileOnSignal(filename, &errInfo);
+  std::error_code errInfo;
+  std::string errInfoStr;
+  sys::RemoveFileOnSignal(filename, &errInfoStr);
 
   raw_fd_ostream out(filename.c_str(), errInfo, llvm::sys::fs::OpenFlags::F_RW);
-  if (!errInfo.empty()) {
+  if (errInfo) {
+    std::string s; std::stringstream ss(s); ss << errInfo;
     foster::EDiag() << "when preparing to write bitcode to " << filename
-        << "\n" << errInfo;
+        << "\n" << ss.str() << "\n" << errInfoStr;
     exit(1);
   }
 
@@ -245,8 +248,9 @@ const char* llvmValueTag(llvm::Value* v) {
 
 llvm::CallInst* markAsNonAllocating(llvm::CallInst* callInst) {
   llvm::Value* tru = llvm::ConstantInt::getTrue(callInst->getContext());
-  llvm::MDNode* mdnode = llvm::MDNode::get(callInst->getContext(),
-                                           llvm::makeArrayRef(tru));
+  llvm::Metadata* md_tru = llvm::ValueAsMetadata::getConstant(tru);
+  llvm::MDNode* mdnode = llvm::MDTuple::get(callInst->getContext(),
+                                            llvm::makeArrayRef(md_tru));
   callInst->setMetadata("willnotgc", mdnode);
   return callInst;
 }
@@ -258,7 +262,7 @@ Constant* arrayVariableToPointer(GlobalVariable* arr) {
   std::vector<Constant*> idx;
   idx.push_back(zero);
   idx.push_back(zero);
-  return ConstantExpr::getGetElementPtr(arr, makeArrayRef(idx));
+  return ConstantExpr::getGetElementPtr(nullptr, arr, makeArrayRef(idx));
 }
 
 bool isFunctionPointerTy(llvm::Type* p) {

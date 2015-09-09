@@ -57,7 +57,7 @@ InputTextBuffer::InputTextBuffer(const std::string& path) {
 }
 
 InputTextBuffer::InputTextBuffer(const char* data, size_t length) {
-  impl = new Impl(MemoryBuffer::getMemBufferCopy(StringRef(data, length)));
+  impl = new Impl(MemoryBuffer::getMemBufferCopy(StringRef(data, length)).release());
 }
 
 MemoryBuffer*

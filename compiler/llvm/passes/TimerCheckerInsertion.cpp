@@ -35,8 +35,8 @@ struct TimerChecksInsertion : public FunctionPass {
   llvm::IRBuilder<> builder;
 
   virtual void getAnalysisUsage(AnalysisUsage& AU) const {
-    AU.addRequired<LoopInfo>();
-    AU.addPreserved<LoopInfo>();
+    AU.addRequired<LoopInfoWrapperPass>();
+    AU.addPreserved<LoopInfoWrapperPass>();
   }
 
   // If F is recursive, or makes calls to statically unknown functions,
@@ -61,8 +61,8 @@ struct TimerChecksInsertion : public FunctionPass {
     return false;
   }
 
-  llvm::Value* needReschedF;
-  llvm::Value* doReschedF;
+  llvm::Function* needReschedF;
+  llvm::Function* doReschedF;
 
   virtual bool doInitialization(Module& M) {
     needReschedF = M.getFunction("__foster_need_resched_threadlocal");
@@ -79,7 +79,7 @@ struct TimerChecksInsertion : public FunctionPass {
 
       builder.SetInsertPoint(bb);
 
-      Value* needsResched = builder.CreateCall(needReschedF, "needsResched");
+      Value* needsResched = builder.CreateCall(needReschedF, None, "needsResched");
       BasicBlock* doReschedBB = BasicBlock::Create(getGlobalContext(), "doyield", F, newbb);
       builder.CreateCondBr(needsResched, doReschedBB, newbb);
 
@@ -94,7 +94,7 @@ struct TimerChecksInsertion : public FunctionPass {
     bool modified = false;
     std::vector<BasicBlock*> headers;
 
-    LoopInfo& LI = getAnalysis<LoopInfo>();
+    LoopInfo& LI = getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
     for (auto loop : LI) {
       headers.push_back(loop->getHeader());
     }
@@ -134,7 +134,8 @@ namespace llvm {
 INITIALIZE_PASS_BEGIN(TimerChecksInsertion, "foster-timer-checks",
                 "Insertion of timer checks at loop headers",
                 false, false)
-INITIALIZE_PASS_DEPENDENCY(LoopInfo)
+INITIALIZE_PASS_DEPENDENCY(LoopInfoWrapperPass)
+//INITIALIZE_PASS_DEPENDENCY(LoopAnalysis)
 INITIALIZE_PASS_END(TimerChecksInsertion, "foster-timer-checks",
                 "Insertion of timer checks at loop headers",
                 false, false)

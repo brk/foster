@@ -51,9 +51,7 @@ void emitFosterArrayBoundsCheck(llvm::Module* mod, llvm::Value* idx,
   Value* msg_array = builder.CreateGlobalString(srclines);
   Value* msg = builder.CreateBitCast(msg_array, builder.getInt8PtrTy());
   Value* ext = signExtend(idx, len64->getType());
-  llvm::CallInst* call = builder.CreateCall3(fosterBoundsCheck, ext,
-                                             len64,
-                                             msg);
+  llvm::CallInst* call = builder.CreateCall(fosterBoundsCheck, { ext, len64, msg });
   markAsNonAllocating(call);
 }
 
@@ -63,7 +61,7 @@ void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr) {
 
   Value* msg_array = builder.CreateGlobalString(cstr);
   Value* msg = builder.CreateBitCast(msg_array, builder.getInt8PtrTy());
-  llvm::CallInst* call = builder.CreateCall2(fosterAssert, cond, msg);
+  llvm::CallInst* call = builder.CreateCall(fosterAssert, { cond, msg });
   markAsNonAllocating(call);
 }
 
@@ -153,7 +151,7 @@ Constant* getSlotName(llvm::AllocaInst* stackslot, CodegenPass* pass) {
 Type* getSlotType(llvm::Value* v) { return v->getType()->getPointerElementType(); }
 
 void markGCRootWithMetadata(llvm::Instruction* stackslot, CodegenPass* pass,
-                            llvm::Value* meta) {
+                            llvm::Constant* meta) {
   // If the original stack slot holds a bare struct type, we'll need to
   // insert an additional slot to point to it, and we'll mark the second slot...
   if (getSlotType(stackslot)->isStructTy()) {
@@ -167,8 +165,9 @@ void markGCRootWithMetadata(llvm::Instruction* stackslot, CodegenPass* pass,
     stackslot = ptr_stackslot;
   }
 
-  llvm::MDNode* metamdnode = llvm::MDNode::get(stackslot->getContext(),
-                                llvm::makeArrayRef(meta));
+  llvm::Metadata* cmeta = ConstantAsMetadata::get(meta);
+  llvm::MDNode* metamdnode = llvm::MDTuple::get(stackslot->getContext(),
+                                llvm::makeArrayRef(cmeta));
   stackslot->setMetadata("fostergcroot", metamdnode);
 
   llvm::Function* F = builder.GetInsertBlock()->getParent();
@@ -186,7 +185,7 @@ void markGCRootWithMetadata(llvm::Instruction* stackslot, CodegenPass* pass,
   llvm::Constant* llvm_gcroot = llvm::Intrinsic::getDeclaration(pass->mod,
                                                llvm::Intrinsic::gcroot);
   ASSERT(llvm_gcroot) << "unable to mark GC root, llvm.gcroot not found";
-  tmpBuilder.CreateCall2(llvm_gcroot, root, meta);
+  tmpBuilder.CreateCall(llvm_gcroot, { root, meta });
 }
 
 void markGCRoot(llvm::AllocaInst* stackslot, CodegenPass* pass) {
@@ -249,7 +248,7 @@ void emitRecordMallocCallsite(llvm::Module* m,
                               llvm::Value* srclines) {
   llvm::Value* rmc = m->getFunction("record_memalloc_cell");
   ASSERT(rmc != NULL) << "NO record_memalloc_cell IN MODULE! :(";
-  markAsNonAllocating(builder.CreateCall2(rmc, typemap, srclines));
+  markAsNonAllocating(builder.CreateCall(rmc, { typemap, srclines }));
 }
 
 // |arg| is a 1-based index (0 is the fn return value).
@@ -306,8 +305,8 @@ CodegenPass::emitArrayMalloc(TypeAST* elt_type, llvm::Value* n, bool init) {
   llvm::Type* typemap_type = getFunctionTypeArgType(memalloc->getType(), 1);
   llvm::Value* typemap = builder.CreateBitCast(ti, typemap_type);
   llvm::Value* num_elts = signExtend(n, builder.getInt64Ty());
-  llvm::CallInst* mem = builder.CreateCall3(memalloc, typemap, num_elts,
-                                            builder.getInt8(init), "arrmem");
+  llvm::CallInst* mem = builder.CreateCall(memalloc, { typemap, num_elts,
+                                                       builder.getInt8(init) }, "arrmem");
   return builder.CreateBitCast(mem,
                   ArrayTypeAST::getZeroLengthTypeRef(elt_type), "arr_ptr");
 }
@@ -346,7 +345,7 @@ createIntrinsicCall2(IRBuilder<>& b, llvm::Value* v1, llvm::Value* v2,
   Module*    m = b.GetInsertBlock()->getParent()->getParent();
   Value* intrv = llvm::Intrinsic::getDeclaration(m, id, tys);
 
-  CallInst *CI = b.CreateCall2(intrv, v1, v2, valname);
+  CallInst *CI = b.CreateCall(intrv, { v1, v2 }, valname);
   //b.SetInstDebugLocation(CI);
   return CI;
 }
@@ -388,7 +387,7 @@ createCtlz(IRBuilder<>& b, llvm::Value* v, const char* valname) {
   Module*    m = b.GetInsertBlock()->getParent()->getParent();
   Value* intrv = llvm::Intrinsic::getDeclaration(m, llvm::Intrinsic::ctlz, tys);
   Value* is_zero_undef = b.getInt1(false);
-  CallInst *CI = b.CreateCall2(intrv, v, is_zero_undef, valname);
+  CallInst *CI = b.CreateCall(intrv, { v, is_zero_undef }, valname);
   //b.SetInstDebugLocation(CI);
   return CI;
 }
@@ -398,7 +397,7 @@ createFMulAdd(IRBuilder<>& b, llvm::Value* v1, llvm::Value* v2, llvm::Value* v3)
   Type*  tys[] = { v1->getType() };
   Module*    m = b.GetInsertBlock()->getParent()->getParent();
   Value* intrv = llvm::Intrinsic::getDeclaration(m, llvm::Intrinsic::fmuladd, tys);
-  CallInst *CI = b.CreateCall3(intrv, v1, v2, v3, "fmuladdtmp");
+  CallInst *CI = b.CreateCall(intrv, { v1, v2, v3 }, "fmuladdtmp");
   //b.SetInstDebugLocation(CI);
   return CI;
 }

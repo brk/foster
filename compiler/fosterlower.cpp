@@ -5,6 +5,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Linker/Linker.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/IR/DiagnosticPrinter.h"
 
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ManagedStatic.h"
@@ -176,7 +177,7 @@ void setTimingDescriptions() {
   gTimings.describe("llvm.llc",  "Time spent doing llc's job (IR->asm) (ms)");
 }
 
-Module* readLLVMModuleFromPath(string path) {
+std::unique_ptr<Module> readLLVMModuleFromPath(string path) {
   foster::validateInputFile(path);
   ScopedTimer timer("io.file.readmodule");
   return foster::readLLVMModuleFromPath(path);
@@ -196,12 +197,17 @@ void dumpModuleToBitcode(Module* mod, const string& filename) {
   foster::dumpModuleToBitcode(mod, filename);
 }
 
+void handleLinkingDiagnostic(const llvm::DiagnosticInfo& di) {
+  DiagnosticPrinterRawOStream dp(llvm::errs());
+  di.print(dp);
+  return;
+}
+
 void linkTo(llvm::Module*& transient,
             const std::string& name,
             llvm::Module* module) {
-  string errMsg;
-  bool failed = Linker::LinkModules(module, transient, llvm::Linker::DestroySource, &errMsg);
-  ASSERT(!failed) << "Error when linking in " << name << ": " << errMsg << "\n";
+  bool failed = Linker::LinkModules(module, transient, handleLinkingDiagnostic);
+  ASSERT(!failed) << "Error when linking in " << name << "\n";
 }
 
 LLModule* readLLProgramFromProtobuf(const string& pathstr,
@@ -313,7 +319,7 @@ int main(int argc, char** argv) {
   llvm::Module* module = new Module(mainModulePath.c_str(), getGlobalContext());
 
   if (!optStandalone) {
-    coro_bc = readLLVMModuleFromPath(optBitcodeLibsDir + "/gc_bc/libfoster_coro.bc");
+    coro_bc = readLLVMModuleFromPath(optBitcodeLibsDir + "/gc_bc/libfoster_coro.bc").release();
     linkTo(coro_bc, "libfoster_coro", module);
 
     StructTypeAST* coroast = StructTypeAST::getRecursive("foster_generic_coro.struct");
@@ -350,7 +356,7 @@ int main(int argc, char** argv) {
   }
 
   if (!optStandalone) {
-    libfoster_bc = readLLVMModuleFromPath(optBitcodeLibsDir + "/foster_runtime.bc");
+    libfoster_bc = readLLVMModuleFromPath(optBitcodeLibsDir + "/foster_runtime.bc").release();
     foster::putModuleFunctionsInScope(libfoster_bc, module);
   }
 
@@ -412,7 +418,7 @@ int main(int argc, char** argv) {
   dumpModuleToBitcode(module, outdirFile(optOutputName + ".preopt.bc"));
 
   if (optDumpStats) {
-    string err;
+    std::error_code err;
     llvm::raw_fd_ostream out(outdirFile(optOutputName + "lower.stats.txt").c_str(),
                              err, llvm::sys::fs::OpenFlags::F_None);
     llvm::PrintStatistics(out);
