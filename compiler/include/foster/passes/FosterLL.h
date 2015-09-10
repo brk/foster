@@ -30,11 +30,11 @@ namespace llvm {
 
 using llvm::Value;
 
-class LLVar;
-class LLExpr;
+struct LLVar;
+struct LLExpr;
 class TypeAST;
 class FnTypeAST;
-class LLTupleStore;
+struct LLTupleStore;
 
 struct CodegenPass;
 struct CodegenPassConfig {
@@ -54,10 +54,12 @@ std::ostream& operator<<(std::ostream& out, LLExpr& expr);
 
 struct LLTerminator {
   virtual void codegenTerminator(CodegenPass* pass) = 0;
+  virtual ~LLTerminator() {}
 };
 
 struct LLMiddle {
   virtual void codegenMiddle(CodegenPass* pass) = 0;
+  virtual ~LLMiddle() {}
 };
 
 struct LLGCRootInit : public LLMiddle {
@@ -102,8 +104,8 @@ struct LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass) = 0;
 };
 
-class LLProc;
-class LLAllocate;
+struct LLProc;
+struct LLAllocate;
 
 struct LLDecl {
   string name;
@@ -350,7 +352,7 @@ struct LLArrayIndex {
                         string static_or_dynamic, string srclines)
     : base(base), index(index),
       static_or_dynamic(static_or_dynamic), srclines(srclines) {}
-  virtual llvm::Value* codegenARI(CodegenPass* pass);
+  llvm::Value* codegenARI(CodegenPass* pass);
 };
 
 // base[index]
@@ -408,7 +410,7 @@ struct LLTupleStore : public LLMiddle {
 
   explicit LLTupleStore(const std::vector<LLVar*>& vars, LLVar* s, bool indir)
                  : vars(vars), storage(s), storage_indir(indir) {}
-  virtual void codegenMiddle(CodegenPass* pass);
+  void codegenMiddle(CodegenPass* pass) override;
 };
 
 struct LLUnboxedTuple : public LLExpr {

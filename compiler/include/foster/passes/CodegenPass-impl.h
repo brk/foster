@@ -18,7 +18,7 @@
 
 using llvm::Value;
 
-struct TupleTypeAST;
+class TupleTypeAST;
 
 // Declarations for Codegen-typemaps.cpp
 enum ArrayOrNot {
@@ -80,8 +80,8 @@ struct LLModule;
 struct LLExpr;
 struct LLVar;
 struct BlockBindings;
-struct DataTypeAST;
-struct LazyCoroPrimInfo;
+class DataTypeAST;
+class LazyCoroPrimInfo;
 
 struct CodegenPass {
   CodegenPassConfig config;

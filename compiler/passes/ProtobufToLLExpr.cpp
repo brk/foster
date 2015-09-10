@@ -25,8 +25,8 @@ struct LLExpr;
 namespace foster {
 
 namespace bepb {
-  struct Expr;
-  struct Type;
+  class Expr;
+  class Type;
 } // namespace foster::bepb
 
 LLExpr* LLExpr_from_pb(const bepb::Letable*);
@@ -107,9 +107,9 @@ LLExpr* parseCoroPrim(const pb::PbCoroPrim& p) {
   case pb::PbCoroPrim::IL_CORO_INVOKE: return new LLCoroPrim("coro_invoke", r, a);
   case pb::PbCoroPrim::IL_CORO_CREATE: return new LLCoroPrim("coro_create", r, a);
   case pb::PbCoroPrim::IL_CORO_YIELD : return new LLCoroPrim("coro_yield",  r, a);
-  default: ASSERT(false) << "unknown coro prim tag number " << p.tag();
-           return NULL;
   }
+  ASSERT(false) << "unknown coro prim tag number " << p.tag();
+  return NULL;
 }
 
 LLExpr* parseCallAsm(const pb::Letable& e) {
@@ -173,7 +173,10 @@ LLAllocate::MemRegion parseMemRegion(const pb::PbAllocInfo& a) {
       target_region = LLAllocate::MEM_REGION_GLOBAL_HEAP; break;
   case           pb::PbAllocInfo::MEM_REGION_GLOBAL_DATA:
       target_region = LLAllocate::MEM_REGION_GLOBAL_DATA; break;
-  default: ASSERT(false) << "Unknown target region for AllocInfo.";
+  }
+  if (target_region == LLAllocate::MEM_REGION_STACK
+   && a.mem_region() != pb::PbAllocInfo::MEM_REGION_STACK) {
+    ASSERT(false) << "Unknown target region for AllocInfo.";
   }
   return target_region;
 }
@@ -209,9 +212,9 @@ parseLinkage(const pb::Proc::Linkage linkage) {
   switch (linkage) {
   case pb::Proc::Internal: return llvm::GlobalValue::InternalLinkage;
   case pb::Proc::External: return llvm::GlobalValue::ExternalLinkage;
-  default: ASSERT(false) << "unknown linkage!";
-           return llvm::GlobalValue::InternalLinkage;
   }
+  ASSERT(false) << "unknown linkage!";
+  return llvm::GlobalValue::InternalLinkage;
 }
 
 LLTupleStore* parseTupleStore(const pb::TupleStore& ts) {
@@ -260,15 +263,13 @@ LLBr* parseBr(const pb::Terminator& b) {
 }
 
 LLTerminator* parseTerminator(const pb::Terminator& b) {
-  LLTerminator* rv = NULL;
   switch (b.tag()) {
   case pb::Terminator::BLOCK_RET_VOID: return new LLRetVoid();
   case pb::Terminator::BLOCK_RET_VAL: return new LLRetVal(parseTermVar(b.var()));
   case pb::Terminator::BLOCK_BR: return parseBr(b);
   case pb::Terminator::BLOCK_CASE: return parseSwitch(b);
-  default: ASSERT(false); return NULL;
   }
-  return rv;
+  ASSERT(false) << "Unknown terminator tag: " << b.tag() << "\n"; return NULL;
 }
 
 

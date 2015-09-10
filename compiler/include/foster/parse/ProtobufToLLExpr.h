@@ -10,7 +10,7 @@ struct LLModule;
 namespace foster {
 
 namespace bepb {
-  struct Module;
+  class Module;
 } // namespace foster::bepb
 
 LLModule* LLModule_from_pb(const bepb::Module&);

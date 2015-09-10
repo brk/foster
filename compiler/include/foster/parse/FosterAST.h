@@ -356,6 +356,7 @@ struct BuiltinCompilesExprAST : public ExprAST {
 class Pattern {
 protected:
   Pattern(foster::SourceRange range) : sourceRange(range) {}
+  virtual ~Pattern() {}
 public:
   foster::SourceRange sourceRange;
   virtual void dump(DumpToProtobufPass* pass) = 0;
@@ -368,7 +369,8 @@ public:
   explicit LiteralPattern(foster::SourceRange range,
                           Variety v,
                           ExprAST* pattern) : Pattern(range), pattern(pattern), variety(v) {}
-  virtual void dump(DumpToProtobufPass* pass);
+  virtual ~LiteralPattern() {}
+  void dump(DumpToProtobufPass* pass) override;
 };
 
 struct CtorPattern : public Pattern {
@@ -378,7 +380,8 @@ struct CtorPattern : public Pattern {
                        std::string name,
                        std::vector<Pattern*> pats)
     : Pattern(range), ctorName(name), patterns(pats) {}
-  virtual void dump(DumpToProtobufPass* pass);
+  virtual ~CtorPattern() {}
+  void dump(DumpToProtobufPass* pass) override;
 };
 
 struct TuplePattern : public Pattern {
@@ -386,12 +389,13 @@ struct TuplePattern : public Pattern {
   explicit TuplePattern(foster::SourceRange range,
                         std::vector<Pattern*> patterns)
     : Pattern(range), patterns(patterns) {}
-  virtual void dump(DumpToProtobufPass* pass);
+  virtual ~TuplePattern() {}
+  void dump(DumpToProtobufPass* pass) override;
 };
 
 struct WildcardPattern : public Pattern {
   WildcardPattern(foster::SourceRange range) : Pattern(range) {}
-  virtual void dump(DumpToProtobufPass* pass);
+  void dump(DumpToProtobufPass* pass) override;
 };
 
 struct CaseBranch {

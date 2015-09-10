@@ -693,9 +693,8 @@ llvm::Value* emitTagOfValue(CodegenPass* pass, llvm::Value* inspected,
   case CTR_MaskWith3: {
     llvm::Value* truncated = builder.CreatePtrToInt(inspected, builder.getInt8Ty());
                       return builder.CreateAnd(truncated, 0x7); }
-  default:
-    ASSERT(false) << "unknown tag representation in LLSwitch::codegen!"; return NULL;
   }
+  ASSERT(false) << "unknown tag representation in LLSwitch::codegen!"; return NULL;
 }
 
 void LLSwitch::codegenTerminator(CodegenPass* pass) {
@@ -1172,7 +1171,7 @@ Value* createUnboxedTuple(const std::vector<Value*>& vals) {
   // Rather than copying values to memory with GEP + store,
   // we "copy" values to a struct value which starts out with undef members.
   Value* rv = llvm::ConstantStruct::getAnon(undefs);
-  for (int i = 0; i < vals.size(); ++i) { rv = builder.CreateInsertValue(rv, vals[i], i); }
+  for (size_t i = 0; i < vals.size(); ++i) { rv = builder.CreateInsertValue(rv, vals[i], i); }
   return rv;
 }
 
