@@ -16,8 +16,20 @@ cleanout () {
   rm -f gclog.txt
 }
 
-cxxpath () {
+cxxcompilerpath () {
   cat $R/_obj/CMakeCache.txt | grep CXX_COMPILER:FILEPATH | sed 's/CMAKE_CXX_COMPILER:FILEPATH=//'
+}
+
+clangpath () {
+  cat $R/_obj/CMakeCache.txt | grep CLANG:FILEPATH | sed 's/CLANG:FILEPATH=//'
+}
+
+cxxpath() {
+  local P=`clangpath`
+  if [ "x${P}" = "x" ];
+  then echo `cxxcompilerpath`
+  else echo ${P}
+  fi
 }
 
 echo "testing $D"

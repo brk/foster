@@ -203,6 +203,7 @@ def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
     return (e1, e2, e3, e4)
 
 def link_to_executable(finalpath, exepath, paths, testpath):
+    assert options.cxxpath and len(options.cxxpath) > 0
     return run_command('%(cxx)s %(finalpath)s.o %(staticlibs)s %(linkflags)s -o %(exepath)s %(rpath)s' % {
                          'finalpath' : finalpath,
                          'staticlibs': get_static_libs(),

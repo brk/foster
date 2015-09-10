@@ -477,6 +477,7 @@ add_custom_target(regress
   COMMAND python ${PROJECT_SOURCE_DIR}/scripts/run_all.py
 	     ${PROJECT_SOURCE_DIR}/test/bootstrap
 	     --bindir ${PROJECT_BINARY_DIR}
+             --cxxpath ${CLANG}
 	     -I ${PROJECT_SOURCE_DIR}/stdlib
   )
 
@@ -484,6 +485,7 @@ add_custom_target(stress
   COMMAND python ${PROJECT_SOURCE_DIR}/scripts/run_all.py
 	     ${PROJECT_SOURCE_DIR}/test/stress
 	     --bindir ${PROJECT_BINARY_DIR}
+             --cxxpath ${CLANG}
 	     -I ${PROJECT_SOURCE_DIR}/stdlib
   )
 
