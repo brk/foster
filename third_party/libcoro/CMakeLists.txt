@@ -6,6 +6,5 @@ set_source_files_properties(
   COMPILE_DEFINITIONS ${CORO_METHOD})
 
 add_library(coro STATIC ${libcoro_ROOT}/coro.c)
-add_dependencies(coro lib_output_dir)
 include_directories(${libcoro_ROOT})
 

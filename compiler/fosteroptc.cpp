@@ -4,7 +4,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/LinkAllPasses.h"
 #include "llvm/ADT/Statistic.h"
-#include "llvm/Config/config.h"
+#include "llvm/Config/llvm-config.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
 #include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
 #include "llvm/IR/DataLayout.h"

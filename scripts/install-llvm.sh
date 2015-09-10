@@ -4,30 +4,28 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-LLVM_VERSION=3.3
+LLVM_VERSION=3.7.0
 LLVM_V=${LLVM_VERSION}.src
 LLVM_ROOT=${HOME}/llvm
 
 # invoke from LLVM_ROOT
 checkout_source() {
 pushd src
-	#echo "checking out llvm..."
-        #svn co http://llvm.org/svn/llvm-project/llvm/trunk llvm-${LLVM_VERSION}
-	#echo "checking out clang..."
-        #svn co http://llvm.org/svn/llvm-project/cfe/trunk  llvm-${LLVM_VERSION}/tools/clang
-
         echo "downloading sources..."
-        #wget http://llvm.org/releases/${LLVM_VERSION}/llvm-${LLVM_V}.tar.gz
-        #wget http://llvm.org/releases/${LLVM_VERSION}/clang-${LLVM_V}.tar.gz
-        wget http://llvm.org/releases/${LLVM_VERSION}/cfe-${LLVM_V}.tar.gz
-        wget http://llvm.org/releases/${LLVM_VERSION}/compiler-rt-${LLVM_V}.tar.gz
-        wget http://llvm.org/releases/${LLVM_VERSION}/llvm-${LLVM_V}.tar.gz
+        wget http://llvm.org/releases/${LLVM_VERSION}/cfe-${LLVM_V}.tar.xz
+        wget http://llvm.org/releases/${LLVM_VERSION}/compiler-rt-${LLVM_V}.tar.xz
+        wget http://llvm.org/releases/${LLVM_VERSION}/llvm-${LLVM_V}.tar.xz
+        wget http://llvm.org/releases/${LLVM_VERSION}/libcxx-${LLVM_V}.tar.xz
+        wget http://llvm.org/releases/${LLVM_VERSION}/libcxxabi-${LLVM_V}.tar.xz
+
         echo "unpacking sources..."
-        for proj in llvm cfe compiler-rt; do
-          tar -xzf ${proj}-${LLVM_V}.tar.gz
+        for proj in llvm cfe compiler-rt libcxx libcxxabi; do
+          tar -xf ${proj}-${LLVM_V}.tar.*
         done
         mv cfe-${LLVM_V}         llvm-${LLVM_V}/tools/clang
         mv compiler-rt-${LLVM_V} llvm-${LLVM_V}/projects/compiler-rt
+        mv libcxx-${LLVM_V}      llvm-${LLVM_V}/projects/libcxx
+        mv libcxxabi-${LLVM_V}   llvm-${LLVM_V}/projects/libcxxabi
         echo "done unpacking sources..."
 popd
 }
@@ -36,7 +34,12 @@ popd
 build_source () {
 pushd src/llvm-${LLVM_V}
         echo "building sources..."
-	./configure --prefix=${LLVM_ROOT}/${LLVM_VERSION} --enable-targets=host --enable-debug-symbols --enable-optimized
+
+        rm -rf build
+        mkdir -p build
+        cd       build
+
+        CC=clang CXX=clang++ cmake .. -G "Unix Makefiles" -DCMAKE_INSTALL_PREFIX=${LLVM_ROOT}/${LLVM_VERSION} -DCMAKE_BUILD_TYPE="RelWithDebInfo" -DLLVM_TARGETS_TO_BUILD="host" -DLLVM_ENABLE_ASSERTIONS=ON
 
 	make -j4
 

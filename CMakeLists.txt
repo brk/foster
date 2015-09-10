@@ -3,7 +3,7 @@ cmake_minimum_required (VERSION 2.8)
 # We need to set up the compiler paths before calling project()...
 # ~~~~~~~~~~~~~~~~~~~~
 
-set(LLVM_VERSION 3.5)
+set(LLVM_VERSION 3.7.0)
 
 find_program(LLVM_CONFIG NAMES llvm-config llvm-config-${LLVM_VERSION}
   PATHS
@@ -359,8 +359,6 @@ add_library(fosterc_base STATIC
   compiler/base/PughSinofskyPrettyPrinter.cpp
   third_party/pystring/pystring.cpp
   third_party/cityhash/src/city.cc
-)
-add_dependencies(fosterc_base
   ${GENERATED}/FosterAST.pb.h
   ${GENERATED}/FosterIL.pb.h
 )
@@ -436,7 +434,7 @@ target_link_libraries(fosterlower
   antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
 
 add_dependencies(fosterlower
-    foster_runtime_bc coro_wrapper_bc hs_me cycle)
+    foster_runtime_bc hs_me cycle)
 
 ############
 
@@ -445,7 +443,7 @@ target_link_libraries(fosteroptc
     fosterc_base fosterc_llvm ${LLVM_LDFLAGS})
 
 add_dependencies(fosteroptc
-    foster_runtime_bc coro_wrapper_bc hs_me)
+    foster_runtime_bc hs_me)
 
 ############
 
