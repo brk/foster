@@ -461,13 +461,13 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
 
   tm->Options.MCOptions.AsmVerbose = true;
 
-  PassManager passes;
-  passes.add(createTargetTransformInfoWrapperPass(tm->getTargetIRAnalysis()));
-
   std::error_code err;
   llvm::raw_fd_ostream out(filename.c_str(), err,
                            fdFlagsForObjectType(filetype));
   ASSERT(!err) << "Error when opening file to print output to: " << filename;
+
+  PassManager passes;
+  passes.add(createTargetTransformInfoWrapperPass(tm->getTargetIRAnalysis()));
 
   bool disableVerify = true;
   if (tm->addPassesToEmitFile(passes, out, filetype,

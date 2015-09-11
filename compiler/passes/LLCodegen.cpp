@@ -540,14 +540,7 @@ void LLProcCFG::codegenToFunction(CodegenPass* pass, llvm::Function* F) {
 
   checkForUnusedEmptyBasicBlocks(F);
 
-  // Mark function to disable frame pointer elimination
-  // so that GC is easier/more reliable.
-  // TODO this can be skipped for functions which (transitively)
-  //      cannot trigger a GC.
-  auto Attrs = F->getAttributes();
-  Attrs = Attrs.addAttribute(F->getContext(), llvm::AttributeSet::FunctionIndex,
-                             "no-frame-pointer-elim", "true");
-  F->setAttributes(Attrs);
+  disableFramePointerElimination(*F);
 }
 
 ////////////////////////////////////////////////////////////////////

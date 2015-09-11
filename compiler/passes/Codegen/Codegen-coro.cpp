@@ -210,6 +210,7 @@ Value* emitCoroWrapperFn(
   // libcoro expects the f_c arg to be pushed on the stack.
   wrapper->setCallingConv(llvm::CallingConv::C);
   wrapper->setGC("fostergc");
+  disableFramePointerElimination(*wrapper);
 
   /////////////////////////////
 
@@ -297,6 +298,7 @@ Value* CodegenPass::emitCoroCreateFn(
 
   create->setCallingConv(llvm::CallingConv::Fast);
   create->setGC("fostergc");
+  disableFramePointerElimination(*create);
 
   registerCoroType(this->mod, argTypes);
   registerCoroType(this->mod, retTy);
@@ -554,6 +556,7 @@ Value* CodegenPass::emitCoroInvokeFn(llvm::Type* retTy,
 
     fn->setCallingConv(llvm::CallingConv::Fast);
     fn->setGC("fostergc");
+    disableFramePointerElimination(*fn);
 
     // TODO when using inlining along with any codegen opt level greater
     //      than None, the basic-coro test segfaults after returning from
@@ -592,6 +595,7 @@ Value* CodegenPass::emitCoroYieldFn(llvm::Type* retTy,
 
     fn->setCallingConv(llvm::CallingConv::Fast);
     fn->setGC("fostergc");
+    disableFramePointerElimination(*fn);
   }
 
   return fn;
