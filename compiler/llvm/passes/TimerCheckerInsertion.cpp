@@ -99,7 +99,7 @@ struct TimerChecksInsertion : public FunctionPass {
       headers.push_back(loop->getHeader());
     }
 
-    for (int i = 0; i < headers.size(); ++i) {
+    for (size_t i = 0; i < headers.size(); ++i) {
       BasicBlock* bb = headers[i];
       insertCheckAt(&F, bb, bb->getFirstNonPHI());
     }

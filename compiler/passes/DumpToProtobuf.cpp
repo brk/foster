@@ -262,7 +262,7 @@ void SeqAST::dump(DumpToProtobufPass* pass) {
     this->parts[0]->dump(pass);
   } else {
     processExprAST(pass, this, pb::Expr::SEQ);
-    for (int i = 0; i < this->semis.size(); ++i) {
+    for (size_t i = 0; i < this->semis.size(); ++i) {
       setSourceRange(pass->exp->add_seq_ranges(), this->semis[i]);
     }
     dumpChildren(pass, this);
@@ -303,7 +303,7 @@ void CallPrimAST::dump(DumpToProtobufPass* pass) {
   processExprAST(pass, this, pb::Expr::CALLPRIM);
   pass->exp->set_string_value(this->primname);
   pass->exp->mutable_ty_app_arg_type()->Reserve(this->types.size());
-  for (int i = 0; i < this->types.size(); ++i) {
+  for (size_t i = 0; i < this->types.size(); ++i) {
     DumpToProtobufPass dt(pass->exp, pass->exp->add_ty_app_arg_type());
     this->types[i]->dump(&dt);
   }
