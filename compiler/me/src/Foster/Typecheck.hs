@@ -25,7 +25,7 @@ import Foster.AnnExpr
 import Foster.Infer
 import Foster.Context
 import Foster.TypecheckInt(typecheckInt, typecheckRat)
-import Foster.Output(OutputOr(Errors), putDocLn)
+import Foster.Output(OutputOr(Errors, OK), putDocLn)
 import Foster.PrettyAnnExpr()
 import Text.PrettyPrint.ANSI.Leijen
 
@@ -921,6 +921,96 @@ unifyFun tau nargs msg = do
         return (arg_tys, res_ty, cc, ft)
 -- }}}
 
+hasNonTrivialRefinementDifferences (arg_ty, var_ty) =
+  case (arg_ty, var_ty) of
+    (RefinedTypeTC _ e_arg _ , RefinedTypeTC _ e_var _) ->
+      not (equivStructureAndVarNames e_arg e_var)
+    _ -> False
+
+allP f xs ys = all (uncurry f) (zip xs ys)
+
+liftEqUnifiable f u1 u2 =
+  case (u1, u2) of
+    (UniConst v1, UniConst v2) -> f v1 v2
+    (UniVar (x1, _), UniVar (x2, _)) -> x1 == x2
+    _ -> False
+
+tcTypeEquiv t1 t2 =
+  let q = tcTypeEquiv in
+  case (t1, t2) of
+     (PrimIntTC            s1 , PrimIntTC          s2   ) -> s1 == s2
+     (PrimFloat64TC           , PrimFloat64TC           ) -> True
+     (TyConAppTC   tcnm1 tys1 , TyConAppTC   tcnm2 tys2 ) -> tcnm1 == tcnm2 && allP tcTypeEquiv tys1 tys2
+     (TupleTypeTC _k1    tys1 , TupleTypeTC _k2    tys2 ) -> {- TODO kinds -} allP tcTypeEquiv tys1 tys2
+     (FnTypeTC     s1 t1 c1 x1, FnTypeTC     s2 t2 c2 x2) -> allP q s1 s2 && q t1 t2 && liftEqUnifiable (==) c1 c2 && liftEqUnifiable (==) x1 x2
+     (CoroTypeTC   s1 t1      , CoroTypeTC   s2 t2      ) -> q s1 s2 && q t1 t2
+     (ForAllTC   tvs1 rho1    , ForAllTC   tvs2 rho2    ) -> allP (==) tvs1 tvs2 && q rho1 rho2
+     (TyVarTC    tv1          , TyVarTC    tv2          ) -> tv1 == tv2
+     (MetaTyVarTC m1          , MetaTyVarTC m2          ) -> m1 == m2
+     (RefTypeTC     ty1       , RefTypeTC     ty2       ) -> q ty1 ty2
+     (ArrayTypeTC   ty1       , ArrayTypeTC   ty2       ) -> q ty1 ty2
+     (RefinedTypeTC v1 e1 ids1, RefinedTypeTC v2 e2 ids2) -> v1 `equivTypedId` v2 && equivStructureAndVarNames e1 e2 -- note: no check on ids...
+     _ -> False
+
+equivTypedId tid1 tid2 =
+  tidType tid1 `tcTypeEquiv` tidType tid2 && identPrefix (tidIdent tid1) == identPrefix (tidIdent tid2)
+
+equivStructureAndVarNames :: AnnExpr TypeTC -> AnnExpr TypeTC -> Bool
+equivStructureAndVarNames e1 e2 =
+  let q = equivStructureAndVarNames in
+  let qf = undefined in
+  let qc = undefined in
+  let qtid = equivTypedId in
+  let qp prim1 prim2 =
+        case (prim1, prim2) of
+            (NamedPrim tid1               , NamedPrim tid2              ) -> qtid tid1 tid2
+            (PrimOp name1 ty1             , PrimOp name2 ty2            ) -> name1 == name2 && tcTypeEquiv ty1 ty2
+            (PrimIntTrunc isba isbx       , PrimIntTrunc isba2 isbx2    ) -> isba == isba2 && isbx == isbx2
+            (CoroPrim     p1 tya1 tyb1    , CoroPrim     p2 tya2 tyb2   ) -> p1 == p2 && tcTypeEquiv tya1 tya2 && tcTypeEquiv tyb1 tyb2
+            (PrimInlineAsm ty1 txa txb b1 , PrimInlineAsm ty2 tza tzb b2) -> tcTypeEquiv ty1 ty2 && txa == tza && txb == tzb && b1 == b2
+            _ -> False
+          in
+  let qcr cr1 cr2 =
+        case (cr1, cr2) of
+           (CompilesResult (OK e1)       , CompilesResult (OK e2)         ) -> q e1 e2
+           (CompilesResult (Errors errs1), CompilesResult (Errors errs2)  ) -> map show errs1 == map show errs2
+           _ -> False
+         in
+  let qai ai1 ai2 =
+        case (ai1, ai2) of
+            (ArrayIndex ea1 eb1 _ sg1 , ArrayIndex ea2 eb2 _ sg2) -> q ea1 ea2 && q eb1 eb2 && sg1 == sg2
+          in
+  let qa le1 le2 =
+        case (le1, le2) of
+            (Left l1, Left l2) -> l1 == l2
+            (Right e1, Right e2) -> q e1 e2
+            _ -> False in
+  case (e1, e2) of
+      (AnnLiteral     _ _ lit1        , AnnLiteral     _ _ lit2        )  -> lit1 == lit2
+      (AnnCall        _ _ e1c e1s     , AnnCall        _ _ e2c e2s     )  -> allP q (e1c:e1s) (e2c:e2s)
+      (AnnAppCtor     _ _ c1  e1s     , AnnAppCtor     _ _ c2  e2s     )  -> c1 == c2 && allP q e1s e2s
+      (AnnCompiles    _ _ cr1         , AnnCompiles    _ _ cr2         )  -> cr1 `qcr` cr2
+      (AnnKillProcess _ ty1 t1        , AnnKillProcess _ ty2 t2        )  -> t1 == t2 && tcTypeEquiv ty1 ty2
+      (AnnIf          _ _ c1 a1 b1    , AnnIf          _ _ c2 a2 b2    )  -> allP q [c1,a1,b1] [c2,a2,b2]
+      (E_AnnFn        f1              , E_AnnFn        f2              )  -> qf f1 f2
+      (AnnLetVar      _ i1 e1 b1      , AnnLetVar      _ i2 e2 b2      )  -> i1 == i2 && q e1 e2 && q b1 b2
+      (AnnLetRec      _ is1 es1 b1    , AnnLetRec      _ is2 es2 b2    )  -> allP (==) is1 is2 && allP q es1 es2 && q b1 b2
+      (AnnLetFuns     _ is1 fs1 b1    , AnnLetFuns     _ is2 fs2 b2    )  -> allP (==) is1 is2 && allP qf fs1 fs2 && q b1 b2
+      (AnnAlloc       _ _ e1 mr1      , AnnAlloc       _ _ e2 mr2      )  -> q e1 e2 && mr1 == mr2
+      (AnnDeref       _ _ e1          , AnnDeref       _ _ e2          )  -> q e1 e2
+      (AnnStore       _ _ e1 x1       , AnnStore       _ _ e2 x2       )  -> q e1 e2 && q x1 x2
+      (AnnArrayLit    _ _ le1         , AnnArrayLit    _ _ le2         )  -> allP qa le1 le2
+      (AnnAllocArray  _ _ e1 t1 z1    , AnnAllocArray  _ _ e2 t2 z2    )  -> q e1 e2 && tcTypeEquiv t1 t2 && z1 == z2
+      (AnnArrayRead   _ _ ai1         , AnnArrayRead   _ _ ai2         )  -> ai1 `qai` ai2
+      (AnnArrayPoke   _ _ ai1 e1      , AnnArrayPoke   _ _ ai2 e2      )  -> ai1 `qai` ai2 && q e1 e2
+      (AnnTuple       _ _ k1 e1s      , AnnTuple       _ _ k2 e2s      )  -> k1 == k2 && allP q e1s e2s
+      (AnnCase        _ _ e1 c1s      , AnnCase        _ _ e2 c2s      )  -> q e1 e2 && allP qc c1s c2s
+      (E_AnnVar       _ (tid1, mcid1) , E_AnnVar       _ (tid2, mcid2) )  -> qtid tid1 tid2  && mcid1 == mcid2
+      (AnnPrimitive   _ _ p1          , AnnPrimitive   _ _ p2          )  -> p1 `qp` p2
+      (E_AnnTyApp     _ _ e1 t1s      , E_AnnTyApp     _ _ e2 t2s      )  -> q e1 e2 && allP tcTypeEquiv t1s t2s
+      _ -> False
+
+
 -- G{x1 : t1}...{xn : tn} |- e ::: tb
 -- ---------------------------------------------------------------------
 -- G |- { x1 : t1 => ... => xn : tn => e } ::: { t1 => ... => tn => tb }
@@ -999,15 +1089,13 @@ tcSigmaFn ctx fnAST expTyRaw = do
                 let var_tys = map tidType uniquelyNamedFormals
                 (arg_tys, body_ty, _cc, _ft) <- unifyFun exp_rho' (length var_tys) ("poly-fn-lit" ++ highlightFirstLine (rangeOf annot))
 
-                case (any tcContainsRefinements arg_tys,
-                      any tcContainsRefinements var_tys ) of
-                   (True, True) ->
+                if any hasNonTrivialRefinementDifferences (zip arg_tys var_tys)
+                  then
                      tcFails [text $ "Cannot yet check a function which has refinements"
                              ++ " on both its explicit argument bindings and its type signature."]
-                   (ar, vr) -> do
+                  else do
                      debugDoc3 $ string "!!!!!!!!!!!!!!!!!!!!!!!! (sigma)"
                      debugDoc3 $ text (show $ fnAstName fnAST)
-                     debugDoc3 $ text "args/vars refined: " <> pretty (ar,vr)
                      debugDoc3 $ string "var_tys: " <+> pretty var_tys
                      debugDoc3 $ string "arg_tys: " <+> pretty arg_tys
 
@@ -1170,20 +1258,18 @@ tcRhoFnHelper ctx f expTy = do
                            _ <- sequence [subsCheckTy argty varty "mono-fn-arg" |
                                            (argty, varty) <- zip arg_tys var_tys]
 
-                           case (filter tcContainsRefinements arg_tys,
-                                 filter tcContainsRefinements var_tys ) of
-                               (ars@(_:_), vrs@(_:_)) ->
+                           if any hasNonTrivialRefinementDifferences (zip arg_tys var_tys)
+                             then do
                                  tcFails [text $ "Cannot yet check a function (" ++ T.unpack (fnAstName f) ++ ") which has refinements"
                                                    ++ " on both its explicit argument bindings and its type signature."
-                                         , indent 2 (text "Refined signature types:" <+> indent 2 (pretty ars))
-                                         , indent 2 (text "Refined variable types:" <+> indent 2 (pretty vrs))
+                                         --, indent 2 (text "Refined signature types:" <+> indent 2 (pretty ars))
+                                        -- , indent 2 (text "Refined variable types:" <+> indent 2 (pretty vrs))
                                          , string $ highlightFirstLine rng]
                                          -- When we remove this check, we should un-comment one of the tests in
                                          -- bootstrap/testscase/test-fn-precond-2
-                               (ar, vr) -> do
+                             else do
                                  debugDoc3 $ string "!!!!!!!!!!!!!!!!!!!!!!!! (rho)"
                                  debugDoc3 $ text (show $ fnAstName f)
-                                 debugDoc3 $ text "args/vars refined: " <> pretty (ar,vr)
                                  debugDoc3 $ string "var_tys: " <+> pretty var_tys
                                  debugDoc3 $ string "arg_tys: " <+> pretty arg_tys
 
@@ -1882,23 +1968,6 @@ tcTypeWellFormed msg ctx typ = do
                    Nothing -> tcFails [text $ "Unbound type variable "
                                            ++ show tv ++ " " ++ msg]
                    Just  _ -> return ()
-
-tcContainsRefinements :: TypeTC -> Bool
-tcContainsRefinements typ =
-  case typ of
-        RefinedTypeTC {} -> True
-        PrimIntTC      {}      -> False
-        PrimFloat64TC  {}      -> False
-        MetaTyVarTC    {}      -> False
-        TyConAppTC _nm tys     -> any tcContainsRefinements tys
-        TupleTypeTC _k tys     -> any tcContainsRefinements tys
-        FnTypeTC   ss r   _ _  -> any tcContainsRefinements (r:ss)
-        CoroTypeTC  s r        -> any tcContainsRefinements [s,r]
-        RefTypeTC     ty       -> tcContainsRefinements ty
-        ArrayTypeTC   ty       -> tcContainsRefinements ty
-        ForAllTC  _tvs rho     -> tcContainsRefinements rho
-        TyVarTC  (SkolemTyVar {})   -> False
-        TyVarTC  _tv@(BoundTyVar _ _) -> False -- or do we need to look at the context?
 
 tcContext :: Context TypeTC -> Context TypeAST -> Tc (Context SigmaTC)
 tcContext emptyCtx ctxAST = do
