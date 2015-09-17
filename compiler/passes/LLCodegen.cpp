@@ -1014,6 +1014,8 @@ Value* getArraySlot(Value* base, Value* idx, CodegenPass* pass,
     if (dynCheck && !pass->config.disableAllArrayBoundsChecks) {
       emitFosterArrayBoundsCheck(pass->mod, idx, len, srclines);
     }
+    ASSERT(idx->getType() != llvm::Type::getInt1Ty(builder.getContext()))
+      << "Indexing using a boolean subscript is probably not what you want!";
     return getPointerToIndex(arr, idx, "arr_slot");
   } else {
     ASSERT(false) << "expected array, got " << str(base);
@@ -1025,6 +1027,7 @@ Value* getArraySlot(Value* base, Value* idx, CodegenPass* pass,
 llvm::Value* LLArrayIndex::codegenARI(CodegenPass* pass) {
   Value* base = this->base ->codegen(pass);
   Value* idx  = this->index->codegen(pass);
+  idx = builder.CreateZExt(idx, llvm::Type::getInt64Ty(builder.getContext()));
   ASSERT(static_or_dynamic == "static" || static_or_dynamic == "dynamic");
   return getArraySlot(base, idx, pass, this->static_or_dynamic == "dynamic",
                                        this->srclines);
