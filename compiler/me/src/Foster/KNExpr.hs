@@ -1572,6 +1572,8 @@ knInline' expr env = do
   let qs _str v = do --liftIO $ putStrLn $ "resVar << " ++ str ++ "\t;\t" ++ show (tidIdent v)
                      resVar env v
   let q v = resVar env v
+  let qav (Left lit) = return (Left lit)
+      qav (Right v) = liftM Right (q v)
   knBumpTotalEffort
   withRaisedLevel $ case expr of
     KNCompiles _r _t e -> do Rez e' <- knInline' e env
@@ -1587,7 +1589,9 @@ knInline' expr env = do
     KNKillProcess {} -> residualize expr
     KNArrayRead ty (ArrayIndex v1 v2 rng sg)    -> (mapM q [v1,v2   ]) >>= \[q1,q2]    -> residualize $ KNArrayRead ty (ArrayIndex q1 q2 rng sg)
     KNArrayPoke ty (ArrayIndex v1 v2 rng sg) v3 -> (mapM q [v1,v2,v3]) >>= \[q1,q2,q3] -> residualize $ KNArrayPoke ty (ArrayIndex q1 q2 rng sg) q3
-    KNArrayLit  ty arr vals -> (q arr) >>= \arr'  -> residualize $ KNArrayLit ty arr' vals -- NOTE: we don't inline array elements!
+    KNArrayLit  ty arr vals -> do vals' <- mapM qav vals
+                                  arr' <- q arr
+                                  residualize $ KNArrayLit ty arr' vals'
     KNAllocArray ty v amr zi -> (q v)       >>= \zv -> residualize $ KNAllocArray ty zv amr zi
     KNDeref      ty v      -> (q v)       >>= \zv -> residualize $ KNDeref      ty zv
     KNAlloc      ty v mem  -> (q v)       >>= \zv -> residualize $ KNAlloc      ty zv mem
