@@ -1147,9 +1147,6 @@ void copyValuesToStruct(const std::vector<llvm::Value*>& vals,
         << "\n" << str(tup_ptr);
 
   for (size_t i = 0; i < vals.size(); ++i) {
-    llvm::outs() << "storing " << str(vals[i]) << " of type " << str(vals[i]->getType()) << " to slot " << i << " of " << str(tup_ptr) << "\n";
-    llvm::outs().flush();
-    //Value* dst = builder.CreateConstGEP2_32(vals[i]->getType(), tup_ptr, 0, i, "gep");
     Value* dst = builder.CreateConstGEP2_32(nullptr, tup_ptr, 0, i, "gep");
     emitStore(vals[i], dst);
   }

@@ -132,9 +132,8 @@ bool SpecializeAllocations::runOnBasicBlock(BasicBlock &BB) {
             CallInst* newcall = CallInst::Create(mem16, ac, "mem16_", I);
             call->replaceAllUsesWith(newcall);
             I = --BBIL.erase(I); // remove & delete the old memalloc call.
+            ++NumSpecialized;
             Changed = true;
-          } else {
-            llvm::errs() << "found allocation of size not-16\n";
           }
         } else {
           if (ac && !ac->isCast()) {
