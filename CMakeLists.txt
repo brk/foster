@@ -473,13 +473,15 @@ if (CMAKE_GENERATOR STREQUAL "Ninja")
 endif()
 #####################################################################
 
+set(REGRESS_CMD
+      python ${PROJECT_SOURCE_DIR}/scripts/run_all.py
+                 ${PROJECT_SOURCE_DIR}/test/bootstrap
+                 --bindir ${PROJECT_BINARY_DIR}
+                 --cxxpath ${CLANG}
+                 -I ${PROJECT_SOURCE_DIR}/stdlib)
 add_custom_target(regress
-  COMMAND python ${PROJECT_SOURCE_DIR}/scripts/run_all.py
-	     ${PROJECT_SOURCE_DIR}/test/bootstrap
-	     --bindir ${PROJECT_BINARY_DIR}
-             --cxxpath ${CLANG}
-	     -I ${PROJECT_SOURCE_DIR}/stdlib
-  )
+        COMMAND echo ${REGRESS_CMD}
+        COMMAND ${REGRESS_CMD})
 
 add_custom_target(stress
   COMMAND python ${PROJECT_SOURCE_DIR}/scripts/run_all.py
