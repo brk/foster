@@ -1935,9 +1935,12 @@ unify' !depth t1 t2 msg = do
                                      False   -> writeTcMetaTC m x2
                                      True    -> occurdCheck   m x2
   where
-     occurdCheck m t = tcFails [text $ "Occurs check for " ++ show (MetaTyVarTC m)
-                                   ++ " failed in " ++ show t
-                               ,string msg]
+     occurdCheck m t = tcFails [text $ "Occurs check for"
+                               ,pretty (MetaTyVarTC m)
+                               ,text "failed in"
+                               ,pretty t
+                               ,string msg
+                               ,text "This type error is often caused by swapped function arguments..."]
 -- }}}
 
 -- {{{ Well-formedness checks
