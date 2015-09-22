@@ -90,6 +90,7 @@ parseCall pbexpr rng = do
           -- foo |> bar !   ~~~> (bar !) foo
           -- foo |> bar     ~~~> (bar  ) foo
           [eexpr, rest] -> return $ E_CallAST rng rest [eexpr]
+          _ -> error $ "parseCall given unexpected input"
       _ -> return $ E_CallAST rng base args
 
 processArrayValue :: ExprAST TypeP -> ArrayEntry (ExprAST TypeP)

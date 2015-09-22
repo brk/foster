@@ -45,7 +45,7 @@ instance Show TypeP where
         RefTypeP    ty                -> "(Ref " ++ show ty ++ ")"
         ArrayTypeP  ty                -> "(Array " ++ show ty ++ ")"
         MetaPlaceholder s             -> "??" ++ s
-        RefinedTypeP nm ty e          -> "(Refined " ++ nm ++ " : " ++ show ty ++ " : ... )"
+        RefinedTypeP nm ty _e         -> "(Refined " ++ nm ++ " : " ++ show ty ++ " : ... )"
 
 instance Structured TypeP where
     textOf e _width =
@@ -59,8 +59,8 @@ instance Structured TypeP where
             TyVarP   tv                  -> text $ "TyVarP " ++ show tv
             RefTypeP    _                -> text $ "RefTypeP"
             ArrayTypeP  _                -> text $ "ArrayTypeP"
-            MetaPlaceholder s            -> text $ "MetaPlaceholder "
-            RefinedTypeP nm ty e         -> text $ "RefinedTypeP"
+            MetaPlaceholder _s           -> text $ "MetaPlaceholder "
+            RefinedTypeP _nm _ty _e      -> text $ "RefinedTypeP"
 
     childrenOf e =
         case e of

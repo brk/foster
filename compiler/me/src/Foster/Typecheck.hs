@@ -29,8 +29,6 @@ import Foster.Output(OutputOr(Errors, OK), putDocLn)
 import Foster.PrettyAnnExpr()
 import Text.PrettyPrint.ANSI.Leijen
 
-import Debug.Trace(trace)
-
 data TCWanted = TCSigma | TCRho deriving Show
 
 -----------------------------------------------------------------------
@@ -250,6 +248,7 @@ tcRho ctx expr expTy = do
       E_PrimAST   rng "inline-asm" [LitText s, LitText c, LitBool x] [ty] -> do
         ty' <- tcType ctx ty
         matchExp expTy (AnnPrimitive rng ty' (PrimInlineAsm ty' s c x)) "inline-asm"
+      E_PrimAST   {} -> tcFails [text "Typecheck saw unexpected primitive", text $ show expr]
       E_IntAST    rng txt ->            typecheckInt rng txt expTy   >>= (\v -> matchExp expTy v "tcInt")
       E_RatAST    rng txt -> (typecheckRat rng txt (expMaybe expTy)) >>= (\v -> matchExp expTy v "tcRat")
       E_BoolAST   rng b              -> tcRhoBool         rng   b          expTy
@@ -949,7 +948,7 @@ tcTypeEquiv t1 t2 =
      (MetaTyVarTC m1          , MetaTyVarTC m2          ) -> m1 == m2
      (RefTypeTC     ty1       , RefTypeTC     ty2       ) -> q ty1 ty2
      (ArrayTypeTC   ty1       , ArrayTypeTC   ty2       ) -> q ty1 ty2
-     (RefinedTypeTC v1 e1 ids1, RefinedTypeTC v2 e2 ids2) -> v1 `equivTypedId` v2 && equivStructureAndVarNames e1 e2 -- note: no check on ids...
+     (RefinedTypeTC v1 e1 _ids1, RefinedTypeTC v2 e2 _ids2) -> v1 `equivTypedId` v2 && equivStructureAndVarNames e1 e2 -- note: no check on ids...
      _ -> False
 
 equivTypedId tid1 tid2 =
@@ -2195,21 +2194,21 @@ fnTypeShallow ctx f = tcTypeAndResolve ctx fnTyAST (fnAstAnnot f)
                  [] -> fnTyAST0
                  tyformals -> ForAllAST (map convertTyFormal tyformals) fnTyAST0
 
-logged'' msg action = do
-  --tcLift $ putStrLn $ "{ " ++ msg
+logged'' _msg action = do
+  --tcLift $ putStrLn $ "{ " ++ _msg
   rv <- action
   --tcLift $ putStrLn $ "} :: " ++ show (pretty $ typeTC rv)
   return rv
 
-logged' msg action = do
-  --tcLift $ putStrLn $ "{ " ++ msg
+logged' _msg action = do
+  --tcLift $ putStrLn $ "{ " ++ _msg
   rv <- action
   --tcLift $ putStrLn $ "}"
   return rv
 
-logged expr msg action = do
-  --tcLift $ putStrLn $ "{ " ++ msg
+logged _expr _msg action = do
+  --tcLift $ putStrLn $ "{ " ++ _msg
   rv <- action
-  --tcLift $ putStrLn $ "} :: " ++ show (pretty $ typeTC expr)
+  --tcLift $ putStrLn $ "} :: " ++ show (pretty $ typeTC _expr)
   return rv
 -- }}}

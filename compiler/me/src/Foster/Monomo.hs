@@ -28,7 +28,6 @@ import Control.Monad(when, liftM, liftM2, liftM3, liftM4)
 import Control.Monad.State(evalStateT, get, gets, put, StateT, liftIO, lift)
 import Data.IORef
 
-import Debug.Trace(trace)
 -- This monomorphization pass is similar in structure to MLton's;
 -- a previous worklist-based version was modeled on BitC's polyinstantiator.
 --
@@ -104,7 +103,8 @@ monoKN subst inTypeExpr e =
                                  --liftIO $ putStrLn $ show t'
                                  --liftIO $ putStrLn $ show t''
                                  liftM2 (KNCall t'') (qv v) (mapM qv vs)
-  KNInlined {} -> error $ "Monomo.hs expects inlining to run after monomorphization!"
+  KNInlined {}    -> error $ "Monomo.hs expects inlining to run after monomorphization!"
+  KNNotInlined {} -> error $ "Monomo.hs expects inlining to run after monomorphization!"
   -- The cases involving sub-expressions are syntactically heavier,
   -- but are still basically trivially inductive.
   KNCase          t v pats -> do liftM3 KNCase          (qt t) (qv v)
@@ -129,6 +129,7 @@ monoKN subst inTypeExpr e =
         c' <- monoMarkDataType c dtname args
         vs' <- mapM qv vs
         return $ KNAppCtor t' c' vs'
+      _ -> error $ "monoKN of KNAppCtor saw unexpected type " ++ show t'
 
   KNLetFuns     ids fns0 b  -> do
     let fns = computeRecursivenessAnnotations fns0 ids
@@ -440,11 +441,11 @@ monoSubstLookup _subst (SkolemTyVar  _ _ KindAnySizeType)  =
         --TyConApp ("BAD:SKOLEM TY VAR, ANY SIZE TYPE:"++nm) []
         error $ "Monomorphization (Monomo.hs:monoSubsLookup) "
              ++ "found a bad skolem type variable with non-pointer kind"
-monoSubstLookup subst tv@(BoundTyVar nm sr) =
+monoSubstLookup subst tv@(BoundTyVar _nm _sr) =
   case Map.lookup tv subst of
       Just monotype -> monotype
       Nothing -> if True
-                  then --TyConApp ("AAAAAAmissing:" ++ nm ++ showSourceRange sr) []
+                  then --TyConApp ("AAAAAAmissing:" ++ _nm ++ showSourceRange _sr) []
                        PtrTypeUnknown
                   else error $
                          "Monomorphization (Monomo.hs:monoSubsLookup) "

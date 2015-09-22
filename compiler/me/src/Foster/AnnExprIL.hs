@@ -467,10 +467,12 @@ ilOf ctx typ = do
              Nothing -> do iltys <- mapM q tys
                            return $ TyConAppIL dtname iltys
              Just rr -> do q $ rr tys
-           Nothing   -> tcFails [text "Unable to find data type " <+> text dtname
-                                ,text "contextDataTypes ="
-                                ,pretty (map fst $ Map.toList $ contextDataTypes ctx)
-                                ]
+           Just dts | length dts > 1
+             -> tcFails [text "Multiple definitions for data type" <+> text dtname]
+           _ -> tcFails [text "Unable to find data type" <+> text dtname
+                        ,text "contextDataTypes ="
+                        ,pretty (map fst $ Map.toList $ contextDataTypes ctx)
+                ]
      PrimIntTC  size    -> do return $ PrimIntIL size
      PrimFloat64TC      -> do return $ PrimFloat64IL
      TupleTypeTC ukind types -> do tys <- mapM q types

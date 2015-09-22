@@ -44,12 +44,12 @@ instance Pretty TypeP where
           PrimIntP       isb          -> text "Int" <> pretty isb
           TyConAppP      dt ts        -> parens $ pretty dt <+> sep (map pretty ts)
           TupleTypeP     ts           -> tupled (map pretty ts)
-          FnTypeP        ts r cc pf   -> text "{" <+> hsep [pretty t <+> text "=>" | t <- ts]
+          FnTypeP        ts r _cc _pf -> text "{" <+> hsep [pretty t <+> text "=>" | t <- ts]
                                                   <+> pretty r <+> text "}"
-          CoroTypeP      s  r         -> text "Coro ..."
+          CoroTypeP      s  r         -> parens $ text "Coro" <+> pretty s <+> pretty r
           ArrayTypeP     t            -> parens $ text "Array" <+> pretty t
           RefTypeP       t            -> parens $ text "Ref" <+> pretty t
-          ForAllP        tyfs rho     -> text "forall ..." <+> pretty rho
+          ForAllP        _tyfs rho    -> text "forall ..." <+> pretty rho
           TyVarP         tv           -> pretty tv
           MetaPlaceholder str         -> text ("?? " ++ str)
           RefinedTypeP nm ty e -> text "%" <+> text nm <+> text ":" <+> pretty ty <+> text ":" <+> pretty e
@@ -154,13 +154,13 @@ instance Pretty (ArrayEntry (ExprAST TypeP)) where
 instance Pretty (ExprAST TypeP) where
   pretty e =
         case e of
-            E_MachArrayLit annot mbt args -> withAnnot annot $ text "prim mach-array-literal" <+> hsep (map pretty args)
+            E_MachArrayLit annot _mbt args -> withAnnot annot $ text "prim mach-array-literal" <+> hsep (map pretty args)
             E_VarAST annot evar     -> withAnnot annot $ pretty evar
             E_TyApp  annot e argtys -> withAnnot annot $ pretty e <> text ":[" <> hsep (punctuate comma (map pretty argtys)) <> text "]"
             E_TyCheck annot e ty    -> withAnnot annot $ parens (pretty e <+> text "as" <+> pretty ty)
             E_KillProcess annot exp -> withAnnot annot $ text "prim kill-entire-process" <+> pretty exp
             E_StringAST   annot r (SS_Text  t) -> withAnnot annot $             wasRaw r <> dquotes (text $ T.unpack t)
-            E_StringAST   annot r (SS_Bytes b) -> withAnnot annot $ text "b" <> wasRaw r <> dquotes (text $ "<.!.>")
+            E_StringAST   annot r (SS_Bytes b) -> withAnnot annot $ text "b" <> wasRaw r <> dquotes (text $ show b)
             E_BoolAST     annot b   -> withAnnot annot $ text $ show b
             E_PrimAST     annot nm []   _ -> withAnnot annot $ text nm
             E_PrimAST     annot nm lits _ -> withAnnot annot $ text nm <+> pretty lits

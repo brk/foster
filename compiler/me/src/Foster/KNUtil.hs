@@ -10,7 +10,6 @@ module Foster.KNUtil where
 import Foster.Base
 
 import Foster.AnnExprIL(TypeIL(..))
-import Foster.Kind
 
 import Text.PrettyPrint.ANSI.Leijen
 
@@ -283,7 +282,7 @@ instance (Show ty, Show rs) => Structured (KNExpr' rs ty) where
             KNLiteral _  (LitBool  b) -> text $ "KNBool      " ++ (show b)
             KNLiteral ty (LitInt int) -> text $ "KNInt       " ++ (litIntText int) ++ " :: " ++ show ty
             KNLiteral ty (LitFloat f) -> text $ "KNFloat     " ++ (litFloatText f) ++ " :: " ++ show ty
-            KNLiteral ty (LitByteArray bs) -> text "KNBytes     " <> text "b" <> text (show bs)
+            KNLiteral _ty (LitByteArray bs) -> text "KNBytes     " <> text "b" <> text (show bs)
             KNCall     t _ _    -> text $ "KNCall :: " ++ show t
             KNCallPrim _ t p  _ -> text $ "KNCallPrim  " ++ (show p) ++ " :: " ++ show t
             KNAppCtor  t cid  _ -> text $ "KNAppCtor   " ++ (show cid) ++ " :: " ++ show t
@@ -579,7 +578,7 @@ knSubst m expr =
       KNIf            t v e1 e2-> KNIf t (qv v) (knSubst m e1) (knSubst m e2)
       KNLetVal       id e   b  -> KNLetVal id (knSubst m e) (knSubst m  b)
       KNLetRec     ids exprs e -> KNLetRec ids (map (knSubst m) exprs) (knSubst m e)
-      KNLetFuns     ids fns b  -> error "knSubst not yet implemented for KNLetFuns"
+      KNLetFuns   _ids _fns _b -> error "knSubst not yet implemented for KNLetFuns"
       KNTyApp t v argtys       -> KNTyApp t (qv v) argtys
       KNCompiles r t e         -> KNCompiles r t (knSubst m e)
       KNInlined t0 tb tn old new -> KNInlined t0 tb tn old (knSubst m new)

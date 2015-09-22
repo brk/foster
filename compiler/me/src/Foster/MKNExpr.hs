@@ -673,8 +673,8 @@ mknInline subterm = do
     term <- readLink "mknInline" subterm
     collectRedexes wr kr fr term
 
-    knownVals <- liftIO $ readIORef kr
-    knownFns  <- liftIO $ readIORef fr
+    _knownVals <- liftIO $ readIORef kr
+    knownFns   <- liftIO $ readIORef fr
 
     do w0 <- liftIO $ readIORef wr
        liftIO $ putStrLn $ "collected " ++ show (length (worklistToList w0)) ++ " redexes..."

@@ -296,8 +296,8 @@ checkModuleExprs expr facts =
 dbgStr x = liftIO $ putStrLn x
 dbgDoc x = liftIO $ putDocLn x
 -}
-dbgStr x = return ()
-dbgDoc x = return ()
+dbgStr _x = return ()
+dbgDoc _x = return ()
 
 checkFn :: (Fn RecStatus KNMono MonoType) -> Facts -> Compiled (Maybe (Ident -> SC SMTExpr))
 checkFn fn facts = do
@@ -576,7 +576,8 @@ checkBody expr facts =
         return $ withDecls facts $ \x -> return $ smtId x === smtTruncToSize (intSizeOf tosz) (smtVar v)
 
     KNCallPrim _ (PrimInt _) (PrimOp "sdiv-unsafe" (PrimInt sz)) vs -> do
-        let precond [s1, s2] = s2 =/= (litOfSize 0 sz)
+        let precond [_s1, s2] = s2 =/= (litOfSize 0 sz)
+            precond _ = error $ "KNStaticChecks: sdiv-unsafe requires exactly 2 args"
         scRunZ3 expr $ scriptImplyingBy' (precond (smtVars vs)) facts
         return $ withDecls facts $ \x -> return $ smtId x === lift2 bvsdiv (smtVars vs)
 
@@ -584,6 +585,7 @@ checkBody expr facts =
         dbgStr $ "TODO: checkBody attributes for call prim " ++ show prim ++ " $ " ++ show vs
         return Nothing
 
+    KNNotInlined _ e -> checkBody e facts
     KNInlined _t0 _to _tn _old new -> checkBody new facts
     KNCase       _ty v arms     -> do
         -- TODO: better path conditions for individual arms
@@ -608,7 +610,7 @@ checkBody expr facts =
         -- Do any of the called function's args have preconditions?
         case tidType v of
           FnType formals _ _ _ -> do
-            forM_ (zip formals vs) $ \(formalTy, arg) -> do
+            forM_ (zip formals vs) $ \(formalTy, _arg) -> do
               case formalTy of
                 FnType {} ->
                   dbgStr "check precondition implication (TODO!)"
@@ -663,8 +665,8 @@ checkBody expr facts =
                         checkBody e2 (addIdentFact facts' id newfact (typeKN e1))
 
     KNLetFuns     [id] [fn] b | identPrefix id == T.pack "assert-invariants-thunk" -> do
-        checkFn'  fn facts
-        checkBody b  facts
+        _ <- checkFn'  fn facts
+        do   checkBody b  facts
 
     KNLetRec      _ids _es _b     ->
         error $ "KNStaticChecks.hs: checkBody can't yet support recursive non-function bindings."
@@ -691,7 +693,7 @@ checkBody expr facts =
     KNTuple       {} -> return Nothing
     KNAllocArray  {} -> return Nothing
 
-    KNTyApp _t v _ts -> -- We don't return a fact saying (x === v) because
+    KNTyApp _t _v _ts -> -- We don't return a fact saying (x === v) because
                         -- doing so would produce invalid SMT when v is function-typed.
                         -- Instead, we record a meta fact (even-more-meta, that is)
                         -- of the correspondence...
@@ -729,7 +731,7 @@ recordIfHasFnPrecondition facts v@(TypedId ty id) =
 
 mkPrecondGen :: Facts -> (Fn RecStatus KNMono MonoType) -> ([MoVar] -> SC SMTExpr)
 mkPrecondGen facts fn = \argVars -> do
-  uref <- lift $ gets ccUniqRef
+  _uref <- lift $ gets ccUniqRef
   --fn' <- liftIO $ alphaRename' fn uref
   let fn' = fn
   sc <- get

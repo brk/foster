@@ -27,6 +27,8 @@ comment d = text "/*" <+> d <+> text "*/"
 instance Pretty e => Pretty (ArrayIndex e) where
   pretty (ArrayIndex b i _rng SG_Static) = pretty b <> brackets (pretty i)
   pretty (ArrayIndex b i _rng SG_Dynamic) =
+    text "prim array-subscript" <+> pretty b <+> pretty i
+  pretty (ArrayIndex b i _rng SG_Unsafe) =
     text "prim array-subscript-unsafe" <+> pretty b <+> pretty i
 
 -- (<//>) ?vs? align (x <$> y)
@@ -62,11 +64,10 @@ emptyOrLine = group linebreak
 -- x <$$> y     =       x <> emptyOrLine <> y -- soft break
 
 instance (Pretty ty, Pretty expr) => Pretty (Fn rec expr ty) where
-  pretty fn = text "pretty fn...."
-  {-
-      group (lbrace <> prettyTyFormals (fnTyFormals fn) <> args (fnFormals fn)
+  pretty fn =
+      group (lbrace <> args (fnVars fn)
                     </> nest 4 (group $
-                                  linebreak <> pretty (fnAstBody fn))
+                                  linebreak <> pretty (fnBody fn))
                     <$> rbrace)
     where args []  = empty
           args frm = empty <+> hsep (map (\v -> prettyFnFormal v <+> text "=>") frm)
@@ -75,9 +76,8 @@ instance (Pretty ty, Pretty expr) => Pretty (Fn rec expr ty) where
 
 prettyTyFormals [] = empty
 prettyTyFormals tyfs = empty <+> text "forall" <+> hsep (map prettyTyFormal tyfs) <+> text ","
-  where prettyTyFormal (TypeFormal name kind) =
+  where prettyTyFormal (TypeFormal name _sr kind) =
                                           text name <+> text ":" <+> pretty kind
--}
 
 {-
 prettyTopLevelFn fn =
@@ -104,6 +104,8 @@ prettyId (TypedId _ i) = text (T.unpack $ identPrefix i)
 prettyAtom e =
   case e of
     AnnCall       {} -> pretty e
+    E_AnnFn f        -> pretty f
+    AnnArrayRead  {} -> pretty e
 
     E_AnnVar      {} -> pretty e
     AnnPrimitive  {} -> pretty e
@@ -187,8 +189,8 @@ instance Pretty (AnnExpr TypeTC) where
             AnnAlloc annot _ e _rgn  -> withAnnot annot $ parens $ text "ref" <+> pretty e
             AnnDeref annot _ e       -> withAnnot annot $ pretty e <> text "^"
             AnnStore annot _ e1 e2   -> withAnnot annot $ pretty e1 <+> text ">^" <+> pretty e2
-            AnnAllocArray annot _ e ty _  -> withAnnot annot $ text "AnnAllocArray"
-            AnnArrayLit   annot _ entries -> withAnnot annot $ text "AnnArrayLit"
+            AnnAllocArray annot _ _e _ty _ -> withAnnot annot $ text "AnnAllocArray"
+            AnnArrayLit   annot _ _entries -> withAnnot annot $ text "AnnArrayLit"
             AnnArrayRead  annot _ ai      -> withAnnot annot $ pretty ai
             AnnArrayPoke  annot _ ai e    -> withAnnot annot $ pretty e <+> text ">^" <+> pretty ai
             AnnKillProcess {} -> text "<<<AnnKillProcess>>>"

@@ -415,6 +415,7 @@ runCensusRewrites' uref bbg = do
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||| Liveness ||||||||||||||||||||||||||||||||{{{
+{-
 type Live = Set.Set Ident
 
 liveLattice :: DataflowLattice Live
@@ -486,6 +487,7 @@ runLiveness uref bbg = runWithUniqAndFuel uref infiniteFuel (go bbg)
                       , bp_transfer = liveness
                       , bp_rewrite  = deadBindElim
                       }
+-}
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 instance AExpr (Letable ty)    where freeIdents x = map tidIdent $ ((freeTypedIds x) :: [TypedId ty])
@@ -506,6 +508,7 @@ cfgSize bbg = foldGraphNodes go (bbgBody bbg) (0, 0)
                                       sum [snd $ cfgSize (fnBody f) | f <- fns])
     go (ILast   _cflast     ) (t,a) = (t + 1         , a + 1)
 
+{-
 cfgCalls :: BasicBlockGraph -> Map Ident (Set BlockId) -- fn var to continuation
 cfgCalls bbg = foldGraphNodes go (bbgBody bbg) Map.empty
   where
@@ -517,7 +520,7 @@ cfgCalls bbg = foldGraphNodes go (bbgBody bbg) Map.empty
     go (ILast (CFCall k _ v _)) m = Map.insertWith Set.union (tidIdent v)
                                                         (Set.singleton k) m
     go (ILast _               ) m = m
-
+-}
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||| Bottom-up May-GC constraint propagation ||||||||||{{{

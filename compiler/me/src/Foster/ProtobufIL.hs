@@ -354,7 +354,9 @@ dumpExpr _ (ILCallPrim t (NamedPrim (TypedId _ (GlobalSymbol gs))) [arr])
 dumpExpr _ (ILCallPrim t (PrimInlineAsm fty contents constraints sideeffects) args)
         =
     let (d, r, cc) = case fty of
-         LLPtrType (LLStructType [LLProcType (_:d) r cc, _]) -> (d,r,cc) in
+         LLPtrType (LLStructType [LLProcType (_:d) r cc, _]) -> (d,r,cc)
+         _ -> error $ "dumpExpr for inline asm expected fn type on inline asm"
+       in
     P'.defaultValue { PbLetable.tag   = IL_CALL
                     , PbLetable.parts = fromList $ fmap dumpVar args
                     , PbLetable.type' = Just $ dumpType t
