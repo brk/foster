@@ -411,6 +411,8 @@ kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
   where
     kNormalCtor :: Context TypeIL -> DataType TypeIL -> DataCtor TypeIL
                 -> KN (FnExprIL)
+    kNormalCtor _ctx _datatype (DataCtor _cname _tyformals _tys Nothing _range) = do
+      error "Cannot wrap a data constructor with no representation information."
     kNormalCtor ctx datatype (DataCtor cname _tyformals tys (Just repr) range) = do
       let dname = dataTypeName datatype
       let arity = Prelude.length tys
@@ -525,7 +527,7 @@ collectMentions knf = go Set.empty (fnBody knf)
           KNLetFuns    _ fns b -> Set.union xs $ go (Set.unions $ map collectMentions fns) b
           KNCompiles _r _t e             -> go xs e
           KNInlined _t0 _to _tn _old new -> go xs new
-          KNNotInlined x e -> go xs e
+          KNNotInlined _x e -> go xs e
 
 rebuildFnWith rebuilder addBindingsFor f =
          let rebuiltBody = rebuildWith rebuilder (fnBody f) in
@@ -1085,12 +1087,12 @@ instance Pretty FoldResult where
     pretty (FoldInto _rez size expr cost) = pretty_status <+> parens (pretty expr) <+> text "at cost" <+> pretty cost
                                       where pretty_status = text "success, size=" <> pretty size
 
-foldCost :: FoldResult -> Maybe Int
-foldCost (FoldFail   _ _ mb_cost) = mb_cost
-foldCost (FoldInto _ _ _    cost) = Just cost
-
-foldResultFailed (FoldInto {}) = False
-foldResultFailed (FoldFail {}) = True
+--foldCost :: FoldResult -> Maybe Int
+--foldCost (FoldFail   _ _ mb_cost) = mb_cost
+--foldCost (FoldInto _ _ _    cost) = Just cost
+--
+--foldResultFailed (FoldInto {}) = False
+--foldResultFailed (FoldFail {}) = True
 
 data InlineError = InlineErrorSize String
                  | InlineErrorEffort Doc deriving Show
@@ -1282,7 +1284,7 @@ mkOpRefs = do
   inp  <- newRef (IP_Limit 1)
   return (lexp, oup, inp)
 
-mkOpExpr msg e env = do
+mkOpExpr _msg e env = do
   --putDocLn $ text "mkOpExpr " <> text msg
   (le, oup, inp) <- mkOpRefs
   return $ Opnd e env le oup inp
@@ -1344,6 +1346,7 @@ maybeCachedOpSize (VO_F (Opnd _ _ loc _ _)) = do
     Visited _ size _ -> return $ Just size
     _                -> return $ Nothing
 
+{- {{{
 data MbCachedEF = MCEF_0 | MCEF_E ResExpr | MCEF_F ResFn
 
 maybeCachedEF (VO_E (Opnd _ _ loc _ _)) = do
@@ -1357,6 +1360,8 @@ maybeCachedEF   (VO_F (Opnd _ _ loc _ _)) = do
   case r of
     Visited val _ _ -> return $ MCEF_F val
     _               -> return $ MCEF_0
+}}} -}
+
 -- }}}
 
 -- {{{ Size counters and size limits...
@@ -1368,8 +1373,7 @@ getSize = do
 
 canBumpSizeBy :: Int -> In (Bool, Int, Maybe Int)
 canBumpSizeBy d = do
-  !r <- gets inSizeCntr
-  !x <- readRef r
+  !x <- getSize
   let !v = x + d
   !lim <- gets inSizeLimit
   case lim of
@@ -1437,9 +1441,9 @@ withPendingFold pending action = do
   writeRef stackref old
   return result
 
-addSizeLimit :: SizeLimit -> Int -> SizeLimit
-addSizeLimit NoLimit _ = NoLimit
-addSizeLimit (Limit (i,s)) d = Limit (i + d,s)
+--addSizeLimit :: SizeLimit -> Int -> SizeLimit
+--addSizeLimit NoLimit _ = NoLimit
+--addSizeLimit (Limit (i,s)) d = Limit (i + d,s)
 
 withSizeCounter :: String -> SizeCounter -> In a -> In (a, Int)
 withSizeCounter msg (SizeCounter sz lim) action = do
@@ -1456,8 +1460,7 @@ withSizeCounter msg (SizeCounter sz lim) action = do
 
 getLimitedSizeCounter :: Int -> String -> In SizeCounter
 getLimitedSizeCounter lim src = do
-  r <- gets inSizeCntr
-  x <- readRef r
+  x <- getSize
   c <- gets inSizeLimit
   case c of Limit c' -> do return $ SizeCounter x (Limit c')
             NoLimit  -> do -- putDocLn $ text $ "getLimitedSizeCounter creating fresh counter"
@@ -1733,7 +1736,7 @@ knInline' expr env = do
       let resExprA s why mb_cost = do --putDocLn $ text "resExprA " <> text s <$> indent 4 (pretty expr)
                           eff <- knTotalEffort
                           rezM2 (\v xs -> KNNotInlined (s,(why,eff,mb_cost)) (KNCall ty v xs)) (qs ("KNCall v " ++ show s) v) (mapM (qs "KNCall vs") vs)
-      (desc, smry) <- case lookupVarOp env v of
+      (_desc, _smry) <- case lookupVarOp env v of
                         Just (VO_E ope) -> do smry <- summarize ope
                                               return ("(a known expr); summary: ",
                                                         smry <$> pretty (opndOldValue ope))
@@ -1812,7 +1815,7 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
       resExprA "visitF failed" FoldInnerPending (Just cost)
 
     Cached _ fn' _ -> do
-      smry' <- summarize opf
+      --smry' <- summarize opf
       --putDocLn3 $  text "visited fn opf " <> smry
       --         <$> text "           ==> " <> smry'
       --         <$> text "               from call  [[" <+> pretty expr <+> text "]], producing:"
@@ -1870,6 +1873,7 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
 
             resExprA "kNothing" why cost
   where
+{- {{{
     primop (NamedPrim tid) = show (tidIdent tid)
     primop (PrimOp nm _)   = nm
     primop (PrimIntTrunc  {}) = "trunc"
@@ -1901,11 +1905,14 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
         KNLetRec      {} -> "KNLetRec      " ++ show (knSize x)
         KNCase        {} -> "KNCase        " ++ show (knSize x)
         KNLetFuns     {} -> "KNLetFuns     " ++ show (knSize x)
-
+        KNCompiles    {} -> "KNCompiles    " ++ show (knSize x)
+        KNInlined     {} -> "KNInlined     " ++ show (knSize x)
+        KNNotInlined  {} -> "KNNotInlined  " ++ show (knSize x)
+}}} -}
     -- input are residual vars, not src vars, fwiw
     foldLambda' :: SrcExpr -> ResFn -> Opnd SrcFn -> TypedId MonoType
                 -> [TypedId MonoType] -> SizeCounter -> SrcEnv -> In FoldResult
-    foldLambda' expr fn' opnd@(Opnd _ _ loc_vis loc_op _) v vs' sizeCounter env = withPendingFold expr $ do
+    foldLambda' expr fn' opnd@(Opnd _ _ _loc_vis loc_op _) _v vs' sizeCounter env = withPendingFold expr $ do
      let fn   = fn'
      let env' = extendEnv ids ids' ops env
                    where
@@ -1949,9 +1956,9 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
          --putDocLn3 $ indent 16 $ pretty (fnBody fn)
 
          mb_sizes <- mapM (maybeCachedOpSize . lookupVarOp' env) vs'
-         mb_vars  <- mapM (\v -> do mbe <- maybeCachedEF (lookupVarOp' env v)
-                                    return $ mcefHead mbe) vs'
-         constnts <- mapM (extractConstExpr env) vs'
+         --mb_vars  <- mapM (\v -> do mbe <- maybeCachedEF (lookupVarOp' env v)
+         --                           return $ mcefHead mbe) vs'
+         constnts <- mapM (extractConstExpr' env) vs'
 
          let noConstants = all isVariable constnts || (null vs')
          (notTooBig, currsz, mblim) <- canBumpSizeBy cachedsize
@@ -2109,6 +2116,7 @@ visitF msg (Opnd fn env loc_fn _ loc_ip) = do
       --inDebugStr ("knInlineFn' called on " ++ show (fnIdent fn))
       return $ fn { fnBody = body' , fnVars = vs' }
 
+{-
 wrapBodyWithArgs fn args =
   mkLetVals (zip (map tidIdent $ fnVars fn) args) (fnBody fn)
 
@@ -2120,6 +2128,7 @@ canInlineMuch (KNArrayRead {}) = False
 canInlineMuch (KNArrayPoke {}) = False
 canInlineMuch (KNCallPrim {}) = False
 canInlineMuch _ = True
+-}
 
 shouldInspect id = "natIsZero" == show id
                 || "arrayIterReverse" `isInfixOf` show id
@@ -2214,34 +2223,26 @@ data ConstStatus = IsConstant (TypedId MonoType) ConstExpr
                  deriving Show
 
 extractConstExpr :: SrcEnv -> TypedId MonoType -> In ConstStatus
-extractConstExpr env var = go var where
- go v = case lookupVarOp env v of
-            Just (VO_E ope) -> do
-                 (e', _) <- visitE (tidIdent v, ope)
-                 case e' of
-                    KNLiteral ty lit      -> return $ IsConstant v $ Lit ty lit
-                    KNTuple   ty vars rng -> do results <- mapM go vars
-                                                return $ IsConstant v $ LitTuple ty results rng
-                    KNAppCtor ty cid vars -> do results <- mapM go vars
-                                                return $ IsConstant v $ KnownCtor ty cid results
-                    _                     -> return $ IsVariable v
-                    -- TODO could recurse through binders
-                    -- TODO could track const-ness of ctor args
-            _ -> return $ IsVariable v
+extractConstExpr env var = extractConstExprWith env var lookupVarOp
 
 extractConstExpr' :: SrcEnv -> TypedId MonoType -> In ConstStatus
-extractConstExpr' env var = go var where
- go v = case lookupVarOp' env v of
-            (VO_E ope) -> do
-                 (e', _) <- visitE (tidIdent v, ope)
-                 case e' of
-                    KNLiteral ty lit      -> return $ IsConstant v $ Lit ty lit
-                    KNTuple   ty vars rng -> do results <- mapM go vars
-                                                return $ IsConstant v $ LitTuple ty results rng
-                    KNAppCtor ty cid vars -> do results <- mapM go vars
-                                                return $ IsConstant v $ KnownCtor ty cid results
-                    _                     -> return $ IsVariable v
+extractConstExpr' env var = extractConstExprWith env var (\e v -> Just $ lookupVarOp' e v)
 
+extractConstExprWith env var lookup = go var where
+  go v =
+     case lookup env v of
+       (Just (VO_E ope)) -> do
+         (e', _) <- visitE (tidIdent v, ope)
+         case e' of
+            KNLiteral ty lit      -> return $ IsConstant v $ Lit ty lit
+            KNTuple   ty vars rng -> do results <- mapM go vars
+                                        return $ IsConstant v $ LitTuple ty results rng
+            KNAppCtor ty cid vars -> do results <- mapM go vars
+                                        return $ IsConstant v $ KnownCtor ty cid results
+            -- TODO could recurse through binders
+            -- TODO could track const-ness of ctor args
+            _                     -> return $ IsVariable v
+       _ -> return $ IsVariable v
 addBindings [] e = e
 addBindings ((id, cs):rest) e = KNLetVal id (exprOfCS cs) (addBindings rest e)
 
@@ -2380,7 +2381,7 @@ subInt32 a b = wrap2 a b (-) :: Int32
 subInt64 a b = wrap2 a b (-) :: Int64
 -- }}}
 
-
+{-
 knElimRebinds :: KNExpr' r t -> KNExpr' r t
 knElimRebinds expr = go Map.empty expr where
   go :: Map Ident (TypedId t) -> KNExpr' r t -> KNExpr' r t
@@ -2420,6 +2421,7 @@ knElimRebinds expr = go Map.empty expr where
             KNCompiles _r _t e  -> KNCompiles _r _t (q e)
             KNInlined _t0 _to _tn _old new  -> KNInlined _t0 _to _tn _old (q new)
             KNNotInlined x e -> KNNotInlined x (q e)
+-}
 fmapCaseArm :: (p1 t1 -> p2 t2) -> (e1 -> e2) -> (t1 -> t2) -> CaseArm p1 e1 t1 -> CaseArm p2 e2 t2
 fmapCaseArm fp fe ft (CaseArm p e g b rng)
                     = CaseArm (fp p) (fe e) (fmap fe g)
