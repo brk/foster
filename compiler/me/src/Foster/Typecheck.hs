@@ -620,8 +620,6 @@ tcRhoArrayRead :: ExprAnnot -> SafetyGuarantee -> AnnExpr SigmaTC -> AnnExpr Sig
 tcRhoArrayRead annot sg base aiexpr expTy = do
   let rng = rangeOf annot
   let ck t = do
-        -- TODO check aiexpr type is compatible with Word
-        unify (PrimIntTC I32) (typeTC aiexpr) "arrayread idx type"
         let expr = AnnArrayRead annot t (ArrayIndex base aiexpr rng sg)
         matchExp expTy expr "arrayread"
 
@@ -650,7 +648,6 @@ tcRhoArrayRead annot sg base aiexpr expTy = do
 tcRhoArrayPoke annot s v base i expTy = do
 -- {{{
   let ck t = do
-      -- TODO check aiexpr type is compatible with Word
       unify t (typeTC v) "arraypoke type"
       let expr = AnnArrayPoke annot unitTypeTC
                                     (ArrayIndex base i (rangeOf annot) s) v

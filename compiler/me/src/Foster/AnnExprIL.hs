@@ -185,11 +185,13 @@ ail ctx ae =
         ; i64 = PrimIntIL I64
         ; litint = LitInt (LiteralInt (fromIntegral n) 32 (show n) 10)
         }
-        AnnArrayRead _rng t (ArrayIndex a b rng s) -> do
+        AnnArrayRead _rng t (ArrayIndex a b0 rng s) -> do
+                                         b <- convertArrayIndexer b0
                                          ti <- qt t
                                          [x,y]   <- mapM q [a,b]
                                          return $ AIArrayRead ti (ArrayIndex x y rng s)
-        AnnArrayPoke _rng t (ArrayIndex a b rng s) c -> do
+        AnnArrayPoke _rng t (ArrayIndex a b0 rng s) c -> do
+                                         b <- convertArrayIndexer b0
                                          ti <- qt t
                                          [x,y,z] <- mapM q [a,b,c]
                                          return $ AIArrayPoke ti (ArrayIndex x y rng s) z
@@ -258,6 +260,37 @@ ail ctx ae =
                 mapM_ (kindCheckSubsumption (rangeOf rng)) (zip3 ktvs raw_argtys (map kindOf argtys))
 
                 return $ E_AITyApp ti ae argtys
+
+data ArrayIndexResult = AIR_OK
+                      | AIR_Trunc
+                      | AIR_ZExt
+convertArrayIndexer b = do
+  -- The actual conversion will be done later on, in the backend.
+  -- See the second hunk of patch b0e56b93f614.
+  _ <- check (typeOf b)
+  return b
+
+  where check t =
+          -- If unconstrained, fix to Int32.
+          -- Otherwise, check how it should be converted to Int32/64.
+          case t of
+            MetaTyVarTC m -> do
+              mb_t <- readTcMeta m
+              case mb_t of
+                Nothing -> do writeTcMeta m (PrimIntTC I32)
+                              check         (PrimIntTC I32)
+                Just tt -> check tt
+            PrimIntTC I1     -> return $ AIR_ZExt
+            PrimIntTC I8     -> return $ AIR_ZExt
+            PrimIntTC I32    -> return $ AIR_OK
+            PrimIntTC I64    -> return $ AIR_Trunc
+            PrimIntTC (IWord 1) -> return $ AIR_Trunc
+            RefinedTypeTC v _ _ -> check (tidType v)
+            _ -> tcFails [text "Array subscript had type"
+                         ,pretty t
+                         ,text "which was insufficiently integer-y."
+                         ,prettyWithLineNumbers (rangeOf b)
+                         ]
 
 unUnified :: Unifiable v -> v -> Tc v
 unUnified uni defaultValue =

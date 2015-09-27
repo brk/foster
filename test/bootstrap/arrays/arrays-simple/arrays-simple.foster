@@ -2,6 +2,8 @@ main = {
   arrays        !;
   arrays8       !;
 
+  arrays-indexing 0 0 0 1 ();
+
   // If we lie about our alignment, this will crash.
   let a = "is_ascii_digit c:"; in () end
 };
@@ -79,5 +81,35 @@ mkTextConcat = { a : Text => b : Text =>
 
 print_concat = {
   print_text (mkTextConcat "abc" "def");
+};
+
+arrays-indexing = { i8 : Int8 => i32 : Int32 => i64 : Int64 =>
+                    ir32  : ( % rir : Int32 : True ) =>
+                    runit : ( % ru  : () : True ) =>
+
+  a = newDArray32 256 { n : Int32 => n };
+  expect_i32 1;
+  print_i32 a[i8];
+
+  expect_i32 1;
+  print_i32 a[i32];
+
+  expect_i32 1;
+  print_i32 a[i64];
+
+  expect_i1 True;
+  print_i1 (__COMPILES__ a[0] );
+
+  expect_i1 True;
+  print_i1 (__COMPILES__ a[255] );
+
+  expect_i1 True;
+  print_i1 (__COMPILES__ a[ir32] );
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ a[runit] );
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ a[()] );
 };
 
