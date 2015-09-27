@@ -107,6 +107,12 @@ parseCallPrim pbexpr annot = do
       (_, True) -> return ()
       (p, False) -> error $ "ProtobuFE: cannot put type annotation on primitive '" ++ p ++ "'"
 
+    let fixupSubscriptRanges (E_ArrayRead (ExprAnnot pc r tc) (ArrayIndex a b rng sg)) =
+          let r' = rangeUnions r [rangeOf a, rangeOf b, r, rng]
+              annot' = ExprAnnot pc r' tc in
+          E_ArrayRead annot' (ArrayIndex a b rng sg)
+        fixupSubscriptRanges _ = error $ "fixupSubscriptRanges needs an ArrayRead"
+
     case (T.unpack primname, args) of
       ("assert-invariants", _) -> return $ mkPrimCall "assert-invariants" [] [] args annot
       ("mach-array-literal", _) -> case tys of
@@ -118,10 +124,10 @@ parseCallPrim pbexpr annot = do
       ("deref", [e]) -> return $ E_DerefAST annot e
       ("ref",             [e]) -> return $ E_AllocAST annot e MemRegionGlobalHeap
       ("stackref-unsafe", [e]) -> return $ E_AllocAST annot e MemRegionStack
-      ("subscript",  [a,b]) -> return $ E_ArrayRead annot (ArrayIndex a b (rangeOf annot) SG_Dynamic)
-      ("subscript-unsafe",  [a,b]) -> return $ E_ArrayRead annot (ArrayIndex a b (rangeOf annot) SG_Unsafe)
-      ("subscript-static",  [a,b]) -> return $ E_ArrayRead annot (ArrayIndex a b (rangeOf annot) SG_Static)
-      ("store",[a,b])-> case b of -- a>^ c[d]
+      ("subscript",  [a,b])        -> return $ fixupSubscriptRanges $ E_ArrayRead annot (ArrayIndex a b (rangeOf annot) SG_Dynamic)
+      ("subscript-unsafe",  [a,b]) -> return $ fixupSubscriptRanges $ E_ArrayRead annot (ArrayIndex a b (rangeOf annot) SG_Unsafe)
+      ("subscript-static",  [a,b]) -> return $ fixupSubscriptRanges $ E_ArrayRead annot (ArrayIndex a b (rangeOf annot) SG_Static)
+      ("store",[a,b])-> case b of -- a >^ c[d]
                            E_ArrayRead _ ari -> return $ E_ArrayPoke annot ari a
                            _                 -> return $ E_StoreAST annot a b
       ("kill-entire-process",  [s@(E_StringAST {})]) ->

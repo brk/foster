@@ -304,7 +304,7 @@ ExprAST* parseStmts_seq(const Statements& v, ExprAST* mb_last) {
   return new SeqAST(e, semis, rangeOfTrees(v));
 }
 
-pTree semi(pTree tree, int n) {
+pTree semi(pTree tree, size_t n) {
   if ((n + 1) >= getChildCount(tree)) return NULL;
   return child(child(tree, n + 1), 0);
 }
@@ -559,7 +559,7 @@ std::string contentsOfStringWithQuotesAndRawMarker(pTree t) {
 
 std::string contentsOfDoubleQuotedStringWithoutQuotes(pTree t) {
   std::string s = textOf(t);
-  int offset = s[0] == 'r' ? 2 : 1;
+  size_t offset = s[0] == 'r' ? 2 : 1;
   ASSERT(s.size() > (offset + 1));
   return std::string(s.begin() + offset, s.end() - 1);
   EDiag() << "Unable to determine what kind of string this is!" << s << "\n" << show(rangeOf(t));

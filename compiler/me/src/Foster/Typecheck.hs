@@ -325,11 +325,9 @@ tcSigmaVar ctx annot name = do
           Just cid -> AnnAppCtor annot (tidType tid) cid []
     (Nothing, Nothing, Just prim) -> return prim
     (Nothing, Nothing, Nothing)   -> do
-         msg <- getStructureContextMessage
          tcFails [text $ "Unknown variable " ++ T.unpack name
-                  ++ showSourceRange (rangeOf annot)
-                  -- ++ "ctx: "++ unlines (map show (Map.toList $ contextBindings ctx))
-                  ++ "\nhist: " , msg]
+                 ,prettyWithLineNumbers (rangeOf annot)
+                 ]
 
 -- To get a rho-type from a variable with a forall type,
 -- we wrap it in a type application and infer the type parameters.
@@ -358,11 +356,9 @@ tcRhoPrim ctx annot name expTy = do
          matchExp expTy ann_var "var"
 
        Nothing -> do
-         msg <- getStructureContextMessage
-         tcFails [text $ "Unknown variable " ++ T.unpack name
-                  ++ showSourceRange (rangeOf annot)
-                  ++ "ctx: "++ unlines (map show (Map.toList $ contextBindings ctx))
-                  ++ "\nhist: " , msg]
+         tcFails [text $ "Unknown primitive " ++ T.unpack name
+                 ,prettyWithLineNumbers (rangeOf annot)
+                 ]
 
 tcSigmaPrim :: Context SigmaTC -> ExprAnnot -> T.Text -> Maybe (AnnExpr SigmaTC)
 tcSigmaPrim ctx annot name = do

@@ -354,9 +354,11 @@ class SourceRanged a
 
 -- Used in ProtobufFE and Typecheck.hs.
 rangeSpanOf :: SourceRanged a => SourceRange -> [a] -> SourceRange
-rangeSpanOf defaultRange allRanges =
-    let ranges = map rangeOf allRanges in
-    rsp defaultRange [r | r@(SourceRange _ _ _ _ _ _) <- ranges]
+rangeSpanOf defaultRange ranged =
+    let ranges = map rangeOf ranged in
+    rangeUnions defaultRange ranges
+
+rangeUnions defaultRange allRanges = rsp defaultRange [r | r@(SourceRange _ _ _ _ _ _) <- allRanges]
   where rsp defaultRange [] = defaultRange
         rsp __ ranges@(b:_) = SourceRange (sourceRangeStartLine b)
                                           (sourceRangeStartCol  b)
