@@ -63,6 +63,16 @@ foldRangeWord = { forall t:Type,
 
 /////
 
+// Precondition: fst <= fin
+//
+enumRange32 = { fst : Int32 =>
+              fin : Int32 =>
+              iter : { Int32 => () } =>
+  foldRange fst fin () { i => u : () => iter i }
+};
+
+/////
+
 arrayFoldl :: forall t:Type, a:Type, { Array t => { t => a => a } => a => a };
 arrayFoldl = { arr => f => acc =>
   arrayFoldlFrom arr 0 f acc
@@ -163,4 +173,12 @@ arrayFold = { forall t:Type r:Type,
   arrayFoldFrom a 0 f acc
 };
 
+arrayZero32 = { a : Array Int32 =>
+  REC go = { n =>
+    if n <SInt64 arrayLength a
+      then 0 >^ a[trunc_i64_to_i32 n]; go (n +Int64 1)
+    end
+  };
+  go 0
+};
 

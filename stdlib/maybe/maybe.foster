@@ -8,7 +8,7 @@ type case Maybe (a:Type)
 
 // Partial.
 unMaybe :: forall a:Type, { Maybe a => a };
-unMaybe = { forall a:Type, x:Maybe a =>
+unMaybe = { x =>
   case x
     of $Some a -> a
     of $None   -> prim kill-entire-process "unMaybe-failed";
@@ -16,9 +16,17 @@ unMaybe = { forall a:Type, x:Maybe a =>
 };
 
 isSome :: forall a:Type, { Maybe a => Bool };
-isSome = { forall a:Type, x =>
+isSome = { x =>
   case x
     of $Some _ -> True
     of $None   -> False
+  end
+};
+
+isNone :: forall a:Type, { Maybe a => Bool };
+isNone = { x =>
+  case x
+    of $Some _ -> False
+    of $None   -> True
   end
 };

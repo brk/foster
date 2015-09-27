@@ -178,3 +178,15 @@ bitlength-Word = { k =>
     go k 0
   end
 };
+
+/////////////////////////////////////////////////////////////////////////
+
+
+// n < 32 && n >= 0
+getBit32 = { n => 1 `bitshl-Int32` n };
+
+testBit32 = { v => n => (v `bitand-Int32` getBit32 n) !=Int32 0 };
+
+xorBit32 = { v => n => v `bitxor-Int32` getBit32 n };
+
+xorIfBit32 = { v => n => b => if b then xorBit32 v n else v end };

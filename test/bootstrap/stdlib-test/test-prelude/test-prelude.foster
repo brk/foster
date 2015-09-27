@@ -84,6 +84,7 @@ main = {
   test-misc-1 !;
   test-misc-2 !;
   test-div-mod !;
+  test-bits !;
 };
 
 test-misc-1 = {
@@ -357,5 +358,25 @@ test-div-mod = {
 
   expect_i32 0;
   print_i32 (udiv-Int32 -4 -3);
+};
+
+test-bits = {
+  expect_i32 16;
+  print_i32 (getBit32 4);
+
+  expect_i1 True;
+  print_i1 (testBit32 7 2);
+
+  expect_i1 False;
+  print_i1 (testBit32 7 3);
+
+  expect_i32 24;
+  print_i32 ((getBit32 4) `xorBit32` 3);
+
+  expect_i32 24;
+  print_i32 (xorIfBit32 (getBit32 4) 3 True);
+
+  expect_i32 16;
+  print_i32 (xorIfBit32 (getBit32 4) 3 False);
 };
 

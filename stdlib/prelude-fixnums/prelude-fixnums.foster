@@ -38,6 +38,14 @@ cast_i32_to_i8      = { a : Int32    =>
   end
 };
 
+cast_i64_to_i8     = { a : Int64    =>
+  res = trunc_i64_to_i8 a;
+  if zext_i8_to_i64 res ==Int64 a
+    then res
+    else prim kill-entire-process "cast_i64_to_i8 invariant violated"
+  end
+};
+
 cast_i64_to_i32     = { a : Int64    =>
   res = trunc_i64_to_i32 a;
   if zext_i32_to_i64 res ==Int64 a
