@@ -139,6 +139,7 @@ parseCallPrim pbexpr annot = do
           ([], Just _) -> return $ mkPrimCall name [] [] args annot
           _ ->
             error $ "ProtobufFE: unknown primitive/arg combo " ++ show primname
+                    ++ "\n" ++ showSourceRange (rangeOf annot)
 
 mkPrimCall :: String -> [Literal] -> [TypeP] -> [ExprAST TypeP] -> ExprAnnot -> ExprAST TypeP
 mkPrimCall name lits tys args annot =
