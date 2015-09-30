@@ -54,7 +54,7 @@ data AnnExpr ty =
                      ,  annTyAppExpr        :: (AnnExpr ty)
                      ,  annTyAppArgTypes    :: [ty] }
         -- Others
-        | AnnCompiles   ExprAnnot ty (CompilesResult (AnnExpr ty))
+        | AnnCompiles    ExprAnnot ty (CompilesResult (AnnExpr ty))
         | AnnKillProcess ExprAnnot ty T.Text
         -- We keep kill-process as a primitive rather than translate it to a
         -- call to a primitive because we must ensure that its assigned value

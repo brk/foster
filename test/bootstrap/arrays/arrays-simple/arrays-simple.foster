@@ -2,7 +2,9 @@ main = {
   arrays        !;
   arrays8       !;
 
-  arrays-indexing 0 0 0 1 ();
+  arrays-indexing 0 0 0 0 1 ();
+
+  arrays-indir !;
 
   // If we lie about our alignment, this will crash.
   let a = "is_ascii_digit c:"; in () end
@@ -83,7 +85,7 @@ print_concat = {
   print_text (mkTextConcat "abc" "def");
 };
 
-arrays-indexing = { i8 : Int8 => i32 : Int32 => i64 : Int64 =>
+arrays-indexing = { i8 : Int8 => i32 : Int32 => i64 : Int64 => iw : Word =>
                     ir32  : ( % rir : Int32 : True ) =>
                     runit : ( % ru  : () : True ) =>
 
@@ -96,6 +98,9 @@ arrays-indexing = { i8 : Int8 => i32 : Int32 => i64 : Int64 =>
 
   expect_i32 1;
   print_i32 a[i64];
+
+  expect_i32 1;
+  print_i32 a[iw];
 
   expect_i1 True;
   print_i1 (__COMPILES__ a[0] );
@@ -111,5 +116,13 @@ arrays-indexing = { i8 : Int8 => i32 : Int32 => i64 : Int64 =>
 
   expect_i1 False;
   print_i1 (__COMPILES__ a[()] );
+};
+
+arrays-indir = {
+  a = prim mach-array-literal 0 0;
+  b = prim mach-array-literal True False;
+
+  expect_i1 True;
+  print_i1 b[a[0]];
 };
 

@@ -110,6 +110,8 @@ liftBinding f (TermVarBinding s (TypedId t i, mb_cid)) = do
   t2 <- f t
   return $ TermVarBinding s (TypedId t2 i, mb_cid)
 
+data TcConstraint -- eventually
+
 -- Based on "Practical type inference for arbitrary rank types."
 -- One significant difference is that we do not include the Gamma context
 --   (mapping term variables to types) in the TcEnv, because we do not
@@ -121,6 +123,7 @@ data TcEnv = TcEnv { tcEnvUniqs        :: IORef Uniq
                    , tcUnificationVars :: IORef [MetaTyVar TypeTC]
                    , tcParents         :: [ExprAST TypeAST]
                    , tcMetaIntConstraints :: IORef (Map (MetaTyVar TypeTC) Int)
+                   , tcConstraints        :: IORef [(TcConstraint, SourceRange)]
                    , tcSubsumptionConstraints :: IORef [(TypeTC, TypeTC)]
                    , tcUseOptimizedCtorReprs :: Bool
                    , tcVerboseMode           :: Bool
@@ -251,6 +254,16 @@ tcGetCurrentHistory :: Tc [ExprAST TypeAST]
 tcGetCurrentHistory = Tc $ \env -> do retOK $ Prelude.reverse $ tcParents env
 
 tcShouldUseOptimizedCtorReprs = Tc $ \env -> do retOK $ tcUseOptimizedCtorReprs env
+
+tcAddConstraint :: TcConstraint -> SourceRange -> Tc ()
+tcAddConstraint c sr = Tc $ \env -> do
+  modIORef' (tcConstraints env) ((c,sr):)
+  retOK ()
+
+tcGetConstraints :: Tc [(TcConstraint, SourceRange)]
+tcGetConstraints = Tc $ \env -> do
+  cs <- readIORef (tcConstraints env)
+  retOK cs
 
 instance Ord (MetaTyVar ty) where
   compare m1 m2 = compare (mtvUniq m1) (mtvUniq m2)

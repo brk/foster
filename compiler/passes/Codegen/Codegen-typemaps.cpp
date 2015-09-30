@@ -210,9 +210,6 @@ GlobalVariable* constructTypeMap(llvm::Type*  ty,
   bool isArray = arrayStatus == YesArray;
   ArrayType* offsetsTy = ArrayType::get(getTypeMapOffsetType(), numPointers);
 
-  llvm::outs() << "aVTP: " << str(typeNameVar->getType()) << " ;;;; " << name << " ;;; " << str(ty) << "\n";
-  llvm::outs().flush();
-
   // Construct the type map itself
   std::vector<Constant*> typeMapFields;
   typeMapFields.push_back(isArray ? slotSizeOf(ty)

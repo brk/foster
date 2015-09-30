@@ -41,7 +41,7 @@ import Foster.PrettyExprAST()
 import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn))
 import Foster.AnnExprIL(AIExpr(AILetFuns, AICall, E_AIVar), fnOf, ilOf,
                      collectIntConstraints, TypeIL(FnTypeIL),  unitTypeIL,
-                     convertDataTypeTC)
+                     handleCoercionsAndConstraints, convertDataTypeTC)
 import Foster.ILExpr(ILProgram, showILProgramStructure, prepForCodegen)
 import Foster.KNExpr(KNExpr', kNormalizeModule, knLoopHeaders, knSinkBlocks,
                      knInline, kNormalize, knSize, renderKN)
@@ -311,9 +311,14 @@ typecheckModule verboseMode pauseOnErrors modast tcenv0 = do
                       -> Context TypeTC
                       -> [[OutputOr (AnnExpr TypeTC)]]
                       -> Tc (Context TypeIL, ModuleIL AIExpr TypeIL)
-   convertTypeILofAST mAST ctx_tc oo_annfns = do
-     mapM_ (tcInject collectIntConstraints) (concat oo_annfns)
+   convertTypeILofAST mAST ctx_tc oo_unprocessed = do
+     mapM_ (tcInject collectIntConstraints) (concat oo_unprocessed)
      tcApplyIntConstraints
+
+     constraints <- tcGetConstraints
+     processTcConstraints constraints
+
+     oo_annfns <- mapM (mapM (tcInject handleCoercionsAndConstraints)) oo_unprocessed
 
      -- We've already typechecked the functions, so no need to re-process them...
      mTC <- convertModule (tcType ctx_tc) $ mAST { moduleASTfunctions = [] }
@@ -321,13 +326,10 @@ typecheckModule verboseMode pauseOnErrors modast tcenv0 = do
      decls     <- mapM (convertDecl (ilOf ctx_tc)) (externalModuleDecls mTC)
      primtypes <- mapM (convertDataTypeTC ctx_tc) (moduleASTprimTypes mTC)
      datatypes <- mapM (convertDataTypeTC ctx_tc) (moduleASTdataTypes mTC)
-     let unfuns fns -- :: [[OutputOr (AnnExpr TypeAST)]] -> [[OutputOr (Fn (AnnExpr TypeAST) TypeAST)]]
-                    = map (map (fmapOO unFunAnn)) fns
+     let unfuns fns -- :: [[AnnExpr TypeAST]] -> [[Fn (AnnExpr TypeAST) TypeAST]]
+                    = map (map unFunAnn) fns
      -- Set fnIsRec flag on top-level functions.
-     let tci oof -- :: OutputOr (Fn (AnnExpr TypeAST) TypeAST) -> Tc (Fn AIExpr TypeIL)
-               = tcInject (fnOf ctx_tc) oof
-     let tcis fns = mapM tci fns
-     aiFns     <- mapM tcis (unfuns oo_annfns)
+     aiFns     <- mapM (mapM (fnOf ctx_tc)) (unfuns oo_annfns)
      let q = buildExprSCC aiFns
      let m = ModuleIL q decls datatypes primtypes (moduleASTsourceLines mAST)
      return (ctx_il, m)
@@ -356,9 +358,10 @@ typecheckModule verboseMode pauseOnErrors modast tcenv0 = do
         unFunAnn (E_AnnFn f) = f
         unFunAnn _           = error $ "Saw non-AnnFn in unFunAnn"
 
-        fmapOO :: (a -> b) -> OutputOr a -> OutputOr b
-        fmapOO  f (OK e)     = OK (f e)
-        fmapOO _f (Errors o) = Errors o
+   processTcConstraints :: [(TcConstraint, SourceRange)] -> Tc ()
+   processTcConstraints constraints = go constraints
+      where go [] = return ()
+            go _ = tcFails [text "Constraint processing not yet implemented"]
 
 dieOnError :: OutputOr t -> Compiled t
 dieOnError (OK     e) = return e
@@ -423,6 +426,7 @@ runCompiler pi_time wholeprog flagVals outfile = do
    varlist <- newIORef []
    subcnst <- newIORef []
    icmap   <- newIORef Map.empty
+   constraints <- newIORef []
    smtStatsRef <- newIORef (0, [])
    cfgSizesRef <- newIORef []
 
@@ -430,6 +434,7 @@ runCompiler pi_time wholeprog flagVals outfile = do
                       tcUnificationVars = varlist,
                               tcParents = [],
                    tcMetaIntConstraints = icmap,
+                          tcConstraints = constraints,
                tcSubsumptionConstraints = subcnst,
                 tcUseOptimizedCtorReprs = getCtorOpt flagVals,
                           tcVerboseMode = getVerboseFlag flagVals }
@@ -581,6 +586,8 @@ lowerModule ai_mod ctx_il = do
 
      (sc_time, _) <- ioTime $ runStaticChecks monomod0
      monomod2 <- knLoopHeaders  monomod0
+
+     liftIO $ putDocLn $ text $ "Performing shrinking: " ++ show (getShrinkFlag flags)
 
      (mkn_time, monomod3) <- ioTime $ do
        if getShrinkFlag flags

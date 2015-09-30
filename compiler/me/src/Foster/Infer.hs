@@ -151,11 +151,10 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
       tcUnifyLoop constraints tysub
 
     ((PrimIntTC  n1), (PrimIntTC  n2)) ->
-      if n1 == n2 then do tcUnifyLoop constraints tysub
-                  else do msg <- getStructureContextMessage
-                          tcFailsMore [text $ "Unable to unify different primitive types: "
-                                       ++ show n1 ++ " vs " ++ show n2
-                                       , msg]
+          if n1 == n2 then do tcUnifyLoop constraints tysub
+            else tcFailsMore [text $ "Unable to unify different primitive types: "
+                             ,indent 2 $ pretty n1 <> text " vs " <> pretty n2
+                             ]
 
     ((TyVarTC  tv1), (TyVarTC  tv2)) ->
        if tv1 == tv2 then tcUnifyLoop constraints tysub

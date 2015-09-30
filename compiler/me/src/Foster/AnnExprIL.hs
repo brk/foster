@@ -6,7 +6,7 @@
 
 module Foster.AnnExprIL (AIExpr(..), TypeIL(..), AIVar, boolTypeIL, stringTypeIL,
                          fnOf, collectIntConstraints, ilOf, unitTypeIL,
-                         convertDataTypeTC) where
+                         handleCoercionsAndConstraints, convertDataTypeTC) where
 
 import Foster.Base
 import Foster.Kind
@@ -95,12 +95,94 @@ unPtr (PtrTypeIL t) = t
 unPtr (RefinedTypeIL v e args) = RefinedTypeIL (fmap unPtr v) e args
 unPtr _ = error $ "Non-ref-type passed to unPtr in AnnExprIL.hs"
 
+-- This function runs after typechecking, and before the conversion to AIExpr.
+-- The reason is that for code like::
+--       a = prim mach-array-literal 0 0;
+--       b = prim mach-array-literal True False;
+--
+--       expect_i1 True;
+--       print_i1 b[a[0]];
+-- Typechecking will record that a[0] has an int-ish type, but the specific
+-- type will remain unconstrained. When converting to AIExpr we'll check that
+-- there are no remaining unconstrained types, so we must fix the type between
+-- typechecking and creating AIExpr. Thus, this function.
+--
+-- This has return type Tc (AnnExpr TypeTC) instead of Tc ()
+-- because we want to signal failure when we see indexing with a bogus type.
+-- In order for __COMPILES__ to work correct, that means we can't get away with
+-- a simple traversal routine.
+handleCoercionsAndConstraints :: AnnExpr TypeTC -> Tc (AnnExpr TypeTC)
+handleCoercionsAndConstraints ae = do
+    let q = handleCoercionsAndConstraints
+    let qf f = do body' <- q (fnBody f)
+                  return $ f { fnBody = body' }
+    case ae of
+        AnnArrayRead _rng t (ArrayIndex a b rng s) -> do
+             checkArrayIndexer b
+             [x,y]   <- mapM q [a,b]
+             return $ AnnArrayRead _rng t (ArrayIndex x y rng s)
+        AnnArrayPoke _rng t (ArrayIndex a b rng s) c -> do
+             checkArrayIndexer b
+             [x,y,z] <- mapM q [a,b,c]
+             return $ AnnArrayPoke _rng t (ArrayIndex x y rng s) z
+
+        AnnCompiles _rng _ty (CompilesResult ooe) -> do
+            res <- tcIntrospect (tcInject q ooe)
+            return $ AnnCompiles _rng _ty (CompilesResult res)
+
+        AnnKillProcess {} -> return ae
+        AnnLiteral     {} -> return ae
+        E_AnnVar       {} -> return ae
+        AnnPrimitive   {} -> return ae
+        AnnIf   _rng  t  a b c -> do [x,y,z] <- mapM q [a,b,c]
+                                     return $ AnnIf   _rng  t  x y z
+        E_AnnFn annFn        -> do fn' <- qf annFn
+                                   return $ E_AnnFn fn'
+        AnnLetVar _rng id  a b     -> do [x,y]   <- mapM q [a,b]
+                                         return $ AnnLetVar _rng id  x y
+        AnnLetRec _rng ids exprs e -> do (e' : exprs' ) <- mapM q (e:exprs)
+                                         return $ AnnLetRec _rng ids exprs' e'
+        AnnLetFuns _rng ids fns e  -> do fnsi <- mapM qf fns
+                                         ei <- q e
+                                         return $ AnnLetFuns _rng ids fnsi ei
+        AnnAlloc _rng _t a rgn     -> do [x] <- mapM q [a]
+                                         return $ AnnAlloc _rng _t x rgn
+        AnnDeref _rng _t a         -> do [x] <- mapM q [a]
+                                         return $ AnnDeref _rng _t x
+        AnnStore _rng _t a b       -> do [x,y]   <- mapM q [a,b]
+                                         return $ AnnStore _rng _t  x y
+        AnnAllocArray _rng _t e aty zi -> do
+                                         x <- q e
+                                         return $ AnnAllocArray _rng _t x aty zi
+        AnnArrayLit  _rng t exprs -> do  ais <- mapRightM q exprs
+                                         return $ AnnArrayLit  _rng t ais
+
+        AnnTuple rng _t kind exprs -> do aies <- mapM q exprs
+                                         return $ AnnTuple rng _t kind aies
+        AnnCase _rng t e arms      -> do ei <- q e
+                                         bsi <- mapM (\(CaseArm p e guard bindings rng) -> do
+                                                     e' <- q e
+                                                     guard' <- liftMaybe q guard
+                                                     return (CaseArm p e' guard' bindings rng)) arms
+                                         return $ AnnCase _rng t ei bsi
+        AnnAppCtor _rng t cid args -> do argsi <- mapM q args
+                                         return $ AnnAppCtor _rng t cid argsi
+        AnnCall annot t b args -> do
+            (bi:argsi) <- mapM q (b:args)
+            return $ AnnCall annot t bi argsi
+
+        E_AnnTyApp rng t e raw_argtys  -> do
+                ae     <- q e
+                return $ E_AnnTyApp rng t ae raw_argtys
+
 collectIntConstraints :: AnnExpr TypeTC -> Tc ()
 collectIntConstraints ae =
     case ae of
         AnnCompiles _ _ty (CompilesResult ooe) -> do
+                -- This function should ignore code that failed to compile.
                 _ <- tcIntrospect (tcInject collectIntConstraints ooe)
                 return ()
+
         AnnLiteral _ ty (LitInt int) -> do
           -- We can't directly mutate the meta type variable for int literals,
           -- because of code like       print_i8 ({ 1234 } !)   where the
@@ -185,13 +267,13 @@ ail ctx ae =
         ; i64 = PrimIntIL I64
         ; litint = LitInt (LiteralInt (fromIntegral n) 32 (show n) 10)
         }
-        AnnArrayRead _rng t (ArrayIndex a b0 rng s) -> do
-                                         b <- convertArrayIndexer b0
+        AnnArrayRead _rng t (ArrayIndex a b rng s) -> do
+                                         checkArrayIndexer b
                                          ti <- qt t
                                          [x,y]   <- mapM q [a,b]
                                          return $ AIArrayRead ti (ArrayIndex x y rng s)
-        AnnArrayPoke _rng t (ArrayIndex a b0 rng s) c -> do
-                                         b <- convertArrayIndexer b0
+        AnnArrayPoke _rng t (ArrayIndex a b rng s) c -> do
+                                         checkArrayIndexer b
                                          ti <- qt t
                                          [x,y,z] <- mapM q [a,b,c]
                                          return $ AIArrayPoke ti (ArrayIndex x y rng s) z
@@ -264,11 +346,11 @@ ail ctx ae =
 data ArrayIndexResult = AIR_OK
                       | AIR_Trunc
                       | AIR_ZExt
-convertArrayIndexer b = do
+checkArrayIndexer b = do
   -- The actual conversion will be done later on, in the backend.
   -- See the second hunk of patch b0e56b93f614.
   _ <- check (typeOf b)
-  return b
+  return ()
 
   where check t =
           -- If unconstrained, fix to Int32.
@@ -284,7 +366,7 @@ convertArrayIndexer b = do
             PrimIntTC I8     -> return $ AIR_ZExt
             PrimIntTC I32    -> return $ AIR_OK
             PrimIntTC I64    -> return $ AIR_Trunc
-            PrimIntTC (IWord 1) -> return $ AIR_Trunc
+            PrimIntTC (IWord 0) -> return $ AIR_Trunc
             RefinedTypeTC v _ _ -> check (tidType v)
             _ -> tcFails [text "Array subscript had type"
                          ,pretty t

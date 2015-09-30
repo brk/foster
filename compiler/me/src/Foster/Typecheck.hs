@@ -455,18 +455,18 @@ tcRhoArrayValue ctx tau (AE_Expr expr) = do
 --  e1 :: tau             ...           en :: tau
 --  ---------------------------------------------------
 --  G |- prim mach-array-literal e1 ... en :: Array tau
-tcRhoArrayLit ctx rng mbt args expTy = do
+tcRhoArrayLit ctx annot mbt args expTy = do
 -- {{{
     tau <- case mbt of
-             Nothing -> newTcUnificationVarTau $ "prim array type"
-             Just t  -> do t' <- tcTypeAndResolve ctx t rng
+             Nothing -> newTcUnificationVarTau $ "prim array type:" ++ showSourceRange (rangeOf annot)
+             Just t  -> do t' <- tcTypeAndResolve ctx t annot
                            if isTau t'
                             then return t'
                             else
                               tcFails [text "rho array lit must have tau type; had", pretty t]
     let ty = ArrayTypeTC tau
     args' <- mapM (tcRhoArrayValue ctx tau) args
-    let ab = AnnArrayLit rng ty args'
+    let ab = AnnArrayLit annot ty args'
     let check t = case t of
              (ArrayTypeTC rho) -> do unify tau rho "mach-array literal"
                                      return ab
@@ -475,7 +475,7 @@ tcRhoArrayLit ctx rng mbt args expTy = do
              RefinedTypeTC v _ _ -> check (tidType v)
              t -> tcFails [text $ "Unable to check array constant in context"
                                 ++ " expecting non-array type " ++ show t
-                                ++ showSourceRange (rangeOf rng)]
+                                ++ showSourceRange (rangeOf annot)]
     case expTy of
          Infer r -> update r (return ab)
          Check t -> check t
