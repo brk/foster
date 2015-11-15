@@ -5,6 +5,7 @@
 #include "llvm/LinkAllPasses.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Config/llvm-config.h"
+#include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
 #include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
 #include "llvm/IR/DataLayout.h"
@@ -16,6 +17,7 @@
 
 #include "llvm/Analysis/LoopPass.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
+#include "llvm/Analysis/TargetLibraryInfo.h"
 
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Host.h"
@@ -426,8 +428,8 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
   if (triple.getTriple().empty()) {
     triple.setTriple(HOST_TRIPLE);
   }
-  auto targetOptions = new llvm::TargetOptions();
-  configureTargetDependentOptions(triple, *targetOptions, filetype);
+  auto targetOptions = InitTargetOptionsFromCodeGenFlags();
+  configureTargetDependentOptions(triple, targetOptions, filetype);
 
   const Target* target = NULL;
   string errstr;
@@ -446,7 +448,7 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
   auto tm = target->createTargetMachine(triple.getTriple(),
                                                  "", // CPU
                                                  "", // Features
-                                                 *targetOptions,
+                                                 targetOptions,
                                                  relocModel,
                                                  cgModel
 #ifdef LLVM_DEFAULT_TARGET_TRIPLE
@@ -466,7 +468,10 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
                            fdFlagsForObjectType(filetype));
   ASSERT(!err) << "Error when opening file to print output to: " << filename;
 
+  TargetLibraryInfoImpl TLII(triple);
+
   PassManager passes;
+  passes.add(new TargetLibraryInfoWrapperPass(TLII));
   passes.add(createTargetTransformInfoWrapperPass(tm->getTargetIRAnalysis()));
 
   bool disableVerify = true;
@@ -478,6 +483,8 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
     llvm::errs() << "Unable to emit assembly file! " << "\n";
     exit(1);
   }
+
+  mod->setDataLayout(tm->createDataLayout());
 
   passes.run(*mod);
 }
