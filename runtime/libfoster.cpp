@@ -15,6 +15,7 @@
 #include <cerrno>
 #include <cstdlib>
 #include <vector>
+#include <cmath>
 
 #include "libfoster.h"
 #include "foster_gc.h"
@@ -454,6 +455,8 @@ int8_t memcpy_i8_to_at_from_at_len(foster_bytes* to,   int64_t   to_at,
 
 void print_float_p9f64(double f) { return fprint_p9f64(stdout, f); }
 void expect_float_p9f64(double f) { return fprint_p9f64(stderr, f); }
+
+double foster__logf64(double f) { return log(f); }
 
 // For GC roots to work correctly, the returned pointer
 // must be of type Text (i.e. %Text.DT*) but we have no

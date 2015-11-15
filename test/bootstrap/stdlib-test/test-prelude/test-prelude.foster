@@ -85,6 +85,7 @@ main = {
   test-misc-2 !;
   test-div-mod !;
   test-bits !;
+  test-logf !;
 };
 
 test-misc-1 = {
@@ -378,5 +379,13 @@ test-bits = {
 
   expect_i32 16;
   print_i32 (xorIfBit32 (getBit32 4) 3 False);
+};
+
+test-logf = {
+  print_float_p9f64  (log-f64 100.0);
+  expect_float_p9f64 4.605170186;
+
+  print_float_p9f64  (log-s32 100);
+  expect_float_p9f64 4.605170186;
 };
 

@@ -198,6 +198,8 @@ primitiveDecls =
     ,(,) "print_float_p9f64"       $ mkProcType [f64] []
     ,(,) "expect_float_p9f64"      $ mkProcType [f64] []
 
+    ,(,) "foster__logf64"          $ mkProcType [f64] [f64]
+
     -- Calls to this function are internally transformed to AIAllocArray nodes.
     -- forall a, i32 -> Array a
     ,(,) "allocDArray" $ let a = BoundTyVar "a" (MissingSourceRange "allocDArray") in
@@ -353,6 +355,8 @@ gFosterPrimOpsTable = Map.fromList $
   ,(,) "f64-to-u32-unsafe"    $ (,) (mkFnType [f64] [i32] ) $ PrimOp "fptoui_f64_i32" i32
   ,(,) "f64-to-s64-unsafe"    $ (,) (mkFnType [f64] [i64] ) $ PrimOp "fptosi_f64_i64" i64
   ,(,) "f64-to-u64-unsafe"    $ (,) (mkFnType [f64] [i64] ) $ PrimOp "fptoui_f64_i64" i64
+  ,(,) "s64-to-f64-unsafe"    $ (,) (mkFnType [i64] [f64] ) $ PrimOp "sitofp_f64" i64
+  ,(,) "u64-to-f64-unsafe"    $ (,) (mkFnType [i64] [f64] ) $ PrimOp "sitofp_f64" i64
   ,(,) "s32-to-f64"    $(,) (mkFnType [i32] [f64]     ) $ PrimOp "sitofp_f64" i32
   ,(,) "u32-to-f64"    $(,) (mkFnType [i32] [f64]     ) $ PrimOp "uitofp_f64" i32
   ] ++ fixnumPrimitives I64
