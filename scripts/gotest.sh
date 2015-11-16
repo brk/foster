@@ -4,7 +4,34 @@ SD=$(dirname `which $0`)/../scripts
 R=$(python $SD/normpath.py $SD/..)
 P=$1
 shift
+
 D=$R/test/$P
+
+tmpfile=$(mktemp foster-gotest.XXXXXX)
+
+# Allow running   gotest.sh array-prim-literals
+# instead of      gotest.sh bootstrap/arrays/array-prim-literals
+# as long as there's only one such subdirectory with that name.
+if [ ! -d $D ]; then
+  find $R/test -name $P > $tmpfile
+  nlines=$(wc -l < $tmpfile)
+  case $nlines in
+  0)
+    # No test by that name; silently fall through
+    # and prompt to create it.
+    ;;
+  1)
+    D=$(head -n 1 $tmpfile)
+    ;;
+  *)
+    echo "Warning: multiple tests found..."
+    cat $tmpfile | sed 's/^/    /'
+    ;;
+  esac
+
+  rm $tmpfile
+fi
+
 T=$D/`basename $P`.foster
 
 if [ -z "$R" ]; then
@@ -47,3 +74,4 @@ else
     echo "_${CONFIRM}_"
   fi
 fi
+
