@@ -178,16 +178,26 @@ typecheckAndFoldContextBindings ctxTC0 bindings = do
 -- |  #. Make sure that all unification variables have been properly eliminated,
 -- |     or else we consider type checking to have failed
 -- |     (no implicit instantiation at the moment!)
-typecheckModule :: Bool -> Bool
+typecheckModule :: Bool -> Bool -> Bool
                 -> ModuleAST FnAST TypeAST
                 -> TcEnv
                 -> IO (OutputOr (Context TypeIL, ModuleIL AIExpr TypeIL))
-typecheckModule verboseMode pauseOnErrors modast tcenv0 = do
+typecheckModule verboseMode pauseOnErrors standalone modast tcenv0 = do
     when verboseMode $ do
         putDocLn $ text "module AST decls:" <$> pretty (moduleASTdecls modast)
     let dts = moduleASTprimTypes modast ++ moduleASTdataTypes modast
     let fns = moduleASTfunctions modast
-    let primBindings = computeContextBindings' primitiveDecls
+    let filteredDecls = if standalone
+                          then filter okForStandalone primitiveDecls
+                          else primitiveDecls
+        okForStandalone (nm, _) = nm `elem` ["foster__logf64"
+                                            ,"prim_arrayLength"
+                                            ,"coro_create"
+                                            ,"coro_invoke"
+                                            ,"coro_yield"
+                                            ]
+
+    let primBindings = computeContextBindings' (filteredDecls ++ primopDecls)
     let allCtorTypes = concatMap extractCtorTypes dts
     let (nullCtors, nonNullCtors) = splitCtorTypes allCtorTypes
     let declBindings = computeContextBindings' (moduleASTdecls modast) ++
@@ -548,8 +558,9 @@ typecheckSourceModule :: TcEnv ->  ModuleAST FnAST TypeAST
 typecheckSourceModule tcenv sm = do
     verboseMode <- gets ccVerbose
     flags <- gets ccFlagVals
+    let standalone    = getStandaloneFlag  flags
     let pauseOnErrors = getInteractiveFlag flags
-    (ctx_il, ai_mod) <- (liftIO $ typecheckModule verboseMode pauseOnErrors sm tcenv)
+    (ctx_il, ai_mod) <- (liftIO $ typecheckModule verboseMode pauseOnErrors standalone sm tcenv)
                       >>= dieOnError
     showGeneratedMetaTypeVariables (tcUnificationVars tcenv) ctx_il
     return (ai_mod, ctx_il)

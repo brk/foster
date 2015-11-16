@@ -7,7 +7,7 @@
 module Foster.TypeAST(
   TypeAST(..), IntSizeBits(..)
 , MetaTyVar(..), Sigma, Rho, Tau, MTVQ(..)
-, fosBoolType, fosStringType, gFosterPrimOpsTable, primitiveDecls
+, fosBoolType, fosStringType, gFosterPrimOpsTable, primitiveDecls, primopDecls
 , minimalTupleAST
 , mkFnType, convertTyFormal
 )
@@ -180,7 +180,7 @@ primitiveDecls =
 
     ,(,) "opaquely_i32" $ mkProcType [i32] [i32]
     ,(,) "opaquely_i64" $ mkProcType [i64] [i64]
-    ,(,) "get_cmdline_arg_n" $ mkProcType [i32] [TyConAppAST "Text" []]
+    ,(,) "get_cmdline_arg_n" $ mkProcType [i32] [fosStringType]
 
     ,(,) "expect_newline" $ mkProcType [] []
     ,(,) "print_newline" $ mkProcType [] []
@@ -241,11 +241,12 @@ primitiveDecls =
     ,(,) "foster_getticks"         $ mkFnType [] [i64]
     ,(,) "foster_getticks_elapsed" $ mkFnType [i64, i64] [f64]
 
-    ,(,) "foster_fmttime_secs"     $ mkFnType [f64] [TyConAppAST "Text" []]
+    ,(,) "foster_fmttime_secs"     $ mkFnType [f64] [fosStringType]
     ,(,) "foster_gettime_microsecs"    $ mkFnType [] [i64]
     ,(,) "foster_gettime_elapsed_secs" $ mkFnType [i64, i64] [f64]
+    ]
 
-    ] ++ (map (\(name, (ty, _op)) -> (name, ty)) $ Map.toList gFosterPrimOpsTable)
+primopDecls = map (\(name, (ty, _op)) -> (name, ty)) $ Map.toList gFosterPrimOpsTable
 
 intSize I1  = "Bool"
 intSize I8  = "Int8"

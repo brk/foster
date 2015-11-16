@@ -17,17 +17,22 @@ import math
 
 from run_cmd import *
 
+from fosterc import get_fosterc_parser, fosterc_parser_parse_and_fixup, \
+                    compile_foster_code, StopAfterMiddle, fosterc_set_options, \
+                    progname, show_cmdlines
+
 from optparse import OptionParser
 
 tests_passed = set()
 tests_failed = set()
 
-options = None
-
 def ensure_dir_exists(dirname):
   if not os.path.exists(dirname):
     return os.mkdir(dirname)
   return True
+
+def testname(testpath):
+  return progname(testpath)
 
 def extract_expected_input(path, rootdir):
   """Reads lines from the start of the file at the given path,
@@ -49,169 +54,6 @@ def extract_expected_input(path, rootdir):
   with open(tmpname, 'w') as f:
     f.writelines(inlines)
   return open(tmpname, 'r')
-
-def nativelib_dir():
-  return mkpath(options.bindir, "_nativelibs_")
-
-def shared(lib):
-  import platform
-  suffix = {
-    'Darwin': ".dylib",
-    'Linux':  ".so"
-  }[platform.system()]
-  return lib + suffix
-
-def get_static_libs():
-    return ' '.join([os.path.join(nativelib_dir(), lib) for lib in
-         ("libfoster_main.o " + shared("libchromium_base") + " " +
-          "libcpuid.a libcoro.a libcycle.a").split(" ")])
-
-def get_link_flags():
-  common = ['-lpthread']
-  if options and options.profile:
-    common.append('-lprofiler') # from gperftools
-  import platform
-  flags = {
-    'Darwin': lambda: common + ['-framework', 'CoreFoundation',
-                                '-framework', 'Cocoa',
-                                '-lobjc'],
-    'Linux': lambda: common + ['-lrt', '-lglib-2.0']
-  }[platform.system()]()
-  return ' '.join(flags)
-
-def rpath(path):
-  import platform
-  return {
-    'Darwin': lambda: '',
-    'Linux' : lambda: '-Wl,-R,' + os.path.abspath(path),
-  }[platform.system()]()
-
-
-def testname(testpath):
-  """Given '/path/to/some/test.foster', returns 'test'"""
-  return os.path.basename(testpath).replace('.foster', '')
-
-def output_extension(to_asm):
-  if to_asm:
-    return ".s"
-  else:
-    return ".o"
-
-def show_cmdlines(options):
-  return options and options.show_cmdlines == True
-
-def file_size(path):
-  try:
-    return os.stat(path).st_size
-  except:
-    return 0
-
-def optlevel(options):
-  if options and options.backend_optimize:
-    # Right now fosteroptc only recognizes -O0, not -O2 or such.
-    return []
-  else:
-    return ['-O0']
-
-class StopAfterMiddle(Exception):
-    def __str__(self):
-        return repr(self.value)
-
-def should_stop_after_middle():
-  if '--fmt' in options.meargs:
-    return True
-  return False
-
-def insert_before_each(val, vals):
-  return [x for v in vals for x in [val, v]]
-
-def get_ghc_rts_args():
-  ghc_rts_args = ["-smeGCstats.txt", "-K400M"]
-
-  if options and options.stacktraces:
-    ghc_rts_args.append('-xc') # Produce stack traces
-
-  # https://downloads.haskell.org/~ghc/latest/docs/html/users_guide/prof-heap.html
-  if options and options.profileme:
-    ghc_rts_args.append("-p") # general time profile, written to me.prof
-    ghc_rts_args.append("-hc") # break down space used by function (cost center)
-    #ghc_rts_args.append("-hm") # break down space used by module (producer)
-    #ghc_rts_args.append("-hy") # break down space used by type
-    #ghc_rts_args.append("-hd") # break down space used by ctor
-    #ghc_rts_args.append("-hr") # break down space used by retainer
-
-    #ghc_rts_args.append("-hySet,[],ByteString,ARR_WORDS,Node") # restrict to given types
-    ghc_rts_args.append("-L50") # give longer labels
-  return ghc_rts_args
-
-def compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir):
-    finalname = os.path.basename(finalpath)
-    ext = output_extension(options.asm)
-
-    # Getting tee functionality in Python is a pain in the behind
-    # so we just disable logging when running with --show-cmdlines.
-    if show_cmdlines(options):
-      compilelog = None
-
-    importpath = insert_before_each('-I', options.importpaths)
-
-    if options and options.interpret:
-      interpret = ["--interpret", tmpdir]
-    else:
-      interpret = []
-
-    ghc_rts_args = get_ghc_rts_args()
-
-    parse_output = os.path.join(tmpdir, '_out.parsed.pb')
-    check_output = os.path.join(tmpdir, '_out.checked.pb')
-
-    def crun(cmdlist):
-      return run_command(cmdlist,
-                paths, testpath, showcmd=show_cmdlines(options),
-                stdout=compilelog, stderr=compilelog, strictrv=True)
-
-    # running fosterparse on a source file produces a ParsedAST
-    e1 = crun(['fosterparse', testpath, parse_output] + importpath)
-
-    # running fostercheck on a ParsedAST produces an ElaboratedAST
-    prog_args = [arg for _arg in options.progargs or []
-                     for arg in ['--prog-arg', _arg]]
-    e2 = crun(['fostercheck', parse_output, check_output] +
-                     ["+RTS"] + ghc_rts_args + ["-RTS"] +
-                     interpret + options.meargs + prog_args)
-
-    if should_stop_after_middle():
-      raise StopAfterMiddle()
-
-    # running fosterlower on a ParsedAST produces a bitcode Module
-    # linking a bunch of Modules produces a Module
-    e3 = crun(['fosterlower', check_output, '-o', finalname,
-                         '-outdir', tmpdir, '-fosterc-time',
-                         '-bitcodelibs', mkpath(options.bindir, '_bitcodelibs_')]
-                    + options.beargs)
-
-    if options.standalone:
-      return (e1, e2, e3, 0)
-
-    # Running opt on a Module produces a Module
-    # Running llc on a Module produces an assembly file
-    e4 = crun(['fosteroptc', finalpath + '.preopt.bc',
-                                         '-fosterc-time', '-o', finalpath + ext]
-                    + optlevel(options)
-                    + options.optcargs)
-
-    return (e1, e2, e3, e4)
-
-def link_to_executable(finalpath, exepath, paths, testpath):
-    assert options.cxxpath and len(options.cxxpath) > 0
-    return run_command('%(cxx)s %(finalpath)s.o %(staticlibs)s %(linkflags)s -o %(exepath)s %(rpath)s' % {
-                         'finalpath' : finalpath,
-                         'staticlibs': get_static_libs(),
-                         'linkflags' : get_link_flags(),
-                         'exepath'   : exepath,
-                         'cxx'       : options.cxxpath,
-                         'rpath'     : rpath(nativelib_dir())
-                       },  paths, testpath, showcmd=show_cmdlines(options))
 
 # based on http://stackoverflow.com/questions/3758606/how-to-convert-byte-size-into-human-readable-format-in-java/3758880#3758880
 def humanized(n, limit=None):
@@ -260,51 +102,28 @@ def get_prog_stdin(testpath, tmpdir):
   else:
     return extract_expected_input(testpath, tmpdir)
 
-def run_one_test(testpath, paths, tmpdir, progargs):
-  ensure_dir_exists(tmpdir)
+def file_size(path):
+  try:
+    return os.stat(path).st_size
+  except:
+    return 0
+
+def run_one_test(testpath, tmpdir, progargs, paths, exe_cmd, elapseds):
   start = walltime()
   exp_filename = os.path.join(tmpdir, "expected.txt")
   act_filename = os.path.join(tmpdir, "actual.txt")
-  log_filename = os.path.join(tmpdir, "compile.log.txt")
   iact_filename = os.path.join(tmpdir, "istdout.txt")
+  rv = 0
   with open(exp_filename, 'w') as expected:
    with open(act_filename, 'w') as actual:
-    with open(log_filename, 'w') as compilelog:
-     with get_prog_stdin(testpath, tmpdir) as infile:
+    with get_prog_stdin(testpath, tmpdir) as infile:
+      rv, rn_elapsed = run_command(exe_cmd, paths, testpath,
+                                 stdout=actual, stderr=expected, stdin=infile,
+                                 showcmd=True, strictrv=False)
 
-        finalpath = os.path.join(tmpdir, 'out')
-        exepath   = os.path.join(tmpdir, 'a.out')
-
-        fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed = \
-                compile_test_to_bitcode(paths, testpath, compilelog, finalpath, tmpdir)
-
-        if options.asm:
-          as_elapsed = run_command('%s -g %s.s -c -o %s.o' % (options.cxxpath, finalpath, finalpath), paths, testpath,
-                                       showcmd=show_cmdlines(options))
-        else: # fosteroptc emitted a .o directly.
-          as_elapsed = 0
-
-        if options.standalone:
-          ld_elapsed = 0
-          rn_elapsed = 0
-        else:
-          allprogargs = progargs + insert_before_each("--foster-runtime", options.progrtargs)
-          ld_elapsed = link_to_executable(finalpath, exepath, paths, testpath)
-
-          if options.exepath is not None:
-            shutil.copy2(exepath, options.exepath)
-            print "Try running:"
-            print  ''.join([options.exepath] + allprogargs)
-            rv, rn_elapsed = 0, 0
-          else:
-            rv, rn_elapsed = run_command([exepath] + allprogargs, paths, testpath,
-                                       stdout=actual, stderr=expected, stdin=infile,
-                                       showcmd=True, strictrv=False)
-
-
-  inbytes  = file_size(os.path.join(tmpdir, '_out.parsed.pb'))
-  ckbytes = file_size(os.path.join(tmpdir, '_out.checked.pb'))
-  outbytes = file_size(os.path.join(tmpdir, finalpath + ".o"))
+  inbytes  = file_size(paths['_out.parsed.pb'])
+  ckbytes  = file_size(paths['_out.checked.pb'])
+  outbytes = file_size(paths['_out.o'])
 
   if rv == 0:
     did_fail = run_diff(exp_filename, act_filename)
@@ -317,6 +136,7 @@ def run_one_test(testpath, paths, tmpdir, progargs):
 
   def elapsed_per_sec(b, e): return humanized(float(b)/(float(e) / 1000.0))
   total_elapsed = elapsed_since(start)
+  (fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed, as_elapsed, ld_elapsed) = elapseds
   compile_elapsed = (as_elapsed + ld_elapsed + fp_elapsed + fm_elapsed + fl_elapsed + fc_elapsed)
   overhead = total_elapsed - (compile_elapsed + rn_elapsed)
   result = dict(failed=did_fail, label=testname(testpath),
@@ -347,117 +167,31 @@ def classify_result(result, testpath):
   else:
     tests_passed.add(testpath)
 
-def main(testpath, paths, tmpdir):
-  testdir = os.path.join(tmpdir, testname(testpath))
-  if not os.path.isdir(testdir):
-    os.makedirs(testdir)
-
-  try:
-    result = run_one_test(testpath, paths, testdir, options.progargs)
-    print_result_table(result)
-    classify_result(result, testpath)
-  except StopAfterMiddle:
-    pass
-
 def mkpath(root, prog):
   if os.path.isabs(prog):
     return prog
   else:
     return os.path.join(root, prog)
 
-def get_paths(options, tmpdir):
-  join = os.path.join
-  bindir = options.bindir
-  paths = {
-      'bindir':    bindir
-  }
-  for prog in ['fosterparse', 'fosterlower', 'fosteroptc']:
-      paths[prog] = mkpath(bindir, prog)
+def get_test_parser():
+  return get_fosterc_parser()
 
-  for lib in ['foster_runtime.bc']:
-      paths[lib] =  mkpath(bindir, os.path.join('_bitcodelibs_', lib))
+def test_parser_parse_and_fixup(parser):
+  return fosterc_parser_parse_and_fixup(parser)
 
-  for lib in [ 'libfoster_main.o']:
-      paths[lib] =  mkpath(bindir, os.path.join('_nativelibs_', lib))
+def compile_and_run_test(testpath, testdir):
+  options.tmpdir = testdir
+  (paths, exe_cmd, elapseds) = compile_foster_code(testpath)
+  return run_one_test(testpath, testdir, options.progargs, paths, exe_cmd, elapseds)
 
-  for out in ['_out.parsed.pb', '_out.checked.pb']:
-      paths[out] =  mkpath(tmpdir, out)
-
-  if options.me != 'fostercheck':
-    paths['fostercheck'] = mkpath(bindir, options.me)
-
-  # compiler spits out foster.ll in current directory
-  paths['foster.ll'] = join(os.path.dirname(paths['fosterparse']), 'foster.ll')
-  return paths
-
-def get_test_parser(usage):
-  parser = OptionParser(usage=usage)
-  parser.add_option("--bindir", dest="bindir", action="store", default=os.getcwd(),
-                    help="Use bindir as default place to find binaries; defaults to current directory")
-  parser.add_option("--me", dest="me", action="store", default="me",
-                    help="Relative (from bindir) or absolute path to binary to use for type checking.")
-  parser.add_option("--show-cmdlines", action="store_true", dest="show_cmdlines", default=False,
-                    help="Show more information about programs being run.")
-  parser.add_option("--asm", action="store_true", dest="asm", default=False,
-                    help="Compile to assembly rather than object file.")
-  parser.add_option("--interpret", action="store_true", dest="interpret", default=False,
-                    help="Run using interpreter instead of compiling via LLVM")
-  parser.add_option("--backend-optimize", dest="backend_optimize", action="store_true", default=False,
-                    help="Enable optimizations in fosteroptc")
-  parser.add_option("--profileme", dest="profileme", action="store_true", default=False,
-                    help="Enable detailed profiling of compiler middle-end")
-  parser.add_option("--no_bytes_per_sec", dest="print_bytes_per_sec", action="store_false", default=True,
-                    help="Disable printing of bytes-per-second for input protobuf and output executable")
-  parser.add_option("--no_extra_bitcode", dest="extrabitcode", action="store_false", default=True,
-                    help="Disable dumping of extra bitcode files (prelinked/postopt)")
-  parser.add_option("--profile", dest="profile", action="store_true", default=False,
-                    help="Enable profiling of generated executable")
-  parser.add_option("--me-arg", action="append", dest="meargs", default=[],
-                    help="Pass through arg to middle-end.")
-  parser.add_option("--be-arg", action="append", dest="beargs", default=[],
-                    help="Pass through arg to back-end (lowering).")
-  parser.add_option("--optc-arg", action="append", dest="optcargs", default=[],
-                    help="Pass through arg to back-end (optc).")
-  parser.add_option("--prog-arg", action="append", dest="progargs", default=[],
-                    help="Pass through command line arguments to program")
-  parser.add_option("--with-stdin", action="store", dest="prog_stdin", default="",
-                    help="Provide explicit redirection for compiled program's stdin.")
-  parser.add_option("--foster-runtime", action="append", dest="progrtargs", default=[],
-                    help="Pass through command line arguments to program runtime")
-  parser.add_option("--standalone", action="store_true", dest="standalone", default=False,
-                    help="Just compile, don't link...")
-  parser.add_option("--stacktraces", action="store_true", dest="stacktraces", default=False,
-                    help="Have the middle-end produce stack traces on error")
-  parser.add_option("--cxxpath", dest="cxxpath", action="store", default="g++",
-                    help="Set C++ compiler/linker path")
-  parser.add_option("-I", dest="importpaths", action="append", default=[],
-                    help="Add import path")
-  parser.add_option("-o", dest="exepath", action="store", default=None,
-                    help="Set path for output executable")
-  return parser
+def test_set_options(opts):
+  global options
+  options = opts
+  fosterc_set_options(opts)
 
 if __name__ == "__main__":
-  parser = get_test_parser("""usage: %prog [options] <test_path>
-
-   Notes:
-     * If using ./gotest.sh or runfoster...
-                --me-arg=--verbose       will print (Ann)ASTs
-                --me-arg=--dump-ir=kn    will print k-normalized IR
-                --me-arg=--dump-ir=cfg   will print closure-conv IR
-                --me-arg=--dump-ir=mono  will print monomo. IR
-                --be-arg=--gc-track-alloc-sites
-                --be-arg=--unsafe-disable-array-bounds-checks
-                --optc-arg=-no-coalesce-loads
-                --optc-arg=--help        will display optimization flags
-                --prog-arg=--hallooooo
-                --profileme              will enable profiling of the middle-end; then do `hp2ps -e8in -c me.hp`
-                --backend-optimize       enables LLVM optimizations
-                --asm
-                -o <path>                copies generated executable to <path>
-                                            but does not run it
-                --show-cmdlines
-""")
-  (options, args) = parser.parse_args()
+  parser = get_test_parser()
+  (options, args) = test_parser_parse_and_fixup(parser)
 
   if len(args) != 1:
     print args
@@ -468,19 +202,18 @@ if __name__ == "__main__":
   testpath = args[0]
 
   tmpdir = os.path.join(options.bindir, 'test-tmpdir')
+  print "tmpdir = ", tmpdir, "; testpath = ", testpath
   ensure_dir_exists(tmpdir)
 
-  # Dump extra files, but only when running directly,
-  # not when running via run_all.py
-  if options.extrabitcode:
-    options.optcargs.append('-dump-preopt')
-    options.optcargs.append('-dump-postopt')
-    options.beargs.append('-dump-prelinked')
+  testdir = os.path.join(tmpdir, testname(testpath))
+  ensure_dir_exists(testdir)
 
-  if options.standalone:
-    options.beargs.append("--unsafe-disable-gc")
-    # unsafe-disable-array-bounds-checks
-    options.beargs.append("--standalone")
-    options.meargs.append("--standalone")
+  # Note: we rely on options being mutable.
+  fosterc_set_options(options)
 
-  main(testpath, get_paths(options, tmpdir), tmpdir)
+  try:
+    result = compile_and_run_test(testpath, testdir)
+    print_result_table(result)
+    classify_result(result, testpath)
+  except StopAfterMiddle:
+    pass

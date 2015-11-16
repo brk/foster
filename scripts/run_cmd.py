@@ -51,7 +51,7 @@ class TestFailed(Exception):
     self.cmdline = cmdline
     self.path = path
   def __str__(self):
-    return "Failed to run " + self.cmdline + "\n\tfor test " + self.path
+    return "Failed to run " + self.cmdline + "\n\tfor input file " + self.path
 
 def default_lookup(word, table):
   if word in table:
@@ -60,7 +60,7 @@ def default_lookup(word, table):
     return word
 
 # returns (status, elapsed-time-ms)
-def run_command(cmd, paths, testpath, showcmd=False, stdout=None, stderr=None, stdin=None, strictrv=True):
+def run_command(cmd, paths, inputfile, showcmd=False, stdout=None, stderr=None, stdin=None, strictrv=True):
   if type(cmd) == str:
     cmd = cmd.strip().split(' ')
   arglist = [default_lookup(arg, paths) for arg in cmd]
@@ -69,7 +69,7 @@ def run_command(cmd, paths, testpath, showcmd=False, stdout=None, stderr=None, s
 
   if strictrv:
     if rv != 0:
-      raise TestFailed(cmd, testpath)
+      raise TestFailed(cmd, inputfile)
     else:
       return ms
   return (rv, ms)

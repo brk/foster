@@ -15,46 +15,44 @@ from list_all import collect_all_tests
 
 all_results = []
 
-def do_run_test(testpath, paths, tmpdir):
-    test_tmpdir = os.path.join(tmpdir, run_test.testname(testpath))
-    prog_args   = []
-    return run_test.run_one_test(testpath, paths, test_tmpdir, prog_args)
-
-def run_and_print_test(testpath, tmpdir, paths):
+def run_and_print_test(testpath, tmpdir):
   try:
-    result = do_run_test(testpath, paths, tmpdir)
+    testdir = os.path.join(tmpdir, run_test.testname(testpath))
+    run_test.ensure_dir_exists(testdir)
+    result = run_test.compile_and_run_test(testpath, testdir)
     run_test.print_result_table(result)
     run_test.classify_result(result, testpath)
     all_results.append(result)
   except run_test.TestFailed:
     run_test.tests_failed.add(testpath)
 
-def run_all_tests_slow(bootstrap_dir, paths, tmpdir):
+def run_all_tests_slow(bootstrap_dir, tmpdir):
   tests = collect_all_tests(bootstrap_dir)
   for testpath in tests:
     try:
-      run_and_print_test(testpath, tmpdir, paths)
+      run_and_print_test(testpath, tmpdir)
     except KeyboardInterrupt:
       return
 
 def worker_run_test(info):
-  testpath, tmpdir, paths = info
+  testpath, tmpdir = info
   try:
-    result = do_run_test(testpath, paths, tmpdir)
+    testdir = os.path.join(tmpdir, run_test.testname(testpath))
+    run_test.ensure_dir_exists(testdir)
+    result = run_test.compile_and_run_test(testpath, testdir)
     return (testpath, result)
   except KeyboardInterrupt:
     return (testpath, None) # Workers should ignore keyboard interrupts
   except run_test.TestFailed:
     return (testpath, None)
 
-def run_all_tests_fast(bootstrap_dir, paths, tmpdir):
+def run_all_tests_fast(bootstrap_dir, tmpdir):
   tests = collect_all_tests(bootstrap_dir)
   pool = multiprocessing.Pool()
   try:
     for result in pool.imap_unordered(worker_run_test,
                 itertools.izip(tests,
-                  itertools.repeat(tmpdir),
-                  itertools.repeat(paths))):
+                  itertools.repeat(tmpdir))):
        testpath, result = result
        if result is not None:
          run_test.print_result_table(result)
@@ -65,12 +63,12 @@ def run_all_tests_fast(bootstrap_dir, paths, tmpdir):
   except KeyboardInterrupt:
     return
 
-def main(opts, bootstrap_dir, paths, tmpdir):
+def main(opts, bootstrap_dir, tmpdir):
   walkstart = run_test.walltime()
   if should_run_tests_in_parallel(opts):
-    run_all_tests_fast(bootstrap_dir, paths, tmpdir)
+    run_all_tests_fast(bootstrap_dir, tmpdir)
   else:
-    run_all_tests_slow(bootstrap_dir, paths, tmpdir)
+    run_all_tests_slow(bootstrap_dir, tmpdir)
   walkend = run_test.walltime()
 
   run_test.print_result_table(run_test.aggregate_results(all_results))
@@ -115,22 +113,23 @@ def should_run_tests_in_parallel(options):
   return True
 
 if __name__ == "__main__":
-  parser = run_test.get_test_parser("usage: %prog [options] <bootstrap_test_dir>")
+  parser = run_test.get_test_parser()
   parser.add_option("--parallel", dest="parallel", action="store_true", default=False,
                     help="Run tests in parallel")
   parser.add_option("--serial", dest="serial", action="store_true", default=False,
                     help="Run tests in serial")
-  (opts, args) = parser.parse_args()
+  (opts, args) = run_test.test_parser_parse_and_fixup(parser)
 
   if len(args) == 0:
     print "Missing <bootstrap_test_dir>!"
     parser.print_help()
     sys.exit(1)
 
-  run_test.options = opts
+  run_test.test_set_options(opts)
+
   bootstrap_dir = args[0]
 
   tmpdir = os.path.join(opts.bindir, 'test-tmpdir')
   run_test.ensure_dir_exists(tmpdir)
 
-  main(opts, bootstrap_dir, run_test.get_paths(opts, tmpdir), tmpdir)
+  main(opts, bootstrap_dir, tmpdir)

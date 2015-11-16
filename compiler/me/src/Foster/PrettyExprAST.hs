@@ -68,7 +68,7 @@ prettyTopLevelFn fn =
  withAnnot (fnAstAnnot fn) $
   text (T.unpack $ fnAstName fn) <+> text "=" <+> pretty fn <> text ";"
 
-instance Pretty (FnAST TypeP) where
+instance Pretty ty => Pretty (FnAST ty) where
   pretty fn =
       group (lbrace <> prettyTyFormals (fnTyFormals fn) <> args (fnFormals fn)
                     <+> nest 4 (group $ pretty (fnAstBody fn))
@@ -83,7 +83,7 @@ prettyTyFormals tyfs = empty <+> text "forall" <+> hsep (map prettyTyFormal tyfs
   where prettyTyFormal (TypeFormal name _sr kind) =
                                           text name <+> text ":" <+> pretty kind
 
-instance Pretty (ModuleAST FnAST TypeP) where
+instance Pretty ty => Pretty (ModuleAST FnAST ty) where
   pretty m = text "// begin decls"
             <$> vcat [showTyped (text s) t | (s, t) <- moduleASTdecls m]
             <$> text "// end decls"
@@ -147,11 +147,11 @@ withAnnot (ExprAnnot pre _ post) doc =
 wasRaw False = empty
 wasRaw True  = text "r"
 
-instance Pretty (ArrayEntry (ExprAST TypeP)) where
+instance Pretty ty => Pretty (ArrayEntry (ExprAST ty)) where
   pretty (AE_Int _annot str) = pretty str
   pretty (AE_Expr ex) = pretty ex
 
-instance Pretty (ExprAST TypeP) where
+instance Pretty ty => Pretty (ExprAST ty) where
   pretty e =
         case e of
             E_MachArrayLit annot _mbt args -> withAnnot annot $ text "prim mach-array-literal" <+> hsep (map pretty args)

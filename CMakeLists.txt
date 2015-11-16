@@ -478,6 +478,7 @@ set(REGRESS_CMD
                  ${PROJECT_SOURCE_DIR}/test/bootstrap
                  --bindir ${PROJECT_BINARY_DIR}
                  --cxxpath ${CLANG}
+                 --no_extra_bitcode
                  -I ${PROJECT_SOURCE_DIR}/stdlib)
 add_custom_target(regress
         COMMAND echo ${REGRESS_CMD}
