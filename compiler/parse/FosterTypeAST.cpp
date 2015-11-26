@@ -12,7 +12,9 @@
 #include "llvm/IR/Module.h"
 
 #include <sstream>
+#include <string>
 
+using std::string;
 using std::vector;
 using std::map;
 

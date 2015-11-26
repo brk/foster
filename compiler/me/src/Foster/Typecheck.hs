@@ -689,10 +689,11 @@ tcRhoLet ctx rng (TermBinding v e1) e2 mt = do
 -- {{{
     sanityCheck (not $ isRecursiveFunction boundName e1) (errMsg boundName)
     id <- tcFreshT boundName
+    let ctxPend = ctx `addPendingBinding` v
     a1 <- case maybeVarType of
-                 Nothing -> inferSigma ctx e1 "let"
-                 Just ta -> do t <- tcType ctx ta
-                               checkSigma ctx e1 t
+                 Nothing -> inferSigma ctxPend e1 "let"
+                 Just ta -> do t <- tcType ctxPend ta
+                               checkSigma ctxPend e1 t
     let ctx' = prependContextBindings ctx [bindingForVar $ TypedId (typeTC a1) id]
     a2 <- tcRho ctx' e2 mt
     return (AnnLetVar rng id a1 a2)
@@ -742,10 +743,11 @@ tcRhoLetRec ctx0 rng recBindings e mt = do
     -- Typecheck each binding
     tcbodies <- forM (zip unificationVarsOrTys recBindings) $
        (\(u_or_ty, TermBinding v b) -> do
+           let ctxPend = ctx `addPendingBinding` v
            b' <- case (u_or_ty, evarMaybeType v) of
              (_, Just _) -> do tcFails [text "shouldn't have any annotation on letrec!"]
-             (Left _u, _) -> do inferSigma ctx b "letrecX"
-             (Right t, _) -> do checkSigma ctx b t
+             (Left _u, _) -> do inferSigma ctxPend b "letrecX"
+             (Right t, _) -> do checkSigma ctxPend b t
            case u_or_ty of
              Left u -> unify u (typeTC b') ("recursive binding " ++ T.unpack (evarName v))
              _      -> return ()
@@ -1014,13 +1016,23 @@ tcRhoFn ctx f expTy = do
   inst sigma "tcRhoFn"
 -- }}}
 
+mkFnName pendings = do
+ u <- newTcUniq
+ return $
+     T.pack $ (joinWith "__" (reverse $ map T.unpack pendings)) ++ ".anon." ++ show u ++ "_"
+
 -- G{a1:k1}...{an:kn}{x1 : t1}...{xn : tn} |- e ::: tb
 -- ---------------------------------------------------------------------
 -- G |- { forall a1:k1, ..., an:kn, x1 : t1 => ... => xn : tn => e } :::
 --        forall a1:k1, ..., an:kn,    { t1 => ... =>      tn => tb }
 -- {{{
 tcSigmaFn :: Context SigmaTC -> FnAST TypeAST -> Expected SigmaTC -> Tc (AnnExpr SigmaTC)
-tcSigmaFn ctx fnAST expTyRaw = do
+tcSigmaFn ctx0 fnAST0 expTyRaw = do
+  fnAST <- if T.pack "" == (fnAstName fnAST0)
+             then do nm <- mkFnName (pendingBindings ctx0)
+                     return fnAST0 { fnAstName = nm }
+             else do return fnAST0
+  let ctx = ctx0 { pendingBindings = [fnAstName fnAST] }
   debug2 $ "****************tcSigmaFn: nexpTyRaw is " ++ show expTyRaw ++ " for " ++ show (fnAstName fnAST)
   case (fnTyFormals fnAST, expTyRaw) of
     ([], Check (ForAllTC exp_ktvs _)) ->

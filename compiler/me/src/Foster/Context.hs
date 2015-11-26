@@ -32,11 +32,15 @@ data Context ty = Context { contextBindings   :: ContextBindings ty
                           , primitiveBindings :: ContextBindings ty
                           , primitiveOperations :: Map T.Text (FosterPrim ty)
                           , globalIdents       :: [Ident]
+                          , pendingBindings   :: [T.Text]
                           , localTypeBindings :: Map String ty -- as introduced by, e.g. foralls.
                           , contextTypeBindings :: [(TyVar, Kind)]
                           , contextCtorInfo   :: Map CtorName     [CtorInfo ty]
                           , contextDataTypes  :: Map DataTypeName [DataType ty]
                           } deriving Show
+
+addPendingBinding :: Context ty -> E_VarAST tx -> Context ty
+addPendingBinding ctx v = ctx { pendingBindings = (evarName v) : (pendingBindings ctx) }
 
 prependBinding :: ContextBindings ty -> ContextBinding ty -> ContextBindings ty
 prependBinding m (TermVarBinding nm cxb) = Map.insert nm cxb m
@@ -63,7 +67,7 @@ extendTyCtx ctx ktvs = ctx { contextTypeBindings =
 
 liftContextM :: (Monad m, Show t1, Show t2)
              => (t1 -> m t2) -> Context t1 -> m (Context t2)
-liftContextM f (Context cb nb pb primops gb tyvars tybinds ctortypeast dtinfo) = do
+liftContextM f (Context cb nb pb primops gb pend tyvars tybinds ctortypeast dtinfo) = do
   cb' <- mmapM (liftCXB f) cb
   nb' <- mmapM (liftCXB f) nb
   pb' <- mmapM (liftCXB f) pb
@@ -71,7 +75,7 @@ liftContextM f (Context cb nb pb primops gb tyvars tybinds ctortypeast dtinfo) =
   tyvars' <- mmapM f tyvars
   ct' <- mmapM (mapM (liftCtorInfo f)) ctortypeast
   dt' <- mmapM (mapM (liftDataType f)) dtinfo
-  return $ Context cb' nb' pb' po' gb tyvars' tybinds ct' dt'
+  return $ Context cb' nb' pb' po' gb pend tyvars' tybinds ct' dt'
 
 mmapM :: (Monad m, Ord k) => (a -> m b) -> Map k a -> m (Map k b)
 mmapM f ka = do

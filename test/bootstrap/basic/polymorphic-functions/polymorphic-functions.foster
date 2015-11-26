@@ -59,7 +59,7 @@ test-mono = {
 };
 
 
-doubleP = { forall t ,
+doubleP = { forall t:Type ,
             f : { t => t } =>  x : t =>
             f (f x)
           };

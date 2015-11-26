@@ -54,10 +54,10 @@ test-utf8-encoding = {
   print-bytes b"ab+cd";
 
   expect_text "ab\u{000b1}cd";
-  print-bytes b"ab\xc2\xb1cd";
+  print-bytes b"ab\xc2\xb1cd"; // ab±cd
 
   print-bytes b"PQ\xf0\x9d\x9b\xbbFX";
-  expect_text "PQ\u{1d6fb}FX";
+  expect_text "PQ\u{1d6fb}FX"; // PQ𝛻FX
 };
 
 print-bytes = { a : Array Int8 =>

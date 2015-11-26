@@ -43,10 +43,10 @@ newDArray8 = { n : Int32 => f : { Int32 => Int8 } =>
 };
 
 
-print_text = { s : Text =>
+expect_text = { s : Text =>
   case s
     of $TextFragment a n     -> prim_print_bytes_stderr a n; n
-    of $TextConcat   s1 s2 n -> print_text s1; print_text s2; n
+    of $TextConcat   s1 s2 n -> expect_text s1; expect_text s2; n
    end;
 };
 
@@ -60,14 +60,15 @@ arrays8 = {
 
   (trunc32to8 0) >^ a[3];
   prim_print_bytes_stdout a 6;
-  print_abc !;
+  expect_abc !;
 
   expect_i32 k;
   print_i64 (prim_arrayLength a);
+
 };
 
-print_abc = {
-  print_text "abc";
+expect_abc = {
+  expect_text "abc";
 };
 
 textLength = { t : Text =>
@@ -75,14 +76,6 @@ textLength = { t : Text =>
     of $TextFragment _ n -> n
     of $TextConcat _ _ n -> n
    end;
-};
-
-mkTextConcat = { a : Text => b : Text =>
-  TextConcat a b ((textLength a) +Int32 (textLength b))
-};
-
-print_concat = {
-  print_text (mkTextConcat "abc" "def");
 };
 
 arrays-indexing = { i8 : Int8 => i32 : Int32 => i64 : Int64 => iw : Word =>

@@ -106,7 +106,8 @@ alphaRename' fn uref = do
     renameV tid@(TypedId ty id@(GlobalSymbol t)) = do
         -- We want to rename any locally-bound functions that might have
         -- been duplicated by monomorphization.
-        if T.pack "<anon_fn" `T.isInfixOf` t ||
+        if T.pack "<anon_fn"  `T.isInfixOf` t ||
+           T.pack ".anon."    `T.isInfixOf` t ||
            T.pack ".kn.thunk" `T.isPrefixOf` t
           then do state <- get
                   case Map.lookup id (renameMap state) of

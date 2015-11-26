@@ -729,9 +729,6 @@ setShowTree = { s => shw =>
 };
 
 setShowTreeRot = { forall a:Type, lbars : List Text => rbars : List Text => s : Set a => shw : { a => Text } =>
-  #associate   a `mkTextConcat` b `mkTextConcat` c
-          as   (mkTextConcat (mkTextConcat a b) c)
-  in
   case s
     of $SetTip ->           setShowTreeBars lbars `mkTextConcat` "|\n"
     of $SetBin 1 x _ _ ->   setShowTreeBars lbars `mkTextConcat` shw x `mkTextConcat` "\n"
@@ -739,7 +736,6 @@ setShowTreeRot = { forall a:Type, lbars : List Text => rbars : List Text => s : 
         setShowTreeRot (setShowTreeWithBar rbars) (setShowTreeWithEmpty rbars) r shw `mkTextConcat`
         setShowTreeBars lbars `mkTextConcat` shw x `mkTextConcat` "\n"               `mkTextConcat`
         setShowTreeRot (setShowTreeWithEmpty lbars) (setShowTreeWithBar lbars) l shw
-  end
   end
 };
 

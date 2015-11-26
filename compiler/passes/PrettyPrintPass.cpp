@@ -8,8 +8,25 @@
 #include "parse/ANTLRtoFosterAST.h" // for reconstructing explicit parens
 
 #include <sstream>
+#include <string>
 
 #include "base/PughSinofskyPrettyPrinter.h"
+
+#include "llvm/Support/raw_os_ostream.h"
+
+using std::string;
+
+std::ostream& operator<<(std::ostream& out, const TypeAST& type) {
+  llvm::raw_os_ostream rout(out);
+  foster::prettyPrintType(&type, rout, 40);
+  return out;
+}
+
+string str(const TypeAST* expr) {
+  if (expr) {
+    std::stringstream ss; ss << (*expr); return ss.str();
+  } else { return "<nil>"; }
+}
 
 inline void recurse(PrettyPrintTypePass* const p, TypeAST* ast);
 

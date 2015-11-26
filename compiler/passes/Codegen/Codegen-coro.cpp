@@ -50,7 +50,7 @@ bool isSingleElementStruct(llvm::Type* t,
   return sty != NULL && sty->getNumElements() == 0;
 }
 
-void addCoroArgs(std::vector<Type*>& fnTyArgs,
+void addCoroArgs(std::vector<llvm::Type*>& fnTyArgs,
                  llvm::Type* argTypes) {
   llvm::StructType* sty;
   if (isSingleElementStruct(argTypes, sty)) {

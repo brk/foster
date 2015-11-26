@@ -6,6 +6,7 @@ glob:*.o
 glob:*.orig
 glob:*~
 glob:.svn
+glob:.git
 glob:.*.swp
 glob:.*.swo
 glob:output

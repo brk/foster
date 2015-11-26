@@ -156,7 +156,7 @@ def run_one_test(testpath, tmpdir, progargs, paths, exe_cmd, elapseds):
     run_command(["paste", exp_filename, act_filename], {}, "")
 
   if rv != 0:
-    print exepath, "failed with non-zero return value", rv
+    print testpath, "failed with non-zero return value", rv
 
   return result
 

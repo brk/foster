@@ -167,8 +167,8 @@ tuple : '(' e ( AS  t    ')'                  -> ^(TYANNOT e t)
 pmatch  : p ('if' e)? '->' stmts -> ^(CASE p e stmts);
 
 // Example: (C _ (C2 3 x), C3, 0).
-p : dctor patom*  -> ^(MU dctor patom*)
-  | patom         -> ^(MU patom);
+p : dctor patom*  -> ^(CTOR dctor patom*)
+  | patom         -> ^(MU   patom);
 
 patom :
     x                                      // variables

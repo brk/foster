@@ -62,13 +62,15 @@ main = {
   expect_i1 False; print_i1 (__COMPILES__ (>^) 2 (prim ref 0));
   2  >^ (prim ref 0);
 
+  print_i32  23456;
+  expect_i32 23456;
   // It doesn't make sense at the machine level
   // for a returned function to be unboxed polymorphic.
   expect_i1 False;
-  print_i1 (__COMPILES__ { i : Int32 =>  { forall b, x:b => x } });
+  print_i1 (__COMPILES__ { { forall b:Type, x:b => x } });
 
   expect_i1 True;
-  print_i1 (__COMPILES__ { i : Int32 => { forall b:Boxed, x:b => x } });
+  print_i1 (__COMPILES__ { { forall b:Boxed, x:b => x } });
 
   expect_i1 True;  print_i1 (__COMPILES__ case True of False -> 0 end);
   // It's an error to accidentally bind "true" or "false" as a pattern variable.

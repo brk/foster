@@ -80,12 +80,15 @@ termBindingName (TermBinding v _) = evarName v
 
 -- ||||||||||||||||||||||||| Instances ||||||||||||||||||||||||||{{{
 
+showSome (SS_Text  txt) = take 40 $ show txt
+showSome (SS_Bytes bs)  = take 40 $ show bs
+
 instance Structured (ExprAST t) where
     textOf e _width =
         let tryGetCallNameE (E_VarAST _rng (VarAST _mt v)) = T.unpack v
             tryGetCallNameE _                              = "" in
         case e of
-            E_StringAST _rng _r _s -> text $ "StringAST    "                                   ++ (exprCmnts e)
+            E_StringAST _rng _r _s -> text $ "StringAST    " ++ (showSome _s)                  ++ (exprCmnts e)
             E_BoolAST   _rng  b    -> text $ "BoolAST      " ++ (show b)                       ++ (exprCmnts e)
             E_IntAST    _rng txt   -> text $ "IntAST       " ++ txt                            ++ (exprCmnts e)
             E_RatAST    _rng txt   -> text $ "RatAST       " ++ txt                            ++ (exprCmnts e)

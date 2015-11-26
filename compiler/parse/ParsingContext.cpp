@@ -31,7 +31,6 @@ std::stack<ParsingContext*> gParsingContexts;
 
 
 struct ParsingContext::Impl {
-  OperatorPrecedenceTable prec;
   FreshNameGenerator freshNames;
 
   SymbolTable<ExprAST> exprScope;
@@ -98,9 +97,6 @@ ParsingContext* // static
 ParsingContext::pushNewContext() {
   ParsingContext* cc = new ParsingContext();
   if (!gParsingContexts.empty()) {
-    // new context gets copy of prev context's precedence tables.
-    cc->impl->prec.initWith(gParsingContexts.top()->impl->prec);
-
     cc->impl->startTokens  = gParsingContexts.top()->impl->startTokens;
     cc->impl->endTokens    = gParsingContexts.top()->impl->endTokens;
     cc->impl->hiddenTokens = gParsingContexts.top()->impl->hiddenTokens;
@@ -229,53 +225,6 @@ ParsingContext::clearTokenBoundaries() {
 
   gParsingContexts.top()->impl->startTokens.clear();
   gParsingContexts.top()->impl->  endTokens.clear();
-}
-
-///////////////////
-
-foster::OperatorPrecedenceTable::OperatorRelation // static
-ParsingContext::getOperatorRelation(const std::string& op1,
-                                    const std::string& op2) {
-  ASSERT(!gParsingContexts.empty());
-
-  return gParsingContexts.top()->impl->prec.get(op1, op2);
-}
-
-void // static
-ParsingContext::parseAsTighter(const std::string& op1,
-                               const std::string& op2) {
-  ASSERT(!gParsingContexts.empty());
-
-  return gParsingContexts.top()->impl->prec.parseAsTighter(op1, op2);
-}
-
-void // static
-ParsingContext::parseAsLooser(const std::string& op1,
-                              const std::string& op2) {
-  ASSERT(!gParsingContexts.empty());
-
-  return gParsingContexts.top()->impl->prec.parseAsLooser(op1, op2);
-}
-
-bool // static
-ParsingContext::isKnownOperatorName(const string& op) {
-  ASSERT(!gParsingContexts.empty());
-
-  return gParsingContexts.top()->impl->prec.isKnownOperatorName(op);
-}
-
-bool // static
-ParsingContext::isKeyword(const string& op) {
-  ASSERT(!gParsingContexts.empty());
-
-  return gParsingContexts.top()->impl->keywords[op];
-}
-
-bool // static
-ParsingContext::isReservedKeyword(const string& op) {
-  ASSERT(!gParsingContexts.empty());
-
-  return gParsingContexts.top()->impl->reserved_keywords[op];
 }
 
 ////////////////////////////////////////////////////////////////////

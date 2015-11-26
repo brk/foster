@@ -6,8 +6,6 @@
 
 module Main (main) where
 
-import Text.ProtocolBuffers(messageGet)
-
 import System.Environment(getArgs,getProgName)
 
 import qualified Data.ByteString.Lazy as L(readFile)
@@ -31,7 +29,7 @@ import Foster.Base
 import Foster.Config
 import Foster.CFG
 import Foster.CFGOptimization
-import Foster.ProtobufFE(parseWholeProgram)
+import Foster.ProtobufFE(cb_parseWholeProgram)
 import Foster.ProtobufIL(dumpILProgramToProtobuf)
 import Foster.TypeTC
 import Foster.ExprAST
@@ -57,10 +55,13 @@ import Foster.ConvertExprAST
 import Foster.MainOpts
 import Foster.MKNExpr
 
+import Data.Binary.Get
+import Data.Binary.CBOR
+
 import Text.Printf(printf)
 import Foster.Output
 import Text.PrettyPrint.ANSI.Leijen((<+>), (<>), (<$>), pretty, text, line, hsep,
-                                    fill, parens, vcat, list, red, dullyellow)
+                                     fill, parens, vcat, list, red, dullyellow)
 import Criterion.Measurement(time, secs)
 
 pair2binding (nm, ty, mcid) = TermVarBinding nm (TypedId ty (GlobalSymbol nm), mcid)
@@ -178,11 +179,11 @@ typecheckAndFoldContextBindings ctxTC0 bindings = do
 -- |  #. Make sure that all unification variables have been properly eliminated,
 -- |     or else we consider type checking to have failed
 -- |     (no implicit instantiation at the moment!)
-typecheckModule :: Bool -> Bool -> Bool
+typecheckModule :: Bool -> Bool -> Bool -> ([Flag], strings)
                 -> ModuleAST FnAST TypeAST
                 -> TcEnv
                 -> IO (OutputOr (Context TypeIL, ModuleIL AIExpr TypeIL))
-typecheckModule verboseMode pauseOnErrors standalone modast tcenv0 = do
+typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
     when verboseMode $ do
         putDocLn $ text "module AST decls:" <$> pretty (moduleASTdecls modast)
     let dts = moduleASTprimTypes modast ++ moduleASTdataTypes modast
@@ -230,8 +231,8 @@ typecheckModule verboseMode pauseOnErrors standalone modast tcenv0 = do
             when verboseMode $ do
                     putStrLn $ "Function SCC list : " ++
                      (unlines $ map show [(name, frees) | (_, name, frees) <- callGraphList])
-            let showASTs     = verboseMode
-            let showAnnExprs = verboseMode
+            let showASTs     = verboseMode || getDumpIRFlag "ast" flagvals
+            let showAnnExprs = verboseMode || getDumpIRFlag "ann" flagvals
             (annFnSCCs, (ctx, tcenv)) <- mapFoldM' sortedFns (ctxTC, tcenv0)
                                               (typecheckFnSCC showASTs showAnnExprs pauseOnErrors)
             unTc tcenv (convertTypeILofAST modast ctx annFnSCCs)
@@ -242,7 +243,7 @@ typecheckModule verboseMode pauseOnErrors standalone modast tcenv0 = do
    mkContext :: [ContextBinding t] -> [ContextBinding t]
              -> [ContextBinding t] -> (Map T.Text (FosterPrim t)) -> [Ident] -> [DataType t] -> Context t
    mkContext declBindings nullCtorBnds primBindings primOpMap globalvars datatypes =
-     Context declBindsMap nullCtorsMap primBindsMap primOpMap globalvars tyvarsMap [] ctorinfo dtypes
+     Context declBindsMap nullCtorsMap primBindsMap primOpMap globalvars [] tyvarsMap [] ctorinfo dtypes
        where ctorinfo     = getCtorInfo  datatypes
              dtypes       = getDataTypes datatypes
              primBindsMap = Map.fromList $ map unbind primBindings
@@ -400,11 +401,9 @@ topoSortBindingSCC allSCCs =
 
 -----------------------------------------------------------------------
 
-readAndParseProtobuf infile = do
-  protobuf <- L.readFile infile
-  case messageGet protobuf of
-    Left msg -> error $ "Failed to parse protocol buffer.\n" ++ msg
-    Right (pb_program, _) -> return pb_program
+readAndParseCbor infile = do
+  cborbytes <- L.readFile infile
+  return $ runGet getCBOR cborbytes
 
 main = do
   -- When we upgrade to criterion 1.0, we must call initializeTime here...
@@ -412,14 +411,14 @@ main = do
   case args of
     (infile : outfile : rest) -> do
        flagVals <- parseOpts rest
-       (pi_time, pb_program) <- ioTime $ readAndParseProtobuf infile
-       let wholeprog = parseWholeProgram pb_program (getStandaloneFlag flagVals)
+       (cp_time, cb_program) <- ioTime $ readAndParseCbor (infile ++ ".cbor")
+       let wholeprog = cb_parseWholeProgram cb_program (getStandaloneFlag flagVals)
        if getFmtOnlyFlag flagVals
          then do
            let WholeProgramAST modules = wholeprog
            liftIO $ putDocLn (pretty (head modules))
          else
-           runCompiler pi_time wholeprog flagVals outfile
+           runCompiler cp_time wholeprog flagVals outfile
 
     rest -> do
       flagVals <- parseOpts rest
@@ -428,7 +427,7 @@ main = do
         else do
            self <- getProgName
            return (error $ "Usage: " ++ self
-                   ++ " path/to/infile.pb path/to/outfile.pb")
+                   ++ " path/to/infile.cbor path/to/outfile.pb")
 
 
 runCompiler pi_time wholeprog flagVals outfile = do
@@ -487,7 +486,7 @@ runCompiler pi_time wholeprog flagVals outfile = do
                          ,fmt "'other'     time:" ct_time
                          ,fmt "sum elapsed time:" nc_time
                          ,text ""
-                         ,fmt "protobuf-in time:" pi_time
+                         ,fmt "    CBOR-in time:" pi_time
                          ,fmt "protobufout time:" pb_time
                          ,text "overall wall-clock time:" <+> text (secs $ pi_time + pb_time + nc_time)
                          ]
@@ -560,7 +559,12 @@ typecheckSourceModule tcenv sm = do
     flags <- gets ccFlagVals
     let standalone    = getStandaloneFlag  flags
     let pauseOnErrors = getInteractiveFlag flags
-    (ctx_il, ai_mod) <- (liftIO $ typecheckModule verboseMode pauseOnErrors standalone sm tcenv)
+    --whenDumpIR "ast" $ do
+    --   putDocLn (outLn $ "vvvv AST :====================")
+    --   putDocLn (vsep $ map showFnStructure (moduleASTfunctions sm))
+    --   putDocLn $ pretty sm
+    --   return ()
+    (ctx_il, ai_mod) <- (liftIO $ typecheckModule verboseMode pauseOnErrors standalone flags sm tcenv)
                       >>= dieOnError
     showGeneratedMetaTypeVariables (tcUnificationVars tcenv) ctx_il
     return (ai_mod, ctx_il)

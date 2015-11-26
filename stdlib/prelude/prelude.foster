@@ -292,6 +292,7 @@ tmp_Text_of_Int32_digit = { n:Int32 =>
   end
 };
 
+tmp_Text_16_of_Int32_digit = { n => tmp_Text_16_of_Int8_nibble (cast_i32_to_i8 n) };
 tmp_Text_16_of_Int8_nibble = { n : Int8 =>
   case n
     of  0 -> "0"

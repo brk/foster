@@ -26,6 +26,8 @@
 #include "city.h"
 #include "pystring/pystring.h"
 
+#include "cbor.h"
+
 #include <iostream>
 #include <string>
 #include <map>
@@ -69,7 +71,6 @@ string str(pANTLR3_COMMON_TOKEN tok) {
   }
 }
 
-TypeAST* TypeAST_from(pTree tree);
 void display_pTree(pTree t, int nspaces);
 
 size_t getChildCount(pTree tree) {
@@ -163,22 +164,6 @@ foster::SourceRange rangeOf(pTree tree) {
   return rangeFrom(tree, tree);
 }
 
-foster::SourceRange rangeFrom(ExprAST* a, ExprAST* b) {
-  if (a && b) {
-    foster::SourceRange ar = a->sourceRange;
-    foster::SourceRange br = b->sourceRange;
-    ASSERT(ar.source == br.source);
-    return foster::SourceRange(ar.source, ar.begin, br.end);
-  } else if (a) {
-    foster::SourceRange ar = a->sourceRange;
-    return foster::SourceRange(ar.source, ar.begin,
-                   foster::SourceLocation::getInvalidLocation());
-  } else {
-    return foster::SourceRange::getEmptyRange();
-  }
-}
-
-
 string spaces(int n) { return (n > 0) ? string(n, ' ') : ""; }
 
 void display_pTree(pTree t, int nspaces) {
@@ -208,355 +193,6 @@ void display_pTree(pTree t, int nspaces) {
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 
-const char* getDefaultCallingConvParse() {
-  //foster::DDiag() << "getDefaultCallingConvParse()";
-  return foster::kDefaultFnLiteralCallingConvention;
-}
-
-////////////////////////////////////////////////////////////////////
-
-ExprAST* parseNumFrom(pTree t) {
-  ASSERT(textOf(t) == "LIT_NUM")
-            << "parseIntFrom() called on non-LIT_NUM token " << textOf(t)
-            << show(rangeOf(t));
-
-  std::string alltext = textOf(child(t, 0));
-
-  if (pystring::count(alltext, ".") > 0) {
-    ASSERT(alltext.find_first_of("abcdfABCDF_") == string::npos)
-              << "rationals should not contain hex digits or a base specifier"
-              << "; saw " << alltext;
-
-    if (alltext.find_first_of("eE") != string::npos) {
-      ASSERT(alltext.find_first_of("eE") > alltext.find_first_of("."))
-              << "e/E should only appear in rational as exponent specifier";
-    }
-    return new RatAST(alltext, rangeOf(t));
-  } else {
-    return new IntAST(alltext, rangeOf(t));
-  }
-}
-
-////////////////////////////////////////////////////////////////////
-
-ExprAST* ExprAST_from(pTree tree);
-std::vector<TypeAST*> getTypes(pTree tree);
-
-Exprs getExprs(pTree tree) {
-  Exprs f;
-  for (size_t i = 0; i < getChildCount(tree); ++i) {
-    f.push_back(ExprAST_from(child(tree, i)));
-  }
-  return f;
-}
-
-enum StmtTag { StmtExprs, StmtLetBinds, StmtRecBinds };
-
-string str(char c) { return std::string(1, c); }
-
-string str(StmtTag t) {
-  if (t == StmtRecBinds) return "StmtRecBinds";
-  if (t == StmtLetBinds) return "StmtLetBinds";
-  if (t == StmtExprs)    return "StmtExprs";
-  return "UnknownStmtTag";
-}
-
-string str(const SourceRange& sr) {
-  string s;
-  llvm::raw_string_ostream ss(s); ss << sr;
-  return s;
-}
-
-StmtTag classifyStmt(pTree t) {
-  if (typeOf(t) == ABINDING) {
-    if (getChildCount(t) == 2) {
-      return StmtRecBinds;
-    } else {
-      return StmtLetBinds;
-    }
-  } else {
-    return StmtExprs;
-  }
-}
-
-typedef std::vector<std::pair<pTree, pTree> > Statements;
-
-foster::SourceRange rangeOfTrees(const Statements& v) {
-  return rangeFrom(v.front().first, v.back().first);
-}
-
-Pattern* parsePattern(pTree t);
-Pattern* parsePatternAtom(pTree t);
-
-Binding parseBinding(pTree tree) {
-  return Binding(parsePatternAtom(child(tree, 0)), ExprAST_from(child(tree, 1)));
-}
-
-ExprAST* parseStmts_seq(const Statements& v, ExprAST* mb_last) {
-  assert(!v.empty());
-  Exprs e;
-  std::vector<foster::SourceRange> semis;
-  for (unsigned i = 0; i < v.size(); ++i) {
-    e.push_back(ExprAST_from(v[i].first));
-    if (v[i].second) { semis.push_back(rangeOf(v[i].second)); }
-  }
-  if (mb_last) e.push_back(mb_last);
-  return new SeqAST(e, semis, rangeOfTrees(v));
-}
-
-pTree semi(pTree tree, size_t n) {
-  if ((n + 1) >= getChildCount(tree)) return NULL;
-  return child(child(tree, n + 1), 0);
-}
-
-pTree stmt(pTree tree, int n) {
-  if (n == 0) return child(tree, 0);
-  return child(child(tree, n), 1);
-}
-
-// ugh...
-// ^(STMTS stmt_ ^(MU semi stmt_)+)
-ExprAST* parseStmts(pTree tree) {
-  if (getChildCount(tree) == 1 && typeOf(child(tree, 0)) != ABINDING) {
-    return ExprAST_from(child(tree, 0));
-  }
-  std::vector<std::pair<StmtTag, Statements> > sections;
-
-  // Collect contiguous slices of similar (rec vs non-rec) statements.
-  for (unsigned i = 0; i < getChildCount(tree);      ) {
-    StmtTag t = classifyStmt(stmt(tree, i));
-    Statements section;
-    do {
-      section.push_back(std::make_pair(stmt(tree, i), semi(tree, i)));
-      ++i;
-    } while (i < getChildCount(tree) && classifyStmt(stmt(tree, i)) == t);
-    sections.push_back(std::make_pair(t, section));
-  }
-
-  ASSERT(!sections.empty());
-  if (sections.back().first != StmtExprs) {
-    ASSERT(false)
-        << "\n\n" << "Statement block should end"
-        << " in an expression!" << "\n"
-        << show(rangeOf(tree));
-  }
-
-  std::vector<std::pair<pTree, pTree>>& end_asts = sections.back().second;
-  ExprAST* acc = parseStmts_seq(end_asts, NULL);
-
-  // Walk backwards over sections, accumulating.
-  for (int i = sections.size() - 2; i >= 0; --i) {
-    bool isRec = sections[i].first == StmtRecBinds;
-    std::vector<Binding> bindings;
-
-    switch (sections[i].first) {
-    case StmtRecBinds: // fallthrough
-    case StmtLetBinds:
-      for (unsigned x = 0; x < sections[i].second.size(); ++x) {
-        pTree c = sections[i].second[x].first;
-        int offset = isRec ? 1 : 0;
-        bindings.push_back(parseBinding(child(c, offset)));
-      }
-      acc = new LetAST(bindings, acc, isRec, rangeOfTrees(sections[i].second));
-      break;
-
-    case StmtExprs:
-      // accumulator becomes last expr in sequence
-      acc = parseStmts_seq(sections[i].second, acc);
-      break;
-    }
-  }
-
-  return acc;
-}
-
-ExprAST* parseParenExpr(pTree tree) {
-  return ExprAST_from(child(tree, 0));
-}
-
-Formal parseFormal(pTree formal) {
-  TypeAST* ty = NULL;
-  if (getChildCount(formal) == 2) {
-    ty = TypeAST_from(child(formal, 1));
-  } else {
-    NamedTypeAST* tv = new NamedTypeAST(ParsingContext::freshName(".inferred:\n" + str(rangeOf(formal))),
-                                        NULL, rangeOf(formal));
-    tv->is_placeholder = true;
-    ty = tv;
-  }
-  return Formal(textOfVar(child(formal, 0)), ty);
-}
-
-KindAST* parseKind(pTree t) {
-  switch (typeOf(t)) {
-  case KIND_TYPE:       return new BaseKindAST(BaseKindAST::KindType);
-  case KIND_TYPE_BOXED: return new BaseKindAST(BaseKindAST::KindBoxed);
-  }
-  ASSERT(false) << "Unknown kind in parseKind()"; return NULL;
-}
-
-void parseFormals(std::vector<Formal>& formals, pTree tree) {
-  for (size_t i = 0; i < getChildCount(tree); ++i) {
-    formals.push_back(parseFormal(child(tree, i)));
-  }
-}
-
-TypeFormal parseTypeFormal(pTree t, KindAST* defaultKind) {
-  std::string varname = textOfVar(child(t, 0));
-  KindAST* kind = (getChildCount(t) == 2)
-                ? parseKind(child(t, 1))
-                : defaultKind;
-  return TypeFormal(varname, kind, rangeOf(t));
-}
-
-// TYPEVAR_DECL name kind?
-std::vector<TypeFormal> parseTyFormals(pTree t, KindAST* defaultKind) {
-  std::vector<TypeFormal> names;
-  for (size_t i = 0; i < getChildCount(t); ++i) {
-    names.push_back(parseTypeFormal(child(t, i), defaultKind));
-  }
-  return names;
-}
-
-std::vector<TypeAST*> noTypes() { std::vector<TypeAST*> types; return types; }
-
-ExprAST* parseTuple(pTree t) {
-  if (getChildCount(t) == 1) {
-    return ExprAST_from(child(t, 0));
-  } return new CallPrimAST("tuple", getExprs(t), noTypes(), rangeOf(t));
-}
-
-// ^(VAL_ABS ^(FORMALS formals) ^(MU tyvar_decl*) stmts?)
-ValAbs* parseValAbs(pTree tree) {
-  std::vector<Formal> formals;
-  parseFormals(formals, child(tree, 0));
-  std::vector<TypeFormal> tyVarFormals = parseTyFormals(child(tree, 1),
-                                                        getDefaultKind());
-  std::vector<foster::SourceRange> semis;
-  const int stmtIndex = 2;
-  TypeAST* resultType = NULL;
-  ExprAST* resultSeq = getChildCount(tree) == (stmtIndex + 1)
-                         ? parseStmts(child(tree, stmtIndex))
-                         : new SeqAST(Exprs(), semis, rangeOf(tree));
-  return new ValAbs(formals, tyVarFormals, resultSeq, resultType, rangeOf(tree));
-}
-
-ExprAST* parseTyCheck(pTree t) {
-  ASSERT(getChildCount(t) == 2);
-  return new ETypeCheckAST(ExprAST_from(child(t, 0)),
-                           TypeAST_from(child(t, 1)),
-                           rangeOf(t));
-}
-
-// so lame :(
-// in particular, we assume the tree is properly structured without checking...
-void tryParseOperatorAssocDecl(pTree raw, pTree expli) {
-  ASSERT(getChildCount(raw) == 3); // ^(TERM ^(MU opr?) ^(MU phrase) ^(MU binops?))
-  pTree rawBinops = child(raw, 2);
-  ASSERT(getChildCount(rawBinops) == 4); // ^(MU op1 _ op2 _)
-  string o1 = textOf(child(rawBinops, 0));
-  string o2 = textOf(child(rawBinops, 2));
-
-  // If this check is removed, note/beware that parseAsTighter(o1, o2)
-  // does not imply parseAsLooser(o2, o1)!
-  ASSERT(o1 == o2) << "for now, operators must be the same...";
-
-  ASSERT(getChildCount(child(expli, 2)) == 0) << "no binops in explicit parse tree";
-  // HUUUUURRRRKKKKKK
-  pTree expl = child(child(child(child(child(expli, 1), 0), 0), 0), 0);
-  pTree ex   = child(child(child(child(child(expl,  1), 0), 1), 0), 0);
-  bool isLeftAssoc = getChildCount(ex) > 1;
-  if (isLeftAssoc) {
-    ParsingContext::parseAsTighter(o1, o2);
-  } else {
-    ParsingContext::parseAsLooser(o1, o2);
-  }
-}
-
-// #associate e1 as e2 in e3 end
-// but it's really
-// #associate _ `o1` _ `o2` _ as (ox _ (oy _ _)) in e3 end
-// ... at least for now...
-// ^(PARSE_DECL e1 e2 stmts)
-ExprAST* parseParseDecl(pTree t) {
-  ASSERT(getChildCount(t) == 3);
-
-  ParsingContext::pushNewContext();
-  tryParseOperatorAssocDecl(child(t, 0), child(t, 1));
-  ExprAST* e = parseStmts(child(t, 2));
-  ParsingContext::popCurrentContext();
-  return e;
-}
-
-std::vector<Binding> parseBindings(pTree tree) {
-  std::vector<Binding> bindings;
-  for (size_t i = 0; i < getChildCount(tree); ++i) {
-    bindings.push_back(parseBinding(child(tree, i)));
-  }
-  return bindings;
-}
-
-// ^(LETS ^(MU binding+) stmts)
-ExprAST* parseLets(pTree tree) {
-  return new LetAST(parseBindings(child(tree, 0)),
-                       parseStmts(child(tree, 1)),
-                         false, rangeOf(tree));
-}
-
-// ^(LETREC ^(MU binding+) stmts)
-ExprAST* parseLetRec(pTree tree) {
-  return new LetAST(parseBindings(child(tree, 0)),
-                       parseStmts(child(tree, 1)),
-                         true,  rangeOf(tree));
-}
-
-bool isLexicalOperator(const std::string& text) {
-  ASSERT(!text.empty());
-  return !isalpha(text[0]); // coincides with fragment IDENT_START
-}
-
-VariableAST* parseVarDirect(pTree t) {
-  return new VariableAST(textOf(t), NULL, rangeOf(t));
-}
-
-std::string parseName(pTree nm) {
-  if (typeOf(nm) == QNAME) {
-    return textOf(child(nm, 0)) + "." + parseName(child(nm, 1));
-  } else {
-    return textOf(nm);
-  }
-}
-
-// t = ^(_NAME name)
-VariableAST* parseTermVar(pTree t) {
-  return new VariableAST(parseName(child(t, 0)), NULL, rangeOf(t));
-}
-
-// ^(IF e stmts stmts)
-ExprAST* parseIf(pTree tree) {
-  ExprAST* elsepart = (getChildCount(tree) == 3)
-                     ? parseStmts(child(tree, 2))
-                     : NULL;
-  return new IfExprAST(ExprAST_from(child(tree, 0)),
-                       parseStmts(child(tree, 1)),
-                       elsepart,
-                       rangeOf(tree));
-}
-
-// ^(COMPILES e)
-ExprAST* parseBuiltinCompiles(pTree t) {
- return new BuiltinCompilesExprAST(ExprAST_from(child(t, 0)), rangeOf(t));
-}
-
-ExprAST* parseBool(pTree t) {
-  return new BoolAST(textOf(child(t, 0)), rangeOf(t));
-}
-
-// ^(STRING type contents)
-std::string contentsOfStringWithQuotesAndRawMarker(pTree t) {
-  return textOf(child(t, 1));
-}
-
 std::string contentsOfDoubleQuotedStringWithoutQuotes(pTree t) {
   std::string s = textOf(t);
   size_t offset = s[0] == 'r' ? 2 : 1;
@@ -565,502 +201,8 @@ std::string contentsOfDoubleQuotedStringWithoutQuotes(pTree t) {
   EDiag() << "Unable to determine what kind of string this is!" << s << "\n" << show(rangeOf(t));
 }
 
-char hexbits(char x) {
-  if (isdigit(x)) return (x - '0');
-  if (islower(x)) return (x - 'a') + 10;
-  if (isupper(x)) return (x - 'A') + 10;
-  ASSERT(false) << "can't extract hex bits from char value " << int(x); return 0;
-}
-
-// Copied from chromium_base, since they don't export it for some reason.
-size_t WriteUnicodeCharacter(uint32_t code_point, std::string* output) {
-  if (code_point <= 0x7f) {
-    // Fast path the common case of one byte.
-    output->push_back(code_point);
-    return 1;
-  }
-
-  // CBU8_APPEND_UNSAFE can append up to 4 bytes.
-  size_t char_offset = output->length();
-  size_t original_char_offset = char_offset;
-  output->resize(char_offset + CBU8_MAX_LENGTH);
-
-  CBU8_APPEND_UNSAFE(&(*output)[0], char_offset, code_point);
-
-  // CBU8_APPEND_UNSAFE will advance our pointer past the inserted character, so
-  // it will represent the new length of the string.
-  output->resize(char_offset);
-  return char_offset - original_char_offset;
-}
-
-// ^(STRING type wholething)
-ExprAST* parseString(pTree t) {
-  std::string wholething = contentsOfStringWithQuotesAndRawMarker(t);
-
-  std::string quo = textOf(child(t, 0));
-  int quotes = (quo == "TDQU" || quo == "TRTK") ? 3 : 1;
-
-  // ANTLR puts us between a rock and a hard place when it comes to handling
-  // strings. If we use lexer rules to capture string syntax, ANTLR can enforce
-  // but not inform us of the internal structure of a legal string.
-  // However, if we use grammar rules, the grammar becomes ambigous
-  // (for example, wrapping an ident with quotes changes its parse class).
-  // So, we're forced to essentially re-parse the string here, looking for
-  // escape codes and such.
-  std::string::iterator it = wholething.begin(), end = wholething.end();
-  if (wholething[0] == 'r') {
-    // Raw string; don't interpret the contents in any way, shape, or form...
-    return new StringAST(std::string(wholething.begin() + quotes + 1,
-                                     wholething.end()   - quotes), true, false, rangeOf(t));
-  } else if (wholething[0] == 'b' && wholething[1] == 'r') {
-    // Raw bytes; don't interpret the contents in any way, shape, or form...
-    return new StringAST(std::string(wholething.begin() + quotes + 2,
-                                     wholething.end()   - quotes), true, true, rangeOf(t));
-  } else {
-    bool bytes = wholething[0] == 'b';
-    // Non-raw string/bytes: walk through it and interpret escape codes.
-    std::string parsed; parsed.reserve(wholething.size());
-    it += quotes + bytes; end -= quotes;
-    while (it != end) {
-      if (*it != '\\') {
-        if (*it == '\n' && quotes == 1) {
-          ASSERT(false) << "embedded newlines not allowed within single-delimiter strings"
-                        << show(rangeOf(t));
-        }
-        if (!(*it == '\n' && bytes)) { // byte literals ignore newlines
-          parsed.push_back(*it);
-        }
-        ++it;
-      } else {
-        ++it;
-        // Escape sequence started...
-             if (*it == 't')  { parsed.push_back('\t'); ++it; }
-        else if (*it == 'n')  { parsed.push_back('\n'); ++it; }
-        else if (*it == 'r')  { parsed.push_back('\r'); ++it; }
-        else if (*it == '"')  { parsed.push_back('"'); ++it; }
-        else if (*it == '\'') { parsed.push_back('\''); ++it; }
-        else if (*it == '\\') { parsed.push_back('\\'); ++it; }
-        else if (*it == 'x' && bytes) { ++it;
-            // This is appropriate for raw bytes, but not text (Unicode...)
-            char c_hi = *it; ++it;
-            char c_lo = *it; ++it;
-            char x_hi = hexbits(c_hi);
-            char x_lo = hexbits(c_lo);
-            char byte = ((x_hi << 4) | x_lo);
-            parsed.push_back(byte);
-        }
-        else if (*it == 'u') { ++it;
-          if (*it == '{') { ++it;
-            // pretty much arbitrary stuff until a matching '}'
-            std::string stuff;
-            bool looksLikeHex = true;
-            while (*it != '}') {
-               if (!  isxdigit(*it)) { looksLikeHex = false; }
-               stuff.push_back(*it); ++it;
-            }
-            ++it;
-
-            ASSERT(looksLikeHex) << "Handling arbitrary unicode names is a TODO!"
-                    << "\nparsed out:" << stuff
-                    << "\n" << show(rangeOf(t));
-            ASSERT(stuff.size() <= 6) << "Unicode escapes can have at most 6 hex digits."
-                                      << "\n" << show(rangeOf(t));
-
-            uint32_t codepoint = strtol(stuff.c_str(), NULL, 16);
-            ASSERT(base::IsValidCharacter(codepoint)) << "Unicode escapes must be valid characters!"
-                                                      << "\n" << show(rangeOf(t));
-            WriteUnicodeCharacter(codepoint, &parsed);
-          } else {
-            ASSERT(false) << "Unicode escapes require curly braces."
-                          << "\n" << show(rangeOf(t));
-          }
-        } else {
-          ASSERT(false) << "unexpected escape code " << str(*it) << " in string: "
-                        << "\n" << wholething
-                        << "\n" << spaces(it - wholething.begin()) << "^";
-        }
-      }
-    }
-    return new StringAST(parsed, false, bytes, rangeOf(t));
-  }
-}
-
-std::vector<Pattern*> noPatterns() { std::vector<Pattern*> f; return f; }
-
-std::vector<Pattern*> getPatterns(pTree tree) {
-  std::vector<Pattern*> f;
-  for (size_t i = 0; i < getChildCount(tree); ++i) {
-    f.push_back(parsePattern(child(tree, i)));
-  }
-  return f;
-}
-
-std::vector<Pattern*> getPatternAtomsFrom1(pTree tree) {
-  std::vector<Pattern*> f;
-  for (size_t i = 1; i < getChildCount(tree); ++i) {
-    f.push_back(parsePatternAtom(child(tree, i)));
-  }
-  return f;
-}
-
-Pattern* parseTuplePattern(pTree t) {
-  if (getChildCount(t) == 1) {
-    return parsePattern(child(t, 0));
-  } return new TuplePattern(rangeOf(t), getPatterns(t));
-}
-
-// ^(CTOR x)
-VariableAST* parseCtor(pTree t) {
-  ASSERT(typeOf(t) == CTOR);
-  return parseTermVar(child(t, 0));
-}
-
-ExprAST* parseAtom(pTree tree);
-Pattern* parsePatternAtom(pTree t) {
-
-  int token = typeOf(t);
-  if ((token == PHRASE)
-    || (token == TERM)) { ASSERT(false); }
-
-    if (token == CTOR ) { return new CtorPattern(rangeOf(t), textOfVar(child(t, 0)), noPatterns()); }
-  if (token == WILDCARD) { return new WildcardPattern(rangeOf(t)); }
-  if (token == TUPLE)    { return parseTuplePattern(t); }
-  if (token == TERMNAME) { return new LiteralPattern(rangeOf(t), LiteralPattern::LP_VAR, parseTermVar(t)); }
-  if (token == LIT_NUM)  { return new LiteralPattern(rangeOf(t), LiteralPattern::LP_NUM, parseAtom(t)); }
-  if (token == BOOL   )  { return new LiteralPattern(rangeOf(t), LiteralPattern::LP_BOOL, parseAtom(t)); }
-  //if (token == STRING ) { return new LiteralPattern(LiteralPattern::LP_STR, parseAtom(t)); }
-
-  display_pTree(t, 2);
-  ASSERT(false) << "returning NULL Pattern for parsePatternAtom token " << str(t->getToken(t));
-  return NULL;
-}
-
-// ^(MU patom) (may be ctor)
-// ^(MU pctor patom*)
-Pattern* parsePattern(pTree t) {
-  if (getChildCount(t) == 1) {
-    return parsePatternAtom(child(t, 0));
-  } return new CtorPattern(rangeOf(t), parseCtor(child(t, 0))->getName(),
-                           getPatternAtomsFrom1(t));
-}
-
-// ^(CASE p e? stmts)
-CaseBranch* parseCaseBranch(pTree t) {
-  if (getChildCount(t) == 3) {
-    return new CaseBranch(parsePattern(child(t, 0)),
-                          ExprAST_from(child(t, 1)),
-                          parseStmts(  child(t, 2)));
-  } else {
-    return new CaseBranch(parsePattern(child(t, 0)),
-                          NULL,
-                          parseStmts(  child(t, 1)));
-  }
-}
-
-// ^(CASE e pmatch+)
-ExprAST* parseCase(pTree t) {
-  ExprAST* scrutinee = ExprAST_from(child(t, 0));
-  std::vector<CaseBranch*> branches;
-  for (size_t i = 1; i < getChildCount(t); ++i) {
-    branches.push_back(parseCaseBranch(child(t, i)));
-  }
-  return new CaseExpr(scrutinee, branches, rangeOf(t));
-}
-
-ExprAST* parseAtom(pTree tree) {
-  int token = typeOf(tree);
-
-  if (token == VAL_ABS)  { return parseValAbs(tree); }
-  if (token == LETS)     { return parseLets(tree); }
-  if (token == LETREC)   { return parseLetRec(tree); }
-  if (token == TUPLE)    { return parseTuple(tree); }
-  if (token == TYANNOT)  { return parseTyCheck(tree); }
-  if (token == PARSE_DECL){return parseParseDecl(tree); }
-  if (token == TERMNAME) { return parseTermVar(tree); }
-  if (token == LIT_NUM)  { return parseNumFrom(tree); }
-  if (token == IF)       { return parseIf(tree); }
-  if (token == COMPILES) { return parseBuiltinCompiles(tree); }
-  if (token == CASE)     { return parseCase(tree); }
-  if (token == CTOR)     { return parseCtor(tree); }
-  if (token == BOOL)     { return parseBool(tree); }
-  if (token == STRING)   { return parseString(tree); }
-
-  display_pTree(tree, 2);
-  foster::EDiag() << "returning NULL ExprAST for parseAtom token " << str(tree->getToken(tree));
-  return NULL;
-}
-
-ExprAST* parseSubscript(ExprAST* base, pTree tree) {
-  return CallPrimAST::two("subscript", base, ExprAST_from(child(tree, 0)), rangeOf(tree));
-}
-
-ExprAST* parseDeref(ExprAST* base, pTree tree) {
-  return CallPrimAST::one("deref", base, rangeOf(tree));
-}
-
-// ^(VAL_TYPE_APP t*)
-ExprAST* parseValTypeApp(ExprAST* base, pTree tree) {
-  std::vector<TypeAST*> types;
-  for (size_t i = 0; i < getChildCount(tree); ++i) {
-    types.push_back(TypeAST_from(child(tree, i)));
-  }
-  return new ETypeAppAST(NULL, base, types, rangeOf(tree));
-}
-
-// ^(VAL_APP)
-ExprAST* parseValApp(ExprAST* base, pTree tree) {
-  ASSERT(getChildCount(tree) == 0);
-  return new CallAST(base, Exprs(), rangeOf(tree));
-}
-
-ExprAST* parseSuffix(ExprAST* base, pTree tree) {
-  int token = typeOf(tree);
-
-  if (token == SUBSCRIPT) { return parseSubscript(base, tree); }
-  if (token == DEREF)     { return parseDeref(base, tree); }
-  if (token == VAL_APP)   { return parseValApp(base, tree); }
-  if (token == VAL_TYPE_APP) { return parseValTypeApp(base, tree); }
-  display_pTree(tree, 2);
-  foster::EDiag() << "returning NULL ExprAST for parseSuffix token " << str(tree->getToken(tree));
-  return NULL;
-}
-
-// ^(LVALUE atom suffix*)
-ExprAST* parseLValue(pTree tree) {
-  ExprAST* acc = parseAtom(child(tree, 0));
-  for (size_t i = 1; i < getChildCount(tree); ++i) {
-     acc = parseSuffix(acc, child(tree, i));
-  }
-  return acc;
-}
-
-ExprAST* parseCall(pTree tree) {
-  bool is_negated = typeOf(child(tree, 0)) == MINUS;
-  unsigned  index = is_negated ? 1 : 0;
-
-  if (is_negated) {
-    EDiag() << "no support yet for negated expressions" << show(rangeOf(tree));
-    // In particular, we need a better story about overloading,
-    // so we can support, e.g.,  -(a *f64 b) rather than ((0.0 -f64 a) *f64 b).
-    return NULL;
-  }
-
-  ExprAST* base = parseLValue(child(tree, index));
-  if (getChildCount(tree) == index + 1 && !is_negated) { return base; }
-  Exprs exprs;
-  for (size_t i = index + 1; i < getChildCount(tree); ++i) {
-    exprs.push_back(parseLValue(child(tree, i)));
-  }
-  return new CallAST(base, exprs, rangeOf(tree));
-}
-
-ExprAST* parsePrimApp(pTree tree) {
-  ASSERT(getChildCount(tree) >= 1) << "prim app with no name?!?";
-  string name = textOf(child(tree, 0));
-
-  std::vector<TypeAST*> types;
-  // ^(MU ^(VAL_TYPE_APP ...)?)
-  pTree _mu = child(tree, 1);
-  if (getChildCount(_mu) == 1) {
-    pTree _tyapp = child(_mu, 0);
-    for (size_t i = 0; i < getChildCount(_tyapp); ++i) {
-      types.push_back(TypeAST_from(child(_tyapp, i)));
-    }
-  }
-
-  Exprs exprs;
-  for (size_t i = 2; i < getChildCount(tree); ++i) {
-    exprs.push_back(parseLValue(child(tree, i)));
-  }
-  return new CallPrimAST(name, exprs, types, rangeOf(tree));
-}
-
-// ^(PHRASE '-'? lvalue+) | ^(PRIMAPP id lvalue*)
-ExprAST* parsePhrase(pTree tree) {
-  int token = typeOf(tree);
-  if (token == PHRASE) { return parseCall(tree); }
-  if (token == PRIMAPP) { return parsePrimApp(tree); }
-
-  display_pTree(tree, 2);
-  ASSERT(false) << "Unknown token type in parsePhrase()!" << token;
-  return NULL;
-}
-
-ExprAST* parseBinops(pTree tree) {
-  display_pTree(tree, 2);
-  foster::EDiag() << "returning NULL TypeAST for parseBinops token " << str(tree->getToken(tree));
-  return NULL;
-}
-
-// Returns the punctuation chars at the start of the given string.
-// This isn't quite right in the presence of user-defined operators,
-// since we'd want .e.g +++ to behave like +.
-std::string oprPrefixOf(std::string s) {
-  if (!s.empty() && !ispunct(s[0])) {
-    return s; // for "and", "or", etc.
-  }
-  std::string::iterator b, e;
-  b = s.begin(); e = s.end();
-  while (b != e && ispunct(*b)) { ++b; }
-  return std::string(s.begin(), b);
-}
-
-typedef std::pair<VariableAST*, std::string> VarOpPair;
-
-void leftAssoc(std::vector<VarOpPair>& opstack,
-               std::vector<ExprAST*>& argstack) {
-  ExprAST*  y = argstack.back(); argstack.pop_back();
-  ExprAST*  x = argstack.back(); argstack.pop_back();
-  VarOpPair p =  opstack.back();  opstack.pop_back();
-  const std::string& o = p.second;
-
-  if (o == ">^") {
-    // TODO move this switch to desugaring in me.
-    argstack.push_back(CallPrimAST::two("store", x, y, rangeFrom(x, y)));
-  } else {
-    Exprs exprs;
-    exprs.push_back(x);
-    exprs.push_back(y);
-    argstack.push_back(new CallAST(p.first, exprs, rangeFrom(x, y)));
-  }
-}
-
-ExprAST* parseBinopChain(ExprAST* first, pTree binOpPairs) {
-  if (getChildCount(binOpPairs) == 0) {
-    return first;
-  }
-
-  std::vector< std::pair<VarOpPair, ExprAST*> > pairs;
-
-  for (size_t i = 0; i < getChildCount(binOpPairs); i += 2) {
-    pairs.push_back(std::make_pair(
-                     VarOpPair(parseVarDirect(child(binOpPairs, i)),
-                           oprPrefixOf(textOf(child(binOpPairs, i)))),
-                     parsePhrase(child(binOpPairs, i + 1))));
-  }
-
-  std::vector<VarOpPair> opstack;
-  std::vector<ExprAST*> argstack;
-  argstack.push_back(first);
-  argstack.push_back(pairs[0].second);
-  opstack.push_back(pairs[0].first);
-
-  for (size_t i = 1; i < pairs.size(); ++i) {
-    while (!opstack.empty()) {
-      const std::string& top = opstack.back().second;
-      const std::string& opd = pairs[i].first.second;
-      foster::OperatorPrecedenceTable::OperatorRelation rel =
-                           ParsingContext::getOperatorRelation(top, opd);
-      if (rel != foster::OperatorPrecedenceTable::kOpBindsTighter) {
-        break;
-      }
-      leftAssoc(opstack, argstack);
-    }
-
-    argstack.push_back(pairs[i].second);
-    opstack.push_back( pairs[i].first);
-  }
-
-  while (!opstack.empty()) {
-    leftAssoc(opstack, argstack);
-  }
-
-  ASSERT(argstack.size() == 1);
-  return argstack[0];
-}
-
-// ^(TERM ^(MU opr?) ^(MU phrase) ^(MU binops?))
-ExprAST* parseTerm(pTree tree) {
-  pTree pTmaybeOpr = child(tree, 0);
-  pTree pTphrase   = child(tree, 1);
-  pTree pTmaybeBin = child(tree, 2);
-  ExprAST* base = parsePhrase(child(pTphrase, 0));
-
-  if (getChildCount(pTmaybeOpr) > 0) {
-    VariableAST* opvar = parseTermVar(pTmaybeOpr);
-    // TODO move this check so it is caught by __COMPILES__
-    ASSERT(opvar->getName() == "-")
-                       << "For now, only unary - is allowed, not unary "
-                       << "'" << opvar->getName() << "'"
-                       << show(rangeOf(pTmaybeOpr));
-    // If we have            - f x y (+ ...) ...,
-    // interpret this as ((-) (f x y)) (+ ...) ...
-    std::vector<ExprAST*> exprs; exprs.push_back(base);
-    base = new CallAST(opvar, exprs, rangeFrom(pTmaybeOpr, pTphrase));
-  }
-
-  return parseBinopChain(base, pTmaybeBin);
-}
-
-ExprAST* ExprAST_from(pTree tree) {
-  if (!tree) return NULL;
-
-  int token = typeOf(tree);
-  string text = textOf(tree);
-  foster::SourceRange sourceRange = rangeOf(tree);
-
-  if (token == TERM) { return parseTerm(tree); }
-
-  // Should have handled all keywords by now...
-  if (ParsingContext::isKeyword(text)) {
-    EDiag() << "illegal use of keyword '" << text << "'" << show(sourceRange);
-    return NULL;
-  }
-
-  if (ParsingContext::isReservedKeyword(text)) {
-    EDiag() << "cannot use reserved keyword '" << text << "'"
-            << show(sourceRange);
-    return NULL;
-  }
-
-  string name = str(tree->getToken(tree));
-  ASSERT(false) << "returning NULL ExprAST for ExprAST_from token " << name
-                  << "with text '" << text << "'"
-                  << foster::show(sourceRange);
-  return NULL;
-}
-
-TypeAST* parseTypeAtom(pTree tree);
-
-// ^(OF dctor tatom*)
-DataCtorAST* parseDataCtor(pTree t) {
-  //foster::SourceRange sourceRange = rangeOf(t);
-  std::vector<TypeAST*> types;
-  for (size_t i = 1; i < getChildCount(t); ++i) {
-    types.push_back(parseTypeAtom(child(t, i)));
-  }
-  return new DataCtorAST(parseCtor(child(t, 0))->getName(), types, rangeOf(t));
-}
-
-// ^(MU data_ctor*)
-std::vector<DataCtorAST*> parseDataCtors(pTree t) {
-  std::vector<DataCtorAST*> ctors;
-  for (size_t i = 0; i < getChildCount(t); ++i) {
-    ctors.push_back(parseDataCtor(child(t, i)));
-  }
-  return ctors;
-}
-
-void tryMarkTypeAsProc(TypeAST* typ) {
-  TypeAST* mb_fty = NULL;
-
-  if (ForallTypeAST* fa = dynamic_cast<ForallTypeAST*>(typ)) {
-           mb_fty = fa->getQuantifiedType();
-  } else { mb_fty = typ; }
-
-  if (FnTypeAST* fty = dynamic_cast<FnTypeAST*>(mb_fty)) {
-    fty->markAsProc();
-  }
-}
-
-ModuleAST* parseTopLevel(pTree root_tree, std::string moduleName,
-                         std::string hash,
-                         std::queue<std::pair<string, string> >& out_imports) {
-  // The top level is composed of declarations and definitions.
-  std::vector<Decl*> decls;
-  std::vector<Defn*> defns;
-  std::vector<Data*> datas;
-
+void extractImports(pTree root_tree,
+                    std::queue<std::pair<string, string> >& out_imports) {
   pTree imports = child(root_tree, 0);
   for (size_t i = 0; i < getChildCount(imports); ++i) {
     pTree imp = child(imports, i);
@@ -1068,204 +210,6 @@ ModuleAST* parseTopLevel(pTree root_tree, std::string moduleName,
     std::string imp_text = contentsOfDoubleQuotedStringWithoutQuotes(child(imp, 1));
     out_imports.push(std::make_pair(imp_name, imp_text));
   }
-
-  for (size_t i = 1; i < getChildCount(root_tree); ++i) {
-    pTree c = child(root_tree, i);
-    int token = typeOf(c);
-
-    if (token == DEFN) { // ^(DEFN x atom)
-      string name = textOfVar(child(c, 0));
-      ExprAST* atom = parseAtom(child(c, 1));
-      defns.push_back(new Defn(name, atom));
-
-      if (ValAbs* fn = dynamic_cast<ValAbs*>(atom)) { fn->name = name; }
-    } else if (token == DECL) {
-      pTree typevar = child(c, 0);
-      pTree type    = child(c, 1);
-      TypeAST* typ  = TypeAST_from(type);
-      // Make sure that fn types for top-level declarations are marked as procs.
-      tryMarkTypeAsProc(typ);
-      decls.push_back(new Decl(textOfVar(typevar), typ));
-    } else if (token == DATATYPE) { // ^(DATATYPE tyvar_decl ^(MU tyvar_decl*) ^(MU data_ctor*)
-      datas.push_back(new Data(
-                       parseTypeFormal(child(c, 0), getBoxedKind()),
-                       parseTyFormals(child(c, 1), getBoxedKind()),
-                       parseDataCtors(child(c, 2)),
-                       rangeOf(c)));
-    } else {
-      EDiag() << "ANTLRtoFosterAST.cpp: "
-              << "Unexpected top-level element with token ID " << token;
-      //display_pTree(c, 8);
-      //display_pTree(root_tree, 4);
-      DDiag() << show(rangeOf(c));
-    }
-  }
-  return new ModuleAST(decls, defns, datas, moduleName, hash);
-}
-
-////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////
-
-bool tryGetBindingName(std::string& s, Binding& b) {
-  if (LiteralPattern* lp = dynamic_cast<LiteralPattern*>(b.patt)) {
-    if (lp->variety == LiteralPattern::LP_VAR) {
-      s = dynamic_cast<VariableAST*>(lp->pattern)->getName();
-      return true;
-    }
-  }
-  return false;
-}
-
-// ^(FUNC_TYPE t+)
-// ^(BINDING binding+)
-void parseAnnots(std::map<string, string>& annots,
-                 pTree tree) {
-  for (size_t i = 0; i < getChildCount(tree); ++i) {
-    Binding b = parseBinding(child(tree, i));
-    string  v;
-    string  k;
-
-    ASSERT(tryGetBindingName(k, b)) << "for now, annots only support literal patterns.";
-
-    if (VariableAST* q = dynamic_cast<VariableAST*>(b.body)) {
-      v = q->getName();
-    } else
-    if (IntAST* q = dynamic_cast<IntAST*>(b.body)) {
-      v = q->getOriginalText();
-    } else
-    if (BoolAST* q = dynamic_cast<BoolAST*>(b.body)) {
-      v = q->boolValue ? "true" : "false";
-    }
-
-    if (v == "") {
-      EDiag() << "Annotation failed to parse value string from "
-              << string(b.body->tag) << show(b.body);
-    } else {
-      annots[k] = v;
-    }
-  }
-}
-
-// ^(FUNC_TYPE ^(TUPLE t+) ^(MU val_abs?) tannots?)
-TypeAST* parseFuncType(pTree tree) {
-  std::vector<TypeAST*> types = getTypes(child(tree, 0));
-  TypeAST* rt = types.back(); types.pop_back();
-
-  pTree tprecond = child(tree, 1);
-  ValAbs* precond = (tprecond && getChildCount(tprecond) == 1)
-                       ? parseValAbs(child(tprecond, 0))
-                       : NULL;
-
-  std::map<string, string> annots;
-  if (getChildCount(tree) == 3) {
-    parseAnnots(annots, child(tree, 2));
-  }
-
-  // Lambdas default to fastcc, procs default to ccc.
-  bool isProc = annots.find("proc") != annots.end()
-             && annots["proc"] == "true";
-
-  if (annots["callconv"] == "") {
-    annots["callconv"] = isProc ? "ccc" : "fastcc";
-  }
-  return new FnTypeAST(rt, types, precond, annots);
-}
-
-// ^(TYPEVAR a)
-NamedTypeAST* parseTypeVar(pTree tree) {
-  TypeAST* ty = NULL;
-  return new NamedTypeAST(textOf(child(tree, 0)), ty, rangeOf(tree));
-}
-
-// ^(TYPE_PLACEHOLDER ^(TYPEVAR a))
-TypeAST* parseTypePlaceholder(pTree tree) {
-  NamedTypeAST* tv = parseTypeVar(child(tree, 0));
-  tv->is_placeholder = true;
-  return tv;
-}
-
-TypeAST* parseTupleType(pTree tree) {
-  if (getChildCount(tree) == 1) {
-    return TypeAST_from(child(tree, 0));
-  } else {
-    return TupleTypeAST::get(getTypes(tree));
-  }
-}
-
-TypeAST* parseTypeAtom(pTree tree) {
-  int token = typeOf(tree);
-
-  if (token == FUNC_TYPE) { return parseFuncType(tree); }
-  if (token == TUPLE)     { return parseTupleType(tree); }
-  if (token == TYPENAME)  { return parseTypeVar(tree); }
-  if (token == TYPE_PLACEHOLDER) { return parseTypePlaceholder(tree); }
-
-  display_pTree(tree, 2);
-  ASSERT(false) << "parseTypeAtom";
-  return NULL;
-}
-
-std::vector<TypeAST*> getTypes(pTree tree) {
-  std::vector<TypeAST*> types;
-  for (size_t i = 0; i < getChildCount(tree); ++i) {
-    TypeAST* ast = TypeAST_from(child(tree, i));
-    ASSERT(ast != NULL) << "getTypes: parsing type " << i;
-    types.push_back(ast);
-  }
-  return types;
-}
-
-std::vector<TypeAST*> getTypeAtoms(pTree tree) {
-  std::vector<TypeAST*> types;
-  for (size_t i = 0; i < getChildCount(tree); ++i) {
-    TypeAST* ast = parseTypeAtom(child(tree, i));
-    ASSERT(ast != NULL) << "getTypeAtoms: parsing type atom " << i;
-    types.push_back(ast);
-  }
-  return types;
-}
-
-// ^(TYPE_TYP_APP tatom tatom+)
-TypeAST* parseTypeTypeApp(pTree tree) {
-  return TypeTypeAppAST::get(getTypeAtoms(tree));
-}
-
-// ^(FORALL_TYPE tyformal+ t)
-TypeAST* parseForallType(pTree tree) {
-  std::vector<TypeFormal> tyformals;
-  for (size_t i = 0; i < getChildCount(tree) - 1; ++i) {
-    tyformals.push_back(parseTypeFormal(child(tree, i), getBoxedKind()));
-  }
-  return new ForallTypeAST(tyformals,
-                           TypeAST_from(child(tree, getChildCount(tree) - 1)),
-                           rangeOf(tree));
-}
-
-// ^(REFINED name ty expr)
-TypeAST* parseRefinedType(pTree tree) {
-  return new RefinedTypeAST(textOfVar(child(tree, 0)),
-                            TypeAST_from(child(tree, 1)),
-                            ExprAST_from(child(tree, 2)),
-                            rangeOf(tree));
-}
-
-TypeAST* TypeAST_from(pTree tree) {
-  if (!tree) return NULL;
-
-  int token = typeOf(tree);
-  string text = textOf(tree);
-  foster::SourceRange sourceRange = rangeOf(tree);
-
-  if (token == TYPE_ATOM)    { return parseTypeAtom(child(tree, 0)); }
-  if (token == TYPE_TYP_APP) { return parseTypeTypeApp(tree); }
-  if (token == FORALL_TYPE)  { return parseForallType(tree); }
-  if (token == REFINED)      { return parseRefinedType(tree); }
-
-  string name = str(tree->getToken(tree));
-  foster::EDiag() << "returning NULL TypeAST for tree token " << name
-                  << foster::show(sourceRange);
-  return NULL;
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1406,7 +350,7 @@ namespace foster {
 
   // Note: Modules are parsed iteratively, not nestedly.
   // Parsing contexts can be stacked, but we no longer use that functionality.
-  void parseModule(WholeProgramAST* pgm,
+  void parseModule(InputWholeProgram* pgm,
                    const foster::InputFile& file,
                    unsigned* outNumANTLRErrors,
                    std::queue<std::pair<string, string> >& out_imports) {
@@ -1432,9 +376,8 @@ namespace foster {
     fosterParser_module_return langAST = ctx->psr->module(ctx->psr);
     *outNumANTLRErrors += ctx->psr->pParser->rec->state->errorCount;
 
-    ModuleAST* m = parseTopLevel(langAST.tree, getShortName(&file), hashstr, out_imports);
-    m->buf = file.getBuffer();
-    m->hiddenTokens = ParsingContext::getHiddenTokens();
+    InputModule* m = new InputModule(langAST.tree, &file, hashstr, ParsingContext::getHiddenTokens());
+    extractImports(langAST.tree, out_imports);
 
     pgm->seen[hash] = m;
     pgm->modules.push_back(m);
@@ -1444,10 +387,10 @@ namespace foster {
   foster::InputFile* resolveModulePath(const std::vector<std::string>& searchPaths,
                                        const std::string& spath);
 
-  WholeProgramAST* parseWholeProgram(const InputFile& startfile,
+  InputWholeProgram* parseWholeProgram(const InputFile& startfile,
                                      const std::vector<std::string> searchPaths,
                                      unsigned* outNumANTLRErrors) {
-    WholeProgramAST* pgm = new WholeProgramAST();
+    InputWholeProgram* pgm = new InputWholeProgram();
     *outNumANTLRErrors = 0;
 
     //llvm::sys::TimeValue parse_beg = llvm::sys::TimeValue::now();
@@ -1554,3 +497,80 @@ namespace foster {
 
 } // namespace foster
 const char* ANTLR_VERSION_STR = PACKAGE_VERSION;
+
+void dumpToCbor(cbor::encoder& e, foster::SourceRange r) {
+  e.write_array(4);
+  e.write_int(r.begin.line);
+  e.write_int(r.begin.column);
+  e.write_int(r.end.line);
+  e.write_int(r.end.column);
+}
+
+// An ANTLR tree node is dumped as an array
+// [TypeIDNum, StringValue, SourceRange, child0, ..., childN]
+void dumpToCbor(cbor::encoder& e, pTree p) {
+  auto cc = p->getChildCount(p);
+  auto tt = p->getType(p);
+  e.write_array(4);
+  e.write_int(tt);
+  if (false && (tt == SNAFUINCLUDE || tt == TERMNAME || tt == LVALUE || tt == LIT_NUM
+    || tt == MU || tt == VAL_ABS || tt == PHRASE || tt == TERM || tt == FORMALS
+    || tt == STMTS || tt == ABINDING || tt == DEFN || tt == TYPENAME || tt == STRING
+    || tt == BINDING || tt == TUPLE || tt == TYPE_TYP_APP || tt == FORMAL
+    || tt == SUBSCRIPT || tt == PRIMAPP || tt == DECL || tt == TYPE_ATOM
+    || tt == FUNC_TYPE || tt == WILDCARD || tt == DQUO)) {
+    e.write_string("");
+  } else {
+    e.write_string(str(p->getText(p)));
+  }
+  dumpToCbor(e, rangeOf(p));
+  e.write_array(cc);
+  for (unsigned i = 0; i < cc; ++i) {
+    dumpToCbor(e, (pTree) p->getChild(p, i));
+  }
+}
+
+void dumpToCbor(cbor::encoder& e, pANTLR3_COMMON_TOKEN tok) {
+  if (!tok) { // NULL pointers inserted by calls to sawNonHiddenToken()
+    e.write_array(1);
+    e.write_string("NHIDDEN");
+  } else if (foster::isNewlineToken(tok)) {
+    e.write_array(1);
+    e.write_string("NEWLINE");
+  } else {
+    e.write_array(4);
+    e.write_string("COMMENT");
+    e.write_int(tok ? tok->getLine(tok) - 1           : -1);
+    e.write_int(tok ? tok->getCharPositionInLine(tok) : -1);
+    e.write_string((const char*) tok->getText(tok)->chars);
+  }
+}
+
+// A module is dumped as the filename, hash, the tree, the original lines,
+// and hidden tokens.
+void dumpToCbor(cbor::encoder& e, InputModule* mod) {
+  e.write_array(5);
+  e.write_string(getShortName(mod->source));
+  e.write_string(mod->hash);
+  dumpToCbor(e, mod->tree);
+
+  const foster::InputTextBuffer* buf = mod->source->getBuffer();
+  int nlines = buf ? buf->getLineCount() : 0;
+  e.write_array(nlines);
+  for (int i = 0; i < nlines; ++i) {
+    e.write_string(buf->getLine(i));
+  }
+
+  e.write_array(mod->hiddenTokens.size());
+  for (auto t : mod->hiddenTokens) {
+    dumpToCbor(e, t);
+  }
+}
+
+// A program is dumped as an array of the modules
+void dumpToCbor(cbor::encoder& e, InputWholeProgram* wp) {
+  e.write_array(wp->modules.size());
+  for (auto m : wp->modules) {
+    dumpToCbor(e, m);
+  }
+}

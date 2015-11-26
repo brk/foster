@@ -779,9 +779,6 @@ mapShowTree = { forall k:Type v:Type, s : Map k v => shw : { k => v => Text } =>
 };
 
 mapShowTreeRot = { forall k:Type v:Type, lbars : List Text => rbars : List Text => s : Map k v => shw : { k => v => Text } =>
-  #associate   a `mkTextConcat` b `mkTextConcat` c
-          as   (mkTextConcat (mkTextConcat a b) c)
-  in
   case s
     of $MapTip ->            mapShowTreeBars lbars `mkTextConcat` "|\n"
     of $MapBin 1 kx x _ _ -> mapShowTreeBars lbars `mkTextConcat` shw kx x `mkTextConcat` "\n"
@@ -789,7 +786,6 @@ mapShowTreeRot = { forall k:Type v:Type, lbars : List Text => rbars : List Text 
         mapShowTreeRot (mapShowTreeWithBar rbars) (mapShowTreeWithEmpty rbars) r shw `mkTextConcat`
         mapShowTreeBars lbars `mkTextConcat` shw kx x `mkTextConcat` "\n"            `mkTextConcat`
         mapShowTreeRot (mapShowTreeWithEmpty lbars) (mapShowTreeWithBar lbars) l shw
-  end
   end
 };
 

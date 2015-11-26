@@ -8,7 +8,6 @@
 #include "base/Diagnostics.h"
 
 #include "parse/FosterSymbolTable.h"
-#include "parse/OperatorPrecedence.h"
 
 #include "antlr3interfaces.h"
 
@@ -91,26 +90,6 @@ public:
   clearTokenBoundaries();
 
   ///////////////////
-
-  static foster::OperatorPrecedenceTable::OperatorRelation
-  getOperatorRelation(const std::string& op1, const std::string& op2);
-
-  static bool
-  isKnownOperatorName(const std::string& op);
-
-  static void
-  parseAsTighter(const std::string& op1, const std::string& op2);
-
-  static void
-  parseAsLooser(const std::string& op1, const std::string& op2);
-
-  static bool
-  isKeyword(const std::string& op);
-
-  static bool
-  isReservedKeyword(const std::string& op);
-
-  /////////////////////
 
 private:
   struct Impl;

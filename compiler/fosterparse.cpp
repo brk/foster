@@ -14,16 +14,16 @@
 #include "parse/ANTLRtoFosterAST.h"
 #include "parse/ParsingContext.h"
 
-#include "passes/DumpToProtobuf.h"
-
 #include <fstream>
 #include <string>
+
+#include "cbor.h"
 
 // Usage:
 //        fosterparse <inputfile.foster> <outputfile.pb>
 // Input: a path to a Foster source file.
-// Output: an AST corresponding to the input source,
-//         serialized in Protobuf format.
+// Output: a concrete parse tree corresponding to the input source,
+//         serialized in CBOR format.
 
 using namespace llvm;
 using std::string;
@@ -42,10 +42,6 @@ optIncludePath("I", cl::desc("Path to search for includes"),
                     cl::value_desc("include path"));
 
 static cl::opt<bool>
-optFSyntaxOnly("fsyntax-only",
-  cl::desc("[foster] Only parse; don't write any output (still need the dir though)"));
-
-static cl::opt<bool>
 optPrintTimings("fosterc-time",
   cl::desc("[foster] Print timing measurements of compiler passes"));
 
@@ -54,52 +50,10 @@ void setTimingDescriptions() {
   gTimings.describe("total", "Overall compiler runtime (ms)");
 
   gTimings.describe("io.parse", "Time spent parsing input file (ms)");
-  gTimings.describe("io.file",  "Time spent doing non-parsing I/O (ms)");
-  gTimings.describe("io.proto", "Time spent reading/writing protobufs (ms)");
+  gTimings.describe("io.cbor", "Time spent building + writing CBOR (ms)");
 }
 
-void dumpWholeProgramToProtobuf(WholeProgramAST* pgm, const string& filename) {
-  ASSERT(pgm != NULL);
-
-  foster::fepb::WholeProgram wp;
-  for (int x = 0; x < pgm->getModuleCount(); ++x) {
-    ModuleAST* mod = pgm->getModuleAST(x);
-    ASSERT(mod != NULL);
-    foster::fepb::SourceModule* sm = wp.add_modules();
-
-    const foster::InputTextBuffer* buf = mod->buf;
-    if (buf) {
-      for (int i = 0; i < buf->getLineCount(); ++i) {
-        sm->add_line(buf->getLine(i));
-      }
-    }
-
-    { ScopedTimer timer("io.protobuf.translate");
-    DumpToProtobufPass p; dumpModule(&p, *sm, mod);
-    }
-
-    if (!sm->IsInitialized()) {
-      EDiag() << "Protobuf module message is not initialized!\n";
-    }
-  }
-
-  if (filename == "-") {
-    EDiag() << "warning: dumping module to file named '-', not stdout!";
-  }
-
-  if (!wp.IsInitialized()) {
-    EDiag() << "Protobuf program message is not initialized!\n";
-  }
-
-  ScopedTimer timer("io.protobuf.write");
-  std::ofstream out(filename.c_str(),
-                  std::ios::trunc | std::ios::binary);
-  if (wp.SerializeToOstream(&out)) {
-    // ok!
-  } else {
-    EDiag() << "protocol buffer serialization returned false\n";
-  }
-}
+void dumpToCbor(cbor::encoder& e, InputWholeProgram* wp);
 
 int main(int argc, char** argv) {
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster parser\n");
@@ -112,7 +66,7 @@ int main(int argc, char** argv) {
 
   foster::ParsingContext::pushNewContext();
 
-  WholeProgramAST* pgmAST = NULL;
+  InputWholeProgram* pgmAST = NULL;
   { ScopedTimer timer("io.parse");
     pgmAST = foster::parseWholeProgram(infile, optIncludePath, &numParseErrors);
   }
@@ -125,9 +79,15 @@ int main(int argc, char** argv) {
     return 4;
   }
 
-  if (!optFSyntaxOnly) {
-    ScopedTimer timer("io.write");
-    dumpWholeProgramToProtobuf(pgmAST, optOutputPath);
+  {
+    ScopedTimer timer("io.cbor");
+    cbor::output_dynamic output;
+    cbor::encoder enc(output);
+    dumpToCbor(enc, pgmAST);
+    std::string cborOut(optOutputPath); cborOut += ".cbor";
+    FILE* f = fopen(cborOut.c_str(), "w");
+    fwrite((const void*) output.data(), 1, (size_t) output.size(), f);
+    fclose(f);
   }
 
   if (optPrintTimings) {

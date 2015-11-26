@@ -762,24 +762,22 @@ reconstructInt64 = { a : Int32 => b : Int32 =>
 
 testSubInt64 = { a : Int32 => b : Int32 => c : Int32 => d : Int32 =>
                  trueab : Int64 => truecd : Int64 => trueabmcd : Int64 =>
-  let ra = (prim ref a);
-      rb = (prim ref b);
-      ab = reconstructInt64 a b;
-      cd = reconstructInt64 c d;
-      abmcd = ab -Int64 cd;
-      ign = subInt64 ra rb c d; // modifies ra,rb by side effect
+  ra = (prim ref a);
+  rb = (prim ref b);
+  ab = reconstructInt64 a b;
+  cd = reconstructInt64 c d;
+  abmcd = ab -Int64 cd;
+  ign = subInt64 ra rb c d; // modifies ra,rb by side effect
 
-  in
-    expect_i64 trueab;
-    print_i64 ab;
+  expect_i64 trueab;
+  print_i64 ab;
 
-    expect_i64 truecd;
-    print_i64 cd;
+  expect_i64 truecd;
+  print_i64 cd;
 
-    expect_i64 trueabmcd;
-    print_i64 abmcd;
+  expect_i64 trueabmcd;
+  print_i64 abmcd;
 
-    expect_i64 abmcd;
-    print_i64 (reconstructInt64 ra^ rb^);
-  end
+  expect_i64 abmcd;
+  print_i64 (reconstructInt64 ra^ rb^);
 };

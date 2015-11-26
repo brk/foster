@@ -167,41 +167,22 @@ add_custom_command(
         ${PROJECT_SOURCE_DIR}/scripts/run_antlr.py
 )
 
-# Generate C++ and Python code to manipulate AST protobuf files.
+# Generate C++ code to manipulate protobuf files.
 add_custom_command(
   OUTPUT
-          ${GENERATED}/FosterAST.pb.h
-          ${GENERATED}/FosterAST.pb.cc
           ${GENERATED}/FosterIL.pb.h
           ${GENERATED}/FosterIL.pb.cc
-  COMMAND ${PROTOBUF_PROTOC_EXECUTABLE}
-          -I ${PROJECT_SOURCE_DIR}/compiler/parse/
-          ${PROJECT_SOURCE_DIR}/compiler/parse/FosterAST.proto
-          --cpp_out=${GENERATED}
   COMMAND ${PROTOBUF_PROTOC_EXECUTABLE}
           -I ${PROJECT_SOURCE_DIR}/compiler/parse/
           ${PROJECT_SOURCE_DIR}/compiler/parse/FosterIL.proto
           --cpp_out=${GENERATED}
   DEPENDS
-          ${PROJECT_SOURCE_DIR}/compiler/parse/FosterAST.proto
           ${PROJECT_SOURCE_DIR}/compiler/parse/FosterIL.proto
   )
 
 #-------------------------------------------------------------------
 
-# Generate Haskell code to manipulate AST protobuf files.
-add_custom_command(
-  OUTPUT ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Fepb.hs
-  COMMAND cp ${PROJECT_SOURCE_DIR}/compiler/parse/FosterAST.proto
-             ${PROJECT_SOURCE_DIR}/compiler/me/FosterAST.protox
-  COMMAND ${HPROTOC}
-          --haskell_out=${PROJECT_SOURCE_DIR}/compiler/me/src
-          ${PROJECT_SOURCE_DIR}/compiler/me/FosterAST.protox
-  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/compiler/me
-  DEPENDS
-          ${PROJECT_SOURCE_DIR}/compiler/parse/FosterAST.proto
-  )
-
+# Generate Haskell code to manipulate protobuf files.
 add_custom_command(
   OUTPUT ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Bepb.hs
   COMMAND cp ${PROJECT_SOURCE_DIR}/compiler/parse/FosterIL.proto
@@ -320,6 +301,7 @@ include_directories(
   ${PROJECT_SOURCE_DIR}/third_party/chromium_base
   ${PROJECT_SOURCE_DIR}/third_party/cityhash/src
   ${PROJECT_SOURCE_DIR}/third_party/fftw_cycle
+  ${PROJECT_SOURCE_DIR}/third_party/cbor-cpp/src
 )
 
 # Takes ldflags, which looks like
@@ -364,12 +346,12 @@ add_library(fosterc_base STATIC
 )
 
 add_library(fosterc_parse STATIC
-  compiler/parse/FosterAST.cpp
   compiler/parse/FosterTypeAST.cpp
   compiler/parse/ParsingContext.cpp
   compiler/parse/ANTLRtoFosterAST.cpp
   compiler/parse/ANTLRtoFosterErrorHandling.cpp
-  compiler/parse/OperatorPrecedence.cpp
+  third_party/cbor-cpp/src/output_dynamic.cpp
+  third_party/cbor-cpp/src/encoder.cpp
   ${GENERATED}/FosterAST.pb.cc
   ${GENERATED}/fosterParser.c
   ${GENERATED}/fosterLexer.c
@@ -400,7 +382,6 @@ add_library(fosterc_llvm STATIC
 add_dependencies(fosterc_llvm fosterc_base)
 
 add_library(fosterc_passes STATIC
-  compiler/passes/DumpToProtobuf.cpp
   compiler/passes/PrettyPrintPass.cpp
 )
 
@@ -413,6 +394,7 @@ add_dependencies(fosterc_passes fosterc_parse)
 ############
 
 add_executable(fosterparse compiler/fosterparse.cpp)
+
 target_link_libraries(fosterparse
   fosterc_parse fosterc_passes fosterc_base
   antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
