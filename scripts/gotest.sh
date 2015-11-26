@@ -13,7 +13,7 @@ tmpfile=$(mktemp foster-gotest.XXXXXX)
 # instead of      gotest.sh bootstrap/arrays/array-prim-literals
 # as long as there's only one such subdirectory with that name.
 if [ ! -d $D ]; then
-  find $R/test -name $P > $tmpfile
+  find $R/test -path "*$P*" -type d > $tmpfile
   nlines=$(wc -l < $tmpfile)
   case $nlines in
   0)
@@ -28,9 +28,9 @@ if [ ! -d $D ]; then
     cat $tmpfile | sed 's/^/    /'
     ;;
   esac
-
-  rm $tmpfile
 fi
+
+rm $tmpfile
 
 T=$D/`basename $P`.foster
 

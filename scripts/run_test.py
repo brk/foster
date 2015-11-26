@@ -202,7 +202,6 @@ if __name__ == "__main__":
   testpath = args[0]
 
   tmpdir = os.path.join(options.bindir, 'test-tmpdir')
-  print "tmpdir = ", tmpdir, "; testpath = ", testpath
   ensure_dir_exists(tmpdir)
 
   testdir = os.path.join(tmpdir, testname(testpath))
