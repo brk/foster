@@ -1,5 +1,8 @@
 #!/bin/sh
 
+FOSTER_SCRIPTS_DIR=$(dirname `which $0`)
+cd ${FOSTER_SCRIPTS_DIR}/..
+
 title () {
   echo ""
   echo ""
