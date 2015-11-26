@@ -25,18 +25,19 @@ main =  {
   part2 !;
   part3 !;
   part4 !;
+  part5 !;
 };
 
 part2 = {
-  x = prim mach-array-literal 1 2;
+  x = prim mach-array-literal 11 22;
 
   expect_i32 2;
   print_i64 (prim_arrayLength x);
 
-  expect_i32 1;
+  expect_i32 11;
   print_i64 x[0];
 
-  expect_i32 2;
+  expect_i32 22;
   print_i64 x[1];
 };
 
@@ -58,4 +59,18 @@ part4 = {
 
   expect_i32 2;
   print_i32 (x[1] !);
+};
+
+part5 = {
+  run = {
+    x = prim mach-array-literal 11 22;
+
+    expect_i32 11;
+    print_i64 x[0];
+
+    33 >^ x[0];
+  };
+
+  run !;
+  run !;
 };

@@ -292,26 +292,26 @@ tmp_Text_of_Int32_digit = { n:Int32 =>
   end
 };
 
-tmp_Text_16_of_Int32_digit = { n:Int32 =>
+tmp_Text_16_of_Int8_nibble = { n : Int8 =>
   case n
-    of 0 -> "0"
-    of 1 -> "1"
-    of 2 -> "2"
-    of 3 -> "3"
-    of 4 -> "4"
-    of 5 -> "5"
-    of 6 -> "6"
-    of 7 -> "7"
-    of 8 -> "8"
-    of 9 -> "9"
-    of 10 -> "A"
-    of 11 -> "B"
-    of 12 -> "C"
-    of 13 -> "D"
-    of 14 -> "E"
-    of 15 -> "F"
-    of _ -> "<error:value passed to tmp_Text_16_of_Int32_digit was too large:"
-                `mkTextConcat` (tmp_Text_of_Int32 n `mkTextConcat` ">")
+    of  0 -> "0"
+    of  1 -> "1"
+    of  2 -> "2"
+    of  3 -> "3"
+    of  4 -> "4"
+    of  5 -> "5"
+    of  6 -> "6"
+    of  7 -> "7"
+    of  8 -> "8"
+    of  9 -> "9"
+    of 10 -> "a"
+    of 11 -> "b"
+    of 12 -> "c"
+    of 13 -> "d"
+    of 14 -> "e"
+    of 15 -> "f"
+    of _ -> "<error:value passed to tmp_Text_16_of_Int8_nibble was too large:"
+                `mkTextConcat` (tmp_Text_of_Int8 n `mkTextConcat` ">")
   end
 };
 
@@ -347,6 +347,12 @@ tmp_Text_2_of_UInt8 = { n:Int8 =>
   "");
 };
 
+tmp_Text_16_of_UInt8 = { n:Int8 =>
+  mkTextConcat (tmp_Text_16_of_Int8_nibble (bitand-Int8 15 (bitlshr-Int8 n 4)))
+ (mkTextConcat (tmp_Text_16_of_Int8_nibble (bitand-Int8 15 n))
+  "");
+};
+
 tmp_Text_2_of_UInt32 = { n:Int32 =>
   ttgo = { n:Int32 =>
     n0 = trunc_i32_to_i8 n;
@@ -358,6 +364,21 @@ tmp_Text_2_of_UInt32 = { n:Int32 =>
     (mkTextConcat (tmp_Text_2_of_UInt8 n2)
     (mkTextConcat (tmp_Text_2_of_UInt8 n1)
     (mkTextConcat (tmp_Text_2_of_UInt8 n0) "")))
+  };
+  ttgo n;
+};
+
+tmp_Text_16_of_UInt32 = { n:Int32 =>
+  ttgo = { n:Int32 =>
+    n0 = trunc_i32_to_i8 n;
+    n1 = trunc_i32_to_i8 (bitlshr-Int32 n 8 );
+    n2 = trunc_i32_to_i8 (bitlshr-Int32 n 16);
+    n3 = trunc_i32_to_i8 (bitlshr-Int32 n 24);
+
+     mkTextConcat (tmp_Text_16_of_UInt8 n3)
+    (mkTextConcat (tmp_Text_16_of_UInt8 n2)
+    (mkTextConcat (tmp_Text_16_of_UInt8 n1)
+    (mkTextConcat (tmp_Text_16_of_UInt8 n0) "")))
   };
   ttgo n;
 };
@@ -445,6 +466,13 @@ tmp_Text_of_Int64 = { n:Int64 =>
   if n <SInt64 0
     then mkTextConcat "-" (tmp_Text_of_UInt64 (negate-Int64 n))
     else                   tmp_Text_of_UInt64               n
+  end
+};
+
+tmp_Text_16_of_UInt64 = { n:Int64 =>
+  case splitInt64 n of
+    (na, nb) ->
+      mkTextConcat (tmp_Text_16_of_UInt32 na) (tmp_Text_16_of_UInt32 nb)
   end
 };
 

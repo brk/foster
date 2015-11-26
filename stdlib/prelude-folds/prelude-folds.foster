@@ -1,7 +1,7 @@
 
 // Precondition: fst >= fin
 // Folds fst, fst - 1, ..., fin + 1, fin.
-//
+//   That is: fst and fin both inclusive.
 foldRangeDown = { forall t:Type,
               fst : Int32 =>
               fin : Int32 =>
@@ -16,6 +16,7 @@ foldRangeDown = { forall t:Type,
 };
 
 // Precondition: fst <= fin
+// Note: fst inclusive, fin exclusive.
 //
 foldRange = { forall t:Type,
               fst : Int32 =>
@@ -64,11 +65,17 @@ foldRangeWord = { forall t:Type,
 /////
 
 // Precondition: fst <= fin
-//
+// Note: fst inclusive, fin exclusive.
 enumRange32 = { fst : Int32 =>
               fin : Int32 =>
               iter : { Int32 => () } =>
-  foldRange fst fin () { i => u : () => iter i }
+  foldRange fst fin () { i => u => iter i }
+};
+
+enumRange64 = { fst : Int64 =>
+                fin : Int64 =>
+                iter : { Int64 => () } =>
+  foldRange64 fst fin () { i => u => iter i }
 };
 
 /////

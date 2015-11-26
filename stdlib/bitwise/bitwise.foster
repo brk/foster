@@ -34,9 +34,53 @@
 // bitshl
 //
 
+// Uses mask to select bits from a (1-bits in mask) or b (0-bits in mask).
+//
+// Example: bitmerge-Int32 11001100_2
+//                         11100010_2
+//                         10100101_2
+//                   ==>
+//                         11100001_2
 bitmerge-Int32 = { mask:Int32 => a:Int32 => b:Int32 =>
   bitor-Int32 (bitand-Int32 a               mask)
               (bitand-Int32 b (bitnot-Int32 mask));
+};
+
+make-byte-Int32 = { x : Int8 => n : Int32 =>
+  bitpos = n *Int32 8;
+  (zext_i8_to_i32 x) `bitshl-Int32` bitpos
+};
+
+clear-byte-Int32 = { v : Int32 => n : Int32 =>
+  bitand-Int32 v (bitnot-Int32 (make-byte-Int32 0ff_16 n))
+};
+
+replace-byte-Int32 = { v : Int32 => n : Int32 => x : Int8 =>
+  clear-byte-Int32 v n `bitor-Int32` (make-byte-Int32 x n)
+};
+
+replace-byte-Int32-alt = { v : Int32 => n : Int32 => x : Int8 =>
+  bitmerge-Int32 (make-byte-Int32 0ff_16 n) (make-byte-Int32 x n) v
+};
+
+// Extracts the n'th byte (little-endian) of v.
+// Precondition: n <= 3.
+extract-byte-Int32 = { v : Int32 => n : Int32 =>
+  bitfield-len-Int32 v (n *Int32 8) 8 |> trunc_i32_to_i8
+};
+
+extract-byte-Int32-alt = { v : Int32 => n : Int32 =>
+  bitlshr-Int32 v (n *Int32 8) |> trunc_i32_to_i8
+};
+
+// Extracts the n'th byte (little-endian) of v.
+// Precondition: n <= 3.
+extract-byte-Int64 = { v : Int64 => n : Int64 =>
+  bitfield-len-Int64 v (n *Int64 8) 8 |> trunc_i64_to_i8
+};
+
+extract-byte-Int64-alt = { v : Int64 => n : Int64 =>
+  trunc_i64_to_i8 (bitlshr-Int64 v (n *Int64 8))
 };
 
 // Preconditions:
@@ -50,9 +94,15 @@ bitfield-Int32 = { n:Int32 => start:Int32 => fin:Int32 =>
 //      len + start <= 32
 //            start <= 32
 // Example: bitfield-len-Int32 1110111001100_2 3 8 == 10111001_2
+//                             --********---
 bitfield-len-Int32 = { n:Int32 => start:Int32 => len:Int32 =>
   bitand-Int32 (bitnot-Int32 (bitshl-Int32 -1 len))
                (bitlshr-Int32 n start);
+};
+
+bitfield-len-Int64 = { n:Int64 => start:Int64 => len:Int64 =>
+  bitand-Int64 (bitnot-Int64 (bitshl-Int64 -1 len))
+               (bitlshr-Int64 n start);
 };
 
 any-common-bits-Int32 = { j : Int32 => k : Int32 =>
