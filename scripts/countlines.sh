@@ -16,7 +16,7 @@ sumof () {
 }
 
 runcloc () {
- cloc $@ --quiet --skip-uniqueness --exclude-dir=compiler/me/src/Foster/Fepb,compiler/me/src/Foster/Bepb,compiler/me/src/Llvmpb,compiler/me/dist
+ cloc $@ --quiet --skip-uniqueness --exclude-dir=compiler/me/src/Foster/Bepb,compiler/me/src/Llvmpb,compiler/me/dist
 }
 
 inspbase () {
@@ -26,7 +26,7 @@ inspbase () {
 }
 
 insp () {
-  inspbase "$@" --not-match-f="_unittest.cpp"
+  inspbase "$@"
 }
 
 need () {
@@ -44,17 +44,17 @@ checkargs () {
       exit
       ;;
     *--by-file*)
-      runcloc compiler/base   --by-file --not-match-f="_unittest.cpp"
-      runcloc compiler/parse  --by-file --not-match-f="_unittest.cpp"
-      runcloc compiler/passes --by-file --not-match-f="_unittest.cpp"
-      runcloc compiler/llvm   --by-file --not-match-f="_unittest.cpp"
-      runcloc compiler/me     --by-file --not-match-f="_unittest.cpp"
+      runcloc compiler/base   --by-file
+      runcloc compiler/parse  --by-file
+      runcloc compiler/passes --by-file
+      runcloc compiler/llvm   --by-file
+      runcloc compiler/me     --by-file
       exit
       ;;
     *--runcloc*)
       shift
-      echo "runcloc $@     --by-file --not-match-f='_unittest.cpp'"
-            runcloc $@     --by-file --not-match-f="_unittest.cpp"
+      echo "runcloc $@     --by-file"
+            runcloc $@     --by-file
       exit
       ;;
   esac
@@ -81,4 +81,5 @@ insp "compiler/me    " compiler/me
 echo
 insp "runtime        " runtime
 insp "compiler       " compiler
+insp "compiler/allcpp" compiler/*.cpp compiler/include compiler/base compiler/parse compiler/passes compiler/llvm
 insp "third_party    " third_party
