@@ -244,6 +244,10 @@ namespace foster {
        || tok->type == LINE_COMMENT
        || tok->type == NESTING_COMMENT) {
         ParsingContext::sawHiddenToken(tok); // note: WS not included.
+      } else if (tok->type == WS) {
+         // do nothing
+      } else {
+        EDiag() << "saw hidden token that was not a newline or a line/nesting comment; type = " << tok->type;
       }
 
 #ifdef ANTLR3_USE_64BIT
@@ -532,16 +536,17 @@ void dumpToCbor(cbor::encoder& e, pTree p) {
 
 void dumpToCbor(cbor::encoder& e, pANTLR3_COMMON_TOKEN tok) {
   if (!tok) { // NULL pointers inserted by calls to sawNonHiddenToken()
-    e.write_array(1);
-    e.write_string("NHIDDEN");
+    return;
   } else if (foster::isNewlineToken(tok)) {
-    e.write_array(1);
+    e.write_array(3);
     e.write_string("NEWLINE");
+    e.write_int(tok->getLine(tok) - 1          );
+    e.write_int(tok->getCharPositionInLine(tok));
   } else {
     e.write_array(4);
     e.write_string("COMMENT");
-    e.write_int(tok ? tok->getLine(tok) - 1           : -1);
-    e.write_int(tok ? tok->getCharPositionInLine(tok) : -1);
+    e.write_int(tok->getLine(tok) - 1          );
+    e.write_int(tok->getCharPositionInLine(tok));
     e.write_string((const char*) tok->getText(tok)->chars);
   }
 }
@@ -561,7 +566,9 @@ void dumpToCbor(cbor::encoder& e, InputModule* mod) {
     e.write_string(buf->getLine(i));
   }
 
-  e.write_array(mod->hiddenTokens.size());
+  int countHiddenTokens = 0;
+  for (auto t : mod->hiddenTokens) { if (t) { ++countHiddenTokens; } }
+  e.write_array(countHiddenTokens);
   for (auto t : mod->hiddenTokens) {
     dumpToCbor(e, t);
   }

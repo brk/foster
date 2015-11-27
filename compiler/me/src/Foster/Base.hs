@@ -455,7 +455,6 @@ lineNumberPadding = fill 8 PP.empty
 
 data Formatting = Comment    {-SourceRange-} String
                 | BlankLine
-                | NonHidden
                 deriving Show
 
 data ExprAnnot = ExprAnnot
