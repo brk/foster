@@ -76,19 +76,19 @@ def aggregate_results(results):
     return result
 
 def print_result_table(res):
-    print "fpr:%4d | fme:%4d | flo:%4d | foc:%4d | as:%4d | ld:%4d | run:%4d | py:%3d | tot:%5d | %s" % (
-                res['fp_elapsed'], res['fm_elapsed'], res['fl_elapsed'], res['fc_elapsed'],
-                res['as_elapsed'], res['ld_elapsed'], res['rn_elapsed'],
-                res['overhead'], res['total_elapsed'], res['label'])
+    print "fpr:%4d | fme:%4d | flo:%4d | foc:%4d | as+ld:%4d | run:%4d | tot:%5d | %s" % (
+                res['fp_elapsed'],  res['fm_elapsed'], res['fl_elapsed'], res['fc_elapsed'],
+                res['as_elapsed'] + res['ld_elapsed'], res['rn_elapsed'],
+                res['total_elapsed'], res['label'])
 
     # We compute times as a percentage of compile time instead of total time,
     # since these measurements target compilation time, not test case runtime.
-    print "fpr:%3.0f%% | fme:%3.0f%% | flo:%3.0f%% | foc:%3.0f%% | as:%3.0f%% | ld:%3.0f%%" % tuple(
+    print "fpr:%3.0f%% | fme:%3.0f%% | flo:%3.0f%% | foc:%3.0f%% | as+ld:%3.0f%%" % tuple(
       100.0*x/float(res['compile_elapsed'])
         for x in list((res['fp_elapsed'], res['fm_elapsed'], res['fl_elapsed'],
-                       res['fc_elapsed'], res['as_elapsed'], res['ld_elapsed'])))
+                       res['fc_elapsed'], res['as_elapsed'] + res['ld_elapsed'])))
     if options.print_bytes_per_sec and 'inbytes' in res:
-      print """input protobuf %(inbytes)s (%(inbytes_per_sec)s/s); output protobuf %(ckbytes)s (%(ckbytes_per_sec)s/s); object file %(outbytes)s (%(outbytes_per_sec)s/s)""" % res
+      print """input CBOR %(inbytes)s (%(inbytes_per_sec)s/s); output protobuf %(ckbytes)s (%(ckbytes_per_sec)s/s); object file %(outbytes)s (%(outbytes_per_sec)s/s)""" % res
     print "".join("-" for x in range(60))
 
 def run_diff(a, b):
@@ -109,7 +109,6 @@ def file_size(path):
     return 0
 
 def run_one_test(testpath, tmpdir, progargs, paths, exe_cmd, elapseds):
-  start = walltime()
   exp_filename = os.path.join(tmpdir, "expected.txt")
   act_filename = os.path.join(tmpdir, "actual.txt")
   iact_filename = os.path.join(tmpdir, "istdout.txt")
@@ -121,7 +120,7 @@ def run_one_test(testpath, tmpdir, progargs, paths, exe_cmd, elapseds):
                                  stdout=actual, stderr=expected, stdin=infile,
                                  showcmd=True, strictrv=False)
 
-  inbytes  = file_size(paths['_out.parsed.pb'])
+  inbytes  = file_size(paths['_out.parsed.cbor'])
   ckbytes  = file_size(paths['_out.checked.pb'])
   outbytes = file_size(paths['_out.o'])
 
@@ -135,13 +134,12 @@ def run_one_test(testpath, tmpdir, progargs, paths, exe_cmd, elapseds):
     did_fail = True
 
   def elapsed_per_sec(b, e): return humanized(float(b)/(float(e) / 1000.0))
-  total_elapsed = elapsed_since(start)
   (fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed, as_elapsed, ld_elapsed) = elapseds
   compile_elapsed = (as_elapsed + ld_elapsed + fp_elapsed + fm_elapsed + fl_elapsed + fc_elapsed)
-  overhead = total_elapsed - (compile_elapsed + rn_elapsed)
+  total_elapsed = rn_elapsed + compile_elapsed
   result = dict(failed=did_fail, label=testname(testpath),
                 total_elapsed=total_elapsed,
-                compile_elapsed=compile_elapsed, overhead=overhead,
+                compile_elapsed=compile_elapsed,
                 inbytes=humanized(inbytes, limit=10000),
                 ckbytes=humanized(ckbytes, limit=10000),
                 outbytes=humanized(outbytes, limit=10000),

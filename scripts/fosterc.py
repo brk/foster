@@ -136,7 +136,7 @@ def compile_foster_to_bitcode(paths, inputfile, compilelog, finalpath, tmpdir):
 
     ghc_rts_args = get_ghc_rts_args()
 
-    parse_output = paths['_out.parsed.pb']
+    parse_output = paths['_out.parsed.cbor']
     check_output = paths['_out.checked.pb']
 
     def crun(cmdlist):
@@ -144,10 +144,12 @@ def compile_foster_to_bitcode(paths, inputfile, compilelog, finalpath, tmpdir):
                 paths, inputfile, showcmd=show_cmdlines(options),
                 stdout=compilelog, stderr=compilelog, strictrv=True)
 
-    # running fosterparse on a source file produces a ParsedAST
+    # running fosterparse on a source file produces a CBORized
+    # concrete parse tree (for the module and its dependencies).
     e1 = crun(['fosterparse', inputfile, parse_output] + importpath)
 
-    # running fostercheck on a ParsedAST produces an ElaboratedAST
+    # running fostercheck on a concrete parse tree produces a CFG
+    # serialized in Protobuf format.
     prog_args = [arg for _arg in options.progargs or []
                      for arg in ['--prog-arg', _arg]]
     e2 = crun(['fostercheck', parse_output, check_output] +
@@ -157,15 +159,15 @@ def compile_foster_to_bitcode(paths, inputfile, compilelog, finalpath, tmpdir):
     if should_stop_after_middle():
       raise StopAfterMiddle()
 
-    # running fosterlower on a ParsedAST produces a bitcode Module
-    # linking a bunch of Modules produces a Module
+    # running fosterlower on the Protobuf CFG produces an LLVM
+    # bitcode Module; linking a bunch of Modules produces a Module
     e3 = crun(['fosterlower', check_output, '-o', finalname,
                          '-outdir', tmpdir, '-fosterc-time',
                          '-bitcodelibs', mkpath(options.bindir, '_bitcodelibs_')]
                     + options.beargs)
 
     # Running opt on a Module produces a Module
-    # Running llc on a Module produces an assembly file
+    # Running llc on a Module produces an assembly or object file
     e4 = crun(['fosteroptc', finalpath + '.preopt.bc',
                                          '-fosterc-time', '-o', outpath]
                     + optlevel(options)
@@ -262,7 +264,7 @@ def get_paths(inputfile):
   for lib in [ 'libfoster_main.o']:
     paths[lib] =  mkpath(bindir, os.path.join('_nativelibs_', lib))
 
-  for out in ['_out.parsed.pb', '_out.checked.pb', "_out.o", "_out.s"]:
+  for out in ['_out.parsed.cbor', '_out.checked.pb', "_out.o", "_out.s"]:
     paths[out] =  mkpath(options.tmpdir, os.path.basename(inputfile) + out[4:])
 
   if options.me != 'fostercheck':

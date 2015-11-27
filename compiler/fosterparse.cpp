@@ -84,8 +84,7 @@ int main(int argc, char** argv) {
     cbor::output_dynamic output;
     cbor::encoder enc(output);
     dumpToCbor(enc, pgmAST);
-    std::string cborOut(optOutputPath); cborOut += ".cbor";
-    FILE* f = fopen(cborOut.c_str(), "w");
+    FILE* f = fopen(optOutputPath.c_str(), "w");
     fwrite((const void*) output.data(), 1, (size_t) output.size(), f);
     fclose(f);
   }

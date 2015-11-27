@@ -198,8 +198,7 @@ add_custom_command(
 # Generate middle-end from Haskell source files, once
 # Haskell protobuf module sources have been generated.
 add_custom_target(hs_me
-  DEPENDS ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Fepb.hs
-          ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Bepb.hs
+  DEPENDS ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Bepb.hs
   COMMAND python ${PROJECT_SOURCE_DIR}/scripts/mk_me.py
           --srcroot ${PROJECT_SOURCE_DIR}
           --bindir ${PROJECT_BINARY_DIR}

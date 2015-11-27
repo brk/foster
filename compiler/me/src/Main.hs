@@ -411,7 +411,7 @@ main = do
   case args of
     (infile : outfile : rest) -> do
        flagVals <- parseOpts rest
-       (cp_time, cb_program) <- ioTime $ readAndParseCbor (infile ++ ".cbor")
+       (cp_time, cb_program) <- ioTime $ readAndParseCbor infile
        let wholeprog = cb_parseWholeProgram cb_program (getStandaloneFlag flagVals)
        if getFmtOnlyFlag flagVals
          then do
