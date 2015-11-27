@@ -139,12 +139,9 @@ Haskell:
       cabal install haskell-src
       cabal install gtk2hs-buildtools
       cabal install chart
-      cabal install criterion
-      : **** : hoopl
+      cabal install criterion hoopl cbor
       cabal install text protocol-buffers filepath hprotoc ansi-terminal ansi-wl-pprint fgl boxes data-dword smtLib union-find
       cabal install language-lua
-
-      : *** : You must install hoopl from source via https://github.com/brk/packages-hoopl/
 
 Python:
         pip install pyyaml

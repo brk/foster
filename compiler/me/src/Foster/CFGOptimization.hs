@@ -9,7 +9,7 @@ module Foster.CFGOptimization (optimizeCFGs, collectMayGCConstraints) where
 
 import Foster.Base
 import Foster.MonoType
-import Foster.Letable(Letable(..), isPure, letableSize, canGC, willNotGCGlobal)
+import Foster.Letable(Letable(..), letableSize, canGC, willNotGCGlobal)
 import Foster.Config
 import Foster.CFG
 
@@ -20,8 +20,6 @@ import qualified Text.PrettyPrint.Boxes as Boxes
 import qualified Data.Text as T
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import Data.Map(Map)
-import Data.Set(Set)
 import Data.Maybe(fromMaybe, fromJust, isJust)
 import Data.List(nubBy, last)
 import Control.Monad.State
@@ -353,6 +351,7 @@ runCensusRewrites' uref bbg = do
           bbg' <- go ci (fnBody fn)
           return $ fn { fnBody = bbg' }
 
+        transform :: Census -> Insn e x -> M (Graph Insn e x)
         transform ci = rw
          where
           rw :: Insn e x -> M (Graph Insn e x)
@@ -399,6 +398,8 @@ runCensusRewrites' uref bbg = do
         -- Rewrite the function's body so that returns become jumps to the
         -- continuation that all callers had provided.
         -- This computes  K[k0/k]  from the paper Comp w/ Continuations, Cont'd.
+        aGraphOfFn :: Monad m =>
+                      Census -> Fn r BasicBlockGraph ty -> BlockId -> m (AGraph Insn C C)
         aGraphOfFn ci fn retbid = do
           let ret bid = if bid == bbgRetK (fnBody fn) then retbid else bid
           let rw :: Insn e x -> Insn e x

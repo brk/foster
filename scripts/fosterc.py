@@ -66,7 +66,7 @@ def get_link_flags():
 def rpath(path):
   import platform
   return {
-    'Darwin': lambda: '',
+    'Darwin': lambda: '-Xlinker -rpath -Xlinker ' + os.path.abspath(path),
     'Linux' : lambda: '-Wl,-R,' + os.path.abspath(path),
   }[platform.system()]()
 

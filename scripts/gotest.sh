@@ -14,7 +14,7 @@ tmpfile=$(mktemp foster-gotest.XXXXXX)
 # as long as there's only one such subdirectory with that name.
 if [ ! -d $D ]; then
   find $R/test -path "*$P*" -type d > $tmpfile
-  nlines=$(wc -l < $tmpfile)
+  nlines=$(wc -l < $tmpfile | sed 's/ *//')
   case $nlines in
   0)
     # No test by that name; silently fall through
