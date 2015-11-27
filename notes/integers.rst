@@ -21,7 +21,23 @@ Other possibilities:
   * Perform static checks to eliminate edge cases
      - Is this really feasible? What languages have tried this?
 
+Fixnum Issues
+=============
 
+Taking the requirement of exposing sized integer types as a given, how should they be handled?
+The approach in C goes roughly like this:
+  * Use a family of types for representing signed and unsigned integers of different (but unspecified) bitwidths.
+  * Use subtyping and coercion rules to invisibly insert extensions and truncations where needed.
+  * Use overloading to avoid having distinct operations for primitives on different sizes.
+
+Java is similar, except that unsigned types are not included, and overflow behavior is defined.
+
+Haskell uses type classes to avoid distinct operations for the sized primitives, and implicitly coerces
+literals (but not arbitrary expressions) using ``fromIntegral``. Haskell also boxes its sized integer types,
+since the language doesn't directly expose the difference between boxed and unboxed types.
+
+TODO review the Habit paper and its treatment of sized integer types & type classes.
+  
 .. [1] http://trac.sacrideo.us/wg/wiki/NumericTower
 .. [2] http://www.ccs.neu.edu/home/stamourv/papers/numeric-tower.pdf
 .. [3] http://www.ccs.northeastern.edu/racket/pubs/icfp10-thf.pdf

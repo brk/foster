@@ -1,0 +1,458 @@
+GC
+	The set of gc roots are:
+		* Pointers into the heap
+		* Objects which (may) transitively contain pointers into the heap
+
+====================
+
+Thought on supporting both nominal and structural typing:
+decide typing equivalence to use on an e.g. per-function-parameter
+basis.
+
+So given
+
+type StPoint2 = tuple { i32, i32 }
+newtype NmPoint2 = StPoint2
+
+// or newtype NmPoint2 = tuple { i32, i32 }
+// or in the opposite order
+
+and
+
+raw = fn (x : tuple { i32, i32 }) { ... }
+nom = fn (x : NmPoint2) { ... }
+stu = fn (x : StPoint2) { ... }
+
+r = tuple { 2, 3 }
+n = NmPoint2 { 2, 3 }
+s = StPoint2 { 2, 3 }
+
+The possible combinations are:
+
+raw(r) // obviously ok
+raw(n) // nominal passed to structural: okay, because fn param type chooses
+raw(s) // okay -- structural match
+
+nom(r) // not okay -- need nominal match
+nom(n) // okay
+nom(s) // not okay -- need nominal match
+
+stu(r) // okay
+stu(n) // okay, same as raw(r)
+stu(s) // okay
+
+====================
+
+ To find the struct field  
+alignment of something, you can do something like:
+
+"sizeof({i8, T}) - sizeof(T)"
+
+-Chris
+
+
+Your allocator should probably bzero the memory before returning it;  
+malloc returns uninitialized memory, which will crash the collector if  
+you reach a collection point before completely initializing the object.
+
+
+"In general, when I hit one of those [(function type mismatch)] assertions,
+I gdb to it, use "p f->dump()" to see the types of the function's arguments,
+and use "p Params[i]->dump()" to see the parameter with the bad type."
+
+====================
+
+In order to dynamically allocate an instance of [dynamically-sized] data type,
+code like the following can be used (which uses the offsetof technique described above):
+
+%array = type { uint, [0 x float] }
+implementation
+%array *%NewArray(uint %Length) {
+  ;; Get the offset of the 'Length' element of the array from the null
+  ;; pointer.
+  %Size = getelementptr %array* null, int 0, uint 1, uint %Length
+  %SizeU = cast float* %Size to uint
+  %Ptr = malloc sbyte, uint %SizeU
+  %Result = cast sbyte* %Ptr to %array*
+
+  ;; Remember the allocated length for later use.
+  %SizePtr = getelementptr %array* %Result, int 0, uint 0
+  store uint %Length, uint* %SizePtr
+  ret %array* %Result
+}
+
+
+====================
+
+On namespaces and modules: the default should be to require qualified
+(but not necessarily fully-qualified) names.
+
+Given package foo exporting symbol bar:
+
+import foo                   // code uses  foo.bar
+import foo as baz            // code uses  baz.bar
+
+import foo as _              // not sure which syntax seems best
+import foo as implicit       // but code would then simply use
+import foo as default        //   bar
+import foo as global         // without needing any qualifier prefix.
+
+Packages should choose which symbols to export.
+
+As a simplification, defaulting to qualified-names means that we don't
+need to bother explicitly specifying which subset of the exported symbols
+to import, because there won't be naming conflicts.
+
+Of course, we could still want to limit exported names for encapsulation.
+
+====================
+
+Unlike traditional HPC apps, these programs are almost exclusively focusing on shared-memory parallelism. There is a notion of separate address spaces when using CUDA or OpenCL to program a graphics card, but that's not a sufficient use case to make distributed computation a part of the language to the degree that, e.g. X10 or Chapel have.
+
+
+
+
+
+Because of the way the grammar is written (liberally newline-sensitive, and without backtracking), constructs like
+    array { 1, 2
+          }
+are misparsed by ANTLR. Instead, use either
+    array { 1, 2, // trailing comma
+          }
+or
+    array { 1, 2 } // no newline after last element
+
+
+======================
+
+bit
+byte
+word
+
+==============================================
+
+MurmurHash2
+
+  while(len >= 4) {
+    unsigned int k = *(unsigned int *)data;
+    
+    k *= m; 
+    k ^= k >> r; 
+    k *= m; 
+    h *= m; 
+    h ^= k;
+    
+    data += 4;
+    len -= 4;
+  }
+
+Foster syntax?
+  v : array { n i32 } = ...
+  for i in 0..n {
+    k = v[i];
+    k = k * m;
+    k = k ^ (k >> r);
+    k = k * m; // 5 ops
+    h = h * m;
+    h = h ^ k; // 7 ops
+  } // 7 ops/elem, 28 ops/4 elem
+
+  Vectors...
+    kkkk = v[i..i+4]
+    kkkk = kkkk * mmmm
+    kkkk = kkkk ^ (kkkk >> rrrr)
+    kkkk = kkkk * mmmm // 5 ops
+    h = h * m
+    h = h ^ kkkk[0] // 8
+    h = h * m
+    h = h ^ kkkk[1] // 11
+    h = h * m
+    h = h ^ kkkk[2] // 14
+    h = h * m
+    h = h ^ kkkk[3] // 17
+    // 17 ops/4 elem
+  // I wonder what sorts of ILP each gets on Core 2s?
+==============================================
+
+name       same types?    fixed size?  contiguous?   index/iter      other notes
+--------------------------------------------------------------------------------
+Tuples          no           yes         yes         static nat      (unit type)
+Record          no           yes         yes         static label
+Array           yes          yes         yes         rand
+simd-vector     yes          yes         yes            *     (hardware support)
+dynamic array   yes          no          yes         rand
+list            yes          no          no          bidi
+                
+(buffer, table)
+
+sparse arrays (specialized maps with integer keys):
+van emde boas trees, patricia tries, judy arrays
+
+
+Tuple    = product type = algebraic data type with one constructor
+tagged union = sum type = algebraic data type with many one-arg constructors
+enum                    = algebraic data type with many  no-arg constructors
+
+Alg. data type = sum type of product types = tagged union of tuples
+
+==============================================
+
+// standard ADT:
+// ML   type tree = Empty | Leaf of int | Node of tree * tree
+// Leaf : int -> tree
+// generalized ADT:
+//      data Term a = Lit ::      Int -> Term Int
+//                  | IsZ :: Term Int -> Term Bool
+
+==============================================
+
+// declare: union { tag; tag; tag }          // many no-arg ctors: enum
+// declare:     union { tag { types } }          // one ctor: tuple
+// declare      union { tag type; tag type }     // many one-arg ctors: sum type
+// declare      union { tag { types }; tag { types } } // Algebraic Data Type
+// define:
+
+// declare: struct { label : type; label : type }
+// define: struct { label = expr, label = expr }
+
+// declare: tuple { type; type; type }
+// define: tuple { expr, expr, expr }
+// declare: ( type; type; type )
+// define: ( expr, expr, expr )
+
+// declare: fn (type; type) to type
+// declare:     fn (type; type) to (type; type)
+// declare:     fn type to fn type to fn type to type
+// = fn type to (fn type to (fn type to type))
+// = fn type   ->   type   ->   type -> type
+// define: fn (name : type, name : type) to type { a = b; z; x = y }
+
+// declare:     array type
+// declare:     array of type
+// declare:     array { type }
+// define:      array { a, b, c(d, e), z }
+
+OK, here's an interesting thought: optimistic handling of ambiguous grammars;
+that is, we'd like to accept
+"map of string ; int" as (unambiguous) syntactic sugar for
+"map { string ; int }" and similarly treat
+"map of map { string ; int } ; int" as sugar for
+"map { map { string ; int } ; int }"
+but reject
+"map of int ; map of strint ; int" because it could be either
+"map { int ; map { string } ; int }" or
+"map { int ; map { string ; int } }"
+and similarly reject as ambiguous
+"map of map of string ; int ; int" but still accept as unambiguous
+"map of (map of string ; int) ; int" (or should it? parens as tuple...)
+above could be ambiguous between
+"map { map { string ; int } ; int }" as intended, and
+"map { (map { string } ; int) ; int", which tuple-expands to
+"map { tuple { map { string } ; int } ; int }"
+depending on whether parens in a type decl. are purely for disambiguation, or
+if they can also be used as shorthand for tuples...
+Python's one-element tuple "problem": (e) vs (e,)
+what about "map of { map of string ; int } ; int", using {} instead of ()?
+Then what does { int } mean? And    map T where T = { int }
+vs  map { T } where T = int? 
+
+  // name
+  // name { typelist }
+  // name of type
+  // name of type type
+  // name of type to type
+  
+  typelist : type (("to" | ";") type)*
+  type: "int"
+  | "map" "{" typelist  "}"
+  | "map" "of" typelist 
+  | "(" type ")"  // or "(" typelist ")" ?
+
+// declare:     map of type to type
+// declare:     map { type to type }
+// declare:  *  map { T1; T2 }
+// define: map { e1a = e2a, e1b = e2b }
+
+// e.g. let s = "hello" in map { s = "world", "hiya" = "earth" }
+
+// declare:     simd-vector n type
+// declare:     simd-vector { n type }
+// declare:     simd-vector { n ; type }
+// declare:     simd-vector { n of type }
+// declare:     simd-vector n of type
+// define:      simd-vector { expr, expr, expr, expr }
+
+// fn f : (fn x to y,  w) to z
+// fn f : fn  x to y,  w  to z
+// fn f : (fn x to y), w  to z
+
+==============================================
+
+Circular buffer of bytes
+    -----------------------------------------------------
+    | 4              ||     |      |      |       |     |
+    -----------------------------------------------------
+offset                   0     1      2      3      4
+index                    1      2     3      4      5
+
+offset k = 0, 1, ..., 3, 4, 0, ...    = k+1 % n
+index  k = 1, 2, ..., 4, 5, 1, ...    = k%n + 1
+
+==============================================
+
+Language features to add:
+main/argv handling - bitc style or python style?
+closures
+simd-vectors
+string literals
+Modules to write:
+PRNG - mt19937
+PRNG - sfmt
+sha1
+hash tables
+dynarrays
+bitstring?
+
+EASTL design influences?
+strings
+utf8 algos
+what does LLVM do?
+what does chrome do?
+bitc: vector of char
+roc: len, cap, ptr, (buf)
+g++: len, cap, ref, ptr, (buf)
+"string object requires only one allocation"
+Iterating through a C string with *s++ and s[n++]
+compile to identical inner loops (in assembly)!
+plan:
+level 0: array of ascii chars
+level 1a: array of utf8 bytes - forward iteration
+level 1b:                     - bidirectional iteration
+level 2: templatized inline storage
+semantic checks - param names, etc
+pointers -> iterators
+ranges
+linked list - requires... ?
+let v = a in e => (fn (v) { e })( a )
+{ e1; e2; e3; } => seq(e1, seq(e2, e3))
+e1;
+let v2 = e2 in {
+e3;
+e4;
+}
+e5 where v6 = e6;
+e7;
+f x y = x * y
+f = fn (x y) { x * y }
+
+================================================================================
+
+I'm having trouble finding resources on selecting the minimal basis set of
+ground types in a language with dependent types. Dropping efficiency (?),
+obviously the lambda calculus shows that "everything" can be constructed from
+function composition and application. Functions plus distinguished unit type? 
+
+Coq allows definition of e.g. the integers inductively, but I don't know how
+hard it is to get representation guarantees. The obvious choices are either
+special-casing the implementation, or building a smart general compiler.
+How smart, though?
+
+LuaJIT2 gets great performance boosts from being able to perform low-level
+optimization of high-level data structures (specifically, hash tables).
+I don't think it's feasible to get a  compiler take a complex data structure
+defined in a library and have it do the sort of dependency-chain optimization
+that LuaJIT2 can get away with.
+
+
+i8, i16, i32, i64, ?
+u8, u16, u32, u64, ?
+b8, b16, b32, b64, ?    or byte and byte arrays?
+
++   *   -   /   mod pow
+
+== Non-dependent (AP) Signatures ==
+int   +   int : int
+int   -   int : int
+int   *   int : int
+int   /   int : rat|err
+int  mod  int : int
+int  pow  int : int
+
+rat   +   rat : rat
+rat   -   rat : rat
+rat   *   rat : rat
+rat   /   rat : rat|err
+rat  mod  rat : rat
+rat  pow  rat : float     (e.g. (3/4) ^ (1/3) has irrational numerator)
+
+float   +   float : float
+float   -   float : float
+float   *   float : float
+float   /   float : float|err
+float  mod  float : float
+float  pow  float : float
+
+
+0b1101011101010101
+0b 1101 0111 0101 0101
+0b1101,0111,0101,0101
+0b_1101_0111_0101_0101
+0b 1 0 1 1 1 0 0 1 1 0
+0d 11 300 3433 0003 13
+
+
+Strings: conceptually a sequence of immutable characters, but not so internally!
+
+LLVM primitive types:
+  bits
+  array (container of 1 type)
+  struct (container of n types), packed struct
+  vector (SIMD)
+  function (sig), returning scalar, void, or struct
+
+  
+Factor built-in classes:
+    array, byte-array, tuple, quotation, string
+    bignum, fixnum, float
+
+  Note that "tuple" in Factor is a record/struct.
+  Not built-in are vector, hashtable, complex, deque, pq, list, etc
+
+  
+C built-in types are pointer, struct (tuple), fixnum, float
+
+
+BitC built-in classes are 
+
+BitC keywords (81): #f #t -> and apply array array-* begin as bitfield bool    
+           block by-ref case catch char cond const continue declare defaxiom
+           defexception define definvariant defrepr defstruct deftheory defthm
+           defunion deref disable do double dup enable exception extends
+           external fill fixint float if import impoure int* interface fn lambda
+           let letrec member mutable not opaque or otherwise pair proclaim
+           provide pure quad ref return return-from set! sizeof string suspend
+           switch tag the throw try tyfn uint* use val vector vector-* word
+plus 29 more reserved (!)
+           
+
+Lua keywords (21): and end in repeat break false local return do for nil
+              then else function not true elseif if or until while
+     tokens (26): + - * / % ^ # == ~= <= >= < > = ( ) { } [ ] ; : , . .. ...
+     
+Lua types: nil, boolean, number (double), string, function, userdata, table, thread (coroutine)
+
+ 
+C++ keywords (72): and and_eq asm auto bitand bitor bool break case catch char
+          class compl const const_cast continue default delete do double
+          dynamic_cast else enum explicit export extern false float for friend
+          goto if inline int long mutable namespace new not not_eq operator or
+          or_eq private protected public register reinterpret_cast return short
+          signed sizeof static static_cast struct switch template this throw
+          true try typedef typeid union using virtual void volatile wchar_t
+          while xor xor_eq 
+
+Foster keywords (21):
+  fn my(?) as like at id to and or if is in not do for op
+  nil true false
+  
+  (given gives)
