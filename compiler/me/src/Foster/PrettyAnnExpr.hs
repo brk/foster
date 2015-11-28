@@ -135,7 +135,6 @@ instance Pretty Formatting where
   -- Egads, is there no way of *forcing* a linebreak with wl-pprint?
   pretty (Comment ('/':'/':s)) = text "/*" <> text s <+> text "*/"
   pretty (Comment s) = string s
-  pretty NonHidden   = error $ "NonHidden should have been removed by parser..."
 
 withAnnot (ExprAnnot pre _ post) doc =
   hsep $ map pretty pre ++ [doc <> hsep (map pretty post)]

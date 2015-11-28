@@ -271,7 +271,7 @@ varOrThunk (a, targetType) = do
       where
 
         mkThunkAround v fnty = do
-          id <- knFresh ".kn.thunk"
+          id <- knFresh (".kn.thunk." ++ show (tidIdent v))
           vars <- argVarsWithTypes (fnTypeILDomain fnty)
           return $ Fn { fnVar      = TypedId fnty (GlobalSymbol (T.pack $ show id))
                       , fnVars     = vars

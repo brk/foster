@@ -63,7 +63,7 @@ def humanized(n, limit=None):
   return "%.1f %sB" % (float(n) / base**e, "KMGTPE"[e - 1])
 
 def aggregate_results(results):
-    fields = ["total_elapsed", "compile_elapsed", "overhead",
+    fields = ["total_elapsed", "compile_elapsed",
               "fp_elapsed", "fm_elapsed", "fl_elapsed",
               "fc_elapsed", "as_elapsed", "ld_elapsed", "rn_elapsed",]
     result = dict(failed=False, label="<aggregate results>",
