@@ -31,6 +31,7 @@ data TypeTC =
          | ArrayTypeTC     TypeTC
          | FnTypeTC        { fnTypeTCDomain :: [TypeTC]
                            , fnTypeTCRange  :: TypeTC
+                           , fnTypeTCEffect :: TypeTC
                            , fnTypeTCCallConv :: Unifiable CallConv
                            , fnTypeTCProcOrFunc :: Unifiable ProcOrFunc }
          | ForAllTC        [(TyVar, Kind)] RhoTC
@@ -87,7 +88,9 @@ instance Pretty TypeTC where
         PrimFloat64TC                   -> text "Float64"
         TyConAppTC   tcnm types         -> parens $ text tcnm <> hpre (map pretty types)
         TupleTypeTC _kind types         -> tupled $ map pretty types
-        FnTypeTC     s t  cc cs         -> text "(" <> pretty s <> text " =" <> text (uni_briefCC cc) <> text "> " <> pretty t <> text " @{" <> text (show cs) <> text "})"
+        FnTypeTC     s t fx  cc cs      -> text "(" <> pretty s <> text " ="
+                                                    <> text (uni_briefCC cc) <> text ";fx=" <> pretty fx
+                                                    <> text "> " <> pretty t <> text " @{" <> text (show cs) <> text "})"
         CoroTypeTC   s t                -> text "(Coro " <> pretty s <> text " " <> pretty t <> text ")"
         ForAllTC   tvs rho              -> text "(forall " <> hsep (prettyTVs tvs) <> text ". " <> pretty rho <> text ")"
         TyVarTC    tv                   -> text (show tv)
@@ -103,7 +106,7 @@ instance Show TypeTC where
         PrimIntTC size         -> "(PrimIntTC " ++ show size ++ ")"
         PrimFloat64TC          -> "(PrimFloat64TC)"
         TupleTypeTC _k types   -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
-        FnTypeTC   s t cc cs   -> "(" ++ show s ++ " =" ++ uni_briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
+        FnTypeTC  s t fx cc cs -> "(" ++ show s ++ " =" ++ uni_briefCC cc ++ ";fx=" ++ show fx ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
         CoroTypeTC s t         -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
         ForAllTC ktvs rho      -> "(ForAll " ++ show ktvs ++ ". " ++ show rho ++ ")"
         TyVarTC     tv         -> show tv
@@ -149,7 +152,7 @@ instance Structured TypeTC where
             PrimIntTC       {}      -> []
             PrimFloat64TC           -> []
             TupleTypeTC  _k types   -> types
-            FnTypeTC  ss t _cc _cs  -> ss++[t]
+            FnTypeTC  ss t fx _cc _cs  -> ss++[t,fx]
             CoroTypeTC s t          -> [s,t]
             ForAllTC  _ktvs rho     -> [rho]
             TyVarTC        _tv      -> []

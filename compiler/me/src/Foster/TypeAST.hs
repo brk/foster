@@ -9,7 +9,7 @@ module Foster.TypeAST(
 , MetaTyVar(..), Sigma, Rho, Tau, MTVQ(..)
 , fosBoolType, fosStringType, gFosterPrimOpsTable, primitiveDecls, primopDecls
 , minimalTupleAST
-, mkFnType, convertTyFormal
+, convertTyFormal
 )
 where
 
@@ -36,9 +36,10 @@ data TypeAST =
          | ArrayTypeAST     (Sigma)
          | FnTypeAST        { fnTypeDomain :: [Sigma]
                             , fnTypeRange  ::  Sigma
+                            , fnTypeEffect ::  Rho
                             , fnTypeCallConv :: CallConv
                             , fnTypeProcOrFunc :: ProcOrFunc }
-         | ForAllAST        [(TyVar, Kind)] (Rho)
+         | ForAllAST        [(TyVar, Kind)] Rho
          | TyVarAST         TyVar
          | MetaPlaceholderAST MTVQ String
          | RefinedTypeAST   String TypeAST (ExprAST TypeAST)
@@ -63,7 +64,8 @@ instance Pretty TypeAST where
         PrimFloat64AST                  -> text "Float64"
         TyConAppAST  tcnm types         -> parens $ text tcnm <> hpre (map pretty types)
         TupleTypeAST      types         -> tupled $ map pretty types
-        FnTypeAST    s t  cc cs         -> text "(" <> pretty s <> text " =" <> text (briefCC cc) <> text "> " <> pretty t <> text " @{" <> text (show cs) <> text "})"
+        FnTypeAST    s t fx cc cs       -> text "(" <> pretty s <> text " =" <> text (briefCC cc) <> text ";"
+                                              <+> pretty fx <> text "> " <> pretty t <> text " @{" <> text (show cs) <> text "})"
         CoroTypeAST  s t                -> text "(Coro " <> pretty s <> text " " <> pretty t <> text ")"
         ForAllAST  tvs rho              -> text "(forall " <> hsep (prettyTVs tvs) <> text ". " <> pretty rho <> text ")"
         TyVarAST   tv                   -> text (show tv)
@@ -102,7 +104,7 @@ instance Structured TypeAST where
             PrimFloat64AST                 -> text $ "PrimFloat64"
             TyConAppAST    tc  _           -> text $ "TyConAppAST " ++ tc
             TupleTypeAST       _           -> text $ "TupleTypeAST"
-            FnTypeAST    _ _    _ _        -> text $ "FnTypeAST"
+            FnTypeAST    {}                -> text $ "FnTypeAST"
             CoroTypeAST  _ _               -> text $ "CoroTypeAST"
             ForAllAST  tvs _rho            -> text $ "ForAllAST " ++ show tvs
             TyVarAST   tv                  -> text $ "TyVarAST " ++ show tv
@@ -118,7 +120,7 @@ instance Structured TypeAST where
             PrimFloat64AST                 -> []
             TyConAppAST   _tc types        -> types
             TupleTypeAST      types        -> types
-            FnTypeAST   ss t   _ _         -> ss ++ [t]
+            FnTypeAST   ss t fx _ _        -> ss ++ [t, fx]
             CoroTypeAST  s t               -> [s, t]
             ForAllAST  _tvs rho            -> [rho]
             TyVarAST   _tv                 -> []
@@ -135,8 +137,13 @@ minimalTupleAST []    = TupleTypeAST []
 minimalTupleAST [arg] = arg
 minimalTupleAST args  = TupleTypeAST args
 
-mkProcType args rets = FnTypeAST args (minimalTupleAST rets) CCC    FT_Proc
-mkFnType   args rets = FnTypeAST args (minimalTupleAST rets) FastCC FT_Func
+nullFx = PrimFloat64AST
+
+mkProcType args rets = mkProcTypeWithFx nullFx args rets
+mkFnType   args rets = mkFnTypeWithFx nullFx   args rets
+
+mkProcTypeWithFx fx args rets = FnTypeAST args (minimalTupleAST rets) fx CCC    FT_Proc
+mkFnTypeWithFx   fx args rets = FnTypeAST args (minimalTupleAST rets) fx FastCC FT_Func
 mkCoroType args rets = CoroTypeAST (minimalTupleAST args) (minimalTupleAST rets)
 
 --------------------------------------------------------------------------------
@@ -214,8 +221,9 @@ primitiveDecls =
     -- forall a b, (a -> b) -> Coro a b
     ,(,) "coro_create" $ let a = BoundTyVar "a" (MissingSourceRange "coro_create") in
                          let b = BoundTyVar "b" (MissingSourceRange "coro_create") in
-                         (ForAllAST (primTyVars [a, b])
-                           (mkFnType [mkFnType   [TyVarAST a] [TyVarAST b]]
+                         let fx = BoundTyVar "fx" (MissingSourceRange "coro_create") in
+                         (ForAllAST (primTyVars [a, b] ++ [(fx, KindAnySizeType)])
+                           (mkFnType [mkFnTypeWithFx (TyVarAST fx) [TyVarAST a] [TyVarAST b]]
                                      [mkCoroType [TyVarAST a] [TyVarAST b]]))
 
     -- forall a b, (Coro a b, a) -> b

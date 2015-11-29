@@ -51,7 +51,7 @@ parSubstTcTy prvNextPairs ty =
         TupleTypeTC k  types -> TupleTypeTC k  (map q types)
         RefTypeTC    t       -> RefTypeTC    (q t)
         ArrayTypeTC  t       -> ArrayTypeTC  (q t)
-        FnTypeTC  ss t cc cs -> FnTypeTC     (map q ss) (q t) cc cs -- TODO unify calling convention?
+        FnTypeTC  ss t fx cc cs -> FnTypeTC     (map q ss) (q t) (q fx) cc cs -- TODO unify calling convention?
         CoroTypeTC  s t      -> CoroTypeTC  (q s) (q t)
         ForAllTC  ktvs rho   ->
                 let prvNextPairs' = prvNextPairs `assocFilterOut` (map fst ktvs)
@@ -72,7 +72,7 @@ tySubst subst ty =
         RefTypeTC     t        -> RefTypeTC    (q t)
         ArrayTypeTC   t        -> ArrayTypeTC  (q t)
         TupleTypeTC k types    -> TupleTypeTC k (map q types)
-        FnTypeTC  ss t cc cs   -> FnTypeTC     (map q ss) (q t) cc cs
+        FnTypeTC  ss t fx cc cs -> FnTypeTC     (map q ss) (q t) (q fx) cc cs
         CoroTypeTC  s t        -> CoroTypeTC  (q s) (q t)
         ForAllTC  tvs rho      -> ForAllTC  tvs (q rho)
         RefinedTypeTC v e args -> RefinedTypeTC (fmap q v) e args
@@ -139,7 +139,7 @@ tcUnifyLoop :: [TypeConstraint] -> TypeSubst -> Tc UnifySoln
 tcUnifyLoop [] tysub = return $ Just tysub
 
 tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
- --tcLift $ putStrLn ("tcUnifyLoop: t1 = " ++ show t1 ++ "; t2 = " ++ show t2)
+ tcLift $ putStrLn ("tcUnifyLoop: t1 = " ++ show t1 ++ "; t2 = " ++ show t2)
  if illegal t1 || illegal t2
   then tcFailsMore
         [text "Bound type variables cannot be unified! Unable to unify"
@@ -181,14 +181,16 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
     -- Mismatches between unitary tuple types probably indicate
     -- parsing/function argument handling mismatch.
 
-    ((FnTypeTC  as1 a1 cc1 ft1), (FnTypeTC  as2 a2 cc2 ft2)) -> do
+    ((FnTypeTC  as1 a1 fx1 cc1 ft1), (FnTypeTC  as2 a2 fx2 cc2 ft2)) -> do
         if List.length as1 /= List.length as2
           then tcFailsMore [string "Unable to unify functions of different arity!\n"
                            <> pretty as1 <> string "\nvs\n" <> pretty as2]
           else do tcUnifyCC cc1 cc2
                   tcUnifyFT ft1 ft2
                   tcUnifyLoop ([TypeConstrEq a b | (a, b) <- zip as1 as2]
-                            ++ (TypeConstrEq a1 a2):constraints) tysub
+                            ++  (TypeConstrEq a1 a2)
+                               :(TypeConstrEq fx1 fx2)
+                               :constraints) tysub
 
     ((CoroTypeTC  a1 a2), (CoroTypeTC  b1 b2)) ->
         tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
@@ -238,12 +240,10 @@ tcUnifyVar m1 (MetaTyVarTC m2) tysub constraints | m1 == m2
   = tcUnifyLoop constraints tysub
 
 tcUnifyVar m ty tysub constraints = do
-{-
     do
       tcm <- readTcMeta m
       tcLift $ putStrLn $ "================ Unifying meta var " ++ show (pretty $ MetaTyVarTC m) ++ " :: " ++ show (pretty tcm)
                      ++ "\n============================= with " ++ show (pretty $ ty)
-                     -}
     let tysub' = Map.insert (mtvUniq m) ty tysub
     tcUnifyLoop (tySubstConstraints constraints (Map.singleton (mtvUniq m) ty)) tysub'
       where

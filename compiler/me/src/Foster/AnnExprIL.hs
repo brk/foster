@@ -593,14 +593,15 @@ ilOf ctx typ = do
      TupleTypeTC ukind types -> do tys <- mapM q types
                                    kind <- unUnified ukind KindPointerSized
                                    return $ TupleTypeIL kind tys
-     FnTypeTC  ss t cc cs -> do (y:xs) <- mapM q (t:ss)
-                                -- Un-unified placeholders occur for loops,
-                                -- where there are no external constraints on
-                                -- the loop's calling convention or representation.
-                                -- So, give reasonable default values here.
-                                cc' <- unUnified cc FastCC
-                                cs' <- unUnified cs FT_Func
-                                return $ FnTypeIL xs y cc' cs'
+     FnTypeTC  ss t _fx cc cs -> do
+        (y:xs) <- mapM q (t:ss)
+        -- Un-unified placeholders occur for loops,
+        -- where there are no external constraints on
+        -- the loop's calling convention or representation.
+        -- So, give reasonable default values here.
+        cc' <- unUnified cc FastCC
+        cs' <- unUnified cs FT_Func
+        return $ FnTypeIL xs y cc' cs'
      RefinedTypeTC v e __args -> do v' <- aiVar ctx v
                                     e' <- ail ctx e
                                     return $ RefinedTypeIL v' e' __args

@@ -280,10 +280,12 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
                          where dtType = typeOfDataType dt name
                                cid    = ctorId (typeFormalName $ dataTypeName dt) dc
 
+   nullFx = TupleTypeAST []
+
    -- Nullary constructors are constants; non-nullary ctors are functions.
    ctorTypeAST [] dtType [] = Left dtType
    ctorTypeAST [] dtType ctorArgTypes =
-                            Right $ FnTypeAST ctorArgTypes dtType FastCC FT_Proc
+                            Right $ FnTypeAST ctorArgTypes dtType nullFx FastCC FT_Proc
 
    ctorTypeAST tyformals dt ctorArgTypes =
      let f = ForAllAST (map convertTyFormal tyformals) in
@@ -445,6 +447,7 @@ runCompiler ci_time wholeprog flagVals outfile = do
                    tcMetaIntConstraints = icmap,
                           tcConstraints = constraints,
                tcSubsumptionConstraints = subcnst,
+                     tcCurrentFnEffect = Nothing,
                 tcUseOptimizedCtorReprs = getCtorOpt flagVals,
                           tcVerboseMode = getVerboseFlag flagVals }
    (nc_time, mb_errs) <- time $ runErrorT $ evalStateT (compile wholeprog tcenv)
@@ -552,7 +555,8 @@ desugarParsedModule tcenv m = do
           TyVarP     tv          -> do return $ TyVarAST tv
           FnTypeP      s t cc cs -> do s' <- mapM q s
                                        t' <- q t
-                                       return $ FnTypeAST      s' t' cc cs
+                                       let fx = MetaPlaceholderAST MTVTau   ("effectvar")
+                                       return $ FnTypeAST  s' t' fx cc cs
           RefinedTypeP nm t e -> do t' <- q t
                                     e' <- convertExprAST q e
                                     return $ RefinedTypeAST nm t' e'
@@ -738,7 +742,7 @@ dumpAllPrimitives = do
   mapM_ dumpPrimitive (Map.toList gFosterPrimOpsTable)
  where
     dumpPrimitive :: (String, (TypeAST, FosterPrim TypeAST)) -> IO ()
-    dumpPrimitive (name, ((FnTypeAST args ret _ _), _primop)) = do
+    dumpPrimitive (name, ((FnTypeAST args ret fx _ _), _primop)) = do
       let allNames = "abcdefghijklmnop"
       let namesArgs = [(text (name:[]) , arg) | (name, arg) <- zip allNames args]
       let textid str = if Char.isAlphaNum (head str)
@@ -749,7 +753,7 @@ dumpAllPrimitives = do
                      <+> hsep [fill 12 (name <+> text ":" <+> pretty arg) <+> text "=>"
                               | (name, arg) <- namesArgs]
                      <+> fill 23 (text "prim" <+> text name <+> hsep (map fst namesArgs))
-                 <+> text "}; // :: " <> pretty ret
+                 <+> text "}; // :: " <> pretty ret <+> text "; fx=" <> pretty fx
 
     dumpPrimitive (name, (_ty, _primop)) = error $ "Can't dump primitive " ++ name ++ " yet."
 

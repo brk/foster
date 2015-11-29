@@ -129,6 +129,7 @@ data TcEnv = TcEnv { tcEnvUniqs        :: IORef Uniq
                    , tcMetaIntConstraints :: IORef (Map (MetaTyVar TypeTC) Int)
                    , tcConstraints        :: IORef [(TcConstraint, SourceRange)]
                    , tcSubsumptionConstraints :: IORef [(TypeTC, TypeTC)]
+                   , tcCurrentFnEffect :: Maybe TypeTC
                    , tcUseOptimizedCtorReprs :: Bool
                    , tcVerboseMode           :: Bool
                    }
@@ -241,6 +242,15 @@ newTcUnificationVar_ q desc = do
 tcWithScope :: ExprAST TypeAST -> Tc a -> Tc a
 tcWithScope expr (Tc f)
     = Tc $ \env -> f (env { tcParents = expr:(tcParents env) })
+
+tcWithCurrentFx :: TypeTC -> Tc a -> Tc a
+tcWithCurrentFx fx (Tc f)
+    = Tc $ \env -> f (env { tcCurrentFnEffect = Just fx })
+
+tcGetCurrentFnFx :: Tc TypeTC
+tcGetCurrentFnFx = Tc $ \env -> do case tcCurrentFnEffect env of
+                                     Nothing -> fail "can't execute effectful code outside of a function!"
+                                     Just fx -> retOK fx
 
 newTcUniq :: Tc Uniq
 newTcUniq = Tc $ \env -> do let ref = tcEnvUniqs env
