@@ -411,14 +411,14 @@ main = do
   case args of
     (infile : outfile : rest) -> do
        flagVals <- parseOpts rest
-       (cp_time, cb_program) <- ioTime $ readAndParseCbor infile
+       (ci_time, cb_program) <- ioTime $ readAndParseCbor infile
        let wholeprog = cb_parseWholeProgram cb_program (getStandaloneFlag flagVals)
        if getFmtOnlyFlag flagVals
          then do
            let WholeProgramAST modules = wholeprog
            liftIO $ putDocLn (pretty (head modules))
          else
-           runCompiler cp_time wholeprog flagVals outfile
+           runCompiler ci_time wholeprog flagVals outfile
 
     rest -> do
       flagVals <- parseOpts rest
@@ -430,7 +430,7 @@ main = do
                    ++ " path/to/infile.cbor path/to/outfile.pb")
 
 
-runCompiler pi_time wholeprog flagVals outfile = do
+runCompiler ci_time wholeprog flagVals outfile = do
    uniqref <- newIORef 2
    varlist <- newIORef []
    subcnst <- newIORef []
@@ -469,6 +469,12 @@ runCompiler pi_time wholeprog flagVals outfile = do
      Right (RWT in_time sr_time cp_time sc_time ilprog) -> do
        (pb_time, _) <- time $ dumpILProgramToProtobuf ilprog outfile
        (nqueries, querytime) <- readIORef smtStatsRef
+       reportFinalPerformanceNumbers ci_time nqueries querytime in_time sr_time cp_time sc_time nc_time pb_time
+
+reportFinalPerformanceNumbers :: Double -> Int -> [ (Double, Double) ]
+                              -> Double -> Double -> Double
+                              -> Double -> Double -> Double -> IO ()
+reportFinalPerformanceNumbers ci_time nqueries querytime in_time sr_time cp_time sc_time nc_time pb_time = do
        let ct_time = (nc_time - (cp_time + in_time + sc_time))
        let pct f1 f2 = (100.0 * f1) / f2
        let fmt_pct time = let p = pct time nc_time
@@ -486,9 +492,9 @@ runCompiler pi_time wholeprog flagVals outfile = do
                          ,fmt "'other'     time:" ct_time
                          ,fmt "sum elapsed time:" nc_time
                          ,text ""
-                         ,fmt "    CBOR-in time:" pi_time
+                         ,fmt "    CBOR-in time:" ci_time
                          ,fmt "protobufout time:" pb_time
-                         ,text "overall wall-clock time:" <+> text (secs $ pi_time + pb_time + nc_time)
+                         ,text "overall wall-clock time:" <+> text (secs $ ci_time + pb_time + nc_time)
                          ]
 
 data ResultWithTimings = RWT Double Double Double Double ILProgram
