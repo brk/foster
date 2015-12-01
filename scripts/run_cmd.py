@@ -69,6 +69,8 @@ def run_command(cmd, paths, inputfile, showcmd=False, stdout=None, stderr=None, 
 
   if strictrv:
     if rv != 0:
+      print "Failed to run:"
+      print "     ", cmd
       raise TestFailed(cmd, inputfile)
     else:
       return ms

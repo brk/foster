@@ -6,7 +6,7 @@
 module Foster.Typecheck(tcSigmaToplevel, tcContext, tcType, fnTypeShallow) where
 
 import qualified Data.List as List(length, zip)
-import Data.List(foldl', (\\))
+import Data.List(foldl', (\\), isInfixOf)
 import Control.Monad(liftM, forM_, forM, liftM, liftM2, when)
 
 import qualified Data.Text as T(Text, pack, unpack)
@@ -59,14 +59,17 @@ data TCWanted = TCSigma | TCRho deriving Show
 --     directed translation along with inference, but we keep it regardless
 --     because it's a cheap sanity check for not ignoring the expected type.
 --
---   * To force an expression to be typechecked in pure inference mode,
+--   * To force an expression to be typechecked in pure (rho) inference mode,
 --     try the following construct: case INFER of _ -> ... end.
+--
+--   * For inferSigma, use (__COMPILES__ INFER) or { x = INFER; ... }
 --
 --   * To force an expression to be checked against a meta type variable,
 --     the easiest approach is to use a reference store operation: METATY >^ r.
 --
 --   * To force an expression to be checked against a particular type,
 --     write { f : { T => () }   =>   f EXPR }
+--     or just do    (EXPR as T)
 --
 --   * See the rule for typechecking boolean constants for an example of
 --     how the expected type can be used to improve error messages.
@@ -81,6 +84,11 @@ data TCWanted = TCSigma | TCRho deriving Show
 --     OCaml avoids this by making constructors second-class;
 --     SML   avoids this by disallowing constructors on the RHS of letrec.
 --
+--   * inferSigma called by
+--        tcRhoLet (let/rec-bindings without type annotations)
+--        tcRhoTyApp
+--        tcCompiles
+--        tc*FnHelper (Infer, or Check of a rho type)
 --   * matchExp calls either subsCheck or subsCheckRho as appropriate.
 --      subsCheck
 --          skolemize
@@ -128,20 +136,27 @@ tcSigmaToplevel (TermVarBinding _txt (tid, _)) ctx ast = do
 
 inferSigma :: Context SigmaTC -> Term -> String -> Tc (AnnExpr SigmaTC)
 -- {{{
+inferSigma ctx e msg = do
+  e' <- inferSigmaHelper ctx e msg
+  doQuantificationCheck e' ctx
+  return e'
+
+inferSigmaHelper :: Context SigmaTC -> Term -> String -> Tc (AnnExpr SigmaTC)
+inferSigmaHelper ctx (E_TyCheck _annot e ta) _msg = do t <- tcType ctx ta
+                                                       checkSigma ctx e t
 -- Special-case variables and function literals
 -- to avoid a redundant instantation + generalization
-inferSigma ctx (E_VarAST rng v) _msg = tcSigmaVar ctx rng (evarName v)
-inferSigma ctx (E_FnAST _rng f)  msg = do r <- newTcRef (error $ "inferSigmaFn: empty result: " ++ msg)
-                                          tcSigmaFn  ctx f (Infer r)
-inferSigma ctx (E_CallAST   rng base argtup) msg = do
+inferSigmaHelper ctx (E_VarAST rng v) _msg = tcSigmaVar ctx rng (evarName v)
+inferSigmaHelper ctx (E_FnAST _rng f)  msg = do r <- newTcRef (error $ "inferSigmaFn: empty result: " ++ msg)
+                                                tcSigmaFn  ctx f (Infer r)
+inferSigmaHelper ctx (E_CallAST   rng base argtup) msg = do
                 r <- newTcRef (error $ "inferSigmaFn: empty result: " ++ msg)
                 tcSigmaCall     ctx rng   base argtup (Infer r)
-inferSigma ctx e msg = do
-    debug $ "inferSigma " ++ highlightFirstLine (rangeOf e)
-    debug $ "inferSigma deferring to inferRho"
-    e' <- inferRho ctx e msg
-    doQuantificationCheck e' ctx
-    return e'
+inferSigmaHelper ctx e msg = do
+    debugIf True $ text $ "inferSigmaHelper " ++ highlightFirstLine (rangeOf e)
+    debugIf True $ showStructure e
+    debugIf True $ text $  "inferSigmaHelper deferring to inferRho"
+    inferRho ctx e msg
 -- }}}
 
 checkSigma :: Context SigmaTC -> Term -> SigmaTC -> Tc (AnnExpr SigmaTC)
@@ -149,9 +164,12 @@ checkSigma :: Context SigmaTC -> Term -> SigmaTC -> Tc (AnnExpr SigmaTC)
 checkSigma ctx (E_FnAST _ f) sigma = tcSigmaFn ctx f (Check sigma)
 checkSigma ctx e sigma = do
     (skol_tvs, rho) <- skolemize sigma
-    debug $ "checkSigma " ++ highlightFirstLine (rangeOf e) ++ " :: " ++ show sigma
-    debug $ "checkSigma used " ++ show skol_tvs ++ " to skolemize " ++ show sigma ++ " to " ++ show rho
-    debug $ "checkSigma deferring to checkRho for: " ++ highlightFirstLine (rangeOf e)
+    if not (null skol_tvs)
+      then do
+        debugIf True $ text $ "checkSigma " ++ highlightFirstLine (rangeOf e) ++ " :: " ++ show sigma
+        debugIf True $ text $ "checkSigma used " ++ show skol_tvs ++ " to skolemize " ++ show sigma ++ " to " ++ show rho
+        debugIf True $ text $ "checkSigma deferring to checkRho for: " ++ highlightFirstLine (rangeOf e)
+      else return ()
 
     ann <- checkRho ctx e rho
     checkForEscapingTypeVariables e ann ctx sigma skol_tvs
@@ -161,13 +179,29 @@ checkSigma ctx e sigma = do
 -- {{{
 doQuantificationCheck :: AnnExpr SigmaTC -> Context SigmaTC -> Tc ()
 doQuantificationCheck e' ctx = do
-    debug $ "inferSigma inferred :: " ++ show (typeTC e')
     env_tys <- getEnvTypes ctx
     env_tvs <- collectUnboundUnificationVars env_tys
     res_tvs <- collectUnboundUnificationVars [typeTC e']
     let forall_tvs = res_tvs \\ env_tvs
-    sanityCheck (null forall_tvs || not (isValue e' )) $
-        "inferSigma ought to quantify over the escaping meta type variables " ++ show (map MetaTyVarTC forall_tvs)
+    debugIf dbgQuant $ text "doQuantificationCheck: e' = " <$$> indent 4 (showStructure e')
+    debugIf dbgQuant $ pretty (typeTC e')
+    debugIf dbgQuant $ text $ "inferSigma inferred :: " ++ show (typeTC e')
+    --forall_tys <- mapM readTcMeta forall_tvs
+    --debugIf dbgQuant $ text "env_typs"   <$> indent 2 (vcat $ map (text.show) env_tys)
+    --debugIf dbgQuant $ text "env_tyvars" <$> indent 2 (vcat $ map (text.show) env_tvs)
+    --debugIf dbgQuant $ text "res_tyvars" <$> indent 2 (vcat $ map (text.show) res_tvs)
+    --debugIf dbgQuant $ text "forall_tys" <$> indent 2 (vcat $ map (text.show) forall_tys)
+    let isFxTv mtv = "fx" `isInfixOf` mtvDesc mtv || "effectvar" `isInfixOf` mtvDesc mtv
+    let nonfx_forall_tvs = [tv | tv <- forall_tvs, not (isFxTv tv)]
+    let hasEscapingMetaVars = not (null nonfx_forall_tvs)
+    if  hasEscapingMetaVars && isValue e'
+      then
+         tcLift $ putDocLn $ blue (text "Warning") <> text ": the expression"
+                    <$> indent 4 (highlightFirstLineDoc (rangeOf e'))
+                    <$> indent 2 (text "is being given a type involving meta type variables,"
+                              <$> text "not an implicitly-generalized polymorphic type"
+                              <+> text "(as might be expected in ML or Haskell")
+      else return ()
 
 isValue e = case e of
   AnnLiteral      {} -> True
@@ -648,10 +682,10 @@ tcRhoArrayRead annot sg base aiexpr expTy = do
 tcRhoArrayPoke annot s v base i expTy = do
 -- {{{
   let ck t = do
-      unify t (typeTC v) "arraypoke type"
-      let expr = AnnArrayPoke annot unitTypeTC
+        unify t (typeTC v) "arraypoke type"
+        let expr = AnnArrayPoke annot unitTypeTC
                                     (ArrayIndex base i (rangeOf annot) s) v
-      matchExp expTy expr "arraypoke"
+        matchExp expTy expr "arraypoke"
 
   let check t = case t of
         ArrayTypeTC t -> ck t
@@ -914,8 +948,8 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
             | identPrefix (tidIdent tid) == T.pack "coro_yield"
             -> do debugIf True $ green (text "call: coro yield: in/out: ") <$$> pretty inp_ty <$$> pretty out_ty
                   fx <- tcGetCurrentFnFx
-                  unify fx (TupleTypeTC (UniConst KindPointerSized) [inp_ty, out_ty]) ("Inconsistent use of coro_invoke" ++ highlightFirstLine (rangeOf rng))
                   debugIf True $ text "call: coro yield: fx = " <> pretty fx <$$> showStructure fx
+                  unify fx (TupleTypeTC (UniConst KindPointerSized) [inp_ty, out_ty]) ("Inconsistent use of coro_yield " ++ highlightFirstLine (rangeOf rng))
                   return ()
           _ -> return ()
 
@@ -2240,7 +2274,7 @@ fnTypeShallow ctx f = tcTypeAndResolve ctx fnTyAST (fnAstAnnot f)
   where
    fnTyAST0 = FnTypeAST (map tidType $ fnFormals f)
                         (MetaPlaceholderAST MTVSigma ("ret type for " ++ (T.unpack $ fnAstName f)))
-                        (MetaPlaceholderAST MTVTau   ("effect for " ++ (T.unpack $ fnAstName f)))
+                        (MetaPlaceholderAST MTVTau   ("effectvar," ++ (T.unpack $ fnAstName f)))
                         FastCC
                         (if fnWasToplevel f then FT_Proc else FT_Func)
    fnTyAST = case fnTyFormals f of
@@ -2252,7 +2286,8 @@ fnTypeShallow ctx f = tcTypeAndResolve ctx fnTyAST (fnAstAnnot f)
 tcVERBOSE = False
 
 dbgCalls = False
-dbgVar   = True
+dbgVar   = False
+dbgQuant = False
 
 debugIf c d = when c (tcLift $ putDocLn d)
 

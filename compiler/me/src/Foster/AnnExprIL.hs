@@ -316,6 +316,10 @@ ail ctx ae =
                 E_AnnTyApp _ ot (AnnPrimitive _rng _ prim@(NamedPrim tid)) apptys ->
                    let primName = identPrefix (tidIdent tid) in
                    case (coroPrimFor primName, apptys) of
+                     (Just CoroCreate, [argty, retty, _fxty]) -> do
+                       [aty, rty] <- mapM qt [argty, retty]
+                       return $ AICallPrim (rangeOf annot) ti (CoroPrim CoroCreate aty rty) argsi
+
                      (Just coroPrim, [argty, retty]) -> do
                        [aty, rty] <- mapM qt [argty, retty]
                        return $ AICallPrim (rangeOf annot) ti (CoroPrim coroPrim aty rty) argsi
@@ -346,6 +350,8 @@ ail ctx ae =
 data ArrayIndexResult = AIR_OK
                       | AIR_Trunc
                       | AIR_ZExt
+
+checkArrayIndexer :: AnnExpr TypeTC -> Tc ()
 checkArrayIndexer b = do
   -- The actual conversion will be done later on, in the backend.
   -- See the second hunk of patch b0e56b93f614.

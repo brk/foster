@@ -38,3 +38,9 @@ glob:compiler/me/**.*-boot
 glob:test/**.exe
 glob:*.lkshw
 glob:*\#
+compiler/me/.stack-work/
+syntax: glob
+compiler/me/.cabal-sandbox/
+compiler/me/.ghc-make/
+compiler/me/.ghc-make.*
+compiler/me/cabal.sandbox.config

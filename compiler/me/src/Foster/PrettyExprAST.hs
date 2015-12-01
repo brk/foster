@@ -44,7 +44,7 @@ instance Pretty TypeP where
           PrimIntP       isb          -> text "Int" <> pretty isb
           TyConAppP      dt ts        -> parens $ pretty dt <+> sep (map pretty ts)
           TupleTypeP     ts           -> tupled (map pretty ts)
-          FnTypeP        ts r _cc _pf -> text "{" <+> hsep [pretty t <+> text "=>" | t <- ts]
+          FnTypeP    ts r _cc _pf _sr -> text "{" <+> hsep [pretty t <+> text "=>" | t <- ts]
                                                   <+> pretty r <+> text "}"
           CoroTypeP      s  r         -> parens $ text "Coro" <+> pretty s <+> pretty r
           ArrayTypeP     t            -> parens $ text "Array" <+> pretty t

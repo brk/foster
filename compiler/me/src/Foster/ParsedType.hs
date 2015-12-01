@@ -19,7 +19,8 @@ data TypeP =
          | FnTypeP        { fnTypeDomain :: [TypeP]
                           , fnTypeRange  :: TypeP
                           , fnTypeCallConv :: CallConv
-                          , fnTypeProcOrFunc :: ProcOrFunc }
+                          , fnTypeProcOrFunc :: ProcOrFunc
+                          , fnTypeSource :: SourceRange }
          | CoroTypeP      TypeP TypeP
          | ForAllP        [TypeFormal] TypeP
          | TyVarP         TyVar
@@ -38,7 +39,7 @@ instance Show TypeP where
         PrimIntP         size         -> "(PrimIntP " ++ show size ++ ")"
         TyConAppP    tc types         -> "(TyCon: " ++ show tc ++ joinWith " " ("":map show types) ++ ")"
         TupleTypeP      types         -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
-        FnTypeP    s t cc cs          -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
+        FnTypeP    s t cc cs _        -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
         CoroTypeP  s t                -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
         ForAllP  tvs rho              -> "(ForAll " ++ show tvs ++ ". " ++ show rho ++ ")"
         TyVarP   tv                   -> show tv
@@ -53,7 +54,7 @@ instance Structured TypeP where
             PrimIntP     size            -> text $ "PrimIntP " ++ show size
             TyConAppP    tc  _           -> text $ "TyConAppP " ++ tc
             TupleTypeP       _           -> text $ "TupleTypeP"
-            FnTypeP    _ _   _ _         -> text $ "FnTypeP"
+            FnTypeP    _ _   _ _ _       -> text $ "FnTypeP"
             CoroTypeP  _ _               -> text $ "CoroTypeP"
             ForAllP  tvs _rho            -> text $ "ForAllP " ++ show tvs
             TyVarP   tv                  -> text $ "TyVarP " ++ show tv
@@ -67,7 +68,7 @@ instance Structured TypeP where
             PrimIntP         _           -> []
             TyConAppP   _tc types        -> types
             TupleTypeP      types        -> types
-            FnTypeP    ss t _ _          -> (t:ss)
+            FnTypeP    ss t _ _ _        -> (t:ss)
             CoroTypeP  s t               -> [s, t]
             ForAllP  _tvs rho            -> [rho]
             TyVarP   _tv                 -> []

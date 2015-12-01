@@ -131,7 +131,11 @@ On Ubuntu 10.10:
 
 Haskell:
    To enable profiling, add    library-profiling: True   to   ~/.cabal/config
-   before installing any further packages. Then:
+   before installing any further packages.
+   It will probably make your life easier to set up a Cabal sandbox within the
+        ``compiler/me`` directory via
+        ``cabal sandbox init ; cabal install --only-dependencies``
+   Or, install things manually:
       cabal update
       cabal install cabal-install
       cabal install happy alex

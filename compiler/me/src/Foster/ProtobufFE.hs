@@ -72,7 +72,7 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
   tm (CBOR_UInt x) n = x == n
   tm other _n = error $ "tm expected CBOR_UInt, got " ++ show other
 
-  markFnAsProc (FnTypeP d r cc _) = (FnTypeP d r cc FT_Proc)
+  markFnAsProc (FnTypeP d r cc _ sr) = (FnTypeP d r cc FT_Proc sr)
   markFnAsProc (ForAllP formals t) = ForAllP formals (markFnAsProc t)
   markFnAsProc ty = ty
 
@@ -485,14 +485,14 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
       MetaPlaceholder (cb_parse_aid a)
     CBOR_Array [tok, _,_cbr, CBOR_Array [t]] | tok `tm` tok_TUPLE -> cb_parse_t t
     CBOR_Array [tok, _,_cbr, CBOR_Array tys] | tok `tm` tok_TUPLE -> TupleTypeP (map cb_parse_t tys)
-    CBOR_Array [tok, _,_cbr, CBOR_Array [tuple, _mu]]          | tok `tm` tok_FUNC_TYPE ->
+    CBOR_Array [tok, _, cbr, CBOR_Array [tuple, _mu]]          | tok `tm` tok_FUNC_TYPE ->
         let tys = map cb_parse_t (unTuple tuple) in
-        FnTypeP (init tys) (last tys) FastCC FT_Func
-    CBOR_Array [tok, _,_cbr, CBOR_Array [tuple, _mu, tannots]] | tok `tm` tok_FUNC_TYPE ->
+        FnTypeP (init tys) (last tys) FastCC FT_Func (cb_parse_range cbr)
+    CBOR_Array [tok, _, cbr, CBOR_Array [tuple, _mu, tannots]] | tok `tm` tok_FUNC_TYPE ->
         let annots = cb_parse_tannots tannots in
         let (cc, ft) = extractFnInfoFromAnnots annots in
         let tys = map cb_parse_t (unTuple tuple) in
-        FnTypeP (init tys) (last tys) cc ft
+        FnTypeP (init tys) (last tys) cc ft (cb_parse_range cbr)
     _ -> error $ "cb_parse_tatom failed: " ++ show cbor
 
   extractFnInfoFromAnnots annots =

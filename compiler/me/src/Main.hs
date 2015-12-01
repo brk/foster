@@ -62,7 +62,7 @@ import Text.Printf(printf)
 import Foster.Output
 import Text.PrettyPrint.ANSI.Leijen((<+>), (<>), (<$>), pretty, text, line, hsep,
                                      fill, parens, vcat, list, red, dullyellow)
-import Criterion.Measurement(time, secs)
+import Criterion.Measurement(secs)
 
 pair2binding (nm, ty, mcid) = TermVarBinding nm (TypedId ty (GlobalSymbol nm), mcid)
 
@@ -408,7 +408,8 @@ readAndParseCbor infile = do
   return $ runGet getCBOR cborbytes
 
 main = do
-  -- When we upgrade to criterion 1.0, we must call initializeTime here...
+  -- When we upgrade to criterion 1.0, we must uncomment the following line...
+  --initializeTime
   args <- getArgs
   case args of
     (infile : outfile : rest) -> do
@@ -450,7 +451,7 @@ runCompiler ci_time wholeprog flagVals outfile = do
                      tcCurrentFnEffect = Nothing,
                 tcUseOptimizedCtorReprs = getCtorOpt flagVals,
                           tcVerboseMode = getVerboseFlag flagVals }
-   (nc_time, mb_errs) <- time $ runErrorT $ evalStateT (compile wholeprog tcenv)
+   (nc_time, mb_errs) <- ioTime $ runErrorT $ evalStateT (compile wholeprog tcenv)
                     CompilerContext {
                            ccVerbose  = getVerboseFlag flagVals
                          , ccFlagVals = flagVals
@@ -470,7 +471,7 @@ runCompiler ci_time wholeprog flagVals outfile = do
        exitFailure
 
      Right (RWT in_time sr_time cp_time sc_time ilprog) -> do
-       (pb_time, _) <- time $ dumpILProgramToProtobuf ilprog outfile
+       (pb_time, _) <- ioTime $ dumpILProgramToProtobuf ilprog outfile
        (nqueries, querytime) <- readIORef smtStatsRef
        reportFinalPerformanceNumbers ci_time nqueries querytime in_time sr_time cp_time sc_time nc_time pb_time
 
@@ -553,9 +554,9 @@ desugarParsedModule tcenv m = do
           CoroTypeP    s t       -> liftM2 CoroTypeAST       (q s) (q t)
           ForAllP    tvs t       -> liftM (ForAllAST $ map convertTyFormal tvs) (q t)
           TyVarP     tv          -> do return $ TyVarAST tv
-          FnTypeP      s t cc cs -> do s' <- mapM q s
+          FnTypeP   s t cc cs sr -> do s' <- mapM q s
                                        t' <- q t
-                                       let fx = MetaPlaceholderAST MTVTau   ("effectvar")
+                                       let fx = MetaPlaceholderAST MTVTau   ("effectvar:" ++ showSourceRange sr)
                                        return $ FnTypeAST  s' t' fx cc cs
           RefinedTypeP nm t e -> do t' <- q t
                                     e' <- convertExprAST q e

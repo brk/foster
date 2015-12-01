@@ -30,12 +30,6 @@ def get_parser(usage):
 def normalize(path):
   return os.path.expanduser(path)
 
-def ghc7plus():
-  import subprocess as sub
-  p = sub.Popen(['ghc','--version'], stdout=sub.PIPE)
-  output, errors = p.communicate()
-  return not 'version 6' in output
-
 if __name__ == "__main__":
   parser = get_parser("%prog --bindir <BINDIR> --root <FOSTER_ROOT> [other args]")
   (options, args) = parser.parse_args()
@@ -47,30 +41,61 @@ if __name__ == "__main__":
   params = {
         'bindir' :  normalize(options.bindir),
         'srcroot':  normalize(options.srcroot),
-        'hsflags': "-XFlexibleInstances -XMultiParamTypeClasses -XDeriveDataTypeable" +
-                   " -XTypeSynonymInstances -XDeriveFunctor -XBangPatterns" +
-                   " -Wall -fwarn-unused-do-bind -fwarn-tabs" +
-                   " -fno-warn-missing-signatures -fno-warn-name-shadowing" +
-                   " -fno-warn-type-defaults -fno-warn-orphans",
+        'hsflags':  ['-rtsopts'],
+        'stackflags' : []
       }
 
-  if options.recompile:
-    params['hsflags'] += ' -fforce-recomp'
-
   if options.profile:
-    params['hsflags'] += ' -prof -auto-all'
+    if not options.optimize:
+      params['hsflags'].append('-auto-all')
+      params['stackflags'].append('--executable-profiling')
+      params['stackflags'].append('--library-profiling')
+    else:
+      print "Warning: profiling disabled due to --optimize flag"
 
   if options.optimize:
-    params['hsflags'] += ' -O2'
+    params['hsflags'].append('-O2')
 
   if options.coverage:
-    params['hsflags'] += ' -fhpc'
+    params['hsflags'].append('-fhpc')
 
-  if ghc7plus():
-    # GHC 6 allows all runtime opts to be late-bound,
-    # but GHC 7 does not, by default. Forcefully revert to the old behavior.
-    params['hsflags'] += ' -rtsopts'
+  # Allow runtime opts to be late-bound.
 
-  cmd = ("ghc --make -i%(srcroot)s/compiler/me/src %(hsflags)s " +
-         "%(srcroot)s/compiler/me/src/Main.hs -o %(bindir)s/me") % params
-  run_command(cmd, {}, "")
+  def build_with_stack():
+    cmd = [
+       'stack', 'install',
+       '--stack-yaml', ('%(srcroot)s/compiler/me/stack.yaml' % params),
+       '--local-bin-path', params['bindir'],
+       ] + ['--ghc-options="%s"' % s for s in params['hsflags']] + params['stackflags']
+    run_command(cmd, {}, "")
+    with open('%(bindir)s/me.buildcmd.txt' % params, 'w') as f:
+      f.write(' '.join(cmd) + '\n')
+
+  def build_with_ghcmake():
+    with open(os.devnull, 'w') as devnull:
+      (rv, ms) = run_command("which ghc-make", {}, "", stdout=devnull, strictrv=False)
+      if rv == 0:
+         # Prevent a spurious/buggy error (race condition?) from ghc-make
+         run_command('touch %(bindir)s/me' % params, {}, "")
+         params['ghcmake'] = 'ghc-make'
+      else:
+         params['ghcmake'] = 'ghc --make'
+
+    params['hsflags'] = (' '.join(params['hsflags']) +
+                         " -XFlexibleInstances -XMultiParamTypeClasses -XDeriveDataTypeable" +
+                         " -XTypeSynonymInstances -XDeriveFunctor -XBangPatterns" +
+                         " -Wall -fwarn-unused-do-bind -fwarn-tabs" +
+                         " -fno-warn-missing-signatures -fno-warn-name-shadowing" +
+                         " -fno-warn-type-defaults -fno-warn-orphans")
+    cmd = ("cabal exec -- %(ghcmake)s -i%(srcroot)s/compiler/me/src %(hsflags)s " +
+           "%(srcroot)s/compiler/me/src/Main.hs -o %(bindir)s/me") % params
+    os.chdir(os.path.join(options.srcroot, 'compiler', 'me'))
+    run_command(cmd, {}, "")
+    with open('%(bindir)s/me.buildcmd.txt' % params, 'w') as f:
+      f.write(' '.join(cmd) + '\n')
+
+  if False:
+     build_with_stack()
+  else:
+     build_with_ghcmake()
+

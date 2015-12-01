@@ -139,7 +139,7 @@ tcUnifyLoop :: [TypeConstraint] -> TypeSubst -> Tc UnifySoln
 tcUnifyLoop [] tysub = return $ Just tysub
 
 tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
- tcLift $ putStrLn ("tcUnifyLoop: t1 = " ++ show t1 ++ "; t2 = " ++ show t2)
+ --tcLift $ putStrLn ("tcUnifyLoop: t1 = " ++ show t1 ++ "; t2 = " ++ show t2)
  if illegal t1 || illegal t2
   then tcFailsMore
         [text "Bound type variables cannot be unified! Unable to unify"
@@ -240,10 +240,10 @@ tcUnifyVar m1 (MetaTyVarTC m2) tysub constraints | m1 == m2
   = tcUnifyLoop constraints tysub
 
 tcUnifyVar m ty tysub constraints = do
-    do
-      tcm <- readTcMeta m
-      tcLift $ putStrLn $ "================ Unifying meta var " ++ show (pretty $ MetaTyVarTC m) ++ " :: " ++ show (pretty tcm)
-                     ++ "\n============================= with " ++ show (pretty $ ty)
+    --do
+    --  tcm <- readTcMeta m
+    --  tcLift $ putStrLn $ "================ Unifying meta var " ++ show (pretty $ MetaTyVarTC m) ++ " :: " ++ show (pretty tcm)
+    --                 ++ "\n============================= with " ++ show (pretty $ ty)
     let tysub' = Map.insert (mtvUniq m) ty tysub
     tcUnifyLoop (tySubstConstraints constraints (Map.singleton (mtvUniq m) ty)) tysub'
       where

@@ -93,7 +93,7 @@ def print_result_table(res):
 
 def run_diff(a, b):
   "Returns True if diff finds a difference between file a and file b."
-  df_rv = subprocess.call(['diff', '-u', a, b])
+  df_rv = subprocess.call(['diff', '--side-by-side', '--brief', '--left-column', a, b])
   return df_rv != 0
 
 def get_prog_stdin(testpath, tmpdir):
@@ -149,9 +149,6 @@ def run_one_test(testpath, tmpdir, progargs, paths, exe_cmd, elapseds):
     fp_elapsed=fp_elapsed, fm_elapsed=fm_elapsed, fl_elapsed=fl_elapsed,
     fc_elapsed=fc_elapsed, as_elapsed=as_elapsed, ld_elapsed=ld_elapsed, rn_elapsed=rn_elapsed)
   infile.close()
-
-  if show_cmdlines(options):
-    run_command(["paste", exp_filename, act_filename], {}, "")
 
   if rv != 0:
     print testpath, "failed with non-zero return value", rv

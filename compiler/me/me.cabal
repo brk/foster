@@ -1,54 +1,139 @@
-name: me
-version: 0.0.3
-cabal-version: -any
-build-type: Simple
-license: BSD3
-license-file: ""
-copyright:
-maintainer:
-build-depends: ansi-terminal -any, array -any, base -any,
-               bytestring -any, containers -any, filepath >=1.1.0.3, fgl -any,
-               mtl -any, protocol-buffers -any, hoopl >=3.9.0.0,
-               protocol-buffers-descriptor -any, text -any, utf8-string -any,
-               criterion -any, hoopl ==3.10.0.1, ansi-wl-pprint -any, time -any,
-               data-dword -any, boxes -any, language-lua
-stability:
-homepage:
-package-url:
-bug-reports:
-synopsis: Foster Middle-End
-description: .
-category:
-author:
-tested-with:
-data-files:
-data-dir: ""
-extra-source-files: Foster/Pb.hs Foster/Pb/Expr.hs
-                    Foster/Pb/SourceLocation.hs Foster/Pb/SourceRange.hs
-extra-tmp-files:
+name:                me
+version:             0.1.0.0
+synopsis:            Foster middle-end
+description:         Please see README.md
+homepage:            http://github.com/brk/stackme#readme
+license:             BSD3
+--license-file:        LICENSE
+author:              Ben Karel
+maintainer:          eschew@gmail.com
+copyright:           2010 Ben Karel
+category:            Languages
+build-type:          Simple
+--extra-source-files: Foster/Pb.hs Foster/Pb/Expr.hs
+--                    Foster/Pb/SourceLocation.hs Foster/Pb/SourceRange.hs
+cabal-version:       >=1.18
 
-executable: me
-main-is: Main.hs
-buildable: True
-build-tools:
-cpp-options:
-cc-options:
-ld-options:
-pkgconfig-depends:
-frameworks:
-c-sources:
-extensions: MultiParamTypeClasses FlexibleInstances
-            DeriveDataTypeable DeriveFunctor BangPatterns TypeSynonymInstances
-extra-libraries:
-extra-lib-dirs:
-includes:
-install-includes:
-include-dirs:
-hs-source-dirs: src
-other-modules:
-ghc-prof-options:
-ghc-shared-options:
-ghc-options:
-hugs-options:
-nhc98-options:
-jhc-options:
+
+
+executable me
+  hs-source-dirs:      src
+  main-is:             Main.hs
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+                       -Wall -fwarn-unused-do-bind -fwarn-tabs
+                       -fno-warn-missing-signatures -fno-warn-name-shadowing
+                       -fno-warn-type-defaults -fno-warn-orphans
+  default-extensions:  FlexibleInstances FlexibleContexts
+                       MultiParamTypeClasses DeriveDataTypeable
+                       TypeSynonymInstances DeriveFunctor BangPatterns
+  other-extensions:    GADTs RankNTypes ScopedTypeVariables StandaloneDeriving
+                       PatternGuards NoMonoLocalBinds RecursiveDo FlexibleContexts
+  build-depends: array -any,
+                 ansi-wl-pprint -any,
+                 binary -any,
+                 bytestring -any,
+                 containers -any,
+                 criterion <= 1.0.0.0,
+                 CBOR -any,
+                 text -any,
+                 mtl -any,
+                 transformers -any,
+                 fgl -any,
+                 hoopl >= 3.10.1.0,
+                 time -any,
+                 union-find -any,
+                 data-dword -any,
+                 directory -any,
+                 smtLib -any,
+                 boxes -any,
+                 process -any,
+                 protocol-buffers,
+                 protocol-buffers-descriptor -any,
+                 utf8-string -any,
+                 base -any
+  default-language:    Haskell2010
+
+  other-modules:
+      Foster.AnnExpr
+      Foster.AnnExprIL
+      Foster.Avails
+      Foster.Base
+      Foster.Bepb.Block
+      Foster.Bepb.BlockMiddle
+      Foster.Bepb.Decl
+      Foster.Bepb.LetVal
+      Foster.Bepb.Letable
+      Foster.Bepb.Letable.Tag
+      Foster.Bepb.Module
+      Foster.Bepb.PBInt
+      Foster.Bepb.PbAllocInfo
+      Foster.Bepb.PbAllocInfo.MemRegion
+      Foster.Bepb.PbArrayEntry
+      Foster.Bepb.PbArrayLiteral
+      Foster.Bepb.PbCallAsm
+      Foster.Bepb.PbCallInfo
+      Foster.Bepb.PbCoroPrim
+      Foster.Bepb.PbCoroPrim.Tag
+      Foster.Bepb.PbCtorId
+      Foster.Bepb.PbCtorInfo
+      Foster.Bepb.PbCtorRepr
+      Foster.Bepb.PbCtorRepr.Tag
+      Foster.Bepb.PbDataCtor
+      Foster.Bepb.PbOccurrence
+      Foster.Bepb.PbSwitch
+      Foster.Bepb.Proc
+      Foster.Bepb.Proc.Linkage
+      Foster.Bepb.ProcType
+      Foster.Bepb.RebindId
+      Foster.Bepb.RootInit
+      Foster.Bepb.RootKill
+      Foster.Bepb.TermVar
+      Foster.Bepb.TermVar.Tag
+      Foster.Bepb.Terminator
+      Foster.Bepb.Terminator.Tag
+      Foster.Bepb.TupleStore
+      Foster.Bepb.Type
+      Foster.Bepb.Type.Tag
+      Foster.CFG
+      Foster.CFGOptimization
+      Foster.CloConv
+      Foster.Config
+      Foster.Context
+      Foster.ConvertExprAST
+      Foster.ExprAST
+      Foster.GCRoots
+      Foster.ILExpr
+      Foster.Infer
+      Foster.KNExpr
+      Foster.KNStaticChecks
+      Foster.KNUtil
+      Foster.KSmallstep
+      Foster.Kind
+      Foster.Letable
+      Foster.MKNExpr
+      Foster.MainCtorHelpers
+      Foster.MainOpts
+      Foster.MonoType
+      Foster.Monomo
+      Foster.Output
+      Foster.ParsedType
+      Foster.PatternMatch
+      Foster.PrettyAnnExpr
+      Foster.PrettyExprAST
+      Foster.Primitives
+      Foster.ProtobufFE
+      Foster.ProtobufIL
+      Foster.ProtobufUtils
+      Foster.RunZ3
+      Foster.TypeAST
+      Foster.TypeIL
+      Foster.TypeLL
+      Foster.TypeTC
+      Foster.Typecheck
+      Foster.TypecheckInt
+      Foster.Worklist
+
+
+source-repository head
+  type:     hg
+  location: https://bitbucket.com/b/foster
