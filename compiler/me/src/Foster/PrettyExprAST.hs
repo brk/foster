@@ -132,8 +132,7 @@ isOperator _                 = False
 
 instance Pretty Formatting where
   pretty BlankLine   = {-text "~" <>-} linebreak
-  -- Egads, is there no way of *forcing* a linebreak with wl-pprint?
-  pretty (Comment ('/':'/':s)) = text "/*" <> text s <+> text "*/"
+  pretty (Comment ('/':'/':s)) = text "//" <> text s <> hardline
   pretty (Comment s) = string s -- comment markers already included
 
 withAnnot (ExprAnnot pre _ post) doc =
