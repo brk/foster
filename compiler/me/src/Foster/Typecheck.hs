@@ -153,9 +153,9 @@ inferSigmaHelper ctx (E_CallAST   rng base argtup) msg = do
                 r <- newTcRef (error $ "inferSigmaFn: empty result: " ++ msg)
                 tcSigmaCall     ctx rng   base argtup (Infer r)
 inferSigmaHelper ctx e msg = do
-    debugIf True $ text $ "inferSigmaHelper " ++ highlightFirstLine (rangeOf e)
-    debugIf True $ showStructure e
-    debugIf True $ text $  "inferSigmaHelper deferring to inferRho"
+    debugIf dbgSigma $ text $ "inferSigmaHelper " ++ highlightFirstLine (rangeOf e)
+    debugIf dbgSigma $ showStructure e
+    debugIf dbgSigma $ text $  "inferSigmaHelper deferring to inferRho"
     inferRho ctx e msg
 -- }}}
 
@@ -166,9 +166,9 @@ checkSigma ctx e sigma = do
     (skol_tvs, rho) <- skolemize sigma
     if not (null skol_tvs)
       then do
-        debugIf True $ text $ "checkSigma " ++ highlightFirstLine (rangeOf e) ++ " :: " ++ show sigma
-        debugIf True $ text $ "checkSigma used " ++ show skol_tvs ++ " to skolemize " ++ show sigma ++ " to " ++ show rho
-        debugIf True $ text $ "checkSigma deferring to checkRho for: " ++ highlightFirstLine (rangeOf e)
+        debugIf dbgSigma $ text $ "checkSigma " ++ highlightFirstLine (rangeOf e) ++ " :: " ++ show sigma
+        debugIf dbgSigma $ text $ "checkSigma used " ++ show skol_tvs ++ " to skolemize " ++ show sigma ++ " to " ++ show rho
+        debugIf dbgSigma $ text $ "checkSigma deferring to checkRho for: " ++ highlightFirstLine (rangeOf e)
       else return ()
 
     ann <- checkRho ctx e rho
@@ -937,18 +937,18 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
         case annbase of
           E_AnnTyApp _ _ (AnnPrimitive _ _ (NamedPrim tid)) tys
             | identPrefix (tidIdent tid) == T.pack "coro_create"
-            -> do debugIf True $ green (text "call: coro create: tys: ") <$$> pretty tys
-                  debugIf True $ showStructure base
+            -> do debugIf dbgCoro $ green (text "call: coro create: tys: ") <$$> pretty tys
+                  debugIf dbgCoro $ showStructure base
                   return ()
           E_AnnTyApp _ _ (AnnPrimitive _ _ (NamedPrim tid)) [inp_ty, out_ty]
             | identPrefix (tidIdent tid) == T.pack "coro_invoke"
-            -> do debugIf True $ green (text "call: coro invoke: in/out: ") <$$> pretty inp_ty <$$> pretty out_ty
+            -> do debugIf dbgCoro $ green (text "call: coro invoke: in/out: ") <$$> pretty inp_ty <$$> pretty out_ty
                   return ()
           E_AnnTyApp _ _ (AnnPrimitive _ _ (NamedPrim tid)) [inp_ty, out_ty]
             | identPrefix (tidIdent tid) == T.pack "coro_yield"
-            -> do debugIf True $ green (text "call: coro yield: in/out: ") <$$> pretty inp_ty <$$> pretty out_ty
+            -> do debugIf dbgCoro $ green (text "call: coro yield: in/out: ") <$$> pretty inp_ty <$$> pretty out_ty
                   fx <- tcGetCurrentFnFx
-                  debugIf True $ text "call: coro yield: fx = " <> pretty fx <$$> showStructure fx
+                  debugIf dbgCoro $ text "call: coro yield: fx = " <> pretty fx <$$> showStructure fx
                   unify fx (TupleTypeTC (UniConst KindPointerSized) [inp_ty, out_ty]) ("Inconsistent use of coro_yield " ++ highlightFirstLine (rangeOf rng))
                   return ()
           _ -> return ()
@@ -1162,7 +1162,6 @@ tcSigmaFnHelper ctx fnAST expTyRaw tyformals = do
     (annbody, body_ty, fx, uniquelyNamedBinders) <- case mb_rho of
       -- for Infer or for Check of a non-ForAll type
       Nothing       -> do fx <- newTcUnificationVarTau "sigma.fx.infer"
-                          debugIf True $ blue $ text "fx for inferred fn"
                           annbody <- tcWithCurrentFx fx $
                                        inferSigma extCtx (fnAstBody fnAST) "poly-fn body"
                           return (annbody, typeTC annbody, fx, uniquelyNamedFormals)
@@ -1199,7 +1198,6 @@ tcSigmaFnHelper ctx fnAST expTyRaw tyformals = do
                          map (\(TypedId _ id, ty) -> TypedId ty id)
                              (zip uniquelyNamedFormals pickedTys)
 
-            debugIf True $ blue $ text "fx for sigma"
             annbody <- tcWithCurrentFx fx $
                          checkRho extCtx (fnAstBody fnAST) body_ty
             return (annbody, body_ty, fx, uniquelyNamedBinders)
@@ -1367,7 +1365,6 @@ tcRhoFnHelper ctx f expTy = do
     let extCtx = extendContext ctx uniquelyNamedBinders
 
     -- Check or infer the type of the body.
-    debugIf True $ blue $ text "fx for rho fn " <> text (show $ fnAstName f) <+> pretty fx
     annbody <- tcWithCurrentFx fx $
       case mbExpBodyTy of
         Nothing      -> do inferSigma extCtx (fnAstBody f) "mono-fn body"
@@ -1472,8 +1469,13 @@ tcType' ctx refinementArgs ris typ = do
                                             case mty of
                                                 Nothing -> do ty' <- zonkType tv
                                                               writeTcMetaTC m ty'
-                                                Just  _ -> do tcFails [text "tcType' didn't expect unification variable associated"
-                                                                      ,text "with a bound type variable to get unified!"]
+                                                Just (MetaTyVarTC m') -> tryOverwrite (tv, MetaTyVarTC m' )
+                                                Just ut -> do tcFailsMore [
+                                                                  text "tcType' didn't expect unification variable" <+> text (show m) <+> text "associated"
+                                                                 ,text "with a bound type variable" <+> pretty tv <+> text "to get unified!"
+                                                                 ,indent 8 (pretty ut)
+                                                                 ,line
+                                                                 ,pretty typ]
                                         tryOverwrite (tv, tau) = do
                                           tcFails [text "tcType'.tryOverwrite could not handle non-meta tau for type variable " <> pretty tv
                                                   ,pretty tau]
@@ -2288,6 +2290,8 @@ tcVERBOSE = False
 dbgCalls = False
 dbgVar   = False
 dbgQuant = False
+dbgCoro  = False
+dbgSigma = False
 
 debugIf c d = when c (tcLift $ putDocLn d)
 
