@@ -349,13 +349,24 @@ def collect_all_timings():
   shell_out("echo ] >> %s" % alltimings)
   print alltimings
 
+def get_test_parser(usage):
+  parser = OptionParser(usage=usage)
+  parser.add_option("--comment", action="append", dest="comments", default=[],
+                    help="Associate a comment with this run.")
+  return parser
 
 def main():
+  parser = get_test_parser("""usage: %prog [options]\n""")
+  (options, args) = parser.parse_args()
+
+  start = datetime.datetime.utcnow()
   ensure_dir_exists(data_dir())
   benchmark_third_party(other_third_party_benchmarks)
   benchmark_third_party(shootout_original_benchmarks)
   benchmark_shootout_programs()
   collect_all_timings()
+  end = datetime.datetime.utcnow()
+  print "Total elapsed time:", end - start
 
 if __name__ == '__main__':
   main()
