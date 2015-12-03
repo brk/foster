@@ -195,15 +195,20 @@ add_custom_command(
           ${PROJECT_SOURCE_DIR}/compiler/parse/FosterIL.proto
   )
 
+set(HS_ME_PROFILE_OR_OPTIMIZE profile CACHE STRING
+        "Middle end: ask GHC to [profile] or to [optimize] it")
+set(HS_ME hs_me_${HS_ME_PROFILE_OR_OPTIMIZE})
+
 # Generate middle-end from Haskell source files, once
 # Haskell protobuf module sources have been generated.
-add_custom_target(hs_me
+add_custom_target(${HS_ME}
   DEPENDS ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Bepb.hs
   COMMAND python ${PROJECT_SOURCE_DIR}/scripts/mk_me.py
           --srcroot ${PROJECT_SOURCE_DIR}
           --bindir ${PROJECT_BINARY_DIR}
-          --profile
+          --${HS_ME_PROFILE_OR_OPTIMIZE}
   )
+
 # We currently run tests in parallel on Linux and serially on Mac OS X.
 # Haskell's profiling coverage tool corrupts its database when
 # run in parallel, so consider yourself warned...
@@ -415,7 +420,7 @@ target_link_libraries(fosterlower
   antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
 
 add_dependencies(fosterlower
-    foster_runtime_bc hs_me cycle)
+    foster_runtime_bc ${HS_ME} cycle)
 
 ############
 
@@ -424,7 +429,7 @@ target_link_libraries(fosteroptc
     fosterc_base fosterc_llvm ${LLVM_LDFLAGS})
 
 add_dependencies(fosteroptc
-    foster_runtime_bc hs_me)
+    foster_runtime_bc ${HS_ME})
 
 ############
 
