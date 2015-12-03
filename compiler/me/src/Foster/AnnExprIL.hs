@@ -261,10 +261,10 @@ ail ctx ae =
                                              amr = if all isLiteral exprs then MemRegionGlobalData
                                                                           else MemRegionGlobalHeap
                                              (ArrayTypeIL ati) = ti
-                                             arr = AIAllocArray ati (AILiteral i64 litint) amr NoZeroInit
+                                             arr = AIAllocArray ati (AILiteral i32 litint) amr NoZeroInit
                                          return $ AIArrayLit ti arr ais where {
           n = length exprs
-        ; i64 = PrimIntIL I64
+        ; i32 = PrimIntIL I32
         ; litint = LitInt (LiteralInt (fromIntegral n) 32 (show n) 10)
         }
         AnnArrayRead _rng t (ArrayIndex a b rng s) -> do
