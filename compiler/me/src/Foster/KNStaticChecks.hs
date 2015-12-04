@@ -25,7 +25,7 @@ import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T
 import qualified Data.ByteString as BS
 
-import Control.Monad.Error(throwError, runErrorT, ErrorT)
+import Control.Monad.Trans.Except(runExceptT)
 import Control.Monad.State(gets, liftIO, evalStateT, StateT,
                            forM, forM_, get, put, lift)
 
@@ -238,14 +238,14 @@ scRunZ3 expr script@(CommentedScript items _) = do
                 putDocLn $ doc
              else return ()
   case res of
-    Left x -> do throwError [text x, knMonoLikePretty expr, string (show doc)]
+    Left x -> do compiledThrowE [text x, knMonoLikePretty expr, string (show doc)]
     Right ["unsat"] -> do
       -- Run the script again, but without the target asserted.
       -- If the result remains unsat, then the context was inconsistent.
       -- If the result becomes sat, then the context was not inconsistent.
       (time', res') <- liftIO $ ioTime $ runZ3 (show $ vcat (map pretty items)) Nothing
       case res' of
-        Left x -> throwError [text x, knMonoLikePretty expr, string (show doc)]
+        Left x -> compiledThrowE [text x, knMonoLikePretty expr, string (show doc)]
         Right ["sat"] -> do liftIO $ modifyIORef smtStatsRef (\(c, ts) -> (c + 1, (time, time'):ts))
                             return ()
         Right ["unsat"] -> do
@@ -253,8 +253,8 @@ scRunZ3 expr script@(CommentedScript items _) = do
          dbgStr $ "   This is either dead code or a buggy implementation of our SMT query generation."
          return ()
         Right strs -> do
-         throwError $ [text "Removing the target assertion resulted in an invalid SMT query?!?"] ++ map text strs
-    Right strs -> throwError ([text "Unable to verify precondition or postcondition associated with expression",
+         compiledThrowE $ [text "Removing the target assertion resulted in an invalid SMT query?!?"] ++ map text strs
+    Right strs -> compiledThrowE ([text "Unable to verify precondition or postcondition associated with expression",
                                case maybeSourceRangeOf expr of
                                    Just sr -> prettyWithLineNumbers sr
                                    Nothing -> knMonoLikePretty expr,
@@ -750,7 +750,7 @@ scIntrospect action = do state <- get
                                    liftIO $ runCompiled action state
 
     runCompiled :: Compiled x -> CompilerContext -> IO (Either CompilerFailures x)
-    runCompiled action state = runErrorT $ evalStateT action state
+    runCompiled action state = runExceptT $ evalStateT action state
 
 
 whenRefined ty f = whenRefinedElse ty f ()

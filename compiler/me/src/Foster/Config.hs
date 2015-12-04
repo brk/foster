@@ -10,9 +10,10 @@ import Foster.Base(Uniq, Ident(..), modIORef')
 import Foster.MainOpts
 
 import Data.IORef(IORef, readIORef, newIORef, writeIORef)
+import Control.Monad.Trans(lift)
 import Control.Monad.State(StateT, gets, when, liftIO)
-import Control.Monad.Error(ErrorT, Error(..))
-import Control.Monad.Trans.Error(ErrorList(..))
+import Control.Monad.Trans.Except(ExceptT, throwE)
+--import Control.Monad.Trans.Error(ErrorList(..))
 import Control.Monad.IO.Class(MonadIO)
 import qualified Data.Text as T(Text)
 
@@ -21,7 +22,7 @@ import Data.Time.Clock.POSIX (getPOSIXTime)
 import Text.PrettyPrint.ANSI.Leijen(Doc, text)
 import System.Console.GetOpt
 
-type Compiled = StateT CompilerContext (ErrorT CompilerFailures IO)
+type Compiled = StateT CompilerContext (ExceptT CompilerFailures IO)
 data CompilerContext = CompilerContext {
         ccVerbose   :: Bool
       , ccUniqRef   :: IORef Uniq
@@ -34,8 +35,11 @@ data CompilerContext = CompilerContext {
 
 type CompilerFailures = [Doc]
 
-instance Error Doc where strMsg s = text s
-instance ErrorList Doc where listMsg s = [text s]
+compiledThrowE :: CompilerFailures -> Compiled ()
+compiledThrowE docs = lift $ throwE docs
+
+--instance Error Doc where strMsg s = text s
+--instance ErrorList Doc where listMsg s = [text s]
 
 data OrdRef a = OrdRef { ordRefUniq :: Uniq, ordRef :: IORef a }
 

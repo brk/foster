@@ -22,7 +22,7 @@ import Data.Traversable(mapM)
 import Prelude hiding (mapM)
 import Control.Monad.State(forM, when, forM_, evalStateT, gets,
                            liftIO, liftM, liftM2)
-import Control.Monad.Error(runErrorT)
+import Control.Monad.Trans.Except(runExceptT)
 import System.Exit(exitFailure)
 
 import Foster.Base
@@ -451,7 +451,7 @@ runCompiler ci_time wholeprog flagVals outfile = do
                      tcCurrentFnEffect = Nothing,
                 tcUseOptimizedCtorReprs = getCtorOpt flagVals,
                           tcVerboseMode = getVerboseFlag flagVals }
-   (nc_time, mb_errs) <- ioTime $ runErrorT $ evalStateT (compile wholeprog tcenv)
+   (nc_time, mb_errs) <- ioTime $ runExceptT $ evalStateT (compile wholeprog tcenv)
                     CompilerContext {
                            ccVerbose  = getVerboseFlag flagVals
                          , ccFlagVals = flagVals
