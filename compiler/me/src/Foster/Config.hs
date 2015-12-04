@@ -13,7 +13,6 @@ import Data.IORef(IORef, readIORef, newIORef, writeIORef)
 import Control.Monad.Trans(lift)
 import Control.Monad.State(StateT, gets, when, liftIO)
 import Control.Monad.Trans.Except(ExceptT, throwE)
---import Control.Monad.Trans.Error(ErrorList(..))
 import Control.Monad.IO.Class(MonadIO)
 import qualified Data.Text as T(Text)
 
