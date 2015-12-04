@@ -944,10 +944,20 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type,
     // as "stable" in foster_gc.cpp.
     llvm::GlobalVariable* ti = getTypeMapForType(type, ctorRepr, pass->mod, NotArray);
     llvm::Type* typemap_type = ti->getType();
-    llvm::StructType* sty = llvm::StructType::get(typemap_type, ty, NULL);
-    llvm::Value* cell = CreateEntryAlloca(sty, "stackref");
-    llvm::Value* slot = getPointerToIndex(cell, builder.getInt32(1), "stackref_slot");
-    builder.CreateStore(ti, getPointerToIndex(cell, builder.getInt32(0), "stackref_meta"));
+    // We include padding in order for the padding plus the typemap pointer to
+    // be 16 bytes wide. This, in turn, ensures that we will align the payload
+    // field to the necessary 16 bytes as well.
+    // Also, because the heap_cell type in foster_gc_utils effectively treats
+    // the header as a union of a pointer with uint64_t, we must include padding
+    // after the typemap if the pointer is 32 bits.
+    int ptrsize = builder.GetInsertBlock()->getModule()->getDataLayout().getPointerSize();
+    llvm::Type* pad8 = llvm::ArrayType::get(builder.getInt8Ty(), 8);
+    llvm::Type* pad  = llvm::ArrayType::get(builder.getInt8Ty(), 8 - ptrsize);
+    llvm::StructType* sty = llvm::StructType::get(pad8, typemap_type, pad, ty, NULL);
+    llvm::AllocaInst* cell = CreateEntryAlloca(sty, "stackref");
+    cell->setAlignment(16);
+    llvm::Value* slot = getPointerToIndex(cell, builder.getInt32(3), "stackref_slot");
+    builder.CreateStore(ti, getPointerToIndex(cell, builder.getInt32(1), "stackref_meta"));
     return slot;
   }
   case LLAllocate::MEM_REGION_GLOBAL_HEAP:
