@@ -93,8 +93,16 @@ def print_result_table(res):
 
 def run_diff(a, b):
   "Returns True if diff finds a difference between file a and file b."
-  df_rv = subprocess.call(['diff', '--side-by-side', '--brief', '--left-column', a, b])
-  return df_rv != 0
+  with open(os.devnull, 'w') as devnull:
+    (rv, ms) = run_command(['diff', '--brief', a, b], {}, "", stdout=devnull, strictrv=False)
+    if rv == 0:
+      # same
+      return False
+    else:
+      cmd = ['diff', '--side-by-side', '--left-column', a, b]
+      print ' '.join(cmd)
+      subprocess.call(cmd)
+      return True
 
 def get_prog_stdin(testpath, tmpdir):
   if options.prog_stdin != "":
