@@ -197,18 +197,22 @@ newDArray = { forall v:Type,
 };
 
 // Initializes slot a[k] with (f k)
-newDArray0 = { forall v:Type,
-                n : Int32 =>
-                f : { Int32 => v } =>
+newDArray0 :: forall v:Type, { % n  : Int32 : True => { Int32 => v } =>
+                               % ndrv : Array v : prim_arrayLength ndrv ==Int64 (sext_i32_to_i64 n)
+                             };
+newDArray0 = { n => f =>
   arrayFromRange32 0 n f
 };
 
 // For example, arrayFromRange32 2 5 f
 // will become  arrayMap [2,3,4] f
 // The elements will be generated in decreasing order.
-arrayFromRange32 :: forall t:Type, { Int32 => Int32 => { Int32 => t } => Array t };
+arrayFromRange32 :: forall t:Type, { % sm : Int32 : True =>
+                                     % lg : Int32 : lg >SInt32 sm =>
+                                     { Int32 => t } =>
+                                     % afrv : Array t : prim_arrayLength afrv ==Int64 (sext_i32_to_i64 (lg -Int32 sm)) };
 arrayFromRange32 = { sm => lg => f =>
-  arr = allocDArray:[t] (lg -Int32 sm);
+  arr = allocDArray (lg -Int32 sm);
   REC go = { n =>
     if n >SInt32 0 then
       i = n -Int32 1;
