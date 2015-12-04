@@ -197,11 +197,11 @@ advance-loop = { n : Int32 => bodies : Array Planet
 };
 
 main = {
-  let n = (prim ref tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1));
+  let n = (prim ref (tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1)));
       nbodies = 5;
       bodies = mkBodies nbodies;
-      i = (prim ref sext_i32_to_i64 0);
-      j = (prim ref sext_i32_to_i64 0);
+      i = (prim ref 0);
+      j = (prim ref 0);
       l = sext_i32_to_i64 nbodies;
       dt = 1.0e-02;
   in

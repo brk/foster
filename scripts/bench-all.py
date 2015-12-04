@@ -24,6 +24,8 @@ import datetime
 import json
 import yaml
 
+from optparse import OptionParser
+
 def mkdir_p(d):
   subprocess.call("mkdir -p %s" % d, shell=True)
 
@@ -91,7 +93,7 @@ def exec_for_testpath(testpath):
     # If testpath is "speed/micro/addtobits",
     # test_name will be "addtobits"
     test_name = os.path.basename(testpath)
-    return os.path.join(obj_dir(), "test-tmpdir/%s/a.out" % test_name)
+    return os.path.join(obj_dir(), "test-tmpdir/%s/%s" % (test_name, test_name))
 
 # testpath might be "speed/micro/addtobits" for example.
 def gotest_with(testpath, tags, flagstrs, extra_cmdline_str=''):
@@ -173,11 +175,11 @@ def generate_all_combinations(all_factors, num_iters):
   plan = []
   # For example, flags might be the tuple
   # (('inline',  ('yes', '--me-arg=--inline')),
-  #  ('LLVMopt', ('O2',  '--optimize=O2')),
+  #  ('LLVMopt', ('O2',  '--backend-optimize')),
   #  ('donate',  ('yes', '')))
   #
   # Then tags_tup would be ('inline=yes', 'LLVMopt=O2', 'donate=yes')
-  # and  flagstrs would be ('--me-arg=--inline', '--optimize=O2', '')
+  # and  flagstrs would be ('--me-arg=--inline', '--backend-optimize', '')
   # and  tags     would be "[inline=yes,LLVMopt=O2,donate=yes]"
   for flags in allflags:
     tags_tup, flagstrs = zip(*[format_flags(flgs) for flgs in flags])
@@ -300,8 +302,8 @@ def benchmark_third_party(third_party_benchmarks):
 # ('inline', [('yes', '--me-arg=--inline'),
 #             ('no' , '--me-arg=--no-inline')
 #            ]),
-# ('LLVMopt', [('O2', '--optimize=O2')
-#             ,('O0', '--optimize=O0')
+# ('LLVMopt', [('O2', '--backend-optimize')
+#             ,('O0', '')
 #             ]),
 # ('donate', [('yes', ''),
 #             ('no' , '--me-arg=--no-donate')
@@ -313,19 +315,19 @@ all_factors = [factor + [('lang', [('foster', '')]),
                         ] for factor in [
  [ # full optimization, showing limits of array bounds checking
    ('inline', [('yes', '--me-arg=--inline'), ]),
-   ('LLVMopt', [('O2', '--optimize=O2')]),
+   ('LLVMopt', [('O2', '--backend-optimize')]),
    ('abc', [('unsafe' , '--be-arg=-unsafe-disable-array-bounds-checks')]),
    ('donate', [('yes', '')]),
  ],
  [ # full optimization, retaining safety
    ('inline', [('yes', '--me-arg=--inline'), ]),
-   ('LLVMopt', [('O2', '--optimize=O2')]),
+   ('LLVMopt', [('O2', '--backend-optimize')]),
    ('abc', [('safe' , '')]),
    ('donate', [('yes', '')]),
  ],
  [
    ('inline', [ ('no' , '--me-arg=--no-inline') ]),
-   ('LLVMopt', [('O0', '--optimize=O0')]),
+   ('LLVMopt', [('O0', '')]),
    ('abc', [('safe' , '')]),
    ('donate', [('yes', ''),]),
  ]

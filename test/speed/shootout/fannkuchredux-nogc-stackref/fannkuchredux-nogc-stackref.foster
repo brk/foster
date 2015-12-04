@@ -74,15 +74,13 @@ tk = { maxn : Int32 =>
       1 >^ i;
       not odd^ >^ odd;
       if (prim subscript s 0) >SInt32 0 then
-        let f = if (prim subscript s (prim subscript s 0))
-                                      ==Int32 0 then 1 else flip ! end; in
-          if f >SInt32 maxflips^ then f >^ maxflips; () else () end;
+          f = if (prim subscript s (prim subscript s 0))
+                                      ==Int32 0 then 1 else flip ! end;
+          if f >SInt32 maxflips^ then f >^ maxflips end;
           if odd^ then checksum^ -Int32 f
                   else checksum^ +Int32 f
           end >^ checksum;
-          ()
-        end
-      else () end
+      end
     end
   }
 };

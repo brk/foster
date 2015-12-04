@@ -215,7 +215,7 @@ scale = { bodies : Array Planet => s : Float64 =>
 };
 
 main = {
-  let n = (prim ref tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1));
+  let n = (prim ref (tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1)));
       nbodies = 5;
       bodies = mkBodies nbodies;
       dt = 1.0e-02;
