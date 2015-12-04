@@ -308,17 +308,31 @@ checkFn' fn facts0 = do
   facts'   <- withBindings (fnVar fn) (fnVars fn) facts0
   facts''  <- foldlM recordIfHasFnPrecondition facts' (fnVars fn)
 
-  dbgDoc $ text "checking body " <$> indent 2 (pretty (fnBody fn))
+  liftIO $ putDocLn $ text "checking body " <$> indent 2 (pretty (fnBody fn))
   f <- checkBody (fnBody fn) facts''
-  dbgStr $ "... checked body"
+  liftIO $ putDocLn $ text "... checked body"
 
   whenRefined (monoFnTypeRange $ fnType fn) $ \v e -> do
     -- An expression summarizing our static knowledge of the fn body/return value.
-    se <- trueOr f (tidIdent v)
+    se <- case f of
+            Nothing -> do
+              liftIO $ putDocLn $ text "no refinement known for body"
+              return $ bareSMTExpr SMT.true
+            Just ft -> do
+              rr <- ft (tidIdent v)
+              liftIO $ putDocLn $ text "refinement for body: " <> pretty rr
+              return rr
 
     let postcondId = Ident (T.pack ".postcond") 0
     f' <- checkBody e facts''
-    se' <- trueOr f' postcondId
+    se' <- case f' of
+                Nothing -> do
+                  liftIO $ putDocLn $ text "fn refinement checked, no extra refinement"
+                  return $ bareSMTExpr SMT.true
+                Just ff -> do
+                  rr <- ff postcondId
+                  liftIO $ putDocLn $ text "fn refinement checked: " <> pretty rr
+                  return rr
     -- An expression of the form (v == ...)
 
     let thm = scriptImplyingBy (liftSMTExpr se (\body -> body SMT.==> smtId postcondId))
@@ -446,7 +460,7 @@ checkBody expr facts =
   -- For example:
   --   * The literal 10 satisfies (x == 10).
   --   * A read from an array in which all values are bounded by y satisfies (x <= y).
-  --   * A literal of length y satisfies (arrayLength x == y)
+  --   * An array literal of length y satisfies (arrayLength x == y)
   --
   -- Checking of ``x = e1; e2`` proceeds as follows:
   --    * If checking ``e1`` reveals that it satisfies property foo
@@ -492,6 +506,10 @@ checkBody expr facts =
 
 
     KNArrayPoke _ty (ArrayIndex _a _i _ _) _v -> return Nothing
+
+    KNAllocArray _ty v _amr _zi ->
+        return $ withDecls facts $ \x -> do
+                    return $ (smtArraySizeOf (smtId x) === sign_extend 32 (smtVar v))
 
     KNArrayLit (ArrayType (PrimInt sz)) _v entries -> do
         {- TODO: attach this condition to the array itself, so that
@@ -606,6 +624,8 @@ checkBody expr facts =
                                    (smtExprAnd' se2 (SMT.not (smtVar v)))
         return $ Just combine
 
+    -- TODO we should return something involving the return-refinement type
+    -- if the called function has one...
     KNCall ty v vs -> do
         -- Do any of the called function's args have preconditions?
         case tidType v of
@@ -630,14 +650,13 @@ checkBody expr facts =
                 _ -> return ()
           _ -> return ()
 
-        dbgStr $ "KNCall " ++ show (pretty expr)
+        liftIO $ putStrLn $ "KNCall " ++ show (pretty expr) ++ " :: " ++ show (pretty ty)
         -- Does the called function have a precondition?
         -- See also mkPrecondGen / compilePreconditionFn
         case fromMaybe [] $ getMbFnPreconditions facts (tidIdent v) of
           [] -> do
             dbgStr $ "TODO: call of function with result type " ++ show ty ++ " ; " ++ show (v)
             dbgStr $ "           (no precond)"
-            return Nothing
           fps -> do
             dbgStr $ "TODO: call of function with result type " ++ show ty ++ " ; " ++ show (tidIdent v)
             dbgStr $ "           (have precond)"
@@ -649,7 +668,30 @@ checkBody expr facts =
                 dbgStr $ show (prettyCommentedScript thm)
                 scRunZ3 expr thm
             mapM_ checkPrecond fps
-            return Nothing
+
+        case ty of
+            RefinedType rtv _rte _rtargs
+              -- -> return Nothing -- $ withDecls facts $ \x -> return $ smtId x === smtVar rtv
+                  --mbrte <- checkBody _rte facts
+                        --mbe <- (maybeM mbrte) x
+              -> do
+                    resid <- lift $ ccFreshId $ T.pack (".fnres_" ++ show (tidIdent rtv))
+                    liftIO $ putDocLn $ text "call of fn" <+> pretty v <+> text "with refined type..."
+                    liftIO $ putDocLn $ indent 4 (text "rtv = " <> pretty rtv)
+                    liftIO $ putDocLn $ indent 4 (text "rte = " <> pretty _rte)
+                    facts' <- compileRefinementBoundTo resid facts rtv _rte
+                    let facts'' = addSymbolicVars facts' [TypedId (tidType rtv) resid]
+                    liftIO $ putDocLn $ indent 4 (text "facts' = " <> pretty facts'')
+                    return $ withDecls facts'' $ \x -> do
+                        liftIO $ putDocLn $ text "result of call to fn" <+> pretty v <+> text "being bound to" <+> pretty x
+                        return $ (smtId x === smtId resid)
+                        --return $ (smtId resid === smtVar rtv)
+                        --return $ SMT.true
+                        --return $ (smtId resid)
+                        --liftIO $ putDocLn $ text "result of call to fn" <+> pretty v <$> pretty mbe
+                        --return $ SMT.and (smtId resid) (smtId x === smtVar rtv)
+
+            _ -> return Nothing
 
     KNLetVal      id   e1 e2    -> do
         --dbgStr $ "letval checking bound expr for " ++ show id
@@ -691,7 +733,6 @@ checkBody expr facts =
     KNDeref       {} -> return Nothing
 
     KNTuple       {} -> return Nothing
-    KNAllocArray  {} -> return Nothing
 
     KNTyApp _t _v _ts -> -- We don't return a fact saying (x === v) because
                         -- doing so would produce invalid SMT when v is function-typed.
