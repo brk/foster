@@ -6,6 +6,7 @@ main = {
   test-more-bools !;
 
   test-refined-array-literals !;
+  test-refined-array-nonlits !;
 
   test-assert-ifs !;
 };
@@ -107,6 +108,43 @@ test-refined-array-literals = {
   expect_i1 True;
   print_i1 (__COMPILES__ { x : % b : Bool : b => () } True);
 
+  la = prim mach-array-literal 1 2 (opaquely_i32 3);
+  la2 = prim mach-array-literal 1 (opaquely_i32 3);
+  expect_i1 True;
+  print_i1 (__COMPILES__ prim assert-invariants (prim_arrayLength la ==Int64 3));
+
+  expect_i1 True;
+  print_i1 (__COMPILES__ arrayLenInp3 la);
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ arrayLenInp3 la2);
+
+  //expect_i1 True;
+  //print_i1 (__COMPILES__ arrayLenInp3Nested ((), la));
+  //
+  //expect_i1 False;
+  //print_i1 (__COMPILES__ arrayLenInp3Nested ((), la2));
+
+  expect_i32 0;
+  print_i32 (arrayLenInp3 la);
+};
+
+test-refined-array-nonlits = {
+  da = allocDArray:[Int32] 16;
+
+  expect_i1 True;
+  print_i1 (__COMPILES__ prim assert-invariants (prim_arrayLength da ==Int64 16));
+
+  expect_i32 0;
+  print_i32 (arrayLenInp16 da);
+
+  dai = arrayLenRet 0 16;
+  expect_i1 True;
+  print_i1 (__COMPILES__ prim assert-invariants (prim_arrayLength dai ==Int64 16));
+
+  //let ((), dain) = arrayLenRetNested 0 16;
+  //expect_i1 True;
+  //print_i1 (__COMPILES__ prim assert-invariants (prim_arrayLength dain ==Int64 16));
 };
 
 test-more-bools = {
@@ -130,16 +168,32 @@ bar :: { % b : Bool : prim ==Bool b True => () };
 bar = { v => () };
 
 
+arrayLenInp3 :: { % aa3 : Array Int32 : prim_arrayLength aa3 ==Int64 3 => Int32 };
+arrayLenInp3 = { a3 => 0 };
 
+arrayLenInp16 :: { % aa16 : Array Int32 : prim_arrayLength aa16 ==Int64 16 => Int32 };
+arrayLenInp16 = { a16 => 0 };
+
+arrayLenRet :: { % sm : Int32 : True =>
+                      % lg : Int32 : lg >SInt32 sm =>
+                      % rvA : Array Int32 : prim_arrayLength rvA ==Int64 (sext_i32_to_i64 (lg -Int32 sm)) };
+arrayLenRet = { sm => lg =>
+  allocDArray:[Int32] (lg -Int32 sm);
+};
 
 
 arrayLength :: forall x:Type, { % ra : Array x : True =>
-                                % rv : Int64 : rv ==Int64 prim_arrayLength:[x] ra };
-arrayLength = { a : Array x => prim_arrayLength a };
+                                % rvAL : Int64 : rvAL ==Int64 prim_arrayLength:[x] ra };
+arrayLength = { a => prim_arrayLength a };
 
+// {{{
+arrayLengthWrap :: forall x:Type, { % ra : Array x : True =>
+                                % rvALW : Int64 : rvALW ==Int64 prim_arrayLength:[x] ra };
+arrayLengthWrap = { a => arrayLength a };
+// }}}
 
 readInt64FromArrayInt8-v1 :: { % ra : Array Int8 : 0 <=SInt32 ri =>
-                               % ri : Int32 : let woo = arrayLength ra in (zext_i32_to_i64 ri +Int64 7) <SInt64 woo end
+                               % ri : Int32 : let woo = arrayLength ra; in (zext_i32_to_i64 ri +Int64 7) <SInt64 woo end
                                => Int64 };
 readInt64FromArrayInt8-v1 = { a => i =>
   alen = prim_arrayLength a;
@@ -162,3 +216,16 @@ readInt64FromArrayInt8-v1 = {  a => i =>
   0
 };
 */
+
+
+
+arrayLenInp3Nested :: { ( () , % aan : Array Int32 : prim_arrayLength aan ==Int64 3 ) => Int32 };
+arrayLenInp3Nested = { arg => 0 };
+
+arrayLenRetNested :: { % sm : Int32 : True =>
+                      % lg : Int32 : lg >SInt32 sm =>
+                      ((), % rvN : Array Int32 : prim_arrayLength rvN ==Int64 (sext_i32_to_i64 (lg -Int32 sm))) };
+arrayLenRetNested = { sm => lg =>
+  ( (), allocDArray:[Int32] (lg -Int32 sm) );
+};
+
