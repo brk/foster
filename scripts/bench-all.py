@@ -75,7 +75,7 @@ def load(jsonpath):
   with open(jsonpath, 'r') as jsonfile:
     return yaml.safe_load(jsonfile)
 
-kNumIters = 10
+kNumIters = 16
 
 
 # Synopsis: (rv, ms) = shell_out("make some_target")
