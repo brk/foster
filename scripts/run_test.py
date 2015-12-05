@@ -97,6 +97,12 @@ def run_diff(a, b):
     (rv, ms) = run_command(['diff', '--brief', a, b], {}, "", stdout=devnull, strictrv=False)
     if rv == 0:
       # same
+      numlines = len(open(a, 'r').readlines())
+      print """
+
+        \m/_(>_<)_\m/    (%d lines)
+
+""" % numlines
       return False
     else:
       cmd = ['diff', '--side-by-side', '--left-column', a, b]
