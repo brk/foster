@@ -41,13 +41,13 @@ def diff_instance_outputs(oldoutputs, newoutputs, name, results):
   if oldvals == newvals:
     pass
   else:
-    with open('old', 'w') as oldfile:
+    with open('old_', 'w') as oldfile:
       for v in oldvals:
         oldfile.write('%s\n' % str(v))
-    with open('new', 'w') as newfile:
+    with open('new_', 'w') as newfile:
       for v in newvals:
         newfile.write('%s\n' % str(v))
-    output = subprocess.check_output('ministat -A -c 98 old new', shell=True)
+    output = subprocess.check_output('ministat -A -c 98 old_ new_', shell=True)
     lines = output.split('\n')
     if lines[-2] == 'No difference proven at 98.0% confidence':
       pass
