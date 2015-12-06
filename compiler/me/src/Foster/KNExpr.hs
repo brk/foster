@@ -125,8 +125,12 @@ kNormalize dtypeMap expr =
                                   [ b', c' ] <- mapM go [b, c]
                                   nestedLets [return a'] (\[v] -> KNIf t v b' c')
       AICallPrim sr t p es -> do nestedLets (map go es) (\vars -> KNCallPrim sr t p vars)
-      AIAppCtor  t c es -> do let repr = lookupCtorRepr c
-                              nestedLets (map go es) (\vars -> KNAppCtor  t (c, repr) vars)
+      AIAppCtor  t c es -> do let ctor = lookupCtor c
+                                  repr = lookupCtorRepr ctor
+                                  tys  = dataCtorTypes ctor
+                              nestedLetsDo (map go es) (\vs -> do
+                                 let args = map varOrThunk (zip vs tys)
+                                 nestedLets args $ \xs -> KNAppCtor  t (c, repr) xs)
       AICall     t (E_AIVar v) es -> do nestedLetsDo (     map go es) (\    vars  -> knCall t v  vars)
       AICall     t b           es -> do nestedLetsDo (go b:map go es) (\(vb:vars) -> knCall t vb vars)
       AICompiles t e              -> do e' <- go e
@@ -207,12 +211,15 @@ kNormalize dtypeMap expr =
         anyCaseArmIsGuarded [] = False
         anyCaseArmIsGuarded (arm:arms) = isGuarded arm || anyCaseArmIsGuarded arms
 
-        lookupCtorRepr cid =
-          case Map.lookup (ctorTypeName cid) dtypeMap of
-            Just dt -> let [ctor] = filter (\ctor -> dataCtorName ctor == T.pack (ctorCtorName cid))
-                                           (dataTypeCtors dt) in
-                       unDataCtorRepr "lookupCtorRepr" ctor
-            Nothing   -> error $ "lookupCtorRepr failed for " ++ show cid
+        lookupCtor cid =
+            case Map.lookup (ctorTypeName cid) dtypeMap of
+               Just dt -> let
+                            [ctor] = filter (\ctor -> dataCtorName ctor == T.pack (ctorCtorName cid))
+                                            (dataTypeCtors dt) in
+                          ctor
+               Nothing -> error $ "lookupCtor failed for " ++ show cid
+
+        lookupCtorRepr ctor = unDataCtorRepr "lookupCtorRepr" ctor
 
         fmapRepr :: Show ty => Pattern ty -> PatternRepr ty
         fmapRepr p =
@@ -221,7 +228,8 @@ kNormalize dtypeMap expr =
             P_Tuple rng ty pats -> PR_Tuple rng ty (map fmapRepr pats)
             P_Ctor  rng ty pats (CtorInfo cid _dc) ->
                         PR_Ctor rng ty (map fmapRepr pats) cinfo'
-                          where cinfo' = LLCtorInfo cid (lookupCtorRepr cid) (map typeOf pats)
+                          where cinfo' = LLCtorInfo cid (lookupCtorRepr (lookupCtor cid))
+                                                        (map typeOf pats)
 
 -- }}}|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
