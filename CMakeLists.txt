@@ -465,6 +465,7 @@ set(REGRESS_CMD
                  --bindir ${PROJECT_BINARY_DIR}
                  --cxxpath ${CLANG}
                  --no_extra_bitcode
+                 --quietish
                  -I ${PROJECT_SOURCE_DIR}/stdlib)
 add_custom_target(regress
         COMMAND echo ${REGRESS_CMD}

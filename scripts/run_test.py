@@ -98,16 +98,18 @@ def run_diff(a, b):
     if rv == 0:
       # same
       numlines = len(open(a, 'r').readlines())
-      print """
+      if not options.quietish:
+        print """
 
         \m/_(>_<)_\m/    (%d lines)
 
 """ % numlines
       return False
     else:
-      cmd = ['diff', '--side-by-side', '--left-column', a, b]
-      print ' '.join(cmd)
-      subprocess.call(cmd)
+      if not options.quietish:
+        cmd = ['diff', '--side-by-side', '--left-column', a, b]
+        print ' '.join(cmd)
+        subprocess.call(cmd)
       return True
 
 def get_prog_stdin(testpath, tmpdir):
@@ -132,7 +134,7 @@ def run_one_test(testpath, tmpdir, progargs, paths, exe_cmd, elapseds):
     with get_prog_stdin(testpath, tmpdir) as infile:
       rv, rn_elapsed = run_command(exe_cmd, paths, testpath,
                                  stdout=actual, stderr=expected, stdin=infile,
-                                 showcmd=True, strictrv=False)
+                                 showcmd=(not options.quietish), strictrv=False)
 
   inbytes  = file_size(paths['_out.parsed.cbor'])
   ckbytes  = file_size(paths['_out.checked.pb'])
@@ -183,7 +185,10 @@ def mkpath(root, prog):
     return os.path.join(root, prog)
 
 def get_test_parser():
-  return get_fosterc_parser()
+  parser = get_fosterc_parser()
+  parser.add_option("--quietish", dest="quietish", action="store_true", default=False,
+                    help="Run test(s) with less output")
+  return parser
 
 def test_parser_parse_and_fixup(parser):
   return fosterc_parser_parse_and_fixup(parser)
@@ -221,7 +226,8 @@ if __name__ == "__main__":
 
   try:
     result = compile_and_run_test(testpath, testdir)
-    print_result_table(result)
+    if not options.quietish:
+      print_result_table(result)
     classify_result(result, testpath)
   except StopAfterMiddle:
     pass

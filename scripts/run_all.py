@@ -15,14 +15,20 @@ from list_all import collect_all_tests
 
 all_results = []
 
+def handle_successful_test_result(result, testpath):
+    if opts.quietish:
+      print os.path.basename(testpath)
+    else:
+      run_test.print_result_table(result)
+    run_test.classify_result(result, testpath)
+    all_results.append(result)
+
 def run_and_print_test(testpath, tmpdir):
   try:
     testdir = os.path.join(tmpdir, run_test.testname(testpath))
     run_test.ensure_dir_exists(testdir)
     result = run_test.compile_and_run_test(testpath, testdir)
-    run_test.print_result_table(result)
-    run_test.classify_result(result, testpath)
-    all_results.append(result)
+    handle_successful_test_result(result, testpath)
   except run_test.TestFailed:
     run_test.tests_failed.add(testpath)
 
@@ -55,9 +61,7 @@ def run_all_tests_fast(bootstrap_dir, tmpdir):
                   itertools.repeat(tmpdir))):
        testpath, result = result
        if result is not None:
-         run_test.print_result_table(result)
-         run_test.classify_result(result, testpath)
-         all_results.append(result)
+         handle_successful_test_result(result, testpath)
        else:
          run_test.tests_failed.add(testpath)
   except KeyboardInterrupt:
