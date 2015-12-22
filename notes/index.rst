@@ -12,7 +12,7 @@ Foster Notes
    misc
    test
    features
-   compiler
+   compiler-history
    runtime
    arrays
    strings
