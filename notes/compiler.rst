@@ -474,7 +474,7 @@ small integers, plus the strict newtype optimization.
 Concretely, the standard representation is a tidy pointer to a tagged heap cell.
 Looking up ``x1``'s tag for pattern-matching requires an indirection::
 
-    type T1 
+    type T1
       of $C1  a b
       of $C1x a b
 
@@ -522,7 +522,7 @@ Data constructor representations have the following lifetime:
     like booleans.
   * A given LLSwitch expression in the backend must know the method it should use to
     find the tag of the scrutinee: raw value (for integers), mask it (for nullary ctors),
-    or query the runtime (for untagged objects). 
+    or query the runtime (for untagged objects).
 
 
 The GC then has a number of cases to consider:

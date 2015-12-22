@@ -159,11 +159,11 @@ tcInject k result = Tc $ \env -> do case result of
 
 -- Modifies the standard Tc monad bind operator
 -- to append an error message, if necessary.
-tcOnError Nothing  m k = m >>= k
-tcOnError (Just o) m k = Tc $ \env -> do result <- unTc env m
-                                         case result of
+tcOnError []   m k = m >>= k
+tcOnError msgs m k = Tc $ \env -> do result <- unTc env m
+                                     case result of
                                            OK expr -> unTc env (k expr)
-                                           Errors ss -> return (Errors (o:ss))
+                                           Errors ss -> return (Errors $ msgs ++ ss)
 
 tcWhenVerbose :: Tc () -> Tc ()
 tcWhenVerbose action = Tc $ \env ->

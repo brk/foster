@@ -425,7 +425,7 @@ tcRhoBool rng b expTy = do
     let check t =
           case t of
             PrimIntTC I1 -> return ab
-            m@MetaTyVarTC {} -> do unify m ty "bool literal"
+            m@MetaTyVarTC {} -> do unify m ty [text "bool literal"]
                                    return ab
             RefinedTypeTC v _ _ -> check (tidType v)
             _ -> tcFails [text $ "Unable to check Bool constant in context"
@@ -446,7 +446,7 @@ tcRhoText rng b expTy = do
     let check t =
           case t of
              (TyConAppTC "Text" []) -> return ab
-             m@MetaTyVarTC {} -> do unify m ty "text literal"
+             m@MetaTyVarTC {} -> do unify m ty [text "text literal"]
                                     return ab
              RefinedTypeTC v _ _ -> check (tidType v)
              t -> tcFails [text $ "Unable to check Text constant in context"
@@ -467,9 +467,9 @@ tcRhoBytes rng bs expTy = do
     let ab = AnnLiteral rng ty (LitByteArray bs)
     let check t =
           case t of
-             ArrayTypeTC m -> do unify m (PrimIntTC I8) "byte array literal"
+             ArrayTypeTC m -> do unify m (PrimIntTC I8) [text "byte array literal"]
                                  return ab
-             m@MetaTyVarTC {} -> do unify m ty "byte array literal"
+             m@MetaTyVarTC {} -> do unify m ty [text "byte array literal"]
                                     return ab
              RefinedTypeTC v _ _ -> check (tidType v)
              t -> tcFails [text $ "Unable to check byte array constant in context"
@@ -506,9 +506,9 @@ tcRhoArrayLit ctx annot mbt args expTy = do
     args' <- mapM (tcRhoArrayValue ctx tau) args
     let ab = AnnArrayLit annot ty args'
     let check t = case t of
-             (ArrayTypeTC rho) -> do unify tau rho "mach-array literal"
+             (ArrayTypeTC rho) -> do unify tau rho [text "mach-array literal"]
                                      return ab
-             m@MetaTyVarTC {} -> do unify m ty "mach-array literal"
+             m@MetaTyVarTC {} -> do unify m ty [text "mach-array literal"]
                                     return ab
              RefinedTypeTC v _ _ -> check (tidType v)
              t -> tcFails [text $ "Unable to check array constant in context"
@@ -548,7 +548,7 @@ tcRhoSeq ctx annot a b expTy = do
 tcRhoSeqCheck range ty = do
     zt <- zonkType ty
     case zt of
-      m@MetaTyVarTC {} -> unify m unitTypeTC "seq-unit"
+      m@MetaTyVarTC {} -> unify m unitTypeTC [text "seq-unit"]
       TupleTypeTC _ [] -> return ()
       PrimIntTC _      -> return ()
       _ | isFnTyLike zt ->
@@ -663,7 +663,7 @@ tcRhoArrayRead annot sg base aiexpr expTy = do
             t <- case expTy of
                   Check t -> return t
                   Infer _ -> newTcUnificationVarTau $ "arrayread_type"
-            unify (ArrayTypeTC t) (typeTC base) "arrayread type"
+            unify (ArrayTypeTC t) (typeTC base) [text "arrayread type"]
             ck t
         RefinedTypeTC v _ _ -> check (tidType v)
         _ ->
@@ -682,7 +682,7 @@ tcRhoArrayRead annot sg base aiexpr expTy = do
 tcRhoArrayPoke annot s v base i expTy = do
 -- {{{
   let ck t = do
-        unify t (typeTC v) "arraypoke type"
+        unify t (typeTC v) [text "arraypoke type"]
         let expr = AnnArrayPoke annot unitTypeTC
                                     (ArrayIndex base i (rangeOf annot) s) v
         matchExp expTy expr "arraypoke"
@@ -691,7 +691,7 @@ tcRhoArrayPoke annot s v base i expTy = do
         ArrayTypeTC t -> ck t
         MetaTyVarTC _ -> do
             t <- newTcUnificationVarTau $ "arraypoke_type"
-            unify (ArrayTypeTC t) (typeTC base) "arraypoke type"
+            unify (ArrayTypeTC t) (typeTC base) [text "arraypoke type"]
             ck t
         RefinedTypeTC v _ _ -> check (tidType v)
         _ ->
@@ -714,7 +714,7 @@ tcRhoIf ctx rng a b c expTy = do
     ea <- tcRho ctx a (Check boolTypeTC)
     eb <- tcRho ctx b expTy
     ec <- tcRho ctx c expTy
-    unify (typeTC eb) (typeTC ec) "IfAST: types of branches didn't match"
+    unify (typeTC eb) (typeTC ec) [text "IfAST: types of branches didn't match"]
     -- TODO use subsumption instead of unification?
     return (AnnIf rng (typeTC eb) ea eb ec)
 -- }}}
@@ -787,7 +787,7 @@ tcRhoLetRec ctx0 rng recBindings e mt = do
              (Left _u, _) -> do inferSigma ctxPend b "letrecX"
              (Right t, _) -> do checkSigma ctxPend b t
            case u_or_ty of
-             Left u -> unify u (typeTC b') ("recursive binding " ++ T.unpack (evarName v))
+             Left u -> unify u (typeTC b') [text $ "recursive binding " ++ T.unpack (evarName v)]
              _      -> return ()
            return b'
        )
@@ -900,7 +900,7 @@ tcSigmaCall ctx rng (E_PrimAST _ name@"assert-invariants" _ _) argtup exp_ty = d
     matchExp exp_ty (AnnLetFuns rng [id] [thunk] (AnnTuple rng unitTypeTC KindPointerSized [])) name
 
 tcSigmaCall ctx rng base argexprs exp_ty = do
-        let dbg d = debugIf dbgCalls d
+        let dbg d = debugIf (True || dbgCalls) d
 
         dbg $ text "{{{"
         annbase <- inferRho ctx base "called base"
@@ -924,7 +924,10 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
 
         -- Strip refinements; just because a formal parameter has a given refinement,
         -- doesn't mean that the actual will necessarily follow the same refinement!
-        args <- sequence [checkSigma ctx arg (shallowStripRefinedTypeTC ty) | (arg, ty) <- zip argexprs args_ty]
+        args <- tcOnError [text "Failure when typechecking call"
+                          ,highlightFirstLineDoc (rangeOf rng)]
+                   (sequence [checkSigma ctx arg (shallowStripRefinedTypeTC ty)
+                             | (arg, ty) <- zip argexprs args_ty]) return
         dbg $ text "call: annargs: "
         dbg $ showStructure (AnnTuple rng (TupleTypeTC (UniConst KindPointerSized)
                                                             (map typeTC args))
@@ -949,7 +952,7 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
             -> do debugIf dbgCoro $ green (text "call: coro yield: in/out: ") <$$> pretty inp_ty <$$> pretty out_ty
                   fx <- tcGetCurrentFnFx
                   debugIf dbgCoro $ text "call: coro yield: fx = " <> pretty fx <$$> showStructure fx
-                  unify fx (TupleTypeTC (UniConst KindPointerSized) [inp_ty, out_ty]) ("Inconsistent use of coro_yield " ++ highlightFirstLine (rangeOf rng))
+                  unify fx (TupleTypeTC (UniConst KindPointerSized) [inp_ty, out_ty]) [text $ "Inconsistent use of coro_yield " ++ highlightFirstLine (rangeOf rng)]
                   return ()
           _ -> return ()
 
@@ -982,7 +985,7 @@ unifyFun tau nargs msg = do
         fx_ty  <- newTcUnificationVarTau ("fn fx ty:" ++ msg)
         cc <- genUnifiableVar
         ft <- genUnifiableVar
-        unify tau (FnTypeTC arg_tys res_ty fx_ty cc ft) ("unifyFun(" ++ msg ++ ")")
+        unify tau (FnTypeTC arg_tys res_ty fx_ty cc ft) [text $ "unifyFun(" ++ msg ++ ")"]
         return (arg_tys, res_ty, fx_ty, cc, ft)
 -- }}}
 
@@ -1576,7 +1579,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
       let ctx' = prependContextBindings ctx ctxbindings
       aguard <- liftMaybe (\g -> tcRho ctx' g (Check boolTypeTC)) guard
       abody <- tcRho ctx' body expTy
-      unify u (typeTC abody) ("Failed to unify all branches of case " ++ highlightFirstLine (rangeOf rng))
+      unify u (typeTC abody) [text $ "Failed to unify all branches of case " ++ highlightFirstLine (rangeOf rng)]
       return (CaseArm p abody aguard bindings brng)
   abranches <- forM branches checkBranch
   matchExp expTy (AnnCase rng u ascrutinee abranches) "case"
@@ -1621,7 +1624,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
         debug $ "*** P_Ctor - metas " ++ show (pretty metas  )
         debug $ "*** P_Ctor - sgmas " ++ show (pretty ts     )
 
-        unify ty ctxTy ("checkPattern:P_Ctor " ++ show cid)
+        unify ty ctxTy [text $ "checkPattern:P_Ctor " ++ show cid]
         return $ P_Ctor r ty ps info
 
       EP_Tuple     r eps  -> do
@@ -1630,7 +1633,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
             TupleTypeTC kind ts -> return (ts, kind)
             _ -> do ts <- sequence [newTcUnificationVarTau "tup" | _ <- eps]
                     kind <- genUnifiableVar
-                    unify ctxTy (TupleTypeTC kind ts) "tuple-pattern"
+                    unify ctxTy (TupleTypeTC kind ts) [text "tuple-pattern"]
                     return (ts, kind)
         sanityCheck (eqLen eps ts) $
                 "Cannot match pattern against tuple type of "
@@ -1700,7 +1703,7 @@ subsCheckRhoTy rho1 (FnTypeTC as2 r2 fx2 cc2 ft2) = unifyFun rho1 (length as2) "
 subsCheckRhoTy (FnTypeTC as1 r1 fx1 cc1 ft1) rho2 = unifyFun rho2 (length as1) "subsCheckRhoTy" >>= \(as2, r2, fx2, cc2, ft2) -> subsCheckFunTy as1 r1 fx1 cc1 ft1 as2 r2 fx2 cc2 ft2
 subsCheckRhoTy tau1 tau2 -- Rule MONO
      = do
-          logged' ("subsCheckRhoTy " ++ show (pretty (tau1, tau2))) $ unify tau1 tau2 "subsCheckRho" -- Revert to ordinary unification
+          logged' ("subsCheckRhoTy " ++ show (pretty (tau1, tau2))) $ unify tau1 tau2 [text "subsCheckRho"] -- Revert to ordinary unification
 -- }}}
 
 subsCheck :: (AnnExpr SigmaTC) -> SigmaTC -> String -> Tc (AnnExpr SigmaTC)
@@ -1746,7 +1749,7 @@ subsCheckRho esigma rho2 = do
     -- shallow, not deep, skolemization due to being a strict language.
 
     (rho1, _) -> do -- Rule MONO
-        logged esigma ("subsCheckRho " ++ show (pretty (rho1, rho2))) $ unify rho1 rho2 ("subsCheckRho[" ++ show rho2 ++ "]" ++ show (showStructure esigma)) -- Revert to ordinary unification
+        logged esigma ("subsCheckRho " ++ show (pretty (rho1, rho2))) $ unify rho1 rho2 [text $ "subsCheckRho[" ++ show rho2 ++ "]", showStructure esigma] -- Revert to ordinary unification
         return esigma
 -- }}}
 
@@ -1985,20 +1988,20 @@ checkAgainst _ (_, _) = return ()
 -- is printed along with the unification failure error message.
 -- If unification succeeds, each unification variable in the two
 -- types is updated according to the unification solution.
-unify :: TypeTC -> TypeTC -> String -> Tc ()
-unify t1 t2 msg = do
+unify :: TypeTC -> TypeTC -> [Doc] -> Tc ()
+unify t1 t2 msgs = do
   --z1 <- zonkType t1
   --z2 <- zonkType t2
   --tcLift $ putDocLn $ green $ text $ "unify " ++ show t1 ++ " ~> " ++ show z1
   --                               ++ "\n?==? " ++ show t2 ++ " ~> " ++ show z2 ++ " (" ++ msg ++ ")"
-  unify' 0 t1 t2 msg
+  unify' 0 t1 t2 msgs
 
-unify' !depth t1 t2 msg | depth == 512 =
+unify' !depth t1 t2 msgs | depth == 512 =
    error $ "unify hit depth 512 equating "
-        ++ show t1 ++ " and " ++ show t2 ++ "\n" ++ msg
+        ++ show t1 ++ " and " ++ show t2 ++ "\n" ++ show msgs
 
-unify' !depth t1 t2 msg = do
-  debugDoc $ green $ text $ "unify " ++ show t1 ++ " ?==? " ++ show t2 ++ " (" ++ msg ++ ")"
+unify' !depth t1 t2 msgs = do
+  debugDoc $ (green $ text ("unify " ++ show t1 ++ " ?==? " ++ show t2)) <$> vcat msgs
   case (t1, t2) of
     (MetaTyVarTC m1, MetaTyVarTC m2) -> do
       mt1 <- readTcMeta m1
@@ -2008,33 +2011,34 @@ unify' !depth t1 t2 msg = do
       return ()
     _ -> return ()
 
-  tcOnError (liftM text (Just msg)) (tcUnifyTypes t1 t2) $ \(Just soln) -> do
+  tcOnError msgs
+            (tcUnifyTypes t1 t2) $ \(Just soln) -> do
      debugDoc $ text $ "soln is: " ++ show soln
      let univars = collectAllUnificationVars [t1, t2]
      forM_ univars $ \m -> do
        mt1 <- readTcMeta m
        case (mt1, Map.lookup (mtvUniq m) soln) of
          (_,       Nothing)          -> return () -- no type to update to.
-         (Just x1, Just x2)          -> do unify' (depth + 1) x1 x2 msg
+         (Just x1, Just x2)          -> do unify' (depth + 1) x1 x2 msgs
          -- The unification var m1 has no bound type, but it's being
          -- associated with var m2, so we'll peek through m2.
          (Nothing, Just (MetaTyVarTC m2)) -> do
                          mt2 <- readTcMeta m2
                          case mt2 of
                              Just x2 -> do debugDoc $ pretty (MetaTyVarTC m2) <+> text "~>" <+> pretty x2
-                                           unify' (depth + 1) (MetaTyVarTC m) x2 msg
+                                           unify' (depth + 1) (MetaTyVarTC m) x2 msgs
                              Nothing -> writeTcMetaTC m (MetaTyVarTC m2)
          (Nothing, Just x2) -> do unbounds <- collectUnboundUnificationVars [x2]
                                   case m `elem` unbounds of
                                      False   -> writeTcMetaTC m x2
                                      True    -> occurdCheck   m x2
   where
-     occurdCheck m t = tcFails [text $ "Occurs check for"
+     occurdCheck m t = tcFails $ [text $ "Occurs check for"
                                ,pretty (MetaTyVarTC m)
                                ,text "failed in"
                                ,pretty t
-                               ,string msg
-                               ,text "This type error is often caused by swapped function arguments..."]
+                               ] ++ msgs ++
+                               [text "This type error is often caused by swapped function arguments..."]
 -- }}}
 
 -- {{{ Well-formedness checks
