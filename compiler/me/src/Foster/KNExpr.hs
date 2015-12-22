@@ -1066,7 +1066,9 @@ knInline mbDefaultSizeLimit shouldDonate knmod = do
      liftIO $ putDocLn $ text "average effort per call site: " <> pretty (expended `div` countCallSites e)
 
   case result of
-    Right (Rez expr') -> return $ knmod { moduleILbody = expr' }
+    Right (Rez expr') -> do
+        liftIO $ putDocLn $ text "total number of inlining decision points in final program: " <> pretty (countInliningDecisionPoints expr')
+        return $ knmod { moduleILbody = expr' }
     Left err -> do liftIO $ putStrLn $ show err
                    liftIO $ putStrLn $ "knInline failed, aborting whole deal!"
                    return $ knmod
@@ -1147,13 +1149,14 @@ putDocLn7 _ = return ()
 inBracket_ :: String -> In a -> In b -> In c -> In b
 inBracket_ msg a b c0 = do
   t0 <- knTotalEffort
+  lvl <- knInLevel
   let c = do
             t1 <- knTotalEffort
             _ <- if ((t1 - t0) > 700 || msg == "visitF:nolimit:foster_nat_add_digits"
                     || msg == "withSizeCounter:visitF:nolimit:foster_nat_add_digits")
                     && (msg /= "withRaisedLevel")
                     && (msg /= "withSizeCounter:visitE:")
-              then liftIO $ putStrLn $ "total effort in bracket call went from " ++ show t0 ++ " to " ++ show t1 ++ " : + " ++ show (t1 - t0) ++ " ; " ++ msg
+              then liftIO $ putStrLn $ "total effort in bracket call at lvl " ++ show lvl ++ " went from " ++ show t0 ++ " to " ++ show t1 ++ " aka + " ++ show (t1 - t0) ++ " ; " ++ msg
               else return ()
             c0
   a >> catchError (b >>= \v -> c >> return v)
@@ -1162,12 +1165,13 @@ inBracket_ msg a b c0 = do
 inBracket_' :: String -> In a -> In b -> (Bool -> In c) -> In b
 inBracket_' msg a b c0 = do
   t0 <- knTotalEffort
+  lvl <- knInLevel
   let c x
        = do
             t1 <- knTotalEffort
             _ <- if (t1 - t0) > 700 || msg == "visitF:nolimit:foster_nat_add_digits"
                     || msg == "withSizeCounter:visitF:nolimit:foster_nat_add_digits"
-              then liftIO $ putStrLn $ "total effort in bracket call went from " ++ show t0 ++ " to " ++ show t1 ++ " : + " ++ show (t1 - t0) ++ " ; " ++ msg
+              then liftIO $ putStrLn $ "total effort in bracket' call at lvl " ++ show lvl ++ " went from " ++ show t0 ++ " to " ++ show t1 ++ " : + " ++ show (t1 - t0) ++ " ; " ++ msg
               else return ()
             c0 x
   a >> catchError (b >>= \v -> c False >> return v)
@@ -1289,7 +1293,7 @@ opLimitMax = 1
 mkOpRefs = do
   lexp <- newRef Unvisited
   oup  <- newRef (OP_Limit opLimitMax)
-  inp  <- newRef (IP_Limit 1)
+  inp  <- newRef (IP_Limit 1) -- TODO experiment with larger values here...
   return (lexp, oup, inp)
 
 mkOpExpr _msg e env = do
@@ -1453,6 +1457,8 @@ withPendingFold pending action = do
 --addSizeLimit NoLimit _ = NoLimit
 --addSizeLimit (Limit (i,s)) d = Limit (i + d,s)
 
+-- Performs an action, insulating the accumulated size information
+-- from the current counter, and returns the result with the computed size.
 withSizeCounter :: String -> SizeCounter -> In a -> In (a, Int)
 withSizeCounter msg (SizeCounter sz lim) action = do
   st <- get
@@ -1538,8 +1544,9 @@ knInlineToplevel :: SrcExpr -> SrcEnv -> In (Rez ResExpr)
 knInlineToplevel expr env = do
         go expr env
  where
-  go expr env =
-   let q v = resVar env v in
+  go expr env = do
+   let q v = resVar env v
+   knBumpTotalEffort
    case expr of
     KNLetFuns ids fns body -> do
         liftIO $ putStrLn $ "saw toplevel fun bindings of " ++ show ids
@@ -1555,7 +1562,7 @@ knInlineToplevel expr env = do
                 before <- knTotalEffort
                 mbfn <- visitF "KNLetFuns"  op
                 after <- knTotalEffort
-                liftIO $ putStrLn $ "toplevel fn " ++ show id ++ " cost " ++ show (after - before)
+                liftIO $ putStrLn $ "final visiting of toplevel fn " ++ show id ++ " cost " ++ show (after - before)
                 return mbfn
         mb_fns <- mapM doVisitFn (zip ids ops)
         let pickFn (_ , Cached _ f _) = do return f
@@ -2086,14 +2093,14 @@ visitF msg (Opnd fn env loc_fn _ loc_ip) = do
         case ip of
           IP_Limit 0 -> do
             debugDocLn $ text $ "inner-pending limit reached for " ++ show (tidIdent $ fnVar fn)
-            return $ Failed (error "cant yet compute cost of inner-pending failure")
+            return $ Failed 0
           IP_Limit k -> do
             putDocLn5 $ text "visitF(" <> text msg <> text ") called... using no-limit, for fn  "
                     <>  text (show (tidIdent $ fnVar fn)) <> text "  which is:"
                     <$> indent 16 (pretty fn)
             (fn' , size) <- do
                 putDocLn7 $ text $ "{{{visiting "++show (fnIdent fn)++ " with no limit (for the first time)"
-                inBracket_ (show (fnIdent fn))
+                inBracket_ ("visitF-IPLimit:" ++ show (fnIdent fn))
                            (writeRef loc_ip (IP_Limit (k - 1)))
                            (withSizeCounter ("visitF:nolimit:"++show (fnIdent fn))
                                             (SizeCounter 0 NoLimit)
@@ -2107,8 +2114,8 @@ visitF msg (Opnd fn env loc_fn _ loc_ip) = do
             writeRef loc_fn (Visited fn' size after)
             return $ Cached True fn' size
     Visited f size _ -> do
-      --putDocLn6 $ text $ "reusing cached result (size " ++ show size ++ " for fn " ++ show (tidIdent $ fnVar fn)
-      --putDocLn6 $ indent 32 $ pretty f
+      putDocLn6 $ text $ "reusing cached result (size " ++ show size ++ " for fn " ++ show (tidIdent $ fnVar fn)
+      putDocLn6 $ indent 32 $ pretty f
       return $ Cached False f size
  where
     knInlineFn' :: SrcFn -> SrcEnv -> In (ResFn)
@@ -2173,7 +2180,7 @@ visitE (resid, Opnd e env loc_e _ loc_ip) = do
                 -- Inline e with the same size limit that's currently in place,
                 -- but don't modify the current size counter until/unless we
                 -- residualize the result.
-                inBracket_ "<expr>"
+                inBracket_ "IPLimit-<expr>"
                            (writeRef loc_ip (IP_Limit $ k - 1))
                            (withSizeCounter ("visitE:")
                                             (SizeCounter z x)
@@ -2551,5 +2558,18 @@ countCallSites expr = execState (go expr) 0 where
     KNCall {} -> do n <- get
                     let !x = n + 1
                     put x
+    _ -> mapM_ go (childrenOf expr)
+
+countInliningDecisionPoints :: KNMono -> Int
+countInliningDecisionPoints expr = execState (go expr) 0 where
+  go expr = case expr of
+    KNInlined _ _ _ _ e -> do n <- get
+                              let !x = n + 1
+                              put x
+                              go e
+    KNNotInlined _ e    -> do n <- get
+                              let !x = n + 1
+                              put x
+                              go e
     _ -> mapM_ go (childrenOf expr)
 -- }}}
