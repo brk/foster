@@ -104,9 +104,7 @@ Ubuntu 10.10:
 Mac OS X:
 	Interesting ports (via MacPorts):
 
-	protobuf-cpp protobuf-java protobuf-python26
-
-        cairo  pango  gtk2
+	protobuf-cpp cairo  pango  gtk2
 
 ANTLR on Linux and OS X:
 	ANTLR_VERSION=3.2
@@ -147,8 +145,11 @@ Haskell:
       cabal install text protocol-buffers filepath hprotoc ansi-terminal ansi-wl-pprint fgl boxes data-dword smtLib union-find
       cabal install language-lua
 
+Python on Ubuntu:
+        sudo apt-get install python-pip python-numpy python-scipy python-matplotlib \
+            ipython ipython-notebook python-pandas python-sympy python-nose
 Python:
-        pip install pyyaml
+        pip install pyyaml jinja2 statsmodels mpld3 seaborn
 
 Other libraries/tools:
         gperftools: https://code.google.com/p/gperftools/
