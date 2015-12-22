@@ -12,7 +12,7 @@ Foster Notes
    misc
    test
    features
-   compiler-history
+   compiler-overview
    runtime
    arrays
    strings
@@ -25,6 +25,7 @@ Foster Notes
    optimization-examples
    todo
    checklist
+   compiler-history
 
 .. Indices and tables
 .. ==================

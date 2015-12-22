@@ -30,7 +30,6 @@ import Control.Monad(when, liftM)
 --   primarily means we've eliminated all unification variables.
 -- * Per above, we recognize calls to coroutine primitives w/ type parameters.
 -- * Lambdas are forced to be let/rec-bound.
--- * __COMPILES__ expressions are translated to the appropriate bool constant.
 
 data AIExpr =
         -- Literals
