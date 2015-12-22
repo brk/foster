@@ -63,7 +63,7 @@ echo "testing $D"
 if [ -d $D ]; then
  make -s -C $R/_obj fosteroptc fosterparse fosterlower me && cleanout && \
  echo python $R/scripts/run_test.py --show-cmdlines ${T} "$@" && \
-      python $R/scripts/run_test.py --show-cmdlines ${T} "$@" --bindir=$R/_obj --me-arg=--interactive --cxxpath=`cxxpath`
+      python $R/scripts/run_test.py --show-cmdlines ${T} "$@" --bindir=$R/_obj --me-arg=--interactive --cxxpath=`cxxpath` -I ${R}/stdlib
 else
   echo "Make new test $T? y/[n]"
   read CONFIRM
