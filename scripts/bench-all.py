@@ -24,13 +24,20 @@ import datetime
 import json
 import yaml
 
-from optparse import OptionParser
+import pin_opcodemix
 
-def mkdir_p(d):
-  subprocess.call("mkdir -p %s" % d, shell=True)
+from optparse import OptionParser
 
 datestr = datetime.datetime.now().strftime('%Y-%m-%d@%H.%M.%S')
 _scripts_dir = os.path.dirname(sys.argv[0])
+
+# http://code.activestate.com/recipes/52308-the-simple-but-handy-collector-of-a-bunch-of-named/
+class Bunch:
+    def __init__(self, **kwds):
+        self.__dict__.update(kwds)
+
+def mkdir_p(d):
+  subprocess.call("mkdir -p %s" % d, shell=True)
 
 def ensure_dir_exists(d):
   mkdir_p(d)
@@ -117,6 +124,11 @@ def intersection_of_sets(sets):
 def union_of_sets(sets):
   return set.union(*sets)
 
+def merge_dicts(x, y):
+  z = x.copy()
+  z.update(y)
+  return z
+
 def zip_dicts(ds):
   """
   Transforms [{k1:v1,...}, {k1:v2,...}, ...]
@@ -133,7 +145,7 @@ def zip_dicts(ds):
     d[k] = [e[k] for e in ds]
   return d
 
-def do_runs_for_gotest(testpath, inputstr, tags, flagsdict, total):
+def do_runs_for_gotest(testpath, inputstr, tags, flagsdict, total, options):
   exec_path = exec_for_testpath(testpath)
   if not os.path.exists(exec_path):
     print "ERROR: compilation failed!"
@@ -143,6 +155,7 @@ def do_runs_for_gotest(testpath, inputstr, tags, flagsdict, total):
            'test'  : testpath,
            'input' : inputstr, }
     stats_seq = []
+    os_stats_seq = []
     for z in range(total):
       stats_path = datapath(testpath, tags, "stats_%d.json" % z)
       os_stats_path = datapath(testpath, tags, "os_stats_%d.json" % z)
@@ -151,18 +164,24 @@ def do_runs_for_gotest(testpath, inputstr, tags, flagsdict, total):
       #print ": $ " + cmdstr + " (%d of %d; tags=%s)" % (z + 1, total, tags)
       (rv, ms) = shell_out(cmdstr)
       print testpath, inputstr, tags, ">>>> ", ms, "ms"
-      stats = load(stats_path)
+      stats_seq.append(load(stats_path))
+      stats = load(os_stats_path)
       stats['py_run_ms'] = ms
-      stats_seq.append(stats)
-    tj['outputs'] = zip_dicts(stats_seq)
+      os_stats_seq.append(stats)
+    tj['outputs'] = merge_dicts(zip_dicts(stats_seq), zip_dicts(os_stats_seq))
+
+    if options.pindir is not None:
+      opts = Bunch(pindir = options.pindir, outfile = datapath(testpath, tags, 'opcodemix.out'))
+      pin_opcodemix.run_pin(opts, [exec_path, inputstr])
+
     with open(datapath(testpath, tags, 'timings.json'), 'a') as results:
       json.dump(tj, results, indent=2, separators=(',', ':'))
       results.write(",\n")
 
 def compile_and_run_test(testpathfragment, extra_compile_args, inputstr,
-                         tags, flagstrs,  flagsdict, num_iters):
+                         tags, flagstrs,  flagsdict, num_iters, options):
   gotest_with(testpathfragment, tags, flagstrs, extra_compile_args)
-  do_runs_for_gotest(testpathfragment, inputstr, tags, flagsdict, num_iters)
+  do_runs_for_gotest(testpathfragment, inputstr, tags, flagsdict, num_iters, options)
 
 def flags_of_factors(all_factors):
   return list(itertools.chain(*
@@ -232,7 +251,7 @@ shootout_benchmarks = [
    ('speed/shootout/fannkuchredux-unchecked',               '10'),
 ]
 
-def benchmark_third_party_code(sourcepath, flagsdict, tags, exe, argstrs, num_iters):
+def benchmark_third_party_code(sourcepath, flagsdict, tags, exe, argstrs, num_iters, options):
   ensure_dir_exists(test_data_dir(sourcepath, tags))
   argstr = ' '.join(argstrs)
   tj = { 'tags'  : tags,
@@ -241,20 +260,32 @@ def benchmark_third_party_code(sourcepath, flagsdict, tags, exe, argstrs, num_it
          'input' : argstr,
         'outputs': {},
        }
-  timings_ms = []
+  os_stats_seq = []
   for z in range(num_iters):
     with open(datapath(sourcepath, tags, 'out.txt'), 'w') as out:
-      (rv, ms) = shell_out(' '.join([exe] + argstrs), stderr=out, stdout=out)
+      os_stats_path = datapath(sourcepath, tags, "os_stats_%d.json" % z)
+
+      cmdstr = """time-json --output %s %s %s""" \
+                 % (os_stats_path, exe, argstr)
+      (rv, ms) = shell_out(cmdstr, stderr=out, stdout=out)
       assert rv == 0
+      #print ' '.join([exe] + argstrs)
       print sourcepath, exe, argstr, ">>>> ", ms, "ms"
-      timings_ms.append(ms)
-  tj['outputs']['py_run_ms'] = timings_ms
+
+      stats = load(os_stats_path)
+      stats['py_run_ms'] = ms
+      os_stats_seq.append(stats)
+  tj['outputs'] = zip_dicts(os_stats_seq)
+
+  if options.pindir is not None:
+    opts = Bunch(pindir = options.pindir, outfile = datapath(sourcepath, tags, 'opcodemix.out'))
+    pin_opcodemix.run_pin(opts, [exe, argstr])
 
   with open(datapath(sourcepath, tags, 'timings.json'), 'a') as results:
     json.dump(tj, results, indent=2, separators=(',', ':'))
     results.write(",\n")
 
-def benchmark_third_party(third_party_benchmarks):
+def benchmark_third_party(third_party_benchmarks, options):
   nested_plans = []
   for (sourcepath, filenames, argstrs) in third_party_benchmarks:
     all_factors = [factor + [('lang', [('other', '')]),
@@ -283,7 +314,7 @@ def benchmark_third_party(third_party_benchmarks):
       exe = 'test_' + tags + ".exe"
       shell_out("gcc -pipe -Wall -Wno-unknown-pragmas %s %s -o %s -lm" % (' '.join(flagstrs), ' '.join(cs), exe), showcmd=True)
       benchmark_third_party_code(sourcepath, flagsdict, tags,
-                                  exe, argstrs, num_iters)
+                                  exe, argstrs, num_iters, options)
     execute_plan(plan, compile_and_run_shootout, step_counter, total_steps)
     shell_out("rm test_*.exe")
 
@@ -334,11 +365,11 @@ all_factors = [factor + [('lang', [('foster', '')]),
 ]]
 
 
-def benchmark_shootout_programs(num_iters=kNumIters):
+def benchmark_shootout_programs(options, num_iters=kNumIters):
   for (testfrag, argstr) in shootout_benchmarks:
     def compile_and_run(tags, flagstrs, flagsdict, num_iters):
       compile_and_run_test(testfrag, '', argstr,
-                           tags, flagstrs, flagsdict, num_iters)
+                           tags, flagstrs, flagsdict, num_iters, options)
     plan = generate_all_combinations(all_factors, kNumIters)
     total_steps = len(plan)
     step_counter = [0]
@@ -351,21 +382,33 @@ def collect_all_timings():
   shell_out("echo ] >> %s" % alltimings)
   print alltimings
 
+def fixup_pindir(options):
+  if options.pindir is None:
+    for path in [ os.path.join(os.path.expanduser('~'), 'sw', 'local', 'pin') ]:
+      if os.path.exists(path):
+        options.pindir = path
+        return True
+  return False
+
 def get_test_parser(usage):
   parser = OptionParser(usage=usage)
   parser.add_option("--comment", action="append", dest="comments", default=[],
                     help="Associate a comment with this run.")
+  parser.add_option("--pindir", dest="pindir", action="store", default=None,
+                    help="Path to the `pin` root, if available.")
   return parser
 
 def main():
   parser = get_test_parser("""usage: %prog [options]\n""")
   (options, args) = parser.parse_args()
 
+  fixup_pindir(options)
+
   start = datetime.datetime.utcnow()
   ensure_dir_exists(data_dir())
-  benchmark_third_party(other_third_party_benchmarks)
-  benchmark_third_party(shootout_original_benchmarks)
-  benchmark_shootout_programs()
+  benchmark_third_party(other_third_party_benchmarks, options)
+  benchmark_third_party(shootout_original_benchmarks, options)
+  benchmark_shootout_programs(options)
   collect_all_timings()
   end = datetime.datetime.utcnow()
   print "Total elapsed time:", end - start

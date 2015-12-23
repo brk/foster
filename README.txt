@@ -46,6 +46,7 @@ Ubuntu 10.10:
 
 	Interesting packages:
 		cmake		libgmp3c2      m4       ministat
+		linux-tools-virtual     linux-tools-generic
 	(universe)
 		binutils-gold	cmake-curses-gui	mercurial
 					libffi-dev

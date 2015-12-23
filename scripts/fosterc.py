@@ -41,7 +41,8 @@ def shared(lib):
   import platform
   suffix = {
     'Darwin': ".dylib",
-    'Linux':  ".so"
+    'Linux':  ".so",
+    'Windows': '.dll'
   }[platform.system()]
   return lib + suffix
 

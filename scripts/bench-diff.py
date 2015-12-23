@@ -11,8 +11,13 @@ from collections import defaultdict
 import itertools
 import re
 import os.path
+import sys
+
+import run_cmd
 
 from optparse import OptionParser
+
+_scripts_dir = os.path.dirname(sys.argv[0])
 
 def load(jsonpath):
   with open(jsonpath, 'r') as jsonfile:
@@ -47,12 +52,18 @@ def diff_instance_outputs(oldoutputs, newoutputs, name, results):
     with open('new_', 'w') as newfile:
       for v in newvals:
         newfile.write('%s\n' % str(v))
+
     output = subprocess.check_output('ministat -A -c 98 old_ new_', shell=True)
     lines = output.split('\n')
     if lines[-2] == 'No difference proven at 98.0% confidence':
       pass
     else:
-      results.append( (name, lines[-3] ) )
+      old_median = lines[-7].split()[5]
+      new_median = lines[-6].split()[5]
+      abs_diff = lines[-4].strip()
+      rel_diff = lines[-3].strip()
+      results.append( (name, rel_diff, abs_diff, old_median, new_median ) )
+
     #with open('boot.txt', 'w') as boot:
     #  boot.write('old new\n')
     #  for ov, nv in zip( oldvals, newvals ):
@@ -81,13 +92,27 @@ def seems_noisy(parsedres):
   (delta, errmargin) = parsedres
   return (errmargin > 0.5 * abs(delta))
 
+def maybe_compare_opcode_mixes(results, old_opcodemix, new_opcodemix):
+  if len(results) > 0:
+    maybe_summarize = ['--summarize']
+  else:
+    maybe_summarize = []
+
+  if os.path.exists(old_opcodemix):
+    if os.path.exists(new_opcodemix):
+      run_cmd.run_cmd(['python', os.path.join(_scripts_dir, 'compare-opcodemix.py'),
+                                 old_opcodemix, new_opcodemix,
+                                 '--ratio', '1.01'] + maybe_summarize)
+
 outputs_to_skip = {
   'Mutator_runtime_s':True,
   '     GC_runtime_s':True,
   'Elapsed_runtime_s':True,
+  'Initlzn_runtime_s':True,
+  'tot_hms':True,
 }
 
-def diff_instances(oi, ni, testname, tags):
+def diff_instances(oi, olddir, ni, newdir, testname, tags):
   oldoutputs = oi['outputs']
   newoutputs = ni['outputs']
 
@@ -101,21 +126,30 @@ def diff_instances(oi, ni, testname, tags):
 
   if len(results) > 0:
     print "%-50s: %s" % (testname, tags)
-    for (outnm, res) in results:
-      outline = "%-20s: %s" % ( "'%s'" % outnm, res)
-      relres = parse_result(res)
-      if seems_superfluous(relres):
+    for res in results:
+      (outnm, rel_diff, abs_diff, old_median, new_median) = res
+      outline = "    %-20s:       %30s" % ( "'%s'" % outnm, rel_diff)
+      outline2 = " from %10s -> %10s (%s)" % (old_median, new_median, abs_diff)
+      parsed_rel_diff = parse_result(rel_diff)
+      if seems_superfluous(parsed_rel_diff):
         pass
-      elif seems_noisy(relres):
-        print bcolors.OKGREEN, outline, bcolors.ENDC
+      elif seems_noisy(parsed_rel_diff):
+        print bcolors.OKGREEN, outline, bcolors.ENDC, outline2
       else:
-        print bcolors.BOLD, outline, bcolors.ENDC
+        print bcolors.BOLD, outline, bcolors.ENDC, outline2
 
-def diff_all_instances(newinsts, oldinsts):
+  old_opcodemix = os.path.join(olddir, testname.replace('/', '__'), oi['tags'], 'opcodemix.out')
+  new_opcodemix = os.path.join(newdir, testname.replace('/', '__'), ni['tags'], 'opcodemix.out')
+  maybe_compare_opcode_mixes(results, old_opcodemix, new_opcodemix)
+
+  if len(results) > 0:
+    print
+
+def diff_all_instances(newdir, newinsts, olddir, oldinsts):
   common_keys = list(set(newinsts.keys()).intersection(set(oldinsts.keys())))
   for k in common_keys:
     nm, inp, tags = k
-    diff_instances(newinsts[k], oldinsts[k], nm, tags)
+    diff_instances(oldinsts[k], olddir, newinsts[k], newdir, nm, tags)
 
 def examine(inst):
   outputs = inst['outputs']
@@ -128,7 +162,7 @@ if __name__ == "__main__":
   if len(args) == 2:
     pass
   else:
-    print "Perhaps invoke with `find data -maxdepth 1 -mindepth 1 -type d | tail -n 2`?"
+    print "Perhaps invoke with `find data -maxdepth 1 -mindepth 1 -type d | sort | tail -n 2`?"
     import sys
     sys.exit(1)
 
@@ -144,6 +178,6 @@ if __name__ == "__main__":
   oldinsts = reorganize(oldtimings)
 
   print 'diffing...'
-  diff_all_instances(newinsts, oldinsts)
+  diff_all_instances(newdir, newinsts, olddir, oldinsts)
 
 
