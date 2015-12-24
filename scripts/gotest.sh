@@ -70,8 +70,6 @@ else
   if [ "$CONFIRM" = "y" ]; then
     mkdir -p $D
     ${EDITOR} ${T}
-  else
-    echo "_${CONFIRM}_"
   fi
 fi
 

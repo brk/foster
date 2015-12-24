@@ -15,6 +15,7 @@ import qualified Data.Set as Set(filter, toList, fromList, notMember, intersecti
 import qualified Data.Graph as Graph(SCC, flattenSCC, stronglyConnComp, stronglyConnCompR)
 import Data.Map(Map)
 import Data.Set(Set)
+import qualified Data.Sequence as Seq(length)
 
 import qualified Data.Char as Char(isAlphaNum)
 import Data.IORef(IORef, newIORef, readIORef, writeIORef)
@@ -403,6 +404,10 @@ topoSortBindingSCC allSCCs =
 
 -----------------------------------------------------------------------
 
+modulesSourceLines (WholeProgramAST mods) =
+  let countLines (SourceLines seq) = Seq.length seq in
+  map (countLines . moduleASTsourceLines) mods
+
 readAndParseCbor infile = do
   cborbytes <- L.readFile infile
   return $ runGet getCBOR cborbytes
@@ -473,13 +478,18 @@ runCompiler ci_time wholeprog flagVals outfile = do
      Right (RWT in_time sr_time cp_time sc_time ilprog) -> do
        (pb_time, _) <- ioTime $ dumpILProgramToProtobuf ilprog outfile
        (nqueries, querytime) <- readIORef smtStatsRef
-       reportFinalPerformanceNumbers ci_time nqueries querytime in_time sr_time cp_time sc_time nc_time pb_time
+       reportFinalPerformanceNumbers ci_time nqueries querytime in_time sr_time
+                                     cp_time sc_time nc_time pb_time
+                                     (sum (modulesSourceLines wholeprog))
 
 reportFinalPerformanceNumbers :: Double -> Int -> [ (Double, Double) ]
                               -> Double -> Double -> Double
-                              -> Double -> Double -> Double -> IO ()
-reportFinalPerformanceNumbers ci_time nqueries querytime in_time sr_time cp_time sc_time nc_time pb_time = do
+                              -> Double -> Double -> Double
+                              -> Int -> IO ()
+reportFinalPerformanceNumbers ci_time nqueries querytime in_time sr_time
+                              cp_time sc_time nc_time pb_time wholeProgNumLines = do
        let ct_time = (nc_time - (cp_time + in_time + sc_time))
+       let total_time = ci_time + pb_time + nc_time
        let pct f1 f2 = (100.0 * f1) / f2
        let fmt_pct time = let p = pct time nc_time
                               n = if p < 10.0 then 2 else if p < 100.0 then 1 else 0
@@ -498,7 +508,9 @@ reportFinalPerformanceNumbers ci_time nqueries querytime in_time sr_time cp_time
                          ,text ""
                          ,fmt "    CBOR-in time:" ci_time
                          ,fmt "protobufout time:" pb_time
-                         ,text "overall wall-clock time:" <+> text (secs $ ci_time + pb_time + nc_time)
+                         ,text "overall wall-clock time:" <+> text (secs $ total_time)
+                         ,text "# source lines:" <+> pretty wholeProgNumLines
+                         ,text "source lines/second:" <+> text (printf "%.1f" (fromIntegral wholeProgNumLines / total_time))
                          ]
 
 data ResultWithTimings = RWT Double Double Double Double ILProgram

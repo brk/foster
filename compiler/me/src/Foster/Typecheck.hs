@@ -900,7 +900,7 @@ tcSigmaCall ctx rng (E_PrimAST _ name@"assert-invariants" _ _) argtup exp_ty = d
     matchExp exp_ty (AnnLetFuns rng [id] [thunk] (AnnTuple rng unitTypeTC KindPointerSized [])) name
 
 tcSigmaCall ctx rng base argexprs exp_ty = do
-        let dbg d = debugIf (True || dbgCalls) d
+        let dbg d = debugIf dbgCalls d
 
         dbg $ text "{{{"
         annbase <- inferRho ctx base "called base"

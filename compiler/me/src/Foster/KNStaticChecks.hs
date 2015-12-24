@@ -308,30 +308,30 @@ checkFn' fn facts0 = do
   facts'   <- withBindings (fnVar fn) (fnVars fn) facts0
   facts''  <- foldlM recordIfHasFnPrecondition facts' (fnVars fn)
 
-  liftIO $ putDocLn $ text "checking body " <$> indent 2 (pretty (fnBody fn))
+  dbgIf dbgCheckFn $ text "checking body " <$> indent 2 (pretty (fnBody fn))
   f <- checkBody (fnBody fn) facts''
-  liftIO $ putDocLn $ text "... checked body"
+  dbgIf dbgCheckFn $ text "... checked body"
 
   whenRefined (monoFnTypeRange $ fnType fn) $ \v e -> do
     -- An expression summarizing our static knowledge of the fn body/return value.
     se <- case f of
             Nothing -> do
-              liftIO $ putDocLn $ text "no refinement known for body"
+              dbgIf dbgCheckFn $ text "no refinement known for body"
               return $ bareSMTExpr SMT.true
             Just ft -> do
               rr <- ft (tidIdent v)
-              liftIO $ putDocLn $ text "refinement for body: " <> pretty rr
+              dbgIf dbgCheckFn $ text "refinement for body: " <> pretty rr
               return rr
 
     let postcondId = Ident (T.pack ".postcond") 0
     f' <- checkBody e facts''
     se' <- case f' of
                 Nothing -> do
-                  liftIO $ putDocLn $ text "fn refinement checked, no extra refinement"
+                  dbgIf dbgCheckFn $ text "fn refinement checked, no extra refinement"
                   return $ bareSMTExpr SMT.true
                 Just ff -> do
                   rr <- ff postcondId
-                  liftIO $ putDocLn $ text "fn refinement checked: " <> pretty rr
+                  dbgIf dbgCheckFn $ text "fn refinement checked: " <> pretty rr
                   return rr
     -- An expression of the form (v == ...)
 
@@ -650,7 +650,7 @@ checkBody expr facts =
                 _ -> return ()
           _ -> return ()
 
-        liftIO $ putStrLn $ "KNCall " ++ show (pretty expr) ++ " :: " ++ show (pretty ty)
+        dbgStr $ "KNCall " ++ show (pretty expr) ++ " :: " ++ show (pretty ty)
         -- Does the called function have a precondition?
         -- See also mkPrecondGen / compilePreconditionFn
         case fromMaybe [] $ getMbFnPreconditions facts (tidIdent v) of
@@ -676,19 +676,19 @@ checkBody expr facts =
                         --mbe <- (maybeM mbrte) x
               -> do
                     resid <- lift $ ccFreshId $ T.pack (".fnres_" ++ show (tidIdent rtv))
-                    liftIO $ putDocLn $ text "call of fn" <+> pretty v <+> text "with refined type..."
-                    liftIO $ putDocLn $ indent 4 (text "rtv = " <> pretty rtv)
-                    liftIO $ putDocLn $ indent 4 (text "rte = " <> pretty _rte)
+                    dbgIf dbgRefinedCalls $ text "call of fn" <+> pretty v <+> text "with refined type..."
+                    dbgIf dbgRefinedCalls $ indent 4 (text "rtv = " <> pretty rtv)
+                    dbgIf dbgRefinedCalls $ indent 4 (text "rte = " <> pretty _rte)
                     facts' <- compileRefinementBoundTo resid facts rtv _rte
                     let facts'' = addSymbolicVars facts' [TypedId (tidType rtv) resid]
-                    liftIO $ putDocLn $ indent 4 (text "facts' = " <> pretty facts'')
+                    dbgIf dbgRefinedCalls $ indent 4 (text "facts' = " <> pretty facts'')
                     return $ withDecls facts'' $ \x -> do
-                        liftIO $ putDocLn $ text "result of call to fn" <+> pretty v <+> text "being bound to" <+> pretty x
+                        dbgIf dbgRefinedCalls $ text "result of call to fn" <+> pretty v <+> text "being bound to" <+> pretty x
                         return $ (smtId x === smtId resid)
                         --return $ (smtId resid === smtVar rtv)
                         --return $ SMT.true
                         --return $ (smtId resid)
-                        --liftIO $ putDocLn $ text "result of call to fn" <+> pretty v <$> pretty mbe
+                        --dbgIf dbgRefinedCalls $ text "result of call to fn" <+> pretty v <$> pretty mbe
                         --return $ SMT.and (smtId resid) (smtId x === smtVar rtv)
 
             _ -> return Nothing
@@ -872,4 +872,11 @@ instance Pretty Facts where
 prettyCommentedScript :: CommentedScript -> Doc
 prettyCommentedScript (CommentedScript items target) =
   vsep (map pretty items) <$> pretty (Cmds [CmdAssert target])
+-- }}}
+
+-- {{{
+dbgIf c d = if c then liftIO $ putDocLn d else return ()
+
+dbgCheckFn      = False
+dbgRefinedCalls = False
 -- }}}
