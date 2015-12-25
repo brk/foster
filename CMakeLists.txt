@@ -133,15 +133,6 @@ execute_process(COMMAND
 string(REPLACE "\n" " " LLVM_LDFLAGS "${LLVM_LDFLAGS}")
 string(STRIP "${LLVM_LDFLAGS}" LLVM_LDFLAGS)
 
-find_package(Threads REQUIRED)
-
-# Rather than running all programs JITted from the main fosterc
-# compiler binary (and embedding the foster runtime inside the foster compiler)
-# we instead compile the foster runtime with clang++ to bitcode, then link the
-# foster runtime bitcode in along with the bitcode for a program to run it.
-
-# TODO: provide ${CMAKE_THREAD_LIBS_INIT} to compile scripts
-
 ####################### Compilation Rules ##########################
 
 # Just run these every time we build... CMake seems to have trouble
@@ -389,11 +380,11 @@ add_library(fosterc_passes STATIC
   compiler/passes/PrettyPrintPass.cpp
 )
 
+add_dependencies(fosterc_passes fosterc_parse)
+
 add_library(fosterc_fosteril_pb STATIC
   ${GENERATED}/FosterIL.pb.cc
 )
-
-add_dependencies(fosterc_passes fosterc_parse)
 
 ############
 
@@ -420,7 +411,7 @@ target_link_libraries(fosterlower
   antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
 
 add_dependencies(fosterlower
-    foster_runtime_bc ${HS_ME} cycle)
+    foster_runtime_bc cycle)
 
 ############
 
