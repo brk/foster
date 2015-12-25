@@ -2,7 +2,7 @@
 
 $ # Run through "Installation" steps below, then:
 
-$ hg clone https://foster.googlecode.com/hg/ foster
+$ hg clone https://bitbucket.org/b/foster foster
 $ cd foster
 $ mkdir _obj        # Separate directory for compilation results and such
 $ cd _obj           # The name can be whatever you'd like, but it should
@@ -36,76 +36,102 @@ Paths:
   You'll want to append $PATH_TO_FOSTER/scripts to $PATH and $PYTHONPATH,
   probably in .bashrc or equivalent.
 
-Ubuntu 10.10:
-	Dependencies: CMake, ANTLR3 C runtime, Java, LLVM,
-                      Google protobuf, z3
+Dependencies (non-exhaustive):
+  CMake, ANTLR + ANTLR3 C runtime, LLVM, Protocol Buffers, Z3
+  Python (and several 3rd party Python libraries)
+  Pin (optional, for benchmarking analysis)
 
-   You can install llvm by executing   bash scripts/install-llvm.sh
+Ubuntu 14.04 (x86):
+  # Mercurial and TortoiseHG
+  sudo add-apt-repository ppa:tortoisehg-ppa/snapshots
+  sudo add-apt-repository ppa:tortoisehg-ppa/releases
+  sudo apt-get update
+  sudo apt-get install tortoisehg meld mercurial
 
-	Assuming you already have LLVM installed, in $PATH and $PKG_CONFIG_PATH...
+  # Compilers, build tools,
+  sudo apt-get install build-essential g++ g++-multilib git gnuplot \
+                       python-pygments python-matplotlib  python-scipy python-sphinx \
+                       python-pandas python-pip python-numpy
+  sudo apt-get install vim vim-gnome ack-grep \
+              libprotobuf8 protobuf-compiler libprotobuf-dev \
+              curl ctags aptitude libpng12-dev libcairo2-dev libc6-dev default-jdk
 
-	Interesting packages:
-		cmake		libgmp3c2      m4       ministat
-		linux-tools-virtual     linux-tools-generic
-	(universe)
-		binutils-gold	cmake-curses-gui	mercurial
-					libffi-dev
-		ccache		ack-grep        libedit-dev
+  sudo apt-get install cmake cmake-curses-gui ccache m4 ministat \
+         linux-tools-virtual linux-tools-generic \
+         libffi-dev libedit-dev
 
-                libprotobuf6 (7 on newer Ubuntus)
-                protobuf-compiler       libprotobuf-dev
-                python-protobuf libprotobuf-java
-      subversion    vim     curl  ctags
+  # TODO check which of these are needed
+  #sudo apt-get install libgmp3c2 libgmp3-dev libgmp-dev
 
-      For GHC, to get profiling libraries, do not use apt-get;
-      instead, download a generic binary tarball directly from
-      http://www.haskell.org/ghc/download
-      and cabal-install from
-      http://www.haskell.org/cabal/download.html
+  # Python packages, mostly used by benchmarking infrastructure
+  pip install pyyaml jinja2 statsmodels mpld3 seaborn
 
-      To get GHC to see libgmp:
-        sudo apt-get install libgmp3-dev
-        sudo ln -s /usr/lib/i386-linux-gnu/libgmp.so{,.3}
+  sudo ln -s /usr/lib/i386-linux-gnu/libgmp.so{,.3}
 
-        For Ott:
-                coq             texlive-latex-base
+  # If you want jEdit and the ninja build tool...
 
-        For Sphinx:
-          # If you don't have easy_install available already:
-          curl -O http://peak.telecommunity.com/dist/ez_setup.py
-          sudo python ez_setup.py -U setuptools
+  wget http://downloads.sourceforge.net/project/jedit/jedit/5.3.0/jedit_5.3.0_all.deb
+  sudo dpkg -i jedit_5.3.0_all.deb
 
-          sudo easy_install -U sphinx
-
-	If you need Java on Ubuntu 9.10,
-	sudo apt-get install sun-java6-jdk
-
-	on 10.04, install default-jdk
+  git clone git://github.com/martine/ninja.git
+  cd ninja
+  python bootstrap.py
+  mv ninja ~/sw/local/bin
 
 
-	sudo apt-get install cmake cmake-curses-gui # etc
 
-	For emscripten:
-	        sudo apt-get install python-software-properties
-	        sudo apt-get update
-	        sudo add-apt-repository ppa:chris-lea/node.js
-	        sudo apt-get install nodejs npm
+  # To get GHC to see libgmp:
+  sudo ln -s /usr/lib/i386-linux-gnu/libgmp.so{,.3}
 
-      For CVC4, add the following lines to /etc/apt/sources.list::
+  # For GHC, to get profiling libraries, do not use apt-get;
+  # instead, download a generic binary tarball directly from
+  #    http://www.haskell.org/ghc/download
+  # and cabal-install from
+  #    http://www.haskell.org/cabal/download.html
+  #
+  # For example:
 
-          deb http://cvc4.cs.nyu.edu/debian/ unstable/
-          deb-src http://cvc4.cs.nyu.edu/debian/ unstable/
-
-      Then::
-
-          $ sudo apt-get update
-          $ sudo apt-get install cvc4 libcvc4-dev
+  wget http://www.haskell.org/ghc/dist/7.10.2/ghc-7.10.2-i386-unknown-linux.tar.bz2
+  tar xf ghc-7.10.2-i386-unknown-linux.tar.bz2
+  cd ghc-7.10.2
+  ./configure --prefix=$HOME/sw/local
+  make install
 
 
-Mac OS X:
-	Interesting ports (via MacPorts):
 
-	protobuf-cpp cairo  pango  gtk2
+  cabal install random text cabal-install --extra-lib-dirs=/usr/lib/i386-linux-gnu
+
+  # You can install binutils-gold but it needs to be disabled for some Haskell packages.
+
+  You can install llvm by executing   bash scripts/install-llvm.sh
+
+  Assuming you already have LLVM installed, in $PATH and $PKG_CONFIG_PATH...
+
+
+
+
+  # For Ott:
+  #         sudo apt-get install  coq texlive-latex-base
+  #         wget http://www.cl.cam.ac.uk/~pes20/ott/ott_distro_0.25.tar.gz
+  #         tar xf ott_distro_0.25.tar.gz
+  #         ...etc...
+
+  # For emscripten:
+  #         sudo apt-get install python-software-properties
+  #         sudo apt-get update
+  #         sudo add-apt-repository ppa:chris-lea/node.js
+  #         sudo apt-get install nodejs npm
+
+  # For CVC4, add the following lines to /etc/apt/sources.list::
+  #
+  #     deb http://cvc4.cs.nyu.edu/debian/ unstable/
+  #     deb-src http://cvc4.cs.nyu.edu/debian/ unstable/
+  #
+  # Then::
+  #
+  #     $ sudo apt-get update
+  #     $ sudo apt-get install cvc4 libcvc4-dev
+
 
 ANTLR on Linux and OS X:
 	ANTLR_VERSION=3.2
@@ -123,17 +149,14 @@ ANTLR on Linux and OS X:
 	wget http://antlr3.org/download/antlr-${ANTLR_VERSION}.jar
 	popd
 
-On Ubuntu 10.10:
-      sudo apt-get install libglib2.0-{bin,dev} libpng12-dev
-                           libcairo2-dev libpango1.0-dev libgtk2.0-dev
-                           libgtksourceview2.0-{0,dev}
-
 Haskell:
    To enable profiling, add    library-profiling: True   to   ~/.cabal/config
    before installing any further packages.
+
    It will probably make your life easier to set up a Cabal sandbox within the
         ``compiler/me`` directory via
         ``cabal sandbox init ; cabal install --only-dependencies``
+
    Or, install things manually:
       cabal update
       cabal install cabal-install
@@ -146,11 +169,6 @@ Haskell:
       cabal install text protocol-buffers filepath hprotoc ansi-terminal ansi-wl-pprint fgl boxes data-dword smtLib union-find
       cabal install language-lua
 
-Python on Ubuntu:
-        sudo apt-get install python-pip python-numpy python-scipy python-matplotlib \
-            ipython ipython-notebook python-pandas python-sympy python-nose
-Python:
-        pip install pyyaml jinja2 statsmodels mpld3 seaborn
 
 Other libraries/tools:
         gperftools: https://code.google.com/p/gperftools/
