@@ -23,6 +23,8 @@ import itertools
 import datetime
 import json
 import yaml
+import re
+import time
 
 import pin_opcodemix
 
@@ -84,6 +86,11 @@ def load(jsonpath):
 
 kNumIters = 16
 
+def pause_before_test():
+  time.sleep(0.060)
+
+def secs_of_ms(ms):
+  return float(ms) / 1000.0
 
 # Synopsis: (rv, ms) = shell_out("make some_target")
 def shell_out(cmdstr, stdout=None, stderr=None, showcmd=False):
@@ -145,25 +152,54 @@ def zip_dicts(ds):
     d[k] = [e[k] for e in ds]
   return d
 
+def extract_foster_compile_stats(testpath, tags):
+  mid_total_ms = None
+  all_total_ms = None
+  num_lines = None
+
+  with open(datapath(testpath, tags, 'compile.txt'), 'r') as compile_txt_path:
+    lines = compile_txt_path.readlines()
+    for line in lines:
+      m = re.match(r'fpr:.+ fme:\s*(\d+) .+ tot:\s*(\d+)', line)
+      if m:
+        mid_total_ms = int(m.groups()[0])
+        all_total_ms = int(m.groups()[1])
+      m = re.match(r'# source lines: (\d+)', line)
+      if m:
+        num_lines = int(m.groups()[0])
+
+  return  { 'mid_total_ms':mid_total_ms,
+            'all_total_ms':all_total_ms,
+            'num_lines':num_lines,
+            'mid_lines_per_s':float(num_lines) / secs_of_ms(mid_total_ms),
+            'all_lines_per_s':float(num_lines) / secs_of_ms(all_total_ms),
+          }
+
 def do_runs_for_gotest(testpath, inputstr, tags, flagsdict, total, options):
   exec_path = exec_for_testpath(testpath)
   if not os.path.exists(exec_path):
     print "ERROR: compilation failed!"
   else:
+    compile_stats = extract_foster_compile_stats(testpath, tags)
     tj = { 'tags'  : tags,
            'flags' : flagsdict,
            'test'  : testpath,
-           'input' : inputstr, }
+           'input' : inputstr,
+           'compile': compile_stats
+    }
     stats_seq = []
     os_stats_seq = []
+    print testpath, inputstr, tags
     for z in range(total):
+      pause_before_test()
+
       stats_path = datapath(testpath, tags, "stats_%d.json" % z)
       os_stats_path = datapath(testpath, tags, "os_stats_%d.json" % z)
       cmdstr = """time-json --output %s %s %s -foster-runtime '{ "dump_json_stats_path" : "%s" }'  > /dev/null""" \
                  % (os_stats_path, exec_path, inputstr, stats_path)
       #print ": $ " + cmdstr + " (%d of %d; tags=%s)" % (z + 1, total, tags)
       (rv, ms) = shell_out(cmdstr)
-      print testpath, inputstr, tags, ">>>> ", ms, "ms"
+      print ">>>> ", ms, "ms"
       stats_seq.append(load(stats_path))
       stats = load(os_stats_path)
       stats['py_run_ms'] = ms
@@ -251,17 +287,21 @@ shootout_benchmarks = [
    ('speed/shootout/fannkuchredux-unchecked',               '10'),
 ]
 
-def benchmark_third_party_code(sourcepath, flagsdict, tags, exe, argstrs, num_iters, options):
-  ensure_dir_exists(test_data_dir(sourcepath, tags))
+def benchmark_third_party_code(sourcepath, flagsdict, tags, exe, argstrs,
+                               num_iters, options, compile_stats):
   argstr = ' '.join(argstrs)
   tj = { 'tags'  : tags,
          'flags' : flagsdict,
          'test'  : sourcepath,
          'input' : argstr,
         'outputs': {},
+        'compile': compile_stats
        }
   os_stats_seq = []
+  print sourcepath, argstr, tags
   for z in range(num_iters):
+    pause_before_test()
+
     with open(datapath(sourcepath, tags, 'out.txt'), 'w') as out:
       os_stats_path = datapath(sourcepath, tags, "os_stats_%d.json" % z)
 
@@ -269,8 +309,7 @@ def benchmark_third_party_code(sourcepath, flagsdict, tags, exe, argstrs, num_it
                  % (os_stats_path, exe, argstr)
       (rv, ms) = shell_out(cmdstr, stderr=out, stdout=out)
       assert rv == 0
-      #print ' '.join([exe] + argstrs)
-      print sourcepath, exe, argstr, ">>>> ", ms, "ms"
+      print ">>>> ", ms, "ms"
 
       stats = load(os_stats_path)
       stats['py_run_ms'] = ms
@@ -284,6 +323,9 @@ def benchmark_third_party_code(sourcepath, flagsdict, tags, exe, argstrs, num_it
   with open(datapath(sourcepath, tags, 'timings.json'), 'a') as results:
     json.dump(tj, results, indent=2, separators=(',', ':'))
     results.write(",\n")
+
+def countlines(path):
+  return len(open(path, 'r').readlines())
 
 def benchmark_third_party(third_party_benchmarks, options):
   nested_plans = []
@@ -310,14 +352,34 @@ def benchmark_third_party(third_party_benchmarks, options):
   for (sourcepath, filenames, argstrs, plan) in nested_plans:
     d  =  os.path.join(root_dir(), sourcepath)
     cs = [os.path.join(d, filename) for filename in filenames]
-    def compile_and_run_shootout(tags, flagstrs, flagsdict, num_iters):
-      exe = 'test_' + tags + ".exe"
-      shell_out("gcc -pipe -Wall -Wno-unknown-pragmas %s %s -o %s -lm" % (' '.join(flagstrs), ' '.join(cs), exe), showcmd=True)
-      benchmark_third_party_code(sourcepath, flagsdict, tags,
-                                  exe, argstrs, num_iters, options)
-    execute_plan(plan, compile_and_run_shootout, step_counter, total_steps)
-    shell_out("rm test_*.exe")
 
+    def compile_and_run_shootout(tags, flagstrs, flagsdict, num_iters):
+      ensure_dir_exists(test_data_dir(sourcepath, tags))
+      exe = datapath(sourcepath, tags, "test.exe")
+      assert not ' ' in exe
+
+      # Produce combined source program for preprocessing
+      combined_code = datapath(sourcepath, tags, "combined.c")
+      preprocessed_code = datapath(sourcepath, tags, "combined.pp.c")
+      shell_out("cat %s > %s" % (' '.join(cs), combined_code))
+      shell_out("gcc -pipe -Wall -Wno-unknown-pragmas -E %s -o %s" % (combined_code, preprocessed_code))
+      combined_code_lines = countlines(combined_code)
+      preprocessed_code_lines = countlines(preprocessed_code)
+
+      compile_cmd = "gcc -pipe -Wall -Wno-unknown-pragmas %s %s -o %s -lm" % (' '.join(flagstrs), ' '.join(cs), exe)
+      (rv, ms) = shell_out(compile_cmd, showcmd=True)
+      compile_stats = {
+        'num_source_lines' : combined_code_lines,
+        'num_lines'  : preprocessed_code_lines,
+        'all_total_ms' : ms,
+        'all_lines_per_s' : float(preprocessed_code_lines) / secs_of_ms(ms)
+      }
+
+      benchmark_third_party_code(sourcepath, flagsdict, tags, exe, argstrs,
+                                 num_iters, options, compile_stats)
+      shell_out("rm " + exe)
+
+    execute_plan(plan, compile_and_run_shootout, step_counter, total_steps)
 
 # --be-arg=--gc-track-alloc-sites
 # --be-arg=--dont-kill-dead-slots
