@@ -75,6 +75,22 @@ In broad strokes:
   platform-specific linking details. It is in turn wrapped by
   ``scripts/runtest.py``.
 
+.. graphviz::
+
+   digraph compileroverview {
+      "ModuleAST TypeAST" -> "AnnExpr TypeTC";
+      "AnnExpr TypeTC" -> "AnnExprIL TypeIL";
+      "AnnExprIL TypeIL" -> "AIExpr TypeIL";
+      "AIExpr TypeIL" -> "KNExpr TypeIL" [label=" kNormalizeModule"];
+      "KNExpr TypeIL" -> "(KNExpr' RecStatus MonoType) MonoType" [label=" monomorphize"];
+      "(KNExpr' RecStatus MonoType) MonoType" -> "(KNExpr' RecStatus MonoType) MonoType" [label=" runStaticChecks"];
+      "(KNExpr' RecStatus MonoType) MonoType" -> "(KNExpr' RecStatus MonoType) MonoType'" [label=" knLoopHeaders"];
+      "(KNExpr' RecStatus MonoType) MonoType'" -> "(KNExpr' RecStatus MonoType) MonoType''" [label=" knInline, knSinkBlocks"];
+      "(KNExpr' RecStatus MonoType) MonoType''" -> "CFBody MonoType" [label=" cfg-ize"];
+      "CFBody MonoType" -> "CCBody TypeLL" [label=" closureConvertAndLift"];
+      "CCBody TypeLL" -> "..." [label=" prepForCodegen, etc"];
+   }
+
 Compiler Details
 ================
 
