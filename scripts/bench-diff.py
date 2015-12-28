@@ -40,6 +40,11 @@ def reorganize(json):
   return rv
 
 def diff_instance_outputs(oldoutputs, newoutputs, name, results):
+  """Uses ministat to perform a significance test on the old-vs-new outputs.
+     Stores information about potentially-significant differences in
+     ``results``. But note that on noisy machines, even 98%-CIs can yield false
+     positives, especially for metrics like context switches.
+  """
   oldvals = oldoutputs[name]
   newvals = newoutputs[name]
 
@@ -100,9 +105,14 @@ def maybe_compare_opcode_mixes(results, old_opcodemix, new_opcodemix):
 
   if os.path.exists(old_opcodemix):
     if os.path.exists(new_opcodemix):
-      run_cmd.run_cmd(['python', os.path.join(_scripts_dir, 'compare-opcodemix.py'),
-                                 old_opcodemix, new_opcodemix,
-                                 '--ratio', '1.01'] + maybe_summarize)
+      output = subprocess.check_output(['python',
+                        os.path.join(_scripts_dir, 'compare-opcodemix.py'),
+                        old_opcodemix, new_opcodemix,
+                        '--ratio', '1.01'] + maybe_summarize)
+      lines = output.strip().split('\n')
+      return lines
+  else:
+    return None
 
 outputs_to_skip = {
   'Mutator_runtime_s':True,
@@ -111,6 +121,10 @@ outputs_to_skip = {
   'Initlzn_runtime_s':True,
   'tot_hms':True,
 }
+
+def parse_pin_metrics_line(s):
+  m = re.match(r'Pin metrics: (\d+) identical; (\d+) with trivial differences; (\d+) with non-trivial differences', s)
+  return int(m.groups()[2])
 
 def diff_instances(oi, olddir, ni, newdir, testname, tags):
   oldoutputs = oi['outputs']
@@ -124,8 +138,14 @@ def diff_instances(oi, olddir, ni, newdir, testname, tags):
     else:
       diff_instance_outputs(oldoutputs, newoutputs, n, results) # testname, tags)
 
+  old_opcodemix = os.path.join(olddir, testname.replace('/', '__'), oi['tags'], 'opcodemix.out')
+  new_opcodemix = os.path.join(newdir, testname.replace('/', '__'), ni['tags'], 'opcodemix.out')
+  lines = maybe_compare_opcode_mixes(results, old_opcodemix, new_opcodemix)
+
   if len(results) > 0:
-    print "%-50s: %s" % (testname, tags)
+    noisy_metrics = []
+    ambig_metrics = []
+
     for res in results:
       (outnm, rel_diff, abs_diff, old_median, new_median) = res
       outline = "    %-20s:       %30s" % ( "'%s'" % outnm, rel_diff)
@@ -134,16 +154,27 @@ def diff_instances(oi, olddir, ni, newdir, testname, tags):
       if seems_superfluous(parsed_rel_diff):
         pass
       elif seems_noisy(parsed_rel_diff):
-        print bcolors.OKGREEN, outline, bcolors.ENDC, outline2
+        noisy_metrics.append( (outline, outline2) )
       else:
-        print bcolors.BOLD, outline, bcolors.ENDC, outline2
+        ambig_metrics.append( (outline, outline2) )
 
-  old_opcodemix = os.path.join(olddir, testname.replace('/', '__'), oi['tags'], 'opcodemix.out')
-  new_opcodemix = os.path.join(newdir, testname.replace('/', '__'), ni['tags'], 'opcodemix.out')
-  maybe_compare_opcode_mixes(results, old_opcodemix, new_opcodemix)
+    # If our pin-comparison script doesn't report any potentially-meaningful
+    # differences, we'll suppress noisy-looking metrics.
+    pin_nontrivials = 0
+    if lines is not None:
+      pin_nontrivials = parse_pin_metrics_line(lines[-1])
 
-  if len(results) > 0:
-    print
+    if pin_nontrivials > 0 or len(ambig_metrics) > 0:
+      print "%-50s: %s" % (testname, tags)
+
+      for (colored, noncolored) in noisy_metrics:
+        print bcolors.OKGREEN, colored, bcolors.ENDC, noncolored
+
+      for (colored, noncolored) in ambig_metrics:
+        print bcolors.BOLD,    colored, bcolors.ENDC, noncolored
+
+      print '\n'.join(lines)
+      print
 
 def diff_all_instances(newdir, newinsts, olddir, oldinsts):
   common_keys = list(set(newinsts.keys()).intersection(set(oldinsts.keys())))
