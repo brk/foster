@@ -401,7 +401,7 @@ add_executable(fosterparse compiler/fosterparse.cpp)
 
 target_link_libraries(fosterparse
   fosterc_parse fosterc_passes fosterc_base
-  antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
+  antlr3c ${LLVM_LDFLAGS})
 
 ############
 
@@ -415,7 +415,7 @@ add_executable(fosterlower
     compiler/passes/Codegen/Codegen-typemaps.cpp
   )
 target_link_libraries(fosterlower
-  fosterc_parse fosterc_passes fosterc_parse fosterc_base
+  fosterc_parse fosterc_passes fosterc_base
   fosterc_llvm fosterc_fosteril_pb
   antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
 
