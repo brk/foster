@@ -30,6 +30,7 @@ import pin_opcodemix
 
 from optparse import OptionParser
 
+script_start = walltime()
 datestr = datetime.datetime.now().strftime('%Y-%m-%d@%H.%M.%S')
 _scripts_dir = os.path.dirname(sys.argv[0])
 
@@ -119,7 +120,7 @@ def gotest_with(testpath, tags, flagstrs, extra_cmdline_str=''):
                        '-I', os.path.join(root_dir(), 'stdlib'),
                        extra_cmdline_str])
     cmdstr += ' '.join([s for s in flagstrs if s])
-    print ": $ " + cmdstr + " &> " + compile_txt_path
+    #print ": $ " + cmdstr + " &> " + compile_txt_path
     shell_out("rm -f %s" % exec_for_testpath(testpath))
     run_cmd(cmdstr, stdout=outfile, stderr=outfile)
     shell_out("cp %s %s" % (exec_for_testpath(testpath),
@@ -190,6 +191,7 @@ def do_runs_for_gotest(testpath, inputstr, tags, flagsdict, total, options):
     stats_seq = []
     os_stats_seq = []
     print testpath, inputstr, tags
+    print
     for z in range(total):
       pause_before_test()
 
@@ -199,7 +201,7 @@ def do_runs_for_gotest(testpath, inputstr, tags, flagsdict, total, options):
                  % (os_stats_path, exec_path, inputstr, stats_path)
       #print ": $ " + cmdstr + " (%d of %d; tags=%s)" % (z + 1, total, tags)
       (rv, ms) = shell_out(cmdstr)
-      print ">>>> ", ms, "ms"
+      print "\r>>>> ", ms, "ms",
       stats_seq.append(load(stats_path))
       stats = load(os_stats_path)
       stats['py_run_ms'] = ms
@@ -245,16 +247,10 @@ def generate_all_combinations(all_factors, num_iters):
     plan.append( (tags, flagstrs, flagsdict, num_iters) )
   return plan
 
-def execute_plan(plan, do_compile_and_run, step_counter, total_steps):
+def execute_plan_fragment(plan, do_compile_and_run):
   for (tags, flagstrs, flagsdict, num_iters) in plan:
-    start = walltime()
     do_compile_and_run(tags, flagstrs, flagsdict, num_iters)
-    end = walltime()
-    ms = elapsed(start, end)
-    d = datetime.timedelta(milliseconds=ms)
-    r = datetime.timedelta(milliseconds=ms * (total_steps - step_counter[0] - 1))
-    step_counter[0] += 1
-    print "Step %d of %d overall plan took %s, estimated time left: %s..." % (step_counter[0], total_steps, str(d), str(r))
+    print "Elapsed time:", str(datetime.timedelta(milliseconds=elapsed(script_start, walltime())))
 
 shootout_original_benchmarks = [
   ('third_party/shootout/nbody',         ['nbody.gcc-2.c'],         ['350000']),
@@ -299,6 +295,7 @@ def benchmark_third_party_code(sourcepath, flagsdict, tags, exe, argstrs,
        }
   os_stats_seq = []
   print sourcepath, argstr, tags
+  print
   for z in range(num_iters):
     pause_before_test()
 
@@ -309,7 +306,7 @@ def benchmark_third_party_code(sourcepath, flagsdict, tags, exe, argstrs,
                  % (os_stats_path, exe, argstr)
       (rv, ms) = shell_out(cmdstr, stderr=out, stdout=out)
       assert rv == 0
-      print ">>>> ", ms, "ms"
+      print "\r>>>> ", ms, "ms",
 
       stats = load(os_stats_path)
       stats['py_run_ms'] = ms
@@ -346,9 +343,6 @@ def benchmark_third_party(third_party_benchmarks, options):
     plan = generate_all_combinations(all_factors, kNumIters)
     nested_plans.append((sourcepath, filenames, argstrs, plan))
 
-  total_steps = sum(len(plan) for (s,f,a, plan) in nested_plans)
-  step_counter = [0]
-
   for (sourcepath, filenames, argstrs, plan) in nested_plans:
     d  =  os.path.join(root_dir(), sourcepath)
     cs = [os.path.join(d, filename) for filename in filenames]
@@ -379,7 +373,7 @@ def benchmark_third_party(third_party_benchmarks, options):
                                  num_iters, options, compile_stats)
       shell_out("rm " + exe)
 
-    execute_plan(plan, compile_and_run_shootout, step_counter, total_steps)
+    execute_plan_fragment(plan, compile_and_run_shootout)
 
 # --be-arg=--gc-track-alloc-sites
 # --be-arg=--dont-kill-dead-slots
@@ -433,9 +427,7 @@ def benchmark_shootout_programs(options, num_iters=kNumIters):
       compile_and_run_test(testfrag, '', argstr,
                            tags, flagstrs, flagsdict, num_iters, options)
     plan = generate_all_combinations(all_factors, kNumIters)
-    total_steps = len(plan)
-    step_counter = [0]
-    execute_plan(plan, compile_and_run, step_counter, total_steps)
+    execute_plan_fragment(plan, compile_and_run)
 
 def collect_all_timings():
   alltimings = os.path.join(data_dir(), 'all_timings.json')
