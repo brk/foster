@@ -548,7 +548,6 @@ desugarParsedModule tcenv m = do
   astOfParsedType typep =
     let q = astOfParsedType in
     case typep of
-          PrimIntP         size  -> return $ PrimIntAST         size
           TyConAppP "Word"    [] -> return $ PrimIntAST         (IWord 0)
           TyConAppP "WordX2"  [] -> return $ PrimIntAST         (IWord 1)
           TyConAppP "Int64"   [] -> return $ PrimIntAST         I64
@@ -561,9 +560,6 @@ desugarParsedModule tcenv m = do
           TyConAppP "Coro" [o,i] -> liftM2 CoroTypeAST       (q o) (q i)
           TyConAppP    tc types  -> liftM (TyConAppAST tc) (mapM q types)
           TupleTypeP      types  -> liftM  TupleTypeAST    (mapM q types)
-          RefTypeP       t       -> liftM  RefTypeAST              (q t)
-          ArrayTypeP     t       -> liftM  ArrayTypeAST            (q t)
-          CoroTypeP    s t       -> liftM2 CoroTypeAST       (q s) (q t)
           ForAllP    tvs t       -> liftM (ForAllAST $ map convertTyFormal tvs) (q t)
           TyVarP     tv          -> do return $ TyVarAST tv
           FnTypeP   s t cc cs sr -> do s' <- mapM q s

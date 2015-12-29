@@ -20,7 +20,7 @@ import qualified Text.PrettyPrint.Boxes as Boxes
 import qualified Data.Text as T
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import Data.Maybe(fromMaybe, fromJust, isJust)
+import Data.Maybe(fromJust, isJust)
 import Data.List(nubBy, last)
 import Control.Monad.State
 import Data.IORef

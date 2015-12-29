@@ -17,14 +17,14 @@ primitiveDataTypesP = [
   (let tf = [] in
    DataType (TypeFormal "Text" (MissingSourceRange "Text") KindPointerSized) tf
         [DataCtor (T.pack "TextFragment") tf
-            [ArrayTypeP (PrimIntP I8)
-            ,PrimIntP I32]
+            [TyConAppP "Array" [TyConAppP "Int8" []]
+            ,TyConAppP "Int32" []]
             (Just (CR_Default 0))
             (MissingSourceRange "Text.TextFragment")
         ,DataCtor (T.pack "TextConcat"  ) tf
             [TyConAppP "Text" []
             ,TyConAppP "Text" []
-            ,PrimIntP I32]
+            ,TyConAppP "Int32" []]
             (Just (CR_Default 1))
             (MissingSourceRange "Text.TextConcat")]
         (MissingSourceRange "Text")),
