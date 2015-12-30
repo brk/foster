@@ -472,6 +472,8 @@ def get_test_parser(usage):
                     help="Associate a comment with this run.")
   parser.add_option("--pindir", dest="pindir", action="store", default=None,
                     help="Path to the `pin` root, if available.")
+  parser.add_option("--no-randomized-order", dest="randomized_order", action="store_false", default=True,
+                    help="Disable running tests in a randomized order")
   return parser
 
 def main():
@@ -486,6 +488,11 @@ def main():
   plan.extend( benchmark_third_party(other_third_party_benchmarks, options) )
   plan.extend( benchmark_third_party(shootout_original_benchmarks, options) )
   plan.extend( benchmark_shootout_programs(options)                         )
+
+  if options.randomized_order:
+    import random
+    print "randomizing test order..."
+    random.shuffle(plan)
 
   print "Plan has", len(plan), "items..."
   for (n,f) in enumerate(plan):
