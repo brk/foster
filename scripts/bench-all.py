@@ -176,6 +176,10 @@ def extract_foster_compile_stats(testpath, tags):
             'all_lines_per_s':float(num_lines) / secs_of_ms(all_total_ms),
           }
 
+def print_timing_line(ms, n, k):
+  print "\r>>>> %d ms (%d/%d)" % (ms, n + 1, k),
+  sys.stdout.flush()
+
 def do_runs_for_gotest(testpath, inputstr, tags, flagsdict, total, options):
   exec_path = exec_for_testpath(testpath)
   if not os.path.exists(exec_path):
@@ -201,11 +205,14 @@ def do_runs_for_gotest(testpath, inputstr, tags, flagsdict, total, options):
                  % (os_stats_path, exec_path, inputstr, stats_path)
       #print ": $ " + cmdstr + " (%d of %d; tags=%s)" % (z + 1, total, tags)
       (rv, ms) = shell_out(cmdstr)
-      print "\r>>>> ", ms, "ms",
+      assert rv == 0
+      print_timing_line(ms, z, total)
+
       stats_seq.append(load(stats_path))
       stats = load(os_stats_path)
       stats['py_run_ms'] = ms
       os_stats_seq.append(stats)
+
     tj['outputs'] = merge_dicts(zip_dicts(stats_seq), zip_dicts(os_stats_seq))
 
     if options.pindir is not None:
@@ -247,10 +254,15 @@ def generate_all_combinations(all_factors, num_iters):
     plan.append( (tags, flagstrs, flagsdict, num_iters) )
   return plan
 
-def execute_plan_fragment(plan, do_compile_and_run):
-  for (tags, flagstrs, flagsdict, num_iters) in plan:
-    do_compile_and_run(tags, flagstrs, flagsdict, num_iters)
-    print "Elapsed time:", str(datetime.timedelta(milliseconds=elapsed(script_start, walltime())))
+def plan_fragments(plan, do_compile_and_run):
+  fragments = []
+  for planinfo in plan:
+    def plan_fragment(planinfo=planinfo):
+      (tags, flagstrs, flagsdict, num_iters) = planinfo
+      do_compile_and_run(tags, flagstrs, flagsdict, num_iters)
+      print "Elapsed time:", str(datetime.timedelta(milliseconds=elapsed(script_start, walltime())))
+    fragments.append(plan_fragment)
+  return fragments
 
 shootout_original_benchmarks = [
   ('third_party/shootout/nbody',         ['nbody.gcc-2.c'],         ['350000']),
@@ -295,7 +307,6 @@ def benchmark_third_party_code(sourcepath, flagsdict, tags, exe, argstrs,
        }
   os_stats_seq = []
   print sourcepath, argstr, tags
-  print
   for z in range(num_iters):
     pause_before_test()
 
@@ -306,7 +317,7 @@ def benchmark_third_party_code(sourcepath, flagsdict, tags, exe, argstrs,
                  % (os_stats_path, exe, argstr)
       (rv, ms) = shell_out(cmdstr, stderr=out, stdout=out)
       assert rv == 0
-      print "\r>>>> ", ms, "ms",
+      print_timing_line(ms, z, num_iters)
 
       stats = load(os_stats_path)
       stats['py_run_ms'] = ms
@@ -325,6 +336,10 @@ def countlines(path):
   return len(open(path, 'r').readlines())
 
 def benchmark_third_party(third_party_benchmarks, options):
+  """
+  Input: a list of (benchmark name, input file list, input arguments)
+  Returns: a list of lambdas
+  """
   nested_plans = []
   for (sourcepath, filenames, argstrs) in third_party_benchmarks:
     all_factors = [factor + [('lang', [('other', '')]),
@@ -343,11 +358,13 @@ def benchmark_third_party(third_party_benchmarks, options):
     plan = generate_all_combinations(all_factors, kNumIters)
     nested_plans.append((sourcepath, filenames, argstrs, plan))
 
-  for (sourcepath, filenames, argstrs, plan) in nested_plans:
-    d  =  os.path.join(root_dir(), sourcepath)
-    cs = [os.path.join(d, filename) for filename in filenames]
+  plan_lambdas = []
+  for planinfo in nested_plans:
+    def compile_and_run_shootout(tags, flagstrs, flagsdict, num_iters, planinfo=planinfo):
+      (sourcepath, filenames, argstrs, plan) = planinfo
+      sourcedir =  os.path.join(root_dir(), sourcepath)
+      filepaths = [os.path.join(sourcedir, filename) for filename in filenames]
 
-    def compile_and_run_shootout(tags, flagstrs, flagsdict, num_iters):
       ensure_dir_exists(test_data_dir(sourcepath, tags))
       exe = datapath(sourcepath, tags, "test.exe")
       assert not ' ' in exe
@@ -355,13 +372,13 @@ def benchmark_third_party(third_party_benchmarks, options):
       # Produce combined source program for preprocessing
       combined_code = datapath(sourcepath, tags, "combined.c")
       preprocessed_code = datapath(sourcepath, tags, "combined.pp.c")
-      shell_out("cat %s > %s" % (' '.join(cs), combined_code))
+      shell_out("cat %s > %s" % (' '.join(filepaths), combined_code))
       shell_out("gcc -pipe -Wall -Wno-unknown-pragmas -E %s -o %s" % (combined_code, preprocessed_code))
       combined_code_lines = countlines(combined_code)
       preprocessed_code_lines = countlines(preprocessed_code)
 
-      compile_cmd = "gcc -pipe -Wall -Wno-unknown-pragmas %s %s -o %s -lm" % (' '.join(flagstrs), ' '.join(cs), exe)
-      (rv, ms) = shell_out(compile_cmd, showcmd=True)
+      compile_cmd = "gcc -pipe -Wall -Wno-unknown-pragmas %s %s -o %s -lm" % (' '.join(flagstrs), combined_code, exe)
+      (rv, ms) = shell_out(compile_cmd)
       compile_stats = {
         'num_source_lines' : combined_code_lines,
         'num_lines'  : preprocessed_code_lines,
@@ -373,7 +390,8 @@ def benchmark_third_party(third_party_benchmarks, options):
                                  num_iters, options, compile_stats)
       shell_out("rm " + exe)
 
-    execute_plan_fragment(plan, compile_and_run_shootout)
+    plan_lambdas.extend(plan_fragments(plan, compile_and_run_shootout))
+  return plan_lambdas
 
 # --be-arg=--gc-track-alloc-sites
 # --be-arg=--dont-kill-dead-slots
@@ -422,12 +440,16 @@ all_factors = [factor + [('lang', [('foster', '')]),
 
 
 def benchmark_shootout_programs(options, num_iters=kNumIters):
-  for (testfrag, argstr) in shootout_benchmarks:
-    def compile_and_run(tags, flagstrs, flagsdict, num_iters):
+  plan_lambdas = []
+  for benchinfo in shootout_benchmarks:
+    def compile_and_run(tags, flagstrs, flagsdict, num_iters, benchinfo=benchinfo):
+      (testfrag, argstr) = benchinfo
       compile_and_run_test(testfrag, '', argstr,
                            tags, flagstrs, flagsdict, num_iters, options)
     plan = generate_all_combinations(all_factors, kNumIters)
-    execute_plan_fragment(plan, compile_and_run)
+
+    plan_lambdas.extend(plan_fragments(plan, compile_and_run))
+  return plan_lambdas
 
 def collect_all_timings():
   alltimings = os.path.join(data_dir(), 'all_timings.json')
@@ -460,9 +482,16 @@ def main():
 
   start = datetime.datetime.utcnow()
   ensure_dir_exists(data_dir())
-  benchmark_third_party(other_third_party_benchmarks, options)
-  benchmark_third_party(shootout_original_benchmarks, options)
-  benchmark_shootout_programs(options)
+  plan = []
+  plan.extend( benchmark_third_party(other_third_party_benchmarks, options) )
+  plan.extend( benchmark_third_party(shootout_original_benchmarks, options) )
+  plan.extend( benchmark_shootout_programs(options)                         )
+
+  print "Plan has", len(plan), "items..."
+  for (n,f) in enumerate(plan):
+    print "[%d of %d]" % (n + 1, len(plan))
+    f()
+
   collect_all_timings()
   end = datetime.datetime.utcnow()
   print "Total elapsed time:", end - start
