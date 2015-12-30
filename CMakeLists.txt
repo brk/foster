@@ -209,6 +209,8 @@ add_custom_target(hs_clean
   COMMAND rm -f  ${PROJECT_SOURCE_DIR}/compiler/me/src/Main.o
   )
 
+# Attaching commands to add_custom_target basically means
+# "run these commands whenver the target is mentioned."
 #-------------------------------------------------------------------
 
 add_custom_command(
@@ -281,10 +283,6 @@ add_custom_target(foster_runtime_bc DEPENDS
         ${LIBRARY_OUTPUT_PATH}/libfoster_main.o)
 
 #-----------------------------------------------------------
-
-# Attaching commands to add_custom_target basically means
-# "run these commands whenver the target is mentioned."
-
 
 # Look for ANTLR-generated lexer and parser, and ANTLR library files
 include_directories(${ANTLR_DIR}/include ${PROJECT_BINARY_DIR})
@@ -468,10 +466,6 @@ add_custom_target(stress
 	     --bindir ${PROJECT_BINARY_DIR}
              --cxxpath ${CLANG}
 	     -I ${PROJECT_SOURCE_DIR}/stdlib
-  )
-
-add_custom_target(speed
-  COMMAND ${PROJECT_SOURCE_DIR}/scripts/gotest.sh speed/siphash -I ${PROJECT_SOURCE_DIR}/stdlib
   )
 
 add_custom_target(list_regression_tests
