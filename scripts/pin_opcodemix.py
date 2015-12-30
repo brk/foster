@@ -39,7 +39,8 @@ def run_pin(options, args):
   if not os.path.exists(pinexe):
     raise ("It look like " + pinexe + " does not exist... :-(")
 
-  run_cmd(' '.join([pinexe, '-injection', 'child', '-t', pintool, '--'] + args))
+  with open(os.devnull, 'w') as devnull:
+    run_cmd(' '.join([pinexe, '-injection', 'child', '-t', pintool, '--'] + args), stdout=devnull, stderr=devnull)
   # writes output to opcodemix.out
 
   if options.outfile is not None:
