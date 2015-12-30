@@ -68,8 +68,6 @@ if __name__ == "__main__":
        '--local-bin-path', params['bindir'],
        ] + ['--ghc-options="%s"' % s for s in params['hsflags']] + params['stackflags']
     run_command(cmd, {}, "")
-    with open('%(bindir)s/me.buildcmd.txt' % params, 'w') as f:
-      f.write(' '.join(cmd) + '\n')
 
   def build_with_ghcmake():
     with open(os.devnull, 'w') as devnull:
@@ -91,8 +89,6 @@ if __name__ == "__main__":
            "%(srcroot)s/compiler/me/src/Main.hs -o %(bindir)s/me") % params
     os.chdir(os.path.join(options.srcroot, 'compiler', 'me'))
     run_command(cmd, {}, "")
-    with open('%(bindir)s/me.buildcmd.txt' % params, 'w') as f:
-      f.write(' '.join(cmd) + '\n')
 
   if False:
      build_with_stack()
