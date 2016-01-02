@@ -60,17 +60,17 @@ def default_lookup(word, table):
     return word
 
 # returns (status, elapsed-time-ms)
-def run_command(cmd, paths, inputfile, showcmd=False, stdout=None, stderr=None, stdin=None, strictrv=True):
-  if type(cmd) == str:
-    cmd = cmd.strip().split(' ')
-  arglist = [default_lookup(arg, paths) for arg in cmd]
+def run_command(rawcmd, paths, inputfile, showcmd=False, stdout=None, stderr=None, stdin=None, strictrv=True):
+  if type(rawcmd) == str:
+    rawcmd = rawcmd.strip().split(' ')
+  cmd = [default_lookup(arg, paths) for arg in rawcmd]
 
-  (rv, ms) = run_cmd(arglist, showcmd=showcmd, stdout=stdout, stderr=stderr, stdin=stdin)
+  (rv, ms) = run_cmd(cmd, showcmd=showcmd, stdout=stdout, stderr=stderr, stdin=stdin)
 
   if strictrv:
     if rv != 0:
       print "Failed to run:"
-      print "     ", cmd
+      print "     ", ' '.join(cmd)
       raise TestFailed(cmd, inputfile)
     else:
       return ms
