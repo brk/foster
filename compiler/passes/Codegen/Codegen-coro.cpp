@@ -185,6 +185,224 @@ int coroField_IndirectSelf() { return 5; }
 int coroField_Status()       { return 6; }
 
 ////////////////////////////////////////////////////////////////////
+
+void registerCoroType(llvm::Module* mod, llvm::Type* argTypes) {
+  std::string ss_str;
+  llvm::raw_string_ostream ss(ss_str);
+  ss << "coro_" << str(argTypes);
+  EDiag() << "Need to register type name: " << ss.str();
+  //mod->addTypeName(ss.str(), ptrTo(getSplitCoroType(argTypes)));
+}
+
+////////////////////////////////////////////////////////////////////
+//////////////////////////  INVOKE/YIELD  //////////////////////////
+////////////////////////////////////////////////////////////////////
+
+// When LLVM links libfoster_coro with the rest of foster_runtime,
+// for some reason it doesn't unify the two identical definitions
+// of %struct.foster_generic_coro, so the function
+// __foster_get_current_coro_slot() ends up with the "wrong" type.
+// So we sometimes insert coercions to undo the silliness.
+Value* createStore(Value* val, Value* ptr) {
+  return builder.CreateStore(val, builder.CreateBitCast(ptr, ptrTo(val->getType())));
+}
+
+Value* generateInvokeYield(bool isYield,
+                         int yield_dormant_or_dead,
+                         CodegenPass* pass,
+                         llvm::Value* coro,
+                         llvm::Type* retTy,
+                         llvm::Type* argTypes,
+                         const std::vector<llvm::Value*>& inputArgs) {
+  llvm::Value* coro_slot = pass->storeAndMarkPointerAsGCRoot(coro);
+
+  Value* current_coro = NULL;
+  llvm::Value* current_coro_slot = NULL;
+  if (!isYield) {
+    current_coro_slot = codegenCurrentCoroSlot(pass->mod);
+    current_coro = builder.CreateLoad(current_coro_slot);
+  }
+
+  /// TODO: call coro_dump(coro)
+
+  Value* status_addr = gep(coro, 0, coroField_Status(), "statusaddr");
+  Value* status = builder.CreateLoad(status_addr);
+
+  // Call foster_assert to verify that
+  // the target coro is in the expected state.
+  llvm::Value* expectedStatus = NULL;
+  const char*  expectedStatusMsg = NULL;
+  if (isYield) {
+    expectedStatus = builder.getInt32(FOSTER_CORO_SUSPENDED);
+    expectedStatusMsg = "can only yield to a suspended coroutine";
+  } else {
+    expectedStatus = builder.getInt32(FOSTER_CORO_DORMANT);
+    expectedStatusMsg = "can only resume a dormant coroutine";
+  }
+
+  Value* cond = builder.CreateICmpEQ(status, expectedStatus);
+  emitFosterAssert(pass->mod, cond, expectedStatusMsg);
+
+  // Store the input arguments to coro->arg.
+  Value* concrete_coro = builder.CreateBitCast(coro,
+                                         ptrTo(getSplitCoroType(
+                                              (isYield ? retTy : argTypes))));
+  Value* coroArg_slot = gep(concrete_coro, 0, 1);
+  if (inputArgs.size() == 1) {
+    builder.CreateStore(inputArgs[0], coroArg_slot);
+  } else {
+    for (size_t i = 0; i < inputArgs.size(); ++i) {
+      Value* slot = gep(coroArg_slot, 0, i);
+      builder.CreateStore(inputArgs[i], slot);
+    }
+  }
+
+  // Set the status fields of both coros.
+  Value* sibling_slot = gep(coro, 0, coroField_Sibling(), "siblingaddr");
+  Value* sibling_ptr_gen = builder.CreateLoad(sibling_slot);
+
+  Value* sib_status_addr = gep(sibling_ptr_gen, 0, coroField_Status(), "sibstatusaddr");
+
+  // TODO once we have multiple threads, this will need to
+  // be done atomically or under a lock (and error handling added).
+  if (isYield) {
+    // The coro we yield from becomes dormant; the one yielded to running.
+    builder.CreateStore(builder.getInt32(FOSTER_CORO_INVALID),       status_addr);
+    builder.CreateStore(builder.getInt32(yield_dormant_or_dead), sib_status_addr);
+  } else {
+    // The coro we invoke starts running; the one we left becomes suspended.
+    builder.CreateStore(builder.getInt32(FOSTER_CORO_RUNNING),       status_addr);
+    builder.CreateStore(builder.getInt32(FOSTER_CORO_SUSPENDED), sib_status_addr);
+  }
+
+  // If we're invoking, "push" the coro on the coro "stack".
+  if (!isYield) {
+    ///   coro->invoker = current_coro;
+    Value* invoker_slot = gep(coro, 0, coroField_Invoker());
+    createStore(current_coro, invoker_slot);
+
+    ///   current_coro = coro;
+    createStore(coro, current_coro_slot);
+  }
+
+  Value* coroTransfer = pass->mod->getFunction(kCoroTransfer);
+  ASSERT(coroTransfer != NULL);
+  Value*     ctx_addr = gep(coro,            0, coroField_Context());
+  Value* sib_ctx_addr = gep(sibling_ptr_gen, 0, coroField_Context());
+
+  llvm::Type* coro_context_ptr_ty = coroTransfer->getType()->getContainedType(0)->getContainedType(1);
+  llvm::CallInst* transfer = builder.CreateCall(coroTransfer, {
+                                builder.CreateBitCast(sib_ctx_addr, coro_context_ptr_ty),
+                                builder.CreateBitCast(ctx_addr, coro_context_ptr_ty) });
+  transfer->addAttribute(1, llvm::Attribute::InReg);
+  transfer->addAttribute(2, llvm::Attribute::InReg);
+
+  //=================================================================
+  //=================================================================
+
+  // A GC may have been triggered, so re-load locals from the stack.
+  coro = builder.CreateLoad(coro_slot);
+  status_addr = gep(coro, 0, coroField_Status(), "statusaddr");
+  sibling_slot = gep(coro, 0, coroField_Sibling(), "siblingaddr");
+  sibling_ptr_gen = builder.CreateLoad(sibling_slot);
+
+  sib_status_addr = gep(sibling_ptr_gen, 0, coroField_Status(), "sibstatusaddr");
+
+  if (!isYield) { // likewise, pop the "stack" when we return from
+    ///   current_coro = coro->invoker;
+    Value* invoker_slot = gep(coro, 0, coroField_Invoker());
+    Value* invoker      = builder.CreateLoad(invoker_slot);
+    createStore(invoker, current_coro_slot);
+  }
+
+  // So if we were originally yielding, then we are
+  // now being re-invoked, possibly by a different
+  // coro and/or a different thread!
+  // But our sibling coro remains the same, it's just the
+  // stack that it refers to that might have changed.
+
+  sibling_slot = gep(coro, 0, coroField_Sibling(), "siblingaddr");
+  sibling_ptr_gen      = builder.CreateLoad(sibling_slot);
+  Value* sibling_ptr   = builder.CreateBitCast(sibling_ptr_gen,
+                                         ptrTo(getSplitCoroType(
+                                               (isYield ? argTypes : retTy))));
+  /// return sibling->arg;
+  Value* sibling_arg_slot = gep(sibling_ptr, 0, 1, "sibling_arg_slot");
+  Value* sibling_arg      = builder.CreateLoad(sibling_arg_slot);
+
+  return sibling_arg;
+}
+
+////////////////////////////////////////////////////////////////////
+////////////////////////// CORO INVOKE  ////////////////////////////
+////////////////////////////////////////////////////////////////////
+
+Value* CodegenPass::emitCoroInvokeFn(llvm::Type* retTy,
+                                     llvm::Type* argTypes) {
+  // Create a function of type  retTy (cloty*)
+  Function*& fn = this->lazyCoroPrimInfo[
+      std::make_pair(std::make_pair(false, retTy), argTypes)];
+  if (!fn) {
+    std::string ss_str;
+    llvm::raw_string_ostream ss(ss_str);
+    ss << ".foster_coro_invoke_" << str(retTy) << "__" << str(argTypes);
+
+    std::string functionName = ss.str();
+
+    fn = Function::Create(
+      /*Type=*/    getCoroInvokeFnTy(retTy, argTypes),
+      /*Linkage=*/ llvm::GlobalValue::InternalLinkage,
+      /*Name=*/    functionName, this->mod);
+
+    fn->setCallingConv(llvm::CallingConv::Fast);
+    fn->setGC("fostergc");
+    disableFramePointerElimination(*fn);
+
+    // TODO when using inlining along with any codegen opt level greater
+    //      than None, the basic-coro test segfaults after returning from
+    //      coro_transfer or when using std::map to lookup stackmap entries.
+    //      why?!?  :(
+    fn->addFnAttr(llvm::Attribute::NoInline);
+  }
+
+  return fn;
+}
+
+////////////////////////////////////////////////////////////////////
+////////////////////////// CORO YIELD //////////////////////////////
+////////////////////////////////////////////////////////////////////
+
+// Return a function with type   argTypes (retTy1...retTyN)
+// Note that "retTypes" denote the arguments, and "argTypes"
+// the (possibly structure-typed) result. The reason is that
+// the parameter names match create/invoke for consistency,
+// and yield does things the other way 'round.
+Value* CodegenPass::emitCoroYieldFn(llvm::Type* retTy,
+                                    llvm::Type* argTypes) {
+  Function*& fn = this->lazyCoroPrimInfo[
+      std::make_pair(std::make_pair(true, retTy), argTypes)];
+  if (!fn) {
+    std::string ss_str;
+    llvm::raw_string_ostream ss(ss_str);
+    ss << ".foster_coro_yield_" << str(retTy) << "__" << str(argTypes);
+
+    std::string functionName = ss.str();
+
+    fn = Function::Create(
+      /*Type=*/    getCoroYieldFnTy(retTy, argTypes),
+      /*Linkage=*/ llvm::GlobalValue::InternalLinkage,
+      /*Name=*/    functionName, this->mod);
+
+    fn->setCallingConv(llvm::CallingConv::Fast);
+    fn->setGC("fostergc");
+    disableFramePointerElimination(*fn);
+  }
+
+  return fn;
+}
+
+
+////////////////////////////////////////////////////////////////////
 ////////////////////////// CORO WRAPPER  ///////////////////////////
 ////////////////////////////////////////////////////////////////////
 
@@ -224,6 +442,8 @@ Value* emitCoroWrapperFn(
   Value* fc  = builder.CreateBitCast(ptr_f_c, ptrTo(getSplitCoroType(argTypes)));
   Value* fcg = gep(fc, 0, 0, "fc_gen");
 
+  llvm::Value* coro_slot = pass->storeAndMarkPointerAsGCRoot(fcg);
+
   Value* fn_addr = gep(fcg, 0, coroField_Fn(), "fnaddr");
   Value* fn_gen  = builder.CreateLoad(fn_addr, "fn_gen");
   Value* fn      = builder.CreateBitCast(fn_gen,
@@ -246,31 +466,36 @@ Value* emitCoroWrapperFn(
   llvm::CallInst* call  = builder.CreateCall(fn, llvm::makeArrayRef(callArgs));
   call->setCallingConv(llvm::CallingConv::Fast);
 
+#if 0
   // Store the result of the call in the sibling's arg slot
   Value* sib_arg_addr = gep(sib, 0, 1, "sibargaddr");
   builder.CreateStore(call, sib_arg_addr, /*isVolatile=*/ false);
 
   // Mark the coro as being dead
   Value* status_addr = gep(fcg, 0, coroField_Status(), "statusaddr");
-  builder.CreateStore(builder.getInt32(4), status_addr);
+  builder.CreateStore(builder.getInt32(FOSTER_CORO_DEAD), status_addr);
+#else
+  std::vector<Value*> inputArgs;
+  inputArgs.push_back(call);
+  bool isYield = true;
 
-  builder.CreateRetVoid();
+  fcg = builder.CreateLoad(coro_slot);
+  sib_addr = gep(fcg, 0, coroField_Sibling(), "sibaddr");
+  sib = builder.CreateLoad(sib_addr, "sib_final");
+  // Returned value is never used because corresponds to the arg passed
+  // by invoking the now-dead coroutine.
+  generateInvokeYield(isYield, FOSTER_CORO_DEAD,
+                      pass, sib, retTy, argTypes, inputArgs);
 
   // TODO add assertion that control flow does not reach here
+#endif
+  builder.CreateRetVoid();
 
   if (prevBB) {
     builder.SetInsertPoint(prevBB);
   }
 
   return wrapper;
-}
-
-void registerCoroType(llvm::Module* mod, llvm::Type* argTypes) {
-  std::string ss_str;
-  llvm::raw_string_ostream ss(ss_str);
-  ss << "coro_" << str(argTypes);
-  EDiag() << "Need to register type name: " << ss.str();
-  //mod->addTypeName(ss.str(), ptrTo(getSplitCoroType(argTypes)));
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -396,213 +621,6 @@ Value* CodegenPass::emitCoroCreateFn(
 }
 
 ////////////////////////////////////////////////////////////////////
-//////////////////////////  INVOKE/YIELD  //////////////////////////
-////////////////////////////////////////////////////////////////////
-
-// When LLVM links libfoster_coro with the rest of foster_runtime,
-// for some reason it doesn't unify the two identical definitions
-// of %struct.foster_generic_coro, so the function
-// __foster_get_current_coro_slot() ends up with the "wrong" type.
-// So we sometimes insert coercions to undo the silliness.
-Value* createStore(Value* val, Value* ptr) {
-  return builder.CreateStore(val, builder.CreateBitCast(ptr, ptrTo(val->getType())));
-}
-
-void generateInvokeYield(bool isYield,
-                         CodegenPass* pass,
-                         llvm::Value* coro,
-                         llvm::Type* retTy,
-                         llvm::Type* argTypes,
-                         const std::vector<llvm::Value*>& inputArgs) {
-  llvm::Value* coro_slot = pass->storeAndMarkPointerAsGCRoot(coro);
-
-  llvm::Value* current_coro_slot = codegenCurrentCoroSlot(pass->mod);
-  Value* current_coro = builder.CreateLoad(current_coro_slot);
-
-  /// TODO: call coro_dump(coro)
-
-  // Call foster_assert to verify that
-  // the target coro is in the expected state.
-  llvm::Value* expectedStatus = NULL;
-  const char*  expectedStatusMsg = NULL;
-  if (isYield) {
-    expectedStatus = builder.getInt32(FOSTER_CORO_SUSPENDED);
-    expectedStatusMsg = "can only yield to a suspended coroutine";
-  } else {
-    expectedStatus = builder.getInt32(FOSTER_CORO_DORMANT);
-    expectedStatusMsg = "can only resume a dormant coroutine";
-  }
-
-  Value* status_addr = gep(coro, 0, coroField_Status(), "statusaddr");
-  Value* status = builder.CreateLoad(status_addr);
-  Value* cond = builder.CreateICmpEQ(status, expectedStatus);
-  emitFosterAssert(pass->mod, cond, expectedStatusMsg);
-
-  // Store the input arguments to coro->arg.
-  Value* concrete_coro = builder.CreateBitCast(coro,
-                                         ptrTo(getSplitCoroType(
-                                              (isYield ? retTy : argTypes))));
-  Value* coroArg_slot = gep(concrete_coro, 0, 1);
-  if (inputArgs.size() == 1) {
-    builder.CreateStore(inputArgs[0], coroArg_slot);
-  } else {
-    for (size_t i = 0; i < inputArgs.size(); ++i) {
-      Value* slot = gep(coroArg_slot, 0, i);
-      builder.CreateStore(inputArgs[i], slot);
-    }
-  }
-
-  // Set the status fields of both coros.
-  Value* sibling_slot = gep(coro, 0, coroField_Sibling(), "siblingaddr");
-  Value* sibling_ptr_gen = builder.CreateLoad(sibling_slot);
-
-  Value* sib_status_addr = gep(sibling_ptr_gen, 0, coroField_Status(), "sibstatusaddr");
-
-  // TODO once we have multiple threads, this will need to
-  // be done atomically or under a lock (and error handling added).
-  if (isYield) {
-    builder.CreateStore(builder.getInt32(FOSTER_CORO_INVALID), status_addr);
-    builder.CreateStore(builder.getInt32(FOSTER_CORO_DORMANT), sib_status_addr);
-  } else {
-    builder.CreateStore(builder.getInt32(FOSTER_CORO_RUNNING), status_addr);
-    builder.CreateStore(builder.getInt32(FOSTER_CORO_SUSPENDED), sib_status_addr);
-  }
-
-  // If we're invoking, "push" the coro on the coro "stack".
-  if (!isYield) {
-    ///   coro->invoker = current_coro;
-    Value* invoker_slot = gep(coro, 0, coroField_Invoker());
-    createStore(current_coro, invoker_slot);
-
-    ///   current_coro = coro;
-    createStore(coro, current_coro_slot);
-  }
-
-  Value* coroTransfer = pass->mod->getFunction(kCoroTransfer);
-  ASSERT(coroTransfer != NULL);
-  Value*     ctx_addr = gep(coro,            0, coroField_Context());
-  Value* sib_ctx_addr = gep(sibling_ptr_gen, 0, coroField_Context());
-
-  llvm::Type* coro_context_ptr_ty = coroTransfer->getType()->getContainedType(0)->getContainedType(1);
-  llvm::CallInst* transfer = builder.CreateCall(coroTransfer, {
-                                builder.CreateBitCast(sib_ctx_addr, coro_context_ptr_ty),
-                                builder.CreateBitCast(ctx_addr, coro_context_ptr_ty) });
-  transfer->addAttribute(1, llvm::Attribute::InReg);
-  transfer->addAttribute(2, llvm::Attribute::InReg);
-
-  //=================================================================
-  //=================================================================
-
-  // A GC may have been triggered, so re-load locals from the stack.
-  coro = builder.CreateLoad(coro_slot);
-  status_addr = gep(coro, 0, coroField_Status(), "statusaddr");
-  sibling_slot = gep(coro, 0, coroField_Sibling(), "siblingaddr");
-  sibling_ptr_gen = builder.CreateLoad(sibling_slot);
-
-  sib_status_addr = gep(sibling_ptr_gen, 0, coroField_Status(), "sibstatusaddr");
-
-  if (!isYield) { // likewise, pop the "stack" when we return from
-    ///   current_coro = coro->invoker;
-    Value* invoker_slot = gep(coro, 0, coroField_Invoker());
-    Value* invoker      = builder.CreateLoad(invoker_slot);
-    createStore(invoker, current_coro_slot);
-  }
-
-  // So if we were originally yielding, then we are
-  // now being re-invoked, possibly by a different
-  // coro and/or a different thread!
-  // But our sibling coro remains the same, it's just the
-  // stack that it refers to that might have changed.
-  if (isYield) {
-    builder.CreateStore(builder.getInt32(FOSTER_CORO_SUSPENDED), status_addr);
-    builder.CreateStore(builder.getInt32(FOSTER_CORO_RUNNING), sib_status_addr);
-  } else {
-    builder.CreateStore(builder.getInt32(FOSTER_CORO_DORMANT), status_addr);
-    builder.CreateStore(builder.getInt32(FOSTER_CORO_INVALID), sib_status_addr);
-  }
-
-  sibling_slot = gep(coro, 0, coroField_Sibling(), "siblingaddr");
-  sibling_ptr_gen      = builder.CreateLoad(sibling_slot);
-  Value* sibling_ptr   = builder.CreateBitCast(sibling_ptr_gen,
-                                         ptrTo(getSplitCoroType(
-                                               (isYield ? argTypes : retTy))));
-  /// return sibling->arg;
-  Value* sibling_arg_slot = gep(sibling_ptr, 0, 1, "sibling_arg_slot");
-  Value* sibling_arg      = builder.CreateLoad(sibling_arg_slot);
-
-  builder.CreateRet(sibling_arg);
-}
-
-////////////////////////////////////////////////////////////////////
-////////////////////////// CORO INVOKE  ////////////////////////////
-////////////////////////////////////////////////////////////////////
-
-Value* CodegenPass::emitCoroInvokeFn(llvm::Type* retTy,
-                                     llvm::Type* argTypes) {
-  // Create a function of type  retTy (cloty*)
-  Function*& fn = this->lazyCoroPrimInfo[
-      std::make_pair(std::make_pair(false, retTy), argTypes)];
-  if (!fn) {
-    std::string ss_str;
-    llvm::raw_string_ostream ss(ss_str);
-    ss << ".foster_coro_invoke_" << str(retTy) << "__" << str(argTypes);
-
-    std::string functionName = ss.str();
-
-    fn = Function::Create(
-      /*Type=*/    getCoroInvokeFnTy(retTy, argTypes),
-      /*Linkage=*/ llvm::GlobalValue::InternalLinkage,
-      /*Name=*/    functionName, this->mod);
-
-    fn->setCallingConv(llvm::CallingConv::Fast);
-    fn->setGC("fostergc");
-    disableFramePointerElimination(*fn);
-
-    // TODO when using inlining along with any codegen opt level greater
-    //      than None, the basic-coro test segfaults after returning from
-    //      coro_transfer or when using std::map to lookup stackmap entries.
-    //      why?!?  :(
-    fn->addFnAttr(llvm::Attribute::NoInline);
-  }
-
-  return fn;
-}
-
-////////////////////////////////////////////////////////////////////
-////////////////////////// CORO YIELD //////////////////////////////
-////////////////////////////////////////////////////////////////////
-
-// Return a function with type   argTypes (retTy1...retTyN)
-// Note that "retTypes" denote the arguments, and "argTypes"
-// the (possibly structure-typed) result. The reason is that
-// the parameter names match create/invoke for consistency,
-// and yield does things the other way 'round.
-Value* CodegenPass::emitCoroYieldFn(llvm::Type* retTy,
-                                    llvm::Type* argTypes) {
-  Function*& fn = this->lazyCoroPrimInfo[
-      std::make_pair(std::make_pair(true, retTy), argTypes)];
-  if (!fn) {
-    std::string ss_str;
-    llvm::raw_string_ostream ss(ss_str);
-    ss << ".foster_coro_yield_" << str(retTy) << "__" << str(argTypes);
-
-    std::string functionName = ss.str();
-
-    fn = Function::Create(
-      /*Type=*/    getCoroYieldFnTy(retTy, argTypes),
-      /*Linkage=*/ llvm::GlobalValue::InternalLinkage,
-      /*Name=*/    functionName, this->mod);
-
-    fn->setCallingConv(llvm::CallingConv::Fast);
-    fn->setGC("fostergc");
-    disableFramePointerElimination(*fn);
-  }
-
-  return fn;
-}
-
-
-////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 
 Value* getCurrentCoroSibling(llvm::Module* mod) {
@@ -652,7 +670,8 @@ void CodegenPass::emitLazyCoroPrimInfo(bool isYield, Function* fn,
                                  ptrTo(foster_generic_coro_t));
   }
 
-  generateInvokeYield(isYield, this, coro, retTy, argTys, inputArgs);
+  builder.CreateRet(generateInvokeYield(isYield, FOSTER_CORO_DORMANT,
+                      this, coro, retTy, argTys, inputArgs));
 
   if (prevBB) {
     builder.SetInsertPoint(prevBB);
