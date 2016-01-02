@@ -1,6 +1,6 @@
 cmake_minimum_required (VERSION 2.8)
 
-# We need to set up the compiler paths before calling project()...
+# {{{ We need to set up the compiler paths before calling project()...
 # ~~~~~~~~~~~~~~~~~~~~
 
 set(LLVM_VERSION 3.7.0)
@@ -30,6 +30,8 @@ set(CMAKE_C_COMPILER ${CLANG_C})
 
 # ~~~~~~~~~~~~~~~~~~~~
 # ... Okay, now we can proceed.
+# }}}
+
 project (foster)
 
 cmake_policy(VERSION 2.8.0)
@@ -37,8 +39,9 @@ cmake_policy(VERSION 2.8.0)
 ####################### Configuration Rules ########################
 
 set(LIBRARY_OUTPUT_PATH ${PROJECT_BINARY_DIR}/_nativelibs_)
+set(GENERATED           ${PROJECT_BINARY_DIR}/_generated_)
 
-# ~~~~~~~~~~~~~~~~~~~~ ANTLR ~~~~~~~~~~~~~~~~~~~~~
+# {{{ ~~~~~~~~~~~~~~~~~~~~ ANTLR ~~~~~~~~~~~~~~~~~~~~~
 
 # This isn't cached since CMake doesn't seem to have any way of
 # specifying that some cached variables depend on others, and it's
@@ -57,14 +60,15 @@ if (${ANTLR_DIR} STREQUAL "ANTLR_DIR-NOTFOUND")
     message("ANTLR not found! Please configure with ccmake or a CMake GUI")
     return()
 endif (${ANTLR_DIR} STREQUAL "ANTLR_DIR-NOTFOUND")
+# }}}
 
+# {{{ ~~~~~~~~~~~~~~~~~~~~ libcoro ~~~~~~~~~~~~~~~~~~~~~~
 set(CORO_METHOD CORO_ASM
     CACHE
     DOC "libcoro implementation: CORO_{ASM,SJLJ,LOSER,PTHREAD}")
+# }}}
 
-set(GENERATED ${PROJECT_BINARY_DIR}/_generated_)
-
-# ~~~~~~~~~~~~~~~~~~~~ Protocol Buffers ~~~~~~~~~~~~~~~~~~~~~~
+# {{{ ~~~~~~~~~~~~~~~~~~~~ Protocol Buffers ~~~~~~~~~~~~~~~~~~~~~~
 find_package(Protobuf REQUIRED)
 include_directories(${PROTOBUF_INCLUDE_DIRS})
 
@@ -72,8 +76,9 @@ find_program(HPROTOC NAMES hprotoc
   PATHS
     $ENV{HOME}/.cabal/bin
   DOC "hprotoc: Protobuf compiler for Haskell")
+# }}}
 
-# ~~~~~~~~~~~~~~~~~~~~~~~~~ LLVM ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# {{{ ~~~~~~~~~~~~~~~~~~~~~~~~~ LLVM ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 # Get flags for LLVM
 execute_process(COMMAND ${LLVM_CONFIG} --cxxflags
@@ -132,6 +137,7 @@ execute_process(COMMAND
 # Make sure that the linker flags are one physical line
 string(REPLACE "\n" " " LLVM_LDFLAGS "${LLVM_LDFLAGS}")
 string(STRIP "${LLVM_LDFLAGS}" LLVM_LDFLAGS)
+# }}}
 
 ####################### Compilation Rules ##########################
 
@@ -141,7 +147,7 @@ execute_process(COMMAND mkdir -p ${PROJECT_BINARY_DIR}/_generated_)
 execute_process(COMMAND mkdir -p ${PROJECT_BINARY_DIR}/_bitcodelibs_)
 execute_process(COMMAND mkdir -p ${PROJECT_BINARY_DIR}/_nativelibs_)
 
-# Use python to build fosterParser.c when grammar/foster.g changes
+# {{{ Use python to build fosterParser.c when grammar/foster.g changes
 add_custom_command(
   OUTPUT ${GENERATED}/fosterParser.c
          ${GENERATED}/fosterLexer.c
@@ -157,8 +163,9 @@ add_custom_command(
         ${PROJECT_SOURCE_DIR}/grammar/foster.g
         ${PROJECT_SOURCE_DIR}/scripts/run_antlr.py
 )
+# }}}
 
-# Generate C++ code to manipulate protobuf files.
+# {{{ Generate C++ code to manipulate protobuf files (between middle & back end).
 add_custom_command(
   OUTPUT
           ${GENERATED}/FosterIL.pb.h
@@ -170,10 +177,11 @@ add_custom_command(
   DEPENDS
           ${PROJECT_SOURCE_DIR}/compiler/parse/FosterIL.proto
   )
+# }}}
 
 #-------------------------------------------------------------------
 
-# Generate Haskell code to manipulate protobuf files.
+# {{{ Generate Haskell code to generate protobuf files for the backend.
 add_custom_command(
   OUTPUT ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Bepb.hs
   COMMAND cp ${PROJECT_SOURCE_DIR}/compiler/parse/FosterIL.proto
@@ -211,8 +219,11 @@ add_custom_target(hs_clean
 
 # Attaching commands to add_custom_target basically means
 # "run these commands whenver the target is mentioned."
-#-------------------------------------------------------------------
+# }}} -------------------------------------------------------------------
 
+# {{{ Generate libfoster_main (object code and bitcode).
+# Note that clang is explicitly used for the bitcode, and the default C++ compiler
+# is used for the object code.
 add_custom_command(
   OUTPUT ${LIBRARY_OUTPUT_PATH}/libfoster_main.o
    	 ${PROJECT_BINARY_DIR}/_bitcodelibs_/libfoster_main.bc
@@ -232,6 +243,7 @@ add_custom_command(
         ${LIBRARY_OUTPUT_PATH}
         ${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
 )
+# }}}
 
 # The .py file here is basically `touch` with a hardcoded path.
 # The intention here was that we could store/overwrite compile-time
@@ -247,6 +259,7 @@ add_custom_command(
     ${PROJECT_SOURCE_DIR}/scripts/mk_gc_reconfig_h.py
 )
 
+# {{{ Use clang to build libfoster.bc
 set(LIBFOSTER_CPP_SOURCES
         ${PROJECT_SOURCE_DIR}/runtime/libfoster.cpp
         ${PROJECT_SOURCE_DIR}/runtime/libfoster_coro.cpp
@@ -256,7 +269,6 @@ set(LIBFOSTER_CPP_SOURCES
         ${PROJECT_SOURCE_DIR}/runtime/foster_globals.cpp
 )
 
-# Use clang to build libfoster.bc
 add_custom_command(
   OUTPUT ${PROJECT_BINARY_DIR}/_bitcodelibs_/foster_runtime.bc
   COMMAND
@@ -274,6 +286,7 @@ add_custom_command(
     ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc_utils.h
     ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc_reconfig-inl.h
 )
+
 # We could attach the command to build libfoster.bc directly
 # to the libfoster_bc target, but the effect of doing that would
 # be that libfoster.bc would always be considered out of date,
@@ -281,8 +294,7 @@ add_custom_command(
 add_custom_target(foster_runtime_bc DEPENDS
         ${PROJECT_BINARY_DIR}/_bitcodelibs_/foster_runtime.bc
         ${LIBRARY_OUTPUT_PATH}/libfoster_main.o)
-
-#-----------------------------------------------------------
+# }}} -----------------------------------------------------------
 
 # Look for ANTLR-generated lexer and parser, and ANTLR library files
 include_directories(${ANTLR_DIR}/include ${PROJECT_BINARY_DIR})
@@ -296,6 +308,8 @@ include_directories(
   ${PROJECT_SOURCE_DIR}/third_party/fftw_cycle
   ${PROJECT_SOURCE_DIR}/third_party/cbor-cpp/src
 )
+
+# {{{ Miscellaneous flag munging
 
 # Takes ldflags, which looks like
 # "... -L/path/to/llvm/lib ..." and puts
@@ -316,12 +330,14 @@ if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
   set(CMAKE_EXE_LINKER_FLAGS
    "${CMAKE_EXE_LINKER_FLAGS} -Wl,--compress-debug-sections,zlib")
 endif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+# }}}
 
 #####################################################################
 include(${PROJECT_SOURCE_DIR}/third_party/chromium_base/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/libcoro/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/fftw_cycle/CMakeLists.txt)
 
+# {{{ Define inputs and dependencies between the various foster* libraries and executables.
 add_library(fosterc_base STATIC
   compiler/base/Assert.cpp
   compiler/base/Diagnostics.cpp
@@ -422,9 +438,7 @@ add_dependencies(fosteroptc
 
 ############
 
-add_dependencies(foster_runtime_bc chromium_base)
-add_dependencies(foster_runtime_bc coro)
-
+add_dependencies(foster_runtime_bc chromium_base coro)
 
 set_target_properties(
   fosterc_passes fosterc_parse
