@@ -91,6 +91,25 @@ In broad strokes:
       "CCBody TypeLL" -> "..." [label=" prepForCodegen, etc"];
    }
 
+Pass Ordering Issues
+====================
+
+* Inlining is improved when loop headers are inserted earlier, because it's
+  generally more profitable to specialize a loop rather than unroll it once.
+  But the decision of whether a particular recursive call should become a
+  call to the loop header or the original function is improved when the results
+  of inlining are known (in particular, for recursive calls appearing within
+  local functions).
+   * If a recursive call could be redirected to the loop header but is not,
+     then (A) the external function remains recursive, rather than a non-rec
+     wrapper around the recursive loop header, and (B) the recursion consumes
+     stack space. Consequence (A) means in turn that inlining will be pushed
+     to unnecessarily avoid inlining the not-actually-recursive wrapper.
+   * If a nested recursive call is directed to the loop header, even though
+     inlining & contification will both fail to eliminate the nested function,
+     then the loop header will need a heap allocated closure, even though the
+     "proper" choice would result in an allocation-free (top-level) function.
+
 Compiler Details
 ================
 

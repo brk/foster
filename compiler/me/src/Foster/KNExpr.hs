@@ -676,7 +676,9 @@ localBlockSinking knf = rebuildFn knf
 -- Since the loop header is only called from tail position, it will
 -- be contifiable by definition. (This is why we ignore non-tail recursive
 -- calls -- because inserting a non-contifiable function wrapper would
--- change the allocation behavior of programs.)
+-- change the allocation behavior of programs.) But note that we must count
+-- any occurrences in nested functions as non-tail calls. After all, eta
+-- expansion means that a non-tail usage can be turned into a nested tail call.
 --
 -- Adding loop headers has two benefits:
 --   1) Passing fewer arguments as loop arguments avoids unnecessary copies.
@@ -773,16 +775,13 @@ knLoopHeaderCensus tailq activeids expr = go' tailq expr where
                                        _ -> return ()
                                      go e2
     KNLetRec      _   es  b    -> do mapM_ (go' NotTail) es ; go b
-    KNLetFuns     ids@[_] fns@[fn] b | isRec fn -> do
-                                     mapM_ (knLoopHeaderCensusFn (Set.union activeids
-                                                                   (Set.fromList ids)))
-                                                                 (zip ids fns)
-                                     -- Note: when we recur, activeids will not
-                                     -- include the bound ids, so calls in the
-                                     -- body will be ignored.
-                                     go b
-    KNLetFuns    _ids fns b    -> do mapM_ (knLoopHeaderCensus YesTail activeids . fnBody) fns
-                                     go b
+    KNLetFuns     _ _ b -> do go b
+    KNLetFuns     ids fns b | all isRec fns -> do
+      mapM_ (knLoopHeaderCensusFn (Set.fromList ids)) (zip ids fns)
+      -- Note: when we recur, activeids will not
+      -- include the bound ids, so calls in the
+      -- body will be (properly) ignored.
+      go b
     KNCall _ v vs | tailq == YesTail -> do -- TODO only for tail calls...
       id <- lookupId (tidIdent v)
       if Set.member id activeids
