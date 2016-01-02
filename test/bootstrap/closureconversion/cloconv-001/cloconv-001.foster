@@ -1,0 +1,30 @@
+
+type case List (a:Type)
+  of $Nil
+  of $Cons a (List a)
+;
+
+type case PairingHeap (elem:Type)
+      of $PairingHeapE
+      of $PairingHeapT elem (List PairingHeap)
+      ;
+
+listShow = { forall a:Type, showElem : { a => Text } => lst : List a =>
+  case lst
+    of $Nil -> "Nil"
+    of $Cons x xs -> "Cons"
+  end
+};
+
+// If inlining doesn't run, loop insertion must insert a full-fledged function
+// loop header, not a proc/cont.
+pairingHeapShow = { forall a:Type, showElem : { a => Text } => ph : PairingHeap a =>
+  case ph
+    of $PairingHeapE -> "PairingHeapE"
+    of $PairingHeapT e l -> listShow { p => pairingHeapShow showElem p } l
+  end
+};
+
+main = {
+  ()
+};

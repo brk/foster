@@ -1,0 +1,211 @@
+
+type case List (a:Type)
+  of $Nil
+  of $Cons a (List a)
+;
+
+expect_text_bare = { s : Text =>
+  case s
+    of $TextFragment a n     -> prim_print_bytes_stderr a n; n
+    of $TextConcat   s1 s2 n -> expect_text_bare s1; expect_text_bare s2; n
+   end;
+};
+
+print_text_bare = { s : Text =>
+  case s
+    of $TextFragment a n     -> prim_print_bytes_stdout a n; n
+    of $TextConcat   s1 s2 n -> print_text_bare s1; print_text_bare s2; n
+   end;
+};
+
+expect_text = { s : Text =>
+  expect_text_bare s; expect_newline !; ()
+};
+
+print_text = { s : Text =>
+  print_text_bare s; print_newline !; ()
+};
+
+
+tmp_Text_of_UInt64 = { n:Int64 =>
+  REC go = { n:Int64 => t:Text =>
+    if n <SInt64 10
+      then mkTextConcat (tmp_Text_of_Int32_digit (trunc_i64_to_i32 n)) t
+      else r = trunc_i64_to_i32 (prim srem-unsafe-Int64 n 10);
+           q =                   prim sdiv-unsafe-Int64 n 10 ;
+           go q (mkTextConcat (tmp_Text_of_Int32_digit r) t);
+    end
+  };
+  go n ""
+};
+
+tmp_Text_of_Int32_digit = { n:Int32 =>
+  case n
+    of 0 -> "0"
+    of 1 -> "1"
+    of 2 -> "2"
+    of 3 -> "3"
+    of 4 -> "4"
+    of 5 -> "5"
+    of 6 -> "6"
+    of 7 -> "7"
+    of 8 -> "8"
+    of 9 -> "9"
+    of _ -> "<error:value passed to tmp_Text_of_Int32_digit was too large>"
+  end
+};
+type case Ord
+       of $LT
+       of $EQ
+       of $GT
+       ;
+
+print_bil = { lst =>
+  print_text_bare "[";
+  listFoldl lst { n => unit => print_i64_bare n; print_text_bare ", "; () } ();
+  print_text "]";
+};
+
+// Uses O(1) stack, and heap proportional to whatever f allocates.
+listFoldl :: forall a:Type, e:Type, { List e => { e => a => a } => a => a };
+listFoldl = { forall a:Type e:Type, v => f => acc : a =>
+  case v
+    of $Nil            -> acc
+    of $Cons head tail -> listFoldl tail f (f head acc)
+  end
+};
+type case PairingHeap (elem:Type)
+      of $PairingHeapE
+      of $PairingHeapT elem (List PairingHeap)
+      ;
+
+cmpSInt64 = { a : Int64 => b : Int64 =>
+  if a ==Int64 b
+  then EQ
+  else if a <SInt64 b then LT else GT end
+  end
+};
+// Manually inlined paringHeapMerge, triggers GC root bug.
+pairingHeapMergePairs :: forall a:Type, { { a => a => Ord } => List (PairingHeap a) => PairingHeap a };
+pairingHeapMergePairs = { forall a:Type, cmp => l =>
+  case l
+    of ($Nil)                   -> PairingHeapE
+    of ($Cons h  ($Nil))        -> h
+    of ($Cons h1 ($Cons h2 hs)) ->
+      pb = pairingHeapMergePairs cmp hs;
+      pa = (case (h1, h2)
+                of ($PairingHeapE, _) -> h2
+                of (_, $PairingHeapE) -> h1
+                of _ -> noinline_x cmp h1 h2;
+              end);
+       case (pa, pb)
+            of ($PairingHeapE, _) -> pb
+            of _ -> noinline_x cmp pa pb;
+          end
+  end
+};
+
+noinline_x = { forall a:Type, cmp : { a => a => Ord } => h1 => h2 =>
+  case (h1, h2)
+    of ($PairingHeapE, _) -> h2
+    of (_, $PairingHeapE) -> h1
+    of ($PairingHeapT ea la, $PairingHeapT eb lb) ->
+      case cmp ea eb
+        of $GT -> PairingHeapT eb (Cons h1 lb)
+        of _   -> PairingHeapT ea (Cons h2 la)
+      end
+  end
+};
+
+pairingHeapInsert :: forall a:Type, { { a => a => Ord } => a => PairingHeap a => PairingHeap a };
+pairingHeapInsert = { forall a:Type, cmp => e => h =>
+  case h
+    of $PairingHeapE -> PairingHeapT e Nil
+    of $PairingHeapT eb lb ->
+      case cmp e eb
+        of $GT -> pa = PairingHeapT e Nil;
+                  PairingHeapT eb (Cons pa lb)
+        of _   -> PairingHeapT e  (Cons h Nil)
+      end
+  end
+};
+
+noinline_pairingHeapToSortedList :: forall a:Type, { { a => a => Ord } => PairingHeap a => List a };
+noinline_pairingHeapToSortedList = { forall a:Type, cmp => h =>
+  case h
+    of $PairingHeapE -> Nil
+    of $PairingHeapT e l -> Cons e (noinline_pairingHeapToSortedList cmp (pairingHeapMergePairs cmp l))
+  end
+};
+
+noinline_pairingHeapFromList :: forall a:Type, { { a => a => Ord } => List a => PairingHeap a };
+noinline_pairingHeapFromList = { forall a:Type, cmp => lst =>
+  REC go = { lst => ph =>
+    case lst
+      of $Nil -> ph
+      of $Cons h t -> go t (pairingHeapInsert cmp h ph)
+    end
+  };
+  go lst PairingHeapE
+};
+
+listSortViaPairingHeapWith :: forall a:Type, { { a => a => Ord } => List a => List a };
+listSortViaPairingHeapWith = { forall a:Type, cmp => lst =>
+  noinline_pairingHeapToSortedList cmp (noinline_pairingHeapFromList cmp lst)
+};
+
+mkTextConcat = { a : Text => b : Text =>
+  lensum = (textLength a) +Int32 (textLength b);
+  TextConcat a b lensum
+};
+
+textLength = { t : Text =>
+  case t
+    of $TextFragment _ n -> n
+    of $TextConcat _ _ n -> n
+   end;
+};
+
+listShow = { forall a:Type, showElem : { a => Text } => lst : List a =>
+  case lst
+    of $Nil -> "Nil"
+    of $Cons x xs ->
+      mkTextConcat "(Cons "
+       (mkTextConcat (mkTextConcat (showElem x) " ")
+        (mkTextConcat (listShow showElem xs) ")"))
+  end
+};
+
+// CloConv.hs: mkProcType given non-function type?? loop.hdr554
+pairingHeapShow = { forall a:Type, showElem : { a => Text } => ph : PairingHeap a =>
+  case ph
+    of $PairingHeapE -> "PairingHeapE"
+    of $PairingHeapT e l ->
+      mkTextConcat "(PairingHeapT"
+       (mkTextConcat (mkTextConcat (showElem e) " ")
+        (mkTextConcat (listShow { p => pairingHeapShow showElem p } l) ")"))
+  end
+};
+
+main = {
+  lst =(Cons 0
+       (Cons 2
+       (Cons 1
+       (Cons 3
+       (Cons 4
+       (Cons 6
+       (Cons 5
+       (Cons 9
+       (Cons 8
+       (Cons 7
+        Nil:[Int64]))))))))));
+
+
+  expect_text "(PairingHeapT0 (Cons (PairingHeapT7 Nil) (Cons (PairingHeapT8 Nil) (Cons (PairingHeapT9 Nil) (Cons (PairingHeapT5 Nil) (Cons (PairingHeapT6 Nil) (Cons (PairingHeapT4 Nil) (Cons (PairingHeapT3 Nil) (Cons (PairingHeapT1 Nil) (Cons (PairingHeapT2 Nil) Nil))))))))))";
+  print_text (pairingHeapShow tmp_Text_of_UInt64 (noinline_pairingHeapFromList cmpSInt64 lst));
+
+  expect_text "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, ]";
+  print_bil (listSortViaPairingHeapWith cmpSInt64 lst);
+
+  ()
+};
