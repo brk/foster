@@ -20,9 +20,7 @@ import qualified Data.Text as T
 import Text.PrettyPrint.ANSI.Leijen
 
 import Data.Map(Map)
-import Data.Map as Map(lookup, alter, fromList, union, empty)
-import Data.Set(Set)
-import Data.Set as Set(member, insert, empty)
+import Data.Map as Map(lookup, alter, fromList, union, empty, insert)
 import Data.List as List(all)
 import Control.Monad(when, liftM, liftM2, liftM3, liftM4)
 import Control.Monad.State(evalStateT, get, gets, put, StateT, liftIO, lift)
@@ -48,7 +46,7 @@ monomorphize :: ModuleIL (KNExpr' ()        TypeIL  ) TypeIL
 monomorphize (ModuleIL body decls dts primdts lines) knorm = do
     uref      <- gets ccUniqRef
     wantedFns <- gets ccDumpFns
-    let monoState0 = MonoState Set.empty Map.empty Map.empty [] uref wantedFns knorm
+    let monoState0 = MonoState Map.empty Map.empty Map.empty [] uref wantedFns knorm
     flip evalStateT monoState0 $ do
                monobody <- monoKN emptyMonoSubst False body
                specs    <- gets monoDTSpecs
@@ -358,12 +356,20 @@ monoInstantiate :: FnExprIL' -> {-Poly-} Ident
 monoInstantiate polydef polybinder
                 monotys subst      ty' = do
   let polyprocid = tidIdent $ fnVar polydef
-  monoprocid <- lift $ ccRefreshLocal $ cvtMonoId polyprocid monotys
-  monobinder <- lift $ ccRefreshLocal $ cvtMonoId polybinder monotys
-  have <- seen monoprocid
-  if have || polybinder == monobinder
-   then return monobinder
-   else do  markSeen monoprocid
+  let monoprocid_raw = cvtMonoId polyprocid monotys
+  let monobinder_raw = cvtMonoId polybinder monotys
+
+  prev <- seen monoprocid_raw
+  case prev of
+    Just monobinder -> do
+            return monobinder
+    Nothing -> do
+       monobinder <- lift $ ccRefreshLocal monobinder_raw
+       if polybinder == monobinder
+         then return monobinder
+         else do
+            monoprocid <- lift $ ccRefreshLocal monoprocid_raw
+            markSeen monoprocid_raw monobinder
             monodef  <- replaceFnVar monoprocid polydef >>= alphaRename
                                 >>= monoFn subst >>= replaceFnVarTy ty'
             monoPutResult polybinder (MonoResult monobinder monodef)
@@ -371,12 +377,13 @@ monoInstantiate polydef polybinder
  where
   replaceFnVarTy ty fn = return fn { fnVar = TypedId ty (tidIdent (fnVar fn)) }
 
-  seen :: MonoProcId -> Mono Bool
-  seen id = do state <- get ; return $ Set.member id (monoSeenIds state)
+  seen :: MonoProcId -> Mono (Maybe MonoProcId)
+  seen id = do state <- get ; return $ Map.lookup id (monoSeenIds state)
 
-  markSeen :: MonoProcId -> Mono ()
-  markSeen id = do state <- get
-                   put state { monoSeenIds = Set.insert id (monoSeenIds state) }
+  markSeen :: MonoProcId -> MonoProcId -> Mono ()
+  markSeen id newid = do
+    state <- get
+    put state { monoSeenIds = Map.insert id newid (monoSeenIds state) }
 
   replaceFnVar :: Show t => MonoProcId -> Fn r KNExpr t -> Mono (Fn r KNExpr t)
   replaceFnVar moid fn = do
@@ -458,7 +465,7 @@ data MonoState = MonoState {
     -- Before instantiating a polymorphic function at a given type,
     -- we first check to see if we've already seen it; if so, then
     -- we don't need to add anything to the work list.
-    monoSeenIds :: Set MonoProcId
+    monoSeenIds :: Map MonoProcId MonoProcId
   , monoOrigins :: Map PolyBinder (PolyOrigin)
   , monoResults :: Map PolyBinder [MonoResult]
   , monoDTSpecs :: EqSet (DataTypeName, [MonoType])
