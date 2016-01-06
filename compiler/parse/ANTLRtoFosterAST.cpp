@@ -74,7 +74,7 @@ string str(pANTLR3_COMMON_TOKEN tok) {
 void display_pTree(pTree t, int nspaces);
 
 size_t getChildCount(pTree tree) {
-  return static_cast<size_t>(tree->getChildCount(tree));
+  return (tree ? static_cast<size_t>(tree->getChildCount(tree)) : 0);
 }
 
 pTree child(pTree tree, int i) {
@@ -372,6 +372,8 @@ namespace foster {
     createParser(*ctx, file);
 
     installTreeTokenBoundaryTracker(ctx->psr->adaptor);
+    // TODO for some malformed input (with stray ; nodes) this produces
+    // wrong results -- no parse && no errors, only warnings reported.
     foster::installRecognitionErrorFilter(ctx->psr->pParser->rec);
 
     gInputFile = &file; // used when creating source ranges

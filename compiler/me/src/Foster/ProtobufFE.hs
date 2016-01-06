@@ -65,8 +65,8 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
               m = ModuleAST (T.unpack (cborText hash)) funcs decls datas
                             lines primDTs
           in resolveFormatting hiddentokens m
-        _ -> error $ "cb_parseSourceModule failed"
-  _ -> error $ "cb_parseSourceModule failed"
+        _ -> error $ "cb_parseSourceModule[1] failed"
+  _ -> error $ "cb_parseSourceModule[2] failed"
 
  where
   tm (CBOR_UInt x) n = x == n
