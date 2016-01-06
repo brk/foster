@@ -67,12 +67,13 @@ prettyTopLevelFn fn =
 instance Pretty ty => Pretty (FnAST ty) where
   pretty fn =
       group (lbrace <> prettyTyFormals (fnTyFormals fn) <> args (fnFormals fn)
-                    <+> nest 4 (group $ pretty (fnAstBody fn))
+                    <$> nest 4 (group $ pretty (fnAstBody fn))
                     <$> rbrace)
     where args []  = empty
-          args frm = empty <+> hsep (map (\v -> prettyFnFormal v <+> text "=>") frm)
+          args frm = hang 1 (empty <+> vsep (map (\v -> prettyFnFormalTy v <+> text "=>") frm))
 
-          prettyFnFormal (TypedId _t v) = text (T.unpack $ identPrefix v)
+          prettyFnFormal   (TypedId _t v) = text (T.unpack $ identPrefix v)
+          prettyFnFormalTy (TypedId  t v) = text (T.unpack $ identPrefix v) <+> text ":" <+> pretty t
 
 prettyTyFormals [] = empty
 prettyTyFormals tyfs = empty <+> text "forall" <+> hsep (map prettyTyFormal tyfs) <+> text ","
@@ -131,8 +132,10 @@ instance Pretty Formatting where
   pretty (Comment ('/':'/':s)) = text "//" <> text s <> hardline
   pretty (Comment s) = string s -- comment markers already included
 
+annotPre [BlankLine] = []
+annotPre pre = map pretty pre
 withAnnot (ExprAnnot pre _ post) doc =
-      hcat (map pretty pre)
+      hcat (annotPre pre)
       <>
       doc
       <>
@@ -164,10 +167,11 @@ instance Pretty ty => Pretty (ExprAST ty) where
             E_CallAST annot e es    -> withAnnot annot $ pretty e <+> align (hsep (map prettyAtom es))
             E_LetAST  annot (TermBinding evar bound) expr ->
                                        withAnnot annot $
-                                      lkwd "let"
-                                      <+> {- fill 8 -} (pretty evar)
+                                      {- lkwd "let"
+                                      <+> -} {- fill 8 -} (pretty evar)
                                       <+> text "="
-                                      <+> pretty bound <+> lkwd "in"
+                                      <+> pretty bound {- <+> lkwd "in" -}
+                                                          <> text ";"
                                    <$> pretty expr
             E_LetRec annot binds e -> withAnnot annot $
                                        text "rec"
@@ -179,9 +183,9 @@ instance Pretty ty => Pretty (ExprAST ty) where
                                    <$> pretty e
                                    <$> end
             E_IfAST annot c b1 b2 -> withAnnot annot $
-                                       kwd "if" <+> pretty c
-                                   <$> nest 2 (kwd "then" <+> pretty b1)
-                                   <$> nest 2 (kwd "else" <+> pretty b2)
+                                   nest 2 (kwd "if" <+> pretty c
+                                           <$> (kwd "then" <+> align (pretty b1))
+                                           <$> (kwd "else" <+> align (pretty b2)))
                                    <$> end
             E_IntAST   annot intstr  -> withAnnot annot $ red     $ text intstr
             E_RatAST   annot fltstr  -> withAnnot annot $ dullred $ text fltstr
