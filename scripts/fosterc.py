@@ -158,6 +158,9 @@ def compile_foster_to_bitcode(paths, inputfile, compilelog, finalpath, tmpdir):
                      interpret + options.meargs + prog_args)
 
     if should_stop_after_middle():
+      if compilelog is not None:
+        compilelog.seek(0)
+        print compilelog.read()
       raise StopAfterMiddle()
 
     # running fosterlower on the Protobuf CFG produces an LLVM
@@ -218,7 +221,7 @@ def compile_foster_code(inputfile):
 
   log_filename = os.path.join(tmpdir, "compile.log.txt")
   rv = 0
-  with open(log_filename, 'w') as compilelog:
+  with open(log_filename, 'w+') as compilelog:
     fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed = \
             compile_foster_to_bitcode(paths, inputfile, compilelog, finalpath, tmpdir)
 
@@ -360,7 +363,6 @@ if __name__ == "__main__":
   parser = get_fosterc_parser()
   (options, args) = fosterc_parser_parse_and_fixup(parser)
 
-
   if len(args) != 1:
     print args
     print options
@@ -368,5 +370,8 @@ if __name__ == "__main__":
     sys.exit(1)
 
   inputfile = args[0]
+  try:
+    compile_foster_code(inputfile)
+  except StopAfterMiddle:
+    pass
 
-  compile_foster_code(inputfile)
