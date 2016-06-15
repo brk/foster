@@ -69,6 +69,9 @@ def run_command(rawcmd, paths, inputfile, showcmd=False, stdout=None, stderr=Non
 
   if strictrv:
     if rv != 0:
+      if showcmd is False and (stderr is not None):
+        print "((stderr has been redirected to ", stderr
+        print "  use --show-cmdlines to disable redirection))"
       print "Failed to run:"
       print "     ", ' '.join(cmd)
       raise TestFailed(cmd, inputfile)

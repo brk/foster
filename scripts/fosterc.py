@@ -243,7 +243,7 @@ def compile_foster_code(inputfile):
         exe_cmd = [options.exepath] + allprogargs
         shutil.copy2(exepath, options.exepath)
         print "Try running:"
-        print  ''.join()
+        print '       ', ''.join(options.exepath)
 
   return (paths, exe_cmd, (fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed, as_elapsed, ld_elapsed))
 

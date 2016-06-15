@@ -81,11 +81,11 @@ bytesBuilderFreeze =  { bb =>
 
 /////
 
-bytesFlatten :: { Bytes => Array Int8 };
-bytesFlatten = { bytes =>
-  newBytesBuilder (bytesLength32 bytes) |>
-  bytesBuilderAppendBytes bytes |>
-  bytesBuilderFreeze
+bytesFlattened :: { Bytes => Array Int8 };
+bytesFlattened = { bytes =>
+  newBytesBuilder (bytesLength32 bytes)
+  |> bytesBuilderAppendBytes bytes
+  |> bytesBuilderFreeze
 };
 
 /////
@@ -940,7 +940,7 @@ test-onesComplementSum = {
   print_i32 (onesComplementSum 0 (prim mach-array-literal 00 01 0f2_16 03 0f4_16 0f5_16 0f6_16) 7);
 };
 
-test-bytesFlatten = {
+test-bytesFlattened = {
   arr16 = allocDArray:[Int8] 16;
   0 >^ arr16[0];
   1 >^ arr16[1];
@@ -952,7 +952,7 @@ test-bytesFlatten = {
   7 >^ arr16[7];
   bytes16 = bytesOfRawArray arr16;
 
-  rt = { bytes => bytesOfRawArray (bytesFlatten bytes) };
+  rt = { bytes => bytesOfRawArray (bytesFlattened bytes) };
 
   go = { txt => bytes =>
     expect_text txt;
@@ -973,14 +973,14 @@ main = {
   loop-reading-tuntap !;
   //test-parseBits !;
   //test-onesComplementSum !;
-  //test-bytesFlatten !;
+  //test-bytesFlattened !;
   0
 };
 
 // Needs to do UTF8 input validation.
 // TODO: http://bjoern.hoehrmann.de/utf-8/decoder/dfa/
 textOfBytes = { b : Bytes =>
-  TextFragment (bytesFlatten b) (bytesLength32 b)
+  TextFragment (bytesFlattened b) (bytesLength32 b)
 };
 
 handler = { connid : TCPConnId =>
@@ -1016,38 +1016,37 @@ loop-reading-tuntap = {
   tcpStackRegisterPortHandler tcpstack 80 handler;
 
   REC loop = { n =>
-  if n ==Int32 0 then () else
+    if n >SInt32 0 then
+      print_text "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^";
+      print_text "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv";
 
-    print_text "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^";
-    print_text "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv";
+      nread = foster_posix_read_bytes fd arr 0 rstatus;
+      print_text "read this many bytes from tun:";
+      print_i64 nread;
+      print_text "with status";
+      print_i32 rstatus^;
 
-    nread = foster_posix_read_bytes fd arr 0 rstatus;
-    print_text "read this many bytes from tun:";
-    print_i64 nread;
-    print_text "with status";
-    print_i32 rstatus^;
+      bytes = bytesTake (bytesOfRawArray arr) nread;
 
-    bytes = bytesTake (bytesOfRawArray arr) nread;
+      mb_resp = bytes |> parse-IPv4-datagram
+                      |> show-IPv4-datagram
+                      |> construct-IPv4-datagram-response tcpstack
+                      |> liftMaybe unparse-IPv4-datagram;
 
-    mb_resp = bytes |> parse-IPv4-datagram
-                  // |> show-IPv4-datagram
-                     |> construct-IPv4-datagram-response tcpstack
-                     |> liftMaybe unparse-IPv4-datagram;
+      case mb_resp
+        of $None ->
+              print_text "no response from networking stack for this packet.";
+        of $Some response ->
+              print_text "writing response back to fd...";
+              nwrote = foster_posix_write_bytes fd response 0 (arrayLength response) rstatus;
+              print_text "wrote this many bytes to tun:";
+              print_i64 nwrote;
+              print_text "with status";
+              print_i32 rstatus^;
 
-    case mb_resp
-      of $None ->
-            print_text "no response from networking stack for this packet.";
-      of $Some response ->
-            print_text "writing response back to fd...";
-            nwrote = foster_posix_write_bytes fd response 0 (arrayLength response) rstatus;
-            print_text "wrote this many bytes to tun:";
-            print_i64 nwrote;
-            print_text "with status";
-            print_i32 rstatus^;
+      end;
 
-    end;
-
-    loop (n -Int32 1);
+      loop (n -Int32 1);
     end
   };
 
@@ -1168,9 +1167,6 @@ unparse-TCP-segment = { src => dst => segment =>
         bytesBuilderFreeze;
   end
 };
-
-print_i8x = { b => print_i32x (zext_i8_to_i32 b) };
-expect_i8x = { b => expect_i32x (zext_i8_to_i32 b) };
 
 show-bytes = { bytes =>
   REC go = { n =>

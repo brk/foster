@@ -203,3 +203,10 @@ On Mac OS X, first install tuntaposx <http://tuntaposx.sourceforge.net/>, then:
         Process calls system(sudo ifconfig tun8 192.168.6.41 192.168.6.42)
         ping 192.168.6.42
 
+Then, once the appropriate network interfaces are up,
+run (from the _obj) directory:
+
+   $ fosterc ../test/speed/foster-posix/foster-net/foster-net.foster
+   $ ../test/speed/foster-posix/foster-net/foster-net.foster.exe
+
+   (and ping as above, from a separate terminal window)

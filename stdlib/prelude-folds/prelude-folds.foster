@@ -47,6 +47,33 @@ foldRange64 = { forall t:Type,
 };
 
 // Precondition: fst <= fin
+// Note: fst inclusive, fin exclusive.
+//
+foldRangeInc32 = { forall t:Type,
+              fst : Int32 =>
+              fin : Int32 =>
+              init : t =>
+              iter : { Int32 => t => t } =>
+  REC go = { n : Int32 => acc : t =>
+      if n <=SInt32 fin then go (n +Int32 1) (iter n acc) else acc end
+  };
+  go fst init;
+};
+
+// Precondition: fst <= fin
+//
+foldRangeInc64 = { forall t:Type,
+                  fst : Int64 =>
+                  fin : Int64 =>
+                  init : t =>
+                  iter : { Int64 => t => t } =>
+  REC go = { n : Int64 => acc : t =>
+      if n <=SInt64 fin then go (n +Int64 1) (iter n acc) else acc end
+  };
+  go fst init;
+};
+
+// Precondition: fst <= fin
 //
 // Folds fst, fst + 1, ... , fin - 1
 foldRangeWord = { forall t:Type,
@@ -76,6 +103,18 @@ enumRange64 = { fst : Int64 =>
                 fin : Int64 =>
                 iter : { Int64 => () } =>
   foldRange64 fst fin () { i => u => iter i }
+};
+
+enumRangeInc32 = { fst : Int32 =>
+              fin : Int32 =>
+              iter : { Int32 => () } =>
+  foldRangeInc32 fst fin () { i => u => iter i }
+};
+
+enumRangeInc64 = { fst : Int64 =>
+              fin : Int64 =>
+              iter : { Int64 => () } =>
+  foldRangeInc64 fst fin () { i => u => iter i }
 };
 
 /////
