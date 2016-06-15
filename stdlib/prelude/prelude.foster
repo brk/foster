@@ -20,6 +20,10 @@ while = { cond : { Bool } => body : { () } =>
   if cond ! then body ! ; while cond body end
 };
 
+do-while = { cond : { Bool } => body : { () } =>
+  body !; while cond body;
+};
+
 until = { cond : { Bool } => body : { () } =>
   if cond ! then () else body ! ; until cond body end
 };

@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 2.8)
+cmake_minimum_required (VERSION 3.0)
 
 # {{{ We need to set up the compiler paths before calling project()...
 # ~~~~~~~~~~~~~~~~~~~~
@@ -34,7 +34,7 @@ set(CMAKE_C_COMPILER ${CLANG_C})
 
 project (foster)
 
-cmake_policy(VERSION 2.8.0)
+cmake_policy(VERSION 3.0)
 
 ####################### Configuration Rules ########################
 
@@ -446,10 +446,30 @@ set_target_properties(
   COMPILE_FLAGS -Wall
 )
 
+############
+
+# The --start/end-group is needed to resolve circular linking dependencies.
+# If/once LLVM ships proper EXPORT info, we can avoid this problem in a
+# portable manner.
+set(CLANGLIBS
+  -Wl,--start-group
+  clangAST clangAnalysis clangBasic clangDriver clangEdit
+  clangFrontend clangFrontendTool clangLex clangParse clangSema
+  clangEdit clangASTMatchers clangRewrite clangRewriteFrontend
+  clangSerialization clangToolingCore clangTooling
+  -Wl,--end-group)
+
+add_executable(c2f tools/c2f/c2f.cpp)
+target_link_libraries(c2f
+  ${CLANGLIBS}
+  ${LLVM_LDFLAGS})
+
+#####################################################################
 # These files contain code which inherits from LLVM classes,
 # or uses llvm::cl, and thus must be compiled without RTTI.
 set_target_properties(fosterc_llvm fosterc_base
                       fosterlower fosteroptc fosterparse
+                      c2f
   PROPERTIES
   COMPILE_FLAGS ${LLVM_EXTRA_CFLAGS}
 )
@@ -461,7 +481,6 @@ if (CMAKE_GENERATOR STREQUAL "Ninja")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fcolor-diagnostics")
 endif()
 #####################################################################
-
 set(REGRESS_CMD
       python ${PROJECT_SOURCE_DIR}/scripts/run_all.py
                  ${PROJECT_SOURCE_DIR}/test/bootstrap
