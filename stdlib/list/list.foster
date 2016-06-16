@@ -5,17 +5,17 @@ type case List (a:Type)
   of $Cons a (List a)
 ;
 
-listEmpty :: forall t:Type, { List t };
+listEmpty :: forall (t:Type) { List t };
 listEmpty = { Nil:[t] };
 
-listSingleton :: forall t:Type, { t => List t };
-listSingleton =  { forall t:Type, x : t =>
+listSingleton :: forall (t:Type) { t => List t };
+listSingleton =  { x : t =>
   Cons x Nil
 };
 
 // Precondition: List is not empty.
-listHead! :: forall t:Type, { List t => t };
-listHead! = { forall t:Type, xs : List t =>
+listHead! :: forall (t:Type) { List t => t };
+listHead! = { xs : List t =>
   case xs
     of $Nil -> prim kill-entire-process "listHead! passed an empty list"
     of $Cons x _ -> x
@@ -23,8 +23,8 @@ listHead! = { forall t:Type, xs : List t =>
 };
 
 // Precondition: List is not empty.
-listTail! :: forall t:Type, { List t => List t };
-listTail! = { forall t:Type, xs : List t =>
+listTail! :: forall (t:Type) { List t => List t };
+listTail! = { xs : List t =>
   case xs
     of $Nil -> prim kill-entire-process "listTail! passed an empty list"
     of $Cons _ ys -> ys
@@ -53,8 +53,8 @@ listGet = { forall t:Type, xs : List t => i : Int32 =>
 };
 
 // Uses O(1) stack, and heap proportional to whatever f allocates.
-listFoldl :: forall a:Type, e:Type, { List e => { e => a => a } => a => a };
-listFoldl = { forall a:Type e:Type, v => f => acc : a =>
+listFoldl :: forall (a:Type) (e:Type) { List e => { e => a => a } => a => a };
+listFoldl = { v => f => acc : a =>
   case v
     of $Nil            -> acc
     of $Cons head tail -> listFoldl tail f (f head acc)
@@ -62,19 +62,19 @@ listFoldl = { forall a:Type e:Type, v => f => acc : a =>
 };
 
 // Uses O(1) stack, and heap O(n) + whatever f allocates.
-listFoldr :: forall a:Type, e:Type, { List e => { e => a => a } => a => a };
-listFoldr = { forall a:Type e:Type, v => f => acc : a =>
+listFoldr :: forall (a:Type) (e:Type) { List e => { e => a => a } => a => a };
+listFoldr = { v => f => acc : a =>
   listFoldl (listReverse v) f acc
 };
 
-listMap :: forall a:Type, e:Type, { List e => { e => a } => List a };
-listMap = { forall a:Type e:Type, v => f =>
+listMap :: forall (a:Type) (e:Type) { List e => { e => a } => List a };
+listMap = { v => f =>
   listFoldl v { e => tail => Cons (f e) tail } Nil |> listReverse;
 };
 
 // Uses heap proportional to the size of the output list (not the input list).
-listKeepIf :: forall a:Type, { List a => { a => Bool } => List a };
-listKeepIf = { forall a:Type, v => f =>
+listKeepIf :: forall (a:Type) { List a => { a => Bool } => List a };
+listKeepIf = { v => f =>
   listFoldl v { e => tail => if f e then Cons e tail else tail end } Nil |> listReverse;
 };
 
@@ -102,7 +102,7 @@ listLength = { forall t:Type, xs : List t =>
   listFoldl xs { _e => z => z +Int32 1 } 0
 };
 
-listLengthWord :: forall t:Type,{ List t => Word };
+listLengthWord :: forall (t:Type) { List t => Word };
 listLengthWord = { xs => listFoldl xs { _e : t => z => z +Word 1 } 0 };
 
 listReverse = { forall t:Type, xs : List t =>
@@ -135,7 +135,7 @@ listSplitAt = { forall t:Type, xs : List t => n : Word =>
   }; go xs n (listEmpty !)
 };
 
-listAppend :: forall t:Type, { List t => List t => List t };
+listAppend :: forall (t:Type) { List t => List t => List t };
 listAppend = { xs => ys =>
   REC go = { rev => acc =>
     case rev
@@ -146,13 +146,13 @@ listAppend = { xs => ys =>
   go (listReverse xs) ys
 };
 
-listAppendAlt :: forall t:Type, { List t => List t => List t };
-listAppendAlt = { forall t:Type, xs => ys =>
+listAppendAlt :: forall (t:Type) { List t => List t => List t };
+listAppendAlt = { xs => ys =>
   listFoldr xs Cons ys
 };
 
-listIter :: forall a:Type, { List a => { Word => a => () } => () };
-listIter = { forall a:Type, v => f =>
+listIter :: forall (a:Type) { List a => { Word => a => () } => () };
+listIter = { v => f =>
   REC go = { n => v =>
               case v
                 of $Nil            -> ()
@@ -164,7 +164,7 @@ listIter = { forall a:Type, v => f =>
 };
 
 // Precondition: listLength xs == listLength ys.
-listZipSameLen :: forall a:Type, b:Type, { List a => List b => List (a, b) };
+listZipSameLen :: forall (a:Type) (b:Type) { List a => List b => List (a, b) };
 listZipSameLen = { xs => ys =>
   REC go = { xs => ys => acc =>
     case (xs, ys)
@@ -176,7 +176,7 @@ listZipSameLen = { xs => ys =>
   go xs ys (listEmpty !)
 };
 
-listZipPrefix :: forall a:Type, b:Type, { List a => List b => List (a, b) };
+listZipPrefix :: forall (a:Type) (b:Type) { List a => List b => List (a, b) };
 listZipPrefix = { xs => ys =>
   REC go = { xs => ys => acc =>
     case (xs, ys)
@@ -189,7 +189,7 @@ listZipPrefix = { xs => ys =>
 };
 
 // Takes O(listLength ls) stack.
-listScanl :: forall a:Type, b:Type, { { b => a => b } => b => List a => List b };
+listScanl :: forall (a:Type) (b:Type) { { b => a => b } => b => List a => List b };
 listScanl = { f => q => ls =>
   Cons q (case ls
             of $Nil -> Nil

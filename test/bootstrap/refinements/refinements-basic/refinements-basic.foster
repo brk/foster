@@ -193,7 +193,7 @@ test-global-poly-refinedA = {
   ();
 };
 
-arrlenA :: forall t:Type, { % ra : Array t : True
+arrlenA :: forall (t:Type) { % ra : Array t : True
          => % rv : Int64 : rv ==Int64 prim_arrayLength:[t] ra };
 arrlenA = { a => prim_arrayLength a };
 
@@ -208,7 +208,7 @@ test-global-poly-refinedB = {
   ();
 };
 
-arrlenB :: forall t:Type, { % ra : Array t : True
+arrlenB :: forall (t:Type) { % ra : Array t : True
          => % rv : Int64 : rv ==Int64 prim_arrayLength ra };
 arrlenB = { a => prim_arrayLength a };
 */

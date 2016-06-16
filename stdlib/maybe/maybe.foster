@@ -7,7 +7,7 @@ type case Maybe (a:Type)
 /////
 
 // Partial.
-unMaybe :: forall a:Type, { Maybe a => a };
+unMaybe :: forall (a:Type) { Maybe a => a };
 unMaybe = { x =>
   case x
     of $Some a -> a
@@ -15,7 +15,7 @@ unMaybe = { x =>
   end
 };
 
-isSome :: forall a:Type, { Maybe a => Bool };
+isSome :: forall (a:Type) { Maybe a => Bool };
 isSome = { x =>
   case x
     of $Some _ -> True
@@ -23,7 +23,7 @@ isSome = { x =>
   end
 };
 
-isNone :: forall a:Type, { Maybe a => Bool };
+isNone :: forall (a:Type) { Maybe a => Bool };
 isNone = { x =>
   case x
     of $Some _ -> False

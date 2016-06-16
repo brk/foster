@@ -2,7 +2,7 @@
 
 /*
 // TODO: fix bug where module fails to compile if unused function has type annotation.
-arrayLength32 :: forall x:Type, { Array x => Int32 };
+arrayLength32 :: forall (x:Type) { Array x => Int32 };
 arrayLength32 = { a : Array x =>
   trunc_i64_to_i32 (prim_arrayLength a)
 };

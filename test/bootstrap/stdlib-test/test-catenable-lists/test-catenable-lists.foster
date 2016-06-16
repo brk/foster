@@ -10,10 +10,10 @@ type case BatchedQueue (a:Boxed)
        of $BatchedQueue (List a) (List a)
        ;
 
-bqEmpty :: forall a:Boxed, { BatchedQueue a };
+bqEmpty :: forall (a:Boxed) { BatchedQueue a };
 bqEmpty = { forall a:Boxed, BatchedQueue Nil Nil };
 
-bqIsEmpty :: forall a:Boxed, { BatchedQueue a => Bool };
+bqIsEmpty :: forall (a:Boxed) { BatchedQueue a => Bool };
 bqIsEmpty = { forall a:Boxed, bq : BatchedQueue a =>
   case bq
     of $BatchedQueue ($Nil) _ -> True
@@ -21,7 +21,7 @@ bqIsEmpty = { forall a:Boxed, bq : BatchedQueue a =>
   end
 };
 
-bqCheckf :: forall a:Boxed, { BatchedQueue a => BatchedQueue a };
+bqCheckf :: forall (a:Boxed) { BatchedQueue a => BatchedQueue a };
 bqCheckf = { forall a:Boxed, bq : BatchedQueue a =>
   case bq
     of $BatchedQueue ($Nil) r -> BatchedQueue (listReverse r) Nil
@@ -29,14 +29,14 @@ bqCheckf = { forall a:Boxed, bq : BatchedQueue a =>
   end
 };
 
-bqSnoc :: forall a:Boxed, { BatchedQueue a => a => BatchedQueue a };
+bqSnoc :: forall (a:Boxed) { BatchedQueue a => a => BatchedQueue a };
 bqSnoc = { forall a:Boxed, bq : BatchedQueue a => elt : a =>
   case bq
     of $BatchedQueue f r -> bqCheckf (BatchedQueue f (Cons elt r))
   end
 };
 
-bqHead :: forall a:Boxed, { BatchedQueue a => Maybe a };
+bqHead :: forall (a:Boxed) { BatchedQueue a => Maybe a };
 bqHead = { forall a:Boxed, bq : BatchedQueue a =>
   case bq
     of $BatchedQueue ($Nil)      _ -> None
@@ -44,7 +44,7 @@ bqHead = { forall a:Boxed, bq : BatchedQueue a =>
   end
 };
 
-bqTail :: forall a:Boxed, { BatchedQueue a => Maybe (BatchedQueue a) };
+bqTail :: forall (a:Boxed) { BatchedQueue a => Maybe (BatchedQueue a) };
 bqTail = { forall a:Boxed, bq : BatchedQueue a =>
   case bq
     of $BatchedQueue ($Nil     ) _ -> None
@@ -59,22 +59,22 @@ type case CatenableList (a:Boxed)
        of $CatenableListC a (BatchedQueue (CatenableList a))
        ;
 
-catenableListSingleton :: forall a:Boxed, { a => CatenableList a };
+catenableListSingleton :: forall (a:Boxed) { a => CatenableList a };
 catenableListSingleton = { forall a:Boxed, e =>
   CatenableListC e (bqEmpty !)
 };
 
-catenableListCons :: forall a:Boxed, { a => CatenableList a => CatenableList a };
+catenableListCons :: forall (a:Boxed) { a => CatenableList a => CatenableList a };
 catenableListCons = { forall a:Boxed, e => c =>
   catenableListConcat (catenableListSingleton e) c
 };
 
-catenableListSnoc :: forall a:Boxed, { CatenableList a => a => CatenableList a };
+catenableListSnoc :: forall (a:Boxed) { CatenableList a => a => CatenableList a };
 catenableListSnoc = { forall a:Boxed, c => e =>
   catenableListConcat c (catenableListSingleton e)
 };
 
-catenableListHead :: forall a:Boxed, { CatenableList a => Maybe a };
+catenableListHead :: forall (a:Boxed) { CatenableList a => Maybe a };
 catenableListHead = { forall a:Boxed, c : CatenableList a =>
   case c
     of $CatenableListC x _ -> Some x
@@ -82,7 +82,7 @@ catenableListHead = { forall a:Boxed, c : CatenableList a =>
    end
 };
 
-catenableListTail :: forall a:Boxed, { CatenableList a => Maybe (CatenableList a) };
+catenableListTail :: forall (a:Boxed) { CatenableList a => Maybe (CatenableList a) };
 catenableListTail = { forall a:Boxed, c : CatenableList a =>
   case c
     of $CatenableListC _ bq -> catenableLinkAll bq
@@ -90,7 +90,7 @@ catenableListTail = { forall a:Boxed, c : CatenableList a =>
    end
 };
 
-catenableListSplit :: forall a:Boxed, { CatenableList a => Maybe (a, CatenableList a) };
+catenableListSplit :: forall (a:Boxed) { CatenableList a => Maybe (a, CatenableList a) };
 catenableListSplit = { forall a:Boxed, c : CatenableList a =>
   case c
     of $CatenableListC x bq ->
@@ -105,8 +105,8 @@ catenableListSplit = { forall a:Boxed, c : CatenableList a =>
 
 /*
 // Providing a wrong type signature induces an occurs check error:
-//      catenableListTail :: forall a:Boxed, { CatenableList a => Maybe a };
-catenableListTail :: forall a:Boxed, { CatenableList a => Maybe (CatenableList a) };
+//      catenableListTail :: forall (a:Boxed) { CatenableList a => Maybe a };
+catenableListTail :: forall (a:Boxed) { CatenableList a => Maybe (CatenableList a) };
 catenableListTail = { forall a:Boxed, c : CatenableList a =>
   case c
     of $CatenableListC x q -> if bqIsEmpty q then Some CatenableListE
@@ -116,7 +116,7 @@ catenableListTail = { forall a:Boxed, c : CatenableList a =>
 };
 */
 
-catenableListConcat :: forall a:Boxed, { CatenableList a => CatenableList a => CatenableList a };
+catenableListConcat :: forall (a:Boxed) { CatenableList a => CatenableList a => CatenableList a };
 catenableListConcat = { forall a:Boxed, xs : CatenableList a => ys : CatenableList a =>
   case (xs, ys)
     of (_, $CatenableListE) -> xs
@@ -125,7 +125,7 @@ catenableListConcat = { forall a:Boxed, xs : CatenableList a => ys : CatenableLi
   end
 };
 
-catenableListLink :: forall a:Boxed, { CatenableList a => CatenableList a => CatenableList a };
+catenableListLink :: forall (a:Boxed) { CatenableList a => CatenableList a => CatenableList a };
 catenableListLink = { forall a:Boxed, xs : CatenableList a => ys : CatenableList a =>
   case xs
     of $CatenableListC x q -> CatenableListC x (bqSnoc q ys)
@@ -136,7 +136,7 @@ catenableListLink = { forall a:Boxed, xs : CatenableList a => ys : CatenableList
    end
 };
 
-catenableLinkAll :: forall a:Boxed, { BatchedQueue (CatenableList a) => Maybe (CatenableList a) };
+catenableLinkAll :: forall (a:Boxed) { BatchedQueue (CatenableList a) => Maybe (CatenableList a) };
 catenableLinkAll = { forall a:Boxed, q : BatchedQueue (CatenableList a) =>
   case (bqHead q, bqTail q)
     of ($Some t , $None   ) -> Some t
@@ -151,7 +151,7 @@ catenableLinkAll = { forall a:Boxed, q : BatchedQueue (CatenableList a) =>
   end
 };
 
-catenableListToList :: forall a:Boxed, { CatenableList a => List a };
+catenableListToList :: forall (a:Boxed) { CatenableList a => List a };
 catenableListToList = { forall a:Boxed, c =>
   case catenableListSplit c
     of $None         -> Nil
@@ -159,22 +159,22 @@ catenableListToList = { forall a:Boxed, c =>
    end
 };
 
-catenableListOfList :: forall a:Boxed, { List a => CatenableList a };
+catenableListOfList :: forall (a:Boxed) { List a => CatenableList a };
 catenableListOfList = { forall a:Boxed, lst =>
   listFoldl (listReverse lst) catenableListCons CatenableListE
 };
 
-catenableListLift :: forall a:Boxed, { { List a => List a } => CatenableList a => CatenableList a };
+catenableListLift :: forall (a:Boxed) { { List a => List a } => CatenableList a => CatenableList a };
 catenableListLift = { forall a:Boxed, f => c =>
   catenableListOfList (f (catenableListToList c))
 };
 
-catenableListReverse :: forall a:Boxed, { CatenableList a => CatenableList a };
+catenableListReverse :: forall (a:Boxed) { CatenableList a => CatenableList a };
 catenableListReverse = { forall a:Boxed, c =>
   catenableListLift listReverse c
 };
 
-catenableListMap :: forall a:Boxed, { { a => a } => CatenableList a => CatenableList a };
+catenableListMap :: forall (a:Boxed) { { a => a } => CatenableList a => CatenableList a };
 catenableListMap = { forall a:Boxed, f => c =>
   catenableListLift { lst => listMap lst f } c
 };

@@ -150,7 +150,7 @@ highestBitMask-Word = { x0 =>
 /////
 
 // Precondition: m >= n
-copyOfArrayTo :: forall t:Type,
+copyOfArrayTo :: forall (t:Type)
                  { Array t => // of length m
                    /*n:*/Int32 =>
                    Array t    // of length n
@@ -201,8 +201,8 @@ newDArray = { forall v:Type,
 };
 
 // Initializes slot a[k] with (f k)
-newDArray0 :: forall v:Type, { % n  : Int32 : True => { Int32 => v } =>
-                               % ndrv : Array v : prim_arrayLength ndrv ==Int64 (sext_i32_to_i64 n)
+newDArray0 :: forall (v:Type) { % n  : Int32 : True => { Int32 => v } =>
+                                % ndrv : Array v : prim_arrayLength ndrv ==Int64 (sext_i32_to_i64 n)
                              };
 newDArray0 = { n => f =>
   arrayFromRange32 0 n f
@@ -211,7 +211,7 @@ newDArray0 = { n => f =>
 // For example, arrayFromRange32 2 5 f
 // will become  arrayMap [2,3,4] f
 // The elements will be generated in decreasing order.
-arrayFromRange32 :: forall t:Type, { % sm : Int32 : True =>
+arrayFromRange32 :: forall (t:Type) { % sm : Int32 : True =>
                                      % lg : Int32 : lg >SInt32 sm =>
                                      { Int32 => t } =>
                                      % afrv : Array t : prim_arrayLength afrv ==Int64 (sext_i32_to_i64 (lg -Int32 sm)) };
@@ -228,7 +228,7 @@ arrayFromRange32 = { sm => lg => f =>
   arr
 };
 
-arrayMap :: forall a:Type, b:Type, { Array a => { a => b } => Array b };
+arrayMap :: forall (a:Type) (b:Type) { Array a => { a => b } => Array b };
 arrayMap = { arr => f =>
   arrayFromRange32 0 (arrayLength32 arr) { idx => f arr[idx] };
 };

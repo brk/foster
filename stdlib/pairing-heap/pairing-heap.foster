@@ -9,14 +9,14 @@ type case PairingHeap (elem:Type)
       of $PairingHeapT elem (List PairingHeap)
       ;
 
-mkEmptyPairingHeap :: forall a:Type, { PairingHeap a };
+mkEmptyPairingHeap :: forall (a:Type) { PairingHeap a };
 mkEmptyPairingHeap = { forall a:Type,
   PairingHeapE
 };
 
 /*
 // Mostly to set the stage for _alt_2, we can introduce a trivial unit arg:
-mkEmptyPairingHeap_alt_1 :: forall a:Type, { () => PairingHeap a };
+mkEmptyPairingHeap_alt_1 :: forall (a:Type) { () => PairingHeap a };
 mkEmptyPairingHeap_alt_1 = { forall a:Type, unit =>
   PairingHeapE
 };
@@ -28,7 +28,7 @@ mkEmptyPairingHeap_alt_2 = { unit =>
 };
 */
 
-pairingHeapMerge :: forall a:Type, { { a => a => Ord } => PairingHeap a => PairingHeap a => PairingHeap a };
+pairingHeapMerge :: forall (a:Type) { { a => a => Ord } => PairingHeap a => PairingHeap a => PairingHeap a };
 pairingHeapMerge = { forall a:Type, cmp => pa => pb =>
   case (pa, pb)
     of ($PairingHeapE, _) -> pb
@@ -41,7 +41,7 @@ pairingHeapMerge = { forall a:Type, cmp => pa => pb =>
   end
 };
 
-pairingHeapInsertSimple :: forall a:Type, { { a => a => Ord } => a => PairingHeap a => PairingHeap a };
+pairingHeapInsertSimple :: forall (a:Type) { { a => a => Ord } => a => PairingHeap a => PairingHeap a };
 pairingHeapInsertSimple = { forall a:Type, cmp => e => h =>
   pairingHeapMerge cmp (PairingHeapT e Nil) h
 };
@@ -49,7 +49,7 @@ pairingHeapInsertSimple = { forall a:Type, cmp => e => h =>
 // TODO benchmark difference between pairingHeapInsertSimple and pairingHeapInsert.
 // The main benefit (once Nil does not allocate) would be saving
 // an allocation of a heap node on one branch.
-pairingHeapInsert :: forall a:Type, { { a => a => Ord } => a => PairingHeap a => PairingHeap a };
+pairingHeapInsert :: forall (a:Type) { { a => a => Ord } => a => PairingHeap a => PairingHeap a };
 pairingHeapInsert = { forall a:Type, cmp => e => h =>
   case h
     of $PairingHeapE -> PairingHeapT e Nil
@@ -62,7 +62,7 @@ pairingHeapInsert = { forall a:Type, cmp => e => h =>
   end
 };
 
-pairingHeapMergePairs :: forall a:Type, { { a => a => Ord } => List (PairingHeap a) => PairingHeap a };
+pairingHeapMergePairs :: forall (a:Type) { { a => a => Ord } => List (PairingHeap a) => PairingHeap a };
 pairingHeapMergePairs = { forall a:Type, cmp => l =>
   case l
     of ($Nil)                   -> PairingHeapE
@@ -74,7 +74,7 @@ pairingHeapMergePairs = { forall a:Type, cmp => l =>
   end
 };
 
-pairingHeapFindMin :: forall a:Type, { PairingHeap a => Maybe a };
+pairingHeapFindMin :: forall (a:Type) { PairingHeap a => Maybe a };
 pairingHeapFindMin = { forall a:Type, h =>
   case h
     of $PairingHeapE -> None
@@ -82,7 +82,7 @@ pairingHeapFindMin = { forall a:Type, h =>
   end
 };
 
-pairingHeapDeleteMin :: forall a:Type, { { a => a => Ord } => PairingHeap a => Maybe (PairingHeap a) };
+pairingHeapDeleteMin :: forall (a:Type) { { a => a => Ord } => PairingHeap a => Maybe (PairingHeap a) };
 pairingHeapDeleteMin = { forall a:Type, cmp => h =>
   case h
     of $PairingHeapE -> None
@@ -90,7 +90,7 @@ pairingHeapDeleteMin = { forall a:Type, cmp => h =>
   end
 };
 
-pairingHeapToSortedList :: forall a:Type, { { a => a => Ord } => PairingHeap a => List a };
+pairingHeapToSortedList :: forall (a:Type) { { a => a => Ord } => PairingHeap a => List a };
 pairingHeapToSortedList = { forall a:Type, cmp => h =>
   case h
     of $PairingHeapE -> Nil
@@ -98,7 +98,7 @@ pairingHeapToSortedList = { forall a:Type, cmp => h =>
   end
 };
 
-pairingHeapToSortedListIter :: forall a:Type, { { a => a => Ord } => PairingHeap a => List a };
+pairingHeapToSortedListIter :: forall (a:Type) { { a => a => Ord } => PairingHeap a => List a };
 pairingHeapToSortedListIter = { forall a:Type, cmp => h =>
   REC go = { h => acc =>
       case h
@@ -110,7 +110,7 @@ pairingHeapToSortedListIter = { forall a:Type, cmp => h =>
   go h Nil
 };
 
-pairingHeapFromList :: forall a:Type, { { a => a => Ord } => List a => PairingHeap a };
+pairingHeapFromList :: forall (a:Type) { { a => a => Ord } => List a => PairingHeap a };
 pairingHeapFromList = { forall a:Type, cmp => lst =>
   REC go = { lst => ph =>
     case lst
@@ -121,7 +121,7 @@ pairingHeapFromList = { forall a:Type, cmp => lst =>
   go lst (mkEmptyPairingHeap !)
 };
 
-listSortViaPairingHeapWith :: forall a:Type, { { a => a => Ord } => List a => List a };
+listSortViaPairingHeapWith :: forall (a:Type) { { a => a => Ord } => List a => List a };
 listSortViaPairingHeapWith = { forall a:Type, cmp => lst =>
   pairingHeapToSortedList cmp (pairingHeapFromList cmp lst)
 };

@@ -186,7 +186,7 @@ ifexpr : 'if' cond=e 'then' thenpart=stmts ('else' elsepart=stmts)? 'end'
 binding  : x '=' e       -> ^(BINDING x e);
 formal   : xid (':' t)?  -> ^(FORMAL xid t);
 tyformal : aid (':' k)?  -> ^(TYPEVAR_DECL aid k);
-tyformalr: aid ':' k     -> ^(TYPEVAR_DECL aid k);
+tyformalr: '(' aid ':' k ')' -> ^(TYPEVAR_DECL aid k);
 
 lets   : 'let' (binding ';')+ 'in' stmts 'end' -> ^(LETS   ^(MU binding+) stmts);
 letrec : 'rec' (binding ';')+ 'in' stmts 'end' -> ^(LETREC ^(MU binding+) stmts);
@@ -201,7 +201,7 @@ tp // "type phrase"
   : tatom (            -> ^(TYPE_ATOM    tatom)        // atomic types
           | tatom+     -> ^(TYPE_TYP_APP tatom tatom+) // type-level application
           )
-  | 'forall' (tyformalr ',')+ t  -> ^(FORALL_TYPE tyformalr+ t) // description of terms indexed by types;
+  | 'forall' tyformalr+ t  -> ^(FORALL_TYPE tyformalr+ t) // description of terms indexed by types;
   ;
 
 tatom :

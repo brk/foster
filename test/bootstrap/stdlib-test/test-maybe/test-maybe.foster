@@ -53,7 +53,7 @@ part2 = { tu =>
 
 part3 = {
   expect_i32 0;
-  n = None;                            // n :: forall a:Boxed, Maybe a
+  n = None;                            // n :: forall (a:Boxed) Maybe a
                                        // None = KNAppCtor Maybe.None
   v = n:[{Int32}];                     // v :: Maybe {Int32}
                                        //   = KNTyApp n(local)

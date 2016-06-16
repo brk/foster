@@ -6,7 +6,7 @@ type case SDSeq (a:Boxed)
       ;
 
 // Hooray for polymorphic recursion!
-sizeS :: forall a:Boxed, { SDSeq a => Int32 };
+sizeS :: forall (a:Boxed) { SDSeq a => Int32 };
 sizeS = { forall a:Boxed, seq:SDSeq a =>
   case seq
     of $SDNil       -> 0

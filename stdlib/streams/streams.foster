@@ -12,38 +12,37 @@ snafuinclude Lazy "lazy";
 // rather than a list, so we can't use the list cons operation directly.
 
 /*
-stream-cons-bad :: forall a:Type, { Lazy a  =>  Lazy (List (Lazy a)) =>
+stream-cons-bad :: forall (a:Type) { Lazy a  =>  Lazy (List (Lazy a)) =>
                                                  Lazy (List (Lazy a)) };
 stream-cons-bad = { forall a:Type, x:Lazy a => s:Lazy (List (Lazy a)) =>
                      delay { Cons x ??s?? }
 };
 */
 
-stream-nil-list ::   forall b:Type, { Lazy (List (Lazy b)) };
-stream-nil-list  = { forall b:Type, delay { Nil } };
+stream-nil-list :: forall (b:Type) { Lazy (List (Lazy b)) };
+stream-nil-list  = { delay { Nil } };
 
 type case Stream (a:Type)
   of $StreamNilV
   of $StreamCons (Lazy a) (Lazy (Stream a))
 ;
 
-stream-cons-mediocre :: forall a:Type,  { Lazy a  =>  Lazy (Stream a) =>
-                                                      Lazy (Stream a) };
-stream-cons-mediocre = { forall a:Type, x:Lazy a => s:Lazy (Stream a) =>
-                           delay { StreamCons x s }
+stream-cons-mediocre :: forall (a:Type)  { Lazy a  =>  Lazy (Stream a) =>
+                                                       Lazy (Stream a) };
+stream-cons-mediocre = { x => s => delay { StreamCons x s }
 };
 
-stream-nil-mediocre ::   forall b:Type, { Lazy (Stream b) };
-stream-nil-mediocre  = { forall b:Type, delay { StreamNilV } };
+stream-nil-mediocre ::   forall (b:Type) { Lazy (Stream b) };
+stream-nil-mediocre  = { delay { StreamNilV } };
 
-stream-is-nil ::   forall b:Type, { Lazy (Stream b) => Bool };
-stream-is-nil  = { forall b:Type, s:Lazy (Stream b) =>
+stream-is-nil ::   forall (b:Type) { Lazy (Stream b) => Bool };
+stream-is-nil  = { s:Lazy (Stream b) =>
   case force s of $StreamNilV -> True
                of _           -> False
   end
 };
 
-stream-uncons ::   forall b:Type, { Lazy (Stream b) => Maybe (Lazy b) };
+stream-uncons ::   forall (b:Type) { Lazy (Stream b) => Maybe (Lazy b) };
 stream-uncons  = { s =>
   case force s of $StreamNilV     -> None
                of $StreamCons v _ -> Some v
@@ -51,7 +50,7 @@ stream-uncons  = { s =>
 };
 
 
-//stream-map-mediocre :: forall b:Type, c:Type, {
+//stream-map-mediocre :: forall (b:Type) (c:Type) {
 //                        { b => c } =>     Lazy (Stream b) => Lazy (Stream c) };
 /*
 stream-map-mediocre = { forall b:Type c:Type,
@@ -84,7 +83,7 @@ stream-map-mediocre = { forall d:Type e:Type,
   };
 };
 
-stream-countup :: forall a:Type,
+stream-countup :: forall (a:Type)
                  { Int32 => { Int32 => a } => Lazy (Stream a) };
 stream-countup = { n     => f =>
   lazily {
@@ -94,10 +93,9 @@ stream-countup = { n     => f =>
 };
 
 
-stream-countdown-tozero :: forall a:Type,
+stream-countdown-tozero :: forall (a:Type)
                           {     Int32 =>     { Int32 => a } => Lazy (Stream a) };
-stream-countdown-tozero = { forall a:Type,
-                            n : Int32 => f : { Int32 => a } =>
+stream-countdown-tozero = { n : Int32 => f : { Int32 => a } =>
   if n <=SInt32 0
     then stream-nil-mediocre !
     else lazily {
@@ -109,8 +107,8 @@ stream-countdown-tozero = { forall a:Type,
 
 // Laziness: monolithic
 // Worst-case cost: O(n) = O(len(s))
-stream-reverse :: forall v:Type,    { Lazy (Stream v) => Lazy (Stream v) };
-stream-reverse = { forall v:Type, s : Lazy (Stream v) =>
+stream-reverse :: forall (v:Type)   { Lazy (Stream v) => Lazy (Stream v) };
+stream-reverse = { s : Lazy (Stream v) =>
   REC go = { x : Lazy (Stream v) => acc : Lazy (Stream v) =>
     case force x
       of $StreamNilV       -> acc
@@ -126,8 +124,8 @@ stream-reverse = { forall v:Type, s : Lazy (Stream v) =>
 // ``stream-append-reverse1 s1 s2`` is rather like
 // ``stream-append (reverse s1) s2`` except that s1 is
 // treated incrementally rather than monolithically.
-stream-append-reverse1 :: forall v:Type, { Lazy (Stream v) => Lazy (Stream v) => Lazy (Stream v) };
-stream-append-reverse1 = { forall v:Type, s1 : Lazy (Stream v) => s2 : Lazy (Stream v) =>
+stream-append-reverse1 :: forall (v:Type) { Lazy (Stream v) => Lazy (Stream v) => Lazy (Stream v) };
+stream-append-reverse1 = { s1 : Lazy (Stream v) => s2 : Lazy (Stream v) =>
   lazily {
     case force s1
       of $StreamNilV       -> s2
@@ -138,8 +136,8 @@ stream-append-reverse1 = { forall v:Type, s1 : Lazy (Stream v) => s2 : Lazy (Str
 
 // Laziness: incremental
 // Worst-case cost: O(n) = O(len(s1))
-stream-append :: forall v:Type, { Lazy (Stream v) => Lazy (Stream v) => Lazy (Stream v) };
-stream-append = { forall v:Type, s1 : Lazy (Stream v) => s2 : Lazy (Stream v) =>
+stream-append :: forall (v:Type) { Lazy (Stream v) => Lazy (Stream v) => Lazy (Stream v) };
+stream-append = { s1 : Lazy (Stream v) => s2 : Lazy (Stream v) =>
   lazily {
     case force s1
       of $StreamNilV       -> s2
@@ -148,7 +146,7 @@ stream-append = { forall v:Type, s1 : Lazy (Stream v) => s2 : Lazy (Stream v) =>
   };
 };
 
-stream-cutoff :: forall v:Type, { Int32 => Lazy (Stream v) => List v };
+stream-cutoff :: forall (v:Type) { Int32 => Lazy (Stream v) => List v };
 stream-cutoff = { n => s =>
   if n ==Int32 0 then Nil else
     case force s

@@ -12,12 +12,12 @@ type case BootstrappedQueue (elem:Type)
                              Int32 (List elem)
       ;
 
-mkEmptyBootstrappedQueue :: forall a:Type, { BootstrappedQueue a };
+mkEmptyBootstrappedQueue :: forall (a:Type) { BootstrappedQueue a };
 mkEmptyBootstrappedQueue = { forall a:Type,
   BootstrappedQueueE
 };
 
-bootstrappedQueueHead :: forall a:Type, { BootstrappedQueue a => Maybe a };
+bootstrappedQueueHead :: forall (a:Type) { BootstrappedQueue a => Maybe a };
 bootstrappedQueueHead = { forall a:Type, h =>
   case h
     of $BootstrappedQueueE -> None
@@ -26,7 +26,7 @@ bootstrappedQueueHead = { forall a:Type, h =>
   end
 };
 
-bootstrappedQueueTail :: forall a:Type, { BootstrappedQueue a => Maybe (BootstrappedQueue a) };
+bootstrappedQueueTail :: forall (a:Type) { BootstrappedQueue a => Maybe (BootstrappedQueue a) };
 bootstrappedQueueTail = { forall a:Type, h =>
   case h
     of $BootstrappedQueueE -> None
@@ -36,7 +36,7 @@ bootstrappedQueueTail = { forall a:Type, h =>
   end
 };
 
-bootstrappedQueueSplit :: forall a:Type, { BootstrappedQueue a => Maybe (a, BootstrappedQueue a) };
+bootstrappedQueueSplit :: forall (a:Type) { BootstrappedQueue a => Maybe (a, BootstrappedQueue a) };
 bootstrappedQueueSplit = { forall a:Type, h =>
   case h
     of $BootstrappedQueueE -> None
@@ -46,7 +46,7 @@ bootstrappedQueueSplit = { forall a:Type, h =>
   end
 };
 
-bootstrappedQueueSnoc :: forall a:Type, { a => BootstrappedQueue a => BootstrappedQueue a };
+bootstrappedQueueSnoc :: forall (a:Type) { a => BootstrappedQueue a => BootstrappedQueue a };
 bootstrappedQueueSnoc = { forall a:Type, e => h =>
   case h
     of $BootstrappedQueueE ->
@@ -60,7 +60,7 @@ bootstrappedQueueSnoc = { forall a:Type, e => h =>
   end
 };
 
-bootstrappedQueueCheckQ :: forall elem:Type, {
+bootstrappedQueueCheckQ :: forall (elem:Type) {
    Int32 => (List elem) => (BootstrappedQueue (Lazy (List elem))) =>
    Int32 => (List elem) =>  BootstrappedQueue elem
 };
@@ -73,7 +73,7 @@ bootstrappedQueueCheckQ = { forall a:Type, lenfm => f => m => lenr => r =>
   end
 };
 
-bootstrappedQueueCheckF :: forall elem:Type, {
+bootstrappedQueueCheckF :: forall (elem:Type) {
     Int32 => (List elem) => (BootstrappedQueue (Lazy (List elem))) =>
     Int32 => (List elem) =>  BootstrappedQueue elem
 };

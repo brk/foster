@@ -9,19 +9,19 @@ type case RealtimeQueue (a:Boxed)
       of $RealtimeQueue (Lazy (Stream a)) (List a) (Lazy (Stream a))
 ;
 
-realtimeQueueEmpty :: forall a:Boxed, { RealtimeQueue a };
+realtimeQueueEmpty :: forall (a:Boxed) { RealtimeQueue a };
 realtimeQueueEmpty = { forall a:Boxed,
   let snil = stream-nil-mediocre !; in
     RealtimeQueue snil Nil snil
   end
 };
 
-realtimeQueueIsEmpty :: forall a:Boxed, { RealtimeQueue a => Bool };
+realtimeQueueIsEmpty :: forall (a:Boxed) { RealtimeQueue a => Bool };
 realtimeQueueIsEmpty = { forall a:Boxed, q: RealtimeQueue a =>
   case q of $RealtimeQueue f _ _ -> stream-is-nil f end
 };
 
-realtimeQueueRotate :: forall a:Boxed, {
+realtimeQueueRotate :: forall (a:Boxed) {
          Lazy (Stream a) => List a => Lazy (Stream a) => Lazy (Stream a) };
 realtimeQueueRotate = { forall a:Boxed,
          s1 : Lazy (Stream a) => lst : List a => s2 : Lazy (Stream a) =>
@@ -38,7 +38,7 @@ realtimeQueueRotate = { forall a:Boxed,
   end
 };
 
-realtimeQueueExec :: forall a:Boxed, { RealtimeQueue a => RealtimeQueue a };
+realtimeQueueExec :: forall (a:Boxed) { RealtimeQueue a => RealtimeQueue a };
 realtimeQueueExec = { forall a:Boxed, q: RealtimeQueue a =>
   case q of $RealtimeQueue f r sched ->
     case force sched
@@ -50,7 +50,7 @@ realtimeQueueExec = { forall a:Boxed, q: RealtimeQueue a =>
 };
 
 // Worst-case time: O(1)
-realtimeQueueSnoc :: forall a:Boxed, { RealtimeQueue a => a => RealtimeQueue a };
+realtimeQueueSnoc :: forall (a:Boxed) { RealtimeQueue a => a => RealtimeQueue a };
 realtimeQueueSnoc = { forall a:Boxed, q: RealtimeQueue a => elt : a =>
   case q of $RealtimeQueue f r sched ->
     realtimeQueueExec (RealtimeQueue f (Cons elt r) sched)
@@ -59,7 +59,7 @@ realtimeQueueSnoc = { forall a:Boxed, q: RealtimeQueue a => elt : a =>
 
 
 // Worst-case time: O(1)
-realtimeQueueHead :: forall a:Boxed, { RealtimeQueue a => Maybe a };
+realtimeQueueHead :: forall (a:Boxed) { RealtimeQueue a => Maybe a };
 realtimeQueueHead = { forall a:Boxed, q: RealtimeQueue a =>
   case q of $RealtimeQueue f r sched ->
     case force f
@@ -70,7 +70,7 @@ realtimeQueueHead = { forall a:Boxed, q: RealtimeQueue a =>
 };
 
 // Worst-case time: O(1)
-realtimeQueueTail :: forall a:Boxed, { RealtimeQueue a => Maybe (RealtimeQueue a) };
+realtimeQueueTail :: forall (a:Boxed) { RealtimeQueue a => Maybe (RealtimeQueue a) };
 realtimeQueueTail = { forall a:Boxed, q: RealtimeQueue a =>
   case q of $RealtimeQueue f r sched ->
     case force f

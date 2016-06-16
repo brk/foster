@@ -1,5 +1,5 @@
 
-elapsed-time :: forall a:Type, { { a } => (Float64, a) };
+elapsed-time :: forall (a:Type) { { a } => (Float64, a) };
 elapsed-time = { fg =>
   t1 = foster_gettime_microsecs !;
   v = fg !;
@@ -11,7 +11,7 @@ elapsed-time = { fg =>
 // Ticks are quicker to read and higher-resolution than times,
 // but cannot be sensibly converted to human-readable times.
 // They are, however, useful for comparative measurements.
-elapsed-ticks :: forall a:Type, { { a } => (Float64, a) };
+elapsed-ticks :: forall (a:Type) { { a } => (Float64, a) };
 elapsed-ticks = { fg =>
   t1 = foster_getticks !;
   v = fg !;

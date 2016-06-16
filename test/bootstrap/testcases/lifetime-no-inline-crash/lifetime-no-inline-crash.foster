@@ -27,12 +27,12 @@ natCountBits = { i : NatInf =>
   r0  +Int32 (bitlength-Word a[fin])
 };
 
-noinline_llvm_arrLen32 :: forall x:Type, { Array x => Int32 };
+noinline_llvm_arrLen32 :: forall (x:Type) { Array x => Int32 };
 noinline_llvm_arrLen32 = { forall t:Type, a : Array t =>
   trunc_i64_to_i32 (prim_arrayLength a)
 };
 
-arrLen32 :: forall x:Type, { Array x => Int32 };
+arrLen32 :: forall (x:Type) { Array x => Int32 };
 arrLen32 = { forall t:Type, a : Array t =>
   trunc_i64_to_i32 (prim_arrayLength a)
 };

@@ -182,13 +182,13 @@ arrayLenRet = { sm => lg =>
 };
 
 
-arrayLength :: forall x:Type, { % ra : Array x : True =>
-                                % rvAL : Int64 : rvAL ==Int64 prim_arrayLength:[x] ra };
+arrayLength :: forall (x:Type) { % ra : Array x : True =>
+                                 % rvAL : Int64 : rvAL ==Int64 prim_arrayLength:[x] ra };
 arrayLength = { a => prim_arrayLength a };
 
 // {{{
-arrayLengthWrap :: forall x:Type, { % ra : Array x : True =>
-                                % rvALW : Int64 : rvALW ==Int64 prim_arrayLength:[x] ra };
+arrayLengthWrap :: forall (x:Type) { % ra : Array x : True =>
+                                  % rvALW : Int64 : rvALW ==Int64 prim_arrayLength:[x] ra };
 arrayLengthWrap = { a => arrayLength a };
 // }}}
 

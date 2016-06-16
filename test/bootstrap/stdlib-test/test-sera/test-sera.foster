@@ -25,7 +25,7 @@ type case Sera (a:Boxed)
                 (Ref Word) // num data blocks in last super block
        ;
 
-mkEmptySera :: forall a:Boxed, { Sera a };
+mkEmptySera :: forall (a:Boxed) { Sera a };
 mkEmptySera =  {
   Sera (prim ref (mkEmptyVList !))
        (prim ref None)
@@ -35,7 +35,7 @@ mkEmptySera =  {
        (prim ref 0)
 };
 
-primArrayBoxedIndex :: forall t:Boxed, { Array t => Word => Maybe t };
+primArrayBoxedIndex :: forall (t:Boxed) { Array t => Word => Maybe t };
 primArrayBoxedIndex = { a => i =>
   if i <UWord arrayLengthWord a
     then Some a[trunc_Word_to_i32 i]
@@ -43,7 +43,7 @@ primArrayBoxedIndex = { a => i =>
   end
 };
 
-primArrayBoxedWrite :: forall t:Boxed, { Array t => Word => t => () };
+primArrayBoxedWrite :: forall (t:Boxed) { Array t => Word => t => () };
 primArrayBoxedWrite = { arr => idx => val =>
   if idx <UWord arrayLengthWord arr
     then val >^ arr[idx]; ()
@@ -84,7 +84,7 @@ seraLastIndexBlock! = { forall z:Boxed, v : Sera z =>
 
 // We store our index block pointers in reverse order, so
 // we must convert a logical index to a physical index before indexing.
-seraGetIndexBlock :: forall a:Boxed, { Sera a => Word => Array a };
+seraGetIndexBlock :: forall (a:Boxed) { Sera a => Word => Array a };
 seraGetIndexBlock = { v => logicalIndex =>
   vlist = (seraIndexBlockRef v)^;
   physicalIndex = ((vListLength vlist) -Int32 (trunc_Word_to_i32 logicalIndex)) -Int32 1;
@@ -153,19 +153,19 @@ seraBlockAppend = { forall b:Boxed, v : Sera b => block : ?? BLOCK =>
 
 ////////
 
-seraLength :: forall a:Boxed, { Sera a => Word };
+seraLength :: forall (a:Boxed) { Sera a => Word };
 seraLength =  { v =>
   (seraNumElemsRef v)^
 };
 
-seraGet :: forall a:Boxed, { Sera a => Word => Maybe a };
+seraGet :: forall (a:Boxed) { Sera a => Word => Maybe a };
 seraGet =  { v => i =>
   case seraLocateDataBlockAndElem i of (elemOffset, db) ->
     primArrayBoxedIndex (seraGetIndexBlock v db) elemOffset;
   end
 };
 
-seraPut :: forall a:Boxed, { Sera a => Word => a => () };
+seraPut :: forall (a:Boxed) { Sera a => Word => a => () };
 seraPut =  { v => i => a =>
   case seraLocateDataBlockAndElem i of (elemOffset, db) ->
     primArrayBoxedWrite (seraGetIndexBlock v db) elemOffset a; ()
@@ -173,7 +173,7 @@ seraPut =  { v => i => a =>
 };
 
 // Called "Grow(Forward)" in the paper by Sedgewick.
-seraSnoc :: forall a:Boxed, { Sera a => a => () };
+seraSnoc :: forall (a:Boxed) { Sera a => a => () };
 seraSnoc =  { v => i =>
   firstValue = (seraNumSuperBlocksRef v)^ ==Word 0;
   if firstValue
@@ -208,7 +208,7 @@ seraSnoc =  { v => i =>
 };
 
 // Called "Shrink(Forward)" in the paper by Sedgewick.
-seraUnSnoc :: forall a:Boxed, { Sera a => Maybe a };
+seraUnSnoc :: forall (a:Boxed) { Sera a => Maybe a };
 seraUnSnoc =  { v =>
   decrWord (seraNumElemsRef v);
   decrWord (seraNumElemsInLastRef v);
@@ -240,7 +240,7 @@ seraUnSnoc =  { v =>
 };
 
 // Uses O(1) stack, and heap proportional to whatever f allocates.
-seraFoldl :: forall acc:Boxed, e:Boxed, { Sera e => { e => acc => acc } => acc => acc };
+seraFoldl :: forall (acc:Boxed) (e:Boxed) { Sera e => { e => acc => acc } => acc => acc };
 seraFoldl = { v => f => acc =>
   case vListSplit (seraIndexBlockRef v)^
     of $None -> acc
@@ -257,19 +257,19 @@ seraFoldl = { v => f => acc =>
 };
 
 // Uses O(n) stack and heap proportional to whatever f allocates.
-//seraFoldr :: forall a:Boxed, e:Boxed, { Sera e => { e => a => a } => a => a };
+//seraFoldr :: forall (a:Boxed) e:Boxed, { Sera e => { e => a => a } => a => a };
 //seraFoldr = { forall a:Boxed e:Boxed, v => f => acc =>
 //  ...
 //};
 
 // Note: the order in which the elements are mapped over
 // implementation-specific and should not be relied upon!
-seraMap :: forall a:Boxed, z:Boxed, { Sera z => { z => a } => Sera a };
+seraMap :: forall (a:Boxed) (z:Boxed) { Sera z => { z => a } => Sera a };
 seraMap = { v => f =>
   seraFoldl v { e => vv => seraSnoc vv (f e); vv } (mkEmptySera !)
 };
 
-seraOfList :: forall a:Boxed, { List a => Sera a };
+seraOfList :: forall (a:Boxed) { List a => Sera a };
 seraOfList = { forall a:Boxed, v =>
   // Because we fold from the left, the left-most element is the first
   // one vConsed onto vNil, so it becomes the last element of the new list.
@@ -285,7 +285,7 @@ seraOfListX = { v : List { Int64 } =>
   listFoldl v { elt => s => print_i64 (elt !); seraSnoc s elt; s } (mkEmptySera !)
 };
 
-listOfSera :: forall a:Boxed, { Sera a => List a };
+listOfSera :: forall (a:Boxed) { Sera a => List a };
 listOfSera = { forall a:Boxed, v =>
   listReverse (seraFoldl v Cons Nil)
 };
@@ -413,7 +413,7 @@ main = {
 //seraMapWrong1 = { v => e => f =>
 //               ~~~~~~~~~~~~~~~~
 //
-//seraMapWrong1 :: forall a:Boxed, z:Boxed, { Sera z => z => { z => a } => () };
+//seraMapWrong1 :: forall (a:Boxed) (z:Boxed) { Sera z => z => { z => a } => () };
 //seraMapWrong1 = { v => e => f =>
 //  seraSnoc (f e) v
 //};
@@ -429,7 +429,7 @@ main = {
 //)
 //
 //This type error is often caused by swapped function arguments...
-//seraMapWrong2 :: forall a:Boxed, z:Boxed, { Sera z => z => { z => a } => Sera a };
+//seraMapWrong2 :: forall (a:Boxed) (z:Boxed) { Sera z => z => { z => a } => Sera a };
 //seraMapWrong2 = { v => e => f =>
 //  seraSnoc (f e) v; v
 //};

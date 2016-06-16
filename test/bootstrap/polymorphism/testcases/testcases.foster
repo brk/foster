@@ -36,7 +36,7 @@ test_mono_poly_unused = {
 
 f = { forall ft:Boxed,
       v : ft =>
-      g : forall gt:Boxed, { gt => () } =>
+      g : forall (gt:Boxed) { gt => () } =>
   g v
 };
 
@@ -44,14 +44,14 @@ f = { forall ft:Boxed,
 //id = { forall a:Type, x:a => x };
 
 t0 = {
-  tc = { f: forall b:Boxed, c:Boxed, { (b,c) => (b,c) } => f (B 0, C 0) };
+  tc = { f: forall (b:Boxed) (c:Boxed) { (b,c) => (b,c) } => f (B 0, C 0) };
   //bc = { forall b:Boxed c:Boxed, x:(b,c) => x };
   //aa = { forall a:Boxed, y:a => y };
   ()
 };
 
 t1 = {
-  tc = { f: forall b:Boxed, c:Boxed, { (b,c) => (b,c) }
+  tc = { f: forall (b:Boxed) (c:Boxed) { (b,c) => (b,c) }
               => f (B 0, C 0) };
   aa = { forall a:Boxed, y:a => y };
 
@@ -61,7 +61,7 @@ t1 = {
 };
 
 t2 = {
-  tc = { f: forall b:Boxed, c:Boxed, { (b,c) => (b,c) }
+  tc = { f: forall (b:Boxed) (c:Boxed) { (b,c) => (b,c) }
           => f (B 0, C 0) };
   bc = { forall p:Boxed q:Boxed, x:(p,q) => x };
 
@@ -77,7 +77,7 @@ t2 = {
 //  inference will not push the partially-known type Int -> 'a into the
 //  anonymous function passed to bar, and the program will be rejected."
 t3 = {
-  tc = { f: forall a:Boxed, { (a,a) => (a,a) }
+  tc = { f: forall (a:Boxed) { (a,a) => (a,a) }
           => f (B 0, B 0) };
   aa = { forall b:Boxed c:Boxed, y:(b,c) => y };
 

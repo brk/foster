@@ -17,27 +17,27 @@ subsCheck(tcSigmaFn): Type
 bad type variables: [$a.15::KindPointerSized]
 */
 
-testPolyAnn2b :: forall a:Boxed, { { a } => a => { a } };
+testPolyAnn2b :: forall (a:Boxed) { { a } => a => { a } };
 testPolyAnn2b = { forall a:Boxed, f => e =>
   f
 };
 
 /*
-testPolyAnn2c :: forall a:Boxed, { { a } => { a } => { a } };
+testPolyAnn2c :: forall (a:Boxed) { { a } => { a } => { a } };
 testPolyAnn2c = { forall a:Boxed, f => e =>
   f
 };
 */
 
 /*
-testPolyAnn2d :: forall a:Boxed, { { a } => a => a };
+testPolyAnn2d :: forall (a:Boxed) { { a } => a => a };
 testPolyAnn2d = { forall a:Boxed, f => e =>
   e
 };
 */
 
 /*
-testPolyAnn2e :: forall a:Boxed, { { a } => { a } };
+testPolyAnn2e :: forall (a:Boxed) { { a } => { a } };
 testPolyAnn2e = { forall a:Boxed, f =>
   f
 };

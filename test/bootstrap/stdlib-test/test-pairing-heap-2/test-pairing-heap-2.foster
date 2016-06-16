@@ -67,7 +67,7 @@ print_bil = { lst =>
 };
 
 // Uses O(1) stack, and heap proportional to whatever f allocates.
-listFoldl :: forall a:Type, e:Type, { List e => { e => a => a } => a => a };
+listFoldl :: forall (a:Type) (e:Type) { List e => { e => a => a } => a => a };
 listFoldl = { forall a:Type e:Type, v => f => acc : a =>
   case v
     of $Nil            -> acc
@@ -86,7 +86,7 @@ cmpSInt64 = { a : Int64 => b : Int64 =>
   end
 };
 // Manually inlined paringHeapMerge, triggers GC root bug.
-pairingHeapMergePairs :: forall a:Type, { { a => a => Ord } => List (PairingHeap a) => PairingHeap a };
+pairingHeapMergePairs :: forall (a:Type) { { a => a => Ord } => List (PairingHeap a) => PairingHeap a };
 pairingHeapMergePairs = { forall a:Type, cmp => l =>
   case l
     of ($Nil)                   -> PairingHeapE
@@ -117,7 +117,7 @@ noinline_x = { forall a:Type, cmp : { a => a => Ord } => h1 => h2 =>
   end
 };
 
-pairingHeapInsert :: forall a:Type, { { a => a => Ord } => a => PairingHeap a => PairingHeap a };
+pairingHeapInsert :: forall (a:Type) { { a => a => Ord } => a => PairingHeap a => PairingHeap a };
 pairingHeapInsert = { forall a:Type, cmp => e => h =>
   case h
     of $PairingHeapE -> PairingHeapT e Nil
@@ -130,7 +130,7 @@ pairingHeapInsert = { forall a:Type, cmp => e => h =>
   end
 };
 
-noinline_pairingHeapToSortedList :: forall a:Type, { { a => a => Ord } => PairingHeap a => List a };
+noinline_pairingHeapToSortedList :: forall (a:Type) { { a => a => Ord } => PairingHeap a => List a };
 noinline_pairingHeapToSortedList = { forall a:Type, cmp => h =>
   case h
     of $PairingHeapE -> Nil
@@ -138,7 +138,7 @@ noinline_pairingHeapToSortedList = { forall a:Type, cmp => h =>
   end
 };
 
-noinline_pairingHeapFromList :: forall a:Type, { { a => a => Ord } => List a => PairingHeap a };
+noinline_pairingHeapFromList :: forall (a:Type) { { a => a => Ord } => List a => PairingHeap a };
 noinline_pairingHeapFromList = { forall a:Type, cmp => lst =>
   REC go = { lst => ph =>
     case lst
@@ -149,7 +149,7 @@ noinline_pairingHeapFromList = { forall a:Type, cmp => lst =>
   go lst PairingHeapE
 };
 
-listSortViaPairingHeapWith :: forall a:Type, { { a => a => Ord } => List a => List a };
+listSortViaPairingHeapWith :: forall (a:Type) { { a => a => Ord } => List a => List a };
 listSortViaPairingHeapWith = { forall a:Type, cmp => lst =>
   noinline_pairingHeapToSortedList cmp (noinline_pairingHeapFromList cmp lst)
 };

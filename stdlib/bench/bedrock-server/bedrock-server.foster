@@ -6,7 +6,7 @@ max = { a => b =>
 
 both   = { a : Bool => b : Bool => if a then b    else False end };
 
-arrayLength32 :: forall x:Type, { Array x => Int32 };
+arrayLength32 :: forall (x:Type) { Array x => Int32 };
 arrayLength32 = { forall t:Type, a : Array t =>
   trunc_i64_to_i32 (prim_arrayLength a)
 };

@@ -119,27 +119,27 @@ enumRangeInc64 = { fst : Int64 =>
 
 /////
 
-arrayFoldl :: forall t:Type, a:Type, { Array t => { t => a => a } => a => a };
+arrayFoldl :: forall (t:Type) (a:Type) { Array t => { t => a => a } => a => a };
 arrayFoldl = { arr => f => acc =>
   arrayFoldlFrom arr 0 f acc
 };
 
-arrayFoldlFrom :: forall t:Type, a:Type, { Array t => Int32 => { t => a => a } => a => a };
+arrayFoldlFrom :: forall (t:Type) (a:Type) { Array t => Int32 => { t => a => a } => a => a };
 arrayFoldlFrom = { arr => offset => f => acc =>
   arrayFoldlFromTo arr offset (arrayLength32 arr) f acc
 };
 
-arrayFoldlFromTo :: forall t:Type, a:Type, { Array t => Int32 => Int32 => { t => a => a } => a => a };
+arrayFoldlFromTo :: forall (t:Type) (a:Type) { Array t => Int32 => Int32 => { t => a => a } => a => a };
 arrayFoldlFromTo = { arr => fst => fin => f => acc =>
   foldRange fst fin acc { n : Int32 => acc => f arr[n] acc }
 };
 
-arrayFoldlFromTo64 :: forall t:Type, a:Type, { Array t => Int64 => Int64 => { t => a => a } => a => a };
+arrayFoldlFromTo64 :: forall (t:Type) (a:Type) { Array t => Int64 => Int64 => { t => a => a } => a => a };
 arrayFoldlFromTo64 = { arr => fst => fin => f => acc =>
   foldRange64 fst fin acc { n => acc => f arr[trunc_i64_to_i32 n] acc }
 };
 
-arrayFoldlFromToWithIndex64 :: forall t:Type, a:Type, {
+arrayFoldlFromToWithIndex64 :: forall (t:Type) (a:Type) {
               Array t => Int64 => Int64 => { Word => t => a => a } => a => a };
 arrayFoldlFromToWithIndex64 = { arr => fst => fin => f => acc =>
   foldRange64 fst fin acc { n => acc => f (trunc_i64_to_Word n) arr[trunc_i64_to_i32 n] acc }
@@ -147,23 +147,23 @@ arrayFoldlFromToWithIndex64 = { arr => fst => fin => f => acc =>
 
 ////
 
-arrayFoldr :: forall t:Type, a:Type, { Array t => { t => a => a } => a => a };
+arrayFoldr :: forall (t:Type) (a:Type) { Array t => { t => a => a } => a => a };
 arrayFoldr = { arr => f => acc =>
   foldRangeDown (arrayLength32 arr -Int32 1) 0 acc { n : Int32 => acc => f arr[n] acc }
 };
 
 ////
 
-arrayLength :: forall x:Type, { % ra : Array x : True =>
-                                % rv : Int64 : rv ==Int64 prim_arrayLength:[x] ra };
+arrayLength :: forall (x:Type) { % ra : Array x : True =>
+                                 % rv : Int64 : rv ==Int64 prim_arrayLength:[x] ra };
 arrayLength = { a : Array x => prim_arrayLength a };
 
-arrayLength32 :: forall x:Type, { % ra : Array x : True =>
-                                  % rv : Int32 : rv ==Int32 trunc_i64_to_i32 (prim_arrayLength:[x] ra) };
+arrayLength32 :: forall (x:Type) { % ra : Array x : True =>
+                                   % rv : Int32 : rv ==Int32 trunc_i64_to_i32 (prim_arrayLength:[x] ra) };
 arrayLength32 = { a : Array x => trunc_i64_to_i32 (prim_arrayLength a) };
 
-arrayLengthWord :: forall x:Type, { % ra : Array x : True =>
-                                    % rv : Word : rv ==Word trunc_i64_to_Word (prim_arrayLength:[x] ra) };
+arrayLengthWord :: forall (x:Type) { % ra : Array x : True =>
+                                     % rv : Word : rv ==Word trunc_i64_to_Word (prim_arrayLength:[x] ra) };
 arrayLengthWord = { a : Array x => trunc_i64_to_Word (prim_arrayLength a) };
 
 

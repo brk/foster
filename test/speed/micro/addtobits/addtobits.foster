@@ -240,7 +240,7 @@ trimLeadingZeroWords_manually_inlined = { a =>
 };
 
 // Precondition: m >= n
-copyOfArrayTo__manually_inlined :: forall t:Type,
+copyOfArrayTo__manually_inlined :: forall (t:Type)
                  { Array t => // of length m
                    /*n:*/Int32 =>
                    Array t    // of length n
@@ -283,7 +283,7 @@ trimLeadingZeroWords_auto_inlined = { a =>
 
 
 // Precondition: m >= n
-copyOfArrayTo_auto_inlined :: forall t:Type,
+copyOfArrayTo_auto_inlined :: forall (t:Type)
                  { Array t => // of length m
                    /*n:*/Int32 =>
                    Array t    // of length n

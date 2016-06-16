@@ -165,7 +165,7 @@ bytesTake = { ba => len =>
 };
 
 /*
-bytesFoldlBytes_Alt :: forall a:Type, { Bytes => { Int8 => a => a } => a => a };
+bytesFoldlBytes_Alt :: forall (a:Type) { Bytes => { Int8 => a => a } => a => a };
 bytesFoldlBytes_Alt = { ba => f => acc =>
   // TODO(opt) this helper can't be contified (due to multiple continuations),
   // so it will result in dynamic allocation,
@@ -195,7 +195,7 @@ bytesFoldlBytes_Alt = { ba => f => acc =>
 };
 */
 
-bytesFoldlBytesFromLen :: forall a:Type, { Bytes => { Int8 => a => a }
+bytesFoldlBytesFromLen :: forall (a:Type) { Bytes => { Int8 => a => a }
                                      => Int64 => Int64 => a => a };
 bytesFoldlBytesFromLen = { bytes => f => offset => len => acc =>
  if len <=SInt64 0 then acc else
@@ -218,12 +218,12 @@ bytesFoldlBytesFromLen = { bytes => f => offset => len => acc =>
  end
 };
 
-bytesFoldlBytes :: forall a:Type, { Bytes => { Int8 => a => a } => a => a };
+bytesFoldlBytes :: forall (a:Type) { Bytes => { Int8 => a => a } => a => a };
 bytesFoldlBytes = { ba => f => acc =>
   bytesFoldlBytesFromLen ba f 0 (bytesLength ba) acc
 };
 
-bytesFoldlBytes_Alt2 :: forall a:Type, { Bytes => { Int8 => a => a } => a => a };
+bytesFoldlBytes_Alt2 :: forall (a:Type) { Bytes => { Int8 => a => a } => a => a };
 bytesFoldlBytes_Alt2 = { ba => f => acc =>
   // Nice, but can we guarantee that inlining will allow us to
   // eliminate the allocation for the closure capturing f?
@@ -232,7 +232,7 @@ bytesFoldlBytes_Alt2 = { ba => f => acc =>
             0 (bytesLength ba) acc;
 };
 
-bytesFoldlFragmentsFromLen :: forall a:Type, { Bytes => { Array Int8 => Int64 => Int64 => a => a }
+bytesFoldlFragmentsFromLen :: forall (a:Type) { Bytes => { Array Int8 => Int64 => Int64 => a => a }
                                      => Int64 => Int64 => a => a };
 bytesFoldlFragmentsFromLen = { bytes => f => offset => len => acc =>
  if len <=SInt64 0 then acc else
@@ -258,7 +258,7 @@ bytesFoldlFragmentsFromLen = { bytes => f => offset => len => acc =>
  end
 };
 
-bytesFoldlFragments :: forall a:Type, { Bytes => { Array Int8 => Int64 => Int64 => a => a } => a => a };
+bytesFoldlFragments :: forall (a:Type) { Bytes => { Array Int8 => Int64 => Int64 => a => a } => a => a };
 bytesFoldlFragments = { ba => f => acc =>
   bytesFoldlFragmentsFromLen ba f 0 (bytesLength ba) acc
 };

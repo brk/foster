@@ -223,14 +223,14 @@ test-faker-example = {
 };
 */
 
-//f :: forall xt : Boxed,  { xt => Int32 };
-//f = { forall x : Boxed, v : x => 0 };
+//f :: forall (xt : Boxed)  { xt => Int32 };
+//f = { forall (x : Boxed) v : x => 0 };
 
-//g0 :: forall gt : Boxed, { gt => forall ft : Boxed, { ft => Int32 } };
+//g0 :: forall (gt : Boxed) { gt => forall ft : Boxed, { ft => Int32 } };
 // without annotation, typechecks but tries to return a proc instead of a func TODO fix this
 //g0 = { forall t : Boxed, v : t => f };
 
-//g1 :: forall gt : Boxed, { gt => { gt => Int32 } };
+//g1 :: forall (gt : Boxed) { gt => { gt => Int32 } };
 // Without an annotation, we fail on g1 because its scheme is inferred to be
 //     forall t : Boxed,   { t => ?? R };
 // and the expression's actual type is as above.
@@ -241,11 +241,11 @@ test-faker-example = {
 //g1 = { forall t : Boxed, v : t => f:[t] };
 
 // OK:
-//g2 :: forall gt : Boxed, { gt => Int32 };
+//g2 :: forall (gt : Boxed) { gt => Int32 };
 //g2 = { forall t : Boxed, v : t => f v };
 
 // OK:
-//g3 :: forall gt : Boxed, { gt => Int32 };
+//g3 :: forall (gt : Boxed) { gt => Int32 };
 //g3 = { forall t : Boxed, v : t => f:[t] v };
 
 /*

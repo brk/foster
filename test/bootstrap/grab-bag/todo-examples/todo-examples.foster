@@ -86,14 +86,14 @@ case lazy
 
 /*
 //error: /home/benkarel/foster/compiler/passes/LLCodegen.cpp:218: ASSERT(getUnitValue()->getType() == builder.getCurrentFunctionReturnType()) failed.
-catenableLinkAll :: forall a:Boxed, { BatchedQueue (CatenableList a) => Maybe (CatenableList a) };
+catenableLinkAll :: forall (a:Boxed) { BatchedQueue (CatenableList a) => Maybe (CatenableList a) };
 catenableLinkAll = { forall a:Boxed, q : BatchedQueue (CatenableList a) =>
   prim kill-entire-process "catenableLinkAll"
 };
 */
 
 /*
-bqHead :: forall a:Boxed, { BatchedQueue a => a => Maybe a };
+bqHead :: forall (a:Boxed) { BatchedQueue a => a => Maybe a };
 bqHead = { forall a:Boxed, bq : BatchedQueue a =>
   case bq
     of $BatchedQueue ($Nil)      _ -> None

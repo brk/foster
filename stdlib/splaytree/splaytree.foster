@@ -6,12 +6,12 @@ type case SplayTree (a:Type)
   of $SplayObj a (SplayTree a) (SplayTree a)
   ;
 
-splay-empty :: forall a:Type, { SplayTree a };
+splay-empty :: forall (a:Type) { SplayTree a };
 splay-empty = { forall a:Type,
   SplayNil
 };
 
-splay :: forall a:Type, { SplayTree a => { a => Ord } => SplayTree a };
+splay :: forall (a:Type) { SplayTree a => { a => Ord } => SplayTree a };
 splay = { forall a:Type,
            t => cmp =>
 
@@ -95,7 +95,7 @@ splay = { forall a:Type,
 //splay-join :: forall a, { SplayTree a => SplayTree a => SplayTree a };
 
 
-splay-depth :: forall a:Type, { SplayTree a => Word };
+splay-depth :: forall (a:Type) { SplayTree a => Word };
 splay-depth = { forall a:Type,
                 t =>
   case t
@@ -105,7 +105,7 @@ splay-depth = { forall a:Type,
   end
 };
 
-splay-root :: forall a:Type, { SplayTree a => Maybe a };
+splay-root :: forall (a:Type) { SplayTree a => Maybe a };
 splay-root = { forall a:Type,
                 t : SplayTree a =>
   case t
@@ -115,7 +115,7 @@ splay-root = { forall a:Type,
 };
 
 
-splay-lookup :: forall a:Type,
+splay-lookup :: forall (a:Type)
                          { SplayTree a => { a => Ord } => (Bool, SplayTree a) };
 splay-lookup = { forall a:Type,
                  t => cmp =>
@@ -129,7 +129,7 @@ splay-lookup = { forall a:Type,
   end
 };
 
-splay-insert :: forall a:Type,
+splay-insert :: forall (a:Type)
                        { a => SplayTree a => { a => a => Ord } => SplayTree a };
 splay-insert = { forall a:Type,
                  v => t => cmp =>

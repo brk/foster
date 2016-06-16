@@ -29,7 +29,7 @@ textOfRangeChunkCmpResult = { o : RangeChunkCmpResult =>
 // Compare range [a,b) and [x,y)
 // Precondition: a <= b && x <= y.
 //
-cmpRange :: forall t:Type, { t => t => t => t => { t => t => Ord }
+cmpRange :: forall (t:Type) { t => t => t => t => { t => t => Ord }
                                => RangeChunkCmpResult };
 cmpRange = { a => b => x => y => cmp =>
   case cmp b x
@@ -53,7 +53,7 @@ cmpRange = { a => b => x => y => cmp =>
 // We'd like to generate equivalent code to the above implementation,
 // where cmp is not always evaluated four times,
 // but doing so requires knowing that cmp is a pure function.
-cmpRangeAlt :: forall t:Type, { t => t => t => t => { t => t => Ord }
+cmpRangeAlt :: forall (t:Type) { t => t => t => t => { t => t => Ord }
                                   => RangeChunkCmpResult };
 cmpRangeAlt = { a => b => x => y => cmp =>
   case (cmp b x, cmp y a, cmp a x, cmp b y)
@@ -78,7 +78,7 @@ type case RangePosCmpResult
 
 // Compare p to the range [x, y]
 // Precondition: x <= y
-cmpRangePos :: forall t:Type, { t => t => t => { t => t => Ord }
+cmpRangePos :: forall (t:Type) { t => t => t => { t => t => Ord }
                                => RangePosCmpResult };
 cmpRangePos = { forall t:Type, x => y => p => cmp =>
   case (cmp p x, cmp p y)
@@ -88,7 +88,7 @@ cmpRangePos = { forall t:Type, x => y => p => cmp =>
   end
 };
 
-cmpRangePosAlt :: forall t:Type, { t => t => t => { t => t => Ord }
+cmpRangePosAlt :: forall (t:Type) { t => t => t => { t => t => Ord }
                                => RangePosCmpResult };
 cmpRangePosAlt = { forall t:Type, x => y => p => cmp =>
   if      isLT (cmp p x) then BeforeRange
