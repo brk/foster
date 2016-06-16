@@ -421,8 +421,8 @@ monoType subst ty =
      TyConAppIL nam types   -> liftM (TyConApp nam) (mapM q types)
      PrimIntIL size         -> return $ PrimInt size
      PrimFloat64IL          -> return $ PrimFloat64
-     TupleTypeIL KindPointerSized types -> liftM TupleType  (mapM q types)
-     TupleTypeIL KindAnySizeType  types -> liftM StructType (mapM q types)
+     TupleTypeIL KindAnySizeType types -> liftM StructType (mapM q types)
+     TupleTypeIL _               types -> liftM TupleType  (mapM q types)
      FnTypeIL  ss t cc cs -> do ss' <- mapM q ss
                                 t'  <- q t
                                 return $ FnType ss' t' cc cs
@@ -443,6 +443,7 @@ monoType subst ty =
 -- opaque pointer types; other type variables are looked up
 -- in the type substitution.
 monoSubstLookup :: MonoSubst -> TyVar -> MonoType
+monoSubstLookup _subst (SkolemTyVar  _ _ KindEffect) = error $ "Monomo.hs: kind effect subst..."
 monoSubstLookup _subst (SkolemTyVar  _ _ KindPointerSized) = PtrTypeUnknown
 monoSubstLookup _subst (SkolemTyVar  _ _ KindAnySizeType)  =
         --TyConApp ("BAD:SKOLEM TY VAR, ANY SIZE TYPE:"++nm) []

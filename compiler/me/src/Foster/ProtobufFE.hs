@@ -139,7 +139,7 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
         else int_ctor annot str
     _ -> error $ "cb_parse_lit_num failed: " ++ show cbor
 
-  cb_parse_name cbor = case cbor of
+  _cb_parse_name cbor = case cbor of
     CBOR_Array [tok, _,_cbr, CBOR_Array [_id, _name]] | tok `tm` tok_QNAME -> error "name (cb_parse_id id) (cb_parse_name name)"
     _ -> error $ "cb_parse_name failed: "
 

@@ -73,7 +73,7 @@ instance Pretty ty => Pretty (FnAST ty) where
     where args []  = empty
           args frm = hang 1 (empty <+> vsep (map (\v -> prettyFnFormalTy v <+> text "=>") frm))
 
-          prettyFnFormal   (TypedId _t v) = text (T.unpack $ identPrefix v)
+          _prettyFnFormal   (TypedId _t v) = text (T.unpack $ identPrefix v)
           prettyFnFormalTy (TypedId  t v) = text (T.unpack $ identPrefix v) <+> text ":" <+> pretty t
 
 prettyTyFormals [] = empty

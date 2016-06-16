@@ -179,5 +179,6 @@ instance SourceRanged (ExprAST ty) where rangeOf e = rangeOf (exprAnnot e)
 instance Pretty Kind where
   pretty KindAnySizeType = text "Type"
   pretty KindPointerSized = text "Boxed"
+  pretty KindEffect       = text "Effect"
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

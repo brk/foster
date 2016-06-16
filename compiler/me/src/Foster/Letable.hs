@@ -92,8 +92,8 @@ instance TypedWith (Letable MonoType) MonoType where
 instance TypedWith (Letable TypeLL) TypeLL where
   typeOf letable = case letable of
       ILLiteral     t _ -> t
-      ILTuple KindPointerSized vs _ -> LLPtrType (LLStructType (map tidType vs))
       ILTuple KindAnySizeType  vs _ ->           (LLStructType (map tidType vs))
+      ILTuple _                vs _ -> LLPtrType (LLStructType (map tidType vs))
       ILKillProcess t _ -> t
       ILOccurrence t _ _-> t
       ILCallPrim t _ _  -> t
@@ -189,8 +189,8 @@ canGC mayGCmap letable =
          ILCall     _ v _ -> -- Exists due to mergeAdjacentBlocks.
                              Map.findWithDefault (GCUnknown "") (tidIdent v) mayGCmap
          ILCallPrim _ p _ -> canGCPrim p
-         ILTuple KindPointerSized _ _   -> MayGC -- rather than stack allocating tuples, easier to just remove 'em probably.
          ILTuple KindAnySizeType  _ _   -> WillNotGC
+         ILTuple _                _ _   -> MayGC -- rather than stack allocating tuples, easier to just remove 'em probably.
          ILLiteral  _ lit -> canGCLit lit
          ILKillProcess {} -> WillNotGC
          ILOccurrence  {} -> WillNotGC

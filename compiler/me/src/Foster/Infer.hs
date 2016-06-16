@@ -207,7 +207,7 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                let t2 = parSubstTcTy tySubst rho2 in
                tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
-    ((RefinedTypeTC (TypedId t1 n1) e1 _), (RefinedTypeTC (TypedId t2 n2) e2 _)) ->
+    ((RefinedTypeTC (TypedId t1 _n1) _e1 _), (RefinedTypeTC (TypedId t2 _n2) _e2 _)) ->
       -- TODO make sure that n/e match...
       tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 

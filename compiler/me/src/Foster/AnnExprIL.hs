@@ -563,7 +563,6 @@ data CtorVariety ty = SingleCtorWrappingSameBoxityType CtorId Kind
 --
 dtUnboxedRepr dt =
   case dataTypeName dt of
-    TypeFormal _ _ KindPointerSized -> Nothing
     TypeFormal _ _ KindAnySizeType ->
       case dataTypeCtors dt of
         [ctor] -> Just $ \tys ->
@@ -571,6 +570,7 @@ dtUnboxedRepr dt =
                           (map (substTypeTC tys (dataCtorDTTyF ctor))
                                (dataCtorTypes ctor))
         _ -> Nothing
+    TypeFormal _ _ _otherKinds -> Nothing
  where
     substTypeTC :: [TypeTC] -> [TypeFormal] -> TypeTC -> TypeTC
     substTypeTC tys formals = parSubstTcTy mapping
@@ -709,8 +709,8 @@ instance Show TypeIL where
                                       ++ joinWith " " ("":map show types) ++ ")"
         PrimIntIL size       -> "(PrimIntIL " ++ show size ++ ")"
         PrimFloat64IL        -> "(PrimFloat64IL)"
-        TupleTypeIL KindPointerSized typs ->  "(" ++ joinWith ", " (map show typs) ++ ")"
         TupleTypeIL KindAnySizeType  typs -> "#(" ++ joinWith ", " (map show typs) ++ ")"
+        TupleTypeIL _                typs ->  "(" ++ joinWith ", " (map show typs) ++ ")"
         FnTypeIL   s t cc cs -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
         CoroTypeIL s t       -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
         ForAllIL ktvs rho    -> "(ForAll " ++ show ktvs ++ ". " ++ show rho ++ ")"
