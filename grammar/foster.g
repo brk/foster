@@ -31,6 +31,7 @@ tokens {
   FUNC_TYPE; REFINED;
   TYPE_CTOR; DATATYPE; CTOR; TYPE_PLACEHOLDER;
   FORMAL; MODULE; WILDCARD; SNAFUINCLUDE; QNAME;
+  EFFECT_SINGLE; EFFECT_ROW;
 
   MU; // child marker
 }
@@ -204,14 +205,26 @@ tp // "type phrase"
   | 'forall' tyformalr+ t  -> ^(FORALL_TYPE tyformalr+ t) // description of terms indexed by types;
   ;
 
+minusq : '-' ? ;
+single_effect : minusq a+ -> ^(EFFECT_SINGLE minusq a+);
+
+effect : '@' (  a      -> ^(EFFECT_SINGLE a)
+             | '(' ')' -> ^(EFFECT_ROW)
+             | '('
+                  single_effect (',' single_effect)*
+                  (
+                              -> ^(EFFECT_ROW ^(MU single_effect+) )
+                  | '|' xid?  -> ^(EFFECT_ROW ^(MU single_effect+) ^(MU xid? ))
+                  )
+               ')' );
 tatom :
     a                                                   // type variables
   | '??' a                              -> ^(TYPE_PLACEHOLDER a)
   | '(' ')'                             -> ^(TUPLE)
   | '(' t (',' t)* ')'                  -> ^(TUPLE t+)  // tuples (products) (sugar: (a,b,c) == Tuple3 a b c)
   | ('#precondition' val_abs)?
-    '{'    t  ('=>' t)* '}'
-   ('@' '{' tannots '}')?               -> ^(FUNC_TYPE ^(TUPLE t+) ^(MU val_abs?) tannots?)  // description of terms indexed by terms
+    '{' t  ('=>' t)* effect? '}'
+   ('@' '{' tannots '}')?               -> ^(FUNC_TYPE ^(TUPLE t+) ^(MU val_abs?) ^(MU effect?) tannots?)  // description of terms indexed by terms
 //      | ':{'        (a ':' k '->')+ t '}'     -> ^(TYPE_TYP_ABS a k t)        // type-level abstractions
 //  | tctor                                -> ^(TYPE_CTOR tctor)                  // type constructor constant
   // The dollar sign is required to distinguish type constructors

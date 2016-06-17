@@ -184,6 +184,15 @@ Other libraries/tools:
 
         hprotoc:    http://hackage.haskell.org/package/hprotoc
 
+Modifying foster.g
+==================
+
+If you modify the foster.g file, be sure to run from the _obj dir the
+following script, and place its output in the ProtobufFE.hs file::
+
+    python ../scripts/extract-antlr3-token-ids.py _generated_/fosterLexer.h
+
+
 Networking
 ==========
 
