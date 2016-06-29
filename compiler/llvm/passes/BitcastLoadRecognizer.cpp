@@ -114,7 +114,7 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
     if (GEPOperator* gep = dyn_cast<GEPOperator>(v)) {
       std::vector<Value*> gep_offsets;
       User::op_iterator idx = gep->idx_begin();
-      for (int i = 0; i < gep->getNumIndices() - 1; ++i) {
+      for (size_t i = 0; i < gep->getNumIndices() - 1; ++i) {
         if (Constant* c = dyn_cast<Constant>(idx)) {
           gep_offsets.push_back(c);
         } else {
@@ -253,14 +253,14 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
   bool allHaveSameNonNullBase(const vector<Idx*>& res) {
     Value* base = res[0]->base;
     if (!base) return false;
-    for (int i = 1; i < res.size(); ++i) {
+    for (size_t i = 1; i < res.size(); ++i) {
       if (res[i]->base != base) return false;
     }
     return true;
   }
 
   bool allHaveSameIndexBase(const vector<Idx*>& res) {
-    for (int i = 1; i < res.size(); ++i) {
+    for (size_t i = 1; i < res.size(); ++i) {
       if (res[0]->index_base  != res[i]->index_base) return false;
       if (res[0]->gep_offsets != res[i]->gep_offsets) return false;
     }
@@ -274,7 +274,7 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
     // the loaded result. We assume the underlying hardware can support
     // unaligned reads, so index_offset need not be zero.
     if (b->shift_offset != 0) return false;
-    for (int i = 1; i < res.size(); ++i) {
+    for (size_t i = 1; i < res.size(); ++i) {
       if (res[i]->index_offset -
           res[0]->index_offset != b->shift_offset + i) return false;
       if (res[i]->shift_offset != b->base_size    * i) return false;
@@ -358,7 +358,7 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
              Type::getIntNTy(getGlobalContext(),
                                   indexes[0]->base_size * indexes.size()), bo);
 
-        for (int i = 0; i < ors.size(); ++i) {
+        for (size_t i = 0; i < ors.size(); ++i) {
           //errs() << "marking to-be-dead " << *ors[i] << "\n";
           willBeDead.insert(ors[i]);
         }

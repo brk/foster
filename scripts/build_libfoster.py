@@ -40,9 +40,8 @@ def compile_source(src):
   runtime_gc = os.path.join(srcdir, 'runtime', 'gc')
   runtime    = os.path.join(srcdir, 'runtime')
   basedir    = os.path.join(srcdir, 'third_party', 'chromium_base')
-  cpuiddir   = os.path.join(srcdir, 'third_party', 'cpuid')
   corodir    = os.path.join(srcdir, 'third_party', 'libcoro')
-  include_dirs = [bindir, runtime, runtime_gc, basedir, cpuiddir, corodir]
+  include_dirs = [bindir, runtime, runtime_gc, basedir, corodir]
   includes = ' '.join(['-I ' + path for path in include_dirs])
   defines = ' -D'.join(['', coro_method])
   flags = debug_flag + defines + " -std=c++11"
