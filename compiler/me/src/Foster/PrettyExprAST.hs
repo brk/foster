@@ -38,14 +38,17 @@ kwd  s = dullblue  (text s)
 lkwd s = dullwhite (text s)
 end    = lkwd "end"
 
+prettyFx Nothing = empty
+prettyFx (Just fx) = pretty fx <> text " "
 
 instance Pretty TypeP where
   pretty t = case t of
           TyConAppP      dt []        ->          pretty dt
           TyConAppP      dt ts        -> parens $ pretty dt <+> sep (map pretty ts)
           TupleTypeP     ts           -> tupled (map pretty ts)
-          FnTypeP    ts r _cc _pf _sr -> text "{" <+> hsep [pretty t <+> text "=>" | t <- ts]
-                                                  <+> pretty r <+> text "}"
+          FnTypeP    ts r fx _cc _pf _sr ->
+                                         text "{" <+> hsep [pretty t <+> text "=>" | t <- ts]
+                                                  <+> pretty r <+> prettyFx fx <> text "}"
           ForAllP        _tyfs rho    -> text "forall ..." <+> pretty rho
           TyVarP         tv           -> pretty tv
           MetaPlaceholder str         -> text ("?? " ++ str)

@@ -25,6 +25,7 @@ import Foster.ExprAST
 type Sigma = TypeAST
 type Rho   = TypeAST -- No top-level ForAll
 type Tau   = TypeAST -- No ForAlls anywhere
+type Effect = TypeAST
 
 data TypeAST =
            PrimIntAST       IntSizeBits
@@ -36,7 +37,7 @@ data TypeAST =
          | ArrayTypeAST     (Sigma)
          | FnTypeAST        { fnTypeDomain :: [Sigma]
                             , fnTypeRange  ::  Sigma
-                            , fnTypeEffect ::  Rho
+                            , fnTypeEffect ::  Effect
                             , fnTypeCallConv :: CallConv
                             , fnTypeProcOrFunc :: ProcOrFunc }
          | ForAllAST        [(TyVar, Kind)] Rho

@@ -10,6 +10,8 @@ where
 import Foster.Base
 import Foster.ExprAST
 
+import Data.Maybe (maybeToList)
+
 import Text.PrettyPrint.ANSI.Leijen(text)
 
 data TypeP =
@@ -17,6 +19,7 @@ data TypeP =
          | TupleTypeP     [TypeP]
          | FnTypeP        { fnTypeDomain :: [TypeP]
                           , fnTypeRange  :: TypeP
+                          , fnTypeEffect :: Maybe TypeP
                           , fnTypeCallConv :: CallConv
                           , fnTypeProcOrFunc :: ProcOrFunc
                           , fnTypeSource :: SourceRange }
@@ -29,7 +32,7 @@ instance Show TypeP where
     show x = case x of
         TyConAppP    tc types         -> "(TyCon: " ++ show tc ++ joinWith " " ("":map show types) ++ ")"
         TupleTypeP      types         -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
-        FnTypeP    s t cc cs _        -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
+        FnTypeP    s t fx cc cs _     -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @" ++ show fx ++ " #{" ++ show cs ++ "})"
         ForAllP  tvs rho              -> "(ForAll " ++ show tvs ++ ". " ++ show rho ++ ")"
         TyVarP   tv                   -> show tv
         MetaPlaceholder s             -> "??" ++ s
@@ -40,7 +43,7 @@ instance Structured TypeP where
         case e of
             TyConAppP    tc  _           -> text $ "TyConAppP " ++ tc
             TupleTypeP       _           -> text $ "TupleTypeP"
-            FnTypeP    _ _   _ _ _       -> text $ "FnTypeP"
+            FnTypeP    _ _  _ _ _ _      -> text $ "FnTypeP"
             ForAllP  tvs _rho            -> text $ "ForAllP " ++ show tvs
             TyVarP   tv                  -> text $ "TyVarP " ++ show tv
             MetaPlaceholder _s           -> text $ "MetaPlaceholder "
@@ -50,7 +53,7 @@ instance Structured TypeP where
         case e of
             TyConAppP   _tc types        -> types
             TupleTypeP      types        -> types
-            FnTypeP    ss t _ _ _        -> (t:ss)
+            FnTypeP    ss t fx _ _  _    -> maybeToList fx ++ (t:ss)
             ForAllP  _tvs rho            -> [rho]
             TyVarP   _tv                 -> []
             MetaPlaceholder _            -> []

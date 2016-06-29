@@ -562,10 +562,12 @@ desugarParsedModule tcenv m = do
           TupleTypeP      types  -> liftM  TupleTypeAST    (mapM q types)
           ForAllP    tvs t       -> liftM (ForAllAST $ map convertTyFormal tvs) (q t)
           TyVarP     tv          -> do return $ TyVarAST tv
-          FnTypeP   s t cc cs sr -> do s' <- mapM q s
-                                       t' <- q t
-                                       let fx = MetaPlaceholderAST MTVTau   ("effectvar:" ++ showSourceRange sr)
-                                       return $ FnTypeAST  s' t' fx cc cs
+          FnTypeP s t fx cc cs sr -> do s' <- mapM q s
+                                        t' <- q t
+                                        fx' <- case fx of
+                                                 Nothing -> return $ MetaPlaceholderAST MTVTau   ("effectvar:" ++ showSourceRange sr)
+                                                 Just xx -> q xx
+                                        return $ FnTypeAST  s' t' fx' cc cs
           RefinedTypeP nm t e -> do t' <- q t
                                     e' <- convertExprAST q e
                                     return $ RefinedTypeAST nm t' e'
