@@ -10,6 +10,8 @@ main = {
   expect_i32 21;
   expect_i32 5555555;
   expect_i32 6666666;
+  expect_i1 False;
+  expect_i1 False;
   expect_i32 9999;
   expect_i32 3333333;
   expect_i32 9999999;
@@ -26,8 +28,10 @@ main = {
          print_i32 5555555;
          force_gc_for_debugging_purposes !;
          print_i32 6666666;
-         // This should be a type error but it isn't yet.
-         //coro_yield:[Int32,{Int32}] { 7777 };
+
+         // Yielding the wrong type results in a type error.
+         print_i1 (__COMPILES__ coro_yield:[Int32,{Int32}] { 7777 } );
+         print_i1 (__COMPILES__ coro_yield { 7777 } );
 
          //coro_yield:[Int32, Int32] 7777;
 
