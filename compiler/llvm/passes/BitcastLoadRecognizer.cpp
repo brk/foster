@@ -66,6 +66,9 @@ STATISTIC(NumSpecialized, "Number of bitcast loads specialized");
 //
 // This is valid on a little-endian architecture... but what isn't, these days?
 
+typedef unsigned Offset;
+const Offset kInvalidOffset = UINT_MAX;
+
 // An index: base[index_base + index_offset] << shift_offset;
 struct Idx {
   Value* base;
@@ -73,8 +76,8 @@ struct Idx {
   std::vector<Value*> gep_offsets; // will be constants
   int    base_size;
   Value* index_base;
-  int    index_offset;
-  int    shift_offset;
+  Offset index_offset;
+  Offset shift_offset;
 };
 
 bool by_index_offset(Idx* a, Idx* b) {
@@ -94,7 +97,7 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
   }
 
   // i is either a constant, a variable, or the sum of a var and a constant.
-  void matchGEP_Index(Value* i, Value*& out_base, int& out_offset) {
+  void matchGEP_Index(Value* i, Value*& out_base, Offset& out_offset) {
     ConstantInt* c1;
     //errs() << "matchGEP_Index called on " << *i << "\n";
     if (match(i, m_Add(m_Value(out_base), m_ConstantInt(c1)))) {
@@ -110,7 +113,7 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
     }
   }
 
-  Value* tryGetGEP(Value* v, Value*& out_base, int& out_offset, std::vector<Value*>& out_offsets) {
+  Value* tryGetGEP(Value* v, Value*& out_base, Offset& out_offset, std::vector<Value*>& out_offsets) {
     if (GEPOperator* gep = dyn_cast<GEPOperator>(v)) {
       std::vector<Value*> gep_offsets;
       User::op_iterator idx = gep->idx_begin();
@@ -132,7 +135,7 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
     }
   }
 
-  ConstantInt* ci32(int o) { return ConstantInt::get(Type::getInt32Ty(llvm::getGlobalContext()), o); }
+  ConstantInt* ci32(Offset o) { return ConstantInt::get(Type::getInt32Ty(llvm::getGlobalContext()), o); }
 
   void spec(Idx* r0, Type* newLoadType, Instruction* exp) {
     IRBuilder<> b(getGlobalContext());
@@ -171,9 +174,9 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
   }
 
   void buildIdxBase(Value* v, Idx* idx) {
-    idx->index_offset = -1;
+    idx->index_offset = kInvalidOffset;
     Value* b = tryGetGEP(v, idx->index_base, idx->index_offset, idx->gep_offsets);
-    if (b && idx->index_offset != -1) {
+    if (b && idx->index_offset != kInvalidOffset) {
       //errs() << "buildIdxBase: base is b: " << *b << "\n";
       idx->base         = b;
     } else {
@@ -316,7 +319,7 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
           errs() << "root insn: " << *(bo) << " has " << bo->getNumUses() << " uses\n";
           errs() << "root insn will be dead? " << willBeDead.count(bo) << "\n";
 
-          for (int i = 0; i < indexes.size(); ++i) {
+          for (unsigned i = 0; i < indexes.size(); ++i) {
             if (!indexes[i]) errs() << "<null>\n";
             else {
               errs() << "origin: " << *(indexes[0]->origin) << "\n\n";

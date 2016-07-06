@@ -26,17 +26,19 @@ const unsigned int FOSTER_GC_DEFAULT_ALIGNMENT_MASK = 15; // 0b0..001111
             return v.val;                   \
     }
 
-NEWTYPE(unchecked_ptr, tidy*); // unchecked in the sense of "might be tagged".
+NEWTYPE(unchecked_ptr, tori*); // unchecked in the sense of "might be tagged".
 
 template<typename T>
 inline T mask_ptr(T p, uintptr_t mask) {
   return T(uintptr_t(p) & (~ mask));
 }
 
-inline tidy* untag(unchecked_ptr p) {
+inline tori* untag(unchecked_ptr p) {
   // Enum-like ctors are represented as small integers...
   return mask_ptr(unchecked_ptr_val(p), FOSTER_GC_DEFAULT_ALIGNMENT_MASK);
 }
+
+inline tori* tori_of_tidy(tidy* t) { return (tori*) t; }
 
 // }}}
 
@@ -93,7 +95,7 @@ struct heap_cell {
     return (tidy*) (uint64_t(cell_size()) & ~FORWARDED_BIT);
   }
 
-  static heap_cell* for_body(tidy* ptr) {
+  static heap_cell* for_tidy(tidy* ptr) {
     return (heap_cell*) offset((void*)ptr, -(intptr_t(HEAP_CELL_HEADER_SIZE)));
   }
 };

@@ -22,12 +22,15 @@
 // the GC we could (re-)specialize these config vars at runtime...
 #define ENABLE_GCLOG 0
 #define FOSTER_GC_ALLOC_HISTOGRAMS    0
+#define FOSTER_GC_TIME_HISTOGRAMS     0
+#define FOSTER_GC_EFFIC_HISTOGRAMS    0
 #define GC_ASSERTIONS 0
 #define TRACK_NUM_ALLOCATIONS         1
 #define TRACK_BYTES_KEPT_ENTRIES      0
 #define TRACK_BYTES_ALLOCATED_ENTRIES 0
 #define GC_BEFORE_EVERY_MEMALLOC_CELL 0
 #define DEBUG_INITIALIZE_ALLOCATIONS  0
+#define MEMSET_FREED_MEMORY           1
 // This included file may un/re-define these parameters, providing
 // a way of easily overriding-without-overwriting the defaults.
 #include "gc/foster_gc_reconfig-inl.h"
@@ -94,7 +97,10 @@ ClusterMap clusterForAddress;
 // {{{ Internal utility functions
 void gc_assert(bool cond, const char* msg);
 
-bool is_marked_as_stable(tidy* body) {
+template <typename T>
+inline T num_granules(T size) { return size / T(16); }
+
+bool is_marked_as_stable(tori* body) {
   for (int i = 0, j = allocator_ranges.size(); i < j; ++i) {
     if (allocator_ranges[i].range.contains(static_cast<void*>(body))) {
       return allocator_ranges[i].stable;
@@ -113,12 +119,59 @@ void coro_visitGCRoots(foster_generic_coro* coro, copying_gc* visitor);
 const typemap* tryGetTypemap(heap_cell* cell);
 // }}}
 
+// {{{
+// Bitmap overhead for 16-byte granules is 8 KB per MB (roughly 1%).
+class bitmap {
+private:
+  size_t num_bytes;
+  uint8_t* bytes;
+
+public:
+  bitmap(int num_bits) {
+    // Invariant: can treat bytes as an array of uint64_t.
+    num_bytes = roundUpToNearestMultipleWeak(num_bits / 8, 8);
+    bytes = (uint8_t*) malloc(num_bytes);
+  }
+
+  ~bitmap() { free(bytes); bytes = 0; }
+
+  void clear() { memset(bytes, 0, num_bytes); }
+
+  uint8_t get_bit(int n) {
+    int byte_offset = n / 8;
+    int bit_offset  = n % 8;
+    uint8_t val = bytes[byte_offset];
+    uint8_t bit = (val >> bit_offset) & 1;
+    return bit;
+  }
+
+  void set_bit(int n) {
+    int byte_offset = n / 8;
+    int bit_offset  = n % 8;
+    uint8_t val = bytes[byte_offset];
+    bytes[byte_offset] = val | (1 << bit_offset);
+  }
+
+  // For object start/finish bitmaps, we expect the bitmap to be dense
+  // and thus this loop will execute a very small number of times, and
+  // searching by byte is likely to be noise/overhead.
+  int prev_bit_onebyone(int n) {
+    while (n --> 0) {
+      if (get_bit(n)) return n;
+    }
+    return -1;
+  }
+
+};
+// }}}
+
 // {{{ copying_gc
 class copying_gc {
   // {{{ semispace
   class semispace {
   public:
-      semispace(int64_t size, copying_gc* parent) : parent(parent) {
+      semispace(int64_t size, copying_gc* parent) : parent(parent),
+                              obj_start(size / 16), obj_limit(size / 16) {
         range.base  = malloc(size);
         range.bound = offset(range.base, size);
         memset(range.base, 0x66, size);
@@ -134,6 +187,8 @@ class copying_gc {
       memory_range range;
       void* bump;
       copying_gc* parent;
+      bitmap obj_start;
+      bitmap obj_limit;
 
   public:
       void realign_bump() {
@@ -148,6 +203,8 @@ class copying_gc {
         // resulting from allocation will be properly aligned.
         bump = range.base;
         realign_bump();
+        obj_start.clear();
+        obj_limit.clear();
         fprintf(gclog, "after reset, bump = %p, low bits: %x, size = %lld\n", bump,
                                                     int(intptr_t(bump) & 0xf),
                                                     get_size());
@@ -156,8 +213,10 @@ class copying_gc {
       bool contains(void* ptr) const { return range.contains(ptr); }
 
       void clear() {
-        fprintf(gclog, "clearing mem from %p to %p, bump = %p\n", range.base, range.bound, bump); fflush(gclog);
-        memset(range.base, 0xFE, range.size());
+        if (MEMSET_FREED_MEMORY) {
+          fprintf(gclog, "clearing mem from %p to %p, bump = %p\n", range.base, range.bound, bump); fflush(gclog);
+          memset(range.base, 0xFE, range.size());
+        }
       }
 
       int64_t used_size() const { return distance(range.base, bump); }
@@ -187,7 +246,28 @@ class copying_gc {
         if (FOSTER_GC_ALLOC_HISTOGRAMS) { HISTOGRAM_ENUMERATION("gc-alloc-small", N, 128); }
         incr_by(bump, N);
         allot->set_meta(map);
-        //fprintf(gclog, "alloc'd %d, bump = %p, low bits: %x\n", int(typeinfo->cell_size), bump, intptr_t(bump) & 0xF);
+
+        // Record the start and end of this object, for interior pointers, heap parsing, etc.
+        int granule = granule_for(tori_of_tidy(allot->body_addr()));
+        obj_start.set_bit(granule);
+        obj_limit.set_bit(granule + num_granules(N));
+        // With --backend-optimize on a GC-heavy workload (10M allocs, 317MB allocated):
+        //   Without memset free: 426ms = 293gc + 133mut
+        //   Without bit setting: 460ms = 322gc + 134mut
+        //   With one bit  set:   491ms = 318gc + 173mut
+        //   With two bits set:   520ms = 310gc + 210mut
+        // So: 6.7% degraded throughput for 1 bit set, 13% for two.
+        // 10M allocs getting 30ms slower: 3 nanoseconds per bit set.
+        // 32 * 10 * (1000/426) is just beyond 750 MB/s.
+        // 32 * 10 * (1000/612) is just shy of 512 MB/s.
+        //
+        // Adding support for interior pointers based on granule bitmaps:
+        //                        612ms = 430gc + 182mut [[30% degraded]]
+        // Without the tidy_for(tori*) logic: 588ms = 411gc + 177mut
+        //   & also minus bitsetting when evacuating: back to 491ms.
+
+        //if (gNumAllocsToPrint --> 0)
+        //  fprintf(gclog, "alloc'd _N=%d; %d, bump = %p, low bits: %x, granule = %d\n", N, int(map->cell_size), bump, intptr_t(bump) & 0xF, granule);
         return allot->body_addr();
       }
 
@@ -202,7 +282,11 @@ class copying_gc {
         }
         incr_by(bump, map->cell_size);
         allot->set_meta(map);
-        //fprintf(gclog, "alloc'd %d, bump = %p, low bits: %x\n", int(typeinfo->cell_size), bump, intptr_t(bump) & 0xF);
+        size_t granule = granule_for(tori_of_tidy(allot->body_addr()));
+        obj_start.set_bit(granule);
+        obj_limit.set_bit(granule + num_granules(map->cell_size));
+        //if (gNumAllocsToPrint --> 0)
+        //  fprintf(gclog, "alloc'd %d, bump = %p, low bits: %x, granule = %d\n", int(map->cell_size), bump, intptr_t(bump) & 0xF, granule);
         return allot->body_addr();
       }
 
@@ -218,6 +302,10 @@ class copying_gc {
         allot->set_num_elts(num_elts);
         if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(total_bytes); }
         if (TRACK_NUM_ALLOCATIONS) { ++parent->num_allocations; }
+
+        size_t granule = granule_for(tori_of_tidy(allot->body_addr()));
+        obj_start.set_bit(granule);
+        obj_limit.set_bit(granule + num_granules(total_bytes));
         return allot->body_addr();
       }
       // }}}
@@ -299,6 +387,9 @@ class copying_gc {
           memcpy(new_addr, cell, cell_size);
           cell->set_forwarded_body(new_addr->body_addr());
 
+          obj_start.set_bit(granule_for(tori_of_tidy(new_addr->body_addr())));
+          obj_limit.set_bit(granule_for((tori*) offset(new_addr->body_addr(), cell_size)));
+
           // We now have a cell in the new semispace, but any pointer fields
           // it had are still pointing back to the old semispace.
           // We'll scan it to update those fields in place.
@@ -358,6 +449,25 @@ class copying_gc {
         get_cell_metadata(cell, arr, map, cell_size);
         // Without metadata for the cell, there's not much we can do...
         if (map) scan_with_map_and_arr(cell, *map, arr, depth);
+      }
+
+      inline tidy* tidy_for_granule(size_t g) {
+        return (tidy*) offset(range.base, g * 16);
+      }
+
+      inline size_t granule_for(tori* t) {
+        return distance(range.base, (void*) t) / 16;
+      }
+
+      inline tidy* tidy_for(tori* t) {
+        size_t granule = granule_for(t);
+        if (obj_start.get_bit(granule)) {
+          return (tidy*) t;
+        }
+        //fprintf(gclog, "granule for %p is %d, prev is %d mapping to %p\n", t, granule,
+        //  obj_start.prev_bit_onebyone(granule), tidy_for_granule(obj_start.prev_bit_onebyone(granule)));
+        //fflush(gclog);
+        return tidy_for_granule(obj_start.prev_bit_onebyone(granule));
       }
 
   private:
@@ -447,6 +557,9 @@ public:
     dump_stats(NULL);
   }
 
+  // Precondition: curr owns t.
+  tidy* tidy_for(tori* t) { return curr->tidy_for(t); }
+
   void visit_root(unchecked_ptr* root, const char* slotname) {
     gc_assert(root != NULL, "someone passed a NULL root addr!");
     if (ENABLE_GCLOG) {
@@ -466,30 +579,36 @@ public:
     //                                ...          ...
     //                                 |            |
     //                                 |------------|
-    tidy* body = untag(*root);
+    tidy* tidyn;
+    tori* body = untag(*root);
     if (!body) return;
 
-    heap_cell* obj = heap_cell::for_body(body);
     if (curr->contains(body)) {
-      *root = make_unchecked_ptr(next->ss_copy(obj, depth));
+      tidy* tidy = curr->tidy_for(body);
+      heap_cell* obj = heap_cell::for_tidy(tidy);
+      tidyn = next->ss_copy(obj, depth);
+      *root = make_unchecked_ptr((tori*) offset(tidyn, distance(tidy, body) ));
 
       gc_assert(NULL != untag(*root), "copying gc should not null out slots");
       gc_assert(body != untag(*root), "copying gc should return new pointers");
     } else if (is_marked_as_stable(body)) {
+      // TODO handling interior pointers to stable storage?
+      // Where's the obj bitmap, and how repr? Or just forbid non-tidy ptrs?
+      heap_cell* obj = heap_cell::for_tidy(reinterpret_cast<tidy*>(body));
       next->scan_cell(obj, depth);
     } else {
       // {{{ Should-never-happen error handling...
-      if (next->contains(obj)) {
+      if (next->contains(body)) {
         fprintf(gclog, "foster_gc error: tried to collect"
-                       " cell in next-semispace: %p\n", obj);
+                       " cell in next-semispace: %p\n", body);
         fflush(gclog);
-        fprintf(gclog, "\t\twith meta %p\n", obj->get_meta());
-        fflush(gclog);
+        //fprintf(gclog, "\t\twith meta %p\n", obj->get_meta());
+        //fflush(gclog);
         exit(254);
         //return false;
       } else {
         fprintf(gclog, "foster_gc error: tried to collect"
-                       " unknown cell: %p\n", obj);
+                       " unknown cell: %p\n", body);
         fflush(gclog);
         saw_bad_pointer = true;
       }
@@ -497,7 +616,9 @@ public:
     }
   }
 
-  bool owns(tidy* body) { return curr->contains(body)
+
+
+  bool owns(tori* body) { return curr->contains(body)
                               || next->contains(body); }
 
   // {{{ Allocation, in various flavors & specializations.
@@ -545,6 +666,13 @@ public:
     if (curr->can_allocate_bytes(cell_size)) {
       fprintf(gclog, "gc collection freed space for cell, now have %lld\n", curr->free_size());
       fflush(gclog);
+
+      if (FOSTER_GC_EFFIC_HISTOGRAMS) {
+         double reclaimed = double(curr->free_size()) / double(curr->get_size());
+         int percent = int(reclaimed * 100.0);
+         HISTOGRAM_PERCENTAGE("gc-reclaimed-pct", percent);
+      }
+
       return curr->allocate_cell_prechecked(typeinfo);
     } else { oops_we_died_from_heap_starvation(); return NULL; }
   }
@@ -688,7 +816,11 @@ void copying_gc::gc() {
     fflush(gclog);
   }
 
-  gc_time += (base::TimeTicks::HighResNow() - begin);
+  auto delta = base::TimeTicks::HighResNow() - begin;
+  if (FOSTER_GC_TIME_HISTOGRAMS) {
+    HISTOGRAM_CUSTOM_COUNTS("gc-pause-micros", delta.InMicroseconds(),  0, 60000000, 256);
+  }
+  gc_time += delta;
 }
 
 void copying_gc::worklist::process(copying_gc::semispace* next) {
@@ -781,16 +913,17 @@ FILE* print_timing_stats() {
                 ? NULL
                 : fopen(__foster_globals.dump_json_stats_path.c_str(), "w");
   if (json) fprintf(json, "{\n");
-  gclog_time("Elapsed_runtime", total_elapsed, json);
-  gclog_time("Initlzn_runtime",  init_elapsed, json);
-  gclog_time("     GC_runtime",    gc_elapsed, json);
-  gclog_time("Mutator_runtime",   mut_elapsed, json);
-  if (FOSTER_GC_ALLOC_HISTOGRAMS) {
+  if (!json &&
+      (FOSTER_GC_ALLOC_HISTOGRAMS || FOSTER_GC_TIME_HISTOGRAMS || FOSTER_GC_EFFIC_HISTOGRAMS)) {
     fprintf(gclog, "stats recorder active? %d\n", base::StatisticsRecorder::IsActive());
     std::string output;
     base::StatisticsRecorder::WriteGraph("", &output);
     fprintf(gclog, "%s\n", output.c_str());
   }
+  gclog_time("Elapsed_runtime", total_elapsed, json);
+  gclog_time("Initlzn_runtime",  init_elapsed, json);
+  gclog_time("     GC_runtime",    gc_elapsed, json);
+  gclog_time("Mutator_runtime",   mut_elapsed, json);
   return json;
 }
 
@@ -1048,8 +1181,8 @@ extern "C" void inspect_ptr_for_debugging_purposes(void* bodyvoid) {
                  : (!(intptr_t(bodyvoid) & 0x03)) ? 4 : 0
                  ;
   fprintf(stdout, "inspect_ptr_for_debugging_purposes: %p  (alignment %d)\n", bodyvoid, align);
-  unchecked_ptr bodyu = make_unchecked_ptr(static_cast<tidy*>(bodyvoid));
-  tidy* body = untag(bodyu);
+  unchecked_ptr bodyu = make_unchecked_ptr(static_cast<tori*>(bodyvoid));
+  tori* body = untag(bodyu);
   if (! body) {
     fprintf(stdout, "body is (maybe tagged) null\n");
   } else {
@@ -1062,7 +1195,7 @@ extern "C" void inspect_ptr_for_debugging_purposes(void* bodyvoid) {
       goto done;
     }
 
-    gc::heap_cell* cell = gc::heap_cell::for_body(body);
+    gc::heap_cell* cell = gc::heap_cell::for_tidy(gc::allocator->tidy_for(body));
     if (cell->is_forwarded()) {
       fprintf(stdout, "cell is forwarded to %p\n", cell->get_forwarded_body());
     } else {
@@ -1148,7 +1281,7 @@ void force_gc_for_debugging_purposes() {
 } // namespace foster::runtime::gc
 
 uint8_t ctor_id_of(void* constructed) {
-  gc::heap_cell* cell = gc::heap_cell::for_body((gc::tidy*) constructed);
+  gc::heap_cell* cell = gc::heap_cell::for_tidy((gc::tidy*) constructed);
   const gc::typemap* map = tryGetTypemap(cell);
   gc_assert(map, "foster_ctor_id_of() was unable to get a usable typemap");
   int8_t ctorId = map->ctorId;

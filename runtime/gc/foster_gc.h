@@ -9,6 +9,7 @@ namespace gc {
 struct tidy;
 struct meta;
 struct intr; // interior/internal; like tidy, but not preceded by metadata.
+struct tori; // tidy or interior; consult mark bitmap (if in semispace)
 
 void initialize(void* stack_base);
 int  cleanup();
