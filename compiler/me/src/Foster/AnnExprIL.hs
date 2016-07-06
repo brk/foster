@@ -581,6 +581,7 @@ ilOf :: Context TypeTC -> TypeTC -> Tc TypeIL
 ilOf ctx typ = do
   let q = ilOf ctx
   case typ of
+     TyConAppTC  "Float64" [] -> return $ TyConAppIL "Float64" []
      TyConAppTC  dtname tys -> do
          case Map.lookup dtname (contextDataTypes ctx) of
            Just [dt] -> case dtUnboxedRepr dt of
@@ -594,7 +595,6 @@ ilOf ctx typ = do
                         ,pretty (map fst $ Map.toList $ contextDataTypes ctx)
                 ]
      PrimIntTC  size    -> do return $ PrimIntIL size
-     PrimFloat64TC      -> do return $ PrimFloat64IL
      TupleTypeTC ukind types -> do tys <- mapM q types
                                    kind <- unUnified ukind KindPointerSized
                                    return $ TupleTypeIL kind tys
@@ -679,7 +679,6 @@ ilOfDataCtor ctx (DataCtor nm tyformals tys repr range) = do
 type RhoIL = TypeIL
 data TypeIL =
            PrimIntIL       IntSizeBits
-         | PrimFloat64IL
          | TyConAppIL      DataTypeName [TypeIL]
          | TupleTypeIL     Kind [TypeIL]
          | FnTypeIL        { fnTypeILDomain :: [TypeIL]
@@ -708,7 +707,6 @@ instance Show TypeIL where
         TyConAppIL nam types -> "(TyConAppIL " ++ nam
                                       ++ joinWith " " ("":map show types) ++ ")"
         PrimIntIL size       -> "(PrimIntIL " ++ show size ++ ")"
-        PrimFloat64IL        -> "(PrimFloat64IL)"
         TupleTypeIL KindAnySizeType  typs -> "#(" ++ joinWith ", " (map show typs) ++ ")"
         TupleTypeIL _                typs ->  "(" ++ joinWith ", " (map show typs) ++ ")"
         FnTypeIL   s t cc cs -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
@@ -724,7 +722,6 @@ instance Structured TypeIL where
         case e of
             TyConAppIL nam _types -> text $ "TyConAppIL " ++ nam
             PrimIntIL     size    -> text $ "PrimIntIL " ++ show size
-            PrimFloat64IL         -> text $ "PrimFloat64IL"
             TupleTypeIL   {}      -> text $ "TupleTypeIL"
             FnTypeIL      {}      -> text $ "FnTypeIL"
             CoroTypeIL    {}      -> text $ "CoroTypeIL"
@@ -738,7 +735,6 @@ instance Structured TypeIL where
         case e of
             TyConAppIL _nam types  -> types
             PrimIntIL       {}     -> []
-            PrimFloat64IL          -> []
             TupleTypeIL _bx types  -> types
             FnTypeIL  ss t _cc _cs -> ss++[t]
             CoroTypeIL s t         -> [s,t]
@@ -750,8 +746,8 @@ instance Structured TypeIL where
 
 instance Kinded TypeIL where
   kindOf x = case x of
-    PrimIntIL   {}       -> KindAnySizeType
-    PrimFloat64IL        -> KindAnySizeType
+    PrimIntIL   {}          -> KindAnySizeType
+    TyConAppIL "Float64" [] -> KindAnySizeType
     TyVarIL   _ kind     -> kind
     TyConAppIL  {}       -> KindPointerSized
     TupleTypeIL kind _   -> kind

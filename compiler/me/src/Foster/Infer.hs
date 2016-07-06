@@ -46,7 +46,6 @@ parSubstTcTy prvNextPairs ty =
         TyVarTC  tv          -> fromMaybe ty $ List.lookup tv prvNextPairs
         MetaTyVarTC   {}     -> ty
         PrimIntTC     {}     -> ty
-        PrimFloat64TC {}     -> ty
         TyConAppTC  nm tys   -> TyConAppTC  nm (map q tys)
         TupleTypeTC k  types -> TupleTypeTC k  (map q types)
         RefTypeTC    t       -> RefTypeTC    (q t)
@@ -66,7 +65,6 @@ tySubst subst ty =
     case ty of
         MetaTyVarTC m          -> Map.findWithDefault ty (mtvUniq m) subst
         PrimIntTC     {}       -> ty
-        PrimFloat64TC {}       -> ty
         TyVarTC       {}       -> ty
         TyConAppTC   nm tys    -> TyConAppTC   nm (map q tys)
         RefTypeTC     t        -> RefTypeTC    (q t)
@@ -147,9 +145,6 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
         ,text "t1::", showStructure t1, text "t2::", showStructure t2]
   else
    case (t1, t2) of
-    (PrimFloat64TC, PrimFloat64TC) -> do
-      tcUnifyLoop constraints tysub
-
     ((PrimIntTC  n1), (PrimIntTC  n2)) ->
           if n1 == n2 then do tcUnifyLoop constraints tysub
             else tcFailsMore [text $ "Unable to unify different primitive types: "

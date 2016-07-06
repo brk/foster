@@ -29,7 +29,6 @@ type Effect = TypeAST
 
 data TypeAST =
            PrimIntAST       IntSizeBits
-         | PrimFloat64AST
          | TyConAppAST      DataTypeName [Sigma]
          | TupleTypeAST     [Sigma]
          | CoroTypeAST      (Sigma) (Sigma)
@@ -62,7 +61,7 @@ hpre ds = empty <+> hsep ds
 instance Pretty TypeAST where
     pretty x = case x of
         PrimIntAST         size         -> pretty size
-        PrimFloat64AST                  -> text "Float64"
+        TyConAppAST "Float64" []        -> text "Float64"
         TyConAppAST  tcnm types         -> parens $ text tcnm <> hpre (map pretty types)
         TupleTypeAST      types         -> tupled $ map pretty types
         FnTypeAST    s t fx cc cs       -> text "(" <> pretty s <> text " =" <> text (briefCC cc) <> text ";"
@@ -102,7 +101,7 @@ instance Structured TypeAST where
     textOf e _width =
         case e of
             PrimIntAST     size            -> text $ "PrimIntAST " ++ show size
-            PrimFloat64AST                 -> text $ "PrimFloat64"
+            TyConAppAST "Float64" []       -> text $ "PrimFloat64"
             TyConAppAST    tc  _           -> text $ "TyConAppAST " ++ tc
             TupleTypeAST       _           -> text $ "TupleTypeAST"
             FnTypeAST    {}                -> text $ "FnTypeAST"
@@ -118,7 +117,6 @@ instance Structured TypeAST where
     childrenOf e =
         case e of
             PrimIntAST         _           -> []
-            PrimFloat64AST                 -> []
             TyConAppAST   _tc types        -> types
             TupleTypeAST      types        -> types
             FnTypeAST   ss t fx _ _        -> ss ++ [t, fx]
@@ -138,7 +136,7 @@ minimalTupleAST []    = TupleTypeAST []
 minimalTupleAST [arg] = arg
 minimalTupleAST args  = TupleTypeAST args
 
-nullFx = PrimFloat64AST
+nullFx = TyConAppAST "emptyEffect" []
 
 mkProcType args rets = mkProcTypeWithFx nullFx args rets
 mkFnType   args rets = mkFnTypeWithFx nullFx   args rets
@@ -155,7 +153,7 @@ i64 = PrimIntAST I64
 i1  = PrimIntAST I1
 iw0 = PrimIntAST (IWord 0)
 iw1 = PrimIntAST (IWord 1)
-f64 = PrimFloat64AST
+f64 = TyConAppAST "Float64" []
 
 primTyVars tyvars = map (\v -> (v, KindAnySizeType)) tyvars
 
@@ -372,6 +370,6 @@ gFosterPrimOpsTable = Map.fromList $
   ] ++ fixnumPrimitives I64
     ++ fixnumPrimitives I32
     ++ fixnumPrimitives I8
-    ++ flonumPrimitives "f64" PrimFloat64AST
+    ++ flonumPrimitives "f64" (TyConAppAST "Float64" [])
     ++ fixnumPrimitives (IWord 0)
     ++ fixnumPrimitives (IWord 1)

@@ -952,7 +952,8 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
             -> do debugIf dbgCoro $ green (text "call: coro yield: in/out: ") <$$> pretty inp_ty <$$> pretty out_ty
                   fx <- tcGetCurrentFnFx
                   debugIf dbgCoro $ text "call: coro yield: fx = " <> pretty fx <$$> showStructure fx
-                  unify fx (TupleTypeTC (UniConst KindPointerSized) [inp_ty, out_ty]) [text $ "Inconsistent use of coro_yield " ++ highlightFirstLine (rangeOf rng)]
+                  unify fx (TupleTypeTC (UniConst KindPointerSized) [inp_ty, out_ty])
+                        [text $ "Inconsistent use of coro_yield " ++ highlightFirstLine (rangeOf rng)]
                   return ()
           _ -> return ()
 
@@ -1007,7 +1008,6 @@ tcTypeEquiv t1 t2 =
   let q = tcTypeEquiv in
   case (t1, t2) of
      (PrimIntTC            s1 , PrimIntTC          s2   ) -> s1 == s2
-     (PrimFloat64TC           , PrimFloat64TC           ) -> True
      (TyConAppTC   tcnm1 tys1 , TyConAppTC   tcnm2 tys2 ) -> tcnm1 == tcnm2 && allP tcTypeEquiv tys1 tys2
      (TupleTypeTC _k1    tys1 , TupleTypeTC _k2    tys2 ) -> {- TODO kinds -} allP tcTypeEquiv tys1 tys2
      (FnTypeTC     s1 t1 fx1 c1 x1, FnTypeTC     s2 t2 fx2 c2 x2) -> allP q s1 s2 && q t1 t2 && q fx1 fx2 && liftEqUnifiable (==) c1 c2 && liftEqUnifiable (==) x1 x2
@@ -1456,7 +1456,6 @@ tcType' ctx refinementArgs ris typ = do
         MetaPlaceholderAST MTVTau   nm -> newTcUnificationVarTau nm
         MetaPlaceholderAST MTVSigma nm -> newTcUnificationVarSigma nm
         PrimIntAST         sz -> return (PrimIntTC sz )
-        PrimFloat64AST        -> return (PrimFloat64TC)
         TyVarAST      tv      -> return $ TyVarTC tv
         RefTypeAST    ty      -> liftM   RefTypeTC   (q ty)
         ArrayTypeAST  ty      -> liftM   ArrayTypeTC (q ty)
@@ -1835,7 +1834,6 @@ resolveType annot origSubst origType = go origSubst origType where
   let q x = go subst x in
   case x of
     PrimIntTC   _                  -> return x
-    PrimFloat64TC                  -> return x
     MetaTyVarTC   _                -> return x
     TyVarTC  (SkolemTyVar _ _ _)   -> return x
     TyVarTC  (BoundTyVar name _sr) -> case Map.lookup name subst of
@@ -1884,7 +1882,6 @@ getFreeTyVars xs = do zs <- mapM zonkType xs
   go bound x =
     case x of
         PrimIntTC         {} -> []
-        PrimFloat64TC     {} -> []
         TyConAppTC _nm types     -> concatMap (go bound) types
         TupleTypeTC _k types     -> concatMap (go bound) types
         FnTypeTC ss r fx  _ _    -> concatMap (go bound) (r:fx:ss)
@@ -1935,7 +1932,6 @@ zonkType x = do
                                             writeTcMetaTC m ty'
                                             return ty'
         PrimIntTC     {}        -> return x
-        PrimFloat64TC {}        -> return x
         TyVarTC       {}        -> return x
         TyConAppTC  nm types    -> liftM  (TyConAppTC nm) (mapM zonkType types)
         TupleTypeTC k  types    -> liftM  (TupleTypeTC k) (mapM zonkType types)
@@ -2048,8 +2044,8 @@ tcTypeWellFormed msg ctx typ = do
   let q = tcTypeWellFormed msg ctx
   case typ of
         PrimIntTC      {}     -> return ()
-        PrimFloat64TC  {}     -> return ()
         MetaTyVarTC    {}     -> return ()
+        TyConAppTC "Float64" [] -> return ()
         TyConAppTC  nm types  ->
                             case Map.lookup nm (contextDataTypes ctx) of
                                    Just  _ -> mapM_ q types
@@ -2121,7 +2117,6 @@ collectAllUnificationVars xs = Set.toList (Set.fromList (concatMap go xs))
   where go x =
           case x of
             PrimIntTC  _            -> []
-            PrimFloat64TC           -> []
             TyConAppTC  _nm types   -> concatMap go types
             TupleTypeTC _k  types   -> concatMap go types
             FnTypeTC  ss r fx _ _   -> concatMap go (r:fx:ss)
@@ -2245,7 +2240,6 @@ instance Expr (Maybe TypeAST) where freeVars Nothing = []
 instance Expr TypeAST where
   freeVars typ = case typ of
         PrimIntAST            {} -> []
-        PrimFloat64AST           -> []
         TyConAppAST      _ types -> concatMap freeVars types
         TupleTypeAST       types -> concatMap freeVars types
         FnTypeAST    s t fx _cc _cs -> concatMap freeVars (t:fx:s)

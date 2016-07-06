@@ -23,7 +23,6 @@ data Unifiable ty = UniConst ty
 
 data TypeTC =
            PrimIntTC       IntSizeBits
-         | PrimFloat64TC
          | TyConAppTC      DataTypeName [TypeTC]
          | TupleTypeTC     (Unifiable Kind) [TypeTC]
          | CoroTypeTC      TypeTC  TypeTC
@@ -85,7 +84,7 @@ uni_briefCC v = show v
 instance Pretty TypeTC where
     pretty x = case x of
         PrimIntTC          size         -> pretty size
-        PrimFloat64TC                   -> text "Float64"
+        TyConAppTC "Float64" []         -> text "Float64"
         TyConAppTC   tcnm types         -> parens $ text tcnm <> hpre (map pretty types)
         TupleTypeTC _kind types         -> tupled $ map pretty types
         FnTypeTC     s t fx  cc cs      -> text "(" <> pretty s <> text " ="
@@ -104,7 +103,6 @@ instance Show TypeTC where
         TyConAppTC nam types   -> "(TyConAppTC " ++ nam
                                       ++ joinWith " " ("":map show types) ++ ")"
         PrimIntTC size         -> "(PrimIntTC " ++ show size ++ ")"
-        PrimFloat64TC          -> "(PrimFloat64TC)"
         TupleTypeTC _k types   -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
         FnTypeTC  s t fx cc cs -> "(" ++ show s ++ " =" ++ uni_briefCC cc ++ ";fx=" ++ show fx ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
         CoroTypeTC s t         -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
@@ -135,7 +133,6 @@ instance Structured TypeTC where
         case e of
             TyConAppTC nam _types   -> text $ "TyConAppTC " ++ nam
             PrimIntTC     size      -> text $ "PrimIntTC " ++ show size
-            PrimFloat64TC           -> text $ "PrimFloat64TC"
             TupleTypeTC   {}        -> text $ "TupleTypeTC"
             FnTypeTC      {}        -> text $ "FnTypeTC"
             CoroTypeTC    {}        -> text $ "CoroTypeTC"
@@ -150,7 +147,6 @@ instance Structured TypeTC where
         case e of
             TyConAppTC _nam types   -> types
             PrimIntTC       {}      -> []
-            PrimFloat64TC           -> []
             TupleTypeTC  _k types   -> types
             FnTypeTC  ss t fx _cc _cs  -> ss++[t,fx]
             CoroTypeTC s t          -> [s,t]

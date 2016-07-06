@@ -83,6 +83,6 @@ typecheckRat annot originalText _expTyTODO = do
   --tcLift $ putStrLn $ "typecheckRat: " ++ originalText ++ " :?: " ++ show _expTyTODO
   -- TODO: be more discriminating about float vs rational numbers?
   let val = (read originalText) :: Double
-  return (AnnLiteral annot PrimFloat64TC
+  return (AnnLiteral annot (TyConAppTC "Float64" [])
                      (LitFloat $ LiteralFloat val originalText))
 

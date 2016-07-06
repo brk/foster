@@ -10,7 +10,6 @@ import Foster.Base
 
 data TypeLL =
            LLPrimInt       IntSizeBits
-         | LLPrimFloat64
          | LLNamedType     String
          | LLStructType    [TypeLL]
          | LLProcType      { llProcTypeDomain   :: [TypeLL]

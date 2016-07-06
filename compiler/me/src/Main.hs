@@ -554,7 +554,6 @@ desugarParsedModule tcenv m = do
           TyConAppP "Int32"   [] -> return $ PrimIntAST         I32
           TyConAppP "Int8"    [] -> return $ PrimIntAST         I8
           TyConAppP "Bool"    [] -> return $ PrimIntAST         I1
-          TyConAppP "Float64" [] -> return $ PrimFloat64AST
           TyConAppP "Array"  [t] -> liftM  ArrayTypeAST            (q t)
           TyConAppP "Ref"    [t] -> liftM  RefTypeAST              (q t)
           TyConAppP "Coro" [o,i] -> liftM2 CoroTypeAST       (q o) (q i)

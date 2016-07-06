@@ -13,7 +13,6 @@ import Foster.KNUtil
 
 data MonoType =
            PrimInt       IntSizeBits
-         | PrimFloat64
          | TyConApp      DataTypeName [MonoType]
          | TupleType     [MonoType]
          | StructType    [MonoType]
@@ -56,7 +55,7 @@ instance Pretty ProcOrFunc where pretty FT_Proc = text "proc"
 instance Pretty MonoType where
   pretty t = case t of
           PrimInt        isb          -> pretty isb
-          PrimFloat64                 -> text "Float64"
+          TyConApp "Float64" []       -> text "Float64"
           TyConApp       dt ts        -> text "(" <> pretty dt <+> tupled (map pretty ts) <> text "]"
           TupleType      ts           -> tupled (map pretty ts)
           StructType     ts           -> text "#" <> tupled (map pretty ts)

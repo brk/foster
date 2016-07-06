@@ -420,7 +420,7 @@ insertDumbGCRoots bbgp0 dump = do
   -- Filter out non-pointer-typed variables from live set.
   isGCable ty = case ty of
                  LLPrimInt _            -> False
-                 LLPrimFloat64          -> False
+                 LLNamedType "Float64"  -> False
                  LLStructType tys       -> any isGCable tys
                  LLProcType _ _ _       -> False
                  LLPtrType _            -> True -- could have further annotations on ptr types

@@ -193,7 +193,6 @@ lambdaLift freeVars f = do
 monoToLL :: MonoType -> TypeLL
 monoToLL mt = case mt of
    PrimInt       isb            -> LLPrimInt       isb
-   PrimFloat64                  -> LLPrimFloat64
    TyConApp      dtn _tys       -> LLNamedType dtn
    TupleType     tys            -> llTupleType     (map q tys)
    StructType    tys            -> LLStructType    (map q tys)
