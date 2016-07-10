@@ -22,6 +22,7 @@ import qualified Data.Map as Map(Map, lookup, toList, fromList)
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T
 
+import Data.Maybe (fromMaybe)
 import Data.UnionFind.IO(descriptor)
 import Control.Monad(when, liftM)
 
@@ -379,15 +380,14 @@ checkArrayIndexer b = do
                          ,prettyWithLineNumbers (rangeOf b)
                          ]
 
-unUnified :: Unifiable v -> v -> Tc v
-unUnified uni defaultValue =
+unUnified :: Unifiable v -> Tc (Maybe v)
+unUnified uni =
   case uni of
-    UniConst x -> return x
+    UniConst x -> return (Just x)
     UniVar (_u,v) -> do
-        mbx <- tcLift $ descriptor v
-        case mbx of
-          Just x -> return x
-          Nothing -> return defaultValue
+        tcLift $ descriptor v
+
+unUnifiedWithDefault uni d = do unUnified uni >>= return . fromMaybe d
 
 sanityCheckIntLiteralNotOversized rng isb int =
     sanityCheck (intSizeOf isb >= litIntMinBits int) $
@@ -596,7 +596,7 @@ ilOf ctx typ = do
                 ]
      PrimIntTC  size    -> do return $ PrimIntIL size
      TupleTypeTC ukind types -> do tys <- mapM q types
-                                   kind <- unUnified ukind KindPointerSized
+                                   kind <- unUnifiedWithDefault ukind KindPointerSized
                                    return $ TupleTypeIL kind tys
      FnTypeTC  ss t _fx cc cs -> do
         (y:xs) <- mapM q (t:ss)
@@ -604,8 +604,8 @@ ilOf ctx typ = do
         -- where there are no external constraints on
         -- the loop's calling convention or representation.
         -- So, give reasonable default values here.
-        cc' <- unUnified cc FastCC
-        cs' <- unUnified cs FT_Func
+        cc' <- unUnifiedWithDefault cc FastCC
+        cs' <- unUnifiedWithDefault cs FT_Func
         return $ FnTypeIL xs y cc' cs'
      RefinedTypeTC v e __args -> do v' <- aiVar ctx v
                                     e' <- ail ctx e
