@@ -63,6 +63,16 @@ bool tryBindArray(Value* base, Value*& arr, Value*& len);
 
 namespace {
 
+  std::string takeEnd(const std::string& s, int n) {
+    int idx = s.size() - n;
+    if (idx < 0) idx = 0;
+    return s.substr(idx, n);
+  }
+
+  bool endsWith(const std::string& haystack, const std::string& needle) {
+    return needle == takeEnd(haystack, needle.size());
+  }
+
 llvm::Type* getLLVMType(TypeAST* type) {
   ASSERT(type) << "getLLVMType must be given a non-null type!";
   return type->getLLVMType();
@@ -320,6 +330,13 @@ void addExternDecls(const std::vector<LLDecl*> decls,
 }
 
 ///}}}//////////////////////////////////////////////////////////////
+llvm::GlobalVariable* emitPrivateGlobal(CodegenPass* pass,
+                                 llvm::Constant* val,
+                                 const std::string& name);
+llvm::GlobalVariable* emitGlobalNonArrayCell(CodegenPass* pass,
+                                     llvm::GlobalVariable* typemap,
+                                     llvm::Constant* body,
+                                     const std::string& name);
 
 void LLModule::codegenModule(CodegenPass* pass) {
   registerKnownDataTypes(datatype_decls, pass);
@@ -339,6 +356,31 @@ void LLModule::codegenModule(CodegenPass* pass) {
     procs[i]->codegenProto(pass);
     // Associate the LLProc with its name so we can get its type later on.
     pass->procs[procs[i]->getCName()] = procs[i];
+  }
+
+  for (size_t i = 0; i < procs.size(); ++i) {
+    // Codegen a global cell containing a closure pair for top-level functions.
+    // The middle-end detects top-level functions which are used as closures
+    // in a higher order way, and uses the name F.func instead of F, which
+    // (at the end of this loop) gets mapped to the contents of the global cell.
+    if (procs[i]->getCName() == "main") continue;
+
+    std::vector<llvm::Constant*> cell_vals;
+    auto Ffunc = pass->mod->getFunction(procs[i]->getCName() + ".proc");
+    ASSERT(Ffunc) << "Couldn't find a closure wrapper for " << procs[i]->getCName();
+    cell_vals.push_back(Ffunc);
+    cell_vals.push_back(llvm::ConstantPointerNull::getNullValue(builder.getInt8PtrTy()));
+    auto const_cell = llvm::ConstantStruct::getAnon(cell_vals);
+
+    std::string cloname = procs[i]->getCName() + ".func";
+
+    CtorRepr ctorRepr; ctorRepr.smallId = -1;
+    auto globalCell = emitGlobalNonArrayCell(pass,
+                          getTypeMapForType(TypeAST::i(64), ctorRepr, pass->mod, NotArray),
+                          const_cell,
+                          cloname + ".cell");
+
+    pass->globalValues[cloname] = builder.CreateConstGEP2_32(NULL, globalCell, 0, 2);
   }
 
   // Codegen all the function bodies, now that we can resolve mutually-recursive
@@ -391,6 +433,40 @@ std::string getGlobalSymbolName(const std::string& sourceName) {
   return sourceName;
 }
 
+template<typename T>
+void vectorAppend(std::vector<T>& target, const std::vector<T>& other) {
+  target.insert(target.end(), other.begin(), other.end());
+}
+
+// We'll generate a wrapper for every toplevel procedure, even if it's not
+// needed, and rely on LLVM's dead value elimination to remove the cruft.
+void codegenClosureWrapper(llvm::Function* F, llvm::CallingConv::ID cc,
+                           llvm::GlobalValue::LinkageTypes linkage,
+                           std::string symbolName, CodegenPass* pass) {
+    auto FT = F->getFunctionType();
+    std::vector<llvm::Type*> argTys;
+    argTys.push_back(builder.getInt8PtrTy());
+    for (size_t i = 0; i < FT->getNumParams(); ++i) { argTys.push_back(FT->getParamType(i)); }
+    auto FfuncT = llvm::FunctionType::get(FT->getReturnType(), argTys, false);
+    std::string funcSymbolName = symbolName + ".proc";
+    auto Ffunc = Function::Create(FfuncT, linkage, funcSymbolName, pass->mod);
+
+    Ffunc->setCallingConv(cc);
+
+    Ffunc->arg_begin()->setName("env");
+    pass->addEntryBB(Ffunc);
+    std::vector<llvm::Value*> args;
+    auto skipEnv = Ffunc->arg_begin(); skipEnv++;
+    while (skipEnv != Ffunc->arg_end()) { args.push_back(skipEnv); ++skipEnv; }
+    auto callInst = builder.CreateCall(F, args);
+    if (callInst->getType()->isVoidTy()) {
+      builder.CreateRetVoid();
+    } else {
+      builder.CreateRet(callInst);
+    }
+    disableFramePointerElimination(*Ffunc);
+}
+
 void LLProc::codegenProto(CodegenPass* pass) {
   std::string symbolName = getGlobalSymbolName(this->getCName());
 
@@ -425,6 +501,8 @@ void LLProc::codegenProto(CodegenPass* pass) {
   if (symbolName == kFosterMain || F->getName().find("noinline_llvm_") == 0) {
     F->addFnAttr(llvm::Attribute::NoInline);
   }
+
+  codegenClosureWrapper(F, cc, linkage, symbolName, pass);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -821,7 +899,6 @@ llvm::GlobalVariable* emitPrivateGlobal(CodegenPass* pass,
       /*Initializer=*/ val,
       /*Name=*/        name);
   globalVar->setAlignment(16);
-
   return globalVar;
 }
 
@@ -885,7 +962,16 @@ llvm::Value* LLValueVar::codegen(CodegenPass* pass) {
 }
 
 llvm::Value* LLGlobalSymbol::codegen(CodegenPass* pass) {
-  return pass->lookupFunctionOrDie(this->name);
+  if (endsWith(this->name, ".func")) {
+    llvm::Value* v = builder.GetInsertBlock()->getModule()->getGlobalVariable(this->name);
+    if (!v) {
+      v = pass->globalValues[this->name];
+    }
+    ASSERT(v) << "\n\tGlobal symbol " << this->name << " not found!";
+    return v;
+  } else {
+    return pass->lookupFunctionOrDie(this->name);
+  }
 }
 
 llvm::Value* LLVar::codegen(CodegenPass* pass) {

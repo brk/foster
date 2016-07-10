@@ -111,7 +111,8 @@ struct CodegenPass {
 
   std::map<std::string,     LLBlock*>     fosterBlocks;
   WorklistLIFO<std::string, LLBlock*>   worklistBlocks;
-  std::map<std::string, llvm::Value*> staticStrings;
+  std::map<std::string, llvm::Value*> staticStrings; // anonymous strings, by contents
+  std::map<std::string, llvm::Value*> globalValues; // named values
 
   std::string currentProcName;
 

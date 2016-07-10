@@ -13,7 +13,7 @@ import Compiler.Hoopl
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Text.PrettyPrint.Boxes as Boxes
 
-import Foster.Base(TExpr, TypedId(TypedId), freeTypedIds, Ident, Occurrence,
+import Foster.Base(TExpr, TypedId(TypedId), freeTypedIds, Ident(..), Occurrence,
                    tidType, tidIdent, typeOf, MayGC(GCUnknown), boolGC)
 import Foster.CFG(runWithUniqAndFuel, M, rebuildGraphM, mapGraphNodesM_)
 import Foster.Config
@@ -29,7 +29,7 @@ import Data.Map(Map)
 import qualified Data.Set as Set
 import qualified Data.Map as Map(lookup, empty, elems, findWithDefault, insert,
            keys, assocs, delete, fromList, keysSet, alter)
-import qualified Data.Text as T(pack)
+import qualified Data.Text as T(pack, takeEnd)
 import Control.Monad(when, liftM)
 import Control.Monad.IO.Class(liftIO)
 import Control.Monad.State(evalStateT, get, put, modify, StateT, lift, gets,
@@ -369,7 +369,7 @@ insertDumbGCRoots bbgp0 dump = do
   -- and extend the substitution.
   maybeRootInitializer :: LLVar -> RootMapped (Graph Insn' O O)
   maybeRootInitializer v = do
-    if not $ isGCable (tidType v)
+    if not $ isGCableVar v
       then return emptyGraph
       else do junkid <- fresh (show (tidIdent v) ++ ".junk")
               let junk = TypedId (LLPtrType (LLStructType [])) junkid
@@ -407,7 +407,7 @@ insertDumbGCRoots bbgp0 dump = do
                            return $ trace ("withGCLoad " ++ show v ++ " ==> " ++ show (pretty rv)) rv
 
       withGCLoad :: LLVar -> RootMapped ([Insn' O O], LLVar)
-      withGCLoad v = if not $ isGCable (tidType v) then return ([], v)
+      withGCLoad v = if not $ isGCableVar v then return ([], v)
        else do gcr <- get
                case Map.lookup v gcr of
                  Just root -> do retLoaded root
@@ -416,6 +416,11 @@ insertDumbGCRoots bbgp0 dump = do
                                  let root = TypedId (tidType v) rootid
                                  put (Map.insert v root gcr)
                                  retLoaded root
+
+  isGlobalFunc (GlobalSymbol t) = T.takeEnd 5 t == T.pack ".func"
+  isGlobalFunc (Ident _ _) = False
+
+  isGCableVar v = if isGlobalFunc (tidIdent v) then False else isGCable (tidType v)
 
   -- Filter out non-pointer-typed variables from live set.
   isGCable ty = case ty of
