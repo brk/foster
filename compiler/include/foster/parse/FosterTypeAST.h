@@ -52,6 +52,7 @@ public:
 
   virtual const FnTypeAST*     castFnTypeAST() const { return NULL; }
   virtual const StructTypeAST* castStructTypeAST() const { return NULL; }
+  virtual const RefTypeAST*    castPtrTypeAST() const { return NULL; }
   virtual bool isGarbageCollectible() const { return false; }
 
   virtual void show(PrettyPrintTypePass*    pass) = 0;
@@ -146,6 +147,7 @@ class RefTypeAST : public TypeAST {
 public:
   virtual void show(PrettyPrintTypePass* pass);
   virtual llvm::Type* getLLVMType() const;
+  virtual const RefTypeAST*    castPtrTypeAST() const { return this; }
 
   TypeAST*& getElementType() { return underlyingType; }
 

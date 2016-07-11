@@ -41,14 +41,43 @@ part2 = {
   print_i64 x[1];
 };
 
+invoker32 = { f => f !; }
+oddity = {
+  expect_i32 3333;
+  ffff = { 3333 };
+  print_i32 ( ffff ! );
+
+  expect_i32 3333;
+  print_i32 (invoker32 ffff);
+};
+
+//part3_helper = { b => { b } };
+invoker = { f => f ! };
 part3 = {
-  x = prim mach-array-literal { True } { False };
+  oddity !;
+  fz = { True };
+  x = prim mach-array-literal fz; // (part3_helper False);
+
+  expect_i32 1111;
+
+  //expect_i1 False;
+  //print_i1 (x[1] !);
+
+  fx = x[0];
+
+  print_i32 1111;
 
   expect_i1 True;
-  print_i1 (x[0] !);
+  print_i1 (fz !);
 
-  expect_i1 False;
-  print_i1 (x[1] !);
+  print_i32 2222;
+  expect_i32 2222;
+
+  expect_i1 True;
+  print_i1 (invoker fz);
+
+  expect_i1 True;
+  print_i1 (invoker fx);
 };
 
 part4 = {

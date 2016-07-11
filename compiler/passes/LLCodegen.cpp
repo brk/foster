@@ -372,13 +372,13 @@ void LLModule::codegenModule(CodegenPass* pass) {
     cell_vals.push_back(llvm::ConstantPointerNull::getNullValue(builder.getInt8PtrTy()));
     auto const_cell = llvm::ConstantStruct::getAnon(cell_vals);
 
-    std::string cloname = procs[i]->getCName() + ".func";
+    std::string cloname = procs[i]->getCName();
 
     CtorRepr ctorRepr; ctorRepr.smallId = -1;
     auto globalCell = emitGlobalNonArrayCell(pass,
                           getTypeMapForType(TypeAST::i(64), ctorRepr, pass->mod, NotArray),
                           const_cell,
-                          cloname + ".cell");
+                          cloname + ".closure.cell");
 
     pass->globalValues[cloname] = builder.CreateConstGEP2_32(NULL, globalCell, 0, 2);
   }
@@ -962,16 +962,23 @@ llvm::Value* LLValueVar::codegen(CodegenPass* pass) {
 }
 
 llvm::Value* LLGlobalSymbol::codegen(CodegenPass* pass) {
-  if (endsWith(this->name, ".func")) {
-    llvm::Value* v = builder.GetInsertBlock()->getModule()->getGlobalVariable(this->name);
-    if (!v) {
-      v = pass->globalValues[this->name];
-    }
-    ASSERT(v) << "\n\tGlobal symbol " << this->name << " not found!";
-    return v;
-  } else {
-    return pass->lookupFunctionOrDie(this->name);
+  // Closure conversion emits variables with procedure type; we'd be quite
+  // remiss to use the nullary global closure wrapper instead of the proc!
+  bool isProc = NULL != this->type->castFnTypeAST();
+
+  auto v = pass->globalValues[this->name];
+  if (!v || isProc) {
+    if (!v) llvm::outs() << "falling back to global proc instead of closure for " << this->name << "\n";
+    v = pass->lookupFunctionOrDie(this->name);
   }
+  if (this->type) {
+    llvm::outs() << "~~~~~ " << this->name << " :: " << str(this->type) << "\n";
+  } else {
+    llvm::outs() << "~~~~~ " << this->name << " :: ??? \n";
+  }
+  llvm::outs() << "    " << str(v->getType()) << "\n";
+
+  return v;
 }
 
 llvm::Value* LLVar::codegen(CodegenPass* pass) {

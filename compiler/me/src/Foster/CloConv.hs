@@ -588,7 +588,7 @@ instance Pretty (Insn' e x) where
 prettyR roots = (if Set.size roots > 15 then text "..." else pretty roots) <> parens (pretty (Set.size roots))
 
 isProc ft = case ft of FnType _ _ _ FT_Proc -> True
-                       _                      -> False
+                       _                    -> False
 
 isFunc ft = case ft of FnType _ _ _ FT_Func     -> True
                        PtrType (StructType (t:_)) -> isProc t

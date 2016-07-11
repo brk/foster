@@ -286,7 +286,7 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
    -- Nullary constructors are constants; non-nullary ctors are functions.
    ctorTypeAST [] dtType [] = Left dtType
    ctorTypeAST [] dtType ctorArgTypes =
-                            Right $ FnTypeAST ctorArgTypes dtType nullFx FastCC FT_Proc
+                            Right $ FnTypeAST ctorArgTypes dtType nullFx FastCC FT_Func
 
    ctorTypeAST tyformals dt ctorArgTypes =
      let f = ForAllAST (map convertTyFormal tyformals) in

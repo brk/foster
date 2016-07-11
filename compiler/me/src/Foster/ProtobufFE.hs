@@ -72,13 +72,9 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
   tm (CBOR_UInt x) n = x == n
   tm other _n = error $ "tm expected CBOR_UInt, got " ++ show other
 
-  markFnAsProc (FnTypeP d r fx cc _ sr) = (FnTypeP d r fx cc FT_Proc sr)
-  markFnAsProc (ForAllP formals t) = ForAllP formals (markFnAsProc t)
-  markFnAsProc ty = ty
-
   cb_parse_ToplevelItem cbor = case cbor of
     CBOR_Array [tok, _,_cbr, CBOR_Array [x, t]] | tok `tm` tok_DECL ->
-       ToplevelItemDecl (cb_parse_x_str x, markFnAsProc $ cb_parse_t t)
+       ToplevelItemDecl (cb_parse_x_str x, cb_parse_t t)
     CBOR_Array [tok, _,_cbr, CBOR_Array [x, atom]] | tok `tm` tok_DEFN ->
       case (cb_parse_x_str x, cb_parse_atom atom) of
         (name, E_FnAST annot fn) ->

@@ -862,14 +862,7 @@ void get_static_data_range(memory_range& r) {
 // {{{ GC startup & shutdown
 void register_stackmaps(ClusterMap&); // see foster_gc_stackmaps.cpp
 
-void initialize(void* stack_highest_addr) {
-  init_start = base::TimeTicks::HighResNow();
-  gclog = fopen("gclog.txt", "w");
-  fprintf(gclog, "----------- gclog ------------\n");
-
-  base::StatisticsRecorder::Initialize();
-  allocator = new copying_gc(gSEMISPACE_SIZE());
-
+void register_allocator_ranges(void* stack_highest_addr) {
   // ASSUMPTION: stack segments grow down, and are linear...
   size_t stack_size = get_default_stack_size();
   allocator_range ar;
@@ -882,6 +875,17 @@ void initialize(void* stack_highest_addr) {
   get_static_data_range(datarange.range);
   datarange.stable = true;
   allocator_ranges.push_back(datarange);
+}
+
+void initialize(void* stack_highest_addr) {
+  init_start = base::TimeTicks::HighResNow();
+  gclog = fopen("gclog.txt", "w");
+  fprintf(gclog, "----------- gclog ------------\n");
+
+  base::StatisticsRecorder::Initialize();
+  allocator = new copying_gc(gSEMISPACE_SIZE());
+
+  register_allocator_ranges(stack_highest_addr);
 
   register_stackmaps(clusterForAddress);
 
@@ -1258,6 +1262,13 @@ void* memalloc_cell_16(typemap* typeinfo) {
     allocator->force_gc_for_debugging_purposes();
   }
   return allocator->allocate_cell_N<16>(typeinfo);
+}
+
+void* memalloc_cell_32(typemap* typeinfo) {
+  if (GC_BEFORE_EVERY_MEMALLOC_CELL) {
+    allocator->force_gc_for_debugging_purposes();
+  }
+  return allocator->allocate_cell_N<32>(typeinfo);
 }
 
 void* memalloc_array(typemap* typeinfo, int64_t n, int8_t init) {

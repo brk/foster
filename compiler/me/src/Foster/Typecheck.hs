@@ -593,7 +593,8 @@ tcRhoDeref ctx rng e1 expTy = do
       RefTypeTC    {} -> return ()
       MetaTyVarTC  {} -> return ()
       other -> tcFails [text $ "Expected deref-ed expr "
-                           ++ "to have ref type, had " ++ show other ++ highlightFirstLine (rangeOf rng)]
+                           ++ "to have ref type, had " ++ show other,
+                        string $ highlightFirstLine (rangeOf rng)]
     matchExp expTy (AnnDeref rng tau a1) "deref"
 -- }}}
 
@@ -1408,10 +1409,9 @@ extendContext ctx protoFormals =
                  prependContextBindings ctx (map bindingForVar protoFormals)
 
 fnTypeTemplate :: FnAST TypeAST -> [TypeTC] -> TypeTC -> TypeTC -> TypeTC
-fnTypeTemplate f argtypes retty fx =
+fnTypeTemplate _f argtypes retty fx =
   -- Compute "base" function type, ignoring any type parameters.
-  let procOrFunc = if fnWasToplevel f then FT_Proc else FT_Func in
-  FnTypeTC argtypes retty fx (UniConst FastCC) (UniConst procOrFunc)
+  FnTypeTC argtypes retty fx (UniConst FastCC) (UniConst FT_Func)
 
 -- Verify that the given formals have distinct names.
 getUniquelyNamedFormals :: SourceRange -> [TypedId ty] -> T.Text -> Tc [TypedId ty]
@@ -2276,7 +2276,7 @@ fnTypeShallow ctx f = tcTypeAndResolve ctx fnTyAST (fnAstAnnot f)
                         (MetaPlaceholderAST MTVSigma ("ret type for " ++ (T.unpack $ fnAstName f)))
                         (MetaPlaceholderAST MTVTau   ("effectvar," ++ (T.unpack $ fnAstName f)))
                         FastCC
-                        (if fnWasToplevel f then FT_Proc else FT_Func)
+                        FT_Func
    fnTyAST = case fnTyFormals f of
                  [] -> fnTyAST0
                  tyformals -> ForAllAST (map convertTyFormal tyformals) fnTyAST0

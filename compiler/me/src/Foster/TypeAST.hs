@@ -192,11 +192,11 @@ primitiveDecls =
     ,(,) "print_newline" $ mkProcType [] []
 
     ,(,) "memcpy_i8_to_from_at_len" $ mkProcType [ArrayTypeAST i8,
-                                                  ArrayTypeAST i8, i32, i32] []
+                                                ArrayTypeAST i8, i32, i32] []
     ,(,) "memcpy_i8_to_at_from_len" $ mkProcType [ArrayTypeAST i8, i32,
-                                                  ArrayTypeAST i8, i32] []
+                                                ArrayTypeAST i8, i32] []
     ,(,) "memcpy_i8_to_at_from_at_len" $ mkProcType [ArrayTypeAST i8, i64,
-                                                     ArrayTypeAST i8, i64, i64] [i8]
+                                                   ArrayTypeAST i8, i64, i64] [i8]
 
     ,(,) "prim_print_bytes_stdout" $ mkProcType [ArrayTypeAST i8, i32] []
     ,(,) "prim_print_bytes_stderr" $ mkProcType [ArrayTypeAST i8, i32] []
@@ -240,17 +240,17 @@ primitiveDecls =
                          (ForAllAST (primTyVars [a, b])
                             (mkFnType [TyVarAST b] [TyVarAST a]))
 
-    ,(,) "force_gc_for_debugging_purposes" $ mkFnType [] [i32]
+    ,(,) "force_gc_for_debugging_purposes" $ mkProcType [] [i32]
 
     -- TODO this is not correct for Solaris, AIX, or SGI/Irix,
     -- which use structs for time results, and is misleading on
     -- Alpha and Sparc v9, which have a 32-bit result.
-    ,(,) "foster_getticks"         $ mkFnType [] [i64]
-    ,(,) "foster_getticks_elapsed" $ mkFnType [i64, i64] [f64]
+    ,(,) "foster_getticks"         $ mkProcType [] [i64]
+    ,(,) "foster_getticks_elapsed" $ mkProcType [i64, i64] [f64]
 
-    ,(,) "foster_fmttime_secs"     $ mkFnType [f64] [fosStringType]
-    ,(,) "foster_gettime_microsecs"    $ mkFnType [] [i64]
-    ,(,) "foster_gettime_elapsed_secs" $ mkFnType [i64, i64] [f64]
+    ,(,) "foster_fmttime_secs"     $ mkProcType [f64] [fosStringType]
+    ,(,) "foster_gettime_microsecs"    $ mkProcType [] [i64]
+    ,(,) "foster_gettime_elapsed_secs" $ mkProcType [i64, i64] [f64]
     ]
 
 primopDecls = map (\(name, (ty, _op)) -> (name, ty)) $ Map.toList gFosterPrimOpsTable
@@ -284,31 +284,31 @@ fixnumPrimitives bitsize =
   ,("<=S" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp "<=s" iKK))
   ,(">=S" ++ (intSize bitsize), (mkFnType [iKK, iKK] [i1], PrimOp ">=s" iKK))
   ] ++
-  [mkPrim "+"           $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "-"           $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "*"           $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "+uc"         $ mkFnType [iKK, iKK] [iKK] -- checked variants
-  ,mkPrim "-uc"         $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "*uc"         $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "+sc"         $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "-sc"         $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "*sc"         $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "bitand"      $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "bitor"       $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "bitxor"      $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "bitshl"      $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "bitlshr"     $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "bitashr"     $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "srem-unsafe" $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "sdiv-unsafe" $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "urem-unsafe" $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "udiv-unsafe" $ mkFnType [iKK, iKK] [iKK]
-  ,mkPrim "=="          $ mkFnType [iKK, iKK] [i1]
-  ,mkPrim "!="          $ mkFnType [iKK, iKK] [i1]
-  ,mkPrim "negate"      $ mkFnType [iKK]      [iKK]
-  ,mkPrim "bitnot"      $ mkFnType [iKK]      [iKK]
-  ,mkPrim "ctlz"        $ mkFnType [iKK]      [iKK]
-  ,mkPrim "ctpop"       $ mkFnType [iKK]      [iKK]
+  [mkPrim "+"           $ mkProcType [iKK, iKK] [iKK]
+  ,mkPrim "-"           $ mkProcType [iKK, iKK] [iKK]
+  ,mkPrim "*"           $ mkProcType [iKK, iKK] [iKK]
+  ,mkPrim "+uc"         $ mkProcType [iKK, iKK] [iKK] -- checked variants
+  ,mkPrim "-uc"         $ mkProcType [iKK, iKK] [iKK]
+  ,mkPrim "*uc"         $ mkProcType [iKK, iKK] [iKK]
+  ,mkPrim "+sc"         $ mkProcType [iKK, iKK] [iKK]
+  ,mkPrim "-sc"         $ mkProcType [iKK, iKK] [iKK]
+  ,mkPrim "*sc"         $ mkProcType [iKK, iKK] [iKK]
+  ,mkPrim "bitand"      $ mkProcType [iKK, iKK] [iKK]
+  ,mkPrim "bitor"       $ mkProcType [iKK, iKK] [iKK]
+  ,mkPrim "bitxor"      $ mkProcType [iKK, iKK] [iKK]
+  ,mkPrim "bitshl"      $ mkProcType [iKK, iKK] [iKK]
+  ,mkPrim "bitlshr"     $ mkProcType [iKK, iKK] [iKK]
+  ,mkPrim "bitashr"     $ mkProcType [iKK, iKK] [iKK]
+  ,mkPrim "srem-unsafe" $ mkProcType [iKK, iKK] [iKK]
+  ,mkPrim "sdiv-unsafe" $ mkProcType [iKK, iKK] [iKK]
+  ,mkPrim "urem-unsafe" $ mkProcType [iKK, iKK] [iKK]
+  ,mkPrim "udiv-unsafe" $ mkProcType [iKK, iKK] [iKK]
+  ,mkPrim "=="          $ mkProcType [iKK, iKK] [i1]
+  ,mkPrim "!="          $ mkProcType [iKK, iKK] [i1]
+  ,mkPrim "negate"      $ mkProcType [iKK]      [iKK]
+  ,mkPrim "bitnot"      $ mkProcType [iKK]      [iKK]
+  ,mkPrim "ctlz"        $ mkProcType [iKK]      [iKK]
+  ,mkPrim "ctpop"       $ mkProcType [iKK]      [iKK]
   ]
 
 -- For example, we'll have a function with external signature
@@ -317,18 +317,18 @@ fixnumPrimitives bitsize =
 --      (PrimOp "f+" PrimFloat64AST)
 flonumPrimitives tystr ty =
   let mkPrim nm fnty = (prettyOpName nm tystr, (fnty, PrimOp ("f" ++ nm) ty)) in
-  [mkPrim "+"       $ mkFnType [ty, ty] [ty]
-  ,mkPrim "-"       $ mkFnType [ty, ty] [ty]
-  ,mkPrim "*"       $ mkFnType [ty, ty] [ty]
-  ,mkPrim "div"     $ mkFnType [ty, ty] [ty]
-  ,mkPrim "<"       $ mkFnType [ty, ty] [i1]
-  ,mkPrim ">"       $ mkFnType [ty, ty] [i1]
-  ,mkPrim "<="      $ mkFnType [ty, ty] [i1]
-  ,mkPrim ">="      $ mkFnType [ty, ty] [i1]
-  ,mkPrim "=="      $ mkFnType [ty, ty] [i1]
-  ,mkPrim "!="      $ mkFnType [ty, ty] [i1]
-  ,mkPrim "sqrt"    $ mkFnType [ty]     [ty]
-  ,mkPrim "muladd"  $ mkFnType [ty, ty, ty] [ty]
+  [mkPrim "+"       $ mkProcType [ty, ty] [ty]
+  ,mkPrim "-"       $ mkProcType [ty, ty] [ty]
+  ,mkPrim "*"       $ mkProcType [ty, ty] [ty]
+  ,mkPrim "div"     $ mkProcType [ty, ty] [ty]
+  ,mkPrim "<"       $ mkProcType [ty, ty] [i1]
+  ,mkPrim ">"       $ mkProcType [ty, ty] [i1]
+  ,mkPrim "<="      $ mkProcType [ty, ty] [i1]
+  ,mkPrim ">="      $ mkProcType [ty, ty] [i1]
+  ,mkPrim "=="      $ mkProcType [ty, ty] [i1]
+  ,mkPrim "!="      $ mkProcType [ty, ty] [i1]
+  ,mkPrim "sqrt"    $ mkProcType [ty]     [ty]
+  ,mkPrim "muladd"  $ mkProcType [ty, ty, ty] [ty]
   ]
 
 -- These primitive names are known to the interpreter and compiler backends.

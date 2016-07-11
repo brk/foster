@@ -35,7 +35,7 @@ instance IntSizedBits MonoType where
         intSizeBitsOf _ = error $ "Unable to compute IntSizedBits for non-PrimInt type"
 
 extractFnType (FnType _ _ cc pf) = (cc, pf)
-extractFnType (PtrType (StructType ((FnType _ _ cc FT_Proc):_))) = (cc, FT_Func)
+extractFnType (PtrType (StructType [FnType _ _ cc FT_Proc, _])) = (cc, FT_Func)
 
 extractFnType other = error $ "Unable to extract fn type from " ++ show other
 

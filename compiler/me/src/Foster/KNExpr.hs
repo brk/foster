@@ -92,13 +92,9 @@ kNormalize dtypeMap expr =
       AIAllocArray t a amr zi -> do nestedLets [go a] (\[x] -> KNAllocArray (ArrayTypeIL t) x amr zi)
       AIAlloc a amr         -> do nestedLets [go a] (\[x] -> KNAlloc (PtrTypeIL $ tidType x) x amr)
       AIDeref   a           -> do nestedLets [go a] (\[x] -> KNDeref (pointedToTypeOfVar x) x)
-      E_AITyApp t a argtys  -> do nestedLetsDo [go a] (\[x] -> do
-                                   -- If there is a proc/func mismatch represented
-                                   -- by this tyapp, insert a thunk wrapper.
-                                   nestedLets [varOrThunk (x, t)] $
-                                                         \[x'] -> KNTyApp t x' argtys)
+      E_AITyApp t a argtys  -> do nestedLets [go a] (\[x] -> KNTyApp t x argtys)
 
-      AIStore      a b  -> do nestedLetsDo [go a, go b] (\[x,y] -> knStore x y)
+      AIStore      a b  -> do nestedLets [go a, go b] (\[x,y] -> KNStore unitTypeIL x y)
       AIArrayRead  t (ArrayIndex a b rng s) ->
               nestedLets (map go [a, b])
                                (\[x, y] -> KNArrayRead t (ArrayIndex x y rng s))
@@ -128,29 +124,14 @@ kNormalize dtypeMap expr =
       AIAppCtor  t c es -> do let ctor = lookupCtor c
                                   repr = lookupCtorRepr ctor
                                   tys  = dataCtorTypes ctor
-                              nestedLetsDo (map go es) (\vs -> do
-                                 let args = map varOrThunk (zip vs tys)
-                                 nestedLets args $ \xs -> KNAppCtor  t (c, repr) xs)
-      AICall     t (E_AIVar v) es -> do nestedLetsDo (     map go es) (\    vars  -> knCall t v  vars)
-      AICall     t b           es -> do nestedLetsDo (go b:map go es) (\(vb:vars) -> knCall t vb vars)
+                              nestedLets (map go es) (\vs -> KNAppCtor  t (c, repr) vs)
+      AICall     t (E_AIVar v) es -> do nestedLets (     map go es) (\    vars  -> KNCall t v  vars)
+      AICall     t b           es -> do nestedLets (go b:map go es) (\(vb:vars) -> KNCall t vb vars)
       AICompiles t e              -> do e' <- go e
                                         r <- liftIO $ newIORef True
                                         return $ KNCompiles (KNCompilesResult r) t e'
 
-  where knStore x y = do
-            let q = varOrThunk (x, pointedToType $ tidType y)
-            nestedLets [q] (\[z] -> KNStore unitTypeIL z y)
-
-        knCall t a vs =
-          case tidType a of
-              ft@(FnTypeIL {}) -> do
-                  let tys  = fnTypeILDomain ft
-                  let args = map varOrThunk (zip vs tys)
-                  nestedLets args (\xs -> KNCall t a xs)
-              _ -> error $ "knCall: Called var had non-function type!\n\t" ++
-                                show a ++
-                                show (showStructure (tidType a))
-
+  where
         -- We currently perform the following source-to-source transformation
         -- on the result of a normalized pattern match:
         --  * Guard splitting:
@@ -232,71 +213,6 @@ kNormalize dtypeMap expr =
                                                         (map typeOf pats)
 
 -- }}}|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
---------------------------------------------------------------------
--- Type checking ignores the distinction between function types
--- marked as functions (which get an environment parameter added
--- during closure conversion) and procedures (which get no env arg).
---
--- But we can't ignore the distinction for the actual values with
--- that type mismatch, because the representations are different:
--- bare function pointer versus pointer to (code, env) pair.
--- So when we see code like (fn_expects_closure c_func),
--- we'll replace it with (fn_expects_closure { args... => c_func args... }).
---
--- We perform this transformation at this stage for two reasons:
---  * Doing it later, during or after closure conversion, complicates
---    the transformation: explicit env vars, making procs instead of thunks.
---  * Doing it earlier, directly after type checking, would involve duplicating
---    the nestedLets functions here. After all, (fec (ret_c_fnptr !)) should
---    become (let fnptr = ret_c_fnptr ! in fec { args.. => fnptr args.. } end),
---    NOT simply   fec { args... => (ret_c_fnptr !) args... }
-varOrThunk :: (AIVar, TypeIL) -> KN KNExpr
-varOrThunk (a, targetType) = do
-  case needsClosureWrapper a targetType of
-    Just fnty -> do withThunkFor a fnty
-    Nothing -> return (KNVar a)
-  where
-    -- TODO: I think this only works because we don't type-check IL.
-    -- Specifically, we are assuming but not verifying that the involved
-    -- types are all of pointer-size kinds.
-    unForAll (ForAllIL _ t) = t
-    unForAll             t  = t
-    needsClosureWrapper a ty =
-      case (tidType a, unForAll ty) of
-        (                      FnTypeIL x y z FT_Proc,  FnTypeIL _ _ _ FT_Func) ->
-            Just $             FnTypeIL x y z FT_Func
-        (          ForAllIL t (FnTypeIL x y z FT_Proc), FnTypeIL _ _ _ FT_Func) ->
-            Just $ ForAllIL t (FnTypeIL x y z FT_Func)
-        _ -> Nothing
-
-    withThunkFor :: AIVar -> TypeIL -> KN KNExpr
-    withThunkFor v fnty = do
-      fn <- mkThunkAround v fnty
-      id <- knFresh ".kn.letfn"
-      return $ KNLetFuns [id] [fn] $ KNVar (TypedId fnty id)
-
-      where
-
-        mkThunkAround v fnty = do
-          id <- knFresh (".kn.thunk." ++ show (tidIdent v))
-          vars <- argVarsWithTypes (fnTypeILDomain fnty)
-          return $ Fn { fnVar      = TypedId fnty (GlobalSymbol (T.pack $ show id))
-                      , fnVars     = vars
-                      , fnBody     = KNCall (fnTypeILRange fnty) v vars
-                      , fnIsRec    = ()
-                      , fnAnnot    = annotForRange (MissingSourceRange $ "thunk for " ++ show v)
-                      }
-        -- TODO the above ident/global check doesn't work correctly for
-        -- global polymorphic functions, which are first type-instantiated
-        -- and then bound to a local variable before being closed over.
-        -- The "right" thing to do is track known vs unknown vars...
-        -- TODO i think this is fixed; double-check...
-
-        argVarsWithTypes tys = do
-          let tidOfType ty = do id <- knFresh ".arg"
-                                return $ TypedId ty id
-          mapM tidOfType tys
 
 -- ||||||||||||||||||||||| Let-Flattening |||||||||||||||||||||||{{{
 -- Because buildLet is applied bottom-to-top, we maintain the invariant
@@ -448,10 +364,11 @@ kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
                          -- function type, so we synthesize a fn type here.
                          ret (TypedId (thunk ty) id)
         Just (tid, _) -> ret tid
+
+    thunk (ForAllIL ktvs rho) = ForAllIL ktvs (thunk rho)
+    thunk ty = FnTypeIL [] ty FastCC FT_Proc
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-thunk (ForAllIL ktvs rho) = ForAllIL ktvs (thunk rho)
-thunk ty = FnTypeIL [] ty FastCC FT_Proc
 
 -- |||||||||||||||||||||||||| Local Block Sinking |||||||||||||||{{{
 

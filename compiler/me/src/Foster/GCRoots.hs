@@ -29,7 +29,7 @@ import Data.Map(Map)
 import qualified Data.Set as Set
 import qualified Data.Map as Map(lookup, empty, elems, findWithDefault, insert,
            keys, assocs, delete, fromList, keysSet, alter)
-import qualified Data.Text as T(pack, takeEnd)
+import qualified Data.Text as T(pack)
 import Control.Monad(when, liftM)
 import Control.Monad.IO.Class(liftIO)
 import Control.Monad.State(evalStateT, get, put, modify, StateT, lift, gets,
@@ -417,10 +417,10 @@ insertDumbGCRoots bbgp0 dump = do
                                  put (Map.insert v root gcr)
                                  retLoaded root
 
-  isGlobalFunc (GlobalSymbol t) = T.takeEnd 5 t == T.pack ".func"
+  isGlobalFunc (GlobalSymbol _) = True
   isGlobalFunc (Ident _ _) = False
 
-  isGCableVar v = if isGlobalFunc (tidIdent v) then False else isGCable (tidType v)
+  isGCableVar v = not (isGlobalFunc (tidIdent v)) && isGCable (tidType v)
 
   -- Filter out non-pointer-typed variables from live set.
   isGCable ty = case ty of
