@@ -448,16 +448,25 @@ set_target_properties(
 
 ############
 
-# The --start/end-group is needed to resolve circular linking dependencies.
+# The --start/end-group is needed to resolve circular linking dependencies
+# on Linux.
 # If/once LLVM ships proper EXPORT info, we can avoid this problem in a
 # portable manner.
+if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+  set(START_GROUP "-Wl,--start-group")
+  set(END_GROUP   "-Wl,--end-group")
+else()
+  set(START_GROUP "")
+  set(END_GROUP   "")
+endif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+
 set(CLANGLIBS
-  -Wl,--start-group
+  ${START_GROUP}
   clangAST clangAnalysis clangBasic clangDriver clangEdit
   clangFrontend clangFrontendTool clangLex clangParse clangSema
   clangEdit clangASTMatchers clangRewrite clangRewriteFrontend
   clangSerialization clangToolingCore clangTooling
-  -Wl,--end-group)
+  ${END_GROUP})
 
 add_executable(c2f tools/c2f/c2f.cpp)
 target_link_libraries(c2f
