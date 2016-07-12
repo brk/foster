@@ -66,7 +66,7 @@ smtN :: String -> SMT.Name
 smtN s = SMT.N (noLeadingDot $ map cleanChar s)
   where noLeadingDot ('.':xs) = '_':xs
         noLeadingDot other    = other
-        cleanChar c = if c `elem` "/:[]() " then '_' else c
+        cleanChar c = if c `elem` "\"/:[]() " then '_' else c
 
 ident :: Ident -> SMT.Ident
 ident id = SMT.I (nm id) []
@@ -238,7 +238,7 @@ scRunZ3 expr script@(CommentedScript items _) = do
                 putDocLn $ doc
              else return ()
   case res of
-    Left x -> do compiledThrowE [text x, knMonoLikePretty expr, string (show doc)]
+    Left x -> do compiledThrowE [text x, knMonoLikePretty expr, lineNumberedDoc doc]
     Right ["unsat"] -> do
       -- Run the script again, but without the target asserted.
       -- If the result remains unsat, then the context was inconsistent.
@@ -258,8 +258,19 @@ scRunZ3 expr script@(CommentedScript items _) = do
                                case maybeSourceRangeOf expr of
                                    Just sr -> prettyWithLineNumbers sr
                                    Nothing -> knMonoLikePretty expr,
-                               string (show doc)] ++ map text strs)
+                               lineNumberedDoc doc] ++ lineNumberedDocs strs)
   return ()
+
+intLog10 n | n < 10 = 1
+intLog10 n = intLog10 ((n `div` 10)) + 1
+
+lineNumberedDoc doc = vcat (lineNumberedDocs $ lines (show doc))
+
+lineNumberedDocs strings =
+  let paddingSize = intLog10 (length strings) in
+  [padded n paddingSize <> text ": " <+> text s | (n, s) <- (zip [(1::Int)..] strings)]
+
+padded n k = (text $ replicate (k - (intLog10 n)) ' ' ) <> pretty n
 
 class KNMonoLike e where
   maybeSourceRangeOf :: e -> Maybe SourceRange
