@@ -254,6 +254,12 @@ llvm::Value* CodegenPass::lookupFunctionOrDie(const std::string&
   }
 }
 
+llvm::CallingConv::ID parseCallingConv(std::string cc) {
+  if (cc == "fastcc") { return llvm::CallingConv::Fast; }
+  ASSERT(cc == "ccc") << "unknown calling convention " << cc;
+  return llvm::CallingConv::C;
+}
+
 llvm::Value* CodegenPass::emitFosterStringOfCString(Value* cstr, Value* sz) {
   bool init = false; // because we'll immediately memcpy.
   Value* hstr = this->emitArrayMalloc(TypeAST::i(8), sz, init);
@@ -270,7 +276,7 @@ llvm::Value* CodegenPass::emitFosterStringOfCString(Value* cstr, Value* sz) {
 
   llvm::Value* textfragment = lookupFunctionOrDie("TextFragment");
   llvm::CallInst* call = builder.CreateCall(textfragment, { hstr, sz });
-  call->setCallingConv(llvm::CallingConv::Fast);
+  call->setCallingConv(parseCallingConv("fastcc"));
   return call;
 }
 
@@ -458,7 +464,11 @@ void codegenClosureWrapper(llvm::Function* F, llvm::CallingConv::ID cc,
     std::vector<llvm::Value*> args;
     auto skipEnv = Ffunc->arg_begin(); skipEnv++;
     while (skipEnv != Ffunc->arg_end()) { args.push_back(skipEnv); ++skipEnv; }
+
     auto callInst = builder.CreateCall(F, args);
+    callInst->setTailCall(true);
+    callInst->setCallingConv(parseCallingConv("fastcc"));
+
     if (callInst->getType()->isVoidTy()) {
       builder.CreateRetVoid();
     } else {
@@ -953,7 +963,7 @@ llvm::Value* LLText::codegen(CodegenPass* pass) {
   Value* hstr = emitByteArray(pass, this->stringValue, ".txt_cell");
   Value* textfragment = pass->lookupFunctionOrDie("TextFragment");
   auto call = builder.CreateCall(textfragment, { hstr, builder.getInt32(this->stringValue.size()) });
-  call->setCallingConv(llvm::CallingConv::Fast);
+  call->setCallingConv(parseCallingConv("fastcc"));
   return call;
 }
 
@@ -1397,12 +1407,6 @@ llvm::Value* emitFnArgCoercions(Value* argV, llvm::Type* expectedType, Value* FV
   }
 
   return argV;
-}
-
-llvm::CallingConv::ID parseCallingConv(std::string cc) {
-  if (cc == "fastcc") { return llvm::CallingConv::Fast; }
-  ASSERT(cc == "ccc") << "unknown calling convention " << cc;
-  return llvm::CallingConv::C;
 }
 
 llvm::Value* LLCall::codegen(CodegenPass* pass) {
