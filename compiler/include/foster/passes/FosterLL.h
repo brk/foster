@@ -102,6 +102,7 @@ struct LLExpr {
   virtual ~LLExpr() {}
 
   virtual llvm::Value* codegen(CodegenPass* pass) = 0;
+  virtual llvm::Value* codegenCallee(CodegenPass* pass) { return codegen(pass); }
 };
 
 struct LLProc;
@@ -250,6 +251,7 @@ struct LLVar : public LLExpr {
 struct LLGlobalSymbol : public LLVar {
   LLGlobalSymbol(std::string name) : LLVar(name) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
+  virtual llvm::Value* codegenCallee(CodegenPass* pass);
 };
 
 // This class permits direct injection of LLVM values to be injected

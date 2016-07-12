@@ -978,17 +978,17 @@ llvm::Value* LLGlobalSymbol::codegen(CodegenPass* pass) {
 
   auto v = pass->globalValues[this->name];
   if (!v || isProc) {
-    if (!v) llvm::outs() << "falling back to global proc instead of closure for " << this->name << "\n";
+    if (!v) llvm::errs() << "falling back to global proc instead of closure for " << this->name << "\n";
     v = pass->lookupFunctionOrDie(this->name);
   }
-  if (this->type) {
-    llvm::outs() << "~~~~~ " << this->name << " :: " << str(this->type) << "\n";
-  } else {
-    llvm::outs() << "~~~~~ " << this->name << " :: ??? \n";
-  }
-  llvm::outs() << "    " << str(v->getType()) << "\n";
-
   return v;
+}
+
+
+llvm::Value* LLGlobalSymbol::codegenCallee(CodegenPass* pass) {
+  // But if we know we're codegenning for a call site, we can use the global
+  // procedure directly, instead of its closure wrapper.
+  return pass->lookupFunctionOrDie(this->name);
 }
 
 llvm::Value* LLVar::codegen(CodegenPass* pass) {
@@ -1411,7 +1411,7 @@ llvm::Value* emitFnArgCoercions(Value* argV, llvm::Type* expectedType, Value* FV
 
 llvm::Value* LLCall::codegen(CodegenPass* pass) {
   ASSERT(base != NULL) << "unable to codegen call due to null base";
-  Value* FV = base->codegen(pass);
+  Value* FV = base->codegenCallee(pass);
   ASSERT(FV) << "unable to codegen call due to missing value for base";
 
   llvm::FunctionType* FT = NULL;
