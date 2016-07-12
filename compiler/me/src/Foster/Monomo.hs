@@ -210,7 +210,7 @@ monoKN subst inTypeExpr e =
        -- variables, but we can use a trivial bitcast if all the type
        -- arguments happen to be pointer-sized.
        Nothing ->
-         if List.all (\(_tv, kind) -> kind == KindPointerSized) ktvs || inTypeExpr
+         if List.all (\(_tv, kind) -> kind /= KindAnySizeType) ktvs || inTypeExpr
                  -- In a type expression, we're not actually going to pass any
                  -- values at runtime, so even if we can't poly-instantiate an
                  -- unknown definition, it's still okay. If all the parameters
