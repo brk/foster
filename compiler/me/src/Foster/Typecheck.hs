@@ -589,13 +589,13 @@ tcRhoDeref ctx rng e1 expTy = do
              (Check t) -> return t
              (Infer _) -> newTcUnificationVarTau $ "deref_type"
     a1 <- tcRho ctx e1 (Check $ RefTypeTC tau)
-    case typeTC a1 of
-      RefTypeTC    {} -> return ()
-      MetaTyVarTC  {} -> return ()
+    ty <- case typeTC a1 of
+      RefTypeTC ty    -> return ty
+      MetaTyVarTC  {} -> return tau
       other -> tcFails [text $ "Expected deref-ed expr "
                            ++ "to have ref type, had " ++ show other,
                         string $ highlightFirstLine (rangeOf rng)]
-    matchExp expTy (AnnDeref rng tau a1) "deref"
+    matchExp expTy (AnnDeref rng ty a1) "deref"
 -- }}}
 
 --  G |-       e1 :::     tau
