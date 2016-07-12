@@ -32,8 +32,7 @@ def run_and_print_test(testpath, tmpdir):
   except run_test.TestFailed:
     run_test.tests_failed.add(testpath)
 
-def run_all_tests_slow(bootstrap_dir, tmpdir):
-  tests = collect_all_tests(bootstrap_dir)
+def run_all_tests_slow(tests, bootstrap_dir, tmpdir):
   for testpath in tests:
     try:
       run_and_print_test(testpath, tmpdir)
@@ -52,8 +51,7 @@ def worker_run_test(info):
   except run_test.TestFailed:
     return (testpath, None)
 
-def run_all_tests_fast(bootstrap_dir, tmpdir):
-  tests = collect_all_tests(bootstrap_dir)
+def run_all_tests_fast(tests, bootstrap_dir, tmpdir):
   pool = multiprocessing.Pool()
   try:
     for result in pool.imap_unordered(worker_run_test,
@@ -69,10 +67,11 @@ def run_all_tests_fast(bootstrap_dir, tmpdir):
 
 def main(opts, bootstrap_dir, tmpdir):
   walkstart = run_test.walltime()
+  tests = collect_all_tests(bootstrap_dir)
   if should_run_tests_in_parallel(opts):
-    run_all_tests_fast(bootstrap_dir, tmpdir)
+    run_all_tests_fast(tests, bootstrap_dir, tmpdir)
   else:
-    run_all_tests_slow(bootstrap_dir, tmpdir)
+    run_all_tests_slow(tests, bootstrap_dir, tmpdir)
   walkend = run_test.walltime()
 
   run_test.print_result_table(run_test.aggregate_results(all_results))
@@ -85,6 +84,11 @@ def main(opts, bootstrap_dir, tmpdir):
   if len(run_test.tests_failed) > 0:
     for test in run_test.tests_failed:
       print test
+
+  num_tests_attempted = len(run_test.tests_passed) + len(run_test.tests_failed)
+  num_tests_not_attempted = len(tests) - num_tests_attempted
+  if num_tests_not_attempted > 0:
+    print num_tests_not_attempted, " tests not reached"
 
   try:
     from stathat import StatHat
