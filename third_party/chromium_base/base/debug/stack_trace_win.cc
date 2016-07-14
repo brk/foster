@@ -6,13 +6,15 @@
 
 #include <windows.h>
 #include <dbghelp.h>
+#include <stddef.h>
 
 #include <iostream>
+#include <memory>
 
-#include "base/basictypes.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/singleton.h"
-#include "base/process_util.h"
 #include "base/synchronization/lock.h"
 
 namespace base {
@@ -24,13 +26,72 @@ namespace {
 // exception. Only used in unit tests.
 LPTOP_LEVEL_EXCEPTION_FILTER g_previous_filter = NULL;
 
+bool g_initialized_symbols = false;
+DWORD g_init_error = ERROR_SUCCESS;
+
 // Prints the exception call stack.
 // This is the unit tests exception filter.
 long WINAPI StackDumpExceptionFilter(EXCEPTION_POINTERS* info) {
-  debug::StackTrace(info).PrintBacktrace();
+  debug::StackTrace(info).Print();
   if (g_previous_filter)
     return g_previous_filter(info);
   return EXCEPTION_CONTINUE_SEARCH;
+}
+
+FilePath GetExePath() {
+  wchar_t system_buffer[MAX_PATH];
+  GetModuleFileName(NULL, system_buffer, MAX_PATH);
+  system_buffer[MAX_PATH - 1] = L'\0';
+  return FilePath(system_buffer);
+}
+
+bool InitializeSymbols() {
+  if (g_initialized_symbols)
+    return g_init_error == ERROR_SUCCESS;
+  g_initialized_symbols = true;
+  // Defer symbol load until they're needed, use undecorated names, and get line
+  // numbers.
+  SymSetOptions(SYMOPT_DEFERRED_LOADS |
+                SYMOPT_UNDNAME |
+                SYMOPT_LOAD_LINES);
+  if (!SymInitialize(GetCurrentProcess(), NULL, TRUE)) {
+    g_init_error = GetLastError();
+    // TODO(awong): Handle error: SymInitialize can fail with
+    // ERROR_INVALID_PARAMETER.
+    // When it fails, we should not call debugbreak since it kills the current
+    // process (prevents future tests from running or kills the browser
+    // process).
+    DLOG(ERROR) << "SymInitialize failed: " << g_init_error;
+    return false;
+  }
+
+  // When transferring the binaries e.g. between bots, path put
+  // into the executable will get off. To still retrieve symbols correctly,
+  // add the directory of the executable to symbol search path.
+  // All following errors are non-fatal.
+  const size_t kSymbolsArraySize = 1024;
+  std::unique_ptr<wchar_t[]> symbols_path(new wchar_t[kSymbolsArraySize]);
+
+  // Note: The below function takes buffer size as number of characters,
+  // not number of bytes!
+  if (!SymGetSearchPathW(GetCurrentProcess(),
+                         symbols_path.get(),
+                         kSymbolsArraySize)) {
+    g_init_error = GetLastError();
+    DLOG(WARNING) << "SymGetSearchPath failed: " << g_init_error;
+    return false;
+  }
+
+  std::wstring new_path(std::wstring(symbols_path.get()) +
+                        L";" + GetExePath().DirName().value());
+  if (!SymSetSearchPathW(GetCurrentProcess(), new_path.c_str())) {
+    g_init_error = GetLastError();
+    DLOG(WARNING) << "SymSetSearchPath failed." << g_init_error;
+    return false;
+  }
+
+  g_init_error = ERROR_SUCCESS;
+  return true;
 }
 
 // SymbolContext is a threadsafe singleton that wraps the DbgHelp Sym* family
@@ -57,11 +118,6 @@ class SymbolContext {
       Singleton<SymbolContext, LeakySingletonTraits<SymbolContext> >::get();
   }
 
-  // Returns the error code of a failed initialization.
-  DWORD init_error() const {
-    return init_error_;
-  }
-
   // For the given trace, attempts to resolve the symbols, and output a trace
   // to the ostream os.  The format for each line of the backtrace is:
   //
@@ -69,7 +125,8 @@ class SymbolContext {
   //
   // This function should only be called if Init() has been called.  We do not
   // LOG(FATAL) here because this code is called might be triggered by a
-  // LOG(FATAL) itself.
+  // LOG(FATAL) itself. Also, it should not be calling complex code that is
+  // extensible like PathService since that can in turn fire CHECKs.
   void OutputTraceToStream(const void* const* trace,
                            size_t count,
                            std::ostream* os) {
@@ -122,27 +179,10 @@ class SymbolContext {
  private:
   friend struct DefaultSingletonTraits<SymbolContext>;
 
-  SymbolContext() : init_error_(ERROR_SUCCESS) {
-    // Initializes the symbols for the process.
-    // Defer symbol load until they're needed, use undecorated names, and
-    // get line numbers.
-    SymSetOptions(SYMOPT_DEFERRED_LOADS |
-                  SYMOPT_UNDNAME |
-                  SYMOPT_LOAD_LINES);
-    if (SymInitialize(GetCurrentProcess(), NULL, TRUE)) {
-      init_error_ = ERROR_SUCCESS;
-    } else {
-      init_error_ = GetLastError();
-      // TODO(awong): Handle error: SymInitialize can fail with
-      // ERROR_INVALID_PARAMETER.
-      // When it fails, we should not call debugbreak since it kills the current
-      // process (prevents future tests from running or kills the browser
-      // process).
-      DLOG(ERROR) << "SymInitialize failed: " << init_error_;
-    }
+  SymbolContext() {
+    InitializeSymbols();
   }
 
-  DWORD init_error_;
   base::Lock lock_;
   DISALLOW_COPY_AND_ASSIGN(SymbolContext);
 };
@@ -153,8 +193,11 @@ bool EnableInProcessStackDumping() {
   // Add stack dumping support on exception on windows. Similar to OS_POSIX
   // signal() handling in process_util_posix.cc.
   g_previous_filter = SetUnhandledExceptionFilter(&StackDumpExceptionFilter);
-  RouteStdioToConsole();
-  return true;
+
+  // Need to initialize symbols early in the process or else this fails on
+  // swarming (since symbols are in different directory than in the exes) and
+  // also release x64.
+  return InitializeSymbols();
 }
 
 // Disable optimizations for the StackTrace::StackTrace function. It is
@@ -176,6 +219,22 @@ StackTrace::StackTrace() {
 #endif
 
 StackTrace::StackTrace(EXCEPTION_POINTERS* exception_pointers) {
+  InitTrace(exception_pointers->ContextRecord);
+}
+
+StackTrace::StackTrace(const CONTEXT* context) {
+  InitTrace(context);
+}
+
+void StackTrace::InitTrace(const CONTEXT* context_record) {
+  // StackWalk64 modifies the register context in place, so we have to copy it
+  // so that downstream exception handlers get the right context.  The incoming
+  // context may have had more register state (YMM, etc) than we need to unwind
+  // the stack. Typically StackWalk64 only needs integer and control registers.
+  CONTEXT context_copy;
+  memcpy(&context_copy, context_record, sizeof(context_copy));
+  context_copy.ContextFlags = CONTEXT_INTEGER | CONTEXT_CONTROL;
+
   // When walking an exception stack, we need to use StackWalk64().
   count_ = 0;
   // Initialize stack walking.
@@ -183,14 +242,14 @@ StackTrace::StackTrace(EXCEPTION_POINTERS* exception_pointers) {
   memset(&stack_frame, 0, sizeof(stack_frame));
 #if defined(_WIN64)
   int machine_type = IMAGE_FILE_MACHINE_AMD64;
-  stack_frame.AddrPC.Offset = exception_pointers->ContextRecord->Rip;
-  stack_frame.AddrFrame.Offset = exception_pointers->ContextRecord->Rbp;
-  stack_frame.AddrStack.Offset = exception_pointers->ContextRecord->Rsp;
+  stack_frame.AddrPC.Offset = context_record->Rip;
+  stack_frame.AddrFrame.Offset = context_record->Rbp;
+  stack_frame.AddrStack.Offset = context_record->Rsp;
 #else
   int machine_type = IMAGE_FILE_MACHINE_I386;
-  stack_frame.AddrPC.Offset = exception_pointers->ContextRecord->Eip;
-  stack_frame.AddrFrame.Offset = exception_pointers->ContextRecord->Ebp;
-  stack_frame.AddrStack.Offset = exception_pointers->ContextRecord->Esp;
+  stack_frame.AddrPC.Offset = context_record->Eip;
+  stack_frame.AddrFrame.Offset = context_record->Ebp;
+  stack_frame.AddrStack.Offset = context_record->Esp;
 #endif
   stack_frame.AddrPC.Mode = AddrModeFlat;
   stack_frame.AddrFrame.Mode = AddrModeFlat;
@@ -199,7 +258,7 @@ StackTrace::StackTrace(EXCEPTION_POINTERS* exception_pointers) {
                      GetCurrentProcess(),
                      GetCurrentThread(),
                      &stack_frame,
-                     exception_pointers->ContextRecord,
+                     &context_copy,
                      NULL,
                      &SymFunctionTableAccess64,
                      &SymGetModuleBase64,
@@ -212,17 +271,16 @@ StackTrace::StackTrace(EXCEPTION_POINTERS* exception_pointers) {
     trace_[i] = NULL;
 }
 
-void StackTrace::PrintBacktrace() const {
+void StackTrace::Print() const {
   OutputToStream(&std::cerr);
 }
 
 void StackTrace::OutputToStream(std::ostream* os) const {
   SymbolContext* context = SymbolContext::GetInstance();
-  DWORD error = context->init_error();
-  if (error != ERROR_SUCCESS) {
-    (*os) << "Error initializing symbols (" << error
+  if (g_init_error != ERROR_SUCCESS) {
+    (*os) << "Error initializing symbols (" << g_init_error
           << ").  Dumping unresolved backtrace:\n";
-    for (int i = 0; (i < count_) && os->good(); ++i) {
+    for (size_t i = 0; (i < count_) && os->good(); ++i) {
       (*os) << "\t" << trace_[i] << "\n";
     }
   } else {

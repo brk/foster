@@ -35,9 +35,12 @@ RefCountedBytes::RefCountedBytes(const std::vector<unsigned char>& initializer)
     : data_(initializer) {
 }
 
-RefCountedBytes* RefCountedBytes::TakeVector(
+RefCountedBytes::RefCountedBytes(const unsigned char* p, size_t size)
+    : data_(p, p + size) {}
+
+scoped_refptr<RefCountedBytes> RefCountedBytes::TakeVector(
     std::vector<unsigned char>* to_destroy) {
-  RefCountedBytes* bytes = new RefCountedBytes;
+  scoped_refptr<RefCountedBytes> bytes(new RefCountedBytes);
   bytes->data_.swap(*to_destroy);
   return bytes;
 }
@@ -59,8 +62,9 @@ RefCountedString::RefCountedString() {}
 RefCountedString::~RefCountedString() {}
 
 // static
-RefCountedString* RefCountedString::TakeString(std::string* to_destroy) {
-  RefCountedString* self = new RefCountedString;
+scoped_refptr<RefCountedString> RefCountedString::TakeString(
+    std::string* to_destroy) {
+  scoped_refptr<RefCountedString> self(new RefCountedString);
   to_destroy->swap(self->data_);
   return self;
 }

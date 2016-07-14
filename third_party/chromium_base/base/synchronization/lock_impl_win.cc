@@ -7,29 +7,20 @@
 namespace base {
 namespace internal {
 
-LockImpl::LockImpl() {
-  // The second parameter is the spin count, for short-held locks it avoid the
-  // contending thread from going to sleep which helps performance greatly.
-  ::InitializeCriticalSectionAndSpinCount(&os_lock_, 2000);
-}
+LockImpl::LockImpl() : native_handle_(SRWLOCK_INIT) {}
 
-LockImpl::~LockImpl() {
-  ::DeleteCriticalSection(&os_lock_);
-}
+LockImpl::~LockImpl() = default;
 
 bool LockImpl::Try() {
-  if (::TryEnterCriticalSection(&os_lock_) != FALSE) {
-    return true;
-  }
-  return false;
+  return !!::TryAcquireSRWLockExclusive(&native_handle_);
 }
 
 void LockImpl::Lock() {
-  ::EnterCriticalSection(&os_lock_);
+  ::AcquireSRWLockExclusive(&native_handle_);
 }
 
 void LockImpl::Unlock() {
-  ::LeaveCriticalSection(&os_lock_);
+  ::ReleaseSRWLockExclusive(&native_handle_);
 }
 
 }  // namespace internal

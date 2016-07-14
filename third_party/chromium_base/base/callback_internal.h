@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,15 +7,17 @@
 
 #ifndef BASE_CALLBACK_INTERNAL_H_
 #define BASE_CALLBACK_INTERNAL_H_
-#pragma once
 
-#include <stddef.h>
-
+#include "base/atomic_ref_count.h"
 #include "base/base_export.h"
+#include "base/callback_forward.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 
 namespace base {
 namespace internal {
+template <CopyMode copy_mode>
+class CallbackBase;
 
 // BindStateBase is used to provide an opaque handle that the Callback
 // class can use to represent a function object with bound arguments.  It
@@ -23,41 +25,46 @@ namespace internal {
 // DoInvoke function to perform the function execution.  This allows
 // us to shield the Callback class from the types of the bound argument via
 // "type erasure."
-class BindStateBase : public RefCountedThreadSafe<BindStateBase> {
+// At the base level, the only task is to add reference counting data. Don't use
+// RefCountedThreadSafe since it requires the destructor to be a virtual method.
+// Creating a vtable for every BindState template instantiation results in a lot
+// of bloat. Its only task is to call the destructor which can be done with a
+// function pointer.
+class BindStateBase {
  protected:
-  friend class RefCountedThreadSafe<BindStateBase>;
-  virtual ~BindStateBase() {}
+  explicit BindStateBase(void (*destructor)(BindStateBase*))
+      : ref_count_(0), destructor_(destructor) {}
+  ~BindStateBase() = default;
+
+ private:
+  friend class scoped_refptr<BindStateBase>;
+  template <CopyMode copy_mode>
+  friend class CallbackBase;
+
+  void AddRef();
+  void Release();
+
+  AtomicRefCount ref_count_;
+
+  // Pointer to a function that will properly destroy |this|.
+  void (*destructor_)(BindStateBase*);
+
+  DISALLOW_COPY_AND_ASSIGN(BindStateBase);
 };
-
-// This structure exists purely to pass the returned |bind_state_| from
-// Bind() to Callback while avoiding an extra AddRef/Release() pair.
-//
-// To do this, the constructor of Callback<> must take a const-ref.  The
-// reference must be to a const object otherwise the compiler will emit a
-// warning about taking a reference to a temporary.
-//
-// Unfortunately, this means that the internal |bind_state_| field must
-// be made mutable.
-template <typename T>
-struct BindStateHolder {
-  explicit BindStateHolder(T* bind_state)
-      : bind_state_(bind_state) {
-  }
-
-  mutable scoped_refptr<BindStateBase> bind_state_;
-};
-
-template <typename T>
-BindStateHolder<T> MakeBindStateHolder(T* o) {
-  return BindStateHolder<T>(o);
-}
 
 // Holds the Callback methods that don't require specialization to reduce
 // template bloat.
-class BASE_EXPORT CallbackBase {
+// CallbackBase<MoveOnly> is a direct base class of MoveOnly callbacks, and
+// CallbackBase<Copyable> uses CallbackBase<MoveOnly> for its implementation.
+template <>
+class BASE_EXPORT CallbackBase<CopyMode::MoveOnly> {
  public:
+  CallbackBase(CallbackBase&& c);
+  CallbackBase& operator=(CallbackBase&& c);
+
   // Returns true if Callback is null (doesn't refer to anything).
-  bool is_null() const;
+  bool is_null() const { return bind_state_.get() == NULL; }
+  explicit operator bool() const { return !is_null(); }
 
   // Returns the Callback into an uninitialized state.
   void Reset();
@@ -67,13 +74,16 @@ class BASE_EXPORT CallbackBase {
   // another type. It is not okay to use void*. We create a InvokeFuncStorage
   // that that can store our function pointer, and then cast it back to
   // the original type on usage.
-  typedef void(*InvokeFuncStorage)(void);
+  using InvokeFuncStorage = void(*)();
 
   // Returns true if this callback equals |other|. |other| may be null.
-  bool Equals(const CallbackBase& other) const;
+  bool EqualsInternal(const CallbackBase& other) const;
 
-  CallbackBase(InvokeFuncStorage polymorphic_invoke,
-               scoped_refptr<BindStateBase>* bind_state);
+  // Allow initializing of |bind_state_| via the constructor to avoid default
+  // initialization of the scoped_refptr.  We do not also initialize
+  // |polymorphic_invoke_| here because doing a normal assignment in the
+  // derived Callback templates makes for much nicer compiler errors.
+  explicit CallbackBase(BindStateBase* bind_state);
 
   // Force the destructor to be instantiated inside this translation unit so
   // that our subclasses will not get inlined versions.  Avoids more template
@@ -81,54 +91,26 @@ class BASE_EXPORT CallbackBase {
   ~CallbackBase();
 
   scoped_refptr<BindStateBase> bind_state_;
-  InvokeFuncStorage polymorphic_invoke_;
+  InvokeFuncStorage polymorphic_invoke_ = nullptr;
 };
 
-// This is a typetraits object that's used to take an argument type, and
-// extract a suitable type for storing and forwarding arguments.
-//
-// In particular, it strips off references, and converts arrays to
-// pointers for storage; and it avoids accidentally trying to create a
-// "reference of a reference" if the argument is a reference type.
-//
-// This array type becomes an issue for storage because we are passing bound
-// parameters by const reference. In this case, we end up passing an actual
-// array type in the initializer list which C++ does not allow.  This will
-// break passing of C-string literals.
-template <typename T>
-struct CallbackParamTraits {
-  typedef const T& ForwardType;
-  typedef T StorageType;
+// CallbackBase<Copyable> is a direct base class of Copyable Callbacks.
+template <>
+class BASE_EXPORT CallbackBase<CopyMode::Copyable>
+    : public CallbackBase<CopyMode::MoveOnly> {
+ public:
+  CallbackBase(const CallbackBase& c);
+  CallbackBase(CallbackBase&& c);
+  CallbackBase& operator=(const CallbackBase& c);
+  CallbackBase& operator=(CallbackBase&& c);
+ protected:
+  explicit CallbackBase(BindStateBase* bind_state)
+      : CallbackBase<CopyMode::MoveOnly>(bind_state) {}
+  ~CallbackBase() {}
 };
 
-// The Storage should almost be impossible to trigger unless someone manually
-// specifies type of the bind parameters.  However, in case they do,
-// this will guard against us accidentally storing a reference parameter.
-//
-// The ForwardType should only be used for unbound arguments.
-template <typename T>
-struct CallbackParamTraits<T&> {
-  typedef T& ForwardType;
-  typedef T StorageType;
-};
-
-// Note that for array types, we implicitly add a const in the conversion. This
-// means that it is not possible to bind array arguments to functions that take
-// a non-const pointer. Trying to specialize the template based on a "const
-// T[n]" does not seem to match correctly, so we are stuck with this
-// restriction.
-template <typename T, size_t n>
-struct CallbackParamTraits<T[n]> {
-  typedef const T* ForwardType;
-  typedef const T* StorageType;
-};
-
-// See comment for CallbackParamTraits<T[n]>.
-template <typename T>
-struct CallbackParamTraits<T[]> {
-  typedef const T* ForwardType;
-  typedef const T* StorageType;
-};
+extern template class CallbackBase<CopyMode::MoveOnly>;
+extern template class CallbackBase<CopyMode::Copyable>;
 
 }  // namespace internal
 }  // namespace base

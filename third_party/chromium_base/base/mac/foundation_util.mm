@@ -4,70 +4,69 @@
 
 #include "base/mac/foundation_util.h"
 
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_logging.h"
+#include "base/macros.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/strings/sys_string_conversions.h"
+#include "build/build_config.h"
 
-#ifdef FOSTER_KEYCHAIN 
+#if !defined(OS_IOS)
+#import <AppKit/AppKit.h>
+#endif
+
 #if !defined(OS_IOS)
 extern "C" {
-CFTypeID SecACLGetTypeID();
-CFTypeID SecTrustedApplicationGetTypeID();
+//CFTypeID SecACLGetTypeID();
+//CFTypeID SecTrustedApplicationGetTypeID();
+Boolean _CFIsObjC(CFTypeID typeID, CFTypeRef obj);
 }  // extern "C"
-#endif
 #endif
 
 namespace base {
 namespace mac {
 
-static bool g_override_am_i_bundled = false;
-static bool g_override_am_i_bundled_value = false;
+namespace {
 
-// Adapted from http://developer.apple.com/carbon/tipsandtricks.html#AmIBundled
-static bool UncachedAmIBundled() {
+bool g_cached_am_i_bundled_called = false;
+bool g_cached_am_i_bundled_value = false;
+bool g_override_am_i_bundled = false;
+bool g_override_am_i_bundled_value = false;
+
+bool UncachedAmIBundled() {
 #if defined(OS_IOS)
-  // All apps are bundled on iOS
+  // All apps are bundled on iOS.
   return true;
 #else
   if (g_override_am_i_bundled)
     return g_override_am_i_bundled_value;
 
-  ProcessSerialNumber psn = {0, kCurrentProcess};
-
-  FSRef fsref;
-  OSStatus pbErr;
-  if ((pbErr = GetProcessBundleLocation(&psn, &fsref)) != noErr) {
-    OSSTATUS_DLOG(ERROR, pbErr) << "GetProcessBundleLocation failed";
-    return false;
-  }
-
-  FSCatalogInfo info;
-  OSErr fsErr;
-  if ((fsErr = FSGetCatalogInfo(&fsref, kFSCatInfoNodeFlags, &info,
-                                NULL, NULL, NULL)) != noErr) {
-    OSSTATUS_DLOG(ERROR, fsErr) << "FSGetCatalogInfo failed";
-    return false;
-  }
-
-  return info.nodeFlags & kFSNodeIsDirectoryMask;
+  // Yes, this is cheap.
+  return [[base::mac::OuterBundle() bundlePath] hasSuffix:@".app"];
 #endif
 }
+
+}  // namespace
 
 bool AmIBundled() {
   // If the return value is not cached, this function will return different
   // values depending on when it's called. This confuses some client code, see
   // http://crbug.com/63183 .
-  static bool result = UncachedAmIBundled();
-  DCHECK_EQ(result, UncachedAmIBundled())
+  if (!g_cached_am_i_bundled_called) {
+    g_cached_am_i_bundled_called = true;
+    g_cached_am_i_bundled_value = UncachedAmIBundled();
+  }
+  DCHECK_EQ(g_cached_am_i_bundled_value, UncachedAmIBundled())
       << "The return value of AmIBundled() changed. This will confuse tests. "
       << "Call SetAmIBundled() override manually if your test binary "
       << "delay-loads the framework.";
-  return result;
+  return g_cached_am_i_bundled_value;
 }
 
 void SetOverrideAmIBundled(bool value) {
@@ -78,6 +77,10 @@ void SetOverrideAmIBundled(bool value) {
 #endif
   g_override_am_i_bundled = true;
   g_override_am_i_bundled_value = value;
+}
+
+BASE_EXPORT void ClearAmIBundledCache() {
+  g_cached_am_i_bundled_called = false;
 }
 
 bool IsBackgroundOnlyProcess() {
@@ -152,7 +155,7 @@ FilePath GetAppBundlePath(const FilePath& exec_name) {
   exec_name.GetComponents(&components);
 
   // It's an error if we don't get any components.
-  if (!components.size())
+  if (components.empty())
     return FilePath();
 
   // Don't prepend '/' to the first component.
@@ -166,7 +169,7 @@ FilePath GetAppBundlePath(const FilePath& exec_name) {
 
   // The first component may be "/" or "//", etc. Only append '/' if it doesn't
   // already end in '/'.
-  if (bundle_name[bundle_name.length() - 1] != '/')
+  if (bundle_name.back() != '/')
     bundle_name += '/';
 
   // Go through the remaining components.
@@ -305,6 +308,31 @@ CF_TO_NS_CAST_DEFN(CFWriteStream, NSOutputStream);
 CF_TO_NS_MUTABLE_CAST_DEFN(String);
 CF_TO_NS_CAST_DEFN(CFURL, NSURL);
 
+#if defined(OS_IOS)
+CF_TO_NS_CAST_DEFN(CTFont, UIFont);
+#else
+// The NSFont/CTFont toll-free bridging is broken when it comes to type
+// checking, so do some special-casing.
+// http://www.openradar.me/15341349 rdar://15341349
+NSFont* CFToNSCast(CTFontRef cf_val) {
+  NSFont* ns_val =
+      const_cast<NSFont*>(reinterpret_cast<const NSFont*>(cf_val));
+  DCHECK(!cf_val ||
+         CTFontGetTypeID() == CFGetTypeID(cf_val) ||
+         (_CFIsObjC(CTFontGetTypeID(), cf_val) &&
+          [ns_val isKindOfClass:[NSFont class]]));
+  return ns_val;
+}
+
+CTFontRef NSToCFCast(NSFont* ns_val) {
+  CTFontRef cf_val = reinterpret_cast<CTFontRef>(ns_val);
+  DCHECK(!cf_val ||
+         CTFontGetTypeID() == CFGetTypeID(cf_val) ||
+         [ns_val isKindOfClass:[NSFont class]]);
+  return cf_val;
+}
+#endif
+
 #undef CF_TO_NS_CAST_DEFN
 #undef CF_TO_NS_MUTABLE_CAST_DEFN
 
@@ -342,14 +370,45 @@ CF_CAST_DEFN(CFUUID);
 
 CF_CAST_DEFN(CGColor);
 
-CF_CAST_DEFN(CTFont);
+CF_CAST_DEFN(CTFontDescriptor);
 CF_CAST_DEFN(CTRun);
 
-#ifdef FOSTER_KEYCHAIN
-#if !defined(OS_IOS)
-CF_CAST_DEFN(SecACL);
-CF_CAST_DEFN(SecTrustedApplication);
+#if defined(OS_IOS)
+CF_CAST_DEFN(CTFont);
+#else
+// The NSFont/CTFont toll-free bridging is broken when it comes to type
+// checking, so do some special-casing.
+// http://www.openradar.me/15341349 rdar://15341349
+template<> CTFontRef
+CFCast<CTFontRef>(const CFTypeRef& cf_val) {
+  if (cf_val == NULL) {
+    return NULL;
+  }
+  if (CFGetTypeID(cf_val) == CTFontGetTypeID()) {
+    return (CTFontRef)(cf_val);
+  }
+
+  if (!_CFIsObjC(CTFontGetTypeID(), cf_val))
+    return NULL;
+
+  id<NSObject> ns_val = reinterpret_cast<id>(const_cast<void*>(cf_val));
+  if ([ns_val isKindOfClass:[NSFont class]]) {
+    return (CTFontRef)(cf_val);
+  }
+  return NULL;
+}
+
+template<> CTFontRef
+CFCastStrict<CTFontRef>(const CFTypeRef& cf_val) {
+  CTFontRef rv = CFCast<CTFontRef>(cf_val);
+  DCHECK(cf_val == NULL || rv);
+  return rv;
+}
 #endif
+
+#if !defined(OS_IOS)
+//CF_CAST_DEFN(SecACL);
+//CF_CAST_DEFN(SecTrustedApplication);
 #endif
 
 #undef CF_CAST_DEFN
@@ -379,6 +438,19 @@ FilePath NSStringToFilePath(NSString* str) {
   return FilePath([str fileSystemRepresentation]);
 }
 
+bool CFRangeToNSRange(CFRange range, NSRange* range_out) {
+  if (base::IsValueInRangeForNumericType<decltype(range_out->location)>(
+          range.location) &&
+      base::IsValueInRangeForNumericType<decltype(range_out->length)>(
+          range.length) &&
+      base::IsValueInRangeForNumericType<decltype(range_out->location)>(
+          range.location + range.length)) {
+    *range_out = NSMakeRange(range.location, range.length);
+    return true;
+  }
+  return false;
+}
+
 }  // namespace mac
 }  // namespace base
 
@@ -387,9 +459,8 @@ std::ostream& operator<<(std::ostream& o, const CFStringRef string) {
 }
 
 std::ostream& operator<<(std::ostream& o, const CFErrorRef err) {
-  base::mac::ScopedCFTypeRef<CFStringRef> desc(CFErrorCopyDescription(err));
-  base::mac::ScopedCFTypeRef<CFDictionaryRef> user_info(
-      CFErrorCopyUserInfo(err));
+  base::ScopedCFTypeRef<CFStringRef> desc(CFErrorCopyDescription(err));
+  base::ScopedCFTypeRef<CFDictionaryRef> user_info(CFErrorCopyUserInfo(err));
   CFStringRef errorDesc = NULL;
   if (user_info.get()) {
     errorDesc = reinterpret_cast<CFStringRef>(

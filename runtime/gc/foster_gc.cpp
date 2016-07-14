@@ -8,7 +8,7 @@
 #include "foster_globals.h"
 #include "stat_tracker.h"
 
-#include "base/time.h" // for TimeTicks, TimeDelta
+#include "base/time/time.h" // for TimeTicks, TimeDelta
 #include "base/metrics/histogram.h"
 #include "base/metrics/statistics_recorder.h"
 
@@ -229,9 +229,9 @@ class copying_gc {
 
       void allocate_cell_prechecked_histogram(int N) {
         if (N > 128) {
-          HISTOGRAM_CUSTOM_COUNTS("gc-alloc-large", N, 129, 33000000, 50);
+          LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-alloc-large", N, 129, 33000000, 50);
         } else {
-          HISTOGRAM_ENUMERATION("gc-alloc-small", N, 128);
+          LOCAL_HISTOGRAM_ENUMERATION("gc-alloc-small", N, 128);
         }
       }
 
@@ -243,7 +243,7 @@ class copying_gc {
         if (DEBUG_INITIALIZE_ALLOCATIONS) { memset(bump, 0xAA, N); }
         if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(N); }
         if (TRACK_NUM_ALLOCATIONS) { ++parent->num_allocations; }
-        if (FOSTER_GC_ALLOC_HISTOGRAMS) { HISTOGRAM_ENUMERATION("gc-alloc-small", N, 128); }
+        if (FOSTER_GC_ALLOC_HISTOGRAMS) { LOCAL_HISTOGRAM_ENUMERATION("gc-alloc-small", N, 128); }
         incr_by(bump, N);
         allot->set_meta(map);
 
@@ -670,7 +670,7 @@ public:
       if (FOSTER_GC_EFFIC_HISTOGRAMS) {
          double reclaimed = double(curr->free_size()) / double(curr->get_size());
          int percent = int(reclaimed * 100.0);
-         HISTOGRAM_PERCENTAGE("gc-reclaimed-pct", percent);
+         LOCAL_HISTOGRAM_PERCENTAGE("gc-reclaimed-pct", percent);
       }
 
       return curr->allocate_cell_prechecked(typeinfo);
@@ -687,7 +687,7 @@ public:
     int64_t req_bytes = array_size_for(n, slot_size);
 
     if (false && FOSTER_GC_ALLOC_HISTOGRAMS) {
-      HISTOGRAM_CUSTOM_COUNTS("gc-alloc-array", (int) req_bytes, 1, 33000000, 128);
+      LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-alloc-array", (int) req_bytes, 1, 33000000, 128);
     }
 
     if (curr->can_allocate_bytes(req_bytes)) {
@@ -780,7 +780,7 @@ extern "C" foster_generic_coro** __foster_get_current_coro_slot();
 void copying_gc::gc() {
   //fprintf(stdout, "gc();\n");
   //fprintf(stderr, "gc();\n");
-  base::TimeTicks begin = base::TimeTicks::HighResNow();
+  base::TimeTicks begin = base::TimeTicks::Now();
   ++this->num_collections;
   if (ENABLE_GCLOG) {
     fprintf(gclog, ">>>>>>> visiting gc roots on current stack\n"); fflush(gclog);
@@ -816,9 +816,9 @@ void copying_gc::gc() {
     fflush(gclog);
   }
 
-  auto delta = base::TimeTicks::HighResNow() - begin;
+  auto delta = base::TimeTicks::Now() - begin;
   if (FOSTER_GC_TIME_HISTOGRAMS) {
-    HISTOGRAM_CUSTOM_COUNTS("gc-pause-micros", delta.InMicroseconds(),  0, 60000000, 256);
+    LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-pause-micros", delta.InMicroseconds(),  0, 60000000, 256);
   }
   gc_time += delta;
 }
@@ -916,9 +916,12 @@ void register_allocator_ranges(void* stack_highest_addr) {
 }
 
 void initialize(void* stack_highest_addr) {
-  init_start = base::TimeTicks::HighResNow();
+  init_start = base::TimeTicks::Now();
   gclog = fopen("gclog.txt", "w");
   fprintf(gclog, "----------- gclog ------------\n");
+  if (!base::TimeTicks::IsHighResolution()) {
+    fprintf(gclog, "(warning: using low-resolution timer)\n");
+  }
 
   base::StatisticsRecorder::Initialize();
   allocator = new copying_gc(gSEMISPACE_SIZE());
@@ -928,7 +931,7 @@ void initialize(void* stack_highest_addr) {
   register_stackmaps(clusterForAddress);
 
   gc_time = base::TimeTicks();
-  runtime_start = base::TimeTicks::HighResNow();
+  runtime_start = base::TimeTicks::Now();
 }
 
 void gclog_time(const char* msg, base::TimeDelta d, FILE* json) {
@@ -946,7 +949,7 @@ void gclog_time(const char* msg, base::TimeDelta d, FILE* json) {
 }
 
 FILE* print_timing_stats() {
-  base::TimeTicks fin = base::TimeTicks::HighResNow();
+  base::TimeTicks fin = base::TimeTicks::Now();
   base::TimeDelta total_elapsed = fin - init_start;
   base::TimeDelta  init_elapsed = runtime_start - init_start;
   base::TimeDelta    gc_elapsed = gc_time - base::TimeTicks();

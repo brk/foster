@@ -5,18 +5,22 @@
 #ifndef BASE_MEMORY_SCOPED_VECTOR_H_
 #define BASE_MEMORY_SCOPED_VECTOR_H_
 
+#include <stddef.h>
+
+#include <memory>
 #include <vector>
 
-#include "base/basictypes.h"
-#include "base/move.h"
+#include "base/logging.h"
+#include "base/macros.h"
 #include "base/stl_util.h"
 
 // ScopedVector wraps a vector deleting the elements from its
 // destructor.
+//
+// TODO(http://crbug.com/554289): DEPRECATED: Use std::vector instead (now that
+// we have support for moveable types inside containers).
 template <class T>
 class ScopedVector {
-  MOVE_ONLY_TYPE_FOR_CPP_03(ScopedVector, RValue)
-
  public:
   typedef typename std::vector<T*>::allocator_type allocator_type;
   typedef typename std::vector<T*>::size_type size_type;
@@ -34,15 +38,15 @@ class ScopedVector {
 
   ScopedVector() {}
   ~ScopedVector() { clear(); }
-  ScopedVector(RValue other) { swap(*other.object); }
+  ScopedVector(ScopedVector&& other) { swap(other); }
 
-  ScopedVector& operator=(RValue rhs) {
-    swap(*rhs.object);
+  ScopedVector& operator=(ScopedVector&& rhs) {
+    swap(rhs);
     return *this;
   }
 
-  T*& operator[](size_t index) { return v_[index]; }
-  const T* operator[](size_t index) const { return v_[index]; }
+  reference operator[](size_t index) { return v_[index]; }
+  const_reference operator[](size_t index) const { return v_[index]; }
 
   bool empty() const { return v_.empty(); }
   size_t size() const { return v_.size(); }
@@ -63,6 +67,13 @@ class ScopedVector {
   reference back() { return v_.back(); }
 
   void push_back(T* elem) { v_.push_back(elem); }
+  void push_back(std::unique_ptr<T> elem) { v_.push_back(elem.release()); }
+
+  void pop_back() {
+    DCHECK(!empty());
+    delete v_.back();
+    v_.pop_back();
+  }
 
   std::vector<T*>& get() { return v_; }
   const std::vector<T*>& get() const { return v_; }
@@ -97,6 +108,10 @@ class ScopedVector {
     return v_.insert(position, x);
   }
 
+  iterator insert(iterator position, std::unique_ptr<T> x) {
+    return v_.insert(position, x.release());
+  }
+
   // Lets the ScopedVector take ownership of elements in [first,last).
   template<typename InputIterator>
   void insert(iterator position, InputIterator first, InputIterator last) {
@@ -125,6 +140,8 @@ class ScopedVector {
 
  private:
   std::vector<T*> v_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScopedVector);
 };
 
 #endif  // BASE_MEMORY_SCOPED_VECTOR_H_

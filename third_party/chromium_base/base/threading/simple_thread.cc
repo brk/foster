@@ -12,15 +12,24 @@
 namespace base {
 
 SimpleThread::SimpleThread(const std::string& name_prefix)
-    : name_prefix_(name_prefix), name_(name_prefix),
-      thread_(), event_(true, false), tid_(0), joined_(false) {
-}
+    : name_prefix_(name_prefix),
+      name_(name_prefix),
+      thread_(),
+      event_(WaitableEvent::ResetPolicy::MANUAL,
+             WaitableEvent::InitialState::NOT_SIGNALED),
+      tid_(0),
+      joined_(false) {}
 
 SimpleThread::SimpleThread(const std::string& name_prefix,
                            const Options& options)
-    : name_prefix_(name_prefix), name_(name_prefix), options_(options),
-      thread_(), event_(true, false), tid_(0), joined_(false) {
-}
+    : name_prefix_(name_prefix),
+      name_(name_prefix),
+      options_(options),
+      thread_(),
+      event_(WaitableEvent::ResetPolicy::MANUAL,
+             WaitableEvent::InitialState::NOT_SIGNALED),
+      tid_(0),
+      joined_(false) {}
 
 SimpleThread::~SimpleThread() {
   DCHECK(HasBeenStarted()) << "SimpleThread was never started.";
@@ -29,7 +38,13 @@ SimpleThread::~SimpleThread() {
 
 void SimpleThread::Start() {
   DCHECK(!HasBeenStarted()) << "Tried to Start a thread multiple times.";
-  bool success = PlatformThread::Create(options_.stack_size(), this, &thread_);
+  bool success;
+  if (options_.priority() == ThreadPriority::NORMAL) {
+    success = PlatformThread::Create(options_.stack_size(), this, &thread_);
+  } else {
+    success = PlatformThread::CreateWithPriority(options_.stack_size(), this,
+                                                 &thread_, options_.priority());
+  }
   DCHECK(success);
   base::ThreadRestrictions::ScopedAllowWait allow_wait;
   event_.Wait();  // Wait for the thread to complete initialization.
@@ -52,7 +67,7 @@ void SimpleThread::ThreadMain() {
   // Construct our full name of the form "name_prefix_/TID".
   name_.push_back('/');
   name_.append(IntToString(tid_));
-  PlatformThread::SetName(name_.c_str());
+  PlatformThread::SetName(name_);
 
   // We've initialized our new thread, signal that we're done to Start().
   event_.Signal();
@@ -87,8 +102,8 @@ DelegateSimpleThreadPool::DelegateSimpleThreadPool(
     int num_threads)
     : name_prefix_(name_prefix),
       num_threads_(num_threads),
-      dry_(true, false) {
-}
+      dry_(WaitableEvent::ResetPolicy::MANUAL,
+           WaitableEvent::InitialState::NOT_SIGNALED) {}
 
 DelegateSimpleThreadPool::~DelegateSimpleThreadPool() {
   DCHECK(threads_.empty());

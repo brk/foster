@@ -4,8 +4,9 @@
 
 #ifndef BASE_SYNCHRONIZATION_LOCK_IMPL_H_
 #define BASE_SYNCHRONIZATION_LOCK_IMPL_H_
-#pragma once
 
+#include "base/base_export.h"
+#include "base/macros.h"
 #include "build/build_config.h"
 
 #if defined(OS_WIN)
@@ -13,9 +14,6 @@
 #elif defined(OS_POSIX)
 #include <pthread.h>
 #endif
-
-#include "base/base_export.h"
-#include "base/basictypes.h"
 
 namespace base {
 namespace internal {
@@ -26,9 +24,9 @@ namespace internal {
 class BASE_EXPORT LockImpl {
  public:
 #if defined(OS_WIN)
-  typedef CRITICAL_SECTION OSLockType;
+  using NativeHandle = SRWLOCK;
 #elif defined(OS_POSIX)
-  typedef pthread_mutex_t OSLockType;
+  using NativeHandle =  pthread_mutex_t;
 #endif
 
   LockImpl();
@@ -45,15 +43,13 @@ class BASE_EXPORT LockImpl {
   // a successful call to Try, or a call to Lock.
   void Unlock();
 
-  // Return the native underlying lock.  Not supported for Windows builds.
+  // Return the native underlying lock.
   // TODO(awalker): refactor lock and condition variables so that this is
   // unnecessary.
-#if !defined(OS_WIN)
-  OSLockType* os_lock() { return &os_lock_; }
-#endif
+  NativeHandle* native_handle() { return &native_handle_; }
 
  private:
-  OSLockType os_lock_;
+  NativeHandle native_handle_;
 
   DISALLOW_COPY_AND_ASSIGN(LockImpl);
 };

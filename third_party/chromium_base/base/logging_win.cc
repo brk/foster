@@ -18,8 +18,8 @@ LogEventProvider::LogEventProvider() : old_log_level_(LOG_NONE) {
 }
 
 LogEventProvider* LogEventProvider::GetInstance() {
-  return Singleton<LogEventProvider,
-                   StaticMemorySingletonTraits<LogEventProvider> >::get();
+  return base::Singleton<LogEventProvider, base::StaticMemorySingletonTraits<
+                                               LogEventProvider>>::get();
 }
 
 bool LogEventProvider::LogMessage(logging::LogSeverity severity,
@@ -37,7 +37,6 @@ bool LogEventProvider::LogMessage(logging::LogSeverity severity,
         level = TRACE_LEVEL_WARNING;
         break;
       case LOG_ERROR:
-      case LOG_ERROR_REPORT:
         level = TRACE_LEVEL_ERROR;
         break;
       case LOG_FATAL:
@@ -45,7 +44,7 @@ bool LogEventProvider::LogMessage(logging::LogSeverity severity,
         break;
     }
   } else {  // severity < 0 is VLOG verbosity levels.
-    level = TRACE_LEVEL_INFORMATION - severity;
+    level = static_cast<EtwEventLevel>(TRACE_LEVEL_INFORMATION - severity);
   }
 
   // Bail if we're not logging, not at that level,

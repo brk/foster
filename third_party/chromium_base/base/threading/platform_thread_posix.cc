@@ -5,151 +5,122 @@
 #include "base/threading/platform_thread.h"
 
 #include <errno.h>
+#include <pthread.h>
 #include <sched.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <sys/resource.h>
+#include <sys/time.h>
+
+#include <memory>
 
 #include "base/lazy_instance.h"
 #include "base/logging.h"
-#include "base/memory/scoped_ptr.h"
-#include "base/safe_strerror_posix.h"
+#include "base/threading/platform_thread_internal_posix.h"
 #include "base/threading/thread_id_name_manager.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/tracked_objects.h"
-
-#if defined(OS_MACOSX)
-#include <sys/resource.h>
-#include <algorithm>
-#endif
+#include "build/build_config.h"
 
 #if defined(OS_LINUX)
-#include <sys/prctl.h>
-#include <sys/resource.h>
 #include <sys/syscall.h>
-#include <sys/time.h>
-#include <unistd.h>
-#endif
-
-#if defined(OS_ANDROID)
-#include <sys/resource.h>
-#include "base/android/thread_utils.h"
-#include "jni/ThreadUtils_jni.h"
-#endif
-
-// TODO(bbudge) Use time.h when NaCl toolchain supports _POSIX_TIMERS
-#if defined(OS_NACL)
-#include <sys/nacl_syscalls.h>
+#elif defined(OS_ANDROID)
+#include <sys/types.h>
 #endif
 
 namespace base {
 
-#if defined(OS_MACOSX)
 void InitThreading();
-#endif
+void TerminateOnThread();
+size_t GetDefaultThreadStackSize(const pthread_attr_t& attributes);
 
 namespace {
 
 struct ThreadParams {
+  ThreadParams()
+      : delegate(NULL), joinable(false), priority(ThreadPriority::NORMAL) {}
+
   PlatformThread::Delegate* delegate;
   bool joinable;
+  ThreadPriority priority;
 };
 
 void* ThreadFunc(void* params) {
-#if defined(OS_ANDROID)
-  // Threads on linux/android may inherit their priority from the thread
-  // where they were created. This sets all threads to the default.
-  // TODO(epenner): Move thread priorities to base. (crbug.com/170549)
-  if (setpriority(PRIO_PROCESS, PlatformThread::CurrentId(), 0))
-    DVLOG(1) << "Failed to reset initial thread nice value to zero.";
+  PlatformThread::Delegate* delegate = nullptr;
+
+  {
+    std::unique_ptr<ThreadParams> thread_params(
+        static_cast<ThreadParams*>(params));
+
+    delegate = thread_params->delegate;
+    if (!thread_params->joinable)
+      base::ThreadRestrictions::SetSingletonAllowed(false);
+
+#if !defined(OS_NACL)
+    // Threads on linux/android may inherit their priority from the thread
+    // where they were created. This explicitly sets the priority of all new
+    // threads.
+    PlatformThread::SetCurrentThreadPriority(thread_params->priority);
 #endif
-  ThreadParams* thread_params = static_cast<ThreadParams*>(params);
-  PlatformThread::Delegate* delegate = thread_params->delegate;
-  if (!thread_params->joinable)
-    base::ThreadRestrictions::SetSingletonAllowed(false);
-  delete thread_params;
+  }
+
+  ThreadIdNameManager::GetInstance()->RegisterThread(
+      PlatformThread::CurrentHandle().platform_handle(),
+      PlatformThread::CurrentId());
+
   delegate->ThreadMain();
-#if defined(OS_ANDROID)
-  base::android::DetachFromVM();
-#endif
+
+  ThreadIdNameManager::GetInstance()->RemoveName(
+      PlatformThread::CurrentHandle().platform_handle(),
+      PlatformThread::CurrentId());
+
+  base::TerminateOnThread();
   return NULL;
 }
 
-bool CreateThread(size_t stack_size, bool joinable,
+bool CreateThread(size_t stack_size,
+                  bool joinable,
                   PlatformThread::Delegate* delegate,
                   PlatformThreadHandle* thread_handle,
                   ThreadPriority priority) {
-#if defined(OS_MACOSX)
+  DCHECK(thread_handle);
   base::InitThreading();
-#endif  // OS_MACOSX
 
-  bool success = false;
   pthread_attr_t attributes;
   pthread_attr_init(&attributes);
 
-  // Pthreads are joinable by default, so only specify the detached attribute if
-  // the thread should be non-joinable.
-  if (!joinable) {
+  // Pthreads are joinable by default, so only specify the detached
+  // attribute if the thread should be non-joinable.
+  if (!joinable)
     pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_DETACHED);
-  }
 
-#if defined(OS_MACOSX) && !defined(OS_IOS)
-  // The Mac OS X default for a pthread stack size is 512kB.
-  // Libc-594.1.4/pthreads/pthread.c's pthread_attr_init uses
-  // DEFAULT_STACK_SIZE for this purpose.
-  //
-  // 512kB isn't quite generous enough for some deeply recursive threads that
-  // otherwise request the default stack size by specifying 0. Here, adopt
-  // glibc's behavior as on Linux, which is to use the current stack size
-  // limit (ulimit -s) as the default stack size. See
-  // glibc-2.11.1/nptl/nptl-init.c's __pthread_initialize_minimal_internal. To
-  // avoid setting the limit below the Mac OS X default or the minimum usable
-  // stack size, these values are also considered. If any of these values
-  // can't be determined, or if stack size is unlimited (ulimit -s unlimited),
-  // stack_size is left at 0 to get the system default.
-  //
-  // Mac OS X normally only applies ulimit -s to the main thread stack. On
-  // contemporary OS X and Linux systems alike, this value is generally 8MB
-  // or in that neighborhood.
-  if (stack_size == 0) {
-    size_t default_stack_size;
-    struct rlimit stack_rlimit;
-    if (pthread_attr_getstacksize(&attributes, &default_stack_size) == 0 &&
-        getrlimit(RLIMIT_STACK, &stack_rlimit) == 0 &&
-        stack_rlimit.rlim_cur != RLIM_INFINITY) {
-      stack_size = std::max(std::max(default_stack_size,
-                                     static_cast<size_t>(PTHREAD_STACK_MIN)),
-                            static_cast<size_t>(stack_rlimit.rlim_cur));
-    }
-  }
-#endif  // OS_MACOSX && !OS_IOS
+  // Get a better default if available.
+  if (stack_size == 0)
+    stack_size = base::GetDefaultThreadStackSize(attributes);
 
   if (stack_size > 0)
     pthread_attr_setstacksize(&attributes, stack_size);
 
-  ThreadParams* params = new ThreadParams;
+  std::unique_ptr<ThreadParams> params(new ThreadParams);
   params->delegate = delegate;
   params->joinable = joinable;
-  success = !pthread_create(thread_handle, &attributes, ThreadFunc, params);
+  params->priority = priority;
 
-  if (priority != kThreadPriority_Normal) {
-#if defined(OS_LINUX)
-    if (priority == kThreadPriority_RealtimeAudio) {
-      // Linux isn't posix compliant with setpriority(2), it will set a thread
-      // priority if it is passed a tid, not affecting the rest of the threads
-      // in the process.  Setting this priority will only succeed if the user
-      // has been granted permission to adjust nice values on the system.
-      const int kNiceSetting = -10;
-      if (setpriority(PRIO_PROCESS, PlatformThread::CurrentId(), kNiceSetting))
-        DVLOG(1) << "Failed to set nice value of thread to " << kNiceSetting;
-    } else {
-      NOTREACHED() << "Unknown thread priority.";
-    }
-#else
-    PlatformThread::SetThreadPriority(*thread_handle, priority);
-#endif
+  pthread_t handle;
+  int err = pthread_create(&handle, &attributes, ThreadFunc, params.get());
+  bool success = !err;
+  if (success) {
+    // ThreadParams should be deleted on the created thread after used.
+    ignore_result(params.release());
+  } else {
+    // Value of |handle| is undefined if pthread_create fails.
+    handle = 0;
+    errno = err;
+    PLOG(ERROR) << "pthread_create";
   }
+  *thread_handle = PlatformThreadHandle(handle);
 
   pthread_attr_destroy(&attributes);
-  if (!success)
-    delete params;
+
   return success;
 }
 
@@ -165,16 +136,26 @@ PlatformThreadId PlatformThread::CurrentId() {
   return syscall(__NR_gettid);
 #elif defined(OS_ANDROID)
   return gettid();
-#elif defined(OS_SOLARIS)
+#elif defined(OS_SOLARIS) || defined(OS_QNX)
   return pthread_self();
 #elif defined(OS_NACL) && defined(__GLIBC__)
   return pthread_self();
 #elif defined(OS_NACL) && !defined(__GLIBC__)
   // Pointers are 32-bits in NaCl.
-  return reinterpret_cast<int32>(pthread_self());
+  return reinterpret_cast<int32_t>(pthread_self());
 #elif defined(OS_POSIX)
-  return reinterpret_cast<int64>(pthread_self());
+  return reinterpret_cast<int64_t>(pthread_self());
 #endif
+}
+
+// static
+PlatformThreadRef PlatformThread::CurrentRef() {
+  return PlatformThreadRef(pthread_self());
+}
+
+// static
+PlatformThreadHandle PlatformThread::CurrentHandle() {
+  return PlatformThreadHandle(pthread_self());
 }
 
 // static
@@ -197,52 +178,9 @@ void PlatformThread::Sleep(TimeDelta duration) {
     sleep_time = remaining;
 }
 
-#if defined(OS_LINUX)
-// static
-void PlatformThread::SetName(const char* name) {
-  ThreadIdNameManager::GetInstance()->SetName(CurrentId(), name);
-  tracked_objects::ThreadData::InitializeThreadContext(name);
-
-  // On linux we can get the thread names to show up in the debugger by setting
-  // the process name for the LWP.  We don't want to do this for the main
-  // thread because that would rename the process, causing tools like killall
-  // to stop working.
-  if (PlatformThread::CurrentId() == getpid())
-    return;
-
-  // http://0pointer.de/blog/projects/name-your-threads.html
-  // Set the name for the LWP (which gets truncated to 15 characters).
-  // Note that glibc also has a 'pthread_setname_np' api, but it may not be
-  // available everywhere and it's only benefit over using prctl directly is
-  // that it can set the name of threads other than the current thread.
-  int err = prctl(PR_SET_NAME, name);
-  // We expect EPERM failures in sandboxed processes, just ignore those.
-  if (err < 0 && errno != EPERM)
-    DPLOG(ERROR) << "prctl(PR_SET_NAME)";
-}
-#elif defined(OS_MACOSX)
-// Mac is implemented in platform_thread_mac.mm.
-#else
-// static
-void PlatformThread::SetName(const char* name) {
-  ThreadIdNameManager::GetInstance()->SetName(CurrentId(), name);
-  tracked_objects::ThreadData::InitializeThreadContext(name);
-
-  // (This should be relatively simple to implement for the BSDs; I
-  // just don't have one handy to test the code on.)
-}
-#endif  // defined(OS_LINUX)
-
 // static
 const char* PlatformThread::GetName() {
   return ThreadIdNameManager::GetInstance()->GetName(CurrentId());
-}
-
-// static
-bool PlatformThread::Create(size_t stack_size, Delegate* delegate,
-                            PlatformThreadHandle* thread_handle) {
-  return CreateThread(stack_size, true /* joinable thread */,
-                      delegate, thread_handle, kThreadPriority_Normal);
 }
 
 // static
@@ -258,7 +196,7 @@ bool PlatformThread::CreateNonJoinable(size_t stack_size, Delegate* delegate) {
   PlatformThreadHandle unused;
 
   bool result = CreateThread(stack_size, false /* non-joinable thread */,
-                             delegate, &unused, kThreadPriority_Normal);
+                             delegate, &unused, ThreadPriority::NORMAL);
   return result;
 }
 
@@ -268,31 +206,66 @@ void PlatformThread::Join(PlatformThreadHandle thread_handle) {
   // the thread referred to by |thread_handle| may still be running long-lived /
   // blocking tasks.
   base::ThreadRestrictions::AssertIOAllowed();
-  pthread_join(thread_handle, NULL);
+  CHECK_EQ(0, pthread_join(thread_handle.platform_handle(), NULL));
 }
 
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
-// Mac OS X uses lower-level mach APIs and Android uses Java APIs.
 // static
-void PlatformThread::SetThreadPriority(PlatformThreadHandle, ThreadPriority) {
-  // TODO(crogers): Implement, see http://crbug.com/116172
-}
-#endif
-
-#if defined(OS_ANDROID)
-bool RegisterThreadUtils(JNIEnv* env) {
-  return RegisterNativesImpl(env);
+void PlatformThread::Detach(PlatformThreadHandle thread_handle) {
+  CHECK_EQ(0, pthread_detach(thread_handle.platform_handle()));
 }
 
-void PlatformThread::SetThreadPriority(PlatformThreadHandle,
-                                       ThreadPriority priority) {
-  if (priority == kThreadPriority_RealtimeAudio) {
-    JNIEnv* env = base::android::AttachCurrentThread();
-    Java_ThreadUtils_setThreadPriorityAudio(env, PlatformThread::CurrentId());
-  } else {
-    NOTREACHED() << "Unknown thread priority.";
+// Mac has its own Set/GetCurrentThreadPriority() implementations.
+#if !defined(OS_MACOSX)
+
+// static
+void PlatformThread::SetCurrentThreadPriority(ThreadPriority priority) {
+#if defined(OS_NACL)
+  NOTIMPLEMENTED();
+#else
+  if (internal::SetCurrentThreadPriorityForPlatform(priority))
+    return;
+
+  // setpriority(2) should change the whole thread group's (i.e. process)
+  // priority. However, as stated in the bugs section of
+  // http://man7.org/linux/man-pages/man2/getpriority.2.html: "under the current
+  // Linux/NPTL implementation of POSIX threads, the nice value is a per-thread
+  // attribute". Also, 0 is prefered to the current thread id since it is
+  // equivalent but makes sandboxing easier (https://crbug.com/399473).
+  const int nice_setting = internal::ThreadPriorityToNiceValue(priority);
+  if (setpriority(PRIO_PROCESS, 0, nice_setting)) {
+    DVPLOG(1) << "Failed to set nice value of thread ("
+              << PlatformThread::CurrentId() << ") to " << nice_setting;
   }
+#endif  // defined(OS_NACL)
 }
-#endif  // defined(OS_ANDROID)
+
+// static
+ThreadPriority PlatformThread::GetCurrentThreadPriority() {
+#if defined(OS_NACL)
+  NOTIMPLEMENTED();
+  return ThreadPriority::NORMAL;
+#else
+  // Mirrors SetCurrentThreadPriority()'s implementation.
+  ThreadPriority platform_specific_priority;
+  if (internal::GetCurrentThreadPriorityForPlatform(
+          &platform_specific_priority)) {
+    return platform_specific_priority;
+  }
+
+  // Need to clear errno before calling getpriority():
+  // http://man7.org/linux/man-pages/man2/getpriority.2.html
+  errno = 0;
+  int nice_value = getpriority(PRIO_PROCESS, 0);
+  if (errno != 0) {
+    DVPLOG(1) << "Failed to get nice value of thread ("
+              << PlatformThread::CurrentId() << ")";
+    return ThreadPriority::NORMAL;
+  }
+
+  return internal::NiceValueToThreadPriority(nice_value);
+#endif  // !defined(OS_NACL)
+}
+
+#endif  // !defined(OS_MACOSX)
 
 }  // namespace base

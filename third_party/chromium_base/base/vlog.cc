@@ -4,8 +4,13 @@
 
 #include "base/vlog.h"
 
-#include "base/basictypes.h"
+#include <stddef.h>
+
+#include <ostream>
+#include <utility>
+
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 
@@ -46,7 +51,6 @@ VlogInfo::VlogInfo(const std::string& v_switch,
     : min_log_level_(min_log_level) {
   DCHECK(min_log_level != NULL);
 
-  typedef std::pair<std::string, std::string> KVPair;
   int vlog_level = 0;
   if (!v_switch.empty()) {
     if (base::StringToInt(v_switch, &vlog_level)) {
@@ -56,13 +60,13 @@ VlogInfo::VlogInfo(const std::string& v_switch,
     }
   }
 
-  std::vector<KVPair> kv_pairs;
+  base::StringPairs kv_pairs;
   if (!base::SplitStringIntoKeyValuePairs(
           vmodule_switch, '=', ',', &kv_pairs)) {
     DLOG(WARNING) << "Could not fully parse vmodule switch \""
                   << vmodule_switch << "\"";
   }
-  for (std::vector<KVPair>::const_iterator it = kv_pairs.begin();
+  for (base::StringPairs::const_iterator it = kv_pairs.begin();
        it != kv_pairs.end(); ++it) {
     VmodulePattern pattern(it->first);
     if (!base::StringToInt(it->second, &pattern.vlog_level)) {
@@ -174,4 +178,4 @@ bool MatchVlogPattern(const base::StringPiece& string,
   return false;
 }
 
-}  // namespace
+}  // namespace logging

@@ -24,7 +24,7 @@
 #include "foster_globals.h"
 
 #include "base/atomicops.h"
-#include "base/time.h"
+#include "base/time/time.h"
 
 #include <signal.h>
 
@@ -514,7 +514,7 @@ void* foster_fmttime_secs_raw(double secs) {
 }
 
 int64_t foster_gettime_microsecs() {
-  return base::TimeTicks::NowFromSystemTraceTime().ToInternalValue();
+  return base::TimeTicks::Now().ToInternalValue();
 }
 double  foster_gettime_elapsed_secs(int64_t early, int64_t later) {
   return base::TimeDelta::FromMicroseconds(later - early).InSecondsF();

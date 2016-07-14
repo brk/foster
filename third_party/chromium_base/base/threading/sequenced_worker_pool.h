@@ -5,14 +5,17 @@
 #ifndef BASE_THREADING_SEQUENCED_WORKER_POOL_H_
 #define BASE_THREADING_SEQUENCED_WORKER_POOL_H_
 
+#include <stddef.h>
+
 #include <cstddef>
+#include <memory>
 #include <string>
 
 #include "base/base_export.h"
-#include "base/basictypes.h"
 #include "base/callback_forward.h"
+#include "base/macros.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
+#include "base/single_thread_task_runner.h"
 #include "base/task_runner.h"
 
 namespace tracked_objects {
@@ -21,7 +24,7 @@ class Location;
 
 namespace base {
 
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 
 template <class T> class DeleteHelper;
 
@@ -44,7 +47,8 @@ class SequencedTaskRunner;
 //     destruction will be visible to T2.
 //
 // Example:
-//   SequencedWorkerPool::SequenceToken token = pool.GetSequenceToken();
+//   SequencedWorkerPool::SequenceToken token =
+//       SequencedWorkerPool::GetSequenceToken();
 //   pool.PostSequencedWorkerTask(token, SequencedWorkerPool::SKIP_ON_SHUTDOWN,
 //                                FROM_HERE, base::Bind(...));
 //   pool.PostSequencedWorkerTask(token, SequencedWorkerPool::SKIP_ON_SHUTDOWN,
@@ -57,10 +61,10 @@ class SequencedTaskRunner;
 // These will be executed in an unspecified order. The order of execution
 // between tasks with different sequence tokens is also unspecified.
 //
-// This class is designed to be leaked on shutdown to allow the
-// CONTINUE_ON_SHUTDOWN behavior to be implemented. To enforce the
-// BLOCK_SHUTDOWN behavior, you must call Shutdown() which will wait until
-// the necessary tasks have completed.
+// This class may be leaked on shutdown to facilitate fast shutdown. The
+// expected usage, however, is to call Shutdown(), which correctly accounts
+// for CONTINUE_ON_SHUTDOWN behavior and is required for BLOCK_SHUTDOWN
+// behavior.
 //
 // Implementation note: This does not use a base::WorkerPool since that does
 // not enforce shutdown semantics or allow us to specify how many worker
@@ -69,6 +73,9 @@ class SequencedTaskRunner;
 //
 // Note that SequencedWorkerPool is RefCountedThreadSafe (inherited
 // from TaskRunner).
+//
+// Test-only code should wrap this in a base::SequencedWorkerPoolOwner to avoid
+// memory leaks. See http://crbug.com/273800
 class BASE_EXPORT SequencedWorkerPool : public TaskRunner {
  public:
   // Defines what should happen to a task posted to the worker pool on
@@ -117,7 +124,7 @@ class BASE_EXPORT SequencedWorkerPool : public TaskRunner {
 
   // Opaque identifier that defines sequencing of tasks posted to the worker
   // pool.
-  class SequenceToken {
+  class BASE_EXPORT SequenceToken {
    public:
     SequenceToken() : id_(0) {}
     ~SequenceToken() {}
@@ -125,6 +132,15 @@ class BASE_EXPORT SequencedWorkerPool : public TaskRunner {
     bool Equals(const SequenceToken& other) const {
       return id_ == other.id_;
     }
+
+    // Returns false if current thread is executing an unsequenced task.
+    bool IsValid() const {
+      return id_ != 0;
+    }
+
+    // Returns a string representation of this token. This method should only be
+    // used for debugging.
+    std::string ToString() const;
 
    private:
     friend class SequencedWorkerPool;
@@ -143,24 +159,42 @@ class BASE_EXPORT SequencedWorkerPool : public TaskRunner {
     virtual void OnDestruct() = 0;
   };
 
+  // Gets the SequencedToken of the current thread.
+  // If current thread is not a SequencedWorkerPool worker thread or is running
+  // an unsequenced task, returns an invalid SequenceToken.
+  static SequenceToken GetSequenceTokenForCurrentThread();
+
+  // Gets a SequencedTaskRunner for the current thread. If the current thread is
+  // running an unsequenced task, a new SequenceToken will be generated and set,
+  // so that the returned SequencedTaskRunner is guaranteed to run tasks after
+  // the current task has finished running.
+  static scoped_refptr<SequencedTaskRunner>
+  GetSequencedTaskRunnerForCurrentThread();
+
+  // Returns a unique token that can be used to sequence tasks posted to
+  // PostSequencedWorkerTask(). Valid tokens are always nonzero.
+  // TODO(bauerb): Rename this to better differentiate from
+  // GetSequenceTokenForCurrentThread().
+  static SequenceToken GetSequenceToken();
+
+  // Returns the SequencedWorkerPool that owns this thread, or null if the
+  // current thread is not a SequencedWorkerPool worker thread.
+  static scoped_refptr<SequencedWorkerPool> GetWorkerPoolForCurrentThread();
+
   // When constructing a SequencedWorkerPool, there must be a
-  // MessageLoop on the current thread unless you plan to deliberately
-  // leak it.
+  // ThreadTaskRunnerHandle on the current thread unless you plan to
+  // deliberately leak it.
 
   // Pass the maximum number of threads (they will be lazily created as needed)
   // and a prefix for the thread name to aid in debugging.
   SequencedWorkerPool(size_t max_threads,
                       const std::string& thread_name_prefix);
 
-  // Like above, but with |observer| for testing.  Does not take
-  // ownership of |observer|.
+  // Like above, but with |observer| for testing.  Does not take ownership of
+  // |observer|.
   SequencedWorkerPool(size_t max_threads,
                       const std::string& thread_name_prefix,
                       TestingObserver* observer);
-
-  // Returns a unique token that can be used to sequence tasks posted to
-  // PostSequencedWorkerTask(). Valid tokens are alwys nonzero.
-  SequenceToken GetSequenceToken();
 
   // Returns the sequence token associated with the given name. Calling this
   // function multiple times with the same string will always produce the
@@ -277,17 +311,22 @@ class BASE_EXPORT SequencedWorkerPool : public TaskRunner {
       WorkerShutdown shutdown_behavior);
 
   // TaskRunner implementation. Forwards to PostDelayedWorkerTask().
-  virtual bool PostDelayedTask(const tracked_objects::Location& from_here,
-                               const Closure& task,
-                               TimeDelta delay) OVERRIDE;
-  virtual bool RunsTasksOnCurrentThread() const OVERRIDE;
+  bool PostDelayedTask(const tracked_objects::Location& from_here,
+                       const Closure& task,
+                       TimeDelta delay) override;
+  bool RunsTasksOnCurrentThread() const override;
 
   // Returns true if the current thread is processing a task with the given
   // sequence_token.
   bool IsRunningSequenceOnCurrentThread(SequenceToken sequence_token) const;
 
+  // Returns true if any thread is currently processing a task with the given
+  // sequence token. Should only be called with a valid sequence token.
+  bool IsRunningSequence(SequenceToken sequence_token) const;
+
   // Blocks until all pending tasks are complete. This should only be called in
   // unit tests when you want to validate something that should have happened.
+  // This will not flush delayed tasks; delayed tasks get deleted.
   //
   // Note that calling this will not prevent other threads from posting work to
   // the queue while the calling thread is waiting on Flush(). In this case,
@@ -306,19 +345,23 @@ class BASE_EXPORT SequencedWorkerPool : public TaskRunner {
   // Must be called from the same thread this object was constructed on.
   void Shutdown() { Shutdown(0); }
 
-  // A variant that allows an arbitrary number of new blocking tasks to
-  // be posted during shutdown from within tasks that execute during shutdown.
-  // Only tasks designated as BLOCKING_SHUTDOWN will be allowed, and only if
-  // posted by tasks that are not designated as CONTINUE_ON_SHUTDOWN. Once
+  // A variant that allows an arbitrary number of new blocking tasks to be
+  // posted during shutdown. The tasks cannot be posted within the execution
+  // context of tasks whose shutdown behavior is not BLOCKING_SHUTDOWN. Once
   // the limit is reached, subsequent calls to post task fail in all cases.
-  //
   // Must be called from the same thread this object was constructed on.
   void Shutdown(int max_new_blocking_tasks_after_shutdown);
 
- protected:
-  virtual ~SequencedWorkerPool();
+  // Check if Shutdown was called for given threading pool. This method is used
+  // for aborting time consuming operation to avoid blocking shutdown.
+  //
+  // Can be called from any thread.
+  bool IsShutdownInProgress();
 
-  virtual void OnDestruct() const OVERRIDE;
+ protected:
+  ~SequencedWorkerPool() override;
+
+  void OnDestruct() const override;
 
  private:
   friend class RefCountedThreadSafe<SequencedWorkerPool>;
@@ -327,11 +370,11 @@ class BASE_EXPORT SequencedWorkerPool : public TaskRunner {
   class Inner;
   class Worker;
 
-  const scoped_refptr<MessageLoopProxy> constructor_message_loop_;
+  const scoped_refptr<SingleThreadTaskRunner> constructor_task_runner_;
 
   // Avoid pulling in too many headers by putting (almost) everything
   // into |inner_|.
-  const scoped_ptr<Inner> inner_;
+  const std::unique_ptr<Inner> inner_;
 
   DISALLOW_COPY_AND_ASSIGN(SequencedWorkerPool);
 };

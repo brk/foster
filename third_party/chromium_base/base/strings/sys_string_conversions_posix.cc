@@ -4,10 +4,12 @@
 
 #include "base/strings/sys_string_conversions.h"
 
+#include <stddef.h>
 #include <wchar.h>
 
-#include "base/string_piece.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_piece.h"
+#include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
 
 namespace base {
 
@@ -24,11 +26,10 @@ std::wstring SysUTF8ToWide(const StringPiece& utf8) {
   return out;
 }
 
-#if defined(OS_CHROMEOS) || defined(OS_ANDROID)
+#if defined(SYSTEM_NATIVE_UTF8) || defined(OS_ANDROID)
 // TODO(port): Consider reverting the OS_ANDROID when we have wcrtomb()
 // support and a better understanding of what calls these routines.
 
-// ChromeOS always runs in UTF-8 locale.
 std::string SysWideToNativeMB(const std::wstring& wide) {
   return WideToUTF8(wide);
 }

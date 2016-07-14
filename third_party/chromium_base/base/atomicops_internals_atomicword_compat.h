@@ -6,9 +6,12 @@
 
 #ifndef BASE_ATOMICOPS_INTERNALS_ATOMICWORD_COMPAT_H_
 #define BASE_ATOMICOPS_INTERNALS_ATOMICWORD_COMPAT_H_
-#pragma once
 
-// AtomicWord is a synonym for intptr_t, and Atomic32 is a synonym for int32,
+#include <stdint.h>
+
+#include "build/build_config.h"
+
+// AtomicWord is a synonym for intptr_t, and Atomic32 is a synonym for int32_t,
 // which in turn means int. On some LP32 platforms, intptr_t is an int, but
 // on others, it's a long. When AtomicWord and Atomic32 are based on different
 // fundamental types, their pointers are incompatible.
@@ -93,8 +96,8 @@ inline AtomicWord Release_Load(volatile const AtomicWord* ptr) {
       reinterpret_cast<volatile const Atomic32*>(ptr));
 }
 
-}   // namespace base::subtle
-}   // namespace base
+}  // namespace subtle
+}  // namespace base
 
 #endif  // !defined(ARCH_CPU_64_BITS)
 

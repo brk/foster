@@ -5,14 +5,25 @@
 #ifndef BASE_THREADING_THREAD_H_
 #define BASE_THREADING_THREAD_H_
 
+#include <stddef.h>
+
+#include <memory>
 #include <string>
 
 #include "base/base_export.h"
-#include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/callback.h"
+#include "base/macros.h"
+#include "base/message_loop/message_loop.h"
+#include "base/message_loop/timer_slack.h"
+#include "base/single_thread_task_runner.h"
+#include "base/synchronization/lock.h"
+#include "base/synchronization/waitable_event.h"
 #include "base/threading/platform_thread.h"
+#include "build/build_config.h"
 
 namespace base {
+
+class MessagePump;
 
 // A simple thread abstraction that establishes a MessageLoop on a new thread.
 // The consumer uses the MessageLoop of the thread to cause code to execute on
@@ -29,23 +40,39 @@ namespace base {
 //  (3.b)    MessageLoop::DestructionObserver::WillDestroyCurrentMessageLoop
 class BASE_EXPORT Thread : PlatformThread::Delegate {
  public:
-  struct Options {
-    Options() : message_loop_type(MessageLoop::TYPE_DEFAULT), stack_size(0) {}
-    Options(MessageLoop::Type type, size_t size)
-        : message_loop_type(type), stack_size(size) {}
+  struct BASE_EXPORT Options {
+    typedef Callback<std::unique_ptr<MessagePump>()> MessagePumpFactory;
+
+    Options();
+    Options(MessageLoop::Type type, size_t size);
+    Options(const Options& other);
+    ~Options();
 
     // Specifies the type of message loop that will be allocated on the thread.
+    // This is ignored if message_pump_factory.is_null() is false.
     MessageLoop::Type message_loop_type;
+
+    // Specifies timer slack for thread message loop.
+    TimerSlack timer_slack;
+
+    // Used to create the MessagePump for the MessageLoop. The callback is Run()
+    // on the thread. If message_pump_factory.is_null(), then a MessagePump
+    // appropriate for |message_loop_type| is created. Setting this forces the
+    // MessageLoop::Type to TYPE_CUSTOM.
+    MessagePumpFactory message_pump_factory;
 
     // Specifies the maximum stack size that the thread is allowed to use.
     // This does not necessarily correspond to the thread's initial stack size.
     // A value of 0 indicates that the default maximum should be used.
     size_t stack_size;
+
+    // Specifies the initial thread priority.
+    ThreadPriority priority;
   };
 
   // Constructor.
   // name is a display string to identify the thread.
-  explicit Thread(const char* name);
+  explicit Thread(const std::string& name);
 
   // Destroys the thread, stopping it if necessary.
   //
@@ -55,7 +82,7 @@ class BASE_EXPORT Thread : PlatformThread::Delegate {
   // vtable, and the thread's ThreadMain calling the virtual method Run().  It
   // also ensures that the CleanUp() virtual method is called on the subclass
   // before it is destructed.
-  virtual ~Thread();
+  ~Thread() override;
 
 #if defined(OS_WIN)
   // Causes the thread to initialize COM.  This must be called before calling
@@ -64,7 +91,7 @@ class BASE_EXPORT Thread : PlatformThread::Delegate {
   // init_com_with_mta(false) and then StartWithOptions() with any message loop
   // type other than TYPE_UI.
   void init_com_with_mta(bool use_mta) {
-    DCHECK(!started_);
+    DCHECK(!message_loop_);
     com_status_ = use_mta ? MTA : STA;
   }
 #endif
@@ -85,6 +112,18 @@ class BASE_EXPORT Thread : PlatformThread::Delegate {
   // i.e. during a DllMain, global object construction or destruction, atexit()
   // callback.
   bool StartWithOptions(const Options& options);
+
+  // Starts the thread and wait for the thread to start and run initialization
+  // before returning. It's same as calling Start() and then
+  // WaitUntilThreadStarted().
+  // Note that using this (instead of Start() or StartWithOptions() causes
+  // jank on the calling thread, should be used only in testing code.
+  bool StartAndWaitForTesting();
+
+  // Blocks until the thread starts running. Called within StartAndWait().
+  // Note that calling this causes jank on the calling thread, must be used
+  // carefully for production code.
+  bool WaitUntilThreadStarted() const;
 
   // Signals the thread to exit and returns once the thread has exited.  After
   // this method returns, the Thread object is completely reset and may be used
@@ -114,20 +153,20 @@ class BASE_EXPORT Thread : PlatformThread::Delegate {
   // Returns the message loop for this thread.  Use the MessageLoop's
   // PostTask methods to execute code on the thread.  This only returns
   // non-null after a successful call to Start.  After Stop has been called,
-  // this will return NULL.
+  // this will return nullptr.
   //
   // NOTE: You must not call this MessageLoop's Quit method directly.  Use
   // the Thread's Stop method instead.
   //
   MessageLoop* message_loop() const { return message_loop_; }
 
-  // Returns a MessageLoopProxy for this thread.  Use the MessageLoopProxy's
-  // PostTask methods to execute code on the thread.  This only returns
-  // non-NULL after a successful call to Start. After Stop has been called,
-  // this will return NULL. Callers can hold on to this even after the thread
-  // is gone.
-  scoped_refptr<MessageLoopProxy> message_loop_proxy() const {
-    return message_loop_ ? message_loop_->message_loop_proxy() : NULL;
+  // Returns a TaskRunner for this thread. Use the TaskRunner's PostTask
+  // methods to execute code on the thread. Returns nullptr if the thread is not
+  // running (e.g. before Start or after Stop have been called). Callers can
+  // hold on to this even after the thread is gone; in this situation, attempts
+  // to PostTask() will fail.
+  scoped_refptr<SingleThreadTaskRunner> task_runner() const {
+    return message_loop_ ? message_loop_->task_runner() : nullptr;
   }
 
   // Returns the name of this thread (for display in debugger too).
@@ -136,8 +175,13 @@ class BASE_EXPORT Thread : PlatformThread::Delegate {
   // The native thread handle.
   PlatformThreadHandle thread_handle() { return thread_; }
 
-  // The thread ID.
-  PlatformThreadId thread_id() const { return thread_id_; }
+  // Returns the thread ID.  Should not be called before the first Start*()
+  // call.  Keeps on returning the same ID even after a Stop() call. The next
+  // Start*() call renews the ID.
+  //
+  // WARNING: This function will block if the thread hasn't started yet.
+  //
+  PlatformThreadId GetThreadId() const;
 
   // Returns true if the thread has been started, and not yet stopped.
   bool IsRunning() const;
@@ -169,39 +213,44 @@ class BASE_EXPORT Thread : PlatformThread::Delegate {
 #endif
 
   // PlatformThread::Delegate methods:
-  virtual void ThreadMain() OVERRIDE;
+  void ThreadMain() override;
 
 #if defined(OS_WIN)
   // Whether this thread needs to initialize COM, and if so, in what mode.
   ComStatus com_status_;
 #endif
 
-  // Whether we successfully started the thread.
-  bool started_;
-
   // If true, we're in the middle of stopping, and shouldn't access
-  // |message_loop_|. It may non-NULL and invalid.
+  // |message_loop_|. It may non-nullptr and invalid.
+  // Should be written on the thread that created this thread. Also read data
+  // could be wrong on other threads.
   bool stopping_;
 
   // True while inside of Run().
   bool running_;
-
-  // Used to pass data to ThreadMain.
-  struct StartupData;
-  StartupData* startup_data_;
+  mutable base::Lock running_lock_;  // Protects |running_|.
 
   // The thread's handle.
   PlatformThreadHandle thread_;
+  mutable base::Lock thread_lock_;  // Protects |thread_|.
+
+  // The thread's id once it has started.
+  PlatformThreadId id_;
+  mutable WaitableEvent id_event_;  // Protects |id_|.
 
   // The thread's message loop.  Valid only while the thread is alive.  Set
   // by the created thread.
   MessageLoop* message_loop_;
 
-  // Our thread's ID.
-  PlatformThreadId thread_id_;
+  // Stores Options::timer_slack_ until the message loop has been bound to
+  // a thread.
+  TimerSlack message_loop_timer_slack_;
 
   // The name of the thread.  Used for debugging purposes.
   std::string name_;
+
+  // Signaled when the created thread gets ready to use the message loop.
+  mutable WaitableEvent start_event_;
 
   friend void ThreadQuitHelper();
 

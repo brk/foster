@@ -7,34 +7,59 @@
 
 #include <mach/mach.h>
 
-#include "base/basictypes.h"
 #include "base/base_export.h"
+#include "base/scoped_generic.h"
 
 namespace base {
 namespace mac {
 
-// A class for managing the life of a Mach port, releasing via
-// mach_port_deallocate either its send and/or receive rights.
-class BASE_EXPORT ScopedMachPort {
- public:
-  // Creates a scoper by taking ownership of the port.
-  explicit ScopedMachPort(mach_port_t port);
+namespace internal {
 
-  ~ScopedMachPort();
-
-  operator mach_port_t() const {
-    return port_;
+struct BASE_EXPORT SendRightTraits {
+  static mach_port_t InvalidValue() {
+    return MACH_PORT_NULL;
   }
 
-  mach_port_t get() const {
-    return port_;
-  }
-
- private:
-  mach_port_t port_;
-
-  DISALLOW_COPY_AND_ASSIGN(ScopedMachPort);
+  BASE_EXPORT static void Free(mach_port_t port);
 };
+
+struct BASE_EXPORT ReceiveRightTraits {
+  static mach_port_t InvalidValue() {
+    return MACH_PORT_NULL;
+  }
+
+  BASE_EXPORT static void Free(mach_port_t port);
+};
+
+struct PortSetTraits {
+  static mach_port_t InvalidValue() {
+    return MACH_PORT_NULL;
+  }
+
+  BASE_EXPORT static void Free(mach_port_t port);
+};
+
+}  // namespace internal
+
+// A scoper for handling a Mach port that names a send right. Send rights are
+// reference counted, and this takes ownership of the right on construction
+// and then removes a reference to the right on destruction. If the reference
+// is the last one on the right, the right is deallocated.
+using ScopedMachSendRight =
+    ScopedGeneric<mach_port_t, internal::SendRightTraits>;
+
+// A scoper for handling a Mach port's receive right. There is only one
+// receive right per port. This takes ownership of the receive right on
+// construction and then destroys the right on destruction, turning all
+// outstanding send rights into dead names.
+using ScopedMachReceiveRight =
+    ScopedGeneric<mach_port_t, internal::ReceiveRightTraits>;
+
+// A scoper for handling a Mach port set. A port set can have only one
+// reference. This takes ownership of that single reference on construction and
+// destroys the port set on destruction. Destroying a port set does not destroy
+// the receive rights that are members of the port set.
+using ScopedMachPortSet = ScopedGeneric<mach_port_t, internal::PortSetTraits>;
 
 }  // namespace mac
 }  // namespace base

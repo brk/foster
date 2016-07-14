@@ -2,13 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stddef.h>
+
 #include <algorithm>
 #include <vector>
 
 #include "base/logging.h"
-#include "base/synchronization/waitable_event.h"
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
+#include "base/synchronization/waitable_event.h"
 #include "base/threading/thread_restrictions.h"
 
 // -----------------------------------------------------------------------------
@@ -37,12 +39,11 @@ namespace base {
 // -----------------------------------------------------------------------------
 // This is just an abstract base class for waking the two types of waiters
 // -----------------------------------------------------------------------------
-WaitableEvent::WaitableEvent(bool manual_reset, bool initially_signaled)
-    : kernel_(new WaitableEventKernel(manual_reset, initially_signaled)) {
-}
+WaitableEvent::WaitableEvent(ResetPolicy reset_policy,
+                             InitialState initial_state)
+    : kernel_(new WaitableEventKernel(reset_policy, initial_state)) {}
 
-WaitableEvent::~WaitableEvent() {
-}
+WaitableEvent::~WaitableEvent() = default;
 
 void WaitableEvent::Reset() {
   base::AutoLock locked(kernel_->lock_);
@@ -91,7 +92,7 @@ class SyncWaiter : public WaitableEvent::Waiter {
         cv_(&lock_) {
   }
 
-  virtual bool Fire(WaitableEvent* signaling_event) OVERRIDE {
+  bool Fire(WaitableEvent* signaling_event) override {
     base::AutoLock locked(lock_);
 
     if (fired_)
@@ -117,9 +118,7 @@ class SyncWaiter : public WaitableEvent::Waiter {
   // These waiters are always stack allocated and don't delete themselves. Thus
   // there's no problem and the ABA tag is the same as the object pointer.
   // ---------------------------------------------------------------------------
-  virtual bool Compare(void* tag) OVERRIDE {
-    return this == tag;
-  }
+  bool Compare(void* tag) override { return this == tag; }
 
   // ---------------------------------------------------------------------------
   // Called with lock held.
@@ -159,7 +158,7 @@ void WaitableEvent::Wait() {
 
 bool WaitableEvent::TimedWait(const TimeDelta& max_time) {
   base::ThreadRestrictions::AssertWaitAllowed();
-  const Time end_time(Time::Now() + max_time);
+  const TimeTicks end_time(TimeTicks::Now() + max_time);
   const bool finite_time = max_time.ToInternalValue() >= 0;
 
   kernel_->lock_.Acquire();
@@ -184,7 +183,7 @@ bool WaitableEvent::TimedWait(const TimeDelta& max_time) {
   // again before unlocking it.
 
   for (;;) {
-    const Time current_time(Time::Now());
+    const TimeTicks current_time(TimeTicks::Now());
 
     if (sw.fired() || (finite_time && current_time >= end_time)) {
       const bool return_value = sw.fired();
@@ -197,6 +196,11 @@ bool WaitableEvent::TimedWait(const TimeDelta& max_time) {
       sw.Disable();
       sw.lock()->Release();
 
+      // This is a bug that has been enshrined in the interface of
+      // WaitableEvent now: |Dequeue| is called even when |sw.fired()| is true,
+      // even though it'll always return false in that case. However, taking
+      // the lock ensures that |Signal| has completed before we return and
+      // means that a WaitableEvent can synchronise its own destruction.
       kernel_->lock_.Acquire();
       kernel_->Dequeue(&sw, &sw);
       kernel_->lock_.Release();
@@ -290,6 +294,11 @@ size_t WaitableEvent::WaitMany(WaitableEvent** raw_waitables,
         raw_waitables[i]->kernel_->Dequeue(&sw, &sw);
       raw_waitables[i]->kernel_->lock_.Release();
     } else {
+      // By taking this lock here we ensure that |Signal| has completed by the
+      // time we return, because |Signal| holds this lock. This matches the
+      // behaviour of |Wait| and |TimedWait|.
+      raw_waitables[i]->kernel_->lock_.Acquire();
+      raw_waitables[i]->kernel_->lock_.Release();
       signaled_index = i;
     }
   }
@@ -338,14 +347,13 @@ size_t WaitableEvent::EnqueueMany
 // -----------------------------------------------------------------------------
 // Private functions...
 
-WaitableEvent::WaitableEventKernel::WaitableEventKernel(bool manual_reset,
-                                                        bool initially_signaled)
-    : manual_reset_(manual_reset),
-      signaled_(initially_signaled) {
-}
+WaitableEvent::WaitableEventKernel::WaitableEventKernel(
+    ResetPolicy reset_policy,
+    InitialState initial_state)
+    : manual_reset_(reset_policy == ResetPolicy::MANUAL),
+      signaled_(initial_state == InitialState::SIGNALED) {}
 
-WaitableEvent::WaitableEventKernel::~WaitableEventKernel() {
-}
+WaitableEvent::WaitableEventKernel::~WaitableEventKernel() = default;
 
 // -----------------------------------------------------------------------------
 // Wake all waiting waiters. Called with lock held.
