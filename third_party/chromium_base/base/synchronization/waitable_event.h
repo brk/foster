@@ -5,11 +5,14 @@
 #ifndef BASE_SYNCHRONIZATION_WAITABLE_EVENT_H_
 #define BASE_SYNCHRONIZATION_WAITABLE_EVENT_H_
 
+#include <stddef.h>
+
 #include "base/base_export.h"
-#include "base/basictypes.h"
+#include "base/macros.h"
+#include "build/build_config.h"
 
 #if defined(OS_WIN)
-#include <windows.h>
+#include "base/win/scoped_handle.h"
 #endif
 
 #if defined(OS_POSIX)
@@ -20,9 +23,6 @@
 #endif
 
 namespace base {
-
-// This replaces INFINITE from Win32
-static const int kNoTimeout = -1;
 
 class TimeDelta;
 
@@ -43,20 +43,24 @@ class TimeDelta;
 // be better off just using an Windows event directly.
 class BASE_EXPORT WaitableEvent {
  public:
-  // If manual_reset is true, then to set the event state to non-signaled, a
-  // consumer must call the Reset method.  If this parameter is false, then the
-  // system automatically resets the event state to non-signaled after a single
-  // waiting thread has been released.
-  WaitableEvent(bool manual_reset, bool initially_signaled);
+  // Indicates whether a WaitableEvent should automatically reset the event
+  // state after a single waiting thread has been released or remain signaled
+  // until Reset() is manually invoked.
+  enum class ResetPolicy { MANUAL, AUTOMATIC };
+
+  // Indicates whether a new WaitableEvent should start in a signaled state or
+  // not.
+  enum class InitialState { SIGNALED, NOT_SIGNALED };
+
+  // Constructs a WaitableEvent with policy and initial state as detailed in
+  // the above enums.
+  WaitableEvent(ResetPolicy reset_policy, InitialState initial_state);
 
 #if defined(OS_WIN)
   // Create a WaitableEvent from an Event HANDLE which has already been
   // created. This objects takes ownership of the HANDLE and will close it when
   // deleted.
-  explicit WaitableEvent(HANDLE event_handle);
-
-  // Releases ownership of the handle from this object.
-  HANDLE Release();
+  explicit WaitableEvent(win::ScopedHandle event_handle);
 #endif
 
   ~WaitableEvent();
@@ -72,16 +76,25 @@ class BASE_EXPORT WaitableEvent {
   // is not a manual reset event, then this test will cause a reset.
   bool IsSignaled();
 
-  // Wait indefinitely for the event to be signaled.
+  // Wait indefinitely for the event to be signaled. Wait's return "happens
+  // after" |Signal| has completed. This means that it's safe for a
+  // WaitableEvent to synchronise its own destruction, like this:
+  //
+  //   WaitableEvent *e = new WaitableEvent;
+  //   SendToOtherThread(e);
+  //   e->Wait();
+  //   delete e;
   void Wait();
 
   // Wait up until max_time has passed for the event to be signaled.  Returns
   // true if the event was signaled.  If this method returns false, then it
   // does not necessarily mean that max_time was exceeded.
+  //
+  // TimedWait can synchronise its own destruction like |Wait|.
   bool TimedWait(const TimeDelta& max_time);
 
 #if defined(OS_WIN)
-  HANDLE handle() const { return handle_; }
+  HANDLE handle() const { return handle_.Get(); }
 #endif
 
   // Wait, synchronously, on multiple events.
@@ -91,7 +104,8 @@ class BASE_EXPORT WaitableEvent {
   // returns: the index of a WaitableEvent which has been signaled.
   //
   // You MUST NOT delete any of the WaitableEvent objects while this wait is
-  // happening.
+  // happening, however WaitMany's return "happens after" the |Signal| call
+  // that caused it has completed, like |Wait|.
   static size_t WaitMany(WaitableEvent** waitables, size_t count);
 
   // For asynchronous waiting, see WaitableEventWatcher
@@ -130,7 +144,7 @@ class BASE_EXPORT WaitableEvent {
   friend class WaitableEventWatcher;
 
 #if defined(OS_WIN)
-  HANDLE handle_;
+  win::ScopedHandle handle_;
 #else
   // On Windows, one can close a HANDLE which is currently being waited on. The
   // MSDN documentation says that the resulting behaviour is 'undefined', but
@@ -143,7 +157,7 @@ class BASE_EXPORT WaitableEvent {
   struct WaitableEventKernel :
       public RefCountedThreadSafe<WaitableEventKernel> {
    public:
-    WaitableEventKernel(bool manual_reset, bool initially_signaled);
+    WaitableEventKernel(ResetPolicy reset_policy, InitialState initial_state);
 
     bool Dequeue(Waiter* waiter, void* tag);
 

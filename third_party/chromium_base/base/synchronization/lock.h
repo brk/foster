@@ -4,11 +4,13 @@
 
 #ifndef BASE_SYNCHRONIZATION_LOCK_H_
 #define BASE_SYNCHRONIZATION_LOCK_H_
-#pragma once
 
 #include "base/base_export.h"
+#include "base/logging.h"
+#include "base/macros.h"
 #include "base/synchronization/lock_impl.h"
 #include "base/threading/platform_thread.h"
+#include "build/build_config.h"
 
 namespace base {
 
@@ -17,7 +19,8 @@ namespace base {
 // AssertAcquired() method.
 class BASE_EXPORT Lock {
  public:
-#if defined(NDEBUG)             // Optimized wrapper implementation
+#if !DCHECK_IS_ON()
+   // Optimized wrapper implementation
   Lock() : lock_() {}
   ~Lock() {}
   void Acquire() { lock_.Lock(); }
@@ -33,11 +36,11 @@ class BASE_EXPORT Lock {
   void AssertAcquired() const {}
 #else
   Lock();
-  ~Lock() {}
+  ~Lock();
 
-  // NOTE: Although windows critical sections support recursive locks, we do not
-  // allow this, and we will commonly fire a DCHECK() if a thread attempts to
-  // acquire the lock a second time (while already holding it).
+  // NOTE: We do not permit recursive locks and will commonly fire a DCHECK() if
+  // a thread attempts to acquire the lock a second time (while already holding
+  // it).
   void Acquire() {
     lock_.Lock();
     CheckUnheldAndMark();
@@ -56,18 +59,17 @@ class BASE_EXPORT Lock {
   }
 
   void AssertAcquired() const;
-#endif                          // NDEBUG
+#endif  // DCHECK_IS_ON()
 
-#if defined(OS_POSIX)
-  // The posix implementation of ConditionVariable needs to be able
-  // to see our lock and tweak our debugging counters, as it releases
-  // and acquires locks inside of pthread_cond_{timed,}wait.
-  // Windows doesn't need to do this as it calls the Lock::* methods.
+#if defined(OS_POSIX) || defined(OS_WIN)
+  // Both Windows and POSIX implementations of ConditionVariable need to be
+  // able to see our lock and tweak our debugging counters, as they release and
+  // acquire locks inside of their condition variable APIs.
   friend class ConditionVariable;
 #endif
 
  private:
-#if !defined(NDEBUG)
+#if DCHECK_IS_ON()
   // Members and routines taking care of locks assertions.
   // Note that this checks for recursive locks and allows them
   // if the variable is set.  This is allowed by the underlying implementation
@@ -78,12 +80,8 @@ class BASE_EXPORT Lock {
 
   // All private data is implicitly protected by lock_.
   // Be VERY careful to only access members under that lock.
-
-  // Determines validity of owning_thread_id_.  Needed as we don't have
-  // a null owning_thread_id_ value.
-  bool owned_by_thread_;
-  base::PlatformThreadId owning_thread_id_;
-#endif  // NDEBUG
+  base::PlatformThreadRef owning_thread_ref_;
+#endif  // DCHECK_IS_ON()
 
   // Platform specific underlying lock implementation.
   internal::LockImpl lock_;
@@ -94,8 +92,14 @@ class BASE_EXPORT Lock {
 // A helper class that acquires the given Lock while the AutoLock is in scope.
 class AutoLock {
  public:
+  struct AlreadyAcquired {};
+
   explicit AutoLock(Lock& lock) : lock_(lock) {
     lock_.Acquire();
+  }
+
+  AutoLock(Lock& lock, const AlreadyAcquired&) : lock_(lock) {
+    lock_.AssertAcquired();
   }
 
   ~AutoLock() {

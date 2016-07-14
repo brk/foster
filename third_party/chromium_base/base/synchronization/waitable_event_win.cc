@@ -4,52 +4,51 @@
 
 #include "base/synchronization/waitable_event.h"
 
-#include <math.h>
 #include <windows.h>
+#include <stddef.h>
+
+#include <utility>
 
 #include "base/logging.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 
 namespace base {
 
-WaitableEvent::WaitableEvent(bool manual_reset, bool signaled)
-    : handle_(CreateEvent(NULL, manual_reset, signaled, NULL)) {
+WaitableEvent::WaitableEvent(ResetPolicy reset_policy,
+                             InitialState initial_state)
+    : handle_(CreateEvent(nullptr,
+                          reset_policy == ResetPolicy::MANUAL,
+                          initial_state == InitialState::SIGNALED,
+                          nullptr)) {
   // We're probably going to crash anyways if this is ever NULL, so we might as
   // well make our stack reports more informative by crashing here.
-  CHECK(handle_);
+  CHECK(handle_.IsValid());
 }
 
-WaitableEvent::WaitableEvent(HANDLE handle)
-    : handle_(handle) {
-  CHECK(handle) << "Tried to create WaitableEvent from NULL handle";
+WaitableEvent::WaitableEvent(win::ScopedHandle handle)
+    : handle_(std::move(handle)) {
+  CHECK(handle_.IsValid()) << "Tried to create WaitableEvent from NULL handle";
 }
 
-WaitableEvent::~WaitableEvent() {
-  CloseHandle(handle_);
-}
-
-HANDLE WaitableEvent::Release() {
-  HANDLE rv = handle_;
-  handle_ = INVALID_HANDLE_VALUE;
-  return rv;
-}
+WaitableEvent::~WaitableEvent() = default;
 
 void WaitableEvent::Reset() {
-  ResetEvent(handle_);
+  ResetEvent(handle_.Get());
 }
 
 void WaitableEvent::Signal() {
-  SetEvent(handle_);
+  SetEvent(handle_.Get());
 }
 
 bool WaitableEvent::IsSignaled() {
-  return TimedWait(TimeDelta::FromMilliseconds(0));
+  return TimedWait(TimeDelta());
 }
 
 void WaitableEvent::Wait() {
   base::ThreadRestrictions::AssertWaitAllowed();
-  DWORD result = WaitForSingleObject(handle_, INFINITE);
+  DWORD result = WaitForSingleObject(handle_.Get(), INFINITE);
   // It is most unexpected that this should ever fail.  Help consumers learn
   // about it if it should ever fail.
   DCHECK_EQ(WAIT_OBJECT_0, result) << "WaitForSingleObject failed";
@@ -57,12 +56,13 @@ void WaitableEvent::Wait() {
 
 bool WaitableEvent::TimedWait(const TimeDelta& max_time) {
   base::ThreadRestrictions::AssertWaitAllowed();
-  DCHECK(max_time >= TimeDelta::FromMicroseconds(0));
-  // Be careful here.  TimeDelta has a precision of microseconds, but this API
-  // is in milliseconds.  If there are 5.5ms left, should the delay be 5 or 6?
-  // It should be 6 to avoid returning too early.
-  double timeout = ceil(max_time.InMillisecondsF());
-  DWORD result = WaitForSingleObject(handle_, static_cast<DWORD>(timeout));
+  DCHECK_GE(max_time, TimeDelta());
+  // Truncate the timeout to milliseconds. The API specifies that this method
+  // can return in less than |max_time| (when returning false), as the argument
+  // is the maximum time that a caller is willing to wait.
+  DWORD timeout = saturated_cast<DWORD>(max_time.InMilliseconds());
+
+  DWORD result = WaitForSingleObject(handle_.Get(), timeout);
   switch (result) {
     case WAIT_OBJECT_0:
       return true;
@@ -79,7 +79,7 @@ bool WaitableEvent::TimedWait(const TimeDelta& max_time) {
 size_t WaitableEvent::WaitMany(WaitableEvent** events, size_t count) {
   base::ThreadRestrictions::AssertWaitAllowed();
   HANDLE handles[MAXIMUM_WAIT_OBJECTS];
-  CHECK_LE(count, MAXIMUM_WAIT_OBJECTS)
+  CHECK_LE(count, static_cast<size_t>(MAXIMUM_WAIT_OBJECTS))
       << "Can only wait on " << MAXIMUM_WAIT_OBJECTS << " with WaitMany";
 
   for (size_t i = 0; i < count; ++i)
@@ -92,7 +92,7 @@ size_t WaitableEvent::WaitMany(WaitableEvent** events, size_t count) {
                              FALSE,      // don't wait for all the objects
                              INFINITE);  // no timeout
   if (result >= WAIT_OBJECT_0 + count) {
-    DLOG_GETLASTERROR(FATAL) << "WaitForMultipleObjects failed";
+    DPLOG(FATAL) << "WaitForMultipleObjects failed";
     return 0;
   }
 

@@ -5,36 +5,23 @@
 #ifndef BASE_JSON_JSON_PARSER_H_
 #define BASE_JSON_JSON_PARSER_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
+#include <memory>
 #include <string>
 
 #include "base/base_export.h"
-#include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/json/json_reader.h"
-#include "base/string_piece.h"
-
-#if !defined(OS_CHROMEOS)
 //#include "base/gtest_prod_util.h"
-#endif
+#include "base/json/json_reader.h"
+#include "base/macros.h"
+#include "base/strings/string_piece.h"
 
 namespace base {
+
 class Value;
-}
 
-#if defined(OS_CHROMEOS)
-// Chromium and Chromium OS check out gtest to different places, so this is
-// unable to compile on both if gtest_prod.h is included here. Instead, include
-// its only contents -- this will need to be updated if the macro ever changes.
-#define FRIEND_TEST(test_case_name, test_name)\
-friend class test_case_name##_##test_name##_Test
-
-#define FRIEND_TEST_ALL_PREFIXES(test_case_name, test_name) \
-  FRIEND_TEST(test_case_name, test_name); \
-  FRIEND_TEST(test_case_name, DISABLED_##test_name); \
-  FRIEND_TEST(test_case_name, FLAKY_##test_name)
-#endif  // OS_CHROMEOS
-
-namespace base {
 namespace internal {
 
 class JSONParserTest;
@@ -57,20 +44,28 @@ class JSONParserTest;
 // of a token, such that the next iteration of the parser will be at the byte
 // immediately following the token, which would likely be the first byte of the
 // next token.
-class BASE_EXPORT_PRIVATE JSONParser {
+class BASE_EXPORT JSONParser {
  public:
   explicit JSONParser(int options);
   ~JSONParser();
 
   // Parses the input string according to the set options and returns the
   // result as a Value owned by the caller.
-  Value* Parse(const StringPiece& input);
+  std::unique_ptr<Value> Parse(StringPiece input);
 
   // Returns the error code.
   JSONReader::JsonParseError error_code() const;
 
   // Returns the human-friendly error message.
   std::string GetErrorMessage() const;
+
+  // Returns the error line number if parse error happened. Otherwise always
+  // returns 0.
+  int error_line() const;
+
+  // Returns the error column number if parse error happened. Otherwise always
+  // returns 0.
+  int error_column() const;
 
  private:
   enum Token {
@@ -139,7 +134,7 @@ class BASE_EXPORT_PRIVATE JSONParser {
     size_t length_;
 
     // The copied string representation. NULL until Convert() is called.
-    // Strong. scoped_ptr<T> has too much of an overhead here.
+    // Strong. std::unique_ptr<T> has too much of an overhead here.
     std::string* string_;
   };
 
@@ -197,7 +192,7 @@ class BASE_EXPORT_PRIVATE JSONParser {
   // Helper function for ConsumeStringRaw() that takes a single code point,
   // decodes it into UTF-8 units, and appends it to the given builder. The
   // point must be valid.
-  void DecodeUTF8(const int32& point, StringBuilder* dest);
+  void DecodeUTF8(const int32_t& point, StringBuilder* dest);
 
   // Assuming that the parser is wound to the start of a valid JSON number,
   // this parses and converts it to either an int or double value.
@@ -254,15 +249,14 @@ class BASE_EXPORT_PRIVATE JSONParser {
   int error_column_;
 
   friend class JSONParserTest;
-  /*
-  FRIEND_TEST_ALL_PREFIXES(JSONParserTest, NextChar);
-  FRIEND_TEST_ALL_PREFIXES(JSONParserTest, ConsumeDictionary);
-  FRIEND_TEST_ALL_PREFIXES(JSONParserTest, ConsumeList);
-  FRIEND_TEST_ALL_PREFIXES(JSONParserTest, ConsumeString);
-  FRIEND_TEST_ALL_PREFIXES(JSONParserTest, ConsumeLiterals);
-  FRIEND_TEST_ALL_PREFIXES(JSONParserTest, ConsumeNumbers);
-  FRIEND_TEST_ALL_PREFIXES(JSONParserTest, ErrorMessages);
-  */
+  //FRIEND_TEST_ALL_PREFIXES(JSONParserTest, NextChar);
+  //FRIEND_TEST_ALL_PREFIXES(JSONParserTest, ConsumeDictionary);
+  //FRIEND_TEST_ALL_PREFIXES(JSONParserTest, ConsumeList);
+  //FRIEND_TEST_ALL_PREFIXES(JSONParserTest, ConsumeString);
+  //FRIEND_TEST_ALL_PREFIXES(JSONParserTest, ConsumeLiterals);
+  //FRIEND_TEST_ALL_PREFIXES(JSONParserTest, ConsumeNumbers);
+  //FRIEND_TEST_ALL_PREFIXES(JSONParserTest, ErrorMessages);
+
   DISALLOW_COPY_AND_ASSIGN(JSONParser);
 };
 

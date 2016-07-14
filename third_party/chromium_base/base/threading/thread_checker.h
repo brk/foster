@@ -5,23 +5,17 @@
 #ifndef BASE_THREADING_THREAD_CHECKER_H_
 #define BASE_THREADING_THREAD_CHECKER_H_
 
+#include "base/logging.h"
+#include "base/threading/thread_checker_impl.h"
+
 // Apart from debug builds, we also enable the thread checker in
 // builds with DCHECK_ALWAYS_ON so that trybots and waterfall bots
 // with this define will get the same level of thread checking as
 // debug bots.
-//
-// Note that this does not perfectly match situations where DCHECK is
-// enabled.  For example a non-official release build may have
-// DCHECK_ALWAYS_ON undefined (and therefore ThreadChecker would be
-// disabled) but have DCHECKs enabled at runtime.
-#if (!defined(NDEBUG) || defined(DCHECK_ALWAYS_ON))
+#if DCHECK_IS_ON()
 #define ENABLE_THREAD_CHECKER 1
 #else
 #define ENABLE_THREAD_CHECKER 0
-#endif
-
-#if ENABLE_THREAD_CHECKER
-#include "base/threading/thread_checker_impl.h"
 #endif
 
 namespace base {
@@ -32,7 +26,7 @@ namespace base {
 // right version for your build configuration.
 class ThreadCheckerDoNothing {
  public:
-  bool CalledOnValidThread() const {
+  bool CalledOnValidThread() const WARN_UNUSED_RESULT {
     return true;
   }
 
@@ -46,7 +40,7 @@ class ThreadCheckerDoNothing {
 //
 // While inheriting from base::NonThreadSafe may give a clear indication about
 // the thread-safety of a class, it may also lead to violations of the style
-// guide with regard to multiple inheritence. The choice between having a
+// guide with regard to multiple inheritance. The choice between having a
 // ThreadChecker member and inheriting from base::NonThreadSafe should be based
 // on whether:
 //  - Derived classes need to know the thread they belong to, as opposed to

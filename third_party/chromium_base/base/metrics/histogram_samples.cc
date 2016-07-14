@@ -15,11 +15,12 @@ class SampleCountPickleIterator : public SampleCountIterator {
  public:
   explicit SampleCountPickleIterator(PickleIterator* iter);
 
-  virtual bool Done() const OVERRIDE;
-  virtual void Next() OVERRIDE;
-  virtual void Get(HistogramBase::Sample* min,
-                   HistogramBase::Sample* max,
-                   HistogramBase::Count* count) const OVERRIDE;
+  bool Done() const override;
+  void Next() override;
+  void Get(HistogramBase::Sample* min,
+           HistogramBase::Sample* max,
+           HistogramBase::Count* count) const override;
+
  private:
   PickleIterator* const iter_;
 
@@ -58,46 +59,70 @@ void SampleCountPickleIterator::Get(HistogramBase::Sample* min,
 
 }  // namespace
 
-HistogramSamples::HistogramSamples() : sum_(0), redundant_count_(0) {}
+// Don't try to delegate behavior to the constructor below that accepts a
+// Matadata pointer by passing &local_meta_. Such cannot be reliably passed
+// because it has not yet been constructed -- no member variables have; the
+// class itself is in the middle of being constructed. Using it to
+// initialize meta_ is okay because the object now exists and local_meta_
+// is before meta_ in the construction order.
+HistogramSamples::HistogramSamples(uint64_t id)
+    : meta_(&local_meta_) {
+  meta_->id = id;
+}
+
+HistogramSamples::HistogramSamples(uint64_t id, Metadata* meta)
+    : meta_(meta) {
+  DCHECK(meta_->id == 0 || meta_->id == id);
+
+  // It's possible that |meta| is contained in initialized, read-only memory
+  // so it's essential that no write be done in that case.
+  if (!meta_->id)
+    meta_->id = id;
+}
 
 HistogramSamples::~HistogramSamples() {}
 
 void HistogramSamples::Add(const HistogramSamples& other) {
-  sum_ += other.sum();
-  redundant_count_ += other.redundant_count();
+  IncreaseSum(other.sum());
+  subtle::NoBarrier_AtomicIncrement(&meta_->redundant_count,
+                                    other.redundant_count());
   bool success = AddSubtractImpl(other.Iterator().get(), ADD);
   DCHECK(success);
 }
 
 bool HistogramSamples::AddFromPickle(PickleIterator* iter) {
-  int64 sum;
+  int64_t sum;
   HistogramBase::Count redundant_count;
 
   if (!iter->ReadInt64(&sum) || !iter->ReadInt(&redundant_count))
     return false;
-  sum_ += sum;
-  redundant_count_ += redundant_count;
+
+  IncreaseSum(sum);
+  subtle::NoBarrier_AtomicIncrement(&meta_->redundant_count,
+                                    redundant_count);
 
   SampleCountPickleIterator pickle_iter(iter);
   return AddSubtractImpl(&pickle_iter, ADD);
 }
 
 void HistogramSamples::Subtract(const HistogramSamples& other) {
-  sum_ -= other.sum();
-  redundant_count_ -= other.redundant_count();
+  IncreaseSum(-other.sum());
+  subtle::NoBarrier_AtomicIncrement(&meta_->redundant_count,
+                                    -other.redundant_count());
   bool success = AddSubtractImpl(other.Iterator().get(), SUBTRACT);
   DCHECK(success);
 }
 
 bool HistogramSamples::Serialize(Pickle* pickle) const {
-  if (!pickle->WriteInt64(sum_) || !pickle->WriteInt(redundant_count_))
+  if (!pickle->WriteInt64(sum()))
+    return false;
+  if (!pickle->WriteInt(redundant_count()))
     return false;
 
   HistogramBase::Sample min;
   HistogramBase::Sample max;
   HistogramBase::Count count;
-  for (scoped_ptr<SampleCountIterator> it = Iterator();
-       !it->Done();
+  for (std::unique_ptr<SampleCountIterator> it = Iterator(); !it->Done();
        it->Next()) {
     it->Get(&min, &max, &count);
     if (!pickle->WriteInt(min) ||
@@ -108,12 +133,16 @@ bool HistogramSamples::Serialize(Pickle* pickle) const {
   return true;
 }
 
-void HistogramSamples::IncreaseSum(int64 diff) {
-  sum_ += diff;
+void HistogramSamples::IncreaseSum(int64_t diff) {
+#ifdef ARCH_CPU_64_BITS
+  subtle::NoBarrier_AtomicIncrement(&meta_->sum, diff);
+#else
+  meta_->sum += diff;
+#endif
 }
 
 void HistogramSamples::IncreaseRedundantCount(HistogramBase::Count diff) {
-  redundant_count_ += diff;
+  subtle::NoBarrier_AtomicIncrement(&meta_->redundant_count, diff);
 }
 
 SampleCountIterator::~SampleCountIterator() {}

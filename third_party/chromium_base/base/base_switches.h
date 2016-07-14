@@ -7,17 +7,37 @@
 #ifndef BASE_BASE_SWITCHES_H_
 #define BASE_BASE_SWITCHES_H_
 
+#include "build/build_config.h"
+
 namespace switches {
 
-extern const char kDebugOnStart[];
 extern const char kDisableBreakpad[];
-extern const char kEnableDCHECK[];
+extern const char kDisableLowEndDeviceMode[];
+extern const char kEnableCrashReporter[];
+extern const char kEnableHeapProfiling[];
+extern const char kEnableHeapProfilingModeNative[];
+extern const char kEnableLowEndDeviceMode[];
+extern const char kForceFieldTrials[];
 extern const char kFullMemoryCrashReport[];
 extern const char kNoErrorDialogs[];
+extern const char kProfilerTiming[];
+extern const char kProfilerTimingDisabledValue[];
+extern const char kProfilingFile[];
 extern const char kTestChildProcess[];
+extern const char kTestDoNotInitializeIcu[];
+extern const char kTraceToFile[];
+extern const char kTraceToFileName[];
 extern const char kV[];
 extern const char kVModule[];
 extern const char kWaitForDebugger[];
+
+#if defined(OS_WIN)
+extern const char kDisableUsbKeyboardDetect[];
+#endif
+
+#if defined(OS_POSIX)
+extern const char kEnableCrashReporterForTesting[];
+#endif
 
 }  // namespace switches
 

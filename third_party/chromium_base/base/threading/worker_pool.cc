@@ -6,7 +6,9 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
+#include "base/debug/leak_annotations.h"
 #include "base/lazy_instance.h"
+#include "base/macros.h"
 #include "base/task_runner.h"
 #include "base/threading/post_task_and_reply_impl.h"
 #include "base/tracked_objects.h"
@@ -20,10 +22,11 @@ class PostTaskAndReplyWorkerPool : public internal::PostTaskAndReplyImpl {
   explicit PostTaskAndReplyWorkerPool(bool task_is_slow)
       : task_is_slow_(task_is_slow) {
   }
+  ~PostTaskAndReplyWorkerPool() override = default;
 
  private:
-  virtual bool PostTask(const tracked_objects::Location& from_here,
-                        const Closure& task) OVERRIDE {
+  bool PostTask(const tracked_objects::Location& from_here,
+                const Closure& task) override {
     return WorkerPool::PostTask(from_here, task, task_is_slow_);
   }
 
@@ -40,13 +43,13 @@ class WorkerPoolTaskRunner : public TaskRunner {
   explicit WorkerPoolTaskRunner(bool tasks_are_slow);
 
   // TaskRunner implementation
-  virtual bool PostDelayedTask(const tracked_objects::Location& from_here,
-                               const Closure& task,
-                               TimeDelta delay) OVERRIDE;
-  virtual bool RunsTasksOnCurrentThread() const OVERRIDE;
+  bool PostDelayedTask(const tracked_objects::Location& from_here,
+                       const Closure& task,
+                       TimeDelta delay) override;
+  bool RunsTasksOnCurrentThread() const override;
 
  private:
-  virtual ~WorkerPoolTaskRunner();
+  ~WorkerPoolTaskRunner() override;
 
   // Helper function for posting a delayed task. Asserts that the delay is
   // zero because non-zero delays are not supported.
@@ -104,6 +107,12 @@ bool WorkerPool::PostTaskAndReply(const tracked_objects::Location& from_here,
                                   const Closure& task,
                                   const Closure& reply,
                                   bool task_is_slow) {
+  // Do not report PostTaskAndReplyRelay leaks in tests. There's nothing we can
+  // do about them because WorkerPool doesn't have a flushing API.
+  // http://crbug.com/248513
+  // http://crbug.com/290897
+  // Note: this annotation does not cover tasks posted through a TaskRunner.
+  ANNOTATE_SCOPED_MEMORY_LEAK;
   return PostTaskAndReplyWorkerPool(task_is_slow).PostTaskAndReply(
       from_here, task, reply);
 }

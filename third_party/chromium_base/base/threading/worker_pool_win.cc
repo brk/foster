@@ -6,10 +6,10 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/pending_task.h"
 #include "base/threading/thread_local.h"
+#include "base/trace_event/trace_event.h"
 #include "base/tracked_objects.h"
 
 namespace base {
@@ -21,21 +21,19 @@ base::LazyInstance<ThreadLocalBoolean>::Leaky
 
 DWORD CALLBACK WorkItemCallback(void* param) {
   PendingTask* pending_task = static_cast<PendingTask*>(param);
-  TRACE_EVENT2("task", "WorkItemCallback::Run",
-               "src_file", pending_task->posted_from.file_name(),
-               "src_func", pending_task->posted_from.function_name());
-
-  tracked_objects::TrackedTime start_time =
-      tracked_objects::ThreadData::NowForStartOfRun(pending_task->birth_tally);
+  TRACE_TASK_EXECUTION("WorkerThread::ThreadMain::Run", *pending_task);
 
   g_worker_pool_running_on_this_thread.Get().Set(true);
+
+  tracked_objects::TaskStopwatch stopwatch;
+  stopwatch.Start();
   pending_task->task.Run();
+  stopwatch.Stop();
+
   g_worker_pool_running_on_this_thread.Get().Set(false);
 
   tracked_objects::ThreadData::TallyRunOnWorkerThreadIfTracking(
-      pending_task->birth_tally,
-      tracked_objects::TrackedTime(pending_task->time_posted), start_time,
-      tracked_objects::ThreadData::NowForEndOfRun());
+      pending_task->birth_tally, pending_task->time_posted, stopwatch);
 
   delete pending_task;
   return 0;
@@ -48,7 +46,7 @@ bool PostTaskInternal(PendingTask* pending_task, bool task_is_slow) {
     flags |= WT_EXECUTELONGFUNCTION;
 
   if (!QueueUserWorkItem(WorkItemCallback, pending_task, flags)) {
-    DLOG_GETLASTERROR(ERROR) << "QueueUserWorkItem failed";
+    DPLOG(ERROR) << "QueueUserWorkItem failed";
     delete pending_task;
     return false;
   }

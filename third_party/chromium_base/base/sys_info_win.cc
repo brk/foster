@@ -1,17 +1,58 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/sys_info.h"
 
 #include <windows.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#include "base/file_path.h"
+#include <limits>
+
+#include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/memory/scoped_ptr.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/win/windows_version.h"
+
+namespace {
+
+int64_t AmountOfMemory(DWORDLONG MEMORYSTATUSEX::*memory_field) {
+  MEMORYSTATUSEX memory_info;
+  memory_info.dwLength = sizeof(memory_info);
+  if (!GlobalMemoryStatusEx(&memory_info)) {
+    NOTREACHED();
+    return 0;
+  }
+
+  int64_t rv = static_cast<int64_t>(memory_info.*memory_field);
+  return rv < 0 ? std::numeric_limits<int64_t>::max() : rv;
+}
+
+bool GetDiskSpaceInfo(const base::FilePath& path,
+                      int64_t* available_bytes,
+                      int64_t* total_bytes) {
+  ULARGE_INTEGER available;
+  ULARGE_INTEGER total;
+  ULARGE_INTEGER free;
+  if (!GetDiskFreeSpaceExW(path.value().c_str(), &available, &total, &free))
+    return false;
+
+  if (available_bytes) {
+    *available_bytes = static_cast<int64_t>(available.QuadPart);
+    if (*available_bytes < 0)
+      *available_bytes = std::numeric_limits<int64_t>::max();
+  }
+  if (total_bytes) {
+    *total_bytes = static_cast<int64_t>(total.QuadPart);
+    if (*total_bytes < 0)
+      *total_bytes = std::numeric_limits<int64_t>::max();
+  }
+  return true;
+}
+
+}  // namespace
 
 namespace base {
 
@@ -21,50 +62,40 @@ int SysInfo::NumberOfProcessors() {
 }
 
 // static
-int64 SysInfo::AmountOfPhysicalMemory() {
-  MEMORYSTATUSEX memory_info;
-  memory_info.dwLength = sizeof(memory_info);
-  if (!GlobalMemoryStatusEx(&memory_info)) {
-    NOTREACHED();
-    return 0;
-  }
-
-  int64 rv = static_cast<int64>(memory_info.ullTotalPhys);
-  if (rv < 0)
-    rv = kint64max;
-  return rv;
+int64_t SysInfo::AmountOfPhysicalMemory() {
+  return AmountOfMemory(&MEMORYSTATUSEX::ullTotalPhys);
 }
 
 // static
-int64 SysInfo::AmountOfAvailablePhysicalMemory() {
-  MEMORYSTATUSEX memory_info;
-  memory_info.dwLength = sizeof(memory_info);
-  if (!GlobalMemoryStatusEx(&memory_info)) {
-    NOTREACHED();
-    return 0;
-  }
-
-  int64 rv = static_cast<int64>(memory_info.ullAvailPhys);
-  if (rv < 0)
-    rv = kint64max;
-  return rv;
+int64_t SysInfo::AmountOfAvailablePhysicalMemory() {
+  return AmountOfMemory(&MEMORYSTATUSEX::ullAvailPhys);
 }
 
 // static
-int64 SysInfo::AmountOfFreeDiskSpace(const FilePath& path) {
-  base::ThreadRestrictions::AssertIOAllowed();
+int64_t SysInfo::AmountOfVirtualMemory() {
+  return AmountOfMemory(&MEMORYSTATUSEX::ullTotalVirtual);
+}
 
-  ULARGE_INTEGER available, total, free;
-  if (!GetDiskFreeSpaceExW(path.value().c_str(), &available, &total, &free)) {
+// static
+int64_t SysInfo::AmountOfFreeDiskSpace(const FilePath& path) {
+  ThreadRestrictions::AssertIOAllowed();
+
+  int64_t available;
+  if (!GetDiskSpaceInfo(path, &available, nullptr))
     return -1;
-  }
-  int64 rv = static_cast<int64>(available.QuadPart);
-  if (rv < 0)
-    rv = kint64max;
-  return rv;
+  return available;
 }
 
 // static
+int64_t SysInfo::AmountOfTotalDiskSpace(const FilePath& path) {
+  ThreadRestrictions::AssertIOAllowed();
+
+  int64_t total;
+  if (!GetDiskSpaceInfo(path, nullptr, &total))
+    return -1;
+  return total;
+}
+
 std::string SysInfo::OperatingSystemName() {
   return "Windows NT";
 }
@@ -73,8 +104,9 @@ std::string SysInfo::OperatingSystemName() {
 std::string SysInfo::OperatingSystemVersion() {
   win::OSInfo* os_info = win::OSInfo::GetInstance();
   win::OSInfo::VersionNumber version_number = os_info->version_number();
-  std::string version(StringPrintf("%d.%d", version_number.major,
-                                   version_number.minor));
+  std::string version(StringPrintf("%d.%d.%d", version_number.major,
+                                   version_number.minor,
+                                   version_number.build));
   win::OSInfo::ServicePack service_pack = os_info->service_pack();
   if (service_pack.major != 0) {
     version += StringPrintf(" SP%d", service_pack.major);
@@ -115,9 +147,9 @@ size_t SysInfo::VMAllocationGranularity() {
 }
 
 // static
-void SysInfo::OperatingSystemVersionNumbers(int32* major_version,
-                                            int32* minor_version,
-                                            int32* bugfix_version) {
+void SysInfo::OperatingSystemVersionNumbers(int32_t* major_version,
+                                            int32_t* minor_version,
+                                            int32_t* bugfix_version) {
   win::OSInfo* os_info = win::OSInfo::GetInstance();
   *major_version = os_info->version_number().major;
   *minor_version = os_info->version_number().minor;

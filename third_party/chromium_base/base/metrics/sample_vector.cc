@@ -7,49 +7,66 @@
 #include "base/logging.h"
 #include "base/metrics/bucket_ranges.h"
 
-using std::vector;
-
 namespace base {
 
 typedef HistogramBase::Count Count;
 typedef HistogramBase::Sample Sample;
 
 SampleVector::SampleVector(const BucketRanges* bucket_ranges)
-    : counts_(bucket_ranges->size() - 1),
+    : SampleVector(0, bucket_ranges) {}
+
+SampleVector::SampleVector(uint64_t id, const BucketRanges* bucket_ranges)
+    : HistogramSamples(id),
+      local_counts_(bucket_ranges->bucket_count()),
+      counts_(&local_counts_[0]),
+      counts_size_(local_counts_.size()),
       bucket_ranges_(bucket_ranges) {
-  CHECK_GE(bucket_ranges_->size(), 2u);
+  CHECK_GE(bucket_ranges_->bucket_count(), 1u);
+}
+
+SampleVector::SampleVector(uint64_t id,
+                           HistogramBase::AtomicCount* counts,
+                           size_t counts_size,
+                           Metadata* meta,
+                           const BucketRanges* bucket_ranges)
+    : HistogramSamples(id, meta),
+      counts_(counts),
+      counts_size_(bucket_ranges->bucket_count()),
+      bucket_ranges_(bucket_ranges) {
+  CHECK_LE(bucket_ranges_->bucket_count(), counts_size_);
+  CHECK_GE(bucket_ranges_->bucket_count(), 1u);
 }
 
 SampleVector::~SampleVector() {}
 
 void SampleVector::Accumulate(Sample value, Count count) {
   size_t bucket_index = GetBucketIndex(value);
-  counts_[bucket_index] += count;
-  IncreaseSum(count * value);
+  subtle::NoBarrier_AtomicIncrement(&counts_[bucket_index], count);
+  IncreaseSum(static_cast<int64_t>(count) * value);
   IncreaseRedundantCount(count);
 }
 
 Count SampleVector::GetCount(Sample value) const {
   size_t bucket_index = GetBucketIndex(value);
-  return counts_[bucket_index];
+  return subtle::NoBarrier_Load(&counts_[bucket_index]);
 }
 
 Count SampleVector::TotalCount() const {
   Count count = 0;
-  for (size_t i = 0; i < counts_.size(); i++) {
-    count += counts_[i];
+  for (size_t i = 0; i < counts_size_; i++) {
+    count += subtle::NoBarrier_Load(&counts_[i]);
   }
   return count;
 }
 
 Count SampleVector::GetCountAtIndex(size_t bucket_index) const {
-  DCHECK(bucket_index >= 0 && bucket_index < counts_.size());
-  return counts_[bucket_index];
+  DCHECK(bucket_index < counts_size_);
+  return subtle::NoBarrier_Load(&counts_[bucket_index]);
 }
 
-scoped_ptr<SampleCountIterator> SampleVector::Iterator() const {
-  return scoped_ptr<SampleCountIterator>(
-      new SampleVectorIterator(&counts_, bucket_ranges_));
+std::unique_ptr<SampleCountIterator> SampleVector::Iterator() const {
+  return std::unique_ptr<SampleCountIterator>(
+      new SampleVectorIterator(counts_, counts_size_, bucket_ranges_));
 }
 
 bool SampleVector::AddSubtractImpl(SampleCountIterator* iter,
@@ -60,12 +77,13 @@ bool SampleVector::AddSubtractImpl(SampleCountIterator* iter,
 
   // Go through the iterator and add the counts into correct bucket.
   size_t index = 0;
-  while (index < counts_.size() && !iter->Done()) {
+  while (index < counts_size_ && !iter->Done()) {
     iter->Get(&min, &max, &count);
     if (min == bucket_ranges_->range(index) &&
         max == bucket_ranges_->range(index + 1)) {
       // Sample matches this bucket!
-      counts_[index] += (op ==  HistogramSamples::ADD) ? count : -count;
+      subtle::NoBarrier_AtomicIncrement(
+          &counts_[index], op == HistogramSamples::ADD ? count : -count);
       iter->Next();
     } else if (min > bucket_ranges_->range(index)) {
       // Sample is larger than current bucket range. Try next.
@@ -83,7 +101,7 @@ bool SampleVector::AddSubtractImpl(SampleCountIterator* iter,
 // Use simple binary search.  This is very general, but there are better
 // approaches if we knew that the buckets were linearly distributed.
 size_t SampleVector::GetBucketIndex(Sample value) const {
-  size_t bucket_count = bucket_ranges_->size() - 1;
+  size_t bucket_count = bucket_ranges_->bucket_count();
   CHECK_GE(bucket_count, 1u);
   CHECK_GE(value, bucket_ranges_->range(0));
   CHECK_LT(value, bucket_ranges_->range(bucket_count));
@@ -107,19 +125,33 @@ size_t SampleVector::GetBucketIndex(Sample value) const {
   return mid;
 }
 
-SampleVectorIterator::SampleVectorIterator(const vector<Count>* counts,
-                                           const BucketRanges* bucket_ranges)
-    : counts_(counts),
+SampleVectorIterator::SampleVectorIterator(
+    const std::vector<HistogramBase::AtomicCount>* counts,
+    const BucketRanges* bucket_ranges)
+    : counts_(&(*counts)[0]),
+      counts_size_(counts->size()),
       bucket_ranges_(bucket_ranges),
       index_(0) {
-  CHECK_GT(bucket_ranges_->size(), counts_->size());
+  CHECK_GE(bucket_ranges_->bucket_count(), counts_size_);
+  SkipEmptyBuckets();
+}
+
+SampleVectorIterator::SampleVectorIterator(
+    const HistogramBase::AtomicCount* counts,
+    size_t counts_size,
+    const BucketRanges* bucket_ranges)
+    : counts_(counts),
+      counts_size_(counts_size),
+      bucket_ranges_(bucket_ranges),
+      index_(0) {
+  CHECK_GE(bucket_ranges_->bucket_count(), counts_size_);
   SkipEmptyBuckets();
 }
 
 SampleVectorIterator::~SampleVectorIterator() {}
 
 bool SampleVectorIterator::Done() const {
-  return index_ >= counts_->size();
+  return index_ >= counts_size_;
 }
 
 void SampleVectorIterator::Next() {
@@ -137,7 +169,7 @@ void SampleVectorIterator::Get(HistogramBase::Sample* min,
   if (max != NULL)
     *max = bucket_ranges_->range(index_ + 1);
   if (count != NULL)
-    *count = (*counts_)[index_];
+    *count = subtle::NoBarrier_Load(&counts_[index_]);
 }
 
 bool SampleVectorIterator::GetBucketIndex(size_t* index) const {
@@ -151,8 +183,8 @@ void SampleVectorIterator::SkipEmptyBuckets() {
   if (Done())
     return;
 
-  while (index_ < counts_->size()) {
-    if ((*counts_)[index_] != 0)
+  while (index_ < counts_size_) {
+    if (subtle::NoBarrier_Load(&counts_[index_]) != 0)
       return;
     index_++;
   }

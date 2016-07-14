@@ -4,70 +4,68 @@
 
 #include "base/sys_info.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <limits>
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/sys_info_internal.h"
+#include "build/build_config.h"
 
-namespace base {
+namespace {
 
-int64 SysInfo::AmountOfPhysicalMemory() {
-  long pages = sysconf(_SC_PHYS_PAGES);
-  long page_size = sysconf(_SC_PAGE_SIZE);
+int64_t AmountOfMemory(int pages_name) {
+  long pages = sysconf(pages_name);
+  long page_size = sysconf(_SC_PAGESIZE);
   if (pages == -1 || page_size == -1) {
     NOTREACHED();
     return 0;
   }
+  return static_cast<int64_t>(pages) * page_size;
+}
 
-  return static_cast<int64>(pages) * page_size;
+int64_t AmountOfPhysicalMemory() {
+  return AmountOfMemory(_SC_PHYS_PAGES);
+}
+
+base::LazyInstance<
+    base::internal::LazySysInfoValue<int64_t, AmountOfPhysicalMemory>>::Leaky
+    g_lazy_physical_memory = LAZY_INSTANCE_INITIALIZER;
+
+}  // namespace
+
+namespace base {
+
+// static
+int64_t SysInfo::AmountOfAvailablePhysicalMemory() {
+  return AmountOfMemory(_SC_AVPHYS_PAGES);
 }
 
 // static
-int64 SysInfo::AmountOfAvailablePhysicalMemory() {
-  long available_pages = sysconf(_SC_AVPHYS_PAGES);
-  long page_size = sysconf(_SC_PAGE_SIZE);
-  if (available_pages == -1 || page_size == -1) {
-    NOTREACHED();
-    return 0;
-  }
-  return static_cast<int64>(available_pages) * page_size;
-}
-
-// static
-size_t SysInfo::MaxSharedMemorySize() {
-  static int64 limit;
-  static bool limit_valid = false;
-  if (!limit_valid) {
-    std::string contents;
-    file_util::ReadFileToString(FilePath("/proc/sys/kernel/shmmax"), &contents);
-    DCHECK(!contents.empty());
-    if (!contents.empty() && contents[contents.length() - 1] == '\n') {
-      contents.erase(contents.length() - 1);
-    }
-    if (base::StringToInt64(contents, &limit)) {
-      DCHECK(limit >= 0);
-      DCHECK(static_cast<uint64>(limit) <= std::numeric_limits<size_t>::max());
-      limit_valid = true;
-    } else {
-      NOTREACHED();
-      return 0;
-    }
-  }
-  return static_cast<size_t>(limit);
+int64_t SysInfo::AmountOfPhysicalMemory() {
+  return g_lazy_physical_memory.Get().value();
 }
 
 // static
 std::string SysInfo::CPUModelName() {
-  const char kModelNamePrefix[] = "model name";
+#if defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL)
+  const char kCpuModelPrefix[] = "Hardware";
+#else
+  const char kCpuModelPrefix[] = "model name";
+#endif
   std::string contents;
-  file_util::ReadFileToString(FilePath("/proc/cpuinfo"), &contents);
+  ReadFileToString(FilePath("/proc/cpuinfo"), &contents);
   DCHECK(!contents.empty());
   if (!contents.empty()) {
     std::istringstream iss(contents);
     std::string line;
-    while (std::getline(iss, line)){
-      if (line.compare(0, strlen(kModelNamePrefix), kModelNamePrefix) == 0) {
+    while (std::getline(iss, line)) {
+      if (line.compare(0, strlen(kCpuModelPrefix), kCpuModelPrefix) == 0) {
         size_t pos = line.find(": ");
         return line.substr(pos + 2);
       }

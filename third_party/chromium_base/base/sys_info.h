@@ -5,11 +5,15 @@
 #ifndef BASE_SYS_INFO_H_
 #define BASE_SYS_INFO_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
+#include <map>
 #include <string>
 
 #include "base/base_export.h"
-#include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
+#include "base/time/time.h"
 #include "build/build_config.h"
 
 namespace base {
@@ -20,23 +24,44 @@ class BASE_EXPORT SysInfo {
   static int NumberOfProcessors();
 
   // Return the number of bytes of physical memory on the current machine.
-  static int64 AmountOfPhysicalMemory();
+  static int64_t AmountOfPhysicalMemory();
 
   // Return the number of bytes of current available physical memory on the
   // machine.
-  static int64 AmountOfAvailablePhysicalMemory();
+  static int64_t AmountOfAvailablePhysicalMemory();
+
+  // Return the number of bytes of virtual memory of this process. A return
+  // value of zero means that there is no limit on the available virtual
+  // memory.
+  static int64_t AmountOfVirtualMemory();
 
   // Return the number of megabytes of physical memory on the current machine.
   static int AmountOfPhysicalMemoryMB() {
     return static_cast<int>(AmountOfPhysicalMemory() / 1024 / 1024);
   }
 
+  // Return the number of megabytes of available virtual memory, or zero if it
+  // is unlimited.
+  static int AmountOfVirtualMemoryMB() {
+    return static_cast<int>(AmountOfVirtualMemory() / 1024 / 1024);
+  }
+
   // Return the available disk space in bytes on the volume containing |path|,
   // or -1 on failure.
-  static int64 AmountOfFreeDiskSpace(const FilePath& path);
+  static int64_t AmountOfFreeDiskSpace(const FilePath& path);
 
-  // Returns system uptime in milliseconds.
-  static int64 Uptime();
+  // Return the total disk space in bytes on the volume containing |path|, or -1
+  // on failure.
+  static int64_t AmountOfTotalDiskSpace(const FilePath& path);
+
+  // Returns system uptime.
+  static TimeDelta Uptime();
+
+  // Returns a descriptive string for the current machine model or an empty
+  // string if the machine model is unknown or an error occured.
+  // e.g. "MacPro1,1" on Mac, or "Nexus 5" on Android. Only implemented on OS X,
+  // Android, and Chrome OS. This returns an empty string on other platforms.
+  static std::string HardwareModelName();
 
   // Returns the name of the host operating system.
   static std::string OperatingSystemName();
@@ -52,9 +77,9 @@ class BASE_EXPORT SysInfo {
   // an OS version check instead of a feature check, use the base::mac::IsOS*
   // family from base/mac/mac_util.h, or base::win::GetVersion from
   // base/win/windows_version.h.
-  static void OperatingSystemVersionNumbers(int32* major_version,
-                                            int32* minor_version,
-                                            int32* bugfix_version);
+  static void OperatingSystemVersionNumbers(int32_t* major_version,
+                                            int32_t* minor_version,
+                                            int32_t* bugfix_version);
 
   // Returns the architecture of the running operating system.
   // Exact return value may differ across platforms.
@@ -72,25 +97,29 @@ class BASE_EXPORT SysInfo {
   // allocate.
   static size_t VMAllocationGranularity();
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
-  // Returns the maximum SysV shared memory segment size.
-  static size_t MaxSharedMemorySize();
-#endif  // defined(OS_POSIX) && !defined(OS_MACOSX)
-
 #if defined(OS_CHROMEOS)
-  // Returns the name of the version entry we wish to look up in the
-  // Linux Standard Base release information file.
-  static std::string GetLinuxStandardBaseVersionKey();
+  typedef std::map<std::string, std::string> LsbReleaseMap;
 
-  // Parses /etc/lsb-release to get version information for Google Chrome OS.
-  // Declared here so it can be exposed for unit testing.
-  static void ParseLsbRelease(const std::string& lsb_release,
-                              int32* major_version,
-                              int32* minor_version,
-                              int32* bugfix_version);
+  // Returns the contents of /etc/lsb-release as a map.
+  static const LsbReleaseMap& GetLsbReleaseMap();
 
-  // Returns the path to the lsb-release file.
-  static FilePath GetLsbReleaseFilePath();
+  // If |key| is present in the LsbReleaseMap, sets |value| and returns true.
+  static bool GetLsbReleaseValue(const std::string& key, std::string* value);
+
+  // Convenience function for GetLsbReleaseValue("CHROMEOS_RELEASE_BOARD",...).
+  // Returns "unknown" if CHROMEOS_RELEASE_BOARD is not set.
+  static std::string GetLsbReleaseBoard();
+
+  // Returns the creation time of /etc/lsb-release. (Used to get the date and
+  // time of the Chrome OS build).
+  static Time GetLsbReleaseTime();
+
+  // Returns true when actually running in a Chrome OS environment.
+  static bool IsRunningOnChromeOS();
+
+  // Test method to force re-parsing of lsb-release.
+  static void SetChromeOSVersionInfoForTest(const std::string& lsb_release,
+                                            const Time& lsb_release_time);
 #endif  // defined(OS_CHROMEOS)
 
 #if defined(OS_ANDROID)
@@ -100,12 +129,14 @@ class BASE_EXPORT SysInfo {
   // Returns the Android build ID.
   static std::string GetAndroidBuildID();
 
-  // Returns the device's name.
-  static std::string GetDeviceName();
-
   static int DalvikHeapSizeMB();
   static int DalvikHeapGrowthLimitMB();
 #endif  // defined(OS_ANDROID)
+
+  // Returns true if this is a low-end device.
+  // Low-end device refers to devices having less than 512M memory in the
+  // current implementation.
+  static bool IsLowEndDevice();
 };
 
 }  // namespace base

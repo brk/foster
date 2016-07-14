@@ -35,15 +35,14 @@ namespace runtime {
         __foster_globals.args.push_back(arg);
       } else {
         if (i == argc - 1) continue; // no more to look at!
-        if (Value* v = reader.ReadToValue(argv[i + 1])) {
-          DictionaryValue* dvp = NULL;
+        if (std::unique_ptr<base::Value> v = reader.ReadToValue(argv[i + 1])) {
+          base::DictionaryValue* dvp = NULL;
           v->GetAsDictionary(&dvp);
           if (dvp) {
             dv.MergeDictionary(dvp); merged = true;
           } else {
             fprintf(stderr, "Parsed option JSON was not dict: %s\n", argv[i + 1]);
           }
-          delete v;
         } else {
           fprintf(stderr, "Parsing option JSON failed: %s\n", reader.GetErrorMessage().c_str());
         }

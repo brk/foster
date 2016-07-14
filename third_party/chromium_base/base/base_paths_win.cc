@@ -2,58 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-
 #include <windows.h>
 #include <shlobj.h>
 
 #include "base/base_paths.h"
-#include "base/file_path.h"
-#include "base/file_util.h"
+#include "base/environment.h"
+#include "base/files/file_path.h"
 #include "base/path_service.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/win/current_module.h"
 #include "base/win/scoped_co_mem.h"
 #include "base/win/windows_version.h"
 
-// http://blogs.msdn.com/oldnewthing/archive/2004/10/25/247180.aspx
-extern "C" IMAGE_DOS_HEADER __ImageBase;
-
 using base::FilePath;
-
-namespace {
-
-bool GetQuickLaunchPath(bool default_user, FilePath* result) {
-  if (default_user) {
-    wchar_t system_buffer[MAX_PATH];
-    system_buffer[0] = 0;
-    // As per MSDN, passing -1 for |hToken| indicates the Default user:
-    // http://msdn.microsoft.com/library/windows/desktop/bb762181.aspx
-    if (FAILED(SHGetFolderPath(NULL, CSIDL_APPDATA,
-                               reinterpret_cast<HANDLE>(-1), SHGFP_TYPE_CURRENT,
-                               system_buffer))) {
-      return false;
-    }
-    *result = FilePath(system_buffer);
-  } else if (!PathService::Get(base::DIR_APP_DATA, result)) {
-    // For the current user, grab the APPDATA directory directly from the
-    // PathService cache.
-    return false;
-  }
-  // According to various sources, appending
-  // "Microsoft\Internet Explorer\Quick Launch" to %appdata% is the only
-  // reliable way to get the quick launch folder across all versions of Windows.
-  // http://stackoverflow.com/questions/76080/how-do-you-reliably-get-the-quick-
-  // http://www.microsoft.com/technet/scriptcenter/resources/qanda/sept05/hey0901.mspx
-  *result = result->AppendASCII("Microsoft");
-  *result = result->AppendASCII("Internet Explorer");
-  *result = result->AppendASCII("Quick Launch");
-  return true;
-}
-
-}  // namespace
 
 namespace base {
 
 bool PathProviderWin(int key, FilePath* result) {
-
   // We need to go compute the value. It would be nice to support paths with
   // names longer than MAX_PATH, but the system functions don't seem to be
   // designed for it either, with the exception of GetTempPath (but other
@@ -65,14 +30,15 @@ bool PathProviderWin(int key, FilePath* result) {
   FilePath cur;
   switch (key) {
     case base::FILE_EXE:
-      GetModuleFileName(NULL, system_buffer, MAX_PATH);
+      if (GetModuleFileName(NULL, system_buffer, MAX_PATH) == 0)
+        return false;
       cur = FilePath(system_buffer);
       break;
     case base::FILE_MODULE: {
       // the resource containing module is assumed to be the one that
       // this code lives in, whether that's a dll or exe
-      HMODULE this_module = reinterpret_cast<HMODULE>(&__ImageBase);
-      GetModuleFileName(this_module, system_buffer, MAX_PATH);
+      if (GetModuleFileName(CURRENT_MODULE(), system_buffer, MAX_PATH) == 0)
+        return false;
       cur = FilePath(system_buffer);
       break;
     }
@@ -95,6 +61,27 @@ bool PathProviderWin(int key, FilePath* result) {
       }
       // Fall through to base::DIR_PROGRAM_FILES if we're on an X86 machine.
     case base::DIR_PROGRAM_FILES:
+      if (FAILED(SHGetFolderPath(NULL, CSIDL_PROGRAM_FILES, NULL,
+                                 SHGFP_TYPE_CURRENT, system_buffer)))
+        return false;
+      cur = FilePath(system_buffer);
+      break;
+    case base::DIR_PROGRAM_FILES6432:
+#if !defined(_WIN64)
+      if (base::win::OSInfo::GetInstance()->wow64_status() ==
+          base::win::OSInfo::WOW64_ENABLED) {
+        std::unique_ptr<base::Environment> env(base::Environment::Create());
+        std::string programfiles_w6432;
+        // 32-bit process running in WOW64 sets ProgramW6432 environment
+        // variable. See
+        // https://msdn.microsoft.com/library/windows/desktop/aa384274.aspx.
+        if (!env->GetVar("ProgramW6432", &programfiles_w6432))
+          return false;
+        // GetVar returns UTF8 - convert back to Wide.
+        cur = FilePath(UTF8ToWide(programfiles_w6432));
+        break;
+      }
+#endif
       if (FAILED(SHGetFolderPath(NULL, CSIDL_PROGRAM_FILES, NULL,
                                  SHGFP_TYPE_CURRENT, system_buffer)))
         return false;
@@ -129,22 +116,6 @@ bool PathProviderWin(int key, FilePath* result) {
                                  SHGFP_TYPE_CURRENT, system_buffer)))
         return false;
       cur = FilePath(system_buffer);
-      break;
-    case base::DIR_PROFILE:
-      if (FAILED(SHGetFolderPath(NULL, CSIDL_PROFILE, NULL, SHGFP_TYPE_CURRENT,
-                                 system_buffer)))
-        return false;
-      cur = FilePath(system_buffer);
-      break;
-    case base::DIR_LOCAL_APP_DATA_LOW:
-      if (win::GetVersion() < win::VERSION_VISTA)
-        return false;
-
-      // TODO(nsylvain): We should use SHGetKnownFolderPath instead. Bug 1281128
-      if (FAILED(SHGetFolderPath(NULL, CSIDL_APPDATA, NULL, SHGFP_TYPE_CURRENT,
-                                 system_buffer)))
-        return false;
-      cur = FilePath(system_buffer).DirName().AppendASCII("LocalLow");
       break;
     case base::DIR_LOCAL_APP_DATA:
       if (FAILED(SHGetFolderPath(NULL, CSIDL_LOCAL_APPDATA, NULL,
@@ -187,18 +158,36 @@ bool PathProviderWin(int key, FilePath* result) {
       cur = FilePath(system_buffer);
       break;
     case base::DIR_USER_QUICK_LAUNCH:
-      if (!GetQuickLaunchPath(false, &cur))
+      if (!PathService::Get(base::DIR_APP_DATA, &cur))
         return false;
-      break;
-    case base::DIR_DEFAULT_USER_QUICK_LAUNCH:
-      if (!GetQuickLaunchPath(true, &cur))
-        return false;
+      // According to various sources, appending
+      // "Microsoft\Internet Explorer\Quick Launch" to %appdata% is the only
+      // reliable way to get the quick launch folder across all versions of
+      // Windows.
+      // http://stackoverflow.com/questions/76080/how-do-you-reliably-get-the-quick-
+      // http://www.microsoft.com/technet/scriptcenter/resources/qanda/sept05/hey0901.mspx
+      cur = cur.Append(FILE_PATH_LITERAL("Microsoft"))
+                .Append(FILE_PATH_LITERAL("Internet Explorer"))
+                .Append(FILE_PATH_LITERAL("Quick Launch"));
       break;
     case base::DIR_TASKBAR_PINS:
       if (!PathService::Get(base::DIR_USER_QUICK_LAUNCH, &cur))
         return false;
-      cur = cur.AppendASCII("User Pinned");
-      cur = cur.AppendASCII("TaskBar");
+      cur = cur.Append(FILE_PATH_LITERAL("User Pinned"))
+                .Append(FILE_PATH_LITERAL("TaskBar"));
+      break;
+    case base::DIR_IMPLICIT_APP_SHORTCUTS:
+      if (!PathService::Get(base::DIR_USER_QUICK_LAUNCH, &cur))
+        return false;
+      cur = cur.Append(FILE_PATH_LITERAL("User Pinned"))
+                .Append(FILE_PATH_LITERAL("ImplicitAppShortcuts"));
+      break;
+    case base::DIR_WINDOWS_FONTS:
+      if (FAILED(SHGetFolderPath(
+              NULL, CSIDL_FONTS, NULL, SHGFP_TYPE_CURRENT, system_buffer))) {
+        return false;
+      }
+      cur = FilePath(system_buffer);
       break;
     default:
       return false;

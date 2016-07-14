@@ -8,15 +8,16 @@
 #include <dlfcn.h>
 #import <Foundation/Foundation.h>
 #include <mach-o/dyld.h>
+#include <stdint.h>
 
 #include "base/base_paths.h"
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
-#include "base/file_util.h"
+#include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/mac/foundation_util.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "build/build_config.h"
 
 namespace {
@@ -29,10 +30,16 @@ void GetNSExecutablePath(base::FilePath* path) {
   _NSGetExecutablePath(NULL, &executable_length);
   DCHECK_GT(executable_length, 1u);
   std::string executable_path;
-  int rv = _NSGetExecutablePath(WriteInto(&executable_path, executable_length),
-                                &executable_length);
+  int rv = _NSGetExecutablePath(
+      base::WriteInto(&executable_path, executable_length),
+                      &executable_length);
   DCHECK_EQ(rv, 0);
-  *path = base::FilePath(executable_path);
+
+  // _NSGetExecutablePath may return paths containing ./ or ../ which makes
+  // FilePath::DirName() work incorrectly, convert it to absolute path so that
+  // paths such as DIR_SOURCE_ROOT can work, since we expect absolute paths to
+  // be returned here.
+  *path = base::MakeAbsoluteFilePath(base::FilePath(executable_path));
 }
 
 // Returns true if the module for |address| is found. |path| will contain
@@ -65,8 +72,8 @@ bool PathProviderMac(int key, base::FilePath* result) {
                                                  result);
 #if defined(OS_IOS)
       // On IOS, this directory does not exist unless it is created explicitly.
-      if (success && !file_util::PathExists(*result))
-        success = file_util::CreateDirectory(*result);
+      if (success && !base::PathExists(*result))
+        success = base::CreateDirectory(*result);
 #endif  // defined(OS_IOS)
       return success;
     }
@@ -101,9 +108,6 @@ bool PathProviderMac(int key, base::FilePath* result) {
 #endif
     case base::DIR_CACHE:
       return base::mac::GetUserDirectory(NSCachesDirectory, result);
-    case base::DIR_HOME:
-      *result = base::mac::NSStringToFilePath(NSHomeDirectory());
-      return true;
     default:
       return false;
   }
