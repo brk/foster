@@ -68,7 +68,7 @@ bool GetCurrentThreadPriorityForPlatform(ThreadPriority* priority) {
 // static
 void PlatformThread::SetName(const std::string& name) {
   ThreadIdNameManager::GetInstance()->SetName(CurrentId(), name);
-  tracked_objects::ThreadData::InitializeThreadContext(name);
+  //tracked_objects::ThreadData::InitializeThreadContext(name);
 
 #if !defined(OS_NACL)
   // On linux we can get the thread names to show up in the debugger by setting
