@@ -10,7 +10,6 @@ import Foster.Base
 import Foster.Kind
 import Foster.KNUtil
 import Foster.Config
-import Foster.AnnExprIL
 import Foster.MonoType
 import Foster.ConvertExprAST()
 import Foster.Context
@@ -41,12 +40,11 @@ import Data.IORef
 -- with the generated monomorphic definitions.
 
 monomorphize :: ModuleIL (KNExpr' ()        TypeIL  ) TypeIL
-             -> (AIExpr -> Compiled KNExpr)
    -> Compiled (ModuleIL (KNExpr' RecStatus MonoType) MonoType)
-monomorphize (ModuleIL body decls dts primdts lines) knorm = do
+monomorphize (ModuleIL body decls dts primdts lines) = do
     uref      <- gets ccUniqRef
     wantedFns <- gets ccDumpFns
-    let monoState0 = MonoState Map.empty Map.empty Map.empty [] uref wantedFns knorm
+    let monoState0 = MonoState Map.empty Map.empty Map.empty [] uref wantedFns
     flip evalStateT monoState0 $ do
                monobody <- monoKN emptyMonoSubst False body
                specs    <- gets monoDTSpecs
@@ -426,7 +424,7 @@ monoType subst ty =
                                 t'  <- q t
                                 return $ FnType ss' t' cc cs
      RefinedTypeIL v e args -> do v' <- qv v
-                                  e' <- convertPrecond subst e
+                                  e' <- monoKN subst True e
                                   return $ RefinedType v' e' args
      CoroTypeIL s t         -> liftM2 CoroType  (q s) (q t)
      ArrayTypeIL ty         -> liftM  ArrayType (q ty)
@@ -471,18 +469,7 @@ data MonoState = MonoState {
   , monoDTSpecs :: EqSet (DataTypeName, [MonoType])
   , monoUniques :: IORef Uniq
   , monoWantedFns :: [String]
-  , monoKNormalize :: AIExpr -> Compiled KNExpr
 }
-
-convertPrecond :: MonoSubst -> AIExpr -> Mono KNMono
-convertPrecond subst expr = do
-        ke <- monoAI expr
-        monoKN subst True ke
-
-monoAI :: AIExpr -> Mono (KNExpr' () TypeIL)
-monoAI e = do
-  kn <- gets monoKNormalize
-  lift $ kn e
 
 type MonoProcId = Ident
 type MonoBinder = Ident

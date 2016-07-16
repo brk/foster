@@ -18,7 +18,7 @@ import qualified Data.Text as T(Text)
 
 import Data.Time.Clock.POSIX (getPOSIXTime)
 
-import Text.PrettyPrint.ANSI.Leijen(Doc, text)
+import Text.PrettyPrint.ANSI.Leijen(Doc)
 import System.Console.GetOpt
 
 type Compiled = StateT CompilerContext (ExceptT CompilerFailures IO)

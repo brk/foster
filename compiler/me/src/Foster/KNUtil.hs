@@ -8,8 +8,7 @@
 module Foster.KNUtil where
 
 import Foster.Base
-
-import Foster.AnnExprIL(TypeIL(..))
+import Foster.Kind
 
 import Text.PrettyPrint.ANSI.Leijen
 
@@ -589,4 +588,108 @@ mapArrayIndex f (ArrayIndex v1 v2 rng s) =
   let v1' = f v1
       v2' = f v2 in ArrayIndex v1' v2' rng s
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+
+
+type RhoIL = TypeIL
+data TypeIL =
+           PrimIntIL       IntSizeBits
+         | TyConAppIL      DataTypeName [TypeIL]
+         | TupleTypeIL     Kind [TypeIL]
+         | FnTypeIL        { fnTypeILDomain :: [TypeIL]
+                           , fnTypeILRange  :: TypeIL
+                           , fnTypeILCallConv :: CallConv
+                           , fnTypeILProcOrFunc :: ProcOrFunc }
+         | CoroTypeIL      TypeIL  TypeIL
+         | ForAllIL        [(TyVar, Kind)] RhoIL
+         | TyVarIL           TyVar  Kind
+         | ArrayTypeIL     TypeIL
+         | PtrTypeIL       TypeIL
+         | RefinedTypeIL   (TypedId TypeIL) (KNExpr' () TypeIL) [Ident]
+
+type AIVar = TypedId TypeIL
+
+
+instance Show TypeIL where
+    show x = case x of
+        TyConAppIL nam types -> "(TyConAppIL " ++ nam
+                                      ++ joinWith " " ("":map show types) ++ ")"
+        PrimIntIL size       -> "(PrimIntIL " ++ show size ++ ")"
+        TupleTypeIL KindAnySizeType  typs -> "#(" ++ joinWith ", " (map show typs) ++ ")"
+        TupleTypeIL _                typs ->  "(" ++ joinWith ", " (map show typs) ++ ")"
+        FnTypeIL   s t cc cs -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
+        CoroTypeIL s t       -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
+        ForAllIL ktvs rho    -> "(ForAll " ++ show ktvs ++ ". " ++ show rho ++ ")"
+        TyVarIL     tv kind  -> show tv ++ ":" ++ show kind
+        ArrayTypeIL ty       -> "(Array " ++ show ty ++ ")"
+        PtrTypeIL   ty       -> "(Ptr " ++ show ty ++ ")"
+        RefinedTypeIL v _ _  -> "(Refined " ++ show (tidType v) ++ ")"
+
+instance Structured TypeIL where
+    textOf e _width =
+        case e of
+            TyConAppIL nam _types -> text $ "TyConAppIL " ++ nam
+            PrimIntIL     size    -> text $ "PrimIntIL " ++ show size
+            TupleTypeIL   {}      -> text $ "TupleTypeIL"
+            FnTypeIL      {}      -> text $ "FnTypeIL"
+            CoroTypeIL    {}      -> text $ "CoroTypeIL"
+            ForAllIL ktvs _rho    -> text $ "ForAllIL " ++ show ktvs
+            TyVarIL       {}      -> text $ "TyVarIL "
+            ArrayTypeIL   {}      -> text $ "ArrayTypeIL"
+            PtrTypeIL     {}      -> text $ "PtrTypeIL"
+            RefinedTypeIL {}      -> text $ "RefinedTypeIL"
+
+    childrenOf e =
+        case e of
+            TyConAppIL _nam types  -> types
+            PrimIntIL       {}     -> []
+            TupleTypeIL _bx types  -> types
+            FnTypeIL  ss t _cc _cs -> ss++[t]
+            CoroTypeIL s t         -> [s,t]
+            ForAllIL  _ktvs rho    -> [rho]
+            TyVarIL        _tv _   -> []
+            ArrayTypeIL     ty     -> [ty]
+            PtrTypeIL       ty     -> [ty]
+            RefinedTypeIL   v  _ _ -> [tidType v]
+
+instance Kinded TypeIL where
+  kindOf x = case x of
+    PrimIntIL   {}          -> KindAnySizeType
+    TyConAppIL "Float64" [] -> KindAnySizeType
+    TyVarIL   _ kind     -> kind
+    TyConAppIL  {}       -> KindPointerSized
+    TupleTypeIL kind _   -> kind
+    FnTypeIL    {}       -> KindPointerSized
+    CoroTypeIL  {}       -> KindPointerSized
+    ForAllIL _ktvs rho   -> kindOf rho
+    ArrayTypeIL {}       -> KindPointerSized
+    PtrTypeIL   {}       -> KindPointerSized
+    RefinedTypeIL v _ _  -> kindOf (tidType v)
+
+unitTypeIL = TupleTypeIL KindPointerSized []
+
+boolTypeIL = PrimIntIL I1
+stringTypeIL = TyConAppIL "Text" []
+
+
+
+-- Since datatypes are recursively defined, we must be careful when lifting
+-- them. In particular, ilOf (TyConAppAST ...) calls ctxLookupDatatype,
+-- and lifts the data type using ilOf, which in turn gets called on the types
+-- of the data constructors, which can include TyConApps putting us in a loop!
+
+-----------------------------------------------------------------------
+
+pointedToType t = case t of
+    PtrTypeIL y -> y
+    _ -> error $ "TypeIL.hs:pointedToType\n"
+              ++ "Expected type to be a pointer, but had " ++ show t
+
+pointedToTypeOfVar v = case v of
+    TypedId (PtrTypeIL t) _ -> t
+    _ -> error $ "TypeIL.hs:pointedToTypeOfVar\n"
+              ++ "Expected variable to be a pointer, but had " ++ show v
+-----------------------------------------------------------------------
+
+fnName f = identPrefix (tidIdent $ fnVar f)
 

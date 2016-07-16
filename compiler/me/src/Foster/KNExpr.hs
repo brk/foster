@@ -9,7 +9,9 @@ module Foster.KNExpr (kNormalizeModule, KNExpr, KNMono, FnMono,
                       KNExpr'(..), TailQ(..), typeKN, kNormalize,
                       KNCompilesResult(..),
                       knLoopHeaders, knSinkBlocks, knInline, knSize,
-                      renderKN, renderKNM, renderKNF, renderKNFM) where
+                      renderKN, renderKNM, renderKNF, renderKNFM,
+                      handleCoercionsAndConstraints,
+                      collectIntConstraints) where
 import qualified Data.Text as T
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -24,8 +26,12 @@ import Foster.Base
 import Foster.KNUtil
 import Foster.Config
 import Foster.Context
-import Foster.TypeIL
-import Foster.AnnExprIL
+import Foster.Output(OutputOr(..))
+import Foster.MainCtorHelpers(withDataTypeCtors)
+import Foster.Kind
+import Foster.TypeTC
+import Foster.AnnExpr
+import Foster.Infer(parSubstTcTy)
 
 import Text.PrettyPrint.ANSI.Leijen
 
@@ -36,102 +42,236 @@ import qualified Data.Graph.Inductive.Query.Dominators as Graph
 import Control.Monad.State(gets, liftIO, evalStateT, execStateT, StateT,
                            execState, State,
                            liftM, liftM2, get, put, lift)
-import Control.Monad.Error(ErrorT, runErrorT, Error(..), MonadError, throwError, catchError)
+import Control.Monad.Except(ExceptT, runExceptT, MonadError, throwError, catchError)
 import Data.IORef(IORef, newIORef, readIORef, writeIORef)
 
-type KN = Compiled
+import Data.Maybe (fromMaybe)
+import Data.UnionFind.IO(descriptor)
+
+type KN = Tc
 
 knFresh :: String -> KN Ident
-knFresh s = ccFreshId (T.pack s)
+--knFresh s = ccFreshId (T.pack s)
+knFresh = tcFresh
+--knFreshId = tcFreshT
+
+ccFresh s = ccFreshId (T.pack s)
+
 
 --------------------------------------------------------------------
 
-kNormalizeModule :: (ModuleIL AIExpr TypeIL) -> Context TypeIL -> (Map String (DataType TypeIL)) ->
-           Compiled (ModuleIL KNExpr TypeIL)
-kNormalizeModule m ctx dtypeMap = do
-    let allDataTypes = moduleILprimTypes m ++ moduleILdataTypes m
+kNormalizeModule :: (ModuleIL (AnnExpr TypeTC) TypeTC)
+                 -> Context TypeTC ->
+                Tc (ModuleIL KNExpr TypeIL)
+kNormalizeModule m ctx = do
+    decls' <- mapM (\(s,t) -> do t' <- tcToIL ctx t ; return (s, t')) (moduleILdecls m)
+    dts'   <- mapM (convertDT ctx) (moduleILdataTypes m)
+    prims' <- mapM (convertDT ctx) (moduleILprimTypes m)
+    let allDataTypes = prims' ++ dts'
+    let dtypeMap = Map.fromList [(typeFormalName (dataTypeName dt), dt) | dt <- allDataTypes]
     body' <- do { ctors <- sequence $ concatMap (kNormalCtors ctx) allDataTypes
-                ; body  <- kNormalize dtypeMap (moduleILbody m)
+                ; body  <- kNormalize ctx dtypeMap (moduleILbody m)
                 ; return $ wrapFns ctors body
                 }
-    return m { moduleILbody = body' }
+    return $ ModuleIL body' decls' dts' prims' (moduleILsourceLines m)
       where
         wrapFns :: [FnExprIL] -> KNExpr -> KNExpr
         wrapFns fs e = foldr (\f body -> KNLetFuns [fnIdent f] [f] body) e fs
 
-kNormalizeFn :: (Map String (DataType TypeIL)) -> Fn () AIExpr TypeIL -> KN (FnExprIL)
-kNormalizeFn dtypeMap fn = do
-{- TODO: if we do this, we must tweak the tail-call heuristics to mark
-         the RHS of the introduced let bindings as a tail-call context...
-    -- Enforce the invariant that the return value of the function is let-bound
-    -- (that is, the function returns a variable). This is useful in checking
-    -- static refinements of return types.
-    id <- ccFreshId $ T.pack "xr"
-    let t = typeOf (fnBody fn)
-    liftIO $ putStrLn $ "typeOf fn body is? " ++ show t
-    let body = AILetVar id (fnBody fn) (E_AIVar (TypedId t id))
-    knbody <- kNormalize ctorRepr body
-    --knbody <- kNormalize ctorRepr (fnBody fn)
-    return $ fn { fnBody = knbody }
--}
-    knbody <- kNormalize dtypeMap (fnBody fn)
-    return $ fn { fnBody = knbody }
+qVar :: Context TypeTC -> TypedId TypeTC -> KN (TypedId TypeIL)
+qVar ctx (TypedId t id) = do
+  t' <- tcToIL ctx t
+  return $ TypedId t' id
 
+kNormalizeFn :: Context TypeTC -> (Map String (DataType TypeIL))
+             -> Fn () (AnnExpr TypeTC) TypeTC -> KN (FnExprIL)
+kNormalizeFn ctx dtypeMap fn = do
+    v <- qVar ctx (fnVar fn)
+    vs <- mapM (qVar ctx) (fnVars fn)
+    body <- kNormalize ctx dtypeMap (fnBody fn)
+    checkForUnboxedPolymorphism fn (tidType v)
+    return $ Fn v vs body (fnIsRec fn) (fnAnnot fn)
+
+checkForUnboxedPolymorphism fn ft = do
+    -- Ensure that the types resulting from function calls don't make
+    -- dubious claims of supporting unboxed polymorphism.
+    when (containsUnboxedPolymorphism (fnReturnType ft)) $
+       tcFails [text $ "Returning an unboxed-polymorphic value from "
+                    ++ show (fnIdent fn) ++ "? Inconceivable!"
+               ,text $ "Try using boxed polymorphism instead."]
+
+containsUnboxedPolymorphism :: TypeIL -> Bool
+containsUnboxedPolymorphism (ForAllIL ktvs rho) =
+  any isUnboxedKind ktvs || containsUnboxedPolymorphism rho
+    where isUnboxedKind (_, kind) = kind == KindAnySizeType
+
+containsUnboxedPolymorphism ty = any containsUnboxedPolymorphism $ childrenOf ty
+
+fnReturnType f@(FnTypeIL {}) = fnTypeILRange f
+fnReturnType (ForAllIL _ f@(FnTypeIL {})) = fnTypeILRange f
+fnReturnType other = error $
+    "Unexpected non-function type in fnReturnType: " ++ show other
 -- ||||||||||||||||||||||| K-Normalization ||||||||||||||||||||||{{{
-kNormalize :: (Map String (DataType TypeIL)) -> AIExpr -> KN KNExpr
-kNormalize dtypeMap expr =
-  let go = kNormalize dtypeMap in
+
+kNormalize :: Context TypeTC -> (Map String (DataType TypeIL)) -> AnnExpr TypeTC -> KN KNExpr
+kNormalize ctx dtypeMap expr =
   case expr of
-      AILiteral ty lit  -> return $ KNLiteral ty lit
-      E_AIVar v         -> return $ KNVar v
-      AIKillProcess t m -> return $ KNKillProcess t m
+      AnnLiteral annot ty (LitInt int) -> do ailInt (rangeOf annot) int ty
+                                             ti <- qt ty
+                                             return $ KNLiteral ti (LitInt int)
+      AnnLiteral _rng ty lit  -> do ty' <- qt ty ; return $ KNLiteral ty' lit
+      E_AnnVar   _rng (v,_)   -> do v'  <- qv v  ; return $ KNVar v'
+      AnnKillProcess _rng t m -> do t'  <- qt t  ; return $ KNKillProcess t' m
 
-      AIArrayLit t arr vals -> do nestedLetsDo [go arr] (\[arr'] -> do
-                                    letsForArrayValues vals go (\vals' -> return $ KNArrayLit t arr' vals'))
+      AnnTuple annot _ kind es -> do nestedLets (map go es) (\vs ->
+                                      KNTuple (TupleTypeIL kind (map tidType vs)) vs (rangeOf annot))
+      AnnAlloc _rng _t a amr  -> do nestedLets [go a] (\[x] -> KNAlloc (PtrTypeIL $ tidType x) x amr)
+      AnnDeref _rng _t   a    -> do nestedLets [go a] (\[x] -> KNDeref (pointedToTypeOfVar x) x)
+      AnnStore _rnt _t a b  -> do nestedLets [go a, go b] (\[x,y] -> KNStore unitTypeIL x y)
 
-      AIAllocArray t a amr zi -> do nestedLets [go a] (\[x] -> KNAllocArray (ArrayTypeIL t) x amr zi)
-      AIAlloc a amr         -> do nestedLets [go a] (\[x] -> KNAlloc (PtrTypeIL $ tidType x) x amr)
-      AIDeref   a           -> do nestedLets [go a] (\[x] -> KNDeref (pointedToTypeOfVar x) x)
-      E_AITyApp t a argtys  -> do nestedLets [go a] (\[x] -> KNTyApp t x argtys)
+      E_AnnTyApp  rng t e raw_argtys -> do
+        ti     <- qt t
+        argtys <- mapM qt raw_argtys
 
-      AIStore      a b  -> do nestedLets [go a, go b] (\[x,y] -> KNStore unitTypeIL x y)
-      AIArrayRead  t (ArrayIndex a b rng s) ->
+        origExprType <- qt (typeOf e)
+        let ktvs = tyvarBindersOf origExprType
+        mapM_ (kindCheckSubsumption (rangeOf rng))
+              (zip3 ktvs raw_argtys (map kindOf argtys))
+
+        nestedLets [go e] (\[x] -> KNTyApp ti x argtys)
+
+      AnnAllocArray _rng _ a aty zi -> do
+            t <- qt aty
+            let amr = MemRegionGlobalHeap
+            nestedLets [go a] (\[x] -> KNAllocArray (ArrayTypeIL t) x amr zi)
+
+      AnnArrayRead _rng t (ArrayIndex a b rng s) -> do
+              checkArrayIndexer b
+              t' <- qt t
               nestedLets (map go [a, b])
-                               (\[x, y] -> KNArrayRead t (ArrayIndex x y rng s))
-      AIArrayPoke _t (ArrayIndex a b rng s) c -> do
+                               (\[x, y] -> KNArrayRead t' (ArrayIndex x y rng s))
+      AnnArrayPoke _rng _t (ArrayIndex a b rng s) c -> do
+              checkArrayIndexer b
               nestedLets (map go [a,b,c])
                                (\[x,y,z] -> KNArrayPoke unitTypeIL (ArrayIndex x y rng s) z)
 
-      AILetFuns ids fns a   -> do knFns <- mapM (kNormalizeFn dtypeMap) fns
-                                  liftM (KNLetFuns ids knFns) (go a)
+      -- In order for GC root placement to work properly, all allocations
+      -- must be explicit in the IR; primitives cannot perform a GC op
+      -- before they use all their args, because if they did, the args
+      -- would be stale. Thus we make the array allocation explicit here.
+      AnnArrayLit _rng t exprs -> do
+        ti <- qt t
+        let n = length exprs
+            i32 = PrimIntTC I32
+            litint = LitInt (LiteralInt (fromIntegral n) 32 (show n) 10)
+            arr = AnnAllocArray _rng (error "hmm") (AnnLiteral _rng i32 litint) ati {-amr-} NoZeroInit
+            (ArrayTypeTC ati) = t
+            isLiteral (Left _) = True
+            isLiteral _        = False
+            {-amr = if all isLiteral exprs then MemRegionGlobalData
+                                         else MemRegionGlobalHeap
+                                         TODO -}
+        nestedLetsDo [go arr] (\[arr'] -> do
+                letsForArrayValues exprs go
+                    (\vals' -> return $ KNArrayLit ti arr' vals'))
 
-      AITuple kind es rng   -> do nestedLets (map go es) (\vs ->
-                                    KNTuple (TupleTypeIL kind (map tidType vs)) vs rng)
+      -- For anonymous function literals
+      E_AnnFn annFn -> do fn_id <- tcFresh $ "lit_fn." ++ sourceLineStart (rangeOf annFn) ++ "..."
+                          knFn <- kNormalizeFn ctx dtypeMap annFn
+                          let t = tidType (fnVar knFn)
+                          let fnvar = KNVar (TypedId t fn_id)
+                          return $ KNLetFuns [fn_id] [knFn] fnvar
 
-      AILetVar id a b       -> do liftM2 (buildLet id) (go a) (go b)
-      AILetRec ids exprs e  -> do -- Unlike with LetVal, we can't float out the
-                                  -- inner bindings, because they're presuambly
-                                  -- defined in terms of the ids being bound.
-                                  exprs' <- mapM go exprs
-                                  e'     <- go e
-                                  return $ KNLetRec ids exprs' e'
-      AICase    t e arms    -> do e' <- go e
-                                  nestedLetsDo [return e'] (\[v] -> compileCaseArms arms t v)
-      AIIf      t  a b c    -> do a' <- go a
-                                  [ b', c' ] <- mapM go [b, c]
-                                  nestedLets [return a'] (\[v] -> KNIf t v b' c')
-      AICallPrim sr t p es -> do nestedLets (map go es) (\vars -> KNCallPrim sr t p vars)
-      AIAppCtor  t c es -> do let ctor = lookupCtor c
-                                  repr = lookupCtorRepr ctor
-                                  tys  = dataCtorTypes ctor
-                              nestedLets (map go es) (\vs -> KNAppCtor  t (c, repr) vs)
-      AICall     t (E_AIVar v) es -> do nestedLets (     map go es) (\    vars  -> KNCall t v  vars)
-      AICall     t b           es -> do nestedLets (go b:map go es) (\(vb:vars) -> KNCall t vb vars)
-      AICompiles t e              -> do e' <- go e
-                                        r <- liftIO $ newIORef True
-                                        return $ KNCompiles (KNCompilesResult r) t e'
+      -- For bound function literals
+      AnnLetVar _rng id (E_AnnFn annFn) b -> do
+                          knFn <- kNormalizeFn ctx dtypeMap annFn
+                          b' <- go b
+                          return $ KNLetFuns [id] [knFn] b'
+
+      AnnLetFuns _rng ids fns a   -> do
+                                knFns <- mapM (kNormalizeFn ctx dtypeMap) fns
+                                liftM (KNLetFuns ids knFns) (go a)
+
+      AnnLetVar _rng id a b -> do liftM2 (buildLet id) (go a) (go b)
+      AnnLetRec _rng ids exprs e  -> do
+                    -- Unlike with LetVal, we can't float out the
+                    -- inner bindings, because they're presuambly
+                    -- defined in terms of the ids being bound.
+                    exprs' <- mapM go exprs
+                    e'     <- go e
+                    return $ KNLetRec ids exprs' e'
+      AnnCase _rng t e arms -> do t' <- qt t
+                                  e' <- go e
+                                  nestedLetsDo [return e'] (\[v] -> compileCaseArms arms t' v)
+      AnnIf _rng t  a b c   -> do t' <- qt t
+                                  a' <- go a
+                                  [b', c' ] <- mapM go [b, c]
+                                  nestedLets [return a'] (\[v] -> KNIf t' v b' c')
+
+      AnnCall annot t b args -> do
+            ti <- qt t
+            case b of
+                -- Calls to primitives are OK; other uses of primitives
+                -- will be flagged as errors.
+                AnnPrimitive _rng _ prim -> do
+                   prim' <- ilPrim prim
+                   nestedLets (map go args) (\vars -> KNCallPrim (rangeOf annot) ti prim' vars)
+
+                -- Now that we can see type applications,
+                -- we can build coroutine primitive nodes.
+                E_AnnTyApp _ ot (AnnPrimitive _rng _ (NamedPrim tid)) apptys ->
+                   let primName = identPrefix (tidIdent tid) in
+                   case (coroPrimFor primName, apptys) of
+                     (Just CoroCreate, [argty, retty, _fxty]) -> do
+                       [aty, rty] <- mapM qt [argty, retty]
+                       nestedLets (map go args) (\vars -> KNCallPrim (rangeOf annot) ti (CoroPrim CoroCreate aty rty) vars)
+
+                     (Just coroPrim, [argty, retty]) -> do
+                       [aty, rty] <- mapM qt [argty, retty]
+                       nestedLets (map go args) (\vars -> KNCallPrim (rangeOf annot) ti (CoroPrim coroPrim aty rty) vars)
+
+                     _otherwise -> do
+                       -- v[types](args) ~~>> let <fresh> = v[types] in <fresh>(args)
+                       error "tyapp of non-coro primitive..."
+                       {-
+                       apptysi <- mapM qt apptys
+                       prim' <- ilPrim ctx prim
+                       tid' <- aiVar ctx tid
+                       oti <- qt ot
+                       x <- tcFreshT $ "appty_" `prependedTo` primName
+                       return $ AILetVar x (E_AITyApp oti (E_AIVar tid') apptysi)
+                                          $ AICallPrim (rangeOf annot) ti prim' argsi
+                                          -}
+
+                _else -> do knCall ti b args
+
+      AnnAppCtor _ t c es -> do let repr = lookupCtorRepr (lookupCtor c)
+                                t'  <- qt t
+                                nestedLets (map go es) (\vs -> KNAppCtor  t' (c, repr) vs)
+
+      AnnCompiles _rng _ty (CompilesResult ooe) -> do
+        oox <- tcIntrospect (tcInject go ooe)
+        case oox of
+          OK expr  -> do r <- tcLift $ newIORef True
+                         return $ KNCompiles (KNCompilesResult r) boolTypeIL expr
+          Errors _ -> do return $ KNLiteral boolTypeIL (LitBool False)
+
+
+      AnnPrimitive annot _ p -> tcFails [text "Primitives must be called directly!"
+                                        ,text "\tFound non-call use of " <> pretty p
+                                        ,prettySourceRangeInfo (rangeOf annot)
+                                        ,highlightFirstLineDoc (rangeOf annot)]
 
   where
+        go = kNormalize ctx dtypeMap
+        qt = tcToIL ctx
+        qv (TypedId t i) = do t' <- qt t ; return (TypedId t' i)
+
+        knCall t (E_AnnVar _ (v,_)) es = do
+                           v' <- qv v
+                           nestedLets (     map go es) (\    vars  -> KNCall t v' vars)
+        knCall t b es = do nestedLets (go b:map go es) (\(vb:vars) -> KNCall t vb vars)
+
         -- We currently perform the following source-to-source transformation
         -- on the result of a normalized pattern match:
         --  * Guard splitting:
@@ -140,16 +280,19 @@ kNormalize dtypeMap expr =
         --          if guard then body else continue-matching !
         --      where continue-matching ! is a lambda containing the
         --      translation of the remaining arms.
-        compileCaseArms :: [CaseArm Pattern AIExpr TypeIL]
+        compileCaseArms :: [CaseArm Pattern (AnnExpr TypeTC) TypeTC]
                         -> TypeIL
                         -> TypedId TypeIL
                         -> KN KNExpr
         compileCaseArms arms t v = do
-          let gtp (CaseArm p e g b r) = do
-                let p' = fmapRepr p
-                e' <- kNormalize dtypeMap e
-                g' <- liftMaybe (kNormalize dtypeMap) g
-                return (CaseArm p' e' g' b r)
+          let gtp ::    (CaseArm Pattern (AnnExpr TypeTC) TypeTC)
+                  -> KN (CaseArm PatternRepr KNExpr TypeIL)
+              gtp (CaseArm p e g b r) = do
+                p' <- qp p
+                e' <- kNormalize ctx dtypeMap e
+                g' <- liftMaybe (kNormalize ctx dtypeMap) g
+                b' <- mapM qv b
+                return (CaseArm p' e' g' b' r)
           arms' <- mapM gtp arms
 
           let go (arm:arms) | isGuarded arm = go' [arm] arms
@@ -192,6 +335,7 @@ kNormalize dtypeMap expr =
         anyCaseArmIsGuarded [] = False
         anyCaseArmIsGuarded (arm:arms) = isGuarded arm || anyCaseArmIsGuarded arms
 
+        lookupCtor :: CtorId -> DataCtor TypeIL
         lookupCtor cid =
             case Map.lookup (ctorTypeName cid) dtypeMap of
                Just dt -> let
@@ -200,18 +344,396 @@ kNormalize dtypeMap expr =
                           ctor
                Nothing -> error $ "lookupCtor failed for " ++ show cid
 
+        lookupCtorRepr :: Show ty => DataCtor ty -> CtorRepr
         lookupCtorRepr ctor = unDataCtorRepr "lookupCtorRepr" ctor
 
-        fmapRepr :: Show ty => Pattern ty -> PatternRepr ty
-        fmapRepr p =
+        qpa :: PatternAtom TypeTC -> KN (PatternAtom TypeIL)
+        qpa p =
           case p of
-            P_Atom a            -> PR_Atom a
-            P_Tuple rng ty pats -> PR_Tuple rng ty (map fmapRepr pats)
-            P_Ctor  rng ty pats (CtorInfo cid _dc) ->
-                        PR_Ctor rng ty (map fmapRepr pats) cinfo'
-                          where cinfo' = LLCtorInfo cid (lookupCtorRepr (lookupCtor cid))
-                                                        (map typeOf pats)
+            P_Wildcard rng ty -> liftM (P_Wildcard rng) (qt ty)
+            P_Variable rng v  -> liftM (P_Variable rng) (qv v)
+            P_Bool rng ty b   -> liftM (\t -> P_Bool rng t b)   (qt ty)
+            P_Int  rng ty lit -> liftM (\t -> P_Int  rng t lit) (qt ty)
 
+        qp :: Pattern TypeTC -> KN (PatternRepr TypeIL)
+        qp p =
+          case p of
+            P_Atom a            -> liftM PR_Atom (qpa a)
+            P_Tuple rng ty pats -> do pats' <- mapM qp pats
+                                      ty'   <- qt ty
+                                      return $ PR_Tuple rng ty' pats'
+            P_Ctor  rng ty pats (CtorInfo cid _dc) -> do
+                        pats' <- mapM qp pats
+                        ty'   <- qt ty
+                        let patTys = map typeOf pats'
+                        let cinfo' = LLCtorInfo cid (lookupCtorRepr (lookupCtor cid)) patTys
+                        return $ PR_Ctor rng ty' pats' cinfo'
+
+        coroPrimFor s | s == T.pack "coro_create" = Just $ CoroCreate
+        coroPrimFor s | s == T.pack "coro_invoke" = Just $ CoroInvoke
+        coroPrimFor s | s == T.pack "coro_yield"  = Just $ CoroYield
+        coroPrimFor _ = Nothing
+
+        ilPrim :: FosterPrim TypeTC -> KN (FosterPrim TypeIL)
+        ilPrim prim =
+          case prim of
+            NamedPrim tid     -> do tid' <- qv tid
+                                    return $ NamedPrim tid'
+            PrimOp    nm ty   -> do ty' <- qt ty
+                                    return $ PrimOp nm ty'
+            PrimIntTrunc i1 i2 ->   return $ PrimIntTrunc i1 i2
+            PrimInlineAsm ty s c x -> do ty' <- qt ty
+                                         return $ PrimInlineAsm ty' s c x
+            CoroPrim {} -> error $ "Shouldn't yet have constructed CoroPrim!"
+
+unUnified :: Unifiable v -> Tc (Maybe v)
+unUnified uni =
+  case uni of
+    UniConst x -> return (Just x)
+    UniVar (_u,v) -> do
+        tcLift $ descriptor v
+
+unUnifiedWithDefault uni d = do unUnified uni >>= return . fromMaybe d
+
+tcToIL :: Context TypeTC -> TypeTC -> KN TypeIL
+tcToIL ctx typ = do
+  let q = tcToIL ctx
+  case typ of
+     TyConAppTC  "Float64" [] -> return $ TyConAppIL "Float64" []
+     TyConAppTC  dtname tys -> do
+         case Map.lookup dtname (contextDataTypes ctx) of
+           Just [dt] -> case dtUnboxedRepr dt of
+             Nothing -> do iltys <- mapM q tys
+                           return $ TyConAppIL dtname iltys
+             Just rr -> do q $ rr tys
+           Just dts | length dts > 1
+             -> tcFails [text "Multiple definitions for data type" <+> text dtname]
+           _ -> tcFails [text "Unable to find data type" <+> text dtname
+                        ,text "contextDataTypes ="
+                        ,pretty (map fst $ Map.toList $ contextDataTypes ctx)
+                ]
+     PrimIntTC  size    -> do return $ PrimIntIL size
+     TupleTypeTC ukind types -> do tys <- mapM q types
+                                   kind <- unUnifiedWithDefault ukind KindPointerSized
+                                   return $ TupleTypeIL kind tys
+     FnTypeTC  ss t _fx cc cs -> do
+        (y:xs) <- mapM q (t:ss)
+        -- Un-unified placeholders occur for loops,
+        -- where there are no external constraints on
+        -- the loop's calling convention or representation.
+        -- So, give reasonable default values here.
+        cc' <- unUnifiedWithDefault cc FastCC
+        cs' <- unUnifiedWithDefault cs FT_Func
+        return $ FnTypeIL xs y cc' cs'
+     RefinedTypeTC v e __args -> do v' <- qVar ctx v
+                                    e' <- kNormalize ctx (error "AFAFA") e
+                                    return $ RefinedTypeIL v' e' __args
+     CoroTypeTC  s t     -> do [x,y] <- mapM q [s,t]
+                               return $ CoroTypeIL x y
+     RefTypeTC  ty       -> do liftM PtrTypeIL (q ty)
+     ArrayTypeTC   ty    -> do liftM ArrayTypeIL (q ty)
+     ForAllTC  ktvs rho  -> do t <- (tcToIL $ extendTyCtx ctx ktvs) rho
+                               return $ ForAllIL ktvs t
+     TyVarTC  tv@(SkolemTyVar _ _ k) -> return $ TyVarIL tv k
+     TyVarTC  tv@(BoundTyVar _ _sr) ->
+        case Prelude.lookup tv (contextTypeBindings ctx) of
+          Nothing -> return $ TyVarIL tv KindAnySizeType -- tcFails [text "Unable to find kind of type variable " <> pretty typ]
+          Just k  -> return $ TyVarIL tv k
+     MetaTyVarTC m -> do
+        mty <- readTcMeta m
+        case mty of
+          Nothing -> if False -- TODO this is dangerous, can violate type correctness
+                      then return unitTypeIL
+                      else tcFails [text $ "Found un-unified unification variable "
+                                ++ show (mtvUniq m) ++ "(" ++ mtvDesc m ++ ")!"]
+          Just t  -> let t' = shallowStripRefinedTypeTC t in
+                     -- TODO: strip refinements deeply
+                     if show t == show t'
+                       then q t'
+                       else error $ "meta ty var : " ++ show t ++ " =====> " ++ show t'
+
+
+-- For datatypes which have been annotated as being unboxed (and are eligible
+-- to be so represented), we want to convert from a "data type name reference"
+-- to "directly unboxed tuple" representation, since the context which maps
+-- names to datatypes will not persist through the rest of the compilation pipeline.
+--
+dtUnboxedRepr dt =
+  case dataTypeName dt of
+    TypeFormal _ _ KindAnySizeType ->
+      case dataTypeCtors dt of
+        [ctor] -> Just $ \tys ->
+                       TupleTypeTC (UniConst KindAnySizeType)
+                          (map (substTypeTC tys (dataCtorDTTyF ctor))
+                               (dataCtorTypes ctor))
+        _ -> Nothing
+    TypeFormal _ _ _otherKinds -> Nothing
+ where
+    substTypeTC :: [TypeTC] -> [TypeFormal] -> TypeTC -> TypeTC
+    substTypeTC tys formals = parSubstTcTy mapping
+      where mapping = [(BoundTyVar nm rng, ty)
+                      | (ty, TypeFormal nm rng _kind) <- zip tys formals]
+
+
+-- Wrinkle: need to extend the context used for checking ctors!
+convertDT :: Context TypeTC -> DataType TypeTC -> KN (DataType TypeIL)
+convertDT ctx (DataType dtName tyformals ctors range) = do
+  -- f :: TypeTC -> Tc TypeIL
+  let f = tcToIL (extendTyCtx ctx $ map convertTyFormal tyformals)
+  cts <- mapM (convertDataCtor f) ctors
+
+  optrep <- tcShouldUseOptimizedCtorReprs
+  let dt = DataType dtName tyformals cts range
+  let reprMap = Map.fromList $ optimizedCtorRepresesentations dt
+  return $ dt { dataTypeCtors = withDataTypeCtors dt (getCtorRepr reprMap optrep) }
+    where
+      convertDataCtor f (DataCtor dataCtorName tyformals types repr range) = do
+        tys <- mapM f types
+        return $ DataCtor dataCtorName tyformals tys repr range
+
+      getCtorRepr :: Map.Map CtorId CtorRepr -> Bool -> CtorId -> DataCtor TypeIL -> Int -> DataCtor TypeIL
+      getCtorRepr _ _     _cid dc _n | Just _ <- dataCtorRepr dc = dc
+      getCtorRepr _ False _cid dc  n = dc { dataCtorRepr = Just (CR_Default n) }
+      getCtorRepr m True   cid dc  n = case Map.lookup cid m of
+                                         Just repr -> dc { dataCtorRepr = Just repr }
+                                         Nothing   -> dc { dataCtorRepr = Just (CR_Default n) }
+
+      optimizedCtorRepresesentations :: Kinded t => DataType t -> [(CtorId, CtorRepr)]
+      optimizedCtorRepresesentations dtype =
+        let ctors = withDataTypeCtors dtype (\cid ctor n -> (cid, ctor, n)) in
+        case classifyCtors ctors (kindOf $ dataTypeName dtype) of
+          SingleCtorWrappingSameBoxityType cid KindAnySizeType ->
+            -- The constructor needs no runtime representation, nor casts...
+            [(cid, CR_TransparentU)]
+
+          SingleCtorWrappingSameBoxityType cid _ ->
+            -- The constructor needs no runtime representation...
+            [(cid, CR_Transparent)]
+
+          AtMostOneNonNullaryCtor [] nullaryCids ->
+            [(cid, CR_Nullary n) | (cid, n) <- nullaryCids]
+
+          AtMostOneNonNullaryCtor [nnCid] nullaryCids ->
+            [(cid, CR_Tagged  n) | (cid, n) <- [nnCid]] ++
+            [(cid, CR_Nullary n) | (cid, n) <- nullaryCids]
+
+          AtMostOneNonNullaryCtor _nnCids _nullaryCids ->
+            error $ "KNExpr.hs cannot yet handle multiple non-nullary ctors"
+
+          OtherCtorSituation cidns ->
+            [(cid, CR_Default n) | (cid, n) <- cidns]
+
+      ctorWrapsOneValueOfKind ctor kind =
+        case dataCtorTypes ctor of
+          [ty] -> kindOf ty `subkindOf` kind
+          _ -> False
+
+      isNullaryCtor :: DataCtor ty -> Bool
+      isNullaryCtor ctor = null (dataCtorTypes ctor)
+
+      splitNullaryCtors :: [(CtorId, DataCtor ty, Int)] -> ( [CtorId], [CtorId] )
+      splitNullaryCtors ctors =
+        ( [cid | (cid, ctor, _) <- ctors, not (isNullaryCtor ctor)]
+        , [cid | (cid, ctor, _) <- ctors,      isNullaryCtor ctor ] )
+
+      classifyCtors :: Kinded ty => [(CtorId, DataCtor ty, Int)] -> Kind -> CtorVariety ty
+      classifyCtors [(cid, ctor, _)] dtypeKind
+                          | ctorWrapsOneValueOfKind ctor dtypeKind
+                          = SingleCtorWrappingSameBoxityType cid dtypeKind
+      classifyCtors ctors _ =
+          case splitNullaryCtors ctors of
+            -- The non-nullary ctor gets a small-int of zero (so it has "no tag"),
+            -- and the nullary ctors get the remaining values.
+            -- The representation can be in the low bits of the pointer.
+            ([nonNullaryCtor], nullaryCtors) | length nullaryCtors <= 7 ->
+                 AtMostOneNonNullaryCtor  [ (nonNullaryCtor, 0) ] (zip nullaryCtors [1..])
+
+            ([],               nullaryCtors) | length nullaryCtors <= 8 ->
+                 AtMostOneNonNullaryCtor  []                      (zip nullaryCtors [0..])
+
+            _ -> OtherCtorSituation [(cid, n) | (cid, _, n) <- ctors]
+
+
+data CtorVariety ty = SingleCtorWrappingSameBoxityType CtorId Kind
+                    | AtMostOneNonNullaryCtor          [(CtorId, Int)] [(CtorId, Int)]
+                    | OtherCtorSituation               [(CtorId, Int)]
+
+data ArrayIndexResult = AIR_OK
+                      | AIR_Trunc
+                      | AIR_ZExt
+
+checkArrayIndexer :: AnnExpr TypeTC -> KN ()
+checkArrayIndexer b = do
+  -- The actual conversion will be done later on, in the backend.
+  -- See the second hunk of patch b0e56b93f614.
+  _ <- check (typeOf b)
+  return ()
+
+  where check t =
+          -- If unconstrained, fix to Int32.
+          -- Otherwise, check how it should be converted to Int32/64.
+          case t of
+            MetaTyVarTC m -> do
+              mb_t <- readTcMeta m
+              case mb_t of
+                Nothing -> do writeTcMeta m (PrimIntTC I32)
+                              check         (PrimIntTC I32)
+                Just tt -> check tt
+            PrimIntTC I1     -> return $ AIR_ZExt
+            PrimIntTC I8     -> return $ AIR_ZExt
+            PrimIntTC I32    -> return $ AIR_OK
+            PrimIntTC I64    -> return $ AIR_Trunc
+            PrimIntTC (IWord 0) -> return $ AIR_Trunc
+            RefinedTypeTC v _ _ -> check (tidType v)
+            _ -> tcFails [text "Array subscript had type"
+                         ,pretty t
+                         ,text "which was insufficiently integer-y."
+                         ,prettyWithLineNumbers (rangeOf b)
+                         ]
+
+ailInt rng int ty = do
+  -- 1. We need to make sure that the types eventually given to an int
+  --    are large enough to hold it.
+  -- 2. For ints with an un-unified meta type variable,
+  --    such as from silly code like (let x = 0; in () end),
+  --    we should update the int's meta type variable
+  --    with the smallest type that accomodates the int.
+  case ty of
+    PrimIntTC isb -> do
+      sanityCheckIntLiteralNotOversized rng isb int
+
+    MetaTyVarTC m -> do
+      mty <- readTcMeta m
+      case mty of
+        Just t -> do ailInt rng int t
+        Nothing -> do tcFails [text "Int literal should have had type inferred for it!"]
+
+    RefinedTypeTC v _ _ -> ailInt rng int (tidType v)
+
+    _ -> do tcFails [text "Unable to assign integer literal the type" <+> pretty ty
+                  ,string (highlightFirstLine rng)]
+
+sanityCheckIntLiteralNotOversized rng isb int =
+    sanityCheck (intSizeOf isb >= litIntMinBits int) $
+       "Int constraint violated; context-imposed exact size (in bits) was " ++ show (intSizeOf isb)
+        ++ "\n                              but the literal intrinsically needs " ++ show (litIntMinBits int)
+        ++ highlightFirstLine rng
+
+
+
+-- This function runs after typechecking, and before the conversion to AIExpr.
+-- The reason is that for code like::
+--       a = prim mach-array-literal 0 0;
+--       b = prim mach-array-literal True False;
+--
+--       expect_i1 True;
+--       print_i1 b[a[0]];
+-- Typechecking will record that a[0] has an int-ish type, but the specific
+-- type will remain unconstrained. When converting to AIExpr we'll check that
+-- there are no remaining unconstrained types, so we must fix the type between
+-- typechecking and creating AIExpr. Thus, this function.
+--
+-- This has return type Tc (AnnExpr TypeTC) instead of Tc ()
+-- because we want to signal failure when we see indexing with a bogus type.
+-- In order for __COMPILES__ to work correct, that means we can't get away with
+-- a simple traversal routine.
+handleCoercionsAndConstraints :: AnnExpr TypeTC -> Tc (AnnExpr TypeTC)
+handleCoercionsAndConstraints ae = do
+    let q = handleCoercionsAndConstraints
+    let qf f = do body' <- q (fnBody f)
+                  return $ f { fnBody = body' }
+    case ae of
+        AnnArrayRead _rng t (ArrayIndex a b rng s) -> do
+             checkArrayIndexer b
+             [x,y]   <- mapM q [a,b]
+             return $ AnnArrayRead _rng t (ArrayIndex x y rng s)
+        AnnArrayPoke _rng t (ArrayIndex a b rng s) c -> do
+             checkArrayIndexer b
+             [x,y,z] <- mapM q [a,b,c]
+             return $ AnnArrayPoke _rng t (ArrayIndex x y rng s) z
+
+        AnnCompiles _rng _ty (CompilesResult ooe) -> do
+            res <- tcIntrospect (tcInject q ooe)
+            return $ AnnCompiles _rng _ty (CompilesResult res)
+
+        AnnKillProcess {} -> return ae
+        AnnLiteral     {} -> return ae
+        E_AnnVar       {} -> return ae
+        AnnPrimitive   {} -> return ae
+        AnnIf   _rng  t  a b c -> do [x,y,z] <- mapM q [a,b,c]
+                                     return $ AnnIf   _rng  t  x y z
+        E_AnnFn annFn        -> do fn' <- qf annFn
+                                   return $ E_AnnFn fn'
+        AnnLetVar _rng id  a b     -> do [x,y]   <- mapM q [a,b]
+                                         return $ AnnLetVar _rng id  x y
+        AnnLetRec _rng ids exprs e -> do (e' : exprs' ) <- mapM q (e:exprs)
+                                         return $ AnnLetRec _rng ids exprs' e'
+        AnnLetFuns _rng ids fns e  -> do fnsi <- mapM qf fns
+                                         ei <- q e
+                                         return $ AnnLetFuns _rng ids fnsi ei
+        AnnAlloc _rng _t a rgn     -> do [x] <- mapM q [a]
+                                         return $ AnnAlloc _rng _t x rgn
+        AnnDeref _rng _t a         -> do [x] <- mapM q [a]
+                                         return $ AnnDeref _rng _t x
+        AnnStore _rng _t a b       -> do [x,y]   <- mapM q [a,b]
+                                         return $ AnnStore _rng _t  x y
+        AnnAllocArray _rng _t e aty zi -> do
+                                         x <- q e
+                                         return $ AnnAllocArray _rng _t x aty zi
+        AnnArrayLit  _rng t exprs -> do  ais <- mapRightM q exprs
+                                         return $ AnnArrayLit  _rng t ais
+
+        AnnTuple rng _t kind exprs -> do aies <- mapM q exprs
+                                         return $ AnnTuple rng _t kind aies
+        AnnCase _rng t e arms      -> do ei <- q e
+                                         bsi <- mapM (\(CaseArm p e guard bindings rng) -> do
+                                                     e' <- q e
+                                                     guard' <- liftMaybe q guard
+                                                     return (CaseArm p e' guard' bindings rng)) arms
+                                         return $ AnnCase _rng t ei bsi
+        AnnAppCtor _rng t cid args -> do argsi <- mapM q args
+                                         return $ AnnAppCtor _rng t cid argsi
+        AnnCall annot t b args -> do
+            (bi:argsi) <- mapM q (b:args)
+            return $ AnnCall annot t bi argsi
+
+        E_AnnTyApp rng t e raw_argtys  -> do
+                ae     <- q e
+                return $ E_AnnTyApp rng t ae raw_argtys
+
+tyvarBindersOf (ForAllIL ktvs _) = ktvs
+tyvarBindersOf _                 = []
+
+kindCheckSubsumption :: SourceRange -> ((TyVar, Kind), TypeTC, Kind) -> Tc ()
+kindCheckSubsumption rng ((tv, tvkind), ty, tykind) = do
+  if tykind `subkindOf` tvkind
+    then return ()
+    else tcFails [text $ "Kind mismatch:" ++ highlightFirstLine rng
+       ++ "Cannot instantiate type variable " ++ show tv ++ " of kind " ++ show tvkind
+       ++ "\nwith type " ++ show ty ++ " of kind " ++ show tykind]
+
+
+collectIntConstraints :: AnnExpr TypeTC -> Tc ()
+collectIntConstraints ae =
+    case ae of
+        AnnCompiles _ _ty (CompilesResult ooe) -> do
+                -- This function should ignore code that failed to compile.
+                _ <- tcIntrospect (tcInject collectIntConstraints ooe)
+                return ()
+
+        AnnLiteral _ ty (LitInt int) -> do
+          -- We can't directly mutate the meta type variable for int literals,
+          -- because of code like       print_i8 ({ 1234 } !)   where the
+          -- constraint that the literal fit an i8 cannot be discarded.
+          -- So we collect all the constraints in a pre-pass, and then fix up
+          -- un-constrained meta ty vars, while leaving constrained ones alone.
+          ty' <- shallowZonk ty
+          case ty' of
+            MetaTyVarTC m -> do
+                    tcUpdateIntConstraint m (litIntMinBits int)
+            _ -> do return ()
+
+        _ -> mapM_ collectIntConstraints (childrenOf ae)
 -- }}}|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||| Let-Flattening |||||||||||||||||||||||{{{
@@ -280,9 +802,10 @@ nestedLets :: [KN KNExpr] -> ([AIVar] -> KNExpr) -> KN KNExpr
 nestedLets exprActions g = nestedLetsDo exprActions (\vars -> return $ g vars)
 
 
-letsForArrayValues :: [Either Literal AIExpr] -> (AIExpr -> KN KNExpr) ->
-                                                 ([Either Literal AIVar] -> KN KNExpr)
-                                                 -> KN KNExpr
+letsForArrayValues :: [Either Literal (AnnExpr TypeTC)]
+                   -> (AnnExpr TypeTC -> KN KNExpr)
+                   -> ([Either Literal (TypedId TypeIL)] -> KN KNExpr)
+                                                         -> KN KNExpr
 letsForArrayValues vals normalize mkArray = do
                                 kvals <- mapRightM normalize vals
                                 nestedLets' kvals [] mkArray
@@ -330,10 +853,11 @@ tmpForExpr _              = ".x"
 -- while ``type case T3 (a:Boxed) of $T3C1 a``
 -- produces T3C1 :: forall b:Boxed, b -> T3 b
 --
-kNormalCtors :: Context TypeIL -> DataType TypeIL -> [KN (FnExprIL)]
-kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
+kNormalCtors :: Context TypeTC -> DataType TypeIL -> [KN (FnExprIL)]
+kNormalCtors ctx dtype =
+        map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
   where
-    kNormalCtor :: Context TypeIL -> DataType TypeIL -> DataCtor TypeIL
+    kNormalCtor :: Context TypeTC -> DataType TypeIL -> DataCtor TypeIL
                 -> KN (FnExprIL)
     kNormalCtor _ctx _datatype (DataCtor _cname _tyformals _tys Nothing _range) = do
       error "Cannot wrap a data constructor with no representation information."
@@ -358,12 +882,14 @@ kNormalCtors ctx dtype = map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
       case termVarLookup cname (contextBindings ctx) of
         Nothing -> case termVarLookup cname (nullCtorBindings ctx) of
           Nothing -> error $ "Unable to find binder for constructor " ++ show cname
-          Just (TypedId ty id, _) ->
+          Just (TypedId ty id, _) -> do
+                         ty' <- tcToIL ctx ty
                          -- This is rather ugly: nullary constructors,
                          -- unlike their non-nullary counterparts, don't have
                          -- function type, so we synthesize a fn type here.
-                         ret (TypedId (thunk ty) id)
-        Just (tid, _) -> ret tid
+                         ret (TypedId (thunk ty') id)
+        Just (TypedId t id, _) -> do t' <- tcToIL ctx t
+                                     ret (TypedId t' id)
 
     thunk (ForAllIL ktvs rho) = ForAllIL ktvs (thunk rho)
     thunk ty = FnTypeIL [] ty FastCC FT_Proc
@@ -494,7 +1020,7 @@ mkLetRec bindings b = KNLetRec ids es b where (ids, es) = unzip bindings
 mkLetVals []            e = e
 mkLetVals ((id,b):rest) e = KNLetVal id b (mkLetVals rest e)
 
-knSinkBlocks :: ModuleIL (KNExpr' r t) t -> KN (ModuleIL (KNExpr' r t) t)
+knSinkBlocks :: ModuleIL (KNExpr' r t) t -> Compiled (ModuleIL (KNExpr' r t) t)
 knSinkBlocks m = do
   let rebuilder idsfns = [(id, localBlockSinking fn) | (id, fn) <- idsfns]
   return $ m { moduleILbody = rebuildWith rebuilder (moduleILbody m) }
@@ -606,7 +1132,7 @@ localBlockSinking knf = rebuildFn knf
 -- See Andrew Appel's 1994 paper "Loop Headers in lambda-calculus or CPS"
 -- for more examples: http://www.cs.princeton.edu/~appel/papers/460.pdf
 
-type Hdr = StateT HdrState KN
+type Hdr = StateT HdrState Compiled
 data HdrState =   HdrState {
     headers :: LoopHeaders
   , census  :: LoopCensus
@@ -663,15 +1189,16 @@ computeInfo census headers = Map.mapMaybeWithKey go census
                      then Nothing
                      else Just (hdr, mt)
 
-knFreshen (Ident name _) = ccFreshId name
-knFreshen id@(GlobalSymbol  _) = error $ "KNExpr.hs: cannot freshen global " ++ show id
-knFreshenTid (TypedId t id) = do id' <- knFreshen id
+ccFreshen :: Ident -> Compiled Ident
+ccFreshen (Ident name _) = ccFreshId name
+ccFreshen id@(GlobalSymbol  _) = error $ "KNExpr.hs: cannot freshen global " ++ show id
+ccFreshenTid (TypedId t id) = do id' <- ccFreshen id
                                  return $ TypedId t id'
 
 knLoopHeaderCensusFn activeids (id, fn) = do
   let vars = fnVars fn
-  id'   <- lift $ knFresh "loop.hdr"
-  vars' <- lift $ mapM knFreshenTid vars -- generate new vars for wrapper in advance
+  id'   <- lift $ ccFresh "loop.hdr"
+  vars' <- lift $ mapM ccFreshenTid vars -- generate new vars for wrapper in advance
   st <- get
   put $ st { headers = Map.insert id ((id' , vars' ), False) (headers st)
            , census  = Map.insert id (map Just vars)         (census st) }
@@ -692,13 +1219,13 @@ knLoopHeaderCensus tailq activeids expr = go' tailq expr where
                                        _ -> return ()
                                      go e2
     KNLetRec      _   es  b    -> do mapM_ (go' NotTail) es ; go b
-    KNLetFuns     _ _ b -> do go b
     KNLetFuns     ids fns b | all isRec fns -> do
       mapM_ (knLoopHeaderCensusFn (Set.fromList ids)) (zip ids fns)
       -- Note: when we recur, activeids will not
       -- include the bound ids, so calls in the
       -- body will be (properly) ignored.
       go b
+    KNLetFuns     _ _ b -> do go b
     KNCall _ v vs | tailq == YesTail -> do -- TODO only for tail calls...
       id <- lookupId (tidIdent v)
       if Set.member id activeids
@@ -959,7 +1486,7 @@ knInline mbDefaultSizeLimit shouldDonate knmod = do
   let defaultSizeLimit = case mbDefaultSizeLimit of Nothing -> 42 * 2
                                                     Just  x -> x
   let e  = moduleILbody knmod
-  let et = runErrorT (knInlineToplevel e (SrcEnv Map.empty Map.empty))
+  let et = runExceptT (knInlineToplevel e (SrcEnv Map.empty Map.empty))
   stkRef <- newRef []
   cenRef <- newRef $ inCensus e
   let st = evalStateT et (InlineState uniq stkRef currlvl effort Map.empty sizectr NoLimit
@@ -990,7 +1517,7 @@ knInline mbDefaultSizeLimit shouldDonate knmod = do
                    return $ knmod
 
 -- {{{ Misc definitions...
-type In          = ErrorT InlineError (StateT InlineState IO)
+type In          = ExceptT InlineError (StateT InlineState IO)
 data InlineState = InlineState {
     inUniqRef  :: IORef Uniq
   , inCurrentPendings :: IORef [KNExpr' RecStatus MonoType]
@@ -1022,9 +1549,6 @@ instance Pretty FoldResult where
 
 data InlineError = InlineErrorSize String
                  | InlineErrorEffort Doc deriving Show
-instance Error InlineError where
-  noMsg    = InlineErrorSize "<no msg>"
-  strMsg s = InlineErrorSize s
 
 shouldDEBUG = False
 

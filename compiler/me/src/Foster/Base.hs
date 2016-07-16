@@ -864,6 +864,11 @@ instance Pretty CtorRepr where
   pretty (CR_Nullary int) = text "##" <> pretty int <> text "~"
   pretty (CR_Value   int) = text "##" <> pretty int
 
+instance Pretty Kind where
+  pretty KindAnySizeType  = text "Type"
+  pretty KindPointerSized = text "Boxed"
+  pretty KindEffect       = text "Effect"
+
 instance TExpr body t => TExpr (Fn rec body t) t where
     freeTypedIds f = let bodyvars =  freeTypedIds (fnBody f) in
                      let boundvars =              (fnVars f) in

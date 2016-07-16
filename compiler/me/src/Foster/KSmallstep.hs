@@ -34,8 +34,8 @@ import Control.Exception(assert)
 import System.Timeout(timeout)
 
 import Foster.Base
-import Foster.AnnExprIL(TypeIL(..))
 import Foster.KNExpr
+import Foster.KNUtil(TypeIL(..))
 
 -- Relatively simple small-step "definitional" interpreter.
 --

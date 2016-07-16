@@ -18,7 +18,7 @@ import Data.Set(Set)
 import qualified Data.Sequence as Seq(length)
 
 import qualified Data.Char as Char(isAlphaNum)
-import Data.IORef(IORef, newIORef, readIORef, writeIORef)
+import Data.IORef(newIORef, readIORef, writeIORef)
 import Data.Traversable(mapM)
 import Prelude hiding (mapM)
 import Control.Monad.State(forM, when, forM_, evalStateT, gets,
@@ -37,13 +37,12 @@ import Foster.ExprAST
 import Foster.TypeAST
 import Foster.ParsedType
 import Foster.PrettyExprAST()
-import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn))
-import Foster.AnnExprIL(AIExpr(AILetFuns, AICall, E_AIVar), fnOf, ilOf,
-                     collectIntConstraints, TypeIL(FnTypeIL),  unitTypeIL,
-                     handleCoercionsAndConstraints, convertDataTypeTC)
+import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn, E_AnnVar, AnnCall, AnnLetFuns))
 import Foster.ILExpr(ILProgram, showILProgramStructure, prepForCodegen)
 import Foster.KNExpr(KNExpr', kNormalizeModule, knLoopHeaders, knSinkBlocks,
-                     knInline, kNormalize, knSize, renderKN)
+                     knInline, knSize, renderKN,
+                     handleCoercionsAndConstraints, collectIntConstraints)
+import Foster.KNUtil(KNExpr, TypeIL)
 import Foster.Typecheck
 import Foster.Context
 import Foster.CloConv(closureConvertAndLift, renderCC, CCBody(..))
@@ -55,6 +54,7 @@ import Foster.MainCtorHelpers
 import Foster.ConvertExprAST
 import Foster.MainOpts
 import Foster.MKNExpr
+import Foster.Kind(Kind(KindPointerSized))
 
 import Data.Binary.Get
 import Data.Binary.CBOR
@@ -183,9 +183,9 @@ typecheckAndFoldContextBindings ctxTC0 bindings = do
 typecheckModule :: Bool -> Bool -> Bool -> ([Flag], strings)
                 -> ModuleAST FnAST TypeAST
                 -> TcEnv
-                -> IO (OutputOr (Context TypeIL, ModuleIL AIExpr TypeIL))
+                -> Compiled (OutputOr TCRESULT)
 typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
-    when verboseMode $ do
+    liftIO $ when verboseMode $ do
         putDocLn $ text "module AST decls:" <$> pretty (moduleASTdecls modast)
     let dts = moduleASTprimTypes modast ++ moduleASTdataTypes modast
     let fns = moduleASTfunctions modast
@@ -206,7 +206,7 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
                        computeContextBindings nonNullCtors
     let nullCtorBindings = computeContextBindings nullCtors
 
-    when verboseMode $ do
+    liftIO $ when verboseMode $ do
         putDocLn $ (outLn "vvvv declBindings:====================")
         putDocLn $ (dullyellow (vcat $ map (text . show) declBindings))
 
@@ -218,7 +218,7 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
         let primOpMap = Map.fromList [(T.pack nm, prim)
                             | (nm, (_, prim)) <- Map.toList gFosterPrimOpsTable]
 
-        ctxErrsOrOK <- unTc tcenv0 $ do
+        ctxErrsOrOK <- liftIO $ unTc tcenv0 $ do
                          let ctxAS1 = mkContext (computeContextBindings nonNullCtors)
                                          nullCtorBindings primBindings primOpMap globalids dts
                          let ctxTC0 = mkContext [] [] [] Map.empty [] []
@@ -229,14 +229,15 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
             -- declBindings includes datatype constructors and some (?) functions.
             let callGraphList = buildCallGraphList fns (Set.fromList $ map fnAstName fns)
             let sortedFns = Graph.stronglyConnComp callGraphList -- :: [SCC FnAST]
-            when verboseMode $ do
+            liftIO $ when verboseMode $ do
                     putStrLn $ "Function SCC list : " ++
                      (unlines $ map show [(name, frees) | (_, name, frees) <- callGraphList])
             let showASTs     = verboseMode || getDumpIRFlag "ast" flagvals
             let showAnnExprs = verboseMode || getDumpIRFlag "ann" flagvals
-            (annFnSCCs, (ctx, tcenv)) <- mapFoldM' sortedFns (ctxTC, tcenv0)
-                                              (typecheckFnSCC showASTs showAnnExprs pauseOnErrors)
-            unTc tcenv (convertTypeILofAST modast ctx annFnSCCs)
+            (annFnSCCs, (ctx, tcenv)) <- liftIO $
+                mapFoldM' sortedFns (ctxTC, tcenv0)
+                            (typecheckFnSCC showASTs showAnnExprs pauseOnErrors)
+            liftIO $ unTc tcenv (convertTypeILofAST modast ctx annFnSCCs)
           Errors os -> return (Errors os)
       dups -> return (Errors [text $ "Unable to check module due to "
                                   ++ "duplicate bindings: " ++ show dups])
@@ -324,7 +325,7 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
    convertTypeILofAST :: ModuleAST FnAST TypeAST
                       -> Context TypeTC
                       -> [[OutputOr (AnnExpr TypeTC)]]
-                      -> Tc (Context TypeIL, ModuleIL AIExpr TypeIL)
+                      -> Tc TCRESULT
    convertTypeILofAST mAST ctx_tc oo_unprocessed = do
      mapM_ (tcInject collectIntConstraints) (concat oo_unprocessed)
      tcApplyIntConstraints
@@ -332,33 +333,55 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
      constraints <- tcGetConstraints
      processTcConstraints constraints
 
+     -- oo_annfns :: [[OutputOr (AnnExpr TypeTC)]]
      oo_annfns <- mapM (mapM (tcInject handleCoercionsAndConstraints)) oo_unprocessed
 
+     let unfuns fns -- :: [[AnnExpr t]] -> [[Fn () (AnnExpr t) t]]
+                    = map (map unFunAnn) fns
+
      -- We've already typechecked the functions, so no need to re-process them...
+     -- First, convert the non-function parts of our module from TypeAST to TypeTC.
+     -- mTC :: ModuleAST FnAST TypeTC
      mTC <- convertModule (tcType ctx_tc) $ mAST { moduleASTfunctions = [] }
+
+     let mTC' = ModuleIL (buildExprSCC' (unfuns oo_annfns))
+                         (externalModuleDecls mTC)
+                         (moduleASTdataTypes  mTC)
+                         (moduleASTprimTypes  mTC)
+                         (moduleASTsourceLines mAST)
+
+     kmod <- kNormalizeModule  mTC' ctx_tc
+     return (kmod, globalIdents ctx_tc)
+{-
+     -- Next, convert those pieces, piecemeal, from TypeTC to TypeIL.
+     -- ctx_il :: Context TypeIL
      ctx_il    <- liftContextM   (ilOf ctx_tc) ctx_tc
      decls     <- mapM (convertDecl (ilOf ctx_tc)) (externalModuleDecls mTC)
      primtypes <- mapM (convertDataTypeTC ctx_tc) (moduleASTprimTypes mTC)
      datatypes <- mapM (convertDataTypeTC ctx_tc) (moduleASTdataTypes mTC)
-     let unfuns fns -- :: [[AnnExpr TypeAST]] -> [[Fn (AnnExpr TypeAST) TypeAST]]
-                    = map (map unFunAnn) fns
+
      -- Set fnIsRec flag on top-level functions.
      aiFns     <- mapM (mapM (fnOf ctx_tc)) (unfuns oo_annfns)
-     let q = buildExprSCC aiFns
-     let m = ModuleIL q decls datatypes primtypes (moduleASTsourceLines mAST)
-     return (ctx_il, m)
+     let ai_mod = ModuleIL (buildExprSCC aiFns) decls datatypes primtypes
+                           (moduleASTsourceLines mAST)
+
+     return (ctx_il, ai_mod)
+-}
+
        where
-        buildExprSCC :: [[Fn () AIExpr TypeIL]] -> AIExpr
-        buildExprSCC [] = error "Main.hs: Can't build SCC of no functions!"
-        buildExprSCC es = let call_of_main = AICall unitTypeIL
-                                              (E_AIVar (TypedId mainty (GlobalSymbol $ T.pack "main")))
-                                              []
-                              mainty = FnTypeIL [unitTypeIL] unitTypeIL FastCC FT_Proc
+        buildExprSCC' :: [[Fn () (AnnExpr TypeTC) TypeTC]] -> (AnnExpr TypeTC)
+        buildExprSCC' [] = error "Main.hs: Can't build SCC of no functions!"
+        buildExprSCC' es = let call_of_main = AnnCall (annotForRange $ MissingSourceRange "buildExprSCC'main!") unitTypeTC
+                                                (E_AnnVar (annotForRange $ MissingSourceRange "buildExprSCC'main")
+                                                          (TypedId mainty (GlobalSymbol $ T.pack "main"), Nothing))
+                                                []
+                               mainty = FnTypeTC [unitTypeTC] unitTypeTC unitTypeTC (UniConst FastCC) (UniConst FT_Proc)
                           in foldr build call_of_main es
-         where build :: [Fn () AIExpr TypeIL] -> AIExpr -> AIExpr
-               build es body = case es of
+         where build es body = case es of
                     [] -> body
-                    _  -> AILetFuns (map fnIdent es) es body
+                    _  -> AnnLetFuns (annotForRange $ MissingSourceRange "buildExprSCC'")
+                                     (map fnIdent es) es body
+               unitTypeTC = TupleTypeTC (UniConst KindPointerSized) []
 
         -- Note that we discard internal declarations, which are only useful
         -- during type checking. External declarations, on the other hand,
@@ -521,7 +544,7 @@ compile wholeprog tcenv = do
      >>= mergeModules -- temporary hack
      >>= desugarParsedModule tcenv
      >>= typecheckSourceModule tcenv
-     >>= (uncurry lowerModule)
+     >>= lowerModule
 
 mergeModules :: WholeProgramAST FnAST ty
               -> Compiled (ModuleAST FnAST ty)
@@ -572,8 +595,10 @@ desugarParsedModule tcenv m = do
                                     return $ RefinedTypeAST nm t' e'
           MetaPlaceholder desc -> return $ MetaPlaceholderAST MTVTau desc
 
+type TCRESULT = (ModuleIL KNExpr TypeIL, [Ident])
+
 typecheckSourceModule :: TcEnv ->  ModuleAST FnAST TypeAST
-                      -> Compiled (ModuleIL AIExpr TypeIL, Context TypeIL)
+                      -> Compiled (ModuleIL KNExpr TypeIL, [Ident])
 typecheckSourceModule tcenv sm = do
     verboseMode <- gets ccVerbose
     flags <- gets ccFlagVals
@@ -584,25 +609,28 @@ typecheckSourceModule tcenv sm = do
     --   putDocLn (vsep $ map showFnStructure (moduleASTfunctions sm))
     --   putDocLn $ pretty sm
     --   return ()
-    (ctx_il, ai_mod) <- (liftIO $ typecheckModule verboseMode pauseOnErrors standalone flags sm tcenv)
-                      >>= dieOnError
-    showGeneratedMetaTypeVariables (tcUnificationVars tcenv) ctx_il
-    return (ai_mod, ctx_il)
 
-lowerModule :: ModuleIL AIExpr TypeIL
-            -> Context TypeIL
+    res0 <- typecheckModule verboseMode pauseOnErrors standalone flags sm tcenv
+    dieOnError res0
+    {-
+    (ctx_il, ai_mod) <- dieOnError res0
+
+    let dtypes = moduleILdataTypes ai_mod ++ moduleILprimTypes ai_mod
+    let dtypeMap = Map.fromList [(typeFormalName (dataTypeName dt), dt) | dt <- dtypes]
+    let knorm = kNormalize dtypeMap -- For normalizing expressions in types.
+    kmod <- kNormalizeModule ai_mod ctx_il dtypeMap
+
+    return (kmod, knorm, globalIdents ctx_il)
+    -}
+
+lowerModule :: (ModuleIL KNExpr TypeIL
+               , [Ident] )
             -> Compiled ResultWithTimings
-lowerModule ai_mod ctx_il = do
+lowerModule (kmod, globals) = do
      inline   <- gets ccInline
      flags    <- gets ccFlagVals
      let donate = getInliningDonate flags
      let insize = getInliningSize   flags
-     let dtypes = moduleILdataTypes ai_mod ++ moduleILprimTypes ai_mod
-     let dtypeMap = Map.fromList [(typeFormalName (dataTypeName dt), dt) | dt <- dtypes]
-
-     let knorm = kNormalize dtypeMap -- For normalizing expressions in types.
-
-     kmod <- kNormalizeModule ai_mod ctx_il dtypeMap
 
      whenDumpIR "kn" $ do
          putDocLn (outLn $ "vvvv k-normalized :====================")
@@ -610,7 +638,7 @@ lowerModule ai_mod ctx_il = do
          _ <- liftIO $ renderKN kmod True
          return ()
 
-     monomod0 <- monomorphize   kmod knorm
+     monomod0 <- monomorphize   kmod
 
      whenDumpIR "mono" $ do
          putDocLn $ (outLn "/// Monomorphized program =============")
@@ -670,7 +698,7 @@ lowerModule ai_mod ctx_il = do
          putDocP  $ pretty cfgmod
          putDocLn $ (outLn "^^^ ===================================")
 
-     ccmod    <- closureConvert cfgmod
+     ccmod    <- closureConvert cfgmod globals
      whenDumpIR "cc" $ do
          putDocLn $ (outLn "/// Closure-converted program =========")
          _ <- liftIO $ renderCC ccmod True
@@ -711,14 +739,13 @@ lowerModule ai_mod ctx_il = do
           then return $ kmod { moduleILbody = cfgBody' }
           else error $ "Main.hs: detected duplicate functions being CFGized: " ++ show dups
 
-    closureConvert cfgmod = do
+    closureConvert cfgmod globals = do
         uniqref <- gets ccUniqRef
         liftIO $ do
             let datatypes = moduleILprimTypes cfgmod ++
                             moduleILdataTypes cfgmod
             let dataSigs = dataTypeSigs datatypes
             u0 <- readIORef uniqref
-            let globals = globalIdents ctx_il
             let (rv, u') = closureConvertAndLift dataSigs globals u0 cfgmod
             writeIORef uniqref u'
             return rv
@@ -732,6 +759,7 @@ lowerModule ai_mod ctx_il = do
                 _unused <- liftIO $ interpretKNormalMod kmod tmpDir cmdLineArgs
                 return ()
 
+{-
 showGeneratedMetaTypeVariables :: (Show ty) =>
                                IORef [MetaTyVar TypeTC] -> Context ty -> Compiled ()
 showGeneratedMetaTypeVariables varlist ctx_il =
@@ -746,7 +774,7 @@ showGeneratedMetaTypeVariables varlist ctx_il =
          else putDocLn (text $ "\t" ++ show (MetaTyVarTC mtv) ++ " :: " ++ show t)
     putDocLn $ (outLn "vvvv contextBindings:====================")
     putDocLn $ (dullyellow $ vcat $ map (text . show) (Map.toList $ contextBindings ctx_il))
-
+-}
 
 dumpAllPrimitives = do
   mapM_ dumpPrimitive (Map.toList gFosterPrimOpsTable)
