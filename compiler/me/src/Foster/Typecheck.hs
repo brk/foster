@@ -2085,10 +2085,7 @@ tcContext emptyCtx ctxAST = do
          sanityCheck (nm == typeFormalName (dataTypeName dt)) ("Data type name mismatch for " ++ nm)
          let tyformals = dataTypeTyFormals dt
          let extctx = extendTyCtx ctx (map convertTyFormal tyformals)
-         case detectDuplicates (map dataCtorName (dataTypeCtors dt)) of
-           []   -> mapM_ (tcDataCtor nm extctx) (dataTypeCtors dt)
-           dups -> tcFails [text $ "Duplicate constructor names " ++ show dups
-                                ++ " in definition of data type " ++ nm]
+         mapM_ (tcDataCtor nm extctx) (dataTypeCtors dt)
       dts -> tcFails $ [text "Data type name" <+> text nm
                         <+> text "didn't map to a single data type!"
                        ,text "Conflicting definitions:"] ++
@@ -2097,6 +2094,22 @@ tcContext emptyCtx ctxAST = do
   }
 
   mapM_ checkDataType (Map.toList $ contextDataTypes ctx)
+
+  let checkDataCtors :: [DataType TypeTC] -> Tc ()
+      checkDataCtors dts = do
+        let ctorsOf dt = [(ctor, dt) | ctor <- dataTypeCtors dt]
+        let ctors = concatMap ctorsOf dts
+        let dups = collectDuplicatesBy (\(ctor,_dt) -> dataCtorName ctor) ctors
+        let complainAbout ctorsWithDts = do
+              [text "These data type constructors have identical names: "]
+              ++ map (indent 2) (numberedParenListDocs
+                         [highlightFirstLineDoc (dataCtorRange ctor) | (ctor, _dt) <- ctorsWithDts])
+
+        if null dups
+          then return ()
+          else tcFails (concatMap complainAbout dups)
+
+  checkDataCtors (concatMap snd $ Map.toList $ contextDataTypes ctx)
 
   return ctx
 

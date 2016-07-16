@@ -1,0 +1,8 @@
+main = { () };
+
+type case DT0 of $CtorA
+              of $CtorA
+              of $CtorB ;
+
+type case DT1 of $CtorB
+              of $CtorA ;

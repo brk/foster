@@ -436,7 +436,7 @@ highlightLineRange bcol ecol =
         else (List.replicate bcol ' ') ++ (List.replicate len '~')
 
 reprSourceRange (MissingSourceRange s) = text "(MissingSourceRange " <> text s <> text ")"
-reprSourceRange (SourceRange bline bcol eline ecol lines _filepath) =
+reprSourceRange (SourceRange bline bcol eline ecol _lines _filepath) =
   parens (text "SourceRange" <+> pretty bline <+> pretty bcol <+> pretty eline
                              <+> pretty ecol <+> pretty _filepath)
 
@@ -568,6 +568,24 @@ detectDuplicates xs = go xs Set.empty Set.empty
         go (x:xs) seen dups =
           if Set.member x seen then go xs seen (Set.insert x dups)
                                else go xs (Set.insert x seen) dups
+
+
+newtype CDPair a b = CDPair (a, b)
+instance Ord b => Ord (CDPair a b) where
+  compare (CDPair (_, b1)) (CDPair (_, b2)) = compare b1 b2
+
+instance Eq b => Eq (CDPair a b) where
+  (==) (CDPair (_, b1)) (CDPair (_, b2)) = (==) b1 b2
+
+-- Returns a list of lists-of-duplicates (in unspecified order).
+-- For example, collectDuplicatesBy id [1,2,3,2,1]
+--                    woudld be (equiv to) [[1,1],[2,2]]
+collectDuplicatesBy :: Ord b => (a -> b) -> [a] -> [[a]]
+collectDuplicatesBy f items =
+  let pairs = [CDPair (a, f a) | a <- items] in
+  let dupPairs = detectDuplicates pairs in
+  let itemsEquivTo b = [x | CDPair (x, y) <- pairs, b == y] in
+  [ itemsEquivTo b | CDPair (_, b) <- dupPairs]
 
 joinWith :: String -> [String] -> String
 joinWith _ [] = ""
