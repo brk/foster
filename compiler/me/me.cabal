@@ -36,7 +36,7 @@ executable me
                  criterion <= 1.0.0.0,
                  CBOR -any,
                  text >= 1.2.0.0,
-                 mtl -any,
+                 mtl >= 2.2.1,
                  transformers -any,
                  fgl -any,
                  hoopl >= 3.10.1.0,
