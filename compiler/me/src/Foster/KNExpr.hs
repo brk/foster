@@ -134,6 +134,7 @@ kNormalize ctx dtypeMap expr =
         argtys <- mapM qt raw_argtys
 
         origExprType <- qt (typeOf e)
+
         let ktvs = tyvarBindersOf origExprType
         mapM_ (kindCheckSubsumption (rangeOf rng))
               (zip3 ktvs raw_argtys (map kindOf argtys))
@@ -434,11 +435,10 @@ tcToIL ctx typ = do
      ArrayTypeTC   ty    -> do liftM ArrayTypeIL (q ty)
      ForAllTC  ktvs rho  -> do t <- (tcToIL $ extendTyCtx ctx ktvs) rho
                                return $ ForAllIL ktvs t
-     TyVarTC  tv@(SkolemTyVar _ _ k) -> return $ TyVarIL tv k
-     TyVarTC  tv@(BoundTyVar _ _sr) ->
-        case Prelude.lookup tv (contextTypeBindings ctx) of
-          Nothing -> return $ TyVarIL tv KindAnySizeType -- tcFails [text "Unable to find kind of type variable " <> pretty typ]
-          Just k  -> return $ TyVarIL tv k
+     TyVarTC  tv@(SkolemTyVar _ _ k) _mbk -> return $ TyVarIL tv k
+     TyVarTC  tv@(BoundTyVar _ _sr)  uniK -> do
+        k <- unUnifiedWithDefault uniK KindAnySizeType
+        return $ TyVarIL tv k
      MetaTyVarTC m -> do
         mty <- readTcMeta m
         case mty of

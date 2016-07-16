@@ -43,7 +43,7 @@ parSubstTcTy :: [(TyVar, TypeTC)] -> TypeTC -> TypeTC
 parSubstTcTy prvNextPairs ty =
     let q = parSubstTcTy prvNextPairs in
     case ty of
-        TyVarTC  tv          -> fromMaybe ty $ List.lookup tv prvNextPairs
+        TyVarTC  tv _mbk     -> fromMaybe ty $ List.lookup tv prvNextPairs
         MetaTyVarTC   {}     -> ty
         PrimIntTC     {}     -> ty
         TyConAppTC  nm tys   -> TyConAppTC  nm (map q tys)
@@ -76,9 +76,9 @@ tySubst subst ty =
         RefinedTypeTC v e args -> RefinedTypeTC (fmap q v) e args
 
 -------------------------------------------------
-illegal (TyVarTC (BoundTyVar {})) = True
-illegal (ForAllTC {})             = True
-illegal _                         = False
+illegal (TyVarTC (BoundTyVar {}) _) = True
+illegal (ForAllTC {})               = True
+illegal _                           = False
 -------------------------------------------------
 
 tcUnifyThings :: (Eq t, Show t) => Unifiable t -> Unifiable t -> (t -> t -> Tc ()) -> Tc ()
@@ -150,8 +150,9 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                              ,indent 2 $ pretty n1 <> text " vs " <> pretty n2
                              ]
 
-    ((TyVarTC  tv1), (TyVarTC  tv2)) ->
-       if tv1 == tv2 then tcUnifyLoop constraints tysub
+    ((TyVarTC  tv1 kind1), (TyVarTC  tv2 kind2)) ->
+       if tv1 == tv2 then do tcUnifyKinds kind1 kind2
+                             tcUnifyLoop constraints tysub
                      else tcFailsMore [text $ "Unable to unify different type variables: "
                                        ++ show tv1 ++ " vs " ++ show tv2]
 
@@ -197,7 +198,7 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
          else if kinds1 /= kinds2
           then tcFails [text $ "Unable to unify foralls with differently-kinded type variables"]
           else let t1 = rho1 in
-               let tySubst = zip tyvars2 (map (\(tv,_) -> TyVarTC  tv) ktyvars1) in
+               let tySubst = zip tyvars2 (map (\(tv,k) -> TyVarTC  tv (UniConst k)) ktyvars1) in
                let t2 = parSubstTcTy tySubst rho2 in
                tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
 
