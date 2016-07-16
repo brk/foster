@@ -73,7 +73,7 @@ kNormalizeModule :: (ModuleIL (AnnExpr TypeTC) TypeTC)
                  -> Context TypeTC ->
                 Tc (ModuleIL KNExpr TypeIL)
 kNormalizeModule m ctx = do
-    let st0 = (ctx, contextDataTypes ctx, Map.empty)
+    let st0 = (ctx, contextDataTypes ctx, error "convertDT wanted a TypeIL...")
     dts'   <- mapM (convertDT st0) (moduleILdataTypes m)
     prims' <- mapM (convertDT st0) (moduleILprimTypes m)
     let allDataTypes = prims' ++ dts'
