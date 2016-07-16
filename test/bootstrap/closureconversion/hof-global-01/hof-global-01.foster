@@ -1,0 +1,7 @@
+main = {
+  zw = { zer };
+  combinY zw
+};
+
+combinY = { fa :   { { Int32 } } => () };
+zer = { 0 };
