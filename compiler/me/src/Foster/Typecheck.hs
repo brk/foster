@@ -2089,14 +2089,19 @@ tcContext emptyCtx ctxAST = do
            []   -> mapM_ (tcDataCtor nm extctx) (dataTypeCtors dt)
            dups -> tcFails [text $ "Duplicate constructor names " ++ show dups
                                 ++ " in definition of data type " ++ nm]
-      _ -> tcFails [text $ "Data type name " ++ nm
-                       ++ " didn't map to a single data type!"]
+      dts -> tcFails $ [text "Data type name" <+> text nm
+                        <+> text "didn't map to a single data type!"
+                       ,text "Conflicting definitions:"] ++
+                       map (indent 2) (numberedParenListDocs
+                                   [highlightFirstLineDoc (dataTypeRange dt) | dt <- dts])
   }
 
   mapM_ checkDataType (Map.toList $ contextDataTypes ctx)
 
   return ctx
 
+numberedParenListDocs docs =
+  [pretty n <> text ")" <+> hang (length (show n) + 2) d | (d, n) <- zip docs [1 :: Int ..]]
 
 tcDataCtor :: String -> Context SigmaTC -> DataCtor TypeTC -> Tc ()
 tcDataCtor dtname ctx (DataCtor nm _tyfs tys _repr _rng) = do
