@@ -57,6 +57,15 @@ knFresh = tcFresh
 
 ccFresh s = ccFreshId (T.pack s)
 
+--------------------------------------------------------------------
+
+type KNState = (Context TypeTC, Map String [DataType TypeTC], Map String (DataType TypeIL))
+-- convertDT needs st to call tcToIL
+-- kNormalCtors uses contextBindings and nullCtorBindings of Context TypeTC
+--      but needs st to call tcToIL
+-- kNormalize needs DataType TypeIL for lookupCtor, which is called for every
+--      constructor application.
+-- tcToIL uses DataType TypeTC for dtUnboxedRepr
 
 --------------------------------------------------------------------
 
@@ -64,13 +73,15 @@ kNormalizeModule :: (ModuleIL (AnnExpr TypeTC) TypeTC)
                  -> Context TypeTC ->
                 Tc (ModuleIL KNExpr TypeIL)
 kNormalizeModule m ctx = do
-    decls' <- mapM (\(s,t) -> do t' <- tcToIL ctx t ; return (s, t')) (moduleILdecls m)
-    dts'   <- mapM (convertDT ctx) (moduleILdataTypes m)
-    prims' <- mapM (convertDT ctx) (moduleILprimTypes m)
+    let st0 = (ctx, contextDataTypes ctx, Map.empty)
+    dts'   <- mapM (convertDT st0) (moduleILdataTypes m)
+    prims' <- mapM (convertDT st0) (moduleILprimTypes m)
     let allDataTypes = prims' ++ dts'
     let dtypeMap = Map.fromList [(typeFormalName (dataTypeName dt), dt) | dt <- allDataTypes]
-    body' <- do { ctors <- sequence $ concatMap (kNormalCtors ctx) allDataTypes
-                ; body  <- kNormalize ctx dtypeMap (moduleILbody m)
+    let st = (ctx, contextDataTypes ctx, dtypeMap)
+    decls' <- mapM (\(s,t) -> do t' <- tcToIL st t ; return (s, t')) (moduleILdecls m)
+    body' <- do { ctors <- sequence $ concatMap (kNormalCtors st) allDataTypes
+                ; body  <- kNormalize st (moduleILbody m)
                 ; return $ wrapFns ctors body
                 }
     return $ ModuleIL body' decls' dts' prims' (moduleILsourceLines m)
@@ -78,17 +89,16 @@ kNormalizeModule m ctx = do
         wrapFns :: [FnExprIL] -> KNExpr -> KNExpr
         wrapFns fs e = foldr (\f body -> KNLetFuns [fnIdent f] [f] body) e fs
 
-qVar :: Context TypeTC -> TypedId TypeTC -> KN (TypedId TypeIL)
-qVar ctx (TypedId t id) = do
-  t' <- tcToIL ctx t
+qVar :: KNState -> TypedId TypeTC -> KN (TypedId TypeIL)
+qVar st (TypedId t id) = do
+  t' <- tcToIL st t
   return $ TypedId t' id
 
-kNormalizeFn :: Context TypeTC -> (Map String (DataType TypeIL))
-             -> Fn () (AnnExpr TypeTC) TypeTC -> KN (FnExprIL)
-kNormalizeFn ctx dtypeMap fn = do
-    v <- qVar ctx (fnVar fn)
-    vs <- mapM (qVar ctx) (fnVars fn)
-    body <- kNormalize ctx dtypeMap (fnBody fn)
+kNormalizeFn :: KNState -> Fn () (AnnExpr TypeTC) TypeTC -> KN (FnExprIL)
+kNormalizeFn st fn = do
+    v <- qVar st (fnVar fn)
+    vs <- mapM (qVar st) (fnVars fn)
+    body <- kNormalize st (fnBody fn)
     checkForUnboxedPolymorphism fn (tidType v)
     return $ Fn v vs body (fnIsRec fn) (fnAnnot fn)
 
@@ -113,8 +123,8 @@ fnReturnType other = error $
     "Unexpected non-function type in fnReturnType: " ++ show other
 -- ||||||||||||||||||||||| K-Normalization ||||||||||||||||||||||{{{
 
-kNormalize :: Context TypeTC -> (Map String (DataType TypeIL)) -> AnnExpr TypeTC -> KN KNExpr
-kNormalize ctx dtypeMap expr =
+kNormalize :: KNState -> AnnExpr TypeTC -> KN KNExpr
+kNormalize st expr =
   case expr of
       AnnLiteral annot ty (LitInt int) -> do ailInt (rangeOf annot) int ty
                                              ti <- qt ty
@@ -178,19 +188,19 @@ kNormalize ctx dtypeMap expr =
 
       -- For anonymous function literals
       E_AnnFn annFn -> do fn_id <- tcFresh $ "lit_fn." ++ sourceLineStart (rangeOf annFn) ++ "..."
-                          knFn <- kNormalizeFn ctx dtypeMap annFn
+                          knFn <- kNormalizeFn st annFn
                           let t = tidType (fnVar knFn)
                           let fnvar = KNVar (TypedId t fn_id)
                           return $ KNLetFuns [fn_id] [knFn] fnvar
 
       -- For bound function literals
       AnnLetVar _rng id (E_AnnFn annFn) b -> do
-                          knFn <- kNormalizeFn ctx dtypeMap annFn
+                          knFn <- kNormalizeFn st annFn
                           b' <- go b
                           return $ KNLetFuns [id] [knFn] b'
 
       AnnLetFuns _rng ids fns a   -> do
-                                knFns <- mapM (kNormalizeFn ctx dtypeMap) fns
+                                knFns <- mapM (kNormalizeFn st) fns
                                 liftM (KNLetFuns ids knFns) (go a)
 
       AnnLetVar _rng id a b -> do liftM2 (buildLet id) (go a) (go b)
@@ -236,8 +246,8 @@ kNormalize ctx dtypeMap expr =
                        error "tyapp of non-coro primitive..."
                        {-
                        apptysi <- mapM qt apptys
-                       prim' <- ilPrim ctx prim
-                       tid' <- aiVar ctx tid
+                       prim' <- ilPrim st prim
+                       tid' <- aiVar st tid
                        oti <- qt ot
                        x <- tcFreshT $ "appty_" `prependedTo` primName
                        return $ AILetVar x (E_AITyApp oti (E_AIVar tid') apptysi)
@@ -264,8 +274,8 @@ kNormalize ctx dtypeMap expr =
                                         ,highlightFirstLineDoc (rangeOf annot)]
 
   where
-        go = kNormalize ctx dtypeMap
-        qt = tcToIL ctx
+        go = kNormalize st
+        qt = tcToIL st
         qv (TypedId t i) = do t' <- qt t ; return (TypedId t' i)
 
         knCall t (E_AnnVar _ (v,_)) es = do
@@ -290,8 +300,8 @@ kNormalize ctx dtypeMap expr =
                   -> KN (CaseArm PatternRepr KNExpr TypeIL)
               gtp (CaseArm p e g b r) = do
                 p' <- qp p
-                e' <- kNormalize ctx dtypeMap e
-                g' <- liftMaybe (kNormalize ctx dtypeMap) g
+                e' <- kNormalize st e
+                g' <- liftMaybe (kNormalize st) g
                 b' <- mapM qv b
                 return (CaseArm p' e' g' b' r)
           arms' <- mapM gtp arms
@@ -338,6 +348,7 @@ kNormalize ctx dtypeMap expr =
 
         lookupCtor :: CtorId -> DataCtor TypeIL
         lookupCtor cid =
+            let (_, _, dtypeMap) = st in
             case Map.lookup (ctorTypeName cid) dtypeMap of
                Just dt -> let
                             [ctor] = filter (\ctor -> dataCtorName ctor == T.pack (ctorCtorName cid))
@@ -396,13 +407,14 @@ unUnified uni =
 
 unUnifiedWithDefault uni d = do unUnified uni >>= return . fromMaybe d
 
-tcToIL :: Context TypeTC -> TypeTC -> KN TypeIL
-tcToIL ctx typ = do
-  let q = tcToIL ctx
+tcToIL :: KNState -> TypeTC -> KN TypeIL
+tcToIL st typ = do
+  let q = tcToIL st
   case typ of
      TyConAppTC  "Float64" [] -> return $ TyConAppIL "Float64" []
      TyConAppTC  dtname tys -> do
-         case Map.lookup dtname (contextDataTypes ctx) of
+         let (_, dtypeMapX, _) = st
+         case Map.lookup dtname dtypeMapX of
            Just [dt] -> case dtUnboxedRepr dt of
              Nothing -> do iltys <- mapM q tys
                            return $ TyConAppIL dtname iltys
@@ -411,7 +423,7 @@ tcToIL ctx typ = do
              -> tcFails [text "Multiple definitions for data type" <+> text dtname]
            _ -> tcFails [text "Unable to find data type" <+> text dtname
                         ,text "contextDataTypes ="
-                        ,pretty (map fst $ Map.toList $ contextDataTypes ctx)
+                        ,pretty (map fst $ Map.toList dtypeMapX)
                 ]
      PrimIntTC  size    -> do return $ PrimIntIL size
      TupleTypeTC ukind types -> do tys <- mapM q types
@@ -426,14 +438,14 @@ tcToIL ctx typ = do
         cc' <- unUnifiedWithDefault cc FastCC
         cs' <- unUnifiedWithDefault cs FT_Func
         return $ FnTypeIL xs y cc' cs'
-     RefinedTypeTC v e __args -> do v' <- qVar ctx v
-                                    e' <- kNormalize ctx (error "AFAFA") e
+     RefinedTypeTC v e __args -> do v' <- qVar st v
+                                    e' <- kNormalize st e
                                     return $ RefinedTypeIL v' e' __args
      CoroTypeTC  s t     -> do [x,y] <- mapM q [s,t]
                                return $ CoroTypeIL x y
      RefTypeTC  ty       -> do liftM PtrTypeIL (q ty)
      ArrayTypeTC   ty    -> do liftM ArrayTypeIL (q ty)
-     ForAllTC  ktvs rho  -> do t <- (tcToIL $ extendTyCtx ctx ktvs) rho
+     ForAllTC  ktvs rho  -> do t <- q rho
                                return $ ForAllIL ktvs t
      TyVarTC  tv@(SkolemTyVar _ _ k) _mbk -> return $ TyVarIL tv k
      TyVarTC  tv@(BoundTyVar _ _sr)  uniK -> do
@@ -458,6 +470,7 @@ tcToIL ctx typ = do
 -- to "directly unboxed tuple" representation, since the context which maps
 -- names to datatypes will not persist through the rest of the compilation pipeline.
 --
+dtUnboxedRepr :: DataType TypeTC -> Maybe ([TypeTC] -> TypeTC)
 dtUnboxedRepr dt =
   case dataTypeName dt of
     TypeFormal _ _ KindAnySizeType ->
@@ -476,10 +489,10 @@ dtUnboxedRepr dt =
 
 
 -- Wrinkle: need to extend the context used for checking ctors!
-convertDT :: Context TypeTC -> DataType TypeTC -> KN (DataType TypeIL)
-convertDT ctx (DataType dtName tyformals ctors range) = do
+convertDT :: KNState -> DataType TypeTC -> KN (DataType TypeIL)
+convertDT st (DataType dtName tyformals ctors range) = do
   -- f :: TypeTC -> Tc TypeIL
-  let f = tcToIL (extendTyCtx ctx $ map convertTyFormal tyformals)
+  let f = tcToIL st
   cts <- mapM (convertDataCtor f) ctors
 
   optrep <- tcShouldUseOptimizedCtorReprs
@@ -853,15 +866,15 @@ tmpForExpr _              = ".x"
 -- while ``type case T3 (a:Boxed) of $T3C1 a``
 -- produces T3C1 :: forall b:Boxed, b -> T3 b
 --
-kNormalCtors :: Context TypeTC -> DataType TypeIL -> [KN (FnExprIL)]
-kNormalCtors ctx dtype =
-        map (kNormalCtor ctx dtype) (dataTypeCtors dtype)
+kNormalCtors :: KNState -> DataType TypeIL -> [KN (FnExprIL)]
+kNormalCtors st dtype =
+        map (kNormalCtor dtype) (dataTypeCtors dtype)
   where
-    kNormalCtor :: Context TypeTC -> DataType TypeIL -> DataCtor TypeIL
+    kNormalCtor :: DataType TypeIL -> DataCtor TypeIL
                 -> KN (FnExprIL)
-    kNormalCtor _ctx _datatype (DataCtor _cname _tyformals _tys Nothing _range) = do
+    kNormalCtor _datatype (DataCtor _cname _tyformals _tys Nothing _range) = do
       error "Cannot wrap a data constructor with no representation information."
-    kNormalCtor ctx datatype (DataCtor cname _tyformals tys (Just repr) range) = do
+    kNormalCtor datatype (DataCtor cname _tyformals tys (Just repr) range) = do
       let dname = dataTypeName datatype
       let arity = Prelude.length tys
       let cid   = CtorId (typeFormalName dname) (T.unpack cname) arity
@@ -879,16 +892,17 @@ kNormalCtors ctx dtype =
                                  FnTypeIL _ r _ _ -> r
                                  ForAllIL _ (FnTypeIL _ r _ _) -> r
                                  _ -> error $ "KNExpr.hs: kNormalCtor given non-function type!"
+      let (ctx, _, _) = st
       case termVarLookup cname (contextBindings ctx) of
         Nothing -> case termVarLookup cname (nullCtorBindings ctx) of
           Nothing -> error $ "Unable to find binder for constructor " ++ show cname
           Just (TypedId ty id, _) -> do
-                         ty' <- tcToIL ctx ty
+                         ty' <- tcToIL st ty
                          -- This is rather ugly: nullary constructors,
                          -- unlike their non-nullary counterparts, don't have
                          -- function type, so we synthesize a fn type here.
                          ret (TypedId (thunk ty') id)
-        Just (TypedId t id, _) -> do t' <- tcToIL ctx t
+        Just (TypedId t id, _) -> do t' <- tcToIL st t
                                      ret (TypedId t' id)
 
     thunk (ForAllIL ktvs rho) = ForAllIL ktvs (thunk rho)
