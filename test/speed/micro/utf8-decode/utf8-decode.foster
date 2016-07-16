@@ -1,0 +1,199 @@
+// Port of http://bjoern.hoehrmann.de/utf-8/decoder/dfa/ from C to Foster.
+
+/*
+// TODO: fix bug where module fails to compile if unused function has type annotation.
+arrayLength32 :: forall (x:Type) { Array x => Int32 };
+arrayLength32 = { a : Array x =>
+  trunc_i64_to_i32 (prim_arrayLength a)
+};
+*/
+
+
+mk-UTF-8-decoder-v1 :: { { % rstate : Int64 : rstate <=UInt64 96
+                         => Int32 => Int8  => (% rs : Int64 : rs <=UInt64 96, Int32) } };
+mk-UTF-8-decoder-v1 = {
+  utf8d = prim mach-array-literal
+          // The first part of the table maps bytes to character classes that
+          // to reduce the size of the transition table and create bitmasks.
+           0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+           0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+           0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+           0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0   0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+           1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1   9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9
+           7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7   7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7
+           8 8 2 2 2 2 2 2 2 2 2 2 2 2 2 2   2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2
+          10 3 3 3 3 3 3 3 3 3 3 3 3 4 3 3  11 6 6 6 5 8 8 8 8 8 8 8 8 8 8 8
+          ;
+   utf8s = prim mach-array-literal // length: 108
+           0 12 24 36 60 96 84 12 12 12 48 72  12 12 12 12 12 12 12 12 12 12 12 12
+          12  0 12 12 12 12 12  0 12  0 12 12  12 24 12 12 12 12 12 24 12 24 12 12
+          12 12 12 12 12 12 12 24 12 12 12 12  12 24 12 12 12 12 12 12 12 24 12 12
+          12 12 12 12 12 12 12 36 12 36 12 12  12 36 12 12 12 12 12 36 12 36 12 12
+          12 36 12 12 12 12 12 12 12 12 12 12 ;
+
+  { state : Int64 => codep : Int32 => byte8 : Int8 =>
+    prim assert-invariants (state <=UInt64 127);
+
+    kUTF8-ACCEPT = 0;
+    kUTF8-REJECT = 12;
+
+    byte32 = zext_i8_to_i32 byte8;
+
+    // Since |utf8d| = 256, this subscript is statically safe.
+    typex = prim subscript utf8d byte32 |> zext_i8_to_i32;
+
+    prim assert-invariants (typex >=UInt32 0) (typex <=UInt32 11);
+
+    codepx = if state !=Int64 kUTF8-ACCEPT
+               then (byte32 `bitand-Int32` 11`1111_2) `bitor-Int32`
+                    (codep  `bitshl-Int32`   6)
+               else (255 `bitlshr-Int32` typex) `bitand-Int32` byte32
+             end;
+
+    // 96 + 11 < 108, so this subscript is statically safe.
+    state32 = trunc_i64_to_i32 state;
+    statex = prim subscript utf8s (state32 +Int32 typex) |> zext_i8_to_i64;
+    (statex, codepx)
+  }
+};
+
+countCodePoints-v1 :: {
+       { % rstate : Int64 : rstate <=UInt64 96
+            => Int32 => Int8
+            => (% rs : Int64 : rs <=UInt64 96, Int32) }
+       => Array Int8
+       => Int32 };
+countCodePoints-v1 = { decoder => bytearr =>
+  maxidx = trunc_i64_to_i32 (prim_arrayLength bytearr);
+  REC loop = { idx => st : (%rst : Int64 : rst <=UInt64 96)
+                   => ct => cp =>
+    if idx <UInt32 maxidx
+      then b = bytearr[idx];
+           // TODO i don't think we're checking the precondition of decoder here...
+           case decoder st cp b of (stx, cpx) ->
+             prim assert-invariants (stx <=UInt64 126);
+             ctx = ct +Int32 (if stx ==Int64 0 then 1 else 0 end);
+             loop (idx +Int32 1) stx ctx cpx
+           end
+      else ct
+    end
+  };
+  loop 0 0 0 0
+};
+
+/*
+is-UTF-8-v1 = { decoder => bytearr =>
+  maxidx = arrayLength32 bytearr;
+  REC loop = { idx => st =>
+    if idx <UInt32 maxidx
+      then b = bytearr[idx];
+           case decoder st 0 b of (stx, cpx) ->
+             loop (idx +Int32 1) stx
+           end
+      else st ==Int32 0 // kUTF8-ACCEPT
+    end
+  };
+  loop 0 0
+};
+*/
+
+test-v1 = {
+
+  d1 = mk-UTF-8-decoder-v1 !;
+
+  expect_i32 4;
+  print_i32 (countCodePoints-v1 d1 (prim mach-array-literal 32 32 32 32));
+
+  expect_i32 9;
+  print_i32 (countCodePoints-v1 d1 (prim mach-array-literal 32 33 34 35 36 37 38 39 40));
+
+  expect_i32 2;
+  print_i32 (countCodePoints-v1 d1 (prim mach-array-literal 02F_16        02F_16));
+
+  expect_i32 0; // overlong encoding
+  print_i32 (countCodePoints-v1 d1 (prim mach-array-literal 0C0_16 0AF_16 02F_16));
+
+  /*
+  expect_i1 True;
+  print_i1 (is-UTF-8-v1 d1 (prim mach-array-literal 02F_16        02F_16));
+
+  expect_i1 False; // overlong encoding
+  print_i1 (is-UTF-8-v1 d1 (prim mach-array-literal 0C0_16 0AF_16 02F_16));
+  */
+};
+
+/////
+
+/*
+mk-UTF-8-decoder-v2 = {
+  utf8d = prim mach-array-literal
+      0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0  // 00..1f
+      0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0  // 20..3f
+      0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0  // 40..5f
+      0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0  // 60..7f
+      1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9  // 80..9f
+      7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7  // a0..bf
+      8 8 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2  // c0..df
+      10 3 3 3 3 3 3 3 3 3 3 3 3 4 3 3  // e0..ef
+      11 6 6 6 5 8 8 8 8 8 8 8 8 8 8 8  // f0..ff
+       0 1 2 3 5 8 7 1 1 1 4 6 1 1 1 1  // s0..s0
+      1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 0 1 1 1 1 1 0 1 0 1 1 1 1 1 1  // s1..s2
+      1 2 1 1 1 1 1 2 1 2 1 1 1 1 1 1 1 1 1 1 1 1 1 2 1 1 1 1 1 1 1 1  // s3..s4
+      1 2 1 1 1 1 1 1 1 2 1 1 1 1 1 1 1 1 1 1 1 1 1 3 1 3 1 1 1 1 1 1  // s5..s6
+      1 3 1 1 1 1 1 3 1 3 1 1 1 1 1 1 1 3 1 1 1 1 1 1 1 1 1 1 1 1 1 1  // s7..s8
+      ;
+
+  { forall t:Boxed, state : Int32 => codep : Int32 => byte : Int32 => k : { Int32 => Int32 => t } =>
+    kUTF8-ACCEPT = 0;
+    kUTF8-REJECT = 1;
+
+    typex = prim subscript utf8d byte |> zext_i8_to_i32;
+    codepx = if state !=Int32 kUTF8-ACCEPT
+               then (byte  `bitand-Int32`  63) `bitor-Int32`
+                    (codep `bitshl-Int32`   6)
+               else (255 `bitlshr-Int32` typex) `bitand-Int32` byte
+             end;
+
+    statex = prim subscript utf8d (256 +Int32 (state *Int32 16) +Int32 typex) |> zext_i8_to_i32;
+    k statex codepx
+  }
+};
+
+countCodePoints-v2 = { decoder => bytearr =>
+  maxidx = arrayLength32 bytearr;
+  REC loop = { idx => st => ct => cp =>
+    if idx <UInt32 maxidx
+      then b = bytearr[idx];
+           decoder st cp b { stx => cpx =>
+             ctx = ct +Int32 (if stx ==Int32 0 then 1 else 0 end);
+             loop (idx +Int32 1) stx ctx cpx
+           }
+      else { ct }
+    end
+
+  };
+  (loop 0 0 0 0) !
+};
+
+test-v2 = {
+
+  d2 = mk-UTF-8-decoder-v2 !;
+
+  expect_i32 4;
+  print_i32 (countCodePoints-v2 d2 (prim mach-array-literal 32 32 32 32));
+
+  expect_i32 9;
+  print_i32 (countCodePoints-v2 d2 (prim mach-array-literal 32 33 34 35 36 37 38 39 40));
+
+  expect_i32 24; // На берегу пустынных волн
+  print_i32 (countCodePoints-v2 d2 (prim mach-array-literal 208 157 208 176 32 208 177 208 181 209 128 208 181 208 179 209 131 32 208 191 209 131 209 129 209 130 209 139 208 189 208 189 209 139 209 133 32 208 178 208 190 208 187 208 189));
+
+};
+*/
+
+/////
+
+main = {
+  test-v1 !;
+  //test-v2 !;
+};

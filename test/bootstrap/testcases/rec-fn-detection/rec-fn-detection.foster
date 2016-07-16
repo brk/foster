@@ -1,0 +1,109 @@
+main = {
+  test0 !;
+  test1 !;
+  test2 !;
+};
+
+test0 = {
+  expect_i1 True;
+  print_i1 (__COMPILES__
+
+          let f = {
+            let f = { 0 }; in f ! end
+            //                ^
+            // This occurrence of f should not be free, but if we've
+            // mis-computed the definition of free variables for let
+            // bindings, it will be...
+          };
+          in () end
+
+  );
+
+  expect_i1 True;
+  print_i1 (__COMPILES__
+
+          let f = {
+            rec f = { f ! ; () }; in f ! end
+            //  Likewise...          ^
+          };
+          in () end
+
+  );
+
+  expect_i1 True;
+  print_i1 (__COMPILES__
+
+          let f = {
+            case 0 of f -> f end
+            // Likewise... ^
+          };
+          in () end
+
+  );
+
+  expect_i32 1;
+  print_i32 (
+          rec f = { x : Int32 =>
+                let f = f ; in
+                    //  ^ refers to rec f binding
+                  if x !=Int32 0 then x
+                   else f 1
+                  end
+                end };
+          in f 0 end);
+
+};
+
+test1 = {
+  // The following testcase distinguishes between these two (respectively:
+  // right, and subtly wrong) definitions for free variable computations::
+  //
+  //    E_LetAST v b e ->  freeVars b ++ (freeVars e  `butnot` [evarName v])
+  //    E_LetAST v b e -> (freeVars b ++  freeVars e) `butnot` [evarName v]
+  expect_i1 False;
+  print_i1 (__COMPILES__
+      rec f = { 0 }; in
+          let f = {
+             // /------------------\ <-- if fvs = {}, wrongly, this is OK
+                let f = f ; in () end                        // to let-bind
+                //      ^ free reference to rec f binding through let, illegally
+          }; in () end
+      end
+  );
+
+  // Similar distinguisher for handling free variable calcualtions for letrec.
+  expect_i1 True;
+  print_i1 (__COMPILES__
+      rec f = { 0 }; in
+          let f = {
+                rec f = { f ! ; () } ; in () end
+          }; in () end
+      end
+  );
+};
+
+
+test2 = {
+
+  expect_i32 3;
+  rec f = { 11 }; in
+      let f = {
+            rec f = { x: Int32 => f x ; () } ; in 3 end
+      }; in print_i32 (f !) end
+  end;
+
+  expect_i32 4;
+  rec f = { () }; in
+    rec f = { 4 }; in
+      print_i32 (f !);
+    end
+  end;
+
+  expect_i32 5;
+  rec f = { 12 }; in
+      let f = {
+            rec f = { x: Int32 => let f = f x; in 13 end } ; in 5 end
+      }; in print_i32 (f !); end
+  end;
+};
+

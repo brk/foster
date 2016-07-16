@@ -1,0 +1,31 @@
+LLVM makes it conceptually easy to link against simple C libraries,
+but a few complications arise in practice:
+
+1) Not all symbols from the library should be exposed.
+   For example, functions to release memory explicitly cannot be made
+   available in language which seeks to retain memory safety.
+
+2) Some functionality from the original library may have been
+   implemented as macros defined in library headers. Macros alone
+   do not appear in LLVM Modules.
+
+3) The interface to C libraries is traditionally written in a header file,
+   but Clang won't generate a Module with declarations from a header alone.
+   Clang requires an actual translation unit.
+
+   Note that it is possible to use Clang to parse a header into an AST,
+   and walk the AST to automatically generate a Module with declarations.
+   However, this approach doesn't address points 1 or 2, and it seems sort
+   of silly to re-implement functionality that LLVM/Clang already provides
+   (namely, parsing C code to generate a Module).
+
+
+A simple and pragmatic solution for all three issues is to define a thin
+wrapper .c file for a library. The wrapper simply #includes the library
+header(s) and defines a static function which calls whatever library functions
+should be made available in the generated LLVM Module. Macros from the library
+may be given concrete function types with simple function definitions.
+
+
+This (probably) isn't a viable long-term FFI solution, but it's a quick and
+easy starting point.

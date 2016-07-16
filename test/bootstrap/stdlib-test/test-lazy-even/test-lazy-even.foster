@@ -1,0 +1,113 @@
+snafuinclude Streams "streams";
+snafuinclude List    "list";
+
+
+/* fails in ProtobufFE "can't parse empty seq"
+stream-reverse = {
+  s : Lazy (Stream v) =>
+};
+*/
+
+seek = { n : Int32 => if n ==Int32 0 then print_i32 1234 else seek (n -Int32 1) end };
+
+type case BInt of $B Int32;
+
+loopy :: { Lazy BInt };
+loopy = { lazily { loopy ! } };
+
+
+main = {
+  //let simple-stream = stream-cons-mediocre (delay { B 0 }) (stream-nil-mediocre !);
+  //let simple-stream = ();
+  p = { v:BInt => case v of $B n -> print_i32 n; v end };
+  //simple-stream = (stream-nil-mediocre:[()] !);
+
+  expect_i32 10; expect_i32 11; expect_i32 12; expect_i32 13;
+  stream-cutoff 4 (stream-map-mediocre p (stream-countup 10 B));
+
+  expect_i32 1; expect_i32 2; expect_i32 3; expect_i32 4;
+  stream-cutoff 4 (stream-map-mediocre p (stream-reverse (stream-countdown-tozero 4 B)));
+
+  {
+    simple-stream = stream-cons-mediocre (delay { B 5 })
+                   (stream-cons-mediocre (delay { B 6 })
+                                         (stream-nil-mediocre !));
+
+    expect_i32 5; expect_i32 6; expect_i32 5; expect_i32 6;
+    stream-cutoff 4 (stream-map-mediocre p (stream-append simple-stream simple-stream));
+  } ! ;
+
+  //seek 1`000`000`000;
+
+  //force (loopy !);
+
+  // Memoization test 3 from http://srfi.schemers.org/srfi-45/srfi-45.html
+  {
+    r = delay { print_i32 7; () };
+    s = lazily { r };
+    t = lazily { s };
+
+    expect_i32 7;
+    force t;
+    force s;
+    force r;
+  } ! ;
+
+  // Reentrancy test 3 from http://srfi.schemers.org/srfi-45/srfi-45.html
+  // What winds up happening here is that force encounters a LazyLazyT
+  // value, and the execution of the thunk winds up itself calling
+  // force on the same suspension.
+  // Specifically, we begin executing (force pr^) which leads to calling pf!
+  // when count^ == 5; this results in calling (force pr^) with count^ == 4,
+  // etc, until finally we recur with count^ == 0, which overwrites the
+  // underlying ref from (LazyLazyT _) to (LazyValue (B 0)). We then unwind
+  // the stack of pending calls to (force pr^), which leads to doubling the
+  // count. Thus the "last" return from (force pr^) yields a value of (B 10),
+  // and the question is: should we use the new value or the old one?
+  // Rather than discard either, we treat the situation as a runtime error.
+  // TODO use type & effect system to rule out this program statically?
+  /*
+  let q = {
+        let count = (prim ref 5);             // count :: Ref Int32
+            get-count = { B (count ^) }; // get-count :: { BInt }
+            pr = (prim ref (delay { B 33 })); // dummy value
+             // hack to get around the fact that we syntactically
+             // can't define recursive binding for a lazy value:
+             //        rec p = delay { ... (force p) ... }; end
+            pf = { print_text "pf";
+                   if (count ^) <=SInt32 0 // pf :: { BInt }
+                        then B (count ^)
+                        else ((count ^) -Int32 1) >^ count;
+                             force (pr ^);
+                             ((count ^) +Int32 2) >^ count;
+                             B (count ^)
+                        end };
+         in (delay pf) >^ pr;  // pr :: Ref (Lazy BInt)
+            (get-count, pr ^)
+        end
+      };
+      print_BInt = { x:BInt => case x of $B n -> print_i32 n end };
+   in case q ! of (get-count, p) ->
+
+        expect_i32 5;
+        print_BInt (get-count !);
+        expect_i32 0;
+        print_BInt (force p);
+
+        expect_i32 10;
+        print_BInt (get-count !);
+      end
+  end;
+  */
+
+  {
+    p1 = lazily { print_i32 8; eager () };
+    p2 = lazily { p1 };
+
+    expect_i32 8;
+    force p2;
+    force p1;
+  } ! ;
+
+  ()
+};

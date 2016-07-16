@@ -1,0 +1,44 @@
+main = { () };
+
+/*
+testPolyAnn2a = { forall a:Boxed, f : { a } => e : a =>
+  f
+};
+*/
+
+/*
+Typecheck error:
+subsCheck(tcSigmaFn): Type
+(forall ('a :: Boxed). ([  ([] => 'a @{FT_Func})
+                        ,(~(R)!2:.inferred.1)] => ([] => 'a @{FT_Func}) @{FT_Proc}))
+    not as polymorphic as
+(forall ('a :: Boxed). ([([] => 'a @{FT_Func})
+                        ,'a]                   => ([] => 'a @{FT_Func}) @{FT_Proc}))
+bad type variables: [$a.15::KindPointerSized]
+*/
+
+testPolyAnn2b :: forall (a:Boxed) { { a } => a => { a } };
+testPolyAnn2b = { forall a:Boxed, f => e =>
+  f
+};
+
+/*
+testPolyAnn2c :: forall (a:Boxed) { { a } => { a } => { a } };
+testPolyAnn2c = { forall a:Boxed, f => e =>
+  f
+};
+*/
+
+/*
+testPolyAnn2d :: forall (a:Boxed) { { a } => a => a };
+testPolyAnn2d = { forall a:Boxed, f => e =>
+  e
+};
+*/
+
+/*
+testPolyAnn2e :: forall (a:Boxed) { { a } => { a } };
+testPolyAnn2e = { forall a:Boxed, f =>
+  f
+};
+*/

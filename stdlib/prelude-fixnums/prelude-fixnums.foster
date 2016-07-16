@@ -1,0 +1,250 @@
+snafuinclude Ord "ord";
+
+minReprInt32 :: { Int32 };
+minReprInt32 = { -2`147`483`648 };
+
+maxReprInt32 :: { Int32 };
+maxReprInt32 = {  2`147`483`647 };
+
+minReprInt64 :: { Int64 };
+minReprInt64 = { -9`223`372`036`854`775`808 };
+
+maxReprInt64 :: { Int64 };
+maxReprInt64 = {  9`223`372`036`854`775`807 };
+
+octet4ToInt32 = { hi : Int8 => m1 : Int8 => m2 : Int8 => lo : Int8 =>
+  octet4x32ToInt32 (zext_i8_to_i32 hi) (zext_i8_to_i32 m1) (zext_i8_to_i32 m2) (zext_i8_to_i32 lo)
+};
+
+octet4x32ToInt32 = { hi : Int32 => m1 : Int32 => m2 : Int32 => lo : Int32 =>
+  ((hi `bitshl-Int32` 24)  `bitor-Int32`
+   (m1 `bitshl-Int32` 16)) `bitor-Int32`
+  ((m2 `bitshl-Int32` 8)   `bitor-Int32`
+    lo)
+};
+
+mergeInt32 = { hi : Int32 => lo : Int32 =>
+  ((zext_i32_to_i64 hi) `bitshl-Int64` 32)  `bitor-Int64`
+   (zext_i32_to_i64 lo)
+};
+
+////
+
+cast_i32_to_i8      = { a : Int32    =>
+  res = trunc_i32_to_i8 a;
+  if zext_i8_to_i32 res ==Int32 a
+    then res
+    else prim kill-entire-process "cast_i32_to_i8 invariant violated"
+  end
+};
+
+cast_i64_to_i8     = { a : Int64    =>
+  res = trunc_i64_to_i8 a;
+  if zext_i8_to_i64 res ==Int64 a
+    then res
+    else prim kill-entire-process "cast_i64_to_i8 invariant violated"
+  end
+};
+
+cast_i64_to_i32     = { a : Int64    =>
+  res = trunc_i64_to_i32 a;
+  if zext_i32_to_i64 res ==Int64 a
+    then res
+    else prim kill-entire-process "cast_i64_to_i32 invariant violated"
+  end
+};
+
+cast_i64_to_Word     = { a : Int64    =>
+  res = trunc_i64_to_Word a;
+  if zext_Word_to_i64 res ==Int64 a
+    then res
+    else prim kill-entire-process "cast_i64_to_Word invariant violated"
+  end
+};
+
+cast_Word_to_i32     = { a : Word    =>
+  res = trunc_Word_to_i32 a;
+  if zext_i32_to_Word res ==Word a
+    then res
+    else prim kill-entire-process "cast_Word_to_i32 invariant violated"
+  end
+};
+
+
+cast_Word_to_i16     = { a : Word    =>
+  res = trunc_Word_to_i32 a `bitand-Int32` 0FFFF_16;
+  if zext_i32_to_Word res ==Word a
+    then res
+    else prim kill-entire-process "cast_Word_to_i16 invariant violated"
+  end
+};
+
+
+cast_Word_to_i8      = { a : Word    =>
+  res = trunc_Word_to_i8 a;
+  if zext_i8_to_Word res ==Word a
+    then res
+    else prim kill-entire-process "cast_Word_to_i8 invariant violated"
+  end
+};
+
+cast_WordX2_to_Word     = { a : WordX2    =>
+  res = trunc_WordX2_to_Word a;
+  if zext_Word_to_WordX2 res ==WordX2 a
+    then res
+    else prim kill-entire-process "cast_WordX2_to_Word invariant violated"
+  end
+};
+
+cast_WordX2_to_i32     = { a : WordX2    =>
+  res = trunc_WordX2_to_i32 a;
+  if zext_i32_to_WordX2 res ==WordX2 a
+    then res
+    else prim kill-entire-process "cast_WordX2_to_i32 invariant violated"
+  end
+};
+
+////
+
+max-UInt32 = { n : Int32 => m : Int32 => if n <UInt32 m then m else n end };
+max-SInt32 = { n : Int32 => m : Int32 => if n <SInt32 m then m else n end };
+max-UInt64 = { n : Int64 => m : Int64 => if n <UInt64 m then m else n end };
+max-SInt64 = { n : Int64 => m : Int64 => if n <SInt64 m then m else n end };
+max-SWord  = { n : Word  => m : Word  => if n <SWord  m then m else n end };
+
+// TODO improve error messages with
+//      min-SInt64 = { a : Int32 => b : Int32 => ...
+min-UInt32 = { n : Int32 => m : Int32 => if n <UInt32 m then n else m end };
+min-SInt32 = { n : Int32 => m : Int32 => if n <SInt32 m then n else m end };
+min-UInt64 = { n : Int64 => m : Int64 => if n <UInt64 m then n else m end };
+min-SInt64 = { n : Int64 => m : Int64 => if n <SInt64 m then n else m end };
+min-SWord  = { n : Word  => m : Word  => if n <SWord  m then n else m end };
+
+////
+
+cmp-UInt8  = { n : Int8  => m : Int8  => if n <UInt8 m then LT else
+                                         if m <UInt8 n then GT else EQ end end };
+
+cmp-SInt8  = { n : Int8  => m : Int8  => if n <SInt8 m then LT else
+                                         if m <SInt8 n then GT else EQ end end };
+
+cmp-UInt32 = { n : Int32 => m : Int32 => if n <UInt32 m then LT else
+                                         if m <UInt32 n then GT else EQ end end };
+
+cmp-SInt32 = { n : Int32 => m : Int32 => if n <SInt32 m then LT else
+                                         if m <SInt32 n then GT else EQ end end };
+
+cmp-UInt64 = { n : Int64 => m : Int64 => if n <UInt64 m then LT else
+                                         if m <UInt64 n then GT else EQ end end };
+
+cmp-SInt64 = { n : Int64 => m : Int64 => if n <SInt64 m then LT else
+                                         if m <SInt64 n then GT else EQ end end };
+
+////
+
+// Precondition: b != 0
+udiv!-Int32    = { a : Int32    => b : Int32    => prim udiv-unsafe-Int32 a b }; // :: Int32
+
+// Precondition: b != 0
+udiv!-Int64    = { a : Int64    => b : Int64    => prim udiv-unsafe-Int64 a b }; // :: Int64
+
+// Precondition: b != 0
+udiv!-Int8     = { a : Int8     => b : Int8     => prim udiv-unsafe-Int8 a b }; // :: Int8
+
+// Precondition: b != 0
+udiv!-Word     = { a : Word     => b : Word     => prim udiv-unsafe-Word a b }; // :: Word
+
+// Precondition: b != 0
+udiv!-WordX2   = { a : WordX2   => b : WordX2   => prim udiv-unsafe-WordX2 a b }; // :: WordX2
+
+// Precondition: b != 0
+urem!-Int32    = { a : Int32    => b : Int32    => prim urem-unsafe-Int32 a b }; // :: Int32
+
+// Precondition: b != 0
+urem!-Int64    = { a : Int64    => b : Int64    => prim urem-unsafe-Int64 a b }; // :: Int64
+
+// Precondition: b != 0
+urem!-Int8     = { a : Int8     => b : Int8     => prim urem-unsafe-Int8 a b }; // :: Int8
+
+// Precondition: b != 0
+urem!-Word     = { a : Word     => b : Word     => prim urem-unsafe-Word a b }; // :: Word
+
+// Precondition: b != 0
+urem!-WordX2   = { a : WordX2   => b : WordX2   => prim urem-unsafe-WordX2 a b }; // :: WordX2
+
+///
+
+// Precondition: b != 0
+sdiv!-Int32    = { a : Int32    => b : Int32    => prim udiv-unsafe-Int32 a b }; // :: Int32
+
+// Precondition: b != 0
+sdiv!-Int64    = { a : Int64    => b : Int64    => prim udiv-unsafe-Int64 a b }; // :: Int64
+
+// Precondition: b != 0
+sdiv!-Int8     = { a : Int8     => b : Int8     => prim udiv-unsafe-Int8 a b }; // :: Int8
+
+// Precondition: b != 0
+sdiv!-Word     = { a : Word     => b : Word     => prim udiv-unsafe-Word a b }; // :: Word
+
+// Precondition: b != 0
+sdiv!-WordX2   = { a : WordX2   => b : WordX2   => prim udiv-unsafe-WordX2 a b }; // :: WordX2
+
+// Precondition: b != 0
+srem!-Int32    = { a : Int32    => b : Int32    => prim urem-unsafe-Int32 a b }; // :: Int32
+
+// Precondition: b != 0
+srem!-Int64    = { a : Int64    => b : Int64    => prim urem-unsafe-Int64 a b }; // :: Int64
+
+// Precondition: b != 0
+srem!-Int8     = { a : Int8     => b : Int8     => prim urem-unsafe-Int8 a b }; // :: Int8
+
+// Precondition: b != 0
+srem!-Word     = { a : Word     => b : Word     => prim urem-unsafe-Word a b }; // :: Word
+
+// Precondition: b != 0
+srem!-WordX2   = { a : WordX2   => b : WordX2   => prim urem-unsafe-WordX2 a b }; // :: WordX2
+
+////
+
+urem-Int32  = { a : Int32  => b : Int32  => if prim ==Int32  b 0 then prim kill-entire-process "urem-Int32 failed" else prim urem-unsafe-Int32  a b end };
+urem-Int64  = { a : Int64  => b : Int64  => if prim ==Int64  b 0 then prim kill-entire-process "urem-Int64 failed" else prim urem-unsafe-Int64  a b end };
+urem-Int8   = { a : Int8   => b : Int8   => if prim ==Int8   b 0 then prim kill-entire-process "urem-Int8  failed" else prim urem-unsafe-Int8   a b end };
+urem-Word   = { a : Word   => b : Word   => if prim ==Word   b 0 then prim kill-entire-process "urem-Word  failed" else prim urem-unsafe-Word   a b end };
+urem-WordX2 = { a : WordX2 => b : WordX2 => if prim ==WordX2 b 0 then prim kill-entire-process "urem-WordX2 failed" else prim urem-unsafe-WordX2 a b end  };
+udiv-Int32  = { a : Int32  => b : Int32  => if prim ==Int32  b 0 then prim kill-entire-process "udiv-Int32 failed" else prim udiv-unsafe-Int32  a b end };
+udiv-Int64  = { a : Int64  => b : Int64  => if prim ==Int64  b 0 then prim kill-entire-process "udiv-Int64 failed" else prim udiv-unsafe-Int64  a b end };
+udiv-Int8   = { a : Int8   => b : Int8   => if prim ==Int8   b 0 then prim kill-entire-process "udiv-Int8  failed" else prim udiv-unsafe-Int8   a b end };
+udiv-Word   = { a : Word   => b : Word   => if prim ==Word   b 0 then prim kill-entire-process "udiv-Word  failed" else prim udiv-unsafe-Word   a b end };
+udiv-WordX2 = { a : WordX2 => b : WordX2 => if prim ==WordX2 b 0 then prim kill-entire-process "udiv-WordX2 failed" else prim udiv-unsafe-WordX2 a b end  };
+srem-Int32  = { a : Int32  => b : Int32  => if prim ==Int32  b 0 then prim kill-entire-process "srem-Int32 failed" else prim srem-unsafe-Int32  a b end };
+srem-Int64  = { a : Int64  => b : Int64  => if prim ==Int64  b 0 then prim kill-entire-process "srem-Int64 failed" else prim srem-unsafe-Int64  a b end };
+srem-Int8   = { a : Int8   => b : Int8   => if prim ==Int8   b 0 then prim kill-entire-process "srem-Int8  failed" else prim srem-unsafe-Int8   a b end };
+srem-Word   = { a : Word   => b : Word   => if prim ==Word   b 0 then prim kill-entire-process "srem-Word  failed" else prim srem-unsafe-Word   a b end };
+srem-WordX2 = { a : WordX2 => b : WordX2 => if prim ==WordX2 b 0 then prim kill-entire-process "srem-WordX2 failed" else prim srem-unsafe-WordX2 a b end  };
+sdiv-Int32  = { a : Int32  => b : Int32  => if prim ==Int32  b 0 then prim kill-entire-process "sdiv-Int32 failed" else prim sdiv-unsafe-Int32  a b end };
+sdiv-Int64  = { a : Int64  => b : Int64  => if prim ==Int64  b 0 then prim kill-entire-process "sdiv-Int64 failed" else prim sdiv-unsafe-Int64  a b end };
+sdiv-Int8   = { a : Int8   => b : Int8   => if prim ==Int8   b 0 then prim kill-entire-process "sdiv-Int8  failed" else prim sdiv-unsafe-Int8   a b end };
+sdiv-Word   = { a : Word   => b : Word   => if prim ==Word   b 0 then prim kill-entire-process "sdiv-Word  failed" else prim sdiv-unsafe-Word   a b end };
+sdiv-WordX2 = { a : WordX2 => b : WordX2 => if prim ==WordX2 b 0 then prim kill-entire-process "sdiv-WordX2 failed" else prim sdiv-unsafe-WordX2 a b end  };
+
+////
+
+// Euclidean division,
+// based on Daan Leijen's paper "Division and Modulus for Computer Scientists"
+//    http://research.microsoft.com/pubs/151917/divmodnote.pdf
+
+ediv-Int32 =  { a : Int32 => b : Int32 =>
+  q = a `sdiv-Int32` b;
+  r = a `srem-Int32` b;
+  i = if r >=SInt32 0 then 0 else if b >SInt32 0 then 1 else -1 end end;
+  q -Int32 i
+};
+
+erem-Int32 =  { a : Int32 => b : Int32 =>
+  q = a `sdiv-Int32` b;
+  r = a `srem-Int32` b;
+  i = if r >=SInt32 0 then 0 else if b >SInt32 0 then 1 else -1 end end;
+  r +Int32 (i *Int32 b)
+};
+
+

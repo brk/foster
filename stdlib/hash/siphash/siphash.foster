@@ -1,0 +1,174 @@
+snafuinclude Prelude "prelude";
+
+// The Foster compiler is able to entirely remove the function literals
+// involved in the half-/double-round computations.
+// This means that the only overhead of optimized Foster code, relative to
+// the original C code, is in array bounds checks.
+//
+// With coalescing of loads disabled, we see roughly 30% overhead from the
+// baseline.
+// Full array bounds checking (8 checks for readInt) incurs an additional 30%
+// overhead, and (as the code is currently written/structured) disables
+// load coalescing, for roughly 60% total overhead.
+//
+// However, if the Foster compiler were a tiny bit smarter, *and* the programmer
+// re-ordered the loads to happen in *descending* index order instead of
+// *ascending* order, then we could (in theory) emit a single check that
+// index (i +Int32 7) is valid, thereby making the other 7 checks redundant.
+// And that, in turn, would enable load coalescing, since the 8 loads would
+// all occur without any interfering checks!
+// One inconvenient aspect is that this also requires a precondition that
+// the base index (i) is non-negative.
+
+// Precondition: i +Int32 7 < arrayLength32 arr
+// Precondition: 0 <= i
+readInt64FromArrayInt8 :: { % ra : Array Int8 : 0 <=SInt32 ri =>
+                            % ri : Int32 : (zext_i32_to_i64 ri +Int64 7) <SInt64 prim_arrayLength ra
+                            => Int64 };
+readInt64FromArrayInt8 = { arr => i =>
+// 1.91 - 1.94 s
+/*
+  a = arr[i +Int32 0];
+  b = arr[i +Int32 1];
+  c = arr[i +Int32 2];
+  d = arr[i +Int32 3];
+  e = arr[i +Int32 4];
+  f = arr[i +Int32 5];
+  g = arr[i +Int32 6];
+  h = arr[i +Int32 7];
+  */
+// 1.84 - 1.91 s
+/*
+  h = arr[i +Int32 7];
+  g = arr[i +Int32 6];
+  f = arr[i +Int32 5];
+  e = arr[i +Int32 4];
+  d = arr[i +Int32 3];
+  c = arr[i +Int32 2];
+  b = arr[i +Int32 1];
+  a = arr[i +Int32 0];
+*/
+/*
+  // 1.42 s
+  h = prim subscript        arr (i +Int32 7);
+  g = prim subscript-unsafe arr (i +Int32 6);
+  f = prim subscript-unsafe arr (i +Int32 5);
+  e = prim subscript-unsafe arr (i +Int32 4);
+  d = prim subscript-unsafe arr (i +Int32 3);
+  c = prim subscript-unsafe arr (i +Int32 2);
+  b = prim subscript-unsafe arr (i +Int32 1);
+  a = prim subscript-unsafe arr (i +Int32 0);
+*/
+  // 1.34 s
+  // TODO: what is causing the extra ~15% overhead? vs Clang -O2
+  h = prim subscript-static arr (i +Int32 7);
+  g = prim subscript-static arr (i +Int32 6);
+  f = prim subscript-static arr (i +Int32 5);
+  e = prim subscript-static arr (i +Int32 4);
+  d = prim subscript-static arr (i +Int32 3);
+  c = prim subscript-static arr (i +Int32 2);
+  b = prim subscript-static arr (i +Int32 1);
+  a = prim subscript-static arr (i +Int32 0);
+
+  // All subscript checks disabled: 1.39s (??) -- 9-14 switches, 88 waits
+  // All subscript checks and GC support disabled: 10 switches, 85 waits
+  // GCC -  O2: 1.42 s
+  // Clang -O2: 1.18 s , 4-8 switches, 9 waits
+  mergeInt32 (octet4ToInt32 h g f e)
+             (octet4ToInt32 d c b a)
+};
+
+// Precondition: n <UInt32 r => offset +Int32 n < arrayLength32 bytes
+//          ==>                 offset +Int32 r < arrayLength32 bytes
+//          ==>   zext_i32_to_i64 offset +Int64 len_rem < arrayLength bytes
+read-rem = { len_rem => offset : Int32 => bytes =>
+  r = trunc_i64_to_i32 len_rem;
+  idx = { n => if n <UInt32 r then bytes[offset +Int32 n] else 0 end };
+  a = idx 0;
+  b = idx 1;
+  c = idx 2;
+  d = idx 3;
+  e = idx 4;
+  f = idx 5;
+  g = idx 6;
+  h = idx 7;
+  mergeInt32 (octet4ToInt32 h g f e)
+             (octet4ToInt32 d c b a)
+};
+
+rot = { x => b =>
+  (bitshl-Int64 x b) `bitor-Int64` (bitlshr-Int64 x (64 -Int64 b))
+};
+
+rot-xor = { a => b => c =>
+  rot a b `bitxor-Int64` c
+};
+
+half-round = { a0 => b => c0 => d => s => t : Int64 => k =>
+  a = a0 +Int64 b;
+  c = c0 +Int64 d;
+  k (rot a 32) (rot-xor b s a) c (rot-xor d t c)
+};
+
+double-round = { v0 => v1 => v2 => v3 : Int64 => k =>
+  half-round v0 v1 v2 v3 13 16 { a0 => b0 => c0 => d0 =>
+  half-round c0 b0 a0 d0 17 21 { c1 => b1 => a1 => d1 =>
+  half-round a1 b1 c1 d1 13 16 { a2 => b2 => c2 => d2 =>
+  half-round c2 b2 a2 d2 17 21 { c3 => b3 => a3 => d3 =>
+           k a3 b3 c3 d3
+  } } } }
+};
+
+debug = { a => b => c => d =>
+  print_i64x a;
+  print_i64x b;
+  print_i64x c;
+  print_i64x d;
+  print_text "";
+};
+
+noinline_llvm_siphash24 :: {
+               % rb : Array Int8 : True =>
+               % rk : Array Int8 : prim_arrayLength rk ==Int64 16
+               => Int64 };
+noinline_llvm_siphash24 = { bytes => key =>
+         siphash24 bytes key
+};
+
+siphash24 :: { % rb : Array Int8 : True =>
+               % rk : Array Int8 : prim_arrayLength rk ==Int64 16
+               => Int64 };
+siphash24 = { bytes => key =>
+  k0 = readInt64FromArrayInt8 key 0;
+  k1 = readInt64FromArrayInt8 key 8;
+
+  b0 = prim_arrayLength bytes `bitshl-Int64` 56;
+
+  v0 = k0 `bitxor-Int64` 736f6d6570736575_16;
+  v1 = k1 `bitxor-Int64` 646f72616e646f6d_16;
+  v2 = k0 `bitxor-Int64` 6c7967656e657261_16;
+  v3 = k1 `bitxor-Int64` 7465646279746573_16;
+
+  // Invariant: len_rem + offset == arrayLength32 bytes
+  // Invariant: 0 <= offset
+  REC go_sh = { len_rem : (% r_len_rem : Int64 : prim_arrayLength bytes ==Int64 r_len_rem +Int64 zext_i32_to_i64 r_offset)
+             => offset :  (% r_offset  : Int32 : r_offset >=SInt32 0)
+             => v0 => v1 => v2 => v3 =>
+    if len_rem >=SInt64 8 then
+      mi = readInt64FromArrayInt8 bytes offset;
+      double-round v0 v1 v2 (v3 `bitxor-Int64` mi) { v0 => v1 => v2 => v3 =>
+        lenrem = len_rem -Int64 8;
+        go_sh lenrem (offset +Int32 8) (v0 `bitxor-Int64` mi) v1 v2 v3;
+      }
+    else
+      b = b0 `bitor-Int64` read-rem len_rem offset bytes;
+      double-round v0                    v1  v2  (v3 `bitxor-Int64` b) { v0 => v1 => v2 => v3 =>
+      double-round (v0 `bitxor-Int64` b) v1 (v2 `bitxor-Int64` 255) v3 { v0 => v1 => v2 => v3 =>
+      double-round v0                    v1  v2                     v3 { v0 => v1 => v2 => v3 =>
+        bitxor-Int64 v0 v1 `bitxor-Int64` bitxor-Int64 v2 v3
+      } } }
+    end
+  };
+  go_sh (arrayLength bytes) 0 v0 v1 v2 v3;
+};
+

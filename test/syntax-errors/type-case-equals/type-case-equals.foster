@@ -1,0 +1,5 @@
+type case X = $X;
+
+main = {
+  0
+};

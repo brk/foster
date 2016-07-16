@@ -1,0 +1,29 @@
+main = {
+  refs = allocDArray:[Ref Int32] 1;
+  fncn = { refs[0] };
+
+  expect_i1 True;
+  print_i1 (__COMPILES__ (prim ref 0) >^ refs[0]);
+
+  // These examples fail because we don't have a first-class notion of
+  // reference (or interior pointer) which would be required to construct
+  // a long lived value which points at a particular array slot.
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ (prim ref 0) >^ (fncn !));
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ (prim ref 0) >^ let r = (prim ref 1); in refs[0] end);
+};
+
+array_poke_return_type = {
+  // This makes sure that the return value of an arary-poke expression
+  // is consistent between the front and back ends.
+  0 >^ (allocDArray:[Int32] 1)[0];
+};
+
+array_poke_alloc_ref = {
+  // This makes sure that we don't codegen any stale values when both
+  // the stored expression and the array expression involve allocation.
+  (prim ref 0) >^ (allocDArray:[Ref Int32] 1)[0];
+};

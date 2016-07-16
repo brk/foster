@@ -1,0 +1,5 @@
+main = {
+  f = { x : Int32 => x +Int32 1 };
+  expect_i32 1;
+  print_i32 (f 0);
+};

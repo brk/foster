@@ -1,0 +1,263 @@
+main = {
+  //itr { itr { print_i32 0 } 2 } 3;
+  itr { expect_i32 0; print_i32 0 } 3;
+  let (a, b) = (1, 2);
+  print_i32 a;
+  expect_i32 1;
+  print_i32 b;
+  expect_i32 2;
+  ()
+};
+
+itr = { f => n =>
+  if n ==Int32 0 then ()
+                 else f ! ; itr f (n -Int32 1) end
+};
+
+/*
+main = {
+  //aaaaaaaaa "1"
+
+  REC repeat = { n : Int32 => f : { () } =>
+    if n >SInt32 0 then f !; repeat (n -Int32 1) f else () end
+  };
+  repeat (opaquely_i32 5) { print_i32 6 };
+
+
+};
+*/
+
+
+/*
+snafuinclude Prelude "prelude";
+main = {
+  a = allocDArray:[Int32] 8;
+  arrayEnumFrom a 0 { v => i => print_i64 i };
+};
+
+noinline_use = { v => (); }
+
+digitNumBits :: { Int32 };
+digitNumBits = { wordNumBits32 !  -Int32 4 };
+
+digitNumBitsWord :: { Word };
+digitNumBitsWord = { zext_i32_to_Word (digitNumBits !) };
+
+digitNumBitsMask :: { Word };
+digitNumBitsMask = {
+  (bitshl-Word 1 (zext_i32_to_Word (digitNumBits !))
+         -Word 1)
+};
+addCarryOfWord :: { Word => Word };
+addCarryOfWord = { n =>
+  bitlshr-Word n (sext_i32_to_Word (digitNumBits !));
+  // shift right (>>) by 60 for word size of i64
+};
+
+// Postcondition: returned array is normalized.
+//
+foster_nat_add_digits :: { Array Word => Array Word => Array Word };
+foster_nat_add_digits = { a => b =>
+  case
+    if (arrayLength32 a) <SInt32 (arrayLength32 b)
+      then (a, b)
+      else (b, a)
+    end
+  of (sm, lg) ->
+
+    c = allocDArray:[Word] (arrayLength32 lg +Int32 1);
+    u = foldRange 0 (arrayLength32 sm) 0 { i => u =>
+        ci = (a[i] +Word b[i] +Word u);
+        unext = addCarryOfWord ci;
+        (bitand-Word ci (digitNumBitsMask !)) >^ c[i];
+        unext
+      };
+    p = if arrayLength32 sm <SInt32 arrayLength32 lg
+          then
+            foldRange (arrayLength32 sm) (arrayLength32 lg) u { i => u =>
+              (lg[i] +Word u) >^ c[i];
+              unext = addCarryOfWord c[i];
+              (bitand-Word c[i] (digitNumBitsMask !)) >^ c[i];
+              unext
+            }
+          else
+            u
+        end;
+
+    p >^ c[arrayLength32 lg];
+
+    // The C version clears digits from used to olduse,
+    // but we don't need to because we allocate from scratch.
+
+    trimLeadingZeroWords c
+  end
+};
+
+trimLeadingZeroWords :: { Array Word => Array Word };
+trimLeadingZeroWords = { a =>
+  REC findFirstNonZero = { n : Int32 =>
+     if n ==Int32 0 // or a[n] !=Int64 0
+       then n
+       else if a[n] !=Word 0
+              then n
+              else findFirstNonZero (n -Int32 1)
+            end
+     end
+  };
+  start = arrayLength32 a -Int32 1;
+  n     = findFirstNonZero start;
+
+  if n ==Int32 start
+    then a
+    else copyOfArrayTo a (n +Int32 1)
+  end
+};
+*/
+
+/*
+aaaaaaaaa = { t:Text =>
+  bbbbbbbbb t
+};
+
+bbbbbbbbb = { t:Text =>
+  noinline_f = { () };
+  REC ccccc = { x =>
+      case t
+        of $TextFragment a n     -> noinline_f !; ()
+        of $TextConcat   s1 s2 n ->
+            bbbbbbbbb s2 ; noinline_f !; ccccc s1
+      end
+  };
+  ccccc t;
+};
+*/
+
+/*
+type case List (a:Boxed)
+  of $Nil
+  of $Cons a (List a)
+;
+
+listLength = { forall t:Boxed, xs : List t =>
+  case xs
+    of $Nil -> 0
+    //of $Cons _ ys -> 1 +Int32 (listLength:[t] ys) // should work but doesn't
+    //of $Cons _ ys -> 1 +Int32 (listLength ys) // unable to find kind of 'a
+    of $Cons _ _ -> 1 // unable to find kind of 'a
+   end;
+};
+
+main = { 0 };
+*/
+
+/*
+main = { 0 };
+
+type case ST (s:Boxed) (a:Boxed)
+  of $ST
+;
+
+type case STRef (s:Boxed) (a:Boxed)
+  of $STRef
+;
+*/
+
+//runST :: ;
+//runST = {forall va, f : forall vs { vs => va } => ??? };
+
+//
+
+// should fail, but doesn't.
+/*
+test-real-example-0 = {
+  let f = {
+        runST  : forall a:Boxed, { (forall s:Boxed, ST s a) => a } =>
+        newRef : forall v:Boxed, { v => forall n:Boxed, ST n (STRef n v) } =>
+      runST:[?? A] (newRef:[Text] "hmm")
+      // (newRef:[Text] "hmm") ::    forall n:Boxed, ST n (STRef n Text)
+      // runST:[?? A]          :: { (forall s:Boxed, ST s (?? A)) => (?? A) }
+      // runST:[?? A] (newRef:[Text] "hmm") :: (STRef ?n? Text) -- illegal escaping tyvar!
+    }; in
+  ()
+  end
+};
+*/
+
+/*
+// fails for the wrong reason
+test-real-example-1 = {
+  let f = {
+        runST  : forall a:Boxed, { (forall s:Boxed, ST s a) => a } =>
+        newRef : forall v:Boxed, { v => forall n:Boxed, ST n (STRef n v) } =>
+      runST (newRef:[Text] "hmm")
+      // (newRef:[Text] "hmm") ::    forall n:Boxed, ST n (STRef n Text)
+      // runST:[?? A]          :: { (forall s:Boxed, ST s (?? A)) => (?? A) }
+      // runST:[?? A] (newRef:[Text] "hmm") :: (STRef ?n? Text) -- illegal escaping tyvar!
+    }; in
+  ()
+  end
+};
+*/
+
+
+/*
+test-fake-example = {
+  let f = {
+        runST  : { (forall s:Boxed, ST s Text) => Text } =>
+        newRef : { Text => forall n:Boxed, ST n Text } =>
+      runST (newRef "hmm")
+    }; in
+  ()
+  end
+};
+*/
+/*
+test-faker-example = {
+  let f = {
+        runST  : { ST Int32 (STRef Int32 Text) => Text }        =>
+        newRef : { Text => ST Int32 (STRef Int32 Text) }        =>
+      runST (newRef "hmm")
+    }; in
+  ()
+  end
+};
+*/
+
+//f :: forall (xt : Boxed)  { xt => Int32 };
+//f = { forall (x : Boxed) v : x => 0 };
+
+//g0 :: forall (gt : Boxed) { gt => forall ft : Boxed, { ft => Int32 } };
+// without annotation, typechecks but tries to return a proc instead of a func TODO fix this
+//g0 = { forall t : Boxed, v : t => f };
+
+//g1 :: forall (gt : Boxed) { gt => { gt => Int32 } };
+// Without an annotation, we fail on g1 because its scheme is inferred to be
+//     forall t : Boxed,   { t => ?? R };
+// and the expression's actual type is as above.
+// Thus the above type scheme gets skolemized to { $t => ?? R }
+// and the expression's type is instantiated to { T => { T => Int32 } }
+// and the two types unify, binding ?? R = { $t => Int32 }.
+// This is considered an illegal escape of the skolemized type variable $t.
+//g1 = { forall t : Boxed, v : t => f:[t] };
+
+// OK:
+//g2 :: forall (gt : Boxed) { gt => Int32 };
+//g2 = { forall t : Boxed, v : t => f v };
+
+// OK:
+//g3 :: forall (gt : Boxed) { gt => Int32 };
+//g3 = { forall t : Boxed, v : t => f:[t] v };
+
+/*
+type case List (a:Boxed)
+  of $Nil
+  of $Cons a (List a)
+;
+
+listLength = { forall t:Boxed, xs : List t =>
+  case xs
+    of $Nil -> 0
+    of $Cons _ ys -> 1 +Int32 (listLength:[t] ys) // should work but doesn't
+   end;
+};
+*/

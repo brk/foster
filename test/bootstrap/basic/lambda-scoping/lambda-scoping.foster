@@ -1,0 +1,14 @@
+main = {
+  expect_i32 3;
+  print_i32 (foo 2);
+};
+
+foo = { x:Int32 =>
+  if x ==Int32 0 then
+    0
+  else
+    y = x +Int32 1;
+    z = foo (x -Int32 1);
+    y
+  end
+};

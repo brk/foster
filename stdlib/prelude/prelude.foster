@@ -1,0 +1,532 @@
+snafuinclude List "list";
+snafuinclude Ord  "ord";
+snafuinclude Text "text";
+snafuinclude Primitives "primitives";
+snafuinclude PreludeFixnums "prelude-fixnums";
+snafuinclude PreludeFolds   "prelude-folds";
+
+// TODO test codegen of not_ vs primitive not
+not_   = { a : Bool => if a then False else True end };
+
+either = { a : Bool => b : Bool => if a then True else b     end };
+both   = { a : Bool => b : Bool => if a then b    else False end };
+
+oror   = { a : { Bool } => b : { Bool } => if a ! then True else b !   end };
+andand = { a : { Bool } => b : { Bool } => if a ! then b !  else False end };
+
+when   = { a : Bool => f : { () } => if a then f ! end };
+
+while = { cond : { Bool } => body : { () } =>
+  if cond ! then body ! ; while cond body end
+};
+
+do-while = { cond : { Bool } => body : { () } =>
+  body !; while cond body;
+};
+
+until = { cond : { Bool } => body : { () } =>
+  if cond ! then () else body ! ; until cond body end
+};
+
+/////
+
+cmdline-arg-or :: { Int32 => Int32 => Int32 };
+cmdline-arg-or = { i => d =>
+  n0 = tmp_Int32_of_base_10_Text (get_cmdline_arg_n i);
+  if n0 ==Int32 0 then d else n0 end;
+};
+
+/////
+
+log-f64  = { f : Float64 => foster__logf64 f };
+log-s32  = { i : Int32 => log-f64 (prim s32-to-f64 i) };
+log-s64! = { i : Int64 => log-f64 (prim s64-to-f64-unsafe i) };
+
+/////
+
+cmpSInt32 = { a : Int32 => b : Int32 =>
+  if a ==Int32 b
+  then EQ
+  else if a <SInt32 b then LT else GT end
+  end
+};
+
+cmpSInt64 = { a : Int64 => b : Int64 =>
+  if a ==Int64 b
+  then EQ
+  else if a <SInt64 b then LT else GT end
+  end
+};
+
+cmpUInt32 = { a : Int32 => b : Int32 =>
+  if a ==Int32 b
+  then EQ
+  else if a <UInt32 b then LT else GT end
+  end
+};
+
+cmpUInt64 = { a : Int64 => b : Int64 =>
+  if a ==Int64 b
+  then EQ
+  else if a <UInt64 b then LT else GT end
+  end
+};
+
+cmpUWord = { a : Word => b : Word =>
+  if a ==Word b
+  then EQ
+  else if a <UWord b then LT else GT end
+  end
+};
+
+cmpSWord = { a : Word => b : Word =>
+  if a ==Word b
+  then EQ
+  else if a <SWord b then LT else GT end
+  end
+};
+
+/////
+
+// Precondition: mn <=UInt32 mx
+clamp-UInt32! = { mn => mx => v => v |> min-UInt32 mx |> max-UInt32 mn };
+
+// Precondition: mn <=SInt32 mx
+clamp-SInt32! = { mn => mx => v => v |> min-SInt32 mx |> max-SInt32 mn };
+
+/////
+
+// Specialization of popcount(-1 :: Word).
+// Assumption: Word is either 32 or 64 bits.
+wordNumBits32 :: { Int32 };
+wordNumBits32 = {
+
+    if 0 ==Word bitxor-Word (-1) 0FFFF`FFFF_16
+      then 32
+      else 64
+    end
+
+};
+
+wordNumBits :: { Word };
+wordNumBits = {
+  sext_i32_to_Word (wordNumBits32 !)
+};
+
+/////
+
+// Computes the following function::
+//     x: f(x)
+//     0: 0
+//     1: 1
+//     2: 2
+//     3: 2
+//     4: 4
+//     ...
+//     7: 4
+//     8: 8
+//     9: 8
+//     ...
+//     127: 64
+//     128: 128
+//     129: 128
+highestBitMask-Word :: { Word => Word };
+highestBitMask-Word = { x0 =>
+  x1 = x0 `bitor-Word` (x0 `bitlshr-Word` 1);
+  x2 = x1 `bitor-Word` (x1 `bitlshr-Word` 2);
+  x3 = x2 `bitor-Word` (x2 `bitlshr-Word` 4);
+  x4 = x3 `bitor-Word` (x3 `bitlshr-Word` 8);
+  x5 = x4 `bitor-Word` (x4 `bitlshr-Word` 16);
+  // In LLVM, shifting a 32-bit value 32 bits
+  // produces undefined, not zero.
+  x6 = if 0 ==Word bitxor-Word (-1) 0FFFF`FFFF_16
+          then x5 // 32 bits in a word
+          else    // 64 bits in a word
+               x5 `bitor-Word` (x5 `bitlshr-Word` 32);
+       end;
+  x6 `bitxor-Word` (x6 `bitlshr-Word` 1);
+};
+
+/////
+
+// Precondition: m >= n
+copyOfArrayTo :: forall (t:Type)
+                 { Array t => // of length m
+                   /*n:*/Int32 =>
+                   Array t    // of length n
+                 };
+copyOfArrayTo = { forall t:Type,
+                   a => n =>
+  assert (arrayLength a >=UInt64 (zext_i32_to_i64 n)) "copyOfArrayTo";
+  newDArray0:[t] n { i : Int32 => a[i] };
+};
+
+/////
+
+text_maxdepth = { s : Text =>
+  case s
+    of $TextFragment a n     -> 0
+    of $TextConcat   s1 s2 n -> 1 +Int32
+                               (max-UInt32 (text_maxdepth s1) (text_maxdepth s2))
+   end;
+};
+
+textOfBool = { b : Bool =>
+  if b then "True" else "False" end
+};
+
+// Precondition: n in range 0..128.
+textOfASCII = { n : Int32 => textOfASCII8 (trunc_i32_to_i8 n) };
+
+// Precondition: n in range 0..128.
+textOfASCII8 = { n : Int8 =>
+  a = newDArray:[Int8] 1 { i => n };
+  TextFragment a 1
+};
+
+/////
+
+// Initializes slot a[k] with f (k + 1)
+newDArray = { forall v:Type,
+                n : Int32 =>
+                f : { Int32 => v } =>
+  a = allocDArray:[v] n;
+  x = (prim ref n);
+
+  until { x^ ==Int32 0 } {
+      f x^            >^ a[x^ -Int32  1];
+      ( x^ -Int32 1 ) >^ x
+  };
+  a
+};
+
+// Initializes slot a[k] with (f k)
+newDArray0 :: forall (v:Type) { % n  : Int32 : True => { Int32 => v } =>
+                                % ndrv : Array v : prim_arrayLength ndrv ==Int64 (sext_i32_to_i64 n)
+                             };
+newDArray0 = { n => f =>
+  arrayFromRange32 0 n f
+};
+
+// For example, arrayFromRange32 2 5 f
+// will become  arrayMap [2,3,4] f
+// The elements will be generated in decreasing order.
+arrayFromRange32 :: forall (t:Type) { % sm : Int32 : True =>
+                                     % lg : Int32 : lg >SInt32 sm =>
+                                     { Int32 => t } =>
+                                     % afrv : Array t : prim_arrayLength afrv ==Int64 (sext_i32_to_i64 (lg -Int32 sm)) };
+arrayFromRange32 = { sm => lg => f =>
+  arr = allocDArray (lg -Int32 sm);
+  REC go = { n =>
+    if n >SInt32 0 then
+      i = n -Int32 1;
+      f  (i +Int32 sm) >^ arr[i];
+      go  i
+    end
+  };
+  go (lg -Int32 sm);
+  arr
+};
+
+arrayMap :: forall (a:Type) (b:Type) { Array a => { a => b } => Array b };
+arrayMap = { arr => f =>
+  arrayFromRange32 0 (arrayLength32 arr) { idx => f arr[idx] };
+};
+
+// Returns True on success, otherwise False.
+arrayIterReverse = { forall t:Type,
+                           a : Array t =>
+                           n : Int32 => // invariant: n < len a
+                           f : { t => Bool } =>
+  if n >=SInt32 0 // TODO change this to avoid needing wraparound here.
+  then if f a[n] then arrayIterReverse a (n -Int32 1) f
+                 else False end
+  else True end
+};
+
+////
+
+// Returns True on success, otherwise False.
+tmp_Text_bytes_iter_reverse = { t:Text =>
+                                f: { Int8 => Bool } =>
+  case t
+    of $TextFragment a n     -> arrayIterReverse a (n -Int32 1) f;
+    of $TextConcat   s1 s2 n ->
+        if    tmp_Text_bytes_iter_reverse s2 f
+         then tmp_Text_bytes_iter_reverse s1 f
+         else False
+        end
+   end;
+};
+
+is_ascii_digit = { c : Int8 =>
+  if   c <=SInt8 (trunc_i32_to_i8 57)
+  then c >=SInt8 (trunc_i32_to_i8 48)
+  else False
+  end
+};
+
+tmp_Int32_of_base_10_Text = { t:Text =>
+  acc = (prim ref 0);
+  pow = (prim ref 1);
+  base = 10;
+  ok = tmp_Text_bytes_iter_reverse t { c : Int8 =>
+   //print_text "is_ascii_digit c:"; // hmm, causes crash...
+   if is_ascii_digit c
+     then
+       s = (sext_i8_to_i32 c) -Int32 48;
+       (acc^ +Int32 (s *Int32 pow^)) >^ acc;
+       (pow^           *Int32 base ) >^ pow;
+       True
+     else False
+   end;
+  };
+  if ok then acc^ else 0 end
+};
+
+tmp_Text_of_Int32_digit = { n:Int32 =>
+  case n
+    of 0 -> "0"
+    of 1 -> "1"
+    of 2 -> "2"
+    of 3 -> "3"
+    of 4 -> "4"
+    of 5 -> "5"
+    of 6 -> "6"
+    of 7 -> "7"
+    of 8 -> "8"
+    of 9 -> "9"
+    of _ -> "<error:value passed to tmp_Text_of_Int32_digit was too large>"
+  end
+};
+
+tmp_Text_16_of_Int32_digit = { n => tmp_Text_16_of_Int8_nibble (cast_i32_to_i8 n) };
+tmp_Text_16_of_Int8_nibble = { n : Int8 =>
+  case n
+    of  0 -> "0"
+    of  1 -> "1"
+    of  2 -> "2"
+    of  3 -> "3"
+    of  4 -> "4"
+    of  5 -> "5"
+    of  6 -> "6"
+    of  7 -> "7"
+    of  8 -> "8"
+    of  9 -> "9"
+    of 10 -> "a"
+    of 11 -> "b"
+    of 12 -> "c"
+    of 13 -> "d"
+    of 14 -> "e"
+    of 15 -> "f"
+    of _ -> "<error:value passed to tmp_Text_16_of_Int8_nibble was too large:"
+                `mkTextConcat` (tmp_Text_of_Int8 n `mkTextConcat` ">")
+  end
+};
+
+tmp_Text_of_Int32 = { n:Int32 => tmp_Text_of_Int64 (sext_i32_to_i64 n) };
+
+tmp_Text_of_Int8  = { n:Int8  => tmp_Text_of_Int64 (sext_i8_to_i64 n) };
+
+tmp_Text_2_of_Int8_nibble = { n : Int8 =>
+  case n
+    of 0  -> "0000"
+    of 1  -> "0001"
+    of 2  -> "0010"
+    of 3  -> "0011"
+    of 4  -> "0100"
+    of 5  -> "0101"
+    of 6  -> "0110"
+    of 7  -> "0111"
+    of 8  -> "1000"
+    of 9  -> "1001"
+    of 10 -> "1010"
+    of 11 -> "1011"
+    of 12 -> "1100"
+    of 13 -> "1101"
+    of 14 -> "1110"
+    of 15 -> "1111"
+    of _ -> "<error:value passed to tmp_Text_2_of_Int8_nibble was too large>"
+  end
+};
+
+tmp_Text_2_of_UInt8 = { n:Int8 =>
+  mkTextConcat (tmp_Text_2_of_Int8_nibble (bitand-Int8 15 (bitlshr-Int8 n 4)))
+ (mkTextConcat (tmp_Text_2_of_Int8_nibble (bitand-Int8 15 n))
+  "");
+};
+
+tmp_Text_16_of_UInt8 = { n:Int8 =>
+  mkTextConcat (tmp_Text_16_of_Int8_nibble (bitand-Int8 15 (bitlshr-Int8 n 4)))
+ (mkTextConcat (tmp_Text_16_of_Int8_nibble (bitand-Int8 15 n))
+  "");
+};
+
+tmp_Text_2_of_UInt32 = { n:Int32 =>
+  ttgo = { n:Int32 =>
+    n0 = trunc_i32_to_i8 n;
+    n1 = trunc_i32_to_i8 (bitlshr-Int32 n 8 );
+    n2 = trunc_i32_to_i8 (bitlshr-Int32 n 16);
+    n3 = trunc_i32_to_i8 (bitlshr-Int32 n 24);
+
+     mkTextConcat (tmp_Text_2_of_UInt8 n3)
+    (mkTextConcat (tmp_Text_2_of_UInt8 n2)
+    (mkTextConcat (tmp_Text_2_of_UInt8 n1)
+    (mkTextConcat (tmp_Text_2_of_UInt8 n0) "")))
+  };
+  ttgo n;
+};
+
+tmp_Text_16_of_UInt32 = { n:Int32 =>
+  ttgo = { n:Int32 =>
+    n0 = trunc_i32_to_i8 n;
+    n1 = trunc_i32_to_i8 (bitlshr-Int32 n 8 );
+    n2 = trunc_i32_to_i8 (bitlshr-Int32 n 16);
+    n3 = trunc_i32_to_i8 (bitlshr-Int32 n 24);
+
+     mkTextConcat (tmp_Text_16_of_UInt8 n3)
+    (mkTextConcat (tmp_Text_16_of_UInt8 n2)
+    (mkTextConcat (tmp_Text_16_of_UInt8 n1)
+    (mkTextConcat (tmp_Text_16_of_UInt8 n0) "")))
+  };
+  ttgo n;
+};
+
+tmp_Text_2_of_SInt32 = { n:Int32 =>
+  if n <SInt32 0
+    then mkTextConcat "-" (tmp_Text_2_of_UInt32 (0 -Int32 n))
+    else                   tmp_Text_2_of_UInt32 n
+  end
+};
+
+textDrop = { d : Int32 => s : Text =>
+  assert (textLength s >=SInt32 d) "textDrop";
+
+  if d ==Int32 0 then s else
+    case s
+      // TODO resolve confusion between bytes/codepoints/glyphs.
+      of $TextFragment a n     -> TextFragment (dropRawBytes a d) (n -Int32 d)
+      of $TextConcat   s1 s2 n ->
+        if textLength s1 <=SInt32 d
+          then             textDrop (d -Int32 textLength s1) s2
+          else TextConcat (textDrop  d s1)                   s2 (n -Int32 d)
+        end
+     end
+  end
+};
+
+dropRawBytes = { a : Array Int8 => d : Int32 =>
+  alen = arrayLength32 a -Int32 d;
+  bytes = allocDArray alen;
+
+  // bytes[0..alen]    = a[d..alen+d]
+  memcpy_i8_to_from_at_len bytes a d    alen;
+  bytes
+};
+
+// Returns the original array if no trimming is needed.
+takeRawBytes = { a : Array Int8 => alen : Int64 =>
+  if alen ==Int64 arrayLength a
+    then a
+    else bytes = allocDArray (cast_i64_to_i32 alen);
+         // bytes[0..alen]    = a[0..alen]
+         memcpy_i8_to_from_at_len bytes a 0 (cast_i64_to_i32 alen);
+         bytes
+  end
+};
+
+high32BitsOf64 = { n : Int64 =>
+  bitlshr-Int64 n 32 |> trunc_i64_to_i32
+};
+
+high16BitsOf32 = { n : Int32 =>
+  bitlshr-Int32 n 16
+};
+
+splitInt32 :: { Int32 => (Int32, Int32) };
+splitInt32 = { n =>
+  highbits = high16BitsOf32 n;
+  lowbits  = high16BitsOf32 (bitshl-Int32 n 16);
+  (highbits, lowbits)
+};
+
+splitInt64 :: { Int64 => (Int32, Int32) };
+splitInt64 = { n =>
+  highbits = high32BitsOf64 n;
+  lowbits  = high32BitsOf64 (bitshl-Int64 n 32);
+  (highbits, lowbits)
+};
+
+tmp_Text_2_of_Word = { n:Word =>
+  if wordNumBits32 ! ==Int32 32
+     then tmp_Text_2_of_UInt32 (trunc_Word_to_i32 n);
+     else tmp_Text_2_of_UInt64 (zext_Word_to_i64 n);
+  end
+};
+
+tmp_Text_2_of_UInt64 = { n:Int64 =>
+  case splitInt64 n of
+    (na, nb) ->
+      mkTextConcat (tmp_Text_2_of_UInt32 na) (tmp_Text_2_of_UInt32 nb)
+  end
+};
+
+tmp_Text_of_Int64 = { n:Int64 =>
+  if n <SInt64 0
+    then mkTextConcat "-" (tmp_Text_of_UInt64 (negate-Int64 n))
+    else                   tmp_Text_of_UInt64               n
+  end
+};
+
+tmp_Text_16_of_UInt64 = { n:Int64 =>
+  case splitInt64 n of
+    (na, nb) ->
+      mkTextConcat (tmp_Text_16_of_UInt32 na) (tmp_Text_16_of_UInt32 nb)
+  end
+};
+
+tmp_Text_of_UInt64 = { n:Int64 =>
+  REC go = { n:Int64 => t:Text =>
+    if n <SInt64 10
+      then mkTextConcat (tmp_Text_of_Int32_digit (trunc_i64_to_i32 n)) t
+      else r = trunc_i64_to_i32 (srem-Int64 n 10);
+           q =                   sdiv-Int64 n 10 ;
+           go q (mkTextConcat (tmp_Text_of_Int32_digit r) t);
+    end
+  };
+  go n ""
+};
+
+tmp_Text_of_SWord = { n:Word =>
+  if n <SWord 0
+    then mkTextConcat "-" (tmp_Text_of_UWord (negate-Word n))
+    else                   tmp_Text_of_UWord              n
+  end
+};
+
+tmp_Text_of_UWord = { n:Word =>
+  tmp_Text_of_UInt64 (zext_Word_to_i64 n)
+};
+
+////
+
+f64-to-u32? = { a : Float64 =>
+  if a <f64 2147483647.5
+    then Some (f64-to-u32! a)
+    else None
+  end
+};
+
+f64-to-s32? = { a : Float64 =>
+  if both (a <f64 1073741820.5) (a >f64 -1073741820.5)
+    then Some (f64-to-s32! a)
+    else None
+  end
+};
+
+// Precondition: a < 2147483640.5
+f64-to-u32! = { a : Float64 => prim f64-to-u32-unsafe a };
+
+// Precondition: a < 1073741820.5 && a > -1073741820.5
+f64-to-s32! = { a : Float64 => prim f64-to-s32-unsafe a };
+

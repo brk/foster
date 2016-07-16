@@ -1,0 +1,105 @@
+main =  {
+  expect_i64 6;
+
+  x = prim mach-array-literal 1 1 2 3 5 (8 +Int32 (opaquely_i32 0));
+  print_i64 (prim_arrayLength x);
+
+  expect_i32 1;
+  print_i32 x[0];
+
+  expect_i32 1;
+  print_i32 x[1];
+
+  expect_i32 2;
+  print_i32 x[2];
+
+  expect_i32 3;
+  print_i32 x[3];
+
+  expect_i32 5;
+  print_i32 x[4];
+
+  expect_i32 8;
+  print_i32 x[5];
+
+  part2 !;
+  part3 !;
+  part4 !;
+  part5 !;
+};
+
+part2 = {
+  x = prim mach-array-literal 11 22;
+
+  expect_i32 2;
+  print_i64 (prim_arrayLength x);
+
+  expect_i32 11;
+  print_i64 x[0];
+
+  expect_i32 22;
+  print_i64 x[1];
+};
+
+invoker32 = { f => f !; }
+oddity = {
+  expect_i32 3333;
+  ffff = { 3333 };
+  print_i32 ( ffff ! );
+
+  expect_i32 3333;
+  print_i32 (invoker32 ffff);
+};
+
+//part3_helper = { b => { b } };
+invoker = { f => f ! };
+part3 = {
+  oddity !;
+  fz = { True };
+  x = prim mach-array-literal fz; // (part3_helper False);
+
+  expect_i32 1111;
+
+  //expect_i1 False;
+  //print_i1 (x[1] !);
+
+  fx = x[0];
+
+  print_i32 1111;
+
+  expect_i1 True;
+  print_i1 (fz !);
+
+  print_i32 2222;
+  expect_i32 2222;
+
+  expect_i1 True;
+  print_i1 (invoker fz);
+
+  expect_i1 True;
+  print_i1 (invoker fx);
+};
+
+part4 = {
+  x = prim mach-array-literal { 1 } { 2 };
+
+  expect_i32 1;
+  print_i32 (x[0] !);
+
+  expect_i32 2;
+  print_i32 (x[1] !);
+};
+
+part5 = {
+  run = {
+    x = prim mach-array-literal 11 22;
+
+    expect_i32 11;
+    print_i64 x[0];
+
+    33 >^ x[0];
+  };
+
+  run !;
+  run !;
+};

@@ -1,0 +1,39 @@
+#!/bin/sh
+
+SD=$(dirname `which $0`)/../scripts
+R=$(python $SD/normpath.py $SD/..)
+
+P=$1
+shift
+T=`basename $P`.foster
+
+if [ -z "$R" ]; then
+  echo "Unable to compute project root, exiting!"
+  exit 1
+fi
+
+gclog_exists=$([ -f gclog.txt ] && echo "y")
+gcstats_exists=$([ -f meGCstats.txt ] && echo "y")
+
+cleanout () {
+  rm -f gclog.txt
+}
+
+cxxpath () {
+  cat $R/_obj/CMakeCache.txt | grep CXX_COMPILER:FILEPATH | sed 's/CMAKE_CXX_COMPILER:FILEPATH=//'
+}
+
+if [ -f $T ]; then
+ make -C $R/_obj fosteroptc fosterparse fosterlower me && cleanout && \
+ echo python $R/scripts/run_test.py --show-cmdlines ${T} "$@" && \
+      python $R/scripts/run_test.py --show-cmdlines ${T} "$@" -I . -I $R/stdlib --bindir=$R/_obj --me-arg=--interactive --cxxpath=`cxxpath` || exit $?
+
+ # If the files didn't exist before, they shouldn't exist after...
+ [ -z "$gclog_exists" ]   && rm -f gclog.txt
+ [ -z "$gcstats_exists" ] && rm -f meGCstats.txt
+ exit 0
+else
+  echo "error: $T does not exist!"
+  exit 1
+fi
+

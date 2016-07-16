@@ -1,0 +1,435 @@
+snafuinclude List "list";
+snafuinclude Maybe "maybe";
+snafuinclude Prelude "prelude";
+snafuinclude Vlist "vlist";
+snafuinclude Bitwise "bitwise";
+
+snafuinclude Prelude "prelude";
+//snafuinclude Sera    "sera";
+snafuinclude Measure "bench/measure";
+
+// Space Efficient Resizable Arrays,
+// based on Sebasian Sylvan's implementation:
+//  http://sebastiansylvan.com/2012/12/19/space-efficient-rresizable-arrays/
+//
+// which implements the algorithms/data structures from the paper
+//      Resizable Arrays in Optimal Space and Time
+
+type case Sera (a:Boxed)
+       of $Sera
+                (Ref (VList (Array a))) // index blocks
+                (Ref (Maybe (Array a))) // spare block
+                (Ref Word) // num elems
+                (Ref Word) // num elems in last data block
+                (Ref Word) // num super blocks
+                (Ref Word) // num data blocks in last super block
+       ;
+
+mkEmptySera :: forall (a:Boxed) { Sera a };
+mkEmptySera =  {
+  Sera (prim ref (mkEmptyVList !))
+       (prim ref None)
+       (prim ref 0)
+       (prim ref 0)
+       (prim ref 0)
+       (prim ref 0)
+};
+
+primArrayBoxedIndex :: forall (t:Boxed) { Array t => Word => Maybe t };
+primArrayBoxedIndex = { a => i =>
+  if i <UWord arrayLengthWord a
+    then Some a[trunc_Word_to_i32 i]
+    else None
+  end
+};
+
+primArrayBoxedWrite :: forall (t:Boxed) { Array t => Word => t => () };
+primArrayBoxedWrite = { arr => idx => val =>
+  if idx <UWord arrayLengthWord arr
+    then val >^ arr[idx]; ()
+    else ()
+  end
+};
+
+incrWord = { r : Ref Word => (r^ +Word 1) >^ r };
+decrWord = { r : Ref Word => (r^ -Word 1) >^ r };
+
+seraNumDataBlocksInLastRef = { forall a:Boxed, v : Sera a =>
+  case v of $Sera _idxBs _spareB _nElems _nElemsL _nSuperBs _nDataBsL -> _nDataBsL end
+};
+
+seraNumSuperBlocksRef = { forall a:Boxed, v : Sera a =>
+  case v of $Sera _idxBs _spareB _nElems _nElemsL _nSuperBs _nDataBsL -> _nSuperBs end
+};
+
+seraNumElemsInLastRef = { forall a:Boxed, v : Sera a =>
+  case v of $Sera _idxBs _spareB _nElems _nElemsL _nSuperBs _nDataBsL -> _nElemsL end
+};
+
+seraNumElemsRef = { forall a:Boxed, v : Sera a =>
+  case v of $Sera _idxBs _spareB _nElems _nElemsL _nSuperBs _nDataBsL -> _nElems end
+};
+
+seraIndexBlockRef = { forall a:Boxed, v : Sera a =>
+  case v of $Sera _idxBs _spareB _nElems _nElemsL _nSuperBs _nDataBsL -> _idxBs end
+};
+
+seraSpareEmptyDataBlockRef = { forall a:Boxed, v : Sera a =>
+  case v of $Sera _idxBs _spareB _nElems _nElemsL _nSuperBs _nDataBsL -> _spareB end
+};
+
+seraLastIndexBlock! = { forall z:Boxed, v : Sera z =>
+  vListHead! (seraIndexBlockRef v)^
+};
+
+// We store our index block pointers in reverse order, so
+// we must convert a logical index to a physical index before indexing.
+seraGetIndexBlock :: forall (a:Boxed) { Sera a => Word => Array a };
+seraGetIndexBlock = { v => logicalIndex =>
+  vlist = (seraIndexBlockRef v)^;
+  physicalIndex = ((vListLength vlist) -Int32 (trunc_Word_to_i32 logicalIndex)) -Int32 1;
+  case vListGet vlist physicalIndex
+    of $Some arr -> arr
+    of $None     ->
+        print_text "list length, logical index, physical index:\n";
+        print_i32 (vListLength vlist);
+        print_i64 (zext_Word_to_i64 logicalIndex);
+        print_i32 (physicalIndex);
+        prim kill-entire-process "seraGetIndexBlock computed a bogus physical index"
+  end
+};
+
+seraSuperBlockSize = { sbi : Word =>
+  1 `bitshl-Word` (sbi `bitlshr-Word` 1)
+};
+
+seraDataBlockSize = { sbi : Word =>
+  1 `bitshl-Word` ((sbi +Word 1) `bitlshr-Word` 1)
+};
+
+// Returned values are offsts for (elem within block, data block index).
+seraLocateDataBlockAndElem :: { Word => (Word, Word) };
+seraLocateDataBlockAndElem = { i : Word =>
+  r = i +Word 1;
+  k = zext_i32_to_Word (bitlength-Word r -Int32 1);
+
+  // TODO benchmark whether code redundancy here helps performance or not.
+  if bitand-Word k 1 ==Word 1
+    then
+      floorKO2    = bitlshr-Word k 1;
+      ceilKO2     = floorKO2 +Word 1;
+      powFloorKO2 = 1 `bitshl-Word` floorKO2;
+      p           = (powFloorKO2 -Word 1) *Word 2;
+      b           = (bitlshr-Word r ceilKO2) `bitand-Word` (powFloorKO2 -Word 1);
+
+      elt_offset  = r `bitand-Word` ((1 `bitshl-Word` ceilKO2) -Word 1);
+      (elt_offset, p +Word powFloorKO2 +Word b)
+    else
+      floorKO2    = bitlshr-Word k 1;
+      powFloorKO2 = 1 `bitshl-Word` floorKO2;
+      p           = (powFloorKO2 -Word 1) *Word 2;
+      b           = (bitlshr-Word r floorKO2) `bitand-Word` (powFloorKO2 -Word 1);
+
+      elt_offset = r `bitand-Word` (powFloorKO2 -Word 1);
+      (elt_offset, p +Word b)
+  end
+};
+
+seraAllocateDataBlock = { forall b:Boxed, v : Sera b =>
+  sr = seraSpareEmptyDataBlockRef v;
+  block =
+      case sr^
+        of $None       -> size = seraDataBlockSize ((seraNumSuperBlocksRef v)^ -Word 1);
+                          allocDArray (trunc_Word_to_i32 size);
+        of $Some block -> None >^ sr; block
+      end;
+  seraBlockAppend v block;
+};
+
+seraBlockAppend = { forall b:Boxed, v : Sera b => block : ?? BLOCK =>
+  ib = seraIndexBlockRef v;
+  vListCons block ib^ >^ ib;
+};
+
+////////
+
+seraLength :: forall (a:Boxed) { Sera a => Word };
+seraLength =  { v =>
+  (seraNumElemsRef v)^
+};
+
+seraGet :: forall (a:Boxed) { Sera a => Word => Maybe a };
+seraGet =  { v => i =>
+  case seraLocateDataBlockAndElem i of (elemOffset, db) ->
+    primArrayBoxedIndex (seraGetIndexBlock v db) elemOffset;
+  end
+};
+
+seraPut :: forall (a:Boxed) { Sera a => Word => a => () };
+seraPut =  { v => i => a =>
+  case seraLocateDataBlockAndElem i of (elemOffset, db) ->
+    primArrayBoxedWrite (seraGetIndexBlock v db) elemOffset a; ()
+  end
+};
+
+// Called "Grow(Forward)" in the paper by Sedgewick.
+seraSnoc :: forall (a:Boxed) { Sera a => a => () };
+seraSnoc =  { v => i =>
+  firstValue = (seraNumSuperBlocksRef v)^ ==Word 0;
+  if firstValue
+    then
+      seraAllocateDataBlock v;
+      1 >^ (seraNumSuperBlocksRef v);
+      1 >^ (seraNumDataBlocksInLastRef v);
+      1 >^ (seraNumElemsInLastRef v);
+      1 >^ (seraNumElemsRef v);
+      ()
+    else
+      numPrevSuperBlocks = (seraNumSuperBlocksRef v)^ -Word 1;
+      when ((seraNumElemsInLastRef v)^        ==Word seraDataBlockSize  numPrevSuperBlocks) {
+        when ((seraNumDataBlocksInLastRef v)^ ==Word seraSuperBlockSize numPrevSuperBlocks) {
+          incrWord (seraNumSuperBlocksRef v);
+          0 >^ (seraNumDataBlocksInLastRef v);
+          ()
+        };
+
+        seraAllocateDataBlock v;
+        incrWord (seraNumDataBlocksInLastRef v);
+        0 >^ (seraNumElemsInLastRef v);
+        ()
+      };
+
+      incrWord (seraNumElemsRef v);
+      incrWord (seraNumElemsInLastRef v);
+      ()
+  end;
+  primArrayBoxedWrite (seraLastIndexBlock! v) ((seraNumElemsInLastRef v)^ -Word 1) i;
+  ()
+};
+
+// Called "Shrink(Forward)" in the paper by Sedgewick.
+seraUnSnoc :: forall (a:Boxed) { Sera a => Maybe a };
+seraUnSnoc =  { v =>
+  decrWord (seraNumElemsRef v);
+  decrWord (seraNumElemsInLastRef v);
+
+  when ((seraNumElemsInLastRef v)^ ==Word 0) {
+    case vListSplit (seraIndexBlockRef v)^
+      of $Some (b, rem) ->
+        // TODO: anything pointed to by seraSpareEmptyDataBlockRef
+        // will be dead at this point and could be immediately deallocated...
+        (Some b) >^ (seraSpareEmptyDataBlockRef v);
+        rem >^ (seraIndexBlockRef v);
+        decrWord (seraNumDataBlocksInLastRef v);
+        when ((seraNumDataBlocksInLastRef v)^ ==Word 0) {
+          decrWord (seraNumSuperBlocksRef v);
+          (seraSuperBlockSize ((seraNumSuperBlocksRef v)^ -Word 1)) >^ (seraNumDataBlocksInLastRef v);
+          ()
+        };
+
+        (seraDataBlockSize ((seraNumSuperBlocksRef v)^ -Word 1)) >^ (seraNumElemsInLastRef v);
+      of $None ->  prim kill-entire-process "seraUnSnoc invariant violated"
+    end;
+    ()
+  };
+
+  if (seraNumElemsRef v)^ ==Word 0
+    then None
+    else primArrayBoxedIndex (seraLastIndexBlock! v) ((seraNumElemsInLastRef v)^ -Word 1)
+  end
+};
+
+// Uses O(1) stack, and heap proportional to whatever f allocates.
+seraFoldl :: forall (acc:Boxed) (e:Boxed) { Sera e => { e => acc => acc } => acc => acc };
+seraFoldl = { v => f => acc =>
+  case vListSplit (seraIndexBlockRef v)^
+    of $None -> acc
+    of $Some (last, rest) ->
+            // Since the index lists blocks in reverse order, we iterate backwards...
+            accp = vListFoldr rest { arr => acc => arrayFoldl arr f acc } acc;
+            // For the (logically) last (biggest, therefore at the front)
+            // block, it may not be full so we manually iterate over the "good"
+            // indices.
+            foldRange 0 (trunc_Word_to_i32 (seraNumElemsInLastRef v)^) accp
+                            { n : Int32 => acc => f last[n] acc };
+
+  end
+};
+
+// Uses O(n) stack and heap proportional to whatever f allocates.
+//seraFoldr :: forall (a:Boxed) e:Boxed, { Sera e => { e => a => a } => a => a };
+//seraFoldr = { forall a:Boxed e:Boxed, v => f => acc =>
+//  ...
+//};
+
+// Note: the order in which the elements are mapped over
+// implementation-specific and should not be relied upon!
+seraMap :: forall (a:Boxed) (z:Boxed) { Sera z => { z => a } => Sera a };
+seraMap = { v => f =>
+  seraFoldl v { e => vv => seraSnoc vv (f e); vv } (mkEmptySera !)
+};
+
+seraOfList :: forall (a:Boxed) { List a => Sera a };
+seraOfList = { forall a:Boxed, v =>
+  // Because we fold from the left, the left-most element is the first
+  // one vConsed onto vNil, so it becomes the last element of the new list.
+  // TODO better error message if we leave off the annotation
+  listFoldl v { elt : a => s : Sera a => seraSnoc s elt; s } (mkEmptySera !)
+};
+
+
+seraOfListX = { v : List { Int64 } =>
+  // Because we fold from the left, the left-most element is the first
+  // one vConsed onto vNil, so it becomes the last element of the new list.
+  // TODO better error message if we leave off the annotation
+  listFoldl v { elt => s => print_i64 (elt !); seraSnoc s elt; s } (mkEmptySera !)
+};
+
+listOfSera :: forall (a:Boxed) { Sera a => List a };
+listOfSera = { forall a:Boxed, v =>
+  listReverse (seraFoldl v Cons Nil)
+};
+
+////////
+
+print_bil = { lst =>
+  print_text_bare "[";
+  listFoldl lst { fv => unit => print_i64_bare (fv !); print_text_bare ", "; () } ();
+  print_text "]";
+};
+
+print_bil_sera = { v =>
+  print_text_bare "[";
+  seraFoldl v { fv => unit => print_i64_bare (fv !); print_text_bare ", "; () } ();
+  print_text "]";
+};
+
+print_Word = { w => print_i64 (zext_Word_to_i64 w); };
+
+print_bil_sera_2 = { v =>
+  print_text_bare "[";
+  foldRange 0 (trunc_Word_to_i32 (seraLength v)) () { n => unit =>
+    case seraGet v (zext_i32_to_Word n)
+      of $Some fv ->
+        print_i64_bare (fv !); print_text_bare ", ";
+      of $None -> print_text_bare "<invalid index!>";
+    end; unit
+  };
+  print_text "]";
+};
+
+/*
+describe_array = { arr => len => show =>
+  print_text_bare " (arr;len=";
+  print_i64_bare (zext_Word_to_i64 len);
+  print_text_bare "/";
+  print_i64_bare (arrayLength arr);
+  print_text_bare "; elts= ";
+  arrayEnumFromTo arr 0 (zext_Word_to_i64 len)
+    { v => idx => show v; print_text_bare "; "; () };
+  print_text_bare ") ";
+
+};
+
+describe_sera = { v => show =>
+  print_text_bare "(Sera #elems=";
+  print_Word (seraNumElemsRef v)^;
+  print_text_bare "#supblocks=";
+  print_Word (seraNumSuperBlocksRef v)^;
+  print_text_bare "#lastelems=";
+  print_Word (seraNumElemsInLastRef v)^;
+  print_text_bare "#lastblocks=";
+  print_Word (seraNumDataBlocksInLastRef v)^;
+  print_text_bare "#idxblocks=";
+  print_i32 (vListLength (seraIndexBlockRef v)^);
+  print_text ")";
+
+  print_text_bare "(Sera-contents";
+  vListFoldl (seraIndexBlockRef v)^ { arr => first =>
+    if first then describe_array arr (seraNumElemsInLastRef v)^ show; False
+             else describe_array arr (arrayLengthWord arr)      show; first
+    end } True;
+  print_text ")";
+};
+*/
+
+type case BoxedInt32 of $BoxedInt32 Int32;
+
+fnInt64Incr = { f =>
+  x = f ! +Int64 1;
+  { x }
+};
+
+main = {
+  lst =(Cons { 0 }
+       (Cons { 1 }
+       (Cons { 2 }
+       (Cons { 3 }
+       (Cons { 4 }
+       (Cons { 5 }
+       (Cons { 6 }
+       (Cons { 7 }
+       (Cons { 8 }
+       (Cons { 9 }
+       Nil))))))))));
+
+  expect_text "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, ]";
+  print_bil lst;
+
+  expect_text "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, ]";
+  print_bil_sera_2 (seraOfList lst);
+
+  expect_text "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, ]";
+  print_bil_sera (seraOfList lst);
+
+  expect_text "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, ]";
+  print_bil (listOfSera (seraOfList lst));
+
+  expect_text "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, ]";
+  print_bil (listOfSera (seraMap (seraOfList lst) fnInt64Incr));
+
+//describe_sera (seraOfListX lst) { fv =>  print_text_bare " "; print_i64_bare (fv !); };
+
+  //expect_text "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, ]";
+  //print_bil (listOfVList (vListOfList lst));
+
+  //print_i64 (elapsed_ticks_n 1 { foldRange 0 100    Nil { e => t => Cons (BoxedInt32 e) t }; () });
+  //print_i64 (elapsed_ticks_n 1 { foldRange 0 1000   Nil { e => t => Cons (BoxedInt32 e) t }; () });
+  //print_i64 (elapsed_ticks_n 1 { foldRange 0 10000  Nil { e => t => Cons (BoxedInt32 e) t }; () });
+  //
+  //print_i64 (elapsed_ticks_n 1 { foldRange 0 100    (mkEmptyVList !) { e => t => vListCons (BoxedInt32 e) t }; () });
+  //print_i64 (elapsed_ticks_n 1 { foldRange 0 1000   (mkEmptyVList !) { e => t => vListCons (BoxedInt32 e) t }; () });
+  //print_i64 (elapsed_ticks_n 1 { foldRange 0 10000  (mkEmptyVList !) { e => t => vListCons (BoxedInt32 e) t }; () });
+
+  // TODO need larger heap to run this test:
+  //print_i64 (elapsed_ticks_n 1 { foldRange 0 100000 Nil { e => t => Cons (BoxedInt32 e) t }; () });
+};
+
+
+
+//Typecheck error:
+//The following polymorphic function will only work if the type parameter 'a is always instantiated to (Sera (~(R)!2423:inst(tcRhoVar[seraSnoc]) type parameter 1 for seraSnoc))
+//
+//seraMapWrong1 = { v => e => f =>
+//               ~~~~~~~~~~~~~~~~
+//
+//seraMapWrong1 :: forall (a:Boxed) (z:Boxed) { Sera z => z => { z => a } => () };
+//seraMapWrong1 = { v => e => f =>
+//  seraSnoc (f e) v
+//};
+
+//Typecheck error:
+//Occurs check for
+//(~(R)!2424:fn args ty)
+//failed in
+//(Sera (~(R)!2423:inst(tcRhoVar[seraSnoc]) type parameter 1 for seraSnoc))
+//subsCheckRho[(TyConAppTC Sera (MetaTyVar(~(R)!2415:fn type parameter 1 for seraMapWrong2)))]├─AnnVar       v!2417 :: (~(R)!2420:.inferred:
+// 272: seraMapWrong2 = { v => e => f =>
+//                        ^
+//)
+//
+//This type error is often caused by swapped function arguments...
+//seraMapWrong2 :: forall (a:Boxed) (z:Boxed) { Sera z => z => { z => a } => Sera a };
+//seraMapWrong2 = { v => e => f =>
+//  seraSnoc (f e) v; v
+//};

@@ -1,0 +1,19 @@
+snafuinclude Prelude  "prelude";
+snafuinclude Xorshift "prng/xorshift";
+
+print_point = { i => x =>
+  print_i64_bare (zext_i32_to_i64 i);
+  print_text_bare ": ";
+  print_i64x (zext_i32_to_i64 x);
+};
+
+main = {
+  st = xor1x32MakeState 2463534242;
+  foldRange 0 100`000`000 st { i => st =>
+    case xor1x32gen st of (x, st) ->
+      //print_point i x;
+      st
+    end
+  };
+};
+

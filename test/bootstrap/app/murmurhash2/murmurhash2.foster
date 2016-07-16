@@ -1,0 +1,87 @@
+//murmurhash2-step = { k:Int32, h:Int32, r:Int32, m:Int32 =>
+//  bitxor(h * m, kx * m) where
+//  kx = bitxor(km, bitashr(km, r)) where
+//  km = k * m
+//}
+
+// C:
+// k *= m;
+// k ^= k >> r;
+// k *= m;
+//
+// h *= m;
+// h ^= k;
+
+test-manually-lifted = {
+  expect_i32 1040811149;
+  print_i32 (murmurhash2-step-manually-lifted 1 -1 24 5bd1e995_16);
+
+  expect_i32 640067440;
+  print_i32 (murmurhash2-step-manually-lifted 2 1040811149 24 5bd1e995_16);
+
+  expect_i32 1308571692;
+  print_i32 (murmurhash2-step-manually-lifted 3 640067440 24 5bd1e995_16);
+
+  expect_i32 (negate-Int32 2051158325);
+  print_i32 (murmurhash2-step-manually-lifted 4 1308571692 24 5bd1e995_16);
+};
+
+test-let-transformed = {
+  expect_i32 1040811149;
+  print_i32 (murmurhash2-step-let-transformed 1 -1 24 5bd1e995_16);
+
+  expect_i32 640067440;
+  print_i32 (murmurhash2-step-let-transformed 2 1040811149 24 5bd1e995_16);
+
+  expect_i32 1308571692;
+  print_i32 (murmurhash2-step-let-transformed 3 640067440 24 5bd1e995_16);
+
+  expect_i32 (negate-Int32 2051158325);
+  print_i32 (murmurhash2-step-let-transformed 4 1308571692 24 5bd1e995_16);
+};
+
+test-let = {
+  expect_i32 1040811149;
+  print_i32 (murmurhash2-step-let 1 (negate-Int32 1) 24 1`540`483`477);
+
+  expect_i32 640067440;
+  print_i32 (murmurhash2-step-let 2 1040811149 24 5bd1e995_16);
+
+  expect_i32 1308571692;
+  print_i32 (murmurhash2-step-let 3 640067440 24 5bd1e995_16);
+
+  expect_i32 (negate-Int32 2051158325);
+  print_i32  (murmurhash2-step-let 4 1308571692 24 5bd1e995_16);
+};
+
+main = {
+  test-manually-lifted !;
+  test-let-transformed !;
+  test-let !;
+};
+
+mrmr-step2 = { km:Int32 => r:Int32 =>
+                        bitxor-Int32 km (bitashr-Int32 km r) };
+mrmr-step5 = { h:Int32 => kx:Int32 => m:Int32 =>
+                        bitxor-Int32 (h  *Int32 m)
+                                     (kx *Int32 m) };
+murmurhash2-step-manually-lifted = {
+                        k:Int32 => h:Int32 => r:Int32 => m:Int32 =>
+  mrmr-step5 h (mrmr-step2 (k *Int32 m) r) m
+};
+
+murmurhash2-step-let-transformed = {
+                        k:Int32 => h:Int32 => r:Int32 => m:Int32 =>
+  {    km:Int32 =>
+    {  kx:Int32 =>
+       bitxor-Int32 (h *Int32 m) (kx *Int32 m)
+    } (bitxor-Int32 km (bitashr-Int32 km r))
+  }   (k *Int32 m)
+};
+
+murmurhash2-step-let = { k:Int32 => h:Int32 => r:Int32 => m:Int32 =>
+  km = k *Int32 m;
+  kx = bitxor-Int32 km (bitashr-Int32 km r);
+       bitxor-Int32 (h  *Int32 m)
+                    (kx *Int32 m)
+};

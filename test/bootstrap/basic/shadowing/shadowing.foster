@@ -1,0 +1,41 @@
+main = {
+  t1 !;
+  t2a !;
+  t2b !;
+  t3a !;
+  t3b !;
+};
+
+t1 = {
+  expect_i32 1;
+  x = (1, 2);
+  case x of (x, _) -> print_i32 x; end
+};
+
+t2a = {
+  expect_i32 3;
+  x = (1, 2);
+  x = 3;
+  print_i32 x
+};
+
+t2b = {
+  expect_i32 3;
+  let x = (1, 2);
+   in let x = 3; in print_i32 x end
+  end;
+};
+
+t3a = {
+  expect_i32 4;
+  x = opaquely_i32 2;
+  y = x;
+  print_i32 (y +Int32 x)
+};
+
+t3b = {
+  expect_i32 4;
+  let x = opaquely_i32 2; in
+    let y = x; in print_i32 (y +Int32 x) end
+  end;
+};

@@ -1,0 +1,42 @@
+snafuinclude WordMaps "wordmap";
+
+print_i64_f_pair_bare = { p : (Word, { Int64 }) =>
+  case p of (k, vf) ->
+    print_text_bare "(";
+    print_i64_bare (zext_Word_to_i64 k);
+    print_text_bare ",";
+    print_i64_bare (vf !);
+    print_text_bare ")";
+  end
+};
+
+print_pbil = { lst =>
+  print_text_bare "[";
+  listFoldl lst { p => unit => print_i64_f_pair_bare p; print_text_bare ", "; () } ();
+  print_text "]";
+};
+
+main = {
+  lst =(Cons (0, { 0 })
+       (Cons (1, { 1 })
+       (Cons (2, { 2 })
+       (Cons (4, { 4 })
+       (Cons (5, { 5 })
+       (Cons (6, { 6 })
+       (Cons (1, { 7 })
+       Nil)))))));
+
+  shwTextPair = { t1 => t2 => mkTextConcat "("
+                              (mkTextConcat
+                               (mkTextConcat t1 ",")
+                               (mkTextConcat t2 ")")) };
+  shw = { k => vf => shwTextPair (tmp_Text_of_SWord k)
+                                  (tmp_Text_of_SWord (vf !)) };
+
+  expect_text "[(0,0), (1,1), (2,2), (4,4), (5,5), (6,6), (1,7), ]";
+  print_pbil lst;
+
+  expect_text "[(0,0), (1,7), (2,2), (4,4), (5,5), (6,6), ]";
+  print_pbil (wordMapToList (wordMapOfList lst));
+
+};

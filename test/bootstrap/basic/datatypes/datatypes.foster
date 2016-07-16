@@ -1,0 +1,97 @@
+main = {
+  expect_i32 6;
+  print_i32 (len (ones 6));
+
+  expect_i32 0;
+  print_i32 (ex2 Nil32);
+
+  expect_i32 1;
+  print_i32 (ex2 (Cons32 0 Nil32));
+
+  expect_i32 2;
+  print_i32 (ex2 (Cons32 0 (Cons32 1 Nil32)));
+
+  badcase ! ;
+
+  ctormismatch !;
+  ctormismatch2 !;
+  ctormismatch3 !;
+};
+
+ones = { n : Int32 =>
+  if n ==Int32 0
+   then Nil32
+   else Cons32 n (ones (n -Int32 1))
+  end
+};
+
+// occ [] switched on, both subtrees are leaves
+ex2 = { z : Int32List => case z
+    of $Nil32                  -> 0
+    of $Cons32 x ($Cons32 y z) -> 2
+    of $Cons32 x ($Nil32)      -> 1
+  end
+};
+
+len = { z : Int32List =>
+  case z
+    of $Nil32       -> 0
+    of $Cons32 n ns -> 1 +Int32 (len ns)
+    // of (n, ns)      -> n +Int32 (len ns) // should fail due to type mismatch
+  end
+};
+
+badcase = { // ensure tuples are kept distinct from tuple-like values.
+  expect_i1 False;
+  print_i1 (__COMPILES__ { z : Int32List =>
+                  case z
+                    of $Cons32 n ns    -> 1 +Int32 (len ns)
+                    of         (n, ns) -> n +Int32 (len ns)
+                  end
+           });
+};
+
+ctormismatch = { // ensure tuples are kept distinct from tuple-like values.
+  expect_i1 False;
+  print_i1 (__COMPILES__ { z : Int32List =>
+                  case z
+                    of $PCons32 _ _    -> 1
+                  end
+           });
+};
+
+ctormismatch2 = {
+  expect_i1 False;
+  print_i1 (__COMPILES__ { z : Int32List =>
+                  case z
+                    of $Cons32 n ns    -> 1 +Int32 (len ns)
+                    of $PCons32 _ _    -> 1
+                  end
+           });
+};
+
+ctormismatch3 = {
+  expect_i1 False;
+  print_i1 (__COMPILES__ { z : List Int32 =>
+                  case z
+                    of $Cons True _ -> 1 +Int32 (len ns)
+                  end
+           });
+};
+
+type case Int32List
+  of $Nil32
+  of $Cons32 Int32 Int32List
+;
+
+type case Int32PairList
+  of $PNil32
+  of $PCons32 (Int32, Int32) Int32PairList
+;
+
+type case Int32TripleList
+  of $TNil32
+  of $TCons32 (Int32, Int32, Int32) Int32TripleList
+;
+
+

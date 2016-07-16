@@ -1,0 +1,250 @@
+snafuinclude List "list";
+snafuinclude Maybe "maybe";
+snafuinclude Prelude "prelude";
+
+// Implementation of Phil Bagwell's VList data structure:
+//   http://en.wikipedia.org/wiki/VList
+// paper:
+//   http://infoscience.epfl.ch/record/64410/files/techlists.pdf
+
+// For now, the underlying storage is a List rather than any form of array.
+
+type case VList (a:Type)
+       of $VList Int32 (VListBase a) Int32
+       ;
+
+type case VListBase (a:Type)
+       of $VListBase (Maybe (VListBase a)) (List a)
+       ;
+
+// The first integer in a VList is called "offset" but really caches the
+// length of the list in the associated base, so that we know when to
+// extend the base chain.
+
+mkEmptyVList :: forall (a:Type) { VList a };
+mkEmptyVList =  {
+  VList 0 (VListBase None Nil) 0
+};
+
+// Space complexity: O(1)
+// Time  complexity: O(1)
+vListCons :: forall (a:Type) { a => VList a => VList a };
+vListCons =  { e => v =>
+  case v of $VList offset base size ->
+    case base of $VListBase prev elems ->
+      if size ==Int32 0
+        then      // invariant: prev is None, offset == 0
+                  VList 1 (VListBase prev (Cons e elems)) 1
+        else if size ==Int32 offset
+             then pptr = Some base;
+                  VList 1 (VListBase pptr (Cons e Nil)) (size *Int32 2)
+             else VList (offset +Int32 1)
+                          (VListBase prev (Cons e elems))  size
+             end
+      end
+    end
+  end
+};
+
+// Precondition: v is not empty.
+vListHead! :: forall (a:Type) { VList a => a };
+vListHead! =  { v =>
+  unMaybe (vListHead v)
+};
+
+// Time  complexity: O(1)
+vListHead :: forall (a:Type) { VList a => Maybe a };
+vListHead =  { v =>
+  case v of $VList offset ($VListBase prev elems) size ->
+    case elems
+      of $Nil      -> None
+      of $Cons e _ -> Some e
+    end
+  end
+};
+
+// Time  complexity: O(log n)
+vListLast :: forall (a:Type) { VList a => Maybe a };
+vListLast =  { v =>
+  REC go = { base =>
+    case base of $VListBase prev elems ->
+      case (prev, elems)
+        of ($None, $Nil)      -> None
+        of ($None, $Cons e _) -> Some e
+        of ($Some base, _)    -> go base
+      end
+    end
+  };
+  case v of $VList offset base size -> go base end
+};
+
+// Precondition: v is not empty.
+vListTail! :: forall (a:Type) { VList a => VList a };
+vListTail! =  { v =>
+  unMaybe (vListTail v)
+};
+
+// Space complexity: O(1)
+// Time  complexity: O(1)
+vListTail :: forall (a:Type) { VList a => Maybe (VList a) };
+vListTail =  { v =>
+  case v of $VList offset ($VListBase prev elems) size ->
+    new-off = offset -Int32 1;
+    if size ==Int32 0
+      then None
+      else
+        if new-off ==Int32 0
+          then case prev
+                of $Some prevbase ->
+                        newsize = size `sdiv-Int32` 2;
+                        Some (VList newsize prevbase newsize)
+                of _ -> Some (mkEmptyVList !)
+               end
+          else // listTail! is justified because new-off > 0,
+               // which implies that elems is non-empty.
+               Some (VList new-off (VListBase prev (listTail! elems)) size)
+        end
+    end
+  end
+};
+
+// Time  complexity: O(1)
+vListLength :: forall (a:Type) { VList a => Int32 };
+vListLength =  { v =>
+  case v of $VList offset ($VListBase prev elems) size ->
+    if size ==Int32 0
+      then 0
+      else size +Int32 (offset -Int32 1)
+    end
+  end
+};
+
+// Time complexity: amortized O(1) for random accesses, O(log n) worst case.
+// TODO factor out `vListGet!` ?
+vListGet :: forall (a:Type) { VList a => Int32 => Maybe a };
+vListGet =  { v => i =>
+  REC helper-loop = { idx => newsize => base =>
+    case base of ($VListBase prev elems) ->
+      case prev
+        of $Some prevbase ->
+          if idx >=SInt32 newsize
+            then helper-loop (idx -Int32 newsize) (newsize `sdiv-Int32` 2) prevbase
+            else listGet elems idx
+          end
+        of $None -> listGet elems idx
+      end
+    end
+  };
+
+  if i >=UInt32 vListLength v
+    then None
+    else
+      case v of $VList offset ($VListBase prev elems) size ->
+        if i ==Int32 0 // and, implicitly, |v| > 0, thus listHead! is ok.
+          then Some (listHead! elems)
+             // TODO should be just as efficient to do (unMaybe (vListHead v))
+          else case prev
+                 of $None -> listGet elems i
+                 of $Some prevbase ->
+                      if i >=SInt32 offset
+                        then helper-loop (i -Int32 offset) (size `sdiv-Int32` 2) prevbase;
+                        else listGet elems i
+                      end
+               end
+        end
+      end
+  end
+};
+
+vListSplit :: forall (c:Type) { VList c => Maybe (c, VList c) };
+vListSplit = { v =>
+  case v of $VList offset ($VListBase prev elems) size ->
+    if size ==Int32 0
+      then None
+      else Some (vListHead! v, vListTail! v)
+    end
+  end
+};
+
+// Uses O(1) stack and O(n) heap.
+vListReverse :: forall (a:Type) { VList a => VList a };
+vListReverse = { v =>
+  REC helper-loop = { v => acc =>
+    case vListSplit v
+      of $None              -> acc
+      of $Some (head, tail) -> helper-loop tail (vListCons head acc)
+    end
+  };
+  helper-loop v (mkEmptyVList !)
+};
+
+// Uses O(1) stack, and heap proportional to whatever f allocates.
+vListFoldl :: forall (a:Type) (e:Type) { VList e => { e => a => a } => a => a };
+vListFoldl = { v => f => acc =>
+  REC foldBase = { mb_base : Maybe (VListBase e) => acc : a =>
+    case mb_base
+     of $None                         -> acc
+     of $Some ($VListBase prev elems) -> foldBase prev (listFoldl elems f acc)
+    end
+  };
+
+  case v of $VList offset base size -> foldBase (Some base) acc end
+};
+
+// Uses O(1) stack, and heap proportional to whatever f allocates.
+vListFoldlAlt :: forall (a:Type) (e:Type) { VList e => { e => a => a } => a => a };
+vListFoldlAlt = { v => f => acc =>
+  case vListSplit v
+    of $None              -> acc
+    of $Some (head, tail) -> vListFoldlAlt tail f (f head acc)
+  end
+};
+
+listShow = { forall t:Type, x : List t => show : { t => Text } =>
+  REC go = { txt => xs =>
+    case xs of $Nil -> mkTextConcat txt ")"
+            of $Cons v zs -> go (mkTextConcat txt (mkTextConcat " " (show v))) zs
+    end
+  };
+
+  case x of $Nil -> "()"
+         of $Cons v xs -> go (mkTextConcat "(list " (show v)) xs
+  end
+};
+
+// Uses O(log n) stack, and heap O(n) + proportional to whatever f allocates.
+vListFoldr :: forall (a:Type) (e:Type) { VList e => { e => a => a } => a => a };
+vListFoldr = { v => f => acc =>
+  REC foldBase = { mb_base : Maybe (VListBase e) => acc : a =>
+    case mb_base
+     of $None                         -> acc
+     of $Some ($VListBase prev elems) -> listFoldr elems f (foldBase prev acc)
+    end
+  };
+
+  case v of $VList offset base size -> foldBase (Some base) acc end
+};
+
+// Uses O(1) stack, and heap O(n) + proportional to whatever f allocates.
+// The constant factor is roughly 5x worse than vListFoldr.
+vListFoldrAlt :: forall (a:Type) (e:Type) { VList e => { e => a => a } => a => a };
+vListFoldrAlt = { v => f => acc =>
+  vListFoldl (vListReverse v) f acc
+};
+
+// Note: the order in which the elements are mapped over
+// implementation-specific and should not be relied upon!
+vListMap :: forall (a:Type) (e:Type) { VList e => { e => a } => VList a };
+vListMap = { v => f =>
+  vListFoldl v { e => vv => vListCons (f e) vv } (mkEmptyVList !)
+};
+
+vListOfList :: forall (a:Type) { List a => VList a };
+vListOfList = { v =>
+  listFoldr v vListCons (mkEmptyVList !)
+};
+
+listOfVList :: forall (a:Type) { VList a => List a };
+listOfVList = { v =>
+  vListFoldr v Cons Nil
+};

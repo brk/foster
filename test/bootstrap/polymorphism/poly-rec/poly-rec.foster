@@ -1,0 +1,64 @@
+main = {
+  noinline_c1 !;
+  noinline_c2 !;
+  ();
+};
+
+noinline_c1 = {
+  a = allocDArray:[Int64] 0;
+  local-arrayEnumFrom a 0 { t => i => () };
+};
+
+noinline_c2 = {
+  a = allocDArray:[Int32] 0;
+  local-arrayEnumFrom_lh a 0 { t => i => () };
+};
+
+local-arrayEnumFrom = { forall t:Type,
+                  a : Array t =>
+                  k : Int64 =>
+                  f : { t => Int64 => () } =>
+  if k <SInt64 prim_arrayLength a
+    then f a[trunc_i64_to_i32 k] k;
+         local-arrayEnumFrom a (k +Int64 1) f
+    else ()
+  end
+};
+
+
+local-arrayEnumFrom_lh = { forall t:Type,
+                  a : Array t =>
+                  k : Int64 =>
+                  f : { t => Int64 => () } =>
+  REC lup = { k =>
+     if k <SInt64 prim_arrayLength a
+       then f a[trunc_i64_to_i32 k] k;
+            lup (k +Int64 1)
+       else ()
+     end
+  };
+
+  lup k;
+};
+
+/*
+// Fails with un-inferred type variable.
+// The error message should point to either allocDArray or t...
+main = {
+  a = allocDArray 0;
+  local-arrayEnumFrom a 0 { t => i => () };
+  ();
+};
+
+local-arrayEnumFrom = { forall t:Type,
+                  a : Array t =>
+                  k : Int64 =>
+                  f : { t => Int64 => () } =>
+  if k <SInt64 prim_arrayLength a
+    then f a[trunc_i64_to_i32 k] k;
+         local-arrayEnumFrom a (k +Int64 1) f
+    else ()
+  end
+};
+*/
+

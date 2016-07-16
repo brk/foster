@@ -1,0 +1,228 @@
+snafuinclude Prelude "prelude";
+
+// Transliteration of Computer Language Benchmarks Game
+// program for Free Pascal contributed by Christoph Bauer
+//                         and sped up by Petr Prokhorenkov.
+//
+// http://shootout.alioth.debian.org/u32/program.php?test=nbody&lang=gcc&id=2
+
+type case Planet of
+  $Planet (Ref Float64) // px
+          (Ref Float64) // py
+          (Ref Float64) // pz
+          (Ref Float64) // vx
+          (Ref Float64) // vy
+          (Ref Float64) // vz
+          (Ref Float64) // mass
+  ;
+
+// Ugh...
+px = { p : Planet => case p of $Planet v _ _  _ _ _  _ -> v^ end };
+py = { p : Planet => case p of $Planet _ v _  _ _ _  _ -> v^ end };
+pz = { p : Planet => case p of $Planet _ _ v  _ _ _  _ -> v^ end };
+vx = { p : Planet => case p of $Planet _ _ _  v _ _  _ -> v^ end };
+vy = { p : Planet => case p of $Planet _ _ _  _ v _  _ -> v^ end };
+vz = { p : Planet => case p of $Planet _ _ _  _ _ v  _ -> v^ end };
+ma = { p : Planet => case p of $Planet _ _ _  _ _ _  v -> v^ end };
+pxr = { p : Planet => case p of $Planet v _ _  _ _ _  _ -> v end };
+pyr = { p : Planet => case p of $Planet _ v _  _ _ _  _ -> v end };
+pzr = { p : Planet => case p of $Planet _ _ v  _ _ _  _ -> v end };
+vxr = { p : Planet => case p of $Planet _ _ _  v _ _  _ -> v end };
+vyr = { p : Planet => case p of $Planet _ _ _  _ v _  _ -> v end };
+vzr = { p : Planet => case p of $Planet _ _ _  _ _ v  _ -> v end };
+mar = { p : Planet => case p of $Planet _ _ _  _ _ _  v -> v end };
+
+mkPlanet = { px : Float64 => py : Float64 => pz : Float64 =>
+             vx : Float64 => vy : Float64 => vz : Float64 =>
+             mass : Float64 =>
+  Planet (prim ref px) (prim ref py) (prim ref pz) (prim ref vx) (prim ref vy) (prim ref vz) (prim ref mass)
+};
+
+mkBodies = { nbodies : Int32 =>
+  let bodies = allocDArray:[Planet] nbodies;
+      //solar_mass = 39.478417604;
+      solar_mass = 39.478417604357428482118055131396; // 50.265482457436688;
+      days_per_year = 365.24;
+  in
+    (mkPlanet  0.0  0.0  0.0
+               0.0  0.0  0.0
+               solar_mass) >^ bodies[0]; // sun
+
+    (mkPlanet
+                 4.84143144246472090e+00
+       (0.0 -f64 1.16032004402742839e+00)
+       (0.0 -f64 1.03622044471123109e-01)
+                (1.66007664274403694e-03 *f64 days_per_year)
+                (7.69901118419740425e-03 *f64 days_per_year)
+       (0.0 -f64 6.90460016972063023e-05 *f64 days_per_year)
+                (9.54791938424326609e-04 *f64 solar_mass)) >^ bodies[1]; // jupiter
+
+    (mkPlanet
+               (8.34336671824457987e+00)
+               (4.12479856412430479e+00)
+      (0.0 -f64 4.03523417114321381e-01)
+      (0.0 -f64 (2.76742510726862411e-03 *f64 days_per_year))
+                (4.99852801234917238e-03 *f64 days_per_year)
+                (2.30417297573763929e-05 *f64 days_per_year)
+                (2.85885980666130812e-04 *f64 solar_mass)) >^ bodies[2]; // saturn
+
+    (mkPlanet
+                (1.28943695621391310e+01)
+       (0.0 -f64 1.51111514016986312e+01)
+       (0.0 -f64 2.23307578892655734e-01)
+                (2.96460137564761618e-03 *f64 days_per_year)
+                (2.37847173959480950e-03 *f64 days_per_year)
+       (0.0 -f64 2.96589568540237556e-05 *f64 days_per_year)
+                (4.36624404335156298e-05 *f64 solar_mass)) >^ bodies[3]; // uranus
+
+    (mkPlanet
+                 1.53796971148509165e+01
+       (0.0 -f64 2.59193146099879641e+01)
+                 1.79258772950371181e-01
+                (2.68067772490389322e-03 *f64 days_per_year)
+                (1.62824170038242295e-03 *f64 days_per_year)
+       (0.0 -f64 9.51592254519715870e-05 *f64 days_per_year)
+                (5.15138902046611451e-05 *f64 solar_mass)) >^ bodies[4]; // neptune
+
+    bodies
+  end
+};
+
+repeat = { n : Int32 => f : { () } =>
+  if n >SInt32 0 then f !; repeat (n -Int32 1) f else () end
+};
+
+incrBy = { r : Ref Int32 => n : Int32 => (n +Int32 r^) >^ r; };
+decrBy = { r : Ref Int32 => n : Int32 => (n -Int32 r^) >^ r; };
+
+incrByFloat64 = { r : Ref Float64 => n : Float64 => (r^ +f64 n) >^ r; };
+decrByFloat64 = { r : Ref Float64 => n : Float64 => (r^ -f64 n) >^ r; };
+multByFloat64 = { r : Ref Float64 => n : Float64 => (r^ *f64 n) >^ r; };
+
+dot_bodyPos = { b : Planet =>
+  (vx b *f64 vx b)  +f64  (vy b *f64 vy b)  +f64  (vz b *f64 vz b)
+};
+
+energy = { bodies : Array Planet =>
+  let e = (prim ref 0.0); in
+    arrayEnum bodies { b1 : Planet => i : Int64 =>
+      incrByFloat64 e (0.5 *f64 ma b1 *f64 dot_bodyPos b1);
+      arrayEnumFrom bodies (incr64 i) { b2: Planet => jj : Int64 =>
+        let dx = px b1 -f64 px b2;
+            dy = py b1 -f64 py b2;
+            dz = pz b1 -f64 pz b2;
+            distance = sqrt-f64 ((dx *f64 dx) +f64 (dy *f64 dy) +f64 (dz *f64 dz));
+        in
+          decrByFloat64 e (div-f64 (ma b1 *f64 ma b2) distance);
+        end
+      };
+    };
+    e^
+  end
+};
+
+advance = { bodies : Array Planet => i : Ref Int64
+                                  => j : Ref Int64
+                                  => l : Int64
+                                  =>
+  (sext_i32_to_i64 0) >^ i;
+  (sext_i32_to_i64 0) >^ j;
+  until { i^ ==Int64 l } {
+    (i^ +Int64 (sext_i32_to_i64 1)) >^ j;
+    let b1 = prim subscript bodies (trunc_i64_to_i32 i^); in
+      until { j^ >=SInt64 l } {
+        let b2 = prim subscript bodies (trunc_i64_to_i32 j^); in
+          let dx = px b1 -f64 px b2;
+              dy = py b1 -f64 py b2;
+              dz = pz b1 -f64 pz b2;
+              inv_distance = div-f64 1.0 (sqrt-f64 ((dx *f64 dx) +f64 (dy *f64 dy) +f64 (dz *f64 dz)));
+              mag = inv_distance *f64 inv_distance *f64 inv_distance;
+          in
+            decrByFloat64 (vxr b1) (dx *f64 ma b2 *f64 mag);
+            decrByFloat64 (vyr b1) (dy *f64 ma b2 *f64 mag);
+            decrByFloat64 (vzr b1) (dz *f64 ma b2 *f64 mag);
+            incrByFloat64 (vxr b2) (dx *f64 ma b1 *f64 mag);
+            incrByFloat64 (vyr b2) (dy *f64 ma b1 *f64 mag);
+            incrByFloat64 (vzr b2) (dz *f64 ma b1 *f64 mag);
+            ()
+          end;
+          (j^ +Int64 (sext_i32_to_i64 1)) >^ j;
+        end
+      }
+    end;
+    (i^ +Int64 (sext_i32_to_i64 1)) >^ i;
+  };
+
+  (sext_i32_to_i64 0) >^ i;
+  until { i^ ==Int64 l } {
+    let b = prim subscript bodies (trunc_i64_to_i32 i^); in
+      incrByFloat64 (pxr b) (vx b);
+      incrByFloat64 (pyr b) (vy b);
+      incrByFloat64 (pzr b) (vz b);
+      (i^ +Int64 (sext_i32_to_i64 1)) >^ i;
+    end
+  }
+};
+
+offset-momentum = { bodies : Array Planet =>
+  let rx = (prim ref 0.0);
+      ry = (prim ref 0.0);
+      rz = (prim ref 0.0);
+  in
+    arrayEnum bodies { b : Planet => ign:Int64 =>
+      incrByFloat64 rx (vx b *f64 ma b);
+      incrByFloat64 ry (vy b *f64 ma b);
+      incrByFloat64 rz (vz b *f64 ma b);
+    };
+    let solar_mass = 39.478417604357428482118055131396; in
+      (div-f64 (0.0 -f64 rx^) solar_mass) >^ vxr bodies[0];
+      (div-f64 (0.0 -f64 ry^) solar_mass) >^ vyr bodies[0];
+      (div-f64 (0.0 -f64 rz^) solar_mass) >^ vzr bodies[0];
+    end
+  end
+};
+
+scale = { bodies : Array Planet => s : Float64 =>
+  arrayEnum bodies { b : Planet => ign:Int64 =>
+    multByFloat64 (mar b) (s *f64 s);
+    multByFloat64 (vxr b) s;
+    multByFloat64 (vyr b) s;
+    multByFloat64 (vzr b) s;
+  };
+};
+
+advance-loop = { n : Int32 => bodies : Array Planet
+              => i : Ref Int64
+              => j : Ref Int64
+              => l : Int64 =>
+  if n ==Int32 0 then () else
+    advance bodies i j l;
+    advance-loop (n -Int32 1) bodies i j l;
+  end
+};
+
+main = {
+  let n = (prim ref (tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1)));
+      nbodies = 5;
+      bodies = mkBodies nbodies;
+      i = (prim ref 0);
+      j = (prim ref 0);
+      l = sext_i32_to_i64 nbodies;
+      dt = 1.0e-02;
+  in
+      offset-momentum bodies;
+
+      print_float_p9f64 (energy bodies);
+
+      scale bodies dt;
+      advance-loop n^ bodies i j l;
+      scale bodies (div-f64 1.0 dt);
+
+      print_float_p9f64 (energy bodies);
+  end
+};
+
+// For 50000000, should print (after 20-some seconds, optimized)
+//        -0.169075164
+//        -0.169059907
+

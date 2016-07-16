@@ -1,0 +1,17 @@
+main = {
+  0
+};
+
+// Make sure we're not sharing stack slots between k and xs.
+count = { z : TreeB32 =>
+  case z
+    of $NilB32  k       -> k
+    of $ConsB32 xs ys z -> z +Int32 (count xs)
+                             +Int32 (count ys)
+  end
+};
+
+type case TreeB32
+  of $NilB32  Int32
+  of $ConsB32 TreeB32 TreeB32 Int32
+;

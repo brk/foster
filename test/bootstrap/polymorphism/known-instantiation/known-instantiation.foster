@@ -1,0 +1,31 @@
+idb  = { forall t:Boxed, x:t => x };
+idb2 = { forall t:Boxed, x:t => x };
+
+main = {
+  //test { () };
+  ()
+};
+
+/*
+test = { f : { () } =>
+  let h = idb:[{ () }];
+      g = idb2 h;
+  in  g f end
+};
+*/
+
+test = { forall t:Boxed, x : t =>
+  let h = idb:[t];
+      // m = idb2:[{ t => t }] h; // no subst for t
+      g = idb2 h;
+  in  g x end
+};
+
+/*
+test = { f : { () } =>
+  let h = { forall t:Boxed, x:t => idb:[t] x };
+      g = idb2 h:[{ () }];
+  in  g f end
+};
+*/
+

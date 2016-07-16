@@ -1,0 +1,29 @@
+snafuinclude Maybe "maybe";
+
+type case Sera (a:Boxed)
+       of $Sera
+                (Ref (Maybe (Array a))) // index blocks
+                (Ref (Maybe (Array a))) // spare block
+       ;
+
+takeArray = { forall t:Boxed, a : Array t => () };
+
+takeArrayUnit = { a : Array () => () };
+
+// At various points, compiler bugs have resulted in some subset of
+// these functions not properly type-checking.
+// The bug is easiest to reproduce at top-level because top-level functions
+// are always run in Check instead of Infer mode, which happens to matter...
+foo1 = { forall b:Boxed, arr =>     takeArray:[b] arr };
+foo2 = { forall b:Boxed, arr =>     takeArrayUnit arr };
+foo3 = { forall b:Boxed, arr => v : Sera b =>   takeArrayUnit arr };
+foo4 = { forall b:Boxed, v : Sera b => arr =>   takeArrayUnit arr };
+foo7 = { forall b:Boxed, arr => v : Sera b =>   takeArray:[b] arr };
+foo8 = { forall b:Boxed, v : Sera b => arr =>   takeArray:[b] arr };
+
+main = {
+  ()
+};
+
+
+

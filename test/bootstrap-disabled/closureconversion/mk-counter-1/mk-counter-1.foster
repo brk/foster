@@ -1,0 +1,26 @@
+// IN: 2 3 5 8 13
+
+// Have temporarily disabled type definitions.
+type Counter = fn (to tuple {i32, Counter})
+
+// This currently triggers a known bug in LLVM 2.6
+// on x86. To be re-enabled when LLVM 2.7 is released.
+//mkcounter = fn (n:i32 to Counter) {
+//  fn (to tuple {i32, Counter}) {
+//    tuple { n + 1, mkcounter(n + 1) }
+//  }
+//}
+
+main = fn () {
+  0
+}
+
+//main = fn () {
+//  let c:Counter = mkcounter(read_i32()) in {
+//  let t:tuple {i32, Counter} = c() in {
+//    expect_i32(3)
+//    print_i32(t[0])
+//  }
+//  }
+//}
+

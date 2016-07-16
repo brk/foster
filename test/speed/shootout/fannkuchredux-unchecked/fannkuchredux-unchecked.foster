@@ -1,0 +1,120 @@
+snafuinclude Prelude "prelude";
+
+incrBy = { r : Ref Int32 => n : Int32 => (r^ +Int32 n) >^ r; };
+decrBy = { r : Ref Int32 => n : Int32 => (r^ -Int32 n) >^ r; };
+
+tk = { maxn : Int32 =>
+       maxflips : Ref Int32 =>
+       checksum : Ref Int32 =>
+
+  i = (prim ref 0);
+  c = allocDArray:[Int32] 16;
+  s = allocDArray:[Int32] 16;
+  t = allocDArray:[Int32] 16;
+  odd = (prim ref False);
+
+  REC rotate-helper = { i : Int32 => n : Int32 =>
+        if i <SInt32 n then
+          (prim subscript-unsafe s (i +Int32 1)) >^
+          (prim subscript-unsafe s i);
+          rotate-helper (i +Int32 1) n;
+        else () end
+      };
+
+  rotate = { n : Int32 =>
+               ec = (prim subscript-unsafe s 0);
+               rotate-helper 0 n;
+               ec >^ (prim subscript-unsafe s n);
+           };
+
+  REC flip-helper = { i : Int32 => n : Int32 =>
+        if i <SInt32 n then
+          (prim subscript-unsafe s i) >^ (prim subscript-unsafe t i);
+          flip-helper (i +Int32 1) n;
+        else () end
+      };
+
+  xo = (prim ref 0);
+  yo = (prim ref (prim subscript-unsafe t 0));
+  ri = (prim ref 1);
+  rc = (prim ref 0);
+  done = (prim ref False);
+
+  flip = {
+    flip-helper 0 maxn;
+
+    1 >^ ri;
+    0 >^ rc;
+    False >^ done;
+
+    until { done^ } {
+      0                           >^ xo;
+      (prim subscript-unsafe t 0) >^ yo;
+      until { xo^ >=SInt32 yo^ } {
+        (prim subscript-unsafe t xo^) >^ rc;
+        (prim subscript-unsafe t yo^) >^
+        (prim subscript-unsafe t xo^);
+        incrBy xo 1;
+        rc^ >^ (prim subscript-unsafe t yo^);
+        decrBy yo 1;
+      };
+      incrBy ri 1;
+      ((prim subscript-unsafe t (prim subscript-unsafe t 0)) ==Int32 0) >^ done;
+    };
+    ri^
+  };
+
+  repeatRange 0 16 { k : Int32 => k >^ s[k]; () };
+  repeatRange 0 16 { k : Int32 => 0 >^ c[k]; () };
+
+  until { maxn <=SInt32 i^ } {
+    rotate i^;
+    if (prim subscript-unsafe c i^) >=SInt32 i^ then
+      0 >^ (prim subscript-unsafe c i^);
+      incrBy i 1;
+    else
+      ((prim subscript-unsafe c i^) +Int32 1) >^ (prim subscript-unsafe c i^);
+      1 >^ i;
+      not odd^ >^ odd;
+      if (prim subscript-unsafe s 0) >SInt32 0 then
+          f = if (prim subscript-unsafe s (prim subscript-unsafe s 0))
+                                      ==Int32 0 then 1 else flip ! end;
+          if f >SInt32 maxflips^ then f >^ maxflips; () else () end;
+          if odd^ then checksum^ -Int32 f
+                  else checksum^ +Int32 f
+          end >^ checksum;
+          ()
+      else () end
+    end
+  }
+};
+
+in-range = { n : Int32 => a : Int32 => z : Int32 =>
+  if   n <SInt32 a then False
+  else n <=SInt32 z
+  end
+};
+
+repeatRange = { e : Int32 => n : Int32 => f : { Int32 => () } =>
+  if e <SInt32 n then f e; repeatRange (e +Int32 1) n f else () end
+};
+
+main = {
+    n = tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1);
+    maxflips = (prim ref 0);
+    checksum = (prim ref 0);
+
+    if in-range n 3 15 then
+      tk n maxflips checksum;
+
+      print_i32 checksum^;
+      print_text "Pfannkuchen";
+      print_i32 n;
+      print_i32 maxflips^;
+      ()
+      // printf("%d\nPfannkuchen(%d) = %d\n", checksum, max_n, maxflips);
+    else
+      print_text "usage: <prog> number";
+      ()
+    end
+};

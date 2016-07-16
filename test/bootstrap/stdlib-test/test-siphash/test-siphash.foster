@@ -1,0 +1,62 @@
+snafuinclude Siphash "hash/siphash";
+
+main = {
+  x64 = readInt64FromArrayInt8 b"\x00\x00\x00\x00\x12\x34\x56\x78" 0;
+  expect_i64x 78563412`00000000_16;
+  print_i64x x64;
+
+  x64 = readInt64FromArrayInt8 (prim mach-array-literal 0 0 0 0 12_16 34_16 56_16 78_16) 0;
+  expect_i64x 78563412`00000000_16;
+  print_i64x x64;
+
+  expect_i64x       563412aabbccdd78_16;
+  print_i64x (rot 78563412aabbccdd_16 8);
+
+  expect_i64x 9FAB721EAB581DA1_16;
+  print_i64x (siphash24 b"abcdefghijklmnopqrstuvwxyz" b"AbCdEfGh12345678");
+
+  r = prim ref double-round-alt;
+  rx = prim ref double-round;
+  let (v0, v1, v2, v3) = double-round-alt 15678_16 1234578_16 1234567_16 123678_16;
+  let (v0, v1, v2, v3) = r^ 12345678_16 12345678_16 12345678_16 12345678_16;
+  {
+	expect_i64x 0C5C7C1D169D8EC0B_16;
+	expect_i64x 0E7E96AFFEECEB357_16;
+	expect_i64x 0E24DB579B90E8685_16;
+	expect_i64x 0A5EFDD88D201F4DC_16;
+
+    print_i64x v0;
+    print_i64x v1;
+    print_i64x v2;
+    print_i64x v3;
+  } !;
+
+  ignore = rx^ 12345678_16 12345678_16 12345678_16 12345678_16 { v0 => v1 => v2 => v3 =>
+	expect_i64x 0C5C7C1D169D8EC0B_16;
+	expect_i64x 0E7E96AFFEECEB357_16;
+	expect_i64x 0E24DB579B90E8685_16;
+	expect_i64x 0A5EFDD88D201F4DC_16;
+
+    print_i64x v0;
+    print_i64x v1;
+    print_i64x v2;
+    print_i64x v3;
+    0
+  };
+  ()
+};
+
+
+half-round-alt = { a0 => b => c0 => d => s => t : Int64 =>
+  a = a0 +Int64 b;
+  c = c0 +Int64 d;
+  prim tuple-unboxed (rot a 32) (rot-xor b s a) c (rot-xor d t c)
+};
+
+double-round-alt = { v0 => v1 => v2 => v3 : Int64 =>
+  let (a0, b0, c0, d0) = half-round-alt v0 v1 v2 v3 13 16;
+  let (c1, b1, a1, d1) = half-round-alt c0 b0 a0 d0 17 21;
+  let (a2, b2, c2, d2) = half-round-alt a1 b1 c1 d1 13 16;
+  let (c3, b3, a3, d3) = half-round-alt c2 b2 a2 d2 17 21;
+  prim tuple-unboxed a3 b3 c3 d3
+};

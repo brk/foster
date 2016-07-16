@@ -1,0 +1,89 @@
+snafuinclude Bits "bitwise";
+
+main = {
+  trunc8-test   !;
+  print-i8-test !;
+  i8-ops-test   !;
+
+  bitwise-ops   !;
+};
+
+sub8 = { n : Int8 => n -Int8 (trunc32to8 2); };
+
+trunc32to8 = { n : Int32 => trunc_i32_to_i8 n; };
+
+trunc8-test = {
+  expect_i32 0;
+  print_i32 (sext_i8_to_i32 (trunc32to8 (opaquely_i32 256)));
+};
+
+print-i8-test = {
+     expect_i32 127;
+     print_i8 (trunc32to8 (opaquely_i32 127));
+
+     expect_i32 (0 -Int32 (opaquely_i32 128));
+     print_i8 (trunc32to8 (opaquely_i32 128));
+};
+
+i8-ops-test = {
+  expect_i32 5;
+  print_i8 ((trunc32to8 3) +Int8 (trunc32to8 2));
+
+  expect_i32 0;
+  print_i8 ((trunc32to8 128) +Int8 (trunc32to8 128));
+};
+
+
+bitwise-ops = {
+  expect_i32b                10111001_2;
+  print_i32b (bitmerge-Int32 11110000_2
+                             10110110_2
+                             01001001_2);
+
+  expect_i32b                      1010_2;
+  print_i32b (bitfield-Int32 1101101010_2  0 4);
+
+  expect_i32                10;
+  print_i32 (bitlength-Int32 11`0110`1010_2);
+
+  expect_i32                10;
+  print_i32 (bitlength-alt-Int32 11`0110`1010_2);
+
+  expect_i32                 32;
+  print_i32 (bitlength-Int32 -1);
+
+  expect_i32                     32;
+  print_i32 (bitlength-alt-Int32 -1234567);
+
+  first-bit-set-Int32-test 0 1;
+  first-bit-set-Int32-test 1 2;
+  first-bit-set-Int32-test 0 3;
+  first-bit-set-Int32-test 2 4;
+  first-bit-set-Int32-test 0 5;
+  first-bit-set-Int32-test 1 6;
+  first-bit-set-Int32-test 0 7;
+  first-bit-set-Int32-test 3 8;
+
+  expect_i32b                     0000`1101_2;
+  print_i32b (bit-reverse-Int32 8 1011`0000_2);
+
+  expect_i1 True ; print_i1 (is-bit-set-Int32 101011_2 0);
+  expect_i1 True ; print_i1 (is-bit-set-Int32 101011_2 1);
+  expect_i1 False; print_i1 (is-bit-set-Int32 101011_2 2);
+  expect_i1 True ; print_i1 (is-bit-set-Int32 101011_2 3);
+  expect_i1 False; print_i1 (is-bit-set-Int32 101011_2 4);
+  expect_i1 True ; print_i1 (is-bit-set-Int32 101011_2 5);
+
+  expect_i32 1;      print_i32 (copy-bit-Int32 0  True  0);
+  expect_i32 0100_2; print_i32 (copy-bit-Int32 0  True  2);
+  expect_i32 1011_2; print_i32 (copy-bit-Int32 15 False 2);
+
+
+  expect_i32 4; print_i32 (bitcount-Int32 10101010_2);
+  expect_i32 0; print_i32 (bitcount-Int32 0);
+  expect_i32 1; print_i32 (bitcount-Int32 -2);
+};
+
+first-bit-set-Int32-test = { e : Int32 => n : Int32 =>
+  expect_i32 e; print_i32 (first-set-bit-Int32 n);
+};

@@ -1,0 +1,132 @@
+snafuinclude Bytes "bytes";
+snafuinclude Prelude "prelude";
+
+type case CBOR
+      of $CBOR_UInt Int64
+      of $CBOR_SInt Int64
+      of $CBOR_BS  (Array Int8)
+      of $CBOR_TS  Text
+      of $CBOR_Array (Array CBOR)
+      of $CBOR_ArrayEmpty
+      of $CBOR_Double Float64
+      of $CBOR_NULL
+      of $CBOR_True
+      of $CBOR_False
+      ;
+
+// May fail with a runtime assert (if an array poke fails)
+// or with a None result (if a memcpy would have gone out of bounds).
+tryWriteCBOR :: { CBOR => Array Int8 => Maybe (Int64, Array Int8) };
+tryWriteCBOR = { cbor => dest =>
+  writeTypeAndU = { offset : Int64 => tycode : Int8 => val : Int64 =>
+    majorType = bitshl-Int8 tycode 5;
+    if val <UInt64 24
+      then (trunc_i64_to_i8 val `bitor-Int8` majorType) >^ dest[offset]; offset +Int64 1
+      else if val <UInt64 256
+        then (24 `bitor-Int8` majorType) >^ (prim subscript dest (offset +Int64 0));
+             (trunc_i64_to_i8 val)       >^ (prim subscript dest (offset +Int64 1));
+             offset +Int64 2
+        else
+          if val <UInt64 65536
+            then (25 `bitor-Int8` majorType) >^ dest[offset];
+                 (trunc_i64_to_i8 (val `bitlshr-Int64` 8)) >^ (prim subscript dest (offset +Int64 1));
+                 (trunc_i64_to_i8 val)                     >^ (prim subscript dest (offset +Int64 2));
+                 offset +Int64 3
+            else
+                if val <UInt64 4294967296
+                  then (26 `bitor-Int8` majorType) >^ dest[offset];
+                       (trunc_i64_to_i8 (val `bitlshr-Int64` 24)) >^ (prim subscript dest (offset +Int64 1));
+                       (trunc_i64_to_i8 (val `bitlshr-Int64` 16)) >^ (prim subscript dest (offset +Int64 2));
+                       (trunc_i64_to_i8 (val `bitlshr-Int64`  8)) >^ (prim subscript dest (offset +Int64 3));
+                       (trunc_i64_to_i8 val)                      >^ (prim subscript dest (offset +Int64 4));
+                       offset +Int64 5
+                  else
+                       (27 `bitor-Int8` majorType) >^ dest[offset];
+                       (trunc_i64_to_i8 (val `bitlshr-Int64` 56)) >^ (prim subscript dest (offset +Int64 1));
+                       (trunc_i64_to_i8 (val `bitlshr-Int64` 48)) >^ (prim subscript dest (offset +Int64 2));
+                       (trunc_i64_to_i8 (val `bitlshr-Int64` 40)) >^ (prim subscript dest (offset +Int64 3));
+                       (trunc_i64_to_i8 (val `bitlshr-Int64` 32)) >^ (prim subscript dest (offset +Int64 4));
+                       (trunc_i64_to_i8 (val `bitlshr-Int64` 24)) >^ (prim subscript dest (offset +Int64 5));
+                       (trunc_i64_to_i8 (val `bitlshr-Int64` 16)) >^ (prim subscript dest (offset +Int64 6));
+                       (trunc_i64_to_i8 (val `bitlshr-Int64`  8)) >^ (prim subscript dest (offset +Int64 7));
+                       (trunc_i64_to_i8 val)                      >^ (prim subscript dest (offset +Int64 8));
+                       offset +Int64 9
+                end
+          end
+      end
+    end
+  };
+
+  writeSpecial = { offset => val => writeTypeAndU offset 7 val };
+
+  writeByteArrRaw = { offset => arr => arr_off => arr_len =>
+    memcpy_i8_to_at_from_at_len dest offset arr arr_off arr_len;
+    offset +Int64 arr_len;
+  };
+
+  writeByteArr = { offset => arr =>
+    offset1 = writeTypeAndU offset 2 (prim_arrayLength arr);
+    writeByteArrRaw offset1 arr 0 (prim_arrayLength arr)
+  };
+
+  writeBytesOfText = { offset => bytes : Bytes =>
+    offset1 = writeTypeAndU offset 3 (bytesLength bytes);
+    REC go = { dest_offset => bytes => bytes_offset => bytes_len =>
+                case bytes
+                  of $BytesEmpty -> dest_offset
+                  of $BytesFragment arr8 _ -> writeByteArrRaw dest_offset arr8 bytes_offset bytes_len
+                  of $BytesConcat b1 b2 _ -> go (go dest_offset b1 0 (bytesLength b1)) b2 0 (bytesLength b2)
+                  of $BytesOffset b off _ ->
+                       case b
+                         of $BytesFragment arr8 blen -> writeByteArrRaw dest_offset arr8 off blen
+                         of $BytesConcat ba bb _ -> dest_offset1 = go dest_offset ba (bytes_offset +Int64 off)
+                                                                                     (bytesLength ba -Int64 off);
+                                                    go dest_offset1 bb 0 (bytesLength bb)
+                         of _ -> prim kill-entire-process "writeBytes: bytes invariant violated";
+                       end
+                end
+    };
+    go offset1 bytes 0 (bytesLength bytes);
+  };
+
+  REC textEncodeUtf8 = { t : Text =>
+    case t
+      of $TextFragment bytes _ -> bytesOfRawArray bytes // assuming utf8-encoded already...
+      of $TextConcat t1 t2 _ -> bytesConcat (textEncodeUtf8 t1) (textEncodeUtf8 t2)
+    end
+  };
+
+  writeSigned = { offset => i64 =>
+    if i64 >=SInt64 0
+     then writeTypeAndU offset 0 i64
+     else writeTypeAndU offset 1 (-1 -Int64 i64)
+    end
+  };
+
+  REC go = { len => cbor => offset =>
+    if offset >=SInt64 len
+      then -1
+      else
+        case cbor
+            of $CBOR_UInt i64        -> writeTypeAndU offset 0 i64
+            of $CBOR_SInt i64        -> writeSigned offset i64
+            of $CBOR_BS  arr8        -> writeByteArr offset arr8
+            of $CBOR_TS  text        -> writeBytesOfText offset (textEncodeUtf8 text)
+            of $CBOR_ArrayEmpty      -> writeTypeAndU offset 4 0
+            of $CBOR_Array arrCBORs  -> offset1 = writeTypeAndU offset 4 (prim_arrayLength arrCBORs);
+                                        arrayFold arrCBORs { cbor => idx => offset => go len cbor offset } offset1
+            of $CBOR_Double f        -> offset // TODO...
+            of $CBOR_NULL            -> writeSpecial offset 22
+            of $CBOR_True            -> writeSpecial offset 21
+            of $CBOR_False           -> writeSpecial offset 20
+        end;
+    end
+  };
+
+  len_or_neg1 = go (prim_arrayLength dest) cbor 0;
+  if len_or_neg1 ==Int64 -1
+    then None
+    else Some (len_or_neg1, dest)
+  end
+};
+

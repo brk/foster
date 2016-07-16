@@ -1,0 +1,44 @@
+main = {
+  noinline_autoin !;
+  noinline_manual !;
+};
+
+// Two aspects here:
+//
+// (1) repeat should be specialized at both call sites,
+//     even though it is not a called-once function.
+//
+// (2) we must be careful about peeling the outer call to
+//     repeat's loop header, which may (in general) prevent
+//     the lambda passed to repeat from being completely
+//     specialized away. OTOH it will be taken care of by
+//      contification in most cases of interest...
+
+repeat = { n : Int32 => f : { () } =>
+  if n >SInt32 0 then f !; repeat (n -Int32 1) f else () end
+};
+
+noinline_autoin = {
+  repeat (opaquely_i32 3) { expect_i32 6 };
+  repeat (opaquely_i32 3) { print_i32 6 };
+};
+
+noinline_manual = {
+  noinline_manual_1 !;
+  noinline_manual_2 !;
+};
+
+noinline_manual_1 = {
+  t = { expect_i32 6 };
+  REC rpt = { n : Int32 =>
+    if n >SInt32 0 then t !; rpt (n -Int32 1) else () end
+  };
+  rpt (opaquely_i32 3);
+};
+
+noinline_manual_2 = {
+  REC rpt = { n : Int32 =>
+    if n >SInt32 0 then print_i32 6; rpt (n -Int32 1) else () end
+  };
+  rpt (opaquely_i32 3);
+};

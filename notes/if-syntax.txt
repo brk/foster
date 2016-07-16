@@ -1,0 +1,77 @@
+if :: { Bool, {A}, {A} => A }
+if := { cond, then, else:
+        match cond
+          case true: then()
+          case false: else()
+        end
+      }
+
+if = (cond, then, else) => {
+        match cond
+          case true => then()
+          case false => else()
+        end
+     }
+
+if = (cond, then, else) => {
+        ... cond
+          | true  => then()
+          | false => else()
+        end
+     }
+
+////////////////////////////////////////////////////////////
+
+lambda syntax:
+C#:
+  (arglist) => body
+        arg => body
+
+Ruby:
+  { body }
+  { arglist: body }
+  { (arglist) body }
+  { (arglist) => body }
+
+type reflections:
+
+  { T } == { T => Unit }
+  { A, B, C => D }
+  { {A, B => C} => D }
+
+Haskell:
+  arg -> arg -> arg == (arg, arg) => arg
+
+  How does
+    A , B => C
+  parse?
+
+  1) error
+  2) (A , B) => C
+  3) A , (B => C)
+
+////////////////////////////////////////////////////////////
+
+fmap :: (a -> b) -> f a -> f b          Haskell, seems nice
+
+fmap :: {{a -> b} -> f[a] -> f[b]}
+
+fmap :: {{a => b}, f(a) => f(b) }       Confusing to have , =>
+fmap :: ((a => b), f(a)) => f(b)        Not as clear as Haskell
+
+////////////////////////////////////////////////////////////
+
+(define if (cond then# else#)
+  (match cond
+    (true (then#))
+    (false (else#))))
+
+////////////////////////////////////////////////////////////
+
+Binding(Name(fn),
+  Lambda(Seq(cond then else),
+         Match(Var(cond), Seq(
+            MatchCase(Pattern(true), Call(Var(then))),
+            MatchCase(Pattern(false), Call(Var(else)))
+         ))))
+

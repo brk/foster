@@ -1,0 +1,199 @@
+snafuinclude Maybe "maybe";
+
+type case List (a:Type)
+  of $Nil
+  of $Cons a (List a)
+;
+
+listEmpty :: forall (t:Type) { List t };
+listEmpty = { Nil:[t] };
+
+listSingleton :: forall (t:Type) { t => List t };
+listSingleton =  { x : t =>
+  Cons x Nil
+};
+
+// Precondition: List is not empty.
+listHead! :: forall (t:Type) { List t => t };
+listHead! = { xs : List t =>
+  case xs
+    of $Nil -> prim kill-entire-process "listHead! passed an empty list"
+    of $Cons x _ -> x
+  end
+};
+
+// Precondition: List is not empty.
+listTail! :: forall (t:Type) { List t => List t };
+listTail! = { xs : List t =>
+  case xs
+    of $Nil -> prim kill-entire-process "listTail! passed an empty list"
+    of $Cons _ ys -> ys
+  end
+};
+
+// Precondition: i >= 0, listLength xs > i
+listGet! = { forall t:Type, xs : List t => i : Int32 =>
+  unMaybe (listGet xs i)
+};
+
+listGet = { forall t:Type, xs : List t => i : Int32 =>
+  if i <SInt32 0 then None else
+    // invariant: i >= 0.
+    REC go = { xs => i =>
+      case xs
+        of $Nil -> None
+        of $Cons y ys ->
+          if i ==Int32 0 then Some y else
+            go ys (i -Int32 1)
+          end
+      end
+    };
+    go xs i;
+  end
+};
+
+// Uses O(1) stack, and heap proportional to whatever f allocates.
+listFoldl :: forall (a:Type) (e:Type) { List e => { e => a => a } => a => a };
+listFoldl = { v => f => acc : a =>
+  case v
+    of $Nil            -> acc
+    of $Cons head tail -> listFoldl tail f (f head acc)
+  end
+};
+
+// Uses O(1) stack, and heap O(n) + whatever f allocates.
+listFoldr :: forall (a:Type) (e:Type) { List e => { e => a => a } => a => a };
+listFoldr = { v => f => acc : a =>
+  listFoldl (listReverse v) f acc
+};
+
+listMap :: forall (a:Type) (e:Type) { List e => { e => a } => List a };
+listMap = { v => f =>
+  listFoldl v { e => tail => Cons (f e) tail } Nil |> listReverse;
+};
+
+// Uses heap proportional to the size of the output list (not the input list).
+listKeepIf :: forall (a:Type) { List a => { a => Bool } => List a };
+listKeepIf = { v => f =>
+  listFoldl v { e => tail => if f e then Cons e tail else tail end } Nil |> listReverse;
+};
+
+// Precondition: n <= listLength xs
+listDrop! = { forall t:Type, n : Int32 => xs : List t =>
+  if n >SInt32 0
+    then listDrop! (n -Int32 1) (listTail! xs)
+    else xs
+  end
+};
+
+// This function converges to Nil.
+listDrop = { forall t:Type, n : Int32 => xs : List t =>
+  if n >SInt32 0
+    then listDrop (n -Int32 1) (case xs of $Nil -> xs of $Cons z zs -> zs end)
+    else xs
+  end
+};
+
+listLength64 = { forall t:Type, xs : List t =>
+  listFoldl xs { _e => z => z +Int64 1 } 0
+};
+
+listLength = { forall t:Type, xs : List t =>
+  listFoldl xs { _e => z => z +Int32 1 } 0
+};
+
+listLengthWord :: forall (t:Type) { List t => Word };
+listLengthWord = { xs => listFoldl xs { _e : t => z => z +Word 1 } 0 };
+
+listReverse = { forall t:Type, xs : List t =>
+  REC go = { xs : List t => acc : List t =>
+    case xs
+      of $Nil -> acc
+      of $Cons x ys -> go ys (Cons x acc)
+    end
+  };
+  go xs Nil
+};
+
+listReverseAlt = { forall t:Type, xs : List t =>
+  listFoldl xs Cons Nil
+};
+
+// Returns (prefix, postfix) such that either
+//      listLength prefix == n, or
+//      listLength prefix < n  and listLength postfix == 0
+// O(n) in time and heap space.
+listSplitAt = { forall t:Type, xs : List t => n : Word =>
+  REC go = { lst => n => acc =>
+    if n <=SWord 0
+      then (listReverse acc, lst)
+      else case lst
+             of $Nil -> (listReverse acc, lst)
+             of $Cons x xs -> go xs (n -Word 1) (Cons x acc)
+           end
+    end
+  }; go xs n (listEmpty !)
+};
+
+listAppend :: forall (t:Type) { List t => List t => List t };
+listAppend = { xs => ys =>
+  REC go = { rev => acc =>
+    case rev
+      of $Nil -> acc
+      of $Cons z zs -> go zs (Cons z acc)
+    end
+  };
+  go (listReverse xs) ys
+};
+
+listAppendAlt :: forall (t:Type) { List t => List t => List t };
+listAppendAlt = { xs => ys =>
+  listFoldr xs Cons ys
+};
+
+listIter :: forall (a:Type) { List a => { Word => a => () } => () };
+listIter = { v => f =>
+  REC go = { n => v =>
+              case v
+                of $Nil            -> ()
+                of $Cons head tail -> f n head; go (n +Word 1) tail;
+                // The addition cannot overflow iff lists are never circular...
+              end
+           };
+  go 0 v;
+};
+
+// Precondition: listLength xs == listLength ys.
+listZipSameLen :: forall (a:Type) (b:Type) { List a => List b => List (a, b) };
+listZipSameLen = { xs => ys =>
+  REC go = { xs => ys => acc =>
+    case (xs, ys)
+      of ($Nil, $Nil) -> listReverse acc
+      of ($Cons x xs_, $Cons y ys_) -> go xs_ ys_ (Cons (x, y) acc)
+      of _ -> prim kill-entire-process "listZipSameLen invariant violated!"
+    end
+  };
+  go xs ys (listEmpty !)
+};
+
+listZipPrefix :: forall (a:Type) (b:Type) { List a => List b => List (a, b) };
+listZipPrefix = { xs => ys =>
+  REC go = { xs => ys => acc =>
+    case (xs, ys)
+      of ($Nil, _) -> listReverse acc
+      of (_, $Nil) -> listReverse acc
+      of ($Cons x xs_, $Cons y ys_) -> go xs_ ys_ (Cons (x, y) acc)
+    end
+  };
+  go xs ys (listEmpty !)
+};
+
+// Takes O(listLength ls) stack.
+listScanl :: forall (a:Type) (b:Type) { { b => a => b } => b => List a => List b };
+listScanl = { f => q => ls =>
+  Cons q (case ls
+            of $Nil -> Nil
+            of $Cons x xs -> listScanl f (f q x) xs
+          end)
+};
+

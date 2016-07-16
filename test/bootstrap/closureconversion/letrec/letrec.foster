@@ -1,0 +1,88 @@
+main = {
+  expect_i1 True; print_i1 (is-odd 3);
+
+  loopy 3;
+
+  // Make sure that we give consistent treatment to the return type
+  // of recursively bound functions.
+  expect_i1 False; print_i1 (__COMPILES__ print_i1 (test-rec-ret0 !));
+  expect_i1 False; print_i1 (__COMPILES__ print_i1 (test-rec-ret1 !));
+  expect_i1 False; print_i1 (__COMPILES__ print_i1 (test-rec-let 3));
+  expect_i1 False; print_i1 (__COMPILES__ print_i1 (test-rec-ret 3));
+
+  expect_i32 (0 -Int32 1) ; print_i32 (test-rec-ret 3);
+
+  // todo: error message for f (); instead of f 2;
+};
+
+// These type annotations are needed to protect the inferred types for
+// these literals from the constraint propagated from the __COMPILES__ nodes.
+test-rec-ret0 :: { Int32 };
+test-rec-ret0 = { rec x = { 0 }; in x ! end };
+
+test-rec-ret1 :: { Int32 };
+test-rec-ret1 = { rec x = { 12345 }; in x ! end };
+
+test-rec-let = { z : Int32 =>
+  rec grope = { x:Int32 => if x <SInt32 0 then x else grope (x -Int32 1) end }; in
+    let eporg = { grope };
+     in eporg ! (opaquely_i32 z); end
+  end
+};
+
+test-rec-ret = { z : Int32 =>
+  rec grope = { x:Int32 => if x <SInt32 0 then x else grope (x -Int32 1) end };
+      eporg = { grope };
+   in eporg ! (opaquely_i32 z);
+  end
+};
+
+is-odd = { z:Int32 =>
+  rec even = { x:Int32 => if x ==Int32 0 then True else odd  (x -Int32 1) end };
+      odd  = { x:Int32 => if x ==Int32 1 then True else even (x -Int32 1) end };
+   in odd (opaquely_i32 3);
+  end
+};
+
+// TODO figure out why this doesn't codegen properly.
+is-odd-sunk = { z:Int32 =>
+  rec odd_s = { x:Int32 =>
+    rec even_s = { z:Int32 => if z ==Int32 0 then True else odd_s (z -Int32 1) end };
+    in
+      if x ==Int32 1 then True else even_s (x -Int32 1) end
+    end
+  };
+  in odd_s (opaquely_i32 3); end
+};
+
+// TODO we ought to restrict block-sinking to contifiable functions [1]...
+//      hmmm... but functions become contifiable
+//      after contifying other functions...
+//              [1] ... because if a function is not contifiable,
+//                      sinking it can result in excess memory consumption,
+//                      e.g. if it is moved from a place evaluated once
+//                           to a scope where it is evaluated n times.
+// UGH!
+
+loopy = { z:Int32 =>
+  rec loop = { x:Int32 => if x ==Int32 0 then True else loop (x -Int32 1) end };
+   in loop z;
+  end
+};
+
+/*
+even.env :: (oe, Int32) = ee
+odd.env  :: (ee, Int8) = oe
+
+scc.env :: (Int32, Int8)
+
+let f1 = ref foo;
+    f2 = ref bar;
+    f3 = ref baz; in
+  rec m1 = { args => ... f2 ... } ;
+      m2 = ... ;
+      m3 = ... ;
+
+ends up being a bunch of pairs which share the
+same "big" env, which acts like a "this" pointer.
+*/

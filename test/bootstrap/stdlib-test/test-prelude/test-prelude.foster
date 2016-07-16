@@ -1,0 +1,391 @@
+snafuinclude Prelude "prelude";
+snafuinclude Bitwise "bitwise";
+snafuinclude Bytes   "bytes";
+
+type case BInt of $B Int32;
+
+type case RecDT_A of $RecDT_A RecDT_B;
+type case RecDT_B of $RecDT_B RecDT_A;
+
+/*
+print_BInt_list = { xs:List BInt =>
+  rec go = { xs : List BInt =>
+             case xs of $Nil            -> ()
+                     of $Cons ($B n) ys -> print_i32 n; print_text ";"; go ys
+              end
+           };
+  in print_text "["; go xs; print_text "]";
+  end
+};
+
+*/
+
+text_of_BInt = { b:BInt => case b of $B n -> tmp_Text_of_Int32 n end };
+
+main = {
+  expect_i32 5;
+  print_i32 (prim srem-unsafe-Int32 105 10);
+
+  expect_i32 10;
+  print_i32 (prim sdiv-unsafe-Int32 105 10);
+
+  expect_text "123";
+  print_text (text_of_BInt (B 123));
+
+  // We expect a single flattened text fragment,
+  // not a linear tree of length-one fragments.
+  expect_i32 0;
+  print_i32 (text_maxdepth (text_of_BInt (B 1234567)));
+
+  expect_text "12345";
+  print_text (text_of_BInt (B 12345));
+
+  /*
+  let lst = Cons (B 1) (Cons (B 2) (Cons (B 3) Nil));
+   in
+     //expect_text "[1, 2, 3]";
+     //print_text (text_of_list text_of_BInt lst);
+  end;
+  */
+
+  expect_i32 (observeWordUnsignedWraparound !);
+  print_i32 (wordNumBits32 !);
+
+  expect_i32 2;
+  print_i32 (bitlength-Word 3);
+
+  expect_i32 3;
+  print_i32 (bitlength-Word 4);
+
+  expect_i32 3;
+  print_i32 (bitlength-Word 7);
+
+  expect_i32 4;
+  print_i32 (bitlength-Word 8);
+
+  test-octet-to-ints !;
+
+
+  expect_text "8";
+  print_text (tmp_Text_of_UInt64 8);
+
+  expect_text "9";
+  print_text (tmp_Text_of_UInt64 9);
+
+  expect_text "10";
+  print_text (tmp_Text_of_UInt64 10);
+
+  expect_text "11";
+  print_text (tmp_Text_of_UInt64 11);
+
+  test-ord !;
+  test-int-primitives !;
+  test-bytes !;
+  test-misc-1 !;
+  test-misc-2 !;
+  test-div-mod !;
+  test-bits !;
+  test-logf !;
+};
+
+test-misc-1 = {
+  expect_i1 True;
+  print_i1 (bytesEqual (bytesOfRawArray b"\x01\x02\x03")
+                       (arrayFromRange32 1 4 { n => n |> trunc_i32_to_i8 } |> bytesOfRawArray));
+
+  expect_i1 True;
+  print_i1 (bytesEqual (bytesOfRawArray           b"\x01\x02\x03")
+                       (bytesOfRawArray (arrayMap b"\x00\x01\x02" { n => n +Int8 1 })));
+
+  expect_i32 5;
+  expect_i32 4;
+  expect_i32 3;
+  expect_i32 2;
+  foldRangeDown 5 2 () { x => unit => print_i32 x; () };
+};
+
+test-misc-2 = {
+  expect_i1 True;
+  print_i1 (__COMPILES__ { x : BInt => 0 });
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ { x : DoesNotExist => 0 });
+
+  expect_i32 0;
+  expect_i32 1;
+  expect_i32 2;
+  arrayFromRange32 0 3 { n => n } |> { a => arrayEnumFrom a 0 { n => i => print_i32 n } };
+};
+
+observeWordUnsignedWraparound :: { Int32 };
+observeWordUnsignedWraparound = {
+  n0 = zext_i32_to_Word 3;
+  n1 = bitshl-Word n0 16;
+  n2 = bitshl-Word n1 16;
+  n3 = bitshl-Word n2 16;
+  n4 = bitshl-Word n3 16;
+
+  if n2 ==Word 0
+      then 32
+      else if n4 ==Word 0
+             then 64
+             else 128
+           end
+  end
+};
+
+test-octet-to-ints = {
+  expect_i32 0;
+  print_i32 (octet4ToInt32 0 0 0 0);
+
+  expect_i32 1;
+  print_i32 (octet4ToInt32 0 0 0 1);
+
+  expect_i32 256;
+  print_i32 (octet4ToInt32 0 0 1 0);
+
+  expect_i32 65536;
+  print_i32 (octet4ToInt32 0 1 0 0);
+};
+
+test-ord = {
+  expect_text "LT";
+  print_text (textOfOrd (cmpBoolTrueLTxAlt True False));
+
+  expect_text "GT";
+  print_text (textOfOrd (cmpBoolTrueLTxAlt False True));
+
+  expect_text "EQ";
+  print_text (textOfOrd (cmpBoolTrueLTxAlt True True));
+
+  expect_text "EQ";
+  print_text (textOfOrd (cmpBoolTrueLTxAlt False False));
+
+  expect_text "LT";
+  print_text (textOfOrd (cmpBoolTrueLT True False));
+
+  expect_text "GT";
+  print_text (textOfOrd (cmpBoolTrueLT False True));
+
+  expect_text "EQ";
+  print_text (textOfOrd (cmpBoolTrueLT True True));
+
+  expect_text "EQ";
+  print_text (textOfOrd (cmpBoolTrueLT False False));
+};
+
+test-int-primitives = {
+              2   |> expect_i32;
+  f64-to-u32! 2.0 |> print_i32;
+
+           3 |> expect_i32;
+  1 +Int32 2 |> print_i32;
+};
+
+test-bytes = {
+  test-bytes-foldl-bytes !;
+  test-bytes-inspection !;
+  test-bytes-flattening !;
+};
+
+test-bytes-foldl-bytes = {
+  bs = BytesConcat (BytesFragment b"12" 2) (BytesFragment b"34" 2) 4;
+  expect_i8x b"1"[0];
+  expect_i8x b"2"[0];
+  expect_i8x b"3"[0];
+  expect_i8x b"4"[0];
+  bytesFoldlBytes bs { b => unit => print_i8x b; () } ();
+
+  bs = BytesConcat (BytesFragment b"1234" 4) (BytesFragment b"5678" 4) 8;
+  expect_i8x b"3"[0];
+  expect_i8x b"4"[0];
+  expect_i8x b"5"[0];
+  expect_i8x b"6"[0];
+  bytesFoldlBytesFromLen bs { b => unit => print_i8x b; () } 2 4 ();
+
+  bs = BytesOffset (BytesConcat (BytesFragment b"1234" 4) (BytesFragment b"5678" 4) 8) 2 6;
+  expect_i8x b"4"[0];
+  expect_i8x b"5"[0];
+  expect_i8x b"6"[0];
+  expect_i8x b"7"[0];
+  bytesFoldlBytesFromLen bs { b => unit => print_i8x b; () } 1 4 ();
+};
+
+test-bytes-inspection = {
+  bs = BytesOffset (BytesConcat (BytesFragment b"1234" 4) (BytesFragment b"5678" 4) 8) 2 5;
+
+  expect_i8x b"3"[0];
+  expect_i8x b"4"[0];
+  expect_i8x b"5"[0];
+  expect_i8x b"6"[0];
+  expect_i8x b"7"[0];
+  bytesFoldlBytes bs { b => unit => print_i8x b; () } ();
+
+  bs2 = bytesConcat bs bs;
+
+  expect_i8x b"3"[0];
+  expect_i8x b"4"[0];
+  expect_i8x b"5"[0];
+  expect_i8x b"6"[0];
+  expect_i8x b"7"[0];
+  expect_i8x b"3"[0];
+  expect_i8x b"4"[0];
+  expect_i8x b"5"[0];
+  expect_i8x b"6"[0];
+  expect_i8x b"7"[0];
+  bytesFoldlBytes bs2 { b => unit => print_i8x b; () } ();
+
+  print_text "----"; expect_text "----";
+
+  expect_i8x b"3"[0]; print_i8x (bytesGet! 0 bs2 );
+  expect_i8x b"4"[0]; print_i8x (bytesGet! 1 bs2 );
+  expect_i8x b"5"[0]; print_i8x (bytesGet! 2 bs2 );
+  expect_i8x b"6"[0]; print_i8x (bytesGet! 3 bs2 );
+  expect_i8x b"7"[0]; print_i8x (bytesGet! 4 bs2 );
+  expect_i8x b"3"[0]; print_i8x (bytesGet! 5 bs2 );
+  expect_i8x b"4"[0]; print_i8x (bytesGet! 6 bs2 );
+  expect_i8x b"5"[0]; print_i8x (bytesGet! 7 bs2 );
+  expect_i8x b"6"[0]; print_i8x (bytesGet! 8 bs2 );
+  expect_i8x b"7"[0]; print_i8x (bytesGet! 9 bs2 );
+};
+
+
+test-bytes-flattening = {
+  bs = BytesConcat (BytesFragment b"12" 2) (BytesFragment b"34" 2) 4;
+  expect_i1 True;
+  print_i1 (bs `bytesEqual` bytesFlatten bs);
+
+  bs = BytesConcat (BytesFragment b"1234" 4) (BytesFragment b"5678" 4) 8;
+  expect_i1 True;
+  print_i1 (bs `bytesEqual` bytesFlatten bs);
+
+  bs = BytesOffset (BytesConcat (BytesFragment b"1234" 4) (BytesFragment b"5678" 4) 8) 2 5;
+  expect_i1 True;
+  print_i1 (bs `bytesEqual` bytesFlatten bs);
+
+  bs2 = bytesConcat bs bs;
+  expect_i1 True;
+  print_i1 (bs2 `bytesEqual` bytesFlatten bs2);
+
+  bsf = bytesFlatten bs2;
+
+  print_text "===="; expect_text "====";
+
+  expect_i8x b"3"[0];
+  expect_i8x b"4"[0];
+  expect_i8x b"5"[0];
+  expect_i8x b"6"[0];
+  expect_i8x b"7"[0];
+  expect_i8x b"3"[0];
+  expect_i8x b"4"[0];
+  expect_i8x b"5"[0];
+  expect_i8x b"6"[0];
+  expect_i8x b"7"[0];
+
+  bytesFoldlBytes bsf { b => unit => print_i8x b; () } ();
+
+  print_text "----"; expect_text "----";
+
+  expect_i8x b"3"[0]; print_i8x (bytesGet! 0 bsf );
+  expect_i8x b"4"[0]; print_i8x (bytesGet! 1 bsf );
+  expect_i8x b"5"[0]; print_i8x (bytesGet! 2 bsf );
+  expect_i8x b"6"[0]; print_i8x (bytesGet! 3 bsf );
+  expect_i8x b"7"[0]; print_i8x (bytesGet! 4 bsf );
+  expect_i8x b"3"[0]; print_i8x (bytesGet! 5 bsf );
+  expect_i8x b"4"[0]; print_i8x (bytesGet! 6 bsf );
+  expect_i8x b"5"[0]; print_i8x (bytesGet! 7 bsf );
+  expect_i8x b"6"[0]; print_i8x (bytesGet! 8 bsf );
+  expect_i8x b"7"[0]; print_i8x (bytesGet! 9 bsf );
+};
+
+test-div-mod = {
+  expect_i32 0;
+  print_i32 (sdiv-Int32 1 2);
+
+  expect_i32 0;
+  print_i32 (udiv-Int32 1 2);
+
+  expect_i32 0;
+  print_i32 (sdiv-Int32 1 -2);
+
+  expect_i32 0;
+  print_i32 (sdiv-Int32 1 4294967294);
+
+  expect_i32 0;
+  print_i32 (udiv-Int32 1 -2);
+
+  expect_i32 2147483647;
+  print_i32 (udiv-Int32 -1 2);
+
+  expect_i32 2147483647;
+  print_i32 (udiv-Int32 4294967295 2);
+
+  expect_i32 0;
+  print_i32 (sdiv-Int32 -1 2);
+
+  expect_i32 0; // T-division
+  print_i32 (sdiv-Int32 -1 -2);
+
+  expect_i32 1;
+  print_i32 (ediv-Int32 -1 -2);
+
+  expect_i32 1; // see below
+  print_i32 (udiv-Int32 -1 -2);
+
+  expect_i32 1;
+  print_i32 (udiv-Int32 4294967295 4294967294);
+
+
+  expect_i32 1;
+  print_i32 (sdiv-Int32 4 3);
+
+  expect_i32 1;
+  print_i32 (udiv-Int32 4 3);
+
+  expect_i32 -1;
+  print_i32 (sdiv-Int32 4 -3);
+
+  expect_i32 1431655764;
+  print_i32 (udiv-Int32 -4 3);
+
+  expect_i32 -1;
+  print_i32 (sdiv-Int32 -4 3);
+
+  expect_i32 0;
+  print_i32 (udiv-Int32 4 -3);
+
+  expect_i32 1;
+  print_i32 (sdiv-Int32 -4 -3);
+
+  expect_i32 0;
+  print_i32 (udiv-Int32 -4 -3);
+};
+
+test-bits = {
+  expect_i32 16;
+  print_i32 (getBit32 4);
+
+  expect_i1 True;
+  print_i1 (testBit32 7 2);
+
+  expect_i1 False;
+  print_i1 (testBit32 7 3);
+
+  expect_i32 24;
+  print_i32 ((getBit32 4) `xorBit32` 3);
+
+  expect_i32 24;
+  print_i32 (xorIfBit32 (getBit32 4) 3 True);
+
+  expect_i32 16;
+  print_i32 (xorIfBit32 (getBit32 4) 3 False);
+};
+
+test-logf = {
+  print_float_p9f64  (log-f64 100.0);
+  expect_float_p9f64 4.605170186;
+
+  print_float_p9f64  (log-s32 100);
+  expect_float_p9f64 4.605170186;
+};
+

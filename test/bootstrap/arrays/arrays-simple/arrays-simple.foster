@@ -1,0 +1,121 @@
+main = {
+  arrays        !;
+  arrays8       !;
+
+  arrays-indexing 0 0 0 0 1 ();
+
+  arrays-indir !;
+
+  // If we lie about our alignment, this will crash.
+  let a = "is_ascii_digit c:"; in () end
+};
+
+newDArray32 = { n : Int32 => f : { Int32 => Int32 } =>
+  a = allocDArray:[Int32] n;
+  REC go = { x =>
+    if x ==Int32 0 then () else
+      f x >^ a[x -Int32  1];
+      go (x -Int32 1)
+    end
+  };
+  go n;
+  a
+};
+
+arrays = {
+  a = newDArray32 2 { n : Int32 => n };
+  expect_i32 2;
+  print_i32 a[opaquely_i32 1];
+};
+
+trunc32to8 = { n : Int32 => trunc_i32_to_i8 n; };
+
+newDArray8 = { n : Int32 => f : { Int32 => Int8 } =>
+  a = allocDArray:[Int8] n;
+  REC go = { x =>
+    if x ==Int32 0 then () else
+      f x >^ a[x -Int32  1];
+      go (x -Int32 1)
+    end
+  };
+  go n;
+  a
+};
+
+
+expect_text = { s : Text =>
+  case s
+    of $TextFragment a n     -> prim_print_bytes_stderr a n; n
+    of $TextConcat   s1 s2 n -> expect_text s1; expect_text s2; n
+   end;
+};
+
+
+arrays8 = {
+  k = 26;
+  a = newDArray8 k { x : Int32 => trunc32to8 (x +Int32 96) };
+
+  expect_i32 99;
+  print_i8 a[opaquely_i32 2];
+
+  (trunc32to8 0) >^ a[3];
+  prim_print_bytes_stdout a 6;
+  expect_abc !;
+
+  expect_i32 k;
+  print_i64 (prim_arrayLength a);
+
+};
+
+expect_abc = {
+  expect_text "abc";
+};
+
+textLength = { t : Text =>
+  case t
+    of $TextFragment _ n -> n
+    of $TextConcat _ _ n -> n
+   end;
+};
+
+arrays-indexing = { i8 : Int8 => i32 : Int32 => i64 : Int64 => iw : Word =>
+                    ir32  : ( % rir : Int32 : True ) =>
+                    runit : ( % ru  : () : True ) =>
+
+  a = newDArray32 256 { n : Int32 => n };
+  expect_i32 1;
+  print_i32 a[i8];
+
+  expect_i32 1;
+  print_i32 a[i32];
+
+  expect_i32 1;
+  print_i32 a[i64];
+
+  expect_i32 1;
+  print_i32 a[iw];
+
+  expect_i1 True;
+  print_i1 (__COMPILES__ a[0] );
+
+  expect_i1 True;
+  print_i1 (__COMPILES__ a[255] );
+
+  expect_i1 True;
+  print_i1 (__COMPILES__ a[ir32] );
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ a[runit] );
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ a[()] );
+};
+
+arrays-indir = {
+  a = prim mach-array-literal 0 0;
+  b = prim mach-array-literal True False;
+
+  expect_i1 True;
+  print_i1 b[a[0]];
+};
+

@@ -1,0 +1,44 @@
+print_0_of_t_i32_i1 = { x : (Int32, Bool) => case x of (y, _) -> print_i32 y end };
+print_1_of_t_i32_i1 = { x : (Int32, Bool) =>
+      force_gc_for_debugging_purposes !; case x of (_, y) -> print_i1  y end };
+
+main = {
+  //expect_i32 42;
+  //print_0_of_t_i32_i1 (42, true);
+  //expect_i1 true;
+  //print_1_of_t_i32_i1 (42, true);
+  //
+  //test2 !;
+  test3 !;
+};
+
+test2 = {
+  t = (opaquely_i32 3, 4);
+  expect_i32 3;
+  // If t is heap allocated and is codegenned to a
+  // pointer eagerly loaded from the gc root, it will be stale
+  // after a GC, and (because semispaces are cleared after GC)
+  // the following test will return the wrong value.
+  force_gc_for_debugging_purposes !;
+  case t
+    of (a, _) -> print_i32 a
+  end;
+};
+
+test3helper = {
+  t = ((prim ref 3), (prim ref 4));
+  { expect_i32 3;
+     // This closure captures t alone; if the first slot in the
+     // closure env is ignored by the GC, then we should get junk
+     // when we chase the pointers.
+     case t
+       of (a, _) -> print_i32 a^
+     end; ()
+  }
+};
+
+test3 = {
+  clo = test3helper !;
+  force_gc_for_debugging_purposes !;
+  clo !;
+};

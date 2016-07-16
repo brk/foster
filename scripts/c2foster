@@ -1,0 +1,56 @@
+#!/bin/bash
+
+SD=$(dirname `which $0`)/../scripts
+FOSTER_ROOT=$(python $SD/normpath.py $SD/..)
+
+LLVM_DIR=${HOME}/llvm/3.7.0
+LLVM_CLANG_INC_DIR=${LLVM_DIR}/lib/clang/3.7.0/include
+BINDIR=${FOSTER_ROOT}/_obj
+
+mkdir -p fosterc-standalone-tmp
+
+# Usage: c2foster cfile [-I dir, etc]
+# Prints re-formatted text on stdout
+
+# Concrete example:
+# c2foster ~/zopfli/src/zopfli/tree.c -I ~/zopfli/src/zopfli > tree.foster
+cprog=$1
+shift
+
+#tmpfile=`mktemp`
+tmpfile="c2f.raw"
+
+set -o pipefail
+
+show_clang_ast () {
+  echo "// Clang AST for input C file:"
+  echo "// ~/llvm/3.7.0/bin/clang -fsyntax-only -Xclang -ast-dump ${cprog} -I ${LLVM_CLANG_INC_DIR} $@"
+  ~/llvm/3.7.0/bin/clang -fsyntax-only -Xclang -ast-dump ${cprog} -I ${LLVM_CLANG_INC_DIR} $@ | python ${SD}/clang-ast-filter.py
+}
+
+
+echo "tmpfile = $tmpfile"
+
+echo "// running c2f..."
+echo "// ${BINDIR}/c2f ${cprog} -- -I ${LLVM_CLANG_INC_DIR} $@  > ${tmpfile}.foster"
+${BINDIR}/c2f ${cprog} -- -I ${LLVM_CLANG_INC_DIR} $@  &> ${tmpfile}.foster
+
+c2f_status="$?"
+
+if [ "${c2f_status}" = "0" ]; then
+  echo "// running foster-fmt; c2f ${tmpfile}.foster status was ${c2f_status}"
+  echo "python ${SD}/fosterc.py --me-arg=--fmt --bindir ${BINDIR} --tmpdir fosterc-standalone-tmp ${tmpfile}.foster"
+  #cp ${tmpfile}.foster raw.foster
+  (python ${SD}/fosterc.py --me-arg=--fmt --bindir ${BINDIR} --tmpdir fosterc-standalone-tmp ${tmpfile}.foster --show-cmdlines | python ${SD}/ansifilter.py) || show_clang_ast
+else
+  echo "// c2f failed with status ${c2f_status}; raw output was:"
+  cat ${tmpfile}.foster
+  if [ `cat ${tmpfile}.foster | wc -l` = "0" ]; then
+     show_clang_ast
+  fi
+fi
+
+rm -f meGCstats.txt
+#rm -rf fosterc-standalone-tmp
+#rm -f ${tmpfile}.foster
+

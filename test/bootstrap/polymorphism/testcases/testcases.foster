@@ -1,0 +1,106 @@
+main = {
+  t0 !;
+  t1 !;
+  t2 !;
+
+  test_dead_poly !;
+  test_mono_poly_order !;
+  test_mono_poly_unused !;
+};
+
+test_dead_poly = {
+  // If we try to monomorphize this unnecessarily, we should get an error.
+  REC polyid = { forall t:Boxed, aaa:t => () };
+  ()
+};
+
+test_mono_poly_order = {
+  // * Mutually recursive nest.
+  // * A instantiates B, but B does not instantiate A.
+  REC polyA = { forall t:Boxed, aaa:t => if False then z = polyB:[Int32] 0; () else () end };
+  REC polyB = { forall t:Type,  qqq:t => f = polyA; f (); () };
+  a = polyB True; // body instantiates B at Bool
+  // polyA needs instantiation of B at Int32, but it hasn't been demanded
+  // from recursive instantation so far, unless we process polymorphic bodies
+  // before collecting monomorphic instantiations.
+  ()
+};
+
+test_mono_poly_unused = {
+  REC unusedMonoRec = { x : () => () };
+  unusedMono = { x : () => () };
+  REC unusedPolyRec = { forall t:Boxed, x : t => () };
+  unusedPoly = { forall t:Boxed, x : t => () };
+  ()
+};
+
+f = { forall ft:Boxed,
+      v : ft =>
+      g : forall (gt:Boxed) { gt => () } =>
+  g v
+};
+
+
+//id = { forall a:Type, x:a => x };
+
+t0 = {
+  tc = { f: forall (b:Boxed) (c:Boxed) { (b,c) => (b,c) } => f (B 0, C 0) };
+  //bc = { forall b:Boxed c:Boxed, x:(b,c) => x };
+  //aa = { forall a:Boxed, y:a => y };
+  ()
+};
+
+t1 = {
+  tc = { f: forall (b:Boxed) (c:Boxed) { (b,c) => (b,c) }
+              => f (B 0, C 0) };
+  aa = { forall a:Boxed, y:a => y };
+
+  // aa :: forall a  , {   a   =>   a   }
+  // tc :: forall b c, { (b,c) => (b,c) } => (B32, C32) }
+  tc aa;
+};
+
+t2 = {
+  tc = { f: forall (b:Boxed) (c:Boxed) { (b,c) => (b,c) }
+          => f (B 0, C 0) };
+  bc = { forall p:Boxed q:Boxed, x:(p,q) => x };
+
+  // bc :: forall p q, { (p,q) => (p,q) }
+  // tc :: forall b c, { (b,c) => (b,c) }
+  tc bc;
+};
+
+// From p. 70 of Peyton Jones, Vytiniotis, Weirich, and Shields
+// "For example, suppose     bar has type Va.(Int -> a) -> a, and consider
+//  the definition   foo w = bar (\x. x + w).
+//  Since the call to bar is instantiated at some unknown type 'a, local type
+//  inference will not push the partially-known type Int -> 'a into the
+//  anonymous function passed to bar, and the program will be rejected."
+t3 = {
+  tc = { f: forall (a:Boxed) { (a,a) => (a,a) }
+          => f (B 0, B 0) };
+  aa = { forall b:Boxed c:Boxed, y:(b,c) => y };
+
+  // aa :: forall b c, { (b,c) => (b,c) }
+  // tc :: forall a  , { (a,a) => (a,a) }
+  tc aa;
+};
+
+/*
+t2 = {
+  let bar = { forall a:Boxed, f:{ Int32 => a } => f 4 };
+      foo = { w : ?? W => bar { x : ?? X => B (x +Int32 w) } };
+   in
+      foo 3;
+  end
+};
+*/
+
+type case B32 of $B Int32;
+type case C32 of $C Int32;
+
+// build :: forall a. (forall b. (a -> b -> b) -> b -> b) -> [a]
+// runST :: forall a. (forall s. ST s a) -> a
+// data Equal a b = Equal (forall f . f a -> f b)
+// data Monad m = Mon { a -> m a }
+//                    { m a -> (a -> m b) -> m b }

@@ -1,0 +1,71 @@
+main = {
+  key = prim mach-array-literal 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 (15 +Int8 0);
+  test = { exp => off => expect_i32x exp;
+                         print_i32x (noinline_readInt32FromArrayInt8 key off);
+  };
+
+  print_i32x 03`02`01`00_16;
+  expect_i32x (octet4ToInt32 03 02 01 00);
+
+  test 03`02`01`00_16   0   ;
+  test 07`06`05`04_16   4   ;
+  test 0B`0A`09`08_16   8   ;
+  test 0F`0E`0D`0C_16   12  ;
+  test 05`04`03`02_16   2   ;
+  test 09`08`07`06_16   6   ;
+  test 0D`0C`0B`0A_16   10  ;
+  test 06`05`04`03_16   3   ;
+  test 0A`09`08`07_16   7   ;
+  test 0E`0D`0C`0B_16   11  ;
+
+  print_i64x 09`08`07`06`05`04`03`02_16;
+  expect_i64x (noinline_readInt64FromArrayInt8 key 2);
+
+  print_i32x 07`06`05`04_16;
+  expect_i32x (noinline_readInt32FromArrayInt8_offset key 0);
+};
+
+noinline_readInt32FromArrayInt8 :: { Array Int8 => Int32 => Int32 };
+noinline_readInt32FromArrayInt8 = { arr => i =>
+  a = arr[i +Int32 0];
+  b = arr[i +Int32 1];
+  c = arr[i +Int32 2];
+  d = arr[i +Int32 3];
+  octet4ToInt32 d c b a
+};
+
+noinline_readInt32FromArrayInt8_offset :: { Array Int8 => Int32 => Int32 };
+noinline_readInt32FromArrayInt8_offset = { arr => i =>
+  a = arr[i +Int32 4];
+  b = arr[i +Int32 5];
+  c = arr[i +Int32 6];
+  d = arr[i +Int32 7];
+  octet4ToInt32 d c b a
+};
+
+octet4ToInt32 = { hi : Int8 => m1 : Int8 => m2 : Int8 => lo : Int8 =>
+  (((zext_i8_to_i32 hi) `bitshl-Int32` 24)  `bitor-Int32`
+   ((zext_i8_to_i32 m1) `bitshl-Int32` 16)) `bitor-Int32`
+  (((zext_i8_to_i32 m2) `bitshl-Int32` 8)   `bitor-Int32`
+    (zext_i8_to_i32 lo))
+};
+
+noinline_readInt64FromArrayInt8 :: { Array Int8 => Int32 => Int64 };
+noinline_readInt64FromArrayInt8 = { arr => i =>
+  a = arr[i +Int32 0];
+  b = arr[i +Int32 1];
+  c = arr[i +Int32 2];
+  d = arr[i +Int32 3];
+  e = arr[i +Int32 4];
+  f = arr[i +Int32 5];
+  g = arr[i +Int32 6];
+  h = arr[i +Int32 7];
+  mergeInt32 (octet4ToInt32 h g f e)
+             (octet4ToInt32 d c b a)
+};
+
+mergeInt32 = { hi : Int32 => lo : Int32 =>
+  ((zext_i32_to_i64 hi) `bitshl-Int64` 32)  `bitor-Int64`
+   (zext_i32_to_i64 lo)
+};
+

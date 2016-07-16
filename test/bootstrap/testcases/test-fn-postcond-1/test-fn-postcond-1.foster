@@ -1,0 +1,42 @@
+
+eqInt32 :: { % aa : Int32 : True =>
+             % bb : Int32 : True =>
+             % rv : Bool : prim ==Bool rv (prim ==Int32 aa bb) };
+
+eqInt32 = { a => b => prim ==Int32 a b }; // :: Bool
+
+main = {
+  xx = 1; yy = 4;
+  qq = eqInt32 xx yy;
+  zz = 1;
+  kk = eqInt32 xx zz;
+
+  expect_i1 False;
+  print_i1 qq;
+
+  expect_i1 True;
+  print_i1 kk;
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ prim assert-invariants qq);
+
+  expect_i1 True;
+  print_i1 (__COMPILES__ prim assert-invariants kk);
+
+  ()
+};
+         /*
+sdivInt32 = { ax : Int32 => bx : Int32 =>
+  z = bx `eqInt32` 0;
+  //if z then prim kill-entire-process "sdiv-WordX2 failed" else prim sdiv-unsafe-Int32 ax bx end
+
+  if z then prim kill-entire-process "sdiv-WordX2 failed" else 1234 end
+};
+
+//snafuinclude PreludeFixnums "prelude-fixnums";
+//snafuinclude Primitives "primitives";
+main = {
+  expect_i32 2;
+  print_i32 (sdivInt32 8 4);
+};
+*/

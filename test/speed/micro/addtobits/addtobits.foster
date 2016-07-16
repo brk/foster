@@ -1,0 +1,295 @@
+snafuinclude Bignum "bignum";
+
+main = {
+  n0 = tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1);
+  n = if n0 ==Int32 0 then 200 else n0 end;
+  addtobits_nat n;
+};
+
+addtobits_int = { n : Int32 =>
+  REC loop = { iters : Int32 => x : IntInf => y : IntInf =>
+    if intCountBits x <UInt32 n
+      then t = intAdd x y;
+           loop (iters +Int32 1) t (intAdd t y)
+      else iters
+    end
+  };
+
+  niters = loop 0 (intFromInt32 1) (intFromInt32 2);
+  print_i32 niters;
+};
+
+addtobits_nat = { n : Int32 =>
+  REC loop = { iters : Int32 => x : NatInf => y : NatInf =>
+    if natCountBits x <UInt32 n
+      then t = natAdd x y;
+           loop (iters +Int32 1) t (natAdd t y)
+      else iters
+    end
+  };
+
+  niters = loop 0 (natFromInt32 1) (natFromInt32 2);
+  blah = trimLeadingZeroWords_auto_inlined (natDigits (natFromInt32 0));
+  print_i32 niters;
+};
+
+addtobits_raw = { n : Int32 =>
+  REC loop = { iters : Int32 => x : Array Word => y : Array Word =>
+    if natCountBits_A x <UInt32 n
+      then t = natAdd_A_manually_inlined_array x y;
+           loop (iters +Int32 1) t (natAdd_A_manually_inlined_array t y)
+      else iters
+    end
+  };
+
+  niters = loop 0 (natDigits (natFromInt32 1))
+                  (natDigits (natFromInt32 2));
+  print_i32 niters;
+};
+
+
+addtobits_raw_slice = { n : Int32 =>
+  REC loop = { iters : Int32 => x : Slice => y : Slice =>
+    if sliceCountBits x <UInt32 n
+      then t = natAdd_A_manually_inlined_slice x y;
+           loop (iters +Int32 1) t (natAdd_A_manually_inlined_slice t y)
+      else iters
+    end
+  };
+
+  niters = loop 0 (mkWholeSlice (natDigits (natFromInt32 1)))
+                  (mkWholeSlice (natDigits (natFromInt32 2)));
+  print_i32 niters;
+};
+
+type case Slice
+      of $Slice (Array Word)
+                Int32 // len
+      ;
+
+mkWholeSlice = { a => Slice a (arrayLength32 a) };
+sliceLength32 = { s =>
+  //case s of $Slice a k => (arrayLength32 a) -Int32 k; end
+  case s of $Slice a k -> k end
+};
+sliceIdx = { s => i =>
+  //case s of $Slice a k => a[k +Int32 i]; end
+  case s of $Slice a k -> a[i]; end
+};
+//sliceIdxSet = { v => s => i =>
+  //case s of $Slice a k -> v >^ a[k +Int32 i]; end
+//};
+
+sliceCountBits = { s =>
+  case s of $Slice a k -> natCountBits_AL a k; end
+};
+
+// Postcondition: returned array is normalized.
+//
+natAdd_A_manually_inlined_slice :: { Slice => Slice => Slice };
+natAdd_A_manually_inlined_slice = { a => b =>
+  case
+    if (sliceLength32 a) <SInt32 (sliceLength32 b)
+      then (a, b)
+      else (b, a)
+    end
+  of (sm, lg) ->
+
+    c = allocDArray:[Word] (sliceLength32 lg +Int32 1);
+    let ugo_fin = sliceLength32 sm;
+    REC ugo = { n : Int32 => acc : Word =>
+      if n >=SInt32 ugo_fin then acc else
+        ugo (n +Int32 1)
+            (let i = n;
+                 u = acc;
+             in
+                 (sliceIdx a i +Word sliceIdx b i +Word u) >^ c[i];
+                 unext = addCarryOfWord c[i];
+                 (bitand-Word c[i] (digitNumBitsMask !)) >^ c[i];
+                 unext
+             end)
+      end
+    };
+    u = ugo 0 0;
+    p = if sliceLength32 sm <SInt32 sliceLength32 lg
+          then
+            pgo_fin = sliceLength32 lg;
+            REC pgo = { n : Int32 => acc : Word =>
+                if n >=SInt32 pgo_fin then acc else
+                  pgo (n +Int32 1)
+                      (let i = n;
+                           u = acc;
+                       in
+                          (sliceIdx lg i +Word u) >^ c[i];
+                          unext = addCarryOfWord c[i];
+                          (bitand-Word c[i] (digitNumBitsMask !)) >^ c[i];
+                          unext
+                     end)
+                end
+            };
+            pgo (sliceLength32 sm) u;
+          else
+            u
+        end;
+
+    p >^ c[sliceLength32 lg];
+
+    // The C version clears digits from used to olduse,
+    // but we don't need to because we allocate from scratch.
+
+    //trimLeadingZeroWords_manually_inlined c
+    trimLeadingZeroWords_mkSlice c
+  end
+};
+
+trimLeadingZeroWords_mkSlice :: { Array Word => Slice };
+trimLeadingZeroWords_mkSlice = { a =>
+  REC findFirstNonZero = { n : Int32 =>
+     if n ==Int32 0 // or a[n] !=Int64 0
+       then n
+       else if a[n] !=Word 0
+              then n
+              else findFirstNonZero (n -Int32 1)
+            end
+     end
+  };
+  start = arrayLength32 a -Int32 1;
+  n     = findFirstNonZero start;
+
+  if n ==Int32 start
+    then mkWholeSlice a
+    else        Slice a (n +Int32 1)
+  end
+};
+
+
+// Postcondition: returned array is normalized.
+//
+natAdd_A_manually_inlined_array = { a => b =>
+  case
+    if (arrayLength32 a) <SInt32 (arrayLength32 b)
+      then (a, b)
+      else (b, a)
+    end
+  of (sm, lg) ->
+
+    c = allocDArray:[Word] (arrayLength32 lg +Int32 1);
+    let ugo_fin = arrayLength32 sm;
+    REC ugo = { n : Int32 => acc : Word =>
+      if n >=SInt32 ugo_fin then acc else
+        ugo (n +Int32 1)
+            (let i = n;
+                 u = acc;
+             in
+                 (a[i] +Word b[i] +Word u) >^ c[i];
+                 unext = addCarryOfWord c[i];
+                 (bitand-Word c[i] (digitNumBitsMask !)) >^ c[i];
+                 unext
+             end)
+      end
+    };
+    u = ugo 0 0;
+    p = if arrayLength32 sm <SInt32 arrayLength32 lg
+          then
+            pgo_fin = arrayLength32 lg;
+            REC pgo = { n : Int32 => acc : Word =>
+                if n >=SInt32 pgo_fin then acc else
+                  pgo (n +Int32 1)
+                      (let i = n;
+                           u = acc;
+                       in
+                          (lg[i] +Word u) >^ c[i];
+                          unext = addCarryOfWord c[i];
+                          (bitand-Word c[i] (digitNumBitsMask !)) >^ c[i];
+                          unext
+                     end)
+                end
+            };
+            pgo (arrayLength32 sm) u;
+          else
+            u
+        end;
+
+    p >^ c[arrayLength32 lg];
+
+    // The C version clears digits from used to olduse,
+    // but we don't need to because we allocate from scratch.
+
+    trimLeadingZeroWords_manually_inlined c
+  end
+};
+
+trimLeadingZeroWords_manually_inlined :: { Array Word => Array Word };
+trimLeadingZeroWords_manually_inlined = { a =>
+  REC findFirstNonZero = { n : Int32 =>
+     if n ==Int32 0 // or a[n] !=Int64 0
+       then n
+       else if a[n] !=Word 0
+              then n
+              else findFirstNonZero (n -Int32 1)
+            end
+     end
+  };
+  start = arrayLength32 a -Int32 1;
+  n     = findFirstNonZero start;
+
+  if n ==Int32 start
+    then a
+    else copyOfArrayTo__manually_inlined a (n +Int32 1)
+  end
+};
+
+// Precondition: m >= n
+copyOfArrayTo__manually_inlined :: forall (t:Type)
+                 { Array t => // of length m
+                   /*n:*/Int32 =>
+                   Array t    // of length n
+                 };
+copyOfArrayTo__manually_inlined = { forall t:Type,
+                   a => n =>
+  //assert (arrayLength a >=UInt64 (zext_i32_to_i64 n)) "copyOfArrayTo";
+  z = allocDArray n;
+  REC loop = { x =>
+    if x ==Int32 0 then () else
+       y = x -Int32 1;
+       a[y] >^ z[y];
+       loop y
+    end
+  };
+  loop n;
+  z
+};
+
+
+trimLeadingZeroWords_auto_inlined :: { Array Word => Array Word };
+trimLeadingZeroWords_auto_inlined = { a =>
+  REC findFirstNonZero = { n : Int32 =>
+     if n ==Int32 0 // or a[n] !=Int64 0
+       then n
+       else if a[n] !=Word 0
+              then n
+              else findFirstNonZero (n -Int32 1)
+            end
+     end
+  };
+  start = arrayLength32 a -Int32 1;
+  n     = findFirstNonZero start;
+
+  if n ==Int32 start
+    then a
+    else copyOfArrayTo_auto_inlined a (n +Int32 1)
+  end
+};
+
+
+// Precondition: m >= n
+copyOfArrayTo_auto_inlined :: forall (t:Type)
+                 { Array t => // of length m
+                   /*n:*/Int32 =>
+                   Array t    // of length n
+                 };
+copyOfArrayTo_auto_inlined = { forall t:Type,
+                   a => n =>
+  //assert (arrayLength a >=UInt64 (zext_i32_to_i64 n)) "copyOfArrayTo";
+  newDArray0:[t] n { i : Int32 => a[i] };
+};

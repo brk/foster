@@ -1,0 +1,783 @@
+snafuinclude Big "bignum";
+snafuinclude Nat "bignat";
+
+main = {
+  //t0 !;
+  //t1 !;
+  //t2 !;
+  //t3 !;
+  //t4 !;
+  //t5 !;
+  //t6 !;
+  //t7 !;
+  //t8 !;
+  //t9 !;
+
+  //expect_text "n0"; print_text "n0";
+  //n0 !;
+  //expect_text "n1"; print_text "n1";
+  //n1 !;
+  //expect_text "n2"; print_text "n2";
+  //n2 !;
+  n3_c !;
+
+  if (wordNumBits32 !) ==Int32 32 then
+    case splitCarry 0`EDcc`cccc_16 0`baaa`aaaa_16
+      of (hi, lo) -> print_Wordx hi;
+                     print_Wordx lo;
+                     expect_Wordx 0`Dccc`cccb_16;
+                     expect_Wordx 0`0aaa`aaaa_16;
+    end
+  else () end;
+
+  ()
+};
+
+////////
+
+expect_Wordx = { w : Word => expect_i64x (zext_Word_to_i64 w); };
+
+////////
+
+txt0 = {
+  expect_text "efghi";
+  print_text (textDrop 4 "abcdefghi")
+};
+
+n3_a = {
+  expect_text                        "12345";
+  print_nat (tmp_nat_of_base_10_Text "12345");
+
+  expect_text                        "123456789";
+  print_nat (tmp_nat_of_base_10_Text "123456789");
+
+  expect_text                        "123456789123456789";
+  print_nat (tmp_nat_of_base_10_Text "123456789123456789");
+
+  expect_text                        "123456789123456789123456789123456789";
+  print_nat (tmp_nat_of_base_10_Text "123456789123456789123456789123456789");
+};
+n3_b = {
+  tb = tmp_nat_of_base_10_Text "8078778917902954167242419465772740032498421305621796875000";
+  bh = natShr tb 1;
+
+  expect_text "4039389458951477083621209732886370016249210652810898437500";
+  print_nat bh;
+
+  x = tmp_nat_of_base_10_Text "9392209442000718954368905850271232071851372947624804687500";
+  y = tmp_nat_of_base_10_Text "1009847364737869270905302433221592504062302663202724609375";
+  z = tmp_nat_of_base_10_Text "9088626282640823438147721898994332536560723968824521484375";
+  b = tmp_nat_of_base_10_Text  "303583159359895516221183951276899535290648978800283203125";
+  expect_text "9392209442000718954368905850271232071851372947624804687500";
+  print_nat (natAdd z b);
+  case natDiv x y
+    of $Some (na, nb) ->
+                expect_text "1009847364737869270905302433221592504062302663202724609375";
+                print_nat y;
+
+                expect_text "na : ";
+                 print_text "na : ";
+                expect_text "9";
+                print_nat na;
+                expect_text "nb : ";
+                 print_text "nb : ";
+                expect_text "303583159359895516221183951276899535290648978800283203125";
+                print_nat nb;
+                r0 = natBasicMul na y;
+                r  = natAdd r0 nb;
+                expect_text "r0 : ";
+                 print_text "r0 : ";
+                expect_text "9088626282640823438147721898994332536560723968824521484375";
+                print_nat r0;
+                expect_text "r  : ";
+                 print_text "r  : ";
+                expect_text "9392209442000718954368905850271232071851372947624804687500";
+                print_nat r;
+                ()
+    of $None -> ()
+  end;
+};
+
+n3_c = {
+  tb = tmp_nat_of_base_10_Text "13696842188115340125188019174635602276306189090372431125932592659538294698840435656222167820202831041317573547363281250";
+  bh = natShr tb 1;
+
+  expect_text "6848421094057670062594009587317801138153094545186215562966296329769147349420217828111083910101415520658786773681640625";
+  print_nat bh;
+
+  //natDebugWordsBin (natDigits tb);
+  //natDebugWordsBin (natDigits bh);
+
+  x = tmp_nat_of_base_10_Text "15692866407653593207879873056906128510858346077176695549231030822381895601947431182672384948731167609361953735351562500";
+  y = tmp_nat_of_base_10_Text "6848421094057670062594009587317801138153094545186215562966296329769147349420217828111083910101415520658786773681640625";
+  z = tmp_nat_of_base_10_Text "13696842188115340125188019174635602276306189090372431125932592659538294698840435656222167820202831041317573547363281250";
+  b = tmp_nat_of_base_10_Text  "1996024219538253082691853882270526234552156986804264423298438162843600903106995526450217128528336568044380187988281250";
+  //expect_text "9392209442000718954368905850271232071851372947624804687500";
+  //print_nat (natAdd z b);
+  case natDiv x y
+    of $Some (na, nb) ->
+                expect_text "6848421094057670062594009587317801138153094545186215562966296329769147349420217828111083910101415520658786773681640625";
+                print_nat y;
+
+                expect_text "na : ";
+                 print_text "na : ";
+                expect_text "2";
+                print_nat na;
+                expect_text "nb : ";
+                 print_text "nb : ";
+                expect_text "1996024219538253082691853882270526234552156986804264423298438162843600903106995526450217128528336568044380187988281250";
+                print_nat nb;
+                r0 = natBasicMul na y;
+                r  = natAdd r0 nb;
+                expect_text "r0 : ";
+                 print_text "r0 : ";
+                expect_text "13696842188115340125188019174635602276306189090372431125932592659538294698840435656222167820202831041317573547363281250";
+                print_nat r0;
+                expect_text "r  : ";
+                 print_text "r  : ";
+                expect_text "15692866407653593207879873056906128510858346077176695549231030822381895601947431182672384948731167609361953735351562500";
+                print_nat r;
+                ()
+    of $None -> ()
+  end;
+
+};
+
+n0 = {
+
+  txt0 !;
+
+  expect_i1 True;
+  print_i1 (natIsZero (natFromInt64 0));
+
+  expect_i1 False;
+  print_i1 (natIsZero (natFromInt64 1));
+
+  expect_i32 0;
+  print_text (foster_nat_to_text_radix (natFromInt64 0) 10);
+
+  expect_i64 123456789012345;
+  print_text (foster_nat_to_text_radix (natFromInt64 123456789012345) 10);
+
+  expect_i1 True;
+  print_i1 (isSome (natSub (natFromInt32 2) (natFromInt32 1)));
+
+  expect_i1 False;
+  print_i1 (isSome (natSub (natFromInt32 1) (natFromInt32 2)));
+
+  expect_i32 16;
+  print_text (foster_nat_to_text_radix (natShr (natFromInt64 64) 2) 10);
+
+  expect_i32 0;
+  print_text (foster_nat_to_text_radix (natShr (natFromInt64 64) 16) 10);
+
+  expect_text "666555444333222111";
+  print_i64 666`555`444`333`222`111;
+
+  expect_text "666555444333222111";
+  print_text (foster_nat_to_text_radix (natFromInt64 666`555`444`333`222`111) 10);
+
+  expect_text "999666333";
+  print_text (foster_nat_to_text_radix (natMulDigit (natFromInt64 333`222`111)
+                                                   3) 10);
+
+  expect_text "999666333000000";
+  print_text (foster_nat_to_text_radix (natMulDigit (natFromInt64 333`222`111`000`000)
+                                                   3) 10);
+
+  if wordNumBits32 ! ==Int32 32
+    then expect_text     "00000011100011010011000011110100101011000010000101000000";
+    else expect_text "000000000011100011010011000011110100101011000010000101000000";
+  end;
+  print_text (foster_nat_to_text_radix (natMulDigit (natFromInt64 333`222`111`000`000)
+                                                   3) 2);
+/*
+  expect_text "1999332666000000";
+  print_text (foster_nat_to_text_radix (natMulDigit (natFromInt64 333`222`111`000`000)
+                                                   6) 10);
+
+  expect_text "7997330664000000";
+  print_text (foster_nat_to_text_radix (natMulDigit (natFromInt64 333`222`111`000`000)
+                                                   (3 *Word 8)) 10);
+
+  if wordNumBits32 ! ==Int32 32
+    then expect_text     "00011100011010011000011110100101011000010000101000000000";
+    else expect_text "000000011100011010011000011110100101011000010000101000000000";
+  end;
+  print_text (foster_nat_to_text_radix (natMulDigit (natFromInt64 333`222`111`000`000)
+                                                   (3 *Word 8)) 2);
+
+  expect_text "15994661328000000";
+  print_text (foster_nat_to_text_radix (natMulDigit (natFromInt64 333`222`111`000`000)
+                                                   (3 *Word 16)) 10);
+
+  if wordNumBits32 ! ==Int32 32
+    then expect_text     "00011100011010011000011110100101011000010000101000000000";
+    else expect_text "000000011100011010011000011110100101011000010000101000000000";
+  end;
+  print_text (foster_nat_to_text_radix (natMulDigit (natFromInt64 333`222`111`000`000)
+                                                   (3 *Word 8)) 2);
+
+  expect_text "999666333000000000";
+  print_text (foster_nat_to_text_radix (natMulDigit (natFromInt64 333`222`111`000`000`000)
+                                                   3) 10);
+
+  if wordNumBits32 ! ==Int32 32
+    then expect_text "000000000000000000000000110111011111100001110011101111000000011000011110001000000000";
+    else expect_text "000000000000000000000000110111011111100001110011101111000000011000011110001000000000";
+  end;
+  print_text (foster_nat_to_text_radix (natMulDigit (natFromInt64 333`222`111`000`000`000)
+                                                   3) 2);
+
+  expect_i1 True;
+  print_i1 (isValidDigit 77`333`444);
+
+  expect_text "51547028127238349460580284";
+  print_text (foster_nat_to_text_radix (natMulDigit (natFromInt64 666`555`444`333`222`111)
+                                                   77`333`444) 10);
+*/
+};
+
+n1 = {
+  expect_text "63";
+  print_text (foster_nat_to_text_radix (natMulDigit (natFromInt32 7) 9) 10);
+
+  /*
+  expect_text "63";
+  print_text (foster_nat_to_text_radix (natBasicMul (natFromInt32 7)
+                                                    (natFromInt32 9)) 10);
+*/
+  expect_text "2342135343234";
+  print_text (foster_nat_to_text_radix (natFromInt64 2342135343234) 10);
+
+  expect_text "12342342324231";
+  print_text (foster_nat_to_text_radix (natFromInt64 12342342324231) 10);
+
+  if wordNumBits32 ! ==Int32 32
+    then
+      testNatMulAddWWW 1378166914 2901282823 0 930962151 2456304526;
+      testNatMulAddWWW 1378166914 2873 1582135758 922 1095832768;
+      testNatMulAddWWW 545 2873 368 0 1566153;
+    else
+      testNatMulAddWWW 1378166914 2901282823 0 0 3998451994815118222;
+      testNatMulAddWWW 1378166914 2873 1582135758 0 3961055679680;
+      testNatMulAddWWW 545 2873 368 0 1566153;
+  end;
+
+  let x = natBasicMul (natFromInt64 2342135343234)
+                      (natFromInt64 12342342324231);
+  in
+      expect_text "28907436175874298500103054";
+      print_text (foster_nat_to_text_radix x 10);
+
+      expect_text "835639866262246086805018926722439349915248620126916";
+      print_text (foster_nat_to_text_radix (natBasicMul x x) 10);
+  end
+
+};
+
+n2 = {
+  expect_i32 3;
+  print_i32 (bitLengthWord 7);
+
+  expect_i32 1;
+  print_i32 (bitLengthWord 1);
+
+  expect_i32 21;
+  print_i32 (bitLengthWord 1703581);
+
+  expect_i32 1;
+  print_i32 (arrayLength32 (natDigits (natFromInt64 2342135)));
+
+
+
+  expect_text "GT";
+  print_text (textOfOrd (natCmp (natFromInt64 12342342324231)
+                                (natFromInt64 2342135343234)));
+
+  //testNatDiv 12342342324231 1 "12342342324231" "0"; // OK
+
+  //testNatDiv 12342342324231 7654321 "1612467" "2304324";
+
+  //testNatDivW 87654321 7654321;
+  //testNatDivW 12342342324231 7654321;
+
+  testNatDivW 8666555444333222999 5;
+
+
+  if wordNumBits32 ! ==Int32 32
+    then
+      expect_i32 2;
+    else
+      expect_i32 1;
+  end;
+  print_i32 (arrayLength32 (natDigits (natFromInt64 2342135343234)));
+
+
+  let n = natFromInt64 9368541372936;
+      s = natShr n 1;
+  in
+    expect_text "9368541372936";
+    print_nat n;
+
+    expect_text "4684270686468";
+    print_nat s;
+  end;
+
+  testNatDivW 1`142`324`231 234`213`534;
+
+  if wordNumBits32 ! ==Int32 32
+    then
+      expect_i32 2;
+    else
+      expect_i32 1;
+  end;
+  print_i32 (arrayLength32 (natDigits (natFromInt64 12342342324231)));
+
+  testNatDiv  12342342324231 2342135343234 "5" "631665608061";
+};
+
+print_Wordb = { k =>
+  print_i64b (zext_Word_to_i64 k);
+};
+
+print_Wordx = { k =>
+  print_i64x (zext_Word_to_i64 k);
+};
+
+debug_nat_2 = { n =>
+  let a = natDigits n;
+  in
+    expect_text "_[1] = "; print_Wordb a[1];
+    expect_text "_[0] = "; print_Wordb a[0];
+  end;
+};
+
+testNatDivW = { i : Int64 => j : Int64 =>
+  case uQuoRemInt64 i j of (lq, lr) ->
+    case foster_div_nat_digit_nz (natFromInt64 i) (trunc_i64_to_Word j)
+      of (q, r) ->
+        expect_i64 lq;
+        print_text (foster_nat_to_text_radix q 10);
+
+        expect_i64 lr;
+        print_i64 (zext_Word_to_i64 r);
+    end
+  end
+};
+
+testNatDiv = { i : Int64 => j : Int64 => exp_q : Text => exp_r : Text =>
+  case natDiv (natFromInt64 i) (natFromInt64 j)
+    of $Some (q, r) -> expect_text exp_q;
+                       print_text (foster_nat_to_text_radix q 10);
+                       expect_text exp_r;
+                       print_text (foster_nat_to_text_radix r 10);
+
+    of $None        -> print_text "unexpected natDiv failure; i/j are:";
+                       print_i64 i;
+                       print_i64 j;
+  end
+};
+
+testNatMulAddWWW = { a : Word => b : Word => c : Word => e1 : Int64 => e0 : Int64 =>
+  case natMulAddWWW a b c of (z1, z0) ->
+    expect_i64 e1;
+    print_i64 (zext_Word_to_i64 z1);
+
+    expect_i64 e0;
+    print_i64 (zext_Word_to_i64 z0);
+  end;
+};
+
+////////
+
+t0 = {
+  expect_i32 12345;
+  print_i64  12345;
+
+  expect_text "0000000000000000000000000000000000000000000000000011000000111001_2";
+  print_i64b  12345;
+};
+
+
+t1 = {
+
+  expect_text "12345";
+  printIntInf (intFromInt32 12345);
+
+  expect_text "00000000";
+  print_text (tmp_Text_2_of_UInt8 0);
+
+  expect_text "0000000000000000000000000000000000000000000000000011000000111001";
+  print_text (foster_mp_to_text_radix (intFromInt32 12345) 2);
+
+  expect_text "00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000";
+  print_text (foster_mp_to_text_radix
+                (intMul2d (intFromInt32 1) 60)
+              2);
+
+  expect_text "18446744073709551616";
+  print_text (foster_mp_to_text_radix
+                (intMul2d (intFromInt32 1) 64)
+              10);
+
+  expect_text "16";
+  print_text (foster_mp_to_text_radix
+                (intMul2d (intFromInt32 1) 4)
+              10);
+
+  expect_text "17310711067705344";
+  print_text (foster_mp_to_text_radix
+                (intMul2d (intFromInt32 123) 47)
+              10);
+
+  expect_text "297395751625198776977719296";
+  print_text (foster_mp_to_text_radix
+                (intMul2d (intFromInt32 123) 81)
+              10);
+
+  expect_text "1307960347852357218937346147315859062784";
+  print_text (foster_mp_to_text_radix
+                (intMul2d (intFromInt32 123) 123)
+              10);
+};
+
+t2 = {
+
+  expect_text "1308248520328005901870729589862130778112";
+  print_text (foster_mp_to_text_radix
+               (intAdd
+                (intMul2d (intFromInt32 123) 123)
+                (intMul2d (intFromInt32 111) 111))
+              10);
+
+  expect_text "1307672175376708536003962704769587347456";
+  print_text (foster_mp_to_text_radix
+               (intSub
+                (intMul2d (intFromInt32 123) 123)
+                (intMul2d (intFromInt32 111) 111))
+              10);
+
+  // TODO: reliably optimize 0 - x to (negate x)?
+  //       Statically easy; dynamically harder, since we don't
+  //       have a constant-time test for zero in general.
+  //       We can dynamically test |a| = 1, a[0] = 0,
+  //       but it's not clear if that test would lead to a net win.
+
+  expect_text "-12345";
+  printIntInf (intFromInt32 -12345);
+
+  expect_text "0";
+  printIntInf (intFromInt32 0);
+
+  test_small_sub        16             8;
+  test_small_sub        5              10;
+  test_small_sub        223344         0;
+  test_small_sub        0              54321;
+  test_small_sub        54321          0;
+  test_small_sub        7             -13;
+  test_small_sub       -7              13;
+  test_small_sub       -7              -5;
+  test_small_sub       -5              -7;
+  test_small_sub       5              7;
+  test_small_sub       7              5;
+
+  test_small_add        16             8;
+  test_small_add        5              10;
+  test_small_add        223344         0;
+  test_small_add        0              54321;
+  test_small_add        54321          0;
+  test_small_add        7             -13;
+  test_small_add       -7              13;
+  test_small_add       -7              -5;
+  test_small_add       -5              -7;
+
+  expect_text "-17310711067705344";
+  print_text (foster_mp_to_text_radix
+               (intSub (intFromInt32 0)
+                (intMul2d (intFromInt32 123) 47))
+              10);
+};
+
+
+test_small_sub = { k0 : Int32 => k1 : Int32 =>
+  test_small_op k0 k1 { a => b => a -Int32 b } intSub;
+};
+
+test_small_add = { k0 : Int32 => k1 : Int32 =>
+  test_small_op k0 k1 { a => b => a +Int32 b } intAdd;
+};
+
+test_small_op = { k0 : Int32 => k1 : Int32 =>
+                  fixop : { Int32 => Int32 => Int32 } =>
+                  bigop : { IntInf => IntInf => IntInf } =>
+
+  let i0 = intFromInt32 k0;
+      i1 = intFromInt32 k1;
+      a = intAdd i0 i1;
+      c = k0 +Int32 k1;
+      b = intFromInt32 c;
+  in
+    expect_text (textOfOrd (cmpSInt32 k0 k1));
+    print_text (textOfOrd (intCmp i0 i1));
+
+    expect_i1 True;
+    print_i1 (eqBool (intNeg a) (intNeg b));
+
+    expect_i32 c;
+    printIntInf a;
+
+    expect_i32 c;
+    printIntInf b;
+  end;
+
+};
+
+t3 = {
+  test-cmp-d 0;
+  test-cmp-d 1;
+  test-cmp-d 12342523;
+  test-cmp-d -1;
+  test-cmp-d -12342523;
+
+  // around 2^62 (i.e. bit 63 of 64 set)
+  test-cmp-d 4611686018427387903;
+  test-cmp-d 4611686018427387904;
+  test-cmp-d 4611686018427387905;
+
+  case splitInt64 4611686018427387904
+    of (hi, lo) ->
+      expect_i32b 01000000000000000000000000000000_2;
+      print_i32b hi;
+      expect_i32b 0;
+      print_i32b lo;
+  end;
+
+  expect_text "4611686018427387904";
+  printIntInf (intFromInt64 4611686018427387904);
+
+};
+
+// Precondition: neither k-1 nor k+1 overflow.
+test-cmp-d = { k : Int64 =>
+  let ii = intFromInt64 k;
+  in
+    expect_i64 k;
+    printIntInf ii;
+
+    expect_text "EQ";
+    print_text (textOfOrd (intCmp64 ii k));
+
+    expect_text "GT";
+    print_text (textOfOrd (intCmp64 ii (k -Int64 1)));
+
+    expect_text "LT";
+    print_text (textOfOrd (intCmp64 ii (k +Int64 1)));
+  end
+};
+
+t4 = {
+  case sqrInt64 9 of
+    (hi, lo) -> expect_i64 81;
+                 print_i64 lo;
+  end;
+
+  case sqrInt64 1839720382 of
+    (hi, lo) -> expect_i64 3384571083946225924;
+                 print_i64 lo;
+
+                expect_i64 0;
+                 print_i64 hi;
+  end;
+
+  case sqrInt64 11839720383 of
+    (hi, lo) -> expect_i64b 1001100101011111110001100111100010001101010000100111100010000001_2;
+                print_i64b lo;
+
+                expect_i64 7;
+                print_i64  hi;
+  end;
+
+};
+
+text_of_Maybe_Int = { mi : Maybe IntInf =>
+  case mi
+    of $Some ii -> mkTextConcat "Some "
+                               (foster_mp_to_text_radix ii 10);
+    of $None    -> "None";
+  end
+};
+
+/*
+t5 = {
+  expect_text "Some 0";
+  print_text (text_of_Maybe_Int (intPosRShd (intFromInt64 4096) 3));
+
+  let foster_DIGIT_BIT = 60;
+      ii = intMul2d (intFromInt32 7) foster_DIGIT_BIT;
+  in
+    expect_text "Some 7";
+    print_text (text_of_Maybe_Int (intPosRShd ii 1));
+  end
+};
+*/
+
+t6 = {
+
+  let k0 = 101010011011011011_2;
+      k1 = 001010101000111110_2;
+  in
+    expect_i64 (bitand-Int64 k0 k1);
+    print_text (foster_mp_to_text_radix
+                   (intBitAnd
+                      (intFromInt64 k0)
+                      (intFromInt64 k1))
+                10);
+  end;
+
+
+  expect_i64 (bitshl-Int64 1 30);
+  print_text (foster_mp_to_text_radix
+                 (int_2expt 30)
+              10);
+
+  expect_text "1180591620717411303424";
+  print_text (foster_mp_to_text_radix
+                 (int_2expt 70)
+              10);
+
+  expect_text "-1180591620717411303424";
+  print_text (foster_mp_to_text_radix
+                 (intNegate (int_2expt 70))
+              10);
+
+  expect_text "0";
+  print_text (foster_mp_to_text_radix
+                 (intNegate (intFromInt32 0))
+              10);
+};
+
+t7 = {
+  expect_text "TODO: natRShb";
+   print_text "TODO: natRShb";
+   /*
+  expect_i64 (bitshl-Int64 1 30);
+  print_text (foster_mp_to_text_radix
+                 (foster_mp_rshb (int_2expt 70) 40)
+              10);
+*/
+
+  expect_i64 (1373420 *Int64 13423);
+  print_text (foster_mp_to_text_radix
+                 (intMulInt32 (intFromInt32 1373420) 13423)
+                 10);
+};
+
+t8 = {
+    testSubInt64 50990 52270 32390 46202  219000382475310 139113990763642 79886391711668;
+    testSubInt64 60191 8603 48593 19412  258518376522139 208705345833940 49813030688199;
+    testSubInt64 9661 59100 28657 5300  41493679105756 123080877806772 -81587198701016;
+    testSubInt64 15994 23631 40315 41758  68693706955855 173151606579998 -104457899624143;
+    testSubInt64 36788 27562 45498 15670  158003256912810 195412422049078 -37409165136268;
+    testSubInt64 32309 20360 6497 29841  138766098386824 27904402551953 110861695834871;
+    testSubInt64 50390 32246 39347 28984  216423402077686 168994078224696 47429323852990;
+    testSubInt64 57144 7096 12689 36673  245431611169720 54498840055617 190932771114103;
+    testSubInt64 48714 30071 56109 54945  209225036887415 240986320066209 -31761283178794;
+    testSubInt64 48529 36922 37059 5561  208430467944506 159167193028025 49263274916481;
+    testSubInt64 63887 63368 51424 60969  274392575702920 220864398290473 53528177412447;
+    testSubInt64 841 32160 27950 20742  3612067528096 120044335943942 -116432268415846;
+    testSubInt64 31029 35710 16878 13978  133268540263294 72490458035866 60778082227428;
+    testSubInt64 30613 59512 60922 14779  131481833891960 261657997621691 -130176163729731;
+
+    testSubInt64 0 25462 8739 29699  25462 37533719229443 -37533719203981;
+    testSubInt64 0 14086 38585 2455  14086 165721313118615 -165721313104529;
+    testSubInt64 0 1295 26265 27190  1295 112807316056630 -112807316055335;
+    testSubInt64 0 7133 38540 5292  7133 165528039593132 -165528039585999;
+    testSubInt64 0 5628 60590 24767  5628 260232068489407 -260232068483779;
+    testSubInt64 0 38168 3161 30945  38168 13576391653601 -13576391615433;
+    testSubInt64 0 14287 28717 40800  14287 123338575880032 -123338575865745;
+
+    testSubInt64 0 14220 0 60935  14220 60935 -46715;
+    testSubInt64 0 64573 0 40992  64573 40992 23581;
+    testSubInt64 0 35685 0 44649  35685 44649 -8964;
+    testSubInt64 0 22101 0 3595  22101 3595 18506;
+    testSubInt64 0 17774 0 54953  17774 54953 -37179;
+    testSubInt64 0 32606 0 25130  32606 25130 7476;
+    testSubInt64 0 15104 0 1364  15104 1364 13740;
+    testSubInt64 0 24657 0 12218  24657 12218 12439;
+    testSubInt64 0 59724 0 41811  59724 41811 17913;
+    testSubInt64 0 43979 0 18931  43979 18931 25048;
+    testSubInt64 0 38291 0 64337  38291 64337 -26046;
+
+    testSubInt64 1 2963 25207 34610  4294970259 108263240664882 -108258945694623;
+    testSubInt64 1 38640 63657 6688  4295005936 273404733168160 -273400438162224;
+    testSubInt64 1 63877 17375 47137  4295031173 74625056815137 -74620761783964;
+    testSubInt64 1 49900 2125 48158  4295017196 9126805552158 -9122510534962;
+
+};
+
+/*
+t9 = {
+
+    //testDMInt128-64 2632213052894475092 9157235946339984955 4763568965949847066 (10193147381994532286, 918742231440960751);
+    //testDMInt128-64 2598943225633312407 5419967317601940430 6940175297111699454 (6907900520223312591, 2282425968935614828);
+    //testDMInt128-64 1854270497306366063 1586699650626340728 2168975207148844265 (15770237112209352200, 91720982380415536);
+    //testDMInt128-64 7203475480652244930 6641192592567061411 7295477904944579637 (18214114327283854043, 5166321686778445900);
+
+    ()
+};
+
+testDMInt128-64 = { a : Int64 => b : Int64 => d : Int64 => expct:(Int64,Int64) =>
+  case expct of (equo, erem) ->
+    case divmod-Int128-64 a b d of (quo, rem) ->
+      expect_i64 equo;
+      print_i64 quo;
+
+      expect_i64 erem;
+      print_i64 rem;
+    end
+  end
+};
+*/
+
+// Modifies ra,rb by side effect for consistency with subNat128.
+// Version on smaller bitstrings for easier testing.
+subInt64 = { hAr : Ref Int32 => lAr : Ref Int32 =>
+             hB  :     Int32 => lB  :     Int32 =>
+  hc = hAr^ -Int32 hB;
+  lc = lAr^ -Int32 lB;
+
+  if lc >=SInt32 0 then // signed comparison
+    hc >^ hAr;            lc >^ lAr; // same bitstrings
+  else
+    (hc -Int32 1) >^ hAr; lc >^ lAr; // borrow from high bits.
+  end;
+  ()
+};
+
+reconstructInt64 = { a : Int32 => b : Int32 =>
+    bitor-Int64 (bitshl-Int64 (sext_i32_to_i64 a) 32)
+                (zext_i32_to_i64 b);
+};
+
+testSubInt64 = { a : Int32 => b : Int32 => c : Int32 => d : Int32 =>
+                 trueab : Int64 => truecd : Int64 => trueabmcd : Int64 =>
+  ra = (prim ref a);
+  rb = (prim ref b);
+  ab = reconstructInt64 a b;
+  cd = reconstructInt64 c d;
+  abmcd = ab -Int64 cd;
+  ign = subInt64 ra rb c d; // modifies ra,rb by side effect
+
+  expect_i64 trueab;
+  print_i64 ab;
+
+  expect_i64 truecd;
+  print_i64 cd;
+
+  expect_i64 trueabmcd;
+  print_i64 abmcd;
+
+  expect_i64 abmcd;
+  print_i64 (reconstructInt64 ra^ rb^);
+};

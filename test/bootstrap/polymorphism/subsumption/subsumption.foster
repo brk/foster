@@ -1,0 +1,91 @@
+main = {
+  x = threedotthree-part-one !;
+  y = threedotthree-part-two !;
+
+  expect_i32 33;
+  print_i32 x;
+
+  expect_i32 44;
+  print_i32 y;
+};
+
+k = { forall a b, x:a => y:b => y };
+q = { forall t:Type, x:t => y:t => y };
+
+f1 = { f:{B => B => B} => print_i32 0; B 0 };
+
+f2b = { f: (forall (a:Boxed) { a => a => a }) => print_i32 1; B 1 };
+
+// TODO higher-order unboxed polymorphism should be flagged eagerly.
+f2t = { f: (forall (a:Type) { a => a => a }) => print_i32 1; B 1 };
+
+threedotthree-part-one = {
+  // f1 ::            { B => B => B } => B
+  // k  :: forall a b,{ a => b => b };
+  // So k must be instantiated as k:[B,B].
+  expect_i32 0;
+  f1 k;
+
+  expect_i32 1;
+  f2b { forall b:Boxed, x:b => y:b => y };
+
+  expect_i32 1;
+  f2b k;
+
+  33
+};
+
+/*
+  Our error message for ``g k1`` is currently:
+
+      Typecheck error:
+      subsCheckRho
+      Unable to unify
+              $a.6::KindPointerSized
+      and
+              ((~(R)!7:instSigma type parameter 1), (~(R)!7:instSigma type parameter 1))
+
+  which is, effectively, saying that it isn't the case that every instantiation
+  of the type variable a will be a pair. At the paper notes, "k1 requires to be
+  given an argument of type (forall a, a -> a), whereas g only promises to pass
+  it a (less polymorphic) arugment of type (forall b. (b,b) -> (b,b))."
+
+  GHC 7.0.4 says (using [b] instead of (b,b)):
+
+    Couldn't match expected type `forall b. [b] -> [b]'
+                with actual type `forall a. a -> a'
+    Expected type: (forall b. [b] -> [b]) -> Int
+      Actual type: (forall a. a -> a) -> Int
+    In the first argument of `g', namely `k1'
+    In the expression: g k1
+
+  while 7.4.1 says:
+
+  ﻿ Couldn't match type `a' with `[a]'
+      `a' is a rigid type variable bound by
+          the type forall a. a -> a at Test.hs:6:16
+    Expected type: (forall b. [b] -> [b]) -> Int
+      Actual type: (forall a. a -> a) -> Int
+    In the first argument of `g', namely `k1'
+    In the expression: g k1
+
+
+  Oddly, both 7.0.4 and 7.4.1 reject the application g k2 (!)
+*/
+threedotthree-part-two = {
+  expect_i1 True ; print_i1 (__COMPILES__ {
+    g  : { { (forall (b:Boxed) { (b, b) => (b, b) }) => B } => B }  =>
+    k2 :   {                   { (B, B) => (B, B) }  => B }         =>
+      g k2;
+  });
+
+  expect_i1 False ; print_i1 (__COMPILES__ {
+    g  : { { (forall (b:Boxed) { (b, b) => (b, b) }) => B } => B }  =>
+    k1 :   { (forall (a:Boxed) {    a   =>    a   }) => B }         =>
+      g k1;
+  });
+
+  44
+};
+
+type case B of $B Int32;

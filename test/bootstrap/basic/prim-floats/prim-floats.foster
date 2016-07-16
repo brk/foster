@@ -1,0 +1,20 @@
+main = {
+  f0 = 1.0e+00;
+  z0 = 0.0e+00;
+
+  expect_float_p9f64 f0;
+  print_float_p9f64 f0;
+
+  expect_float_p9f64 z0;
+  print_float_p9f64 (f0 -f64 f0);
+
+  expect_float_p9f64 4.0;
+  print_float_p9f64 (div-f64 12.0 3.0);
+
+  expect_float_p9f64 2.0;
+  print_float_p9f64 (sqrt-f64 4.0);
+
+  expect_float_p9f64 -1.0;
+  print_float_p9f64 (z0 -f64 f0);
+};
+

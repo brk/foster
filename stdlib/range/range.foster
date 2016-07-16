@@ -1,0 +1,100 @@
+snafuinclude Ord "ord";
+
+// Assuming the endpoints are (ax,ay) and (bx,by),
+// with the precondition that ax <= ay and bx <= by:
+type case RangeChunkCmpResult
+  of $Before         //  [aaaaaa]  [bbbbbb]                            ay <  bx
+  of $AdjacentBefore //   [aaaaaa][bbbbbb]                             ay == bx
+  of $After          //  [bbbbbb]  [aaaaaa]                            ax >  by           (and ay > bx)
+  of $AdjacentAfter  //   [bbbbbb][aaaaaa]                             ax == by           (and ay > bx)
+  of $OverlapsBefore //    [aaaa[__]bbbb]                              ax <  bx, ay <  by (and ay > bx)
+  of $OverlapsAfter  //    [bbbb[__]aaaa]                              ax >  bx, ay >= by (and ay > bx)
+  of $Subsumes       //    [aaaa[bb]aaaa]   or  [[__]aaa]  or  [[__]]  ax <= bx, ay >= by (and ay > bx)
+  of $Subsumed       //    [bbbb[aa]bbbb]   or  [[__]bbb]              ax >= bx, ay <  by (and ay > bx)
+;
+
+textOfRangeChunkCmpResult = { o : RangeChunkCmpResult =>
+  case o
+    of $Before         -> "Before"
+    of $AdjacentBefore -> "AdjacentBefore"
+    of $After          -> "After"
+    of $AdjacentAfter  -> "AdjacentAfter"
+    of $OverlapsBefore -> "OverlapsBefore"
+    of $OverlapsAfter  -> "OverlapsAfter"
+    of $Subsumes       -> "Subsumes"
+    of $Subsumed       -> "Subsumed"
+  end
+};
+
+// Compare range [a,b) and [x,y)
+// Precondition: a <= b && x <= y.
+//
+cmpRange :: forall (t:Type) { t => t => t => t => { t => t => Ord }
+                               => RangeChunkCmpResult };
+cmpRange = { a => b => x => y => cmp =>
+  case cmp b x
+    of $LT              -> Before
+    of $EQ              -> AdjacentBefore
+    of $GT              ->
+    case cmp y a
+      of $LT            -> After
+      of $EQ            -> AdjacentAfter
+      of $GT            ->
+        case (cmp a x, cmp b y)
+          of ($LT, $LT) -> OverlapsBefore
+          of (_  , $LT) -> Subsumed
+          of ($GT, _  ) -> OverlapsAfter
+          of (_  , _  ) -> Subsumes
+        end
+    end
+  end
+};
+
+// We'd like to generate equivalent code to the above implementation,
+// where cmp is not always evaluated four times,
+// but doing so requires knowing that cmp is a pure function.
+cmpRangeAlt :: forall (t:Type) { t => t => t => t => { t => t => Ord }
+                                  => RangeChunkCmpResult };
+cmpRangeAlt = { a => b => x => y => cmp =>
+  case (cmp b x, cmp y a, cmp a x, cmp b y)
+    of ($LT, _,     _,   _) -> Before
+    of ($EQ, _,     _,   _) -> AdjacentBefore
+    of ($GT, $LT,   _,   _) -> After
+    of ($GT, $EQ,   _,   _) -> AdjacentAfter
+    of ($GT, $GT, $LT, $LT) -> OverlapsBefore
+    of ($GT, $GT, _  , $LT) -> Subsumed
+    of ($GT, $GT, $GT, _  ) -> OverlapsAfter
+    of ($GT, $GT, _  , _  ) -> Subsumes
+  end
+};
+
+
+type case RangePosCmpResult
+ of $BeforeRange
+ of $WithinRange
+ of $AfterRange
+;
+
+
+// Compare p to the range [x, y]
+// Precondition: x <= y
+cmpRangePos :: forall (t:Type) { t => t => t => { t => t => Ord }
+                               => RangePosCmpResult };
+cmpRangePos = { forall t:Type, x => y => p => cmp =>
+  case (cmp p x, cmp p y)
+    of ($LT    , _      ) -> BeforeRange
+    of ( _     , $GT    ) -> AfterRange
+    of ( _     ,  _     ) -> WithinRange
+  end
+};
+
+cmpRangePosAlt :: forall (t:Type) { t => t => t => { t => t => Ord }
+                               => RangePosCmpResult };
+cmpRangePosAlt = { forall t:Type, x => y => p => cmp =>
+  if      isLT (cmp p x) then BeforeRange
+  else if isGT (cmp p y) then AfterRange
+       else                   WithinRange
+       end
+  end
+};
+

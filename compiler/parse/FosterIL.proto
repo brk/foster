@@ -1,0 +1,287 @@
+package foster.bepb;
+
+message Type {
+  enum Tag {
+    NAMED = 1;
+    PTR = 2;
+    PROC = 3;
+    CORO = 4;
+    CARRAY = 6;
+    PRIM_INT = 8;
+    FLOAT64 = 9;
+    ARRAY = 11;
+    DATATYPE = 12;
+    TY_CON_APP = 13;
+    STRUCT = 14;
+  }
+
+  required Tag         tag   = 2;
+
+  // LLVM_NAMED, TYPE_VARIABLE
+  optional string name = 3;
+  optional ProcType procty = 17;
+  repeated Type type_parts = 18;
+  optional uint64 carray_size = 19;
+  repeated PbDataCtor ctor    = 21;
+}
+
+message PbDataCtor {
+  required string   name = 1;
+  repeated Type     type = 2;
+}
+
+message ProcType {
+  repeated Type arg_types = 1;
+  required Type ret_type  = 2;
+  optional string calling_convention = 3;
+
+  //repeated string annot_key = 3;
+  //repeated string annot_val = 4;
+}
+
+message Block {
+  required string       block_id  = 1;
+  repeated TermVar      phis      = 2;
+  repeated BlockMiddle  middle    = 3;
+  required Terminator   last      = 4;
+  optional int32        num_preds = 5;
+}
+
+message BlockMiddle {
+  optional LetVal       let_val = 1;
+  optional RebindId     rebind  = 3;
+  optional RootKill gcroot_kill = 5;
+  optional RootInit gcroot_init = 6;
+  optional TupleStore tuple_store = 7;
+}
+
+message RebindId {
+  required string from_id = 1;
+  required TermVar to_var = 2;
+}
+
+message TupleStore {
+  repeated TermVar stored_vars = 1;
+  required TermVar storage     = 2;
+  required bool    storage_indir = 3;
+}
+
+message RootInit {
+  required TermVar root_init_src  = 1;
+  required TermVar root_init_root = 2;
+}
+
+message RootKill {
+  required TermVar root_kill_root = 1;
+  required bool    root_kill_null = 2;
+}
+
+message LetVal {
+  required string let_val_id = 1;
+  required Letable let_expr  = 2;
+}
+
+message Letable {
+  enum Tag {
+    IL_INT = 16;
+    IL_BOOL = 17;
+    IL_TEXT = 18;
+    IL_UNIT = 19;
+    IL_FLOAT = 20;
+    IL_OCCURRENCE = 21;
+    IL_CALL = 23;
+    IL_CALL_PRIMOP = 24;
+    IL_BYTE_ARRAY = 25;
+    IL_BITCAST = 28;
+    IL_OBJECT_COPY = 29;
+    IL_DEREF = 31;
+    IL_STORE = 32;
+    IL_IF = 33;
+    IL_ALLOCATE = 34;
+    IL_ARRAY_READ = 35;
+    IL_ARRAY_POKE = 36;
+    IL_ARRAY_LENGTH = 37;
+    IL_ARRAY_LITERAL = 38;
+    IL_NAMED_TYPE_DECL = 40;
+    IL_UNBOXED_TUPLE = 41;
+    IL_KILL_PROCESS = 63;
+  }
+  repeated TermVar     parts = 1;
+  required Tag           tag = 2;
+  optional Type         type = 3;
+
+  repeated string      names = 6;
+  optional PBInt      pb_int = 17;
+  optional double       dval = 18;
+
+  optional bool       bool_value = 22;
+  optional bytes     bytes_value = 23;
+  optional string   string_value = 24;
+
+  optional PbAllocInfo   alloc_info = 25;
+  optional PbCallInfo     call_info = 26;
+  optional PbCallAsm      call_asm  = 27;
+
+  optional PbOccurrence       occ = 28;
+  optional string    prim_op_name = 30;
+  optional int32     prim_op_size = 31; // TODO use this
+  optional PbCtorInfo   ctor_info = 32;
+  optional Type         elem_type = 33;
+  optional PbArrayLiteral array_lit = 34;
+}
+
+message PbCallInfo {
+  optional PbCoroPrim         coro_prim = 29;
+
+  required bool     call_may_trigger_gc = 26;
+  required bool     call_is_a_tail_call = 22;
+  required string             call_conv = 27;
+}
+
+message PbCallAsm {
+  required bool     has_side_effects = 1;
+  required string   asm_contents     = 2;
+  required string   constraints      = 3;
+  required ProcType asm_proctype     = 4;
+}
+
+message PbArrayLiteral {
+  repeated PbArrayEntry entries = 1;
+}
+
+message PbArrayEntry {
+  optional TermVar var = 1;
+  optional Letable lit = 2;
+}
+
+message Terminator {
+  enum Tag {
+    BLOCK_RET_VAL  = 1;
+    BLOCK_RET_VOID = 2;
+    BLOCK_BR       = 3;
+    BLOCK_CASE     = 4;
+  }
+  required Tag         tag = 1;
+  optional TermVar var     = 2;  // BLOCK_RET, BLOCK_CASE
+  optional string block    = 3;  // BLOCK_BR
+  optional PbSwitch  scase = 4;  // BLOCK_CASE
+  repeated TermVar    args = 5;  // BLOCK_BR
+}
+
+message TermVar {
+  enum Tag {
+    IL_VAR           = 1;
+    IL_GLOBAL_SYMBOL = 2;
+  }
+  required Tag    tag  = 1;
+  required string name = 2;
+  optional Type   typ  = 3;
+}
+
+message PbAllocInfo {
+  enum MemRegion {
+    MEM_REGION_STACK       = 1;
+    MEM_REGION_GLOBAL_HEAP = 2;
+    MEM_REGION_GLOBAL_DATA = 3;
+  }
+  required MemRegion mem_region = 1;
+  required Type            type = 2;
+  optional PbCtorRepr ctor_repr = 6;
+  optional TermVar   array_size = 3;
+  required string    alloc_site = 4;
+  required string     type_name = 5;
+  required bool       zero_init = 7;
+}
+
+message Proc {
+  enum Linkage {
+    Internal = 1;
+    External = 2;
+  }
+  required ProcType proctype = 1;
+  repeated string   in_args  = 2;
+  required string   name     = 3;
+  repeated Block    blocks   = 4;
+  optional string   lines    = 5;
+  required Linkage  linkage  = 6;
+  repeated TermVar  gcroots  = 7;
+}
+
+message PBInt {
+  // The middle-end is responsible for verifying that the originalText
+  // constitutes a syntactically valid literal. For example, FEEDFACE_10
+  // is syntactically invalid.
+  //
+  // The parser is NOT responsible for verifying that the originalText
+  // constitutes a syntactically valid literal, because doing so precludes
+  // having __COMPILES__ in the language, which requires transmitting
+  // possibly-invalid literals to the middle-end.
+  //
+  // The middle-end is also responsible for checking that the literal is
+  // used appropriately (e.g. no passing 64-bit literal to 32-bit func).
+  //
+  required string clean = 2; // in base 10
+  required int32  bits  = 3;
+}
+
+message PbCoroPrim {
+  enum Tag {
+    IL_CORO_INVOKE = 27;
+    IL_CORO_CREATE = 28;
+    IL_CORO_YIELD  = 29;
+  }
+  required Tag       tag = 1;
+  required Type ret_type = 2;
+  required Type arg_type = 3;
+}
+
+message PbSwitch {
+  repeated PbCtorId     ctors   = 1;
+  repeated string       blocks  = 2;
+  optional string       defCase = 3;
+  required TermVar      var     = 4;
+  optional string       ctor_by = 5;
+}
+
+message PbCtorInfo {
+  required PbCtorId      ctor_id = 1;
+  optional Type   ctor_struct_ty = 4;
+}
+
+message PbCtorId {
+  required string ctor_type_name = 1;
+  required string ctor_ctor_name = 2;
+  required PbCtorRepr  ctor_repr = 3;
+}
+
+message PbCtorRepr {
+  enum Tag {
+    CR_DEFAULT     = 1;
+    CR_NULLARY     = 2;
+    CR_TRANSPARENT = 3;
+    CR_VALUE       = 4;
+  }
+  required Tag   tag = 1;
+  optional int64 ctor_repr_tag = 2;
+  optional bool  is_boxed = 3;
+}
+
+message PbOccurrence {
+  required TermVar     scrutinee   = 1;
+  repeated int32       occ_offset  = 2;
+  repeated PbCtorInfo  occ_ctors   = 3;
+}
+
+message Decl {
+  required string name = 1;
+  required Type   type = 2;
+}
+
+message Module {
+  required string      modulename = 1;
+  repeated Proc        procs      = 2;
+  repeated Decl extern_val_decls  = 3;
+  repeated Decl        typ_decls  = 4;
+  repeated string      modlines   = 5;
+}
+

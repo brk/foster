@@ -1,0 +1,802 @@
+snafuinclude Prelude "prelude";
+snafuinclude List    "list";
+
+/*
+  Based on the (BSD-licensed) implementation of maps in
+  the Haskell `containers-0.5.0.0` package:
+    http://hackage.haskell.org/packages/archive/containers/0.5.0.0/doc/html/src/Data-Map-Base.html#null
+  (c) Daan Leijen 2002
+  (c) Andriy Palamarchuk 2008
+
+  The relevant license file may be found in third_party/ghc/LICENSE.txt
+ */
+
+type case Map (k:Type) (v:Type)
+       of $MapBin Word k v (Map k v) (Map k v)
+       of $MapTip
+       ;
+
+mapEmpty :: forall (k:Type) (v:Type) { Map k v };
+mapEmpty = { MapTip };
+
+// O(1)
+mapIsEmpty :: forall (k:Type) (v:Type) { Map k v => Bool };
+mapIsEmpty = { forall k:Type v:Type, s =>
+  case s
+    of $MapTip -> True
+    of _       -> False
+  end
+};
+
+// O(1)
+mapSingleton :: forall (k:Type) (v:Type) { k => v => Map k v };
+mapSingleton = { forall k:Type v:Type, k => v => MapBin 1 k v MapTip MapTip };
+
+// O(1)
+mapSize :: forall (k:Type) (v:Type) { Map k v => Word };
+mapSize = { forall k:Type v:Type, s =>
+  case s
+    of $MapTip            -> 0
+    of $MapBin sz _ _ _ _ -> sz
+  end
+};
+
+// O(1)
+// Precondition: [[mapsBalanced l r]]
+mapBin! :: forall (k:Type) (v:Type) { k => v => Map k v => Map k v => Map k v };
+mapBin! = { forall k:Type v:Type, kx => x => l => r =>
+  MapBin (1 +Word mapSize l +Word mapSize r) kx x l r
+};
+
+// O(?)
+// Smart constructor which restores balance and size if necessary.
+mapJoin :: forall (k:Type) (v:Type) { k => v => Map k v => Map k v => Map k v };
+mapJoin = { forall k:Type v:Type, kx => x => l => r =>
+  case (l, r)
+    of ($MapTip, _) -> mapInsertMin kx x r
+    of (_, $MapTip) -> mapInsertMax kx x l
+    of ($MapBin sl ky y ly ry, $MapBin sr kz z lz rz) ->
+       if (mapDelta !) *Word sl <UWord sr then mapBalanceL kz z (mapJoin kx x l lz) rz else
+       if (mapDelta !) *Word sr <UWord sl then mapBalanceR ky y ly (mapJoin kx x ry r) else
+         mapBin! kx x l r
+       end
+       end
+  end
+};
+
+// O(lg n)
+// May perform one allocation, depending on compiler-chosen data representation.
+mapLookup :: forall (k:Type) (v:Type) { Map k v => k => { k => k => Ord } => Maybe v };
+mapLookup = { forall k:Type v:Type, s => k => cmp =>
+  REC go = { s =>
+      case s
+        of $MapTip                -> None
+        of $MapBin _ kelt elt l r ->
+          case cmp k kelt
+            of $EQ -> Some elt
+            of $LT -> go l
+            of $GT -> go r
+          end
+      end
+  };
+  go s;
+};
+
+// O(lg n)
+// Does not allocate.
+mapContainsKey :: forall (k:Type) (v:Type) { Map k v => k => { k => k => Ord } => Bool };
+mapContainsKey = { forall k:Type v:Type, s => k => cmp =>
+  REC go = { s =>
+      case s
+        of $MapTip                -> False
+        of $MapBin _ kelt elt l r ->
+          case cmp k kelt
+            of $EQ -> True
+            of $LT -> go l
+            of $GT -> go r
+          end
+      end
+  };
+  go s;
+};
+
+// O(lg  n)
+// Does not allocate.
+mapLookupWithDefault :: forall (k:Type) (v:Type) { Map k v => k => v => { k => k => Ord } => v };
+mapLookupWithDefault = { forall k:Type v:Type, s => k => v => cmp =>
+  REC go = { s =>
+      case s
+        of $MapTip                -> v
+        of $MapBin _ kelt elt l r ->
+          case cmp k kelt
+            of $EQ -> elt
+            of $LT -> go l
+            of $GT -> go r
+          end
+      end
+  };
+  go s;
+};
+
+/*
+// O(lg n)
+// Find largest element smaller than the given one.
+mapLookupLT :: forall (k:Type) (v:Type) { Map k v => k => { k => k => Ord } => Maybe v };
+mapLookupLT = { forall k:Type v:Type, s => k => cmp =>
+  REC goNone = { s =>
+      case s
+        of $MapTip                -> None
+        of $MapBin _ kelt elt l r ->
+          if isLT (cmp elt e)
+            then goSome elt r
+            else goNone l
+          end
+      end
+  };
+  REC goSome = { best => s =>
+      case s
+        of $MapTip           -> Some best
+        of $MapBin _ kelt elt l r ->
+            if isLT (cmp elt e)
+              then goSome elt  r
+              else goSome best l
+            end
+      end
+  };
+  goNone s;
+};
+
+// O(lg n)
+// Find smallest element greater than the given one.
+mapLookupGT :: forall (k:Type) (v:Type) { Map k v => a => { k => k => Ord } => Maybe k };
+mapLookupGT = { forall k:Type v:Type, s => e => cmp =>
+  REC goNone = { s =>
+      case s
+        of $MapTip           -> None
+        of $MapBin _ kelt elt l r ->
+          if isGT (cmp elt e)
+            then goNone l
+            else goSome elt r
+          end
+      end
+  };
+  REC goSome = { best => s =>
+      case s
+        of $MapTip           -> Some best
+        of $MapBin _ kelt elt l r ->
+            if isGT (cmp elt e)
+              then goSome best l
+              else goSome elt  r
+            end
+      end
+  };
+  goNone s;
+};
+
+// O(lg n)
+// Find largest element smaller or equal to the given one.
+mapLookupLE :: forall (k:Type) (v:Type) { Map k v => a => { k => k => Ord } => Maybe k };
+mapLookupLE = { forall k:Type v:Type, s => e => cmp =>
+  REC goNone = { s =>
+      case s
+        of $MapTip           -> None
+        of $MapBin _ kelt elt l r ->
+          case cmp elt e
+            of $LT -> goSome elt r
+            of $EQ -> Some elt
+            of $GT -> goNone l
+          end
+      end
+  };
+  REC goSome = { best => s =>
+      case s
+        of $MapTip           -> Some best
+        of $MapBin _ kelt elt l r ->
+          case cmp elt e
+            of $LT -> goSome best l
+            of $EQ -> Some elt
+            of $GT -> goSome elt l
+          end
+      end
+  };
+  goNone s;
+};
+
+// O(lg n)
+// Find smallest element greater or equal to the given one.
+mapLookupGE :: forall (k:Type) (v:Type) { Map k v => a => { k => k => Ord } => Maybe k };
+mapLookupGE = { forall k:Type v:Type, s => e => cmp =>
+  REC goNone = { s =>
+      case s
+        of $MapTip           -> None
+        of $MapBin _ kelt elt l r ->
+          case cmp elt e
+            of $LT -> goNone r
+            of $EQ -> Some elt
+            of $GT -> goSome elt l
+          end
+      end
+  };
+  REC goSome = { best => s =>
+      case s
+        of $MapTip           -> Some best
+        of $MapBin _ kelt elt l r ->
+          case cmp elt e
+            of $LT -> goSome best r
+            of $EQ -> Some elt
+            of $GT -> goSome elt l
+          end
+      end
+  };
+  goNone s;
+};
+*/
+
+// O(lg n)
+// If an element is equivalent to one already in the map,
+// the new element replaces the old one.
+mapInsert :: forall (k:Type) (v:Type) { k => v => Map k v => { k => k => Ord } => Map k v };
+mapInsert = { forall k:Type v:Type, k : k => v : v => s => cmp =>
+  REC go = { s =>
+      case s
+        of $MapTip            -> mapSingleton k v
+        of $MapBin z kx x l r ->
+          case cmp k kx
+            of $LT -> mapBalanceL kx x (go l) r
+            of $EQ -> MapBin z k v l r
+            of $GT -> mapBalanceR kx x l (go r)
+          end
+      end
+  };
+  go s;
+};
+
+// TODO the k : k annotations are only needed due to a compiler bug (2013/03/15).
+
+// O(lg n)
+// If an element is equivalent to one already in the map,
+// the original map is returned, not a new map.
+mapInsertR :: forall (k:Type) (v:Type) { k => v => Map k v => { k => k => Ord } => Map k v };
+mapInsertR = { forall k:Type v:Type,  k => v => s => cmp =>
+  REC go = { s =>
+      case s
+        of $MapTip            -> mapSingleton k v
+        of $MapBin _ kx x l r ->
+          case cmp k kx
+            of $LT -> mapBalanceL kx x (go l) r
+            of $EQ -> s
+            of $GT -> mapBalanceR kx x l (go r)
+          end
+      end
+  };
+  go s;
+};
+
+// O(lg n)
+// If an element is equivalent to one already in the map,
+// the original map is returned, not a new map.
+mapDelete :: forall (k:Type) (v:Type) { Map k v => k => { k => k => Ord } => Map k v };
+mapDelete = { forall k:Type v:Type, s => k => cmp =>
+  REC go = { s =>
+      case s
+        of $MapTip                -> s
+        of $MapBin _ kelt elt l r ->
+          case cmp k kelt
+            of $LT -> mapBalanceR kelt elt (go l) r
+            of $EQ -> mapGlue! l r
+            of $GT -> mapBalanceL kelt elt l (go r)
+          end
+      end
+  };
+  go s;
+};
+
+////////////
+
+mapInsertMin :: forall (k:Type) (v:Type) { k => v => Map k v => Map k v };
+mapInsertMin = { forall k:Type v:Type, k => x => s =>
+  case s
+    of $MapTip            -> mapSingleton k x
+    of $MapBin _ ky y l r -> mapBalanceL ky y (mapInsertMin k x l) r
+  end
+};
+
+mapInsertMax :: forall (k:Type) (v:Type) { k => v => Map k v => Map k v };
+mapInsertMax = { forall k:Type v:Type, k => x => s =>
+  case s
+    of $MapTip            -> mapSingleton k x
+    of $MapBin _ ky y l r -> mapBalanceR ky y l (mapInsertMax k x r)
+  end
+};
+
+////////////
+
+// O(n+m)
+mapUnion :: forall (k:Type) (v:Type) { Map k v => Map k v => { k => k => Ord } => Map k v };
+mapUnion = { forall k:Type v:Type, s1 => s2 => cmp =>
+  case (s1, s2)
+    of ($MapTip, _) -> s2
+    of (_, $MapTip) -> s1
+    of _ -> mapHedgeUnion! None None s1 s2 cmp
+  end
+};
+
+// O(n+m)
+mapDifference :: forall (k:Type) (v:Type) { Map k v => Map k v => { k => k => Ord } => Map k v };
+mapDifference = { forall k:Type v:Type, s1 => s2 => cmp =>
+  case (s1, s2)
+    of ($MapTip, _) -> s1
+    of (_, $MapTip) -> s1
+    of _ -> mapHedgeDiff! None None s1 s2 cmp
+  end
+};
+
+// O(n+m)
+mapIntersection :: forall (k:Type) (v:Type) { Map k v => Map k v => { k => k => Ord } => Map k v };
+mapIntersection = { forall k:Type v:Type, s1 => s2 => cmp =>
+  case (s1, s2)
+    of ($MapTip, _) -> s1
+    of (_, $MapTip) -> s2
+    of _ -> mapHedgeInter! None None s1 s2 cmp
+  end
+};
+
+// O(n+m)
+mapIsSubmapOf :: forall (k:Type) (v:Type) { Map k v => Map k v => { k => k => Ord } => Bool };
+mapIsSubmapOf = { forall k:Type v:Type, s1 => s2 => cmp =>
+  REC go = { s1 => s2 =>
+    case (s1, s2)
+      of ($MapTip, _) -> True
+      of (_, $MapTip) -> False
+      of ($MapBin _ kx x l r, _) ->
+        case mapSplitLookup kx s2 cmp
+          of (lt, found, gt) ->
+            both found ({ go l lt } `andand` { go r gt })
+        end
+    end
+  };
+  { mapSize s1 <=UWord mapSize s2 } `andand` { go s1 s2 };
+};
+
+mapSplit :: forall (k:Type) (v:Type) { k => Map k v => { k => k => Ord } => (Map k v, Map k v) };
+mapSplit = { forall k:Type v:Type, k => s => cmp =>
+  case mapSplitLookup k s cmp
+    of (lt, _, gt) -> (lt, gt)
+  end
+};
+
+// O(lg n)
+mapSplitLookup :: forall (k:Type) (v:Type) { k => Map k v => { k => k => Ord } => (Map k v, Bool, Map k v) };
+mapSplitLookup = { forall k:Type v:Type, k => s => cmp =>
+  case s
+    of $MapTip -> (s, False, s)
+    of $MapBin _ ky y l r ->
+      case cmp k ky
+        of $LT -> case mapSplitLookup k l cmp of (lt, found, gt) -> (lt, found, mapJoin ky y gt r) end
+        of $EQ -> (l, True, r)
+        of $GT -> case mapSplitLookup k r cmp of (lt, found, gt) -> (mapJoin ky y l lt, found, gt) end
+      end
+  end
+};
+
+////////////
+
+
+
+////////////
+
+mapHedgeUnion! :: forall (k:Type) (v:Type) { Maybe k => Maybe k => Map k v => Map k v => { k => k => Ord } => Map k v };
+mapHedgeUnion! = { forall k:Type v:Type, blo => bhi => s1 => s2 => cmp =>
+  case (s1, s2)
+    of (_, $MapTip) -> s1
+    of (_,       $MapBin 1 kx x _ _) -> mapInsertR kx x s1 cmp
+    of ($MapTip, $MapBin _ kx x l r) -> mapJoin kx x (mapFilterGT blo l cmp)
+                                                     (mapFilterLT bhi r cmp)
+    of ($MapBin _ kx x l r,       _) ->
+                  bmi = Some kx;
+                  mapJoin kx x
+                     (mapHedgeUnion! blo bmi l (mapTrim blo bmi s2 cmp) cmp)
+                     (mapHedgeUnion! bmi bhi r (mapTrim bmi bhi s2 cmp) cmp)
+  end
+};
+
+mapHedgeDiff! :: forall (k:Type) (v:Type) { Maybe k => Maybe k => Map k v => Map k v => { k => k => Ord } => Map k v };
+mapHedgeDiff! = { forall k:Type v:Type, blo => bhi => s1 => s2 => cmp =>
+  case (s1, s2)
+    of ($MapTip, _) -> s1
+    of ($MapBin _ kx x l r, $MapTip) -> mapJoin kx x (mapFilterGT blo l cmp)
+                                                     (mapFilterLT bhi r cmp)
+    of (_,       $MapBin _ kx x l r) ->
+                  bmi = Some kx;
+                  mapMerge
+                      (mapHedgeDiff! blo bmi (mapTrim blo bmi s1 cmp) l cmp)
+                      (mapHedgeDiff! bmi bhi (mapTrim bmi bhi s1 cmp) r cmp)
+  end
+};
+
+mapHedgeInter! :: forall (k:Type) (v:Type) { Maybe k => Maybe k => Map k v => Map k v => { k => k => Ord } => Map k v };
+mapHedgeInter! = { forall k:Type v:Type, blo => bhi => s1 => s2 => cmp =>
+  case (s1, s2)
+    of ($MapTip, _) -> s1
+    of (_, $MapTip) -> s2
+    of ($MapBin _ kx x l r, _) ->
+        bmi = Some kx;
+        lp = mapHedgeInter! blo bmi l (mapTrim blo bmi s2 cmp) cmp;
+        rp = mapHedgeInter! bmi bhi r (mapTrim bmi bhi s2 cmp) cmp;
+        if mapContainsKey s2 kx cmp
+          then mapJoin kx x lp rp
+          else mapMerge     lp rp
+        end
+  end
+};
+
+mapTrim :: forall (k:Type) (v:Type) { Maybe k => Maybe k => Map k v => { k => k => Ord } => Map k v };
+mapTrim = { forall k:Type v:Type, blo => bhi => s => cmp =>
+  case (blo, bhi)
+    of ($None,    $None)    -> s
+    of ($Some lx, $None)    -> REC greater = { t =>
+                                 case t
+                                   of $MapTip         -> t
+                                   of $MapBin _ kx x _ r ->
+                                     if isLE (cmp kx lx)
+                                       then greater r
+                                       else t
+                                     end
+                                 end
+                               };  greater s;
+    of ($None,    $Some hx) -> REC lesser  = { t =>
+                                 case t
+                                   of $MapTip         -> t
+                                   of $MapBin _ kx x l _ ->
+                                     if isGE (cmp kx hx)
+                                       then lesser l
+                                       else t
+                                     end
+                                 end
+                               };  lesser  s;
+    of ($Some lx, $Some hx) -> REC middle = { t =>
+                                 case t
+                                   of $MapTip         -> t
+                                   of $MapBin _ kx x l r ->
+                                     if isLE (cmp kx lx) then middle r else
+                                     if isGE (cmp kx hx) then middle l else
+                                       t
+                                     end
+                                     end
+                                 end
+                               };  middle s;
+  end
+};
+
+mapFilterGT :: forall (k:Type) (v:Type) { Maybe k => Map k v => { k => k => Ord } => Map k v };
+mapFilterGT = { forall k:Type v:Type, mb => s => cmp =>
+  case mb
+    of $None -> s
+    of $Some b ->
+      REC go = { s =>
+        case s
+          of $MapTip -> s
+          of $MapBin _ kx x l r ->
+            case cmp b kx
+              of $LT -> mapJoin kx x (go l) r
+              of $EQ -> r
+              of $GT -> go r
+            end
+        end
+      };
+      go s;
+  end
+};
+
+mapFilterLT :: forall (k:Type) (v:Type) { Maybe k => Map k v => { k => k => Ord } => Map k v };
+mapFilterLT = { forall k:Type v:Type, mb => s => cmp =>
+  case mb
+    of $None -> s
+    of $Some b ->
+      REC go = { s =>
+        case s
+          of $MapTip -> s
+          of $MapBin _ kx x l r ->
+            case cmp b kx
+              of $LT -> go l
+              of $EQ -> l
+              of $GT -> mapJoin kx x l (go r)
+            end
+        end
+      };
+      go s;
+  end
+};
+
+////////////
+
+// O(n)
+mapFoldl :: forall (k:Type) (v:Type) (a:Type) { Map k v => { k => v => a => a } => a => a };
+mapFoldl = { forall k:Type v:Type a:Type, s => f => z =>
+  REC go = { s => acc =>
+      case s
+        of $MapTip                -> acc
+        of $MapBin _ kelt elt l r -> go r (f kelt elt (go l acc))
+      end
+  };
+  go s z;
+};
+
+// O(n)
+mapFoldr :: forall (k:Type) (v:Type) (a:Type) { Map k v => { k => v => a => a } => a => a };
+mapFoldr = { forall k:Type v:Type a:Type, s => f => z =>
+  REC go = { s => acc =>
+      case s
+        of $MapTip                -> acc
+        of $MapBin _ kelt elt l r -> go l (f kelt elt (go r acc))
+      end
+  };
+  go s z;
+};
+
+// O(n)
+mapMap :: forall (k:Type) (v:Type) (r:Type) { Map k v => { v => r } => Map k r };
+mapMap = { forall k:Type v:Type r:Type, s => f =>
+  REC go = { s =>
+      case s
+        of $MapTip                 -> MapTip
+        of $MapBin sz kelt elt l r -> MapBin sz kelt (f elt) (go l) (go r)
+      end
+  };
+  go s;
+};
+
+/*
+mapKeepIf :: forall (k:Type) (v:Type) { Map k v => { a => Bool } => Map k v };
+mapKeepIf = { forall k:Type v:Type, s => p =>
+  case s
+    of $MapTip -> s
+    of $MapBin _ kx x l r ->
+      if p x
+        then mapJoin kx x (mapKeepIf l p) (mapKeepIf r p)
+        else mapMerge  (mapKeepIf l p) (mapKeepIf r p)
+      end
+  end
+};
+*/
+
+mapToList :: forall (k:Type) (v:Type) { Map k v => List (k, v) };
+mapToList = { forall k:Type v:Type, s =>
+  mapFoldr s { k => v => lst => Cons (k, v) lst } Nil
+};
+
+mapToListDesc :: forall (k:Type) (v:Type) { Map k v => List (k, v) };
+mapToListDesc = { forall k:Type v:Type, s =>
+  mapFoldl s { k => v => lst => Cons (k, v) lst } Nil
+};
+
+mapOfList :: forall (k:Type) (v:Type) { List (k, v) => { k => k => Ord } => Map k v };
+mapOfList = { forall k:Type v:Type, lst => cmp =>
+  listFoldl lst { p => s => case p of (k, v) -> mapInsert k v s cmp end } MapTip
+};
+
+////////////
+
+mapMerge :: forall (k:Type) (v:Type) { Map k v => Map k v => Map k v };
+mapMerge = { forall k:Type v:Type, l => r =>
+  case (l, r)
+    of ($MapTip, _) -> r
+    of (_, $MapTip) -> l
+    of ($MapBin sl kx x lx rx, $MapBin sr ky y ly ry) ->
+      if (mapDelta !) *Word sl <UWord sr then mapBalanceL ky y (mapMerge l ly) ry else
+      if (mapDelta !) *Word sr <UWord sl then mapBalanceR kx x lx (mapMerge rx r) else
+        mapGlue! l r
+      end
+      end
+  end
+};
+
+// Like mapMerge, but assumes the maps are balanced.
+mapGlue! :: forall (k:Type) (v:Type) { Map k v => Map k v => Map k v };
+mapGlue! = { forall k:Type v:Type, l => r =>
+  case (l, r)
+    of ($MapTip, _) -> r
+    of (_, $MapTip) -> l
+    of _ ->
+      if mapSize l >UWord mapSize r
+        then case mapDeleteFindMax! l of ((km, m), lp) -> mapBalanceR km m lp r end
+        else case mapDeleteFindMin! r of ((km, m), rp) -> mapBalanceL km m l rp end
+      end
+  end
+};
+
+// Precondition: mapSize s > 0
+mapDeleteFindMin! :: forall (k:Type) (v:Type) { Map k v => ((k, v), Map k v) };
+mapDeleteFindMin! = { forall k:Type v:Type, s =>
+  case s
+    of $MapBin _ kelt elt ($MapTip) r -> ((kelt, elt), r)
+    of $MapBin _ kelt elt l r ->
+        case mapDeleteFindMin! l of (kxm, lp) -> (kxm, mapBalanceR kelt elt lp r) end
+    of $MapTip -> prim kill-entire-process "mapDeleteFindMin! invariant violated"
+  end
+};
+
+// Precondition: mapSize s > 0
+mapDeleteFindMax! :: forall (k:Type) (v:Type) { Map k v => ((k, v), Map k v) };
+mapDeleteFindMax! = { forall k:Type v:Type, s =>
+  case s
+    of $MapBin _ kelt elt l ($MapTip) -> ((kelt, elt), l)
+    of $MapBin _ kelt elt l r ->
+        case mapDeleteFindMax! r of (kxm, rp) -> (kxm, mapBalanceL kelt elt l rp) end
+    of $MapTip -> prim kill-entire-process "mapDeleteFindMax! invariant violated"
+  end
+};
+
+mapRatio = { 2 };
+mapDelta = { 3 };
+
+mapBalanceL :: forall (k:Type) (v:Type) { k => v => Map k v => Map k v => Map k v };
+mapBalanceL = { forall k:Type v:Type, k => x => l => r =>
+  case r
+      of $MapTip        ->
+        case l
+          of $MapTip                             -> MapBin 1 k x l l
+          of $MapBin _ _  _  ($MapTip) ($MapTip) -> MapBin 2 k x l MapTip
+          of $MapBin _ lk lx ($MapTip) ($MapBin _ lrk lrx _ _) ->
+              MapBin 3 lrk lrx (mapSingleton lk lx) (mapSingleton k x)
+          of $MapBin _ lk lx ll ($MapTip) ->
+              MapBin 3 lk lx ll (mapSingleton k x)
+          of $MapBin ls lk lx ll lr ->
+            case lr
+              of $MapBin lrs lrk lrx lrl lrr ->
+                // TODO hmm int overflow?
+                if lrs <UWord ((mapRatio !) *Word mapSize ll)
+                  then MapBin (1 +Word ls) lk lx ll
+                      (MapBin (1 +Word lrs) k x lr MapTip)
+                  else MapBin (1 +Word ls) lrk lrx
+                      (MapBin (1 +Word mapSize ll +Word mapSize lrl) lk lx ll lrl)
+                      (MapBin (1 +Word mapSize lrr) k x lrr MapTip)
+                end
+             of _ -> prim kill-entire-process "mapBalanceL invariant (1) violated";
+           end
+        end
+
+      of $MapBin rs _ _ _ _ ->
+          case l
+              of $MapTip              -> MapBin (rs +Word 1) k x l r
+              of $MapBin ls lk lx ll lr ->
+                // TODO hmm int overflow?
+                if ls >UWord ((mapDelta !) *Word rs)
+                  then
+                    case lr
+                      of $MapBin lrs lrk lrx lrl lrr ->
+                        // TODO hmm int overflow?
+                        if lrs <UWord ((mapRatio !) *Word mapSize ll)
+                          then MapBin (1 +Word ls +Word rs) lk lx ll
+                              (MapBin (1 +Word rs +Word lrs) k x lr r)
+                          else MapBin (1 +Word ls +Word rs) lrk lrx
+                              (MapBin (1 +Word mapSize ll +Word mapSize lrl) lk lx ll  lrl)
+                              (MapBin (1 +Word rs         +Word mapSize lrr)  k  x lrr  r)
+                        end
+                      of _ -> prim kill-entire-process "mapBalanceL invariant (2) violated";
+                    end
+                  else MapBin (1 +Word ls +Word rs) k x l r
+                end
+          end
+  end
+};
+
+
+mapBalanceR :: forall (k:Type) (v:Type) { k => v => Map k v => Map k v => Map k v };
+mapBalanceR = { forall k:Type v:Type, k => x => l => r =>
+  case l
+    of $MapTip ->
+      case r
+        of $MapTip -> MapBin 1 k x l r
+        of $MapBin _ _ _ ($MapTip) ($MapTip) -> MapBin 2 k  x  MapTip r
+        of $MapBin _ rk rx ($MapTip) rr      -> MapBin 3 rk rx (mapSingleton k x) rr
+        of $MapBin _ rk rx ($MapBin _ rlk rlx _ _) ($MapTip) ->
+            MapBin 3 rlk rlx (mapSingleton k x) (mapSingleton rk rx)
+        of $MapBin rs rk rx rl rr ->
+          case rl
+            of $MapBin rls rlk rlx rll rlr ->
+             if rls <UWord ((mapRatio !) *Word mapSize rr)
+               then MapBin (1 +Word rs) rk rx
+                   (MapBin (1 +Word rls) k x MapTip rl) rr
+               else MapBin (1 +Word rs) rlk rlx
+                   (MapBin (1 +Word mapSize rll) k x MapTip rll)
+                   (MapBin (1 +Word mapSize rr +Word mapSize rlr) rk rx rlr rr)
+             end
+            of _ -> prim kill-entire-process "mapBalanceR invariant (1) violated";
+          end
+      end
+
+   of $MapBin ls _ _ _ _ ->
+     case r
+       of $MapTip -> MapBin (1 +Word ls) k x l r
+       of $MapBin rs rk rx rl rr ->
+         if rs >UWord ((mapDelta !) *Word ls)
+           then
+             case rl
+               of $MapBin rls rlk rlx rll rlr ->
+                 if rls <UWord ((mapRatio !) *Word mapSize rr)
+                   then MapBin (1 +Word ls +Word rs) rk rx
+                       (MapBin (1 +Word ls +Word rls) k x l rl) rr
+                   else MapBin (1 +Word ls +Word rs) rlk rlx
+                       (MapBin (1 +Word ls +Word mapSize rll) k x l rll)
+                       (MapBin (1 +Word mapSize rr +Word mapSize rlr) rk rx rlr rr)
+                 end
+               of _ -> prim kill-entire-process "mapBalanceR invariant (2) violated"
+             end
+           else MapBin (1 +Word ls +Word rs) k x l r
+         end
+      end
+  end
+};
+
+////////////
+
+// O(n)
+mapSizeValid_ :: forall (k:Type) (v:Type) { Map k v => Bool };
+mapSizeValid_ = { forall k:Type v:Type, s =>
+  REC realsize = { s =>
+    case s
+      of $MapTip            -> Some { 0 }
+      of $MapBin sz _ _ l r ->
+            case (realsize l, realsize r)
+              of ($Some nf  , $Some mf  ) ->
+                if (nf !) +Word (mf !) +Word 1 ==Word sz
+                  then Some { sz }
+                  else None
+                end
+              of _ -> None
+            end
+    end
+  };
+  case realsize s
+    of $Some fsz -> (fsz !) ==Word mapSize s
+    of _ -> False
+  end
+};
+
+mapBalanced :: forall (k:Type) (v:Type) { Map k v => Bool };
+mapBalanced = { forall k:Type v:Type, s =>
+  case s
+    of $MapTip           -> True
+    of $MapBin _ _ _ l r -> mapsBalanced l r
+  end
+};
+
+mapsBalanced :: forall (k:Type) (v:Type) { Map k v => Map k v => Bool };
+mapsBalanced = { forall k:Type v:Type, l => r =>
+  sl = mapSize l;
+  sr = mapSize r;
+  andand { either (sl +Word sr <=UWord 1)
+                  (both (sl <=UWord (mapDelta !) *Word sr)
+                        (sr <=UWord (mapDelta !) *Word sl)) }
+         { { mapBalanced l } `andand` { mapBalanced r } }
+};
+
+////////////
+
+mapShowTree = { forall k:Type v:Type, s : Map k v => shw : { k => v => Text } =>
+  mapShowTreeRot Nil Nil s shw
+};
+
+mapShowTreeRot = { forall k:Type v:Type, lbars : List Text => rbars : List Text => s : Map k v => shw : { k => v => Text } =>
+  case s
+    of $MapTip ->            mapShowTreeBars lbars `mkTextConcat` "|\n"
+    of $MapBin 1 kx x _ _ -> mapShowTreeBars lbars `mkTextConcat` shw kx x `mkTextConcat` "\n"
+    of $MapBin _ kx x l r ->
+        mapShowTreeRot (mapShowTreeWithBar rbars) (mapShowTreeWithEmpty rbars) r shw `mkTextConcat`
+        mapShowTreeBars lbars `mkTextConcat` shw kx x `mkTextConcat` "\n"            `mkTextConcat`
+        mapShowTreeRot (mapShowTreeWithEmpty lbars) (mapShowTreeWithBar lbars) l shw
+  end
+};
+
+mapShowTreeWithBar   = { bars => Cons "|  " bars };
+mapShowTreeWithEmpty = { bars => Cons "   " bars };
+
+mapShowTreeBars = { bars : List Text =>
+  case bars
+    of $Nil -> ""
+    of $Cons _ tail -> mkTextConcat (listFoldl (listReverse tail) mkTextConcat "")
+                                   "+--"
+  end
+};
+

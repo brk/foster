@@ -1,0 +1,8 @@
+one = { 1 };
+
+main = {
+  expect_i32 1 ; print_i32 (one !);
+
+  // Test that variable scoping is respected: outer v not in scope
+  expect_i1 False ; print_i1 (__COMPILES__ { v:i32 => v } v);
+};

@@ -1,0 +1,90 @@
+main = {
+  problem1 9;
+
+  problem0 !;
+
+  // These functions loop infinitely, but we should still
+  // be able to compile them.
+  // problem4 !;
+  // problem5 !;
+
+  problem2 !;
+
+  expect_i32 3;
+  print_i32 ((problem3 !) !);
+
+  expect_i32 3;
+  print_i32 ((problem3a 3) !);
+};
+
+// again1 wasn't called, wasn't being dropped,
+// made it look like again2 was free.
+// This implied that divWW would need an env,and
+// env being inserted, but not passed at call site.
+problem1 = { v : Int32 =>
+  rec
+      again1 = { again2 ! }; // indirection needed
+      again2 = {
+	 if False then again2 !  // recursive call needed...
+	          else () end
+      };
+  in
+    ()
+  end
+};
+
+// Same problem, but we've dropped the arg to problem1.
+problem0 = {
+  let again2 = { if False then () else () end };
+      again1 = { again2 ! }; in
+    again1 !
+  end
+};
+
+// * again2 gets contified, but the call in again1 isn't converted.
+// * problem4 thus has again2 as a free variable
+// * problem4 is assigned an extra env parameter,
+//      but its call sites aren't updated (?)
+problem4 = {
+  again2 = { if False then 3 else 4 end };
+  again1 = { again2 ! };
+
+  if True then again1 ! else again1 ! +Int32 1 end
+};
+
+// This is how we should internally rearrange problem4 before contifying it.
+problem5 = {
+ again1 = {
+   again2 = { if False then 3 else 4 end };
+   again2 !
+ };
+
+ if True then again1 ! else again1 ! +Int32 1 end
+};
+
+problem2 = {
+  rec
+      again1 = { again2 ! };
+      again2 = {
+	 if False then again2 ! else () end
+      };
+  in
+    again1 !
+  end
+};
+
+problem3 = {
+  rec again2 = { if opaquely_i32 0 ==Int32 1 then again2 ! else 3 end };
+  in
+     again1 = { again2 ! };
+     again1
+  end
+};
+
+problem3a = { a : Int32 =>
+  rec again2 = { if opaquely_i32 0 ==Int32 1 then again2 ! else a end };
+  in
+     again1 = { again2 ! };
+     again1
+  end
+};

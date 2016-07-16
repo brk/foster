@@ -1,0 +1,113 @@
+<?xml version="1.0"?>
+
+<!DOCTYPE MODE SYSTEM "xmode.dtd">
+
+<!-- Foster MODE 0.0.1, based on SML mode 1.0.1 by Lucas Dixon, based on Ingmar Stein's ml mode -->
+<MODE>
+  <PROPS>
+    <PROPERTY NAME="commentStart" VALUE="/*"/>
+    <PROPERTY NAME="commentEnd" VALUE="*/"/>
+    <PROPERTY NAME="lineComment" VALUE="//" />
+    <PROPERTY NAME="wordBreakChars" VALUE=",+-=&lt;&gt;/?^&amp;*\\/(){}" />
+  </PROPS>
+
+  <RULES IGNORE_CASE="FALSE" HIGHLIGHT_DIGITS="TRUE" DIGIT_RE="[0-9]+(\`?[0-9a-fA-F]+)+(_[1-9][0-9]?)?">
+    <!-- comments -->
+    <SPAN TYPE="COMMENT1">
+      <BEGIN>/*</BEGIN>
+      <END>*/</END>
+    </SPAN>
+
+    <!-- string literals -->
+    <SPAN TYPE="LITERAL1" ESCAPE="\" NO_LINE_BREAK="TRUE">
+      <BEGIN>"</BEGIN>
+      <END>"</END>
+    </SPAN>
+
+    <EOL_SPAN TYPE="COMMENT1">//</EOL_SPAN>
+
+  <!-- built-in operators -->
+    <SEQ TYPE="OPERATOR">{</SEQ>
+    <SEQ TYPE="OPERATOR">}</SEQ>
+    <SEQ TYPE="OPERATOR">;</SEQ>
+    <SEQ TYPE="OPERATOR">(</SEQ>
+    <SEQ TYPE="OPERATOR">)</SEQ>
+<!--
+    <SEQ TYPE="OPERATOR">/</SEQ>
+    <SEQ TYPE="OPERATOR">*</SEQ>
+
+    <SEQ TYPE="OPERATOR">+</SEQ>
+    <SEQ TYPE="OPERATOR">-</SEQ>
+    <SEQ TYPE="OPERATOR">^</SEQ>
+    <SEQ TYPE="OPERATOR">@</SEQ>
+    <SEQ TYPE="OPERATOR">=</SEQ>
+    <SEQ TYPE="OPERATOR">&lt;</SEQ>
+    <SEQ TYPE="OPERATOR">&gt;</SEQ>
+    <SEQ TYPE="OPERATOR">[</SEQ>
+    <SEQ TYPE="OPERATOR">]</SEQ>
+    <SEQ TYPE="OPERATOR">,</SEQ>
+    <SEQ TYPE="OPERATOR">:</SEQ>
+    <SEQ TYPE="OPERATOR">|</SEQ>
+    <SEQ TYPE="OPERATOR">#</SEQ>
+-->
+<!--
+    <MARK_FOLLOWING TYPE="FUNCTION"
+    MATCH_TYPE="KEYWORD1">fun </MARK_FOLLOWING>
+    <MARK_FOLLOWING TYPE="FUNCTION"
+    MATCH_TYPE="KEYWORD1">val </MARK_FOLLOWING>
+    <MARK_FOLLOWING TYPE="FUNCTION"
+    MATCH_TYPE="KEYWORD1">exception </MARK_FOLLOWING>
+
+    <MARK_FOLLOWING TYPE="FUNCTION"
+    MATCH_TYPE="KEYWORD1">type </MARK_FOLLOWING>
+    <MARK_FOLLOWING TYPE="FUNCTION"
+    MATCH_TYPE="KEYWORD1">abstype </MARK_FOLLOWING>
+     <MARK_FOLLOWING TYPE="FUNCTION"
+    MATCH_TYPE="KEYWORD1">eqtype </MARK_FOLLOWING>
+    <MARK_FOLLOWING TYPE="FUNCTION"
+    MATCH_TYPE="KEYWORD1">datatype </MARK_FOLLOWING>
+
+    <MARK_FOLLOWING TYPE="LITERAL3"
+    MATCH_TYPE="KEYWORD1">functor </MARK_FOLLOWING>
+    <MARK_FOLLOWING TYPE="LITERAL3"
+    MATCH_TYPE="KEYWORD1">structure </MARK_FOLLOWING>
+    <MARK_FOLLOWING TYPE="LITERAL3"
+    MATCH_TYPE="KEYWORD1">signature </MARK_FOLLOWING>
+-->
+    <!-- reserved words -->
+    <KEYWORDS>
+      <!-- type def -->
+      <KEYWORD1>type</KEYWORD1>
+
+      <!-- generic definitional -->
+      <KEYWORD1>end</KEYWORD1>
+      <KEYWORD1>in</KEYWORD1>
+      <KEYWORD1>let</KEYWORD1>
+      <KEYWORD1>of</KEYWORD1>
+
+      <!-- logic/control flow -->
+      <KEYWORD1>if</KEYWORD1>
+      <KEYWORD1>then</KEYWORD1>
+      <KEYWORD1>else</KEYWORD1>
+      <KEYWORD1>when</KEYWORD1>
+      <KEYWORD1>case</KEYWORD1>
+      <KEYWORD1>of</KEYWORD1>
+      <KEYWORD1>as</KEYWORD1>
+
+      <!--- other -->
+      <KEYWORD1>rec</KEYWORD1>
+      <KEYWORD1>REC</KEYWORD1>
+      <KEYWORD1>prim</KEYWORD1>
+
+      <!-- built-in types -->
+      <!-- <KEYWORD3>Int32</KEYWORD3> -->
+
+      <!-- built-in literals -->
+      <LITERAL2>False</LITERAL2>
+      <LITERAL2>True</LITERAL2>
+    </KEYWORDS>
+
+  </RULES>
+</MODE>
+
+
