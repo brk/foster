@@ -394,9 +394,8 @@ highlightFirstLineDoc :: SourceRange -> Doc
 highlightFirstLineDoc (MissingSourceRange s) = text $ "<missing range: " ++ s ++ ">"
 highlightFirstLineDoc (SourceRange bline bcol eline ecol lines _filepath) =
     line <> highlightLineDoc bline bcol fcol lines <> line
-      where fcol  = if lineb == linee then ecol else Prelude.length lineb
+      where fcol  = if bline == eline then ecol else Prelude.length lineb
             lineb = sourceLine lines bline
-            linee = sourceLine lines eline
 
 highlightFirstLine :: SourceRange -> String
 highlightFirstLine (MissingSourceRange s) = "<missing range: " ++ s ++ ">"
@@ -435,6 +434,11 @@ highlightLineRange bcol ecol =
     if len <= 0
         then ""
         else (List.replicate bcol ' ') ++ (List.replicate len '~')
+
+reprSourceRange (MissingSourceRange s) = text "(MissingSourceRange " <> text s <> text ")"
+reprSourceRange (SourceRange bline bcol eline ecol lines _filepath) =
+  parens (text "SourceRange" <+> pretty bline <+> pretty bcol <+> pretty eline
+                             <+> pretty ecol <+> pretty _filepath)
 
 data SourceLines = SourceLines !(Seq T.Text)
 
