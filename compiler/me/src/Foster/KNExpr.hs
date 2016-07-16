@@ -42,7 +42,7 @@ import qualified Data.Graph.Inductive.Query.Dominators as Graph
 import Control.Monad.State(gets, liftIO, evalStateT, execStateT, StateT,
                            execState, State,
                            liftM, liftM2, get, put, lift)
-import Control.Monad.Except(ExceptT, runExceptT, MonadError, throwError, catchError)
+import Control.Monad.Except(ExceptT, runExceptT, throwError, catchError)
 import Data.IORef(IORef, newIORef, readIORef, writeIORef)
 
 import Data.Maybe (fromMaybe)
