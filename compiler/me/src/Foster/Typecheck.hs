@@ -1014,7 +1014,7 @@ tcTypeEquiv t1 t2 =
      (FnTypeTC     s1 t1 fx1 c1 x1, FnTypeTC     s2 t2 fx2 c2 x2) -> allP q s1 s2 && q t1 t2 && q fx1 fx2 && liftEqUnifiable (==) c1 c2 && liftEqUnifiable (==) x1 x2
      (CoroTypeTC   s1 t1      , CoroTypeTC   s2 t2      ) -> q s1 s2 && q t1 t2
      (ForAllTC   tvs1 rho1    , ForAllTC   tvs2 rho2    ) -> allP (==) tvs1 tvs2 && q rho1 rho2
-     (TyVarTC    tv1          , TyVarTC    tv2          ) -> tv1 == tv2
+     (TyVarTC    tv1 _mbk1    , TyVarTC    tv2 _mbk2    ) -> tv1 == tv2
      (MetaTyVarTC m1          , MetaTyVarTC m2          ) -> m1 == m2
      (RefTypeTC     ty1       , RefTypeTC     ty2       ) -> q ty1 ty2
      (ArrayTypeTC   ty1       , ArrayTypeTC   ty2       ) -> q ty1 ty2
@@ -1218,12 +1218,12 @@ tcSigmaFnHelper ctx fnAST expTyRaw tyformals = do
     -- bound type variables. We'll do the replacement by first making sure
     -- that nothing has been unified with them so far, and then writing
     -- the appropriate bound type variable to the ref.
-    _ <- mapM (\(t, (tv, _)) -> do
+    _ <- mapM (\(t, (tv, k)) -> do
                  t' <- shallowZonk t
                  case t' of
                    (MetaTyVarTC m) -> do
                         debugDoc $ text "zonked " <> pretty t <> text " to " <> pretty t <> text "; writing " <> pretty tv
-                        writeTcMetaTC m (TyVarTC tv)
+                        writeTcMetaTC m (TyVarTC tv (UniConst k))
                    _ -> tcFails [text "The following polymorphic function will only work if the type parameter"
                                    <+> pretty tv <+> text "is always instantiated to" <+> pretty t'
                                 ,highlightFirstLineDoc (rangeOf annot)]
@@ -1456,14 +1456,14 @@ tcType' ctx refinementArgs ris typ = do
         MetaPlaceholderAST MTVTau   nm -> newTcUnificationVarTau nm
         MetaPlaceholderAST MTVSigma nm -> newTcUnificationVarSigma nm
         PrimIntAST         sz -> return (PrimIntTC sz )
-        TyVarAST      tv      -> return $ TyVarTC tv
+        TyVarAST      tv      -> liftM (TyVarTC tv) genUnifiableVar
         RefTypeAST    ty      -> liftM   RefTypeTC   (q ty)
         ArrayTypeAST  ty      -> liftM   ArrayTypeTC (q ty)
         TupleTypeAST  types  -> liftM  (TupleTypeTC (UniConst KindPointerSized)) (mapM q types)
         CoroTypeAST   s r     -> liftM2  CoroTypeTC  (q s) (q r)
         TyConAppAST nm types  -> liftM (TyConAppTC nm) (mapM q types)
         ForAllAST ktvs rho    -> do taus <- genTauUnificationVarsLike ktvs (\n -> "tcType'forall param " ++ show n)
-                                    let xtvs = map (\(tv,_) -> TyVarTC tv) ktvs
+                                    let xtvs = map (\(tv,k) -> TyVarTC tv (UniConst k)) ktvs
                                     let ctx' = ctx { localTypeBindings = extendTypeBindingsWith ctx ktvs taus }
                                     rv <- liftM (ForAllTC ktvs) (tcType' ctx' refinementArgs RIS_False rho)
                                     let tryOverwrite (tv, MetaTyVarTC m) = do
@@ -1835,8 +1835,8 @@ resolveType annot origSubst origType = go origSubst origType where
   case x of
     PrimIntTC   _                  -> return x
     MetaTyVarTC   _                -> return x
-    TyVarTC  (SkolemTyVar _ _ _)   -> return x
-    TyVarTC  (BoundTyVar name _sr) -> case Map.lookup name subst of
+    TyVarTC  (SkolemTyVar _ _ _) _  -> return x
+    TyVarTC  (BoundTyVar name _sr) _ -> case Map.lookup name subst of
                                          Nothing -> tcFails [text $ "Typecheck.hs: ill-formed type with free bound variable " ++ name
                                                             ,text "    " <> text "embedded within type " <> pretty origType
                                                             ,text "    " <> text "with orig subst " <> pretty (Map.toList origSubst)
@@ -1854,8 +1854,8 @@ resolveType annot origSubst origType = go origSubst origType where
     ForAllTC      ktvs rho         -> liftM (ForAllTC  ktvs) (go subst' rho)
                                        where
                                         subst' = foldl' ins subst ktvs
-                                        ins m (tv@(BoundTyVar nm _sr), _k) = Map.insert nm (TyVarTC tv) m
-                                        ins _     (SkolemTyVar {},     _k) = error "ForAll bound a skolem!"
+                                        ins m (tv@(BoundTyVar nm _sr), k) = Map.insert nm (TyVarTC tv (UniConst k)) m
+                                        ins _     (SkolemTyVar {},    _k) = error "ForAll bound a skolem!"
 
 fmapM_TID f (TypedId t id) = do t' <- f t
                                 return $ TypedId t' id
@@ -1868,7 +1868,7 @@ skolemize :: TypeTC -> Tc ([TyVar], RhoTC)
 skolemize (ForAllTC ktvs rho) = do
      skolems <- mapM newTcSkolem ktvs
      let tyvarsAndTys = List.zip (tyvarsOf ktvs)
-                                 (map TyVarTC skolems)
+                                 (map (\tv@(SkolemTyVar _ _ k) -> TyVarTC tv (UniConst k)) skolems)
      return (skolems, parSubstTcTy tyvarsAndTys rho)
 skolemize ty = return ([], ty)
 -- }}}
@@ -1887,7 +1887,7 @@ getFreeTyVars xs = do zs <- mapM zonkType xs
         FnTypeTC ss r fx  _ _    -> concatMap (go bound) (r:fx:ss)
         CoroTypeTC s r           -> concatMap (go bound) [s,r]
         ForAllTC  tvs rho        -> go (tyvarsOf tvs ++ bound) rho
-        TyVarTC   tv             -> if tv `elem` bound then [] else [tv]
+        TyVarTC   tv  _mbk       -> if tv `elem` bound then [] else [tv]
         MetaTyVarTC  {}          -> []
         RefTypeTC    ty          -> (go bound) ty
         ArrayTypeTC  ty          -> (go bound) ty
@@ -2058,8 +2058,8 @@ tcTypeWellFormed msg ctx typ = do
         ArrayTypeTC   ty      -> q ty
         RefinedTypeTC v _e  _ -> q (tidType v)
         ForAllTC   tvs rho    -> tcTypeWellFormed msg (extendTyCtx ctx tvs) rho
-        TyVarTC  (SkolemTyVar {}) -> return ()
-        TyVarTC  tv@(BoundTyVar _ _) ->
+        TyVarTC  (SkolemTyVar {}) _mbk -> return ()
+        TyVarTC  tv@(BoundTyVar _ _) _mbk ->
                  case Prelude.lookup tv (contextTypeBindings ctx) of
                    Nothing -> tcFails [text $ "Unbound type variable "
                                            ++ show tv ++ " " ++ msg]
@@ -2122,7 +2122,7 @@ collectAllUnificationVars xs = Set.toList (Set.fromList (concatMap go xs))
             FnTypeTC  ss r fx _ _   -> concatMap go (r:fx:ss)
             CoroTypeTC  s r         -> concatMap go [s,r]
             ForAllTC  _tvs rho      -> go rho
-            TyVarTC   _tv           -> []
+            TyVarTC       {}        -> []
             MetaTyVarTC   m         -> [m]
             RefTypeTC     ty        -> go ty
             ArrayTypeTC   ty        -> go ty

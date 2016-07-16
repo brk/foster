@@ -34,10 +34,10 @@ test_mono_poly_unused = {
   ()
 };
 
-f = { forall ft:Boxed,
-      v : ft =>
-      g : forall (gt:Boxed) { gt => () } =>
-  g v
+fff = { forall fxt:Boxed,
+      vvv : fxt =>
+      ggg : forall (gxt:Boxed) { gxt => () } =>
+  ggg vvv
 };
 
 

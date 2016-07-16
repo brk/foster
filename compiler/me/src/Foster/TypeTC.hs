@@ -34,7 +34,7 @@ data TypeTC =
                            , fnTypeTCCallConv :: Unifiable CallConv
                            , fnTypeTCProcOrFunc :: Unifiable ProcOrFunc }
          | ForAllTC        [(TyVar, Kind)] RhoTC
-         | TyVarTC           TyVar
+         | TyVarTC           TyVar  (Unifiable Kind)
          | MetaTyVarTC     (MetaTyVar TypeTC)
          | RefinedTypeTC   (TypedId TypeTC) (AnnExpr TypeTC) [Ident]
 
@@ -92,7 +92,7 @@ instance Pretty TypeTC where
                                                     <> text "> " <> pretty t <> text " @{" <> text (show cs) <> text "})"
         CoroTypeTC   s t                -> text "(Coro " <> pretty s <> text " " <> pretty t <> text ")"
         ForAllTC   tvs rho              -> text "(forall " <> hsep (prettyTVs tvs) <> text ". " <> pretty rho <> text ")"
-        TyVarTC    tv                   -> text (show tv)
+        TyVarTC    tv _mbk              -> text (show tv)
         MetaTyVarTC m                   -> text "(~(" <> pretty (descMTVQ (mtvConstraint m)) <> text ")!" <> text (show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")")
         RefTypeTC     ty                -> text "(Ref " <> pretty ty <> text ")"
         ArrayTypeTC   ty                -> text "(Array " <> pretty ty <> text ")"
@@ -107,7 +107,7 @@ instance Show TypeTC where
         FnTypeTC  s t fx cc cs -> "(" ++ show s ++ " =" ++ uni_briefCC cc ++ ";fx=" ++ show fx ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
         CoroTypeTC s t         -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
         ForAllTC ktvs rho      -> "(ForAll " ++ show ktvs ++ ". " ++ show rho ++ ")"
-        TyVarTC     tv         -> show tv
+        TyVarTC     tv _mbk    -> show tv
         ArrayTypeTC ty         -> "(Array " ++ show ty ++ ")"
         RefTypeTC   ty         -> "(Ptr " ++ show ty ++ ")"
         MetaTyVarTC _          -> "(MetaTyVar" ++ show (pretty x) ++ ")"
@@ -151,7 +151,7 @@ instance Structured TypeTC where
             FnTypeTC  ss t fx _cc _cs  -> ss++[t,fx]
             CoroTypeTC s t          -> [s,t]
             ForAllTC  _ktvs rho     -> [rho]
-            TyVarTC        _tv      -> []
+            TyVarTC        _tv _mbk -> []
             ArrayTypeTC     ty      -> [ty]
             RefTypeTC       ty      -> [ty]
             MetaTyVarTC     {}      -> []
