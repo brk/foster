@@ -6,6 +6,8 @@
 
 module Foster.PrettyAnnExpr where
 
+import Prelude hiding ((<$>))
+
 import Foster.Base
 import Foster.AnnExpr
 import Foster.TypeTC

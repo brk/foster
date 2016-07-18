@@ -1,4 +1,4 @@
-{-# LANGUAGE StandaloneDeriving, BangPatterns #-}
+{-# LANGUAGE StandaloneDeriving, BangPatterns, FlexibleContexts #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2013 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -6,6 +6,8 @@
 -----------------------------------------------------------------------------
 
 module Foster.KNUtil where
+
+import Prelude hiding ((<$>))
 
 import Foster.Base
 import Foster.Kind

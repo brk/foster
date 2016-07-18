@@ -7,6 +7,8 @@
 
 module Foster.CloConv where
 
+import Prelude hiding ((<$>), (<*>))
+
 import qualified Data.Text as T
 import Data.Set(Set)
 import qualified Data.Set as Set(empty, singleton, union, unions, notMember,

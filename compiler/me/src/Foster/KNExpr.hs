@@ -1,4 +1,4 @@
-{-# LANGUAGE StandaloneDeriving, BangPatterns #-}
+{-# LANGUAGE StandaloneDeriving, BangPatterns, FlexibleContexts #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2011 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -12,6 +12,9 @@ module Foster.KNExpr (kNormalizeModule, KNExpr, KNMono, FnMono,
                       renderKN, renderKNM, renderKNF, renderKNFM,
                       handleCoercionsAndConstraints,
                       collectIntConstraints) where
+
+import Prelude hiding ((<$>))
+
 import qualified Data.Text as T
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -2223,12 +2226,12 @@ knInline' expr env = do
       -- ``v'`` is the alias at which it is called.
       -- Checking both names permits a hacky form of per-call-site inlining prevention.
       let maybeInlineCall opf v v' = do
-          let shouldNotInline nm = "noinline_" `isPrefixOf` nm
-          if shouldNotInline (show $ tidIdent v) || shouldNotInline (show $ tidIdent v')
-            then do _ <- visitF "noinline" opf -- don't inline this function...
-                    resExpr "noinline" FoldCallSiteOptOut
+           let shouldNotInline nm = "noinline_" `isPrefixOf` nm
+           if shouldNotInline (show $ tidIdent v) || shouldNotInline (show $ tidIdent v')
+             then do _ <- visitF "noinline" opf -- don't inline this function...
+                     resExpr "noinline" FoldCallSiteOptOut
 
-            else do handleCallOfKnownFunction expr resExprA opf v vs env qs
+             else do handleCallOfKnownFunction expr resExprA opf v vs env qs
 
       case lookupVarOp env v of
         -- Peek through type applications...
@@ -2437,44 +2440,44 @@ handleCallOfKnownFunction expr resExprA opf@(Opnd fn0 _ _ _ _) v vs env qs = do
          --inDebugStr ("foldLamba.B of " ++ show (fnIdent fn' ) ++ " ; " ++ show constnts)
 
          let inlineit = do
-             let needsOuterPendingGuard = _firstVisit || isRec fn
-             when needsOuterPendingGuard (writeRef loc_op $ OP_Limit (k - 1))
-             before <- knTotalEffort
-             stkref <- gets inCurrentPendings
-             stk <- readRef stkref
-             putDocLn3 $ text "attemping lambda fold of [[" <+> pretty expr <+> text "]] with current effort " <>
-                            pretty before <> text " and stack " <> pretty stk
-                       <$> indent 8 (text ("body of called lambda " ++ show (fnIdent fn') ++ " is:"))
-                       <$> indent 8 (pretty (fnBody fn))
-             (Rez e' , size) <-
-                inBracket_' "bracket'" (return ())
-                            (withSizeCounter ("foldLambda:"++show (fnIdent fn' )++" "++show (map tidIdent vs' )  ++ " ; " ++ show mb_sizes)
-                                                 sizeCounter $
-                                              (knInline' (fnBody fn) env'))
-                            (\fail -> do if fail
-                                           then do
-                                             after <- knTotalEffort
-                                             when noConstants $ putDocLn6 (text "no-constant failed inlining effort was " <> pretty (after - before)
-                                                                <+> text "for cachedsize-" <> pretty cachedsize
-                                                                <+> text "call" <+> pretty expr <+> text " ;;;; " <> text (show (currsz, mblim)))
-                                           else return ()
-                                         )
-             when needsOuterPendingGuard
-               (if k == opLimitMax then writeRef loc_op $ OP_Limit k else return ())
+                 let needsOuterPendingGuard = _firstVisit || isRec fn
+                 when needsOuterPendingGuard (writeRef loc_op $ OP_Limit (k - 1))
+                 before <- knTotalEffort
+                 stkref <- gets inCurrentPendings
+                 stk <- readRef stkref
+                 putDocLn3 $ text "attemping lambda fold of [[" <+> pretty expr <+> text "]] with current effort " <>
+                                pretty before <> text " and stack " <> pretty stk
+                           <$> indent 8 (text ("body of called lambda " ++ show (fnIdent fn') ++ " is:"))
+                           <$> indent 8 (pretty (fnBody fn))
+                 (Rez e' , size) <-
+                    inBracket_' "bracket'" (return ())
+                                (withSizeCounter ("foldLambda:"++show (fnIdent fn' )++" "++show (map tidIdent vs' )  ++ " ; " ++ show mb_sizes)
+                                                     sizeCounter $
+                                                  (knInline' (fnBody fn) env'))
+                                (\fail -> do if fail
+                                               then do
+                                                 after <- knTotalEffort
+                                                 when noConstants $ putDocLn6 (text "no-constant failed inlining effort was " <> pretty (after - before)
+                                                                    <+> text "for cachedsize-" <> pretty cachedsize
+                                                                    <+> text "call" <+> pretty expr <+> text " ;;;; " <> text (show (currsz, mblim)))
+                                               else return ()
+                                             )
+                 when needsOuterPendingGuard
+                   (if k == opLimitMax then writeRef loc_op $ OP_Limit k else return ())
 
-             putDocLn3 $ text $ "done lambda folding; resetting outer-pending flag to "
-                                ++ show k ++ " for " ++ show (tidIdent $ fnVar fn)
-             putDocLn3 $ indent 8 $ text "for call  " <+> pretty expr
-             -- putDocLn3 $ indent 16 $ pretty e'
-             putDocLn3 $ text "}}}}}}}}}}}}}}}}}}"
+                 putDocLn3 $ text $ "done lambda folding; resetting outer-pending flag to "
+                                    ++ show k ++ " for " ++ show (tidIdent $ fnVar fn)
+                 putDocLn3 $ indent 8 $ text "for call  " <+> pretty expr
+                 -- putDocLn3 $ indent 16 $ pretty e'
+                 putDocLn3 $ text "}}}}}}}}}}}}}}}}}}"
 
-             after <- knTotalEffort
-             when noConstants $ putDocLn6 (text "no-constant ok     inlining effort was " <> pretty (after - before)
-                                                                <+> text "for size-" <> pretty size
-                                                                <+> text "call" <+> pretty expr)
+                 after <- knTotalEffort
+                 when noConstants $ putDocLn6 (text "no-constant ok     inlining effort was " <> pretty (after - before)
+                                                                    <+> text "for size-" <> pretty size
+                                                                    <+> text "call" <+> pretty expr)
 
-             return $ FoldInto (Rez (KNInlined t0 before after expr e' )) size
-                                 expr (after - before)
+                 return $ FoldInto (Rez (KNInlined t0 before after expr e' )) size
+                                     expr (after - before)
 
          case (noConstants, tooBig) of
            (True, True) -> do
@@ -2577,8 +2580,8 @@ visitF msg (Opnd fn env loc_fn _ loc_ip) = do
       let vs = fnVars fn
       vs'   <- mapM freshenTid vs
       let foldEnv env (v , v' ) = do
-          ope <- mkOpExpr ("knInlineFn' " ++ show (tidIdent v')) (KNVar v' ) env
-          return $ extendEnv [tidIdent v] [tidIdent v' ] [ VO_E ope ] env
+            ope <- mkOpExpr ("knInlineFn' " ++ show (tidIdent v')) (KNVar v' ) env
+            return $ extendEnv [tidIdent v] [tidIdent v' ] [ VO_E ope ] env
       env' <- foldlM foldEnv env (zip vs vs' )
       --inDebugStr ("knInlineFn' being called on " ++ show (fnIdent fn))
       Rez body' <- knInline' (fnBody fn) env'

@@ -20,7 +20,7 @@ import qualified Data.Sequence as Seq(length)
 import qualified Data.Char as Char(isAlphaNum)
 import Data.IORef(newIORef, readIORef, writeIORef)
 import Data.Traversable(mapM)
-import Prelude hiding (mapM)
+import Prelude hiding (mapM, (<$>))
 import Control.Monad.State(forM, when, forM_, evalStateT, gets,
                            liftIO, liftM, liftM2)
 import Control.Monad.Trans.Except(runExceptT)
@@ -63,7 +63,7 @@ import Text.Printf(printf)
 import Foster.Output
 import Text.PrettyPrint.ANSI.Leijen((<+>), (<>), (<$>), pretty, text, line, hsep,
                                      fill, parens, vcat, list, red, dullyellow)
-import Criterion.Measurement(secs)
+import qualified Criterion.Measurement as Criterion(initializeTime, secs)
 
 pair2binding (nm, ty, mcid) = TermVarBinding nm (TypedId ty (GlobalSymbol nm), mcid)
 
@@ -81,15 +81,15 @@ typecheckFnSCC showASTs showAnnExprs pauseOnErrors scc (ctx, tcenv) = do
     -- out in the cold.
     let genBinding :: FnAST TypeAST -> IO (ContextBinding TypeTC)
         genBinding fn = do
-        oo_binding <-
-            case termVarLookup (fnAstName fn) (contextBindings ctx) of
-                Nothing  -> do unTc tcenv $ bindingForFnAST ctx fn
-                Just cxb -> do return (OK $ TermVarBinding (fnAstName fn) cxb)
-        case oo_binding of
-          OK binding  -> return binding
-          Errors errs -> error $ show (fnAstName fn) ++ " ;; " ++
-                                 show (termVarLookup (fnAstName fn) (contextBindings ctx))
-                                 ++ " \n " ++ show errs
+          oo_binding <-
+              case termVarLookup (fnAstName fn) (contextBindings ctx) of
+                  Nothing  -> do unTc tcenv $ bindingForFnAST ctx fn
+                  Just cxb -> do return (OK $ TermVarBinding (fnAstName fn) cxb)
+          case oo_binding of
+            OK binding  -> return binding
+            Errors errs -> error $ show (fnAstName fn) ++ " ;; " ++
+                                   show (termVarLookup (fnAstName fn) (contextBindings ctx))
+                                   ++ " \n " ++ show errs
 
     bindings <- mapM genBinding fns
     let extCtx = prependContextBindings ctx bindings
@@ -436,8 +436,7 @@ readAndParseCbor infile = do
   return $ runGet getCBOR cborbytes
 
 main = do
-  -- When we upgrade to criterion 1.0, we must uncomment the following line...
-  --initializeTime
+  Criterion.initializeTime
   args <- getArgs
   case args of
     (infile : outfile : rest) -> do
@@ -492,7 +491,7 @@ runCompiler ci_time wholeprog flagVals outfile = do
 
    case mb_errs of
      Left  errs -> do
-       putStrLn $ "compilation time: " ++ secs (nc_time)
+       putStrLn $ "compilation time: " ++ Criterion.secs (nc_time)
        putDocLn $ red $ text "Compilation failed: "
        forM_ errs putDocLn
        putDocP line
@@ -518,10 +517,10 @@ reportFinalPerformanceNumbers ci_time nqueries querytime in_time sr_time
                               n = if p < 10.0 then 2 else if p < 100.0 then 1 else 0
                               padding = fill n (text "") in
                           padding <> parens (text (printf "%.1f" p) <> text "%")
-       let fmt str time = text str <+> (fill 11 $ text $ secs time) <+> fmt_pct time
+       let fmt str time = text str <+> (fill 11 $ text $ Criterion.secs time) <+> fmt_pct time
        let pairwise f = \(x,y) -> (f x, f (x + y))
        putDocLn $ vcat $ [text "                                            (initial query time, overall query time)"
-                         ,text "# SMT queries:" <+> pretty nqueries <+> text "taking" <+> pretty (map (pairwise secs) querytime)
+                         ,text "# SMT queries:" <+> pretty nqueries <+> text "taking" <+> pretty (map (pairwise Criterion.secs) querytime)
                          ,fmt "static-chk  time:" sc_time
                          ,fmt "inlining    time:" in_time
                          ,fmt "shrinking   time:" sr_time
@@ -531,7 +530,7 @@ reportFinalPerformanceNumbers ci_time nqueries querytime in_time sr_time
                          ,text ""
                          ,fmt "    CBOR-in time:" ci_time
                          ,fmt "protobufout time:" pb_time
-                         ,text "overall wall-clock time:" <+> text (secs $ total_time)
+                         ,text "overall wall-clock time:" <+> text (Criterion.secs $ total_time)
                          ,text "# source lines:" <+> pretty wholeProgNumLines
                          ,text "source lines/second:" <+> text (printf "%.1f" (fromIntegral wholeProgNumLines / total_time))
                          ]

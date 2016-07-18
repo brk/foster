@@ -5,6 +5,8 @@
 -----------------------------------------------------------------------------
 module Foster.Typecheck(tcSigmaToplevel, tcContext, tcType, fnTypeShallow) where
 
+import Prelude hiding ((<$>))
+
 import qualified Data.List as List(length, zip)
 import Data.List(foldl', (\\), isInfixOf)
 import Control.Monad(liftM, forM_, forM, liftM, liftM2, when)
@@ -1568,18 +1570,18 @@ tcRhoCase ctx rng scrutinee branches expTy = do
   debugDoc $ text "metavar for overall type of case is " <> pretty u
   debugDoc $ text " exp ty is " <> pretty expTy
   let checkBranch (CaseArm pat body guard _ brng) = do
-      debugDoc $ text "checking pattern with context ty " <+> pretty (typeTC ascrutinee) <+> string (highlightFirstLine $ rangeOf rng)
-      p <- checkPattern ctx pat (typeTC ascrutinee)
-      debug $ "case branch pat: " ++ show p
-      let bindings = extractPatternBindings p
-      debugDoc $ text "case branch generated bindings: " <> list (map pretty bindings)
-      let ctxbindings = [varbind id ty | (TypedId ty id) <- bindings]
-      verifyNonOverlappingBindings (rangeOf rng) "case" ctxbindings
-      let ctx' = prependContextBindings ctx ctxbindings
-      aguard <- liftMaybe (\g -> tcRho ctx' g (Check boolTypeTC)) guard
-      abody <- tcRho ctx' body expTy
-      unify u (typeTC abody) [text $ "Failed to unify all branches of case " ++ highlightFirstLine (rangeOf rng)]
-      return (CaseArm p abody aguard bindings brng)
+        debugDoc $ text "checking pattern with context ty " <+> pretty (typeTC ascrutinee) <+> string (highlightFirstLine $ rangeOf rng)
+        p <- checkPattern ctx pat (typeTC ascrutinee)
+        debug $ "case branch pat: " ++ show p
+        let bindings = extractPatternBindings p
+        debugDoc $ text "case branch generated bindings: " <> list (map pretty bindings)
+        let ctxbindings = [varbind id ty | (TypedId ty id) <- bindings]
+        verifyNonOverlappingBindings (rangeOf rng) "case" ctxbindings
+        let ctx' = prependContextBindings ctx ctxbindings
+        aguard <- liftMaybe (\g -> tcRho ctx' g (Check boolTypeTC)) guard
+        abody <- tcRho ctx' body expTy
+        unify u (typeTC abody) [text $ "Failed to unify all branches of case " ++ highlightFirstLine (rangeOf rng)]
+        return (CaseArm p abody aguard bindings brng)
   abranches <- forM branches checkBranch
   matchExp expTy (AnnCase rng u ascrutinee abranches) "case"
  where

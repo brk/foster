@@ -70,21 +70,22 @@ if __name__ == "__main__":
     run_command(cmd, {}, "")
 
   def build_with_ghcmake():
+    params['ghcmake'] = 'ghc --make'
+
     with open(os.devnull, 'w') as devnull:
       (rv, ms) = run_command("which ghc-make", {}, "", stdout=devnull, strictrv=False)
       if rv == 0:
          # Prevent a spurious/buggy error (race condition?) from ghc-make
          run_command('touch %(bindir)s/me' % params, {}, "")
          params['ghcmake'] = 'ghc-make'
-      else:
-         params['ghcmake'] = 'ghc --make'
+
 
     params['hsflags'] = (' '.join(params['hsflags']) +
-                         " -XFlexibleInstances -XMultiParamTypeClasses -XDeriveDataTypeable" +
+                         " -XFlexibleInstances -XFlexibleContexts -XMultiParamTypeClasses -XDeriveDataTypeable" +
                          " -XTypeSynonymInstances -XDeriveFunctor -XBangPatterns" +
                          " -Wall -fwarn-unused-do-bind -fwarn-tabs" +
                          " -fno-warn-missing-signatures -fno-warn-name-shadowing" +
-                         " -fno-warn-type-defaults -fno-warn-orphans")
+                         " -fno-warn-type-defaults -fno-warn-orphans -fno-warn-redundant-constraints")
     cmd = ("cabal exec -- %(ghcmake)s -i%(srcroot)s/compiler/me/src %(hsflags)s " +
            "%(srcroot)s/compiler/me/src/Main.hs -o %(bindir)s/me") % params
     os.chdir(os.path.join(options.srcroot, 'compiler', 'me'))

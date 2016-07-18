@@ -26,13 +26,19 @@ module Foster.CFG
 , runWithUniqAndFuel, M
 ) where
 
+import Prelude hiding ((<$>))
+
 import Foster.Base
 import Foster.Kind
 import Foster.MonoType
 import Foster.KNExpr(KNExpr'(..), typeKN, KNCompilesResult(..))
 import Foster.Letable(Letable(..))
 
+import Control.Monad(ap)
+import qualified Control.Applicative as AP(Applicative(..))
+
 import Compiler.Hoopl
+import qualified Compiler.Hoopl as H((<*>))
 import Text.PrettyPrint.ANSI.Leijen
 
 import qualified Data.Text as T
@@ -663,7 +669,7 @@ rebuildGraphAccM entrybid body init transform = do
       ; (fg, acc1) <- transform acc0 f
       ; (gs, accn) <- mapFoldM' ms acc1 (\insn acc -> transform acc insn)
       ; (lg, accm) <- transform accn l
-      ; return $ (fg <*> catGraphs gs <*> lg, accm)
+      ; return $ (fg H.<*> catGraphs gs H.<*> lg, accm)
    }
    let blocks = postorder_dfs (mkLast (branchTo entrybid) |*><*| body)
    (mb, acc) <- mapFoldM' blocks init rebuildBlockGraph
@@ -679,6 +685,10 @@ newtype UniqMonadIO a = UMT { unUMT :: [Uniq] -> IO (a, [Uniq]) }
 instance Monad UniqMonadIO where
   return a = UMT $ \us -> return (a, us)
   m >>= k  = UMT $ \us -> do { (a, us') <- unUMT m us; unUMT (k a) us' }
+
+instance Functor        UniqMonadIO where fmap  = liftM
+instance AP.Applicative UniqMonadIO where pure  = return
+                                          (<*>) = ap
 
 instance UniqueMonad UniqMonadIO where
   freshUnique = UMT $ f

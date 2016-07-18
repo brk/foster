@@ -6,6 +6,9 @@
 
 module Foster.Context where
 
+import Control.Monad(ap)
+import Control.Applicative(Applicative(..))
+
 import Control.Monad.State(liftM, liftM2)
 import Data.IORef(IORef,newIORef,readIORef,writeIORef)
 import Data.Map(Map)
@@ -149,6 +152,10 @@ instance Monad Tc where
                                 case result of
                                   OK expr -> unTc env (k expr)
                                   Errors ss -> return (Errors ss)
+
+instance Functor     Tc where fmap  = liftM
+instance Applicative Tc where pure  = return
+                              (<*>) = ap
 
 -- | Given a Tc function and the result of a previous Tc action,
 -- | fmap the function in OutputOr (and return a monadic value).

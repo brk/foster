@@ -7,6 +7,8 @@
 
 module Foster.Base where
 
+import Prelude hiding ((<$>))
+
 import Foster.Kind
 import Foster.Output
 

@@ -6,6 +6,8 @@
 
 module Foster.PrettyExprAST where
 
+import Prelude hiding ((<$>))
+
 import Foster.Base
 import Foster.ExprAST
 import Foster.ParsedType
@@ -100,6 +102,7 @@ instance Pretty ty => Pretty (ModuleAST FnAST ty) where
 
 prettyId (TypedId _ i) = text (T.unpack $ identPrefix i)
 
+prettyAtom :: Pretty ty => ExprSkel ExprAnnot ty -> Doc
 prettyAtom e =
   case e of
     E_SeqAST      {} -> parens $ pretty e
