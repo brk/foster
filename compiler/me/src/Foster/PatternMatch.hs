@@ -7,6 +7,8 @@
 
 module Foster.PatternMatch where
 
+import Prelude hiding ((<$>))
+
 import qualified Data.List as List
 import Data.Set(Set)
 import qualified Data.Set  as Set(size, fromList, toList, map)

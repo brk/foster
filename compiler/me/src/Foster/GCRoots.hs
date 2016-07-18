@@ -8,6 +8,8 @@
 
 module Foster.GCRoots(insertSmartGCRoots, fnty_of_procty) where
 
+import Prelude hiding ((<*>))
+
 import Compiler.Hoopl
 
 import Text.PrettyPrint.ANSI.Leijen

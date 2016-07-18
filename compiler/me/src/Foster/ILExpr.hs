@@ -8,6 +8,8 @@
 
 module Foster.ILExpr where
 
+import Prelude hiding ((<$>), (<*>))
+
 import Compiler.Hoopl
 
 import Text.PrettyPrint.ANSI.Leijen

@@ -1,4 +1,4 @@
-{-# LANGUAGE StandaloneDeriving, BangPatterns #-}
+{-# LANGUAGE StandaloneDeriving, BangPatterns, FlexibleContexts #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2014 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -6,6 +6,8 @@
 -----------------------------------------------------------------------------
 
 module Foster.KNStaticChecks (runStaticChecks) where
+
+import Prelude hiding ((<$>))
 
 import qualified Data.Map as Map
 import Data.Map(Map)
@@ -672,12 +674,12 @@ checkBody expr facts =
             dbgStr $ "TODO: call of function with result type " ++ show ty ++ " ; " ++ show (tidIdent v)
             dbgStr $ "           (have precond)"
             let checkPrecond fp = do
-                SMTExpr e decls idfacts <- fp vs
-                dbgStr $ "checkPrecond[ " ++ show vs ++ " ] " ++ show (SMT.pp e) ++ ";;;;;" ++ show idfacts
-                let thm = scriptImplyingBy (SMTExpr e decls idfacts)  facts
-                dbgStr $ "fn precond checking this script:"
-                dbgStr $ show (prettyCommentedScript thm)
-                scRunZ3 expr thm
+                 SMTExpr e decls idfacts <- fp vs
+                 dbgStr $ "checkPrecond[ " ++ show vs ++ " ] " ++ show (SMT.pp e) ++ ";;;;;" ++ show idfacts
+                 let thm = scriptImplyingBy (SMTExpr e decls idfacts)  facts
+                 dbgStr $ "fn precond checking this script:"
+                 dbgStr $ show (prettyCommentedScript thm)
+                 scRunZ3 expr thm
             mapM_ checkPrecond fps
 
         case ty of
