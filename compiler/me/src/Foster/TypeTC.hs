@@ -23,7 +23,8 @@ data Unifiable ty = UniConst ty
 
 data TypeTC =
            PrimIntTC       IntSizeBits
-         | TyConAppTC      DataTypeName [TypeTC]
+         | TyConTC         DataTypeName
+         | TyAppTC         TypeTC [TypeTC]
          | TupleTypeTC     (Unifiable Kind) [TypeTC]
          | CoroTypeTC      TypeTC  TypeTC
          | RefTypeTC       TypeTC
@@ -84,8 +85,9 @@ uni_briefCC v = show v
 instance Pretty TypeTC where
     pretty x = case x of
         PrimIntTC          size         -> pretty size
-        TyConAppTC "Float64" []         -> text "Float64"
-        TyConAppTC   tcnm types         -> parens $ text tcnm <> hpre (map pretty types)
+        TyConTC nam                     -> text nam
+        TyAppTC con            []       -> pretty con
+        TyAppTC con types               -> parens $ pretty con <> hpre (map pretty types)
         TupleTypeTC _kind types         -> tupled $ map pretty types
         FnTypeTC     s t fx  cc cs      -> text "(" <> pretty s <> text " ="
                                                     <> text (uni_briefCC cc) <> text ";fx=" <> pretty fx
@@ -100,7 +102,8 @@ instance Pretty TypeTC where
 
 instance Show TypeTC where
     show x = case x of
-        TyConAppTC nam types   -> "(TyConAppTC " ++ nam
+        TyConTC nam -> nam
+        TyAppTC con types -> "(TyAppTC " ++ show con
                                       ++ joinWith " " ("":map show types) ++ ")"
         PrimIntTC size         -> "(PrimIntTC " ++ show size ++ ")"
         TupleTypeTC _k types   -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
@@ -114,7 +117,7 @@ instance Show TypeTC where
         RefinedTypeTC v _  _   -> "(RefinedTypeTC " ++ show v ++ ")"
 
 boolTypeTC = PrimIntTC I1
-stringTypeTC = TyConAppTC "Text" []
+stringTypeTC = TyAppTC (TyConTC "Text") []
 
 pointedToTypeTC t = case t of
     RefTypeTC y -> y
@@ -131,7 +134,8 @@ pointedToTypeOfVarTC v = case v of
 instance Structured TypeTC where
     textOf e _width =
         case e of
-            TyConAppTC nam _types   -> text $ "TyConAppTC " ++ nam
+            TyConTC nam          -> text $ nam
+            TyAppTC con _types   -> text $ "TyAppTC " ++ show con
             PrimIntTC     size      -> text $ "PrimIntTC " ++ show size
             TupleTypeTC   {}        -> text $ "TupleTypeTC"
             FnTypeTC      {}        -> text $ "FnTypeTC"
@@ -145,7 +149,8 @@ instance Structured TypeTC where
 
     childrenOf e =
         case e of
-            TyConAppTC _nam types   -> types
+            TyConTC {}              -> []
+            TyAppTC con types       -> con:types
             PrimIntTC       {}      -> []
             TupleTypeTC  _k types   -> types
             FnTypeTC  ss t fx _cc _cs  -> ss++[t,fx]

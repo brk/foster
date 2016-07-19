@@ -122,7 +122,7 @@ monoKN subst inTypeExpr e =
       StructType {} -> do
         vs' <- mapM qv vs
         return $ KNTuple t' vs' (MissingSourceRange $ "<unboxed ctor:" ++ show c ++ ">")
-      TyConApp dtname args -> do
+      TyApp (TyCon dtname) args -> do
         c' <- monoMarkDataType c dtname args
         vs' <- mapM qv vs
         return $ KNAppCtor t' c' vs'
@@ -417,7 +417,8 @@ monoType subst ty =
   let q = monoType subst
       qv (TypedId ty id) = do ty' <- q ty ; return (TypedId ty' id) in
   case ty of
-     TyConAppIL nam types   -> liftM (TyConApp nam) (mapM q types)
+     TyConIL nam       -> return $ TyCon nam
+     TyAppIL con types -> liftM2 TyApp (q con) (mapM q types)
      PrimIntIL size         -> return $ PrimInt size
      TupleTypeIL KindAnySizeType types -> liftM StructType (mapM q types)
      TupleTypeIL _               types -> liftM TupleType  (mapM q types)

@@ -13,7 +13,8 @@ import Foster.KNUtil
 
 data MonoType =
            PrimInt       IntSizeBits
-         | TyConApp      DataTypeName [MonoType]
+         | TyCon         DataTypeName
+         | TyApp         MonoType [MonoType]
          | TupleType     [MonoType]
          | StructType    [MonoType]
          | FnType        { monoFnTypeDomain :: [MonoType]
@@ -55,8 +56,9 @@ instance Pretty ProcOrFunc where pretty FT_Proc = text "proc"
 instance Pretty MonoType where
   pretty t = case t of
           PrimInt        isb          -> pretty isb
-          TyConApp "Float64" []       -> text "Float64"
-          TyConApp       dt ts        -> text "(" <> pretty dt <+> tupled (map pretty ts) <> text "]"
+          TyCon          nm           -> text nm
+          TyApp       con []          -> pretty con
+          TyApp       con ts          -> text "(" <> pretty con <+> tupled (map pretty ts) <> text "]"
           TupleType      ts           -> tupled (map pretty ts)
           StructType     ts           -> text "#" <> tupled (map pretty ts)
           FnType         ts r _cc _pf -> text "{" <+> group (align (hsep [pretty t <+> text "=>" <> softbreak | t <- ts]))

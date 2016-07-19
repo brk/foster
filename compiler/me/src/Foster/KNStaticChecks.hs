@@ -88,12 +88,13 @@ smtType (ArrayType _) = smtArray
 smtType (TupleType  tys) = TApp (smtI ("FosterTuple" ++ show (length tys))) (map smtType tys)
 smtType (StructType tys) = TApp (smtI ("FosterTuple" ++ show (length tys))) (map smtType tys)
 smtType (RefinedType v _ _) = smtType (tidType v)
-smtType (TyConApp "Float64" []) = TApp (smtI "$Float64") []
-smtType (TyConApp nm tys) = TApp (smtI nm) (map smtType tys)
+smtType (TyApp (TyCon "Float64") []) = TApp (smtI "$Float64") []
+smtType (TyApp (TyCon nm) tys) = TApp (smtI nm) (map smtType tys)
 smtType (PtrType t) = TApp (smtI "$Ptr") [smtType t]
 smtType (FnType ds rt _cc _pf) = TApp (smtI $ "$Fn$" ++ show (pretty rt)) (map smtType ds)
 smtType (PtrTypeUnknown) = TApp (smtI "$Ptr_") []
 smtType (CoroType a b) = TApp (smtI "$Coro") [smtType a, smtType b]
+smtType other = error $ "smtType unable to handle " ++ show other
 
 smtArray = TApp (smtI "FosterArray") []
 

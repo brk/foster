@@ -707,7 +707,7 @@ tryGetFlonumPrimUnOp name =
 
 evalPrimitiveOp :: TypeIL -> String -> [SSValue] -> SSValue
 evalPrimitiveOp (PrimIntIL size) nm args = evalPrimitiveIntOp size nm args
-evalPrimitiveOp (TyConAppIL "Float64" []) nm args = evalPrimitiveDoubleOp nm args
+evalPrimitiveOp (TyAppIL (TyConIL "Float64") []) nm args = evalPrimitiveDoubleOp nm args
 evalPrimitiveOp ty opName args =
   error $ "Smallstep.evalPrimitiveOp " ++ show ty ++ " " ++ opName ++ " " ++ show args
 

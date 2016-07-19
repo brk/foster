@@ -195,7 +195,9 @@ lambdaLift freeVars f = do
 monoToLL :: MonoType -> TypeLL
 monoToLL mt = case mt of
    PrimInt       isb            -> LLPrimInt       isb
-   TyConApp      dtn _tys       -> LLNamedType dtn
+   TyCon dtn                    -> LLNamedType dtn
+   TyApp  (TyCon dtn) _tys      -> LLNamedType dtn
+   TyApp  con _tys      -> error $ "monoToLL can't handle TyApp of non-TyCon " ++ show con
    TupleType     tys            -> llTupleType     (map q tys)
    StructType    tys            -> LLStructType    (map q tys)
    CoroType      s t            -> LLCoroType      (q s) (q t)
@@ -412,7 +414,7 @@ closureOfKnFn infoMap (self_id, fn) = do
                 nonGlobalVars
 
     fakeCloVar id = TypedId fakeCloEnvType id
-                      where fakeCloEnvType = TyConApp "Foster$GenericClosureEnvPtr" []
+                      where fakeCloEnvType = TyApp (TyCon "Foster$GenericClosureEnvPtr") []
 
     -- This is where the magic happens: given a function and its free variables,
     -- we create a procedure which also takes an extra (strongly-typed) env ptr

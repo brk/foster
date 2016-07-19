@@ -45,8 +45,9 @@ prettyFx (Just fx) = pretty fx <> text " "
 
 instance Pretty TypeP where
   pretty t = case t of
-          TyConAppP      dt []        ->          pretty dt
-          TyConAppP      dt ts        -> parens $ pretty dt <+> sep (map pretty ts)
+          TyConP nam          -> text nam
+          TyAppP con []       ->          pretty con
+          TyAppP con ts       -> parens $ pretty con <+> sep (map pretty ts)
           TupleTypeP     ts           -> tupled (map pretty ts)
           FnTypeP    ts r fx _cc _pf _sr ->
                                          text "{" <+> hsep [pretty t <+> text "=>" | t <- ts]

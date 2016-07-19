@@ -262,10 +262,11 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
 
    -- Given a data type  T (A1::K1) ... (An::Kn)
    -- returns the type   T A1 .. An   (with A1..An free).
-   typeOfDataType :: DataType TypeAST -> CtorName -> TypeAST
-   typeOfDataType dt _ctorName =
+   typeOfDataType :: DataType TypeAST -> TypeAST
+   typeOfDataType dt =
      let boundTyVarFor (TypeFormal name sr _kind) = TyVarAST $ BoundTyVar name sr in
-     TyConAppAST (typeFormalName $ dataTypeName dt) (map boundTyVarFor $ dataTypeTyFormals dt)
+     TyAppAST (TyConAST $ typeFormalName $ dataTypeName dt)
+              (map boundTyVarFor $ dataTypeTyFormals dt)
 
    splitCtorTypes :: [(String, Either TypeAST TypeAST, CtorId)] ->
                     ([(String, TypeAST, CtorId)]
@@ -279,7 +280,7 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
    extractCtorTypes dt = map nmCTy (dataTypeCtors dt)
      where nmCTy dc@(DataCtor name tyformals types _repr _range) =
                  (T.unpack name, ctorTypeAST tyformals dtType types, cid)
-                         where dtType = typeOfDataType dt name
+                         where dtType = typeOfDataType dt
                                cid    = ctorId (typeFormalName $ dataTypeName dt) dc
 
    nullFx = TupleTypeAST []
@@ -352,21 +353,6 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
 
      kmod <- kNormalizeModule  mTC' ctx_tc
      return (kmod, globalIdents ctx_tc)
-{-
-     -- Next, convert those pieces, piecemeal, from TypeTC to TypeIL.
-     -- ctx_il :: Context TypeIL
-     ctx_il    <- liftContextM   (ilOf ctx_tc) ctx_tc
-     decls     <- mapM (convertDecl (ilOf ctx_tc)) (externalModuleDecls mTC)
-     primtypes <- mapM (convertDataTypeTC ctx_tc) (moduleASTprimTypes mTC)
-     datatypes <- mapM (convertDataTypeTC ctx_tc) (moduleASTdataTypes mTC)
-
-     -- Set fnIsRec flag on top-level functions.
-     aiFns     <- mapM (mapM (fnOf ctx_tc)) (unfuns oo_annfns)
-     let ai_mod = ModuleIL (buildExprSCC aiFns) decls datatypes primtypes
-                           (moduleASTsourceLines mAST)
-
-     return (ctx_il, ai_mod)
--}
 
        where
         buildExprSCC' :: [[Fn () (AnnExpr TypeTC) TypeTC]] -> (AnnExpr TypeTC)
@@ -573,16 +559,17 @@ desugarParsedModule tcenv m = do
   astOfParsedType typep =
     let q = astOfParsedType in
     case typep of
-          TyConAppP "Word"    [] -> return $ PrimIntAST         (IWord 0)
-          TyConAppP "WordX2"  [] -> return $ PrimIntAST         (IWord 1)
-          TyConAppP "Int64"   [] -> return $ PrimIntAST         I64
-          TyConAppP "Int32"   [] -> return $ PrimIntAST         I32
-          TyConAppP "Int8"    [] -> return $ PrimIntAST         I8
-          TyConAppP "Bool"    [] -> return $ PrimIntAST         I1
-          TyConAppP "Array"  [t] -> liftM  ArrayTypeAST            (q t)
-          TyConAppP "Ref"    [t] -> liftM  RefTypeAST              (q t)
-          TyConAppP "Coro" [o,i] -> liftM2 CoroTypeAST       (q o) (q i)
-          TyConAppP    tc types  -> liftM (TyConAppAST tc) (mapM q types)
+          TyAppP (TyConP "Word"  )    [] -> return $ PrimIntAST         (IWord 0)
+          TyAppP (TyConP "WordX2")    [] -> return $ PrimIntAST         (IWord 1)
+          TyAppP (TyConP "Int64" )    [] -> return $ PrimIntAST         I64
+          TyAppP (TyConP "Int32" )    [] -> return $ PrimIntAST         I32
+          TyAppP (TyConP "Int8"  )    [] -> return $ PrimIntAST         I8
+          TyAppP (TyConP "Bool"  )    [] -> return $ PrimIntAST         I1
+          TyAppP (TyConP "Array" )   [t] -> liftM  ArrayTypeAST            (q t)
+          TyAppP (TyConP "Ref"   )   [t] -> liftM  RefTypeAST              (q t)
+          TyAppP (TyConP "Coro"  ) [o,i] -> liftM2 CoroTypeAST       (q o) (q i)
+          TyAppP con types       -> liftM2 TyAppAST (q con) (mapM q types)
+          TyConP nam             -> return $ TyConAST nam
           TupleTypeP      types  -> liftM  TupleTypeAST    (mapM q types)
           ForAllP    tvs t       -> liftM (ForAllAST $ map convertTyFormal tvs) (q t)
           TyVarP     tv          -> do return $ TyVarAST tv
