@@ -497,20 +497,21 @@ runCompiler ci_time wholeprog flagVals outfile = do
        putDocP line
        exitFailure
 
-     Right (RWT in_time sr_time cp_time sc_time ilprog) -> do
+     Right (RWT in_time sr_time mn_time cg_time cp_time sc_time ilprog) -> do
        (pb_time, _) <- ioTime $ dumpILProgramToProtobuf ilprog outfile
        (nqueries, querytime) <- readIORef smtStatsRef
        reportFinalPerformanceNumbers ci_time nqueries querytime in_time sr_time
-                                     cp_time sc_time nc_time pb_time
+                                     mn_time cg_time cp_time sc_time nc_time pb_time
                                      (sum (modulesSourceLines wholeprog))
 
 reportFinalPerformanceNumbers :: Double -> Int -> [ (Double, Double) ]
-                              -> Double -> Double -> Double
-                              -> Double -> Double -> Double
+                              -> Double -> Double -> Double -> Double
+                              -> Double -> Double -> Double -> Double
                               -> Int -> IO ()
 reportFinalPerformanceNumbers ci_time nqueries querytime in_time sr_time
-                              cp_time sc_time nc_time pb_time wholeProgNumLines = do
-       let ct_time = (nc_time - (cp_time + in_time + sc_time))
+                              mn_time cg_time cp_time sc_time
+                              nc_time pb_time wholeProgNumLines = do
+       let ct_time = (nc_time - (in_time + mn_time + cg_time + cp_time + sc_time))
        let total_time = ci_time + pb_time + nc_time
        let pct f1 f2 = (100.0 * f1) / f2
        let fmt_pct time = let p = pct time nc_time
@@ -524,6 +525,8 @@ reportFinalPerformanceNumbers ci_time nqueries querytime in_time sr_time
                          ,fmt "static-chk  time:" sc_time
                          ,fmt "inlining    time:" in_time
                          ,fmt "shrinking   time:" sr_time
+                         ,fmt "monomorphiz time:" mn_time
+                         ,fmt "cfg-ization time:" cg_time
                          ,fmt "codegenprep time:" cp_time
                          ,fmt "'other'     time:" ct_time
                          ,fmt "sum elapsed time:" nc_time
@@ -535,7 +538,7 @@ reportFinalPerformanceNumbers ci_time nqueries querytime in_time sr_time
                          ,text "source lines/second:" <+> text (printf "%.1f" (fromIntegral wholeProgNumLines / total_time))
                          ]
 
-data ResultWithTimings = RWT Double Double Double Double ILProgram
+data ResultWithTimings = RWT Double Double Double Double Double Double ILProgram
 
 compile :: WholeProgramAST FnAST TypeP -> TcEnv -> Compiled ResultWithTimings
 compile wholeprog tcenv = do
@@ -637,7 +640,7 @@ lowerModule (kmod, globals) = do
          _ <- liftIO $ renderKN kmod True
          return ()
 
-     monomod0 <- monomorphize   kmod
+     (mn_time, monomod0) <- ioTime $ monomorphize   kmod
 
      whenDumpIR "mono" $ do
          putDocLn $ (outLn "/// Monomorphized program =============")
@@ -685,7 +688,7 @@ lowerModule (kmod, globals) = do
          _ <- liftIO $ renderKN monomod  True
          putDocLn $ (outLn "^^^ ===================================")
 
-     cfgmod   <- cfgModule      monomod
+     (cg_time, cfgmod) <- ioTime $ cfgModule      monomod
      let constraints = collectMayGCConstraints (moduleILbody cfgmod)
      whenDumpIR "may-gc" $ do
          liftIO $ putStrLn "\n MAY GC CONSTRAINTS ======================="
@@ -723,7 +726,7 @@ lowerModule (kmod, globals) = do
 
      maybeInterpretKNormalModule kmod
 
-     return (RWT in_time mkn_time cp_time sc_time ilprog)
+     return (RWT in_time mkn_time mn_time cg_time cp_time sc_time ilprog)
 
   where
     cfgModule :: ModuleIL (KNExpr' RecStatus MonoType) MonoType -> Compiled (ModuleIL CFBody MonoType)
