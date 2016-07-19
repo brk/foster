@@ -973,7 +973,7 @@ mkAnnCall rng res_ty annbase args =
       -> AnnCall rng res_ty annprim args
     E_AnnTyApp _ _ (AnnPrimitive _ _ (NamedPrim (TypedId _ (GlobalSymbol gs)))) [argty]
          | T.unpack gs == "allocDArray"
-      -> AnnAllocArray rng res_ty arraySize argty DoZeroInit where [arraySize] = args
+      -> AnnAllocArray rng res_ty arraySize argty Nothing DoZeroInit where [arraySize] = args
     E_AnnVar _rng (_tid, Just cid)
       -> AnnAppCtor rng res_ty cid  args
     _ -> AnnCall rng res_ty annbase args
@@ -1072,7 +1072,7 @@ equivStructureAndVarNames e1 e2 =
       (AnnDeref       _ _ e1          , AnnDeref       _ _ e2          )  -> q e1 e2
       (AnnStore       _ _ e1 x1       , AnnStore       _ _ e2 x2       )  -> q e1 e2 && q x1 x2
       (AnnArrayLit    _ _ le1         , AnnArrayLit    _ _ le2         )  -> allP qa le1 le2
-      (AnnAllocArray  _ _ e1 t1 z1    , AnnAllocArray  _ _ e2 t2 z2    )  -> q e1 e2 && tcTypeEquiv t1 t2 && z1 == z2
+      (AnnAllocArray  _ _ e1 t1 mr1 z1, AnnAllocArray  _ _ e2 t2 mr2 z2)  -> q e1 e2 && tcTypeEquiv t1 t2 && mr1 == mr2 && z1 == z2
       (AnnArrayRead   _ _ ai1         , AnnArrayRead   _ _ ai2         )  -> ai1 `qai` ai2
       (AnnArrayPoke   _ _ ai1 e1      , AnnArrayPoke   _ _ ai2 e2      )  -> ai1 `qai` ai2 && q e1 e2
       (AnnTuple       _ _ k1 e1s      , AnnTuple       _ _ k2 e2s      )  -> k1 == k2 && allP q e1s e2s

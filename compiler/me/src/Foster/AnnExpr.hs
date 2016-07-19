@@ -44,7 +44,7 @@ data AnnExpr ty =
         | AnnDeref      ExprAnnot ty              (AnnExpr ty)
         | AnnStore      ExprAnnot ty (AnnExpr ty) (AnnExpr ty)
         -- Array operations
-        | AnnAllocArray ExprAnnot ty (AnnExpr ty) ty ZeroInit
+        | AnnAllocArray ExprAnnot ty (AnnExpr ty) ty (Maybe AllocMemRegion) ZeroInit
         | AnnArrayLit   ExprAnnot ty [Either Literal (AnnExpr ty)]
         | AnnArrayRead  ExprAnnot ty (ArrayIndex (AnnExpr ty))
         | AnnArrayPoke  ExprAnnot ty (ArrayIndex (AnnExpr ty)) (AnnExpr ty)
@@ -81,7 +81,7 @@ instance TypedWith (AnnExpr ty) ty where
      AnnArrayLit  _rng t _ -> t
      AnnArrayRead _rng t _ -> t
      AnnArrayPoke  _ t _ _ -> t
-     AnnAllocArray _ t _ _ _ -> t
+     AnnAllocArray _ t _ _ _ _ -> t
      AnnCase _rng t _ _    -> t
      E_AnnVar _rng (tid, _)-> tidType tid
      AnnPrimitive _rng t _ -> t
@@ -108,7 +108,7 @@ instance Pretty ty => Structured (AnnExpr ty) where
       AnnDeref  {}               -> text "AnnDeref     "
       AnnStore  {}               -> text "AnnStore     "
       AnnArrayLit   _rng _ _     -> text "AnnArrayLit  "
-      AnnAllocArray _rng _ _ aty _ -> text "AnnAllocArray:: " <> pretty aty
+      AnnAllocArray _rng _ _ aty _ _ -> text "AnnAllocArray:: " <> pretty aty
       AnnArrayRead  _rng t _     -> text "AnnArrayRead :: " <> pretty t
       AnnArrayPoke  _rng t _ _   -> text "AnnArrayPoke :: " <> pretty t
       AnnTuple  {}               -> text "AnnTuple     "
@@ -136,7 +136,7 @@ instance Pretty ty => Structured (AnnExpr ty) where
       AnnAlloc     _rng _t a _             -> [a]
       AnnDeref     _rng _t a               -> [a]
       AnnStore     _rng _t a b             -> [a, b]
-      AnnAllocArray _rng _ e _ _           -> [e]
+      AnnAllocArray _rng _ e _ _ _         -> [e]
       AnnArrayLit  _rng _t exprs           -> rights exprs
       AnnArrayRead _rng _t ari             -> childrenOfArrayIndex ari
       AnnArrayPoke _rng _t ari c           -> childrenOfArrayIndex ari ++ [c]
@@ -184,7 +184,7 @@ annExprAnnot expr = case expr of
       AnnDeref     annot _ _        -> annot
       AnnStore     annot _ _ _      -> annot
       AnnArrayLit  annot _ _        -> annot
-      AnnAllocArray annot _ _ _ _   -> annot
+      AnnAllocArray annot _ _ _ _ _ -> annot
       AnnArrayRead annot _ _        -> annot
       AnnArrayPoke annot _ _ _      -> annot
       AnnTuple     annot _ _ _      -> annot
