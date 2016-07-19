@@ -443,11 +443,11 @@ tcRhoBool rng b expTy = do
 tcRhoText rng b expTy = do
 -- {{{
 -- {{{
-    let ty = TyConAppTC "Text" []
+    let ty = TyAppTC (TyConTC "Text") []
     let ab = AnnLiteral rng ty (LitText b)
     let check t =
           case t of
-             (TyConAppTC "Text" []) -> return ab
+             TyAppTC (TyConTC "Text") [] -> return ab
              m@MetaTyVarTC {} -> do unify m ty [text "text literal"]
                                     return ab
              RefinedTypeTC v _ _ -> check (tidType v)
@@ -1011,7 +1011,8 @@ tcTypeEquiv t1 t2 =
   let q = tcTypeEquiv in
   case (t1, t2) of
      (PrimIntTC            s1 , PrimIntTC          s2   ) -> s1 == s2
-     (TyConAppTC   tcnm1 tys1 , TyConAppTC   tcnm2 tys2 ) -> tcnm1 == tcnm2 && allP tcTypeEquiv tys1 tys2
+     (TyConTC      tcnm1      , TyConTC   tcnm2         ) -> tcnm1 == tcnm2
+     (TyAppTC      con1 tys1  , TyAppTC   con2 tys2     ) -> allP tcTypeEquiv (con1:tys1) (con2:tys2)
      (TupleTypeTC _k1    tys1 , TupleTypeTC _k2    tys2 ) -> {- TODO kinds -} allP tcTypeEquiv tys1 tys2
      (FnTypeTC     s1 t1 fx1 c1 x1, FnTypeTC     s2 t2 fx2 c2 x2) -> allP q s1 s2 && q t1 t2 && q fx1 fx2 && liftEqUnifiable (==) c1 c2 && liftEqUnifiable (==) x1 x2
      (CoroTypeTC   s1 t1      , CoroTypeTC   s2 t2      ) -> q s1 s2 && q t1 t2
@@ -1463,7 +1464,8 @@ tcType' ctx refinementArgs ris typ = do
         ArrayTypeAST  ty      -> liftM   ArrayTypeTC (q ty)
         TupleTypeAST  types  -> liftM  (TupleTypeTC (UniConst KindPointerSized)) (mapM q types)
         CoroTypeAST   s r     -> liftM2  CoroTypeTC  (q s) (q r)
-        TyConAppAST nm types  -> liftM (TyConAppTC nm) (mapM q types)
+        TyConAST nam          -> return $ TyConTC nam
+        TyAppAST con types    -> liftM2 TyAppTC (q con) (mapM q types)
         ForAllAST ktvs rho    -> do taus <- genTauUnificationVarsLike ktvs (\n -> "tcType'forall param " ++ show n)
                                     let xtvs = map (\(tv,k) -> TyVarTC tv (UniConst k)) ktvs
                                     let ctx' = ctx { localTypeBindings = extendTypeBindingsWith ctx ktvs taus }
@@ -1613,7 +1615,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
               "Invariant violated: constructor arity did not match # types!"
               ++ showSourceRange r
 
-        ty@(TyConAppTC _ metas) <-
+        ty@(TyAppTC _ metas) <-
                             generateTypeSchemaForDataType ctx (ctorTypeName cid)
         let ktvs = map convertTyFormal tyformals
         ts <- mapM (\ty -> instSigmaWith ktvs ty metas) types
@@ -1655,7 +1657,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
       case Map.lookup typeName (contextDataTypes ctx) of
         Just [dt] -> do
           formals <- mapM (\_ -> newTcUnificationVarTau "dt-tyformal") (dataTypeTyFormals dt)
-          return $ TyConAppTC typeName formals
+          return $ TyAppTC (TyConTC typeName) formals
         other -> tcFails [text $ "Typecheck.generateTypeSchemaForDataType: Too many or"
                             ++ " too few definitions for $" ++ typeName
                             ++ "\n\t" ++ show (pretty other)]
@@ -1849,7 +1851,8 @@ resolveType annot origSubst origType = go origSubst origType where
     FnTypeTC    ss t fx cc cs      -> do (t':fx':ss') <- mapM q (t:fx:ss)
                                          return $ FnTypeTC  ss' t' fx' cc cs
     CoroTypeTC   s t               -> liftM2 CoroTypeTC  (q s) (q t)
-    TyConAppTC    tc  types        -> liftM  (TyConAppTC  tc) (mapM q types)
+    TyConTC    nam                 -> return $ TyConTC nam
+    TyAppTC    con types           -> liftM2 TyAppTC (q con) (mapM q types)
     TupleTypeTC  kind types        -> liftM  (TupleTypeTC kind) (mapM q types)
     RefinedTypeTC v e args -> do v' <- fmapM_TID q v
                                  return $ RefinedTypeTC v' e args
@@ -1884,7 +1887,8 @@ getFreeTyVars xs = do zs <- mapM zonkType xs
   go bound x =
     case x of
         PrimIntTC         {} -> []
-        TyConAppTC _nm types     -> concatMap (go bound) types
+        TyConTC           {} -> []
+        TyAppTC con types    -> concatMap (go bound) (con:types)
         TupleTypeTC _k types     -> concatMap (go bound) types
         FnTypeTC ss r fx  _ _    -> concatMap (go bound) (r:fx:ss)
         CoroTypeTC s r           -> concatMap (go bound) [s,r]
@@ -1935,7 +1939,8 @@ zonkType x = do
                                             return ty'
         PrimIntTC     {}        -> return x
         TyVarTC       {}        -> return x
-        TyConAppTC  nm types    -> liftM  (TyConAppTC nm) (mapM zonkType types)
+        TyConTC  nm             -> return $ TyConTC nm
+        TyAppTC  con types      -> liftM2 TyAppTC (zonkType con) (mapM zonkType types)
         TupleTypeTC k  types    -> liftM  (TupleTypeTC k) (mapM zonkType types)
         ForAllTC    tvs  rho    -> liftM  (ForAllTC tvs ) (zonkType rho)
         RefTypeTC       ty      -> liftM  (RefTypeTC    ) (zonkType ty)
@@ -2047,12 +2052,12 @@ tcTypeWellFormed msg ctx typ = do
   case typ of
         PrimIntTC      {}     -> return ()
         MetaTyVarTC    {}     -> return ()
-        TyConAppTC "Float64" [] -> return ()
-        TyConAppTC  nm types  ->
-                            case Map.lookup nm (contextDataTypes ctx) of
-                                   Just  _ -> mapM_ q types
+        TyConTC "Float64" -> return ()
+        TyConTC nm -> case Map.lookup nm (contextDataTypes ctx) of
+                                   Just  _ -> return ()
                                    Nothing -> tcFails [text $ "Unknown type "
                                                         ++ nm ++ " " ++ msg]
+        TyAppTC con types     -> mapM_ q (con:types)
         TupleTypeTC _k types  -> mapM_ q types
         FnTypeTC  ss r fx _ _ -> mapM_ q (r:fx:ss)
         CoroTypeTC  s r       -> mapM_ q [s,r]
@@ -2137,7 +2142,8 @@ collectAllUnificationVars xs = Set.toList (Set.fromList (concatMap go xs))
   where go x =
           case x of
             PrimIntTC  _            -> []
-            TyConAppTC  _nm types   -> concatMap go types
+            TyConTC  {}             -> []
+            TyAppTC  con types      -> concatMap go (con:types)
             TupleTypeTC _k  types   -> concatMap go types
             FnTypeTC  ss r fx _ _   -> concatMap go (r:fx:ss)
             CoroTypeTC  s r         -> concatMap go [s,r]
@@ -2260,8 +2266,9 @@ instance Expr (Maybe TypeAST) where freeVars Nothing = []
 instance Expr TypeAST where
   freeVars typ = case typ of
         PrimIntAST            {} -> []
-        TyConAppAST      _ types -> concatMap freeVars types
-        TupleTypeAST       types -> concatMap freeVars types
+        TyConAST              {} -> []
+        TyAppAST          con types -> concatMap freeVars (con:types)
+        TupleTypeAST          types -> concatMap freeVars types
         FnTypeAST    s t fx _cc _cs -> concatMap freeVars (t:fx:s)
         CoroTypeAST  s t         -> concatMap freeVars [t,s]
         ForAllAST  _tvs rho      -> freeVars rho

@@ -15,7 +15,8 @@ import Data.Maybe (maybeToList)
 import Text.PrettyPrint.ANSI.Leijen(text)
 
 data TypeP =
-           TyConAppP      DataTypeName [TypeP]
+           TyConP         DataTypeName
+         | TyAppP         TypeP [TypeP]
          | TupleTypeP     [TypeP]
          | FnTypeP        { fnTypeDomain :: [TypeP]
                           , fnTypeRange  :: TypeP
@@ -30,7 +31,8 @@ data TypeP =
 
 instance Show TypeP where
     show x = case x of
-        TyConAppP    tc types         -> "(TyCon: " ++ show tc ++ joinWith " " ("":map show types) ++ ")"
+        TyConP    nm                  -> "(TyCon: " ++ show nm ++ ")"
+        TyAppP    con types           -> show con ++ joinWith " " ("":map show types)
         TupleTypeP      types         -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
         FnTypeP    s t fx cc cs _     -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @" ++ show fx ++ " #{" ++ show cs ++ "})"
         ForAllP  tvs rho              -> "(ForAll " ++ show tvs ++ ". " ++ show rho ++ ")"
@@ -41,7 +43,8 @@ instance Show TypeP where
 instance Structured TypeP where
     textOf e _width =
         case e of
-            TyConAppP    tc  _           -> text $ "TyConAppP " ++ tc
+            TyAppP    con  _             -> text $ "TyAppP " ++ show con
+            TyConP    nm                 -> text $ "TyConP " ++ nm
             TupleTypeP       _           -> text $ "TupleTypeP"
             FnTypeP    _ _  _ _ _ _      -> text $ "FnTypeP"
             ForAllP  tvs _rho            -> text $ "ForAllP " ++ show tvs
@@ -51,7 +54,8 @@ instance Structured TypeP where
 
     childrenOf e =
         case e of
-            TyConAppP   _tc types        -> types
+            TyConP      _nm              -> []
+            TyAppP      con types        -> con:types
             TupleTypeP      types        -> types
             FnTypeP    ss t fx _ _  _    -> maybeToList fx ++ (t:ss)
             ForAllP  _tvs rho            -> [rho]

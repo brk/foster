@@ -29,7 +29,8 @@ type Effect = TypeAST
 
 data TypeAST =
            PrimIntAST       IntSizeBits
-         | TyConAppAST      DataTypeName [Sigma]
+         | TyConAST         DataTypeName
+         | TyAppAST         Rho [Sigma]
          | TupleTypeAST     [Sigma]
          | CoroTypeAST      (Sigma) (Sigma)
          | RefTypeAST       (Sigma)
@@ -61,8 +62,9 @@ hpre ds = empty <+> hsep ds
 instance Pretty TypeAST where
     pretty x = case x of
         PrimIntAST         size         -> pretty size
-        TyConAppAST "Float64" []        -> text "Float64"
-        TyConAppAST  tcnm types         -> parens $ text tcnm <> hpre (map pretty types)
+        TyConAST nam                    -> text nam
+        TyAppAST con []     ->          pretty con
+        TyAppAST con types  -> parens $ pretty con <> hpre (map pretty types)
         TupleTypeAST      types         -> tupled $ map pretty types
         FnTypeAST    s t fx cc cs       -> text "(" <> pretty s <> text " =" <> text (briefCC cc) <> text ";"
                                               <+> pretty fx <> text "> " <> pretty t <> text " @{" <> text (show cs) <> text "})"
@@ -101,8 +103,8 @@ instance Structured TypeAST where
     textOf e _width =
         case e of
             PrimIntAST     size            -> text $ "PrimIntAST " ++ show size
-            TyConAppAST "Float64" []       -> text $ "PrimFloat64"
-            TyConAppAST    tc  _           -> text $ "TyConAppAST " ++ tc
+            TyConAST       nam             -> text $ nam
+            TyAppAST con   _               -> text "(TyAppAST" <+> pretty con <> text ")"
             TupleTypeAST       _           -> text $ "TupleTypeAST"
             FnTypeAST    {}                -> text $ "FnTypeAST"
             CoroTypeAST  _ _               -> text $ "CoroTypeAST"
@@ -117,7 +119,8 @@ instance Structured TypeAST where
     childrenOf e =
         case e of
             PrimIntAST         _           -> []
-            TyConAppAST   _tc types        -> types
+            TyConAST           _           -> []
+            TyAppAST     con  types        -> con:types
             TupleTypeAST      types        -> types
             FnTypeAST   ss t fx _ _        -> ss ++ [t, fx]
             CoroTypeAST  s t               -> [s, t]
@@ -130,13 +133,13 @@ instance Structured TypeAST where
             MetaPlaceholderAST {}          -> []
 
 fosBoolType = PrimIntAST I1
-fosStringType = TyConAppAST "Text" []
+fosStringType = TyAppAST (TyConAST "Text") []
 
 minimalTupleAST []    = TupleTypeAST []
 minimalTupleAST [arg] = arg
 minimalTupleAST args  = TupleTypeAST args
 
-nullFx = TyConAppAST "emptyEffect" []
+nullFx = TyAppAST (TyConAST "emptyEffect") []
 
 mkProcType args rets = mkProcTypeWithFx nullFx args rets
 mkFnType   args rets = mkFnTypeWithFx nullFx   args rets
@@ -153,7 +156,7 @@ i64 = PrimIntAST I64
 i1  = PrimIntAST I1
 iw0 = PrimIntAST (IWord 0)
 iw1 = PrimIntAST (IWord 1)
-f64 = TyConAppAST "Float64" []
+f64 = TyAppAST (TyConAST "Float64") []
 
 primTyVars tyvars = map (\v -> (v, KindAnySizeType)) tyvars
 
@@ -370,6 +373,6 @@ gFosterPrimOpsTable = Map.fromList $
   ] ++ fixnumPrimitives I64
     ++ fixnumPrimitives I32
     ++ fixnumPrimitives I8
-    ++ flonumPrimitives "f64" (TyConAppAST "Float64" [])
+    ++ flonumPrimitives "f64" f64
     ++ fixnumPrimitives (IWord 0)
     ++ fixnumPrimitives (IWord 1)

@@ -460,7 +460,7 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
       let tys = map cb_parse_tatom tatoms in
       case tatom of
         CBOR_Array [tik, _, _, CBOR_Array [name]] | tik `tm` tok_TYPENAME ->
-          TyConAppP (cb_parse_typename name) tys
+          TyAppP (TyConP $ cb_parse_typename name) tys
         _ -> error $ "tp (cb_parse_tatom tatom) (map cb_parse_tatom tatoms)" ++ show tatom
     CBOR_Array [tok, _,_cbr, CBOR_Array args] | tok `tm` tok_FORALL_TYPE ->
       let (tyformals, t) = (init args, last args) in
@@ -476,7 +476,7 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
       let name@(c:_) = cb_parse_typename typename in
       if isLower c
         then TyVarP (BoundTyVar name (cb_parse_range cbr))
-        else TyConAppP name []
+        else TyAppP (TyConP name) []
     CBOR_Array [tok, _,_cbr, CBOR_Array [a]] | tok `tm` tok_TYPE_PLACEHOLDER ->
       MetaPlaceholder (cb_parse_aid a)
     CBOR_Array [tok, _,_cbr, CBOR_Array [t]] | tok `tm` tok_TUPLE -> cb_parse_t t

@@ -12,19 +12,21 @@ import Foster.ParsedType
 
 import qualified Data.Text as T
 
+typ nm = TyAppP (TyConP nm) []
+
 primitiveDataTypesP :: [DataType TypeP]
 primitiveDataTypesP = [
   (let tf = [] in
    DataType (TypeFormal "Text" (MissingSourceRange "Text") KindPointerSized) tf
         [DataCtor (T.pack "TextFragment") tf
-            [TyConAppP "Array" [TyConAppP "Int8" []]
-            ,TyConAppP "Int32" []]
+            [TyAppP (TyConP "Array") [typ "Int8"]
+            , typ "Int32"]
             (Just (CR_Default 0))
             (MissingSourceRange "Text.TextFragment")
         ,DataCtor (T.pack "TextConcat"  ) tf
-            [TyConAppP "Text" []
-            ,TyConAppP "Text" []
-            ,TyConAppP "Int32" []]
+            [typ "Text"
+            ,typ "Text"
+            ,typ "Int32"]
             (Just (CR_Default 1))
             (MissingSourceRange "Text.TextConcat")]
         (MissingSourceRange "Text")),

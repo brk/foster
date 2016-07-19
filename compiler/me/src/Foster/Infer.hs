@@ -46,7 +46,8 @@ parSubstTcTy prvNextPairs ty =
         TyVarTC  tv _mbk     -> fromMaybe ty $ List.lookup tv prvNextPairs
         MetaTyVarTC   {}     -> ty
         PrimIntTC     {}     -> ty
-        TyConAppTC  nm tys   -> TyConAppTC  nm (map q tys)
+        TyConTC       {}     -> ty
+        TyAppTC     con tys  -> TyAppTC (q con) (map q tys)
         TupleTypeTC k  types -> TupleTypeTC k  (map q types)
         RefTypeTC    t       -> RefTypeTC    (q t)
         ArrayTypeTC  t       -> ArrayTypeTC  (q t)
@@ -66,7 +67,8 @@ tySubst subst ty =
         MetaTyVarTC m          -> Map.findWithDefault ty (mtvUniq m) subst
         PrimIntTC     {}       -> ty
         TyVarTC       {}       -> ty
-        TyConAppTC   nm tys    -> TyConAppTC   nm (map q tys)
+        TyConTC       {}       -> ty
+        TyAppTC con tys        -> TyAppTC (q con) (map q tys)
         RefTypeTC     t        -> RefTypeTC    (q t)
         ArrayTypeTC   t        -> ArrayTypeTC  (q t)
         TupleTypeTC k types    -> TupleTypeTC k (map q types)
@@ -156,13 +158,15 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                      else tcFailsMore [text $ "Unable to unify different type variables: "
                                        ++ show tv1 ++ " vs " ++ show tv2]
 
-    ((TyConAppTC  nm1 tys1), (TyConAppTC  nm2 tys2)) ->
-      if nm1 == nm2
-        then do tcUnifyMoreTypes tys1 tys2 constraints tysub
+    ((TyConTC  nam1), (TyConTC  nam2)) ->
+      if nam1 == nam2 then do tcUnifyLoop constraints tysub
         else do msg <- getStructureContextMessage
                 tcFailsMore [text $ "Unable to unify different type constructors: "
-                                  ++ nm1 ++ " vs " ++ nm2,
+                                  ++ nam1 ++ " vs " ++ nam2,
                              msg]
+
+    ((TyAppTC  con1 tys1), (TyAppTC  con2 tys2)) ->
+      tcUnifyMoreTypes (con1:tys1) (con2:tys2) constraints tysub
 
     ((TupleTypeTC kind1 tys1), (TupleTypeTC kind2 tys2)) ->
         if List.length tys1 /= List.length tys2

@@ -596,7 +596,8 @@ mapArrayIndex f (ArrayIndex v1 v2 rng s) =
 type RhoIL = TypeIL
 data TypeIL =
            PrimIntIL       IntSizeBits
-         | TyConAppIL      DataTypeName [TypeIL]
+         | TyConIL         DataTypeName
+         | TyAppIL         TypeIL [TypeIL]
          | TupleTypeIL     Kind [TypeIL]
          | FnTypeIL        { fnTypeILDomain :: [TypeIL]
                            , fnTypeILRange  :: TypeIL
@@ -614,7 +615,8 @@ type AIVar = TypedId TypeIL
 
 instance Show TypeIL where
     show x = case x of
-        TyConAppIL nam types -> "(TyConAppIL " ++ nam
+        TyConIL nm        -> nm
+        TyAppIL con types -> "(TyAppIL " ++ (show con)
                                       ++ joinWith " " ("":map show types) ++ ")"
         PrimIntIL size       -> "(PrimIntIL " ++ show size ++ ")"
         TupleTypeIL KindAnySizeType  typs -> "#(" ++ joinWith ", " (map show typs) ++ ")"
@@ -630,7 +632,8 @@ instance Show TypeIL where
 instance Structured TypeIL where
     textOf e _width =
         case e of
-            TyConAppIL nam _types -> text $ "TyConAppIL " ++ nam
+            TyConIL nam        -> text $ nam
+            TyAppIL con _types -> text $ "TyAppIL " ++ show con
             PrimIntIL     size    -> text $ "PrimIntIL " ++ show size
             TupleTypeIL   {}      -> text $ "TupleTypeIL"
             FnTypeIL      {}      -> text $ "FnTypeIL"
@@ -643,7 +646,8 @@ instance Structured TypeIL where
 
     childrenOf e =
         case e of
-            TyConAppIL _nam types  -> types
+            TyConIL {}          -> []
+            TyAppIL con types  -> con:types
             PrimIntIL       {}     -> []
             TupleTypeIL _bx types  -> types
             FnTypeIL  ss t _cc _cs -> ss++[t]
@@ -656,10 +660,11 @@ instance Structured TypeIL where
 
 instance Kinded TypeIL where
   kindOf x = case x of
-    PrimIntIL   {}          -> KindAnySizeType
-    TyConAppIL "Float64" [] -> KindAnySizeType
+    PrimIntIL   {}       -> KindAnySizeType
+    TyConIL "Float64"    -> KindAnySizeType
+    TyConIL _            -> KindPointerSized
+    TyAppIL con _        -> kindOf con
     TyVarIL   _ kind     -> kind
-    TyConAppIL  {}       -> KindPointerSized
     TupleTypeIL kind _   -> kind
     FnTypeIL    {}       -> KindPointerSized
     CoroTypeIL  {}       -> KindPointerSized
@@ -671,7 +676,7 @@ instance Kinded TypeIL where
 unitTypeIL = TupleTypeIL KindPointerSized []
 
 boolTypeIL = PrimIntIL I1
-stringTypeIL = TyConAppIL "Text" []
+stringTypeIL = TyAppIL (TyConIL "Text") []
 
 
 

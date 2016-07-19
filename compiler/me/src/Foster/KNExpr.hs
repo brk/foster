@@ -233,7 +233,7 @@ kNormalize st expr =
 
                 -- Now that we can see type applications,
                 -- we can build coroutine primitive nodes.
-                E_AnnTyApp _ ot (AnnPrimitive _rng _ (NamedPrim tid)) apptys ->
+                E_AnnTyApp _ _ot (AnnPrimitive _rng _ (NamedPrim tid)) apptys ->
                    let primName = identPrefix (tidIdent tid) in
                    case (coroPrimFor primName, apptys) of
                      (Just CoroCreate, [argty, retty, _fxty]) -> do
@@ -414,13 +414,14 @@ tcToIL :: KNState -> TypeTC -> KN TypeIL
 tcToIL st typ = do
   let q = tcToIL st
   case typ of
-     TyConAppTC  "Float64" [] -> return $ TyConAppIL "Float64" []
-     TyConAppTC  dtname tys -> do
+     TyConTC nm -> return $ TyConIL nm
+     TyAppTC (TyConTC "Float64") [] -> return $ TyAppIL (TyConIL "Float64") []
+     TyAppTC (TyConTC dtname) tys -> do
          let (_, dtypeMapX, _) = st
          case Map.lookup dtname dtypeMapX of
            Just [dt] -> case dtUnboxedRepr dt of
              Nothing -> do iltys <- mapM q tys
-                           return $ TyConAppIL dtname iltys
+                           return $ TyAppIL (TyConIL dtname) iltys
              Just rr -> do q $ rr tys
            Just dts | length dts > 1
              -> tcFails [text "Multiple definitions for data type" <+> text dtname]
@@ -428,6 +429,7 @@ tcToIL st typ = do
                         ,text "contextDataTypes ="
                         ,pretty (map fst $ Map.toList dtypeMapX)
                 ]
+     TyAppTC _ _ -> error $ "tcToIL saw TyApp of non-TyCon"
      PrimIntTC  size    -> do return $ PrimIntIL size
      TupleTypeTC ukind types -> do tys <- mapM q types
                                    kind <- unUnifiedWithDefault ukind KindPointerSized
