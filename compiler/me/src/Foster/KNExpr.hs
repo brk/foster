@@ -154,9 +154,11 @@ kNormalize st expr =
 
         nestedLets [go e] (\[x] -> KNTyApp ti x argtys)
 
-      AnnAllocArray _rng _ a aty zi -> do
+      AnnAllocArray _rng _ a aty mb_amr zi -> do
             t <- qt aty
-            let amr = MemRegionGlobalHeap
+            let amr = case mb_amr of
+                        Just amr -> amr
+                        Nothing  -> MemRegionGlobalHeap
             nestedLets [go a] (\[x] -> KNAllocArray (ArrayTypeIL t) x amr zi)
 
       AnnArrayRead _rng t (ArrayIndex a b rng s) -> do
@@ -178,13 +180,12 @@ kNormalize st expr =
         let n = length exprs
             i32 = PrimIntTC I32
             litint = LitInt (LiteralInt (fromIntegral n) 32 (show n) 10)
-            arr = AnnAllocArray _rng (error "hmm") (AnnLiteral _rng i32 litint) ati {-amr-} NoZeroInit
+            arr = AnnAllocArray _rng (error "hmm") (AnnLiteral _rng i32 litint) ati (Just amr) NoZeroInit
             (ArrayTypeTC ati) = t
             isLiteral (Left _) = True
             isLiteral _        = False
-            {-amr = if all isLiteral exprs then MemRegionGlobalData
+            amr = if all isLiteral exprs then MemRegionGlobalData
                                          else MemRegionGlobalHeap
-                                         TODO -}
         nestedLetsDo [go arr] (\[arr'] -> do
                 letsForArrayValues exprs go
                     (\vals' -> return $ KNArrayLit ti arr' vals'))
@@ -695,9 +696,9 @@ handleCoercionsAndConstraints ae = do
                                          return $ AnnDeref _rng _t x
         AnnStore _rng _t a b       -> do [x,y]   <- mapM q [a,b]
                                          return $ AnnStore _rng _t  x y
-        AnnAllocArray _rng _t e aty zi -> do
+        AnnAllocArray _rng _t e aty mb_amr zi -> do
                                          x <- q e
-                                         return $ AnnAllocArray _rng _t x aty zi
+                                         return $ AnnAllocArray _rng _t x aty mb_amr zi
         AnnArrayLit  _rng t exprs -> do  ais <- mapRightM q exprs
                                          return $ AnnArrayLit  _rng t ais
 
