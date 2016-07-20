@@ -13,7 +13,7 @@ import Control.Monad(liftM, forM_, forM, liftM, liftM2, when)
 
 import qualified Data.Text as T(Text, pack, unpack)
 import Data.Map(Map)
-import qualified Data.Map as Map(lookup, insert, elems, toList, fromList, null)
+import qualified Data.Map as Map(lookup, insert, elems, toList, null)
 import qualified Data.Set as Set(toList, fromList)
 import Data.IORef(readIORef,writeIORef)
 import Data.UnionFind.IO(fresh)
@@ -1489,31 +1489,35 @@ tcType' ctx refinementArgs ris typ = do
                                     return rv
         FnTypeAST ss r fx cc ft -> do
           let rng    = MissingSourceRange $ "refinement for fn type..."
-          let refinedFormals = concatMap (\t ->
-                           case t of
-                             RefinedTypeAST nm t' _ ->
-                               [TypedId t' (Ident (T.pack nm) 0)]
-                             _ -> []) ss
+          let annot = annotForRange rng
 
-          uniqRefinedFormals <- getUniquelyNamedAndRetypedFormals' ctx (annotForRange rng)
-                                   refinedFormals (T.pack $ "refinement for fn type...")
+          refinedFormalsFull <- mapM (\ (t, idx) -> do
+                case t of
+                  RefinedTypeAST nm t' _ -> return $ Right (TypedId t' (Ident (T.pack nm) 0))
+                  other                  -> do i <- tcFreshT (T.pack $ "_" ++ show idx)
+                                               return $ Left (TypedId other i))
+               (zip ss [0..])
+
+          let bareRefinedFormals = [v | Right v <- refinedFormalsFull]
+
+          uniqRefinedFormals <- getUniquelyNamedAndRetypedFormals' ctx annot
+                                   bareRefinedFormals (T.pack $ "refinement for fn type...")
                                    (localTypeBindings ctx) []
 
           let extCtx = extendContext ctx uniqRefinedFormals
+          let refinementArgs' = map tidIdent uniqRefinedFormals ++
+                                  [tidIdent v | Left v <- refinedFormalsFull]
 
-          let refinementArgs' = mkRefinementArgs ss `replacingUniquesWith`
-                                 (map tidIdent uniqRefinedFormals)
-
-          --tcLift $ putDocLn $ text "tcType' checking " <> pretty typ <+>
-          --                     text "w/ context extended with" <+> pretty uniquelyNamedFormals
-          --                     <+> text "and refinement args" <+> pretty refinementArgs'
+          --tcLift $ putDocLn $ text "tcType' checking " <> pretty typ
+          --                 <$> text "w/ context extended with" <+> pretty uniqRefinedFormals
+          --                 <$> text "and refinement args" <+> pretty refinementArgs'
 
           ss' <- mapM (tcType' extCtx refinementArgs' RIS_True) ss
           -- The binding for the function's return type, if any, should
           -- be in-scope for its refinement.
           extCtx' <- case r of
                        RefinedTypeAST nm r' _ -> do
-                            unf <- getUniquelyNamedAndRetypedFormals' ctx (annotForRange rng)
+                            unf <- getUniquelyNamedAndRetypedFormals' ctx annot
                                        [TypedId r' (Ident (T.pack nm) 0)] (T.pack "refinement for fn return type...")
                                        (localTypeBindings ctx) []
                             return $ extendContext extCtx unf
@@ -1541,18 +1545,6 @@ tcType' ctx refinementArgs ris typ = do
           e' <- checkRho ctx' e (PrimIntTC I1)
           ty' <- tcType' ctx' refinementArgs RIS_False ty
           return $ RefinedTypeTC (TypedId ty' id) e' refinementArgs
-
-mkRefinementArgs types =
-    map (\(t, idx) ->
-            case t of
-                 RefinedTypeAST nm _ _ -> Ident (T.pack nm) 0
-                 _                     -> Ident (T.pack $ "_" ++ show idx) (-1))
-        (zip types [0..])
-
-replacingUniquesWith fakes reals =
-  let m = Map.fromList [(txt, uniq) | Ident txt uniq <- reals] in
-  map (\x@(Ident t _) -> case Map.lookup t m of Nothing -> x
-                                                Just u  -> Ident t u) fakes
 -- }}}
 
 
