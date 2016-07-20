@@ -6,6 +6,8 @@
 
 module Foster.TypeTC where
 
+import Prelude hiding ((<$>))
+
 import Foster.Base
 import Foster.Kind
 import Foster.AnnExpr(AnnExpr)
@@ -98,7 +100,7 @@ instance Pretty TypeTC where
         MetaTyVarTC m                   -> text "(~(" <> pretty (descMTVQ (mtvConstraint m)) <> text ")!" <> text (show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")")
         RefTypeTC     ty                -> text "(Ref " <> pretty ty <> text ")"
         ArrayTypeTC   ty                -> text "(Array " <> pretty ty <> text ")"
-        RefinedTypeTC v _ args          -> text "(Refined " <> parens (pretty v <+> text "::" <> pretty (tidType v)) <> text " / " <> pretty args <> text ")"
+        RefinedTypeTC v expr args       -> text "(Refined " <> parens (pretty v <+> text "::" <> pretty (tidType v)) <> text " / " <> pretty args <$> showStructure expr <> text ")"
 
 instance Show TypeTC where
     show x = case x of
