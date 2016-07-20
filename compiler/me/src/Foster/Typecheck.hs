@@ -13,7 +13,7 @@ import Control.Monad(liftM, forM_, forM, liftM, liftM2, when)
 
 import qualified Data.Text as T(Text, pack, unpack)
 import Data.Map(Map)
-import qualified Data.Map as Map(lookup, insert, elems, toList, null)
+import qualified Data.Map as Map(lookup, insert, keys, elems, fromList, toList, null)
 import qualified Data.Set as Set(toList, fromList)
 import Data.IORef(readIORef,writeIORef)
 import Data.UnionFind.IO(fresh)
@@ -908,19 +908,19 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
         dbg $ text "{{{"
         annbase <- inferRho ctx base "called base"
         let fun_ty = typeTC annbase
-        (args_ty, res_ty, _fx, _cc, _) <- unifyFun fun_ty (length argexprs) ("tSC("++tryGetVarName base++")" ++ highlightFirstLine (rangeOf rng))
+        (args_tys, res_ty_raw, _fx, _cc, _) <- unifyFun fun_ty (length argexprs) ("tSC("++tryGetVarName base++")" ++ highlightFirstLine (rangeOf rng))
         dbg $ text "tcSigmaCall: fn type of" <+> pretty annbase <+> text "is " <$$>
                     indent 2 (pretty fun_ty <$$>
                               text ";; cc=" <+> text (show _cc)
                               <$$> text ";; fx=" <+> pretty _fx)
         dbg $ string (highlightFirstLine (rangeOf rng))
 
-        dbg $ text "call: fn args ty is " <> pretty args_ty
+        dbg $ text "call: fn args tys are " <> pretty args_tys
         dbg $ text $ "call: arg exprs are " ++ show argexprs
-        sanityCheck (eqLen argexprs args_ty) $
+        sanityCheck (eqLen argexprs args_tys) $
                 "tcSigmaCall expected equal # of arguments! Had "
                 ++ (show $ List.length argexprs) ++ "; expected "
-                ++ (show $ List.length args_ty)
+                ++ (show $ List.length args_tys)
                 ++ highlightFirstLine (rangeOf rng)
         --tcLift $ putStrLn $ "tcSigmaCall of " ++ show base
         --tcLift $ putStrLn $ show (zip argexprs args_ty)
@@ -930,7 +930,14 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
         args <- tcOnError [text "Failure when typechecking call"
                           ,highlightFirstLineDoc (rangeOf rng)]
                    (sequence [checkSigma ctx arg (shallowStripRefinedTypeTC ty)
-                             | (arg, ty) <- zip argexprs args_ty]) return
+                             | (arg, ty) <- zip argexprs args_tys]) return
+
+        let res_ty = substExprsForRefinedArgs res_ty_raw args_tys args
+        debugIf True $ text "res_ty_raw was " <> dullwhite (pretty res_ty_raw)
+        debugIf True $ text "res_ty     was " <> pretty res_ty
+        debugIf True $ text "after substituting for arg tys"
+        debugIf True $ indent 6 (vcat $ map pretty args_tys)
+        debugIf True $ text "^^^^^^^"
         dbg $ text "call: annargs: "
         dbg $ showStructure (AnnTuple rng (TupleTypeTC (UniConst KindPointerSized)
                                                             (map typeTC args))
@@ -2145,6 +2152,66 @@ collectAllUnificationVars xs = Set.toList (Set.fromList (concatMap go xs))
             RefTypeTC     ty        -> go ty
             ArrayTypeTC   ty        -> go ty
             RefinedTypeTC v _ _     -> go (tidType v)
+
+substExprsForRefinedArgs raw argsTys argsExprs = do
+  let argExprPairs = [ (tidIdent v,e) | (RefinedTypeTC v _ _, e) <- zip argsTys argsExprs]
+  let subst = Map.fromList argExprPairs
+  tcSubst subst raw
+
+tcSubst subst typ = go typ
+  where go typ = case typ of
+            PrimIntTC  {}           -> typ
+            TyConTC    {}           -> typ
+            TyAppTC  con types      -> TyAppTC (go con) (map go types)
+            TupleTypeTC  k  types   -> TupleTypeTC k (map go types)
+            FnTypeTC  ss r fx cc fp -> FnTypeTC (map go ss) (go r) fx cc fp
+            CoroTypeTC  s r         -> CoroTypeTC (go s) (go r)
+            ForAllTC  tvs rho       -> ForAllTC tvs (go rho)
+            RefTypeTC     ty        -> RefTypeTC (go ty)
+            ArrayTypeTC   ty        -> ArrayTypeTC (go ty)
+            TyVarTC   _tv _k        -> typ -- TODO attach delayed subst?
+            MetaTyVarTC   _m        -> typ
+            RefinedTypeTC v e ids   ->
+              RefinedTypeTC v (annSubst subst e) (ids `butnot` Map.keys subst)
+
+annSubst subst expr = go expr
+  where gt :: TypeTC -> TypeTC
+        gt = tcSubst subst
+        gf (Fn v vs e rec annot) = Fn (fmap gt v) (map (fmap gt) vs) (go e) rec annot
+        gle = fmap go
+        gb (CaseArm pat body guard vs rng) =
+            CaseArm (gp pat) (go body) (fmap go guard) vs rng
+        gp = fmap gt
+        gai = fmap go
+        go expr = do
+          case expr of
+            E_AnnFn annFn                        -> E_AnnFn (gf annFn)
+            AnnCall _rng ty b exprs              -> AnnCall _rng (gt ty) (go b) (map go exprs)
+            AnnAppCtor _rng ty cid exprs         -> AnnAppCtor _rng (gt ty) cid (map go exprs)
+            AnnIf        _rng ty a b c           -> AnnIf        _rng (gt ty) (go a) (go b) (go c)
+            AnnLetVar    _rng id a b             -> AnnLetVar    _rng id (go a) (go b)
+            AnnLetRec    _rng ids exprs e        -> AnnLetRec    _rng ids (map go exprs) (go e)
+            AnnLetFuns   _rng ids fns e          -> AnnLetFuns   _rng ids (map gf fns) (go e)
+            AnnAlloc     _rng ty a amr           -> AnnAlloc     _rng (gt ty) (go a) amr
+            AnnDeref     _rng ty a               -> AnnDeref     _rng (gt ty) (go a)
+            AnnStore     _rng ty a b             -> AnnStore     _rng (gt ty) (go a) (go b)
+            AnnAllocArray _rng tyA e tyB amr zi  -> AnnAllocArray _rng (gt tyA) (go e) (gt tyB) amr zi
+            AnnArrayLit  _rng ty exprs           -> AnnArrayLit  _rng (gt ty) (map gle exprs)
+            AnnArrayRead _rng ty ari             -> AnnArrayRead _rng (gt ty) (gai ari)
+            AnnArrayPoke _rng ty ari c           -> AnnArrayPoke _rng (gt ty) (gai ari) (go c)
+            AnnTuple _rng ty kind exprs          -> AnnTuple     _rng (gt ty) kind (map go exprs)
+            AnnCase _rng ty e bs                 -> AnnCase      _rng (gt ty) (go e) (map gb bs)
+            E_AnnTyApp _rng ty a argtys          -> E_AnnTyApp   _rng (gt ty) (go a) (map gt argtys)
+            AnnLiteral _rng ty lit               -> AnnLiteral   _rng (gt ty) lit
+            AnnPrimitive _rng ty prim            -> AnnPrimitive _rng (gt ty) prim
+            AnnKillProcess _rng ty txt           -> AnnKillProcess _rng (gt ty) txt
+            E_AnnVar _rng (v, _mcid)             ->
+              case Map.lookup (tidIdent v) subst of
+                Nothing -> expr
+                Just e  -> e
+            AnnCompiles  _rng _ty (CompilesResult (OK      e)) ->
+             AnnCompiles _rng _ty (CompilesResult (OK $ go e))
+            AnnCompiles  {} -> expr
 
 vname (E_AnnVar _rng (av, _)) n = show n ++ " for " ++ T.unpack (identPrefix $ tidIdent av)
 vname _                       n = show n

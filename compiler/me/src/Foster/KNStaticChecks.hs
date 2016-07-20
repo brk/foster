@@ -70,6 +70,11 @@ smtN s = SMT.N (noLeadingDot $ map cleanChar s)
         noLeadingDot other    = other
         cleanChar c = if c `elem` "\"/:[]() " then '_' else c
 
+smtI s = SMT.I (smtN s) []
+
+-- Precondition: s must be a valid SMT identifier.
+smtI_ s = SMT.I (SMT.N s) []
+
 ident :: Ident -> SMT.Ident
 ident id = SMT.I (nm id) []
 
@@ -88,15 +93,15 @@ smtType (ArrayType _) = smtArray
 smtType (TupleType  tys) = TApp (smtI ("FosterTuple" ++ show (length tys))) (map smtType tys)
 smtType (StructType tys) = TApp (smtI ("FosterTuple" ++ show (length tys))) (map smtType tys)
 smtType (RefinedType v _ _) = smtType (tidType v)
-smtType (TyApp (TyCon "Float64") []) = TApp (smtI "$Float64") []
+smtType (TyApp (TyCon "Float64") []) = TApp (smtI_ "$Float64") []
 smtType (TyApp (TyCon nm) tys) = TApp (smtI nm) (map smtType tys)
-smtType (PtrType t) = TApp (smtI "$Ptr") [smtType t]
-smtType (FnType ds rt _cc _pf) = TApp (smtI $ "$Fn$" ++ show (pretty rt)) (map smtType ds)
-smtType (PtrTypeUnknown) = TApp (smtI "$Ptr_") []
-smtType (CoroType a b) = TApp (smtI "$Coro") [smtType a, smtType b]
+smtType (PtrType t) = TApp (smtI_ "$Ptr") [smtType t]
+smtType (FnType ds rt _cc _pf) = TApp (smtI $ "$Fn_" ++ show (pretty rt)) (map smtType ds)
+smtType (PtrTypeUnknown) = TApp (smtI_ "$Ptr_") []
+smtType (CoroType a b) = TApp (smtI_ "$Coro") [smtType a, smtType b]
 smtType other = error $ "smtType unable to handle " ++ show other
 
-smtArray = TApp (smtI "FosterArray") []
+smtArray = TApp (smtI_ "FosterArray") []
 
 smtTruncToSize i v = extract (fromIntegral i - 1) 0 v
 
@@ -107,8 +112,6 @@ litOfSize num sz = bv num (fromIntegral $ intSizeOf sz)
 
 -- inRangeCO x (a, b) = bvsge x a `SMT.and` bvslt x b
 inRangeCC x (a, b) = bvsge x a `SMT.and` bvsle x b
-
-smtI s = SMT.I (SMT.N s) []
 
 smtArraySizeOf x = app (smtI "foster$arraySizeOf") [x]
 -- }}}
@@ -807,8 +810,7 @@ compilePreconditionFn fn facts argVars = do
   return $ SMTExpr (smtId resid) decls idfacts'
 
 compileRefinementBoundTo id facts v0 e0  = do
-  uref <- lift $ gets ccUniqRef
-  (Fn v [] e _ _) <- liftIO $ alphaRename' (Fn v0 [] e0 undefined undefined) uref
+  (Fn v [] e _ _) <- lift $ alphaRenameMono (Fn v0 [] e0 undefined undefined)
   mb_f2 <- checkBody e facts
   resid <- lift $ ccFreshId $ T.pack ".true"
   (SMTExpr body decls idfacts) <- (trueOr mb_f2) resid

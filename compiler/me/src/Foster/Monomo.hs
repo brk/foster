@@ -7,6 +7,8 @@
 
 module Foster.Monomo (monomorphize) where
 
+import Prelude hiding ((<$>))
+
 import Foster.Base
 import Foster.Kind
 import Foster.KNUtil
@@ -14,6 +16,7 @@ import Foster.Config
 import Foster.MonoType
 import Foster.ConvertExprAST()
 import Foster.Context
+import Foster.Output
 
 import qualified Data.Text as T
 
@@ -24,7 +27,6 @@ import Data.Map as Map(lookup, alter, fromList, union, empty, insert)
 import Data.List as List(all)
 import Control.Monad(when, liftM, liftM2, liftM3, liftM4)
 import Control.Monad.State(evalStateT, get, gets, put, StateT, liftIO, lift)
-import Data.IORef
 
 -- This monomorphization pass is similar in structure to MLton's;
 -- a previous worklist-based version was modeled on BitC's polyinstantiator.
@@ -43,9 +45,8 @@ import Data.IORef
 monomorphize :: ModuleIL (KNExpr' ()        TypeIL  ) TypeIL
    -> Compiled (ModuleIL (KNExpr' RecStatus MonoType) MonoType)
 monomorphize (ModuleIL body decls dts primdts lines) = do
-    uref      <- gets ccUniqRef
     wantedFns <- gets ccDumpFns
-    let monoState0 = MonoState Map.empty Map.empty Map.empty [] uref wantedFns
+    let monoState0 = MonoState Map.empty Map.empty Map.empty [] wantedFns
     flip evalStateT monoState0 $ do
                monobody <- monoKN emptyMonoSubst False body
                specs    <- gets monoDTSpecs
@@ -239,12 +240,16 @@ substRefinementArgs _v (RefinedType v e args) xs =
 substRefinementArgs _a t _xs = t
 
 monoFn :: MonoSubst -> Fn RecStatus KNExpr TypeIL -> Mono MonoFn
-monoFn subst (Fn v vs body isrec rng) = do
+monoFn subst fn@(Fn v vs body isrec rng) = do
   let qv = monoVar subst
   body' <- monoKN subst False body
   v'  <- qv v
   vs' <- mapM qv vs
-  return (Fn v' vs' body' isrec rng)
+  let rv = (Fn v' vs' body' isrec rng)
+  liftIO $ putDocLn $ text "monoFn given input fn " <$> pretty fn <$> string (show (tidType (fnVar fn )))
+  liftIO $ putDocLn $ text "monoFn returning" <$> pretty rv <$> string (show (tidType (fnVar rv )))
+
+  return rv
 
 monoPatternBinding :: MonoSubst -> CaseArm PatternRepr KNExpr TypeIL
                           -> Mono (CaseArm PatternRepr KNMono MonoType)
@@ -369,7 +374,7 @@ monoInstantiate polydef polybinder
          else do
             monoprocid <- lift $ ccRefreshLocal monoprocid_raw
             markSeen monoprocid_raw monobinder
-            monodef  <- replaceFnVar monoprocid polydef >>= alphaRename
+            monodef  <- replaceFnVar monoprocid polydef >>= alphaRenameIL
                                 >>= monoFn subst >>= replaceFnVarTy ty'
             monoPutResult polybinder (MonoResult monobinder monodef)
             return monobinder
@@ -391,10 +396,14 @@ monoInstantiate polydef polybinder
       putStrLn $ "monodef fn var:: " ++ show (TypedId (tidType $ fnVar fn) moid)
     return fn { fnVar = TypedId (tidType $ fnVar fn) moid }
 
-alphaRename :: Fn r (KNExpr' r2 t) t -> Mono (Fn r (KNExpr' r2 t) t)
-alphaRename fn = do
-   uref <- gets monoUniques
-   liftIO $ alphaRename' fn uref
+
+alphaRenameIL :: (Show r2, Pretty r, Pretty r2)
+              => Fn r (KNExpr' r2 TypeIL) TypeIL -> Mono (Fn r (KNExpr' r2 TypeIL) TypeIL)
+alphaRenameIL fn = do
+  fn' <- lift $ alphaRename' fn
+  liftIO $ putDocLn $ text "alphaRename started with" <$> pretty fn <$> string (show (tidType (fnVar fn)))
+  liftIO $ putDocLn $ text "alphaRename turned it into" <$> pretty fn' <$> string (show (tidType (fnVar fn' )))
+  return fn'
 
 -- ||||||||||||||||| Monomorphic Type Substitution ||||||||||||||{{{
 
@@ -469,7 +478,6 @@ data MonoState = MonoState {
   , monoOrigins :: Map PolyBinder (PolyOrigin)
   , monoResults :: Map PolyBinder [MonoResult]
   , monoDTSpecs :: EqSet (DataTypeName, [MonoType])
-  , monoUniques :: IORef Uniq
   , monoWantedFns :: [String]
 }
 

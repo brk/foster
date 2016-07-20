@@ -11,6 +11,7 @@ import Prelude hiding ((<$>))
 
 import Foster.Base
 import Foster.Kind
+import Foster.Config(Compiled, CompilerContext(ccUniqRef))
 
 import Text.PrettyPrint.ANSI.Leijen
 
@@ -18,8 +19,8 @@ import Data.List(foldl')
 import Data.Map(Map)
 import qualified Data.Map as Map(insert, lookup, empty)
 import qualified Data.Text as T
-import Control.Monad.State(evalStateT, get, gets, put,
-                               StateT, liftIO, liftM, liftM2, liftM3)
+import Control.Monad.State(evalStateT, get, gets, put, lift,
+                               StateT, liftIO, liftM, liftM2, liftM3, liftM4)
 import Data.IORef
 
 --------------------------------------------------------------------
@@ -82,29 +83,50 @@ type KNExprFlat = KNExpr' () TypeIL
 
 type FnExprIL = Fn () KNExpr TypeIL
 
+class AlphaRenamish t rs where
+  ccAlphaRename :: Fn r (KNExpr' rs t) t -> Compiled (Fn r (KNExpr' rs t) t)
+
 --------------------------------------------------------------------
 
-{-
-showFnStructure :: Fn r KNExpr TypeIL -> Doc
-showFnStructure (Fn fnvar args body _ _srcrange) =
+--showFnStructureX :: Fn r KNExpr TypeIL -> Doc
+showFnStructureX (Fn fnvar args body _ _srcrange) =
   pretty fnvar <+> text "=" <+>
                      text "{" <+> hsep (map pretty args)
                  <$> indent 2 (showStructure body)
                  <$> text "}" <> line
--}
 
-alphaRename' :: Fn r (KNExpr' r2 t) t -> IORef Uniq -> IO (Fn r (KNExpr' r2 t) t)
-alphaRename' fn uref = do
-  renamed <- evalStateT (renameFn fn) (RenameState uref Map.empty)
+alphaRename' :: (Show r2) => Fn r (KNExpr' r2 TypeIL) TypeIL -> Compiled (Fn r (KNExpr' r2 TypeIL) TypeIL)
+--alphaRename' :: Fn r (KNExpr' r2 t) t -> IORef Uniq -> IO (Fn r (KNExpr' r2 t) t)
+alphaRename' fn = do
+  renamed <- evalStateT (renameFn fn) (RenameState Map.empty)
 
-  --whenMonoWanted (tidIdent $ fnVar fn) $ liftIO $ do
-  --    putDoc $ text "fn:      " <$> showFnStructure fn
-  --    putDoc $ text "renamed: " <$> showFnStructure renamed
+  liftIO $ do
+      putDoc $ text "fn (IL): " <$> showFnStructureX fn
+      putDoc $ text "renamed: " <$> showFnStructureX renamed
 
   return renamed
    where
-    renameV :: TypedId t -> Renamed (TypedId t)
-    renameV tid@(TypedId ty id@(GlobalSymbol t)) = do
+    renameT :: TypeIL -> Renamed TypeIL
+    renameT typ = case typ of
+          PrimIntIL      {}           -> return $ typ
+          TyConIL        {}           -> return $ typ
+          TyAppIL     con ts          -> do liftM2 TyAppIL (renameT con) (mapM renameT ts)
+          TupleTypeIL  k ts           -> do liftM (TupleTypeIL k) (mapM renameT ts)
+          CoroTypeIL     s  r         -> do liftM2 CoroTypeIL (renameT s) (renameT r)
+          ArrayTypeIL    t            -> do liftM ArrayTypeIL (renameT t)
+          PtrTypeIL      t            -> do liftM PtrTypeIL   (renameT t)
+          FnTypeIL       ts r _cc _pf -> do ts' <- mapM renameT ts
+                                            r'  <- renameT r
+                                            return $ FnTypeIL ts' r' _cc _pf
+          RefinedTypeIL v e args      -> do v'    <- qv v
+                                            e'    <- renameKN e
+                                            args' <- mapM qi args
+                                            return $ RefinedTypeIL v' e' args'
+          ForAllIL      ktvs rho      -> do liftM (ForAllIL ktvs) (renameT rho)
+          TyVarIL        {}           -> do return $ typ
+
+    renameV :: TypedId TypeIL -> Renamed (TypedId TypeIL)
+    renameV (TypedId ty id@(GlobalSymbol t)) = do
         -- We want to rename any locally-bound functions that might have
         -- been duplicated by monomorphization.
         if T.pack "<anon_fn"  `T.isInfixOf` t ||
@@ -113,15 +135,18 @@ alphaRename' fn uref = do
           then do state <- get
                   case Map.lookup id (renameMap state) of
                     Nothing  -> do id' <- renameI id
-                                   return (TypedId ty id' )
+                                   ty' <- renameT ty
+                                   return (TypedId ty' id' )
                     Just _u' -> error "can't rename a global variable twice!"
-          else return tid
+          else do ty' <- renameT ty
+                  return $ TypedId ty' id
 
-    renameV     (TypedId t id) = do
+    renameV     (TypedId ty id) = do
       state <- get
       case Map.lookup id (renameMap state) of
         Nothing  -> do id' <- renameI id
-                       return (TypedId t id' )
+                       ty' <- renameT ty
+                       return (TypedId ty' id' )
         Just _u' -> error $ "KNUtil.hs: can't rename a variable twice! " ++ show id
 
     renameI id@(GlobalSymbol t) = do u' <- fresh
@@ -133,7 +158,7 @@ alphaRename' fn uref = do
                                      remap id id'
                                      return id'
     fresh :: Renamed Uniq
-    fresh = do uref <- gets renameUniq ; mutIORef uref (+1)
+    fresh = do uref <- lift (gets ccUniqRef) ; mutIORef uref (+1)
 
     mutIORef :: IORef a -> (a -> a) -> Renamed a
     mutIORef r f = liftIO $ modIORef' r f >> readIORef r
@@ -141,15 +166,21 @@ alphaRename' fn uref = do
     remap id id' = do state <- get
                       put state { renameMap = Map.insert id id' (renameMap state) }
 
-    qv :: TypedId t -> Renamed (TypedId t)
-    qv (TypedId t i) = do i' <- qi i ; return $ TypedId t i'
+    -- Updates a usage of a variable
+    qv :: TypedId TypeIL -> Renamed (TypedId TypeIL)
+    qv (TypedId t i) = do i' <- qi i
+                          t' <- renameT t
+                          return $ TypedId t' i'
 
+    -- Updates a usage of an identifier
     qi v = do state <- get
               case Map.lookup v (renameMap state) of
                 Just v' -> return v'
                 Nothing -> return v
 
-    renameFn :: Fn r (KNExpr' r2 t) t -> Renamed (Fn r (KNExpr' r2 t) t)
+    qt = renameT
+
+    renameFn :: Fn r (KNExpr' r2 TypeIL) TypeIL -> Renamed (Fn r (KNExpr' r2 TypeIL) TypeIL)
     renameFn (Fn v vs body isrec rng) = do
        (v' : vs') <- mapM renameV (v:vs)
        body' <- renameKN body
@@ -158,29 +189,28 @@ alphaRename' fn uref = do
     renameArrayIndex (ArrayIndex v1 v2 rng s) =
       mapM qv [v1,v2] >>= \[v1' , v2' ] -> return $ ArrayIndex v1' v2' rng s
 
-    renameKN :: (KNExpr' r t) -> Renamed (KNExpr' r t)
+    renameKN :: (KNExpr' r TypeIL) -> Renamed (KNExpr' r TypeIL)
     renameKN e =
       case e of
       KNLiteral       {}       -> return e
       KNKillProcess   {}       -> return e
-      KNTuple         t vs a   -> mapM qv vs     >>= \vs' -> return $ KNTuple t vs' a
-      KNCall          t v vs   -> mapM qv (v:vs) >>= \(v':vs') -> return $ KNCall t v' vs'
-      KNCallPrim   sr t p vs   -> liftM  (KNCallPrim   sr t p) (mapM qv vs)
-      KNAppCtor       t c vs   -> liftM  (KNAppCtor       t c) (mapM qv vs)
-      KNAllocArray    t v amr zi -> liftM3 (KNAllocArray    t) (qv v) (return amr) (return zi)
-      KNAlloc         t v amr  -> liftM2 (KNAlloc         t) (qv v) (return amr)
-      KNDeref         t v      -> liftM  (KNDeref         t) (qv v)
-      KNStore         t v1 v2  -> liftM2 (KNStore         t) (qv v1) (qv v2)
-      KNArrayRead     t ai     -> liftM  (KNArrayRead     t) (renameArrayIndex ai)
-      KNArrayPoke     t ai v   -> liftM2 (KNArrayPoke     t) (renameArrayIndex ai) (qv v)
-      KNArrayLit    t arr vals -> liftM2 (KNArrayLit      t) (qv arr) (mapRightM qv vals)
+      KNTuple         t vs a   -> do vs' <- mapM qv vs; t' <- qt t ; return $ KNTuple t' vs' a
+      KNCall          t v vs   -> do (v' : vs') <- mapM qv (v:vs); t' <- qt t; return $ KNCall t' v' vs'
+      KNCallPrim   sr t p vs   -> do vs' <- mapM qv vs; t' <- qt t; return $ KNCallPrim   sr t' p vs'
+      KNAppCtor       t c vs   -> do vs' <- mapM qv vs; t' <- qt t; return $ KNAppCtor t' c vs'
+      KNAllocArray    t v amr zi -> liftM4 KNAllocArray (qt t) (qv v) (return amr) (return zi)
+      KNAlloc         t v amr  -> liftM3 KNAlloc      (qt t) (qv v) (return amr)
+      KNDeref         t v      -> liftM2 KNDeref      (qt t) (qv v)
+      KNStore         t v1 v2  -> liftM3 KNStore      (qt t) (qv v1) (qv v2)
+      KNArrayRead     t ai     -> liftM2 KNArrayRead  (qt t) (renameArrayIndex ai)
+      KNArrayPoke     t ai v   -> liftM3 KNArrayPoke  (qt t) (renameArrayIndex ai) (qv v)
+      KNArrayLit    t arr vals -> liftM3 KNArrayLit   (qt t) (qv arr) (mapRightM qv vals)
       KNVar                  v -> liftM  KNVar                  (qv v)
-      KNCase          t v arms -> do arms' <- mapM renameCaseArm arms
-                                     v'    <- qv v
-                                     return $ KNCase       t v' arms'
+      KNCase          t v arms -> liftM3 KNCase (qt t) (qv v) (mapM renameCaseArm arms)
       KNIf            t v e1 e2-> do [ethen, eelse] <- mapM renameKN [e1,e2]
                                      v' <- qv v
-                                     return $ KNIf         t v' ethen eelse
+                                     t' <- qt t
+                                     return $ KNIf         t' v' ethen eelse
       KNLetVal       id e   b  -> do id' <- renameI id
                                      [e' , b' ] <- mapM renameKN [e, b]
                                      return $ KNLetVal id' e'  b'
@@ -191,9 +221,10 @@ alphaRename' fn uref = do
                                      fns' <- mapM renameFn fns
                                      b'   <- renameKN b
                                      return $ KNLetFuns ids' fns' b'
-      KNTyApp t v argtys       -> qv v >>= \v' -> return $ KNTyApp t v' argtys
-      KNCompiles r t e         -> liftM (KNCompiles r t) (renameKN e)
-      KNInlined t0 tb tn old new -> do renameKN new >>= return . (KNInlined t0 tb tn old)
+      KNTyApp t v argtys       -> liftM3 KNTyApp (qt t) (qv v) (return argtys)
+      KNCompiles r t e         -> liftM2 (KNCompiles r) (qt t) (renameKN e)
+      KNInlined t0 tb tn old new -> do new' <- renameKN new
+                                       return $ KNInlined t0 tb tn old new'
       KNNotInlined x e -> do renameKN e >>= return . (KNNotInlined x)
 
     renameCaseArm (CaseArm pat expr guard vs rng) = do
@@ -218,11 +249,8 @@ alphaRename' fn uref = do
        PR_Tuple    rng t pats       -> mp pats >>= \pats' -> return $ PR_Tuple rng t pats'
 
 
-data RenameState = RenameState {
-                       renameUniq :: IORef Uniq
-                     , renameMap  :: Map Ident Ident
-                   }
-type Renamed = StateT RenameState IO
+data RenameState = RenameState { renameMap  :: Map Ident Ident }
+type Renamed = StateT RenameState Compiled
 
 --------------------------------------------------------------------
 
@@ -417,7 +445,7 @@ kwd  s = dullblue  (text s)
 lkwd s = dullwhite (text s)
 end    = lkwd "end"
 
-instance (Pretty t, Pretty rs) => Pretty (Fn rs (KNExpr' rs t) t) where
+instance (Pretty t, Pretty rs, Pretty rs2) => Pretty (Fn rs (KNExpr' rs2 t) t) where
   pretty fn = group (lbrace <+> (hsep (map (\v -> pretty v <+> text "=>") (fnVars fn)))
                     <$> indent 4 (pretty (fnBody fn))
                     <$> rbrace) <+> pretty (fnVar fn)
@@ -627,7 +655,7 @@ instance Show TypeIL where
         TyVarIL     tv kind  -> show tv ++ ":" ++ show kind
         ArrayTypeIL ty       -> "(Array " ++ show ty ++ ")"
         PtrTypeIL   ty       -> "(Ptr " ++ show ty ++ ")"
-        RefinedTypeIL v _ _  -> "(Refined " ++ show (tidType v) ++ ")"
+        RefinedTypeIL v e _  -> "(Refined " ++ show (tidIdent v) ++ "::" ++ show (tidType v) ++ " ;; " ++ show e ++ ")"
 
 instance Structured TypeIL where
     textOf e _width =
@@ -642,7 +670,7 @@ instance Structured TypeIL where
             TyVarIL       {}      -> text $ "TyVarIL "
             ArrayTypeIL   {}      -> text $ "ArrayTypeIL"
             PtrTypeIL     {}      -> text $ "PtrTypeIL"
-            RefinedTypeIL {}      -> text $ "RefinedTypeIL"
+            RefinedTypeIL v _e _  -> text $ "RefinedTypeIL " ++ show v
 
     childrenOf e =
         case e of

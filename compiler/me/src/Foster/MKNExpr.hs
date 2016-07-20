@@ -1,4 +1,4 @@
-{-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE RecursiveDo, FlexibleContexts #-}
 
 module Foster.MKNExpr where
 
@@ -573,7 +573,7 @@ classifyRedex' callee (Just fn) args knownFns = do
 -- }}}
 
 -- {{{
-copyMKFn :: Pretty t => MKFn (Subterm t) t -> Compiled (MKFn (Subterm t) t)
+copyMKFn :: (Pretty t, Show t, AlphaRenamish t RecStatus) => MKFn (Subterm t) t -> Compiled (MKFn (Subterm t) t)
 copyMKFn fn = do
   knfn <- knOfMKFn fn
   allOccs    <- collectOccsFn    fn
@@ -584,8 +584,7 @@ copyMKFn fn = do
 
   -- We need to alpha-rename the converted function so that we don't wind up
   -- introducing duplicate bindings, which will cause later conversions to fail.
-  uniq  <- gets ccUniqRef
-  knfn' <- liftIO $ alphaRename' knfn uniq
+  knfn' <- ccAlphaRename knfn
   mkOfKNFn binderMap knfn'
 
 collectOccsFn fn = collectOccs (mkfnBody fn)
@@ -665,7 +664,7 @@ collectBinders subterm = do
     MKTyApp       {} -> return []
 -- }}}
 
-mknInline :: Pretty t => Subterm t -> Compiled (KNExpr' RecStatus t)
+mknInline :: (Pretty t, Show t, AlphaRenamish t RecStatus) => Subterm t -> Compiled (KNExpr' RecStatus t)
 mknInline subterm = do
     wr <- liftIO $ newIORef worklistEmpty
     kr <- liftIO $ newIORef Map.empty
