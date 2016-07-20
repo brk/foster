@@ -984,7 +984,7 @@ unifyFun (ForAllTC {}) _ str = tcFails [text $ "invariant violated: sigma passed
                                         ,text $ "For now, lambdas given forall types must be annotated with forall markers."
                                         ,text str]
 unifyFun tau nargs msg = do
-        arg_tys <- mapM (\_ -> newTcUnificationVarTau "fn args ty") (replicate nargs ())
+        arg_tys <- mapM (\_ -> newTcUnificationVarTau $ "fn args ty:" ++ msg) (replicate nargs ())
         res_ty <- newTcUnificationVarTau ("fn res ty:" ++ msg)
         fx_ty  <- newTcUnificationVarTau ("fn fx ty:" ++ msg)
         cc <- genUnifiableVar
