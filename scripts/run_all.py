@@ -83,7 +83,11 @@ def main(opts, bootstrap_dir, tmpdir):
   print len(run_test.tests_failed), " tests failed"
   if len(run_test.tests_failed) > 0:
     for test in run_test.tests_failed:
-      print test
+      try:
+        size = os.path.getsize(test)
+        print test + " (" + str(size) + " bytes)"
+      except:
+        print test
 
   num_tests_attempted = len(run_test.tests_passed) + len(run_test.tests_failed)
   num_tests_not_attempted = len(tests) - num_tests_attempted

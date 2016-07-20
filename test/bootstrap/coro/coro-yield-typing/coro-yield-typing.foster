@@ -12,19 +12,22 @@ main = {
   expect_i32 6666666;
   expect_i1 False;
   expect_i1 False;
+  expect_i1 True;
   expect_i32 9999;
   expect_i32 3333333;
   expect_i32 9999999;
 
   print_i32 1111111;
-  co = coro_create { x : Int32 =>
+  co = coro_create { xp : (Bool, Int32) =>
          print_i32 4444444;
          force_gc_for_debugging_purposes  !;
+         let (_, x) = xp;
          print_i32 x; // 10
-         y = coro_yield:[Int32,Int32] 6666; // 20
+         yp = coro_yield:[(Bool, Int32), Int32] 6666; // 20
+         let (_, y) = yp;
 
          force_gc_for_debugging_purposes !;
-         z = coro_yield:[Int32,Int32] (y +Int32 1); // 30 <- 21
+         z = coro_yield:[(Bool, Int32), Int32] (y +Int32 1); // 30 <- 21
          print_i32 5555555;
          force_gc_for_debugging_purposes !;
          print_i32 6666666;
@@ -33,7 +36,7 @@ main = {
          print_i1 (__COMPILES__ coro_yield:[Int32,{Int32}] { 7777 } );
          print_i1 (__COMPILES__ coro_yield { 7777 } );
 
-         //coro_yield:[Int32, Int32] 7777;
+         print_i1 (__COMPILES__ coro_yield 7777 );
 
          brkpt 9999;
   };
@@ -41,13 +44,13 @@ main = {
 
     print_i32 2222222;
   force_gc_for_debugging_purposes !;
-    print_i32 (coro_invoke co 10); // 6666
+    print_i32 (coro_invoke co (True, 10)); // 6666
 
     print_i32 1234;
   force_gc_for_debugging_purposes !;
-    print_i32 (coro_invoke co 20); // 21
+    print_i32 (coro_invoke co (True, 20)); // 21
   force_gc_for_debugging_purposes !;
-    print_i32 (coro_invoke co 30);
+    print_i32 (coro_invoke co (True, 30));
     print_i32 3333333;
     print_i32 9999999;
 };

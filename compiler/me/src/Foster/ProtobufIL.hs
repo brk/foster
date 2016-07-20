@@ -551,6 +551,12 @@ dumpILProgramToProtobuf m outpath = do
              , Decl.type' = dumpType t
              }
 
+    dumpDataType (TypeFormal dtName _sr KindEffect) _ctors =
+        P'.defaultValue { PbType.tag  = PbTypeTag.DATATYPE
+                        , PbType.name = Just $ u8fromString dtName
+                        , PbType.ctor = fromList []
+                        }
+
     dumpDataType (TypeFormal dtName _sr KindPointerSized) ctors =
         P'.defaultValue { PbType.tag  = PbTypeTag.DATATYPE
                         , PbType.name = Just $ u8fromString dtName

@@ -89,12 +89,18 @@ instance Pretty TyVar where
   pretty (BoundTyVar name _) = text "'" <> text name
   pretty (SkolemTyVar name uniq _kind) = text "$" <> text name <> text ":" <> pretty uniq
 
-data MTVQ = MTVSigma | MTVTau deriving (Eq)
+data MTVQ = MTVSigma | MTVTau | MTVEffect deriving (Eq)
 data MetaTyVar t = Meta { mtvConstraint :: MTVQ
                         , mtvDesc       :: String
                         , mtvUniq       :: Uniq
                         , mtvRef        :: IORef (Maybe t)
                         }
+
+descMTVQ MTVSigma  = "S"
+descMTVQ MTVTau    = "R"
+descMTVQ MTVEffect = "E"
+
+mtvIsEffect mtv = mtvConstraint mtv == MTVEffect
 
 childrenOfArrayIndex (ArrayIndex a b _ _) = [a, b]
 
@@ -163,7 +169,7 @@ data CaseArm pat expr ty = CaseArm { caseArmPattern :: pat ty
                                    , caseArmGuard   :: Maybe expr
                                    , caseArmBindings:: [TypedId ty]
                                    , caseArmRange   :: SourceRange
-                                   } deriving Show
+                                   } deriving (Eq, Show)
 
 caseArmExprs arm = [caseArmBody arm] ++ caseArmGuardList arm
   where
@@ -743,6 +749,16 @@ instance SourceRanged expr => Pretty (CompilesResult expr)
 
 instance SourceRanged (Fn r e t) where rangeOf fn = rangeOf (fnAnnot fn)
 
+instance SourceRanged (EPattern ty) where
+  rangeOf epat =
+    case  epat  of
+          EP_Wildcard     rng     -> rng
+          EP_Variable     rng _   -> rng
+          EP_Ctor         rng _ _ -> rng
+          EP_Bool         rng _ -> rng
+          EP_Int          rng _ -> rng
+          EP_Tuple        rng _ -> rng
+
 deriving instance (Show ty) => Show (DataType ty)
 deriving instance (Show ty) => Show (DataCtor ty)
 
@@ -888,15 +904,32 @@ instance Pretty CtorRepr where
   pretty (CR_Nullary int) = text "##" <> pretty int <> text "~"
   pretty (CR_Value   int) = text "##" <> pretty int
 
+instance TExpr body t => TExpr (Fn rec body t) t where
+    freeTypedIds f = let bodyvars =  freeTypedIds (fnBody f) in
+                     let boundvars =              (fnVars f) in
+                     bodyvars `butnot` boundvars
+
 instance Pretty Kind where
   pretty KindAnySizeType  = text "Type"
   pretty KindPointerSized = text "Boxed"
   pretty KindEffect       = text "Effect"
 
-instance TExpr body t => TExpr (Fn rec body t) t where
-    freeTypedIds f = let bodyvars =  freeTypedIds (fnBody f) in
-                     let boundvars =              (fnVars f) in
-                     bodyvars `butnot` boundvars
+instance Pretty TypeFormal where
+  pretty (TypeFormal name _sr kind) =
+    text name <+> text ":" <+> pretty kind
+
+instance Pretty t => Pretty (DataType t) where
+  pretty dt =
+    text "type case" <+> pretty (dataTypeName dt) <+>
+         hsep (map (parens . pretty) (dataTypeTyFormals dt))
+     <$> indent 2 (vsep (map prettyDataTypeCtor (dataTypeCtors dt)))
+     <$> text ";"
+     <$> text ""
+
+prettyDataTypeCtor dc =
+  text "of" <+> text "$" <> text (T.unpack $ dataCtorName dc)
+                        <+> hsep (map pretty (dataCtorTypes dc))
+                        <+> text "// repr:" <+> text (show (dataCtorRepr dc))
 
 prettyCase :: (Pretty expr, Pretty (pat ty)) => expr -> [CaseArm pat expr ty] -> Doc
 prettyCase scrutinee arms =
@@ -935,6 +968,16 @@ compareLLCtorInfo (LLCtorInfo c1 r1 _) (LLCtorInfo c2 r2 _) = compare (c1, r1) (
 
 instance Eq  (LLCtorInfo ty) where
   c1 == c2 = compare c1 c2 == EQ
+
+instance Eq Doc where d1 == d2 = pretty d1 == pretty d2
+
+deriving instance (Eq ty) => Eq (PatternAtom ty)
+deriving instance (Eq ty) => Eq (CompilesResult ty)
+deriving instance (Eq ty) => Eq (OutputOr ty)
+deriving instance (Eq ty) => Eq (Pattern ty)
+deriving instance (Eq ty, Eq expr) => Eq (Fn () expr ty)
+deriving instance Eq ExprAnnot
+deriving instance Eq Formatting
 
 deriving instance Functor PatternAtom
 deriving instance Functor PatternRepr

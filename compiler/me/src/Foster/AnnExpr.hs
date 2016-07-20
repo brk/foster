@@ -195,4 +195,5 @@ annExprAnnot expr = case expr of
 
 instance SourceRanged (AnnExpr ty) where rangeOf e = rangeOf (annExprAnnot e)
 
+deriving instance (Eq ty) => Eq (AnnExpr ty)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||

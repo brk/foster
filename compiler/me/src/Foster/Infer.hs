@@ -7,7 +7,7 @@ module Foster.Infer(
 
 import Data.Map(Map)
 import qualified Data.Map as Map(lookup, empty, insert, findWithDefault, singleton)
-import qualified Data.List as List(length, elem, lookup)
+import qualified Data.List as List(length, elem, lookup, nub, sortBy)
 import Data.Maybe(fromMaybe)
 import Text.PrettyPrint.ANSI.Leijen
 import Data.UnionFind.IO(descriptor, setDescriptor, equivalent, union)
@@ -52,7 +52,7 @@ parSubstTcTy prvNextPairs ty =
         RefTypeTC    t       -> RefTypeTC    (q t)
         ArrayTypeTC  t       -> ArrayTypeTC  (q t)
         FnTypeTC  ss t fx cc cs -> FnTypeTC     (map q ss) (q t) (q fx) cc cs -- TODO unify calling convention?
-        CoroTypeTC  s t      -> CoroTypeTC  (q s) (q t)
+        CoroTypeTC  s t fx   -> CoroTypeTC  (q s) (q t) (q fx)
         ForAllTC  ktvs rho   ->
                 let prvNextPairs' = prvNextPairs `assocFilterOut` (map fst ktvs)
                 in  ForAllTC  ktvs (parSubstTcTy prvNextPairs' rho)
@@ -73,7 +73,7 @@ tySubst subst ty =
         ArrayTypeTC   t        -> ArrayTypeTC  (q t)
         TupleTypeTC k types    -> TupleTypeTC k (map q types)
         FnTypeTC  ss t fx cc cs -> FnTypeTC     (map q ss) (q t) (q fx) cc cs
-        CoroTypeTC  s t        -> CoroTypeTC  (q s) (q t)
+        CoroTypeTC  s t fx     -> CoroTypeTC  (q s) (q t) (q fx)
         ForAllTC  tvs rho      -> ForAllTC  tvs (q rho)
         RefinedTypeTC v e args -> RefinedTypeTC (fmap q v) e args
 
@@ -141,7 +141,7 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
  --tcLift $ putStrLn ("tcUnifyLoop: t1 = " ++ show t1 ++ "; t2 = " ++ show t2)
  if illegal t1 || illegal t2
   then tcFailsMore
-        [text "Bound type variables cannot be unified! Unable to unify"
+        [text "Bound type variables and/or polymoprhic types cannot be unified! Unable to unify"
         ,text "\t" <> pretty t1 <> string "\nand\n\t" <> pretty t2
         ,text "t1::", showStructure t1, text "t2::", showStructure t2]
   else
@@ -157,6 +157,10 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                              tcUnifyLoop constraints tysub
                      else tcFailsMore [text $ "Unable to unify different type variables: "
                                        ++ show tv1 ++ " vs " ++ show tv2]
+
+    ((TyAppTC (TyConTC nm1) _tys1), (TyAppTC (TyConTC nm2) _tys2))
+          | isEffectExtend nm1 && isEffectExtend nm2 -> do
+      tcUnifyEffects t1 t2 tysub constraints
 
     ((TyConTC  nam1), (TyConTC  nam2)) ->
       if nam1 == nam2 then do tcUnifyLoop constraints tysub
@@ -191,8 +195,8 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                                :(TypeConstrEq fx1 fx2)
                                :constraints) tysub
 
-    ((CoroTypeTC  a1 a2), (CoroTypeTC  b1 b2)) ->
-        tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):constraints) tysub
+    ((CoroTypeTC  a1 a2 fxa), (CoroTypeTC  b1 b2 fxb)) ->
+        tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):(TypeConstrEq fxa fxb):constraints) tysub
 
     ((ForAllTC  ktyvars1 rho1), (ForAllTC  ktyvars2 rho2)) ->
         let (tyvars1, kinds1) = unzip ktyvars1 in
@@ -250,3 +254,103 @@ tcUnifyVar m ty tysub constraints = do
           where q = tySubst tysub
                 tySub (TypeConstrEq t1 t2) = TypeConstrEq (q t1) (q t2)
 
+effectExtendTc eff row = TyAppTC (TyConTC "effect.Extend") [eff, row]
+
+-- Once we get type synonyms, this function should have a special case
+-- for          (extends SYN empty) ~~> SYN
+effectExtendsTc labels eff
+  = foldr effectExtendTc eff labels
+
+-- This code was adapted from the Apache-2-licensed implementation of Koka.
+-- See https://koka.codeplex.com/license
+tcUnifyEffects t1 t2 tysub constraints = do
+      (ls1, tl1) <- extractOrderedEffect t1
+      (ls2, tl2) <- extractOrderedEffect t2
+      (ds1, ds2, labconstraints) <- unifyLabels ls1 ls2 []
+
+      case ({-expandSyn-} tl1, {-expandSyn-} tl2) of
+         (MetaTyVarTC m1, MetaTyVarTC m2) | (mtvUniq m1 == mtvUniq m2) && not (null ds1 && null ds2)
+             -> do -- trace ("unifyEffect: unification of " ++ show (tp1,tp2) ++ " is infinite") $ return ()
+                   tcFails [text "Effect unification produced infinite loop"]
+         _   -> do let subst x = return (tySubst tysub x)
+
+                   let unifyTail ds tl desc = do
+                       if null ds then return (tl, [])
+                                  else do tv <- newTcUnificationVarTau desc
+                                          return (tv, [TypeConstrEq tl1 (effectExtendsTc ds tv)] )
+
+                   (tail1, c1) <- unifyTail ds1 tl1 "fx.tail1"
+                   stl2  <- subst tl2
+                   (tail2, c2) <- unifyTail ds2 stl2 "fx.tail2"
+                   stail1 <- subst tail1
+
+                   let c3 = [TypeConstrEq stail1 tail2]
+
+                   stp1 <- subst t1
+                   stp2 <- subst t2
+                   -- trace ("unifyEffect: " ++ show (tp1,tp2) ++ " to " ++ show (stp1,stp2) ++ " with " ++ show (ds1,ds2)) $ return ()
+
+                   tcUnifyLoop (labconstraints ++ c1 ++ c2 ++ c3 ++ constraints) tysub
+
+
+-- | Unify lists of ordered labels; return the differences.
+--unifyLabels :: [Tau] -> [Tau] -> [TypeConstraint] -> Unify ([Tau],[Tau],TypeConstraint)
+unifyLabels ls1 ls2 constraints =
+   case (ls1,ls2) of
+      ([],[])   -> return ([],[],constraints)
+      (_ ,[])   -> return ([],ls1,constraints)
+      ([],_ )   -> return (ls2,[],constraints)
+      (l1:ll1, l2:ll2) ->
+        case compare (labelName l1) (labelName l2) of
+          LT -> do (ds1, ds2, cs) <- unifyLabels ll1 ls2 constraints
+                   return (ds1, l1:ds2, cs)
+          GT -> do (ds1, ds2, cs) <- unifyLabels ls1 ll2 constraints
+                   return (l2:ds1, ds2, cs)
+          EQ -> do -- TODO what's the difference between unify-then-subst
+                   --      versus subst-then-unify?
+                   --unify l1 l2  -- for heap effects and kind checks
+                   --ll1' <- subst ll1
+                   --ll2' <- subst ll2
+                   unifyLabels ll1 ll2 (TypeConstrEq l1 l2 : constraints)
+
+isEffectExtend nm = nm == "effect.Extend"
+
+isEffectEmpty (TyAppTC (TyConTC nm) _) = nm == "effect.Empty"
+isEffectEmpty _ = False
+
+labelName :: TypeTC -> String
+labelName (TyAppTC (TyConTC nm) _) = nm
+labelName ty = error $ "labelName used on non-ctor type " ++ show ty
+
+extractEffectExtend :: TypeTC -> Tc ([TypeTC],TypeTC)
+extractEffectExtend t
+  = case {-expandSyn-} t of
+      TyAppTC (TyConTC nm) [l, e] | isEffectExtend nm
+        -> do (ls, tl) <- extractEffectExtend e
+              ls0 <- extractLabel l
+              return (ls0 ++ ls, tl)
+      _ -> return ([],t)
+  where
+    extractLabel :: TypeTC -> Tc [TypeTC]
+    extractLabel l
+      = case {-expandSyn-} l of
+          --TApp (TCon tc) [_,e] | typeConName tc == nameEffectExtend
+          TyAppTC (TyConTC nm) [_, e] | isEffectExtend nm
+            -> do (ls,tl) <- extractEffectExtend l
+                  sanityCheck (isEmptyEffect tl) $ "Found an embedded open effect type..."
+                  return ls
+          _ -> return [l]
+
+--extractOrderedEffect :: TypeTC -> Tc ([TypeTC],TypeTC)
+extractOrderedEffect tp = do
+  (labs,tl) <- extractEffectExtend tp
+  labss <- concatMapM expand labs
+  let slabs = List.nub $ (List.sortBy (\l1 l2 -> compare (labelName l1) (labelName l2)) labss)
+  return (slabs,tl)
+  where
+    expand l = do
+      (ls,tl) <- extractEffectExtend l
+      return $
+         if isEffectEmpty tl && not (null ls)
+            then ls
+            else [l]
