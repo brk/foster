@@ -1,5 +1,6 @@
 snafuinclude Prelude  "prelude";
 snafuinclude Xorshift "prng/xorshift";
+snafuinclude KnuthLCG "prng/knuthLCG";
 
 print_point = { i => x =>
   print_i64_bare (zext_i32_to_i64 i);
@@ -8,12 +9,24 @@ print_point = { i => x =>
 };
 
 main = {
+
   st = xor1x32MakeState 2463534242;
-  foldRange 0 100`000`000 st { i => st =>
+  expect_i32x 2B1F4D63_16;
+  expect_i32x 94DACB7A_16;
+  foldRange 0 2 st { i => st =>
     case xor1x32gen st of (x, st) ->
-      //print_point i x;
+      print_i32x x;
       st
     end
   };
+
+
+  gen = kLCG1x64HOF 2223;
+
+  expect_i64 8081521364565807322;
+  print_i64 (gen !);
+
+  expect_i64 1898400345152178178;
+  print_i64 (gen !);
 };
 

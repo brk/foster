@@ -27,6 +27,8 @@ main = {
 
   expect_text "[0, 1, 2, 3, 4, 5, 5, 4, 3, 2, 1, 0, ]";
   print_bil (listAppend lst (listReverse lst));
+
+  test-list-folds !;
 };
 
 mkUnitListTo = { n : Int32 =>
@@ -51,3 +53,16 @@ print_bil = { lst =>
   print_text "]";
 };
 
+test-list-folds = {
+  lst = Cons "a" (Cons "b" (Cons "c" Nil));
+
+  f = { x => acc =>
+    "(" `mkTextConcat` x `mkTextConcat` acc
+        `mkTextConcat` ")" };
+
+  expect_text "(c(b(a)))";
+  print_text (listFoldl lst f "");
+
+  expect_text "(a(b(c)))";
+  print_text (listFoldr lst f "");
+};
