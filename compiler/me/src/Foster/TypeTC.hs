@@ -22,13 +22,14 @@ type SigmaTC = TypeTC
 
 data Unifiable ty = UniConst ty
                   | UniVar (Uniq, Point (Maybe ty))
+                  deriving Eq
 
 data TypeTC =
            PrimIntTC       IntSizeBits
          | TyConTC         DataTypeName
          | TyAppTC         TypeTC [TypeTC]
          | TupleTypeTC     (Unifiable Kind) [TypeTC]
-         | CoroTypeTC      TypeTC  TypeTC
+         | CoroTypeTC      TypeTC  TypeTC TypeTC -- effect
          | RefTypeTC       TypeTC
          | ArrayTypeTC     TypeTC
          | FnTypeTC        { fnTypeTCDomain :: [TypeTC]
@@ -40,6 +41,7 @@ data TypeTC =
          | TyVarTC           TyVar  (Unifiable Kind)
          | MetaTyVarTC     (MetaTyVar TypeTC)
          | RefinedTypeTC   (TypedId TypeTC) (AnnExpr TypeTC) [Ident]
+         deriving Eq
 
 -- The list of idents attached to RefinedTypeTC corresponds to the set of
 -- logical binders for the type, which should be a superset of the directly
@@ -53,6 +55,11 @@ data TypeTC =
 isTau :: TypeTC -> Bool
 isTau (ForAllTC {}) = False
 isTau t = all isTau (childrenOf t)
+
+emptyEffectTC = TyAppTC (TyConTC "effect.Empty") []
+isEmptyEffect t =
+  case t of TyAppTC (TyConTC nm) [] | nm == "effect.Empty" -> True
+            _ -> False
 
 {-
 instance Kinded TypeTC where
@@ -74,15 +81,17 @@ hpre ds = empty <+> hsep ds
 
 prettyTVs tvs = map (\(tv,k) -> parens (pretty tv <+> text "::" <+> pretty k)) tvs
 
-descMTVQ MTVSigma = "S"
-descMTVQ MTVTau   = "R"
-
 instance Show ty => Show (Unifiable ty) where
   show (UniConst v)   = show v
   show (UniVar (u,_)) = "(UniVar " ++ show u ++ " ...)"
 
 uni_briefCC (UniConst v) = briefCC v
 uni_briefCC v = show v
+
+prettyFuncProcComment cs =
+  case cs of
+    UniConst FT_Func -> text ""
+    _ -> text " /*" <> text (show cs) <> text "*/ "
 
 instance Pretty TypeTC where
     pretty x = case x of
@@ -93,8 +102,8 @@ instance Pretty TypeTC where
         TupleTypeTC _kind types         -> tupled $ map pretty types
         FnTypeTC     s t fx  cc cs      -> text "(" <> pretty s <> text " ="
                                                     <> text (uni_briefCC cc) <> text ";fx=" <> pretty fx
-                                                    <> text "> " <> pretty t <> text " @{" <> text (show cs) <> text "})"
-        CoroTypeTC   s t                -> text "(Coro " <> pretty s <> text " " <> pretty t <> text ")"
+                                                    <> text "> " <> pretty t <> prettyFuncProcComment cs <> text ")"
+        CoroTypeTC   s t fx             -> text "(Coro " <> pretty s <+> pretty t <+> pretty fx <> text ")"
         ForAllTC   tvs rho              -> text "(forall " <> hsep (prettyTVs tvs) <> text ". " <> pretty rho <> text ")"
         TyVarTC    tv _mbk              -> text (show tv)
         MetaTyVarTC m                   -> text "(~(" <> pretty (descMTVQ (mtvConstraint m)) <> text ")!" <> text (show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")")
@@ -110,7 +119,7 @@ instance Show TypeTC where
         PrimIntTC size         -> "(PrimIntTC " ++ show size ++ ")"
         TupleTypeTC _k types   -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
         FnTypeTC  s t fx cc cs -> "(" ++ show s ++ " =" ++ uni_briefCC cc ++ ";fx=" ++ show fx ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
-        CoroTypeTC s t         -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
+        CoroTypeTC s t fx      -> "(Coro " ++ show s ++ " " ++ show t ++ " " ++ show fx ++ ")"
         ForAllTC ktvs rho      -> "(ForAll " ++ show ktvs ++ ". " ++ show rho ++ ")"
         TyVarTC     tv _mbk    -> show tv
         ArrayTypeTC ty         -> "(Array " ++ show ty ++ ")"
@@ -156,7 +165,7 @@ instance Structured TypeTC where
             PrimIntTC       {}      -> []
             TupleTypeTC  _k types   -> types
             FnTypeTC  ss t fx _cc _cs  -> ss++[t,fx]
-            CoroTypeTC s t          -> [s,t]
+            CoroTypeTC s t fx       -> [s,t,fx]
             ForAllTC  _ktvs rho     -> [rho]
             TyVarTC        _tv _mbk -> []
             ArrayTypeTC     ty      -> [ty]

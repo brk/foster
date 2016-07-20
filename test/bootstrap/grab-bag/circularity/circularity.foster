@@ -2,18 +2,18 @@ main = { 0 };
 
 weird1 = { forall t:Type,
                   a : Array t =>
-                  f : { t => () } =>
+                  f1 : { t => () } =>
   prim_arrayLength a;
-  f a[0];
-  weird1 a f;
+  f1 a[0];
+  weird1 a f1;
   ()
 };
 
 
 weird2 = { forall t:Type,
                   a : Array t =>
-                  f : { t => () } =>
+                  f2 : { t => () } =>
   prim_arrayLength a;
-  f a[0];
+  f2 a[0];
   ()
 };

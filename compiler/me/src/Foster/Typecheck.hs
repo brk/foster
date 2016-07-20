@@ -8,8 +8,8 @@ module Foster.Typecheck(tcSigmaToplevel, tcContext, tcType, fnTypeShallow) where
 import Prelude hiding ((<$>))
 
 import qualified Data.List as List(length, zip)
-import Data.List(foldl', (\\), isInfixOf)
-import Control.Monad(liftM, forM_, forM, liftM, liftM2, when)
+import Data.List(foldl', (\\))
+import Control.Monad(liftM, forM_, forM, liftM, liftM2, liftM3, when)
 
 import qualified Data.Text as T(Text, pack, unpack)
 import Data.Map(Map)
@@ -140,8 +140,7 @@ inferSigma :: Context SigmaTC -> Term -> String -> Tc (AnnExpr SigmaTC)
 -- {{{
 inferSigma ctx e msg = do
   e' <- inferSigmaHelper ctx e msg
-  doQuantificationCheck e' ctx
-  return e'
+  doQuantification e' ctx
 
 inferSigmaHelper :: Context SigmaTC -> Term -> String -> Tc (AnnExpr SigmaTC)
 inferSigmaHelper ctx (E_TyCheck _annot e ta) _msg = do t <- tcType ctx ta
@@ -179,31 +178,66 @@ checkSigma ctx e sigma = do
 -- }}}
 
 -- {{{
-doQuantificationCheck :: AnnExpr SigmaTC -> Context SigmaTC -> Tc ()
-doQuantificationCheck e' ctx = do
+doQuantification :: AnnExpr SigmaTC -> Context SigmaTC -> Tc (AnnExpr SigmaTC)
+doQuantification e' ctx = do
+    let t = typeTC e'
+
     env_tys <- getEnvTypes ctx
     env_tvs <- collectUnboundUnificationVars env_tys
-    res_tvs <- collectUnboundUnificationVars [typeTC e']
+    res_tvs <- collectUnboundUnificationVars [t]
     let forall_tvs = res_tvs \\ env_tvs
+    debugIf dbgQuant $ text "{{{{"
     debugIf dbgQuant $ text "doQuantificationCheck: e' = " <$$> indent 4 (showStructure e')
-    debugIf dbgQuant $ pretty (typeTC e')
-    debugIf dbgQuant $ text $ "inferSigma inferred :: " ++ show (typeTC e')
+    debugIf dbgQuant $ pretty t
+    debugIf dbgQuant $ text $ "inferSigma inferred :: " ++ show t
+    debugIf dbgQuant $ text "non-effect tvs: " <> (pretty $ map show [tv | tv <- forall_tvs, not (mtvIsEffect tv)])
+    debugIf dbgQuant $ text "effect tvs: " <> (pretty $ map show [tv | tv <- forall_tvs, (mtvIsEffect tv)])
+
     --forall_tys <- mapM readTcMeta forall_tvs
     --debugIf dbgQuant $ text "env_typs"   <$> indent 2 (vcat $ map (text.show) env_tys)
     --debugIf dbgQuant $ text "env_tyvars" <$> indent 2 (vcat $ map (text.show) env_tvs)
     --debugIf dbgQuant $ text "res_tyvars" <$> indent 2 (vcat $ map (text.show) res_tvs)
     --debugIf dbgQuant $ text "forall_tys" <$> indent 2 (vcat $ map (text.show) forall_tys)
-    let isFxTv mtv = "fx" `isInfixOf` mtvDesc mtv || "effectvar" `isInfixOf` mtvDesc mtv
-    let nonfx_forall_tvs = [tv | tv <- forall_tvs, not (isFxTv tv)]
+    debugIf dbgQuant $ text "}}}}}"
+    let nonfx_forall_tvs = [tv | tv <- forall_tvs, not (mtvIsEffect tv)]
+    let    fx_forall_tvs = [tv | tv <- forall_tvs,     (mtvIsEffect tv)]
     let hasEscapingMetaVars = not (null nonfx_forall_tvs)
-    if  hasEscapingMetaVars && isValue e'
-      then
+    case (hasEscapingMetaVars, isValue e') of
+      (_, False) -> return e' -- Don't generalize over non-values...
+      (True, _) -> do
          tcLift $ putDocLn $ blue (text "Warning") <> text ": the expression"
                     <$> indent 4 (highlightFirstLineDoc (rangeOf e'))
                     <$> indent 2 (text "is being given a type involving meta type variables,"
                               <$> text "not an implicitly-generalized polymorphic type"
                               <+> text "(as might be expected in ML or Haskell")
-      else return ()
+         return e'
+      _ | null fx_forall_tvs -> return e'
+      _ -> do -- generalize over escaping effect meta type variables
+        let newBinderNames = take (length fx_forall_tvs) (allBinderNames \\ tyVarBinders t )
+            newBinders = map (\strName -> BoundTyVar strName rng) newBinderNames
+            rng  = rangeOf (annExprAnnot e')
+        let writeTv (mtv, tv) = writeTcMeta mtv (TyVarTC tv (UniConst KindEffect))
+        mapM_ writeTv (zip fx_forall_tvs newBinders)
+        rho' <- zonkType t
+        let sigma = quantifyOver [(tv, KindEffect) | tv <- newBinders] rho'
+        return $ case e' of
+          E_AnnVar annot (tid, mcid) -> E_AnnVar annot ((TypedId sigma (tidIdent tid)), mcid)
+          E_AnnFn fn -> E_AnnFn fn { fnVar = TypedId sigma (fnIdent fn) }
+          _          -> E_AnnTyApp (annExprAnnot e') sigma e' []
+
+quantifyOver tyvars (ForAllTC existing rho) = ForAllTC (existing ++ tyvars) rho
+quantifyOver tyvars rho = ForAllTC tyvars rho
+
+allBinderNames = let base = ['a'..'z'] in
+                 [ [x] | x <- base ] ++ [ (x : show i) | i <- [1..], x <- base ]
+
+tyVarBinders :: TypeTC -> [String]
+tyVarBinders t = go [] t
+  where go acc (ForAllTC ktvs rho) = go (map (binderName . fst) ktvs ++ acc) rho
+        go acc t = foldl' go acc (childrenOf t)
+
+        binderName (BoundTyVar s _) = s
+        binderName (SkolemTyVar s _ _) = error $ "tyVarBinders.SKOLEM." ++ s
 
 isValue e = case e of
   AnnLiteral      {} -> True
@@ -813,10 +847,15 @@ tcRhoLetRec ctx0 rng recBindings e mt = do
         return $ mkFunctionSCCs ids fns e' (AnnLetFuns rng)
 -- }}}
 
+--      M <= n
+--      tX for X in [M,n] is a fresh metavar
 -- G |- e ::: forall a1::k1..an::kn, rho
 -- G |- t_n <::: k_n                          (checked later)
 -- ------------------------------------------
--- G |- e :[ t1..tn ]  ::: rho{t1..tn/a1..an}
+-- G |- e :[ t1..tM ]  ::: rho{t1..tn/a1..an}
+--
+-- Note: we allow partial application, because otherwise it gets extremely
+-- awkward to call functions that were quantified over effect variables.
 tcRhoTyApp :: Context SigmaTC -> ExprAnnot -> Term -> [TypeAST] -> Expected RhoTC -> Tc (AnnExpr RhoTC)
 tcRhoTyApp ctx annot e tsAST expTy = do
 -- {{{
@@ -827,7 +866,7 @@ tcRhoTyApp ctx annot e tsAST expTy = do
     case situation of
       TI_Sigma -> do
             types <- mapM (\t -> tcTypeAndResolve ctx t annot) tsAST
-            expr <- instWith annot aeSigma types
+            expr <- instWith ("tcRhoTyApp: " ++ highlightFirstLine (rangeOf annot)) annot aeSigma types
             matchExp expTy expr "tyapp"
       TI_Empty -> matchExp expTy aeSigma "empty-tyapp"
       TI_Rho rho ->
@@ -891,7 +930,7 @@ tcSigmaCall :: Context SigmaTC -> ExprAnnot -> ExprAST TypeAST
             -> [ExprAST TypeAST] -> Expected SigmaTC -> Tc (AnnExpr SigmaTC)
 
 tcSigmaCall ctx rng (E_PrimAST _ name@"assert-invariants" _ _) argtup exp_ty = do
-    let mkFnTypeTC args ret = FnTypeTC args ret (TupleTypeTC  (UniConst KindPointerSized) [])
+    let mkFnTypeTC args ret = FnTypeTC args ret emptyEffectTC
                                       (UniConst FastCC) (UniConst FT_Func)
 
     args <- mapM (\arg -> checkSigma ctx arg boolTypeTC) argtup
@@ -908,11 +947,11 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
         dbg $ text "{{{"
         annbase <- inferRho ctx base "called base"
         let fun_ty = typeTC annbase
-        (args_tys, res_ty_raw, _fx, _cc, _) <- unifyFun fun_ty (length argexprs) ("tSC("++tryGetVarName base++")" ++ highlightFirstLine (rangeOf rng))
+        (args_tys, res_ty_raw, fx, _cc, _) <- unifyFun fun_ty (length argexprs) ("tSC("++tryGetVarName base++")" ++ highlightFirstLine (rangeOf rng))
         dbg $ text "tcSigmaCall: fn type of" <+> pretty annbase <+> text "is " <$$>
                     indent 2 (pretty fun_ty <$$>
                               text ";; cc=" <+> text (show _cc)
-                              <$$> text ";; fx=" <+> pretty _fx)
+                              <$$> text ";; fx=" <+> pretty fx)
         dbg $ string (highlightFirstLine (rangeOf rng))
 
         dbg $ text "call: fn args tys are " <> pretty args_tys
@@ -947,17 +986,18 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
         dbg $ text "tcRhoCall deferring to instSigma"
 
         dbg $ green (text "call: annbase is: ") <> showStructure annbase
+        {-
         case annbase of
           E_AnnTyApp _ _ (AnnPrimitive _ _ (NamedPrim tid)) tys
             | identPrefix (tidIdent tid) == T.pack "coro_create"
             -> do debugIf dbgCoro $ green (text "call: coro create: tys: ") <$$> pretty tys
                   debugIf dbgCoro $ showStructure base
                   return ()
-          E_AnnTyApp _ _ (AnnPrimitive _ _ (NamedPrim tid)) [inp_ty, out_ty]
+          E_AnnTyApp _ _ (AnnPrimitive _ _ (NamedPrim tid)) (inp_ty : out_ty : eff)
             | identPrefix (tidIdent tid) == T.pack "coro_invoke"
             -> do debugIf dbgCoro $ green (text "call: coro invoke: in/out: ") <$$> pretty inp_ty <$$> pretty out_ty
                   return ()
-          E_AnnTyApp _ _ (AnnPrimitive _ _ (NamedPrim tid)) [inp_ty, out_ty]
+          E_AnnTyApp _ _ (AnnPrimitive _ _ (NamedPrim tid)) (inp_ty : out_ty : eff)
             | identPrefix (tidIdent tid) == T.pack "coro_yield"
             -> do debugIf dbgCoro $ green (text "call: coro yield: in/out: ") <$$> pretty inp_ty <$$> pretty out_ty
                   fx <- tcGetCurrentFnFx
@@ -966,6 +1006,23 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
                         [text $ "Inconsistent use of coro_yield " ++ highlightFirstLine (rangeOf rng)]
                   return ()
           _ -> return ()
+          -}
+
+        ctxFx <- tcGetCurrentFnFx
+        if not $ isEmptyEffect fx
+          then do
+            debugIf True $ text (highlightFirstLine (rangeOf rng))
+            debugIf True $ text "ctxFx: " <> pretty ctxFx
+            debugIf True $ text "fx: " <> pretty fx
+            debugIf True $ showStructure fun_ty
+            debugIf True $ text "len argexprs:" <> pretty (length argexprs) <+> text ("tSC("++tryGetVarName base++")")
+            unify fx ctxFx [text $ "Inconsistent effects at call site: "
+                           ,text $ highlightFirstLine (rangeOf rng)
+                           ,text $ "Effect of called function:"
+                           ,indent 4 (pretty fx)
+                           ,text $ "Effect of calling context:"
+                           ,indent 4 (pretty ctxFx)]
+          else return ()
 
         let app = mkAnnCall rng res_ty annbase args
         dbg $ text "call: overall ty is " <> pretty (typeTC app)
@@ -993,7 +1050,7 @@ unifyFun (ForAllTC {}) _ str = tcFails [text $ "invariant violated: sigma passed
 unifyFun tau nargs msg = do
         arg_tys <- mapM (\_ -> newTcUnificationVarTau $ "fn args ty:" ++ msg) (replicate nargs ())
         res_ty <- newTcUnificationVarTau ("fn res ty:" ++ msg)
-        fx_ty  <- newTcUnificationVarTau ("fn fx ty:" ++ msg)
+        fx_ty  <- newTcUnificationVarEffect ("effectvar:" ++ msg)
         cc <- genUnifiableVar
         ft <- genUnifiableVar
         unify tau (FnTypeTC arg_tys res_ty fx_ty cc ft) [text $ "unifyFun(" ++ msg ++ ")"]
@@ -1022,7 +1079,7 @@ tcTypeEquiv t1 t2 =
      (TyAppTC      con1 tys1  , TyAppTC   con2 tys2     ) -> allP tcTypeEquiv (con1:tys1) (con2:tys2)
      (TupleTypeTC _k1    tys1 , TupleTypeTC _k2    tys2 ) -> {- TODO kinds -} allP tcTypeEquiv tys1 tys2
      (FnTypeTC     s1 t1 fx1 c1 x1, FnTypeTC     s2 t2 fx2 c2 x2) -> allP q s1 s2 && q t1 t2 && q fx1 fx2 && liftEqUnifiable (==) c1 c2 && liftEqUnifiable (==) x1 x2
-     (CoroTypeTC   s1 t1      , CoroTypeTC   s2 t2      ) -> q s1 s2 && q t1 t2
+     (CoroTypeTC   s1 t1 fx1  , CoroTypeTC   s2 t2 fx2  ) -> q s1 s2 && q t1 t2 && q fx1 fx2
      (ForAllTC   tvs1 rho1    , ForAllTC   tvs2 rho2    ) -> allP (==) tvs1 tvs2 && q rho1 rho2
      (TyVarTC    tv1 _mbk1    , TyVarTC    tv2 _mbk2    ) -> tv1 == tv2
      (MetaTyVarTC m1          , MetaTyVarTC m2          ) -> m1 == m2
@@ -1136,7 +1193,7 @@ tcSigmaFn ctx0 fnAST0 expTyRaw = do
 tcSigmaFnHelper ctx fnAST expTyRaw tyformals = do
     let annot = fnAstAnnot fnAST
     let ktvs = map convertTyFormal tyformals
-    taus <- genTauUnificationVarsLike ktvs (\n -> "fn type parameter " ++ show n ++ " for " ++ T.unpack (fnAstName fnAST))
+    taus <- genNonSigmaUnificationVarsLike ktvs (\n -> "fn type parameter " ++ show n ++ " for " ++ T.unpack (fnAstName fnAST))
 
     let extTyCtx = ctx { localTypeBindings = extendTypeBindingsWith ctx ktvs taus }
 
@@ -1175,7 +1232,7 @@ tcSigmaFnHelper ctx fnAST expTyRaw tyformals = do
     -- Check or infer the type of the body.
     (annbody, body_ty, fx, uniquelyNamedBinders) <- case mb_rho of
       -- for Infer or for Check of a non-ForAll type
-      Nothing       -> do fx <- newTcUnificationVarTau "sigma.fx.infer"
+      Nothing       -> do fx <- newTcUnificationVarEffect "sigma.fx.infer"
                           annbody <- tcWithCurrentFx fx $
                                        inferSigma extCtx (fnAstBody fnAST) "poly-fn body"
                           return (annbody, typeTC annbody, fx, uniquelyNamedFormals)
@@ -1212,6 +1269,7 @@ tcSigmaFnHelper ctx fnAST expTyRaw tyformals = do
                          map (\(TypedId _ id, ty) -> TypedId ty id)
                              (zip uniquelyNamedFormals pickedTys)
 
+            tcLift $ putDocLn $ text ("tcSigmaFnHelper: fx for " ++ show (fnAstName fnAST) ++ " is ") <> pretty fx
             annbody <- tcWithCurrentFx fx $
                          checkRho extCtx (fnAstBody fnAST) body_ty
             return (annbody, body_ty, fx, uniquelyNamedBinders)
@@ -1330,7 +1388,7 @@ tcRhoFnHelper ctx f expTy = do
                                                   (localTypeBindings ctx) (map tidIdent refinementVars)
 
     (mbExpBodyTy, fx, uniquelyNamedBinders) <- case expTy of
-       Infer _    -> do    fx <- newTcUnificationVarTau "rho.fx.infer"
+       Infer _    -> do    fx <- newTcUnificationVarEffect "rho.fx.infer"
                            return (Nothing, fx, uniquelyNamedFormals)
        Check fnty -> do
                            -- |arg_tys| are the corresponding arguments expected
@@ -1463,17 +1521,18 @@ tcType' :: Context TypeTC -> [Ident] -> IsRefinementInScope -> TypeAST -> Tc Typ
 tcType' ctx refinementArgs ris typ = do
   let q = tcType' ctx refinementArgs RIS_False
   case typ of
-        MetaPlaceholderAST MTVTau   nm -> newTcUnificationVarTau nm
-        MetaPlaceholderAST MTVSigma nm -> newTcUnificationVarSigma nm
+        MetaPlaceholderAST MTVTau    nm -> newTcUnificationVarTau nm
+        MetaPlaceholderAST MTVSigma  nm -> newTcUnificationVarSigma nm
+        MetaPlaceholderAST MTVEffect nm -> newTcUnificationVarEffect nm
         PrimIntAST         sz -> return (PrimIntTC sz )
         TyVarAST      tv      -> liftM (TyVarTC tv) genUnifiableVar
         RefTypeAST    ty      -> liftM   RefTypeTC   (q ty)
         ArrayTypeAST  ty      -> liftM   ArrayTypeTC (q ty)
-        TupleTypeAST  types  -> liftM  (TupleTypeTC (UniConst KindPointerSized)) (mapM q types)
-        CoroTypeAST   s r     -> liftM2  CoroTypeTC  (q s) (q r)
+        TupleTypeAST  types   -> liftM  (TupleTypeTC (UniConst KindPointerSized)) (mapM q types)
+        CoroTypeAST   s r fx  -> liftM3  CoroTypeTC  (q s) (q r) (q fx)
         TyConAST nam          -> return $ TyConTC nam
         TyAppAST con types    -> liftM2 TyAppTC (q con) (mapM q types)
-        ForAllAST ktvs rho    -> do taus <- genTauUnificationVarsLike ktvs (\n -> "tcType'forall param " ++ show n)
+        ForAllAST ktvs rho    -> do taus <- genNonSigmaUnificationVarsLike ktvs (\n -> "tcType'forall param " ++ show n)
                                     let xtvs = map (\(tv,k) -> TyVarTC tv (UniConst k)) ktvs
                                     let ctx' = ctx { localTypeBindings = extendTypeBindingsWith ctx ktvs taus }
                                     rv <- liftM (ForAllTC ktvs) (tcType' ctx' refinementArgs RIS_False rho)
@@ -1617,7 +1676,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
         ty@(TyAppTC _ metas) <-
                             generateTypeSchemaForDataType ctx (ctorTypeName cid)
         let ktvs = map convertTyFormal tyformals
-        ts <- mapM (\ty -> instSigmaWith ktvs ty metas) types
+        ts <- mapM (\ty -> instSigmaWith "ctor pattern" ktvs ty metas) types
         ps <- sequence [checkPattern ctx p t | (p, t) <- zip eps ts]
 
         debug $ "checkPattern for "   ++ show (pretty pattern)
@@ -1633,9 +1692,10 @@ tcRhoCase ctx rng scrutinee branches expTy = do
         (ts, kind) <-
           case ctxTy of
             TupleTypeTC kind ts -> return (ts, kind)
-            _ -> do ts <- sequence [newTcUnificationVarTau "tup" | _ <- eps]
+            _ -> do ts <- sequence [newTcUnificationVarTau ("tup" ++ showSourceRange (rangeOf ep)) | ep <- eps]
                     kind <- genUnifiableVar
                     unify ctxTy (TupleTypeTC kind ts) [text "tuple-pattern"]
+
                     return (ts, kind)
         sanityCheck (eqLen eps ts) $
                 "Cannot match pattern against tuple type of "
@@ -1698,8 +1758,8 @@ instance Show (AnnExpr TypeTC) where show e = show (pretty e)
 
 subsCheckRhoTy :: SigmaTC -> RhoTC -> Tc ()
 subsCheckRhoTy (ForAllTC ktvs rho) rho2 = do -- Rule SPEC
-             taus <- genTauUnificationVarsLike ktvs (\n -> "instSigma type parameter " ++ show n)
-             rho1 <- instSigmaWith ktvs rho taus
+             taus <- genNonSigmaUnificationVarsLike ktvs (\n -> "instSigma type parameter " ++ show n)
+             rho1 <- instSigmaWith "subsCheckRhoTy" ktvs rho taus
              subsCheckRhoTy rho1 rho2
 subsCheckRhoTy rho1 (FnTypeTC as2 r2 fx2 cc2 ft2) = unifyFun rho1 (length as2) "subsCheckRhoTy" >>= \(as1, r1, fx1, cc1, ft1) -> subsCheckFunTy as1 r1 fx1 cc1 ft1 as2 r2 fx2 cc2 ft2
 subsCheckRhoTy (FnTypeTC as1 r1 fx1 cc1 ft1) rho2 = unifyFun rho2 (length as1) "subsCheckRhoTy" >>= \(as2, r2, fx2, cc2, ft2) -> subsCheckFunTy as1 r1 fx1 cc1 ft1 as2 r2 fx2 cc2 ft2
@@ -1794,32 +1854,38 @@ inst base msg = do
   zonked <- return (typeTC base)
   case zonked of
      ForAllTC ktvs _rho -> do
-       taus <- genTauUnificationVarsLike ktvs (\n -> "inst("++msg++") type parameter " ++ vname base n)
-       instWith (annExprAnnot base) base taus
+       taus <- genNonSigmaUnificationVarsLike ktvs (\n -> "inst("++msg++") type parameter " ++ vname base n)
+       instWith "inst" (annExprAnnot base) base taus
      _rho -> return base
 
-instWith :: ExprAnnot -> AnnExpr SigmaTC -> [TauTC] -> Tc (AnnExpr RhoTC)
-instWith _          aexpSigma [] = do
+instWith :: String -> ExprAnnot -> AnnExpr SigmaTC -> [TauTC] -> Tc (AnnExpr RhoTC)
+instWith _ _          aexpSigma [] = do
         sanityCheck (isRho $ typeTC aexpSigma)
                      "Tried to instantiate a sigma with no types!"
         return aexpSigma
 
-instWith rng aexpSigma taus = do
-    instRho <- tryInstSigmaWith (typeTC aexpSigma) taus
+instWith whereFrom rng aexpSigma taus = do
+    instRho <- tryInstSigmaWith whereFrom (typeTC aexpSigma) taus
     return $ E_AnnTyApp rng instRho aexpSigma taus
 
-tryInstSigmaWith sigma taus = do
+tryInstSigmaWith whereFrom sigma taus = do
   --zonked <- shallowZonk sigma
   zonked <- return sigma
   case zonked of
-     ForAllTC ktvs rho -> instSigmaWith ktvs rho taus
+     ForAllTC ktvs rho -> do let tailKtvs = drop (length taus) ktvs
+                             partialTaus <- genNonSigmaUnificationVarsLike tailKtvs (\n -> "tISW type parameter " ++ show n)
+                             instSigmaWith whereFrom ktvs rho (taus ++ partialTaus)
      rho               -> return rho
 
-instSigmaWith ktvs rho taus = do
+instSigmaWith whereFrom ktvs rho taus = do
     sanityCheck (eqLen taus ktvs)
-                ("Arity mismatch in instSigma: can't instantiate"
+                ("Arity mismatch in instSigma: can't instantiate "
                 ++ show (List.length ktvs) ++ " type variables with "
-                ++ show (List.length taus) ++ " types!")
+                ++ show (List.length taus) ++ " types!" ++ "\n"
+                ++ "rho: " ++ show rho ++ "\n"
+                ++ "ktvs: " ++ show ktvs ++ "\n"
+                ++ "taus: " ++ show taus ++ "\n"
+                ++ "context: " ++ whereFrom)
     let tyvarsAndTys = List.zip (tyvarsOf ktvs) taus
     zonked <- zonkType rho -- Do a deep zonk to ensure we don't miss any vars.
     return $ parSubstTcTy tyvarsAndTys zonked
@@ -1849,7 +1915,7 @@ resolveType annot origSubst origType = go origSubst origType where
     ArrayTypeTC   ty               -> liftM  ArrayTypeTC  (q ty)
     FnTypeTC    ss t fx cc cs      -> do (t':fx':ss') <- mapM q (t:fx:ss)
                                          return $ FnTypeTC  ss' t' fx' cc cs
-    CoroTypeTC   s t               -> liftM2 CoroTypeTC  (q s) (q t)
+    CoroTypeTC   s t fx            -> liftM3 CoroTypeTC  (q s) (q t) (q fx)
     TyConTC    nam                 -> return $ TyConTC nam
     TyAppTC    con types           -> liftM2 TyAppTC (q con) (mapM q types)
     TupleTypeTC  kind types        -> liftM  (TupleTypeTC kind) (mapM q types)
@@ -1890,7 +1956,7 @@ getFreeTyVars xs = do zs <- mapM zonkType xs
         TyAppTC con types    -> concatMap (go bound) (con:types)
         TupleTypeTC _k types     -> concatMap (go bound) types
         FnTypeTC ss r fx  _ _    -> concatMap (go bound) (r:fx:ss)
-        CoroTypeTC s r           -> concatMap (go bound) [s,r]
+        CoroTypeTC s r fx        -> concatMap (go bound) [s,r,fx]
         ForAllTC  tvs rho        -> go (tyvarsOf tvs ++ bound) rho
         TyVarTC   tv  _mbk       -> if tv `elem` bound then [] else [tv]
         MetaTyVarTC  {}          -> []
@@ -1945,7 +2011,7 @@ zonkType x = do
         RefTypeTC       ty      -> liftM  (RefTypeTC    ) (zonkType ty)
         ArrayTypeTC     ty      -> do debug $ "zonking array ty: " ++ show ty
                                       liftM (ArrayTypeTC  ) (zonkType ty)
-        CoroTypeTC s r          -> liftM2 (CoroTypeTC  ) (zonkType s) (zonkType r)
+        CoroTypeTC s r fx       -> liftM3 (CoroTypeTC  ) (zonkType s) (zonkType r) (zonkType fx)
         RefinedTypeTC (TypedId ty id) e __args   -> liftM (\t -> RefinedTypeTC (TypedId t id) e __args) (zonkType ty)
         FnTypeTC ss r fx cc cs  -> do ss' <- mapM zonkType ss
                                       r' <- zonkType r
@@ -2059,7 +2125,7 @@ tcTypeWellFormed msg ctx typ = do
         TyAppTC con types     -> mapM_ q (con:types)
         TupleTypeTC _k types  -> mapM_ q types
         FnTypeTC  ss r fx _ _ -> mapM_ q (r:fx:ss)
-        CoroTypeTC  s r       -> mapM_ q [s,r]
+        CoroTypeTC  s r fx    -> mapM_ q [s,r,fx]
         RefTypeTC     ty      -> q ty
         ArrayTypeTC   ty      -> q ty
         RefinedTypeTC v _e  _ -> q (tidType v)
@@ -2145,7 +2211,7 @@ collectAllUnificationVars xs = Set.toList (Set.fromList (concatMap go xs))
             TyAppTC  con types      -> concatMap go (con:types)
             TupleTypeTC _k  types   -> concatMap go types
             FnTypeTC  ss r fx _ _   -> concatMap go (r:fx:ss)
-            CoroTypeTC  s r         -> concatMap go [s,r]
+            CoroTypeTC  s r fx      -> concatMap go [s,r,fx]
             ForAllTC  _tvs rho      -> go rho
             TyVarTC       {}        -> []
             MetaTyVarTC   m         -> [m]
@@ -2164,8 +2230,8 @@ tcSubst subst typ = go typ
             TyConTC    {}           -> typ
             TyAppTC  con types      -> TyAppTC (go con) (map go types)
             TupleTypeTC  k  types   -> TupleTypeTC k (map go types)
-            FnTypeTC  ss r fx cc fp -> FnTypeTC (map go ss) (go r) fx cc fp
-            CoroTypeTC  s r         -> CoroTypeTC (go s) (go r)
+            FnTypeTC  ss r fx cc fp -> FnTypeTC (map go ss) (go r) (go fx) cc fp
+            CoroTypeTC  s r fx      -> CoroTypeTC (go s) (go r) (go fx)
             ForAllTC  tvs rho       -> ForAllTC tvs (go rho)
             RefTypeTC     ty        -> RefTypeTC (go ty)
             ArrayTypeTC   ty        -> ArrayTypeTC (go ty)
@@ -2219,9 +2285,12 @@ vname _                       n = show n
 varbind id ty = TermVarBinding (identPrefix id) (TypedId ty id, Nothing)
 bindingForVar (TypedId ty id) = varbind id ty
 
-genTauUnificationVarsLike :: [a] -> (Int -> String) -> Tc [TypeTC]
-genTauUnificationVarsLike spine namegen = do
-  sequence [newTcUnificationVarTau (namegen n) | (_, n) <- zip spine [1..]]
+genNonSigmaUnificationVarsLike :: [(a,Kind)] -> (Int -> String) -> Tc [TypeTC]
+genNonSigmaUnificationVarsLike spine namegen = do
+  sequence [newTcUnificationVar_ (nsConstraintForKind k) (namegen n) | ((_, k), n) <- zip spine [1..]]
+
+nsConstraintForKind KindEffect = MTVEffect
+nsConstraintForKind _          = MTVTau
 
   {-
 genSigmaUnificationVarsLike :: [a] -> (Int -> String) -> Tc [TypeAST]
@@ -2268,14 +2337,6 @@ instance Pretty ty => Pretty (CtorInfo ty) where
 instance Pretty ty => Pretty (DataCtor ty) where
   pretty (DataCtor name _tyformals _ctortyargs _repr _range) =
         parens (text "DataCtor" <+> text (T.unpack name))
-
-instance Pretty ty => Pretty (DataType ty) where
-  pretty (DataType name tyformals dctors _range) =
-        text "type case " <> pretty name <+> hsep (map pretty tyformals)
-                <$> vsep (map pretty dctors)
-
-instance Pretty TypeFormal where
-  pretty (TypeFormal name _ kind) = text name <> text " :: " <> pretty kind
 
 retypeTID :: (t1 -> Tc t2) -> TypedId t1 -> Tc (TypedId t2)
 retypeTID f (TypedId t1 id) = f t1 >>= \t2 -> return (TypedId t2 id)
@@ -2329,7 +2390,7 @@ instance Expr TypeAST where
         TyAppAST          con types -> concatMap freeVars (con:types)
         TupleTypeAST          types -> concatMap freeVars types
         FnTypeAST    s t fx _cc _cs -> concatMap freeVars (t:fx:s)
-        CoroTypeAST  s t         -> concatMap freeVars [t,s]
+        CoroTypeAST  s t fx      -> concatMap freeVars [t,s,fx]
         ForAllAST  _tvs rho      -> freeVars rho
         TyVarAST   {}            -> []
         RefTypeAST    ty         -> freeVars ty
@@ -2359,8 +2420,8 @@ fnTypeShallow :: Context TypeTC -> FnAST TypeAST -> Tc TypeTC
 fnTypeShallow ctx f = tcTypeAndResolve ctx fnTyAST (fnAstAnnot f)
   where
    fnTyAST0 = FnTypeAST (map tidType $ fnFormals f)
-                        (MetaPlaceholderAST MTVSigma ("ret type for " ++ (T.unpack $ fnAstName f)))
-                        (MetaPlaceholderAST MTVTau   ("effectvar," ++ (T.unpack $ fnAstName f)))
+                        (MetaPlaceholderAST MTVSigma  ("ret type for " ++ (T.unpack $ fnAstName f)))
+                        (MetaPlaceholderAST MTVEffect ("effectvar," ++ (T.unpack $ fnAstName f)))
                         FastCC
                         FT_Func
    fnTyAST = case fnTyFormals f of
@@ -2374,7 +2435,6 @@ tcVERBOSE = False
 dbgCalls = False
 dbgVar   = False
 dbgQuant = False
-dbgCoro  = False
 dbgSigma = False
 
 debugIf c d = when c (tcLift $ putDocLn d)

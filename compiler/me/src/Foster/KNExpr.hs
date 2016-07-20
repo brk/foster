@@ -241,7 +241,7 @@ kNormalize st expr =
                        [aty, rty] <- mapM qt [argty, retty]
                        nestedLets (map go args) (\vars -> KNCallPrim (rangeOf annot) ti (CoroPrim CoroCreate aty rty) vars)
 
-                     (Just coroPrim, [argty, retty]) -> do
+                     (Just coroPrim, (argty:retty:_fxty_or_null)) -> do
                        [aty, rty] <- mapM qt [argty, retty]
                        nestedLets (map go args) (\vars -> KNCallPrim (rangeOf annot) ti (CoroPrim coroPrim aty rty) vars)
 
@@ -447,7 +447,7 @@ tcToIL st typ = do
      RefinedTypeTC v e __args -> do v' <- qVar st v
                                     e' <- kNormalize st e
                                     return $ RefinedTypeIL v' e' __args
-     CoroTypeTC  s t     -> do [x,y] <- mapM q [s,t]
+     CoroTypeTC  s t _fx -> do [x,y] <- mapM q [s,t]
                                return $ CoroTypeIL x y
      RefTypeTC  ty       -> do liftM PtrTypeIL (q ty)
      ArrayTypeTC   ty    -> do liftM ArrayTypeIL (q ty)
@@ -460,9 +460,9 @@ tcToIL st typ = do
      MetaTyVarTC m -> do
         mty <- readTcMeta m
         case mty of
-          Nothing -> if False -- TODO this is dangerous, can violate type correctness
-                      then return unitTypeIL
-                      else tcFails [text $ "Found un-unified unification variable "
+          Nothing -> if mtvIsEffect m
+                       then return (TyAppIL (TyConIL "effect.Empty") [])
+                       else tcFails [text $ "Found un-unified unification variable "
                                 ++ show (mtvUniq m) ++ "(" ++ mtvDesc m ++ ")!"]
           Just t  -> let t' = shallowStripRefinedTypeTC t in
                      -- TODO: strip refinements deeply

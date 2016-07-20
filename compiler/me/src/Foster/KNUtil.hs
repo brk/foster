@@ -468,23 +468,6 @@ instance (Pretty body, Pretty t) => Pretty (ModuleIL body t) where
 
 prettyId (TypedId _ i) = text (show i)
 
-instance Pretty TypeFormal where
-  pretty (TypeFormal name _sr kind) =
-    text name <+> text ":" <+> pretty kind
-
-instance Pretty t => Pretty (DataType t) where
-  pretty dt =
-    text "type case" <+> pretty (dataTypeName dt) <+>
-         hsep (map (parens . pretty) (dataTypeTyFormals dt))
-     <$> indent 2 (vsep (map prettyDataTypeCtor (dataTypeCtors dt)))
-     <$> text ";"
-     <$> empty
-
-prettyDataTypeCtor dc =
-  text "of" <+> text "$" <> text (T.unpack $ dataCtorName dc)
-                        <+> hsep (map pretty (dataCtorTypes dc))
-                        <+> text "// repr:" <+> text (show (dataCtorRepr dc))
-
 pr YesTail = "(tail)"
 pr NotTail = "(non-tail)"
 
@@ -690,6 +673,8 @@ instance Kinded TypeIL where
   kindOf x = case x of
     PrimIntIL   {}       -> KindAnySizeType
     TyConIL "Float64"    -> KindAnySizeType
+    TyConIL "effect.Empty"  -> KindEffect
+    TyConIL "effect.Extend" -> KindEffect
     TyConIL _            -> KindPointerSized
     TyAppIL con _        -> kindOf con
     TyVarIL   _ kind     -> kind

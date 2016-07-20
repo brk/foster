@@ -22,7 +22,7 @@ import Data.IORef(newIORef, readIORef, writeIORef)
 import Data.Traversable(mapM)
 import Prelude hiding (mapM, (<$>))
 import Control.Monad.State(forM, when, forM_, evalStateT, gets,
-                           liftIO, liftM, liftM2)
+                           liftIO, liftM, liftM2, liftM3)
 import Control.Monad.Trans.Except(runExceptT)
 import System.Exit(exitFailure)
 
@@ -210,7 +210,7 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
         putDocLn $ (outLn "vvvv declBindings:====================")
         putDocLn $ (dullyellow (vcat $ map (text . show) declBindings))
 
-    case detectDuplicates $ map fnAstName fns of
+    rv <- case detectDuplicates $ map fnAstName fns of
       [] -> do
         let declCG = buildCallGraphList' declBindings (Set.fromList $ map (\(TermVarBinding nm _) -> nm) declBindings)
         let globalids = map (\(TermVarBinding _ (tid, _)) -> tidIdent tid) $ declBindings ++ primBindings
@@ -238,9 +238,12 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
                 mapFoldM' sortedFns (ctxTC, tcenv0)
                             (typecheckFnSCC showASTs showAnnExprs pauseOnErrors)
             liftIO $ unTc tcenv (convertTypeILofAST modast ctx annFnSCCs)
-          Errors os -> return (Errors os)
+          Errors os -> do
+              when verboseMode $ do liftIO $ putStrLn "~~~ Typechecking the module's context failed"
+              return (Errors os)
       dups -> return (Errors [text $ "Unable to check module due to "
                                   ++ "duplicate bindings: " ++ show dups])
+    return rv
  where
    mkContext :: [ContextBinding t] -> [ContextBinding t]
              -> [ContextBinding t] -> (Map T.Text (FosterPrim t)) -> [Ident] -> [DataType t] -> Context t
@@ -283,7 +286,7 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
                          where dtType = typeOfDataType dt
                                cid    = ctorId (typeFormalName $ dataTypeName dt) dc
 
-   nullFx = TupleTypeAST []
+   nullFx = TyAppAST (TyConAST "effect.Empty") []
 
    -- Nullary constructors are constants; non-nullary ctors are functions.
    ctorTypeAST [] dtType [] = Left dtType
@@ -361,7 +364,7 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
                                                 (E_AnnVar (annotForRange $ MissingSourceRange "buildExprSCC'main")
                                                           (TypedId mainty (GlobalSymbol $ T.pack "main"), Nothing))
                                                 []
-                               mainty = FnTypeTC [unitTypeTC] unitTypeTC unitTypeTC (UniConst FastCC) (UniConst FT_Proc)
+                               mainty = FnTypeTC [unitTypeTC] unitTypeTC (error "fx.bESCC") (UniConst FastCC) (UniConst FT_Proc)
                           in foldr build call_of_main es
          where build es body = case es of
                     [] -> body
@@ -567,8 +570,8 @@ desugarParsedModule tcenv m = do
           TyAppP (TyConP "Bool"  )    [] -> return $ PrimIntAST         I1
           TyAppP (TyConP "Array" )   [t] -> liftM  ArrayTypeAST            (q t)
           TyAppP (TyConP "Ref"   )   [t] -> liftM  RefTypeAST              (q t)
-          TyAppP (TyConP "Coro"  ) [o,i] -> liftM2 CoroTypeAST       (q o) (q i)
-          TyAppP con types       -> liftM2 TyAppAST (q con) (mapM q types)
+          TyAppP (TyConP "Coro") [o,i,fx] -> liftM3 CoroTypeAST       (q o) (q i) (q fx)
+          TyAppP con types       -> liftM2   TyAppAST (q con) (mapM q types)
           TyConP nam             -> return $ TyConAST nam
           TupleTypeP      types  -> liftM  TupleTypeAST    (mapM q types)
           ForAllP    tvs t       -> liftM (ForAllAST $ map convertTyFormal tvs) (q t)
@@ -576,7 +579,7 @@ desugarParsedModule tcenv m = do
           FnTypeP s t fx cc cs sr -> do s' <- mapM q s
                                         t' <- q t
                                         fx' <- case fx of
-                                                 Nothing -> return $ MetaPlaceholderAST MTVTau   ("effectvar:" ++ showSourceRange sr)
+                                                 Nothing -> return $ MetaPlaceholderAST MTVEffect   ("effectvar:" ++ showSourceRange sr)
                                                  Just xx -> q xx
                                         return $ FnTypeAST  s' t' fx' cc cs
           RefinedTypeP nm t e -> do t' <- q t

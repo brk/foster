@@ -32,9 +32,31 @@ primitiveDataTypesP = [
         (MissingSourceRange "Text")),
 
   (let tf = [TypeFormal "o"    (MissingSourceRange "Coro.o") KindAnySizeType,
-             TypeFormal "i"    (MissingSourceRange "Coro.i") KindAnySizeType] in
+             TypeFormal "i"    (MissingSourceRange "Coro.i") KindAnySizeType,
+             TypeFormal "e"    (MissingSourceRange "Coro.e") KindEffect] in
    DataType (TypeFormal "Coro" (MissingSourceRange "Coro")   KindPointerSized) tf
         []
-        (MissingSourceRange "Coro"))
+        (MissingSourceRange "Coro")),
+
+  (let tf = [TypeFormal "o"    (MissingSourceRange "Coro.o") KindAnySizeType,
+             TypeFormal "i"    (MissingSourceRange "Coro.i") KindAnySizeType] in
+   DataType (TypeFormal "Yield" (MissingSourceRange "Yield") KindEffect) tf
+        []
+        (MissingSourceRange "Yield")),
+
+   DataType (TypeFormal "effect.Empty" (MissingSourceRange "effect.Empty") KindEffect) []
+        []
+        (MissingSourceRange "effect.Empty"),
+
+  (let tf = [TypeFormal "e"    (MissingSourceRange "effect.Extend.e") KindEffect,
+             TypeFormal "t"    (MissingSourceRange "effect.Extend.t") KindEffect] in
+   DataType (TypeFormal "effect.Extend" (MissingSourceRange "effect.Extend") KindEffect) tf
+        []
+        (MissingSourceRange "effect.Extend"))
+{-
+   DataType (TypeFormal "Ndet" (MissingSourceRange "Ndet") KindEffect) []
+        []
+        (MissingSourceRange "Ndet")
+        -}
   ]
 

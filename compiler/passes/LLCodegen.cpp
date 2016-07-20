@@ -168,8 +168,9 @@ void assertRightNumberOfArgsForFunction(llvm::Value* FV,
 void assertValueHasExpectedType(llvm::Value* argV, llvm::Type* expectedType,
                                 llvm::Value* FV) {
     ASSERT(typesEq(argV->getType(), expectedType))
-              << "type mismatch, " << str(argV->getType())
-              << " vs expected type " << str(expectedType)
+              << "\ntype mismatch: "
+              << "\n had type         " << str(argV->getType())
+              << "\n vs expected type " << str(expectedType)
               << "\nbase is " << str(FV)
               << "\nwith base type " << str(FV->getType())
               << "\nargV = " << str(argV);

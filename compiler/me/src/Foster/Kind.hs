@@ -12,4 +12,5 @@ KindPointerSized `subkindOf` KindPointerSized = True
 KindPointerSized `subkindOf` KindAnySizeType  = True
 KindAnySizeType  `subkindOf` KindAnySizeType  = True
 KindAnySizeType  `subkindOf` KindPointerSized = False
+KindEffect       `subkindOf` KindEffect       = True
 _ `subkindOf` _ = False

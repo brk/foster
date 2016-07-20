@@ -227,8 +227,9 @@ newTcSkolem (tv, k) = do u <- newTcUniq
 newTcRef :: a -> Tc (IORef a)
 newTcRef v = tcLift $ newIORef v
 
-newTcUnificationVarSigma d = newTcUnificationVar_ MTVSigma d
-newTcUnificationVarTau   d = newTcUnificationVar_ MTVTau d
+newTcUnificationVarEffect d = newTcUnificationVar_ MTVEffect d
+newTcUnificationVarSigma  d = newTcUnificationVar_ MTVSigma d
+newTcUnificationVarTau    d = newTcUnificationVar_ MTVTau d
 
 newTcUnificationVar_ :: MTVQ -> String -> Tc TypeTC
 newTcUnificationVar_ q desc = do
@@ -254,9 +255,10 @@ tcWithCurrentFx :: TypeTC -> Tc a -> Tc a
 tcWithCurrentFx fx (Tc f)
     = Tc $ \env -> f (env { tcCurrentFnEffect = Just fx })
 
+-- Refinement expressions embedded in types must be completely pure, no fooling!
 tcGetCurrentFnFx :: Tc TypeTC
 tcGetCurrentFnFx = Tc $ \env -> do case tcCurrentFnEffect env of
-                                     Nothing -> fail "can't execute effectful code outside of a function!"
+                                     Nothing -> retOK (TyAppTC (TyConTC "effect.Empty") [])
                                      Just fx -> retOK fx
 
 newTcUniq :: Tc Uniq

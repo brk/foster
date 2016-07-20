@@ -1,7 +1,11 @@
 main = {
  expect_i1 False;
- print_i1 (__COMPILES__ f g0); 
+ print_i1 (__COMPILES__ f g0);
 };
 
 g0 = { () };
+
+// f :: { { Int32 => () @() } => () @() }
+// f :: { { Int32 => () @??FX } => () @??FX }
+// f :: { forall FX, { Int32 => () @FX } => () @FX }
 f = { c : { Int32 => () } => c 0 };
