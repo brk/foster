@@ -25,7 +25,7 @@ typecheckInt annot originalText expTy = do
                 ("Integer base must be one of " ++ show goodBases
                                     ++ "; was " ++ show base)
     sanityCheck (onlyValidDigitsIn clean base)
-                ("Cleaned integer must contain only hex digits: " ++ clean)
+                ("Cleaned integer must contain only valid digits for base " ++ show base ++ ": " ++ clean)
     let int = precheckedLiteralInt originalText negated clean base
     let activeBits = litIntMinBits int
     sanityCheck (activeBits <= maxBits)
