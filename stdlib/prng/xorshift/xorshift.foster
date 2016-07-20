@@ -13,6 +13,13 @@
 // For all PRNGs implemented here:
 //  * Seed values must be nonzero.
 //  * A state called MxN has a period of 2^(M*N) - 1.
+//
+// See also http://www.pcg-random.org/other-rngs.html
+// which observes that 32-bit xorshift never produces zero,
+// and produces every other number exactly once.
+//
+// See also http://xoroshiro.di.unimi.it/xoroshiro128plus.c
+//
 
 /////////
 
@@ -62,3 +69,63 @@ xor1x64gen = { s =>
   end
 };
 
+//////////
+
+// See http://xorshift.di.unimi.it/splitmix64.c
+
+splitMix64 = { x : Int64 =>
+	z0 = x +Int64 9E3779B97F4A7C15_16;
+	z1 = (z0 `bitxor-Int64` (z0 `bitlshr-Int64` 30)) *Int64 0BF58476D1CE4E5B9_16;
+	z2 = (z1 `bitxor-Int64` (z1 `bitlshr-Int64` 27)) *Int64  94D049BB133111EB_16;
+	      z2 `bitxor-Int64` (z2 `bitlshr-Int64` 31);
+};
+
+//////////
+
+// Technically xoroshiro128, not xorshift128.
+//
+// To avoid weakness in the low-order bit
+// we generate two numbers and combine the
+// high-order bits.
+
+type case Xor2x64State
+      of $Xor2x64State Int64 Int64
+         ;
+
+xor2x64MakeState :: { Int64 => Xor2x64State };
+xor2x64MakeState = { x0 =>
+  x1 = splitMix64 x0;
+  x2 = splitMix64 x1;
+  Xor2x64State x1 x2
+};
+
+xorRotl = { x : Int64 => k : Int64 =>
+  (x `bitshl-Int64` k) `bitor-Int64` (x `bitlshr-Int64` (64 -Int64 k));
+};
+
+xor2x64gen1 :: { Xor2x64State => (Int64, Xor2x64State) };
+xor2x64gen1 = { s =>
+  case s of $Xor2x64State s0 s1 ->
+    s1a = s0 `bitxor-Int64` s1;
+    s0b = (xorRotl s0 55) `bitxor-Int64` s1a
+                          `bitxor-Int64` (s1a `bitshl-Int64` 14);
+    s1b = (xorRotl s1a 36);
+    (s0 +Int64 s1, Xor2x64State s0b s1b)
+  end
+};
+
+xor2x64gen :: { Xor2x64State => (Int64, Xor2x64State) };
+xor2x64gen = { s0 =>
+  case xor2x64gen1 s0 of (v1, s1) ->
+    case xor2x64gen1 s1 of (v2, s2) ->
+      (mergeInt32 (high32BitsOf64 v1) (high32BitsOf64 v2), s2)
+    end
+  end
+};
+
+xor2x64gen32 :: { Xor2x64State => (Int32, Xor2x64State) };
+xor2x64gen32 = { s0 =>
+  case xor2x64gen1 s0 of (v1, s1) ->
+     (high32BitsOf64 v1, s1)
+  end
+};
