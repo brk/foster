@@ -63,16 +63,6 @@ bool tryBindArray(Value* base, Value*& arr, Value*& len);
 
 namespace {
 
-  std::string takeEnd(const std::string& s, int n) {
-    int idx = s.size() - n;
-    if (idx < 0) idx = 0;
-    return s.substr(idx, n);
-  }
-
-  bool endsWith(const std::string& haystack, const std::string& needle) {
-    return needle == takeEnd(haystack, needle.size());
-  }
-
 llvm::Type* getLLVMType(TypeAST* type) {
   ASSERT(type) << "getLLVMType must be given a non-null type!";
   return type->getLLVMType();
