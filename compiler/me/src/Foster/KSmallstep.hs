@@ -712,6 +712,9 @@ evalPrimitiveOp ty opName args =
   error $ "Smallstep.evalPrimitiveOp " ++ show ty ++ " " ++ opName ++ " " ++ show args
 
 evalPrimitiveDoubleOp :: String -> [SSValue] -> SSValue
+evalPrimitiveDoubleOp "fpowi" [SSFloat d, SSInt z] =
+  SSFloat $ d ** fromIntegral z
+
 evalPrimitiveDoubleOp opName [SSFloat d1] =
   case tryGetFlonumPrimUnOp opName of
     (Just fn) -> SSFloat $ (fn :: Double -> Double) d1
