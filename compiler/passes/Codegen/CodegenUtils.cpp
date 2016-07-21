@@ -403,6 +403,16 @@ createFMulAdd(IRBuilder<>& b, llvm::Value* v1, llvm::Value* v2, llvm::Value* v3)
 }
 
 llvm::Value*
+createPowi(IRBuilder<>& b, llvm::Value* vd, llvm::Value* vi) {
+  Type*  tys[] = { vd->getType() };
+  Module*    m = b.GetInsertBlock()->getParent()->getParent();
+  Value* intrv = llvm::Intrinsic::getDeclaration(m, llvm::Intrinsic::powi, tys);
+  CallInst *CI = b.CreateCall(intrv, { vd, vi }, "powi");
+  //b.SetInstDebugLocation(CI);
+  return CI;
+}
+
+llvm::Value*
 CodegenPass::emitPrimitiveOperation(const std::string& op,
                                     IRBuilder<>& b,
                                     const std::vector<Value*>& args) {
@@ -436,7 +446,7 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
 
   Value* VR = args.at(1);
 
-  if (VL->getType() != VR->getType()) {
+  if ((VL->getType() != VR->getType()) && op != "fpowi") {
     b.GetInsertBlock()->getParent()->dump();
     ASSERT(false) << "primop values for " << op << " did not have equal types\n"
            << "VL: " << str(VL) << " :: " << str(VL->getType()) << "\n"
@@ -491,6 +501,7 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   else if (op == "bitshl" ) { return b.CreateShl(VL,  getMaskedForShift(b, VL, VR), "shltmp", this->config.useNUW, this->config.useNSW); }
   else if (op == "bitlshr") { return b.CreateLShr(VL, getMaskedForShift(b, VL, VR), "lshrtmp"); }
   else if (op == "bitashr") { return b.CreateAShr(VL, getMaskedForShift(b, VL, VR), "ashrtmp"); }
+  else if (op == "fpowi")   { return createPowi(b, VL, VR); }
 
   ASSERT(args.size() > 2) << "CodegenUtils.cpp missing implementation of " << op << "\n";
 

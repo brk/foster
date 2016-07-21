@@ -6,6 +6,7 @@ main = {
   i8-ops-test   !;
 
   bitwise-ops   !;
+  floating-ops  !;
 };
 
 sub8 = { n : Int8 => n -Int8 (trunc32to8 2); };
@@ -86,4 +87,11 @@ bitwise-ops = {
 
 first-bit-set-Int32-test = { e : Int32 => n : Int32 =>
   expect_i32 e; print_i32 (first-set-bit-Int32 n);
+};
+
+floating-ops = {
+  expect_float_p9f64  5.2;
+  print_float_p9f64 (0.65 *f64 (powi-f64 2.0 3));
+
+  ()
 };

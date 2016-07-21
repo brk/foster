@@ -347,6 +347,7 @@ flonumPrimitives tystr ty =
   ,mkPrim "=="      $ mkProcType [ty, ty] [i1]
   ,mkPrim "!="      $ mkProcType [ty, ty] [i1]
   ,mkPrim "sqrt"    $ mkProcType [ty]     [ty]
+  ,mkPrim "powi"    $ mkProcType [ty, i32]    [ty]
   ,mkPrim "muladd"  $ mkProcType [ty, ty, ty] [ty]
   ]
 
