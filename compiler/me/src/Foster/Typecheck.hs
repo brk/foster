@@ -972,11 +972,11 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
                              | (arg, ty) <- zip argexprs args_tys]) return
 
         let res_ty = substExprsForRefinedArgs res_ty_raw args_tys args
-        debugIf True $ text "res_ty_raw was " <> dullwhite (pretty res_ty_raw)
-        debugIf True $ text "res_ty     was " <> pretty res_ty
-        debugIf True $ text "after substituting for arg tys"
-        debugIf True $ indent 6 (vcat $ map pretty args_tys)
-        debugIf True $ text "^^^^^^^"
+        debugIf False $ text "res_ty_raw was " <> dullwhite (pretty res_ty_raw)
+        debugIf False $ text "res_ty     was " <> pretty res_ty
+        debugIf False $ text "after substituting for arg tys"
+        debugIf False $ indent 6 (vcat $ map pretty args_tys)
+        debugIf False $ text "^^^^^^^"
         dbg $ text "call: annargs: "
         dbg $ showStructure (AnnTuple rng (TupleTypeTC (UniConst KindPointerSized)
                                                             (map typeTC args))
@@ -1011,11 +1011,11 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
         ctxFx <- tcGetCurrentFnFx
         if not $ isEmptyEffect fx
           then do
-            debugIf True $ text (highlightFirstLine (rangeOf rng))
-            debugIf True $ text "ctxFx: " <> pretty ctxFx
-            debugIf True $ text "fx: " <> pretty fx
-            debugIf True $ showStructure fun_ty
-            debugIf True $ text "len argexprs:" <> pretty (length argexprs) <+> text ("tSC("++tryGetVarName base++")")
+            debugIf False $ text (highlightFirstLine (rangeOf rng))
+            debugIf False $ text "ctxFx: " <> pretty ctxFx
+            debugIf False $ text "fx: " <> pretty fx
+            debugIf False $ showStructure fun_ty
+            debugIf False $ text "len argexprs:" <> pretty (length argexprs) <+> text ("tSC("++tryGetVarName base++")")
             unify fx ctxFx [text $ "Inconsistent effects at call site: "
                            ,text $ highlightFirstLine (rangeOf rng)
                            ,text $ "Effect of called function:"
@@ -1269,7 +1269,7 @@ tcSigmaFnHelper ctx fnAST expTyRaw tyformals = do
                          map (\(TypedId _ id, ty) -> TypedId ty id)
                              (zip uniquelyNamedFormals pickedTys)
 
-            tcLift $ putDocLn $ text ("tcSigmaFnHelper: fx for " ++ show (fnAstName fnAST) ++ " is ") <> pretty fx
+            --tcLift $ putDocLn $ text ("tcSigmaFnHelper: fx for " ++ show (fnAstName fnAST) ++ " is ") <> pretty fx
             annbody <- tcWithCurrentFx fx $
                          checkRho extCtx (fnAstBody fnAST) body_ty
             return (annbody, body_ty, fx, uniquelyNamedBinders)

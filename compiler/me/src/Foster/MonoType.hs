@@ -102,9 +102,9 @@ alphaRenameMono :: Fn r (KNExpr' RecStatus MonoType) MonoType -> Compiled (Fn r 
 alphaRenameMono fn = do
   renamed <- evalStateT (renameFn fn) (MonoRenameState Map.empty)
 
-  liftIO $ do
-      putDoc $ text "mono-fn: " <$> showFnStructure fn
-      putDoc $ text "renamed: " <$> showFnStructure renamed
+  --liftIO $ do
+  --    putDoc $ text "mono-fn: " <$> showFnStructure fn
+  --    putDoc $ text "renamed: " <$> showFnStructure renamed
 
   return renamed
    where

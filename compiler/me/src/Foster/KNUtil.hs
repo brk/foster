@@ -100,9 +100,9 @@ alphaRename' :: (Show r2) => Fn r (KNExpr' r2 TypeIL) TypeIL -> Compiled (Fn r (
 alphaRename' fn = do
   renamed <- evalStateT (renameFn fn) (RenameState Map.empty)
 
-  liftIO $ do
-      putDoc $ text "fn (IL): " <$> showFnStructureX fn
-      putDoc $ text "renamed: " <$> showFnStructureX renamed
+  --liftIO $ do
+  --    putDoc $ text "fn (IL): " <$> showFnStructureX fn
+  --    putDoc $ text "renamed: " <$> showFnStructureX renamed
 
   return renamed
    where
