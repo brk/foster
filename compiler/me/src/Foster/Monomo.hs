@@ -16,7 +16,6 @@ import Foster.Config
 import Foster.MonoType
 import Foster.ConvertExprAST()
 import Foster.Context
-import Foster.Output
 
 import qualified Data.Text as T
 
@@ -240,14 +239,14 @@ substRefinementArgs _v (RefinedType v e args) xs =
 substRefinementArgs _a t _xs = t
 
 monoFn :: MonoSubst -> Fn RecStatus KNExpr TypeIL -> Mono MonoFn
-monoFn subst fn@(Fn v vs body isrec rng) = do
+monoFn subst (Fn v vs body isrec rng) = do
   let qv = monoVar subst
   body' <- monoKN subst False body
   v'  <- qv v
   vs' <- mapM qv vs
   let rv = (Fn v' vs' body' isrec rng)
-  liftIO $ putDocLn $ text "monoFn given input fn " <$> pretty fn <$> string (show (tidType (fnVar fn )))
-  liftIO $ putDocLn $ text "monoFn returning" <$> pretty rv <$> string (show (tidType (fnVar rv )))
+  --liftIO $ putDocLn $ text "monoFn given input fn " <$> pretty fn <$> string (show (tidType (fnVar fn )))
+  --liftIO $ putDocLn $ text "monoFn returning" <$> pretty rv <$> string (show (tidType (fnVar rv )))
 
   return rv
 
@@ -401,8 +400,8 @@ alphaRenameIL :: (Show r2, Pretty r, Pretty r2)
               => Fn r (KNExpr' r2 TypeIL) TypeIL -> Mono (Fn r (KNExpr' r2 TypeIL) TypeIL)
 alphaRenameIL fn = do
   fn' <- lift $ alphaRename' fn
-  liftIO $ putDocLn $ text "alphaRename started with" <$> pretty fn <$> string (show (tidType (fnVar fn)))
-  liftIO $ putDocLn $ text "alphaRename turned it into" <$> pretty fn' <$> string (show (tidType (fnVar fn' )))
+  --liftIO $ putDocLn $ text "alphaRename started with" <$> pretty fn <$> string (show (tidType (fnVar fn)))
+  --liftIO $ putDocLn $ text "alphaRename turned it into" <$> pretty fn' <$> string (show (tidType (fnVar fn' )))
   return fn'
 
 -- ||||||||||||||||| Monomorphic Type Substitution ||||||||||||||{{{
