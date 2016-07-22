@@ -5,6 +5,8 @@ module Foster.Infer(
   , extractSubstTypes
 ) where
 
+import Prelude hiding ((<$>))
+
 import Data.Map(Map)
 import qualified Data.Map as Map(lookup, empty, insert, findWithDefault, singleton)
 import qualified Data.List as List(length, elem, lookup, nub, sortBy)
@@ -15,6 +17,7 @@ import Data.UnionFind.IO(descriptor, setDescriptor, equivalent, union)
 import Foster.Base
 import Foster.TypeTC
 import Foster.Context
+import Foster.Output (putDocLn)
 
 ----------------------
 
@@ -144,7 +147,14 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
         [text "Bound type variables and/or polymoprhic types cannot be unified! Unable to unify"
         ,text "\t" <> pretty t1 <> string "\nand\n\t" <> pretty t2
         ,text "t1::", showStructure t1, text "t2::", showStructure t2]
-  else
+  else do
+   case (t1, t2) of
+       ((TyAppTC (TyConTC nm1) _tys1), (TyAppTC (TyConTC nm2) _tys2))
+          | isEffect nm1 && isEffect nm2 -> do
+                tcLift $ putDocLn $ text "Unifying effects:"
+                                 <$> indent 4 (pretty t1)
+                                 <$> indent 4 (pretty t2)
+       _ -> return ()
    case (t1, t2) of
     ((PrimIntTC  n1), (PrimIntTC  n2)) ->
           if n1 == n2 then do tcUnifyLoop constraints tysub
@@ -314,6 +324,7 @@ unifyLabels ls1 ls2 constraints =
                    unifyLabels ll1 ll2 (TypeConstrEq l1 l2 : constraints)
 
 isEffectExtend nm = nm == "effect.Extend"
+isEffect nm = nm == "effect.Empty" || isEffectExtend nm
 
 isEffectEmpty (TyAppTC (TyConTC nm) _) = nm == "effect.Empty"
 isEffectEmpty _ = False
