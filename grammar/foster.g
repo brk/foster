@@ -27,7 +27,7 @@ tokens {
   VAL_TYPE_APP; DEREF; ASSIGN_TO;
   TUPLE; VAL_ABS; TYP_ABS; TYPE_ATOM; TYANNOT;
   TYPE_TYP_APP; TYPE_TYP_ABS;
-  KIND_TYPE; KIND_TYOP; KIND_TYPE_BOXED; FORALL_TYPE;
+  KIND_CONST; KIND_TYOP; FORALL_TYPE;
   FUNC_TYPE; REFINED;
   TYPE_CTOR; DATATYPE; CTOR; TYPE_PLACEHOLDER;
   FORMAL; MODULE; WILDCARD; SNAFUINCLUDE; QNAME;
@@ -80,8 +80,7 @@ dctor : '$' ctor       -> ctor ;
 tctor : '$' ctor       -> ctor ;
 
 k       :              // kinds
-    'Type'                              -> ^(KIND_TYPE)         // kind of types
-  | 'Boxed'                             -> ^(KIND_TYPE_BOXED)
+    a                                     -> ^(KIND_CONST a)
 //  |     '{' a '->' k '}'                -> ^(KIND_TYOP a k)     // dependent kinds (kinds of type operators)
   ;
 
@@ -214,7 +213,7 @@ effect : '@' (  a      -> ^(EFFECT_SINGLE a)
                   single_effect (',' single_effect)*
                   (
                               -> ^(EFFECT_ROW ^(MU single_effect+) )
-                  | '|' xid?  -> ^(EFFECT_ROW ^(MU single_effect+) ^(MU xid? ))
+                  | '|' aid?  -> ^(EFFECT_ROW ^(MU single_effect+) ^(MU aid? ))
                   )
                ')' );
 tatom :

@@ -11,6 +11,7 @@ import Foster.Kind
 import Foster.ExprAST
 import Foster.ParsedType
 import Foster.TypeAST(gFosterPrimOpsTable)
+import Foster.Tokens
 
 import Data.CBOR
 
@@ -27,6 +28,8 @@ import qualified Data.Text.Encoding as TE
 import qualified Data.ByteString.Char8 as BS
 
 import Foster.Primitives
+
+import Debug.Trace(trace)
 
 import Control.Monad.State (evalState, get, put, liftM, State)
 --------------------------------------------------------------------------------
@@ -96,6 +99,7 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
 
   cb_parse_dctor cbor = cb_parse_ctor cbor
 
+  cb_parse_aid :: CBOR -> String
   cb_parse_aid cbor = case cbor of
     CBOR_Array [tok, _,_cbr, CBOR_Array [name]] | tok `tm` tok_TYPENAME -> cb_parse_typename name
     _ -> error $ "cb_parse_aid failed: " ++ show cbor
@@ -145,12 +149,15 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
       cb_parse_x_text x
     _ -> error $ "cb_parse_ctor failed: " ++ show cbor ++ " ;; " ++ show sourceFile
 
-
+  cb_parse_k :: CBOR -> Kind
   cb_parse_k cbor = case cbor of
-    CBOR_Array [tok, _,_cbr, CBOR_Array []] | tok `tm` tok_KIND_TYPE -> KindAnySizeType
-    CBOR_Array [tok, _,_cbr, CBOR_Array []] | tok `tm` tok_KIND_TYPE_BOXED -> KindPointerSized
+    CBOR_Array [tok, _,_cbr, CBOR_Array [aid]] | tok `tm` tok_KIND_CONST ->
+      case cb_parse_aid aid of
+        "Type"   -> KindAnySizeType
+        "Boxed"  -> KindPointerSized
+        "Effect" -> KindEffect
+        other -> error $ "cb_parse_k failed, unknown kind constant " ++ other
     _ -> error $ "cb_parse_k failed: " ++ show cbor
-
 
   cb_parse_idbinding cbor = case cbor of
     CBOR_Array [tok, _,_cbr, CBOR_Array [xid, e]] | tok `tm` tok_BINDING ->
@@ -276,6 +283,11 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
         E_IfAST annot (cb_parse_e e) (cb_parse_stmts thenstmts) (cb_parse_stmts elsestmts)
     CBOR_Array [tok, _,_cbr, CBOR_Array [e, t]] | tok `tm` tok_TYANNOT ->
         E_TyCheck annot (cb_parse_e e) (cb_parse_t t)
+    CBOR_Array [tok, _,_cbr, CBOR_Array [mu_formals, mu_tyformals]]        | tok `tm` tok_VAL_ABS ->
+        let name = T.empty in -- typechecking maintains the pending binding stack, and will update the fn name
+        E_FnAST annot (FnAST annot name (map cb_parse_tyformal $ unMu mu_tyformals)
+                                        (map cb_parse_formal   $ unMu mu_formals)
+                                        (E_TupleAST annot KindPointerSized []) False)
     CBOR_Array [tok, _,_cbr, CBOR_Array [mu_formals, mu_tyformals, stmts]] | tok `tm` tok_VAL_ABS ->
         let name = T.empty in -- typechecking maintains the pending binding stack, and will update the fn name
         E_FnAST annot (FnAST annot name (map cb_parse_tyformal $ unMu mu_tyformals)
@@ -471,25 +483,64 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
     CBOR_Array [tok, _, _, CBOR_Array vals] | tok `tm` tok_TUPLE -> vals
     _ -> error $ "unTuple given " ++ show cbor
 
-  cb_parse_tatom cbor = case cbor of
-    CBOR_Array [tok, _, cbr, CBOR_Array [typename]] | tok `tm` tok_TYPENAME ->
-      let name@(c:_) = cb_parse_typename typename in
+  cb_ty_of_str cbr name@(c:_) =
       if isLower c
         then TyVarP (BoundTyVar name (cb_parse_range cbr))
         else TyAppP (TyConP name) []
+  cb_ty_of_str _ [] = error $ "cb_ty_of_str cannot parse empty name!"
+
+  cb_parse_tatom cbor = case cbor of
+    CBOR_Array [tok, _, cbr, CBOR_Array [typename]] | tok `tm` tok_TYPENAME ->
+      cb_ty_of_str cbr (cb_parse_typename typename)
     CBOR_Array [tok, _,_cbr, CBOR_Array [a]] | tok `tm` tok_TYPE_PLACEHOLDER ->
       MetaPlaceholder (cb_parse_aid a)
     CBOR_Array [tok, _,_cbr, CBOR_Array [t]] | tok `tm` tok_TUPLE -> cb_parse_t t
     CBOR_Array [tok, _,_cbr, CBOR_Array tys] | tok `tm` tok_TUPLE -> TupleTypeP (map cb_parse_t tys)
-    CBOR_Array [tok, _, cbr, CBOR_Array [tuple, _mu, _eff]]          | tok `tm` tok_FUNC_TYPE ->
+    CBOR_Array [tok, _, cbr, CBOR_Array [tuple, _mu, mu_eff]]        | tok `tm` tok_FUNC_TYPE ->
         let tys = map cb_parse_t (unTuple tuple) in
-        FnTypeP (init tys) (last tys) Nothing FastCC FT_Func (cb_parse_range cbr)
+        let eff = let effp = map cb_parse_eff (unMu mu_eff) in
+                  case effp of
+                    [] -> Nothing
+                    [eff] -> Just eff
+                    _ -> trace ("Warning: dropping multi-parsed-effects: " ++ show effp) Nothing in
+        FnTypeP (init tys) (last tys) eff FastCC FT_Func (cb_parse_range cbr)
     CBOR_Array [tok, _, cbr, CBOR_Array [tuple, _mu, _eff, tannots]] | tok `tm` tok_FUNC_TYPE ->
         let annots = cb_parse_tannots tannots in
         let (cc, ft) = extractFnInfoFromAnnots annots in
         let tys = map cb_parse_t (unTuple tuple) in
         FnTypeP (init tys) (last tys) Nothing cc ft (cb_parse_range cbr)
     _ -> error $ "cb_parse_tatom failed: " ++ show cbor
+
+  cb_parse_eff :: CBOR -> Effect
+  cb_parse_eff cbor = case cbor of
+    CBOR_Array [tok_row,_,_cbr,CBOR_Array [a]] | tok_row `tm` tok_EFFECT_SINGLE ->
+       effectSingle (cb_ty_of_a _cbr a)
+    CBOR_Array [tok_row,_,_cbr,CBOR_Array rowsyntax] | tok_row `tm` tok_EFFECT_ROW ->
+      case rowsyntax of
+        [] ->        effectsClosed []
+        [mu_effs] -> effectsClosed (map cb_parse_single_effect (unMu mu_effs))
+        [mu_effs, mu_aidq] ->
+           case unMu mu_aidq of
+             [] -> effectsClosed  (map cb_parse_single_effect (unMu mu_effs))
+             [aid] ->
+                   effectsExtends (map cb_parse_single_effect (unMu mu_effs))
+                                  (cb_ty_of_a _cbr aid)
+             other -> error $ "cb_parse_eff_ext failed: " ++ show other
+        _ -> error $ "cb_parse_eff_rowsyntax failed: " ++ show cbor
+    _ -> error $ "cb_parse_eff failed: " ++ show cbor
+
+  cb_ty_of_a :: CBOR -> CBOR -> TypeP
+  cb_ty_of_a cbr a = cb_ty_of_str cbr (cb_parse_aid a)
+
+  cb_parse_single_effect :: CBOR -> TypeP
+  cb_parse_single_effect cbor = case cbor of
+    CBOR_Array [tok,_, cbr,CBOR_Array axs] | tok `tm` tok_EFFECT_SINGLE ->
+      case axs of
+        [a]    -> cb_ty_of_a cbr a
+        (a:xs) -> let (TyAppP tcon []) = cb_ty_of_a cbr a in
+                       TyAppP tcon (map (cb_ty_of_a cbr) xs) -- TODO handle minus
+        [] -> error $ "cb_parse_single_eff_empty failed: " ++ show cbor
+    _ -> error $ "cb_parse_single_effect failed: " ++ show cbor
 
   extractFnInfoFromAnnots annots =
       if (T.pack "proc", T.pack "true") `elem` annots
@@ -631,6 +682,22 @@ cb_int cbor = case cbor of
     CBOR_Byte word8   -> fromIntegral word8
     _ -> error $ "cb_int had unexpected input: " ++ show cbor
 
+-- {{{
+type Effect = TypeP
+effectSingle :: Effect -> Effect
+effectSingle eff = effectExtend eff nullFx
+
+effectExtend :: Effect -> Effect -> Effect
+effectExtend eff row = TyAppP (TyConP "effect.Extend") [eff, row]
+
+effectsExtends :: [Effect] -> Effect -> Effect
+effectsExtends effs eff = foldr effectExtend eff effs
+
+effectsClosed :: [Effect] -> Effect
+effectsClosed effs = effectsExtends effs nullFx
+
+nullFx = TyAppP (TyConP "effect.Empty") []
+-- }}}
 
 -- {{{
 data SourceLoc = SourceLoc !Int !Int
@@ -790,294 +857,4 @@ data ParsedStmt =
   | StmtLetBind ExprAnnot (EPattern TypeP, ExprAST TypeP)
   | StmtRecBind ExprAnnot (EPattern TypeP, ExprAST TypeP)
   deriving Show
-
-
---------------------------------------------------------------------------------
--- Autogenerated
-_tok_TICK_STR_CONTENTS = 106
-_tok_UNDER_IDENT = 81
-_tok_SYMBOL_CONTINUE_NDIG = 95
-_tok_WORD_CHAR = 90
-tok_LETS = 31
-tok_CASE = 18
-tok_STMTS = 34
-tok_TYANNOT = 56
-tok_DEREF = 50
-_tok_DO = 6
-tok_SNAFUINCLUDE = 72
-_tok_TYPE = 25
-_tok_TICK_STR = 102
-tok_MU = 76
-tok_TUPLE = 52
-tok_LETREC = 32
-tok_CTOR = 67
-tok_REFINED = 64
-tok_PRIMAPP = 46
-_tok_SMALL_IDENT = 79
-tok_TYPE_TYP_APP = 57
-_tok_INT_RAT_BASE = 86
-tok_TRTK = 98
-tok_VAL_ABS = 53
-_tok_IDENT_START_SMALL = 88
-_tok_NL = 112
-_tok_EQ = 23
-_tok_DQUO_STR = 77
-tok_TDQU = 100
-_tok_T__139 = 139
-tok_TYPENAME = 42
-_tok_T__138 = 138
-_tok_T__137 = 137
-_tok_T__136 = 136
-_tok_SYMBOL_MULTI_START = 94
-_tok_SYMBOL = 78
-_tok_LINE_COMMENT = 110
-_tok_PARSE_DECL = 40
-tok_ABINDING = 30
-_tok_ELSE = 15
-tok_BOOL = 36
-_tok_SYMBOL_SINGLE_START = 93
-tok_TRU = 16
-tok_DEFN = 39
-tok_KIND_TYPE = 59
-_tok_T__141 = 141
-_tok_T__142 = 142
-tok_OF = 20
-_tok_T__140 = 140
-_tok_IDENT_SYMBOL = 92
-_tok_TYPE_TYP_ABS = 58
-_tok_T__143 = 143
-_tok_T__144 = 144
-tok_COMPILES = 26
-_tok_T__126 = 126
-_tok_T__125 = 125
-_tok_T__128 = 128
-_tok_UNICODE_INNER = 109
-_tok_IDENT_CONTINUE = 91
-_tok_T__127 = 127
-_tok_WS = 113
-tok_QNAME = 73
-_tok_T__129 = 129
-tok_SUBSCRIPT = 48
-_tok_OR = 22
-_tok_TDQU_STR = 103
-tok_TYPE_ATOM = 55
-tok_DATATYPE = 66
-_tok_SYMBOL_CONTINUE = 96
-_tok_END = 19
-tok_FLS = 17
-_tok_T__130 = 130
-tok_LIT_NUM = 35
-_tok_T__131 = 131
-_tok_T__132 = 132
-_tok_T__133 = 133
-_tok_T__134 = 134
-_tok_BACKSLASH = 101
-_tok_T__135 = 135
-tok_TERM = 44
-_tok_WHERE = 12
-tok_BINDING = 29
-_tok_T__118 = 118
-_tok_T__119 = 119
-tok_TYPE_PLACEHOLDER = 68
-_tok_T__116 = 116
-_tok_T__117 = 117
-_tok_T__114 = 114
-_tok_T__115 = 115
-_tok_T__124 = 124
-_tok_T__123 = 123
-_tok_T__122 = 122
-_tok_T__121 = 121
-_tok_UPPER_IDENT = 80
-_tok_T__120 = 120
-tok_VAL_TYPE_APP = 49
-tok_KIND_TYPE_BOXED = 61
-_tok_AND = 21
-tok_FORALL_TYPE = 62
-tok_IF = 13
-_tok_TYPE_CTOR = 65
-_tok_AT = 5
-_tok_AS = 4
-_tok_ESC_SEQ = 108
-_tok_THEN = 14
-_tok_IN = 7
-_tok_SEQ = 33
-_tok_IS = 8
-_tok_IT = 9
-tok_WILDCARD = 71
-_tok_DIGIT = 83
-_tok_DQUO = 99
-_tok_STR_TAG = 105
-_tok_KIND_TYOP = 60
-_tok_IDENT_START_UPPER = 89
-_tok_TYP_ABS = 54
-_tok_EFFECT_SINGLE = 74
-_tok_TICK = 97
-_tok_TO = 10
-_tok_TRTK_STR = 104
-tok_FUNC_TYPE = 63
-_tok_SCI_NOTATION = 85
-_tok_HEX_DIGIT = 87
-_tok_ASSIGN_TO = 51
-tok_LVALUE = 47
-_tok_MINUS = 24
-tok_MODULE = 70
-_tok_EFFECT_ROW = 75
-tok_PHRASE = 45
-_tok_NUM = 82
-tok_TYPEVAR_DECL = 43
-tok_DECL = 38
-_tok_HEX_CLUMP = 84
-_tok_FORMALS = 28
-tok_FORMAL = 69
-_tok_DQUO_STR_CONTENTS = 107
-tok_VAL_APP = 27
-_tok_LET = 11
-_tok_NESTING_COMMENT = 111
-tok_TERMNAME = 41
-tok_STRING = 37
-
-_tokNameOf id =
-  case id of
-    106 -> "TICK_STR_CONTENTS"
-    81 -> "UNDER_IDENT"
-    95 -> "SYMBOL_CONTINUE_NDIG"
-    90 -> "WORD_CHAR"
-    31 -> "LETS"
-    18 -> "CASE"
-    34 -> "STMTS"
-    56 -> "TYANNOT"
-    50 -> "DEREF"
-    6 -> "DO"
-    72 -> "SNAFUINCLUDE"
-    25 -> "TYPE"
-    102 -> "TICK_STR"
-    76 -> "MU"
-    52 -> "TUPLE"
-    32 -> "LETREC"
-    67 -> "CTOR"
-    64 -> "REFINED"
-    46 -> "PRIMAPP"
-    79 -> "SMALL_IDENT"
-    57 -> "TYPE_TYP_APP"
-    86 -> "INT_RAT_BASE"
-    98 -> "TRTK"
-    53 -> "VAL_ABS"
-    88 -> "IDENT_START_SMALL"
-    112 -> "NL"
-    23 -> "EQ"
-    77 -> "DQUO_STR"
-    100 -> "TDQU"
-    139 -> "T__139"
-    42 -> "TYPENAME"
-    138 -> "T__138"
-    137 -> "T__137"
-    136 -> "T__136"
-    94 -> "SYMBOL_MULTI_START"
-    78 -> "SYMBOL"
-    110 -> "LINE_COMMENT"
-    40 -> "PARSE_DECL"
-    30 -> "ABINDING"
-    15 -> "ELSE"
-    36 -> "BOOL"
-    93 -> "SYMBOL_SINGLE_START"
-    16 -> "TRU"
-    39 -> "DEFN"
-    59 -> "KIND_TYPE"
-    141 -> "T__141"
-    142 -> "T__142"
-    20 -> "OF"
-    140 -> "T__140"
-    92 -> "IDENT_SYMBOL"
-    58 -> "TYPE_TYP_ABS"
-    143 -> "T__143"
-    144 -> "T__144"
-    26 -> "COMPILES"
-    126 -> "T__126"
-    125 -> "T__125"
-    128 -> "T__128"
-    109 -> "UNICODE_INNER"
-    91 -> "IDENT_CONTINUE"
-    127 -> "T__127"
-    113 -> "WS"
-    73 -> "QNAME"
-    129 -> "T__129"
-    48 -> "SUBSCRIPT"
-    22 -> "OR"
-    103 -> "TDQU_STR"
-    55 -> "TYPE_ATOM"
-    66 -> "DATATYPE"
-    96 -> "SYMBOL_CONTINUE"
-    19 -> "END"
-    17 -> "FLS"
-    130 -> "T__130"
-    35 -> "LIT_NUM"
-    131 -> "T__131"
-    132 -> "T__132"
-    133 -> "T__133"
-    134 -> "T__134"
-    101 -> "BACKSLASH"
-    135 -> "T__135"
-    44 -> "TERM"
-    12 -> "WHERE"
-    29 -> "BINDING"
-    118 -> "T__118"
-    119 -> "T__119"
-    68 -> "TYPE_PLACEHOLDER"
-    116 -> "T__116"
-    117 -> "T__117"
-    114 -> "T__114"
-    115 -> "T__115"
-    124 -> "T__124"
-    123 -> "T__123"
-    122 -> "T__122"
-    121 -> "T__121"
-    80 -> "UPPER_IDENT"
-    120 -> "T__120"
-    49 -> "VAL_TYPE_APP"
-    61 -> "KIND_TYPE_BOXED"
-    21 -> "AND"
-    62 -> "FORALL_TYPE"
-    13 -> "IF"
-    65 -> "TYPE_CTOR"
-    5 -> "AT"
-    4 -> "AS"
-    108 -> "ESC_SEQ"
-    14 -> "THEN"
-    7 -> "IN"
-    33 -> "SEQ"
-    8 -> "IS"
-    9 -> "IT"
-    71 -> "WILDCARD"
-    83 -> "DIGIT"
-    99 -> "DQUO"
-    105 -> "STR_TAG"
-    60 -> "KIND_TYOP"
-    89 -> "IDENT_START_UPPER"
-    54 -> "TYP_ABS"
-    74 -> "EFFECT_SINGLE"
-    97 -> "TICK"
-    10 -> "TO"
-    104 -> "TRTK_STR"
-    63 -> "FUNC_TYPE"
-    85 -> "SCI_NOTATION"
-    87 -> "HEX_DIGIT"
-    51 -> "ASSIGN_TO"
-    47 -> "LVALUE"
-    24 -> "MINUS"
-    70 -> "MODULE"
-    75 -> "EFFECT_ROW"
-    45 -> "PHRASE"
-    82 -> "NUM"
-    43 -> "TYPEVAR_DECL"
-    38 -> "DECL"
-    84 -> "HEX_CLUMP"
-    28 -> "FORMALS"
-    69 -> "FORMAL"
-    107 -> "DQUO_STR_CONTENTS"
-    27 -> "VAL_APP"
-    11 -> "LET"
-    111 -> "NESTING_COMMENT"
-    41 -> "TERMNAME"
-    37 -> "STRING"
-    _ -> "<unknown token" ++ show id ++ ">"
 

@@ -32,7 +32,7 @@ data TypeP =
 instance Show TypeP where
     show x = case x of
         TyConP    nm                  -> "(TyCon: " ++ show nm ++ ")"
-        TyAppP    con types           -> show con ++ joinWith " " ("":map show types)
+        TyAppP    con types           -> "(" ++ show con ++ joinWith " " ("":map show types) ++ ")"
         TupleTypeP      types         -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
         FnTypeP    s t fx cc cs _     -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @" ++ show fx ++ " #{" ++ show cs ++ "})"
         ForAllP  tvs rho              -> "(ForAll " ++ show tvs ++ ". " ++ show rho ++ ")"
