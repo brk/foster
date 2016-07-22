@@ -165,6 +165,19 @@ add_custom_command(
 )
 # }}}
 
+# {{{ Re-generate the Tokens.hs file when the ANTLR-generated tokens change.
+add_custom_command(
+  OUTPUT ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Tokens.hs
+  COMMAND
+    python ${PROJECT_SOURCE_DIR}/scripts/extract-antlr3-token-ids.py
+           ${GENERATED}/fosterLexer.h
+                > ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Tokens.hs
+  DEPENDS
+    ${PROJECT_SOURCE_DIR}/scripts/extract-antlr3-token-ids.py
+    ${GENERATED}/fosterLexer.h
+)
+# }}} -----------------------------------------------------------
+
 # {{{ Generate C++ code to manipulate protobuf files (between middle & back end).
 add_custom_command(
   OUTPUT
@@ -202,6 +215,7 @@ set(HS_ME hs_me_${HS_ME_PROFILE_OR_OPTIMIZE})
 # Haskell protobuf module sources have been generated.
 add_custom_target(${HS_ME}
   DEPENDS ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Bepb.hs
+          ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Tokens.hs
   COMMAND python ${PROJECT_SOURCE_DIR}/scripts/mk_me.py
           --srcroot ${PROJECT_SOURCE_DIR}
           --bindir ${PROJECT_BINARY_DIR}
