@@ -384,7 +384,7 @@ gFosterPrimOpsTable = Map.fromList $
   ,(,) "f64-to-s64-unsafe"    $ (,) (mkFnType [f64] [i64] ) $ PrimOp "fptosi_f64_i64" i64
   ,(,) "f64-to-u64-unsafe"    $ (,) (mkFnType [f64] [i64] ) $ PrimOp "fptoui_f64_i64" i64
   ,(,) "s64-to-f64-unsafe"    $ (,) (mkFnType [i64] [f64] ) $ PrimOp "sitofp_f64" i64
-  ,(,) "u64-to-f64-unsafe"    $ (,) (mkFnType [i64] [f64] ) $ PrimOp "sitofp_f64" i64
+  ,(,) "u64-to-f64-unsafe"    $ (,) (mkFnType [i64] [f64] ) $ PrimOp "uitofp_f64" i64
   ,(,) "s32-to-f64"    $(,) (mkFnType [i32] [f64]     ) $ PrimOp "sitofp_f64" i32
   ,(,) "u32-to-f64"    $(,) (mkFnType [i32] [f64]     ) $ PrimOp "uitofp_f64" i32
   ] ++ fixnumPrimitives I64
