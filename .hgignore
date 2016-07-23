@@ -29,6 +29,7 @@ compiler/me/src/Foster/Fepb/
 compiler/me/src/Foster/Fepb.hs
 compiler/me/src/Foster/Bepb/
 compiler/me/src/Foster/Bepb.hs
+compiler/me/src/Foster/Tokens.hs
 compiler/me/src/Llvmpb/
 compiler/me/src/Llvmpb.hs
 compiler/me/src/Main.hsext
