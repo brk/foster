@@ -12,9 +12,10 @@ kLCG1x64gen = { s =>
   c = 1442695040888963407;
   case s of $KLCG1x64State x ->
     x0 = (a *Int64 x) +Int64 c;
-    y0 = x0 `bitlshr-Int64` 32;
     x1 = (a *Int64 x0) +Int64 c;
-    y1 = y0 `bitor-Int64` (x1 `bitand-Int64` 7FFF`FFFF`0000`0000_16);
+    // Merge high bits of second iteration with low bits of first iteration.
+    y0 = x0 `bitlshr-Int64` 32;
+    y1 = y0 `bitor-Int64` (x1 `bitand-Int64` 0FFFF`FFFF`0000`0000_16);
     (y1, kLCG1x64MakeState x1)
   end
 };
