@@ -30,11 +30,13 @@ executable me
                        PatternGuards NoMonoLocalBinds RecursiveDo FlexibleContexts
   build-depends: array -any,
                  ansi-wl-pprint -any,
+                 attoparsec -any,
                  binary -any,
                  bytestring -any,
                  containers -any,
                  criterion >= 1.1.0.0,
                  CBOR -any,
+                 double-conversion -any,
                  text >= 1.2.0.0,
                  mtl >= 2.2.1,
                  transformers -any,
