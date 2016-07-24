@@ -1664,7 +1664,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
                                 return $ P_Atom $ P_Int r ty int
 
       EP_Ctor     r eps s -> do
-        info@(CtorInfo cid (DataCtor _ tyformals types _repr _crng)) <- getCtorInfoForCtor ctx s
+        info@(CtorInfo cid (DataCtor _ tyformals types _repr _crng)) <- getCtorInfoForCtor ctx r s
         sanityCheck (ctorArity cid == List.length eps) $
               "Incorrect pattern arity: expected " ++
               (show $ ctorArity cid) ++ " pattern(s), but got "
@@ -1703,10 +1703,12 @@ tcRhoCase ctx rng scrutinee branches expTy = do
         ps <- sequence [checkPattern ctx p t | (p, t) <- zip eps ts]
         return $ P_Tuple r (TupleTypeTC kind ts) ps
     -----------------------------------------------------------------------
-    getCtorInfoForCtor :: Context SigmaTC -> T.Text -> Tc (CtorInfo SigmaTC)
-    getCtorInfoForCtor ctx ctorName = do
+    getCtorInfoForCtor :: Context SigmaTC -> SourceRange -> T.Text -> Tc (CtorInfo SigmaTC)
+    getCtorInfoForCtor ctx r ctorName = do
       case Map.lookup ctorName (contextCtorInfo ctx) of
         Just [info] -> return info
+        Nothing  -> tcFails [text $ "Missing definition for $" ++ T.unpack ctorName
+                            , highlightFirstLineDoc r]
         elsewise -> tcFails [text $ "Typecheck.getCtorInfoForCtor: Too many or"
                                     ++ " too few definitions for $" ++ T.unpack ctorName
                                     ++ "\n\t" ++ show (pretty elsewise)]
