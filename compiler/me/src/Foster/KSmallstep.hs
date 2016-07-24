@@ -20,6 +20,7 @@ import qualified Data.Text.Encoding as TE
 import Data.Int
 import Data.Word
 import Data.Bits
+import Data.Bits.Floating
 import Data.Char(toUpper)
 import Data.IORef(IORef, readIORef, newIORef)
 import Data.Array
@@ -712,8 +713,10 @@ evalPrimitiveOp ty opName args =
   error $ "Smallstep.evalPrimitiveOp " ++ show ty ++ " " ++ opName ++ " " ++ show args
 
 evalPrimitiveDoubleOp :: String -> [SSValue] -> SSValue
+evalPrimitiveDoubleOp "bitcast_i64" [SSFloat f] =
+  SSInt (fromIntegral $ coerceToWord f)
 evalPrimitiveDoubleOp "fpowi" [SSFloat d, SSInt z] =
-  SSFloat $ d ** fromIntegral z
+  SSFloat (d ** fromIntegral z)
 
 evalPrimitiveDoubleOp opName [SSFloat d1] =
   case tryGetFlonumPrimUnOp opName of
@@ -737,6 +740,8 @@ evalPrimitiveDoubleOp opName args =
   error $ "Smallstep.evalPrimitiveDoubleOp " ++ opName ++ " " ++ show args
 
 evalPrimitiveIntOp :: IntSizeBits -> String -> [SSValue] -> SSValue
+evalPrimitiveIntOp I64 "bitcast_f64" [SSInt z] =
+  SSFloat (coerceToFloat $ fromInteger z)
 evalPrimitiveIntOp I64 opName [SSInt i1, SSInt i2] =
   case tryGetFixnumPrimOp 64 opName :: PrimOpResult Int64 Word64 of
     (POR_Signed   fn) -> SSInt (modifyIntsWith i1 i2 fn)
