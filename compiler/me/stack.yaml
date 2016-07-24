@@ -9,7 +9,7 @@ packages:
 - '.'
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
-extra-deps: [binary-bits-0.5, CBOR-0.1.0.1, data-bword-0.1,
+extra-deps: [binary-bits-0.5, CBOR-0.1.0.1, data-bword-0.1, floating-bits-0.3.0.0,
              hoopl-3.10.2.0]
 
 # Override default flag values for local packages and extra-deps

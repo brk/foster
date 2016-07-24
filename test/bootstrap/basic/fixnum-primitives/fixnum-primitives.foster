@@ -93,5 +93,9 @@ floating-ops = {
   expect_float_p9f64  5.2;
   print_float_p9f64 (0.65 *f64 (powi-f64 2.0 3));
 
-  ()
+  expect_float_p9f64 42.42;
+  print_float_p9f64 (4631166901565532406 |> i64-as-f64);
+
+  expect_i64 4631166901565532406;
+  print_i64 (42.42 |> f64-as-i64);
 };

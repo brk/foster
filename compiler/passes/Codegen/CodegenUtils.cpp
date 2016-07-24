@@ -441,6 +441,8 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   else if (op == "fptoui_f64_i64") { return b.CreateFPToUI(VL, b.getInt64Ty(), "fptoui_f64_i64tmp"); }
   else if (op == "sitofp_f64")     { return b.CreateSIToFP(VL, b.getDoubleTy(), "sitofp_f64tmp"); }
   else if (op == "uitofp_f64")     { return b.CreateUIToFP(VL, b.getDoubleTy(), "uitofp_f64tmp"); }
+  else if (op == "bitcast_f64")    { return b.CreateBitCast(VL, b.getDoubleTy(), "bitcast_f64tmp"); }
+  else if (op == "bitcast_i64")    { return b.CreateBitCast(VL, b.getInt64Ty(),  "bitcast_i64tmp"); }
 
   ASSERT(args.size() > 1) << "CodegenUtils.cpp missing implementation of " << op << "\n";
 
