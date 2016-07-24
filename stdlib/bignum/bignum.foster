@@ -17,7 +17,7 @@ mkIntInf = { n => b =>
 
 intFromInt32 = { i : Int32 =>
   if i <SInt32 0
-    then if i ==Int32 (minReprInt32 !)
+    then if i ==Int32 (minReprSInt32 !)
            then // 0 - MIN_INT does not produce -MIN_INT,
                 //           cursed pigeonhole principle!
                 noinline_mkNegativeMinInt32 !
@@ -29,7 +29,7 @@ intFromInt32 = { i : Int32 =>
 
 intFromInt64 = { i : Int64 =>
   if i <SInt64 0
-    then if i ==Int64 (minReprInt64 !)
+    then if i ==Int64 (minReprSInt64 !)
            then // 0 - MIN_INT does not produce -MIN_INT,
                 //           cursed pigeonhole principle!
                 noinline_mkNegativeMinInt64 !
@@ -57,12 +57,12 @@ noinline_foo3 = { i : Int32 =>
 };
 
 noinline_mkNegativeMinInt64 = {
-  IntInf (natAdd (natFromInt64 (maxReprInt64 !))
+  IntInf (natAdd (natFromInt64 (maxReprSInt64 !))
                  (natFromInt64 1)) True;
 };
 
 noinline_mkNegativeMinInt32 = {
-  m64 = zext_i32_to_i64 (maxReprInt32 !);
+  m64 = zext_i32_to_i64 (maxReprSInt32 !);
   IntInf (natFromInt64 (m64 +Int64 1)) True
 };
 
