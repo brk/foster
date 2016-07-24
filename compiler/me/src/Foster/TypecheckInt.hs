@@ -10,6 +10,8 @@ import qualified Data.Text as T
 import Data.Char(toLower)
 import Data.Maybe(fromJust)
 import qualified Data.List as List(elemIndex, reverse)
+import qualified Data.Attoparsec.Text as Atto
+import Data.Double.Conversion.Text
 
 import Foster.Base
 import Foster.Context
@@ -80,9 +82,47 @@ typecheckInt annot originalText expTy = do
 
 typecheckRat :: ExprAnnot -> String -> Maybe TypeTC -> Tc (AnnExpr RhoTC)
 typecheckRat annot originalText _expTyTODO = do
-  --tcLift $ putStrLn $ "typecheckRat: " ++ originalText ++ " :?: " ++ show _expTyTODO
   -- TODO: be more discriminating about float vs rational numbers?
-  let val = (read originalText) :: Double
-  return (AnnLiteral annot (TyAppTC (TyConTC "Float64") [])
-                     (LitFloat $ LiteralFloat val originalText))
 
+  case Atto.parseOnly Atto.rational $ T.pack originalText of
+    Left err -> tcFails [text "Failed to parse rational:" <+> text originalText
+                        ,text "Error was:"
+                        ,indent 8 (text err) ]
+    Right val -> do
+      -- It's possible that the literal given is "misleading",
+      -- in the sense that it is neither the shortest string to
+      -- uniquely identify a given floating point value, nor is
+      -- it the most precise short-ish string.
+      let shortest = T.unpack $ toShortest val
+      let canonicalS = addPointZeroIfNeeded shortest
+      let Just shortestPrec = List.elemIndex '.' (reverse canonicalS)
+      let canonicalP = T.unpack $ toFixed shortestPrec val
+      let differingS = differingDigits originalText canonicalS
+      let differingP = differingDigits originalText canonicalP
+
+      case (differingS, differingP) of
+        (0, _) -> return ()
+        (_, 0) -> return ()
+        _ -> tcWarnMisleadingRat (rangeOf annot) canonicalS canonicalP
+
+      return (AnnLiteral annot (TyAppTC (TyConTC "Float64") [])
+                         (LitFloat $ LiteralFloat val originalText))
+
+tcWarnMisleadingRat range canonicalS canonicalP = do
+  let alt = if canonicalS == canonicalP
+             then []
+             else [text "                 or, alternatively:   " <> text canonicalS]
+  tcWarn $ [text "the provided rational constant"
+           ,highlightFirstLineDoc range
+           ,text "is actually the floating point number " <> text canonicalP
+           ] ++ alt
+
+addPointZeroIfNeeded s = if '.' `elem` s then s else s ++ ".0"
+
+differingDigits s1 s2 = loop s1 s2 0
+  where loop [] [] n = n
+        loop (_:s1) [] n = loop s1 [] (n + 1)
+        loop [] (_:s2) n = loop [] s2 (n + 1)
+        loop (x:s1) (y:s2) n =
+          if x == y then loop s1 s2 n
+                    else loop s1 s2 (n + 1)

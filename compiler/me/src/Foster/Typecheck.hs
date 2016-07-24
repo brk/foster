@@ -205,11 +205,11 @@ doQuantification e' ctx = do
     case (hasEscapingMetaVars, isValue e') of
       (_, False) -> return e' -- Don't generalize over non-values...
       (True, _) -> do
-         tcLift $ putDocLn $ blue (text "Warning") <> text ": the expression"
-                    <$> indent 4 (highlightFirstLineDoc (rangeOf e'))
-                    <$> indent 2 (text "is being given a type involving meta type variables,"
-                              <$> text "not an implicitly-generalized polymorphic type"
-                              <+> text "(as might be expected in ML or Haskell")
+         tcWarn [text "the expression"
+                , indent 4 (highlightFirstLineDoc (rangeOf e'))
+                , indent 2 (text "is being given a type involving meta type variables,"
+                          <$> text "not an implicitly-generalized polymorphic type"
+                          <+> text "(as might be expected in ML or Haskell")]
          return e'
       _ | null fx_forall_tvs -> return e'
       _ -> do -- generalize over escaping effect meta type variables

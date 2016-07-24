@@ -179,6 +179,10 @@ tcWhenVerbose action = Tc $ \env ->
 tcLift :: IO a -> Tc a
 tcLift action = Tc $ \_env -> action >>= retOK
 
+tcWarn :: [Doc] -> Tc ()
+tcWarn docs =
+  tcLift $ putDocLn $ blue (text "Warning") <> text ": " <> vcat docs
+
 tcFails :: [Doc] -> Tc a
 tcFails errs = Tc $ \_env -> return $ Errors errs
 
