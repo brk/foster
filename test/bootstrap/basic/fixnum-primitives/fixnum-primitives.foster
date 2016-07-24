@@ -1,4 +1,5 @@
 snafuinclude Bits "bitwise";
+snafuinclude Text "text";
 
 main = {
   trunc8-test   !;
@@ -98,4 +99,93 @@ floating-ops = {
 
   expect_i64 4631166901565532406;
   print_i64 (42.42 |> f64-as-i64);
+
+  test-float-classification !;
+
+  expect_text      "18446744073709551616.000000000";
+  print_float_p9f64 18446744073709551616.0;
+
+  // A bit strange, until you realize it's the same float as above.
+  expect_text      "18446744073709551616.000000000";
+  print_float_p9f64 18446744073709552000.0;
+
+  expect_i64x (43efffffffffffff_16);
+  print_i64x  (f64-as-i64 18446744073709549568.0);
+
+  expect_i64x (43efffffffffffff_16);
+  print_i64x  (f64-as-i64 18446744073709549568.1);
+
+  expect_i64x (43f0000000000000_16);
+  print_i64x (f64-as-i64 18446744073709552000.0);
+};
+
+test-float-classification = {
+
+  expect_text "F64_U64_Negative";
+  print_text (-1.0 |> classify-f64-to-u64 |> show_tag_Float64AsU64Cases);
+
+  expect_text "F64_U64_Exact";
+  print_text (0.0 |> classify-f64-to-u64 |> show_tag_Float64AsU64Cases);
+
+  expect_text "F64_U64_Exact";
+  print_text (2.0 |> classify-f64-to-u64 |> show_tag_Float64AsU64Cases);
+
+  expect_text "F64_U64_Rounded";
+  print_text (2.2 |> classify-f64-to-u64 |> show_tag_Float64AsU64Cases);
+
+  expect_text "F64_U64_TooBig";
+  print_text (18446744073709551616.0 |> classify-f64-to-u64 |> show_tag_Float64AsU64Cases);
+
+  expect_text "F64_U64_TooBig";
+  print_text (18446744073709551616.5 |> classify-f64-to-u64 |> show_tag_Float64AsU64Cases);
+
+
+
+  expect_text "U64_F64_Exact";
+  print_text (1 |> classify-u64-to-f64 |> show_tag_UInt64asFloat64Cases);
+
+  expect_text "U64_F64_Exact";
+  print_text (18446744073709547520 |> classify-u64-to-f64 |> show_tag_UInt64asFloat64Cases);
+
+  expect_text "U64_F64_Exact";
+  print_text (18446744073709549568 |> classify-u64-to-f64 |> show_tag_UInt64asFloat64Cases);
+
+  case (18446744073709549569 |> classify-u64-to-f64)
+   of $U64_F64_Rounded f delta ->
+     expect_float_p9f64 18446744073709549568.0;
+     print_float_p9f64 f;
+     expect_i64 -1;
+     print_i64 delta;
+   of _ -> ()
+  end;
+
+  expect_text "U64_F64_Rounded";
+  print_text (18446744073709550000 |> classify-u64-to-f64 |> show_tag_UInt64asFloat64Cases);
+
+  expect_text "U64_F64_Exact";
+  print_text (18446744073709549568 |> classify-u64-to-f64 |> show_tag_UInt64asFloat64Cases);
+
+  expect_text "U64_F64_Rounded";
+  print_text (18446744073709550591 |> classify-u64-to-f64 |> show_tag_UInt64asFloat64Cases);
+
+  expect_text "U64_F64_RoundMax";
+  print_text (18446744073709550592 |> classify-u64-to-f64 |> show_tag_UInt64asFloat64Cases);
+
+};
+
+show_tag_UInt64asFloat64Cases = { c =>
+  case c
+     of $U64_F64_RoundMax _   -> "U64_F64_RoundMax"
+     of $U64_F64_Rounded  _ _ -> "U64_F64_Rounded"
+     of $U64_F64_Exact    _   -> "U64_F64_Exact"
+  end
+};
+
+show_tag_Float64AsU64Cases = { c =>
+  case c
+     of $F64_U64_Negative _   -> "F64_U64_Negative"
+     of $F64_U64_TooBig   _   -> "F64_U64_TooBig"
+     of $F64_U64_Rounded  _ _ -> "F64_U64_Rounded"
+     of $F64_U64_Exact    _   -> "F64_U64_Exact"
+  end
 };

@@ -1,16 +1,22 @@
 snafuinclude Ord "ord";
 
-minReprInt32 :: { Int32 };
-minReprInt32 = { -2`147`483`648 };
+minReprSInt32 :: { Int32 };
+minReprSInt32 = { -2`147`483`648 };
 
-maxReprInt32 :: { Int32 };
-maxReprInt32 = {  2`147`483`647 };
+maxReprSInt32 :: { Int32 };
+maxReprSInt32 = {  2`147`483`647 };
 
-minReprInt64 :: { Int64 };
-minReprInt64 = { -9`223`372`036`854`775`808 };
+maxReprUInt32 :: { Int32 };
+maxReprUInt32 = { -1 };
 
-maxReprInt64 :: { Int64 };
-maxReprInt64 = {  9`223`372`036`854`775`807 };
+minReprSInt64 :: { Int64 };
+minReprSInt64 = { -9`223`372`036`854`775`808 };
+
+maxReprSInt64 :: { Int64 };
+maxReprSInt64 = {  9`223`372`036`854`775`807 };
+
+maxReprUInt64 :: { Int64 };
+maxReprUInt64 = { -1 }; // 18`446`744`073`709`551`616
 
 octet4ToInt32 = { hi : Int8 => m1 : Int8 => m2 : Int8 => lo : Int8 =>
   octet4x32ToInt32 (zext_i8_to_i32 hi) (zext_i8_to_i32 m1) (zext_i8_to_i32 m2) (zext_i8_to_i32 lo)
@@ -101,6 +107,91 @@ cast_WordX2_to_i32     = { a : WordX2    =>
   if zext_i32_to_WordX2 res ==WordX2 a
     then res
     else prim kill-entire-process "cast_WordX2_to_i32 invariant violated"
+  end
+};
+
+////
+
+type case Float64AsU64Cases
+       of $F64_U64_Negative Float64
+       of $F64_U64_TooBig   Float64
+       of $F64_U64_Rounded  Int64 Float64
+       of $F64_U64_Exact    Int64
+       ;
+
+classify-f64-to-u64 = { f =>
+  // Note: this isn't the same as (maxReprUInt64 ! - 1);
+  // instead, it's the next-smallest representable float.
+  u64-max-minus-one = 18446744073709549568.0;
+
+  case ()
+    of _ if f <f64  0.0
+         -> F64_U64_Negative f
+    of _ if f >f64 u64-max-minus-one
+         -> F64_U64_TooBig f
+    of _ ->
+     fi = f64-to-u64-unsafe f;
+     ff = u64-to-f64-unsafe fi;
+     delta = ff -f64 f;
+     if delta ==f64 0.0
+       then F64_U64_Exact   fi
+       else F64_U64_Rounded fi delta
+     end
+  end
+};
+
+// Note that the "optimal" representation of the float
+//        18446744073709549568.0
+//     is 18446744073709550000.0
+// but the integer conversion of the optimal version
+// yields 18446744073709549568
+//    not 18446744073709550000
+
+////
+
+// (Rounded f d) means that the input i rounded to f,
+// such that f = (i + d). Note: d can be positive or negative.
+//
+// (RoundMax i) means that the given integer would round to
+// 18446744073709551616.0. The delta can be computed as
+// ((maxReprUInt64 !) -Int64 i) +Int64 1
+type case UInt64asFloat64Cases
+       of $U64_F64_RoundMax Int64
+       of $U64_F64_Rounded  Float64 Int64
+       of $U64_F64_Exact    Float64
+       ;
+
+// Near the top of the UInt32 space, the situation
+// looks like this:
+//
+// ... large numbers that don't have exact float representations ...
+// 4294967040, which is UINT_MAX - 256
+//             and has an exact float representation
+// ... 126 more numbers
+// 4294967167, which rounds down to the same float
+// 4294967168, which rounds up to the float for UINT_MAX+1
+// ... 126 more numbers
+// UINT_MAX
+//
+// The "magic number" 4294967040 is the value obtained by computing
+// UINT_MAX |> u32-to-f32 |> prevFloat |> f32-to-u32
+//    where prevFloat f = f |> f32-as-u32 |> decrInt32 |> u32-as-f32
+//
+//
+// With UInt64, the situation is similar, except that
+// 18446744073709549568 is ULLONG_MAX - 2048, and the last number
+// that doesn't round out-of-range is 18446744073709550591.
+
+classify-u64-to-f64 = { u =>
+  if u >UInt64 18446744073709550591
+    then U64_F64_RoundMax u
+    else f = u64-to-f64-unsafe u;
+         x = f64-to-u64-unsafe f;
+         delta = x -Int64 u;
+         if delta ==Int64 0
+           then U64_F64_Exact   f
+           else U64_F64_Rounded f delta
+         end
   end
 };
 
