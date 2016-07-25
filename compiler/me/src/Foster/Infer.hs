@@ -150,7 +150,7 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
   else do
    case (t1, t2) of
        ((TyAppTC (TyConTC nm1) _tys1), (TyAppTC (TyConTC nm2) _tys2))
-          | isEffect nm1 && isEffect nm2 -> do
+          | isEffect nm1 && isEffect nm2 && not (isEffectEmpty t1 && isEffectEmpty t2) -> do
                 tcLift $ putDocLn $ text "Unifying effects:"
                                  <$> indent 4 (pretty t1)
                                  <$> indent 4 (pretty t2)
