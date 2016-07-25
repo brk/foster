@@ -22,7 +22,7 @@ typecheckInt :: ExprAnnot -> String -> Expected TypeTC -> Tc (AnnExpr RhoTC)
 typecheckInt annot originalText expTy = do
     let goodBases = [2, 8, 10, 16]
     let maxBits = 64
-    (negated, clean, base) <- extractCleanBase originalText
+    ((negated, clean), base) <- extractCleanBase originalText
     sanityCheck (base `Prelude.elem` goodBases)
                 ("Integer base must be one of " ++ show goodBases
                                     ++ "; was " ++ show base)
@@ -50,16 +50,11 @@ typecheckInt annot originalText expTy = do
 
         -- Given "raw" integer text like "-123`456_10",
         -- return (True, "123456", 10)
-        extractCleanBase :: String -> Tc (Bool, String, Int)
+        extractCleanBase :: String -> Tc ((Bool, String), Int)
         extractCleanBase raw = do
-            let getNeg ('-':first, base) = (True,  first, base)
-                getNeg (    first, base) = (False, first, base)
-
-                noticks = Prelude.filter (/= '`') raw
-
-            case splitString "_" noticks of
-                [first, base] -> return $ getNeg (first, read base)
-                [first]       -> return $ getNeg (first, 10)
+            case splitString "_" raw of
+                [first, base] -> return $ (getNeg first, read base)
+                [first]       -> return $ (getNeg first, 10)
                 _otherwise    -> tcFails
                    [text "Unable to parse integer literal" <+> text raw]
 
@@ -80,42 +75,71 @@ typecheckInt annot originalText expTy = do
         parseRadixRev r (c:cs) = (fromIntegral $ fromJust (indexOf c))
                                + (r * parseRadixRev r cs)
 
+stripTicksAndPlus = Prelude.filter (\c -> c /= '`' && c /= '+')
+
+getNeg ('-':first) = (True,  stripTicksAndPlus first)
+getNeg ('+':first) = (False, stripTicksAndPlus first)
+getNeg (    first) = (False, stripTicksAndPlus first)
+
 typecheckRat :: ExprAnnot -> String -> Maybe TypeTC -> Tc (AnnExpr RhoTC)
 typecheckRat annot originalText _expTyTODO = do
   -- TODO: be more discriminating about float vs rational numbers?
+  let (negated, cleanWithoutSign) = getNeg originalText
+  let clean = if negated then '-':cleanWithoutSign else cleanWithoutSign
 
-  case Atto.parseOnly Atto.rational $ T.pack originalText of
-    Left err -> tcFails [text "Failed to parse rational:" <+> text originalText
+  case Atto.parseOnly Atto.rational $ T.pack clean of
+    Left err -> tcFails [text "Failed to parse rational:" <+> text clean
+                        ,highlightFirstLineDoc (rangeOf annot)
                         ,text "Error was:"
                         ,indent 8 (text err) ]
     Right val -> do
-      -- It's possible that the literal given is "misleading",
-      -- in the sense that it is neither the shortest string to
-      -- uniquely identify a given floating point value, nor is
-      -- it the most precise short-ish string.
-      let shortest = T.unpack $ toShortest val
-      let canonicalS = addPointZeroIfNeeded shortest
-      let Just shortestPrec = List.elemIndex '.' (reverse canonicalS)
-      let canonicalP = T.unpack $ toFixed shortestPrec val
-      let differingS = differingDigits originalText canonicalS
-      let differingP = differingDigits originalText canonicalP
-
-      case (differingS, differingP) of
-        (0, _) -> return ()
-        (_, 0) -> return ()
-        _ -> tcWarnMisleadingRat (rangeOf annot) canonicalS canonicalP
-
+      tcMaybeWarnMisleadingRat (rangeOf annot) clean val
       return (AnnLiteral annot (TyAppTC (TyConTC "Float64") [])
                          (LitFloat $ LiteralFloat val originalText))
 
-tcWarnMisleadingRat range canonicalS canonicalP = do
-  let alt = if canonicalS == canonicalP
-             then []
-             else [text "                 or, alternatively:   " <> text canonicalS]
-  tcWarn $ [text "the provided rational constant"
-           ,highlightFirstLineDoc range
-           ,text "is actually the floating point number " <> text canonicalP
-           ] ++ alt
+tcMaybeWarnMisleadingRat range cleanText val = do
+  -- It's possible that the literal given is "misleading",
+  -- in the sense that it is neither the shortest string to
+  -- uniquely identify a given floating point value, nor is
+  -- it the most precise short-ish string.
+  let isExpNot = isExponentialNotation cleanText
+  let shortest = T.unpack $ toShortest val
+  let canonicalS = addPointZeroIfNeeded shortest
+  let canonicalP = T.unpack $
+            if isExpNot
+              then toExponential   (-1) val
+              else toFixed shortestPrec val
+                where Just shortestPrec =
+                        List.elemIndex '.' (reverse canonicalS)
+
+  let differingS = differingDigits cleanText canonicalS
+  let differingP = differingDigits cleanText canonicalP
+  let sameLength = length cleanText == length canonicalP
+
+  case (differingS, differingP) of
+    (0, _) -> return ()
+    (_, 0) -> return ()
+    _ | sameLength && isExpNot -> return ()
+    _ -> do
+      let alt = if canonicalS == canonicalP
+                 then []
+                 else [text "                 or, alternatively:   " <> text canonicalS]
+      let description =
+                if sameLength
+                  then "is actually the floating point number "
+                  else "could be written more compactly as    "
+
+      tcWarn $ [text "the provided rational constant"
+               ,highlightFirstLineDoc range
+               ,text description <> text canonicalP
+               ] ++ alt
+
+isExponentialNotation s = loop s False
+  where loop ('.':s) _ = loop s True
+        loop ('e':_) True = True
+        loop ('E':_) True = True
+        loop (_:s) seenDot = loop s seenDot
+        loop [] _ = False
 
 addPointZeroIfNeeded s = if '.' `elem` s then s else s ++ ".0"
 
