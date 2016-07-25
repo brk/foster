@@ -37,19 +37,19 @@ i8-ops-test = {
 
 
 bitwise-ops = {
-  expect_i32b                10111001_2;
-  print_i32b (bitmerge-Int32 11110000_2
-                             10110110_2
-                             01001001_2);
+  expect_i32b                0b`10111001;
+  print_i32b (bitmerge-Int32 0b`11110000
+                             0b`10110110
+                             0b`01001001);
 
-  expect_i32b                      1010_2;
-  print_i32b (bitfield-Int32 1101101010_2  0 4);
-
-  expect_i32                10;
-  print_i32 (bitlength-Int32 11`0110`1010_2);
+  expect_i32b                      0b`1010;
+  print_i32b (bitfield-Int32 0b`1101101010  0 4);
 
   expect_i32                10;
-  print_i32 (bitlength-alt-Int32 11`0110`1010_2);
+  print_i32 (bitlength-Int32 0b`11`0110`1010);
+
+  expect_i32                10;
+  print_i32 (bitlength-alt-Int32 0b`11`0110`1010);
 
   expect_i32                 32;
   print_i32 (bitlength-Int32 -1);
@@ -66,24 +66,27 @@ bitwise-ops = {
   first-bit-set-Int32-test 0 7;
   first-bit-set-Int32-test 3 8;
 
-  expect_i32b                     0000`1101_2;
-  print_i32b (bit-reverse-Int32 8 1011`0000_2);
+  expect_i32b                     0b`0000`1101;
+  print_i32b (bit-reverse-Int32 8 0b`1011`0000);
 
-  expect_i1 True ; print_i1 (is-bit-set-Int32 101011_2 0);
-  expect_i1 True ; print_i1 (is-bit-set-Int32 101011_2 1);
-  expect_i1 False; print_i1 (is-bit-set-Int32 101011_2 2);
-  expect_i1 True ; print_i1 (is-bit-set-Int32 101011_2 3);
-  expect_i1 False; print_i1 (is-bit-set-Int32 101011_2 4);
-  expect_i1 True ; print_i1 (is-bit-set-Int32 101011_2 5);
+  expect_i1 True ; print_i1 (is-bit-set-Int32 0b`101011 0);
+  expect_i1 True ; print_i1 (is-bit-set-Int32 0b`101011 1);
+  expect_i1 False; print_i1 (is-bit-set-Int32 0b`101011 2);
+  expect_i1 True ; print_i1 (is-bit-set-Int32 0b`101011 3);
+  expect_i1 False; print_i1 (is-bit-set-Int32 0b`101011 4);
+  expect_i1 True ; print_i1 (is-bit-set-Int32 0b`101011 5);
 
   expect_i32 1;      print_i32 (copy-bit-Int32 0  True  0);
-  expect_i32 0100_2; print_i32 (copy-bit-Int32 0  True  2);
-  expect_i32 1011_2; print_i32 (copy-bit-Int32 15 False 2);
+  expect_i32 0b0100; print_i32 (copy-bit-Int32 0  True  2);
+  expect_i32 0b1011; print_i32 (copy-bit-Int32 15 False 2);
 
 
-  expect_i32 4; print_i32 (bitcount-Int32 10101010_2);
+  expect_i32 4; print_i32 (bitcount-Int32 0b`10101010);
   expect_i32 0; print_i32 (bitcount-Int32 0);
   expect_i32 1; print_i32 (bitcount-Int32 -2);
+
+  expect_i32 (-1);
+  print_i32 0xFFFF`FFFF;
 };
 
 first-bit-set-Int32-test = { e : Int32 => n : Int32 =>
@@ -109,17 +112,25 @@ floating-ops = {
   expect_text      "18446744073709551616.000000000";
   print_float_p9f64 18446744073709552000.0;
 
-  expect_i64x (43efffffffffffff_16);
+  expect_i64x (0x43efffffffffffff);
   print_i64x  (f64-as-i64 18446744073709549568.0);
 
-  expect_i64x (43efffffffffffff_16);
+  expect_i64x (0x43efffffffffffff);
   print_i64x  (f64-as-i64 18446744073709549568.1);
 
-  expect_i64x (43f0000000000000_16);
+  expect_i64x (0x43f0000000000000);
   print_i64x (f64-as-i64 18446744073709552000.0);
 };
 
 test-float-classification = {
+  z0 = 1.41e+01;
+  z1 = 1.41e+1;
+
+  expect_float_p9f64 14.1;
+  print_float_p9f64 z0;
+
+  expect_float_p9f64 14.1;
+  print_float_p9f64 z1;
 
   expect_text "F64_U64_Negative";
   print_text (-1.0 |> classify-f64-to-u64 |> show_tag_Float64AsU64Cases);

@@ -866,30 +866,30 @@ bitfield-left-Int32 = { i : Int32 => off-right => len =>
 };
 
 test-parseBits = {
-  bytes = bytesOfRawArray (prim mach-array-literal 0 0111`1101_2 0011`0110_2 (-1));
+  bytes = bytesOfRawArray (prim mach-array-literal 0 0b0111`1101 0b0011`0110 (-1));
   expect_i32                0; print_i32 (parseBits bytes 0  8);
-  expect_i32      0111`1101_2; print_i32 (parseBits bytes 8  8);
-  expect_i32      0111`11_2;   print_i32 (parseBits bytes 8  6);
-  expect_i32         1`1101_2; print_i32 (parseBits bytes 11 5);
-  expect_i32         1`1101`001_2;    print_i32 (parseBits bytes 11 8);
+  expect_i32      0b0111`1101; print_i32 (parseBits bytes 8  8);
+  expect_i32      0b0111`11;   print_i32 (parseBits bytes 8  6);
+  expect_i32         0b1`1101; print_i32 (parseBits bytes 11 5);
+  expect_i32         0b1`1101`001;    print_i32 (parseBits bytes 11 8);
 
-  bytes = bytesOfRawArray (prim mach-array-literal 45_16);
+  bytes = bytesOfRawArray (prim mach-array-literal 0x45);
   expect_i32 4; print_i32 (parseBits bytes 0  4);
   expect_i32 5; print_i32 (parseBits bytes 4  4);
 
-  expect_i32 5; print_i32 (bitfield-len-Int32 45_16 0 4);
-  expect_i32 4; print_i32 (bitfield-len-Int32 45_16 4 4);
-  expect_i32 10001_2; print_i32 (bitfield-len-Int32 11000101_2 2 5);
-  expect_i32  0001_2; print_i32 (bitfield-len-Int32 11000101_2 2 4);
-  expect_i32  0010_2; print_i32 (bitfield-len-Int32 11000101_2 1 4);
-  expect_i32  0101_2; print_i32 (bitfield-len-Int32 11000101_2 0 4);
-  expect_i32 45_16; print_i32 1000101_2;
+  expect_i32 5; print_i32 (bitfield-len-Int32 0x45 0 4);
+  expect_i32 4; print_i32 (bitfield-len-Int32 0x45 4 4);
+  expect_i32 0b10001; print_i32 (bitfield-len-Int32 0b11000101 2 5);
+  expect_i32  0b0001; print_i32 (bitfield-len-Int32 0b11000101 2 4);
+  expect_i32  0b0010; print_i32 (bitfield-len-Int32 0b11000101 1 4);
+  expect_i32  0b0101; print_i32 (bitfield-len-Int32 0b11000101 0 4);
+  expect_i32 0x45; print_i32 0b1000101;
 
-  bytes = bytesOfRawArray (prim mach-array-literal 45_16 255 255 255 255 255);
+  bytes = bytesOfRawArray (prim mach-array-literal 0x45 255 255 255 255 255);
   expect_i32 4; print_i32 (parseBits bytes 0  4);
   expect_i32 5; print_i32 (parseBits bytes 4  4);
 
-  bytes = bytesOfRawArray (prim mach-array-literal 12_16 34_16 56_16 78_16 9A_16);
+  bytes = bytesOfRawArray (prim mach-array-literal 0x12 0x34 0x56 0x78 0x9A);
   // [9a 78 56 34 12]
   //                ^index 0
   expect_i32 1; print_i32 (parseBits bytes 0  4);
@@ -897,13 +897,13 @@ test-parseBits = {
   expect_i32 3; print_i32 (parseBits bytes 8  4);
   expect_i32 4; print_i32 (parseBits bytes 12  4);
 
-  expect_i32   12_16; print_i32 (parseBits bytes 0  8);
-  //expect_i32 3412_16; print_i32 (parseBits bytes 0  16);
-  //expect_i32 1234_16; print_i32 (bytesGet2BE! bytes 0);
+  expect_i32   0x12; print_i32 (parseBits bytes 0  8);
+  //expect_i32 0x3412; print_i32 (parseBits bytes 0  16);
+  //expect_i32 0x1234; print_i32 (bytesGet2BE! bytes 0);
 
 
-  bytes = bytesOfRawArray (prim mach-array-literal 0 0 1111`0000_2 1011`0001_2 255 255);
-  expect_i32b 1`0000`1011`0001_2; print_i32b (parseBits bytes 19 13);
+  bytes = bytesOfRawArray (prim mach-array-literal 0 0 0b1111`0000 0b1011`0001 255 255);
+  expect_i32b 0b1`0000`1011`0001; print_i32b (parseBits bytes 19 13);
 };
 
 onesComplementSumIncremental16 = { w16 : Int32 => acc : Int32 =>
@@ -930,14 +930,14 @@ onesComplementSum = { init : Int32 => arr : Array Int8 => len : Int32 =>
 };
 
 test-onesComplementSum = {
-  expect_i32 (bitnot-Int32 0ddf2_16);
-  print_i32 (onesComplementSum 0 (prim mach-array-literal 00 01 0f2_16 03 0f4_16 0f5_16 0f6_16 0f7_16) 8);
+  expect_i32 (bitnot-Int32 0x0ddf2);
+  print_i32 (onesComplementSum 0 (prim mach-array-literal 00 01 0xf2 03 0xf4 0xf5 0xf6 0xf7) 8);
 
   expect_i32 (bitnot-Int32 56571);
-  print_i32 (onesComplementSum 0 (prim mach-array-literal 00 01 0f2_16 03 0f4_16 0f5_16 0f6_16 0) 8);
+  print_i32 (onesComplementSum 0 (prim mach-array-literal 00 01 0xf2 03 0xf4 0xf5 0xf6 0) 8);
 
   expect_i32 (bitnot-Int32 56571);
-  print_i32 (onesComplementSum 0 (prim mach-array-literal 00 01 0f2_16 03 0f4_16 0f5_16 0f6_16) 7);
+  print_i32 (onesComplementSum 0 (prim mach-array-literal 00 01 0xf2 03 0xf4 0xf5 0xf6) 7);
 };
 
 test-bytesFlattened = {
@@ -1104,7 +1104,7 @@ unparse-IPv4-datagram = { datagram =>
 
         bb = newBytesBuilder size;
         cksm = 0; // for now...
-        verslen = 45_16; // vers=4, len=5 (*4 = 20)
+        verslen = 0x45; // vers=4, len=5 (*4 = 20)
                                        bb |>
         bytesBuilderAppendInt8    verslen |>
         bytesBuilderAppendInt8    0       |> // TOS = normal
@@ -1152,7 +1152,7 @@ unparse-TCP-segment = { src => dst => segment =>
 
         bb = newBytesBuilder size;
         cksm = 0; // for now...
-        verslen = 45_16; // vers=4, len=5 (*4 = 20)
+        verslen = 0x45; // vers=4, len=5 (*4 = 20)
                                        bb |>
         bytesBuilderAppendInt16BE srcport |>
         bytesBuilderAppendInt16BE dstport |>

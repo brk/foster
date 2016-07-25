@@ -101,7 +101,7 @@ clamp-SInt32! = { mn => mx => v => v |> min-SInt32 mx |> max-SInt32 mn };
 wordNumBits32 :: { Int32 };
 wordNumBits32 = {
 
-    if 0 ==Word bitxor-Word (-1) 0FFFF`FFFF_16
+    if 0 ==Word bitxor-Word (-1) 0xFFFF`FFFF
       then 32
       else 64
     end
@@ -139,7 +139,7 @@ highestBitMask-Word = { x0 =>
   x5 = x4 `bitor-Word` (x4 `bitlshr-Word` 16);
   // In LLVM, shifting a 32-bit value 32 bits
   // produces undefined, not zero.
-  x6 = if 0 ==Word bitxor-Word (-1) 0FFFF`FFFF_16
+  x6 = if 0 ==Word bitxor-Word (-1) 0xFFFF`FFFF
           then x5 // 32 bits in a word
           else    // 64 bits in a word
                x5 `bitor-Word` (x5 `bitlshr-Word` 32);

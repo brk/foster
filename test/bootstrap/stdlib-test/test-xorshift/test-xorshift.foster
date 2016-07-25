@@ -11,8 +11,8 @@ print_point = { i => x =>
 main = {
 
   st = xor1x32MakeState 2463534242;
-  expect_i32x 2B1F4D63_16;
-  expect_i32x 94DACB7A_16;
+  expect_i32x 0x2B1F4D63;
+  expect_i32x 0x94DACB7A;
   foldRange 0 2 st { i => st =>
     case xor1x32gen st of (x, st) ->
       print_i32x x;

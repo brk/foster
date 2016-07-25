@@ -238,32 +238,20 @@ tannots :  binding (',' binding)* -> ^(BINDING binding+);
 //    1
 //    -2
 //    1234
-//    10101011_2
-//    1011`1011_2
-//    0FEEDFACE_16
+//    0b10101011
+//    0b`1011`1011
+//    0xFEEDFACE
 //    12.34
 //    12.34`56
 //    12.34e+01
 //    12.34e-10
-/*
-                      // not currently supported:
-                      //    12.34_16
-                      //    12.34abc_16
-                      //    12.abc_16
-                      // If we supported hex clumps following a decimal point,
-                      // we would need to use a non-hex digit (like x) to avoid
-                      // ambiguity between 1.0e+0 being parsed as
-                      // num.hexclump + num  vs num.hexclump sci_notation.
-                      // So we don't support hex clumps, nor base specifiers.
-*/
 
 num : NUM -> ^(LIT_NUM NUM);
-NUM			:  ('+'|'-')? DIGIT HEX_CLUMP? ('`' HEX_CLUMP)*
-				( '.' DIGIT* ('`' DIGIT+)* SCI_NOTATION?
-				|                          INT_RAT_BASE?
-				);
+NUM			:  ('+'|'-')?
+               (DIGIT         DIGIT*     ('`' DIGIT+   )*
+               |'0' ('x'|'b') HEX_CLUMP? ('`' HEX_CLUMP)*)
+               ( '.' DIGIT* ('`' DIGIT+)* SCI_NOTATION? )?;
 fragment SCI_NOTATION	: ('e'|'E') ('+'|'-')? DIGIT+;
-fragment INT_RAT_BASE   : '_' HEX_CLUMP;
 fragment HEX_CLUMP      : DIGIT HEX_DIGIT* | SMALL_IDENT | UPPER_IDENT;
 
 fragment WORD_CHAR      : IDENT_START_SMALL | IDENT_START_UPPER;

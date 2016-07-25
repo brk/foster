@@ -14,30 +14,30 @@
 
 test-manually-lifted = {
   expect_i32 1040811149;
-  print_i32 (murmurhash2-step-manually-lifted 1 -1 24 5bd1e995_16);
+  print_i32 (murmurhash2-step-manually-lifted 1 -1 24 0x5bd1e995);
 
   expect_i32 640067440;
-  print_i32 (murmurhash2-step-manually-lifted 2 1040811149 24 5bd1e995_16);
+  print_i32 (murmurhash2-step-manually-lifted 2 1040811149 24 0x5bd1e995);
 
   expect_i32 1308571692;
-  print_i32 (murmurhash2-step-manually-lifted 3 640067440 24 5bd1e995_16);
+  print_i32 (murmurhash2-step-manually-lifted 3 640067440 24 0x5bd1e995);
 
   expect_i32 (negate-Int32 2051158325);
-  print_i32 (murmurhash2-step-manually-lifted 4 1308571692 24 5bd1e995_16);
+  print_i32 (murmurhash2-step-manually-lifted 4 1308571692 24 0x5bd1e995);
 };
 
 test-let-transformed = {
   expect_i32 1040811149;
-  print_i32 (murmurhash2-step-let-transformed 1 -1 24 5bd1e995_16);
+  print_i32 (murmurhash2-step-let-transformed 1 -1 24 0x5bd1e995);
 
   expect_i32 640067440;
-  print_i32 (murmurhash2-step-let-transformed 2 1040811149 24 5bd1e995_16);
+  print_i32 (murmurhash2-step-let-transformed 2 1040811149 24 0x5bd1e995);
 
   expect_i32 1308571692;
-  print_i32 (murmurhash2-step-let-transformed 3 640067440 24 5bd1e995_16);
+  print_i32 (murmurhash2-step-let-transformed 3 640067440 24 0x5bd1e995);
 
   expect_i32 (negate-Int32 2051158325);
-  print_i32 (murmurhash2-step-let-transformed 4 1308571692 24 5bd1e995_16);
+  print_i32 (murmurhash2-step-let-transformed 4 1308571692 24 0x5bd1e995);
 };
 
 test-let = {
@@ -45,13 +45,13 @@ test-let = {
   print_i32 (murmurhash2-step-let 1 (negate-Int32 1) 24 1`540`483`477);
 
   expect_i32 640067440;
-  print_i32 (murmurhash2-step-let 2 1040811149 24 5bd1e995_16);
+  print_i32 (murmurhash2-step-let 2 1040811149 24 0x5bd1e995);
 
   expect_i32 1308571692;
-  print_i32 (murmurhash2-step-let 3 640067440 24 5bd1e995_16);
+  print_i32 (murmurhash2-step-let 3 640067440 24 0x5bd1e995);
 
   expect_i32 (negate-Int32 2051158325);
-  print_i32  (murmurhash2-step-let 4 1308571692 24 5bd1e995_16);
+  print_i32  (murmurhash2-step-let 4 1308571692 24 0x5bd1e995);
 };
 
 main = {

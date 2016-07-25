@@ -52,7 +52,7 @@ make-byte-Int32 = { x : Int8 => n : Int32 =>
 };
 
 clear-byte-Int32 = { v : Int32 => n : Int32 =>
-  bitand-Int32 v (bitnot-Int32 (make-byte-Int32 0ff_16 n))
+  bitand-Int32 v (bitnot-Int32 (make-byte-Int32 0xff n))
 };
 
 replace-byte-Int32 = { v : Int32 => n : Int32 => x : Int8 =>
@@ -60,7 +60,7 @@ replace-byte-Int32 = { v : Int32 => n : Int32 => x : Int8 =>
 };
 
 replace-byte-Int32-alt = { v : Int32 => n : Int32 => x : Int8 =>
-  bitmerge-Int32 (make-byte-Int32 0ff_16 n) (make-byte-Int32 x n) v
+  bitmerge-Int32 (make-byte-Int32 0xff n) (make-byte-Int32 x n) v
 };
 
 // Extracts the n'th byte (little-endian) of v.
@@ -152,6 +152,10 @@ bitlength-alt-Int32 = { n : Int32 =>
              end
            };
   in  go n 0 end
+};
+
+bitlength-alt2-Int32 = { n : Int32 =>
+  32 -Int32 (ctlz-Int32 n)
 };
 
 first-set-bit-Int32 = { n : Int32 =>

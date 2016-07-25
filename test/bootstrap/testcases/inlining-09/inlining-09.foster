@@ -30,7 +30,7 @@ natCountBits = { i : NatInf =>
 
 wordNumBits32 :: { Int32 };
 wordNumBits32 = {
-    if 0 ==Word bitxor-Word (-1) 0FFFF`FFFF_16
+    if 0 ==Word bitxor-Word (-1) 0xFFFF`FFFF
       then 32
       else 64
     end

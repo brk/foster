@@ -4,24 +4,24 @@ main = {
                          print_i32x (noinline_readInt32FromArrayInt8 key off);
   };
 
-  print_i32x 03`02`01`00_16;
+  print_i32x 0x03`02`01`00;
   expect_i32x (octet4ToInt32 03 02 01 00);
 
-  test 03`02`01`00_16   0   ;
-  test 07`06`05`04_16   4   ;
-  test 0B`0A`09`08_16   8   ;
-  test 0F`0E`0D`0C_16   12  ;
-  test 05`04`03`02_16   2   ;
-  test 09`08`07`06_16   6   ;
-  test 0D`0C`0B`0A_16   10  ;
-  test 06`05`04`03_16   3   ;
-  test 0A`09`08`07_16   7   ;
-  test 0E`0D`0C`0B_16   11  ;
+  test 0x`03`02`01`00   0   ;
+  test 0x`07`06`05`04   4   ;
+  test 0x`0B`0A`09`08   8   ;
+  test 0x`0F`0E`0D`0C   12  ;
+  test 0x`05`04`03`02   2   ;
+  test 0x`09`08`07`06   6   ;
+  test 0x`0D`0C`0B`0A   10  ;
+  test 0x`06`05`04`03   3   ;
+  test 0x`0A`09`08`07   7   ;
+  test 0x`0E`0D`0C`0B   11  ;
 
-  print_i64x 09`08`07`06`05`04`03`02_16;
+  print_i64x 0x09`08`07`06`05`04`03`02;
   expect_i64x (noinline_readInt64FromArrayInt8 key 2);
 
-  print_i32x 07`06`05`04_16;
+  print_i32x 0x07`06`05`04;
   expect_i32x (noinline_readInt32FromArrayInt8_offset key 0);
 };
 

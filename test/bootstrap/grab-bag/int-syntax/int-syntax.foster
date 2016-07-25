@@ -1,16 +1,14 @@
 main = {
-  expect_i1 True ; print_i1 (__COMPILES__ 1_2  );
+  expect_i1 True ; print_i1 (__COMPILES__ 0b1  );
   expect_i1 False; print_i1 (__COMPILES__ 0_1  );
-  expect_i1 True ; print_i1 (__COMPILES__ 0_2  );
-  expect_i1 False; print_i1 (__COMPILES__ 2_2  );
-  expect_i1 True ; print_i1 (__COMPILES__ 7_8  );
-  expect_i1 False; print_i1 (__COMPILES__ 08_8 );
-  expect_i1 False; print_i1 (__COMPILES__ 0a_8 );
-  expect_i1 True ; print_i1 (__COMPILES__ 0f_16);
-  expect_i1 True ; print_i1 (__COMPILES__ 1f_16);
-
-  // parses as variable, not number
-  expect_i1 False ; print_i1 (__COMPILES__ f_16 );
+  expect_i1 True ; print_i1 (__COMPILES__ 0b0  );
+  expect_i1 False; print_i1 (__COMPILES__ 0b2  );
+  expect_i1 False; print_i1 (__COMPILES__ 0bA  );
+  expect_i1 False; print_i1 (__COMPILES__ 0hA  );
+  expect_i1 True ; print_i1 (__COMPILES__ 0xA  );
+  expect_i1 False; print_i1 (__COMPILES__ 0xG  );
+  expect_i1 True ; print_i1 (__COMPILES__ 0x0f);
+  expect_i1 True ; print_i1 (__COMPILES__ 0x1f);
 
   // ==== numeric representation limit tests ====
   // === base 10 ===
@@ -23,15 +21,15 @@ main = {
   expect_i1 False; print_i1( __COMPILES__ print_i32 4294967297); // 2^32 + 1
 
   // === base 2 ===
-  expect_i1 True; print_i1( __COMPILES__ 1111`1111_2); // 8 bits
-  expect_i1 True; print_i1( __COMPILES__ 1111`1111`1111`1111_2); // 16 bits
+  expect_i1 True; print_i1( __COMPILES__ 0b1111`1111); // 8 bits
+  expect_i1 True; print_i1( __COMPILES__ 0b1111`1111`1111`1111); // 16 bits
 
   // TODO LLVM i<n> type counts bits only
   // signedness comes from operations
     // 32 bits
-  expect_i1 True ; print_i1 (__COMPILES__ print_i32   1111`1111`1111`1111`1111`1111`1111`1111_2);
+  expect_i1 True ; print_i1 (__COMPILES__ print_i32   0b1111`1111`1111`1111`1111`1111`1111`1111);
     // zero + 32 bits
-  expect_i1 True ; print_i1 (__COMPILES__ print_i32 0`1111`1111`1111`1111`1111`1111`1111`1111_2);
+  expect_i1 True ; print_i1 (__COMPILES__ print_i32 0b0`1111`1111`1111`1111`1111`1111`1111`1111);
     // one + 32 bits
-  expect_i1 False; print_i1 (__COMPILES__ print_i32 1`1111`1111`1111`1111`1111`1111`1111`1111_2);
+  expect_i1 False; print_i1 (__COMPILES__ print_i32 0b1`1111`1111`1111`1111`1111`1111`1111`1111);
 };

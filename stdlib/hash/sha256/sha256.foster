@@ -7,17 +7,17 @@ sha256aa :: { Array Int8 => Array Int8 };
 sha256aa = { inp =>
 
   cube = prim mach-array-literal
-      0428a2f98_16 071374491_16 0b5c0fbcf_16 0e9b5dba5_16 03956c25b_16 059f111f1_16 0923f82a4_16 0ab1c5ed5_16
-      0d807aa98_16 012835b01_16 0243185be_16 0550c7dc3_16 072be5d74_16 080deb1fe_16 09bdc06a7_16 0c19bf174_16
-      0e49b69c1_16 0efbe4786_16 00fc19dc6_16 0240ca1cc_16 02de92c6f_16 04a7484aa_16 05cb0a9dc_16 076f988da_16
-      0983e5152_16 0a831c66d_16 0b00327c8_16 0bf597fc7_16 0c6e00bf3_16 0d5a79147_16 006ca6351_16 014292967_16
-      027b70a85_16 02e1b2138_16 04d2c6dfc_16 053380d13_16 0650a7354_16 0766a0abb_16 081c2c92e_16 092722c85_16
-      0a2bfe8a1_16 0a81a664b_16 0c24b8b70_16 0c76c51a3_16 0d192e819_16 0d6990624_16 0f40e3585_16 0106aa070_16
-      019a4c116_16 01e376c08_16 02748774c_16 034b0bcb5_16 0391c0cb3_16 04ed8aa4a_16 05b9cca4f_16 0682e6ff3_16
-      0748f82ee_16 078a5636f_16 084c87814_16 08cc70208_16 090befffa_16 0a4506ceb_16 0bef9a3f7_16 0c67178f2_16
+      0x428a2f98 0x71374491 0xb5c0fbcf 0xe9b5dba5 0x3956c25b 0x59f111f1 0x923f82a4 0xab1c5ed5
+      0xd807aa98 0x12835b01 0x243185be 0x550c7dc3 0x72be5d74 0x80deb1fe 0x9bdc06a7 0xc19bf174
+      0xe49b69c1 0xefbe4786 0x0fc19dc6 0x240ca1cc 0x2de92c6f 0x4a7484aa 0x5cb0a9dc 0x76f988da
+      0x983e5152 0xa831c66d 0xb00327c8 0xbf597fc7 0xc6e00bf3 0xd5a79147 0x06ca6351 0x14292967
+      0x27b70a85 0x2e1b2138 0x4d2c6dfc 0x53380d13 0x650a7354 0x766a0abb 0x81c2c92e 0x92722c85
+      0xa2bfe8a1 0xa81a664b 0xc24b8b70 0xc76c51a3 0xd192e819 0xd6990624 0xf40e3585 0x106aa070
+      0x19a4c116 0x1e376c08 0x2748774c 0x34b0bcb5 0x391c0cb3 0x4ed8aa4a 0x5b9cca4f 0x682e6ff3
+      0x748f82ee 0x78a5636f 0x84c87814 0x8cc70208 0x90befffa 0xa4506ceb 0xbef9a3f7 0xc67178f2
       ;
-  sqr = prim mach-array-literal 06a09e667_16 0bb67ae85_16 03c6ef372_16 0a54ff53a_16
-                                0510e527f_16 09b05688c_16 01f83d9ab_16 05be0cd19_16;
+  sqr = prim mach-array-literal 0x6a09e667 0xbb67ae85 0x3c6ef372 0xa54ff53a
+                                0x510e527f 0x9b05688c 0x1f83d9ab 0x5be0cd19;
   w = newDArray0 64 { i => 0 };
   a = newDArray0 16 { i => 0 };
   h = newDArray0 8  { i => sqr[i] };
@@ -56,7 +56,7 @@ sha256aa = { inp =>
     bitpos = sv q^ `bitshl-Int32` 3;
     q2 = s2 q^;
     v = a[q2];
-    mask1 = bitnot-Int32 (0ff_16 `bitshl-Int32` bitpos);
+    mask1 = bitnot-Int32 (0xff `bitshl-Int32` bitpos);
     mask2 = (zext_i8_to_i32 val) `bitshl-Int32` bitpos;
     ((v `bitand-Int32` mask1) `bitor-Int32` mask2) >^ a[q2];
     if q^ ==Int32 63
@@ -74,7 +74,7 @@ sha256aa = { inp =>
   };
 
   // finish
-  byte 80_16;
+  byte 0x80;
   while { q^ !=Int32 56 } { byte 0 };
   enumRange64 0 8 { n =>
     extract-byte-Int64-offset (arrayLength inp) (7 -Int64 n) |> byte;

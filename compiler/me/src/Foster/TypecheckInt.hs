@@ -22,7 +22,7 @@ typecheckInt :: ExprAnnot -> String -> Expected TypeTC -> Tc (AnnExpr RhoTC)
 typecheckInt annot originalText expTy = do
     let goodBases = [2, 8, 10, 16]
     let maxBits = 64
-    ((negated, clean), base) <- extractCleanBase originalText
+    let (negated, clean, base) = extractCleanBase originalText
     sanityCheck (base `Prelude.elem` goodBases)
                 ("Integer base must be one of " ++ show goodBases
                                     ++ "; was " ++ show base)
@@ -48,20 +48,6 @@ typecheckInt annot originalText expTy = do
 
         indexOf x = (toLower x) `List.elemIndex` "0123456789abcdef"
 
-        -- Given "raw" integer text like "-123`456_10",
-        -- return (True, "123456", 10)
-        extractCleanBase :: String -> Tc ((Bool, String), Int)
-        extractCleanBase raw = do
-            case splitString "_" raw of
-                [first, base] -> return $ (getNeg first, read base)
-                [first]       -> return $ (getNeg first, 10)
-                _otherwise    -> tcFails
-                   [text "Unable to parse integer literal" <+> text raw]
-
-        splitString :: String -> String -> [String]
-        splitString needle haystack =
-            map T.unpack $ T.splitOn (T.pack needle) (T.pack haystack)
-
         -- Precondition: the provided string must be parseable in the given radix
         precheckedLiteralInt :: String -> Bool -> String -> Int -> LiteralInt
         precheckedLiteralInt originalText negated clean base =
@@ -75,16 +61,27 @@ typecheckInt annot originalText expTy = do
         parseRadixRev r (c:cs) = (fromIntegral $ fromJust (indexOf c))
                                + (r * parseRadixRev r cs)
 
-stripTicksAndPlus = Prelude.filter (\c -> c /= '`' && c /= '+')
+-- Given "raw" integer text like "-0x123`456",
+-- return (True, "123456", 16)
+extractCleanBase :: String -> (Bool, String, Int)
+extractCleanBase raw = do
+  case getNeg raw of
+    (neg, clean) ->
+       case clean of
+         ('0':'b':rest) -> (neg, rest , 2)
+         ('0':'x':rest) -> (neg, rest , 16)
+         _              -> (neg, clean, 10)
+  where
+    stripTicksAndPlus = Prelude.filter (\c -> c /= '`' && c /= '+')
 
-getNeg ('-':first) = (True,  stripTicksAndPlus first)
-getNeg ('+':first) = (False, stripTicksAndPlus first)
-getNeg (    first) = (False, stripTicksAndPlus first)
+    getNeg ('-':first) = (True,  stripTicksAndPlus first)
+    getNeg ('+':first) = (False, stripTicksAndPlus first)
+    getNeg (    first) = (False, stripTicksAndPlus first)
 
 typecheckRat :: ExprAnnot -> String -> Maybe TypeTC -> Tc (AnnExpr RhoTC)
 typecheckRat annot originalText _expTyTODO = do
   -- TODO: be more discriminating about float vs rational numbers?
-  let (negated, cleanWithoutSign) = getNeg originalText
+  let (negated, cleanWithoutSign, _) = extractCleanBase originalText
   let clean = if negated then '-':cleanWithoutSign else cleanWithoutSign
 
   case Atto.parseOnly Atto.rational $ T.pack clean of
