@@ -36,7 +36,7 @@ executable me
                  containers -any,
                  criterion >= 1.1.0.0,
                  CBOR -any,
-                 double-conversion -any,
+                 double-conversion >=2.0.1.2,
                  text >= 1.2.0.0,
                  mtl >= 2.2.1,
                  transformers -any,
