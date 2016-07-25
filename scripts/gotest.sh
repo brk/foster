@@ -32,7 +32,7 @@ fi
 
 rm $tmpfile
 
-T=$D/`basename $P`.foster
+T=$D/`basename $D`.foster
 
 if [ -z "$R" ]; then
   echo "Unable to compute project root, exiting!"
