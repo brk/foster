@@ -78,7 +78,7 @@ cast_Word_to_i32     = { a : Word    =>
 
 
 cast_Word_to_i16     = { a : Word    =>
-  res = trunc_Word_to_i32 a `bitand-Int32` 0FFFF_16;
+  res = trunc_Word_to_i32 a `bitand-Int32` 0xFFFF;
   if zext_i32_to_Word res ==Word a
     then res
     else prim kill-entire-process "cast_Word_to_i16 invariant violated"

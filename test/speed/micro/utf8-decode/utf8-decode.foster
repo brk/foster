@@ -45,7 +45,7 @@ mk-UTF-8-decoder-v1 = {
     prim assert-invariants (typex >=UInt32 0) (typex <=UInt32 11);
 
     codepx = if state !=Int64 kUTF8-ACCEPT
-               then (byte32 `bitand-Int32` 11`1111_2) `bitor-Int32`
+               then (byte32 `bitand-Int32` 0b11`1111) `bitor-Int32`
                     (codep  `bitshl-Int32`   6)
                else (255 `bitlshr-Int32` typex) `bitand-Int32` byte32
              end;
@@ -108,17 +108,17 @@ test-v1 = {
   print_i32 (countCodePoints-v1 d1 (prim mach-array-literal 32 33 34 35 36 37 38 39 40));
 
   expect_i32 2;
-  print_i32 (countCodePoints-v1 d1 (prim mach-array-literal 02F_16        02F_16));
+  print_i32 (countCodePoints-v1 d1 (prim mach-array-literal 0x2F        0x2F));
 
   expect_i32 0; // overlong encoding
-  print_i32 (countCodePoints-v1 d1 (prim mach-array-literal 0C0_16 0AF_16 02F_16));
+  print_i32 (countCodePoints-v1 d1 (prim mach-array-literal 0xC0 0xAF 0x2F));
 
   /*
   expect_i1 True;
-  print_i1 (is-UTF-8-v1 d1 (prim mach-array-literal 02F_16        02F_16));
+  print_i1 (is-UTF-8-v1 d1 (prim mach-array-literal 0x2F        0x2F));
 
   expect_i1 False; // overlong encoding
-  print_i1 (is-UTF-8-v1 d1 (prim mach-array-literal 0C0_16 0AF_16 02F_16));
+  print_i1 (is-UTF-8-v1 d1 (prim mach-array-literal 0xC0 0xAF 0x2F));
   */
 };
 

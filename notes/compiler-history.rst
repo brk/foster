@@ -762,6 +762,27 @@ we know that ``h`` has a known gc effect, we can avoid generating and then
 later solving an indirect constraint. After collecting a minimal constraint
 set, we wait until after closure conversion to resolve the constraints.
 
+Historical Note: Integer Syntax
+-------------------------------
+
+Early prototypes of the language adopted a base-suffix syntax for
+integer literals, such as ``101101_2`` to represent 41.
+This design was taken from the Fortress language
+(via a blog post from Guy Steele that is now lost to the sands of time).
+Such literals are (arguably) prettier than the ``0b101101`` style.
+One downside of this scheme is that it introduces an
+ambiguity: should ``ff_16`` be lexed as a digit or an identifier?
+The obvious solution is to require a leading digit (such as ``0``),
+but in doing so we're halfway towards the traditional solution of
+a leading zero plus a base specifier.
+Plus, we end up needing six characters: ``0ff_16`` instead of four: ``0xff``.
+And the leading zero looks pretty silly in cases like ``0FFFF`FFFF`0000`0000_16``
+Finally, the scheme suggests support for (unsupported) arbitrary bases.
+
+On the other hand, lining up vertically-juxtaposed
+numbers looks nicer with trailing base specifiers.
+
+
 Extending The Language
 ----------------------
 

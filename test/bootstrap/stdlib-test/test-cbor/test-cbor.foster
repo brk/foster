@@ -5,7 +5,7 @@ main = {
   expect_text "21";
   print_text (21 |> tmp_Text_of_Int64);
 
-  let (hi, lo) = splitByte 82_16;
+  let (hi, lo) = splitByte 0x82;
   print_i8 hi;
   print_i8 lo;
   expect_i8 8;
@@ -38,7 +38,7 @@ cbor-test = { raw : Array Int8 => cbor =>
 
 splitByte = { b : Int8 =>
   (b `bitlshr-Int8` 4,
-   b `bitand-Int8`  1111_2)
+   b `bitand-Int8`  0b1111)
 };
 
 textOfNibble = { b : Int8 =>

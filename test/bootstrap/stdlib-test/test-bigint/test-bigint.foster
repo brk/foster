@@ -22,11 +22,11 @@ main = {
   n3_c !;
 
   if (wordNumBits32 !) ==Int32 32 then
-    case splitCarry 0`EDcc`cccc_16 0`baaa`aaaa_16
+    case splitCarry 0xEDcc`cccc 0xbaaa`aaaa
       of (hi, lo) -> print_Wordx hi;
                      print_Wordx lo;
-                     expect_Wordx 0`Dccc`cccb_16;
-                     expect_Wordx 0`0aaa`aaaa_16;
+                     expect_Wordx 0xDccc`cccb;
+                     expect_Wordx 0x0aaa`aaaa;
     end
   else () end;
 
@@ -395,7 +395,7 @@ t0 = {
   expect_i32 12345;
   print_i64  12345;
 
-  expect_text "0000000000000000000000000000000000000000000000000011000000111001_2";
+  expect_text "0b0000000000000000000000000000000000000000000000000011000000111001";
   print_i64b  12345;
 };
 
@@ -547,7 +547,7 @@ t3 = {
 
   case splitInt64 4611686018427387904
     of (hi, lo) ->
-      expect_i32b 01000000000000000000000000000000_2;
+      expect_i32b 0b01000000000000000000000000000000;
       print_i32b hi;
       expect_i32b 0;
       print_i32b lo;
@@ -591,7 +591,7 @@ t4 = {
   end;
 
   case sqrInt64 11839720383 of
-    (hi, lo) -> expect_i64b 1001100101011111110001100111100010001101010000100111100010000001_2;
+    (hi, lo) -> expect_i64b 0b1001100101011111110001100111100010001101010000100111100010000001;
                 print_i64b lo;
 
                 expect_i64 7;
@@ -624,8 +624,8 @@ t5 = {
 
 t6 = {
 
-  let k0 = 101010011011011011_2;
-      k1 = 001010101000111110_2;
+  let k0 = 0b101010011011011011;
+      k1 = 0b001010101000111110;
   in
     expect_i64 (bitand-Int64 k0 k1);
     print_text (foster_mp_to_text_radix

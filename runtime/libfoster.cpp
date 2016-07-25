@@ -286,6 +286,7 @@ int fprint_b2(FILE* f, Int x) {
 
 void fprint_f64(FILE* f, double x) { fprintf(f, "%f\n", x); }
 void fprint_p9f64(FILE* f, double x) { fprintf(f, "%.9f\n", x); }
+// TODO .17g for doubles?
 
 void fprint_i64(FILE* f, int64_t x) { fprintf(f, "%" PRId64 "\n", x); }
 void fprint_i64x(FILE* f, int64_t x) { fprintf(f, "%" PRIX64 "_16\n", x); }

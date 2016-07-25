@@ -144,10 +144,10 @@ siphash24 = { bytes => key =>
 
   b0 = prim_arrayLength bytes `bitshl-Int64` 56;
 
-  v0 = k0 `bitxor-Int64` 736f6d6570736575_16;
-  v1 = k1 `bitxor-Int64` 646f72616e646f6d_16;
-  v2 = k0 `bitxor-Int64` 6c7967656e657261_16;
-  v3 = k1 `bitxor-Int64` 7465646279746573_16;
+  v0 = k0 `bitxor-Int64` 0x736f6d6570736575;
+  v1 = k1 `bitxor-Int64` 0x646f72616e646f6d;
+  v2 = k0 `bitxor-Int64` 0x6c7967656e657261;
+  v3 = k1 `bitxor-Int64` 0x7465646279746573;
 
   // Invariant: len_rem + offset == arrayLength32 bytes
   // Invariant: 0 <= offset

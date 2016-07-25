@@ -33,16 +33,16 @@ test-load-sub = fn(a:i32) {
 // conflict with grammar keywords for now...
 
 test-load-xor = fn(a:i32) {
-  expect_i32(10001_2) ; print_i32(llvm.atomic.load.xor.i32.p0i32(a, 00111_2))
-  expect_i32(10110_2) ; print_i32(a)
+  expect_i32(0b10001) ; print_i32(llvm.atomic.load.xor.i32.p0i32(a, 0b00111))
+  expect_i32(0b10110) ; print_i32(a)
 }
 
 // For LLVM 2.6, load.nand actually computes A & ~B, not ~(A & B),
 // in order to maintain compatibility with GCC 4.2
 //test-load-nand = fn(a:i32) {
-//  expect_i32(110101_2) ; print_i32(llvm.atomic.load.nand.i32.p0i32(a, 111011_2))
-//  expect_i32(001111_2) ; print_i32(a)
-//  // actual: 001010_2
+//  expect_i32(0b110101) ; print_i32(llvm.atomic.load.nand.i32.p0i32(a, 0b111011))
+//  expect_i32(0b001111) ; print_i32(a)
+//  // actual: 0b001010
 //}
 
 test-load-max = fn(a:i32) {
