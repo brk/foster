@@ -240,7 +240,7 @@ tannots :  binding (',' binding)* -> ^(BINDING binding+);
 //    1234
 //    10101011_2
 //    1011`1011_2
-//    FEEDFACE_16
+//    0FEEDFACE_16
 //    12.34
 //    12.34`56
 //    12.34e+01
@@ -258,11 +258,11 @@ tannots :  binding (',' binding)* -> ^(BINDING binding+);
 */
 
 num : NUM -> ^(LIT_NUM NUM);
-NUM			:  '-'? DIGIT HEX_CLUMP? ('`' HEX_CLUMP)*
+NUM			:  ('+'|'-')? DIGIT HEX_CLUMP? ('`' HEX_CLUMP)*
 				( '.' DIGIT* ('`' DIGIT+)* SCI_NOTATION?
 				|                          INT_RAT_BASE?
 				);
-fragment SCI_NOTATION	: ('e'|'E') ('+'|'-') DIGIT+;
+fragment SCI_NOTATION	: ('e'|'E') ('+'|'-')? DIGIT+;
 fragment INT_RAT_BASE   : '_' HEX_CLUMP;
 fragment HEX_CLUMP      : DIGIT HEX_DIGIT* | SMALL_IDENT | UPPER_IDENT;
 
