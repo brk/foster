@@ -264,22 +264,26 @@ UPPER_IDENT             :       IDENT_START_UPPER IDENT_CONTINUE*;
 UNDER_IDENT             :       '_'               IDENT_CONTINUE+;
 fragment IDENT_START_SMALL : 'a'..'z' ;
 fragment IDENT_START_UPPER : 'A'..'Z' ;
-fragment IDENT_CONTINUE    : (DIGIT | WORD_CHAR | IDENT_SYMBOL);
+fragment IDENT_CONTINUE    : (DIGIT | WORD_CHAR | IDENT_SYMBOL_CONTINUE);
 // Meanwhile, symbols start with a non-numeric, non-alphabetic glyph.
 // We must play some tricks here to ensure that '=' is a keyword, not a symbol.
 // Also, +Int32 is a symbol, but +2 is not.
-SYMBOL    :    SYMBOL_SINGLE_START
+SYMBOL    :    SYMBOL_COMMON
+          |    '|' (AFTER_PIPE SYMBOL_CONTINUE*)?
           |    SYMBOL_MULTI_START   SYMBOL_CONTINUE_NDIG   SYMBOL_CONTINUE*;
 
 fragment SYMBOL_CONTINUE        :(SYMBOL_CONTINUE_NDIG | DIGIT);
-fragment SYMBOL_CONTINUE_NDIG   :('/' | '^' | WORD_CHAR | IDENT_SYMBOL);
+fragment SYMBOL_CONTINUE_NDIG   :('/' | '^' | WORD_CHAR | IDENT_SYMBOL_CONTINUE);
 
-fragment IDENT_SYMBOL   :      '_' | SYMBOL_MULTI_START;
-fragment SYMBOL_MULTI_START  : '=' | SYMBOL_SINGLE_START;
-fragment SYMBOL_SINGLE_START : '!' | '|'
-        | '>' | '<' | '-'
+fragment SYMBOL_MULTI_START  : '=' | SYMBOL_COMMON;
+
+fragment SYMBOL_COMMON :
+    '!' | '>' | '<' | '-'
         | '?' | '+' | '*';
 
+fragment IDENT_SYMBOL_CONTINUE   : '_' | SYMBOL_MULTI_START;
+// Note: AFTER_PIPE is SYMBOL_CONTINUE_NDIG, minus WORD_CHAR
+fragment AFTER_PIPE : IDENT_SYMBOL_CONTINUE | '/' | '^';
 
 TICK  : '\'';
 TRTK  : '\'\'\''; // triple-tick

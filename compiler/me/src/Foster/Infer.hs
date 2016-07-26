@@ -168,6 +168,11 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                      else tcFailsMore [text $ "Unable to unify different type variables: "
                                        ++ show tv1 ++ " vs " ++ show tv2]
 
+    (t1@(TyAppTC (TyConTC _nm1) _tys1), t2@(TyAppTC (TyConTC nm2) _tys2))
+          | isEffectEmpty t1 && isEffectExtend nm2 -> do
+      tcWarn [text "permitting effect subsumption of empty effect and " <> pretty t2]
+      tcUnifyLoop constraints tysub
+
     ((TyAppTC (TyConTC nm1) _tys1), (TyAppTC (TyConTC nm2) _tys2))
           | isEffectExtend nm1 && isEffectExtend nm2 -> do
       tcUnifyEffects t1 t2 tysub constraints
@@ -284,14 +289,20 @@ tcUnifyEffects t1 t2 tysub constraints = do
                    tcFails [text "Effect unification produced infinite loop"]
          _   -> do let subst x = return (tySubst tysub x)
 
-                   let unifyTail ds tl desc = do
+                   let unifyTail1 ds tl desc = do
+                       tcLift $ putDocLn $ text "unifyTail1 " <> pretty ds <+> pretty tl
                        if null ds then return (tl, [])
-                                  else do tv <- newTcUnificationVarTau desc
-                                          return (tv, [TypeConstrEq tl1 (effectExtendsTc ds tv)] )
+                                  else do tv <- newTcUnificationVarEffect desc
+                                          return (tv, [TypeConstrEq tl (effectExtendsTc ds tv)] )
+                   let unifyTail2 ds tl desc = do
+                       tcLift $ putDocLn $ text "unifyTail2 " <> pretty ds <+> pretty tl
+                       if null ds then return (tl, [])
+                                  else do tv <- newTcUnificationVarEffect desc
+                                          return (tv, [TypeConstrEq (effectExtendsTc ds tv) tl] )
 
-                   (tail1, c1) <- unifyTail ds1 tl1 "fx.tail1"
+                   (tail1, c1) <- unifyTail1 ds1 tl1 "fx.tail1"
                    stl2  <- subst tl2
-                   (tail2, c2) <- unifyTail ds2 stl2 "fx.tail2"
+                   (tail2, c2) <- unifyTail2 ds2 stl2 "fx.tail2"
                    stail1 <- subst tail1
 
                    let c3 = [TypeConstrEq stail1 tail2]
