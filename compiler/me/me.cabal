@@ -12,7 +12,7 @@ category:            Languages
 build-type:          Simple
 --extra-source-files: Foster/Pb.hs Foster/Pb/Expr.hs
 --                    Foster/Pb/SourceLocation.hs Foster/Pb/SourceRange.hs
-cabal-version:       >=1.18
+cabal-version:       >=1.24
 
 
 
@@ -37,6 +37,7 @@ executable me
                  criterion >= 1.1.0.0,
                  CBOR -any,
                  double-conversion >=2.0.1.2,
+                 data-dword >= 0.3.1,
                  text >= 1.2.0.0,
                  mtl >= 2.2.1,
                  transformers -any,
