@@ -31,8 +31,9 @@ typecheckInt annot originalText expTy = do
     let int = precheckedLiteralInt originalText negated clean base
     let activeBits = litIntMinBits int
     sanityCheck (activeBits <= maxBits)
-                ("Integers currently limited to " ++ show maxBits ++ " bits, "
-                                  ++ clean ++ " requires " ++ show activeBits)
+                ("Integer literals are currently limited to " ++ show maxBits ++ " bits, but "
+                                  ++ clean ++ " requires " ++ show activeBits ++
+                                  "\n" ++ highlightFirstLine (rangeOf annot))
 
     -- No need to unify with Infer here because tcRho does it for us.
     ty <- case expTy of

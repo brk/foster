@@ -27,7 +27,7 @@ import Data.IORef(IORef, readIORef, newIORef)
 import Data.Array
 import Numeric(showHex)
 import qualified Data.ByteString as BS
-import Text.Printf(printf)
+import Data.Double.Conversion.Text(toFixed)
 import Text.PrettyPrint.ANSI.Leijen
 import Criterion.Measurement(getTime, secs)
 
@@ -910,11 +910,11 @@ evalNamedPrimitive "get_cmdline_arg_n" gs [SSInt i] =
          return $ withTerm gs (SSTmValue $ textFragmentOf argN)
 
 evalNamedPrimitive "expect_float_p9f64" gs [SSFloat f] =
-      do expectStringNL gs (printf "%.9f" f)
+      do expectStringNL gs (T.unpack $ toFixed 9 f)
          return $ withTerm gs unit
 
 evalNamedPrimitive "print_float_p9f64" gs [SSFloat f] =
-      do printStringNL gs (printf "%.9f" f)
+      do printStringNL gs (T.unpack $ toFixed 9 f)
          return $ withTerm gs unit
 
 -- {{{

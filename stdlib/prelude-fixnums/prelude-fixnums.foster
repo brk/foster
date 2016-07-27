@@ -16,7 +16,7 @@ maxReprSInt64 :: { Int64 };
 maxReprSInt64 = {  9`223`372`036`854`775`807 };
 
 maxReprUInt64 :: { Int64 };
-maxReprUInt64 = { -1 }; // 18`446`744`073`709`551`616
+maxReprUInt64 = { 18`446`744`073`709`551`615 };
 
 octet4ToInt32 = { hi : Int8 => m1 : Int8 => m2 : Int8 => lo : Int8 =>
   octet4x32ToInt32 (zext_i8_to_i32 hi) (zext_i8_to_i32 m1) (zext_i8_to_i32 m2) (zext_i8_to_i32 lo)
