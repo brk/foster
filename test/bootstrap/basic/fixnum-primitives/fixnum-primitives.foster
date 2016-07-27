@@ -6,8 +6,28 @@ main = {
   print-i8-test !;
   i8-ops-test   !;
 
+  numerical-ops !;
   bitwise-ops   !;
   floating-ops  !;
+};
+
+numerical-ops = {
+
+  expect_i64 9223372036854775807;
+  print_i64 (maxReprSInt64 !);
+
+  n1 = -1;
+  expect_i1 True;
+  print_i1 (maxReprUInt64 ! ==Int64 n1);
+
+  expect_i1 True;
+  print_i1 (maxReprUInt64 ! ==Int64 ((maxReprSInt64 !) *Int64 2) +Int64 1);
+
+  expect_i1 True;
+  print_i1 (0 >SInt64 n1);
+
+  expect_i1 True;
+  print_i1 (0 <UInt64 n1);
 };
 
 sub8 = { n : Int8 => n -Int8 (trunc32to8 2); };
@@ -103,6 +123,17 @@ floating-ops = {
   expect_i64 4631166901565532406;
   print_i64 (42.42 |> f64-as-i64);
 
+  expect_i64 6;
+  print_i64 (6.25 |> f64-to-u64-unsafe);
+
+  expect_i64 -6;
+  print_i64 (-6.25 |> f64-to-s64-unsafe);
+/*
+  expect_i64 4294967290;
+  print_i64 (if opaquely_i32 0 ==Int32 0 then -6.25 else 6.25 end
+              |> f64-to-u64-unsafe);
+*/
+
   test-float-classification !;
 
   expect_text      "18446744073709551616.000000000";
@@ -114,6 +145,20 @@ floating-ops = {
 
   expect_i64x (0x43efffffffffffff);
   print_i64x  (f64-as-i64 18446744073709549568.0);
+
+  prevFloat64 = { f => i64-as-f64 ((f64-as-i64 f) -Int64 1) };
+
+  expect_float_p9f64 18446744073709549568.0;
+  print_float_p9f64 ((maxReprUInt64 !) |> u64-to-f64-unsafe |> prevFloat64);
+
+  // Note: minimum signed i64 is 0x8000... unsigned,
+  // which is one larger than the max representable signed integer.
+  expect_float_p9f64 9223372036854775808.0;
+  print_float_p9f64 ((minReprSInt64 !) |> u64-to-f64-unsafe);
+
+  // Unlike with with maxReprUInt64, the float faithfully represents the int.
+  expect_float_p9f64 -9223372036854775808.0;
+  print_float_p9f64 ((minReprSInt64 !) |> s64-to-f64-unsafe);
 
   expect_i64x (0x43efffffffffffff);
   print_i64x  (f64-as-i64 18446744073709549568.1);
@@ -167,6 +212,10 @@ test-float-classification = {
      print_float_p9f64 f;
      expect_i64 -1;
      print_i64 delta;
+
+     expect_i64 4895412794951729151;
+     print_i64 (f64-as-i64 f);
+
    of _ -> ()
   end;
 
