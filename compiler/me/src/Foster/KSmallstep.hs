@@ -19,6 +19,7 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import Data.Int
 import Data.Word
+import Data.DoubleWord
 import Data.Bits
 import Data.Bits.Floating
 import Data.Char(toUpper)
@@ -592,10 +593,9 @@ matchPatterns pats vals = do
 -- |||||||||||||||||||||| Primitive Operators ||||||||||||||||||{{{
 kVirtualWordSize = 64
 type IntVW0 = Int64
---type IntVW1 = Int128
+type IntVW1 = Int128
 type WordVW0 = Word64
---type WordVW1 = Word128
--- Temporarily disabled until data-dword is updated for GHC 8.
+type WordVW1 = Word128
 
 arraySlotLocation arr n = SSLocation (arr ! n)
 
@@ -773,7 +773,7 @@ evalPrimitiveIntOp (IWord 0) opName [SSInt i1, SSInt i2] =
     _ -> case tryGetPrimCmp opName of
           (Just fn) -> SSBool (liftInt2 fn i1 i2)
           _ -> error $ "Unknown primitive operation " ++ opName
-{-
+
 evalPrimitiveIntOp (IWord 1) opName [SSInt i1, SSInt i2] =
   case tryGetFixnumPrimOp kVirtualWordSize opName :: PrimOpResult IntVW1 WordVW1 of
     (POR_Signed   fn) -> SSInt (modifyIntsWith i1 i2 fn)
@@ -781,7 +781,6 @@ evalPrimitiveIntOp (IWord 1) opName [SSInt i1, SSInt i2] =
     _ -> case tryGetPrimCmp opName of
           (Just fn) -> SSBool (liftInt2 fn i1 i2)
           _ -> error $ "Unknown primitive operation " ++ opName
--}
 
 -- TODO hmm
 evalPrimitiveIntOp I32 "negate" [SSInt i] = SSInt (negate i)
