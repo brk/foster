@@ -339,10 +339,15 @@ add_definitions(${LLVM_CFLAGS} "-ggdb")
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
+# Compressing debug sections can significantly reduce link time,
+# but the functionality is specific to GNU gold.
 if (CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
-  # Only works with the GNU Gold linker
-  set(CMAKE_EXE_LINKER_FLAGS
-   "${CMAKE_EXE_LINKER_FLAGS} -Wl,--compress-debug-sections,zlib")
+  execute_process(COMMAND ld --version
+                  OUTPUT_VARIABLE LD_VERSION_STRING)
+  if(LD_VERSION_STRING MATCHES "GNU gold")
+    set(CMAKE_EXE_LINKER_FLAGS
+    "${CMAKE_EXE_LINKER_FLAGS} -Wl,--compress-debug-sections,zlib")
+  endif(LD_VERSION_STRING MATCHES "GNU gold")
 endif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
 # }}}
 
