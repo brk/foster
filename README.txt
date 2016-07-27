@@ -56,7 +56,7 @@ Ubuntu 14.04 (x86):
               libprotobuf8 protobuf-compiler libprotobuf-dev \
               curl ctags aptitude libpng12-dev libcairo2-dev libc6-dev default-jdk
 
-  sudo apt-get install cmake cmake-curses-gui ccache m4 ministat \
+  sudo apt-get install m4 ministat \
          linux-tools-virtual linux-tools-generic \
          libffi-dev libedit-dev
 
@@ -73,9 +73,9 @@ Ubuntu 14.04 (x86):
   wget http://downloads.sourceforge.net/project/jedit/jedit/5.3.0/jedit_5.3.0_all.deb
   sudo dpkg -i jedit_5.3.0_all.deb
 
-  git clone git://github.com/martine/ninja.git
+  git clone git://github.com/ninja-build/ninja.git
   cd ninja
-  python bootstrap.py
+  ./configure.py --bootstrap
   mv ninja ~/sw/local/bin
 
 
@@ -91,13 +91,19 @@ Ubuntu 14.04 (x86):
   #
   # For example:
 
-  wget http://www.haskell.org/ghc/dist/7.10.2/ghc-7.10.2-i386-unknown-linux.tar.bz2
-  tar xf ghc-7.10.2-i386-unknown-linux.tar.bz2
-  cd ghc-7.10.2
-  ./configure --prefix=$HOME/sw/local
-  make install
+  # or http://downloads.haskell.org/~ghc/8.0.1/ghc-8.0.1-x86_64-deb8-linux.tar.xz
+  wget http://downloads.haskell.org/~ghc/8.0.1/ghc-8.0.1-i386-deb8-linux.tar.xz
+  tar xf ghc-*-linux.tar.xz
+  cd ghc-* && ./configure --prefix=$HOME/sw/local && make install && cd ..
 
+  # On Ubuntu 14.10, the CMake version available via apt-get is outdated.
+  # To build from source (might want to pass --prefix to configure!):
 
+  wget http://www.cmake.org/files/v3.6/cmake-3.6.1.tar.gz
+  tar xf cmake-*.tar.gz
+  cd cmake-*
+  ./configure
+  make
 
   cabal install random text cabal-install --extra-lib-dirs=/usr/lib/i386-linux-gnu
 
