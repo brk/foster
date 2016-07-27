@@ -364,7 +364,6 @@ add_library(fosterc_base STATIC
   compiler/base/PughSinofskyPrettyPrinter.cpp
   third_party/pystring/pystring.cpp
   third_party/cityhash/src/city.cc
-  ${GENERATED}/FosterAST.pb.h
   ${GENERATED}/FosterIL.pb.h
 )
 
@@ -375,7 +374,6 @@ add_library(fosterc_parse STATIC
   compiler/parse/ANTLRtoFosterErrorHandling.cpp
   third_party/cbor-cpp/src/output_dynamic.cpp
   third_party/cbor-cpp/src/encoder.cpp
-  ${GENERATED}/FosterAST.pb.cc
   ${GENERATED}/fosterParser.c
   ${GENERATED}/fosterLexer.c
 )
