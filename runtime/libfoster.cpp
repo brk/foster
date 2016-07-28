@@ -279,7 +279,7 @@ int fprint_b2(FILE* f, Int x) {
   for (Int i = 0; i < N; ++i) {
     buf[(N-1) - i] = (x & (Int(1)<<i)) ? '1' : '0';
   }
-  int n = fprintf(f, "%s_2\n", buf);
+  int n = fprintf(f, "0b%s\n", buf);
   delete [] buf;
   return n;
 }
@@ -289,12 +289,12 @@ void fprint_p9f64(FILE* f, double x) { fprintf(f, "%.9f\n", x); }
 // TODO .17g for doubles?
 
 void fprint_i64(FILE* f, int64_t x) { fprintf(f, "%" PRId64 "\n", x); }
-void fprint_i64x(FILE* f, int64_t x) { fprintf(f, "%" PRIX64 "_16\n", x); }
+void fprint_i64x(FILE* f, int64_t x) { fprintf(f, "0x%" PRIX64 "\n", x); }
 void fprint_i64b(FILE* f, int64_t x) { fprint_b2<64>(f, x); }
 void fprint_i64_bare(FILE* f, int64_t x) { fprintf(f, "%" PRId64 , x); }
 
 void fprint_i32(FILE* f, int32_t x) {  fprintf(f, "%d\n", x); fflush(f); }
-void fprint_i32x(FILE* f, int32_t x) { fprintf(f, "%X_16\n", x); }
+void fprint_i32x(FILE* f, int32_t x) { fprintf(f, "0x%X\n", x); }
 void fprint_i32b(FILE* f, int32_t x) { fprint_b2<32>(f, x); }
 
 void fprint_i8b(FILE* f, int8_t x) { fprint_b2<8>(f, x); }
