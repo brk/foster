@@ -50,8 +50,7 @@ data CompilesResult expr = CompilesResult (OutputOr expr)
 type Uniq = Int
 data CallConv = CCC | FastCC deriving (Eq, Show)
 type LogInt = Int
-data IntSizeBits = I1 | I8 | I32 | I64
-                 | IWord LogInt -- Word 3 means 8x larger; -2 is 4x smaller.
+data IntSizeBits = I1 | I8 | I32 | I64 | IWd | IDw -- Word/double-word
                  deriving (Eq, Show)
 
 data ProcOrFunc   = FT_Proc | FT_Func  deriving (Show, Eq)
@@ -726,9 +725,8 @@ instance IntSized IntSizeBits
        intSizeOf I8 = 8
        intSizeOf I32 = 32
        intSizeOf I64 = 64
-       intSizeOf (IWord 0) = 32 -- TODO this is hacky =/
-       intSizeOf (IWord 1) = 64
-       intSizeOf (IWord w) = error $ "unsupported IWord key " ++ show w
+       intSizeOf IWd = 32 -- TODO this is hacky =/
+       intSizeOf IDw = 64
 
 sizeOfBits :: Int -> IntSizeBits
 sizeOfBits 1           = I1
@@ -737,8 +735,8 @@ sizeOfBits n | n <= 32 = I32
 sizeOfBits n | n <= 64 = I64
 sizeOfBits n = error $ "TypecheckInt.hs:sizeOfBits: Unsupported size: " ++ show n
 
-instance Pretty IntSizeBits    where pretty (IWord 0) = text "Word"
-                                     pretty (IWord 1) = text "WordX2"
+instance Pretty IntSizeBits    where pretty IWd = text "Word"
+                                     pretty IDw = text "WordX2"
                                      pretty I1 = text "Bool"
                                      pretty i  = text ("Int" ++ show (intSizeOf i))
 instance Pretty Ident          where pretty id = text (show id)

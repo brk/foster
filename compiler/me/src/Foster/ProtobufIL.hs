@@ -90,8 +90,8 @@ dumpIntType sizeBits = P'.defaultValue { PbType.tag  = PbTypeTag.PRIM_INT
 
 dumpType :: TypeLL -> PbType.Type
 dumpType (LLPtrTypeUnknown)  = dumpUnknownType ()
-dumpType (LLPrimInt (IWord 0)) = dumpIntType (-32)
-dumpType (LLPrimInt (IWord 1)) = dumpIntType (-64)
+dumpType (LLPrimInt IWd) = dumpIntType (-32)
+dumpType (LLPrimInt IDw) = dumpIntType (-64)
 dumpType (LLPrimInt size)    = dumpIntType (fromIntegral $ intSizeOf size)
 dumpType (LLNamedType "Float64") =
               P'.defaultValue { PbType.tag  = PbTypeTag.FLOAT64 }
@@ -247,8 +247,8 @@ dumpLiteral ty lit =
 mkPbInt ty int = PBInt.PBInt { clean = u8fromString (show $ litIntValue int)
                              , bits  = intToInt32 (fixnumTypeSize ty) }
 
-fixnumTypeSize (LLPrimInt (IWord 0)) = (-32)
-fixnumTypeSize (LLPrimInt (IWord 1)) = (-64)
+fixnumTypeSize (LLPrimInt IWd) = (-32)
+fixnumTypeSize (LLPrimInt IDw) = (-64)
 fixnumTypeSize (LLPrimInt isb) = intSizeOf isb
 fixnumTypeSize other = error $ "Expected int literal to have LLPrimInt type; had " ++ show other
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -380,13 +380,12 @@ dumpExpr _ (ILCallPrim t (CoroPrim coroPrim argty retty) args)
 
 dumpExpr _ (ILCallPrim t (PrimIntTrunc _from to) args)
         = dumpCallPrimOp t (truncOp to) args
-  where truncOp I1        = "trunc_i1"
-        truncOp I8        = "trunc_i8"
-        truncOp I32       = "trunc_i32"
-        truncOp I64       = "trunc_i64"
-        truncOp (IWord 0) = "trunc_w0"
-        truncOp (IWord 1) = "trunc_w1"
-        truncOp (IWord x) = error $ "Protobuf.hs: truncOp can't handle Word " ++ show x
+  where truncOp I1  = "trunc_i1"
+        truncOp I8  = "trunc_i8"
+        truncOp I32 = "trunc_i32"
+        truncOp I64 = "trunc_i64"
+        truncOp IWd = "trunc_w0"
+        truncOp IDw = "trunc_w1"
 
 dumpExpr _ (ILAppCtor _ _cinfo _) = error $ "ProtobufIL.hs saw ILAppCtor, which"
                                        ++ " should have been translated away..."

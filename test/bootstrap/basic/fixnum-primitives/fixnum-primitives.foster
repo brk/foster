@@ -128,6 +128,7 @@ floating-ops = {
 
   expect_i64 -6;
   print_i64 (-6.25 |> f64-to-s64-unsafe);
+
 /*
   expect_i64 4294967290;
   print_i64 (if opaquely_i32 0 ==Int32 0 then -6.25 else 6.25 end
@@ -147,6 +148,21 @@ floating-ops = {
   print_i64x  (f64-as-i64 18446744073709549568.0);
 
   prevFloat64 = { f => i64-as-f64 ((f64-as-i64 f) -Int64 1) };
+
+  print_i32 5123;
+  expect_i32 5123;
+
+  expect_float_p9f64 18446744073709551616.0;
+  print_float_p9f64 ((maxReprUInt64 !) |> u64-to-f64-unsafe);
+
+  expect_text "0xFFFFFFFFFFFFFFFF"; // "-1" ; unsigned: "18446744073709551615";
+  print_i64x (maxReprUInt64 !);
+
+  expect_i64x 4895412794951729152;
+  print_i64x ((maxReprUInt64 !) |> u64-to-f64-unsafe |> f64-as-i64);
+
+  print_i32 123;
+  expect_i32 123;
 
   expect_float_p9f64 18446744073709549568.0;
   print_float_p9f64 ((maxReprUInt64 !) |> u64-to-f64-unsafe |> prevFloat64);

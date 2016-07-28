@@ -242,7 +242,11 @@ data ShowableMachineState = SMS MachineState
 -- A closure value has a proc ident, env+captures var names,
 -- and captured values.
 data SSValue = SSBool      Bool
-             | SSInt       Integer
+             | SSInt8      Int8
+             | SSInt32     Int32
+             | SSInt64     Int64
+             | SSIntWd     Int64
+             | SSIntDw     Int128
              | SSFloat     Double
              | SSArray     (Array Int Location)
              | SSByteString BS.ByteString -- strictly redundant, but convenient.
@@ -262,7 +266,9 @@ ssTermOfExpr expr =
   let idOf = tidIdent     in
   case expr of
     KNLiteral _ (LitBool  b) -> SSTmValue $ SSBool b
-    KNLiteral _ (LitInt   i) -> SSTmValue $ SSInt (litIntValue i)
+    KNLiteral (PrimIntIL isb) (LitInt i) -> SSTmValue $ mkSSInt isb (litIntValue i)
+    --KNLiteral (PrimIntIL IWd) (LitInt i) -> SSTmValue $ SSInt8 (fromInteger $ litIntValue i)
+    --KNLiteral (PrimIntIL IDw) (LitInt i) -> SSTmValue $ SSInt8 (fromInteger $ litIntValue i)
     KNLiteral _ (LitFloat f) -> SSTmValue $ SSFloat (litFloatValue f)
     KNLiteral _ (LitText  s) -> SSTmValue $ textFragmentOf s
     KNLiteral _ (LitByteArray bs) -> SSTmValue $ SSByteString bs
@@ -278,7 +284,7 @@ ssTermOfExpr expr =
                            -> SSTmExpr  $ IArrayRead (idOf a) (idOf b)
     KNArrayPoke _t (ArrayIndex b i _ _) v
                            -> SSTmExpr  $ IArrayPoke (idOf v) (idOf b) (idOf i)
-    KNArrayLit _t arr vals -> SSTmExpr  $ IArrayLit  (idOf arr) (map arrEntry vals)
+    KNArrayLit t arr vals  -> SSTmExpr  $ IArrayLit  (idOf arr) (map (arrEntry t) vals)
     KNAllocArray _ety n _ _ -> SSTmExpr  $ IAllocArray (idOf n)
     KNAlloc    _t a _rgn   -> SSTmExpr  $ IAlloc (idOf a)
     KNDeref    _t a        -> SSTmExpr  $ IDeref (idOf a)
@@ -292,9 +298,16 @@ ssTermOfExpr expr =
     KNInlined     _ _ _ _ e -> ssTermOfExpr e
     KNNotInlined        _ e -> ssTermOfExpr e
 
-arrEntry (Right var) = SSTmExpr $ IVar $ tidIdent var
-arrEntry (Left (LitInt lit)) = SSTmValue $ SSInt $ litIntValue lit
-arrEntry other = error $ "KSmallstep.hs: Unsupported array entry type: " ++ show other
+arrEntry _t (Right var) = SSTmExpr $ IVar $ tidIdent var
+arrEntry (PrimIntIL isb) (Left (LitInt lit)) = SSTmValue $ mkSSInt isb (litIntValue lit)
+arrEntry _ other = error $ "KSmallstep.hs: Unsupported array entry type: " ++ show other
+
+mkSSInt I1  _ = error $ "mkSSInt shouldn't be used for boolean values."
+mkSSInt I8  i = SSInt8  (fromInteger i)
+mkSSInt I32 i = SSInt32 (fromInteger i)
+mkSSInt I64 i = SSInt64 (fromInteger i)
+mkSSInt IWd i = SSIntWd (fromInteger i)
+mkSSInt IDw i = SSIntDw (fromInteger i)
 
 -- ... which lifts in a  straightfoward way to procedure definitions.
 ssFunc f =
@@ -536,8 +549,8 @@ stepExpr gs expr = do
            v -> error $ "Cannot call non-function value " ++ display v
 
     IArrayRead base idxvar ->
-        let (SSInt i) = getval gs idxvar in
-        let n = (fromInteger i) :: Int in
+        let (SSInt32 i) = getval gs idxvar in
+        let n = (fromIntegral i) :: Int in
         case getval gs base of
           a@(SSArray _)      ->
             return $ withTerm gs (SSTmValue $ prim_arrayRead gs n a)
@@ -547,15 +560,15 @@ stepExpr gs expr = do
                         ++ " to be array value; had " ++ show other
 
     IArrayPoke iv base idxvar ->
-        let (SSInt i) = getval gs idxvar in
-        let n = (fromInteger i) :: Int in
+        let (SSInt32 i) = getval gs idxvar in
+        let n = (fromIntegral i) :: Int in
         arrayPoke gs (getval gs base) n (getval gs iv)
 
     IAllocArray sizeid -> do
-        let (SSInt i) = getval gs sizeid
+        let (SSInt32 i) = getval gs sizeid
         -- The array cells are initially filled with constant zeros,
         -- regardless of what type we will eventually store.
-        arrayOf gs [SSInt n | n <- [0 .. i - 1]]
+        arrayOf gs [SSInt32 n | n <- [0 .. i - 1]]
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||||||| Pattern Matching ||||||||||||||||||||{{{
@@ -565,7 +578,9 @@ matchPattern p v =
     (_, PR_Atom (P_Wildcard _ _  )) -> trivialMatchSuccess
     (_, PR_Atom (P_Variable _ tid)) -> Just [(tidIdent tid, v)]
 
-    (SSInt i1, PR_Atom (P_Int _ _ i2))   -> matchIf $ i1 == litIntValue i2
+    (SSInt8  i1, PR_Atom (P_Int _ _ i2))   -> matchIf $ i1 == fromIntegral (litIntValue i2)
+    (SSInt32 i1, PR_Atom (P_Int _ _ i2))   -> matchIf $ i1 == fromIntegral (litIntValue i2)
+    (SSInt64 i1, PR_Atom (P_Int _ _ i2))   -> matchIf $ i1 == fromIntegral (litIntValue i2)
     (_       , PR_Atom (P_Int _ _ _ ))   -> matchFailure
 
     (SSBool b1, PR_Atom (P_Bool _ _ b2)) -> matchIf $ b1 == b2
@@ -599,15 +614,15 @@ type WordVW1 = Word128
 
 arraySlotLocation arr n = SSLocation (arr ! n)
 
-prim_arrayLength :: SSValue -> Int
-prim_arrayLength (SSArray a) = let (b,e) = bounds a in e - b + 1
-prim_arrayLength (SSByteString bs) = BS.length bs
+prim_arrayLength :: SSValue -> Int64
+prim_arrayLength (SSArray a) = let (b,e) = bounds a in fromIntegral $ e - b + 1
+prim_arrayLength (SSByteString bs) =                 fromIntegral $ BS.length bs
 prim_arrayLength _ = error "prim_arrayLength got non-array value!"
 
 prim_arrayRead :: MachineState -> Int -> SSValue -> SSValue
 prim_arrayRead gs n (SSArray arr) =
         let (SSLocation z) = arraySlotLocation arr n in lookupHeap gs z
-prim_arrayRead _  n (SSByteString bs) = SSInt . fromIntegral $ BS.index bs n
+prim_arrayRead _  n (SSByteString bs) = SSInt8 . fromIntegral $ BS.index bs n
 prim_arrayRead _  _ _ = error "prim_arrayRead got non-array value!"
 
 prim_arrayPoke :: MachineState -> Int -> Array Int Location -> SSValue -> IO MachineState
@@ -621,25 +636,15 @@ arrayPoke gs base n val =
       SSArray arr  -> prim_arrayPoke gs n arr val
       other -> error $ "Expected base of array write to be array value; had " ++ show other
 
-liftInt2 :: (Integral a) => (a -> a -> b) -> Integer -> Integer -> b
-liftInt2 f i1 i2 = f (fromInteger i1) (fromInteger i2)
-
-liftInt  :: (Integral a) => (a -> b)      -> Integer -> b
-liftInt f i1 =     f (fromInteger i1)
-
-modifyIntWith :: (Integral a) => Integer -> (a -> a) -> Integer
-modifyIntWith i1 f = fromIntegral (liftInt f i1)
-
-modifyIntsWith :: (Integral a) => Integer -> Integer -> (a -> a -> a) -> Integer
-modifyIntsWith i1 i2 f = fromIntegral (liftInt2 f i1 i2)
-
 lowShiftBits k b = (k - 1) .&. fromIntegral b
 
 shr k a b = shiftR a (lowShiftBits k b)
 shl k a b = shiftL a (lowShiftBits k b)
 
-data PrimOpResult a b = POR_Signed   (a -> a -> a)
-                      | POR_Unsigned (b -> b -> b)
+data PrimOpResult a b = POR_Signed    (a -> a -> a)
+                      | POR_Unsigned  (b -> b -> b)
+                      | POR_SignedB   (a -> a -> Bool)
+                      | POR_UnsignedB (b -> b -> Bool)
                       | POR_Missing
 
 -- k is the paramerized bitwidth.
@@ -660,43 +665,41 @@ tryGetFixnumPrimOp k name =
     "bitashr"     -> POR_Signed   (shr k)
     "bitlshr"     -> POR_Unsigned (shr k)
     "bitshl"      -> POR_Unsigned (shl k)
+
+    "=="       -> POR_SignedB ((==))
+    "!="       -> POR_SignedB ((/=))
+    -- signed variants
+    "<s"       -> POR_SignedB ((<))
+    "<=s"      -> POR_SignedB ((<=))
+    ">=s"      -> POR_SignedB ((>=))
+    ">s"       -> POR_SignedB ((>))
+    -- unsigned variants...
+    "<u"       -> POR_UnsignedB ((<))
+    "<=u"      -> POR_UnsignedB ((<=))
+    ">=u"      -> POR_UnsignedB ((>=))
+    ">u"       -> POR_UnsignedB ((>))
+
     _ -> POR_Missing
 
-tryGetPrimCmp :: (Ord a) => String -> (Maybe (a -> a -> Bool))
-tryGetPrimCmp name =
-  -- Strip off any identifying prefix.
-  let clean_name = case name of
-                        'f':n -> n
-                        n     -> n
-                   in
-  case clean_name of
-    "=="       -> Just ((==))
-    "!="       -> Just ((/=))
-    -- signed variants
-    "<s"       -> Just ((<))
-    "<=s"      -> Just ((<=))
-    ">=s"      -> Just ((>=))
-    ">s"       -> Just ((>))
-    -- unsigned variants...
-    "<u"       -> Just ((<))
-    "<=u"      -> Just ((<=))
-    ">=u"      -> Just ((>=))
-    ">u"       -> Just ((>))
-    -- float variants
-    "<"        -> Just ((<))
-    "<="       -> Just ((<=))
-    ">="       -> Just ((>=))
-    ">"        -> Just ((>))
-    _ -> Nothing
 
-tryGetFlonumPrimOp :: (Fractional a) => String -> Maybe (a -> a -> a)
+data PrimOpFloat = PrimOpFloat2 (Double -> Double -> Double)
+                 | PrimOpFloatB (Double -> Double -> Bool)
+                 | PrimOpFloatMissing
+
+tryGetFlonumPrimOp :: (Fractional a) => String -> PrimOpFloat
 tryGetFlonumPrimOp name =
   case name of
-    "f*"       -> Just (*)
-    "f+"       -> Just (+)
-    "f-"       -> Just (-)
-    "fdiv"     -> Just (/)
-    _ -> Nothing
+    "f*"       -> PrimOpFloat2 (*)
+    "f+"       -> PrimOpFloat2 (+)
+    "f-"       -> PrimOpFloat2 (-)
+    "fdiv"     -> PrimOpFloat2 (/)
+
+    "f=="      -> PrimOpFloatB ((==))
+    "f<"       -> PrimOpFloatB ((<))
+    "f<="      -> PrimOpFloatB ((<=))
+    "f>="      -> PrimOpFloatB ((>=))
+    "f>"       -> PrimOpFloatB ((>))
+    _ -> PrimOpFloatMissing
 
 tryGetFlonumPrimUnOp :: (Floating a) => String -> Maybe (a -> a)
 tryGetFlonumPrimUnOp name =
@@ -713,9 +716,10 @@ evalPrimitiveOp ty opName args =
   error $ "Smallstep.evalPrimitiveOp " ++ show ty ++ " " ++ opName ++ " " ++ show args
 
 evalPrimitiveDoubleOp :: String -> [SSValue] -> SSValue
-evalPrimitiveDoubleOp "bitcast_i64" [SSFloat f] =
-  SSInt (fromIntegral $ coerceToWord f)
-evalPrimitiveDoubleOp "fpowi" [SSFloat d, SSInt z] =
+evalPrimitiveDoubleOp "bitcast_i64" [SSFloat f] = let val = (fromIntegral $ coerceToWord f) in
+ --trace ("f64-to-i64: f = " ++ show f ++ "; (coerceToWord f) == " ++ show (coerceToWord f) ++ "; result = " ++ show val) $
+  SSInt64 val
+evalPrimitiveDoubleOp "fpowi" [SSFloat d, SSInt32 z] =
   SSFloat (d ** fromIntegral z)
 
 evalPrimitiveDoubleOp opName [SSFloat d1] =
@@ -726,12 +730,10 @@ evalPrimitiveDoubleOp opName [SSFloat d1] =
 
 evalPrimitiveDoubleOp opName [SSFloat d1, SSFloat d2] =
   case tryGetFlonumPrimOp opName of
-    (Just fn)
-      -> SSFloat $ (fn :: Double -> Double -> Double) d1 d2
-    _ -> case tryGetPrimCmp opName of
-          (Just fn) -> SSBool ((fn :: Double -> Double -> Bool) d1 d2)
-          _ -> error $ "Smallstep.evalPrimitiveDoubleOp:"
-                    ++ "Unknown primitive operation " ++ opName
+    PrimOpFloat2 fn -> SSFloat $ fn d1 d2
+    PrimOpFloatB fn -> SSBool  $ fn d1 d2
+    _ -> error $ "Smallstep.evalPrimitiveDoubleOp:"
+               ++ "Unknown primitive operation " ++ opName
 
 evalPrimitiveDoubleOp "fmuladd" [SSFloat d1, SSFloat d2, SSFloat d3] =
     SSFloat (d1 * d2 + d3)
@@ -739,117 +741,142 @@ evalPrimitiveDoubleOp "fmuladd" [SSFloat d1, SSFloat d2, SSFloat d3] =
 evalPrimitiveDoubleOp opName args =
   error $ "Smallstep.evalPrimitiveDoubleOp " ++ opName ++ " " ++ show args
 
+coerceU :: (Integral a, Integral b) => (a -> a -> a) -> (b -> b -> b)
+coerceU f2 b1 b2 = fromIntegral (coerce f2 b1 b2)
+
+coerce :: (Integral a, Integral b) => (a -> a -> c) -> (b -> b -> c)
+coerce f2 b1 b2 = f2 (fromIntegral b1) (fromIntegral b2)
+
 evalPrimitiveIntOp :: IntSizeBits -> String -> [SSValue] -> SSValue
-evalPrimitiveIntOp I64 "bitcast_f64" [SSInt z] =
-  SSFloat (coerceToFloat $ fromInteger z)
-evalPrimitiveIntOp I64 opName [SSInt i1, SSInt i2] =
+evalPrimitiveIntOp I64 "bitcast_f64" [SSInt64 z] =
+  SSFloat (coerceToFloat $ fromIntegral z)
+
+evalPrimitiveIntOp I64 opName [SSInt64 i1, SSInt64 i2] =
   case tryGetFixnumPrimOp 64 opName :: PrimOpResult Int64 Word64 of
-    (POR_Signed   fn) -> SSInt (modifyIntsWith i1 i2 fn)
-    (POR_Unsigned fn) -> SSInt (modifyIntsWith i1 i2 fn)
-    _ -> case tryGetPrimCmp opName of
-          (Just fn) -> SSBool (liftInt2 fn i1 i2)
-          _ -> error $ "Unknown primitive operation " ++ opName
+    (POR_Signed   fn) -> SSInt64 (        fn i1 i2)
+    (POR_Unsigned fn) -> SSInt64 (coerceU fn i1 i2)
+    (POR_SignedB   fn) -> SSBool (        fn i1 i2)
+    (POR_UnsignedB fn) -> SSBool (coerce  fn i1 i2)
+    _ -> error $ "Unknown primitive operation " ++ opName
 
-evalPrimitiveIntOp I32 opName [SSInt i1, SSInt i2] =
+evalPrimitiveIntOp I32 opName [SSInt32 i1, SSInt32 i2] =
   case tryGetFixnumPrimOp 32 opName :: PrimOpResult Int32 Word32 of
-    (POR_Signed   fn) -> SSInt (modifyIntsWith i1 i2 fn)
-    (POR_Unsigned fn) -> SSInt (modifyIntsWith i1 i2 fn)
-    _ -> case tryGetPrimCmp opName of
-          (Just fn) -> SSBool (liftInt2 fn i1 i2)
-          _ -> error $ "Unknown primitive operation " ++ opName
+    (POR_Signed   fn) -> SSInt32 (        fn i1 i2)
+    (POR_Unsigned fn) -> SSInt32 (coerceU fn i1 i2)
+    (POR_SignedB   fn) -> SSBool (        fn i1 i2)
+    (POR_UnsignedB fn) -> SSBool (coerce  fn i1 i2)
+    _ -> error $ "Unknown primitive operation " ++ opName
 
-evalPrimitiveIntOp I8 opName [SSInt i1, SSInt i2] =
+evalPrimitiveIntOp I8 opName [SSInt8 i1, SSInt8 i2] =
   case tryGetFixnumPrimOp  8 opName :: PrimOpResult Int8 Word8 of
-    (POR_Signed   fn) -> SSInt (modifyIntsWith i1 i2 fn)
-    (POR_Unsigned fn) -> SSInt (modifyIntsWith i1 i2 fn)
-    _ -> case tryGetPrimCmp opName of
-          (Just fn) -> SSBool (liftInt2 fn i1 i2)
-          _ -> error $ "Unknown primitive operation " ++ opName
+    (POR_Signed   fn) -> SSInt8 (        fn i1 i2)
+    (POR_Unsigned fn) -> SSInt8 (coerceU fn i1 i2)
+    (POR_SignedB   fn) -> SSBool (       fn i1 i2)
+    (POR_UnsignedB fn) -> SSBool (coerce fn i1 i2)
+    _ -> error $ "Unknown primitive operation " ++ opName
 
-evalPrimitiveIntOp (IWord 0) opName [SSInt i1, SSInt i2] =
+evalPrimitiveIntOp IWd opName [SSIntWd i1, SSIntWd i2] =
   case tryGetFixnumPrimOp kVirtualWordSize opName :: PrimOpResult IntVW0 WordVW0 of
-    (POR_Signed   fn) -> SSInt (modifyIntsWith i1 i2 fn)
-    (POR_Unsigned fn) -> SSInt (modifyIntsWith i1 i2 fn)
-    _ -> case tryGetPrimCmp opName of
-          (Just fn) -> SSBool (liftInt2 fn i1 i2)
-          _ -> error $ "Unknown primitive operation " ++ opName
+    (POR_Signed   fn) -> SSIntWd (        fn i1 i2)
+    (POR_Unsigned fn) -> SSIntWd (coerceU fn i1 i2)
+    (POR_SignedB   fn) -> SSBool (       fn i1 i2)
+    (POR_UnsignedB fn) -> SSBool (coerce fn i1 i2)
+    _ -> error $ "Unknown primitive operation " ++ opName
 
-evalPrimitiveIntOp (IWord 1) opName [SSInt i1, SSInt i2] =
+evalPrimitiveIntOp IDw opName [SSIntDw i1, SSIntDw i2] =
   case tryGetFixnumPrimOp kVirtualWordSize opName :: PrimOpResult IntVW1 WordVW1 of
-    (POR_Signed   fn) -> SSInt (modifyIntsWith i1 i2 fn)
-    (POR_Unsigned fn) -> SSInt (modifyIntsWith i1 i2 fn)
-    _ -> case tryGetPrimCmp opName of
-          (Just fn) -> SSBool (liftInt2 fn i1 i2)
-          _ -> error $ "Unknown primitive operation " ++ opName
+    (POR_Signed   fn) -> SSIntDw (        fn i1 i2)
+    (POR_Unsigned fn) -> SSIntDw (coerceU fn i1 i2)
+    (POR_SignedB   fn) -> SSBool (       fn i1 i2)
+    (POR_UnsignedB fn) -> SSBool (coerce fn i1 i2)
+    _ -> error $ "Unknown primitive operation " ++ opName
 
--- TODO hmm
-evalPrimitiveIntOp I32 "negate" [SSInt i] = SSInt (negate i)
-evalPrimitiveIntOp I64 "negate" [SSInt i] = SSInt (negate i)
-evalPrimitiveIntOp I8  "negate" [SSInt i] = SSInt (negate i)
-evalPrimitiveIntOp (IWord 0) "negate" [SSInt i] = SSInt (negate i)
+evalPrimitiveIntOp I32 "negate" [SSInt32 i] = SSInt32 (negate i)
+evalPrimitiveIntOp I64 "negate" [SSInt64 i] = SSInt64 (negate i)
+evalPrimitiveIntOp I8  "negate" [SSInt8  i] = SSInt8  (negate i)
+evalPrimitiveIntOp IWd "negate" [SSIntWd i] = SSIntWd (negate i)
 
 evalPrimitiveIntOp I1  "bitnot" [SSBool b] = SSBool (not b)
-evalPrimitiveIntOp I32 "bitnot" [SSInt i] = SSInt $ modifyIntWith i (complement :: Int32 -> Int32)
-evalPrimitiveIntOp I8  "bitnot" [SSInt i] = SSInt $ modifyIntWith i (complement :: Int8 -> Int8)
-evalPrimitiveIntOp I64 "bitnot" [SSInt i] = SSInt $ modifyIntWith i (complement :: Int64 -> Int64)
-evalPrimitiveIntOp (IWord 0) "bitnot" [SSInt i] = SSInt $ modifyIntWith i (complement :: IntVW0 -> IntVW0)
+evalPrimitiveIntOp I32 "bitnot" [SSInt32 i] = SSInt32 $ complement i
+evalPrimitiveIntOp I64 "bitnot" [SSInt64 i] = SSInt64 $ complement i
+evalPrimitiveIntOp I8  "bitnot" [SSInt8  i] = SSInt8  $ complement i
+evalPrimitiveIntOp IWd "bitnot" [SSIntWd i] = SSIntWd $ complement i
 
-evalPrimitiveIntOp I32       "ctpop" [SSInt i] = SSInt (ctpop i 32)
-evalPrimitiveIntOp I64       "ctpop" [SSInt i] = SSInt (ctpop i 64)
-evalPrimitiveIntOp I8        "ctpop" [SSInt i] = SSInt (ctpop i 8 )
-evalPrimitiveIntOp (IWord 0) "ctpop" [SSInt i] = SSInt (ctpop i 64)
+evalPrimitiveIntOp I32       "ctpop" [SSInt32 i] = SSInt32 (ctpop i 32)
+evalPrimitiveIntOp I64       "ctpop" [SSInt64 i] = SSInt64 (ctpop i 64)
+evalPrimitiveIntOp I8        "ctpop" [SSInt8  i] = SSInt8  (ctpop i 8 )
+evalPrimitiveIntOp IWd       "ctpop" [SSIntWd i] = SSIntWd (ctpop i kVirtualWordSize)
 
-evalPrimitiveIntOp I32       "ctlz"  [SSInt i] = SSInt (ctlz i 32)
-evalPrimitiveIntOp I64       "ctlz"  [SSInt i] = SSInt (ctlz i 64)
-evalPrimitiveIntOp I8        "ctlz"  [SSInt i] = SSInt (ctlz i 8 )
-evalPrimitiveIntOp (IWord 0) "ctlz"  [SSInt i] = SSInt (ctlz i 64)
+evalPrimitiveIntOp I32       "ctlz"  [SSInt32 i] = SSInt32 (ctlz i 32)
+evalPrimitiveIntOp I64       "ctlz"  [SSInt64 i] = SSInt64 (ctlz i 64)
+evalPrimitiveIntOp I8        "ctlz"  [SSInt8  i] = SSInt8  (ctlz i 8 )
+evalPrimitiveIntOp IWd       "ctlz"  [SSIntWd i] = SSIntWd (ctlz i kVirtualWordSize)
 
-evalPrimitiveIntOp _  sext [SSInt i] | "sext_" `isPrefixOf` sext = SSInt i
-evalPrimitiveIntOp sz zext [SSInt i] | "zext_" `isPrefixOf` zext = SSInt (unsigned (intSizeOf sz) i)
+evalPrimitiveIntOp _  "sext_i32" [SSInt8  i] = SSInt32 (fromIntegral i)
+evalPrimitiveIntOp _  "sext_i64" [SSInt8  i] = SSInt64 (fromIntegral i)
+evalPrimitiveIntOp _  "sext_i64" [SSInt32 i] = SSInt64 (fromIntegral i)
 
-evalPrimitiveIntOp I32 "sitofp_f64"     [SSInt i] = SSFloat (fromIntegral i)
-evalPrimitiveIntOp I32 "uitofp_f64"     [SSInt i] = SSFloat (fromIntegral i)
-evalPrimitiveIntOp I32 "fptosi_f64_i32" [SSFloat f] =
-  let ft = truncate f in
-  let fi = toInteger (trunc32 ft) in
-  if ft == fi then SSInt fi
-              else error $ "Smallstep.fptosi: Can't fit in an Int32: " ++ show f
-evalPrimitiveIntOp I32 "fptoui_f64_i32" [SSFloat f] =
-  let ft = truncate f in
-  let fi = toInteger (trunc32 ft) in
-  if ft == fi then SSInt fi
-              else error $ "Smallstep.fptoui: Can't fit in an Int32: " ++ show f
+evalPrimitiveIntOp _  "zext_i32" [SSInt8  i] = SSInt32 $ unsigned 8  (fromIntegral i)
+evalPrimitiveIntOp _  "zext_i64" [SSInt8  i] = SSInt64 $ unsigned 8  (fromIntegral i)
+evalPrimitiveIntOp _  "zext_i64" [SSInt32 i] = SSInt64 $ unsigned 32 (fromIntegral i)
+
+evalPrimitiveIntOp I32 "sitofp_f64"     [SSInt32 i] = SSFloat (fromIntegral i)
+evalPrimitiveIntOp I32 "uitofp_f64"     [SSInt32 i] = SSFloat (fromIntegral i)
+evalPrimitiveIntOp I64 "sitofp_f64"     [SSInt64 i] = SSFloat $ toDoubleLikeC              (fromIntegral i)
+evalPrimitiveIntOp I64 "uitofp_f64"     [SSInt64 i] = SSFloat $ toDoubleLikeC (unsigned 64 (fromIntegral i))
+evalPrimitiveIntOp I32 "fptosi_f64_i32" [SSFloat f] = SSInt32 (truncate f)
+evalPrimitiveIntOp I32 "fptoui_f64_i32" [SSFloat f] = SSInt32 (truncate f) -- TODO probably wrong
+evalPrimitiveIntOp I64 "fptosi_f64_i64" [SSFloat f] = SSInt64 (truncate f)
+evalPrimitiveIntOp I64 "fptoui_f64_i64" [SSFloat f] = SSInt64 (truncate f) -- TODO probably wrong
 
 evalPrimitiveIntOp size opName args =
   error $ "Smallstep.evalPrimitiveIntOp " ++ show size ++ " " ++ opName ++ " " ++ show args
 
+-- This is true with GHC 8.0.1 on 32-bit Linux
+--    and false with GHC 8.0.1 on 64-bit Linux (!)
+defaultRoundsDown = ((fromInteger 4611686018427387648) :: Double) == 4611686018427387392.0
+
+toDoubleLikeC :: Integer -> Double
+toDoubleLikeC i =
+  if defaultRoundsDown
+   then let val = fromInteger i :: Double in
+        let ulps = ulp val in
+        case (ulps >= 2.0, i > 0) of
+          (True, True)  -> fromInteger (i + (round $ ulps / 2.0))
+          (True, False) -> fromInteger (i - (round $ ulps / 2.0))
+          _ -> val
+   else fromInteger i
 --------------------------------------------------------------------
 
 ctpop i n = fromIntegral $ length [x | x <- showBits n i , x == '1']
 
 ctlz  i n = fromIntegral $ length $ takeWhile (=='0') (showBits n i)
 
-trunc8  = fromInteger :: Integer -> Int8
-trunc32 = fromInteger :: Integer -> Int32
-trunc64 = fromInteger :: Integer -> Int64
-
 evalPrimitiveIntTrunc :: IntSizeBits -> IntSizeBits -> [SSValue] -> SSValue
-evalPrimitiveIntTrunc   _ I8  [SSInt i] = SSInt (toInteger $ trunc8 i)
-evalPrimitiveIntTrunc   _ I32 [SSInt i] = SSInt (toInteger $ trunc32 i)
-evalPrimitiveIntTrunc   _ I64 [SSInt i] = SSInt (toInteger $ trunc64 i)
-evalPrimitiveIntTrunc I64 (IWord 0) [SSInt i] = SSInt i
-evalPrimitiveIntTrunc (IWord 1) (IWord 0) [SSInt i] = SSInt (toInteger $ trunc64 i)
+evalPrimitiveIntTrunc   _ I8  [SSInt32 i] = SSInt8  $ fromIntegral i
+evalPrimitiveIntTrunc   _ I8  [SSInt64 i] = SSInt8  $ fromIntegral i
+evalPrimitiveIntTrunc   _ I32 [SSInt64 i] = SSInt32 $ fromIntegral i
+
+--evalPrimitiveIntTrunc I64 (IWord 0) [SSInt i] = SSInt i
+--evalPrimitiveIntTrunc (IWord 1) (IWord 0) [SSInt i] = SSInt (toInteger $ trunc64 i)
 
 evalPrimitiveIntTrunc from to _args =
   error $ "Smallstep.evalPrimitiveIntTrunc " ++ show from ++ " " ++ show to
 
 -- This relies on the invariant that lists are created & stored densely.
-packBytes :: MachineState -> Array Int Location -> Integer -> BS.ByteString
-packBytes gs a n = let locs = List.take (fromInteger n) (elems a) in
-                   let ints = map (\z -> let (SSInt i) = lookupHeap gs z in i) locs in
-                   let bytes = (map fromInteger ints) :: [Word8] in
+packBytes :: MachineState -> Array Int Location -> Int32 -> BS.ByteString
+packBytes gs a n = let locs = List.take (fromIntegral n) (elems a) in
+                   let ints = map (\z -> let (SSInt8 i) = lookupHeap gs z in i) locs in
+                   let bytes = (map fromIntegral ints) :: [Word8] in
                    BS.takeWhile (/= 0) (BS.pack bytes)
 
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+-- |||||||||||||||||||||||  Integer Helpers   |||||||||||||||||||{{{
+mbInteger :: SSValue -> Maybe (IntSizeBits, Integer)
+mbInteger (SSInt8  i) = Just (I8 , fromIntegral i)
+mbInteger (SSInt32 i) = Just (I32, fromIntegral i)
+mbInteger (SSInt64 i) = Just (I64, fromIntegral i)
+mbInteger _ = Nothing
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- |||||||||||||||||||||||  Named Primitives  |||||||||||||||||||{{{
 
@@ -863,7 +890,8 @@ evalNamedPrimitive primName gs [val] | Just fmt <- isExpectFunction primName =
       do expectStringNL gs (fmt val)
          return $ withTerm gs unit
 
-evalNamedPrimitive primName gs [SSInt i] | Just act <- lookupPrintInt i primName
+evalNamedPrimitive primName gs [intish] | Just (_, i) <- mbInteger intish,
+                                          Just act <- lookupPrintInt (fromIntegral i) primName
     = do act gs ; return $ withTerm gs unit
 
 evalNamedPrimitive "force_gc_for_debugging_purposes" gs _args =
@@ -880,29 +908,29 @@ evalNamedPrimitive "expect_newline" gs [] =
       do expectStringNL gs ""
          return $ withTerm gs unit
 
-evalNamedPrimitive "prim_print_bytes_stdout" gs [SSArray a, SSInt n] =
+evalNamedPrimitive "prim_print_bytes_stdout" gs [SSArray a, SSInt32 n] =
       do printString gs (stringOfBytes $ packBytes gs a n)
          return $ withTerm gs unit
 
-evalNamedPrimitive "prim_print_bytes_stderr" gs [SSArray a, SSInt n] =
+evalNamedPrimitive "prim_print_bytes_stderr" gs [SSArray a, SSInt32 n] =
       do expectString gs (stringOfBytes $ packBytes gs a n)
          return $ withTerm gs unit
 
-evalNamedPrimitive "prim_print_bytes_stdout" gs [SSByteString bs, SSInt n] =
-      do printString  gs (stringOfBytes $ BS.take (fromInteger n) bs)
+evalNamedPrimitive "prim_print_bytes_stdout" gs [SSByteString bs, SSInt32 n] =
+      do printString  gs (stringOfBytes $ BS.take (fromIntegral n) bs)
          return $ withTerm gs unit
 
-evalNamedPrimitive "prim_print_bytes_stderr" gs [SSByteString bs, SSInt n] =
-      do expectString gs (stringOfBytes $ BS.take (fromInteger n) bs)
+evalNamedPrimitive "prim_print_bytes_stderr" gs [SSByteString bs, SSInt32 n] =
+      do expectString gs (stringOfBytes $ BS.take (fromIntegral n) bs)
          return $ withTerm gs unit
 
 evalNamedPrimitive "prim_arrayLength" gs [arr@(SSArray _)] =
-      do return $ withTerm gs (SSTmValue $ SSInt (fromIntegral $ (prim_arrayLength arr)))
+      do return $ withTerm gs (SSTmValue $ SSInt64 (fromIntegral (prim_arrayLength arr)))
 
 evalNamedPrimitive "prim_arrayLength" gs [arr@(SSByteString _)] =
-      do return $ withTerm gs (SSTmValue $ SSInt (fromIntegral $ (prim_arrayLength arr)))
+      do return $ withTerm gs (SSTmValue $ SSInt64 (fromIntegral (prim_arrayLength arr)))
 
-evalNamedPrimitive "get_cmdline_arg_n" gs [SSInt i] =
+evalNamedPrimitive "get_cmdline_arg_n" gs [SSInt32 i] =
       do let argN = let args = stCmdArgs $ stConfig gs in
                     let ii = fromIntegral i in
                     T.pack $ if ii < List.length args && ii >= 0
@@ -920,38 +948,41 @@ evalNamedPrimitive "print_float_p9f64" gs [SSFloat f] =
 -- {{{
 -- to[req_at..whatever] = from[0..req_len]
 evalNamedPrimitive "memcpy_i8_to_at_from_len" gs
-         [SSArray arr, SSInt req_at_I, from_bs_or_arr, SSInt req_len_I] =
+         [SSArray arr, SSInt32 req_at_I , from_bs_or_arr, SSInt32 req_len_I] =
   evalNamedPrimitive "memcpy_i8_to_at_from_at_len" gs
-         [SSArray arr, SSInt req_at_I, from_bs_or_arr, SSInt 0, SSInt req_len_I]
+         [SSArray arr, SSInt64 (fromIntegral req_at_I) , from_bs_or_arr,
+                       SSInt64 0, SSInt64 (fromIntegral req_len_I)]
 
 -- to[0..req_len] = from[req_at..req_at+req_len]
 evalNamedPrimitive "memcpy_i8_to_from_at_len" gs
-         [SSArray arr, from_bs_or_arr, SSInt req_at_I, SSInt req_len_I] =
+         [SSArray arr, from_bs_or_arr, SSInt32 req_at_I, SSInt32 req_len_I] =
   evalNamedPrimitive "memcpy_i8_to_at_from_at_len" gs
-         [SSArray arr, SSInt 0, from_bs_or_arr, SSInt req_at_I, SSInt req_len_I]
+         [SSArray arr, SSInt64 0, from_bs_or_arr, SSInt64 (fromIntegral req_at_I),
+                       SSInt64 (fromIntegral req_len_I)]
 
 -- to[to_at..to_at+req_len] = from[from_at..from_at+req_len]
 evalNamedPrimitive "memcpy_i8_to_at_from_at_len" gs
-         [SSArray arr, SSInt to_at_I, from_bs_or_arr, SSInt from_at_I, SSInt req_len_I] =
+         [SSArray arr, SSInt64 to_at, from_bs_or_arr, SSInt64 from_at, SSInt64 req_len_I] =
    if isSameArray (SSArray arr) from_bs_or_arr
     then error "memcpy_i8_to_from_at_len: arrays were aliased!"
     else
       do let min0 a b c = max 0 (min (min a b) c)
          let     to_len  = prim_arrayLength (SSArray arr)
          let   from_len  = prim_arrayLength from_bs_or_arr
-         let    req_len  = min0 (fromInteger req_len_I) from_len to_len
-         let     to_at   = fromInteger to_at_I
-         let   from_at   = fromInteger from_at_I
+         let    req_len  = min0 req_len_I from_len to_len
          let   to_rem =   to_len -   to_at
          let from_rem = from_len - from_at
          let len = min0 to_rem from_rem req_len
-         if to_rem < 0 || from_rem < 0 then error "memcpy_i8_to_from_at_len: *_at > *_len"
-          else if len /= req_len then error "memcpy_i8_to_from_at_len: unable to copy requested length"
-           else do
-             let idxs = take len $ [from_at..]
-             (_, gs') <- mapFoldM idxs gs (\idx gs -> do
-                             let val = prim_arrayRead gs idx from_bs_or_arr
-                             let to_idx = to_at + fromIntegral (idx - from_at)
+         case () of
+           _ | to_rem < 0 || from_rem < 0
+            -> error "memcpy_i8_to_from_at_len: *_at > *_len"
+           _ | len /= req_len
+            -> error "memcpy_i8_to_from_at_len: unable to copy requested length"
+           _ -> do
+             let idxs = take (fromIntegral len) $ [from_at..] :: [Int64]
+             (_, gs') <- mapFoldM idxs gs (\idx64 gs -> do
+                             let val = prim_arrayRead gs (fromIntegral idx64) from_bs_or_arr
+                             let to_idx = fromIntegral (to_at + (idx64 - from_at))
                              gs' <- prim_arrayPoke gs to_idx arr val
                              return ([], gs' ))
              return $ withTerm gs' unit
@@ -963,9 +994,9 @@ evalNamedPrimitive "foster_getticks" gs [] = do
   -- "Convert" seconds to ticks by treating our abstract machine
   -- as a blazingly fast 2 MHz beast!
   let t64 = round (t * 2000000.0)
-  return $ withTerm gs (SSTmValue $ SSInt t64)
+  return $ withTerm gs (SSTmValue $ SSInt64 t64)
 
-evalNamedPrimitive "foster_getticks_elapsed" gs [SSInt t1, SSInt t2] = do
+evalNamedPrimitive "foster_getticks_elapsed" gs [SSInt64 t1, SSInt64 t2] = do
   return $ withTerm gs (SSTmValue $ SSFloat (fromIntegral (t2 - t1)))
 -- }}}
 
@@ -973,9 +1004,9 @@ evalNamedPrimitive "foster_getticks_elapsed" gs [SSInt t1, SSInt t2] = do
 evalNamedPrimitive "foster_gettime_microsecs" gs [] = do
   t_secs <- getTime
   let t_us = round (t_secs * 1e6)
-  return $ withTerm gs (SSTmValue $ SSInt t_us)
+  return $ withTerm gs (SSTmValue $ SSInt64 t_us)
 
-evalNamedPrimitive "foster_gettime_elapsed_secs" gs [SSInt t1_us, SSInt t2_us] = do
+evalNamedPrimitive "foster_gettime_elapsed_secs" gs [SSInt64 t1_us, SSInt64 t2_us] = do
   return $ withTerm gs (SSTmValue $ SSFloat (fromIntegral (t2_us - t1_us) * 1e6))
 
 evalNamedPrimitive "foster_fmttime_secs" gs [SSFloat d] = do
@@ -1003,18 +1034,18 @@ lookupPrintInt i  "print_i16b" =    Just (\gs ->  printStringNL gs (showBits 16 
 lookupPrintInt i "expect_i16b" =    Just (\gs -> expectStringNL gs (showBits 16 i))
 lookupPrintInt i  "print_i8b"  =    Just (\gs ->  printStringNL gs (showBits  8 i))
 lookupPrintInt i "expect_i8b"  =    Just (\gs -> expectStringNL gs (showBits  8 i))
-lookupPrintInt i  "print_i64x" =    Just (\gs ->  printStringNL gs (map toUpper $ showHexy 64 i))
-lookupPrintInt i "expect_i64x" =    Just (\gs -> expectStringNL gs (map toUpper $ showHexy 64 i))
-lookupPrintInt i  "print_i32x" =    Just (\gs ->  printStringNL gs (map toUpper $ showHexy 32 i))
-lookupPrintInt i "expect_i32x" =    Just (\gs -> expectStringNL gs (map toUpper $ showHexy 32 i))
-lookupPrintInt i  "print_i16x" =    Just (\gs ->  printStringNL gs (map toUpper $ showHexy 16 i))
-lookupPrintInt i "expect_i16x" =    Just (\gs -> expectStringNL gs (map toUpper $ showHexy 16 i))
-lookupPrintInt i  "print_i8x"  =    Just (\gs ->  printStringNL gs (map toUpper $ showHexy  8 i))
-lookupPrintInt i "expect_i8x"  =    Just (\gs -> expectStringNL gs (map toUpper $ showHexy  8 i))
+lookupPrintInt i  "print_i64x" =    Just (\gs ->  printStringNL gs (showHexy 64 i))
+lookupPrintInt i "expect_i64x" =    Just (\gs -> expectStringNL gs (showHexy 64 i))
+lookupPrintInt i  "print_i32x" =    Just (\gs ->  printStringNL gs (showHexy 32 i))
+lookupPrintInt i "expect_i32x" =    Just (\gs -> expectStringNL gs (showHexy 32 i))
+lookupPrintInt i  "print_i16x" =    Just (\gs ->  printStringNL gs (showHexy 16 i))
+lookupPrintInt i "expect_i16x" =    Just (\gs -> expectStringNL gs (showHexy 16 i))
+lookupPrintInt i  "print_i8x"  =    Just (\gs ->  printStringNL gs (showHexy  8 i))
+lookupPrintInt i "expect_i8x"  =    Just (\gs -> expectStringNL gs (showHexy  8 i))
 lookupPrintInt _ _ = Nothing
 
 showHexy :: (Integral x, Show x) => x -> x -> String
-showHexy bitwidth n = showHex (unsigned bitwidth n) "_16"
+showHexy bitwidth n = "0x" ++ (map toUpper $ showHex (unsigned bitwidth n) "")
 
 showSigned :: Integer -> Integer -> String
 showSigned bitwidth n =
@@ -1118,7 +1149,7 @@ expectString gs s = do
   appendFile (errFile gs)  s
 
 --------------------------------------------------------------------
-textFragmentOf txt = SSCtorVal textFragmentCtor [SSByteString bytes, SSInt len]
+textFragmentOf txt = SSCtorVal textFragmentCtor [SSByteString bytes, SSInt32 len]
   where textFragmentCtor = CtorId "Text" "TextFragment" 2 -- see Primitives.hs
         bytes = TE.encodeUtf8 txt
         len   = fromIntegral $ BS.length bytes
@@ -1136,21 +1167,21 @@ arrayOf gs0 vals = do
 showBits k n = -- k = 32, for example
   let bits = map (testBit n) [0 .. (k - 1)] in
   let s = map (\b -> if b then '1' else '0') bits in
-  (reverse s) ++ "_2"
+  "0b" ++ (reverse s)
 
 isPrintFunction name =
   case name of
-    "print_i64"  -> Just $ \(SSInt i) -> showSigned 64 i
-    "print_i32"  -> Just $ \(SSInt i) -> showSigned 32 i
-    "print_i8"   -> Just $ \(SSInt i) -> showSigned 8  i
+    "print_i64"  -> Just $ \(SSInt64 i) -> show i
+    "print_i32"  -> Just $ \(SSInt32 i) -> show i
+    "print_i8"   -> Just $ \(SSInt8  i) -> show i
     "print_i1"   -> Just $ display
     _ -> Nothing
 
 isExpectFunction name =
   case name of
-    "expect_i64" -> Just $ \(SSInt i) -> showSigned 64 i
-    "expect_i32" -> Just $ \(SSInt i) -> showSigned 32 i
-    "expect_i8"  -> Just $ \(SSInt i) -> showSigned 8  i
+    "expect_i64" -> Just $ \(SSInt64 i) -> show i
+    "expect_i32" -> Just $ \(SSInt32 i) -> show i
+    "expect_i8"  -> Just $ \(SSInt8  i) -> show i
     "expect_i1"  -> Just $ display
     _ -> Nothing
 
@@ -1158,7 +1189,11 @@ display :: SSValue -> String
 display (SSBool True )  = "true"
 display (SSBool False)  = "false"
 display (SSByteString bs)= show bs
-display (SSInt   i   )  = show i
+display (SSInt8  i   )  = show i
+display (SSInt32 i   )  = show i
+display (SSInt64 i   )  = show i
+display (SSIntWd i   )  = show i
+display (SSIntDw i   )  = show i
 display (SSFloat f   )  = show f
 display (SSArray a   )  = show a
 display (SSTuple vals)  = "(" ++ joinWith ", " (map display vals) ++ ")"
