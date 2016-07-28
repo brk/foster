@@ -1,0 +1,78 @@
+snafuinclude List "list";
+
+main = {
+  expect_i32 4;
+  print_i32 (intListMax (Cons 0 (Cons 4 (Cons 1 (listEmpty !)))) 2);
+};
+
+// http://arxiv.org/pdf/1507.00385.pdf
+
+max :: { Int32 => Int32 => Int32 };
+max = { a => b =>
+  if a <=SInt32 b then b else a end
+};
+
+intListMax :: { List Int32 => Int32 => Int32 };
+intListMax =  { lst => basecase =>
+  case lst
+    of $Nil -> basecase
+    of $Cons v rest -> intListMax rest (max v basecase)
+  end
+};
+
+// Fails...
+//posListMax :: { List (%p : Int32 : p >=SInt32 0) => (%prv : Int32 : prv >=SInt32 0) };
+//posListMax = { plist => intListMax plist 0 };
+
+// Works, but we lose the refinement on the result.
+posListMaxAlt2 :: { List (%p : Int32 : p >=SInt32 0) => Int32 };
+posListMaxAlt2 = { plist => intListMax plist 0 };
+
+
+/*
+main = {
+  dai = arrayLenRet 0 16;
+  expect_i1 True;
+  print_i1 (__COMPILES__ prim assert-invariants (prim_arrayLength dai ==Int64 16));
+
+  // Note: the return type of this function is not directly a refinement type,
+  // but it does contain a refinement type which refers to the function's
+  // refined args. So when we get around to asserting/establishing that the
+  // refinement applies to ``dain``, we have a choice:
+  //   * Keep the variables mentioned in the return refinement as-is,
+  //     and establish new symbolic variables in the continuation scope.
+  //     ``dain`` :: % rvN : ... : prim_arrayLength rvN ==Int64 (sext_i32_to_i64 (rlgn -Int32 rsmn)))
+  //     The downsides are: (1) bloats the SMT context with extra refinement vars
+  //                   and  (2) non-obvious how to get the proper scoping in static checks.
+  //
+  //   * Substitute the concrete arguments within the refinement.
+  //     ``dain`` :: % rvN : ... : prim_arrayLength rvN ==Int64 (sext_i32_to_i64 (rlit16 -Int32 rlit0)))
+  //     But: when to do the substitution?
+  //     After K-normalization, types have already been inferred & propagated.
+  //     But before K-normalization, substitution can lead to duplication...
+  ares = arrayLenRetNested 0 16;
+  case ares
+    of ((), dain) ->
+      prim assert-invariants (prim_arrayLength dai ==Int64 16);
+      ()
+  end;
+
+  //prim assert-invariants (prim_arrayLength dai ==Int64 16);
+};
+
+arrayLenRetNested :: { % rsmn : Int32 : True =>
+                       % rlgn : Int32 : rlgn >SInt32 rsmn =>
+                      ((), % rvN : Array Int32 : prim_arrayLength rvN ==Int64 (sext_i32_to_i64 (rlgn -Int32 rsmn))) };
+arrayLenRetNested = { sm => lg =>
+  aa = allocDArray:[Int32] (lg -Int32 sm);
+  rt = ( (), aa );
+  rt
+};
+
+arrayLenRet :: { % rsm : Int32 : True =>
+                 % rlg : Int32 : rlg >SInt32 rsm =>
+                 % rvA : Array Int32 : prim_arrayLength rvA ==Int64 (sext_i32_to_i64 (rlg -Int32 rsm)) };
+arrayLenRet = { sm => lg =>
+  allocDArray:[Int32] (lg -Int32 sm);
+};
+*/
