@@ -105,10 +105,7 @@ compilePatterns bs allSigs =
                              where
                               isb  = intSizeBitsOf ty
                               bits = intSizeOf     isb
-                              ctnm = case isb of
-                                         IWord 0 -> "Word"
-                                         IWord 1 -> "WordX2"
-                                         _       -> "Int" ++ show bits
+                              ctnm = show (pretty isb)
                               tag  = if litIntMinBits li <= bits
                                       then litIntValue li
                                       else error $ "cannot cram " ++ show bits

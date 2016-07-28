@@ -602,7 +602,7 @@ checkArrayIndexer b = do
             PrimIntTC I8     -> return $ AIR_ZExt
             PrimIntTC I32    -> return $ AIR_OK
             PrimIntTC I64    -> return $ AIR_Trunc
-            PrimIntTC (IWord 0) -> return $ AIR_Trunc
+            PrimIntTC IWd    -> return $ AIR_Trunc
             RefinedTypeTC v _ _ -> check (tidType v)
             _ -> tcFails [text "Array subscript had type"
                          ,pretty t

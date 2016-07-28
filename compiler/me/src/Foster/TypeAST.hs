@@ -166,8 +166,8 @@ i8  = PrimIntAST I8
 i32 = PrimIntAST I32
 i64 = PrimIntAST I64
 i1  = PrimIntAST I1
-iw0 = PrimIntAST (IWord 0)
-iw1 = PrimIntAST (IWord 1)
+iw0 = PrimIntAST IWd
+iw1 = PrimIntAST IDw
 f64 = TyAppAST (TyConAST "Float64") []
 
 primTyVars tyvars = map (\v -> (v, KindAnySizeType)) tyvars
@@ -274,14 +274,7 @@ primitiveDecls =
 
 primopDecls = map (\(name, (ty, _op)) -> (name, ty)) $ Map.toList gFosterPrimOpsTable
 
-intSize I1  = "Bool"
-intSize I8  = "Int8"
---intSize I16 = "Int16"
-intSize I32 = "Int32"
-intSize I64 = "Int64"
-intSize (IWord 0) = "Word"
-intSize (IWord 1) = "WordX2"
-intSize (IWord x) = error $ "Unable to handle Word " ++ show x
+intSize bitsize = show $ pretty bitsize
 
 prettyOpName nm tystr =
   if Char.isLetter (head nm)
@@ -374,11 +367,11 @@ gFosterPrimOpsTable = Map.fromList $
   ,(,) "trunc_i32_to_i8"      $ (,) (mkFnType [i32] [i8 ] ) $ PrimIntTrunc I32 I8
   ,(,) "trunc_i64_to_i8"      $ (,) (mkFnType [i64] [i8 ] ) $ PrimIntTrunc I64 I8
   ,(,) "trunc_i64_to_i32"     $ (,) (mkFnType [i64] [i32] ) $ PrimIntTrunc I64 I32
-  ,(,) "trunc_i64_to_Word"    $ (,) (mkFnType [i64] [iw0] ) $ PrimIntTrunc I64 (IWord 0)
-  ,(,) "trunc_Word_to_i32"    $ (,) (mkFnType [iw0] [i32] ) $ PrimIntTrunc (IWord 0) I32
-  ,(,) "trunc_Word_to_i8"     $ (,) (mkFnType [iw0] [i8 ] ) $ PrimIntTrunc (IWord 0) I8
-  ,(,) "trunc_WordX2_to_i32"  $ (,) (mkFnType [iw1] [i32] ) $ PrimIntTrunc (IWord 1) I32
-  ,(,) "trunc_WordX2_to_Word" $ (,) (mkFnType [iw1] [iw0] ) $ PrimIntTrunc (IWord 1) (IWord 0)
+  ,(,) "trunc_i64_to_Word"    $ (,) (mkFnType [i64] [iw0] ) $ PrimIntTrunc I64 IWd
+  ,(,) "trunc_Word_to_i32"    $ (,) (mkFnType [iw0] [i32] ) $ PrimIntTrunc IWd I32
+  ,(,) "trunc_Word_to_i8"     $ (,) (mkFnType [iw0] [i8 ] ) $ PrimIntTrunc IWd I8
+  ,(,) "trunc_WordX2_to_i32"  $ (,) (mkFnType [iw1] [i32] ) $ PrimIntTrunc IDw I32
+  ,(,) "trunc_WordX2_to_Word" $ (,) (mkFnType [iw1] [iw0] ) $ PrimIntTrunc IDw IWd
   ,(,) "f64-to-s32-unsafe"    $ (,) (mkFnType [f64] [i32] ) $ PrimOp "fptosi_f64_i32" i32
   ,(,) "f64-to-u32-unsafe"    $ (,) (mkFnType [f64] [i32] ) $ PrimOp "fptoui_f64_i32" i32
   ,(,) "f64-to-s64-unsafe"    $ (,) (mkFnType [f64] [i64] ) $ PrimOp "fptosi_f64_i64" i64
@@ -389,9 +382,5 @@ gFosterPrimOpsTable = Map.fromList $
   ,(,) "u32-to-f64"    $(,) (mkFnType [i32] [f64]     ) $ PrimOp "uitofp_f64" i32
   ,(,) "f64-as-i64"    $(,) (mkFnType [f64] [i64]     ) $ PrimOp "bitcast_i64" f64
   ,(,) "i64-as-f64"    $(,) (mkFnType [i64] [f64]     ) $ PrimOp "bitcast_f64" i64
-  ] ++ fixnumPrimitives I64
-    ++ fixnumPrimitives I32
-    ++ fixnumPrimitives I8
+  ] ++ concatMap fixnumPrimitives [I32, I64, I8, IWd, IDw]
     ++ flonumPrimitives "f64" f64
-    ++ fixnumPrimitives (IWord 0)
-    ++ fixnumPrimitives (IWord 1)
