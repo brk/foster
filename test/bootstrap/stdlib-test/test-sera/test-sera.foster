@@ -14,6 +14,8 @@ snafuinclude Measure "bench/measure";
 //
 // which implements the algorithms/data structures from the paper
 //      Resizable Arrays in Optimal Space and Time
+//
+//      https://cs.uwaterloo.ca/~imunro/cs840/ResizableArrays.pdf
 
 type case Sera (a:Boxed)
        of $Sera

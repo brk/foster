@@ -4,8 +4,8 @@ snafuinclude Bytes "bytes";
 // but here it is for reference:
 //
 //   type case Text
-//         of $TextFragment Bytes     Int64 (length in ... bytes?)
-//         of $TextConcat   Text Text Int64
+//         of $TextFragment Bytes     Int32 (length in ... bytes?)
+//         of $TextConcat   Text Text Int32
 
 mkTextConcat = { a : Text => b : Text =>
   lensum = (textLength a) +Int32 (textLength b);
@@ -31,13 +31,15 @@ mkTextConcat = { a : Text => b : Text =>
 // TODO how to efficiently support an operation like textHeadTail/textSplit?
 // The challenge would be to efficiently support incremental iteration
 // through a Text with minimal allocation.
-
+textLength :: { Text => Int32 };
 textLength = { t : Text =>
   case t
     of $TextFragment _ n -> n
     of $TextConcat _ _ n -> n
    end;
 };
+
+textLength32 = { t => textLength t };
 
 textFoldASCII = { forall a:Type, t : Text => f : { Int8 => a => a } => acc:a =>
   case t
