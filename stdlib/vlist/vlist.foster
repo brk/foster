@@ -9,6 +9,11 @@ snafuinclude Prelude "prelude";
 
 // For now, the underlying storage is a List rather than any form of array.
 
+// VList supports indexing in O(1) average, O(log n) worst-case,
+// prepending an element   in O(1) average,
+// un-prepending           in O(1),
+// and computing the length of the list in O(log n).
+
 type case VList (a:Type)
        of $VList Int32 (VListBase a) Int32
        ;
