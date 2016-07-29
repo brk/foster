@@ -165,7 +165,7 @@ struct FosterVirtualCPU {
 
 // {{{
 
-inline FosterVirtualCPU* __foster_get_current_vCPU() {
+inline static FosterVirtualCPU* __foster_get_current_vCPU() {
   // TODO use TLS to store current vCPU?
   return __foster_vCPUs[0];
 }
@@ -174,17 +174,17 @@ extern "C" foster_generic_coro** __foster_get_current_coro_slot() {
   return &(__foster_get_current_vCPU()->current_coro);
 }
 
+// $ gotest.sh speed/siphash --optc-arg=-foster-insert-timing-checks --backend-optimize
+// $ test-tmpdir/siphash/siphash 64 20048
 extern "C" void __foster_do_resched() {
+  FosterVirtualCPU* v = __foster_get_current_vCPU();
+  v->needs_resched.set(false);
   printf("__foster_do_resched...\n");
 }
 
 extern "C" bool __foster_need_resched_threadlocal() {
   FosterVirtualCPU* v = __foster_get_current_vCPU();
-  if (v->needs_resched.get()) {
-      v->needs_resched.set(false);
-      return true;
-  }
-  return false;
+  return v->needs_resched.get();
 }
 
 // Rather than muck about with alarms, etc,

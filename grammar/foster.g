@@ -5,6 +5,9 @@ options {
   // and still automatically generate a C-language parser via CMake and Python.
   //language = C;
   output = AST;
+
+  // Grammar is LL(5); lookahead is needed to
+  // disambiguate    '(' '(' SYMBOL ')'
 }
 
 

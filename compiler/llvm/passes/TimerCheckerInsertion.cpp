@@ -14,6 +14,7 @@
 
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/LoopPass.h"
+#include "llvm/Analysis/ScalarEvolution.h"
 
 #include "base/LLVMUtils.h"
 
@@ -36,7 +37,10 @@ struct TimerChecksInsertion : public FunctionPass {
 
   virtual void getAnalysisUsage(AnalysisUsage& AU) const {
     AU.addRequired<LoopInfoWrapperPass>();
+    AU.addRequired<ScalarEvolution>();
+
     AU.addPreserved<LoopInfoWrapperPass>();
+    AU.addPreserved<ScalarEvolution>();
   }
 
   // If F is recursive, or makes calls to statically unknown functions,
@@ -47,11 +51,11 @@ struct TimerChecksInsertion : public FunctionPass {
         if (llvm::CallInst* call = llvm::dyn_cast<CallInst>(I)) {
           llvm::Value* Vtgt = call->getCalledValue();
           if (!Vtgt) {
-            errs() << F.getName() << " needs header due to unknown target " << str(call);
+            //errs() << F.getName() << " needs header due to unknown target " << str(call);
             return true; // Call to unknown function.
           }
           if (llvm::dyn_cast<llvm::Function>(Vtgt->stripPointerCasts()) == &F) {
-            errs() << F.getName() << " needs header due to recursive call " << str(call);
+            //errs() << F.getName() << " needs header due to recursive call " << str(call);
             return true; // Recursive call.
           }
         }
@@ -59,6 +63,10 @@ struct TimerChecksInsertion : public FunctionPass {
     }
 
     return false;
+  }
+
+  bool isKnownAndReasonable(unsigned trips) {
+    return trips > 0 && trips < 255;
   }
 
   llvm::Function* needReschedF;
@@ -92,32 +100,37 @@ struct TimerChecksInsertion : public FunctionPass {
     if (!isFosterFunction(F)) { return false; }
 
     bool modified = false;
-    std::vector<BasicBlock*> headers;
+    std::vector<Loop*> loops;
 
     LoopInfo& LI = getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
     for (auto loop : LI) {
-      headers.push_back(loop->getHeader());
+      loops.push_back(loop);
     }
 
-    for (size_t i = 0; i < headers.size(); ++i) {
-      BasicBlock* bb = headers[i];
+    ScalarEvolution& SE = getAnalysis<ScalarEvolution>();
+
+    for (auto loop : loops) {
+      // Don't insert checks in blocked/tiled inner loops.
+      if (isKnownAndReasonable(SE.getSmallConstantTripCount(loop))) continue;
+      BasicBlock* bb = loop->getHeader();
       insertCheckAt(&F, bb, bb->getFirstNonPHI());
     }
 
-    modified = !headers.empty();
+    modified = !loops.empty();
 
     /*
     Otherwise, if there are no loops, the function can't diverge (though it
     (perhaps) can block in native platform/library function calls, which
     cannot be safely pre-empted...
     */
-    if (headers.empty() && needsHeader(F)) {
+    if (loops.empty() && needsHeader(F)) {
       BasicBlock* bb = &F.getEntryBlock();
       insertCheckAt(&F,  bb, bb->getTerminator());
+      modified = true;
     }
 
-    outs() << "TimerChecksInsertion ran on function " << F.getName()
-           << " with " << headers.size() << "headers" << "\n";
+    //outs() << "TimerChecksInsertion ran on function " << F.getName()
+    //       << " with " << headers.size() << " headers; modified? "  << modified << "\n";
 
     return modified;
   }
