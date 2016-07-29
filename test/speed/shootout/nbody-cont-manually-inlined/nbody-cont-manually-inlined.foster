@@ -40,11 +40,11 @@ mkPlanet = { px : Float64 => py : Float64 => pz : Float64 =>
 };
 
 mkBodies = { nbodies : Int32 =>
-  let bodies = allocDArray:[Planet] nbodies;
-      //solar_mass = 39.478417604;
-      solar_mass = 39.478417604357428482118055131396; // 50.265482457436688;
-      days_per_year = 365.24;
-  in
+  bodies = allocDArray:[Planet] nbodies;
+  //solar_mass = 39.478417604;
+  solar_mass = 39.478417604357428482118055131396; // 50.265482457436688;
+  days_per_year = 365.24;
+
     (mkPlanet  0.0  0.0  0.0
                0.0  0.0  0.0
                solar_mass) >^ bodies[0]; // sun
@@ -86,7 +86,6 @@ mkBodies = { nbodies : Int32 =>
                 (5.15138902046611451e-05 *f64 solar_mass)) >^ bodies[4]; // neptune
 
     bodies
-  end
 };
 
 repeat = { n : Int32 => f : { () } =>
@@ -105,8 +104,8 @@ dot_bodyPos = { b : Planet =>
 };
 
 energy = { bodies : Array Planet =>
-  let e = (prim ref 0.0); in
-  rec
+  e = (prim ref 0.0);
+  REC
   /*
         arrayEnumFromF = { forall t:Boxed,
                           a : Array t =>
@@ -115,60 +114,49 @@ energy = { bodies : Array Planet =>
           if k <SInt64 prim_arrayLength a
             then f a[trunc_i64_to_i32 k] k;
                  arrayEnumFromF a (incr64 k) f
-            else ()
           end
         };
         */
-        arrayEnumFromF = {k : Int64 =>
+        arrayEnumFromF = { k : Int64 =>
           if k <SInt64 prim_arrayLength bodies
             then /* { */
 
-            let b1 = bodies[trunc_i64_to_i32 k];
-                i  = k;
-             in
-                rec
-                   arrayEnumFromH = { k : Int64 =>
+              b1 = bodies[trunc_i64_to_i32 k];
+              i  = k;
+
+              REC  arrayEnumFromH = { k : Int64 =>
                      if k <SInt64 prim_arrayLength bodies
                        then
-                           let b2 = bodies[trunc_i64_to_i32 k];
-                               jj = k;
-                               dx = px b1 -f64 px b2;
-                               dy = py b1 -f64 py b2;
-                               dz = pz b1 -f64 pz b2;
-                               distance = sqrt-f64 ((dx *f64 dx) +f64 (dy *f64 dy) +f64 (dz *f64 dz));
-                           in
+                           b2 = bodies[trunc_i64_to_i32 k];
+                           jj = k;
+                           dx = px b1 -f64 px b2;
+                           dy = py b1 -f64 py b2;
+                           dz = pz b1 -f64 pz b2;
+                           distance = sqrt-f64 ((dx *f64 dx) +f64 (dy *f64 dy) +f64 (dz *f64 dz));
+
                              decrByFloat64 e (div-f64 (ma b1 *f64 ma b2) distance);
-                           end;
                            arrayEnumFromH (incr64 k)
-                       else ()
                      end
                    };
-                  in
-                      incrByFloat64 e (0.5 *f64 ma b1 *f64 dot_bodyPos b1);
-                      arrayEnumFromH (incr64 i);
-                 end
-             end;
-             arrayEnumFromF (incr64 k)
-                 /* } */
-            else ()
+              incrByFloat64 e (0.5 *f64 ma b1 *f64 dot_bodyPos b1);
+              arrayEnumFromH (incr64 i);
+
+              arrayEnumFromF (incr64 k)
           end
         };
-  in
-    arrayEnumFromF (sext_i32_to_i64 0);
+    arrayEnumFromF 0;
     e^
-  end
-  end
 };
 
 advance = { bodies : Array Planet =>
   arrayEnum:[Planet] bodies { b1 : Planet => i : Int64 =>
     arrayEnumFrom:[Planet] bodies (incr64 i) { b2: Planet => jj : Int64 =>
-      let dx = px b1 -f64 px b2;
-          dy = py b1 -f64 py b2;
-          dz = pz b1 -f64 pz b2;
-          inv_distance = div-f64 1.0 (sqrt-f64 ((dx *f64 dx) +f64 (dy *f64 dy) +f64 (dz *f64 dz)));
-          mag = inv_distance *f64 inv_distance *f64 inv_distance;
-      in
+      dx = px b1 -f64 px b2;
+      dy = py b1 -f64 py b2;
+      dz = pz b1 -f64 pz b2;
+      inv_distance = div-f64 1.0 (sqrt-f64 ((dx *f64 dx) +f64 (dy *f64 dy) +f64 (dz *f64 dz)));
+      mag = inv_distance *f64 inv_distance *f64 inv_distance;
+
         decrByFloat64 (vxr b1) (dx *f64 ma b2 *f64 mag);
         decrByFloat64 (vyr b1) (dy *f64 ma b2 *f64 mag);
         decrByFloat64 (vzr b1) (dz *f64 ma b2 *f64 mag);
@@ -176,7 +164,6 @@ advance = { bodies : Array Planet =>
         incrByFloat64 (vyr b2) (dy *f64 ma b1 *f64 mag);
         incrByFloat64 (vzr b2) (dz *f64 ma b1 *f64 mag);
         ()
-      end
     };
   };
 
@@ -188,21 +175,19 @@ advance = { bodies : Array Planet =>
 };
 
 offset-momentum = { bodies : Array Planet =>
-  let rx = (prim ref 0.0);
-      ry = (prim ref 0.0);
-      rz = (prim ref 0.0);
-  in
+  rx = (prim ref 0.0);
+  ry = (prim ref 0.0);
+  rz = (prim ref 0.0);
+
     arrayEnum bodies { b : Planet => ign:Int64 =>
       incrByFloat64 rx (vx b *f64 ma b);
       incrByFloat64 ry (vy b *f64 ma b);
       incrByFloat64 rz (vz b *f64 ma b);
     };
-    let solar_mass = 39.478417604357428482118055131396; in
+    solar_mass = 39.478417604357428482118055131396;
       (div-f64 (0.0 -f64 rx^) solar_mass) >^ vxr bodies[0];
       (div-f64 (0.0 -f64 ry^) solar_mass) >^ vyr bodies[0];
       (div-f64 (0.0 -f64 rz^) solar_mass) >^ vzr bodies[0];
-    end
-  end
 };
 
 scale = { bodies : Array Planet => s : Float64 =>
@@ -215,11 +200,11 @@ scale = { bodies : Array Planet => s : Float64 =>
 };
 
 main = {
-  let n = (prim ref (tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1)));
-      nbodies = 5;
-      bodies = mkBodies nbodies;
-      dt = 1.0e-02;
-  in
+  n = (prim ref (tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1)));
+  nbodies = 5;
+  bodies = mkBodies nbodies;
+  dt = 1.0e-02;
+
       offset-momentum bodies;
 
       print_float_p9f64 (energy bodies);
@@ -229,5 +214,4 @@ main = {
       scale bodies (div-f64 1.0 dt);
 
       print_float_p9f64 (energy bodies);
-  end
 };

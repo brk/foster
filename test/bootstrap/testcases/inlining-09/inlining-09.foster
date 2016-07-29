@@ -61,15 +61,13 @@ natCountBits_A = { a =>
 //       which is equal to llvm.ctlz(0, 0) - llvm.ctlz(k, 0).
 bitlength-Word :: { Word => Int32 };
 bitlength-Word = { k =>
-  rec go = { x => acc =>
+  REC go = { x => acc =>
                  if x ==Word 0
                    then acc
                    else go (bitlshr-Word x 1) (acc +Int32 1)
                  end
            };
-  in
     go k 0
-  end
 };
 
 type case IntInf

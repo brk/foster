@@ -10,9 +10,8 @@ type case BankersQueue (a:Boxed)
 
 bankersQueueEmpty :: forall (a:Boxed) { BankersQueue a };
 bankersQueueEmpty = { forall a:Boxed,
-  let snil = stream-nil-mediocre !; in
-    BankersQueue 0 snil 0 snil
-  end
+  snil = stream-nil-mediocre !;
+  BankersQueue 0 snil 0 snil
 };
 
 bankersQueueIsEmpty :: forall (a:Boxed) { BankersQueue a => Bool };

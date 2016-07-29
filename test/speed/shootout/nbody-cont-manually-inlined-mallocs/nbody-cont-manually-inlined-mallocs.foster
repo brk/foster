@@ -40,11 +40,11 @@ mkPlanet = { px : Float64 => py : Float64 => pz : Float64 =>
 };
 
 mkBodies = { nbodies : Int32 =>
-  let bodies = allocDArray:[Planet] nbodies;
-      //solar_mass = 39.478417604;
-      solar_mass = 39.478417604357428482118055131396; // 50.265482457436688;
-      days_per_year = 365.24;
-  in
+  bodies = allocDArray:[Planet] nbodies;
+  //solar_mass = 39.478417604;
+  solar_mass = 39.478417604357428482118055131396; // 50.265482457436688;
+  days_per_year = 365.24;
+
     (mkPlanet  0.0  0.0  0.0
                0.0  0.0  0.0
                solar_mass) >^ bodies[0]; // sun
@@ -86,7 +86,6 @@ mkBodies = { nbodies : Int32 =>
                 (5.15138902046611451e-05 *f64 solar_mass)) >^ bodies[4]; // neptune
 
     bodies
-  end
 };
 
 incrBy = { r : Ref Int32 => n : Int32 => (n +Int32 r^) >^ r; };
@@ -101,119 +100,96 @@ dot_bodyPos = { b : Planet =>
 };
 
 energy = { bodies : Array Planet =>
-  rec
-        arrayIterFromF = { k : Int64 => e : Float64 =>
+  REC arrayIterFromF = { k : Int64 => e : Float64 =>
           if k <SInt64 prim_arrayLength bodies
             then
              arrayIterFromF (incr64 k)
-               (let b1 = bodies[trunc_i64_to_i32 k];
-                    i  = k;
-                in
-                   rec
-                      arrayIterFromH = { k : Int64 => e : Float64 =>
+               { b1 = bodies[trunc_i64_to_i32 k];
+                 i  = k;
+                 REC arrayIterFromH = { k : Int64 => e : Float64 =>
                         if k <SInt64 prim_arrayLength bodies
                           then
-                              let b2 = bodies[trunc_i64_to_i32 k];
-                                  jj = k;
-                                  dx = px b1 -f64 px b2;
-                                  dy = py b1 -f64 py b2;
-                                  dz = pz b1 -f64 pz b2;
-                                  distance = sqrt-f64 ((dx *f64 dx) +f64 (dy *f64 dy) +f64 (dz *f64 dz));
-                              in
-                                arrayIterFromH (incr64 k)
+                              b2 = bodies[trunc_i64_to_i32 k];
+                              jj = k;
+                              dx = px b1 -f64 px b2;
+                              dy = py b1 -f64 py b2;
+                              dz = pz b1 -f64 pz b2;
+                              distance = sqrt-f64 ((dx *f64 dx) +f64 (dy *f64 dy) +f64 (dz *f64 dz));
+                              arrayIterFromH (incr64 k)
                                    (e -f64 (div-f64 (ma b1 *f64 ma b2) distance))
-                              end;
                           else e
                         end
                       };
-                     in // TODO these calls (incr64, ma, dot_bodyPos)
-                        // aren't yet being marked as willnotgc,
-                        // which forces b1, b2 into gc root slots.
-                         arrayIterFromH (incr64 i)
-                           (e +f64 (0.5 *f64 ma b1 *f64 dot_bodyPos b1));
-                    end
-                end)
+                 // TODO these calls (incr64, ma, dot_bodyPos)
+                 // aren't yet being marked as willnotgc,
+                 // which forces b1, b2 into gc root slots.
+                 arrayIterFromH (incr64 i)
+                       (e +f64 (0.5 *f64 ma b1 *f64 dot_bodyPos b1));
+               } !
             else e
           end
         };
-  in
-    arrayIterFromF (sext_i32_to_i64 0) 0.0;
-  end
+    arrayIterFromF 0 0.0;
 };
 
 advance = { bodies : Array Planet =>
-  rec arrayEnumFromF = { k : Int64 =>
+  REC arrayEnumFromF = { k : Int64 =>
           if k <SInt64 prim_arrayLength bodies
-            then let b1 = bodies[trunc_i64_to_i32 k];
-                     i  = k;
-                 in
-                     rec arrayEnumFromH = { k : Int64 =>
-                          if k <SInt64 prim_arrayLength bodies
-                            then  let b2 = bodies[trunc_i64_to_i32 k];
-                                      jj = k;
+            then b1 = bodies[trunc_i64_to_i32 k];
+                 i  = k;
 
-                                      dx = px b1 -f64 px b2;
-                                      dy = py b1 -f64 py b2;
-                                      dz = pz b1 -f64 pz b2;
-                                      inv_distance = div-f64 1.0 (sqrt-f64 ((dx *f64 dx) +f64 (dy *f64 dy) +f64 (dz *f64 dz)));
-                                      mag = inv_distance *f64 inv_distance *f64 inv_distance;
-                                  in
+                 REC arrayEnumFromH = { k : Int64 =>
+                          if k <SInt64 prim_arrayLength bodies
+                            then  b2 = bodies[trunc_i64_to_i32 k];
+                                  jj = k;
+
+                                  dx = px b1 -f64 px b2;
+                                  dy = py b1 -f64 py b2;
+                                  dz = pz b1 -f64 pz b2;
+                                  inv_distance = div-f64 1.0 (sqrt-f64 ((dx *f64 dx) +f64 (dy *f64 dy) +f64 (dz *f64 dz)));
+                                  mag = inv_distance *f64 inv_distance *f64 inv_distance;
                                     decrByFloat64 (vxr b1) (dx *f64 ma b2 *f64 mag);
                                     decrByFloat64 (vyr b1) (dy *f64 ma b2 *f64 mag);
                                     decrByFloat64 (vzr b1) (dz *f64 ma b2 *f64 mag);
                                     incrByFloat64 (vxr b2) (dx *f64 ma b1 *f64 mag);
                                     incrByFloat64 (vyr b2) (dy *f64 ma b1 *f64 mag);
                                     incrByFloat64 (vzr b2) (dz *f64 ma b1 *f64 mag);
-                                    ()
-                                  end;
                                  arrayEnumFromH (incr64 k)
-                            else ()
                           end
-                        };
-                    in
-                      arrayEnumFromH (incr64 i);
-                    end
-                 end;
-                 arrayEnumFromF (incr64 k)
-            else ()
-          end
-  }; in
-    arrayEnumFromF (sext_i32_to_i64 0)
-  end;
+                 };
+                 arrayEnumFromH (incr64 i);
 
-  rec arrayEnumFromG = { k : Int64 =>
+                 arrayEnumFromF (incr64 k)
+          end
+  };
+  arrayEnumFromF 0;
+
+  REC arrayEnumFromG = { k : Int64 =>
           if k <SInt64 prim_arrayLength bodies
-            then let b = bodies[trunc_i64_to_i32 k];
-                 in
+            then b = bodies[trunc_i64_to_i32 k];
                     incrByFloat64 (pxr b) (vx b);
                     incrByFloat64 (pyr b) (vy b);
                     incrByFloat64 (pzr b) (vz b);
-                 end;
                  arrayEnumFromG (incr64 k)
-            else ()
           end
         };
-  in
-    arrayEnumFromG (sext_i32_to_i64 0);
-  end
+  arrayEnumFromG 0;
 };
 
 offset-momentum = { bodies : Array Planet =>
-  let rx = (prim ref 0.0);
-      ry = (prim ref 0.0);
-      rz = (prim ref 0.0);
-  in
-    arrayEnum bodies { b : Planet => ign:Int64 =>
-      incrByFloat64 rx (vx b *f64 ma b);
-      incrByFloat64 ry (vy b *f64 ma b);
-      incrByFloat64 rz (vz b *f64 ma b);
-    };
-    let solar_mass = 39.478417604357428482118055131396; in
-      (div-f64 (0.0 -f64 rx^) solar_mass) >^ vxr bodies[0];
-      (div-f64 (0.0 -f64 ry^) solar_mass) >^ vyr bodies[0];
-      (div-f64 (0.0 -f64 rz^) solar_mass) >^ vzr bodies[0];
-    end
-  end
+  rx = (prim ref 0.0);
+  ry = (prim ref 0.0);
+  rz = (prim ref 0.0);
+
+  arrayEnum bodies { b : Planet => ign:Int64 =>
+    incrByFloat64 rx (vx b *f64 ma b);
+    incrByFloat64 ry (vy b *f64 ma b);
+    incrByFloat64 rz (vz b *f64 ma b);
+  };
+  solar_mass = 39.478417604357428482118055131396;
+    (div-f64 (0.0 -f64 rx^) solar_mass) >^ vxr bodies[0];
+    (div-f64 (0.0 -f64 ry^) solar_mass) >^ vyr bodies[0];
+    (div-f64 (0.0 -f64 rz^) solar_mass) >^ vzr bodies[0];
 };
 
 scale = { bodies : Array Planet => s : Float64 =>
@@ -226,11 +202,11 @@ scale = { bodies : Array Planet => s : Float64 =>
 };
 
 main = {
-  let n = (prim ref (tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1)));
+      n = (prim ref (tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1)));
       nbodies = 5;
       bodies = mkBodies nbodies;
       dt = 1.0e-02;
-  in
+
       offset-momentum bodies;
 
       print_float_p9f64 (energy bodies);
@@ -239,13 +215,12 @@ main = {
 
       // TODO: make sure a global defn of repeat can be inlined,
       //       and a thunk parameter can be inlined/specialized.
-      rec repeat = { n : Int32 =>
+      REC repeat = { n : Int32 =>
           if n >SInt32 0 then advance bodies; repeat (n -Int32 1) else () end
         };
-      in repeat n^ end;
+      repeat n^;
 
       scale bodies (div-f64 1.0 dt);
 
       print_float_p9f64 (energy bodies);
-  end
 };

@@ -96,18 +96,17 @@ natAdd_A_manually_inlined_slice = { a => b =>
   of (sm, lg) ->
 
     c = allocDArray:[Word] (sliceLength32 lg +Int32 1);
-    let ugo_fin = sliceLength32 sm;
+    ugo_fin = sliceLength32 sm;
     REC ugo = { n : Int32 => acc : Word =>
       if n >=SInt32 ugo_fin then acc else
         ugo (n +Int32 1)
-            (let i = n;
-                 u = acc;
-             in
+            (i = n;
+             u = acc;
                  (sliceIdx a i +Word sliceIdx b i +Word u) >^ c[i];
                  unext = addCarryOfWord c[i];
                  (bitand-Word c[i] (digitNumBitsMask !)) >^ c[i];
                  unext
-             end)
+             )
       end
     };
     u = ugo 0 0;
@@ -117,9 +116,8 @@ natAdd_A_manually_inlined_slice = { a => b =>
             REC pgo = { n : Int32 => acc : Word =>
                 if n >=SInt32 pgo_fin then acc else
                   pgo (n +Int32 1)
-                      (let i = n;
-                           u = acc;
-                       in
+                      (i = n;
+                       u = acc;
                           (sliceIdx lg i +Word u) >^ c[i];
                           unext = addCarryOfWord c[i];
                           (bitand-Word c[i] (digitNumBitsMask !)) >^ c[i];
@@ -174,18 +172,17 @@ natAdd_A_manually_inlined_array = { a => b =>
   of (sm, lg) ->
 
     c = allocDArray:[Word] (arrayLength32 lg +Int32 1);
-    let ugo_fin = arrayLength32 sm;
+    ugo_fin = arrayLength32 sm;
     REC ugo = { n : Int32 => acc : Word =>
       if n >=SInt32 ugo_fin then acc else
         ugo (n +Int32 1)
-            (let i = n;
-                 u = acc;
-             in
+            (i = n;
+             u = acc;
                  (a[i] +Word b[i] +Word u) >^ c[i];
                  unext = addCarryOfWord c[i];
                  (bitand-Word c[i] (digitNumBitsMask !)) >^ c[i];
                  unext
-             end)
+            )
       end
     };
     u = ugo 0 0;
@@ -195,14 +192,13 @@ natAdd_A_manually_inlined_array = { a => b =>
             REC pgo = { n : Int32 => acc : Word =>
                 if n >=SInt32 pgo_fin then acc else
                   pgo (n +Int32 1)
-                      (let i = n;
-                           u = acc;
-                       in
+                      (i = n;
+                       u = acc;
                           (lg[i] +Word u) >^ c[i];
                           unext = addCarryOfWord c[i];
                           (bitand-Word c[i] (digitNumBitsMask !)) >^ c[i];
                           unext
-                     end)
+                     )
                 end
             };
             pgo (arrayLength32 sm) u;

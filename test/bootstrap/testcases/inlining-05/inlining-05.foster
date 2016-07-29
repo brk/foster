@@ -11,44 +11,34 @@ main = {
 
 noinline_test-cases = {
   expect_i32 2;
-  let z = 4;
-  in
+  z = 4;
      print_i32 (case z of 0 -> 1
                        of 4 -> 2
                        of _ -> 3
                 end);
-  end;
 
   expect_i32 3;
-  let z = True;
-  in
+  z = True;
      print_i32 (case z of True  -> 3
                        of False -> 2
                 end);
-  end;
 
   expect_i32 4;
-  let z = False;
-  in
+  z = False;
      print_i32 (case z of True  -> 3
                        of _     -> 4
                 end);
-  end;
 };
 
 
 noinline_test-ifs = {
   expect_i32 2;
-  let z = 4;
-  in
-     print_i32 (if z ==Int32 4 then 2 else 3 end);
-  end;
+  z = 4;
+  print_i32 (if z ==Int32 4 then 2 else 3 end);
 
   expect_i32 3;
-  let z = True;
-  in
-     print_i32 (if z then 3 else 2 end);
-  end;
+  z = True;
+  print_i32 (if z then 3 else 2 end);
 };
 
 // Trivial testcase for combined inlining + constant propagation.

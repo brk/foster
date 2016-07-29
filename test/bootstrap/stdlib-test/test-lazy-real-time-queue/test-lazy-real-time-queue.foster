@@ -11,9 +11,8 @@ type case RealtimeQueue (a:Boxed)
 
 realtimeQueueEmpty :: forall (a:Boxed) { RealtimeQueue a };
 realtimeQueueEmpty = { forall a:Boxed,
-  let snil = stream-nil-mediocre !; in
+  snil = stream-nil-mediocre !;
     RealtimeQueue snil Nil snil
-  end
 };
 
 realtimeQueueIsEmpty :: forall (a:Boxed) { RealtimeQueue a => Bool };
@@ -42,8 +41,8 @@ realtimeQueueExec :: forall (a:Boxed) { RealtimeQueue a => RealtimeQueue a };
 realtimeQueueExec = { forall a:Boxed, q: RealtimeQueue a =>
   case q of $RealtimeQueue f r sched ->
     case force sched
-      of $StreamNilV       -> let ff = realtimeQueueRotate f r sched;
-                               in RealtimeQueue ff Nil ff end
+      of $StreamNilV       -> ff = realtimeQueueRotate f r sched;
+                              RealtimeQueue ff Nil ff
       of $StreamCons la ls -> RealtimeQueue f r ls
     end
   end

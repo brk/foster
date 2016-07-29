@@ -18,41 +18,36 @@ main = {
 // These type annotations are needed to protect the inferred types for
 // these literals from the constraint propagated from the __COMPILES__ nodes.
 test-rec-ret0 :: { Int32 };
-test-rec-ret0 = { rec x = { 0 }; in x ! end };
+test-rec-ret0 = { REC x = { 0 }; x ! };
 
 test-rec-ret1 :: { Int32 };
-test-rec-ret1 = { rec x = { 12345 }; in x ! end };
+test-rec-ret1 = { REC x = { 12345 }; x ! };
 
 test-rec-let = { z : Int32 =>
-  rec grope = { x:Int32 => if x <SInt32 0 then x else grope (x -Int32 1) end }; in
-    let eporg = { grope };
-     in eporg ! (opaquely_i32 z); end
-  end
+  REC grope = { x:Int32 => if x <SInt32 0 then x else grope (x -Int32 1) end };
+  eporg = { grope };
+  eporg ! (opaquely_i32 z);
 };
 
 test-rec-ret = { z : Int32 =>
-  rec grope = { x:Int32 => if x <SInt32 0 then x else grope (x -Int32 1) end };
-      eporg = { grope };
-   in eporg ! (opaquely_i32 z);
-  end
+  REC grope = { x:Int32 => if x <SInt32 0 then x else grope (x -Int32 1) end };
+  REC eporg = { grope };
+  eporg ! (opaquely_i32 z);
 };
 
 is-odd = { z:Int32 =>
-  rec even = { x:Int32 => if x ==Int32 0 then True else odd  (x -Int32 1) end };
-      odd  = { x:Int32 => if x ==Int32 1 then True else even (x -Int32 1) end };
-   in odd (opaquely_i32 3);
-  end
+  REC even = { x:Int32 => if x ==Int32 0 then True else odd  (x -Int32 1) end };
+  REC odd  = { x:Int32 => if x ==Int32 1 then True else even (x -Int32 1) end };
+  odd (opaquely_i32 3);
 };
 
 // TODO figure out why this doesn't codegen properly.
 is-odd-sunk = { z:Int32 =>
-  rec odd_s = { x:Int32 =>
-    rec even_s = { z:Int32 => if z ==Int32 0 then True else odd_s (z -Int32 1) end };
-    in
+  REC odd_s = { x:Int32 =>
+    REC even_s = { z:Int32 => if z ==Int32 0 then True else odd_s (z -Int32 1) end };
       if x ==Int32 1 then True else even_s (x -Int32 1) end
-    end
   };
-  in odd_s (opaquely_i32 3); end
+  odd_s (opaquely_i32 3);
 };
 
 // TODO we ought to restrict block-sinking to contifiable functions [1]...
@@ -65,9 +60,8 @@ is-odd-sunk = { z:Int32 =>
 // UGH!
 
 loopy = { z:Int32 =>
-  rec loop = { x:Int32 => if x ==Int32 0 then True else loop (x -Int32 1) end };
-   in loop z;
-  end
+  REC loop = { x:Int32 => if x ==Int32 0 then True else loop (x -Int32 1) end };
+  loop z;
 };
 
 /*

@@ -32,35 +32,29 @@ noinline_testfoo = {
 
 
 noinline_is-odd_a = { z:Int32 =>
-  rec noinline_even = { x:Int32 => if x ==Int32 0 then True  else
+  REC noinline_even = { x:Int32 => if x ==Int32 0 then True  else
                                    if x ==Int32 1 then False else noinline_odd  (x -Int32 1) end end };
-      noinline_odd  = { x:Int32 => if x ==Int32 1 then True  else noinline_even (x -Int32 1) end };
-   in
-      ignore0 = noinline_even z;
-      ignore1 = noinline_odd  z;
+  REC noinline_odd  = { x:Int32 => if x ==Int32 1 then True  else noinline_even (x -Int32 1) end };
+  ignore0 = noinline_even z;
+  ignore1 = noinline_odd  z;
 
-      noinline_odd z
-  end
+  noinline_odd z
 };
 
 noinline_is-odd_b = { z:Int32 =>
-  rec even = { x:Int32 => if x ==Int32 0 then True  else
+  REC even = { x:Int32 => if x ==Int32 0 then True  else
                           if x ==Int32 1 then False else odd  (x -Int32 1) end end };
-      odd  = { y:Int32 => if y ==Int32 1 then True  else even (y -Int32 1) end };
-   in
+  REC odd  = { y:Int32 => if y ==Int32 1 then True  else even (y -Int32 1) end };
       ignore0 = even z;
       ignore1 = odd  z;
 
       odd z
-  end
 };
 
 
 noinline_is-odd_c = { z:Int32 =>
-  rec even = { x:Int32 => if x ==Int32 0 then True  else
+  REC even = { x:Int32 => if x ==Int32 0 then True  else
                           if x ==Int32 1 then False else odd  (x -Int32 1) end end };
-      odd  = { y:Int32 => if y ==Int32 1 then True  else even (y -Int32 1) end };
-   in
-      odd z
-  end
+  REC odd  = { y:Int32 => if y ==Int32 1 then True  else even (y -Int32 1) end };
+  odd z
 };

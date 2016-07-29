@@ -64,14 +64,14 @@ main = {
 
   // OK
   { forall t:Boxed, x:t =>
-      f = { y : () => let z = id2:[t] x; in y end };
+      f = { y : () => z = id2:[t] x; y };
 
       f ()
   } ();
 
   // OK
   {forall t:Boxed, x:t =>
-      f = { y : () => let z = id2 (); in y end };
+      f = { y : () => z = id2 (); y };
 
       f ()
   } ();

@@ -30,11 +30,9 @@ mulAtv = { n : Int32 => v : Array Float64 => av : Array Float64 =>
 };
 
 fA = { i : Int32 => j : Int32 =>
-  let d = ((bitashr-Int32 ((i +Int32 j) *Int32 (i +Int32 j +Int32 1)) 1)
+  d = ((bitashr-Int32 ((i +Int32 j) *Int32 (i +Int32 j +Int32 1)) 1)
                                                   +Int32 i +Int32 1);
-  in
-    div-f64 1.0 (s32-to-f64 d);
-  end
+  div-f64 1.0 (s32-to-f64 d);
 };
 
 in-range = { n : Int32 => a : Int32 => z : Int32 =>

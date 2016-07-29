@@ -1,9 +1,8 @@
 main = {
-    let a = allocDArray:[Ref Int32] 10; in
-      print_i64 (prim_arrayLength a);
-      arrayFizz a;
-      expect_i64 (prim_arrayLength a);
-    end
+  a = allocDArray:[Ref Int32] 10;
+  print_i64 (prim_arrayLength a);
+  arrayFizz a;
+  expect_i64 (prim_arrayLength a);
 };
 
 arrayFizz = { forall t:Type, a : Array t =>

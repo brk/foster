@@ -193,7 +193,7 @@ arrayLengthWrap = { a => arrayLength a };
 // }}}
 
 readInt64FromArrayInt8-v1 :: { % ra : Array Int8 : 0 <=SInt32 ri =>
-                               % ri : Int32 : let woo = arrayLength ra; in (zext_i32_to_i64 ri +Int64 7) <SInt64 woo end
+                               % ri : Int32 : (woo = arrayLength ra; (zext_i32_to_i64 ri +Int64 7) <SInt64 woo)
                                => Int64 };
 readInt64FromArrayInt8-v1 = { a => i =>
   alen = prim_arrayLength a;
@@ -205,7 +205,7 @@ readInt64FromArrayInt8-v1 = { a => i =>
 /*
 readInt64FromArrayInt8-v1 :: { % ra : Array Int8 : 0 <=SInt32 ri =>
                           //  % ri : Int32 : (zext_i32_to_i64 ri +Int64 7) <SInt64 prim_arrayLength ra
-                            % ri : Int32 : let woo = arrayLength ra in (zext_i32_to_i64 ri +Int64 7) <SInt64 woo end
+                            % ri : Int32 : (woo = arrayLength ra; (zext_i32_to_i64 ri +Int64 7) <SInt64 woo)
                           // TODO: this should also work but doesn't:
                           //  % ri : Int32 : (ri +Int32 7) <SInt32 arrayLength32 ra
                             => Int64 };

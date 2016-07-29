@@ -79,8 +79,9 @@ a       :       name -> ^(TYPENAME name);
 nameunq :      id      -> id
         |  '(' opr ')' -> opr;
 
+pid     :      id      -> ^(TERMNAME id);
 xid     :      nameunq -> ^(TERMNAME nameunq); // unqualified variants,
-aid     :      nameunq -> ^(TYPENAME nameunq); // needed to disambiguate grammar
+aid     :      id      -> ^(TYPENAME id); // needed to disambiguate grammar
 
 ctor  :     x          -> ^(CTOR x);
 dctor : '$' ctor       -> ctor ;
@@ -97,14 +98,14 @@ k       :              // kinds
 stmts   :  stmt_ stmt_cont* ';'? -> ^(STMTS stmt_ stmt_cont*);
 stmt_   : abinding | e ;
 stmt_cont : semi=';' stmt_ -> ^(MU $semi stmt_);
-abinding : 'REC' idbinding -> ^(ABINDING 'rec' idbinding)
+abinding : 'REC' idbinding -> ^(ABINDING 'REC' idbinding)
          |        pbinding -> ^(ABINDING        pbinding);
 
 idbinding : xid '=' e    -> ^(BINDING xid e);
 pbinding  : patbind '=' e    -> ^(BINDING patbind e);
 
 patbind :
-  xid                                      // variables
+  pid                                      // variables
   | '_'                  -> ^(WILDCARD)    // wildcards
   | 'let' '(' p (',' p)* ')'   -> ^(TUPLE p+)    // tuples (products)
   ;
@@ -141,13 +142,11 @@ suffix  :       type_application
 atom    :       // syntactically "closed" terms
     x                                   // variables
   | lit                                 // literals
-  | lets                                // sequential let
-  | letrec                              // recursive let
   | ifexpr
   | parse_in
   | 'case' e (OF pmatch)+ 'end'         -> ^(CASE e pmatch+) // pattern matching
   | '(' ')'                             -> ^(TUPLE)
-  | '(' COMPILES e ')'                  -> ^(COMPILES e)
+  | '(' COMPILES stmts ')'              -> ^(COMPILES stmts)
   | tuple
   | val_abs
   ;
@@ -166,9 +165,9 @@ parse_in :
 	'#associate' e 'as' e 'in' stmts 'end' -> ^(PARSE_DECL e e stmts)
 	;
 
-tuple : '(' e ( AS  t    ')'                  -> ^(TYANNOT e t)
-              | (',' e)* ')'                  -> ^(TUPLE e+)  // tuples (products) (sugar: (a,b,c) == Tuple3 a b c)
-              )
+tuple : '(' stmts ( AS  t    ')'  -> ^(TYANNOT stmts t)
+                  | (',' e)* ')'  -> ^(TUPLE stmts e*)  // tuples (products) (sugar: (a,b,c) == Tuple3 a b c)
+                  )
       ;
 
 pmatch  : p ('if' e)? '->' stmts -> ^(CASE p e stmts);
@@ -191,12 +190,9 @@ ifexpr : 'if' cond=e 'then' thenpart=stmts ('else' elsepart=stmts)? 'end'
           -> ^(IF $cond $thenpart $elsepart);
 
 binding  : x '=' e       -> ^(BINDING x e);
-formal   : xid (':' t)?  -> ^(FORMAL xid t);
+formal   : pid (':' t)?  -> ^(FORMAL pid t);
 tyformal : aid (':' k)?  -> ^(TYPEVAR_DECL aid k);
 tyformalr: '(' aid ':' k ')' -> ^(TYPEVAR_DECL aid k);
-
-lets   : 'let' (binding ';')+ 'in' stmts 'end' -> ^(LETS   ^(MU binding+) stmts);
-letrec : 'rec' (binding ';')+ 'in' stmts 'end' -> ^(LETREC ^(MU binding+) stmts);
 
 ////////////////////////////////////////////////////////////////////////////////
 
