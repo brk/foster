@@ -46,15 +46,18 @@ main = {
   expect_i1 False ; print_i1 (__COMPILES__ 0[0]);
 
   // Primitives must be called, not treated as first class values.
-  expect_i1 False; print_i1 (__COMPILES__ let f = print_i1; in f True end);
+  expect_i1 False; print_i1 (__COMPILES__ f = print_i1; f True );
 
   // Pattern variables shouldn't overlap.
   expect_i1 False;
   print_i1 (__COMPILES__ case (1, (2, 3)) of (a, (b, a)) -> 0 end);
 
   // Recursively bound variables shouldn't overlap.
-  expect_i1 True;  print_i1 (__COMPILES__ rec a = { 0 }; b = { 0 }; in 0 end);
-  expect_i1 False; print_i1 (__COMPILES__ rec a = { 0 }; a = { 0 }; in 0 end);
+  expect_i1 True;  print_i1 (__COMPILES__ REC a = { 0 }; REC b = { 0 }; 0 );
+  expect_i1 False; print_i1 (__COMPILES__ REC a = { 0 }; REC a = { 0 }; 0 );
+
+  // But shadowing is OK
+  expect_i1 True;  print_i1 (__COMPILES__ REC a = { 0 };     a = { 0 }; 0 );
 
   // >^ is, for now, a primitive unlike +, which means it
   // can't be implicitly turned into a first-class function value.
@@ -78,18 +81,18 @@ main = {
   expect_i1 False; print_i1 (__COMPILES__ case True of  true -> 0 end);
 
   // Variable scoping rules make this illegal:
-  expect_i1 False ; print_i1 (__COMPILES__ let x = x; in x end);
+  expect_i1 False ; print_i1 (__COMPILES__ x = x; x );
 
   // Shadowing is OK, including at different types:
-  expect_i1 True ; print_i1 (__COMPILES__ { x:() => let x = x; in x end });
-  expect_i1 True ; print_i1 (__COMPILES__ { x:() => let x = 0; in x end });
+  expect_i1 True ; print_i1 (__COMPILES__ { x:() => x = x; x });
+  expect_i1 True ; print_i1 (__COMPILES__ { x:() => x = 0; x });
 
   // But writing something that looks recursive but isn't is disallowed.
-  expect_i1 False; print_i1 (__COMPILES__  { x:() => let x = { x }; in x end });
+  expect_i1 False; print_i1 (__COMPILES__  { x:() => x = { x }; x });
   expect_i1 True ; print_i1 (__COMPILES__
-                         { x:() => rec x = { n:Int32 => x n ; () }; in x end });
+                         { x:() => REC x = { n:Int32 => x n ; () }; x });
 
-  expect_i1 False; print_i1 (__COMPILES__ rec go = { () }; in go 1 end);
+  expect_i1 False; print_i1 (__COMPILES__ REC go = { () }; go 1 );
 
   // Hmm... should this actually compile?
   // The issue is that this is translated to id:[?a -> ?b] id:[?c -> ?d]

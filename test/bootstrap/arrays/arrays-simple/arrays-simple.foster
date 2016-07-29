@@ -7,7 +7,7 @@ main = {
   arrays-indir !;
 
   // If we lie about our alignment, this will crash.
-  let a = "is_ascii_digit c:"; in () end
+  a = "is_ascii_digit c:"; ()
 };
 
 newDArray32 = { n : Int32 => f : { Int32 => Int32 } =>

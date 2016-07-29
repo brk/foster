@@ -39,10 +39,10 @@ main = {
       rv
   };
 
-  let co = coro_create cofn;
-      //j0 = force_gc_for_debugging_purposes !;
-      cr  = (prim ref co);
-  in
+  co = coro_create cofn;
+  //j0 = force_gc_for_debugging_purposes !;
+  cr  = (prim ref co);
+
       print_i32 2222222;
     //force_gc_for_debugging_purposes !;
       print_i32 (coro_invoke cr^ 10); // 6666
@@ -53,6 +53,5 @@ main = {
       print_i32 (coro_invoke cr^ 30);
       print_i32 3333333;
       print_i32 9999999;
-  end
 };
 

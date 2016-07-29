@@ -85,14 +85,13 @@ noinline_call_fold2 = {
 };
 
 fold2 = { f2 => x => b => nullp => car => cdr =>
-  rec loop = { x => acc =>
+  REC loop = { x => acc =>
     if nullp x
       then acc
       else (loop (cdr x) (f2 (car x) acc))
     end
-  }; in
-    loop x b
-  end
+  };
+  loop x b
 };
 
 
@@ -113,12 +112,11 @@ noinline_call_fold3 = {
 // (should be compiled without inlining)
 // Should be compiled to be no worse than fold1, possibly better.
 fold3 = { f3 => x => b => nullp => car => cdr =>
-  rec loop = { f => x => b => nullp => car => cdr =>
+  REC loop = { f => x => b => nullp => car => cdr =>
     if nullp x
       then b
       else (loop f3 (cdr x) (f3 (car x)  b) nullp car cdr)
     end
-  }; in
-    loop f3 x b nullp car cdr
-  end
+  };
+  loop f3 x b nullp car cdr
 };

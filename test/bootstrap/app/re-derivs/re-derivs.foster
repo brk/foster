@@ -156,8 +156,7 @@ re_matches = { re => t =>
 
 /*
 re_goto = { q => c => qq => d =>
-  let qc = re_d c q;
-  in
+  qc = re_d c q;
      // if exists q' in qq such that q' `re_equiv` qc
      //   then (qq, d `union` { (q,c) |-> q' })
      //   else let qq' = qq `union` { qc };
@@ -165,7 +164,6 @@ re_goto = { q => c => qq => d =>
      //         in explore qq' d' qc end
      // end
      //
-  end
 };
 
 re_explore = { qq => d => q =>
@@ -173,12 +171,10 @@ re_explore = { qq => d => q =>
 };
 
 re_mkDFA = { re =>
-  let q0 = re_d ?? re;
+      q0 = re_d ?? re;
       (qq, d) = re_explore {q0} {} q0;
       f = { q for q in qq if re_v q is empty };
-  in
     (qq, q0, f, d)
-  end
 };
 */
 

@@ -114,15 +114,13 @@ type case NatInf
 
 bitlength-Word :: { Word => Int32 };
 bitlength-Word = { k =>
-  rec go = { x => acc =>
+  REC go = { x => acc =>
                  if x ==Word 0
                    then acc
                    else go (bitlshr-Word x 1) (acc +Int32 1)
                  end
            };
-  in
     go k 0
-  end
 };
 wordNumBits32 :: { Int32 };
 wordNumBits32 = {

@@ -96,10 +96,9 @@ build-unboxed-ref = {
                   |
 */
 build-boxed-ref = {
-  let a = (prim ref (prim tuple 1 2 3)); in
+  a = (prim ref (prim tuple 1 2 3));
      expect_i32 0;
      force_gc_for_debugging_purposes !;
      print_i32 0;
-  end
 };
 

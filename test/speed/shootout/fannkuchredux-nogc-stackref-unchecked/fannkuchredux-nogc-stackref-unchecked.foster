@@ -75,15 +75,14 @@ tk = { maxn : Int32 =>
        1 >^ i;
        not odd^ >^ odd;
        if (prim subscript-unsafe s 0) >SInt32 0 then
-         let f = if (prim subscript-unsafe s (prim subscript-unsafe s 0))
+           f = if (prim subscript-unsafe s (prim subscript-unsafe s 0))
                                        ==Int32 0 then 1 else flip ! end; in
            if f >SInt32 maxflips^ then f >^ maxflips; () else () end;
            if odd^ then checksum^ -Int32 f
                    else checksum^ +Int32 f
            end >^ checksum;
            ()
-         end
-       else () end
+       end
      end
    }
 };
@@ -99,10 +98,9 @@ repeatRange = { e : Int32 => n : Int32 => f : { Int32 => () } =>
 };
 
 main = {
-  let n = tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1);
+      n = tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1);
       maxflips = (prim ref 0);
       checksum = (prim ref 0);
-  in
     if in-range n 3 15 then
       tk n maxflips checksum;
 
@@ -116,5 +114,4 @@ main = {
       print_text "usage: <prog> number";
       ()
     end
-  end
 };

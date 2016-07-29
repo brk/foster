@@ -40,11 +40,11 @@ mkPlanet = { px : Float64 => py : Float64 => pz : Float64 =>
 };
 
 mkBodies = { nbodies : Int32 =>
-  let bodies = allocDArray:[Planet] nbodies;
+      bodies = allocDArray:[Planet] nbodies;
       //solar_mass = 39.478417604;
       solar_mass = 39.478417604357428482118055131396; // 50.265482457436688;
       days_per_year = 365.24;
-  in
+
     (mkPlanet  0.0  0.0  0.0
                0.0  0.0  0.0
                solar_mass) >^ bodies[0]; // sun
@@ -86,7 +86,6 @@ mkBodies = { nbodies : Int32 =>
                 (5.15138902046611451e-05 *f64 solar_mass)) >^ bodies[4]; // neptune
 
     bodies
-  end
 };
 
 repeat = { n : Int32 => f : { () } =>

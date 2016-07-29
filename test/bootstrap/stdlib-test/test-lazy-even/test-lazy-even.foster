@@ -17,8 +17,8 @@ loopy = { lazily { loopy ! } };
 
 
 main = {
-  //let simple-stream = stream-cons-mediocre (delay { B 0 }) (stream-nil-mediocre !);
-  //let simple-stream = ();
+  //simple-stream = stream-cons-mediocre (delay { B 0 }) (stream-nil-mediocre !);
+  //simple-stream = ();
   p = { v:BInt => case v of $B n -> print_i32 n; v end };
   //simple-stream = (stream-nil-mediocre:[()] !);
 

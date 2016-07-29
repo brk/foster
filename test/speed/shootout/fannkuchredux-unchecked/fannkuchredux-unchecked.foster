@@ -96,7 +96,7 @@ in-range = { n : Int32 => a : Int32 => z : Int32 =>
 };
 
 repeatRange = { e : Int32 => n : Int32 => f : { Int32 => () } =>
-  if e <SInt32 n then f e; repeatRange (e +Int32 1) n f else () end
+  if e <SInt32 n then f e; repeatRange (e +Int32 1) n f end
 };
 
 main = {

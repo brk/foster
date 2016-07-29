@@ -15,10 +15,10 @@ test = { f : { () } =>
 */
 
 test = { forall t:Boxed, x : t =>
-  let h = idb:[t];
+      h = idb:[t];
       // m = idb2:[{ t => t }] h; // no subst for t
       g = idb2 h;
-  in  g x end
+      g x
 };
 
 /*

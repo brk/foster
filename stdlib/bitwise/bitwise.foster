@@ -145,13 +145,13 @@ bitlength-Int32 = { n : Int32 =>
 };
 
 bitlength-alt-Int32 = { n : Int32 =>
-  rec go = { n => total =>
+  REC go = { n => total =>
              if n ==Int32 0
                then total
                else go (bitlshr-Int32 n 1) (total +Int32 1)
              end
            };
-  in  go n 0 end
+  go n 0
 };
 
 bitlength-alt2-Int32 = { n : Int32 =>
@@ -206,15 +206,13 @@ bit-field-reverse-Int32 = { n : Int32 => start : Int32 => fin : Int32 =>
 
 bitlength-Int64 :: { Int64 => Int32 };
 bitlength-Int64 = { k =>
-  rec go = { x => acc =>
+  REC go = { x => acc =>
                  if x ==Int64 0
                    then acc
                    else go (bitlshr-Int64 x 1) (acc +Int32 1)
                  end
            };
-  in
     go k 0
-  end
 };
 
 // TODO should this be called wordCountBits instead?
@@ -222,15 +220,13 @@ bitlength-Int64 = { k =>
 //       which is equal to llvm.ctlz(0, 0) - llvm.ctlz(k, 0).
 bitlength-Word :: { Word => Int32 };
 bitlength-Word = { k =>
-  rec go = { x => acc =>
+  REC go = { x => acc =>
                  if x ==Word 0
                    then acc
                    else go (bitlshr-Word x 1) (acc +Int32 1)
                  end
            };
-  in
     go k 0
-  end
 };
 
 /////////////////////////////////////////////////////////////////////////

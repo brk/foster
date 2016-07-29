@@ -13,7 +13,7 @@ main = {
   print_i1 (__COMPILES__ (prim ref 0) >^ (fncn !));
 
   expect_i1 False;
-  print_i1 (__COMPILES__ (prim ref 0) >^ let r = (prim ref 1); in refs[0] end);
+  print_i1 (__COMPILES__ (prim ref 0) >^ (r = (prim ref 1); refs[0]));
 };
 
 array_poke_return_type = {

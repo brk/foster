@@ -175,8 +175,11 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
     CBOR_Array [tok, _,_cbr, CBOR_Array [pat]] | tok `tm` tok_TUPLE    -> cb_parse_p pat
     CBOR_Array [tok, _, cbr, CBOR_Array pats]  | tok `tm` tok_TUPLE    -> EP_Tuple    (cb_parse_range cbr) (map cb_parse_p pats)
     CBOR_Array [tok, _, cbr, CBOR_Array [var]] | tok `tm` tok_TERMNAME -> EP_Variable (cb_parse_range cbr) (cb_parse_VarAST var)
-    _ -> error $ "cb_parse_patbind failed: " ++ show cbor
+    _ -> error $ "cb_parse_patbind failed: " ++ show cbor ++ " ;; " ++ headName cbor
 
+
+  headName (CBOR_Array ((CBOR_UInt x) : _)) = tokNameOf x
+  headName _ = ""
 
   cb_parse_phrase :: CBOR -> ExprAST TypeP
   cb_parse_phrase cbor = case cbor of
@@ -268,21 +271,23 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
     CBOR_Array [tok, _,_cbr, CBOR_Array [quo, chrs]] | tok `tm` tok_STRING -> cb_parse_str quo chrs
     CBOR_Array [tok, _,_cbr, CBOR_Array [name]] | tok `tm` tok_TERMNAME -> cb_parse_termname name
     CBOR_Array [tok, _,_cbr, CBOR_Array (e : pmatches)] | tok `tm` tok_CASE -> E_Case annot (cb_parse_e e) (map cb_parse_pmatch pmatches)
-    CBOR_Array [tok, _,_cbr, CBOR_Array [e]] | tok `tm` tok_COMPILES -> E_CompilesAST annot (Just $ cb_parse_e e)
-    CBOR_Array [tok, _,_cbr, CBOR_Array [mu_bindings, stmts]] | tok `tm` tok_LETS   ->
+    CBOR_Array [tok, _,_cbr, CBOR_Array [stmts]] | tok `tm` tok_COMPILES -> E_CompilesAST annot (Just $ cb_parse_stmts stmts)
+    {-CBOR_Array [tok, _,_cbr, CBOR_Array [mu_bindings, stmts]] | tok `tm` tok_LETS   ->
         let mkLet s cb = E_LetAST (annotOfCbor cb) (cb_parse_binding cb) s in
         foldl' mkLet (cb_parse_stmts stmts) (reverse $ unMu mu_bindings)
     CBOR_Array [tok, _,_cbr, CBOR_Array [mu_bindings, stmts]] | tok `tm` tok_LETREC ->
-        E_LetRec annot (map cb_parse_binding (unMu mu_bindings)) (cb_parse_stmts stmts)
-    CBOR_Array [tok, _,   _, CBOR_Array [e]]   | tok `tm` tok_TUPLE -> cb_parse_e e
+        E_LetRec annot (map cb_parse_binding (unMu mu_bindings)) (cb_parse_stmts stmts)-}
     CBOR_Array [tok, _,_cbr, CBOR_Array cbors] | tok `tm` tok_TUPLE ->
-        E_TupleAST annot KindPointerSized (map cb_parse_e cbors)
+      case cbors of
+        []           -> E_TupleAST annot KindPointerSized []
+        [stmts]      -> cb_parse_stmts stmts
+        (stmts:rest) -> E_TupleAST annot KindPointerSized (cb_parse_stmts stmts : map cb_parse_e rest)
     CBOR_Array [tok, _,_cbr, CBOR_Array [e, thenstmts]] | tok `tm` tok_IF ->
         E_IfAST annot (cb_parse_e e) (cb_parse_stmts thenstmts) (E_TupleAST annot KindPointerSized [])
     CBOR_Array [tok, _,_cbr, CBOR_Array [e, thenstmts, elsestmts]] | tok `tm` tok_IF ->
         E_IfAST annot (cb_parse_e e) (cb_parse_stmts thenstmts) (cb_parse_stmts elsestmts)
-    CBOR_Array [tok, _,_cbr, CBOR_Array [e, t]] | tok `tm` tok_TYANNOT ->
-        E_TyCheck annot (cb_parse_e e) (cb_parse_t t)
+    CBOR_Array [tok, _,_cbr, CBOR_Array [stmts, t]] | tok `tm` tok_TYANNOT ->
+        E_TyCheck annot (cb_parse_stmts stmts) (cb_parse_t t)
     CBOR_Array [tok, _,_cbr, CBOR_Array [mu_formals, mu_tyformals]]        | tok `tm` tok_VAL_ABS ->
         let name = T.empty in -- typechecking maintains the pending binding stack, and will update the fn name
         E_FnAST annot (FnAST annot name (map cb_parse_tyformal $ unMu mu_tyformals)

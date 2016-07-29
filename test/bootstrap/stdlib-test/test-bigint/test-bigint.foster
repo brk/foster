@@ -264,15 +264,14 @@ n1 = {
       testNatMulAddWWW 545 2873 368 0 1566153;
   end;
 
-  let x = natBasicMul (natFromInt64 2342135343234)
-                      (natFromInt64 12342342324231);
-  in
+  x = natBasicMul (natFromInt64 2342135343234)
+                  (natFromInt64 12342342324231);
+
       expect_text "28907436175874298500103054";
       print_text (foster_nat_to_text_radix x 10);
 
       expect_text "835639866262246086805018926722439349915248620126916";
       print_text (foster_nat_to_text_radix (natBasicMul x x) 10);
-  end
 
 };
 
@@ -314,15 +313,14 @@ n2 = {
   print_i32 (arrayLength32 (natDigits (natFromInt64 2342135343234)));
 
 
-  let n = natFromInt64 9368541372936;
-      s = natShr n 1;
-  in
+  n = natFromInt64 9368541372936;
+  s = natShr n 1;
+
     expect_text "9368541372936";
     print_nat n;
 
     expect_text "4684270686468";
     print_nat s;
-  end;
 
   testNatDivW 1`142`324`231 234`213`534;
 
@@ -346,11 +344,9 @@ print_Wordx = { k =>
 };
 
 debug_nat_2 = { n =>
-  let a = natDigits n;
-  in
+  a = natDigits n;
     expect_text "_[1] = "; print_Wordb a[1];
     expect_text "_[0] = "; print_Wordb a[0];
-  end;
 };
 
 testNatDivW = { i : Int64 => j : Int64 =>
@@ -512,12 +508,12 @@ test_small_op = { k0 : Int32 => k1 : Int32 =>
                   fixop : { Int32 => Int32 => Int32 } =>
                   bigop : { IntInf => IntInf => IntInf } =>
 
-  let i0 = intFromInt32 k0;
-      i1 = intFromInt32 k1;
-      a = intAdd i0 i1;
-      c = k0 +Int32 k1;
-      b = intFromInt32 c;
-  in
+  i0 = intFromInt32 k0;
+  i1 = intFromInt32 k1;
+  a = intAdd i0 i1;
+  c = k0 +Int32 k1;
+  b = intFromInt32 c;
+
     expect_text (textOfOrd (cmpSInt32 k0 k1));
     print_text (textOfOrd (intCmp i0 i1));
 
@@ -529,7 +525,6 @@ test_small_op = { k0 : Int32 => k1 : Int32 =>
 
     expect_i32 c;
     printIntInf b;
-  end;
 
 };
 
@@ -560,8 +555,7 @@ t3 = {
 
 // Precondition: neither k-1 nor k+1 overflow.
 test-cmp-d = { k : Int64 =>
-  let ii = intFromInt64 k;
-  in
+  ii = intFromInt64 k;
     expect_i64 k;
     printIntInf ii;
 
@@ -573,7 +567,6 @@ test-cmp-d = { k : Int64 =>
 
     expect_text "LT";
     print_text (textOfOrd (intCmp64 ii (k +Int64 1)));
-  end
 };
 
 t4 = {
@@ -613,28 +606,26 @@ t5 = {
   expect_text "Some 0";
   print_text (text_of_Maybe_Int (intPosRShd (intFromInt64 4096) 3));
 
-  let foster_DIGIT_BIT = 60;
-      ii = intMul2d (intFromInt32 7) foster_DIGIT_BIT;
-  in
+  foster_DIGIT_BIT = 60;
+  ii = intMul2d (intFromInt32 7) foster_DIGIT_BIT;
+
     expect_text "Some 7";
     print_text (text_of_Maybe_Int (intPosRShd ii 1));
-  end
+
 };
 */
 
 t6 = {
 
-  let k0 = 0b101010011011011011;
-      k1 = 0b001010101000111110;
-  in
+  k0 = 0b101010011011011011;
+  k1 = 0b001010101000111110;
+
     expect_i64 (bitand-Int64 k0 k1);
     print_text (foster_mp_to_text_radix
                    (intBitAnd
                       (intFromInt64 k0)
                       (intFromInt64 k1))
                 10);
-  end;
-
 
   expect_i64 (bitshl-Int64 1 30);
   print_text (foster_mp_to_text_radix

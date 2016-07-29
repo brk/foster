@@ -1,7 +1,7 @@
 main = {
-  let r  = (prim ref 0);
-      r2 = (prim ref 0); // force r into root slot
-  in
+  r  = (prim ref 0);
+  r2 = (prim ref 0); // force r into root slot
+
     if 0 ==Int32 opaquely_i32 0
       then
         expect_i32 0;
@@ -10,12 +10,10 @@ main = {
         // r dead here
         //
         // force some basic blocks to see if r is killed multiple times.
-        let x = if 0 ==Int32 opaquely_i32 0 then 1 else 0 end;
-            y = if 0 ==Int32 opaquely_i32 0 then 1 else 0 end;
-        in
+        x = if 0 ==Int32 opaquely_i32 0 then 1 else 0 end;
+        y = if 0 ==Int32 opaquely_i32 0 then 1 else 0 end;
+
           print_i32 x;
           expect_i32 y;
-        end
     end
-  end
 };

@@ -1,8 +1,7 @@
 fn-no-gc = { n : Int32 => r : Ref Int32 =>
-  let d = r^; in
-    expect_i32 d;
-    print_i32  n;
-  end
+  d = r^;
+  expect_i32 d;
+  print_i32  n;
 };
 
 
@@ -12,24 +11,23 @@ fn-no-gc = { n : Int32 => r : Ref Int32 =>
 //           across which the pointer must be stored.
 
 may-trigger-gc = {
-  let x = (prim ref 0);
-      d = x ^  ;
-  in  d  end
+  x = (prim ref 0);
+  d = x ^  ;
+  d
 };
 
 needs-gc-roots = { x0 : Ref Int32 =>
-  let x1 = (prim ref x0);
-      x2 = (prim ref 2 );
-      d1 = x1 ^  ;
-      d0 = d1 ^  ;
-  in  d0 +Int32 (x2 ^) end
+  x1 = (prim ref x0);
+  x2 = (prim ref 2 );
+  d1 = x1 ^  ;
+  d0 = d1 ^  ;
+  d0 +Int32 (x2 ^)
 };
 
 no-gc-after-new = {
-  let t = may-trigger-gc ! ;
-      n = (prim ref 0); in
-    n^
-  end
+  t = may-trigger-gc ! ;
+  n = (prim ref 0);
+  n^
 };
 
 // * If a pointer is dead before a GC can be triggered,
@@ -37,23 +35,19 @@ no-gc-after-new = {
 //
 no-root-for-dead-ptrs = {
   expect_i32   42;
-  let r = (prim ref 42);
-      d = r ^     ;
-  in
-    print_i32 d;
-    may-trigger-gc !;
-  end
+  r = (prim ref 42);
+  d = r ^     ;
+  print_i32 d;
+  may-trigger-gc !;
 };
 
 fn-late-reload = { k : Int32 =>
-  let r = (prim ref 2);
-  in
-    may-trigger-gc !;
-    // r should not be reloaded here
-    if 0 ==Int32 opaquely_i32 0
-      then k
-      else r^
-    end
+  r = (prim ref 2);
+  may-trigger-gc !;
+  // r should not be reloaded here
+  if 0 ==Int32 opaquely_i32 0
+    then k
+    else r^
   end
 };
 

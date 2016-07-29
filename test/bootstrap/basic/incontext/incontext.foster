@@ -115,13 +115,13 @@ f2 = { r : Ref Int32 =>
   print_i1 (__COMPILES__ 0 ^); // "Expected deref-ed expr to have ref type, had (PrimIntAST I32)"
 
   expect_i1 False;
-  print_i1 (__COMPILES__ rec x = 0; in () end); // "Recursive bindings should only contain functions!"
+  print_i1 (__COMPILES__ REC x = 0; ()); // "Recursive bindings should only contain functions!"
 
   expect_i1 True;
-  print_i1 (__COMPILES__ rec x = { 0 }; in () end); // ok for non-recursive functions
+  print_i1 (__COMPILES__ REC x = { 0 }; ()); // ok for non-recursive functions
 
   expect_i1 True;
-  print_i1 (__COMPILES__ let x = { 0 }; in () end);
+  print_i1 (__COMPILES__ x = { 0 }; ());
 
   expect_i1 True;
   print_i1 (__COMPILES__ if True then () else () end);
@@ -130,13 +130,13 @@ f2 = { r : Ref Int32 =>
   print_i1 (__COMPILES__ if True then r else () end);
 
   expect_i1 False;
-  print_i1 (__COMPILES__ let f = { f ! }; in () end); // "Recursive bindings should use 'rec', not 'let':"
+  print_i1 (__COMPILES__ f = { f ! }; ()); // "Recursive bindings should use 'rec', not 'let':"
 
   expect_i1 True;
-  print_i1 (__COMPILES__ rec f = { x : Bool => if x then () else f True end }; in f end); // "Recursive bindings should use 'rec', not 'let':"
+  print_i1 (__COMPILES__ REC f = { x : Bool => if x then () else f True end }; f); // "Recursive bindings should use 'rec', not 'let':"
 
   expect_i1 False;
-  print_i1 (__COMPILES__ rec f = { f }; in f end); // "Occurs check for (~!86:letrec_f) failed in (() => (~!86:letrec_f) @{FT_Func})"
+  print_i1 (__COMPILES__ REC f = { f }; f); // "Occurs check for (~!86:letrec_f) failed in (() => (~!86:letrec_f) @{FT_Func})"
 
   expect_i1 False;
   print_i1 (__COMPILES__ case True ^ of _ -> () end); // "Unable to check Bool constant in context expecting non-Bool type (Ref (~!97:ref_type))"
@@ -178,11 +178,10 @@ f5 = {
 
   expect_i1 True;
   print_i1 (__COMPILES__
-        let x = 0;
+            x = 0;
             p = { forall t:Type, z:t => 0 };
-        in
           p x;
-        end);
+        );
 
   // The reason the following example fails is that the claim of unboxed
   // polymorphism is bogus. Given our current compilation scheme, the
@@ -206,29 +205,24 @@ f6 = {
  expect_i32 123456;
 
   // Make sure that un-instantiated procs don't cause trouble.
-  let u0 = { forall t:Type,  x : t => 0 };
+      u0 = { forall t:Type,  x : t => 0 };
       b0 = { forall t:Boxed, x : t => 0 };
       n0 = { forall t:Type,
-            let x = (prim ref 0);
-                p = { forall b:Boxed, z:b => 0 };
-            in
+               x = (prim ref 0);
+               p = { forall b:Boxed, z:b => 0 };
+
               p x;
-            end
           };
-  in print_i32 0;
+     print_i32 0;
      expect_i32 (b0 "1");
-     ()
-  end;
 
   /*
   // This currently fails because we don't track known vs unknown locals,
   // and we can't sensibly instantiate an unboxed-polymorphic unknown function.
   { forall t:Type,
-    let x = 0;
+        x = 0;
         p = { forall t:Type, z:t => 0 };
-    in
       p x;
-    end
   };
   */
 

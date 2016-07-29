@@ -22,23 +22,20 @@ main = {
 // This implied that divWW would need an env,and
 // env being inserted, but not passed at call site.
 problem1 = { v : Int32 =>
-  rec
-      again1 = { again2 ! }; // indirection needed
-      again2 = {
+  REC again1 = { again2 ! }; // indirection needed
+  REC again2 = {
 	 if False then again2 !  // recursive call needed...
 	          else () end
-      };
-  in
-    ()
-  end
+  };
+
+  ()
 };
 
 // Same problem, but we've dropped the arg to problem1.
 problem0 = {
-  let again2 = { if False then () else () end };
-      again1 = { again2 ! }; in
+      again2 = { if False then () else () end };
+      again1 = { again2 ! };
     again1 !
-  end
 };
 
 // * again2 gets contified, but the call in again1 isn't converted.
@@ -63,28 +60,21 @@ problem5 = {
 };
 
 problem2 = {
-  rec
-      again1 = { again2 ! };
-      again2 = {
+  REC again1 = { again2 ! };
+  REC again2 = {
 	 if False then again2 ! else () end
       };
-  in
     again1 !
-  end
 };
 
 problem3 = {
-  rec again2 = { if opaquely_i32 0 ==Int32 1 then again2 ! else 3 end };
-  in
+  REC again2 = { if opaquely_i32 0 ==Int32 1 then again2 ! else 3 end };
      again1 = { again2 ! };
      again1
-  end
 };
 
 problem3a = { a : Int32 =>
-  rec again2 = { if opaquely_i32 0 ==Int32 1 then again2 ! else a end };
-  in
+  REC again2 = { if opaquely_i32 0 ==Int32 1 then again2 ! else a end };
      again1 = { again2 ! };
      again1
-  end
 };
