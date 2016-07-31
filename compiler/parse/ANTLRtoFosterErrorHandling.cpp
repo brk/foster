@@ -162,6 +162,8 @@ bool handleMissingToken(pANTLR3_EXCEPTION ex,
                         pANTLR3_BASE_RECOGNIZER recognizer) {
   errs() << "Warning: inserted missing " << tokenText << ":\n\n"
          << r << "\n";
+  errs() << "  (sometimes this is because the line above is missing a"
+         << " statement-terminating semicolon...)\n";
   recognizer->state->errorCount--; // warning, not error!
   return false;
 }
@@ -181,7 +183,7 @@ const char* describeApproximateStartPosition(const SourceRange& r) {
 
   llvm::StringRef line = r.source->getBuffer()->getLine(r.begin.line);
   int lineStart = getFirstNonWhitespacePosition(line);
-  float lineLength = (std::min)(1.0f, float(line.size()    - lineStart));
+  float lineLength = (std::max)(1.0f, float(line.size()    - lineStart));
   float percentThroughLine = 100.0f * float(r.begin.column - lineStart)
                                     / lineLength;
   if (percentThroughLine < 30.0f) {
