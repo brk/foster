@@ -1,0 +1,74 @@
+snafuinclude FingerTree "data/finger-tree";
+
+type case Seq (a:Type)
+      of $Seq (FingerTree a)
+      ;
+
+
+seqEmpty :: forall (a:Type) { Seq a };
+seqEmpty = { Seq (FT_Empty) };
+
+seqSingleton = { x => Seq (FT_Single x) };
+
+seqReplicate32 :: forall (a:Type)
+                   { % n : Int32 : n >=SInt32 0
+                    => a => Seq a };
+seqReplicate32 = { n => a =>
+  Seq (ftReplicate32 n 1 a)
+};
+
+seqPrepend = { x => seq =>
+  let ($Seq xs) = seq;
+  Seq (ftConsTreeE x xs)
+};
+
+seqPostpend = { seq => x =>
+  let ($Seq xs) = seq;
+  Seq (ftSnocTreeE xs x)
+};
+
+seqIsNull = { seq =>
+  let ($Seq xs) = seq;
+  case xs
+    of $FT_Empty -> True
+    of _ -> False
+  end
+};
+
+seqConcat :: forall (a:Type) { Seq a => Seq a => Seq a };
+seqConcat = { s1 => s2 =>
+  let ($Seq xs, $Seq ys) = (s1, s2);
+  ftAppendTree0 ftElemSize xs ys
+};
+
+seqLength :: forall (a:Type) { Seq a => Int32 };
+seqLength = { seq => let ($Seq xs) = seq; ftTreeSize ftElemSize xs };
+
+seqViewL = { seq => let ($Seq xs) = seq; Seq (ftViewL ftElemSize xs) };
+
+seqViewR = { seq => let ($Seq xs) = seq; Seq (ftViewR ftElemSize xs) };
+
+seqSplitAt :: forall (a:Type) { Seq a => Int32 => (Seq a, Seq a) };
+seqSplitAt = { seq => i =>
+  case seq
+    of ($Seq ($FT_Empty)) -> (FT_Empty, FT_Empty)
+    of ($Seq xs) ->
+      if i >=SInt32 seqLength seq
+        then (Seq xs, Seq FT_Empty)
+        else let ($FT_Split l x r) = ftSplitTree ftElemSize i xs;
+             (Seq l, Seq (ftConsTreeE x r))
+      end
+  end
+};
+
+seqIndex :: forall (a:Type) { Seq a => Int32 => Maybe a };
+seqIndex =  { seq => idx =>
+  let ($Seq ft) = seq;
+  ftIndex ftElemSize ft idx;
+};
+
+ftConsTreeE :: forall (a:Type) { a => FingerTree a => FingerTree a };
+ftConsTreeE = { size => e => ft => ftConsTreeS ftElemSize e ft };
+
+ftSnocTreeE :: forall (a:Type) { FingerTree a => a => FingerTree a };
+ftSnocTreeE = { size => ft => e => ftSnocTreeS ftElemSize ft e };
