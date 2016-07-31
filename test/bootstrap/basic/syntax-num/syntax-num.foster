@@ -1,0 +1,23 @@
+main = {
+  a = 1;
+  b = -2;
+  c = 1234;
+  d = 0b10101011;
+  e = 0b`1010`1011;
+  f = 12.34;
+  g = 12.34`56;
+
+  expect_float_p9f64 12.3456;
+  print_float_p9f64 g;
+
+  h = 12.34e+1;
+  //i = 12abc.34e+01;
+  j = 12.34e1;
+  k = +2;
+  expect_i1 False;
+  print_i1 (__COMPILES__ 0FEEDFACE);
+
+  l = 0xFEEDFACE;
+  m = 0xFEED`FACE;
+  ()
+};
