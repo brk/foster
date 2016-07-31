@@ -151,13 +151,18 @@ foster::SourceLocation getEndLocation(pANTLR3_COMMON_TOKEN tok) {
       tok->getCharPositionInLine(tok) + tok->getText(tok)->len);
 }
 
+foster::SourceRange rangeFrom(pANTLR3_COMMON_TOKEN stok,
+                              pANTLR3_COMMON_TOKEN etok) {
+  return foster::SourceRange(foster::gInputFile,
+    getStartLocation(stok),
+    getEndLocation(etok),
+    foster::gInputTextBuffer);
+}
+
 foster::SourceRange rangeFrom(pTree start, pTree end) {
   pANTLR3_COMMON_TOKEN stok = getStartToken(start);
   pANTLR3_COMMON_TOKEN etok = getEndToken(end);
-  return foster::SourceRange(foster::gInputFile,
-      getStartLocation(stok),
-      getEndLocation(etok),
-      foster::gInputTextBuffer);
+  return rangeFrom(stok, etok);
 }
 
 foster::SourceRange rangeOf(pTree tree) {
@@ -305,12 +310,79 @@ namespace foster {
       return getMemoryBufferHash(file.getBuffer()->getMemoryBuffer());
     }
 
+    bool isMatchingTokenOpen(pANTLR3_COMMON_TOKEN tok) {
+      return tok->type == OPEN_PAREN
+          || tok->type == OPEN_CURLY
+          || tok->type == OPEN_SQRBR
+          || tok->type == OPEN_COLON_SQRBR;
+    }
+
+    bool isMatchingTokenClose(pANTLR3_COMMON_TOKEN tok) {
+      return tok->type == CLOSE_PAREN
+          || tok->type == CLOSE_CURLY
+          || tok->type == CLOSE_SQRBR;
+    }
+
+    int matchingTokenType(pANTLR3_COMMON_TOKEN opn) {
+      if (opn->type == OPEN_PAREN) return CLOSE_PAREN;
+      if (opn->type == OPEN_CURLY) return CLOSE_CURLY;
+      if (opn->type == OPEN_SQRBR) return CLOSE_SQRBR;
+      if (opn->type == OPEN_COLON_SQRBR) return CLOSE_SQRBR;
+      return 0;
+    }
+
+    void doTokenMatchingPrepass(const foster::InputFile& infile) {
+      auto buf = infile.getBuffer()->getMemoryBuffer();
+      auto filepath = infile.getPath();
+      auto input = antlr3StringStreamNew(
+                                    (pANTLR3_UINT8) buf->getBufferStart(),
+                                                    ANTLR3_ENC_8BIT,
+                                    (ANTLR3_UINT32) buf->getBufferSize(),
+                                    (pANTLR3_UINT8) const_cast<char*>(filepath.c_str()));
+      auto lxr = fosterLexerNew(input);
+      auto tsr = TOKENSOURCE(lxr);
+      bool failed = false;
+
+      pANTLR3_COMMON_TOKEN tok = NULL;
+      std::vector<pANTLR3_COMMON_TOKEN> matchingTokens;
+      do {
+        tok = tsr->nextToken(tsr);
+        if (isMatchingTokenOpen(tok)) {
+          matchingTokens.push_back(tok);
+        } else if (isMatchingTokenClose(tok)) {
+          if (matchingTokens.empty()) {
+            EDiag() << "Unexpectedly saw a closing brace without a matching opening brace!"
+                    << show(rangeFrom(tok, tok)) << "\n";
+            failed = true;
+          } else {
+            auto matchingTok = matchingTokens.back();
+            if (matchingTokenType(matchingTok) != tok->type) {
+              EDiag() << "You know, I was expecting to find a buddy for this little guy here:\n" << show(rangeFrom(matchingTok, matchingTok))
+                      << "but instead this unexpected token came outta nowhere:\n" << show(rangeFrom(tok, tok));
+              failed = true;
+            } else {
+              matchingTokens.pop_back();
+            }
+          }
+        }
+      } while (tok != &tsr->eofToken);
+
+      //tsr ->free (tsr);  tsr = NULL;
+      lxr->free  (lxr);  lxr = NULL;
+
+      if (failed) {
+        llvm::errs() << "Bailing out due to mismatched tokens...\n";
+        exit(1);
+      }
+    }
+
     void createParser(foster::ANTLRContext&    ctx,
                       const string&            filepath,
                       foster::InputTextBuffer* textbuf) {
       llvm::MemoryBuffer* buf = textbuf->getMemoryBuffer();
       ASSERT(buf->getBufferSize() <= ((ANTLR3_UINT32)-1)
              && "Trying to parse files larger than 4GB makes me cry.");
+
       ctx.filename = filepath;
       ctx.input = antlr3StringStreamNew(
                     (pANTLR3_UINT8) const_cast<char*>(buf->getBufferStart()),
@@ -379,6 +451,8 @@ namespace foster {
 
     gInputFile = &file; // used when creating source ranges
     gInputTextBuffer = file.getBuffer(); // also used for source ranges
+
+    doTokenMatchingPrepass(file);
 
     fosterParser_module_return langAST = ctx->psr->module(ctx->psr);
     *outNumANTLRErrors += ctx->psr->pParser->rec->state->errorCount;
