@@ -751,7 +751,10 @@ tcRhoIf ctx rng a b c expTy = do
     ea <- tcRho ctx a (Check boolTypeTC)
     eb <- tcRho ctx b expTy
     ec <- tcRho ctx c expTy
-    unify (typeTC eb) (typeTC ec) [text "IfAST: types of branches didn't match"]
+    unify (typeTC eb) (typeTC ec) [
+         text "The two branches of an `if` expression must match."
+        ,text "    The `then` branch had type" <+> pretty (typeTC eb) <> text ";"
+        ,text "    the `else` branch had type" <+> pretty (typeTC ec) <> text "."]
     -- TODO use subsumption instead of unification?
     return (AnnIf rng (typeTC eb) ea eb ec)
 -- }}}
