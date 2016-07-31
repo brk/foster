@@ -147,6 +147,9 @@ withPathFacts facts pathfacts = facts { pathFacts = pathfacts ++ pathFacts facts
 -- According to de Moura at http://stackoverflow.com/questions/7411995/support-for-aufbv
 -- it's better to use either UFBV or QF_AUFBV, rather than AUFBV...
 -- the former is more useful for us.
+-- TODO investigate Z3's newish support for floating-point numbers (QF_FPABV).
+-- Maybe we want (set-option :int-real-coercions false) ?
+--               (set-option :error-behavior immediate-exit) ?
 -- Also, we carefully avoid doing multiple (check-sat)s per query or using
 -- push/pop, because those features trigger Z3's incremental solver, which does
 -- not accelerate bitvector queries, leading to 2+ orders of magnitude slowdown.

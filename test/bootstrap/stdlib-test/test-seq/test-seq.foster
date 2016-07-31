@@ -1,0 +1,9 @@
+snafuinclude Seq "data/seq";
+snafuinclude Prelude "prelude";
+
+main = {
+  enumRange32 0 100 { n =>
+    expect_i32 n;
+    print_i32 (seqLength (seqReplicate32 n ()));
+  };
+};

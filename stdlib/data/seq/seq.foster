@@ -6,28 +6,35 @@ type case Seq (a:Type)
 
 
 seqEmpty :: forall (a:Type) { Seq a };
-seqEmpty = { Seq (FT_Empty) };
+seqEmpty = { Seq FT_Empty };
 
+seqSingleton :: forall (a:Type) { a => Seq a };
 seqSingleton = { x => Seq (FT_Single x) };
 
 seqReplicate32 :: forall (a:Type)
                    { % n : Int32 : n >=SInt32 0
                     => a => Seq a };
-seqReplicate32 = { n => a =>
-  Seq (ftReplicate32 n 1 a)
+seqReplicate32 = { vn => va =>
+  //TODO swapping the args results in a less-than-ideal error message
+  //Seq (ftReplicate32 vn 1 va)
+
+  Seq (ftReplicate32 vn va 1)
 };
 
+seqPrepend :: forall (a:Type) { a => Seq a => Seq a };
 seqPrepend = { x => seq =>
   let ($Seq xs) = seq;
   Seq (ftConsTreeE x xs)
 };
 
+seqPostpend :: forall (a:Type) { Seq a => a => Seq a };
 seqPostpend = { seq => x =>
   let ($Seq xs) = seq;
   Seq (ftSnocTreeE xs x)
 };
 
-seqIsNull = { seq =>
+seqIsEmpty :: forall (a:Type) { Seq a => Bool };
+seqIsEmpty = { seq =>
   let ($Seq xs) = seq;
   case xs
     of $FT_Empty -> True
@@ -38,20 +45,43 @@ seqIsNull = { seq =>
 seqConcat :: forall (a:Type) { Seq a => Seq a => Seq a };
 seqConcat = { s1 => s2 =>
   let ($Seq xs, $Seq ys) = (s1, s2);
-  ftAppendTree0 ftElemSize xs ys
+  Seq (ftAppendTree0 ftElemSize xs ys)
 };
 
 seqLength :: forall (a:Type) { Seq a => Int32 };
 seqLength = { seq => let ($Seq xs) = seq; ftTreeSize ftElemSize xs };
 
-seqViewL = { seq => let ($Seq xs) = seq; Seq (ftViewL ftElemSize xs) };
 
-seqViewR = { seq => let ($Seq xs) = seq; Seq (ftViewR ftElemSize xs) };
+type case SeqViewR (a:Type)
+      of $SV_EmptyR
+      of $SV_Snoc (Seq a) a
+      ;
+
+type case SeqViewL (a:Type)
+      of $SV_EmptyL
+      of $SV_Cons a (Seq a)
+      ;
+
+seqViewL :: forall (a:Type) { Seq a => SeqViewL a };
+seqViewL = { seq => let ($Seq xs) = seq;
+  case ftViewL ftElemSize xs
+    of $FT_EmptyL    -> SV_EmptyL
+    of $FT_Cons a ft -> SV_Cons a (Seq ft)
+  end
+};
+
+seqViewR :: forall (a:Type) { Seq a => SeqViewR a };
+seqViewR = { seq => let ($Seq xs) = seq;
+  case ftViewR ftElemSize xs
+    of $FT_EmptyR    -> SV_EmptyR
+    of $FT_Snoc ft a -> SV_Snoc (Seq ft) a
+  end
+};
 
 seqSplitAt :: forall (a:Type) { Seq a => Int32 => (Seq a, Seq a) };
 seqSplitAt = { seq => i =>
   case seq
-    of ($Seq ($FT_Empty)) -> (FT_Empty, FT_Empty)
+    of ($Seq ($FT_Empty)) -> (Seq FT_Empty, Seq FT_Empty)
     of ($Seq xs) ->
       if i >=SInt32 seqLength seq
         then (Seq xs, Seq FT_Empty)
@@ -68,7 +98,7 @@ seqIndex =  { seq => idx =>
 };
 
 ftConsTreeE :: forall (a:Type) { a => FingerTree a => FingerTree a };
-ftConsTreeE = { size => e => ft => ftConsTreeS ftElemSize e ft };
+ftConsTreeE = { e => ft => ftConsTreeS ftElemSize e ft };
 
 ftSnocTreeE :: forall (a:Type) { FingerTree a => a => FingerTree a };
-ftSnocTreeE = { size => ft => e => ftSnocTreeS ftElemSize ft e };
+ftSnocTreeE = { ft => e => ftSnocTreeS ftElemSize ft e };
