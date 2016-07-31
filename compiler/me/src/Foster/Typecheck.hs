@@ -366,7 +366,7 @@ matchExp expTy ann msg =
                        debug $ "matchExp[Check]("++msg++") deferring to subsCheck"
                        subsCheck ann s msg
          Check t -> do debug $ "matchExp[Check]("++msg++") deferring to subsCheckRho"
-                       subsCheckRho ann t
+                       subsCheckRho ann t msg
          Infer r -> do update r (return ann)
 
 -- First, an interesting pair of rules for variables:
@@ -1678,7 +1678,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
               ++ showSourceRange r
 
         ty@(TyAppTC _ metas) <-
-                            generateTypeSchemaForDataType ctx (ctorTypeName cid)
+                            generateTypeSchemaForDataType ctx r (ctorTypeName cid)
         let ktvs = map convertTyFormal tyformals
         ts <- mapM (\ty -> instSigmaWith "ctor pattern" ktvs ty metas) types
         ps <- sequence [checkPattern ctx p t | (p, t) <- zip eps ts]
@@ -1717,11 +1717,11 @@ tcRhoCase ctx rng scrutinee branches expTy = do
                                     ++ " too few definitions for $" ++ T.unpack ctorName
                                     ++ "\n\t" ++ show (pretty elsewise)]
 
-    generateTypeSchemaForDataType :: Context SigmaTC -> DataTypeName -> Tc RhoTC
-    generateTypeSchemaForDataType ctx typeName = do
+    generateTypeSchemaForDataType :: Context SigmaTC -> SourceRange -> DataTypeName -> Tc RhoTC
+    generateTypeSchemaForDataType ctx r typeName = do
       case Map.lookup typeName (contextDataTypes ctx) of
         Just [dt] -> do
-          formals <- mapM (\_ -> newTcUnificationVarTau "dt-tyformal") (dataTypeTyFormals dt)
+          formals <- mapM (\_ -> newTcUnificationVarTau ("dt-tyformal:" ++ showSourceRange r)) (dataTypeTyFormals dt)
           return $ TyAppTC (TyConTC typeName) formals
         other -> tcFails [text $ "Typecheck.generateTypeSchemaForDataType: Too many or"
                             ++ " too few definitions for $" ++ typeName
@@ -1750,7 +1750,7 @@ subsCheckTy :: SigmaTC -> SigmaTC -> String -> Tc ()
 subsCheckTy sigma1 sigma2@(ForAllTC {}) msg = do
   (skols, rho) <- skolemize sigma2
   debug $ "subsCheckTy deferring to subsCheckRhoTy"
-  subsCheckRhoTy sigma1 rho
+  subsCheckRhoTy sigma1 rho ("subsCheckTy(" ++ msg ++ ")")
   esc_tvs <- getFreeTyVars [sigma1, sigma2]
   let bad_tvs = filter (`elem` esc_tvs) skols
   sanityCheck (null bad_tvs) ("subsCheck(" ++ msg ++ "): Type\n" ++ show sigma1 ++
@@ -1758,20 +1758,25 @@ subsCheckTy sigma1 sigma2@(ForAllTC {}) msg = do
                        "\nbad type variables: " ++ show bad_tvs)
   return ()
 
-subsCheckTy sigma1 rho2 _msg = subsCheckRhoTy sigma1 rho2
+subsCheckTy sigma1 rho2 msg = subsCheckRhoTy sigma1 rho2 ("subsCheckTy("++msg++")")
 
 instance Show (AnnExpr TypeTC) where show e = show (pretty e)
 
-subsCheckRhoTy :: SigmaTC -> RhoTC -> Tc ()
-subsCheckRhoTy (ForAllTC ktvs rho) rho2 = do -- Rule SPEC
+subsCheckRhoTy :: SigmaTC -> RhoTC -> String -> Tc ()
+subsCheckRhoTy (ForAllTC ktvs rho) rho2 msg = do -- Rule SPEC
              taus <- genNonSigmaUnificationVarsLike ktvs (\n -> "instSigma type parameter " ++ show n)
              rho1 <- instSigmaWith "subsCheckRhoTy" ktvs rho taus
-             subsCheckRhoTy rho1 rho2
-subsCheckRhoTy rho1 (FnTypeTC as2 r2 fx2 cc2 ft2) = unifyFun rho1 (length as2) "subsCheckRhoTy" >>= \(as1, r1, fx1, cc1, ft1) -> subsCheckFunTy as1 r1 fx1 cc1 ft1 as2 r2 fx2 cc2 ft2
-subsCheckRhoTy (FnTypeTC as1 r1 fx1 cc1 ft1) rho2 = unifyFun rho2 (length as1) "subsCheckRhoTy" >>= \(as2, r2, fx2, cc2, ft2) -> subsCheckFunTy as1 r1 fx1 cc1 ft1 as2 r2 fx2 cc2 ft2
-subsCheckRhoTy tau1 tau2 -- Rule MONO
+             subsCheckRhoTy rho1 rho2 msg
+subsCheckRhoTy rho1 (FnTypeTC as2 r2 fx2 cc2 ft2) msg = unifyFun rho1 (length as2) msg >>= \(as1, r1, fx1, cc1, ft1) -> subsCheckFunTy as1 r1 fx1 cc1 ft1 as2 r2 fx2 cc2 ft2 msg
+subsCheckRhoTy (FnTypeTC as1 r1 fx1 cc1 ft1) rho2 msg = unifyFun rho2 (length as1) msg >>= \(as2, r2, fx2, cc2, ft2) -> subsCheckFunTy as1 r1 fx1 cc1 ft1 as2 r2 fx2 cc2 ft2 msg
+subsCheckRhoTy tau1 tau2 msg -- Rule MONO
      = do
-          logged' ("subsCheckRhoTy " ++ show (pretty (tau1, tau2))) $ unify tau1 tau2 [text "subsCheckRho"] -- Revert to ordinary unification
+          logged' ("subsCheckRhoTy " ++ show (pretty (tau1, tau2)) ++ " ;; " ++ msg) $
+            unify tau1 tau2 [text $ "subsCheckRhoTy-MONO(" ++ msg ++ ")"]
+                            {- ++ [text $ "Tried to unify"
+                            ,pretty tau1
+                            ,text $ "with"
+                            ,pretty tau2] -} -- Revert to ordinary unification
 -- }}}
 
 subsCheck :: (AnnExpr SigmaTC) -> SigmaTC -> String -> Tc (AnnExpr SigmaTC)
@@ -1780,7 +1785,7 @@ subsCheck esigma sigma2@(ForAllTC {}) msg = do
   (skols, rho) <- skolemize sigma2
   debug $ "subsCheck skolemized sigma to " ++ show rho ++ " via " ++ show skols
                                             ++ ", now deferring to subsCheckRho"
-  _ <- subsCheckRho esigma rho
+  _ <- subsCheckRho esigma rho ("subsCheck(" ++ msg ++")")
   esc_tvs <- getFreeTyVars [typeTC esigma, sigma2]
   let bad_tvs = filter (`elem` esc_tvs) skols
   sanityCheck (null bad_tvs) ("subsCheck(" ++ msg ++ "): Type\n" ++ show (typeTC esigma) ++
@@ -1790,46 +1795,48 @@ subsCheck esigma sigma2@(ForAllTC {}) msg = do
 
 subsCheck _esigma _rho2 _msg = tcFails [text $ "rho passed to subsCheck!"]
 
-subsCheckRho :: AnnExpr SigmaTC -> RhoTC -> Tc (AnnExpr RhoTC)
-subsCheckRho esigma rho2 = do
+subsCheckRho :: AnnExpr SigmaTC -> RhoTC -> String -> Tc (AnnExpr RhoTC)
+subsCheckRho esigma rho2 msg = do
   case (typeTC esigma, rho2) of
     (_, ForAllTC {}) -> do tcFails [text $ "violated invariant: sigma passed to subsCheckRho"]
     (ForAllTC {}, _) -> do -- Rule SPEC
-        debug $ "subsCheckRho instantiating " ++ show (typeTC esigma)
-        erho <- inst esigma "subsCheckRho"
-        debug $ "subsCheckRho instantiated to " ++ show (typeTC erho)
-        debug $ "subsCheckRho inst. type against " ++ show rho2
-        subsCheckRho erho rho2
+        debugIf False $ text $ "subsCheckRho instantiating " ++ show (typeTC esigma)
+        erho <- inst esigma ("subsCheckRho(" ++ msg ++ ")")
+        debugIf False $ text $ "subsCheckRho instantiated to " ++ show (typeTC erho)
+        debugIf False $ text $ "subsCheckRho inst. type against " ++ show rho2
+        subsCheckRho erho rho2 msg
 
     (rho1, FnTypeTC as2 r2 fx2 cc2 ft2) -> do
         debug $ "subsCheckRho fn 1"
         (as1, r1, fx1, cc1, ft1) <- unifyFun rho1 (length as2) "sCR1"
-        subsCheckFunTy as1 r1 fx1 cc1 ft1 as2 r2 fx2 cc2 ft2
+        subsCheckFunTy as1 r1 fx1 cc1 ft1 as2 r2 fx2 cc2 ft2 msg
         return esigma
     (FnTypeTC as1 r1 fx1 cc1 ft1, _)    -> do
         debug "subsCheckRho fn 2"
         (as2, r2, fx2, cc2, ft2) <- unifyFun rho2 (length as1) "sCR2"
         debug $ "&&&&&& r1: " ++ show r1
         debug $ "&&&&&& r2: " ++ show r2
-        subsCheckFunTy as1 r1 fx1 cc1 ft1 as2 r2 fx2 cc2 ft2
+        subsCheckFunTy as1 r1 fx1 cc1 ft1 as2 r2 fx2 cc2 ft2 msg
         return esigma
     -- Elide the two FUN rules and subsCheckFun because we're using
     -- shallow, not deep, skolemization due to being a strict language.
 
     (rho1, _) -> do -- Rule MONO
-        logged esigma ("subsCheckRho " ++ show (pretty (rho1, rho2))) $ unify rho1 rho2 [text $ "subsCheckRho[" ++ show rho2 ++ "]", showStructure esigma] -- Revert to ordinary unification
+        logged esigma ("subsCheckRho " ++ show (pretty (rho1, rho2))) $
+            unify rho1 rho2 [text $ "subsCheckRho[" ++ show rho2 ++ "](" ++ msg ++ ")", showStructure esigma] -- Revert to ordinary unification
         return esigma
 -- }}}
 
 -- {{{ Helper functions for subsCheckRho to peek inside type constructors
-subsCheckFunTy as1 r1 fx1 cc1 ft1 as2 r2 fx2 cc2 ft2 = do
+subsCheckFunTy as1 r1 fx1 cc1 ft1 as2 r2 fx2 cc2 ft2 msg = do
         if eqLen as1 as2
           then return ()
           else do msg <- getStructureContextMessage
                   tcFailsMore [text "Function types must have equal-length argument lists"
                               ,msg]
         debug $ "subsCheckFunTy arg: " ++ show as2 ++ " ?<=? " ++ show as1
-        mapM_ (\(a2, a1) -> subsCheckTy a2 a1 "sCFTa") (zip as2 as1)
+        mapM_ (\(nth, a2, a1) -> subsCheckTy a2 a1 ("sCFTa[arg " ++ show nth ++ "]("++msg++")"))
+              (zip3 [0..] as2 as1)
         debug $ "subsCheckFunTy res: " ++ show r1 ++ " ?<=? " ++ show r2
         subsCheckTy r1 r2 "sCFTr"
         subsCheckTy fx1 fx2 "sCFTfx"
@@ -1844,7 +1851,7 @@ instSigma :: AnnExpr SigmaTC -> Expected RhoTC -> Tc (AnnExpr RhoTC)
 instSigma e1 (Check t2) = do {
                              ; debug $ "instSigma " ++ show (typeTC e1) ++ " :?: " ++ show t2
                              ; debug $ "instSigma deferring to subsCheckRho"
-                             ; subsCheckRho e1 t2
+                             ; subsCheckRho e1 t2 "instSigma"
                              }
 instSigma e1 (Infer r)  = do { e <- inst e1 "instSigma"
                              ; debug $ "instSigma " ++ show (typeTC e1) ++ " -inst-> " ++ show (typeTC e)
@@ -2112,7 +2119,9 @@ unify' !depth t1 t2 msgs = do
                                ,text "failed in"
                                ,pretty t
                                ] ++ msgs ++
-                               [text "This type error is often caused by swapped function arguments..."]
+                               [text "This type error is often caused by swapped function arguments..."
+                               ,text "Less commonly, it arises from use of" <+>
+                                text "polymorphic recursion, which needs an explicit annotation."]
 -- }}}
 
 -- {{{ Well-formedness checks
