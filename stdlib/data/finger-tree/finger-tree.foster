@@ -1,6 +1,8 @@
 // Based on the BSD-licensed implementation of finger trees at
 // https://hackage.haskell.org/package/containers-0.5.7.1/docs/src/Data.Sequence.html
 
+// TODO add laziness to preserve amortized bounds for persistent usage.
+
 type case FT_Node (a:Type)
   of $FT_Node2 Int32 a a
   of $FT_Node3 Int32 a a a
@@ -56,6 +58,7 @@ ftDigitSize = { size => d =>
 
 // }}}
 
+// {{{ Code for consing finger trees (and supporting code).
 ftNode2 :: forall (a:Type) { { a => Int32 } => a => a => FT_Node a };
 ftNode2 = { size => a => b =>
     FT_Node2 (size a +Int32 size b) a b
@@ -323,8 +326,9 @@ ftAddDigits4 = { m1 => da => p => q => r => s => dx => m2 =>
     of ($FT_Four a b c d, e, f, g, h, $FT_Four i j k l) -> ftAppendTree4 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode3ns g h i) (ftNode3ns j k l) m2
   end
 };
+// }}}
 
-// {{{
+// {{{ Internal helpers
 ftDigitToTreeS :: forall (a:Type) { { a => Int32 } => FT_Digit a => FingerTree a };
 ftDigitToTreeS = { size => m =>
   case m
@@ -346,8 +350,7 @@ ftDigitToTreeP = { s => m =>
 };
 // }}}
 
-// {{{
-
+// {{{ Deconstruction by views & peeking at the head.
 
 ftHead :: forall (a:Type) { FingerTree a => Maybe a };
 ftHead = { ft =>
@@ -450,7 +453,7 @@ ftViewR = { size => ft =>
 
 // }}}
 
-// {{{
+// {{{ Creation via replication
 ftReplicate32 :: forall (a:Type)
                    { % n : Int32 : n >=SInt32 0
                     => a => Int32 => FingerTree a };
@@ -481,7 +484,7 @@ ftReplicate32 = { n : Int32 => a => sz =>
 };
 // }}}
 
-// {{{
+// {{{ Splitting
 type case FT_Split (a:Type) (b:Type) of $FT_Split a b a;
 
 ftSplitTree :: forall (a:Type) { { a => Int32 } => Int32 =>
@@ -560,7 +563,7 @@ ftSplitDigit = { size => i => z =>
 };
 // }}}
 
-// {{{
+// {{{ Indexing
 type case FT_Place (a:Type)
        of $FT_Place Int32 a
        ;
@@ -645,4 +648,38 @@ ftLookupDigit = { size => idx => z =>
       end
   end
 };
+// }}}
+
+// {{{ Reverse
+
+ftReverseTree :: forall (a:Type) { { a => a } => FingerTree a => FingerTree a };
+ftReverseTree = { reversed => ft =>
+  case ft
+    of $FT_Empty -> FT_Empty
+    of $FT_Single x -> FT_Single (reversed x)
+    of $FT_Deep s pr m sf ->
+      FT_Deep s (ftReverseDigit reversed sf)
+                (ftReverseTree:[FT_Node a] { nx => ftReverseNode reversed nx } m)
+                (ftReverseDigit reversed pr)
+  end
+};
+
+ftReverseDigit :: forall (a:Type) { { a => a } => FT_Digit a => FT_Digit a };
+ftReverseDigit = { reversed => xs =>
+  case xs
+    of $FT_One   a       -> FT_One   (reversed a)
+    of $FT_Two   a b     -> FT_Two   (reversed b) (reversed a)
+    of $FT_Three a b c   -> FT_Three (reversed c) (reversed b) (reversed a)
+    of $FT_Four  a b c d -> FT_Four  (reversed d) (reversed c) (reversed b) (reversed a)
+  end
+};
+
+ftReverseNode :: forall (a:Type) { { a => a } => FT_Node a => FT_Node a };
+ftReverseNode = { reversed => xs =>
+  case xs
+    of $FT_Node2 v a b     -> FT_Node2 v (reversed b) (reversed a)
+    of $FT_Node3 v a b c   -> FT_Node3 v (reversed c) (reversed b) (reversed a)
+  end
+};
+
 // }}}

@@ -97,6 +97,19 @@ seqIndex =  { seq => idx =>
   ftIndex ftElemSize ft idx;
 };
 
+
+seqReverse :: forall (a:Type) { Seq a => Seq a };
+seqReverse =  { seq =>
+  seqReverseWith seq { x : a => x }
+};
+
+seqReverseWith :: forall (a:Type) { Seq a => { a => a } => Seq a };
+seqReverseWith =  { seq => reverser =>
+  let ($Seq ft) = seq;
+  Seq (ftReverseTree reverser ft)
+};
+
+
 ftConsTreeE :: forall (a:Type) { a => FingerTree a => FingerTree a };
 ftConsTreeE = { e => ft => ftConsTreeS ftElemSize e ft };
 
