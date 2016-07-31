@@ -267,8 +267,9 @@ checkForEscapingTypeVariables e _ann ctx sigma skol_tvs = do
 
 checkSigmaDirect :: Context SigmaTC -> Term -> SigmaTC -> Tc (AnnExpr SigmaTC)
 -- {{{
-checkSigmaDirect ctx (E_FnAST _rng fn) sigma@(ForAllTC {}) = do
-    tcSigmaFn ctx fn (Check sigma)
+checkSigmaDirect ctx expr@(E_FnAST _rng fn) sigma@(ForAllTC {}) = do
+   tcWithScope expr $
+      tcSigmaFn ctx fn (Check sigma)
 
 checkSigmaDirect _ctx _ (ForAllTC {}) =
     tcFails [text $ "checkSigmaDirect: can't check a sigma type against an "
