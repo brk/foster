@@ -17,7 +17,7 @@ mkEmptyPairingHeap = { forall a:Type,
 /*
 // Mostly to set the stage for _alt_2, we can introduce a trivial unit arg:
 mkEmptyPairingHeap_alt_1 :: forall (a:Type) { () => PairingHeap a };
-mkEmptyPairingHeap_alt_1 = { forall a:Type, unit =>
+mkEmptyPairingHeap_alt_1 = { unit =>
   PairingHeapE
 };
 
