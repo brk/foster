@@ -1,0 +1,613 @@
+// Based on the BSD-licensed implementation of finger trees at
+// https://hackage.haskell.org/package/containers-0.5.7.1/docs/src/Data.Sequence.html
+
+type case FT_Node (a:Type)
+  of $FT_Node2 Int32 a a
+  of $FT_Node3 Int32 a a a
+  ;
+
+type case FT_Digit (a:Type)
+  of $FT_One   a
+  of $FT_Two   a a
+  of $FT_Three a a a
+  of $FT_Four  a a a a
+  ;
+
+type case FingerTree (a:Type)
+  of $FT_Empty
+  of $FT_Single a
+  of $FT_Deep Int32 (FT_Digit a) (FingerTree (FT_Node a)) (FT_Digit a)
+  ;
+
+// {{{ Size instances
+ftNodeSize :: forall (a:Type) { FT_Node a => Int32 };
+ftNodeSize = { n =>
+  case n of $FT_Node2 v _ _ -> v
+         of $FT_Node3 v _ _ _ -> v
+  end
+};
+
+ftElemSize = { e => 1 };
+
+ftTreeSize :: forall (a:Type) { { a => Int32 } => FingerTree a => Int32 };
+ftTreeSize = { size => tree =>
+  case tree
+    of $FT_Empty          -> 0
+    of $FT_Single x       -> size x
+    of $FT_Deep   v _ _ _ -> v
+  end
+};
+
+ftDigitSize :: forall (a:Type) { { a => Int32 } => FT_Digit a => Int32 };
+ftDigitSize = { size => d =>
+  case d
+    of $FT_One   a       -> size a
+    of $FT_Two   a b     -> size a +Int32 size b
+    of $FT_Three a b c   -> size a +Int32 size b +Int32 size c
+    of $FT_Four  a b c d -> size a +Int32 size b +Int32 size c +Int32 size d
+  end
+};
+
+// }}}
+
+ftNode2 :: forall (a:Type) { { a => Int32 } => a => a => FT_Node a };
+ftNode2 = { size => a => b =>
+    FT_Node2 (size a +Int32 size b) a b
+};
+
+ftNode3 :: forall (a:Type) { { a => Int32 } => a => a => a => FT_Node a };
+ftNode3 = { size => a => b => c =>
+    FT_Node3 (size a +Int32 size b +Int32 size c) a b c
+};
+
+ftNode2ns :: forall (a:Type) { FT_Node a => FT_Node a => FT_Node (FT_Node a) };
+ftNode2ns = { a => b => ftNode2 ftNodeSize a b };
+
+ftNode3ns :: forall (a:Type) { FT_Node a => FT_Node a => FT_Node a => FT_Node (FT_Node a) };
+ftNode3ns = { a => b => c => ftNode3 ftNodeSize a b c };
+
+ftNodeToDigit :: forall (a:Type) { FT_Node a => FT_Digit a };
+ftNodeToDigit = { n =>
+  case n
+    of $FT_Node2 _ a b   -> FT_Two   a b
+    of $FT_Node3 _ a b c -> FT_Three a b c
+  end
+};
+
+ftDeep :: forall (a:Type) { { a => Int32 } => FT_Digit a
+                 => FingerTree (FT_Node a) => FT_Digit a => FingerTree a };
+ftDeep = { size => pr => m => sf =>
+  deepsize = ftDigitSize size pr      +Int32
+              ftTreeSize ftNodeSize m +Int32
+              ftDigitSize size sf;
+  FT_Deep deepsize pr m sf
+};
+
+ftConsTreeS :: forall (a:Type) { { a => Int32 } => a => FingerTree a => FingerTree a };
+ftConsTreeS = { size => a => ft =>
+  case ft
+    of $FT_Empty       -> FT_Single a
+    of $FT_Single b    -> ftDeep size (FT_One a) FT_Empty (FT_One b)
+    of $FT_Deep s ftx m sf ->
+      case ftx
+        of $FT_Four  b c d e -> FT_Deep (size a +Int32 s) (FT_Two   a b    ) (ftConsTreeS ftNodeSize (ftNode3 size c d e) m) sf
+        of $FT_Three b c d   -> FT_Deep (size a +Int32 s) (FT_Four  a b c d) m sf
+        of $FT_Two   b c     -> FT_Deep (size a +Int32 s) (FT_Three a b c  ) m sf
+        of $FT_One   b       -> FT_Deep (size a +Int32 s) (FT_Two   a b    ) m sf
+      end
+  end
+};
+
+ftSnocTreeS :: forall (a:Type) { { a => Int32 } => FingerTree a => a => FingerTree a };
+ftSnocTreeS = { size => ft => e =>
+  case ft
+    of $FT_Empty       -> FT_Single a
+    of $FT_Single a    -> ftDeep size (FT_One a) FT_Empty (FT_One e)
+    of $FT_Deep s pr m sf ->
+      case sf
+        of $FT_Four  a b c d -> FT_Deep (size e +Int32 s) pr (ftSnocTreeS ftNodeSize m (ftNode3 size a b c)) (FT_Two d e)
+        of $FT_Three a b c   -> FT_Deep (size e +Int32 s) pr m (FT_Four  a b c e)
+        of $FT_Two   a b ->     FT_Deep (size e +Int32 s) pr m (FT_Three a b e)
+        of $FT_One   a   ->     FT_Deep (size e +Int32 s) pr m (FT_Two a e)
+      end
+  end
+};
+
+ftConsTreeN :: forall (a:Type) { FT_Node a => FingerTree (FT_Node a) => FingerTree (FT_Node a) };
+ftConsTreeN = { size => e => ft => ftConsTreeS ftNodeSize e ft };
+
+ftSnocTreeN :: forall (a:Type) { FingerTree (FT_Node a) => FT_Node a => FingerTree (FT_Node a) };
+ftSnocTreeN = { size => ft => e => ftSnocTreeS ftNodeSize ft e };
+
+ftAppendTree0 :: forall (a:Type) { { a => Int32 } => FingerTree a => FingerTree a => FingerTree a };
+ftAppendTree0 =  { size => ft => xs =>
+  case (ft, xs)
+    of ($FT_Empty, _)    -> xs
+    of (_, $FT_Empty)    -> ft
+    of ($FT_Single x, _) -> ftConsTreeS size x xs
+    of (_, $FT_Single x) -> ftSnocTreeS size xs x
+    of ($FT_Deep s1 pr1 m1 sf1, $FT_Deep s2 pr2 m2 sf2) ->
+      FT_Deep (s1 +Int32 s2) pr1 (ftAddDigits0 m1 sf1 pr2 m2) sf2
+  end
+};
+
+addDigits0 :: forall (a:Type) { { a => Int32 } => FingerTree (FT_Node a)
+                                               => Digit a => Digit a
+                                               => FingerTree (Node a) => FingerTree (Node a) };
+addDigits0 = { size => m1 => da => dz => m2 =>
+  case (da, dz)
+    of ($FT_One a,        $FT_One   b)       -> ftAppendTree1 m1 (ftNode2 size a b  ) m2
+    of ($FT_One a,        $FT_Two   b c)     -> ftAppendTree1 m1 (ftNode3 size a b c) m2
+    of ($FT_One a,        $FT_Three b c d)   -> ftAppendTree2 m1 (ftNode2 size a b  ) (ftNode2 size c d) m2
+    of ($FT_One a,        $FT_Four  b c d e) -> ftAppendTree2 m1 (ftNode3 size a b c) (ftNode2 size d e) m2
+    of ($FT_Two a b,      $FT_One c        ) -> ftAppendTree1 m1 (ftNode3 size a b c) m2
+    of ($FT_Two a b,      $FT_Two   c d    ) -> ftAppendTree2 m1 (ftNode2 size a b  ) (ftNode2 size c d)   m2
+    of ($FT_Two a b,      $FT_Three c d e  ) -> ftAppendTree2 m1 (ftNode3 size a b c) (ftNode2 size d e)   m2
+    of ($FT_Two a b,      $FT_Four  c d e f) -> ftAppendTree2 m1 (ftNode3 size a b c) (ftNode3 size d e f) m2
+    of ($FT_Three a b c,  $FT_One   d      ) -> ftAppendTree2 m1 (ftNode2 size a b)   (ftNode2 size c d)   m2
+    of ($FT_Three a b c,  $FT_Two   d e    ) -> ftAppendTree2 m1 (ftNode3 size a b c) (ftNode2 size d e)   m2
+    of ($FT_Three a b c,  $FT_Three d e f  ) -> ftAppendTree2 m1 (ftNode3 size a b c) (ftNode3 size d e f) m2
+    of ($FT_Three a b c,  $FT_Four  d e f g) -> ftAppendTree3 m1 (ftNode3 size a b c) (ftNode2 size d e) (ftNode2 size f g) m2
+    of ($FT_Four a b c d, $FT_One   e      ) -> ftAppendTree2 m1 (ftNode3 size a b c) (ftNode2 size d e)   m2
+    of ($FT_Four a b c d, $FT_Two   e f    ) -> ftAppendTree2 m1 (ftNode3 size a b c) (ftNode3 size d e f) m2
+    of ($FT_Four a b c d, $FT_Three e f g  ) -> ftAppendTree3 m1 (ftNode3 size a b c) (ftNode2 size d e)   (ftNode2 size f g) m2
+    of ($FT_Four a b c d, $FT_Four  e f g h) -> ftAppendTree3 m1 (ftNode3 size a b c) (ftNode3 size d e f) (ftNode2 size g h) m2
+  end
+};
+
+ftAppendTree1 :: forall (a:Type) { FingerTree (FT_Node a) => FT_Node a => FingerTree (FT_Node a) => FingerTree (FT_Node a) };
+ftAppendTree1 = { ft => a => xs =>
+  case (ft, xs)
+    of ($FT_Empty, _) -> ftConsTreeN a xs
+    of (_, $FT_Empty) -> ftSnocTreeN ft a
+    of ($FT_Single x, _) -> ftConsTreeN x (ftConsTreeN a xs)
+    of (_, $FT_Single x) -> ftSnocTreeN (ftSnocTreeN xs a) x
+    of ($FT_Deep s1 pr1 m1 sf1, $FT_Deep s2 pr2 m2 sf2) ->
+      FT_Deep (s1 +Int32 ftNodeSize a +Int32 s2) pr1 (ftAddDigits1 m1 sf1 a pr2 m2) sf2
+  end
+};
+
+ftAddDigits1 :: {        FingerTree (FT_Node (FT_Node a))
+                      => FT_Digit (FT_Node a) => FT_Node a => Digit (FT_Node a)
+                      => FingerTree (FT_Node (FT_Node a)) => FingerTree (FT_Node (FT_Node a)) };
+ftAddDigits1 = { m1 => da => n => dx => m2 =>
+  case (da, dx)
+    of ($FT_One   a      , $FT_One   c      ) -> ftAppendTree1 m1 (ftNode3ns a n c) m2
+    of ($FT_One   a      , $FT_Two   c d    ) -> ftAppendTree2 m1 (ftNode2ns a n  ) (ftNode2ns c d) m2
+    of ($FT_One   a      , $FT_Three c d e  ) -> ftAppendTree2 m1 (ftNode3ns a n c) (ftNode2ns d e) m2
+    of ($FT_One   a      , $FT_Four  c d e f) -> ftAppendTree2 m1 (ftNode3ns a n c) (ftNode3ns d e f) m2
+    of ($FT_Two   a b    , $FT_One   d      ) -> ftAppendTree2 m1 (ftNode2ns a b  ) (ftNode2ns n d) m2
+    of ($FT_Two   a b    , $FT_Two   d e    ) -> ftAppendTree2 m1 (ftNode3ns a b n) (ftNode2ns d e) m2
+    of ($FT_Two   a b    , $FT_Three d e f  ) -> ftAppendTree2 m1 (ftNode3ns a b n) (ftNode3ns d e f) m2
+    of ($FT_Two   a b    , $FT_Four  d e f g) -> ftAppendTree3 m1 (ftNode3ns a b n) (ftNode2ns d e) (ftNode2ns f g) m2
+    of ($FT_Three a b c  , $FT_One   e      ) -> ftAppendTree2 m1 (ftNode3ns a b c) (ftNode2ns d e) m2
+    of ($FT_Three a b c  , $FT_Two   e f    ) -> ftAppendTree2 m1 (ftNode3ns a b c) (ftNode3ns d e f) m2
+    of ($FT_Three a b c  , $FT_Three e f g  ) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode2ns d e)   (ftNode2ns f g) m2
+    of ($FT_Three a b c  , $FT_Four  e f g h) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode2ns g h) m2
+    of ($FT_Four  a b c d, $FT_One   f      ) -> ftAppendTree2 m1 (ftNode3ns a b c) (ftNode3ns d n f) m2
+    of ($FT_Four  a b c d, $FT_Two   f g    ) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode2ns d n)   (ftNode2ns f g) m2
+    of ($FT_Four  a b c d, $FT_Three f g h  ) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode3ns d n f) (ftNode2ns g h) m2
+    of ($FT_Four  a b c d, $FT_Four  f g h i) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode3ns d n f) (ftNode3ns g h i) m2
+  end
+};
+
+
+ftAppendTree2 :: forall (a:Type) {
+                   FingerTree (FT_Node a) => FT_Node a => FT_Node a => FT_Node a
+                => FingerTree (FT_Node a) => FingerTree (FT_Node a) };
+ftAppendTree2 = { m1 => a => b => m2 =>
+  case (m1, m2)
+    of ($FT_Empty, xs)    ->                ftConsTreeN a (ftConsTreeN b xs)
+    of ($FT_Single x, xs) -> ftConsTreeN x (ftConsTreeN a (ftConsTreeN b xs))
+    of (xs, $FT_Empty)    ->              ftSnocTreeN (ftSnocTreeN xs a) b
+    of (xs, $FT_Single x) -> ftSnocTreeN (ftSnocTreeN (ftSnocTreeN xs a) b) x
+    of ($FT_Deep s1 pr1 m1 sf1, $FT_Deep s2 pr2 m2 sf2) ->
+      FT_Deep (s1 +Int32 ftNodeSize a +Int32 ftNodeSize b +Int32 s2)
+              pr1 (ftAddDigits2 m1 sf1 a b pr2 m2) sf2
+  end
+};
+
+ftAddDigits2 :: forall (a:Type) {
+                  FingerTree (FT_Node (FT_Node a)) => FT_Digit (FT_Node a) =>
+                            FT_Node a => FT_Node a => FT_Digit (FT_Node a) =>
+                  FingerTree (FT_Node (FT_Node a)) => FingerTree (FT_Node (FT_Node a)) };
+ftAddDigits2 = { m1 => da => p => q => dx => m2 =>
+  case (da, p, q, dx)
+   of ($FT_One a       , b, c, $FT_One   d      ) -> ftAppendTree2 m1 (ftNode2ns a b)   (ftNode2ns c d  ) m2
+   of ($FT_One a       , b, c, $FT_Two   d e    ) -> ftAppendTree2 m1 (ftNode3ns a b c) (ftNode2ns d e  ) m2
+   of ($FT_One a       , b, c, $FT_Three d e f  ) -> ftAppendTree2 m1 (ftNode3ns a b c) (ftNode3ns d e f) m2
+   of ($FT_One a       , b, c, $FT_Four  d e f g) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode2ns d e  ) (ftNode2ns f g) m2
+   of ($FT_Two a b     , c, d, $FT_One   e      ) -> ftAppendTree2 m1 (ftNode3ns a b c) (ftNode2ns d e  ) m2
+   of ($FT_Two a b     , c, d, $FT_Two   e f    ) -> ftAppendTree2 m1 (ftNode3ns a b c) (ftNode3ns d e f) m2
+   of ($FT_Two a b     , c, d, $FT_Three e f g  ) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode2ns d e  ) (ftNode2ns f g) m2
+   of ($FT_Two a b     , c, d, $FT_Four  e f g h) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode2ns g h) m2
+   of ($FT_Three a b c , d, e, $FT_One   f      ) -> ftAppendTree2 m1 (ftNode3ns a b c) (ftNode3ns d e f) m2
+   of ($FT_Three a b c , d, e, $FT_Two   f g    ) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode2ns d e  ) (ftNode2ns f g) m2
+   of ($FT_Three a b c , d, e, $FT_Three f g h  ) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode2ns g h) m2
+   of ($FT_Three a b c , d, e, $FT_Four  f g h i) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode3ns g h i) m2
+   of ($FT_Four a b c d, e, f, $FT_One   g      ) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode2ns d e  ) (ftNode2ns f g) m2
+   of ($FT_Four a b c d, e, f, $FT_Two   g h    ) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode2ns g h) m2
+   of ($FT_Four a b c d, e, f, $FT_Three g h i  ) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode3ns g h i) m2
+   of ($FT_Four a b c d, e, f, $FT_Four  g h i j) -> ftAppendTree4 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode2ns g h) (ftNode2ns i j) m2
+  end
+};
+
+ftAppendTree3 :: forall (a:Type) {
+                   FingerTree (FT_Node a) => FT_Node a => FT_Node a => FT_Node a
+                => FingerTree (FT_Node a) => FingerTree (FT_Node a) };
+ftAppendTree3 = { m1 => a => b => c => m2 =>
+  case (m1, m2)
+    of ($FT_Empty, xs)    ->                ftConsTreeN a (ftConsTreeN b (ftConsTreeN c xs))
+    of ($FT_Single x, xs) -> ftConsTreeN x (ftConsTreeN a (ftConsTreeN b (ftConsTreeN c xs)))
+    of (xs, $FT_Empty)    ->              ftSnocTreeN (ftSnocTreeN (ftSnocTreeN xs a) b) c
+    of (xs, $FT_Single x) -> ftSnocTreeN (ftSnocTreeN (ftSnocTreeN (ftSnocTreeN xs a) b) c) x
+    of ($FT_Deep s1 pr1 m1 sf1, $FT_Deep s2 pr2 m2 sf2) ->
+      FT_Deep (s1 +Int32 ftNodeSize a +Int32 ftNodeSize b +Int32 ftNodeSize c +Int32 s2)
+              pr1 (ftAddDigits3 m1 sf1 a b c pr2 m2) sf2
+  end
+};
+
+ftAddDigits3 :: forall (a:Type) {
+                  FingerTree (FT_Node (FT_Node a)) => FT_Digit (FT_Node a) =>
+                  FT_Node a => FT_Node a => FT_Node a => FT_Digit (FT_Node a) =>
+                  FingerTree (FT_Node (FT_Node a)) => FingerTree (FT_Node (FT_Node a)) };
+ftAddDigits3 = { m1 => da => p => q => r => dx => m2 =>
+  case (da, p, q, r, dx)
+   of ($FT_One a       , b, c, d, $FT_One e       ) -> ftAppendTree2 m1 (ftNode3ns a b c) (ftNode2ns d e) m2
+   of ($FT_One a       , b, c, d, $FT_Two e f     ) -> ftAppendTree2 m1 (ftNode3ns a b c) (ftNode3ns d e f) m2
+   of ($FT_One a       , b, c, d, $FT_Three e f g ) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode2ns d e) (ftNode2ns f g) m2
+   of ($FT_One a       , b, c, d, $FT_Four e f g h) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode2ns g h) m2
+   of ($FT_Two a b     , c, d, e, $FT_One f       ) -> ftAppendTree2 m1 (ftNode3ns a b c) (ftNode3ns d e f) m2
+   of ($FT_Two a b     , c, d, e, $FT_Two f g     ) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode2ns d e) (ftNode2ns f g) m2
+   of ($FT_Two a b     , c, d, e, $FT_Three f g h ) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode2ns g h) m2
+   of ($FT_Two a b     , c, d, e, $FT_Four f g h i) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode3ns g h i) m2
+   of ($FT_Three a b c , d, e, f, $FT_One g       ) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode2ns d e) (ftNode2ns f g) m2
+   of ($FT_Three a b c , d, e, f, $FT_Two g h     ) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode2ns g h) m2
+   of ($FT_Three a b c , d, e, f, $FT_Three g h i ) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode3ns g h i) m2
+   of ($FT_Three a b c , d, e, f, $FT_Four g h i j) -> ftAppendTree4 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode2ns g h) (ftNode2ns i j) m2
+   of ($FT_Four a b c d, e, f, g, $FT_One h       ) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode2ns g h) m2
+   of ($FT_Four a b c d, e, f, g, $FT_Two h i     ) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode3ns g h i) m2
+   of ($FT_Four a b c d, e, f, g, $FT_Three h i j ) -> ftAppendTree4 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode2ns g h) (ftNode2ns i j) m2
+   of ($FT_Four a b c d, e, f, g, $FT_Four h i j k) -> ftAppendTree4 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode3ns g h i) (ftNode2ns j k) m2
+  end
+};
+
+
+
+appendTree4 :: forall (a:Type) {
+                 FingerTree (FT_Node a) => FT_Node a => FT_Node a => FT_Node a => FT_Node a
+              => FingerTree (FT_Node a) => FingerTree (FT_Node a) };
+appendTree4 = { m1 => a => b => c => d => m2 =>
+  case (m1, m2)
+    of ($FT_Empty, xs)    ->                ftConsTreeN a (ftConsTreeN b (ftConsTreeN c (ftConsTreeN d xs)))
+    of ($FT_Single x, xs) -> ftConsTreeN x (ftConsTreeN a (ftConsTreeN b (ftConsTreeN c (ftConsTreeN d xs))))
+    of (xs, $FT_Empty)    ->              ftSnocTreeN (ftSnocTreeN (ftSnocTreeN (ftSnocTreeN xs a) b) c) d
+    of (xs, $FT_Single x) -> ftSnocTreeN (ftSnocTreeN (ftSnocTreeN (ftSnocTreeN (ftSnocTreeN xs a) b) c) d) x
+    of ($FT_Deep s1 pr1 m1 sf1, $FT_Deep s2 pr2 m2 sf2) ->
+      FT_Deep (s1 +Int32 ftNodeSize a +Int32 ftNodeSize b +Int32 ftNodeSize c +Int32 ftNodeSize d +Int32 s2)
+              pr1 (ftAddDigits4 m1 sf1 a b c d pr2 m2) sf2
+  end
+};
+
+addDigits4 :: forall (a:Type) {
+                FingerTree (FT_Node (FT_Node a))
+             => FT_Digit (FT_Node a)
+             => FT_Node a => FT_Node a => FT_Node a => FT_Node a
+             => FT_Digit (FT_Node a) => FingerTree (FT_Node (FT_Node a))
+             => FingerTree (FT_Node (FT_Node a)) };
+addDigits4 = { m1 => da => p => q => r => s => dx => m2 =>
+  case (da, p, q, r, s, dx)
+    of ($FT_One a       , b, c, d, e, $FT_One f       ) -> ftAppendTree2 m1 (ftNode3ns a b c) (ftNode3ns d e f) m2
+    of ($FT_One a       , b, c, d, e, $FT_Two f g     ) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode2ns d e  ) (ftNode2ns f g  ) m2
+    of ($FT_One a       , b, c, d, e, $FT_Three f g h ) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode2ns g h  ) m2
+    of ($FT_One a       , b, c, d, e, $FT_Four f g h i) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode3ns g h i) m2
+    of ($FT_Two a b     , c, d, e, f, $FT_One g       ) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode2ns d e  ) (ftNode2ns f g  ) m2
+    of ($FT_Two a b     , c, d, e, f, $FT_Two g h     ) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode2ns g h  ) m2
+    of ($FT_Two a b     , c, d, e, f, $FT_Three g h i ) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode3ns g h i) m2
+    of ($FT_Two a b     , c, d, e, f, $FT_Four g h i j) -> ftAppendTree4 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode2ns g h  ) (ftNode2ns i j) m2
+    of ($FT_Three a b c , d, e, f, g, $FT_One h       ) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode2ns g h  ) m2
+    of ($FT_Three a b c , d, e, f, g, $FT_Two h i     ) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode3ns g h i) m2
+    of ($FT_Three a b c , d, e, f, g, $FT_Three h i j ) -> ftAppendTree4 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode2ns g h  ) (ftNode2ns i j) m2
+    of ($FT_Three a b c , d, e, f, g, $FT_Four h i j k) -> ftAppendTree4 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode3ns g h i) (ftNode2ns j k) m2
+    of ($FT_Four a b c d, e, f, g, h, $FT_One i       ) -> ftAppendTree3 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode3ns g h i) m2
+    of ($FT_Four a b c d, e, f, g, h, $FT_Two i j     ) -> ftAppendTree4 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode2ns g h  ) (ftNode2ns i j) m2
+    of ($FT_Four a b c d, e, f, g, h, $FT_Three i j k ) -> ftAppendTree4 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode3ns g h i) (ftNode2ns j k) m2
+    of ($FT_Four a b c d, e, f, g, h, $FT_Four i j k l) -> ftAppendTree4 m1 (ftNode3ns a b c) (ftNode3ns d e f) (ftNode3ns g h i) (ftNode3ns j k l) m2
+  end
+};
+
+// {{{
+ftDigitToTreeS :: forall (a:Type) { { a => Int32 } => FT_Digit a => FingerTree a };
+ftDigitToTreeS = { size => m =>
+  case m
+    of $FT_One   a       -> FT_Single a
+    of $FT_Two   a b     -> ftDeep size (FT_One a)   FT_Empty (FT_One b)
+    of $FT_Three a b c   -> ftDeep size (FT_Two a b) FT_Empty (FT_One c)
+    of $FT_Four  a b c d -> ftDeep size (FT_Two a b) FT_Empty (FT_Two c d)
+  end
+};
+
+ftDigitToTreeP :: forall (a:Type) { Int32 => FT_Digit a => FingerTree a };
+ftDigitToTreeP = { s => m =>
+  case m
+    of $FT_One   a       -> FT_Single a
+    of $FT_Two   a b     -> FT_Deep s (FT_One a)   FT_Empty (FT_One b)
+    of $FT_Three a b c   -> FT_Deep s (FT_Two a b) FT_Empty (FT_One c)
+    of $FT_Four  a b c d -> FT_Deep s (FT_Two a b) FT_Empty (FT_Two c d)
+  end
+};
+// }}}
+
+type case SeqViewR (a:Type)
+      of $SV_EmptyR
+      of $SV_Snoc (Seq a) a
+      ;
+
+type case SeqViewL (a:Type)
+      of $SV_EmptyL
+      of $SV_Cons a (Seq a)
+      ;
+
+
+ftPullL :: forall (a:Type) { Int32 => FingerTree (FT_Node a) => FT_Digit a => FingerTree a };
+ftPullL = { s => m => sf =>
+  case ftViewL ftNodeSize m
+    of $SV_EmptyL     -> ftDigitToTreeP s sf
+    of $SV_Cons pr mx -> FT_Deep s (ftNodeToDigit pr) mx sf
+  end
+};
+
+ftPullR :: forall (a:Type) { Int32 => FT_Digit a => FingerTree (FT_Node a) => FingerTree a };
+ftPullR = { s => pr => m =>
+  case ftViewR ftNodeSize m
+    of $SV_EmptyR     -> ftDigitToTreeP s sf
+    of $SV_Snoc mx sf -> FT_Deep s pr mx (ftNodeToDigit sf)
+  end
+};
+
+ftDeepL :: forall (a:Type) { { a => Int32 } => FT_Digit a =>
+              FingerTree (FT_Node a) => Maybe (FT_Digit a) => FingerTree a };
+ftDeepL = { size => mbpr => m => sf =>
+  case mbsf
+    of $None    -> ftPullL (ftTreeSize ftNodeSize m +Int32 ftDigitSize size sf) sf m
+    of $Some sf -> ftDeep size pr m sf
+  end
+};
+
+ftDeepR :: forall (a:Type) { { a => Int32 } => FT_Digit a =>
+              FingerTree (FT_Node a) => Maybe (FT_Digit a) => FingerTree a };
+ftDeepR = { size => pr => m => mbsf =>
+  case mbsf
+    of $None    -> ftPullR (ftTreeSize ftNodeSize m +Int32 ftDigitSize size pr) pr m
+    of $Some sf -> ftDeep size pr m sf
+  end
+};
+
+
+
+ftViewL :: forall (a:Type) { { a => Int32 } => FingerTree a => SeqViewL a };
+ftViewL = { size => ft =>
+  case ft
+    of $FT_Empty    -> SV_EmptyL
+    of $FT_Single a -> SV_Cons a FT_Empty
+    of $FT_Deep s z m sf ->
+      case z
+        of $FT_One   a       -> SV_Cons a (ftPullL (s -Int32 size a) m sf)
+        of $FT_Two   a b     -> SV_Cons a (FT_Deep (s -Int32 size a) (FT_One   b    ) m sf)
+        of $FT_Three a b c   -> SV_Cons a (FT_Deep (s -Int32 size a) (FT_Two   b c  ) m sf)
+        of $FT_Four  a b c d -> SV_Cons a (FT_Deep (s -Int32 size a) (FT_Three b c d) m sf)
+      end
+  end
+};
+
+ftViewR :: forall (a:Type) { { a => Int32 } => FingerTree a => SeqViewR a };
+ftViewR = { size => ft =>
+  case ft
+    of $FT_Empty    -> SV_EmptyR
+    of $FT_Single a -> SV_Snoc FT_Empty a
+    of $FT_Deep s pr m z ->
+      case z
+        of $FT_One   a       -> SV_Snoc (ftPullR (s -Int32 size a) pr m) a
+        of $FT_Two   a b     -> SV_Snoc (FT_Deep (s -Int32 size a) (FT_One   b    ) pr m) a
+        of $FT_Three a b c   -> SV_Snoc (FT_Deep (s -Int32 size a) (FT_Two   b c  ) pr m) a
+        of $FT_Four  a b c d -> SV_Snoc (FT_Deep (s -Int32 size a) (FT_Three b c d) pr m) a
+      end
+  end
+};
+
+// {{{
+ftReplicate32 :: forall (a:Type)
+                   { % n : Int32 : n >=SInt32 0
+                    => a => Int32 => FingerTree a };
+ftReplicate32 = { n : Int32 => a => sz =>
+  nsz = n *Int32 sz;
+  case n
+    of 0 -> FT_Empty
+    of 1 -> FT_Single a
+    of 2 -> one = FT_One a;
+            FT_Deep nsz one FT_Empty one
+    of 3 -> FT_Deep nsz (FT_Two a a) FT_Empty (FT_One a)
+    of 4 -> two = FT_Two a a;
+            FT_Deep nsz two FT_Empty two
+    of 5 -> FT_Deep nsz (FT_Three a a a) FT_Empty (FT_Two a a)
+    of 6 -> three = FT_Three a a a;
+            FT_Deep nsz three FT_Empty three
+    of _ -> two = FT_Two a a;
+            three = FT_Three a a a;
+            q = sdiv-Int32 n 3;
+            msz = sz *Int32 3;
+            n3 = FT_Node3 msz a a a;
+            case srem-Int32 n 3
+              of 0 -> FT_Deep nsz three (ftReplicate32 (q -Int32 2) n3 msz) three
+              of 1 -> FT_Deep nsz two   (ftReplicate32 (q -Int32 1) n3 msz) two
+              of _ -> FT_Deep nsz three (ftReplicate32 (q -Int32 2) n3 msz) two
+            end
+  end
+};
+// }}}
+
+// {{{
+type case FT_Split (a:Type) (b:Type) of $FT_Split a b a;
+
+ftSplitTree :: forall (a:Type) { { a => Int32 } => Int32 =>
+               FingerTree a => FT_Split (FingerTree a) a };
+ftSplitTree =  { size => i => ft =>
+  case ft
+    of $FT_Empty -> prim kill-entire-process "ftSplitTree can't split an empty tree";
+    of $FT_Single x       -> FT_Split FT_Empty x FT_Empty
+    of $FT_Deep _ pr m sf ->
+      spr = ftNodeSize pr;
+      case ()
+        of _ if i <SInt32 spr ->
+          let ($FT_Split l x r) = ftSplitDigit size i pr;
+          FT_Split (maybe FT_Empty ftDigitToTree l) x (ftDeepL r m sf)
+        of _ if i <SInt32 (spr +Int32 size m) ->
+          im = i -Int32 spr;
+          let ($FT_Split ml xs mr) = ftSplitTree size im m;
+          let ($FT_Split l x r) = ftSplitNode size (im -Int32 size ml) xs;
+          FT_Split (ftDeepR pr ml l) x (ftDeepR r mr sf)
+        of _ ->
+          let ($FT_Split l x r) = ftSplitDigit size (i -Int32 (spr +Int32 size m)) sf;
+          FT_Split (ftDeepR pr m l) x (maybe FT_Empty ftDigitToTree r)
+      end
+  end
+};
+
+ftSplitNode :: forall (a:Type) { { a => Int32 } => Int32 => FT_Node a
+                    => FT_Split (Maybe (FT_Digit a)) a };
+ftSplitNode = { size => idx => node =>
+  case node
+   of $FT_Node2 _ a b ->
+      sa      = size a;
+      if idx <SInt32 sa then FT_Split None a (Some (FT_One b))
+                        else FT_Split (Some (FT_One a)) b None end
+    of $FT_Node3 _ a b c ->
+      sa      = size a;
+      sab     = sa +Int32 size b;
+           if idx <SInt32 sa  then FT_Split None a (Some (FT_Two b c))
+      else if idx <SInt32 sab then FT_Split (Some (FT_One a)) b (Some (FT_One c))
+      else                         FT_Split (Some (FT_Two a b)) c None
+      end
+      end
+  end
+};
+
+ftSplitDigit :: forall (a:Type) { { a => Int32 } => Int32 => FT_Digit a =>
+                        FT_Split (Maybe (FT_Digit a)) a };
+ftSplitDigit = { size => i => z =>
+  case z
+    of $FT_One a   -> FT_Split None a None
+    of $FT_Two a b ->
+      if i <SInt32 size a
+        then FT_Split None a (Some (FT_One b))
+        else FT_Split (Some (FT_One a)) b None
+      end
+    of $FT_Three a b c ->
+      if i <SInt32 size a
+        then        FT_Split None a (Some (FT_Two b c))
+        else if i <SInt32 (size a) +Int32 (size b)
+               then FT_Split (Some (FT_One a)) b (Some (FT_One c))
+               else FT_Split (Some (FT_Two a b)) c None
+             end
+      end
+
+    of $FT_Four a b c d ->
+      sa      = size a;
+      sab     = sa  +Int32 size b;
+      sabc    = sab +Int32 size c;
+      case ()
+        of _ if i <SInt32 sa   -> FT_Split None a (Some (FT_Three b c d))
+        of _ if i <SInt32 sab  -> FT_Split (Some (FT_One a)) b (Some (FT_Two c d))
+        of _ if i <SInt32 sabc -> FT_Split (Some (FT_Two a b)) c (Some (FT_One d))
+        of _                   -> FT_Split (Some (FT_Three a b c)) d None
+      end
+  end
+};
+// }}}
+
+// {{{
+type case FT_Place (a:Type)
+       of $FT_Place Int32 a
+       ;
+
+ftIndex :: forall (a:Type) { { a => Int32 } => FingerTree a => Int32 => Maybe a };
+ftIndex = { size => ft => idx =>
+  if idx <SInt32 0 then None else
+    if idx >= ftTreeSize size ft then None else
+      let ($FT_Place _ x) = ftLookupTree size ft idx;
+      Some x
+    end
+  end
+};
+
+
+ftLookupTree :: forall (a:Type) { { a => Int32 } => Int32 =>
+               FingerTree a => FT_Lookup (FingerTree a) a };
+ftLookupTree =  { size => i => ft =>
+  case ft
+    of $FT_Empty -> prim kill-entire-process "ftLookupTree can't split an empty tree";
+    of $FT_Single x       -> FT_Place idx x
+    of $FT_Deep sz pr m sf ->
+      spr = ftNodeSize pr;
+      spm = sz -Int32 ftDigitSize size sf;
+      case ()
+        of _ if i <SInt32 spr -> ftLookupDigit size i pr
+        of _ if i <SInt32 spm ->
+                let ($FT_Place ix xs) = ftLookupTree ftNodeSize (idx -Int32 spr) m;
+                ftLookupNode  size ix xs
+        of _ -> ftLookupDigit size (idx -Int32 spm) sf
+      end
+  end
+};
+
+ftLookupNode :: forall (a:Type) { { a => Int32 } => Int32 => FT_Node a => FT_Place a };
+ftLookupNode = { size => idx => node =>
+  case node
+   of $FT_Node2 _ a b ->
+      sa      = size a;
+      if idx <SInt32 sa then FT_Place idx a
+                        else FT_Place (idx -Int32 sa) b end
+    of $FT_Node3 _ a b c ->
+      sa      = size a;
+      sab     = sa +Int32 size b;
+           if idx <SInt32 sa  then FT_Place idx a
+      else if idx <SInt32 sab then FT_Place (idx -Int32 sa) b
+      else                         FT_Place (idx -Int32 sab) c
+      end
+      end
+  end
+};
+
+ftLookupDigit :: forall (a:Type) { { a => Int32 } =>
+                                   Int32 => FT_Digit a => FT_Place a };
+ftLookupDigit = { size => idx => z =>
+  case z
+    of $FT_One a   -> FT_Place idx a
+    of $FT_Two a b ->
+      sa = size a;
+      if idx <SInt32 sa
+        then FT_Place idx a
+        else FT_Place (idx -Int32 sa) b
+      end
+    of $FT_Three a b c ->
+      sa = size a;
+      sab = sa +Int32 size b;
+      case ()
+        of _ if idx <SInt32 sa   -> FT_Place idx a
+        of _ if idx <SInt32 sab  -> FT_Place (idx -Int32 sa) b
+        of _                     -> FT_Place (idx -Int32 sab) c
+      end
+
+    of $FT_Four a b c d ->
+      sa      = size a;
+      sab     = sa  +Int32 size b;
+      sabc    = sab +Int32 size c;
+      case ()
+        of _ if idx <SInt32 sa   -> FT_Place idx a
+        of _ if idx <SInt32 sab  -> FT_Place (idx -Int32 sa) b
+        of _ if idx <SInt32 sabc -> FT_Place (idx -Int32 sab) c
+        of _                     -> FT_Place (idx -Int32 sabc) d
+      end
+  end
+};
+// }}}
