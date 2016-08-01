@@ -58,7 +58,7 @@ ftDigitSize = { size => d =>
 
 // }}}
 
-// {{{ Code for consing finger trees (and supporting code).
+// {{{ Consing and concatenating finger trees
 ftNode2 :: forall (a:Type) { { a => Int32 } => a => a => FT_Node a };
 ftNode2 = { size => a => b =>
     FT_Node2 (size a +Int32 size b) a b
@@ -680,6 +680,151 @@ ftReverseNode = { reversed => xs =>
     of $FT_Node2 v a b     -> FT_Node2 v (reversed b) (reversed a)
     of $FT_Node3 v a b c   -> FT_Node3 v (reversed c) (reversed b) (reversed a)
   end
+};
+
+// }}}
+
+// {{{ Creation via function
+
+ftFromFunction :: forall (a:Type) { Int32 => { Int32 => a } => FingerTree a };
+ftFromFunction = { len => f0 =>
+  if len <=SInt32 0 then FT_Empty else
+    ftFFcreate f0 1 0 len;
+  end
+};
+
+ftFFcreate :: forall (c:Type) { { Int32 => c } => Int32 => Int32 => Int32 => FingerTree c };
+ftFFcreate = { b => s => i => trees =>
+    s2 = s *Int32 2;
+    s3 = s *Int32 3;
+    nsz = s *Int32 trees;
+    createTwo = { j => FT_Two   (b j) (b (j +Int32 s)) };
+    createThr = { j => FT_Three (b j) (b (j +Int32 s)) (b (j +Int32 s2)) };
+    case trees
+      of 1 -> FT_Single (b i)
+      of 2 -> FT_Deep nsz (FT_One (b i)) FT_Empty (FT_One (b (i +Int32 s)))
+      of 3 -> FT_Deep nsz (createTwo i) FT_Empty (FT_One (b (i +Int32 s2)))
+      of 4 -> FT_Deep nsz (createTwo i) FT_Empty (createTwo (i +Int32 s2))
+      of 5 -> FT_Deep nsz (createThr i) FT_Empty (createTwo (i +Int32 s3))
+      of 6 -> FT_Deep nsz (createThr i) FT_Empty (createThr (i +Int32 s3))
+      of _ -> q = sdiv-Int32 trees 3;
+              q1 = q -Int32 1;
+              mb = { j => FT_Node3:[c] s3 (b j) (b (j +Int32 s)) (b (j +Int32 s2)) };
+              case srem-Int32 trees 3
+                of 1 -> FT_Deep nsz (createTwo i)
+                                    (ftFFcreate:[FT_Node c] mb s3 (i +Int32 s2) q1)
+                                    (createTwo (i +Int32 (2 +Int32 (3 *Int32 q1)) *Int32 s))
+                of 2 -> FT_Deep nsz (createThr i)
+                                    (ftFFcreate:[FT_Node c] mb s3 (i +Int32 s3) q1)
+                                    (createTwo (i +Int32 (3 +Int32 (3 *Int32 q1)) *Int32 s))
+                of _ -> q2 = q -Int32 2;
+                        FT_Deep nsz (createThr i)
+                                    (ftFFcreate:[FT_Node c] mb s3 (i +Int32 s3) q2)
+                                    (createThr (i +Int32 (3 +Int32 (3 *Int32 q2)) *Int32 s))
+              end;
+    end;
+};
+// }}}
+
+// {{{ Folds
+
+ftFoldlTree :: forall (a:Type) (b:Type) { { a => b => b } => FingerTree a => b => b };
+ftFoldlTree = { f => ft => init =>
+  case ft
+    of $FT_Empty    -> init
+    of $FT_Single x -> f x init
+    of $FT_Deep _ pr m sf ->
+        first = pr; second = sf;
+        init1 = ftFoldlDigit f first init;
+        init2 = ftFoldlTree:[FT_Node a] { na => b => ftFoldlNode f na b } m init1;
+                ftFoldlDigit f second init2
+  end
+};
+
+ftFoldrTree :: forall (a:Type) (b:Type) { { a => b => b } => FingerTree a => b => b };
+ftFoldrTree = { f => ft => init =>
+  case ft
+    of $FT_Empty    -> init
+    of $FT_Single x -> f x init
+    of $FT_Deep _ pr m sf ->
+        first = sf; second = pr;
+        init1 = ftFoldrDigit f first init;
+        init2 = ftFoldrTree:[FT_Node a, b] { na => b => ftFoldrNode f na b } m init1;
+                 ftFoldrDigit f second init2
+  end
+};
+
+ftFoldrDigit :: forall (a:Type) (b:Type) { { a => b => b } => FT_Digit a => b => b };
+ftFoldrDigit = { f => xs => init =>
+  case xs
+    of $FT_One   a       -> init |>                      f a
+    of $FT_Two   a b     -> init |>               f b |> f a
+    of $FT_Three a b c   -> init |>        f c |> f b |> f a
+    of $FT_Four  a b c d -> init |> f d |> f c |> f b |> f a
+  end
+};
+
+ftFoldlDigit :: forall (a:Type) (b:Type) { { a => b => b } => FT_Digit a => b => b };
+ftFoldlDigit = { f => xs => init =>
+  case xs
+    of $FT_One   a       -> init |> f a
+    of $FT_Two   a b     -> init |> f a |> f b
+    of $FT_Three a b c   -> init |> f a |> f b |> f c
+    of $FT_Four  a b c d -> init |> f a |> f b |> f c |> f d
+  end
+};
+
+ftFoldlNode :: forall (a:Type) (b:Type) { { a => b => b } => FT_Node a => b => b };
+ftFoldlNode = { f => xs => init =>
+  case xs
+    of $FT_Node2 _ a b     -> init |> f a |> f b
+    of $FT_Node3 _ a b c   -> init |> f a |> f b |> f c
+  end
+};
+
+ftFoldrNode :: forall (a:Type) (b:Type) { { a => b => b } => FT_Node a => b => b };
+ftFoldrNode = { f => xs => init =>
+  case xs
+    of $FT_Node2 _ a b     -> init        |> f b |> f a
+    of $FT_Node3 _ a b c   -> init |> f c |> f b |> f a
+  end
+};
+
+
+ftFoldlTreeWithIndex :: forall (a:Type) (b:Type) { { a => Int32 } => { Int32 => a => b => b } => FingerTree a => b => b };
+ftFoldlTreeWithIndex = { size => fidx => ft => init =>
+  r = (prim ref 0);
+  f = { a => b =>
+          v = r^; (v +Int32 1) >^ r;
+          fidx v a b
+      };
+  ftFoldlTree f ft init
+};
+
+ftFoldrTreeWithIndex :: forall (a:Type) (b:Type) { { a => Int32 } => { Int32 => a => b => b } => FingerTree a => b => b };
+ftFoldrTreeWithIndex = { size => fidx => ft => init =>
+  r = (prim ref (ftTreeSize size ft -Int32 1));
+  f = { a => b =>
+          v = r^; (v -Int32 1) >^ r;
+          fidx v a b
+      };
+  ftFoldrTree f ft init
+};
+
+// }}}
+
+// {{{ Conversion to primitive arrays
+
+ftToArray :: forall (a:Type) { { a => Int32 } => FingerTree a => Array a };
+ftToArray = { size => ft =>
+  len = ftTreeSize size ft;
+  arr = allocDArray:[a] len;
+  f = { idx => val => unit =>
+          val >^ arr[idx];
+          unit
+      };
+  ftFoldlTreeWithIndex size f ft ();
+  arr
 };
 
 // }}}

@@ -109,6 +109,16 @@ seqReverseWith =  { seq => reverser =>
   Seq (ftReverseTree reverser ft)
 };
 
+seqFromFunction :: forall (a:Type) { Int32 => { Int32 => a } => Seq a };
+seqFromFunction = { len => f =>
+  Seq (ftFromFunction len f)
+};
+
+seqToArray :: forall (a:Type) { Seq a => Array a };
+seqToArray = { seq =>
+  let ($Seq ft) = seq;
+  ftToArray ftElemSize ft
+};
 
 ftConsTreeE :: forall (a:Type) { a => FingerTree a => FingerTree a };
 ftConsTreeE = { e => ft => ftConsTreeS ftElemSize e ft };
