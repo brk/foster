@@ -11,7 +11,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/process/process_metrics.h"
-#include "base/timer/timer.h"
 #include "base/trace_event/trace_log.h"
 
 namespace base {
@@ -56,7 +55,7 @@ class BASE_EXPORT TraceEventSystemStatsMonitor
   scoped_refptr<SingleThreadTaskRunner> task_runner_;
 
   // Timer to schedule system profile dumps.
-  RepeatingTimer dump_timer_;
+  //RepeatingTimer dump_timer_;
 
   WeakPtrFactory<TraceEventSystemStatsMonitor> weak_factory_;
 

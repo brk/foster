@@ -312,10 +312,11 @@ namespace foster {
       ASSERT(buf->getBufferSize() <= ((ANTLR3_UINT32)-1)
              && "Trying to parse files larger than 4GB makes me cry.");
       ctx.filename = filepath;
-      ctx.input = antlr3NewAsciiStringInPlaceStream(
-                                    (pANTLR3_UINT8) buf->getBufferStart(),
-                                    (ANTLR3_UINT32) buf->getBufferSize(),
-                                    NULL);
+      ctx.input = antlr3StringStreamNew(
+                    (pANTLR3_UINT8) const_cast<char*>(buf->getBufferStart()),
+                                    ANTLR3_ENC_8BIT,  // TODO: _UTF8
+                    (ANTLR3_UINT32) buf->getBufferSize(),
+                    (pANTLR3_UINT8) const_cast<char*>(filepath.c_str()));
       ctx.lxr = fosterLexerNew(ctx.input);
       if (ctx.lxr == NULL) {
         ANTLR3_FPRINTF(stderr, "Unable to create lexer\n");

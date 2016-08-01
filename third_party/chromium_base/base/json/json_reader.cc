@@ -115,7 +115,7 @@ JSONReader::JsonParseError JSONReader::error_code() const {
 }
 
 std::string JSONReader::GetErrorMessage() const {
-  return parser_->GetErrorMessage();
+  return parser_->GetErrorMessage(); 
 }
 
 }  // namespace base

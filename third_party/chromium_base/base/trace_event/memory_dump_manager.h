@@ -18,7 +18,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/singleton.h"
 #include "base/synchronization/lock.h"
-#include "base/timer/timer.h"
 #include "base/trace_event/memory_dump_request_args.h"
 #include "base/trace_event/process_memory_dump.h"
 #include "base/trace_event/trace_event.h"
@@ -273,6 +272,7 @@ class BASE_EXPORT MemoryDumpManager : public TraceLog::EnabledStateObserver {
     DISALLOW_COPY_AND_ASSIGN(ProcessMemoryDumpAsyncState);
   };
 
+  /*
   // Sets up periodic memory dump timers to start global dump requests based on
   // the dump triggers from trace config.
   class BASE_EXPORT PeriodicGlobalDumpTimer {
@@ -297,6 +297,7 @@ class BASE_EXPORT MemoryDumpManager : public TraceLog::EnabledStateObserver {
 
     DISALLOW_COPY_AND_ASSIGN(PeriodicGlobalDumpTimer);
   };
+  */
 
   static const int kMaxConsecutiveFailuresCount;
   static const char* const kSystemAllocatorPoolName;

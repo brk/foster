@@ -39,9 +39,11 @@ pushd src/llvm-${LLVM_V}
         mkdir -p build
         cd       build
 
+        # Note: it's OK to use GCC 4.x instead of Clang, I think, but using GCC 5 will lead
+        # to pain and suffering until the whole cxx11 abi_tag situation gets worked out.
         CC=clang CXX=clang++ cmake .. -G "Unix Makefiles" -DCMAKE_INSTALL_PREFIX=${LLVM_ROOT}/${LLVM_VERSION} -DCMAKE_BUILD_TYPE="RelWithDebInfo" -DLLVM_TARGETS_TO_BUILD="host" -DLLVM_ENABLE_ASSERTIONS=ON
 
-	make -j4
+	make -j2
 
 	make install
 popd

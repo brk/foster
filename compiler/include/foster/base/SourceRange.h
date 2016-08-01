@@ -68,7 +68,7 @@ public:
               SourceLocation::getInvalidLocation(), gInputTextBuffer);
   }
   bool operator==(const SourceRange& o) const {
-    return ((void*)source == (void*)o.source) && end == o.end && begin == o.begin;
+    return (source == o.source) && end == o.end && begin == o.begin;
   }
   bool operator!=(const SourceRange& o) const {
     return !(o == *this);
