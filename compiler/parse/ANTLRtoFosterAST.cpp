@@ -367,6 +367,17 @@ namespace foster {
         }
       } while (tok != &tsr->eofToken);
 
+      if (!matchingTokens.empty()) {
+        auto matchingTok = matchingTokens.back();
+        EDiag() << "You know, I was expecting to find a buddy for this little guy here:\n" << show(rangeFrom(matchingTok, matchingTok))
+                << "but I never did...\n"
+                << "The culprit is probably a stray friend of his, somewhere later on in your program,\n"
+                << "that snatched away his buddy. If you think you know where his buddy is, try\n"
+                << "checking what token the buddy actually matches up with.\n"
+                << "The culprit should be somewhere in between...\n";
+        failed = true;
+      }
+
       //tsr ->free (tsr);  tsr = NULL;
       lxr->free  (lxr);  lxr = NULL;
 
