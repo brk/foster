@@ -2,6 +2,28 @@ main = {
   ()
 };
 
+x_top1 :: forall (a:Boxed) { a => { a } };
+x_top1 = { x => { x } };
+
+x_top3 :: forall (a:Boxed) { a => { a } };
+x_top3 = { x => ( { x } as { a }) };
+
+foo_nested = {
+  REC foo = { forall a:Type,
+              v : a =>
+              x : Int32 =>
+              takes : { (a, a) => () } =>
+
+                if x ==Int32 42
+                  then rc = foo:[(a,a)] (v,v) 0 { pp => () };
+                       takes rc;
+                       (v, v)
+                  else (v, v)
+                end
+            };
+  (foo:[Int32] 0 0 { p => () } as (Int32, Int32))
+};
+
 /*
 triv :: forall (b:Boxed) { b => Int32 };
 triv =  { forall t:Boxed, v : t => 0     };
