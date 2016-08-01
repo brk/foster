@@ -900,9 +900,10 @@ classifyTypeInstSituation _ rho = return $ TI_Rho rho
 -- G |- t1 is an instance of t
 -- ------------------------------------------
 -- G |- e as t  ~~~>  a1 ::: t
-tcRhoTyCheck ctx _annot e tya expTy = do
+tcRhoTyCheck ctx annot e tya expTy = do
 -- {{{
-    ty  <- tcType ctx tya
+    ty0 <- tcType ctx tya
+    ty  <- resolveType annot (localTypeBindings ctx) ty0
     ann <- checkSigma ctx e ty
     do tcLift $ putDocLn $ text "tycheck ann result was " <> showStructure ann
     rv <- matchExp expTy ann "tycheck"
@@ -2114,14 +2115,20 @@ unify' !depth t1 t2 msgs = do
                                      False   -> writeTcMetaTC m x2
                                      True    -> occurdCheck   m x2
   where
-     occurdCheck m t = tcFails $ [text $ "Occurs check for"
-                               ,pretty (MetaTyVarTC m)
+     occurdCheck m t = tcFailsMore $ [text $ "Occurs check for"
+                               ,indent 8 (pretty (MetaTyVarTC m))
                                ,text "failed in"
-                               ,pretty t
+                               ,indent 8 (pretty t)
                                ] ++ msgs ++
                                [text "This type error is often caused by swapped function arguments..."
-                               ,text "Less commonly, it arises from use of" <+>
-                                text "polymorphic recursion, which needs an explicit annotation."]
+                               ,text "Less commonly, it arises from use of"
+                               ,text "polymorphic recursion, which usually needs an explicit annotation"
+                               ,text "on both the recursive call site and the recursive function definition."
+                               ,indent 4 (text "(Incidentally, in case you're curious, the reason"
+                                      <$> text " this is a problem the compiler can't just solve for you"
+                                      <$> text " is that it requires higher-order unification, which is"
+                                      <$> text " undecidable in theory. And that's not great because it"
+                                      <$> text " would make the compiler slow(er) and fragile(r)...")]
 -- }}}
 
 -- {{{ Well-formedness checks
@@ -2237,7 +2244,9 @@ collectAllUnificationVars xs = Set.toList (Set.fromList (concatMap go xs))
 substExprsForRefinedArgs raw argsTys argsExprs = do
   let argExprPairs = [ (tidIdent v,e) | (RefinedTypeTC v _ _, e) <- zip argsTys argsExprs]
   let subst = Map.fromList argExprPairs
-  tcSubst subst raw
+  if null subst
+    then raw
+    else tcSubst subst raw
 
 tcSubst subst typ = go typ
   where go typ = case typ of

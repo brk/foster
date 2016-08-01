@@ -62,3 +62,26 @@ local-arrayEnumFrom = { forall t:Type,
 };
 */
 
+
+type case FT_Node (a:Type)
+  of $FT_Node a
+  ;
+
+type case FingerTree (a:Type)
+  of $FT_Deep (FingerTree (FT_Node a))
+  ;
+
+// This should typecheck just fine.
+anntop :: forall (zzz:Type) { () => FingerTree zzz };
+anntop = { x =>
+    FT_Deep (anntop:[FT_Node zzz] x)
+};
+
+/*
+// This alternate version shouldn't typecheck
+// because it would require higher-order unification
+// to avoid the occurs check.
+yeptop = { forall zzz:Type, x : () =>
+    FT_Deep (yeptop:[FT_Node zzz] x)
+};
+*/
