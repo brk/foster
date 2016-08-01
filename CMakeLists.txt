@@ -25,6 +25,10 @@ find_program(CLANG NAMES clang++-${LLVM_VERSION} clang++
 
 string(REPLACE "++" "" CLANG_C ${CLANG})
 
+# We need to build our runtime with Clang in order to get LLVM bitcode,
+# which means that we need to build everything that the runtime links
+# against with Clang as well, since other compilers might make different
+# choices about ABI and/or name mangling.
 set(CMAKE_CXX_COMPILER ${CLANG})
 set(CMAKE_C_COMPILER ${CLANG_C})
 
@@ -33,6 +37,17 @@ set(CMAKE_C_COMPILER ${CLANG_C})
 # }}}
 
 project (foster)
+
+# Uses of the CMAKE_CXX_COMPILER variable will now come from the cache,
+# which might be different than the value we set above. Whelp...
+if (NOT (${CMAKE_CXX_COMPILER} STREQUAL ${CLANG}))
+  message("CMake wants to use a C++ compiler (${CMAKE_CXX_COMPILER}) that's not the version of Clang we want (${CLANG}).")
+  message("To fix this, I'm afriad you'll need to blow away CMake's cache and rebuild. Sorry!")
+  message("Oh, and just to make things extra fun, if you were unfortunate enough to compile LLVM with GCC 5,")
+  message("  you'll need to recompile and reinstall with either GCC 4.x or LLVM, thanks to GCC's cxx11_abi tags.")
+  message("Blergh.")
+  return()
+endif (NOT (${CMAKE_CXX_COMPILER} STREQUAL ${CLANG}))
 
 cmake_policy(VERSION 3.0)
 
@@ -47,7 +62,7 @@ set(GENERATED           ${PROJECT_BINARY_DIR}/_generated_)
 # specifying that some cached variables depend on others, and it's
 # sort of annoying to see the option to change it AFTER the paths
 # that depend on it have been presented...
-set(ANTLR_VERSION 3.2)
+set(ANTLR_VERSION 3.4)
 find_path(ANTLR_DIR antlr-${ANTLR_VERSION}.jar
   PATHS $ENV{HOME}/antlr/${ANTLR_VERSION}
         $ENV{HOME}/sw/local/antlr/${ANTLR_VERSION}
@@ -151,6 +166,7 @@ execute_process(COMMAND mkdir -p ${PROJECT_BINARY_DIR}/_nativelibs_)
 add_custom_command(
   OUTPUT ${GENERATED}/fosterParser.c
          ${GENERATED}/fosterLexer.c
+         ${GENERATED}/fosterLexer.h
 
   # Make sure later stages fail if this stage fails.
   COMMAND rm -f ${GENERATED}/fosterLexer.h
@@ -225,6 +241,10 @@ add_custom_target(${HS_ME}
 # We currently run tests in parallel on Linux and serially on Mac OS X.
 # Haskell's profiling coverage tool corrupts its database when
 # run in parallel, so consider yourself warned...
+
+add_custom_target(cmake_clean
+  COMMAND rm -rf ${PROJECT_BINARY_DIR}/CMakeCache.txt ${PROJECT_BINARY_DIR}/CMakeFiles ${PROJECT_BINARY_DIR}/cmake_install.cmake
+  )
 
 add_custom_target(hs_clean
   COMMAND rm -rf ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/*.o

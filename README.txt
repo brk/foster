@@ -41,32 +41,35 @@ Dependencies (non-exhaustive):
   Python (and several 3rd party Python libraries)
   Pin (optional, for benchmarking analysis)
 
-Ubuntu 14.04 (x86):
-  # Mercurial and TortoiseHG
-  sudo add-apt-repository ppa:tortoisehg-ppa/snapshots
-  sudo add-apt-repository ppa:tortoisehg-ppa/releases
-  sudo apt-get update
-  sudo apt-get install tortoisehg meld mercurial
+Ubuntu 16.04 (x64):
+  # Mercurial
+  sudo apt-get install mercurial
 
   # Compilers, build tools,
   sudo apt-get install build-essential g++ g++-multilib git gnuplot \
                        python-pygments python-matplotlib  python-scipy python-sphinx \
-                       python-pandas python-pip python-numpy
+                       python-pandas python-pip python-numpy python-qt4 \
+                       python-qscintilla2 libqscintilla2-dev 
+
   sudo apt-get install vim vim-gnome ack-grep \
-              libprotobuf8 protobuf-compiler libprotobuf-dev \
+              libprotobuf9v5 protobuf-compiler libprotobuf-dev \
               curl ctags aptitude libpng12-dev libcairo2-dev libc6-dev default-jdk
 
-  sudo apt-get install m4 ministat \
+  sudo apt-get install m4 ministat meld \
          linux-tools-virtual linux-tools-generic \
-         libffi-dev libedit-dev
+         libffi-dev libedit-dev cmake cmake-curses-gui
 
-  # TODO check which of these are needed
-  #sudo apt-get install libgmp3c2 libgmp3-dev libgmp-dev
+  # TortoiseHG from source, since the PPA packages have been taken down.
+  hg clone https://bitbucket.org/tortoisehg/thg ~/.local/tortoisehg
+  # Assuming ~/.local/bin is on $PATH, which it was in Ubuntu MATE 16.04
+  mkir -p ~/.local/bin
+  ln -l ~/.local/tortoisehg/thg ~/.local/bin/thg
+
+  # GMP is needed for GHC to build Cabal from source.
+  sudo apt-get install libgmp3-dev libgmp-dev
 
   # Python packages, mostly used by benchmarking infrastructure
   pip install pyyaml jinja2 statsmodels mpld3 seaborn
-
-  sudo ln -s /usr/lib/i386-linux-gnu/libgmp.so{,.3}
 
   # If you want jEdit and the ninja build tool...
 
@@ -80,9 +83,6 @@ Ubuntu 14.04 (x86):
 
 
 
-  # To get GHC to see libgmp:
-  sudo ln -s /usr/lib/i386-linux-gnu/libgmp.so{,.3}
-
   # For GHC, to get profiling libraries, do not use apt-get;
   # instead, download a generic binary tarball directly from
   #    http://www.haskell.org/ghc/download
@@ -91,12 +91,20 @@ Ubuntu 14.04 (x86):
   #
   # For example:
 
-  # or http://downloads.haskell.org/~ghc/8.0.1/ghc-8.0.1-x86_64-deb8-linux.tar.xz
-  wget http://downloads.haskell.org/~ghc/8.0.1/ghc-8.0.1-i386-deb8-linux.tar.xz
+  wget http://downloads.haskell.org/~ghc/8.0.1/ghc-8.0.1-x86_64-deb8-linux.tar.xz
   tar xf ghc-*-linux.tar.xz
-  cd ghc-* && ./configure --prefix=$HOME/sw/local && make install && cd ..
+  cd ghc-* && ./configure --prefix=$HOME/.local/ghc-8.0.1 && make install && cd ..
 
-  # On Ubuntu 14.10, the CMake version available via apt-get is outdated.
+  wget https://hackage.haskell.org/package/cabal-install-1.24.0.0/cabal-install-1.24.0.0.tar.gz 
+  tar xf cabal-install-*.tar.gz
+  cd cabal-install-* && ./bootstrap.sh && cd ..
+
+  cabal install happy alex
+  cabal install hprotoc
+  # Must be done separately!
+
+  # Ubuntu 16.10 has a recent-enough version of CMake, but on
+  # Ubuntu 14.10, the CMake version available via apt-get is outdated.
   # To build from source (might want to pass --prefix to configure!):
 
   wget http://www.cmake.org/files/v3.6/cmake-3.6.1.tar.gz
@@ -104,8 +112,6 @@ Ubuntu 14.04 (x86):
   cd cmake-*
   ./configure
   make
-
-  cabal install random text cabal-install --extra-lib-dirs=/usr/lib/i386-linux-gnu
 
   # You can install binutils-gold but it needs to be disabled for some Haskell packages.
 
@@ -140,7 +146,8 @@ Ubuntu 14.04 (x86):
 
 
 ANTLR on Linux and OS X:
-	ANTLR_VERSION=3.2
+
+	ANTLR_VERSION=3.4
 	ANTLR_DIR=~/antlr/${ANTLR_VERSION}
 	mkdir tmp
 	cd tmp
@@ -152,28 +159,17 @@ ANTLR on Linux and OS X:
 	cd ..
 	rm -rf ./tmp
 	pushd ${ANTLR_DIR}
-	wget http://antlr3.org/download/antlr-${ANTLR_VERSION}.jar
+	wget http://antlr3.org/download/antlr-${ANTLR_VERSION}-complete.jar
+        mv antlr-${ANTLR_VERSION}-complete.jar antlr-${ANTLR_VERSION}.jar
 	popd
 
 Haskell:
    To enable profiling, add    library-profiling: True   to   ~/.cabal/config
    before installing any further packages.
 
-   It will probably make your life easier to set up a Cabal sandbox within the
-        ``compiler/me`` directory via
-        ``cabal sandbox init ; cabal install --only-dependencies``
+   Set up a Cabal sandbox within the ``compiler/me`` directory via::
 
-   Or, install things manually:
-      cabal update
-      cabal install cabal-install
-      cabal install happy alex
-      export PATH=$PATH:~/.cabal/bin
-      cabal install haskell-src
-      cabal install gtk2hs-buildtools
-      cabal install chart
-      cabal install criterion hoopl cbor
-      cabal install text protocol-buffers filepath hprotoc ansi-terminal ansi-wl-pprint fgl boxes data-dword smtLib union-find
-      cabal install language-lua
+        $ cd foster/compiler/me ; cabal sandbox init ; cabal install --only-dependencies
 
 
 Other libraries/tools:
@@ -189,14 +185,6 @@ Other libraries/tools:
         ocaml-core: https://bitbucket.org/janestreet/core
 
         hprotoc:    http://hackage.haskell.org/package/hprotoc
-
-Modifying foster.g
-==================
-
-If you modify the foster.g file, be sure to run from the _obj dir the
-following script, and place its output in the ProtobufFE.hs file::
-
-    python ../scripts/extract-antlr3-token-ids.py _generated_/fosterLexer.h
 
 
 Networking

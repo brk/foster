@@ -24,10 +24,15 @@
 // frame pointer.
 struct frameinfo { frameinfo* frameptr; void* retaddr; };
 
+// Interestingly, on x86_64 Linux (Ubuntu 16.04), the call stack
+// is not terminated by a zeroed framepointr, so we use the return
+// address as an alternate termination condition.
+bool not_bogus(void* retaddr) { return uintptr_t(retaddr) < uintptr_t(0x7FFFFFFF); }
+
 // obtain frame via (frameinfo*) __builtin_frame_address(0)
 int foster_backtrace(frameinfo* frame, frameinfo* frames, size_t frames_sz) {
   int i = 0;
-  while (frame && frames_sz --> 0) {
+  while (frame && not_bogus(frame->retaddr) && frames_sz --> 0) {
     if (ENABLE_GCLOG) {
       if (frame) {
         fprintf(gclog, "...... frame: %p, frameptr: %p, retaddr: %p\n", frame, frame->frameptr, frame->retaddr);
