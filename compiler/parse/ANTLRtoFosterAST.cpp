@@ -323,7 +323,7 @@ namespace foster {
           || tok->type == CLOSE_SQRBR;
     }
 
-    int matchingTokenType(pANTLR3_COMMON_TOKEN opn) {
+    ANTLR3_UINT32 matchingTokenType(pANTLR3_COMMON_TOKEN opn) {
       if (opn->type == OPEN_PAREN) return CLOSE_PAREN;
       if (opn->type == OPEN_CURLY) return CLOSE_CURLY;
       if (opn->type == OPEN_SQRBR) return CLOSE_SQRBR;
