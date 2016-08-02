@@ -535,11 +535,11 @@ set(REGRESS_CMD
                  --no_extra_bitcode
                  --quietish
                  -I ${PROJECT_SOURCE_DIR}/stdlib)
-add_custom_target(regress
+add_custom_target(regress       USES_TERMINAL
         COMMAND echo ${REGRESS_CMD}
         COMMAND ${REGRESS_CMD})
 
-add_custom_target(stress
+add_custom_target(stress        USES_TERMINAL
   COMMAND python ${PROJECT_SOURCE_DIR}/scripts/run_all.py
 	     ${PROJECT_SOURCE_DIR}/test/stress
 	     --bindir ${PROJECT_BINARY_DIR}
