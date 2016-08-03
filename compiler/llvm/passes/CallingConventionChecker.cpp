@@ -82,7 +82,9 @@ bool CallingConventionChecker::runOnBasicBlock(BasicBlock &BB) {
         llvm::CallingConv::ID fn_cc   =    F->getCallingConv();
         llvm::CallingConv::ID call_cc = call->getCallingConv();
         if (fn_cc != call_cc) {
-          errs() << "***** CallingConventionChecker saw mismatched calling convention for call to " << F->getName() << "\n";
+          errs() << "***** CallingConventionChecker saw mismatched calling convention for call to "
+                 << F->getName() << "\n"
+                 << "The function's cc is " << fn_cc << " but the call's was " << call_cc << "\n";
           sawSuspiciousCalls = true;
         }
       }
