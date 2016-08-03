@@ -15,4 +15,6 @@ void initialize(void* stack_base);
 int  cleanup();
 void force_gc_for_debugging_purposes();
 
+bool is_marked_as_stable(tori* body);
+
 } } } // namespace foster::runtime::gc
