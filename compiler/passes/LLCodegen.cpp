@@ -1462,8 +1462,8 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   callInst->setCallingConv(callingConv);
   trySetName(callInst, "calltmp");
 
-  if (this->okToMarkAsTailCall) {
-    ASSERT(callingConv == llvm::CallingConv::Fast);
+  // See ProtobufIL.hs for a note on tail call marker safety.
+  if (this->okToMarkAsTailCall && callingConv == llvm::CallingConv::Fast) {
     callInst->setTailCall(true);
   }
 
