@@ -205,18 +205,6 @@ vListFoldlAlt = { v => f => acc =>
   end
 };
 
-listShow = { forall t:Type, x : List t => show : { t => Text } =>
-  REC go = { txt => xs =>
-    case xs of $Nil -> mkTextConcat txt ")"
-            of $Cons v zs -> go (mkTextConcat txt (mkTextConcat " " (show v))) zs
-    end
-  };
-
-  case x of $Nil -> "()"
-         of $Cons v xs -> go (mkTextConcat "(list " (show v)) xs
-  end
-};
-
 // Uses O(log n) stack, and heap O(n) + proportional to whatever f allocates.
 vListFoldr :: forall (a:Type) (e:Type) { VList e => { e => a => a } => a => a };
 vListFoldr = { v => f => acc =>

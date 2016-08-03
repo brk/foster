@@ -53,7 +53,7 @@ listGet = { forall t:Type, xs : List t => i : Int32 =>
 };
 
 // Uses O(1) stack, and heap proportional to whatever f allocates.
-// listFoldl [x,y,z] f a === (f z (f y (f x a)))
+// listFoldl [x,y,z] f a === (f z (f y (f x a))) === a |> f x |> f y |> f z
 listFoldl :: forall (a:Type) (e:Type) { List e => { e => a => a } => a => a };
 listFoldl = { v => f => acc : a =>
   case v
@@ -63,7 +63,7 @@ listFoldl = { v => f => acc : a =>
 };
 
 // Uses O(1) stack, and heap O(n) + whatever f allocates.
-// listFoldr [x,y,z] f a === (f x (f y (f z a)))
+// listFoldr [x,y,z] f a === (f x (f y (f z a))) === a |> f z |> f y |> f x
 listFoldr :: forall (a:Type) (e:Type) { List e => { e => a => a } => a => a };
 listFoldr = { v => f => acc : a =>
   listFoldl (listReverse v) f acc
@@ -212,3 +212,4 @@ listEqual = { eq => xs => ys =>
   };
   go xs ys
 };
+
