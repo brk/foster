@@ -285,6 +285,7 @@ int fprint_b2(FILE* f, Int x) {
 }
 
 void fprint_f64(FILE* f, double x) { fprintf(f, "%f\n", x); }
+void fprint_f64x(FILE* f, double x) { fprintf(f, "%a\n", x); }
 void fprint_p9f64(FILE* f, double x) { fprintf(f, "%.9f\n", x); }
 // TODO .17g for doubles?
 
@@ -453,6 +454,8 @@ int8_t memcpy_i8_to_at_from_at_len(foster_bytes* to,   int64_t   to_at,
   return (len == req_len) ? 0 : 1;
 }
 
+void print_float_f64x(double f) { return fprint_f64x(stdout, f); }
+void expect_float_f64x(double f) { return fprint_f64x(stderr, f); }
 
 void print_float_p9f64(double f) { return fprint_p9f64(stdout, f); }
 void expect_float_p9f64(double f) { return fprint_p9f64(stderr, f); }
