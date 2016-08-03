@@ -218,6 +218,8 @@ primitiveDecls =
 
     ,(,) "print_float_p9f64"       $ mkProcType [f64] []
     ,(,) "expect_float_p9f64"      $ mkProcType [f64] []
+    ,(,) "print_float_f64x"        $ mkProcType [f64] []
+    ,(,) "expect_float_f64x"       $ mkProcType [f64] []
 
     ,(,) "foster__logf64"          $ mkProcType [f64] [f64]
 
