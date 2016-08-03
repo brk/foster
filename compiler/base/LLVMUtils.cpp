@@ -324,14 +324,3 @@ bool isFosterFunction(llvm::Function& F) {
   return F.hasGC() && F.getGC() == std::string("fostergc");
 }
 
-void disableFramePointerElimination(llvm::Function& F) {
-  // Mark function to disable frame pointer elimination
-  // so that GC is easier/more reliable.
-  // TODO this can be skipped for functions which (transitively)
-  //      cannot trigger a GC.
-  auto Attrs = F.getAttributes();
-  Attrs = Attrs.addAttribute(F.getContext(), llvm::AttributeSet::FunctionIndex,
-                             "no-frame-pointer-elim", "true");
-  F.setAttributes(Attrs);
-}
-

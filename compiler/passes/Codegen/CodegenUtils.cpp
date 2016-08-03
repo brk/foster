@@ -192,6 +192,11 @@ void markGCRoot(llvm::AllocaInst* stackslot, CodegenPass* pass) {
   markGCRootWithMetadata(stackslot, pass, getSlotName(stackslot, pass));
 }
 
+void CodegenPass::markFosterFunction(Function* f) {
+  f->setAttributes(this->fosterFunctionAttributes);
+  if (this->config.useGC) { f->setGC("fostergc"); }
+}
+
 void CodegenPass::addEntryBB(Function* f) {
   BasicBlock* BB = BasicBlock::Create(builder.getContext(), "entry", f);
   this->allocaPoints[f] = new llvm::BitCastInst(builder.getInt32(0),
@@ -543,6 +548,7 @@ struct LLProcStringOfCStringPrim : public LLProcPrimBase {
                                  argTypes, NULL, annots);
   }
   virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) {
+    pass->markFosterFunction(F);
     Function::arg_iterator AI = F->arg_begin();
     Value* cstr = AI++;
     Value* sz   = AI++;
@@ -571,6 +577,7 @@ struct LLProcGetCmdlineArgPrim : public LLProcPrimBase {
                                  argTypes, NULL, annots);
   }
   virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) {
+    pass->markFosterFunction(F);
     return codegenCall1ToFunction(F,
              pass->lookupFunctionOrDie("foster_get_cmdline_arg_n_raw"));
   }

@@ -355,8 +355,7 @@ Value* CodegenPass::emitCoroInvokeFn(llvm::Type* retTy,
       /*Name=*/    functionName, this->mod);
 
     fn->setCallingConv(llvm::CallingConv::Fast);
-    fn->setGC("fostergc");
-    disableFramePointerElimination(*fn);
+    this->markFosterFunction(fn);
 
     // TODO when using inlining along with any codegen opt level greater
     //      than None, the basic-coro test segfaults after returning from
@@ -394,8 +393,7 @@ Value* CodegenPass::emitCoroYieldFn(llvm::Type* retTy,
       /*Name=*/    functionName, this->mod);
 
     fn->setCallingConv(llvm::CallingConv::Fast);
-    fn->setGC("fostergc");
-    disableFramePointerElimination(*fn);
+    this->markFosterFunction(fn);
   }
 
   return fn;
@@ -427,8 +425,7 @@ Value* emitCoroWrapperFn(
   // The wrapper has to use the C calling convention because
   // libcoro expects the f_c arg to be pushed on the stack.
   wrapper->setCallingConv(llvm::CallingConv::C);
-  wrapper->setGC("fostergc");
-  disableFramePointerElimination(*wrapper);
+  pass->markFosterFunction(wrapper);
 
   /////////////////////////////
 
@@ -522,8 +519,7 @@ Value* CodegenPass::emitCoroCreateFn(
     /*Name=*/    functionName, this->mod);
 
   create->setCallingConv(llvm::CallingConv::Fast);
-  create->setGC("fostergc");
-  disableFramePointerElimination(*create);
+  this->markFosterFunction(create);
 
   registerCoroType(this->mod, argTypes);
   registerCoroType(this->mod, retTy);

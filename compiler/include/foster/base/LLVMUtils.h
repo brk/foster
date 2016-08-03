@@ -81,6 +81,4 @@ llvm::Constant* getNullOrZero(llvm::Type* t);
 
 bool isFosterFunction(llvm::Function& F);
 
-void disableFramePointerElimination(llvm::Function& F);
-
 #endif

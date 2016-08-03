@@ -225,6 +225,23 @@ void assertValueHasSameTypeAsPhiNode(llvm::Value* v, LLBlock* block, int i) {
 CodegenPass::CodegenPass(llvm::Module* m, CodegenPassConfig config)
     : config(config), mod(m), currentProcName("<no proc yet>") {
   //dib = new DIBuilder(*mod);
+
+  // N.B. we assume here that the input module m has already been linked
+  // with the runtime library. We want to copy the function attributes that
+  // Clang decorated the stdlib functions with, because we need some of the
+  // attributes (such as "target-features=+sse2") to match, otherwise we'll
+  // get incorrect results.
+  llvm::Function* f = mod->getFunction("memalloc_cell");
+  llvm::AttributeSet attrs = f->getAttributes();
+  auto FI = llvm::AttributeSet::FunctionIndex;
+  if (!attrs.hasAttribute(FI, "no-frame-pointer-elim")) {
+    attrs.addAttribute(f->getContext(), FI, "no-frame-pointer-elim", "true");
+  }
+
+  llvm::AttributeSet toremove;
+  toremove.addAttribute(f->getContext(), FI, "stack-protector-buffer-size", "8");
+  attrs = attrs.removeAttributes(f->getContext(), FI, toremove);
+  this->fosterFunctionAttributes = attrs;
 }
 
 llvm::Value* emitLoad(llvm::Value* v, llvm::StringRef suffix) {
@@ -448,7 +465,7 @@ void codegenClosureWrapper(llvm::Function* F, llvm::CallingConv::ID cc,
     std::string funcSymbolName = symbolName + ".proc";
     auto Ffunc = Function::Create(FfuncT, linkage, funcSymbolName, pass->mod);
 
-    Ffunc->setCallingConv(cc);
+    Ffunc->setCallingConv(parseCallingConv("fastcc"));
 
     Ffunc->arg_begin()->setName("env");
     pass->addEntryBB(Ffunc);
@@ -458,14 +475,14 @@ void codegenClosureWrapper(llvm::Function* F, llvm::CallingConv::ID cc,
 
     auto callInst = builder.CreateCall(F, args);
     callInst->setTailCall(true);
-    callInst->setCallingConv(parseCallingConv("fastcc"));
+    callInst->setCallingConv(cc);
 
     if (callInst->getType()->isVoidTy()) {
       builder.CreateRetVoid();
     } else {
       builder.CreateRet(callInst);
     }
-    disableFramePointerElimination(*Ffunc);
+    pass->markFosterFunction(Ffunc);
 }
 
 void LLProc::codegenProto(CodegenPass* pass) {
@@ -493,7 +510,6 @@ void LLProc::codegenProto(CodegenPass* pass) {
   ASSERT(F->getName() == symbolName) << "redefinition of function " << symbolName;
 
   setFunctionArgumentNames(F, this->getFunctionArgNames());
-  if (pass->config.useGC) { F->setGC("fostergc"); }
 
   F->setCallingConv(cc);
 
@@ -619,7 +635,7 @@ void LLProcCFG::codegenToFunction(CodegenPass* pass, llvm::Function* F) {
 
   checkForUnusedEmptyBasicBlocks(F);
 
-  disableFramePointerElimination(*F);
+  pass->markFosterFunction(F);
 }
 
 ////////////////////////////////////////////////////////////////////

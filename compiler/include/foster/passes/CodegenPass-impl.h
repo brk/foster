@@ -116,6 +116,8 @@ struct CodegenPass {
 
   std::string currentProcName;
 
+  llvm::AttributeSet fosterFunctionAttributes;
+
   explicit CodegenPass(llvm::Module* mod, CodegenPassConfig config);
 
   ~CodegenPass() {
@@ -138,6 +140,8 @@ struct CodegenPass {
       scheduleBlockCodegen(fosterBlocks[s]);
       return fosterBlocks[s];
   }
+
+  void markFosterFunction(llvm::Function* f);
 
   Value* emitMalloc(TypeAST* typ, CtorRepr ctorRepr,
                                       std::string srclines, bool init);
