@@ -530,3 +530,16 @@ f64-to-u32! = { a : Float64 => prim f64-to-u32-unsafe a };
 // Precondition: a < 1073741820.5 && a > -1073741820.5
 f64-to-s32! = { a : Float64 => prim f64-to-s32-unsafe a };
 
+// {{{
+
+listShow :: forall (t:Type) { { t => Text } => List t => Text };
+listShow = { px => xs =>
+  inner = case xs
+           of $Nil -> ""
+           of $Cons e elts -> listFoldl elts { e => t => mkTextConcat t (mkTextConcat ", " (px e)) } (px e)
+         end;
+  "[" `mkTextConcat` inner `mkTextConcat` "]"
+};
+
+// }}}
+
