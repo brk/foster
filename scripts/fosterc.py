@@ -170,10 +170,9 @@ def compile_foster_to_bitcode(paths, inputfile, compilelog, finalpath, tmpdir):
                          '-bitcodelibs', mkpath(options.bindir, '_bitcodelibs_')]
                     + options.beargs)
 
-    # Running opt on a Module produces a Module
-    # Running llc on a Module produces an assembly or object file
     e4 = crun(['fosteroptc', finalpath + '.preopt.bc',
                                          '-fosterc-time', '-o', outpath]
+                    + ['-tailcallopt']
                     + optlevel(options)
                     + options.optcargs)
 
