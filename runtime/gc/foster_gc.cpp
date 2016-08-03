@@ -24,6 +24,7 @@
 #define FOSTER_GC_ALLOC_HISTOGRAMS    0
 #define FOSTER_GC_TIME_HISTOGRAMS     0
 #define FOSTER_GC_EFFIC_HISTOGRAMS    0
+#define FOSTER_GC_PRINT_WHEN_RUN      1
 #define GC_ASSERTIONS 0
 #define TRACK_NUM_ALLOCATIONS         1
 #define TRACK_BYTES_KEPT_ENTRIES      0
@@ -509,7 +510,7 @@ class copying_gc {
 
   // }}}
 
-  void gc();
+  void gc(bool should_print);
 
   // precondition: all active cells from curr have been copied to next
   void flip() {
@@ -662,7 +663,7 @@ public:
 
   void* allocate_cell_slowpath(typemap* typeinfo) {
     int64_t cell_size = typeinfo->cell_size; // includes space for cell header.
-    gc();
+    gc(FOSTER_GC_PRINT_WHEN_RUN);
     if (curr->can_allocate_bytes(cell_size)) {
       fprintf(gclog, "gc collection freed space for cell, now have %lld\n", curr->free_size());
       fflush(gclog);
@@ -693,7 +694,7 @@ public:
     if (curr->can_allocate_bytes(req_bytes)) {
       return curr->allocate_array_prechecked(elt_typeinfo, n, req_bytes, init);
     } else {
-      gc();
+      gc(FOSTER_GC_PRINT_WHEN_RUN);
       if (curr->can_allocate_bytes(req_bytes)) {
         fprintf(gclog, "gc collection freed space for array, now have %lld\n", curr->free_size());
         fflush(gclog);
@@ -718,7 +719,7 @@ public:
   // {{{
   bool had_problems() { return saw_bad_pointer; }
 
-  void force_gc_for_debugging_purposes() { this->gc(); }
+  void force_gc_for_debugging_purposes() { this->gc(false); }
 
   void record_memalloc_cell(typemap* typeinfo, const char* srclines) {
     this->alloc_site_counters[std::make_pair(srclines, typeinfo)]++;
@@ -777,9 +778,11 @@ public:
 
 extern "C" foster_generic_coro** __foster_get_current_coro_slot();
 
-void copying_gc::gc() {
-  //fprintf(stdout, "gc();\n");
-  //fprintf(stderr, "gc();\n");
+void copying_gc::gc(bool should_print) {
+  if (should_print) {
+    fprintf(stdout, "♻\n");
+    fprintf(stderr, "♻\n");
+  }
   base::TimeTicks begin = base::TimeTicks::Now();
   ++this->num_collections;
   if (ENABLE_GCLOG) {
