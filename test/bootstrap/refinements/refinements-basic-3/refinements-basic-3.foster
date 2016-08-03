@@ -40,7 +40,7 @@ main = {
  test-local-nonrec !;
 
  expect_i1 True;
- print_i1 (__COMPILES__ { a : Array Int8 => prim assert-invariants (prim_arrayLength a >=SInt64 0));
+ print_i1 (__COMPILES__ { a : Array Int8 => prim assert-invariants (prim_arrayLength a >=SInt64 0) });
 
  /*
  // DISABLED_TEST
