@@ -62,7 +62,7 @@ cxxpath() {
 echo "testing $D"
 if [ -d $D ]; then
  #make -s -C $R/_obj fosteroptc fosterparse fosterlower && cleanout && \
- cmake --build $R/_obj --target fosteroptc --target fosterparse --target fosterlower && cleanout && \
+ cmake --build $R/_obj --target fosteroptc --target fosterparse --target fosterlower --target me && cleanout && \
  echo python $R/scripts/run_test.py --show-cmdlines ${T} "$@" && \
       python $R/scripts/run_test.py --show-cmdlines ${T} "$@" --bindir=$R/_obj --me-arg=--interactive --cxxpath=`cxxpath` -I ${R}/stdlib
 else
