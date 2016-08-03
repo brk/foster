@@ -301,8 +301,8 @@ computeBlocks tailq expr idmaybe k = do
         KNCall ty b vs -> do
             -- We can't just compare [[b == fnvar]] because b might be a
             -- let-bound result of type-instantiating a polymorphic function.
-            isTailCall <- cfgIsThisFnVar b
-            case (tailq, isTailCall) of
+            isSelfTailCall <- cfgIsThisFnVar b
+            case (tailq, isSelfTailCall) of
                 -- Direct tail recursion becomes a jump
                 -- (reassigning the arg slots).
                 (YesTail, True) -> do

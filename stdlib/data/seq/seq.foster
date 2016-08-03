@@ -4,13 +4,16 @@ type case Seq (a:Type)
       of $Seq (FingerTree a)
       ;
 
-
+// Time: O(1)
+// Heap: may or may not dynamically allocate.
 seqEmpty :: forall (a:Type) { Seq a };
 seqEmpty = { Seq FT_Empty };
 
+// Time, Heap: O(1)
 seqSingleton :: forall (a:Type) { a => Seq a };
 seqSingleton = { x => Seq (FT_Single x) };
 
+// Time, Heap: O(log n)
 seqReplicate32 :: forall (a:Type)
                    { % n : Int32 : n >=SInt32 0
                     => a => Seq a };
@@ -21,18 +24,22 @@ seqReplicate32 = { vn => va =>
   Seq (ftReplicate32 vn va 1)
 };
 
+// Time: amortized O(1)
 seqPrepend :: forall (a:Type) { a => Seq a => Seq a };
 seqPrepend = { x => seq =>
   let ($Seq xs) = seq;
   Seq (ftConsTreeE x xs)
 };
 
+// Time: amortized O(1)
 seqPostpend :: forall (a:Type) { Seq a => a => Seq a };
 seqPostpend = { seq => x =>
   let ($Seq xs) = seq;
   Seq (ftSnocTreeE xs x)
 };
 
+// Time: O(1)
+// Heap: none
 seqIsEmpty :: forall (a:Type) { Seq a => Bool };
 seqIsEmpty = { seq =>
   let ($Seq xs) = seq;
@@ -42,6 +49,7 @@ seqIsEmpty = { seq =>
   end
 };
 
+// Time, Heap: O(log(min(n1, n2)))
 seqConcat :: forall (a:Type) { Seq a => Seq a => Seq a };
 seqConcat = { s1 => s2 =>
   let ($Seq xs, $Seq ys) = (s1, s2);
