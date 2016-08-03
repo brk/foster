@@ -191,7 +191,7 @@ kNormalize st expr =
                     (\vals' -> return $ KNArrayLit ti arr' vals'))
 
       -- For anonymous function literals
-      E_AnnFn annFn -> do fn_id <- tcFresh $ "lit_fn." ++ sourceLineStart (rangeOf annFn) ++ "..."
+      E_AnnFn annFn -> do fn_id <- tcFresh $ show (tidIdent (fnVar annFn))
                           knFn <- kNormalizeFn st annFn
                           let t = tidType (fnVar knFn)
                           let fnvar = KNVar (TypedId t fn_id)
