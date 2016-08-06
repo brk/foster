@@ -26,6 +26,7 @@ main =  {
   part3 !;
   part4 !;
   part5 !;
+  part6 !;
 };
 
 part2 = {
@@ -91,15 +92,29 @@ part4 = {
 };
 
 part5 = {
-  run = {
+  run = { expected =>
     x = prim mach-array-literal 11 22;
 
-    expect_i32 11;
+    expect_i32 expected;
     print_i64 x[0];
 
     33 >^ x[0];
   };
 
-  run !;
-  run !;
+  run 11;
+  run 11;
+};
+
+part6 = {
+  x = prim mach-array-literal 11 22;
+  run = { expected =>
+
+    expect_i32 expected;
+    print_i64 x[0];
+
+    33 >^ x[0];
+  };
+
+  run 11;
+  run 33;
 };
