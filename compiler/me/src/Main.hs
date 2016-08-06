@@ -64,6 +64,9 @@ import Foster.Output
 import Text.PrettyPrint.ANSI.Leijen((<+>), (<>), (<$>), pretty, text, line, hsep,
                                      fill, parens, vcat, list, red, dullyellow)
 import qualified Criterion.Measurement as Criterion(initializeTime, secs)
+--import qualified Criterion.Measurement as Criterion(getGCStats)
+--import GHC.Stats
+--import System.Mem
 
 pair2binding (nm, ty, mcid) = TermVarBinding nm (TypedId ty (GlobalSymbol nm), mcid)
 
@@ -486,21 +489,36 @@ runCompiler ci_time wholeprog flagVals outfile = do
        putDocP line
        exitFailure
 
-     Right (RWT in_time sr_time mn_time cg_time cp_time sc_time ilprog) -> do
+     Right (RWT tc_time in_time sr_time mn_time cg_time cp_time sc_time ilprog) -> do
+
+       --liftIO $ performGC
+       --Just stats1 <- liftIO $ Criterion.getGCStats
+
        (pb_time, _) <- ioTime $ dumpILProgramToProtobuf ilprog outfile
+
+       --liftIO $ performGC
+       --Just stats2 <- liftIO $ Criterion.getGCStats
+       --liftIO $ putStrLn $ "delta in gc stats during protobuf dumping: " ++ show (stats2 `minusGCStats` stats1)
+
        (nqueries, querytime) <- readIORef smtStatsRef
-       reportFinalPerformanceNumbers ci_time nqueries querytime in_time sr_time
+       reportFinalPerformanceNumbers ci_time nqueries querytime tc_time in_time sr_time
                                      mn_time cg_time cp_time sc_time nc_time pb_time
                                      (sum (modulesSourceLines wholeprog))
 
+{-
+minusGCStats (GCStats a2 b2 c2 d2 e2 f2 g2 h2 i2 j2 k2 l2 m2 n2 o2 p2 q2 r2)
+             (GCStats a1 b1 c1 d1 e1 f1 g1 h1 i1 j1 k1 l1 m1 n1 o1 p1 q1 r1)
+  = GCStats (a2 - a1) (b2 - b1) (c2 - c1) (d2 - d1) (e2 - e1) (f2 - f1) (g2 - g1) (h2 - h1) (i2 - i1) (j2 - j1) (k2 - k1) (l2 - l1) (m2 - m1) (n2 - n1) (o2 - o1) (p2 - p1) (q2 - q1) (r2 - r1)
+-}
+
 reportFinalPerformanceNumbers :: Double -> Int -> [ (Double, Double) ]
-                              -> Double -> Double -> Double -> Double
+                              -> Double -> Double -> Double -> Double -> Double
                               -> Double -> Double -> Double -> Double
                               -> Int -> IO ()
-reportFinalPerformanceNumbers ci_time nqueries querytime in_time sr_time
+reportFinalPerformanceNumbers ci_time nqueries querytime tc_time in_time sr_time
                               mn_time cg_time cp_time sc_time
                               nc_time pb_time wholeProgNumLines = do
-       let ct_time = (nc_time - (in_time + mn_time + cg_time + cp_time + sc_time))
+       let ct_time = (nc_time - (tc_time + in_time + mn_time + cg_time + cp_time + sc_time))
        let total_time = ci_time + pb_time + nc_time
        let pct f1 f2 = (100.0 * f1) / f2
        let fmt_pct time = let p = pct time nc_time
@@ -509,12 +527,14 @@ reportFinalPerformanceNumbers ci_time nqueries querytime in_time sr_time
                           padding <> parens (text (printf "%.1f" p) <> text "%")
        let fmt str time = text str <+> (fill 11 $ text $ Criterion.secs time) <+> fmt_pct time
        let pairwise f = \(x,y) -> (f x, f (x + y))
+
        putDocLn $ vcat $ [text "                                            (initial query time, overall query time)"
                          ,text "# SMT queries:" <+> pretty nqueries <+> text "taking" <+> pretty (map (pairwise Criterion.secs) querytime)
-                         ,fmt "static-chk  time:" sc_time
+                         ,fmt "typecheck   time:" tc_time
                          ,fmt "inlining    time:" in_time
                          ,fmt "shrinking   time:" sr_time
                          ,fmt "monomorphiz time:" mn_time
+                         ,fmt "static-chk  time:" sc_time
                          ,fmt "cfg-ization time:" cg_time
                          ,fmt "codegenprep time:" cp_time
                          ,fmt "'other'     time:" ct_time
@@ -527,7 +547,7 @@ reportFinalPerformanceNumbers ci_time nqueries querytime in_time sr_time
                          ,text "source lines/second:" <+> text (printf "%.1f" (fromIntegral wholeProgNumLines / total_time))
                          ]
 
-data ResultWithTimings = RWT Double Double Double Double Double Double ILProgram
+data ResultWithTimings = RWT Double Double Double Double Double Double Double ILProgram
 
 compile :: WholeProgramAST FnAST TypeP -> TcEnv -> Compiled ResultWithTimings
 compile wholeprog tcenv = do
@@ -589,8 +609,8 @@ desugarParsedModule tcenv m = do
 
 type TCRESULT = (ModuleIL KNExpr TypeIL, [Ident])
 
-typecheckSourceModule :: TcEnv ->  ModuleAST FnAST TypeAST
-                      -> Compiled (ModuleIL KNExpr TypeIL, [Ident])
+typecheckSourceModule :: TcEnv ->          ModuleAST FnAST TypeAST
+                      -> Compiled (Double, (ModuleIL KNExpr TypeIL, [Ident]))
 typecheckSourceModule tcenv sm = do
     verboseMode <- gets ccVerbose
     flags <- gets ccFlagVals
@@ -602,23 +622,22 @@ typecheckSourceModule tcenv sm = do
     --   putDocLn $ pretty sm
     --   return ()
 
-    res0 <- typecheckModule verboseMode pauseOnErrors standalone flags sm tcenv
-    dieOnError res0
-    {-
-    (ctx_il, ai_mod) <- dieOnError res0
+    --liftIO $ performGC
+    --Just stats1 <- liftIO $ Criterion.getGCStats
 
-    let dtypes = moduleILdataTypes ai_mod ++ moduleILprimTypes ai_mod
-    let dtypeMap = Map.fromList [(typeFormalName (dataTypeName dt), dt) | dt <- dtypes]
-    let knorm = kNormalize dtypeMap -- For normalizing expressions in types.
-    kmod <- kNormalizeModule ai_mod ctx_il dtypeMap
+    (tc_time, res0) <- ioTime $ typecheckModule verboseMode pauseOnErrors standalone flags sm tcenv
 
-    return (kmod, knorm, globalIdents ctx_il)
-    -}
+    --liftIO $ performGC
+    --Just stats2 <- liftIO $ Criterion.getGCStats
+    --liftIO $ putStrLn $ "delta in gc stats during typechecking: " ++ show (stats2 `minusGCStats` stats1)
 
-lowerModule :: (ModuleIL KNExpr TypeIL
-               , [Ident] )
+    res <- dieOnError res0
+    return (tc_time, res)
+
+lowerModule :: (Double, (ModuleIL KNExpr TypeIL
+               , [Ident] ))
             -> Compiled ResultWithTimings
-lowerModule (kmod, globals) = do
+lowerModule (tc_time, (kmod, globals)) = do
      inline   <- gets ccInline
      flags    <- gets ccFlagVals
      let donate = getInliningDonate flags
@@ -716,7 +735,7 @@ lowerModule (kmod, globals) = do
 
      maybeInterpretKNormalModule kmod
 
-     return (RWT in_time mkn_time mn_time cg_time cp_time sc_time ilprog)
+     return (RWT tc_time in_time mkn_time mn_time cg_time cp_time sc_time ilprog)
 
   where
     cfgModule :: ModuleIL (KNExpr' RecStatus MonoType) MonoType -> Compiled (ModuleIL CFBody MonoType)
