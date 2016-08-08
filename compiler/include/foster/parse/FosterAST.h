@@ -35,8 +35,8 @@ struct InputWholeProgram {
 
   explicit InputWholeProgram() {}
 
-  int getModuleCount() { return modules.size(); }
-  InputModule* getInputModule(int x) { return modules[x]; }
+  int getModuleCount() const { return modules.size(); }
+  InputModule* getInputModule(int x) const { return modules[x]; }
 };
 
 #endif // header guard
