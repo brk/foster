@@ -4,6 +4,7 @@
 
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/MemoryBuffer.h"
 
 #include "base/LLVMUtils.h"
 #include "base/InputFile.h"
@@ -44,6 +45,11 @@ optIncludePath("I", cl::desc("Path to search for includes"),
 static cl::opt<bool>
 optPrintTimings("fosterc-time",
   cl::desc("[foster] Print timing measurements of compiler passes"));
+
+static cl::opt<bool>
+optPrintCombined("fosterc-combined",
+  cl::desc("[foster] Print combined source lines"));
+
 
 void setTimingDescriptions() {
   using foster::gTimings;
@@ -87,6 +93,14 @@ int main(int argc, char** argv) {
     FILE* f = fopen(optOutputPath.c_str(), "w");
     fwrite((const void*) output.data(), 1, (size_t) output.size(), f);
     fclose(f);
+  }
+
+  if (optPrintCombined) {
+    for (int i = 0; i < pgmAST->getModuleCount(); ++i) {
+      auto m = pgmAST->getInputModule(i)->source;
+      llvm::outs() << "// " << m->getPath() << "\n";
+      llvm::outs() << m->getBuffer()->getMemoryBuffer()->getBuffer() << "\n";
+    }
   }
 
   if (optPrintTimings) {
