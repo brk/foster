@@ -230,7 +230,7 @@ set(HS_ME hs_me_${HS_ME_PROFILE_OR_OPTIMIZE})
 # Generate middle-end from Haskell source files, once
 # Haskell protobuf module sources have been generated.
 add_custom_target(me DEPENDS ${HS_ME})
-add_custom_target(${HS_ME}
+add_custom_target(${HS_ME}              USES_TERMINAL
   DEPENDS ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Bepb.hs
           ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Tokens.hs
   COMMAND python ${PROJECT_SOURCE_DIR}/scripts/mk_me.py
