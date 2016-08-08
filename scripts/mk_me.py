@@ -48,6 +48,7 @@ if __name__ == "__main__":
   if options.profile:
     if not options.optimize:
       params['hsflags'].append('-auto-all')
+      params['hsflags'].append('-prof')
       params['stackflags'].append('--executable-profiling')
       params['stackflags'].append('--library-profiling')
     else:

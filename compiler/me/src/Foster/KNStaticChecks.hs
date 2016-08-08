@@ -813,7 +813,7 @@ compilePreconditionFn fn facts argVars = do
   return $ SMTExpr (smtId resid) decls idfacts'
 
 compileRefinementBoundTo id facts v0 e0  = do
-  (Fn v [] e _ _) <- lift $ alphaRenameMono (Fn v0 [] e0 undefined undefined)
+  (Fn v [] e _ _) <- lift $ alphaRenameMono (Fn v0 [] e0 NotRec (annotForRange (MissingSourceRange "knstatic-ref")))
   mb_f2 <- checkBody e facts
   resid <- lift $ ccFreshId $ T.pack ".true"
   (SMTExpr body decls idfacts) <- (trueOr mb_f2) resid

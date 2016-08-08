@@ -102,11 +102,14 @@ def get_ghc_rts_args():
   # https://downloads.haskell.org/~ghc/latest/docs/html/users_guide/prof-heap.html
   if options and options.profileme:
     ghc_rts_args.append("-p") # general time profile, written to me.prof
-    ghc_rts_args.append("-hc") # break down space used by function (cost center)
+    #ghc_rts_args.append("-hc") # break down space used by function (cost center)
     #ghc_rts_args.append("-hm") # break down space used by module (producer)
     #ghc_rts_args.append("-hy") # break down space used by type
     #ghc_rts_args.append("-hd") # break down space used by ctor
     #ghc_rts_args.append("-hr") # break down space used by retainer
+    #ghc_rts_args.append("-hb") # break down space used by lag/use/drag/void stage
+
+    #ghc_rts_args.append('-xt') # include space used by evaluation stack.
 
     #ghc_rts_args.append("-hySet,[],ByteString,ARR_WORDS,Node") # restrict to given types
     ghc_rts_args.append("-L50") # give longer labels
