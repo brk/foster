@@ -31,7 +31,7 @@ import Foster.Config
 import Foster.CFG
 import Foster.CFGOptimization
 import Foster.ProtobufFE(cb_parseWholeProgram)
-import Foster.ProtobufIL(dumpILProgramToProtobuf)
+import Foster.CapnpIL(dumpILProgramToCapnp)
 import Foster.TypeTC
 import Foster.ExprAST
 import Foster.TypeAST
@@ -64,9 +64,12 @@ import Foster.Output
 import Text.PrettyPrint.ANSI.Leijen((<+>), (<>), (<$>), pretty, text, line, hsep,
                                      fill, parens, vcat, list, red, dullyellow)
 import qualified Criterion.Measurement as Criterion(initializeTime, secs)
---import qualified Criterion.Measurement as Criterion(getGCStats)
---import GHC.Stats
---import System.Mem
+
+{-
+import qualified Criterion.Measurement as Criterion(getGCStats)
+import GHC.Stats
+import System.Mem
+-}
 
 pair2binding (nm, ty, mcid) = TermVarBinding nm (TypedId ty (GlobalSymbol nm), mcid)
 
@@ -433,8 +436,17 @@ main = do
   case args of
     (infile : outfile : rest) -> do
        flagVals <- parseOpts rest
+
+       --liftIO $ performGC
+       --Just stats1 <- liftIO $ Criterion.getGCStats
+
        (ci_time, cb_program) <- ioTime $ readAndParseCbor infile
        let wholeprog = cb_parseWholeProgram cb_program (getStandaloneFlag flagVals)
+
+       --liftIO $ performGC
+       --Just stats2 <- liftIO $ Criterion.getGCStats
+       --liftIO $ putStrLn $ "delta in gc stats during protobuf parsing: " ++ show (stats2 `minusGCStats` stats1)
+
        if getFmtOnlyFlag flagVals
          then do
            let WholeProgramAST modules = wholeprog
@@ -491,14 +503,7 @@ runCompiler ci_time wholeprog flagVals outfile = do
 
      Right (RWT tc_time in_time sr_time mn_time cg_time cp_time sc_time ilprog) -> do
 
-       --liftIO $ performGC
-       --Just stats1 <- liftIO $ Criterion.getGCStats
-
-       (pb_time, _) <- ioTime $ dumpILProgramToProtobuf ilprog outfile
-
-       --liftIO $ performGC
-       --Just stats2 <- liftIO $ Criterion.getGCStats
-       --liftIO $ putStrLn $ "delta in gc stats during protobuf dumping: " ++ show (stats2 `minusGCStats` stats1)
+       (pb_time , _) <- ioTime $ dumpILProgramToCapnp ilprog (outfile ++ ".cb")
 
        (nqueries, querytime) <- readIORef smtStatsRef
        reportFinalPerformanceNumbers ci_time nqueries querytime tc_time in_time sr_time
@@ -540,8 +545,8 @@ reportFinalPerformanceNumbers ci_time nqueries querytime tc_time in_time sr_time
                          ,fmt "'other'     time:" ct_time
                          ,fmt "sum elapsed time:" nc_time
                          ,text ""
-                         ,fmt "    CBOR-in time:" ci_time
-                         ,fmt "protobufout time:" pb_time
+                         ,fmt "CBOR-in     time:" ci_time
+                         ,fmt "  capnp-out time:" pb_time
                          ,text "overall wall-clock time:" <+> text (Criterion.secs $ total_time)
                          ,text "# source lines:" <+> pretty wholeProgNumLines
                          ,text "source lines/second:" <+> text (printf "%.1f" (fromIntegral wholeProgNumLines / total_time))
@@ -677,8 +682,10 @@ lowerModule (tc_time, (kmod, globals)) = do
              return $ monomod2 { moduleILbody = kn }
         else return $ monomod2
 
+     liftIO $ putDocLn $ text $ "Line 691"
      (in_time, monomod4) <- ioTime $ (if inline then knInline insize donate else return) monomod3
      monomod  <- knSinkBlocks   monomod4
+     liftIO $ putDocLn $ text $ "Line 694"
 
      whenDumpIR "mono" $ do
          putDocLn $ (outLn "/// Loop-headered program =============")
@@ -696,7 +703,7 @@ lowerModule (tc_time, (kmod, globals)) = do
          putDocLn $ (outLn "/// Block-sunk program =============")
          _ <- liftIO $ renderKN monomod  True
          putDocLn $ (outLn "^^^ ===================================")
-
+     liftIO $ putDocLn $ text $ "Line 712"
      (cg_time, cfgmod) <- ioTime $ cfgModule      monomod
      let constraints = collectMayGCConstraints (moduleILbody cfgmod)
      whenDumpIR "may-gc" $ do
@@ -714,7 +721,7 @@ lowerModule (tc_time, (kmod, globals)) = do
          putDocLn $ (outLn "/// Closure-converted program =========")
          _ <- liftIO $ renderCC ccmod True
          putDocLn $ (outLn "^^^ ===================================")
-
+     liftIO $ putDocLn $ text $ "Line 730"
      (cp_time, (ilprog, prealloc)) <- ioTime $ prepForCodegen ccmod  constraints
      whenDumpIR "prealloc" $ do
          putDocLn $ (outLn "/// Pre-allocation ====================")

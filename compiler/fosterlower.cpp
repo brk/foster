@@ -27,7 +27,10 @@
 #include "parse/ProtobufToLLExpr.h"
 #include "parse/ParsingContext.h" // for LLVM type names
 
-#include "_generated_/FosterIL.pb.h"
+#include "_generated_/FosterIL.capnp.h"
+
+#include <capnp/message.h>
+#include <capnp/serialize.h>
 
 #include "StandardPrelude.h"
 
@@ -210,19 +213,22 @@ void linkTo(llvm::Module*& transient,
   ASSERT(!failed) << "Error when linking in " << name << "\n";
 }
 
-LLModule* readLLProgramFromProtobuf(const string& pathstr,
-                                   foster::bepb::Module& out_sm) {
-  { ScopedTimer timer("io.proto.read");
-    std::fstream input(pathstr.c_str(), std::ios::in | std::ios::binary);
-    if (!out_sm.ParseFromIstream(&input)) {
-      EDiag() << "ParseFromIstream() failed!";
-      return NULL;
-    }
-  }
+namespace foster {
+  LLModule* LLModule_from_capnp(const foster::be::Module::Reader&);
+}
+
+LLModule* readLLProgramFromCapnp(const string& pathstr) {
 
   LLModule* prog = NULL;
-  { ScopedTimer timer("io.proto.translate");
-    prog = foster::LLModule_from_pb(out_sm);
+
+  { ScopedTimer timer("io.capnp.read+translate");
+    FILE* f = fopen(pathstr.c_str(), "rb");
+    { int fd = fileno(f);
+      ::capnp::StreamFdMessageReader message(fd);
+      foster::be::Module::Reader modread = message.getRoot<foster::be::Module>();
+      prog = foster::LLModule_from_capnp(modread);
+    }
+    fclose(f);
   }
 
   if (!prog) {
@@ -293,14 +299,12 @@ namespace foster {
 
 int main(int argc, char** argv) {
   int program_status = 0;
-  GOOGLE_PROTOBUF_VERIFY_VERSION;
   sys::PrintStackTraceOnErrorSignal();
   PrettyStackTraceProgram X(argc, argv);
   llvm_shutdown_obj Y;
   ScopedTimer* wholeProgramTimer = new ScopedTimer("total");
   Module* libfoster_bc = NULL;
   Module* coro_bc      = NULL;
-  foster::bepb::Module pbin;
 
   cl::SetVersionPrinter(&printVersionInfo);
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler backend\n");
@@ -366,7 +370,8 @@ int main(int argc, char** argv) {
   //================================================================
 
   {
-    LLModule* prog = readLLProgramFromProtobuf(optInputPath, pbin);
+    //LLModule* prog = readLLProgramFromProtobuf(optInputPath, pbin);
+    LLModule* prog = readLLProgramFromCapnp(optInputPath + ".cb");
     ASSERT(prog) << "Unable to read LL program from protobuf!";
 
     if(!areDeclaredValueTypesOK(module, prog->extern_val_decls)) {
@@ -425,7 +430,6 @@ int main(int argc, char** argv) {
   }
 
 cleanup:
-  google::protobuf::ShutdownProtobufLibrary();
   foster::gInputFile = NULL;
   llvm::outs().flush();
   llvm::errs().flush();

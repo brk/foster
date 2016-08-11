@@ -49,10 +49,9 @@ Ubuntu 16.04 (x64):
   sudo apt-get install build-essential g++ g++-multilib git gnuplot \
                        python-pygments python-matplotlib  python-scipy python-sphinx \
                        python-pandas python-pip python-numpy python-qt4 \
-                       python-qscintilla2 libqscintilla2-dev 
+                       python-qscintilla2 libqscintilla2-dev
 
   sudo apt-get install vim vim-gnome ack-grep \
-              libprotobuf9v5 protobuf-compiler libprotobuf-dev \
               curl ctags aptitude libpng12-dev libcairo2-dev libc6-dev default-jdk
 
   sudo apt-get install m4 ministat meld \
@@ -95,13 +94,11 @@ Ubuntu 16.04 (x64):
   tar xf ghc-*-linux.tar.xz
   cd ghc-* && ./configure --prefix=$HOME/.local/ghc-8.0.1 && make install && cd ..
 
-  wget https://hackage.haskell.org/package/cabal-install-1.24.0.0/cabal-install-1.24.0.0.tar.gz 
+  wget https://hackage.haskell.org/package/cabal-install-1.24.0.0/cabal-install-1.24.0.0.tar.gz
   tar xf cabal-install-*.tar.gz
   cd cabal-install-* && ./bootstrap.sh && cd ..
 
   cabal install happy alex
-  cabal install hprotoc
-  # Must be done separately!
 
   # Ubuntu 16.10 has a recent-enough version of CMake, but on
   # Ubuntu 14.10, the CMake version available via apt-get is outdated.
@@ -169,7 +166,16 @@ Haskell:
 
    Set up a Cabal sandbox within the ``compiler/me`` directory via::
 
-        $ cd foster/compiler/me ; cabal sandbox init ; cabal install --only-dependencies
+        $ cd ~/foster/compiler/me ; cabal sandbox init
+
+   Now, install minuproto somewhere:
+
+        $ cd ~/sw/local
+        $ hg clone https://bitbucket.org/b/minuproto
+        $ cd minuproto
+        $ cabal --sandbox-config-file=$HOME/foster/compiler/me/cabal.sandbox.config install
+
+        $ cd ~/foster/compiler/me ; cabal install --only-dependencies
 
 
 Other libraries/tools:

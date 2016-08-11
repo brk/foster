@@ -61,7 +61,7 @@ In broad strokes:
       * And finally, conversion to the output protocol buffers
 * The backend is composed of two executables:
 
-  * ``compiler/fosterlower.cpp`` takes the protocol-buffer-encoded IR from the
+  * ``compiler/fosterlower.cpp`` takes the CapnProto-encoded IR from the
     middle end and emits the appropriate LLVM IR. Having this functionality
     implemented in C++ makes it easier to interoprerate with the LLVM API.
     The codegen process does a bunch of miscellaneous extra work, including

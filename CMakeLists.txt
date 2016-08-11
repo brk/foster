@@ -83,14 +83,23 @@ set(CORO_METHOD CORO_ASM
     DOC "libcoro implementation: CORO_{ASM,SJLJ,LOSER,PTHREAD}")
 # }}}
 
-# {{{ ~~~~~~~~~~~~~~~~~~~~ Protocol Buffers ~~~~~~~~~~~~~~~~~~~~~~
-find_package(Protobuf REQUIRED)
-include_directories(${PROTOBUF_INCLUDE_DIRS})
+# {{{ ~~~~~~~~~~~~~~~~~~~~ Cap'n Proto ~~~~~~~~~~~~~~~~~~~~~~
 
-find_program(HPROTOC NAMES hprotoc
+find_program(CAPNP NAMES capnp
+  PATHS
+    $ENV{HOME}/sw/local/capnproto-0.5.0/bin
+    $ENV{HOME}/sw/local/capnp-c++-0.5.3/bin
+  DOC "capnp: Cap'n Proto compiler driver")
+
+find_program(MINUPROTO NAMES minuproto
   PATHS
     $ENV{HOME}/.cabal/bin
-  DOC "hprotoc: Protobuf compiler for Haskell")
+    ${PROJECT_SOURCE_DIR}/compiler/me/.cabal-sandbox/bin
+  DOC "Cap'n Proto plugin to generate Haskell code from .capnp files")
+
+get_filename_component(CAPNP_BIN_DIR ${CAPNP} DIRECTORY)
+set(CAPNP_DIR ${CAPNP_BIN_DIR}/..)
+
 # }}}
 
 # {{{ ~~~~~~~~~~~~~~~~~~~~~~~~~ LLVM ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -194,33 +203,25 @@ add_custom_command(
 )
 # }}} -----------------------------------------------------------
 
-# {{{ Generate C++ code to manipulate protobuf files (between middle & back end).
+# {{{ Generate C++ code to read serialized FosterIL capnproto buffers.
 add_custom_command(
-  OUTPUT
-          ${GENERATED}/FosterIL.pb.h
-          ${GENERATED}/FosterIL.pb.cc
-  COMMAND ${PROTOBUF_PROTOC_EXECUTABLE}
-          -I ${PROJECT_SOURCE_DIR}/compiler/parse/
-          ${PROJECT_SOURCE_DIR}/compiler/parse/FosterIL.proto
-          --cpp_out=${GENERATED}
+  OUTPUT ${GENERATED}/FosterIL.capnp.c++
+  COMMAND ${CAPNP} compile FosterIL.capnp
+                 --output=c++:${GENERATED}
+  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/compiler/parse
   DEPENDS
-          ${PROJECT_SOURCE_DIR}/compiler/parse/FosterIL.proto
+          ${PROJECT_SOURCE_DIR}/compiler/parse/FosterIL.capnp
   )
-# }}}
+# }}} -----------------------------------------------------------
 
-#-------------------------------------------------------------------
-
-# {{{ Generate Haskell code to generate protobuf files for the backend.
+# {{{ Generate Haskell code to generate capnp files for the backend.
 add_custom_command(
-  OUTPUT ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Bepb.hs
-  COMMAND cp ${PROJECT_SOURCE_DIR}/compiler/parse/FosterIL.proto
-             ${PROJECT_SOURCE_DIR}/compiler/me/FosterIL.protox
-  COMMAND ${HPROTOC}
-          --haskell_out=${PROJECT_SOURCE_DIR}/compiler/me/src
-          ${PROJECT_SOURCE_DIR}/compiler/me/FosterIL.protox
-  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/compiler/me
+  OUTPUT ${PROJECT_SOURCE_DIR}/compiler/me/src/FosterIL_capnp.hs
+  COMMAND ${CAPNP} compile FosterIL.capnp
+                 --output=${MINUPROTO}:${PROJECT_SOURCE_DIR}/compiler/me/src
+  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/compiler/parse
   DEPENDS
-          ${PROJECT_SOURCE_DIR}/compiler/parse/FosterIL.proto
+          ${PROJECT_SOURCE_DIR}/compiler/parse/FosterIL.capnp
   )
 
 set(HS_ME_PROFILE_OR_OPTIMIZE profile CACHE STRING
@@ -228,10 +229,10 @@ set(HS_ME_PROFILE_OR_OPTIMIZE profile CACHE STRING
 set(HS_ME hs_me_${HS_ME_PROFILE_OR_OPTIMIZE})
 
 # Generate middle-end from Haskell source files, once
-# Haskell protobuf module sources have been generated.
+# Haskell capnp module sources have been generated.
 add_custom_target(me DEPENDS ${HS_ME})
 add_custom_target(${HS_ME}              USES_TERMINAL
-  DEPENDS ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Bepb.hs
+  DEPENDS ${PROJECT_SOURCE_DIR}/compiler/me/src/FosterIL_capnp.hs
           ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Tokens.hs
   COMMAND python ${PROJECT_SOURCE_DIR}/scripts/mk_me.py
           --srcroot ${PROJECT_SOURCE_DIR}
@@ -250,6 +251,7 @@ add_custom_target(cmake_clean
 add_custom_target(hs_clean
   COMMAND rm -rf ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/*.o
   COMMAND rm -f  ${PROJECT_SOURCE_DIR}/compiler/me/src/Main.o
+  COMMAND rm -f  ${PROJECT_SOURCE_DIR}/compiler/me/src/FosterIL_capnp.o
   )
 
 # Attaching commands to add_custom_target basically means
@@ -390,7 +392,6 @@ add_library(fosterc_base STATIC
   compiler/base/PughSinofskyPrettyPrinter.cpp
   third_party/pystring/pystring.cpp
   third_party/cityhash/src/city.cc
-  ${GENERATED}/FosterIL.pb.h
 )
 
 add_library(fosterc_parse STATIC
@@ -451,16 +452,23 @@ target_link_libraries(fosterparse
 add_executable(fosterlower
     compiler/fosterlower.cpp
     compiler/StandardPrelude.cpp
-    compiler/passes/ProtobufToLLExpr.cpp
+    compiler/passes/CapnpToLLExpr.cpp
     compiler/passes/LLCodegen.cpp
     compiler/passes/Codegen/CodegenUtils.cpp
     compiler/passes/Codegen/Codegen-coro.cpp
     compiler/passes/Codegen/Codegen-typemaps.cpp
+    ${GENERATED}/FosterIL.capnp.c++
   )
+
 target_link_libraries(fosterlower
   fosterc_parse fosterc_passes fosterc_base
   fosterc_llvm fosterc_fosteril_pb
-  antlr3c ${PROTOBUF_LIBRARY} ${LLVM_LDFLAGS})
+  ${CAPNP_DIR}/lib/libcapnp.so
+  ${CAPNP_DIR}/lib/libkj.so
+  antlr3c ${LLVM_LDFLAGS})
+
+target_include_directories(fosterlower
+     PRIVATE  ${CAPNP_DIR}/include)
 
 add_dependencies(fosterlower
     foster_runtime_bc cycle)
