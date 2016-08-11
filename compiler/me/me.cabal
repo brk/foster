@@ -2,12 +2,12 @@ name:                me
 version:             0.1.0.0
 synopsis:            Foster middle-end
 description:         Please see README.md
-homepage:            http://github.com/brk/stackme#readme
+homepage:            https://bitbucket.org/b/foster
 license:             BSD3
 --license-file:        LICENSE
 author:              Ben Karel
 maintainer:          eschew@gmail.com
-copyright:           2010 Ben Karel
+copyright:           2010-2016 Ben Karel
 category:            Languages
 build-type:          Simple
 --extra-source-files: Foster/Pb.hs Foster/Pb/Expr.hs
@@ -50,53 +50,17 @@ executable me
                  smtLib -any,
                  boxes -any,
                  process -any,
-                 protocol-buffers,
-                 protocol-buffers-descriptor -any,
+                 minuproto -any,
                  utf8-string -any,
                  base -any
   default-language:    Haskell2010
 
   other-modules:
+      FosterIL_capnp
       Foster.AnnExpr
       Foster.AnnExprIL
       Foster.Avails
       Foster.Base
-      Foster.Bepb.Block
-      Foster.Bepb.BlockMiddle
-      Foster.Bepb.Decl
-      Foster.Bepb.LetVal
-      Foster.Bepb.Letable
-      Foster.Bepb.Letable.Tag
-      Foster.Bepb.Module
-      Foster.Bepb.PBInt
-      Foster.Bepb.PbAllocInfo
-      Foster.Bepb.PbAllocInfo.MemRegion
-      Foster.Bepb.PbArrayEntry
-      Foster.Bepb.PbArrayLiteral
-      Foster.Bepb.PbCallAsm
-      Foster.Bepb.PbCallInfo
-      Foster.Bepb.PbCoroPrim
-      Foster.Bepb.PbCoroPrim.Tag
-      Foster.Bepb.PbCtorId
-      Foster.Bepb.PbCtorInfo
-      Foster.Bepb.PbCtorRepr
-      Foster.Bepb.PbCtorRepr.Tag
-      Foster.Bepb.PbDataCtor
-      Foster.Bepb.PbOccurrence
-      Foster.Bepb.PbSwitch
-      Foster.Bepb.Proc
-      Foster.Bepb.Proc.Linkage
-      Foster.Bepb.ProcType
-      Foster.Bepb.RebindId
-      Foster.Bepb.RootInit
-      Foster.Bepb.RootKill
-      Foster.Bepb.TermVar
-      Foster.Bepb.TermVar.Tag
-      Foster.Bepb.Terminator
-      Foster.Bepb.Terminator.Tag
-      Foster.Bepb.TupleStore
-      Foster.Bepb.Type
-      Foster.Bepb.Type.Tag
       Foster.CFG
       Foster.CFGOptimization
       Foster.CloConv
