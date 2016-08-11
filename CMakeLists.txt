@@ -207,7 +207,7 @@ add_custom_command(
 add_custom_command(
   OUTPUT ${GENERATED}/FosterIL.capnp.c++
   COMMAND ${CAPNP} compile FosterIL.capnp
-                 --output=c++:${GENERATED}
+                 --output=${CAPNP_BIN_DIR}/capnpc-c++:${GENERATED}
   WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/compiler/parse
   DEPENDS
           ${PROJECT_SOURCE_DIR}/compiler/parse/FosterIL.capnp
