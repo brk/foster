@@ -435,10 +435,6 @@ add_library(fosterc_passes STATIC
 
 add_dependencies(fosterc_passes fosterc_parse)
 
-add_library(fosterc_fosteril_pb STATIC
-  ${GENERATED}/FosterIL.pb.cc
-)
-
 ############
 
 add_executable(fosterparse compiler/fosterparse.cpp)
@@ -462,7 +458,7 @@ add_executable(fosterlower
 
 target_link_libraries(fosterlower
   fosterc_parse fosterc_passes fosterc_base
-  fosterc_llvm fosterc_fosteril_pb
+  fosterc_llvm
   ${CAPNP_DIR}/lib/libcapnp.so
   ${CAPNP_DIR}/lib/libkj.so
   antlr3c ${LLVM_LDFLAGS})
