@@ -174,13 +174,13 @@ main = {
 
   offset-momentum bodies;
 
-  expect_float_p9f64 -0.169289903;
   print_float_p9f64 (energy bodies);
+  expect_float_p9f64 -0.169289903;
 
   scale bodies dt;
   repeat n^ { advance bodies };
   scale bodies (div-f64 1.0 dt);
 
-  expect_float_p9f64 -0.169296889;
   print_float_p9f64 (energy bodies);
+  expect_float_p9f64 -0.169296889;
 };
