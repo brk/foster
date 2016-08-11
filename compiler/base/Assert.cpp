@@ -43,7 +43,7 @@ private:
   ~DiagIgnore() {}
 
 protected:
-  virtual void add(long long int i) {}
+  virtual void add(int64_t i) {}
   virtual void add(const char* str) {}
   virtual void add(const std::string& str) {}
   virtual void add(const SourceRangeHighlighter& h) {}
