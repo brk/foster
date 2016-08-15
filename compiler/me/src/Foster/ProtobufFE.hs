@@ -15,6 +15,7 @@ import Foster.Tokens
 
 import Data.CBOR
 
+import Data.Foldable (toList)
 import Data.List(groupBy, foldl')
 import qualified Data.Sequence as Seq
 import qualified Data.Map as Map(lookup)
@@ -707,6 +708,8 @@ nullFx = TyAppP (TyConP "effect.Empty") []
 -- {{{
 data SourceLoc = SourceLoc !Int !Int
 
+type FmtState a = State (Seq.Seq (SourceLoc, Formatting)) a
+
 -- The front-end produces an abstract syntax tree with position information
 -- but without "hidden" tokens like newlines and comments. Such tokens are
 -- instead produced in a separate list, off to the side. Our task is then to
@@ -717,7 +720,7 @@ resolveFormatting :: [CBOR] -> ModuleAST FnAST TypeP -> ModuleAST FnAST TypeP
 resolveFormatting hiddentokens m =
    m { moduleASTfunctions = evalState
                               (mapM attachFormattingFn (moduleASTfunctions m))
-                              (map p hiddentokens) }
+                              (Seq.fromList $ map p hiddentokens) }
  where loc lineno charpos = SourceLoc (cb_int lineno) (cb_int charpos)
        p cbor = case cbor of
           CBOR_Array [_comment, lineno, charpos, txt] ->
@@ -728,28 +731,26 @@ resolveFormatting hiddentokens m =
                 _ -> error $ "resolveFormatting encountered unexpected hidden token type"
           _ -> error $ "resolveFormatting encountered unexpected hidden token: " ++ show cbor
 
-getPreFormatting :: ExprAnnot -> State [(SourceLoc, Formatting)]
-                                      ExprAnnot
+getPreFormatting :: ExprAnnot -> FmtState ExprAnnot
 getPreFormatting (ExprAnnot (_:_) _ _) = error $ "ExprAnnot should not have any pre-formatting yet!"
 getPreFormatting (ExprAnnot [] rng post) = do
  fs <- get
  let prefilter (loc, _      ) = loc `beforeRangeStart` rng
- let (pre, rest) = span prefilter fs
+ let (pre, rest) = Seq.spanl prefilter fs
  put rest
- return (ExprAnnot (map snd pre) rng post)
+ return (ExprAnnot (map snd $ toList pre) rng post)
 
-getPostFormatting :: ExprAnnot -> State [(SourceLoc, Formatting)]
-                                       ExprAnnot
+getPostFormatting :: ExprAnnot -> FmtState ExprAnnot
 getPostFormatting (ExprAnnot _ _ (_:_)) = error $ "ExprAnnot should not have any post-formatting yet!"
 getPostFormatting (ExprAnnot pre0 rng []) = do
  fs <- get
- case fs of
-   [] -> return (ExprAnnot pre0 rng [])
-   ((_loc0, _):_) -> do
+ if Seq.null fs
+   then return (ExprAnnot pre0 rng [])
+   else do
       let
           prefilter (loc, _ ) = loc `beforeRangeEnd` rng
 
-          (post, rest) = span prefilter fs
+          (post, rest) = Seq.spanl prefilter fs
 
           -- onlyComments (_, Comment _) = True
           -- onlyComments (_, _)         = False
@@ -757,7 +758,7 @@ getPostFormatting (ExprAnnot pre0 rng []) = do
           -- (pre, rest0) = span prefilter fs
           -- (post, rest) = span onlyComments rest0
       put rest
-      return (ExprAnnot (pre0) rng (map snd post))
+      return (ExprAnnot (pre0) rng (map snd $ toList post))
 
 beforeRangeStart _ (MissingSourceRange _) = False
 beforeRangeStart (SourceLoc line col) (SourceRange bline bcol _ _ _ _) =
@@ -773,8 +774,7 @@ rangeSpanNextLine (SourceRange sl sc el _ec lines file) =
                   SourceRange sl sc (el + 1) 0 lines file
 rangeSpanNextLine sr = sr
 
-attachFormattingFn :: FnAST TypeP -> State [(SourceLoc, Formatting)]
-                                           (FnAST TypeP)
+attachFormattingFn :: FnAST TypeP -> FmtState     (FnAST TypeP)
 attachFormattingFn fn = do
  a0 <- getPreFormatting  (fnAstAnnot fn)
  b  <- attachFormatting  (fnAstBody  fn)
@@ -785,8 +785,7 @@ attachFormattingFn fn = do
 convertTermBinding (TermBinding evar expr) =
              liftM (TermBinding evar) (attachFormatting expr)
 
-attachFormatting :: ExprAST TypeP -> State [(SourceLoc, Formatting)]
-                                           (ExprAST TypeP)
+attachFormatting :: ExprAST TypeP -> FmtState     (ExprAST TypeP)
 attachFormatting (E_SeqAST annot a b) = do
  a' <- attachFormatting a
  ExprAnnot pre  rng [] <- getPreFormatting annot
