@@ -4,6 +4,8 @@
 
 #include "base/InputFile.h"
 #include "base/InputTextBuffer.h"
+#include "base/TimingsRepository.h"
+
 #include "base/strings/utf_string_conversion_utils.h"
 #include "base/third_party/icu/icu_utf.h"
 
@@ -442,9 +444,12 @@ namespace foster {
                    const foster::InputFile& file,
                    unsigned* outNumANTLRErrors,
                    std::queue<std::pair<string, string> >& out_imports) {
-    uint128 hash = getFileHash(file);
-    if (pgm->seen.count(hash) == 1) {
-      return;
+    uint128 hash;
+    { foster::ScopedTimer timer("io.parse.filesystem.hash");
+      hash = getFileHash(file);
+      if (pgm->seen.count(hash) == 1) {
+        return;
+      }
     }
     char hashcstr[33] = {0};
     sprintf(hashcstr, "%08" PRIx64 "%08" PRIx64,
@@ -463,7 +468,9 @@ namespace foster {
     gInputFile = &file; // used when creating source ranges
     gInputTextBuffer = file.getBuffer(); // also used for source ranges
 
-    doTokenMatchingPrepass(file);
+    { foster::ScopedTimer timer("io.parse.prepass");
+      doTokenMatchingPrepass(file);
+    }
 
     fosterParser_module_return langAST = ctx->psr->module(ctx->psr);
     *outNumANTLRErrors += ctx->psr->pParser->rec->state->errorCount;
@@ -487,7 +494,9 @@ namespace foster {
 
     //llvm::sys::TimeValue parse_beg = llvm::sys::TimeValue::now();
     std::queue<std::pair<string, string> > pending_imports;
-    parseModule(pgm, startfile, outNumANTLRErrors, pending_imports);
+    { foster::ScopedTimer timer("io.parse.antlr");
+      parseModule(pgm, startfile, outNumANTLRErrors, pending_imports);
+    }
 
     while (*outNumANTLRErrors == 0 && !pending_imports.empty()) {
       std::pair<string, string> imp = pending_imports.front();
@@ -495,7 +504,12 @@ namespace foster {
       std::string localname = imp.first;
       std::string imp_path  = imp.second;
       //std::cout << "pending import: " << imp.first << " " << imp.second << std::endl;
-      if (foster::InputFile* f = resolveModulePath(searchPaths, imp_path)) {
+      foster::InputFile* f = nullptr;
+      { foster::ScopedTimer timer("io.parse.filesystem");
+        f = resolveModulePath(searchPaths, imp_path);
+      }
+      if (f) {
+        foster::ScopedTimer timer("io.parse.antlr");
         parseModule(pgm, *f, outNumANTLRErrors, pending_imports);
       } else {
         return NULL;
