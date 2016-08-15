@@ -682,10 +682,8 @@ lowerModule (tc_time, (kmod, globals)) = do
              return $ monomod2 { moduleILbody = kn }
         else return $ monomod2
 
-     liftIO $ putDocLn $ text $ "Line 691"
      (in_time, monomod4) <- ioTime $ (if inline then knInline insize donate else return) monomod3
      monomod  <- knSinkBlocks   monomod4
-     liftIO $ putDocLn $ text $ "Line 694"
 
      whenDumpIR "mono" $ do
          putDocLn $ (outLn "/// Loop-headered program =============")
@@ -703,7 +701,7 @@ lowerModule (tc_time, (kmod, globals)) = do
          putDocLn $ (outLn "/// Block-sunk program =============")
          _ <- liftIO $ renderKN monomod  True
          putDocLn $ (outLn "^^^ ===================================")
-     liftIO $ putDocLn $ text $ "Line 712"
+
      (cg_time, cfgmod) <- ioTime $ cfgModule      monomod
      let constraints = collectMayGCConstraints (moduleILbody cfgmod)
      whenDumpIR "may-gc" $ do
@@ -721,7 +719,7 @@ lowerModule (tc_time, (kmod, globals)) = do
          putDocLn $ (outLn "/// Closure-converted program =========")
          _ <- liftIO $ renderCC ccmod True
          putDocLn $ (outLn "^^^ ===================================")
-     liftIO $ putDocLn $ text $ "Line 730"
+
      (cp_time, (ilprog, prealloc)) <- ioTime $ prepForCodegen ccmod  constraints
      whenDumpIR "prealloc" $ do
          putDocLn $ (outLn "/// Pre-allocation ====================")
