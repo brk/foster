@@ -9,6 +9,7 @@
 // Doesn't handle switch() yet.
 // Doesn't handle early returns/break/continue/goto.
 //   (best bet would be Clang CFG + Relooper)
+// Doesn't distinguish return-for-control-flow vs return-for-value.
 // Doesn't handle pointers or structure allocations very well.
 //   (needs to do analysis to differentiate arrays from singleton pointers).
 // Could get better translations by doing more careful analysis of which
@@ -30,6 +31,7 @@
 #include "clang/Rewrite/Core/Rewriter.h"
 #include "clang/Lex/Lexer.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/Format.h"
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -195,6 +197,19 @@ std::string tyName(const clang::Type* ty, std::string defaultName = "C2FUNK") {
 
   if (const RecordType* rty = dyn_cast<RecordType>(ty)) { return rty->getDecl()->getNameAsString(); }
   if (const ParenType* rty = dyn_cast<ParenType>(ty)) { return tyName(rty->getInnerType().getTypePtr()); }
+
+  if (const EnumType* ety = dyn_cast<EnumType>(ty)) {
+    std::string name = ety->getDecl()->getCanonicalDecl()->getNameAsString();
+    if (name.empty()) {
+      auto tnd = ety->getDecl()->getTypedefNameForAnonDecl();
+      if (tnd) name = tnd->getNameAsString();
+    }
+    if (name.empty()) name = "/*EnumType unknown*/";
+    return name;
+  }
+
+  if (const DecayedType* dty = dyn_cast<DecayedType>(ty)) { return "/*DecayedType*/ " + tyName(dty->getDecayedType().getTypePtr()); }
+
   // TODO handle constantarraytype
 
   llvm::outs().flush();
@@ -238,6 +253,9 @@ std::string mkFosterBinop(const std::string& op, const clang::Type* typ) {
   if (op == "%" && typ->hasUnsignedIntegerRepresentation()) return infixOp("urem-unsafe-", ty);
   if (op == "/" && typ->hasSignedIntegerRepresentation()) return infixOp("sdiv-unsafe-", ty);
   if (op == "/" && typ->hasUnsignedIntegerRepresentation()) return infixOp("udiv-unsafe-", ty);
+
+  if (op == "%") return infixOp("mod-", ty);
+  if (op == "/") return infixOp("div-", ty);
 
   if (op[0] == '<' || op[0] == '>') {
     if (typ->hasSignedIntegerRepresentation())
@@ -453,7 +471,8 @@ public:
   void translateWhileLoop(const T* stmt, std::string loopname, const Stmt* extra = nullptr) {
     llvm::outs() << loopname << " { ";
       // TODO write an explicit "ended" variable, for control flow
-      if (stmt->getCond()) visitStmt(stmt->getCond()); else llvm::outs() << "True";
+      if (stmt->getCond()) visitStmt(stmt->getCond());
+      else llvm::outs() << "True";
     llvm::outs() << " } {\n";
       visitStmt(stmt->getBody());
       // If the body wasn't a compound, we'll be missing a semicolon...
@@ -478,6 +497,30 @@ public:
         visitStmt(unop->getSubExpr(), true);
         llvm::outs() << ")";
       }
+  }
+
+  void handleBinaryOperator(const BinaryOperator* binop) {
+    std::string op = binop->getOpcodeStr();
+
+    if (op == "=") {
+      handleAssignment(binop);
+    } else if (op == "&&" || op == "||") {
+      std::string tgt = (op == "&&" ? "`andand`" : "`oror`");
+      llvm::outs() << "({ ";
+      visitStmt(binop->getLHS());
+      llvm::outs() << " } " << tgt << " { ";
+      visitStmt(binop->getRHS());
+      llvm::outs() << " })";
+    } else {
+      // TODO account for the fact that compound operations may occur in a
+      // different intermediate type...
+      std::string tgt = mkFosterBinop(op, exprTy(binop->getLHS()));
+      llvm::outs() << "(";
+      visitStmt(binop->getLHS(), binop->isCompoundAssignmentOp());
+      llvm::outs() << " " << tgt << " ";
+      visitStmt(binop->getRHS());
+      llvm::outs() << ")";
+    }
   }
 
   // clang::UnaryOperatorKind
@@ -661,7 +704,7 @@ public:
 
   void handleAssignment(const BinaryOperator* binop) {
     if (const MemberExpr* me = dyn_cast<MemberExpr>(binop->getLHS())) {
-      // translate p->f = v;  to  (set_pType_f p v)
+      // translate p->f = x;  to  (set_pType_f p x)
       llvm::outs() << "(set_" << fieldAccessorName(me) << " ";
       llvm::outs() << "(";
       visitStmt(me->getBase(), true);
@@ -670,8 +713,44 @@ public:
       llvm::outs() << ")";
       llvm::outs() << ")";
     } else {
+      // translate v = x;  to  (x) >^ v;
       llvm::outs() << "(";
       visitStmt(binop->getRHS());
+      llvm::outs() << ") >^ ";
+      visitStmt(binop->getLHS(), true);
+    }
+  }
+
+  void handleCompoundAssignment(const BinaryOperator* binop) {
+    std::string op = binop->getOpcodeStr();
+    if (op.back() == '=') op.pop_back();
+
+    std::string tgt = mkFosterBinop(op, exprTy(binop->getLHS()));
+
+    if (const MemberExpr* me = dyn_cast<MemberExpr>(binop->getLHS())) {
+      // translate p->f OP= v;  to  (set_pType_f p ((pType_f p) OP v))
+      llvm::outs() << "(set_" << fieldAccessorName(me) << " ";
+      llvm::outs() << "(";
+      visitStmt(me->getBase(), true);
+      llvm::outs() << ") (";
+
+        llvm::outs() << "(" << fieldAccessorName(me) << " ";
+        llvm::outs() << "(";
+        visitStmt(me->getBase(), true);
+        llvm::outs() << ")";
+        llvm::outs() << ")";
+
+        llvm::outs() << " " << tgt << " ";
+
+        visitStmt(binop->getRHS());
+      llvm::outs() << ")";
+      llvm::outs() << ")";
+    } else {
+      // translate v OP= x;  to  (v^ OP x) >^ v;
+      llvm::outs() << "(";
+      visitStmt(binop->getLHS(), false);
+      llvm::outs() << " " << tgt << " ";
+      visitStmt(binop->getRHS(), false);
       llvm::outs() << ") >^ ";
       visitStmt(binop->getLHS(), true);
     }
@@ -820,25 +899,10 @@ public:
       llvm::outs() << "[";
       visitStmt(ase->getIdx());
       llvm::outs() << "]";
+    } else if (const CompoundAssignOperator* binop = dyn_cast<CompoundAssignOperator>(stmt)) {
+      handleCompoundAssignment(binop);
     } else if (const BinaryOperator* binop = dyn_cast<BinaryOperator>(stmt)) {
-      std::string op = binop->getOpcodeStr();
-      if (op == "=") {
-        handleAssignment(binop);
-      } else if (op == "&&" || op == "||") {
-        std::string tgt = (op == "&&" ? "`andand`" : "`oror`");
-        llvm::outs() << "({ ";
-        visitStmt(binop->getLHS());
-        llvm::outs() << " } " << tgt << " { ";
-        visitStmt(binop->getRHS());
-        llvm::outs() << " })";
-      } else {
-        std::string tgt = mkFosterBinop(op, exprTy(binop->getLHS()));
-        llvm::outs() << "(";
-        visitStmt(binop->getLHS(), binop->isCompoundAssignmentOp());
-        llvm::outs() << " " << tgt << " ";
-        visitStmt(binop->getRHS());
-        llvm::outs() << ")";
-      }
+      handleBinaryOperator(binop);
     } else if (const UnaryOperator* unop = dyn_cast<UnaryOperator>(stmt)) {
       handleUnaryOperator(unop);
     } else if (const IntegerLiteral* lit = dyn_cast<IntegerLiteral>(stmt)) {
@@ -858,6 +922,10 @@ public:
         lit->getValue().toString(buf);
         llvm::outs() << "/*floatlit...*/" << buf;
       }
+
+    } else if (const CharacterLiteral* clit = dyn_cast<CharacterLiteral>(stmt)) {
+      llvm::outs() << clit->getValue();
+      llvm::outs() << " /*'" << llvm::format("%c", clit->getValue()) << "'*/ ";
     } else if (const PredefinedExpr* lit = dyn_cast<PredefinedExpr>(stmt)) {
       lit->getFunctionName()->outputString(llvm::outs());
     } else if (const CastExpr* ce = dyn_cast<CastExpr>(stmt)) {
@@ -920,7 +988,7 @@ public:
               visitStmt(vd->getInit());
             }
           } else {
-            llvm::outs() << vd->getName() << " = (prim ref " << zeroValue(exprTy(vd)) << ")";
+            llvm::outs() << fosterizedName(vd->getName()) << " = (prim ref " << zeroValue(exprTy(vd)) << ")";
           }
         } else {
           visitStmt(d->getBody());
@@ -1132,7 +1200,7 @@ int main(int argc, const char **argv) {
 //     A field of type T can be translated to any one of:
 //       T                         when all structs are literals and the field is never mutated,
 //                                 or if all mutations can be coalesced into struct allocation.
-//       (Ref T)                   for mutable fields
+//       (Ref T)                   for mutable fields with known initializer expressions.
 //       (Ref (Maybe T))           for mutable fields with uncertain initialization
 //    For a pointer-to-struct S, we have additional choices in translating:
 //      * Single-constructor datatype S, with implicit level of indirection, but no nullability
