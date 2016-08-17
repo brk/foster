@@ -27,20 +27,19 @@ show_clang_ast () {
   echo "// Clang AST for input C file:"
   echo "// ${LLVM_DIR}/bin/clang -fsyntax-only -Xclang -ast-dump ${cprog} -I ${LLVM_CLANG_INC_DIR} $@"
   ${LLVM_DIR}/bin/clang -fsyntax-only -Xclang -ast-dump ${cprog} -I ${LLVM_CLANG_INC_DIR} $@ | python ${SD}/clang-ast-filter.py
+  (>&2 echo "Failed to process either the input C code or the resulting Foster code...")
+  exit 1
 }
 
 
-echo "tmpfile = $tmpfile"
-
 echo "// running c2f..."
 echo "// ${BINDIR}/c2f ${cprog} -- -I ${LLVM_CLANG_INC_DIR} $@  > ${tmpfile}.foster"
-${BINDIR}/c2f ${cprog} -- -I ${LLVM_CLANG_INC_DIR} $@  &> ${tmpfile}.foster
+${BINDIR}/c2f ${cprog} -- -I ${LLVM_CLANG_INC_DIR} $@  > ${tmpfile}.foster
 
 c2f_status="$?"
 
 if [ "${c2f_status}" = "0" ]; then
   echo "// running foster-fmt; c2f ${tmpfile}.foster status was ${c2f_status}"
-  echo "python ${SD}/fosterc.py --me-arg=--fmt --bindir ${BINDIR} --tmpdir fosterc-standalone-tmp ${tmpfile}.foster"
   #cp ${tmpfile}.foster raw.foster
   (python ${SD}/fosterc.py --me-arg=--fmt --bindir ${BINDIR} --tmpdir fosterc-standalone-tmp ${tmpfile}.foster --show-cmdlines | python ${SD}/ansifilter.py) || show_clang_ast
 else
@@ -48,7 +47,8 @@ else
   cat ${tmpfile}.foster
   if [ `cat ${tmpfile}.foster | wc -l` = "0" ]; then
      show_clang_ast
-  fi
+   fi
+   exit 1
 fi
 
 rm -f meGCstats.txt
