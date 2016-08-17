@@ -278,7 +278,6 @@ add_custom_command(
           -I ${PROJECT_SOURCE_DIR}/third_party/chromium_base/
                 -c -o ${PROJECT_BINARY_DIR}/_bitcodelibs_/libfoster_main.bc
   DEPENDS
-        ${LIBRARY_OUTPUT_PATH}
         ${PROJECT_SOURCE_DIR}/runtime/libfoster_main.cpp
 )
 # }}}
@@ -319,7 +318,6 @@ add_custom_command(
         ${LIBFOSTER_CPP_SOURCES}
   DEPENDS
     ${LIBFOSTER_CPP_SOURCES}
-    ${PROJECT_BINARY_DIR}/_bitcodelibs_
     ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
     ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc_utils.h
     ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc_reconfig-inl.h
