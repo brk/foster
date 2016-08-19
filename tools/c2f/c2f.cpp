@@ -978,6 +978,32 @@ public:
     }
   }
 
+  void visitCaseStmt(const CaseStmt* cs, bool isFirst) {
+      const Stmt* ss = cs->getSubStmt();
+      if (cs->getLHS()) {
+        if (isFirst) {
+          llvm::outs() << "  of ";
+        } else {
+          llvm::outs() << "  or ";
+        }
+
+        visitStmt(cs->getLHS());
+        if (ss && !isa<CaseStmt>(ss)) { llvm::outs() << " ->"; }
+        llvm::outs() << "\n";
+      }
+      if (cs->getRHS()) {
+        llvm::outs() << "//case stmt rhs:\n";
+        visitStmt(cs->getRHS());
+      }
+      if (ss) {
+        if (const CaseStmt* css = dyn_cast<CaseStmt>(ss)) {
+          visitCaseStmt(css, false);
+        } else {
+          visitStmt(ss);
+        }
+      }
+  }
+
   void visitStmt(const Stmt* stmt, bool isAssignmentTarget = false) {
     emitCommentsFromBefore(stmt->getLocStart());
 
@@ -1014,26 +1040,14 @@ public:
     } else if (const NullStmt* dr = dyn_cast<NullStmt>(stmt)) {
       llvm::outs() << "()";
     } else if (const CaseStmt* cs = dyn_cast<CaseStmt>(stmt)) {
-      const Stmt* ss = cs->getSubStmt();
-      if (cs->getLHS()) {
-        llvm::outs() << "  of ";
-        visitStmt(cs->getLHS());
-        if (ss && !isa<CaseStmt>(ss)) { llvm::outs() << " ->"; }
-        llvm::outs() << "\n";
-      }
-      if (cs->getRHS()) {
-        visitStmt(cs->getRHS());
-      }
-      if (ss) {
-        visitStmt(ss);
-      }
+      visitCaseStmt(cs, true);
     } else if (const DefaultStmt* ds = dyn_cast<DefaultStmt>(stmt)) {
       llvm::outs() << "  _ ->\n";
       visitStmt(ds->getSubStmt());
     } else if (const SwitchStmt* ss = dyn_cast<SwitchStmt>(stmt)) {
       handleSwitch(ss);
     } else if (const GotoStmt* gs = dyn_cast<GotoStmt>(stmt)) {
-      llvm::outs() << "_goto_" << gs->getLabel()->getNameAsString() << " !\n";
+      llvm::outs() << "goto_" << gs->getLabel()->getNameAsString() << " !\n";
     } else if (const BreakStmt* bs = dyn_cast<BreakStmt>(stmt)) {
       llvm::outs() << "// TODO(c2f): break;\n";
       llvm::outs() << "()";
