@@ -164,7 +164,7 @@ instance Pretty ty => Pretty (ExprAST ty) where
             E_TyApp  annot e argtys -> withAnnot annot $ pretty e <> text ":[" <> hsep (punctuate comma (map pretty argtys)) <> text "]"
             E_TyCheck annot e ty    -> withAnnot annot $ parens (pretty e <+> text "as" <+> pretty ty)
             E_KillProcess annot exp -> withAnnot annot $ text "prim kill-entire-process" <+> pretty exp
-            E_StringAST   annot r (SS_Text  t) -> withAnnot annot $             wasRaw r <> dquotes (text $ T.unpack t)
+            E_StringAST   annot r (SS_Text  t) -> withAnnot annot $             wasRaw r <>         (text $ show $ T.unpack t)
             E_StringAST   annot r (SS_Bytes b) -> withAnnot annot $ text "b" <> wasRaw r <> dquotes (text $ show b)
             E_BoolAST     annot b   -> withAnnot annot $ text $ show b
             E_PrimAST     annot nm []   _ -> withAnnot annot $ text nm
@@ -182,14 +182,11 @@ instance Pretty ty => Pretty (ExprAST ty) where
                                                           <> text ";"
                                    <$> pretty expr
             E_LetRec annot binds e -> withAnnot annot $
-                                       text "rec"
-                                   <$> indent 2 (vcat [pretty evar <+> text "="
-                                                                   <+> pretty expr
-                                                      | TermBinding evar expr <- binds
-                                                      ])
-                                   <$> lkwd "in"
+                                   (vcat [text "REC" <+> pretty evar <+> text "="
+                                                     <+> pretty expr <> text ";"
+                                                  | TermBinding evar expr <- binds
+                                                  ])
                                    <$> pretty e
-                                   <$> end
             E_IfAST annot c b1 b2 -> withAnnot annot $
                                    nest 2 (kwd "if" <+> pretty c
                                            <$> (kwd "then" <+> align (pretty b1))
