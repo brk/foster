@@ -18,12 +18,14 @@
 // Based on AST matching sample by Eli Bendersky (eliben@gmail.com).
 //------------------------------------------------------------------------------
 #include <string>
+#include <sstream>
 
 #include "clang/AST/AST.h"
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
+#include "clang/Analysis/CFG.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/Tooling/CommonOptionsParser.h"
@@ -324,7 +326,8 @@ class FnBodyVisitor : public RecursiveASTVisitor<FnBodyVisitor> {
   public:
   FnBodyVisitor(std::map<std::string, bool>& locals,
                 VoidPtrCasts& casts,
-                ASTContext& ctx) : locals(locals), casts(casts), ctx(ctx) {}
+                bool& needsCFG,
+                ASTContext& ctx) : locals(locals), casts(casts), needsCFG(needsCFG), ctx(ctx) {}
 
   bool VisitStmt(Stmt* s) {
     MatchFinder mf;
@@ -369,6 +372,10 @@ class FnBodyVisitor : public RecursiveASTVisitor<FnBodyVisitor> {
       }
     }
 
+    if (isa<GotoStmt>(s) || isa<LabelStmt>(s) || isa<BreakStmt>(s) || isa<ContinueStmt>(s)) {
+      needsCFG = true;
+    }
+
     mf.match(*s, ctx);
     return true;
   }
@@ -382,6 +389,7 @@ class FnBodyVisitor : public RecursiveASTVisitor<FnBodyVisitor> {
   private:
   std::map<std::string, bool>& locals;
   VoidPtrCasts& casts;
+  bool& needsCFG;
   ASTContext& ctx;
 };
 
@@ -399,6 +407,129 @@ public:
       visitStmt(els);
     }
     llvm::outs() << " end";
+  }
+
+  std::string getBlockName(const CFGBlock& cb) {
+    std::string s;
+    std::stringstream ss(s);
+    ss << "goto_";
+
+    if (const Stmt* lab = cb.getLabel()) {
+      if (const LabelStmt* labstmt = dyn_cast<LabelStmt>(lab)) {
+        ss << labstmt->getName();
+        return ss.str();
+      }
+    }
+    ss << "block_" << cb.getBlockID();
+    return ss.str();
+  }
+
+  bool isExitBlock(const CFGBlock* next) const {
+    return next->getBlockID() == next->getParent()->getExit().getBlockID();
+  }
+
+  void visitStmtCFG(const Stmt* stmt) {
+
+    CFG::BuildOptions BO;
+    std::unique_ptr<CFG> cfg = CFG::buildCFG(nullptr, const_cast<Stmt*>(stmt), Ctx, BO);
+
+    for (auto it = cfg->nodes_begin(); it != cfg->nodes_end(); ++it) {
+      CFGBlock* cb = it;
+      if (isExitBlock(cb)) continue;
+
+      llvm::outs() << "\n//{{{ cfg block, empty? " << cb->empty() << " ; #succs = " << cb->succ_size() << " ; hasNoRetElem? " << cb->hasNoReturnElement() << "; id = " << cb->getBlockID() << ":\n";
+
+      llvm::outs() << "REC " << getBlockName(*cb) << " = {\n";
+
+#if 0
+      if (const Stmt* targ = cb->getLoopTarget()) {
+        llvm::outs() << "//loop tgt is";
+        visitStmt(targ);
+      }
+#endif
+
+      for (auto cbit = cb->begin(); cbit != cb->end(); ++cbit) {
+        CFGElement ce = *cbit;
+        if (ce.getKind() == CFGElement::Kind::Statement) {
+          if (const Stmt* s = ce.castAs<CFGStmt>().getStmt()) {
+            visitStmt(s);
+            llvm::outs() << ";\n";
+          }
+        } else {
+          llvm::outs() << "// non-stmt cfg element...\n";
+        }
+      }
+
+#if 0
+      if (const Stmt* tc = cb->getTerminatorCondition()) {
+        llvm::outs() << "// {{{ terminator condition\n";
+        visitStmt(tc);
+        llvm::outs() << "// }}} end terminator condition\n";
+      } else {
+        llvm::outs() << "// no terminator condition\n";
+      }
+#endif
+      if (const Stmt* termin = cb->getTerminator().getStmt()) {
+        if (!isa<GotoStmt>(termin)) {
+#if 0
+          llvm::outs() << "// {{{ terminator\n";
+          llvm::outs().flush();
+          termin->dump();
+          llvm::errs() << "\n";
+          llvm::errs().flush();
+          llvm::outs() << getText(R, *termin) << "\n";
+          llvm::outs() << "// }}} end terminator\n";
+#endif
+          visitStmt(termin);
+        }
+      }
+
+      if (cb->succ_size() == 1) {
+        CFGBlock::AdjacentBlock* ab = cb->succ_begin();
+        if (ab->isReachable()) {
+          CFGBlock* next = ab->getReachableBlock();
+          // Don't bother jumping to the exit block, just return directly.
+          if (! isExitBlock(next)) {
+            llvm::outs() << getBlockName(*next) << " !;\n";
+          }
+        } else {
+          llvm::outs() << "GOTO(u) block " << ab->getPossiblyUnreachableBlock()->getBlockID() << "\n";
+        }
+      }
+
+      llvm::outs() << "\n// }}}\n";
+      llvm::outs() << "};\n";
+
+    }
+
+    llvm::outs() << getBlockName(cfg->getEntry()) << " !;\n";
+
+  }
+
+  void handleSwitch(const SwitchStmt* ss) {
+    if (ss->getConditionVariable()) {
+      llvm::outs() << "/*TODO(c2f) handle var decl in switch*/\n";
+    }
+
+    /*
+    if (ss->getInit()) {
+      visitStmt(ss->getInit());
+    }
+    */
+
+    llvm::outs() << "case ";
+    visitStmt(ss->getCond());
+    // Assuming the body is a CompoundStmt of CaseStmts...
+    visitStmt(ss->getBody());
+
+    if (ss->isAllEnumCasesCovered()) {
+      llvm::outs() << "// all enum cases covered\n";
+    } else {
+      llvm::outs() << "// not all enum cases covered...\n";
+    }
+
+    llvm::outs() << "end\n";
+
   }
 
   bool tryHandleConditionalOperator(const Stmt* stmt) {
@@ -771,6 +902,18 @@ public:
     return name;
   }
 
+  /*
+  std::string castIsNonLossy(const std::string& srcTy, const std::string& dstTy) {
+    if (srcTy == "Int8"  && dstTy == "Int32") return true;
+    if (srcTy == "Int8"  && dstTy == "Int64") return true;
+    if (srcTy == "Int32" && dstTy == "Int64") return true;
+    if (srcTy == "Int8"  && dstTy == "Int32") return true;
+    if (srcTy == "Int8"  && dstTy == "Int64") return true;
+    if (srcTy == "Int32" && dstTy == "Int64") return true;
+    return false;
+  }
+  */
+
   std::string intCastFromTo(const std::string& srcTy, const std::string& dstTy, bool isSigned) {
     if (srcTy == "Int32" && dstTy == "Int8" ) return "trunc_i32_to_i8";
     if (srcTy == "Int64" && dstTy == "Int8" ) return "trunc_i64_to_i8";
@@ -809,7 +952,7 @@ public:
       break;
     case CK_IntegralCast: {
       std::string cast = "";
-      if (const IntegerLiteral* lit = dyn_cast<IntegerLiteral>(ce->getSubExpr())) {
+      if (isa<IntegerLiteral>(ce->getSubExpr()) || isa<CharacterLiteral>(ce->getSubExpr())) {
         // don't print anything, no cast needed
       } else if (isSignConversion(ce)) {
         // don't print anything either
@@ -870,9 +1013,27 @@ public:
       }
     } else if (const NullStmt* dr = dyn_cast<NullStmt>(stmt)) {
       llvm::outs() << "()";
+    } else if (const CaseStmt* cs = dyn_cast<CaseStmt>(stmt)) {
+      const Stmt* ss = cs->getSubStmt();
+      if (cs->getLHS()) {
+        llvm::outs() << "  of ";
+        visitStmt(cs->getLHS());
+        if (ss && !isa<CaseStmt>(ss)) { llvm::outs() << " ->"; }
+        llvm::outs() << "\n";
+      }
+      if (cs->getRHS()) {
+        visitStmt(cs->getRHS());
+      }
+      if (ss) {
+        visitStmt(ss);
+      }
+    } else if (const DefaultStmt* ds = dyn_cast<DefaultStmt>(stmt)) {
+      llvm::outs() << "  _ ->\n";
+      visitStmt(ds->getSubStmt());
+    } else if (const SwitchStmt* ss = dyn_cast<SwitchStmt>(stmt)) {
+      handleSwitch(ss);
     } else if (const GotoStmt* gs = dyn_cast<GotoStmt>(stmt)) {
-      llvm::outs() << "// TODO(c2f): goto " << gs->getLabel()->getNameAsString() << "\n";
-      llvm::outs() << "()";
+      llvm::outs() << "_goto_" << gs->getLabel()->getNameAsString() << " !\n";
     } else if (const BreakStmt* bs = dyn_cast<BreakStmt>(stmt)) {
       llvm::outs() << "// TODO(c2f): break;\n";
       llvm::outs() << "()";
@@ -1052,8 +1213,8 @@ public:
 
   bool isFromMainFile(const Decl* d) { return isFromMainFile(d->getLocation()); }
 
-  void performFunctionLocalAnalysis(FunctionDecl* d) {
-    FnBodyVisitor v(mutableLocals, voidPtrCasts, d->getASTContext());
+  void performFunctionLocalAnalysis(FunctionDecl* d, bool& needsCFG) {
+    FnBodyVisitor v(mutableLocals, voidPtrCasts, needsCFG, d->getASTContext());
     v.TraverseDecl(d);
   }
 
@@ -1080,7 +1241,8 @@ public:
         }
       } else if (FunctionDecl* fd = dyn_cast<FunctionDecl>(*b)) {
         if (Stmt* body = fd->getBody()) {
-          performFunctionLocalAnalysis(fd);
+          bool needsCFG = false;
+          performFunctionLocalAnalysis(fd, needsCFG);
 
           llvm::outs() << fosterizedName(fd->getName()) << " = {\n";
           for (unsigned i = 0; i < fd->getNumParams(); ++i) {
@@ -1093,7 +1255,11 @@ public:
             }
           }
           // TODO rebind parameters if they are mutable locals
-          visitStmt(body);
+          if (needsCFG) {
+            visitStmtCFG(body);
+          } else {
+            visitStmt(body);
+          }
           llvm::outs() << "};\n";
         }
       } else if (TypedefDecl* fd = dyn_cast<TypedefDecl>(*b)) {
@@ -1144,6 +1310,7 @@ public:
   void Initialize(ASTContext& ctx) override {
     rawcomments = &(ctx.getRawCommentList());
     rawcomments_lastsize = 0;
+    Ctx = &ctx;
   }
 /*
   void HandleTranslationUnit(ASTContext& ctx) override {
@@ -1164,6 +1331,7 @@ private:
   std::map<std::string, bool> mutableLocals;
   VoidPtrCasts voidPtrCasts;
   Rewriter R;
+  ASTContext* Ctx;
 };
 
 // For each source file provided to the tool, a new FrontendAction is created.
