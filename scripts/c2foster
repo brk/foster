@@ -3,10 +3,11 @@
 SD=$(dirname `which $0`)/../scripts
 FOSTER_ROOT=$(python $SD/normpath.py $SD/..)
 
-LLVM_VERSION=3.7.1
-LLVM_DIR=${HOME}/llvm/${LLVM_VERSION}
-LLVM_CLANG_INC_DIR=${LLVM_DIR}/lib/clang/${LLVM_VERSION}/include
+LLVM_DIR=$( ${SD}/echo-llvmdir )
+LLVM_CLANG_INC_DIR=$( ${LLVM_DIR}/bin/clang -print-search-dirs | tail -n1 | sed 's/libraries: =//' )/include
 BINDIR=${FOSTER_ROOT}/_obj
+
+[ -d ${LLVM_CLANG_INC_DIR} ] || echo "// Clang include dir ${LLVM_CLANG_INC_DIR} doesn't exist..."
 
 mkdir -p fosterc-standalone-tmp
 
@@ -34,14 +35,14 @@ show_clang_ast () {
 
 echo "// running c2f..."
 echo "// ${BINDIR}/c2f ${cprog} -- -I ${LLVM_CLANG_INC_DIR} $@  > ${tmpfile}.foster"
-${BINDIR}/c2f ${cprog} -- -I ${LLVM_CLANG_INC_DIR} $@  &> ${tmpfile}.foster
+${BINDIR}/c2f ${cprog} -- -I ${LLVM_CLANG_INC_DIR} $@  > ${tmpfile}.foster
 
 c2f_status="$?"
 
 if [ "${c2f_status}" = "0" ]; then
   echo "// running foster-fmt; c2f ${tmpfile}.foster status was ${c2f_status}"
   echo "python ${SD}/fosterc.py --me-arg=--fmt --bindir ${BINDIR} --tmpdir fosterc-standalone-tmp ${tmpfile}.foster"
-  (python ${SD}/fosterc.py --me-arg=--fmt --bindir ${BINDIR} --tmpdir fosterc-standalone-tmp ${tmpfile}.foster --show-cmdlines | python ${SD}/ansifilter.py) || show_clang_ast
+  (python ${SD}/fosterc.py --me-arg=--fmt --bindir ${BINDIR} --tmpdir fosterc-standalone-tmp ${tmpfile}.foster --no-compile-log | python ${SD}/ansifilter.py) || show_clang_ast
 else
   echo "// c2f failed with status ${c2f_status}; raw output was:"
   cat ${tmpfile}.foster

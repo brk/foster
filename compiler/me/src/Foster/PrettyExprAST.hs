@@ -159,13 +159,13 @@ instance Pretty ty => Pretty (ArrayEntry (ExprAST ty)) where
 instance Pretty ty => Pretty (ExprAST ty) where
   pretty e =
         case e of
-            E_MachArrayLit annot _mbt args -> withAnnot annot $ text "prim mach-array-literal" <+> hsep (map pretty args)
+            E_MachArrayLit annot _mbt args -> withAnnot annot $ parens $ text "prim mach-array-literal" <+> hsep (map pretty args)
             E_VarAST annot evar     -> withAnnot annot $ pretty evar
             E_TyApp  annot e argtys -> withAnnot annot $ pretty e <> text ":[" <> hsep (punctuate comma (map pretty argtys)) <> text "]"
             E_TyCheck annot e ty    -> withAnnot annot $ parens (pretty e <+> text "as" <+> pretty ty)
             E_KillProcess annot exp -> withAnnot annot $ text "prim kill-entire-process" <+> pretty exp
-            E_StringAST   annot r (SS_Text  t) -> withAnnot annot $             wasRaw r <>         (text $ show $ T.unpack t)
-            E_StringAST   annot r (SS_Bytes b) -> withAnnot annot $ text "b" <> wasRaw r <> dquotes (text $ show b)
+            E_StringAST   annot r (SS_Text  t) -> withAnnot annot $             wasRaw r <> (text $ show $ T.unpack t)
+            E_StringAST   annot r (SS_Bytes b) -> withAnnot annot $ text "b" <> wasRaw r <> (text $ show b)
             E_BoolAST     annot b   -> withAnnot annot $ text $ show b
             E_PrimAST     annot nm []   _ -> withAnnot annot $ text nm
             E_PrimAST     annot nm lits _ -> withAnnot annot $ text nm <+> pretty lits
@@ -194,7 +194,7 @@ instance Pretty ty => Pretty (ExprAST ty) where
                                    <$> end
             E_IntAST   annot intstr  -> withAnnot annot $ red     $ text intstr
             E_RatAST   annot fltstr  -> withAnnot annot $ dullred $ text fltstr
-            E_AllocAST annot e _rgn  -> withAnnot annot $ parens $ text "ref" <+> prettyAtom e
+            E_AllocAST annot e _rgn  -> withAnnot annot $ parens $ text "prim ref" <+> prettyAtom e
             E_DerefAST annot e       -> withAnnot annot $ prettyAtom e <> text "^"
             E_StoreAST annot e1 e2   -> withAnnot annot $ prettyAtom e1 <+> text ">^" <+> prettyAtom e2
             E_Case annot scrut arms  -> withAnnot annot $ prettyCase scrut arms

@@ -120,6 +120,10 @@ std::string tyOpSuffix(const clang::Type* ty) {
     return "Ptr_" + tyOpSuffix(ty->getPointeeType().getTypePtr());
   }
 
+  if (auto tdty = dyn_cast<TypedefType>(ty)) {
+    return tdty->getDecl()->getName();
+  }
+
   return "";
 }
 
@@ -139,6 +143,7 @@ std::string tryParseFnTy(const Type* ty) {
 }
 
 const Stmt* lastStmtWithin(const Stmt* s) {
+  if (!s) return s;
   if (const CompoundStmt* cs = dyn_cast<CompoundStmt>(s)) {
     if (cs->body_back()) return cs->body_back();
   }
@@ -175,13 +180,17 @@ std::string tyName(const clang::Type* ty, std::string defaultName = "C2FUNK") {
   }
 
   if (const TypedefType* tty = dyn_cast<TypedefType>(ty)) {
-    return tyName(tty->desugar().getTypePtr(), tty->getDecl()->getNameAsString());
+    auto nm = tyName(tty->desugar().getTypePtr(), tty->getDecl()->getNameAsString());
+    if (!nm.empty()) return nm;
   }
   if (const PointerType* pty = dyn_cast<PointerType>(ty)) {
-    // could mean either (Array t) or (Ref t)
+    // could mean either (Array t) or (Ref t) or t
     if (isVoidPtr(pty)) return "VOIDPTR";
     if (const RecordType* rty = bindRecordType(pty->getPointeeType().getTypePtr())) {
-      return rty->getDecl()->getNameAsString();
+      auto nm = rty->getDecl()->getNameAsString();
+      if (!nm.empty()) return nm;
+
+      return tyName(pty->getPointeeType().getTypePtr());
     }
 
     return "(Array " + tyName(pty->getPointeeType().getTypePtr()) + ")";
@@ -198,7 +207,8 @@ std::string tyName(const clang::Type* ty, std::string defaultName = "C2FUNK") {
 
   if (const ElaboratedType* ety = dyn_cast<ElaboratedType>(ty)) {
     if (ety->isSugared()) {
-      return tyName(ety->desugar().getTypePtr());
+      auto nm = tyName(ety->desugar().getTypePtr());
+      if (!nm.empty()) return nm;
     }
   }
 
@@ -219,9 +229,11 @@ std::string tyName(const clang::Type* ty, std::string defaultName = "C2FUNK") {
 
   // TODO handle constantarraytype
 
-  llvm::outs().flush();
-  ty->dump();
-  llvm::errs().flush();
+  if (defaultName == "C2FUNK") {
+    llvm::outs().flush();
+    ty->dump();
+    llvm::errs().flush();
+  }
   return defaultName;
 }
 
@@ -509,8 +521,9 @@ public:
   void emitJumpTo(CFGBlock::AdjacentBlock* ab) {
     if (ab->isReachable()) {
       CFGBlock* next = ab->getReachableBlock();
-      // Don't bother jumping to the exit block, just return directly.
-      if (! isExitBlock(next)) {
+      if (isExitBlock(next)) {
+        llvm::outs() << "() /*exitblock*/\n";
+      } else {
         llvm::outs() << getBlockName(*next) << " !;\n";
       }
     } else {
@@ -525,7 +538,11 @@ public:
 
     if (0) {
       LangOptions LO;
+      llvm::outs().flush();
+      llvm::errs() << "/*\n";
       cfg->dump(LO, false);
+      llvm::errs() << "\n*/\n";
+      llvm::errs().flush();
     }
 
     if (1) {
@@ -558,8 +575,9 @@ public:
 
       const Stmt* termin = cb->getTerminator().getStmt();
       bool hasControlFlowTerminator = termin && (
-            isa<SwitchStmt>(termin) || isa<IfStmt>(termin) || isa<ForStmt>(termin));
-      int offset = hasControlFlowTerminator ? 1 : 0;
+            isa<SwitchStmt>(termin) || isa<IfStmt>(termin)
+            || isa<ForStmt>(termin) || isa<WhileStmt>(termin));
+      int offset = (hasControlFlowTerminator && (cb->begin() != cb->end())) ? 1 : 0;
       for (auto cbit = cb->begin() + offset; cbit != cb->end(); ++cbit) {
         CFGElement ce = *cbit;
         if (ce.getKind() == CFGElement::Kind::Statement) {
@@ -596,51 +614,53 @@ public:
         }
       } else if (const SwitchStmt* ss = dyn_cast<SwitchStmt>(cb->getTerminator())) {
         // SwitchStmt terminator
+        llvm::outs() << "/*line 617*/ ";
         llvm::outs() << "case ";
         visitStmt(cb->getTerminatorCondition());
         llvm::outs() << "\n";
-        // We could translate every case to a distinct label,
-        // but that generates linear chains of explicit gotos
-        // for implicit-fallthrough case branches.
-        // Instead, we'll walk through the cases, accumulating
-        // those with empty blocks.
-        auto swit = ss->getSwitchCaseList();
-        auto succ = cb->succ_rbegin();
-        std::vector<const SwitchCase*> allCases;
-        while (swit != nullptr) {
-          allCases.push_back(swit);
-          swit = swit->getNextSwitchCase();
-        }
 
-        std::vector<const SwitchCase*> cases;
+        // Walk through the successor blocks.
+        // If it's a fallthrough, associate the case label with the
+        // target block.
+        // If it's not a fallthrough, associate with our own block.
+
+        CFGBlock::AdjacentBlock* defaultBlock = nullptr;
+        std::map<CFGBlock*, std::vector<Stmt*> > labelsFor;
 
         std::vector<CFGBlock::AdjacentBlock*> adjs;
-        CFGBlock::AdjacentBlock* defaultBlock = nullptr;
-        size_t swit_idx = allCases.size() - 1;
-        do {
-          cases.push_back(allCases[swit_idx]);
-          adjs.push_back(&*succ);
-          if (!isEmptyFallthroughAdjacent(&*succ)) {
-            for (size_t i = 0; i < cases.size(); ++i) {
-              if (const CaseStmt* cs = dyn_cast<CaseStmt>(cases[i])) {
-                llvm::outs() << "  " << (i == 0 ? "of" : "or") << " ";
-                visitStmt(cs->getLHS());
-                if (i == cases.size() - 1) {
-                  llvm::outs() << " -> ";
-                  emitJumpTo(adjs[i]);
-                } else {
-                  llvm::outs() << "\n";
-                }
-              } else {
-                defaultBlock = &*succ;
-              }
-            }
-            cases.clear();
-            adjs.clear();
+        for (auto it = cb->succ_rbegin(); it != cb->succ_rend(); ++it) {
+          if (isEmptyFallthroughAdjacent(&*it)) {
+            labelsFor[it->getReachableBlock()->succ_begin()->getReachableBlock()].push_back(
+                      it->getReachableBlock()->getLabel());
+          } else {
+            adjs.push_back(&*it);
+            labelsFor[it->getReachableBlock()].push_back(
+                      it->getReachableBlock()->getLabel());
           }
-          ++succ;
-          --swit_idx;
-        } while (succ != cb->succ_rend());
+        }
+
+        // TODO does this handle fallthrough into the default block?
+        for (auto adj : adjs) {
+          const std::vector<Stmt*>& labels = labelsFor[adj->getReachableBlock()];
+          for (size_t i = 0; i < labels.size(); ++i) {
+            const Stmt* lab = labels[labels.size() - (i + 1)];
+            if (isa<DefaultStmt>(lab)) {
+              defaultBlock = adj;
+            } else if (const CaseStmt* cs = dyn_cast<CaseStmt>(lab)) {
+              llvm::outs() << "  " << (i == 0 ? "of" : "or") << " ";
+              visitStmt(cs->getLHS());
+
+              if (i == labels.size() - 1) {
+                llvm::outs() << " -> ";
+                emitJumpTo(adj);
+              } else {
+                llvm::outs() << "\n";
+              }
+            } else {
+              llvm::outs() << "non-default, non-case label?!?\n";
+            }
+          }
+        }
 
         if (defaultBlock) {
           llvm::outs() << "\n of _ -> ";
@@ -669,6 +689,7 @@ public:
     }
     */
 
+    llvm::outs() << "/*line 691*/ ";
     llvm::outs() << "case ";
     visitStmt(ss->getCond());
     llvm::outs() << "\n";
@@ -685,11 +706,19 @@ public:
 
   }
 
-  bool tryHandleConditionalOperator(const Stmt* stmt) {
+  bool isNumericLiteral(const Stmt* stmt) {
+    return (isa<IntegerLiteral>(stmt) || isa<FloatingLiteral>(stmt));
+  }
+
+  bool tryHandleAtomicExpr(const Stmt* stmt) {
     if (const ConditionalOperator* co = dyn_cast<ConditionalOperator>(stmt)) {
       handleIfThenElse(co->getCond(), co->getTrueExpr(), co->getFalseExpr());
       return true;
     }
+    if (isNumericLiteral(stmt)) {
+      visitStmt(stmt); return true;
+    }
+
     return false;
   }
 
@@ -754,9 +783,14 @@ public:
   template <typename T>
   void translateWhileLoop(const T* stmt, std::string loopname, const Stmt* extra = nullptr) {
     llvm::outs() << loopname << " { ";
-      // TODO write an explicit "ended" variable, for control flow
-      if (stmt->getCond()) visitStmt(stmt->getCond());
-      else llvm::outs() << "True";
+      if (stmt->getCond()) {
+        if (stmt->getCond()->getType()->isPointerType()) {
+          llvm::outs() << "isNonNull ";
+        }
+        llvm::outs() << "( ";
+        visitStmt(stmt->getCond());
+        llvm::outs() << " )";
+      } else llvm::outs() << "True";
     llvm::outs() << " } {\n";
       visitStmt(stmt->getBody());
       // If the body wasn't a compound, we'll be missing a semicolon...
@@ -783,11 +817,36 @@ public:
       }
   }
 
+/* TODO
+code like sizeof(mathlib)/sizeof((mathlib)[0])
+should be translated to the statically-known length
+of the array type for mathlib.
+
+The corresponding AST to be matched is
+    BinaryOperator ... 'unsigned long' '/'
+    |-UnaryExprOrTypeTraitExpr ... 'unsigned long' sizeof
+    | `-ParenExpr ... 'const luaL_Reg [28]' lvalue
+    |   `-DeclRefExpr ... 'const luaL_Reg [28]' lvalue Var 0x7f8daa905398 'mathlib' 'const luaL_Reg [28]'
+    `-UnaryExprOrTypeTraitExpr ... 'unsigned long' sizeof
+      `-ParenExpr ... 'const luaL_Reg':'const struct luaL_Reg' lvalue
+        `-ArraySubscriptExpr ... 'const luaL_Reg':'const struct luaL_Reg' lvalue
+          |-ImplicitCastExpr ... 'const luaL_Reg *' <ArrayToPointerDecay>
+          | `-ParenExpr ... 'const luaL_Reg [28]' lvalue
+          |   `-DeclRefExpr ... 'const luaL_Reg [28]' lvalue Var 0x7f8daa905398 'mathlib' 'const luaL_Reg [28]'
+          `-IntegerLiteral ... 'int' 0
+*/
+
   void handleBinaryOperator(const BinaryOperator* binop) {
     std::string op = binop->getOpcodeStr();
 
     if (op == "=") {
       handleAssignment(binop);
+    } else if (op == ",") {
+      llvm::outs() << "( _ = ";
+      visitStmt(binop->getLHS());
+      llvm::outs() << ";\n";
+      visitStmt(binop->getRHS());
+      llvm::outs() << " )";
     } else if (op == "&&" || op == "||") {
       std::string tgt = (op == "&&" ? "`andand`" : "`oror`");
       llvm::outs() << "({ ";
@@ -819,9 +878,18 @@ public:
       visitStmt(unop->getSubExpr());
       llvm::outs() << ")";
     } else if (unop->getOpcode() == UO_Minus) {
-      llvm::outs() << "(-";
-      visitStmt(unop->getSubExpr());
-      llvm::outs() << ")";
+      // We make the minus sign a lexical part of numeric literals,
+      // rather than an operator, which means it cannot have intervening
+      // whitespace. Other cases turn into zero-minus-whatever.
+      if (isNumericLiteral(unop->getSubExpr())) {
+        llvm::outs() << "-";
+        visitStmt(unop->getSubExpr());
+      } else {
+        std::string tgt = mkFosterBinop("-", exprTy(unop->getSubExpr()));
+        llvm::outs() << "(0 " << tgt << " ";
+        visitStmt(unop->getSubExpr());
+        llvm::outs() << ")";
+      }
     } else if (unop->getOpcode() == UO_PreDec || unop->getOpcode() == UO_PostDec) {
       handleIncrDecr("decr", unop);
     } else if (unop->getOpcode() == UO_PreInc || unop->getOpcode() == UO_PostInc) {
@@ -981,17 +1049,46 @@ public:
     return "None";
   }
 
-  std::string fieldAccessorName(const MemberExpr* me) {
-    DeclarationNameInfo dni = me->getMemberNameInfo();
-    return tyName(exprTy(me->getBase())) + "_" + dni.getAsString();
+  bool isAnonymousStructOrUnionType(const Type* ty) {
+    if (auto ety = dyn_cast<ElaboratedType>(ty)) {
+      if (auto rty = dyn_cast<RecordType>(ety->desugar().getTypePtr())) {
+        auto d = rty->getDecl();
+        return (d->getIdentifier() == NULL)
+            && (d->getNameAsString().empty())
+            && (d->getDeclName().isEmpty());
+      }
+    }
+    return false;
+  }
+
+  // Convert v->f, if v has type T*, to (T_f v)
+  // Convert v->s.f, if v has type T*, and s is anonymous,
+  //                                   to (T_s_f v)
+  // Convert v->s.f, if v has type T*, and s has type S,
+  //                                   to (S_f (T_s v))
+  // Convert v.s->f, if v has type T*, and f has type X,
+  //                                   to (X_f (T_s v))
+  std::string fieldAccessorName(const MemberExpr* me, const Expr* & base) {
+    std::string path = "";
+    base = me->getBase();
+    const MemberExpr* baseme = me;
+    while (true) {
+      baseme = dyn_cast<MemberExpr>(baseme->getBase()->IgnoreImplicit());
+      if (!baseme || !isAnonymousStructOrUnionType(baseme->getType().getTypePtr()))
+        break;
+      path = path + "_" + baseme->getMemberNameInfo().getAsString();
+      base = baseme->getBase();
+    }
+    return tyName(exprTy(base)) + path + "_" + me->getMemberNameInfo().getAsString();
   }
 
   void handleAssignment(const BinaryOperator* binop) {
     if (const MemberExpr* me = dyn_cast<MemberExpr>(binop->getLHS())) {
       // translate p->f = x;  to  (set_pType_f p x)
-      llvm::outs() << "(set_" << fieldAccessorName(me) << " ";
+      const Expr* base = nullptr;
+      llvm::outs() << "(set_" << fieldAccessorName(me, base) << " ";
       llvm::outs() << "(";
-      visitStmt(me->getBase(), true);
+      visitStmt(base, true);
       llvm::outs() << ") (";
       visitStmt(binop->getRHS());
       llvm::outs() << ")";
@@ -1013,14 +1110,16 @@ public:
 
     if (const MemberExpr* me = dyn_cast<MemberExpr>(binop->getLHS())) {
       // translate p->f OP= v;  to  (set_pType_f p ((pType_f p) OP v))
-      llvm::outs() << "(set_" << fieldAccessorName(me) << " ";
+      const Expr* base = nullptr;
+      std::string accessor = fieldAccessorName(me, base);
+      llvm::outs() << "(set_" << accessor << " ";
       llvm::outs() << "(";
-      visitStmt(me->getBase(), true);
+      visitStmt(base, true);
       llvm::outs() << ") (";
 
-        llvm::outs() << "(" << fieldAccessorName(me) << " ";
+        llvm::outs() << "(" << accessor << " ";
         llvm::outs() << "(";
-        visitStmt(me->getBase(), true);
+        visitStmt(base, true);
         llvm::outs() << ")";
         llvm::outs() << ")";
 
@@ -1048,8 +1147,9 @@ public:
   }
 
   std::string fosterizedName(const std::string& name) {
-    if (name == "end" || name == "do" || name == "type" || name == "case"
-     || name == "of" || name == "as" || name == "then" || name == "in") {
+    if (name == "to" || name == "do" || name == "type" || name == "case"
+     || name == "of" || name == "as" || name == "then" || name == "end"
+     || name == "in") {
       return name + "_";
     }
     return name;
@@ -1082,6 +1182,16 @@ public:
 
   void handleCastExpr(const CastExpr* ce) {
     switch (ce->getCastKind()) {
+    case CK_NullToPointer:
+      llvm::outs() << "NullPtr";
+      break;
+    case CK_ToVoid:
+      if (isa<IntegerLiteral>(ce->getSubExpr()->IgnoreParens())) {
+        llvm::outs() << "()";
+      } else {
+        visitStmt(ce->getSubExpr());
+      }
+      break;
     case CK_FloatingCast:
       llvm::outs() << " /*float cast*/ ";
       visitStmt(ce->getSubExpr());
@@ -1125,7 +1235,7 @@ public:
         llvm::outs() << ")";
       }
       break;
-                          }
+    }
     default:
       visitStmt(ce->getSubExpr());
     }
@@ -1183,7 +1293,7 @@ public:
     } else if (const ConditionalOperator* co = dyn_cast<ConditionalOperator>(stmt)) {
       handleIfThenElse(co->getCond(), co->getTrueExpr(), co->getFalseExpr());
     } else if (const ParenExpr* pe = dyn_cast<ParenExpr>(stmt)) {
-      if (tryHandleConditionalOperator(pe->getSubExpr())) {
+      if (tryHandleAtomicExpr(pe->getSubExpr())) {
         // done
       } else {
         llvm::outs() << "(";
@@ -1197,6 +1307,9 @@ public:
     } else if (const DefaultStmt* ds = dyn_cast<DefaultStmt>(stmt)) {
       llvm::outs() << "  of _ ->\n";
       visitStmt(ds->getSubStmt());
+      if (isa<BreakStmt>(ds->getSubStmt())) {
+        llvm::outs() << "()\n";
+      }
     } else if (const SwitchStmt* ss = dyn_cast<SwitchStmt>(stmt)) {
       handleSwitch(ss);
     } else if (const GotoStmt* gs = dyn_cast<GotoStmt>(stmt)) {
@@ -1214,8 +1327,9 @@ public:
         llvm::outs() << "()";
       }
     } else if (const MemberExpr* me = dyn_cast<MemberExpr>(stmt)) {
-      llvm::outs() << "(" + fieldAccessorName(me) + " ";
-      visitStmt(me->getBase());
+      const Expr* base = nullptr;
+      llvm::outs() << "(" + fieldAccessorName(me, base) + " ";
+      visitStmt(base);
       llvm::outs() << ")";
     } else if (const ArraySubscriptExpr* ase = dyn_cast<ArraySubscriptExpr>(stmt)) {
       visitStmt(ase->getBase());
@@ -1229,10 +1343,33 @@ public:
     } else if (const UnaryOperator* unop = dyn_cast<UnaryOperator>(stmt)) {
       handleUnaryOperator(unop);
     } else if (const IntegerLiteral* lit = dyn_cast<IntegerLiteral>(stmt)) {
-      lit->getValue().print(llvm::outs(), true);
+      bool isSigned = true;
+      lit->getValue().print(llvm::outs(), isSigned);
     } else if (const StringLiteral* lit = dyn_cast<StringLiteral>(stmt)) {
       if (lit->isUTF8() || lit->isAscii()) {
-        lit->outputString(llvm::outs());
+        // Clang's outputString uses octal escapes, but we only support
+        // Unicode escape sequences in non-byte-strings.
+        StringRef data = lit->getString();
+        bool useTriple = data.count('\n') > 1;
+        // TODO must also check the str doesn't contain 3 consecutive dquotes.
+        // TODO distinguish text vs byte strings...?
+        llvm::outs() << "b" << (useTriple ? "\"\"\"" : "\"");
+        for (char c : data) {
+            switch(c) {
+            case '\n': llvm::outs() << (useTriple ? "\n" : "\\n"); break;
+            case '\t': llvm::outs() << "\\t"; break;
+            case '\\': llvm::outs() << "\\\\"; break;
+            case '"' : llvm::outs() << (useTriple ? "\"" : "\\\""); break;
+            default:
+              if (isprint(c)) {
+                llvm::outs() << c;
+              } else {
+                llvm::outs() << llvm::format("\\u{%02x}", c);
+              }
+              break;
+            }
+        }
+        llvm::outs() << (useTriple ? "\"\"\"" : "\"");
       } else {
         llvm::outs() << "// non UTF8 string\n";
         lit->outputString(llvm::outs());
@@ -1251,7 +1388,11 @@ public:
 
     } else if (const CharacterLiteral* clit = dyn_cast<CharacterLiteral>(stmt)) {
       llvm::outs() << clit->getValue();
-      llvm::outs() << " /*'" << llvm::format("%c", clit->getValue()) << "'*/ ";
+      if (isprint(clit->getValue())) {
+        llvm::outs() << " /*'" << llvm::format("%c", clit->getValue()) << "'*/ ";
+      } else {
+        llvm::outs() << " /*'\\x" << llvm::format("%02x", clit->getValue()) << "'*/ ";
+      }
     } else if (const PredefinedExpr* lit = dyn_cast<PredefinedExpr>(stmt)) {
       lit->getFunctionName()->outputString(llvm::outs());
     } else if (const CastExpr* ce = dyn_cast<CastExpr>(stmt)) {
@@ -1308,7 +1449,10 @@ public:
         if (isa<CompoundStmt>(c) || isa<BreakStmt>(c)) {
           // don't print another semicolon
         } else if (childno == numPrintingChildren - 1) {
-          llvm::outs() << "\n";
+          // We need to print a semicolon when compound statments
+          // are embedded within other compound statments,
+          // but not when they appear within switch cases...
+          llvm::outs() << ";/*clast*/\n";
         } else {
           llvm::outs() << ";\n";
         }
@@ -1347,6 +1491,8 @@ public:
         llvm::errs().flush();
         llvm::outs() << getText(R, *stmt) << "\n";
       }
+    } else if (!stmt) {
+      llvm::outs() << "/*null stmt??*/";
     } else {
       llvm::outs().flush();
       llvm::errs() << "/* line 655\n";
@@ -1392,11 +1538,18 @@ public:
 
   bool isFromMainFile(const Decl* d) { return isFromMainFile(d->getLocation()); }
 
+  const ReturnStmt* getTailReturnOrNull(const Stmt* s) {
+    const Stmt* rv = lastStmtWithin(s);
+    return rv ? dyn_cast<ReturnStmt>(rv) : NULL;
+  }
+
   void performFunctionLocalAnalysis(FunctionDecl* d, bool& needsCFG) {
     std::map<const Stmt*, bool> innocuousReturns;
-    if (const ReturnStmt* r = dyn_cast<ReturnStmt>(
-          lastStmtWithin(d->getBody()))) {
-      innocuousReturns[r] = true;
+    innocuousReturns[getTailReturnOrNull(d->getBody())] = true;
+
+    if (const IfStmt* ifs = dyn_cast<IfStmt>(lastStmtWithin(d->getBody()))) {
+      innocuousReturns[getTailReturnOrNull(ifs->getThen())] = true;
+      innocuousReturns[getTailReturnOrNull(ifs->getElse())] = true;
     }
 
     FnBodyVisitor v(mutableLocals, innocuousReturns,
@@ -1548,6 +1701,12 @@ int main(int argc, const char **argv) {
 }
 
 // Notes on un-handled C constructs:
+//   * Need to think more about how to expose libm functions and macros.
+//     Even a trivial-ish macro (HUGE_VAL) raises questions.
+//   * I dunno how to ask clang to evaluate sizeof() expressions.
+//   * Unions...
+//   * Embedded anonymous structs are not well-handled yet,
+//     on either the creation/representation or accessor sides.
 //   * I'm not sure of the simplest way to distinguish trivial vs non-trivial
 //     return statements. One way might be to copy the AST but replace
 //     the returns with non-control-flow marker nodes, then build CFGs for
