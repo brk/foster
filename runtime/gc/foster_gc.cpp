@@ -71,20 +71,6 @@ struct allocator_range {
   memory_range range;
   bool         stable;
 };
-// }}}
-
-// {{{ Global data used by the GC
-FILE* gclog = NULL;
-
-class copying_gc;
-copying_gc* allocator = NULL;
-
-std::vector<allocator_range> allocator_ranges;
-
-// TODO de-globalize these
-base::TimeTicks gc_time;
-base::TimeTicks runtime_start;
-base::TimeTicks    init_start;
 
 typedef void* ret_addr;
 typedef void* frameptr;
@@ -92,35 +78,46 @@ typedef void* frameptr;
 // but both options lead to unacceptable binary bloat vs std::map,
 // because chromium_base (etc) already uses std::map...
 typedef std::map<frameptr, const stackmap::PointCluster*> ClusterMap;
-ClusterMap clusterForAddress;
+// }}}
+
+// {{{ Global data used by the GC
+FILE* gclog = NULL;
+
+class copying_gc;
+
+template<typename Allocator>
+struct GCGlobals {
+  Allocator* allocator = NULL;
+
+  std::vector<allocator_range> allocator_ranges;
+
+  ClusterMap clusterForAddress;
+
+  base::TimeTicks gc_time;
+  base::TimeTicks runtime_start;
+  base::TimeTicks    init_start;
+};
+
+GCGlobals<copying_gc> gcglobals;
 // }}}
 
 // {{{ Internal utility functions
 void gc_assert(bool cond, const char* msg);
 
 template <typename T>
-inline T num_granules(T size) { return size / T(16); }
+inline T num_granules(T size_in_bytes) { return size_in_bytes / T(16); }
 
 bool is_marked_as_stable(tori* body) {
-  for (int i = 0, j = allocator_ranges.size(); i < j; ++i) {
-    if (allocator_ranges[i].range.contains(static_cast<void*>(body))) {
-      return allocator_ranges[i].stable;
+  for (const allocator_range& ar : gcglobals.allocator_ranges) {
+    if (ar.range.contains(static_cast<void*>(body))) {
+      return ar.stable;
     }
   }
   return false;
 }
 // }}}
 
-////////////////////////////////////////////////////////////////////
-
-// {{{
-void inspect_typemap(const typemap* ti);
-void visitGCRoots(void* start_frame, copying_gc* visitor);
-void coro_visitGCRoots(foster_generic_coro* coro, copying_gc* visitor);
-const typemap* tryGetTypemap(heap_cell* cell);
-// }}}
-
-// {{{
+// {{{ Bitmap/bytemap utility class
 // Bitmap overhead for 16-byte granules is 8 KB per MB (roughly 1%).
 class bitmap {
 private:
@@ -164,6 +161,15 @@ public:
   }
 
 };
+// }}}
+
+////////////////////////////////////////////////////////////////////
+
+// {{{ Function prototype decls
+void inspect_typemap(const typemap* ti);
+void visitGCRoots(void* start_frame, copying_gc* visitor);
+void coro_visitGCRoots(foster_generic_coro* coro, copying_gc* visitor);
+const typemap* tryGetTypemap(heap_cell* cell);
 // }}}
 
 // {{{ copying_gc
@@ -587,6 +593,7 @@ public:
     if (curr->contains(body)) {
       tidy* tidy = curr->tidy_for(body);
       heap_cell* obj = heap_cell::for_tidy(tidy);
+
       tidyn = next->ss_copy(obj, depth);
       *root = make_unchecked_ptr((tori*) offset(tidyn, distance(tidy, body) ));
 
@@ -778,6 +785,9 @@ public:
 
 extern "C" foster_generic_coro** __foster_get_current_coro_slot();
 
+// {{{ Primary GC driver loops for root visiting and worklist processing.
+// Adds stack + coroutine roots to the worklist, processes the worklist,
+// then flips semispaces.
 void copying_gc::gc(bool should_print) {
   if (should_print) {
     fprintf(stdout, "♻\n");
@@ -823,7 +833,7 @@ void copying_gc::gc(bool should_print) {
   if (FOSTER_GC_TIME_HISTOGRAMS) {
     LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-pause-micros", delta.InMicroseconds(),  0, 60000000, 256);
   }
-  gc_time += delta;
+  gcglobals.gc_time += delta;
 }
 
 void copying_gc::worklist::process(copying_gc::semispace* next) {
@@ -832,161 +842,6 @@ void copying_gc::worklist::process(copying_gc::semispace* next) {
     advance();
     next->scan_cell(cell, kFosterGCMaxDepth);
   }
-}
-
-size_t get_default_stack_size() {
-  struct rlimit rlim;
-  getrlimit(RLIMIT_STACK, &rlim);
-  return (size_t) (rlim.rlim_cur != RLIM_INFINITY) ? rlim.rlim_cur : 0x080000;
-}
-
-// {{{ get_static_data_range
-#if OS_LINUX
-// http://stackoverflow.com/questions/4308996/finding-the-address-range-of-the-data-segment
-// Sadly, the etext symbol sometimes comes after certain rodata segments;
-// we take a conservative approach and include all the binary's text and data.
-extern "C" char __executable_start, end;
-void get_static_data_range(memory_range& r) {
-  r.base  = &__executable_start;
-  r.bound = &end;
-}
-#elif OS_MACOSX
-// http://stackoverflow.com/questions/1765969/unable-to-locate-definition-of-etext-edata-end
-//
-// However, these return static (aka file) addresses; to find the actual
-// runtime addresses, we need to query the dynamic loader to find the offset
-// it applied when loading this process.
-uintptr_t get_base();
-uintptr_t get_offset();
-
-#include <mach-o/getsect.h>
-#include <mach-o/dyld.h>
-#include <sys/param.h>
-// See also http://opensource.apple.com//source/cctools/cctools-822/libmacho/get_end.c
-void get_static_data_range(memory_range& r) {
-  uintptr_t offset = get_offset();
-  r.base  = (void*) (get_base() + offset);
-  r.bound = (void*) (get_end()  + offset);
-
-  if (!r.contains((void*) &get_static_data_range)) {
-    fprintf(gclog, "WARNING: computation of static data ranges seems to have gone awry.\n");
-    fprintf(gclog, "         The most likely consequence is that the program "
-                   "will exit with status code 99.\n");
-  }
-}
-
-// http://stackoverflow.com/questions/10301542/getting-process-base-address-in-mac-osx
-uintptr_t get_base() {
-  return getsegbyname("__TEXT")->vmaddr;
-}
-
-uintptr_t get_offset() {
-  char path[MAXPATHLEN];
-  uint32_t size = sizeof(path);
-  if (_NSGetExecutablePath(path, &size) != 0) {
-    // Due to nested links, MAXPATHLEN wasn't enough! See also `man 3 dyld`.
-    return 0;
-  }
-  for (uint32_t i = 0; i < _dyld_image_count(); i++) {
-    if (strcmp(_dyld_get_image_name(i), path) == 0) {
-      return _dyld_get_image_vmaddr_slide(i);
-    }
-  }
-  return 0;
-}
-
-#else
-#error TODO: Use Win32 to find boundaries of data segment range.
-#endif
-// }}}
-
-// {{{ GC startup & shutdown
-void register_stackmaps(ClusterMap&); // see foster_gc_stackmaps.cpp
-
-void register_allocator_ranges(void* stack_highest_addr) {
-  // ASSUMPTION: stack segments grow down, and are linear...
-  size_t stack_size = get_default_stack_size();
-  allocator_range ar;
-  ar.range.bound = stack_highest_addr;
-  ar.range.base  = (void*) (((char*) ar.range.bound) - stack_size);
-  ar.stable = true;
-  allocator_ranges.push_back(ar);
-
-  allocator_range datarange;
-  get_static_data_range(datarange.range);
-  datarange.stable = true;
-  allocator_ranges.push_back(datarange);
-}
-
-void initialize(void* stack_highest_addr) {
-  init_start = base::TimeTicks::Now();
-  gclog = fopen("gclog.txt", "w");
-  fprintf(gclog, "----------- gclog ------------\n");
-  if (!base::TimeTicks::IsHighResolution()) {
-    fprintf(gclog, "(warning: using low-resolution timer)\n");
-  }
-
-  base::StatisticsRecorder::Initialize();
-  allocator = new copying_gc(gSEMISPACE_SIZE());
-
-  register_allocator_ranges(stack_highest_addr);
-
-  register_stackmaps(clusterForAddress);
-
-  gc_time = base::TimeTicks();
-  runtime_start = base::TimeTicks::Now();
-}
-
-void gclog_time(const char* msg, base::TimeDelta d, FILE* json) {
-  fprintf(gclog, "%s: %2ld.%03ld s\n", msg,
-          long(d.InSeconds()),
-          long(d.InMilliseconds() - (d.InSeconds() * 1000)));
-  if (json) {
-  fprintf(json, "'%s_s' : %2ld.%03ld,\n", msg,
-          long(d.InSeconds()),
-          long(d.InMilliseconds() - (d.InSeconds() * 1000)));
-  fprintf(json, "'%s_ms': %2ld.%03ld,\n", msg,
-          long(d.InMilliseconds()),
-          long(d.InMicroseconds() - (d.InMilliseconds() * 1000)));
-  }
-}
-
-FILE* print_timing_stats() {
-  base::TimeTicks fin = base::TimeTicks::Now();
-  base::TimeDelta total_elapsed = fin - init_start;
-  base::TimeDelta  init_elapsed = runtime_start - init_start;
-  base::TimeDelta    gc_elapsed = gc_time - base::TimeTicks();
-  base::TimeDelta   mut_elapsed = total_elapsed - gc_elapsed - init_elapsed;
-  FILE* json = __foster_globals.dump_json_stats_path.empty()
-                ? NULL
-                : fopen(__foster_globals.dump_json_stats_path.c_str(), "w");
-  if (json) fprintf(json, "{\n");
-  if (!json &&
-      (FOSTER_GC_ALLOC_HISTOGRAMS || FOSTER_GC_TIME_HISTOGRAMS || FOSTER_GC_EFFIC_HISTOGRAMS)) {
-    fprintf(gclog, "stats recorder active? %d\n", base::StatisticsRecorder::IsActive());
-    std::string output;
-    base::StatisticsRecorder::WriteGraph("", &output);
-    fprintf(gclog, "%s\n", output.c_str());
-  }
-  gclog_time("Elapsed_runtime", total_elapsed, json);
-  gclog_time("Initlzn_runtime",  init_elapsed, json);
-  gclog_time("     GC_runtime",    gc_elapsed, json);
-  gclog_time("Mutator_runtime",   mut_elapsed, json);
-  return json;
-}
-
-// TODO: track bytes allocated, bytes collected, max heap size,
-//       max slop (alloc - reserved), peak mem use; compute % GC time.
-
-int cleanup() {
-  FILE* json = print_timing_stats();
-  bool had_problems = allocator->had_problems();
-  if (json) allocator->dump_stats(json);
-  delete allocator;
-  fclose(gclog); gclog = NULL;
-  if (json) fprintf(json, "}\n");
-  if (json) fclose(json);
-  return had_problems ? 99 : 0;
 }
 // }}}
 
@@ -1053,7 +908,7 @@ void visitGCRoots(void* start_frame, copying_gc* visitor) {
     ret_addr safePointAddr = frames[i].retaddr;
     frameptr fp = (frameptr) frames[i].frameptr;
 
-    const stackmap::PointCluster* pc = clusterForAddress[safePointAddr];
+    const stackmap::PointCluster* pc = gcglobals.clusterForAddress[safePointAddr];
     if (!pc) {
       if (ENABLE_GCLOG) {
         fprintf(gclog, "no point cluster for address %p with frame ptr%p\n", safePointAddr, fp);
@@ -1197,11 +1052,169 @@ void coro_visitGCRoots(foster_generic_coro* coro, copying_gc* visitor) {
 
 //////////////////////////////////////////////////////////////}}}
 
+// {{{ get_static_data_range
+#if OS_LINUX
+// http://stackoverflow.com/questions/4308996/finding-the-address-range-of-the-data-segment
+// Sadly, the etext symbol sometimes comes after certain rodata segments;
+// we take a conservative approach and include all the binary's text and data.
+extern "C" char __executable_start, end;
+void get_static_data_range(memory_range& r) {
+  r.base  = &__executable_start;
+  r.bound = &end;
+}
+#elif OS_MACOSX
+// http://stackoverflow.com/questions/1765969/unable-to-locate-definition-of-etext-edata-end
+//
+// However, these return static (aka file) addresses; to find the actual
+// runtime addresses, we need to query the dynamic loader to find the offset
+// it applied when loading this process.
+uintptr_t get_base();
+uintptr_t get_offset();
+
+#include <mach-o/getsect.h>
+#include <mach-o/dyld.h>
+#include <sys/param.h>
+// See also http://opensource.apple.com//source/cctools/cctools-822/libmacho/get_end.c
+void get_static_data_range(memory_range& r) {
+  uintptr_t offset = get_offset();
+  r.base  = (void*) (get_base() + offset);
+  r.bound = (void*) (get_end()  + offset);
+
+  if (!r.contains((void*) &get_static_data_range)) {
+    fprintf(gclog, "WARNING: computation of static data ranges seems to have gone awry.\n");
+    fprintf(gclog, "         The most likely consequence is that the program "
+                   "will exit with status code 99.\n");
+  }
+}
+
+// http://stackoverflow.com/questions/10301542/getting-process-base-address-in-mac-osx
+uintptr_t get_base() {
+  return getsegbyname("__TEXT")->vmaddr;
+}
+
+uintptr_t get_offset() {
+  char path[MAXPATHLEN];
+  uint32_t size = sizeof(path);
+  if (_NSGetExecutablePath(path, &size) != 0) {
+    // Due to nested links, MAXPATHLEN wasn't enough! See also `man 3 dyld`.
+    return 0;
+  }
+  for (uint32_t i = 0; i < _dyld_image_count(); i++) {
+    if (strcmp(_dyld_get_image_name(i), path) == 0) {
+      return _dyld_get_image_vmaddr_slide(i);
+    }
+  }
+  return 0;
+}
+
+#else
+#error TODO: Use Win32 to find boundaries of data segment range.
+#endif
+// }}}
+
+// {{{ GC startup & shutdown
+void register_stackmaps(ClusterMap&); // see foster_gc_stackmaps.cpp
+
+size_t get_default_stack_size() {
+  struct rlimit rlim;
+  getrlimit(RLIMIT_STACK, &rlim);
+  return (size_t) (rlim.rlim_cur != RLIM_INFINITY) ? rlim.rlim_cur : 0x080000;
+}
+
+void register_allocator_ranges(void* stack_highest_addr) {
+  // ASSUMPTION: stack segments grow down, and are linear...
+  size_t stack_size = get_default_stack_size();
+  allocator_range ar;
+  ar.range.bound = stack_highest_addr;
+  ar.range.base  = (void*) (((char*) ar.range.bound) - stack_size);
+  ar.stable = true;
+  gcglobals.allocator_ranges.push_back(ar);
+
+  allocator_range datarange;
+  get_static_data_range(datarange.range);
+  datarange.stable = true;
+  gcglobals.allocator_ranges.push_back(datarange);
+}
+
+void initialize(void* stack_highest_addr) {
+  gcglobals.init_start = base::TimeTicks::Now();
+  gclog = fopen("gclog.txt", "w");
+  fprintf(gclog, "----------- gclog ------------\n");
+  if (!base::TimeTicks::IsHighResolution()) {
+    fprintf(gclog, "(warning: using low-resolution timer)\n");
+  }
+
+  base::StatisticsRecorder::Initialize();
+  gcglobals.allocator = new copying_gc(gSEMISPACE_SIZE());
+
+  register_allocator_ranges(stack_highest_addr);
+
+  register_stackmaps(gcglobals.clusterForAddress);
+
+  gcglobals.gc_time = base::TimeTicks();
+  gcglobals.runtime_start = base::TimeTicks::Now();
+}
+
+void gclog_time(const char* msg, base::TimeDelta d, FILE* json) {
+  fprintf(gclog, "%s: %2ld.%03ld s\n", msg,
+          long(d.InSeconds()),
+          long(d.InMilliseconds() - (d.InSeconds() * 1000)));
+  if (json) {
+  fprintf(json, "'%s_s' : %2ld.%03ld,\n", msg,
+          long(d.InSeconds()),
+          long(d.InMilliseconds() - (d.InSeconds() * 1000)));
+  fprintf(json, "'%s_ms': %2ld.%03ld,\n", msg,
+          long(d.InMilliseconds()),
+          long(d.InMicroseconds() - (d.InMilliseconds() * 1000)));
+  }
+}
+
+FILE* print_timing_stats() {
+  base::TimeTicks fin = base::TimeTicks::Now();
+  base::TimeDelta total_elapsed = fin - gcglobals.init_start;
+  base::TimeDelta  init_elapsed = gcglobals.runtime_start - gcglobals.init_start;
+  base::TimeDelta    gc_elapsed = gcglobals.gc_time - base::TimeTicks();
+  base::TimeDelta   mut_elapsed = total_elapsed - gc_elapsed - init_elapsed;
+  FILE* json = __foster_globals.dump_json_stats_path.empty()
+                ? NULL
+                : fopen(__foster_globals.dump_json_stats_path.c_str(), "w");
+  if (json) fprintf(json, "{\n");
+  if (!json &&
+      (FOSTER_GC_ALLOC_HISTOGRAMS || FOSTER_GC_TIME_HISTOGRAMS || FOSTER_GC_EFFIC_HISTOGRAMS)) {
+    fprintf(gclog, "stats recorder active? %d\n", base::StatisticsRecorder::IsActive());
+    std::string output;
+    base::StatisticsRecorder::WriteGraph("", &output);
+    fprintf(gclog, "%s\n", output.c_str());
+  }
+  gclog_time("Elapsed_runtime", total_elapsed, json);
+  gclog_time("Initlzn_runtime",  init_elapsed, json);
+  gclog_time("     GC_runtime",    gc_elapsed, json);
+  gclog_time("Mutator_runtime",   mut_elapsed, json);
+  return json;
+}
+
+// TODO: track bytes allocated, bytes collected, max heap size,
+//       max slop (alloc - reserved), peak mem use; compute % GC time.
+
+int cleanup() {
+  FILE* json = print_timing_stats();
+  bool had_problems = gcglobals.allocator->had_problems();
+  if (json) gcglobals.allocator->dump_stats(json);
+  delete gcglobals.allocator;
+  fclose(gclog); gclog = NULL;
+  if (json) fprintf(json, "}\n");
+  if (json) fclose(json);
+  return had_problems ? 99 : 0;
+}
+// }}}
+
+/////////////////////////////////////////////////////////////////
+
 //  {{{ Debugging utilities
 void gc_assert(bool cond, const char* msg) {
   if (GC_ASSERTIONS) {
     if (!cond) {
-      allocator->dump_stats(NULL);
+      gcglobals.allocator->dump_stats(NULL);
     }
     foster_assert(cond, msg);
   }
@@ -1234,7 +1247,7 @@ extern "C" void inspect_ptr_for_debugging_purposes(void* bodyvoid) {
   if (! body) {
     fprintf(stdout, "body is (maybe tagged) null\n");
   } else {
-    if (gc::allocator->owns(body)) {
+    if (gc::gcglobals.allocator->owns(body)) {
       fprintf(stdout, "\t...this pointer is owned by the main allocator");
     } else if (is_marked_as_stable(body)) {
       fprintf(stdout, "\t...this pointer is marked as stable");
@@ -1243,7 +1256,7 @@ extern "C" void inspect_ptr_for_debugging_purposes(void* bodyvoid) {
       goto done;
     }
 
-    gc::heap_cell* cell = gc::heap_cell::for_tidy(gc::allocator->tidy_for(body));
+    gc::heap_cell* cell = gc::heap_cell::for_tidy(gc::gcglobals.allocator->tidy_for(body));
     if (cell->is_forwarded()) {
       fprintf(stdout, "cell is forwarded to %p\n", cell->get_forwarded_body());
     } else {
@@ -1292,35 +1305,35 @@ extern "C" {
 // {{{ Allocation interface used by generated code
 void* memalloc_cell(typemap* typeinfo) {
   if (GC_BEFORE_EVERY_MEMALLOC_CELL) {
-    allocator->force_gc_for_debugging_purposes();
+    gcglobals.allocator->force_gc_for_debugging_purposes();
   }
-  return allocator->allocate_cell(typeinfo);
+  return gcglobals.allocator->allocate_cell(typeinfo);
 }
 
 void* try_memalloc_cell(typemap* typeinfo) {
-  return allocator->try_allocate_cell(typeinfo);
+  return gcglobals.allocator->try_allocate_cell(typeinfo);
 }
 
 void* memalloc_cell_16(typemap* typeinfo) {
   if (GC_BEFORE_EVERY_MEMALLOC_CELL) {
-    allocator->force_gc_for_debugging_purposes();
+    gcglobals.allocator->force_gc_for_debugging_purposes();
   }
-  return allocator->allocate_cell_N<16>(typeinfo);
+  return gcglobals.allocator->allocate_cell_N<16>(typeinfo);
 }
 
 void* memalloc_cell_32(typemap* typeinfo) {
   if (GC_BEFORE_EVERY_MEMALLOC_CELL) {
-    allocator->force_gc_for_debugging_purposes();
+    gcglobals.allocator->force_gc_for_debugging_purposes();
   }
-  return allocator->allocate_cell_N<32>(typeinfo);
+  return gcglobals.allocator->allocate_cell_N<32>(typeinfo);
 }
 
 void* memalloc_array(typemap* typeinfo, int64_t n, int8_t init) {
-  return allocator->allocate_array(typeinfo, n, (bool) init);
+  return gcglobals.allocator->allocate_array(typeinfo, n, (bool) init);
 }
 
 void record_memalloc_cell(typemap* typeinfo, const char* srclines) {
-  allocator->record_memalloc_cell(typeinfo, srclines);
+  gcglobals.allocator->record_memalloc_cell(typeinfo, srclines);
 }
 // }}}
 
@@ -1330,7 +1343,7 @@ void fflush_gclog() { fflush(gclog); }
 } // extern "C"
 
 void force_gc_for_debugging_purposes() {
-  allocator->force_gc_for_debugging_purposes();
+  gcglobals.allocator->force_gc_for_debugging_purposes();
 }
 
 } // namespace foster::runtime::gc
