@@ -40,8 +40,7 @@ c2f_status="$?"
 
 if [ "${c2f_status}" = "0" ]; then
   echo "// running foster-fmt; c2f ${tmpfile}.foster status was ${c2f_status}"
-  #echo "python ${SD}/fosterc.py --me-arg=--fmt --bindir ${BINDIR} --tmpdir fosterc-standalone-tmp ${tmpfile}.foster"
-  #cp ${tmpfile}.foster raw.foster
+  echo "python ${SD}/fosterc.py --me-arg=--fmt --bindir ${BINDIR} --tmpdir fosterc-standalone-tmp ${tmpfile}.foster"
   (python ${SD}/fosterc.py --me-arg=--fmt --bindir ${BINDIR} --tmpdir fosterc-standalone-tmp ${tmpfile}.foster --show-cmdlines | python ${SD}/ansifilter.py) || show_clang_ast
 else
   echo "// c2f failed with status ${c2f_status}; raw output was:"

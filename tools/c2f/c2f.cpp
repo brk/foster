@@ -289,6 +289,9 @@ public:
           locals[v->getDecl()->getName()] = true;
       }
     }
+    if (auto v = Result.Nodes.getNodeAs<DeclRefExpr>("unaryopvar")) {
+      locals[v->getDecl()->getName()] = true;
+    }
     if (auto v = Result.Nodes.getNodeAs<DeclRefExpr>("addrtakenvar"))
       locals[v->getDecl()->getName()] = true;
     if (auto v = Result.Nodes.getNodeAs<VarDecl>("vardecl-noinit"))
@@ -337,6 +340,9 @@ class FnBodyVisitor : public RecursiveASTVisitor<FnBodyVisitor> {
     mf.addMatcher( binaryOperator(hasLHS(declRefExpr().bind("binopvar"))).bind("binop") , &mutloc_handler);
     // address-of &x
     mf.addMatcher( unaryOperator(hasOperatorName("&"), hasUnaryOperand(declRefExpr().bind("addrtakenvar"))) , &mutloc_handler);
+    // incr/decr unary operators
+    mf.addMatcher( unaryOperator(hasOperatorName("++"), hasUnaryOperand(declRefExpr().bind("unaryopvar"))) , &mutloc_handler);
+    mf.addMatcher( unaryOperator(hasOperatorName("--"), hasUnaryOperand(declRefExpr().bind("unaryopvar"))) , &mutloc_handler);
     // vars with no intializer
     //mf.addMatcher( varDecl(unless(hasInitializer())).bind("vardecl-noinit") , &mutloc_handler);
     mf.addMatcher( varDecl().bind("vardecl") , &mutloc_handler);
@@ -428,76 +434,155 @@ public:
     return next->getBlockID() == next->getParent()->getExit().getBlockID();
   }
 
+  bool isEmptyFallthroughAdjacent(CFGBlock::AdjacentBlock* ab) {
+    return ab->isReachable() && ab->getReachableBlock()->empty()
+                             && ab->getReachableBlock()->getTerminator() == nullptr;
+  }
+
+  void emitJumpTo(CFGBlock::AdjacentBlock* ab) {
+    if (ab->isReachable()) {
+      CFGBlock* next = ab->getReachableBlock();
+      // Don't bother jumping to the exit block, just return directly.
+      if (! isExitBlock(next)) {
+        llvm::outs() << getBlockName(*next) << " !;\n";
+      }
+    } else {
+      llvm::outs() << "GOTO(u) block " << ab->getPossiblyUnreachableBlock()->getBlockID() << "\n";
+    }
+  }
+
   void visitStmtCFG(const Stmt* stmt) {
 
     CFG::BuildOptions BO;
     std::unique_ptr<CFG> cfg = CFG::buildCFG(nullptr, const_cast<Stmt*>(stmt), Ctx, BO);
 
+    if (0) {
+      LangOptions LO;
+      cfg->dump(LO, false);
+    }
+
+    if (1) {
+      llvm::outs() << "/*\n";
+      llvm::outs() << getText(R, *stmt) << "\n";
+      llvm::outs() << "*/\n";
+    }
+
+    // Add all var decls
     for (auto it = cfg->nodes_begin(); it != cfg->nodes_end(); ++it) {
       CFGBlock* cb = it;
-      if (isExitBlock(cb)) continue;
-
-      llvm::outs() << "\n//{{{ cfg block, empty? " << cb->empty() << " ; #succs = " << cb->succ_size() << " ; hasNoRetElem? " << cb->hasNoReturnElement() << "; id = " << cb->getBlockID() << ":\n";
-
-      llvm::outs() << "REC " << getBlockName(*cb) << " = {\n";
-
-#if 0
-      if (const Stmt* targ = cb->getLoopTarget()) {
-        llvm::outs() << "//loop tgt is";
-        visitStmt(targ);
-      }
-#endif
-
       for (auto cbit = cb->begin(); cbit != cb->end(); ++cbit) {
         CFGElement ce = *cbit;
         if (ce.getKind() == CFGElement::Kind::Statement) {
           if (const Stmt* s = ce.castAs<CFGStmt>().getStmt()) {
-            visitStmt(s);
-            llvm::outs() << ";\n";
+            if (isa<DeclStmt>(s)) {
+              visitStmt(s);
+              llvm::outs() << ";\n";
+            }
+          }
+        }
+      }
+    }
+
+    for (auto it = cfg->nodes_begin(); it != cfg->nodes_end(); ++it) {
+      CFGBlock* cb = it;
+      if (isExitBlock(cb)) continue;
+
+      llvm::outs() << "REC " << getBlockName(*cb) << " = {\n";
+
+      const Stmt* termin = cb->getTerminator().getStmt();
+      bool hasControlFlowTerminator = termin && (
+            isa<SwitchStmt>(termin) || isa<IfStmt>(termin) || isa<ForStmt>(termin));
+      int offset = hasControlFlowTerminator ? 1 : 0;
+      for (auto cbit = cb->begin() + offset; cbit != cb->end(); ++cbit) {
+        CFGElement ce = *cbit;
+        if (ce.getKind() == CFGElement::Kind::Statement) {
+          if (const Stmt* s = ce.castAs<CFGStmt>().getStmt()) {
+            if (!isa<DeclStmt>(s)) {
+              visitStmt(s);
+              llvm::outs() << ";\n";
+            }
           }
         } else {
           llvm::outs() << "// non-stmt cfg element...\n";
         }
       }
 
-#if 0
-      if (const Stmt* tc = cb->getTerminatorCondition()) {
-        llvm::outs() << "// {{{ terminator condition\n";
-        visitStmt(tc);
-        llvm::outs() << "// }}} end terminator condition\n";
-      } else {
-        llvm::outs() << "// no terminator condition\n";
-      }
-#endif
-      if (const Stmt* termin = cb->getTerminator().getStmt()) {
-        if (!isa<GotoStmt>(termin)) {
-#if 0
-          llvm::outs() << "// {{{ terminator\n";
-          llvm::outs().flush();
-          termin->dump();
-          llvm::errs() << "\n";
-          llvm::errs().flush();
-          llvm::outs() << getText(R, *termin) << "\n";
-          llvm::outs() << "// }}} end terminator\n";
-#endif
+      /*
+      if (termin) {
+        if (!(isa<GotoStmt>(termin) || isa<IfStmt>(termin) || isa<ForStmt>(termin))) {
           visitStmt(termin);
         }
       }
+      */
 
       if (cb->succ_size() == 1) {
-        CFGBlock::AdjacentBlock* ab = cb->succ_begin();
-        if (ab->isReachable()) {
-          CFGBlock* next = ab->getReachableBlock();
-          // Don't bother jumping to the exit block, just return directly.
-          if (! isExitBlock(next)) {
-            llvm::outs() << getBlockName(*next) << " !;\n";
-          }
-        } else {
-          llvm::outs() << "GOTO(u) block " << ab->getPossiblyUnreachableBlock()->getBlockID() << "\n";
+        emitJumpTo(cb->succ_begin());
+      } else if (cb->succ_size() == 2) {
+        if (const Stmt* tc = cb->getTerminatorCondition()) {
+          llvm::outs() << "if ";
+          visitStmt(tc);
+          llvm::outs() << " then ";
+          emitJumpTo(cb->succ_begin());
+          llvm::outs() << " else ";
+          emitJumpTo(cb->succ_begin() + 1);
+          llvm::outs() << "end";
         }
+      } else if (const SwitchStmt* ss = dyn_cast<SwitchStmt>(cb->getTerminator())) {
+        // SwitchStmt terminator
+        llvm::outs() << "case ";
+        visitStmt(cb->getTerminatorCondition());
+        llvm::outs() << "\n";
+        // We could translate every case to a distinct label,
+        // but that generates linear chains of explicit gotos
+        // for implicit-fallthrough case branches.
+        // Instead, we'll walk through the cases, accumulating
+        // those with empty blocks.
+        auto swit = ss->getSwitchCaseList();
+        auto succ = cb->succ_rbegin();
+        std::vector<const SwitchCase*> allCases;
+        while (swit != nullptr) {
+          allCases.push_back(swit);
+          swit = swit->getNextSwitchCase();
+        }
+
+        std::vector<const SwitchCase*> cases;
+
+        std::vector<CFGBlock::AdjacentBlock*> adjs;
+        CFGBlock::AdjacentBlock* defaultBlock = nullptr;
+        size_t swit_idx = allCases.size() - 1;
+        do {
+          cases.push_back(allCases[swit_idx]);
+          adjs.push_back(&*succ);
+          if (!isEmptyFallthroughAdjacent(&*succ)) {
+            for (size_t i = 0; i < cases.size(); ++i) {
+              if (const CaseStmt* cs = dyn_cast<CaseStmt>(cases[i])) {
+                llvm::outs() << "  " << (i == 0 ? "of" : "or") << " ";
+                visitStmt(cs->getLHS());
+                if (i == cases.size() - 1) {
+                  llvm::outs() << " -> ";
+                  emitJumpTo(adjs[i]);
+                } else {
+                  llvm::outs() << "\n";
+                }
+              } else {
+                defaultBlock = &*succ;
+              }
+            }
+            cases.clear();
+            adjs.clear();
+          }
+          ++succ;
+          --swit_idx;
+        } while (succ != cb->succ_rend());
+
+        if (defaultBlock) {
+          llvm::outs() << "\n of _ -> ";
+          emitJumpTo(defaultBlock);
+        }
+
+        llvm::outs() << "\nend\n";
       }
 
-      llvm::outs() << "\n// }}}\n";
       llvm::outs() << "};\n";
 
     }
@@ -674,10 +759,10 @@ public:
     } else if (unop->getOpcode() == UO_PreInc || unop->getOpcode() == UO_PostInc) {
       handleIncrDecr("incr", unop);
     } else if (unop->getOpcode() == UO_AddrOf) {
-        visitStmt(unop->getSubExpr(), true);
+      visitStmt(unop->getSubExpr(), true);
     } else if (unop->getOpcode() == UO_Deref) {
-        visitStmt(unop->getSubExpr());
-        llvm::outs() << "^";
+      visitStmt(unop->getSubExpr());
+      llvm::outs() << "^";
     } else {
       llvm::outs() << "/* line 424\n";
       llvm::outs().flush();
@@ -1042,18 +1127,14 @@ public:
     } else if (const CaseStmt* cs = dyn_cast<CaseStmt>(stmt)) {
       visitCaseStmt(cs, true);
     } else if (const DefaultStmt* ds = dyn_cast<DefaultStmt>(stmt)) {
-      llvm::outs() << "  _ ->\n";
+      llvm::outs() << "  of _ ->\n";
       visitStmt(ds->getSubStmt());
     } else if (const SwitchStmt* ss = dyn_cast<SwitchStmt>(stmt)) {
       handleSwitch(ss);
     } else if (const GotoStmt* gs = dyn_cast<GotoStmt>(stmt)) {
       llvm::outs() << "goto_" << gs->getLabel()->getNameAsString() << " !\n";
-    } else if (const BreakStmt* bs = dyn_cast<BreakStmt>(stmt)) {
-      llvm::outs() << "// TODO(c2f): break;\n";
-      llvm::outs() << "()";
-    } else if (const ContinueStmt* cs = dyn_cast<ContinueStmt>(stmt)) {
-      llvm::outs() << "// TODO(c2f): continue;\n";
-      llvm::outs() << "()";
+    } else if (isa<BreakStmt>(stmt) || isa<ContinueStmt>(stmt)) {
+      // Do nothing; should be implicitly handled by CFG building.
     } else if (const LabelStmt* ls = dyn_cast<LabelStmt>(stmt)) {
       llvm::outs() << "// TODO(c2f): label " << ls->getName() << ";\n";
       llvm::outs() << "()";
