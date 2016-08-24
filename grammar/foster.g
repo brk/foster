@@ -70,8 +70,6 @@ name    :     id ('.' name -> ^(QNAME id name)
                  )
         |       '(' opr ')' -> opr;
 
-nopr    :       name | opr;
-
 x       :       name -> ^(TERMNAME name);
 a       :       name -> ^(TYPENAME name);
 
@@ -116,27 +114,25 @@ e       :
               -> ^(TERM ^(MU opr?) ^(MU phrase) ^(MU binops?))
   ;
 
+binops  : (binop phrase)+;
 binop   : opr          -> opr
         | '`' name '`' -> name
         ;
 
-binops  : (binop phrase)+;
-
+nopr    : name | opr ;
 phrase  :       '-'?   lvalue+                  -> ^(PHRASE '-'?  lvalue+)
         |       'prim' nopr tyapp? lvalue*      -> ^(PRIMAPP nopr ^(MU tyapp?) lvalue*);
 lvalue  :              atom suffix*             -> ^(LVALUE atom suffix*);
 
-tyapp : type_application;
-type_application
-        :	':[' t (',' t)* ']'          -> ^(VAL_TYPE_APP t+) // type application
+tyapp   :	':[' t (',' t)* ']'          -> ^(VAL_TYPE_APP t+) // type application
         |	':['  ']'                    -> ^(VAL_TYPE_APP)    // nullary type application
         ;
 
-suffix  :       type_application
-  |     '^'                             -> ^(DEREF)             // dereference
-  |     '[' e ']'                       -> ^(SUBSCRIPT e)
-  |     '!'                             -> ^(VAL_APP)		// nullary call
-//      |       '.(' e ')'                      -> ^(VAL_APP e)
+suffix  :  tyapp
+        |  '^'                          -> ^(DEREF)             // dereference
+        |  '[' e ']'                    -> ^(SUBSCRIPT e)
+        |  '!'                          -> ^(VAL_APP)		// nullary call
+//      |    '.(' e ')'                 -> ^(VAL_APP e)
   ;
 
 atom    :       // syntactically "closed" terms
