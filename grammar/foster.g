@@ -143,7 +143,6 @@ atom    :       // syntactically "closed" terms
     x                                   // variables
   | lit                                 // literals
   | ifexpr
-  | parse_in
   | 'case' e (OF pmatch)+ 'end'         -> ^(CASE e pmatch+) // pattern matching
   | '(' ')'                             -> ^(TUPLE)
   | '(' COMPILES stmts ')'              -> ^(COMPILES stmts)
@@ -160,10 +159,6 @@ val_abs :
                                                      stmts?)
                   // value + type abstraction (terms indexed by terms and types)
     ;
-
-parse_in :
-	'#associate' e 'as' e 'in' stmts 'end' -> ^(PARSE_DECL e e stmts)
-	;
 
 tuple : '(' stmts ( AS  t    ')'  -> ^(TYANNOT stmts t)
                   | (',' e)* ')'  -> ^(TUPLE stmts e*)  // tuples (products) (sugar: (a,b,c) == Tuple3 a b c)
