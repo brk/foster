@@ -86,7 +86,7 @@ prettyTopLevelFn fn =
  withAnnot (fnAstAnnot fn) $
   text (T.unpack $ fnAstName fn) <+> text "=" <+> pretty fn <> text ";"
 
-instance Pretty (ModuleAST FnAST TypeP) where
+instance Pretty (ModuleAST (ExprSkel ExprAnnot) TypeP) where
   pretty m = text "// begin decls"
             <$> vcat [showTyped (text s) t | (s, t) <- moduleASTdecls m]
             <$> text "// end decls"

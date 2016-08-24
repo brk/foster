@@ -298,18 +298,24 @@ instance Pretty Literal where
   pretty (LitBool  b) =           text (if b then "True" else "False")
   pretty (LitByteArray b) = text "b" <> dquotes (text $ show b)
 
-data WholeProgramAST fnCtor ty = WholeProgramAST {
-          programASTmodules    :: [ModuleAST fnCtor ty]
+data WholeProgramAST expr ty = WholeProgramAST {
+          programASTmodules    :: [ModuleAST expr ty]
      }
 
-data ModuleAST fnCtor ty = ModuleAST {
+data ToplevelItem expr ty =
+      ToplevelDecl (String, ty)
+    | ToplevelDefn (String, expr ty)
+    | ToplevelData (DataType ty)
+
+data ModuleAST expr ty = ModuleAST {
           moduleASThash        :: String
-        , moduleASTfunctions   :: [fnCtor ty]
-        , moduleASTdecls       :: [(String, ty)]
-        , moduleASTdataTypes   :: [DataType ty]
+        , moduleASTitems       :: [ToplevelItem expr ty]
         , moduleASTsourceLines :: SourceLines
         , moduleASTprimTypes   :: [DataType ty]
      }
+
+moduleASTdataTypes m = [dt | ToplevelData dt <- moduleASTitems m]
+moduleASTdecls     m = [de | ToplevelDecl de <- moduleASTitems m]
 
 data Fn rec expr ty
                 = Fn { fnVar   :: TypedId ty

@@ -5,14 +5,15 @@
 -----------------------------------------------------------------------------
 
 module Foster.ExprAST(
-  ExprAST, ExprSkel(..), exprAnnot
-, FnAST(..), SourceString(..)
+  ExprAST, ModuleExpr, ExprSkel(..), exprAnnot
+, FnAST(..), moduleASTfunctions, SourceString(..)
 , TermBinding(..)
 , termBindingName
 )
 where
 
 import Foster.Base(Structured(..), Literal, TypeFormal,
+                   ToplevelItem(..), ModuleAST(..),
                    SourceRanged(..), TypedId(..), ArrayIndex(..),
                    AllocMemRegion, childrenOfArrayIndex, ArrayEntry(..),
                    CaseArm(..), caseArmExprs, EPattern(..), E_VarAST(..),
@@ -26,6 +27,7 @@ import qualified Data.ByteString as B
 -----------------------------------------------------------------------
 
 type ExprAST ty = ExprSkel ExprAnnot ty
+type ModuleExpr ty = ModuleAST (ExprSkel ExprAnnot) ty
 data SourceString = SS_Text  T.Text
                   | SS_Bytes B.ByteString
                   deriving (Eq, Show)
@@ -72,6 +74,9 @@ data FnAST ty  = FnAST { fnAstAnnot    :: ExprAnnot
                        , fnAstBody     :: ExprAST ty
                        , fnWasToplevel :: Bool
                        } deriving (Show)
+
+moduleASTfunctions :: ModuleExpr ty -> [FnAST ty]
+moduleASTfunctions m = [fn | ToplevelDefn (_, E_FnAST _ fn) <- moduleASTitems m]
 
 data TermBinding ty = TermBinding (E_VarAST ty) (ExprAST ty) deriving (Show)
 
