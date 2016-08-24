@@ -1507,7 +1507,7 @@ The corresponding AST to be matched is
     } else if (const UnaryExprOrTypeTraitExpr* ue = dyn_cast<UnaryExprOrTypeTraitExpr>(stmt)) {
       if (ue->getKind() == UETT_SizeOf) {
         const Type* ty = bindSizeofType(ue);
-        llvm::outs() << "0 /* sizeof " << tyName(ty) << "*/\n";
+        llvm::outs() << (Ctx->getTypeSize(ty) / 8) << " /* sizeof " << tyName(ty) << "*/\n";
       } else {
         llvm::outs().flush();
         llvm::errs() << "/* line 716\n";
