@@ -6,16 +6,14 @@
 // Current status: hacky prototype.
 //
 // Doesn't do any special handling/recognition of function-like macros.
-// Doesn't handle switch() yet.
-// Doesn't handle early returns/break/continue/goto.
-//   (best bet would be Clang CFG + Relooper)
+// Doesn't do any relooping for converted CFGs.
 // Doesn't distinguish return-for-control-flow vs return-for-value.
 // Doesn't handle pointers or structure allocations very well.
 //   (needs to do analysis to differentiate arrays from singleton pointers).
 // Could get better translations by doing more careful analysis of which
 //   variables in the program are mutable and which aren't.
 //
-// Based on AST matching sample by Eli Bendersky (eliben@gmail.com).
+// Originally based on AST matching sample by Eli Bendersky (eliben@gmail.com).
 //------------------------------------------------------------------------------
 #include <string>
 #include <sstream>
@@ -138,6 +136,13 @@ std::string tryParseFnTy(const Type* ty) {
     return fnTyName(fpt);
   }
   return "";
+}
+
+const Stmt* lastStmtWithin(const Stmt* s) {
+  if (const CompoundStmt* cs = dyn_cast<CompoundStmt>(s)) {
+    if (cs->body_back()) return cs->body_back();
+  }
+  return s;
 }
 
 bool isVoidPtr(const Type* inp_ty) {
@@ -285,8 +290,9 @@ public:
   virtual void run(const MatchFinder::MatchResult &Result) {
     if (auto v = Result.Nodes.getNodeAs<DeclRefExpr>("binopvar")) {
       if (auto bo = Result.Nodes.getNodeAs<BinaryOperator>("binop")) {
-        if (bo->isAssignmentOp() || bo->isCompoundAssignmentOp())
+        if (bo->isAssignmentOp() || bo->isCompoundAssignmentOp()) {
           locals[v->getDecl()->getName()] = true;
+        }
       }
     }
     if (auto v = Result.Nodes.getNodeAs<DeclRefExpr>("unaryopvar")) {
@@ -328,10 +334,15 @@ typedef std::map<const Decl*, ZeroOneTwoSet<const Type*> > VoidPtrCasts;
 class FnBodyVisitor : public RecursiveASTVisitor<FnBodyVisitor> {
   public:
   FnBodyVisitor(std::map<std::string, bool>& locals,
+                std::map<const Stmt*, bool>& innocuousReturns,
                 VoidPtrCasts& casts,
                 bool& needsCFG,
-                ASTContext& ctx) : locals(locals), casts(casts), needsCFG(needsCFG), ctx(ctx) {}
+                ASTContext& ctx) : locals(locals), innocuousReturns(innocuousReturns),
+                        casts(casts), needsCFG(needsCFG), ctx(ctx) {}
 
+  // Note: statements are visited top-down / preorder;
+  // we rely on this fact to identify and tag "innocuous" control flow
+  // statements from their parents, before they are recursively visited.
   bool VisitStmt(Stmt* s) {
     MatchFinder mf;
 
@@ -378,12 +389,66 @@ class FnBodyVisitor : public RecursiveASTVisitor<FnBodyVisitor> {
       }
     }
 
-    if (isa<GotoStmt>(s) || isa<LabelStmt>(s) || isa<BreakStmt>(s) || isa<ContinueStmt>(s)) {
+    if (const SwitchStmt* ss = dyn_cast<SwitchStmt>(s)) {
+      inspectSwitchStmt(ss);
+    }
+
+    if (isa<GotoStmt>(s) || isa<LabelStmt>(s) || isa<ContinueStmt>(s)) {
       needsCFG = true;
     }
 
+    if (isa<BreakStmt>(s) && !innocuousBreaks[s]) {
+      needsCFG = true;
+    }
+
+    if (isa<ReturnStmt>(s) && !innocuousReturns[s]) {
+      needsCFG = true;
+    }
+
+
     mf.match(*s, ctx);
     return true;
+  }
+
+  // Switch statements need CFG translation if they contain
+  // any cases which have non-empty fallthrough blocks.
+  // Break statements are innocuous if they appear as the last
+  // statement in a switch case.
+  //                        (non-break)
+  //   START ---->  SwitchCase -----> SwitchCaseWithBody
+  //     \          / \                /       |
+  //      (break)--/   --(non-break)--/        | (break)
+  //                       needs CFG           v
+  //                                        START
+  //
+  // TODO make sure this works for default blocks
+  // that don't appear at the end.
+  void inspectSwitchStmt(const SwitchStmt* ss) {
+    enum State { ST_Start, ST_SwitchCase, ST_WithBody };
+    if (const CompoundStmt* cs = dyn_cast<CompoundStmt>(ss->getBody())) {
+      State state = ST_Start;
+      for (auto part : cs->body()) {
+        if (const SwitchCase* scase = dyn_cast<SwitchCase>(part)) {
+          if (state == ST_WithBody) {
+            needsCFG = true;
+          }
+          if (const BreakStmt* bs = dyn_cast<BreakStmt>(
+                        lastStmtWithin(scase->getSubStmt()))) {
+            state = ST_Start;
+            innocuousBreaks[bs] = true;
+          } else {
+            state = ST_SwitchCase;
+          }
+        } else {
+          if (isa<BreakStmt>(part)) {
+            state = ST_Start;
+            innocuousBreaks[part] = true;
+          } else if (state == ST_SwitchCase) {
+            state = ST_WithBody;
+          }
+        }
+      }
+    }
   }
 
   void handlePotentialVoidPtrCast(const ValueDecl* v, const CStyleCastExpr* cse) {
@@ -394,6 +459,8 @@ class FnBodyVisitor : public RecursiveASTVisitor<FnBodyVisitor> {
 
   private:
   std::map<std::string, bool>& locals;
+  std::map<const Stmt*, bool>& innocuousReturns;
+  std::map<const Stmt*, bool> innocuousBreaks;
   VoidPtrCasts& casts;
   bool& needsCFG;
   ASTContext& ctx;
@@ -604,6 +671,7 @@ public:
 
     llvm::outs() << "case ";
     visitStmt(ss->getCond());
+    llvm::outs() << "\n";
     // Assuming the body is a CompoundStmt of CaseStmts...
     visitStmt(ss->getBody());
 
@@ -1140,7 +1208,6 @@ public:
       llvm::outs() << "()";
       visitStmt(ls->getSubStmt());
     } else if (const ReturnStmt* rs = dyn_cast<ReturnStmt>(stmt)) {
-      llvm::outs() << "// TODO(c2f): return\n";
       if (rs->getRetValue()) {
         visitStmt(rs->getRetValue());
       } else {
@@ -1176,7 +1243,10 @@ public:
       else {
         llvm::SmallString<128> buf;
         lit->getValue().toString(buf);
-        llvm::outs() << "/*floatlit...*/" << buf;
+        llvm::outs() << buf;
+        if (buf.count('.') == 0) {
+          llvm::outs() << ".0";
+        }
       }
 
     } else if (const CharacterLiteral* clit = dyn_cast<CharacterLiteral>(stmt)) {
@@ -1222,13 +1292,27 @@ public:
       }
       llvm::outs() << ")";
     } else if (const CompoundStmt* cs = dyn_cast<CompoundStmt>(stmt)) {
+
+      size_t numPrintingChildren = cs->size();
+      for (const Stmt* c : cs->children()) {
+        if (isa<CompoundStmt>(c) || isa<BreakStmt>(c)) {
+          // non-printing
+          --numPrintingChildren;
+        }
+      }
+
+      size_t childno = 0;
       for (const Stmt* c : cs->children()) {
         visitStmt(c);
-        if (const CompoundStmt* x = dyn_cast<CompoundStmt>(c)) {
+
+        if (isa<CompoundStmt>(c) || isa<BreakStmt>(c)) {
           // don't print another semicolon
+        } else if (childno == numPrintingChildren - 1) {
+          llvm::outs() << "\n";
         } else {
           llvm::outs() << ";\n";
         }
+        ++childno;
       }
     } else if (const DeclStmt* ds = dyn_cast<DeclStmt>(stmt)) {
       const Decl* last = *(ds->decls().end() - 1);
@@ -1254,7 +1338,7 @@ public:
     } else if (const UnaryExprOrTypeTraitExpr* ue = dyn_cast<UnaryExprOrTypeTraitExpr>(stmt)) {
       if (ue->getKind() == UETT_SizeOf) {
         const Type* ty = bindSizeofType(ue);
-        llvm::outs() << "0 // sizeof(" << tyName(ty) << ")\n";
+        llvm::outs() << "0 /* sizeof " << tyName(ty) << "*/\n";
       } else {
         llvm::outs().flush();
         llvm::errs() << "/* line 716\n";
@@ -1309,7 +1393,14 @@ public:
   bool isFromMainFile(const Decl* d) { return isFromMainFile(d->getLocation()); }
 
   void performFunctionLocalAnalysis(FunctionDecl* d, bool& needsCFG) {
-    FnBodyVisitor v(mutableLocals, voidPtrCasts, needsCFG, d->getASTContext());
+    std::map<const Stmt*, bool> innocuousReturns;
+    if (const ReturnStmt* r = dyn_cast<ReturnStmt>(
+          lastStmtWithin(d->getBody()))) {
+      innocuousReturns[r] = true;
+    }
+
+    FnBodyVisitor v(mutableLocals, innocuousReturns,
+                    voidPtrCasts, needsCFG, d->getASTContext());
     v.TraverseDecl(d);
   }
 
@@ -1457,14 +1548,18 @@ int main(int argc, const char **argv) {
 }
 
 // Notes on un-handled C constructs:
-//   * Local control flow statements (break, continue, return)
-//     not yet implemented.
+//   * I'm not sure of the simplest way to distinguish trivial vs non-trivial
+//     return statements. One way might be to copy the AST but replace
+//     the returns with non-control-flow marker nodes, then build CFGs for
+//     the original and modified ASTs. If the marker's successor is the exit
+//     block, then the corresponding return was trivial.
 //   * Struct fields not yet properly translated.
 //     A field of type T can be translated to any one of:
 //       T                         when all structs are literals and the field is never mutated,
 //                                 or if all mutations can be coalesced into struct allocation.
-//       (Ref T)                   for mutable fields with known initializer expressions.
-//       (Ref (Maybe T))           for mutable fields with uncertain initialization
+//       (Ref T)                   for mutable fields with known initializer expressions,
+//                                 or non-pointer types (which can be zero-initialized).
+//       (Ref (Maybe T))           for mutable pointer fields with uncertain initialization
 //    For a pointer-to-struct S, we have additional choices in translating:
 //      * Single-constructor datatype S, with implicit level of indirection, but no nullability
 //      * Single-constructor datatype SU of kind Unboxed
