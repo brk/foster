@@ -9,6 +9,7 @@ find_program(LLVM_CONFIG NAMES llvm-config llvm-config-${LLVM_VERSION}
   PATHS
     $ENV{HOME}/llvm/${LLVM_VERSION}/bin
     $ENV{HOME}/sw/local/llvm-${LLVM_VERSION}/bin
+    $ENV{HOME}/sw/local/llvm/${LLVM_VERSION}/bin
     /usr/lib/llvm-${LLVM_VERSION}/bin
   DOC "llvm-config")
 

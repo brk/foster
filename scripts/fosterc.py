@@ -74,6 +74,9 @@ def rpath(path):
 def show_cmdlines(options):
   return options and options.show_cmdlines == True
 
+def no_compile_log(options):
+  return options and options.no_compile_log == True
+
 def optlevel(options):
   if options and options.backend_optimize:
     # Right now fosteroptc only recognizes -O0, not -O2 or such.
@@ -126,7 +129,7 @@ def compile_foster_to_bitcode(paths, inputfile, compilelog, finalpath, tmpdir):
 
     # Getting tee functionality in Python is a pain in the behind
     # so we just disable logging when running with --show-cmdlines.
-    if show_cmdlines(options):
+    if show_cmdlines(options) or no_compile_log(options):
       compilelog = None
 
     importpath = insert_before_each('-I', options.importpaths)
@@ -305,6 +308,8 @@ def get_fosterc_parser():
                     help="Relative (from bindir) or absolute path to binary to use for type checking.")
   parser.add_option("--show-cmdlines", action="store_true", dest="show_cmdlines", default=False,
                     help="Show more information about programs being run.")
+  parser.add_option("--no-compile-log", action="store_true", dest="no_compile_log", default=False,
+                    help="Disable redirection to a combined compile-log.")
   parser.add_option("--asm", action="store_true", dest="asm", default=False,
                     help="Compile to assembly rather than object file.")
   parser.add_option("--interpret", action="store_true", dest="interpret", default=False,
