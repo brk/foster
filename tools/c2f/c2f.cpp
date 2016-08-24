@@ -960,6 +960,28 @@ The corresponding AST to be matched is
     llvm::outs() << ")";
   }
 
+  bool tryHandleCallPrintf(const CallExpr* ce) {
+    if (!isDeclNamed("printf", ce->getCallee()->IgnoreParenImpCasts())) return false;
+    if (ce->getNumArgs() != 2) return false;
+
+    if (auto slit = dyn_cast<StringLiteral>(ce->getArg(0)->IgnoreParenImpCasts())) {
+      if (slit->getString() == "%d\n") {
+        std::string tynm = tyName(ce->getArg(1)->getType().getTypePtr());
+        std::string printfn;
+        if (tynm == "Int8") printfn = "print_i8";
+        if (tynm == "Int32") printfn = "print_i32";
+        if (tynm == "Int64") printfn = "print_i64";
+        if (printfn.empty()) return false;
+
+        llvm::outs() << "(" << printfn << " ";
+        visitStmt(ce->getArg(1));
+        llvm::outs() << ")";
+        return true;
+      }
+    }
+    return false;
+  }
+
   // Emit calls to free() as comments, since we're presumably doing GC.
   bool tryHandleCallFree(const CallExpr* ce) {
     if (!isDeclNamed("free", ce->getCallee()->IgnoreParenImpCasts())) return false;
@@ -1416,6 +1438,8 @@ The corresponding AST to be matched is
     } else if (const CallExpr* ce = dyn_cast<CallExpr>(stmt)) {
       if (tryHandleCallMalloc(ce, nullptr) || tryHandleCallFree(ce)) {
         // done
+      } else if (tryHandleCallPrintf(ce)) {
+        // done
       } else {
         handleCall(ce);
       }
@@ -1426,6 +1450,7 @@ The corresponding AST to be matched is
       if (ile->isStringLiteralInit()) {
         llvm::outs() << "// WARNING: string literal init...?\n";
       }
+      // TODO should sometimes become struct ctor calls, not array literals.
       llvm::outs() << "(prim mach-array-literal";
       for (unsigned i = 0; i < ile->getNumInits(); ++i) {
         llvm::outs() << " ";
