@@ -187,7 +187,7 @@ typecheckAndFoldContextBindings ctxTC0 bindings = do
 -- |     or else we consider type checking to have failed
 -- |     (no implicit instantiation at the moment!)
 typecheckModule :: Bool -> Bool -> Bool -> ([Flag], strings)
-                -> ModuleAST FnAST TypeAST
+                -> ModuleExpr TypeAST
                 -> TcEnv
                 -> Compiled (OutputOr TCRESULT)
 typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
@@ -332,7 +332,7 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
 
    -- The functions from the module have already been converted;
    -- now we just need to convert the rest of the module...
-   convertTypeILofAST :: ModuleAST FnAST TypeAST
+   convertTypeILofAST :: ModuleExpr TypeAST
                       -> Context TypeTC
                       -> [[OutputOr (AnnExpr TypeTC)]]
                       -> Tc TCRESULT
@@ -348,11 +348,13 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
 
      let unfuns fns -- :: [[AnnExpr t]] -> [[Fn () (AnnExpr t) t]]
                     = map (map unFunAnn) fns
+         nonFns (ToplevelDefn (_, E_FnAST {})) = False
+         nonFns _ = True
 
      -- We've already typechecked the functions, so no need to re-process them...
      -- First, convert the non-function parts of our module from TypeAST to TypeTC.
-     -- mTC :: ModuleAST FnAST TypeTC
-     mTC <- convertModule (tcType ctx_tc) $ mAST { moduleASTfunctions = [] }
+     -- mTC :: ModuleExpr TypeTC
+     mTC <- convertModule (tcType ctx_tc) $ mAST { moduleASTitems = (filter nonFns (moduleASTitems mAST)) }
 
      let mTC' = ModuleIL (buildExprSCC' (unfuns oo_annfns))
                          (externalModuleDecls mTC)
@@ -554,7 +556,7 @@ reportFinalPerformanceNumbers ci_time nqueries querytime tc_time in_time sr_time
 
 data ResultWithTimings = RWT Double Double Double Double Double Double Double ILProgram
 
-compile :: WholeProgramAST FnAST TypeP -> TcEnv -> Compiled ResultWithTimings
+compile :: WholeProgramAST (ExprSkel ExprAnnot) TypeP -> TcEnv -> Compiled ResultWithTimings
 compile wholeprog tcenv = do
     (return wholeprog)
      >>= mergeModules -- temporary hack
@@ -562,24 +564,22 @@ compile wholeprog tcenv = do
      >>= typecheckSourceModule tcenv
      >>= lowerModule
 
-mergeModules :: WholeProgramAST FnAST ty
-              -> Compiled (ModuleAST FnAST ty)
+mergeModules :: WholeProgramAST (ExprSkel ExprAnnot) ty
+              -> Compiled (ModuleExpr ty)
 mergeModules (WholeProgramAST modules) = do
   return (foldr1 mergedModules modules)
   -- Modules are listed in reverse dependency order, conveniently.
   -- TODO track explicit module dependency graph, decompose to DAG, etc.
   where mergedModules m1 m2 = ModuleAST {
        moduleASThash        = moduleASThash        m1 -- meh
-     , moduleASTfunctions   = moduleASTfunctions   m1 ++ moduleASTfunctions   m2
-     , moduleASTdecls       = moduleASTdecls       m1 ++ moduleASTdecls       m2
-     , moduleASTdataTypes   = moduleASTdataTypes   m1 ++ moduleASTdataTypes   m2
+     , moduleASTitems       = moduleASTitems       m1 ++ moduleASTitems m2
      , moduleASTsourceLines = moduleASTsourceLines m1 `appendSourceLines`
                                                          moduleASTsourceLines m2
      , moduleASTprimTypes   = moduleASTprimTypes   m1 -- should be the same
                                      }
 
-desugarParsedModule :: TcEnv -> ModuleAST FnAST TypeP ->
-                      Compiled (ModuleAST FnAST TypeAST)
+desugarParsedModule :: TcEnv -> ModuleExpr TypeP ->
+                      Compiled (ModuleExpr TypeAST)
 desugarParsedModule tcenv m = do
   (liftIO $ unTc tcenv (convertModule astOfParsedType m)) >>= dieOnError
  where
@@ -614,7 +614,7 @@ desugarParsedModule tcenv m = do
 
 type TCRESULT = (ModuleIL KNExpr TypeIL, [Ident])
 
-typecheckSourceModule :: TcEnv ->          ModuleAST FnAST TypeAST
+typecheckSourceModule :: TcEnv ->          ModuleExpr TypeAST
                       -> Compiled (Double, (ModuleIL KNExpr TypeIL, [Ident]))
 typecheckSourceModule tcenv sm = do
     verboseMode <- gets ccVerbose

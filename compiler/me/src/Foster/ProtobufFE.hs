@@ -36,12 +36,7 @@ import Debug.Trace(trace)
 import Control.Monad.State (evalState, get, put, liftM, State)
 --------------------------------------------------------------------------------
 
-data ToplevelItem =
-     ToplevelItemDecl (String, TypeP)
-   | ToplevelItemDefn (String, ExprAST TypeP)
-   | ToplevelItemData (DataType TypeP)
-
-cb_parseWholeProgram :: CBOR -> Bool -> WholeProgramAST FnAST TypeP
+cb_parseWholeProgram :: CBOR -> Bool -> WholeProgramAST (ExprSkel ExprAnnot) TypeP
 cb_parseWholeProgram cbor standalone =
   case cbor of
     CBOR_Array cbmods ->
@@ -61,14 +56,8 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
         CBOR_Array [tok, _, _, CBOR_Array (cbincludes:defn_decls)] | tok `tm` tok_MODULE ->
           let _includes = cb_parseIncludes cbincludes
               items = map cb_parse_ToplevelItem defn_decls
-              decls = [t | ToplevelItemDecl t <- items]
-              defns = [t | ToplevelItemDefn t <- items]
-              datas = [t | ToplevelItemData t <- items]
-              funcs = [fn | (_, E_FnAST _ fn) <- defns]
               primDTs = if standalone then [] else primitiveDataTypesP
-
-              m = ModuleAST (T.unpack (cborText hash)) funcs decls datas
-                            lines primDTs
+              m = ModuleAST (T.unpack (cborText hash)) items lines primDTs
           in resolveFormatting hiddentokens m
         _ -> error $ "cb_parseSourceModule[1] failed"
   _ -> error $ "cb_parseSourceModule[2] failed"
@@ -79,16 +68,16 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
 
   cb_parse_ToplevelItem cbor = case cbor of
     CBOR_Array [tok, _,_cbr, CBOR_Array [x, t]] | tok `tm` tok_DECL ->
-       ToplevelItemDecl (cb_parse_x_str x, cb_parse_t t)
+       ToplevelDecl (cb_parse_x_str x, cb_parse_t t)
     CBOR_Array [tok, _,_cbr, CBOR_Array [x, atom]] | tok `tm` tok_DEFN ->
       case (cb_parse_x_str x, cb_parse_atom atom) of
         (name, E_FnAST annot fn) ->
-                        ToplevelItemDefn (name, E_FnAST annot fn { fnAstName = T.pack name , fnWasToplevel = True })
-        (name, expr) -> ToplevelItemDefn (name, expr)
+                        ToplevelDefn (name, E_FnAST annot fn { fnAstName = T.pack name , fnWasToplevel = True })
+        (name, expr) -> ToplevelDefn (name, expr)
     CBOR_Array [tok, _, cbr, CBOR_Array [tyformal_nm, mu_tyformals, mu_data_ctors]]
                                                       | tok `tm` tok_DATATYPE ->
        let tyf = (map cb_parse_tyformal  (unMu mu_tyformals)) in
-       ToplevelItemData $ DataType (cb_parse_tyformal      tyformal_nm)
+       ToplevelData $ DataType (cb_parse_tyformal      tyformal_nm)
                                    tyf
                                    (map (cb_parse_data_ctor tyf) (unMu mu_data_ctors))
                                    (cb_parse_range          cbr)
@@ -717,10 +706,10 @@ type FmtState a = State (Seq.Seq (SourceLoc, Formatting)) a
 -- take each hidden token and attach it to the parsed AST, based on the range
 -- information embedded in the AST and the hidden tokens.
 
-resolveFormatting :: [CBOR] -> ModuleAST FnAST TypeP -> ModuleAST FnAST TypeP
+resolveFormatting :: [CBOR] -> ModuleExpr TypeP -> ModuleExpr TypeP
 resolveFormatting hiddentokens m =
-   m { moduleASTfunctions = evalState
-                              (mapM attachFormattingFn (moduleASTfunctions m))
+   m { moduleASTitems = evalState
+                              (mapM attachFormattingItem (moduleASTitems m))
                               (Seq.fromList $ map p hiddentokens) }
  where loc lineno charpos = SourceLoc (cb_int lineno) (cb_int charpos)
        p cbor = case cbor of
@@ -781,6 +770,11 @@ attachFormattingFn fn = do
  b  <- attachFormatting  (fnAstBody  fn)
  an <- getPostFormatting a0
  return $ fn { fnAstAnnot = an, fnAstBody = b }
+
+attachFormattingItem (ToplevelDefn (s,e)) = do
+  ef <- attachFormatting e; return $ ToplevelDefn (s, ef)
+attachFormattingItem (ToplevelDecl de) = return $ ToplevelDecl de
+attachFormattingItem (ToplevelData dt) = return $ ToplevelData dt
 
 -- patterns have source ranges, not annotations.
 convertTermBinding (TermBinding evar expr) =

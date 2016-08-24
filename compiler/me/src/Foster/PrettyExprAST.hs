@@ -87,19 +87,13 @@ prettyTyFormals tyfs = empty <+> text "forall" <+> hsep (map prettyTyFormal tyfs
   where prettyTyFormal (TypeFormal name _sr kind) =
                                           text name <+> text ":" <+> pretty kind
 
-instance Pretty ty => Pretty (ModuleAST FnAST ty) where
-  pretty m = text "// begin decls"
-            <$> vcat [showTyped (text s) t | (s, t) <- moduleASTdecls m]
-            <$> text "// end decls"
-            <$> text "// begin datatypes"
-            <$> empty
-            <$> text "// end datatypes"
-            <$> text "// begin prim types"
-            <$> empty
-            <$> text "// end prim types"
-            <$> text "// begin functions"
-            <$> vsep (map prettyTopLevelFn (moduleASTfunctions m))
-            <$> text "// end functions"
+instance Pretty ty => Pretty (ModuleExpr ty) where
+  pretty m = vcat (map prettyItem $ moduleASTitems m)
+
+prettyItem (ToplevelDecl (s, t)) = showTyped (text s) t
+prettyItem (ToplevelDefn (_, E_FnAST _ fn)) = prettyTopLevelFn fn
+prettyItem (ToplevelDefn (s, e)) = text s <+> text "=" <+> pretty e <> text ";"
+prettyItem (ToplevelData dt) = pretty dt
 
 prettyId (TypedId _ i) = text (T.unpack $ identPrefix i)
 

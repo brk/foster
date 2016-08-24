@@ -7,16 +7,19 @@ import Foster.Context
 import Control.Monad.State(liftM, liftM2, liftM3)
 
 convertModule :: (Show a, Show b) =>
-                 (a -> Tc b) -> ModuleAST FnAST a -> Tc (ModuleAST FnAST b)
-convertModule f (ModuleAST hash funs decls dts lines primdts) = do
-         funs'  <- mapM (convertFun          f) funs
-         decls' <- mapM (convertDecl         f) decls
-         prims' <- mapM (convertDataTypeAST f) primdts
-         dts'   <- mapM (convertDataTypeAST f) dts
-         return $ ModuleAST hash funs' decls' dts' lines prims'
+                 (a -> Tc b) -> ModuleExpr a -> Tc (ModuleExpr b)
+convertModule f (ModuleAST hash items lines primdts) = do
+         prims' <- mapM (convertDataTypeAST  f) primdts
+         items' <- mapM (convertToplevelItem f) items
+         return $ ModuleAST hash items' lines prims'
 
 convertVar f (TypedId t i) = do ty <- f t
                                 return $ TypedId ty i
+
+convertToplevelItem f (ToplevelDecl de) = convertDecl f de        >>= (return . ToplevelDecl)
+convertToplevelItem f (ToplevelData dt) = convertDataTypeAST f dt >>= (return . ToplevelData)
+convertToplevelItem f (ToplevelDefn (s, e)) = do
+    ex <- convertExprAST f e ; return $ ToplevelDefn (s, ex)
 
 convertFun :: Monad m => (a -> m b) -> FnAST a -> m (FnAST b)
 convertFun f (FnAST rng nm tyformals formals body toplevel) = do
