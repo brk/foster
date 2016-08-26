@@ -309,6 +309,7 @@ data ToplevelItem expr ty =
 
 data ModuleAST expr ty = ModuleAST {
           moduleASThash        :: String
+        , moduleASTincludes    :: [ (T.Text, T.Text) ]
         , moduleASTitems       :: [ToplevelItem expr ty]
         , moduleASTsourceLines :: SourceLines
         , moduleASTprimTypes   :: [DataType ty]

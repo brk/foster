@@ -50,14 +50,16 @@ cb_parseSourceModule standalone cbor = case cbor of
       where sourcelines = SourceLines $ Seq.fromList $ map cborText lines
   _ -> error "cb_parseSourceModule"
 
+-- Defer parsing to a separate function so that sourcelines is in scope for
+-- the function's where-clause definitions.
 cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
   CBOR_Array [_, hash, modtree, _, CBOR_Array hiddentokens] ->
       case modtree of
         CBOR_Array [tok, _, _, CBOR_Array (cbincludes:defn_decls)] | tok `tm` tok_MODULE ->
-          let _includes = cb_parseIncludes cbincludes
+          let includes  = cb_parseIncludes cbincludes
               items = map cb_parse_ToplevelItem defn_decls
               primDTs = if standalone then [] else primitiveDataTypesP
-              m = ModuleAST (T.unpack (cborText hash)) items lines primDTs
+              m = ModuleAST (T.unpack (cborText hash)) includes items lines primDTs
           in resolveFormatting hiddentokens m
         _ -> error $ "cb_parseSourceModule[1] failed"
   _ -> error $ "cb_parseSourceModule[2] failed"
@@ -609,10 +611,10 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
       (False, False) -> (isRaw, SS_Text  $  T.pack $ parse isBytes strWithoutQuotes)
 
   cb_parseInclude cbor = case cbor of
-    CBOR_Array [tok, _, _cbr, CBOR_Array [CBOR_Array [_, CBOR_TS _ident, _cbr_i, _],
-                                                     CBOR_Array [_, CBOR_TS _path , _cbr_p, _]]]
+    CBOR_Array [tok, _, _cbr, CBOR_Array [CBOR_Array [_, ts_ident, _cbr_i, _],
+                                                     CBOR_Array [_, ts_path , _cbr_p, _]]]
       | tok `tm` tok_SNAFUINCLUDE ->
-            error "cb_parseInclude"
+            (cborText ts_ident, cborText ts_path)
     _ -> error $ "cb_parseIncludes failed"
 
   cb_parseIncludes cbor = case cbor of
