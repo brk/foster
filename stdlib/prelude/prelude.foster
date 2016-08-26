@@ -208,6 +208,19 @@ newDArray0 = { n => f =>
   arrayFromRange32 0 n f
 };
 
+newArrayReplicate = { forall v:Type,
+                n : Int32 =>
+                v : v =>
+  a = allocDArray:[v] n;
+  x = (prim ref n);
+
+  until { x^ ==Int32 0 } {
+      v >^ a[x^ -Int32 1];
+      (      x^ -Int32 1 ) >^ x
+  };
+  a
+};
+
 // For example, arrayFromRange32 2 5 f
 // will become  arrayMap [2,3,4] f
 // The elements will be generated in decreasing order.

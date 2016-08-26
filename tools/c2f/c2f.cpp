@@ -1300,6 +1300,38 @@ The corresponding AST to be matched is
       }
   }
 
+  void visitVarDecl(const VarDecl* vd) {
+    if (vd->hasInit()) {
+      if (mutableLocals[vd->getName()]) {
+        llvm::outs() << fosterizedName(vd->getName()) << " = (prim ref ";
+        visitStmt(vd->getInit());
+        llvm::outs() << ")";
+      } else {
+        llvm::outs() << fosterizedName(vd->getName()) << " = ";
+        visitStmt(vd->getInit());
+      }
+    } else {
+      const Type* ty = vd->getType().getTypePtr();
+      if (auto cat = dyn_cast<ConstantArrayType>(ty)) {
+        uint64_t sz = cat->getSize().getZExtValue();
+        auto zeroval = zeroValue(cat->getElementType().getTypePtr());
+
+        llvm::outs() << fosterizedName(vd->getName()) << " = ";
+        if (sz > 0 && sz <= 16) {
+          llvm::outs() << "(prim mach-array-literal";
+          for (uint64_t i = 0; i < sz; ++i) {
+            llvm::outs() << " " << zeroval;
+          }
+          llvm::outs() << ")";
+        } else {
+          llvm::outs() << "(newArrayReplicate " << sz << " " << zeroval << ")";
+        }
+      } else {
+        llvm::outs() << fosterizedName(vd->getName()) << " = (prim ref " << zeroValue(exprTy(vd)) << ")";
+      }
+    }
+  }
+
   void visitStmt(const Stmt* stmt, bool isAssignmentTarget = false) {
     emitCommentsFromBefore(stmt->getLocStart());
 
@@ -1498,18 +1530,7 @@ The corresponding AST to be matched is
       const Decl* last = *(ds->decls().end() - 1);
       for (const Decl* d : ds->decls()) {
         if (const VarDecl* vd = dyn_cast<VarDecl>(d)) {
-          if (vd->hasInit()) {
-            if (mutableLocals[vd->getName()]) {
-              llvm::outs() << fosterizedName(vd->getName()) << " = (prim ref ";
-              visitStmt(vd->getInit());
-              llvm::outs() << ")";
-            } else {
-              llvm::outs() << fosterizedName(vd->getName()) << " = ";
-              visitStmt(vd->getInit());
-            }
-          } else {
-            llvm::outs() << fosterizedName(vd->getName()) << " = (prim ref " << zeroValue(exprTy(vd)) << ")";
-          }
+          visitVarDecl(vd);
         } else {
           visitStmt(d->getBody());
         }
