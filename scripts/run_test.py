@@ -97,8 +97,8 @@ def run_diff(a, b):
     (rv, ms) = run_command(['diff', '--brief', a, b], {}, "", stdout=devnull, strictrv=False)
     if rv == 0:
       # same
-      numlines = len(open(a, 'r').readlines())
       if not options.quietish:
+        numlines = len(open(a, 'r').readlines())
         print """
 
         \m/_(>_<)_\m/    (%d lines)
@@ -149,6 +149,10 @@ def run_one_test(testpath, tmpdir, progargs, paths, exe_cmd, elapseds):
   else:
     did_fail = True
 
+  if options.show_stdout:
+    with open(act_filename, 'r') as act:
+      print act.read(),
+
   def elapsed_per_sec(b, e): return humanized(float(b)/(float(e) / 1000.0))
   (fp_elapsed, fm_elapsed, fl_elapsed, fc_elapsed, as_elapsed, ld_elapsed) = elapseds
   compile_elapsed = (as_elapsed + ld_elapsed + fp_elapsed + fm_elapsed + fl_elapsed + fc_elapsed)
@@ -188,6 +192,8 @@ def get_test_parser():
   parser = get_fosterc_parser()
   parser.add_option("--quietish", dest="quietish", action="store_true", default=False,
                     help="Run test(s) with less output")
+  parser.add_option("--show-stdout", dest="show_stdout", action="store_true", default=False,
+                    help="Print the program's stdout after it terminates")
   return parser
 
 def test_parser_parse_and_fixup(parser):
