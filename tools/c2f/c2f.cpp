@@ -518,11 +518,22 @@ public:
                              && ab->getReachableBlock()->getTerminator() == nullptr;
   }
 
-  void emitJumpTo(CFGBlock::AdjacentBlock* ab) {
+  bool stmtHasValue(const Stmt* s) {
+    if (!s) return false;
+    if (isa<GotoStmt>(s)) return false;
+    if (auto rs = dyn_cast<ReturnStmt>(s)) {
+      return rs->getRetValue() != nullptr;
+    }
+    return true;
+  }
+
+  void emitJumpTo(CFGBlock::AdjacentBlock* ab, bool hasValue = true) {
     if (ab->isReachable()) {
       CFGBlock* next = ab->getReachableBlock();
       if (isExitBlock(next)) {
-        llvm::outs() << "() /*exitblock*/\n";
+        if (!hasValue) {
+          llvm::outs() << "()";
+        }
       } else {
         llvm::outs() << getBlockName(*next) << " !;\n";
       }
@@ -601,7 +612,7 @@ public:
       */
 
       if (cb->succ_size() == 1) {
-        emitJumpTo(cb->succ_begin());
+        emitJumpTo(cb->succ_begin(), stmtHasValue(cb->getTerminator().getStmt()));
       } else if (cb->succ_size() == 2) {
         if (const Stmt* tc = cb->getTerminatorCondition()) {
           llvm::outs() << "if ";
