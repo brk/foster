@@ -16,5 +16,22 @@ main = {
 
   expect_float_p9f64 -1.0;
   print_float_p9f64 (z0 -f64 f0);
+
+  geocar-example !;
+};
+
+geocar-example = {
+  // http://geocar.sdf1.org/numbers.html
+  expect_float_p9f64 2.0;
+  print_float_p9f64 (9999999999999999.0 -f64 9999999999999998.0);
+  /*
+        Warning: the provided rational constant
+
+          print_float_p9f64 (9999999999999999.0 -f64 9999999999999998.0);
+                             ~~~~~~~~~~~~~~~~~~
+
+        is actually the floating point number 10000000000000000.0
+                 or, in exponential notation: 1e16
+  */
 };
 
