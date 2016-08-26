@@ -1,0 +1,14 @@
+#!/bin/sh
+
+SD=$(dirname `which $0`)/../scripts
+R=$(python $SD/normpath.py $SD/..)
+
+cxxpath () {
+  cat $R/_obj/CMakeCache.txt | grep CLANG:FILEPATH | sed 's/CLANG:FILEPATH=//'
+}
+
+# Use regular clang instead of clang++
+CLANG=$(python $SD/normpath.py `cxxpath`/../clang)
+
+${CLANG} $@ -o _runclang.exe && ./_runclang.exe
+rm -rf _runclang.exe
