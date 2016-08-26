@@ -88,7 +88,11 @@ prettyTyFormals tyfs = empty <+> text "forall" <+> hsep (map prettyTyFormal tyfs
                                           text name <+> text ":" <+> pretty kind
 
 instance Pretty ty => Pretty (ModuleExpr ty) where
-  pretty m = vcat (map prettyItem $ moduleASTitems m)
+  pretty m =
+        vcat (map prettyImport $ moduleASTincludes m)
+    <$> vcat (map prettyItem $ moduleASTitems m)
+
+prettyImport (ident, path) = text "snafuinclude" <+> text (T.unpack ident) <+> text (T.unpack path) <> text ";"
 
 prettyItem (ToplevelDecl (s, t)) = showTyped (text s) t
 prettyItem (ToplevelDefn (_, E_FnAST _ fn)) = prettyTopLevelFn fn
