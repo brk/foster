@@ -1078,14 +1078,12 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type,
   }
 }
 
+// If we represent a constant array as a globally-allocated/static value,
+// we simply won't call this function.
 llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
   if (this->arraySize != NULL) {
     Value* array_size = this->arraySize->codegen(pass);
-    if (this->region == LLAllocate::MEM_REGION_GLOBAL_HEAP) {
-      return pass->emitArrayMalloc(this->type, array_size, this->zero_init);
-    } else {
-      return emitFakeComment("LLAllocate non-heap array");
-    }
+    return pass->emitArrayMalloc(this->type, array_size, this->zero_init);
   } else {
     if (const StructTypeAST* sty = this->type->castStructTypeAST()) {
       registerStructType(const_cast<StructTypeAST*>(sty),
@@ -1204,10 +1202,12 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
   llvm::ArrayType* ty = llvm::ArrayType::get(elt_ty, vals.size());
   llvm::Constant* const_arr = llvm::ConstantArray::get(ty, vals);
 
+  bool isImmutable = false;
+
   // If there are no non-constant values, then the array can be
   // allocated globally instead of on the heap, and we won't need
   // to copy any values.
-  if (ncvals.empty()) {
+  if (ncvals.empty() && isImmutable) {
     auto const_arr_tidy = emitConstantArrayTidy(vals.size(), const_arr);
 
     CtorRepr ctorRepr; ctorRepr.smallId = -1;
