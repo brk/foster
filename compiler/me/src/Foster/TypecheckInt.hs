@@ -103,6 +103,7 @@ tcMaybeWarnMisleadingRat range cleanText val = do
   let isExpNot = isExponentialNotation cleanText
   let shortest = T.unpack $ toShortest val
   let canonicalS = addPointZeroIfNeeded shortest
+  let canonicalE = T.unpack $ toExponential   (-1) val
   let canonicalP = T.unpack $
             if isExpNot
               then toExponential   (-1) val
@@ -119,18 +120,21 @@ tcMaybeWarnMisleadingRat range cleanText val = do
     (_, 0) -> return ()
     _ | sameLength && isExpNot -> return ()
     _ -> do
-      let alt = if canonicalS == canonicalP
-                 then []
-                 else [text "                 or, alternatively:   " <> text canonicalS]
+      let alt1 = if canonicalS == canonicalP
+                  then []
+                  else [text "                   or, alternatively: " <> text canonicalS]
+      let alt2 = if (length canonicalE + 5) > length canonicalP
+                  then []
+                  else [text "         or, in exponential notation: " <> text canonicalE]
       let description =
-                if sameLength
+                if length cleanText <= length canonicalP
                   then "is actually the floating point number "
                   else "could be written more compactly as    "
 
       tcWarn $ [text "the provided rational constant"
                ,highlightFirstLineDoc range
                ,text description <> text canonicalP
-               ] ++ alt
+               ] ++ alt1 ++ alt2
 
 isExponentialNotation s = loop s False
   where loop ('.':s) _ = loop s True
