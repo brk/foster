@@ -28,8 +28,8 @@ cxxpath () {
 }
 
 if [ -f $T ]; then
- #echo python $R/scripts/run_test.py ${T} "$@" -I . -I $R/stdlib --bindir=$R/_obj --me-arg=--interactive --cxxpath=`cxxpath` && \
-      python $R/scripts/run_test.py --quietish --show-stdout ${T} "$@" -I . -I $R/stdlib --bindir=$R/_obj --me-arg=--interactive --cxxpath=`cxxpath` || exit $?
+ #echo python $R/scripts/run_test.py --quietish --show-stdout ${T} "$@" -I . -I $R/stdlib --bindir=$R/_obj --cxxpath=`cxxpath` && \
+      python $R/scripts/run_test.py --quietish --show-stdout ${T} "$@" -I . -I $R/stdlib --bindir=$R/_obj --cxxpath=`cxxpath` || exit $?
 
  # If the files didn't exist before, they shouldn't exist after...
  [ -z "$gclog_exists" ]   && rm -f gclog.txt
