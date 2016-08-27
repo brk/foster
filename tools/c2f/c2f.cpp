@@ -478,13 +478,19 @@ class FnBodyVisitor : public RecursiveASTVisitor<FnBodyVisitor> {
   ASTContext& ctx;
 };
 
+enum ContextKind {
+  ExprContext,
+  AssignmentTarget,
+  BooleanContext
+};
+
 class MyASTConsumer : public ASTConsumer {
 public:
   MyASTConsumer(Rewriter &R) : lastloc(), R(R) { }
 
   void handleIfThenElse(const Stmt* cnd, const Stmt* thn, const Stmt* els) {
     llvm::outs() << "if ";
-    visitStmt(cnd);
+    visitStmt(cnd, BooleanContext);
     llvm::outs() << " then ";
     visitStmt(thn);
     if (els) {
@@ -617,20 +623,12 @@ public:
         }
       }
 
-      /*
-      if (termin) {
-        if (!(isa<GotoStmt>(termin) || isa<IfStmt>(termin) || isa<ForStmt>(termin))) {
-          visitStmt(termin);
-        }
-      }
-      */
-
       if (cb->succ_size() == 1) {
         emitJumpTo(cb->succ_begin(), stmtHasValue(getBlockTerminatorOrLastStmt(cb)));
       } else if (cb->succ_size() == 2) {
         if (const Stmt* tc = cb->getTerminatorCondition()) {
           llvm::outs() << "if ";
-          visitStmt(tc);
+          visitStmt(tc, BooleanContext);
           llvm::outs() << " then ";
           emitJumpTo(cb->succ_begin());
           llvm::outs() << " else ";
@@ -837,7 +835,7 @@ public:
         llvm::outs() << ")";
       } else {
         llvm::outs() << "(" << incdec << tyName(unop) << " ";
-        visitStmt(unop->getSubExpr(), true);
+        visitStmt(unop->getSubExpr(), AssignmentTarget);
         llvm::outs() << ")";
       }
   }
@@ -861,7 +859,8 @@ The corresponding AST to be matched is
           `-IntegerLiteral ... 'int' 0
 */
 
-  void handleBinaryOperator(const BinaryOperator* binop) {
+  void handleBinaryOperator(const BinaryOperator* binop,
+                            bool isBooleanContext) {
     std::string op = binop->getOpcodeStr();
 
     if (op == "=") {
@@ -882,12 +881,17 @@ The corresponding AST to be matched is
     } else {
       // TODO account for the fact that compound operations may occur in a
       // different intermediate type...
+      bool needsBoolToIntCoercion = (!isBooleanContext) && (op[0] == '<' || op[1] == '>');
+      if (needsBoolToIntCoercion) { llvm::outs() << "if "; }
+
       std::string tgt = mkFosterBinop(op, exprTy(binop->getLHS()));
       llvm::outs() << "(";
-      visitStmt(binop->getLHS(), binop->isCompoundAssignmentOp());
+      visitStmt(binop->getLHS(), (binop->isCompoundAssignmentOp() ? AssignmentTarget : ExprContext));
       llvm::outs() << " " << tgt << " ";
       visitStmt(binop->getRHS());
       llvm::outs() << ")";
+
+      if (needsBoolToIntCoercion) { llvm::outs() << " then 1 else 0 end"; }
     }
   }
 
@@ -920,7 +924,7 @@ The corresponding AST to be matched is
     } else if (unop->getOpcode() == UO_PreInc || unop->getOpcode() == UO_PostInc) {
       handleIncrDecr("incr", unop);
     } else if (unop->getOpcode() == UO_AddrOf) {
-      visitStmt(unop->getSubExpr(), true);
+      visitStmt(unop->getSubExpr(), AssignmentTarget);
     } else if (unop->getOpcode() == UO_Deref) {
       visitStmt(unop->getSubExpr());
       llvm::outs() << "^";
@@ -1135,7 +1139,7 @@ The corresponding AST to be matched is
       const Expr* base = nullptr;
       llvm::outs() << "(set_" << fieldAccessorName(me, base) << " ";
       llvm::outs() << "(";
-      visitStmt(base, true);
+      visitStmt(base, AssignmentTarget);
       llvm::outs() << ") (";
       visitStmt(binop->getRHS());
       llvm::outs() << ")";
@@ -1145,7 +1149,7 @@ The corresponding AST to be matched is
       llvm::outs() << "(";
       visitStmt(binop->getRHS());
       llvm::outs() << ") >^ ";
-      visitStmt(binop->getLHS(), true);
+      visitStmt(binop->getLHS(), AssignmentTarget);
     }
   }
 
@@ -1161,12 +1165,12 @@ The corresponding AST to be matched is
       std::string accessor = fieldAccessorName(me, base);
       llvm::outs() << "(set_" << accessor << " ";
       llvm::outs() << "(";
-      visitStmt(base, true);
+      visitStmt(base, AssignmentTarget);
       llvm::outs() << ") (";
 
         llvm::outs() << "(" << accessor << " ";
         llvm::outs() << "(";
-        visitStmt(base, true);
+        visitStmt(base, AssignmentTarget); // ExprContext?
         llvm::outs() << ")";
         llvm::outs() << ")";
 
@@ -1178,11 +1182,11 @@ The corresponding AST to be matched is
     } else {
       // translate v OP= x;  to  (v^ OP x) >^ v;
       llvm::outs() << "(";
-      visitStmt(binop->getLHS(), false);
+      visitStmt(binop->getLHS(), ExprContext);
       llvm::outs() << " " << tgt << " ";
-      visitStmt(binop->getRHS(), false);
+      visitStmt(binop->getRHS(), ExprContext);
       llvm::outs() << ") >^ ";
-      visitStmt(binop->getLHS(), true);
+      visitStmt(binop->getLHS(), AssignmentTarget);
     }
   }
 
@@ -1346,7 +1350,7 @@ The corresponding AST to be matched is
     }
   }
 
-  void visitStmt(const Stmt* stmt, bool isAssignmentTarget = false) {
+  void visitStmt(const Stmt* stmt, ContextKind ctx = ExprContext) {
     emitCommentsFromBefore(stmt->getLocStart());
 
     if (const ImplicitCastExpr* ice = dyn_cast<ImplicitCastExpr>(stmt)) {
@@ -1418,7 +1422,7 @@ The corresponding AST to be matched is
     } else if (const CompoundAssignOperator* binop = dyn_cast<CompoundAssignOperator>(stmt)) {
       handleCompoundAssignment(binop);
     } else if (const BinaryOperator* binop = dyn_cast<BinaryOperator>(stmt)) {
-      handleBinaryOperator(binop);
+      handleBinaryOperator(binop, ctx == BooleanContext);
     } else if (const UnaryOperator* unop = dyn_cast<UnaryOperator>(stmt)) {
       handleUnaryOperator(unop);
     } else if (const IntegerLiteral* lit = dyn_cast<IntegerLiteral>(stmt)) {
@@ -1478,7 +1482,7 @@ The corresponding AST to be matched is
       handleCastExpr(ce);
     } else if (const DeclRefExpr* dr = dyn_cast<DeclRefExpr>(stmt)) {
       std::string name = dr->getDecl()->getName();
-      if (mutableLocals[name] && !isAssignmentTarget) {
+      if (mutableLocals[name] && ctx != AssignmentTarget) {
         llvm::outs() << fosterizedName(name) << "^";
       } else {
         llvm::outs() << fosterizedName(name);
@@ -1664,7 +1668,18 @@ The corresponding AST to be matched is
                             << " : " << tyName(ty) << " =>\n";
             }
           }
-          // TODO rebind parameters if they are mutable locals
+
+          // Rebind parameters if they are observed to be mutable locals.
+          for (unsigned i = 0; i < fd->getNumParams(); ++i) {
+            ParmVarDecl* d = fd->getParamDecl(i);
+            if (mutableLocals[d->getName()]) {
+              llvm::outs() << fosterizedName(d->getDeclName().getAsString())
+                           << " = (prim ref "
+                           << fosterizedName(d->getDeclName().getAsString())
+                           << ");\n";
+            }
+          }
+
           if (needsCFG) {
             visitStmtCFG(body);
           } else {
