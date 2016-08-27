@@ -576,6 +576,7 @@ mergeModules (WholeProgramAST modules) = do
      , moduleASTsourceLines = moduleASTsourceLines m1 `appendSourceLines`
                                                          moduleASTsourceLines m2
      , moduleASTprimTypes   = moduleASTprimTypes   m1 -- should be the same
+     , moduleASTincludes    = moduleASTincludes   m1 ++ moduleASTincludes m2
                                      }
 
 desugarParsedModule :: TcEnv -> ModuleExpr TypeP ->
