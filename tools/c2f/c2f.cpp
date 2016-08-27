@@ -944,9 +944,13 @@ The corresponding AST to be matched is
         visitStmt(unop->getSubExpr());
         llvm::outs() << ")";
       }
-    } else if (unop->getOpcode() == UO_PreDec || unop->getOpcode() == UO_PostDec) {
+    } else if (unop->getOpcode() == UO_PreDec) {
       handleIncrDecr("decr", unop);
-    } else if (unop->getOpcode() == UO_PreInc || unop->getOpcode() == UO_PostInc) {
+    } else if (unop->getOpcode() == UO_PostDec) {
+      handleIncrDecr("postdecr", unop);
+    } else if (unop->getOpcode() == UO_PostInc) {
+      handleIncrDecr("postincr", unop);
+    } else if (unop->getOpcode() == UO_PreInc) {
       handleIncrDecr("incr", unop);
     } else if (unop->getOpcode() == UO_AddrOf) {
       visitStmt(unop->getSubExpr(), AssignmentTarget);
