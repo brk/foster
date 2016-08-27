@@ -93,9 +93,9 @@ k       :              // kinds
 // Syntax sugar for sequence of (recursive) let bindings & expressions.
 // the last stmt in stmts should be an expr, not a binding,
 // but we can give better error messages later on in the pipeline.
-stmts   :  stmt_ stmt_cont* ';'? -> ^(STMTS stmt_ stmt_cont*);
+stmts   :  stmt_ stmt_cont* ';'* -> ^(STMTS stmt_ stmt_cont*);
 stmt_   : abinding | e ;
-stmt_cont : semi=';' stmt_ -> ^(MU $semi stmt_);
+stmt_cont : semi=';'+ stmt_ -> ^(MU $semi stmt_);
 abinding : 'REC' idbinding -> ^(ABINDING 'REC' idbinding)
          |        pbinding -> ^(ABINDING        pbinding);
 

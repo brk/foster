@@ -543,6 +543,16 @@ f64-to-u32! = { a : Float64 => prim f64-to-u32-unsafe a };
 // Precondition: a < 1073741820.5 && a > -1073741820.5
 f64-to-s32! = { a : Float64 => prim f64-to-s32-unsafe a };
 
+
+incrInt32 = { r : Ref Int32 => (r^ +Int32 1) >^ r };
+decrInt32 = { r : Ref Int32 => (r^ -Int32 1) >^ r };
+
+incrInt8 = { r : Ref Int8 => (r^ +Int8 1) >^ r };
+decrInt8 = { r : Ref Int8 => (r^ -Int8 1) >^ r };
+
+incrInt64 = { r : Ref Int64 => (r^ +Int64 1) >^ r };
+decrInt64 = { r : Ref Int64 => (r^ -Int64 1) >^ r };
+
 // {{{
 
 listShow :: forall (t:Type) { { t => Text } => List t => Text };

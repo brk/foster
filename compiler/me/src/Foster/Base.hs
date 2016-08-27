@@ -865,12 +865,12 @@ instance Pretty t => Pretty (PatternRepr t) where
         PR_Tuple         _rng _ty pats     -> parens (hsep $ punctuate comma (map pretty pats))
 
 instance Pretty ty => Pretty (EPattern ty) where
-  pretty (EP_Wildcard _)            = text "EP_Wildcard"
-  pretty (EP_Variable _ v)          = text "EP_Variable " <> pretty v
-  pretty (EP_Ctor     _ _pats ctor) = text "EP_Ctor     " <> text (show ctor)
-  pretty (EP_Bool     _ b)          = text "EP_Bool     " <> pretty b
-  pretty (EP_Int      _ str)        = text "EP_Int      " <> text str
-  pretty (EP_Tuple    _ pats)       = text "EP_Tuple    " <> pretty pats
+  pretty (EP_Wildcard _)            = text "_"
+  pretty (EP_Variable _ v)          = pretty v
+  pretty (EP_Ctor     _ pats ctor)  = text "$" <> text (show ctor) <+> hcat (map pretty pats)
+  pretty (EP_Bool     _ b)          = pretty b
+  pretty (EP_Int      _ str)        = text str
+  pretty (EP_Tuple    _ pats)       = tupled $ map pretty pats
 
 instance Pretty ty => Pretty (E_VarAST ty) where
   pretty (VarAST (Just ty) txt) = text (T.unpack txt) <+> text "::" <+> pretty ty
