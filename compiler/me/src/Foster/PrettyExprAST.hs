@@ -101,34 +101,66 @@ prettyItem (ToplevelData dt) = pretty dt
 
 prettyId (TypedId _ i) = text (T.unpack $ identPrefix i)
 
+prettyExpr e =
+  case e of
+    E_SeqAST {} -> parens $ pretty e
+    _ -> pretty e
+
+prettyStmt e = case e of
+    E_MachArrayLit annot _mbt args -> withAnnot annot $ parens $ text "prim mach-array-literal" <+> hsep (map pretty args)
+    E_VarAST annot evar     -> withAnnot annot $ pretty evar
+    E_TyApp  annot e argtys -> withAnnot annot $ pretty e <> text ":[" <> hsep (punctuate comma (map pretty argtys)) <> text "]"
+    E_TyCheck annot e ty    -> withAnnot annot $ parens (pretty e <+> text "as" <+> pretty ty)
+    E_KillProcess annot exp -> withAnnot annot $ text "prim kill-entire-process" <+> pretty exp
+    E_StringAST   annot r (SS_Text  t) -> withAnnot annot $             wasRaw r <> (text $ show $ T.unpack t)
+    E_StringAST   annot r (SS_Bytes b) -> withAnnot annot $ text "b" <> wasRaw r <> (text $ show b)
+    E_BoolAST     annot b   -> withAnnot annot $ text $ show b
+    E_PrimAST     annot nm []   _ -> withAnnot annot $ text nm
+    E_PrimAST     annot nm lits _ -> withAnnot annot $ text nm <+> pretty lits
+    E_CallAST annot e []    -> withAnnot annot $ pretty e <+> text "!"
+    E_CallAST annot e [e1,e2] | isOperator e
+                            -> withAnnot annot $ prettyAtom e1 <+> pretty e <+> prettyAtom e2
+    E_CallAST annot e es    -> withAnnot annot $ pretty e <+> align (hsep (map prettyAtom es))
+    E_LetAST  annot (TermBinding evar bound) expr ->
+                               withAnnot annot $
+                              {- lkwd "let"
+                              <+> -} {- fill 8 -} (pretty evar)
+                              <+> text "="
+                              <+> pretty bound {- <+> lkwd "in" -}
+                                                  <> text ";"
+                           <$> pretty expr
+    E_LetRec annot binds e -> withAnnot annot $
+                           (vcat [text "REC" <+> pretty evar <+> text "="
+                                             <+> pretty expr <> text ";"
+                                          | TermBinding evar expr <- binds
+                                          ])
+                           <$> pretty e
+    E_IfAST annot c b1 b2 -> withAnnot annot $
+                           nest 2 (kwd "if" <+> pretty c
+                                   <$> (kwd "then" <+> align (pretty b1))
+                                   <$> (kwd "else" <+> align (pretty b2)))
+                           <$> end
+    E_IntAST   annot intstr  -> withAnnot annot $ red     $ text intstr
+    E_RatAST   annot fltstr  -> withAnnot annot $ dullred $ text fltstr
+    E_AllocAST annot e _rgn  -> withAnnot annot $ parens $ text "prim ref" <+> prettyAtom e
+    E_DerefAST annot e       -> withAnnot annot $ prettyAtom e <> text "^"
+    E_StoreAST annot e1 e2   -> withAnnot annot $ prettyAtom e1 <+> text ">^" <+> prettyAtom e2
+    E_Case annot scrut arms  -> withAnnot annot $ prettyCase scrut arms
+    E_CompilesAST annot Nothing  -> withAnnot annot $ text $ "E_CompilesAST NOTHING"
+    E_CompilesAST annot (Just e) -> withAnnot annot $ parens $ text "__COMPILES__" <+> pretty e
+    E_ArrayRead   annot ai   -> withAnnot annot $ pretty ai
+    E_ArrayPoke   annot ai e -> withAnnot annot $ prettyAtom e <+> text ">^" <+> pretty ai
+    E_TupleAST    annot _ es -> withAnnot annot $ parens (hsep $ punctuate comma (map pretty es))
+    E_SeqAST (ExprAnnot pre _ post) l r -> prettyExpr l <> text ";" <+> (vcat $ map pretty $ pre ++ post)
+                                        <> prettyExpr r
+    E_FnAST annot fn     -> withAnnot annot $ pretty fn
+
 prettyAtom :: Pretty ty => ExprSkel ExprAnnot ty -> Doc
 prettyAtom e =
   case e of
     E_SeqAST      {} -> parens $ pretty e
     E_CallAST     {} -> parens $ pretty e
-
-    E_PrimAST     {} -> pretty e
-    E_StringAST   {} -> pretty e
-    E_BoolAST     {} -> pretty e
-    E_IntAST      {} -> pretty e
-    E_RatAST      {} -> pretty e
-    E_TupleAST    {} -> pretty e
-    E_FnAST       {} -> pretty e
-    E_IfAST       {} -> pretty e
-    E_Case        {} -> pretty e
-    E_LetAST      {} -> pretty e
-    E_LetRec      {} -> pretty e
-    E_VarAST      {} -> pretty e
-    E_AllocAST    {} -> pretty e
-    E_DerefAST    {} -> pretty e
-    E_StoreAST    {} -> pretty e
-    E_ArrayRead   {} -> pretty e
-    E_ArrayPoke   {} -> pretty e
-    E_TyApp       {} -> pretty e
-    E_TyCheck     {} -> pretty e
-    E_CompilesAST {} -> pretty e
-    E_KillProcess {} -> pretty e
-    E_MachArrayLit {} -> pretty e
+    _ -> pretty e
 
 isOperator (E_VarAST _ evar) = not . isAlpha . T.head $ evarName evar
 isOperator _                 = False
@@ -155,53 +187,5 @@ instance Pretty ty => Pretty (ArrayEntry (ExprAST ty)) where
   pretty (AE_Expr ex) = pretty ex
 
 instance Pretty ty => Pretty (ExprAST ty) where
-  pretty e =
-        case e of
-            E_MachArrayLit annot _mbt args -> withAnnot annot $ parens $ text "prim mach-array-literal" <+> hsep (map pretty args)
-            E_VarAST annot evar     -> withAnnot annot $ pretty evar
-            E_TyApp  annot e argtys -> withAnnot annot $ pretty e <> text ":[" <> hsep (punctuate comma (map pretty argtys)) <> text "]"
-            E_TyCheck annot e ty    -> withAnnot annot $ parens (pretty e <+> text "as" <+> pretty ty)
-            E_KillProcess annot exp -> withAnnot annot $ text "prim kill-entire-process" <+> pretty exp
-            E_StringAST   annot r (SS_Text  t) -> withAnnot annot $             wasRaw r <> (text $ show $ T.unpack t)
-            E_StringAST   annot r (SS_Bytes b) -> withAnnot annot $ text "b" <> wasRaw r <> (text $ show b)
-            E_BoolAST     annot b   -> withAnnot annot $ text $ show b
-            E_PrimAST     annot nm []   _ -> withAnnot annot $ text nm
-            E_PrimAST     annot nm lits _ -> withAnnot annot $ text nm <+> pretty lits
-            E_CallAST annot e []    -> withAnnot annot $ pretty e <+> text "!"
-            E_CallAST annot e [e1,e2] | isOperator e
-                                    -> withAnnot annot $ prettyAtom e1 <+> pretty e <+> prettyAtom e2
-            E_CallAST annot e es    -> withAnnot annot $ pretty e <+> align (hsep (map prettyAtom es))
-            E_LetAST  annot (TermBinding evar bound) expr ->
-                                       withAnnot annot $
-                                      {- lkwd "let"
-                                      <+> -} {- fill 8 -} (pretty evar)
-                                      <+> text "="
-                                      <+> pretty bound {- <+> lkwd "in" -}
-                                                          <> text ";"
-                                   <$> pretty expr
-            E_LetRec annot binds e -> withAnnot annot $
-                                   (vcat [text "REC" <+> pretty evar <+> text "="
-                                                     <+> pretty expr <> text ";"
-                                                  | TermBinding evar expr <- binds
-                                                  ])
-                                   <$> pretty e
-            E_IfAST annot c b1 b2 -> withAnnot annot $
-                                   nest 2 (kwd "if" <+> pretty c
-                                           <$> (kwd "then" <+> align (pretty b1))
-                                           <$> (kwd "else" <+> align (pretty b2)))
-                                   <$> end
-            E_IntAST   annot intstr  -> withAnnot annot $ red     $ text intstr
-            E_RatAST   annot fltstr  -> withAnnot annot $ dullred $ text fltstr
-            E_AllocAST annot e _rgn  -> withAnnot annot $ parens $ text "prim ref" <+> prettyAtom e
-            E_DerefAST annot e       -> withAnnot annot $ prettyAtom e <> text "^"
-            E_StoreAST annot e1 e2   -> withAnnot annot $ prettyAtom e1 <+> text ">^" <+> prettyAtom e2
-            E_Case annot scrut arms  -> withAnnot annot $ prettyCase scrut arms
-            E_CompilesAST annot Nothing  -> withAnnot annot $ text $ "E_CompilesAST NOTHING"
-            E_CompilesAST annot (Just e) -> withAnnot annot $ parens $ text "__COMPILES__" <+> pretty e
-            E_ArrayRead   annot ai   -> withAnnot annot $ pretty ai
-            E_ArrayPoke   annot ai e -> withAnnot annot $ prettyAtom e <+> text ">^" <+> pretty ai
-            E_TupleAST    annot _ es -> withAnnot annot $ parens (hsep $ punctuate comma (map pretty es))
-            E_SeqAST (ExprAnnot pre _ post) l r -> pretty l <> text ";" <+> (vcat $ map pretty $ pre ++ post)
-                                                <> pretty r
-            E_FnAST annot fn     -> withAnnot annot $ pretty fn
+  pretty e = prettyStmt e
 

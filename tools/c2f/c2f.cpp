@@ -513,6 +513,20 @@ public:
     return next->getBlockID() == next->getParent()->getExit().getBlockID();
   }
 
+  const Stmt*
+  getBlockTerminatorOrLastStmt(const CFGBlock* b) const {
+    // Return statements are not terminators (???) so we fish them
+    // (or whatever else) out of the block if there's no actual terminator.
+    const Stmt* s = b->getTerminator().getStmt();
+    if (!s && !b->empty()) {
+      CFGElement ce = b->back();
+      if (ce.getKind() == CFGElement::Kind::Statement) {
+        s = ce.castAs<CFGStmt>().getStmt();
+      }
+    }
+    return s;
+  }
+
   bool isEmptyFallthroughAdjacent(CFGBlock::AdjacentBlock* ab) {
     return ab->isReachable() && ab->getReachableBlock()->empty()
                              && ab->getReachableBlock()->getTerminator() == nullptr;
@@ -532,7 +546,7 @@ public:
       CFGBlock* next = ab->getReachableBlock();
       if (isExitBlock(next)) {
         if (!hasValue) {
-          llvm::outs() << "()";
+          llvm::outs() << "(jump = (); jump)";
         }
       } else {
         llvm::outs() << getBlockName(*next) << " !;\n";
@@ -612,7 +626,7 @@ public:
       */
 
       if (cb->succ_size() == 1) {
-        emitJumpTo(cb->succ_begin(), stmtHasValue(cb->getTerminator().getStmt()));
+        emitJumpTo(cb->succ_begin(), stmtHasValue(getBlockTerminatorOrLastStmt(cb)));
       } else if (cb->succ_size() == 2) {
         if (const Stmt* tc = cb->getTerminatorCondition()) {
           llvm::outs() << "if ";
@@ -1366,14 +1380,14 @@ The corresponding AST to be matched is
         llvm::outs() << ")";
       }
     } else if (const NullStmt* dr = dyn_cast<NullStmt>(stmt)) {
-      llvm::outs() << "()";
+      llvm::outs() << "(nullstmt = (); nullstmt)";
     } else if (const CaseStmt* cs = dyn_cast<CaseStmt>(stmt)) {
       visitCaseStmt(cs, true);
     } else if (const DefaultStmt* ds = dyn_cast<DefaultStmt>(stmt)) {
       llvm::outs() << "  of _ ->\n";
       visitStmt(ds->getSubStmt());
       if (isa<BreakStmt>(ds->getSubStmt())) {
-        llvm::outs() << "()\n";
+        llvm::outs() << "(breakstmt = (); breakstmt)\n";
       }
     } else if (const SwitchStmt* ss = dyn_cast<SwitchStmt>(stmt)) {
       handleSwitch(ss);
@@ -1383,13 +1397,13 @@ The corresponding AST to be matched is
       // Do nothing; should be implicitly handled by CFG building.
     } else if (const LabelStmt* ls = dyn_cast<LabelStmt>(stmt)) {
       llvm::outs() << "// TODO(c2f): label " << ls->getName() << ";\n";
-      llvm::outs() << "()";
+      llvm::outs() << "(labelstmt = (); retstmt)";
       visitStmt(ls->getSubStmt());
     } else if (const ReturnStmt* rs = dyn_cast<ReturnStmt>(stmt)) {
       if (rs->getRetValue()) {
         visitStmt(rs->getRetValue());
       } else {
-        llvm::outs() << "()";
+        llvm::outs() << "(retstmt = (); retstmt)";
       }
     } else if (const MemberExpr* me = dyn_cast<MemberExpr>(stmt)) {
       const Expr* base = nullptr;
