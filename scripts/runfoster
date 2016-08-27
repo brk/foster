@@ -5,10 +5,10 @@ R=$(python $SD/normpath.py $SD/..)
 
 P=$1
 shift
-T=`basename $P`.foster
+T=$(dirname $P)/$(basename $P).foster
 
 if [ ! -f "${T}" ]; then
-  T=`basename $P`
+  T=$(dirname $P)/$(basename $P)
 fi
 
 if [ -z "$R" ]; then

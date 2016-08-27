@@ -306,19 +306,21 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
       let rev_pparts = groupBy similarStmts rev_parts in
 
       -- Construct groups of let-bindings.
+     let go [] [] expr = expr
+         go [] (block:rest) expr = go block rest expr
+         go block@(StmtRecBind annot _:_) rest expr =
+           go [] rest (E_LetRec annot [TermBinding v body | StmtRecBind _annot (EP_Variable _ v, body) <- block] expr)
+         go (thing:block) rest expr =
+           go block rest (letbind thing expr)
+         letbind (StmtExpr    annot e)                        expr = E_SeqAST annot e expr
+         letbind (StmtLetBind annot (EP_Variable _ v, bound)) expr = E_LetAST annot (TermBinding v bound) expr
+         letbind (StmtLetBind annot (pat, bound))             expr = E_Case   annot bound [CaseArm pat expr Nothing [] (error "E_Case range 3")]
+         letbind (StmtRecBind _ _) _xpr = error "shouldn't happen"
+       in
       case rev_pparts of
         ((StmtExpr _ expr:exprs):rest) -> go exprs rest expr
-          where go [] [] expr = expr
-                go [] (block:rest) expr = go block rest expr
-                go block@(StmtRecBind annot _:_) rest expr =
-                  go [] rest (E_LetRec annot [TermBinding v body | StmtRecBind _annot (EP_Variable _ v, body) <- block] expr)
-                go (thing:block) rest expr =
-                  go block rest (letbind thing expr)
-                letbind (StmtExpr    annot e)                        expr = E_SeqAST annot e expr
-                letbind (StmtLetBind annot (EP_Variable _ v, bound)) expr = E_LetAST annot (TermBinding v bound) expr
-                letbind (StmtLetBind annot (pat, bound))             expr = E_Case   annot bound [CaseArm pat expr Nothing [] (error "E_Case range 3")]
-                letbind (StmtRecBind _ _) _xpr = error "shouldn't happen"
-        ((stmt:_):_) -> error $ "Statement block should end in an expression! Had: " ++ show stmt
+        -- TODO or use value of last binding?
+        ((stmt:stmts):rest) -> go (stmt:stmts) rest (E_TupleAST (annotOfParsedStmt stmt) KindPointerSized [])
         _ -> error $ "Expected more statements!"
     _ -> error $ "cb_parse_stmts " ++ show cbor
 
@@ -859,3 +861,7 @@ data ParsedStmt =
   | StmtRecBind ExprAnnot (EPattern TypeP, ExprAST TypeP)
   deriving Show
 
+annotOfParsedStmt ps = case ps of
+  StmtExpr    annot _ -> annot
+  StmtLetBind annot _ -> annot
+  StmtRecBind annot _ -> annot

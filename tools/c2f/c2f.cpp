@@ -343,6 +343,28 @@ private:
 
 typedef std::map<const Decl*, ZeroOneTwoSet<const Type*> > VoidPtrCasts;
 
+class LogicalAndOrTweaker : public RecursiveASTVisitor<LogicalAndOrTweaker> {
+public:
+  LogicalAndOrTweaker(llvm::DenseMap<const Stmt*, BinaryOperatorKind>& tweaked) : tweaked(tweaked) {}
+  bool VisitStmt(Stmt* s) {
+    if (auto bo = dyn_cast<BinaryOperator>(s)) {
+      if (bo->getOpcode() == BO_LAnd) {
+        tweaked[bo] = BO_LAnd;
+        bo->setOpcode(BO_And);
+      }
+      if (bo->getOpcode() == BO_LOr) {
+        llvm::errs() << "tweaked || operator...\n";
+        tweaked[bo] = BO_LOr;
+        bo->setOpcode(BO_Or);
+      }
+    }
+    return true;
+  }
+
+private:
+  llvm::DenseMap<const Stmt*, BinaryOperatorKind>& tweaked;
+};
+
 class FnBodyVisitor : public RecursiveASTVisitor<FnBodyVisitor> {
   public:
   FnBodyVisitor(std::map<std::string, bool>& locals,
@@ -547,6 +569,7 @@ public:
     return true;
   }
 
+  // TODO support ternary conditional operators in CFGs
   void emitJumpTo(CFGBlock::AdjacentBlock* ab, bool hasValue = true) {
     if (ab->isReachable()) {
       CFGBlock* next = ab->getReachableBlock();
@@ -558,19 +581,26 @@ public:
         llvm::outs() << getBlockName(*next) << " !;\n";
       }
     } else {
-      llvm::outs() << "GOTO(u) block " << ab->getPossiblyUnreachableBlock()->getBlockID() << "\n";
+      CFGBlock* next = ab->getPossiblyUnreachableBlock();
+      llvm::outs() << getBlockName(*next) << " !; // unreachable\n";
     }
   }
 
   void visitStmtCFG(const Stmt* stmt) {
+    // Make sure that binary operators, like || and &&,
+    // don't get split up into separate CFG blocks, since
+    // the way Clang does so is a pain to reconstruct into
+    // well-scoped CPS-style expressions.
+    LogicalAndOrTweaker tweaker(tweakedStmts);
+    tweaker.TraverseStmt(const_cast<Stmt*>(stmt));
 
     CFG::BuildOptions BO;
     std::unique_ptr<CFG> cfg = CFG::buildCFG(nullptr, const_cast<Stmt*>(stmt), Ctx, BO);
 
     if (0) {
-      LangOptions LO;
       llvm::outs().flush();
       llvm::errs() << "/*\n";
+      LangOptions LO;
       cfg->dump(LO, false);
       llvm::errs() << "\n*/\n";
       llvm::errs().flush();
@@ -582,9 +612,38 @@ public:
       llvm::outs() << "*/\n";
     }
 
+    // One not-completely-obvious thing about Clang's CFG construction
+    // is that it can lead to duplicated statements, potentially across
+    // block boundaries. For example::
+    //
+    //    [B3]
+    //      1: ([B5.3]) || [B4.1]
+    //      2: l_24 = ((int16_t)((int16_t)(([B3.1]) & l_16) << (int16_t)l_26) % (int16_t)l_59)
+    //      Preds (2): B4 B5
+    //      Succs (1): B2
+    //
+    //    [B4]
+    //      1: 52693
+    //      Preds (1): B5
+    //      Succs (1): B3
+    //
+    //    [B5]
+    //      1: l_16 = l_26
+    //      2: func_31(((int16_t)15524 << (int16_t)p_12), p_12)
+    //      3: [B5.2] != l_26
+    //      T: ([B5.3]) || ...
+    //      Preds (1): B12
+    //      Succs (2): B3 B4
+    //
+    // Clang pretty-prints statement references of the form [B5.2],
+    // but it's just indicating that the same Stmt pointer occurs in
+    // the block element list and the LHS of the binary operator.
+
     // Add all var decls
+    StmtMap.clear();
     for (auto it = cfg->nodes_begin(); it != cfg->nodes_end(); ++it) {
       CFGBlock* cb = it;
+      unsigned j = 0;
       for (auto cbit = cb->begin(); cbit != cb->end(); ++cbit) {
         CFGElement ce = *cbit;
         if (ce.getKind() == CFGElement::Kind::Statement) {
@@ -592,6 +651,8 @@ public:
             if (isa<DeclStmt>(s)) {
               visitStmt(s);
               llvm::outs() << ";\n";
+            } else {
+              StmtMap[s] = std::make_pair(cb->getBlockID(), j++);
             }
           }
         }
@@ -605,16 +666,14 @@ public:
       llvm::outs() << "REC " << getBlockName(*cb) << " = {\n";
 
       const Stmt* termin = cb->getTerminator().getStmt();
-      bool hasControlFlowTerminator = termin && (
-            isa<SwitchStmt>(termin) || isa<IfStmt>(termin)
-            || isa<ForStmt>(termin) || isa<WhileStmt>(termin));
-      int offset = (hasControlFlowTerminator && (cb->begin() != cb->end())) ? 1 : 0;
-      for (auto cbit = cb->begin() + offset; cbit != cb->end(); ++cbit) {
+      for (auto cbit = cb->begin(); cbit != cb->end(); ++cbit) {
         CFGElement ce = *cbit;
         if (ce.getKind() == CFGElement::Kind::Statement) {
           if (const Stmt* s = ce.castAs<CFGStmt>().getStmt()) {
             if (!isa<DeclStmt>(s)) {
+              currStmt = s;
               visitStmt(s);
+              currStmt = nullptr;
               llvm::outs() << ";\n";
             }
           }
@@ -699,7 +758,7 @@ public:
     }
 
     llvm::outs() << getBlockName(cfg->getEntry()) << " !;\n";
-
+    StmtMap.clear();
   }
 
   void handleSwitch(const SwitchStmt* ss) {
@@ -753,6 +812,7 @@ public:
     return false;
   }
 
+  // Precondition: op should not be "&&" or "||".
   const Expr* bindOperator(const Expr* e, const std::string& op, const Decl* d) {
     if (const BinaryOperator* boe = dyn_cast<BinaryOperator>(e)) {
       if (boe->getOpcodeStr() == op) {
@@ -866,9 +926,18 @@ The corresponding AST to be matched is
          || op == "<"  || op == ">");
   }
 
+  std::string getBinaryOperatorString(const BinaryOperator* binop) {
+    auto it = tweakedStmts.find(binop);
+    if (it != tweakedStmts.end()) {
+      if (it->second == BO_LAnd) return "&&";
+      if (it->second == BO_LOr)  return "||";
+    }
+    return binop->getOpcodeStr();
+  }
+
   void handleBinaryOperator(const BinaryOperator* binop,
                             bool isBooleanContext) {
-    std::string op = binop->getOpcodeStr();
+    std::string op = getBinaryOperatorString(binop);
 
     if (op == "=") {
       handleAssignment(binop);
@@ -1382,8 +1451,40 @@ The corresponding AST to be matched is
     }
   }
 
+  bool isAssignmentOrVoidish(const Stmt* stmt) {
+    if (auto bo = dyn_cast<BinaryOperator>(stmt)) {
+      return bo->isAssignmentOp();
+    }
+    if (isa<ReturnStmt>(stmt)) {
+      return true;
+    }
+    if (auto expr = dyn_cast<Expr>(stmt)) {
+      if (auto ty = expr->IgnoreParenCasts()->getType().getTypePtr()) {
+        return ty->isVoidType();
+      }
+    }
+    return false;
+  }
+
   void visitStmt(const Stmt* stmt, ContextKind ctx = ExprContext) {
     emitCommentsFromBefore(stmt->getLocStart());
+
+    // When visiting a bound substatement, emit its variable binding.
+    auto it = StmtMap.find(stmt);
+    if (it != StmtMap.end()) {
+      auto pair = it->second;
+      if (stmt != currStmt) {
+        llvm::outs() << "b_" << pair.first << "_" << pair.second;
+        if (ctx == BooleanContext) {
+          if (auto expr = dyn_cast<Expr>(stmt)) {
+            llvm::outs() << " " << mkFosterBinop("!=", exprTy(expr)) << " 0"; } }
+        return;
+      }
+
+      if (stmt == currStmt && !isAssignmentOrVoidish(stmt)) {
+        llvm::outs() << "b_" << pair.first << "_" << pair.second << " = ";
+      }
+    }
 
     if (const ImplicitCastExpr* ice = dyn_cast<ImplicitCastExpr>(stmt)) {
       if (ice->getCastKind() == CK_LValueToRValue
@@ -1794,6 +1895,7 @@ The corresponding AST to be matched is
     rawcomments = &(ctx.getRawCommentList());
     rawcomments_lastsize = 0;
     Ctx = &ctx;
+    currStmt = nullptr;
   }
 /*
   void HandleTranslationUnit(ASTContext& ctx) override {
@@ -1815,6 +1917,12 @@ private:
   VoidPtrCasts voidPtrCasts;
   Rewriter R;
   ASTContext* Ctx;
+
+  const Stmt* currStmt; // print this one, even if it's in the map.
+  typedef llvm::DenseMap<const Stmt*,std::pair<unsigned,unsigned> > StmtMapTy;
+  StmtMapTy StmtMap;
+
+  llvm::DenseMap<const Stmt*, BinaryOperatorKind> tweakedStmts;
 };
 
 // For each source file provided to the tool, a new FrontendAction is created.
