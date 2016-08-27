@@ -112,6 +112,11 @@ cast_WordX2_to_i32     = { a : WordX2    =>
 
 ////
 
+trunc_i32_to_i32_16 = { v : Int32 =>                  v |> bitand-Int32 0xFFFF };
+trunc_i64_to_i32_16 = { v : Int64 => trunc_i64_to_i32 v |> bitand-Int32 0xFFFF };
+
+////
+
 type case Float64AsU64Cases
        of $F64_U64_Negative Float64
        of $F64_U64_TooBig   Float64
