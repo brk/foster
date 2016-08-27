@@ -33,7 +33,9 @@ def invoke_antlr(antlr, outdir, grammarfile):
 
   # ANTLR 3.2 is naughty and spits out <grammar>.tokens
   # in the cwd, but we don't need to keep it around.
-  os.remove(without_ext(in_tail)+".tokens")
+  tokens_file = without_ext(in_tail)+".tokens"
+  if os.path.exists(tokens_file):
+    os.remove(tokens_file)
 
 def uncomment_language_C(line):
   """Replaces '//language = C' with 'language = C',

@@ -152,7 +152,7 @@ prettyStmt e = case e of
     E_ArrayPoke   annot ai e -> withAnnot annot $ prettyAtom e <+> text ">^" <+> pretty ai
     E_TupleAST    annot _ es -> withAnnot annot $ parens (hsep $ punctuate comma (map pretty es))
     E_SeqAST (ExprAnnot pre _ post) l r -> prettyExpr l <> text ";" <+> (vcat $ map pretty $ pre ++ post)
-                                        <> prettyExpr r
+                                        <> prettyStmt r
     E_FnAST annot fn     -> withAnnot annot $ pretty fn
 
 prettyAtom :: Pretty ty => ExprSkel ExprAnnot ty -> Doc

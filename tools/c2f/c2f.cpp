@@ -488,14 +488,14 @@ class MyASTConsumer : public ASTConsumer {
 public:
   MyASTConsumer(Rewriter &R) : lastloc(), R(R) { }
 
-  void handleIfThenElse(const Stmt* cnd, const Stmt* thn, const Stmt* els) {
+  void handleIfThenElse(ContextKind ctx, const Stmt* cnd, const Stmt* thn, const Stmt* els) {
     llvm::outs() << "if ";
     visitStmt(cnd, BooleanContext);
     llvm::outs() << " then ";
-    visitStmt(thn);
+    visitStmt(thn, ctx);
     if (els) {
       llvm::outs() << " else ";
-      visitStmt(els);
+      visitStmt(els, ctx);
     }
     llvm::outs() << " end";
   }
@@ -627,6 +627,7 @@ public:
         emitJumpTo(cb->succ_begin(), stmtHasValue(getBlockTerminatorOrLastStmt(cb)));
       } else if (cb->succ_size() == 2) {
         if (const Stmt* tc = cb->getTerminatorCondition()) {
+          // Similar to handleIfThenElse, but with emitJumpTo instead of visitStmt.
           llvm::outs() << "if ";
           visitStmt(tc, BooleanContext);
           llvm::outs() << " then ";
@@ -733,13 +734,13 @@ public:
     return (isa<IntegerLiteral>(stmt) || isa<FloatingLiteral>(stmt));
   }
 
-  bool tryHandleAtomicExpr(const Stmt* stmt) {
+  bool tryHandleAtomicExpr(const Stmt* stmt, ContextKind ctx) {
     if (const ConditionalOperator* co = dyn_cast<ConditionalOperator>(stmt)) {
-      handleIfThenElse(co->getCond(), co->getTrueExpr(), co->getFalseExpr());
+      handleIfThenElse(ctx, co->getCond(), co->getTrueExpr(), co->getFalseExpr());
       return true;
     }
     if (isNumericLiteral(stmt)) {
-      visitStmt(stmt); return true;
+      visitStmt(stmt, ctx); return true;
     }
 
     return false;
@@ -859,6 +860,12 @@ The corresponding AST to be matched is
           `-IntegerLiteral ... 'int' 0
 */
 
+  bool isComparisonOp(const std::string& op) {
+    return (op == "!=" || op == "=="
+         || op == "<=" || op == ">="
+         || op == "<"  || op == ">");
+  }
+
   void handleBinaryOperator(const BinaryOperator* binop,
                             bool isBooleanContext) {
     std::string op = binop->getOpcodeStr();
@@ -872,17 +879,23 @@ The corresponding AST to be matched is
       visitStmt(binop->getRHS());
       llvm::outs() << " )";
     } else if (op == "&&" || op == "||") {
+      bool needsBoolToIntCoercion = !isBooleanContext;
+      if (needsBoolToIntCoercion) { llvm::outs() << "if "; }
+
       std::string tgt = (op == "&&" ? "`andand`" : "`oror`");
       llvm::outs() << "({ ";
-      visitStmt(binop->getLHS());
+      visitStmt(binop->getLHS(), BooleanContext);
       llvm::outs() << " } " << tgt << " { ";
-      visitStmt(binop->getRHS());
+      visitStmt(binop->getRHS(), BooleanContext);
       llvm::outs() << " })";
+
+      if (needsBoolToIntCoercion) { llvm::outs() << " then 1 else 0 end"; }
     } else {
       // TODO account for the fact that compound operations may occur in a
       // different intermediate type...
-      bool needsBoolToIntCoercion = (!isBooleanContext) && (op[0] == '<' || op[1] == '>');
-      if (needsBoolToIntCoercion) { llvm::outs() << "if "; }
+      bool isComparison = isComparisonOp(op);
+      if ((!isBooleanContext) && isComparison) { llvm::outs() << "if "; }
+      if (isBooleanContext && !isComparison) { llvm::outs() << "("; }
 
       std::string tgt = mkFosterBinop(op, exprTy(binop->getLHS()));
       llvm::outs() << "(";
@@ -891,19 +904,31 @@ The corresponding AST to be matched is
       visitStmt(binop->getRHS());
       llvm::outs() << ")";
 
-      if (needsBoolToIntCoercion) { llvm::outs() << " then 1 else 0 end"; }
+      if (isBooleanContext && !isComparison) { llvm::outs() << " " << mkFosterBinop("!=", exprTy(binop)) << " 0 /*L907*/)"; }
+      if ((!isBooleanContext) && isComparison) { llvm::outs() << " then 1 else 0 end"; }
     }
   }
 
   // clang::UnaryOperatorKind
-  void handleUnaryOperator(const UnaryOperator* unop) {
+  void handleUnaryOperator(const UnaryOperator* unop, ContextKind ctx) {
     if (unop->getOpcode() == UO_LNot) {
-      llvm::outs() << "(";
-      visitStmt(unop->getSubExpr());
-      llvm::outs() << " " << mkFosterBinop("!=", exprTy(unop));
-      llvm::outs() << " " << "0" << ")";
+      // We translate logical-not to either an integer or boolean:
+      //   (!0 + 2)   ==> ((if 0 !=Int32 0 then 1 else 0) +Int32 2)
+      //  if (!0) ... ==>   if 0 !=Int32 0 then ...
+      if (ctx == ExprContext) {
+        llvm::outs() << "(if ";
+        visitStmt(unop->getSubExpr(), BooleanContext);
+        llvm::outs() << " then 0 else 1 end)";
+      } else {
+        // If ctx is BooleanContext, there'll be a coercion inserted
+        // around the call to handleUnaryOperator, which means the
+        // subexpr here should be visited in expr context.
+        llvm::outs() << "(if ";
+        visitStmt(unop->getSubExpr(), BooleanContext);
+        llvm::outs() << " then 0 else 1 end)";
+      }
     } else if (unop->getOpcode() == UO_Not) {
-      llvm::outs() << "(bitnot-" + tyName(unop);
+      llvm::outs() << "(bitnot-" + tyName(unop) << " ";
       visitStmt(unop->getSubExpr());
       llvm::outs() << ")";
     } else if (unop->getOpcode() == UO_Minus) {
@@ -964,6 +989,7 @@ The corresponding AST to be matched is
         llvm::outs() << "cltz-" << tyName(exprTy(ce->getArg(0)));
         return true;
       }
+      // TODO handle more builtins
     }
     return false;
   }
@@ -1231,7 +1257,7 @@ The corresponding AST to be matched is
     return "/*unhandled cast from " + srcTy + " to " + dstTy + "*/";
   }
 
-  void handleCastExpr(const CastExpr* ce) {
+  void handleCastExpr(const CastExpr* ce, ContextKind ctx) {
     switch (ce->getCastKind()) {
     case CK_NullToPointer:
       llvm::outs() << "NullPtr";
@@ -1240,29 +1266,30 @@ The corresponding AST to be matched is
       if (isa<IntegerLiteral>(ce->getSubExpr()->IgnoreParens())) {
         llvm::outs() << "()";
       } else {
-        visitStmt(ce->getSubExpr());
+        visitStmt(ce->getSubExpr(), ctx);
       }
       break;
     case CK_FloatingCast:
       llvm::outs() << " /*float cast*/ ";
-      visitStmt(ce->getSubExpr());
+      visitStmt(ce->getSubExpr(), ctx);
       break;
     case CK_FloatingToIntegral:
       llvm::outs() << " /*float-to-int cast*/ ";
-      visitStmt(ce->getSubExpr());
+      visitStmt(ce->getSubExpr(), ctx);
       break;
     case CK_IntegralToFloating:
       llvm::outs() << "(" << intToFloat(ce->getSubExpr(), exprTy(ce)) << " ";
       visitStmt(ce->getSubExpr());
       llvm::outs() << ")";
+      if (ctx != ExprContext) { llvm::outs() << "/*TODO(c2f) i2f cast in non-epxr ctx*/"; }
       break;
     case CK_PointerToBoolean:
       llvm::outs() << " /*pointer-to-bool cast*/ ";
-      visitStmt(ce->getSubExpr());
+      visitStmt(ce->getSubExpr(), ctx);
       break;
     case CK_IntegralToBoolean:
       llvm::outs() << " /*integral-to-bool cast*/ ";
-      visitStmt(ce->getSubExpr());
+      visitStmt(ce->getSubExpr(), ctx);
       break;
     case CK_IntegralCast: {
       std::string cast = "";
@@ -1279,16 +1306,17 @@ The corresponding AST to be matched is
       }
 
       if (cast == "") {
-        visitStmt(ce->getSubExpr());
+        visitStmt(ce->getSubExpr(), ctx);
       } else {
         llvm::outs() << "(" << cast << " ";
         visitStmt(ce->getSubExpr());
         llvm::outs() << ")";
+        if (ctx != ExprContext) { llvm::outs() << "/*TODO(c2f) cast in non-epxr ctx*/"; }
       }
       break;
     }
     default:
-      visitStmt(ce->getSubExpr());
+      visitStmt(ce->getSubExpr(), ctx);
     }
   }
 
@@ -1357,12 +1385,12 @@ The corresponding AST to be matched is
       if (ice->getCastKind() == CK_LValueToRValue
        || ice->getCastKind() == CK_FunctionToPointerDecay
        || ice->getCastKind() == CK_NoOp)
-          return visitStmt(ice->getSubExpr());
-      return handleCastExpr(ice);
+          return visitStmt(ice->getSubExpr(), ctx);
+      return handleCastExpr(ice, ctx);
     }
 
     if (const IfStmt* ifs = dyn_cast<IfStmt>(stmt)) {
-      handleIfThenElse(ifs->getCond(), ifs->getThen(), ifs->getElse());
+      handleIfThenElse(ctx, ifs->getCond(), ifs->getThen(), ifs->getElse());
     } else if (const ForStmt* fs = dyn_cast<ForStmt>(stmt)) {
       if (tryHandleEnumRange(fs)) {
         // done
@@ -1374,13 +1402,13 @@ The corresponding AST to be matched is
     } else if (const DoStmt* ws = dyn_cast<DoStmt>(stmt)) {
       translateWhileLoop(ws, "do-while", nullptr);
     } else if (const ConditionalOperator* co = dyn_cast<ConditionalOperator>(stmt)) {
-      handleIfThenElse(co->getCond(), co->getTrueExpr(), co->getFalseExpr());
+      handleIfThenElse(ctx, co->getCond(), co->getTrueExpr(), co->getFalseExpr());
     } else if (const ParenExpr* pe = dyn_cast<ParenExpr>(stmt)) {
-      if (tryHandleAtomicExpr(pe->getSubExpr())) {
+      if (tryHandleAtomicExpr(pe->getSubExpr(), ctx)) {
         // done
       } else {
         llvm::outs() << "(";
-        visitStmt(pe->getSubExpr());
+        visitStmt(pe->getSubExpr(), ctx);
         llvm::outs() << ")";
       }
     } else if (const NullStmt* dr = dyn_cast<NullStmt>(stmt)) {
@@ -1419,74 +1447,98 @@ The corresponding AST to be matched is
       llvm::outs() << "[";
       visitStmt(ase->getIdx());
       llvm::outs() << "]";
-    } else if (const CompoundAssignOperator* binop = dyn_cast<CompoundAssignOperator>(stmt)) {
-      handleCompoundAssignment(binop);
+    } else if (const CompoundAssignOperator* cao = dyn_cast<CompoundAssignOperator>(stmt)) {
+      handleCompoundAssignment(cao);
     } else if (const BinaryOperator* binop = dyn_cast<BinaryOperator>(stmt)) {
       handleBinaryOperator(binop, ctx == BooleanContext);
     } else if (const UnaryOperator* unop = dyn_cast<UnaryOperator>(stmt)) {
-      handleUnaryOperator(unop);
+      if (ctx == BooleanContext) { llvm::outs() << "("; }
+      handleUnaryOperator(unop, ctx);
+      if (ctx == BooleanContext) { llvm::outs() << " " << mkFosterBinop("!=", exprTy(unop)) << " 0 /*L1455*/)"; }
     } else if (const IntegerLiteral* lit = dyn_cast<IntegerLiteral>(stmt)) {
-      bool isSigned = true;
-      lit->getValue().print(llvm::outs(), isSigned);
-    } else if (const StringLiteral* lit = dyn_cast<StringLiteral>(stmt)) {
-      if (lit->isUTF8() || lit->isAscii()) {
-        // Clang's outputString uses octal escapes, but we only support
-        // Unicode escape sequences in non-byte-strings.
-        StringRef data = lit->getString();
-        bool useTriple = data.count('\n') > 1;
-        // TODO must also check the str doesn't contain 3 consecutive dquotes.
-        // TODO distinguish text vs byte strings...?
-        llvm::outs() << "b" << (useTriple ? "\"\"\"" : "\"");
-        for (char c : data) {
-            switch(c) {
-            case '\n': llvm::outs() << (useTriple ? "\n" : "\\n"); break;
-            case '\t': llvm::outs() << "\\t"; break;
-            case '\\': llvm::outs() << "\\\\"; break;
-            case '"' : llvm::outs() << (useTriple ? "\"" : "\\\""); break;
-            default:
-              if (isprint(c)) {
-                llvm::outs() << c;
-              } else {
-                llvm::outs() << llvm::format("\\u{%02x}", c);
-              }
-              break;
-            }
-        }
-        llvm::outs() << (useTriple ? "\"\"\"" : "\"");
+      if (ctx == BooleanContext) {
+        llvm::outs() << (lit->getValue().getBoolValue() ? "True" : "False");
       } else {
-        llvm::outs() << "// non UTF8 string\n";
-        lit->outputString(llvm::outs());
+        bool isSigned = true;
+        lit->getValue().print(llvm::outs(), isSigned);
+      }
+    } else if (const StringLiteral* lit = dyn_cast<StringLiteral>(stmt)) {
+      if (ctx == BooleanContext) {
+        llvm::outs() << "True";
+      } else {
+        if (lit->isUTF8() || lit->isAscii()) {
+          // Clang's outputString uses octal escapes, but we only support
+          // Unicode escape sequences in non-byte-strings.
+          StringRef data = lit->getString();
+          bool useTriple = data.count('\n') > 1;
+          // TODO must also check the str doesn't contain 3 consecutive dquotes.
+          // TODO distinguish text vs byte strings...?
+          llvm::outs() << "b" << (useTriple ? "\"\"\"" : "\"");
+          for (char c : data) {
+              switch(c) {
+              case '\n': llvm::outs() << (useTriple ? "\n" : "\\n"); break;
+              case '\t': llvm::outs() << "\\t"; break;
+              case '\\': llvm::outs() << "\\\\"; break;
+              case '"' : llvm::outs() << (useTriple ? "\"" : "\\\""); break;
+              default:
+                if (isprint(c)) {
+                  llvm::outs() << c;
+                } else {
+                  llvm::outs() << llvm::format("\\u{%02x}", c);
+                }
+                break;
+              }
+          }
+          llvm::outs() << (useTriple ? "\"\"\"" : "\"");
+        } else {
+          llvm::outs() << "// non UTF8 string\n";
+          lit->outputString(llvm::outs());
+        }
       }
     } else if (const FloatingLiteral* lit = dyn_cast<FloatingLiteral>(stmt)) {
-      std::string litstr = getText(R, *lit);
-      if (litstr != "") llvm::outs() << litstr;
-      else {
-        llvm::SmallString<128> buf;
-        lit->getValue().toString(buf);
-        llvm::outs() << buf;
-        if (buf.count('.') == 0) {
-          llvm::outs() << ".0";
+      if (ctx == BooleanContext) {
+        llvm::outs() << (lit->getValueAsApproximateDouble() != 0.0 ? "True" : "False");
+      } else {
+        std::string litstr = getText(R, *lit);
+        if (litstr != "") llvm::outs() << litstr;
+        else {
+          llvm::SmallString<128> buf;
+          lit->getValue().toString(buf);
+          llvm::outs() << buf;
+          if (buf.count('.') == 0) {
+            llvm::outs() << ".0";
+          }
         }
       }
 
     } else if (const CharacterLiteral* clit = dyn_cast<CharacterLiteral>(stmt)) {
-      llvm::outs() << clit->getValue();
-      if (isprint(clit->getValue())) {
-        llvm::outs() << " /*'" << llvm::format("%c", clit->getValue()) << "'*/ ";
+      if (ctx == BooleanContext) {
+        llvm::outs() << (clit->getValue() ? "True" : "False");
       } else {
-        llvm::outs() << " /*'\\x" << llvm::format("%02x", clit->getValue()) << "'*/ ";
+        llvm::outs() << clit->getValue();
+        if (isprint(clit->getValue())) {
+          llvm::outs() << " /*'" << llvm::format("%c", clit->getValue()) << "'*/ ";
+        } else {
+          llvm::outs() << " /*'\\x" << llvm::format("%02x", clit->getValue()) << "'*/ ";
+        }
       }
     } else if (const PredefinedExpr* lit = dyn_cast<PredefinedExpr>(stmt)) {
       lit->getFunctionName()->outputString(llvm::outs());
     } else if (const CastExpr* ce = dyn_cast<CastExpr>(stmt)) {
-      handleCastExpr(ce);
+      handleCastExpr(ce, ctx);
     } else if (const DeclRefExpr* dr = dyn_cast<DeclRefExpr>(stmt)) {
+
+      if (ctx == BooleanContext) { llvm::outs() << "("; }
+
       std::string name = dr->getDecl()->getName();
       if (mutableLocals[name] && ctx != AssignmentTarget) {
         llvm::outs() << fosterizedName(name) << "^";
       } else {
         llvm::outs() << fosterizedName(name);
       }
+
+      if (ctx == BooleanContext) { llvm::outs() << " " << mkFosterBinop("!=", exprTy(dr)) << " 0)"; }
+
     } else if (const CStyleCastExpr* ce = dyn_cast<CStyleCastExpr>(stmt)) {
       if (tryHandleCallMallocCasted(ce)) {
         // done
@@ -1502,7 +1554,9 @@ The corresponding AST to be matched is
       } else if (tryHandleCallPrintf(ce)) {
         // done
       } else {
+        if (ctx == BooleanContext) { llvm::outs() << "("; }
         handleCall(ce);
+        if (ctx == BooleanContext) { llvm::outs() << " " << mkFosterBinop("!=", exprTy(ce)) << " 0)"; }
       }
     } else if (const InitListExpr* ile = dyn_cast<InitListExpr>(stmt)) {
       if (ile->hasArrayFiller()) {
