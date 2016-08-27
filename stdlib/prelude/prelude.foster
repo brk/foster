@@ -544,14 +544,19 @@ f64-to-u32! = { a : Float64 => prim f64-to-u32-unsafe a };
 f64-to-s32! = { a : Float64 => prim f64-to-s32-unsafe a };
 
 
-incrInt32 = { r : Ref Int32 => (r^ +Int32 1) >^ r };
-decrInt32 = { r : Ref Int32 => (r^ -Int32 1) >^ r };
+incrInt32 = { r : Ref Int32 => v = (r^ +Int32 1); v >^ r; v };
+decrInt32 = { r : Ref Int32 => v = (r^ -Int32 1); v >^ r; v };
+incrInt8 = { r : Ref Int8 => v = (r^ +Int8 1); v >^ r; v };
+decrInt8 = { r : Ref Int8 => v = (r^ -Int8 1); v >^ r; v };
+incrInt64 = { r : Ref Int64 => v = (r^ +Int64 1); v >^ r; v };
+decrInt64 = { r : Ref Int64 => v = (r^ -Int64 1); v >^ r; v };
 
-incrInt8 = { r : Ref Int8 => (r^ +Int8 1) >^ r };
-decrInt8 = { r : Ref Int8 => (r^ -Int8 1) >^ r };
-
-incrInt64 = { r : Ref Int64 => (r^ +Int64 1) >^ r };
-decrInt64 = { r : Ref Int64 => (r^ -Int64 1) >^ r };
+postincrInt32 = { r : Ref Int32 => v = r^; (v +Int32 1) >^ r; v };
+postdecrInt32 = { r : Ref Int32 => v = r^; (v -Int32 1) >^ r; v };
+postincrInt8 = { r : Ref Int8 => v = r^; (v +Int8 1) >^ r; v };
+postdecrInt8 = { r : Ref Int8 => v = r^; (v -Int8 1) >^ r; v };
+postincrInt64 = { r : Ref Int64 => v = r^; (v +Int64 1) >^ r; v };
+postdecrInt64 = { r : Ref Int64 => v = r^; (v -Int64 1) >^ r; v };
 
 // {{{
 
