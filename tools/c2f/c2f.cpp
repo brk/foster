@@ -1289,13 +1289,6 @@ The corresponding AST to be matched is
     }
   }
 
-  bool isSignConversion(const CastExpr* ce) {
-    const Type* origType = exprTy(ce->getSubExpr());
-    const Type* destType = exprTy(ce);
-    // Assuming here that both are signed/unsigned integer (well, integral) types.
-    return origType->isUnsignedIntegerType() != destType->isUnsignedIntegerType();
-  }
-
   std::string fosterizedName(const std::string& name) {
     if (name == "to" || name == "do" || name == "type" || name == "case"
      || name == "of" || name == "as" || name == "then" || name == "end"
@@ -1305,21 +1298,11 @@ The corresponding AST to be matched is
     return name;
   }
 
-  /*
-  std::string castIsNonLossy(const std::string& srcTy, const std::string& dstTy) {
-    if (srcTy == "Int8"  && dstTy == "Int32") return true;
-    if (srcTy == "Int8"  && dstTy == "Int64") return true;
-    if (srcTy == "Int32" && dstTy == "Int64") return true;
-    if (srcTy == "Int8"  && dstTy == "Int32") return true;
-    if (srcTy == "Int8"  && dstTy == "Int64") return true;
-    if (srcTy == "Int32" && dstTy == "Int64") return true;
-    return false;
-  }
-  */
-
   std::string intCastFromTo(const std::string& srcTy, const std::string& dstTy, bool isSigned) {
     if (srcTy == "Int32" && dstTy == "Int8" ) return "trunc_i32_to_i8";
     if (srcTy == "Int64" && dstTy == "Int8" ) return "trunc_i64_to_i8";
+    if (srcTy == "Int32" && dstTy == "Int16") return "trunc_i32_to_i32_16";
+    if (srcTy == "Int64" && dstTy == "Int16") return "trunc_i64_to_i32_16";
     if (srcTy == "Int64" && dstTy == "Int32") return "trunc_i64_to_i32";
     if (srcTy == "Int8"  && dstTy == "Int32" && isSigned) return "sext_i8_to_i32";
     if (srcTy == "Int8"  && dstTy == "Int64" && isSigned) return "sext_i8_to_i64";
@@ -1366,15 +1349,17 @@ The corresponding AST to be matched is
       break;
     case CK_IntegralCast: {
       std::string cast = "";
-      if (isa<IntegerLiteral>(ce->getSubExpr()) || isa<CharacterLiteral>(ce->getSubExpr())) {
+      if (isa<IntegerLiteral>(ce->getSubExpr())
+       || isa<CharacterLiteral>(ce->getSubExpr())) {
         // don't print anything, no cast needed
-      } else if (isSignConversion(ce)) {
-        // don't print anything either
       } else {
         std::string srcTy = tyName(exprTy(ce->getSubExpr())) ;
         std::string dstTy = tyName(exprTy(ce));
         if (srcTy != dstTy) {
           cast = intCastFromTo(srcTy, dstTy, exprTy(ce)->isSignedIntegerType());
+        } else if (exprTy(ce)->isSpecificBuiltinType(BuiltinType::UShort)
+                || exprTy(ce)->isSpecificBuiltinType(BuiltinType::Short)) {
+          cast = intCastFromTo(srcTy, "Int16", exprTy(ce)->isSignedIntegerType());
         }
       }
 
