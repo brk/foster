@@ -630,7 +630,7 @@ ailInt rng int ty = do
     RefinedTypeTC v _ _ -> ailInt rng int (tidType v)
 
     _ -> do tcFails [text "Unable to assign integer literal the type" <+> pretty ty
-                  ,string (highlightFirstLine rng)]
+                    ,prettyWithLineNumbers rng]
 
 sanityCheckIntLiteralNotOversized rng isb int =
     sanityCheck (intSizeOf isb >= litIntMinBits int) $
