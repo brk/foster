@@ -115,6 +115,12 @@ cast_WordX2_to_i32     = { a : WordX2    =>
 trunc_i32_to_i32_16 = { v : Int32 =>                  v |> bitand-Int32 0xFFFF };
 trunc_i64_to_i32_16 = { v : Int64 => trunc_i64_to_i32 v |> bitand-Int32 0xFFFF };
 
+sext_i32_16_to_i32 = { v : Int32 => bitashr-Int32 (bitshl-Int32 v 16) 16 };
+sext_i32_16_to_i64 = { v : Int32 => v |> sext_i32_16_to_i32 |> sext_i32_to_i64 };
+
+zext_i32_16_to_i32 = { v : Int32 => v };
+zext_i32_16_to_i64 = { v : Int32 => v |> zext_i32_to_i64 };
+
 ////
 
 type case Float64AsU64Cases

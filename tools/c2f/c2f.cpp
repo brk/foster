@@ -1306,9 +1306,13 @@ The corresponding AST to be matched is
     if (srcTy == "Int64" && dstTy == "Int32") return "trunc_i64_to_i32";
     if (srcTy == "Int8"  && dstTy == "Int32" && isSigned) return "sext_i8_to_i32";
     if (srcTy == "Int8"  && dstTy == "Int64" && isSigned) return "sext_i8_to_i64";
+    if (srcTy == "Int16" && dstTy == "Int32" && isSigned) return "sext_i32_16_to_i32";
+    if (srcTy == "Int16" && dstTy == "Int64" && isSigned) return "sext_i32_16_to_i64";
     if (srcTy == "Int32" && dstTy == "Int64" && isSigned) return "sext_i32_to_i64";
     if (srcTy == "Int8"  && dstTy == "Int32" && !isSigned) return "zext_i8_to_i32";
     if (srcTy == "Int8"  && dstTy == "Int64" && !isSigned) return "zext_i8_to_i64";
+    if (srcTy == "Int16" && dstTy == "Int32" && !isSigned) return "zext_i32_16_to_i32";
+    if (srcTy == "Int16" && dstTy == "Int64" && !isSigned) return "zext_i32_16_to_i64";
     if (srcTy == "Int32" && dstTy == "Int64" && !isSigned) return "zext_i32_to_i64";
     return "/*unhandled cast from " + srcTy + " to " + dstTy + "*/";
   }
@@ -1360,6 +1364,9 @@ The corresponding AST to be matched is
         } else if (exprTy(ce)->isSpecificBuiltinType(BuiltinType::UShort)
                 || exprTy(ce)->isSpecificBuiltinType(BuiltinType::Short)) {
           cast = intCastFromTo(srcTy, "Int16", exprTy(ce)->isSignedIntegerType());
+        } else if (exprTy(ce->getSubExpr())->isSpecificBuiltinType(BuiltinType::UShort)
+                || exprTy(ce->getSubExpr())->isSpecificBuiltinType(BuiltinType::Short)) {
+          cast = intCastFromTo("Int16", dstTy, exprTy(ce)->isSignedIntegerType());
         }
       }
 
