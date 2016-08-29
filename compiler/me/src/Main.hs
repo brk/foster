@@ -55,6 +55,7 @@ import Foster.ConvertExprAST
 import Foster.MainOpts
 import Foster.MKNExpr
 import Foster.Kind(Kind(KindPointerSized))
+import Foster.Infer(zonkType, unify)
 
 import Data.Binary.Get
 import Data.Binary.CBOR
@@ -393,9 +394,14 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
         unFunAnn _           = error $ "Saw non-AnnFn in unFunAnn"
 
    processTcConstraints :: [(TcConstraint, SourceRange)] -> Tc ()
-   processTcConstraints constraints = go constraints
-      where go [] = return ()
-            go _ = tcFails [text "Constraint processing not yet implemented"]
+   processTcConstraints constraints = mapM_ processConstraint constraints
+      where
+        processConstraint ((TcC_SeqUnit mtv), range) = do
+            zt <- zonkType (MetaTyVarTC mtv)
+            case zt of
+              TupleTypeTC {} -> return ()
+              PrimIntTC   {} -> return ()
+              m@(MetaTyVarTC _) -> unify m unitTypeTC [text "seq-unit"]
 
 dieOnError :: OutputOr t -> Compiled t
 dieOnError (OK     e) = return e

@@ -117,7 +117,8 @@ liftBinding f (TermVarBinding s (TypedId t i, mb_cid)) = do
   t2 <- f t
   return $ TermVarBinding s (TypedId t2 i, mb_cid)
 
-data TcConstraint -- eventually
+data TcConstraint =
+  TcC_SeqUnit (MetaTyVar TypeTC)  -- eventually
 
 -- Based on "Practical type inference for arbitrary rank types."
 -- One significant difference is that we do not include the Gamma context
