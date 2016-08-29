@@ -43,6 +43,8 @@ data TypeTC =
          | RefinedTypeTC   (TypedId TypeTC) (AnnExpr TypeTC) [Ident]
          deriving Eq
 
+unitTypeTC = TupleTypeTC (UniConst KindPointerSized) []
+
 -- The list of idents attached to RefinedTypeTC corresponds to the set of
 -- logical binders for the type, which should be a superset of the directly
 -- bound variable. For example, given an expression like

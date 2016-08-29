@@ -579,13 +579,15 @@ tcRhoSeq ctx annot a b expTy = do
     ea <- inferRho ctx a "seq"
     id <- tcFresh ".seq"
     eb <- tcRho ctx b expTy
+    tcLift $ putDocLn $ text "type " <> pretty (typeTC ea) <> text " given to expr " <> pretty ea
     tcRhoSeqCheck (rangeOf a) (typeTC ea)
     return (AnnLetVar annot id ea eb)
 
 tcRhoSeqCheck range ty = do
     zt <- zonkType ty
     case zt of
-      m@MetaTyVarTC {} -> unify m unitTypeTC [text "seq-unit"]
+      MetaTyVarTC mtv -> do --unify m unitTypeTC [text "seq-unit"]
+        tcAddConstraint (TcC_SeqUnit mtv) range
       TupleTypeTC _ [] -> return ()
       PrimIntTC _      -> return ()
       _ | isFnTyLike zt ->
@@ -600,8 +602,6 @@ isFnTyLike (FnTypeTC {}) = True
 isFnTyLike (RefinedTypeTC v _ _) = isFnTyLike (tidType v)
 isFnTyLike (ForAllTC _ t) = isFnTyLike t
 isFnTyLike _ = False
-
-unitTypeTC = TupleTypeTC (UniConst KindPointerSized) []
 -- }}}
 
 
@@ -1264,8 +1264,8 @@ tcSigmaFnHelper ctx fnAST expTyRaw tyformals = do
             _ <- mapM (checkAgainst (map unMeta taus)) (zip arg_tys var_tys)
             var_tys'' <- mapM shZonkType var_tys
             debugDoc $ string "var_tys'': " <+> pretty var_tys''
-            debugDoc $ string "metaOf var_tys  : " <+> pretty (show $ collectAllUnificationVars var_tys)
-            debugDoc $ string "metaOf var_tys'': " <+> pretty (show $ collectAllUnificationVars $ map unMBS var_tys'')
+            --debugDoc $ string "metaOf var_tys  : " <+> pretty (show $ collectAllUnificationVars var_tys)
+            --debugDoc $ string "metaOf var_tys'': " <+> pretty (show $ collectAllUnificationVars $ map unMBS var_tys'')
             -- mvar_tys'' <- mapM shZonkMetaType (collectAllUnificationVars var_tys)
 
             pickedTys <- pickBetween (rangeOf (fnAstAnnot fnAST))
@@ -2003,35 +2003,6 @@ shZonkMetaType m = do
     Nothing -> do return $ MetaUnbound m
     Just ty -> do return $ MetaBoundTo m ty
 
--- As in the paper, zonking recursively eliminates indirections
--- from instantiated meta type variables.
-zonkType :: TypeTC -> Tc TypeTC
--- {{{
-zonkType x = do
-    case x of
-        MetaTyVarTC m -> do mty <- readTcMeta m
-                            case mty of
-                              Nothing -> do debugDoc $ string "unable to zonk meta " <> pretty x
-                                            return x
-                              Just ty -> do ty' <- zonkType ty >>= return
-                                            writeTcMetaTC m ty'
-                                            return ty'
-        PrimIntTC     {}        -> return x
-        TyVarTC       {}        -> return x
-        TyConTC  nm             -> return $ TyConTC nm
-        TyAppTC  con types      -> liftM2 TyAppTC (zonkType con) (mapM zonkType types)
-        TupleTypeTC k  types    -> liftM  (TupleTypeTC k) (mapM zonkType types)
-        ForAllTC    tvs  rho    -> liftM  (ForAllTC tvs ) (zonkType rho)
-        RefTypeTC       ty      -> liftM  (RefTypeTC    ) (zonkType ty)
-        ArrayTypeTC     ty      -> do debug $ "zonking array ty: " ++ show ty
-                                      liftM (ArrayTypeTC  ) (zonkType ty)
-        CoroTypeTC s r fx       -> liftM3 (CoroTypeTC  ) (zonkType s) (zonkType r) (zonkType fx)
-        RefinedTypeTC (TypedId ty id) e __args   -> liftM (\t -> RefinedTypeTC (TypedId t id) e __args) (zonkType ty)
-        FnTypeTC ss r fx cc cs  -> do ss' <- mapM zonkType ss
-                                      r' <- zonkType r
-                                      fx' <- zonkType fx
-                                      return $ FnTypeTC ss' r' fx' cc cs
--- }}}
 
 -- Sad hack:
 -- Given code like
@@ -2064,72 +2035,6 @@ checkAgainst taus (ety, MetaTyVarTC m) = do
         return ()
     _ -> tryOverwrite
 checkAgainst _ (_, _) = return ()
-
--- {{{ Unification driver
--- If unification fails, the provided error message (if any)
--- is printed along with the unification failure error message.
--- If unification succeeds, each unification variable in the two
--- types is updated according to the unification solution.
-unify :: TypeTC -> TypeTC -> [Doc] -> Tc ()
-unify t1 t2 msgs = do
-  --z1 <- zonkType t1
-  --z2 <- zonkType t2
-  --tcLift $ putDocLn $ green $ text $ "unify " ++ show t1 ++ " ~> " ++ show z1
-  --                               ++ "\n?==? " ++ show t2 ++ " ~> " ++ show z2 ++ " (" ++ msg ++ ")"
-  unify' 0 t1 t2 msgs
-
-unify' !depth t1 t2 msgs | depth == 512 =
-   error $ "unify hit depth 512 equating "
-        ++ show t1 ++ " and " ++ show t2 ++ "\n" ++ show msgs
-
-unify' !depth t1 t2 msgs = do
-  debugDoc $ (green $ text ("unify " ++ show t1 ++ " ?==? " ++ show t2)) <$> vcat msgs
-  case (t1, t2) of
-    (MetaTyVarTC m1, MetaTyVarTC m2) -> do
-      mt1 <- readTcMeta m1
-      mt2 <- readTcMeta m2
-      debugDoc $ text $ show t1 ++ " ~> " ++ show mt1
-      debugDoc $ text $ show t2 ++ " ~> " ++ show mt2
-      return ()
-    _ -> return ()
-
-  tcOnError msgs
-            (tcUnifyTypes t1 t2) $ \(Just soln) -> do
-     debugDoc $ text $ "soln is: " ++ show soln
-     let univars = collectAllUnificationVars [t1, t2]
-     forM_ univars $ \m -> do
-       mt1 <- readTcMeta m
-       case (mt1, Map.lookup (mtvUniq m) soln) of
-         (_,       Nothing)          -> return () -- no type to update to.
-         (Just x1, Just x2)          -> do unify' (depth + 1) x1 x2 msgs
-         -- The unification var m1 has no bound type, but it's being
-         -- associated with var m2, so we'll peek through m2.
-         (Nothing, Just (MetaTyVarTC m2)) -> do
-                         mt2 <- readTcMeta m2
-                         case mt2 of
-                             Just x2 -> do debugDoc $ pretty (MetaTyVarTC m2) <+> text "~>" <+> pretty x2
-                                           unify' (depth + 1) (MetaTyVarTC m) x2 msgs
-                             Nothing -> writeTcMetaTC m (MetaTyVarTC m2)
-         (Nothing, Just x2) -> do unbounds <- collectUnboundUnificationVars [x2]
-                                  case m `elem` unbounds of
-                                     False   -> writeTcMetaTC m x2
-                                     True    -> occurdCheck   m x2
-  where
-     occurdCheck m t = tcFailsMore $ [text $ "Occurs check for"
-                               ,indent 8 (pretty (MetaTyVarTC m))
-                               ,text "failed in"
-                               ,indent 8 (pretty t)
-                               ] ++ msgs ++
-                               [text "This type error is often caused by swapped function arguments..."
-                               ,text "Less commonly, it arises from use of"
-                               ,text "polymorphic recursion, which usually needs an explicit annotation"
-                               ,text "on both the recursive call site and the recursive function definition."
-                               ,indent 4 (text "(Incidentally, in case you're curious, the reason"
-                                      <$> text " this is a problem the compiler can't just solve for you"
-                                      <$> text " is that it requires higher-order unification, which is"
-                                      <$> text " undecidable in theory. And that's not great because it"
-                                      <$> text " would make the compiler slow(er) and fragile(r)...")]
--- }}}
 
 -- {{{ Well-formedness checks
 -- The judgement   G |- T
@@ -2217,29 +2122,6 @@ tcDataCtor dtname ctx (DataCtor nm _tyfs tys _repr _rng) = do
 -- }}}
 
 -- {{{ Miscellaneous helpers.
-
-collectUnboundUnificationVars :: [TypeTC] -> Tc [MetaTyVar TypeTC]
-collectUnboundUnificationVars xs = do
-  xs' <- mapM zonkType xs
-  return $ [m | m <- collectAllUnificationVars xs' , not $ isForIntLit m]
-    where isForIntLit m = mtvDesc m == "int-lit"
-
-collectAllUnificationVars :: [TypeTC] -> [MetaTyVar TypeTC]
-collectAllUnificationVars xs = Set.toList (Set.fromList (concatMap go xs))
-  where go x =
-          case x of
-            PrimIntTC  _            -> []
-            TyConTC  {}             -> []
-            TyAppTC  con types      -> concatMap go (con:types)
-            TupleTypeTC _k  types   -> concatMap go types
-            FnTypeTC  ss r fx _ _   -> concatMap go (r:fx:ss)
-            CoroTypeTC  s r fx      -> concatMap go [s,r,fx]
-            ForAllTC  _tvs rho      -> go rho
-            TyVarTC       {}        -> []
-            MetaTyVarTC   m         -> [m]
-            RefTypeTC     ty        -> go ty
-            ArrayTypeTC   ty        -> go ty
-            RefinedTypeTC v _ _     -> go (tidType v)
 
 substExprsForRefinedArgs raw argsTys argsExprs = do
   let argExprPairs = [ (tidIdent v,e) | (RefinedTypeTC v _ _, e) <- zip argsTys argsExprs]
