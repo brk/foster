@@ -94,15 +94,15 @@ type VariablesForGCRoots = Map RootVar LLVar
 
 -- Precondition: allocations have been made explicit in the input graph.
 -- Precondition: may-gc analysis has updated the annotations in the graph.
-insertSmartGCRoots :: BasicBlockGraph' -> Map Ident MayGC -> Bool -> Compiled ( BasicBlockGraph' , [RootVar] )
-insertSmartGCRoots bbgp0 mayGCmap dump = do
+insertSmartGCRoots :: Ident -> BasicBlockGraph' -> Map Ident MayGC -> Bool -> Compiled ( BasicBlockGraph' , [RootVar] )
+insertSmartGCRoots procid bbgp0 mayGCmap dump = do
   runRootConsistencyChecker "bbgp0" bbgp0
 
   --   1) Run a rewriting (non-dataflow) pass to insert root initializers
   --      at first uses, and insert disabled kill markers after each use.
   bbgp'1 <- insertDumbGCRoots bbgp0 dump
 
-  runRootConsistencyChecker "bbgp'1" bbgp'1
+  runRootConsistencyChecker ("bbgp'1 for " ++ show procid) bbgp'1
 
   --   2) Fold to compute the (root, initializing variable) relation/mapping.
   let gcr = computeGCRootsForVars bbgp'1
