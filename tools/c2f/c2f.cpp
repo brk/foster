@@ -1655,7 +1655,10 @@ The corresponding AST to be matched is
         handleCall(ce);
         if (ctx == BooleanContext) { llvm::outs() << " " << mkFosterBinop("!=", exprTy(ce)) << " 0)"; }
       }
+    } else if (const ImplicitValueInitExpr* ivie = dyn_cast<ImplicitValueInitExpr>(stmt)) {
+      llvm::outs() << zeroValue(ivie->getType().getTypePtr());
     } else if (const InitListExpr* ile = dyn_cast<InitListExpr>(stmt)) {
+      // TOOD CompoundLiteralExpr containing an InitListExpr
       if (ile->hasArrayFiller()) {
         llvm::outs() << "// WARNING: ignoring array filler\n";
       }
