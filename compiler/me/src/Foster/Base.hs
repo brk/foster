@@ -122,6 +122,7 @@ data EPattern ty =
         | EP_Bool         SourceRange Bool
         | EP_Int          SourceRange String
         | EP_Tuple        SourceRange [EPattern ty]
+        | EP_Or           SourceRange [EPattern ty]
 
 data PatternAtom ty =
           P_Wildcard      SourceRange ty
@@ -139,24 +140,28 @@ data Pattern ty =
           P_Atom         (PatternAtom ty)
         | P_Ctor          SourceRange ty [Pattern ty] (CtorInfo ty)
         | P_Tuple         SourceRange ty [Pattern ty]
+        | P_Or            SourceRange ty [Pattern ty]
 
 instance TypedWith (Pattern ty) ty where
  typeOf pattern = case pattern of
       P_Atom          atom -> typeOf atom
       P_Ctor  _rng ty _ _  -> ty
       P_Tuple _rng ty _    -> ty
+      P_Or    _rng ty _    -> ty
 
 
 data PatternRepr ty =
           PR_Atom         (PatternAtom ty)
         | PR_Ctor          SourceRange ty [PatternRepr ty] (LLCtorInfo ty)
         | PR_Tuple         SourceRange ty [PatternRepr ty]
+        | PR_Or            SourceRange ty [PatternRepr ty]
 
 instance TypedWith (PatternRepr ty) ty where
  typeOf pattern = case pattern of
       PR_Atom          atom -> typeOf atom
       PR_Ctor  _rng ty _ _  -> ty
       PR_Tuple _rng ty _    -> ty
+      PR_Or    _rng ty _    -> ty
 
 data PatternFlat ty =
           PF_Atom        (PatternAtom ty)
@@ -576,6 +581,14 @@ butnot bs zs =
     let szs = Set.fromList zs in
     Set.toList (Set.difference sbs szs)
 
+(|>) :: a -> (a -> b) -> b
+x |> f = f x
+
+infixl 1 |>
+
+removeDuplicates :: Ord a => [a] -> [a]
+removeDuplicates xs = xs |> Set.fromList |> Set.toList
+
 detectDuplicates :: Ord a => [a] -> [a]
 detectDuplicates xs = go xs Set.empty Set.empty
   where go []    _seen dups = Set.toList dups
@@ -763,6 +776,7 @@ instance SourceRanged (EPattern ty) where
           EP_Bool         rng _ -> rng
           EP_Int          rng _ -> rng
           EP_Tuple        rng _ -> rng
+          EP_Or           rng _ -> rng
 
 deriving instance (Show ty) => Show (DataType ty)
 deriving instance (Show ty) => Show (DataCtor ty)
@@ -831,6 +845,7 @@ instance Show (Pattern ty) where
   show (P_Atom atom) = show atom
   show (P_Ctor     _ _ _pats ctor) = "P_Ctor     " ++ show (ctorInfoId ctor)
   show (P_Tuple    _ _ pats)       = "P_Tuple    " ++ show pats
+  show (P_Or       _ _ pats)       = "P_Or       " ++ show pats
 
 instance Show (PatternFlat ty) where
   show (PF_Atom atom) = show atom
@@ -841,6 +856,7 @@ instance Show (PatternRepr ty) where
   show (PR_Atom atom) = show atom
   show (PR_Ctor     _ _ _pats ctor) = "PR_Ctor     " ++ show (ctorLLInfoId ctor)
   show (PR_Tuple    _ _ pats)       = "PR_Tuple    " ++ show pats
+  show (PR_Or       _ _ pats)       = "PR_Or       " ++ show pats
 
 instance Pretty t => Pretty (Pattern t) where
   pretty p =
@@ -848,6 +864,7 @@ instance Pretty t => Pretty (Pattern t) where
         P_Atom          atom              -> pretty atom
         P_Ctor          _rng _ty pats cid -> parens (text "$" <> text (ctorCtorName $ ctorInfoId cid) <+> (hsep $ map pretty pats))
         P_Tuple         _rng _ty pats     -> parens (hsep $ punctuate comma (map pretty pats))
+        P_Or            _rng _ty pats     -> parens (hsep $ punctuate (text " or ") (map pretty pats))
 
 instance Pretty t => Pretty (PatternAtom t) where
   pretty p =
@@ -863,14 +880,24 @@ instance Pretty t => Pretty (PatternRepr t) where
         PR_Atom          atom              -> pretty atom
         PR_Ctor          _rng _ty pats cid -> parens (text "$" <> text (ctorCtorName $ ctorLLInfoId cid) <+> (hsep $ map pretty pats))
         PR_Tuple         _rng _ty pats     -> parens (hsep $ punctuate comma (map pretty pats))
+        PR_Or            _rng _ty pats     -> parens (hsep $ punctuate (text " or ") (map pretty pats))
+
+instance Show ty => Show (EPattern ty) where
+  show (EP_Wildcard _)            = "EP_Wildcard"
+  show (EP_Variable _ v)          = "EP_Variable " ++ show v
+  show (EP_Ctor     _ _pats ctor) = "EP_Ctor     " ++ show ctor
+  show (EP_Bool     _ b)          = "EP_Bool     " ++ show b
+  show (EP_Int      _ str)        = "EP_Int      " ++ str
+  show (EP_Tuple    _ pats)       = "EP_Tuple    " ++ show pats
+  show (EP_Or       _ pats)       = "EP_Or       " ++ show pats
 
 instance Pretty ty => Pretty (EPattern ty) where
   pretty (EP_Wildcard _)            = text "_"
   pretty (EP_Variable _ v)          = pretty v
-  pretty (EP_Ctor     _ pats ctor)  = text "$" <> text (show ctor) <+> hcat (map pretty pats)
+  pretty (EP_Ctor     _ pats ctor)  = text "$" <> text (show ctor) <+> hsep (map pretty pats)
   pretty (EP_Bool     _ b)          = pretty b
   pretty (EP_Int      _ str)        = text str
-  pretty (EP_Tuple    _ pats)       = tupled $ map pretty pats
+  pretty (EP_Tuple    _ pats)       = tupled $ map pretty pats -- parens (hsep $ punctuate (text ", ") (map pretty pats))
 
 instance Pretty ty => Pretty (E_VarAST ty) where
   pretty (VarAST (Just ty) txt) = text (T.unpack txt) <+> text "::" <+> pretty ty
@@ -889,14 +916,6 @@ instance Pretty CoroPrim where
   pretty CoroCreate = text "CoroCreate"
   pretty CoroInvoke = text "CoroInvoke"
   pretty CoroYield  = text "CoroYield"
-
-instance Show ty => Show (EPattern ty) where
-  show (EP_Wildcard _)            = "EP_Wildcard"
-  show (EP_Variable _ v)          = "EP_Variable " ++ show v
-  show (EP_Ctor     _ _pats ctor) = "EP_Ctor     " ++ show ctor
-  show (EP_Bool     _ b)          = "EP_Bool     " ++ show b
-  show (EP_Int      _ str)        = "EP_Int      " ++ str
-  show (EP_Tuple    _ pats)       = "EP_Tuple    " ++ show pats
 
 instance Pretty CtorId where
   pretty (CtorId tynm ctnm sm) = pretty tynm <> text "." <> pretty ctnm <> parens (pretty sm)

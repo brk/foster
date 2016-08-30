@@ -271,6 +271,7 @@ monoPattern subst pattern =
  case pattern of
    PR_Atom           atom       -> liftM  (PR_Atom        ) (monoPatternAtom subst atom)
    PR_Tuple    rng t pats       -> liftM2 (PR_Tuple    rng) (monoType subst t) (mp pats)
+   PR_Or       rng t pats       -> liftM2 (PR_Or       rng) (monoType subst t) (mp pats)
    PR_Ctor     rng t pats ctor  -> liftM3 (PR_Ctor     rng) (monoType subst t) (mp pats)
                                                             (monoCtorInfo subst ctor)
 

@@ -49,6 +49,7 @@ convertPat f pat = case pat of
         EP_Int      rng s        -> return (EP_Int      rng s)
         EP_Variable rng evar     -> liftM  (EP_Variable rng) (convertEVar f evar)
         EP_Tuple    rng pats     -> liftM  (EP_Tuple    rng) (mapM (convertPat f) pats)
+        EP_Or       rng pats     -> liftM  (EP_Or       rng) (mapM (convertPat f) pats)
         EP_Ctor     rng pats txt -> do pats' <- mapM (convertPat f) pats
                                        return $ EP_Ctor rng pats' txt
 
