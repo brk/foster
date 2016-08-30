@@ -1635,13 +1635,12 @@ tcRhoCase ctx rng scrutinee branches expTy = do
   debugDoc $ text "metavar for overall type of case is " <> pretty u
   debugDoc $ text " exp ty is " <> pretty expTy
   let checkBranch (CaseArm pat body guard _ brng) = do
-        debugDoc $ text "checking pattern with context ty " <+> pretty (typeTC ascrutinee) <+> string (highlightFirstLine $ rangeOf rng)
+        let names = epatBoundNames pat
+        verifyNamesAreDistinct (rangeOf rng) "case" names
+
         p <- checkPattern ctx pat (typeTC ascrutinee)
-        debug $ "case branch pat: " ++ show p
         let bindings = extractPatternBindings p
-        debugDoc $ text "case branch generated bindings: " <> list (map pretty bindings)
         let ctxbindings = [varbind id ty | (TypedId ty id) <- bindings]
-        verifyNonOverlappingBindings (rangeOf rng) "case" ctxbindings
         let ctx' = prependContextBindings ctx ctxbindings
         aguard <- liftMaybe (\g -> tcRho ctx' g (Check boolTypeTC)) guard
         abody <- tcRho ctx' body expTy
@@ -1693,6 +1692,34 @@ tcRhoCase ctx rng scrutinee branches expTy = do
         unify ty ctxTy [text $ "checkPattern:P_Ctor " ++ show cid]
         return $ P_Ctor r ty ps info
 
+      EP_Or     r eps  -> do
+        let (epatFirst : rest) = eps
+        let firstNames = epatBoundNames epatFirst
+        if firstNames /= []
+           then tcFailsMore [text "Subpatterns of an 'or' cannot yet bind variables..."
+                            ,highlightFirstLineDoc (rangeOf epatFirst)]
+           else return ()
+        mapM_ (\epat -> do
+          let boundNames = epatBoundNames epat
+          if firstNames == boundNames
+            then return ()
+            else let descNames names =
+                       case names of
+                         []  -> text "no names were"
+                         [x] -> text "the name" <+> (text . T.unpack) x <+> text "was"
+                         _   -> text "the names" <+> hsep (punctuate comma (map (text . T.unpack) names)) <+> text "were"
+                    in
+                 tcFailsMore [text "The subpatterns of an 'or' must provide bindings for the same variable names."
+                             ,text "Otherwise, things would go haywire if the scrutinized value matched a branch"
+                             ,text "that didn't bind a name used by the body."
+                             ,descNames firstNames <+> text "bound by"
+                             ,highlightFirstLineDoc (rangeOf epatFirst)
+                             ,text "whereas" <+> descNames boundNames <+> text "bound by"
+                             ,highlightFirstLineDoc (rangeOf epat)
+                             ]) rest
+        pats <- mapM (\epat -> checkPattern ctx epat ctxTy) eps
+        return $ P_Or r ctxTy pats
+
       EP_Tuple     r eps  -> do
         (ts, kind) <-
           case ctxTy of
@@ -1735,6 +1762,7 @@ tcRhoCase ctx rng scrutinee branches expTy = do
     extractPatternBindings (P_Atom (P_Variable _ tid)) = [tid]
     extractPatternBindings (P_Ctor _ _ ps _)  = concatMap extractPatternBindings ps
     extractPatternBindings (P_Tuple _ _ ps)   = concatMap extractPatternBindings ps
+    extractPatternBindings (P_Or    _ _ ps)   = concatMap extractPatternBindings ps
 
     checkSuspiciousPatternVariable rng var =
       if T.unpack (evarName var) `elem` ["true", "false"]
@@ -2309,15 +2337,17 @@ freeVarsMb (Just e) = freeVars e
 
 caseArmFreeVars (CaseArm epat body guard _ _) =
   (freeVars body ++ freeVarsMb guard) `butnot` epatBoundNames epat
-  where epatBoundNames :: EPattern ty -> [T.Text]
-        epatBoundNames epat =
-          case epat of
-            EP_Wildcard {}        -> []
-            EP_Variable _rng evar -> [evarName evar]
-            EP_Ctor     {}        -> []
-            EP_Bool     {}        -> []
-            EP_Int      {}        -> []
-            EP_Tuple    _rng pats -> concatMap epatBoundNames pats
+
+epatBoundNames :: EPattern ty -> [T.Text]
+epatBoundNames epat =
+  case epat of
+    EP_Wildcard {}        -> []
+    EP_Variable _rng evar -> [evarName evar]
+    EP_Ctor     _r pats _ -> concatMap epatBoundNames pats
+    EP_Bool     {}        -> []
+    EP_Int      {}        -> []
+    EP_Or       _rng pats -> concatMap epatBoundNames pats |> removeDuplicates
+    EP_Tuple    _rng pats -> concatMap epatBoundNames pats
 
 typeTC :: AnnExpr TypeTC -> TypeTC
 typeTC = typeOf

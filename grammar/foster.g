@@ -163,9 +163,15 @@ tuple : '(' stmts ( AS  t    ')'  -> ^(TYANNOT stmts t)
 
 pmatch  : p ('if' e)? '->' stmts -> ^(CASE p e stmts);
 
-// Example: (C _ (C2 3 x), C3, 0).
-p : dctor patom*  -> ^(CTOR dctor patom*)
+p : patside (('or' patside)+  -> ^(OR patside+)
+             |                -> patside
+            );
+
+// Example: ($C _ ($C2 3 x), $C3, 0).
+patside
+  : dctor patom*  -> ^(CTOR dctor patom*)
   | patom         -> ^(MU   patom);
+
 
 patom :
     x                                      // variables

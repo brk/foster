@@ -302,7 +302,7 @@ arrEntry _t (Right var) = SSTmExpr $ IVar $ tidIdent var
 arrEntry (PrimIntIL isb) (Left (LitInt lit)) = SSTmValue $ mkSSInt isb (litIntValue lit)
 arrEntry _ other = error $ "KSmallstep.hs: Unsupported array entry type: " ++ show other
 
-mkSSInt I1  _ = error $ "mkSSInt shouldn't be used for boolean values."
+mkSSInt I1  i = SSInt8  (fromInteger i)
 mkSSInt I8  i = SSInt8  (fromInteger i)
 mkSSInt I32 i = SSInt32 (fromInteger i)
 mkSSInt I64 i = SSInt64 (fromInteger i)
@@ -592,12 +592,17 @@ matchPattern p v =
     (_                 , PR_Ctor _ _ _ _) -> matchFailure
 
     (SSTuple vals, PR_Tuple _ _ pats) -> matchPatterns pats vals
+    (_, PR_Or _ _ pats) -> matchOr v pats
     (_, PR_Tuple _ _ _) -> matchFailure
  where
    trivialMatchSuccess = Just []
    matchFailure        = Nothing
    matchIf cond = if cond then trivialMatchSuccess
                           else matchFailure
+   matchOr v [] = matchFailure
+   matchOr v (p:pats) = case matchPattern p v of
+                          Just ok -> Just ok
+                          Nothing -> matchOr v pats
 
 matchPatterns :: [PatternRepr TypeIL] -> [SSValue] -> Maybe [(Ident, SSValue)]
 matchPatterns pats vals = do

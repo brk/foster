@@ -247,6 +247,7 @@ alphaRename' fn = do
        PR_Atom     atom             -> renamePatternAtom atom >>= \atom' -> return $ PR_Atom atom'
        PR_Ctor     rng t pats ctor  -> mp pats >>= \pats' -> return $ PR_Ctor  rng t pats' ctor
        PR_Tuple    rng t pats       -> mp pats >>= \pats' -> return $ PR_Tuple rng t pats'
+       PR_Or       rng t pats       -> mp pats >>= \pats' -> return $ PR_Or    rng t pats'
 
 
 data RenameState = RenameState { renameMap  :: Map Ident Ident }

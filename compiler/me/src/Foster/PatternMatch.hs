@@ -11,7 +11,8 @@ import Prelude hiding ((<$>))
 
 import qualified Data.List as List
 import Data.Set(Set)
-import qualified Data.Set  as Set(size, fromList, toList, map)
+import qualified Data.Set  as Set(size, toList, map,
+                                  singleton, unions, empty)
 import Data.Map(Map)
 import qualified Data.Map  as Map(lookup, size)
 
@@ -62,14 +63,17 @@ data ClauseRow a t  = ClauseRow { rowOrigPat  :: (SPattern t)
 data SPattern t = SP_Wildcard
                 | SP_Variable (TypedId t)
                 | SP_Ctor     (LLCtorInfo t) [SPattern t]
+                | SP_Or                      [SPattern t]
                deriving (Show)
 
 instance Pretty (SPattern t) where
   pretty (SP_Wildcard) = text "_"
   pretty (SP_Variable tid) = pretty (tidIdent tid)
+  pretty (SP_Or pats) = parens (hsep $ punctuate (text " or ") (map pretty pats))
   pretty (SP_Ctor cinfo pats) = parens ((text (show $ ctorLLInfoId cinfo)
                                       <> text (show $ ctorLLInfoRepr cinfo))
                                      <+> hsep (map pretty pats))
+
 
 type DataTypeSigs = Map DataTypeName DataTypeSig
 
@@ -94,6 +98,7 @@ compilePatterns bs allSigs =
     (PR_Atom (P_Int     _ ty i)) -> SP_Ctor (intCtor ty i)   []
     (PR_Ctor  _ _ pats nfo) -> SP_Ctor            nfo   (map compilePattern pats)
     (PR_Tuple _ _ pats)     -> SP_Ctor (tupleCtor pats) (map compilePattern pats)
+    (PR_Or    _ _ pats)     -> SP_Or                    (map compilePattern pats)
     where
           ctorInfo tynm dcnm dctys repr =
              LLCtorInfo (CtorId tynm dcnm (Prelude.length $ dctys)) repr dctys
@@ -108,8 +113,9 @@ compilePatterns bs allSigs =
                               ctnm = show (pretty isb)
                               tag  = if litIntMinBits li <= bits
                                       then litIntValue li
-                                      else error $ "cannot cram " ++ show bits
-                                               ++ " bits into Int"++ show (litIntMinBits li)++"!"
+                                      else error $ "PatternMatch.hs: cannot cram a literal (" ++ litIntText li ++ ")"
+                                               ++ " needing " ++ show (litIntMinBits li)
+                                               ++ " bits into Int"++ show bits++"!"
 
 -- "Compilation is defined by cases as follows."
 cc :: Show t => [Occurrence t] -> ClauseMatrix a t -> [SourceRange] -> DataTypeSigs -> DecisionTree a t
@@ -131,6 +137,7 @@ cc _occs cm _rngs _allSigs | allGuaranteedMatch (rowPatterns $ firstRow cm) =
             computeBindings :: (Occurrence t, SPattern t) -> [(TypedId t, Occurrence t)]
             computeBindings ( occ, SP_Variable v   ) = [(v, occ)]
             computeBindings (_occ, SP_Wildcard     ) = []
+            computeBindings ( occ, SP_Or pats      ) = concatMap (\p -> computeBindings (occ, p)) pats
             computeBindings ( occ, SP_Ctor ctorinfo pats) =
               let occs = expand occ ctorinfo in
               concatMap computeBindings (zip occs pats)
@@ -144,7 +151,7 @@ cc occs cm rngs allSigs =
   if  i == 0
    then
       let spPatterns = cm `column` i in
-      let headCtorInfos = Set.fromList (concatMap headCtorInfo spPatterns) in
+      let headCtorInfos = Set.unions (map headCtorInfo spPatterns) in
       let (o1:orest) = occs in
       let caselist = [ ((c, r),
                            cc (expand o1  llci ++ orest)
@@ -168,14 +175,16 @@ allGuaranteedMatch pats = List.all trivialMatch pats
                              where trivialMatch (SP_Wildcard  ) = True
                                    trivialMatch (SP_Variable _) = True
                                    trivialMatch (SP_Ctor   _ _) = False
+                                   trivialMatch (SP_Or       _) = False
 
 firstRow (ClauseMatrix (r:_)) = r
 firstRow (ClauseMatrix []) = error "precondition violated for firstRow helper!"
 
-headCtorInfo :: SPattern ty -> [LLCtorInfo ty]
-headCtorInfo (SP_Wildcard    ) = []
-headCtorInfo (SP_Variable   _) = []
-headCtorInfo (SP_Ctor cinfo _) = [cinfo]
+headCtorInfo :: SPattern ty -> Set (LLCtorInfo ty)
+headCtorInfo (SP_Wildcard    ) = Set.empty
+headCtorInfo (SP_Variable   _) = Set.empty
+headCtorInfo (SP_Ctor cinfo _) = Set.singleton cinfo
+headCtorInfo (SP_Or      pats) = Set.unions (map headCtorInfo pats)
 
 columnNumWithNonTrivialPattern cm =
   loop cm 0 where
@@ -222,39 +231,34 @@ specialize cinfo (ClauseMatrix rows) =
          ++ "\nw.r.t. "  ++ show (pretty $ ctorInfoId cinfo)
                          ++ show (pretty $ ctorInfoRepr cinfo)
                          ++ " and got\n" ++ show (pretty cm)) -}
-  cm
+ ClauseMatrix (concat [specializeRow row cinfo | row <- rows])
   where
-    cm = ClauseMatrix [specializeRow row cinfo | row <- rows
-                                               , isCompatible row cinfo]
-    isCompatible row cinfo =
-      case rowPatterns row of
-        []               -> False
-        ((SP_Wildcard               ):_) -> True
-        ((SP_Variable              _):_) -> True
-        ((SP_Ctor cinfo' _):_) -> cinfo' `compatWith` cinfo
 
     compatWith (LLCtorInfo c1 r1 _) (c2, r2) = c1 == c2 && r1 == r2
 
-    specializeRow (ClauseRow orig []       a rng) _cinfo = ClauseRow orig [] a rng
+    specializeRow (ClauseRow orig []       a rng) _cinfo = [ClauseRow orig [] a rng]
     specializeRow (ClauseRow orig (p:rest) a rng)  cinfo@(ctor, _) =
       case p of
-        SP_Variable _ -> ClauseRow orig (wilds ++ rest) a rng
+        SP_Variable _ -> [ClauseRow orig (wilds ++ rest) a rng]
           where wilds = List.replicate (ctorArity ctor) (SP_Wildcard)
-        SP_Wildcard   -> ClauseRow orig (wilds ++ rest) a rng
+        SP_Wildcard   -> [ClauseRow orig (wilds ++ rest) a rng]
           where wilds = List.replicate (ctorArity ctor) (SP_Wildcard)
-        SP_Ctor c pats | c `compatWith` cinfo -> ClauseRow orig (pats ++ rest) a rng
-        SP_Ctor _ _pats -> error $ "specializeRow with unequal ctor?!? "
-                                               ++ show "...c..." ++ " // " ++ show cinfo
+        SP_Ctor c pats | c `compatWith` cinfo -> [ClauseRow orig (pats ++ rest) a rng]
+        SP_Ctor _ _pats -> [] -- Unequal ctors -> no match
+        SP_Or pats ->
+            concatMap (\q -> specializeRow (ClauseRow orig (q:rest) a rng) cinfo) pats
 
 defaultMatrix (ClauseMatrix rows) =
-  ClauseMatrix (concat [defaultRow row | row <- rows])
+  ClauseMatrix (concatMap defaultRows rows)
   where
-    defaultRow row =
+    defaultRows row =
       case row of
         ClauseRow orig []                     a rng -> [ClauseRow orig []   a rng]
         ClauseRow orig ((SP_Wildcard  ):rest) a rng -> [ClauseRow orig rest a rng]
         ClauseRow orig ((SP_Variable _):rest) a rng -> [ClauseRow orig rest a rng]
         ClauseRow _    ((SP_Ctor _   _):_   ) _   _ -> [] -- No row...
+        ClauseRow orig ((SP_Or pats)   :rest) a rng ->
+            concatMap (\p -> defaultRows (ClauseRow orig (p:rest) a rng)) pats
 
 column :: ClauseMatrix a t -> Int -> [SPattern t]
 column (ClauseMatrix rows) i = map (rowIndex i) rows

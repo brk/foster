@@ -378,6 +378,9 @@ kNormalize st expr =
             P_Tuple rng ty pats -> do pats' <- mapM qp pats
                                       ty'   <- qt ty
                                       return $ PR_Tuple rng ty' pats'
+            P_Or    rng ty pats -> do pats' <- mapM qp pats
+                                      ty'   <- qt ty
+                                      return $ PR_Or rng ty' pats'
             P_Ctor  rng ty pats (CtorInfo cid _dc) -> do
                         pats' <- mapM qp pats
                         ty'   <- qt ty
@@ -740,7 +743,28 @@ collectIntConstraints ae =
                 _ <- tcIntrospect (tcInject collectIntConstraints ooe)
                 return ()
 
-        AnnLiteral _ ty (LitInt int) -> do
+        AnnCase _ _ scrut arms -> do
+          collectIntConstraints scrut
+          let handleArm (CaseArm pat body guard _binds _rng) = do
+                applyPatternIntConstraints pat
+                collectIntConstraints body
+                mapMaybeM collectIntConstraints guard
+                return ()
+          mapM_ handleArm arms
+
+        AnnLiteral _ ty (LitInt int) -> applyIntLiteralConstraint ty int
+
+        _ -> mapM_ collectIntConstraints (childrenOf ae)
+
+applyPatternIntConstraints pat = do
+  case pat of
+    P_Atom (P_Int _ ty int) -> applyIntLiteralConstraint ty int
+    P_Atom _                -> return ()
+    P_Ctor  _ _ pats _ -> mapM_ applyPatternIntConstraints pats
+    P_Tuple _ _ pats   -> mapM_ applyPatternIntConstraints pats
+    P_Or    _ _ pats   -> mapM_ applyPatternIntConstraints pats
+
+applyIntLiteralConstraint ty int = do
           -- We can't directly mutate the meta type variable for int literals,
           -- because of code like       print_i8 ({ 1234 } !)   where the
           -- constraint that the literal fit an i8 cannot be discarded.
@@ -751,8 +775,6 @@ collectIntConstraints ae =
             MetaTyVarTC m -> do
                     tcUpdateIntConstraint m (litIntMinBits int)
             _ -> do return ()
-
-        _ -> mapM_ collectIntConstraints (childrenOf ae)
 -- }}}|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||| Let-Flattening |||||||||||||||||||||||{{{
@@ -1767,6 +1789,7 @@ qp subst pattern = do
  case pattern of
    PR_Atom           atom       -> liftM    PR_Atom                 (qpa subst  atom)
    PR_Tuple    rng t pats       -> liftM   (PR_Tuple    rng t) (mapM (qp subst) pats)
+   PR_Or       rng t pats       -> liftM   (PR_Or       rng t) (mapM (qp subst) pats)
    PR_Ctor     rng t pats ctor  -> do p' <-                     mapM (qp subst) pats
                                       return $ PR_Ctor  rng t p' ctor
 

@@ -167,6 +167,7 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
     CBOR_Array [tok, _, cbr, CBOR_Array []]    | tok `tm` tok_WILDCARD -> EP_Wildcard (cb_parse_range cbr)
     CBOR_Array [tok, _,_cbr, CBOR_Array [pat]] | tok `tm` tok_TUPLE    -> cb_parse_p pat
     CBOR_Array [tok, _, cbr, CBOR_Array pats]  | tok `tm` tok_TUPLE    -> EP_Tuple    (cb_parse_range cbr) (map cb_parse_p pats)
+    CBOR_Array [tok, _, cbr, CBOR_Array pats]  | tok `tm` tok_OR       -> EP_Or       (cb_parse_range cbr) (map cb_parse_p pats)
     CBOR_Array [tok, _, cbr, CBOR_Array [var]] | tok `tm` tok_TERMNAME -> EP_Variable (cb_parse_range cbr) (cb_parse_VarAST var)
     _ -> error $ "cb_parse_patbind failed: " ++ show cbor ++ " ;; " ++ headName cbor
 
@@ -217,8 +218,11 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
     _ -> error $ "cb_parse_tyapp failed: " ++ show cbor
 
   cb_parse_p cbor = case cbor of
-    CBOR_Array [tok, _, cbr, CBOR_Array (dctor : patoms)] | tok `tm` tok_CTOR -> EP_Ctor (cb_parse_range cbr) (map cb_parse_patom patoms) (cb_parse_dctor dctor)
-    CBOR_Array [_tokMU, _,_cbr, CBOR_Array [patom]] -> cb_parse_patom patom
+    CBOR_Array [tok, _, cbr, CBOR_Array (dctor : patoms)]| tok `tm` tok_CTOR ->
+        EP_Ctor (cb_parse_range cbr) (map cb_parse_patom patoms) (cb_parse_dctor dctor)
+    CBOR_Array [tok, _, cbr, CBOR_Array pats] | tok `tm` tok_OR -> EP_Or (cb_parse_range cbr) (map cb_parse_p pats)
+    CBOR_Array [_tokMU, _,_cbr, CBOR_Array [patom]] ->
+        cb_parse_patom patom
     _ -> error $ "cb_parse_p failed: " ++ show cbor
 
   cb_parse_pmatch cbor = case cbor of
