@@ -122,7 +122,7 @@ prepForCodegen m mayGCconstraints0 = do
    deHooplize :: Map Ident MayGC -> Proc BasicBlockGraph' -> Compiled ILProcDef
    deHooplize mayGCmap p = do
      wantedFns <- gets ccDumpFns
-     (g , liveRoots) <- insertSmartGCRoots (procBlocks p) mayGCmap (want p wantedFns)
+     (g , liveRoots) <- insertSmartGCRoots (procIdent p) (procBlocks p) mayGCmap (want p wantedFns)
      let (cfgBlocks , numPreds) = flattenGraph g mayGCmap
      return $ ILProcDef (p { procBlocks = cfgBlocks }) numPreds liveRoots
 

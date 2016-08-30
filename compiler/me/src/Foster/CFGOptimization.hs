@@ -9,7 +9,8 @@ module Foster.CFGOptimization (optimizeCFGs, collectMayGCConstraints) where
 
 import Foster.Base
 import Foster.MonoType
-import Foster.Letable(Letable(..), letableSize, canGC, willNotGCGlobal)
+import Foster.Letable(Letable(..), letableSize, canGC, willNotGCGlobal,
+                      substVarsInLetable)
 import Foster.Config
 import Foster.CFG
 
@@ -21,7 +22,7 @@ import qualified Data.Text as T
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Maybe(fromJust, isJust)
-import Data.List(nubBy, last)
+import Data.List(nubBy, last, foldl' )
 import Control.Monad.State
 import Data.IORef
 import Prelude hiding (id, last)
@@ -40,7 +41,9 @@ optimizeCFFn r fn = do
   uref      <- gets ccUniqRef
 
   let optimizations = [ elimContInBBG
-                      , runCensusRewrites' , elimContInBBG
+                      , runCensusRewrites'
+                      , eliminateAliasedVariables
+                      , elimContInBBG
                      -- ,runLiveness
                       ]
 
@@ -58,12 +61,13 @@ optimizeCFFn r fn = do
       putStrLn "BEFORE/AFTER"
       -- Discards duplicates before annotating
       Boxes.printBox $ catboxes bbgs
-      putStrLn ""
+      putStrLn ";;"
 
   let bbg' = last bbgs
 
   when (fn `isWanted` wantedFns) $ liftIO $ do
       let jumpTo bbg = case bbgEntry bbg of (bid, _) -> ILast $ CFCont bid undefined
+      putStrLn $ "preorder_dfs:"
       Boxes.printBox $ catboxes $ map blockGraph $
                          preorder_dfs $ mkLast (jumpTo bbg') |*><*| bbgBody bbg'
 
@@ -413,6 +417,116 @@ runCensusRewrites' uref bbg = do
           let g_old = bbgBody $ fnBody fn
           let g_new = mapGraph rw g_old
           return $ aGraphOfGraph g_new
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+
+-- |||||||||||||||||||| Alias Elimination |||||||||||||||||||||||{{{
+
+type IncomingBindings = Map.Map BlockId [Ident]
+type OutgoingBindings = [ (BlockId, [Maybe Ident]) ]
+-- Outgoing bindings are a "maybe ident" to distinguish continuations that
+-- pass known values (CFCont) from those that pass unknown values (CFCall).
+type Bindings = (IncomingBindings, OutgoingBindings)
+
+computeLabelsToVars :: BasicBlockGraph -> Bindings
+computeLabelsToVars bbg =
+  let (entryId, entryVars) = bbgEntry bbg in
+  foldGraphNodes go (bbgBody bbg) (Map.empty, [ (entryId, unknowns entryVars) ])
+ where
+   ids vars = map tidIdent vars
+   unknowns vars = [Nothing | _ <- vars]
+
+   go :: Insn e x -> Bindings -> Bindings
+   go (ILabel (bid,bs))  (mi, mo) = (Map.insert bid (ids bs) mi, mo)
+   go (ILetVal  {})      (mi, mo) = (mi, mo)
+   go (ILetFuns {})      (mi, mo) = (mi, mo)
+   go (ILast cflast)     (mi, mo) = case cflast of
+            CFCont bid vs          -> (mi, (bid, map Just $ ids vs):mo)
+            CFCall bid _t _v vs    -> (mi, (bid, unknowns vs):mo)
+            CFCase _v _arms        -> (mi, mo)
+            {-
+            CFCase v arms        -> (mi, foldl' addArmBinds mo arms)
+                 where addArmBinds mo' arm = Map.insert (caseArmBody arm)
+                   (map (\tid -> Just (tidIdent tid)) caseArmBindings arm) mo'
+                   -}
+
+-- A binding position is an argument or formal parameter to a given continuation.
+type BindingPositions = Map.Map BlockId [Int]
+-- Mapping for duplicated bindings, plus set of binding positions to eliminate.
+type Alias = (Map.Map Ident Ident, BindingPositions)
+
+computeAliasedVariables :: BasicBlockGraph -> Alias
+computeAliasedVariables bbg =
+  let (inc, out) = computeLabelsToVars bbg in
+  let computeRebindings rebindMap (bid, mb_ids) =
+        -- The return continuation won't be listed in the incoming map,
+        -- but all the other lookups should find the relevant targetIds.
+        case Map.lookup bid inc of
+          Just targetIds ->
+            foldl' (\m (tgt, mbid) -> Map.insertWith (++) tgt [mbid] m) rebindMap (zip targetIds mb_ids)
+          Nothing -> rebindMap
+      in
+  -- fullMap :: Map Ident [Maybe Ident]
+  let fullMap = foldl' computeRebindings Map.empty out in
+  -- Filter down the map to include only entries that had a one-to-one mapping.
+  let oneMap = Map.fromList [(k, v) | (k, [Just v]) <- Map.toList fullMap] in
+  -- Compute the closure of the remappings (inefficient but shouldn't matter for small chains).
+  let closure id = case Map.lookup id oneMap of
+                    Nothing -> id
+                    Just id' -> closure id'  in
+  let rv = Map.fromList [(k, closure id) | (k, id) <- Map.toList oneMap] in
+  -- Collect the binding positions for bindings that have been made redundant.
+  let bindingPositions = Map.fromListWith (++) $ concatMap (\(blockId, ids) ->
+                            [(blockId, [n]) | (n, id) <- zip [0..] ids
+                                            , Map.member id oneMap
+                            ]) (Map.toList inc) in
+  (rv, bindingPositions)
+
+eliminateAliasedVariables :: IORef Uniq -> BasicBlockGraph -> IO BasicBlockGraph
+eliminateAliasedVariables uref bbg = do
+     runWithUniqAndFuel uref infiniteFuel (go (computeAliasedVariables bbg) bbg)
+  where
+        go :: Alias -> BasicBlockGraph -> M BasicBlockGraph
+        go aliases bbg = do
+          let (bid,_) = bbgEntry bbg
+          bb' <- rebuildGraphM bid (bbgBody bbg) (transform aliases)
+          return $ bbg { bbgBody = bb' }
+
+        transformFn aliases fn = do
+          bbg' <- go aliases (fnBody fn)
+          return $ fn { fnBody = bbg' }
+
+        substTypedId aliasMap tid =
+          case Map.lookup (tidIdent tid) aliasMap of
+            Nothing -> tid
+            Just id -> (TypedId (tidType tid) id)
+
+        transform :: Alias -> Insn e x -> M (Graph Insn e x)
+        transform (ci, redund) = rw
+         where
+          rw :: Insn e x -> M (Graph Insn e x)
+          rw n = case n of
+             ILabel   (bid, vs) -> do return $ mkFirst $ ILabel (bid, modifiedVarList (ci, redund) bid vs)
+             ILetFuns ids rawfns -> do
+               fns <- mapM (transformFn (ci, redund)) rawfns
+               return $ mkMiddle $ ILetFuns ids fns
+             ILetVal  id letable ->
+                let letable' = substVarsInLetable (substTypedId ci) letable in
+                return $ mkMiddle (ILetVal id letable')
+             ILast cflast -> return $ mkLast $ ILast (applySubst (ci, redund) cflast)
+
+          modifiedVarList (ci, redund) bid vs =
+            let rawVars = map (substTypedId ci) vs in
+            case Map.lookup bid redund of
+              Nothing -> rawVars
+              Just redundOffsets ->
+                [v | (n, v) <- zip [0..] rawVars
+                   , not (n `elem` redundOffsets)]
+
+          applySubst aliases (CFCont bid vs) = CFCont bid (modifiedVarList aliases bid vs)
+          applySubst aliases (CFCall bid t v vs) = CFCall bid t (substTypedId ci v) (modifiedVarList aliases bid vs)
+          applySubst (ci, _) (CFCase v bbs) = CFCase (substTypedId ci v) bbs
+
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||| Liveness ||||||||||||||||||||||||||||||||{{{
