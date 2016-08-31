@@ -566,7 +566,8 @@ public:
 
   bool stmtHasValue(const Stmt* s) {
     if (!s) return false;
-    if (isa<GotoStmt>(s)) return false;
+    if (isa<GotoStmt>(s) || isa<WhileStmt>(s)
+     || isa<ForStmt>(s) || isa<IfStmt>(s)) return false;
     if (auto rs = dyn_cast<ReturnStmt>(s)) {
       return rs->getRetValue() != nullptr;
     }
@@ -612,11 +613,11 @@ public:
   }
 
   void markduplicateVarDecls(const std::vector<const DeclStmt*>& decls) {
-    std::set<std::string> namesSeen;
+    std::map<std::string, int> namesSeen;
     for (auto d : decls) {
       if (d->isSingleDecl()) {
         if (auto vd = dyn_cast<ValueDecl>(d->getSingleDecl())) {
-          namesSeen.insert(emitVarName(vd));
+          namesSeen[emitVarName(vd)]++;
         }
       }
     }
@@ -625,7 +626,7 @@ public:
     for (auto d : decls) {
       if (d->isSingleDecl()) {
         if (auto vd = dyn_cast<ValueDecl>(d->getSingleDecl())) {
-          if (namesSeen.count(emitVarName(vd)) >= 1) {
+          if (namesSeen[emitVarName(vd)] > 1) {
             duplicateVarDecls[vd] = uniq++;
           }
         }
@@ -724,12 +725,14 @@ public:
       } else if (cb->succ_size() == 2) {
         if (const Stmt* tc = cb->getTerminatorCondition()) {
           // Similar to handleIfThenElse, but with emitJumpTo instead of visitStmt.
+          bool hasVal = stmtHasValue(getBlockTerminatorOrLastStmt(cb));
+          llvm::outs() << "/* hasVal=" << hasVal << " */ ";
           llvm::outs() << "if ";
           visitStmt(tc, BooleanContext);
           llvm::outs() << " then ";
-          emitJumpTo(cb->succ_begin());
+          emitJumpTo(cb->succ_begin(), hasVal);
           llvm::outs() << " else ";
-          emitJumpTo(cb->succ_begin() + 1);
+          emitJumpTo(cb->succ_begin() + 1, hasVal);
           llvm::outs() << "end";
         }
       } else if (const SwitchStmt* ss = dyn_cast<SwitchStmt>(cb->getTerminator())) {
@@ -1827,17 +1830,18 @@ The corresponding AST to be matched is
 
     for (auto d : rd->decls()) {
       if (const FieldDecl* fd = dyn_cast<FieldDecl>(d)) {
-        llvm::outs() << name << "_" << fd->getName() << " = { sv : " << name << " => case sv of $" << name;
+        std::string fieldName = fosterizedName(fd->getName());
+        llvm::outs() << name << "_" << fieldName << " = { sv : " << name << " => case sv of $" << name;
         for (auto d2 : rd->decls()) {
           if (const FieldDecl* fd2 = dyn_cast<FieldDecl>(d2)) {
             if (fd2 == fd) {
-              llvm::outs() << " " << fd->getName();
+              llvm::outs() << " " << fieldName;
             } else {
               llvm::outs() << " _";
             }
           }
         }
-        llvm::outs() << " -> getField " << fd->getName() << " end };\n";
+        llvm::outs() << " -> getField " << fieldName << " end };\n";
       }
     }
   }

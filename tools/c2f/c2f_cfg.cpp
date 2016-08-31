@@ -1916,7 +1916,7 @@ CFGBlock *C2F_CFGBuilder::VisitCompoundStmt(CompoundStmt *C) {
 
 CFGBlock *C2F_CFGBuilder::VisitConditionalOperator(AbstractConditionalOperator *C,
                                                AddStmtChoice asc) {
-
+  autoCreateBlock();
   appendStmt(Block, C);
   return Block;
 
