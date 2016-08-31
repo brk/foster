@@ -897,7 +897,8 @@ instance Pretty ty => Pretty (EPattern ty) where
   pretty (EP_Ctor     _ pats ctor)  = text "$" <> text (show ctor) <+> hsep (map pretty pats)
   pretty (EP_Bool     _ b)          = pretty b
   pretty (EP_Int      _ str)        = text str
-  pretty (EP_Tuple    _ pats)       = tupled $ map pretty pats -- parens (hsep $ punctuate (text ", ") (map pretty pats))
+  pretty (EP_Tuple    _ pats)       = tupled $ map pretty pats
+  pretty (EP_Or       _ pats)       = parens (hsep $ punctuate (text " or ") (map pretty pats))
 
 instance Pretty ty => Pretty (E_VarAST ty) where
   pretty (VarAST (Just ty) txt) = text (T.unpack txt) <+> text "::" <+> pretty ty
