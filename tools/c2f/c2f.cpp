@@ -1673,12 +1673,25 @@ The corresponding AST to be matched is
         llvm::outs() << "// WARNING: string literal init...?\n";
       }
       // TODO should sometimes become struct ctor calls, not array literals.
-      llvm::outs() << "(prim mach-array-literal";
-      for (unsigned i = 0; i < ile->getNumInits(); ++i) {
-        llvm::outs() << " ";
-        visitStmt(ile->getInit(i));
+      llvm::errs() << "InitListExpr has type:\n";
+      ile->getType().getTypePtr()->dump();
+      if (auto rt = bindRecordType(ile->getType().getTypePtr())) {
+        llvm::outs() << "(" << tyName(rt);
+        for (unsigned i = 0; i < ile->getNumInits(); ++i) {
+          llvm::outs() << " ";
+          llvm::outs() << "(Field ";
+          visitStmt(ile->getInit(i));
+          llvm::outs() << ")";
+        }
+        llvm::outs() << ")";
+      } else {
+        llvm::outs() << "(prim mach-array-literal";
+        for (unsigned i = 0; i < ile->getNumInits(); ++i) {
+          llvm::outs() << " ";
+          visitStmt(ile->getInit(i));
+        }
+        llvm::outs() << ")";
       }
-      llvm::outs() << ")";
     } else if (const CompoundStmt* cs = dyn_cast<CompoundStmt>(stmt)) {
 
       size_t numPrintingChildren = cs->size();
@@ -1766,6 +1779,22 @@ The corresponding AST to be matched is
     }
     llvm::outs() << ";\n\n";
     // TODO emit field accessor functions
+
+    for (auto d : rd->decls()) {
+      if (const FieldDecl* fd = dyn_cast<FieldDecl>(d)) {
+        llvm::outs() << name << "_" << fd->getName() << " = { sv : " << name << " => case sv of $" << name;
+        for (auto d2 : rd->decls()) {
+          if (const FieldDecl* fd2 = dyn_cast<FieldDecl>(d2)) {
+            if (fd2 == fd) {
+              llvm::outs() << " " << fd->getName();
+            } else {
+              llvm::outs() << " _";
+            }
+          }
+        }
+        llvm::outs() << " -> getField " << fd->getName() << " end };\n";
+      }
+    }
   }
 
   bool isFromMainFile(const SourceLocation loc) {
