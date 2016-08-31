@@ -14,7 +14,10 @@ import Foster.ParsedType
 
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T
-import Data.Char(isAlpha)
+import Data.Char(isAlpha, isPrint, ord, chr)
+import Numeric(showHex)
+import Data.Word(Word8)
+import qualified Data.ByteString as BS(unpack)
 
 -- "The ribbon width is the maximal amount of
 --  non-indentation characters on a line."
@@ -106,14 +109,43 @@ prettyExpr e =
     E_SeqAST {} -> parens $ pretty e
     _ -> pretty e
 
+showHex2 c s =
+  let rv = showHex c s in
+  if length rv == 1 then '0' : rv else rv
+
+formatTextChar :: Char -> String
+formatTextChar c =
+  if isPrint c then [c] else
+    case c of
+      '\n' -> "\\n"
+      '\r' -> "\\r"
+      '\t' -> "\\t"
+      '\\' -> "\\\\"
+      '\'' -> "\\'" -- TODO selectively escape based on string bracket type
+      '"'  -> "\\\""
+      _ -> "\\u{" ++ showHex2 (ord c) "}"
+
+formatBytesWord8 :: Word8 -> String
+formatBytesWord8 w =
+  let c = chr $ fromIntegral w in
+  if isPrint c then [c] else
+    case c of
+      '\n' -> "\\n"
+      '\r' -> "\\r"
+      '\t' -> "\\t"
+      '\\' -> "\\\\"
+      '\'' -> "\\'" -- TODO selectively escape based on string bracket type
+      '"'  -> "\\\""
+      _ -> "\\x" ++ showHex2 w ""
+
 prettyStmt e = case e of
     E_MachArrayLit annot _mbt args -> withAnnot annot $ parens $ text "prim mach-array-literal" <+> hsep (map pretty args)
     E_VarAST annot evar     -> withAnnot annot $ pretty evar
     E_TyApp  annot e argtys -> withAnnot annot $ pretty e <> text ":[" <> hsep (punctuate comma (map pretty argtys)) <> text "]"
     E_TyCheck annot e ty    -> withAnnot annot $ parens (pretty e <+> text "as" <+> pretty ty)
     E_KillProcess annot exp -> withAnnot annot $ text "prim kill-entire-process" <+> pretty exp
-    E_StringAST   annot r (SS_Text  t) -> withAnnot annot $             wasRaw r <> (text $ show $ T.unpack t)
-    E_StringAST   annot r (SS_Bytes b) -> withAnnot annot $ text "b" <> wasRaw r <> (text $ show b)
+    E_StringAST   annot r (SS_Text  t) -> withAnnot annot $             wasRaw r <> dquotes (text $ concatMap formatTextChar $ T.unpack t)
+    E_StringAST   annot r (SS_Bytes b) -> withAnnot annot $ text "b" <> wasRaw r <> dquotes (text $ concatMap formatBytesWord8 $ BS.unpack b)
     E_BoolAST     annot b   -> withAnnot annot $ text $ show b
     E_PrimAST     annot nm []   _ -> withAnnot annot $ text nm
     E_PrimAST     annot nm lits _ -> withAnnot annot $ text nm <+> pretty lits
