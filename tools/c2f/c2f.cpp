@@ -3,11 +3,10 @@
 // Mainly focuses on translating syntax as a starting point for human cleanup,
 // rather than being an Emscripten-style automated translator of semantics.
 //
-// Current status: hacky prototype.
+// Current status: moderately hacky prototype.
 //
 // Doesn't do any special handling/recognition of function-like macros.
 // Doesn't do any relooping for converted CFGs.
-// Doesn't distinguish return-for-control-flow vs return-for-value.
 // Doesn't handle pointers or structure allocations very well.
 //   (needs to do analysis to differentiate arrays from singleton pointers).
 // Could get better translations by doing more careful analysis of which
@@ -2034,15 +2033,10 @@ int main(int argc, const char **argv) {
 // Notes on un-handled C constructs:
 //   * Need to think more about how to expose libm functions and macros.
 //     Even a trivial-ish macro (HUGE_VAL) raises questions.
-//   * I dunno how to ask clang to evaluate sizeof() expressions.
 //   * Unions...
 //   * Embedded anonymous structs are not well-handled yet,
 //     on either the creation/representation or accessor sides.
-//   * I'm not sure of the simplest way to distinguish trivial vs non-trivial
-//     return statements. One way might be to copy the AST but replace
-//     the returns with non-control-flow marker nodes, then build CFGs for
-//     the original and modified ASTs. If the marker's successor is the exit
-//     block, then the corresponding return was trivial.
+//
 //   * Struct fields not yet properly translated.
 //     A field of type T can be translated to any one of:
 //       T                         when all structs are literals and the field is never mutated,
@@ -2064,6 +2058,7 @@ int main(int argc, const char **argv) {
 //    then (T*)malloc(SZ) translates to allocDArray:[Array T] SZ
 //    which is not correct (the outer array is 2x as big as it should be,
 //    and there is no initialization of the interior elements).
+//
 //  * Local struct decls are stack-allocated in C, but we allocate (ref None) to be safe,
 //    and it's not clear where/when/how to upgrade that allocation or update the ref contents.
 //    E.g.::
