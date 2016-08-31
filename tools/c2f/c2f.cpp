@@ -1593,6 +1593,7 @@ The corresponding AST to be matched is
                 break;
               }
           }
+          llvm::outs() << "\\x00";
           llvm::outs() << (useTriple ? "\"\"\"" : "\"");
         } else {
           llvm::outs() << "// non UTF8 string\n";
