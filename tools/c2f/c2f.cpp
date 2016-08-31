@@ -1373,10 +1373,12 @@ The corresponding AST to be matched is
       if (cast == "") {
         visitStmt(ce->getSubExpr(), ctx);
       } else {
+        if (ctx == BooleanContext) { llvm::outs() << "("; }
         llvm::outs() << "(" << cast << " ";
         visitStmt(ce->getSubExpr());
         llvm::outs() << ")";
-        if (ctx != ExprContext) { llvm::outs() << "/*TODO(c2f) cast in non-epxr ctx*/"; }
+        if (ctx == BooleanContext) { llvm::outs() << " " << mkFosterBinop("!=", exprTy(ce)) << " 0)"; }
+        if (ctx == AssignmentTarget) { llvm::outs() << "/*TODO(c2f) cast in assignment ctx!!!*/"; }
       }
       break;
     }
