@@ -510,7 +510,7 @@ set(CLANGLIBS
   clangSerialization clangToolingCore clangTooling
   ${END_GROUP})
 
-add_executable(c2f tools/c2f/c2f.cpp)
+add_executable(c2f tools/c2f/c2f.cpp tools/c2f/c2f_cfg.cpp)
 target_link_libraries(c2f
   ${CLANGLIBS}
   ${LLVM_LDFLAGS})
