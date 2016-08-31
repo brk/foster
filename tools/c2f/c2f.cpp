@@ -591,6 +591,49 @@ public:
     }
   }
 
+  std::vector<const DeclStmt*> collectDeclsAndBuildStmtMap(std::unique_ptr<CFG>& cfg) {
+    std::vector<const DeclStmt*> rv;
+    for (auto it = cfg->nodes_begin(); it != cfg->nodes_end(); ++it) {
+      CFGBlock* cb = it;
+      unsigned j = 0;
+      for (auto cbit = cb->begin(); cbit != cb->end(); ++cbit) {
+        CFGElement ce = *cbit;
+        if (ce.getKind() == CFGElement::Kind::Statement) {
+          if (const Stmt* s = ce.castAs<CFGStmt>().getStmt()) {
+            if (auto ds = dyn_cast<DeclStmt>(s)) {
+              rv.push_back(ds);
+            } else {
+              StmtMap[s] = std::make_pair(cb->getBlockID(), j++);
+            }
+          }
+        }
+      }
+    }
+    return rv;
+  }
+
+  void markduplicateVarDecls(const std::vector<const DeclStmt*>& decls) {
+    std::set<std::string> namesSeen;
+    for (auto d : decls) {
+      if (d->isSingleDecl()) {
+        if (auto vd = dyn_cast<ValueDecl>(d->getSingleDecl())) {
+          namesSeen.insert(emitVarName(vd));
+        }
+      }
+    }
+
+    int uniq = 0;
+    for (auto d : decls) {
+      if (d->isSingleDecl()) {
+        if (auto vd = dyn_cast<ValueDecl>(d->getSingleDecl())) {
+          if (namesSeen.count(emitVarName(vd)) >= 1) {
+            duplicateVarDecls[vd] = uniq++;
+          }
+        }
+      }
+    }
+  }
+
   void visitStmtCFG(const Stmt* stmt) {
     // Make sure that binary operators, like || and &&,
     // don't get split up into separate CFG blocks, since
@@ -646,22 +689,12 @@ public:
 
     // Add all var decls
     StmtMap.clear();
-    for (auto it = cfg->nodes_begin(); it != cfg->nodes_end(); ++it) {
-      CFGBlock* cb = it;
-      unsigned j = 0;
-      for (auto cbit = cb->begin(); cbit != cb->end(); ++cbit) {
-        CFGElement ce = *cbit;
-        if (ce.getKind() == CFGElement::Kind::Statement) {
-          if (const Stmt* s = ce.castAs<CFGStmt>().getStmt()) {
-            if (isa<DeclStmt>(s)) {
-              visitStmt(s);
-              llvm::outs() << ";\n";
-            } else {
-              StmtMap[s] = std::make_pair(cb->getBlockID(), j++);
-            }
-          }
-        }
-      }
+    std::vector<const DeclStmt*> decls = collectDeclsAndBuildStmtMap(cfg);
+    markduplicateVarDecls(decls);
+
+    for (auto d : decls) {
+      visitStmt(d);
+      llvm::outs() << ";\n";
     }
 
     for (auto it = cfg->nodes_begin(); it != cfg->nodes_end(); ++it) {
@@ -1418,14 +1451,25 @@ The corresponding AST to be matched is
       }
   }
 
+  std::string emitVarName(const ValueDecl* vd) {
+    auto it = duplicateVarDecls.find(vd);
+    if (it == duplicateVarDecls.end()) {
+      return fosterizedName(vd->getName());
+    } else {
+      std::string s;
+      std::stringstream ss(s); ss << fosterizedName(vd->getName()) << "_" << it->second;
+      return ss.str();
+    }
+  }
+
   void visitVarDecl(const VarDecl* vd) {
     if (vd->hasInit()) {
       if (mutableLocals[vd->getName()]) {
-        llvm::outs() << fosterizedName(vd->getName()) << " = (prim ref ";
+        llvm::outs() << emitVarName(vd) << " = (prim ref ";
         visitStmt(vd->getInit());
         llvm::outs() << ")";
       } else {
-        llvm::outs() << fosterizedName(vd->getName()) << " = ";
+        llvm::outs() << emitVarName(vd) << " = ";
         visitStmt(vd->getInit());
       }
     } else {
@@ -1434,7 +1478,7 @@ The corresponding AST to be matched is
         uint64_t sz = cat->getSize().getZExtValue();
         auto zeroval = zeroValue(cat->getElementType().getTypePtr());
 
-        llvm::outs() << fosterizedName(vd->getName()) << " = ";
+        llvm::outs() << emitVarName(vd) << " = ";
         if (sz > 0 && sz <= 16) {
           llvm::outs() << "(prim mach-array-literal";
           for (uint64_t i = 0; i < sz; ++i) {
@@ -1445,7 +1489,7 @@ The corresponding AST to be matched is
           llvm::outs() << "(newArrayReplicate " << sz << " " << zeroval << ")";
         }
       } else {
-        llvm::outs() << fosterizedName(vd->getName()) << " = (prim ref " << zeroValue(exprTy(vd)) << ")";
+        llvm::outs() << emitVarName(vd) << " = (prim ref " << zeroValue(exprTy(vd)) << ")";
       }
     }
   }
@@ -1635,11 +1679,12 @@ The corresponding AST to be matched is
 
       if (ctx == BooleanContext) { llvm::outs() << "("; }
 
-      std::string name = dr->getDecl()->getName();
-      if (mutableLocals[name] && ctx != AssignmentTarget) {
-        llvm::outs() << fosterizedName(name) << "^";
+      auto vd = dr->getDecl();
+      std::string rawName = vd->getName();
+      if (mutableLocals[rawName] && ctx != AssignmentTarget) {
+        llvm::outs() << emitVarName(vd) << "^";
       } else {
-        llvm::outs() << fosterizedName(name);
+        llvm::outs() << emitVarName(vd);
       }
 
       if (ctx == BooleanContext) { llvm::outs() << " " << mkFosterBinop("!=", exprTy(dr)) << " 0)"; }
@@ -1949,6 +1994,8 @@ private:
   VoidPtrCasts voidPtrCasts;
   Rewriter R;
   ASTContext* Ctx;
+
+  llvm::DenseMap<const ValueDecl*, int> duplicateVarDecls;
 
   const Stmt* currStmt; // print this one, even if it's in the map.
   typedef llvm::DenseMap<const Stmt*,std::pair<unsigned,unsigned> > StmtMapTy;
