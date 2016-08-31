@@ -343,6 +343,9 @@ private:
 
 typedef std::map<const Decl*, ZeroOneTwoSet<const Type*> > VoidPtrCasts;
 
+// Rather than excise the special cases in our copy of Clang's CFG builder,
+// it's much easier to just forcibly turn logical operators into bitwise
+// operators for the purposes of CFG building.
 class LogicalAndOrTweaker : public RecursiveASTVisitor<LogicalAndOrTweaker> {
 public:
   LogicalAndOrTweaker(llvm::DenseMap<const Stmt*, BinaryOperatorKind>& tweaked) : tweaked(tweaked) {}
@@ -353,7 +356,6 @@ public:
         bo->setOpcode(BO_And);
       }
       if (bo->getOpcode() == BO_LOr) {
-        llvm::errs() << "tweaked || operator...\n";
         tweaked[bo] = BO_LOr;
         bo->setOpcode(BO_Or);
       }
@@ -506,6 +508,9 @@ enum ContextKind {
   BooleanContext
 };
 
+std::unique_ptr<CFG>
+  C2F_buildCFG(const Decl *D, Stmt *Statement, ASTContext *C, const CFG::BuildOptions &BO);
+
 class MyASTConsumer : public ASTConsumer {
 public:
   MyASTConsumer(Rewriter &R) : lastloc(), R(R) { }
@@ -595,7 +600,7 @@ public:
     tweaker.TraverseStmt(const_cast<Stmt*>(stmt));
 
     CFG::BuildOptions BO;
-    std::unique_ptr<CFG> cfg = CFG::buildCFG(nullptr, const_cast<Stmt*>(stmt), Ctx, BO);
+    std::unique_ptr<CFG> cfg = C2F_buildCFG(nullptr, const_cast<Stmt*>(stmt), Ctx, BO);
 
     if (0) {
       llvm::outs().flush();
