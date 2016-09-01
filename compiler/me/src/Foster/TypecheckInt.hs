@@ -3,7 +3,8 @@
 -- Use of this source code is governed by a BSD-style license that can be
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
-module Foster.TypecheckInt(typecheckInt, typecheckRat, sanityCheck) where
+module Foster.TypecheckInt(typecheckInt, typecheckRat,
+      tryParseInt, ParseIntResult(..), sanityCheck) where
 
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T
@@ -18,29 +19,33 @@ import Foster.Context
 import Foster.AnnExpr
 import Foster.TypeTC
 
-typecheckInt :: ExprAnnot -> String -> Expected TypeTC -> Tc (AnnExpr RhoTC)
-typecheckInt annot originalText expTy = do
-    let goodBases = [2, 8, 10, 16]
-    let maxBits = 64
-    let (negated, clean, base) = extractCleanBase originalText
-    sanityCheck (base `Prelude.elem` goodBases)
+data PIR_FailureCase = PIR_InvalidBase
+                     | PIR_InvalidDigit
+                     | PIR_NeedsTooManyBits
+
+data ParseIntResult = PIR_Success LiteralInt
+                    | PIR_Failure PIR_FailureCase String
+
+tryParseInt :: SourceRange -> String -> ParseIntResult
+tryParseInt rng originalText =
+    let goodBases = [2, 8, 10, 16] in
+    let maxBits = 64 in
+    let (negated, clean, base) = extractCleanBase originalText in
+    case () of
+      _ | not (base `Prelude.elem` goodBases) -> PIR_Failure PIR_InvalidBase $
                 ("Integer base must be one of " ++ show goodBases
                                     ++ "; was " ++ show base)
-    sanityCheck (onlyValidDigitsIn clean base)
+      _ | not (onlyValidDigitsIn clean base) -> PIR_Failure PIR_InvalidDigit $
                 ("Cleaned integer must contain only valid digits for base " ++ show base ++ ": " ++ clean)
-    let int = precheckedLiteralInt originalText negated clean base
-    let activeBits = litIntMinBits int
-    sanityCheck (activeBits <= maxBits)
+      _ ->
+        let int = precheckedLiteralInt originalText negated clean base in
+        let activeBits = litIntMinBits int in
+        if  activeBits <= maxBits
+          then PIR_Success int
+          else PIR_Failure PIR_NeedsTooManyBits $
                 ("Integer literals are currently limited to " ++ show maxBits ++ " bits, but "
                                   ++ clean ++ " requires " ++ show activeBits ++
-                                  "\n" ++ highlightFirstLine (rangeOf annot))
-
-    -- No need to unify with Infer here because tcRho does it for us.
-    ty <- case expTy of
-             Infer _ -> newTcUnificationVarTau $ "int-lit"
-             Check t -> return t
-
-    return (AnnLiteral annot ty (LitInt int))
+                                  "\n" ++ highlightFirstLine rng)
  where
         onlyValidDigitsIn :: String -> Int -> Bool
         onlyValidDigitsIn str lim =
@@ -78,6 +83,19 @@ extractCleanBase raw = do
     getNeg ('-':first) = (True,  stripTicksAndPlus first)
     getNeg ('+':first) = (False, stripTicksAndPlus first)
     getNeg (    first) = (False, stripTicksAndPlus first)
+
+
+typecheckInt :: ExprAnnot -> String -> Expected TypeTC -> Tc (AnnExpr RhoTC)
+typecheckInt annot originalText expTy = do
+  case tryParseInt (rangeOf annot) originalText of
+    PIR_Failure _ msg -> tcFails [red (text msg)]
+    PIR_Success int -> do
+      -- No need to unify with Infer here because tcRho does it for us.
+      ty <- case expTy of
+               Infer _ -> newTcUnificationVarTau $ "int-lit"
+               Check t -> return t
+
+      return (AnnLiteral annot ty (LitInt int))
 
 typecheckRat :: ExprAnnot -> String -> Maybe TypeTC -> Tc (AnnExpr RhoTC)
 typecheckRat annot originalText _expTyTODO = do
