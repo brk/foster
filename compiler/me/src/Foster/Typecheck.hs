@@ -9,7 +9,7 @@ import Prelude hiding ((<$>))
 
 import qualified Data.List as List(length, zip)
 import Data.List(foldl', (\\))
-import Control.Monad(liftM, forM_, forM, liftM, liftM2, liftM3, when)
+import Control.Monad(liftM, forM, liftM, liftM2, liftM3, when)
 
 import qualified Data.Text as T(Text, pack, unpack)
 import Data.Map(Map)
@@ -2007,10 +2007,12 @@ getFreeTyVars xs = do zs <- mapM zonkType xs
         RefinedTypeTC v _e _args -> (go bound) (tidType v) -- TODO handle tyvars in expr/args?
 -- }}}
 
+{-
 unMBS :: MetaBindStatus -> TypeTC
 unMBS (NonMeta t) = t
 unMBS (MetaUnbound m  ) = MetaTyVarTC m
 unMBS (MetaBoundTo _ t) = t
+-}
 
 instance Pretty MetaBindStatus where pretty mbs = string (show mbs)
 
