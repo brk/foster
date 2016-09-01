@@ -1403,10 +1403,10 @@ The corresponding AST to be matched is
           cast = intCastFromTo(srcTy, dstTy, exprTy(ce)->isSignedIntegerType());
         } else if (exprTy(ce)->isSpecificBuiltinType(BuiltinType::UShort)
                 || exprTy(ce)->isSpecificBuiltinType(BuiltinType::Short)) {
-          cast = intCastFromTo(srcTy, "Int16", exprTy(ce)->isSignedIntegerType());
+          cast = intCastFromTo(srcTy, "Int16", exprTy(ce->getSubExpr())->isSignedIntegerType());
         } else if (exprTy(ce->getSubExpr())->isSpecificBuiltinType(BuiltinType::UShort)
                 || exprTy(ce->getSubExpr())->isSpecificBuiltinType(BuiltinType::Short)) {
-          cast = intCastFromTo("Int16", dstTy, exprTy(ce)->isSignedIntegerType());
+          cast = intCastFromTo("Int16", dstTy, exprTy(ce->getSubExpr())->isSignedIntegerType());
         }
       }
 
