@@ -732,7 +732,31 @@ mkFunctionSCCs ids fns body k =
                                               where (fns, ids) = unzip fnids
          ) body theSCCs
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+-- ||||||||||||||||||||||||| Instance Helpers |||||||||||||||||||{{{
+caseArmFreeVars (CaseArm epat body guard _ _) =
+  (freeVars body ++ freeVars guard) `butnot` epatBoundNames epat
+
+epatBoundNames :: EPattern ty -> [T.Text]
+epatBoundNames epat =
+  case epat of
+    EP_Wildcard {}        -> []
+    EP_Variable _rng evar -> [evarName evar]
+    EP_Ctor     _r pats _ -> concatMap epatBoundNames pats
+    EP_Bool     {}        -> []
+    EP_Int      {}        -> []
+    EP_Or       _rng pats -> concatMap epatBoundNames pats |> removeDuplicates
+    EP_Tuple    _rng pats -> concatMap epatBoundNames pats
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||||||||| Instances ||||||||||||||||||||||||||{{{
+instance Expr expr => Expr (CaseArm EPattern expr ty) where
+  freeVars = caseArmFreeVars
+
+instance Expr e => Expr (Maybe e) where
+  freeVars Nothing = []
+  freeVars (Just e) = freeVars e
+
+instance Expr (EPattern ty) where
+  freeVars = epatBoundNames
 
 instance AExpr body => AExpr (Fn recStatus body t) where
     freeIdents f = let bodyvars =  freeIdents (fnBody f) in

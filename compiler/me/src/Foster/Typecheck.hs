@@ -2316,9 +2316,6 @@ instance Expr (ExprAST TypeAST) where
 refiVars (RefinedTypeAST nm _ _) = [T.pack nm]
 refiVars _ = []
 
-instance Expr (Maybe TypeAST) where freeVars Nothing = []
-                                    freeVars (Just t) = freeVars t
-
 instance Expr TypeAST where
   freeVars typ = case typ of
         PrimIntAST            {} -> []
@@ -2333,23 +2330,6 @@ instance Expr TypeAST where
         ArrayTypeAST  ty         -> freeVars ty
         RefinedTypeAST  nm ty e  -> freeVars ty ++ (freeVars e `butnot` [T.pack nm])
         MetaPlaceholderAST    {} -> []
-
-freeVarsMb Nothing  = []
-freeVarsMb (Just e) = freeVars e
-
-caseArmFreeVars (CaseArm epat body guard _ _) =
-  (freeVars body ++ freeVarsMb guard) `butnot` epatBoundNames epat
-
-epatBoundNames :: EPattern ty -> [T.Text]
-epatBoundNames epat =
-  case epat of
-    EP_Wildcard {}        -> []
-    EP_Variable _rng evar -> [evarName evar]
-    EP_Ctor     _r pats _ -> concatMap epatBoundNames pats
-    EP_Bool     {}        -> []
-    EP_Int      {}        -> []
-    EP_Or       _rng pats -> concatMap epatBoundNames pats |> removeDuplicates
-    EP_Tuple    _rng pats -> concatMap epatBoundNames pats
 
 typeTC :: AnnExpr TypeTC -> TypeTC
 typeTC = typeOf
