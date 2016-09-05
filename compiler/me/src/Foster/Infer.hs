@@ -490,7 +490,10 @@ unify' !depth t1 t2 msgs = do
                                ,text "failed in"
                                ,indent 8 (pretty t)
                                ] ++ msgs ++
-                               [text "This type error is often caused by swapped function arguments..."
+                               [text "This type error generally arises when different parts of your"
+                               ,text "program disagree about whether they are dealing with a polymorphic"
+                               ,text "type such as `List a` or just `a`."
+                               ,text "This is sometimes caused by swapped function arguments..."
                                ,text "Less commonly, it arises from use of"
                                ,text "polymorphic recursion, which usually needs an explicit annotation"
                                ,text "on both the recursive call site and the recursive function definition."
