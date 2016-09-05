@@ -4,8 +4,8 @@ snafuinclude Bytes "bytes";
 // but here it is for reference:
 //
 //   type case Text
-//         of $TextFragment Bytes     Int32 (length in ... bytes?)
-//         of $TextConcat   Text Text Int32
+//         of $TextFragment (Array Int8) Int32 (length in ... bytes?)
+//         of $TextConcat   Text  Text   Int32
 
 mkTextConcat = { a : Text => b : Text =>
   lensum = (textLength a) +Int32 (textLength b);
@@ -52,14 +52,14 @@ textFoldASCII = { forall a:Type, t : Text => f : { Int8 => a => a } => acc:a =>
 
 expect_text_bare = { s : Text =>
   case s
-    of $TextFragment a n     -> prim_print_bytes_stderr a n; n
+    of $TextFragment a n     -> prim_print_bytes_stderr a n 0; n
     of $TextConcat   s1 s2 n -> expect_text_bare s1; expect_text_bare s2; n
    end;
 };
 
 print_text_bare = { s : Text =>
   case s
-    of $TextFragment a n     -> prim_print_bytes_stdout a n; n
+    of $TextFragment a n     -> prim_print_bytes_stdout a n 0; n
     of $TextConcat   s1 s2 n -> print_text_bare s1; print_text_bare s2; n
    end;
 };

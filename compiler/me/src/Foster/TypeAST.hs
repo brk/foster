@@ -213,8 +213,8 @@ primitiveDecls =
     ,(,) "memcpy_i8_to_at_from_at_len" $ mkProcType [ArrayTypeAST i8, i64,
                                                    ArrayTypeAST i8, i64, i64] [i8]
 
-    ,(,) "prim_print_bytes_stdout" $ mkProcType [ArrayTypeAST i8, i32] []
-    ,(,) "prim_print_bytes_stderr" $ mkProcType [ArrayTypeAST i8, i32] []
+    ,(,) "prim_print_bytes_stdout" $ mkProcType [ArrayTypeAST i8, i32, i32] []
+    ,(,) "prim_print_bytes_stderr" $ mkProcType [ArrayTypeAST i8, i32, i32] []
 
     ,(,) "print_float_p9f64"       $ mkProcType [f64] []
     ,(,) "expect_float_p9f64"      $ mkProcType [f64] []

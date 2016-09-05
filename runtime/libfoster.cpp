@@ -305,9 +305,14 @@ void fprint_i32b(FILE* f, int32_t x) { fprint_b2<32>(f, x); }
 
 void fprint_i8b(FILE* f, int8_t x) { fprint_b2<8>(f, x); }
 
-void fprint_bytes(FILE* f, foster_bytes* array, uint32_t n) {
+void fprint_bytes_from(FILE* f, foster_bytes* array, uint32_t n, uint32_t off) {
   uint32_t c = array->cap;
-  fprintf(f, "%.*s", (std::min)(n, c), &array->bytes[0]);
+  uint32_t lim = (std::min)(n + off, c);
+  // If (n + off) overflows, then lim < off,
+  if (lim > off) {
+    uint32_t size = lim - off;
+    fprintf(f, "%.*s", size, &array->bytes[off]);
+  }
 }
 
 template<typename T>
@@ -402,12 +407,12 @@ void print_addr(void* x) { fprintf(stdout, "addr: %p\n", x); }
 void print_newline()  { fprintf(stdout, "\n"); }
 void expect_newline() { fprintf(stderr, "\n"); }
 
-void prim_print_bytes_stdout(foster_bytes* array, uint32_t n) {
-  fprint_bytes(stdout, array, n);
+void prim_print_bytes_stdout(foster_bytes* array, uint32_t n, uint32_t off) {
+  fprint_bytes_from(stdout, array, n, off);
 }
 
-void prim_print_bytes_stderr(foster_bytes* array, uint32_t n) {
-  fprint_bytes(stderr, array, n);
+void prim_print_bytes_stderr(foster_bytes* array, uint32_t n, uint32_t off) {
+  fprint_bytes_from(stderr, array, n, off);
 }
 
 // to[0..req_len] = from[req_at..req_at+req_len]

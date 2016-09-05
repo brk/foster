@@ -5,14 +5,14 @@ main = {
 
 expect_text = { s : Text =>
   case s
-    of $TextFragment a n     -> prim_print_bytes_stderr a n; n
+    of $TextFragment a n     -> prim_print_bytes_stderr a n 0; n
     of $TextConcat   s1 s2 n -> expect_text s1; expect_text s2; n
    end;
 };
 
 print_text = { s : Text =>
   case s
-    of $TextFragment a n     -> prim_print_bytes_stdout a n; n
+    of $TextFragment a n     -> prim_print_bytes_stdout a n 0; n
     of $TextConcat   s1 s2 n -> print_text s1; print_text s2; n
    end;
 };
