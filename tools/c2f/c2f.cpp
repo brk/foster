@@ -104,8 +104,8 @@ std::string getCompoundTextWithoutBraces(const Rewriter &R, const Stmt* mb_comp)
 
 std::string tyOpSuffix(const clang::Type* ty) {
   if (ty->isCharType()) return "Int8";
-  if (ty->isSpecificBuiltinType(BuiltinType::UShort)) return "Int32";
-  if (ty->isSpecificBuiltinType(BuiltinType::Short)) return "Int32";
+  if (ty->isSpecificBuiltinType(BuiltinType::UShort)) return "Int32_16";
+  if (ty->isSpecificBuiltinType(BuiltinType::Short)) return "Int32_16";
   if (ty->isSpecificBuiltinType(BuiltinType::UInt)) return "Int32";
   if (ty->isSpecificBuiltinType(BuiltinType::Int)) return "Int32";
   if (ty->isSpecificBuiltinType(BuiltinType::ULong)) return "Int64";
