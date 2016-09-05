@@ -192,7 +192,7 @@ std::string tyName(const clang::Type* ty, std::string defaultName = "C2FUNK") {
       return tyName(pty->getPointeeType().getTypePtr());
     }
 
-    return "(Array " + tyName(pty->getPointeeType().getTypePtr()) + ")";
+    return "(Ptr " + tyName(pty->getPointeeType().getTypePtr()) + ")";
   }
 
   if (const ConstantArrayType* cat = dyn_cast<ConstantArrayType>(ty)) {
@@ -507,6 +507,11 @@ enum ContextKind {
   BooleanContext
 };
 
+enum IfExprOrStmt {
+  AnIfExpr,
+  AnIfStmt,
+};
+
 std::unique_ptr<CFG>
   C2F_buildCFG(const Decl *D, Stmt *Statement, ASTContext *C, const CFG::BuildOptions &BO);
 
@@ -514,14 +519,20 @@ class MyASTConsumer : public ASTConsumer {
 public:
   MyASTConsumer(Rewriter &R) : lastloc(), R(R) { }
 
-  void handleIfThenElse(ContextKind ctx, const Stmt* cnd, const Stmt* thn, const Stmt* els) {
+  void handleIfThenElse(ContextKind ctx, IfExprOrStmt ies, const Stmt* cnd, const Stmt* thn, const Stmt* els) {
     llvm::outs() << "if ";
     visitStmt(cnd, BooleanContext);
     llvm::outs() << " then ";
     visitStmt(thn, ctx);
+    if (ies == AnIfStmt || !els) {
+      llvm::outs() << "; ()";
+    }
     if (els) {
       llvm::outs() << " else ";
       visitStmt(els, ctx);
+      if (ies == AnIfStmt) {
+        llvm::outs() << "; ()";
+      }
     }
     llvm::outs() << " end";
   }
@@ -835,7 +846,7 @@ public:
 
   bool tryHandleAtomicExpr(const Stmt* stmt, ContextKind ctx) {
     if (const ConditionalOperator* co = dyn_cast<ConditionalOperator>(stmt)) {
-      handleIfThenElse(ctx, co->getCond(), co->getTrueExpr(), co->getFalseExpr());
+      handleIfThenElse(ctx, AnIfExpr, co->getCond(), co->getTrueExpr(), co->getFalseExpr());
       return true;
     }
     if (isNumericLiteral(stmt)) {
@@ -927,6 +938,16 @@ public:
     translateWhileLoop(fs, "while", fs->getInc());
   }
 
+  std::string fosterizedNameChars(std::string nm) {
+    for (size_t i = 0; i < nm.size(); ++i) {
+      char c = nm[i];
+      if (c == ' ' || c == '(' || c == ')') {
+        nm[i] = '_';
+      }
+    }
+    return nm;
+  }
+
   void handleIncrDecr(const std::string& incdec, const UnaryOperator* unop) {
       if (const ArraySubscriptExpr* ase = dyn_cast<ArraySubscriptExpr>(unop->getSubExpr())) {
         llvm::outs() << "(" << incdec << "Array" << tyName(unop) << " ";
@@ -935,7 +956,7 @@ public:
         visitStmt(ase->getIdx());
         llvm::outs() << ")";
       } else {
-        llvm::outs() << "(" << incdec << tyName(unop) << " ";
+        llvm::outs() << "(" << incdec << fosterizedNameChars(tyName(unop)) << " ";
         visitStmt(unop->getSubExpr(), AssignmentTarget);
         llvm::outs() << ")";
       }
@@ -1064,8 +1085,9 @@ The corresponding AST to be matched is
     } else if (unop->getOpcode() == UO_AddrOf) {
       visitStmt(unop->getSubExpr(), AssignmentTarget);
     } else if (unop->getOpcode() == UO_Deref) {
+      llvm::outs() << "(ptrGet ";
       visitStmt(unop->getSubExpr());
-      llvm::outs() << "^";
+      llvm::outs() << ")";
     } else {
       llvm::outs() << "/* line 424\n";
       llvm::outs().flush();
@@ -1145,6 +1167,16 @@ The corresponding AST to be matched is
         visitStmt(ce->getArg(1));
         llvm::outs() << ")";
         return true;
+      } else if (slit->getString() == "%s\n") {
+        std::string tynm = tyName(ce->getArg(1)->getType().getTypePtr());
+        if (tynm == "(Ptr Int8)") {
+          llvm::outs() << "(printStr ";
+          visitStmt(ce->getArg(1));
+          llvm::outs() << ")";
+          return true;
+        }
+        llvm::errs() << "printf %s format for type " << tynm << "\n";
+        return false;
       }
     }
     return false;
@@ -1334,6 +1366,12 @@ The corresponding AST to be matched is
      || name == "of" || name == "as" || name == "then" || name == "end"
      || name == "in") {
       return name + "_";
+    }
+    if (name.empty()) {
+      return "__empty__";
+    }
+    if (isupper(name[0])) {
+      return "v_" + name;
     }
     return name;
   }
@@ -1540,7 +1578,7 @@ The corresponding AST to be matched is
     }
 
     if (const IfStmt* ifs = dyn_cast<IfStmt>(stmt)) {
-      handleIfThenElse(ctx, ifs->getCond(), ifs->getThen(), ifs->getElse());
+      handleIfThenElse(ctx, AnIfStmt, ifs->getCond(), ifs->getThen(), ifs->getElse());
     } else if (const ForStmt* fs = dyn_cast<ForStmt>(stmt)) {
       if (tryHandleEnumRange(fs)) {
         // done
@@ -1552,7 +1590,7 @@ The corresponding AST to be matched is
     } else if (const DoStmt* ws = dyn_cast<DoStmt>(stmt)) {
       translateWhileLoop(ws, "do-while", nullptr);
     } else if (const ConditionalOperator* co = dyn_cast<ConditionalOperator>(stmt)) {
-      handleIfThenElse(ctx, co->getCond(), co->getTrueExpr(), co->getFalseExpr());
+      handleIfThenElse(ctx, AnIfExpr, co->getCond(), co->getTrueExpr(), co->getFalseExpr());
     } else if (const ParenExpr* pe = dyn_cast<ParenExpr>(stmt)) {
       if (tryHandleAtomicExpr(pe->getSubExpr(), ctx)) {
         // done
@@ -1623,7 +1661,7 @@ The corresponding AST to be matched is
           bool useTriple = data.count('\n') > 1;
           // TODO must also check the str doesn't contain 3 consecutive dquotes.
           // TODO distinguish text vs byte strings...?
-          llvm::outs() << "b" << (useTriple ? "\"\"\"" : "\"");
+          llvm::outs() << "(strLit " << "b" << (useTriple ? "\"\"\"" : "\"");
           for (char c : data) {
               switch(c) {
               case '\n': llvm::outs() << (useTriple ? "\n" : "\\n"); break;
@@ -1641,9 +1679,12 @@ The corresponding AST to be matched is
           }
           llvm::outs() << "\\x00";
           llvm::outs() << (useTriple ? "\"\"\"" : "\"");
+          llvm::outs() << ")";
         } else {
           llvm::outs() << "// non UTF8 string\n";
+          llvm::outs() << "(strLit ";
           lit->outputString(llvm::outs());
+          llvm::outs() << ")";
         }
       }
     } else if (const FloatingLiteral* lit = dyn_cast<FloatingLiteral>(stmt)) {
@@ -1750,21 +1791,25 @@ The corresponding AST to be matched is
         }
       }
 
-      size_t childno = 0;
-      for (const Stmt* c : cs->children()) {
-        visitStmt(c);
+      if (numPrintingChildren == 0) {
+        llvm::outs() << "()\n";
+      } else {
+        size_t childno = 0;
+        for (const Stmt* c : cs->children()) {
+          visitStmt(c);
 
-        if (isa<CompoundStmt>(c) || isa<BreakStmt>(c)) {
-          // don't print another semicolon
-        } else if (childno == numPrintingChildren - 1) {
-          // We need to print a semicolon when compound statments
-          // are embedded within other compound statments,
-          // but not when they appear within switch cases...
-          llvm::outs() << ";/*clast*/\n";
-        } else {
-          llvm::outs() << ";\n";
+          if (isa<CompoundStmt>(c) || isa<BreakStmt>(c)) {
+            // don't print another semicolon
+          } else if (childno == numPrintingChildren - 1) {
+            // We need to print a semicolon when compound statments
+            // are embedded within other compound statments,
+            // but not when they appear within switch cases...
+            llvm::outs() << ";/*clast*/\n";
+          } else {
+            llvm::outs() << ";\n";
+          }
+          ++childno;
         }
-        ++childno;
       }
     } else if (const DeclStmt* ds = dyn_cast<DeclStmt>(stmt)) {
       const Decl* last = *(ds->decls().end() - 1);
