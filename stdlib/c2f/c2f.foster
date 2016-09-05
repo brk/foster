@@ -69,3 +69,7 @@ type case ArrPtr (a:Type)
 
 incrArrPtr :: forall (a:Type) { ArrPtr a => ArrPtr a };
 incrArrPtr = { v => case v of $ArrPtr a x -> ArrPtr a (x +Int64 1) end };
+
+(+Int32_16) = { a : Int32 => b : Int32 =>
+  (a +Int32 b) `bitand-Int32` 0xFFFF;
+};
