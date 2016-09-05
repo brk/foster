@@ -520,21 +520,30 @@ public:
   MyASTConsumer(Rewriter &R) : lastloc(), R(R) { }
 
   void handleIfThenElse(ContextKind ctx, IfExprOrStmt ies, const Stmt* cnd, const Stmt* thn, const Stmt* els) {
+    bool needTrailingUnit = ies == AnIfStmt && !isCompoundWithTrailingReturn(thn);
     llvm::outs() << "if ";
     visitStmt(cnd, BooleanContext);
     llvm::outs() << " then ";
     visitStmt(thn, ctx);
-    if (ies == AnIfStmt || !els) {
+    if (needTrailingUnit || !els) {
       llvm::outs() << "; ()";
     }
     if (els) {
       llvm::outs() << " else ";
       visitStmt(els, ctx);
-      if (ies == AnIfStmt) {
+      if (needTrailingUnit) {
         llvm::outs() << "; ()";
       }
     }
     llvm::outs() << " end";
+  }
+
+  bool isCompoundWithTrailingReturn(const Stmt* s) {
+    if (auto cs = dyn_cast<CompoundStmt>(s)) {
+      if (cs->size() == 0) return false;
+      return isa<ReturnStmt>(cs->body_back());
+    }
+    return false;
   }
 
   std::string getBlockName(const CFGBlock& cb) {
@@ -1402,7 +1411,7 @@ The corresponding AST to be matched is
       break;
     case CK_ToVoid:
       if (isa<IntegerLiteral>(ce->getSubExpr()->IgnoreParens())) {
-        llvm::outs() << "()";
+        llvm::outs() << "(tovoid = (); tovoid)";
       } else {
         visitStmt(ce->getSubExpr(), ctx);
       }
@@ -1781,7 +1790,7 @@ The corresponding AST to be matched is
         }
         llvm::outs() << ")";
       }
-    } else if (const CompoundStmt* cs = dyn_cast<CompoundStmt>(stmt)) {
+    } else if (auto cs = dyn_cast<CompoundStmt>(stmt)) {
 
       size_t numPrintingChildren = cs->size();
       for (const Stmt* c : cs->children()) {
@@ -1792,7 +1801,7 @@ The corresponding AST to be matched is
       }
 
       if (numPrintingChildren == 0) {
-        llvm::outs() << "()\n";
+        llvm::outs() << "(empty = (); empty)\n";
       } else {
         size_t childno = 0;
         for (const Stmt* c : cs->children()) {
