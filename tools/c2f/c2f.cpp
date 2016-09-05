@@ -155,6 +155,14 @@ bool isVoidPtr(const Type* inp_ty) {
   return ty && ty->isVoidType();
 }
 
+bool isTrivialIntegerLiteral(const Expr* e) {
+  if (auto lit = dyn_cast<IntegerLiteral>(e)) {
+    auto se = lit->getValue().getSExtValue();
+    return se >= 0 && se <= 127;
+  }
+  return false;
+}
+
 std::string tyName(const clang::Type* ty, std::string defaultName = "C2FUNK") {
   if (ty->isCharType()) return "Int8";
   if (ty->isSpecificBuiltinType(BuiltinType::UShort)) return "Int32";
@@ -539,11 +547,8 @@ public:
   }
 
   bool isCompoundWithTrailingReturn(const Stmt* s) {
-    if (auto cs = dyn_cast<CompoundStmt>(s)) {
-      if (cs->size() == 0) return false;
-      return isa<ReturnStmt>(cs->body_back());
-    }
-    return false;
+    auto fin = lastStmtWithin(s);
+    return (fin && isa<ReturnStmt>(fin));
   }
 
   std::string getBlockName(const CFGBlock& cb) {
@@ -939,6 +944,8 @@ public:
       visitStmt(stmt->getBody());
       // If the body wasn't a compound, we'll be missing a semicolon...
       if (extra) { llvm::outs() << "\n"; visitStmt(extra); }
+
+      llvm::outs() << ";\n()";
     llvm::outs() << "}";
   }
 
@@ -1440,12 +1447,15 @@ The corresponding AST to be matched is
       break;
     case CK_IntegralCast: {
       std::string cast = "";
-      if (isa<IntegerLiteral>(ce->getSubExpr())
+
+      ce->getSubExpr()->dump();
+      if (isTrivialIntegerLiteral(ce->getSubExpr())
        || isa<CharacterLiteral>(ce->getSubExpr())) {
         // don't print anything, no cast needed
       } else {
         std::string srcTy = tyName(exprTy(ce->getSubExpr())) ;
         std::string dstTy = tyName(exprTy(ce));
+
         if (srcTy != dstTy) {
           cast = intCastFromTo(srcTy, dstTy, exprTy(ce)->isSignedIntegerType());
         } else if (exprTy(ce)->isSpecificBuiltinType(BuiltinType::UShort)
