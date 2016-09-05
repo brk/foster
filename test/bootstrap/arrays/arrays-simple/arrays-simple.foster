@@ -45,7 +45,7 @@ newDArray8 = { n : Int32 => f : { Int32 => Int8 } =>
 
 expect_text = { s : Text =>
   case s
-    of $TextFragment a n     -> prim_print_bytes_stderr a n; n
+    of $TextFragment a n     -> prim_print_bytes_stderr a n 0; n
     of $TextConcat   s1 s2 n -> expect_text s1; expect_text s2; n
    end;
 };
@@ -59,7 +59,7 @@ arrays8 = {
   print_i8 a[opaquely_i32 2];
 
   (trunc32to8 0) >^ a[3];
-  prim_print_bytes_stdout a 6;
+  prim_print_bytes_stdout a 6 0;
   expect_abc !;
 
   expect_i32 k;

@@ -61,5 +61,5 @@ test-utf8-encoding = {
 };
 
 print-bytes = { a : Array Int8 =>
-  prim_print_bytes_stdout a (arrayLength32 a); print_newline !; ()
+  prim_print_bytes_stdout a (arrayLength32 a) 0; print_newline !; ()
 };
