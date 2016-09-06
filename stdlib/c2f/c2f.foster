@@ -4,6 +4,9 @@ type case Field (a:Type)
   of $Field (Ref a)
 ;
 
+mkField :: forall (a:Type) { a => Field a };
+mkField = { v => Field (prim ref v) };
+
 getField :: forall (a:Type) { Field a => a };
 getField = { f => case f of $Field a -> a^ end };
 
