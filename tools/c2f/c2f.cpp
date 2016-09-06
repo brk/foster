@@ -163,6 +163,15 @@ bool isTrivialIntegerLiteral(const Expr* e) {
   return false;
 }
 
+std::string fosterizedTypeName(std::string rv) {
+  if ((!rv.empty()) && islower(rv[0])) {
+    rv[0] = toupper(rv[0]);
+  }
+  return rv;
+}
+
+std::string maybeNonUppercaseTyName(const clang::Type* ty, std::string defaultName);
+
 std::string tyName(const clang::Type* ty, std::string defaultName = "C2FUNK") {
   if (ty->isCharType()) return "Int8";
   if (ty->isSpecificBuiltinType(BuiltinType::UShort)) return "Int32";
@@ -177,6 +186,12 @@ std::string tyName(const clang::Type* ty, std::string defaultName = "C2FUNK") {
   if (ty->isSpecificBuiltinType(BuiltinType::Double)) return "Float64";
 
   if (ty->isSpecificBuiltinType(BuiltinType::Void)) return "()";
+
+  return fosterizedTypeName(maybeNonUppercaseTyName(ty, defaultName));
+}
+
+
+std::string maybeNonUppercaseTyName(const clang::Type* ty, std::string defaultName) {
 
   if (auto dc = dyn_cast<DecayedType>(ty)) {
     std::string fnty = tryParseFnTy(dc->getDecayedType().getTypePtr());
@@ -243,6 +258,7 @@ std::string tyName(const clang::Type* ty, std::string defaultName = "C2FUNK") {
   }
   return defaultName;
 }
+
 
 std::string fnTyName(const FunctionProtoType* fpt) {
   std::string rv = "{";
@@ -601,8 +617,7 @@ public:
 
   // TODO support ternary conditional operators in CFGs
   void emitJumpTo(CFGBlock::AdjacentBlock* ab, bool hasValue = true) {
-    if (ab->isReachable()) {
-      CFGBlock* next = ab->getReachableBlock();
+    if (CFGBlock* next = ab->getReachableBlock()) {
       if (isExitBlock(next)) {
         if (!hasValue) {
           llvm::outs() << "(jump = (); jump)";
@@ -610,9 +625,10 @@ public:
       } else {
         llvm::outs() << getBlockName(*next) << " !;\n";
       }
-    } else {
-      CFGBlock* next = ab->getPossiblyUnreachableBlock();
+    } else if (CFGBlock* next = ab->getPossiblyUnreachableBlock()) {
       llvm::outs() << getBlockName(*next) << " !; // unreachable\n";
+    } else {
+      llvm::outs() << "prim kill-entire-process \"no-next-block\"";
     }
   }
 
@@ -733,7 +749,21 @@ public:
         CFGElement ce = *cbit;
         if (ce.getKind() == CFGElement::Kind::Statement) {
           if (const Stmt* s = ce.castAs<CFGStmt>().getStmt()) {
-            if (!isa<DeclStmt>(s)) {
+            if (auto ds = dyn_cast<DeclStmt>(s)) {
+              // If we see a (mutable) variable declaration in a loop,
+              // we must re-initialize the variable.
+              if (ds->isSingleDecl()) {
+                if (const VarDecl* vd = dyn_cast<VarDecl>(ds->getSingleDecl())) {
+                  if (vd->hasInit() && mutableLocals[vd->getName()]) {
+                    llvm::outs() << "(";
+                    visitStmt(vd->getInit());
+                    llvm::outs() << ") >^ " << emitVarName(vd) << ";\n";
+                  }
+                }
+              } else {
+                llvm::outs() << "/*skipped multi decl*/\n";
+              }
+            } else {
               currStmt = s;
               visitStmt(s);
               currStmt = nullptr;
@@ -1780,14 +1810,14 @@ The corresponding AST to be matched is
       if (ile->isStringLiteralInit()) {
         llvm::outs() << "// WARNING: string literal init...?\n";
       }
-      // TODO should sometimes become struct ctor calls, not array literals.
-      llvm::errs() << "InitListExpr has type:\n";
-      ile->getType().getTypePtr()->dump();
+
       if (auto rt = bindRecordType(ile->getType().getTypePtr())) {
-        llvm::outs() << "(" << tyName(rt);
+        // We use the name of the expr type rather than the record type
+        // because the former works correctly for anonymous typedef'd records.
+        llvm::outs() << "(" << tyName(ile->getType().getTypePtr());
         for (unsigned i = 0; i < ile->getNumInits(); ++i) {
           llvm::outs() << " ";
-          llvm::outs() << "(Field ";
+          llvm::outs() << "(mkField ";
           visitStmt(ile->getInit(i));
           llvm::outs() << ")";
         }
@@ -1873,6 +1903,7 @@ The corresponding AST to be matched is
     if (TypedefNameDecl* tnd = rd->getTypedefNameForAnonDecl()) {
       name = tnd->getName();
     }
+    name = fosterizedTypeName(name);
 
     if (name == "") {
       llvm::outs() << "// TODO handle this better...\n";
@@ -2133,3 +2164,8 @@ int main(int argc, const char **argv) {
 //       struct S ss; struct S* ps = &ss; S_init(ps);
 //    should have a better translation than
 //       ss = (ref None); ps = ss; S_init ps;
+//
+// Other notes:
+//   * If the input program defines two types differing only in the case
+//     of the first letter (e.g. 'foo' and 'Foo'),
+//     we won't properly distinguish the two (both become Foo).
