@@ -904,8 +904,7 @@ public:
 
   void emitPeek(const Expr* base, const Expr* idx) {
       std::string tynm = tyName(exprTy(base));
-      bool rawArray = startswith(tynm, "(Array");
-      if (rawArray) {
+      if (startswith(tynm, "(Array")) {
         visitStmt(base);
         llvm::outs() << "[";
         visitStmt(idx);
@@ -921,62 +920,49 @@ public:
 
   void emitPokeIdx(const Expr* base, const Expr* idx, const Expr* val) {
       std::string tynm = tyName(exprTy(base));
-      bool rawArray = startswith(tynm, "(Array");
-      if (rawArray) {
-        llvm::outs() << "(";
-        visitStmt(val);
-        llvm::outs() << " >^ (";
-        visitStmt(base);
-        llvm::outs() << "[";
-        visitStmt(idx);
-        llvm::outs() << "] ) )";
-      } else {
+      if (startswith(tynm, "(Ptr")) {
         llvm::outs() << "(ptrSetIndex ";
         visitStmt(base);
         llvm::outs() << " ";
         visitStmt(idx);
         llvm::outs() << " ";
         visitStmt(val);
-        llvm::outs() << ")";
+        llvm::outs() << ");";
+      } else {
+        llvm::outs() << "(";
+        visitStmt(val);
+        llvm::outs() << " >^ (";
+        visitStmt(base);
+        llvm::outs() << "[";
+        visitStmt(idx);
+        llvm::outs() << "] ) );";
       }
   }
 
   void emitPoke(const Expr* ptr, const Expr* val) {
       std::string tynm = tyName(exprTy(ptr));
-      bool rawArray = startswith(tynm, "(Array");
-      if (rawArray) {
-        llvm::outs() << "((";
-        visitStmt(val);
-        llvm::outs() << ") >^ (";
-        visitStmt(ptr, AssignmentTarget);
-        llvm::outs() << "))";
-      } else if (auto ase = dyn_cast<ArraySubscriptExpr>(ptr)) {
+
+      if (auto ase = dyn_cast<ArraySubscriptExpr>(ptr)) {
         emitPokeIdx(ase->getBase(), ase->getIdx(), val);
-      } else {
+      } else if (startswith(tynm, "(Ptr")) {
         llvm::outs() << "(ptrSet (";
         visitStmt(ptr);
         llvm::outs() << ") (";
         visitStmt(val);
-        llvm::outs() << "))";
+        llvm::outs() << "));";
+      } else {
+        llvm::outs() << "((";
+        visitStmt(val);
+        llvm::outs() << ") >^ (";
+        visitStmt(ptr, AssignmentTarget);
+        llvm::outs() << ")) /*poke*/;";
       }
   }
 
   void emitPoke(const VarDecl* ptr, const Expr* val) {
-      std::string tynm = tyName(exprTy(ptr));
-      bool rawArray = startswith(tynm, "(Array");
-      if (rawArray) {
-        llvm::outs() << "((";
-        visitStmt(val);
-        llvm::outs() << ") >^ (";
-        emitVarName(ptr);
-        llvm::outs() << "))";
-      } else {
-        llvm::outs() << "(ptrSet (";
-        emitVarName(ptr);
-        llvm::outs() << ") (";
-        visitStmt(val);
-        llvm::outs() << "))";
-      }
+      llvm::outs() << "((";
+      visitStmt(val);
+      llvm::outs() << ") >^ " << emitVarName(ptr) << ");";
   }
 
   bool isNumericLiteral(const Stmt* stmt) {
