@@ -719,6 +719,7 @@ void addAndEmitTo(Function* f, BasicBlock* bb) {
 
 ConstantInt* getTagForCtorId(const CtorId& c) {
          if (c.typeName == "Bool")  { return builder.getInt1( c.ctorRepr.smallId);
+  } else if (c.typeName == "Int16") { return builder.getInt16(c.ctorRepr.smallId);
   } else if (c.typeName == "Int32") { return builder.getInt32(c.ctorRepr.smallId);
   } else if (c.typeName == "Int64") { return builder.getInt64(c.ctorRepr.smallId);
   } else if (c.typeName == "Word")  { return is32Bit()
@@ -756,7 +757,7 @@ void codegenSwitch(CodegenPass* pass, LLSwitch* sw, llvm::Value* insp_tag) {
 
     ASSERT(si->getCondition()->getType() == onVal->getType())
         << "switch case and inspected value had different types!\n"
-        << "SwitchCase ctor " << (i+1) << "/" << sw->ctors.size()
+        << "SwitchCase ctor " << (i+1) << " of " << sw->ctors.size()
            << ": " << c.typeName << "." << c.ctorName << "#" << c.ctorRepr.smallId
         << "\ncond type: " << str(si->getCondition()->getType())
                       << "; val type: " << str(onVal->getType());
