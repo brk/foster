@@ -598,6 +598,7 @@ desugarParsedModule tcenv m = do
           TyAppP (TyConP "WordX2")    [] -> return $ PrimIntAST         IDw
           TyAppP (TyConP "Int64" )    [] -> return $ PrimIntAST         I64
           TyAppP (TyConP "Int32" )    [] -> return $ PrimIntAST         I32
+          TyAppP (TyConP "Int16" )    [] -> return $ PrimIntAST         I16
           TyAppP (TyConP "Int8"  )    [] -> return $ PrimIntAST         I8
           TyAppP (TyConP "Bool"  )    [] -> return $ PrimIntAST         I1
           TyAppP (TyConP "Array" )   [t] -> liftM  ArrayTypeAST            (q t)

@@ -163,11 +163,10 @@ effectYield inp outp = effectExtend (TyAppAST (TyConAST "Yield") [inp, outp]) nu
 --------------------------------------------------------------------------------
 
 i8  = PrimIntAST I8
+i16 = PrimIntAST I16
 i32 = PrimIntAST I32
 i64 = PrimIntAST I64
 i1  = PrimIntAST I1
-iw0 = PrimIntAST IWd
-iw1 = PrimIntAST IDw
 f64 = TyAppAST (TyConAST "Float64") []
 
 primTyVars tyvars = map (\v -> (v, KindAnySizeType)) tyvars
@@ -194,6 +193,8 @@ primitiveDecls =
     ,(,)  "print_i8x"  $ mkProcType [i8] []
     ,(,) "expect_i8b"  $ mkProcType [i8] []
     ,(,)  "print_i8b"  $ mkProcType [i8] []
+    ,(,) "expect_i16"  $ mkProcType [i16] []
+    ,(,)  "print_i16"  $ mkProcType [i16] []
     ,(,) "expect_i32b" $ mkProcType [i32] []
     ,(,)  "print_i32b" $ mkProcType [i32] []
     ,(,) "expect_i64b" $ mkProcType [i64] []
@@ -346,21 +347,97 @@ flonumPrimitives tystr ty =
   ,mkPrim "muladd"  $ mkProcType [ty, ty, ty] [ty]
   ]
 
+data IntSizedBitsCmp = ISB_DefinitelySmaller
+                     | ISB_DefinitelyLarger
+                     | ISB_EqualOrLarger
+                     | ISB_EqualOrSmaller
+                     | ISB_Equal
+
+allSizes = [I32, I64, I8, I16, IWd, IDw]
+allSizePairs = [(a, b) | a <- allSizes, b <- allSizes]
+
+isbCompare a b =
+  if a == b then ISB_Equal
+    else case (a, b) of
+            (I1,  _)   -> ISB_DefinitelySmaller
+            (I8,  _)   -> ISB_DefinitelySmaller
+            (I16, _)   -> ISB_DefinitelySmaller
+
+            (I32, IWd) -> ISB_EqualOrSmaller
+            (I32, I64) -> ISB_DefinitelySmaller
+            (I32, IDw) -> ISB_DefinitelySmaller
+            (I32, _  ) -> ISB_DefinitelyLarger
+
+            (I64, IWd) -> ISB_EqualOrLarger
+            (I64, IDw) -> ISB_EqualOrSmaller
+            (I64, _  ) -> ISB_DefinitelyLarger
+
+            (IWd, IDw) -> ISB_DefinitelySmaller
+            (IWd, I64) -> ISB_EqualOrSmaller
+            (IWd, _  ) -> ISB_DefinitelyLarger
+
+            (IDw, I64) -> ISB_EqualOrLarger
+            (IDw, _  ) -> ISB_DefinitelyLarger
+
+isSmaller (a, b) =
+  case isbCompare a b of
+     ISB_DefinitelySmaller -> True
+     ISB_DefinitelyLarger  -> False
+     ISB_EqualOrLarger     -> False
+     ISB_EqualOrSmaller    -> True
+     ISB_Equal             -> False
+
+isLarger (a, b) =
+  case isbCompare a b of
+     ISB_DefinitelySmaller -> False
+     ISB_DefinitelyLarger  -> True
+     ISB_EqualOrLarger     -> True
+     ISB_EqualOrSmaller    -> False
+     ISB_Equal             -> False
+
+sizeConversions = [mkTruncate p | p <- allSizePairs, isLarger  p] ++
+                  [mkSignExt  p | p <- allSizePairs, isSmaller p] ++
+                  [mkZeroExt  p | p <- allSizePairs, isSmaller p]
+  where
+    mkSignExt  (a, b) = (,) (mkSignExtName  a b)     $ (,) (mkFnType [PrimIntAST a] [PrimIntAST b] ) $ PrimOp ("sext_" ++ i b) (PrimIntAST a)
+    mkZeroExt  (a, b) = (,) (mkZeroExtName  a b)     $ (,) (mkFnType [PrimIntAST a] [PrimIntAST b] ) $ PrimOp ("zext_" ++ i b) (PrimIntAST a)
+    mkTruncate (a, b) = (,) (mkTruncateName a b)     $ (,) (mkFnType [PrimIntAST a] [PrimIntAST b] ) $ PrimIntTrunc a b
+    mkTruncateName a b = "trunc_" ++ i a ++ "_to_" ++ i b
+    mkSignExtName  a b = "sext_"  ++ i a ++ "_to_" ++ i b
+    mkZeroExtName  a b = "zext_"  ++ i a ++ "_to_" ++ i b
+
+    i IWd = "Word"
+    i IDw = "WordX2"
+    i I1  = "Bool"
+    i I8  = "i8"
+    i I16 = "i16"
+    i I32 = "i32"
+    i I64 = "i64"
+
 -- These primitive names are known to the interpreter and compiler backends.
 gFosterPrimOpsTable :: Map.Map String (TypeAST, FosterPrim TypeAST)
 gFosterPrimOpsTable = Map.fromList $
   [(,) "not"                  $ (,) (mkFnType [i1]  [i1]  ) $ PrimOp "bitnot" i1
   ,(,) "==Bool"               $ (,) (mkFnType [i1,i1][i1] ) $ PrimOp "==" i1
+  {-
   ,(,) "sext_i32_to_i64"      $ (,) (mkFnType [i32] [i64] ) $ PrimOp "sext_i64" i32
   ,(,) "zext_i32_to_i64"      $ (,) (mkFnType [i32] [i64] ) $ PrimOp "zext_i64" i32
   ,(,) "zext_Word_to_i64"     $ (,) (mkFnType [iw0] [i64] ) $ PrimOp "zext_i64" iw0
   ,(,) "sext_Word_to_i64"     $ (,) (mkFnType [iw0] [i64] ) $ PrimOp "sext_i64" iw0
+  ,(,) "sext_i8_to_i16"       $ (,) (mkFnType [i8 ] [i16] ) $ PrimOp "sext_i16" i8
+  ,(,) "zext_i8_to_i16"       $ (,) (mkFnType [i8 ] [i16] ) $ PrimOp "zext_i16" i8
   ,(,) "sext_i8_to_i32"       $ (,) (mkFnType [i8 ] [i32] ) $ PrimOp "sext_i32" i8
   ,(,) "zext_i8_to_i32"       $ (,) (mkFnType [i8 ] [i32] ) $ PrimOp "zext_i32" i8
   ,(,) "sext_i8_to_i64"       $ (,) (mkFnType [i8 ] [i64] ) $ PrimOp "sext_i64" i8
   ,(,) "zext_i8_to_i64"       $ (,) (mkFnType [i8 ] [i64] ) $ PrimOp "zext_i64" i8
   ,(,) "sext_i8_to_Word"      $ (,) (mkFnType [i8 ] [iw0] ) $ PrimOp "sext_Word"   i8
   ,(,) "zext_i8_to_Word"      $ (,) (mkFnType [i8 ] [iw0] ) $ PrimOp "zext_Word"   i8
+  ,(,) "sext_i16_to_i32"      $ (,) (mkFnType [i16] [i32] ) $ PrimOp "sext_i32"    i16
+  ,(,) "zext_i16_to_i32"      $ (,) (mkFnType [i16] [i32] ) $ PrimOp "zext_i32"    i16
+  ,(,) "sext_i16_to_i64"      $ (,) (mkFnType [i16] [i64] ) $ PrimOp "sext_i64"    i16
+  ,(,) "zext_i16_to_i64"      $ (,) (mkFnType [i16] [i64] ) $ PrimOp "zext_i64"    i16
+  ,(,) "sext_i16_to_Word"     $ (,) (mkFnType [i16] [iw0] ) $ PrimOp "sext_Word"   i16
+  ,(,) "zext_i16_to_Word"     $ (,) (mkFnType [i16] [iw0] ) $ PrimOp "zext_Word"   i16
   ,(,) "sext_i32_to_Word"     $ (,) (mkFnType [i32] [iw0] ) $ PrimOp "sext_Word"   i32
   ,(,) "zext_i32_to_Word"     $ (,) (mkFnType [i32] [iw0] ) $ PrimOp "zext_Word"   i32
   ,(,) "zext_i32_to_WordX2"   $ (,) (mkFnType [i32] [iw1] ) $ PrimOp "zext_WordX2" i32
@@ -368,12 +445,15 @@ gFosterPrimOpsTable = Map.fromList $
   ,(,) "sext_Word_to_WordX2"  $ (,) (mkFnType [iw0] [iw1] ) $ PrimOp "sext_WordX2" iw0
   ,(,) "trunc_i32_to_i8"      $ (,) (mkFnType [i32] [i8 ] ) $ PrimIntTrunc I32 I8
   ,(,) "trunc_i64_to_i8"      $ (,) (mkFnType [i64] [i8 ] ) $ PrimIntTrunc I64 I8
+  ,(,) "trunc_i32_to_i16"     $ (,) (mkFnType [i32] [i16] ) $ PrimIntTrunc I32 I16
+  ,(,) "trunc_i64_to_i16"     $ (,) (mkFnType [i64] [i16] ) $ PrimIntTrunc I64 I16
   ,(,) "trunc_i64_to_i32"     $ (,) (mkFnType [i64] [i32] ) $ PrimIntTrunc I64 I32
   ,(,) "trunc_i64_to_Word"    $ (,) (mkFnType [i64] [iw0] ) $ PrimIntTrunc I64 IWd
   ,(,) "trunc_Word_to_i32"    $ (,) (mkFnType [iw0] [i32] ) $ PrimIntTrunc IWd I32
   ,(,) "trunc_Word_to_i8"     $ (,) (mkFnType [iw0] [i8 ] ) $ PrimIntTrunc IWd I8
   ,(,) "trunc_WordX2_to_i32"  $ (,) (mkFnType [iw1] [i32] ) $ PrimIntTrunc IDw I32
   ,(,) "trunc_WordX2_to_Word" $ (,) (mkFnType [iw1] [iw0] ) $ PrimIntTrunc IDw IWd
+  -}
   ,(,) "f64-to-s32-unsafe"    $ (,) (mkFnType [f64] [i32] ) $ PrimOp "fptosi_f64_i32" i32
   ,(,) "f64-to-u32-unsafe"    $ (,) (mkFnType [f64] [i32] ) $ PrimOp "fptoui_f64_i32" i32
   ,(,) "f64-to-s64-unsafe"    $ (,) (mkFnType [f64] [i64] ) $ PrimOp "fptosi_f64_i64" i64
@@ -384,5 +464,6 @@ gFosterPrimOpsTable = Map.fromList $
   ,(,) "u32-to-f64"    $(,) (mkFnType [i32] [f64]     ) $ PrimOp "uitofp_f64" i32
   ,(,) "f64-as-i64"    $(,) (mkFnType [f64] [i64]     ) $ PrimOp "bitcast_i64" f64
   ,(,) "i64-as-f64"    $(,) (mkFnType [i64] [f64]     ) $ PrimOp "bitcast_f64" i64
-  ] ++ concatMap fixnumPrimitives [I32, I64, I8, IWd, IDw]
+  ] ++ concatMap fixnumPrimitives [I32, I64, I8, I16, IWd, IDw]
+    ++ sizeConversions
     ++ flonumPrimitives "f64" f64

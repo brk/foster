@@ -371,6 +371,7 @@ dumpExpr _ (ILCallPrim t (PrimIntTrunc _from to) args)
         = dumpCallPrimOp t (truncOp to) args
   where truncOp I1  = "trunc_i1"
         truncOp I8  = "trunc_i8"
+        truncOp I16 = "trunc_i16"
         truncOp I32 = "trunc_i32"
         truncOp I64 = "trunc_i64"
         truncOp IWd = "trunc_w0"

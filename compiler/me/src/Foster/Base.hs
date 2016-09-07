@@ -50,7 +50,7 @@ data CompilesResult expr = CompilesResult (OutputOr expr)
 type Uniq = Int
 data CallConv = CCC | FastCC deriving (Eq, Show)
 type LogInt = Int
-data IntSizeBits = I1 | I8 | I32 | I64 | IWd | IDw -- Word/double-word
+data IntSizeBits = I1 | I8 | I16 | I32 | I64 | IWd | IDw -- Word/double-word
                  deriving (Eq, Show)
 
 data ProcOrFunc   = FT_Proc | FT_Func  deriving (Show, Eq)
@@ -767,6 +767,7 @@ instance IntSized IntSizeBits
  where
        intSizeOf I1 = 1
        intSizeOf I8 = 8
+       intSizeOf I16 = 16
        intSizeOf I32 = 32
        intSizeOf I64 = 64
        intSizeOf IWd = 32 -- TODO this is hacky =/
@@ -775,6 +776,7 @@ instance IntSized IntSizeBits
 sizeOfBits :: Int -> IntSizeBits
 sizeOfBits 1           = I1
 sizeOfBits n | n <= 8  = I8
+sizeOfBits n | n <= 16 = I16
 sizeOfBits n | n <= 32 = I32
 sizeOfBits n | n <= 64 = I64
 sizeOfBits n = error $ "TypecheckInt.hs:sizeOfBits: Unsupported size: " ++ show n
