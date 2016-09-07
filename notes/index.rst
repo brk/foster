@@ -27,6 +27,8 @@ Foster Notes
    checklist
    compiler-history
 
+   dive-into-foster
+
 .. Indices and tables
 .. ==================
 ..
