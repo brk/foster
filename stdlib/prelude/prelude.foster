@@ -543,7 +543,8 @@ f64-to-u32! = { a : Float64 => prim f64-to-u32-unsafe a };
 // Precondition: a < 1073741820.5 && a > -1073741820.5
 f64-to-s32! = { a : Float64 => prim f64-to-s32-unsafe a };
 
-
+incrInt16 = { r : Ref Int16 => v = (r^ +Int16 1); v >^ r; v };
+decrInt16 = { r : Ref Int16 => v = (r^ -Int16 1); v >^ r; v };
 incrInt32 = { r : Ref Int32 => v = (r^ +Int32 1); v >^ r; v };
 decrInt32 = { r : Ref Int32 => v = (r^ -Int32 1); v >^ r; v };
 incrInt8 = { r : Ref Int8 => v = (r^ +Int8 1); v >^ r; v };
@@ -553,6 +554,8 @@ decrInt64 = { r : Ref Int64 => v = (r^ -Int64 1); v >^ r; v };
 
 postincrInt32 = { r : Ref Int32 => v = r^; (v +Int32 1) >^ r; v };
 postdecrInt32 = { r : Ref Int32 => v = r^; (v -Int32 1) >^ r; v };
+postincrInt16 = { r : Ref Int16 => v = r^; (v +Int16 1) >^ r; v };
+postdecrInt16 = { r : Ref Int16 => v = r^; (v -Int16 1) >^ r; v };
 postincrInt8 = { r : Ref Int8 => v = r^; (v +Int8 1) >^ r; v };
 postdecrInt8 = { r : Ref Int8 => v = r^; (v -Int8 1) >^ r; v };
 postincrInt64 = { r : Ref Int64 => v = r^; (v +Int64 1) >^ r; v };
