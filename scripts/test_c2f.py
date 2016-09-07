@@ -84,7 +84,8 @@ def attempt_test_named(filename, copy_here_if_ok=None):
 def run_on_test_c2f():
   for root, d, files in os.walk("../test/c2f"):
     for cfile in fnmatch.filter(files, "*.c"):
-      attempt_test_named(os.path.join(root, cfile))
+      if not 'csmith' in root:
+        attempt_test_named(os.path.join(root, cfile))
 
 def run_on_csf_files():
   for root, d, files in os.walk("."):
