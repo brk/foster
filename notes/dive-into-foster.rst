@@ -294,6 +294,85 @@ we automatically produce the following Foster code::
 
     main = { print_i32 (foo (bitshl-Int32 3 3)) };
 
+
+Compilation
+~~~~~~~~~~~
+
+The Foster middle-end does some high-level optimizations like contification,
+inlining, and GC root analysis. The LLVM backend then does further work.
+
+The following small Foster program::
+
+    main = {
+      REC loop = { x =>
+        case x
+          of 0 -> x
+          of _ -> loop (x -Int32 1)
+        end
+      };
+      print_i32 (loop (opaquely_i32 3));
+    };
+
+
+produces the following lightly-optimized LLVM IR, in which the local function
+has become a set of local basic blocks::
+
+    define void @foster__main() #2 gc "fostergc" {
+    entry:
+      %".x!580" = call i32 @opaquely_i32(i32 3)                   ; #uses = 1	; i32
+      br label %contified_postalloca.L591
+
+    contified_postalloca.L591:                        ; preds = %case_arm.L594, %entry
+      %"scrut.occ!615" = phi i32 [ %".x!580", %entry ], [ %".x!578", %case_arm.L594 ] ; #uses = 3	; i32
+      %cond = icmp eq i32 %"scrut.occ!615", 0                     ; #uses = 1	; i1
+      br i1 %cond, label %case_arm.L593, label %case_arm.L594
+
+    case_arm.L594:                                    ; preds = %contified_postalloca.L591
+      %".x!578" = sub i32 %"scrut.occ!615", 1                     ; #uses = 1	; i32
+      br label %contified_postalloca.L591
+
+    case_arm.L593:                                    ; preds = %contified_postalloca.L591
+      call void @print_i32(i32 %"scrut.occ!615"), !willnotgc !4
+      ret void
+    }
+
+which gets translated to this assembly code (use the ``--asm`` flag)::
+
+    foster__main:                           # @foster__main
+    # BB#0:                                 # %entry
+            pushl	%ebp
+            movl	%esp, %ebp
+            subl	$24, %esp
+            movl	$3, %eax
+            movl	$3, (%esp)
+            movl	%eax, -4(%ebp)          # 4-byte Spill
+            calll	opaquely_i32
+            movl	%eax, -8(%ebp)          # 4-byte Spill
+    .LBB14_1:                               # %contified_postalloca.L591
+                                            # =>This Inner Loop Header: Depth=1
+            movl	-8(%ebp), %eax          # 4-byte Reload
+            cmpl	$0, %eax
+            movl	%eax, -12(%ebp)         # 4-byte Spill
+            je	.LBB14_3
+    # BB#2:                                 # %case_arm.L594
+                                            #   in Loop: Header=BB14_1 Depth=1
+            movl	-12(%ebp), %eax         # 4-byte Reload
+            subl	$1, %eax
+            movl	%eax, -8(%ebp)          # 4-byte Spill
+            jmp	.LBB14_1
+    .LBB14_3:                               # %case_arm.L593
+            movl	-12(%ebp), %eax         # 4-byte Reload
+            movl	%eax, (%esp)
+            calll	print_i32
+            addl	$24, %esp
+            popl	%ebp
+            retl
+
+LLVM did some strange register scheduling in this case, spilling and restoring
+``%eax`` across the loop boundary. If we enable
+``-O2`` level optimization, using the ``--backend-optimize`` flag to
+``runfoster``, LLVM simply eliminates the loop.
+
 Unimplemented Bits
 ------------------
 
