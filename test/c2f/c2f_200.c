@@ -1,5 +1,4 @@
 extern int printf (const char *format, ...);
-extern int getchar(void);
 
 int main(void)
 {

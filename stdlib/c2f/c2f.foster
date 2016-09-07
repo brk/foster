@@ -17,12 +17,39 @@ type case Ptr (a:Type)
   of $PtrRef (Ref a)
   ;
 
+ptrGetIndex :: forall (a:Type) { Ptr a => Int32 => a };
+ptrGetIndex = { ptr => idx =>
+  case ptr
+    of $PtrNil -> prim kill-entire-process "ptrGetIndex null";
+    of $PtrRef r -> r^
+    of $PtrArr arr off -> arr[off +Int32 idx]
+  end
+};
+
+ptrSetIndex :: forall (a:Type) { Ptr a => Int32 => a => () };
+ptrSetIndex = { ptr => idx => val =>
+  case ptr
+    of $PtrNil -> ()
+    of $PtrRef r -> val >^ r;
+    of $PtrArr arr off -> val >^ arr[off +Int32 idx];
+  end
+};
+
 ptrGet :: forall (a:Type) { Ptr a => a };
 ptrGet = { ptr =>
   case ptr
     of $PtrNil -> prim kill-entire-process "ptrGet null";
     of $PtrRef r -> r^
     of $PtrArr arr off -> arr[off]
+  end
+};
+
+ptrSet :: forall (a:Type) { Ptr a => a => () };
+ptrSet = { ptr => val =>
+  case ptr
+    of $PtrNil -> prim kill-entire-process "ptrGet null";
+    of $PtrRef r -> val >^ r;
+    of $PtrArr arr off -> val >^ arr[off]
   end
 };
 
@@ -50,7 +77,7 @@ decr_Ptr_Int8_     = { r : Ref (Ptr Int8) => v = (r^ `ptrMinus` 1); v >^ r; v };
 postincr_Ptr_Int8_ = { r : Ref (Ptr Int8) => v = r^; (v `ptrPlus` 1) >^ r; v };
 postdecr_Ptr_Int8_ = { r : Ref (Ptr Int8) => v = r^; (v `ptrMinus` 1) >^ r; v };
 
-strLit :: { Array Int8 => Ptr Int8 };
+strLit :: forall (t:Type) { Array t => Ptr t };
 strLit = { s => PtrArr s 0 };
 
 printStr :: { Ptr Int8 => () };
@@ -72,8 +99,3 @@ type case ArrPtr (a:Type)
 
 incrArrPtr :: forall (a:Type) { ArrPtr a => ArrPtr a };
 incrArrPtr = { v => case v of $ArrPtr a x -> ArrPtr a (x +Int64 1) end };
-
-(+Int32_16) = { a : Int32 => b : Int32 => (a +Int32 b) `bitand-Int32` 0xFFFF; };
-(-Int32_16) = { a : Int32 => b : Int32 => (a -Int32 b) `bitand-Int32` 0xFFFF; };
-(==Int32_16) = { a : Int32 => b : Int32 => a ==Int32 b };
-(!=Int32_16) = { a : Int32 => b : Int32 => a !=Int32 b };

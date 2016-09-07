@@ -43,6 +43,10 @@ static std::string getRWText(const Rewriter &R, const SourceLocation& locstt, co
   return R.getRewrittenText(SourceRange(locstt, locend));
 }
 
+static bool startswith(const std::string& a, const std::string& b) {
+  return a.size() >= b.size() && a.substr(0, b.size()) == b;
+}
+
 static std::string getText(const Rewriter &R, const SourceLocation& locstt, const SourceLocation& locend) {
   const SourceManager &SourceManager = R.getSourceMgr();
   SourceLocation StartSpellingLocation = SourceManager.getSpellingLoc(locstt);
@@ -104,8 +108,8 @@ std::string getCompoundTextWithoutBraces(const Rewriter &R, const Stmt* mb_comp)
 
 std::string tyOpSuffix(const clang::Type* ty) {
   if (ty->isCharType()) return "Int8";
-  if (ty->isSpecificBuiltinType(BuiltinType::UShort)) return "Int32_16";
-  if (ty->isSpecificBuiltinType(BuiltinType::Short)) return "Int32_16";
+  if (ty->isSpecificBuiltinType(BuiltinType::UShort)) return "Int16";
+  if (ty->isSpecificBuiltinType(BuiltinType::Short)) return "Int16";
   if (ty->isSpecificBuiltinType(BuiltinType::UInt)) return "Int32";
   if (ty->isSpecificBuiltinType(BuiltinType::Int)) return "Int32";
   if (ty->isSpecificBuiltinType(BuiltinType::ULong)) return "Int64";
@@ -174,8 +178,8 @@ std::string maybeNonUppercaseTyName(const clang::Type* ty, std::string defaultNa
 
 std::string tyName(const clang::Type* ty, std::string defaultName = "C2FUNK") {
   if (ty->isCharType()) return "Int8";
-  if (ty->isSpecificBuiltinType(BuiltinType::UShort)) return "Int32";
-  if (ty->isSpecificBuiltinType(BuiltinType::Short)) return "Int32";
+  if (ty->isSpecificBuiltinType(BuiltinType::UShort)) return "Int16";
+  if (ty->isSpecificBuiltinType(BuiltinType::Short)) return "Int16";
   if (ty->isSpecificBuiltinType(BuiltinType::UInt)) return "Int32";
   if (ty->isSpecificBuiltinType(BuiltinType::Int)) return "Int32";
   if (ty->isSpecificBuiltinType(BuiltinType::ULong)) return "Int64";
@@ -643,9 +647,10 @@ public:
           if (const Stmt* s = ce.castAs<CFGStmt>().getStmt()) {
             if (auto ds = dyn_cast<DeclStmt>(s)) {
               rv.push_back(ds);
-            } else {
-              StmtMap[s] = std::make_pair(cb->getBlockID(), j++);
+              continue;
             }
+            // else:
+            StmtMap[s] = std::make_pair(cb->getBlockID(), j++);
           }
         }
       }
@@ -734,6 +739,14 @@ public:
     markduplicateVarDecls(decls);
 
     for (auto d : decls) {
+      if (d->isSingleDecl()) {
+        if (const VarDecl* vd = dyn_cast<VarDecl>(d->getSingleDecl())) {
+          mutableLocals[vd->getName()] = true;
+          // Unfortunately, all variables must be treated as mutable
+          // when we are doing CFG-based generation, because the CFG
+          // doesn't respect variable scoping rules.
+        }
+      }
       visitStmt(d);
       llvm::outs() << ";\n";
     }
@@ -744,7 +757,7 @@ public:
 
       llvm::outs() << "REC " << getBlockName(*cb) << " = {\n";
 
-      const Stmt* termin = cb->getTerminator().getStmt();
+      //const Stmt* termin = cb->getTerminator().getStmt();
       for (auto cbit = cb->begin(); cbit != cb->end(); ++cbit) {
         CFGElement ce = *cbit;
         if (ce.getKind() == CFGElement::Kind::Statement) {
@@ -755,15 +768,20 @@ public:
               if (ds->isSingleDecl()) {
                 if (const VarDecl* vd = dyn_cast<VarDecl>(ds->getSingleDecl())) {
                   if (vd->hasInit() && mutableLocals[vd->getName()]) {
-                    llvm::outs() << "(";
-                    visitStmt(vd->getInit());
-                    llvm::outs() << ") >^ " << emitVarName(vd) << ";\n";
+                    emitPoke(vd, vd->getInit());
+                  } else if (!mutableLocals[vd->getName()]) {
+                    // Non-mutable declarations should be visited in-place.
+                    currStmt = s;
+                    visitStmt(s);
+                    currStmt = nullptr;
+                    llvm::outs() << ";\n";
                   }
                 }
               } else {
                 llvm::outs() << "/*skipped multi decl*/\n";
               }
             } else {
+              // Non-declaration statement: visit it regularly.
               currStmt = s;
               visitStmt(s);
               currStmt = nullptr;
@@ -882,6 +900,83 @@ public:
 
     llvm::outs() << "end\n";
 
+  }
+
+  void emitPeek(const Expr* base, const Expr* idx) {
+      std::string tynm = tyName(exprTy(base));
+      bool rawArray = startswith(tynm, "(Array");
+      if (rawArray) {
+        visitStmt(base);
+        llvm::outs() << "[";
+        visitStmt(idx);
+        llvm::outs() << "]";
+      } else {
+        llvm::outs() << "(ptrGetIndex ";
+        visitStmt(base);
+        llvm::outs() << " ";
+        visitStmt(idx);
+        llvm::outs() << ")";
+      }
+  }
+
+  void emitPokeIdx(const Expr* base, const Expr* idx, const Expr* val) {
+      std::string tynm = tyName(exprTy(base));
+      bool rawArray = startswith(tynm, "(Array");
+      if (rawArray) {
+        llvm::outs() << "(";
+        visitStmt(val);
+        llvm::outs() << " >^ (";
+        visitStmt(base);
+        llvm::outs() << "[";
+        visitStmt(idx);
+        llvm::outs() << "] ) )";
+      } else {
+        llvm::outs() << "(ptrSetIndex ";
+        visitStmt(base);
+        llvm::outs() << " ";
+        visitStmt(idx);
+        llvm::outs() << " ";
+        visitStmt(val);
+        llvm::outs() << ")";
+      }
+  }
+
+  void emitPoke(const Expr* ptr, const Expr* val) {
+      std::string tynm = tyName(exprTy(ptr));
+      bool rawArray = startswith(tynm, "(Array");
+      if (rawArray) {
+        llvm::outs() << "((";
+        visitStmt(val);
+        llvm::outs() << ") >^ (";
+        visitStmt(ptr, AssignmentTarget);
+        llvm::outs() << "))";
+      } else if (auto ase = dyn_cast<ArraySubscriptExpr>(ptr)) {
+        emitPokeIdx(ase->getBase(), ase->getIdx(), val);
+      } else {
+        llvm::outs() << "(ptrSet (";
+        visitStmt(ptr);
+        llvm::outs() << ") (";
+        visitStmt(val);
+        llvm::outs() << "))";
+      }
+  }
+
+  void emitPoke(const VarDecl* ptr, const Expr* val) {
+      std::string tynm = tyName(exprTy(ptr));
+      bool rawArray = startswith(tynm, "(Array");
+      if (rawArray) {
+        llvm::outs() << "((";
+        visitStmt(val);
+        llvm::outs() << ") >^ (";
+        emitVarName(ptr);
+        llvm::outs() << "))";
+      } else {
+        llvm::outs() << "(ptrSet (";
+        emitVarName(ptr);
+        llvm::outs() << ") (";
+        visitStmt(val);
+        llvm::outs() << "))";
+      }
   }
 
   bool isNumericLiteral(const Stmt* stmt) {
@@ -1223,6 +1318,17 @@ The corresponding AST to be matched is
         }
         llvm::errs() << "printf %s format for type " << tynm << "\n";
         return false;
+      } else if (slit->getString() == "0x%X\n") {
+        std::string tynm = tyName(ce->getArg(1)->getType().getTypePtr());
+        std::string printfn;
+        if (tynm == "Int32") printfn = "print_i32x";
+        if (tynm == "Int64") printfn = "print_i64x";
+        if (printfn.empty()) return false;
+
+        llvm::outs() << "(" << printfn << " ";
+        visitStmt(ce->getArg(1));
+        llvm::outs() << ")";
+        return true;
       }
     }
     return false;
@@ -1363,10 +1469,7 @@ The corresponding AST to be matched is
       llvm::outs() << ")";
     } else {
       // translate v = x;  to  (x) >^ v;
-      llvm::outs() << "(";
-      visitStmt(binop->getRHS());
-      llvm::outs() << ") >^ ";
-      visitStmt(binop->getLHS(), AssignmentTarget);
+      emitPoke(binop->getLHS(), binop->getRHS());
     }
   }
 
@@ -1425,18 +1528,18 @@ The corresponding AST to be matched is
   std::string intCastFromTo(const std::string& srcTy, const std::string& dstTy, bool isSigned) {
     if (srcTy == "Int32" && dstTy == "Int8" ) return "trunc_i32_to_i8";
     if (srcTy == "Int64" && dstTy == "Int8" ) return "trunc_i64_to_i8";
-    if (srcTy == "Int32" && dstTy == "Int16") return "trunc_i32_to_i32_16";
-    if (srcTy == "Int64" && dstTy == "Int16") return "trunc_i64_to_i32_16";
+    if (srcTy == "Int32" && dstTy == "Int16") return "trunc_i32_to_i16";
+    if (srcTy == "Int64" && dstTy == "Int16") return "trunc_i64_to_i16";
     if (srcTy == "Int64" && dstTy == "Int32") return "trunc_i64_to_i32";
     if (srcTy == "Int8"  && dstTy == "Int32" && isSigned) return "sext_i8_to_i32";
     if (srcTy == "Int8"  && dstTy == "Int64" && isSigned) return "sext_i8_to_i64";
-    if (srcTy == "Int16" && dstTy == "Int32" && isSigned) return "sext_i32_16_to_i32";
-    if (srcTy == "Int16" && dstTy == "Int64" && isSigned) return "sext_i32_16_to_i64";
+    if (srcTy == "Int16" && dstTy == "Int32" && isSigned) return "sext_i16_to_i32";
+    if (srcTy == "Int16" && dstTy == "Int64" && isSigned) return "sext_i16_to_i64";
     if (srcTy == "Int32" && dstTy == "Int64" && isSigned) return "sext_i32_to_i64";
     if (srcTy == "Int8"  && dstTy == "Int32" && !isSigned) return "zext_i8_to_i32";
     if (srcTy == "Int8"  && dstTy == "Int64" && !isSigned) return "zext_i8_to_i64";
-    if (srcTy == "Int16" && dstTy == "Int32" && !isSigned) return "zext_i32_16_to_i32";
-    if (srcTy == "Int16" && dstTy == "Int64" && !isSigned) return "zext_i32_16_to_i64";
+    if (srcTy == "Int16" && dstTy == "Int32" && !isSigned) return "zext_i16_to_i32";
+    if (srcTy == "Int16" && dstTy == "Int64" && !isSigned) return "zext_i16_to_i64";
     if (srcTy == "Int32" && dstTy == "Int64" && !isSigned) return "zext_i32_to_i64";
     return "/*unhandled cast from " + srcTy + " to " + dstTy + "*/";
   }
@@ -1487,13 +1590,7 @@ The corresponding AST to be matched is
         std::string dstTy = tyName(exprTy(ce));
 
         if (srcTy != dstTy) {
-          cast = intCastFromTo(srcTy, dstTy, exprTy(ce)->isSignedIntegerType());
-        } else if (exprTy(ce)->isSpecificBuiltinType(BuiltinType::UShort)
-                || exprTy(ce)->isSpecificBuiltinType(BuiltinType::Short)) {
-          cast = intCastFromTo(srcTy, "Int16", exprTy(ce->getSubExpr())->isSignedIntegerType());
-        } else if (exprTy(ce->getSubExpr())->isSpecificBuiltinType(BuiltinType::UShort)
-                || exprTy(ce->getSubExpr())->isSpecificBuiltinType(BuiltinType::Short)) {
-          cast = intCastFromTo("Int16", dstTy, exprTy(ce->getSubExpr())->isSignedIntegerType());
+          cast = intCastFromTo(srcTy, dstTy, exprTy(ce->getSubExpr())->isSignedIntegerType());
         }
       }
 
@@ -1569,11 +1666,11 @@ The corresponding AST to be matched is
 
         llvm::outs() << emitVarName(vd) << " = ";
         if (sz > 0 && sz <= 16) {
-          llvm::outs() << "(prim mach-array-literal";
+          llvm::outs() << "(strLit (prim mach-array-literal";
           for (uint64_t i = 0; i < sz; ++i) {
             llvm::outs() << " " << zeroval;
           }
-          llvm::outs() << ")";
+          llvm::outs() << "))";
         } else {
           llvm::outs() << "(newArrayReplicate " << sz << " " << zeroval << ")";
         }
@@ -1680,10 +1777,7 @@ The corresponding AST to be matched is
       visitStmt(base);
       llvm::outs() << ")";
     } else if (const ArraySubscriptExpr* ase = dyn_cast<ArraySubscriptExpr>(stmt)) {
-      visitStmt(ase->getBase());
-      llvm::outs() << "[";
-      visitStmt(ase->getIdx());
-      llvm::outs() << "]";
+      emitPeek(ase->getBase(), ase->getIdx());
     } else if (const CompoundAssignOperator* cao = dyn_cast<CompoundAssignOperator>(stmt)) {
       handleCompoundAssignment(cao);
     } else if (const BinaryOperator* binop = dyn_cast<BinaryOperator>(stmt)) {
@@ -1823,12 +1917,12 @@ The corresponding AST to be matched is
         }
         llvm::outs() << ")";
       } else {
-        llvm::outs() << "(prim mach-array-literal";
+        llvm::outs() << "(strLit (prim mach-array-literal";
         for (unsigned i = 0; i < ile->getNumInits(); ++i) {
           llvm::outs() << " ";
           visitStmt(ile->getInit(i));
         }
-        llvm::outs() << ")";
+        llvm::outs() << "))";
       }
     } else if (auto cs = dyn_cast<CompoundStmt>(stmt)) {
 
