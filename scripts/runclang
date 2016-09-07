@@ -10,8 +10,7 @@ cxxpath () {
 # Use regular clang instead of clang++
 CLANG=$(python $SD/normpath.py `cxxpath`/../clang)
 
-${CLANG} -Werror=division-by-zero $@ -o _runclang.exe
-./_runclang.exe
+${CLANG} -Werror=division-by-zero $@ -o _runclang.exe && ./_runclang.exe
 retval=$?
 rm -rf _runclang.exe
 exit ${retval}
