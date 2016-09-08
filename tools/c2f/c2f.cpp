@@ -531,6 +531,7 @@ class FnBodyVisitor : public RecursiveASTVisitor<FnBodyVisitor> {
 
 enum ContextKind {
   ExprContext,
+  StmtContext,
   AssignmentTarget,
   BooleanContext
 };
@@ -772,7 +773,7 @@ public:
                   } else if (!mutableLocals[vd->getName()]) {
                     // Non-mutable declarations should be visited in-place.
                     currStmt = s;
-                    visitStmt(s);
+                    visitStmt(s, StmtContext);
                     currStmt = nullptr;
                     llvm::outs() << ";\n";
                   }
@@ -918,7 +919,9 @@ public:
       }
   }
 
-  void emitPokeIdx(const Expr* base, const Expr* idx, const Expr* val) {
+  void emitPokeIdx(const ArraySubscriptExpr* ase, const Expr* val, ContextKind ctx) {
+      auto base = ase->getBase();
+      auto idx  = ase->getIdx();
       std::string tynm = tyName(exprTy(base));
       if (startswith(tynm, "(Ptr")) {
         llvm::outs() << "(ptrSetIndex ";
@@ -927,35 +930,62 @@ public:
         visitStmt(idx);
         llvm::outs() << " ";
         visitStmt(val);
+
+        if (ctx == ExprContext) {
+          llvm::outs() << "; "; emitPeek(base, idx);
+        }
+        // TODO BooleanContext
         llvm::outs() << ");";
       } else {
-        llvm::outs() << "(";
+        llvm::outs() << "((";
         visitStmt(val);
         llvm::outs() << " >^ (";
         visitStmt(base);
         llvm::outs() << "[";
         visitStmt(idx);
-        llvm::outs() << "] ) );";
+        llvm::outs() << "] ) )";
+
+        if (ctx == ExprContext) {
+          llvm::outs() << "; "; emitPeek(base, idx);
+        } else if (ctx == BooleanContext) {
+          llvm::outs() << "; "; emitPeek(base, idx);
+          llvm::outs() << " " << mkFosterBinop("!=", exprTy(ase)) << " 0";
+        }
+        llvm::outs() << ");";
       }
   }
 
-  void emitPoke(const Expr* ptr, const Expr* val) {
+  void emitPoke(const Expr* ptr, const Expr* val, ContextKind ctx) {
       std::string tynm = tyName(exprTy(ptr));
 
       if (auto ase = dyn_cast<ArraySubscriptExpr>(ptr)) {
-        emitPokeIdx(ase->getBase(), ase->getIdx(), val);
+        emitPokeIdx(ase, val, ctx);
       } else if (startswith(tynm, "(Ptr")) {
         llvm::outs() << "(ptrSet (";
         visitStmt(ptr);
         llvm::outs() << ") (";
         visitStmt(val);
-        llvm::outs() << "));";
+        llvm::outs() << ")";
+        if (ctx == ExprContext) {
+          llvm::outs() << "; "; visitStmt(ptr);
+        }
+        // TODO BooleanContext
+        llvm::outs() << ");";
       } else {
+        // If we have something like (c = (b = a)),
+        // translate it to (a >^ b; b) >^ c
         llvm::outs() << "((";
         visitStmt(val);
         llvm::outs() << ") >^ (";
         visitStmt(ptr, AssignmentTarget);
-        llvm::outs() << ")) /*poke*/;";
+        llvm::outs() << ")";
+        if (ctx == ExprContext) {
+          llvm::outs() << "; "; visitStmt(ptr);
+        } else if (ctx == BooleanContext) {
+          llvm::outs() << "; "; visitStmt(ptr);
+          llvm::outs() << " " << mkFosterBinop("!=", exprTy(ptr)) << " 0";
+        }
+        llvm::outs() << ");";
       }
   }
 
@@ -1124,11 +1154,12 @@ The corresponding AST to be matched is
   }
 
   void handleBinaryOperator(const BinaryOperator* binop,
-                            bool isBooleanContext) {
+                            ContextKind ctx) {
     std::string op = getBinaryOperatorString(binop);
 
+    bool isBooleanContext = ctx == BooleanContext;
     if (op == "=") {
-      handleAssignment(binop);
+      handleAssignment(binop, ctx);
     } else if (op == ",") {
       llvm::outs() << "( _ = ";
       visitStmt(binop->getLHS());
@@ -1442,7 +1473,7 @@ The corresponding AST to be matched is
     return tyName(exprTy(base)) + path + "_" + me->getMemberNameInfo().getAsString();
   }
 
-  void handleAssignment(const BinaryOperator* binop) {
+  void handleAssignment(const BinaryOperator* binop, ContextKind ctx) {
     if (const MemberExpr* me = dyn_cast<MemberExpr>(binop->getLHS())) {
       // translate p->f = x;  to  (set_pType_f p x)
       const Expr* base = nullptr;
@@ -1455,7 +1486,7 @@ The corresponding AST to be matched is
       llvm::outs() << ")";
     } else {
       // translate v = x;  to  (x) >^ v;
-      emitPoke(binop->getLHS(), binop->getRHS());
+      emitPoke(binop->getLHS(), binop->getRHS(), ctx);
     }
   }
 
@@ -1666,6 +1697,16 @@ The corresponding AST to be matched is
     }
   }
 
+  const BinaryOperator*
+  tryBindAssignmentOp(const Stmt* stmt) {
+    if (auto bo = dyn_cast<BinaryOperator>(stmt)) {
+      if (bo->isAssignmentOp()) {
+        return bo;
+      }
+    }
+    return nullptr;
+  }
+
   bool isAssignmentOrVoidish(const Stmt* stmt) {
     if (auto bo = dyn_cast<BinaryOperator>(stmt)) {
       return bo->isAssignmentOp();
@@ -1767,7 +1808,7 @@ The corresponding AST to be matched is
     } else if (const CompoundAssignOperator* cao = dyn_cast<CompoundAssignOperator>(stmt)) {
       handleCompoundAssignment(cao);
     } else if (const BinaryOperator* binop = dyn_cast<BinaryOperator>(stmt)) {
-      handleBinaryOperator(binop, ctx == BooleanContext);
+      handleBinaryOperator(binop, ctx);
     } else if (const UnaryOperator* unop = dyn_cast<UnaryOperator>(stmt)) {
       if (ctx == BooleanContext) { llvm::outs() << "("; }
       handleUnaryOperator(unop, ctx);
@@ -1925,7 +1966,7 @@ The corresponding AST to be matched is
       } else {
         size_t childno = 0;
         for (const Stmt* c : cs->children()) {
-          visitStmt(c);
+          visitStmt(c, StmtContext);
 
           if (isa<CompoundStmt>(c) || isa<BreakStmt>(c)) {
             // don't print another semicolon
