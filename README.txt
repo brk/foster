@@ -54,7 +54,7 @@ Ubuntu 16.04 (x64):
   sudo apt-get install build-essential g++ g++-multilib git gnuplot \
                        python-pygments python-matplotlib  python-scipy python-sphinx \
                        python-pandas python-pip python-numpy python-qt4 \
-                       python-qscintilla2 libqscintilla2-dev
+                       python-qscintilla2 libqscintilla2-dev swig
 
   sudo apt-get install vim vim-gnome ack-grep \
               curl ctags aptitude libpng12-dev libcairo2-dev libc6-dev default-jdk
