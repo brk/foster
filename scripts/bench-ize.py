@@ -588,14 +588,15 @@ def display_compiletime_results(all_tests, output_file):
     oth_opt_O0 = []
     oth_opt_O2 = []
     for t in all_tests:
-      if t['flags']['lang'] == 'foster' and t['flags']['LLVMopt'] == 'O0':
-        fos_opt_O0.append(t['compile'])
-      if t['flags']['lang'] == 'foster' and t['flags']['LLVMopt'] == 'O2':
-        fos_opt_O2.append(t['compile'])
-      if t['flags']['lang'] != 'foster' and t['flags']['LLVMopt'] == 'O0':
-        oth_opt_O0.append(t['compile'])
-      if t['flags']['lang'] != 'foster' and t['flags']['LLVMopt'] == 'O2':
-        oth_opt_O2.append(t['compile'])
+      if 'compile' in t:
+        if t['flags']['lang'] == 'foster' and t['flags']['LLVMopt'] == 'O0':
+          fos_opt_O0.append(t['compile'])
+        if t['flags']['lang'] == 'foster' and t['flags']['LLVMopt'] == 'O2':
+          fos_opt_O2.append(t['compile'])
+        if t['flags']['lang'] != 'foster' and t['flags']['LLVMopt'] == 'O0':
+          oth_opt_O0.append(t['compile'])
+        if t['flags']['lang'] != 'foster' and t['flags']['LLVMopt'] == 'O2':
+          oth_opt_O2.append(t['compile'])
 
     ax2 = ax1.twinx()
 
@@ -619,7 +620,7 @@ def display_compiletime_results(all_tests, output_file):
       ['O0, no inlining',
        'O2, with inlining',
        'O0',
-       'O2'], loc='upper right', framealpha=0.6)
+       'O2'], loc='upper right') # framealpha=0.6
 
     pyplot.savefig(outfile)
     print >>output_file, Template("""
@@ -638,14 +639,15 @@ def display_compiletime_results(all_tests, output_file):
     oth_opt_O0 = []
     oth_opt_O2 = []
     for t in all_tests:
-      if t['flags']['lang'] == 'foster' and t['flags']['LLVMopt'] == 'O0':
-        fos_opt_O0.append(t['compile'])
-      if t['flags']['lang'] == 'foster' and t['flags']['LLVMopt'] == 'O2':
-        fos_opt_O2.append(t['compile'])
-      if t['flags']['lang'] != 'foster' and t['flags']['LLVMopt'] == 'O0':
-        oth_opt_O0.append(t['compile'])
-      if t['flags']['lang'] != 'foster' and t['flags']['LLVMopt'] == 'O2':
-        oth_opt_O2.append(t['compile'])
+      if 'compile' in t:
+        if t['flags']['lang'] == 'foster' and t['flags']['LLVMopt'] == 'O0':
+          fos_opt_O0.append(t['compile'])
+        if t['flags']['lang'] == 'foster' and t['flags']['LLVMopt'] == 'O2':
+          fos_opt_O2.append(t['compile'])
+        if t['flags']['lang'] != 'foster' and t['flags']['LLVMopt'] == 'O0':
+          oth_opt_O0.append(t['compile'])
+        if t['flags']['lang'] != 'foster' and t['flags']['LLVMopt'] == 'O2':
+          oth_opt_O2.append(t['compile'])
 
     ax1.scatter(proj(fos_opt_O0, 'num_lines'),
                 proj(fos_opt_O0, 'mid_total_ms'), s=10, c='#0000ff', marker="s", label='O0, no inlining')

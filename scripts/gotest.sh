@@ -59,10 +59,22 @@ cxxpath() {
   fi
 }
 
+build_prereqs() {
+  if [ -f $R/_obj/Makefile]; then
+    make -s -C $R/_obj fosteroptc fosterparse fosterlower me && cleanout
+  elif [ -f $R/_obj/build.ninja ]; then
+    ninja -C $R/_obj fosteroptc fosterparse fosterlower me && cleanout
+  else
+    cmake --build $R/_obj --target fosteroptc && \
+    cmake --build $R/_obj --target fosterparse && \
+    cmake --build $R/_obj --target fosterlower && \
+    cmake --build $R/_obj --target me && cleanout
+  fi
+}
+
 echo "testing $D"
 if [ -d $D ]; then
- #make -s -C $R/_obj fosteroptc fosterparse fosterlower && cleanout && \
- cmake --build $R/_obj --target fosteroptc --target fosterparse --target fosterlower --target me && cleanout && \
+ build_prereqs && \
  echo python $R/scripts/run_test.py --show-cmdlines ${T} "$@" && \
       python $R/scripts/run_test.py --show-cmdlines ${T} "$@" --bindir=$R/_obj --me-arg=--interactive --cxxpath=`cxxpath` -I ${R}/stdlib
 else

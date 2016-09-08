@@ -496,6 +496,15 @@ A different approach would be to have an alternate implementation
 of certain primitive effects in standalone mode, probably not involving
 the "regular" implementation of coroutines at all.
 
+Benchmarking Infrastructure
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* TODO cover ``bench-all.py``, ``bench-diff.py``, and ``bench-ize.py``.
+
+    bench-ize.py data/2013-08-09@11.46.53/all_timings.json --overview
+    bench-ize.py data/2013-08-09@11.46.53/all_timings.json --test fannkuchredux
+    open bench-ized.html
+
 Unimplemented Bits
 ------------------
 
