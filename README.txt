@@ -41,6 +41,11 @@ Dependencies (non-exhaustive):
   Python (and several 3rd party Python libraries)
   Pin (optional, for benchmarking analysis)
 
+Mac OS X:
+  You'll want to install the GNU time binary:
+     brew install gnu-time       # or
+     sudo port install gtime
+
 Ubuntu 16.04 (x64):
   # Mercurial
   sudo apt-get install mercurial
