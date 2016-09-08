@@ -157,6 +157,9 @@ that takes two arguments, and one that takes one argument and returns a function
 that takes another argument. Calling a function that returns a function
 must be ``(fn arg1) arg2``.
 
+Functions can also be applied F#-style, using the pipe operator:
+``arg2 |> fn arg1``.
+
 Other expressions include numbers (for now: double precision float or
 8 to 64-bit integer), strings (Python-like syntax: single or double quotes,
 in single or triple-pair flavors; :doc:`strings` can be prefixed with ``r`` to
@@ -175,9 +178,52 @@ Pattern matches can have guards, and non-binding or-patterns are supported::
       of _ -> 300
     end
 
+Pattern matching doesn't currently support arrays.
+
 One interesting expression form is ``(__COMPILES__ e)``,
 which evaluates (at compile time) to a boolean value reflecting whether
 the provided expression was well-typed.
+
+Some expressions are represented with primitive functions rather than
+dedicated syntax. For example, instead of Python-style ``[1, 2, 3]``
+for arrays, we get by with ``prim mach-array-literal 1 2 3``.
+It's ugly but it retains flexibility.
+
+Coroutines
+~~~~~~~~~~
+
+Foster supports Lua-style stackful coroutines.
+The following code::
+
+    co = coro_create { x : Int32 =>
+           print_i32 x;
+           y = coro_yield 6666;
+           coro_yield y;
+           9999
+    };
+
+    print_i32 (coro_invoke co 10);
+    print_i32 (coro_invoke co 20);
+    print_i32 (coro_invoke co 30);
+
+
+will print out::
+
+    10
+    6666
+    20
+    9999
+
+Interrupts
+~~~~~~~~~~
+
+The Foster compiler has a flag (``--optc-arg=-foster-insert-timer-checks``)
+to insert flag checks, ensuring that a finite number
+of instructions are executed between flag checks. A timer thread in the
+runtime sets the flag every 16ms. Eventually, these timer interrupts should
+cause a coroutine yield, which will enable (nested) scheduling. For now,
+the runtime just prints a message whenever the flag trips.
+
 
 Statements
 ~~~~~~~~~~
@@ -205,6 +251,9 @@ in patterns and data type definitions (but not for e.g. function calls).
 Types
 ~~~~~
 
+Polymorphism
+************
+
 Functions can be given polymorphic type annotations::
 
    foo :: forall (t:Type) { Array t => Int32 };
@@ -214,6 +263,28 @@ Individual functions can also be made polymorphic without a separate type
 annotation::
 
    foo = { forall t:Type, a : Array t => arrayLength32 a };
+
+Unlike many languages, Foster uses a kind system to differentiate
+between values which are guaranteed to be represented as a pointer,
+and values which may or may not be pointer-sized.
+The former have kind ``Boxed``, the latter have kind ``Type``.
+The primary restriction is that when passing around polymorphic functions
+in a higher-order way (that is, when using higher-rank polymorphism),
+they must abstract over ``Boxed`` types, since we can provide only
+a single compiled implementation and we can't control what type the
+caller provides when instantiating the polymorphic function.
+
+This restriction could be lifted by using intensional polymorphism.
+I'm undecided on whether it's better to accept the restriction that
+reflects an implementation constraint, or extend the implementation
+(and add some complexity, and add a different sort of constraint,
+in the form of limiting separate compilation)
+to lift the constraint. The main issue where this comes up is
+in monadic-style encodings, where it's kinda painful to be restricted
+to only defining monads over boxed types.
+
+Effects
+*******
 
 We have (some) support for Koka-style effects. In this example, we verify
 that passing a function which has the Net and Console effects cannot be
@@ -235,6 +306,13 @@ the caller allows Console and Net::
           });
 
 However, the standard library does not yet make use of effect types.
+At the moment, they're only used for coroutines, to track what type
+the coroutine is going to yield. Any function called by a coroutine
+is allowed to yield a value (that's what it means to support stackful
+coroutines).
+
+Refinements
+***********
 
 Unlike most languages, we support refinement types, which are statically
 checked using an SMT solver.
@@ -296,7 +374,7 @@ we automatically produce the following Foster code::
 
 
 Compilation
-~~~~~~~~~~~
+-----------
 
 The Foster middle-end does some high-level optimizations like contification,
 inlining, and GC root analysis. The LLVM backend then does further work.
@@ -373,16 +451,51 @@ LLVM did some strange register scheduling in this case, spilling and restoring
 ``-O2`` level optimization, using the ``--backend-optimize`` flag to
 ``runfoster``, LLVM simply eliminates the loop.
 
+Bare-Metal Mode
+~~~~~~~~~~~~~~~
+
+There's a ``--standalone`` flag for the compiler
+(and a ``fosterc-standalone`` driver script) which disables linking
+with the runtime. This could, in theory, be useful for creating
+very low-level code, such as the implementation of an operating system.
+
+However, I haven't done much with it yet, mainly because I think it
+would be worth extending the benefits of effects and handlers to
+standalone code, as much as possible, and I'm not sure of the right
+way of doing so.
+
+One way of going about it is to have a layered runtime, such that
+only a very very small amount of code is truly zero-runtime,
+and most code can assume at least coroutine primitives.
+A different approach would be to have an alternate implementation
+of certain primitive effects in standalone mode, probably not involving
+the "regular" implementation of coroutines at all.
+
 Unimplemented Bits
 ------------------
 
 * Mutability tracking for arrays
+* Control over aliasing
 * (Possibly) regions for Ref cells and/or other datatypes
 * Full story on boxed vs unboxed types
 * Module system
 * Non-trivial use of effects
 * Effect handlers
 * Monadic effect translation
+* Any form of JIT compilation
+* A sophisticated garbage collector
 
 Vision
 ------
+
+* ML-style type safety provides a solid foundation for a reasonable language.
+* For reasons of both maintainability and security, we'd also like to
+track and restrict the effects of executing a given piece of code,
+thus effect typing.
+* Given effect typing, something like extensible effects provides a unified
+mechanism for language-based interpositioning.
+* Coroutines serve as a behind-the-scenes implementation mechanism for
+extensible effects, and also for an independent, hugely useful,
+in-front-of-the-scenes language mechanism.
+*
+
