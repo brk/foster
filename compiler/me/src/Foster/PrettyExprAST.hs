@@ -77,8 +77,8 @@ prettyTopLevelFn fn =
 instance Pretty ty => Pretty (FnAST ty) where
   pretty fn =
       group (lbrace <> prettyTyFormals (fnTyFormals fn) <> args (fnFormals fn)
-                    <$> nest 4 (group $ pretty (fnAstBody fn))
-                    <$> rbrace)
+                    <> nest 4 (group $ line <> pretty (fnAstBody fn) <> line)
+                    <> rbrace)
     where args []  = empty
           args frm = hang 1 (empty <+> vsep (map (\v -> prettyFnFormalTy v <+> text "=>") frm))
 
@@ -216,7 +216,7 @@ wasRaw True  = text "r"
 
 instance Pretty ty => Pretty (ArrayEntry (ExprAST ty)) where
   pretty (AE_Int _annot str) = pretty str
-  pretty (AE_Expr ex) = pretty ex
+  pretty (AE_Expr ex) = prettyAtom ex
 
 instance Pretty ty => Pretty (ExprAST ty) where
   pretty e = prettyStmt e

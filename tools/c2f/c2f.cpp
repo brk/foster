@@ -1385,18 +1385,6 @@ The corresponding AST to be matched is
     return false;
   }
 
-  /*
-    type case Ptr (t:Type)
-          of $NullPtr
-          of $Ptr t
-          ;
-
-    // assuming that t has a zero value
-    type case Field (t:Type)
-           of $Field (Ref t)
-           ;
-  */
-
   std::string zeroValueRecord(const RecordDecl* rd) {
     std::string name = rd->getName();
     if (TypedefNameDecl* tnd = rd->getTypedefNameForAnonDecl()) {
@@ -1427,7 +1415,7 @@ The corresponding AST to be matched is
   std::string zeroValue(const Type* typ) {
     if (typ->isFloatingType()) return "0.0";
     if (typ->isIntegerType()) return "0";
-    if (typ->isPointerType()) return "NullPtr";
+    if (typ->isPointerType()) return "PtrNil";
     if (auto tty = dyn_cast<TypedefType>(typ)) {
       return zeroValue(tty->desugar().getTypePtr());
     }
@@ -1564,7 +1552,7 @@ The corresponding AST to be matched is
   void handleCastExpr(const CastExpr* ce, ContextKind ctx) {
     switch (ce->getCastKind()) {
     case CK_NullToPointer:
-      llvm::outs() << "NullPtr";
+      llvm::outs() << "PtrNil";
       break;
     case CK_ToVoid:
       if (isa<IntegerLiteral>(ce->getSubExpr()->IgnoreParens())) {
