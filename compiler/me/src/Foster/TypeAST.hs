@@ -360,8 +360,13 @@ isbCompare a b =
   if a == b then ISB_Equal
     else case (a, b) of
             (I1,  _)   -> ISB_DefinitelySmaller
-            (I8,  _)   -> ISB_DefinitelySmaller
-            (I16, _)   -> ISB_DefinitelySmaller
+
+            (I8,  I1)  -> ISB_DefinitelyLarger
+            (I8,  _ )  -> ISB_DefinitelySmaller
+
+            (I16, I1)  -> ISB_DefinitelyLarger
+            (I16, I8)  -> ISB_DefinitelyLarger
+            (I16, _ )  -> ISB_DefinitelySmaller
 
             (I32, IWd) -> ISB_EqualOrSmaller
             (I32, I64) -> ISB_DefinitelySmaller
