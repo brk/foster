@@ -179,7 +179,7 @@ extern "C" foster_generic_coro** __foster_get_current_coro_slot() {
   return &(__foster_get_current_vCPU()->current_coro);
 }
 
-// $ gotest.sh speed/siphash --optc-arg=-foster-insert-timing-checks --backend-optimize
+// $ gotest.sh speed/siphash --optc-arg=-foster-insert-timer-checks --backend-optimize
 // $ test-tmpdir/siphash/siphash 64 20048
 extern "C" void __foster_do_resched() {
   FosterVirtualCPU* v = __foster_get_current_vCPU();

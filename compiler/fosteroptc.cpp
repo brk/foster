@@ -106,8 +106,8 @@ optInternalize("foster-internalize",
   cl::cat(FosterOptCat));
 
 static cl::opt<bool>
-optInsertTimerChecks("foster-insert-timing-checks",
-  cl::desc("Insert timing checks at loop backedges"),
+optInsertTimerChecks("foster-insert-timer-checks",
+  cl::desc("Insert timer flag checks at loop backedges"),
   cl::cat(FosterOptCat));
 
 static cl::opt<bool>
