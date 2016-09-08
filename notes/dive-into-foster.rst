@@ -373,8 +373,18 @@ we automatically produce the following Foster code::
     main = { print_i32 (foo (bitshl-Int32 3 3)) };
 
 
+Implementation
+--------------
+
+Interpretation
+~~~~~~~~~~~~~~
+
+There is a small-step interpreter, available via the ``--interpret`` flag.(
+It's mainly intended as a reference semantics, not a day-to-day REPL or
+anything like that.
+
 Compilation
------------
+~~~~~~~~~~~
 
 The Foster middle-end does some high-level optimizations like contification,
 inlining, and GC root analysis. The LLVM backend then does further work.
@@ -450,6 +460,21 @@ LLVM did some strange register scheduling in this case, spilling and restoring
 ``%eax`` across the loop boundary. If we enable
 ``-O2`` level optimization, using the ``--backend-optimize`` flag to
 ``runfoster``, LLVM simply eliminates the loop.
+
+Optimizations
+~~~~~~~~~~~~~
+
+One interesting backend optimization: we turn (the LLVM equivalent of C)
+code like::
+
+       (((T)buf[0]) << (0 * sizeof(buf[0])))
+     | (((T)buf[1]) << (1 * sizeof(buf[0])))
+     | (((T)buf[2]) << (2 * sizeof(buf[0])))
+     | (((T)buf[3]) << (3 * sizeof(buf[0])))
+
+into::
+
+      ((T*)buf)[0]
 
 Bare-Metal Mode
 ~~~~~~~~~~~~~~~
