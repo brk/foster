@@ -1644,7 +1644,24 @@ The corresponding AST to be matched is
       }
   }
 
+  std::string enumPrefix(const EnumDecl* ed) {
+    std::string prefix = ed->getNameAsString();
+    if (!prefix.empty()) prefix += "_";
+    return prefix;
+  }
+
+  std::string enumConstantAccessor(const EnumDecl* ed,
+                                   const EnumConstantDecl* ecd) {
+    std::string prefix = enumPrefix(ed);
+    return prefix + ecd->getNameAsString();
+  }
+
   std::string emitVarName(const ValueDecl* vd) {
+    if (auto ecd = dyn_cast<EnumConstantDecl>(vd)) {
+      const EnumDecl* ed = enumDeclsForConstants[ecd];
+      return "(" + enumConstantAccessor(ed, ecd) + " !)";
+    }
+
     auto it = duplicateVarDecls.find(vd);
     if (it == duplicateVarDecls.end()) {
       return fosterizedName(vd->getName());
@@ -2136,6 +2153,13 @@ The corresponding AST to be matched is
         llvm::outs() << "/* " << getText(R, *fd) << ";*/\n";
       } else if (VarDecl* vd = dyn_cast<VarDecl>(*b)) {
         llvm::outs() << "/* Unhandled global variable declaration:\n" << getText(R, *vd) << ";*/\n";
+      } else if (auto ed = dyn_cast<EnumDecl>(*b)) {
+        for (auto e : ed->enumerators()) {
+          enumDeclsForConstants[e] = ed;
+          llvm::outs() << enumConstantAccessor(ed, e)
+                       << " = { " << e->getInitVal().getSExtValue()
+                       << " };\n";
+        }
       } else {
         llvm::errs() << "unhandled top-level decl\n";
         (*b)->dump();
@@ -2205,6 +2229,8 @@ private:
   ASTContext* Ctx;
 
   llvm::DenseMap<const ValueDecl*, int> duplicateVarDecls;
+
+  llvm::DenseMap<const EnumConstantDecl*, const EnumDecl*> enumDeclsForConstants;
 
   const Stmt* currStmt; // print this one, even if it's in the map.
   typedef llvm::DenseMap<const Stmt*,std::pair<unsigned,unsigned> > StmtMapTy;
