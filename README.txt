@@ -86,6 +86,10 @@ Ubuntu 16.04 (x64):
   mv ninja ~/sw/local/bin
 
 
+  # To build LLDB, you'll need editline on Linux, from
+  # http://thrysoee.dk/editline/
+  # which depends on libncurses:
+  sudo apt-get install libncurses5-dev
 
   # For GHC, to get profiling libraries, do not use apt-get;
   # instead, download a generic binary tarball directly from
@@ -109,7 +113,7 @@ Ubuntu 16.04 (x64):
   # Ubuntu 14.10, the CMake version available via apt-get is outdated.
   # To build from source (might want to pass --prefix to configure!):
 
-  wget http://www.cmake.org/files/v3.6/cmake-3.6.1.tar.gz
+  wget https://cmake.org/files/v3.6/cmake-3.6.2.tar.gz
   tar xf cmake-*.tar.gz
   cd cmake-*
   ./configure

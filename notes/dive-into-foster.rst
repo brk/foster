@@ -168,6 +168,10 @@ of ``Text``; there is no primitive character type), pattern matches
 ``case e of p1 -> e1 of p2 -> e2 end``, conditionals ``if a then b else c end``,
 tuples ``(a, b, c)``, and booleans ``True``/``False``.
 
+Once upon a time, numbers had Fortress-style radix suffixes (like ``8FFF_16``)
+but now we use regular hex/binary prefix syntax (``0b1101``). Numbers can have
+embedded backticks to provide visual separation: ``0b`1110`1110``.
+
 Pattern matches can have guards, and non-binding or-patterns are supported::
 
     // Evaluates to 200
@@ -504,6 +508,20 @@ Benchmarking Infrastructure
     bench-ize.py data/2013-08-09@11.46.53/all_timings.json --overview
     bench-ize.py data/2013-08-09@11.46.53/all_timings.json --test fannkuchredux
     open bench-ized.html
+
+Standard Library
+~~~~~~~~~~~~~~~~
+
+A few random bits and pieces:
+
+* Bignum library, ported from libtommath (partial)
+* sha256, siphash, xorshift ported from reference C implementations
+* Finger trees, maps, sets, and sequences, ported from Haskell
+* Various purely functional data structures, ported from Okasaki
+* A few benchmarks ported from the Language Shootout Benchmarking Game.
+* A partial implementation of a TCP stack, in test/speed/foster-posix/foster-net
+* A port of a UTF-8 decoder, which uses a dash of refinement types,
+  in test/speed/micro/utf8-decode
 
 Unimplemented Bits
 ------------------
