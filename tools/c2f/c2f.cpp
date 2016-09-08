@@ -1162,9 +1162,9 @@ The corresponding AST to be matched is
       handleAssignment(binop, ctx);
     } else if (op == ",") {
       llvm::outs() << "( _ = ";
-      visitStmt(binop->getLHS());
+      visitStmt(binop->getLHS(), StmtContext);
       llvm::outs() << ";\n";
-      visitStmt(binop->getRHS());
+      visitStmt(binop->getRHS(), ctx);
       llvm::outs() << " )";
     } else if (op == "&&" || op == "||") {
       bool needsBoolToIntCoercion = !isBooleanContext;
@@ -1531,16 +1531,19 @@ The corresponding AST to be matched is
   }
 
   std::string intCastFromTo(const std::string& srcTy, const std::string& dstTy, bool isSigned) {
+    if (srcTy == "Int16" && dstTy == "Int8" ) return "trunc_i16_to_i8";
     if (srcTy == "Int32" && dstTy == "Int8" ) return "trunc_i32_to_i8";
     if (srcTy == "Int64" && dstTy == "Int8" ) return "trunc_i64_to_i8";
     if (srcTy == "Int32" && dstTy == "Int16") return "trunc_i32_to_i16";
     if (srcTy == "Int64" && dstTy == "Int16") return "trunc_i64_to_i16";
     if (srcTy == "Int64" && dstTy == "Int32") return "trunc_i64_to_i32";
+    if (srcTy == "Int8"  && dstTy == "Int16" && isSigned) return "sext_i8_to_i16";
     if (srcTy == "Int8"  && dstTy == "Int32" && isSigned) return "sext_i8_to_i32";
     if (srcTy == "Int8"  && dstTy == "Int64" && isSigned) return "sext_i8_to_i64";
     if (srcTy == "Int16" && dstTy == "Int32" && isSigned) return "sext_i16_to_i32";
     if (srcTy == "Int16" && dstTy == "Int64" && isSigned) return "sext_i16_to_i64";
     if (srcTy == "Int32" && dstTy == "Int64" && isSigned) return "sext_i32_to_i64";
+    if (srcTy == "Int8"  && dstTy == "Int16" && !isSigned) return "zext_i8_to_i16";
     if (srcTy == "Int8"  && dstTy == "Int32" && !isSigned) return "zext_i8_to_i32";
     if (srcTy == "Int8"  && dstTy == "Int64" && !isSigned) return "zext_i8_to_i64";
     if (srcTy == "Int16" && dstTy == "Int32" && !isSigned) return "zext_i16_to_i32";
@@ -1586,7 +1589,6 @@ The corresponding AST to be matched is
     case CK_IntegralCast: {
       std::string cast = "";
 
-      ce->getSubExpr()->dump();
       if (isTrivialIntegerLiteral(ce->getSubExpr())
        || isa<CharacterLiteral>(ce->getSubExpr())) {
         // don't print anything, no cast needed
