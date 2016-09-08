@@ -243,6 +243,7 @@ data ShowableMachineState = SMS MachineState
 -- and captured values.
 data SSValue = SSBool      Bool
              | SSInt8      Int8
+             | SSInt16     Int16
              | SSInt32     Int32
              | SSInt64     Int64
              | SSIntWd     Int64
@@ -304,6 +305,7 @@ arrEntry _ other = error $ "KSmallstep.hs: Unsupported array entry type: " ++ sh
 
 mkSSInt I1  i = SSInt8  (fromInteger i)
 mkSSInt I8  i = SSInt8  (fromInteger i)
+mkSSInt I16 i = SSInt16 (fromInteger i)
 mkSSInt I32 i = SSInt32 (fromInteger i)
 mkSSInt I64 i = SSInt64 (fromInteger i)
 mkSSInt IWd i = SSIntWd (fromInteger i)
@@ -579,6 +581,7 @@ matchPattern p v =
     (_, PR_Atom (P_Variable _ tid)) -> Just [(tidIdent tid, v)]
 
     (SSInt8  i1, PR_Atom (P_Int _ _ i2))   -> matchIf $ i1 == fromIntegral (litIntValue i2)
+    (SSInt16 i1, PR_Atom (P_Int _ _ i2))   -> matchIf $ i1 == fromIntegral (litIntValue i2)
     (SSInt32 i1, PR_Atom (P_Int _ _ i2))   -> matchIf $ i1 == fromIntegral (litIntValue i2)
     (SSInt64 i1, PR_Atom (P_Int _ _ i2))   -> matchIf $ i1 == fromIntegral (litIntValue i2)
     (_       , PR_Atom (P_Int _ _ _ ))   -> matchFailure
@@ -772,6 +775,14 @@ evalPrimitiveIntOp I32 opName [SSInt32 i1, SSInt32 i2] =
     (POR_UnsignedB fn) -> SSBool (coerce  fn i1 i2)
     _ -> error $ "Unknown primitive operation " ++ opName
 
+evalPrimitiveIntOp I16 opName [SSInt16 i1, SSInt16 i2] =
+  case tryGetFixnumPrimOp  8 opName :: PrimOpResult Int16 Word16 of
+    (POR_Signed   fn) -> SSInt16 (        fn i1 i2)
+    (POR_Unsigned fn) -> SSInt16 (coerceU fn i1 i2)
+    (POR_SignedB   fn) -> SSBool (        fn i1 i2)
+    (POR_UnsignedB fn) -> SSBool (coerce  fn i1 i2)
+    _ -> error $ "Unknown primitive operation " ++ opName
+
 evalPrimitiveIntOp I8 opName [SSInt8 i1, SSInt8 i2] =
   case tryGetFixnumPrimOp  8 opName :: PrimOpResult Int8 Word8 of
     (POR_Signed   fn) -> SSInt8 (        fn i1 i2)
@@ -799,30 +810,40 @@ evalPrimitiveIntOp IDw opName [SSIntDw i1, SSIntDw i2] =
 evalPrimitiveIntOp I32 "negate" [SSInt32 i] = SSInt32 (negate i)
 evalPrimitiveIntOp I64 "negate" [SSInt64 i] = SSInt64 (negate i)
 evalPrimitiveIntOp I8  "negate" [SSInt8  i] = SSInt8  (negate i)
+evalPrimitiveIntOp I16 "negate" [SSInt16 i] = SSInt16 (negate i)
 evalPrimitiveIntOp IWd "negate" [SSIntWd i] = SSIntWd (negate i)
 
 evalPrimitiveIntOp I1  "bitnot" [SSBool b] = SSBool (not b)
 evalPrimitiveIntOp I32 "bitnot" [SSInt32 i] = SSInt32 $ complement i
 evalPrimitiveIntOp I64 "bitnot" [SSInt64 i] = SSInt64 $ complement i
 evalPrimitiveIntOp I8  "bitnot" [SSInt8  i] = SSInt8  $ complement i
+evalPrimitiveIntOp I16 "bitnot" [SSInt16 i] = SSInt16 $ complement i
 evalPrimitiveIntOp IWd "bitnot" [SSIntWd i] = SSIntWd $ complement i
 
 evalPrimitiveIntOp I32       "ctpop" [SSInt32 i] = SSInt32 (ctpop i 32)
 evalPrimitiveIntOp I64       "ctpop" [SSInt64 i] = SSInt64 (ctpop i 64)
 evalPrimitiveIntOp I8        "ctpop" [SSInt8  i] = SSInt8  (ctpop i 8 )
+evalPrimitiveIntOp I16       "ctpop" [SSInt16 i] = SSInt16 (ctpop i 16)
 evalPrimitiveIntOp IWd       "ctpop" [SSIntWd i] = SSIntWd (ctpop i kVirtualWordSize)
 
 evalPrimitiveIntOp I32       "ctlz"  [SSInt32 i] = SSInt32 (ctlz i 32)
 evalPrimitiveIntOp I64       "ctlz"  [SSInt64 i] = SSInt64 (ctlz i 64)
 evalPrimitiveIntOp I8        "ctlz"  [SSInt8  i] = SSInt8  (ctlz i 8 )
+evalPrimitiveIntOp I16       "ctlz"  [SSInt16 i] = SSInt16 (ctlz i 16)
 evalPrimitiveIntOp IWd       "ctlz"  [SSIntWd i] = SSIntWd (ctlz i kVirtualWordSize)
 
+evalPrimitiveIntOp _  "sext_i16" [SSInt8  i] = SSInt16 (fromIntegral i)
 evalPrimitiveIntOp _  "sext_i32" [SSInt8  i] = SSInt32 (fromIntegral i)
 evalPrimitiveIntOp _  "sext_i64" [SSInt8  i] = SSInt64 (fromIntegral i)
+evalPrimitiveIntOp _  "sext_i32" [SSInt16 i] = SSInt32 (fromIntegral i)
+evalPrimitiveIntOp _  "sext_i64" [SSInt16 i] = SSInt64 (fromIntegral i)
 evalPrimitiveIntOp _  "sext_i64" [SSInt32 i] = SSInt64 (fromIntegral i)
 
+evalPrimitiveIntOp _  "zext_i16" [SSInt8  i] = SSInt16 $ unsigned 8  (fromIntegral i)
 evalPrimitiveIntOp _  "zext_i32" [SSInt8  i] = SSInt32 $ unsigned 8  (fromIntegral i)
 evalPrimitiveIntOp _  "zext_i64" [SSInt8  i] = SSInt64 $ unsigned 8  (fromIntegral i)
+evalPrimitiveIntOp _  "zext_i32" [SSInt16 i] = SSInt32 $ unsigned 16 (fromIntegral i)
+evalPrimitiveIntOp _  "zext_i64" [SSInt16 i] = SSInt64 $ unsigned 16 (fromIntegral i)
 evalPrimitiveIntOp _  "zext_i64" [SSInt32 i] = SSInt64 $ unsigned 32 (fromIntegral i)
 
 evalPrimitiveIntOp I32 "sitofp_f64"     [SSInt32 i] = SSFloat (fromIntegral i)
