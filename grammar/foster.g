@@ -183,7 +183,7 @@ patom :
 
 lit     : num | str | TRU -> ^(BOOL TRU) | FLS -> ^(BOOL FLS);
 
-ifexpr : 'if' cond=e 'then' thenpart=stmts ('else' elsepart=stmts)? 'end'
+ifexpr : 'if' cond=stmts 'then' thenpart=stmts ('else' elsepart=stmts)? 'end'
           -> ^(IF $cond $thenpart $elsepart);
 
 binding  : x '=' e       -> ^(BINDING x e);

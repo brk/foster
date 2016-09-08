@@ -279,10 +279,10 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
         []           -> E_TupleAST annot KindPointerSized []
         [stmts]      -> cb_parse_stmts stmts
         (stmts:rest) -> E_TupleAST annot KindPointerSized (cb_parse_stmts stmts : map cb_parse_e rest)
-    CBOR_Array [tok, _,_cbr, CBOR_Array [e, thenstmts]] | tok `tm` tok_IF ->
-        E_IfAST annot (cb_parse_e e) (cb_parse_stmts thenstmts) (E_TupleAST annot KindPointerSized [])
-    CBOR_Array [tok, _,_cbr, CBOR_Array [e, thenstmts, elsestmts]] | tok `tm` tok_IF ->
-        E_IfAST annot (cb_parse_e e) (cb_parse_stmts thenstmts) (cb_parse_stmts elsestmts)
+    CBOR_Array [tok, _,_cbr, CBOR_Array [stmts, thenstmts]] | tok `tm` tok_IF ->
+        E_IfAST annot (cb_parse_stmts stmts) (cb_parse_stmts thenstmts) (E_TupleAST annot KindPointerSized [])
+    CBOR_Array [tok, _,_cbr, CBOR_Array [stmts, thenstmts, elsestmts]] | tok `tm` tok_IF ->
+        E_IfAST annot (cb_parse_stmts stmts) (cb_parse_stmts thenstmts) (cb_parse_stmts elsestmts)
     CBOR_Array [tok, _,_cbr, CBOR_Array [stmts, t]] | tok `tm` tok_TYANNOT ->
         E_TyCheck annot (cb_parse_stmts stmts) (cb_parse_t t)
     CBOR_Array [tok, _,_cbr, CBOR_Array [mu_formals, mu_tyformals]]        | tok `tm` tok_VAL_ABS ->
