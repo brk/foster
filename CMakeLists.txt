@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 3.0)
+cmake_minimum_required (VERSION 3.4.3)
 
 # {{{ We need to set up the compiler paths before calling project()...
 # ~~~~~~~~~~~~~~~~~~~~
