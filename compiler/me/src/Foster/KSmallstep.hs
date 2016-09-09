@@ -776,7 +776,7 @@ evalPrimitiveIntOp I32 opName [SSInt32 i1, SSInt32 i2] =
     _ -> error $ "Unknown primitive operation " ++ opName
 
 evalPrimitiveIntOp I16 opName [SSInt16 i1, SSInt16 i2] =
-  case tryGetFixnumPrimOp  8 opName :: PrimOpResult Int16 Word16 of
+  case tryGetFixnumPrimOp 16 opName :: PrimOpResult Int16 Word16 of
     (POR_Signed   fn) -> SSInt16 (        fn i1 i2)
     (POR_Unsigned fn) -> SSInt16 (coerceU fn i1 i2)
     (POR_SignedB   fn) -> SSBool (        fn i1 i2)
@@ -1216,6 +1216,7 @@ display (SSBool True )  = "true"
 display (SSBool False)  = "false"
 display (SSByteString bs)= show bs
 display (SSInt8  i   )  = show i
+display (SSInt16 i   )  = show i
 display (SSInt32 i   )  = show i
 display (SSInt64 i   )  = show i
 display (SSIntWd i   )  = show i
