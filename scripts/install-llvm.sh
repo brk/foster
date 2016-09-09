@@ -21,9 +21,13 @@ pushd src
         wget http://llvm.org/releases/${LLVM_VERSION}/libcxxabi-${LLVM_V}.tar.xz
 
         echo "unpacking sources..."
-        for proj in llvm cfe compiler-rt libcxx libcxxabi; do
-          tar -xf ${proj}-${LLVM_V}.tar.*
+        for proj in $(ls *-${LLVM_V}.tar.xz); do
+          tar -xf ${proj}
         done
+        if [ ! -d cfe-${LLVM_V} ]; then
+          echo "failed to unpack..."
+          exit 1
+        fi
         mv lld-${LLVM_V}         llvm-${LLVM_V}/tools/lld
         mv lldb-${LLVM_V}        llvm-${LLVM_V}/tools/lldb
         mv cfe-${LLVM_V}         llvm-${LLVM_V}/tools/clang
@@ -45,7 +49,7 @@ pushd src/llvm-${LLVM_V}
 
         # Note: it's OK to use GCC 4.x instead of Clang, I think, but using GCC 5 will lead
         # to pain and suffering until the whole cxx11 abi_tag situation gets worked out.
-        CC=clang CXX=clang++ cmake .. -G "Unix Makefiles" -DCMAKE_INSTALL_PREFIX=${LLVM_ROOT}/${LLVM_VERSION} -DCMAKE_BUILD_TYPE="RelWithDebInfo" -DLLVM_TARGETS_TO_BUILD="host" -DLLVM_ENABLE_ASSERTIONS=ON
+        CC=clang CXX=clang++ cmake .. -G "Unix Makefiles" -DCMAKE_INSTALL_PREFIX=${LLVM_ROOT}/${LLVM_VERSION} -DCMAKE_BUILD_TYPE="RelWithDebInfo" -DLLVM_TARGETS_TO_BUILD="host" -DLLVM_ENABLE_ASSERTIONS=ON -DLLVM_LINK_LLVM_DYLIB=ON
 
 	make -j2
 

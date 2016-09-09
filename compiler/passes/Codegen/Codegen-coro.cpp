@@ -430,7 +430,7 @@ Value* emitCoroWrapperFn(
   /////////////////////////////
 
   Function::arg_iterator args = wrapper->arg_begin();
-  Value* ptr_f_c = args++;
+  Value* ptr_f_c = &*(args++);
   ptr_f_c->setName("f_c");
 
   BasicBlock* prevBB = builder.GetInsertBlock();
@@ -525,7 +525,7 @@ Value* CodegenPass::emitCoroCreateFn(
   registerCoroType(this->mod, retTy);
 
   Function::arg_iterator args = create->arg_begin();
-  Value* pclo = args++;
+  Value* pclo = &*(args++);
   pclo->setName("pclo");
 
   BasicBlock* prevBB = builder.GetInsertBlock();
@@ -654,13 +654,13 @@ void CodegenPass::emitLazyCoroPrimInfo(bool isYield, Function* fn,
   // when yielding, we yield to the sibling of the current thread's coro.
   if (isYield) {
     while (args != fn->arg_end()) {
-      inputArgs.push_back(args++);
+      inputArgs.push_back(&*(args++));
     }
     coro = getCurrentCoroSibling(this->mod);
   } else {
-    Value* concrete_invoked_coro = args++;
+    Value* concrete_invoked_coro = &*(args++);
     while (args != fn->arg_end()) {
-      inputArgs.push_back(args++);
+      inputArgs.push_back(&*(args++));
     }
     coro = builder.CreateBitCast(concrete_invoked_coro,
                                  ptrTo(foster_generic_coro_t));

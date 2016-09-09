@@ -35,6 +35,8 @@ std::string str(llvm::Value* value);
 
 namespace foster {
 
+extern llvm::LLVMContext fosterLLVMContext;
+
 void initializeLLVM();
 void initializeKnownNonAllocatingFQNames(llvm::StringSet<>& names);
 

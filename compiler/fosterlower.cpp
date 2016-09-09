@@ -161,8 +161,7 @@ optPrintLLVMImports("foster-print-llvm-imports",
   cl::cat(FosterOptCat));
 
 void printVersionInfo() {
-  llvm::outs() << "Foster version: " << FOSTER_VERSION_STR;
-  llvm::outs() << ", compiled: " << __DATE__ << " at " << __TIME__ << "\n";
+  llvm::outs() << "Foster version: " << FOSTER_VERSION_STR << "\n";
   cl::PrintVersionMessage();
 }
 
@@ -200,16 +199,11 @@ void dumpModuleToBitcode(Module* mod, const string& filename) {
   foster::dumpModuleToBitcode(mod, filename);
 }
 
-void handleLinkingDiagnostic(const llvm::DiagnosticInfo& di) {
-  DiagnosticPrinterRawOStream dp(llvm::errs());
-  di.print(dp);
-  return;
-}
-
-void linkTo(llvm::Module*& transient,
+void linkTo(std::unique_ptr<llvm::Module> transient,
             const std::string& name,
-            llvm::Module* module) {
-  bool failed = Linker::LinkModules(module, transient, handleLinkingDiagnostic);
+            llvm::Module& module,
+            llvm::Linker::Flags flags = llvm::Linker::Flags::None) {
+  bool failed = Linker::linkModules(module, std::move(transient), flags);
   ASSERT(!failed) << "Error when linking in " << name << "\n";
 }
 
@@ -299,12 +293,12 @@ namespace foster {
 
 int main(int argc, char** argv) {
   int program_status = 0;
-  sys::PrintStackTraceOnErrorSignal();
+  sys::PrintStackTraceOnErrorSignal(argv[0]);
   PrettyStackTraceProgram X(argc, argv);
   llvm_shutdown_obj Y;
   ScopedTimer* wholeProgramTimer = new ScopedTimer("total");
-  Module* libfoster_bc = NULL;
-  Module* coro_bc      = NULL;
+  std::unique_ptr<Module> libfoster_bc = NULL;
+  std::unique_ptr<Module> coro_bc      = NULL;
 
   cl::SetVersionPrinter(&printVersionInfo);
   cl::ParseCommandLineOptions(argc, argv, "Bootstrap Foster compiler backend\n");
@@ -320,11 +314,11 @@ int main(int argc, char** argv) {
 
   foster::ParsingContext::pushNewContext();
 
-  llvm::Module* module = new Module(mainModulePath.c_str(), getGlobalContext());
+  llvm::Module* module = new Module(mainModulePath.c_str(), foster::fosterLLVMContext);
 
   if (!optStandalone) {
-    coro_bc = readLLVMModuleFromPath(optBitcodeLibsDir + "/gc_bc/libfoster_coro.bc").release();
-    linkTo(coro_bc, "libfoster_coro", module);
+    coro_bc = readLLVMModuleFromPath(optBitcodeLibsDir + "/gc_bc/libfoster_coro.bc");
+    linkTo(std::move(coro_bc), "libfoster_coro", *module);
 
     StructTypeAST* coroast = StructTypeAST::getRecursive("foster_generic_coro.struct");
     std::vector<TypeAST*> coro_parts;
@@ -360,8 +354,8 @@ int main(int argc, char** argv) {
   }
 
   if (!optStandalone) {
-    libfoster_bc = readLLVMModuleFromPath(optBitcodeLibsDir + "/foster_runtime.bc").release();
-    foster::putModuleFunctionsInScope(libfoster_bc, module);
+    libfoster_bc = readLLVMModuleFromPath(optBitcodeLibsDir + "/foster_runtime.bc");
+    foster::putModuleFunctionsInScope(libfoster_bc.get(), module);
   }
 
   //================================================================
@@ -413,7 +407,7 @@ int main(int argc, char** argv) {
 
   if (!optStandalone) {
     ScopedTimer timer("llvm.link");
-    linkTo(libfoster_bc, "libfoster", module);
+    linkTo(std::move(libfoster_bc), "libfoster", *module);
   }
 
   if (optDumpPostLinkedIR) {
@@ -438,8 +432,6 @@ cleanup:
 
   delete wholeProgramTimer;
 
-  delete coro_bc;      coro_bc = NULL;
-  delete libfoster_bc; libfoster_bc = NULL;
   delete module;       module = NULL;
 
   if (optPrintTimings) {

@@ -124,7 +124,7 @@ public:
     // Set up for emitting addresses.
     const char *AddressDirective;
     int AddressAlignLog;
-    if (AP.TM.getDataLayout()->getPointerSize() == sizeof(int32_t)) {
+    if (AP.getDataLayout().getPointerSize() == sizeof(int32_t)) {
       AddressDirective = MAI.getData32bitsDirective();
       AddressAlignLog = 2;
     } else {
@@ -217,7 +217,7 @@ public:
         AP.EmitInt32(offsets.size());
         i32sForThisFunction++;
 
-        unsigned IntPtrSize = AP.TM.getDataLayout()->getPointerSize();
+        unsigned IntPtrSize = AP.getDataLayout().getPointerSize();
 
         // Emit the addresses of the safe points in the cluster.
         for (auto label : labels) {
@@ -230,7 +230,7 @@ public:
         // Emit the stack offsets for the metadata-imbued roots in the cluster.
         for (auto rit : offsetsWithMetadata) {
           AP.OutStreamer->AddComment("metadata");
-          AP.EmitGlobalConstant(rit.second);
+          AP.EmitGlobalConstant(AP.getDataLayout(), rit.second);
           voidPtrsForThisFunction++;
         }
 

@@ -37,6 +37,8 @@ namespace runtime {
 
 extern "C" {
 
+foster_generic_coro** __foster_get_current_coro_slot();
+
 void foster_coro_ensure_self_reference(foster_generic_coro* coro) {
   if (coro->indirect_self != NULL) {
     *(coro->indirect_self) = coro;
@@ -62,6 +64,13 @@ void foster_coro_create(coro_func corofn,
 // This is a no-op for the CORO_ASM backend,
 // but we should still call it anyways (TODO).
 void foster_coro_destroy(coro_context* ctx) {
+  // We need to call this function from this module, somewhere,
+  // to force LLVM to include a declaration in this bitcode
+  // module, which then ensures that the generic coro struct type
+  // isn't duplicated when we link the modules together
+  // after manually adding a declaration in fosterlower.
+  (void)__foster_get_current_coro_slot();
+
   (void) coro_destroy(ctx);
 }
 

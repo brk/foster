@@ -30,24 +30,25 @@ namespace {
 // Loop Pass Manager... ugh!
 struct TimerChecksInsertion : public FunctionPass {
   static char ID;
-  TimerChecksInsertion() : FunctionPass(ID), builder(getGlobalContext()) {}
+  TimerChecksInsertion() : FunctionPass(ID), builder(foster::fosterLLVMContext) {}
 
   const char* getPassName() const { return "TimerChecksInsertion"; }
   llvm::IRBuilder<> builder;
 
   virtual void getAnalysisUsage(AnalysisUsage& AU) const {
     AU.addRequired<LoopInfoWrapperPass>();
-    AU.addRequired<ScalarEvolution>();
+    AU.addRequired<ScalarEvolutionWrapperPass>();
 
     AU.addPreserved<LoopInfoWrapperPass>();
-    AU.addPreserved<ScalarEvolution>();
+    AU.addPreserved<ScalarEvolutionWrapperPass>();
   }
 
   // If F is recursive, or makes calls to statically unknown functions,
   // we should insert a check at the entry.
   bool needsHeader(llvm::Function& F) {
-    for (Function::iterator BB : F) {
-      for (BasicBlock::iterator I : *BB) {
+    for (BasicBlock& BB : F) {
+      for (Instruction& Iref : BB) {
+        Instruction* I = &Iref;
         if (llvm::CallInst* call = llvm::dyn_cast<CallInst>(I)) {
           llvm::Value* Vtgt = call->getCalledValue();
           if (!Vtgt) {
@@ -88,7 +89,7 @@ struct TimerChecksInsertion : public FunctionPass {
       builder.SetInsertPoint(bb);
 
       Value* needsResched = builder.CreateCall(needReschedF, None, "needsResched");
-      BasicBlock* doReschedBB = BasicBlock::Create(getGlobalContext(), "doyield", F, newbb);
+      BasicBlock* doReschedBB = BasicBlock::Create(foster::fosterLLVMContext, "doyield", F, newbb);
       builder.CreateCondBr(needsResched, doReschedBB, newbb);
 
       builder.SetInsertPoint(doReschedBB);
@@ -107,7 +108,7 @@ struct TimerChecksInsertion : public FunctionPass {
       loops.push_back(loop);
     }
 
-    ScalarEvolution& SE = getAnalysis<ScalarEvolution>();
+    ScalarEvolution& SE = getAnalysis<ScalarEvolutionWrapperPass>().getSE();
 
     for (auto loop : loops) {
       // Don't insert checks in blocked/tiled inner loops.

@@ -20,6 +20,7 @@ using std::map;
 
 using foster::EDiag;
 using foster::SourceRange;
+using foster::fosterLLVMContext;
 
 llvm::Type* foster_generic_coro_t = NULL;
 TypeAST* foster_generic_coro_ast  = NULL;
@@ -31,7 +32,7 @@ RefTypeAST* getUnitType() {
 }
 
 llvm::Type* llvmIntType(int n) {
-  return llvm::IntegerType::get(llvm::getGlobalContext(), n);
+  return llvm::IntegerType::get(fosterLLVMContext, n);
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -74,7 +75,7 @@ llvm::Type* NamedTypeAST::getLLVMType() const {
 
 llvm::Type* DataTypeAST::getLLVMType() const {
   llvm::StructType* dt_opaque_named_ty =
-         llvm::StructType::create(llvm::getGlobalContext(),
+         llvm::StructType::create(fosterLLVMContext,
                                                std::string(this->name + ".DT"));
   return llvm::PointerType::getUnqual(dt_opaque_named_ty);
 }
@@ -167,7 +168,7 @@ llvm::CallingConv::ID FnTypeAST::getCallingConventionID() const {
 /////////////////////////////////////////////////////////////////////
 
 llvm::Type* VoidTypeAST::getLLVMType() const {
-  return llvm::Type::getVoidTy(llvm::getGlobalContext());
+  return llvm::Type::getVoidTy(fosterLLVMContext);
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -189,7 +190,7 @@ TupleTypeAST* TupleTypeAST::get(const vector<TypeAST*>& argTypes) {
 
 StructTypeAST::StructTypeAST(std::string name, const SourceRange& sourceRange)
   : IndexableTypeAST("StructType", NULL, sourceRange) {
-  repr = llvm::StructType::create(llvm::getGlobalContext(), name);
+  repr = llvm::StructType::create(fosterLLVMContext, name);
 }
 
 vector<llvm::Type*> StructTypeAST::getLoweredTypes() const {
@@ -209,7 +210,7 @@ void StructTypeAST::setBody(const vector<TypeAST*>& argTypes) {
 
 llvm::Type* StructTypeAST::getLLVMType() const {
   if (repr) return repr;
-  repr = llvm::StructType::get(llvm::getGlobalContext(), getLoweredTypes());
+  repr = llvm::StructType::get(fosterLLVMContext, getLoweredTypes());
   return repr;
 }
 
