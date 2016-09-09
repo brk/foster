@@ -124,7 +124,7 @@ Value* getElementFromComposite(Value* compositeValue, int indexValue,
 ////////////////////////////////////////////////////////////////////
 
 Constant* getConstantArrayOfString(llvm::StringRef s, bool addNull) {
-  return llvm::ConstantDataArray::getString(llvm::getGlobalContext(), s, addNull);
+  return llvm::ConstantDataArray::getString(foster::fosterLLVMContext, s, addNull);
 }
 
 // Given a stack slot named s in a function called f,
@@ -175,7 +175,7 @@ void markGCRootWithMetadata(llvm::Instruction* stackslot, CodegenPass* pass,
   ASSERT(pass->getCurrentAllocaPoint() != NULL) << F->getName();
 
   // Make sure that all the calls to llvm.gcroot() happen in the entry block.
-  llvm::IRBuilder<> tmpBuilder(&entryBlock, pass->getCurrentAllocaPoint());
+  llvm::IRBuilder<> tmpBuilder(&entryBlock, pass->getCurrentAllocaPoint()->getIterator());
   ASSERT(getSlotType(stackslot)->isPointerTy()) << "\n"
               << "gc root slots must be pointers, not structs or such; had "
               << "non-pointer type " << str(getSlotType(stackslot));
@@ -553,8 +553,8 @@ struct LLProcStringOfCStringPrim : public LLProcPrimBase {
   virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) {
     pass->markFosterFunction(F);
     Function::arg_iterator AI = F->arg_begin();
-    Value* cstr = AI++;
-    Value* sz   = AI++;
+    Value* cstr = &*(AI++);
+    Value* sz   = &*(AI++);
     Value* str = pass->emitFosterStringOfCString(cstr, sz);
     builder.CreateRet(str);
   }
@@ -562,7 +562,7 @@ struct LLProcStringOfCStringPrim : public LLProcPrimBase {
 
 void codegenCall1ToFunction(llvm::Function* F, llvm::Value* f) {
     Function::arg_iterator AI = F->arg_begin();
-    Value* n = AI++;
+    Value* n = &*(AI++);
     llvm::CallInst* call = builder.CreateCall(f, n);
     call->setCallingConv(llvm::CallingConv::C);
     // Implicitly: called function may GC...

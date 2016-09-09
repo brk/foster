@@ -129,7 +129,7 @@ bool SpecializeAllocations::runOnBasicBlock(BasicBlock &BB) {
             // Replace call to memalloc with call to memalloc_16.
             Constant* mem16 = ConstantExpr::getBitCast(memalloc_16,
                                                         call->getCalledValue()->getType());
-            CallInst* newcall = CallInst::Create(mem16, ac, "mem16_", I);
+            CallInst* newcall = CallInst::Create(mem16, ac, "mem16_", &*I);
             call->replaceAllUsesWith(newcall);
             I = --BBIL.erase(I); // remove & delete the old memalloc call.
             ++NumSpecialized;

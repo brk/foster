@@ -87,10 +87,10 @@ struct GCRootSafetyChecker : public FunctionPass {
     ValueSet gcroots;
 
     // Collect gc roots
-    for (BasicBlock::iterator IP : F.getEntryBlock()) {
-      if (!llvm::isa<llvm::AllocaInst>(IP)) break;
-      if (isGCRoot(IP)) {
-        gcroots.insert(IP);
+    for (Instruction& IP : F.getEntryBlock()) {
+      if (!llvm::isa<llvm::AllocaInst>(&IP)) break;
+      if (isGCRoot(&IP)) {
+        gcroots.insert(&IP);
       }
     }
 
@@ -124,12 +124,13 @@ struct GCRootSafetyChecker : public FunctionPass {
     std::vector<StaleLoadInfo> problems;
     std::map<const llvm::Value*, const llvm::Value*> lifetime_started;
 
-    for (Function::iterator bb : F) {
-      ValueValueMap& tainted_loads = bb_tainted_loads[bb];
+    for (BasicBlock& bb : F) {
+      ValueValueMap& tainted_loads = bb_tainted_loads[&bb];
       ValueSet untainted_loads;
-      union_of_predecessors(bb, tainted_loads, bb_tainted_loads);
+      union_of_predecessors(&bb, tainted_loads, bb_tainted_loads);
       // Iterate through each instruction in each basic block.
-      for (BasicBlock::iterator i : *bb) {
+      for (Instruction& iref : bb) {
+        Instruction* i = &iref;
         if (llvm::isa<CallInst>(i) || llvm::isa<InvokeInst>(i)) {
           // {{{ lifetime intrinsic handling
           ImmutableCallSite cs(i);

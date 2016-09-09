@@ -52,7 +52,8 @@ std::string str(llvm::Value* value) {
 namespace foster {
 
 std::map<std::string, std::string> sgProcLines;
-llvm::IRBuilder<> builder(llvm::getGlobalContext());
+llvm::LLVMContext fosterLLVMContext;
+llvm::IRBuilder<> builder(fosterLLVMContext);
 
 /// Macros in TargetSelect.h conflict with those from ANTLR, so this code
 /// must be in a source file that does not include any ANTLR files.
@@ -111,8 +112,8 @@ void validateOutputFile(const std::string& pathstr) {
 void runFunctionPassesOverModule(llvm::legacy::FunctionPassManager& fpasses,
                                  Module* mod) {
   fpasses.doInitialization();
-  for (Module::iterator it : *mod) {
-    fpasses.run(*it);
+  for (llvm::Function& f : *mod) {
+    fpasses.run(f);
   }
   fpasses.doFinalization();
 }
@@ -126,7 +127,7 @@ void ensureDirectoryExists(const std::string& pathstr) {
 
 std::unique_ptr<Module> readLLVMModuleFromPath(const std::string& path) {
   llvm::SMDiagnostic diag;
-  return llvm::parseIRFile(path, diag, llvm::getGlobalContext());
+  return llvm::parseIRFile(path, diag, fosterLLVMContext);
 }
 
 struct CommentWriter : public llvm::AssemblyAnnotationWriter {

@@ -3,7 +3,7 @@ cmake_minimum_required (VERSION 3.0)
 # {{{ We need to set up the compiler paths before calling project()...
 # ~~~~~~~~~~~~~~~~~~~~
 
-set(LLVM_VERSION 3.7.0)
+set(LLVM_VERSION 3.9.0)
 
 find_program(LLVM_CONFIG NAMES llvm-config llvm-config-${LLVM_VERSION}
   PATHS

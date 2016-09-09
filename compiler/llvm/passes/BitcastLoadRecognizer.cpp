@@ -15,6 +15,7 @@
 #include "llvm/ADT/Statistic.h"
 
 #include "base/GenericGraph.h"
+#include "base/LLVMUtils.h"
 
 #include <set>
 #include <map>
@@ -135,10 +136,10 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
     }
   }
 
-  ConstantInt* ci32(Offset o) { return ConstantInt::get(Type::getInt32Ty(llvm::getGlobalContext()), o); }
+  ConstantInt* ci32(Offset o) { return ConstantInt::get(Type::getInt32Ty(foster::fosterLLVMContext), o); }
 
   void spec(Idx* r0, Type* newLoadType, Instruction* exp) {
-    IRBuilder<> b(getGlobalContext());
+    IRBuilder<> b(foster::fosterLLVMContext);
     b.SetInsertPoint(exp);
 
     std::vector<llvm::Value*> offsets = r0->gep_offsets;
@@ -358,7 +359,7 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
         //llvm::errs() << "specializing " << indexes.size() << " loads into one\n";
 
         spec(indexes[0],
-             Type::getIntNTy(getGlobalContext(),
+             Type::getIntNTy(foster::fosterLLVMContext,
                                   indexes[0]->base_size * indexes.size()), bo);
 
         for (size_t i = 0; i < ors.size(); ++i) {

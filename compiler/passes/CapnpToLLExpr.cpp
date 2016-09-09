@@ -622,7 +622,7 @@ TypeAST* TypeAST_from_pb(const pb::Type::Reader& t) {
 
   case pb::Type::Tag::FLOAT64:
     return PrimitiveTypeAST::get("Float64",
-                             llvm::Type::getDoubleTy(llvm::getGlobalContext()));
+                             llvm::Type::getDoubleTy(fosterLLVMContext));
 
   case pb::Type::Tag::PRIMINT: {
     int size = t.getCarraysize()[0];
@@ -638,7 +638,7 @@ TypeAST* TypeAST_from_pb(const pb::Type::Reader& t) {
       ty = getWordX2Ty(builder);
     } else {
 
-      ty = llvm::IntegerType::get(llvm::getGlobalContext(), size);
+      ty = llvm::IntegerType::get(fosterLLVMContext, size);
       if (size == 1) {
         name << "Bool";
       } else if (size > 0) {

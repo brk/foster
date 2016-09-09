@@ -40,11 +40,10 @@ struct EscapingAllocaFinder : public FunctionPass {
     std::set<llvm::Value*> allocas;
 
     // Collect allocas
-    BasicBlock::iterator IP = F.getEntryBlock().begin();
-    while (IP != F.getEntryBlock().end()
-        && llvm::isa<llvm::AllocaInst>(IP)) {
-      allocas.insert(IP);
-      ++IP;
+    for (Instruction& I : F.getEntryBlock()) {
+      if (!llvm::isa<llvm::AllocaInst>(&I)) break;
+
+      allocas.insert(&I);
     }
 
     // Calculate taint
@@ -75,8 +74,8 @@ struct EscapingAllocaFinder : public FunctionPass {
 
     // If any escaping terminator returns a tainted value, complain!
     bool wasTainted = false;
-    for (Function::iterator BBit : F) {
-      TerminatorInst *ti = (*BBit).getTerminator();
+    for (BasicBlock& BB : F) {
+      TerminatorInst *ti = BB.getTerminator();
       if (!ti) {
         llvm::outs() << "WARNING: found block in " << F.getName()
                      << " without terminator!\n";

@@ -471,7 +471,7 @@ void codegenClosureWrapper(llvm::Function* F, llvm::CallingConv::ID cc,
     pass->addEntryBB(Ffunc);
     std::vector<llvm::Value*> args;
     auto skipEnv = Ffunc->arg_begin(); skipEnv++;
-    while (skipEnv != Ffunc->arg_end()) { args.push_back(skipEnv); ++skipEnv; }
+    while (skipEnv != Ffunc->arg_end()) { args.push_back(&*skipEnv); ++skipEnv; }
 
     auto callInst = builder.CreateCall(F, args);
     callInst->setTailCall(true);
@@ -548,8 +548,8 @@ void CodegenPass::scheduleBlockCodegen(LLBlock* b) {
 
 // We shouldn't get any such things from the middle-end.
 void checkForUnusedEmptyBasicBlocks(llvm::Function* F) {
-  for(llvm::Function::iterator BB_it : *F) {
-    ASSERT(! (BB_it->empty() && BB_it->use_empty()) );
+  for(auto& BB : *F) {
+    ASSERT(! (BB.empty() && BB.use_empty()) );
   }
 }
 
@@ -578,7 +578,7 @@ llvm::Value* allocateSlot(CodegenPass* pass, LLVar* rootvar) {
       registerStructType(sty, "unboxed_tuple", ctorRepr, pass->mod);
     }
     llvm::GlobalVariable* typemap = getTypeMapForType(rootvar->type, ctorRepr, pass->mod, NotArray);
-    auto padded_ty = llvm::StructType::get(llvm::getGlobalContext(),
+    auto padded_ty = llvm::StructType::get(foster::fosterLLVMContext,
                                             { builder.getInt64Ty(), builder.getInt64Ty(), ty });
     llvm::AllocaInst* slot = CreateEntryAlloca(padded_ty, rootvar->getName());
     slot->setAlignment(16);
@@ -621,8 +621,8 @@ void LLProcCFG::codegenToFunction(CodegenPass* pass, llvm::Function* F) {
   // which will either be a case analysis on the env parameter, or postalloca.
   builder.SetInsertPoint(savedBB);
   LLBr br(blocks[0]->block_id);
-  if (isEnvPtr(F->arg_begin())) {
-    br.args.push_back(new LLValueVar(F->arg_begin()));
+  if (isEnvPtr(&*F->arg_begin())) {
+    br.args.push_back(new LLValueVar(&*F->arg_begin()));
   }
   br.codegenTerminator(pass);
 
@@ -702,7 +702,7 @@ void LLBr::codegenTerminator(CodegenPass* pass) {
     std::vector<llvm::Value*> args;
     Function* F = builder.GetInsertBlock()->getParent();
     for (Function::arg_iterator AI = F->arg_begin(); AI != F->arg_end(); ++AI) {
-      if (!isEnvPtr(AI)) { args.push_back(AI); }
+      if (!isEnvPtr(&*AI)) { args.push_back(&*AI); }
     }
     passPhisAndBr(block, args);
   } else {

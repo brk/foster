@@ -60,7 +60,7 @@ cxxpath() {
 }
 
 build_prereqs() {
-  if [ -f $R/_obj/Makefile]; then
+  if [ -f $R/_obj/Makefile ]; then
     make -s -C $R/_obj fosteroptc fosterparse fosterlower me && cleanout
   elif [ -f $R/_obj/build.ninja ]; then
     ninja -C $R/_obj fosteroptc fosterparse fosterlower me && cleanout
