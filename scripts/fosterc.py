@@ -183,7 +183,6 @@ def compile_foster_to_bitcode(paths, inputfile, compilelog, finalpath, tmpdir):
     return (e1, e2, e3, e4)
 
 def link_to_executable(finalpath, exepath, paths, inputfile):
-    assert options.cxxpath and len(options.cxxpath) > 0
     return run_command('%(cxx)s %(_out.o)s %(staticlibs)s %(linkflags)s -o %(exepath)s %(rpath)s' % {
                          '_out.o'    : paths['_out.o'],
                          'staticlibs': get_static_libs(),
@@ -199,6 +198,8 @@ def insert(lst, val):
     lst.append(val)
 
 def compile_foster_code(inputfile):
+  assert options.cxxpath and len(options.cxxpath) > 0
+
   paths = get_paths(inputfile)
 
   # Dump extra files, but only when running directly,
