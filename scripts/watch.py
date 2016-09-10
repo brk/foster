@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 # Python port of Ian Piumarta's watch.c
 # BSD Licensed - http://eschew.org/txt/bsd.txt
 

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 
 # Copyright (c) 2015 Ben Karel. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
@@ -73,7 +73,7 @@ def diff_instance_outputs(oldoutputs, newoutputs, name, results):
     #  boot.write('old new\n')
     #  for ov, nv in zip( oldvals, newvals ):
     #    boot.write('%s %s\n' % (str(ov), str(nv)))
-    #subprocess.call('python bootstrap.py boot.txt --bootstrap', shell=True)
+    #subprocess.call('python2 bootstrap.py boot.txt --bootstrap', shell=True)
 
 class bcolors:
     OKGREEN = '\033[92m'
@@ -105,7 +105,7 @@ def maybe_compare_opcode_mixes(results, old_opcodemix, new_opcodemix):
 
   if os.path.exists(old_opcodemix):
     if os.path.exists(new_opcodemix):
-      output = subprocess.check_output(['python',
+      output = subprocess.check_output(['python2',
                         os.path.join(_scripts_dir, 'compare-opcodemix.py'),
                         old_opcodemix, new_opcodemix,
                         '--ratio', '1.01'] + maybe_summarize)

@@ -3,6 +3,6 @@
 # "foster ack"
 
 SD=$(dirname `which $0`)/../scripts
-R=$(python $SD/normpath.py $SD/..)
+R=$($SD/normpath.py $SD/..)
 
 find ${R}/stdlib ${R}/test -name '*.foster' | grep -v 'linear.*foster' | ack -x --match "$@"

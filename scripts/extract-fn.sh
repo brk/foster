@@ -1,6 +1,7 @@
 #!/bin/sh
 
-LLVM=~/llvm/3.2/bin
+SD=$(dirname `which $0`)/../scripts
+LLVM=$($SD/echo-llvmdir)/bin
 
 TEST=$1
 FUNC=$2

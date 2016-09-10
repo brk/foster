@@ -1,3 +1,5 @@
+#!/usr/bin/env python2
+
 import random
 
 def n64(a,b):

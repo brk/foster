@@ -1,7 +1,7 @@
 #!/bin/sh
 
 SD=$(dirname `which $0`)/../scripts
-R=$(python $SD/normpath.py $SD/..)
+R=$($SD/normpath.py $SD/..)
 P=$1
 shift
 
@@ -43,14 +43,6 @@ cleanout () {
   rm -f gclog.txt
 }
 
-cxxcompilerpath () {
-  cat $R/_obj/CMakeCache.txt | grep CXX_COMPILER:FILEPATH | sed 's/CMAKE_CXX_COMPILER:FILEPATH=//'
-}
-
-clangpath () {
-  cat $R/_obj/CMakeCache.txt | grep CLANG:FILEPATH | sed 's/CLANG:FILEPATH=//'
-}
-
 cxxpath() {
   local P=`clangpath`
   if [ "x${P}" = "x" ];
@@ -75,8 +67,8 @@ build_prereqs() {
 echo "testing $D"
 if [ -d $D ]; then
  build_prereqs && \
- echo python $R/scripts/run_test.py --show-cmdlines ${T} "$@" && \
-      python $R/scripts/run_test.py --show-cmdlines ${T} "$@" --bindir=$R/_obj --me-arg=--interactive --cxxpath=`cxxpath` -I ${R}/stdlib
+ echo $R/scripts/run_test.py --show-cmdlines ${T} "$@" && \
+      $R/scripts/run_test.py --show-cmdlines ${T} "$@" --bindir=$R/_obj --me-arg=--interactive --cxxpath=`cxxpath` -I ${R}/stdlib
 else
   echo "Make new test $T? y/[n]"
   read CONFIRM

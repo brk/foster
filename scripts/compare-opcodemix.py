@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 
 # A simple script to compare opcode mix logs generated from pin.
 

@@ -1,7 +1,7 @@
 #!/bin/sh
 
 SD=$(dirname `which $0`)/../scripts
-R=$(python $SD/normpath.py $SD/..)
+R=$($SD/normpath.py $SD/..)
 
 P=$1
 shift
@@ -28,8 +28,8 @@ cxxpath () {
 }
 
 if [ -f $T ]; then
- #echo python $R/scripts/run_test.py --quietish --show-stdout ${T} "$@" -I . -I $R/stdlib --bindir=$R/_obj --cxxpath=`cxxpath` && \
-      python $R/scripts/run_test.py --quietish --show-stdout ${T} "$@" -I . -I $R/stdlib --bindir=$R/_obj --cxxpath=`cxxpath` || exit $?
+ #echo $R/scripts/run_test.py --quietish --show-stdout ${T} "$@" -I . -I $R/stdlib --bindir=$R/_obj --cxxpath=`cxxpath` && \
+      $R/scripts/run_test.py --quietish --show-stdout ${T} "$@" -I . -I $R/stdlib --bindir=$R/_obj --cxxpath=`cxxpath` || exit $?
 
  # If the files didn't exist before, they shouldn't exist after...
  [ -z "$gclog_exists" ]   && rm -f gclog.txt
