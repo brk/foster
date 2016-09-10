@@ -3,10 +3,10 @@
 SD=$(dirname `which $0`)/../scripts
 R=$($SD/normpath.py $SD/..)
 
-clang_exec_path() {
-  cat $R/_obj/CMakeCache.txt | grep CLANG:FILEPATH | sed 's/CLANG:FILEPATH=//'
+llvmconfig() {
+  cat $R/_obj/CMakeCache.txt | grep LLVM_CONFIG:FILEPATH | sed 's/LLVM_CONFIG:FILEPATH=//'
 }
 
 # go from LLVMDIR/bin/clang++
 # to      LLVMDIR
-$SD/normpath.py $(clang_exec_path)/../../
+echo $($(llvmconfig) --prefix)

@@ -3,6 +3,7 @@ cmake_minimum_required (VERSION 3.4.3)
 # {{{ We need to set up the compiler paths before calling project()...
 # ~~~~~~~~~~~~~~~~~~~~
 
+set(PYTHON python2)
 set(LLVM_VERSION 3.9.0)
 
 find_program(LLVM_CONFIG NAMES llvm-config llvm-config-${LLVM_VERSION}
@@ -11,7 +12,10 @@ find_program(LLVM_CONFIG NAMES llvm-config llvm-config-${LLVM_VERSION}
     $ENV{HOME}/sw/local/llvm-${LLVM_VERSION}/bin
     $ENV{HOME}/sw/local/llvm/${LLVM_VERSION}/bin
     /usr/lib/llvm-${LLVM_VERSION}/bin
-  DOC "llvm-config")
+  DOC "llvm-config"
+  NO_SYSTEM_ENVIRONMENT_PATH)
+# In case the paths above didn't work, fall back to the system path.
+find_program(LLVM_CONFIG NAMES llvm-config llvm-config-${LLVM_VERSION})
 
 execute_process(COMMAND ${LLVM_CONFIG} --bindir OUTPUT_VARIABLE LLVM_BINDIR)
 
@@ -19,10 +23,7 @@ execute_process(COMMAND ${LLVM_CONFIG} --bindir OUTPUT_VARIABLE LLVM_BINDIR)
 # and CMake will report an error here.
 string(REPLACE "\n" "" LLVM_BINDIR ${LLVM_BINDIR})
 
-find_program(CLANG NAMES clang++-${LLVM_VERSION} clang++
-  PATHS
-    ${LLVM_BINDIR}
-  DOC "C++ compiler to emit LLVM bytecode: clang++")
+set(CLANG ${LLVM_BINDIR}/clang++)
 
 string(REPLACE "++" "" CLANG_C ${CLANG})
 
@@ -182,7 +183,7 @@ add_custom_command(
   # Make sure later stages fail if this stage fails.
   COMMAND rm -f ${GENERATED}/fosterLexer.h
 
-  COMMAND python ${PROJECT_SOURCE_DIR}/scripts/run_antlr.py
+  COMMAND ${PYTHON} ${PROJECT_SOURCE_DIR}/scripts/run_antlr.py
                     ${ANTLR_JAR}
                     ${GENERATED}
                     ${PROJECT_SOURCE_DIR}/grammar/foster.g
@@ -196,7 +197,7 @@ add_custom_command(
 add_custom_command(
   OUTPUT ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Tokens.hs
   COMMAND
-    python ${PROJECT_SOURCE_DIR}/scripts/extract-antlr3-token-ids.py
+    ${PYTHON} ${PROJECT_SOURCE_DIR}/scripts/extract-antlr3-token-ids.py
            ${GENERATED}/fosterLexer.h
                 > ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Tokens.hs
   DEPENDS
@@ -236,7 +237,7 @@ add_custom_target(me DEPENDS ${HS_ME})
 add_custom_target(${HS_ME}              USES_TERMINAL
   DEPENDS ${PROJECT_SOURCE_DIR}/compiler/me/src/FosterIL_capnp.hs
           ${PROJECT_SOURCE_DIR}/compiler/me/src/Foster/Tokens.hs
-  COMMAND python ${PROJECT_SOURCE_DIR}/scripts/mk_me.py
+  COMMAND ${PYTHON} ${PROJECT_SOURCE_DIR}/scripts/mk_me.py
           --srcroot ${PROJECT_SOURCE_DIR}
           --bindir ${PROJECT_BINARY_DIR}
           --${HS_ME_PROFILE_OR_OPTIMIZE}
@@ -291,7 +292,7 @@ add_custom_command(
 add_custom_command(
   OUTPUT ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc_reconfig-inl.h
   COMMAND
-    python ${PROJECT_SOURCE_DIR}/scripts/mk_gc_reconfig_h.py
+    ${PYTHON} ${PROJECT_SOURCE_DIR}/scripts/mk_gc_reconfig_h.py
       --srcdir=${PROJECT_SOURCE_DIR}
   DEPENDS
     ${PROJECT_SOURCE_DIR}/scripts/mk_gc_reconfig_h.py
@@ -310,7 +311,7 @@ set(LIBFOSTER_CPP_SOURCES
 add_custom_command(
   OUTPUT ${PROJECT_BINARY_DIR}/_bitcodelibs_/foster_runtime.bc
   COMMAND
-    python ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
+    ${PYTHON} ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
         --clang="${CLANG}"
         --srcdir=${PROJECT_SOURCE_DIR}
         --bindir=${PROJECT_BINARY_DIR}
@@ -533,7 +534,7 @@ if (CMAKE_GENERATOR STREQUAL "Ninja")
 endif()
 #####################################################################
 set(REGRESS_CMD
-      python ${PROJECT_SOURCE_DIR}/scripts/run_all.py
+      ${PYTHON} ${PROJECT_SOURCE_DIR}/scripts/run_all.py
                  ${PROJECT_SOURCE_DIR}/test/bootstrap
                  --bindir ${PROJECT_BINARY_DIR}
                  --cxxpath ${CLANG}
@@ -545,7 +546,7 @@ add_custom_target(regress       USES_TERMINAL
         COMMAND ${REGRESS_CMD})
 
 add_custom_target(stress        USES_TERMINAL
-  COMMAND python ${PROJECT_SOURCE_DIR}/scripts/run_all.py
+  COMMAND ${PYTHON} ${PROJECT_SOURCE_DIR}/scripts/run_all.py
 	     ${PROJECT_SOURCE_DIR}/test/stress
 	     --bindir ${PROJECT_BINARY_DIR}
              --cxxpath ${CLANG}
@@ -553,7 +554,7 @@ add_custom_target(stress        USES_TERMINAL
   )
 
 add_custom_target(list_regression_tests
-  COMMAND python ${PROJECT_SOURCE_DIR}/scripts/list_all.py
+  COMMAND ${PYTHON} ${PROJECT_SOURCE_DIR}/scripts/list_all.py
 	     ${PROJECT_SOURCE_DIR}/test/bootstrap
   )
 

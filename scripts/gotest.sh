@@ -43,14 +43,6 @@ cleanout () {
   rm -f gclog.txt
 }
 
-cxxpath() {
-  local P=`clangpath`
-  if [ "x${P}" = "x" ];
-  then echo `cxxcompilerpath`
-  else echo ${P}
-  fi
-}
-
 build_prereqs() {
   if [ -f $R/_obj/Makefile ]; then
     make -s -C $R/_obj fosteroptc fosterparse fosterlower me && cleanout
@@ -64,11 +56,15 @@ build_prereqs() {
   fi
 }
 
+cxxpath() {
+  echo $($SD/echo-llvmdir)/bin/clang++
+}
+
 echo "testing $D"
 if [ -d $D ]; then
  build_prereqs && \
- echo $R/scripts/run_test.py --show-cmdlines ${T} "$@" && \
-      $R/scripts/run_test.py --show-cmdlines ${T} "$@" --bindir=$R/_obj --me-arg=--interactive --cxxpath=`cxxpath` -I ${R}/stdlib
+ echo $SD/run_test.py --show-cmdlines ${T} "$@" && \
+      $SD/run_test.py --show-cmdlines ${T} "$@" --bindir=$R/_obj --me-arg=--interactive --cxxpath=`cxxpath` -I ${R}/stdlib
 else
   echo "Make new test $T? y/[n]"
   read CONFIRM
