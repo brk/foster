@@ -1,7 +1,7 @@
 #!/bin/sh
 
 SD=$(dirname `which $0`)/../scripts
-FOSTER_ROOT=$(python $SD/normpath.py $SD/..)
+FOSTER_ROOT=$($SD/normpath.py $SD/..)
 TMPDIR=fosterc-tmp
 
 mkdir ${TMPDIR}
@@ -14,8 +14,8 @@ for arg in $@; do
   fi
 done
 
-echo python ${SD}/fosterc.py --bindir ${FOSTER_ROOT}/_obj -I ${FOSTER_ROOT}/stdlib --tmpdir ${TMPDIR} $@ $MAYBE_OUT
-python ${SD}/fosterc.py --bindir ${FOSTER_ROOT}/_obj -I ${FOSTER_ROOT}/stdlib --tmpdir ${TMPDIR} $@ $MAYBE_OUT
+echo ${SD}/fosterc.py --bindir ${FOSTER_ROOT}/_obj -I ${FOSTER_ROOT}/stdlib --tmpdir ${TMPDIR} $@ $MAYBE_OUT
+${SD}/fosterc.py --bindir ${FOSTER_ROOT}/_obj -I ${FOSTER_ROOT}/stdlib --tmpdir ${TMPDIR} $@ $MAYBE_OUT
 
 rm meGCstats.txt
 rm -rf ${TMPDIR} $1.postopt.ll $1.preopt.ll

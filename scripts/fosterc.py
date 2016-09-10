@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 
 # Copyright (c) 2010-2015 Ben Karel. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be

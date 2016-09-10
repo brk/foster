@@ -1,7 +1,7 @@
 #!/bin/sh
 
 SD=$(dirname `which $0`)/../scripts
-R=$(python $SD/normpath.py $SD/..)
+R=$($SD/normpath.py $SD/..)
 
 clang_exec_path() {
   cat $R/_obj/CMakeCache.txt | grep CLANG:FILEPATH | sed 's/CLANG:FILEPATH=//'
@@ -9,4 +9,4 @@ clang_exec_path() {
 
 # go from LLVMDIR/bin/clang++
 # to      LLVMDIR
-python $SD/normpath.py $(clang_exec_path)/../../
+$SD/normpath.py $(clang_exec_path)/../../

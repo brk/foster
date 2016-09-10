@@ -1,9 +1,9 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 
 import sys
 import fileinput
 
-# Usage: cat input.txt | python align-on-first.py @ > aligned.txt
+# Usage: cat input.txt | align-on-first.py @ > aligned.txt
 
 sep = sys.argv[1]
 
