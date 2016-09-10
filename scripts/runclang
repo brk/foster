@@ -3,8 +3,8 @@
 SD=$(dirname `which $0`)/../scripts
 R=$(python $SD/normpath.py $SD/..)
 
-cxxpath () {
-  cat $R/_obj/CMakeCache.txt | grep CLANG:FILEPATH | sed 's/CLANG:FILEPATH=//'
+cxxpath() {
+  echo $($SD/echo-llvmdir)/bin/clang++
 }
 
 # Use regular clang instead of clang++

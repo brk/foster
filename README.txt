@@ -46,6 +46,9 @@ Mac OS X:
      brew install gnu-time       # or
      sudo port install gtime
 
+  Also, SWIG for building LLDB:
+     sudo port install swig swig-python
+
 Ubuntu 16.04 (x64):
   # Mercurial
   sudo apt-get install mercurial

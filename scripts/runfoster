@@ -24,7 +24,7 @@ cleanout () {
 }
 
 cxxpath () {
-  cat $R/_obj/CMakeCache.txt | grep CLANG:FILEPATH | sed 's/CLANG:FILEPATH=//'
+  echo $($SD/echo-llvmdir)/bin/clang++
 }
 
 if [ -f $T ]; then
