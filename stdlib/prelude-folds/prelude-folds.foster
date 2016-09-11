@@ -154,6 +154,26 @@ arrayFoldr = { arr => f => acc =>
 
 ////
 
+arrayEq :: forall (x:Type) { Array x => Array x => { x => x => Bool } => Bool };
+arrayEq = { a1 => a2 => eq =>
+  if arrayLength a1 !=Int64 arrayLength a2
+    then False
+    else
+      REC go = { idx =>
+        if idx ==Int64 arrayLength a1
+          then True
+          else if eq a1[idx] a2[idx]
+                 then go (incr64 idx)
+                 else False
+               end
+        end
+      };
+      go 0
+  end
+};
+
+////
+
 arrayLength :: forall (x:Type) { % ra : Array x : True =>
                                  % rv : Int64 : rv ==Int64 prim_arrayLength:[x] ra };
 arrayLength = { a : Array x => prim_arrayLength a };

@@ -100,6 +100,10 @@ listLength64 = { forall t:Type, xs : List t =>
   listFoldl xs { _e => z => z +Int64 1 } 0
 };
 
+listLength32 = { forall t:Type, xs : List t =>
+  listFoldl xs { _e => z => z +Int32 1 } 0
+};
+
 listLength = { forall t:Type, xs : List t =>
   listFoldl xs { _e => z => z +Int32 1 } 0
 };
@@ -213,3 +217,15 @@ listEqual = { eq => xs => ys =>
   go xs ys
 };
 
+listToArray :: forall (a:Type) { List a => Array a };
+listToArray = { xs =>
+  r = (prim ref xs);
+  uncons = { idx =>
+    case r^
+      of $Cons x xs -> xs >^ r; x
+      of $Nil -> prim kill-entire-process "listToArray invariant violated";
+    end
+  };
+
+  arrayFromRange32Up 0 (listLength32 xs) uncons
+};
