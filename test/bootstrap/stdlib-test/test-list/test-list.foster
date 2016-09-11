@@ -29,6 +29,8 @@ main = {
   print_bil (listAppend lst (listReverse lst));
 
   test-list-folds !;
+
+  test-list-to-array !;
 };
 
 mkUnitListTo = { n : Int32 =>
@@ -65,4 +67,14 @@ test-list-folds = {
 
   expect_text "(a(b(c)))";
   print_text (listFoldr lst f "");
+};
+
+test-list-to-array = {
+  lst = Cons 5 (Cons 6 (Cons 7 Nil));
+  arr = listToArray lst;
+  expect_i1 True;
+  print_i1 (arrayEq arr (prim mach-array-literal 5 6 7) { a => b => a ==Int32 b } );
+
+  expect_i1 False;
+  print_i1 (arrayEq arr (prim mach-array-literal 7 6 5) { a => b => a ==Int32 b } );
 };
