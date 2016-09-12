@@ -495,7 +495,7 @@ setFoldr = { s => f => z =>
 
 setMap :: forall (a:Type) (e:Type) { Set e => { e => a } => { a => a => Ord } => Set a };
 setMap = { s => f => cmp =>
-  setOfList (listMap (setToList s) f) cmp
+  setOfList (listMap f (setToList s)) cmp
 };
 
 setKeepIf :: forall (a:Type) { Set a => { a => Bool } => Set a };
