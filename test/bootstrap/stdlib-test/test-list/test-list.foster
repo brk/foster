@@ -29,8 +29,8 @@ main = {
   print_bil (listAppend lst (listReverse lst));
 
   test-list-folds !;
-
   test-list-to-array !;
+  test-list-sort-by !;
 };
 
 mkUnitListTo = { n : Int32 =>
@@ -77,4 +77,18 @@ test-list-to-array = {
 
   expect_i1 False;
   print_i1 (arrayEq arr (prim mach-array-literal 7 6 5) { a => b => a ==Int32 b } );
+};
+
+print_i64list = { lst =>
+  print_text_bare "[";
+  listFoldl lst { x => unit => print_i64_bare x; print_text_bare ", "; () } ();
+  print_text "]";
+};
+
+test-list-sort-by = {
+  lst = Cons 8 (Cons 6 (Cons 7 (Cons 5 Nil)));
+  sorted = listSortBy { a => b => a >=SInt64 b } lst;
+  arr = listToArray sorted;
+  expect_i1 True;
+  print_i1 (arrayEq arr (prim mach-array-literal 5 6 7 8) { a => b => a ==Int64 b } );
 };

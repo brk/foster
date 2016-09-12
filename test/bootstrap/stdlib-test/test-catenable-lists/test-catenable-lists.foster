@@ -176,7 +176,7 @@ catenableListReverse = { forall a:Boxed, c =>
 
 catenableListMap :: forall (a:Boxed) { { a => a } => CatenableList a => CatenableList a };
 catenableListMap = { forall a:Boxed, f => c =>
-  catenableListLift { lst => listMap lst f } c
+  catenableListLift { lst => listMap f lst } c
 };
 
 ////////////

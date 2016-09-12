@@ -69,9 +69,37 @@ listFoldr = { v => f => acc : a =>
   listFoldl (listReverse v) f acc
 };
 
-listMap :: forall (a:Type) (e:Type) { List e => { e => a } => List a };
-listMap = { v => f =>
+listMap :: forall (a:Type) (e:Type) { { e => a } => List e => List a };
+listMap = { f => v =>
   listFoldl v { e => tail => Cons (f e) tail } Nil |> listReverse;
+};
+
+listMapMaybe :: forall (a:Type) (e:Type) { { e => Maybe a } => List e => List a };
+listMapMaybe = { f => v =>
+  mb = { e => tail => case f e
+                       of $Some x -> Cons x tail
+                       of $None   ->        tail
+                      end
+       };
+  listFoldl v mb Nil |> listReverse;
+};
+
+// This is arguably a nicer decomposition, but I don't think we
+// can yet optimize away the two folds and reverses.
+listMapMaybeAlt :: forall (a:Type) (e:Type) { { e => Maybe a } => List e => List a };
+listMapMaybeAlt = { f => v =>
+  listMap f v |> listFilterMaybe
+};
+
+listFilterMaybe :: forall (a:Type) { List (Maybe a) => List a };
+listFilterMaybe = { lst =>
+  mb = { mba => tail =>
+          case mba
+            of $None   -> tail
+            of $Some x -> Cons x tail
+          end
+       };
+  listFoldl lst mb Nil |> listReverse
 };
 
 // Uses heap proportional to the size of the output list (not the input list).
@@ -217,12 +245,53 @@ listEqual = { eq => xs => ys =>
   go xs ys
 };
 
+// Port of the (superseded) merge sort algorithm from
+// https://hackage.haskell.org/package/base-4.9.0.0/docs/src/Data.OldList.html#sortBy
+listSortBy :: forall (a:Type) { { a => a => Bool } => List a => List a };
+listSortBy = { cmpGT => xs =>
+
+  REC helper = { xss =>
+    case xss
+      of $Nil -> Nil
+      of $Cons cs ($Nil) -> cs
+      of _ -> mergePairs xss |> helper
+    end
+  };
+
+  REC mergePairs = { xss =>
+    case xss
+      of $Nil -> Nil
+      of $Cons xs ($Nil) -> xss
+      of $Cons xs ($Cons ys yss) -> Cons (merge xs ys) (mergePairs yss)
+    end
+  };
+
+  REC merge = { xs => ys =>
+    case (xs, ys)
+      of ($Nil, _) -> ys
+      of (_, $Nil) -> xs
+      of ($Cons x xs, $Cons y ys) ->
+        if cmpGT x y
+          then Cons y (merge (Cons x xs) ys)
+          else Cons x (merge xs (Cons y ys))
+        end
+    end
+  };
+
+  xs |> listMap { x => Cons x Nil } |> helper;
+};
+
 listToArray :: forall (a:Type) { List a => Array a };
 listToArray = { xs =>
+  listToArrayWithIndex xs { idx => a => a }
+};
+
+listToArrayWithIndex :: forall (a:Type) { List a => { Int32 => a => a } => Array a };
+listToArrayWithIndex = { xs => f =>
   r = (prim ref xs);
   uncons = { idx =>
     case r^
-      of $Cons x xs -> xs >^ r; x
+      of $Cons x xs -> xs >^ r; f idx x
       of $Nil -> prim kill-entire-process "listToArray invariant violated";
     end
   };
