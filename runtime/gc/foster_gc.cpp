@@ -29,6 +29,7 @@
 #define TRACK_NUM_ALLOCATIONS         1
 #define TRACK_BYTES_KEPT_ENTRIES      0
 #define TRACK_BYTES_ALLOCATED_ENTRIES 0
+#define TRACK_BYTES_ALLOCATED_PINHOOK 1
 #define GC_BEFORE_EVERY_MEMALLOC_CELL 0
 #define DEBUG_INITIALIZE_ALLOCATIONS  0
 #define MEMSET_FREED_MEMORY           1
@@ -49,6 +50,11 @@ const bool wantWeirdCrashToHappen = false;
 #include <list>
 #include <vector>
 #include <map>
+
+extern "C" {
+  void foster_pin_hook_memalloc_cell(uint64_t nbytes) { return; }
+  void foster_pin_hook_memalloc_array(uint64_t nbytes) { return; }
+}
 
 namespace foster {
 namespace runtime {
@@ -249,6 +255,7 @@ class copying_gc {
         //fprintf(gclog, "this=%p, memsetting %d bytes at %p (ti=%p)\n", this, int(typeinfo->cell_size), bump, typeinfo); fflush(gclog);
         if (DEBUG_INITIALIZE_ALLOCATIONS) { memset(bump, 0xAA, N); }
         if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(N); }
+        if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_cell(N); }
         if (TRACK_NUM_ALLOCATIONS) { ++parent->num_allocations; }
         if (FOSTER_GC_ALLOC_HISTOGRAMS) { LOCAL_HISTOGRAM_ENUMERATION("gc-alloc-small", N, 128); }
         incr_by(bump, N);
@@ -283,6 +290,7 @@ class copying_gc {
         //fprintf(gclog, "this=%p, memsetting %d bytes at %p (ti=%p)\n", this, int(typeinfo->cell_size), bump, typeinfo); fflush(gclog);
         if (DEBUG_INITIALIZE_ALLOCATIONS) { memset(bump, 0xAA, map->cell_size); }
         if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(map->cell_size); }
+        if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_cell(map->cell_size); }
         if (TRACK_NUM_ALLOCATIONS) { ++parent->num_allocations; }
         if (!wantWeirdCrashToHappen && FOSTER_GC_ALLOC_HISTOGRAMS) {
           allocate_cell_prechecked_histogram((int) map->cell_size);
@@ -308,6 +316,7 @@ class copying_gc {
         allot->set_meta(arr_elt_map);
         allot->set_num_elts(num_elts);
         if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(total_bytes); }
+        if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_array(total_bytes); }
         if (TRACK_NUM_ALLOCATIONS) { ++parent->num_allocations; }
 
         size_t granule = granule_for(tori_of_tidy(allot->body_addr()));
