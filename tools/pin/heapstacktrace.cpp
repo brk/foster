@@ -34,6 +34,9 @@ END_LEGAL */
 #include <iostream>
 #include <fstream>
 
+// Expect slowdown of 240x (1s -> 4m)
+// and logfiles of roughly 200 MB / minute
+
 namespace LEVEL_PINCLIENT { extern VOID RTN_InsertFillBuffer(RTN rtn, IPOINT action, BUFFER_ID id, ...); }
 
 /* ===================================================================== */
@@ -131,21 +134,6 @@ VOID * BufferFull(BUFFER_ID id, THREADID tid, const CONTEXT *ctxt, VOID *buf,
 
 VOID Image(IMG img, VOID *v)
 {
-    // Instrument the malloc() and free() functions.  Print the input argument
-    // of each malloc() or free(), and the return value of malloc().
-    //
-    //  Find the malloc() function.
-    RTN mallocRtn = RTN_FindByName(img, MALLOC);
-    if (RTN_Valid(mallocRtn))
-    {
-        RTN_Open(mallocRtn);
-        RTN_InsertCall(mallocRtn, IPOINT_BEFORE, (AFUNPTR) AllocPinHook_1,
-                       IARG_TSC,
-                       IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
-                       IARG_END);
-        RTN_Close(mallocRtn);
-    }
-
     RTN mcellRtn = RTN_FindByName(img, "foster_pin_hook_memalloc_cell");
     if (RTN_Valid(mcellRtn))
     {
@@ -168,6 +156,17 @@ VOID Image(IMG img, VOID *v)
         RTN_Close(marrRtn);
     }
 
+    RTN mallocRtn = RTN_FindByName(img, MALLOC);
+    if (RTN_Valid(mallocRtn))
+    {
+        RTN_Open(mallocRtn);
+        RTN_InsertCall(mallocRtn, IPOINT_BEFORE, (AFUNPTR) AllocPinHook_1,
+                       IARG_TSC,
+                       IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
+                       IARG_END);
+        RTN_Close(mallocRtn);
+    }
+
     RTN mainRtn = RTN_FindByName(img, "main");
     if (RTN_Valid(mainRtn))
     {
@@ -175,63 +174,92 @@ VOID Image(IMG img, VOID *v)
         RTN_InsertCall(mainRtn, IPOINT_BEFORE, (AFUNPTR) BeforeMain, IARG_TSC, IARG_END);
         RTN_Close(mainRtn);
     }
+
+    RTN fmainRtn = RTN_FindByName(img, "foster__main");
+    if (RTN_Valid(fmainRtn))
+    {
+        RTN_Open(fmainRtn);
+        RTN_InsertCall(fmainRtn, IPOINT_BEFORE, (AFUNPTR) BeforeMain, IARG_TSC, IARG_END);
+        RTN_Close(fmainRtn);
+    }
+}
+
+VOID HandleStackPointerMunge(INS ins) {
+  if (INS_IsSub(ins)) {
+    if (INS_OperandIsImmediate(ins, 1)) {
+      if (INS_OperandImmediate(ins, 1) == 8016) {
+        TraceFile << "X " << RTN_Name(INS_Rtn(ins)) << endl;
+      } else if (INS_OperandImmediate(ins, 1) > 32000) {
+        // Ignore very large stack munging
+      } else {
+        INS_InsertFillBuffer(ins, IPOINT_BEFORE, bufid,
+            IARG_TSC, offsetof(struct alloc_record, tsc),
+            IARG_ADDRINT, INS_OperandImmediate(ins, 1),
+            offsetof(struct alloc_record, size),
+            IARG_UINT32, 4, offsetof(struct alloc_record, typ),
+            IARG_END);
+      }
+    } else {
+      INS_InsertFillBuffer(ins, IPOINT_BEFORE, bufid,
+          IARG_TSC, offsetof(struct alloc_record, tsc),
+          IARG_ADDRINT, INS_OperandReg(ins, 1),
+          offsetof(struct alloc_record, size),
+          IARG_UINT32, 7, offsetof(struct alloc_record, typ),
+          IARG_END);
+    }
+  } else if (INS_Opcode(ins) == XED_ICLASS_ADD) {
+    if (INS_OperandIsImmediate(ins, 1)) {
+      if (INS_OperandImmediate(ins, 1) < 0) {
+        INS_InsertFillBuffer(ins, IPOINT_BEFORE, bufid,
+            IARG_TSC, offsetof(struct alloc_record, tsc),
+            IARG_ADDRINT, -INS_OperandImmediate(ins, 1),
+            offsetof(struct alloc_record, size),
+            IARG_UINT32, 8, offsetof(struct alloc_record, typ),
+            IARG_END);
+      }
+    }
+  } else if (INS_Opcode(ins) == XED_ICLASS_AND
+      ||   INS_Opcode(ins) == XED_ICLASS_LEA
+      ||   INS_Opcode(ins) == XED_ICLASS_MOV) {
+    /// do nothing
+  } else if (INS_Opcode(ins) == XED_ICLASS_PUSH) {
+    // skip 'push ebp'
+    if (INS_OperandIsReg(ins, 0) && INS_OperandReg(ins, 0) == REG_EBP) {
+      // do nothing
+    } else {
+      INS_InsertFillBuffer(ins, IPOINT_BEFORE, bufid,
+          IARG_TSC, offsetof(struct alloc_record, tsc),
+          IARG_ADDRINT, 8,
+          offsetof(struct alloc_record, size),
+          IARG_UINT32, 6, offsetof(struct alloc_record, typ),
+          IARG_END);
+    }
+  } else {
+    //xed_decoded_inst_t* xdi = INS_XedDec(ins);
+    //TraceFile << "non-sub/push insn writing stack ptr, opcode is " << INS_Opcode(ins)
+    //		  << " with mnemonic " << INS_Mnemonic(ins) << "; nops = " << nops << endl;
+  }
+
 }
 
 // Pin calls this function every time a new rtn is executed
 VOID Insn(INS ins, VOID *v)
 {
-	if (INS_RegW(ins, 0) == REG_STACK_PTR) {
-		if (INS_IsSub(ins)) {
-                    if (INS_OperandIsImmediate(ins, 1)) {
-                      INS_InsertFillBuffer(ins, IPOINT_BEFORE, bufid,
-                          IARG_TSC, offsetof(struct alloc_record, tsc),
-                          IARG_ADDRINT, INS_OperandImmediate(ins, 1),
-                                    offsetof(struct alloc_record, size),
-                          IARG_UINT32, 4, offsetof(struct alloc_record, typ),
-                          IARG_END);
-                    } else {
-                      INS_InsertFillBuffer(ins, IPOINT_BEFORE, bufid,
-                          IARG_TSC, offsetof(struct alloc_record, tsc),
-                          IARG_ADDRINT, INS_OperandReg(ins, 1),
-                                    offsetof(struct alloc_record, size),
-                          IARG_UINT32, 4, offsetof(struct alloc_record, typ),
-                          IARG_END);
-                    }
-		} else if (INS_Opcode(ins) == XED_ICLASS_ADD) {
-                  if (INS_OperandIsImmediate(ins, 1)) {
-                    if (INS_OperandImmediate(ins, 1) < 0) {
-                      INS_InsertFillBuffer(ins, IPOINT_BEFORE, bufid,
-                          IARG_TSC, offsetof(struct alloc_record, tsc),
-                          IARG_ADDRINT, -INS_OperandImmediate(ins, 1),
-                                    offsetof(struct alloc_record, size),
-                          IARG_UINT32, 4, offsetof(struct alloc_record, typ),
-                          IARG_END);
-                    }
-                  }
-		} else if (INS_Opcode(ins) == XED_ICLASS_AND
-                      ||   INS_Opcode(ins) == XED_ICLASS_LEA
-                      ||   INS_Opcode(ins) == XED_ICLASS_MOV) {
-                  /// do nothing
-		} else if (INS_Opcode(ins) == XED_ICLASS_PUSH) {
-                      // skip 'push ebp'
-                      if (INS_OperandIsReg(ins, 0) && INS_OperandReg(ins, 0) == REG_EBP) {
-                        // do nothing
-                      } else {
-                        INS_InsertFillBuffer(ins, IPOINT_BEFORE, bufid,
-                            IARG_TSC, offsetof(struct alloc_record, tsc),
-                            IARG_ADDRINT, 8,
-                                      offsetof(struct alloc_record, size),
-                            IARG_UINT32, 6, offsetof(struct alloc_record, typ),
-                            IARG_END);
-                      }
-                } else {
-			//xed_decoded_inst_t* xdi = INS_XedDec(ins);
-			//TraceFile << "non-sub/push insn writing stack ptr, opcode is " << INS_Opcode(ins)
-		//		  << " with mnemonic " << INS_Mnemonic(ins) << "; nops = " << nops << endl;
-		}
-	  // Insert a call to docount to increment the instruction counter for this rtn
-	 // INS_InsertCall(ins, IPOINT_BEFORE, (AFUNPTR)docount, IARG_PTR, &(rc->_icount), IARG_END);
-	}
+  if (INS_RegW(ins, 0) == REG_STACK_PTR) {
+    HandleStackPointerMunge(ins);
+  } else if (INS_RegW(ins, 0) == REG_R15) {
+    // OCaml open-coded allocation(?)
+    if (INS_Opcode(ins) == XED_ICLASS_SUB) {
+      if (INS_OperandIsImmediate(ins, 1)) {
+        INS_InsertFillBuffer(ins, IPOINT_BEFORE, bufid,
+            IARG_TSC, offsetof(struct alloc_record, tsc),
+            IARG_ADDRINT,  INS_OperandImmediate(ins, 1),
+            offsetof(struct alloc_record, size),
+            IARG_UINT32, 9, offsetof(struct alloc_record, typ),
+            IARG_END);
+      }
+    }
+  }
 }
 
 /* ===================================================================== */
