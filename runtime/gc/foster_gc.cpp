@@ -52,8 +52,8 @@ const bool wantWeirdCrashToHappen = false;
 #include <map>
 
 extern "C" {
-  void foster_pin_hook_memalloc_cell(uint64_t nbytes) { return; }
-  void foster_pin_hook_memalloc_array(uint64_t nbytes) { return; }
+  void foster_pin_hook_memalloc_cell(uint64_t nbytes);
+  void foster_pin_hook_memalloc_array(uint64_t nbytes);
 }
 
 namespace foster {
