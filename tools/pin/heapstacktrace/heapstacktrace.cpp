@@ -78,6 +78,7 @@ PIN_LOCK lock;
 // Shifting off 20 bits would be 21 bits per second, about 500 microsecond resolution.
 #define TSC_TRIM_BITS 16
 UINT64 tsc_trim(UINT64 t) { return t >> TSC_TRIM_BITS; }
+UINT64 tsc_trim_call(UINT64 t) { return t >> 20; }
 
 // TODO histogram encoding:
 // Bucket StartTimeStamp EndTimeStamp
@@ -260,6 +261,29 @@ typedef std::map< int, std::map<int, int> >  histmap;
 /* Analysis routines                                                     */
 /* ===================================================================== */
 
+void PrintHistBucket(const histmap& hist, UINT64 tsc_d_trimmed) {
+    TraceFile << "B " << hex << tsc_d_trimmed << dec;
+    for (histmap::const_iterator t_m = hist.begin(); t_m != hist.end(); ++t_m) {
+      int sum_size  = 0;
+      int sum_count = 0;
+      int max_size  = 0;
+      for (std::map<int,int>::const_iterator s_c = t_m->second.begin(); s_c != t_m->second.end(); ++s_c) {
+        int sz = s_c->first;
+        int cnt = s_c->second;
+        max_size = (max_size < sz) ? sz : max_size;
+        sum_size += (sz * cnt);
+        sum_count += cnt;
+      }
+      // event, sum(size), count, min, max
+      TraceFile << " " << t_m->first << " " << sum_size << " " << sum_count << " " << max_size;
+    }
+    TraceFile << endl;
+}
+
+#define kCallCountType 5
+#define kStackPtrType 13
+#define kOcamlBumpPtr 9
+
 /*!
  * Called when a buffer fills up, or the thread exits, so we can process it or pass it off
  * as we see fit.
@@ -281,40 +305,68 @@ VOID * BufferFull(BUFFER_ID id, THREADID tid, const CONTEXT *ctxt, VOID *buf,
     struct alloc_record* rc =(struct alloc_record*)buf;
 
     UINT64 prev_tsc_d_trimmed = 0;
+    UINT64 prev_tsc_d_trimmed_call = 0;
+    UINT64 bucket_calls = 0;
+
+    ADDRINT minStack = -1;
+    ADDRINT maxStack = 0;
+    UINT64  numStackDepthSamples = 0;
 
     TraceFile << endl << "A " << hex << rc[0].tsc;
 
     histmap hist;
     for(UINT64 i = 0; i < numElements; i++) {
       UINT64 tsc_d = (rc[i].tsc - tsc0);
-      UINT64 tsc_d_trimmed = tsc_trim(tsc_d);
-      if (tsc_d_trimmed == prev_tsc_d_trimmed) {
-        hist[ rc[i].typ ][ rc[i].size ]++;
-      } else {
-        prev_tsc_d_trimmed = tsc_d_trimmed;
 
-        TraceFile << "B " << hex << tsc_d_trimmed << dec;
-        for (histmap::iterator t_m = hist.begin(); t_m != hist.end(); ++t_m) {
-          int sum_size = 0;
-          int sum_count = 0;
-          int max_size = 0;
-          for (std::map<int,int>::iterator s_c = t_m->second.begin(); s_c != t_m->second.end(); ++s_c) {
-            int sz = s_c->first;
-            int cnt = s_c->second;
-            max_size = (max_size < sz) ? sz : max_size;
-            sum_size += (sz * cnt);
-            sum_count += cnt;
+      if (rc[i].typ == kCallCountType) {
+        UINT64 tsc_d_trimmed = tsc_trim_call(tsc_d);
+        if (prev_tsc_d_trimmed_call == 0) prev_tsc_d_trimmed_call = tsc_d_trimmed;
+        if (tsc_d_trimmed == prev_tsc_d_trimmed_call) {
+          bucket_calls += rc[i].size;
+        } else {
+          prev_tsc_d_trimmed_call = tsc_d_trimmed;
+          if (bucket_calls > 0) {
+            TraceFile << "CC " << hex << tsc_d_trimmed << dec << " " << bucket_calls << endl;
+            bucket_calls = 0;
           }
-          // event, sum(size), count, min, max
-          TraceFile << " " << t_m->first << " " << sum_size << " " << sum_count << " " << max_size;
         }
-        hist.clear();
-        TraceFile << endl;
+      } else {
+        UINT64 tsc_d_trimmed = tsc_trim(tsc_d);
+        if (prev_tsc_d_trimmed == 0) prev_tsc_d_trimmed = tsc_d_trimmed;
 
-        // dump hist
-        //TraceFile << endl << "B " << hex << tsc_d_trimmed;
-        //TraceFile << " " << dec << rc[i].typ << " " << rc[i].size;
+        if (rc[i].typ == kStackPtrType) {
+          if (tsc_d_trimmed == prev_tsc_d_trimmed) {
+            minStack = min(minStack, rc[i].size);
+            maxStack = max(maxStack, rc[i].size);
+            numStackDepthSamples++;
+          } else {
+            prev_tsc_d_trimmed = tsc_d_trimmed;
+            if (maxStack != 0) {
+              TraceFile << endl << "SD " << hex << tsc_d_trimmed << " " << minStack << " " << maxStack << dec << " " << numStackDepthSamples << endl;
+              minStack = -1;
+              maxStack = 0;
+              numStackDepthSamples = 0;
+            }
+          }
+        } else {
+          if (tsc_d_trimmed == prev_tsc_d_trimmed) {
+            hist[ rc[i].typ ][ rc[i].size ]++;
+          } else {
+            prev_tsc_d_trimmed = tsc_d_trimmed;
+            if (!hist.empty()) {
+              PrintHistBucket(hist, tsc_d_trimmed);
+              hist.clear();
+            }
+          }
+        }
       }
+    }
+
+    if (maxStack != 0) {
+      TraceFile << endl << "SD " << hex << tsc_trim(tsc_begin - tsc0) << " " << minStack << " " << maxStack << dec << " " << numStackDepthSamples << endl;
+    }
+    if (!hist.empty()) {
+      PrintHistBucket(hist, tsc_trim(tsc_begin - tsc0));
     }
 
     UINT64 tsc_end = xed_get_time();
@@ -328,171 +380,6 @@ VOID * BufferFull(BUFFER_ID id, THREADID tid, const CONTEXT *ctxt, VOID *buf,
 /* Instrumentation routines                                              */
 /* ===================================================================== */
 
-VOID FindAndInstrument(IMG img, const char* name, AFUNPTR hook) {
-    RTN rtn = RTN_FindByName(img, name);
-    if (RTN_Valid(rtn))
-    {
-        RTN_Open(rtn);
-        RTN_InsertCall(rtn, IPOINT_BEFORE, hook, IARG_TSC, IARG_FUNCARG_ENTRYPOINT_VALUE, 0, IARG_END);
-        RTN_Close(rtn);
-    }
-}
-
-VOID Image(IMG img, VOID *v)
-{
-    FindAndInstrument(img, "foster_pin_hook_memalloc_cell", (AFUNPTR) AllocPinHook_2);
-    FindAndInstrument(img, "foster_pin_hook_memalloc_array", (AFUNPTR) AllocPinHook_3);
-
-    RTN mmapRtn = RTN_FindByName(img, "mmap");
-    if (RTN_Valid(mmapRtn))
-    {
-      //if (!RTN_IsSafeForProbedReplacementEx(mmapRtn, PROBE_MODE_ALLOW_RELOCATION)) {
-      //  TraceFile << "X NoProbedReplace mmap" << endl;
-      //}
-      PROTO proto = PROTO_Allocate( PIN_PARG(void *), CALLINGSTD_DEFAULT, "mmap", PIN_PARG_END() );
-
-      RTN_ReplaceSignature(mmapRtn, AFUNPTR( MmapWrapper ),
-          IARG_PROTOTYPE, proto,
-          IARG_CONTEXT,
-          IARG_ORIG_FUNCPTR,
-          IARG_END);
-    }
-
-    RTN mprotectRtn = RTN_FindByName(img, "mprotect");
-    if (RTN_Valid(mprotectRtn))
-    {
-      PROTO proto = PROTO_Allocate( PIN_PARG(void *), CALLINGSTD_DEFAULT, "mprotect", PIN_PARG_END() );
-
-      RTN_ReplaceSignature(mprotectRtn, AFUNPTR( MprotectWrapper ),
-          IARG_PROTOTYPE, proto,
-          IARG_CONTEXT,
-          IARG_ORIG_FUNCPTR,
-          IARG_END);
-    }
-
-    RTN mremapRtn = RTN_FindByName(img, "mremap");
-    if (RTN_Valid(mremapRtn))
-    {
-      PROTO proto = PROTO_Allocate( PIN_PARG(void *), CALLINGSTD_DEFAULT, "mremap", PIN_PARG_END() );
-
-      RTN_ReplaceSignature(mremapRtn, AFUNPTR( MremapWrapper ),
-          IARG_PROTOTYPE, proto,
-          IARG_CONTEXT,
-          IARG_ORIG_FUNCPTR,
-          IARG_END);
-    }
-
-    RTN freeRtn = RTN_FindByName(img, "free");
-    if (RTN_Valid(freeRtn))
-    {
-      //if (!RTN_IsSafeForProbedReplacementEx(freeRtn, PROBE_MODE_ALLOW_RELOCATION)) {
-      //  TraceFile << "X NoProbedReplace free" << endl;
-      //}
-      PROTO proto = PROTO_Allocate( PIN_PARG(void *), CALLINGSTD_DEFAULT, "free", PIN_PARG_END() );
-
-      RTN_ReplaceSignature(freeRtn, AFUNPTR( FreeWrapper ),
-          IARG_PROTOTYPE, proto,
-          IARG_CONTEXT,
-          IARG_ORIG_FUNCPTR,
-          IARG_END);
-    }
-
-    RTN mehRtn = RTN_FindByName(img, "meh");
-    if (RTN_Valid(mehRtn))
-    {
-      PROTO proto = PROTO_Allocate( PIN_PARG(void *), CALLINGSTD_DEFAULT, "meh", PIN_PARG_END() );
-
-      RTN_ReplaceSignature(mehRtn, AFUNPTR( MehWrapper ),
-          IARG_PROTOTYPE, proto,
-          IARG_CONTEXT,
-          IARG_ORIG_FUNCPTR,
-          IARG_END);
-    }
-
-    RTN mallocRtn = RTN_FindByName(img, "malloc");
-    if (RTN_Valid(mallocRtn))
-    {
-      //if (!RTN_IsSafeForProbedReplacementEx(mallcRtn, PROBE_MODE_ALLOW_RELOCATION)) {
-      //  TraceFile << "X NoProbedReplace malloc" << endl;
-      //}
-      PROTO proto = PROTO_Allocate( PIN_PARG(void *), CALLINGSTD_DEFAULT, "malloc", PIN_PARG_END() );
-
-      RTN_ReplaceSignature(mallocRtn, AFUNPTR( MallocWrapper ),
-          IARG_PROTOTYPE, proto,
-          IARG_CONTEXT,
-          IARG_ORIG_FUNCPTR,
-          IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
-          IARG_END);
-    }
-
-    RTN reallocRtn = RTN_FindByName(img, "realloc");
-    if (RTN_Valid(reallocRtn))
-    {
-      PROTO proto = PROTO_Allocate( PIN_PARG(void *), CALLINGSTD_DEFAULT, "realloc", PIN_PARG_END() );
-
-      RTN_ReplaceSignature(reallocRtn, AFUNPTR( ReallocWrapper ),
-          IARG_PROTOTYPE, proto,
-          IARG_CONTEXT,
-          IARG_ORIG_FUNCPTR,
-          IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
-          IARG_END);
-    }
-
-    // I tried the following routine to instrument calls to calloc but couldn't make it work;
-    // the third function parameter was always garbage. Also tried instrumenting calls
-    // to calloc, but couldn't make that work either... Maybe explicit interpositioning
-    // would work better??
-    RTN callocRtn = RTN_FindByName(img, "calloc");
-    if (RTN_Valid(callocRtn))
-    {
-      PROTO proto = PROTO_Allocate( PIN_PARG(void *), CALLINGSTD_DEFAULT, "calloc", PIN_PARG_END() );
-
-      RTN_ReplaceSignature(callocRtn, AFUNPTR( CallocWrapper ),
-          IARG_PROTOTYPE, proto,
-          IARG_CONTEXT,
-          IARG_ORIG_FUNCPTR,
-          IARG_FUNCARG_ENTRYPOINT_VALUE, 0,
-          IARG_FUNCARG_ENTRYPOINT_VALUE, 1,
-          IARG_END);
-    }
-
-    RTN mainRtn = RTN_FindByName(img, "main");
-    if (RTN_Valid(mainRtn))
-    {
-        RTN_Open(mainRtn);
-        RTN_InsertCall(mainRtn, IPOINT_BEFORE, (AFUNPTR) BeforeMain, IARG_TSC, IARG_END);
-        RTN_InsertCall(mainRtn, IPOINT_AFTER,  (AFUNPTR) AfterMain,  IARG_TSC, IARG_END);
-        RTN_Close(mainRtn);
-    }
-
-    { RTN rtn = RTN_FindByName(img, "exit");
-      if (RTN_Valid(rtn))
-      {
-          RTN_Open(rtn);
-          RTN_InsertCall(rtn, IPOINT_BEFORE,  (AFUNPTR) AfterMain,  IARG_TSC, IARG_END);
-          RTN_Close(rtn);
-      }
-    }
-
-    { RTN rtn = RTN_FindByName(img, "caml_sys_exit");
-      if (RTN_Valid(rtn))
-      {
-          RTN_Open(rtn);
-          RTN_InsertCall(rtn, IPOINT_BEFORE,  (AFUNPTR) AfterMain,  IARG_TSC, IARG_END);
-          RTN_Close(rtn);
-      }
-    }
-
-    RTN fmainRtn = RTN_FindByName(img, "foster__main");
-    if (RTN_Valid(fmainRtn))
-    {
-        RTN_Open(fmainRtn);
-        RTN_InsertCall(fmainRtn, IPOINT_BEFORE, (AFUNPTR) BeforeMain, IARG_TSC, IARG_END);
-        RTN_InsertCall(fmainRtn, IPOINT_AFTER,  (AFUNPTR) AfterMain,  IARG_TSC, IARG_END);
-        RTN_Close(fmainRtn);
-    }
-}
-
 VOID PIN_FAST_ANALYSIS_CALL do_incr_by(UINT64* counter, UINT64 amount)
 {
     (*counter) += amount;
@@ -502,9 +389,18 @@ int HandleStackPointerMunge(INS ins) {
   if (INS_IsSub(ins)) {
     if (INS_OperandIsImmediate(ins, 1)) {
       if (INS_OperandImmediate(ins, 1) > 516) {
-        TraceFile << endl << "X " << RTN_Name(INS_Rtn(ins)) << " " << dec << INS_OperandImmediate(ins, 1) << endl;
+        TraceFile << endl << "X stack ptr sub with big immediate " << RTN_Name(INS_Rtn(ins)) << " " << dec << INS_OperandImmediate(ins, 1) << endl;
       } else if (INS_OperandImmediate(ins, 1) > 32000) {
         // Ignore very large stack munging
+        // In particular, this filters out the following code from the OCaml runtime:
+#if 0
+        LBL(caml_call_gc):
+    /* Touch the stack to trigger a recoverable segfault
+       if insufficient space remains */
+        subq    $32768, %rsp
+        movq    %rax, 0(%rsp)
+        addq    $32768, %rsp
+#endif
       } else {
         INS_InsertFillBuffer(ins, IPOINT_BEFORE, bufid,
             IARG_TSC, offsetof(struct alloc_record, tsc),
@@ -524,6 +420,7 @@ int HandleStackPointerMunge(INS ins) {
   } else if (INS_Opcode(ins) == XED_ICLASS_ADD) {
     if (INS_OperandIsImmediate(ins, 1)) {
       if (INS_OperandImmediate(ins, 1) < 0) {
+	// Only include ADDs of negative constants.
         INS_InsertFillBuffer(ins, IPOINT_BEFORE, bufid,
             IARG_TSC, offsetof(struct alloc_record, tsc),
             IARG_ADDRINT, -INS_OperandImmediate(ins, 1),
@@ -559,6 +456,17 @@ VOID Trace(TRACE tr, VOID *v)
     for (INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins = INS_Next(ins)) {
       if (gDoTrackStackPointer && INS_IsCall(ins)) {
         numCalls++;
+
+        // Insert code to record the stack pointer (depth) at each call.
+        // This effectively ignores the stack in leaf frames, but at least
+        // it's a consistent rule that's mostly independent of calling convention etc.
+        // And special treatment of leaf frames is a standard distinction...
+        INS_InsertFillBuffer(ins, IPOINT_BEFORE, bufid,
+            IARG_TSC, offsetof(struct alloc_record, tsc),
+            IARG_REG_VALUE, REG_STACK_PTR, offsetof(struct alloc_record, size),
+            IARG_UINT32, kStackPtrType, offsetof(struct alloc_record, typ),
+            IARG_END);
+
       }
 
       if (INS_RegW(ins, 0) == REG_STACK_PTR) {
@@ -573,7 +481,7 @@ VOID Trace(TRACE tr, VOID *v)
                 IARG_TSC, offsetof(struct alloc_record, tsc),
                 IARG_ADDRINT,  INS_OperandImmediate(ins, 1),
                 offsetof(struct alloc_record, size),
-                IARG_UINT32, 9, offsetof(struct alloc_record, typ),
+                IARG_UINT32, kOcamlBumpPtr, offsetof(struct alloc_record, typ),
                 IARG_END);
           }
         }
@@ -593,10 +501,18 @@ VOID Trace(TRACE tr, VOID *v)
 
   if (numCalls > 0) {
     INS ins = BBL_InsHead(TRACE_BblHead(tr));
+    // This adds somewhat significant overhead (brings overhead from ~5x to ~8x).
+    INS_InsertFillBuffer(ins, IPOINT_BEFORE, bufid,
+        IARG_TSC, offsetof(struct alloc_record, tsc),
+        IARG_ADDRINT, ADDRINT(numCalls), offsetof(struct alloc_record, size),
+        IARG_UINT32, 5, offsetof(struct alloc_record, typ),
+        IARG_END);
+    /*
     INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(do_incr_by), IARG_FAST_ANALYSIS_CALL,
                         IARG_PTR, &gNumCalls,
                         IARG_UINT64, numCalls,
                         IARG_END);
+                        */
   }
 }
 
@@ -670,9 +586,6 @@ int main(int argc, char *argv[])
     TraceFile << "T " << hex << tsc0 << " " << dec << TSC_TRIM_BITS << endl;
     TraceFile << "X " << "TSC-backtoback " << measureTSC_backtoback() << endl;
     TraceFile << "X " << "TSC-preinstrument " << tsc_trim(xed_get_time()) << endl;
-
-    // Register Image to be called to instrument functions.
-    IMG_AddInstrumentFunction(Image, 0);
 
     if (gDoTrackStackPointer || gDoTrackOCaml) {
       TRACE_AddInstrumentFunction(Trace, 0);
