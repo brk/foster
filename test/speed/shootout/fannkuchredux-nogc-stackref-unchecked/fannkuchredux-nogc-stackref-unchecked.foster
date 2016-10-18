@@ -76,8 +76,8 @@ tk = { maxn : Int32 =>
        not odd^ >^ odd;
        if (prim subscript-unsafe s 0) >SInt32 0 then
            f = if (prim subscript-unsafe s (prim subscript-unsafe s 0))
-                                       ==Int32 0 then 1 else flip ! end; in
-           if f >SInt32 maxflips^ then f >^ maxflips; () else () end;
+                                       ==Int32 0 then 1 else flip ! end;
+           if f >SInt32 maxflips^ then f >^ maxflips; () end;
            if odd^ then checksum^ -Int32 f
                    else checksum^ +Int32 f
            end >^ checksum;

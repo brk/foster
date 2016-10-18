@@ -83,6 +83,7 @@ tk = { maxn : Int32 =>
                     else checksum^ +Int32 f
             end >^ checksum;
             ()
+        end
       end
     }
 };
@@ -102,17 +103,16 @@ main = {
   maxflips = (prim ref 0);
   checksum = (prim ref 0);
 
-    if in-range n 3 15 then
-      tk n maxflips checksum;
+  if in-range n 3 15 then
+    tk n maxflips checksum;
 
-      print_i32 checksum^;
-      print_text "Pfannkuchen";
-      print_i32 n;
-      print_i32 maxflips^;
-      ()
-      // printf("%d\nPfannkuchen(%d) = %d\n", checksum, max_n, maxflips);
-    else
-      print_text "usage: <prog> number-from-3-to-15";
-    end
+    print_i32 checksum^;
+    print_text "Pfannkuchen";
+    print_i32 n;
+    print_i32 maxflips^;
+    ()
+    // printf("%d\nPfannkuchen(%d) = %d\n", checksum, max_n, maxflips);
+  else
+    print_text "usage: <prog> number-from-3-to-15";
   end
 };

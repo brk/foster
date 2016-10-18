@@ -235,8 +235,9 @@ namespace  {
   // Provide AliasAnalysis services for optimizations.
   //PMB.addInitialAliasAnalysisPasses(PM);
   {
-    PM.add(createCFLSteensAAWrapperPass());
-    PM.add(createCFLAndersAAWrapperPass());
+    //PM.add(createCFLSteensAAWrapperPass());
+    // CFLAnders segfaults on the code we generate...
+    //PM.add(createCFLAndersAAWrapperPass());
 
     // Add TypeBasedAliasAnalysis before BasicAliasAnalysis so that
     // BasicAliasAnalysis wins if they disagree. This is intended to help

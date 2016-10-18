@@ -118,11 +118,10 @@ natAdd_A_manually_inlined_slice = { a => b =>
                   pgo (n +Int32 1)
                       (i = n;
                        u = acc;
-                          (sliceIdx lg i +Word u) >^ c[i];
-                          unext = addCarryOfWord c[i];
-                          (bitand-Word c[i] (digitNumBitsMask !)) >^ c[i];
-                          unext
-                     end)
+                       (sliceIdx lg i +Word u) >^ c[i];
+                       unext = addCarryOfWord c[i];
+                       (bitand-Word c[i] (digitNumBitsMask !)) >^ c[i];
+                          unext)
                 end
             };
             pgo (sliceLength32 sm) u;
