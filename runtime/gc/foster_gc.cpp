@@ -21,15 +21,16 @@
 // can do effective dead-code elimination. If we were JIT compiling
 // the GC we could (re-)specialize these config vars at runtime...
 #define ENABLE_GCLOG 0
+#define FOSTER_GC_TRACK_BITMAPS       0
 #define FOSTER_GC_ALLOC_HISTOGRAMS    0
 #define FOSTER_GC_TIME_HISTOGRAMS     0
 #define FOSTER_GC_EFFIC_HISTOGRAMS    0
-#define FOSTER_GC_PRINT_WHEN_RUN      1
+#define FOSTER_GC_PRINT_WHEN_RUN      0
 #define GC_ASSERTIONS 0
-#define TRACK_NUM_ALLOCATIONS         1
+#define TRACK_NUM_ALLOCATIONS         0
 #define TRACK_BYTES_KEPT_ENTRIES      0
 #define TRACK_BYTES_ALLOCATED_ENTRIES 0
-#define TRACK_BYTES_ALLOCATED_PINHOOK 1
+#define TRACK_BYTES_ALLOCATED_PINHOOK 0
 #define GC_BEFORE_EVERY_MEMALLOC_CELL 0
 #define DEBUG_INITIALIZE_ALLOCATIONS  0
 #define MEMSET_FREED_MEMORY           1
@@ -262,9 +263,11 @@ class copying_gc {
         allot->set_meta(map);
 
         // Record the start and end of this object, for interior pointers, heap parsing, etc.
-        int granule = granule_for(tori_of_tidy(allot->body_addr()));
-        obj_start.set_bit(granule);
-        obj_limit.set_bit(granule + num_granules(N));
+        if (FOSTER_GC_TRACK_BITMAPS) {
+          int granule = granule_for(tori_of_tidy(allot->body_addr()));
+          obj_start.set_bit(granule);
+          obj_limit.set_bit(granule + num_granules(N));
+        }
         // With --backend-optimize on a GC-heavy workload (10M allocs, 317MB allocated):
         //   Without memset free: 426ms = 293gc + 133mut
         //   Without bit setting: 460ms = 322gc + 134mut
@@ -297,9 +300,11 @@ class copying_gc {
         }
         incr_by(bump, map->cell_size);
         allot->set_meta(map);
-        size_t granule = granule_for(tori_of_tidy(allot->body_addr()));
-        obj_start.set_bit(granule);
-        obj_limit.set_bit(granule + num_granules(map->cell_size));
+        if (FOSTER_GC_TRACK_BITMAPS) {
+          size_t granule = granule_for(tori_of_tidy(allot->body_addr()));
+          obj_start.set_bit(granule);
+          obj_limit.set_bit(granule + num_granules(map->cell_size));
+        }
         //if (gNumAllocsToPrint --> 0)
         //  fprintf(gclog, "alloc'd %d, bump = %p, low bits: %x, granule = %d\n", int(map->cell_size), bump, intptr_t(bump) & 0xF, granule);
         return allot->body_addr();
@@ -319,9 +324,11 @@ class copying_gc {
         if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_array(total_bytes); }
         if (TRACK_NUM_ALLOCATIONS) { ++parent->num_allocations; }
 
-        size_t granule = granule_for(tori_of_tidy(allot->body_addr()));
-        obj_start.set_bit(granule);
-        obj_limit.set_bit(granule + num_granules(total_bytes));
+        if (FOSTER_GC_TRACK_BITMAPS) {
+          size_t granule = granule_for(tori_of_tidy(allot->body_addr()));
+          obj_start.set_bit(granule);
+          obj_limit.set_bit(granule + num_granules(total_bytes));
+        }
         return allot->body_addr();
       }
       // }}}
@@ -403,8 +410,10 @@ class copying_gc {
           memcpy(new_addr, cell, cell_size);
           cell->set_forwarded_body(new_addr->body_addr());
 
-          obj_start.set_bit(granule_for(tori_of_tidy(new_addr->body_addr())));
-          obj_limit.set_bit(granule_for((tori*) offset(new_addr->body_addr(), cell_size)));
+          if (FOSTER_GC_TRACK_BITMAPS) {
+            obj_start.set_bit(granule_for(tori_of_tidy(new_addr->body_addr())));
+            obj_limit.set_bit(granule_for((tori*) offset(new_addr->body_addr(), cell_size)));
+          }
 
           // We now have a cell in the new semispace, but any pointer fields
           // it had are still pointing back to the old semispace.
@@ -476,6 +485,8 @@ class copying_gc {
       }
 
       inline tidy* tidy_for(tori* t) {
+        if (!FOSTER_GC_TRACK_BITMAPS) return (tidy*) t; // assume no interior pointers...
+
         size_t granule = granule_for(t);
         if (obj_start.get_bit(granule)) {
           return (tidy*) t;
@@ -677,7 +688,8 @@ public:
     }
   }
 
-  void* allocate_cell_slowpath(typemap* typeinfo) {
+  void* allocate_cell_slowpath(typemap* typeinfo) // __attribute__((noinline))
+  {
     int64_t cell_size = typeinfo->cell_size; // includes space for cell header.
     gc(FOSTER_GC_PRINT_WHEN_RUN);
     if (curr->can_allocate_bytes(cell_size)) {

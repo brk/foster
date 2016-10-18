@@ -136,7 +136,7 @@ advance = { bodies : Array Planet => i : Ref Int64
             incrByFloat64 (vyr b2) (dy *f64 ma b1 *f64 mag);
             incrByFloat64 (vzr b2) (dz *f64 ma b1 *f64 mag);
           (j^ +Int64 1) >^ j;
-      }
+      };
     (i^ +Int64 1) >^ i;
   };
 
