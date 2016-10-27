@@ -262,6 +262,12 @@ fixnumTypeSize (LLPrimInt IWd) = (-32)
 fixnumTypeSize (LLPrimInt IDw) = (-64)
 fixnumTypeSize (LLPrimInt isb) = intSizeOf isb
 fixnumTypeSize other = error $ "Expected int literal to have LLPrimInt type; had " ++ show other
+
+isTraced ty = case ty of
+  LLPtrType _ -> True
+  LLPtrTypeUnknown -> True
+  _ -> False
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||||||| Expressions |||||||||||||||||||||||||{{{
@@ -300,11 +306,15 @@ dumpExpr _  (ILAllocArray nonArrayType _ _ _) =
          error $ "ProtobufIL.hs: Can't dump ILAllocArray with non-array type "
               ++ show nonArrayType
 
-dumpExpr _ x@(ILDeref _ a) =
-    (defaultLetable (typeOf x) Ilderef) { parts_of_Letable = [dumpVar a] }
+dumpExpr _ x@(ILDeref ty a) =
+    (defaultLetable (typeOf x) Ilderef) { parts_of_Letable = [dumpVar a]
+                                        , boolvalue_of_Letable = [isTraced ty] }
 
+-- The boolvalue for Deref and Store is used to determine whether loads/stores
+-- should use LLVM's gcread/gcwrite primitives or regular, non-barriered ops.
 dumpExpr _ x@(ILStore v r) =
-    (defaultLetable (typeOf x) Ilstore) { parts_of_Letable = map dumpVar [v, r] }
+    (defaultLetable (typeOf x) Ilstore) { parts_of_Letable = map dumpVar [v, r]
+                                        , boolvalue_of_Letable = [isTraced (tidType v)] }
 
 dumpExpr _ x@(ILArrayRead _t (ArrayIndex b i rng sg)) =
     (defaultLetable (typeOf x) Ilarrayread) {

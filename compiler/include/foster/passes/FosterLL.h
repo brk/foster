@@ -224,7 +224,7 @@ public:
 
 struct LLBool : public LLExpr {
   bool boolValue;
-  explicit LLBool(string val) : LLExpr("LLBool"), boolValue(val == "true") {}
+  explicit LLBool(bool val) : LLExpr("LLBool"), boolValue(val) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
@@ -354,7 +354,7 @@ struct LLArrayIndex {
                         string static_or_dynamic, string srclines)
     : base(base), index(index),
       static_or_dynamic(static_or_dynamic), srclines(srclines) {}
-  llvm::Value* codegenARI(CodegenPass* pass);
+  llvm::Value* codegenARI(CodegenPass* pass, Value** base);
 };
 
 // base[index]
@@ -448,14 +448,17 @@ struct LLAllocate : public LLExpr {
 
 struct LLDeref : public LLExpr {
   LLVar* base;
-  explicit LLDeref(LLVar* e) : LLExpr("LLDeref"), base(e) {}
+  bool isTraced;
+  explicit LLDeref(LLVar* e, bool isTraced)
+    : LLExpr("LLDeref"), base(e), isTraced(isTraced) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
 struct LLStore : public LLExpr {
   LLVar* v; LLVar* r;
-  explicit LLStore(LLVar* v, LLVar* r)
-    : LLExpr("LLStore"), v(v), r(r) {}
+  bool isTraced;
+  explicit LLStore(LLVar* v, LLVar* r, bool isTraced)
+    : LLExpr("LLStore"), v(v), r(r), isTraced(isTraced) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 

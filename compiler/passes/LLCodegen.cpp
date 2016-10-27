@@ -244,10 +244,6 @@ CodegenPass::CodegenPass(llvm::Module* m, CodegenPassConfig config)
   this->fosterFunctionAttributes = attrs;
 }
 
-llvm::Value* emitLoad(llvm::Value* v, llvm::StringRef suffix) {
-  return emitNonVolatileLoad(v, v->getName() + suffix);
-}
-
 std::map<std::string, llvm::Type*> gDeclaredSymbolTypes;
 
 llvm::Value* CodegenPass::lookupFunctionOrDie(const std::string&
@@ -833,15 +829,54 @@ void LLRebindId::codegenMiddle(CodegenPass* pass) {
 /////////////// LLDeref, LLStore, LLLetVals ////////////////////////
 /////////////////////////////////////////////////////////////////{{{
 
+llvm::Value* emitGCWrite(CodegenPass* pass, Value* val, Value* base, Value* slot) {
+  if (!base) base = llvm::ConstantPointerNull::getNullValue(builder.getInt8PtrTy());
+  llvm::Constant* llvm_gcwrite = llvm::Intrinsic::getDeclaration(pass->mod,
+                                                      llvm::Intrinsic::gcwrite);
+
+  llvm::outs() << "emitting GC write" << "\n";
+  llvm::outs() << "  base is " << *base << "\n";
+  llvm::outs() << "   val is " << *val << "\n";
+  llvm::outs() << "  slot is " << *slot << "\n";
+
+  Value* base_generic = builder.CreateBitCast(base, builder.getInt8PtrTy());
+  Value* slot_generic = builder.CreateBitCast(slot, builder.getInt8PtrTy()->getPointerTo(0));
+  Value*  val_generic = builder.CreateBitCast(val,  builder.getInt8PtrTy());
+  return builder.CreateCall(llvm_gcwrite, { val_generic, base_generic, slot_generic });
+}
+
+llvm::Value* emitGCRead(CodegenPass* pass, Value* base, Value* slot) {
+  if (!base) base = llvm::ConstantPointerNull::getNullValue(builder.getInt8PtrTy());
+  llvm::Constant* llvm_gcread = llvm::Intrinsic::getDeclaration(pass->mod,
+                                                      llvm::Intrinsic::gcread);
+  llvm::outs() << "emitting GC read" << "\n";
+  llvm::outs() << "  base is " << *base << "\n";
+  llvm::outs() << "  slot is " << *slot << "\n";
+
+  Value* base_generic = builder.CreateBitCast(base, builder.getInt8PtrTy());
+  Value* slot_generic = builder.CreateBitCast(slot, builder.getInt8PtrTy()->getPointerTo(0));
+  Value* val_generic = builder.CreateCall(llvm_gcread, { base_generic, slot_generic });
+  return builder.CreateBitCast(val_generic, slot->getType()->getPointerElementType());
+}
+
+
 llvm::Value* LLDeref::codegen(CodegenPass* pass) {
   llvm::Value* ptr = base->codegen(pass);
-  return emitNonVolatileLoad(ptr, "deref");
+  if (isTraced && !llvm::isa<llvm::AllocaInst>(ptr)) {
+    return emitGCRead(pass, nullptr, ptr);
+  } else {
+    return emitNonVolatileLoad(ptr, "deref");
+  }
 }
 
 llvm::Value* LLStore::codegen(CodegenPass* pass) {
-  llvm::Value* vv = v->codegen(pass);
-  llvm::Value* vr = r->codegen(pass);
-  return emitStore(vv, vr);
+  llvm::Value* val  = v->codegen(pass);
+  llvm::Value* slot = r->codegen(pass);
+  if (isTraced) {
+    return emitGCWrite(pass, val, nullptr, slot);
+  } else {
+    return emitStore(val, slot);
+  }
 }
 
 llvm::Value* LLObjectCopy::codegen(CodegenPass* pass) {
@@ -849,7 +884,7 @@ llvm::Value* LLObjectCopy::codegen(CodegenPass* pass) {
   llvm::Value* vr =   to->codegen(pass);
   // TODO assert that object tags are equal?
 
-  llvm::Value* from_obj = emitNonVolatileLoad(vv, "from_obj");
+  llvm::Value* from_obj = emitNonVolatileLoad(vv, "copy_from_obj");
   return emitStore(from_obj, vr);
 }
 
@@ -1143,17 +1178,19 @@ Value* getArraySlot(Value* base, Value* idx, CodegenPass* pass,
 }
 
 
-llvm::Value* LLArrayIndex::codegenARI(CodegenPass* pass) {
-  Value* base = this->base ->codegen(pass);
+llvm::Value* LLArrayIndex::codegenARI(CodegenPass* pass, Value** outbase) {
+  *outbase    = this->base ->codegen(pass);
   Value* idx  = this->index->codegen(pass);
   idx = builder.CreateZExt(idx, llvm::Type::getInt64Ty(builder.getContext()));
   ASSERT(static_or_dynamic == "static" || static_or_dynamic == "dynamic");
-  return getArraySlot(base, idx, pass, this->static_or_dynamic == "dynamic",
-                                       this->srclines);
+  return getArraySlot(*outbase, idx, pass, this->static_or_dynamic == "dynamic",
+                                           this->srclines);
 }
 
 llvm::Value* LLArrayRead::codegen(CodegenPass* pass) {
-  Value* slot = ari->codegenARI(pass);
+  Value* base = NULL;
+  Value* slot = ari->codegenARI(pass, &base);
+  //Value* val  = emitGCRead(pass, base, slot);
   Value* val  = emitNonVolatileLoad(slot, "arrayslot");
   ASSERT(this->type) << "LLArrayRead with no type?";
   ASSERT(this->type->getLLVMType() == val->getType());
@@ -1167,8 +1204,10 @@ llvm::Value* LLArrayRead::codegen(CodegenPass* pass) {
 
 llvm::Value* LLArrayPoke::codegen(CodegenPass* pass) {
   Value* val  = this->value->codegen(pass);
-  Value* slot = ari->codegenARI(pass);
+  Value* base = NULL;
+  Value* slot = ari->codegenARI(pass, &base);
   return builder.CreateStore(val, slot, /*isVolatile=*/ false);
+  //return emitGCWrite(pass, val, base, slot);
 }
 
 
