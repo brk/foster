@@ -87,6 +87,24 @@ typedef void* frameptr;
 typedef std::map<frameptr, const stackmap::PointCluster*> ClusterMap;
 // }}}
 
+class heap {
+public:
+  virtual ~heap() {}
+
+  virtual bool owns(tori* body) = 0;
+  virtual tidy* tidy_for(tori* t) = 0;
+
+  virtual void dump_stats(FILE* json) = 0;
+
+  virtual void force_gc_for_debugging_purposes() = 0;
+
+  virtual void* allocate_array(typemap* elt_typeinfo, int64_t n, bool init) = 0;
+  virtual void* allocate_cell(typemap* typeinfo) = 0;
+
+  virtual void* allocate_cell_16(typemap* typeinfo) = 0;
+  virtual void* allocate_cell_32(typemap* typeinfo) = 0;
+};
+
 // {{{ Global data used by the GC
 FILE* gclog = NULL;
 
@@ -95,10 +113,15 @@ class copying_gc;
 template<typename Allocator>
 struct GCGlobals {
   Allocator* allocator = NULL;
+  Allocator* default_allocator = NULL;
 
   std::vector<allocator_range> allocator_ranges;
 
   ClusterMap clusterForAddress;
+
+  bool had_problems;
+
+  std::map<std::pair<const char*, typemap*>, int64_t> alloc_site_counters;
 
   base::TimeTicks gc_time;
   base::TimeTicks runtime_start;
@@ -196,14 +219,12 @@ public:
 
   stat_tracker<int64_t> bytes_kept_per_gc;
 
-  std::map<std::pair<const char*, typemap*>, int64_t> alloc_site_counters;
-
   int64_t num_allocations;
   int64_t num_collections;
 };
 
 // {{{ copying_gc
-class copying_gc {
+class copying_gc : public heap {
   // {{{ semispace
   class semispace {
   public:
@@ -528,8 +549,6 @@ class copying_gc {
 
   // {{{ Copying GC data members
 
-  bool saw_bad_pointer;
-
   heapstats hpstats;
 
   semispace* curr;
@@ -572,7 +591,7 @@ class copying_gc {
   }
 
 public:
-  copying_gc(int64_t size) {
+  copying_gc(int64_t size) : heap() {
     // {{{
     curr = new semispace(size, this);
 
@@ -586,17 +605,15 @@ public:
     for (int i = 0; i < stretches.size(); --i) {
       delete stretches[i]; stretches[i] = NULL;
     }
-
-    saw_bad_pointer = false;
     // }}}
   }
 
-  ~copying_gc() {
+  virtual ~copying_gc() {
     dump_stats(NULL);
   }
 
   // Precondition: curr owns t.
-  tidy* tidy_for(tori* t) { return curr->tidy_for(t); }
+  virtual tidy* tidy_for(tori* t) { return curr->tidy_for(t); }
 
   void visit_root(unchecked_ptr* root, const char* slotname) {
     gc_assert(root != NULL, "someone passed a NULL root addr!");
@@ -649,19 +666,18 @@ public:
         fprintf(gclog, "foster_gc error: tried to collect"
                        " unknown cell: %p\n", body);
         fflush(gclog);
-        saw_bad_pointer = true;
+        gcglobals.had_problems = true;
       }
       // }}}
     }
   }
 
-
-
-  bool owns(tori* body) { return curr->contains(body)
-                              || next->contains(body); }
+  virtual bool owns(tori* body) {
+    return curr->contains(body) || next->contains(body);
+  }
 
   // {{{ Allocation, in various flavors & specializations.
-  void* allocate_cell(typemap* typeinfo) {
+  virtual void* allocate_cell(typemap* typeinfo) {
     int64_t cell_size = typeinfo->cell_size; // includes space for cell header.
 
     if (wantWeirdCrashToHappen && FOSTER_GC_ALLOC_HISTOGRAMS) {
@@ -699,6 +715,9 @@ public:
     }
   }
 
+  virtual void* allocate_cell_16(typemap* typeinfo) { return allocate_cell_N<16>(typeinfo); }
+  virtual void* allocate_cell_32(typemap* typeinfo) { return allocate_cell_N<32>(typeinfo); }
+
   void* allocate_cell_slowpath(typemap* typeinfo) __attribute__((noinline))
   {
     int64_t cell_size = typeinfo->cell_size; // includes space for cell header.
@@ -722,7 +741,7 @@ public:
                                         FOSTER_GC_DEFAULT_ALIGNMENT);
   }
 
-  void* allocate_array(typemap* elt_typeinfo, int64_t n, bool init) {
+  virtual void* allocate_array(typemap* elt_typeinfo, int64_t n, bool init) {
     int64_t slot_size = elt_typeinfo->cell_size; // note the name change!
     int64_t req_bytes = array_size_for(n, slot_size);
 
@@ -756,15 +775,9 @@ public:
   // }}}
 
   // {{{
-  bool had_problems() { return saw_bad_pointer; }
+  virtual void force_gc_for_debugging_purposes() { this->gc(false); }
 
-  void force_gc_for_debugging_purposes() { this->gc(false); }
-
-  void record_memalloc_cell(typemap* typeinfo, const char* srclines) {
-    this->hpstats.alloc_site_counters[std::make_pair(srclines, typeinfo)]++;
-  }
-
-  void dump_stats(FILE* json) {
+  virtual void dump_stats(FILE* json) {
     FILE* stats = json ? json : gclog;
 
     double approx_bytes = double((hpstats.num_collections * curr->get_size()) + curr->used_size());
@@ -797,9 +810,9 @@ public:
       fprintf(stats,  "allocs_of_size_more: %12" PRId64 ",\n", hpstats.bytes_req_per_alloc.back());
     }
 
-    if (!hpstats.alloc_site_counters.empty()) {
+    if (!gcglobals.alloc_site_counters.empty()) {
       fprintf(stats, "'allocation_sites' : [\n");
-      for (auto it : hpstats.alloc_site_counters) {
+      for (auto it : gcglobals.alloc_site_counters) {
         typemap* map = it.first.second;
         int64_t bytes_allocated = map->cell_size * it.second;
         fprintf(stats, "{ 'typemap' : %p , 'allocations' : %12" PRId64 ", 'alloc_size':%" PRId64
@@ -1178,6 +1191,9 @@ void initialize(void* stack_highest_addr) {
 
   base::StatisticsRecorder::Initialize();
   gcglobals.allocator = new copying_gc(gSEMISPACE_SIZE());
+  gcglobals.default_allocator = gcglobals.allocator;
+
+  gcglobals.had_problems = false;
 
   register_allocator_ranges(stack_highest_addr);
 
@@ -1230,7 +1246,7 @@ FILE* print_timing_stats() {
 
 int cleanup() {
   FILE* json = print_timing_stats();
-  bool had_problems = gcglobals.allocator->had_problems();
+  bool had_problems = gcglobals.had_problems;
   if (json) gcglobals.allocator->dump_stats(json);
   delete gcglobals.allocator;
   fclose(gclog); gclog = NULL;
@@ -1342,22 +1358,24 @@ void* memalloc_cell(typemap* typeinfo) {
   return gcglobals.allocator->allocate_cell(typeinfo);
 }
 
+#if 0
 void* try_memalloc_cell(typemap* typeinfo) {
   return gcglobals.allocator->try_allocate_cell(typeinfo);
 }
+#endif
 
 void* memalloc_cell_16(typemap* typeinfo) {
   if (GC_BEFORE_EVERY_MEMALLOC_CELL) {
     gcglobals.allocator->force_gc_for_debugging_purposes();
   }
-  return gcglobals.allocator->allocate_cell_N<16>(typeinfo);
+  return gcglobals.allocator->allocate_cell_16(typeinfo);
 }
 
 void* memalloc_cell_32(typemap* typeinfo) {
   if (GC_BEFORE_EVERY_MEMALLOC_CELL) {
     gcglobals.allocator->force_gc_for_debugging_purposes();
   }
-  return gcglobals.allocator->allocate_cell_N<32>(typeinfo);
+  return gcglobals.allocator->allocate_cell_32(typeinfo);
 }
 
 void* memalloc_array(typemap* typeinfo, int64_t n, int8_t init) {
@@ -1365,7 +1383,7 @@ void* memalloc_array(typemap* typeinfo, int64_t n, int8_t init) {
 }
 
 void record_memalloc_cell(typemap* typeinfo, const char* srclines) {
-  gcglobals.allocator->record_memalloc_cell(typeinfo, srclines);
+  gcglobals.alloc_site_counters[std::make_pair(srclines, typeinfo)]++;
 }
 // }}}
 
