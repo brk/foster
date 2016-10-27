@@ -179,6 +179,29 @@ void coro_visitGCRoots(foster_generic_coro* coro, copying_gc* visitor);
 const typemap* tryGetTypemap(heap_cell* cell);
 // }}}
 
+class heapstats {
+public:
+  heapstats() {
+    num_allocations = 0;
+    num_collections = 0;
+    bytes_kept_per_gc.resize(TRACK_BYTES_KEPT_ENTRIES);
+    bytes_req_per_alloc.resize(TRACK_BYTES_ALLOCATED_ENTRIES + 1);
+  }
+
+  // An efficiently-encoded int->int map...
+  // A value of v at index k in [index 0..TRACK_BYTES_ALLOCATED_ENTRIES)
+  // means v allocations of size (k * FOSTER_GC_DEFAULT_ALIGNMENT).
+  // All larger allocations go in the last array entry.
+  std::vector<int64_t>  bytes_req_per_alloc;
+
+  stat_tracker<int64_t> bytes_kept_per_gc;
+
+  std::map<std::pair<const char*, typemap*>, int64_t> alloc_site_counters;
+
+  int64_t num_allocations;
+  int64_t num_collections;
+};
+
 // {{{ copying_gc
 class copying_gc {
   // {{{ semispace
@@ -257,7 +280,7 @@ class copying_gc {
         if (DEBUG_INITIALIZE_ALLOCATIONS) { memset(bump, 0xAA, N); }
         if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(N); }
         if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_cell(N); }
-        if (TRACK_NUM_ALLOCATIONS) { ++parent->num_allocations; }
+        if (TRACK_NUM_ALLOCATIONS) { ++parent->hpstats.num_allocations; }
         if (FOSTER_GC_ALLOC_HISTOGRAMS) { LOCAL_HISTOGRAM_ENUMERATION("gc-alloc-small", N, 128); }
         incr_by(bump, N);
         allot->set_meta(map);
@@ -294,7 +317,7 @@ class copying_gc {
         if (DEBUG_INITIALIZE_ALLOCATIONS) { memset(bump, 0xAA, map->cell_size); }
         if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(map->cell_size); }
         if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_cell(map->cell_size); }
-        if (TRACK_NUM_ALLOCATIONS) { ++parent->num_allocations; }
+        if (TRACK_NUM_ALLOCATIONS) { ++parent->hpstats.num_allocations; }
         if (!wantWeirdCrashToHappen && FOSTER_GC_ALLOC_HISTOGRAMS) {
           allocate_cell_prechecked_histogram((int) map->cell_size);
         }
@@ -322,7 +345,7 @@ class copying_gc {
         allot->set_num_elts(num_elts);
         if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(total_bytes); }
         if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_array(total_bytes); }
-        if (TRACK_NUM_ALLOCATIONS) { ++parent->num_allocations; }
+        if (TRACK_NUM_ALLOCATIONS) { ++parent->hpstats.num_allocations; }
 
         if (FOSTER_GC_TRACK_BITMAPS) {
           size_t granule = granule_for(tori_of_tidy(allot->body_addr()));
@@ -426,6 +449,7 @@ class copying_gc {
               scan_with_map_and_arr(new_addr, *map, arr, remaining_depth - 1);
             }
           } else {
+            fprintf(gclog, "adding to parent worklist, current length %d\n", parent->worklist.size());
             parent->worklist.add(new_addr);
           }
         }
@@ -504,19 +528,9 @@ class copying_gc {
 
   // {{{ Copying GC data members
 
-  // An efficiently-encoded int->int map...
-  // A value of v at index k in [index 0..TRACK_BYTES_ALLOCATED_ENTRIES)
-  // means v allocations of size (k * FOSTER_GC_DEFAULT_ALIGNMENT).
-  // All larger allocations go in the last array entry.
-  std::vector<int64_t>  bytes_req_per_alloc;
-
-  stat_tracker<int64_t> bytes_kept_per_gc;
-
-  std::map<std::pair<const char*, typemap*>, int64_t> alloc_site_counters;
-
-  int64_t num_allocations;
-  int64_t num_collections;
   bool saw_bad_pointer;
+
+  heapstats hpstats;
 
   semispace* curr;
   semispace* next;
@@ -528,6 +542,7 @@ class copying_gc {
       void       advance()         { ++idx; }
       heap_cell* peek_front()      { return ptrs[idx]; }
       void       add(heap_cell* c) { ptrs.push_back(c); }
+      size_t     size()            { return ptrs.size(); }
     private:
       size_t                  idx;
       std::vector<heap_cell*> ptrs;
@@ -549,10 +564,10 @@ class copying_gc {
 
   void record_bytes_allocated(int64_t num_bytes) {
     int64_t idx = num_bytes / FOSTER_GC_DEFAULT_ALIGNMENT;
-    if (idx >= bytes_req_per_alloc.size() - 1) {
-      bytes_req_per_alloc.back()++;
+    if (idx >= hpstats.bytes_req_per_alloc.size() - 1) {
+      hpstats.bytes_req_per_alloc.back()++;
     } else {
-      bytes_req_per_alloc[idx]++;
+      hpstats.bytes_req_per_alloc[idx]++;
     }
   }
 
@@ -572,11 +587,7 @@ public:
       delete stretches[i]; stretches[i] = NULL;
     }
 
-    num_allocations = 0;
-    num_collections = 0;
     saw_bad_pointer = false;
-    bytes_kept_per_gc.resize(TRACK_BYTES_KEPT_ENTRIES);
-    bytes_req_per_alloc.resize(TRACK_BYTES_ALLOCATED_ENTRIES + 1);
     // }}}
   }
 
@@ -688,7 +699,7 @@ public:
     }
   }
 
-  void* allocate_cell_slowpath(typemap* typeinfo) // __attribute__((noinline))
+  void* allocate_cell_slowpath(typemap* typeinfo) __attribute__((noinline))
   {
     int64_t cell_size = typeinfo->cell_size; // includes space for cell header.
     gc(FOSTER_GC_PRINT_WHEN_RUN);
@@ -750,27 +761,27 @@ public:
   void force_gc_for_debugging_purposes() { this->gc(false); }
 
   void record_memalloc_cell(typemap* typeinfo, const char* srclines) {
-    this->alloc_site_counters[std::make_pair(srclines, typeinfo)]++;
+    this->hpstats.alloc_site_counters[std::make_pair(srclines, typeinfo)]++;
   }
 
   void dump_stats(FILE* json) {
     FILE* stats = json ? json : gclog;
 
-    double approx_bytes = double((num_collections * curr->get_size()) + curr->used_size());
-    fprintf(stats, "'num_collections' : %" PRId64 ",\n", num_collections);
+    double approx_bytes = double((hpstats.num_collections * curr->get_size()) + curr->used_size());
+    fprintf(stats, "'num_collections' : %" PRId64 ",\n", hpstats.num_collections);
     if (TRACK_NUM_ALLOCATIONS) {
-    fprintf(stats, "'num_allocations' : %.3g,\n", double(num_allocations));
-    fprintf(stats, "'avg_alloc_size' : %d,\n", (num_allocations == 0)
+    fprintf(stats, "'num_allocations' : %.3g,\n", double(hpstats.num_allocations));
+    fprintf(stats, "'avg_alloc_size' : %d,\n", (hpstats.num_allocations == 0)
                                                   ? 0
-                                                  : int(approx_bytes / double(num_allocations)));
+                                                  : int(approx_bytes / double(hpstats.num_allocations)));
     }
     fprintf(stats, "'alloc_num_bytes_gt' : %.3g,\n", approx_bytes);
     fprintf(stats, "'semispace_size_kb' : %lld,\n", curr->get_size() / 1024);
 
     if (TRACK_BYTES_KEPT_ENTRIES) {
-    int64_t mn = bytes_kept_per_gc.compute_min(),
-            mx = bytes_kept_per_gc.compute_max(),
-            aa = bytes_kept_per_gc.compute_avg_arith();
+    int64_t mn = hpstats.bytes_kept_per_gc.compute_min(),
+            mx = hpstats.bytes_kept_per_gc.compute_max(),
+            aa = hpstats.bytes_kept_per_gc.compute_avg_arith();
     fprintf(stats, "'min_bytes_kept' : %8" PRId64 ",\n", mn);
     fprintf(stats, "'max_bytes_kept' : %8" PRId64 ",\n", mx);
     fprintf(stats, "'avg_bytes_kept' : %8" PRId64 ",\n", aa);
@@ -779,16 +790,16 @@ public:
     fprintf(stats, "'avg_bytes_kept_percent' : %.2g%%,\n", double(aa * 100.0)/double(curr->get_size()));
     }
     if (TRACK_BYTES_ALLOCATED_ENTRIES) {
-      for (int i = 0; i < bytes_req_per_alloc.size() - 1; ++i) {
+      for (int i = 0; i < hpstats.bytes_req_per_alloc.size() - 1; ++i) {
         int sz = i * FOSTER_GC_DEFAULT_ALIGNMENT;
-        fprintf(stats, "allocs_of_size_%4d: %12" PRId64 ",\n", sz, bytes_req_per_alloc[i]);
+        fprintf(stats, "allocs_of_size_%4d: %12" PRId64 ",\n", sz, hpstats.bytes_req_per_alloc[i]);
       }
-      fprintf(stats,  "allocs_of_size_more: %12" PRId64 ",\n", bytes_req_per_alloc.back());
+      fprintf(stats,  "allocs_of_size_more: %12" PRId64 ",\n", hpstats.bytes_req_per_alloc.back());
     }
 
-    if (!this->alloc_site_counters.empty()) {
+    if (!hpstats.alloc_site_counters.empty()) {
       fprintf(stats, "'allocation_sites' : [\n");
-      for (auto it : alloc_site_counters) {
+      for (auto it : hpstats.alloc_site_counters) {
         typemap* map = it.first.second;
         int64_t bytes_allocated = map->cell_size * it.second;
         fprintf(stats, "{ 'typemap' : %p , 'allocations' : %12" PRId64 ", 'alloc_size':%" PRId64
@@ -815,7 +826,7 @@ void copying_gc::gc(bool should_print) {
     fprintf(stderr, "♻\n");
   }
   base::TimeTicks begin = base::TimeTicks::Now();
-  ++this->num_collections;
+  ++hpstats.num_collections;
   if (ENABLE_GCLOG) {
     fprintf(gclog, ">>>>>>> visiting gc roots on current stack\n"); fflush(gclog);
   }
@@ -839,7 +850,7 @@ void copying_gc::gc(bool should_print) {
   worklist.process(next);
 
   if (TRACK_BYTES_KEPT_ENTRIES) {
-    bytes_kept_per_gc.record_sample(next->used_size());
+    hpstats.bytes_kept_per_gc.record_sample(next->used_size());
   }
 
   flip();
