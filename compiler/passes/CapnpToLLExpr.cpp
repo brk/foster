@@ -78,9 +78,13 @@ CtorInfo parseCtorInfo(const pb::PbCtorInfo::Reader& c) { CtorInfo x;
   return x;
 }
 
-LLExpr* parseBool(const pb::Letable::Reader& e) {
+bool getBool(const pb::Letable::Reader& e) {
   auto bools = e.getBoolvalue();
-  return new LLBool( (bools.size() > 0 && bools[0]) ? "true" : "false");
+  return bools.size() > 0 && bools[0];
+}
+
+LLExpr* parseBool(const pb::Letable::Reader& e) {
+  return new LLBool(getBool(e));
 }
 
 LLExpr* parseText(const pb::Letable::Reader& e) {
@@ -419,13 +423,15 @@ LLSwitch* parseSwitch(const pb::Terminator::Reader& b) {
 }
 
 LLExpr* parseDeref(const pb::Letable::Reader& e) {
-  return new LLDeref(parseTermVar( e.getParts()[0]));
+  bool isTraced = getBool(e);
+  return new LLDeref(parseTermVar( e.getParts()[0]), isTraced);
 }
 
 LLExpr* parseStore(const pb::Letable::Reader& e) {
+  bool isTraced = getBool(e);
   return new LLStore(
       parseTermVar( e.getParts()[0]),
-      parseTermVar( e.getParts()[1]));
+      parseTermVar( e.getParts()[1]), isTraced);
 }
 
 LLExpr* parseObjectCopy(const pb::Letable::Reader& e) {

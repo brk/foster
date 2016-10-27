@@ -597,5 +597,23 @@ listShow = { px => xs =>
   "[" `mkTextConcat` inner `mkTextConcat` "]"
 };
 
+listToArray :: forall (a:Type) { List a => Array a };
+listToArray = { xs =>
+  listToArrayWithIndex xs { idx => a => a }
+};
+
+listToArrayWithIndex :: forall (a:Type) { List a => { Int32 => a => a } => Array a };
+listToArrayWithIndex = { xs => f =>
+  r = (prim ref xs);
+  uncons = { idx =>
+    case r^
+      of $Cons x xs -> xs >^ r; f idx x
+      of $Nil -> prim kill-entire-process "listToArray invariant violated";
+    end
+  };
+
+  arrayFromRange32Up 0 (listLength32 xs) uncons
+};
+
 // }}}
 
