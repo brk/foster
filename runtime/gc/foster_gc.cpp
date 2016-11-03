@@ -41,7 +41,7 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 #define TRACK_BYTES_ALLOCATED_PINHOOK 0
 #define GC_BEFORE_EVERY_MEMALLOC_CELL 0
 #define DEBUG_INITIALIZE_ALLOCATIONS  0
-#define MEMSET_FREED_MEMORY           0
+#define MEMSET_FREED_MEMORY           1
 // This included file may un/re-define these parameters, providing
 // a way of easily overriding-without-overwriting the defaults.
 #include "gc/foster_gc_reconfig-inl.h"
@@ -1420,7 +1420,7 @@ class copying_gc : public heap {
                               obj_start(size / 16), obj_limit(size / 16) {
         range.base  = malloc(size);
         range.bound = offset(range.base, size);
-        //memset(range.base, 0x66, size);
+        if (MEMSET_FREED_MEMORY) { memset(range.base, 0x66, size); }
 
         reset_bump();
       }
