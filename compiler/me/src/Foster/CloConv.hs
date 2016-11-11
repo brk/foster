@@ -77,7 +77,7 @@ data Insn' e x where
         CCLabel      :: BlockEntryL                        -> Insn' C O
         CCLetVal     :: Ident   -> Letable TypeLL          -> Insn' O O
         CCLetFuns    :: [Ident] -> [Closure]               -> Insn' O O
-        CCGCLoad     :: LLVar   -> LLRootVar               -> Insn' O O
+        CCGCLoad     :: LLVar   -> LLRootVar -> LLVar      -> Insn' O O
         CCGCInit     :: LLVar   -> LLVar -> LLRootVar      -> Insn' O O
         CCGCKill     :: Enabled -> Set      LLRootVar      -> Insn' O O
         CCTupleStore :: [LLVar] -> LLVar -> AllocMemRegion -> Insn' O O
@@ -579,7 +579,7 @@ instance Pretty (Insn' e x) where
                                   indent 4 (align $
                                    vcat [text recfun <+> text (show id) <+> text "=" <+> pretty fn
                                         | (id,fn) <- zip ids fns])
-  pretty (CCGCLoad  loadedvar root) = indent 4 $ dullwhite $ text "load from" <+> pretty root <+> text "to" <+> pretty loadedvar
+  pretty (CCGCLoad  lded root _org) = indent 4 $ dullwhite $ text "load from" <+> pretty root <+> text "to" <+> pretty lded
   pretty (CCGCInit  _  srcvar root) = indent 4 $ dullgreen $ text "init root" <+> pretty root <+> text ":=" <+> pretty srcvar
   pretty (CCGCKill  Disabled roots) = indent 4 $ (dullwhite $ text "kill roots") <+> prettyR roots <+> pretty Disabled
   pretty (CCGCKill  enabled  roots) | Set.size roots == 0

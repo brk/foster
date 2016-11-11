@@ -24,6 +24,7 @@ import Foster.Letable
 import Foster.GCRoots
 import Foster.Avails
 import Foster.Output(putDocLn)
+import Foster.MainOpts (getNonMovingGC)
 
 import Data.Map(Map)
 import Data.List(zipWith4, foldl' )
@@ -121,9 +122,13 @@ prepForCodegen m mayGCconstraints0 = do
 
    deHooplize :: Map Ident MayGC -> Proc BasicBlockGraph' -> Compiled ILProcDef
    deHooplize mayGCmap p = do
+
+     flagVals <- gets ccFlagVals
+     let assumeNonMovingGC = getNonMovingGC flagVals
+
      wantedFns <- gets ccDumpFns
      (g , liveRoots) <- insertSmartGCRoots (procIdent p) (procBlocks p) mayGCmap (want p wantedFns)
-     let (cfgBlocks , numPreds) = flattenGraph g mayGCmap
+     let (cfgBlocks , numPreds) = flattenGraph g mayGCmap assumeNonMovingGC
      return $ ILProcDef (p { procBlocks = cfgBlocks }) numPreds liveRoots
 
    want p wantedFns = T.unpack (identPrefix (procIdent p)) `elem` wantedFns
@@ -138,9 +143,9 @@ makeAllocationsExplicit bbgp = do
   explicate :: forall e x. Insn' e x -> Compiled (Graph Insn' e x)
   explicate insn = case insn of
     (CCLabel   {}        ) -> return $ mkFirst $ insn
-    (CCGCLoad _v    _root) -> return $ mkMiddle $ insn
-    (CCGCInit _ _v  _root) -> return $ mkMiddle $ insn
-    (CCGCKill {}         ) -> return $ mkMiddle $ insn
+    (CCGCLoad  {}        ) -> return $ mkMiddle $ insn
+    (CCGCInit  {}        ) -> return $ mkMiddle $ insn
+    (CCGCKill  {}        ) -> return $ mkMiddle $ insn
     (CCLetVal id (ILAlloc v memregion)) -> do
             id' <- ccFreshId (T.pack "ref-alloc")
             let t = tidType v
@@ -356,8 +361,8 @@ withGraphBlocks bbgp f =
    let jumpTo bg = case bbgpEntry bg of (bid, _) -> CCLast $ CCCont bid [] in
    f $ preorder_dfs $ mkLast (jumpTo bbgp) |*><*| bbgpBody bbgp
 
-flattenGraph :: BasicBlockGraph' -> MayGCMap -> ( [ILBlock] , NumPredsMap )
-flattenGraph bbgp mayGCmap = -- clean up any rebindings from gc root optz.
+flattenGraph :: BasicBlockGraph' -> MayGCMap -> Bool -> ( [ILBlock] , NumPredsMap )
+flattenGraph bbgp mayGCmap assumeNonMovingGC = -- clean up any rebindings from gc root optz.
    withGraphBlocks (simplifyCFG bbgp) (\blocks ->
      ( map (deHooplizeBlock (bbgpRetK bbgp)) blocks
      , computeNumPredecessors (bbgpEntry bbgp) blocks ))
@@ -375,7 +380,10 @@ flattenGraph bbgp mayGCmap = -- clean up any rebindings from gc root optz.
 
      mid :: Insn' O O -> ILMiddle
      mid (CCLetVal id letable   ) = ILLetVal id letable (canGC mayGCmap letable)
-     mid (CCGCLoad v   fromroot)  = ILLetVal (tidIdent v) (ILDeref (tidType v) fromroot) WillNotGC
+     mid (CCGCLoad v root orig  ) =
+        if assumeNonMovingGC
+          then ILRebindId (tidIdent v) orig
+          else ILLetVal   (tidIdent v) (ILDeref (tidType v) root) WillNotGC
      mid (CCGCInit _ src toroot)  = ILGCRootInit src toroot
      mid (CCTupleStore vs tid r)  = ILTupleStore vs tid r
      mid (CCRebindId {}         ) = error $ "Invariant violated: CCRebindId not eliminated!"
@@ -505,8 +513,8 @@ mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
      substIn :: VarSubstFor (Insn' e x)
      substIn s insn  = case insn of
           (CCLabel   {}        ) -> insn
-          (CCGCLoad  v fromroot) -> CCGCLoad        (s v) (s fromroot)
-          (CCGCInit vr v toroot) -> CCGCInit (s vr) (s v) (s   toroot)
+          (CCGCLoad  v root org) -> CCGCLoad        (s v) (s   root) (s org)
+          (CCGCInit vr v toroot) -> CCGCInit (s vr) (s v) (s toroot)
           (CCGCKill enabld roots) -> CCGCKill enabld (Set.map s roots)
           (CCTupleStore vs  v r) -> CCTupleStore (map s vs) (s v) r
           (CCLetVal id letable ) -> CCLetVal id (substVarsInLetable s letable)
@@ -671,8 +679,8 @@ liveness = mkBTransfer go
     go (CCLabel  {} ) s = s
     go (CCLetVal  id letable ) s = Set.union   (without s [id]) (Set.fromList $ freeIdentsL letable)
     go (CCLetFuns ids clzs   ) s = Set.unions ((without s ids):(map (Set.fromList . freeIdentsC) clzs))
-    go (CCGCLoad     v rv) s = insert (without s [tidIdent v]) [rv]
-    go (CCGCInit   _ v rv) s = insert (without s [tidIdent v]) [rv]
+    go (CCGCLoad     v rv _  ) s = insert (without s [tidIdent v]) [rv]
+    go (CCGCInit   _ v rv    ) s = insert (without s [tidIdent v]) [rv]
     go (CCGCKill (Enabled _) vs) s = insert s (Set.toList vs)
     go (CCGCKill Disabled   _vs) s = s
     go (CCTupleStore vs v _) s = insert s (v:vs)

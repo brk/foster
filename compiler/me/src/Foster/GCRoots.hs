@@ -48,8 +48,8 @@ gDoReuseRootSlots = True -- TODO measure effect of disabling this optimization.
 
 --------------------------------------------------------------------
 
--- Every potentially-GCing operation could invalidate
--- every value stored in the root slots, so we must insert reloads
+-- Every operation that might potentially trigger copying GC could invalidate
+-- the values stored in the root slots, so we must insert reloads
 -- from slots between GC points and uses. The simplest strategy
 -- is to insert reloads immediately after each GC point. But consider
 -- the following example::
@@ -170,9 +170,8 @@ insertSmartGCRoots procid bbgp0 mayGCmap dump = do
 
 instance TExpr Closure TypeLL where freeTypedIds _ = []
 
--- A moving garbage collector can copy a pointer. Because LLVM does
--- not automatically spill GCable pointers to the stack (because it
--- doesn't distinguish different types of pointers in the backends)
+-- Because LLVM does not automatically spill GCable pointers to the stack
+-- (as it doesn't distinguish different types of pointers in the backends)
 -- the front-end is responsible for setting up and emitting reloads
 -- from GC root stack slots.
 --
@@ -187,7 +186,7 @@ type ContinuationMayGC = Bool
 type LiveAGC2 = (LiveGCRoots, RootLiveWhenGC, ContinuationMayGC)
 
 -- When we see a load from a root, the root becomes live in prior nodes;
--- when we see a root init happen, the root becomes dead in proor nodes.
+-- when we see a root init happen, the root becomes dead in prior nodes.
 -- When we see an operation that may induce (copying) GC,
 -- we'll add the current set of live roots to the set of
 -- roots we keep.
@@ -196,7 +195,7 @@ liveAtGCPointXfer2 mayGCmap = mkBTransfer go
   where
     go :: Insn' e x -> Fact x LiveAGC2 -> LiveAGC2
     go (CCLabel   {}        ) f = ifgc False            f
-    go (CCGCLoad _v fromroot) f = markLive fromroot     f
+    go (CCGCLoad _v fromrt _) f = markLive   fromrt     f
     go (CCGCInit _ _v toroot) f = markDead   toroot     f
     go (CCGCKill {}         ) f = {- just ignore it  -} f
     go (CCLetVal  _ letable ) f = ifgc (boolGC maygc)   f where maygc = canGC mayGCmap letable
@@ -395,12 +394,12 @@ insertDumbGCRoots bbgp0 dump = do
       --      x.load = load x.root
       --      kill x.root (disabled)
       ---     call @foo (x.load , n)
-      -- We'll removed kills for live roots and enable the remainder.
+      -- We'll remove kills for live roots and enable the remainder.
       -- We'll insert root initializations in a separate pass.
-      retLoaded root = do
+      retLoaded root v = do
           id <- fresh (show (tidIdent root) ++ ".load")
           let loadedvar = TypedId (tidType root) id
-          return ([CCGCLoad loadedvar root
+          return ([CCGCLoad loadedvar root v
                   ,CCGCKill Disabled (Set.fromList [root])]
                  , loadedvar)
 
@@ -409,15 +408,18 @@ insertDumbGCRoots bbgp0 dump = do
                            return $ trace ("withGCLoad " ++ show v ++ " ==> " ++ show (pretty rv)) rv
 
       withGCLoad :: LLVar -> RootMapped ([Insn' O O], LLVar)
-      withGCLoad v = if not $ isGCableVar v then return ([], v)
-       else do gcr <- get
+      withGCLoad v =
+       if not $ isGCableVar v
+         then return ([], v)
+         else do
+               gcr <- get
                case Map.lookup v gcr of
-                 Just root -> do retLoaded root
+                 Just root -> do retLoaded root v
                  Nothing   -> do
                                  rootid <- fresh (show (tidIdent v) ++ ".ROOT")
                                  let root = TypedId (tidType v) rootid
                                  put (Map.insert v root gcr)
-                                 retLoaded root
+                                 retLoaded root v
 
   isGlobalFunc (GlobalSymbol _) = True
   isGlobalFunc (Ident _ _) = False
@@ -430,6 +432,7 @@ insertDumbGCRoots bbgp0 dump = do
                  LLNamedType "Float64"  -> False
                  LLStructType tys       -> any isGCable tys
                  LLProcType _ _ _       -> False
+                 LLPtrType (LLStructType []) -> False
                  LLPtrType _            -> True -- could have further annotations on ptr types
                  LLNamedType _          -> True -- TODO maybe not?
                  LLCoroType _ _         -> True
@@ -512,7 +515,7 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
   transform :: forall e x. Insn' e x -> RootMapped (Graph Insn' e x)
   transform insn = case insn of
     CCLabel {}                    -> do return $ mkFirst $ insn
-    CCGCLoad  v     root          -> do m <- get
+    CCGCLoad  v     root  _orig   -> do m <- get
                                         put (Map.insert v root m)
                                         iflive root $ mkMiddle $ insn
     CCGCInit  _ _   root          -> do iflive root $ mkMiddle $ insn
@@ -620,7 +623,7 @@ availsXfer mayGCmap = mkFTransfer3 go go (distributeXfer availsLattice go)
   where
     go :: Insn' e x -> Avails -> Avails
     go (CCLabel      {}    ) f = f
-    go (CCGCLoad   var root) f = makeLoadAvail var root f
+    go (CCGCLoad var root _) f = makeLoadAvail var root f
     go (CCGCInit _ _   root) f =        f `unkill` root
     go (CCGCKill (Enabled _) roots) f = f `killin` roots
     go (CCGCKill     {}    ) f = f
@@ -672,10 +675,10 @@ availsRewrite allRoots doReuseRootSlots = mkFRewrite d
     --          let var  = load root in
     --          REPLACE var' WITH var in
     --          ... var ... var' ...
-    d (CCGCLoad     var' root0)   a =
+    d (CCGCLoad     var' root0 orig)   a =
         let root = s a root0 in
         let replacement = if root == root0 then Nothing
-                           else Just $ mkMiddle $ CCGCLoad var' root in
+                           else Just $ mkMiddle $ CCGCLoad var' root orig in
         case lookupAvailMap root (rootLoads a) of
               [var] -> return $ Just $ mkMiddle (CCRebindId (text "gcload") var' var)
               _     -> return replacement
@@ -811,7 +814,7 @@ liveRootsXfer :: String -> FwdTransfer Insn' LiveRoots
 liveRootsXfer msg = mkFTransfer3 go go (distributeXfer liveRootsLattice go)
   where
     go :: Insn' e x -> LiveRoots -> LiveRoots
-    go (CCGCLoad var root) lives =
+    go (CCGCLoad var root _orig) lives =
          if root `availIn` lives
             then lives
             else error $ "GCRoots.hs: runRootConsistencyChecker @ " ++ msg
@@ -896,8 +899,8 @@ runRebinds bbgp = do
     d a (CCTupleStore vs v amr ) =
       return (mkMiddle $ CCTupleStore (map (s a) vs) (s a v) amr )
     d _ (CCRebindId {}) = return emptyGraph
-    d a (CCGCLoad  v1 v2) =
-      return (mkMiddle $ CCGCLoad (s a v1) (s a v2))
+    d a (CCGCLoad  v1 v2 orig) =
+      return (mkMiddle $ CCGCLoad (s a v1) (s a v2) (s a orig))
     d a (CCGCInit j v root0)     =
       return (mkMiddle $ CCGCInit j (s a v) (s a root0))
     d a (CCGCKill disen roots)   =
