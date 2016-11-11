@@ -8,8 +8,17 @@ main = {
   //expect_i1 true;
   //print_1_of_t_i32_i1 (42, true);
   //
-  //test2 !;
   test3 !;
+
+  s = foster_subheap_create !;
+  foster_subheap_activate s;
+
+  test3 !;
+
+  foster_subheap_collect s;
+
+  test3 !;
+
 };
 
 test2 = {

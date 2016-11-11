@@ -109,6 +109,28 @@ public:
   }
 };
 
+struct byte_limit {
+  size_t frame15s_left;
+  size_t frame21s_left;
+
+  byte_limit(size_t maxbytes) {
+    size_t max_frame21s = maxbytes >> 21;
+    auto maxbytes_after_21s = maxbytes - (max_frame21s << 21);
+    size_t max_frame15s = (maxbytes_after_21s + ((1 << 15) - 1)) >> 15;
+
+    this->frame15s_left = max_frame15s;
+    this->frame21s_left = max_frame21s;
+
+    /*
+    printf("maxbytes: %d\n", maxbytes);
+    printf("max_frame15s: %d\n", max_frame15s);
+    printf("max_frame21s: %d\n", max_frame21s);
+    printf("maxbytes_after_21s: %d\n", maxbytes_after_21s);
+    printf("lim_bytes: %d\n", (max_frame15s * (1 << 15)) + (max_frame21s * (1 << 21)));
+    */
+  }
+};
+
 struct allocator_range {
   memory_range range;
   bool         stable;
@@ -158,11 +180,10 @@ enum class frame15kind : uint8_t {
   immix_malloc_continue, // parent is frame15* to malloc_start frame
   staticdata // parent is nullptr
 };
-// TODO: immix_malloc_start frames need both pointer to immix_space*
-// and card table bytes... Want to measure perf impact of extra indirection.
 
 struct frame15info {
   void* associated;
+  //uint8_t* card_bytes; // TODO measure perf impact of indirection
   frame15kind frame_classification;
   uint8_t num_marked_lines_at_last_collection;
   uint8_t num_available_lines_at_last_collection;
@@ -197,7 +218,7 @@ GCGlobals<copying_gc> gcglobals;
 GCGlobals<immix_space> gcglobals;
 #endif
 
-void flip_mark_bits() {
+void flip_current_mark_bits_value() {
   // This value starts intialized to zero by the immix_space constructor.
   gcglobals.mark_bits_current_value = gcglobals.mark_bits_current_value ^ HEADER_MARK_BITS;
 }
@@ -419,7 +440,7 @@ struct frame15_allocator {
       next_frame15 = nullptr;
     }
 
-    fprintf(gclog, "handing out frame15: %p, now empty? %d\n", curr_frame15, empty());
+    //fprintf(gclog, "handing out frame15: %p, now empty? %d\n", curr_frame15, empty());
     return curr_frame15;
   }
 
@@ -586,14 +607,7 @@ bool non_kosher_addr(void* addr) {
 
 class immix_space : public heap {
 public:
-  immix_space(size_t maxbytes) {
-    size_t max_frame21s = maxbytes >> 21;
-    auto maxbytes_after_21s = maxbytes - (max_frame21s << 21);
-    size_t max_frame15s = (maxbytes_after_21s + ((1 << 15) - 1)) >> 15;
-
-    this->frame15s_left = max_frame15s;
-    this->frame21s_left = max_frame21s;
-  }
+  immix_space(byte_limit* lim) : lim(lim) { }
   // TODO take a space limit. Use a combination of local & global
   // frame21_allocators to service requests for frame15s.
 
@@ -687,7 +701,7 @@ public:
   }
 
   bool try_prep_allocatable_block(bump_allocator* bumper, int64_t cell_size) __attribute__((noinline)) {
-    //fprintf(gclog, "prepping allocatable block; #recycl = %d\n", recycled_frame15s.size());
+    //fprintf(gclog, "prepping allocatable block in subheap %p; #recycl = %d\n", this, recycled_frame15s.size());
 
     // Note the implicit policy embodied below in the preference between
     // using recycled frames, clean used frames, or fresh/new frames.
@@ -704,9 +718,11 @@ public:
       uint8_t* linemap = linemap_for_frame15_id(frame15_id_of(f));
       int startline = conservatively_unmarked_line_from(linemap, 0);
       int endline   = first_marked_line_after(linemap, startline);
-      //fprintf(gclog, "startline = %d, endline = %d\n", startline, endline);
-      //for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", linemap[i] ? 'd' : '_'); }
-      //fprintf(gclog, "\n");
+      if (ENABLE_GCLOG) {
+        fprintf(gclog, "using recycled frame: startline = %d, endline = %d, # left: %d\n", startline, endline, recycled_frame15s.size());
+        for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", linemap[i] ? 'd' : '_'); }
+        fprintf(gclog, "\n");
+      }
       if (startline != -1) {
         bumper->bound = offset(f, endline   * IMMIX_LINE_SIZE);
         bumper->base  = offset(f, startline * IMMIX_LINE_SIZE);
@@ -722,8 +738,8 @@ public:
       return true;
     }
 
-    if (frame15s_left > 0) {
-      --frame15s_left;
+    if (lim->frame15s_left > 0) {
+      --lim->frame15s_left;
       frame15* f = global_frame15_allocator.get_frame15();
       frame15s.push_back(f);
       set_parent_for_frame(this, f);
@@ -733,11 +749,11 @@ public:
     }
 
     if (local_frame15_allocator.empty()) {
-      if (frame21s_left == 0) {
+      if (lim->frame21s_left == 0) {
         return false; // no used frames, no new frames available. sad!
       }
 
-      --frame21s_left;
+      --lim->frame21s_left;
       frame21* f = allocate_frame21();
       frame21s.push_back(f);
       local_frame15_allocator.give_frame21(f);
@@ -943,19 +959,22 @@ public:
     return obj->get_mark_bits() == gcglobals.mark_bits_current_value;
   }
 
-  void clear_mark_bits() {
-    // Could filter out clean blocks, but preliminary testing suggested it
-    // wasn't faster than bulk clearing. Probably the branch mispredict hurts.
+  void clear_mark_bits_for_space() {
+    // Could filter out clean blocks, which by definition are clean because
+    // their mark bits are all clear, but preliminary testing suggested it
+    // wasn't faster than unconditional bulk clearing.
+    // Maybe the branch mispredict hurts more than the memory traffic?
     for (auto f15 : frame15s) {
       uint8_t* linemap = linemap_for_frame15_id(frame15_id_of(f15));
-      memset(linemap, 0, IMMIX_LINES_PER_BLOCK); // TODO
+      memset(linemap, 0, IMMIX_LINES_PER_BLOCK);
     }
 
     for (auto f21 : frame21s) {
       frame15_id fid = frame15_id_of(f21);
-      for (int i = 0; i < IMMIX_F15_PER_F21; ++i) {
+      // Note: the first frame is the metadata frame, so we skip it.
+      for (int i = 1; i < IMMIX_F15_PER_F21; ++i) {
         uint8_t* linemap = linemap_for_frame15_id(fid + i);
-        memset(linemap, 0, IMMIX_LINES_PER_BLOCK); // TODO
+        memset(linemap, 0, IMMIX_LINES_PER_BLOCK);
       }
     }
   }
@@ -973,8 +992,8 @@ public:
 
     //worklist.initialize();
 
-    flip_mark_bits();
-    clear_mark_bits();
+    flip_current_mark_bits_value();
+    clear_mark_bits_for_space();
 
     // Trace from remembered set roots
     for (auto& fid : frames_pointing_here) {
@@ -1037,10 +1056,12 @@ public:
     //if (TRACK_BYTES_KEPT_ENTRIES) { hpstats.bytes_kept_per_gc.record_sample(next->used_size()); }
 
     if (ENABLE_GCLOG) {
-      fprintf(gclog, "%lu recycled, %lu clean, %d total\n", recycled_frame15s.size(), clean_frame15s.size(), frame15s_total);
+      auto delta = base::TimeTicks::Now() - begin;
+      fprintf(gclog, "%lu recycled, %lu clean, (%d f15 + %d f21) = %d total, took %f us\n", recycled_frame15s.size(), clean_frame15s.size(),
+        frame15s.size(), frame21s.size(), frame15s_total, delta.InMicroseconds());
 
       fprintf(gclog, "\t/gc\n\n");
-      fflush(gclog);
+      //fflush(gclog);
     }
     }
 
@@ -1075,7 +1096,7 @@ public:
     // __dd__dd__d : 3 holes, 2 conservatively marked lines
     // d_dd__dd__d : 3 holes, 3 conservatively marked lines
     // As the above indicates, the first hole is not counted if it starts the
-    // block; otherwise, each hole constributes one line lost to cons marking.
+    // block; otherwise, each hole contributes one line lost to cons marking.
     auto conservative_adjustment = num_holes - (linemap[0] == 0);
     auto num_available_lines = (IMMIX_LINES_PER_BLOCK - num_marked_lines) - conservative_adjustment;
 
@@ -1166,6 +1187,12 @@ public:
     }
   }
 
+  void add_subheap_handle(heap_handle<immix_space>* subheap) {
+    subheaps.push_back(subheap);
+  }
+
+  // TODO destroy_space
+
   void remember_outof(void** slot, void* val) {
     auto mdb = metadata_block_for_slot((void*) slot);
     uint8_t* cards = (uint8_t*) mdb->cardmap;
@@ -1176,12 +1203,12 @@ public:
     frames_pointing_here.insert(frame15_id_of((void*) slot));
   }
 
-private:
-
+public:
   // How many are we allowed to allocate before being forced to GC & reuse?
-  int frame15s_left;
-  int frame21s_left;
+  byte_limit* lim;
 
+private:
+  // These bumpers point into particular frame15s.
   bump_allocator small_bumper;
   bump_allocator medium_bumper;
 
@@ -1189,6 +1216,11 @@ private:
   std::vector<frame15*> frame15s;
   // Stores values returned from allocate_frame21();
   std::vector<frame21*> frame21s;
+  // The above vectors store all the frames that belong to this space:
+  // used, unused, clean, & recycled.
+
+  // The next pair of vectors store the frames that the previous collection
+  // identified as being viable candidates for allocation into.
 
   // For now, we'll represent these as explicit lists, and reset them
   // after each stop-the-world collection.
@@ -1198,9 +1230,18 @@ private:
   std::vector<frame15*> recycled_frame15s;
   std::vector<frame15*> clean_frame15s;
 
+  // This allocator wraps one frame21 at a time and doles it out as frame15s.
+  // For now, this means in practice that subheaps will usually reserve 2 MB
+  // of address space at a time, even though they only use 32 KB at a time.
+  // The main benefit of doing so is (slightly) lower metadata costs and
+  // higher locality.
   frame15_allocator local_frame15_allocator;
 
+  // The points-into remembered set; each frame in this set needs to have its
+  // card table inspected for pointers that actually point here.
   std::set<frame15_id> frames_pointing_here;
+
+  std::vector<heap_handle<immix_space>*> subheaps;
 
   // immix_space_end
 };
@@ -2120,7 +2161,7 @@ void initialize(void* stack_highest_addr) {
   #ifdef USE_COPYING
   gcglobals.allocator = new copying_gc(gSEMISPACE_SIZE());
   #else
-  gcglobals.allocator = new immix_space(gSEMISPACE_SIZE());
+  gcglobals.allocator = new immix_space(new byte_limit(gSEMISPACE_SIZE()));
   #endif
   gcglobals.default_allocator = gcglobals.allocator;
 
@@ -2361,6 +2402,47 @@ void foster_write_barrier_generic(void* val, void** slot) {
   *slot = val;
 }
 
+// We need a degree of separation between the possibly-moving
+// traced immix heap, which does not currently support finalizers/destructors,
+// and the fact that immix_space is a C++ object with a non-trivial "dtor".
+// There's also an issue of alignment: pointers in the immix heap ought to be
+// aligned (though I guess it's not strictly necessary for types without any
+// constructors).
+void* foster_subheap_create_raw() {
+#ifdef USE_COPYING
+  return nullptr;
+#else
+  immix_space* subheap = new immix_space(gcglobals.allocator->lim);
+  fprintf(gclog, "created subheap %p\n", subheap);
+  void* alloc = malloc(sizeof(heap_handle<immix_space>));
+  heap_handle<immix_space>* h = (heap_handle<immix_space>*)
+    realigned_for_allocation(alloc);
+  h->header           = gcglobals.mark_bits_current_value;
+  h->unaligned_malloc = alloc;
+  h->body             = subheap;
+  gcglobals.allocator->add_subheap_handle(h);
+  return h;
+#endif
+}
+
+void foster_subheap_activate_raw(void* generic_subheap) {
+  // TODO make sure we properly retain (or properly remove!)
+  //      a subheap that is created, installed, and then silently dropped
+  //      without explicitly being destroyed.
+#ifndef USE_COPYING
+  immix_space* subheap = ((heap_handle<immix_space>*) generic_subheap)->body;
+  gcglobals.allocator = subheap;
+  fprintf(gclog, "activated subheap %p\n", subheap);
+#endif
+}
+
+void foster_subheap_collect_raw(void* generic_subheap) {
+#ifndef USE_COPYING
+  immix_space* subheap = ((heap_handle<immix_space>*) generic_subheap)->body;
+  fprintf(gclog, "collecting subheap %p\n", subheap);
+  subheap->force_gc_for_debugging_purposes();
+#endif
+}
 
 
 } // extern "C"

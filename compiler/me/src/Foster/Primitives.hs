@@ -31,6 +31,11 @@ primitiveDataTypesP = [
             (MissingSourceRange "Text.TextConcat")]
         (MissingSourceRange "Text")),
 
+  (let tf = [] in
+   DataType (TypeFormal "Subheap" (MissingSourceRange "Subheap") KindPointerSized) tf
+        []
+        (MissingSourceRange "Subheap")),
+
   (let tf = [TypeFormal "o"    (MissingSourceRange "Coro.o") KindAnySizeType,
              TypeFormal "i"    (MissingSourceRange "Coro.i") KindAnySizeType,
              TypeFormal "e"    (MissingSourceRange "Coro.e") KindEffect] in

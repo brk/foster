@@ -146,6 +146,16 @@ struct heap_array {
   }
 };
 
+template <typename T>
+struct heap_handle {
+  void* unaligned_malloc;
+  HEAP_CELL_HEADER_TYPE header;
+  T* body;
+  uint8_t padding[16];
+
+  heap_cell* as_cell() { return (heap_cell*) &header; }
+};
+
 
 // This structure describes the layout of a particular type,
 // giving offsets and type descriptors for the pointer slots.
