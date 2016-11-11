@@ -859,7 +859,6 @@ llvm::Value* emitGCRead(CodegenPass* pass, Value* base, Value* slot) {
   return builder.CreateBitCast(val_generic, slot->getType()->getPointerElementType());
 }
 
-
 llvm::Value* LLDeref::codegen(CodegenPass* pass) {
   llvm::Value* ptr = base->codegen(pass);
   if (isTraced && !llvm::isa<llvm::AllocaInst>(ptr)) {

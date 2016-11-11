@@ -225,6 +225,7 @@ class VoidTypeAST : public TypeAST {
 public:
   virtual void show(PrettyPrintTypePass* pass);
   virtual llvm::Type* getLLVMType() const;
+  static VoidTypeAST* get();
 };
 
 class TupleTypeAST : public IndexableTypeAST {

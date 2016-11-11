@@ -64,8 +64,11 @@ main = {
 
     long    = make 0 maxN;
 
+    subheap = foster_subheap_create !;
+    foster_subheap_activate subheap;
     REC depth = { mn => mx =>
       if mn <=SInt32 mx then
+        foster_subheap_collect subheap;
         n = bit ((mx -Int32 mn) +Int32 (minN !));
         i = sumT mn n 0;
         m = 2 *Int32 n;

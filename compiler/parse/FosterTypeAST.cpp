@@ -171,6 +171,10 @@ llvm::Type* VoidTypeAST::getLLVMType() const {
   return llvm::Type::getVoidTy(fosterLLVMContext);
 }
 
+VoidTypeAST* VoidTypeAST::get() {
+  return new VoidTypeAST();
+}
+
 /////////////////////////////////////////////////////////////////////
 
 llvm::Type* TupleTypeAST::getLLVMType() const {
