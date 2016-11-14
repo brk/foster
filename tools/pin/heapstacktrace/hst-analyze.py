@@ -82,6 +82,10 @@ for line in args.infile.readlines():
         tsc = int(parts[1], 16)
         sz = int(parts[2])
         c.append( (tsc, sz, 1) )
+    elif parts[0] == 'ghc': # ghc allocate()
+        tsc = int(parts[1], 16)
+        sz = int(parts[2])
+        c.append( (tsc, sz, 1) )
     elif parts[0] == '3': # memalloc array
         tsc = int(parts[1], 16)
         sz = int(parts[2])
@@ -107,20 +111,19 @@ for line in args.infile.readlines():
             k = parts[idx]
             sz = int(parts[idx + 1])
             cnt = int(parts[idx + 2])
-            mx = int(parts[idx + 3])
-            idx += 4
+            idx += 3
 
             if sz < 18000000000000000000:
                 if   k == '4': # sub or -add
-                    s.append( (tsc, sz, cnt, mx) )
+                    s.append( (tsc, sz, cnt) )
                 elif k == '6': # push(es)
-                    s.append( (tsc, sz, cnt, mx) )
+                    s.append( (tsc, sz, cnt) )
                 elif k == '7': # sub/add, non-const
-                    s.append( (tsc, sz, cnt, mx) )
+                    s.append( (tsc, sz, cnt) )
                 elif k == '9': # ocaml alloc
-                    o.append( (tsc, sz, cnt, mx) )
+                    o.append( (tsc, sz, cnt) )
                 elif k == '8': # add negative
-                    s.append( (tsc, sz, cnt, mx) )
+                    s.append( (tsc, sz, cnt) )
                 else:
                     nignored += 1
   except:
@@ -180,10 +183,10 @@ if True:
     malloc_b     = sum(tup[1] for tup in h)
     memalloc_b   = sum(tup[1] for tup in c)
     arralloc_b   = sum(tup[1] for tup in a)
-    ocamlalloc_b = sum(tup[1] for tup in o)
+    ocamlalloc_b = sum(tup[1] * tup[2] for tup in o)
     ocamlalloc_n = sum(tup[2] for tup in o)
     if len(s) > 0:
-        stackalloc_b = sum(tup[1] for tup in s)
+        stackalloc_b = sum(tup[1] * tup[2] for tup in s)
         print "stack alloc:", stackalloc_b, "b", "(%.2f per frame, %d calls)" % ((float(stackalloc_b) / float(numCalls)), numCalls)
     if len(h) > 0:
         print "malloc     :", malloc_b, "b", "(%d per cell)" % int(malloc_b / len(h))
