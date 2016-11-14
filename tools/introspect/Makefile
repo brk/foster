@@ -13,6 +13,24 @@ ${OBJ}/switch-vs-vtable-default: switch-vs-vtable.cpp f.cpp
 ${OBJ}/switch-vs-vtable-O2: switch-vs-vtable.cpp f.cpp
 	g++ switch-vs-vtable.cpp f.cpp -o ${OBJ}/switch-vs-vtable-O2 -O2
 
+# -ftree-vectorize
+${OBJ}/bytemap-scan-O2: bytemap-scan.cpp timebits.cpp Makefile
+	g++ bytemap-scan.cpp -std=c++11 -o ${OBJ}/bytemap-scan-O2 -O2 -mtune=native -march=native
+	g++ bytemap-scan.cpp -std=c++11 -S -o ${OBJ}/bytemap-scan-O2.s -O2 -mtune=native -march=native
+
+bench-bms: ${OBJ}/bytemap-scan-O2
+	${OBJ}/bytemap-scan-O2 1024 0.001
+	${OBJ}/bytemap-scan-O2 1024 0.01
+	${OBJ}/bytemap-scan-O2 1024 0.1
+	${OBJ}/bytemap-scan-O2 32   0.001
+	${OBJ}/bytemap-scan-O2 32   0.01
+	${OBJ}/bytemap-scan-O2 32   0.1
+	${OBJ}/bytemap-scan-O2 4    0.01
+	${OBJ}/bytemap-scan-O2 2    0.01
+	${OBJ}/bytemap-scan-O2 524288 0.001
+	${OBJ}/bytemap-scan-O2 524288 0.01
+	${OBJ}/bytemap-scan-O2 524288 0.1
+
 ${OBJ}/malloc-resolution-default: malloc-resolution.cpp
 	g++ malloc-resolution.cpp -o ${OBJ}/malloc-resolution-default
 
