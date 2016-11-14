@@ -262,8 +262,9 @@ typedef std::map< int, std::map<int, int> >  histmap;
 /* ===================================================================== */
 
 void PrintHistBucket(const histmap& hist, UINT64 tsc_d_trimmed) {
-    TraceFile << "B " << hex << tsc_d_trimmed << dec;
+    TraceFile << "B " << hex << tsc_d_trimmed;
     for (histmap::const_iterator t_m = hist.begin(); t_m != hist.end(); ++t_m) {
+      /*
       int sum_size  = 0;
       int sum_count = 0;
       int max_size  = 0;
@@ -276,13 +277,19 @@ void PrintHistBucket(const histmap& hist, UINT64 tsc_d_trimmed) {
       }
       // event, sum(size), count, min, max
       TraceFile << " " << t_m->first << " " << sum_size << " " << sum_count << " " << max_size;
+      */
+      for (std::map<int,int>::const_iterator s_c = t_m->second.begin(); s_c != t_m->second.end(); ++s_c) {
+        int sz = s_c->first;
+        int cnt = s_c->second;
+        TraceFile << dec << " " << t_m->first << " " << sz << " " << cnt;
+      }
     }
     TraceFile << endl;
 }
 
 #define kCallCountType 5
 #define kStackPtrType 13
-#define kOcamlBumpPtr 9
+#define kOCamlBumpPtr 9
 
 /*!
  * Called when a buffer fills up, or the thread exits, so we can process it or pass it off
@@ -481,7 +488,7 @@ VOID Trace(TRACE tr, VOID *v)
                 IARG_TSC, offsetof(struct alloc_record, tsc),
                 IARG_ADDRINT,  INS_OperandImmediate(ins, 1),
                 offsetof(struct alloc_record, size),
-                IARG_UINT32, kOcamlBumpPtr, offsetof(struct alloc_record, typ),
+                IARG_UINT32, kOCamlBumpPtr, offsetof(struct alloc_record, typ),
                 IARG_END);
           }
         }
