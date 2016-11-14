@@ -2182,7 +2182,7 @@ void initialize(void* stack_highest_addr) {
 #elif OS_LINUX
   //printf("mmapping %d slots for frameinfo\n", (1 << slots_needed_log)); fflush(stdout);
   gcglobals.lazy_mapped_frame15info = (frame15info*) mmap(NULL, bytes_needed,
-    PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
   if (gcglobals.lazy_mapped_frame15info == MAP_FAILED) {
     perror("mmap failed...");
   }
