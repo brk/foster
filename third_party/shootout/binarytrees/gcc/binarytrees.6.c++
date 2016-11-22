@@ -34,11 +34,14 @@ struct Node
     }
 };
 
+int nallocs = 0;
+
 typedef boost::object_pool<Node> NodePool;
 
 
 Node *make(int i, int d, NodePool &store) 
 {
+  ++nallocs;
     if (d > 0)  {
         return store.construct(	make(2*i-1, d-1, store), i, make(2*i, d-1, store)	);
     }
@@ -97,6 +100,7 @@ int main(int argc, char *argv[])
 
     std::cout << "long lived tree of depth " << max_depth << "\t "
               << "check: " << (long_lived_tree->check()) << "\n";
+    std::cout << "nallocs: " << nallocs << "\n";
 
     return 0;
 }
