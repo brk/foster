@@ -59,16 +59,37 @@ main = {
     maxN = if n >=SInt32 6 then n else 6 end;
     stretchN = maxN +Int32 1;
 
-    c = check (make 0 stretchN);
+    subheapL = foster_subheap_create !;
+    subheap = foster_subheap_create !;
+
+    foster_subheap_activate subheap;
+
+    c = checkX (make 0 stretchN);
     io "stretch tree" stretchN c;
+
+    foster_subheap_collect subheap;
+    foster_subheap_shrink subheap;
+
+    foster_subheap_activate subheapL;
 
     long    = make 0 maxN;
 
-    subheap = foster_subheap_create !;
     foster_subheap_activate subheap;
+
+    REC sumT = { d => i => t =>
+      if i ==Int32 0
+        then t
+        else
+          a = checkX (make i d);
+          b = checkX (make (0 -Int32 i) d);
+          ans = a +Int32 b +Int32 t;
+          sumT d (i -Int32 1) ans
+      end
+    };
+
     REC depth = { mn => mx =>
       if mn <=SInt32 mx then
-        foster_subheap_collect subheap;
+            foster_subheap_collect subheap;
         n = bit ((mx -Int32 mn) +Int32 (minN !));
         i = sumT mn n 0;
         m = 2 *Int32 n;
@@ -78,22 +99,21 @@ main = {
     };
     depth (minN !) maxN;
 
-    io "long lived tree" maxN (check long);
+    io "long lived tree" maxN (checkX long);
 };
 
-sumT :: { Int32 => Int32 => Int32 => Int32 };
-sumT = { d => i => t =>
-  if i ==Int32 0
-    then t
-    else
-      a = check (make i d);
-      b = check (make (0 -Int32 i) d);
-      ans = a +Int32 b +Int32 t;
-      sumT d (i -Int32 1) ans
-  end
-};
+checkN = { t : Tree => 0 };
 
-check = { t : Tree =>
+checkX = { t : Tree =>
+  case t
+    of $TNil -> 0
+    of $Node i l r ->
+      case l of $TNil -> i
+             of _ -> ((checkX l) +Int32 i) -Int32 (checkX r);
+      end
+    end
+};
+checkA = { t : Tree =>
   REC gocheck = { b => z => t =>
     case t
       of $TNil -> z
