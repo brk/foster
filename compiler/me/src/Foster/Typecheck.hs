@@ -579,7 +579,7 @@ tcRhoSeq ctx annot a b expTy = do
     ea <- inferRho ctx a "seq"
     id <- tcFresh ".seq"
     eb <- tcRho ctx b expTy
-    tcLift $ putDocLn $ text "type " <> pretty (typeTC ea) <> text " given to expr " <> pretty ea
+    --tcLift $ putDocLn $ text "type " <> pretty (typeTC ea) <> text " given to expr " <> pretty ea
     tcRhoSeqCheck (rangeOf a) (typeTC ea)
     return (AnnLetVar annot id ea eb)
 
