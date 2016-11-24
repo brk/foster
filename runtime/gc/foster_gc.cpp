@@ -323,14 +323,6 @@ immix_space* heap_for(void* addr) {
 template <typename T>
 inline T num_granules(T size_in_bytes) { return size_in_bytes / T(16); }
 
-bool is_marked_as_stable(tori* body) {
-  for (const allocator_range& ar : gcglobals.allocator_ranges) {
-    if (ar.range.contains(static_cast<void*>(body))) {
-      return ar.stable;
-    }
-  }
-  return false;
-}
 // }}}
 
 // {{{ Bitmap/bytemap utility class
@@ -1412,6 +1404,15 @@ private:
 
 
 // {{{ copying_gc
+bool is_marked_as_stable(tori* body) {
+  for (const allocator_range& ar : gcglobals.allocator_ranges) {
+    if (ar.range.contains(static_cast<void*>(body))) {
+      return ar.stable;
+    }
+  }
+  return false;
+}
+
 class copying_gc : public heap {
   // {{{ semispace
   class semispace {
