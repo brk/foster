@@ -15,7 +15,8 @@ pushd src
         wget http://llvm.org/releases/${LLVM_VERSION}/cfe-${LLVM_V}.tar.xz
         wget http://llvm.org/releases/${LLVM_VERSION}/compiler-rt-${LLVM_V}.tar.xz
         wget http://llvm.org/releases/${LLVM_VERSION}/llvm-${LLVM_V}.tar.xz
-        wget http://llvm.org/releases/${LLVM_VERSION}/lld-${LLVM_V}.tar.xz
+        # Temporarily disabled until LLD stabilizes.
+        #wget http://llvm.org/releases/${LLVM_VERSION}/lld-${LLVM_V}.tar.xz
         wget http://llvm.org/releases/${LLVM_VERSION}/lldb-${LLVM_V}.tar.xz
         wget http://llvm.org/releases/${LLVM_VERSION}/libcxx-${LLVM_V}.tar.xz
         wget http://llvm.org/releases/${LLVM_VERSION}/libcxxabi-${LLVM_V}.tar.xz
@@ -28,7 +29,7 @@ pushd src
           echo "failed to unpack..."
           exit 1
         fi
-        mv lld-${LLVM_V}         llvm-${LLVM_V}/tools/lld
+        #mv lld-${LLVM_V}         llvm-${LLVM_V}/tools/lld
         mv lldb-${LLVM_V}        llvm-${LLVM_V}/tools/lldb
         mv cfe-${LLVM_V}         llvm-${LLVM_V}/tools/clang
         mv compiler-rt-${LLVM_V} llvm-${LLVM_V}/projects/compiler-rt
@@ -49,9 +50,10 @@ pushd src/llvm-${LLVM_V}
 
         # Note: it's OK to use GCC 4.x instead of Clang, I think, but using GCC 5 will lead
         # to pain and suffering until the whole cxx11 abi_tag situation gets worked out.
-        CC=clang CXX=clang++ cmake .. -G "Unix Makefiles" -DCMAKE_INSTALL_PREFIX=${LLVM_ROOT}/${LLVM_VERSION} -DCMAKE_BUILD_TYPE="RelWithDebInfo" -DLLVM_TARGETS_TO_BUILD="host" -DLLVM_ENABLE_ASSERTIONS=ON -DLLVM_LINK_LLVM_DYLIB=ON
+        #CC=clang CXX=clang++
+        cmake .. -G "Unix Makefiles" -DCMAKE_INSTALL_PREFIX=${LLVM_ROOT}/${LLVM_VERSION} -DCMAKE_BUILD_TYPE="RelWithDebInfo" -DLLVM_TARGETS_TO_BUILD="host" -DLLVM_ENABLE_ASSERTIONS=ON -DLLVM_LINK_LLVM_DYLIB=ON
 
-	make -j2
+	time make -j2
 
 	make install
 popd
