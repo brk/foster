@@ -433,10 +433,10 @@ struct frame15_allocator {
       spare_frame15s.clear();
     }
 
-    for (auto f21 : allocated_frame21s) {
+    for (auto f21 : self_owned_allocated_frame21s) {
       base::AlignedFree(f21);
     }
-    allocated_frame21s.clear();
+    self_owned_allocated_frame21s.clear();
 
     next_frame15 = nullptr;
   }
@@ -457,7 +457,7 @@ struct frame15_allocator {
 
     if (empty()) {
       frame21* f = allocate_frame21();
-      allocated_frame21s.push_back(f);
+      self_owned_allocated_frame21s.push_back(f);
       give_frame21(f);
     }
 
@@ -472,10 +472,11 @@ struct frame15_allocator {
     return curr_frame15;
   }
 
+  // Note: the associated f21 may or may not be owned by this class...
   frame15* next_frame15;
   std::vector<frame15*> spare_frame15s;
 
-  std::vector<frame21*> allocated_frame21s;
+  std::vector<frame21*> self_owned_allocated_frame21s;
 };
 
 frame15_allocator global_frame15_allocator;
@@ -557,6 +558,10 @@ void clear_linemap(uint8_t* linemap) {
   memset(linemap, 0, IMMIX_LINES_PER_BLOCK);
 }
 
+void clear_frame15(frame15* f15) {
+  memset(f15, 0xDD, 1 << 15);
+}
+
 // Invariant: IMMIX_LINES_PER_BLOCK <= 256
 // Invariant: marked lines have value 1, unmarked are 0.
 uint8_t count_marked_lines_for_frame15(uint8_t* linemap_for_frame) {
@@ -593,10 +598,15 @@ void mark_line_for_slot(void* slot) {
   linemap[ line_offset_within_f21(slot) ] = 1;
 }
 
+bool is_linemap15_clear(frame15* f15) {
+  uint8_t* linemap = linemap_for_frame15_id(frame15_id_of(f15));
+  return count_marked_lines_for_frame15(linemap) == 0;
+}
+
 bool is_linemap_clear(frame21* f21) {
     auto mdb = metadata_block_for_frame21(f21);
     uint64_t linehash = 0;
-    for (int i = 0; i < IMMIX_F15_PER_F21; ++i) {
+    for (int i = 1; i < IMMIX_F15_PER_F21; ++i) {
       uint64_t* lines = (uint64_t*) &mdb->linemap[i][0];
       for (int j = 0; j < IMMIX_LINES_PER_BLOCK / 8; ++j) {
         linehash |= lines[j];
@@ -787,6 +797,7 @@ public:
     if (!clean_frame15s.empty()) {
       frame15* f = clean_frame15s.back(); clean_frame15s.pop_back();
       if (ENABLE_GCLOG_PREP) { fprintf(gclog, "grabbed clean frame15: %p\n", f); }
+      if (MEMSET_FREED_MEMORY) { clear_frame15(f); }
       bumper->base  = realigned_for_allocation(f);
       bumper->bound = offset(f, 1 << 15);
       return true;
@@ -794,19 +805,24 @@ public:
 
     if (lim->frame15s_left > 0) {
       --lim->frame15s_left;
+      // Note: cannot call clear() on global allocator until
+      // all frame15s it has distributed are relinquished.
       frame15* f = global_frame15_allocator.get_frame15();
       frame15s.push_back(f);
       set_parent_for_frame(this, f);
       bumper->base  = realigned_for_allocation(f);
       bumper->bound = offset(f, 1 << 15);
-      if (ENABLE_GCLOG_PREP) { fprintf(gclog, "grabbed global frame15: %p\n", f); }
+      if (ENABLE_GCLOG_PREP) { fprintf(gclog, "grabbed global frame15: %p into space %p\n", f, this); }
       return true;
     }
 
+    // Note: frame15_allocator will call allocate_frame21() itself if empty
+    // but we don't want it to, because the space should own any allocated
+    // frames for bookkeeping purposes.
     if (local_frame15_allocator.empty()) {
       if (!clean_frame21s.empty()) {
         frame21* f = clean_frame21s.back(); clean_frame21s.pop_back();
-        if (ENABLE_GCLOG_PREP) { fprintf(gclog, "using clean frame21: %p\n", f); }
+        if (ENABLE_GCLOG_PREP) { fprintf(gclog, "giving clean frame21 to local f15 allocator: %p\n", f); }
         local_frame15_allocator.give_frame21(f);
       } else {
         if (lim->frame21s_left == 0) {
@@ -822,6 +838,7 @@ public:
     }
 
     frame15* f = local_frame15_allocator.get_frame15();
+    if (MEMSET_FREED_MEMORY) { clear_frame15(f); }
     set_parent_for_frame(this, f);
     bumper->base  = realigned_for_allocation(f);
     bumper->bound = offset(f, 1 << 15);
@@ -879,8 +896,9 @@ public:
   {
     int64_t cell_size = typeinfo->cell_size; // includes space for cell header.
 
-    //printf("allocate_cell_slowpath triggering immix gc\n"); fflush(stdout);
+    //fprintf(gclog, "allocate_cell_slowpath triggering immix gc\n");
     this->immix_gc();
+    //fprintf(gclog, "allocate_cell_slowpath triggered immix gc\n");
     //printf("allocate_cell_slowpath trying to establish cell precond\n"); fflush(stdout);
 
     if (!try_establish_alloc_precondition(&small_bumper, cell_size)) {
@@ -1049,6 +1067,7 @@ public:
 
   void immix_gc() {
     //printf("GC\n");
+    //fprintf(gclog, "GC\n");
 
     base::TimeTicks begin = base::TimeTicks::Now();
     int64_t t0 = __foster_getticks();
@@ -1116,6 +1135,7 @@ public:
     recycled_frame15s.clear();
     clean_frame15s.clear();
     clean_frame21s.clear();
+    local_frame15_allocator.clear();
 
     for (auto f15 : frame15s) {
       inspect_frame15_postgc(frame15_id_of(f15));
@@ -1151,32 +1171,10 @@ public:
   }
 
   void inspect_frame21_postgc(frame21* f21) {
-    /*
-    fprintf(gclog, "inspect_frame21_postgc %p, linemap looks clear: %d\n", f21, is_linemap_clear(f21));
-    fprintf(gclog, "  f15s:\n");
-      auto fidx = frame15_id_of(f21);
-      for (int i = 1; i < IMMIX_F15_PER_F21; ++i) {
-        fprintf(gclog, "    ");
-        auto linemap = linemap_for_frame15_id(fidx + i);
-        for (int x = 0; x < IMMIX_LINES_PER_BLOCK; ++x) {
-          fprintf(gclog, "%c", (linemap[x] == 0) ? '_' : '*');
-        }
-        fprintf(gclog, "\n");
-      }
-    fprintf(gclog, "\n");
-    */
-
-    // TODO this is suspect...
     bool is_frame21_entirely_clear = is_linemap_clear(f21);
     if (is_frame21_entirely_clear) {
       clean_frame21s.push_back(f21);
-      /*
-      frame15_id fid = frame15_id_of(f21);
-      frame15* f15 = frame15_for_frame15_id(fid);
-      auto finfo = frame15_info_for(f15);
-      finfo->num_available_lines_at_last_collection = num_available_lines;
-      finfo->num_marked_lines_at_last_collection = num_marked_lines;
-      */
+      // TODO set frameinfo?
     } else {
       // Handle the component frame15s individually.
       frame15_id fid = frame15_id_of(f21);
@@ -1191,7 +1189,10 @@ public:
     // some of the frame15s for a f21 might not yet be used. If so, we should
     // skip 'em.
     frame15* f15 = frame15_for_frame15_id(fid);
-    if (heap_for(f15) != this) { return; }
+    if (heap_for(f15) != this) {
+      fprintf(gclog, "    skipped frame15 because its heap pointer was %p instead of %p\n", heap_for(f15), this);
+      return;
+    }
 
     uint8_t* linemap = linemap_for_frame15_id(fid);
     auto num_marked_lines = count_marked_lines_for_frame15(linemap);
@@ -1329,16 +1330,34 @@ public:
   }
 
   void shrink() {
+    std::vector<frame15*> keep_frame15s;
+    std::vector<frame21*> keep_frame21s;
     // TODO only return free blocks; this assumes everything is free...
-    for (auto f15 : frame15s) { global_frame15_allocator.give_frame15(f15); }
+    for (auto f15 : frame15s) {
+      if (is_linemap15_clear(f15)) {
+        global_frame15_allocator.give_frame15(f15);
+      } else {
+        keep_frame15s.push_back(f15);
+      }
+    }
 
-    for (auto f21 : frame21s) { base::AlignedFree(f21); }
+    for (auto f21 : frame21s) {
+      if (is_linemap_clear(f21)) {
+        base::AlignedFree(f21);
+      } else {
+        keep_frame21s.push_back(f21);
+      }
+    }
 
     lim->frame15s_left += frame15s.size();
+    lim->frame15s_left -= keep_frame15s.size();
     lim->frame21s_left += frame21s.size();
+    lim->frame21s_left -= keep_frame21s.size();
 
     frame15s.clear();
+    for (auto f : keep_frame15s) { frame15s.push_back(f); }
     frame21s.clear();
+    for (auto f : keep_frame21s) { frame21s.push_back(f); }
     clear_current_blocks();
 
     recycled_frame15s.clear();
@@ -2430,45 +2449,50 @@ void inspect_typemap(const typemap* ti) {
 }
 
 extern "C" void inspect_ptr_for_debugging_purposes(void* bodyvoid) {
+  /*
   unsigned align = (!(intptr_t(bodyvoid) & 0x0f)) ? 16
                  : (!(intptr_t(bodyvoid) & 0x07)) ? 8
                  : (!(intptr_t(bodyvoid) & 0x03)) ? 4 : 0
                  ;
-  fprintf(stdout, "inspect_ptr_for_debugging_purposes: %p  (alignment %d)\n", bodyvoid, align);
+                 */
+  fprintf(gclog, "<%p>\n", bodyvoid);
+  fprintf(stdout, "<%p>\n", bodyvoid);
+  /*
   unchecked_ptr bodyu = make_unchecked_ptr(static_cast<tori*>(bodyvoid));
   tori* body = untag(bodyu);
   if (! body) {
-    fprintf(stdout, "body is (maybe tagged) null\n");
+    fprintf(gclog, "body is (maybe tagged) null\n");
   } else {
     if (gc::gcglobals.allocator->owns(body)) {
-      fprintf(stdout, "\t...this pointer is owned by the main allocator");
+      fprintf(gclog, "\t...this pointer is owned by the main allocator");
     } else if (is_marked_as_stable(body)) {
-      fprintf(stdout, "\t...this pointer is marked as stable");
+      fprintf(gclog, "\t...this pointer is marked as stable");
     } else {
-      fprintf(stdout, "\t...this pointer is not owned by the main allocator, nor marked as stable!");
+      fprintf(gclog, "\t...this pointer is not owned by the main allocator, nor marked as stable!");
       goto done;
     }
 
     gc::heap_cell* cell = gc::heap_cell::for_tidy(gc::gcglobals.allocator->tidy_for(body));
     if (cell->is_forwarded()) {
-      fprintf(stdout, "cell is forwarded to %p\n", cell->get_forwarded_body());
+      fprintf(gclog, "cell is forwarded to %p\n", cell->get_forwarded_body());
     } else {
       if (const gc::typemap* ti = tryGetTypemap(cell)) {
         //gc::inspect_typemap(stdout, ti);
         int iters = ti->numOffsets > 128 ? 0 : ti->numOffsets;
         for (int i = 0; i < iters; ++i) {
-          fprintf(stdout, "\t@%d : %p\n", ti->offsets[i], gc::offset(bodyvoid, ti->offsets[i]));
-          fflush(stdout);
+          fprintf(gclog, "\t@%d : %p\n", ti->offsets[i], gc::offset(bodyvoid, ti->offsets[i]));
+          fflush(gclog);
         }
       } else {
-        fprintf(stdout, "\tcell has no typemap, size is %lld\n", cell->cell_size());
+        fprintf(gclog, "\tcell has no typemap, size is %lld\n", cell->cell_size());
       }
     }
   }
 
 done:
-  fprintf(stdout, "done inspecting ptr: %p\n", body);
-  fflush(stdout);
+  fprintf(gclog, "done inspecting ptr: %p\n", body);
+  fflush(gclog);
+  */
 }
 // }}}
 
@@ -2594,6 +2618,7 @@ void foster_subheap_shrink_raw(void* generic_subheap) {
 #ifndef USE_COPYING
   immix_space* subheap = ((heap_handle<immix_space>*) generic_subheap)->body;
   subheap->shrink();
+  fprintf(gclog, "shrink()-ed subheap %p\n", subheap);
 #endif
 }
 
@@ -2602,6 +2627,7 @@ void foster_subheap_collect_raw(void* generic_subheap) {
   immix_space* subheap = ((heap_handle<immix_space>*) generic_subheap)->body;
   //fprintf(gclog, "collecting subheap %p\n", subheap);
   subheap->force_gc_for_debugging_purposes();
+  fprintf(gclog, "subheap-collect done\n");
 #endif
 }
 
