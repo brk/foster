@@ -82,6 +82,7 @@ main = {
         else
           a = checkX (make i d);
           b = checkX (make (0 -Int32 i) d);
+            foster_subheap_collect subheap;
           ans = a +Int32 b +Int32 t;
           sumT d (i -Int32 1) ans
       end
@@ -89,7 +90,6 @@ main = {
 
     REC depth = { mn => mx =>
       if mn <=SInt32 mx then
-            foster_subheap_collect subheap;
         n = bit ((mx -Int32 mn) +Int32 (minN !));
         i = sumT mn n 0;
         m = 2 *Int32 n;

@@ -60,12 +60,22 @@ sumT  d i t = a `par` b `par` sumT d (i-1) ans
         b = check (make (-i) d)
         ans = a + b + t
 
-check = check' True 0
+--check = check'' True 0
+check = checkX
 
 -- traverse the tree, counting up the nodes
 check' :: Bool -> Int -> Tree -> Int
 check' !b !z Nil          = z
 check' b z (Node i l r)	  = check' (not b) (check' b (if b then z+i else z-i) l) r
+
+checkX t =
+  case t of
+    Nil -> 0
+    Node i l r ->
+      case l of
+        Nil -> i
+        _ -> let !res = checkX l + i - checkX r in
+             res
 
 -- build a tree
 make :: Int -> Int -> Tree
