@@ -2618,7 +2618,7 @@ void foster_subheap_shrink_raw(void* generic_subheap) {
 #ifndef USE_COPYING
   immix_space* subheap = ((heap_handle<immix_space>*) generic_subheap)->body;
   subheap->shrink();
-  fprintf(gclog, "shrink()-ed subheap %p\n", subheap);
+  //fprintf(gclog, "shrink()-ed subheap %p\n", subheap);
 #endif
 }
 
@@ -2627,7 +2627,7 @@ void foster_subheap_collect_raw(void* generic_subheap) {
   immix_space* subheap = ((heap_handle<immix_space>*) generic_subheap)->body;
   //fprintf(gclog, "collecting subheap %p\n", subheap);
   subheap->force_gc_for_debugging_purposes();
-  fprintf(gclog, "subheap-collect done\n");
+  //fprintf(gclog, "subheap-collect done\n");
 #endif
 }
 
