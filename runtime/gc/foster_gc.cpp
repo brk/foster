@@ -41,7 +41,7 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 #define TRACK_BYTES_ALLOCATED_PINHOOK 0
 #define GC_BEFORE_EVERY_MEMALLOC_CELL 0
 #define DEBUG_INITIALIZE_ALLOCATIONS  0
-#define MEMSET_FREED_MEMORY           1
+#define MEMSET_FREED_MEMORY           0
 // This included file may un/re-define these parameters, providing
 // a way of easily overriding-without-overwriting the defaults.
 #include "gc/foster_gc_reconfig-inl.h"
@@ -433,10 +433,13 @@ struct frame15_allocator {
       spare_frame15s.clear();
     }
 
-    for (auto f21 : self_owned_allocated_frame21s) {
-      base::AlignedFree(f21);
+    if (!self_owned_allocated_frame21s.empty()) {
+      fprintf(gclog, "calling AlignedFree on %d frame21s\n", self_owned_allocated_frame21s.size());
+      for (auto f21 : self_owned_allocated_frame21s) {
+        base::AlignedFree(f21);
+      }
+      self_owned_allocated_frame21s.clear();
     }
-    self_owned_allocated_frame21s.clear();
 
     next_frame15 = nullptr;
   }
