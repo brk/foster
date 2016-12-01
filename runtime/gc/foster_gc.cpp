@@ -87,13 +87,6 @@ void* realigned_for_allocation(void* bump) {
  return offset(roundUpToNearestMultipleWeak(bump, FOSTER_GC_DEFAULT_ALIGNMENT)
               ,HEAP_CELL_HEADER_SIZE);
 }
-/*
-void* realigned_for_allocation(void* bump) {
- return offset(roundUpToNearestMultipleWeak(offset(bump, HEAP_CELL_HEADER_SIZE),
-                                            FOSTER_GC_DEFAULT_ALIGNMENT)
-                                                        ,HEAP_CELL_HEADER_SIZE);
-}
-*/
 
 class bump_allocator : public memory_range {
 public:
@@ -185,9 +178,9 @@ class immix_space;
 
 enum class frame15kind : uint8_t {
   unknown = 0,
-  immix_smallmedium, // parent is immix_space*
-  immix_malloc_start, // parent is immix_space*
-  immix_malloc_continue, // parent is frame15* to malloc_start frame
+  immix_smallmedium, // associated is immix_space*
+  immix_malloc_start, // associated is immix_malloc_frame15info*
+  immix_malloc_continue, // associated is heap_array* base.
   staticdata // parent is nullptr
 };
 
@@ -198,6 +191,45 @@ struct frame15info {
   uint8_t num_marked_lines_at_last_collection;
   uint8_t num_available_lines_at_last_collection;
 };
+
+// {{{
+struct immix_malloc_frame15info {
+  // Since allocs are min 8K, this will be guaranteed to have size at most 4.
+  heap_array* contained[4];
+  immix_space* parents[4];
+};
+
+template<int N, typename T, typename P>
+void sizedset__add(T** arr, T* val,  P** parents, P* parent) {
+  for (int i = 0; i < N; ++i) {
+    if (arr[i] == nullptr) {
+      arr[i] = val;
+      parents[i] = parent;
+      break;
+    }
+  }
+}
+
+template<int N, typename T, typename P>
+void sizedset__remove(T** arr, T* val, P** parents) {
+  for (int i = 0; i < N; ++i) {
+    if (arr[i] == val) {
+      arr[i] = nullptr;
+      parents[i] = nullptr;
+      break;
+    }
+  }
+}
+
+template<int N, typename T>
+int sizedset__count(T** arr) {
+  int rv = 0;
+  for (int i = 0; i < N; ++i) {
+    if (arr[i] != nullptr) { ++rv; }
+  }
+  return rv;
+}
+// }}}
 
 template<typename Allocator>
 struct GCGlobals {
@@ -237,40 +269,128 @@ void flip_current_mark_bits_value() {
     gcglobals.mark_bits_current_value ^ HEADER_MARK_BITS;
 }
 
+#define IMMIX_F15_PER_F21 64
+#define IMMIX_LINES_PER_BLOCK 128
+#define IMMIX_BYTES_PER_LINE 256
+
+// On a 64-bit machine, physical address space will only be 48 bits usually.
+// If we use 47 of those bits, we can drop the low-order 15 bits and be left
+// with 32 bits!
+typedef uint32_t frame15_id;
+
+frame15_id frame15_id_of(void* p) { return frame15_id(uintptr_t(p) >> 15); }
+uint32_t frame21_id_of(void* p) { return uint32_t(uintptr_t(p) >> 21); }
+
+
+uintptr_t low_n_bits(uintptr_t val, uintptr_t n) { return val & ((1 << n) - 1); }
+
+uintptr_t line_offset_within_f21(void* slot) {
+  return low_n_bits(uintptr_t(slot) >> 8, 21 - 8);
+}
+
+uintptr_t line_offset_within_f15(void* slot) {
+  return low_n_bits(uintptr_t(slot) >> 8, 15 - 8);
+}
+
+inline
+frame15info* frame15_info_for_frame15_id(frame15_id fid) {
+  return &gcglobals.lazy_mapped_frame15info[fid];
+}
+
+frame15info* frame15_info_for(void* addr) {
+  return frame15_info_for_frame15_id(frame15_id_of(addr));
+}
+
 struct large_array_allocator {
-  std::list<heap_array*> allocated;
+  std::list<void*> allocated;
 
   tidy* allocate_array(const typemap* arr_elt_map,
                        int64_t  num_elts,
                        int64_t  total_bytes,
-                       bool     init) {
+                       bool     init,
+                       immix_space* parent) {
     void* base = malloc(total_bytes + 8);
-    // If multiple of 16, offset by 8 so payload pointer will be aligned.
-    if ((uintptr_t(base) & 0xF) == 0) { base = offset(base, 8); }
-    else { printf("ERROR: array malloc returned pointer not multiple of 16!\n"); fflush(stdout); exit(111); }
 
-    heap_array* allot = static_cast<heap_array*>(base);
+    heap_array* allot = static_cast<heap_array*>(realigned_for_allocation(base));
     if (init) memset((void*) allot, 0x00, total_bytes);
     allot->set_header(arr_elt_map, gcglobals.mark_bits_current_value);
     allot->set_num_elts(num_elts);
     if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_array(total_bytes); }
 
     // TODO modify associated frame15infos, lazily allocate card bytes.
+    toggle_framekinds_for(allot, offset(base, total_bytes + 7), parent);
     // TODO review when/where line mark bit setting happens,
     //      ensure it doesn't happen for pointers to arrays.
-    allocated.push_front(allot);
+    allocated.push_front(base);
     return allot->body_addr();
   }
 
+  void toggle_framekinds_for(heap_array* allot, void* last, immix_space* parent) {
+    frame15_id b = frame15_id_of(allot);
+    frame15_id e = frame15_id_of(last);
+
+    set_framekind_malloc(b, allot, parent);
+    // If b == e, we've already set the framekind.
+    // If the line offset isn't the last one in the block, we must assume that
+    // another allocation can happen, so we'll leave the framekind unset.
+    if ((b != e) && (line_offset_within_f15(last) == IMMIX_LINES_PER_BLOCK - 1)) {
+      set_framekind_malloc_continue(e, allot);
+    }
+    // Any blocks in between the start and end should be marked as continuations.
+    while (++b < e) {
+      set_framekind_malloc_continue(b, allot);
+    }
+  }
+
+  void set_framekind_malloc(frame15_id b, heap_array* allot, immix_space* parent) {
+    auto b_f = frame15_info_for_frame15_id(b);
+    if (b_f->frame_classification != frame15kind::immix_malloc_start) {
+      b_f->frame_classification = frame15kind::immix_malloc_start;
+      // Potential race condition in multithreaded code
+
+      immix_malloc_frame15info* maf = (immix_malloc_frame15info*) malloc(sizeof(immix_malloc_frame15info));
+      memset(maf->contained, 0, sizeof(maf->contained));
+      b_f->associated = maf;
+    }
+
+    immix_malloc_frame15info* maf = (immix_malloc_frame15info*) b_f->associated;
+    sizedset__add<4>(&maf->contained[0], allot, &maf->parents[0], parent);
+  }
+
+  void set_framekind_malloc_continue(frame15_id mc, heap_array* allot) {
+    auto mc_f = frame15_info_for_frame15_id(mc);
+    mc_f->frame_classification = frame15kind::immix_malloc_continue;
+    mc_f->associated = allot;
+  }
+
+  void framekind_malloc_cleanup(heap_array* allot) {
+    auto b_f = frame15_info_for_frame15_id(frame15_id_of(allot));
+    immix_malloc_frame15info* maf = (immix_malloc_frame15info*) b_f->associated;
+    sizedset__remove<4>(&maf->contained[0], allot, &maf->parents[0]);
+
+    if (0 == sizedset__count<4>(&maf->contained[0])) {
+      frame15_id b = frame15_id_of(allot);
+      auto b_f = frame15_info_for_frame15_id(b);
+      b_f->frame_classification = frame15kind::unknown;
+      free(b_f->associated);
+      b_f->associated = nullptr;
+    }
+  }
+
+  // Iterates over each allocated array, and calls free() on the unmarked ones.
   void sweep_arrays() {
-    for (auto it = allocated.begin(); it != allocated.end(); ++it) {
-      heap_array* arr = *it;
+    for (auto it = allocated.begin(); it != allocated.end();       ) {
+      void* base = *it;
+      heap_array* arr = static_cast<heap_array*>(realigned_for_allocation(base));
       if (arr->get_mark_bits() != gcglobals.mark_bits_current_value) {
         // unmarked, can free associated array.
-        allocated.erase(it);
-        // re-align base to get original return value
-        free(offset(arr, -8));
+        it = allocated.erase(it); // erase() returns incremented iterator.
+        framekind_malloc_cleanup(arr);
+        free(base);
+
         // TODO inspect outgoing card table?
+      } else {
+        ++it;
       }
     }
   }
@@ -284,27 +404,15 @@ void gc_assert(bool cond, const char* msg);
 
 intr* from_tidy(tidy* t) { return (intr*) t; }
 
-// On a 64-bit machine, physical address space will only be 48 bits usually.
-// If we use 47 of those bits, we can drop the low-order 15 bits and be left
-// with 32 bits!
-typedef uint32_t frame15_id;
-
-frame15_id frame15_id_of(void* p) { return frame15_id(uintptr_t(p) >> 15); }
-uint32_t frame21_id_of(void* p) { return uint32_t(uintptr_t(p) >> 21); }
-
-inline
-frame15info* frame15_info_for_frame15_id(frame15_id fid) {
-  return &gcglobals.lazy_mapped_frame15info[fid];
-}
-
-frame15info* frame15_info_for(void* addr) {
-  return frame15_info_for_frame15_id(frame15_id_of(addr));
-}
 
 void set_parent_for_frame(immix_space* p, frame15* f) {
   auto fid = frame15_id_of(f);
   gcglobals.lazy_mapped_frame15info[fid].associated = p;
   gcglobals.lazy_mapped_frame15info[fid].frame_classification = frame15kind::immix_smallmedium;
+}
+
+frame15kind frame15_classification(void* addr) {
+  return gcglobals.lazy_mapped_frame15info[frame15_id_of(addr)].frame_classification;
 }
 
 // Returns either null (for static data) or a valid immix_space*.
@@ -492,10 +600,6 @@ class free_line_span {
   free_line_span* next;
 };
 
-#define IMMIX_F15_PER_F21 64
-#define IMMIX_LINES_PER_BLOCK 128
-#define IMMIX_BYTES_PER_LINE 256
-
 // 64 * 32 KB = 2 MB  ~~~ 2^6 * 2^15 = 2^21
 struct frame21_15_metadata_block {
   // The first block entry (IMMIX_LINES_PER_BLOCK bytes) of the linemap will be
@@ -516,11 +620,6 @@ struct frame21_15_metadata_block {
   uint8_t cardmap[IMMIX_F15_PER_F21][IMMIX_LINES_PER_BLOCK];
 };
 
-uintptr_t low_n_bits(uintptr_t val, uintptr_t n) { return val & ((1 << n) - 1); }
-
-uintptr_t line_offset_within_f21(void* slot) {
-  return low_n_bits(uintptr_t(slot) >> 8, 21 - 8);
-}
 
 frame15_id frame15_id_within_f21(frame15_id global_fid) {
   return low_n_bits(global_fid, 21 - 15);
@@ -937,9 +1036,7 @@ public:
     } else if (req_bytes > (1 << 13)) {
       // The Immix paper, since it built on top of Jikes RVM, uses an 8 KB
       // threshold to distinguish medium-sized allocations from large ones.
-      fprintf(gclog, "ERROR: need to get something in place for large allocations!\n");
-      fflush(gclog);
-      return nullptr;
+      return laa.allocate_array(elt_typeinfo, n, req_bytes, init, this);
     } else {
       // If it's not small and it's not large, it must be medium.
       return allocate_array_into_bumper(&medium_bumper, elt_typeinfo, n, req_bytes, init);
@@ -1002,7 +1099,9 @@ public:
   void scan_cell(heap_cell* cell, int depth) {
     if (!is_marked(cell)) {
       cell->flip_mark_bits();
-      mark_line_for_slot((void*)cell);
+      if (frame15_classification(cell) == frame15kind::immix_smallmedium) {
+        mark_line_for_slot((void*)cell);
+      }
 
       heap_array* arr = NULL;
       const typemap* map = NULL;
@@ -1011,7 +1110,7 @@ public:
       // Without metadata for the cell, there's not much we can do...
       if (map) scan_with_map_and_arr(cell, *map, arr, depth);
     } else {
-      fprintf(gclog, "cell %p was already marked\n", cell);
+      //fprintf(gclog, "cell %p was already marked\n", cell);
     }
   }
 
@@ -1139,6 +1238,7 @@ public:
     clean_frame15s.clear();
     clean_frame21s.clear();
     local_frame15_allocator.clear();
+    laa.sweep_arrays();
 
     for (auto f15 : frame15s) {
       inspect_frame15_postgc(frame15_id_of(f15));
@@ -1333,9 +1433,14 @@ public:
   }
 
   void shrink() {
+    // Establish the invariant that live frames/arrays are suitably marked.
+    this->immix_gc();
+
     std::vector<frame15*> keep_frame15s;
     std::vector<frame21*> keep_frame21s;
-    // TODO only return free blocks; this assumes everything is free...
+
+    // Frames that are unmarked will be freed as appropriate;
+    // marked frames will be kept.
     for (auto f15 : frame15s) {
       if (is_linemap15_clear(f15)) {
         global_frame15_allocator.give_frame15(f15);
@@ -1352,11 +1457,13 @@ public:
       }
     }
 
+    // Adjust frame limit counts, accounting for frames we're going to keep.
     lim->frame15s_left += frame15s.size();
     lim->frame15s_left -= keep_frame15s.size();
     lim->frame21s_left += frame21s.size();
     lim->frame21s_left -= keep_frame21s.size();
 
+    // Get rid of everything except the frames we wanted to keep.
     frame15s.clear();
     for (auto f : keep_frame15s) { frame15s.push_back(f); }
     frame21s.clear();
@@ -1368,6 +1475,7 @@ public:
     clean_frame21s.clear();
     to_be_cleared.clear();
     local_frame15_allocator.clear();
+    laa.sweep_arrays();
     // TODO remembered sets?
   }
 
@@ -1379,6 +1487,8 @@ private:
   // These bumpers point into particular frame15s.
   bump_allocator small_bumper;
   bump_allocator medium_bumper;
+
+  large_array_allocator laa;
 
   // Stores values returned from global_frame15_allocator.get_frame15();
   std::vector<frame15*> frame15s;
