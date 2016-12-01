@@ -1205,7 +1205,9 @@ llvm::Value* LLArrayPoke::codegen(CodegenPass* pass) {
   Value* val  = this->value->codegen(pass);
   Value* base = NULL;
   Value* slot = ari->codegenARI(pass, &base);
-  return builder.CreateStore(val, slot, /*isVolatile=*/ false);
+  builder.CreateStore(val, slot, /*isVolatile=*/ false);
+  return llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(
+        llvm::StructType::get(foster::fosterLLVMContext)));
   //return emitGCWrite(pass, val, base, slot);
 }
 
