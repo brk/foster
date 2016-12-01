@@ -2032,7 +2032,7 @@ knInlineToplevel expr env = do
    knBumpTotalEffort
    case expr of
     KNLetFuns ids fns body -> do
-        liftIO $ putStrLn $ "saw toplevel fun bindings of " ++ show ids
+        --liftIO $ putStrLn $ "saw toplevel fun bindings of " ++ show ids
         let ids' = ids -- Don't rename top-level functions!
         mapM_ inNewVar ids' -- but do give them occurrence counters
 
