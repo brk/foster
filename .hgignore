@@ -1,6 +1,9 @@
 glob:*.class
 glob:*.java
 glob:*.pyc
+glob:*.ll
+glob:*.hi
+glob:*.exe
 glob:*.s
 glob:*.o
 glob:*.orig

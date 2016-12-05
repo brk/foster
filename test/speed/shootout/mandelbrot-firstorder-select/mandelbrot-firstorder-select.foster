@@ -33,19 +33,22 @@ main = {
   init_r = allocDArray:[Float64] img_W_H;
   init_i = allocDArray:[Float64] img_W_H;
 
-  enumRange32 0 img_W_H { xy =>
-    xyf = u32-to-f64 xy;
-    (((2.0 `div-f64` (u32-to-f64 img_W_H)) *f64 xyf) -f64 1.5) >^ init_r[xy];
-    (((2.0 `div-f64` (u32-to-f64 img_W_H)) *f64 xyf) -f64 1.0) >^ init_i[xy];
-  };
+  REC loopA = { xy =>
+    if xy <SInt32 img_W_H then
+      xyf = u32-to-f64 xy;
+      (((2.0 `div-f64` (u32-to-f64 img_W_H)) *f64 xyf) -f64 1.5) >^ init_r[xy];
+      (((2.0 `div-f64` (u32-to-f64 img_W_H)) *f64 xyf) -f64 1.0) >^ init_i[xy];
+      loopA (xy +Int32 1);
+    end
+  }; loopA 0;
 
 
   // Hoist allocations...
   pixel_Group_r = allocDArray 8;
   pixel_Group_i = allocDArray 8;
-  eightPixels = (prim ref 0xFF);
 
-  enumRange32 0 img_W_H { y =>
+  REC loopB = { y =>
+   if y <SInt32 img_W_H then
     prefetched_Initial_i = init_i[y];
     REC inner = { xMaj =>
       if xMaj <SInt32 img_W_H
@@ -53,19 +56,19 @@ main = {
             // pixel_Group_r and pixel_Group_i will store real and imaginary
             // values for each pixel in the current pixel group as we perform
             // iterations. Set their initial values here.
-            enumRange32 0 8 { xMinor =>
-              init_r[xMaj +Int32 xMinor] >^ pixel_Group_r[xMinor];
-              prefetched_Initial_i       >^ pixel_Group_i[xMinor];
-            };
+            REC loopC = { xMinor =>
+              if xMinor <SInt32 8 then
+                init_r[xMaj +Int32 xMinor] >^ pixel_Group_r[xMinor];
+                prefetched_Initial_i       >^ pixel_Group_i[xMinor];
+                loopC (xMinor +Int32 1)
+              end
+            }; loopC 0;
 
-            // Assume all pixels are in the Mandelbrot set initially.
-            0xFF >^ eightPixels;
-
-            REC loop = { iteration =>
-              if iteration >SInt32 0
-                then if eightPixels^ !=Int32 0 then
-
-                    enumRange32 0 8 { xMinor =>
+            REC loop = { iteration => eightPixels =>
+              cond = if iteration >SInt32 0 then eightPixels !=Int32 0 else False end;
+              if cond then
+                    REC loopD = { xMinor => eightPixels =>
+                      if xMinor <SInt32 8 then
                        r = pixel_Group_r[xMinor];
                        i = pixel_Group_i[xMinor];
 
@@ -77,27 +80,50 @@ main = {
                        // Clear the bit for the pixel if it escapes from the
                        // Mandelbrot set.
 
-                       if ((r *f64 r) +f64 (i *f64 i)) >f64 kLimitSquared
-                         then
-                            current_Pixel_Bitmask = 0x80 `bitlshr-Int32` xMinor;
-                            (eightPixels^ `bitand-Int32` (bitnot-Int32 current_Pixel_Bitmask)) >^ eightPixels;
-                       end
+
+                       esc = ((r *f64 r) +f64 (i *f64 i)) >f64 kLimitSquared;
+
+                       aus = if esc then
+                                current_Pixel_Bitmask = 0x80 `bitlshr-Int32` xMinor;
+                                (bitnot-Int32 current_Pixel_Bitmask) else -1 end;
+                       eightPixels2 = eightPixels `bitand-Int32` aus;
+/* Version 1:
+                       aus = if esc then
+                                current_Pixel_Bitmask = 0x80 `bitlshr-Int32` xMinor;
+                                (bitnot-Int32 current_Pixel_Bitmask) else -1 end;
+                       (eightPixels^ `bitand-Int32` aus) >^ eightPixels;
+                       */
+                       
+                       /* Version 0:
+                       current_Pixel_Bitmask = 0x80 `bitlshr-Int32` xMinor;
+                       if esc then (eightPixels^ `bitand-Int32` (bitnot-Int32 current_Pixel_Bitmask)) >^ eightPixels; end;
+                       */
+
+                       loopD (xMinor +Int32 1) eightPixels2
+                     else
+                       eightPixels
+                     end
                     };
-                    loop (iteration -Int32 1);
-                  end
+                    
+                    eightPixels3 = loopD 0 eightPixels;
+                    loop (iteration -Int32 1) eightPixels3;
+              else eightPixels
               end
             };
 
-            loop kMaxIterations;
+            eightPixels = loop kMaxIterations 0xFF;
 
             index = (y *Int32 img_W_H_bits) +Int32 (xMaj `sdiv-Int32` 8);
-            (eightPixels^ |> trunc_i32_to_i8) >^ pixels[index];
+            (eightPixels |> trunc_i32_to_i8) >^ pixels[index];
 
             inner (xMaj +Int32 8)
       end
     };
     inner 0;
-  };
+
+    loopB (y +Int32 1);
+   end
+  }; loopB 0;
 
   print_text "P4";
   print_i64_bare (sext_i32_to_i64 img_W_H);

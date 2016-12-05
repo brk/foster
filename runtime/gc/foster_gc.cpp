@@ -221,6 +221,16 @@ void sizedset__remove(T** arr, T* val, P** parents) {
   }
 }
 
+template<int N, typename T, typename P>
+P* sizedset__lookup(T** arr, T* val, P** parents) {
+  for (int i = 0; i < N; ++i) {
+    if (arr[i] == val) {
+      return parents[i];
+    }
+  }
+  return nullptr;
+}
+
 template<int N, typename T>
 int sizedset__count(T** arr) {
   int rv = 0;
@@ -312,6 +322,7 @@ struct large_array_allocator {
     void* base = malloc(total_bytes + 8);
 
     heap_array* allot = static_cast<heap_array*>(realigned_for_allocation(base));
+
     if (init) memset((void*) allot, 0x00, total_bytes);
     allot->set_header(arr_elt_map, gcglobals.mark_bits_current_value);
     allot->set_num_elts(num_elts);
@@ -416,15 +427,20 @@ frame15kind frame15_classification(void* addr) {
 }
 
 // Returns either null (for static data) or a valid immix_space*.
-immix_space* heap_for_frame15info(frame15info* finfo) {
+immix_space* heap_for_frame15info(frame15info* finfo, void* addr) {
   if (finfo->frame_classification == frame15kind::immix_malloc_continue) {
-    finfo = frame15_info_for((frame15*)finfo->associated);
+    finfo = frame15_info_for(finfo->associated);
+  } else if (finfo->frame_classification == frame15kind::immix_malloc_start) {
+    immix_malloc_frame15info* maf = (immix_malloc_frame15info*) finfo->associated;
+    heap_array* arr = heap_array::from_heap_cell(heap_cell::for_tidy((tidy*)addr));
+    return sizedset__lookup<4>(&maf->contained[0], arr, &maf->parents[0]);
   }
+
   return static_cast<immix_space*>(finfo->associated);
 }
 
 immix_space* heap_for(void* addr) {
-  return heap_for_frame15info(frame15_info_for(addr));
+  return heap_for_frame15info(frame15_info_for(addr), addr);
 }
 
 
@@ -1107,6 +1123,7 @@ public:
       const typemap* map = NULL;
       int64_t cell_size;
       get_cell_metadata(cell, arr, map, cell_size);
+
       // Without metadata for the cell, there's not much we can do...
       if (map) scan_with_map_and_arr(cell, *map, arr, depth);
     } else {
@@ -1394,7 +1411,7 @@ public:
       return;
     }
 
-    immix_space* owner = heap_for_frame15info(f15info);
+    immix_space* owner = heap_for(body);
     if (owner != this) {
       // We can rely on remembered sets
       return;
