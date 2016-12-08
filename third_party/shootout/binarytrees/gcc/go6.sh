@@ -1,6 +1,6 @@
-#CXX=$HOME/llvm/3.9.0/bin/clang++
-CXX=g++
+CXX=$HOME/llvm/3.9.0/bin/clang++
+#CXX=g++
 ${CXX} -c -pipe -O3 -fomit-frame-pointer -march=native  -std=c++0x binarytrees.6.c++ -o binarytrees.gpp-6.c++.o &&  \
-      ${CXX} binarytrees.gpp-6.c++.o -o binarytrees.gpp-6.gpp_run -lboost_system
+      ${CXX} binarytrees.gpp-6.c++.o -o binarytrees.gpp-6.exe -lboost_system
 
-perf stat ./binarytrees.gpp-6.gpp_run 19
+perf stat ./binarytrees.gpp-6.exe 19
