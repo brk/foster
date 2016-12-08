@@ -106,5 +106,6 @@ main = {
   status = (prim ref 0);
   stdout = 1;
   offset = 0;
-  foster_posix_write_bytes stdout pixels offset (sext_i32_to_i64 (img_W_H *Int32 img_W_H_bits)) status;
+  foster_posix_write_bytes /*fd*/ stdout
+    /*from*/ pixels offset /*len*/ (sext_i32_to_i64 (img_W_H *Int32 img_W_H_bits)) status;
 };

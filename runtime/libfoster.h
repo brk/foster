@@ -15,7 +15,7 @@ extern "C" {
 void foster_coro_destroy(coro_context* ctx);
 
 struct foster_bytes {
-   int64_t cap;
+   int64_t cap; // array portion has space for this many elements
    int8_t bytes[0];
 };
 }
