@@ -314,16 +314,20 @@ frame15info* frame15_info_for(void* addr) {
 struct large_array_allocator {
   std::list<void*> allocated;
 
+  static heap_array* align_as_array(void* base) {
+    // We want the body address of the array to be aligned mod 16.
+    return static_cast<heap_array*>(((uintptr_t(base) & 0xF) == 8) ? base : offset(base, 8));
+  }
+
   tidy* allocate_array(const typemap* arr_elt_map,
                        int64_t  num_elts,
                        int64_t  total_bytes,
                        bool     init,
                        immix_space* parent) {
     void* base = malloc(total_bytes + 8);
+    heap_array* allot = align_as_array(base);
 
-    heap_array* allot = static_cast<heap_array*>(realigned_for_allocation(base));
-
-    if (init) memset((void*) allot, 0x00, total_bytes);
+    if (init) memset((void*) base, 0x00, total_bytes + 8);
     allot->set_header(arr_elt_map, gcglobals.mark_bits_current_value);
     allot->set_num_elts(num_elts);
     if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_array(total_bytes); }
@@ -392,7 +396,7 @@ struct large_array_allocator {
   void sweep_arrays() {
     for (auto it = allocated.begin(); it != allocated.end();       ) {
       void* base = *it;
-      heap_array* arr = static_cast<heap_array*>(realigned_for_allocation(base));
+      heap_array* arr = align_as_array(base);
       if (arr->get_mark_bits() != gcglobals.mark_bits_current_value) {
         // unmarked, can free associated array.
         it = allocated.erase(it); // erase() returns incremented iterator.
