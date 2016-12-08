@@ -18,12 +18,13 @@ const size_t	LINE_SIZE = 64;
 
 struct Node 
 {
+  Node* pad;
     Node *l, *r;
     int i;
     
-    Node(int i2) : l(0), r(0), i(i2) 
+    Node(int i2) : pad(0), l(0), r(0), i(i2) 
     {}
-    Node(Node *l2, int i2, Node *r2) : l(l2), r(r2), i(i2) 
+    Node(Node *l2, int i2, Node *r2) : pad(0), l(l2), r(r2), i(i2) 
     {}
 
     int check() const 
@@ -38,10 +39,21 @@ int nallocs = 0;
 
 typedef boost::object_pool<Node> NodePool;
 
+int checkX(Node* n) {
+  if (!n) return 0;
+  return checkX(n->l) + n->i - checkX(n->r);
+}
+
+int checkO(Node* n) {
+  return n->check();
+}
+
+#define CHECK checkX
+
 
 Node *make(int i, int d, NodePool &store) 
 {
-  ++nallocs;
+  //++nallocs;
     if (d > 0)  {
         return store.construct(	make(2*i-1, d-1, store), i, make(2*i, d-1, store)	);
     }
@@ -75,7 +87,7 @@ int main(int argc, char *argv[])
         NodePool store;
         Node *c = make(0, stretch_depth, store);
         std::cout << "stretch tree of depth " << stretch_depth << "\t "
-                  << "check: " << c->check() << std::endl;
+                  << "check: " << CHECK(c) << std::endl;
     }
 
     NodePool long_lived_store;
@@ -91,7 +103,7 @@ int main(int argc, char *argv[])
         {
             NodePool store;
             Node *a = make(i, d, store), *b = make(-i, d, store);
-            c += a->check() + b->check();
+            c += CHECK(a) + CHECK(b);
         }
 
 		// each thread write to separate location
@@ -99,8 +111,8 @@ int main(int argc, char *argv[])
     }
 
     std::cout << "long lived tree of depth " << max_depth << "\t "
-              << "check: " << (long_lived_tree->check()) << "\n";
-    std::cout << "nallocs: " << nallocs << "\n";
+              << "check: " << CHECK(long_lived_tree) << "\n";
+    //std::cout << "nallocs: " << nallocs << "\n";
 
     return 0;
 }
