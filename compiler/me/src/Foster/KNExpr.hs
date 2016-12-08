@@ -1537,8 +1537,8 @@ knInline mbDefaultSizeLimit shouldDonate knmod = do
   expended <- readRef effort
   stk <- readRef stkRef
   liftIO $ putDocLn  $ text "------------------------------------"
-  liftIO $ putDocLn4 $ text "stkref was:" <$> pretty stk
-  liftIO $ putDocLn4 $ text "census was:" <$> pretty (Map.toList $ inCensus e)
+  liftIO $ putDocLn $ text "stkref was:" <$> pretty stk
+  liftIO $ putDocLn $ text "census was:" <$> pretty (Map.toList $ inCensus e)
   --do foldResults <- readRef foldResultsRef
   --   liftIO $ putDocLn $ text "failed unfoldings :" <$> pretty [fr | fr <- reverse foldResults, foldResultFailed fr]
   --   liftIO $ putDocLn $ text "non-zero-cost unfoldings costs :" <$> pretty [fr | fr <- reverse foldResults, foldCost fr /= Just 0]
@@ -1694,6 +1694,11 @@ resVar env v = do
         case lookupVarMb v env of
                    Just id -> do sawVar id
                                  return $ (TypedId (tidType v) id)
+                   Nothing -> do return $ v
+
+resVarWeakly env v = do
+        case lookupVarMb v env of
+                   Just id -> do return $ (TypedId (tidType v) id)
                    Nothing -> do return $ v
 
 type SrcExpr = (KNExpr' RecStatus MonoType)
@@ -2096,7 +2101,7 @@ knInline' expr env = do
     KNAllocArray ty v amr zi -> (q v)       >>= \zv -> residualize $ KNAllocArray ty zv amr zi
     KNDeref      ty v      -> (q v)       >>= \zv -> residualize $ KNDeref      ty zv
     KNAlloc      ty v mem  -> (q v)       >>= \zv -> residualize $ KNAlloc      ty zv mem
-    KNTyApp      ty v tys  -> (q v)       >>= \zv -> residualize $ KNTyApp      ty zv tys
+    KNTyApp      ty v tys  -> (resVarWeakly env v)       >>= \zv -> residualize $ KNTyApp      ty zv tys
     KNTuple      ty vs rng -> (mapM q vs) >>= \zv -> residualize $ KNTuple      ty zv rng
     KNStore      ty v1 v2  -> rezM2                         (KNStore      ty) (q v1) (q v2)
 
@@ -2179,7 +2184,7 @@ knInline' expr env = do
         residualize $ mkLetRec idses'' b'
 
     KNLetFuns    ids fns0 b -> do
-        --liftIO $ putStrLn $ "saw fun bindings of " ++ show ids
+        liftIO $ putStrLn $ "saw fun bindings of " ++ show ids
         ids' <- mapM freshenId ids
 
         -- Rename the fnVar so we don't get duplicate procedure names.
@@ -2194,19 +2199,21 @@ knInline' expr env = do
         Rez b' <- knInline' b env'
 
         liftIO $ do
-          putDocLn4 $ text "KNLetFuns " <> pretty ids
-          putDocLn4 $ indent 8 $ text "inlined"
-          putDocLn4 $ indent 16 $ pretty b
-          putDocLn4 $ indent 8 $ text "to"
-          putDocLn4 $ indent 16 $ pretty b'
-          putDocLn4 $ indent 8 $ text "; now looking at the fns bound to " <> pretty ids
+          putDocLn $ text "KNLetFuns " <> pretty ids
+          putDocLn $ indent 8 $ text "inlined"
+          putDocLn $ indent 16 $ pretty b
+          putDocLn $ indent 8 $ text "to"
+          putDocLn $ indent 16 $ pretty b'
+          putDocLn $ indent 8 $ text "; now looking at the fns bound to " <> pretty ids
 
         mb_fns  <- mapM (visitF "KNLetFuns.2") ops
         occ_sts <- mapM getVarStatus ids'
-        --let irrel_ids = [(id, id') | (id, id' , occst) <- zip3 ids ids' occ_sts, not (relevant occst id' ) ]
-        --if (not $ null $ irrel_ids)
-        --  then liftIO $ putDocLn $ text "letfuns dead ids: " <> pretty irrel_ids
-        --  else return ()
+
+        let irrel_ids = [(id, id') | (id, id' , occst) <- zip3 ids ids' occ_sts, not (relevant occst id' ) ]
+        if (not $ null $ irrel_ids)
+          then liftIO $ putDocLn $ text "letfuns dead ids: " <> pretty irrel_ids
+          else return ()
+
         let fns' = map (\(fn, mb_fn) ->
                          case mb_fn of Cached _ f sz -> (f,sz)
                                        Failed _ -> error $ "KNExpr.hs: One or more recursive functions failed to residualize during inlining!"
@@ -2215,6 +2222,7 @@ knInline' expr env = do
         let (idfns'', szs'') = unzip [((id, fn), sz)
                                      |((id, (fn, sz)), occst) <- zip (zip ids' fns' ) occ_sts
                                      , notDead occst]
+        liftIO $ putDocLn $ text "letfuns residz: " <> pretty (idfns'', szs'')
         mapM_ bumpSize (zip szs'' (map Just $ zip ids' ids))
         residualize $ mkLetFuns idfns'' b'
 
@@ -3024,7 +3032,7 @@ inCensusExpr expr = go expr where
     KNTuple       _ vs _ -> mapM_ cenSawPassed vs
     KNVar           v    -> mapM_ cenSawPassed [v]
     KNAlloc       _ v _  -> mapM_ cenSawPassed [v]
-    KNTyApp       _ v _  -> mapM_ cenSawPassed [v]
+    KNTyApp       _ v _  -> return () -- mapM_ cenSawPassed [v]
     KNStore     _  v1 v2 -> mapM_ cenSawPassed [v1,v2]
 
     -- Silently handle other cases...

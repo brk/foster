@@ -10,7 +10,7 @@ module Foster.CFGOptimization (optimizeCFGs, collectMayGCConstraints) where
 import Foster.Base
 import Foster.MonoType
 import Foster.Letable(Letable(..), letableSize, canGC, willNotGCGlobal,
-                      substVarsInLetable)
+                      substVarsInLetable, isPure)
 import Foster.Config
 import Foster.CFG
 
@@ -21,7 +21,7 @@ import qualified Text.PrettyPrint.Boxes as Boxes
 import qualified Data.Text as T
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import Data.Maybe(fromJust, isJust)
+import Data.Maybe(fromJust, isJust, fromMaybe)
 import Data.List(nubBy, last, foldl' )
 import Control.Monad.State
 import Data.IORef
@@ -44,7 +44,7 @@ optimizeCFFn r fn = do
                       , runCensusRewrites'
                       , eliminateAliasedVariables
                       , elimContInBBG
-                     -- ,runLiveness
+                      , runLiveness
                       ]
 
   -- Depth-first optimization: first optimize every sub-function,
@@ -530,7 +530,7 @@ eliminateAliasedVariables uref bbg = do
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||| Liveness ||||||||||||||||||||||||||||||||{{{
-{-
+
 type Live = Set.Set Ident
 
 liveLattice :: DataflowLattice Live
@@ -602,7 +602,7 @@ runLiveness uref bbg = runWithUniqAndFuel uref infiniteFuel (go bbg)
                       , bp_transfer = liveness
                       , bp_rewrite  = deadBindElim
                       }
--}
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 instance AExpr (Letable ty)    where freeIdents x = map tidIdent $ ((freeTypedIds x) :: [TypedId ty])
