@@ -2524,6 +2524,8 @@ FILE* print_timing_stats() {
   if (!json &&
       (FOSTER_GC_ALLOC_HISTOGRAMS || FOSTER_GC_TIME_HISTOGRAMS || FOSTER_GC_EFFIC_HISTOGRAMS)) {
     fprintf(gclog, "stats recorder active? %d\n", base::StatisticsRecorder::IsActive());
+    auto gah = base::StatisticsRecorder::ToJSON("");
+    fprintf(gclog, "GC_Alloc_Histograms : %s\n", gah.c_str());
     std::string output;
     base::StatisticsRecorder::WriteGraph("", &output);
     fprintf(gclog, "%s\n", output.c_str());
