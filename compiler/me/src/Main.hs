@@ -26,6 +26,8 @@ import Control.Monad.State(forM, when, forM_, evalStateT, gets,
 import Control.Monad.Trans.Except(runExceptT)
 import System.Exit(exitFailure)
 
+import Foster.FromHaskell(convertHaskellToFoster)
+
 import Foster.Base
 import Foster.Config
 import Foster.CFG
@@ -36,7 +38,6 @@ import Foster.TypeTC
 import Foster.ExprAST
 import Foster.TypeAST
 import Foster.ParsedType
-import Foster.PrettyExprAST()
 import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn, E_AnnVar, AnnCall, AnnLetFuns))
 import Foster.ILExpr(ILProgram, showILProgramStructure, prepForCodegen)
 import Foster.KNExpr(KNExpr', kNormalizeModule, knLoopHeaders, knSinkBlocks,
@@ -62,8 +63,9 @@ import Data.Binary.CBOR
 
 import Text.Printf(printf)
 import Foster.Output
-import Text.PrettyPrint.ANSI.Leijen((<+>), (<>), (<$>), pretty, text, line, hsep,
-                                     fill, parens, vcat, list, red, dullyellow)
+import Text.PrettyPrint.ANSI.Leijen((<+>), (<>), (<$>), pretty, text, line,
+                                     hsep, fill, parens, vcat, list, red,
+                                     dullyellow)
 import qualified Criterion.Measurement as Criterion(initializeTime, secs)
 
 {-
@@ -396,12 +398,13 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
    processTcConstraints :: [(TcConstraint, SourceRange)] -> Tc ()
    processTcConstraints constraints = mapM_ processConstraint constraints
       where
-        processConstraint ((TcC_SeqUnit mtv), range) = do
+        processConstraint ((TcC_SeqUnit mtv), _range) = do
             zt <- zonkType (MetaTyVarTC mtv)
             case zt of
               TupleTypeTC {} -> return ()
               PrimIntTC   {} -> return ()
               m@(MetaTyVarTC _) -> unify m unitTypeTC [text "seq-unit"]
+              _ -> error $ "Main.hs:processConstraint"
 
 dieOnError :: OutputOr t -> Compiled t
 dieOnError (OK     e) = return e
@@ -445,22 +448,26 @@ main = do
     (infile : outfile : rest) -> do
        flagVals <- parseOpts rest
 
-       --liftIO $ performGC
-       --Just stats1 <- liftIO $ Criterion.getGCStats
+       if getHs2FosterFlag flagVals
+         then convertHaskellToFoster infile outfile
+         else do
 
-       (ci_time, cb_program) <- ioTime $ readAndParseCbor infile
-       let wholeprog = cb_parseWholeProgram cb_program (getStandaloneFlag flagVals)
+           --liftIO $ performGC
+           --Just stats1 <- liftIO $ Criterion.getGCStats
 
-       --liftIO $ performGC
-       --Just stats2 <- liftIO $ Criterion.getGCStats
-       --liftIO $ putStrLn $ "delta in gc stats during protobuf parsing: " ++ show (stats2 `minusGCStats` stats1)
+           (ci_time, cb_program) <- ioTime $ readAndParseCbor infile
+           let wholeprog = cb_parseWholeProgram cb_program (getStandaloneFlag flagVals)
 
-       if getFmtOnlyFlag flagVals
-         then do
-           let WholeProgramAST modules = wholeprog
-           liftIO $ putDocLn (pretty (head modules))
-         else
-           runCompiler ci_time wholeprog flagVals outfile
+           --liftIO $ performGC
+           --Just stats2 <- liftIO $ Criterion.getGCStats
+           --liftIO $ putStrLn $ "delta in gc stats during protobuf parsing: " ++ show (stats2 `minusGCStats` stats1)
+
+           if getFmtOnlyFlag flagVals
+             then do
+               let WholeProgramAST modules = wholeprog
+               liftIO $ putDocLn (pretty (head modules))
+             else
+               runCompiler ci_time wholeprog flagVals outfile
 
     rest -> do
       flagVals <- parseOpts rest

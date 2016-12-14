@@ -60,6 +60,15 @@ instance Pretty TypeP where
           MetaPlaceholder str         -> text ("?? " ++ str)
           RefinedTypeP nm ty e -> text "%" <+> text nm <+> text ":" <+> pretty ty <+> text ":" <+> pretty e
 
+class IsQuietPlaceholder ty where
+  isQuietPlaceholder :: ty -> Bool
+
+instance IsQuietPlaceholder TypeP where
+  isQuietPlaceholder t =
+    case t of
+      MetaPlaceholder "" -> True
+      _ -> False
+
 lineOrSpace = line              -- line, unless undone by group, then space
 lineOrEmpty = linebreak
 spaceOrLine = group line        -- space if possible, otherwise line
@@ -74,7 +83,7 @@ prettyTopLevelFn fn =
  withAnnot (fnAstAnnot fn) $
   text (T.unpack $ fnAstName fn) <+> text "=" <+> pretty fn <> text ";"
 
-instance Pretty ty => Pretty (FnAST ty) where
+instance (Pretty ty, IsQuietPlaceholder ty) => Pretty (FnAST ty) where
   pretty fn =
       group (lbrace <> prettyTyFormals (fnTyFormals fn) <> args (fnFormals fn)
                     <> nest 4 (group $ line <> pretty (fnAstBody fn) <> line)
@@ -82,15 +91,18 @@ instance Pretty ty => Pretty (FnAST ty) where
     where args []  = empty
           args frm = hang 1 (empty <+> vsep (map (\v -> prettyFnFormalTy v <+> text "=>") frm))
 
-          _prettyFnFormal   (TypedId _t v) = text (T.unpack $ identPrefix v)
-          prettyFnFormalTy (TypedId  t v) = text (T.unpack $ identPrefix v) <+> text ":" <+> pretty t
+          prettyFnFormal       (TypedId _t v) = text (T.unpack $ identPrefix v)
+          prettyFnFormalTy tid@(TypedId  t v) =
+            if isQuietPlaceholder t
+             then prettyFnFormal tid
+             else prettyFnFormal tid <+> text ":" <+> pretty t
 
 prettyTyFormals [] = empty
 prettyTyFormals tyfs = empty <+> text "forall" <+> hsep (map prettyTyFormal tyfs) <+> text ","
   where prettyTyFormal (TypeFormal name _sr kind) =
                                           text name <+> text ":" <+> pretty kind
 
-instance Pretty ty => Pretty (ModuleExpr ty) where
+instance (Pretty ty, IsQuietPlaceholder ty) => Pretty (ModuleExpr ty) where
   pretty m =
         vcat (map prettyImport $ moduleASTincludes m)
     <$> vcat (map prettyItem $ moduleASTitems m)
@@ -187,7 +199,7 @@ prettyStmt e = case e of
                                         <> prettyStmt r
     E_FnAST annot fn     -> withAnnot annot $ pretty fn
 
-prettyAtom :: Pretty ty => ExprSkel ExprAnnot ty -> Doc
+prettyAtom :: (Pretty ty, IsQuietPlaceholder ty) => ExprSkel ExprAnnot ty -> Doc
 prettyAtom e =
   case e of
     E_SeqAST      {} -> parens $ pretty e
@@ -214,10 +226,10 @@ withAnnot (ExprAnnot pre _ post) doc =
 wasRaw False = empty
 wasRaw True  = text "r"
 
-instance Pretty ty => Pretty (ArrayEntry (ExprAST ty)) where
+instance (Pretty ty, IsQuietPlaceholder ty) => Pretty (ArrayEntry (ExprAST ty)) where
   pretty (AE_Int _annot str) = pretty str
   pretty (AE_Expr ex) = prettyAtom ex
 
-instance Pretty ty => Pretty (ExprAST ty) where
+instance (Pretty ty, IsQuietPlaceholder ty) => Pretty (ExprAST ty) where
   pretty e = prettyStmt e
 
