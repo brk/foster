@@ -20,6 +20,7 @@ options =
  , Option []     ["interactive"](NoArg  Interactive)      "interactive mode (pause on errors)"
  , Option []     ["dump-prims"] (NoArg  DumpPrims)        "dump primitive bindings"
  , Option []     ["fmt"]        (NoArg  FmtOnly)          "pretty-print source AST"
+ , Option []     ["hs2foster"]  (NoArg  Hs2Foster)        "pretty-print source Haskell as Foster"
  , Option []     ["no-inline"]  (NoArg  NoInline)         "disable inlining"
  , Option []     ["inline"]     (NoArg  Inline)           "enable inlining"
  , Option []     ["no-donate"]  (NoArg  NoDonate)         "diable inlining donation"
@@ -40,6 +41,7 @@ getStandaloneFlag (flags, _) =       Standalone  `elem` flags
 getDumpIRFlag ir (flags, _) =        DumpIR ir   `elem` flags
 getDumpPrimitives(flags, _) =        DumpPrims   `elem` flags
 getFmtOnlyFlag   (flags, _) =        FmtOnly     `elem` flags
+getHs2FosterFlag (flags, _) =        Hs2Foster   `elem` flags
 getShrinkFlag    (flags, _) =        Shrink      `elem` flags
 getCtorOpt       (flags, _) = (not $ NoCtorOpt   `elem` flags)
 getNonMovingGC   (flags, _) =        NonMovingGC `elem` flags
@@ -57,6 +59,7 @@ data Flag = Interpret String
           | Standalone
           | DumpPrims
           | FmtOnly
+          | Hs2Foster
           | NoCtorOpt
           | NonMovingGC
           | NoInline

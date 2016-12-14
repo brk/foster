@@ -38,33 +38,33 @@ data ExprSkel annot ty =
         | E_BoolAST       annot Bool
         | E_IntAST        annot String
         | E_RatAST        annot String
-        | E_TupleAST      annot Kind [ExprAST ty]
+        | E_TupleAST      annot Kind [ExprSkel annot ty]
         | E_FnAST         annot (FnAST ty)
-        | E_MachArrayLit  annot (Maybe ty) [ArrayEntry (ExprAST ty)]
+        | E_MachArrayLit  annot (Maybe ty) [ArrayEntry (ExprSkel annot ty)]
         -- Control flow
-        | E_IfAST         annot (ExprAST ty) (ExprAST ty) (ExprAST ty)
-        | E_SeqAST        annot (ExprAST ty) (ExprAST ty)
+        | E_IfAST         annot (ExprSkel annot ty) (ExprSkel annot ty) (ExprSkel annot ty)
+        | E_SeqAST        annot (ExprSkel annot ty) (ExprSkel annot ty)
         -- Creation of bindings
-        | E_Case          annot (ExprAST ty) [CaseArm EPattern (ExprAST ty) ty]
-        | E_LetAST        annot (TermBinding ty) (ExprAST ty)
-        | E_LetRec        annot [TermBinding ty] (ExprAST ty)
+        | E_Case          annot (ExprSkel annot ty) [CaseArm EPattern (ExprSkel annot ty) ty]
+        | E_LetAST        annot (TermBinding ty) (ExprSkel annot ty)
+        | E_LetRec        annot [TermBinding ty] (ExprSkel annot ty)
         -- Use of bindings
         | E_VarAST        annot (E_VarAST ty)
         | E_PrimAST       annot String [Literal] [ty]
-        | E_CallAST       annot (ExprAST ty) [ExprAST ty]
+        | E_CallAST       annot (ExprSkel annot ty) [ExprSkel annot ty]
         -- Mutable ref cells
-        | E_AllocAST      annot (ExprAST ty) AllocMemRegion
-        | E_DerefAST      annot (ExprAST ty)
-        | E_StoreAST      annot (ExprAST ty) (ExprAST ty)
+        | E_AllocAST      annot (ExprSkel annot ty) AllocMemRegion
+        | E_DerefAST      annot (ExprSkel annot ty)
+        | E_StoreAST      annot (ExprSkel annot ty) (ExprSkel annot ty)
         -- Array subscripting
-        | E_ArrayRead     annot (ArrayIndex (ExprAST ty))
-        | E_ArrayPoke     annot (ArrayIndex (ExprAST ty)) (ExprAST ty)
+        | E_ArrayRead     annot (ArrayIndex (ExprSkel annot ty))
+        | E_ArrayPoke     annot (ArrayIndex (ExprSkel annot ty)) (ExprSkel annot ty)
         -- Terms indexed by types
-        | E_TyApp         annot (ExprAST ty) [ty]
+        | E_TyApp         annot (ExprSkel annot ty) [ty]
         -- Others
-        | E_CompilesAST   annot (Maybe (ExprAST ty))
-        | E_KillProcess   annot (ExprAST ty) -- arg must be string literal
-        | E_TyCheck       annot (ExprAST ty) ty
+        | E_CompilesAST   annot (Maybe (ExprSkel annot ty))
+        | E_KillProcess   annot (ExprSkel annot ty) -- arg must be string literal
+        | E_TyCheck       annot (ExprSkel annot ty) ty
         deriving Show
 
 data FnAST ty  = FnAST { fnAstAnnot    :: ExprAnnot

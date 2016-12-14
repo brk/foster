@@ -43,6 +43,8 @@ executable me
                  transformers -any,
                  fgl -any,
                  floating-bits -any,
+                 haskell-src-exts -any,
+                 haskell-src-exts-simple -any,
                  hoopl >= 3.10.1.0,
                  time -any,
                  union-find -any,
