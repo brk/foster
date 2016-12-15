@@ -84,7 +84,8 @@ convertHaskellToFoster hspath fosterpath = do
         H.If c t e -> E_IfAST noAnnot (expOfExp c) (expOfExp t) (expOfExp e)
 
         H.List exps ->
-          E_MachArrayLit noAnnot Nothing [AE_Expr (expOfExp e) | e <- exps]
+          foldr (\e l -> E_CallAST noAnnot (mkVar "Cons") [expOfExp e]) (mkVar "Nil") exps
+          --E_MachArrayLit noAnnot Nothing [AE_Expr (expOfExp e) | e <- exps]
 
         H.Paren e -> expOfExp e
         H.Lambda pats body -> E_FnAST noAnnot $ fnOfLambda "" pats (expOfExp body) [] False
