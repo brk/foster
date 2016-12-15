@@ -62,12 +62,26 @@ convertHaskellToFoster hspath fosterpath = do
 
         _ -> E_CallAST noAnnot (expOfExp e) (map expOfExp es)
 
+      mkLetS [] e = e
+      mkLetS (s:stmts) e =
+        case s of
+          H.Generator (H.PVar v) exp ->
+               mkLetS stmts (E_LetAST noAnnot (TermBinding (mkVar $ rename v) (expOfExp exp)) e)
+          H.Generator pat exp ->
+               mkLetS stmts (E_LetAST noAnnot (TermBinding (mkVar $ prettyPrint pat) (expOfExp exp)) e)
+          H.LetStmt (H.BDecls decls) ->
+               mkLet  decls (mkLetS stmts e)
+          _ -> mkLetS stmts (E_LetAST noAnnot (TermBinding (mkVar $ prettyPrint s) (mkVarE "()")) e)
+
+
       mkLet [] e = e
       mkLet (d:decls) e =
         case d of
           H.PatBind (H.PVar v) rhs _mb_binds ->
                mkLet decls (E_LetAST noAnnot (TermBinding (mkVar $ rename v) (expOfRhs rhs)) e)
-          _ -> mkLet decls e
+          H.PatBind pat rhs _mb_binds ->
+               mkLet decls (E_LetAST noAnnot (TermBinding (mkVar $ prettyPrint pat) (expOfRhs rhs)) e)
+          _ -> mkLet decls (E_LetAST noAnnot (TermBinding (mkVar $ prettyPrint d) (mkVarE "()")) e)
 
       expOfExp :: H.Exp -> ExprAST TypeP
       expOfExp exp = case exp of
@@ -100,6 +114,16 @@ convertHaskellToFoster hspath fosterpath = do
           expOfExp e
 
         H.Let (H.BDecls decls) e -> mkLet decls (expOfExp e)
+        H.Do stmts ->
+            case (init stmts, last stmts) of
+                (decls, H.Qualifier e) -> mkLetS decls (expOfExp e)
+                _ -> error $ "do-stmt did not end with an expression: " ++ prettyPrint exp
+
+        H.LeftSection e qop ->
+           E_FnAST noAnnot $ FnAST noAnnot (T.pack "") []
+            [TypedId (MetaPlaceholder "") (Ident (T.pack "__sarg") 0)]
+            (expOfExp $ H.InfixApp e qop (H.Var (H.UnQual (H.Ident "__sarg"))))
+            False
 
         H.EnumFrom {} -> mkVarE $ "/* " ++ prettyPrint exp ++ " */"
         H.ListComp {} -> mkVarE $ "/* " ++ prettyPrint exp ++ " */"
@@ -132,6 +156,9 @@ convertHaskellToFoster hspath fosterpath = do
           H.PBangPat p -> patOfPat p
           H.PApp qname pats ->
             EP_Ctor noRange (map patOfPat pats) (T.pack $ prettyPrint qname)
+
+          H.PList pats -> foldr (\p ep -> EP_Ctor noRange [patOfPat p, ep] (T.pack "Cons"))
+                                (EP_Ctor noRange [] (T.pack "Nil")) pats
 
           H.PAsPat name pat -> error $ "patOfPat.AsPat: " ++ prettyPrint p
           H.PatTypeSig {} -> error $ "patOfPat.PatTypeSig: " ++ prettyPrint p
@@ -247,10 +274,10 @@ convertHaskellToFoster hspath fosterpath = do
                    forM_ tys $ \ty -> appendFile fosterpath (" " ++ prettyPrint ty)
 
                  H.RecDecl nm fields -> do
-                   appendFile fosterpath ("  of $" ++ prettyPrint nm)
+                   appendFile fosterpath ("  of $" ++ prettyPrint nm  ++ "\n")
                    forM_ fields $ \(H.FieldDecl names ty) -> do
                      forM_ names $ \name ->
-                       appendFile fosterpath (" /* " ++ prettyPrint name ++ " */ " ++ prettyPrint ty)
+                       appendFile fosterpath ("      /* " ++ prettyPrint name ++ " */ " ++ prettyPrint ty ++ "\n")
                    -- TODO generate accessors
                    appendFile fosterpath "\n/* TODO: generate record accessor functions */\n"
                appendFile fosterpath "\n"
@@ -280,8 +307,8 @@ convertHaskellToFoster hspath fosterpath = do
     ParseOk m -> do
       case m of
         H.Module _mb_modulehead _pragmas imports decls -> do
-          forM_ imports $ \(H.ImportDecl im qualB srcB safeB mb_pkg mb_as mb_specs) -> do
-            appendFile fosterpath ("// " ++ show im ++ "\n")
+          forM_ imports $ \(H.ImportDecl (H.ModuleName modname) qualB srcB safeB mb_pkg mb_as mb_specs) -> do
+            appendFile fosterpath ("// snafuinclude " ++ show modname ++ ";\n")
 
           mapM_ dumpDecl decls
 
