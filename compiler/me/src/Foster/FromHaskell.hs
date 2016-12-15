@@ -39,9 +39,8 @@ convertHaskellToFoster hspath fosterpath = do
 
   let
       expOfQName qname = case qname of
-        H.Qual modname name ->
-            E_VarAST noAnnot (VarAST Nothing (T.pack $ prettyPrint modname ++ "_" ++ rename name))
-        H.UnQual name -> E_VarAST noAnnot (VarAST Nothing (T.pack $ rename name))
+        H.Qual modname name -> mkVarE $ prettyPrint modname ++ "_" ++ rename name
+        H.UnQual name -> mkVarE $ rename name
 
         H.Special sp ->
           case sp of
@@ -59,7 +58,7 @@ convertHaskellToFoster hspath fosterpath = do
         H.Var (H.UnQual (H.Symbol "$")) -> app (head es) (tail es)
         H.Var qname -> E_CallAST noAnnot (expOfQName qname) (map expOfExp es)
         H.Con (H.Special (H.TupleCon _boxed _n)) -> E_TupleAST noAnnot (error "kind2") (map expOfExp es)
-        H.Con (H.Special H.Cons)     -> E_CallAST noAnnot (E_VarAST noAnnot (VarAST Nothing (T.pack "Cons"))) (map expOfExp es)
+        H.Con (H.Special H.Cons)     -> E_CallAST noAnnot (mkVarE "Cons") (map expOfExp es)
 
         _ -> E_CallAST noAnnot (expOfExp e) (map expOfExp es)
 
@@ -67,7 +66,7 @@ convertHaskellToFoster hspath fosterpath = do
       mkLet (d:decls) e =
         case d of
           H.PatBind (H.PVar v) rhs _mb_binds ->
-               mkLet decls (E_LetAST noAnnot (TermBinding (VarAST Nothing (T.pack $ rename v)) (expOfRhs rhs)) e)
+               mkLet decls (E_LetAST noAnnot (TermBinding (mkVar $ rename v) (expOfRhs rhs)) e)
           _ -> mkLet decls e
 
       expOfExp :: H.Exp -> ExprAST TypeP
@@ -84,7 +83,7 @@ convertHaskellToFoster hspath fosterpath = do
         H.If c t e -> E_IfAST noAnnot (expOfExp c) (expOfExp t) (expOfExp e)
 
         H.List exps ->
-          foldr (\e l -> E_CallAST noAnnot (mkVar "Cons") [expOfExp e]) (mkVar "Nil") exps
+          foldr (\e l -> E_CallAST noAnnot (mkVarE "Cons") [expOfExp e]) (mkVarE "Nil") exps
           --E_MachArrayLit noAnnot Nothing [AE_Expr (expOfExp e) | e <- exps]
 
         H.Paren e -> expOfExp e
@@ -102,8 +101,8 @@ convertHaskellToFoster hspath fosterpath = do
 
         H.Let (H.BDecls decls) e -> mkLet decls (expOfExp e)
 
-        H.EnumFrom {} -> E_VarAST noAnnot (VarAST Nothing (T.pack $ "/* " ++ prettyPrint exp ++ " */"))
-        H.ListComp {} -> E_VarAST noAnnot (VarAST Nothing (T.pack $ "/* " ++ prettyPrint exp ++ " */"))
+        H.EnumFrom {} -> mkVarE $ "/* " ++ prettyPrint exp ++ " */"
+        H.ListComp {} -> mkVarE $ "/* " ++ prettyPrint exp ++ " */"
 
         _ -> error $ "expOfExp: " ++ prettyPrint exp
 
@@ -123,7 +122,7 @@ convertHaskellToFoster hspath fosterpath = do
 
       patOfPat p =
         case p of
-          H.PVar nm   -> EP_Variable noRange (VarAST Nothing (T.pack $ prettyPrint nm))
+          H.PVar nm   -> EP_Variable noRange (mkVar $ prettyPrint nm)
           H.PWildCard -> EP_Wildcard noRange
           H.PParen p  -> patOfPat p
           H.PTuple _boxed pats -> EP_Tuple noRange (map patOfPat pats)
@@ -154,9 +153,9 @@ convertHaskellToFoster hspath fosterpath = do
                          guard = mkGuard guards
                          bod  = case (args, pats) of
                                  ([arg], [pat]) ->
-                                      (E_Case noAnnot (E_VarAST noAnnot (VarAST Nothing (T.pack arg)))
+                                      (E_Case noAnnot (mkVarE arg)
                                         [CaseArm (patOfPat pat) body guard [] noRange])
-                                 _ -> (E_Case noAnnot (E_TupleAST noAnnot (error "kind0") [E_VarAST noAnnot (VarAST Nothing (T.pack arg)) | arg <- args])
+                                 _ -> (E_Case noAnnot (E_TupleAST noAnnot (error "kind0") (map mkVarE args))
                                         [CaseArm (EP_Tuple noRange (map patOfPat pats))
                                             body guard [] noRange])
                                   in
@@ -169,14 +168,15 @@ convertHaskellToFoster hspath fosterpath = do
                  body'
                  isToplevel
 
-      mkVar str = E_VarAST noAnnot (VarAST Nothing (T.pack str))
+      mkVar  str = VarAST Nothing (T.pack str)
+      mkVarE str = E_VarAST noAnnot (mkVar str)
 
       mkGuard :: [H.Stmt] -> Maybe (ExprAST TypeP)
       mkGuard guards =
         case guards of
            [] -> Nothing
            [H.Qualifier exp] -> Just $ expOfExp exp
-           _  -> Just $ mkVar $ "/* " ++ show guards ++ " */"
+           _  -> Just $ mkVarE $ "/* " ++ show guards ++ " */"
 
       fnOfMatches nameStr [pats] [(body, guards)] isToplevel =
         fnOfLambda nameStr pats body guards isToplevel
@@ -185,10 +185,10 @@ convertHaskellToFoster hspath fosterpath = do
            let args = ["arg" ++ show n | (_, n) <- zip (head patss) [0..]]
                bod  = case (args, head patss) of
                        ([arg], [pat]) ->
-                            (E_Case noAnnot (E_VarAST noAnnot (VarAST Nothing (T.pack arg)))
+                            (E_Case noAnnot (mkVarE arg)
                               [CaseArm (patOfPat pat)
                                   body (mkGuard guards) [] noRange | (pats, (body, guards)) <- zip patss bodiesAndGuards])
-                       _ -> (E_Case noAnnot (E_TupleAST noAnnot (error "kind0") [E_VarAST noAnnot (VarAST Nothing (T.pack arg)) | arg <- args])
+                       _ -> (E_Case noAnnot (E_TupleAST noAnnot (error "kind0") (map mkVarE args))
                               [CaseArm (EP_Tuple noRange (map patOfPat pats))
                                   body (mkGuard guards) [] noRange | (pats, (body, guards)) <- zip patss bodiesAndGuards])
                         in
