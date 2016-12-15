@@ -87,7 +87,7 @@ convertHaskellToFoster hspath fosterpath = do
           E_MachArrayLit noAnnot Nothing [AE_Expr (expOfExp e) | e <- exps]
 
         H.Paren e -> expOfExp e
-        H.Lambda pats body -> E_FnAST noAnnot $ fnOfLambda "" pats (expOfExp body) False
+        H.Lambda pats body -> E_FnAST noAnnot $ fnOfLambda "" pats (expOfExp body) [] False
         H.Case exp alts -> E_Case noAnnot (expOfExp exp) (map caseArmOfAlt alts)
         H.InfixApp e1 qop e2 ->
           case qop of
@@ -115,6 +115,11 @@ convertHaskellToFoster hspath fosterpath = do
         H.UnGuardedRhs exp -> expOfExp exp
         H.GuardedRhss grhss -> error $ "expOfRhs.Guarded"
 
+      expAndGuardsOfRhs rhs = case rhs of
+        H.UnGuardedRhs exp -> (expOfExp exp, [])
+        H.GuardedRhss [H.GuardedRhs guards exp] -> (expOfExp exp, guards)
+        H.GuardedRhss grhss -> error $ "expOfRhs.Guarded (multi)"
+
       patOfPat p =
         case p of
           H.PVar nm   -> EP_Variable noRange (VarAST Nothing (T.pack $ prettyPrint nm))
@@ -137,21 +142,22 @@ convertHaskellToFoster hspath fosterpath = do
           H.PInfixApp {} -> error $ "patOfPat.PInfixApp: " ++ prettyPrint p
           _ -> error $ "patOfPat: " ++ prettyPrint p
 
-      fnOfLambda nameStr pats body isToplevel =
+      fnOfLambda nameStr pats body guards isToplevel =
         let (args', body') =
               if all isVar pats
                 then let args = [prettyPrint name | H.PVar name <- pats] in
                      (args, body)
                      -- { patVars => body }
                      -- { genArgs => case genArgs of pats -> body end }
-                else let args = ["arg" ++ show n | (_, n) <- zip pats [0..]] in
-                     let bod  = case (args, pats) of
+                else let args = ["arg" ++ show n | (_, n) <- zip pats [0..]]
+                         guard = mkGuard guards
+                         bod  = case (args, pats) of
                                  ([arg], [pat]) ->
                                       (E_Case noAnnot (E_VarAST noAnnot (VarAST Nothing (T.pack arg)))
-                                        [CaseArm (patOfPat pat) body Nothing [] noRange])
+                                        [CaseArm (patOfPat pat) body guard [] noRange])
                                  _ -> (E_Case noAnnot (E_TupleAST noAnnot (error "kind0") [E_VarAST noAnnot (VarAST Nothing (T.pack arg)) | arg <- args])
                                         [CaseArm (EP_Tuple noRange (map patOfPat pats))
-                                            body Nothing [] noRange])
+                                            body guard [] noRange])
                                   in
                      (args, bod)
         in
@@ -162,19 +168,28 @@ convertHaskellToFoster hspath fosterpath = do
                  body'
                  isToplevel
 
-      fnOfMatches nameStr [pats] [body] isToplevel =
-        fnOfLambda nameStr pats body isToplevel
+      mkVar str = E_VarAST noAnnot (VarAST Nothing (T.pack str))
 
-      fnOfMatches nameStr patss bodies isToplevel =
-           let args = ["arg" ++ show n | (_, n) <- zip (head patss) [0..]] in
-           let bod  = case (args, head patss) of
+      mkGuard :: [H.Stmt] -> Maybe (ExprAST TypeP)
+      mkGuard guards =
+        case guards of
+           [] -> Nothing
+           [H.Qualifier exp] -> Just $ expOfExp exp
+           _  -> Just $ mkVar $ "/* " ++ show guards ++ " */"
+
+      fnOfMatches nameStr [pats] [(body, guards)] isToplevel =
+        fnOfLambda nameStr pats body guards isToplevel
+
+      fnOfMatches nameStr patss bodiesAndGuards isToplevel =
+           let args = ["arg" ++ show n | (_, n) <- zip (head patss) [0..]]
+               bod  = case (args, head patss) of
                        ([arg], [pat]) ->
                             (E_Case noAnnot (E_VarAST noAnnot (VarAST Nothing (T.pack arg)))
                               [CaseArm (patOfPat pat)
-                                  body Nothing [] noRange | (pats, body) <- zip patss bodies])
+                                  body (mkGuard guards) [] noRange | (pats, (body, guards)) <- zip patss bodiesAndGuards])
                        _ -> (E_Case noAnnot (E_TupleAST noAnnot (error "kind0") [E_VarAST noAnnot (VarAST Nothing (T.pack arg)) | arg <- args])
                               [CaseArm (EP_Tuple noRange (map patOfPat pats))
-                                  body Nothing [] noRange | (pats, body) <- zip patss bodies])
+                                  body (mkGuard guards) [] noRange | (pats, (body, guards)) <- zip patss bodiesAndGuards])
                         in
             FnAST noAnnot
                  (T.pack nameStr)
@@ -196,7 +211,7 @@ convertHaskellToFoster hspath fosterpath = do
       dumpFnLoneMatch match = do
         case match of
           H.Match name pats rhs mb_binds -> do
-            let fn = fnOfLambda (prettyPrint name) pats (expOfRhs rhs) True
+            let fn = fnOfLambda (prettyPrint name) pats (expOfRhs rhs) [] True
             appendFile fosterpath (show $ plain $ prettyTopLevelFn fn)
             appendFile fosterpath "\n\n"
 
@@ -205,7 +220,7 @@ convertHaskellToFoster hspath fosterpath = do
 
       dumpFnMatches matches = do
         let (name, patss, rhss) = parseMatches matches
-        let fn = fnOfMatches (prettyPrint name) patss (map expOfRhs rhss) True
+        let fn = fnOfMatches (prettyPrint name) patss (map expAndGuardsOfRhs rhss) True
         appendFile fosterpath (show $ plain $ prettyTopLevelFn fn)
         appendFile fosterpath "\n\n"
 
