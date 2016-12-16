@@ -9,6 +9,7 @@ module Foster.PrettyExprAST where
 import Prelude hiding ((<$>))
 
 import Foster.Base
+import Foster.Kind(kindAsHash)
 import Foster.ExprAST
 import Foster.ParsedType
 
@@ -51,7 +52,7 @@ instance Pretty TypeP where
           TyConP nam          -> text nam
           TyAppP con []       ->          pretty con
           TyAppP con ts       -> parens $ pretty con <+> sep (map pretty ts)
-          TupleTypeP     ts           -> tupled (map pretty ts)
+          TupleTypeP  k   ts             -> tupled (map pretty ts) <> text (kindAsHash k)
           FnTypeP    ts r fx _cc _pf _sr ->
                                          text "{" <+> hsep [pretty t <+> text "=>" | t <- ts]
                                                   <+> pretty r <+> prettyFx fx <> text "}"

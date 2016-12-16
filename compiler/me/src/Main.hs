@@ -613,7 +613,7 @@ desugarParsedModule tcenv m = do
           TyAppP (TyConP "Coro") [o,i,fx] -> liftM3 CoroTypeAST       (q o) (q i) (q fx)
           TyAppP con types       -> liftM2   TyAppAST (q con) (mapM q types)
           TyConP nam             -> return $ TyConAST nam
-          TupleTypeP      types  -> liftM  TupleTypeAST    (mapM q types)
+          TupleTypeP k   types   -> liftM (TupleTypeAST k)    (mapM q types)
           ForAllP    tvs t       -> liftM (ForAllAST $ map convertTyFormal tvs) (q t)
           TyVarP     tv          -> do return $ TyVarAST tv
           FnTypeP s t fx cc cs sr -> do s' <- mapM q s

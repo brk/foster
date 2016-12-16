@@ -30,8 +30,8 @@ type Effect = TypeAST
 data TypeAST =
            PrimIntAST       IntSizeBits
          | TyConAST         DataTypeName
-         | TyAppAST         Rho [Sigma]
-         | TupleTypeAST     [Sigma]
+         | TyAppAST         Rho  [Sigma]
+         | TupleTypeAST     Kind [Sigma]
          | CoroTypeAST      (Sigma) (Sigma) Effect
          | RefTypeAST       (Sigma)
          | ArrayTypeAST     (Sigma)
@@ -65,7 +65,7 @@ instance Pretty TypeAST where
         TyConAST nam                    -> text nam
         TyAppAST con []     ->          pretty con
         TyAppAST con types  -> parens $ pretty con <> hpre (map pretty types)
-        TupleTypeAST      types         -> tupled $ map pretty types
+        TupleTypeAST k   types          -> tupled (map pretty types) <> text (kindAsHash k)
         FnTypeAST    s t fx cc cs       -> text "(" <> pretty s <> text " =" <> text (briefCC cc) <> text ";"
                                               <+> pretty fx <> text "> " <> pretty t <> text " @{" <> text (show cs) <> text "})"
         CoroTypeAST  s t fx             -> text "(Coro " <> pretty s <+> pretty t <+> pretty fx <> text ")"
@@ -102,7 +102,7 @@ instance Structured TypeAST where
             PrimIntAST     size            -> text $ "PrimIntAST " ++ show size
             TyConAST       nam             -> text $ nam
             TyAppAST con   _               -> text "(TyAppAST" <+> pretty con <> text ")"
-            TupleTypeAST       _           -> text $ "TupleTypeAST"
+            TupleTypeAST   k   _           -> text $ "TupleTypeAST" ++ kindAsHash k
             FnTypeAST    {}                -> text $ "FnTypeAST"
             CoroTypeAST  _ _ _             -> text $ "CoroTypeAST"
             ForAllAST  tvs _rho            -> text $ "ForAllAST " ++ show tvs
@@ -118,7 +118,7 @@ instance Structured TypeAST where
             PrimIntAST         _           -> []
             TyConAST           _           -> []
             TyAppAST     con  types        -> con:types
-            TupleTypeAST      types        -> types
+            TupleTypeAST  _k  types        -> types
             FnTypeAST   ss t fx _ _        -> ss ++ [t, fx]
             CoroTypeAST  s t fx            -> [s, t, fx]
             ForAllAST  _tvs rho            -> [rho]
@@ -133,9 +133,9 @@ fosBoolType = PrimIntAST I1
 fosStringType = TyAppAST (TyConAST "Text") []
 fosSubheapType = TyAppAST (TyConAST "Subheap") []
 
-minimalTupleAST []    = TupleTypeAST []
+minimalTupleAST []    = TupleTypeAST KindPointerSized []
 minimalTupleAST [arg] = arg
-minimalTupleAST args  = TupleTypeAST args
+minimalTupleAST args  = TupleTypeAST KindPointerSized args
 
 nullFx = TyAppAST (TyConAST "effect.Empty") []
 
