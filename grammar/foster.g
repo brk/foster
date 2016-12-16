@@ -20,6 +20,7 @@ tokens {
   AND='and'; OR='or'; EQ='='; MINUS='-';
   TYPE='type';
   COMPILES='__COMPILES__';
+  HASH_MARK='#';
 
   OPEN_PAREN='('; CLOSE_PAREN=')';
   OPEN_SQRBR='['; CLOSE_SQRBR=']'; OPEN_COLON_SQRBR=':[';
@@ -156,10 +157,12 @@ val_abs :
                   // value + type abstraction (terms indexed by terms and types)
     ;
 
-tuple : '(' stmts ( AS  t    ')'  -> ^(TYANNOT stmts t)
-                  | (',' e)* ')'  -> ^(TUPLE stmts e*)  // tuples (products) (sugar: (a,b,c) == Tuple3 a b c)
+tuple : '(' stmts ( AS  t    ')'        -> ^(TYANNOT stmts t)
+                  | (',' e)* ')' hashq  -> ^(TUPLE hashq stmts e*)  // tuples (products) (sugar: (a,b,c) == Tuple3 a b c)
                   )
       ;
+
+hashq : '#'?;
 
 pmatch  : p ('if' e)? '->' stmts -> ^(CASE p e stmts);
 
@@ -171,7 +174,6 @@ p : patside (('or' patside)+  -> ^(OR patside+)
 patside
   : dctor patom*  -> ^(CTOR dctor patom*)
   | patom         -> ^(MU   patom);
-
 
 patom :
     x                                      // variables
@@ -220,7 +222,7 @@ tatom :
     a                                                   // type variables
   | '??' a                              -> ^(TYPE_PLACEHOLDER a)
   | '(' ')'                             -> ^(TUPLE)
-  | '(' t (',' t)* ')'                  -> ^(TUPLE t+)  // tuples (products) (sugar: (a,b,c) == Tuple3 a b c)
+  | '(' t (',' t)* ')' hashq            -> ^(TUPLE hashq t+)  // tuples (products) (sugar: (a,b,c) == Tuple3 a b c)
   | ('#precondition' val_abs)?
     '{' t  ('=>' t)* effect? '}'
    ('@' '{' tannots '}')?               -> ^(FUNC_TYPE ^(TUPLE t+) ^(MU val_abs?) ^(MU effect?) tannots?)  // description of terms indexed by terms

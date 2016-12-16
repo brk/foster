@@ -8,6 +8,7 @@ module Foster.ParsedType
 where
 
 import Foster.Base
+import Foster.Kind
 import Foster.ExprAST
 
 import Data.Maybe (maybeToList)
@@ -17,7 +18,7 @@ import Text.PrettyPrint.ANSI.Leijen(text)
 data TypeP =
            TyConP         DataTypeName
          | TyAppP         TypeP [TypeP]
-         | TupleTypeP     [TypeP]
+         | TupleTypeP     Kind  [TypeP]
          | FnTypeP        { fnTypeDomain :: [TypeP]
                           , fnTypeRange  :: TypeP
                           , fnTypeEffect :: Maybe TypeP
@@ -33,7 +34,7 @@ instance Show TypeP where
     show x = case x of
         TyConP    nm                  -> "(TyCon: " ++ show nm ++ ")"
         TyAppP    con types           -> "(" ++ show con ++ joinWith " " ("":map show types) ++ ")"
-        TupleTypeP      types         -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
+        TupleTypeP k  types           -> "(" ++ joinWith ", " [show t | t <- types] ++ ")" ++ kindAsHash k
         FnTypeP    s t fx cc cs _     -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @" ++ show fx ++ " #{" ++ show cs ++ "})"
         ForAllP  tvs rho              -> "(ForAll " ++ show tvs ++ ". " ++ show rho ++ ")"
         TyVarP   tv                   -> show tv
@@ -45,7 +46,7 @@ instance Structured TypeP where
         case e of
             TyAppP    con  _             -> text $ "TyAppP " ++ show con
             TyConP    nm                 -> text $ "TyConP " ++ nm
-            TupleTypeP       _           -> text $ "TupleTypeP"
+            TupleTypeP k     _           -> text $ "TupleTypeP" ++ kindAsHash k
             FnTypeP    _ _  _ _ _ _      -> text $ "FnTypeP"
             ForAllP  tvs _rho            -> text $ "ForAllP " ++ show tvs
             TyVarP   tv                  -> text $ "TyVarP " ++ show tv
@@ -56,7 +57,7 @@ instance Structured TypeP where
         case e of
             TyConP      _nm              -> []
             TyAppP      con types        -> con:types
-            TupleTypeP      types        -> types
+            TupleTypeP _k   types        -> types
             FnTypeP    ss t fx _ _  _    -> maybeToList fx ++ (t:ss)
             ForAllP  _tvs rho            -> [rho]
             TyVarP   _tv                 -> []

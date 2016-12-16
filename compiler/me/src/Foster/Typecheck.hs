@@ -1533,7 +1533,7 @@ tcType' ctx refinementArgs ris typ = do
         TyVarAST      tv      -> liftM (TyVarTC tv) genUnifiableVar
         RefTypeAST    ty      -> liftM   RefTypeTC   (q ty)
         ArrayTypeAST  ty      -> liftM   ArrayTypeTC (q ty)
-        TupleTypeAST  types   -> liftM  (TupleTypeTC (UniConst KindPointerSized)) (mapM q types)
+        TupleTypeAST  k types -> liftM  (TupleTypeTC (UniConst k)) (mapM q types)
         CoroTypeAST   s r fx  -> liftM3  CoroTypeTC  (q s) (q r) (q fx)
         TyConAST nam          -> return $ TyConTC nam
         TyAppAST con types    -> liftM2 TyAppTC (q con) (mapM q types)
@@ -2321,7 +2321,7 @@ instance Expr TypeAST where
         PrimIntAST            {} -> []
         TyConAST              {} -> []
         TyAppAST          con types -> concatMap freeVars (con:types)
-        TupleTypeAST          types -> concatMap freeVars types
+        TupleTypeAST     _k   types -> concatMap freeVars types
         FnTypeAST    s t fx _cc _cs -> concatMap freeVars (t:fx:s)
         CoroTypeAST  s t fx      -> concatMap freeVars [t,s,fx]
         ForAllAST  _tvs rho      -> freeVars rho

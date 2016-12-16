@@ -14,3 +14,7 @@ KindAnySizeType  `subkindOf` KindAnySizeType  = True
 KindAnySizeType  `subkindOf` KindPointerSized = False
 KindEffect       `subkindOf` KindEffect       = True
 _ `subkindOf` _ = False
+
+kindAsHash KindAnySizeType   = "#"
+kindAsHash KindPointerSized  = ""
+kindAsHash KindEffect        = "@"

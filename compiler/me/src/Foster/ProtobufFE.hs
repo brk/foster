@@ -260,6 +260,9 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
     CBOR_Array [_, _, cbr, _] -> annotOfCbr cbr
     _ -> error "annotOfCbor expeted CBOR_Array"
 
+  isHashMark (CBOR_Array [tok, _, _cbr, _]) = tok `tm` tok_HASH_MARK
+  isHashMark _ = False
+
   cb_parse_atom cbor =
    let annot = annotOfCbor cbor in
    case cbor of
@@ -278,6 +281,8 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
       case cbors of
         []           -> E_TupleAST annot KindPointerSized []
         [stmts]      -> cb_parse_stmts stmts
+        (hash:stmts:rest) | isHashMark hash ->
+                        E_TupleAST annot KindAnySizeType  (cb_parse_stmts stmts : map cb_parse_e rest)
         (stmts:rest) -> E_TupleAST annot KindPointerSized (cb_parse_stmts stmts : map cb_parse_e rest)
     CBOR_Array [tok, _,_cbr, CBOR_Array [stmts, thenstmts]] | tok `tm` tok_IF ->
         E_IfAST annot (cb_parse_stmts stmts) (cb_parse_stmts thenstmts) (E_TupleAST annot KindPointerSized [])
@@ -499,7 +504,9 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
     CBOR_Array [tok, _,_cbr, CBOR_Array [a]] | tok `tm` tok_TYPE_PLACEHOLDER ->
       MetaPlaceholder (cb_parse_aid a)
     CBOR_Array [tok, _,_cbr, CBOR_Array [t]] | tok `tm` tok_TUPLE -> cb_parse_t t
-    CBOR_Array [tok, _,_cbr, CBOR_Array tys] | tok `tm` tok_TUPLE -> TupleTypeP (map cb_parse_t tys)
+    CBOR_Array [tok, _,_cbr, CBOR_Array (hash:tys)] | tok `tm` tok_TUPLE && isHashMark hash
+                                                                  -> TupleTypeP KindAnySizeType  (map cb_parse_t tys)
+    CBOR_Array [tok, _,_cbr, CBOR_Array tys] | tok `tm` tok_TUPLE -> TupleTypeP KindPointerSized (map cb_parse_t tys)
     CBOR_Array [tok, _, cbr, CBOR_Array [tuple, _mu, mu_eff]]        | tok `tm` tok_FUNC_TYPE ->
         let tys = map cb_parse_t (unTuple tuple) in
         let eff = let effp = map cb_parse_eff (unMu mu_eff) in
