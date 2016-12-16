@@ -694,7 +694,7 @@ data PrimOpFloat = PrimOpFloat2 (Double -> Double -> Double)
                  | PrimOpFloatB (Double -> Double -> Bool)
                  | PrimOpFloatMissing
 
-tryGetFlonumPrimOp :: (Fractional a) => String -> PrimOpFloat
+tryGetFlonumPrimOp :: String -> PrimOpFloat
 tryGetFlonumPrimOp name =
   case name of
     "f*"       -> PrimOpFloat2 (*)
