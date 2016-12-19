@@ -41,6 +41,8 @@ textLength = { t : Text =>
 
 textLength32 = { t => textLength t };
 
+textFromRawASCII = { a : Array Int8 => TextFragment a (arrayLength32 a) };
+
 textFoldASCII = { forall a:Type, t : Text => f : { Int8 => a => a } => acc:a =>
   case t
     of $TextFragment a _ ->
