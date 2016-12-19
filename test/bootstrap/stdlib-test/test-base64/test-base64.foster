@@ -1,0 +1,159 @@
+snafuinclude Text "text";
+snafuinclude Prelude "prelude";
+
+main = {
+  b"Man" `try-base64-encoding-testcase` "TWFu";
+
+  b"pleasure." `try-base64-encoding-testcase` "cGxlYXN1cmUu";
+  b"leasure."  `try-base64-encoding-testcase` "bGVhc3VyZS4=";
+  b"easure."   `try-base64-encoding-testcase` "ZWFzdXJlLg==";
+  b"asure."    `try-base64-encoding-testcase` "YXN1cmUu";
+  b"sure."     `try-base64-encoding-testcase` "c3VyZS4=";
+
+  ()
+
+/*
+  print_text ( (base64-encode-bare b"""Man is distinguished, not only by his reason, but by this singular passion from
+other animals, which is a lust of the mind, that by a perseverance of delight
+in the continued and indefatigable generation of knowledge, exceeds the short
+vehemence of any carnal pleasure.""");
+*/
+};
+
+try-base64-encoding-testcase = { inp => oup =>
+  expect_text oup;
+  print_text (textFromRawASCII (base64-encode-bare inp));
+};
+
+base64-encode-bare :: { Array Int8 => Array Int8 };
+base64-encode-bare = { a =>
+  alen = arrayLength32 a;
+  res = newArrayReplicate (base64-encode-size alen) 0;
+
+  lookup = get-base64-encoding-table !;
+
+  emitv = { target => v : Int8 => lookup[v] >^ res[target]; };
+  prepw = { w => trunc_i32_to_i8 w |> bitand-Int8 0b00111111 };
+  emit3v = { target => v0 : Int8 => v1 => v2 =>
+    xa = bitor-Int32 (bitor-Int32 (             (zext_i8_to_i32 v2))
+                                  (bitshl-Int32 (zext_i8_to_i32 v1) 8))
+                     (bitshl-Int32 (zext_i8_to_i32 v0) 16);
+
+    emitv target            (prepw (bitlshr-Int32 xa 18));
+    emitv (target +Int32 1) (prepw (bitlshr-Int32 xa 12));
+    emitv (target +Int32 2) (prepw (bitlshr-Int32 xa  6));
+    emitv (target +Int32 3) (prepw xa);
+  };
+
+  emit3 = { from => target =>
+    emit3v target a[from] a[from +Int32 1] a[from +Int32 2]
+  };
+
+  REC go = { from => target =>
+    remaining = alen -Int32 from;
+    if remaining >=UInt32 3
+      then emit3 from target;
+           go (from +Int32 3) (target +Int32 4)
+      else
+        case remaining
+          of 1 -> emit3v target a[from] 0                0;
+                  61 >^ res[target +Int32 2];
+                  61 >^ res[target +Int32 3];
+          of 2 -> emit3v target a[from] a[from +Int32 1] 0;
+                  61 >^ res[target +Int32 3];
+          of _ -> ()
+        end
+    end
+  };
+  go 0 0;
+  res
+};
+
+base64-encode-size-nopad = { rawSize : Int32 =>
+  lenF = rawSize |> u32-to-f64;
+  f64-to-u32-unsafe ((4.0 *f64 lenF +f64 2.0) `div-f64` 3.0)
+};
+
+base64-encode-size = { rawSize : Int32 =>
+  base64-encode-size-nopad rawSize |> round-up-to-multiple-of 3
+};
+
+// hmm = { a => b => print_i32 a; print_i32 b; };
+// 111 |> hmm 222;  // prints 222; 1111
+round-up-to-multiple-of = { granule => n =>
+  m = n `srem-Int32` granule;
+  if m ==Int32 0 then n else n +Int32 (granule -Int32 m) end
+};
+
+get-base64-encoding-table = {
+prim mach-array-literal
+  // A - Z
+65
+66
+67
+68
+69
+70
+71
+72
+73
+74
+75
+76
+77
+78
+79
+80
+81
+82
+83
+84
+85
+86
+87
+88
+89
+90
+  // a-z
+97
+98
+99
+100
+101
+102
+103
+104
+105
+106
+107
+108
+109
+110
+111
+112
+113
+114
+115
+116
+117
+118
+119
+120
+121
+122
+ // 0 - 9
+48
+49
+50
+51
+52
+53
+54
+55
+56
+57
+// + /
+43
+47
+;
+};
