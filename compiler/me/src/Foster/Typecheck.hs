@@ -11,7 +11,7 @@ import qualified Data.List as List(length, zip)
 import Data.List(foldl', (\\))
 import Control.Monad(liftM, forM, liftM, liftM2, liftM3, when)
 
-import qualified Data.Text as T(Text, pack, unpack)
+import qualified Data.Text as T(Text, pack, unpack, length, head)
 import Data.Map(Map)
 import qualified Data.Map as Map(lookup, insert, keys, elems, fromList, toList, null)
 import qualified Data.Set as Set(toList, fromList)
@@ -474,7 +474,7 @@ tcRhoBool rng b expTy = do
 -- }}}
 
 --  ------------------
---  G |- [r]"..." :: Text
+--  G |- [r]"..." :: Text (or Int8 or Int32)
 tcRhoText rng b expTy = do
 -- {{{
 -- {{{
@@ -486,6 +486,13 @@ tcRhoText rng b expTy = do
              m@MetaTyVarTC {} -> do unify m ty [text "text literal"]
                                     return ab
              RefinedTypeTC v _ _ -> check (tidType v)
+             PrimIntTC I8 | T.length b == 1 ->
+               if fromEnum (T.head b) >= 256
+                 then tcFails [text $ "Rune cannot be represented as an Int8:"
+                               ++ showSourceRange (rangeOf rng)]
+                 else return $ AnnLiteral rng t (LitInt $ LiteralInt (fromIntegral $ fromEnum $ T.head b) 8  (T.unpack b) 10)
+             PrimIntTC I32 | T.length b == 1 ->
+                      return $ AnnLiteral rng t (LitInt $ LiteralInt (fromIntegral $ fromEnum $ T.head b) 32 (T.unpack b) 10)
              t -> tcFails [text $ "Unable to check Text constant in context"
                                     ++ " expecting non-Text type " ++ show t
                                     ++ showSourceRange (rangeOf rng)]
