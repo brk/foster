@@ -82,6 +82,9 @@ bool isLargishStructPointerTy(llvm::Type* ty) {
 
 llvm::Value* emitBitcast(llvm::Value* v, llvm::Type* dstTy, llvm::StringRef msg = "") {
   llvm::Type* srcTy = v->getType();
+  if (srcTy->isVoidTy()) {
+    return llvm::ConstantPointerNull::getNullValue(dstTy);
+  }
   if (isFunctionPointerTy(srcTy) && isLargishStructPointerTy(dstTy)) {
     ASSERT(false) << "cannot cast " << str(srcTy) << " to " << str(dstTy) << "\n" << str(v);
   }
@@ -799,7 +802,6 @@ llvm::Value* LLBitcast::codegen(CodegenPass* pass) {
     // Can't cast a void value to a unit value,
     // but we can manufacture a unit ptr...
     return llvm::ConstantPointerNull::getNullValue(tgt);
-    //return v;
   } else return (v->getType() == tgt) ? v : emitBitcast(v, tgt);
 }
 
