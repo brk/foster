@@ -188,7 +188,6 @@ lit     : num | str | TRU -> ^(BOOL TRU) | FLS -> ^(BOOL FLS);
 ifexpr : 'if' cond=stmts 'then' thenpart=stmts ('else' elsepart=stmts)? 'end'
           -> ^(IF $cond $thenpart $elsepart);
 
-binding  : x '=' e       -> ^(BINDING x e);
 formal   : pid (':' t)?  -> ^(FORMAL pid t);
 tyformal : aid (':' k)?  -> ^(TYPEVAR_DECL aid k);
 tyformalr: '(' aid ':' k ')' -> ^(TYPEVAR_DECL aid k);
@@ -232,7 +231,8 @@ tatom :
   // from type variables, since we don't use upper/lower case to distinguish.
   ;
 
-tannots :  binding (',' binding)* -> ^(BINDING binding+);
+tannots   : tabinding (',' tabinding)* -> ^(BINDING tabinding+);
+tabinding : x '=' e                    -> ^(BINDING x e);
 
 ////////////////////////////////////////////////////////////////////////////////
 
