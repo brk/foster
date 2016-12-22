@@ -31,6 +31,7 @@ using std::vector;
 // of bit-bashing code, such as siphash.
 
 STATISTIC(NumSpecialized, "Number of bitcast loads specialized");
+STATISTIC(NumInspected,   "Number of bitcast loads inspected");
 
 // Simple peephole optimizer to turn code like
 //
@@ -66,6 +67,17 @@ STATISTIC(NumSpecialized, "Number of bitcast loads specialized");
 //      ((T*)buf)[0]
 //
 // This is valid on a little-endian architecture... but what isn't, these days?
+
+//
+// Reads in the opposite order should be transformed into a load + bswap.
+// That is:
+//      (((T)buf[0]) << (3 * sizeof(buf[0])))
+//    | (((T)buf[1]) << (2 * sizeof(buf[0])))
+//    | (((T)buf[2]) << (1 * sizeof(buf[0])))
+//    | (((T)buf[3]) << (0 * sizeof(buf[0])))
+// becomes
+//    ((T*)buf)[0] |> bswap
+//
 
 typedef unsigned Offset;
 const Offset kInvalidOffset = UINT_MAX;
@@ -128,7 +140,7 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
         ++idx;
       }
       out_offsets = gep_offsets;
-      matchGEP_Index(*idx, out_base, out_offset);
+      matchGEP_Index(unZExt(*idx), out_base, out_offset);
       return gep->getPointerOperand();
     } else {
       ASSERT(!isa<GetElementPtrInst>(v)) << "Ugh, need to handle both GEPOp and GEPInsn... :-(";
@@ -138,7 +150,15 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
 
   ConstantInt* ci32(Offset o) { return ConstantInt::get(Type::getInt32Ty(foster::fosterLLVMContext), o); }
 
-  void spec(Idx* r0, Type* newLoadType, Instruction* exp) {
+  Value* maybeBSwap(IRBuilder<>& b, bool needBSwap, Instruction* v) {
+    if (!needBSwap) return v;
+
+    std::vector<Type*> arg_types = { v->getType() };
+    auto fun = Intrinsic::getDeclaration(b.GetInsertBlock()->getModule(), Intrinsic::bswap, arg_types);
+    return b.CreateCall(fun, { v });
+  }
+
+  void spec(BasicBlock& BB, bool needBSwap, Idx* r0, Type* newLoadType, Instruction* exp) {
     IRBuilder<> b(foster::fosterLLVMContext);
     b.SetInsertPoint(exp);
 
@@ -150,10 +170,10 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
     LoadInst* bufload = b.CreateLoad(bufcast, "buf.load");
 
     if (bufload->getType() != exp->getType()) {
-      Value* zext     = new ZExtInst(bufload, exp->getType(), "buf.zext", exp);
-      exp->replaceAllUsesWith(zext);
+      auto zext = new ZExtInst(bufload, exp->getType(), "buf.zext", exp);
+      exp->replaceAllUsesWith(maybeBSwap(b, needBSwap, zext));
     } else {
-      exp->replaceAllUsesWith(bufload);
+      exp->replaceAllUsesWith(maybeBSwap(b, needBSwap, bufload));
     }
 
     // TODO: propagate alignment from the loads (conservatively)
@@ -172,6 +192,13 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
      rv-> shift_offset = shiftdelta;
      rv-> origin = v;
      return rv;
+  }
+
+  llvm::Value* unZExt(llvm::Value* v) {
+    if (auto zi = llvm::dyn_cast<llvm::ZExtInst>(v)) {
+      return zi-> getOperand(0);
+    }
+    return v;
   }
 
   void buildIdxBase(Value* v, Idx* idx) {
@@ -283,10 +310,24 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
           res[0]->index_offset != b->shift_offset + i) return false;
       if (res[i]->shift_offset != b->base_size    * i) return false;
     }
-    // TODO if we see shifts in the opposite order, we can generate
-    // a load followed by a bswap?
     return true;
   }
+
+  bool haveDecreasingLoads(const vector<Idx*>& res) {
+    Idx* b = res.back();
+
+    // The requirement that shift offset == 0 lets us avoid re-shifting
+    // the loaded result. We assume the underlying hardware can support
+    // unaligned reads, so index_offset need not be zero.
+    if (b->shift_offset != 0) { return false; }
+    for (size_t i = 0; i < res.size(); ++i) {
+      if (     b->index_offset -
+          res[i]->index_offset != b->shift_offset + (res.size() - i - 1)) return false;
+      if (res[i]->shift_offset != b->base_size    * (res.size() - i - 1)) return false;
+    }
+    return true;
+  }
+
 
   virtual bool runOnBasicBlock(BasicBlock& BB) {
     std::set<Value*>  willBeDead;
@@ -313,6 +354,8 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
       if (collectOrResults(bo, 0, indexes, ors)) {
         if (indexes.size() <= 1) continue;
 
+        ++NumInspected;
+
         sort(indexes.begin(), indexes.end(), by_index_offset);
 
         if (0) {
@@ -335,7 +378,11 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
                      <<   indexes[i]->index_offset
                      << " shift offset: "
                      <<   indexes[i]->shift_offset << "\n";
-              errs() << " index base: " << *(indexes[i]->index_base) << "\n";
+              if (auto indexbase = indexes[i]->index_base) {
+                errs() << " index base: " << *indexbase << "\n";
+              } else {
+                errs() << " index base: <null>\n";
+              }
             }
           }
           errs() << ">>>>>>>>>>>>>\n";
@@ -351,21 +398,33 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
           continue;
         }
 
-        if (!haveIncreasingLoads(indexes)) {
-          //llvm::errs() << "skipping because they don't have increasing loads\n";
+        if (haveIncreasingLoads(indexes)) {
+          //llvm::errs() << "specializing " << indexes.size() << " loads into one\n";
+
+          spec(BB, false, indexes[0],
+               Type::getIntNTy(foster::fosterLLVMContext,
+                                    indexes[0]->base_size * indexes.size()), bo);
+
+          for (size_t i = 0; i < ors.size(); ++i) {
+            //errs() << "marking to-be-dead " << *ors[i] << "\n";
+            willBeDead.insert(ors[i]);
+          }
+        } else if (haveDecreasingLoads(indexes)) {
+          //llvm::errs() << "specializing " << indexes.size() << " loads into one\n";
+
+          spec(BB, true, indexes[0],
+               Type::getIntNTy(foster::fosterLLVMContext,
+                                    indexes[0]->base_size * indexes.size()), bo);
+
+          for (size_t i = 0; i < ors.size(); ++i) {
+            //errs() << "marking to-be-dead " << *ors[i] << "\n";
+            willBeDead.insert(ors[i]);
+          }
+        } else {
+          //llvm::errs() << "skipping because they don't have increasing or decreasing loads\n";
           continue;
         }
 
-        //llvm::errs() << "specializing " << indexes.size() << " loads into one\n";
-
-        spec(indexes[0],
-             Type::getIntNTy(foster::fosterLLVMContext,
-                                  indexes[0]->base_size * indexes.size()), bo);
-
-        for (size_t i = 0; i < ors.size(); ++i) {
-          //errs() << "marking to-be-dead " << *ors[i] << "\n";
-          willBeDead.insert(ors[i]);
-        }
       }
     }
     return false;
