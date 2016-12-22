@@ -91,7 +91,7 @@ convertHaskellToFoster hspath fosterpath = do
         H.Con qname -> expOfQName qname
         H.Lit (H.Int i)     -> E_IntAST noAnnot (show i)
         H.Lit (H.PrimInt i) -> E_IntAST noAnnot (show i)
-        H.Lit (H.String s)  -> E_StringAST noAnnot False (SS_Text $ T.pack s)
+        H.Lit (H.String s)  -> E_StringAST noAnnot (SS_Text NotRaw $ T.pack s)
 
         H.App e1 e2 -> app e1 [e2]
 
