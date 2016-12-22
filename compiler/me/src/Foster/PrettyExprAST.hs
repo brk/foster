@@ -157,8 +157,8 @@ prettyStmt e = case e of
     E_TyApp  annot e argtys -> withAnnot annot $ pretty e <> text ":[" <> hsep (punctuate comma (map pretty argtys)) <> text "]"
     E_TyCheck annot e ty    -> withAnnot annot $ parens (pretty e <+> text "as" <+> pretty ty)
     E_KillProcess annot exp -> withAnnot annot $ text "prim kill-entire-process" <+> pretty exp
-    E_StringAST   annot r (SS_Text  t) -> withAnnot annot $             wasRaw r <> dquotes (text $ concatMap formatTextChar $ T.unpack t)
-    E_StringAST   annot r (SS_Bytes b) -> withAnnot annot $ text "b" <> wasRaw r <> dquotes (text $ concatMap formatBytesWord8 $ BS.unpack b)
+    E_StringAST   annot (SS_Text  r t) -> withAnnot annot $             wasRaw r <> dquotes (text $ concatMap formatTextChar $ T.unpack t)
+    E_StringAST   annot (SS_Bytes r b) -> withAnnot annot $ text "b" <> wasRaw r <> dquotes (text $ concatMap formatBytesWord8 $ BS.unpack b)
     E_BoolAST     annot b   -> withAnnot annot $ text $ show b
     E_PrimAST     annot nm []   _ -> withAnnot annot $ text nm
     E_PrimAST     annot nm lits _ -> withAnnot annot $ text nm <+> pretty lits
@@ -224,8 +224,8 @@ withAnnot (ExprAnnot pre _ post) doc =
       <>
       hcat (map pretty post)
 
-wasRaw False = empty
-wasRaw True  = text "r"
+wasRaw NotRaw = empty
+wasRaw YesRaw = text "r"
 
 instance (Pretty ty, IsQuietPlaceholder ty) => Pretty (ArrayEntry (ExprAST ty)) where
   pretty (AE_Int _annot str) = pretty str

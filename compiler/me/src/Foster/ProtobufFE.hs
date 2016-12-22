@@ -566,8 +566,7 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
   -- TODO parse different escapes, etc.
   cb_parse_str quo chrs = case (quo, chrs) of
     (CBOR_Array [tok, _, _, CBOR_Array []], CBOR_Array [_, val, _, _]) ->
-      let (wasRaw, sourceString) = cb_parse_str' tok (T.unpack $ cborText val) in
-      E_StringAST (annotOfCbor chrs) wasRaw sourceString
+      E_StringAST (annotOfCbor chrs) $ cb_parse_str' tok (T.unpack $ cborText val)
     _ -> error $ "cb_parse_str failed: " ++ show cbor
 
   cb_parse_str' tok str =
@@ -618,10 +617,10 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
           in go orig []
      in
     case (isRaw, isBytes) of
-      (True, True)   -> (isRaw, SS_Bytes $ BS.pack strWithoutQuotes)
-      (True, False)  -> (isRaw, SS_Text  $  T.pack strWithoutQuotes)
-      (False, True)  -> (isRaw, SS_Bytes $ BS.pack $ parse isBytes strWithoutQuotes)
-      (False, False) -> (isRaw, SS_Text  $  T.pack $ parse isBytes strWithoutQuotes)
+      (True, True)   -> SS_Bytes YesRaw $ BS.pack strWithoutQuotes
+      (True, False)  -> SS_Text  YesRaw $  T.pack strWithoutQuotes
+      (False, True)  -> SS_Bytes NotRaw $ BS.pack $ parse isBytes strWithoutQuotes
+      (False, False) -> SS_Text  NotRaw $  T.pack $ parse isBytes strWithoutQuotes
 
   cb_parseInclude cbor = case cbor of
     CBOR_Array [tok, _, _cbr, CBOR_Array [CBOR_Array [_, ts_ident, _cbr_i, _],
@@ -672,7 +671,7 @@ parseCallPrim' primname tys args annot = do
                                                 E_KillProcess annot s
       ("inline-asm", _) ->
         case (tys, args) of
-          ([_], E_StringAST _ _ (SS_Text cnt) : E_StringAST _ _ (SS_Text cns) : E_BoolAST _ sideeffects : args' ) -> do
+          ([_], E_StringAST _ (SS_Text _ cnt) : E_StringAST _ (SS_Text _ cns) : E_BoolAST _ sideeffects : args' ) -> do
             let prim = (E_PrimAST annot "inline-asm"
                            [LitText cnt, LitText cns, LitBool sideeffects] tys)
             E_CallAST annot prim args'
@@ -808,7 +807,7 @@ attachFormatting expr = do
  a0 <- getPreFormatting (exprAnnot expr)
  let ana = getPostFormatting a0 -- "annotation action"
  case expr of
-   E_StringAST    _ r s      -> liftM3' E_StringAST   ana (return r) (return s)
+   E_StringAST    _ s        -> liftM2' E_StringAST   ana (return s)
    E_BoolAST      _ b        -> liftM2' E_BoolAST     ana (return b)
    E_IntAST       _ txt      -> liftM2' E_IntAST      ana (return txt)
    E_RatAST       _ txt      -> liftM2' E_RatAST      ana (return txt)

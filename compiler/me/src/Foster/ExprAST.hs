@@ -6,7 +6,7 @@
 
 module Foster.ExprAST(
   ExprAST, ModuleExpr, ExprSkel(..), exprAnnot
-, FnAST(..), moduleASTfunctions, SourceString(..)
+, FnAST(..), moduleASTfunctions, SourceString(..), StringRawFlag(..)
 , TermBinding(..)
 , termBindingName
 )
@@ -28,13 +28,14 @@ import qualified Data.ByteString as B
 
 type ExprAST ty = ExprSkel ExprAnnot ty
 type ModuleExpr ty = ModuleAST (ExprSkel ExprAnnot) ty
-data SourceString = SS_Text  T.Text
-                  | SS_Bytes B.ByteString
+data StringRawFlag = YesRaw | NotRaw deriving (Eq, Show)
+data SourceString = SS_Text  StringRawFlag T.Text
+                  | SS_Bytes StringRawFlag B.ByteString
                   deriving (Eq, Show)
 
 data ExprSkel annot ty =
         -- Literals
-          E_StringAST     annot Bool SourceString
+          E_StringAST     annot SourceString
         | E_BoolAST       annot Bool
         | E_IntAST        annot String
         | E_RatAST        annot String
@@ -85,15 +86,15 @@ termBindingName (TermBinding v _) = evarName v
 
 -- ||||||||||||||||||||||||| Instances ||||||||||||||||||||||||||{{{
 
-showSome (SS_Text  txt) = take 40 $ show txt
-showSome (SS_Bytes bs)  = take 40 $ show bs
+showSome (SS_Text  _raw txt) = take 40 $ show txt
+showSome (SS_Bytes _raw bs)  = take 40 $ show bs
 
 instance Structured (ExprAST t) where
     textOf e _width =
         let tryGetCallNameE (E_VarAST _rng (VarAST _mt v)) = T.unpack v
             tryGetCallNameE _                              = "" in
         case e of
-            E_StringAST _rng _r _s -> text $ "StringAST    " ++ (showSome _s)                  ++ (exprCmnts e)
+            E_StringAST _rng  _s   -> text $ "StringAST    " ++ (showSome _s)                  ++ (exprCmnts e)
             E_BoolAST   _rng  b    -> text $ "BoolAST      " ++ (show b)                       ++ (exprCmnts e)
             E_IntAST    _rng txt   -> text $ "IntAST       " ++ txt                            ++ (exprCmnts e)
             E_RatAST    _rng txt   -> text $ "RatAST       " ++ txt                            ++ (exprCmnts e)
@@ -154,7 +155,7 @@ exprCmnts e = showComments $ annotComments (exprAnnot e)
 
 exprAnnot :: ExprSkel annot ty -> annot
 exprAnnot e = case e of
-      E_StringAST     annot _ _   -> annot
+      E_StringAST     annot _     -> annot
       E_BoolAST       annot _     -> annot
       E_IntAST        annot _     -> annot
       E_RatAST        annot _     -> annot

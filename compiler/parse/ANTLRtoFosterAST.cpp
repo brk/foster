@@ -202,10 +202,10 @@ void display_pTree(pTree t, int nspaces) {
 
 std::string contentsOfDoubleQuotedStringWithoutQuotes(pTree t) {
   std::string s = textOf(t);
-  size_t offset = s[0] == 'r' ? 2 : 1;
-  ASSERT(s.size() > (offset + 1));
-  return std::string(s.begin() + offset, s.end() - 1);
-  EDiag() << "Unable to determine what kind of string this is!" << s << "\n" << show(rangeOf(t));
+  ASSERT(s.size() >= 2);
+  ASSERT(s[0] == '"');
+  ASSERT(s[1] != '"');
+  return std::string(s.begin() + 1, s.end() - 1);
 }
 
 void extractImports(pTree root_tree,
