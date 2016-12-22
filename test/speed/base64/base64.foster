@@ -1,0 +1,26 @@
+snafuinclude Text "text";
+snafuinclude Prelude "prelude";
+snafuinclude Base64 "base64";
+
+// Foster version of
+// https://github.com/kostya/benchmarks/blob/master/base64/test.c
+
+main = {
+  str = newArrayReplicate 9`999`999  ('a' as Int8);
+
+  t0 = foster_gettime_microsecs !;
+  sr = prim ref 0;
+  sh = foster_subheap_create !;
+  enumRange32 0 100 { i =>
+    foster_subheap_collect sh;
+
+    s2 = noinline_llvm_base64-encode-bare4 str;
+    (sr^ +Int64 arrayLength s2) >^ sr;
+  };
+  t1 = foster_gettime_microsecs !;
+  s = foster_gettime_elapsed_secs t0 t1;
+  print_text_bare "encode: ";
+  print_i64_bare sr^;
+  print_text_bare ", ";
+  print_text (foster_fmttime_secs s);
+};
