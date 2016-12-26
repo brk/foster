@@ -1367,17 +1367,17 @@ The corresponding AST to be matched is
     return true;
   }
 
-  // Recognize calls of the form memset(ARR, VAL, sizeof(T) * SIZE);
-  // and emit                 ptrMemset ARR VAL SIZE
-  bool tryHandleCallMemset(const CallExpr* ce) {
-    if (!isDeclNamed("memset", ce->getCallee()->IgnoreParenImpCasts())) return false;
+  // Recognize calls of the form memcpy(A1, A2, sizeof(T) * SIZE);
+  // and emit                 ptrMemcpy A1  A2 SIZE
+  bool tryHandleCallMemop_(const CallExpr* ce, const std::string& variant) {
+    if (!isDeclNamed("mem" + variant, ce->getCallee()->IgnoreParenImpCasts())) return false;
     if (ce->getNumArgs() != 3) return false;
     if (const BinaryOperator* binop = dyn_cast<BinaryOperator>(ce->getArg(2)->IgnoreParenImpCasts())) {
       if (binop->getOpcodeStr() != "*") return false;
       const Type* sztyL = bindSizeofType(binop->getLHS());
       const Type* sztyR = bindSizeofType(binop->getRHS());
       if (sztyL || sztyR) {
-        llvm::outs() << "(ptrMemset ";
+        llvm::outs() << "(ptrMem" << variant << " ";
         visitStmt(ce->getArg(0));
         llvm::outs() << " ";
         visitStmt(ce->getArg(1));
@@ -1387,7 +1387,15 @@ The corresponding AST to be matched is
         return true;
       }
     }
+    // TODO handle forms with no sizeof multiplication, for byte arrays and such.
     return false;
+  }
+
+  // Recognize calls of the form memset(ARR, VAL, sizeof(T) * SIZE);
+  // and emit                 ptrMemset ARR VAL SIZE
+  bool tryHandleCallMemop(const CallExpr* ce) {
+    return tryHandleCallMemop_(ce, "cpy")
+        || tryHandleCallMemop_(ce, "set");
   }
 
   // Recognize calls of the form malloc(sizeof(T) * EXPR);
@@ -1952,7 +1960,7 @@ The corresponding AST to be matched is
     } else if (const CallExpr* ce = dyn_cast<CallExpr>(stmt)) {
       if (tryHandleCallMalloc(ce, nullptr) || tryHandleCallFree(ce)) {
         // done
-      } else if (tryHandleCallPrintf(ce) || tryHandleCallMemset(ce)) {
+      } else if (tryHandleCallPrintf(ce) || tryHandleCallMemop(ce)) {
         // done
       } else {
         if (ctx == BooleanContext) { llvm::outs() << "("; }
