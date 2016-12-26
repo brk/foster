@@ -251,7 +251,8 @@ std::string maybeNonUppercaseTyName(const clang::Type* ty, std::string defaultNa
     return name;
   }
 
-  if (const DecayedType* dty = dyn_cast<DecayedType>(ty)) { return "/*DecayedType*/ " + tyName(dty->getDecayedType().getTypePtr()); }
+  // If we were going to handle fixed-size array types, this is probably where we'd do it.
+  if (const DecayedType* dty = dyn_cast<DecayedType>(ty)) { return tyName(dty->getDecayedType().getTypePtr()); }
 
   // TODO handle constantarraytype
 
@@ -1713,7 +1714,7 @@ The corresponding AST to be matched is
 
         llvm::outs() << emitVarName(vd) << " = ";
         if (sz > 0 && sz <= 16) {
-          llvm::outs() << "(strLit (prim mach-array-literal";
+          llvm::outs() << "(strLit:[" << tyName(cat->getElementType().getTypePtr()) << "] (prim mach-array-literal";
           for (uint64_t i = 0; i < sz; ++i) {
             llvm::outs() << " " << zeroval;
           }
@@ -1974,10 +1975,28 @@ The corresponding AST to be matched is
         }
         llvm::outs() << ")";
       } else {
-        llvm::outs() << "(strLit (prim mach-array-literal";
+        std::string eltTyName = "";
+        if (ile->getNumInits() > 0) { eltTyName = tyName(exprTy(ile->getInit(0))); }
+        else if (ile->hasArrayFiller()) { eltTyName = tyName(exprTy(ile->getArrayFiller())); }
+        else { // TODO constant array element type?
+        }
+
+        llvm::outs() << "(strLit:[" << eltTyName << "] (prim mach-array-literal";
         for (unsigned i = 0; i < ile->getNumInits(); ++i) {
           llvm::outs() << " ";
           visitStmt(ile->getInit(i));
+        }
+        // Explicitly add any array values that Clang left implicit/uninitialized.
+        // TODO for large arrays that are incompletely initialized, we should
+        // emit code to set individual slots and rely on the runtime's
+        // zero-initialization for the rest.
+        const Type* ty = ile->getType().getTypePtr();
+        if (auto cat = dyn_cast<ConstantArrayType>(ty)) {
+          uint64_t sz = cat->getSize().getZExtValue();
+          auto zeroval = zeroValue(cat->getElementType().getTypePtr());
+          for (unsigned i = ile->getNumInits(); i < sz; ++i) {
+            llvm::outs() << " " << zeroval;
+          }
         }
         llvm::outs() << "))";
       }
