@@ -67,7 +67,8 @@ class IsQuietPlaceholder ty where
 instance IsQuietPlaceholder TypeP where
   isQuietPlaceholder t =
     case t of
-      MetaPlaceholder "" -> True
+      MetaPlaceholder ""          -> True
+      MetaPlaceholder ".inferred" -> True
       _ -> False
 
 lineOrSpace = line              -- line, unless undone by group, then space
@@ -92,11 +93,11 @@ instance (Pretty ty, IsQuietPlaceholder ty) => Pretty (FnAST ty) where
     where args []  = empty
           args frm = hang 1 (empty <+> vsep (map (\v -> prettyFnFormalTy v <+> text "=>") frm))
 
-          prettyFnFormal       (TypedId _t v) = text (T.unpack $ identPrefix v)
-          prettyFnFormalTy tid@(TypedId  t v) =
-            if isQuietPlaceholder t
+          prettyFnFormal (TypedId _t v) = text (T.unpack $ identPrefix v)
+          prettyFnFormalTy tid =
+            if isQuietPlaceholder (tidType tid)
              then prettyFnFormal tid
-             else prettyFnFormal tid <+> text ":" <+> pretty t
+             else prettyFnFormal tid <+> text ":" <+> pretty (tidType tid)
 
 prettyTyFormals [] = empty
 prettyTyFormals tyfs = empty <+> text "forall" <+> hsep (map prettyTyFormal tyfs) <+> text ","
