@@ -27,11 +27,11 @@ import Foster.Avails
 
 import Debug.Trace(trace)
 
-import Data.Maybe(fromMaybe, fromJust)
+import Data.Maybe(fromMaybe)
 import Data.Map(Map)
 import qualified Data.Set as Set
 import qualified Data.Map as Map(lookup, empty, elems, findWithDefault, insert,
-           keys, assocs, delete, fromList, keysSet, alter, map)
+           keys, assocs, delete, fromList, keysSet, alter)
 import qualified Data.Text as T(pack)
 import Control.Monad(when, liftM)
 import Control.Monad.IO.Class(liftIO)
@@ -667,8 +667,10 @@ availsXfer mayGCmap domInfo = mkFTransfer3 go go
     dominanceXfer lastNode@(CCLast label _) avails =
       case dominatedBy domInfo label of
         Just labels -> let list = [ (l, go lastNode avails) | l <- labels ] in
-                        trace ("domXFER: domSucc for " ++ show label ++ "\nis " ++ show labels ++ "\nvs regular " ++ show (successors lastNode)) $ mkFactBase availsLattice list
-        Nothing -> trace ("domXFER: no entry for " ++ show label ++ " in " ++ show domInfo) noFacts
+                        --trace ("domXFER: domSucc for " ++ show label ++ "\nis " ++ show labels ++ "\nvs regular " ++ show (successors lastNode)) $
+                          mkFactBase availsLattice list
+        Nothing -> --trace ("domXFER: no entry for " ++ show label ++ " in " ++ show domInfo)
+                    noFacts
 
     makeLoadAvail var root f = f { rootLoads = insertAvailMap root var (rootLoads f) }
 
@@ -785,8 +787,8 @@ runAvails bbgp rootsLiveAtGCPoints mayGCmap doReuseRootSlots = do
         let ((_,blab), _) = bbgpEntry bbgp
 
         (_ , domfacts, _) <- analyzeAndRewriteFwd
-                                (debugFwdTransfers trace showing (\_ _ -> True) (debugFwdJoins trace (\_ -> True) domPass))
-                                --domPass
+                                --(debugFwdTransfers trace showing (\_ _ -> True) (debugFwdJoins trace (\_ -> True) domPass))
+                                domPass
                                 (JustC [bbgpEntry bbgp]) (bbgpBody bbgp) (mapSingleton blab domEntry)
 
         -- NOTE! The bottom element for the loaded & initialized roots is
@@ -795,10 +797,14 @@ runAvails bbgp rootsLiveAtGCPoints mayGCmap doReuseRootSlots = do
         --       go back to the entry, we'll discard loads/inits from the body.
         --       See the commentary on AvailSet and AvailMap.
         let init = Avails (UniverseMinus Set.empty) emptyAvailMap (Avail Set.empty) emptyAvailMap emptyAvailMap
-        (body' , _, _) <- analyzeAndRewriteFwd (fwd (trace ("domfacts: " ++ show domfacts ++ "\nwith domInfo: " ++ show (computeDomInfo domfacts :: LabelMap [Label]) ++ "\n for\n" ++ show (pretty bbgp)) domfacts)) (JustC [bbgpEntry bbgp])
+        (body' , _, _) <- analyzeAndRewriteFwd (fwd (domfacts)) (JustC [bbgpEntry bbgp])
                                                               (bbgpBody bbgp)
                            (mapSingleton blab init)
         return bbgp { bbgpBody = body' }
+
+    --tracedomfacts domfacts = trace ("domfacts: " ++ show domfacts ++ "\nwith domInfo: "
+    --                                    ++ show (computeDomInfo domfacts :: LabelMap [Label])
+    --                                    ++ "\n for\n" ++ show (pretty bbgp)) domfacts
 
     --__fwd = debugFwdTransfers trace showing (\_ _ -> True) fwd
     -- _fwd = debugFwdJoins trace (\_ -> True) fwd
@@ -808,8 +814,8 @@ runAvails bbgp rootsLiveAtGCPoints mayGCmap doReuseRootSlots = do
                   , fp_rewrite  = availsRewrite rootsLiveAtGCPoints doReuseRootSlots
                   }
 
-showing :: Insn' e x -> String
-showing insn = show (pretty insn)
+--showing :: Insn' e x -> String
+--showing insn = show (pretty insn)
 
 availsLattice :: DataflowLattice Avails
 availsLattice = DataflowLattice
