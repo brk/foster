@@ -749,7 +749,7 @@ public:
           // doesn't respect variable scoping rules.
         }
       }
-      visitStmt(d);
+      visitStmt(d, StmtContext);
       llvm::outs() << ";\n";
     }
 
@@ -785,7 +785,7 @@ public:
             } else {
               // Non-declaration statement: visit it regularly.
               currStmt = s;
-              visitStmt(s);
+              visitStmt(s, StmtContext);
               currStmt = nullptr;
               llvm::outs() << ";\n";
             }
@@ -814,7 +814,7 @@ public:
         // SwitchStmt terminator
         llvm::outs() << "/*line 617*/ ";
         llvm::outs() << "case ";
-        visitStmt(cb->getTerminatorCondition());
+        visitStmt(cb->getTerminatorCondition(), StmtContext);
         llvm::outs() << "\n";
 
         // Walk through the successor blocks.
@@ -892,7 +892,7 @@ public:
     visitStmt(ss->getCond());
     llvm::outs() << "\n";
     // Assuming the body is a CompoundStmt of CaseStmts...
-    visitStmt(ss->getBody());
+    visitStmt(ss->getBody(), StmtContext);
 
     if (ss->isAllEnumCasesCovered()) {
       llvm::outs() << "// all enum cases covered\n";
@@ -1367,27 +1367,58 @@ The corresponding AST to be matched is
     return true;
   }
 
+  // Given an expression presumed to be an element count (in bytes),
+  // as used in memset/memcmp/etc, try to extract the underlying
+  // number of elements (rather than bytes).
+  //
+  // Given e = (sizeof X) * C, return C
+  // Otherwise, return e, which is (presumably) either a non-sizeof constant,
+  // or a sizeof expr used as a count of byte-sized elements.
+  const Expr* extractElementCount(const Expr* e) {
+    if (const BinaryOperator* binop = dyn_cast<BinaryOperator>(e)) {
+      if (binop->getOpcodeStr() != "*") return nullptr;
+
+      const Type* sztyL = bindSizeofType(binop->getLHS());
+      const Type* sztyR = bindSizeofType(binop->getRHS());
+      if (sztyL && (!sztyR)) return binop->getRHS();
+      if ((!sztyL) && sztyR) return binop->getLHS();
+      return nullptr;
+    }
+    return e;
+  }
+
+  const Type* getElementType(const Type* ptrOrArrayType) {
+    if (auto pty = dyn_cast<clang::PointerType>(ptrOrArrayType)) {
+      return pty->getPointeeType().getTypePtr();
+    }
+    if (auto pty = dyn_cast<clang::ArrayType>(ptrOrArrayType)) {
+      return pty->getElementType().getTypePtr();
+    }
+    return ptrOrArrayType;
+  }
+
   // Recognize calls of the form memcpy(A1, A2, sizeof(T) * SIZE);
   // and emit                 ptrMemcpy A1  A2 SIZE
   bool tryHandleCallMemop_(const CallExpr* ce, const std::string& variant) {
     if (!isDeclNamed("mem" + variant, ce->getCallee()->IgnoreParenImpCasts())) return false;
     if (ce->getNumArgs() != 3) return false;
-    if (const BinaryOperator* binop = dyn_cast<BinaryOperator>(ce->getArg(2)->IgnoreParenImpCasts())) {
-      if (binop->getOpcodeStr() != "*") return false;
-      const Type* sztyL = bindSizeofType(binop->getLHS());
-      const Type* sztyR = bindSizeofType(binop->getRHS());
-      if (sztyL || sztyR) {
-        llvm::outs() << "(ptrMem" << variant << " ";
-        visitStmt(ce->getArg(0));
-        llvm::outs() << " ";
-        visitStmt(ce->getArg(1));
-        llvm::outs() << " ";
-        visitStmt(sztyL ? binop->getRHS() :  binop->getLHS());
-        llvm::outs() << ")";
-        return true;
+
+    if (auto count = extractElementCount(ce->getArg(2)->IgnoreParenImpCasts())) {
+      llvm::outs() << "(ptrMem" << variant << " ";
+      visitStmt(ce->getArg(0));
+      llvm::outs() << " ";
+      visitStmt(ce->getArg(1));
+      llvm::outs() << " ";
+      visitStmt(count);
+
+      if (variant == "cmp") {
+        auto ty = getElementType(exprTy(ce->getArg(0)->IgnoreParenImpCasts()));
+        std::string suffix = (ty->hasSignedIntegerRepresentation()) ? "S" : "U";
+        llvm::outs() << " " << mkFosterBinop("cmp-" + suffix, ty);
       }
+      llvm::outs() << ")";
+      return true;
     }
-    // TODO handle forms with no sizeof multiplication, for byte arrays and such.
     return false;
   }
 
@@ -1395,7 +1426,8 @@ The corresponding AST to be matched is
   // and emit                 ptrMemset ARR VAL SIZE
   bool tryHandleCallMemop(const CallExpr* ce) {
     return tryHandleCallMemop_(ce, "cpy")
-        || tryHandleCallMemop_(ce, "set");
+        || tryHandleCallMemop_(ce, "set")
+        || tryHandleCallMemop_(ce, "cmp");
   }
 
   // Recognize calls of the form malloc(sizeof(T) * EXPR);
@@ -1678,7 +1710,7 @@ The corresponding AST to be matched is
         if (const CaseStmt* css = dyn_cast<CaseStmt>(ss)) {
           visitCaseStmt(css, false);
         } else {
-          visitStmt(ss);
+          visitStmt(ss, StmtContext);
         }
       }
   }
@@ -1824,7 +1856,7 @@ The corresponding AST to be matched is
       visitCaseStmt(cs, true);
     } else if (const DefaultStmt* ds = dyn_cast<DefaultStmt>(stmt)) {
       llvm::outs() << "  of _ ->\n";
-      visitStmt(ds->getSubStmt());
+      visitStmt(ds->getSubStmt(), StmtContext);
       if (isa<BreakStmt>(ds->getSubStmt())) {
         llvm::outs() << "(breakstmt = (); breakstmt)\n";
       }
@@ -1837,17 +1869,17 @@ The corresponding AST to be matched is
     } else if (const LabelStmt* ls = dyn_cast<LabelStmt>(stmt)) {
       llvm::outs() << "// TODO(c2f): label " << ls->getName() << ";\n";
       llvm::outs() << "(labelstmt = (); retstmt)";
-      visitStmt(ls->getSubStmt());
+      visitStmt(ls->getSubStmt(), ctx);
     } else if (const ReturnStmt* rs = dyn_cast<ReturnStmt>(stmt)) {
       if (rs->getRetValue()) {
-        visitStmt(rs->getRetValue());
+        visitStmt(rs->getRetValue(), ctx);
       } else {
         llvm::outs() << "(retstmt = (); retstmt)";
       }
     } else if (const MemberExpr* me = dyn_cast<MemberExpr>(stmt)) {
       const Expr* base = nullptr;
       llvm::outs() << "(" + fieldAccessorName(me, base) + " ";
-      visitStmt(base);
+      visitStmt(base, ctx);
       llvm::outs() << ")";
     } else if (const ArraySubscriptExpr* ase = dyn_cast<ArraySubscriptExpr>(stmt)) {
       emitPeek(ase->getBase(), ase->getIdx());
@@ -1958,15 +1990,17 @@ The corresponding AST to be matched is
         llvm::outs() << getText(R, *stmt) << "\n";
       }
     } else if (const CallExpr* ce = dyn_cast<CallExpr>(stmt)) {
+      if (ctx == BooleanContext) { llvm::outs() << "("; }
+
       if (tryHandleCallMalloc(ce, nullptr) || tryHandleCallFree(ce)) {
         // done
       } else if (tryHandleCallPrintf(ce) || tryHandleCallMemop(ce)) {
         // done
       } else {
-        if (ctx == BooleanContext) { llvm::outs() << "("; }
         handleCall(ce);
-        if (ctx == BooleanContext) { llvm::outs() << " " << mkFosterBinop("!=", exprTy(ce)) << " 0)"; }
       }
+
+      if (ctx == BooleanContext) { llvm::outs() << " " << mkFosterBinop("!=", exprTy(ce)) << " 0)"; }
     } else if (const ImplicitValueInitExpr* ivie = dyn_cast<ImplicitValueInitExpr>(stmt)) {
       llvm::outs() << zeroValue(ivie->getType().getTypePtr());
     } else if (const InitListExpr* ile = dyn_cast<InitListExpr>(stmt)) {
@@ -2051,7 +2085,7 @@ The corresponding AST to be matched is
         if (const VarDecl* vd = dyn_cast<VarDecl>(d)) {
           visitVarDecl(vd);
         } else {
-          visitStmt(d->getBody());
+          visitStmt(d->getBody(), StmtContext);
         }
         if (d != last) llvm::outs() << ";\n";
       }
