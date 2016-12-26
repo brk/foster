@@ -71,6 +71,11 @@ ptrMinus = { ptr => n =>
   end
 };
 
+ptrMemset :: forall (a:Type) { Ptr a => a => Int32 => () };
+ptrMemset = { ptr => v => n =>
+  enumRange32 0 n { i => ptrSetIndex ptr i v };
+};
+
 
 incr_Ptr_Int8_     = { r : Ref (Ptr Int8) => v = (r^ `ptrPlus` 1); v >^ r; v };
 decr_Ptr_Int8_     = { r : Ref (Ptr Int8) => v = (r^ `ptrMinus` 1); v >^ r; v };

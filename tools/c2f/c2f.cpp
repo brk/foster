@@ -1360,8 +1360,31 @@ The corresponding AST to be matched is
     return true;
   }
 
+  // Recognize calls of the form memset(ARR, VAL, sizeof(T) * SIZE);
+  // and emit                 ptrMemset ARR VAL SIZE
+  bool tryHandleCallMemset(const CallExpr* ce) {
+    if (!isDeclNamed("memset", ce->getCallee()->IgnoreParenImpCasts())) return false;
+    if (ce->getNumArgs() != 3) return false;
+    if (const BinaryOperator* binop = dyn_cast<BinaryOperator>(ce->getArg(2)->IgnoreParenImpCasts())) {
+      if (binop->getOpcodeStr() != "*") return false;
+      const Type* sztyL = bindSizeofType(binop->getLHS());
+      const Type* sztyR = bindSizeofType(binop->getRHS());
+      if (sztyL || sztyR) {
+        llvm::outs() << "(ptrMemset ";
+        visitStmt(ce->getArg(0));
+        llvm::outs() << " ";
+        visitStmt(ce->getArg(1));
+        llvm::outs() << " ";
+        visitStmt(sztyL ? binop->getRHS() :  binop->getLHS());
+        llvm::outs() << ")";
+        return true;
+      }
+    }
+    return false;
+  }
+
   // Recognize calls of the form malloc(sizeof(T) * EXPR);
-  // and emit                   (allocDArray:[T] EXPR)
+  // and emit               strLit (allocDArray:[T] EXPR)
   bool tryHandleCallMalloc(const CallExpr* ce, const Type* result_typ) {
     if (!isDeclNamed("malloc", ce->getCallee()->IgnoreParenImpCasts())) return false;
     if (ce->getNumArgs() != 1) return false;
@@ -1376,9 +1399,9 @@ The corresponding AST to be matched is
         if (result_typ && szty != result_typ) {
           llvm::outs() << "// WARNING: conflicting types for this malloc... (" << tyName(result_typ) << ")\n";
         }
-        llvm::outs() << "(allocDArray:[" << tyName(szty) << "] ";
+        llvm::outs() << "(strLit (allocDArray:[" << tyName(szty) << "] ";
         visitStmt(sztyL ? binop->getRHS() :  binop->getLHS());
-        llvm::outs() << ")";
+        llvm::outs() << "))";
         return true;
       }
     }
@@ -1921,7 +1944,7 @@ The corresponding AST to be matched is
     } else if (const CallExpr* ce = dyn_cast<CallExpr>(stmt)) {
       if (tryHandleCallMalloc(ce, nullptr) || tryHandleCallFree(ce)) {
         // done
-      } else if (tryHandleCallPrintf(ce)) {
+      } else if (tryHandleCallPrintf(ce) || tryHandleCallMemset(ce)) {
         // done
       } else {
         if (ctx == BooleanContext) { llvm::outs() << "("; }
