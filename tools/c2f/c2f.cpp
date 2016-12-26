@@ -920,7 +920,8 @@ public:
       }
   }
 
-  void emitPokeIdx(const ArraySubscriptExpr* ase, const Expr* val, ContextKind ctx) {
+  template <typename Lam>
+  void emitPokeIdx(const ArraySubscriptExpr* ase, Lam& valEmitter, ContextKind ctx) {
       auto base = ase->getBase();
       auto idx  = ase->getIdx();
       std::string tynm = tyName(exprTy(base));
@@ -930,7 +931,7 @@ public:
         llvm::outs() << " ";
         visitStmt(idx);
         llvm::outs() << " ";
-        visitStmt(val);
+        valEmitter();
 
         if (ctx == ExprContext) {
           llvm::outs() << "; "; emitPeek(base, idx);
@@ -939,7 +940,7 @@ public:
         llvm::outs() << ");";
       } else {
         llvm::outs() << "((";
-        visitStmt(val);
+        valEmitter();
         llvm::outs() << " >^ (";
         visitStmt(base);
         llvm::outs() << "[";
@@ -956,16 +957,17 @@ public:
       }
   }
 
-  void emitPoke(const Expr* ptr, const Expr* val, ContextKind ctx) {
+  template <typename Lam>
+  void emitPoke_(const Expr* ptr, Lam valEmitter, ContextKind ctx) {
       std::string tynm = tyName(exprTy(ptr));
 
       if (auto ase = dyn_cast<ArraySubscriptExpr>(ptr)) {
-        emitPokeIdx(ase, val, ctx);
+        emitPokeIdx(ase, valEmitter, ctx);
       } else if (startswith(tynm, "(Ptr")) {
         llvm::outs() << "(ptrSet (";
         visitStmt(ptr);
         llvm::outs() << ") (";
-        visitStmt(val);
+        valEmitter();
         llvm::outs() << ")";
         if (ctx == ExprContext) {
           llvm::outs() << "; "; visitStmt(ptr);
@@ -976,7 +978,7 @@ public:
         // If we have something like (c = (b = a)),
         // translate it to (a >^ b; b) >^ c
         llvm::outs() << "((";
-        visitStmt(val);
+        valEmitter();
         llvm::outs() << ") >^ (";
         visitStmt(ptr, AssignmentTarget);
         llvm::outs() << ")";
@@ -988,6 +990,10 @@ public:
         }
         llvm::outs() << ");";
       }
+  }
+
+  void emitPoke(const Expr* ptr, const Expr* val, ContextKind ctx) {
+    emitPoke_(ptr, [=]() { visitStmt(val); }, ctx);
   }
 
   void emitPoke(const VarDecl* ptr, const Expr* val) {
@@ -1529,13 +1535,14 @@ The corresponding AST to be matched is
       llvm::outs() << ")";
       llvm::outs() << ")";
     } else {
-      // translate v OP= x;  to  (v^ OP x) >^ v;
-      llvm::outs() << "(";
-      visitStmt(binop->getLHS(), ExprContext);
-      llvm::outs() << " " << tgt << " ";
-      visitStmt(binop->getRHS(), ExprContext);
-      llvm::outs() << ") >^ ";
-      visitStmt(binop->getLHS(), AssignmentTarget);
+      // translate v OP= x;  to  (v^ OP x) >^ v
+      emitPoke_(binop->getLHS(), [=]() {
+        llvm::outs() << "(";
+        visitStmt(binop->getLHS(), ExprContext);
+        llvm::outs() << " " << tgt << " ";
+        visitStmt(binop->getRHS(), ExprContext);
+        llvm::outs() << ")";
+      }, ExprContext);
     }
   }
 
