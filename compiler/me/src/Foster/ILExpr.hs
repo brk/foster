@@ -327,12 +327,12 @@ collectMayGCConstraints_Proc proc m = foldGraphNodes go (bbgpBody $ procBlocks p
         go (CCGCKill       {}   ) m = m
         go (CCTupleStore   {}   ) m = m
         go (CCRebindId     {}   ) m = m
-        go (CCLast (CCCont {} ) ) m = m
-        go (CCLast (CCCase {} ) ) m = m
+        go (CCLast _ (CCCont {} ) ) m = m
+        go (CCLast _ (CCCase {} ) ) m = m
 
         go (CCLetFuns  _ _clos) _ = error $ "collecMayGCConstraints saw CCLetClosures!"
 
-        go (CCLast (CCCall _ _ _ v _ )) m = withGC m $ unknownMeansMayGC (Map.findWithDefault (GCUnknown "cmGC") (tidIdent v) m)
+        go (CCLast _ (CCCall _ _ _ v _ )) m = withGC m $ unknownMeansMayGC (Map.findWithDefault (GCUnknown "cmGC") (tidIdent v) m)
         go (CCLetVal x (ILBitcast t v)) m = case Map.lookup (tidIdent v) m of
                                                Nothing  -> withGC m $ unknownMeansMayGC (canGC m (ILBitcast t v))
                                                Just mgc -> Map.insert x mgc m
@@ -358,7 +358,7 @@ computeNumPredecessors elab blocks =
 
 withGraphBlocks :: BasicBlockGraph' -> ( [ Block' ] -> a ) -> a
 withGraphBlocks bbgp f =
-   let jumpTo bg = case bbgpEntry bg of (bid, _) -> CCLast $ CCCont bid [] in
+   let jumpTo bg = case bbgpEntry bg of (bid, _) -> CCLast (error "cclast entry block?") $ CCCont bid [] in
    f $ preorder_dfs $ mkLast (jumpTo bbgp) |*><*| bbgpBody bbgp
 
 flattenGraph :: BasicBlockGraph' -> MayGCMap -> Bool -> ( [ILBlock] , NumPredsMap )
@@ -394,10 +394,10 @@ flattenGraph bbgp mayGCmap assumeNonMovingGC = -- clean up any rebindings from g
      frs (CCLabel be) = be
 
      fin :: Insn' O C -> ([ILMiddle], ILLast)
-     fin (CCLast (CCCont k vs)   ) = ([], cont k vs)
-     fin (CCLast (CCCase v bs mb)) = ([], ILCase v bs mb)
+     fin (CCLast _ (CCCont k vs)   ) = ([], cont k vs)
+     fin (CCLast _ (CCCase v bs mb)) = ([], ILCase v bs mb)
      -- [[f k vs]] ==> let x = f vs in [[k x]]
-     fin (CCLast (CCCall k t id v vs)) =
+     fin (CCLast _ (CCCall k t id v vs)) =
         let maygc = Map.findWithDefault MayGC (tidIdent v) mayGCmap in
         ([ILLetVal id (ILCall t v vs) maygc], cont k [TypedId t id])
 
@@ -443,7 +443,7 @@ mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
        case (yargs, xl) of
          -- Given a call next to its single-predecessor target,
          -- glue together the blocks with a let-binding in between.
-         ([yarg], CCLast (CCCall cb t _id v vs)) | cb == yb ->
+         ([yarg], CCLast _ (CCCall cb t _id v vs)) | cb == yb ->
              if Map.lookup yb numpreds == Just 1
                  then Just ((xem `blockSnoc`
                               (CCLetVal (tidIdent yarg) (ILCall t v vs)))
@@ -454,7 +454,7 @@ mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
          -- and assuming that the args match up properly,
          -- glue the blocks together with nothing in between,
          -- and an extended substitution for the remaining blocks.
-         (_, CCLast (CCCont cb   avs))          | cb == yb ->
+         (_, CCLast _ (CCCont cb   avs))          | cb == yb ->
              if Map.lookup yb numpreds == Just 1
                  then case (length yargs == length avs, yb) of
                         (True, _) ->
@@ -520,10 +520,10 @@ mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
           (CCLetVal id letable ) -> CCLetVal id (substVarsInLetable s letable)
           (CCLetFuns ids fns   ) -> CCLetFuns ids $ map (substForInClo s) fns
           (CCRebindId {}       ) -> error $ "Unexpected rebinding!"
-          (CCLast    cclast    ) -> case cclast of
-              CCCont b vs          -> CCLast (CCCont b (map s vs))
-              CCCall b t id v vs   -> CCLast (CCCall b t id (s v) (map s vs))
-              CCCase v cs mb       -> CCLast (CCCase (s v) cs mb)
+          (CCLast l  cclast    ) -> case cclast of
+              CCCont b vs          -> CCLast l (CCCont b (map s vs))
+              CCCall b t id v vs   -> CCLast l (CCCall b t id (s v) (map s vs))
+              CCCase v cs mb       -> CCLast l (CCCase (s v) cs mb)
 
      substForInClo :: VarSubstFor Closure
      substForInClo s clo =
@@ -685,7 +685,7 @@ liveness = mkBTransfer go
     go (CCGCKill Disabled   _vs) s = s
     go (CCTupleStore vs v _) s = insert s (v:vs)
     go (CCRebindId   _ v1 v2) s = insert (without s [tidIdent v1]) [v2]
-    go node@(CCLast last) fdb =
+    go node@(CCLast _ last) fdb =
           let s = Set.unions (map (fact fdb) (successors node)) in
           case last of
             (CCCont _         vs) -> insert s vs

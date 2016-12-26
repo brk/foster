@@ -82,7 +82,7 @@ data Insn' e x where
         CCGCKill     :: Enabled -> Set      LLRootVar      -> Insn' O O
         CCTupleStore :: [LLVar] -> LLVar -> AllocMemRegion -> Insn' O O
         CCRebindId   :: Doc     -> LLVar -> LLVar          -> Insn' O O
-        CCLast       :: CCLast                             -> Insn' O C
+        CCLast       :: BlockId ->          CCLast -> Insn' O C -- first arg is block entry label id
 
 type RootVar = LLVar
 
@@ -223,23 +223,22 @@ llb (s,vs) = (s, map llv vs)
 -- starting from the graph's entry block.
 closureConvertBlocks :: BasicBlockGraph -> ILM BasicBlockGraph'
 closureConvertBlocks bbg = do
-   g' <- rebuildGraphM (case bbgEntry bbg of (bid, _) -> bid) (bbgBody bbg)
-                                                                       transform
+   (g', _) <- case bbgEntry bbg of (bid, _) -> rebuildGraphAccM bid (bbgBody bbg) bid transform
    return BasicBlockGraph' {
                  bbgpEntry = llb (bbgEntry bbg),
                  bbgpRetK  =      bbgRetK  bbg,
                  bbgpBody  = g'
           }
   where
-      transform :: Insn e x -> ILM (Graph Insn' e x)
-      transform insn = case insn of
-        ILabel l                -> do return $ mkFirst $ CCLabel (llb l)
-        ILetVal id val          -> do return $ mkMiddle $ CCLetVal id (fmap monoToLL val)
+      transform :: BlockId -> Insn e x -> ILM (Graph Insn' e x, BlockId)
+      transform ent insn = case insn of
+        ILabel l                -> do return (mkFirst $ CCLabel (llb l), blockId l)
+        ILetVal id val          -> do return (mkMiddle $ CCLetVal id (fmap monoToLL val), ent)
         ILetFuns ids fns        -> do closures <- closureConvertLetFuns ids fns
-                                      return $ mkMiddle $ CCLetFuns ids closures
-        ILast (CFCont b vs)     -> do return $ mkLast $ CCLast (CCCont b (map llv vs))
+                                      return (mkMiddle $ CCLetFuns ids closures, ent)
+        ILast (CFCont b vs)     -> do return (mkLast $ CCLast ent (CCCont b (map llv vs)), ent)
         ILast (CFCall b t v vs) -> do id <- ilmFresh (T.pack ".call")
-                                      return $ mkLast $ CCLast (CCCall b (monoToLL t) id (llv v) (map llv vs))
+                                      return (mkLast $ CCLast ent (CCCall b (monoToLL t) id (llv v) (map llv vs)), ent)
         ILast (CFCase a arms) -> do
            allSigs <- gets ilmCtors
            let dt = compilePatterns arms allSigs
@@ -248,7 +247,7 @@ closureConvertBlocks bbg = do
                             , Set.notMember bid usedBlocks]
            -- TODO print warning if any unused patterns
            (BlockFin blocks id _) <- compileDecisionTree a dt
-           return $ (mkLast $ CCLast $ CCCont id []) |*><*| blocks
+           return ((mkLast $ CCLast ent $ CCCont id []) |*><*| blocks, ent)
           where
             -- The decision tree we get from pattern-match compilation may
             -- contain only a subset of the pattern branches.
@@ -319,7 +318,7 @@ compileDecisionTree scrutinee (DT_Leaf armid varoccs) = do
         case Map.lookup armid wrappers of
            Just id -> do return $ BlockFin emptyClosedGraph id (DTO_Leaf armid varoccs)
            Nothing -> do let binders = map (emitOccurrence scrutinee) varoccs
-                         (id, block) <- ilmNewBlock ".leaf" binders (CCLast $ CCCont armid []) -- TODO
+                         (id, block) <- ilmNewBlock ".leaf" binders (\entryid -> CCLast entryid $ CCCont armid []) -- TODO
                          ilmAddWrapper armid id
                          return $ BlockFin block id (DTO_Leaf armid varoccs)
 
@@ -342,7 +341,7 @@ compileDecisionTree scrutinee (DT_Switch occ subtrees maybeDefaultDt) = do
                        let scrut_occ = TypedId (occType scrutinee occ) scrut_occ_id
                        (id, blockg) <- ilmNewBlock ".dt.switch"
                          [emitOccurrence scrutinee (scrut_occ, occ)]
-                         (CCLast $ mkSwitch (llv scrut_occ) (zip ctors ids) maybeDefaultId)
+                         (\entryid -> CCLast entryid $ mkSwitch (llv scrut_occ) (zip ctors ids) maybeDefaultId)
                        ilmAddDecisionTree dto id
                        return (id, blockg)
     let catClosedGraphs = foldr (|*><*|) emptyClosedGraph
@@ -519,10 +518,10 @@ ilmFresh :: T.Text -> ILM Ident
 ilmFresh t = do u <- ilmNewUniq
                 return (Ident t u)
 
-ilmNewBlock :: String -> [Insn' O O] -> Insn' O C -> ILM (BlockId, BlockG)
+ilmNewBlock :: String -> [Insn' O O] -> (BlockId -> Insn' O C) -> ILM (BlockId, BlockG)
 ilmNewBlock s mids last = do u <- freshLabel
                              let id = (s, u)
-                             return $ (id, mkBlockG (id,[]) mids last)
+                             return $ (id, mkBlockG (id,[]) mids (last id))
 
 ilmAddDecisionTree dto id = do old <- get
                                put old { ilmDecisionTrees = Map.insert dto id
@@ -587,7 +586,7 @@ instance Pretty (Insn' e x) where
   pretty (CCGCKill  enabled  roots) = indent 4 $ (dullred  $ text "kill roots") <+> prettyR roots <+> pretty enabled
   pretty (CCTupleStore vs tid _memregion) = indent 4 $ text "stores " <+> pretty vs <+> text "to" <+> pretty tid
   pretty (CCRebindId d v1 v2) = indent 4 $ text "REPLACE " <+> pretty v1 <+> text "WITH" <+> pretty v2 <+> parens d
-  pretty (CCLast    cclast     ) = pretty cclast
+  pretty (CCLast _  cclast     ) = pretty cclast
 
 prettyR roots = (if Set.size roots > 15 then text "..." else pretty roots) <> parens (pretty (Set.size roots))
 
@@ -647,18 +646,21 @@ instance Show (Insn e x) where
 
 instance NonLocal Insn' where
   entryLabel (CCLabel ((_,l), _)) = l
-  successors (CCLast last) = map blockLabel (block'TargetsOf (CCLast last))
-                           where blockLabel (_, label) = label
+  successors (CCLast _ last) = map blockLabel (ccLastTargetsOf last)
+                             where blockLabel (_, label) = label
 
-instance FosterNode Insn' where branchTo bid = CCLast $ CCCont bid []
+instance FosterNode Insn' where branchTo bid = CCLast (error "CloConv 653") $ CCCont bid []
 
-block'TargetsOf :: Insn' O C -> [BlockId]
-block'TargetsOf (CCLast last) =
+ccLastTargetsOf :: CCLast -> [BlockId]
+ccLastTargetsOf last =
     case last of
         CCCont     b _            -> [b]
         CCCall     b _ _ _ _      -> [b]
         CCCase     _ cbs (Just b) -> b:map snd cbs
         CCCase     _ cbs Nothing  ->   map snd cbs
+
+block'TargetsOf :: Insn' O C -> [BlockId]
+block'TargetsOf (CCLast _ last) = ccLastTargetsOf last
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

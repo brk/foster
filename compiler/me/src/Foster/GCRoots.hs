@@ -11,13 +11,14 @@ module Foster.GCRoots(insertSmartGCRoots, fnty_of_procty) where
 import Prelude hiding ((<*>))
 
 import Compiler.Hoopl
+import Foster.HooplDominatorPass
 
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Text.PrettyPrint.Boxes as Boxes
 
 import Foster.Base(TExpr, TypedId(TypedId), freeTypedIds, Ident(..), Occurrence,
                    tidType, tidIdent, typeOf, MayGC(GCUnknown), boolGC)
-import Foster.CFG(runWithUniqAndFuel, M, rebuildGraphM, mapGraphNodesM_)
+import Foster.CFG(runWithUniqAndFuel, M, rebuildGraphM, mapGraphNodesM_, rebuildGraphAccM, blockId, BlockId)
 import Foster.Config
 import Foster.CloConv
 import Foster.TypeLL
@@ -26,11 +27,11 @@ import Foster.Avails
 
 import Debug.Trace(trace)
 
-import Data.Maybe(fromMaybe)
+import Data.Maybe(fromMaybe, fromJust)
 import Data.Map(Map)
 import qualified Data.Set as Set
 import qualified Data.Map as Map(lookup, empty, elems, findWithDefault, insert,
-           keys, assocs, delete, fromList, keysSet, alter)
+           keys, assocs, delete, fromList, keysSet, alter, map)
 import qualified Data.Text as T(pack)
 import Control.Monad(when, liftM)
 import Control.Monad.IO.Class(liftIO)
@@ -44,7 +45,7 @@ import Control.Monad.State(evalStateT, get, put, modify, StateT, lift, gets,
 --             pre-codegen preparations.
 
 showOptResults = False
-gDoReuseRootSlots = True -- TODO measure effect of disabling this optimization.
+gDoReuseRootSlots = False -- True -- TODO measure effect of disabling this optimization.
 
 --------------------------------------------------------------------
 
@@ -128,7 +129,8 @@ insertSmartGCRoots procid bbgp0 mayGCmap dump = do
   --   6) Run a forwards pass to trim redundant kills.
   --      If we are configured to reuse root slots,
   --      this is where we do it.
-  bbgp'5a0 <- runAvails bbgp'4 rootsLiveAtGCPoints mayGCmap gDoReuseRootSlots
+  bbgp'4b  <- relabelEntryExitBlocks bbgp'4
+  bbgp'5a0 <- runAvails bbgp'4b rootsLiveAtGCPoints mayGCmap gDoReuseRootSlots
   bbgp'5a  <- runRebinds bbgp'5a0
 
   -- runAvails might have reused a root slot in a forwards pass, which might
@@ -141,6 +143,12 @@ insertSmartGCRoots procid bbgp0 mayGCmap dump = do
   liftIO $ when (showOptResults || dump) $ do
               putStrLn "difference from runAvails:"
               Boxes.printBox $ catboxes2 (bbgpBody bbgp'4) (bbgpBody bbgp'5d )
+              putStrLn "variant 4:"
+              Boxes.printBox $ makebox (bbgpBody bbgp'4)
+              putStrLn "variant 5a0:"
+              Boxes.printBox $ makebox (bbgpBody bbgp'5a0)
+              putStrLn "variant 5a:"
+              Boxes.printBox $ makebox (bbgpBody bbgp'5a)
 
   runRootConsistencyChecker "bbgp'5d" bbgp'5d
 
@@ -206,7 +214,7 @@ liveAtGCPointXfer2 mayGCmap = mkBTransfer go
              ++ "which has probably invalidated the computed results. Fix this by using\n"
              ++ "a forwards rewriting pass to resolve & remove RebindId nodes before\n"
              ++ "running a backwards analysis."
-    go node@(CCLast    cclast) fdb =
+    go node@(CCLast _  cclast) fdb =
           let f = combineLastFacts fdb node in
           ifgc (canCCLastGC mayGCmap cclast) f
 
@@ -287,6 +295,8 @@ makeSubstWith from to = let m = Map.fromList $ zip from to in
                         let s v = Map.findWithDefault v v m in
                         s
 
+makebox bbg = boxify $ measure $ pretty bbg
+
 catboxes2 bbg1 bbg2 = Boxes.hsep 1 Boxes.left $
                             [(boxify . measure . plain . pretty) bbg1
                             ,(boxify . measure .         pretty) bbg2]
@@ -353,12 +363,12 @@ insertDumbGCRoots bbgp0 dump = do
                                           (mkMiddle $ CCLetFuns [id] [substVarsInClo s clo]) <*> ri)
     CCLetFuns ids _clos           -> do error $ "CCLetFuns should all become singletons!" ++ show ids
     CCRebindId _doc _v1 _v2       -> do error $ "GCRoots.hs: insertDumbGCRoots saw unexpected CCRebindId: " ++ show (pretty insn)
-    CCLast (CCCont b vs)          -> do withGCLoads vs (\vs'  ->
-                                               (mkLast $ CCLast (CCCont b vs' )))
-    CCLast (CCCall b t id v vs)  -> do withGCLoads (v:vs) (\(v' : vs' ) ->
-                                               (mkLast $ CCLast (CCCall b t id v' vs' )))
-    CCLast (CCCase v arms mb)    -> do withGCLoads [v] (\[v' ] ->
-                                               (mkLast $ CCLast (CCCase v' arms mb)))
+    CCLast l (CCCont b vs)        -> do withGCLoads vs (\vs'  ->
+                                               (mkLast $ CCLast l (CCCont b vs' )))
+    CCLast l (CCCall b t id v vs) -> do withGCLoads (v:vs) (\(v' : vs' ) ->
+                                               (mkLast $ CCLast l (CCCall b t id v' vs' )))
+    CCLast l (CCCase v arms mb)   -> do withGCLoads [v] (\[v' ] ->
+                                               (mkLast $ CCLast l (CCCase v' arms mb)))
 
   fresh str = lift $ ccFreshId (T.pack str)
 
@@ -528,12 +538,12 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
                                          let s = makeSubstWith vs vs' in
                                          mkMiddle $ CCLetVal id (substVarsInLetable s val))
     CCLetFuns {}                  -> do return $ mkMiddle $ insn
-    CCLast (CCCont b vs)          -> do undoDeadGCLoads vs (\vs'  ->
-                                               (mkLast $ CCLast (CCCont b vs' )))
-    CCLast (CCCall b t id v vs)   -> do undoDeadGCLoads (v:vs) (\(v' : vs' ) ->
-                                               (mkLast $ CCLast (CCCall b t id v' vs' )))
-    CCLast (CCCase v arms mb)     -> do undoDeadGCLoads [v] (\[v' ] ->
-                                               (mkLast $ CCLast (CCCase v' arms mb)))
+    CCLast l (CCCont b vs)        -> do undoDeadGCLoads vs (\vs'  ->
+                                               (mkLast $ CCLast l (CCCont b vs' )))
+    CCLast l (CCCall b t id v vs) -> do undoDeadGCLoads (v:vs) (\(v' : vs' ) ->
+                                               (mkLast $ CCLast l (CCCall b t id v' vs' )))
+    CCLast l (CCCase v arms mb)   -> do undoDeadGCLoads [v] (\[v' ] ->
+                                               (mkLast $ CCLast l (CCCase v' arms mb)))
     CCRebindId     {}             -> do return $ mkMiddle $ insn
 
   _varForRoot_t root = let rv = varForRoot (trace ("varForRoot " ++ show root) root) in
@@ -612,14 +622,25 @@ data Avails = Avails { unkilledRoots :: UnkilledRoots
                      }  -- note: AvailMap works here because LLVar == LLRootVar...
                      deriving Show
 
---instance Show Avails where show a = show (pretty a)
---instance Pretty Avails where
---  pretty (Avails uk lr fr) = text "(Avails unkilledRoots=" <> text (show uk)
---                         <+> text "loadedRoots="   <> text (show uk)
---                         <+> text "loadsForRoots=" <> text (show $ Map.map (Set.map tidIdent) fr) <> text ")"
+{-
+instance Show Avails where show a = show (pretty a)
+instance Pretty Avails where
+  pretty (Avails uk lr fr) = text "(Avails unkilledRoots=" <> text (show uk)
+                         <+> text "loadedRoots="   <> text (show uk)
+                         <+> text "loadsForRoots=" <> text (show $ Map.map (Set.map tidIdent) fr) <> text ")"
+                         <+> text "availSubst=" <> ( <> text ")"
+                         <+> text "loadsForRoots=" <> text (show $ Map.map (Set.map tidIdent) fr) <> text ")"
+                         -}
 
-availsXfer :: Map Ident MayGC -> FwdTransfer Insn' Avails
-availsXfer mayGCmap = mkFTransfer3 go go (distributeXfer availsLattice go)
+dominatedBy domInfo label = lookupFact (snd label) domInfo
+
+computeDomInfo factbase =
+  mapFromListWith (++) [(d, [l]) | (l,d) <- mapToList $ immediateDominators factbase]
+
+availsXfer :: Map Ident MayGC -> LabelMap [Label] -> FwdTransfer Insn' Avails
+availsXfer mayGCmap domInfo = mkFTransfer3 go go
+                                dominanceXfer
+                                --(distributeXfer availsLattice go)
   where
     go :: Insn' e x -> Avails -> Avails
     go (CCLabel      {}    ) f = f
@@ -632,11 +653,22 @@ availsXfer mayGCmap = mkFTransfer3 go go (distributeXfer availsLattice go)
     go (CCLetFuns    {}    ) f = ifgc True             f
     go (CCTupleStore {}    ) f = f
     go (CCRebindId _ v1 v2 ) f = f { availSubst = insertAvailMap v1 v2 (availSubst f) }
-    go (CCLast       cclast) f = ifgc (canCCLastGC mayGCmap cclast) f
+    go (CCLast   _   cclast) f = ifgc (canCCLastGC mayGCmap cclast) f
 
     ifgc mayGC f = if mayGC then f { rootLoads = emptyAvailMap }
                             else f -- when a GC might occur, all root loads
                                    -- become invalidated...
+
+    -- The simple seeming thing to do would be to use a transfer function driven by a
+    -- dominance analysis, but the issue is that we need the label from the entry node
+    -- in CCLast in order to get the proper list of dominance-successors.
+    -- Stepping back, avails rewriting isn't a dataflow property, just a closure property.
+    dominanceXfer :: Insn' O C -> Avails -> FactBase Avails
+    dominanceXfer lastNode@(CCLast label _) avails =
+      case dominatedBy domInfo label of
+        Just labels -> let list = [ (l, go lastNode avails) | l <- labels ] in
+                        trace ("domXFER: domSucc for " ++ show label ++ "\nis " ++ show labels ++ "\nvs regular " ++ show (successors lastNode)) $ mkFactBase availsLattice list
+        Nothing -> trace ("domXFER: no entry for " ++ show label ++ " in " ++ show domInfo) noFacts
 
     makeLoadAvail var root f = f { rootLoads = insertAvailMap root var (rootLoads f) }
 
@@ -751,26 +783,33 @@ runAvails bbgp rootsLiveAtGCPoints mayGCmap doReuseRootSlots = do
     go :: BasicBlockGraph' -> M BasicBlockGraph'
     go bbgp = do
         let ((_,blab), _) = bbgpEntry bbgp
+
+        (_ , domfacts, _) <- analyzeAndRewriteFwd
+                                (debugFwdTransfers trace showing (\_ _ -> True) (debugFwdJoins trace (\_ -> True) domPass))
+                                --domPass
+                                (JustC [bbgpEntry bbgp]) (bbgpBody bbgp) (mapSingleton blab domEntry)
+
         -- NOTE! The bottom element for the loaded & initialized roots is
         --       (UnivMinus empty), which is what we use for joins, but we use
         --       (Avail empty), i.e. top, for the entry block. Thus if/when we
         --       go back to the entry, we'll discard loads/inits from the body.
         --       See the commentary on AvailSet and AvailMap.
         let init = Avails (UniverseMinus Set.empty) emptyAvailMap (Avail Set.empty) emptyAvailMap emptyAvailMap
-        (body' , _, _) <- analyzeAndRewriteFwd fwd (JustC [bbgpEntry bbgp])
-                                                           (bbgpBody bbgp)
+        (body' , _, _) <- analyzeAndRewriteFwd (fwd (trace ("domfacts: " ++ show domfacts ++ "\nwith domInfo: " ++ show (computeDomInfo domfacts :: LabelMap [Label]) ++ "\n for\n" ++ show (pretty bbgp)) domfacts)) (JustC [bbgpEntry bbgp])
+                                                              (bbgpBody bbgp)
                            (mapSingleton blab init)
         return bbgp { bbgpBody = body' }
 
     --__fwd = debugFwdTransfers trace showing (\_ _ -> True) fwd
-    _fwd = debugFwdJoins trace (\_ -> True) fwd
-    fwd = FwdPass { fp_lattice  = availsLattice
-                  , fp_transfer = availsXfer mayGCmap
+    -- _fwd = debugFwdJoins trace (\_ -> True) fwd
+    fwd domfacts = FwdPass {
+                    fp_lattice  = availsLattice
+                  , fp_transfer = availsXfer mayGCmap (computeDomInfo domfacts)
                   , fp_rewrite  = availsRewrite rootsLiveAtGCPoints doReuseRootSlots
                   }
 
---showing :: Insn' e x -> String
---showing insn = show (pretty insn)
+showing :: Insn' e x -> String
+showing insn = show (pretty insn)
 
 availsLattice :: DataflowLattice Avails
 availsLattice = DataflowLattice
@@ -799,6 +838,31 @@ availsLattice = DataflowLattice
               (jx, c3) = ox `intersectAvailMap` nx
               ch = changeIf (availSmaller jk ok || availSmaller ji oi
                                                 || c1 || c2 || c3)
+
+-- We need to make sure that the "entry" labels on CCLast nodes are up-to-date
+-- so that the dominator-successors computation is accurate.
+relabelEntryExitBlocks :: BasicBlockGraph' -> Compiled BasicBlockGraph'
+relabelEntryExitBlocks bbgp = do
+   (g', _) <- case bbgpEntry bbgp of (bid, _) -> rebuildGraphAccM bid (bbgpBody bbgp) bid transform
+   return BasicBlockGraph' {
+                 bbgpEntry = bbgpEntry bbgp,
+                 bbgpRetK  = bbgpRetK  bbgp,
+                 bbgpBody  = g'
+          }
+  where
+      transform :: BlockId -> Insn' e x -> Compiled (Graph Insn' e x, BlockId)
+      transform ent insn = case insn of
+        CCLabel l               -> return (mkFirst  insn, blockId l)
+
+        CCLetVal     {}         -> return (mkMiddle insn, ent)
+        CCLetFuns    {}         -> return (mkMiddle insn, ent)
+        CCGCLoad     {}         -> return (mkMiddle insn, ent)
+        CCGCInit     {}         -> return (mkMiddle insn, ent)
+        CCGCKill     {}         -> return (mkMiddle insn, ent)
+        CCTupleStore {}         -> return (mkMiddle insn, ent)
+        CCRebindId   {}         -> return (mkMiddle insn, ent)
+
+        CCLast _ cclast         -> do return (mkLast (CCLast ent cclast), ent)
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -905,13 +969,13 @@ runRebinds bbgp = do
       return (mkMiddle $ CCGCInit j (s a v) (s a root0))
     d a (CCGCKill disen roots)   =
         return (mkMiddle $ CCGCKill disen (Set.map (s a) roots))
-    d a (CCLast (CCCont bid vs)) =
-      return (mkLast $ CCLast (CCCont bid (map (s a) vs) ))
-    d a (CCLast (CCCall bid ty id v vs)) =
+    d a (CCLast l (CCCont bid vs)) =
+      return (mkLast $ CCLast l (CCCont bid (map (s a) vs) ))
+    d a (CCLast l (CCCall bid ty id v vs)) =
       let (v', vs' ) = (s a v, map (s a) vs) in
-      return (mkLast $ CCLast (CCCall bid ty id v' vs' ))
-    d a (CCLast (CCCase v cases def)) =
-      return (mkLast $ CCLast (CCCase (s a v) cases def))
+      return (mkLast $ CCLast l (CCCall bid ty id v' vs' ))
+    d a (CCLast l (CCCase v cases def)) =
+      return (mkLast $ CCLast l (CCCase (s a v) cases def))
 
     s a v = case Map.lookup v a of
               Nothing -> v

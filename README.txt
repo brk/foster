@@ -129,6 +129,11 @@ Ubuntu 16.04 (x64):
   Assuming you already have LLVM installed, in $PATH and $PKG_CONFIG_PATH...
 
 
+  # For CSmith:
+  git clone https://github.com/csmith-project/csmith
+  cd csmith
+  ./configure --prefix=$HOME/sw/local/csmith-2016-08-26
+  make
 
 
   # For Ott:
