@@ -1317,6 +1317,13 @@ The corresponding AST to be matched is
 
   bool tryHandleCallPrintf(const CallExpr* ce) {
     if (!isDeclNamed("printf", ce->getCallee()->IgnoreParenImpCasts())) return false;
+    if (ce->getNumArgs() == 1) {
+      // Assume one-arg printf means literal text.
+      llvm::outs() << "(printStr ";
+      visitStmt(ce->getArg(0));
+      llvm::outs() << ")";
+      return true;
+    }
     if (ce->getNumArgs() != 2) return false;
 
     if (auto slit = dyn_cast<StringLiteral>(ce->getArg(0)->IgnoreParenImpCasts())) {
