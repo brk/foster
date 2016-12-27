@@ -159,10 +159,10 @@ bool isVoidPtr(const Type* inp_ty) {
   return ty && ty->isVoidType();
 }
 
-bool isTrivialIntegerLiteral(const Expr* e) {
+bool isTrivialIntegerLiteralInRange(const Expr* e, int lo, int hi) {
   if (auto lit = dyn_cast<IntegerLiteral>(e)) {
     auto se = lit->getValue().getSExtValue();
-    return se >= 0 && se <= 127;
+    return se >= lo && se <= hi;
   }
   return false;
 }
@@ -1660,8 +1660,10 @@ The corresponding AST to be matched is
     case CK_IntegralCast: {
       std::string cast = "";
 
-      if (isTrivialIntegerLiteral(ce->getSubExpr())
-       || isa<CharacterLiteral>(ce->getSubExpr())) {
+      if (isTrivialIntegerLiteralInRange(ce->getSubExpr(), 0, 127)
+       || isa<CharacterLiteral>(ce->getSubExpr())
+       || (exprTy(ce)->isUnsignedIntegerType() &&
+             isTrivialIntegerLiteralInRange(ce->getSubExpr(), 0, 255))) {
         // don't print anything, no cast needed
       } else {
         std::string srcTy = tyName(exprTy(ce->getSubExpr())) ;
