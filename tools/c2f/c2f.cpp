@@ -493,7 +493,7 @@ class FnBodyVisitor : public RecursiveASTVisitor<FnBodyVisitor> {
       State state = ST_Start;
       for (auto part : cs->body()) {
         if (const SwitchCase* scase = dyn_cast<SwitchCase>(part)) {
-          if (state == ST_WithBody) {
+          if (state == ST_WithBody || state == ST_SwitchCase) {
             needsCFG = true;
           }
           if (const BreakStmt* bs = dyn_cast<BreakStmt>(
@@ -1098,7 +1098,7 @@ public:
   }
 
   void translateGeneralForLoop(const ForStmt* fs) {
-    if (fs->getInit()) { visitStmt(fs->getInit()); llvm::outs() << ";\n"; }
+    if (fs->getInit()) { visitStmt(fs->getInit(), StmtContext); llvm::outs() << ";\n"; }
     translateWhileLoop(fs, "while", fs->getInc());
   }
 
