@@ -841,8 +841,11 @@ public:
         for (auto adj : adjs) {
           const std::vector<Stmt*>& labels = labelsFor[adj->getReachableBlock()];
           for (size_t i = 0; i < labels.size(); ++i) {
+            auto idx = labels.size() - (i + 1);
             const Stmt* lab = labels[labels.size() - (i + 1)];
-            if (isa<DefaultStmt>(lab)) {
+            if (!lab) {
+              llvm::outs() << "/*no label?!? size = " << labels.size() << " ; i = " << i << " ; idx = " << idx << "*/\n";
+            } else if (isa<DefaultStmt>(lab)) {
               defaultBlock = adj;
             } else if (const CaseStmt* cs = dyn_cast<CaseStmt>(lab)) {
               llvm::outs() << "  " << (i == 0 ? "of" : "or") << " ";
@@ -855,7 +858,7 @@ public:
                 llvm::outs() << "\n";
               }
             } else {
-              llvm::outs() << "non-default, non-case label?!?\n";
+              llvm::outs() << "/*non-default, non-case label?!?*/\n";
             }
           }
         }
