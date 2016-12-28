@@ -16,7 +16,6 @@ import qualified Data.Graph as Graph(SCC, flattenSCC, stronglyConnComp, strongly
 import Data.Map(Map)
 import Data.Set(Set)
 import qualified Data.Sequence as Seq(length)
-
 import qualified Data.Char as Char(isAlphaNum)
 import Data.IORef(newIORef, readIORef, writeIORef)
 import Data.Traversable(mapM)
@@ -36,6 +35,7 @@ import Foster.ProtobufFE(cb_parseWholeProgram)
 import Foster.CapnpIL(dumpILProgramToCapnp)
 import Foster.TypeTC
 import Foster.ExprAST
+import Foster.PrettyExprAST(IsQuietPlaceholder(..))
 import Foster.TypeAST
 import Foster.ParsedType
 import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn, E_AnnVar, AnnCall, AnnLetFuns))
@@ -76,13 +76,22 @@ import System.Mem
 
 pair2binding (nm, ty, mcid) = TermVarBinding nm (TypedId ty (GlobalSymbol nm), mcid)
 
+typecheckNonFn :: Context TypeTC -> TermBinding TypeAST -> Tc (ContextBinding SigmaTC, AnnExpr SigmaTC)
+typecheckNonFn ctx = \(TermBinding var expr) -> do
+  let name = evarName var
+  ann <- case termVarLookup name (contextBindings ctx) of
+            Just cxb -> do tcSigmaToplevel (TermVarBinding name cxb) ctx expr
+            Nothing  -> do tcSigmaToplevelNonFn ctx expr
+  uniq <- newTcUniq
+  return (TermVarBinding name (TypedId (typeOf ann) (Ident name uniq), Nothing), ann)
+
 -- Every function in the SCC should typecheck against the input context,
 -- and the resulting context should include the computed types of each
 -- function in the SCC.
-typecheckFnSCC :: Bool -> Bool -> Bool
-               -> Graph.SCC (FnAST TypeAST)    ->   (Context TypeTC, TcEnv)
-               -> IO ([OutputOr (AnnExpr SigmaTC)], (Context TypeTC, TcEnv))
-typecheckFnSCC showASTs showAnnExprs pauseOnErrors scc (ctx, tcenv) = do
+typecheckFnSCC :: Bool -> Bool -> Bool -> TcEnv
+               -> Graph.SCC (FnAST TypeAST)    ->   Context TypeTC
+               -> IO ([OutputOr (AnnExpr SigmaTC)], Context TypeTC)
+typecheckFnSCC showASTs showAnnExprs pauseOnErrors tcenv = \scc ctx -> do
     let fns = Graph.flattenSCC scc
 
     -- Generate a binding (for functions without user-provided declarations)
@@ -132,10 +141,9 @@ typecheckFnSCC showASTs showAnnExprs pauseOnErrors scc (ctx, tcenv) = do
                                   [bindingForAnnFn f | (E_AnnFn f) <- goodexprs]
 
     if null errsAndASTs
-     then return $ (,) (map OK goodexprs) (newctx, tcenv)
-     else return $ (,) [Errors [text $ "not all functions type checked in SCC: "
-                                  ++ show (map fnAstName fns)]
-                        ]                 (newctx, tcenv)
+     then return (map OK goodexprs, newctx)
+     else return ([Errors [text $ "not all functions type checked in SCC: "
+                                  ++ show (map fnAstName fns)]], newctx)
 
    where
         bindingOf (_errs, (_ast, binding)) = binding
@@ -173,6 +181,11 @@ typecheckFnSCC showASTs showAnnExprs pauseOnErrors scc (ctx, tcenv) = do
             t <- fnTypeShallow ctx f
             return $ pair2binding (fnAstName f, t, Nothing)
 
+instance IsQuietPlaceholder TypeAST where
+  isQuietPlaceholder _ = False
+instance IsQuietPlaceholder TypeTC where
+  isQuietPlaceholder _ = False
+
 typecheckAndFoldContextBindings :: Context TypeTC ->
                                   [ContextBinding TypeAST] ->
                                Tc (Context TypeTC)
@@ -183,6 +196,7 @@ typecheckAndFoldContextBindings ctxTC0 bindings = do
 -- | Typechecking a module proceeds as follows:
 -- |  #. Build separate binding lists for the globally-defined primitiveDecls
 -- |     and the module's top-level (function) declarations.
+-- |  #. Typecheck non-function definitions, in a minimal environment.
 -- |  #. Build a (conservative) dependency graph on the module's top-level
 -- |     declarations, yielding a list of SCCs of declarations.
 -- |  #. Typecheck the SCCs bottom-up, propagating results as we go along.
@@ -198,6 +212,7 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
         putDocLn $ text "module AST decls:" <$> pretty (moduleASTdecls modast)
     let dts = moduleASTprimTypes modast ++ moduleASTdataTypes modast
     let fns = moduleASTfunctions modast
+    let nonfns = moduleASTnonfndefs modast
     let filteredDecls = if standalone
                           then filter okForStandalone primitiveDecls
                           else primitiveDecls
@@ -227,26 +242,37 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
         let primOpMap = Map.fromList [(T.pack nm, prim)
                             | (nm, (_, prim)) <- Map.toList gFosterPrimOpsTable]
 
-        ctxErrsOrOK <- liftIO $ unTc tcenv0 $ do
+        ctxErrsOrOK_0 <- liftIO $ unTc tcenv0 $ do
                          let ctxAS1 = mkContext (computeContextBindings nonNullCtors)
                                          nullCtorBindings primBindings primOpMap globalids dts
                          let ctxTC0 = mkContext [] [] [] Map.empty [] []
                          ctxTC1 <- tcContext ctxTC0 ctxAS1
                          foldlM typecheckAndFoldContextBindings ctxTC1 declBindings'
-        case ctxErrsOrOK of
-          OK ctxTC -> do
-            -- declBindings includes datatype constructors and some (?) functions.
-            let callGraphList = buildCallGraphList fns (Set.fromList $ map fnAstName fns)
-            let sortedFns = Graph.stronglyConnComp callGraphList -- :: [SCC FnAST]
-            liftIO $ when verboseMode $ do
-                    putStrLn $ "Function SCC list : " ++
-                     (unlines $ map show [(name, frees) | (_, name, frees) <- callGraphList])
-            let showASTs     = verboseMode || getDumpIRFlag "ast" flagvals
-            let showAnnExprs = verboseMode || getDumpIRFlag "ann" flagvals
-            (annFnSCCs, (ctx, tcenv)) <- liftIO $
-                mapFoldM' sortedFns (ctxTC, tcenv0)
-                            (typecheckFnSCC showASTs showAnnExprs pauseOnErrors)
-            liftIO $ unTc tcenv (convertTypeILofAST modast ctx annFnSCCs)
+        case ctxErrsOrOK_0 of
+          OK ctxTC0 -> do
+            oo_nonfns' <- liftIO $ unTc tcenv0 $ do
+                            mapM (typecheckNonFn ctxTC0) nonfns
+            case oo_nonfns' of
+              OK nonfns' -> do
+                    liftIO $ putStrLn $ show nonfns'
+
+                    let ctxTC = prependContextBindings ctxTC0 (map fst nonfns')
+
+                    -- declBindings includes datatype constructors and some (?) functions.
+                    let callGraphList = buildCallGraphList fns (Set.fromList $ map fnAstName fns)
+                    let sortedFns = Graph.stronglyConnComp callGraphList -- :: [SCC FnAST]
+                    liftIO $ when verboseMode $ do
+                          putStrLn $ "Function SCC list : " ++
+                            (unlines $ map show [(name, frees) | (_, name, frees) <- callGraphList])
+                    let showASTs     = verboseMode || getDumpIRFlag "ast" flagvals
+                    let showAnnExprs = verboseMode || getDumpIRFlag "ann" flagvals
+                    (annFnSCCs, ctx) <- liftIO $
+                        mapFoldM' sortedFns ctxTC
+                                    (typecheckFnSCC showASTs showAnnExprs pauseOnErrors tcenv0)
+                    liftIO $ unTc tcenv0 (convertTypeILofAST modast ctx annFnSCCs)
+              Errors os -> do
+                when verboseMode $ do liftIO $ putStrLn "~~~ Typechecking the module's non-function bindings failed"
+                return (Errors os)
           Errors os -> do
               when verboseMode $ do liftIO $ putStrLn "~~~ Typechecking the module's context failed"
               return (Errors os)
@@ -346,26 +372,44 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
      constraints <- tcGetConstraints
      processTcConstraints constraints
 
-     -- oo_annfns :: [[OutputOr (AnnExpr TypeTC)]]
+     -- oo_annfns :: [[AnnExpr TypeTC]]
      oo_annfns <- mapM (mapM (tcInject handleCoercionsAndConstraints)) oo_unprocessed
+{-
+     let partition :: [AnnExpr t] -> ([Fn () (AnnExpr t) t], [AnnExpr t])
+         partition exprs = partitionEithers [case e of
+                                                E_AnnFn f -> Left f
+                                                _         -> Right e
+                                              | e <- exprs]
+         rearrange :: [ ([Fn () (AnnExpr t) t], [AnnExpr t]) ] ->
+                      ( [[Fn () (AnnExpr t) t]], [AnnExpr t] )
+         rearrange partitioneds =
+            (map fst partitioneds, concatMap snd partitioneds)
 
-     let unfuns fns -- :: [[AnnExpr t]] -> [[Fn () (AnnExpr t) t]]
-                    = map (map unFunAnn) fns
-         nonFns (ToplevelDefn (_, E_FnAST {})) = False
-         nonFns _ = True
+     let (funs, nonfns) = rearrange (map partition oo_annfns)
+     -}
+     let funs = map (map (\e -> case e of
+                           E_AnnFn f -> f
+                           _ -> error $ "convertTypeILofAST had a non-fn in the fn SCC!"))
+                    oo_annfns
 
      -- We've already typechecked the functions, so no need to re-process them...
      -- First, convert the non-function parts of our module from TypeAST to TypeTC.
      -- mTC :: ModuleExpr TypeTC
-     mTC <- convertModule (tcType ctx_tc) $ mAST { moduleASTitems = (filter nonFns (moduleASTitems mAST)) }
+     mTC <- convertModule (tcType ctx_tc) mAST
 
-     let mTC' = ModuleIL (buildExprSCC' (unfuns oo_annfns))
+     -- TODO get the non-fns from mTC items, wrap around buildExprSCC' ...
+
+     let mTC' = ModuleIL (buildExprSCC' funs)
                          (externalModuleDecls mTC)
                          (moduleASTdataTypes  mTC)
                          (moduleASTprimTypes  mTC)
                          (moduleASTsourceLines mAST)
 
      kmod <- kNormalizeModule  mTC' ctx_tc
+     --tcLift $ putStrLn $ "mAST: " ++ show (pretty modast)
+     --tcLift $ putStrLn $ "mTC:  " ++ show (pretty mTC   )
+     --tcLift $ putStrLn $ "mTC': " ++ show (pretty mTC'  )
+     --tcLift $ putStrLn $ "kmod: " ++ show (pretty kmod  )
      return (kmod, globalIdents ctx_tc)
 
        where
@@ -391,9 +435,6 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
             funcnames = map fnAstName (moduleASTfunctions mAST)
             valuenames = Set.fromList funcnames
             has_no_defn (s, _) = Set.notMember (T.pack s) valuenames
-
-        unFunAnn (E_AnnFn f) = f
-        unFunAnn _           = error $ "Saw non-AnnFn in unFunAnn"
 
    processTcConstraints :: [(TcConstraint, SourceRange)] -> Tc ()
    processTcConstraints constraints = mapM_ processConstraint constraints

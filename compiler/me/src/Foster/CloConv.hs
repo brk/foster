@@ -112,6 +112,8 @@ closureConvertAndLift dataSigs globalIds u m =
     -- that they don't have any "real" free vars.
     -- Lambda lifting then closure converts any nested functions.
     let initialState = ILMState u Map.empty Map.empty Map.empty dataSigs in
+    -- Currently, globalIds is `globalIdents ctx_tc` in convertTypeILofAST in Main.hs...
+    -- The list does not include any identifiers from the input module.
     let (ccmain, st) = runState (closureConvertToplevel globalIds $ moduleILbody m)
                                                                  initialState in
     (ModuleIL {
@@ -135,6 +137,10 @@ closureConvertToplevel globalIds body = do
        -- from nested functions.
        cvt :: Set Ident -> CFBody -> ILM CCMain
        cvt _ (CFB_Call t v vs) = return (CCMain YesTail (monoToLL t) (llv v) (map llv vs))
+
+       -- TODO what to do with expr??
+       cvt globalized (CFB_LetVal id _expr body) =
+        cvt (Set.union globalized (Set.fromList [id])) body
 
        cvt globalized (CFB_LetFuns ids fns body) =
          let

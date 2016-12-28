@@ -3,7 +3,8 @@
 -- Use of this source code is governed by a BSD-style license that can be
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
-module Foster.Typecheck(tcSigmaToplevel, tcContext, tcType, fnTypeShallow) where
+module Foster.Typecheck(tcSigmaToplevel, tcSigmaToplevelNonFn,
+                        tcContext, tcType, fnTypeShallow) where
 
 import Prelude hiding ((<$>))
 
@@ -118,6 +119,10 @@ data TCWanted = TCSigma | TCRho deriving Show
 --      instSigmaWith
 
 -----------------------------------------------------------------------
+
+tcSigmaToplevelNonFn :: Context TypeTC -> Term -> Tc (AnnExpr SigmaTC)
+tcSigmaToplevelNonFn ctx ast = do
+  inferSigma ctx ast "tcSigmaToplevel"
 
 tcSigmaToplevel :: ContextBinding TypeTC -> Context TypeTC -> Term -> Tc (AnnExpr SigmaTC)
 tcSigmaToplevel (TermVarBinding _txt (tid, _)) ctx ast = do
