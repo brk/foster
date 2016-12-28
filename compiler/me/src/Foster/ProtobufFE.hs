@@ -71,8 +71,8 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
   cb_parse_ToplevelItem cbor = case cbor of
     CBOR_Array [tok, _,_cbr, CBOR_Array [x, t]] | tok `tm` tok_DECL ->
        ToplevelDecl (cb_parse_x_str x, cb_parse_t t)
-    CBOR_Array [tok, _,_cbr, CBOR_Array [x, atom]] | tok `tm` tok_DEFN ->
-      case (cb_parse_x_str x, cb_parse_atom atom) of
+    CBOR_Array [tok, _,_cbr, CBOR_Array [x, phrase]] | tok `tm` tok_DEFN ->
+      case (cb_parse_x_str x, cb_parse_phrase phrase) of
         (name, E_FnAST annot fn) ->
                         ToplevelDefn (name, E_FnAST annot fn { fnAstName = T.pack name , fnWasToplevel = True })
         (name, expr) -> ToplevelDefn (name, expr)

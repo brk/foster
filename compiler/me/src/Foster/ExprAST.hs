@@ -6,7 +6,8 @@
 
 module Foster.ExprAST(
   ExprAST, ModuleExpr, ExprSkel(..), exprAnnot
-, FnAST(..), moduleASTfunctions, SourceString(..), StringRawFlag(..)
+, FnAST(..), moduleASTfunctions, moduleASTnonfndefs
+, SourceString(..), StringRawFlag(..)
 , TermBinding(..)
 , termBindingName
 )
@@ -78,6 +79,13 @@ data FnAST ty  = FnAST { fnAstAnnot    :: ExprAnnot
 
 moduleASTfunctions :: ModuleExpr ty -> [FnAST ty]
 moduleASTfunctions m = [fn | ToplevelDefn (_, E_FnAST _ fn) <- moduleASTitems m]
+
+moduleASTnonfndefs :: ModuleExpr ty -> [TermBinding ty]
+moduleASTnonfndefs m = concat [case expr of
+                                 E_FnAST {} -> []
+                                 _          -> [TermBinding (VarAST Nothing (T.pack name)) expr]
+                              | ToplevelDefn (name, expr) <- moduleASTitems m]
+
 
 data TermBinding ty = TermBinding (E_VarAST ty) (ExprAST ty) deriving (Show)
 

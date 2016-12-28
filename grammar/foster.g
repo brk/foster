@@ -52,7 +52,7 @@ imports :       ('snafuinclude' id s=DQUO_STR ';')     -> ^(SNAFUINCLUDE id $s);
 
 decl_or_defn :
         x ( '::' t ';'                    -> ^(DECL x t)
-          | EQ atom ';'                   -> ^(DEFN x atom) // We should allow suffixes, but only of type application.
+          | EQ phrase ';'                 -> ^(DEFN x phrase) // We should allow suffixes, but only of type application.
           )
         | data_defn ';'                   -> data_defn
         ;

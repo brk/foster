@@ -53,6 +53,7 @@ import Prelude (($), head, Ord, filter, (.), IO, Maybe(..), (+), concatMap,
                 Int, Bool(..), String, Show, reverse, (/=))
 
 data CFBody = CFB_LetFuns [Ident] [CFFn] CFBody
+            | CFB_LetVal   Ident  KNMono CFBody
             | CFB_Call    MonoType MoVar [MoVar]
 
 -- Next stage: optimizeCFGs in CFGOptimizations.hs
@@ -582,14 +583,16 @@ instance Pretty BasicBlockGraph where
 instance Pretty CFBody where
   pretty (CFB_LetFuns ids fns body) =
                                    text "letfuns"
-                                   <$> indent 2 (vcat [text (show id) <+> text "="
-                                                                      <+> pretty fn
-                                                      | (id, fn) <- zip ids fns
-                                                      ])
+                                   <$> indent 2 (vcat [prettyBinding id fn | (id, fn) <- zip ids fns])
                                    <$> text "in"
                                    <$> pretty body
                                    <$> text "end"
+  pretty (CFB_LetVal id expr body) = text "let" <+> prettyBinding id expr <+> text "in"
+                                 <$> pretty body
   pretty (CFB_Call {}) = text "call main..."
+
+prettyBinding :: Pretty x => Ident -> x -> Doc
+prettyBinding id thing = text (show id) <+> text "=" <+> pretty thing
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

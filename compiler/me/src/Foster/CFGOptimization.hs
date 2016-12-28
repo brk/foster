@@ -29,6 +29,9 @@ import Prelude hiding (id, last)
 
 optimizeCFGs :: CFBody -> IORef [Ident] -> Compiled CFBody
 optimizeCFGs c@(CFB_Call {}) _ = return c
+optimizeCFGs (CFB_LetVal id expr cfbody) r = do
+          body' <- optimizeCFGs cfbody r
+          return $ CFB_LetVal id expr body'
 optimizeCFGs (CFB_LetFuns ids cffns cfbody) r = do
           cffns'  <- mapM (optimizeCFFn r) cffns
           cfbody' <- optimizeCFGs cfbody r
@@ -646,6 +649,7 @@ collectMayGCConstraints cfbody = execState (go cfbody) Map.empty
   where
     go :: CFBody -> MGCM ()
     go (CFB_Call {}) = return ()
+    go (CFB_LetVal _id  _expr cfbody) = go cfbody
     go (CFB_LetFuns ids cffns cfbody) = do
           collectMayGCConstraints_CFFns ids cffns
           go cfbody
