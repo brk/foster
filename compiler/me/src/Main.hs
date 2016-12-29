@@ -15,6 +15,7 @@ import qualified Data.Set as Set(filter, toList, fromList, notMember, intersecti
 import qualified Data.Graph as Graph(SCC, flattenSCC, stronglyConnComp, stronglyConnCompR)
 import Data.Map(Map)
 import Data.Set(Set)
+import Data.Either(partitionEithers)
 import qualified Data.Sequence as Seq(length)
 import qualified Data.Char as Char(isAlphaNum)
 import Data.IORef(newIORef, readIORef, writeIORef)
@@ -38,7 +39,8 @@ import Foster.ExprAST
 import Foster.PrettyExprAST(IsQuietPlaceholder(..))
 import Foster.TypeAST
 import Foster.ParsedType
-import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn, E_AnnVar, AnnCall, AnnLetFuns))
+import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn, E_AnnVar, AnnCall, AnnLetFuns,
+                      AnnLetVar))
 import Foster.ILExpr(ILProgram, showILProgramStructure, prepForCodegen)
 import Foster.KNExpr(KNExpr', kNormalizeModule, knLoopHeaders, knSinkBlocks,
                      knInline, knSize, renderKN,
@@ -76,110 +78,145 @@ import System.Mem
 
 pair2binding (nm, ty, mcid) = TermVarBinding nm (TypedId ty (GlobalSymbol nm), mcid)
 
-typecheckNonFn :: Context TypeTC -> TermBinding TypeAST -> Tc (ContextBinding SigmaTC, AnnExpr SigmaTC)
-typecheckNonFn ctx = \(TermBinding var expr) -> do
-  let name = evarName var
-  ann <- case termVarLookup name (contextBindings ctx) of
-            Just cxb -> do tcSigmaToplevel (TermVarBinding name cxb) ctx expr
-            Nothing  -> do tcSigmaToplevelNonFn ctx expr
-  uniq <- newTcUniq
-  return (TermVarBinding name (TypedId (typeOf ann) (Ident name uniq), Nothing), ann)
+data FnsOrExpr = AllFns   [FnAST TypeAST]
+               | NonFn    T.Text (ExprAST TypeAST)
 
--- Every function in the SCC should typecheck against the input context,
--- and the resulting context should include the computed types of each
--- function in the SCC.
-typecheckFnSCC :: Bool -> Bool -> Bool -> TcEnv
-               -> Graph.SCC (FnAST TypeAST)    ->   Context TypeTC
-               -> IO ([OutputOr (AnnExpr SigmaTC)], Context TypeTC)
-typecheckFnSCC showASTs showAnnExprs pauseOnErrors tcenv = \scc ctx -> do
-    let fns = Graph.flattenSCC scc
+type Binding thing = (T.Text, thing)
 
-    -- Generate a binding (for functions without user-provided declarations)
-    -- before doing any typechecking, so that SCC-recursive calls aren't left
-    -- out in the cold.
-    let genBinding :: FnAST TypeAST -> IO (ContextBinding TypeTC)
-        genBinding fn = do
-          oo_binding <-
-              case termVarLookup (fnAstName fn) (contextBindings ctx) of
-                  Nothing  -> do unTc tcenv $ bindingForFnAST ctx fn
-                  Just cxb -> do return (OK $ TermVarBinding (fnAstName fn) cxb)
-          case oo_binding of
-            OK binding  -> return binding
-            Errors errs -> error $ show (fnAstName fn) ++ " ;; " ++
-                                   show (termVarLookup (fnAstName fn) (contextBindings ctx))
-                                   ++ " \n " ++ show errs
+typecheckSCC :: Bool -> Bool -> Bool -> TcEnv
+             -> Graph.SCC (Binding (ExprAST TypeAST)) -> Context TypeTC
+             -> IO ([OutputOr (Binding (AnnExpr SigmaTC))], Context TypeTC)
+typecheckSCC showASTs showAnnExprs pauseOnErrors tcenv    scc ctx = do
+     let exprs = Graph.flattenSCC scc
+     case classify exprs of
+       AllFns fns -> do
+         typecheckFnSCC fns
 
-    bindings <- mapM genBinding fns
-    let extCtx = prependContextBindings ctx bindings
+       NonFn name expr -> do
+         oo_bindann <- unTc tcenv $ typecheckNonFn name expr
+         case oo_bindann of
+           OK (binding, ann) ->
+             return ( [OK (name, ann)] , prependContextBinding ctx binding )
+           Errors os ->
+             -- If typechecking fails, we don't bother extending the context.
+             return ( [Errors os], ctx )
 
-    -- Note that all functions in an SCC are checked in the same environment!
-    -- Also note that each function is typechecked with its own binding
-    -- in scope (for typechecking recursive calls).
-    -- TODO better error messages for type conflicts
-    tcResults <- forM (zip bindings fns) $ \(binding, fn) -> do
-        let ast = (E_FnAST (fnAstAnnot fn) fn)
-        let name = T.unpack $ fnAstName fn
 
-        when False $ do
-          putStrLn $ "typechecking " ++ name ++ " with binding " ++ show binding
+  where
+    classify :: [(T.Text, ExprAST TypeAST)] -> FnsOrExpr
+    classify things =
+      let eith (nm, exp) =
+            case exp of
+              E_FnAST _ fn -> Left fn
+              _            -> Right (nm, exp)
+      in
+      case partitionEithers (map eith things) of
+        ([], [(nm, exp)]) -> NonFn nm exp
+        (fns, [])         -> AllFns fns
+        _ -> error $ "Main.hs: classify saw mixed fns/non fns in " ++ show things
 
-        annfn <- unTc tcenv $ tcSigmaToplevel binding extCtx ast
+    typecheckNonFn :: T.Text -> ExprAST TypeAST -> Tc (ContextBinding SigmaTC, AnnExpr SigmaTC)
+    typecheckNonFn name expr = do
+      ann <- case termVarLookup name (contextBindings ctx) of
+                Just cxb -> do tcSigmaToplevel (TermVarBinding name cxb) ctx expr
+                Nothing  -> do tcSigmaToplevelNonFn ctx expr
+      return (TermVarBinding name (TypedId (typeOf ann) (GlobalSymbol name), Nothing), ann)
 
-        -- We can't convert AnnExpr to AIExpr here because
-        -- the output context is threaded through further type checking.
-        return (annfn, (ast, binding))
+    -- Every function in the SCC should typecheck against the input context,
+    -- and the resulting context should include the computed types of each
+    -- function in the SCC.
+    typecheckFnSCC :: [FnAST TypeAST]
+                   -> IO ([OutputOr (Binding (AnnExpr SigmaTC))], Context TypeTC)
+    typecheckFnSCC fns = do
 
-    -- Dump full ASTs if requested, otherwise just type-incorrect ASTs.
-    mapM_ (uncurry inspect) tcResults
+        -- Generate a binding (for definitions without user-provided declarations)
+        -- before doing any typechecking, so that SCC-recursive calls aren't left
+        -- out in the cold.
+        let genBinding :: FnAST TypeAST -> IO (ContextBinding TypeTC)
+            genBinding fn = do
+              oo_binding <-
+                  case termVarLookup (fnAstName fn) (contextBindings ctx) of
+                      Nothing  -> do unTc tcenv $ bindingForFnAST ctx fn
+                      Just cxb -> do return (OK $ TermVarBinding (fnAstName fn) cxb)
+              case oo_binding of
+                OK binding  -> return binding
+                Errors errs -> error $ show (fnAstName fn) ++ " ;; " ++
+                                       show (termVarLookup (fnAstName fn) (contextBindings ctx))
+                                       ++ " \n " ++ show errs
 
-    -- The extra bindings of an SCC are the ones generated from successfully
-    -- type checked symbols, plus the initial guesses (involving type variables)
-    -- for those symbols which could not be checked. This ensures that we don't
-    -- undefined-symbol errors when checking subsequent SCCs.
-    let (goodexprs, errsAndASTs) = split tcResults
-    let newctx = prependContextBindings ctx $ (map bindingOf errsAndASTs) ++
-                                  [bindingForAnnFn f | (E_AnnFn f) <- goodexprs]
+        bindings <- mapM genBinding fns
+        let extCtx = prependContextBindings ctx bindings
 
-    if null errsAndASTs
-     then return (map OK goodexprs, newctx)
-     else return ([Errors [text $ "not all functions type checked in SCC: "
-                                  ++ show (map fnAstName fns)]], newctx)
+        -- Note that all functions in an SCC are checked in the same environment!
+        -- Also note that each function is typechecked with its own binding
+        -- in scope (for typechecking recursive calls).
+        -- TODO better error messages for type conflicts
+        tcResults <- forM (zip bindings fns) $ \(binding, fn) -> do
+            let ast = (E_FnAST (fnAstAnnot fn) fn)
+            let name = fnAstName fn
 
-   where
-        bindingOf (_errs, (_ast, binding)) = binding
+            when False $ do
+              putStrLn $ "typechecking " ++ T.unpack name ++ " with binding " ++ show binding
 
-        split fnsAndASTs = (,) [expr        | (OK expr,     _ast) <- fnsAndASTs]
-                               [(errs, ast) | (Errors errs,  ast) <- fnsAndASTs]
+            varbind <- unTc tcenv $ do
+                          ann <- tcSigmaToplevel binding extCtx ast
+                          return (name, ann)
 
-        inspect :: OutputOr (AnnExpr TypeTC) -> (ExprAST TypeAST, a) -> IO ()
-        inspect typechecked (ast, _) =
-            case typechecked of
-                OK e -> do
-                    when showASTs     $ (putDocLn $ showStructure ast)
-                    when showAnnExprs $ do
-                        putStrLn $ "[[[[[["
-                        putDocLn $ showStructure e
-                        putStrLn $ "]]]]]]"
-                Errors errs -> do
-                    putDocLn $ showStructure ast
-                    putDocLn $ red $ text "Typecheck error: "
-                    forM_ errs putDocLn
-                    putDocP line
-                    when pauseOnErrors $ do
-                        putStrLn "Press ENTER to continue..."
-                        _ <- getLine
-                        return ()
+            -- We can't convert AnnExpr to AIExpr here because
+            -- the output context is threaded through further type checking.
+            return (varbind, (ast, binding))
 
-        bindingForAnnFn :: Fn () (AnnExpr ty) ty -> ContextBinding ty
-        bindingForAnnFn f = TermVarBinding (identPrefix $ fnIdent f) (fnVar f, Nothing)
+        -- Dump full ASTs if requested, otherwise just type-incorrect ASTs.
+        mapM_ (uncurry inspect) tcResults
 
-        -- Start with the most specific binding possible (i.e. sigma, not tau).
-        -- Otherwise, if we blindly used a meta type variable, we'd be unable
-        -- to type check a recursive & polymorphic function.
-        bindingForFnAST :: Context TypeTC -> FnAST TypeAST -> Tc (ContextBinding TypeTC)
-        bindingForFnAST ctx f = do
-            t <- fnTypeShallow ctx f
-            return $ pair2binding (fnAstName f, t, Nothing)
+        -- The extra bindings of an SCC are the ones generated from successfully
+        -- type checked symbols, plus the initial guesses (involving type variables)
+        -- for those symbols which could not be checked. This ensures that we don't
+        -- undefined-symbol errors when checking subsequent SCCs.
+        let (goodexprs, errsAndASTs) = split tcResults
+        let newctx = prependContextBindings ctx $ (map bindingOf errsAndASTs) ++
+                                      [bindingForAnnFn f | (_, E_AnnFn f) <- goodexprs]
+
+        if null errsAndASTs
+         then return (map OK goodexprs, newctx)
+         else return ([Errors [text $ "not all functions type checked in SCC: "
+                                      ++ show (map fnAstName fns)]], newctx)
+
+       where
+            bindingOf (_errs, (_ast, binding)) = binding
+
+            split fnsAndASTs = (,) [thing       | (OK thing,    _ast) <- fnsAndASTs]
+                                   [(errs, ast) | (Errors errs,  ast) <- fnsAndASTs]
+
+            inspect :: OutputOr (Binding (AnnExpr TypeTC)) -> (ExprAST TypeAST, a) -> IO ()
+            inspect typechecked (ast, _) =
+                case typechecked of
+                    OK (_, e) -> do
+                        when showASTs     $ (putDocLn $ showStructure ast)
+                        when showAnnExprs $ do
+                            putStrLn $ "[[[[[["
+                            putDocLn $ showStructure e
+                            putStrLn $ "]]]]]]"
+                    Errors errs -> do
+                        putDocLn $ showStructure ast
+                        putDocLn $ red $ text "Typecheck error: "
+                        forM_ errs putDocLn
+                        putDocP line
+                        when pauseOnErrors $ do
+                            putStrLn "Press ENTER to continue..."
+                            _ <- getLine
+                            return ()
+
+            bindingForAnnFn :: Fn () (AnnExpr ty) ty -> ContextBinding ty
+            bindingForAnnFn f = TermVarBinding (identPrefix $ fnIdent f) (fnVar f, Nothing)
+
+            -- Start with the most specific binding possible (i.e. sigma, not tau).
+            -- Otherwise, if we blindly used a meta type variable, we'd be unable
+            -- to type check a recursive & polymorphic function.
+            bindingForFnAST :: Context TypeTC -> FnAST TypeAST -> Tc (ContextBinding TypeTC)
+            bindingForFnAST ctx f = do
+                t <- fnTypeShallow ctx f
+                return $ pair2binding (fnAstName f, t, Nothing)
 
 instance IsQuietPlaceholder TypeAST where
   isQuietPlaceholder _ = False
@@ -211,8 +248,9 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
     liftIO $ when verboseMode $ do
         putDocLn $ text "module AST decls:" <$> pretty (moduleASTdecls modast)
     let dts = moduleASTprimTypes modast ++ moduleASTdataTypes modast
-    let fns = moduleASTfunctions modast
-    let nonfns = moduleASTnonfndefs modast
+    --let fns = moduleASTfunctions modast
+    --let nonfns = moduleASTnonfndefs modast
+    let defns = [(T.pack nm, e) | ToplevelDefn (nm, e) <- moduleASTitems modast]
     let filteredDecls = if standalone
                           then filter okForStandalone primitiveDecls
                           else primitiveDecls
@@ -234,7 +272,7 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
         putDocLn $ (outLn "vvvv declBindings:====================")
         putDocLn $ (dullyellow (vcat $ map (text . show) declBindings))
 
-    rv <- case detectDuplicates $ map fnAstName fns of
+    rv <- case detectDuplicates $ map fst defns of
       [] -> do
         let declCG = buildCallGraphList' declBindings (Set.fromList $ map (\(TermVarBinding nm _) -> nm) declBindings)
         let globalids = map (\(TermVarBinding _ (tid, _)) -> tidIdent tid) $ declBindings ++ primBindings
@@ -242,37 +280,26 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
         let primOpMap = Map.fromList [(T.pack nm, prim)
                             | (nm, (_, prim)) <- Map.toList gFosterPrimOpsTable]
 
-        ctxErrsOrOK_0 <- liftIO $ unTc tcenv0 $ do
+        ctxErrsOrOK <- liftIO $ unTc tcenv0 $ do
                          let ctxAS1 = mkContext (computeContextBindings nonNullCtors)
                                          nullCtorBindings primBindings primOpMap globalids dts
                          let ctxTC0 = mkContext [] [] [] Map.empty [] []
                          ctxTC1 <- tcContext ctxTC0 ctxAS1
                          foldlM typecheckAndFoldContextBindings ctxTC1 declBindings'
-        case ctxErrsOrOK_0 of
-          OK ctxTC0 -> do
-            oo_nonfns' <- liftIO $ unTc tcenv0 $ do
-                            mapM (typecheckNonFn ctxTC0) nonfns
-            case oo_nonfns' of
-              OK nonfns' -> do
-                    liftIO $ putStrLn $ show nonfns'
-
-                    let ctxTC = prependContextBindings ctxTC0 (map fst nonfns')
-
-                    -- declBindings includes datatype constructors and some (?) functions.
-                    let callGraphList = buildCallGraphList fns (Set.fromList $ map fnAstName fns)
-                    let sortedFns = Graph.stronglyConnComp callGraphList -- :: [SCC FnAST]
-                    liftIO $ when verboseMode $ do
-                          putStrLn $ "Function SCC list : " ++
-                            (unlines $ map show [(name, frees) | (_, name, frees) <- callGraphList])
-                    let showASTs     = verboseMode || getDumpIRFlag "ast" flagvals
-                    let showAnnExprs = verboseMode || getDumpIRFlag "ann" flagvals
-                    (annFnSCCs, ctx) <- liftIO $
-                        mapFoldM' sortedFns ctxTC
-                                    (typecheckFnSCC showASTs showAnnExprs pauseOnErrors tcenv0)
-                    liftIO $ unTc tcenv0 (convertTypeILofAST modast ctx annFnSCCs)
-              Errors os -> do
-                when verboseMode $ do liftIO $ putStrLn "~~~ Typechecking the module's non-function bindings failed"
-                return (Errors os)
+        case ctxErrsOrOK of
+          OK ctxTC -> do
+              -- declBindings includes datatype constructors and some (?) functions.
+              let callGraphList = buildCallGraphList defns (Set.fromList $ map fst defns)
+              let sortedBindings = Graph.stronglyConnComp callGraphList -- :: [SCC (T.Text, ExprAST TypeAST)]
+              liftIO $ when verboseMode $ do
+                    putStrLn $ "Top-level SCC list : " ++
+                      (unlines $ map show [(name, frees) | (_, name, frees) <- callGraphList])
+              let showASTs     = verboseMode || getDumpIRFlag "ast" flagvals
+              let showAnnExprs = verboseMode || getDumpIRFlag "ann" flagvals
+              (annSCCs, ctx) <- liftIO $
+                  mapFoldM' sortedBindings ctxTC
+                              (typecheckSCC showASTs showAnnExprs pauseOnErrors tcenv0)
+              liftIO $ unTc tcenv0 (convertTypeILofAST modast ctx annSCCs)
           Errors os -> do
               when verboseMode $ do liftIO $ putStrLn "~~~ Typechecking the module's context failed"
               return (Errors os)
@@ -334,63 +361,47 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
        Left ty  -> Left $ f ty
        Right ty -> Right $ f ty
 
+   freeVarsOf :: Expr b => Set T.Text -> b -> T.Text -> [T.Text]
+   freeVarsOf toplevels body nm =
+     let allCalledFns = Set.fromList $ freeVars body in
+     -- Remove everything that isn't a top-level binding.
+     let nonPrimitives = Set.intersection allCalledFns toplevels in
+     -- remove recursive function name calls
+     Set.toList $ Set.filter (\name -> nm /= name) nonPrimitives
+
    buildCallGraphList' :: [ContextBinding TypeAST] -> Set T.Text
                       -> [(ContextBinding TypeAST, T.Text, [T.Text])]
    buildCallGraphList' bindings toplevels =
-     map (\binding -> (binding, bindingName binding, freeVariables binding)) bindings
-       where
-         bindingName   (TermVarBinding nm _     ) = nm
-         freeVariables (TermVarBinding nm (v, _)) =
-            let allCalledFns = Set.fromList $ freeVars v in
-            -- Remove everything that isn't a top-level binding.
-            let nonPrimitives = Set.intersection allCalledFns toplevels in
-            -- remove recursive function name calls
-            Set.toList $ Set.filter (\name -> nm /= name) nonPrimitives
+     map mkDep bindings
+      where
+       mkDep = \binding@(TermVarBinding nm (v, _)) ->
+                    (binding, nm, freeVarsOf toplevels v nm)
 
-   buildCallGraphList :: [FnAST TypeAST] -> Set T.Text
-                      -> [(FnAST TypeAST, T.Text, [T.Text])]
-   buildCallGraphList asts toplevels =
-     map (\ast -> (ast, fnAstName ast, fnAstFreeVariables ast)) asts
-       where
-         fnAstFreeVariables f =
-            let allCalledFns = Set.fromList $ freeVars (fnAstBody f) in
-            -- Remove everything that isn't a top-level binding.
-            let nonPrimitives = Set.intersection allCalledFns toplevels in
-            -- remove recursive function name calls
-            Set.toList $ Set.filter (\name -> fnAstName f /= name) nonPrimitives
+   buildCallGraphList :: [ (T.Text, ExprAST TypeAST) ] -> Set T.Text
+                      -> [((T.Text, ExprAST TypeAST), T.Text, [T.Text])]
+   buildCallGraphList defns toplevels =
+     map mkDep defns
+      where
+       mkDep = \(nm, expr) -> ((nm, expr), nm, freeVarsOf toplevels expr nm)
+
+   liftSnd :: Monad m => (a -> m b) -> (c, a) -> m (c, b)
+   liftSnd f (c, a) = do b <- f a ; return (c, b)
 
    -- The functions from the module have already been converted;
    -- now we just need to convert the rest of the module...
    convertTypeILofAST :: ModuleExpr TypeAST
                       -> Context TypeTC
-                      -> [[OutputOr (AnnExpr TypeTC)]]
+                      -> [[OutputOr (Binding (AnnExpr TypeTC))]]
                       -> Tc TCRESULT
    convertTypeILofAST mAST ctx_tc oo_unprocessed = do
-     mapM_ (tcInject collectIntConstraints) (concat oo_unprocessed)
+     mapM_ (tcInject (collectIntConstraints . snd)) (concat oo_unprocessed)
      tcApplyIntConstraints
 
      constraints <- tcGetConstraints
      processTcConstraints constraints
 
-     -- oo_annfns :: [[AnnExpr TypeTC]]
-     oo_annfns <- mapM (mapM (tcInject handleCoercionsAndConstraints)) oo_unprocessed
-{-
-     let partition :: [AnnExpr t] -> ([Fn () (AnnExpr t) t], [AnnExpr t])
-         partition exprs = partitionEithers [case e of
-                                                E_AnnFn f -> Left f
-                                                _         -> Right e
-                                              | e <- exprs]
-         rearrange :: [ ([Fn () (AnnExpr t) t], [AnnExpr t]) ] ->
-                      ( [[Fn () (AnnExpr t) t]], [AnnExpr t] )
-         rearrange partitioneds =
-            (map fst partitioneds, concatMap snd partitioneds)
-
-     let (funs, nonfns) = rearrange (map partition oo_annfns)
-     -}
-     let funs = map (map (\e -> case e of
-                           E_AnnFn f -> f
-                           _ -> error $ "convertTypeILofAST had a non-fn in the fn SCC!"))
-                    oo_annfns
+     -- annexprs :: [[Binding (AnnExpr TypeTC)]]
+     annexprs <- mapM (mapM (tcInject (liftSnd handleCoercionsAndConstraints))) oo_unprocessed
 
      -- We've already typechecked the functions, so no need to re-process them...
      -- First, convert the non-function parts of our module from TypeAST to TypeTC.
@@ -399,21 +410,21 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
 
      -- TODO get the non-fns from mTC items, wrap around buildExprSCC' ...
 
-     let mTC' = ModuleIL (buildExprSCC' funs)
+     let mTC' = ModuleIL (buildExprSCC' annexprs)
                          (externalModuleDecls mTC)
                          (moduleASTdataTypes  mTC)
                          (moduleASTprimTypes  mTC)
                          (moduleASTsourceLines mAST)
 
      kmod <- kNormalizeModule  mTC' ctx_tc
-     --tcLift $ putStrLn $ "mAST: " ++ show (pretty modast)
-     --tcLift $ putStrLn $ "mTC:  " ++ show (pretty mTC   )
-     --tcLift $ putStrLn $ "mTC': " ++ show (pretty mTC'  )
-     --tcLift $ putStrLn $ "kmod: " ++ show (pretty kmod  )
+     tcLift $ putStrLn $ "mAST: " ++ show (pretty modast)
+     tcLift $ putStrLn $ "mTC:  " ++ show (pretty mTC   )
+     tcLift $ putStrLn $ "mTC': " ++ show (pretty mTC'  )
+     tcLift $ putStrLn $ "kmod: " ++ show (pretty kmod  )
      return (kmod, globalIdents ctx_tc)
 
        where
-        buildExprSCC' :: [[Fn () (AnnExpr TypeTC) TypeTC]] -> (AnnExpr TypeTC)
+        buildExprSCC' :: [[Binding (AnnExpr TypeTC)]] -> (AnnExpr TypeTC)
         buildExprSCC' [] = error "Main.hs: Can't build SCC of no functions!"
         buildExprSCC' es = let call_of_main = AnnCall (annotForRange $ MissingSourceRange "buildExprSCC'main!") unitTypeTC
                                                 (E_AnnVar (annotForRange $ MissingSourceRange "buildExprSCC'main")
@@ -421,11 +432,22 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
                                                 []
                                mainty = FnTypeTC [unitTypeTC] unitTypeTC (error "fx.bESCC") (UniConst FastCC) (UniConst FT_Proc)
                           in foldr build call_of_main es
-         where build es body = case es of
-                    [] -> body
-                    _  -> AnnLetFuns (annotForRange $ MissingSourceRange "buildExprSCC'")
-                                     (map fnIdent es) es body
+         where isFn (E_AnnFn {}) = True
+               isFn _ = False
+
+               build binds body = case binds of
+                [] -> body
+                [(nm, expr)] | not (isFn expr) ->
+                    AnnLetVar emptyAnnot (GlobalSymbol nm) expr body
+                fnbinds ->
+                    let fnes = map snd fnbinds in
+                    if all isFn fnes
+                      then let fns = [f | E_AnnFn f <- fnes] in
+                           AnnLetFuns emptyAnnot (map fnIdent fns) fns body
+                      else error $ "Main.hs: unable to build expr from mixed fns/non-fns"
+
                unitTypeTC = TupleTypeTC (UniConst KindPointerSized) []
+               emptyAnnot = annotForRange $ MissingSourceRange "buildExprSCC'"
 
         -- Note that we discard internal declarations, which are only useful
         -- during type checking. External declarations, on the other hand,
@@ -779,8 +801,8 @@ lowerModule (tc_time, (kmod, globals)) = do
      (cp_time, (ilprog, prealloc)) <- ioTime $ prepForCodegen ccmod  constraints
      whenDumpIR "prealloc" $ do
          putDocLn $ (outLn "/// Pre-allocation ====================")
-         _ <- liftIO (renderCC (ccmod { moduleILbody = let (CCB_Procs _ main) = moduleILbody ccmod in
-                                                         CCB_Procs prealloc main }) True )
+         _ <- liftIO (renderCC (ccmod { moduleILbody = let (CCBody _ vals main) = moduleILbody ccmod in
+                                                         CCBody prealloc vals main }) True )
          putDocLn $ (outLn "^^^ ===================================")
 
      whenDumpIR "il" $ do

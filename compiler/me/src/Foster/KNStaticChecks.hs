@@ -308,6 +308,10 @@ checkModuleExprs expr facts =
                            facts (zip ids fns)
         mapM_ (\fn -> checkFn fn facts') fns
         checkModuleExprs b facts'
+    KNLetVal _id expr b -> do
+        qref <- gets ccSMTStats
+        _ <- evalStateT (checkBody expr facts) (SCState Map.empty qref)
+        checkModuleExprs b facts
     KNCall {} ->
       return ()
     _ -> error $ "Unexpected expression in checkModuleExprs: " ++ show expr

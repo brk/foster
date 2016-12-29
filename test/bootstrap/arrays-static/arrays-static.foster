@@ -1,0 +1,14 @@
+main = {
+    barBARARBARBAARA 42;
+    fooBARBAZ___QUUUX !;
+};
+
+fooBARBAZ___QUUUX = {
+    print_i32 aAAAARRRRRRAAAYYYYYY[0];
+};
+
+barBARARBARBAARA = { arg =>
+  expect_i32 arg;
+};
+
+aAAAARRRRRRAAAYYYYYY = prim mach-array-literal 42 43 44;

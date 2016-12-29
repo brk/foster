@@ -133,8 +133,7 @@ struct Letable {
   primopname   @ 13 : Text $optional;
   primopsize   @ 14 : List(Int32); # TODO use this # optional
   ctorinfo     @ 15 : PbCtorInfo $optional;
-  elemtype     @ 16 : Type $optional;
-  arraylit     @ 17 : PbArrayLiteral $optional;
+  arraylit     @ 16 : PbArrayLiteral $optional;
 }
 
 struct PbCallInfo {
@@ -153,6 +152,7 @@ struct PbCallAsm {
 }
 
 struct PbArrayLiteral {
+  elemtype  @ 1 : Type;
   entries   @ 0 : List(PbArrayEntry); # repeated
 }
 
@@ -272,11 +272,18 @@ struct Decl {
   type   @ 1 : Type;
 }
 
+struct PbToplevelItem {
+  name         @ 1 : Text;
+  arr          @ 0 : PbArrayLiteral;
+}
+
 struct Module {
   modulename       @ 0 : Text;
   procs            @ 1 : List(Proc); # repeated
   externvaldecls   @ 2 : List(Decl); # repeated
   typdecls         @ 3 : List(Decl); # repeated
   modlines         @ 4 : List(Text); # repeated
+
+  items            @ 5 : List(PbToplevelItem); # repeated
 }
 

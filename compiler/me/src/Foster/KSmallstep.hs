@@ -300,8 +300,9 @@ ssTermOfExpr expr =
     KNNotInlined        _ e -> ssTermOfExpr e
 
 arrEntry _t (Right var) = SSTmExpr $ IVar $ tidIdent var
-arrEntry (PrimIntIL isb) (Left (LitInt lit)) = SSTmValue $ mkSSInt isb (litIntValue lit)
-arrEntry _ other = error $ "KSmallstep.hs: Unsupported array entry type: " ++ show other
+arrEntry              (PrimIntIL isb)  (Left (LitInt lit)) = SSTmValue $ mkSSInt isb (litIntValue lit)
+arrEntry (ArrayTypeIL (PrimIntIL isb)) (Left (LitInt lit)) = SSTmValue $ mkSSInt isb (litIntValue lit)
+arrEntry ty other = error $ "KSmallstep.hs: Unsupported array entry type: " ++ show other ++ "\nof type" ++ show ty
 
 mkSSInt I1  i = SSInt8  (fromInteger i)
 mkSSInt I8  i = SSInt8  (fromInteger i)
@@ -551,8 +552,7 @@ stepExpr gs expr = do
            v -> error $ "Cannot call non-function value " ++ display v
 
     IArrayRead base idxvar ->
-        let (SSInt32 i) = getval gs idxvar in
-        let n = (fromIntegral i) :: Int in
+        let Right n = getint $ getval gs idxvar in
         case getval gs base of
           a@(SSArray _)      ->
             return $ withTerm gs (SSTmValue $ prim_arrayRead gs n a)
@@ -562,8 +562,7 @@ stepExpr gs expr = do
                         ++ " to be array value; had " ++ show other
 
     IArrayPoke iv base idxvar ->
-        let (SSInt32 i) = getval gs idxvar in
-        let n = (fromIntegral i) :: Int in
+        let Right n = getint $ getval gs idxvar  in
         arrayPoke gs (getval gs base) n (getval gs iv)
 
     IAllocArray sizeid -> do
@@ -571,6 +570,12 @@ stepExpr gs expr = do
         -- The array cells are initially filled with constant zeros,
         -- regardless of what type we will eventually store.
         arrayOf gs [SSInt32 n | n <- [0 .. i - 1]]
+
+getint :: SSValue -> Either SSValue Int
+getint (SSInt32 i) = Right $ fromIntegral i
+getint (SSInt16 i) = Right $ fromIntegral i
+getint (SSInt8  i) = Right $ fromIntegral i
+getint val = Left val
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||||||| Pattern Matching ||||||||||||||||||||{{{

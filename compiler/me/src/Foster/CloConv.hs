@@ -26,6 +26,7 @@ import Compiler.Hoopl
 
 import Foster.Base
 import Foster.CFG
+import Foster.KNUtil
 import Foster.TypeLL
 import Foster.MonoType
 import Foster.Letable
@@ -45,7 +46,7 @@ import Foster.PatternMatch
 -- Next     stage: prepForCodegen in ILExpr.hs
 
 -- ||||||||||||||||||||||||| Datatypes ||||||||||||||||||||||||||{{{
-data CCBody = CCB_Procs [CCProc] CCMain
+data CCBody = CCBody [CCProc] [ToplevelBinding] CCMain
 data CCMain = CCMain TailQ TypeLL LLVar [LLVar]
 type CCProc = Proc BasicBlockGraph'
 type Block' = Block Insn' C C
@@ -99,6 +100,7 @@ data CCLast = CCCont        BlockId [LLVar] -- either ret or br
             | CCCase        LLVar [((CtorId, CtorRepr), BlockId)] (Maybe BlockId)
             deriving (Show)
 
+data ToplevelBinding = TopBindArray Ident TypeLL [Literal]
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||||| The Driver |||||||||||||||||||||||||{{{
@@ -111,13 +113,13 @@ closureConvertAndLift dataSigs globalIds u m =
     -- We lambda lift top level functions, since we know a priori
     -- that they don't have any "real" free vars.
     -- Lambda lifting then closure converts any nested functions.
-    let initialState = ILMState u Map.empty Map.empty Map.empty dataSigs in
+    let initialState = ILMState u Map.empty Map.empty Map.empty [] dataSigs in
     -- Currently, globalIds is `globalIdents ctx_tc` in convertTypeILofAST in Main.hs...
     -- The list does not include any identifiers from the input module.
     let (ccmain, st) = runState (closureConvertToplevel globalIds $ moduleILbody m)
                                                                  initialState in
     (ModuleIL {
-          moduleILbody        = CCB_Procs (Map.elems $ ilmProcs st) ccmain
+          moduleILbody        = CCBody (Map.elems $ ilmProcs st) (ilmVals st) ccmain
         , moduleILdecls       = map (\(s,t) -> (s, monoToLL t)) (moduleILdecls m)
         , moduleILdataTypes   = map (fmap monoToLL) (moduleILdataTypes m)
         , moduleILprimTypes   = map (fmap monoToLL) (moduleILprimTypes m)
@@ -139,7 +141,8 @@ closureConvertToplevel globalIds body = do
        cvt _ (CFB_Call t v vs) = return (CCMain YesTail (monoToLL t) (llv v) (map llv vs))
 
        -- TODO what to do with expr??
-       cvt globalized (CFB_LetVal id _expr body) =
+       cvt globalized (CFB_LetVal id expr body) = do
+        recordGlobalVal (mkToplevelBinding id expr)
         cvt (Set.union globalized (Set.fromList [id])) body
 
        cvt globalized (CFB_LetFuns ids fns body) =
@@ -169,6 +172,23 @@ closureConvertToplevel globalIds body = do
           in if traced gonnaLift
               then do _ <- mapM (lambdaLift []) fns      ; cvt globalized' body
               else do _ <- closureConvertLetFuns ids fns ; cvt globalized  body
+
+recordGlobalVal Nothing = return ()
+recordGlobalVal (Just thing) = do
+        old <- get
+        put (old { ilmVals = thing : (ilmVals old) })
+
+mkToplevelBinding :: Ident -> KNMono -> Maybe ToplevelBinding
+mkToplevelBinding id kn =
+  case kn of
+    KNArrayLit ty _ litsOrVars ->
+      let lits = [lit | Left lit <- litsOrVars] in
+      if length lits == length litsOrVars
+        then Just $ TopBindArray id (monoToLL ty) lits
+        else error $ "Top-level arrays can only contain literals, not variables, for now..."
+
+    _ -> Nothing -- error $ "mkLetableFrom " ++ show id ++ ":\n" ++ show (pretty kn)
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||||| Lambda Lifter ||||||||||||||||||||||{{{
@@ -510,6 +530,7 @@ data ILMState = ILMState {
   , ilmBlockWrappers :: Map BlockId BlockId          -- read-write
   , ilmDecisionTrees :: Map DT_Ord  BlockId          -- read-write
   , ilmProcs         :: Map Ident   CCProc           -- read-write
+  , ilmVals          :: [ToplevelBinding]            -- read-write
   , ilmCtors         :: DataTypeSigs                 -- read-only per-program
 }
 type ILM a = State ILMState a
@@ -633,8 +654,14 @@ instance Pretty BasicBlockGraph' where
                 <$> text "------------------------------"))
           <> pretty (bbgpBody bbg)
 
+instance Pretty ToplevelBinding where
+  pretty tb = text "toplevel binding..."
+
 instance Pretty CCBody where
- pretty (CCB_Procs procs _) = vcat (map (\p -> line <> pretty p) procs)
+ pretty (CCBody procs vals _) =
+       vcat (map (\p -> line <> pretty p) vals)
+   <$> vcat (map (\p -> line <> pretty p) procs)
+
 
 instance Pretty TypeLL where pretty t = text (show t) -- TODO fix
 

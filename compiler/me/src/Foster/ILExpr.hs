@@ -57,6 +57,7 @@ import Data.Graph(SCC(..))
 -- ||||||||||||||||||||||||| Datatypes ||||||||||||||||||||||||||{{{
 -- A program consists of top-level data types and mutually-recursive procedures.
 data ILProgram = ILProgram [ILProcDef]
+                           [ToplevelBinding]
                            [LLExternDecl]
                            [DataType TypeLL]
                            SourceLines
@@ -97,7 +98,7 @@ prepForCodegen :: ModuleIL CCBody TypeLL -> MayGCConstraints -> Compiled (ILProg
 prepForCodegen m mayGCconstraints0 = do
     let decls = map (\(s,t) -> LLExternDecl s t) (moduleILdecls m)
     let dts = moduleILprimTypes m ++ moduleILdataTypes m
-    let hprocs = flatten $ moduleILbody m
+    let CCBody hprocs valbinds _ = moduleILbody m
     combined <- mapM explicateProc hprocs
     let (aprocs, preallocprocs) = unzip combined
 
@@ -109,12 +110,9 @@ prepForCodegen m mayGCconstraints0 = do
                                    [(mgc,f) | (f,mgc) <- Map.toList mayGCmap]) )
 
     procs <- mapM (deHooplize mayGCmap) aprocs
-    return $ (ILProgram procs decls dts (moduleILsourceLines m),
+    return $ (ILProgram procs valbinds decls dts (moduleILsourceLines m),
               preallocprocs)
   where
-   flatten :: CCBody -> [CCProc]
-   flatten (CCB_Procs procs _) = procs
-
    explicateProc p = do
      g0 <- runPreAllocationOptimizations (simplifyCFG $ procBlocks p)
      g' <- makeAllocationsExplicit g0
@@ -741,8 +739,9 @@ runPreAllocationOptimizations b0 = do
 
 -- ||||||||||||||||||||||||| Boilerplate ||||||||||||||||||||||||{{{
 showILProgramStructure :: ILProgram -> Doc
-showILProgramStructure (ILProgram procdefs _decls _dtypes _lines) =
-    vcat $ map showProcStructure procdefs
+showILProgramStructure (ILProgram procdefs vals _decls _dtypes _lines) =
+        vcat (map pretty vals)
+    <$> vcat (map showProcStructure procdefs)
   where
     showProcStructure (ILProcDef proc _ roots) =
         text (show $ procIdent proc) <+> (text "//")

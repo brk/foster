@@ -362,6 +362,10 @@ void LLModule::codegenModule(CodegenPass* pass) {
     extendWithImplementationSpecificProcs(pass, procs);
   }
 
+  for (auto& item : items) {
+    pass->globalValues[item->name] = item->arrlit->codegen(pass);
+  }
+
   // Ensure that the llvm::Function*s are created for all the function
   // prototypes, so that mutually recursive function references resolve.
   for (size_t i = 0; i < procs.size(); ++i) {
@@ -1250,7 +1254,7 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
   // If there are no non-constant values, then the array can be
   // allocated globally instead of on the heap, and we won't need
   // to copy any values.
-  if (ncvals.empty() && isImmutable) {
+  if (!arr || (ncvals.empty() && isImmutable)) {
     auto const_arr_tidy = emitConstantArrayTidy(vals.size(), const_arr);
 
     CtorRepr ctorRepr; ctorRepr.smallId = -1;

@@ -118,17 +118,37 @@ struct LLDecl {
   TypeAST*     getType() const { return type; }
 };
 
+struct LLArrayLiteral : public LLExpr {
+  TypeAST* elem_type;
+  LLVar* arr;
+  std::vector<LLExpr*> args;
+  explicit LLArrayLiteral(TypeAST* elem_type, LLVar* arr, std::vector<LLExpr*> args)
+        : LLExpr("LLArrayLiteral"), elem_type(elem_type), arr(arr), args(args) {}
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
+struct LLTopItem {
+  string   name;
+  LLArrayLiteral*  arrlit;
+
+  explicit LLTopItem(const string& name, LLArrayLiteral* arrlit)
+      : name(name), arrlit(arrlit) {}
+};
+
 struct LLModule {
   const std::string name;
   std::vector<LLProc*> procs;
   std::vector<LLDecl*> extern_val_decls;
   std::vector<LLDecl*> datatype_decls;
+  std::vector<LLTopItem*> items;
 
   explicit LLModule(const std::string& name,
                     const std::vector<LLProc*>& procs,
                     const std::vector<LLDecl*> edecls,
-                    const std::vector<LLDecl*> datatype_decls)
-  : name(name), procs(procs), extern_val_decls(edecls), datatype_decls(datatype_decls) {}
+                    const std::vector<LLDecl*> datatype_decls,
+                    const std::vector<LLTopItem*> items)
+  : name(name), procs(procs), extern_val_decls(edecls),
+    datatype_decls(datatype_decls), items(items) {}
 
   void codegenModule(CodegenPass* pass);
 };
@@ -379,14 +399,6 @@ struct LLArrayLength : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
-struct LLArrayLiteral : public LLExpr {
-  TypeAST* elem_type;
-  LLVar* arr;
-  std::vector<LLExpr*> args;
-  explicit LLArrayLiteral(TypeAST* elem_type, LLVar* arr, std::vector<LLExpr*> args)
-        : LLExpr("LLArrayLiteral"), elem_type(elem_type), arr(arr), args(args) {}
-  virtual llvm::Value* codegen(CodegenPass* pass);
-};
 
 // Conceptually redundant, but more efficient at representing large byte arrays.
 struct LLByteArray : public LLExpr {
