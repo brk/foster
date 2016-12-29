@@ -42,7 +42,7 @@ part2 = {
   print_i64 x[1];
 };
 
-invoker32 = { f => f !; }
+invoker32 = { f => f ! };
 oddity = {
   expect_i32 3333;
   ffff = { 3333 };
