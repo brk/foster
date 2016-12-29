@@ -403,10 +403,13 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
      -- annexprs :: [[Binding (AnnExpr TypeTC)]]
      annexprs <- mapM (mapM (tcInject (liftSnd handleCoercionsAndConstraints))) oo_unprocessed
 
-     -- We've already typechecked the functions, so no need to re-process them...
-     -- First, convert the non-function parts of our module from TypeAST to TypeTC.
+     -- We've already typechecked the definitions, so no need to re-process them...
+     -- First, convert the non-defn parts of our module from TypeAST to TypeTC.
      -- mTC :: ModuleExpr TypeTC
-     mTC <- convertModule (tcType ctx_tc) mAST
+     mTC <- let nonDefn (ToplevelDefn _) = False
+                nonDefn _                = True
+            in convertModule (tcType ctx_tc) $ mAST { moduleASTitems =
+                                      filter nonDefn (moduleASTitems mAST) }
 
      -- TODO get the non-fns from mTC items, wrap around buildExprSCC' ...
 
