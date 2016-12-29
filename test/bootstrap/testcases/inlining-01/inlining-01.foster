@@ -9,7 +9,7 @@ fib1 = { x =>
   if x ==Int32 0 then 1 else
     x *Int32 (fib1 (x -Int32 1))
   end
-}
+};
 
 noinline_ex1 = {
   expect_i32 120;
