@@ -13,7 +13,7 @@ import Foster.Base
 import Foster.Kind
 import Foster.ILExpr hiding (Block)
 import qualified Foster.ILExpr as IL
-import qualified Foster.CloConv as CC(Proc(..))
+import qualified Foster.CloConv as CC(Proc(..), ToplevelBinding(..))
 import Foster.TypeLL
 import Foster.Letable hiding (Letable)
 import qualified Foster.Letable as IL
@@ -238,7 +238,6 @@ defaultLetable ty tag =
         , primopname_of_Letable  = StrictlyNone
         , primopsize_of_Letable  = []
         , ctorinfo_of_Letable    = StrictlyNone
-        , elemtype_of_Letable    = StrictlyNone
         , arraylit_of_Letable    = StrictlyNone
     }
 
@@ -328,21 +327,12 @@ dumpExpr _ x@(ILArrayPoke (ArrayIndex b i rng sg) v) =
         , stringvalue_of_Letable = StrictlyJust $ stringSG sg
         , primopname_of_Letable = StrictlyJust $ u8fromString $ highlightFirstLine rng }
 
-dumpExpr _ _x@(ILArrayLit ty arr vals) =
-  let
-        (LLArrayType ety) = ty
-        dumpArrayValue (Right var) = PbArrayEntry { var_of_PbArrayEntry = StrictlyJust $ dumpVar var
-                                                  , lit_of_PbArrayEntry = StrictlyNone }
-        dumpArrayValue (Left lit)  = PbArrayEntry { var_of_PbArrayEntry = StrictlyNone,
-                                                    lit_of_PbArrayEntry = StrictlyJust $ dumpLiteral ety lit }
-  in
-    (defaultLetable ty Ilarrayliteral) {
-          parts_of_Letable = [dumpVar arr]
-        , elemtype_of_Letable = StrictlyJust $ dumpType ety
-        , arraylit_of_Letable = StrictlyJust $ PbArrayLiteral {
-                         entries_of_PbArrayLiteral = map dumpArrayValue vals
-                      }
-        }
+dumpExpr _ _x@(ILArrayLit ty@(LLArrayType ety) arr vals) =
+      (defaultLetable ty Ilarrayliteral) {
+        parts_of_Letable = [dumpVar arr]
+      , arraylit_of_Letable = StrictlyJust $ pbArrayLit ety vals
+      }
+
 
 dumpExpr maygc (ILCall t base args)
         = dumpCall t (dumpVar base)          args maygc ccs
@@ -506,6 +496,19 @@ dumpCtorRepr _ (CR_Value ciid) =
     }
 
 -----------------------------------------------------------------------
+
+pbArrayLit ety vals =
+  PbArrayLiteral {
+    elemtype_of_PbArrayLiteral = dumpType ety
+  , entries_of_PbArrayLiteral = map dumpArrayValue vals
+  }
+ where
+  dumpArrayValue (Right var) = PbArrayEntry { var_of_PbArrayEntry = StrictlyJust $ dumpVar var
+                                            , lit_of_PbArrayEntry = StrictlyNone }
+  dumpArrayValue (Left lit)  = PbArrayEntry { var_of_PbArrayEntry = StrictlyNone,
+                                              lit_of_PbArrayEntry = StrictlyJust $ dumpLiteral ety lit }
+
+-----------------------------------------------------------------------
 dumpVar (TypedId t i) = dumpMoVar t i
 
 dumpGlobalSymbol base =
@@ -530,10 +533,11 @@ dumpILProgramToCapnp m outpath = do
     BS.writeFile outpath bytes
 
 dumpProgramToModule :: ILProgram -> Module
-dumpProgramToModule (ILProgram procdefs extern_decls datatypes (SourceLines lines))
+dumpProgramToModule (ILProgram procdefs vals extern_decls datatypes (SourceLines lines))
     = Module {
-          modulename_of_Module     = u8fromString $ "foo"
+          modulename_of_Module     = u8fromString $ "foo539hmm"
         , procs_of_Module          = map dumpProc procdefs
+        , items_of_Module          = map dumpItem vals
         , externvaldecls_of_Module = map dumpDecl extern_decls
         , typdecls_of_Module       = map dumpDataTypeDecl datatypes
         , modlines_of_Module       = map u8fromText (toList lines)
@@ -553,6 +557,13 @@ dumpProgramToModule (ILProgram procdefs extern_decls datatypes (SourceLines line
         let retty = CC.procReturnType proc in
         let argtys = map tidType (CC.procVars proc) in
         (argtys, retty, FastCC)
+
+    dumpItem :: CC.ToplevelBinding -> PbToplevelItem
+    dumpItem (CC.TopBindArray id _ty@(LLArrayType ety) lits) =
+      PbToplevelItem {
+          name_of_PbToplevelItem = dumpIdent id
+        , arr_of_PbToplevelItem = pbArrayLit ety (map Left lits)
+        }
 
     dumpDataTypeDecl :: DataType TypeLL -> Decl
     dumpDataTypeDecl datatype =

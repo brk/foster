@@ -70,6 +70,10 @@ computeCFGs uref expr =
       cffns <- mapM (computeCFGIO uref) fns
       cfbody <- computeCFGs uref body
       return $ CFB_LetFuns ids cffns cfbody
+    KNLetVal id expr body -> do
+      putStrLn $ "top-level expr: " ++ show expr
+      cfbody <- computeCFGs uref body
+      return $ CFB_LetVal id expr cfbody
     -- We've kept a placeholder call to the main function here until now,
     -- but at this point we can get rid of it, since we're convering to a
     -- flat-list representation with an implicit call to main.

@@ -364,14 +364,25 @@ LLExpr* parseArrayEntry(const pb::PbArrayEntry::Reader& e) {
 }
 
 LLExpr* parseArrayLiteral(const pb::Letable::Reader& e) {
-  ASSERT(e.hasElemtype());
   std::vector<LLExpr*> args;
   LLVar* arr = parseTermVar(e.getParts()[0]);
   const pb::PbArrayLiteral::Reader lit = e.getArraylit();
   for (auto ent : lit.getEntries()) {
     args.push_back(parseArrayEntry(ent));
   }
-  return new LLArrayLiteral(TypeAST_from_pb(e.getElemtype()), arr, args);
+  return new LLArrayLiteral(TypeAST_from_pb(lit.getElemtype()), arr, args);
+}
+
+LLArrayLiteral* parseTopArrayLiteral(const pb::PbArrayLiteral::Reader& lit) {
+  std::vector<LLExpr*> args;
+  for (auto ent : lit.getEntries()) {
+    args.push_back(parseArrayEntry(ent));
+  }
+  return new LLArrayLiteral(TypeAST_from_pb(lit.getElemtype()), nullptr, args);
+}
+
+LLTopItem* parseToplevelItem(const pb::PbToplevelItem::Reader& e) {
+  return new LLTopItem(e.getName(), parseTopArrayLiteral(e.getArr()));
 }
 
 LLExpr* parseByteArray(const pb::Letable::Reader& e) {
@@ -497,7 +508,12 @@ LLModule* LLModule_from_capnp(const foster::be::Module::Reader& e) {
     evdecls.push_back(parseDecl(evd));
   }
 
-  return new LLModule(moduleName, procs, evdecls, datatype_decls);
+  std::vector<LLTopItem*> items;
+  for (auto p : e.getItems()) {
+    items.push_back(parseToplevelItem(p));
+  }
+
+  return new LLModule(moduleName, procs, evdecls, datatype_decls, items);
 }
 
 
