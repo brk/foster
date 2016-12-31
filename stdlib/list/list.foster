@@ -93,7 +93,7 @@ listMapMaybeAlt = { f => v =>
 
 listFilterMaybe :: forall (a:Type) { List (Maybe a) => List a };
 listFilterMaybe = { lst =>
-  mb = { mba => tail =>
+  mb = { mba : Maybe a => tail : List a =>
           case mba
             of $None   -> tail
             of $Some x -> Cons x tail
