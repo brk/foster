@@ -214,7 +214,7 @@ doQuantification e' ctx = do
                 , indent 4 (highlightFirstLineDoc (rangeOf e'))
                 , indent 2 (text "is being given a type involving meta type variables,"
                           <$> text "not an implicitly-generalized polymorphic type"
-                          <+> text "(as might be expected in ML or Haskell")]
+                          <+> text "(as might be expected in ML or Haskell).")]
          return e'
       _ | null fx_forall_tvs -> return e'
       _ -> do -- generalize over escaping effect meta type variables
