@@ -1608,6 +1608,7 @@ The corresponding AST to be matched is
     if (isupper(name[0])) {
       return "v_" + name;
     }
+    if (name == "strlen") return "ptrStrlen";
     return name;
   }
 

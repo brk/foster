@@ -81,6 +81,17 @@ ptrMemcpy = { dst => src => n =>
   enumRange32 0 n { i => ptrSetIndex dst i (ptrGetIndex src i) };
 };
 
+ptrStrlen :: { Ptr Int8 => Int64 };
+ptrStrlen = { ptr =>
+  REC go = { i =>
+    if ptrGetIndex ptr i ==Int8 0
+      then i |> zext_i32_to_i64
+      else go (i +Int32 1)
+    end
+  };
+  go 0
+};
+
 ptrMemcmp :: forall (a:Type) { Ptr a => Ptr a => Int32 => { a => a => Ord } => Int32 };
 ptrMemcmp = { a => b => n => cmp =>
   REC go = { i =>
