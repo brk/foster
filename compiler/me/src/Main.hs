@@ -420,10 +420,6 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
                          (moduleASTsourceLines mAST)
 
      kmod <- kNormalizeModule  mTC' ctx_tc
-     tcLift $ putStrLn $ "mAST: " ++ show (pretty modast)
-     tcLift $ putStrLn $ "mTC:  " ++ show (pretty mTC   )
-     tcLift $ putStrLn $ "mTC': " ++ show (pretty mTC'  )
-     tcLift $ putStrLn $ "kmod: " ++ show (pretty kmod  )
      return (kmod, globalIdents ctx_tc)
 
        where
