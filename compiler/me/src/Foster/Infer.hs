@@ -501,5 +501,5 @@ unify' !depth t1 t2 msgs = do
                                       <$> text " this is a problem the compiler can't just solve for you"
                                       <$> text " is that it requires higher-order unification, which is"
                                       <$> text " undecidable in theory. And that's not great because it"
-                                      <$> text " would make the compiler slow(er) and fragile(r)...")]
+                                      <$> text " would make the compiler slow(er) and fragile(r)...)")]
 -- }}}
