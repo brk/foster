@@ -1,0 +1,21 @@
+scan = {
+
+    goto_yy5 = { print_i32 1  };
+    goto_yy15 = {
+        case opaquely_i32 0
+          of 1 -> { goto_yy5 ! } !
+          of _ -> { goto_yy5 ! } !
+        end
+    };
+
+    goto_yy15 !
+};
+
+main = {
+  expect_i32 1;
+  expect_i32 1;
+  scan !;
+  scan !;
+  0
+};
+

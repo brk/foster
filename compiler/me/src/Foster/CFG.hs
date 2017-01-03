@@ -524,6 +524,9 @@ instance Pretty BasicBlock where
 instance Pretty (Graph Insn C C) where
   pretty bg = foldGraphNodes  prettyInsn bg empty
 
+instance Pretty (Graph Insn O O) where
+  pretty bg = foldGraphNodes  prettyInsn bg empty
+
 prettyInsn :: Insn e x -> Doc -> Doc
 prettyInsn i d = d <$> pretty i
 
@@ -656,21 +659,26 @@ mapGraphNodesM_ a entrybid g = do
 
 -- Simplified interface for rebuilding graphs in the common case where
 -- the client doesn't want to bother threading any state through.
+--
+-- Passing Nothing for entrybid means visit graph nodes in arbitrary order,
+-- preserving unreachable blocks;
+-- Passing Just entrybid means visit graph nodes in DFS order,
+-- dropping unreachable blocks.
 rebuildGraphM :: (Monad m, NonLocal o, FosterNode i, NonLocal i)
-                         => BlockId -> Graph i C C
+                         => Maybe BlockId -> Graph i C C
                          -> (forall e x. i e x -> m (Graph o e x))
                          -> m (Graph o C C)
-rebuildGraphM entrybid body transform = do
+rebuildGraphM mb_entrybid body transform = do
   let transform' () insn = do g <- transform insn; return (g, ())
-  (g, ()) <- rebuildGraphAccM entrybid body () transform'
+  (g, ()) <- rebuildGraphAccM mb_entrybid body () transform'
   return g
 
 -- More complete interface supporting threaded state.
 rebuildGraphAccM :: (Monad m, NonLocal o, FosterNode i, NonLocal i)
-                         => BlockId -> Graph i C C -> acc
+                         => Maybe BlockId -> Graph i C C -> acc
                          -> (forall e x. acc -> i e x -> m (Graph o e x, acc))
                          -> m (Graph o C C, acc)
-rebuildGraphAccM entrybid body init transform = do
+rebuildGraphAccM mb_entrybid body init transform = do
    let rebuildBlockGraph blk_cc acc0 = do {
       ; let (f, ms, l) = unblock ( blockSplit blk_cc )
       ; (fg, acc1) <- transform acc0 f
@@ -678,11 +686,22 @@ rebuildGraphAccM entrybid body init transform = do
       ; (lg, accm) <- transform accn l
       ; return $ (fg H.<*> catGraphs gs H.<*> lg, accm)
    }
-   let blocks = postorder_dfs (mkLast (branchTo entrybid) |*><*| body)
+   let blocks = case mb_entrybid of
+                  Just entrybid -> postorder_dfs (mkLast (branchTo entrybid) |*><*| body)
+                  Nothing       -> graphBlocks body
    (mb, acc) <- mapFoldM' blocks init rebuildBlockGraph
    return $ (catClosedGraphs mb, acc)
   where
    unblock (f, ms_blk, l) = (f, blockToList ms_blk, l)
+
+-- Akin to preorder_dfs but preserves unreachable blocks.
+graphBlocks :: NonLocal i => Graph i C C -> [Block i C C]
+graphBlocks g =
+  case g of
+    --GNil -> []
+    --GUnit b -> [b]
+    GMany NothingO body NothingO -> mapElems body
+
 
 -- ||||||||||||||||||||||||||| UniqMonadIO ||||||||||||||||||||||{{{
 -- Basically a copy of UniqueMonadT, specialized to IO, with a
