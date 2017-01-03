@@ -44,7 +44,7 @@ optimizeCFFn r fn = do
   uref      <- gets ccUniqRef
 
   let optimizations = [ elimContInBBG
-                      , runCensusRewrites'
+                      , runCensusRewrites' (fnIdent fn)
                       , eliminateAliasedVariables
                       , elimContInBBG
                       , runLiveness
@@ -91,7 +91,7 @@ optimizeCFFn r fn = do
 
 mapFunctions :: forall m. MonadIO m => (CFFn -> m CFFn) -> BasicBlockGraph -> m BasicBlockGraph
 mapFunctions optFn bbg = do
-  body' <- rebuildGraphM (fst $ bbgEntry bbg) (bbgBody bbg) recurse
+  body' <- rebuildGraphM (Just $ fst $ bbgEntry bbg) (bbgBody bbg) recurse
   return bbg { bbgBody = body' }
     where recurse :: forall e x. Insn e x -> m (Graph Insn e x)
           recurse insn@(ILabel  {}) = return (mkFirst  insn)
@@ -212,6 +212,7 @@ elimContInBBG uref bbg = runWithUniqAndFuel uref infiniteFuel (elimContInBBG' bb
 data HowUsed = UnknownCall BlockId
              | KnownCall   BlockId {- provided cont; -}
                            (RecStatus,BlockId) {- of known fn entry point -}
+                           ParentFnId
              | TailRecursion
              | UsedFirstClass | UsedSecondClass -- as cont arg
                  deriving (Eq, Ord, Show)
@@ -230,23 +231,38 @@ getCensusFns bbg = gobbg bbg Map.empty
                                    where m' = Map.union m $ Map.fromList (zip ids fns)
     go _                      m = m
 
+-- We may need to re-position contified functions in a smaller scope.
+-- For example:
+--         let f1 = { ... };
+--             f2 = { ... f1 ! ... }; in f2 ! end
+-- cannot be transformed to
+--     letcont j1 = { ... };
+--     letfun  f2 = { ... j1 ! ... }; in f2 ! end
+-- because f2 can't call a continuation that belongs to its parent.
+--
+-- To determine how and where to reposition functions, we'll record the parent
+-- scope of each call (e.g. the sequence of fn idents containing the call).
+-- Then, for each contifiable function, its contified body should be placed
+-- within the scope of the common prefix of the calls' scopes.
+type ParentFnId = Ident
 type Census = Map.Map Ident (Set.Set HowUsed)
 
-getCensus :: BasicBlockGraph -> Census
-getCensus bbg = let cf = getCensusFns bbg in
-                getCensusForFn cf bbg Map.empty
+getCensus :: Ident -> BasicBlockGraph -> (Census, CenFuns)
+getCensus id bbg = let cf = getCensusFns bbg in
+                (getCensusForFn cf (id, bbg) Map.empty, cf)
   where
     addUsed c lst = Map.unionWith Set.union c
                                 (Map.fromList [(tidIdent v, Set.singleton u)
                                               | (v, u) <- lst])
 
-    getCensusForFn cf bbg m = foldGraphNodes (go cf) (bbgBody bbg) m
+    getCensusForFn cf (path, bbg) m = foldGraphNodes (go cf path) (bbgBody bbg) m
 
-    go :: CenFuns -> Insn e x -> Census -> Census
-    go _  (ILabel   _bentry    ) m = m
-    go _  (ILetVal  _id letable) m = censusLetable letable m
-    go cf (ILetFuns _ids fns   ) m = foldr (getCensusForFn cf) m (map fnBody fns)
-    go cf (ILast    cflast     ) m =
+    go :: CenFuns -> ParentFnId -> Insn e x -> Census -> Census
+    go _  _ (ILabel   _bentry    ) m = m
+    go _  _ (ILetVal  _id letable) m = censusLetable letable m
+    go cf _ (ILetFuns _ids fns   ) m = foldr (getCensusForFn cf) m
+                                           (map (\f -> (fnIdent f, fnBody f)) fns)
+    go cf p (ILast    cflast     ) m =
       case cflast of
             (CFCont _bid    vs) -> addUsed m [(v, UsedSecondClass) | v <- vs]
             (CFCall bid _ v vs) ->
@@ -262,9 +278,9 @@ getCensus bbg = let cf = getCensusFns bbg in
                            -> addUsed m $ (v, TailRecursion):
                                          [(v, UsedFirstClass) | v <- vs]
 
-                   Just fn -> addUsed m $ (v, (KnownCall bid (fnEntryId fn))):
+                   Just fn -> addUsed m $ (v, (KnownCall bid (fnEntryId fn) p)):
                                          [(v, UsedFirstClass) | v <- vs]
-            (CFCase v _pats)    -> addUsed m [(v, UsedSecondClass)]
+            (CFCase v _pats) -> addUsed m [(v, UsedSecondClass)]
 
     fnEntryId fn = (fnIsRec fn, blockId $ bbgEntry (fnBody fn))
 
@@ -302,24 +318,35 @@ collectEquivalentBlockIds bbg = execState (mapM go blocks) Map.empty
                     | evars == cvars -> modify (Map.insert eb cb)
                  (_, _, _) -> return ()
 
-data ContInfo = NoConts
-              | OneCont BlockId BlockId
-              | ManyConts
-              deriving (Show)
+data ContInfo = OneCont BlockId BlockId ParentFnId
+              | ManyOrZeroConts
+              deriving (Show, Eq)
 
-runCensusRewrites' :: IORef Uniq -> BasicBlockGraph -> IO BasicBlockGraph
-runCensusRewrites' uref bbg = do
-     runWithUniqAndFuel uref infiniteFuel (go (getCensus bbg) bbg)
+-- parent fn id -> [ info on fn to contify ]
+type Relocs = Map.Map Ident [(Ident, CFFn, BlockId, BlockId)]
+
+runCensusRewrites' :: Ident -> IORef Uniq -> BasicBlockGraph -> IO BasicBlockGraph
+runCensusRewrites' parent uref bbg = do
+     let (ci, cenfuns) = getCensus parent bbg
+     let relocs = computeFnRelocations ci cenfuns
+     runWithUniqAndFuel uref infiniteFuel (go (ci, cenfuns, relocs) parent bbg)
   where
+        computeFnRelocations :: Census -> CenFuns -> Relocs
+        computeFnRelocations ci cenfuns =
+          let knowns = [(id, cf, getKnownCall ci id) | (id, cf) <- Map.toList cenfuns] in
+          Map.fromListWith (++) [(parent, [(id, cf, bid, fn_ent)])
+                                | (id, cf, OneCont bid fn_ent parent) <- knowns]
+
         equivBlockIds = collectEquivalentBlockIds bbg
 
         sharedTrivialCont [] = Nothing
         sharedTrivialCont (first:others) =
           case first of
-            KnownCall bid0 (_, fn_ent) ->
+            KnownCall bid0 (_, fn_ent) path ->
                 let
                     try bids [] = bids
-                    try bids ((KnownCall bid' (_, fn_ent')):others)
+                    -- Shared continuations imply identical paths.
+                    try bids ((KnownCall bid' (_, fn_ent') _path):others)
                         | fn_ent == fn_ent'
                         = try (bid' : bids) others
                     try _ _ = []
@@ -327,74 +354,74 @@ runCensusRewrites' uref bbg = do
                     nextbids = [Map.lookup bid equivBlockIds
                                | bid <- try [bid0] others] in
                 case Set.toList $ Set.fromList nextbids of
-                    [Just commonbid] -> Just (OneCont commonbid fn_ent)
+                    [Just commonbid] -> Just (OneCont commonbid fn_ent path)
                     _ -> Nothing
             _ -> Nothing
-
-        go :: Census -> BasicBlockGraph -> M BasicBlockGraph
-        go ci bbg = do
-          let (bid,_) = bbgEntry bbg
-          bb' <- rebuildGraphM bid (bbgBody bbg) (transform ci)
-          return $ bbg { bbgBody = bb' }
 
         getKnownCall :: Census -> Ident -> ContInfo
         getKnownCall ci id =
           case fmap Set.toList (Map.lookup id ci) of
             -- Simple case: non-recursive function, with only one return cont.
-            Just [KnownCall bid (NotRec, fn_ent)] -> OneCont bid fn_ent
+            Just [KnownCall bid (NotRec, fn_ent) parent] -> OneCont bid fn_ent parent
 
             -- A recursive continuation must have one return cont provided
             -- from the outside, and only tail recursive calls from inside.
             -- (does not handle non-trivial SCCs of tail recursive functions...)
-            Just [TailRecursion, KnownCall bid (_, fn_ent)] -> OneCont bid fn_ent
-            Just [KnownCall bid (_, fn_ent), TailRecursion] -> OneCont bid fn_ent
+            Just [TailRecursion, KnownCall bid (_, fn_ent) parent] -> OneCont bid fn_ent parent
+            Just [KnownCall bid (_, fn_ent) parent, TailRecursion] -> OneCont bid fn_ent parent
 
-            Just others | Just result <- sharedTrivialCont others -> result
-            Just _others -> --trace ("getKnownCall returning ManyConts for " ++ show id ++ " due to " ++ show _others)
-                            ManyConts
-            Nothing -> NoConts
+            Just others ->
+              case sharedTrivialCont others of
+                Just result -> result
+                Nothing     -> ManyOrZeroConts -- many
+            Nothing         -> ManyOrZeroConts -- zero
 
-        transformFn ci fn = do
-          bbg' <- go ci (fnBody fn)
+        transformFn  info fn = do
+          bbg' <- go info (fnIdent fn) (fnBody fn)
           return $ fn { fnBody = bbg' }
 
-        transform :: Census -> Insn e x -> M (Graph Insn e x)
-        transform ci = rw
+        go :: (Census, CenFuns, Relocs) -> Ident -> BasicBlockGraph -> M BasicBlockGraph
+        go info@(ci, _, relocs) fnId bbg = do
+          let conts = toContify relocs fnId
+          fngs <- mapM (\(_id, fn, bid, _fn_ent) -> do aGraphOfFn ci fn bid)
+                       conts
+
+          wrapped <- graphOfAGraph $ foldr (flip addBlocks)
+                                      (aGraphOfGraph (bbgBody bbg))
+                                      fngs
+
+          bb' <- rebuildGraphM Nothing wrapped (transform info)
+          return $ bbg { bbgBody = bb' }
+
+        toContify :: Relocs -> Ident -> [(Ident, CFFn, BlockId, BlockId)]
+        toContify relocs id =
+          let roots = Map.findWithDefault [] id relocs in
+          concatMap (\(x, _, _, _) -> toContify relocs x) roots ++ roots
+
+        transform :: (Census, CenFuns, Relocs) -> Insn e x -> M (Graph Insn e x)
+        transform (ci, cenfuns, relocs) = rw
          where
           rw :: Insn e x -> M (Graph Insn e x)
           rw n = case n of
              ILabel   {} -> do return $ mkFirst n
-             -- TODO may need to re-position contified functions in a smaller
-             --      scope. For example:
-             --                    let f1 = { ... };
-             --                        f2 = { ... f1 ! ... }; in f2 ! end
-             -- cannot be transformed to
-             --                letcont j1 = { ... };
-             --                letfun  f2 = { ... j1 ! ... }; in f2 ! end
-             -- because f2 can't call a continuation that belongs to its parent.
-             ILetFuns ids rawfns -> do
-               fns <- mapM (transformFn ci) rawfns
-               let (contifiables, nonconts) = splitContifiable (zip ids fns) ci
-               let nonconts_ag = aGraphOfGraph $ mkMiddle $ uncurry ILetFuns $ unzip nonconts
 
-               fngs <- mapM (\(_, fn, bid) -> aGraphOfFn ci fn bid) contifiables
-               graphOfAGraph (foldr (flip addBlocks) nonconts_ag fngs)
+             ILetFuns ids rawfns -> do
+               -- Filter to keep only the non-contifiable functions
+               let nonconts = [(id, rawfn) | (id, rawfn) <- zip ids rawfns
+                                           , ManyOrZeroConts == getKnownCall ci id]
+               -- Transform each non-contifiable function
+               nonconts' <- mapM (\(id, rawfn) -> do
+                 fn <- transformFn (ci, cenfuns, relocs) rawfn
+                 return (id, fn)) nonconts
+               -- And package them back up into a Graph.
+               return $ mkMiddle $ uncurry ILetFuns $ unzip nonconts'
 
              ILetVal  _id _letable -> return $ mkMiddle n
              ILast cflast -> return $ mkLast $ ILast (contifyCalls ci cflast)
 
-        splitContifiable :: [(Ident, CFFn)] -> Census -> ([(Ident, CFFn, BlockId)],
-                                                          [(Ident, CFFn)])
-        splitContifiable idsfns ci =
-          let idsfns' = map (\(id, fn) -> (id, fn, getKnownCall ci id)) idsfns in
-          let contifiables = [(id, fn, bid) | (id, fn, OneCont bid _fn_ent) <- idsfns' ] in
-          let nonconts     = [(id, fn)      | (id, fn, ManyConts)           <- idsfns' ] in
-          -- Silently drop dead functions...
-          (contifiables, nonconts)
-
         contifyCalls :: Census -> CFLast -> CFLast
         contifyCalls ci (CFCall _k _t v vs)
-          | OneCont _bid fn_ent <- getKnownCall ci (tidIdent v) =
+          | OneCont _bid fn_ent _path <- getKnownCall ci (tidIdent v) =
                      -- Replace (v k vs) with (j vs) if all calls to v had eq k.
                      CFCont (contified fn_ent) vs
         contifyCalls _ci other = other
@@ -417,9 +444,7 @@ runCensusRewrites' uref bbg = do
                   CFCall bid t v vs -> CFCall (ret bid) t v vs
                   CFCase v arms     -> CFCase v (map (\(CaseArm p e g b r) -> CaseArm p (ret e) (fmap ret g) b r) arms)
               rw insn = insn
-          let g_old = bbgBody $ fnBody fn
-          let g_new = mapGraph rw g_old
-          return $ aGraphOfGraph g_new
+          return $ aGraphOfGraph $ mapGraph rw $ bbgBody $ fnBody fn
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- |||||||||||||||||||| Alias Elimination |||||||||||||||||||||||{{{
@@ -491,7 +516,7 @@ eliminateAliasedVariables uref bbg = do
         go :: Alias -> BasicBlockGraph -> M BasicBlockGraph
         go aliases bbg = do
           let (bid,_) = bbgEntry bbg
-          bb' <- rebuildGraphM bid (bbgBody bbg) (transform aliases)
+          bb' <- rebuildGraphM (Just bid) (bbgBody bbg) (transform aliases)
           return $ bbg { bbgBody = bb' }
 
         transformFn aliases fn = do

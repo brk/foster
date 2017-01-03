@@ -249,7 +249,7 @@ llb (s,vs) = (s, map llv vs)
 -- starting from the graph's entry block.
 closureConvertBlocks :: BasicBlockGraph -> ILM BasicBlockGraph'
 closureConvertBlocks bbg = do
-   (g', _) <- case bbgEntry bbg of (bid, _) -> rebuildGraphAccM bid (bbgBody bbg) bid transform
+   (g', _) <- case bbgEntry bbg of (bid, _) -> rebuildGraphAccM (Just bid) (bbgBody bbg) bid transform
    return BasicBlockGraph' {
                  bbgpEntry = llb (bbgEntry bbg),
                  bbgpRetK  =      bbgRetK  bbg,

@@ -1,0 +1,23 @@
+scan = {
+
+    // Note: this is all dead code...
+        goto_yy5 = { ()  };
+
+    REC goto_yy14 = { goto_yy15 !  };
+    REC goto_yy15 = {
+
+        case opaquely_i32 0
+          of 1 -> goto_yy14 !
+          of _ -> goto_yy5 !
+        end
+    };
+
+    ()
+};
+
+main = {
+  scan !;
+  scan !;
+  0
+};
+

@@ -328,7 +328,7 @@ insertDumbGCRoots bbgp0 dump = do
    -- we don't want to try to find a root for o!
    -- So we enforce the invariant that no active rebindings exist here.
    bbgp <- runRebinds bbgp0
-   g'  <- evalStateT (rebuildGraphM (case bbgpEntry bbgp of (bid, _) -> bid)
+   g'  <- evalStateT (rebuildGraphM (case bbgpEntry bbgp of (bid, _) -> Just bid)
                                     (bbgpBody bbgp) transform)
                              Map.empty
 
@@ -476,7 +476,7 @@ insertDumbGCRoots bbgp0 dump = do
 -- So we must insert kills for dead root slots at the start of basic blocks.
 insertDumbGCKills :: BasicBlockGraph' -> Bool -> [RootVar] -> Compiled BasicBlockGraph'
 insertDumbGCKills bbgp dump allroots = do
-   g'  <- rebuildGraphM (case bbgpEntry bbgp of (bid, _) -> bid)
+   g'  <- rebuildGraphM (case bbgpEntry bbgp of (bid, _) -> Just bid)
                                     (bbgpBody bbgp) transform
    liftIO $ when (showOptResults || dump) $ do Boxes.printBox $ catboxes2 (bbgpBody bbgp) g'
    return bbgp { bbgpBody =  g' }
@@ -511,7 +511,7 @@ removeDeadGCRoots :: BasicBlockGraph'
                   -> RootLiveWhenGC
                   -> Compiled BasicBlockGraph'
 removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
-   let mappedAction = rebuildGraphM (case bbgpEntry bbgp of (bid, _) -> bid)
+   let mappedAction = rebuildGraphM (case bbgpEntry bbgp of (bid, _) -> Just bid)
                                     (bbgpBody bbgp) transform
    g' <- evalStateT mappedAction Map.empty
 
@@ -849,7 +849,7 @@ availsLattice = DataflowLattice
 -- so that the dominator-successors computation is accurate.
 relabelEntryExitBlocks :: BasicBlockGraph' -> Compiled BasicBlockGraph'
 relabelEntryExitBlocks bbgp = do
-   (g', _) <- case bbgpEntry bbgp of (bid, _) -> rebuildGraphAccM bid (bbgpBody bbgp) bid transform
+   (g', _) <- case bbgpEntry bbgp of (bid, _) -> rebuildGraphAccM (Just bid) (bbgpBody bbgp) bid transform
    return BasicBlockGraph' {
                  bbgpEntry = bbgpEntry bbgp,
                  bbgpRetK  = bbgpRetK  bbgp,
@@ -891,6 +891,7 @@ liveRootsXfer msg = mkFTransfer3 go go (distributeXfer liveRootsLattice go)
                       ++ "\nDetected load from dead root: " ++ show root
                       ++ "\nBound to variable: " ++ show var
                       ++ "\nLive roots are: " ++ show lives
+                      ++ "\nOrig is: " ++ show _orig
     go (CCGCInit _ _   root)        lives = lives `addAvail`  root
     go (CCGCKill (Enabled _) roots) lives = lives `delAvails` roots
     go _ lives = lives
@@ -947,7 +948,7 @@ runRebinds :: BasicBlockGraph' -> Compiled BasicBlockGraph'
 runRebinds bbgp = do
   let (bid, _) = bbgpEntry bbgp
   let m = execState (mapGraphNodesM_ am bid (bbgpBody bbgp)) Map.empty
-  g <- rebuildGraphM bid (bbgpBody bbgp) (d m)
+  g <- rebuildGraphM (Just bid) (bbgpBody bbgp) (d m)
   return bbgp { bbgpBody = g }
  where
     am :: forall e x. Insn' e x -> State (Map LLVar [LLVar]) ()
