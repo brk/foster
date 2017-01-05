@@ -96,7 +96,7 @@ return-unboxed-C = { b =>
 
 
 get-unboxed-C = { x =>
-  zz = prim tuple-unboxed 4 5;
+  zz = (4, 5)#;
   prim tuple-unboxed zz x
 };
 
