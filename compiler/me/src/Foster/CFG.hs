@@ -15,12 +15,12 @@ module Foster.CFG
 , CFLast(..)
 , CFBody(..)
 , CFFn
-, blockId
+, blockId, isReturn
 , blockTargetsOf
 , mapGraphNodesM_
 , rebuildGraphM
 , rebuildGraphAccM
-, graphOfClosedBlocks
+, graphOfClosedBlocks, graphBlocks
 , FosterNode(..)
 , catClosedGraphs
 , runWithUniqAndFuel, M
@@ -102,7 +102,7 @@ internalComputeCFG uniqRef fn = do
     runComputeBlocks = do
         header <- cfgFresh "postalloca"
         cfgSetHeader header
-        retcont <- cfgFresh "rk"
+        retcont <- cfgFresh ".return"
         cfgSetRetCont retcont
         cfgSetFnVar (fnVar fn)
         cfgNewBlock header (fnVars fn)
@@ -493,7 +493,9 @@ type BlockEntry' t = (BlockId, [TypedId t])
 -- We pair a name for later codegen with a label for Hoopl's NonLocal class.
 type BlockId = (String, Label)
 
-
+isReturn :: BlockId -> Bool
+isReturn (".return", _) = True
+isReturn _ = False
 -- ||||||||||||||||||||| CFG Pretty Printing ||||||||||||||||||||{{{
 
 comment d = text "/*" <+> d <+> text "*/"
