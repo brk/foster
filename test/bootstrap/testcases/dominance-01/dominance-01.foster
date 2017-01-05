@@ -1,7 +1,3 @@
-oror = { fb1 => fb2 =>
-  if fb1 ! then True else fb2 ! end
-};
-
 main = {
     p_44 = prim ref 0;
 
@@ -28,7 +24,10 @@ main = {
     REC goto_block_3 = { (-7 >^ p_44; p_44^); goto_block_1 ! };
     REC goto_block_1 = { print_i32 p_44^; 0 };
 
+    expect_i32 0;
+    expect_i32 22;
+
     goto_block_8 !;
 
-    expect_i32 0;
+    print_i32 22;
 };
