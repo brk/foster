@@ -333,6 +333,9 @@ dumpExpr _ _x@(ILArrayLit ty@(LLArrayType ety) arr vals) =
       , arraylit_of_Letable = StrictlyJust $ pbArrayLit ety vals
       }
 
+dumpExpr _ (ILArrayLit otherty _arr _vals) =
+    error $ "dumpExpr saw array literal with non-array type " ++ show otherty
+
 
 dumpExpr maygc (ILCall t base args)
         = dumpCall t (dumpVar base)          args maygc ccs
@@ -564,6 +567,9 @@ dumpProgramToModule (ILProgram procdefs vals extern_decls datatypes (SourceLines
           name_of_PbToplevelItem = dumpIdent id
         , arr_of_PbToplevelItem = pbArrayLit ety (map Left lits)
         }
+
+    dumpItem (CC.TopBindArray _id otherty _lits) =
+        error $ "dumpItem saw top-level array with non-array type " ++ show otherty
 
     dumpDataTypeDecl :: DataType TypeLL -> Decl
     dumpDataTypeDecl datatype =

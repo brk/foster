@@ -506,8 +506,8 @@ tcRhoText rng b expTy = do
          Check t -> check t
 -- }}}
 
-tcRhoTextOrBytes rng (SS_Text  raw txt) expTy = tcRhoText  rng txt expTy
-tcRhoTextOrBytes rng (SS_Bytes raw bs) expTy = tcRhoBytes rng bs  expTy
+tcRhoTextOrBytes rng (SS_Text  _raw txt) expTy = tcRhoText  rng txt expTy
+tcRhoTextOrBytes rng (SS_Bytes _raw bs)  expTy = tcRhoBytes rng bs  expTy
 
 --  -------------------------
 --  G |- b"..." :: Array Int8
