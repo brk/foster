@@ -25,11 +25,12 @@ class SpecializeAllocations : public BasicBlockPass {
   Constant *memalloc;
   Constant *memalloc_16;
   Constant *memalloc_32;
+  Constant *memalloc_48;
   bool ready;
 public:
   static char ID;
   explicit SpecializeAllocations() : BasicBlockPass(ID),
-        memalloc(NULL), memalloc_16(NULL), memalloc_32(NULL), ready(false) {}
+        memalloc(NULL), memalloc_16(NULL), memalloc_32(NULL), memalloc_48(NULL), ready(false) {}
 
   const char* getPassName() const { return "SpecializeAllocations"; }
 
@@ -73,7 +74,8 @@ bool SpecializeAllocations::doInitialization(Module &M) {
   memalloc    = M.getFunction("memalloc_cell");
   memalloc_16 = M.getFunction("memalloc_cell_16");
   memalloc_32 = M.getFunction("memalloc_cell_32");
-  ready = memalloc && memalloc_16 && memalloc_32;
+  memalloc_48 = M.getFunction("memalloc_cell_48");
+  ready = memalloc && memalloc_16 && memalloc_32 && memalloc_48;
   return true;
 }
 
@@ -141,6 +143,16 @@ bool SpecializeAllocations::runOnBasicBlock(BasicBlock &BB) {
             Constant* mem32 = ConstantExpr::getBitCast(memalloc_32,
                                                         call->getCalledValue()->getType());
             CallInst* newcall = CallInst::Create(mem32, ac, "mem32_", &*I);
+            call->replaceAllUsesWith(newcall);
+            I = --BBIL.erase(I); // remove & delete the old memalloc call.
+            ++NumSpecialized;
+            Changed = true;
+            
+          } else if (sz->getSExtValue() == 48) {
+            // Replace call to memalloc with call to memalloc_48.
+            Constant* mem48 = ConstantExpr::getBitCast(memalloc_48,
+                                                        call->getCalledValue()->getType());
+            CallInst* newcall = CallInst::Create(mem48, ac, "mem48_", &*I);
             call->replaceAllUsesWith(newcall);
             I = --BBIL.erase(I); // remove & delete the old memalloc call.
             ++NumSpecialized;
