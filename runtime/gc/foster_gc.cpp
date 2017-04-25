@@ -29,7 +29,7 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 // the GC we could (re-)specialize these config vars at runtime...
 #define ENABLE_GCLOG 0
 #define ENABLE_GCLOG_PREP 0
-#define ENABLE_GCLOG_ENDGC 0
+#define ENABLE_GCLOG_ENDGC 1
 #define FOSTER_GC_TRACK_BITMAPS       0
 #define FOSTER_GC_ALLOC_HISTOGRAMS    0
 #define FOSTER_GC_TIME_HISTOGRAMS     0
@@ -51,6 +51,8 @@ const int kFosterGCMaxDepth = 1024;
 const int inline gSEMISPACE_SIZE() { return __foster_globals.semispace_size; }
 
 const bool wantWeirdCrashToHappen = false;
+
+//int gNumMarked = 0;
 
 /////////////////////////////////////////////////////////////////
 
@@ -166,6 +168,7 @@ public:
 
   virtual void* allocate_cell_16(typemap* typeinfo) = 0;
   virtual void* allocate_cell_32(typemap* typeinfo) = 0;
+  virtual void* allocate_cell_48(typemap* typeinfo) = 0;
 };
 
 // {{{ Global data used by the GC
@@ -261,6 +264,7 @@ struct GCGlobals {
   base::TimeTicks    init_start;
 
   int num_gcs_triggered;
+  int num_big_stackwalks;
   double subheap_ticks;
 
   // TODO initialize this with lazily-mapped zeros!
@@ -1014,6 +1018,7 @@ public:
 
   virtual void* allocate_cell_16(typemap* typeinfo) { return allocate_cell_N<16>(typeinfo); }
   virtual void* allocate_cell_32(typemap* typeinfo) { return allocate_cell_N<32>(typeinfo); }
+  virtual void* allocate_cell_48(typemap* typeinfo) { return allocate_cell_N<48>(typeinfo); }
 
   void* allocate_cell_slowpath(typemap* typeinfo) __attribute__((noinline))
   {
@@ -1119,6 +1124,7 @@ public:
 
   void scan_cell(heap_cell* cell, int depth) {
     if (!is_marked(cell)) {
+      //++gNumMarked;
       cell->flip_mark_bits();
       if (frame15_classification(cell) == frame15kind::immix_smallmedium) {
         mark_line_for_slot((void*)cell);
@@ -1193,7 +1199,7 @@ public:
     //printf("GC\n");
     //fprintf(gclog, "GC\n");
 
-    base::TimeTicks begin = base::TimeTicks::Now();
+    base::TimeTicks gcstart = base::TimeTicks::Now();
     int64_t t0 = __foster_getticks();
     //++hpstats.num_collections;
     if (ENABLE_GCLOG) {
@@ -1204,6 +1210,13 @@ public:
 
     flip_current_mark_bits_value();
 
+#if ENABLE_GCLOG || ENABLE_GCLOG_ENDGC
+    base::TimeTicks phaseStartTime = base::TimeTicks::Now();
+#endif    
+#if FOSTER_GC_TIME_HISTOGRAMS
+    int64_t phaseStartTicks = __foster_getticks();
+#endif
+
     // Before we begin tracing, we need to establish the invariant that
     // any line which might be free should be unmarked.
     // The simple way of doing so would be to clear all the mark bits
@@ -1213,6 +1226,15 @@ public:
     // So we only need to clear the mark bits for recycled frames and
     // formerly-clean frames that were allocated into since the last GC.
     clear_mark_bits_for_space();
+
+    #if ENABLE_GCLOG || ENABLE_GCLOG_ENDGC
+    auto deltaClearMarkBits = base::TimeTicks::Now() - phaseStartTime;
+    
+    phaseStartTime = base::TimeTicks::Now();
+    #endif
+#if FOSTER_GC_TIME_HISTOGRAMS
+    phaseStartTicks = __foster_getticks();
+#endif
 
     // Trace from remembered set roots
     for (auto& fid : frames_pointing_here) {
@@ -1235,6 +1257,10 @@ public:
 
     visitGCRoots(__builtin_frame_address(0), this);
 
+#if FOSTER_GC_TIME_HISTOGRAMS
+      LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-rootscan-ticks", __foster_getticks_elapsed(phaseStartTicks, __foster_getticks()),  0, 60000000, 256);
+#endif
+
     foster_generic_coro** coro_slot = __foster_get_current_coro_slot();
     foster_generic_coro*  coro = *coro_slot;
     if (coro) {
@@ -1249,6 +1275,13 @@ public:
 
     //worklist.process(next);
 
+#if ENABLE_GCLOG || ENABLE_GCLOG_ENDGC
+    auto deltaRecursiveMarking = base::TimeTicks::Now() - phaseStartTime;
+    phaseStartTime = base::TimeTicks::Now();
+#endif
+#if FOSTER_GC_TIME_HISTOGRAMS
+    phaseStartTicks = __foster_getticks();
+#endif
     // Coarse grained sweep, post-collection
     {
     // The current block will probably get marked recycled;
@@ -1270,27 +1303,36 @@ public:
       inspect_frame21_postgc(f21);
     }
 
-    int frame15s_total = frame15s.size() + (IMMIX_F15_PER_F21 * frame21s.size());
-
+#if ENABLE_GCLOG || ENABLE_GCLOG_ENDGC
+    auto deltaPostMarkingCleanup = base::TimeTicks::Now() - phaseStartTime;
+#if FOSTER_GC_TIME_HISTOGRAMS
+      LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-postgc-ticks", __foster_getticks_elapsed(phaseStartTicks, __foster_getticks()),  0, 60000000, 256);
+#endif
+#endif
     //if (TRACK_BYTES_KEPT_ENTRIES) { hpstats.bytes_kept_per_gc.record_sample(next->used_size()); }
 
-    if (ENABLE_GCLOG || ENABLE_GCLOG_ENDGC) {
-      auto delta = base::TimeTicks::Now() - begin;
-      fprintf(gclog, "%lu recycled, %lu clean f15 + %lu clean f21; (%d f15 + %d f21) = %d total (%d KB), took %f us\n",
+#if (ENABLE_GCLOG || ENABLE_GCLOG_ENDGC)
+      int frame15s_total = frame15s.size() + (IMMIX_F15_PER_F21 * frame21s.size());
+      auto delta = base::TimeTicks::Now() - gcstart;
+      fprintf(gclog, "%lu recycled, %lu clean f15 + %lu clean f21; (%d f15 + %d f21) = %d total (%d KB), took %ld us which was %f%% premark, %f%% marking, %f%% post-mark\n",
           recycled_frame15s.size(), clean_frame15s.size(), clean_frame21s.size(),
-        frame15s.size(), frame21s.size(), frame15s_total, frame15s_total * 32, delta.InMicroseconds());
+        frame15s.size(), frame21s.size(), frame15s_total, frame15s_total * 32, delta.InMicroseconds(),
+          double(deltaClearMarkBits.InMicroseconds() * 100.0)/double(delta.InMicroseconds()),
+          double(deltaRecursiveMarking.InMicroseconds() * 100.0)/double(delta.InMicroseconds()),
+          double(deltaPostMarkingCleanup.InMicroseconds() * 100.0)/double(delta.InMicroseconds()));
 
       fprintf(gclog, "\t/endgc\n\n");
       fflush(gclog);
-    }
+#endif
     }
 
-    auto delta = base::TimeTicks::Now() - begin;
+    auto delta = base::TimeTicks::Now() - gcstart;
+    int64_t t1 = __foster_getticks();
     if (FOSTER_GC_TIME_HISTOGRAMS) {
       LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-pause-micros", delta.InMicroseconds(),  0, 60000000, 256);
+      LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-pause-ticks", __foster_getticks_elapsed(t0, t1),  0, 60000000, 256);
     }
     gcglobals.gc_time += delta;
-    int64_t t1 = __foster_getticks();
     gcglobals.subheap_ticks += __foster_getticks_elapsed(t0, t1);
     gcglobals.num_gcs_triggered += 1;
   }
@@ -1314,10 +1356,7 @@ public:
     // some of the frame15s for a f21 might not yet be used. If so, we should
     // skip 'em.
     frame15* f15 = frame15_for_frame15_id(fid);
-    if (heap_for(f15) != this) {
-      fprintf(gclog, "    skipped frame15 because its heap pointer was %p instead of %p\n", heap_for(f15), this);
-      return;
-    }
+    if (heap_for(f15) != this) { return; }
 
     uint8_t* linemap = linemap_for_frame15_id(fid);
     auto num_marked_lines = count_marked_lines_for_frame15(linemap);
@@ -1606,9 +1645,11 @@ class copying_gc : public heap {
         realign_bump();
         obj_start.clear();
         obj_limit.clear();
+#if ENABLE_GCLOG_ENDGC
         fprintf(gclog, "after reset, bump = %p, low bits: %x, size = %lld\n", bump,
                                                     int(intptr_t(bump) & 0xf),
                                                     get_size());
+#endif
       }
 
       bool contains(void* ptr) const { return range.contains(ptr); }
@@ -1889,15 +1930,18 @@ class copying_gc : public heap {
   }
 
 public:
-  copying_gc(int64_t size) : heap() {
+  copying_gc() : heap() { }
+  copying_gc(int64_t size) : heap() { init(size); }
+
+  virtual ~copying_gc() {
+    dump_stats(NULL);
+  }
+
+  void init(int64_t size) {
     // {{{
     curr = new semispace(size, this);
     next = new semispace(size, this);
     // }}}
-  }
-
-  virtual ~copying_gc() {
-    dump_stats(NULL);
   }
 
   // Precondition: curr owns t.
@@ -1995,6 +2039,7 @@ public:
 
   virtual void* allocate_cell_16(typemap* typeinfo) { return allocate_cell_N<16>(typeinfo); }
   virtual void* allocate_cell_32(typemap* typeinfo) { return allocate_cell_N<32>(typeinfo); }
+  virtual void* allocate_cell_48(typemap* typeinfo) { return allocate_cell_N<48>(typeinfo); }
 
   void* allocate_cell_slowpath(typemap* typeinfo) __attribute__((noinline))
   {
@@ -2051,6 +2096,7 @@ public:
   virtual void force_gc_for_debugging_purposes() { this->gc(); }
 
   virtual void dump_stats(FILE* json) {
+    return;
     FILE* stats = json ? json : gclog;
 
     double approx_bytes = double((hpstats.num_collections * curr->get_size()) + curr->used_size());
@@ -2169,6 +2215,12 @@ void visitGCRoots(void* start_frame, HeapInterface* visitor) {
   // Collect frame pointers and return addresses
   // for the current call stack.
   int nFrames = foster_backtrace((frameinfo*) start_frame, frames, MAX_NUM_RET_ADDRS);
+  if (nFrames == MAX_NUM_RET_ADDRS) {
+    gcglobals.num_big_stackwalks += 1;
+  }
+  if (FOSTER_GC_TIME_HISTOGRAMS) {
+    LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-stackscan-frames", nFrames,  0, 60000000, 256);
+  }
 
   const bool SANITY_CHECK_CUSTOM_BACKTRACE = false;
   if (SANITY_CHECK_CUSTOM_BACKTRACE) {
@@ -2499,8 +2551,11 @@ void initialize(void* stack_highest_addr) {
   gcglobals.gc_time = base::TimeTicks();
   gcglobals.runtime_start = base::TimeTicks::Now();
   gcglobals.num_gcs_triggered = 0;
+  gcglobals.num_big_stackwalks = 0;
   gcglobals.subheap_ticks = 0.0;
 }
+
+
 
 void gclog_time(const char* msg, base::TimeDelta d, FILE* json) {
   fprintf(gclog, "%s: %2ld.%03ld s\n", msg,
@@ -2522,8 +2577,7 @@ FILE* print_timing_stats() {
   base::TimeDelta  init_elapsed = gcglobals.runtime_start - gcglobals.init_start;
   base::TimeDelta    gc_elapsed = gcglobals.gc_time - base::TimeTicks();
   base::TimeDelta   mut_elapsed = total_elapsed - gc_elapsed - init_elapsed;
-  fprintf(gclog, "'Num_GCs_Triggered': %d\n", gcglobals.num_gcs_triggered);
-  fprintf(gclog, "'Subheap_Ticks': %f\n", gcglobals.subheap_ticks);
+
   FILE* json = __foster_globals.dump_json_stats_path.empty()
                 ? NULL
                 : fopen(__foster_globals.dump_json_stats_path.c_str(), "w");
@@ -2537,6 +2591,11 @@ FILE* print_timing_stats() {
     base::StatisticsRecorder::WriteGraph("", &output);
     fprintf(gclog, "%s\n", output.c_str());
   }
+
+  fprintf(gclog, "'Num_Big_Stackwalks': %d\n", gcglobals.num_big_stackwalks);
+  fprintf(gclog, "'Num_GCs_Triggered': %d\n", gcglobals.num_gcs_triggered);
+  fprintf(gclog, "'Subheap_Ticks': %f\n", gcglobals.subheap_ticks);
+
   gclog_time("Elapsed_runtime", total_elapsed, json);
   gclog_time("Initlzn_runtime",  init_elapsed, json);
   gclog_time("     GC_runtime",    gc_elapsed, json);
@@ -2678,6 +2737,13 @@ void* memalloc_cell_32(typemap* typeinfo) {
     gcglobals.allocator->force_gc_for_debugging_purposes();
   }
   return gcglobals.allocator->allocate_cell_32(typeinfo);
+}
+
+void* memalloc_cell_48(typemap* typeinfo) {
+  if (GC_BEFORE_EVERY_MEMALLOC_CELL) {
+    gcglobals.allocator->force_gc_for_debugging_purposes();
+  }
+  return gcglobals.allocator->allocate_cell_48(typeinfo);
 }
 
 void* memalloc_array(typemap* typeinfo, int64_t n, int8_t init) {
