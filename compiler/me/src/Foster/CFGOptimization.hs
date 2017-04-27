@@ -495,11 +495,16 @@ runCensusRewrites' info uref rootFn = do
              ILetVal  _id _letable -> return $ mkMiddle n
              ILast cflast -> return $ mkLast $ ILast (contifyCalls ci cflast)
 
+        shouldNotContify id = T.pack "mustnotbecont_" `T.isPrefixOf` identPrefix id
+
         contifyCalls :: Census -> CFLast -> CFLast
         contifyCalls ci (CFCall _k _t v vs)
           | OneCont _bid fn_ent _path <- getKnownCall ci (tidIdent v) (fnBody rootFn) =
-                     -- Replace (v k vs) with (j vs) if all calls to v had eq k.
+              if shouldNotContify (tidIdent v)
+                then error $ "Oops! Trying to contify call to " ++ show v ++ " with rk " ++ show _k
+                else -- Replace (v k vs) with (j vs) if all calls to v had eq k.
                      CFCont (contified fn_ent) vs
+
         contifyCalls _ci other = other
 
         contified ("postalloca", l) = ("contified_postalloca", l)
