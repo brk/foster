@@ -4,11 +4,26 @@ main = {
 
   arrays-indexing 0 0 0 0 1 ();
 
-  arrays-indir !;
+  noinline_arrays_bool (noinline_genbools !);
+  noinline_arrays_indir !;
+  arrays-indir-2 !;
 
   // If we lie about our alignment, this will crash.
   a = "is_ascii_digit c:"; ()
 };
+
+noinline_genbools = { (prim mach-array-literal True False True True True False) };
+noinline_arrays_bool = { b =>
+  expect_i64 6;
+  print_i64 (prim_arrayLength b);
+
+  expect_i1 True;
+  print_i1 b[0];
+
+  expect_i1 False;
+  print_i1 b[1];
+};
+
 
 newDArray32 = { n : Int32 => f : { Int32 => Int32 } =>
   a = allocDArray:[Int32] n;
@@ -111,11 +126,34 @@ arrays-indexing = { i8 : Int8 => i32 : Int32 => i64 : Int64 => iw : Word =>
   print_i1 (__COMPILES__ a[()] );
 };
 
-arrays-indir = {
+noinline_arrays_indir = {
   a = prim mach-array-literal 0 0;
   b = prim mach-array-literal True False;
 
   expect_i1 True;
   print_i1 b[a[0]];
+};
+
+arrays-indir-2 = {
+
+  a = prim mach-array-literal 0 1;
+  b = prim mach-array-literal 22 33;
+
+  expect_i32 22;
+  print_i32 b[a[0]];
+
+
+  a = prim mach-array-literal 1 0;
+  b = prim mach-array-literal 22 33;
+
+  expect_i32 33;
+  print_i32 b[a[0]];
+
+  a = prim mach-array-literal 0 1;
+  b = prim mach-array-literal 22 33;
+
+  expect_i32 33;
+  print_i32 b[a[1]];
+
 };
 
