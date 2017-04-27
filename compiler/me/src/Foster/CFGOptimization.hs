@@ -27,6 +27,17 @@ import Control.Monad.State
 import Data.IORef
 import Prelude hiding (id, last)
 
+import Debug.Trace(trace)
+
+-- CFG optimizations:
+--  * Aliased-variable elimination (via forwards dataflow)
+--  * Trivial continuation elimination (via backwards dataflow)
+--  * Function relocation (to enable more contification)
+--  * Contification
+--  * Dead binding elimination (using liveness computed via backwards dataflow)
+--
+-- Also, we export a function to compute may-GC information.
+
 optimizeCFGs :: CFBody -> Compiled CFBody
 optimizeCFGs c@(CFB_Call {}) = return c
 optimizeCFGs (CFB_LetVal id expr cfbody) = do
