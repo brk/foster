@@ -41,7 +41,7 @@ import Foster.TypeAST
 import Foster.ParsedType
 import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn, E_AnnVar, AnnCall, AnnLetFuns,
                       AnnLetVar))
-import Foster.ILExpr(ILProgram, showILProgramStructure, prepForCodegen)
+import Foster.ILExpr(ILProgram, showILProgramStructure, prepForCodegen, collectMayGCConstraints)
 import Foster.KNExpr(KNExpr', kNormalizeModule, knLoopHeaders, knSinkBlocks,
                      knInline, knSize, renderKN,
                      handleCoercionsAndConstraints, collectIntConstraints)
@@ -780,12 +780,7 @@ lowerModule (tc_time, (kmod, globals)) = do
          putDocLn $ (outLn "^^^ ===================================")
 
      (cg_time, cfgmod) <- ioTime $ cfgModule      monomod
-     let constraints = collectMayGCConstraints (moduleILbody cfgmod)
-     whenDumpIR "may-gc" $ do
-         liftIO $ putStrLn "\n MAY GC CONSTRAINTS ======================="
-         liftIO $ putDocLn $ list (map pretty $ (Map.toList constraints))
-         liftIO $ putStrLn "\n/MAY GC CONSTRAINTS ======================="
-
+     
      whenDumpIR "cfg" $ do
          putDocLn $ (outLn "/// CFG-ized program ==================")
          putDocP  $ pretty cfgmod
@@ -796,6 +791,12 @@ lowerModule (tc_time, (kmod, globals)) = do
          putDocLn $ (outLn "/// Closure-converted program =========")
          _ <- liftIO $ renderCC ccmod True
          putDocLn $ (outLn "^^^ ===================================")
+
+     let constraints = collectMayGCConstraints (moduleILbody ccmod)
+     whenDumpIR "may-gc" $ do
+         liftIO $ putStrLn "\n MAY GC CONSTRAINTS ======================="
+         liftIO $ putDocLn $ list (map pretty $ (Map.toList constraints))
+         liftIO $ putStrLn "\n/MAY GC CONSTRAINTS ======================="
 
      (cp_time, (ilprog, prealloc)) <- ioTime $ prepForCodegen ccmod  constraints
      whenDumpIR "prealloc" $ do
