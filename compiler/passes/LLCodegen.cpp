@@ -1275,10 +1275,10 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
     if (tryBindArray(heap_arr, /*out*/ heapmem, /*out*/ _len)) {
       MEMCPY_FROM_GLOBAL_TO_HEAP++;
       // Memcpy from global to heap.
-      //
 
-      int64_t size_in_bytes = (elt_ty->getPrimitiveSizeInBits() / 8)
-                            * this->args.size();
+      int64_t size_in_bytes = pass->mod->getDataLayout().getTypeAllocSize(elt_ty)
+                                  * this->args.size();
+      
       builder.CreateMemCpy(heapmem, arrayVariableToPointer(arrayGlobal),
                                     size_in_bytes, 1);
 
