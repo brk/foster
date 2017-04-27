@@ -209,7 +209,7 @@ makeAllocationsExplicit bbgp = do
     --
     -- In the common case, however, where the environments do *not* close
     -- over each other, we can make closure allocation slightly more efficient
-    -- by directly initializing the environments. (TODO: how much more efficicient?)
+    -- by directly initializing the environments. (TODO: how much more efficient?)
     --
     -- Similarly, for the closures themselves, we can trade off between
     -- redundant loads and stores.
