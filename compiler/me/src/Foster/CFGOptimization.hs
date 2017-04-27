@@ -5,7 +5,7 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.CFGOptimization (optimizeCFGs, collectMayGCConstraints) where
+module Foster.CFGOptimization (optimizeCFGs) where
 
 import Foster.Base
 import Foster.MonoType
@@ -745,87 +745,5 @@ cfgCalls bbg = foldGraphNodes go (bbgBody bbg) Map.empty
                                                         (Set.singleton k) m
     go (ILast _               ) m = m
 -}
--- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
--- ||||||||||| Bottom-up May-GC constraint propagation ||||||||||{{{
-type MGCM a = State MayGCConstraints a -- MGCM = "may-gc monad"
-
-collectMayGCConstraints :: CFBody -> MayGCConstraints
-collectMayGCConstraints cfbody = execState (go cfbody) Map.empty
-  where
-    go :: CFBody -> MGCM ()
-    go (CFB_Call {}) = return ()
-    go (CFB_LetVal _id  _expr cfbody) = go cfbody
-    go (CFB_LetFuns ids cffns cfbody) = do
-          collectMayGCConstraints_CFFns ids cffns
-          go cfbody
-
-defaultMayGCConstraint = (GCUnknown "maygc-init", Set.empty)
-
-collectMayGCConstraints_CFFns :: [Ident] -> [CFFn] -> MGCM ()
-collectMayGCConstraints_CFFns ids fns = do
-  mapM_ initializeMayGCConstraint ids
-  mapM_ collectMayGCConstraints_CFFn fns
- where
-   initializeMayGCConstraint id = modify (Map.insert id defaultMayGCConstraint)
-
-collectMayGCConstraints_CFFn :: CFFn -> MGCM ()
-collectMayGCConstraints_CFFn fn = collectMayGCConstraints_CFG (fnBody fn)
-                                                    (tidIdent (fnVar  fn))
-
-collectMayGCConstraints_CFG :: BasicBlockGraph -> Ident -> MGCM ()
-collectMayGCConstraints_CFG bbg fnid = let (bid,_) = bbgEntry bbg in
-                                       mapGraphNodesM_ go bid (bbgBody bbg)
-  where
-        go :: forall e x. Insn e x -> MGCM ()
-        go (ILabel  _    )    = return ()
-        -- This is a conservative approximation; we may not actually call v
-        -- through the ident it is bound to, but it's good enough for now...
-        -- The indirect constraint is a hack to ensure that the SCC/call graph
-        -- built during may-gc resolution will not be under-approximated.
-        -- The aliasing bit makes sure that calls to x are treated as being
-        -- GCUnknown rather than MayGC.
-        go (ILetVal x (ILBitcast _ v)) = do addIndirectConstraint (tidIdent v)
-                                            modify $ aliasing x v
-        go (ILetVal _  lt)    = withGC $ canGC Map.empty lt
-        go (ILetFuns ids fns) = collectMayGCConstraints_CFFns ids fns
-           -- Note: the function bindings themselves don't (yet) contribute
-           -- to their parent's GC status; we need the representation decisions
-           -- made by closure conversion before getting a final answer.
-        go (ILast cflast)     = case cflast of
-                     CFCont {}      -> return ()
-                     CFCase {}      -> return ()
-                     CFCall _ _ v _ -> callGC (tidIdent v)
-
-        aliasing x v = \m -> Map.insert x (looky m (tidIdent v) `addAlias` v) m
-        addAlias (maygc, s) v = (maygc, Set.insert (tidIdent v) s)
-        looky m id = Map.findWithDefault defaultMayGCConstraint id m
-
-        withGC WillNotGC     = return ()
-        withGC MayGC         = modify $ Map.adjust (\_ -> (MayGC, Set.empty)) fnid
-        withGC (GCUnknown _) = return ()
-
-        callGC :: Ident -> MGCM ()
-
-        callGC id@(GlobalSymbol name) = do
-           if willNotGCGlobal name
-             then return ()
-             else addIndirectConstraint id
-
-        callGC localid = do
-                m <- get
-                case Map.lookup localid m of
-                  Nothing -> withGC MayGC
-                     -- Note: Because we collect may-gc constraints after
-                     --       running optimizations, the conservative estimate
-                     --       that every unknown call site might GC is probably
-                     --       not a bad approximation to the truth.
-
-                  Just (GCUnknown _, _) -> addIndirectConstraint localid
-                  Just (maygc,       _) -> withGC maygc
-
-        addIndirectConstraint id =
-          modify $ Map.adjust (\(maygc, indirs) ->
-                                (maygc, Set.insert id indirs)) fnid
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
