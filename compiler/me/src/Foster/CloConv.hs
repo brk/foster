@@ -39,7 +39,7 @@ import Foster.PatternMatch
 -- | the IR definition with allocation- and GC-related primitives.
 -- |
 -- | We also perform pattern match compilation at this stage;
--- |    as a reusult, nested patterns are translated,
+-- |    as a result, nested patterns are translated,
 -- |    via decision trees, to flat switches.
 
 -- Previous stage: optimizeCFGs   in CFGOptimizations.hs
@@ -392,8 +392,9 @@ closureOfKnFn :: InfoMap
               -> (Ident, CFFn)
               -> ILM Closure
 closureOfKnFn infoMap (self_id, fn) = do
+    
     let varsOfClosure = closedOverVarsOfKnFn
-    let
+    
     let envId  = snd (case Map.lookup self_id infoMap of
                              Just id -> id
                              Nothing -> error $ "CloConv.hs: did not find info for " ++ show self_id)
