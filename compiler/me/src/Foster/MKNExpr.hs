@@ -1,6 +1,6 @@
 {-# LANGUAGE RecursiveDo, FlexibleContexts #-}
 
-module Foster.MKNExpr where
+module Foster.MKNExpr (MKBound(MKBound), mkOfKN, mknInline) where
 
 import Foster.Base
 import Foster.Config
