@@ -108,7 +108,7 @@ Syntax
 Files are a collection of top-level function definitions (for now, there are
 no global constants or arrays). Functions can have type annotations::
 
-    foo :: { Int32 => Int32 };
+    foo :: { Int32 => Int32 => Int32 };
     foo = { a => b => a +Int32 b };
 
 You can also put type annotations on individual parameters::
