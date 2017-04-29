@@ -507,7 +507,7 @@ closureOfKnFn infoMap (self_id, fn) = do
 
 closureConvertedProc :: [MoVar] -> CFFn -> BasicBlockGraph' -> ILM CCProc
 closureConvertedProc procArgs f newbody = do
-  case fnVar f of
+  case mkGlobal (fnVar f) of
     TypedId (FnType _ ftrange _ _) id ->
        return $ Proc (monoToLL ftrange) id (map llv procArgs) (fnAnnot f) newbody
     tid -> error $ "Expected closure converted proc to have fntype, had " ++ show tid
@@ -656,7 +656,7 @@ instance Pretty BasicBlockGraph' where
           <> pretty (bbgpBody bbg)
 
 instance Pretty ToplevelBinding where
-  pretty tb = text "toplevel binding..."
+  pretty _tb = text "toplevel binding..."
 
 instance Pretty CCBody where
  pretty (CCBody procs vals _) =
@@ -701,4 +701,9 @@ block'TargetsOf (CCLast _ last) = ccLastTargetsOf last
 
 -- canGCCalled  v = let rv = canGCF v in if rv then {- trace ("canGCF: " ++ show v) -} rv else rv
 --canGCLetable msg l = let rv = canGC msg l in if rv then {- trace ("canGCL: " ++ show l) -} rv else rv
+
+mkGlobal (TypedId t i) = mkGlobalWithType t i
+
+mkGlobalWithType ty (Ident t u) = TypedId ty (GlobalSymbol $ T.pack (T.unpack t ++ show u))
+mkGlobalWithType ty global      = TypedId ty global
 
