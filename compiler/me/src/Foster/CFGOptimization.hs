@@ -286,7 +286,7 @@ data HowUsed = UnknownCall BlockId
              | KnownCall   BlockId {- provided cont; -}
                            (RecStatus,BlockId) {- of known fn entry point -}
                            ParentFnId
-                           ParentFnId
+             | TailRecursion
              | UsedFirstClass | UsedSecondClass -- as cont arg
                  deriving (Eq, Ord, Show)
 
@@ -344,7 +344,17 @@ getCensus f = let cf = getCensusFns (fnBody f) in
                    Nothing -> addUsed m $ (v, UnknownCall bid):
                                          [(v, UsedFirstClass) | v <- vs]
 
-                   Just fn -> addUsed m $ (v, (KnownCall bid (fnEntryId fn) (fnIdent fn) p)):
+                   -- This identifies only self-recursive tail calls;
+                   -- it does not distinguish between (tail calls to other
+                   -- functions within the same recursive SCC) or (tail calls to
+                   -- known functions defined outside of the current fn's SCC).
+                   {-
+                   Just _fn | isReturn bid
+                           -> addUsed m $ (v, TailRecursion):
+                                         [(v, UsedFirstClass) | v <- vs]
+                                         -}
+
+                   Just fn -> addUsed m $ (v, (KnownCall bid (fnEntryId fn) p)):
                                          [(v, UsedFirstClass) | v <- vs]
             (CFCase v _pats) -> addUsed m [(v, UsedSecondClass)]
 
@@ -371,22 +381,17 @@ getCensus f = let cf = getCensusFns (fnBody f) in
         ILAllocate {}            -> m -- Might have been introduced by KNLetRec.
         ILCall         _ v _vs   -> error $ "census encountered non-tail ILCall of " ++ show v
 
--- Example data for id and 'others' in getKnownCall:
--- getKnownCall loop.hdr!4007 : [KnownCall (".return",L4548) (YesRec,("postalloca",L4549)) loop.hdr!4007 toploop
---                              ,KnownCall (".return",L4550) (YesRec,("postalloca",L4549)) loop.hdr!4007 loop.hdr4007]
 getKnownCall :: Census -> Ident -> BasicBlockGraph -> ContInfo
 getKnownCall ci id bbg =
   case fmap Set.toList (Map.lookup id ci) of
     -- Simple case: non-recursive function, with only one return cont.
-    Just [KnownCall bid (NotRec, fn_ent) _fnx parent] -> OneCont bid fn_ent parent
+    Just [KnownCall bid (NotRec, fn_ent) parent] -> OneCont bid fn_ent parent
 
     -- A recursive continuation must have one return cont provided
     -- from the outside, and only tail recursive calls from inside.
     -- (does not handle non-trivial SCCs of tail recursive functions...)
-    Just [KnownCall bid1 (_, fn_ent1) fnx1 parent1
-         ,KnownCall bid2 (_, fn_ent2) fnx2 parent2] | fn_ent1 == fn_ent2 && (fnx1 == parent1 || fnx2 == parent2) ->
-            if fnx1 == parent1 then OneCont bid2 fn_ent2 parent2 -- keep the "other" parent.
-                               else OneCont bid1 fn_ent1 parent1
+    Just [TailRecursion, KnownCall bid (_, fn_ent) parent] -> OneCont bid fn_ent parent
+    Just [KnownCall bid (_, fn_ent) parent, TailRecursion] -> OneCont bid fn_ent parent
 
     Just others ->
       case sharedTrivialCont others of
@@ -397,11 +402,11 @@ getKnownCall ci id bbg =
     sharedTrivialCont [] = Nothing
     sharedTrivialCont (first:others) =
       case first of
-        KnownCall bid0 (_, fn_ent) _fnx path ->
+        KnownCall bid0 (_, fn_ent) path ->
             let
                 try bids [] = bids
                 -- Shared continuations imply identical paths.
-                try bids ((KnownCall bid' (_, fn_ent') _fnx _path):others)
+                try bids ((KnownCall bid' (_, fn_ent') _path):others)
                     | fn_ent == fn_ent'
                     = try (bid' : bids) others
                 try _ _ = []
