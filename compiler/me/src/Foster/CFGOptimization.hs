@@ -39,7 +39,7 @@ import Debug.Trace(trace)
 -- Also, we export a function to compute may-GC information.
 
 optimizeCFGs :: CFBody -> Compiled CFBody
-optimizeCFGs c@(CFB_Call {}) = return c
+optimizeCFGs CFB_Done = return CFB_Done
 optimizeCFGs (CFB_LetVal id expr cfbody) = do
           body' <- optimizeCFGs cfbody
           return $ CFB_LetVal id expr body'

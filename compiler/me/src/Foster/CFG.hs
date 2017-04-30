@@ -54,7 +54,7 @@ import Prelude (($), head, Ord, filter, (.), IO, Maybe(..), (+), concatMap,
 
 data CFBody = CFB_LetFuns [Ident] [CFFn] CFBody
             | CFB_LetVal   Ident  KNMono CFBody
-            | CFB_Call    MonoType MoVar [MoVar]
+            | CFB_Done
 
 -- Next stage: optimizeCFGs in CFGOptimizations.hs
 
@@ -77,7 +77,7 @@ computeCFGs uref expr =
     -- We've kept a placeholder call to the main function here until now,
     -- but at this point we can get rid of it, since we're convering to a
     -- flat-list representation with an implicit call to main.
-    KNCall t v vs -> return $ CFB_Call t v vs
+    KNCall {} -> return CFB_Done
     _ -> error $ "computeCFGIO expected a series of KNLetFuns bindings! had " ++ show expr
 
 computeCFGIO :: IORef Uniq -> FnMono -> IO CFFn
@@ -598,7 +598,7 @@ instance Pretty CFBody where
                                    <$> text "end"
   pretty (CFB_LetVal id expr body) = text "let" <+> prettyBinding id expr <+> text "in"
                                  <$> pretty body
-  pretty (CFB_Call {}) = text "call main..."
+  pretty CFB_Done = text "call main..."
 
 prettyBinding :: Pretty x => Ident -> x -> Doc
 prettyBinding id thing = text (show id) <+> text "=" <+> pretty thing
