@@ -1460,6 +1460,13 @@ llvm::Value* emitFnArgCoercions(Value* argV, llvm::Type* expectedType, Value* FV
     argV = emitBitcast(argV, expectedType, "spec2gen");
   }
 
+  // In code like  v = case _ of _ -> expect_i32 ...    _ -> ()
+  // we'll be forced to bind the result of expect_i32 (which is actually
+  // void, not unit) to a unit-typed variable. If so, just use a null pointer.
+  if (argV->getType()->isVoidTy() && str(expectedType) == "{}*") {
+    argV = llvm::ConstantPointerNull::get(llvm::dyn_cast<llvm::PointerType>(expectedType));
+  }
+
   return argV;
 }
 
