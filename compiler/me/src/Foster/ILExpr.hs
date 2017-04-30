@@ -98,7 +98,7 @@ prepForCodegen :: ModuleIL CCBody TypeLL -> MayGCConstraints -> Compiled (ILProg
 prepForCodegen m mayGCconstraints0 = do
     let decls = map (\(s,t) -> LLExternDecl s t) (moduleILdecls m)
     let dts = moduleILprimTypes m ++ moduleILdataTypes m
-    let CCBody hprocs valbinds _ = moduleILbody m
+    let CCBody hprocs valbinds = moduleILbody m
     combined <- mapM explicateProc hprocs
     let (aprocs, preallocprocs) = unzip combined
 
@@ -741,7 +741,7 @@ runPreAllocationOptimizations b0 = do
 type MGCM a = State MayGCConstraints a -- MGCM = "may-gc monad"
 
 collectMayGCConstraints :: CCBody -> MayGCConstraints
-collectMayGCConstraints (CCBody procs _bindings _main) =
+collectMayGCConstraints (CCBody procs _bindings) =
       -- TODO do we need to worry about GC in top-level bindings?
       execState (mapM collectMayGCConstraints_CCProc procs) Map.empty
 

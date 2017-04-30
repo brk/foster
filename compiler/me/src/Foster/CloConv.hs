@@ -46,8 +46,7 @@ import Foster.PatternMatch
 -- Next     stage: prepForCodegen in ILExpr.hs
 
 -- ||||||||||||||||||||||||| Datatypes ||||||||||||||||||||||||||{{{
-data CCBody = CCBody [CCProc] [ToplevelBinding] CCMain
-data CCMain = CCMain TailQ TypeLL LLVar [LLVar]
+data CCBody = CCBody [CCProc] [ToplevelBinding]
 type CCProc = Proc BasicBlockGraph'
 type Block' = Block Insn' C C
 type BlockG = Graph Insn' C C
@@ -116,17 +115,17 @@ closureConvertAndLift dataSigs globalIds u m =
     let initialState = ILMState u Map.empty Map.empty Map.empty [] dataSigs in
     -- Currently, globalIds is `globalIdents ctx_tc` in convertTypeILofAST in Main.hs...
     -- The list does not include any identifiers from the input module.
-    let (ccmain, st) = runState (closureConvertToplevel globalIds $ moduleILbody m)
-                                                                 initialState in
+    let st = execState (closureConvertToplevel globalIds $ moduleILbody m)
+                       initialState in
     (ModuleIL {
-          moduleILbody        = CCBody (Map.elems $ ilmProcs st) (ilmVals st) ccmain
+          moduleILbody        = CCBody (Map.elems $ ilmProcs st) (ilmVals st)
         , moduleILdecls       = map (\(s,t) -> (s, monoToLL t)) (moduleILdecls m)
         , moduleILdataTypes   = map (fmap monoToLL) (moduleILdataTypes m)
         , moduleILprimTypes   = map (fmap monoToLL) (moduleILprimTypes m)
         , moduleILsourceLines = moduleILsourceLines m
         }, (ilmUniq st))
 
-closureConvertToplevel :: [Ident] -> CFBody -> ILM CCMain
+closureConvertToplevel :: [Ident] -> CFBody -> ILM ()
 closureConvertToplevel globalIds body = do
   cvt (Set.fromList globalIds) body
      where
@@ -137,8 +136,8 @@ closureConvertToplevel globalIds body = do
        -- We directly return a list of the top-level proc definitions, and also
        -- (via the ILM monad) a list of all procs generated, including those
        -- from nested functions.
-       cvt :: Set Ident -> CFBody -> ILM CCMain
-       cvt _ (CFB_Call t v vs) = return (CCMain YesTail (monoToLL t) (llv v) (map llv vs))
+       cvt :: Set Ident -> CFBody -> ILM ()
+       cvt _ (CFB_Done) = return ()
 
        -- TODO what to do with expr??
        cvt globalized (CFB_LetVal id expr body) = do
@@ -659,7 +658,7 @@ instance Pretty ToplevelBinding where
   pretty _tb = text "toplevel binding..."
 
 instance Pretty CCBody where
- pretty (CCBody procs vals _) =
+ pretty (CCBody procs vals) =
        vcat (map (\p -> line <> pretty p) vals)
    <$> vcat (map (\p -> line <> pretty p) procs)
 

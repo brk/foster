@@ -801,8 +801,8 @@ lowerModule (tc_time, (kmod, globals)) = do
      (cp_time, (ilprog, prealloc)) <- ioTime $ prepForCodegen ccmod  constraints
      whenDumpIR "prealloc" $ do
          putDocLn $ (outLn "/// Pre-allocation ====================")
-         _ <- liftIO (renderCC (ccmod { moduleILbody = let (CCBody _ vals main) = moduleILbody ccmod in
-                                                         CCBody prealloc vals main }) True )
+         _ <- liftIO (renderCC (ccmod { moduleILbody = let (CCBody _ vals) = moduleILbody ccmod in
+                                                         CCBody prealloc vals }) True )
          putDocLn $ (outLn "^^^ ===================================")
 
      whenDumpIR "il" $ do
