@@ -134,8 +134,7 @@ prepForCodegen m mayGCconstraints0 = do
 -- ||||||||||||||||||||||||| Allocation Explication  ||||||||||||{{{
 makeAllocationsExplicit :: BasicBlockGraph' -> Compiled BasicBlockGraph'
 makeAllocationsExplicit bbgp = do
-     let (bid,_) = bbgpEntry bbgp
-     bb' <- rebuildGraphM (Just bid) (bbgpBody bbgp) explicate
+     bb' <- rebuildGraphM Nothing (bbgpBody bbgp) explicate
      return $ bbgp { bbgpBody = bb' }
  where
   explicate :: forall e x. Insn' e x -> Compiled (Graph Insn' e x)

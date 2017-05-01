@@ -328,6 +328,11 @@ insertDumbGCRoots bbgp0 dump = do
    -- we don't want to try to find a root for o!
    -- So we enforce the invariant that no active rebindings exist here.
    bbgp <- runRebinds bbgp0
+   {--- Root insertion breaks if we process the graph in a different order than
+     -- DFS-from-entry-node...
+   g'bad  <- evalStateT (rebuildGraphM Nothing (bbgpBody bbgp) transform)
+                             Map.empty
+                             -}
    g'  <- evalStateT (rebuildGraphM (case bbgpEntry bbgp of (bid, _) -> Just bid)
                                     (bbgpBody bbgp) transform)
                              Map.empty
@@ -476,8 +481,7 @@ insertDumbGCRoots bbgp0 dump = do
 -- So we must insert kills for dead root slots at the start of basic blocks.
 insertDumbGCKills :: BasicBlockGraph' -> Bool -> [RootVar] -> Compiled BasicBlockGraph'
 insertDumbGCKills bbgp dump allroots = do
-   g'  <- rebuildGraphM (case bbgpEntry bbgp of (bid, _) -> Just bid)
-                                    (bbgpBody bbgp) transform
+   g'  <- rebuildGraphM Nothing (bbgpBody bbgp) transform
    liftIO $ when (showOptResults || dump) $ do Boxes.printBox $ catboxes2 (bbgpBody bbgp) g'
    return bbgp { bbgpBody =  g' }
  where
@@ -511,8 +515,7 @@ removeDeadGCRoots :: BasicBlockGraph'
                   -> RootLiveWhenGC
                   -> Compiled BasicBlockGraph'
 removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
-   let mappedAction = rebuildGraphM (case bbgpEntry bbgp of (bid, _) -> Just bid)
-                                    (bbgpBody bbgp) transform
+   let mappedAction = rebuildGraphM Nothing (bbgpBody bbgp) transform
    g' <- evalStateT mappedAction Map.empty
 
    liftIO $ when showOptResults $ Boxes.printBox $ catboxes2 (bbgpBody bbgp) g'
@@ -849,7 +852,7 @@ availsLattice = DataflowLattice
 -- so that the dominator-successors computation is accurate.
 relabelEntryExitBlocks :: BasicBlockGraph' -> Compiled BasicBlockGraph'
 relabelEntryExitBlocks bbgp = do
-   (g', _) <- case bbgpEntry bbgp of (bid, _) -> rebuildGraphAccM (Just bid) (bbgpBody bbgp) bid transform
+   (g', _) <- case bbgpEntry bbgp of (bid, _) -> rebuildGraphAccM Nothing (bbgpBody bbgp) bid transform
    return BasicBlockGraph' {
                  bbgpEntry = bbgpEntry bbgp,
                  bbgpRetK  = bbgpRetK  bbgp,
@@ -948,7 +951,7 @@ runRebinds :: BasicBlockGraph' -> Compiled BasicBlockGraph'
 runRebinds bbgp = do
   let (bid, _) = bbgpEntry bbgp
   let m = execState (mapGraphNodesM_ am bid (bbgpBody bbgp)) Map.empty
-  g <- rebuildGraphM (Just bid) (bbgpBody bbgp) (d m)
+  g <- rebuildGraphM Nothing (bbgpBody bbgp) (d m)
   return bbgp { bbgpBody = g }
  where
     am :: forall e x. Insn' e x -> State (Map LLVar [LLVar]) ()
