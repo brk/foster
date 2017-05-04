@@ -346,7 +346,7 @@ computeNumPredecessors elab blocks =
         startingMap blocks
  where
     -- The entry (i.e. postalloca) label will get an incoming edge in LLVM.
-    startingMap = Map.singleton (blockId elab) 1
+    startingMap = Map.singleton (fst elab) 1
 
     incrPredecessorsDueTo :: Insn' O C -> NumPredsMap -> NumPredsMap
     incrPredecessorsDueTo insn' m =

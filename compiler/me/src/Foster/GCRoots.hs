@@ -18,7 +18,7 @@ import qualified Text.PrettyPrint.Boxes as Boxes
 
 import Foster.Base(TExpr, TypedId(TypedId), freeTypedIds, Ident(..), Occurrence,
                    tidType, tidIdent, typeOf, MayGC(), boolGC)
-import Foster.CFG(runWithUniqAndFuel, M, rebuildGraphM, mapGraphNodesM_, rebuildGraphAccM, blockId, BlockId)
+import Foster.CFG(runWithUniqAndFuel, M, rebuildGraphM, mapGraphNodesM_, rebuildGraphAccM, BlockId)
 import Foster.Config
 import Foster.CloConv
 import Foster.TypeLL
@@ -858,7 +858,7 @@ relabelEntryExitBlocks bbgp = do
   where
       transform :: BlockId -> Insn' e x -> Compiled (Graph Insn' e x, BlockId)
       transform ent insn = case insn of
-        CCLabel l               -> return (mkFirst  insn, blockId l)
+        CCLabel l               -> return (mkFirst  insn, fst l)
 
         CCLetVal     {}         -> return (mkMiddle insn, ent)
         CCLetFuns    {}         -> return (mkMiddle insn, ent)
