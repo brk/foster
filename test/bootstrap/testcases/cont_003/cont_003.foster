@@ -1,0 +1,34 @@
+
+type case List (a:Type)
+  of $Nil
+  of $Cons a (List a)
+;
+
+// Uses O(log n) stack, and heap O(n) + proportional to whatever f allocates.
+listFoldrZZ = { lst =>
+  REC mustnotbecont_foldBase = { xs =>
+    case xs
+     of $Nil                         ->
+      	0
+     of $Cons _ rest ->
+     	print_i32 11111111;
+     	res = mustnotbecont_foldBase rest;
+     	print_i32 22222222;
+     	res +Int32 1
+    end
+  };
+
+  mustnotbecont_foldBase lst
+};
+
+main = {
+  lst = Cons { 3 } Nil;
+
+  expect_i32 11111111;
+  expect_i32 22222222;
+  expect_i32 1;
+  print_i32 (listFoldrZZ lst);
+
+};
+
+
