@@ -331,7 +331,6 @@ collectMayGCConstraints_Proc proc m = foldGraphNodes go (bbgpBody $ procBlocks p
 
         go (CCLetFuns  _ _clos) _ = error $ "collecMayGCConstraints saw CCLetClosures!"
 
-        go (CCLast _ (CCCall _ _ _ v _ )) m = withGC m $ unknownMeansMayGC (Map.findWithDefault (GCUnknown "cmGC") (tidIdent v) m)
         go (CCLetVal x (ILBitcast t v)) m = case Map.lookup (tidIdent v) m of
                                                Nothing  -> withGC m $ unknownMeansMayGC (canGC m (ILBitcast t v))
                                                Just mgc -> Map.insert x mgc m
@@ -395,10 +394,6 @@ flattenGraph bbgp mayGCmap assumeNonMovingGC = -- clean up any rebindings from g
      fin :: Insn' O C -> ([ILMiddle], ILLast)
      fin (CCLast _ (CCCont k vs)   ) = ([], cont k vs)
      fin (CCLast _ (CCCase v bs mb)) = ([], ILCase v bs mb)
-     -- [[f k vs]] ==> let x = f vs in [[k x]]
-     fin (CCLast _ (CCCall k t id v vs)) =
-        let maygc = Map.findWithDefault MayGC (tidIdent v) mayGCmap in
-        ([ILLetVal id (ILCall t v vs) maygc], cont k [TypedId t id])
 
      -- Translate continuation application to br or ret, as appropriate.
      cont k vs =
@@ -444,12 +439,14 @@ mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
        case (yargs, xl) of
          -- Given a call next to its single-predecessor target,
          -- glue together the blocks with a let-binding in between.
+         {-
          ([yarg], CCLast _ (CCCall cb t _id v vs)) | cb == yb ->
              if Map.lookup yb numpreds == Just 1
                  then Just ((xem `blockSnoc`
                               (CCLetVal (tidIdent yarg) (ILCall t v vs)))
                                  `blockAppend` yml, subst)
                  else Nothing
+                 -}
 
          -- Given a continuation/branch to its single-predecessor target,
          -- and assuming that the args match up properly,
@@ -527,7 +524,6 @@ mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
           (CCRebindId {}       ) -> error $ "Unexpected rebinding!"
           (CCLast l  cclast    ) -> case cclast of
               CCCont b vs          -> CCLast l (CCCont b (map s vs))
-              CCCall b t id v vs   -> CCLast l (CCCall b t id (s v) (map s vs))
               CCCase v cs mb       -> CCLast l (CCCase (s v) cs mb)
 
      substForInClo :: VarSubstFor Closure
@@ -694,7 +690,6 @@ liveness = mkBTransfer go
           let s = Set.unions (map (fact fdb) (successors node)) in
           case last of
             (CCCont _         vs) -> insert s vs
-            (CCCall _ _ _id v vs) -> insert s (v:vs)
             (CCCase v _ _)        -> insert s [v]
 
     without s ids = Set.difference s (Set.fromList ids)
@@ -776,7 +771,6 @@ collectMayGCConstraints_CFG bbgp fnid = let (bid,_) = bbgpEntry bbgp in
         go (CCLast _ cclast)     = case cclast of
                      CCCont {}      -> return ()
                      CCCase {}      -> return ()
-                     CCCall _ _ _ v _ -> callGC (tidIdent v)
 
         go (CCGCLoad     {}) = return ()
         go (CCGCInit     {}) = return ()
@@ -792,25 +786,6 @@ collectMayGCConstraints_CFG bbgp fnid = let (bid,_) = bbgpEntry bbgp in
         withGC WillNotGC     = return ()
         withGC MayGC         = modify $ Map.adjust (\_ -> (MayGC, Set.empty)) fnid
         withGC (GCUnknown _) = return ()
-
-        callGC :: Ident -> MGCM ()
-
-        callGC id@(GlobalSymbol name) = do
-           if willNotGCGlobal name
-             then return ()
-             else addIndirectConstraint id
-
-        callGC localid = do
-                m <- get
-                case Map.lookup localid m of
-                  Nothing -> withGC MayGC
-                     -- Note: Because we collect may-gc constraints after
-                     --       running optimizations, the conservative estimate
-                     --       that every unknown call site might GC is probably
-                     --       not a bad approximation to the truth.
-
-                  Just (GCUnknown _, _) -> addIndirectConstraint localid
-                  Just (maygc,       _) -> withGC maygc
 
         addIndirectConstraint id =
           modify $ Map.adjust (\(maygc, indirs) ->

@@ -93,7 +93,6 @@ data Proc blocks =
           }
 
 data CCLast = CCCont        BlockId [LLVar] -- either ret or br
-            | CCCall        BlockId TypeLL Ident LLVar [LLVar] -- add ident for later let-binding
             | CCCase        LLVar [((CtorId, CtorRepr), BlockId)] (Maybe BlockId)
             deriving (Show)
 
@@ -256,8 +255,6 @@ closureConvertBlocks bbg = do
         ILetFuns ids fns        -> do closures <- closureConvertLetFuns ids fns
                                       return (mkMiddle $ CCLetFuns ids closures, ent)
         ILast (CFCont b vs)     -> do return (mkLast $ CCLast ent (CCCont b (map llv vs)), ent)
-        ILast (CFCall b t v vs) -> do id <- ilmFresh (T.pack ".call")
-                                      return (mkLast $ CCLast ent (CCCall b (monoToLL t) id (llv v) (map llv vs)), ent)
         ILast (CFCase a arms) -> do
            allSigs <- gets ilmCtors
            let dt = compilePatterns arms allSigs
@@ -628,11 +625,7 @@ isFunc ft = case ft of FnType _ _ _ FT_Func     -> True
                        _                          -> False
 
 instance Pretty CCLast where
-  pretty (CCCont bid       vs) = text "cont" <+> prettyBlockId bid <+>              list (map pretty vs)
-  pretty (CCCall bid _ _ v vs) =
-        case tidType v of
-          LLProcType _ _ _ -> text ("call (proc)") <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
-          _                -> text ("call (func)") <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
+  pretty (CCCont bid vs) = text "cont" <+> prettyBlockId bid <+>              list (map pretty vs)
   pretty (CCCase v arms def) = align $
     text "case" <+> pretty v <$> indent 2
        ((vcat [ arm (text "of" <+> pretty ctor) bid
@@ -695,7 +688,6 @@ ccLastTargetsOf :: CCLast -> [BlockId]
 ccLastTargetsOf last =
     case last of
         CCCont     b _            -> [b]
-        CCCall     b _ _ _ _      -> [b]
         CCCase     _ cbs (Just b) -> b:map snd cbs
         CCCase     _ cbs Nothing  ->   map snd cbs
 

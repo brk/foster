@@ -17,7 +17,7 @@ import Text.PrettyPrint.ANSI.Leijen
 import qualified Text.PrettyPrint.Boxes as Boxes
 
 import Foster.Base(TExpr, TypedId(TypedId), freeTypedIds, Ident(..), Occurrence,
-                   tidType, tidIdent, typeOf, MayGC(GCUnknown), boolGC)
+                   tidType, tidIdent, typeOf, MayGC(), boolGC)
 import Foster.CFG(runWithUniqAndFuel, M, rebuildGraphM, mapGraphNodesM_, rebuildGraphAccM, blockId, BlockId)
 import Foster.Config
 import Foster.CloConv
@@ -214,9 +214,9 @@ liveAtGCPointXfer2 mayGCmap = mkBTransfer go
              ++ "which has probably invalidated the computed results. Fix this by using\n"
              ++ "a forwards rewriting pass to resolve & remove RebindId nodes before\n"
              ++ "running a backwards analysis."
-    go node@(CCLast _  cclast) fdb =
+    go node@(CCLast {}) fdb =
           let f = combineLastFacts fdb node in
-          ifgc (canCCLastGC mayGCmap cclast) f
+          ifgc False f
 
     markLive root (s, g, c) = (Set.insert root s, g, c)
     markDead root (s, g, c) = (Set.delete root s, g, c)
@@ -370,8 +370,6 @@ insertDumbGCRoots bbgp0 dump = do
     CCRebindId _doc _v1 _v2       -> do error $ "GCRoots.hs: insertDumbGCRoots saw unexpected CCRebindId: " ++ show (pretty insn)
     CCLast l (CCCont b vs)        -> do withGCLoads vs (\vs'  ->
                                                (mkLast $ CCLast l (CCCont b vs' )))
-    CCLast l (CCCall b t id v vs) -> do withGCLoads (v:vs) (\(v' : vs' ) ->
-                                               (mkLast $ CCLast l (CCCall b t id v' vs' )))
     CCLast l (CCCase v arms mb)   -> do withGCLoads [v] (\[v' ] ->
                                                (mkLast $ CCLast l (CCCase v' arms mb)))
 
@@ -515,8 +513,9 @@ removeDeadGCRoots :: BasicBlockGraph'
                   -> RootLiveWhenGC
                   -> Compiled BasicBlockGraph'
 removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
-   let mappedAction = rebuildGraphM Nothing (bbgpBody bbgp) transform
-   g' <- evalStateT mappedAction Map.empty
+   g' <- evalStateT (rebuildGraphM (case bbgpEntry bbgp of (bid, _) -> Just bid)
+                                   (bbgpBody bbgp) transform)
+                    Map.empty
 
    liftIO $ when showOptResults $ Boxes.printBox $ catboxes2 (bbgpBody bbgp) g'
 
@@ -543,8 +542,6 @@ removeDeadGCRoots bbgp varsForGCRoots liveRoots = do
     CCLetFuns {}                  -> do return $ mkMiddle $ insn
     CCLast l (CCCont b vs)        -> do undoDeadGCLoads vs (\vs'  ->
                                                (mkLast $ CCLast l (CCCont b vs' )))
-    CCLast l (CCCall b t id v vs) -> do undoDeadGCLoads (v:vs) (\(v' : vs' ) ->
-                                               (mkLast $ CCLast l (CCCall b t id v' vs' )))
     CCLast l (CCCase v arms mb)   -> do undoDeadGCLoads [v] (\[v' ] ->
                                                (mkLast $ CCLast l (CCCase v' arms mb)))
     CCRebindId     {}             -> do return $ mkMiddle $ insn
@@ -656,7 +653,7 @@ availsXfer mayGCmap domInfo = mkFTransfer3 go go
     go (CCLetFuns    {}    ) f = ifgc True             f
     go (CCTupleStore {}    ) f = f
     go (CCRebindId _ v1 v2 ) f = f { availSubst = insertAvailMap v1 v2 (availSubst f) }
-    go (CCLast   _   cclast) f = ifgc (canCCLastGC mayGCmap cclast) f
+    go (CCLast       {}    ) f = ifgc False            f
 
     ifgc mayGC f = if mayGC then f { rootLoads = emptyAvailMap }
                             else f -- when a GC might occur, all root loads
@@ -981,9 +978,6 @@ runRebinds bbgp = do
         return (mkMiddle $ CCGCKill disen (Set.map (s a) roots))
     d a (CCLast l (CCCont bid vs)) =
       return (mkLast $ CCLast l (CCCont bid (map (s a) vs) ))
-    d a (CCLast l (CCCall bid ty id v vs)) =
-      let (v', vs' ) = (s a v, map (s a) vs) in
-      return (mkLast $ CCLast l (CCCall bid ty id v' vs' ))
     d a (CCLast l (CCCase v cases def)) =
       return (mkLast $ CCLast l (CCCase (s a v) cases def))
 
@@ -995,9 +989,4 @@ runRebinds bbgp = do
                            ++ " to zero or one variables, but had " ++ show s
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
-canCCLastGC mayGCmap (CCCall _ _ _ v _) =
-  boolGC $ Map.findWithDefault (GCUnknown "") (tidIdent v) mayGCmap
-canCCLastGC _        (CCCont {}) = False
-canCCLastGC _        (CCCase {}) = False
 

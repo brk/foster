@@ -1581,7 +1581,11 @@ cffnOfMKCont (MKFn cv vs _ subterm _isrec _annot) = do
                                  blockid <- blockIdOf' contvar
                                  (v' : vs') <- mapM qv (v:vs)
                                  --liftIO $ putStrLn $ "putting block with ending call " ++ show (tidIdent $ boundVar cv)
-                                 baPutBlock head insns (CFCall blockid ty v' vs')
+                                 -- TODO avoid eliminating trivial rebindings if target contvar is uniquely ref'd?
+                                 
+                                 resid <- lift $ ccFreshId $ T.pack ".cr"
+                                 baPutBlock head (ILetVal resid (ILCall ty v' vs') : insns)
+                                        (CFCont blockid [TypedId ty resid])
 
           MKCont        _u _ty contvar vs -> do
                                  blockid <- blockIdOf' contvar
