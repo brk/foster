@@ -30,12 +30,10 @@ import Data.Maybe(catMaybes, isJust)
 
 import Compiler.Hoopl(UniqueMonad(..), C, O, freshLabel, intToUnique,
                       blockGraph, blockJoin, blockFromList, firstNode)
-import System.IO(openFile, hClose, IOMode(..))
 
 import Text.PrettyPrint.ANSI.Leijen
 
 -- Binding occurrences of variables, with link to a free occurrence (if not dead).
---data MKBound t = MKBound (TypedId t) (OrdRef (Maybe (FreeOcc t)))
 data MKBound x = MKBound x (OrdRef (Maybe (FreeOcc x)))
 
 -- Free occurrences: doubly-linked list with union-find for access to binder.
@@ -75,9 +73,6 @@ substVarForBound (fox, MKBound v r) = do
   mb_fo <- readOrdRef r
   case mb_fo of
     Nothing -> do
-      --b <- freeBinder fox
-      --liftIO $ putDocLn $ text "can't substitute" <+> pretty b <+> text "for" <+> pretty v
-
       -- Substituting for a dead variable; nothing to do.
       return ()
     Just fo -> do
@@ -107,6 +102,7 @@ mergeFreeLists rx ry = do
     (Just nx, Just ny) -> dlcMerge nx ny
 
 data DLCNode t = DLCNode t (OrdRef (DLCNode t)) (OrdRef (DLCNode t))
+
 dlcNextRef (DLCNode _ _ nr) = nr
 dlcPrevRef (DLCNode _ pr _) = pr
 
@@ -182,16 +178,6 @@ dlcToList (MKBound _ r) = do
 dlcCount d1 = dlcToList d1 >>= return . length
 
 
-{-}
-mkbClassify :: (OrdRef (Maybe (FreeOcc t))) -> Compiled VarOccClassif
-mkbClassify mkb = do
-  mfo <- readOrdRef mkb
-  case mfo of
-    Nothing -> return VOC_Zero
-    Just fo -> do s <- dlcIsSingleton fo
-                  return $ if s then VOC_One else VOC_Many
--}
-
 type Link   val    = OrdRef (Maybe val)
 type Subterm ty    = Link (MKTerm ty)
 type Subexpr ty    = Link (MKExpr ty)
@@ -233,8 +219,8 @@ type FreeVar ty = FreeOcc (TypedId ty)
 --                      linkCB ---> body(actual)
 --                      linkCC -----^
 --
--- This is the subtly broken bit with direct self-reference: 'body'
--- will have directly embedded 'linkCB' as its self-link value,
+-- This is the subtly broken bit with direct self-reference:
+--  if 'body' directly embeds 'linkCB' as its self-link value, then
 -- even though the program now accesses it via 'linkCC'.
 -- Thus an attempt to subtitute 'new' for 'body' results in
 --
@@ -243,48 +229,95 @@ type FreeVar ty = FreeOcc (TypedId ty)
 --
 -- And since the progrma knows about linkCC and not the now-dead linkCB,
 -- the upshot is the appearance of phantom lost inlinings.
+--
+-- A similar problem occurs with no embedded self-link; the worklist
+-- can process linkCB after linkCC, producing a lost update.
+--
+-- The solution is (I think?) hinted at by Kennedy: we must use
+-- the parent link in the to-be-replaced term to harvest a selection
+-- of "active" subterm links, from which we can select the relevant one.
+-- So in the example, when we look at body(actual), perhaps via linkCB,
+-- we'll examine the uplink, which points to the MKLetCont; from there,
+-- we'll harvest linkCF and linkCC. We can do simple identity comparisons
+-- of the uplinks in the linked terms. Thus from linkCB we update linkCC.
 
-type Uplink ty     = Link (Parent ty)
-type Links ty = (Uplink ty, Subterm ty) -- parent, self
-type LinkE ty = (Uplink ty, Subexpr ty) -- parent, self
+getActiveLinkFor :: Subterm ty -> Compiled (Subterm ty)
+getActiveLinkFor subterm = do
+  term <- readLink "linkFor" subterm
+  let isLinkToOurTerm link = do
+        mb_term' <- readOrdRef link
+        case mb_term' of
+          Nothing -> return False
+          Just term' -> return $ parentLinkT term' == parentLinkT term
+
+  parent <- readLink "linkFor" (parentLinkT term)
+  case parent of
+    ParentFn fn -> do
+      good <- isLinkToOurTerm (mkfnBody fn)
+      if good
+        then return $ mkfnBody fn
+        else error $ "linkFor: body of parent fn wasn't equal to our term!"
+    ParentTerm p -> do
+      siblings <- subtermsOf p
+      goods <- mapM isLinkToOurTerm siblings
+      case [sib | (True, sib) <- zip goods siblings] of
+        [] -> error "linkFor didn't find our candidate among the siblings"
+        [x] -> return x
+        _ -> error $ "linkFor found multiple candidates among the siblings!"
+
+
+ where
+  subtermsOf :: MKTerm t -> Compiled [Subterm t]
+  subtermsOf term =
+      case term of
+        MKIf          _u _ _ tru fls -> return $ [tru, fls]
+        MKLetVal      _u  (x, br) k  -> return $ [k]
+        MKLetRec      _u   knowns k  -> return $ k : (map snd knowns)
+        MKLetFuns     _u   knowns k  -> do fns <- knownActuals knowns
+                                           return $ k : map mkfnBody fns
+        MKLetCont     _u   knowns k  -> do fns <- knownActuals knowns
+                                           return $ k : map mkfnBody fns
+        MKCase        _u _ _v arms   -> do return $ map mkcaseArmBody arms
+        MKCont {} -> return []
+        MKCall {} -> return []
+
+type Uplink ty = Link (Parent ty)
 data Parent ty = ParentTerm (MKTerm ty)
                | ParentFn  (MKFn (Subterm ty) ty)
 
 -- Bindable values/expressions; distinct from MKTerm to separate program structure from computations.
 data MKExpr ty =
-          MKKillProcess (LinkE ty) ty T.Text
-        | MKLiteral     (LinkE ty) ty Literal
-        | MKTuple       (LinkE ty) ty [FreeVar ty] SourceRange
-        | MKAppCtor     (LinkE ty) ty (CtorId, CtorRepr) [FreeVar ty]
-        | MKCallPrim    (LinkE ty) ty (FosterPrim ty)    [FreeVar ty] SourceRange
+          MKKillProcess (Uplink ty) ty T.Text
+        | MKLiteral     (Uplink ty) ty Literal
+        | MKTuple       (Uplink ty) ty [FreeVar ty] SourceRange
+        | MKAppCtor     (Uplink ty) ty (CtorId, CtorRepr) [FreeVar ty]
+        | MKCallPrim    (Uplink ty) ty (FosterPrim ty)    [FreeVar ty] SourceRange
         -- Mutable ref cells
-        | MKAlloc       (LinkE ty) ty (FreeVar ty) AllocMemRegion
-        | MKDeref       (LinkE ty) ty (FreeVar ty)
-        | MKStore       (LinkE ty) ty (FreeVar ty) (FreeVar ty)
+        | MKAlloc       (Uplink ty) ty (FreeVar ty) AllocMemRegion
+        | MKDeref       (Uplink ty) ty (FreeVar ty)
+        | MKStore       (Uplink ty) ty (FreeVar ty) (FreeVar ty)
         -- Array operations
-        | MKAllocArray  (LinkE ty) ty (FreeVar ty) AllocMemRegion ZeroInit
-        | MKArrayRead   (LinkE ty) ty (ArrayIndex (FreeVar ty))
-        | MKArrayPoke   (LinkE ty) ty (ArrayIndex (FreeVar ty)) (FreeVar ty)
-        | MKArrayLit    (LinkE ty) ty (FreeVar ty) [Either Literal (FreeVar ty)]
+        | MKAllocArray  (Uplink ty) ty (FreeVar ty) AllocMemRegion ZeroInit
+        | MKArrayRead   (Uplink ty) ty (ArrayIndex (FreeVar ty))
+        | MKArrayPoke   (Uplink ty) ty (ArrayIndex (FreeVar ty)) (FreeVar ty)
+        | MKArrayLit    (Uplink ty) ty (FreeVar ty) [Either Literal (FreeVar ty)]
         -- Others
-        | MKCompiles    (LinkE ty) KNCompilesResult ty (Subterm ty)
-        | MKTyApp       (LinkE ty) ty (FreeVar ty) [ty]
-        -- Use of bindings
-        -- | MKVar         (LinkE ty) (FreeOcc ty)
+        | MKCompiles    (Uplink ty) KNCompilesResult ty (Subterm ty)
+        | MKTyApp       (Uplink ty) ty (FreeVar ty) [ty]
 
 -- Terms are lists of bindings ending in control flow (if/case/call/cont).
 data MKTerm ty =
         -- Creation of bindings
-          MKLetVal      (Links ty) (Known ty   (Subexpr ty)) (Subterm ty)
-        | MKLetRec      (Links ty) [Known ty   (Subterm ty)] (Subterm ty)
-        | MKLetFuns     (Links ty) [Known ty (Link (MKFn (Subterm ty) ty))] (Subterm ty)
-        | MKLetCont     (Links ty) [Known ty (Link (MKFn (Subterm ty) ty))] (Subterm ty)
+          MKLetVal      (Uplink ty) (Known ty   (Subexpr ty)) (Subterm ty)
+        | MKLetRec      (Uplink ty) [Known ty   (Subterm ty)] (Subterm ty)
+        | MKLetFuns     (Uplink ty) [Known ty (Link (MKFn (Subterm ty) ty))] (Subterm ty)
+        | MKLetCont     (Uplink ty) [Known ty (Link (MKFn (Subterm ty) ty))] (Subterm ty)
 
         -- Control flow
-        | MKCase        (Links ty) ty (FreeVar ty) [MKCaseArm (Subterm ty) ty]
-        | MKIf          (Links ty) ty (FreeVar ty) (Subterm ty) (Subterm ty)
-        | MKCall        (Links ty) ty (FreeVar ty)       [FreeVar ty] (ContVar ty)
-        | MKCont        (Links ty) ty (ContVar ty)       [FreeVar ty]
+        | MKCase        (Uplink ty) ty (FreeVar ty) [MKCaseArm (Subterm ty) ty]
+        | MKIf          (Uplink ty) ty (FreeVar ty) (Subterm ty) (Subterm ty)
+        | MKCall        (Uplink ty) ty (FreeVar ty)       [FreeVar ty] (ContVar ty)
+        | MKCont        (Uplink ty) ty (ContVar ty)       [FreeVar ty]
 
 -- Does double duty, representing both regular functions and continuations.
 data MKFn expr ty
@@ -295,30 +328,12 @@ data MKFn expr ty
                        , mkfnIsRec :: RecStatus
                        ,_mkfnAnnot :: ExprAnnot
                        } deriving Show -- For KNExpr and KSmallstep
-{-
 
-data MKPatternAtom ty =
-          MKP_Wildcard      SourceRange ty
-        | MKP_Variable      SourceRange (MKBound ty)
-        | MKP_Bool          SourceRange ty Bool
-        | MKP_Int           SourceRange ty LiteralInt
-
-data MKPatternFlat ty =
-          MKPF_Atom                 (MKPatternAtom ty)
-        | MKPF_Ctor  SourceRange ty [MKPatternAtom ty] (LLCtorInfo ty)
--}
 data MKCaseArm expr ty = MKCaseArm { _mkcaseArmPattern  :: PatternRepr ty
                                    ,  mkcaseArmBody     :: expr
                                    , _mkcaseArmBindings :: [MKBoundVar ty]
                                    , _mkcaseArmRange    :: SourceRange
                                    }
-{-
-data MKCaseArm expr ty = MKCaseArm { mkcaseArmPattern :: PatternFlat ty
-                                   , mkcaseArmBody    :: expr
-                                   , mkcaseArmBindings:: [MKBoundVar ty]
-                                   , mkcaseArmRange   :: SourceRange
-                                   }
--}
 
 type WithBinders ty = StateT (Map Ident (MKBoundVar ty)) Compiled
 
@@ -337,11 +352,6 @@ mkBackpatch' es k f = do
   rv <- f ms
   lift $ backpatchT rv ms
   return rv
-
---mkBackpatch m f es = mkBackpatch' m es (return . f)
-
---backpatchL :: LinkE ty -> Subexpr ty -> Subterm ty -> Compiled ()
---backpatchL ()
 
 -- For each subexpr, install the given term as the parent.
 backpatchE :: MKTerm ty -> [Subexpr ty] -> Compiled ()
@@ -439,7 +449,6 @@ mkOfKNFn (Fn v vs expr isrec annot) = do
     vs' <- mapM mkBinder vs
     
     jb  <- genBinder ".fret" (tidType v)
-    --liftIO $ putStrLn $ "generated return continuation " ++ show (pretty jb) ++ " for " ++ show (pretty v)
 
     expr' <- mkOfKN_Base expr (CC_Tail jb)
     put m
@@ -456,10 +465,7 @@ contApply :: ContinuationContext ty -> FreeVar ty
 contApply (CC_Tail jb) v' = do
         cv <- lift $ mkFreeOccForBinder jb
         parentLink2 <- lift $ newOrdRef Nothing
-        selfLink2   <- lift $ newOrdRef Nothing
-        let links = (parentLink2, selfLink2)
-            thing = MKCont links (tidType $ boundVar jb)  cv [v']
-        lift $ writeOrdRef selfLink2 (Just thing)
+        selfLink2   <- lift $ newOrdRef $ Just $ MKCont parentLink2 (tidType $ boundVar jb)  cv [v']
         return selfLink2
 contApply (CC_Base (fn, _)) v' = fn v'
 
@@ -483,25 +489,17 @@ mkOfKN_Base expr k = do
             body' <- mkOfKN_Base body qk
             put m
             return $ MKCaseArm pat body' binds' rng
-  {-
-  let qarm (CaseArmFlat pat expr binds _occs rng) = do
-            -- TODO should track/remap occs...
-            binds' <- mapM qb binds
-            let m' = extend m binds binds'
-            expr' <- mkOfKN m' expr
-            return $ MKCaseArm pat expr' binds' rng
-            -}
 
   parentLink <- lift $ newOrdRef Nothing
   selfLink   <- lift $ newOrdRef Nothing
-  let nu = (parentLink, selfLink)
+  let nu = parentLink
 
   -- Note: should only be called once per go since it captures nu.
   let --genMKLetVal :: String -> ty -> (LinkE ty -> WithBinders ty (MKExpr ty))
       --            -> WithBinders ty (MKTerm ty)
       genMKLetVal name ty gen = do
         (xb, xo) <- genBinderAndOcc name ty
-        (selfLink2, exp) <- withLinkE gen
+        (selfLink2, _exp) <- withLinkE gen
         subterm <- contApply k xo
         let rv = MKLetVal nu (mkKnownE xb selfLink2) subterm
         lift $ backpatchE rv [selfLink2]
@@ -511,7 +509,7 @@ mkOfKN_Base expr k = do
   let
    gor expr = case expr of
     KNLetVal      x e1 e2 | Just (_, gen) <- isExprNotTerm e1 -> do
-        (selfLink2, exp) <- withLinkE gen
+        (selfLink2, _exp) <- withLinkE gen
         xb <- mkBinder (TypedId (typeKN e1) x)
         subterm <- mkOfKN_Base e2 k
         let rv = MKLetVal nu (mkKnownE xb selfLink2) subterm
@@ -661,31 +659,22 @@ isExprNotTerm expr = do
     KNTyApp  ty v argtys   -> Just $ (,) ".tya" $ \nu' -> do
                                    v' <- qv  v 
                                    return $ MKTyApp    nu' ty v' argtys
-                                   {-
-    KNCompiles res ty expr -> Just $ \nu' -> do
-                                    e' <- mkOfKN_Base expr k
-                                    return $ MKCompiles nu' res ty e'
-                                    -}
     _ -> Nothing
 
-withLinkT :: (Links ty -> StateT s Compiled (MKTerm ty))
+withLinkT :: (Uplink ty -> StateT s Compiled (MKTerm ty))
           -> StateT s Compiled (Subterm ty, MKTerm ty)
 withLinkT gen = do
   parentLink2 <- lift $ newOrdRef Nothing
-  selfLink2   <- lift $ newOrdRef Nothing
-  let links = (parentLink2, selfLink2)
-  thing <- gen links
-  lift $ writeOrdRef selfLink2 (Just thing)
+  thing <- gen parentLink2
+  selfLink2 <- lift $ newOrdRef (Just thing)
   return (selfLink2, thing)
 
-withLinkE :: (LinkE ty -> StateT s Compiled (MKExpr ty))
+withLinkE :: (Uplink ty -> StateT s Compiled (MKExpr ty))
           -> StateT s Compiled (Subexpr ty, MKExpr ty)
 withLinkE gen = do
   parentLink2 <- lift $ newOrdRef Nothing
-  selfLink2   <- lift $ newOrdRef Nothing
-  let links = (parentLink2, selfLink2)
-  thing <- gen links
-  lift $ writeOrdRef selfLink2 (Just thing)
+  thing <- gen parentLink2
+  selfLink2 <- lift $ newOrdRef (Just thing)
   return (selfLink2, thing)
 
 genBinder :: String -> ty -> WithBinders ty (MKBoundVar ty)
@@ -723,17 +712,12 @@ genContinuation contName contBindName ty_x (kf, resTy) nu selfLink restgen = do
     lift $ backpatchT rv [rest']
     installLink selfLink rv 
 
-
 parentLinkE :: MKExpr ty -> Uplink ty
-parentLinkE = fst . linksE
-
-linksE :: MKExpr ty -> LinkE ty
-linksE expr =
+parentLinkE expr =
   case expr of
     MKLiteral     u       _t _it -> u
     MKTuple       u     _t _s _r -> u
     MKKillProcess u     _ty _t    -> u
-    --MKVar         u          _   -> u
     MKCallPrim    u     _ty _ _s _ -> u
     MKAppCtor     u     _ty _ _s -> u
     MKAlloc       u     _ty _  _ -> u
@@ -746,14 +730,8 @@ linksE expr =
     MKCompiles    u _res _ty _body -> u
     MKTyApp       u _ty _ _arg_tys -> u
 
-selfLinkT :: MKTerm ty -> Subterm ty
-selfLinkT  = snd . linksT
-
 parentLinkT :: MKTerm ty -> Uplink ty
-parentLinkT = fst . linksT
-
-linksT :: MKTerm ty -> Links ty
-linksT expr =
+parentLinkT expr =
   case expr of
     MKLetVal      u   _known  _k -> u
     MKLetRec      u   _knowns _k -> u
@@ -786,10 +764,7 @@ knOfMKExpr :: Pretty t =>
               MaybeCont t -> MKExpr t -> Compiled (KNExpr' RecStatus t)
 knOfMKExpr mb_retCont expr = do
   let q  subterm = readLink "knOfMK" subterm >>= knOfMK mb_retCont
-  let qk :: (val -> Compiled res) -> Known ty (OrdRef (Maybe val)) -> Compiled (Ident, Maybe res)
-      qk f (x,br) = do b <- readOrdRef br
-                       b' <- liftMaybe f b
-                       return (tidIdent (boundVar x), b')
+
   let qv (DLCNode pt _ _) = do bound <- liftIO $ repr pt >>= descriptor
                                return $ boundVar bound
   let qa (ArrayIndex v1 v2 x y) = mapM qv [v1, v2] >>= \[v1', v2'] -> return (ArrayIndex v1' v2' x y)
@@ -801,7 +776,6 @@ knOfMKExpr mb_retCont expr = do
     MKTuple       _ ty vars sr -> do vars' <- mapM qv vars
                                      return $ KNTuple ty vars' sr
     MKKillProcess _ ty txt     -> return $ KNKillProcess ty txt
-    --MKVar         _          _   -> u
     MKCallPrim    _ ty p vs r -> do vs' <- mapM qv vs
                                     return $ KNCallPrim r ty p vs'
     MKAppCtor     _ ty cid vs -> do vs' <- mapM qv vs
@@ -947,9 +921,8 @@ collectRedexes ref valbindsref expbindsref funbindsref cntbindsref subterm = do
       case term of
         MKCall _ _ fo _ _ -> whenNotM (isMainFn fo) markRedex
         MKCont {} -> markRedex
-        _ -> subtermsOf term >>= mapM_ go
-        where --subtermsOf :: MKTerm t -> Compiled [Subterm t]
-              subtermsOf term =
+        _ -> markAndFindSubtermsOf term >>= mapM_ go
+        where markAndFindSubtermsOf term =
                   case term of
                     MKIf          _u _ _ tru fls -> return [tru, fls]
 
@@ -970,11 +943,6 @@ knownActuals :: [Known ty (Link val)] -> Compiled [val]
 knownActuals knowns = do
     mb_vals <- mapM (readOrdRef . snd) knowns
     return $ catMaybes mb_vals
-
-putDocF file doc = do
-    handle <- openFile file WriteMode
-    displayIO handle (renderPretty 0.4 100 (plain doc))
-    hClose handle
 
 -- {{{
 data RedexSituation t =
@@ -1024,7 +992,7 @@ runCopyMKFn mkfn = evalStateT (copyMKFn mkfn) Map.empty
 
 copyBinder :: MKBoundVar t -> MKRenamed t (MKBoundVar t)
 copyBinder b = do
-  newid <- lift $ ccRefreshLocal (tidIdent $ boundVar b)
+  newid <- lift $ ccRefresh (tidIdent $ boundVar b)
   -- Like mkBinder, but we record the old id in the map instead of the new one.
   ref <- lift $ newOrdRef Nothing
   let binder = MKBound (TypedId (tidType $ boundVar b) newid) ref
@@ -1032,6 +1000,14 @@ copyBinder b = do
   put $ extend m [tidIdent $ boundVar b] [binder]
   liftIO $ putStrLn $ "copied binder " ++ show (tidIdent $ boundVar b) ++ " into " ++ show newid
   return binder
+ where
+    ccRefresh :: Ident -> Compiled Ident
+    ccRefresh (Ident t _) = do
+        u <- ccUniq
+        return $ Ident t u
+    ccRefresh (GlobalSymbol t) = do
+        u <- ccUniq
+        return $ GlobalSymbol $ t `T.append` T.pack (show u)
 
 copyFreeOcc :: FreeVar t -> WithBinders t (FreeVar t)
 copyFreeOcc fv = do
@@ -1236,7 +1212,7 @@ mknInline subterm mainCont mb_gas = do
            mb_mredex_parent <- worklistGet'
            case mb_mredex_parent of
              Nothing -> liftIO $ putStrLn "... ran outta work"
-             Just (subterm, mredex, Nothing) -> do
+             Just (_subterm, mredex, Nothing) -> do
                
                 do redex <- knOfMK (YesCont mainCont) mredex
                    liftIO $ putDocLn $ text "skipping parentless redex: " <+> pretty redex
@@ -1255,16 +1231,17 @@ mknInline subterm mainCont mb_gas = do
                         liftIO $ putDocLn $ text "CallOfSingletonFunction starting with: " <+> pretty redex
 
                      do v <- freeBinder callee
-                        liftIO $ putStrLn $ "inlining without copying " ++ show (tidIdent $ boundVar v)
+                        liftIO $ putDocLn $ green (text "inlining without copying ") <> pretty (tidIdent $ boundVar v)
                      newbody <- betaReduceOnlyCall fn args kv
 
                     --  do newbody' <- knOfMK (mbContOf $ mkfnCont fn) newbody
                     --     liftIO $ putDocLn $ text "CallOfSingletonFunction generated: " <+> pretty newbody'
 
-                     replaceWith mredex newbody
+                     replaceWith subterm newbody
                      killBinding callee knownFns
                      -- No need to collect redexes, since the body wasn't duplicated.
 
+{-
                      case _parent of
                             ParentTerm pt -> do
                               kn <- knOfMK   (mbContOf $ mkfnCont fn) pt
@@ -1272,6 +1249,7 @@ mknInline subterm mainCont mb_gas = do
                             ParentFn   pf -> do
                               kn <- knOfMKFn NoCont pf
                               liftIO $ putDocLn $ text "CallOfSingletonFunction parent fn became: " <+> pretty kn
+-}
 
                    CallOfDonatableFunction fn -> do
                      do redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
@@ -1280,12 +1258,13 @@ mknInline subterm mainCont mb_gas = do
                      if getInliningDonate flags
                        then do
                          do v <- freeBinder callee
-                            liftIO $ putStrLn $ "copying and inlining DF " ++ show (tidIdent $ boundVar v)
+                            liftIO $ putDocLn $ green (text "copying and inlining DF ") <+> pretty (tidIdent $ boundVar v)
                             kn1 <- knOfMKFn (mbContOf $ mkfnCont fn) fn
-                            liftIO $ putStrLn $ "pre-copy fn is " ++ show (pretty kn1)
+                            --liftIO $ putStrLn $ "pre-copy fn is " ++ show (pretty kn1)
+                            return ()
                          fn' <- runCopyMKFn fn
                          newbody <- do betaReduceOnlyCall fn' args kv
-                         replaceWith mredex newbody
+                         replaceWith subterm newbody
                          -- No need to kill the old binding, since the body was duplicated.
                          collectRedexes wr kr er fr cr newbody
                        else return ()
@@ -1296,12 +1275,12 @@ mknInline subterm mainCont mb_gas = do
                      if shouldInlineRedex mredex _fn
                        then do
                              do v <- freeBinder callee
-                                liftIO $ putStrLn $ "copying and inlining SE " ++ show (tidIdent $ boundVar v)
+                                liftIO $ putDocLn $ green (text "copying and inlining SE ") <+> pretty (tidIdent $ boundVar v)
                                 --kn1 <- knOfMK (YesCont mainCont) term
                                 --liftIO $ putStrLn $ "knOfMK, term is " ++ show (pretty kn1)
                              fn' <- runCopyMKFn _fn
                              newbody <- betaReduceOnlyCall fn' args kv
-                             replaceWith mredex newbody
+                             replaceWith subterm newbody
                              killOccurrence callee
                              collectRedexes wr kr er fr cr newbody
                        else return ()
@@ -1336,8 +1315,8 @@ mknInline subterm mainCont mb_gas = do
       -}
 
                      do v <- freeBinder callee
-                        liftIO $ putStrLn $ "beta reducing (inlining) singleton cont " ++ show (tidIdent $ boundVar v)
-                         
+                        liftIO $ putDocLn $ green (text "beta reducing (inlining) singleton cont ") <> pretty (tidIdent $ boundVar v)
+
                      newbody <- betaReduceOnlyCall fn args callee
                      
                     --  do newbody' <- knOfMK (mbContOf $ mkfnCont fn) newbody
@@ -1347,7 +1326,7 @@ mknInline subterm mainCont mb_gas = do
                                        c <- dlcCount b
                                        liftIO $ putDocLn $ text "pre-kill occ count: " <> pretty c) args
 
-                     replaceWith mredex newbody
+                     replaceWith subterm newbody
                      killBinding callee knownConts
 
                      mapM_ (\arg -> do b <- freeBinder arg
@@ -1393,17 +1372,10 @@ mknInline subterm mainCont mb_gas = do
                     liftIO $ putStrLn $ "skipping non-call/cont redex: " ++ show (pretty kn)
                  go gas
 
-    --kn0 <- knOfMK term
-    --putDocF "before.mknexpr.txt" $ pretty kn0
-
     let gas = case mb_gas of
                 Nothing -> 150
                 Just gas -> gas
     go gas
-
-    --kn1 <- knOfMK (YesCont mainCont) term
-    --liftIO $ putStrLn $ "knOfMK, term is " ++ show (pretty kn1)
-    --putDocF "after.mknexpr.txt" $ pretty kn1
 
     return ()
 
@@ -1416,30 +1388,16 @@ shouldInlineRedex _mredex _fn =
   -}
   False
 
-sanityCheck :: MKTerm ty -> Compiled ()
-sanityCheck tm = do
-  let tmLink = selfLinkT tm
-  tm' <- readLink "sanityCheck" tmLink
-  let tm'Link = selfLinkT tm'
-  if tmLink == tm'Link
-    then return ()
-    else error $ "sanityCheck failed! MKTerm selfLink turned out to not be self-ref..."
-
-replaceWith :: MKTerm ty -> Subterm ty -> Compiled ()
-replaceWith target newsubterm = do
+replaceWith :: Subterm ty -> Subterm ty -> Compiled ()
+replaceWith poss_indir_target newsubterm = do
   newterm <- readLink "replaceWith" newsubterm
+  oldterm <- readLink "replaceWith" poss_indir_target
+  target <- getActiveLinkFor poss_indir_target
 
-  writeOrdRef (selfLinkT target) (Just newterm)
-  occs <- collectOccsT target
-  occs' <- mapM freeBinder occs
-  liftIO $ putStrLn $ "replaceWith: killing occurrences from replaced target: " ++ show (map (tidIdent . boundVar) occs')
-  precounts <- mapM (\o -> do freeBinder o >>= dlcCount) occs
+  writeOrdRef target (Just newterm)
+  occs <- collectOccsT oldterm
   mapM_ killOccurrence occs
-  postcounts <- mapM (\o -> do freeBinder o >>= dlcCount) occs
-  liftIO $ putStrLn $ "replaceWith: var counts (post-inline, pre-kill): " ++ show precounts
-  liftIO $ putStrLn $ "replaceWith: var counts                  after : " ++ show postcounts
-
-  readOrdRef (parentLinkT target) >>= writeOrdRef (parentLinkT newterm)
+  readOrdRef (parentLinkT oldterm) >>= writeOrdRef (parentLinkT newterm)
 
 killOccurrence fo = do
     MKBound _ r <- freeBinder fo
