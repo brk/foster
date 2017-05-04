@@ -916,13 +916,10 @@ collectRedexes ref valbindsref expbindsref funbindsref cntbindsref subterm = do
   case mb_term of
     Nothing -> return ()
     Just term -> do
-      
-      let markRedex =          liftIO $ modIORef' ref        (\w -> worklistAdd w subterm)
-
-      
+      let markRedex = liftIO $ modIORef' ref (\w -> worklistAdd w subterm)
       case term of
         MKCall _ _ fo _ _ -> whenNotM (isMainFn fo) markRedex
-        MKCont {} -> markRedex
+        MKCont {}         -> markRedex
         _ -> markAndFindSubtermsOf term >>= mapM_ go
         where markAndFindSubtermsOf term =
                   case term of
@@ -932,7 +929,8 @@ collectRedexes ref valbindsref expbindsref funbindsref cntbindsref subterm = do
                                                        return [k]
                     MKLetRec      _u   knowns k  -> do mapM_ markValBind knowns
                                                        return $ k : (map snd knowns)
-                    MKLetFuns     _u   knowns k  -> do mapM_ markFunBind knowns
+                    MKLetFuns     _u   knowns k  -> do liftIO $ modIORef' ref (\w -> worklistAdd w subterm) -- markRedex
+                                                       mapM_ markFunBind knowns
                                                        fns <- knownActuals knowns
                                                        return $ k : map mkfnBody fns
                     MKLetCont     _u   knowns k  -> do mapM_ markCntBind knowns
@@ -965,7 +963,10 @@ classifyRedex' callee (Just fn) args knownFns = do
   bnd <- freeBinder callee
   singleordead <- binderIsSingletonOrDead bnd
   count <- dlcCount bnd
-  liftIO $ putStrLn $ "is callee singleton? " ++ show (pretty bnd) ++ " -> " ++ show callee_singleton ++ " ; single/dead?" ++ show singleordead ++ " count: " ++ show count
+  liftIO $ putStrLn $ "is callee singleton? " ++ show (pretty bnd) ++
+                      " -> " ++ show callee_singleton ++
+                      " ; single/dead?" ++ show singleordead ++ " count: " ++ show count ++
+                      " ; rec? " ++ show (mkfnIsRec fn)
 
   case (callee_singleton, mkfnIsRec fn) of
     (True, NotRec) -> return $ CallOfSingletonFunction fn
@@ -1215,10 +1216,13 @@ mknInline subterm mainCont mb_gas = do
            case mb_mredex_parent of
              Nothing -> liftIO $ putStrLn "... ran outta work"
              Just (_subterm, mredex, Nothing) -> do
-               
-                do redex <- knOfMK (YesCont mainCont) mredex
-                   liftIO $ putDocLn $ red (text "skipping parentless redex: ") <+> pretty redex
-               
+                case mredex of
+                  MKLetFuns _u [(bv,_)] _ | tidIdent (boundVar bv) == GlobalSymbol (T.pack "TextFragment") ->
+                    return () -- The top-most function binding will be parentless; don't print about it though.
+                  _ -> do
+                    do redex <- knOfMK (YesCont mainCont) mredex
+                       liftIO $ putDocLn $ red (text "skipping parentless redex: ") <+> pretty redex
+                  
                 go gas
              Just (subterm, mredex, Just _parent) -> case mredex of
                MKCall _up _ty callee args kv -> do
@@ -1273,7 +1277,7 @@ mknInline subterm mainCont mb_gas = do
 
                    SomethingElse _fn -> do
                      do redex <- knOfMK (mbContOf $ mkfnCont _fn) mredex
-                        liftIO $ putDocLn $ text "SomethingElse: " <+> pretty redex
+                        liftIO $ putDocLn $ text "SomethingElse: " <+> align (pretty redex)
                      if shouldInlineRedex mredex _fn
                        then do
                              do v <- freeBinder callee
@@ -1292,8 +1296,11 @@ mknInline subterm mainCont mb_gas = do
                  situation <- classifyRedex callee args knownConts
                  case situation of
                    CallOfUnknownFunction -> do
-                     do redex <- knOfMK (YesCont mainCont) mredex
-                        liftIO $ putDocLn $ text "CallOfUnknownCont: " <+> pretty redex
+                     do cb <- freeBinder callee
+                        if T.pack ".fret" `T.isPrefixOf` (identPrefix $ tidIdent $ boundVar cb) 
+                          then return ()
+                          else do redex <- knOfMK (YesCont mainCont) mredex
+                                  liftIO $ putDocLn $ red (text "CallOfUnknownCont: ") <+> pretty redex
                      return ()
 
                    CallOfSingletonFunction fn -> do
@@ -1368,6 +1375,16 @@ mknInline subterm mainCont mb_gas = do
                              return ()
                        else return ()
                  go (gas - 1)
+
+               MKLetFuns _u knowns _k -> do
+                 let isTopLevel (GlobalSymbol _) = True
+                     isTopLevel _ = False
+                 if all isTopLevel $ map (tidIdent.boundVar.fst) knowns
+                   then return ()
+                   else do
+                     liftIO $ putDocLn $ blue (text "considering " <> pretty (map (tidIdent.boundVar.fst) knowns) <> text " for contification")
+
+                 go gas
 
                _ -> do
                  do kn <- knOfMK (YesCont mainCont) mredex
