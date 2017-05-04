@@ -101,18 +101,17 @@ data ToplevelBinding = TopBindArray Ident TypeLL [Literal]
 
 -- ||||||||||||||||||||||||| The Driver |||||||||||||||||||||||||{{{
 closureConvertAndLift :: DataTypeSigs
-                      -> [Ident]
                       -> Uniq
                       -> ModuleIL PreCloConv MonoType
                       -> (ModuleIL CCBody TypeLL, Uniq)
-closureConvertAndLift dataSigs globalIds u m =
+closureConvertAndLift dataSigs u m =
     -- We lambda lift top level functions, since we know a priori
     -- that they don't have any "real" free vars.
     -- Lambda lifting then closure converts any nested functions.
     let initialState = ILMState u Map.empty Map.empty Map.empty [] dataSigs in
     -- Currently, globalIds is `globalIdents ctx_tc` in convertTypeILofAST in Main.hs...
     -- The list does not include any identifiers from the input module.
-    let st = execState (closureConvertToplevel globalIds $ moduleILbody m)
+    let st = execState (closureConvertToplevel $ moduleILbody m)
                        initialState in
     (ModuleIL {
           moduleILbody        = CCBody (Map.elems $ ilmProcs st) (ilmVals st)
@@ -122,47 +121,10 @@ closureConvertAndLift dataSigs globalIds u m =
         , moduleILsourceLines = moduleILsourceLines m
         }, (ilmUniq st))
 
-closureConvertToplevel :: [Ident] -> PreCloConv -> ILM ()
-closureConvertToplevel _globalIds (PreCloConv cffns) = do
+closureConvertToplevel :: PreCloConv -> ILM ()
+closureConvertToplevel (PreCloConv cffns) = do
   mapM_ (lambdaLift []) cffns
-  {-
-  mapM (cvt (Set.fromList globalIds)) cffns
-     where
-       -- Iterate through the SCCs of definitions, keeping track of a state
-       -- parameter (the set of globalized variables, which need not appear in
-       -- a function's environment). For each definition, if it doesn't need
-       -- an environment, we'll lift it; otherwise, closure convert it.
-       -- We directly return a list of the top-level proc definitions, and also
-       -- (via the ILM monad) a list of all procs generated, including those
-       -- from nested functions.
-       cvt :: Set Ident -> CFFn -> ILM ()
 
-       {-
-       cvt globalized (CFB_LetVal id expr body) = do
-        recordGlobalVal (mkToplevelBinding id expr)
-        cvt (Set.union globalized (Set.fromList [id])) body
-        -}
-
-       cvt globalized fn =
-         let
-             unliftable glbl fn = [ id | (TypedId _ id) <- fnFreeIds fn
-                                       , Set.notMember id glbl]
-             allUnliftables = filter (not . null)
-                                     (map (unliftable globalized' ) fns)
-             -- If a recursive nest of functions don't close over any other
-             -- variables, they can all be globalized as long as every use
-             -- of their peers happens to be a direct call. So, we'll assume
-             -- we can globalize, but enforce the side condition.
-             globalized' = Set.union globalized (Set.fromList ids)
-             gonnaLift   = null allUnliftables
-         in
-          let traced = if gonnaLift then id
-                          else trace ("not gonna lift " ++ show ids ++
-                                 " due to unliftables " ++ show allUnliftables)
-          in if traced gonnaLift
-              then do _ <- mapM (lambdaLift []) fns      ; cvt globalized' body
-              else do _ <- closureConvertLetFuns ids fns ; cvt globalized  body
--}
 recordGlobalVal Nothing = return ()
 recordGlobalVal (Just thing) = do
         old <- get
@@ -250,7 +212,7 @@ closureConvertBlocks bbg = do
   where
       transform :: BlockId -> Insn e x -> ILM (Graph Insn' e x, BlockId)
       transform ent insn = case insn of
-        ILabel l                -> do return (mkFirst $ CCLabel (llb l), blockId l)
+        ILabel l                -> do return (mkFirst $ CCLabel (llb l), fst l)
         ILetVal id val          -> do return (mkMiddle $ CCLetVal id (fmap monoToLL val), ent)
         ILetFuns ids fns        -> do closures <- closureConvertLetFuns ids fns
                                       return (mkMiddle $ CCLetFuns ids closures, ent)
@@ -483,24 +445,22 @@ closureOfKnFn infoMap (self_id, fn) = do
           go :: Insn e x -> Insn e x
           go insn = case insn of
             ILabel   {}      -> insn
+            ILetVal x (ILCall t v vs) ->
+              case Map.lookup (tidIdent v) infoMap of
+                Nothing -> insn
+                -- The only really interesting case: call to let-bound function!
+                Just (proc_var, envid) ->
+                  let env = if envid == tidIdent envVar
+                              then envVar
+                              else fakeCloVar envid in
+                  ILetVal x $ ILCall t proc_var (env:vs) -- Call proc with env as first arg.
+                  -- We don't know the env type here, since we don't
+                  -- pre-collect the set of closed-over envs from other procs.
+                  -- This works because (A) we never type check ILExprs, and
+                  -- (B) the LLVM codegen doesn't check the type field in this case.
             ILetVal  {}      -> insn
             ILetFuns ids fns -> ILetFuns ids $ map (makeEnvPassingExplicit envVar) fns
-            ILast cf -> case cf of
-              CFCont {} -> insn
-              CFCase {} -> insn
-              CFCall b t v vs ->
-                case Map.lookup (tidIdent v) infoMap of
-                  Nothing -> insn
-                  -- The only really interesting case: call to let-bound function!
-                  Just (proc_var, envid) ->
-                    let env = if envid == tidIdent envVar
-                               then envVar
-                               else fakeCloVar envid in
-                    ILast $ CFCall b t proc_var (env:vs) -- Call proc with env as first arg.
-                    -- We don't know the env type here, since we don't
-                    -- pre-collect the set of closed-over envs from other procs.
-                    -- This works because (A) we never type check ILExprs, and
-                    -- (B) the LLVM codegen doesn't check the type field in this case.
+            ILast {} -> insn
 
 --------------------------------------------------------------------
 

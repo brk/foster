@@ -7,15 +7,13 @@
 -----------------------------------------------------------------------------
 
 module Foster.CFG
-( computeCFGs
-, Insn(..)
+( Insn(..)
 , BlockId, BlockEntry'
 , BasicBlockGraph(..)
 , BasicBlock
 , CFLast(..)
-, CFBody(..)
 , CFFn
-, blockId, isReturn
+, isReturn
 , blockTargetsOf
 , mapGraphNodesM_
 , rebuildGraphM
@@ -33,7 +31,6 @@ import Prelude hiding ((<$>))
 import Foster.Base
 import Foster.Kind
 import Foster.MonoType
-import Foster.KNExpr(KNExpr'(..), typeKN, KNCompilesResult(..))
 import Foster.Letable(Letable(..))
 
 import Control.Monad(ap)
@@ -43,408 +40,13 @@ import Compiler.Hoopl
 import qualified Compiler.Hoopl as H((<*>))
 import Text.PrettyPrint.ANSI.Leijen
 
-import qualified Data.Text as T
-import qualified Data.Map as Map
 import qualified Data.Set as Set
-import Data.Map(Map)
 import Data.Set(Set)
 import Control.Monad.State
 import Data.IORef
-import Prelude (($), head, Ord, filter, (.), IO, Maybe(..), (+), concatMap,
-                error, map, foldr, fst, snd, zip, show, (++), length, (==), (||),
-                Int, Bool(..), String, Show, reverse, (/=))
-
-data CFBody = CFB_LetFuns [Ident] [CFFn] CFBody
-            | CFB_LetVal   Ident  KNMono CFBody
-            | CFB_Done
-
--- Next stage: optimizeCFGs in CFGOptimizations.hs
-
--- |||||||||||||||||||| Entry Point & Helpers |||||||||||||||||||{{{
-
--- This is the "entry point" into CFG-building for the outside.
--- We take (and update) a mutable reference as a convenient way of
--- threading through the small amount of globally-unique state we need.
-computeCFGs :: IORef Uniq -> KNMono -> IO CFBody
-computeCFGs uref expr =
-  case expr of
-    KNLetFuns ids fns body -> do
-      cffns <- mapM (computeCFGIO uref) fns
-      cfbody <- computeCFGs uref body
-      return $ CFB_LetFuns ids cffns cfbody
-    KNLetVal id expr body -> do
-      putStrLn $ "top-level expr: " ++ show expr
-      cfbody <- computeCFGs uref body
-      return $ CFB_LetVal id expr cfbody
-    -- We've kept a placeholder call to the main function here until now,
-    -- but at this point we can get rid of it, since we're convering to a
-    -- flat-list representation with an implicit call to main.
-    KNCall {} -> return CFB_Done
-    _ -> error $ "computeCFGIO expected a series of KNLetFuns bindings! had " ++ show expr
-
-computeCFGIO :: IORef Uniq -> FnMono -> IO CFFn
-computeCFGIO uref fn = do
-  cfgState <- internalComputeCFG uref fn
-  extractFunction cfgState fn
-
--- A mirror image for internal use (when converting nested functions).
--- As above, we thread through the updated unique value from the subcomputation!
-cfgComputeCFG :: FnMono -> CFG CFFn
-cfgComputeCFG fn = do
-  uref      <- gets cfgUniq
-  cfgState  <- liftIO $ internalComputeCFG uref fn
-  liftIO $ extractFunction cfgState fn
-
--- A helper for the CFG functions above, to run computeBlocks.
-internalComputeCFG :: IORef Int -> FnMono -> IO CFGState
-internalComputeCFG uniqRef fn = do
-  let state0 = CFGState uniqRef Nothing [] Nothing Nothing Nothing Map.empty
-  execStateT runComputeBlocks state0
-  where
-    runComputeBlocks = do
-        header <- cfgFresh "postalloca"
-        cfgSetHeader header
-        retcont <- cfgFresh ".return"
-        cfgSetRetCont retcont
-        cfgSetFnVar (fnVar fn)
-        cfgNewBlock header (fnVars fn)
-        computeBlocks YesTail (fnBody fn) Nothing (ret fn retcont)
-
-    -- Make sure that the main function returns void.
-    ret :: forall ty expr. Fn RecStatus expr ty -> BlockId -> MoVar -> CFG ()
-    ret f k v = if isMain f then cfgEndWith (CFCont k [])
-                            else cfgEndWith (CFCont k [v])
-            where isMain :: forall ty expr. Fn RecStatus expr ty -> Bool
-                  isMain f = (identPrefix $ tidIdent $ fnVar f) == T.pack "main"
-
--- The other helper, to collect the scattered results and build the actual CFG.
-extractFunction :: CFGState -> Fn RecStatus KNMono MonoType -> IO CFFn
-extractFunction st fn = do
-  let blocks = Prelude.reverse (cfgAllBlocks st)
-  let elab    = entryLab blocks
-  let (Just rk) = cfgRetCont st
-  let bbg = BasicBlockGraph elab rk (catClosedGraphs (map blockGraph blocks))
-  return fn { fnBody = bbg }
-  where
-        entryLab :: forall x. [Block Insn C x] -> BlockEntry
-        entryLab [] = error $ "can't get entry block label from empty list!"
-        entryLab (bb:_) = let _r :: Insn C O -- needed for GHC 6.12 compat
-                              _r@(ILabel elab) = firstNode bb in elab
-
-blockId :: BlockEntry' t -> BlockId
-blockId = fst
-
--- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
-caseIf a b = [CaseArm (pat True)  a Nothing [] rng,
-              CaseArm (pat False) b Nothing [] rng]
-         where rng = MissingSourceRange "cfg.if.rng"
-               pat :: Bool -> PatternRepr MonoType
-               pat bval = PR_Atom $ P_Bool rng boolMonoType bval
-
--- ||||||||||||||||||||||||| KNMono -> CFG ||||||||||||||||||||||{{{
--- computeBlocks takes an expression and a contination,
--- which determines what to do with the let-bound result of the expression.
-computeBlocks :: TailQ -> KNMono -> Maybe Ident -> (MoVar -> CFG ()) -> CFG ()
-computeBlocks tailq expr idmaybe k = do
-    case expr of
-        KNInlined _t0 _to _tn _old new -> computeBlocks tailq new idmaybe k
-        KNNotInlined _ e               -> computeBlocks tailq e   idmaybe k
-
-        KNIf t v a b -> do -- Compile [if v then ...] as [case v of ...].
-            computeBlocks tailq (KNCase t v $ caseIf a b) idmaybe k
-
-        -- Perform on-demand let-flattening, which enables a CPS tranform with a mostly-first-order flavor.
-        KNLetVal id (KNLetVal  x   e   c) b -> computeBlocks tailq (KNLetVal x e      (KNLetVal id c b)) idmaybe k
-        KNLetVal id (KNLetFuns ids fns a) b -> computeBlocks tailq (KNLetFuns ids fns (KNLetVal id a b)) idmaybe k
-
-        KNLetVal id (KNVar v) expr -> do
-            cont <- cfgFresh "rebind_cont"
-            cfgEndWith (CFCont cont [v])
-            cfgNewBlock      cont [TypedId (tidType v) id]
-            computeBlocks tailq expr idmaybe k
-
-        KNLetVal id bexp cont -> do
-            -- exp could be a KNCase or KNLetVal,
-            -- so it must be processed by computeBlocks.
-            -- Because we want the result from processing expr to be let-bound
-            -- to an identifier of our choosing (rather than the sub-call's
-            -- choosing, that is), we provide it explicitly as idmaybe.
-            computeBlocks NotTail bexp (Just id) $ \var ->
-              if id /= tidIdent var
-                then computeBlocks tailq (KNLetVal id (KNVar var) cont) idmaybe k -- didn't get var we expected, must rebind
-                else computeBlocks tailq                          cont  idmaybe k
-
-        KNLetRec [id] [bexp] e -> do
-            -- With KNLetFuns, we maintain a special binding form for SCCs of
-            -- mutually-recursive functions, because we'll sometimes optimize
-            -- them to continuations and/or inline them away entirely.
-            -- We also 'evaluate' them specially, avoiding extra allocations.
-            --
-            -- For more complex recursive bindings, we'll just do the (second)
-            -- simplest thing that works, at least for now.
-            -- TODO: extend this to use the 'immediate in-place update' scheme.
-
-            -- Let-bind un-initialized blocks to the ids
-            --
-            -- It's tempting to say "allocate a block for type (typeKN bexp)",
-            -- but that's wrong for two (related) reasons. First, at this stage
-            -- in the game, the visible representation is the pointer, not the
-            -- underlying struct. Second, the same datatype can be constructed
-            -- from different-sized blocks/ctors, which means there's no way
-            -- to derive a representation struct from a type alone.
-
-            -- We also need to separate the internal and external
-            -- representations of the block.
-            stor <- cfgFreshId ".rec.storage"
-            let allocInfo = allocInfoForKNExpr bexp
-            let obj = TypedId (PtrType (allocType allocInfo)) stor
-
-            cfgAddMiddle (ILetVal stor (ILAllocate allocInfo))
-            cfgAddMiddle (ILetVal id   (ILBitcast (typeKN bexp) obj))
-
-            -- Emit code to evaluate the expressions (bound to temporaries).
-            tmpgen <- cfgFreshId ".rec.tmp.gen"
-            computeBlocks NotTail bexp (Just tmpgen) $ \_var -> return ()
-
-            -- Overwrite the id-bound blocks with the temporary values.
-            tmpid <- cfgFreshId ".rec.tmp"
-            cfgAddMiddle (ILetVal tmpid (ILBitcast (tidType obj)
-                                          (TypedId (typeKN bexp) tmpgen)))
-
-            let tmp = TypedId (tidType obj) tmpid
-            tupstorid <- cfgFreshId ".rec.tupstore"
-            cfgAddMiddle (ILetVal tupstorid (ILObjectCopy tmp obj))
-
-            -- Emit code to evaluate the body of the letrec.
-            computeBlocks tailq e idmaybe k
-            -- Paper references:
-            --  * "Fixing Letrec"
-            --  * "Compilation of Extended Recursion in Call-by-value Functional Languages"
-
-        KNLetRec {} -> error $ "CFG.hs: no support yet for multi-extended-letrec"
-
-        KNLetFuns ids fns e -> do
-            funs <- mapM cfgComputeCFG fns
-            cfgAddMiddle (ILetFuns ids funs)
-            computeBlocks tailq e idmaybe k
-
-        -- Cases are translated very straightforwardly here; we put off
-        -- fancier pattern match compilation for later. Giving each arm's
-        -- expression a label here conveniently prevents code duplication
-        -- during match compilation, and delaying pattern match compilation
-        -- makes closure conversion somewhat easier.
-        --
-        -- A case expression of overall type t, such as
-        --
-        --      case scrutinee of p1       -> e1
-        --                     of p2 if g2 -> e2 ...
-        --
-        -- gets translated into (the moral equivalent of)
-        --
-        --      case scrutinee of p1 -> goto case_arm1
-        --                     of p2 -> goto case_arm2 ...
-        --  case_arm1: ev = [[e1]]; goto case_cont [ev]
-        --  case_arm2: _t = [[g2]]; goto (_t ? a2gt : a2gf) []
-        --       a2gt: ev = [[e2]]; goto case_cont [ev]
-        --       a2gf: ... continue pattern matching ...
-        --  case_cont [case_value]:
-        --      ...
-        --
-        -- The one point this glosses over is how the variables bound by
-        -- p1 become visible in the translation of e1. Currently this is
-        -- done by some magic in LLCodegen, but it should be represented
-        -- more explicitly.
-        KNCase t v bs -> do
-            -- Compute the new block ids, along with their patterns.
-            --bids <- mapM (\_ -> cfgFresh "case_arm") bs
-
-            let computeCaseIds arm = do
-                  bid <- cfgFresh "case_arm"
-                  tru <- liftMaybe (\_ -> cfgFresh "case_arm.tru") (caseArmGuard arm)
-                  fls <- liftMaybe (\_ -> cfgFresh "case_arm.fls") (caseArmGuard arm)
-                  return (arm, bid, tru, fls)
-            arms_bids <- mapM computeCaseIds bs
-            case_cont <- cfgFresh "case_cont"
-
-            let bbs = [CaseArm p bid tru b rng | (CaseArm p _ _ b rng, bid, tru, _fls) <- arms_bids]
-            --let bbs = [CaseArm p bid Nothing b rng | (CaseArm p _ _ b rng, bid) <- zip bs bids]
-
-            --let badArms = [arm | arm@(CaseArm _ _ (Just _) _ _) <- bs]
-            cfgEndWith (CFCase v bbs)
-
-            let computeCaseBlocks (arm, block_id, mb_tru, mb_fls) = do
-                    let e = caseArmBody arm
-                    case caseArmGuard arm of
-                      Nothing -> do
-                        -- Fill in each arm's block with [[e]] (and a store at the end).
-                        cfgNewBlock block_id []
-                        computeBlocks tailq e Nothing $ \var ->
-                            cfgEndWith (CFCont case_cont [var])
-                      Just  g -> do
-                        let Just tru = mb_tru
-                        let Just fls = mb_fls
-                        cfgNewBlock block_id []
-                        computeBlocks NotTail g Nothing $ \guard ->
-                            cfgEndWith (CFCase guard (caseIf tru fls))
-
-                        -- We'll fill in the 'fls' block implementation later...
-                        cfgNewBlock fls []
-                        cfgEndWith (CFCont tru []) -- What do we do here?!?
-                        -- We want to emit code to resume pattern-matching against
-                        -- the remaining contenders/rows of the match matrix,
-                        -- but the match matrix will not be determined until later.
-
-                        cfgNewBlock tru []
-                        computeBlocks tailq e Nothing $ \var ->
-                            cfgEndWith (CFCont case_cont [var])
-            mapM_ computeCaseBlocks arms_bids
-
-            -- The overall value of the case is the value stored in the slot.
-            phi <- cfgFreshVarI idmaybe t ".case.phi"
-            cfgNewBlock case_cont [phi]
-            k phi
-
-        KNCall ty b vs -> do
-            -- We can't just compare [[b == fnvar]] because b might be a
-            -- let-bound result of type-instantiating a polymorphic function.
-
-            isSelfTailCall <- cfgIsThisFnVar b
-            --liftIO $ putStrLn $ "saw KNCall of " ++ show b ++ " ; tailq : " ++ show tailq ++ "; isSelfCall? " ++ show isSelfTailCall
-            case (tailq, isSelfTailCall) of
-                -- Direct tail recursion becomes a jump
-                -- (reassigning the arg slots).
-                (YesTail, True) -> do
-                    Just header <- gets cfgHeader
-                    cfgEndWith (CFCont header vs)
-
-                -- Calls to other functions in tail position use the function's
-                -- return continuation rather than a new continuation.
-                (YesTail, False) -> do
-                    Just retk <- gets cfgRetCont
-                    cfgEndWith (CFCall retk ty b vs)
-
-                -- Non-tail calls specify a new block as their continuation,
-                -- and the block's parameter becomes the result of the call.
-                (_, _) -> do
-                    cont <- cfgFresh "call_cont"
-                    res  <- cfgFreshVarI idmaybe ty "call_res"
-                    cfgEndWith (CFCall cont ty b vs)
-                    cfgNewBlock cont [res]
-                    k res
-
-        KNVar v -> k v
-
-        KNCompiles (KNCompilesResult r) t _e -> do
-          b <- liftIO $ readIORef r
-          computeBlocks tailq (KNLiteral t (LitBool b)) idmaybe k
-
-        _ -> do cfgAddLet idmaybe (knToLetable expr) (typeKN expr) >>= k
-  where
-    knToLetable :: KNMono -> Letable MonoType
-    knToLetable expr =
-      case expr of
-         KNLiteral    t lit  -> ILLiteral    t lit
-         KNVar        _v     -> error $ "can't make Letable from KNVar!"
-         KNTuple (TupleType {})  vs rng -> ILTuple KindPointerSized vs (AllocationSource "tuple" rng)
-         KNTuple (StructType {}) vs rng -> ILTuple KindAnySizeType  vs (AllocationSource "tuple" rng)
-         KNCallPrim _ t p vs -> ILCallPrim   t p vs
-         KNAppCtor    t c vs -> ILAppCtor    t c vs
-         KNAlloc    _ v rgn  -> ILAlloc      v rgn
-         KNDeref    t v      -> ILDeref      t v
-         KNStore    _ a b    -> ILStore      a b
-         KNAllocArray t v rg zi -> ILAllocArray t v rg zi
-         KNArrayRead  t ari  -> ILArrayRead  t ari
-         KNArrayPoke  _ ari c-> ILArrayPoke  ari c
-         KNArrayLit t arr vals -> ILArrayLit t arr vals
-         KNTyApp      t v [] -> ILBitcast    t v
-         KNTyApp          {} -> error $ "knToLetable saw tyapp that was not "
-                                      ++ "eliminated by monomorphization: "
-                                      ++ show expr
-         KNKillProcess t m   -> ILKillProcess t m
-         _                   -> error $ "non-letable thing seen by letable: "
-                                      ++ show expr
-
-    allocInfoForKNExpr bexp =
-      case bexp of
-        KNLetVal     _ _  b -> allocInfoForKNExpr b
-        KNLetFuns    _ _  b -> allocInfoForKNExpr b
-        KNAppCtor    _ (cid,rep) vs ->
-          let structty = StructType (map tidType vs) in
-          let tynm = ctorTypeName cid ++ "." ++ ctorCtorName cid in
-          AllocInfo structty   MemRegionGlobalHeap   tynm
-                    (Just rep) Nothing "KNLetRecTmp" DoZeroInit
-        KNCall _ base _ -> error $ "allocInfoForKNExpr can't handle " ++ show (textOf bexp 0) ++ " ;; " ++ show base
-        _ -> error $ "allocInfoForKNExpr can't handle " ++ show (textOf bexp 0)
-
-    cfgFreshVarI idmaybe t n = do
-        id <- (case idmaybe of
-                Just id -> return id
-                Nothing -> cfgFreshId n)
-        return $ TypedId t id
-
-    cfgAddLet :: Maybe Ident -> Letable MonoType -> MonoType -> CFG MoVar
-    cfgAddLet idmaybe letable ty = do
-        tid@(TypedId _ id) <- cfgFreshVarI idmaybe ty ".cfg_seq"
-        cfgAddMiddle (ILetVal id letable)
-        return tid
-
-    cfgFreshId :: String -> CFG Ident
-    cfgFreshId s = do u <- cfgNewUniq ; return (Ident (T.pack s) u)
-
-    cfgAddMiddle :: Insn O O -> CFG ()
-    cfgAddMiddle mid = do
-        old <- get
-        case cfgPreBlock old of
-            Just (id, phis, mids) -> do put (old { cfgPreBlock = Just (id, phis, mid:mids) })
-            Nothing         -> error $ "Tried to add middle without a block: " ++ show (pretty mid)
-                                         ++ "\n" ++ show (pretty (cfgAllBlocks old))
--- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
--- ||||||||||||||||||||| CFG Monadic Helpers ||||||||||||||||||||{{{
-cfgEndWith :: CFLast -> CFG ()
-cfgEndWith last = do
-    old <- get
-    case cfgPreBlock old of
-        Nothing          -> error $ "Tried to finish block but no preblock!"
-                                   ++ " Tried to end with " ++ show last
-        Just (id, phis, mids) -> do
-            let middles = blockFromList (Prelude.reverse mids)
-            let newblock = blockJoin (ILabel (id, phis)) middles (ILast last)
-            put (old { cfgPreBlock     = Nothing
-                     , cfgAllBlocks    = newblock : (cfgAllBlocks old) })
-
-cfgNewBlock :: BlockId -> [MoVar] -> CFG ()
-cfgNewBlock bid phis = do
-    old <- get
-    case cfgPreBlock old of
-        Nothing      -> do put (old { cfgPreBlock = Just (bid, phis, []) })
-        Just (id, _, _) -> error $ "Tried to start new block "
-                               ++ " with unfinished old block " ++ show id
-
-cfgFresh :: String -> CFG BlockId
-cfgFresh s = do u <- freshLabel ; return (s, u)
-
-cfgNewUniq :: CFG Uniq
-cfgNewUniq = do uref <- gets cfgUniq ; mutIORef uref (+1)
-  where
-    mutIORef :: IORef a -> (a -> a) -> CFG a
-    mutIORef r f = liftIO $ modIORef' r f >> readIORef r
-
-cfgSetHeader header   = do old <- get ; put old { cfgHeader = Just header }
-cfgSetRetCont retcont = do old <- get ; put old { cfgRetCont = Just retcont }
-cfgSetFnVar fnvar = do old <- get ; put old { cfgCurrentFnVar = Just fnvar }
-
-cfgIsThisFnVar :: MoVar -> CFG Bool
-cfgIsThisFnVar b = do old <- get
-                      let v = cfgCurrentFnVar old
-                      return $ Just b == v || Map.lookup (tidIdent b) (cfgKnownFnVars old) == v
-
--- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||| CFG Data Types |||||||||||||||||||||||{{{
 data CFLast = CFCont        BlockId [MoVar] -- either ret or br
-            | CFCall        BlockId MonoType MoVar [MoVar]
             | CFCase        MoVar [CaseArm PatternRepr BlockId MonoType]
             deriving (Show)
 
@@ -453,20 +55,6 @@ data Insn e x where
               ILetVal  :: Ident   -> Letable MonoType -> Insn O O
               ILetFuns :: [Ident] -> [CFFn]           -> Insn O O
               ILast    :: CFLast                      -> Insn O C
-
-data CFGState = CFGState {
-    cfgUniq         :: IORef Uniq
-  , cfgPreBlock     :: Maybe (BlockId, [MoVar], [Insn O O])
-  , cfgAllBlocks    :: [BasicBlock]
-  , cfgHeader       :: Maybe BlockId
-  , cfgRetCont      :: Maybe BlockId
-  , cfgCurrentFnVar :: Maybe MoVar
-  , cfgKnownFnVars  :: Map Ident MoVar
-}
-
-type CFG = StateT CFGState IO
-instance UniqueMonad CFG where freshUnique = cfgNewUniq >>= return . intToUnique
-
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 instance NonLocal Insn where
@@ -482,7 +70,6 @@ blockTargetsOf :: Insn O C -> [BlockId]
 blockTargetsOf (ILast last) =
     case last of
         CFCont b _           -> [b]
-        CFCall b _ _ _       -> [b]
         CFCase _ arms        -> concatMap caseArmExprs arms
 
 type BasicBlock = Block Insn C C
@@ -553,8 +140,6 @@ instance Pretty (Insn e x) where
 
 instance Pretty CFLast where
   pretty (CFCont bid     vs) = text "cont" <+> prettyBlockId bid <+>              list (map pretty vs)
-  pretty (CFCall bid _ v vs) = text "call" <+> prettyBlockId bid <+> pretty v <+> list (map pretty vs)
-                                           <$> indent 6 (prettyTypedVar v)
   pretty (CFCase v arms)     = align $
                                text "case" <+> pretty v <$> indent 2
                                   (vcat [ text "of" <+> fill 20 (pretty pat)
@@ -596,20 +181,6 @@ instance Pretty BasicBlockGraph where
                 <$> text "------------------------------"))
           <> pretty (bbgBody bbg)
 
-instance Pretty CFBody where
-  pretty (CFB_LetFuns ids fns body) =
-                                   text "letfuns"
-                                   <$> indent 2 (vcat [prettyBinding id fn | (id, fn) <- zip ids fns])
-                                   <$> text "in"
-                                   <$> pretty body
-                                   <$> text "end"
-  pretty (CFB_LetVal id expr body) = text "let" <+> prettyBinding id expr <+> text "in"
-                                 <$> pretty body
-  pretty CFB_Done = text "call main..."
-
-prettyBinding :: Pretty x => Ident -> x -> Doc
-prettyBinding id thing = text (show id) <+> text "=" <+> pretty thing
-
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 graphOfClosedBlocks :: NonLocal i => [Block i C C] -> Graph i C C
@@ -644,7 +215,6 @@ instance TExpr BasicBlockGraph MonoType where
            go (ILetFuns ids fns) (bvs,fvs) = (insert bvs ids, insert fvs (concatMap freeTypedIds fns))
            go (ILast cflast)     (bvs,fvs) = case cflast of
                     CFCont _ vs          -> (bvs, insert fvs vs)
-                    CFCall _ _ v vs      -> (bvs, insert fvs (v:vs))
                     CFCase v arms        -> (insertV bvs pvs, Set.insert v fvs)
                          where pvs = concatMap caseArmBindings arms
 

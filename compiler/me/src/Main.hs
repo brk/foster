@@ -31,7 +31,6 @@ import Foster.FromHaskell(convertHaskellToFoster)
 import Foster.Base
 import Foster.Config
 import Foster.CFG
-import Foster.CFGOptimization
 import Foster.ProtobufFE(cb_parseWholeProgram)
 import Foster.CapnpIL(dumpILProgramToCapnp)
 import Foster.TypeTC
@@ -419,8 +418,7 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
                          (moduleASTprimTypes  mTC)
                          (moduleASTsourceLines mAST)
 
-     kmod <- kNormalizeModule  mTC' ctx_tc
-     return (kmod, globalIdents ctx_tc)
+     kNormalizeModule  mTC' ctx_tc
 
        where
         buildExprSCC' :: [[Binding (AnnExpr TypeTC)]] -> (AnnExpr TypeTC)
@@ -689,10 +687,10 @@ desugarParsedModule tcenv m = do
                                     return $ RefinedTypeAST nm t' e'
           MetaPlaceholder desc -> return $ MetaPlaceholderAST MTVTau desc
 
-type TCRESULT = (ModuleIL KNExpr TypeIL, [Ident])
+type TCRESULT = ModuleIL KNExpr TypeIL
 
 typecheckSourceModule :: TcEnv ->          ModuleExpr TypeAST
-                      -> Compiled (Double, (ModuleIL KNExpr TypeIL, [Ident]))
+                      -> Compiled (Double, TCRESULT)
 typecheckSourceModule tcenv sm = do
     verboseMode <- gets ccVerbose
     flags <- gets ccFlagVals
@@ -716,10 +714,9 @@ typecheckSourceModule tcenv sm = do
     res <- dieOnError res0
     return (tc_time, res)
 
-lowerModule :: (Double, (ModuleIL KNExpr TypeIL
-               , [Ident] ))
+lowerModule :: (Double, (ModuleIL KNExpr TypeIL))
             -> Compiled ResultWithTimings
-lowerModule (tc_time, (kmod, globals)) = do
+lowerModule (tc_time, kmod) = do
      inline   <- gets ccInline
      flags    <- gets ccFlagVals
      let donate = getInliningDonate flags
@@ -745,15 +742,7 @@ lowerModule (tc_time, (kmod, globals)) = do
 
      liftIO $ putDocLn $ text $ "Performing shrinking: " ++ show (getShrinkFlag flags)
 
-{-
-     monomod2a  <- knSinkBlocks   monomod2
-
-     liftIO $ do
-      putStrLn $ "before block sinking:"
-      putDocLn (pretty (moduleILbody monomod2))
-      putStrLn $ "after block sinking:"
-      putDocLn (pretty (moduleILbody monomod2a))
--}
+     --monomod2a  <- knSinkBlocks   monomod2
 
      (mkn_time, pccmod) <- ioTime $ do
           assocBinders <- sequence [do r <- newOrdRef Nothing
@@ -766,16 +755,6 @@ lowerModule (tc_time, (kmod, globals)) = do
 
           let mainBinder = head assocBinders
           let binders = Map.fromList assocBinders
-          --liftIO $ putStrLn $ show binders
-          --mk <- mkOfKN binders (moduleILbody monomod2)
-          {-
-          if inline
-            then do
-              kn <- evalStateT 
-                  (do mk <- mkOfKNMod (moduleILbody monomod2a) (snd mainBinder)
-                      mknInline mk (snd mainBinder))
-                  binders
-            else -}
           mk <- evalStateT 
                   (mkOfKNMod (moduleILbody monomod2{-a-}) (snd mainBinder))
                   binders
@@ -814,14 +793,7 @@ lowerModule (tc_time, (kmod, globals)) = do
          _ <- liftIO $ renderKN monomod2a  True
          putDocLn $ (outLn "^^^ ===================================")
 -}
-     --(cg_time, cfgmod) <- ioTime $ cfgModule      monomod4
-     {-
-     whenDumpIR "cfg" $ do
-         putDocLn $ (outLn "/// CFG-ized program ==================")
-         putDocP  $ pretty cfgmod
-         putDocLn $ (outLn "^^^ ===================================")
-         -}
-     ccmod    <- closureConvert pccmod globals
+     ccmod    <- closureConvert pccmod
      whenDumpIR "cc" $ do
          putDocLn $ (outLn "/// Closure-converted program =========")
          _ <- liftIO $ renderCC ccmod True
@@ -859,21 +831,15 @@ lowerModule (tc_time, (kmod, globals)) = do
      return (RWT tc_time in_time mkn_time mn_time cg_time cp_time sc_time ilprog)
 
   where
-    cfgModule :: ModuleIL (KNExpr' RecStatus MonoType) MonoType -> Compiled (ModuleIL CFBody MonoType)
-    cfgModule kmod = do
-        uniqref <- gets ccUniqRef
-        cfgBody <- liftIO $ computeCFGs uniqref (moduleILbody kmod)
-        cfgBody' <- optimizeCFGs cfgBody
-        return $ kmod { moduleILbody = cfgBody' }
 
-    closureConvert pccmod globals = do
+    closureConvert pccmod = do
         uniqref <- gets ccUniqRef
         liftIO $ do
             let datatypes = moduleILprimTypes pccmod ++
                             moduleILdataTypes pccmod
             let dataSigs = dataTypeSigs datatypes
             u0 <- readIORef uniqref
-            let (rv, u') = closureConvertAndLift dataSigs globals (u0 + 1) pccmod
+            let (rv, u') = closureConvertAndLift dataSigs (u0 + 1) pccmod
             writeIORef uniqref u'
             return rv
 
