@@ -39,6 +39,8 @@ import qualified Data.Text as T(pack, unpack)
 import qualified Data.Graph as Graph(stronglyConnComp)
 import Data.Graph(SCC(..))
 
+import Debug.Trace(trace)
+
 --------------------------------------------------------------------
 
 -- | This pass does three things in prepration for handing of to LLVM:
@@ -355,7 +357,7 @@ computeNumPredecessors elab blocks =
 
 withGraphBlocks :: BasicBlockGraph' -> ( [ Block' ] -> a ) -> a
 withGraphBlocks bbgp f =
-   let jumpTo bg = case bbgpEntry bg of (bid, _) -> CCLast (error "cclast entry block?") $ CCCont bid [] in
+   let jumpTo bg = case bbgpEntry bg of (bid, _) -> CCLast bid $ CCCont bid [] in
    f $ preorder_dfs $ mkLast (jumpTo bbgp) |*><*| bbgpBody bbgp
 
 flattenGraph :: BasicBlockGraph' -> MayGCMap -> Bool -> ( [ILBlock] , NumPredsMap )
@@ -408,12 +410,14 @@ flattenGraph bbgp mayGCmap assumeNonMovingGC = -- clean up any rebindings from g
 
 -- ||||||||||||||||||||||||| CFG Simplification  ||||||||||||||||{{{
 simplifyCFG :: BasicBlockGraph' -> BasicBlockGraph'
-simplifyCFG bbgp =
+simplifyCFG bbgp = bbgp
+{-
    -- Because we do a depth-first search, "renaming" blocks are guaranteed
    -- to be adjacent to each other in the list.
    withGraphBlocks bbgp (\blocks ->
        bbgp { bbgpBody = graphOfClosedBlocks $ mergeCallNamingBlocks blocks $
                              computeNumPredecessors (bbgpEntry bbgp) blocks } )
+-}
 
 -- This little bit of unpleasantness is needed to ensure that we
 -- don't need to create gcroot slots for the phi nodes corresponding
@@ -470,16 +474,20 @@ mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
                           -- because we'll fail to replace .x!205 with .x!185
                           -- when substituting in the binding for .cfg_seq!387.
                           let subst' = Map.union (Map.fromList $ zip yargs avs' ) subst in
-                          Just ((xem `blockAppend` yml), subst' )
+                          trace ("yml: " ++ show (pretty yml)) $
+                            Just ((xem `blockAppend` yml), subst' )
 
+                        (False, _) -> Nothing -- Assume it's just a postalloca block...
+{-
                         (False, ("postalloca",_)) ->
                           Nothing
 
                         (False, _) ->
                           error $ "Continuation application not passing same # of arguments "
-                               ++ "as expected by the continuation!\n"
+                               ++ "as expected by the continuation (" ++ show (length yargs) ++ " vs " ++ show (length avs) ++ ")!\n"
                                ++ show avs ++ "\n" ++ show yargs
                                ++ "\n" ++ show cb ++ " // " ++ show yb
+-}
                  else Nothing
          _ -> Nothing
 

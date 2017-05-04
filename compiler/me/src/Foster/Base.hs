@@ -664,6 +664,7 @@ whenNotM cond action = do b <- cond ; if b then return () else action
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- |||||||||||||||||||||||||| Idents |||||||||||||||||||||||||||{{{
 
+identPrefix :: Ident -> T.Text
 identPrefix (GlobalSymbol name) = name
 identPrefix (Ident name _)      = name
 

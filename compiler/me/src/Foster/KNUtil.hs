@@ -319,7 +319,7 @@ instance (Show ty, Show rs) => Structured (KNExpr' rs ty) where
             KNAppCtor  t cid  _ -> text $ "KNAppCtor   " ++ (show cid) ++ " :: " ++ show t
             KNLetVal   x b    _ -> text $ "KNLetVal    " ++ (show x) ++ " :: " ++ (show $ typeKN b) ++ " = ... in ... "
             KNLetRec   _ _    _ -> text $ "KNLetRec    "
-            KNLetFuns ids fns _ -> text $ "KNLetFuns   " ++ (show $ zip ids (map fnVar fns))
+            KNLetFuns ids fns _ -> text $ "KNLetFuns   " ++ (show $ zip ids (map (tidIdent.fnVar) fns))
             KNIf      t  _ _ _  -> text $ "KNIf        " ++ " :: " ++ show t
             KNAlloc      {}     -> text $ "KNAlloc     "
             KNDeref      {}     -> text $ "KNDeref     "
@@ -503,15 +503,15 @@ instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
                                       <+> text "="
                                       <+> (indent 0 $ pretty b) <+> lkwd "in"
                                    <$> pretty k
-
+{-
             KNLetFuns ids fns k -> pretty k
                                    <$> indent 1 (lkwd "wherefuns")
                                    <$> indent 2 (vcat [text (show id) <+> text "="
                                                                       <+> pretty fn
                                                       | (id, fn) <- zip ids fns
                                                       ])
+                                                      -}
                                    -- <$> indent 2 end
-                                   {-
             KNLetFuns ids fns k -> text "letfuns"
                                    <$> indent 2 (vcat [text (show id) <+> text "="
                                                                       <+> pretty fn
@@ -520,7 +520,6 @@ instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
                                    <$> lkwd "in"
                                    <$> pretty k
                                    <$> end
-                                   -}
             KNLetRec  ids xps e -> text "rec"
                                    <$> indent 2 (vcat [text (show id) <+> text "="
                                                                       <+> pretty xpr
@@ -651,7 +650,7 @@ instance Structured TypeIL where
             FnTypeIL      {}      -> text $ "FnTypeIL"
             CoroTypeIL    {}      -> text $ "CoroTypeIL"
             ForAllIL ktvs _rho    -> text $ "ForAllIL " ++ show ktvs
-            TyVarIL       {}      -> text $ "TyVarIL "
+            TyVarIL       tv k     -> text "TyVarIL " <> pretty tv <> text " :: " <> pretty k
             ArrayTypeIL   {}      -> text $ "ArrayTypeIL"
             PtrTypeIL     {}      -> text $ "PtrTypeIL"
             RefinedTypeIL v _e _  -> text $ "RefinedTypeIL " ++ show v
@@ -714,3 +713,7 @@ pointedToTypeOfVar v = case v of
 
 fnName f = identPrefix (tidIdent $ fnVar f)
 
+-----------------------------------------------------------------------
+
+class CanMakeFun t where
+    mkFunType   :: [t] -> t -> t

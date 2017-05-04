@@ -9,8 +9,7 @@ module Foster.CFGOptimization (optimizeCFGs) where
 
 import Foster.Base
 import Foster.MonoType
-import Foster.Letable(Letable(..), letableSize, canGC, willNotGCGlobal,
-                      substVarsInLetable, isPure)
+import Foster.Letable(Letable(..), letableSize, substVarsInLetable, isPure)
 import Foster.Config
 import Foster.CFG
 
@@ -26,8 +25,6 @@ import Data.List(nubBy, last, foldl' )
 import Control.Monad.State
 import Data.IORef
 import Prelude hiding (id, last)
-
-import Debug.Trace(trace)
 
 -- CFG optimizations:
 --  * Aliased-variable elimination (via forwards dataflow)
@@ -56,6 +53,7 @@ optimizeCFFnWithCensus fn0 = do
 
      let (ci, cenfuns) = getCensus fn'
      let relocs = computeFnRelocations ci cenfuns fn'
+         relocs' = Map.empty
 
      -- Slight subtlety: the census itself is computed once, for top-level
      -- functions, and is carried down into nested functions. The "regular"
