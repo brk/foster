@@ -27,6 +27,10 @@ import Data.List as List(all)
 import Control.Monad(when, liftM, liftM2, liftM3, liftM4)
 import Control.Monad.State(evalStateT, get, gets, put, StateT, liftIO, lift)
 
+import Data.Set as Set(Set, fromList, toList, difference, insert, empty, member,
+                                      null, intersection)
+import qualified Data.Graph as Graph(SCC(..), stronglyConnComp, flattenSCCs)
+
 -- This monomorphization pass is similar in structure to MLton's;
 -- a previous worklist-based version was modeled on BitC's polyinstantiator.
 --
@@ -132,9 +136,7 @@ monoKN subst inTypeExpr e =
     let fns = computeRecursivenessAnnotations fns0 ids
     let (monos, polys) = split (zip ids fns)
 
-    when False $ liftIO $ do
-      putStrLn $ "monos/polys: " ++ show (fst $ unzip monos, fst $ unzip polys)
-      putDoc $ vcat $ [showStructure (tidType (fnVar f)) | f <- snd $ unzip monos]
+
 
     monoAddOrigins polys
     -- Expose the definitions of the polymorphic
@@ -152,14 +154,55 @@ monoKN subst inTypeExpr e =
                              return (polyids, polyfns' )
     (monoids, monofns) <- monoGatherVersions ids
 
-    -- We keep the polymorphic versions around in case they have been
-    -- referenceed without being instantiated. If they are dead, they
-    -- will be trivially removed during shrinking.
-    return $ mkFunctionSCCs (polyids ++ monoids) (polyfns ++ monofns)
+    when False $ liftIO $ do
+      putStrLn $ "monos/polys for " ++ show ids ++ ": " ++ show (fst $ unzip monos, fst $ unzip polys)
+      putDoc $ vcat $ [showStructure (tidType (fnVar f)) | f <- snd $ unzip monos]
+      putStrLn $ "   polyids: " ++ show polyids
+      putStrLn $ "   monoids: " ++ show monoids
+      putStrLn $ "   ids':    " ++ show ids'
+      {-
+      putStrLn $ "fns0:"
+      putDoc $ vcat $ map pretty fns0
+      putStrLn $ "polys:"
+      putDoc $ vcat $ map pretty polys
+      putStrLn $ "polyfns:"
+      putDoc $ vcat $ map pretty polyfns
+      putStrLn $ ""
+      -}
+
+      --mkFunctionSCCs :: AExpr fn => [Ident] -> [fn] -> expr ->
+      --                            ([Ident] -> [fn] -> expr -> expr) -> expr
+    let mkFunctionSCCs' ids fns =
+            let idset    = Set.fromList ids
+                fnids fn = Set.toList $ Set.intersection (Set.fromList (freeIdents fn))
+                                                        idset
+                callGraphList = map (\(id, fn) -> ((fn, id), id, fnids fn)) (zip ids fns)
+                theSCCs       = Graph.stronglyConnComp callGraphList
+            in Graph.flattenSCCs theSCCs
+
+    let res = mkFunctionSCCs (polyids ++ monoids) (polyfns ++ monofns)
                  (mkKNLetFuns ids'    fns'    b')
                   mkKNLetFuns
             where mkKNLetFuns []  []  b = b
                   mkKNLetFuns ids fns b = KNLetFuns ids fns b
+  
+    if show polyids == "[foo!689]" || show polyids == "[foo!615]"
+      then do
+              liftIO $ putStrLn $ "\n=================================================\n"
+              liftIO $ putStrLn $ show polyids
+              liftIO $ putStrLn $ show monoids
+              liftIO $ putStrLn $ show ids'
+              liftIO $ putDoc $ pretty $
+                [id | (_, id) <-
+                        mkFunctionSCCs' (polyids ++ monoids) (polyfns ++ monofns)]
+              liftIO $ putDoc  $ showStructure res <> line
+              liftIO $ putStrLn $ "\n=================================================\n"
+      else return ()
+
+    -- We keep the polymorphic versions around in case they have been
+    -- referenceed without being instantiated. If they are dead, they
+    -- will be trivially removed during shrinking.
+    return $ res
 
   KNTyApp t v [] -> do -- coercion, rather than a type application per se.
     liftIO $ putStrLn $ "Monomorphizing coercion..."
@@ -173,10 +216,11 @@ monoKN subst inTypeExpr e =
     monotys <- mapM generic argtys
     let extsubst = extendMonoSubst subst monotys ktvs
 
-    -- For example:              polybinder :: forall x:Type, x => Maybe x
+    -- For example:     polybinder :: forall x:Type, x => Maybe x
+    --                                t   = NatInf(IL) => Maybe NatInf
     t'  <- monoType subst    t    --  t'  = NatInf(Mo) => Maybe NatInf
     t'' <- monoType extsubst _rho --  t'' = PtrTypeUnk => Maybe PtrTypeUnk
-    --                                   t   = NatInf(IL) => Maybe NatInf
+    
 
     -- If we're polymorphically instantiating a global symbol
     -- (i.e. a proc) then we can statically look up the proc
@@ -191,9 +235,14 @@ monoKN subst inTypeExpr e =
           monobinder <- monoInstantiate polydef polybinder monotys extsubst t''
 
           whenMonoWanted monobinder $ liftIO $ do
-            putStrLn $ "for monobinder " ++ show monobinder ++ ", t   is " ++ show t
-            putStrLn $ "for monobinder " ++ show monobinder ++ ", t'  is " ++ show t'
-            putStrLn $ "for monobinder " ++ show monobinder ++ ", t'' is " ++ show t''
+            putDoc $ text "for polybinder " <+> pretty polybinder
+                    <+> text " turning into " <+> pretty monobinder
+                    <$> text "     with argtys " <+> pretty monotys 
+                    <+> text " simplified from " <+> pretty argtys
+                    <$> (indent 10 (text "rho is" <+> (align (showStructure _rho))
+                    <$>             text "t   is" <+> (align (showStructure t))
+                    <$>             text "t'  is" <+> (align (showStructure t'))
+                    <$>             text "t'' is" <+> (align (showStructure t'')))) <> line
 
           -- We need to bitcast the proc we generate because we're
           -- sharing similarly-kinded instantiations, but we want for

@@ -88,6 +88,36 @@ renderKNM m = show (pretty m)
 renderKNFM :: FnMono -> String
 renderKNFM m = show (pretty m)
 
+instance Structured MonoType where
+    textOf e _width =
+        case e of
+            TyCon nam           -> text $ nam
+            TyApp con _types    -> text $ "TyApp " ++ show con
+            PrimInt     size    -> text $ "PrimInt " ++ show size
+            TupleType   {}      -> text $ "TupleType"
+            StructType  {}      -> text $ "StructType"
+            FnType      {}      -> text $ "FnType"
+            CoroType    {}      -> text $ "CoroType"
+            ArrayType   {}      -> text $ "ArrayType"
+            PtrType     {}      -> text $ "PtrType"
+            PtrTypeUnknown      -> text "?"
+            RefinedType v _e _  -> text $ "RefinedType " ++ show v
+
+    childrenOf e =
+        case e of
+            TyCon {}             -> []
+            TyApp con types      -> con:types
+            PrimInt       {}     -> []
+            TupleType     types  -> types
+            StructType    types  -> types
+            FnType  ss t _cc _cs -> ss++[t]
+            CoroType s t         -> [s,t]
+            ArrayType     ty     -> [ty]
+            PtrType       ty     -> [ty]
+            RefinedType   v  _ _ -> [tidType v]
+            PtrTypeUnknown       -> []
+            
+
 --
 showFnStructure (Fn fnvar args body _ _srcrange) =
   pretty fnvar <+> text "=" <+>

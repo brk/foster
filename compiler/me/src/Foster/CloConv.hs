@@ -1,4 +1,4 @@
-{-# LANGUAGE GADTs, TypeSynonymInstances, BangPatterns, RankNTypes #-}
+{-# LANGUAGE GADTs, TypeSynonymInstances, BangPatterns, RankNTypes, StrictData #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2012 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -12,15 +12,13 @@ import Prelude hiding ((<$>), (<*>))
 import qualified Data.Text as T
 import Data.Set(Set)
 import qualified Data.Set as Set(empty, singleton, union, unions, notMember,
-                                                      size, fromList, toList)
+                                                      size, toList)
 import Data.Map(Map)
 import qualified Data.Map as Map(insert, lookup, empty, fromList, elems)
 
 import Control.Monad.State
 
 import Text.PrettyPrint.ANSI.Leijen
-
-import Debug.Trace(trace)
 
 import Compiler.Hoopl
 
@@ -31,6 +29,8 @@ import Foster.TypeLL
 import Foster.MonoType
 import Foster.Letable
 import Foster.PatternMatch
+
+import Debug.Trace(trace)
 
 -- | Closure conversion and lambda lifting.
 -- |
@@ -106,7 +106,7 @@ data ToplevelBinding = TopBindArray Ident TypeLL [Literal]
 closureConvertAndLift :: DataTypeSigs
                       -> [Ident]
                       -> Uniq
-                      -> ModuleIL CFBody MonoType
+                      -> ModuleIL PreCloConv MonoType
                       -> (ModuleIL CCBody TypeLL, Uniq)
 closureConvertAndLift dataSigs globalIds u m =
     -- We lambda lift top level functions, since we know a priori
@@ -125,9 +125,11 @@ closureConvertAndLift dataSigs globalIds u m =
         , moduleILsourceLines = moduleILsourceLines m
         }, (ilmUniq st))
 
-closureConvertToplevel :: [Ident] -> CFBody -> ILM ()
-closureConvertToplevel globalIds body = do
-  cvt (Set.fromList globalIds) body
+closureConvertToplevel :: [Ident] -> PreCloConv -> ILM ()
+closureConvertToplevel _globalIds (PreCloConv cffns) = do
+  mapM_ (lambdaLift []) cffns
+  {-
+  mapM (cvt (Set.fromList globalIds)) cffns
      where
        -- Iterate through the SCCs of definitions, keeping track of a state
        -- parameter (the set of globalized variables, which need not appear in
@@ -136,25 +138,17 @@ closureConvertToplevel globalIds body = do
        -- We directly return a list of the top-level proc definitions, and also
        -- (via the ILM monad) a list of all procs generated, including those
        -- from nested functions.
-       cvt :: Set Ident -> CFBody -> ILM ()
-       cvt _ (CFB_Done) = return ()
+       cvt :: Set Ident -> CFFn -> ILM ()
 
-       -- TODO what to do with expr??
+       {-
        cvt globalized (CFB_LetVal id expr body) = do
         recordGlobalVal (mkToplevelBinding id expr)
         cvt (Set.union globalized (Set.fromList [id])) body
+        -}
 
-       cvt globalized (CFB_LetFuns ids fns body) =
+       cvt globalized fn =
          let
-             unliftable glbl fn =
-             {-
-                 trace (if (identPrefix $ tidIdent $ fnVar fn) == T.pack "problem4" then
-                        "Computing unliftables for fn " ++ show (fnVar fn)
-                        ++ "\nfree ids: " ++ show (fnFreeIds fn)
-                        -- ++ "\nglobals: " ++ show glbl
-                        ++ "\n"
-                        else "") $ -}
-                                  [ id | (TypedId _ id) <- fnFreeIds fn
+             unliftable glbl fn = [ id | (TypedId _ id) <- fnFreeIds fn
                                        , Set.notMember id glbl]
              allUnliftables = filter (not . null)
                                      (map (unliftable globalized' ) fns)
@@ -171,7 +165,7 @@ closureConvertToplevel globalIds body = do
           in if traced gonnaLift
               then do _ <- mapM (lambdaLift []) fns      ; cvt globalized' body
               else do _ <- closureConvertLetFuns ids fns ; cvt globalized  body
-
+-}
 recordGlobalVal Nothing = return ()
 recordGlobalVal (Just thing) = do
         old <- get
@@ -248,7 +242,9 @@ llb (s,vs) = (s, map llv vs)
 -- starting from the graph's entry block.
 closureConvertBlocks :: BasicBlockGraph -> ILM BasicBlockGraph'
 closureConvertBlocks bbg = do
-   (g', _) <- case bbgEntry bbg of (bid, _) -> rebuildGraphAccM Nothing (bbgBody bbg) bid transform
+   (g', _) <- case bbgEntry bbg
+                of (bid, _) ->
+                    rebuildGraphAccM Nothing (bbgBody bbg) bid transform
    return BasicBlockGraph' {
                  bbgpEntry = llb (bbgEntry bbg),
                  bbgpRetK  =      bbgRetK  bbg,
@@ -271,8 +267,9 @@ closureConvertBlocks bbg = do
            let _unusedPats = [pat | (CaseArm pat bid _ _ _) <- arms
                             , Set.notMember bid usedBlocks]
            -- TODO print warning if any unused patterns
-           (BlockFin blocks id _) <- compileDecisionTree a dt
-           return ((mkLast $ CCLast ent $ CCCont id []) |*><*| blocks, ent)
+           (BlockFin blocks id _occs) <- compileDecisionTree a dt
+           return $ -- (trace ("CFCase producing new blocks:\n" ++ show (pretty blocks)))
+              ((mkLast $ CCLast ent $ CCCont id []) |*><*| blocks, ent)
           where
             -- The decision tree we get from pattern-match compilation may
             -- contain only a subset of the pattern branches.
@@ -343,7 +340,9 @@ compileDecisionTree scrutinee (DT_Leaf armid varoccs) = do
         case Map.lookup armid wrappers of
            Just id -> do return $ BlockFin emptyClosedGraph id (DTO_Leaf armid varoccs)
            Nothing -> do let binders = map (emitOccurrence scrutinee) varoccs
-                         (id, block) <- ilmNewBlock ".leaf" binders (\entryid -> CCLast entryid $ CCCont armid []) -- TODO
+                         (id, block) <- ilmNewBlock ".leaf" binders
+                            --(\entryid -> CCLast entryid $ CCCont armid (map (llv.fst) varoccs)) -- TODO
+                            (\entryid -> CCLast entryid $ CCCont armid []) -- TODO
                          ilmAddWrapper armid id
                          return $ BlockFin block id (DTO_Leaf armid varoccs)
 
@@ -391,7 +390,7 @@ closureOfKnFn :: InfoMap
               -> (Ident, CFFn)
               -> ILM Closure
 closureOfKnFn infoMap (self_id, fn) = do
-    
+
     let varsOfClosure = closedOverVarsOfKnFn
     
     let envId  = snd (case Map.lookup self_id infoMap of
@@ -406,7 +405,13 @@ closureOfKnFn infoMap (self_id, fn) = do
     let transformedFn = makeEnvPassingExplicit envVar fn
     newproc          <- closureConvertFn transformedFn envVar varsOfClosure
     let procid        = TypedId (procType newproc) (procIdent newproc)
-    return $ Closure procid (llv envVar) (map llv varsOfClosure)
+    return $
+    {-
+     trace (show $ text "closureOfKNFn starting with " <$> indent 8 (pretty fn)
+                              <$> text "w/ closed vars " <$> indent 8 (pretty closedOverVarsOfKnFn)
+                              <$> text "and produced " <$> indent 8 (pretty transformedFn)
+                              <$> text "then becomes " <$> indent 8 (pretty newproc)) $ -}
+      Closure procid (llv envVar) (map llv varsOfClosure)
                    (AllocationSource (show procid ++ ":")
                                      (rangeOf $ procAnnot newproc))
   where
@@ -581,10 +586,10 @@ instance Structured (String, Label) where
 
 instance UniqueMonad (State ILMState) where
   freshUnique = ilmNewUniq >>= (return . intToUnique)
-
+{-
 instance Pretty BlockG where
   pretty bb = foldGraphNodes prettyInsn' bb empty
-
+-}
 prettyInsn' :: Insn' e x -> Doc -> Doc
 prettyInsn' i d = d <$> pretty i
 
@@ -643,8 +648,8 @@ prettyTypedVar v = pretty (tidIdent v) <+> text "::" <+> pretty (tidType v)
 
 instance Pretty Closure where
   pretty clo = text "(Closure" <+> text "env =(" <> pretty (tidIdent $ closureEnvVar clo)
-                         <>  text ") proc =(" <+> pretty (closureProcVar clo)
-                         <+> text ") captures" <+> text (show (map prettyTypedVar (closureCaptures clo)))
+                         <>  text ")" <$> text " proc =(" <+> pretty (closureProcVar clo)
+                         <+> text ")" <$> text " captures" <+> text (show (map tidIdent (closureCaptures clo)))
                          <+> text ")"
 
 instance Pretty BasicBlockGraph' where
@@ -653,6 +658,12 @@ instance Pretty BasicBlockGraph' where
                 <$> text "entry =" <+> pretty (fst $ bbgpEntry bbg)
                 <$> text "------------------------------"))
           <> pretty (bbgpBody bbg)
+
+instance Pretty (Block Insn' O C) where
+ pretty b = pretty (blockGraph b)
+
+instance Pretty (Graph Insn' o c) where
+  pretty bb = foldGraphNodes prettyInsn' bb empty
 
 instance Pretty ToplevelBinding where
   pretty _tb = text "toplevel binding..."
@@ -682,8 +693,6 @@ instance NonLocal Insn' where
   successors (CCLast _ last) = map blockLabel (ccLastTargetsOf last)
                              where blockLabel (_, label) = label
 
-instance FosterNode Insn' where branchTo bid = CCLast (error "CloConv 653") $ CCCont bid []
-
 ccLastTargetsOf :: CCLast -> [BlockId]
 ccLastTargetsOf last =
     case last of
@@ -706,3 +715,7 @@ mkGlobal (TypedId t i) = mkGlobalWithType t i
 mkGlobalWithType ty (Ident t u) = TypedId ty (GlobalSymbol $ T.pack (T.unpack t ++ show u))
 mkGlobalWithType ty global      = TypedId ty global
 
+-- Reusing bid as the 'block entry label' for CCLast is a pretty awful hack,
+-- but it's better than letting GCRoots choke on an error value when it tries
+-- to do dominator analysis.
+instance FosterNode Insn' where branchTo bid = CCLast bid $ CCCont bid []

@@ -37,6 +37,7 @@ import Foster.AnnExpr
 import Foster.Infer(parSubstTcTy)
 
 import Text.PrettyPrint.ANSI.Leijen
+import Debug.Trace(trace)
 
 import qualified Data.Graph.Inductive.Graph            as Graph
 import qualified Data.Graph.Inductive.PatriciaTree     as Graph
@@ -1062,13 +1063,29 @@ mkLetRec bindings b = KNLetRec ids es b where (ids, es) = unzip bindings
 mkLetVals []            e = e
 mkLetVals ((id,b):rest) e = KNLetVal id b (mkLetVals rest e)
 
-knSinkBlocks :: ModuleIL (KNExpr' r t) t -> Compiled (ModuleIL (KNExpr' r t) t)
+knSinkBlocks :: (Pretty t, Pretty r, Show t, Show r) => ModuleIL (KNExpr' r t) t -> Compiled (ModuleIL (KNExpr' r t) t)
 knSinkBlocks m = do
   let rebuilder idsfns = [(id, localBlockSinking fn) | (id, fn) <- idsfns]
   return $ m { moduleILbody = rebuildWith rebuilder (moduleILbody m) }
 
-localBlockSinking :: Fn r (KNExpr' r t) t -> Fn r (KNExpr' r t) t
-localBlockSinking knf = rebuildFn knf
+localBlockSinking :: (Pretty t, Pretty r, Show t, Show r) => Fn r (KNExpr' r t) t -> Fn r (KNExpr' r t) t
+localBlockSinking knf =
+    let newfn = rebuildFn knf in
+    let !nu = show (pretty $ fnBody newfn)
+        !ol = show (pretty $ fnBody knf) in
+    if nu == ol then
+      newfn
+      else
+        trace ("localBlockSinking turned\n\n" ++ show (showStructure (fnBody knf))
+              ++ "\n\ninto\n" ++ show (showStructure (fnBody newfn))
+              ++ "\nallMentions: " ++ show allMentions
+              ++ "\nparents: " ++ show parents
+              ++ "\nbindings: " ++ show bindings
+              ++ "\nchild_functions: " ++ show children
+              ++ "\nfunctions: " ++ show (Set.toList functionsSet)
+              ++ "\ncallGraph: " ++ show [(n2b x, n2b y) | (x,y) <- Graph.edges callGraph]
+              ++ "\nrelocList: " ++ show [(id,tidIdent (fnVar fn), dom) | ((id,fn),dom) <- relocationTargetsList]
+              ) newfn
  where
   rebuildFn   = rebuildFnWith rebuilder addBindingsFor
   functions   = collectFunctions knf

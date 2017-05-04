@@ -45,7 +45,7 @@ import Foster.ILExpr(ILProgram, showILProgramStructure, prepForCodegen, collectM
 import Foster.KNExpr(KNExpr', kNormalizeModule, knLoopHeaders, knSinkBlocks,
                      knInline, knSize, renderKN,
                      handleCoercionsAndConstraints, collectIntConstraints)
-import Foster.KNUtil(KNExpr, TypeIL)
+import Foster.KNUtil(KNExpr, TypeIL, CanMakeFun(mkFunType))
 import Foster.Typecheck
 import Foster.Context
 import Foster.CloConv(closureConvertAndLift, renderCC, CCBody(..))
@@ -745,48 +745,83 @@ lowerModule (tc_time, (kmod, globals)) = do
 
      liftIO $ putDocLn $ text $ "Performing shrinking: " ++ show (getShrinkFlag flags)
 
-     (mkn_time, monomod3) <- ioTime $ do
-       if getShrinkFlag flags
-        then do
-             assocBinders <- sequence [do r <- newOrdRef Nothing
-                                          let id  = GlobalSymbol $ T.pack s
-                                          let tid = TypedId ty id
-                                          let b = MKBound tid r
-                                          return (id, b) | (s, ty) <- moduleILdecls monomod2]
-             let binders = Map.fromList assocBinders
-             mk <- mkOfKN binders (moduleILbody monomod2)
-             kn <- mknInline mk
-             return $ monomod2 { moduleILbody = kn }
-        else return $ monomod2
+{-
+     monomod2a  <- knSinkBlocks   monomod2
 
-     (in_time, monomod4) <- ioTime $ (if inline then knInline insize donate else return) monomod3
-     monomod  <- knSinkBlocks   monomod4
+     liftIO $ do
+      putStrLn $ "before block sinking:"
+      putDocLn (pretty (moduleILbody monomod2))
+      putStrLn $ "after block sinking:"
+      putDocLn (pretty (moduleILbody monomod2a))
+-}
+
+     (mkn_time, pccmod) <- ioTime $ do
+          assocBinders <- sequence [do r <- newOrdRef Nothing
+                                       let xid = GlobalSymbol $ T.pack s
+                                       let tid = TypedId ty xid
+                                       let b = MKBound tid r
+                                       return (xid, b)
+                                   | (s, ty) <- ("main", FnType [] (TupleType []) CCC FT_Proc)
+                                                : moduleILdecls monomod2]
+
+          let mainBinder = head assocBinders
+          let binders = Map.fromList assocBinders
+          --liftIO $ putStrLn $ show binders
+          --mk <- mkOfKN binders (moduleILbody monomod2)
+          {-
+          if inline
+            then do
+              kn <- evalStateT 
+                  (do mk <- mkOfKNMod (moduleILbody monomod2a) (snd mainBinder)
+                      mknInline mk (snd mainBinder))
+                  binders
+            else -}
+          mk <- evalStateT 
+                  (mkOfKNMod (moduleILbody monomod2{-a-}) (snd mainBinder))
+                  binders
+          mknInline mk (snd mainBinder) (getInliningGas flags)
+          uref <- gets ccUniqRef
+          pcc@(PreCloConv cffns) <- pccOfTopTerm uref mk
+
+          whenDumpIR "cfg" $ do
+              putDocLn $ (outLn "/// pre//CFG program ==================")
+              putDocP  $ vcat $ map prettyCFFn cffns
+              putDocLn $ (outLn "^^^ ===================================")
+
+          return $ monomod2{-a-} { moduleILbody = pcc }
 
      whenDumpIR "mono" $ do
          putDocLn $ (outLn "/// Loop-headered program =============")
          putDocLn $ (outLn $ "///               size: " ++ show (knSize (moduleILbody monomod2)))
          _ <- liftIO $ renderKN monomod2 True
          putDocLn $ (outLn "^^^ ===================================")
+{-
+         when (inline || getShrinkFlag flags) $ do
+           putDocLn $ (outLn "/// MKN-ed       program =============")
+           putDocLn $ (outLn $ "///               size: " ++ show (knSize (moduleILbody monomod3)))
+           _ <- liftIO $ renderKN monomod3 True
+           putDocLn $ (outLn "^^^ ===================================")
 
          when (inline || getShrinkFlag flags) $ do
            putDocLn $ (outLn "/// Inlined       program =============")
            putDocLn $ (outLn $ "///               size: " ++ show (knSize (moduleILbody monomod4)))
            _ <- liftIO $ renderKN monomod4 True
            putDocLn $ (outLn "^^^ ===================================")
-
+-}
+{-
      whenDumpIR "mono-sunk" $ do
          putDocLn $ (outLn "/// Block-sunk program =============")
-         _ <- liftIO $ renderKN monomod  True
+         _ <- liftIO $ renderKN monomod2a  True
          putDocLn $ (outLn "^^^ ===================================")
-
-     (cg_time, cfgmod) <- ioTime $ cfgModule      monomod
-     
+-}
+     --(cg_time, cfgmod) <- ioTime $ cfgModule      monomod4
+     {-
      whenDumpIR "cfg" $ do
          putDocLn $ (outLn "/// CFG-ized program ==================")
          putDocP  $ pretty cfgmod
          putDocLn $ (outLn "^^^ ===================================")
-
-     ccmod    <- closureConvert cfgmod globals
+         -}
+     ccmod    <- closureConvert pccmod globals
      whenDumpIR "cc" $ do
          putDocLn $ (outLn "/// Closure-converted program =========")
          _ <- liftIO $ renderCC ccmod True
@@ -811,13 +846,16 @@ lowerModule (tc_time, (kmod, globals)) = do
          putDocLn $ (outLn "^^^ ===================================")
 
      liftIO $ putDocLn $ (text $ "/// Mono    size: " ++ show (knSize (moduleILbody monomod0)))
+{-
      when (getShrinkFlag flags) $
        liftIO $ putDocLn $ (text $ "/// Shrunk  size: " ++ show (knSize (moduleILbody monomod3)))
      when (getInlining flags) $
        liftIO $ putDocLn $ (text $ "/// Inlined size: " ++ show (knSize (moduleILbody monomod4)))
-
+-}
      maybeInterpretKNormalModule kmod
 
+     let in_time = 0.0
+         cg_time = 0.0
      return (RWT tc_time in_time mkn_time mn_time cg_time cp_time sc_time ilprog)
 
   where
@@ -828,14 +866,14 @@ lowerModule (tc_time, (kmod, globals)) = do
         cfgBody' <- optimizeCFGs cfgBody
         return $ kmod { moduleILbody = cfgBody' }
 
-    closureConvert cfgmod globals = do
+    closureConvert pccmod globals = do
         uniqref <- gets ccUniqRef
         liftIO $ do
-            let datatypes = moduleILprimTypes cfgmod ++
-                            moduleILdataTypes cfgmod
+            let datatypes = moduleILprimTypes pccmod ++
+                            moduleILdataTypes pccmod
             let dataSigs = dataTypeSigs datatypes
             u0 <- readIORef uniqref
-            let (rv, u') = closureConvertAndLift dataSigs globals u0 cfgmod
+            let (rv, u') = closureConvertAndLift dataSigs globals (u0 + 1) pccmod
             writeIORef uniqref u'
             return rv
 
@@ -884,3 +922,5 @@ dumpAllPrimitives = do
 
     dumpPrimitive (name, (_ty, _primop)) = error $ "Can't dump primitive " ++ name ++ " yet."
 
+instance CanMakeFun MonoType where
+    mkFunType args ret = FnType args ret FastCC FT_Func

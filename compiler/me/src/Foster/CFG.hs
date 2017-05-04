@@ -23,7 +23,9 @@ module Foster.CFG
 , graphOfClosedBlocks, graphBlocks
 , FosterNode(..)
 , catClosedGraphs
+, prettyCFFn
 , runWithUniqAndFuel, M
+, PreCloConv(..)
 ) where
 
 import Prelude hiding ((<$>))
@@ -224,7 +226,7 @@ computeBlocks tailq expr idmaybe k = do
 
         KNLetFuns ids fns e -> do
             funs <- mapM cfgComputeCFG fns
-            cfgAddMiddle (ILetFuns ids $ funs)
+            cfgAddMiddle (ILetFuns ids funs)
             computeBlocks tailq e idmaybe k
 
         -- Cases are translated very straightforwardly here; we put off
@@ -306,7 +308,9 @@ computeBlocks tailq expr idmaybe k = do
         KNCall ty b vs -> do
             -- We can't just compare [[b == fnvar]] because b might be a
             -- let-bound result of type-instantiating a polymorphic function.
+
             isSelfTailCall <- cfgIsThisFnVar b
+            --liftIO $ putStrLn $ "saw KNCall of " ++ show b ++ " ; tailq : " ++ show tailq ++ "; isSelfCall? " ++ show isSelfTailCall
             case (tailq, isSelfTailCall) of
                 -- Direct tail recursion becomes a jump
                 -- (reassigning the arg slots).
@@ -508,6 +512,9 @@ showTyped d t = parens (d <+> text "::" <+> pretty t)
 
 fnFreeIds :: (Fn RecStatus BasicBlockGraph MonoType) -> [MoVar]
 fnFreeIds fn = freeTypedIds fn
+
+prettyCFFn :: Fn RecStatus BasicBlockGraph MonoType -> Doc
+prettyCFFn fn = pretty fn
 
 instance Pretty (Fn RecStatus BasicBlockGraph MonoType) where
   pretty fn = group (lbrace <+>
@@ -746,3 +753,4 @@ runWithUniqAndFuel r f x = do startUniq <- readIORef r
 type M {-a-} = InfiniteFuelMonad UniqMonadIO {-a-}
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+data PreCloConv = PreCloConv [CFFn] -- [(Ident, MonoType, [Literal])]

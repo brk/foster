@@ -698,7 +698,8 @@ void passPhisAndBr(LLBlock* block, const vector<llvm::Value*>& args) {
 void LLBr::codegenTerminator(CodegenPass* pass) {
   LLBlock* block = pass->lookupBlock(this->block_id);
 
-  if (this->args.empty() && llvm::StringRef(block_id).startswith("postalloca"))
+  if (this->args.empty() && llvm::StringRef(block_id).startswith(
+                        builder.GetInsertBlock()->getParent()->getName().str()))
   { // The "first" branch into the postalloca won't pass any actual args, so we
     // want to use the "real" function args (leaving out the invariant env ptr).
     // Other branches to postalloca will pass the new values for the arg slots.
@@ -1044,8 +1045,9 @@ llvm::Value* LLVar::codegen(CodegenPass* pass) {
   if (!v) {
     builder.GetInsertBlock()->getParent()->dump();
     pass->valueSymTab.dump(llvm::errs());
-    ASSERT(false) << "Unknown variable name " << this->name << " in CodegenPass"
-                  << " in function " << pass->currentProcName;
+    ASSERT(false) << "\n\n\t\tUnknown variable name " << this->name << " in CodegenPass"
+                  << " in block " << builder.GetInsertBlock()->getName()
+                  << " of function " << pass->currentProcName;
   }
   return v;
 }
