@@ -30,8 +30,6 @@ import Foster.MonoType
 import Foster.Letable
 import Foster.PatternMatch
 
-import Debug.Trace(trace)
-
 -- | Closure conversion and lambda lifting.
 -- |
 -- | We convert from CF(G)Procs to ClosureConvertedProcs.
