@@ -560,7 +560,9 @@ mkOfKN_Base expr k = do
         case k of
             CC_Tail {} -> do
               arms' <- mapM (qarm k) arms
-              installLink selfLink $ MKCase        nu ty v' arms'
+              let rv = MKCase        nu ty v' arms'
+              lift $ backpatchT rv (map mkcaseArmBody arms')
+              installLink selfLink rv
 
             CC_Base kf -> do
               -- The topmost 'case' case from CwCC figure 8,
@@ -1215,7 +1217,7 @@ mknInline subterm mainCont mb_gas = do
              Just (_subterm, mredex, Nothing) -> do
                
                 do redex <- knOfMK (YesCont mainCont) mredex
-                   liftIO $ putDocLn $ text "skipping parentless redex: " <+> pretty redex
+                   liftIO $ putDocLn $ red (text "skipping parentless redex: ") <+> pretty redex
                
                 go gas
              Just (subterm, mredex, Just _parent) -> case mredex of
