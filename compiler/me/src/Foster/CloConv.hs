@@ -368,9 +368,11 @@ closureOfKnFn infoMap (self_id, fn) = do
                               <$> text "w/ closed vars " <$> indent 8 (pretty closedOverVarsOfKnFn)
                               <$> text "and produced " <$> indent 8 (pretty transformedFn)
                               <$> text "then becomes " <$> indent 8 (pretty newproc)) $ -}
-      Closure procid (llv envVar) (map llv varsOfClosure)
-                   (AllocationSource (show procid ++ ":")
-                                     (rangeOf $ procAnnot newproc))
+      if T.pack "mustbecont_" `T.isInfixOf` identPrefix self_id
+        then error $ "Failed to contify " ++ show self_id
+        else Closure procid (llv envVar) (map llv varsOfClosure)
+                            (AllocationSource (show procid ++ ":")
+                                              (rangeOf $ procAnnot newproc))
   where
     procType proc =
       let retty = procReturnType proc in
