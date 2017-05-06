@@ -760,7 +760,7 @@ lowerModule (tc_time, kmod) = do
                   binders
           mknInline mk (snd mainBinder) (getInliningGas flags)
           uref <- gets ccUniqRef
-          pcc@(PreCloConv cffns) <- pccOfTopTerm uref mk
+          pcc@(PreCloConv (cffns,topbinds)) <- pccOfTopTerm uref mk
 
           whenDumpIR "cfg" $ do
               putDocLn $ (outLn "/// pre//CFG program ==================")

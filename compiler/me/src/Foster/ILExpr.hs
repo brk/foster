@@ -59,7 +59,7 @@ import Debug.Trace(trace)
 -- ||||||||||||||||||||||||| Datatypes ||||||||||||||||||||||||||{{{
 -- A program consists of top-level data types and mutually-recursive procedures.
 data ILProgram = ILProgram [ILProcDef]
-                           [ToplevelBinding]
+                           [ToplevelBinding TypeLL]
                            [LLExternDecl]
                            [DataType TypeLL]
                            SourceLines
