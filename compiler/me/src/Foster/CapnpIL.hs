@@ -13,7 +13,7 @@ import Foster.Base
 import Foster.Kind
 import Foster.ILExpr hiding (Block)
 import qualified Foster.ILExpr as IL
-import qualified Foster.CloConv as CC(Proc(..), ToplevelBinding(..))
+import qualified Foster.CloConv as CC(Proc(..))
 import Foster.TypeLL
 import Foster.Letable hiding (Letable)
 import qualified Foster.Letable as IL
@@ -561,14 +561,14 @@ dumpProgramToModule (ILProgram procdefs vals extern_decls datatypes (SourceLines
         let argtys = map tidType (CC.procVars proc) in
         (argtys, retty, FastCC)
 
-    dumpItem :: CC.ToplevelBinding -> PbToplevelItem
-    dumpItem (CC.TopBindArray id _ty@(LLArrayType ety) lits) =
+    dumpItem :: ToplevelBinding TypeLL -> PbToplevelItem
+    dumpItem (TopBindArray id _ty@(LLArrayType ety) lits) =
       PbToplevelItem {
           name_of_PbToplevelItem = dumpIdent id
         , arr_of_PbToplevelItem = pbArrayLit ety (map Left lits)
         }
 
-    dumpItem (CC.TopBindArray _id otherty _lits) =
+    dumpItem (TopBindArray _id otherty _lits) =
         error $ "dumpItem saw top-level array with non-array type " ++ show otherty
 
     dumpDataTypeDecl :: DataType TypeLL -> Decl

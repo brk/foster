@@ -350,6 +350,8 @@ data ModuleIL expr ty = ModuleIL {
         , moduleILprimTypes   :: [DataType ty]
         , moduleILsourceLines :: SourceLines
      }
+
+data ToplevelBinding ty = TopBindArray Ident ty [Literal]
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||||||| Source Ranges ||||||||||||||||||||||||{{{
 

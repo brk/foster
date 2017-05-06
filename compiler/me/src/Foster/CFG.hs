@@ -322,4 +322,4 @@ runWithUniqAndFuel r f x = do startUniq <- readIORef r
 type M {-a-} = InfiniteFuelMonad UniqMonadIO {-a-}
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
-data PreCloConv = PreCloConv [CFFn] -- [(Ident, MonoType, [Literal])]
+data PreCloConv = PreCloConv ([CFFn], [ToplevelBinding MonoType]) -- [(Ident, MonoType, [Literal])]

@@ -1664,11 +1664,11 @@ baPutBlock head middles last = do
 
 instance UniqueMonad BlockAccum where freshUnique = baNewUniq >>= return . intToUnique
 
-type PCCFns = StateT [CFFn] Compiled
+type PCCFns = StateT ([CFFn], [ToplevelBinding MonoType]) Compiled
 
 pccOfTopTerm :: IORef Uniq -> Subterm MonoType -> Compiled PreCloConv
 pccOfTopTerm uref subterm = do
-  execStateT (go subterm) [] >>= return . PreCloConv
+  execStateT (go subterm) ([], []) >>= return . PreCloConv
     where
       grabFn :: Known MonoType (Link (MKFn (Subterm MonoType) MonoType)) -> PCCFns ()
       grabFn (_, link) = do
@@ -1683,20 +1683,36 @@ pccOfTopTerm uref subterm = do
             liftIO $ putDocLn $ text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
             
             cffn <- lift $ cffnOfMKFn uref fn
-            !fns <- get
-            put (cffn : fns)
+            !(fns, topbinds) <- get
+            put (cffn : fns, topbinds)
 
       go :: Subterm MonoType -> PCCFns ()
       go subterm = do
         term <- lift $ readLink "pccOfTopTerm(subterm)" subterm
         case term of
           -- Call cffnOfMKFn for each top-level function binding.
-          MKLetVal      {} -> do error $ "MKLetVal in pccTopTerm"
+          MKLetVal   _u (bv, subexpr) k -> do
+            expr <- lift $ readLink "pccTopTerm" subexpr
+            handleTopLevelBinding (tidIdent $ boundVar bv) expr k
           MKLetRec      {} -> do error $ "MKLetRec in pccTopTerm"
           MKLetFuns     _u   knowns  k  -> do mapM_ grabFn knowns ; go k
           MKCall        {}              -> return ()
           MKLetCont     {} -> do error $ "MKLetCont in pccTopTerm"
           MKCont        {} -> do error $ "MKCont in pccTopTerm"
+
+      handleTopLevelBinding id expr k = do
+        case expr of
+          MKLiteral    {} -> go k
+          MKAllocArray {} -> go k
+
+          MKArrayLit _ ty _fv litsOrVars -> do
+            let lits = [lit | Left lit <- litsOrVars]
+            if length lits == length litsOrVars
+              then do !(fns, topbinds) <- get
+                      put (fns, TopBindArray id ty lits : topbinds)
+                      go k
+              else error $ "Top-level arrays can only contain literals, not variables, for now..."
+          _ -> error $ "MKLetVal in pccTopTerm"
 
 blockIdOf :: MKBoundVar MonoType -> BlockAccum BlockId
 blockIdOf bv = blockIdOfIdent (tidIdent $ boundVar bv)
