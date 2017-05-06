@@ -1,4 +1,5 @@
-{-# LANGUAGE RecursiveDo, FlexibleContexts, GADTs #-}
+{-# LANGUAGE RecursiveDo, GADTs #-}
+-- RecursiveDo is used in dlcSingleton
 
 module Foster.MKNExpr (MKBound(MKBound), mkOfKNMod, mknInline, mknShrink,
                        pccOfTopTerm, knOfMK, readLink, MaybeCont(..)) where
@@ -302,7 +303,7 @@ getActiveLinkFor term = do
   subtermsOf term =
       case term of
         MKIf          _u _ _ tru fls -> return $ [tru, fls]
-        MKLetVal      _u  (x, br) k  -> return $ [k]
+        MKLetVal      _u   _      k  -> return $ [k]
         MKLetRec      _u   knowns k  -> return $ k : (map snd knowns)
         MKLetFuns     _u   knowns k  -> do fns <- knownActuals knowns
                                            return $ k : map mkfnBody fns
@@ -1324,7 +1325,7 @@ mknInline subterm mainCont mb_gas = do
                        then do
                          do v <- freeBinder callee
                             liftIO $ putDocLn $ green (text "copying and inlining DF ") <+> pretty (tidIdent $ boundVar v)
-                            kn1 <- knOfMKFn (mbContOf $ mkfnCont fn) fn
+                            --kn1 <- knOfMKFn (mbContOf $ mkfnCont fn) fn
                             --liftIO $ putStrLn $ "pre-copy fn is " ++ show (pretty kn1)
                             return ()
                          fn' <- runCopyMKFn fn
@@ -1735,8 +1736,8 @@ cffnOfMKCont (MKFn cv vs _ subterm _isrec _annot) = do
           MKLetVal      _u (bv, subexpr) k -> do
               letable <- lift $ letableOfSubexpr subexpr
               go k head (ILetVal (tidIdent $ boundVar bv) letable : insns)
-          MKLetRec      _u   [known] k  -> do error $ "MKNExpr.hs: no support yet for MKLetRec..."
-          MKLetRec      _u   knowns  k  -> do error $ "MKNExpr.hs: no support yet for multi-extended-letrec"
+          MKLetRec      _u  [_known] _k -> do error $ "MKNExpr.hs: no support yet for MKLetRec..."
+          MKLetRec      _u  _knowns  _k -> do error $ "MKNExpr.hs: no support yet for multi-extended-letrec"
           MKLetFuns     _u   knowns  k  -> do (uref, _, _) <- get
                                               idsfnss <- lift $ mapM (\(bv,link) -> do
                                                   mb_mkfn <- readOrdRef link
