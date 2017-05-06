@@ -13,7 +13,6 @@ module Foster.CFG
 , BasicBlock
 , CFLast(..)
 , CFFn
-, isReturn
 , blockTargetsOf
 , mapGraphNodesM_
 , rebuildGraphM
@@ -84,15 +83,15 @@ type BlockEntry' t = (BlockId, [TypedId t])
 -- We pair a name for later codegen with a label for Hoopl's NonLocal class.
 type BlockId = (String, Label)
 
-isReturn :: BlockId -> Bool
-isReturn (".return", _) = True
-isReturn _ = False
 -- ||||||||||||||||||||| CFG Pretty Printing ||||||||||||||||||||{{{
 
 comment d = text "/*" <+> d <+> text "*/"
 
-prettyId (TypedId _ i) = text (show i)
-prettyTypedVar (TypedId t i) = text (show i) <+> text "::" <+> pretty t
+prettyIdent i@(GlobalSymbol _) = text "G:" <> text (show i)
+prettyIdent i = text (show i)
+
+prettyId (TypedId _ i) = prettyIdent i
+prettyTypedVar (TypedId t i) = prettyIdent i <+> text "::" <+> pretty t
 
 showTyped :: Doc -> MonoType -> Doc
 showTyped d t = parens (d <+> text "::" <+> pretty t)
