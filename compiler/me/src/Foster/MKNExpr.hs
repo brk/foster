@@ -1502,7 +1502,7 @@ data Contifiability =
                 (MKFn (Subterm MonoType) MonoType)
                 [FreeOcc MonoType]
 
---analyzeContifiability :: -> Compiled Contifiability
+--analyzeContifiability :: ... -> Compiled Contifiability
 analyzeContifiability knowns = do
   let isTopLevel (GlobalSymbol _) = True
       isTopLevel _ = False
