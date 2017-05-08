@@ -461,6 +461,12 @@ closureConvertedProc procArgs f newbody = do
     TypedId (FnType _ ftrange _ _) id ->
        return $ Proc (monoToLL ftrange) id (map llv procArgs) (fnAnnot f) newbody
     tid -> error $ "Expected closure converted proc to have fntype, had " ++ show tid
+
+ where
+  mkGlobal (TypedId t i) = mkGlobalWithType t i
+
+  mkGlobalWithType ty (Ident t u) = TypedId ty (GlobalSymbol $ T.pack (T.unpack t ++ show u))
+  mkGlobalWithType ty global      = TypedId ty global
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- Canonicalize single-consequent cases to unconditional branches,
@@ -532,10 +538,7 @@ instance Structured (String, Label) where
 
 instance UniqueMonad (State ILMState) where
   freshUnique = ilmNewUniq >>= (return . intToUnique)
-{-
-instance Pretty BlockG where
-  pretty bb = foldGraphNodes prettyInsn' bb empty
--}
+
 prettyInsn' :: Insn' e x -> Doc -> Doc
 prettyInsn' i d = d <$> pretty i
 
@@ -646,15 +649,6 @@ block'TargetsOf :: Insn' O C -> [BlockId]
 block'TargetsOf (CCLast _ last) = ccLastTargetsOf last
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
-
--- canGCCalled  v = let rv = canGCF v in if rv then {- trace ("canGCF: " ++ show v) -} rv else rv
---canGCLetable msg l = let rv = canGC msg l in if rv then {- trace ("canGCL: " ++ show l) -} rv else rv
-
-mkGlobal (TypedId t i) = mkGlobalWithType t i
-
-mkGlobalWithType ty (Ident t u) = TypedId ty (GlobalSymbol $ T.pack (T.unpack t ++ show u))
-mkGlobalWithType ty global      = TypedId ty global
 
 -- Reusing bid as the 'block entry label' for CCLast is a pretty awful hack,
 -- but it's better than letting GCRoots choke on an error value when it tries
