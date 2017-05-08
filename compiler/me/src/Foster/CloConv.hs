@@ -24,7 +24,6 @@ import Compiler.Hoopl
 
 import Foster.Base
 import Foster.CFG
-import Foster.KNUtil
 import Foster.TypeLL
 import Foster.MonoType
 import Foster.Letable
