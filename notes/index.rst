@@ -16,6 +16,7 @@ Foster Notes
    runtime
    arrays
    strings
+   hashtables
    mutation
    parallelism
    polymorphism
