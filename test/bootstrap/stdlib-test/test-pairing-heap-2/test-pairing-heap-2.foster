@@ -76,7 +76,7 @@ listFoldl = { forall a:Type e:Type, v => f => acc : a =>
 };
 type case PairingHeap (elem:Type)
       of $PairingHeapE
-      of $PairingHeapT elem (List PairingHeap)
+      of $PairingHeapT elem (List (PairingHeap elem))
       ;
 
 cmpSInt64 = { a : Int64 => b : Int64 =>
