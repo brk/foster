@@ -1548,7 +1548,8 @@ tcType' ctx refinementArgs ris typ = do
         TupleTypeAST  k types -> liftM  (TupleTypeTC (UniConst k)) (mapM q types)
         CoroTypeAST   s r fx  -> liftM3  CoroTypeTC  (q s) (q r) (q fx)
         TyConAST nam          -> return $ TyConTC nam
-        TyAppAST con types    -> liftM2 TyAppTC (q con) (mapM q types)
+        TyAppAST con types    -> do kindCheckDT con types ctx
+                                    liftM2 TyAppTC (q con) (mapM q types)
         ForAllAST ktvs rho    -> do taus <- genNonSigmaUnificationVarsLike ktvs (\n -> "tcType'forall param " ++ show n)
                                     let xtvs = map (\(tv,k) -> TyVarTC tv (UniConst k)) ktvs
                                     let ctx' = ctx { localTypeBindings = extendTypeBindingsWith ctx ktvs taus }
@@ -1628,6 +1629,38 @@ tcType' ctx refinementArgs ris typ = do
           e' <- checkRho ctx' e (PrimIntTC I1)
           ty' <- tcType' ctx' refinementArgs RIS_False ty
           return $ RefinedTypeTC (TypedId ty' id) e' refinementArgs
+
+kindCheckDT con tys ctx = do
+  case con of
+    TyConAST dtname -> do
+      case Map.lookup dtname (contextDataTypes ctx) of
+        Just [dt] -> do
+          let numActuals = length (dataTypeTyFormals dt)
+          if length tys /= numActuals
+            then tcFails [text "Inconsistent use of type constructor" <+> pretty dtname <> text ":"
+                        ,text "    Expected" <+> describeNumber numActuals "no"
+                          <+> text "type parameter" <> text (sIfNotOne numActuals) <+>
+                              text "but was given" <+> describeNumber (length tys) "zero"]
+            else return ()
+        _ -> return ()
+    _ -> return ()
+
+sIfNotOne n = if n == 1 then "" else "s"
+
+describeNumber n zero = text $
+  case n of
+    0 -> zero
+    1 -> "one"
+    2 -> "two"
+    3 -> "three"
+    4 -> "four"
+    5 -> "five"
+    6 -> "six"
+    7 -> "seven"
+    8 -> "eight"
+    9 -> "nine"
+    10 -> "ten"
+    _ -> show n
 -- }}}
 
 

@@ -6,7 +6,7 @@ type case List (a:Type)
 
 type case PairingHeap (elem:Type)
       of $PairingHeapE
-      of $PairingHeapT elem (List PairingHeap)
+      of $PairingHeapT elem (List (PairingHeap elem))
       ;
 
 listShow = { forall a:Type, showElem : { a => Text } => lst : List a =>

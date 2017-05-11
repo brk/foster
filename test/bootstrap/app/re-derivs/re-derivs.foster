@@ -124,7 +124,7 @@ re_d = { a => re =>
   end;
 };
 
-re_ds_v :: { VList => RE => RE };
+re_ds_v :: { VList Int32 => RE => RE };
 re_ds_v = { v => re =>
   case vListSplit v
     of $None        -> re

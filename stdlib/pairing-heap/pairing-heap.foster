@@ -6,7 +6,7 @@ snafuinclude Maybe "maybe";
 
 type case PairingHeap (elem:Type)
       of $PairingHeapE
-      of $PairingHeapT elem (List PairingHeap)
+      of $PairingHeapT elem (List (PairingHeap elem))
       ;
 
 mkEmptyPairingHeap :: forall (a:Type) { PairingHeap a };
