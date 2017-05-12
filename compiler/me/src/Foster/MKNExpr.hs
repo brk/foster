@@ -1011,6 +1011,10 @@ knownActuals knowns = do
     return $ catMaybes mb_vals
 
 -- {{{
+shouldNotInlineFn fn =
+  let id = tidIdent (boundVar (mkfnVar fn)) in
+  T.pack "noinline_" `T.isInfixOf` identPrefix id
+
 data RedexSituation t =
        CallOfUnknownFunction
      | CallOfSingletonFunction (MKFn (Subterm t) t)
@@ -1035,6 +1039,7 @@ classifyRedex' callee (Just fn) args knownFns = do
                       " ; rec? " ++ show (mkfnIsRec fn)
 
   case (callee_singleton, mkfnIsRec fn) of
+    _ | shouldNotInlineFn fn -> return CallOfUnknownFunction
     (True, NotRec) -> return $ CallOfSingletonFunction fn
     _ -> do
       donationss <- mapM (\(arg, binder) -> do
