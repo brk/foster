@@ -1528,9 +1528,17 @@ analyzeContifiability knowns = do
                     mb_tm <- readOrdRef (freeLink occ)
                     case mb_tm of
                       Nothing -> do return Nothing
-                      Just (MKCall _ _ty _v _vs cont) -> do
-                                    cv <- freeBinder cont
-                                    return $ Just cv
+                      Just (MKCall _ _ty v _vs cont) -> do
+                          vb <- freeBinder v
+                          if vb == bv
+                            then -- It's a call to the function being considered
+                              do cv <- freeBinder cont
+                                 return $ Just cv
+                            else -- It's a call to some other function, our function is one of its args.
+                                 -- We could possibly contify if we knew whether the callee will only
+                                 -- tail call our function, but as of yet we don't track that information.
+                                 return Nothing
+                                    
                       Just _ -> return Nothing
 
               mbs_conts <- mapM contOfCall occs
