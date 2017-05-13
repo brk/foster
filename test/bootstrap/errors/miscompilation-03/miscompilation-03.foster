@@ -1,0 +1,15 @@
+
+type case Bytes
+  of $BytesEmpty
+  of $BytesConcat   Bytes Bytes  Int64
+;
+
+main = { () };
+
+bytesDrop :: { Bytes => Int64 => Bytes };
+bytesDrop = { ba => n =>
+    case ba
+      of $BytesConcat _ bc _ -> bytesDrop bc 0
+      of _                   -> BytesEmpty
+    end
+};
