@@ -62,7 +62,7 @@ Cuckoo Hashing
  * http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.185.3838&rep=rep1&type=pdf
  * https://arxiv.org/pdf/1107.4378.pdf
  * https://arxiv.org/pdf/1503.00658.pdf
-
+ * https://infosys.cs.uni-saarland.de/publications/ARCD15.pdf
 
 Misc
 ~~~~
