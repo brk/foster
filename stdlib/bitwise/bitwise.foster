@@ -232,7 +232,7 @@ bitlength-Word = { k =>
 /////////////////////////////////////////////////////////////////////////
 
 
-// n < 32 && n >= 0
+// Precondition: n < 32 && n >= 0
 getBit32 = { n => 1 `bitshl-Int32` n };
 
 testBit32 = { v => n => (v `bitand-Int32` getBit32 n) !=Int32 0 };
@@ -240,3 +240,16 @@ testBit32 = { v => n => (v `bitand-Int32` getBit32 n) !=Int32 0 };
 xorBit32 = { v => n => v `bitxor-Int32` getBit32 n };
 
 xorIfBit32 = { v => n => b => if b then xorBit32 v n else v end };
+
+// Precondition: n < 32 && n >= 0
+bitmask-Int32 = { len => getBit32 len -Int32 1 };
+
+// Like bitlshr, but oversize shifts saturate to zero instead of being no-ops.
+bitlshrz-Int32 = { k => n => if n <UInt32 32 then bitlshr-Int32 k n else 0 end };
+
+oneBeforeNextPowerOfTwo     = { n =>
+  -1 `bitlshrz-Int32` (ctlz-Int32 n)
+};
+oneBeforeNextPowerOfTwo_alt = { n =>
+  n `bitor-Int32` bitmask-Int32 (bitlength-Int32 n)
+};
