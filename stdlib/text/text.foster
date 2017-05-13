@@ -28,6 +28,9 @@ mkTextConcat = { a : Text => b : Text =>
   end
 };
 
+(++Text) :: { Text => Text => Text };
+(++Text) = { a => b => mkTextConcat a b };
+
 // TODO how to efficiently support an operation like textHeadTail/textSplit?
 // The challenge would be to efficiently support incremental iteration
 // through a Text with minimal allocation.
