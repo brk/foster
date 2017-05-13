@@ -59,6 +59,7 @@ expect_text_bare = { s : Text =>
    end;
 };
 
+print_text_bare :: { Text => Int32 };
 print_text_bare = { s : Text =>
   case s
     of $TextFragment a n     -> prim_print_bytes_stdout a n 0; n
