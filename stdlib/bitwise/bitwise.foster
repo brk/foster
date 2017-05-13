@@ -36,16 +36,19 @@
 
 // Uses mask to select bits from a (1-bits in mask) or b (0-bits in mask).
 //
-// Example: bitmerge-Int32 11001100_2
-//                         11100010_2
-//                         10100101_2
+// Example: bitmerge-Int32 0b`11001100 (mask)
+//                         0b`11100010 (a)
+//                         0b`10100101 (b)
 //                   ==>
-//                         11100001_2
+//                         0b`11100001
+//                             ^     ^
+//                         from a   from b
 bitmerge-Int32 = { mask:Int32 => a:Int32 => b:Int32 =>
   bitor-Int32 (bitand-Int32 a               mask)
               (bitand-Int32 b (bitnot-Int32 mask));
 };
 
+// n should be 0, 1, 2, or 3.
 make-byte-Int32 = { x : Int8 => n : Int32 =>
   bitpos = n *Int32 8;
   (zext_i8_to_i32 x) `bitshl-Int32` bitpos
@@ -55,6 +58,7 @@ clear-byte-Int32 = { v : Int32 => n : Int32 =>
   bitand-Int32 v (bitnot-Int32 (make-byte-Int32 0xff n))
 };
 
+// Replaces the n'th byte of v with x.
 replace-byte-Int32 = { v : Int32 => n : Int32 => x : Int8 =>
   clear-byte-Int32 v n `bitor-Int32` (make-byte-Int32 x n)
 };
@@ -93,8 +97,8 @@ bitfield-Int32 = { n:Int32 => start:Int32 => fin:Int32 =>
 // Preconditions:
 //      len + start <= 32
 //            start <= 32
-// Example: bitfield-len-Int32 1110111001100_2 3 8 == 10111001_2
-//                             --********---
+// Example: bitfield-len-Int32 0b`1110111001100 3 8 == 10111001_2
+//                                --********---
 bitfield-len-Int32 = { n:Int32 => start:Int32 => len:Int32 =>
   bitand-Int32 (bitnot-Int32 (bitshl-Int32 -1 len))
                (bitlshr-Int32 n start);
@@ -116,6 +120,7 @@ bitcount-Int32 = { n : Int32 =>
        count-1-bits (bitlshr-Int32 k 1) (acc +Int32 (bitand-Int32 k 1));
      end
   };
+
   if n <SInt32 0 then
     // Count 0 bits by inverting and counting 1 bits.
     count-1-bits (bitnot-Int32 n) 0
@@ -234,6 +239,8 @@ bitlength-Word = { k =>
 
 // Precondition: n < 32 && n >= 0
 getBit32 = { n => 1 `bitshl-Int32` n };
+
+setBit32 = { v => n => v `bitor-Int32` getBit32 n };
 
 testBit32 = { v => n => (v `bitand-Int32` getBit32 n) !=Int32 0 };
 

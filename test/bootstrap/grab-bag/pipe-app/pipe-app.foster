@@ -21,6 +21,7 @@ main = {
     |> print_i32;
 
   part2 !;
+  part3 !;
 };
 
 part2 = {
@@ -30,3 +31,18 @@ part2 = {
     |> (*Int32) 3 |> print_i32;
 };
 
+part3 = {
+  det = { a => b =>
+    if a ==Int32 0 then 11111 else 22222 end
+  };
+
+  expect_i32 22222;
+  print_i32 (det 1 0);
+
+  expect_i32 11111;
+  print_i32 (det 0 1);
+
+
+  expect_i32 22222;
+  print_i32 (0 |> det 1); // equivalent to (det 1 0)
+};
