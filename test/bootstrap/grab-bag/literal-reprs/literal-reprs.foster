@@ -1,0 +1,51 @@
+main = {
+  str !;
+  ctors !;
+  arr !;
+  ()
+};
+
+str = {
+  x = "abcd";
+  ssink x;
+};
+
+ssink = { s : Text => () };
+
+ctors = {
+  expect_i32 0;
+  y = NilInt32;
+  csink y;
+
+  expect_i32 2345;
+  expect_i32 6789;
+  z = PairInt32 2345 6789;
+  csink z;
+
+  expect_i32 2345;
+  q = ConsInt32 2345 y;
+  csink q;
+  ()
+};
+
+arr = {
+  a = prim mach-array-literal 1 1 2 3 5;
+  asink a;
+};
+
+
+csink = { c : ListInt32 =>
+  case c
+    of $NilInt32 -> print_i32 0
+    of $ConsInt32 n _ -> print_i32 n;
+    of $PairInt32 x y -> print_i32 x; print_i32 y;
+  end
+};
+
+asink = { a : Array Int32 => () };
+
+type case ListInt32
+  of $NilInt32
+  of $ConsInt32 Int32 ListInt32
+  of $PairInt32 Int32 Int32
+  ;

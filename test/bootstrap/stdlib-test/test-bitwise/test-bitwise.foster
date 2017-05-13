@@ -1,0 +1,17 @@
+snafuinclude Bitwise "bitwise";
+
+main = {
+
+  expect_i32 0;
+  print_i32 (oneBeforeNextPowerOfTwo 0);
+
+  expect_i32 1;
+  print_i32 (oneBeforeNextPowerOfTwo 1);
+
+  expect_i32 3;
+  print_i32 (oneBeforeNextPowerOfTwo 2);
+
+  expect_i32 -1;
+  print_i32 (oneBeforeNextPowerOfTwo 0x8000`0000);
+
+};

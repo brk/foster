@@ -1,0 +1,13 @@
+main = {
+  ffff = ({ 0 +Int32 0 } as { Int32 });
+  expect_i32 0;
+
+  print_i32 if opaquely_i32 0 ==Int32 0
+    then ffff !
+    else
+      if opaquely_i32 1 ==Int32 1
+        then ffff !
+        else ffff !
+      end
+  end;
+};
