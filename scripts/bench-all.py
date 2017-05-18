@@ -290,8 +290,8 @@ shootout_benchmarks = [
 
    ('speed/shootout/fannkuchredux',                         '10'),
    ('speed/shootout/fannkuchredux-nogc',                    '10'),
-   ('speed/shootout/fannkuchredux-nogc-stackref',           '10'),
-   ('speed/shootout/fannkuchredux-nogc-stackref-unchecked', '10'),
+   #('speed/shootout/fannkuchredux-nogc-stackref',           '10'),
+   #('speed/shootout/fannkuchredux-nogc-stackref-unchecked', '10'),
    ('speed/shootout/fannkuchredux-unchecked',               '10'),
 ]
 

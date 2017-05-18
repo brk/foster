@@ -1256,7 +1256,7 @@ ccFreshenTid (TypedId t id) = do id' <- ccFreshen id
 
 knLoopHeaderCensusFn activeids (id, fn) = do
   let vars = fnVars fn
-  id'   <- lift $ ccFresh "loop.hdr"
+  id'   <- lift $ ccFresh ("loop.hdr." ++ T.unpack (identPrefix (fnIdent fn)) ++ "_")
   vars' <- lift $ mapM ccFreshenTid vars -- generate new vars for wrapper in advance
   st <- get
   put $ st { headers = Map.insert id ((id' , vars' ), False) (headers st)
