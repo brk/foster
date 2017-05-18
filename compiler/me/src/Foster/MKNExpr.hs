@@ -34,6 +34,7 @@ import Data.Either(partitionEithers)
 import Compiler.Hoopl(UniqueMonad(..), C, O, freshLabel, intToUnique,
                       blockGraph, blockJoin, blockFromList, firstNode)
 
+import Prelude hiding ((<$>))
 import Text.PrettyPrint.ANSI.Leijen
 
 -- Binding occurrences of variables, with link to a free occurrence (if not dead).
@@ -1173,12 +1174,24 @@ copyMKTerm term = do
             Nothing -> error $ "copyMKTerm 1175"
   let qv = copyFreeOcc
 
+  let qpat (PR_Ctor sr ty pats ctor) = do pats' <- mapM qpat pats
+                                          return $ PR_Ctor sr ty pats' ctor
+      qpat (PR_Or   sr ty pats     ) = do pats' <- mapM qpat pats
+                                          return $ PR_Or   sr ty pats'
+      qpat (PR_Tuple sr ty pats    ) = do pats' <- mapM qpat pats
+                                          return $ PR_Tuple sr ty pats'
+      qpat (PR_Atom (P_Variable sr tid)) = do
+            m <- get
+            case Map.lookup (tidIdent tid) m of
+              Just binder -> return $ PR_Atom (P_Variable sr (boundVar binder))
+              Nothing     -> return $ PR_Atom (P_Variable sr tid)
+      qpat (PR_Atom atom) = return $ PR_Atom atom
   let qarm (MKCaseArm pat body binds rng) = do
         binds' <- mapM copyBinder binds
         body' <- q body
         --mb_guard' <- liftMaybe q mb_guard
-        -- TODO pat...
-        return $ MKCaseArm pat body' binds' rng
+        pat' <- qpat pat
+        return $ MKCaseArm pat' body' binds' rng
 
   let -- qk :: (Link val -> MKRenamed ty (Link res)) -> Known ty (Link val)
       --   -> MKRenamed ty (MKBound (TypedId ty), Link res)
@@ -1488,7 +1501,7 @@ mknInline subterm mainCont mb_gas = do
                  go gas
 
     let gas = case mb_gas of
-                Nothing -> 150
+                Nothing -> 42000
                 Just gas -> gas
     go gas
 
@@ -1553,11 +1566,13 @@ analyzeContifiability knowns = do
               case allJusts mbs_conts of
                 Nothing -> return HadUnknownContinuations
                 Just conts -> do
-                  liftIO $ putDocLn $ yellow (text "       had just these conts: ") <> pretty (map (tidIdent.boundVar) conts)
                   let (tailconts, nontailconts) = partitionEithers $
                         [if Just bv == mkfnCont fn
                           then Left bv else Right bv
                         | bv <- Set.toList $ Set.fromList conts]
+                  liftIO $ putDocLn $ yellow (text "       had just these conts: ")
+                                        <$> text "              tail calls: " <> pretty (map (tidIdent.boundVar) tailconts)
+                                        <$> text "          non-tail calls: " <> pretty (map (tidIdent.boundVar) nontailconts)
                   case (tailconts, nontailconts) of
                     ((_:_:_), _) -> return HadMultipleContinuations -- Multiple tail calls: no good!
                     (_ ,  [cont]) -> do -- Happy case: zero or one tail call, one outer continuation.
