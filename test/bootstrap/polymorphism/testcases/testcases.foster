@@ -14,6 +14,20 @@ test_dead_poly = {
   ()
 };
 
+test_mono_poly_order2 = {
+  // * Mutually recursive nest.
+  // * A instantiates B, but B does not instantiate A.
+  REC polyB = { forall t:Type,  qqq:t =>
+    polyA = { forall t:Boxed, aaa:t => if False then z = polyB:[Int32] 0; () else () end };
+    f = polyA; f (); ()
+  };
+  a = polyB True; // body instantiates B at Bool
+  // polyA needs instantiation of B at Int32, but it hasn't been demanded
+  // from recursive instantation so far, unless we process polymorphic bodies
+  // before collecting monomorphic instantiations.
+  ()
+};
+
 test_mono_poly_order = {
   // * Mutually recursive nest.
   // * A instantiates B, but B does not instantiate A.
@@ -25,6 +39,7 @@ test_mono_poly_order = {
   // before collecting monomorphic instantiations.
   ()
 };
+
 
 test_mono_poly_unused = {
   REC unusedMonoRec = { x : () => () };
