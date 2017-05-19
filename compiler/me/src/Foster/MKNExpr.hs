@@ -299,20 +299,19 @@ getActiveLinkFor term = do
         [x] -> return x
         _ -> error $ "linkFor found multiple candidates among the siblings!"
 
- where
-  subtermsOf :: MKTerm t -> Compiled [Subterm t]
-  subtermsOf term =
-      case term of
-        MKIf          _u _ _ tru fls -> return $ [tru, fls]
-        MKLetVal      _u   _      k  -> return $ [k]
-        MKLetRec      _u   knowns k  -> return $ k : (map snd knowns)
-        MKLetFuns     _u   knowns k  -> do fns <- knownActuals knowns
-                                           return $ k : map mkfnBody fns
-        MKLetCont     _u   knowns k  -> do fns <- knownActuals knowns
-                                           return $ k : map mkfnBody fns
-        MKCase        _u _ _v arms   -> do return $ map mkcaseArmBody arms
-        MKCont {} -> return []
-        MKCall {} -> return []
+subtermsOf :: MKTerm t -> Compiled [Subterm t]
+subtermsOf term =
+    case term of
+      MKIf          _u _ _ tru fls -> return $ [tru, fls]
+      MKLetVal      _u   _      k  -> return $ [k]
+      MKLetRec      _u   knowns k  -> return $ k : (map snd knowns)
+      MKLetFuns     _u   knowns k  -> do fns <- knownActuals knowns
+                                         return $ k : map mkfnBody fns
+      MKLetCont     _u   knowns k  -> do fns <- knownActuals knowns
+                                         return $ k : map mkfnBody fns
+      MKCase        _u _ _v arms   -> do return $ map mkcaseArmBody arms
+      MKCont {} -> return []
+      MKCall {} -> return []
 
 type Uplink ty = Link (Parent ty)
 data Parent ty = ParentTerm (MKTerm ty)
@@ -531,7 +530,6 @@ mkOfKN_Base expr k = do
                    -- We're done; no further backpatching needed.
     nonvar -> do
       parentLink <- lift $ newOrdRef Nothing
-      selfLink   <- lift $ newOrdRef Nothing
       let nu = parentLink
 
       -- Note: should only be called once per go since it captures nu.
@@ -641,7 +639,8 @@ mkOfKN_Base expr k = do
             genMKLetVal bindName (typeKN e) gen
       
       -- Insert final backpatches etc.
-      lift $ installLinks selfLink nvres
+      lift $ do selfLink <- newOrdRef Nothing
+                installLinks selfLink nvres
 
   gor expr
 
@@ -1107,10 +1106,11 @@ copyMKFn fn = do
   cont' <- mapMaybeM copyBinder (mkfnCont fn)
   body <- lift $ readOrdRef (mkfnBody fn)
   link' <- case body of
-                Just term -> do (link, _) <- copyMKTerm term
-                                return link
+                Just term -> copyMKTerm term
                 Nothing   -> return (mkfnBody fn)
-  return $ fn { mkfnVar = v' , mkfnVars = vs' , mkfnBody = link' , mkfnCont = cont' }
+  let fn' = fn { mkfnVar = v' , mkfnVars = vs' , mkfnBody = link' , mkfnCont = cont' }
+  lift $ backpatchFn fn'
+  return fn'
 
 -- Returns a Subexpr with an empty parent link.
 copyMKExpr :: (Pretty t, Show t, AlphaRenamish t RecStatus)
@@ -1148,17 +1148,16 @@ copyMKExpr expr = do
                                  mapM qelt elts >>= \elts' ->
                                     withLinkE $ \u -> return $ MKArrayLit u ty v' elts'
     MKCompiles    _ res ty body -> do body' <- lift $ readLink "copyMKExpr.Compiles" body
-                                      copyMKTerm body' >>= \(subterm', _) ->
+                                      copyMKTerm body' >>= \subterm' ->
                                         withLinkE $ \u -> return $ MKCompiles u res ty subterm'
     MKTyApp       _ ty v arg_tys -> qv v >>= \v' ->
                                      withLinkE $ \u -> return $ MKTyApp u ty v' arg_tys
 
 copyMKTerm :: (Pretty t, Show t, AlphaRenamish t RecStatus)
-           => MKTerm t -> MKRenamed t (Subterm t, MKTerm t)
+           => MKTerm t -> MKRenamed t (Subterm t)
 copyMKTerm term = do
   let q subterm = do tm <- lift $ readLink "copyMKTerm" subterm
-                     tm' <- copyMKTerm tm
-                     return $ fst tm'
+                     copyMKTerm tm
   let --qe :: Subexpr t -> MKRenamed (Subexpr t)
       qe subexpr = do mb_se <- lift $ readOrdRef subexpr
                       case mb_se of
@@ -1200,32 +1199,47 @@ copyMKTerm term = do
                        link' <- f link
                        return (bv', link')
 
-  case term of
+  -- TODO maybe have withLinkT use subtermsOf ?
+  (link, newterm) <- case term of
     MKLetVal      _u   known  k   -> do x' <- qk qe known
                                         k' <- q k
-                                        withLinkT $ \u -> return $ MKLetVal u x' k'
+                                        withLinkT $ \u -> lift $ do
+                                          let rv = MKLetVal u x' k'
+                                          backpatchE rv [snd x']
+                                          backpatchT rv [k']
     MKLetRec      _u   knowns  k  -> do knowns' <- mapM (qk q) knowns
                                         k'  <- q k
-                                        withLinkT $ \u -> return $ MKLetRec u knowns' k'
+                                        withLinkT $ \u -> lift $ do
+                                          let rv = MKLetRec u knowns' k'
+                                          backpatchT rv [k']
     MKLetFuns     _u   knowns  k  -> do knowns' <- mapM (qk qf) knowns
                                         k'  <- q k
-                                        withLinkT $ \u -> return $ MKLetFuns u knowns' k'
+                                        withLinkT $ \u -> lift $ do
+                                          let rv = MKLetFuns u knowns' k'
+                                          backpatchT rv [k']
     MKLetCont     _u   knowns  k  -> do knowns' <- mapM (qk qf) knowns
                                         k'  <- q k
-                                        withLinkT $ \u -> return $ MKLetCont u knowns' k'
+                                        withLinkT $ \u -> lift $ do
+                                          let rv = MKLetCont u knowns' k'
+                                          backpatchT rv [k']
     MKIf          _u  ty v e1 e2  -> do e1' <- q e1
                                         e2' <- q e2
                                         v'  <- qv v
-                                        withLinkT $ \u -> return $ MKIf u ty v' e1' e2'
+                                        withLinkT $ \u -> lift $ do
+                                          let rv = MKIf u ty v' e1' e2'
+                                          backpatchT rv [e1', e2']
     MKCase        _u  ty v arms   -> do arms' <- mapM qarm arms
                                         v' <- qv v
-                                        withLinkT $ \u -> return $ MKCase u ty v' arms'
+                                        withLinkT $ \u -> lift $ do
+                                          let rv = MKCase u ty v' arms'
+                                          backpatchT rv (map mkcaseArmBody arms')
     MKCall        _u  ty v vs _c   -> do mapM qv (v:vs) >>= \(v':vs') ->
                                           qv  _c        >>= \c'  ->
-                                           withLinkT $ \u -> return $ MKCall u       ty v' vs' c' 
+                                           withLinkT $ \u -> lift $ return $ MKCall u       ty v' vs' c' 
     MKCont        _u  ty _c vs     -> do mapM qv    vs  >>= \    vs' ->
                                           qv  _c        >>= \c'  ->
                                            withLinkT $ \u -> return $ MKCont u       ty c' vs'
+  lift $ installLinks link newterm
 
 
 mknShrink :: (Pretty t, Show t, AlphaRenamish t RecStatus)
@@ -1493,7 +1507,7 @@ mknInline subterm mainCont mb_gas = do
                       let letcont = MKLetCont fnup [contfn] fnrest
                       replaceTermWith mredex letcont
 
-                 go gas
+                 go (gas - 1)
 
                _ -> do
                  do kn <- knOfMK (YesCont mainCont) mredex
@@ -1540,8 +1554,10 @@ analyzeContifiability knowns = do
               let contOfCall occ = do
                     mb_tm <- readOrdRef (freeLink occ)
                     case mb_tm of
-                      Nothing -> do return Nothing
-                      Just (MKCall _ _ty v _vs cont) -> do
+                      Nothing -> do
+                          do liftIO $ putDocLn $ text "free link w/ no term for" <> pretty bv
+                          return Nothing
+                      Just tm@(MKCall _ _ty v _vs cont) -> do
                           vb <- freeBinder v
                           if vb == bv
                             then -- It's a call to the function being considered
@@ -1550,9 +1566,14 @@ analyzeContifiability knowns = do
                             else -- It's a call to some other function, our function is one of its args.
                                  -- We could possibly contify if we knew whether the callee will only
                                  -- tail call our function, but as of yet we don't track that information.
+                              do do kn <- knOfMK NoCont tm
+                                    liftIO $ putDocLn $ text "call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
                                  return Nothing
                                     
-                      Just _ -> return Nothing
+                      Just tm -> do
+                        do kn <- knOfMK NoCont tm
+                           liftIO $ putDocLn $ text "non call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
+                        return Nothing
 
               mbs_conts <- mapM contOfCall occs
 
