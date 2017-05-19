@@ -40,6 +40,7 @@ import Text.PrettyPrint.ANSI.Leijen
 import Debug.Trace(trace)
 
 import qualified Data.Graph.Inductive.Graph            as Graph
+import qualified Data.Graph.Inductive.Query.DFS        as Graph
 import qualified Data.Graph.Inductive.PatriciaTree     as Graph
 import qualified Data.Graph.Inductive.Query.Dominators as Graph
 
@@ -1128,6 +1129,8 @@ localBlockSinking knf =
 
       ledges = [(caller, callee, ()) | (caller, callee) <- mentionsL]
 
+  reachable = Set.fromList $ map n2b $ Graph.dfs [root] callGraph
+
   -- If a function is dominated by a node which is not its parent, relocate it.
   -- relocationTargetsList :: [(Fn (KNExpr' t) t, Ident)]
   relocationTargetsList = [((id, f), dom)
@@ -1151,7 +1154,9 @@ localBlockSinking knf =
   rebuilder idsfns =
       [(id, rebuildFn fn)
       |(id, fn) <- idsfns,
-       Set.notMember (fnIdent fn) shouldBeRelocated]
+       Set.notMember (fnIdent fn) shouldBeRelocated
+        -- Discard unreachable functions.
+        && Set.member (fnIdent fn) reachable]
     where
         shouldBeRelocated = Set.fromList $ map (\((_id, fn), _) -> fnIdent fn)
                                                relocationTargetsList

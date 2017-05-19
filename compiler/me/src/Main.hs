@@ -742,7 +742,7 @@ lowerModule (tc_time, kmod) = do
 
      liftIO $ putDocLn $ text $ "Performing shrinking: " ++ show (getShrinkFlag flags)
 
-     --monomod2a  <- knSinkBlocks   monomod2
+     monomod2a  <- knSinkBlocks   monomod2
 
      (mkn_time, pccmod) <- ioTime $ do
           assocBinders <- sequence [do r <- newOrdRef Nothing
@@ -756,7 +756,7 @@ lowerModule (tc_time, kmod) = do
           let mainBinder = head assocBinders
           let binders = Map.fromList assocBinders
           mk <- evalStateT 
-                  (mkOfKNMod (moduleILbody monomod2{-a-}) (snd mainBinder))
+                  (mkOfKNMod (moduleILbody monomod2a) (snd mainBinder))
                   binders
           mknInline mk (snd mainBinder) (getInliningGas flags)
           uref <- gets ccUniqRef
@@ -767,7 +767,7 @@ lowerModule (tc_time, kmod) = do
               putDocP  $ vcat $ map prettyCFFn cffns
               putDocLn $ (outLn "^^^ ===================================")
 
-          return $ monomod2{-a-} { moduleILbody = pcc }
+          return $ monomod2a { moduleILbody = pcc }
 
      whenDumpIR "mono" $ do
          putDocLn $ (outLn "/// Loop-headered program =============")
@@ -787,12 +787,11 @@ lowerModule (tc_time, kmod) = do
            _ <- liftIO $ renderKN monomod4 True
            putDocLn $ (outLn "^^^ ===================================")
 -}
-{-
      whenDumpIR "mono-sunk" $ do
          putDocLn $ (outLn "/// Block-sunk program =============")
          _ <- liftIO $ renderKN monomod2a  True
          putDocLn $ (outLn "^^^ ===================================")
--}
+
      ccmod    <- closureConvert pccmod
      whenDumpIR "cc" $ do
          putDocLn $ (outLn "/// Closure-converted program =========")
