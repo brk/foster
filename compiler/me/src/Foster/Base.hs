@@ -679,6 +679,11 @@ fmapIdent tt (GlobalSymbol t) = GlobalSymbol (tt t)
 
 data TypedId ty = TypedId { tidType :: ty, tidIdent :: Ident }
 
+prettyIdent i@(GlobalSymbol _) = text "G:" <> text (show i)
+prettyIdent i = text (show i)
+
+prettyId (TypedId _ i) = prettyIdent i
+
 data FosterPrim ty = NamedPrim (TypedId ty) -- invariant: global symbol
                    | PrimOp { ilPrimOpName :: String
                             , ilPrimOpType :: ty }

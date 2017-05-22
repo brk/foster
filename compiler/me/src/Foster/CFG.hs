@@ -87,10 +87,6 @@ type BlockId = (String, Label)
 
 comment d = text "/*" <+> d <+> text "*/"
 
-prettyIdent i@(GlobalSymbol _) = text "G:" <> text (show i)
-prettyIdent i = text (show i)
-
-prettyId (TypedId _ i) = prettyIdent i
 prettyTypedVar (TypedId t i) = prettyIdent i <+> text "::" <+> pretty t
 
 showTyped :: Doc -> MonoType -> Doc
