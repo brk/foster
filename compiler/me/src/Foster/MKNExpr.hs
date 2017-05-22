@@ -213,6 +213,7 @@ dlcToList (MKBound _ r) = do
 
 dlcCount d1 = dlcToList d1 >>= return . length
 
+mkbCount d1 = collectOccurrences d1 >>= return . length
 
 type Link   val    = OrdRef (Maybe val)
 type Subterm ty    = Link (MKTerm ty)
@@ -1400,8 +1401,8 @@ mknInline subterm mainCont mb_gas = do
                         liftIO $ putDocLn $ text "CallOfSingletonCont: " <+> pretty redex
                     
                         mapM_ (\arg -> do b <- freeBinder arg
-                                          c <- dlcCount b
-                                          liftIO $ putDocLn $ text "pre-beta occ count: " <> pretty c) args
+                                          c <- mkbCount b
+                                          liftIO $ putDocLn $ text "      pre-beta occ count: " <> pretty c) args
                                           {-
       fob <- freeBinder fo
       fo_c <- dlcCount fob
@@ -1416,7 +1417,7 @@ mknInline subterm mainCont mb_gas = do
       -}
 
                      do v <- freeBinder callee
-                        liftIO $ putDocLn $ green (text "beta reducing (inlining) singleton cont ") <> pretty (tidIdent $ boundVar v)
+                        liftIO $ putDocLn $ green (text "      beta reducing (inlining) singleton cont ") <> pretty (tidIdent $ boundVar v)
 
                      newbody <- betaReduceOnlyCall fn args callee
                      
@@ -1424,15 +1425,15 @@ mknInline subterm mainCont mb_gas = do
                     --     liftIO $ putDocLn $ text "CallOfSingletonCont: new: " <+> pretty newbody'
 
                      mapM_ (\arg -> do b <- freeBinder arg
-                                       c <- dlcCount b
-                                       liftIO $ putDocLn $ text "pre-kill occ count: " <> pretty c) args
+                                       c <- mkbCount b
+                                       liftIO $ putDocLn $ text "      pre-kill occ count: " <> pretty c) args
 
                      replaceWith subterm newbody
                      killBinding callee knownConts
 
                      mapM_ (\arg -> do b <- freeBinder arg
-                                       c <- dlcCount b
-                                       liftIO $ putDocLn $ text "post-kill occ count: " <> pretty c) args
+                                       c <- mkbCount b
+                                       liftIO $ putDocLn $ text "      post-kill occ count: " <> pretty c) args
 
 
                    CallOfDonatableFunction fn -> do
@@ -1681,13 +1682,13 @@ betaReduceOnlyCall fn args kv = do
       Just cb -> substVarForBound (kv, cb)
 
     kvb2 <- freeBinder kv
-    liftIO $ putStrLn $ "betaReduceOnlyCall on " ++ show (pretty (mkfnVar fn))
+    liftIO $ putStrLn $ "      betaReduceOnlyCall on " ++ show (pretty (mkfnVar fn))
     if kvb1 /= kvb2
       then do
-        liftIO $ putDocLn $ text "kv before: " <> pretty kvb1
-        liftIO $ putDocLn $ text "kv after: " <> pretty kvb2
+        liftIO $ putDocLn $ text "       kv before: " <> pretty kvb1
+        liftIO $ putDocLn $ text "       kv after: " <> pretty kvb2
       else return ()
-    liftIO $ putDocLn $ text "fn kv: " <> pretty (mkfnCont fn)
+    liftIO $ putDocLn $ text "      fn kv: " <> pretty (mkfnCont fn)
     return $ mkfnBody fn
 
 -- TODO: ok this seems to work, more or less.
