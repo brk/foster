@@ -27,9 +27,8 @@ import Data.List as List(all)
 import Control.Monad(when, liftM, liftM2, liftM3, liftM4)
 import Control.Monad.State(evalStateT, get, gets, put, StateT, liftIO, lift)
 
-import Data.Set as Set(Set, fromList, toList, difference, insert, empty, member,
-                                      null, intersection)
-import qualified Data.Graph as Graph(SCC(..), stronglyConnComp, flattenSCCs)
+import Data.Set as Set(fromList, toList, intersection)
+import qualified Data.Graph as Graph(stronglyConnComp, flattenSCCs)
 
 -- This monomorphization pass is similar in structure to MLton's;
 -- a previous worklist-based version was modeled on BitC's polyinstantiator.

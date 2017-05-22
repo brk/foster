@@ -607,7 +607,7 @@ matchPattern p v =
    matchFailure        = Nothing
    matchIf cond = if cond then trivialMatchSuccess
                           else matchFailure
-   matchOr v [] = matchFailure
+   matchOr _ [] = matchFailure
    matchOr v (p:pats) = case matchPattern p v of
                           Just ok -> Just ok
                           Nothing -> matchOr v pats

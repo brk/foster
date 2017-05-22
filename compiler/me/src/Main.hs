@@ -41,8 +41,8 @@ import Foster.ParsedType
 import Foster.AnnExpr(AnnExpr, AnnExpr(E_AnnFn, E_AnnVar, AnnCall, AnnLetFuns,
                       AnnLetVar))
 import Foster.ILExpr(ILProgram, showILProgramStructure, prepForCodegen, collectMayGCConstraints)
-import Foster.KNExpr(KNExpr', kNormalizeModule, knLoopHeaders, knSinkBlocks,
-                     knInline, knSize, renderKN,
+import Foster.KNExpr(kNormalizeModule, knLoopHeaders, knSinkBlocks,
+                     knSize, renderKN,
                      handleCoercionsAndConstraints, collectIntConstraints)
 import Foster.KNUtil(KNExpr, TypeIL, CanMakeFun(mkFunType))
 import Foster.Typecheck
