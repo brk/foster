@@ -31,5 +31,6 @@ data LLExternDecl = LLExternDecl String TypeLL deriving (Show)
 
 extractCallConv (LLProcType _ _ cc) = cc
 extractCallConv (LLPtrType (LLStructType ((LLProcType _ _ cc):_))) = cc
+extractCallConv (LLPtrTypeUnknown) = FastCC
 extractCallConv other = error $ "TypeLL.hs: cannot extract calling convention from " ++ show other
 

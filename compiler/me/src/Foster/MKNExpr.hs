@@ -191,10 +191,16 @@ dlcMerge d1 d2 = do
   writeOrdRef (dlcPrevRef d1 ) d2p
   writeOrdRef (dlcPrevRef d2 ) d1p
 
---data VarOccClassif = VOC_Zero | VOC_One | VOC_Many
-
-freeOccIsSingleton :: FreeOcc t -> Compiled Bool
-freeOccIsSingleton = dlcIsSingleton
+-- Wrapper around dlcIsSingleton, which verifies that eliminating
+-- bitcasts still results in a singleton occurrence.
+freeOccIsSingleton :: Pretty t => FreeOcc t -> Compiled Bool
+freeOccIsSingleton fo = do
+  estimate <- dlcIsSingleton fo
+  if estimate
+    then do bv   <- freeBinder fo
+            occs <- collectOccurrences bv
+            return $ length occs == 1
+    else do return False
 
 binderIsSingletonOrDead (MKBound _ r) = do mbfo <- readOrdRef r
                                            case mbfo of
@@ -955,56 +961,95 @@ isTextPrim _ = False
 -- For example, to remove a dead function binding we must also
 -- collect and kill the free variable occurrences mentioned within the
 -- body, which may in turn trigger further dead-binding elimination.
-collectRedexes :: IORef (WorklistQ (Subterm t))
+collectRedexes :: (Pretty t)
+               => IORef (WorklistQ (Subterm t))
                -> IORef (Map (MKBoundVar t) (Link (MKTerm t)))
                -> IORef (Map (MKBoundVar t) (Link (MKExpr t)))
                -> IORef (Map (MKBoundVar t) (Link (MKFn (Subterm t) t)))
                -> IORef (Map (MKBoundVar t) (Link (MKFn (Subterm t) t)))
+               -> IORef (Map (MKBoundVar t) (MKBoundVar t))
                -> Subterm t -> Compiled ()
-collectRedexes ref valbindsref expbindsref funbindsref cntbindsref subterm = do
-  let go = collectRedexes ref valbindsref expbindsref funbindsref cntbindsref
-  let markExpBind (x,tm) = liftIO $ modIORef' expbindsref (\m -> Map.insert x tm m)
-  let markValBind (x,tm) = liftIO $ modIORef' valbindsref (\m -> Map.insert x tm m)
-  let markCntBind (x,fn) = liftIO $ modIORef' cntbindsref (\m -> Map.insert x fn m)
-  let markFunBind (x,fn) = do
-                      mkfn <- readLink "collectRedex" fn
-                      xc <- dlcCount x
-                      fc <- dlcCount (mkfnVar mkfn)
-                      liftIO $ putStrLn $ "markFnBind: x  = (" ++ show xc ++ ") " ++ show (tidIdent $ boundVar x)                
-                      liftIO $ putStrLn $ "            fv = (" ++ show fc ++ ") " ++ show (tidIdent $ boundVar (mkfnVar mkfn))
-                      if xc == 0 && not (isTextPrim (tidIdent $ boundVar x))
-                        then do
-                          -- liftIO $ putStrLn $ "killing dead fn binding " ++ show (tidIdent $ boundVar x)
-                          writeOrdRef fn Nothing
-                        else do
-                          liftIO $ modIORef' funbindsref (\m -> Map.insert x fn m)
+collectRedexes ref valbindsref expbindsref funbindsref cntbindsref aliasesref sbtm = go sbtm
+ where
+   go subterm = do
+    mb_term <- readOrdRef subterm
+    case mb_term of
+      Nothing -> return ()
+      Just term -> do
+        let markRedex = liftIO $ modIORef' ref (\w -> worklistAdd w subterm)
+        case term of
+          MKCall _ _ fo _ _ -> whenNotM (isMainFn fo) markRedex
+          MKCont {}         -> markRedex
+          _ -> markAndFindSubtermsOf term >>= mapM_ go
+          where markAndFindSubtermsOf term =
+                    case term of
+                      MKIf          _u _ _ tru fls -> return [tru, fls]
 
-  mb_term <- readOrdRef subterm
-  case mb_term of
-    Nothing -> return ()
-    Just term -> do
-      let markRedex = liftIO $ modIORef' ref (\w -> worklistAdd w subterm)
-      case term of
-        MKCall _ _ fo _ _ -> whenNotM (isMainFn fo) markRedex
-        MKCont {}         -> markRedex
-        _ -> markAndFindSubtermsOf term >>= mapM_ go
-        where markAndFindSubtermsOf term =
-                  case term of
-                    MKIf          _u _ _ tru fls -> return [tru, fls]
+                      MKLetVal      _u  (x, br) k  -> do markExpBind (x, br)
+                                                         return [k]
+                      MKLetRec      _u   knowns k  -> do mapM_ markValBind knowns
+                                                         return $ k : (map snd knowns)
+                      MKLetFuns     _u   knowns k  -> do liftIO $ modIORef' ref (\w -> worklistAdd w subterm) -- markRedex
+                                                         mapM_ markFunBind knowns
+                                                         fns <- knownActuals knowns
+                                                         return $ k : map mkfnBody fns
+                      MKLetCont     _u   knowns k  -> do mapM_ markCntBind knowns
+                                                         fns <- knownActuals knowns
+                                                         return $ k : map mkfnBody fns
+                      MKCase        _u _ _v arms -> return $ map mkcaseArmBody arms
+                      _ -> return []
 
-                    MKLetVal      _u  (x, br) k  -> do markExpBind (x, br)
-                                                       return [k]
-                    MKLetRec      _u   knowns k  -> do mapM_ markValBind knowns
-                                                       return $ k : (map snd knowns)
-                    MKLetFuns     _u   knowns k  -> do liftIO $ modIORef' ref (\w -> worklistAdd w subterm) -- markRedex
-                                                       mapM_ markFunBind knowns
-                                                       fns <- knownActuals knowns
-                                                       return $ k : map mkfnBody fns
-                    MKLetCont     _u   knowns k  -> do mapM_ markCntBind knowns
-                                                       fns <- knownActuals knowns
-                                                       return $ k : map mkfnBody fns
-                    MKCase        _u _ _v arms -> return $ map mkcaseArmBody arms
-                    _ -> return []
+   markValBind (x,tm) = liftIO $ modIORef' valbindsref (\m -> Map.insert x tm m)
+   markCntBind (x,fn) = liftIO $ modIORef' cntbindsref (\m -> Map.insert x fn m)
+   markExpBind (x,exlink) = do
+                        liftIO $ modIORef' expbindsref (\m -> Map.insert x exlink m)
+                    
+                        ex <- readLink "collectRedex.E" exlink
+                        case ex of
+                          MKTyApp _u _ty fv [] -> do
+                            -- record alias...
+                            bv <- freeBinder fv
+                            liftIO $ modIORef' aliasesref (\m -> Map.insert x bv m)
+                            --return ()
+
+                            {-
+                            -- TODO record an alias between x and bv
+                            -- instead of directly associating x with bv's function.
+                            -- That way, when we see a use of x,
+                            -- we can look as uses of bv to determine whether to treat
+                            -- x's use as a singleton or not.
+                            
+                            liftIO $ putDocLn $ text "bitcast of " <> pretty (tidIdent $ boundVar bv)
+                                                <$> text "        from " <> pretty (tidType $ boundVar bv)
+                                                <$> text "          to " <> pretty _ty
+                                                
+                            
+                            -- TODO we need bitcasts for the backend to work properly...
+                            --      but they mess up inlining for now, because (A)
+                            --      we need to associate the known function with the alias,
+                            --      and (B) we must account for aliases when determining which
+                            --      functions are singleton/
+                            liftIO $ putStrLn $ "ZZZ alias " ++ show (pretty x) ++ " ;;; " ++ show (pretty $ boundVar bv)
+                            liftIO $ do m <- readIORef funbindsref
+                                        case Map.lookup bv m of
+                                          Just f -> do writeIORef funbindsref (Map.insert x f m)
+                                          Nothing -> do return ()
+                                          -}
+                          _ -> return ()
+
+   markFunBind (x,fn) = do
+                        mkfn <- readLink "collectRedex" fn
+                        xc <- dlcCount x
+                        bc <- mkbCount x
+                        fc <- dlcCount (mkfnVar mkfn)
+                        liftIO $ putStrLn $ "markFnBind: x  = (" ++ show xc ++ " vs " ++ show bc ++ ") " ++ show (tidIdent $ boundVar x)                
+                        liftIO $ putStrLn $ "            fv = (" ++ show fc ++ ") " ++ show (tidIdent $ boundVar (mkfnVar mkfn))
+                        if xc == 0 && not (isTextPrim (tidIdent $ boundVar x))
+                          then do
+                            -- liftIO $ putStrLn $ "killing dead fn binding " ++ show (tidIdent $ boundVar x)
+                            writeOrdRef fn Nothing
+                          else do
+                            liftIO $ modIORef' funbindsref (\m -> Map.insert x fn m)
 
 knownActuals :: [Known ty (Link val)] -> Compiled [val]
 knownActuals knowns = do
@@ -1022,22 +1067,29 @@ data RedexSituation t =
      | CallOfDonatableFunction (MKFn (Subterm t) t)
      | SomethingElse           (MKFn (Subterm t) t)
 
-classifyRedex callee args knownFns = do
-  mb_fn <- lookupBinding callee knownFns
-  classifyRedex' callee mb_fn args knownFns
+classifyRedex :: (Pretty t)
+              => FreeOcc t -> [FreeOcc t]
+              -> Map (MKBoundVar t) (Link (MKFn (Subterm t) t))
+              -> Map (MKBoundVar t) (MKBoundVar t)
+              -> Compiled (RedexSituation t)
+classifyRedex callee args knownFns aliases = do
+  bv <- freeBinder callee
+  let bv' = case Map.lookup bv aliases of
+              Nothing -> bv
+              Just z  -> z
+  mb_fn <- lookupBinding' bv' knownFns
+  classifyRedex' bv' mb_fn args knownFns
 
 classifyRedex' _ Nothing _ _ =
   return CallOfUnknownFunction
 
-classifyRedex' callee (Just fn) args knownFns = do
-  callee_singleton <- freeOccIsSingleton callee
-  bnd <- freeBinder callee
-  singleordead <- binderIsSingletonOrDead bnd
-  count <- dlcCount bnd
-  liftIO $ putStrLn $ "is callee singleton? " ++ show (pretty bnd) ++
-                      " -> " ++ show callee_singleton ++
-                      " ; single/dead?" ++ show singleordead ++ " count: " ++ show count ++
-                      " ; rec? " ++ show (mkfnIsRec fn)
+classifyRedex' binder (Just fn) args knownFns = do
+  callee_singleton <- binderIsSingletonOrDead binder
+  count <- mkbCount binder
+  {-
+  liftIO $ putStrLn $ "is callee singleton? " ++ show (pretty binder) ++
+                      " -> " ++ show callee_singleton ++ " count: " ++ show count ++
+                      " ; rec? " ++ show (mkfnIsRec fn) -}
 
   case (callee_singleton, mkfnIsRec fn) of
     _ | shouldNotInlineFn fn -> return CallOfUnknownFunction
@@ -1258,12 +1310,14 @@ mknInline subterm mainCont mb_gas = do
     er <- liftIO $ newIORef Map.empty
     fr <- liftIO $ newIORef Map.empty
     cr <- liftIO $ newIORef Map.empty
+    ar <- liftIO $ newIORef Map.empty
     --term <- readLink "mknInline" subterm
-    collectRedexes wr kr er fr cr subterm
+    collectRedexes wr kr er fr cr ar subterm
 
     _knownVals <- liftIO $ readIORef kr
     knownFns   <- liftIO $ readIORef fr
     knownConts <- liftIO $ readIORef cr
+    aliases    <- liftIO $ readIORef ar
 
     do w0 <- liftIO $ readIORef wr
        k0 <- liftIO $ readIORef kr
@@ -1319,25 +1373,26 @@ mknInline subterm mainCont mb_gas = do
                 go gas
              Just (subterm, mredex, Just _parent) -> case mredex of
                MKCall _up _ty callee args kv -> do
-                 situation <- classifyRedex callee args knownFns
+                 situation <- classifyRedex callee args knownFns aliases
                  case situation of
                    CallOfUnknownFunction -> do
-                     --do redex <- knOfMK mredex
-                     --   liftIO $ putDocLn $ text "CallOfUnknownFunction: " <+> pretty redex
+                     do redex <- knOfMK NoCont mredex
+                        liftIO $ putDocLn $ text "CallOfUnknownFunction: " <+> pretty redex
                      return ()
                    CallOfSingletonFunction fn -> do
                      do redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
-                        liftIO $ putDocLn $ text "CallOfSingletonFunction starting with: " <+> pretty redex
+                        liftIO $ putDocLn $ text "CallOfSingletonFunction starting with: " <+> align (pretty redex)
 
                      do v <- freeBinder callee
                         liftIO $ putDocLn $ green (text "inlining without copying ") <> pretty (tidIdent $ boundVar v)
                      newbody <- betaReduceOnlyCall fn args kv
 
-                    --  do newbody' <- knOfMK (mbContOf $ mkfnCont fn) newbody
-                    --     liftIO $ putDocLn $ text "CallOfSingletonFunction generated: " <+> pretty newbody'
+                     --do nubody <- readLink "kninline-sf" newbody
+                     --   newbody' <- knOfMK NoCont nubody
+                     --   liftIO $ putDocLn $ text "CallOfSingletonFunction generated: " <+> pretty newbody'
 
                      replaceWith subterm newbody
-                     killBinding callee knownFns
+                     killBinding callee knownFns aliases
                      -- No need to collect redexes, since the body wasn't duplicated.
 
 {-
@@ -1365,7 +1420,7 @@ mknInline subterm mainCont mb_gas = do
                          newbody <- do betaReduceOnlyCall fn' args kv
                          replaceWith subterm newbody
                          -- No need to kill the old binding, since the body was duplicated.
-                         collectRedexes wr kr er fr cr newbody
+                         collectRedexes wr kr er fr cr ar newbody
                        else return ()
 
                    SomethingElse _fn -> do
@@ -1381,12 +1436,12 @@ mknInline subterm mainCont mb_gas = do
                              newbody <- betaReduceOnlyCall fn' args kv
                              replaceWith subterm newbody
                              killOccurrence callee
-                             collectRedexes wr kr er fr cr newbody
+                             collectRedexes wr kr er fr cr ar newbody
                        else return ()
                  go (gas - 1)
               
                MKCont _up _ty callee args -> do
-                 situation <- classifyRedex callee args knownConts
+                 situation <- classifyRedex callee args knownConts aliases
                  case situation of
                    CallOfUnknownFunction -> do
                      do cb <- freeBinder callee
@@ -1405,13 +1460,13 @@ mknInline subterm mainCont mb_gas = do
                                           liftIO $ putDocLn $ text "      pre-beta occ count: " <> pretty c) args
                                           {-
       fob <- freeBinder fo
-      fo_c <- dlcCount fob
-      fx_c <- dlcCount b
+      fo_c <- mkbCount fob
+      fx_c <- mkbCount b
       liftIO $ putDocLn $ text "substituting var " <> pretty (boundVar b) <> text " for " <> pretty (boundVar fob)
       liftIO $ putDocLn $ text "    occ lengths " <> pretty fx_c <> text " and " <> pretty fo_c
 
-      fo_c <- dlcCount fob
-      fx_c <- dlcCount b
+      fo_c <- mkbCount fob
+      fx_c <- mkbCount b
       fa <- freeBinder fox
       liftIO $ putDocLn $ text "    afteward, lengths " <> pretty fx_c <> text " and " <> pretty fo_c <> text "; fox -> " <> pretty (boundVar fa)
       -}
@@ -1429,7 +1484,7 @@ mknInline subterm mainCont mb_gas = do
                                        liftIO $ putDocLn $ text "      pre-kill occ count: " <> pretty c) args
 
                      replaceWith subterm newbody
-                     killBinding callee knownConts
+                     killBinding callee knownConts aliases
 
                      mapM_ (\arg -> do b <- freeBinder arg
                                        c <- mkbCount b
@@ -1449,7 +1504,7 @@ mknInline subterm mainCont mb_gas = do
                                        readLink "CallOfDonatableC" mk
                          replaceWith mredex newbody
                          killOccurrence callee
-                         collectRedexes wr kr er fr cr newbody
+                         collectRedexes wr kr er fr cr ar newbody
                        else return ()
 -}
                    SomethingElse _fn -> do
@@ -1463,7 +1518,7 @@ mknInline subterm mainCont mb_gas = do
                              newbody <- betaReduceOnlyCall fn' args kv >>= readLink "CallOfDonatable"
                              replaceWith mredex newbody
                              killOccurrence callee
-                             collectRedexes wr kr er fr cr newbody
+                             collectRedexes wr kr er fr cr ar newbody
                              -}
                              return ()
                        else return ()
@@ -1547,11 +1602,12 @@ analyzeContifiability knowns = do
         [(bv, fnlink)] -> do
           liftIO $ putDocLn $ blue (text "considering " <> pretty (map (tidIdent.boundVar.fst) knowns) <> text " for contification")
           mb_fn <- readOrdRef fnlink
-          occs <- dlcToList bv          
+          occs <- collectOccurrences bv
           case (occs, mb_fn) of
             (_, Nothing) -> do return CantContifyWithNoFn
             ([_], _) -> do return NoNeedToContifySingleton -- Singleton call; no need to contify since we'll just inline it...
             (_, Just fn) -> do
+              -- Collect the continuations associated with every use of the function binding.
               let contOfCall occ = do
                     mb_tm <- readOrdRef (freeLink occ)
                     case mb_tm of
@@ -1607,7 +1663,30 @@ analyzeContifiability knowns = do
         _ -> do
           return $ NoSupportForMultiBindingsYet
 
-
+-- Collect the list of occurrences for the given binder,
+-- but "peek through" any bitcasts.
+collectOccurrences bv = do
+  inits <- dlcToList bv
+  initss <- mapM (\fv -> do
+                mb_tm <- readOrdRef (freeLink fv)
+                case mb_tm of
+                  Just (MKLetVal _ (v, exprlink) _tmlink) -> do
+                    expr <- readLink "collectOccurrences" exprlink
+                    case expr of
+                      MKTyApp _ _ty fv' _tys -> do
+                        bv' <- freeBinder fv'
+                        if bv' == bv
+                          then do
+                            return [fv]
+                          else do
+                            -- Note: this can't be an infinite loop because
+                            -- we are looking under letval and not letrec,
+                            -- and also because we filter on v.
+                            collectOccurrences bv'
+                      _ -> return [fv]
+                  _ -> return [fv]
+    ) inits
+  return $ concat initss
 
 shouldInlineRedex _mredex _fn =
   -- TODO use per-call-site annotation, when we have such things.
@@ -1617,14 +1696,14 @@ shouldInlineRedex _mredex _fn =
   -}
   False
 
-replaceWith :: Subterm ty -> Subterm ty -> Compiled ()
+replaceWith :: Pretty ty => Subterm ty -> Subterm ty -> Compiled ()
 replaceWith poss_indir_target newsubterm = do
   oldterm <- readLink "replaceWith" poss_indir_target
   newterm <- readLink "replaceWith" newsubterm
   replaceTermWith oldterm newterm
   writeOrdRef poss_indir_target     (Just newterm)
 
-replaceTermWith :: MKTerm ty -> MKTerm ty -> Compiled ()
+replaceTermWith :: Pretty ty => MKTerm ty -> MKTerm ty -> Compiled ()
 replaceTermWith oldterm newterm = do
   target <- getActiveLinkFor oldterm
 
@@ -1636,13 +1715,14 @@ replaceTermWith oldterm newterm = do
   mapM_ (\fv -> setFreeLink fv newterm) newoccs
   readOrdRef (parentLinkT oldterm) >>= writeOrdRef (parentLinkT newterm)
 
-killOccurrence :: FreeVar tyx -> Compiled ()
+killOccurrence :: Pretty ty => FreeVar ty -> Compiled ()
 killOccurrence fo = do
-    MKBound _ r <- freeBinder fo -- r :: OrdRef (Maybe (FreeOcc tyx))
+    MKBound _v r <- freeBinder fo -- r :: OrdRef (Maybe (FreeOcc tyx))
 
-    isSingleton <- dlcIsSingleton fo
+    isSingleton <- freeOccIsSingleton fo
     if isSingleton
      then do
+       liftIO $ putDocLn $ red (text "killing singleton binding ") <> prettyId _v
        writeOrdRef r Nothing
      else do
        n <- dlcNext fo
@@ -1660,18 +1740,27 @@ killOccurrence fo = do
                   writeOrdRef r $ Just fo''
       _ -> return ()
 
-killBinding fo knownFns = do
-    binding@(MKBound _ r') <- freeBinder fo
+killBinding fo knownFns aliases = do
+    origBinding <- freeBinder fo
+    let binding@(MKBound v r') =
+            case Map.lookup origBinding aliases of
+                    Nothing -> origBinding
+                    Just bv -> bv
+    liftIO $ putDocLn $ red (text "killing binding for ") <> pretty (boundVar origBinding) <> text " ~~> " <> pretty v
     writeOrdRef r' Nothing
     case Map.lookup binding knownFns of
-        Nothing -> return ()
+        Nothing -> do liftIO $ putDocLn $ red (text "no killable binding for ") <> pretty v
+                      return ()
         Just r  -> writeOrdRef r Nothing
 
 lookupBinding fo m = do
     binding <- freeBinder fo
-    mb_mb <- liftMaybe readOrdRef (Map.lookup binding m)
-    case mb_mb of Just mb -> return mb
-                  _       -> return Nothing
+    lookupBinding' binding m
+
+lookupBinding' binding m = do
+    case Map.lookup binding m of
+      Nothing   -> return Nothing
+      Just link -> readOrdRef link
 
 betaReduceOnlyCall fn args kv = do
     mapM_ substVarForBound (zip args (mkfnVars fn))
