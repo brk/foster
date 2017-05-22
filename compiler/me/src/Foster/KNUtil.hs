@@ -467,8 +467,6 @@ instance (Pretty body, Pretty t) => Pretty (ModuleIL body t) where
             <$> pretty (moduleILbody m)
             <$> text "// end functions"
 
-prettyId (TypedId _ i) = text (show i)
-
 pr YesTail = "(tail)"
 pr NotTail = "(non-tail)"
 
