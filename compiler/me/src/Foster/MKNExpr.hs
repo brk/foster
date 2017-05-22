@@ -1720,14 +1720,15 @@ pccOfTopTerm uref subterm = do
   execStateT (go subterm) ([], []) >>= return . PreCloConv
     where
       grabFn :: Known MonoType (Link (MKFn (Subterm MonoType) MonoType)) -> PCCFns ()
-      grabFn (_, link) = do
+      grabFn (x, link) = do
         mb_fn <- lift $ readOrdRef link
         case mb_fn of
           Nothing -> do
-            liftIO $ putDocLn $ text "pccOfTopTerm saw nulled-out function link"
+            liftIO $ putDocLn $ text "pccOfTopTerm saw nulled-out function link " <> pretty x
             return ()
           Just fn -> do
             knfn <- lift $ knOfMKFn NoCont fn
+            liftIO $ putDocLn $ indent 10 (pretty x)
             liftIO $ putDocLn $ indent 20 (pretty knfn)
             liftIO $ putDocLn $ text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
             
