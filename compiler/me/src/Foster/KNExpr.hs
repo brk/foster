@@ -1004,8 +1004,8 @@ collectMentions knf = go Set.empty (fnBody knf)
           KNAllocArray  {} -> xs -- next few cases can't be fn-valued due to type checking.
           KNArrayRead   {} -> xs
           KNArrayPoke   {} -> xs
-          KNArrayLit    {} -> xs
           KNDeref       {} -> xs
+          KNArrayLit _ _ litsvars -> uu xs [v | Right v <- litsvars]
           KNTuple       _ vs _ -> uu xs vs
           KNAppCtor     _ _ vs -> uu xs vs
           KNCallPrim  _ _ _ vs -> uu xs vs
