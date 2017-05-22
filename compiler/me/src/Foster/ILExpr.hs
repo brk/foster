@@ -34,12 +34,10 @@ import Control.Monad.IO.Class(liftIO)
 import qualified Data.Set as Set(toList, map, union, unions, difference,
                                  member, Set, empty, size, fromList, insert)
 import qualified Data.Map as Map(singleton, insertWith, lookup, empty, fromList,
-                                 adjust, insert, union, findWithDefault, toList)
+                                 adjust, insert, findWithDefault, toList)
 import qualified Data.Text as T(pack, unpack)
 import qualified Data.Graph as Graph(stronglyConnComp)
 import Data.Graph(SCC(..))
-
-import Debug.Trace(trace)
 
 --------------------------------------------------------------------
 
@@ -405,94 +403,14 @@ flattenGraph bbgp mayGCmap assumeNonMovingGC = -- clean up any rebindings from g
 
 -- ||||||||||||||||||||||||| CFG Simplification  ||||||||||||||||{{{
 simplifyCFG :: BasicBlockGraph' -> BasicBlockGraph'
-simplifyCFG bbgp = bbgp
-{-
-   -- Because we do a depth-first search, "renaming" blocks are guaranteed
-   -- to be adjacent to each other in the list.
+simplifyCFG bbgp =
    withGraphBlocks bbgp (\blocks ->
-       bbgp { bbgpBody = graphOfClosedBlocks $ mergeCallNamingBlocks blocks $
-                             computeNumPredecessors (bbgpEntry bbgp) blocks } )
--}
+       bbgp { bbgpBody = graphOfClosedBlocks $ eliminateRebindings blocks } )
 
--- This little bit of unpleasantness is needed to ensure that we
--- don't need to create gcroot slots for the phi nodes corresponding
--- to blocks inserted from using CPS-like calls.
-mergeCallNamingBlocks :: [Block' ] -> NumPredsMap -> [ Block' ]
-mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
-  where
-     go !subst !acc !blocks =
-       case blocks of
-         [] -> finalize acc subst
-         [b] -> go subst (b:acc) []
-         (x:y:zs) ->
-            case mergeAdjacent subst (blockSplitTail x)
-                                     (blockSplitHead y) of
-              Just (m,s) -> go s        acc  (m:zs)
-              Nothing    -> go subst (x:acc) (y:zs)
-
-     mergeAdjacent :: Map LLVar LLVar -> (Block Insn' C O, Insn' O C)
-                                      -> (Insn' C O, Block Insn' O C)
-                                      -> Maybe (Block Insn' C C, Map LLVar LLVar)
-     mergeAdjacent subst (xem, xl) (CCLabel (yb,yargs), yml)
-     -- [...xem..., xl] [yb(yargs): ...yml...]
-      =
-       case (yargs, xl) of
-         -- Given a call next to its single-predecessor target,
-         -- glue together the blocks with a let-binding in between.
-         {-
-         ([yarg], CCLast _ (CCCall cb t _id v vs)) | cb == yb ->
-             if Map.lookup yb numpreds == Just 1
-                 then Just ((xem `blockSnoc`
-                              (CCLetVal (tidIdent yarg) (ILCall t v vs)))
-                                 `blockAppend` yml, subst)
-                 else Nothing
-                 -}
-
-         -- Given a continuation/branch to its single-predecessor target,
-         -- and assuming that the args match up properly,
-         -- glue the blocks together with nothing in between,
-         -- and an extended substitution for the remaining blocks.
-         (_, CCLast _ (CCCont cb   avs))          | cb == yb ->
-             if Map.lookup yb numpreds == Just 1
-                 then case (length yargs == length avs, yb) of
-                        (True, _) ->
-                          let s v = Map.findWithDefault v v subst in
-                          let avs' = map s avs in
-                          -- Apply the substitution to the actuals;
-                          -- otherwise, code like this will fail:
-                          --     L407 [.x!204]
-                          --     cont L408 [.x!185]
-                          --
-                          --     L408 [.x!205]
-                          --     cont L385 [.x!205]
-                          --
-                          --     L385 [a!213]
-                          --         let .cfg_seq!387 = prim blah a!213
-                          -- because we'll fail to replace .x!205 with .x!185
-                          -- when substituting in the binding for .cfg_seq!387.
-                          let subst' = Map.union (Map.fromList $ zip yargs avs' ) subst in
-                          trace ("yml: " ++ show (pretty yml)) $
-                            Just ((xem `blockAppend` yml), subst' )
-
-                        (False, _) -> Nothing -- Assume it's just a postalloca block...
-{-
-                        (False, ("postalloca",_)) ->
-                          Nothing
-
-                        (False, _) ->
-                          error $ "Continuation application not passing same # of arguments "
-                               ++ "as expected by the continuation (" ++ show (length yargs) ++ " vs " ++ show (length avs) ++ ")!\n"
-                               ++ show avs ++ "\n" ++ show yargs
-                               ++ "\n" ++ show cb ++ " // " ++ show yb
--}
-                 else Nothing
-         _ -> Nothing
-
-     finalize revblocks subst =
-         --let s v = Map.findWithDefault v v subst in
-         --map (mapBlock' $ substIn s) (reverse revblocks)
-         let elimRebindingsInBlock block = do mapBlockM substIn' block in
-         evalState (mapM elimRebindingsInBlock (reverse revblocks)) subst
+    where
+     eliminateRebindings blocks =
+         let elimRebindingsInBlock block = mapBlockM substIn' block in
+         evalState (mapM elimRebindingsInBlock blocks) Map.empty
 
      -- | Monadic version of the strict mapBlock3' from Hoopl.
      mapBlockM :: Monad m => (forall e x. i e x -> m [i e x]) -> Block i C C -> m (Block i C C)
@@ -529,6 +447,7 @@ mergeCallNamingBlocks blocks numpreds = go Map.empty [] blocks
      substForInClo :: VarSubstFor Closure
      substForInClo s clo =
        clo { closureCaptures = (map s (closureCaptures clo)) }
+
 
 type VarSubstFor a = (LLVar -> LLVar) -> a -> a
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
