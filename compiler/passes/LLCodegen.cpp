@@ -80,6 +80,33 @@ bool isLargishStructPointerTy(llvm::Type* ty) {
   return false;
 }
 
+bool isPointerToUnknown(Type* ty) {
+  return ty->isPointerTy() &&
+         slotType(ty)->isIntegerTy(kUnknownBitsize);
+}
+
+bool matchesExceptForUnknownPointers(Type* aty, Type* ety) {
+  //DDiag() << "matchesExceptForUnknownPointers ? " << str(aty) << " =?= " << str(ety);
+  if (aty == ety) return true;
+  if (aty->isPointerTy() && ety->isPointerTy()) {
+    if (isPointerToUnknown(aty) || isPointerToUnknown(ety)) { return true; }
+    return matchesExceptForUnknownPointers(slotType(aty), slotType(ety));
+  }
+  if (aty->getTypeID() != ety->getTypeID()) return false;
+
+  if (aty->isIntegerTy() && ety->isIntegerTy()) {
+    return llvm::cast<llvm::IntegerType>(aty)->getBitWidth()
+        == llvm::cast<llvm::IntegerType>(ety)->getBitWidth();
+  }
+  // TODO vector types? metadata? floating point?
+  if (aty->getNumContainedTypes() != ety->getNumContainedTypes()) return false;
+  for (size_t i = 0; i < aty->getNumContainedTypes(); ++i) {
+    if (! matchesExceptForUnknownPointers(aty->getContainedType(i),
+                                          ety->getContainedType(i))) return false;
+  }
+  return true;
+}
+
 llvm::Value* emitBitcast(llvm::Value* v, llvm::Type* dstTy, llvm::StringRef msg = "") {
   llvm::Type* srcTy = v->getType();
   if (srcTy->isVoidTy()) {
@@ -105,6 +132,13 @@ inline llvm::Value* emitNonVolatileLoad(llvm::Value* v, llvm::Twine name) {
 llvm::Value* emitStore(llvm::Value* val,
                        llvm::Value* ptr) {
   ASSERT(!val->getType()->isVoidTy());
+  if (ptr->getType()->isPointerTy()
+    && !isPointerToType(ptr->getType(), val->getType())) {
+    auto eltTy = llvm::dyn_cast<llvm::PointerType>(ptr->getType())->getElementType();
+    if (matchesExceptForUnknownPointers(val->getType(), eltTy)) {
+      val = emitBitcast(val, eltTy, "specSgen");
+    }
+  }
   if (isPointerToType(ptr->getType(), val->getType())) {
     return builder.CreateStore(val, ptr, /*isVolatile=*/ false);
   }
@@ -681,9 +715,6 @@ void LLRetVal::codegenTerminator(CodegenPass* pass) {
   }
 }
 
-bool matchesExceptForUnknownPointers(Type* aty, Type* ety);
-bool isPointerToUnknown(Type*);
-
 void passPhisAndBr(LLBlock* block, const vector<llvm::Value*>& args) {
   assertHaveSameNumberOfArgsAndPhiNodes(args, block);
   std::stringstream ss; ss << "br args:";
@@ -1182,6 +1213,15 @@ bool tryBindArray(llvm::Value* base, Value*& arr, Value*& len) {
 Value* getArraySlot(Value* base, Value* idx, CodegenPass* pass,
                     bool dynCheck, const std::string& srclines) {
   Value* arr = NULL; Value* len;
+
+  if (isPointerToUnknown(base->getType())) {
+    auto arrayType = llvm::PointerType::getUnqual(
+            llvm::StructType::get(foster::fosterLLVMContext,
+              { builder.getInt64Ty(),
+                llvm::ArrayType::get(base->getType(), 0) }));
+    base = emitBitcast(base, arrayType, "genAspec");
+  }
+
   if (tryBindArray(base, arr, len)) {
     if (dynCheck && !pass->config.disableAllArrayBoundsChecks) {
       emitFosterArrayBoundsCheck(pass->mod, idx, len, srclines);
@@ -1206,12 +1246,12 @@ llvm::Value* LLArrayIndex::codegenARI(CodegenPass* pass, Value** outbase) {
 }
 
 llvm::Value* LLArrayRead::codegen(CodegenPass* pass) {
+  ASSERT(this->type) << "LLArrayRead with no type?";
+
   Value* base = NULL;
   Value* slot = ari->codegenARI(pass, &base);
   //Value* val  = emitGCRead(pass, base, slot);
   Value* val  = emitNonVolatileLoad(slot, "arrayslot");
-  ASSERT(this->type) << "LLArrayRead with no type?";
-  //ASSERT(this->type->getLLVMType() == val->getType());
   return val;
 }
 
@@ -1425,33 +1465,6 @@ llvm::Value* LLCallInlineAsm::codegen(CodegenPass* pass) {
                                    this->constraints,
                                    this->hasSideEffects);
   return builder.CreateCall(iasm, llvm::makeArrayRef(vs), "asmres");
-}
-
-bool isPointerToUnknown(Type* ty) {
-  return ty->isPointerTy() &&
-         slotType(ty)->isIntegerTy(kUnknownBitsize);
-}
-
-bool matchesExceptForUnknownPointers(Type* aty, Type* ety) {
-  //DDiag() << "matchesExceptForUnknownPointers ? " << str(aty) << " =?= " << str(ety);
-  if (aty == ety) return true;
-  if (aty->isPointerTy() && ety->isPointerTy()) {
-    if (isPointerToUnknown(aty) || isPointerToUnknown(ety)) { return true; }
-    return matchesExceptForUnknownPointers(slotType(aty), slotType(ety));
-  }
-  if (aty->getTypeID() != ety->getTypeID()) return false;
-
-  if (aty->isIntegerTy() && ety->isIntegerTy()) {
-    return llvm::cast<llvm::IntegerType>(aty)->getBitWidth()
-        == llvm::cast<llvm::IntegerType>(ety)->getBitWidth();
-  }
-  // TODO vector types? metadata? floating point?
-  if (aty->getNumContainedTypes() != ety->getNumContainedTypes()) return false;
-  for (size_t i = 0; i < aty->getNumContainedTypes(); ++i) {
-    if (! matchesExceptForUnknownPointers(aty->getContainedType(i),
-                                          ety->getContainedType(i))) return false;
-  }
-  return true;
 }
 
 llvm::Value* emitFnArgCoercions(Value* argV, llvm::Type* expectedType) {

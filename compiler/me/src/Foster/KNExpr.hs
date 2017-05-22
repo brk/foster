@@ -1207,7 +1207,10 @@ data HdrState =   HdrState {
 -- fresh variables, and a flag indicating whether any tail calls to
 -- the function were detected, since we only care about arguments
 -- passed to tail calls.
-type LoopHeaders = Map Ident ((Ident, [TypedId MonoType]), Bool)
+type LoopHeader  = (OuterIdent, [TypedId MonoType], InnerIdent)
+type LoopHeaders = Map Ident (LoopHeader, Bool)
+type InnerIdent = Ident
+type OuterIdent = Ident
 
 -- Map each recursive fn identifier to the list of variables it is always
 -- passed. This list starts as [Just x] for each formal x; if a recursive call
@@ -1240,7 +1243,7 @@ renameUsefulArgs xs ys = resolve (zip xs ys)
 
 -- Map each recursive fn identifier to the var/s for its loop header, and a
 -- list reflecting which of the original formals were recursively useless.
-type LoopInfo = Map Ident ((Ident, [TypedId MonoType]), [Maybe (TypedId MonoType)])
+type LoopInfo = Map Ident (LoopHeader, [Maybe (TypedId MonoType)])
 
 isAllNothing [] = True
 isAllNothing (Nothing:xs) = isAllNothing xs
@@ -1262,10 +1265,11 @@ ccFreshenTid (TypedId t id) = do id' <- ccFreshen id
 knLoopHeaderCensusFn activeids (id, fn) = do
   let vars = fnVars fn
   id'   <- lift $ ccFresh ("loop.hdr." ++ T.unpack (identPrefix (fnIdent fn)) ++ "_")
+  id''  <- lift $ ccFresh ("loophdr." ++ T.unpack (identPrefix (fnIdent fn)) ++ "_")
   vars' <- lift $ mapM ccFreshenTid vars -- generate new vars for wrapper in advance
   st <- get
-  put $ st { headers = Map.insert id ((id' , vars' ), False) (headers st)
-           , census  = Map.insert id (map Just vars)         (census st) }
+  put $ st { headers = Map.insert id ((id' , vars', id'' ), False) (headers st)
+           , census  = Map.insert id (map Just vars)               (census st) }
   knLoopHeaderCensus YesTail activeids (fnBody fn)
 
 knLoopHeaderCensus :: TailQ -> Set Ident -> KNMono -> Hdr ()
@@ -1377,10 +1381,11 @@ knLoopHeaders' expr = do
           --                         in
           --                             loop x' end
           --                       }; in b end)
-          Just ((id' , vs' ), mt ) -> -- vs' is the complete list of fresh args
+          Just ((id' , vs' , id'' ), mt ) -> -- vs' is the complete list of fresh args
             let v'  = TypedId (selectUsefulArgs id' mt (tidType (fnVar fn))) id' in
+            let v'' = TypedId (selectUsefulArgs id' mt (tidType (fnVar fn))) id'' in
             -- The inner, recursive body
-            let fn'' = Fn { fnVar   = mkGlobal v'
+            let fn'' = Fn { fnVar   = v''
                           , fnVars  = dropUselessArgs mt (fnVars fn)
                           , fnBody  = (q YesTail $ fnBody fn)
                           , fnIsRec = YesRec
@@ -1408,7 +1413,7 @@ knLoopHeaders' expr = do
     -- the appropriate pre-computed call to the corresponding loop header.
     KNCall ty v vs ->
       case (tailq, qv (tidIdent v)) of
-        (YesTail, Just ((id, _), mt)) ->
+        (YesTail, Just ((id, _, _), mt)) ->
              KNCall ty (TypedId (selectUsefulArgs id mt (tidType v)) id) (dropUselessArgs mt vs)
         _ -> expr
 
@@ -1433,8 +1438,6 @@ selectUsefulArgs id' _ ty = error $ "KNExpr.hs wasn't expecting a non-function t
 -- even though it shouldn't be... which then impedes inlining opportunities
 -- later on down the road. So for pure bindings, we check to see if they are
 -- dead and should be dropped.
-
-mkGlobal (TypedId t i) = mkGlobalWithType t i
 
 mkGlobalWithType ty (Ident t u) = TypedId ty (GlobalSymbol $ T.pack (T.unpack t ++ show u))
 mkGlobalWithType _  (GlobalSymbol _) = error $ "KNExpr.hs: mkGlobal(WithType) of global!"
