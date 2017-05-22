@@ -1,13 +1,13 @@
 module Foster.FromHaskell (convertHaskellToFoster) where
 
-import Language.Haskell.Exts.SrcLoc
+--import Language.Haskell.Exts.SrcLoc
 import Language.Haskell.Exts.Simple.Parser
 import Language.Haskell.Exts.Simple.Pretty (prettyPrint)
 import qualified Language.Haskell.Exts.Simple.Syntax as H
 import Language.Haskell.Exts.Simple(parseFile)
 
 import qualified Data.Text as T
-import Control.Monad.State(forM, forM_)
+import Control.Monad.State(forM_)
 
 import Text.PrettyPrint.ANSI.Leijen((<+>), (<>), (<$>), pretty, text, line,
                                      hsep, fill, parens, vcat, list, red,
@@ -99,7 +99,7 @@ convertHaskellToFoster hspath fosterpath = do
         H.If c t e -> E_IfAST noAnnot (expOfExp c) (expOfExp t) (expOfExp e)
 
         H.List exps ->
-          foldr (\e l -> E_CallAST noAnnot (mkVarE "Cons") [expOfExp e]) (mkVarE "Nil") exps
+          foldr (\e _l -> E_CallAST noAnnot (mkVarE "Cons") [expOfExp e]) (mkVarE "Nil") exps
           --E_MachArrayLit noAnnot Nothing [AE_Expr (expOfExp e) | e <- exps]
 
         H.Paren e -> expOfExp e
@@ -138,16 +138,16 @@ convertHaskellToFoster hspath fosterpath = do
       caseArmOfAlt alt =
         case alt of
           H.Alt pat (H.UnGuardedRhs exp) _mb_binds -> CaseArm (patOfPat pat) (expOfExp exp) Nothing [] noRange
-          H.Alt pat (H.GuardedRhss rhss) _mb_binds -> error $ "caseArmOfAlt.guarded"
+          H.Alt _pat (H.GuardedRhss _rhss) _mb_binds -> error $ "caseArmOfAlt.guarded"
 
       expOfRhs rhs = case rhs of
         H.UnGuardedRhs exp -> expOfExp exp
-        H.GuardedRhss grhss -> error $ "expOfRhs.Guarded"
+        H.GuardedRhss _grhss -> error $ "expOfRhs.Guarded"
 
       expAndGuardsOfRhs rhs = case rhs of
         H.UnGuardedRhs exp -> (expOfExp exp, [])
         H.GuardedRhss [H.GuardedRhs guards exp] -> (expOfExp exp, guards)
-        H.GuardedRhss grhss -> error $ "expOfRhs.Guarded (multi)"
+        H.GuardedRhss _grhss -> error $ "expOfRhs.Guarded (multi)"
 
       patOfPat p =
         case p of
@@ -166,7 +166,7 @@ convertHaskellToFoster hspath fosterpath = do
           H.PList pats -> foldr (\p ep -> EP_Ctor noRange [patOfPat p, ep] (T.pack "Cons"))
                                 (EP_Ctor noRange [] (T.pack "Nil")) pats
 
-          H.PAsPat name pat -> error $ "patOfPat.AsPat: " ++ prettyPrint p
+          H.PAsPat _name _pat -> error $ "patOfPat.AsPat: " ++ prettyPrint p
           H.PatTypeSig {} -> error $ "patOfPat.PatTypeSig: " ++ prettyPrint p
           H.PRPat {} -> error $ "patOfPat.PRPat: " ++ prettyPrint p
           H.PViewPat {} -> error $ "patOfPat.PViewPat: " ++ prettyPrint p
@@ -217,7 +217,7 @@ convertHaskellToFoster hspath fosterpath = do
       fnOfMatches nameStr patss bodiesAndGuards isToplevel =
            let args = ["arg" ++ show n | (_, n) <- zip (head patss) [0..]]
                bod  = case (args, head patss) of
-                       ([arg], [pat]) ->
+                       ([arg], [_pat]) ->
                             (E_Case noAnnot (mkVarE arg)
                               [CaseArm (patOfPat pat)
                                   body (mkGuard guards) [] noRange | ([pat], (body, guards)) <- zip patss bodiesAndGuards])
@@ -239,13 +239,13 @@ convertHaskellToFoster hspath fosterpath = do
       parseMatches (H.Match name pats rhs _mb_binds : rest) = go name [pats] [rhs] rest
         where
           go name patss rhss [] = (name, reverse patss, reverse rhss)
-          go name patss rhss (H.Match name' pats' rhs' _ :  rest) =
+          go name patss rhss (H.Match _name' pats' rhs' _ :  rest) =
                       go name (pats' : patss) (rhs' : rhss) rest
-          go name _ _ _ = error "parseMatches.InfixMatch"
+          go _name _ _ _ = error "parseMatches.InfixMatch"
 
       dumpFnLoneMatch match = do
         case match of
-          H.Match name pats rhs mb_binds -> do
+          H.Match name pats rhs _mb_binds -> do
             let fn = fnOfLambda (prettyPrint name) pats (expOfRhs rhs) [] True
             appendFile fosterpath (show $ plain $ prettyTopLevelFn fn)
             appendFile fosterpath "\n\n"
@@ -270,12 +270,12 @@ convertHaskellToFoster hspath fosterpath = do
 
       dumpDecl d = do
         case d of
-          H.TypeDecl dh ty ->
+          H.TypeDecl _dh _ty ->
             appendFile fosterpath ("/* TODO(dumpDecl.TypeDecl):\n" ++ prettyPrint d ++ "\n*/\n\n")
           H.DataDecl H.DataType Nothing dh qcdecls mb_der -> do
-            let (name, tvbs) = parseDeclHead dh
+            let (name, _tvbs) = parseDeclHead dh
             appendFile fosterpath $ "type case " ++ prettyPrint name ++ {- tyvars -} "\n"
-            forM_ qcdecls $ \(H.QualConDecl mb_tvbs mb_ctx condecl) -> do
+            forM_ qcdecls $ \(H.QualConDecl _mb_tvbs _mb_ctx condecl) -> do
                case condecl of
                  H.ConDecl nm tys -> do
                    appendFile fosterpath ("  of $" ++ prettyPrint nm)
