@@ -662,6 +662,8 @@ void LLRetVoid::codegenTerminator(CodegenPass* pass) {
   builder.CreateRetVoid();
 }
 
+Value* emitFnArgCoercions(Value*, Type*);
+
 void LLRetVal::codegenTerminator(CodegenPass* pass) {
   llvm::Value* rv = this->val->codegen(pass);
   bool fnReturnsVoid = builder.getCurrentFunctionReturnType()->isVoidTy();
@@ -675,9 +677,12 @@ void LLRetVal::codegenTerminator(CodegenPass* pass) {
   if (fnReturnsVoid) {
     builder.CreateRetVoid();
   } else {
-    builder.CreateRet(rv);
+    builder.CreateRet(emitFnArgCoercions(rv, builder.getCurrentFunctionReturnType()));
   }
 }
+
+bool matchesExceptForUnknownPointers(Type* aty, Type* ety);
+bool isPointerToUnknown(Type*);
 
 void passPhisAndBr(LLBlock* block, const vector<llvm::Value*>& args) {
   assertHaveSameNumberOfArgsAndPhiNodes(args, block);
@@ -686,6 +691,12 @@ void passPhisAndBr(LLBlock* block, const vector<llvm::Value*>& args) {
     llvm::Value* v = args[i];
     if (v->getType()->isVoidTy()) {
       v = getUnitValue(); // Can't pass a void value!
+    }
+    if ((v->getType() != block->phiNodes[i]->getType())
+        && matchesExceptForUnknownPointers(v->getType(), block->phiNodes[i]->getType())
+        //&& (isPointerToUnknown(v->getType()) || isPointerToUnknown(block->phiNodes[i]->getType()))
+        ) {
+      v = emitBitcast(v, block->phiNodes[i]->getType(), "genXspec");
     }
     assertValueHasSameTypeAsPhiNode(v, block, i);
     block->phiNodes[i]->addIncoming(v, builder.GetInsertBlock());
@@ -1200,7 +1211,7 @@ llvm::Value* LLArrayRead::codegen(CodegenPass* pass) {
   //Value* val  = emitGCRead(pass, base, slot);
   Value* val  = emitNonVolatileLoad(slot, "arrayslot");
   ASSERT(this->type) << "LLArrayRead with no type?";
-  ASSERT(this->type->getLLVMType() == val->getType());
+  //ASSERT(this->type->getLLVMType() == val->getType());
   return val;
 }
 
@@ -1416,7 +1427,6 @@ llvm::Value* LLCallInlineAsm::codegen(CodegenPass* pass) {
   return builder.CreateCall(iasm, llvm::makeArrayRef(vs), "asmres");
 }
 
-// Returns null if no bitcast is needed, else returns the type to bitcast to.
 bool isPointerToUnknown(Type* ty) {
   return ty->isPointerTy() &&
          slotType(ty)->isIntegerTy(kUnknownBitsize);
@@ -1426,7 +1436,7 @@ bool matchesExceptForUnknownPointers(Type* aty, Type* ety) {
   //DDiag() << "matchesExceptForUnknownPointers ? " << str(aty) << " =?= " << str(ety);
   if (aty == ety) return true;
   if (aty->isPointerTy() && ety->isPointerTy()) {
-    if (isPointerToUnknown(ety)) { return true; }
+    if (isPointerToUnknown(aty) || isPointerToUnknown(ety)) { return true; }
     return matchesExceptForUnknownPointers(slotType(aty), slotType(ety));
   }
   if (aty->getTypeID() != ety->getTypeID()) return false;
@@ -1444,7 +1454,7 @@ bool matchesExceptForUnknownPointers(Type* aty, Type* ety) {
   return true;
 }
 
-llvm::Value* emitFnArgCoercions(Value* argV, llvm::Type* expectedType, Value* FV) {
+llvm::Value* emitFnArgCoercions(Value* argV, llvm::Type* expectedType) {
   // This is a an artifact produced by the mutual recursion
   // of the environments of mutually recursive closures.
   if (  argV->getType() != expectedType
@@ -1472,6 +1482,17 @@ llvm::Value* emitFnArgCoercions(Value* argV, llvm::Type* expectedType, Value* FV
   return argV;
 }
 
+llvm::Type* getClosureType(llvm::Type* retTy, const std::vector<Value*>& nonEnvArgs) {
+  std::vector<llvm::Type*> argTys;
+  argTys.push_back(builder.getInt8PtrTy());
+  for (auto arg : nonEnvArgs) { argTys.push_back(arg->getType()); }
+  return llvm::PointerType::getUnqual(
+            llvm::StructType::get(foster::fosterLLVMContext,
+              { llvm::PointerType::getUnqual(llvm::FunctionType::get(retTy, argTys, false)),
+                builder.getInt8PtrTy() })
+            );
+}
+
 llvm::Value* LLCall::codegen(CodegenPass* pass) {
   ASSERT(base != NULL) << "unable to codegen call due to null base";
   Value* FV = base->codegenCallee(pass);
@@ -1482,6 +1503,12 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
 
   llvm::CallingConv::ID callingConv = parseCallingConv(this->callconv);
 
+  std::vector<Value*> nonEnvArgs;
+  // Collect the args, performing coercions if necessary.
+  for (auto arg : this->args) {
+    nonEnvArgs.push_back(arg->codegen(pass));
+  }
+
   if (Function* F = llvm::dyn_cast<Function>(FV)) {
     // Call to top level function
     ASSERT(callingConv == F->getCallingConv());
@@ -1489,10 +1516,17 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   } else if (isFunctionPointerTy(FV->getType())) {
     FT = dyn_cast<llvm::FunctionType>(slotType(FV));
   } else {
+    if (!isPointerToStruct(FV->getType())) {
+      // We can end up in this situation (trying to call a value that
+      // has an unknown/generic type) because inlining does not "push through"
+      // type coercions.
+      FV = emitBitcast(FV, getClosureType(this->type->getLLVMType(), nonEnvArgs), "fnspec");
+    }
+
     ASSERT(isPointerToStruct(FV->getType()));
     // Load code and env pointers from closure...
     llvm::Value* envPtr =
-         getElementFromComposite(FV, 1, "getCloEnv");
+        getElementFromComposite(FV, 1, "getCloEnv");
     FV = getElementFromComposite(FV, 0, "getCloCode");
     FT = dyn_cast<llvm::FunctionType>(slotType(FV));
     // Pass env pointer as first parameter to function.
@@ -1501,11 +1535,10 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
 
   assertHaveCallableType(base, FT, FV);
 
-  // Collect the args, performing coercions if necessary.
-  for (size_t i = 0; i < this->args.size(); ++i) {
+  // Collect all args, performing coercions if needed.
+  for (auto arg : nonEnvArgs) {
     llvm::Type* expectedType = FT->getParamType(valArgs.size());
-    llvm::Value* argV = this->args[i]->codegen(pass);
-    argV = emitFnArgCoercions(argV, expectedType, FV);
+    llvm::Value* argV = emitFnArgCoercions(arg, expectedType);
     assertValueHasExpectedType(argV, expectedType, FV);
     valArgs.push_back(argV);
   }
