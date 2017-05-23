@@ -1242,6 +1242,9 @@ The corresponding AST to be matched is
         visitStmt(unop->getSubExpr());
         llvm::outs() << ")";
       }
+    } else if (unop->getOpcode() == UO_Plus) {
+      // Unary plus gets ignored, basically.
+      visitStmt(unop->getSubExpr());
     } else if (unop->getOpcode() == UO_PreDec) {
       handleIncrDecr("decr", unop);
     } else if (unop->getOpcode() == UO_PostDec) {
