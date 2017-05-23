@@ -197,7 +197,7 @@ typecheckSCC showASTs showAnnExprs pauseOnErrors tcenv    scc ctx = do
                             putDocLn $ showStructure e
                             putStrLn $ "]]]]]]"
                     Errors errs -> do
-                        putDocLn $ showStructure ast
+                        --putDocLn $ showStructure ast
                         putDocLn $ red $ text "Typecheck error: "
                         forM_ errs putDocLn
                         putDocP line
