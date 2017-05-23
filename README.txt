@@ -293,3 +293,7 @@ Running an individual C file can be done with  runclang  .
 Note as before that you'll need to provide search paths explicitly.
 
 Individual Foster programs can be run with  runfoster  .
+
+You can see a (colorized) output of Clang's AST for a given C program
+with   clang -fsyntax-only -Xclang -ast-dump  <includes> <program>
+
