@@ -10,8 +10,8 @@
 //  This file defines the CFG and C2F_CFGBuilder classes for representing and
 //  building Control-Flow Graphs (CFGs) from ASTs.
 //
-//  (Our C2F modification is simply to disable CFG building for (ternary)
-//   ConditionalOperators).
+//  (Our main C2F modification is simply to disable CFG building for (ternary)
+//   ConditionalOperators.).
 //
 //===----------------------------------------------------------------------===//
 
@@ -865,6 +865,11 @@ private:
   /// tryEvaluateBool - Try and evaluate the Stmt and return 0 or 1
   /// if we can evaluate to a known value, otherwise return -1.
   TryResult tryEvaluateBool(Expr *S) {
+        return TryResult();
+        // The code exercised by this function will trigger LLVM asserts
+        // regarding differing bitwidths on code like   if (0 || 0L) {}.
+
+#if 0
     if (!BuildOpts.PruneTriviallyFalseEdges ||
         S->isTypeDependent() || S->isValueDependent())
       return TryResult();
@@ -908,6 +913,7 @@ private:
     }
 
     return evaluateAsBooleanConditionNoCache(S);
+    #endif
   }
 
   /// \brief Evaluate as boolean \param E without using the cache.
