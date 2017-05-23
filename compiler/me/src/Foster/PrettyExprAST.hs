@@ -172,7 +172,7 @@ prettyStmt e = case e of
                               {- lkwd "let"
                               <+> -} {- fill 8 -} (pretty evar)
                               <+> text "="
-                              <+> pretty bound {- <+> lkwd "in" -}
+                              <+> prettySeq bound {- <+> lkwd "in" -}
                                                   <> text ";"
                            <$> pretty expr
     E_LetRec annot binds e -> withAnnot annot $
@@ -200,6 +200,12 @@ prettyStmt e = case e of
     E_SeqAST (ExprAnnot pre _ post) l r -> prettyExpr l <> text ";" <+> (vcat $ map pretty $ pre ++ post)
                                         <> prettyStmt r
     E_FnAST annot fn     -> withAnnot annot $ pretty fn
+
+prettySeq :: (Pretty ty, IsQuietPlaceholder ty) => ExprSkel ExprAnnot ty -> Doc
+prettySeq e =
+  case e of
+    E_SeqAST      {} -> parens $ pretty e
+    _ -> pretty e
 
 prettyAtom :: (Pretty ty, IsQuietPlaceholder ty) => ExprSkel ExprAnnot ty -> Doc
 prettyAtom e =
