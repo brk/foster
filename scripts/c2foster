@@ -7,7 +7,7 @@ LLVM_DIR=$( ${SD}/echo-llvmdir )
 LLVM_CLANG_INCLUDES=$( ${LLVM_DIR}/bin/clang -print-search-dirs | tail -n1 | sed 's/libraries: =//' | ${SD}/split-clang-includes.py)
 BINDIR=${FOSTER_ROOT}/_obj
 
-[ -d ${LLVM_CLANG_INC_DIR} ] || echo "// Clang include dir ${LLVM_CLANG_INC_DIR} doesn't exist..."
+[ -d "${LLVM_DIR}" ] || echo "// LLVM dir ${LLVM_DIR} doesn't exist..."
 
 mkdir -p fosterc-standalone-tmp
 
@@ -26,8 +26,8 @@ set -o pipefail
 
 show_clang_ast () {
   echo "// Clang AST for input C file:"
-  echo "// ${LLVM_DIR}/bin/clang -fsyntax-only -Xclang -ast-dump ${cprog} -I ${LLVM_CLANG_INCLUDES} $@"
-  ${LLVM_DIR}/bin/clang -fsyntax-only -Xclang -ast-dump ${cprog} -I ${LLVM_CLANG_INCLUDES} $@ | ${SD}/clang-ast-filter.py
+  echo "// ${LLVM_DIR}/bin/clang -fsyntax-only -Xclang -ast-dump ${cprog} ${LLVM_CLANG_INCLUDES} $@"
+  ${LLVM_DIR}/bin/clang -fsyntax-only -Xclang -ast-dump ${cprog} ${LLVM_CLANG_INCLUDES} $@ | ${SD}/clang-ast-filter.py
   (>&2 echo "Failed to process either the input C code or the resulting Foster code...")
   exit 1
 }
@@ -42,12 +42,12 @@ c2f_status="$?"
 if [ "${c2f_status}" = "0" ]; then
   echo "// running foster-fmt; c2f ${tmpfile}.foster status was ${c2f_status}"
   echo "// ${SD}/fosterc.py --me-arg=--fmt --bindir ${BINDIR} --tmpdir fosterc-standalone-tmp ${tmpfile}.foster"
-  (${SD}/fosterc.py --me-arg=--fmt -I ${FOSTER_ROOT}/stdlib --bindir ${BINDIR} --tmpdir fosterc-standalone-tmp ${tmpfile}.foster --no-compile-log | ${SD}/ansifilter.py) || show_clang_ast
+  (${SD}/fosterc.py --me-arg=--fmt -I ${FOSTER_ROOT}/stdlib --bindir ${BINDIR} --tmpdir fosterc-standalone-tmp ${tmpfile}.foster --no-compile-log | ${SD}/ansifilter.py) || show_clang_ast $@
 else
   echo "// c2f failed with status ${c2f_status}; raw output was:"
   cat ${tmpfile}.foster
   if [ `cat ${tmpfile}.foster | wc -l` = "0" ]; then
-     show_clang_ast
+     show_clang_ast $@
   fi
   exit 1
 fi
