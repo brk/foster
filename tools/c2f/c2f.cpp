@@ -1561,7 +1561,7 @@ The corresponding AST to be matched is
     }
   }
 
-  void handleCompoundAssignment(const BinaryOperator* binop) {
+  void handleCompoundAssignment(const BinaryOperator* binop, ContextKind ctx) {
     std::string op = binop->getOpcodeStr();
     if (op.back() == '=') op.pop_back();
 
@@ -1610,7 +1610,7 @@ The corresponding AST to be matched is
           }
         }
         llvm::outs() << ")";
-      }, ExprContext);
+      }, ctx);
     }
   }
 
@@ -1915,7 +1915,7 @@ The corresponding AST to be matched is
     } else if (const ArraySubscriptExpr* ase = dyn_cast<ArraySubscriptExpr>(stmt)) {
       emitPeek(ase->getBase(), ase->getIdx());
     } else if (const CompoundAssignOperator* cao = dyn_cast<CompoundAssignOperator>(stmt)) {
-      handleCompoundAssignment(cao);
+      handleCompoundAssignment(cao, ctx);
     } else if (const BinaryOperator* binop = dyn_cast<BinaryOperator>(stmt)) {
       handleBinaryOperator(binop, ctx);
     } else if (const UnaryOperator* unop = dyn_cast<UnaryOperator>(stmt)) {
