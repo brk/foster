@@ -660,7 +660,7 @@ public:
     return rv;
   }
 
-  void markduplicateVarDecls(const std::vector<const DeclStmt*>& decls) {
+  void markDuplicateVarDecls(const std::vector<const DeclStmt*>& decls) {
     std::map<std::string, int> namesSeen;
     for (auto d : decls) {
       if (d->isSingleDecl()) {
@@ -731,14 +731,14 @@ public:
     //      Preds (1): B12
     //      Succs (2): B3 B4
     //
-    // Clang pretty-prints statement references of the form [B5.2],
+    // Clang pretty-prints statement references of the form [B5.3],
     // but it's just indicating that the same Stmt pointer occurs in
     // the block element list and the LHS of the binary operator.
 
     // Add all var decls
     StmtMap.clear();
     std::vector<const DeclStmt*> decls = collectDeclsAndBuildStmtMap(cfg);
-    markduplicateVarDecls(decls);
+    markDuplicateVarDecls(decls);
 
     for (auto d : decls) {
       if (d->isSingleDecl()) {
@@ -1816,21 +1816,6 @@ The corresponding AST to be matched is
     return nullptr;
   }
 
-  bool isAssignmentOrVoidish(const Stmt* stmt) {
-    if (auto bo = dyn_cast<BinaryOperator>(stmt)) {
-      return bo->isAssignmentOp();
-    }
-    if (isa<ReturnStmt>(stmt)) {
-      return true;
-    }
-    if (auto expr = dyn_cast<Expr>(stmt)) {
-      if (auto ty = expr->IgnoreParenCasts()->getType().getTypePtr()) {
-        return ty->isVoidType();
-      }
-    }
-    return false;
-  }
-
   void visitStmt(const Stmt* stmt, ContextKind ctx = ExprContext) {
     emitCommentsFromBefore(stmt->getLocStart());
 
@@ -1846,8 +1831,9 @@ The corresponding AST to be matched is
         return;
       }
 
-      if (stmt == currStmt && !isAssignmentOrVoidish(stmt)) {
+      if (stmt == currStmt && !isa<ReturnStmt>(stmt)) {
         llvm::outs() << "b_" << pair.first << "_" << pair.second << " = ";
+        ctx = ExprContext;
       }
     }
 
