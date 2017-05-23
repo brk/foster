@@ -52,6 +52,8 @@ def files_differ(a, b):
 def fail_reason(foster_compile_rv):
   if foster_compile_rv == 0:
     return "wrong output"
+  elif foster_compile_rv == 99:
+    return "compilation timeout"
   else:
     return "couldn't compile"
 
@@ -76,7 +78,7 @@ def attempt_test_named(filename, copy_here_if_ok=None):
       run_cmd("c2foster %s -I %s" % (c_code, csmith_inc), stdout=open(f_code, 'w'), stderr=open(cf_warn, 'w'))
 
       print "Compiling and running the generated Foster code..."
-      f_c_rv = run_cmd("runfoster %s" % f_code, stdout=open(f_out, 'w'), timeout=20)
+      f_c_rv = run_cmd("runfoster %s" % f_code, stdout=open(f_out, 'w'), timeout=30)
 
 
       linecount = len(open(c_out, 'r').readlines())
