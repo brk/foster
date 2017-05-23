@@ -1593,7 +1593,22 @@ The corresponding AST to be matched is
         llvm::outs() << "(";
         visitStmt(binop->getLHS(), ExprContext);
         llvm::outs() << " " << tgt << " ";
-        visitStmt(binop->getRHS(), ExprContext);
+        {
+          std::string srcTy = tyName(exprTy(binop->getRHS()));
+          std::string dstTy = tyName(exprTy(binop->getLHS()));
+          // Usually integral type mismatches are explicitly represented with
+          // an IntegralCast node in the AST, but for some reason that doesn't
+          // happen with compound assignments.
+          if (srcTy != dstTy) {
+            llvm::outs() << "("
+              << intCastFromTo(srcTy, dstTy, exprTy(binop->getRHS())->isSignedIntegerType())
+              << " ";
+            visitStmt(binop->getRHS(), ExprContext);
+            llvm::outs() << " )";
+          } else {
+            visitStmt(binop->getRHS(), ExprContext);
+          }
+        }
         llvm::outs() << ")";
       }, ExprContext);
     }
