@@ -218,7 +218,9 @@ LLModule* readLLProgramFromCapnp(const string& pathstr) {
   { ScopedTimer timer("io.capnp.read+translate");
     FILE* f = fopen(pathstr.c_str(), "rb");
     { int fd = fileno(f);
-      ::capnp::StreamFdMessageReader message(fd);
+      ::capnp::ReaderOptions options;
+      options.traversalLimitInWords = 64 * 1024 * 1024;
+      ::capnp::StreamFdMessageReader message(fd, options);
       foster::be::Module::Reader modread = message.getRoot<foster::be::Module>();
       prog = foster::LLModule_from_capnp(modread);
     }
