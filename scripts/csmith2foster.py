@@ -5,8 +5,6 @@ from __future__ import with_statement
 from test_c2f import run_cmd, attempt_test_named
 import os.path
 
-csmith_dir = os.path.expanduser("~/sw/local/csmith-2016-08-26")
-
 #############################
 
 def generate_test_named(c_code):

@@ -4,26 +4,39 @@ from __future__ import with_statement
 
 import os.path
 import subprocess
+import threading
 import fnmatch
 import hashlib
 import shutil
 
-csmith_dir = os.path.expanduser("~/sw/local/csmith-2016-08-26")
+csmith_dir = os.path.expanduser("~/sw/local/csmith-2.3.0")
 csmith_inc = os.path.join(csmith_dir, 'include', 'csmith-2.3.0')
 
 # returns status
-def run_cmd(cmd, stdout=None, stderr=None, stdin=None):
+def run_cmd(cmd, stdout=None, stderr=None, stdin=None, timeout=2):
   if type(cmd) == str:
     cmd = cmd.strip().split(' ')
 
-  rv = 1
+  class mut:
+      proc = None
+
   try:
     #print ' '.join(cmd)
-    rv = subprocess.call(cmd, stdout=stdout, stderr=stderr, stdin=stdin)
+    def runner():
+         mut.proc = subprocess.Popen(cmd, stdout=stdout, stderr=stderr, stdin=stdin)
+         mut.proc.communicate()
+
+    thread = threading.Thread(target=runner)
+    thread.start()
+    thread.join(timeout) # seconds
+    if thread.is_alive():
+        mut.proc.terminate()
+        thread.join()
+        return 99
   except OSError:
     print ": error: Unable to execute ", cmd
     raise
-  return rv
+  return mut.proc.returncode
 
 #############################
 
@@ -63,7 +76,7 @@ def attempt_test_named(filename, copy_here_if_ok=None):
       run_cmd("c2foster %s -I %s" % (c_code, csmith_inc), stdout=open(f_code, 'w'), stderr=open(cf_warn, 'w'))
 
       print "Compiling and running the generated Foster code..."
-      f_c_rv = run_cmd("runfoster %s" % f_code, stdout=open(f_out, 'w'))
+      f_c_rv = run_cmd("runfoster %s" % f_code, stdout=open(f_out, 'w'), timeout=20)
 
 
       linecount = len(open(c_out, 'r').readlines())
@@ -76,6 +89,8 @@ def attempt_test_named(filename, copy_here_if_ok=None):
           if copy_here_if_ok is not None:
             filename = hashlib.md5(open(c_code, 'r').read()).hexdigest() + ".c"
             shutil.copyfile(c_code, os.path.join(copy_here_if_ok, filename))
+    elif c_rv == 99:
+          print "Test case", c_code, "skipped because the C code was (probably) non-terminating."
     else:
           print "Test case", c_code, "skipped because the C code exited under murky circumstances."
 
