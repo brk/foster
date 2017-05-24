@@ -374,7 +374,7 @@ struct LLArrayIndex {
                         string static_or_dynamic, string srclines)
     : base(base), index(index),
       static_or_dynamic(static_or_dynamic), srclines(srclines) {}
-  llvm::Value* codegenARI(CodegenPass* pass, Value** base);
+  llvm::Value* codegenARI(CodegenPass* pass, Value** base, llvm::Type* ty);
 };
 
 // base[index]
