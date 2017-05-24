@@ -1210,7 +1210,7 @@ bool tryBindArray(llvm::Value* base, Value*& arr, Value*& len) {
   return false;
 }
 
-Value* getArraySlot(Value* base, Value* idx, CodegenPass* pass,
+Value* getArraySlot(Value* base, Value* idx, CodegenPass* pass, Type* ty,
                     bool dynCheck, const std::string& srclines) {
   Value* arr = NULL; Value* len;
 
@@ -1218,7 +1218,7 @@ Value* getArraySlot(Value* base, Value* idx, CodegenPass* pass,
     auto arrayType = llvm::PointerType::getUnqual(
             llvm::StructType::get(foster::fosterLLVMContext,
               { builder.getInt64Ty(),
-                llvm::ArrayType::get(base->getType(), 0) }));
+                llvm::ArrayType::get(ty, 0) }));
     base = emitBitcast(base, arrayType, "genAspec");
   }
 
@@ -1236,20 +1236,20 @@ Value* getArraySlot(Value* base, Value* idx, CodegenPass* pass,
 }
 
 
-llvm::Value* LLArrayIndex::codegenARI(CodegenPass* pass, Value** outbase) {
+llvm::Value* LLArrayIndex::codegenARI(CodegenPass* pass, Value** outbase, Type* ty) {
   *outbase    = this->base ->codegen(pass);
   Value* idx  = this->index->codegen(pass);
   idx = builder.CreateZExt(idx, llvm::Type::getInt64Ty(builder.getContext()));
   ASSERT(static_or_dynamic == "static" || static_or_dynamic == "dynamic");
-  return getArraySlot(*outbase, idx, pass, this->static_or_dynamic == "dynamic",
-                                           this->srclines);
+  return getArraySlot(*outbase, idx, pass, ty,
+                      this->static_or_dynamic == "dynamic", this->srclines);
 }
 
 llvm::Value* LLArrayRead::codegen(CodegenPass* pass) {
   ASSERT(this->type) << "LLArrayRead with no type?";
 
   Value* base = NULL;
-  Value* slot = ari->codegenARI(pass, &base);
+  Value* slot = ari->codegenARI(pass, &base, this->type->getLLVMType());
   //Value* val  = emitGCRead(pass, base, slot);
   Value* val  = emitNonVolatileLoad(slot, "arrayslot");
   return val;
@@ -1263,7 +1263,7 @@ llvm::Value* LLArrayRead::codegen(CodegenPass* pass) {
 llvm::Value* LLArrayPoke::codegen(CodegenPass* pass) {
   Value* val  = this->value->codegen(pass);
   Value* base = NULL;
-  Value* slot = ari->codegenARI(pass, &base);
+  Value* slot = ari->codegenARI(pass, &base, val->getType());
   builder.CreateStore(val, slot, /*isVolatile=*/ false);
   return llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(
         llvm::StructType::get(foster::fosterLLVMContext)));
@@ -1564,7 +1564,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
   callInst->setCallingConv(callingConv);
   trySetName(callInst, "calltmp");
 
-  // See ProtobufIL.hs for a note on tail call marker safety.
+  // See CapnpIL.hs for a note on tail call marker safety.
   if (this->okToMarkAsTailCall && callingConv == llvm::CallingConv::Fast) {
     callInst->setTailCall(true);
   }
