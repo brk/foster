@@ -142,6 +142,20 @@ struct allocator_range {
   bool         stable;
 };
 
+struct immix_space;
+struct immix_worklist {
+    void       initialize()      { ptrs.clear(); idx = 0; }
+    void       process(immix_space* target);
+    bool       empty()           { return idx >= ptrs.size(); }
+    void       advance()         { ++idx; }
+    heap_cell* peek_front()      { return ptrs[idx]; }
+    void       add(heap_cell* c) { ptrs.push_back(c); }
+    size_t     size()            { return ptrs.size(); }
+  private:
+    size_t                  idx;
+    std::vector<heap_cell*> ptrs;
+};
+
 typedef void* ret_addr;
 typedef void* frameptr;
 // I've looked at using std::unordered_map or google::sparsehash instead,
@@ -276,6 +290,9 @@ struct GCGlobals {
 GCGlobals<copying_gc> gcglobals;
 #else
 GCGlobals<immix_space> gcglobals;
+
+// The worklist would be per-GC-thread in a multithreaded implementation.
+immix_worklist immix_worklist;
 #endif
 
 void flip_current_mark_bits_value() {
@@ -1123,23 +1140,29 @@ public:
   }
 
   void scan_cell(heap_cell* cell, int depth) {
-    if (!is_marked(cell)) {
-      //++gNumMarked;
-      cell->flip_mark_bits();
-      if (frame15_classification(cell) == frame15kind::immix_smallmedium) {
-        mark_line_for_slot((void*)cell);
-      }
-
-      heap_array* arr = NULL;
-      const typemap* map = NULL;
-      int64_t cell_size;
-      get_cell_metadata(cell, arr, map, cell_size);
-
-      // Without metadata for the cell, there's not much we can do...
-      if (map) scan_with_map_and_arr(cell, *map, arr, depth);
-    } else {
+    if (is_marked(cell)) {
       //fprintf(gclog, "cell %p was already marked\n", cell);
+      return;
     }
+
+    if (depth == 0) {
+      immix_worklist.add(cell);
+      return;
+    }
+
+    //++gNumMarked;
+    cell->flip_mark_bits();
+    if (frame15_classification(cell) == frame15kind::immix_smallmedium) {
+      mark_line_for_slot((void*)cell);
+    }
+
+    heap_array* arr = NULL;
+    const typemap* map = NULL;
+    int64_t cell_size;
+    get_cell_metadata(cell, arr, map, cell_size);
+
+    // Without metadata for the cell, there's not much we can do...
+    if (map) scan_with_map_and_arr(cell, *map, arr, depth - 1);
   }
 
   virtual tidy* tidy_for(tori* t) { return (tidy*) t; }
@@ -1212,7 +1235,7 @@ public:
 
 #if ENABLE_GCLOG || ENABLE_GCLOG_ENDGC
     base::TimeTicks phaseStartTime = base::TimeTicks::Now();
-#endif    
+#endif
 #if FOSTER_GC_TIME_HISTOGRAMS
     int64_t phaseStartTicks = __foster_getticks();
 #endif
@@ -1273,7 +1296,7 @@ public:
       }
     }
 
-    //worklist.process(next);
+    immix_worklist.process(this);
 
 #if ENABLE_GCLOG || ENABLE_GCLOG_ENDGC
     auto deltaRecursiveMarking = base::TimeTicks::Now() - phaseStartTime;
@@ -1594,6 +1617,14 @@ private:
   // immix_space_end
 };
 
+void immix_worklist::process(immix_space* target) {
+  while (!empty()) {
+    heap_cell* cell = peek_front();
+    advance();
+    target->scan_cell(cell, kFosterGCMaxDepth);
+  }
+  initialize();
+}
 
 
 // {{{ copying_gc
@@ -2200,6 +2231,7 @@ void copying_gc::worklist::process(copying_gc::semispace* next) {
     advance();
     next->scan_cell(cell, kFosterGCMaxDepth);
   }
+  initialize();
 }
 // }}}
 
