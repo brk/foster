@@ -8,7 +8,10 @@ mkField :: forall (a:Type) { a => Field a };
 mkField = { v => Field (prim ref v) };
 
 getField :: forall (a:Type) { Field a => a };
-getField = { f => case f of $Field a -> a^ end };
+getField = { f => case f of $Field r -> r^ end };
+
+setField :: forall (a:Type) { Field a => a => () };
+setField = { f => v => case f of $Field r -> v >^ r end };
 
 
 type case Ptr (a:Type)
