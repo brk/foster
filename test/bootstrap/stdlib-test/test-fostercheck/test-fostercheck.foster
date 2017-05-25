@@ -74,7 +74,7 @@ main = {
   case quickCheck prng32 testable_Int32_to_bool prop_oBNPT_same
     of $QCTR_Success     -> print_text "prop_oBNPT OK"
     of $QCTR_Failure _ q -> print_text "prop_oBNPT failed";
-                            listMap print_text q;
+                            _ = listMap print_text q;
                             ()
     of $QCTR_Exhausted _ -> print_text "prop_oBNPT exhausted"
   end;

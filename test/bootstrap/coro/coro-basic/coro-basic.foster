@@ -18,7 +18,7 @@ main = {
 
   bar = { y0 =>
          force_gc_for_debugging_purposes !;
-         coro_yield:[Array Int8,Int32] (zext_i8_to_i32 y0);
+         _ = coro_yield:[Array Int8,Int32] (zext_i8_to_i32 y0);
          print_i32 5555555;
          force_gc_for_debugging_purposes !;
          print_i32 6666666;
@@ -36,7 +36,7 @@ main = {
 
          foo y[0];
          // TODO no yield makes for an error
-         coro_yield:[Array Int8, Int32] 7777;
+         _ = coro_yield:[Array Int8, Int32] 7777;
          9999
   };
   r  = (prim ref 0);

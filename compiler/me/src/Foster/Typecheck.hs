@@ -323,7 +323,7 @@ tcRho ctx expr expTy = do
         ty' <- tcType ctx ty
         matchExp expTy (AnnPrimitive rng ty' (PrimInlineAsm ty' s c x)) "inline-asm"
       E_PrimAST   {} -> tcFails [text "Typecheck saw unexpected primitive", text $ show expr]
-      E_IntAST    rng txt ->            typecheckInt rng txt expTy   >>= (\v -> matchExp expTy v "tcInt")
+      E_IntAST    rng txt ->  typecheckInt rng txt           expTy   >>= (\v -> matchExp expTy v "tcInt")
       E_RatAST    rng txt -> (typecheckRat rng txt (expMaybe expTy)) >>= (\v -> matchExp expTy v "tcRat")
       E_BoolAST   rng b              -> tcRhoBool         rng   b          expTy
       E_StringAST rng txtorbytes     -> tcRhoTextOrBytes  rng   txtorbytes expTy
@@ -601,14 +601,16 @@ tcRhoSeqCheck range ty = do
       MetaTyVarTC mtv -> do --unify m unitTypeTC [text "seq-unit"]
         tcAddConstraint (TcC_SeqUnit mtv) range
       TupleTypeTC _ [] -> return ()
-      PrimIntTC _      -> return ()
+      PrimIntTC n | n /= I1 -> return ()
+      RefinedTypeTC v _ _ -> tcRhoSeqCheck range (tidType v)
       _ | isFnTyLike zt ->
            tcFails [text "Sequenced expression returned a function type:"
                    , indent 2 $ vcat [prettyWithLineNumbers range
                                      ,text "Maybe you forgot a function call?"
                                      ,text $ "If not, please add a value binding to make it clear "
                                           ++ "that you want to ignore the function-valued result."]]
-      _ -> return () -- Eventually, warn...
+      _ -> tcFails [text "Sequenced expression had a non-unit type:" <+> pretty zt
+                   , indent 2 $ vcat [prettyWithLineNumbers range]]
 
 isFnTyLike (FnTypeTC {}) = True
 isFnTyLike (RefinedTypeTC v _ _) = isFnTyLike (tidType v)
@@ -671,8 +673,9 @@ tcRhoTuple ctx rng kind exprs expTy = do
      Check (TupleTypeTC kind' ts) -> do
                                tcUnifyKinds (UniConst kind) kind'
                                tcTuple ctx rng exprs [Just t  | t <- ts]
-     Check ty -> tcFailsMore [text $ "typecheck: tuple (" ++ show exprs ++ ") "
-                             ++ "cannot check against non-tuple type " ++ show ty]
+     
+     Check ty -> tcFailsMore [text $ "Tuple cannot check against non-tuple type " ++ show ty
+                             , showStructure ty]
    matchExp expTy tup (highlightFirstLine (rangeOf rng))
   where
     tcTuple ctx rng exps typs = do

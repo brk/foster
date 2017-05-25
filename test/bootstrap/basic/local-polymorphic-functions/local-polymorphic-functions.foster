@@ -15,6 +15,6 @@ test-poly = {
             f (f x)
   };
 
-  doubleP:[SomeBoxedType] gBoxed (SomeBoxedCtor 0);
+  _ = doubleP:[SomeBoxedType] gBoxed (SomeBoxedCtor 0);
   ()
 };

@@ -23,10 +23,10 @@ main = {
   //simple-stream = (stream-nil-mediocre:[()] !);
 
   expect_i32 10; expect_i32 11; expect_i32 12; expect_i32 13;
-  stream-cutoff 4 (stream-map-mediocre p (stream-countup 10 B));
+  _ = stream-cutoff 4 (stream-map-mediocre p (stream-countup 10 B));
 
   expect_i32 1; expect_i32 2; expect_i32 3; expect_i32 4;
-  stream-cutoff 4 (stream-map-mediocre p (stream-reverse (stream-countdown-tozero 4 B)));
+  _ = stream-cutoff 4 (stream-map-mediocre p (stream-reverse (stream-countdown-tozero 4 B)));
 
   {
     simple-stream = stream-cons-mediocre (delay { B 5 })
@@ -34,7 +34,8 @@ main = {
                                          (stream-nil-mediocre !));
 
     expect_i32 5; expect_i32 6; expect_i32 5; expect_i32 6;
-    stream-cutoff 4 (stream-map-mediocre p (stream-append simple-stream simple-stream));
+    _ = stream-cutoff 4 (stream-map-mediocre p (stream-append simple-stream simple-stream));
+    ()
   } ! ;
 
   //seek 1`000`000`000;
