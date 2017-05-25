@@ -1256,9 +1256,14 @@ The corresponding AST to be matched is
     } else if (unop->getOpcode() == UO_AddrOf) {
       visitStmt(unop->getSubExpr(), AssignmentTarget);
     } else if (unop->getOpcode() == UO_Deref) {
-      llvm::outs() << "(ptrGet ";
-      visitStmt(unop->getSubExpr());
-      llvm::outs() << ")";
+      if (isDeclRefOfMutableAlias(unop->getSubExpr())) {
+        visitStmt(unop->getSubExpr());
+      } else {
+        llvm::outs() << "(ptrGet ";
+        llvm::outs() << "/* " << tyName(exprTy(unop->getSubExpr())) << " */";
+        visitStmt(unop->getSubExpr());
+        llvm::outs() << ")";
+      }
     } else {
       llvm::outs() << "/* line 424\n";
       llvm::outs().flush();
@@ -1267,6 +1272,13 @@ The corresponding AST to be matched is
       llvm::outs() << "\n*/\n";
       llvm::outs() << getText(R, *unop) << "\n";
     }
+  }
+
+  bool isDeclRefOfMutableAlias(const Expr* e) {
+    if (auto dre = dyn_cast<DeclRefExpr>(e->IgnoreParenImpCasts())) {
+      return mutableLocalAliases[dre->getDecl()->getName()];
+    }
+    return false;
   }
 
   bool isDeclNamed(const std::string& nm, const Expr* e) {
@@ -1783,6 +1795,14 @@ The corresponding AST to be matched is
       } else {
         llvm::outs() << emitVarName(vd) << " = ";
         visitStmt(vd->getInit());
+
+        if (auto uno = dyn_cast<UnaryOperator>(vd->getInit())) {
+          if (auto dre = dyn_cast<DeclRefExpr>(uno->getSubExpr())) {
+            if (isPrimRef(dre->getDecl())) {
+              mutableLocalAliases[vd->getName()] = true;
+            }
+          }
+        }
       }
     } else {
       const Type* ty = vd->getType().getTypePtr();
@@ -1990,8 +2010,7 @@ The corresponding AST to be matched is
       if (ctx == BooleanContext) { llvm::outs() << "("; }
 
       auto vd = dr->getDecl();
-      std::string rawName = vd->getName();
-      if (mutableLocals[rawName] && ctx != AssignmentTarget) {
+      if (isPrimRef(vd) && ctx != AssignmentTarget) {
         llvm::outs() << emitVarName(vd) << "^";
       } else {
         llvm::outs() << emitVarName(vd);
@@ -2224,9 +2243,14 @@ The corresponding AST to be matched is
     v.TraverseDecl(d);
   }
 
+  bool isPrimRef(const ValueDecl* d) {
+    return mutableLocals[d->getName()] || mutableLocalAliases[d->getName()];
+  }
+
   bool HandleTopLevelDecl(DeclGroupRef DR) override {
     for (DeclGroupRef::iterator b = DR.begin(), e = DR.end(); b != e; ++b) {
       mutableLocals.clear();
+      mutableLocalAliases.clear();
       voidPtrCasts.clear();
 
       emitCommentsFromBefore((*b)->getLocStart());
@@ -2354,6 +2378,7 @@ private:
   int             rawcomments_lastsize;
   SourceLocation  lastloc;
   std::map<std::string, bool> mutableLocals;
+  std::map<std::string, bool> mutableLocalAliases;
   VoidPtrCasts voidPtrCasts;
   Rewriter R;
   ASTContext* Ctx;
