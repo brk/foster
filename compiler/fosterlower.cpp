@@ -24,7 +24,6 @@
 #include "passes/FosterLL.h"
 
 #include "parse/FosterTypeAST.h"
-#include "parse/ProtobufToLLExpr.h"
 #include "parse/ParsingContext.h" // for LLVM type names
 
 #include "_generated_/FosterIL.capnp.h"

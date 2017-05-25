@@ -9,7 +9,6 @@
 
 #include "parse/ParsingContext.h"
 #include "parse/FosterTypeAST.h"
-#include "parse/ProtobufToLLExpr.h"
 
 #include "passes/FosterLL.h"
 
