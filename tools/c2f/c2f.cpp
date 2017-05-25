@@ -1550,7 +1550,7 @@ The corresponding AST to be matched is
       const Expr* base = nullptr;
       llvm::outs() << "(set_" << fieldAccessorName(me, base) << " ";
       llvm::outs() << "(";
-      visitStmt(base, AssignmentTarget);
+      visitStmt(base, ExprContext);
       llvm::outs() << ") (";
       visitStmt(binop->getRHS());
       llvm::outs() << ")";
@@ -1573,12 +1573,12 @@ The corresponding AST to be matched is
       std::string accessor = fieldAccessorName(me, base);
       llvm::outs() << "(set_" << accessor << " ";
       llvm::outs() << "(";
-      visitStmt(base, AssignmentTarget);
+      visitStmt(base, ExprContext);
       llvm::outs() << ") (";
 
         llvm::outs() << "(" << accessor << " ";
         llvm::outs() << "(";
-        visitStmt(base, AssignmentTarget); // ExprContext?
+        visitStmt(base, ExprContext); // ExprContext?
         llvm::outs() << ")";
         llvm::outs() << ")";
 
@@ -1895,9 +1895,11 @@ The corresponding AST to be matched is
       }
     } else if (const MemberExpr* me = dyn_cast<MemberExpr>(stmt)) {
       const Expr* base = nullptr;
+      if (ctx == BooleanContext) { llvm::outs() << "("; }
       llvm::outs() << "(" + fieldAccessorName(me, base) + " ";
-      visitStmt(base, ctx);
+      visitStmt(base, ExprContext);
       llvm::outs() << ")";
+      if (ctx == BooleanContext) { llvm::outs() << " " << mkFosterBinop("!=", exprTy(me)) << " 0 /*L1922*/)"; }
     } else if (const ArraySubscriptExpr* ase = dyn_cast<ArraySubscriptExpr>(stmt)) {
       emitPeek(ase->getBase(), ase->getIdx());
     } else if (const CompoundAssignOperator* cao = dyn_cast<CompoundAssignOperator>(stmt)) {
@@ -1907,7 +1909,7 @@ The corresponding AST to be matched is
     } else if (const UnaryOperator* unop = dyn_cast<UnaryOperator>(stmt)) {
       if (ctx == BooleanContext) { llvm::outs() << "("; }
       handleUnaryOperator(unop, ctx);
-      if (ctx == BooleanContext) { llvm::outs() << " " << mkFosterBinop("!=", exprTy(unop)) << " 0 /*L1455*/)"; }
+      if (ctx == BooleanContext) { llvm::outs() << " " << mkFosterBinop("!=", exprTy(unop)) << " 0 /*L1932*/)"; }
     } else if (const IntegerLiteral* lit = dyn_cast<IntegerLiteral>(stmt)) {
       if (ctx == BooleanContext) {
         llvm::outs() << (lit->getValue().getBoolValue() ? "True" : "False");
@@ -2157,8 +2159,8 @@ The corresponding AST to be matched is
       }
     }
     llvm::outs() << ";\n\n";
-    // TODO emit field accessor functions
-
+    
+    // Emit field getters
     for (auto d : rd->decls()) {
       if (const FieldDecl* fd = dyn_cast<FieldDecl>(d)) {
         std::string fieldName = fosterizedName(fd->getName());
@@ -2173,6 +2175,26 @@ The corresponding AST to be matched is
           }
         }
         llvm::outs() << " -> getField " << fieldName << " end };\n";
+      }
+    }
+
+    // Emit field setters
+    for (auto d : rd->decls()) {
+      if (const FieldDecl* fd = dyn_cast<FieldDecl>(d)) {
+        std::string fieldName = fosterizedName(fd->getName());
+        llvm::outs() << "set_" << name << "_" << fieldName
+          << " = { sv : " << name << " => v : " << tyName(fd->getType().getTypePtr())
+          << " => case sv of $" << name;
+        for (auto d2 : rd->decls()) {
+          if (const FieldDecl* fd2 = dyn_cast<FieldDecl>(d2)) {
+            if (fd2 == fd) {
+              llvm::outs() << " " << fieldName;
+            } else {
+              llvm::outs() << " _";
+            }
+          }
+        }
+        llvm::outs() << " -> setField " << fieldName << " v end };\n";
       }
     }
   }
