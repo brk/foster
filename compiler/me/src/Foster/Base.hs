@@ -781,14 +781,6 @@ instance IntSized IntSizeBits
        intSizeOf IWd = 32 -- TODO this is hacky =/
        intSizeOf IDw = 64
 
-sizeOfBits :: Int -> IntSizeBits
-sizeOfBits 1           = I1
-sizeOfBits n | n <= 8  = I8
-sizeOfBits n | n <= 16 = I16
-sizeOfBits n | n <= 32 = I32
-sizeOfBits n | n <= 64 = I64
-sizeOfBits n = error $ "TypecheckInt.hs:sizeOfBits: Unsupported size: " ++ show n
-
 instance Pretty IntSizeBits    where pretty IWd = text "Word"
                                      pretty IDw = text "WordX2"
                                      pretty I1 = text "Bool"

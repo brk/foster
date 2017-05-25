@@ -24,13 +24,13 @@ threedotthree-part-one = {
   // k  :: forall a b,{ a => b => b };
   // So k must be instantiated as k:[B,B].
   expect_i32 0;
-  f1 k;
+  _ = f1 k;
 
   expect_i32 1;
-  f2b { forall b:Boxed, x:b => y:b => y };
+  _ = f2b { forall b:Boxed, x:b => y:b => y };
 
   expect_i32 1;
-  f2b k;
+  _ = f2b k;
 
   33
 };

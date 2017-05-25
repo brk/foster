@@ -310,6 +310,14 @@ tcApplyIntConstraints = Tc $ \env -> do
                                     (Just $ PrimIntTC (sizeOfBits neededBits)))
         (Map.toList map)
   retOK ()
+ where
+  sizeOfBits :: Int -> IntSizeBits
+  sizeOfBits n | n <= 8  = I8
+  sizeOfBits n | n <= 16 = I16
+  sizeOfBits n | n <= 32 = I32
+  sizeOfBits n | n <= 64 = I64
+  sizeOfBits n = error $ "Context.hs: Unsupported integer size: " ++ show n
+
 
 -- The type says it all: run a Tc action, and capture any errors explicitly.
 tcIntrospect :: Tc a -> Tc (OutputOr a)

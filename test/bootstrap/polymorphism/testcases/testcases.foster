@@ -72,7 +72,8 @@ t1 = {
 
   // aa :: forall a  , {   a   =>   a   }
   // tc :: forall b c, { (b,c) => (b,c) } => (B32, C32) }
-  tc aa;
+  _ = tc aa;
+  ()
 };
 
 t2 = {
@@ -82,7 +83,8 @@ t2 = {
 
   // bc :: forall p q, { (p,q) => (p,q) }
   // tc :: forall b c, { (b,c) => (b,c) }
-  tc bc;
+  _ = tc bc;
+  ()
 };
 
 // From p. 70 of Peyton Jones, Vytiniotis, Weirich, and Shields

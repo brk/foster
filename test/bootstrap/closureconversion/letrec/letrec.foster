@@ -1,7 +1,7 @@
 main = {
   expect_i1 True; print_i1 (is-odd 3);
 
-  loopy 3;
+  _ = loopy 3;
 
   // Make sure that we give consistent treatment to the return type
   // of recursively bound functions.
