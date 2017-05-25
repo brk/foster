@@ -7,7 +7,6 @@
 #include "base/SourceRange.h"
 #include "base/LLVMUtils.h"
 
-#include "parse/ANTLRtoFosterAST.h"
 #include "parse/ParsingContext.h"
 #include "parse/FosterTypeAST.h"
 #include "parse/ProtobufToLLExpr.h"
