@@ -89,6 +89,7 @@ set(CORO_METHOD CORO_ASM
 
 find_program(CAPNP NAMES capnp
   PATHS
+    $ENV{HOME}/sw/local/capnp-c++-0.6.0/bin
     $ENV{HOME}/sw/local/capnproto-0.5.0/bin
     $ENV{HOME}/sw/local/capnproto-0.5.3/bin
     $ENV{HOME}/sw/local/capnp-c++-0.5.3/bin
@@ -211,6 +212,7 @@ add_custom_command(
   OUTPUT ${GENERATED}/FosterIL.capnp.c++
   COMMAND ${CAPNP} compile FosterIL.capnp
                  --output=${CAPNP_BIN_DIR}/capnpc-c++:${GENERATED}
+                 --import-path=${CAPNP_DIR}/include
   WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/compiler/parse
   DEPENDS
           ${PROJECT_SOURCE_DIR}/compiler/parse/FosterIL.capnp
@@ -222,6 +224,7 @@ add_custom_command(
   OUTPUT ${PROJECT_SOURCE_DIR}/compiler/me/src/FosterIL_capnp.hs
   COMMAND ${CAPNP} compile FosterIL.capnp
                  --output=${MINUPROTO}:${PROJECT_SOURCE_DIR}/compiler/me/src
+                 --import-path=${CAPNP_DIR}/include
   WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/compiler/parse
   DEPENDS
           ${PROJECT_SOURCE_DIR}/compiler/parse/FosterIL.capnp
@@ -460,8 +463,8 @@ add_executable(fosterlower
 target_link_libraries(fosterlower
   fosterc_parse fosterc_passes fosterc_base
   fosterc_llvm
-  ${CAPNP_DIR}/lib/libcapnp${CMAKE_SHARED_LIBRARY_SUFFIX}
-  ${CAPNP_DIR}/lib/libkj${CMAKE_SHARED_LIBRARY_SUFFIX}
+  ${CAPNP_DIR}/lib/libcapnp${CMAKE_STATIC_LIBRARY_SUFFIX}
+  ${CAPNP_DIR}/lib/libkj${CMAKE_STATIC_LIBRARY_SUFFIX}
   antlr3c ${LLVM_LDFLAGS})
 
 target_include_directories(fosterlower
