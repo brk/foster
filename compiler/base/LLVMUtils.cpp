@@ -185,23 +185,6 @@ void dumpModuleToBitcode(llvm::Module* mod, const std::string& filename) {
   WriteBitcodeToFile(mod, out);
 }
 
-void initializeKnownNonAllocatingFQNames(llvm::StringSet<>& names) {
-  names.insert("print_i1");
-  names.insert("expect_i1");
-  names.insert("print_i32");
-  names.insert("expect_i32");
-  names.insert("print_i64");
-  names.insert("expect_i64");
-  names.insert("read_i32");
-  names.insert("mp_int_zero");
-  names.insert("mp_int_clear");
-  names.insert("mp_int_init_value");
-
-  // This one will allocate memory, but for now, it only allocates
-  // memory via malloc, so it cannot trigger GC.
-  names.insert("foster_coro_create");
-}
-
 } // namespace foster
 
 std::string makePathAbsolute(std::string path) {

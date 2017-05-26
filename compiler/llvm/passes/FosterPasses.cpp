@@ -21,7 +21,6 @@ void runCleanupPasses(llvm::Module& mod) {
   foster::runFunctionPassesOverModule(fpasses, &mod);
 
   llvm::legacy::PassManager passes;
-  passes.add(foster::createGCMallocFinderPass());
   passes.add(llvm::createDeadInstEliminationPass());
   passes.run(mod);
 }
