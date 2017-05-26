@@ -9,6 +9,8 @@ import fnmatch
 import hashlib
 import shutil
 
+from run_cmd import walltime, elapsed_since
+
 csmith_dir = os.path.expanduser("~/sw/local/csmith-2.3.0")
 csmith_inc = os.path.join(csmith_dir, 'include', 'csmith-2.3.0')
 
@@ -23,6 +25,7 @@ def run_cmd(cmd, stdout=None, stderr=None, stdin=None, timeout=2):
   try:
     #print ' '.join(cmd)
     def runner():
+        
          mut.proc = subprocess.Popen(cmd, stdout=stdout, stderr=stderr, stdin=stdin)
          mut.proc.communicate()
 
@@ -73,16 +76,19 @@ def attempt_test_named(filename, copy_here_if_ok=None):
     c_rv = run_cmd("runclang %s -I %s" % (c_code, csmith_inc), stdout=open(c_out, 'w'), stderr=open(c_warn, 'w'))
 
     if c_rv == 0:
-      linecount = len(open(c_code, 'r').readlines())
-      print "Compiling", c_code, "to Foster... (%d lines)" % linecount
+      c_linecount = len(open(c_code, 'r').readlines())
+      print "Compiling", c_code, "to Foster... (%d lines)" % c_linecount
       run_cmd("c2foster %s -I %s" % (c_code, csmith_inc), stdout=open(f_code, 'w'), stderr=open(cf_warn, 'w'))
 
       print "Compiling and running the generated Foster code..."
+      f_c_st = walltime()
       f_c_rv = run_cmd("runfoster %s" % f_code, stdout=open(f_out, 'w'), timeout=30)
-
+      f_c_ms = elapsed_since(f_c_st)
+      f_linecount = len(open(f_code, 'r').readlines())
+      print "fosterc ran @ %d lines / %.1f s (%d l/s)" % (f_linecount, (f_c_ms / 1000.0), int(f_linecount / (f_c_ms / 1000.0)) )
 
       linecount = len(open(c_out, 'r').readlines())
-      print "Diffing... (%d lines)" % linecount
+      print "Diffing... (%d lines)" % linecount 
 
       if files_differ(c_out, f_out):
           print "Test case", c_code, "            FAILED (%s)" % fail_reason(f_c_rv)
