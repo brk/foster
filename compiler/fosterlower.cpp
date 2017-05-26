@@ -218,7 +218,8 @@ LLModule* readLLProgramFromCapnp(const string& pathstr) {
     FILE* f = fopen(pathstr.c_str(), "rb");
     { int fd = fileno(f);
       ::capnp::ReaderOptions options;
-      options.traversalLimitInWords = 64 * 1024 * 1024;
+      options.traversalLimitInWords = 128 * 1024 * 1024;
+      options.nestingLimit = 128;
       ::capnp::StreamFdMessageReader message(fd, options);
       foster::be::Module::Reader modread = message.getRoot<foster::be::Module>();
       prog = foster::LLModule_from_capnp(modread);
