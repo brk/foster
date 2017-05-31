@@ -37,7 +37,7 @@ import Foster.AnnExpr
 import Foster.Infer(parSubstTcTy)
 
 import Text.PrettyPrint.ANSI.Leijen
-import Debug.Trace(trace)
+--import Debug.Trace(trace)
 
 import qualified Data.Graph.Inductive.Graph            as Graph
 import qualified Data.Graph.Inductive.Query.DFS        as Graph
@@ -750,7 +750,7 @@ collectIntConstraints ae =
           let handleArm (CaseArm pat body guard _binds _rng) = do
                 applyPatternIntConstraints pat
                 collectIntConstraints body
-                mapMaybeM collectIntConstraints guard
+                _ <- mapMaybeM collectIntConstraints guard
                 return ()
           mapM_ handleArm arms
 
@@ -1077,7 +1077,7 @@ localBlockSinking knf =
     if nu == ol then
       newfn
       else
-        trace ("localBlockSinking turned\n\n" ++ show (showStructure (fnBody knf))
+        {-trace ("localBlockSinking turned\n\n" ++ show (showStructure (fnBody knf))
               ++ "\n\ninto\n" ++ show (showStructure (fnBody newfn))
               ++ "\nallMentions: " ++ show allMentions
               ++ "\nparents: " ++ show parents
@@ -1086,7 +1086,7 @@ localBlockSinking knf =
               ++ "\nfunctions: " ++ show (Set.toList functionsSet)
               ++ "\ncallGraph: " ++ show [(n2b x, n2b y) | (x,y) <- Graph.edges callGraph]
               ++ "\nrelocList: " ++ show [(id,tidIdent (fnVar fn), dom) | ((id,fn),dom) <- relocationTargetsList]
-              ) newfn
+              )-} newfn
  where
   rebuildFn   = rebuildFnWith rebuilder addBindingsFor
   functions   = collectFunctions knf
