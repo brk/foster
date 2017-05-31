@@ -88,7 +88,7 @@ def print_result_table(res):
         for x in list((res['fp_elapsed'], res['fm_elapsed'], res['fl_elapsed'],
                        res['fc_elapsed'], res['as_elapsed'] + res['ld_elapsed'])))
     if options.print_bytes_per_sec and 'inbytes' in res:
-      print """input CBOR %(inbytes)s (%(inbytes_per_sec)s/s); output protobuf %(ckbytes)s (%(ckbytes_per_sec)s/s); object file %(outbytes)s (%(outbytes_per_sec)s/s)""" % res
+      print """input CBOR %(inbytes)s (%(inbytes_per_sec)s/s); output capnp %(ckbytes)s (%(ckbytes_per_sec)s/s); object file %(outbytes)s (%(outbytes_per_sec)s/s)""" % res
     print "".join("-" for x in range(60))
 
 def run_diff(a, b):
@@ -137,7 +137,7 @@ def run_one_test(testpath, tmpdir, progargs, paths, exe_cmd, elapseds):
                                  showcmd=(not options.quietish), strictrv=False)
 
   inbytes  = file_size(paths['_out.parsed.cbor'])
-  ckbytes  = file_size(paths['_out.checked.pb'])
+  ckbytes  = file_size(paths['_out.checked.pb'] + '.cb')
   outbytes = file_size(paths['_out.o'])
 
   if rv == 0:
