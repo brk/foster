@@ -136,6 +136,11 @@ string(REPLACE ${NDEBUG_FLAG} "" LLVM_CFLAGS "${LLVM_CFLAGS}")
 # and unconditionally add it to CXXFLAGS later.
 string(REPLACE "-std=c++11" "" LLVM_CFLAGS "${LLVM_CFLAGS}")
 
+# llvm-config reports flags for the compiler used to build it,
+# which may result in flags for GCC that clang++ chokes on.
+#   https://bugs.llvm.org//show_bug.cgi?id=24979
+string(REPLACE "-Wno-maybe-uninitialized" "" LLVM_CFLAGS "${LLVM_CFLAGS}")
+
 # Make sure we don't have any extraneous newlines in generated Makefiles
 #
 string(STRIP "${LLVM_ORIGINAL_CFLAGS}" LLVM_ORIGINAL_CFLAGS)
