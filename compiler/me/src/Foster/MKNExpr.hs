@@ -120,10 +120,10 @@ substVarForVar'' bx by = do
   mb_fy <- boundOcc by
   case (mb_fx, mb_fy) of
     (Just fx, Just fy) -> do
-      liftIO $ putStrLn $ "substVarForVar'' " ++ show (boundVar bx) ++ "  " ++ show (boundVar by)
+      dbgDoc $ text $ "substVarForVar'' " ++ show (boundVar bx) ++ "  " ++ show (boundVar by)
       substVarForVar fx fy
     _ -> do
-      liftIO $ putStrLn $ "substVarForVar'' doing nothing; one or both binders are dead"
+      dbgDoc $ text $ "substVarForVar'' doing nothing; one or both binders are dead"
       return ()
 
 mergeFreeLists :: OrdRef (Maybe (FreeOcc t)) -> OrdRef (Maybe (FreeOcc t)) -> Compiled ()
@@ -507,8 +507,8 @@ contApply (CC_Base (fn, _)) v' = fn v'
 
 mkOfKNMod kn mainBinder = do
   lift $ whenDumpIR "mono-structure" $ do
-    liftIO $ putDocLn $ pretty kn
-    liftIO $ putDocLn $ showStructure kn
+    dbgDoc $ pretty kn
+    dbgDoc $ showStructure kn
   mkOfKN_Base kn (CC_Tail mainBinder)
 
 mkOfKN_Base :: (CanMakeFun ty, Pretty ty) =>
@@ -620,10 +620,10 @@ mkOfKN_Base expr k = do
         KNLetRec  xs es rest -> do 
             let vs = map (\(x,e) -> (TypedId (typeKN e) x)) (zip xs es)
             m1 <- get
-            liftIO $ putDocLn $ text "m1: " <> pretty (Map.toList m1)
+            dbgDoc $ text "m1: " <> pretty (Map.toList m1)
             xs' <- mapM mkBinder vs
             m2 <- get
-            liftIO $ putDocLn $ text "m2: " <> pretty (Map.toList m2)
+            dbgDoc $ text "m2: " <> pretty (Map.toList m2)
             --put $ extend m (map tidIdent vs) xs'
             -- TODO reconsider k
             ts <- mapM (\e -> mkOfKN_Base e k) es
@@ -1020,7 +1020,7 @@ collectRedexes ref valbindsref expbindsref funbindsref aliasesref sbtm = go sbtm
                             -- we can look as uses of bv to determine whether to treat
                             -- x's use as a singleton or not.
                             
-                            liftIO $ putDocLn $ text "bitcast of " <> pretty (tidIdent $ boundVar bv)
+                            dbgDoc $ text "bitcast of " <> pretty (tidIdent $ boundVar bv)
                                                 <$> text "        from " <> pretty (tidType $ boundVar bv)
                                                 <$> text "          to " <> pretty _ty
                                                 
@@ -1030,7 +1030,7 @@ collectRedexes ref valbindsref expbindsref funbindsref aliasesref sbtm = go sbtm
                             --      we need to associate the known function with the alias,
                             --      and (B) we must account for aliases when determining which
                             --      functions are singleton/
-                            liftIO $ putStrLn $ "ZZZ alias " ++ show (pretty x) ++ " ;;; " ++ show (pretty $ boundVar bv)
+                            dbgDoc $ text $ "ZZZ alias " ++ show (pretty x) ++ " ;;; " ++ show (pretty $ boundVar bv)
                             liftIO $ do m <- readIORef funbindsref
                                         case Map.lookup bv m of
                                           Just f -> do writeIORef funbindsref (Map.insert x f m)
@@ -1043,11 +1043,11 @@ collectRedexes ref valbindsref expbindsref funbindsref aliasesref sbtm = go sbtm
                         xc <- dlcCount x
                         bc <- mkbCount x
                         fc <- dlcCount (mkfnVar mkfn)
-                        liftIO $ putStrLn $ "markFnBind: x  = (" ++ show xc ++ " vs " ++ show bc ++ ") " ++ show (tidIdent $ boundVar x)                
-                        liftIO $ putStrLn $ "            fv = (" ++ show fc ++ ") " ++ show (tidIdent $ boundVar (mkfnVar mkfn))
+                        dbgDoc $ text $ "markFnBind: x  = (" ++ show xc ++ " vs " ++ show bc ++ ") " ++ show (tidIdent $ boundVar x)                
+                        dbgDoc $ text $ "            fv = (" ++ show fc ++ ") " ++ show (tidIdent $ boundVar (mkfnVar mkfn))
                         if xc == 0 && not (isTextPrim (tidIdent $ boundVar x))
                           then do
-                            -- liftIO $ putStrLn $ "killing dead fn binding " ++ show (tidIdent $ boundVar x)
+                            -- dbgDoc $ text $ "killing dead fn binding " ++ show (tidIdent $ boundVar x)
                             writeOrdRef fn Nothing
                           else do
                             liftIO $ modIORef' funbindsref (\m -> Map.insert x fn m)
@@ -1088,7 +1088,7 @@ classifyRedex' binder (Just fn) args knownFns = do
   callee_singleton <- binderIsSingletonOrDead binder
   {-
   count <- mkbCount binder
-  liftIO $ putStrLn $ "is callee singleton? " ++ show (pretty binder) ++
+  dbgDoc $ text $ "is callee singleton? " ++ show (pretty binder) ++
                       " -> " ++ show callee_singleton ++ " count: " ++ show count ++
                       " ; rec? " ++ show (mkfnIsRec fn) -}
 
@@ -1126,7 +1126,7 @@ copyBinder msg b = do
   let binder = MKBound (TypedId (tidType $ boundVar b) newid) ref
   !m <- get
   put $ extend m [tidIdent $ boundVar b] [binder]
-  liftIO $ putStrLn $ "copied binder " ++ show (prettyIdent $ tidIdent $ boundVar b) ++ " (" ++ msg ++ ") into " ++ show newid
+  dbgDoc $ text $ "copied binder " ++ show (prettyIdent $ tidIdent $ boundVar b) ++ " (" ++ msg ++ ") into " ++ show newid
   return binder
  where
     ccRefresh :: Ident -> Compiled Ident
@@ -1306,7 +1306,7 @@ mknShrink :: (Pretty t, Show t, AlphaRenamish t RecStatus)
 mknShrink subterm mainCont = do
   term <- lift $ readLink "mknShrink" subterm
   kn1 <- lift $ knOfMK (YesCont mainCont) term  
-  liftIO $ putStrLn $ "mknShrink, term is " ++ show (pretty kn1)
+  dbgDoc $ text $ "mknShrink, term is " ++ show (pretty kn1)
   return kn1
 
 mknInline :: Subterm MonoType -> MKBoundVar MonoType -> Maybe Int -> Compiled ()
@@ -1325,10 +1325,10 @@ mknInline subterm mainCont mb_gas = do
        k0 <- liftIO $ readIORef kr
        e0 <- liftIO $ readIORef er
        f0 <- liftIO $ readIORef fr
-       liftIO $ putStrLn $ "collected " ++ show (length (worklistToList w0)) ++ " redexes..."
-       liftIO $ putStrLn $ "collected " ++ show (length (Map.toList k0)) ++ " valbinds..."
-       liftIO $ putStrLn $ "collected " ++ show (length (Map.toList e0)) ++ " expbinds..."
-       liftIO $ putStrLn $ "collected " ++ show (length (Map.toList f0)) ++ " funbinds..."
+       dbgDoc $ text $ "collected " ++ show (length (worklistToList w0)) ++ " redexes..."
+       dbgDoc $ text $ "collected " ++ show (length (Map.toList k0)) ++ " valbinds..."
+       dbgDoc $ text $ "collected " ++ show (length (Map.toList e0)) ++ " expbinds..."
+       dbgDoc $ text $ "collected " ++ show (length (Map.toList f0)) ++ " funbinds..."
 
     let worklistGet' = do
           w0 <- liftIO $ readIORef wr
@@ -1356,19 +1356,19 @@ mknInline subterm mainCont mb_gas = do
                       return $ Just (mredex, parent)
                       -}
 
-    let go 0 = liftIO $ putStrLn "... ran outta gas"
+    let go 0 = dbgDoc $ text "... ran outta gas"
 
         go gas = do
            mb_mredex_parent <- worklistGet'
            case mb_mredex_parent of
-             Nothing -> liftIO $ putStrLn "... ran outta work"
+             Nothing -> dbgDoc $ text "... ran outta work"
              Just (_subterm, mredex, Nothing) -> do
                 case mredex of
                   MKLetFuns _u [(bv,_)] _ | tidIdent (boundVar bv) == GlobalSymbol (T.pack "TextFragment") ->
                     return () -- The top-most function binding will be parentless; don't print about it though.
                   _ -> do
                     do redex <- knOfMK (YesCont mainCont) mredex
-                       liftIO $ putDocLn $ red (text "skipping parentless redex: ") <+> pretty redex
+                       dbgDoc $ red (text "skipping parentless redex: ") <+> pretty redex
                   
                 go gas
              Just (subterm, mredex, Just _parent) -> case mredex of
@@ -1379,19 +1379,19 @@ mknInline subterm mainCont mb_gas = do
                  case situation of
                    CallOfUnknownFunction -> do
                      do redex <- knOfMK NoCont mredex
-                        liftIO $ putDocLn $ text "CallOfUnknownFunction (inlineN): " <+> pretty redex
+                        dbgDoc $ text "CallOfUnknownFunction (inlineN): " <+> pretty redex
                      return ()
                    CallOfSingletonFunction fn -> do
                      do redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
-                        liftIO $ putDocLn $ text "CallOfSingletonFunction starting with: " <+> align (pretty redex)
+                        dbgDoc $ text "CallOfSingletonFunction starting with: " <+> align (pretty redex)
 
                      do v <- freeBinder callee
-                        liftIO $ putDocLn $ green (text "inlining without copying ") <> pretty (tidIdent $ boundVar v)
+                        dbgDoc $ green (text "inlining without copying ") <> pretty (tidIdent $ boundVar v)
                      newbody <- betaReduceOnlyCall fn args kv
 
                      --do nubody <- readLink "kninline-sf" newbody
                      --   newbody' <- knOfMK NoCont nubody
-                     --   liftIO $ putDocLn $ text "CallOfSingletonFunction generated: " <+> pretty newbody'
+                     --   dbgDoc $ text "CallOfSingletonFunction generated: " <+> pretty newbody'
 
                      replaceWith subterm newbody
                      killBinding callee knownFns aliases
@@ -1401,22 +1401,22 @@ mknInline subterm mainCont mb_gas = do
                      case _parent of
                             ParentTerm pt -> do
                               kn <- knOfMK   (mbContOf $ mkfnCont fn) pt
-                              liftIO $ putDocLn $ text "CallOfSingletonFunction parent tm became: " <+> pretty kn
+                              dbgDoc $ text "CallOfSingletonFunction parent tm became: " <+> pretty kn
                             ParentFn   pf -> do
                               kn <- knOfMKFn NoCont pf
-                              liftIO $ putDocLn $ text "CallOfSingletonFunction parent fn became: " <+> pretty kn
+                              dbgDoc $ text "CallOfSingletonFunction parent fn became: " <+> pretty kn
 -}
 
                    CallOfDonatableFunction fn -> do
                      do redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
-                        liftIO $ putDocLn $ text "CallOfDonatableFunction: " <+> pretty redex
+                        dbgDoc $ text "CallOfDonatableFunction: " <+> pretty redex
                      flags <- gets ccFlagVals
                      if getInliningDonate flags
                        then do
                          do v <- freeBinder callee
-                            liftIO $ putDocLn $ green (text "copying and inlining DF ") <+> pretty (tidIdent $ boundVar v)
+                            dbgDoc $ green (text "copying and inlining DF ") <+> pretty (tidIdent $ boundVar v)
                             --kn1 <- knOfMKFn (mbContOf $ mkfnCont fn) fn
-                            --liftIO $ putStrLn $ "pre-copy fn is " ++ show (pretty kn1)
+                            --dbgDoc $ text $ "pre-copy fn is " ++ show (pretty kn1)
                             return ()
                          fn' <- runCopyMKFn fn
                          newbody <- do betaReduceOnlyCall fn' args kv
@@ -1429,13 +1429,13 @@ mknInline subterm mainCont mb_gas = do
 
                    SomethingElse _fn -> do
                      do redex <- knOfMK (mbContOf $ mkfnCont _fn) mredex
-                        liftIO $ putDocLn $ text "SomethingElse (inlineNorF): " <+> align (pretty redex)
+                        dbgDoc $ text "SomethingElse (inlineNorF): " <+> align (pretty redex)
                      if shouldInlineRedex mredex _fn
                        then do
                              do v <- freeBinder callee
-                                liftIO $ putDocLn $ green (text "copying and inlining SE ") <+> pretty (tidIdent $ boundVar v)
+                                dbgDoc $ green (text "copying and inlining SE ") <+> pretty (tidIdent $ boundVar v)
                                 --kn1 <- knOfMK (YesCont mainCont) term
-                                --liftIO $ putStrLn $ "knOfMK, term is " ++ show (pretty kn1)
+                                --dbgDoc $ text $ "knOfMK, term is " ++ show (pretty kn1)
                              fn' <- runCopyMKFn _fn
                              newbody <- betaReduceOnlyCall fn' args kv
                              replaceWith subterm newbody
@@ -1454,52 +1454,52 @@ mknInline subterm mainCont mb_gas = do
                         if T.pack ".fret" `T.isPrefixOf` (identPrefix $ tidIdent $ boundVar cb) 
                           then return ()
                           else do redex <- knOfMK (YesCont mainCont) mredex
-                                  liftIO $ putDocLn $ red (text "CallOfUnknownCont: ") <+> pretty redex
+                                  dbgDoc $ red (text "CallOfUnknownCont: ") <+> pretty redex
                      return ()
 
                    CallOfSingletonFunction fn -> do
                      do redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
-                        liftIO $ putDocLn $ text "CallOfSingletonCont: " <+> pretty redex
+                        dbgDoc $ text "CallOfSingletonCont: " <+> pretty redex
                     
                         mapM_ (\arg -> do b <- freeBinder arg
                                           c <- mkbCount b
-                                          liftIO $ putDocLn $ text "      pre-beta occ count: " <> pretty c) args
+                                          dbgDoc $ text "      pre-beta occ count: " <> pretty c) args
                                           {-
       fob <- freeBinder fo
       fo_c <- mkbCount fob
       fx_c <- mkbCount b
-      liftIO $ putDocLn $ text "substituting var " <> pretty (boundVar b) <> text " for " <> pretty (boundVar fob)
-      liftIO $ putDocLn $ text "    occ lengths " <> pretty fx_c <> text " and " <> pretty fo_c
+      dbgDoc $ text "substituting var " <> pretty (boundVar b) <> text " for " <> pretty (boundVar fob)
+      dbgDoc $ text "    occ lengths " <> pretty fx_c <> text " and " <> pretty fo_c
 
       fo_c <- mkbCount fob
       fx_c <- mkbCount b
       fa <- freeBinder fox
-      liftIO $ putDocLn $ text "    afteward, lengths " <> pretty fx_c <> text " and " <> pretty fo_c <> text "; fox -> " <> pretty (boundVar fa)
+      dbgDoc $ text "    afteward, lengths " <> pretty fx_c <> text " and " <> pretty fo_c <> text "; fox -> " <> pretty (boundVar fa)
       -}
 
                      do v <- freeBinder callee
-                        liftIO $ putDocLn $ green (text "      beta reducing (inlining) singleton cont ") <> pretty (tidIdent $ boundVar v)
+                        dbgDoc $ green (text "      beta reducing (inlining) singleton cont ") <> pretty (tidIdent $ boundVar v)
 
                      newbody <- betaReduceOnlyCall fn args callee
                      
                     --  do newbody' <- knOfMK (mbContOf $ mkfnCont fn) newbody
-                    --     liftIO $ putDocLn $ text "CallOfSingletonCont: new: " <+> pretty newbody'
+                    --     dbgDoc $ text "CallOfSingletonCont: new: " <+> pretty newbody'
 
                      mapM_ (\arg -> do b <- freeBinder arg
                                        c <- mkbCount b
-                                       liftIO $ putDocLn $ text "      pre-kill occ count: " <> pretty c) args
+                                       dbgDoc $ text "      pre-kill occ count: " <> pretty c) args
 
                      replaceWith subterm newbody
                      killBinding callee knownFns aliases
 
                      mapM_ (\arg -> do b <- freeBinder arg
                                        c <- mkbCount b
-                                       liftIO $ putDocLn $ text "      post-kill occ count: " <> pretty c) args
+                                       dbgDoc $ text "      post-kill occ count: " <> pretty c) args
 
 
                    CallOfDonatableFunction fn -> do
                      do redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
-                        liftIO $ putDocLn $ text "CallOfDonatableCont: " <+> pretty redex
+                        dbgDoc $ text "CallOfDonatableCont: " <+> pretty redex
                      return ()
                      {-
                      flags <- gets ccFlagVals
@@ -1515,10 +1515,10 @@ mknInline subterm mainCont mb_gas = do
 -}
                    SomethingElse _fn -> do
                      do redex <- knOfMK (mbContOf $ mkfnCont _fn) mredex
-                        liftIO $ putDocLn $ text "SomethingElseC: " <+> pretty redex
+                        dbgDoc $ text "SomethingElseC: " <+> pretty redex
                      if shouldInlineRedex mredex _fn
                        then do
-                             liftIO $ putStrLn "skipping inlining continuation redex...?"
+                             dbgDoc $ text "skipping inlining continuation redex...?"
                              {-
                              fn' <- runCopyMKFn _fn
                              newbody <- betaReduceOnlyCall fn' args kv >>= readLink "CallOfDonatable"
@@ -1534,20 +1534,20 @@ mknInline subterm mainCont mb_gas = do
                  contifiability <- analyzeContifiability knowns
                  case contifiability of
                    GlobalsArentContifiable -> return ()
-                   CantContifyWithNoFn -> do liftIO $ putDocLn $ yellow (text "       can't contify with no fn...")
+                   CantContifyWithNoFn -> do dbgDoc $ yellow (text "       can't contify with no fn...")
                                              return ()
-                   NoNeedToContifySingleton -> do liftIO $ putDocLn $ yellow (text "       singleton usage, no need to contify")
+                   NoNeedToContifySingleton -> do dbgDoc $ yellow (text "       singleton usage, no need to contify")
                                                   return ()
-                   HadUnknownContinuations -> do liftIO $ putDocLn $ red (text "       had one or more unknown continuations")
+                   HadUnknownContinuations -> do dbgDoc $ red (text "       had one or more unknown continuations")
                                                  return ()
-                   HadMultipleContinuations -> do liftIO $ putDocLn $ red (text "       had too many continuations")
+                   HadMultipleContinuations -> do dbgDoc $ red (text "       had too many continuations")
                                                   return ()
-                   NoSupportForMultiBindingsYet -> do liftIO $ putDocLn $ red (text "skipping considering " <> pretty (map (tidIdent.boundVar.fst) knowns) <> text " for contification")
+                   NoSupportForMultiBindingsYet -> do dbgDoc $ red (text "skipping considering " <> pretty (map (tidIdent.boundVar.fst) knowns) <> text " for contification")
                                                       return ()
-                   CantContifyNestedTailCalls -> do liftIO $ putDocLn $ red (text "can't contify with nested tail call...")
+                   CantContifyNestedTailCalls -> do dbgDoc $ red (text "can't contify with nested tail call...")
                                                     return ()
                    ContifyWith cont bv fn occs -> do
-                      liftIO $ putDocLn $ green (text "       should contify!")
+                      dbgDoc $ green (text "       should contify!")
                       
                       -- Replace uses of return continuation with common cont target.
                       let Just oldret = mkfnCont fn
@@ -1573,7 +1573,7 @@ mknInline subterm mainCont mb_gas = do
 
                _ -> do
                  do kn <- knOfMK (YesCont mainCont) mredex
-                    liftIO $ putStrLn $ "skipping non-call/cont redex: " ++ show (pretty kn)
+                    dbgDoc $ text $ "skipping non-call/cont redex: " ++ show (pretty kn)
                  go gas
 
     let gas = case mb_gas of
@@ -1606,7 +1606,7 @@ analyzeContifiability knowns = do
     else
       case knowns of
         [(bv, fnlink)] -> do
-          liftIO $ putDocLn $ blue (text "considering " <> pretty (map (tidIdent.boundVar.fst) knowns) <> text " for contification")
+          dbgDoc $ blue (text "considering " <> pretty (map (tidIdent.boundVar.fst) knowns) <> text " for contification")
           mb_fn <- readOrdRef fnlink
           occs <- collectOccurrences bv
           case (occs, mb_fn) of
@@ -1618,7 +1618,7 @@ analyzeContifiability knowns = do
                     mb_tm <- readOrdRef (freeLink occ)
                     case mb_tm of
                       Nothing -> do
-                          do liftIO $ putDocLn $ text "free link w/ no term for" <> pretty bv
+                          do dbgDoc $ text "free link w/ no term for" <> pretty bv
                           return Nothing
                       Just tm@(MKCall _ _ty v _vs cont) -> do
                           vb <- freeBinder v
@@ -1630,12 +1630,12 @@ analyzeContifiability knowns = do
                                  -- We could possibly contify if we knew whether the callee will only
                                  -- tail call our function, but as of yet we don't track that information.
                               do do kn <- knOfMK NoCont tm
-                                    liftIO $ putDocLn $ text "call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
+                                    dbgDoc $ text "call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
                                  return Nothing
                                     
                       Just tm -> do
                         do kn <- knOfMK NoCont tm
-                           liftIO $ putDocLn $ text "non call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
+                           dbgDoc $ text "non call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
                         return Nothing
 
               mbs_conts <- mapM contOfCall occs
@@ -1654,7 +1654,7 @@ analyzeContifiability knowns = do
                         [if Just bv == mkfnCont fn
                           then Left bv else Right bv
                         | bv <- Set.toList $ Set.fromList conts]
-                  liftIO $ putDocLn $ yellow (text "       had just these conts: ")
+                  dbgDoc $ yellow (text "       had just these conts: ")
                                         <$> text "              tail calls: " <> pretty (map (tidIdent.boundVar) tailconts)
                                         <$> text "          non-tail calls: " <> pretty (map (tidIdent.boundVar) nontailconts)
                   case (tailconts, nontailconts) of
@@ -1728,7 +1728,7 @@ killOccurrence fo = do
     isSingleton <- freeOccIsSingleton fo
     if isSingleton
      then do
-       liftIO $ putDocLn $ red (text "killing singleton binding ") <> prettyId _v
+       dbgDoc $ red (text "killing singleton binding ") <> prettyId _v
        writeOrdRef r Nothing
      else do
        n <- dlcNext fo
@@ -1752,10 +1752,10 @@ killBinding fo knownFns aliases = do
             case Map.lookup origBinding aliases of
                     Nothing -> origBinding
                     Just bv -> bv
-    liftIO $ putDocLn $ red (text "killing binding for ") <> pretty (boundVar origBinding) <> text " ~~> " <> pretty v
+    dbgDoc $ red (text "killing binding for ") <> pretty (boundVar origBinding) <> text " ~~> " <> pretty v
     writeOrdRef r' Nothing
     case Map.lookup binding knownFns of
-        Nothing -> do liftIO $ putDocLn $ red (text "no killable binding for ") <> pretty v
+        Nothing -> do dbgDoc $ red (text "no killable binding for ") <> pretty v
                       return ()
         Just r  -> writeOrdRef r Nothing
 
@@ -1777,13 +1777,13 @@ betaReduceOnlyCall fn args kv = do
       Just cb -> substVarForBound (kv, cb)
 
     kvb2 <- freeBinder kv
-    liftIO $ putStrLn $ "      betaReduceOnlyCall on " ++ show (pretty (mkfnVar fn))
+    dbgDoc $ text $ "      betaReduceOnlyCall on " ++ show (pretty (mkfnVar fn))
     if kvb1 /= kvb2
       then do
-        liftIO $ putDocLn $ text "       kv before: " <> pretty kvb1
-        liftIO $ putDocLn $ text "       kv after: " <> pretty kvb2
+        dbgDoc $ text "       kv before: " <> pretty kvb1
+        dbgDoc $ text "       kv after: " <> pretty kvb2
       else return ()
-    liftIO $ putDocLn $ text "      fn kv: " <> pretty (mkfnCont fn)
+    dbgDoc $ text "      fn kv: " <> pretty (mkfnCont fn)
     return $ mkfnBody fn
 
 -- TODO: ok this seems to work, more or less.
@@ -1820,13 +1820,13 @@ pccOfTopTerm uref subterm = do
         mb_fn <- lift $ readOrdRef link
         case mb_fn of
           Nothing -> do
-            liftIO $ putDocLn $ text "pccOfTopTerm saw nulled-out function link " <> pretty x
+            dbgDoc $ text "pccOfTopTerm saw nulled-out function link " <> pretty x
             return ()
           Just fn -> do
             knfn <- lift $ knOfMKFn NoCont fn
-            liftIO $ putDocLn $ indent 10 (pretty x)
-            liftIO $ putDocLn $ indent 20 (pretty knfn)
-            liftIO $ putDocLn $ text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+            dbgDoc $ indent 10 (pretty x)
+            dbgDoc $ indent 20 (pretty knfn)
+            dbgDoc $ text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
             
             cffn <- lift $ cffnOfMKFn uref fn
             !(fns, topbinds) <- get
@@ -1905,7 +1905,7 @@ cffnOfMKCont cv (MKFn _ vs _ subterm _isrec _annot) = do
                                                   mb_mkfn <- readOrdRef link
                                                   case mb_mkfn of
                                                     Nothing -> do
-                                                      liftIO $ putStrLn $ "cffnOfMKCont removed dead fn: " ++ show (tidIdent $ boundVar bv)
+                                                      dbgDoc $ text $ "cffnOfMKCont removed dead fn: " ++ show (tidIdent $ boundVar bv)
                                                       return []
                                                     Just mkfn -> do
                                                       cffn <- cffnOfMKFn uref mkfn
@@ -1920,7 +1920,7 @@ cffnOfMKCont cv (MKFn _ vs _ subterm _isrec _annot) = do
                                                 mb_contfn <- lift $ readOrdRef link
                                                 case mb_contfn of
                                                    Nothing -> do
-                                                     liftIO $ putStrLn $ "cffnOfMKCont removed dead continuation " ++ show (tidIdent $ boundVar bv)
+                                                     dbgDoc $ text $ "cffnOfMKCont removed dead continuation " ++ show (tidIdent $ boundVar bv)
                                                    Just contfn -> do
                                                      cffnOfMKCont bv contfn)
                                                knowns
@@ -1930,7 +1930,7 @@ cffnOfMKCont cv (MKFn _ vs _ subterm _isrec _annot) = do
           MKCall        _u ty v vs contvar -> do
                                  blockid <- blockIdOf' contvar
                                  (v' : vs') <- mapM qv (v:vs)
-                                 --liftIO $ putStrLn $ "putting block with ending call " ++ show (tidIdent $ boundVar cv)
+                                 --dbgDoc $ text $ "putting block with ending call " ++ show (tidIdent $ boundVar cv)
                                  -- TODO avoid eliminating trivial rebindings if target contvar is uniquely ref'd?
                                  
                                  resid <- lift $ ccFreshId $ T.pack ".cr"
@@ -1940,7 +1940,7 @@ cffnOfMKCont cv (MKFn _ vs _ subterm _isrec _annot) = do
           MKCont        _u _ty contvar vs -> do
                                  blockid <- blockIdOf' contvar
                                  vs' <- mapM qv vs
-                                 --liftIO $ putStrLn $ "putting block with ending cont " ++ show (tidIdent $ boundVar cv)
+                                 --dbgDoc $ text $ "putting block with ending cont " ++ show (tidIdent $ boundVar cv)
                                  baPutBlock head insns (CFCont blockid vs')
 
           MKIf          _u _ty v tru fls -> do
@@ -1951,7 +1951,7 @@ cffnOfMKCont cv (MKFn _ vs _ subterm _isrec _annot) = do
                                  blockIdFals <- generateBlock "if.fls" [] fls
                                  let trueArm = CaseArm (pat True)  blockIdTrue Nothing [] (MissingSourceRange "if.true")
                                  let falsArm = CaseArm (pat False) blockIdFals Nothing [] (MissingSourceRange "if.fals")
-                                 --liftIO $ putStrLn $ "putting block with ending case (if) " ++ show (tidIdent $ boundVar cv)
+                                 --dbgDoc $ text $ "putting block with ending case (if) " ++ show (tidIdent $ boundVar cv)
                                  v' <- qv v
                                  baPutBlock head insns (CFCase v' [trueArm, falsArm])
 
@@ -1959,7 +1959,7 @@ cffnOfMKCont cv (MKFn _ vs _ subterm _isrec _annot) = do
                                  v' <- qv v
                                  arms' <- mapM (\(MKCaseArm pat subterm bindings range) -> do
                                                 blockid <- generateBlock "case.arm" {-bindings-} [] subterm
-                                                --liftIO $ putStrLn $ "bindings for " ++ show blockid ++ " are " ++ show (map (tidIdent. boundVar) bindings)
+                                                --dbgDoc $ text $ "bindings for " ++ show blockid ++ " are " ++ show (map (tidIdent. boundVar) bindings)
                                                 return $ CaseArm pat blockid Nothing (map boundVar bindings) range) arms
                                                 --return $ CaseArm pat blockid Nothing [] range) arms
                                  baPutBlock head insns (CFCase v' arms')
@@ -1984,12 +1984,12 @@ cffnOfMKFn uref (MKFn v vs (Just cont) term isrec annot) = do
         (cffnOfMKCont v (MKFn v vs Nothing term isrec annot))
         st
 
-  --liftIO $ putStrLn $ "# blocks for " ++ show (tidIdent $ boundVar v) ++ " = " ++ show (length allblocks)
+  --dbgDoc $ text $ "# blocks for " ++ show (tidIdent $ boundVar v) ++ " = " ++ show (length allblocks)
 
   let graph  = catClosedGraphs (map blockGraph blocks)
 
-  --liftIO $ putDocLn $ vcat (map pretty allblocks)
-  --liftIO $ putDocLn $ indent 20 (pretty graph)
+  --dbgDoc $ vcat (map pretty allblocks)
+  --dbgDoc $ indent 20 (pretty graph)
 
   return $ Fn { fnVar = boundVar v,
                 fnVars = map boundVar vs,
@@ -2037,3 +2037,9 @@ letableOfSubexpr subexpr = do
     MKTyApp       _ ty v [] -> qv v >>= \v' -> return $ ILBitcast ty v'
     MKTyApp       {} -> error $ "MKNExpr saw tyapp that wasn't eliminated by monomorphization"
     _ -> error $ "non-Letable thing seen by letableOfSubexpr..."
+
+
+dbgDoc d =
+  if False
+    then liftIO $ putDocLn d
+    else return ()
