@@ -24,7 +24,7 @@ import Foster.Letable
 import Foster.GCRoots
 import Foster.Avails
 import Foster.Output(putDocLn)
-import Foster.MainOpts (getNonMovingGC)
+import Foster.MainOpts (getNonMovingGC, getNoPreAllocOpt)
 
 import Data.Map(Map)
 import Data.List(zipWith4, foldl' )
@@ -38,6 +38,8 @@ import qualified Data.Map as Map(singleton, insertWith, lookup, empty, fromList,
 import qualified Data.Text as T(pack, unpack)
 import qualified Data.Graph as Graph(stronglyConnComp)
 import Data.Graph(SCC(..))
+
+--import qualified Criterion.Measurement as Criterion(secs)
 
 --------------------------------------------------------------------
 
@@ -99,7 +101,7 @@ prepForCodegen m mayGCconstraints0 = do
     let decls = map (\(s,t) -> LLExternDecl s t) (moduleILdecls m)
     let dts = moduleILprimTypes m ++ moduleILdataTypes m
     let CCBody hprocs valbinds = moduleILbody m
-    combined <- mapM explicateProc hprocs
+    (_ep_time, combined) <- ioTime $ mapM explicateProc hprocs
     let (aprocs, preallocprocs) = unzip combined
 
     let mayGCmap = resolveMayGC mayGCconstraints0 aprocs
@@ -109,13 +111,22 @@ prepForCodegen m mayGCconstraints0 = do
          indent 4 ( pretty (Map.toList $ mapAllFromList
                                    [(mgc,f) | (f,mgc) <- Map.toList mayGCmap]) )
 
-    procs <- mapM (deHooplize mayGCmap) aprocs
+    (_dh_time, procs) <- ioTime $ mapM (deHooplize mayGCmap) aprocs
+
+    --liftIO $ putDocLn $ text "explicateProcs time: " <> text (Criterion.secs ep_time)
+    --liftIO $ putDocLn $ text "deHooplize/gcr time: " <> text (Criterion.secs dh_time)
+
     return $ (ILProgram procs valbinds decls dts (moduleILsourceLines m),
               preallocprocs)
   where
    explicateProc p = do
-     g0 <- runPreAllocationOptimizations (simplifyCFG $ procBlocks p)
-     g' <- makeAllocationsExplicit g0
+     flagVals <- gets ccFlagVals
+     (_pa_time, g0) <- ioTime $ if getNoPreAllocOpt flagVals
+                                  then return $ simplifyCFG $ procBlocks p
+                                  else runPreAllocationOptimizations (simplifyCFG $ procBlocks p)
+     (_ae_time, g') <- ioTime $ makeAllocationsExplicit g0
+     --liftIO $ putDocLn $ text "  makeAllocExplicit time: " <> text (Criterion.secs ae_time)
+
      return (p { procBlocks = g' }, p { procBlocks = g0 })
 
    deHooplize :: Map Ident MayGC -> Proc BasicBlockGraph' -> Compiled ILProcDef
@@ -498,7 +509,9 @@ availsRewrite = mkFRewrite d
         --             ...
         --             o0 = occ t [0]
         --             o1 = o0         <<<<
+        -- This rewrite is triggered by (for example) test-vlist.
         (v' : _) -> return $ Just (mkMiddle $ CCRebindId (text "occ-reuse") (TypedId ty id) v' )
+        
         [] -> case (occ, lookupAvailMap (tidIdent v) (availTuples a)) of
                 -- If we have  t = (v0, v1)
                 --             ...
@@ -655,8 +668,11 @@ runLiveness bbgp = do
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 runPreAllocationOptimizations b0 = do
-  b1 <- runAvails b0
-  runLiveness b1
+  (_av_time, b1) <- ioTime $ runAvails b0
+  --liftIO $ putDocLn $ text "  runAvails   time: " <> text (Criterion.secs av_time)
+  (_lv_time, b2) <- ioTime $ runLiveness b1
+  --liftIO $ putDocLn $ text "  runLiveness time: " <> text (Criterion.secs lv_time)
+  return b2
 
 -- ||||||||||| Bottom-up May-GC constraint propagation ||||||||||{{{
 type MGCM a = State MayGCConstraints a -- MGCM = "may-gc monad"
