@@ -962,7 +962,7 @@ kNormalCtors st dtype =
 --
 -- http://www.brics.dk/RS/99/27/BRICS-RS-99-27.pdf
 
-collectFunctions :: Fn r (KNExpr' r t) t -> [(Ident, Ident, Fn r (KNExpr' r t) t)]  -- (parent, binding, child)
+collectFunctions :: Fn RecStatus (KNExpr' RecStatus t) t -> [(Ident, Ident, Fn RecStatus (KNExpr' RecStatus t) t)]  -- (parent, binding, child)
 collectFunctions knf = go [] (fnBody knf)
   where go xs e = case e of
           KNLiteral       {} -> xs
@@ -1064,12 +1064,12 @@ mkLetRec bindings b = KNLetRec ids es b where (ids, es) = unzip bindings
 mkLetVals []            e = e
 mkLetVals ((id,b):rest) e = KNLetVal id b (mkLetVals rest e)
 
-knSinkBlocks :: (Pretty t, Pretty r, Show t, Show r) => ModuleIL (KNExpr' r t) t -> Compiled (ModuleIL (KNExpr' r t) t)
+knSinkBlocks :: (Pretty t, Show t) => ModuleIL (KNExpr' RecStatus t) t -> Compiled (ModuleIL (KNExpr' RecStatus t) t)
 knSinkBlocks m = do
   let rebuilder idsfns = [(id, localBlockSinking fn) | (id, fn) <- idsfns]
   return $ m { moduleILbody = rebuildWith rebuilder (moduleILbody m) }
 
-localBlockSinking :: (Pretty t, Pretty r, Show t, Show r) => Fn r (KNExpr' r t) t -> Fn r (KNExpr' r t) t
+localBlockSinking :: (Pretty t, Show t) => Fn RecStatus (KNExpr' RecStatus t) t -> Fn RecStatus (KNExpr' RecStatus t) t
 localBlockSinking knf =
     let newfn = rebuildFn knf in
     let !nu = show (pretty $ fnBody newfn)
@@ -1162,7 +1162,11 @@ localBlockSinking knf =
                                                relocationTargetsList
 
   -- Add new bindings for functions which should be relocated.
-  addBindingsFor f body = mkLetFuns newfns body
+  addBindingsFor f body = let (ids, fns) = unzip newfns in
+                          let fnMarker fn isCyclic =
+                                fn { fnIsRec = if isCyclic then YesRec else NotRec } in
+                          let mkLetFuns' ids fns body = mkLetFuns (zip ids fns) body in
+                          mkFunctionSCCs ids fns body fnMarker mkLetFuns'
         where
           newfns   = [(id, rebuildFn fn)
                      | ((id, fn), dom) <- relocationTargetsList
