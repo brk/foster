@@ -576,7 +576,7 @@ public:
   std::string getBlockName(const CFGBlock& cb) {
     std::string s;
     std::stringstream ss(s);
-    ss << "goto_";
+    ss << "mustbecont_";
 
     if (const Stmt* lab = cb.getLabel()) {
       if (const LabelStmt* labstmt = dyn_cast<LabelStmt>(lab)) {
@@ -1900,7 +1900,7 @@ The corresponding AST to be matched is
     } else if (const SwitchStmt* ss = dyn_cast<SwitchStmt>(stmt)) {
       handleSwitch(ss);
     } else if (const GotoStmt* gs = dyn_cast<GotoStmt>(stmt)) {
-      llvm::outs() << "goto_" << gs->getLabel()->getNameAsString() << " !\n";
+      llvm::outs() << "mustbecont_" << gs->getLabel()->getNameAsString() << " !\n";
     } else if (isa<BreakStmt>(stmt) || isa<ContinueStmt>(stmt)) {
       // Do nothing; should be implicitly handled by CFG building.
     } else if (const LabelStmt* ls = dyn_cast<LabelStmt>(stmt)) {
