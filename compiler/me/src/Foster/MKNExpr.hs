@@ -1536,7 +1536,7 @@ mknInline subterm mainCont mb_gas = do
                       let Just oldret = mkfnCont fn
                       -- This may result in additional functions becoming contifiable,
                       -- so we collect the uses of the old ret cont first.
-                      collectRedexesUsingFnRetCont fn oldret   wr fd
+                      collectRedexesUsingFnRetCont oldret   wr fd
                       substVarForVar'' cont oldret
 
                       -- Replacing the Call with a Cont will kill the old cont occurrences.
@@ -1570,18 +1570,16 @@ mknInline subterm mainCont mb_gas = do
     return ()
 
 
-collectRedexesUsingFnRetCont fn oldret    wr fd = do
-  fndefs <- liftIO $ readIORef fd
-  liftIO $ putDocLn $ text "collectRedexesUsingFnRetCont: " <> pretty (mkfnVar fn) <+> text "  ;; oldret = " <> pretty oldret
+collectRedexesUsingFnRetCont oldret    wr fd = do
   occs <- collectOccurrences oldret
   mb_callees <- mapM calleeOfCont occs
-  let callees = [c | Just c <- mb_callees]
+
+  fndefs <- liftIO $ readIORef fd  
   mapM_ (\calleeBV -> do
       case Map.lookup calleeBV fndefs of
-        Nothing -> liftIO $ putDocLn $ text "no def found for callee" <+> pretty calleeBV
-        Just tm -> do liftIO $ putDocLn $ text "found def for callee" <+> pretty calleeBV
-                      liftIO $ modIORef' wr (\w -> worklistAdd w tm)
-    ) callees
+        Nothing -> return ()
+        Just tm -> liftIO $ modIORef' wr (\w -> worklistAdd w tm)
+    ) [c | Just c <- mb_callees]
 
 data Contifiability =
     GlobalsArentContifiable
@@ -1835,7 +1833,7 @@ betaReduceOnlyCall fn args kv    wr fd = do
     case mkfnCont fn of
       Nothing -> return ()
       Just oldret -> do
-        collectRedexesUsingFnRetCont fn oldret   wr fd
+        collectRedexesUsingFnRetCont oldret   wr fd
         -- This may result in additional functions becoming contifiable,
         -- so we collect the uses of the old ret cont first.
         substVarForBound (kv, oldret)
