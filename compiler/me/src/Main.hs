@@ -606,11 +606,16 @@ reportFinalPerformanceNumbers ci_time nqueries querytime tc_time in_time sr_time
                               padding = fill n (text "") in
                           padding <> parens (text (printf "%.1f" p) <> text "%")
        let fmt str time = text str <+> (fill 11 $ text $ Criterion.secs time) <+> fmt_pct time
-       let pairwise f = \(x,y) -> (f x, f (x + y))
-
-       putDocLn $ vcat $ [text "                                            (initial query time, overall query time)"
-                         ,text "# SMT queries:" <+> pretty nqueries <+> text "taking" <+> pretty (map (pairwise Criterion.secs) querytime)
-                         ,fmt "typecheck   time:" tc_time
+       
+       if nqueries > 0
+         then do
+           let pairwise f = \(x,y) -> (f x, f (x + y))
+           putDocLn $ vcat $
+                         [text "                                            (initial query time, overall query time)"
+                         ,text "# SMT queries (uncached):" <+> pretty nqueries <+> text "taking" <+> pretty (map (pairwise Criterion.secs) querytime)]
+         else return ()
+                         
+       putDocLn $ vcat $ [fmt "typecheck   time:" tc_time
                          ,fmt "inlining    time:" in_time
                          ,fmt "shrinking   time:" sr_time
                          ,fmt "monomorphiz time:" mn_time
