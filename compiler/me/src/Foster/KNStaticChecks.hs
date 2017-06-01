@@ -26,9 +26,12 @@ import Foster.Output(putDocLn)
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
+
+import Data.Digest.CityHash (cityHash64)
 
 import Control.Monad.Trans.Except(runExceptT)
-import Control.Monad.State(gets, liftIO, evalStateT, StateT,
+import Control.Monad.State(gets, liftIO, evalStateT, StateT, State, evalState,
                            forM, forM_, get, put, lift)
 
 import qualified SMTLib2 as SMT
@@ -236,10 +239,27 @@ scGetFact id = do
 
 -- Errors will be propagated, while unsat (success) results are trivial...
 scRunZ3 :: KNMonoLike monolike => monolike -> CommentedScript -> SC ()
-scRunZ3 expr script@(CommentedScript items _) = do
+scRunZ3 expr script = do
  smtStatsRef <- gets scSMTStats
- lift $ do
+ let hash = cityHash64 $ BSC.pack $ show $ prettyCommentedScript (canonicalizeScript script)
+ let knownCanonHashes = [
+        807324308929015824,
+        6634015232262316238,
+        980697889711928269,
+        9928868970853278210,
+        10096721311113477168,
+        14187241249078338769,
+        17281924150558556845,
+        12399786756963341161]
+ if hash `elem` knownCanonHashes
+    then return ()
+    else lift $ scRunZ3' expr script smtStatsRef
+
+-- Run a script (in non-canonical form). The canonical version wasn't cached.
+scRunZ3' expr script@(CommentedScript items _) smtStatsRef = do
   let doc = prettyCommentedScript script
+  --liftIO $ putDocLn $ text "smthash: " <> text (show hash)
+
   (time, res) <- liftIO $ ioTime $ runZ3 (show doc) (Just "(get-model)")
   liftIO $ if (time > 0.9)
              then do
@@ -858,6 +878,81 @@ idsEq  (v1, v2) = smtId  v1 === smtId  v2
 getMbFnPreconditions facts id = Map.lookup id (fnPreconds facts)
 
 primName tid = T.unpack (identPrefix (tidIdent tid))
+
+
+-- {{{ SMT canonicalization
+canonicalizeScript :: CommentedScript -> CommentedScript
+canonicalizeScript (CommentedScript commentsOrCommands expr)
+  = evalState (do cc' <- mapM canonicalizeCC commentsOrCommands
+                  ex' <- canonicalizeExpr expr
+                  return $ CommentedScript cc' ex') (Map.empty, 0)
+
+canonicalizeCC :: CommentOrCommand -> Canon CommentOrCommand
+canonicalizeCC (Cmnt s) = return (Cmnt s)
+canonicalizeCC (Cmds cmds) = do cmds' <- mapM canonicalizeCommand cmds
+                                return $ Cmds cmds'
+
+canonicalizeExpr :: SMT.Expr -> Canon SMT.Expr
+canonicalizeExpr lit@(SMT.Lit _) = return lit
+canonicalizeExpr (SMT.App id mb_ty exprs) = do
+  id' <- canonicalizeIdent id
+  exprs' <- mapM canonicalizeExpr exprs
+  return $ SMT.App id' mb_ty exprs'
+
+canonicalizeExpr (SMT.Quant q binders expr) = do
+  binders' <- mapM canonicalizeBinder binders
+  expr' <- canonicalizeExpr expr 
+  return $ SMT.Quant q binders' expr'
+
+canonicalizeExpr (SMT.Let defns expr) = do
+  defns' <- mapM canonicalizeDefn defns
+  expr'  <- canonicalizeExpr expr
+  return $ SMT.Let defns' expr'
+
+canonicalizeExpr (SMT.Annot expr attrs) = do
+  expr' <- canonicalizeExpr expr
+  return $ SMT.Annot expr' attrs -- TODO i don't think attrs should be canonicalized?
+
+canonicalizeDefn :: SMT.Defn -> Canon SMT.Defn
+canonicalizeDefn (SMT.Defn name expr) = do
+  name' <- canonicalizeName name
+  expr' <- canonicalizeExpr expr
+  return $ SMT.Defn name' expr'
+
+canonicalizeIdent (SMT.I name ints) = do
+  name' <- canonicalizeName name
+  return $ SMT.I name' ints
+
+canonicalizeCommand :: Command -> Canon Command
+canonicalizeCommand (CmdAssert expr) = do expr' <- canonicalizeExpr expr
+                                          return $ CmdAssert expr'
+canonicalizeCommand (CmdGetValue exprs) = do exprs' <- mapM canonicalizeExpr exprs
+                                             return $ CmdGetValue exprs'
+canonicalizeCommand (CmdDeclareFun name tys ty) = do name' <- canonicalizeName name
+                                                     return $ CmdDeclareFun name' tys ty
+canonicalizeCommand (CmdDefineFun  name binders ty expr) = do
+                                                     name' <- canonicalizeName name
+                                                     binders' <- mapM canonicalizeBinder binders
+                                                     expr' <- canonicalizeExpr expr
+                                                     return $ CmdDefineFun name' binders' ty expr'
+canonicalizeCommand cmd = return cmd
+
+canonicalizeBinder (SMT.Bind name ty) = do name' <- canonicalizeName name
+                                           return $ SMT.Bind name' ty
+
+canonicalizeName :: SMT.Name -> Canon SMT.Name
+canonicalizeName name = do
+  (m, u) <- get
+  case Map.lookup name m of
+    Nothing -> do
+      let name' = SMT.N $ "v" ++ show u
+      put $ (Map.insert name name' m, u + 1)
+      return name'
+    Just name' -> return name'
+
+type Canon a = State CanonState a
+type CanonState = (Map SMT.Name SMT.Name, Uniq)
+-- }}}
 
 -- {{{ Pretty-printing and other instances
 instance Ord SymDecl where compare (SymDecl n1 _ _) (SymDecl n2 _ _) = compare n1 n2
