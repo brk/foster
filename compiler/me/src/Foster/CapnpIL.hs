@@ -129,7 +129,7 @@ dumpAllocate (AllocInfo typ region typename maybe_tag maybe_array_size allocsite
 -- dumpBlock :: Map.Map BlockId (Maybe Int) -> ILBlock -> PbBlock.Block
 dumpBlock predmap (IL.Block (id, phis) mids illast) =
          FC.Block   { blockid_of_Block  = dumpBlockId id
-                    , phis_of_Block     = map dumpVar phis
+                    , phis_of_Block     = map dumpVar' phis
                     , middle_of_Block   = map dumpMiddle mids
                     , last_of_Block     = dumpLast illast
                     , numpreds_of_Block= optList $ fmap fromIntegral (Map.lookup id predmap)
@@ -281,9 +281,9 @@ dumpExpr _ x@(ILKillProcess _ msg) =
 dumpExpr _ x@(ILObjectCopy from to) =
     (defaultLetable (typeOf x) Ilobjectcopy) { parts_of_Letable = [dumpVar from, dumpVar to] }
 dumpExpr _ x@(ILTuple _kindTODO [] _allocsrc) =
-    (defaultLetable (typeOf x) Ilunit)
+    (defaultLetable (typeOf x) Ilunit) { type_of_Letable = StrictlyNone }
 dumpExpr _ x@(ILTuple KindAnySizeType vs _allocsrc) =
-    (defaultLetable (typeOf x) Ilunboxedtuple) { parts_of_Letable = map dumpVar vs }
+    (defaultLetable (typeOf x) Ilunboxedtuple) { parts_of_Letable = map dumpVar vs, type_of_Letable = StrictlyNone }
 dumpExpr _ (ILTuple _kind vs allocsrc) =
         error $ "ProtobufIL.hs: ILTuple " ++ show vs
             ++ "\n should have been eliminated!\n" ++ show allocsrc
@@ -307,13 +307,15 @@ dumpExpr _  (ILAllocArray nonArrayType _ _ _) =
 
 dumpExpr _ x@(ILDeref ty a) =
     (defaultLetable (typeOf x) Ilderef) { parts_of_Letable = [dumpVar a]
-                                        , boolvalue_of_Letable = [isTraced ty] }
+                                        , boolvalue_of_Letable = [isTraced ty]
+                                        , type_of_Letable = StrictlyNone }
 
 -- The boolvalue for Deref and Store is used to determine whether loads/stores
 -- should use LLVM's gcread/gcwrite primitives or regular, non-barriered ops.
 dumpExpr _ x@(ILStore v r) =
     (defaultLetable (typeOf x) Ilstore) { parts_of_Letable = map dumpVar [v, r]
-                                        , boolvalue_of_Letable = [isTraced (tidType v)] }
+                                        , boolvalue_of_Letable = [isTraced (tidType v)]
+                                        , type_of_Letable = StrictlyNone }
 
 dumpExpr _ x@(ILArrayRead _t (ArrayIndex b i rng sg)) =
     (defaultLetable (typeOf x) Ilarrayread) {
@@ -512,7 +514,12 @@ pbArrayLit ety vals =
                                               lit_of_PbArrayEntry = StrictlyJust $ dumpLiteral ety lit }
 
 -----------------------------------------------------------------------
-dumpVar (TypedId t i) = dumpMoVar t i
+dumpVar (TypedId t i) = dumpMoVar t i False
+dumpVar' (TypedId t i) = dumpMoVar t i True
+-- Most uses of variables don't need explicit types during LLVM codegen
+-- with a few exceptions for root slots and phi arguments.
+-- By eliding types for most varaibles we save ~20% file size
+-- for some programs.
 
 dumpGlobalSymbol base =
     TermVar {
@@ -521,12 +528,14 @@ dumpGlobalSymbol base =
         , typ_of_TermVar  = StrictlyJust $ dumpType (tidType base)
     }
 
-dumpMoVar t i@(GlobalSymbol _) = dumpGlobalSymbol (TypedId t i)
-dumpMoVar t i =
+dumpMoVar t i@(GlobalSymbol _) _ = dumpGlobalSymbol (TypedId t i)
+dumpMoVar t i useType =
     TermVar {
           tag_of_TermVar  = Ilvar
         , name_of_TermVar = dumpIdent i
-        , typ_of_TermVar  = StrictlyJust (dumpType t)
+        , typ_of_TermVar  = if useType
+                             then StrictlyJust $ dumpType t
+                             else StrictlyNone
     }
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -554,7 +563,7 @@ dumpProgramToModule (ILProgram procdefs vals extern_decls datatypes (SourceLines
             , blocks_of_Proc   = map (dumpBlock predmap) (CC.procBlocks p)
             , lines_of_Proc    = StrictlyJust $ u8fromString (showSourceRange . rangeOf $ CC.procAnnot p)
             , linkage_of_Proc  = Internal
-            , gcroots_of_Proc  = map dumpVar gcroots
+            , gcroots_of_Proc  = map dumpVar' gcroots
         }
     preProcType proc =
         let retty = CC.procReturnType proc in
