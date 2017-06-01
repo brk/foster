@@ -971,9 +971,10 @@ collectRedexes :: (Pretty t)
                -> IORef (Map (MKBoundVar t) (Link (MKTerm t)))
                -> IORef (Map (MKBoundVar t) (Link (MKExpr t)))
                -> IORef (Map (MKBoundVar t) (Link (MKFn (Subterm t) t)))
+               -> IORef (Map (MKBoundVar t) (Link (MKTerm t)))
                -> IORef (Map (MKBoundVar t) (MKBoundVar t))
                -> Subterm t -> Compiled ()
-collectRedexes ref valbindsref expbindsref funbindsref aliasesref sbtm = go sbtm
+collectRedexes ref valbindsref expbindsref funbindsref fundefsref aliasesref sbtm = go sbtm
  where
    go subterm = do
     mb_term <- readOrdRef subterm
@@ -994,7 +995,7 @@ collectRedexes ref valbindsref expbindsref funbindsref aliasesref sbtm = go sbtm
                       MKLetRec      _u   knowns k  -> do mapM_ markValBind knowns
                                                          return $ k : (map snd knowns)
                       MKLetFuns     _u   knowns k  -> do liftIO $ modIORef' ref (\w -> worklistAdd w subterm) -- markRedex
-                                                         mapM_ markFunBind knowns
+                                                         mapM_ (markFunBind subterm) knowns
                                                          fns <- knownActuals knowns
                                                          return $ k : map mkfnBody fns
                       MKLetCont     _u   knowns k  -> do mapM_ markCntBind knowns
@@ -1016,7 +1017,7 @@ collectRedexes ref valbindsref expbindsref funbindsref aliasesref sbtm = go sbtm
                             liftIO $ modIORef' aliasesref (\m -> Map.insert x bv m)
                           _ -> return ()
 
-   markFunBind (x,fn) = do
+   markFunBind subterm (x,fn) = do
                         mkfn <- readLink "collectRedex" fn
                         xc <- dlcCount x
                         bc <- mkbCount x
@@ -1029,6 +1030,7 @@ collectRedexes ref valbindsref expbindsref funbindsref aliasesref sbtm = go sbtm
                             writeOrdRef fn Nothing
                           else do
                             liftIO $ modIORef' funbindsref (\m -> Map.insert x fn m)
+                            liftIO $ modIORef' fundefsref  (\m -> Map.insert x subterm m)
 
 knownActuals :: [Known ty (Link val)] -> Compiled [val]
 knownActuals knowns = do
@@ -1071,7 +1073,8 @@ classifyRedex' binder (Just fn) args knownFns = do
                       " ; rec? " ++ show (mkfnIsRec fn) -}
 
   case (callee_singleton, mkfnIsRec fn) of
-    _ | shouldNotInlineFn fn -> return CallOfUnknownFunction
+    _ | shouldNotInlineFn fn
+                   -> return CallOfUnknownFunction
     (True, NotRec) -> return $ CallOfSingletonFunction fn
     _ -> do
       donationss <- mapM (\(arg, binder) -> do
@@ -1293,9 +1296,10 @@ mknInline subterm mainCont mb_gas = do
     kr <- liftIO $ newIORef Map.empty
     er <- liftIO $ newIORef Map.empty
     fr <- liftIO $ newIORef Map.empty
+    fd <- liftIO $ newIORef Map.empty
     ar <- liftIO $ newIORef Map.empty
     --term <- readLink "mknInline" subterm
-    collectRedexes wr kr er fr ar subterm
+    collectRedexes wr kr er fr fd ar subterm
 
     _knownVals <- liftIO $ readIORef kr
 
@@ -1365,7 +1369,8 @@ mknInline subterm mainCont mb_gas = do
 
                      do v <- freeBinder callee
                         dbgDoc $ green (text "inlining without copying ") <> pretty (tidIdent $ boundVar v)
-                     newbody <- betaReduceOnlyCall fn args kv
+
+                     newbody <- betaReduceOnlyCall fn args kv     wr fd
 
                      --do nubody <- readLink "kninline-sf" newbody
                      --   newbody' <- knOfMK NoCont nubody
@@ -1397,11 +1402,11 @@ mknInline subterm mainCont mb_gas = do
                             --dbgDoc $ text $ "pre-copy fn is " ++ show (pretty kn1)
                             return ()
                          fn' <- runCopyMKFn fn
-                         newbody <- do betaReduceOnlyCall fn' args kv
+                         newbody <- do betaReduceOnlyCall fn' args kv     wr fd
                          replaceWith subterm newbody
                          -- No need to kill the old binding, since the body was duplicated.
 
-                         collectRedexes wr kr er fr ar newbody
+                         collectRedexes wr kr er fr fd ar newbody
 
                        else return ()
 
@@ -1415,10 +1420,10 @@ mknInline subterm mainCont mb_gas = do
                                 --kn1 <- knOfMK (YesCont mainCont) term
                                 --dbgDoc $ text $ "knOfMK, term is " ++ show (pretty kn1)
                              fn' <- runCopyMKFn _fn
-                             newbody <- betaReduceOnlyCall fn' args kv
+                             newbody <- betaReduceOnlyCall fn' args kv    wr fd
                              replaceWith subterm newbody
                              killOccurrence callee
-                             collectRedexes wr kr er fr ar newbody
+                             collectRedexes wr kr er fr fd ar newbody
                        else return ()
                  go (gas - 1)
               
@@ -1458,7 +1463,7 @@ mknInline subterm mainCont mb_gas = do
                      do v <- freeBinder callee
                         dbgDoc $ green (text "      beta reducing (inlining) singleton cont ") <> pretty (tidIdent $ boundVar v)
 
-                     newbody <- betaReduceOnlyCall fn args callee
+                     newbody <- betaReduceOnlyCall fn args callee         wr fd
                      
                     --  do newbody' <- knOfMK (mbContOf $ mkfnCont fn) newbody
                     --     dbgDoc $ text "CallOfSingletonCont: new: " <+> pretty newbody'
@@ -1484,11 +1489,11 @@ mknInline subterm mainCont mb_gas = do
                      if getInliningDonate flags
                        then do
                          fn' <- runCopyMKFn fn
-                         newbody <- do mk <- betaReduceOnlyCall fn' args kv
+                         newbody <- do mk <- betaReduceOnlyCall fn' args kv   wr fd
                                        readLink "CallOfDonatableC" mk
                          replaceWith mredex newbody
                          killOccurrence callee
-                         collectRedexes wr kr er fr ar newbody
+                         collectRedexes wr kr er fr fd ar newbody
                        else return ()
 -}
                    SomethingElse _fn -> do
@@ -1499,10 +1504,10 @@ mknInline subterm mainCont mb_gas = do
                              dbgDoc $ text "skipping inlining continuation redex...?"
                              {-
                              fn' <- runCopyMKFn _fn
-                             newbody <- betaReduceOnlyCall fn' args kv >>= readLink "CallOfDonatable"
+                             newbody <- betaReduceOnlyCall fn' args kv   wr fd  >>= readLink "CallOfDonatable"
                              replaceWith mredex newbody
                              killOccurrence callee
-                             collectRedexes wr kr er fr ar newbody
+                             collectRedexes wr kr er fr fd ar newbody
                              -}
                              return ()
                        else return ()
@@ -1529,6 +1534,9 @@ mknInline subterm mainCont mb_gas = do
                       
                       -- Replace uses of return continuation with common cont target.
                       let Just oldret = mkfnCont fn
+                      -- This may result in additional functions becoming contifiable,
+                      -- so we collect the uses of the old ret cont first.
+                      collectRedexesUsingFnRetCont fn oldret   wr fd
                       substVarForVar'' cont oldret
 
                       -- Replacing the Call with a Cont will kill the old cont occurrences.
@@ -1562,6 +1570,19 @@ mknInline subterm mainCont mb_gas = do
     return ()
 
 
+collectRedexesUsingFnRetCont fn oldret    wr fd = do
+  fndefs <- liftIO $ readIORef fd
+  liftIO $ putDocLn $ text "collectRedexesUsingFnRetCont: " <> pretty (mkfnVar fn) <+> text "  ;; oldret = " <> pretty oldret
+  occs <- collectOccurrences oldret
+  mb_callees <- mapM calleeOfCont occs
+  let callees = [c | Just c <- mb_callees]
+  mapM_ (\calleeBV -> do
+      case Map.lookup calleeBV fndefs of
+        Nothing -> liftIO $ putDocLn $ text "no def found for callee" <+> pretty calleeBV
+        Just tm -> do liftIO $ putDocLn $ text "found def for callee" <+> pretty calleeBV
+                      liftIO $ modIORef' wr (\w -> worklistAdd w tm)
+    ) callees
+
 data Contifiability =
     GlobalsArentContifiable
   | NoNeedToContifySingleton
@@ -1591,40 +1612,7 @@ analyzeContifiability knowns = do
             (_, Nothing) -> do return CantContifyWithNoFn
             ([_], _) -> do return NoNeedToContifySingleton -- Singleton call; no need to contify since we'll just inline it...
             (_, Just fn) -> do
-              -- Collect the continuations associated with every use of the function binding.
-              let contOfCall occ = do
-                    mb_tm <- readOrdRef (freeLink occ)
-                    case mb_tm of
-                      Nothing -> do
-                          do dbgDoc $ text "free link w/ no term for" <> pretty bv
-                          return Nothing
-                      Just tm@(MKCall _ _ty v _vs cont) -> do
-                          vb <- freeBinder v
-                          if vb == bv
-                            then -- It's a call to the function being considered
-                              do cv <- freeBinder cont
-                                 return $ Just cv
-                            else -- It's a call to some other function, our function is one of its args.
-                                 -- We could possibly contify if we knew whether the callee will only
-                                 -- tail call our function, but as of yet we don't track that information.
-                              do do kn <- knOfMK NoCont tm
-                                    dbgDoc $ text "call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
-                                 return Nothing
-                                    
-                      Just tm -> do
-                        do kn <- knOfMK NoCont tm
-                           dbgDoc $ text "non call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
-                        return Nothing
-
-              mbs_conts <- mapM contOfCall occs
-
-              let allJusts [] = Just []
-                  allJusts (Nothing : _) = Nothing
-                  allJusts (Just x:xs) = 
-                    case allJusts xs of
-                      Nothing -> Nothing
-                      Just res -> Just (x:res)
-
+              mbs_conts <- mapM (contOfCall bv) occs
               case allJusts mbs_conts of
                 Nothing -> return HadUnknownContinuations
                 Just conts -> do
@@ -1645,6 +1633,50 @@ analyzeContifiability knowns = do
                     _ -> return HadMultipleContinuations -- Multiple outer continuations: no good!
 
         _ -> do
+          let bvs     = map fst knowns
+              fnlinks = map snd knowns
+          mb_fns <- mapM readOrdRef fnlinks
+          occss <- mapM collectOccurrences bvs
+
+          liftIO $ putDocLn $ text "recursive nest: {{{"
+          mapM_ (\(occs, bv, mb_fn) -> do
+            case occs of [_] -> liftIO $ putDocLn $ text "   (is  singleton)"
+                         _   -> liftIO $ putDocLn $ text "   (not singleton)"
+            liftIO $ putDocLn $ text "   occ:"
+            mapM_ (\occ -> do
+              mb_tm <- readOrdRef (freeLink occ)
+              case mb_tm of
+                Nothing -> do
+                  liftIO $ putDocLn $ text "      no term"
+                Just tm -> do
+                  do kn <- knOfMK NoCont tm
+                     liftIO $ putDocLn $ text "      " <> pretty kn) occs
+
+
+            case mb_fn of
+              Nothing -> do
+                liftIO $ putDocLn $ text "    no fn"
+              Just fn -> do
+                aconts <- mapM (contOfCall bv) occs
+                case allJusts aconts of
+                  Nothing -> liftIO $ putDocLn $ text "  (some continuations not found)"
+                  Just conts -> do
+                             liftIO $ putDocLn $ text "  (all continuations found)"
+                             let (tailconts, nontailconts) = partitionEithers $
+                                                    [if Just bv == mkfnCont fn
+                                                      then Left bv else Right bv
+                                                    | bv <- Set.toList $ Set.fromList conts]
+                             liftIO $ putDocLn $ yellow (text "       had just these conts: ")
+                                                  <$> text "              tail calls: " <> pretty (map (tidIdent.boundVar) tailconts)
+                                                  <$> text "          non-tail calls: " <> pretty (map (tidIdent.boundVar) nontailconts)
+            ) (zip3 occss bvs mb_fns){-
+          case (occs, mb_fn) of
+            (_, Nothing) -> do return CantContifyWithNoFn
+            ([_], _) -> do return NoNeedToContifySingleton -- Singleton call; no need to contify since we'll just inline it...
+            (_, Just fn) -> do
+             -}
+
+          liftIO $ putDocLn $ text "}}}"
           return $ NoSupportForMultiBindingsYet
 
 -- Collect the list of occurrences for the given binder,
@@ -1671,6 +1703,56 @@ collectOccurrences bv = do
                   _ -> return [fv]
     ) inits
   return $ concat initss
+
+allJusts [] = Just []
+allJusts (Nothing : _) = Nothing
+allJusts (Just x:xs) = 
+  case allJusts xs of
+    Nothing -> Nothing
+    Just res -> Just (x:res)
+
+-- Collect the continuations associated with every use of the function binding.
+contOfCall bv occ = do
+  mb_tm <- readOrdRef (freeLink occ)
+  case mb_tm of
+    Nothing -> do
+        do dbgDoc $ red $ text "free link w/ no term for" <> pretty bv
+        return Nothing
+    Just tm@(MKCall _ _ty v _vs cont) -> do
+        vb <- freeBinder v
+        if vb == bv
+          then -- It's a call to the function being considered
+            do cv <- freeBinder cont
+               return $ Just cv
+          else -- It's a call to some other function, our function is one of its args.
+                -- We could possibly contify if we knew whether the callee will only
+                -- tail call our function, but as of yet we don't track that information.
+            do do kn <- knOfMK NoCont tm
+                  dbgDoc $ text "call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
+                  return Nothing
+                  
+    Just tm -> do
+      do kn <- knOfMK NoCont tm
+         dbgDoc $ text "non call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
+      return Nothing
+
+-- Collect the function vars associated with every use of a continuation variable.
+calleeOfCont occ = do
+  bv <- freeBinder occ
+  mb_tm <- readOrdRef (freeLink occ)
+  case mb_tm of
+    Nothing -> do
+        do dbgDoc $ red $ text "free link w/ no term for cont " <> pretty bv
+        return Nothing
+
+    Just (MKCall _ _ty v _vs _cont) -> do
+        bv <- freeBinder v
+        return $ Just bv
+                  
+    Just tm -> do
+      do kn <- knOfMK NoCont tm
+         dbgDoc $ text "calleeOfCont: non call for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
+      return Nothing
 
 shouldInlineRedex _mredex _fn =
   -- TODO use per-call-site annotation, when we have such things.
@@ -1746,13 +1828,17 @@ lookupBinding' binding m = do
       Nothing   -> return Nothing
       Just link -> readOrdRef link
 
-betaReduceOnlyCall fn args kv = do
+betaReduceOnlyCall fn args kv    wr fd = do
     mapM_ substVarForBound (zip args (mkfnVars fn))
     kvb1 <- freeBinder kv
 
     case mkfnCont fn of
       Nothing -> return ()
-      Just cb -> substVarForBound (kv, cb)
+      Just oldret -> do
+        collectRedexesUsingFnRetCont fn oldret   wr fd
+        -- This may result in additional functions becoming contifiable,
+        -- so we collect the uses of the old ret cont first.
+        substVarForBound (kv, oldret)
 
     kvb2 <- freeBinder kv
     dbgDoc $ text $ "      betaReduceOnlyCall on " ++ show (pretty (mkfnVar fn))
