@@ -1014,31 +1014,6 @@ collectRedexes ref valbindsref expbindsref funbindsref aliasesref sbtm = go sbtm
                             -- record alias...
                             bv <- freeBinder fv
                             liftIO $ modIORef' aliasesref (\m -> Map.insert x bv m)
-                            --return ()
-
-                            {-
-                            -- TODO record an alias between x and bv
-                            -- instead of directly associating x with bv's function.
-                            -- That way, when we see a use of x,
-                            -- we can look as uses of bv to determine whether to treat
-                            -- x's use as a singleton or not.
-                            
-                            dbgDoc $ text "bitcast of " <> pretty (tidIdent $ boundVar bv)
-                                                <$> text "        from " <> pretty (tidType $ boundVar bv)
-                                                <$> text "          to " <> pretty _ty
-                                                
-                            
-                            -- TODO we need bitcasts for the backend to work properly...
-                            --      but they mess up inlining for now, because (A)
-                            --      we need to associate the known function with the alias,
-                            --      and (B) we must account for aliases when determining which
-                            --      functions are singleton/
-                            dbgDoc $ text $ "ZZZ alias " ++ show (pretty x) ++ " ;;; " ++ show (pretty $ boundVar bv)
-                            liftIO $ do m <- readIORef funbindsref
-                                        case Map.lookup bv m of
-                                          Just f -> do writeIORef funbindsref (Map.insert x f m)
-                                          Nothing -> do return ()
-                                          -}
                           _ -> return ()
 
    markFunBind (x,fn) = do
