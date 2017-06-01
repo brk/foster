@@ -28,7 +28,7 @@ import qualified Data.Set as Set(toList, fromList)
 import qualified Data.Map as Map
 import Data.Map(Map)
 import qualified Data.List as List(foldl', reverse)
-import Data.Maybe(catMaybes, isJust)
+import Data.Maybe(catMaybes, isJust, isNothing)
 import Data.Either(partitionEithers)
 
 import Compiler.Hoopl(UniqueMonad(..), C, O, freshLabel, intToUnique,
@@ -201,6 +201,9 @@ freeOccIsSingleton fo = do
             occs <- collectOccurrences bv
             return $ length occs == 1
     else do return False
+
+binderIsDead (MKBound _ r) = do mbfo <- readOrdRef r
+                                return $ isNothing mbfo
 
 binderIsSingletonOrDead (MKBound _ r) = do mbfo <- readOrdRef r
                                            case mbfo of
@@ -1959,7 +1962,10 @@ cffnOfMKCont cv (MKFn _ vs _ subterm _isrec _annot) = do
         case term of
           MKLetVal      _u (bv, subexpr) k -> do
               letable <- lift $ letableOfSubexpr subexpr
-              go k head (ILetVal (tidIdent $ boundVar bv) letable : insns)
+              isDead  <- lift $ binderIsDead bv
+              if isDead && isPure letable
+                then go k head insns
+                else go k head (ILetVal (tidIdent $ boundVar bv) letable : insns)
           MKLetRec      _u  [_known] _k -> do error $ "MKNExpr.hs: no support yet for MKLetRec..."
           MKLetRec      _u  _knowns  _k -> do error $ "MKNExpr.hs: no support yet for multi-extended-letrec"
           MKLetFuns     _u   knowns  k  -> do (uref, _, _) <- get
