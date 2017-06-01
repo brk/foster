@@ -501,7 +501,10 @@ contApply :: ContinuationContext ty -> FreeVar ty
 contApply (CC_Tail jb) v' = do
         cv <- lift $ mkFreeOccForBinder jb
         parentLink2 <- lift $ newOrdRef Nothing
-        selfLink2   <- lift $ newOrdRef $ Just $ MKCont parentLink2 (tidType $ boundVar jb)  cv [v']
+        let tm = MKCont parentLink2 (tidType $ boundVar jb)  cv [v']
+        selfLink2   <- lift $ newOrdRef $ Just tm
+        lift $ setFreeLink cv tm
+        
         return selfLink2
 contApply (CC_Base (fn, _)) v' = fn v'
 
