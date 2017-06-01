@@ -740,8 +740,6 @@ lowerModule (tc_time, kmod) = do
      (sc_time, _) <- ioTime $ runStaticChecks monomod0
      monomod2 <- knLoopHeaders  monomod0
 
-     liftIO $ putDocLn $ text $ "Performing shrinking: " ++ show (getShrinkFlag flags)
-
      monomod2a  <- knSinkBlocks   monomod2
 
      (mkn_time, pccmod) <- ioTime $ do
@@ -760,7 +758,7 @@ lowerModule (tc_time, kmod) = do
                   binders
           mknInline mk (snd mainBinder) (getInliningGas flags)
           uref <- gets ccUniqRef
-          pcc@(PreCloConv (cffns,topbinds)) <- pccOfTopTerm uref mk
+          pcc@(PreCloConv (cffns,_topbinds)) <- pccOfTopTerm uref mk
 
           whenDumpIR "cfg" $ do
               putDocLn $ (outLn "/// pre//CFG program ==================")
@@ -774,19 +772,7 @@ lowerModule (tc_time, kmod) = do
          putDocLn $ (outLn $ "///               size: " ++ show (knSize (moduleILbody monomod2)))
          _ <- liftIO $ renderKN monomod2 True
          putDocLn $ (outLn "^^^ ===================================")
-{-
-         when (inline || getShrinkFlag flags) $ do
-           putDocLn $ (outLn "/// MKN-ed       program =============")
-           putDocLn $ (outLn $ "///               size: " ++ show (knSize (moduleILbody monomod3)))
-           _ <- liftIO $ renderKN monomod3 True
-           putDocLn $ (outLn "^^^ ===================================")
 
-         when (inline || getShrinkFlag flags) $ do
-           putDocLn $ (outLn "/// Inlined       program =============")
-           putDocLn $ (outLn $ "///               size: " ++ show (knSize (moduleILbody monomod4)))
-           _ <- liftIO $ renderKN monomod4 True
-           putDocLn $ (outLn "^^^ ===================================")
--}
      whenDumpIR "mono-sunk" $ do
          putDocLn $ (outLn "/// Block-sunk program =============")
          _ <- liftIO $ renderKN monomod2a  True
@@ -817,12 +803,7 @@ lowerModule (tc_time, kmod) = do
          putDocLn $ (outLn "^^^ ===================================")
 
      liftIO $ putDocLn $ (text $ "/// Mono    size: " ++ show (knSize (moduleILbody monomod0)))
-{-
-     when (getShrinkFlag flags) $
-       liftIO $ putDocLn $ (text $ "/// Shrunk  size: " ++ show (knSize (moduleILbody monomod3)))
-     when (getInlining flags) $
-       liftIO $ putDocLn $ (text $ "/// Inlined size: " ++ show (knSize (moduleILbody monomod4)))
--}
+
      maybeInterpretKNormalModule kmod
 
      let in_time = 0.0
