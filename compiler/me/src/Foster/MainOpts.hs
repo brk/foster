@@ -28,6 +28,7 @@ options =
  , Option []     ["no-ctor-opt"] (NoArg NoCtorOpt)        "diable ctor representation optimizations"
  , Option []     ["no-prealloc-opt"] (NoArg NoPreAllocOpt)"diable pre-allocation optimizations"
  , Option []     ["non-moving-gc"] (NoArg NonMovingGC)    "assume non-moving GC (for testing codegen effect of reloads)"
+ , Option []     ["no-gc-at-all"]  (NoArg NoGcAtAll)      "assume no GC at all  (for testing codegen effect of root slots)"
  , Option []     ["inline-size-limit"]
                                 (ReqArg InlineSize "SIZE")"size counter value for inlining"
  ]
@@ -45,6 +46,7 @@ getFmtOnlyFlag   (flags, _) =        FmtOnly     `elem` flags
 getHs2FosterFlag (flags, _) =        Hs2Foster   `elem` flags
 getCtorOpt       (flags, _) = (not $ NoCtorOpt   `elem` flags)
 getNonMovingGC   (flags, _) =        NonMovingGC `elem` flags
+getNoGcAtAll     (flags, _) =        NoGcAtAll   `elem` flags
 getNoPreAllocOpt (flags, _) =        NoPreAllocOpt `elem` flags
 getInlining      (flags, _) = (not $ NoInline    `elem` flags) && (Inline  `elem` flags)
 getInliningDonate(flags, _) = (not $ NoDonate    `elem` flags)
@@ -64,6 +66,7 @@ data Flag = Interpret String
           | NoCtorOpt
           | NoPreAllocOpt
           | NonMovingGC
+          | NoGcAtAll
           | NoInline
           | Inline
           | InlineGas String

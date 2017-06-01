@@ -24,7 +24,7 @@ import Foster.Letable
 import Foster.GCRoots
 import Foster.Avails
 import Foster.Output(putDocLn)
-import Foster.MainOpts (getNonMovingGC, getNoPreAllocOpt)
+import Foster.MainOpts (getNonMovingGC, getNoGcAtAll, getNoPreAllocOpt)
 
 import Data.Map(Map)
 import Data.List(zipWith4, foldl' )
@@ -133,11 +133,15 @@ prepForCodegen m mayGCconstraints0 = do
    deHooplize mayGCmap p = do
 
      flagVals <- gets ccFlagVals
-     let assumeNonMovingGC = getNonMovingGC flagVals
 
-     wantedFns <- gets ccDumpFns
-     (g , liveRoots) <- insertSmartGCRoots (procIdent p) (procBlocks p) mayGCmap (want p wantedFns)
-     let (cfgBlocks , numPreds) = flattenGraph g mayGCmap assumeNonMovingGC
+     (g , liveRoots) <- if getNoGcAtAll flagVals
+        then do
+          return (procBlocks p, [])
+        else do
+          wantedFns <- gets ccDumpFns
+          insertSmartGCRoots (procIdent p) (procBlocks p) mayGCmap (want p wantedFns)
+
+     let (cfgBlocks , numPreds) = flattenGraph g mayGCmap (getNonMovingGC flagVals)
      return $ ILProcDef (p { procBlocks = cfgBlocks }) numPreds liveRoots
 
    want p wantedFns = T.unpack (identPrefix (procIdent p)) `elem` wantedFns
