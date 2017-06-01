@@ -863,7 +863,8 @@ tcRhoLetRec ctx0 rng recBindings e mt = do
         when (not $ null nonfns) $ do
           tcFails $ [text "Recursive bindings should only contain functions! Had:"
                     ] ++ map showStructure nonfns
-        return $ mkFunctionSCCs ids fns e' (AnnLetFuns rng)
+        let fnMarker fn _isCyclic = fn
+        return $ mkFunctionSCCs ids fns e' fnMarker (AnnLetFuns rng)
 -- }}}
 
 --      M <= n

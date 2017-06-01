@@ -724,9 +724,10 @@ type MayGCConstraints = Map Ident MayGCConstraint
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- {{{ Split up a sequence of function bindings into minimal SCCs.
-mkFunctionSCCs :: AExpr fn => [Ident] -> [fn] -> expr ->
+mkFunctionSCCs :: AExpr fn => [Ident] -> [fn] -> expr -> (fn -> Bool -> fn) ->
                              ([Ident] -> [fn] -> expr -> expr) -> expr
-mkFunctionSCCs ids fns body k =
+mkFunctionSCCs []  []  body _ k = k [] [] body
+mkFunctionSCCs ids fns body recMarker k =
   let idset    = Set.fromList ids
       fnids fn = Set.toList $ Set.intersection (Set.fromList (freeIdents fn))
                                                idset
@@ -735,9 +736,10 @@ mkFunctionSCCs ids fns body k =
   in foldr (\scc body ->
           let mkFuns ids fns = k ids fns body in
           case scc of
-                Graph.AcyclicSCC (fn, id) -> mkFuns [id] [fn]
-                Graph.CyclicSCC fnids ->     mkFuns ids fns
-                                              where (fns, ids) = unzip fnids
+                Graph.AcyclicSCC (fn, id) -> mkFuns [id] [recMarker fn False]
+                Graph.CyclicSCC fnids ->     mkFuns ids fns'
+                                              where fns' = map (\fn -> recMarker fn True) fns
+                                                    (fns, ids) = unzip fnids
          ) body theSCCs
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||||||||| Instance Helpers |||||||||||||||||||{{{

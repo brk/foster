@@ -27,9 +27,6 @@ import Data.List as List(all)
 import Control.Monad(when, liftM, liftM2, liftM3, liftM4)
 import Control.Monad.State(evalStateT, get, gets, put, StateT, liftIO, lift)
 
-import Data.Set as Set(fromList, toList, intersection)
-import qualified Data.Graph as Graph(stronglyConnComp, flattenSCCs)
-
 -- This monomorphization pass is similar in structure to MLton's;
 -- a previous worklist-based version was modeled on BitC's polyinstantiator.
 --
@@ -169,34 +166,13 @@ monoKN subst inTypeExpr e =
       putStrLn $ ""
       -}
 
-      --mkFunctionSCCs :: AExpr fn => [Ident] -> [fn] -> expr ->
-      --                            ([Ident] -> [fn] -> expr -> expr) -> expr
-    let mkFunctionSCCs' ids fns =
-            let idset    = Set.fromList ids
-                fnids fn = Set.toList $ Set.intersection (Set.fromList (freeIdents fn))
-                                                        idset
-                callGraphList = map (\(id, fn) -> ((fn, id), id, fnids fn)) (zip ids fns)
-                theSCCs       = Graph.stronglyConnComp callGraphList
-            in Graph.flattenSCCs theSCCs
-
+    let knFunMarker fn _isCyclic = fn
     let res = mkFunctionSCCs (polyids ++ monoids) (polyfns ++ monofns)
                  (mkKNLetFuns ids'    fns'    b')
+                  knFunMarker
                   mkKNLetFuns
             where mkKNLetFuns []  []  b = b
                   mkKNLetFuns ids fns b = KNLetFuns ids fns b
-  
-    if show polyids == "[foo!689]" || show polyids == "[foo!615]"
-      then do
-              liftIO $ putStrLn $ "\n=================================================\n"
-              liftIO $ putStrLn $ show polyids
-              liftIO $ putStrLn $ show monoids
-              liftIO $ putStrLn $ show ids'
-              liftIO $ putDoc $ pretty $
-                [id | (_, id) <-
-                        mkFunctionSCCs' (polyids ++ monoids) (polyfns ++ monofns)]
-              liftIO $ putDoc  $ showStructure res <> line
-              liftIO $ putStrLn $ "\n=================================================\n"
-      else return ()
 
     -- We keep the polymorphic versions around in case they have been
     -- referenceed without being instantiated. If they are dead, they
