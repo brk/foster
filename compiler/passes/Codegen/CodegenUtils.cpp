@@ -192,9 +192,16 @@ void markGCRoot(llvm::AllocaInst* stackslot, CodegenPass* pass) {
   markGCRootWithMetadata(stackslot, pass, getSlotName(stackslot, pass));
 }
 
+extern char kFosterMain[];
 void CodegenPass::markFosterFunction(Function* f) {
   f->setAttributes(this->fosterFunctionAttributes);
   if (this->config.useGC) { f->setGC("fostergc"); }
+
+  // We must not inline foster__main, which is marked with our gc,
+  // into its caller, which is a gc-less function!
+  if (f->getName() == kFosterMain || f->getName().find("noinline_llvm_") == 0) {
+    f->addFnAttr(llvm::Attribute::NoInline);
+  }
 }
 
 void CodegenPass::addEntryBB(Function* f) {
