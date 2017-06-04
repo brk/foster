@@ -551,12 +551,6 @@ void LLProc::codegenProto(CodegenPass* pass) {
 
   F->setCallingConv(cc);
 
-  // We must not inline foster__main, which is marked with our gc,
-  // into its caller, which is a gc-less function!
-  if (symbolName == kFosterMain || F->getName().find("noinline_llvm_") == 0) {
-    F->addFnAttr(llvm::Attribute::NoInline);
-  }
-
   codegenClosureWrapper(F, cc, linkage, symbolName, pass);
 }
 
