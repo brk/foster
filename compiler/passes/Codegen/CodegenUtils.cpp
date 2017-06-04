@@ -548,7 +548,7 @@ struct LLProcStringOfCStringPrim : public LLProcPrimBase {
       argTypes.push_back(TypeAST::i(32));
       std::map<std::string, std::string> annots; annots["callconv"] = "ccc";
       this->type = new FnTypeAST(foster::ParsingContext::lookupType("Text"),
-                                 argTypes, NULL, annots);
+                                 argTypes, annots);
   }
   virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) {
     pass->markFosterFunction(F);
@@ -593,7 +593,7 @@ struct LLProcGetCmdlineArgPrim : public LLProcPrimBase {
       argTypes.push_back(TypeAST::i(32));
       std::map<std::string, std::string> annots; annots["callconv"] = "ccc";
       this->type = new FnTypeAST(foster::ParsingContext::lookupType("Text"),
-                                 argTypes, NULL, annots);
+                                 argTypes, annots);
   }
   virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) {
     pass->markFosterFunction(F);
@@ -610,7 +610,7 @@ struct LLProcFmtTimePrim : public LLProcPrimBase {
       argTypes.push_back(PrimitiveTypeAST::get("Float64", builder.getDoubleTy()));
       std::map<std::string, std::string> annots; annots["callconv"] = "ccc";
       this->type = new FnTypeAST(foster::ParsingContext::lookupType("Text"),
-                                 argTypes, NULL, annots);
+                                 argTypes, annots);
   }
   virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) {
     pass->markFosterFunction(F);
@@ -625,7 +625,7 @@ struct LLProcSubheapCreatePrim : public LLProcPrimBase {
       std::vector<TypeAST*> argTypes;
       std::map<std::string, std::string> annots; annots["callconv"] = "ccc";
       this->type = new FnTypeAST(foster::ParsingContext::lookupType("Subheap"),
-                                 argTypes, NULL, annots);
+                                 argTypes, annots);
   }
   virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) {
     pass->markFosterFunction(F);
@@ -643,7 +643,7 @@ struct LLProcSubheapActivatePrim : public LLProcPrimBase {
       argTypes.push_back(foster::ParsingContext::lookupType("Subheap"));
       std::map<std::string, std::string> annots; annots["callconv"] = "ccc";
       this->type = new FnTypeAST(VoidTypeAST::get(),
-                                 argTypes, NULL, annots);
+                                 argTypes, annots);
   }
   virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) {
     pass->markFosterFunction(F);
@@ -663,7 +663,7 @@ struct LLProcSubheapCollectPrim : public LLProcPrimBase {
       argTypes.push_back(foster::ParsingContext::lookupType("Subheap"));
       std::map<std::string, std::string> annots; annots["callconv"] = "ccc";
       this->type = new FnTypeAST(VoidTypeAST::get(),
-                                 argTypes, NULL, annots);
+                                 argTypes, annots);
   }
   virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) {
     pass->markFosterFunction(F);
@@ -683,7 +683,7 @@ struct LLProcSubheapShrinkPrim : public LLProcPrimBase {
       argTypes.push_back(foster::ParsingContext::lookupType("Subheap"));
       std::map<std::string, std::string> annots; annots["callconv"] = "ccc";
       this->type = new FnTypeAST(VoidTypeAST::get(),
-                                 argTypes, NULL, annots);
+                                 argTypes, annots);
   }
   virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) {
     pass->markFosterFunction(F);

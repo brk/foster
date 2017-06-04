@@ -80,6 +80,10 @@ llvm::Type* getWordTy(llvm::IRBuilder<>& b);
 llvm::Type* getWordX2Ty(llvm::IRBuilder<>& b);
 
 llvm::Constant* getNullOrZero(llvm::Type* t);
+llvm::PointerType* getHeapPtrTo(llvm::Type*);
+llvm::PointerType* rawPtrTo(llvm::Type*);
+llvm::PointerType* ptrTo(llvm::Type*);
+
 
 bool isFosterFunction(llvm::Function& F);
 

@@ -70,8 +70,8 @@ public:
   : TypeAST("PrimitiveType", underlyingType, sourceRange), name(typeName) {}
 
   virtual void show(PrettyPrintTypePass* pass);
-  virtual llvm::Type* getLLVMType() const { return this->repr; }
   const std::string getName() { return name; }
+  virtual llvm::Type* getLLVMType() const { return this->repr; }
   static TypeAST* get(const std::string& name, llvm::Type* loweredType);
 };
 
@@ -88,8 +88,8 @@ public:
        name(typeName), namedType(underlyingType), is_placeholder(false) {}
   void setNamedType(TypeAST* t) { namedType = t; }
   virtual void show(PrettyPrintTypePass* pass);
-  virtual llvm::Type* getLLVMType() const;
   const std::string getName() { return name; }
+  virtual llvm::Type* getLLVMType() const;
   TypeAST* getType() const { return namedType; }
   virtual bool isGarbageCollectible() const { return getType()->isGarbageCollectible(); }
 };
@@ -112,11 +112,8 @@ public:
        name(typeName), ctors(ctors) /*, opaq(NULL)*/ {}
 
   virtual void show(PrettyPrintTypePass* pass);
-  virtual llvm::Type* getLLVMType() const; // don't use this one!
-  //llvm::PointerType* getOpaquePointerTy(llvm::Module* mod) const;
-  size_t getNumCtors() const { return ctors.size(); }
-  DataCtor* getCtor(size_t x) const { return ctors[x]; }
   const std::string getName() { return name; }
+  virtual llvm::Type* getLLVMType() const; // don't use this one!
   virtual bool isGarbageCollectible() const { return true; }
 };
 
@@ -132,8 +129,6 @@ public:
   virtual void show(PrettyPrintTypePass* pass) = 0;
 
   virtual TypeAST*& getContainedType(int idx) = 0;
-  virtual int64_t   getNumElements() const = 0;
-  virtual bool      indexValid(int idx) const { return idx < getNumElements(); }
 };
 
 class RefTypeAST : public TypeAST {
@@ -158,19 +153,15 @@ public:
 class FnTypeAST : public TypeAST {
   TypeAST* returnType;
   std::vector<TypeAST*> argTypes;
-  ValAbs* precond;
   std::map<std::string, std::string> annots;
 
 public:
   explicit FnTypeAST(TypeAST* returnType,
                      const std::vector<TypeAST*>& argTypes,
-                     ValAbs* precond,
                      std::map<std::string, std::string> annots);
 
   virtual void show(PrettyPrintTypePass* pass);
   virtual llvm::Type* getLLVMType() const;
-
-  ValAbs* getPrecond() const { return precond; }
 
   virtual const FnTypeAST*     castFnTypeAST() const { return this; }
 
@@ -207,7 +198,6 @@ public:
   virtual const StructTypeAST* castStructTypeAST() const { return this; }
 
   virtual int getNumContainedTypes() const { return parts.size(); }
-  virtual int64_t getNumElements()   const { return parts.size(); }
   virtual TypeAST*& getContainedType(int i);
 
   static StructTypeAST* get(const std::vector<TypeAST*>& parts);
@@ -242,7 +232,6 @@ public:
   virtual llvm::Type* getLLVMType() const;
 
   virtual int getNumContainedTypes() const { return structType->getNumContainedTypes(); }
-  virtual int64_t getNumElements()   const { return structType->getNumElements(); }
   virtual TypeAST*& getContainedType(int i) { return structType->getContainedType(i); }
 
   static TupleTypeAST* get(const std::vector<TypeAST*>& parts);
@@ -261,7 +250,6 @@ public:
   virtual llvm::Type* getLLVMType() const;
 
   virtual int getNumContainedTypes() const { return parts.size(); }
-  virtual int64_t getNumElements()   const { return parts.size(); }
   virtual TypeAST*& getContainedType(int i);
 
   static TypeTypeAppAST* get(const std::vector<TypeAST*>& parts);
@@ -317,11 +305,12 @@ class ArrayTypeAST : public TypeAST {
 public:
   virtual void show(PrettyPrintTypePass* pass);
   virtual llvm::Type* getLLVMType() const;
-  static  llvm::Type* getZeroLengthTypeRef(TypeAST* t);
-  static  llvm::Type* getSizedArrayTypeRef(llvm::Type* t, int64_t n);
-
+  
   virtual int getNumContainedTypes() const { return 1; }
   virtual TypeAST*& getContainedType(int i);
+
+  static  llvm::Type* getZeroLengthTypeRef(TypeAST* t);
+  static  llvm::Type* getSizedArrayTypeRef(llvm::Type* t, int64_t n);
 
   static ArrayTypeAST* get(TypeAST* tcell);
 };
