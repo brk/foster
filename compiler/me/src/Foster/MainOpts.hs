@@ -26,6 +26,7 @@ options =
  , Option []     ["inline-gas"] (ReqArg InlineGas "GAS")  "stop inlining after GAS steps"
  , Option []     ["no-donate"]  (NoArg  NoDonate)         "diable inlining donation"
  , Option []     ["no-ctor-opt"] (NoArg NoCtorOpt)        "diable ctor representation optimizations"
+ , Option []     ["strip-gc-kills"] (NoArg StripGCKills)  "strip GC root kills"
  , Option []     ["no-prealloc-opt"] (NoArg NoPreAllocOpt)"diable pre-allocation optimizations"
  , Option []     ["non-moving-gc"] (NoArg NonMovingGC)    "assume non-moving GC (for testing codegen effect of reloads)"
  , Option []     ["no-gc-at-all"]  (NoArg NoGcAtAll)      "assume no GC at all  (for testing codegen effect of root slots)"
@@ -47,6 +48,7 @@ getHs2FosterFlag (flags, _) =        Hs2Foster   `elem` flags
 getCtorOpt       (flags, _) = (not $ NoCtorOpt   `elem` flags)
 getNonMovingGC   (flags, _) =        NonMovingGC `elem` flags
 getNoGcAtAll     (flags, _) =        NoGcAtAll   `elem` flags
+getStripGCKills  (flags, _) =        StripGCKills `elem` flags
 getNoPreAllocOpt (flags, _) =        NoPreAllocOpt `elem` flags
 getInlining      (flags, _) = (not $ NoInline    `elem` flags) && (Inline  `elem` flags)
 getInliningDonate(flags, _) = (not $ NoDonate    `elem` flags)
@@ -64,6 +66,7 @@ data Flag = Interpret String
           | FmtOnly
           | Hs2Foster
           | NoCtorOpt
+          | StripGCKills
           | NoPreAllocOpt
           | NonMovingGC
           | NoGcAtAll
