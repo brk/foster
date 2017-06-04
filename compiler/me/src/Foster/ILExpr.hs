@@ -24,8 +24,8 @@ import Foster.Letable
 import Foster.GCRoots
 import Foster.Avails
 import Foster.Output(putDocLn)
-import Foster.MainOpts (getNonMovingGC, getNoGcAtAll, getNoPreAllocOpt)
-
+import Foster.MainOpts (getNonMovingGC, getNoGcAtAll,
+                        getStripGCKills, getNoPreAllocOpt)
 import Data.Map(Map)
 import Data.List(zipWith4, foldl' )
 import Data.Maybe(maybeToList, fromMaybe)
@@ -139,7 +139,12 @@ prepForCodegen m mayGCconstraints0 = do
           return (procBlocks p, [])
         else do
           wantedFns <- gets ccDumpFns
-          insertSmartGCRoots (procIdent p) (procBlocks p) mayGCmap (want p wantedFns)
+          (g', liveRoots) <- insertSmartGCRoots (procIdent p) (procBlocks p) mayGCmap (want p wantedFns)
+          --(g', liveRoots) <- insertDumbGCRoots' (procBlocks p) (want p wantedFns)
+          g <- if getStripGCKills flagVals
+                then stripKills g'
+                else return     g'
+          return (g, liveRoots)
 
      let (cfgBlocks , numPreds) = flattenGraph g mayGCmap (getNonMovingGC flagVals)
      return $ ILProcDef (p { procBlocks = cfgBlocks }) numPreds liveRoots
@@ -385,7 +390,8 @@ flattenGraph bbgp mayGCmap assumeNonMovingGC = -- clean up any rebindings from g
          Block (frs f) (concatMap midmany (blockToList ms) ++ lastmids) last
    where
      midmany :: Insn' O O -> [ILMiddle]
-     midmany (CCGCKill Disabled     _root) = error $ "Invariant violated: saw disabled root kill pseudo-insn!"
+     --midmany (CCGCKill Disabled     _root) = error $ "Invariant violated: saw disabled root kill pseudo-insn!"
+     midmany (CCGCKill Disabled     _root) = []
      midmany (CCGCKill (Enabled cgc) roots) = [ILGCRootKill root cgc | root <- Set.toList roots]
      midmany insn = [mid insn]
 

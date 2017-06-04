@@ -6,7 +6,8 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.GCRoots(insertSmartGCRoots, fnty_of_procty) where
+module Foster.GCRoots(insertSmartGCRoots, insertDumbGCRoots',
+                      stripKills, fnty_of_procty) where
 
 import Prelude hiding ((<*>))
 
@@ -92,6 +93,23 @@ gDoReuseRootSlots = False -- True -- TODO measure effect of disabling this optim
 
 type GCRootsForVariables = Map LLVar RootVar
 type VariablesForGCRoots = Map RootVar LLVar
+
+insertDumbGCRoots' :: BasicBlockGraph' -> Bool -> Compiled ( BasicBlockGraph' , [RootVar] )
+insertDumbGCRoots' bbgp0 dump = do
+  bbgp' <- insertDumbGCRoots bbgp0 dump
+  return (bbgp' , computeUsedRoots bbgp')
+ where
+
+    computeUsedRoots bbgp = Set.toList . Set.fromList $
+                             Map.elems (computeGCRootsForVars bbgp)
+
+    computeGCRootsForVars bbgp = foldGraphNodes go (bbgpBody bbgp) Map.empty
+      where
+        go :: Insn' e x -> GCRootsForVariables -> GCRootsForVariables
+        go (CCGCInit _ v root) s = -- assert v not in s
+                                   Map.insert v root s
+        -- don't recurse into functions: we don't want their roots!
+        go _                   s = s
 
 -- Precondition: allocations have been made explicit in the input graph.
 -- Precondition: may-gc analysis has updated the annotations in the graph.
@@ -990,3 +1008,25 @@ runRebinds bbgp = do
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
+
+-- ||||||||||||||||||||||| Root kill elimination ||||||||||||||||{{{
+
+stripKills :: BasicBlockGraph' -> Compiled BasicBlockGraph'
+stripKills bbgp = do
+  g <- rebuildGraphM Nothing (bbgpBody bbgp) d
+  return bbgp { bbgpBody = g }
+ where
+    d :: Monad m => Insn' e x -> m (Graph Insn' e x)
+    d insn@(CCLabel {})     = return (mkFirst insn)
+    d insn@(CCLast  {})     = return (mkLast  insn)
+
+    d (CCGCKill {})   = return emptyGraph
+
+    d insn@(CCRebindId {})   = return $ mkMiddle insn
+    d insn@(CCLetVal {})     = return $ mkMiddle insn
+    d insn@(CCLetFuns {})    = return $ mkMiddle insn
+    d insn@(CCTupleStore {}) = return $ mkMiddle insn
+    d insn@(CCGCLoad {})     = return $ mkMiddle insn
+    d insn@(CCGCInit {})     = return $ mkMiddle insn
+
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
