@@ -574,7 +574,7 @@ FnTypeAST* parseProcType(const pb::ProcType::Reader& fnty) {
   std::map<std::string, std::string> annots;
   annots["callconv"] = fnty.getCallingconvention();
 
-  return new FnTypeAST(retTy, argTypes, NULL, annots);
+  return new FnTypeAST(retTy, argTypes, annots);
 }
 
 

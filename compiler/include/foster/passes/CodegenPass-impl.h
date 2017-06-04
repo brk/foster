@@ -34,9 +34,6 @@ void registerStructType(const StructTypeAST* structty,
 llvm::GlobalVariable* getTypeMapForType(TypeAST*, CtorRepr ctorRepr,
                                         llvm::Module*, ArrayOrNot);
 
-inline llvm::PointerType* ptrTo(llvm::Type* t) {
-  return llvm::PointerType::getUnqual(t);
-}
 bool mayContainGCablePointers(llvm::Type* ty);
 bool containsGCablePointers(TypeAST* typ, llvm::Type* ty);
 llvm::Constant* slotSizeOf(llvm::Type* ty);

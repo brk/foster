@@ -110,7 +110,7 @@ bool matchesExceptForUnknownPointers(Type* aty, Type* ety) {
 llvm::Value* emitBitcast(llvm::Value* v, llvm::Type* dstTy, llvm::StringRef msg = "") {
   llvm::Type* srcTy = v->getType();
   if (srcTy->isVoidTy()) {
-    return llvm::ConstantPointerNull::getNullValue(dstTy);
+    return getNullOrZero(dstTy);
   }
   if (isFunctionPointerTy(srcTy) && isLargishStructPointerTy(dstTy)) {
     ASSERT(false) << "cannot cast " << str(srcTy) << " to " << str(dstTy) << "\n" << str(v);
@@ -119,6 +119,7 @@ llvm::Value* emitBitcast(llvm::Value* v, llvm::Type* dstTy, llvm::StringRef msg 
     builder.GetInsertBlock()->getParent()->dump();
     ASSERT(false) << "cannot cast " << str(srcTy) << " to " << str(dstTy) << "\ndue to pointer-type mismatch\n" << str(v);
   }
+
   return builder.CreateBitCast(v, dstTy, msg);
 }
 
@@ -420,7 +421,7 @@ void LLModule::codegenModule(CodegenPass* pass) {
     auto Ffunc = pass->mod->getFunction(procs[i]->getCName() + ".proc");
     ASSERT(Ffunc) << "Couldn't find a closure wrapper for " << procs[i]->getCName();
     cell_vals.push_back(Ffunc);
-    cell_vals.push_back(llvm::ConstantPointerNull::getNullValue(builder.getInt8PtrTy()));
+    cell_vals.push_back(getNullOrZero(builder.getInt8PtrTy()));
     auto const_cell = llvm::ConstantStruct::getAnon(cell_vals);
 
     std::string cloname = procs[i]->getCName();
@@ -879,7 +880,7 @@ void LLRebindId::codegenMiddle(CodegenPass* pass) {
 /////////////////////////////////////////////////////////////////{{{
 
 llvm::Value* emitGCWrite(CodegenPass* pass, Value* val, Value* base, Value* slot) {
-  if (!base) base = llvm::ConstantPointerNull::getNullValue(builder.getInt8PtrTy());
+  if (!base) base = getNullOrZero(builder.getInt8PtrTy());
   llvm::Constant* llvm_gcwrite = llvm::Intrinsic::getDeclaration(pass->mod,
                                                       llvm::Intrinsic::gcwrite);
 
@@ -895,7 +896,7 @@ llvm::Value* emitGCWrite(CodegenPass* pass, Value* val, Value* base, Value* slot
 }
 
 llvm::Value* emitGCRead(CodegenPass* pass, Value* base, Value* slot) {
-  if (!base) base = llvm::ConstantPointerNull::getNullValue(builder.getInt8PtrTy());
+  if (!base) base = getNullOrZero(builder.getInt8PtrTy());
   llvm::Constant* llvm_gcread = llvm::Intrinsic::getDeclaration(pass->mod,
                                                       llvm::Intrinsic::gcread);
   llvm::outs() << "emitting GC read" << "\n";
@@ -1177,7 +1178,7 @@ llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
     if (this->ctorRepr.isNullary) {
       emitFakeComment("nullary ctor!");
       llvm::Value* val = builder.getInt8(this->ctorRepr.smallId);
-      llvm::Type* ptrty = ptrTo(this->type->getLLVMType());
+      llvm::Type* ptrty = getHeapPtrTo(this->type->getLLVMType());
       return builder.CreateIntToPtr(val, ptrty);
       // return null pointer, or'ed with ctor smallId, bitcast to appropriate result.
     } else {
@@ -1215,10 +1216,7 @@ Value* getArraySlot(Value* base, Value* idx, CodegenPass* pass, Type* ty,
   Value* arr = NULL; Value* len;
 
   if (isPointerToUnknown(base->getType())) {
-    auto arrayType = llvm::PointerType::getUnqual(
-            llvm::StructType::get(foster::fosterLLVMContext,
-              { builder.getInt64Ty(),
-                llvm::ArrayType::get(ty, 0) }));
+    auto arrayType = ArrayTypeAST::getSizedArrayTypeRef(ty, 0);
     base = emitBitcast(base, arrayType, "genAspec");
   }
 
@@ -1265,8 +1263,7 @@ llvm::Value* LLArrayPoke::codegen(CodegenPass* pass) {
   Value* base = NULL;
   Value* slot = ari->codegenARI(pass, &base, val->getType());
   builder.CreateStore(val, slot, /*isVolatile=*/ false);
-  return llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(
-        llvm::StructType::get(foster::fosterLLVMContext)));
+  return getNullOrZero(getUnitType()->getLLVMType());
   //return emitGCWrite(pass, val, base, slot);
 }
 
@@ -1418,7 +1415,7 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
     // a particular data constructor, emit a cast to that ctor's type.
     if (ctors[i].ctorStructType) {
       if (v->getType()->isPointerTy()) {
-        v = emitBitcast(v, ptrTo(ctors[i].ctorStructType->getLLVMType()));
+        v = emitBitcast(v, getHeapPtrTo(ctors[i].ctorStructType->getLLVMType()));
       } else {
         const CtorRepr& r = ctors[i].ctorId.ctorRepr;
         if (r.isTransparent && !r.isBoxed) {
@@ -1489,7 +1486,7 @@ llvm::Value* emitFnArgCoercions(Value* argV, llvm::Type* expectedType) {
   // we'll be forced to bind the result of expect_i32 (which is actually
   // void, not unit) to a unit-typed variable. If so, just use a null pointer.
   if (argV->getType()->isVoidTy() && str(expectedType) == "{}*") {
-    argV = llvm::ConstantPointerNull::get(llvm::dyn_cast<llvm::PointerType>(expectedType));
+    argV = getNullOrZero(llvm::dyn_cast<llvm::PointerType>(expectedType));
   }
 
   return argV;
@@ -1499,9 +1496,9 @@ llvm::Type* getClosureType(llvm::Type* retTy, const std::vector<Value*>& nonEnvA
   std::vector<llvm::Type*> argTys;
   argTys.push_back(builder.getInt8PtrTy());
   for (auto arg : nonEnvArgs) { argTys.push_back(arg->getType()); }
-  return llvm::PointerType::getUnqual(
+  return getHeapPtrTo(
             llvm::StructType::get(foster::fosterLLVMContext,
-              { llvm::PointerType::getUnqual(llvm::FunctionType::get(retTy, argTys, false)),
+              { rawPtrTo(llvm::FunctionType::get(retTy, argTys, false)),
                 builder.getInt8PtrTy() })
             );
 }

@@ -304,6 +304,19 @@ llvm::Constant* getNullOrZero(llvm::Type* t) {
   }
 }
 
+llvm::PointerType* ptrTo(llvm::Type* t) {
+  return llvm::PointerType::getUnqual(t);
+}
+
+llvm::PointerType* rawPtrTo(llvm::Type* t) {
+  return llvm::PointerType::getUnqual(t);
+}
+
+llvm::PointerType* getHeapPtrTo(llvm::Type* t) {
+  return llvm::PointerType::getUnqual(t);
+  //return llvm::PointerType::get(t, 1);
+}
+
 bool isFosterFunction(llvm::Function& F) {
   return F.hasGC() && F.getGC() == std::string("fostergc");
 }

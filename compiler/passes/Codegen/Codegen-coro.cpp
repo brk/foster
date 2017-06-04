@@ -114,7 +114,7 @@ llvm::FunctionType* getCoroInvokeFnTy(
   llvm::Type* argTypes)
 {
   std::vector<llvm::Type*> fnTyArgs;
-  fnTyArgs.push_back(ptrTo(getSplitCoroType(argTypes)));
+  fnTyArgs.push_back(getHeapPtrTo(getSplitCoroType(argTypes)));
   addCoroArgs(fnTyArgs, argTypes);
   return llvm::FunctionType::get(
                    /*Result=*/   retTy,
@@ -140,7 +140,7 @@ llvm::StructType* getCoroClosureStructTy(
   llvm::Type* argTypes)
 {
   std::vector<llvm::Type*> parts;
-  parts.push_back(ptrTo(getCoroClosureFnType(retTy, argTypes)));
+  parts.push_back(rawPtrTo(getCoroClosureFnType(retTy, argTypes)));
   parts.push_back(builder.getInt8PtrTy());
   return llvm::StructType::get(builder.getContext(), parts, /*isPacked=*/ false);
 }
@@ -151,9 +151,9 @@ llvm::FunctionType* getCoroCreateFnTy(
   llvm::Type* argTypes)
 {
   std::vector<llvm::Type*> fnTyArgs;
-  fnTyArgs.push_back(ptrTo(getCoroClosureStructTy(retTy, argTypes)));
+  fnTyArgs.push_back(getHeapPtrTo(getCoroClosureStructTy(retTy, argTypes)));
   return llvm::FunctionType::get(
-                   /*Result=*/   ptrTo(getSplitCoroType(argTypes)),
+                   /*Result=*/   getHeapPtrTo(getSplitCoroType(argTypes)),
                    /*Params=*/   fnTyArgs,
                    /*isVarArg=*/ false);
 }
@@ -204,7 +204,8 @@ void registerCoroType(llvm::Module* mod, llvm::Type* argTypes) {
 // __foster_get_current_coro_slot() ends up with the "wrong" type.
 // So we sometimes insert coercions to undo the silliness.
 Value* createStore(Value* val, Value* ptr) {
-  return builder.CreateStore(val, builder.CreateBitCast(ptr, ptrTo(val->getType())));
+  // TODO raw or heap ptr?
+  return builder.CreateStore(val, builder.CreateBitCast(ptr, rawPtrTo(val->getType())));
 }
 
 Value* generateInvokeYield(bool isYield,
@@ -245,7 +246,7 @@ Value* generateInvokeYield(bool isYield,
 
   // Store the input arguments to coro->arg.
   Value* concrete_coro = builder.CreateBitCast(coro,
-                                         ptrTo(getSplitCoroType(
+                                         getHeapPtrTo(getSplitCoroType(
                                               (isYield ? retTy : argTypes))));
   Value* coroArg_slot = gep(concrete_coro, 0, 1);
   if (inputArgs.size() == 1) {
@@ -324,7 +325,7 @@ Value* generateInvokeYield(bool isYield,
   sibling_slot = gep(coro, 0, coroField_Sibling(), "siblingaddr");
   sibling_ptr_gen      = builder.CreateLoad(sibling_slot);
   Value* sibling_ptr   = builder.CreateBitCast(sibling_ptr_gen,
-                                         ptrTo(getSplitCoroType(
+                                         getHeapPtrTo(getSplitCoroType(
                                                (isYield ? argTypes : retTy))));
   /// return sibling->arg;
   Value* sibling_arg_slot = gep(sibling_ptr, 0, 1, "sibling_arg_slot");
@@ -436,7 +437,7 @@ Value* emitCoroWrapperFn(
   BasicBlock* prevBB = builder.GetInsertBlock();
   pass->addEntryBB(wrapper);
 
-  Value* fc  = builder.CreateBitCast(ptr_f_c, ptrTo(getSplitCoroType(argTypes)));
+  Value* fc  = builder.CreateBitCast(ptr_f_c, getHeapPtrTo(getSplitCoroType(argTypes)));
   Value* fcg = gep(fc, 0, 0, "fc_gen");
 
   llvm::Value* coro_slot = pass->storeAndMarkPointerAsGCRoot(fcg);
@@ -444,11 +445,11 @@ Value* emitCoroWrapperFn(
   Value* fn_addr = gep(fcg, 0, coroField_Fn(), "fnaddr");
   Value* fn_gen  = builder.CreateLoad(fn_addr, "fn_gen");
   Value* fn      = builder.CreateBitCast(fn_gen,
-                                      ptrTo(getCoroClosureFnType(retTy, argTypes)));
+                                      rawPtrTo(getCoroClosureFnType(retTy, argTypes)));
 
   Value* sib_addr = gep(fcg, 0, coroField_Sibling(), "sibaddr");
   Value* sib_gen  = builder.CreateLoad(sib_addr, "sib_gen");
-  Value* sib      = builder.CreateBitCast(sib_gen, ptrTo(getSplitCoroType(retTy)));
+  Value* sib      = builder.CreateBitCast(sib_gen, getHeapPtrTo(getSplitCoroType(retTy)));
 
   Value* env_addr = gep(fcg, 0, coroField_Env(), "envaddr");
   Value* env      = builder.CreateLoad(env_addr, "env_ptr");
@@ -607,7 +608,7 @@ Value* CodegenPass::emitCoroCreateFn(
 
   // return (foster_coro_i32_i32*) fcoro;
   builder.CreateRet(builder.CreateBitCast(fcoro,
-                                    ptrTo(getSplitCoroType(argTypes))));
+                                    getHeapPtrTo(getSplitCoroType(argTypes))));
 
   if (prevBB) {
     builder.SetInsertPoint(prevBB);
@@ -663,7 +664,7 @@ void CodegenPass::emitLazyCoroPrimInfo(bool isYield, Function* fn,
       inputArgs.push_back(&*(args++));
     }
     coro = builder.CreateBitCast(concrete_invoked_coro,
-                                 ptrTo(foster_generic_coro_t));
+                                 getHeapPtrTo(foster_generic_coro_t));
   }
 
   builder.CreateRet(generateInvokeYield(isYield, FOSTER_CORO_DORMANT,

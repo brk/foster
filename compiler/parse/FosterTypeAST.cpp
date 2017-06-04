@@ -77,14 +77,14 @@ llvm::Type* DataTypeAST::getLLVMType() const {
   llvm::StructType* dt_opaque_named_ty =
          llvm::StructType::create(fosterLLVMContext,
                                                std::string(this->name + ".DT"));
-  return llvm::PointerType::getUnqual(dt_opaque_named_ty);
+  return getHeapPtrTo(dt_opaque_named_ty);
 }
 
 ////////////////////////////////////////////////////////////////////
 
 llvm::Type* RefTypeAST::getLLVMType() const {
   if (!repr) {
-    repr = llvm::PointerType::getUnqual(underlyingType->getLLVMType());
+    repr = getHeapPtrTo(underlyingType->getLLVMType());
   }
   return repr;
 }
@@ -98,12 +98,10 @@ RefTypeAST* RefTypeAST::get(TypeAST* baseType) {
 
 FnTypeAST::FnTypeAST(TypeAST* returnType,
                      const std::vector<TypeAST*>& argTypes,
-                     ValAbs* precond,
                      std::map<string, string> _annots)
     : TypeAST("FnType", NULL, SourceRange::getEmptyRange()),
       returnType(returnType),
       argTypes(argTypes),
-      precond(precond),
       annots(_annots) {
   ASSERT(returnType) << "FnTypeAST() needs non-NULL return type";
   getCallingConventionID(); // ensure we have a valid calling convention...
@@ -116,7 +114,7 @@ FnTypeAST::FnTypeAST(TypeAST* returnType,
 
 llvm::Type* FnTypeAST::getLLVMType() const {
   if (!repr) { // At the backend, FnTypeAST == LLProcType
-    repr = llvm::PointerType::getUnqual(getLLVMFnType());
+    repr = rawPtrTo(getLLVMFnType());
   }
   return repr;
 }
@@ -219,8 +217,7 @@ llvm::Type* StructTypeAST::getLLVMType() const {
 }
 
 TypeAST*& StructTypeAST::getContainedType(int i) {
-  ASSERT(indexValid(i));
-  return parts[i];
+  return parts.at(i);
 }
 
 StructTypeAST* StructTypeAST::get(const vector<TypeAST*>& argTypes) {
@@ -242,8 +239,7 @@ llvm::Type* TypeTypeAppAST::getLLVMType() const {
 }
 
 TypeAST*& TypeTypeAppAST::getContainedType(int i) {
-  ASSERT(indexValid(i));
-  return parts[i];
+  return parts.at(i);
 }
 
 TypeTypeAppAST* TypeTypeAppAST::get(const vector<TypeAST*>& argTypes) {
@@ -259,7 +255,7 @@ llvm::Type* CoroTypeAST::getLLVMType() const {
     fieldTypes.push_back(foster_generic_coro_t);
     fieldTypes.push_back(this->a->getLLVMType());
 
-    repr = llvm::PointerType::getUnqual(
+    repr = getHeapPtrTo(
                 llvm::StructType::get(fieldTypes.back()->getContext(),
                                  fieldTypes, /*isPacked=*/false));
   }
@@ -304,14 +300,12 @@ CArrayTypeAST* CArrayTypeAST::get(TypeAST* tcell, uint64_t size) {
 
 /////////////////////////////////////////////////////////////////////
 
+// Returns {i64, [t, n]}*
 llvm::Type* ArrayTypeAST::getSizedArrayTypeRef(llvm::Type* t, int64_t n) {
-  std::vector<llvm::Type*> structElemTypes;
-  // embedded length
-  structElemTypes.push_back(llvm::IntegerType::get(t->getContext(), 64));
-  structElemTypes.push_back(llvm::ArrayType::get(t, n));
-  return llvm::PointerType::getUnqual(
+  return getHeapPtrTo(
           llvm::StructType::get(t->getContext(),
-                                llvm::makeArrayRef(structElemTypes)));
+                                { llvm::IntegerType::get(t->getContext(), 64)
+                                , llvm::ArrayType::get(t, n) }));
 }
 
 
