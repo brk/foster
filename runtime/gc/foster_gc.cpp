@@ -269,7 +269,6 @@ struct GCGlobals {
   ClusterMap clusterForAddress;
 
   bool had_problems;
-  uint8_t mark_bits_current_value;
 
   std::map<std::pair<const char*, typemap*>, int64_t> alloc_site_counters;
 
@@ -278,6 +277,7 @@ struct GCGlobals {
   base::TimeTicks    init_start;
 
   int num_gcs_triggered;
+  int num_gcs_triggered_involuntarily;
   int num_big_stackwalks;
   double subheap_ticks;
 
@@ -294,12 +294,6 @@ GCGlobals<immix_space> gcglobals;
 // The worklist would be per-GC-thread in a multithreaded implementation.
 immix_worklist immix_worklist;
 #endif
-
-void flip_current_mark_bits_value() {
-  // This value starts intialized to zero by the immix_space constructor.
-  gcglobals.mark_bits_current_value =
-    gcglobals.mark_bits_current_value ^ HEADER_MARK_BITS;
-}
 
 #define IMMIX_F15_PER_F21 64
 #define IMMIX_LINES_PER_BLOCK 128
@@ -345,12 +339,13 @@ struct large_array_allocator {
                        int64_t  num_elts,
                        int64_t  total_bytes,
                        bool     init,
+                       uint8_t  mark_bits_current_value,
                        immix_space* parent) {
     void* base = malloc(total_bytes + 8);
     heap_array* allot = align_as_array(base);
 
     if (init && SEMA_INITIALIZE_ALLOCATIONS) { memset((void*) base, 0x00, total_bytes + 8); }
-    allot->set_header(arr_elt_map, gcglobals.mark_bits_current_value);
+    allot->set_header(arr_elt_map, mark_bits_current_value);
     allot->set_num_elts(num_elts);
     if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_array(total_bytes); }
 
@@ -415,11 +410,12 @@ struct large_array_allocator {
   }
 
   // Iterates over each allocated array, and calls free() on the unmarked ones.
-  void sweep_arrays() {
+  void sweep_arrays(uint8_t mark_bits_current_value) {
     for (auto it = allocated.begin(); it != allocated.end();       ) {
       void* base = *it;
       heap_array* arr = align_as_array(base);
-      if (arr->get_mark_bits() != gcglobals.mark_bits_current_value) {
+      if (arr->get_mark_bits() != mark_bits_current_value) {
+        if (ENABLE_GCLOG) { fprintf(gclog, "freeing unmarked array %p\n", arr); }
         // unmarked, can free associated array.
         it = allocated.erase(it); // erase() returns incremented iterator.
         framekind_malloc_cleanup(arr);
@@ -812,8 +808,8 @@ bool non_kosher_addr(void* addr) {
 
 class immix_space : public heap {
 public:
-  immix_space(byte_limit* lim) : lim(lim) {
-    fprintf(gclog, "new immix_space, byte limit: %p, current values: %d f15s + %d f21s\n", lim, lim->frame15s_left, lim->frame21s_left);
+  immix_space(byte_limit* lim) : lim(lim), mark_bits_current_value(0) {
+    fprintf(gclog, "new immix_space %p, byte limit: %p, current values: %d f15s + %d f21s\n", this, lim, lim->frame15s_left, lim->frame21s_left);
   }
   // TODO take a space limit. Use a combination of local & global
   // frame21_allocators to service requests for frame15s.
@@ -836,6 +832,13 @@ public:
     medium_bumper.base = medium_bumper.bound;
   }
 
+  void flip_current_mark_bits_value() {
+    // This value starts intialized to zero by the immix_space constructor.
+    this->mark_bits_current_value =
+      this->mark_bits_current_value ^ HEADER_MARK_BITS;
+  }
+
+
   virtual void force_gc_for_debugging_purposes() { this->immix_gc(); }
 
   // {{{ Prechecked allocation functions
@@ -847,7 +850,7 @@ public:
     //if (TRACK_NUM_ALLOCATIONS) { ++parent->hpstats.num_allocations; }
     if (FOSTER_GC_ALLOC_HISTOGRAMS) { LOCAL_HISTOGRAM_ENUMERATION("gc-alloc-small", N, 128); }
 
-    allot->set_header(map, gcglobals.mark_bits_current_value);
+    allot->set_header(map, this->mark_bits_current_value);
 
     // Record the start and end of this object, for interior pointers, heap parsing, etc.
     if (FOSTER_GC_TRACK_BITMAPS) {
@@ -865,7 +868,7 @@ public:
     if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_cell(map->cell_size); }
     //if (TRACK_NUM_ALLOCATIONS) { ++parent->hpstats.num_allocations; }
     if (FOSTER_GC_ALLOC_HISTOGRAMS) { allocate_cell_prechecked_histogram((int) map->cell_size); }
-    allot->set_header(map, gcglobals.mark_bits_current_value);
+    allot->set_header(map, this->mark_bits_current_value);
 
     if (FOSTER_GC_TRACK_BITMAPS) {
       //size_t granule = granule_for(tori_of_tidy(allot->body_addr()));
@@ -882,7 +885,7 @@ public:
     heap_array* allot = static_cast<heap_array*>(bumper->prechecked_alloc_noinit(total_bytes));
     if (init && SEMA_INITIALIZE_ALLOCATIONS) { memset((void*) allot, 0x00, total_bytes); }
     //fprintf(gclog, "alloc'a %d, bump = %p, low bits: %x\n", int(total_bytes), bump, intptr_t(bump) & 0xF);
-    allot->set_header(arr_elt_map, gcglobals.mark_bits_current_value);
+    allot->set_header(arr_elt_map, this->mark_bits_current_value);
     allot->set_num_elts(num_elts);
     //if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(total_bytes); }
     if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_array(total_bytes); }
@@ -1079,7 +1082,7 @@ public:
     } else if (req_bytes > (1 << 13)) {
       // The Immix paper, since it built on top of Jikes RVM, uses an 8 KB
       // threshold to distinguish medium-sized allocations from large ones.
-      return laa.allocate_array(elt_typeinfo, n, req_bytes, init, this);
+      return laa.allocate_array(elt_typeinfo, n, req_bytes, init, this->mark_bits_current_value, this);
     } else {
       // If it's not small and it's not large, it must be medium.
       return allocate_array_into_bumper(&medium_bumper, elt_typeinfo, n, req_bytes, init);
@@ -1189,7 +1192,7 @@ public:
       */
 
   inline bool is_marked(heap_cell* obj) {
-    return obj->get_mark_bits() == gcglobals.mark_bits_current_value;
+    return obj->get_mark_bits() == this->mark_bits_current_value;
   }
 
   void clear_mark_bits_for_space() {
@@ -1316,7 +1319,7 @@ public:
     clean_frame15s.clear();
     clean_frame21s.clear();
     local_frame15_allocator.clear();
-    laa.sweep_arrays();
+    laa.sweep_arrays(this->mark_bits_current_value);
 
     for (auto f15 : frame15s) {
       inspect_frame15_postgc(frame15_id_of(f15));
@@ -1559,13 +1562,15 @@ public:
     clean_frame21s.clear();
     to_be_cleared.clear();
     local_frame15_allocator.clear();
-    laa.sweep_arrays();
+    laa.sweep_arrays(this->mark_bits_current_value);
     // TODO remembered sets?
   }
 
 public:
   // How many are we allowed to allocate before being forced to GC & reuse?
   byte_limit* lim;
+
+  uint8_t mark_bits_current_value;
 
 private:
   // These bumpers point into particular frame15s.
@@ -2556,7 +2561,6 @@ void initialize(void* stack_highest_addr) {
   gcglobals.default_allocator = gcglobals.allocator;
 
   gcglobals.had_problems = false;
-  gcglobals.mark_bits_current_value = 0;
 
   register_allocator_ranges(stack_highest_addr);
 
@@ -2832,7 +2836,7 @@ void* foster_subheap_create_raw() {
   void* alloc = malloc(sizeof(heap_handle<immix_space>));
   heap_handle<immix_space>* h = (heap_handle<immix_space>*)
     realigned_for_allocation(alloc);
-  h->header           = gcglobals.mark_bits_current_value;
+  h->header           = subheap->mark_bits_current_value;
   h->unaligned_malloc = alloc;
   h->body             = subheap;
   gcglobals.allocator->add_subheap_handle(h);
