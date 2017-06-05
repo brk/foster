@@ -153,6 +153,18 @@ def zip_dicts(ds):
     d[k] = [e[k] for e in ds]
   return d
 
+def matches(needle, haystack):
+  return needle in haystack
+
+def matches_any(subj, needles):
+  for needle in needles:
+    if matches(needle, subj):
+      return True
+  return False
+
+def should_test(subj, options):
+  return len(options.tests) == 0 or matches_any(subj, options.tests)
+
 def extract_foster_compile_stats(testpath, tags):
   mid_total_ms = None
   all_total_ms = None
@@ -342,21 +354,22 @@ def benchmark_third_party(third_party_benchmarks, options):
   """
   nested_plans = []
   for (sourcepath, filenames, argstrs) in third_party_benchmarks:
-    all_factors = [factor + [('lang', [('other', '')]),
-                             ('date', [(datestr, '')]),
-                            ] for factor in [
-      [
-        ('LLVMopt', [('O3', '-O3')]),
-        ('sse',     [('yes', '-march=core2 -mfpmath=sse -msse3 -falign-labels=8')]),
-      ],
-      [
-        ('LLVMopt', [('O2', '-O2'),
-                     ('O0', '-O0')]),
-        ('sse',     [('no', '')]),
-      ],
-    ]]
-    plan = generate_all_combinations(all_factors, kNumIters)
-    nested_plans.append((sourcepath, filenames, argstrs, plan))
+    if should_test(sourcepath, options):
+      all_factors = [factor + [('lang', [('other', '')]),
+                              ('date', [(datestr, '')]),
+                              ] for factor in [
+        [
+          ('LLVMopt', [('O3', '-O3')]),
+          ('sse',     [('yes', '-march=core2 -mfpmath=sse -msse3 -falign-labels=8')]),
+        ],
+        [
+          ('LLVMopt', [('O2', '-O2'),
+                      ('O0', '-O0')]),
+          ('sse',     [('no', '-mno-sse')]),
+        ],
+      ]]
+      plan = generate_all_combinations(all_factors, kNumIters)
+      nested_plans.append((sourcepath, filenames, argstrs, plan))
 
   plan_lambdas = []
   for planinfo in nested_plans:
@@ -442,13 +455,14 @@ all_factors = [factor + [('lang', [('foster', '')]),
 def benchmark_shootout_programs(options, num_iters=kNumIters):
   plan_lambdas = []
   for benchinfo in shootout_benchmarks:
-    def compile_and_run(tags, flagstrs, flagsdict, num_iters, benchinfo=benchinfo):
-      (testfrag, argstr) = benchinfo
-      compile_and_run_test(testfrag, '', argstr,
-                           tags, flagstrs, flagsdict, num_iters, options)
-    plan = generate_all_combinations(all_factors, kNumIters)
+    if should_test(benchinfo[0], options):
+      def compile_and_run(tags, flagstrs, flagsdict, num_iters, benchinfo=benchinfo):
+        (testfrag, argstr) = benchinfo
+        compile_and_run_test(testfrag, '', argstr,
+                            tags, flagstrs, flagsdict, num_iters, options)
+      plan = generate_all_combinations(all_factors, kNumIters)
 
-    plan_lambdas.extend(plan_fragments(plan, compile_and_run))
+      plan_lambdas.extend(plan_fragments(plan, compile_and_run))
   return plan_lambdas
 
 def collect_all_timings():
@@ -468,6 +482,8 @@ def fixup_pindir(options):
 
 def get_test_parser(usage):
   parser = OptionParser(usage=usage)
+  parser.add_option("--test", action="append", dest="tests", default=[],
+                    help="Consider only these tests by (substring of) name.")
   parser.add_option("--comment", action="append", dest="comments", default=[],
                     help="Associate a comment with this run.")
   parser.add_option("--pindir", dest="pindir", action="store", default=None,
