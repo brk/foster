@@ -506,6 +506,7 @@ contApply (CC_Tail jb) v' = do
         parentLink2 <- lift $ newOrdRef Nothing
         let tm = MKCont parentLink2 (tidType $ boundVar jb)  cv [v']
         selfLink2   <- lift $ newOrdRef $ Just tm
+        lift $ setFreeLink v' tm
         lift $ setFreeLink cv tm
         
         return selfLink2
