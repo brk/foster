@@ -32,7 +32,7 @@ public:
   explicit SpecializeAllocations() : BasicBlockPass(ID),
         memalloc(NULL), memalloc_16(NULL), memalloc_32(NULL), memalloc_48(NULL), ready(false) {}
 
-  const char* getPassName() const { return "SpecializeAllocations"; }
+  llvm::StringRef getPassName() const { return "SpecializeAllocations"; }
 
   virtual void getAnalysisUsage(AnalysisUsage &AU) const {
     AU.setPreservesCFG();
@@ -105,14 +105,15 @@ bool SpecializeAllocations::runOnBasicBlock(BasicBlock &BB) {
       }
 
       if (F == memalloc) {
-        ConstantExpr* ac = dyn_cast<ConstantExpr>(call->getArgOperand(0));
-        if (ac && ac->isCast()) {
-          GlobalVariable* gv = dyn_cast<GlobalVariable>(ac->getOperand(0));
+        Constant* ac = dyn_cast<Constant>(call->getArgOperand(0));
+        if (ac) {
+          GlobalVariable* gv = dyn_cast<GlobalVariable>(ac->stripPointerCasts());
+          assert(gv && "had Constant but no GlobalVariable??");
           ConstantStruct* cs = dyn_cast<ConstantStruct>(gv->getInitializer());
           ConstantExpr* sze = dyn_cast<ConstantExpr>(cs->getOperand(0));
-          Constant* szc = ConstantFoldConstantExpression(sze, TD);
+          Constant* szc = ConstantFoldConstant(sze, TD);
           if (szc && !llvm::isa<ConstantInt>(szc)) {
-            szc = ConstantFoldConstantExpression(dyn_cast<ConstantExpr>(szc), TD);
+            szc = ConstantFoldConstant(dyn_cast<ConstantExpr>(szc), TD);
           }
           if (!szc) {
             llvm::errs() << "FosterMallocSpecializer: Unable to evaluate allocated size!\n";
@@ -161,13 +162,9 @@ bool SpecializeAllocations::runOnBasicBlock(BasicBlock &BB) {
             llvm::errs() << "Saw memalloc but can't specialize size " << sz->getSExtValue() << "\n";
           }
         } else {
-          if (ac && !ac->isCast()) {
-            errs() << "FosterMallocSpecializer wasn't expecting "
-                    << "direct call of (non-bit-casted) memalloc!";
-          } else {
-            errs() << "FosterMallocSpecializer wasn't able to find the called function! "
-                    << call;
-          }
+          errs() << "FosterMallocSpecializer wasn't able to find the called function! "
+                  << "\n" << *call
+                  << "\n";
           exit(1);
         }
       }

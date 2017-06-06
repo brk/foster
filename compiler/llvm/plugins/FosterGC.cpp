@@ -66,7 +66,7 @@ void EmitSymbol(const llvm::Twine& symStr,
                 const llvm::MCAsmInfo& MAI) {
 
   llvm::SmallString<128> mangledName;
-  AP.Mang->getNameWithPrefix(mangledName, symStr, AP.getDataLayout());
+  llvm::Mangler::getNameWithPrefix(mangledName, symStr, AP.getDataLayout());
 
   MCSymbol* sym = AP.OutContext.getOrCreateSymbol(mangledName);
   AP.OutStreamer->EmitSymbolAttribute(sym, llvm::MCSA_Global);

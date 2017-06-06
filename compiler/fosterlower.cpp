@@ -321,26 +321,6 @@ int main(int argc, char** argv) {
   if (!optStandalone) {
     coro_bc = readLLVMModuleFromPath(optBitcodeLibsDir + "/gc_bc/libfoster_coro.bc");
     linkTo(std::move(coro_bc), "libfoster_coro", *module);
-
-    StructTypeAST* coroast = StructTypeAST::getRecursive("foster_generic_coro.struct");
-    std::vector<TypeAST*> coro_parts;
-    coro_parts.push_back(RefTypeAST::get(TypeAST::i(999)));  // coro ctx
-    coro_parts.push_back(RefTypeAST::get(coroast));          // sibling
-    coro_parts.push_back(RefTypeAST::get(TypeAST::i(999)));  // fn
-    coro_parts.push_back(RefTypeAST::get(TypeAST::i(999)));  // env
-    coro_parts.push_back(RefTypeAST::get(coroast));          // invoker
-    coro_parts.push_back(RefTypeAST::get(
-                         RefTypeAST::get(coroast)));         // indirect_self
-    coro_parts.push_back(TypeAST::i(32)); // status
-    coroast->setBody(coro_parts);
-    foster_generic_coro_ast = coroast;
-
-    foster_generic_coro_t = module->getTypeByName("struct.foster_generic_coro");
-    // Can't do this yet, because generating type maps requires
-    // access to specific coro fields.
-    //foster_generic_coro_t = llvm::StructType::create(module->getContext(),
-    //                                          "struct.foster_generic_coro");
-    ASSERT(foster_generic_coro_t != NULL);
   }
 
   // TODO mark foster__assert as alwaysinline
@@ -358,15 +338,44 @@ int main(int argc, char** argv) {
   if (!optStandalone) {
     libfoster_bc = readLLVMModuleFromPath(optBitcodeLibsDir + "/foster_runtime.bc");
     foster::putModuleFunctionsInScope(libfoster_bc.get(), module);
+
+    // The module is "unclean" because it now has types that refer to libfoster_bc;
+    // remove the taint by round-tripping to disk. Usually takes ~1ms.
+    { ScopedTimer timer("llvm.roundtrip");
+      dumpModuleToBitcode(module,     outdirFile(optOutputName + ".stdlib.bc").c_str());
+      delete module;
+      module = readLLVMModuleFromPath(outdirFile(optOutputName + ".stdlib.bc")).release();
+    }
   }
 
   //================================================================
-  foster::ParsingContext::insertType("Foster$GenericClosureEnvPtr",
-                                     getGenericClosureEnvType());
+  {
+    StructTypeAST* coroast = StructTypeAST::getRecursive("foster_generic_coro.struct");
+    std::vector<TypeAST*> coro_parts;
+    coro_parts.push_back(RefTypeAST::get(TypeAST::i(999)));  // coro ctx
+    coro_parts.push_back(RefTypeAST::get(coroast));          // sibling
+    coro_parts.push_back(RefTypeAST::get(TypeAST::i(999)));  // fn
+    coro_parts.push_back(RefTypeAST::get(TypeAST::i(999)));  // env
+    coro_parts.push_back(RefTypeAST::get(coroast));          // invoker
+    coro_parts.push_back(RefTypeAST::get(
+                          RefTypeAST::get(coroast)));         // indirect_self
+    coro_parts.push_back(TypeAST::i(32)); // status
+    coroast->setBody(coro_parts);
+    foster_generic_coro_ast = coroast;
+
+    foster_generic_coro_t = module->getTypeByName("struct.foster_generic_coro");
+    // Can't do this yet, because generating type maps requires
+    // access to specific coro fields.
+    //foster_generic_coro_t = llvm::StructType::create(module->getContext(),
+    //                                          "struct.foster_generic_coro");
+    ASSERT(foster_generic_coro_t != NULL);
+
+    foster::ParsingContext::insertType("Foster$GenericClosureEnvPtr",
+                                      getGenericClosureEnvType());
+  }
   //================================================================
 
   {
-    //LLModule* prog = readLLProgramFromProtobuf(optInputPath, pbin);
     LLModule* prog = readLLProgramFromCapnp(optInputPath + ".cb");
     ASSERT(prog) << "Unable to read LL program from protobuf!";
 

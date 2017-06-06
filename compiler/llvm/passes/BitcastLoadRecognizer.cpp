@@ -101,7 +101,7 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
   static char ID;
   BitcastLoadRecognizer() : BasicBlockPass(ID) {}
 
-  const char* getPassName() const { return "BitcastLoadRecognizer"; }
+  llvm::StringRef getPassName() const { return "BitcastLoadRecognizer"; }
 
   int sz(Type* t) {
     if (t->isIntegerTy()) {

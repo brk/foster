@@ -32,7 +32,7 @@ public:
   explicit CallingConventionChecker() : BasicBlockPass(ID),
         memalloc(NULL), memalloc_16(NULL) {}
 
-  const char* getPassName() const { return "SpecializeAllocations"; }
+  llvm::StringRef getPassName() const { return "CallingConventionChecker"; }
 
   virtual void getAnalysisUsage(AnalysisUsage &AU) const {
     AU.setPreservesAll();

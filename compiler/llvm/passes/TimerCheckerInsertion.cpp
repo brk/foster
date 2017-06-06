@@ -32,7 +32,7 @@ struct TimerChecksInsertion : public FunctionPass {
   static char ID;
   TimerChecksInsertion() : FunctionPass(ID), builder(foster::fosterLLVMContext) {}
 
-  const char* getPassName() const { return "TimerChecksInsertion"; }
+  llvm::StringRef getPassName() const { return "TimerChecksInsertion"; }
   llvm::IRBuilder<> builder;
 
   virtual void getAnalysisUsage(AnalysisUsage& AU) const {
