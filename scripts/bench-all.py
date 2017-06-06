@@ -291,12 +291,6 @@ shootout_benchmarks = [
 
    ('speed/shootout/nbody',                               '350000'),
    ('speed/shootout/nbody-loops',                         '350000'),
-   ('speed/shootout/nbody-loops-inlined',                 '350000'),
-   ('speed/shootout/nbody-loops-mallocs',                 '350000'),
-   ('speed/shootout/nbody-loops-unsafe',                  '350000'),
-   ('speed/shootout/nbody-loops-unchecked',               '350000'),
-   ('speed/shootout/nbody-cont-manually-inlined',         '350000'),
-   ('speed/shootout/nbody-cont-manually-inlined-mallocs', '350000'),
 
    ('speed/shootout/spectralnorm', '850'),
 
@@ -356,16 +350,16 @@ def benchmark_third_party(third_party_benchmarks, options):
   for (sourcepath, filenames, argstrs) in third_party_benchmarks:
     if should_test(sourcepath, options):
       all_factors = [factor + [('lang', [('other', '')]),
-                              ('date', [(datestr, '')]),
+                               ('date', [(datestr, '')]),
                               ] for factor in [
         [
           ('LLVMopt', [('O3', '-O3')]),
-          ('sse',     [('yes', '-march=core2 -mfpmath=sse -msse3 -falign-labels=8')]),
+          ('sse',     [('yes', '-march=native -mfpmath=sse')]),
         ],
         [
           ('LLVMopt', [('O2', '-O2'),
-                      ('O0', '-O0')]),
-          ('sse',     [('no', '-mno-sse')]),
+                       ('O0', '-O0')]),
+          ('sse',     [('no', '')]),
         ],
       ]]
       plan = generate_all_combinations(all_factors, kNumIters)
@@ -436,18 +430,21 @@ all_factors = [factor + [('lang', [('foster', '')]),
    ('LLVMopt', [('O2', '--backend-optimize')]),
    ('abc', [('unsafe' , '--be-arg=-unsafe-disable-array-bounds-checks')]),
    ('donate', [('yes', '')]),
+   ('gc', [('nonmoving', '--me-arg=--non-moving-gc')]),
  ],
  [ # full optimization, retaining safety
    ('inline', [('yes', '--me-arg=--inline'), ]),
    ('LLVMopt', [('O2', '--backend-optimize')]),
    ('abc', [('safe' , '')]),
    ('donate', [('yes', '')]),
+   ('gc', [('default', '')]),
  ],
  [
    ('inline', [ ('no' , '--me-arg=--no-inline') ]),
    ('LLVMopt', [('O0', '')]),
    ('abc', [('safe' , '')]),
    ('donate', [('yes', ''),]),
+   ('gc', [('default', '')]),
  ]
 ]]
 
