@@ -7,10 +7,10 @@
 
 #include "llvm/Support/DataTypes.h"
 #include "llvm/Support/Path.h"
-#include "llvm/Support/TimeValue.h"
 
 #include <map>
 #include <string>
+#include <chrono>
 
 using std::string;
 
@@ -34,14 +34,15 @@ extern TimingsRepository gTimings;
 
 struct ScopedTimer {
   ScopedTimer(const char* stat)
-     : stat(stat), start(llvm::sys::TimeValue::now()) {}
+     : stat(stat), start(std::chrono::high_resolution_clock::now()) {}
   ~ScopedTimer() {
-    llvm::sys::TimeValue end = llvm::sys::TimeValue::now();
-    gTimings.incr(stat, (end - start).usec());
+    auto end = std::chrono::high_resolution_clock::now();
+    auto usecs = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+    gTimings.incr(stat, usecs);
   }
 private:
   const char* stat;
-  llvm::sys::TimeValue start;
+  std::chrono::time_point<std::chrono::high_resolution_clock> start;
 };
 
 } // namespace foster

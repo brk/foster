@@ -212,7 +212,7 @@ namespace  {
         Threshold = 275;
       Builder.Inliner = createFunctionInliningPass(Threshold);
     } else {
-      Builder.Inliner = createAlwaysInlinerPass();
+      Builder.Inliner = createAlwaysInlinerLegacyPass();
     }
     Builder.DisableUnitAtATime = false;
     Builder.DisableUnrollLoops = OptLevel == 0;

@@ -641,7 +641,7 @@ public:
   std::vector<const DeclStmt*> collectDeclsAndBuildStmtMap(std::unique_ptr<CFG>& cfg) {
     std::vector<const DeclStmt*> rv;
     for (auto it = cfg->nodes_begin(); it != cfg->nodes_end(); ++it) {
-      CFGBlock* cb = it;
+      CFGBlock* cb = *it;
       unsigned j = 0;
       for (auto cbit = cb->begin(); cbit != cb->end(); ++cbit) {
         CFGElement ce = *cbit;
@@ -754,7 +754,7 @@ public:
     }
 
     for (auto it = cfg->nodes_begin(); it != cfg->nodes_end(); ++it) {
-      CFGBlock* cb = it;
+      CFGBlock* cb = *it;
       if (isExitBlock(cb)) continue;
 
       llvm::outs() << "REC " << getBlockName(*cb) << " = {\n";

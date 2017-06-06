@@ -53,7 +53,7 @@ struct GCRootSafetyChecker : public FunctionPass {
   static char ID;
   GCRootSafetyChecker() : FunctionPass(ID) {}
 
-  const char* getPassName() const { return "GCRootSafetyChecker"; }
+  llvm::StringRef getPassName() const { return "GCRootSafetyChecker"; }
 
   bool callSiteMayGC(llvm::Instruction* i) {
     if (i->getMetadata("willnotgc")) {

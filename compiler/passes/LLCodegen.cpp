@@ -653,8 +653,11 @@ void LLProcCFG::codegenToFunction(CodegenPass* pass, llvm::Function* F) {
   // which will either be a case analysis on the env parameter, or postalloca.
   builder.SetInsertPoint(savedBB);
   LLBr br(blocks[0]->block_id);
-  if (isEnvPtr(&*F->arg_begin())) {
-    br.args.push_back(new LLValueVar(&*F->arg_begin()));
+  if (!F->arg_empty()) {
+    llvm::Argument* firstArg = &*F->arg_begin();
+    if (isEnvPtr(firstArg)) {
+      br.args.push_back(new LLValueVar(firstArg));
+    }
   }
   br.codegenTerminator(pass);
 

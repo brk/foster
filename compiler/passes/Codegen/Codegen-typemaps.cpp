@@ -148,7 +148,27 @@ Type* getTypeMapOffsetType() {
 //   i8          unused_padding;
 //   i32         offsets[numPtrEntries];
 // }
-StructType* getTypeMapType(int numPointers) {
+StructType* getTypeMapType(int numPointers, llvm::Module* mod) {
+  if (numPointers == 0) {
+    // In version 4.0 something changed in LLVM's linking strategy,
+    // with the result that the named struct type from foster_gc_utils.h
+    // and the anonymous version below, which are structurally identical,
+    // were linked in favor of the anonymous version instead of the named
+    // version, which in turn meant that C functions taking typemaps,
+    // such as the memalloc_* family, were left unlinked!
+    //
+    // We just avoid the whole mess by getting the named struct type here.
+
+    llvm::Value* memalloc = mod->getFunction("memalloc_array");
+    ASSERT(memalloc != NULL);
+    llvm::Type* typemap_ptr_ty = memalloc->getType()
+                                            ->getContainedType(0) // function
+                                            ->getContainedType(1); // arg 1
+    llvm::StructType* tmty = llvm::dyn_cast<llvm::StructType>(
+                              typemap_ptr_ty->getContainedType(0));
+    if (tmty) { return tmty; }
+  }
+
   ArrayType* offsetsTy = ArrayType::get(getTypeMapOffsetType(), numPointers);
 
   std::vector<Type*> typeMapTyFields;
@@ -173,7 +193,7 @@ GlobalVariable* constructTypeMap(llvm::Type*  ty,
                                  int8_t             ctorId,
                                  llvm::Module*      mod) {
   int numPointers = pointerOffsets.size();
-  StructType* typeMapTy = getTypeMapType(numPointers);
+  StructType* typeMapTy = getTypeMapType(numPointers, mod);
 
   GlobalVariable* typeMapVar = new GlobalVariable(
     /*Module=*/     *mod,

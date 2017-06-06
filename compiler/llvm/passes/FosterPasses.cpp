@@ -13,11 +13,8 @@ namespace foster {
 
 void runCleanupPasses(llvm::Module& mod) {
   llvm::legacy::FunctionPassManager fpasses(&mod);
-  // Note that LLCodegen generates code which requires CFG simplification to
-  // run to avoid keeping stale GC root temporaries.
-  //    (^^^ is from late 2011 but I don't think it is true as of late 2013?)
+  
   fpasses.add(llvm::createCFGSimplificationPass());
-  // TODO: tailduplicate?
   foster::runFunctionPassesOverModule(fpasses, &mod);
 
   llvm::legacy::PassManager passes;

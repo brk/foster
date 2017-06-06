@@ -7,7 +7,6 @@
 
 #include "llvm/Support/DataTypes.h"
 #include "llvm/Support/Path.h"
-#include "llvm/Support/TimeValue.h"
 
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/IRBuilder.h"
