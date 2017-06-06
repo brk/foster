@@ -21,13 +21,19 @@ tk = { maxn : Int32 =>
       odd = (prim ref False);
 
       rotate = { n : Int32 =>
-        ec = s[0];
+          ec = s[0];
           repeatRange 0 n { i : Int32 => s[i +Int32 1] >^ s[i]; () };
           ec >^ s[n];
       };
 
       flip = {
         repeatRange 0 maxn { i : Int32 => s[i] >^ t[i]; () };
+         // Naively, these references will be heap-allocated on each flip,
+         // even though they could be stack-allocated.
+         // The resulting GCs will be mostly-free, but there are costs in
+         // cache misses, and the allocator fastpath is not free either.
+         // For input size 10, the allocations incur an extra 500M insns
+         // (170M cycles on Skylake), 3.8M D1$ misses, and 16K LLC misses.
          xo = (prim ref 0);
          yo = (prim ref t[0]);
          i = (prim ref 1);
