@@ -238,10 +238,46 @@ run (from the _obj) directory:
    (and ping as above, from a separate terminal window)
 
 
+Benchmarks
+==========
+
+Make sure that the foster/ directory is in your $PYTHONPATH,
+then execute scripts/bench-all.py. The script will churn through
+a few benchmarks (of both Foster code and reference non-Foster implementations).
+After a few minutes, the script will spit out a path like
+        data/2017-06-01@16.37.12/all_timings.json
+which we'll call $ALLTIMINGS.
+
+The bench-ize.py script will munge this data for display, in various ways.
+
+        $ bench-ize.py --overview $ALLTIMINGS
+        ...
+        third_party/shootout/fannkuchredux [LLVMopt=O0,sse=no,lang=other,date=2017-06-01@16.37.12] {'inputs': ['10']}
+                                        [LLVMopt=O2,sse=no,lang=other,date=2017-06-01@16.37.12] {'inputs': ['10']}
+                                        [LLVMopt=O3,sse=yes,lang=other,date=2017-06-01@16.37.12] {'inputs': ['10']}
+        speed/shootout/fannkuchredux [inline=yes,LLVMopt=O2,abc=unsafe,donate=yes,lang=foster,date=2017-06-01@16.37.12] {'inputs': ['10']}
+                                [inline=no,LLVMopt=O0,abc=safe,donate=yes,lang=foster,date=2017-06-01@16.37.12] {'inputs': ['10']}
+                                [inline=yes,LLVMopt=O2,abc=safe,donate=yes,lang=foster,date=2017-06-01@16.37.12] {'inputs': ['10']}
+        speed/shootout/nbody [inline=yes,LLVMopt=O2,abc=unsafe,donate=yes,lang=foster,date=2017-06-01@16.37.12] {'inputs': ['350000']}
+                        [inline=no,LLVMopt=O0,abc=safe,donate=yes,lang=foster,date=2017-06-01@16.37.12] {'inputs': ['350000']}
+                        [inline=yes,LLVMopt=O2,abc=safe,donate=yes,lang=foster,date=2017-06-01@16.37.12] {'inputs': ['350000']}
+        ...
+
+
+        $ bench-ize.py --test spectralnorm $ALLTIMINGS
+        ...
+        Output written to 'bench-ized.html'
+
+
+
+        $ bench-ize.py --test spectralnorm --tags LLVMopt=O2 $ALLTIMINGS
+
+
+
 CSmith
 ======
 
-We include a tool to translate a subset of C code into Foster.
+We have a tool to translate a subset of C code into Foster.
 
 The scripts/ directory includes a few wrappers to generate random C programs
 using CSmith, translate the resulting code into Foster, and compare whether
