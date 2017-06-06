@@ -359,14 +359,19 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
         sort(indexes.begin(), indexes.end(), by_index_offset);
 
         if (0) {
+          errs() << "\n";
           errs() << "<<<<<<<<<<<<<\n";
           errs() << "root insn: " << *(bo) << " has " << bo->getNumUses() << " uses\n";
           errs() << "root insn will be dead? " << willBeDead.count(bo) << "\n";
 
+          if (indexes.size() > 0) {
+            errs() << "origin[0]: " << *(indexes[0]->origin) << "\n";
+          }
+
           for (unsigned i = 0; i < indexes.size(); ++i) {
             if (!indexes[i]) errs() << "<null>\n";
             else {
-              errs() << "origin: " << *(indexes[0]->origin) << "\n\n";
+              errs() << "\n";
               if (indexes[i]->base) {
                 errs() << "base: " << *(indexes[i]->base);
               } else {
