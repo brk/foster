@@ -556,7 +556,7 @@ instance Pretty (Insn' e x) where
                                                        <+> pretty letable)
   pretty (CCLetFuns ids fns    ) = let recfun = if length ids == 1 then "fun" else "rec" in
                                   indent 4 (align $
-                                   vcat [text recfun <+> text (show id) <+> text "=" <+> pretty fn
+                                   vcat [red (text recfun) <+> text (show id) <+> text "=" <+> pretty fn
                                         | (id,fn) <- zip ids fns])
   pretty (CCGCLoad  lded root _org) = indent 4 $ dullwhite $ text "load from" <+> pretty root <+> text "to" <+> pretty lded
   pretty (CCGCInit  _  srcvar root) = indent 4 $ dullgreen $ text "init root" <+> pretty root <+> text ":=" <+> pretty srcvar
