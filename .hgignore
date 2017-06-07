@@ -12,6 +12,8 @@ glob:.svn
 glob:.git
 glob:.*.swp
 glob:.*.swo
+glob:third_party/**.cmi
+glob:third_party/**.cmx
 glob:output
 CMakeFiles/
 CMakeCache.txt
