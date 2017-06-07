@@ -269,8 +269,8 @@ def generate_all_combinations(all_factors, num_iters):
 def plan_fragments(plan, do_compile_and_run):
   fragments = []
   for planinfo in plan:
-    def plan_fragment(planinfo=planinfo):
-      (tags, flagstrs, flagsdict, num_iters) = planinfo
+    def plan_fragment(planx=planinfo):
+      (tags, flagstrs, flagsdict, num_iters) = planx
       do_compile_and_run(tags, flagstrs, flagsdict, num_iters)
       print "Elapsed time:", str(datetime.timedelta(milliseconds=elapsed(script_start, walltime())))
     fragments.append(plan_fragment)
@@ -280,10 +280,18 @@ shootout_original_benchmarks = [
   ('third_party/shootout/nbody',         ['nbody.gcc-2.c'],         ['350000']),
   ('third_party/shootout/fannkuchredux', ['fannkuchredux.gcc-1.c'], ['10']),
   ('third_party/shootout/spectralnorm',  ['spectralnorm.gcc-3.c'],  ['850']),
+  ('third_party/shootout/mandelbrot',    ['mandel.c'],              ['1024']),
 ]
 
 other_third_party_benchmarks = [
   ('third_party/siphash',  ['csiphash.c', 'csiphash_driver.c'], ['32', '1000000']),
+
+  ('third_party/shootout/mandelbrot/rust',  ['src/main.rs'],    ['1024']),
+  ('third_party/shootout/mandelbrot/sml',               ['mandelbrot.sml'],       ['1024']),
+  ('third_party/shootout/mandelbrot/sml/first-order',   ['mandelbrot_fo.sml'],    ['1024']),
+  ('third_party/shootout/mandelbrot/sml/higher-order',  ['mandelbrot_ho.sml'],    ['1024']),
+  ('third_party/shootout/mandelbrot/ocaml/first-order',   ['mandelbrot_firstorder.ml'],  ['1024']),
+  ('third_party/shootout/mandelbrot/ocaml/higher-order',  ['mandelbrot_higherorder.ml'], ['1024']),
 ]
 
 shootout_benchmarks = [
@@ -291,6 +299,8 @@ shootout_benchmarks = [
 
    ('speed/shootout/nbody',                               '350000'),
    ('speed/shootout/nbody-loops',                         '350000'),
+
+   ('speed/shootout/mandelbrot',                          '1024'),
 
    ('speed/shootout/spectralnorm', '850'),
 
@@ -349,26 +359,15 @@ def benchmark_third_party(third_party_benchmarks, options):
   nested_plans = []
   for (sourcepath, filenames, argstrs) in third_party_benchmarks:
     if should_test(sourcepath, options):
-      all_factors = [factor + [('lang', [('other', '')]),
-                               ('date', [(datestr, '')]),
-                              ] for factor in [
-        [
-          ('LLVMopt', [('O3', '-O3')]),
-          ('sse',     [('yes', '-march=native -mfpmath=sse')]),
-        ],
-        [
-          ('LLVMopt', [('O2', '-O2'),
-                       ('O0', '-O0')]),
-          ('sse',     [('no', '')]),
-        ],
-      ]]
-      plan = generate_all_combinations(all_factors, kNumIters)
-      nested_plans.append((sourcepath, filenames, argstrs, plan))
+      all_factors = select_factors(guess_language(filenames[0]))
+      planq = generate_all_combinations(all_factors, kNumIters)
+      nested_plans.append((sourcepath, filenames, argstrs, planq))
 
   plan_lambdas = []
+  
   for planinfo in nested_plans:
     def compile_and_run_shootout(tags, flagstrs, flagsdict, num_iters, planinfo=planinfo):
-      (sourcepath, filenames, argstrs, plan) = planinfo
+      (sourcepath, filenames, argstrs, plann) = planinfo
       sourcedir =  os.path.join(root_dir(), sourcepath)
       filepaths = [os.path.join(sourcedir, filename) for filename in filenames]
 
@@ -376,28 +375,55 @@ def benchmark_third_party(third_party_benchmarks, options):
       exe = datapath(sourcepath, tags, "test.exe")
       assert not ' ' in exe
 
-      # Produce combined source program for preprocessing
-      combined_code = datapath(sourcepath, tags, "combined.c")
-      preprocessed_code = datapath(sourcepath, tags, "combined.pp.c")
-      shell_out("cat %s > %s" % (' '.join(filepaths), combined_code))
-      shell_out("gcc -pipe -Wall -Wno-unknown-pragmas -E %s -o %s" % (combined_code, preprocessed_code))
-      combined_code_lines = countlines(combined_code)
-      preprocessed_code_lines = countlines(preprocessed_code)
+      lang = flagsdict['lang']
 
-      compile_cmd = "gcc -pipe -Wall -Wno-unknown-pragmas %s %s -o %s -lm" % (' '.join(flagstrs), combined_code, exe)
-      (rv, ms) = shell_out(compile_cmd)
-      compile_stats = {
-        'num_source_lines' : combined_code_lines,
-        'num_lines'  : preprocessed_code_lines,
-        'all_total_ms' : ms,
-        'all_lines_per_s' : float(preprocessed_code_lines) / secs_of_ms(ms)
-      }
+      if lang == 'rust':
+        shell_out("cp %s %s" % (' '.join(filepaths), datapath(sourcepath, tags, '')))
+        (rv, ms) = shell_out("rustc %s %s -o %s" % (' '.join(flagstrs), ' '.join(filepaths), exe))
+        benchmark_third_party_code(sourcepath, flagsdict, tags, exe, argstrs,
+                                   num_iters, options, {})
+        shell_out("rm " + exe)
 
-      benchmark_third_party_code(sourcepath, flagsdict, tags, exe, argstrs,
-                                 num_iters, options, compile_stats)
-      shell_out("rm " + exe)
+      if lang == 'ocaml':
+        shell_out("cp %s %s" % (' '.join(filepaths), datapath(sourcepath, tags, '')))
+        (rv, ms) = shell_out("ocamlopt %s %s -o %s" % (' '.join(flagstrs), ' '.join(filepaths), exe))
+        benchmark_third_party_code(sourcepath, flagsdict, tags, exe, argstrs,
+                                   num_iters, options, {})
+        shell_out("rm " + exe)
 
-    plan_lambdas.extend(plan_fragments(plan, compile_and_run_shootout))
+      if lang == 'sml':
+        mlton = '/home/benkarel/mlton-git/build/bin/mlton'
+        tmpfile = "_foster_tmp"
+        shell_out("cp %s %s" % (' '.join(filepaths), datapath(sourcepath, tags, '')))
+        (rv, ms) = shell_out("%s %s -output %s %s" % (mlton, ' '.join(flagstrs), tmpfile, ' '.join(filepaths)))
+        shell_out("mv %s %s" % (tmpfile, exe))
+        benchmark_third_party_code(sourcepath, flagsdict, tags, exe, argstrs,
+                                   num_iters, options, {})
+        shell_out("rm " + exe)
+
+      if lang == 'c':
+        # Produce combined source program for preprocessing
+        combined_code = datapath(sourcepath, tags, "combined.c")
+        preprocessed_code = datapath(sourcepath, tags, "combined.pp.c")
+        shell_out("cat %s > %s" % (' '.join(filepaths), combined_code))
+        shell_out("gcc -pipe -Wall -Wno-unknown-pragmas -E %s -o %s" % (combined_code, preprocessed_code))
+        combined_code_lines = countlines(combined_code)
+        preprocessed_code_lines = countlines(preprocessed_code)
+
+        compile_cmd = "gcc -pipe -Wall -Wno-unknown-pragmas %s %s -o %s -lm" % (' '.join(flagstrs), combined_code, exe)
+        (rv, ms) = shell_out(compile_cmd)
+        compile_stats = {
+          'num_source_lines' : combined_code_lines,
+          'num_lines'  : preprocessed_code_lines,
+          'all_total_ms' : ms,
+          'all_lines_per_s' : float(preprocessed_code_lines) / secs_of_ms(ms)
+        }
+
+        benchmark_third_party_code(sourcepath, flagsdict, tags, exe, argstrs,
+                                  num_iters, options, compile_stats)
+        shell_out("rm " + exe)
+
+    plan_lambdas.extend(plan_fragments(planinfo[3], compile_and_run_shootout))
   return plan_lambdas
 
 # --be-arg=--gc-track-alloc-sites
@@ -422,7 +448,7 @@ def benchmark_third_party(third_party_benchmarks, options):
 #            ]),
 #('inlineSize', [(str(x), '--me-arg=--inline-size-limit=%d' % x) for x in range(0, 101)])
 
-all_factors = [factor + [('lang', [('foster', '')]),
+foster_factors = [factor + [('lang', [('foster', '')]),
                          ('date', [(datestr, '')]),
                         ] for factor in [
  [ # full optimization, showing limits of array bounds checking
@@ -448,16 +474,83 @@ all_factors = [factor + [('lang', [('foster', '')]),
  ]
 ]]
 
+clang_factors = [factor + [('lang', [('c', '')]),
+                           ('date', [(datestr, '')]),
+                          ] for factor in [
+  [
+    ('LLVMopt', [('O3', '-O3')]),
+    ('sse',     [('yes', '-march=native -mfpmath=sse')]),
+  ],
+  [
+    ('LLVMopt', [('O2', '-O2'),
+                  ('O0', '-O0')]),
+    ('sse',     [('no', '')]),
+  ],
+]]
+
+ocaml_factors = [factor + [('lang', [('ocaml', '')]),
+                           ('date', [(datestr, '')]),
+                        ] for factor in [
+ [ ('opt', [('O2', '-O2'),
+            ('O3', '-O3'),
+            ('default', '') ]),
+   ('safe', [('yes', ''), ]),
+ ],
+ [ # unboxed?
+   ('opt', [('O3', '-O3'), ]),
+   ('safe', [('no', '-unsafe -fno-PIC'), ]),
+ ],
+]]
+
+mlton_factors = [factor + [('lang', [('sml', '')]),
+                           ('date', [(datestr, '')]),
+                        ] for factor in [
+ [ ('codegen', [('llvm', '-codegen llvm'),
+                ('c',    '-codegen c'),
+                ('amd64','-codegen amd64'), ]),
+   ('safe', [('yes', ''), ]),
+ ],
+]]
+
+rust_factors = [factor + [('lang', [('rust', '')]),
+                          ('date', [(datestr, '')]),
+                         ] for factor in [
+  [
+    ('LLVMopt', [('O3', '-C opt-level=3'),
+                 ('O2', '-C opt-level=2')]),
+    ('cpu',     [('native', '-C target-cpu=native')]),
+  ],
+]]
+
+def guess_language(filename):
+  if filename[-3:] == ".rs":
+    return "rust"
+  if filename[-3:] == ".ml":
+    return "ocaml"
+  if filename[-4:] == ".sml":
+    return "sml"
+  return "c"
+
+def select_factors(lang):
+  if lang == "c":
+    return clang_factors
+  if lang == "ocaml":
+    return ocaml_factors
+  if lang == "rust":
+    return rust_factors
+  if lang == "sml":
+    return mlton_factors
+  raise Exception("Unknown language: " + lang)
 
 def benchmark_shootout_programs(options, num_iters=kNumIters):
   plan_lambdas = []
   for benchinfo in shootout_benchmarks:
     if should_test(benchinfo[0], options):
-      def compile_and_run(tags, flagstrs, flagsdict, num_iters, benchinfo=benchinfo):
-        (testfrag, argstr) = benchinfo
+      def compile_and_run(tags, flagstrs, flagsdict, num_iters, benchi=benchinfo):
+        (testfrag, argstr) = benchi
         compile_and_run_test(testfrag, '', argstr,
                             tags, flagstrs, flagsdict, num_iters, options)
-      plan = generate_all_combinations(all_factors, kNumIters)
+      plan = generate_all_combinations(foster_factors, kNumIters)
 
       plan_lambdas.extend(plan_fragments(plan, compile_and_run))
   return plan_lambdas

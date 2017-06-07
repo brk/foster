@@ -220,7 +220,7 @@ def violin_plot(ax,data,pos, facecolor='y', bp=False, x_to_scale=False, rugplot=
       ax.plot([p+w, p+w, p-w, p-w], [m,M,m,M], 'b.', markersize=0, alpha=1)
 
 def proj(objs, key):
-  return [obj[key] for obj in objs]
+  return [obj[key] for obj in objs if key in obj]
 
 def viz_datasets(datasets, x_positions, title, legend_labels=[], xlabels=[], outfile=None, noshow=False):
   pyplot.rc('font', size=10)
@@ -254,9 +254,10 @@ def viz_datasets(datasets, x_positions, title, legend_labels=[], xlabels=[], out
   ax.xaxis.set_smart_bounds(True)
   if xlabels and len(xlabels) > 0:
     def format_axis_label(x):
-      return x.replace('speed/shootout', 's/s')
+      return x.replace('speed/shootout', 's/s') \
+              .replace('third_party/shootout', 'tp/s')
     ax.set_xticklabels([format_axis_label(x) for x in xlabels])
-    pyplot.xticks(rotation=7)
+    pyplot.xticks(rotation=8)
     ax.axes.relim()
     ax.axes.autoscale_view(True,True,True)
 
@@ -593,10 +594,13 @@ def display_compiletime_results(all_tests, output_file):
           fos_opt_O0.append(t['compile'])
         if t['flags']['lang'] == 'foster' and t['flags']['LLVMopt'] == 'O2':
           fos_opt_O2.append(t['compile'])
-        if t['flags']['lang'] != 'foster' and t['flags']['LLVMopt'] == 'O0':
-          oth_opt_O0.append(t['compile'])
-        if t['flags']['lang'] != 'foster' and t['flags']['LLVMopt'] == 'O2':
-          oth_opt_O2.append(t['compile'])
+        if t['flags']['lang'] != 'foster':
+          if ('LLVMopt' in t['flags'] and t['flags']['LLVMopt'] == 'O0') \
+              or ('opt' in t['flags'] and t['flags']['opt'] == 'O0'):
+            oth_opt_O0.append(t['compile'])
+          if ('LLVMopt' in t['flags'] and t['flags']['LLVMopt'] == 'O2') \
+              or ('opt' in t['flags'] and t['flags']['opt'] == 'O2'):
+            oth_opt_O2.append(t['compile'])
 
     ax2 = ax1.twinx()
 
@@ -644,10 +648,14 @@ def display_compiletime_results(all_tests, output_file):
           fos_opt_O0.append(t['compile'])
         if t['flags']['lang'] == 'foster' and t['flags']['LLVMopt'] == 'O2':
           fos_opt_O2.append(t['compile'])
-        if t['flags']['lang'] != 'foster' and t['flags']['LLVMopt'] == 'O0':
-          oth_opt_O0.append(t['compile'])
-        if t['flags']['lang'] != 'foster' and t['flags']['LLVMopt'] == 'O2':
-          oth_opt_O2.append(t['compile'])
+
+        if t['flags']['lang'] != 'foster':
+          if ('LLVMopt' in t['flags'] and t['flags']['LLVMopt'] == 'O0') \
+              or ('opt' in t['flags'] and t['flags']['opt'] == 'O0'):
+            oth_opt_O0.append(t['compile'])
+          if ('LLVMopt' in t['flags'] and t['flags']['LLVMopt'] == 'O2') \
+              or ('opt' in t['flags'] and t['flags']['opt'] == 'O2'):
+            oth_opt_O2.append(t['compile'])
 
     ax1.scatter(proj(fos_opt_O0, 'num_lines'),
                 proj(fos_opt_O0, 'mid_total_ms'), s=10, c='#0000ff', marker="s", label='O0, no inlining')
@@ -832,7 +840,8 @@ def use_default_options():
   return options.tests == [] and options.tags == [] and options.argstrs == []
 
 def set_default_options():
-  options.tests = ['spectralnorm', 'fannkuchredux', 'nbody', 'addtobits', 'siphash']
+  options.tests = ['spectralnorm', 'fannkuchredux', 'nbody', 'addtobits', 'siphash',
+                   'mandelbrot']
   options.group_by_name = True
 
 if __name__ == "__main__":
