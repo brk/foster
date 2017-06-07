@@ -209,9 +209,9 @@ void assertValueHasExpectedType(llvm::Value* argV, llvm::Type* expectedType,
               << "\ntype mismatch: "
               << "\n had type         " << str(argV->getType())
               << "\n vs expected type " << str(expectedType)
-              << "\nbase is " << str(FV)
-              << "\nwith base type " << str(FV->getType())
-              << "\nargV = " << str(argV);
+              << "\nargV = " << str(argV)
+              << "\and base type " << str(FV->getType())
+              << "\nfor base " << str(FV);
 }
 
 void assertHaveCallableType(LLExpr* base, llvm::Type* FT, llvm::Value* FV) {
