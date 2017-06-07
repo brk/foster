@@ -192,7 +192,7 @@ def print_timing_line(ms, n, k):
   print "\r>>>> %d ms (%d/%d)" % (ms, n + 1, k),
   sys.stdout.flush()
 
-def do_runs_for_gotest(testpath, inputstr, tags, flagsdict, total, options):
+def do_runs_for_gotest(testpath, inputstr, runtimeparams, tags, flagsdict, total, options):
   exec_path = exec_for_testpath(testpath)
   if not os.path.exists(exec_path):
     print "ERROR: compilation failed!"
@@ -213,8 +213,8 @@ def do_runs_for_gotest(testpath, inputstr, tags, flagsdict, total, options):
 
       stats_path = datapath(testpath, tags, "stats_%d.json" % z)
       os_stats_path = datapath(testpath, tags, "os_stats_%d.json" % z)
-      cmdstr = """time-json --output %s %s %s -foster-runtime '{ "dump_json_stats_path" : "%s" }'  > /dev/null""" \
-                 % (os_stats_path, exec_path, inputstr, stats_path)
+      cmdstr = """time-json --output %s %s %s %s -foster-runtime '{ "dump_json_stats_path" : "%s" }'  > /dev/null""" \
+                 % (os_stats_path, exec_path, inputstr, runtimeparams, stats_path)
       #print ": $ " + cmdstr + " (%d of %d; tags=%s)" % (z + 1, total, tags)
       (rv, ms) = shell_out(cmdstr)
       assert rv == 0
@@ -235,10 +235,10 @@ def do_runs_for_gotest(testpath, inputstr, tags, flagsdict, total, options):
       json.dump(tj, results, indent=2, separators=(',', ':'))
       results.write(",\n")
 
-def compile_and_run_test(testpathfragment, extra_compile_args, inputstr,
+def compile_and_run_test(testpathfragment, extra_compile_args, inputstr, runtimeparams,
                          tags, flagstrs,  flagsdict, num_iters, options):
   gotest_with(testpathfragment, tags, flagstrs, extra_compile_args)
-  do_runs_for_gotest(testpathfragment, inputstr, tags, flagsdict, num_iters, options)
+  do_runs_for_gotest(testpathfragment, inputstr, runtimeparams, tags, flagsdict, num_iters, options)
 
 def flags_of_factors(all_factors):
   return list(itertools.chain(*
@@ -292,23 +292,29 @@ other_third_party_benchmarks = [
   ('third_party/shootout/mandelbrot/sml/higher-order',  ['mandelbrot_ho.sml'],    ['1024']),
   ('third_party/shootout/mandelbrot/ocaml/first-order',   ['mandelbrot_firstorder.ml'],  ['1024']),
   ('third_party/shootout/mandelbrot/ocaml/higher-order',  ['mandelbrot_higherorder.ml'], ['1024']),
+
+  ('third_party/shootout/binarytrees/gcc',  ['binarytrees.c'],    ['14']),
 ]
 
 shootout_benchmarks = [
-   ('speed/micro/addtobits', '50000'),
+   ('speed/micro/addtobits', '50000', []),
 
-   ('speed/shootout/nbody',                               '350000'),
-   ('speed/shootout/nbody-loops',                         '350000'),
+   ('speed/shootout/nbody',                               '350000', '', []),
+   ('speed/shootout/nbody-loops',                         '350000', '', []),
 
-   ('speed/shootout/mandelbrot',                          '1024'),
+   ('speed/shootout/mandelbrot',                          '1024', '', []),
 
    ('speed/shootout/spectralnorm', '850'),
 
-   ('speed/shootout/fannkuchredux',                         '10'),
-   ('speed/shootout/fannkuchredux-nogc',                    '10'),
-   #('speed/shootout/fannkuchredux-nogc-stackref',           '10'),
-   #('speed/shootout/fannkuchredux-nogc-stackref-unchecked', '10'),
-   ('speed/shootout/fannkuchredux-unchecked',               '10'),
+   ('speed/shootout/fannkuchredux',                         '10', '', []),
+   ('speed/shootout/fannkuchredux-nogc',                    '10', '', []),
+   #('speed/shootout/fannkuchredux-nogc-stackref',           '10', '',  []),
+   #('speed/shootout/fannkuchredux-nogc-stackref-unchecked', '10', '',  []),
+   ('speed/shootout/fannkuchredux-unchecked',               '10', '',  []),
+
+
+   ('speed/shootout/binarytrees', '14', """--foster-runtime '{"gc_semispace_size_kb":10000}'""", [('heapsize', [('10M', '')]),
+   ]),
 ]
 
 def benchmark_third_party_code(sourcepath, flagsdict, tags, exe, argstrs,
@@ -448,9 +454,10 @@ def benchmark_third_party(third_party_benchmarks, options):
 #            ]),
 #('inlineSize', [(str(x), '--me-arg=--inline-size-limit=%d' % x) for x in range(0, 101)])
 
-foster_factors = [factor + [('lang', [('foster', '')]),
-                         ('date', [(datestr, '')]),
-                        ] for factor in [
+def addfactors(factors, newfactors):
+  return [factor + newfactors for factor in factors]
+
+foster_factors = addfactors([
  [ # full optimization, showing limits of array bounds checking
    ('inline', [('yes', '--me-arg=--inline'), ]),
    ('LLVMopt', [('O2', '--backend-optimize')]),
@@ -472,7 +479,9 @@ foster_factors = [factor + [('lang', [('foster', '')]),
    ('donate', [('yes', ''),]),
    ('gc', [('default', '')]),
  ]
-]]
+], [('lang', [('foster', '')]),
+    ('date', [(datestr, '')]),
+   ])
 
 clang_factors = [factor + [('lang', [('c', '')]),
                            ('date', [(datestr, '')]),
@@ -547,10 +556,10 @@ def benchmark_shootout_programs(options, num_iters=kNumIters):
   for benchinfo in shootout_benchmarks:
     if should_test(benchinfo[0], options):
       def compile_and_run(tags, flagstrs, flagsdict, num_iters, benchi=benchinfo):
-        (testfrag, argstr) = benchi
-        compile_and_run_test(testfrag, '', argstr,
+        (testfrag, argstr, runtimeparams, bench_factors) = benchi
+        compile_and_run_test(testfrag, '', argstr, runtimeparams,
                             tags, flagstrs, flagsdict, num_iters, options)
-      plan = generate_all_combinations(foster_factors, kNumIters)
+      plan = generate_all_combinations(addfactors(foster_factors, benchinfo[3]), kNumIters)
 
       plan_lambdas.extend(plan_fragments(plan, compile_and_run))
   return plan_lambdas

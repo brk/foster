@@ -841,7 +841,7 @@ def use_default_options():
 
 def set_default_options():
   options.tests = ['spectralnorm', 'fannkuchredux', 'nbody', 'addtobits', 'siphash',
-                   'mandelbrot']
+                   'mandelbrot', 'binarytrees']
   options.group_by_name = True
 
 if __name__ == "__main__":
