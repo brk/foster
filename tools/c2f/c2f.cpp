@@ -627,6 +627,8 @@ public:
       if (isExitBlock(next)) {
         if (!hasValue) {
           llvm::outs() << "(jump = (); jump)";
+        } else {
+          llvm::outs() << "/*exit block, !hasValue*/ ()";
         }
       } else {
         llvm::outs() << getBlockName(*next) << " !;\n";
@@ -827,6 +829,10 @@ public:
 
         std::vector<CFGBlock::AdjacentBlock*> adjs;
         for (auto it = cb->succ_rbegin(); it != cb->succ_rend(); ++it) {
+          if (!it->getReachableBlock()) {
+            llvm::outs() << "(prim kill-entire-process \"CFGBlock had no reachable block!\")\n";
+            continue;
+          }
           if (isEmptyFallthroughAdjacent(&*it)) {
             labelsFor[it->getReachableBlock()->succ_begin()->getReachableBlock()].push_back(
                       it->getReachableBlock()->getLabel());
@@ -1747,11 +1753,13 @@ The corresponding AST to be matched is
       }
     }
 
+
     llvm::APSInt result;
     if (!handledSpecially && lhs->EvaluateAsInt(result, *Ctx)) {
       handledSpecially = true;
       llvm::outs() << result.getSExtValue();
     }
+
 
     if (!handledSpecially) {
       visitStmt(lhs);
@@ -1800,7 +1808,10 @@ The corresponding AST to be matched is
   std::string emitVarName(const ValueDecl* vd) {
     if (auto ecd = dyn_cast<EnumConstantDecl>(vd)) {
       const EnumDecl* ed = enumDeclsForConstants[ecd];
-      return "(" + enumConstantAccessor(ed, ecd) + " !)";
+      if (ed)
+        return "(" + enumConstantAccessor(ed, ecd) + " !)";
+      else
+        return "(prim kill-entire-process \"ERROR-no-enum-decl-for-" + ecd->getNameAsString() + "\")";
     }
 
     auto it = duplicateVarDecls.find(vd);
