@@ -1649,6 +1649,20 @@ The corresponding AST to be matched is
     return name;
   }
 
+  bool isNestedCastThatCancelsOut(const CastExpr* ce) {
+/* Example:
+ce:  | | |-ImplicitCastExpr 0x55b68a4daf48 <./http_parser.h:289:41, col:75> 'unsigned int' <IntegralCast>
+     | | | `-ParenExpr 0x55b68a4daf00 <col:41, col:75> 'enum http_errno':'enum http_errno'
+sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':'enum http_errno' <IntegralCast>
+     | | |     `-ImplicitCastExpr 0x55b68a4daec0 <col:60, col:65> 'unsigned int' <LValueToRValue>
+     | | |       `-MemberExpr 0x55b68a4dae68 <col:60, col:65> 'unsigned int' lvalue bitfield ->http_errno 0x55b68a42fcc0
+*/
+    if (const CastExpr* sce = dyn_cast<CastExpr>(ce->getSubExpr()->IgnoreParens())) {
+      return exprTy(ce) == exprTy(sce->getSubExpr());
+    }
+    return false;
+  }
+
   std::string intCastFromTo(const std::string& srcTy, const std::string& dstTy, bool isSigned) {
     if (srcTy == "Int16" && dstTy == "Int8" ) return "trunc_i16_to_i8";
     if (srcTy == "Int32" && dstTy == "Int8" ) return "trunc_i32_to_i8";
@@ -1708,7 +1722,8 @@ The corresponding AST to be matched is
     case CK_IntegralCast: {
       std::string cast = "";
 
-      if (isTrivialIntegerLiteralInRange(ce->getSubExpr(), 0, 127)
+      if (isNestedCastThatCancelsOut(ce)
+       || isTrivialIntegerLiteralInRange(ce->getSubExpr(), 0, 127)
        || isa<CharacterLiteral>(ce->getSubExpr())
        || (exprTy(ce)->isUnsignedIntegerType() &&
              isTrivialIntegerLiteralInRange(ce->getSubExpr(), 0, 255))) {
@@ -1723,7 +1738,11 @@ The corresponding AST to be matched is
       }
 
       if (cast == "") {
-        visitStmt(ce->getSubExpr(), ctx);
+        if (isNestedCastThatCancelsOut(ce)) {
+          visitStmt(ce->getSubExpr()->IgnoreParenCasts(), ctx);
+        } else {
+          visitStmt(ce->getSubExpr(), ctx);
+        }
       } else {
         if (ctx == BooleanContext) { llvm::outs() << "("; }
         llvm::outs() << "(" << cast << " ";
