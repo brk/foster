@@ -1022,7 +1022,10 @@ collectRedexes ref valbindsref expbindsref funbindsref fundefsref aliasesref sbt
                           _ -> return ()
 
    markFunBind subterm (x,fn) = do
-                        mkfn <- readLink "collectRedex" fn
+            mb_mkfn <- readOrdRef fn
+            case mb_mkfn of
+              Nothing -> return ()
+              Just mkfn -> do
                         xc <- dlcCount x
                         bc <- mkbCount x
                         fc <- dlcCount (mkfnVar mkfn)
