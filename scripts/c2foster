@@ -35,7 +35,8 @@ show_clang_ast () {
 echo 'snafuinclude C2F "c2f";' > ${tmpfile}.foster
 echo "// running c2f..."
 echo "// ${BINDIR}/c2f ${cprog} -- ${LLVM_CLANG_INCLUDES} $@  > ${tmpfile}.foster"
-         ${BINDIR}/c2f ${cprog} -- ${LLVM_CLANG_INCLUDES} $@ >> ${tmpfile}.foster
+#gdb --args ${BINDIR}/c2f ${cprog} -- ${LLVM_CLANG_INCLUDES} $@
+            ${BINDIR}/c2f ${cprog} -- ${LLVM_CLANG_INCLUDES} $@ >> ${tmpfile}.foster
 
 c2f_status="$?"
 
