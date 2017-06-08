@@ -129,7 +129,6 @@ showHex2 c s =
 
 formatTextChar :: Char -> String
 formatTextChar c =
-  if isPrint c then [c] else
     case c of
       '\n' -> "\\n"
       '\r' -> "\\r"
@@ -137,12 +136,11 @@ formatTextChar c =
       '\\' -> "\\\\"
       '\'' -> "\\'" -- TODO selectively escape based on string bracket type
       '"'  -> "\\\""
-      _ -> "\\u{" ++ showHex2 (ord c) "}"
+      _ -> if isPrint c then [c] else "\\u{" ++ showHex2 (ord c) "}"
 
 formatBytesWord8 :: Word8 -> String
 formatBytesWord8 w =
   let c = chr $ fromIntegral w in
-  if isPrint c then [c] else
     case c of
       '\n' -> "\\n"
       '\r' -> "\\r"
@@ -150,7 +148,7 @@ formatBytesWord8 w =
       '\\' -> "\\\\"
       '\'' -> "\\'" -- TODO selectively escape based on string bracket type
       '"'  -> "\\\""
-      _ -> "\\x" ++ showHex2 w ""
+      _ -> if isPrint c then [c] else "\\x" ++ showHex2 w ""
 
 prettyStmt e = case e of
     E_MachArrayLit annot _mbt args -> withAnnot annot $ parens $ text "prim mach-array-literal" <+> hsep (map pretty args)
