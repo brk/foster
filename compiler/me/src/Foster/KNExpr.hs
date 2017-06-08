@@ -8,7 +8,8 @@
 module Foster.KNExpr (kNormalizeModule, KNExpr, KNMono, FnMono,
                       KNExpr'(..), TailQ(..), typeKN, kNormalize,
                       KNCompilesResult(..),
-                      knLoopHeaders, knSinkBlocks, knInline, knSize,
+                      knLoopHeaders, knLoopHeaders',
+                      knSinkBlocks, knInline, knSize,
                       renderKN, renderKNM, renderKNF, renderKNFM,
                       handleCoercionsAndConstraints,
                       collectIntConstraints) where
@@ -1177,19 +1178,29 @@ localBlockSinking knf =
 
 -- Insert loop headers for recursive functions in the program.
 --
--- For each recursive function, we'll look at all the (recursive)
--- tail calls it makes, and which arguments each call passes.
+-- This pass gets called twice during compilation. The first time,
+-- it's applied to every function being compiled, in preparation for
+-- subsequent inlining/contification. To avoid adding allocations,
+-- the first time will look only at tail recursion.
+--
+-- The second time we'll add loop headers is if we encounter a donatable
+-- recursive-but-not-tail-recursive function during inlining -- which only
+-- happens if the first pass bailed out. In such cases, there may still be
+-- a benefit to adding a loop header that introduces a new allocation,
+-- because it should allow at least one donatable parameter to become
+-- specialized within the loop, thus offsetting the "cost" of the new alloc.
+-- So the second time around, we'll also consider non-tail recursion.
+--
+-- For each recursive function, we'll look at all the recursive
+-- calls it makes, and which arguments each call passes.
 --
 -- If there's a subset of arguments which are passed at every recursive
 -- call, these arguments will be factored out of the loop header
 -- and each recursive call.
 --
--- Since the loop header is only called from tail position, it will
--- be contifiable by definition. (This is why we ignore non-tail recursive
--- calls -- because inserting a non-contifiable function wrapper would
--- change the allocation behavior of programs.) But note that we must count
--- any occurrences in nested functions as non-tail calls. After all, eta
--- expansion means that a non-tail usage can be turned into a nested tail call.
+-- Since the (inner) loop header is only called from tail position, it will
+-- be contifiable by definition. Note that we must count
+-- any occurrences in nested functions as non-tail calls.
 --
 -- Adding loop headers has two benefits:
 --   1) Passing fewer arguments as loop arguments avoids unnecessary copies.
@@ -1199,20 +1210,71 @@ localBlockSinking knf =
 --
 -- See Andrew Appel's 1994 paper "Loop Headers in lambda-calculus or CPS"
 -- for more examples: http://www.cs.princeton.edu/~appel/papers/460.pdf
+--
+--
+-- Example:
+--
+-- Consider the case of bytesFoldlFragmentsFromLen, which contains
+-- both tail and non-tail recursion; it looks something like
+--
+--    bytesFoldlFragmentsFromLen = { bytes => f => offset =>
+--      case bytes of ... bytesFoldlFragmentsFromLen b1 f offset
+--                        bytesFoldlFragmentsFromLen b2 f 0
+--    }
+--
+-- Notably, the bytes argument is never invariant between calls,
+-- the f argument is always invariant, and the offset argument is
+-- only invariant for non-tail calls.
+--
+-- We want to transform the function like so:
+--    bytesFoldlFragmentsFromLen = { bytes0 => f => offset0 =>
+--      nontailheader = { bytes1 => bytes1 =>
+--        tailheader = { bytes => offset =>
+--          case bytes of ... nontailheader b1 offset
+--                            tailheader b2 f 0
+--        }; tailheader bytes1 offset1
+--      }; nontailheader bytes0 offset0
+--    }
+--
+-- This way, the tailheader will be contified, and the f argument will
+-- be specialized when the bytesFoldlFragmentsFromLen wrapper is inlined.
+-- Even though the offset parameter is invariant in non-tail calls, it
+-- doesn't get dropped from the non-tail header.
+--
+-- Consider the following function, which has only non-tail recursion:
+--
+--    fold2 = { f2 => x => b => nullp => car => cdr =>
+--      if (nullp x) then b else
+--       f2 (car x) (fold2 f2 (cdr x) b nullp car cdr)
+--      end
+--    };
+--
+-- Inserting both headers produces
+--
+--    fold2 = { f2 => x0 => b => nullp => car => cdr =>
+--      nontailheader = { x1 =>
+--        tailheader = { x =>
+--           if (nullp x) then b else
+--            f2 (car x) (nontailheader f2 (cdr x) b nullp car cdr)
+--           end
+--        }; tailheader x1
+--      }; nontailheader x0
+--    };
 
 type Hdr = StateT HdrState Compiled
 data HdrState =   HdrState {
     headers :: LoopHeaders
   , census  :: LoopCensus
   , varmap  :: Map Ident Ident -- for tracking bitcasts...
+  , nontail :: Bool
 }
 
 -- Map each function's (outer) bound identifier to a fresh id,
 -- fresh variables, and a flag indicating whether any tail calls to
 -- the function were detected, since we only care about arguments
 -- passed to tail calls.
-type LoopHeader  = (OuterIdent, [TypedId MonoType], InnerIdent)
-type LoopHeaders = Map Ident (LoopHeader, Bool)
+data LoopHeader  = LoopHeader OuterIdent [TypedId MonoType] InnerIdent    OuterIdent InnerIdent
+type LoopHeaders = Map Ident (LoopHeader, Bool, Bool) -- tail usages, non-tail usages
 type InnerIdent = Ident
 type OuterIdent = Ident
 
@@ -1247,18 +1309,20 @@ renameUsefulArgs xs ys = resolve (zip xs ys)
 
 -- Map each recursive fn identifier to the var/s for its loop header, and a
 -- list reflecting which of the original formals were recursively useless.
-type LoopInfo = Map Ident (LoopHeader, [Maybe (TypedId MonoType)])
+type LoopInfo = Map Ident LoopSummary
+data LoopSummary = LoopSummary LoopHeader [Maybe (TypedId MonoType)] Bool Bool
 
 isAllNothing [] = True
 isAllNothing (Nothing:xs) = isAllNothing xs
 isAllNothing (_      :_ ) = False
 
 computeInfo :: LoopCensus -> LoopHeaders -> LoopInfo
-computeInfo census headers = Map.mapMaybeWithKey go census
-  where go id mt = let Just (hdr, called) = Map.lookup id headers in
-                   if isAllNothing mt || not called
+computeInfo census headers =
+    Map.mapMaybeWithKey go census
+  where go id mt = let Just (hdr, tailcalled, nontailcalled) = Map.lookup id headers in
+                   if tailcalled && (isAllNothing mt || nontailcalled)
                      then Nothing
-                     else Just (hdr, mt)
+                     else Just (LoopSummary hdr mt tailcalled nontailcalled)
 
 ccFreshen :: Ident -> Compiled Ident
 ccFreshen (Ident name _) = ccFreshId name
@@ -1266,14 +1330,25 @@ ccFreshen id@(GlobalSymbol  _) = error $ "KNExpr.hs: cannot freshen global " ++ 
 ccFreshenTid (TypedId t id) = do id' <- ccFreshen id
                                  return $ TypedId t id'
 
+mustCont :: Ident -> Bool
+mustCont id = identPrefix id `startsWith` T.pack ".cont"
+           || identPrefix id `startsWith` T.pack "mustbecont_"
+  where startsWith t1 t2 = t2 `T.isPrefixOf` t1
+
 knLoopHeaderCensusFn activeids (id, fn) = do
-  let vars = fnVars fn
-  id'   <- lift $ ccFresh ("loop.hdr." ++ T.unpack (identPrefix (fnIdent fn)) ++ "_")
-  id''  <- lift $ ccFresh ("loophdr." ++ T.unpack (identPrefix (fnIdent fn)) ++ "_")
-  vars' <- lift $ mapM ccFreshenTid vars -- generate new vars for wrapper in advance
-  st <- get
-  put $ st { headers = Map.insert id ((id' , vars', id'' ), False) (headers st)
-           , census  = Map.insert id (map Just vars)               (census st) }
+  if mustCont id
+    then return () -- Don't create loop headers for continuation functions!
+    else do
+      let vars = fnVars fn
+      id'    <- lift $ ccFresh  ("mustbecont_hdr." ++ T.unpack (identPrefix (fnIdent fn)) ++ "_")
+      id''   <- lift $ ccFresh  ("mustbecont_hdr_"  ++ T.unpack (identPrefix (fnIdent fn)) ++ "_")
+      id'nt  <- lift $ ccFresh  ("loop.hdr.nt." ++ T.unpack (identPrefix (fnIdent fn)) ++ "_")
+      id''nt <- lift $ ccFresh  ("loophdr.nt."  ++ T.unpack (identPrefix (fnIdent fn)) ++ "_")
+      vars' <- lift $ mapM ccFreshenTid vars -- generate new vars for wrapper in advance
+      st <- get
+      put $ st { headers = Map.insert id ((LoopHeader id' vars' id'' id'nt id''nt), False, False) (headers st)
+              , census  = Map.insert id (map Just vars)                              (census st) }
+  --trace ("computing loop header census w/ activeids " ++ show activeids ++ " for\n " ++ show (pretty (fnBody fn))) $
   knLoopHeaderCensus YesTail activeids (fnBody fn)
 
 knLoopHeaderCensus :: TailQ -> Set Ident -> KNMono -> Hdr ()
@@ -1291,19 +1366,30 @@ knLoopHeaderCensus tailq activeids expr = go' tailq expr where
                                        _ -> return ()
                                      go e2
     KNLetRec      _   es  b    -> do mapM_ (go' NotTail) es ; go b
-    KNLetFuns     ids fns b | all isRec fns -> do
-      mapM_ (knLoopHeaderCensusFn (Set.fromList ids)) (zip ids fns)
-      -- Note: when we recur, activeids will not
-      -- include the bound ids, so calls in the
-      -- body will be (properly) ignored.
+    KNLetFuns     ids fns b -> do
+      case () of
+        _ | all mustCont ids -> do
+          mapM_ (knLoopHeaderCensusFn activeids) (zip ids fns)
+          -- We can keep the same activeids for continuations.
+
+        _ | all isRec fns -> do
+          mapM_ (knLoopHeaderCensusFn (Set.fromList ids)) (zip ids fns)
+          -- Note: when we recur, activeids will not
+          -- include the bound ids, so calls in the
+          -- body will be (properly) ignored.
+
+        _ -> return ()
+
       go b
-    KNLetFuns     _ _ b -> do go b
-    KNCall _ v vs | tailq == YesTail -> do -- TODO only for tail calls...
+
+    KNCall _ v vs -> do
+      st <- get
       id <- lookupId (tidIdent v)
-      if Set.member id activeids
-        then do st <- get
-                put $ st { census  = Map.adjust (mergeInfo vs) id (census st)
-                         , headers = Map.adjust (\(hdr, _) -> (hdr, True)) id (headers st) }
+      if (tailq == YesTail || nontail st) && Set.member id activeids
+        then do put $ st { census  = Map.adjust (mergeInfo vs) id (census st)
+                         , headers = Map.adjust (\(hdr, ptc, pntc) ->
+                                                  (hdr, ptc  || (tailq == YesTail)
+                                                      , pntc || (tailq /= YesTail))) id (headers st) }
         else return ()
 
     -- Silently handle other cases...
@@ -1328,20 +1414,20 @@ addIdRemapping id id' = do
 
 knLoopHeaders ::          (ModuleIL KNMono MonoType)
               -> Compiled (ModuleIL KNMono MonoType)
-knLoopHeaders m = do body' <- knLoopHeaders' (moduleILbody m)
+knLoopHeaders m = do body' <- knLoopHeaders' (moduleILbody m) False
                      return $ m { moduleILbody = body' }
 
-knLoopHeaders' :: KNMono -> Compiled KNMono
-knLoopHeaders' expr = do
-    HdrState h c r <- execStateT (knLoopHeaderCensus YesTail Set.empty expr)
-                                 (HdrState Map.empty Map.empty Map.empty)
+knLoopHeaders' :: KNMono -> Bool -> Compiled KNMono
+knLoopHeaders' expr addLoopHeadersForNonTailLoops = do
+    HdrState h c r _ <- execStateT (knLoopHeaderCensus YesTail Set.empty expr)
+                                   (HdrState Map.empty Map.empty Map.empty
+                                             addLoopHeadersForNonTailLoops)
     let info = computeInfo c h
-    --liftIO $ putStrLn $ show info
-    return $ qq info r YesTail expr
+    return $ qq info r [] YesTail expr
  where
-  qq info r tailq expr =
+  qq info r inScopeHeaders tailq expr =
    let qv id = Map.lookup (Map.findWithDefault id id r ) info in
-   let q = qq info r in
+   let q = qq info r inScopeHeaders in
    case expr of
     KNLiteral     {} -> expr
     KNVar         {} -> expr
@@ -1371,8 +1457,6 @@ knLoopHeaders' expr = do
     KNLetRec      ids es  b     -> KNLetRec ids (map (q NotTail) es) (q tailq b)
     KNLetFuns     [id] [fn] b ->
         case qv id of
-          Nothing -> KNLetFuns [id] [fn { fnBody = (q YesTail $ fnBody fn) }] (q tailq b)
-
           -- If we have a single recursive function (as detected earlier),
           -- we should wrap its body with a minimal loop,
           -- and replace recursive calls with calls to a loop header.
@@ -1385,40 +1469,67 @@ knLoopHeaders' expr = do
           --                         in
           --                             loop x' end
           --                       }; in b end)
-          Just ((id' , vs' , id'' ), mt ) -> -- vs' is the complete list of fresh args
-            let v'  = TypedId (selectUsefulArgs id' mt (tidType (fnVar fn))) id' in
-            let v'' = TypedId (selectUsefulArgs id' mt (tidType (fnVar fn))) id'' in
-            -- The inner, recursive body
-            let fn'' = Fn { fnVar   = v''
-                          , fnVars  = dropUselessArgs mt (fnVars fn)
-                          , fnBody  = (q YesTail $ fnBody fn)
-                          , fnIsRec = YesRec
-                          , fnAnnot = annotForRange (rangeOf fn)
-                          } in
-            -- TODO should we create another wrapper to maintain the invariant
-            -- that the outermost fn bound to id is always non-recursive,
-            -- for inlining purposes?
-            let fn' = Fn { fnVar   = fnVar fn
+          Just (LoopSummary (LoopHeader id' vs' id'' id'nt id''nt) mt tc ntc) | tc || ntc -> -- vs' is the complete list of fresh args
+            let body   = qq info r (id':id'nt:inScopeHeaders) YesTail $ fnBody fn
+
+                v'inr  = TypedId (selectUsefulArgs id' mt (tidType (fnVar fn))) id'
+                v''inr = TypedId (selectUsefulArgs id' mt (tidType (fnVar fn))) id''
+                -- The inner, tail-recursive body
+                fn'inr = Fn { fnVar   = v''inr
+                            , fnVars  = dropUselessArgs mt (fnVars fn)
+                            , fnBody  = body
+                            , fnIsRec = computeIsFnRec fn'inr [id']
+                            , fnAnnot = annotForRange (rangeOf fn)
+                            }
+                
+                (v'mid, id'mid, fn'mid) =
+                  if addLoopHeadersForNonTailLoops && ntc
+                    then
+                      let
+                        -- The middle, non-tail wrapper
+                        v'nt  = TypedId (selectUsefulArgs id' mt (tidType (fnVar fn))) id'nt
+                        v''nt = TypedId (selectUsefulArgs id' mt (tidType (fnVar fn))) id''nt
+                        fn'nt = Fn { fnVar   = v''nt
+                                  , fnVars  = dropUselessArgs mt (fnVars fn)
+                                  , fnBody  = if tc
+                                                then KNLetFuns [ id' ] [ fn'inr ]
+                                                      (KNCall (typeKN (fnBody fn)) v'inr (dropUselessArgs mt vs' ))
+                                                else body
+                                  , fnIsRec = computeIsFnRec fn'nt [id'nt]
+                                  , fnAnnot = annotForRange (rangeOf fn)
+                                  }
+                       in (v'nt, id'nt, fn'nt)
+                     else (v'inr, id', fn'inr)
+
+                -- The "original" fn definition, which calls the middle wrapper with the relevant args.
+                fn' = Fn { fnVar   = fnVar fn
                          , fnVars  = renameUsefulArgs mt vs'
-                         , fnBody  = KNLetFuns [ id' ] [ fn'' ]
-                                         (KNCall (typeKN (fnBody fn)) v' (dropUselessArgs mt vs' ))
+                         , fnBody  = KNLetFuns [ id'mid ] [ fn'mid ]
+                                         (KNCall (typeKN (fnBody fn)) v'mid (dropUselessArgs mt vs' ))
                          , fnIsRec = computeIsFnRec fn' [id]
                          , fnAnnot = fnAnnot fn
                          } in
-            KNLetFuns [id ] [ fn' ] (qq (Map.delete id info) r tailq b)
-
+            KNLetFuns [id ] [ fn' ] (qq (Map.delete id info) r inScopeHeaders tailq b)
+              
+          -- No loop summary, or summary with no wrapper to generate.
+          _ -> KNLetFuns [id] [fn { fnBody = (q YesTail $ fnBody fn) }] (q tailq b)
     KNLetFuns     ids fns b     ->
         -- If we have a nest of recursive functions,
         -- the replacements should only happen locally, not intra-function.
-        -- (TODO)
+        -- This is handled by the inScopeHeaders state variable.
         KNLetFuns ids (map (\fn -> fn { fnBody = q YesTail (fnBody fn) }) fns) (q tailq b)
 
     -- If we see a *tail* call to a recursive function, replace it with
     -- the appropriate pre-computed call to the corresponding loop header.
-    KNCall ty v vs ->
-      case (tailq, qv (tidIdent v)) of
-        (YesTail, Just ((id, _, _), mt)) ->
-             KNCall ty (TypedId (selectUsefulArgs id mt (tidType v)) id) (dropUselessArgs mt vs)
+    KNCall ty v vs -> do
+      case qv (tidIdent v) of
+        Just (LoopSummary (LoopHeader id _ _ idnt _) mt _tc _ntc)
+          | (tailq == YesTail || addLoopHeadersForNonTailLoops)
+             && id `elem` inScopeHeaders
+          ->
+             let targetId = if tailq == YesTail then id else idnt in
+             KNCall ty (TypedId (selectUsefulArgs targetId mt (tidType v)) targetId)
+                       (dropUselessArgs mt vs)
         _ -> expr
 
 -- Drop formal param types from the function type if the corresponding
@@ -3062,6 +3173,8 @@ inCensusExpr expr = go expr where
 
 -- }}}
 
+instance CanMakeFun MonoType where
+    mkFunType args ret = FnType args ret FastCC FT_Func
 
 -- {{{||||||||||||||||||||||  Counting src call sites  |||||||||||||||
 countCallSites :: KNMono -> Int

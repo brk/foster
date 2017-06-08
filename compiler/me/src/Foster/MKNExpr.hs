@@ -8,6 +8,7 @@ import Foster.Base
 import Foster.Config
 import Foster.MainOpts(getInliningDonate)
 import Foster.KNUtil
+import Foster.KNExpr(knLoopHeaders')
 import Foster.Worklist
 import Foster.Output(putDocLn)
 
@@ -1073,8 +1074,8 @@ classifyRedex callee args knownFns aliases = do
 classifyRedex' _ Nothing _ _ =
   return CallOfUnknownFunction
 
-classifyRedex' binder (Just fn) args knownFns = do
-  callee_singleton <- binderIsSingletonOrDead binder
+classifyRedex' fnbinder (Just fn) args knownFns = do
+  callee_singleton <- binderIsSingletonOrDead fnbinder
   {-
   count <- mkbCount binder
   dbgDoc $ text $ "is callee singleton? " ++ show (pretty binder) ++
@@ -1083,13 +1084,24 @@ classifyRedex' binder (Just fn) args knownFns = do
 
   case (callee_singleton, mkfnIsRec fn) of
     _ | shouldNotInlineFn fn
-                   -> return CallOfUnknownFunction
+                   -> return $ CallOfUnknownFunction
     (True, NotRec) -> return $ CallOfSingletonFunction fn
     _ -> do
       donationss <- mapM (\(arg, binder) -> do
                          argsingle <- freeOccIsSingleton arg
                          argboundfn <- lookupBinding arg knownFns
-                         bindsingle <- binderIsSingletonOrDead binder
+                         bindoccs <- collectOccurrences binder
+                         -- Check how many times the binder occurs,
+                         -- excluding recursive calls.
+                         bindNonRecOccCounts <- mapM (\occ -> do
+                            Just tm <- readOrdRef (freeLink occ)
+                            case tm of
+                              MKCall _ _ v _ _ -> do
+                                vb <- freeBinder v
+                                return (if vb == fnbinder || vb == mkfnVar fn then 0 else (1 :: Int))
+                              _ -> return 1) bindoccs
+                         let bindsingle = sum bindNonRecOccCounts <= 1
+
                          if argsingle && isJust argboundfn && bindsingle
                            then return [(arg, binder)]
                            else return []
@@ -1104,9 +1116,9 @@ classifyRedex' binder (Just fn) args knownFns = do
 type MKRenamed t = WithBinders t
 
 runCopyMKFn :: (Pretty t, Show t, AlphaRenamish t RecStatus)
-            => MKFn (Subterm t) t
+            => MKFn (Subterm t) t -> Map Ident (MKBoundVar t)
             -> Compiled (MKFn (Subterm t) t)
-runCopyMKFn mkfn = evalStateT (copyMKFn mkfn) Map.empty
+runCopyMKFn mkfn bindings = evalStateT (copyMKFn mkfn) bindings
 
 copyBinder :: String -> MKBoundVar t -> MKRenamed t (MKBoundVar t)
 copyBinder msg b = do
@@ -1370,7 +1382,7 @@ mknInline subterm mainCont mb_gas = do
                  case situation of
                    CallOfUnknownFunction -> do
                      do redex <- knOfMK NoCont mredex
-                        dbgDoc $ text "CallOfUnknownFunction (inlineN): " <+> pretty redex
+                        dbgDoc $ text "CallOfUnknownFunction: " <+> pretty redex
                      return ()
                    CallOfSingletonFunction fn -> do
                      do redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
@@ -1410,8 +1422,43 @@ mknInline subterm mainCont mb_gas = do
                             --kn1 <- knOfMKFn (mbContOf $ mkfnCont fn) fn
                             --dbgDoc $ text $ "pre-copy fn is " ++ show (pretty kn1)
                             return ()
-                         fn' <- runCopyMKFn fn
-                         newbody <- do betaReduceOnlyCall fn' args kv     wr fd
+                         fn' <- runCopyMKFn fn Map.empty
+                         do kn1 <- knOfMKFn (mbContOf $ mkfnCont fn) fn'
+                            dbgDoc $ text $ "post-copy fn is " ++ show (pretty kn1)
+                         -- TODO Recursive-but-not-tail-recursive functions (RBNTRF)
+                         --      will have a recursive call in the body, so we can't
+                         --      simply use betaReduceOnlyCall as theres more than 1 call.
+                         --
+                         --      Most functions will be given loop headers in KNExpr,
+                         --      but an un-eliminated loop header within a RBNTRF
+                         --      might change the allocation behavior of a program.
+                         --      
+                         --      If the generated fn' isn't singleton/dead, it should
+                         --      be inserted next to the original fn. (TODO)
+
+                         rbntr <- isRecursiveButNotTailRecursive fn'
+                         newbody <- if rbntr then do
+                           -- We don't modify the known function list, so the recursive call in
+                           -- the copied body will bottom out and not do any loop unrolling.
+                           
+                           dbgDoc $ red $ text "isRecursiveButNotTailRecursive!"
+                           -- We must disable recursive inlining or else we'd infinitely regress!
+                           
+                           knfn <- knOfMKFn NoCont $ fn'
+
+                           kn' <- knLoopHeaders' (KNLetFuns [tidIdent $ fnVar knfn] [knfn] (KNVar $ fnVar knfn))
+                                                 True
+                           let (KNLetFuns _ [knfn'] _) = kn'
+                           dbgDoc $ text $ "loop-headered fn is " ++ show (pretty knfn')
+
+                           fn'' <- evalStateT (mkOfKNFn knfn') $
+                            Map.fromList [(tidIdent $ boundVar b, b) | (b,_) <- Map.toList knownFns]
+
+                           -- We reuse the pieces of the original MKCall because it's now dead.
+                           createLetFunAndCall fn'' (mkfnVar fn'') _ty _up args kv
+                           
+                          else do betaReduceOnlyCall fn' args kv     wr fd
+                          
                          replaceWith subterm newbody
                          -- No need to kill the old binding, since the body was duplicated.
 
@@ -1428,7 +1475,7 @@ mknInline subterm mainCont mb_gas = do
                                 dbgDoc $ green (text "copying and inlining SE ") <+> pretty (tidIdent $ boundVar v)
                                 --kn1 <- knOfMK (YesCont mainCont) term
                                 --dbgDoc $ text $ "knOfMK, term is " ++ show (pretty kn1)
-                             fn' <- runCopyMKFn _fn
+                             fn' <- runCopyMKFn _fn Map.empty
                              newbody <- betaReduceOnlyCall fn' args kv    wr fd
                              replaceWith subterm newbody
                              killOccurrence callee
@@ -1578,6 +1625,40 @@ mknInline subterm mainCont mb_gas = do
 
     return ()
 
+isRecursiveButNotTailRecursive fn = do
+  occs <- collectOccurrences (mkfnVar fn)
+  isRecAndNotTailRec <- mapM (\occ -> do
+      tm <- readLink "isRecursiveButNotTailRecursive" (freeLink occ)
+      case tm of
+        MKCall _ _ v _ k -> do
+          vb <- freeBinder v
+          kb <- freeBinder k
+          return $ vb == mkfnVar fn && (Just kb) /= mkfnCont fn
+        _ -> return False
+    ) occs
+  return $ any id isRecAndNotTailRec
+
+-- Create a new term of the form
+-- fun outerBinder <args> = <fn> in outerBinder <args>
+createLetFunAndCall :: MKFn (Subterm ty) ty -> MKBoundVar ty -> ty
+                    -> Link (Parent ty) -> [FreeOcc ty] -> FreeOcc ty
+                    -> Compiled (Subterm ty)
+createLetFunAndCall fn outerBinder ty up args kv = do
+  callee <- mkFreeOccForBinder outerBinder
+
+  up' <- newOrdRef Nothing
+  
+  -- We can't use args and kv directly, because replaceWith looks only at
+  -- top-level occs, and these occs will be nested in the call under the letfun.
+  args' <- mapM freeBinder args >>= mapM mkFreeOccForBinder
+  kv'   <-      freeBinder kv   >>=      mkFreeOccForBinder
+
+  callLink <- newOrdRef Nothing
+  _ <- installLinks callLink $ MKCall up' ty callee args' kv'
+
+  known <- mkKnown' outerBinder fn
+  letfuns <- backpatchT (MKLetFuns up [known] callLink) [callLink]
+  newOrdRef (Just letfuns)
 
 collectRedexesUsingFnRetCont oldret    wr fd = do
   occs <- collectOccurrences oldret

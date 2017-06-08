@@ -738,8 +738,9 @@ void passPhisAndBr(LLBlock* block, const vector<llvm::Value*>& args) {
 void LLBr::codegenTerminator(CodegenPass* pass) {
   LLBlock* block = pass->lookupBlock(this->block_id);
 
-  if (this->args.empty() && llvm::StringRef(block_id).startswith(
-                        builder.GetInsertBlock()->getParent()->getName().str()))
+  if (this->args.empty() && (llvm::StringRef(block_id).startswith(
+                        builder.GetInsertBlock()->getParent()->getName().str())
+                          || llvm::StringRef(block_id).startswith("loophdr.")))
   { // The "first" branch into the postalloca won't pass any actual args, so we
     // want to use the "real" function args (leaving out the invariant env ptr).
     // Other branches to postalloca will pass the new values for the arg slots.

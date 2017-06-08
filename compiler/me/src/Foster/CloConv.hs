@@ -443,7 +443,7 @@ closureOfKnFn infoMap (self_id, fn) = do
                   let env = if envid == tidIdent envVar
                               then envVar
                               else fakeCloVar envid in
-                  ILetVal x $ ILCall t proc_var (env:vs) -- Call proc with env as first arg.
+                  ILetVal x $ ILCall t (mkGlobal proc_var) (env:vs) -- Call proc with env as first arg.
                   -- We don't know the env type here, since we don't
                   -- pre-collect the set of closed-over envs from other procs.
                   -- This works because (A) we never type check ILExprs, and
@@ -461,9 +461,8 @@ closureConvertedProc procArgs f newbody = do
        return $ Proc (monoToLL ftrange) id (map llv procArgs) (fnAnnot f) newbody
     tid -> error $ "Expected closure converted proc to have fntype, had " ++ show tid
 
- where
-  mkGlobal (TypedId t i) = mkGlobalWithType t i
-
+ 
+mkGlobal (TypedId t i) = mkGlobalWithType t i where
   mkGlobalWithType ty (Ident t u) = TypedId ty (GlobalSymbol $ T.pack (T.unpack t ++ show u))
   mkGlobalWithType ty global      = TypedId ty global
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
