@@ -44,7 +44,7 @@ import Foster.ILExpr(ILProgram, showILProgramStructure, prepForCodegen, collectM
 import Foster.KNExpr(kNormalizeModule, knLoopHeaders, knSinkBlocks,
                      knSize, renderKN,
                      handleCoercionsAndConstraints, collectIntConstraints)
-import Foster.KNUtil(KNExpr, TypeIL, CanMakeFun(mkFunType))
+import Foster.KNUtil(KNExpr, TypeIL)
 import Foster.Typecheck
 import Foster.Context
 import Foster.CloConv(closureConvertAndLift, renderCC, CCBody(..))
@@ -754,7 +754,7 @@ lowerModule (tc_time, kmod) = do
                                        let b = MKBound tid r
                                        return (xid, b)
                                    | (s, ty) <- ("main", FnType [] (TupleType []) CCC FT_Proc)
-                                                : moduleILdecls monomod2]
+                                                : moduleILdecls monomod2a]
 
           let mainBinder = head assocBinders
           let binders = Map.fromList assocBinders
@@ -872,6 +872,3 @@ dumpAllPrimitives = do
                  <+> text "}; // :: " <> pretty ret <+> text "; fx=" <> pretty fx
 
     dumpPrimitive (name, (_ty, _primop)) = error $ "Can't dump primitive " ++ name ++ " yet."
-
-instance CanMakeFun MonoType where
-    mkFunType args ret = FnType args ret FastCC FT_Func

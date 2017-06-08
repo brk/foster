@@ -1,10 +1,13 @@
 main = {
-  noinline_ex1 !;
-  //noinline_ex2 !;
+  //noinline_ex1 !;
+  noinline_ex2 !;
+  noinline_ex2b !;
   //noinline_ex3 !;
   //noinline_ex4 !;
+  ()
 };
 
+/*
 fib1 = { x =>
   if x ==Int32 0 then 1 else
     x *Int32 (fib1 (x -Int32 1))
@@ -15,7 +18,7 @@ noinline_ex1 = {
   expect_i32 120;
   print_i32 (fib1 5);
 };
-
+*/
 
 fold2 = { f2 => x => b => nullp => car => cdr =>
   if (nullp x) then b else
@@ -23,15 +26,34 @@ fold2 = { f2 => x => b => nullp => car => cdr =>
   end
 };
 
+fold2_wrapper = { f2 => x => b => nullp => car => cdr =>
+  REC f2loop = { x =>
+    if (nullp x) then b else
+      f2 (car x) (f2loop (cdr x))
+    end
+  };
+  f2loop x
+};
+
 noinline_ex2 = {
+  mult = { a => b => a *Int32 b };
+  eqz  = { q => q ==Int32 0 };
+  iden = { r => r };
+  pred = { s => s -Int32 1 };
+
   expect_i32 120;
-  print_i32 (fold2
-                   { a => b => a *Int32 b }
-                   5
-                   1
-                   { q => q ==Int32 0 }
-                   { r => r }
-                   { s => s -Int32 1 });
+  print_i32 (fold2 mult 5 1 eqz iden pred);
+};
+
+
+noinline_ex2b = {
+  mult = { a => b => a *Int32 b };
+  eqz  = { q => q ==Int32 0 };
+  iden = { r => r };
+  pred = { s => s -Int32 1 };
+
+  expect_i32 720;
+  print_i32 (fold2_wrapper mult 6 1 eqz iden pred);
 };
 
 /*
