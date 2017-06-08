@@ -731,7 +731,7 @@ void passPhisAndBr(LLBlock* block, const vector<llvm::Value*>& args) {
     block->phiNodes[i]->addIncoming(v, builder.GetInsertBlock());
     ss << " " << v->getName().str() << ";";
   }
-  emitFakeComment(ss.str());
+  if (!args.empty()) { emitFakeComment(ss.str()); }
   builder.CreateBr(block->bb);
 }
 
