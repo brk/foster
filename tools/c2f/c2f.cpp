@@ -849,7 +849,8 @@ public:
               defaultBlock = adj;
             } else if (const CaseStmt* cs = dyn_cast<CaseStmt>(lab)) {
               llvm::outs() << "  " << (i == 0 ? "of" : "or") << " ";
-              visitStmt(cs->getLHS());
+
+              visitCaseValue(cs->getLHS());
 
               if (i == labels.size() - 1) {
                 llvm::outs() << " -> ";
@@ -1732,6 +1733,31 @@ The corresponding AST to be matched is
     }
   }
 
+  void visitCaseValue(const Expr* lhs) {
+    bool handledSpecially = false;
+
+    // Redundant with constant handling, but gives us something nicer to print.
+    if (auto dre = dyn_cast<DeclRefExpr>(lhs->IgnoreImpCasts())) {
+      // Special case handling of enum constants: as values they get codegenned to
+      // function calls, but in pattern context they must become constant integers.
+      if (auto ecd = dyn_cast<EnumConstantDecl>(dre->getDecl())) {
+        handledSpecially = true;
+        llvm::outs() << ecd->getInitVal().getSExtValue()
+            << "/* " << ecd->getNameAsString() << " */";
+      }
+    }
+
+    llvm::APSInt result;
+    if (!handledSpecially && lhs->EvaluateAsInt(result, *Ctx)) {
+      handledSpecially = true;
+      llvm::outs() << result.getSExtValue();
+    }
+
+    if (!handledSpecially) {
+      visitStmt(lhs);
+    }
+  }
+
   void visitCaseStmt(const CaseStmt* cs, bool isFirst) {
       const Stmt* ss = cs->getSubStmt();
       if (cs->getLHS()) {
@@ -1741,7 +1767,8 @@ The corresponding AST to be matched is
           llvm::outs() << "  or ";
         }
 
-        visitStmt(cs->getLHS());
+        visitCaseValue(cs->getLHS());
+        
         if (ss && !isa<CaseStmt>(ss)) { llvm::outs() << " ->"; }
         llvm::outs() << "\n";
       }
