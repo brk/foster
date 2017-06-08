@@ -1047,7 +1047,9 @@ knownActuals knowns = do
 -- {{{
 shouldNotInlineFn fn =
   let id = tidIdent (boundVar (mkfnVar fn)) in
-  T.pack "noinline_" `T.isInfixOf` identPrefix id
+  (T.pack "noinline_" `T.isInfixOf` identPrefix id
+   && not (T.pack "." `T.isInfixOf` identPrefix id))
+
 
 data RedexSituation t =
        CallOfUnknownFunction
