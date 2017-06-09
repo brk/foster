@@ -631,14 +631,19 @@ public:
     return true;
   }
 
-  // TODO support ternary conditional operators in CFGs
-  void emitJumpTo(CFGBlock::AdjacentBlock* ab, bool hasValue = true) {
+  void emitJumpTo(CFGBlock::AdjacentBlock* ab, const Stmt* last) {
+    bool hasValue = last ? stmtHasValue(last) : true;
+ 
     if (CFGBlock* next = ab->getReachableBlock()) {
       if (isExitBlock(next)) {
         if (!hasValue) {
           llvm::outs() << "(jump = (); jump)";
         } else {
-          llvm::outs() << "/*exit block, !hasValue*/ ()";
+          if (last && !isa<ReturnStmt>(last)) {
+            llvm::outs() << "(prim kill-entire-process \"unreachable\")";
+          } else {
+            llvm::outs() << "/*exit block, hasValue; reachable? " << ab->isReachable() << "*/";
+          }
         }
       } else {
         llvm::outs() << getBlockName(*next) << " !;\n";
@@ -721,7 +726,7 @@ public:
     }
 
     // One not-completely-obvious thing about Clang's CFG construction
-    // is that it can lead to duplicated statements, potentially across
+    // is that it can lead to "duplicated" statements, potentially across
     // block boundaries. For example::
     //
     //    [B3]
@@ -808,18 +813,19 @@ public:
       }
 
       if (cb->succ_size() == 1) {
-        emitJumpTo(cb->succ_begin(), stmtHasValue(getBlockTerminatorOrLastStmt(cb)));
+        emitJumpTo(cb->succ_begin(), getBlockTerminatorOrLastStmt(cb));
       } else if (cb->succ_size() == 2) {
         if (const Stmt* tc = cb->getTerminatorCondition()) {
           // Similar to handleIfThenElse, but with emitJumpTo instead of visitStmt.
-          bool hasVal = stmtHasValue(getBlockTerminatorOrLastStmt(cb));
+          const Stmt* last = getBlockTerminatorOrLastStmt(cb);
+          bool hasVal = stmtHasValue(last);
           llvm::outs() << "/* hasVal=" << hasVal << " */ ";
           llvm::outs() << "if ";
           visitStmt(tc, BooleanContext);
           llvm::outs() << " then ";
-          emitJumpTo(cb->succ_begin(), hasVal);
+          emitJumpTo(cb->succ_begin(), last);
           llvm::outs() << " else ";
-          emitJumpTo(cb->succ_begin() + 1, hasVal);
+          emitJumpTo(cb->succ_begin() + 1, last);
           llvm::outs() << "end";
         }
       } else if (const SwitchStmt* ss = dyn_cast<SwitchStmt>(cb->getTerminator())) {
@@ -870,7 +876,7 @@ public:
 
               if (i == labels.size() - 1) {
                 llvm::outs() << " -> ";
-                emitJumpTo(adj);
+                emitJumpTo(adj, nullptr);
               } else {
                 llvm::outs() << "\n";
               }
@@ -882,7 +888,7 @@ public:
 
         if (defaultBlock) {
           llvm::outs() << "\n of _ -> ";
-          emitJumpTo(defaultBlock);
+          emitJumpTo(defaultBlock, nullptr);
         }
 
         llvm::outs() << "\nend\n";
@@ -2321,6 +2327,8 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         innocuousReturns[mbElseRet] = true;
       }
     }
+
+    // TODO tail returns within a last-stmt do-while(0) block are innocuous.
 
     FnBodyVisitor v(mutableLocals, innocuousReturns,
                     voidPtrCasts, needsCFG, d->getASTContext());
