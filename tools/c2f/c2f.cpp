@@ -2305,8 +2305,13 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
     innocuousReturns[getTailReturnOrNull(d->getBody())] = true;
 
     if (const IfStmt* ifs = dyn_cast<IfStmt>(lastStmtWithin(d->getBody()))) {
-      innocuousReturns[getTailReturnOrNull(ifs->getThen())] = true;
-      innocuousReturns[getTailReturnOrNull(ifs->getElse())] = true;
+      // It's only innocuous if both branches have a tail return!
+      const ReturnStmt* mbThenRet = getTailReturnOrNull(ifs->getThen());
+      const ReturnStmt* mbElseRet = getTailReturnOrNull(ifs->getElse());
+      if (mbThenRet && mbElseRet) {
+        innocuousReturns[mbThenRet] = true;
+        innocuousReturns[mbElseRet] = true;
+      }
     }
 
     FnBodyVisitor v(mutableLocals, innocuousReturns,
@@ -2545,3 +2550,5 @@ int main(int argc, const char **argv) {
 //   * If the input program defines two types differing only in the case
 //     of the first letter (e.g. 'foo' and 'Foo'),
 //     we won't properly distinguish the two (both become Foo).
+//   * Missing returns from non-void-returning functions will (reasonably!)
+//     lead to type errors in the generated Foster code.
