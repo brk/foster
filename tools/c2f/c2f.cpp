@@ -39,6 +39,16 @@ using namespace clang::tooling;
 
 static llvm::cl::OptionCategory CtoFosterCategory("C-to-Foster");
 
+static llvm::cl::opt<bool>
+optDumpCFGs("dump-cfgs",
+  llvm::cl::desc("Dump CFGs (when using CFGs instead of ASTs for reconstruction)"),
+  llvm::cl::cat(CtoFosterCategory));
+
+static llvm::cl::opt<bool>
+optDumpOrigSource("dump-orig-source",
+  llvm::cl::desc("Dump original C source in a comment before each generated function"),
+  llvm::cl::cat(CtoFosterCategory));
+
 static std::string getRWText(const Rewriter &R, const SourceLocation& locstt, const SourceLocation& locend) {
   return R.getRewrittenText(SourceRange(locstt, locend));
 }
@@ -695,7 +705,7 @@ public:
     CFG::BuildOptions BO;
     std::unique_ptr<CFG> cfg = C2F_buildCFG(nullptr, const_cast<Stmt*>(stmt), Ctx, BO);
 
-    if (0) {
+    if (optDumpCFGs) {
       llvm::outs().flush();
       llvm::errs() << "/*\n";
       LangOptions LO;
@@ -704,7 +714,7 @@ public:
       llvm::errs().flush();
     }
 
-    if (1) {
+    if (optDumpOrigSource) {
       llvm::outs() << "/*\n";
       llvm::outs() << getText(R, *stmt) << "\n";
       llvm::outs() << "*/\n";
