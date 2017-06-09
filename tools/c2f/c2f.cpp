@@ -2281,6 +2281,10 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
 
   bool isFromMainFile(const Decl* d) { return isFromMainFile(d->getLocation()); }
 
+  bool isFromSystemHeader(const Decl* d) {
+    return R.getSourceMgr().isInSystemHeader(d->getLocation());
+  }
+
   const ReturnStmt* getTailReturnOrNull(const Stmt* s) {
     const Stmt* rv = lastStmtWithin(s);
     return rv ? dyn_cast<ReturnStmt>(rv) : NULL;
@@ -2304,6 +2308,71 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
     return mutableLocals[d->getName()] || mutableLocalAliases[d->getName()];
   }
 
+  void handleSingleTopLevelDecl(Decl* decl) {
+    if (RecordDecl* rdo = dyn_cast<RecordDecl>(decl)) {
+      if (!rdo->isThisDeclarationADefinition()) return;
+      if (RecordDecl* rd = rdo->getDefinition()) {
+        if (rd->isEnum()) {
+          llvm::outs() << "// TODO: translate enum definitions\n";
+          return;
+        }
+        if (!(rd->isClass() || rd->isStruct())) {
+          return;
+        }
+
+        handleRecordDecl(rd);
+      }
+    } else if (FunctionDecl* fd = dyn_cast<FunctionDecl>(decl)) {
+      if (Stmt* body = fd->getBody()) {
+        bool needsCFG = false;
+        performFunctionLocalAnalysis(fd, needsCFG);
+
+        llvm::outs() << fosterizedName(fd->getName()) << " = {\n";
+        for (unsigned i = 0; i < fd->getNumParams(); ++i) {
+          ParmVarDecl* d = fd->getParamDecl(i);
+          auto vpcset = voidPtrCasts[d];
+          const Type* ty = vpcset.unique() ? vpcset.front() : exprTy(d);
+          if (!isVoidPtr(ty)) {
+            llvm::outs() << "    " << fosterizedName(d->getDeclName().getAsString())
+                          << " : " << tyName(ty) << " =>\n";
+          }
+        }
+
+        // Rebind parameters if they are observed to be mutable locals.
+        for (unsigned i = 0; i < fd->getNumParams(); ++i) {
+          ParmVarDecl* d = fd->getParamDecl(i);
+          if (mutableLocals[d->getName()]) {
+            llvm::outs() << fosterizedName(d->getDeclName().getAsString())
+                          << " = (prim ref "
+                          << fosterizedName(d->getDeclName().getAsString())
+                          << ");\n";
+          }
+        }
+
+        if (needsCFG) {
+          visitStmtCFG(body);
+        } else {
+          visitStmt(body);
+        }
+        llvm::outs() << "};\n";
+      }
+    } else if (TypedefDecl* fd = dyn_cast<TypedefDecl>(decl)) {
+      llvm::outs() << "/* " << getText(R, *fd) << ";*/\n";
+    } else if (VarDecl* vd = dyn_cast<VarDecl>(decl)) {
+      llvm::outs() << "/* Unhandled global variable declaration:\n" << getText(R, *vd) << ";*/\n";
+    } else if (auto ed = dyn_cast<EnumDecl>(decl)) {
+      for (auto e : ed->enumerators()) {
+        enumDeclsForConstants[e] = ed;
+        llvm::outs() << enumConstantAccessor(ed, e)
+                      << " = { " << e->getInitVal().getSExtValue()
+                      << " };\n";
+      }
+    } else {
+      llvm::errs() << "unhandled top-level decl\n";
+      decl->dump();
+    }
+  }
+
   bool HandleTopLevelDecl(DeclGroupRef DR) override {
     for (DeclGroupRef::iterator b = DR.begin(), e = DR.end(); b != e; ++b) {
       mutableLocals.clear();
@@ -2312,68 +2381,16 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
 
       emitCommentsFromBefore((*b)->getLocStart());
       if (!isFromMainFile(*b)) {
-        // skip it
-      } else if (RecordDecl* rdo = dyn_cast<RecordDecl>(*b)) {
-        if (!rdo->isThisDeclarationADefinition()) continue;
-        if (RecordDecl* rd = rdo->getDefinition()) {
-          if (rd->isEnum()) {
-            llvm::outs() << "// TODO: translate enum definitions\n";
-            continue;
-          }
-          if (!(rd->isClass() || rd->isStruct())) {
-            continue;
-          }
-
-          handleRecordDecl(rd);
-        }
-      } else if (FunctionDecl* fd = dyn_cast<FunctionDecl>(*b)) {
-        if (Stmt* body = fd->getBody()) {
-          bool needsCFG = false;
-          performFunctionLocalAnalysis(fd, needsCFG);
-
-          llvm::outs() << fosterizedName(fd->getName()) << " = {\n";
-          for (unsigned i = 0; i < fd->getNumParams(); ++i) {
-            ParmVarDecl* d = fd->getParamDecl(i);
-            auto vpcset = voidPtrCasts[d];
-            const Type* ty = vpcset.unique() ? vpcset.front() : exprTy(d);
-            if (!isVoidPtr(ty)) {
-              llvm::outs() << "    " << fosterizedName(d->getDeclName().getAsString())
-                            << " : " << tyName(ty) << " =>\n";
+        if (!isFromSystemHeader(*b)) {
+          if (auto td = dyn_cast<TagDecl>(*b)) {
+            if (td->isThisDeclarationADefinition() && td->isCompleteDefinition()) {
+              handleSingleTopLevelDecl(*b);
             }
           }
-
-          // Rebind parameters if they are observed to be mutable locals.
-          for (unsigned i = 0; i < fd->getNumParams(); ++i) {
-            ParmVarDecl* d = fd->getParamDecl(i);
-            if (mutableLocals[d->getName()]) {
-              llvm::outs() << fosterizedName(d->getDeclName().getAsString())
-                           << " = (prim ref "
-                           << fosterizedName(d->getDeclName().getAsString())
-                           << ");\n";
-            }
-          }
-
-          if (needsCFG) {
-            visitStmtCFG(body);
-          } else {
-            visitStmt(body);
-          }
-          llvm::outs() << "};\n";
         }
-      } else if (TypedefDecl* fd = dyn_cast<TypedefDecl>(*b)) {
-        llvm::outs() << "/* " << getText(R, *fd) << ";*/\n";
-      } else if (VarDecl* vd = dyn_cast<VarDecl>(*b)) {
-        llvm::outs() << "/* Unhandled global variable declaration:\n" << getText(R, *vd) << ";*/\n";
-      } else if (auto ed = dyn_cast<EnumDecl>(*b)) {
-        for (auto e : ed->enumerators()) {
-          enumDeclsForConstants[e] = ed;
-          llvm::outs() << enumConstantAccessor(ed, e)
-                       << " = { " << e->getInitVal().getSExtValue()
-                       << " };\n";
-        }
+        // skip it if incomplete or from system header
       } else {
-        llvm::errs() << "unhandled top-level decl\n";
-        (*b)->dump();
+        handleSingleTopLevelDecl(*b);
       }
     }
     return true;
