@@ -1659,6 +1659,10 @@ The corresponding AST to be matched is
     return name;
   }
 
+  bool isLargerOrEqualSizedType(const Type* t1, const Type* t2) {
+    return Ctx->getTypeSize(t1) >= Ctx->getTypeSize(t2);
+  }
+
   bool isNestedCastThatCancelsOut(const CastExpr* ce) {
 /* Example:
 ce:  | | |-ImplicitCastExpr 0x55b68a4daf48 <./http_parser.h:289:41, col:75> 'unsigned int' <IntegralCast>
@@ -1668,7 +1672,11 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
      | | |       `-MemberExpr 0x55b68a4dae68 <col:60, col:65> 'unsigned int' lvalue bitfield ->http_errno 0x55b68a42fcc0
 */
     if (const CastExpr* sce = dyn_cast<CastExpr>(ce->getSubExpr()->IgnoreParens())) {
-      return exprTy(ce) == exprTy(sce->getSubExpr());
+      if (exprTy(ce) == exprTy(sce->getSubExpr())) {
+        // The cast is only a no-op if the size
+        // of sce's type is >= the size of ce's type.
+        return isLargerOrEqualSizedType(exprTy(sce), exprTy(ce));
+      }
     }
     return false;
   }
