@@ -1701,7 +1701,7 @@ analyzeContifiability knowns = do
             ([_], _) -> do return NoNeedToContifySingleton -- Singleton call; no need to contify since we'll just inline it...
             (_, Just fn) -> do
               mbs_conts <- mapM (contOfCall bv) occs
-              case allJusts mbs_conts of
+              case allFoundConts mbs_conts of
                 Nothing -> return HadUnknownContinuations
                 Just conts -> do
                   let (tailconts, nontailconts) = partitionEithers $
@@ -1723,6 +1723,12 @@ analyzeContifiability knowns = do
           mb_fns <- mapM readOrdRef fnlinks
           occss <- mapM collectOccurrences bvs
 
+          mbs_retconts <- mapM (\mb_fn -> do
+              case mb_fn of
+                Nothing -> return Nothing
+                Just fn -> return $ mkfnCont fn) mb_fns
+          let retconts = [c | Just c <- mbs_retconts]
+
           liftIO $ putDocLn $ text "recursive nest: {{{"
           mapM_ (\(occs, bv, mb_fn) -> do
             case occs of [_] -> liftIO $ putDocLn $ text "   (is  singleton)"
@@ -1743,12 +1749,12 @@ analyzeContifiability knowns = do
                 liftIO $ putDocLn $ text "    no fn"
               Just fn -> do
                 aconts <- mapM (contOfCall bv) occs
-                case allJusts aconts of
+                case allFoundConts aconts of
                   Nothing -> liftIO $ putDocLn $ text "  (some continuations not found)"
                   Just conts -> do
                              liftIO $ putDocLn $ text "  (all continuations found)"
                              let (tailconts, nontailconts) = partitionEithers $
-                                                    [if Just bv == mkfnCont fn
+                                                    [if bv `elem` retconts
                                                       then Left bv else Right bv
                                                     | bv <- Set.toList $ Set.fromList conts]
                              liftIO $ putDocLn $ yellow (text "       had just these conts: ")
@@ -1763,6 +1769,11 @@ analyzeContifiability knowns = do
 
           liftIO $ putDocLn $ text "}}}"
           return $ NoSupportForMultiBindingsYet
+
+          -- TODO for contifiable nests, determine whether the calls all come from
+          -- within one of the functions in the nest; if so, the contified functions
+          -- should be relocated there (header/census rewrites wouldn't have relocated
+          -- the function). Otherwise, contify as usual.
 
 -- Collect the list of occurrences for the given binder,
 -- but "peek through" any bitcasts.
@@ -1789,33 +1800,48 @@ collectOccurrences bv = do
     ) inits
   return $ concat initss
 
-allJusts [] = Just []
-allJusts (Nothing : _) = Nothing
-allJusts (Just x:xs) = 
-  case allJusts xs of
+allFoundConts [] = Just []
+allFoundConts (HigherOrder  : _) = Nothing
+allFoundConts (NonCall      : _) = Nothing
+allFoundConts (FoundCont x _:xs) = 
+  case allFoundConts xs of
     Nothing -> Nothing
     Just res -> Just (x:res)
+
+data FoundCont =
+    FoundCont    (MKBoundVar MonoType) Bool -- False if fn; True if cont (!)
+  | HigherOrder
+  | NonCall
 
 -- Collect the continuations associated with every use of the function binding.
 contOfCall bv occ = do
   mb_tm <- readOrdRef (freeLink occ)
   case mb_tm of
     Nothing -> do
-        do dbgDoc $ red $ text "free link w/ no term for" <> pretty bv
-        return Nothing
+        do dbgDoc $ red $ text "contOfCall: free link w/ no term for" <> pretty bv
+        return NonCall
+
     Just tm@(MKCall _ _ty v _vs cont) -> do
         vb <- freeBinder v
         if vb == bv
           then -- It's a call to the function being considered
             do cv <- freeBinder cont
-               return $ Just cv
+               return $ FoundCont cv False
           else -- It's a call to some other function, our function is one of its args.
                 -- We could possibly contify if we knew whether the callee will only
                 -- tail call our function, but as of yet we don't track that information.
             do do kn <- knOfMK NoCont tm
-                  dbgDoc $ text "call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
-                  return Nothing
-                  
+                  dbgDoc $ text "contOfCall: call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
+                  return $ HigherOrder
+
+    Just (MKCont _ _ cont _vs) -> do
+        vb <- freeBinder cont
+        if vb == bv
+          then -- It's a continuation (!!!) call to the function being considered
+            do return $ NonCall --FoundCont vb True
+          else 
+            do return $ HigherOrder
+
     Just tm -> do
       do kn <- knOfMK NoCont tm
          dbgDoc $ text "non call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
