@@ -1714,10 +1714,7 @@ analyzeContifiability knowns = do
                   case (tailconts, nontailconts) of
                     ((_:_:_), _) -> return HadMultipleContinuations -- Multiple tail calls: no good!
                     (_ ,  [cont]) -> do -- Happy case: zero or one tail call, one outer continuation.
-                      let isRetCont = T.pack ".fret" `T.isPrefixOf` identPrefix (tidIdent $ boundVar cont)
-                      if False && isRetCont
-                        then return HadMultipleContinuations
-                        else return (ContifyWith cont bv fn occs)
+                         return (ContifyWith cont bv fn occs)
                     _ -> return HadMultipleContinuations -- Multiple outer continuations: no good!
 
         _ -> do
