@@ -11,6 +11,9 @@
 //   (needs to do analysis to differentiate arrays from singleton pointers).
 // Could get better translations by doing more careful analysis of which
 //   variables in the program are mutable and which aren't.
+// Doesn't handle certain name conflicts in generated code.
+//   Specifically, accessor names (field 'anon' of type 'S')
+//   can shadow datatype construtors ('$S_anon' from whatever type).
 //
 // Originally based on AST matching sample by Eli Bendersky (eliben@gmail.com).
 //------------------------------------------------------------------------------
