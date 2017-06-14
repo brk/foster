@@ -1511,11 +1511,16 @@ The corresponding AST to be matched is
     return false;
   }
 
-  std::string zeroValueRecord(const RecordDecl* rd) {
+  std::string recordName(const RecordDecl* rd) {
     std::string name = rd->getName();
     if (TypedefNameDecl* tnd = rd->getTypedefNameForAnonDecl()) {
       name = tnd->getName();
     }
+    return name;
+  }
+
+  std::string zeroValueRecord(const RecordDecl* rd) {
+    std::string name = recordName(rd);
 
     if (name == "") {
       llvm::outs() << "// TODO handle this better...\n";
@@ -1538,9 +1543,19 @@ The corresponding AST to be matched is
     return "(MutField (ref " + zeroValue(typ) + " ))";
   }
 
+  const RecordType* tryGetRecordPointee(const Type* typ) {
+    if (auto pty = dyn_cast<PointerType>(typ)) {
+      return bindRecordType(pty->getPointeeType().getTypePtr());
+    }
+    return nullptr;
+  }
+
   std::string zeroValue(const Type* typ) {
     if (typ->isFloatingType()) return "0.0";
     if (typ->isIntegerType()) return "0";
+    if (auto rty = tryGetRecordPointee(typ)) {
+      return recordName(rty->getDecl()) + "_nil";
+    }
     if (typ->isPointerType()) return "PtrNil";
     if (auto tty = dyn_cast<TypedefType>(typ)) {
       return zeroValue(tty->desugar().getTypePtr());
@@ -1720,7 +1735,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
   void handleCastExpr(const CastExpr* ce, ContextKind ctx) {
     switch (ce->getCastKind()) {
     case CK_NullToPointer:
-      llvm::outs() << "PtrNil";
+      llvm::outs() << zeroValue(ce->getType().getTypePtr());
       break;
     case CK_ToVoid:
       if (isa<IntegerLiteral>(ce->getSubExpr()->IgnoreParens())) {
@@ -2260,6 +2275,9 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
     }
 
     llvm::outs() << "type case " << name
+      << "\n       of $" << name << "_nil\n"
+      // TODO when foster better supports unboxed datatypes, we should probably
+      // split record translation into boxed and unboxed portions.
       << "\n       of $" << name << "\n";
     for (auto d : rd->decls()) {
       if (const FieldDecl* fd = dyn_cast<FieldDecl>(d)) {
@@ -2272,7 +2290,11 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
     for (auto d : rd->decls()) {
       if (const FieldDecl* fd = dyn_cast<FieldDecl>(d)) {
         std::string fieldName = fosterizedName(fd->getName());
-        llvm::outs() << name << "_" << fieldName << " = { sv : " << name << " => case sv of $" << name;
+        llvm::outs() << name << "_" << fieldName << " = { sv : " << name << " => case sv "
+            << "of $" << name << "_nil" << " -> prim kill-entire-process \""
+                                        << "get_" << name << "_" << fieldName << " called on "
+                                        << name << "_nil" << "\"" << "\n"
+            << "of $" << name;
         for (auto d2 : rd->decls()) {
           if (const FieldDecl* fd2 = dyn_cast<FieldDecl>(d2)) {
             if (fd2 == fd) {
@@ -2292,7 +2314,11 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         std::string fieldName = fosterizedName(fd->getName());
         llvm::outs() << "set_" << name << "_" << fieldName
           << " = { sv : " << name << " => v : " << tyName(fd->getType().getTypePtr())
-          << " => case sv of $" << name;
+          << " => case sv\n"
+          << "of $" << name << "_nil" << " -> prim kill-entire-process \""
+                                      << "set_" << name << "_" << fieldName << " called on "
+                                      << name << "_nil" << "\"" << "\n"
+          << "of $" << name;
         for (auto d2 : rd->decls()) {
           if (const FieldDecl* fd2 = dyn_cast<FieldDecl>(d2)) {
             if (fd2 == fd) {
