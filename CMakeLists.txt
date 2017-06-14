@@ -89,6 +89,7 @@ set(CORO_METHOD CORO_ASM
 
 find_program(CAPNP NAMES capnp
   PATHS
+    $ENV{HOME}/sw/local/capnp-c++-0.6.1/bin
     $ENV{HOME}/sw/local/capnp-c++-0.6.0/bin
     $ENV{HOME}/sw/local/capnproto-0.5.0/bin
     $ENV{HOME}/sw/local/capnproto-0.5.3/bin
