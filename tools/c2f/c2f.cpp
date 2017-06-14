@@ -633,7 +633,7 @@ public:
 
   void emitJumpTo(CFGBlock::AdjacentBlock* ab, const Stmt* last) {
     bool hasValue = last ? stmtHasValue(last) : true;
- 
+
     if (CFGBlock* next = ab->getReachableBlock()) {
       if (isExitBlock(next)) {
         if (!hasValue) {
@@ -989,7 +989,7 @@ public:
 
       if (auto ase = dyn_cast<ArraySubscriptExpr>(ptr)) {
         emitPokeIdx(ase, valEmitter, ctx);
-      } else if (startswith(tynm, "(Ptr")) {
+      } else if (startswith(tynm, "(Ptr") && !isDeclRefOfMutableLocal(ptr)) {
         llvm::outs() << "(ptrSet (";
         visitStmt(ptr);
         llvm::outs() << ") (";
@@ -1300,6 +1300,14 @@ The corresponding AST to be matched is
   bool isDeclRefOfMutableAlias(const Expr* e) {
     if (auto dre = dyn_cast<DeclRefExpr>(e->IgnoreParenImpCasts())) {
       return mutableLocalAliases[dre->getDecl()->getName()];
+    }
+    return false;
+  }
+
+  bool isDeclRefOfMutableLocal(const Expr* e) {
+    if (auto dre = dyn_cast<DeclRefExpr>(e->IgnoreParenImpCasts())) {
+      return mutableLocals[dre->getDecl()->getName()]
+            || isDeclRefOfMutableAlias(e);
     }
     return false;
   }
@@ -1819,7 +1827,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         }
 
         visitCaseValue(cs->getLHS());
-        
+
         if (ss && !isa<CaseStmt>(ss)) { llvm::outs() << " ->"; }
         llvm::outs() << "\n";
       }
@@ -2259,7 +2267,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       }
     }
     llvm::outs() << ";\n\n";
-    
+
     // Emit field getters
     for (auto d : rd->decls()) {
       if (const FieldDecl* fd = dyn_cast<FieldDecl>(d)) {
