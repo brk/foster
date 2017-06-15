@@ -1905,7 +1905,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
 
         if (auto uno = dyn_cast<UnaryOperator>(vd->getInit())) {
           if (auto dre = dyn_cast<DeclRefExpr>(uno->getSubExpr())) {
-            if (isPrimRef(dre->getDecl())) {
+            if (isPrimRef(dre->getDecl()) && uno->getOpcode() == UO_AddrOf) {
               mutableLocalAliases[vd->getName()] = true;
             }
           }
