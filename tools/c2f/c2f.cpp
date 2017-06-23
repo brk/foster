@@ -180,6 +180,34 @@ bool isTrivialIntegerLiteralInRange(const Expr* e, int lo, int hi) {
   return false;
 }
 
+template <typename T>
+std::string str(T x) {
+  std::string s;
+  std::stringstream ss(s);
+  ss << x;
+  return ss.str();
+}
+
+std::string getNameForAnonymousRecordTypeWithin(const Decl* d, const TagDecl* td) {
+  std::string rv;
+
+  if (auto typdef = td->getTypedefNameForAnonDecl()) {
+    rv = typdef->getIdentifier()->getName();
+  } else if (td->getIdentifier()) {
+    rv = td->getIdentifier()->getName();
+  }
+
+  if (!rv.empty()) {
+    PresumedLoc PLoc = d->getASTContext().getSourceManager().getPresumedLoc(
+      d->getLocation());
+    if (PLoc.isValid()) {
+      rv = rv + "__" + str(PLoc.getLine()) + "_" + str(PLoc.getColumn());
+    }
+  }
+
+  return rv;
+}
+
 std::string fosterizedTypeName(std::string rv) {
   if ((!rv.empty()) && islower(rv[0])) {
     rv[0] = toupper(rv[0]);
@@ -207,6 +235,39 @@ std::string tyName(const clang::Type* ty, std::string defaultName = "C2FUNK") {
   return fosterizedTypeName(maybeNonUppercaseTyName(ty, defaultName));
 }
 
+std::string getNamedRecordDeclName(const RecordDecl* rd) {
+  if (TypedefNameDecl* tnd = rd->getTypedefNameForAnonDecl()) {
+    return tnd->getName();
+  }
+
+  return rd->getNameAsString();
+}
+
+std::string getRecordDeclName(const RecordDecl* rd) {
+  std::string name = getNamedRecordDeclName(rd);
+
+  if (name.empty()) { // anonymous nested struct, probably.
+    if (auto td = dyn_cast<TagDecl>(rd->getDeclContext())) {
+      name = getNameForAnonymousRecordTypeWithin(rd, td);
+    }
+  }
+
+  return name;
+}
+
+const RecordDecl* getRecordDeclFromType(const Type* ty) {
+  if (const ElaboratedType* ety = dyn_cast<ElaboratedType>(ty)) {
+    if (ety->isSugared()) {
+      return getRecordDeclFromType(ety->desugar().getTypePtr());
+    }
+  }
+
+  if (const RecordType* rty = dyn_cast<RecordType>(ty)) {
+    return rty->getDecl();
+  }
+
+  return nullptr;
+}
 
 std::string maybeNonUppercaseTyName(const clang::Type* ty, std::string defaultName) {
 
@@ -251,7 +312,9 @@ std::string maybeNonUppercaseTyName(const clang::Type* ty, std::string defaultNa
     }
   }
 
-  if (const RecordType* rty = dyn_cast<RecordType>(ty)) { return rty->getDecl()->getNameAsString(); }
+  if (const RecordType* rty = dyn_cast<RecordType>(ty)) {
+    return getRecordDeclName(rty->getDecl());
+  }
   if (const ParenType* rty = dyn_cast<ParenType>(ty)) { return tyName(rty->getInnerType().getTypePtr()); }
 
   if (const EnumType* ety = dyn_cast<EnumType>(ty)) {
@@ -2266,19 +2329,60 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
     return "(Field " +  fieldTyName + ")";
   }
 
-  void handleRecordDecl(const RecordDecl* rd) {
-    std::string name = rd->getName();
-    if (TypedefNameDecl* tnd = rd->getTypedefNameForAnonDecl()) {
-      name = tnd->getName();
+  void emitFieldsAsUnderscoresExcept(const RecordDecl* rd,
+                                     const FieldDecl* fd, const std::string& fieldName) {
+    for (auto d2 : rd->decls()) {
+      if (const FieldDecl* fd2 = dyn_cast<FieldDecl>(d2)) {
+        if (fd2 == fd) {
+          llvm::outs() << " " << fieldName;
+        } else {
+          llvm::outs() << " _";
+        }
+      }
     }
-    name = fosterizedTypeName(name);
+  }
 
-    if (name == "") {
-      llvm::outs() << "// TODO handle this better...\n";
-      llvm::errs() << "anon record\n";
-      rd->dump();
-      llvm::outs() << getText(R, *rd) << "\n";
-      return;
+  void emitFieldGetter(const RecordDecl* rd, const FieldDecl* fd,
+                       const std::string& name, bool mightBeNil = true) {
+    std::string fieldName = fosterizedName(fd->getName());
+    llvm::outs() << name << "_" << fieldName << " = { sv : " << name << " => case sv ";
+    if (mightBeNil) {
+      llvm::outs() << "of $" << name << "_nil" << " -> prim kill-entire-process \""
+                                    << "get_" << name << "_" << fieldName << " called on "
+                                    << name << "_nil" << "\"" << "\n";
+    }
+    llvm::outs() << "of $" << name;
+    emitFieldsAsUnderscoresExcept(rd, fd, fieldName);
+    llvm::outs() << " -> getField " << fieldName << " end };\n";
+  }
+
+  void emitAnonFieldGetters(const RecordDecl* ord, const FieldDecl* ofd,
+                            const std::string& name,
+                            const RecordDecl* erd) {
+    for (auto d : erd->decls()) {
+      if (auto efd = dyn_cast<FieldDecl>(d)) {
+        llvm::outs() << name << "_" << fosterizedName(ofd->getName())
+                             << "_" << fosterizedName(efd->getName())
+                     << " = { sv : " << name << " => "
+                     << getRecordDeclName(erd) << "_"
+                                    << fosterizedName(efd->getName())
+                                    << " (" <<
+                     name << "_" << fosterizedName(ofd->getName())
+                                 << " " << "sv" << ") };\n";
+      }
+    }
+  }
+
+  void handleRecordDecl(const RecordDecl* rd) {
+    std::string name = fosterizedTypeName(getRecordDeclName(rd));
+    std::map<const RecordDecl*, bool> embeddedStructs;
+
+    // Handle any anonymous struct fields.
+    for (auto d : rd->decls()) {
+      if (const RecordDecl* erd = dyn_cast<RecordDecl>(d)) {
+        handleRecordDecl(erd);
+        embeddedStructs[erd] = true;
+      }
     }
 
     llvm::outs() << "type case " << name
@@ -2287,7 +2391,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       // split record translation into boxed and unboxed portions.
       << "\n       of $" << name << "\n";
     for (auto d : rd->decls()) {
-      if (const FieldDecl* fd = dyn_cast<FieldDecl>(d)) {
+      if (auto fd = dyn_cast<FieldDecl>(d)) {
         llvm::outs() << "             " << fieldOf(tyName(exprTy(fd))) << " // " << fd->getName() << "\n";
       }
     }
@@ -2295,23 +2399,14 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
 
     // Emit field getters
     for (auto d : rd->decls()) {
-      if (const FieldDecl* fd = dyn_cast<FieldDecl>(d)) {
-        std::string fieldName = fosterizedName(fd->getName());
-        llvm::outs() << name << "_" << fieldName << " = { sv : " << name << " => case sv "
-            << "of $" << name << "_nil" << " -> prim kill-entire-process \""
-                                        << "get_" << name << "_" << fieldName << " called on "
-                                        << name << "_nil" << "\"" << "\n"
-            << "of $" << name;
-        for (auto d2 : rd->decls()) {
-          if (const FieldDecl* fd2 = dyn_cast<FieldDecl>(d2)) {
-            if (fd2 == fd) {
-              llvm::outs() << " " << fieldName;
-            } else {
-              llvm::outs() << " _";
-            }
-          }
+      if (auto fd = dyn_cast<FieldDecl>(d)) {
+        auto fieldType = fd->getType().getTypePtr();
+        emitFieldGetter(rd, fd, name);
+        if (isAnonymousStructOrUnionType(fieldType)) {
+          std::string fieldName = fosterizedName(fd->getName());
+          emitAnonFieldGetters(rd, fd, name,
+                                getRecordDeclFromType(fieldType));
         }
-        llvm::outs() << " -> getField " << fieldName << " end };\n";
       }
     }
 
@@ -2326,15 +2421,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
                                       << "set_" << name << "_" << fieldName << " called on "
                                       << name << "_nil" << "\"" << "\n"
           << "of $" << name;
-        for (auto d2 : rd->decls()) {
-          if (const FieldDecl* fd2 = dyn_cast<FieldDecl>(d2)) {
-            if (fd2 == fd) {
-              llvm::outs() << " " << fieldName;
-            } else {
-              llvm::outs() << " _";
-            }
-          }
-        }
+        emitFieldsAsUnderscoresExcept(rd, fd, fieldName);
         llvm::outs() << " -> setField " << fieldName << " v end };\n";
       }
     }
