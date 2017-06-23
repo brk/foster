@@ -1468,7 +1468,10 @@ The corresponding AST to be matched is
         }
         llvm::errs() << "printf %s format for type " << tynm << "\n";
         return false;
-      } else if (slit->getString() == "0x%X\n" || slit->getString() == "0x%lX\n") {
+      } else if (slit->getString() == "0x%X\n"
+              || slit->getString() == "0x%lX\n"
+              || slit->getString() == "0x%llX\n") {
+        // TODO force tynm to be Int64 for %llX ?
         std::string tynm = tyName(ce->getArg(1)->getType().getTypePtr());
         std::string printfn;
         if (tynm == "Int32") printfn = "print_i32x";
