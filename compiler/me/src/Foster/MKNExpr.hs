@@ -1845,7 +1845,7 @@ contOfCall bv occ = do
     Just tm -> do
       do kn <- knOfMK NoCont tm
          dbgDoc $ text "non call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
-      return Nothing
+      return NonCall
 
 -- Collect the function vars associated with every use of a continuation variable.
 calleeOfCont occ = do
