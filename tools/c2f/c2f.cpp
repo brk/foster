@@ -844,6 +844,7 @@ public:
         // If it's not a fallthrough, associate with our own block.
 
         CFGBlock::AdjacentBlock* defaultBlock = nullptr;
+        std::map<CFGBlock*, CFGBlock* > fallthrough;
         std::map<CFGBlock*, std::vector<Stmt*> > labelsFor;
 
         std::vector<CFGBlock::AdjacentBlock*> adjs;
@@ -853,8 +854,11 @@ public:
             continue;
           }
           if (isEmptyFallthroughAdjacent(&*it)) {
-            labelsFor[it->getReachableBlock()->succ_begin()->getReachableBlock()].push_back(
-                      it->getReachableBlock()->getLabel());
+            auto direct = it->getReachableBlock()->succ_begin()->getReachableBlock();
+            auto tgt0 = fallthrough[direct];
+            auto tgt  = tgt0 ? tgt0 : direct;
+            labelsFor[tgt].push_back(it->getReachableBlock()->getLabel());
+            fallthrough[it->getReachableBlock()] = tgt;
           } else {
             adjs.push_back(&*it);
             labelsFor[it->getReachableBlock()].push_back(
