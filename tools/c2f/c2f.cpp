@@ -2693,6 +2693,7 @@ int main(int argc, const char **argv) {
 //    should have a better translation than
 //       ss = (ref None); ps = ss; S_init ps;
 //
+//  * No support yet for Clang's OpaqueValueExpr or BinaryConditionalOperator.
 // Other notes:
 //   * If the input program defines two types differing only in the case
 //     of the first letter (e.g. 'foo' and 'Foo'),
