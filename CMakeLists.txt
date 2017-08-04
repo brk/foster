@@ -417,7 +417,7 @@ add_library(fosterc_parse STATIC
 add_dependencies(fosterc_parse fosterc_base)
 
 set(ANTLR_C_FLAGS "-Wno-parentheses-equality -Wno-unused-variable
- 		   -Wno-trigraphs -Wno-unused-function
+ 		   -Wno-trigraphs -Wno-unused-function -Wno-cast-qual
  		   -Wno-tautological-compare -std=gnu11")
 string(REPLACE "\n" "" ANTLR_C_FLAGS ${ANTLR_C_FLAGS})
 # gnu11 disables trigraphs...
