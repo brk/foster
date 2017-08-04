@@ -271,7 +271,7 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
         putDocLn $ (outLn "vvvv declBindings:====================")
         putDocLn $ (dullyellow (vcat $ map (text . show) declBindings))
 
-    rv <- case detectDuplicates $ map fst defns of
+    rv <- case collectDuplicatesBy fst defns of
       [] -> do
         let declCG = buildCallGraphList' declBindings (Set.fromList $ map (\(TermVarBinding nm _) -> nm) declBindings)
         let globalids = map (\(TermVarBinding _ (tid, _)) -> tidIdent tid) $ declBindings ++ primBindings
@@ -302,8 +302,8 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
           Errors os -> do
               when verboseMode $ do liftIO $ putStrLn "~~~ Typechecking the module's context failed"
               return (Errors os)
-      dups -> return (Errors [text $ "Unable to check module due to "
-                                  ++ "duplicate bindings: " ++ show dups])
+      dups -> return (Errors $ [text "Unable to check module due to duplicate bindings: "
+                               ] ++ (map (prettyWithLineNumbers.rangeOf.snd) (concat dups)))
     return rv
  where
    mkContext :: [ContextBinding t] -> [ContextBinding t]
