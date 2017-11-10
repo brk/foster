@@ -12,8 +12,8 @@ options {
 
 
 tokens {
-  AS='as'; AT='at'; DO='do'; IN='in'; IS='is'; IT='it'; TO='to';
-  LET='let'; WHERE='where';
+  AS='as'; AT='at'; DO='do'; IN='in'; IS_='is'; IT='it'; TO='to';
+  LET='let'; WHERE='where'; WITH='with';
 
   IF='if'; THEN='then'; ELSE='else'; TRU='True'; FLS='False';
   CASE='case'; END='end'; OF='of';

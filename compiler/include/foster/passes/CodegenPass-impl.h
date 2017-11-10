@@ -113,7 +113,7 @@ struct CodegenPass {
 
   std::string currentProcName;
 
-  llvm::AttributeSet fosterFunctionAttributes;
+  llvm::AttributeList fosterFunctionAttributes;
 
   explicit CodegenPass(llvm::Module* mod, CodegenPassConfig config);
 

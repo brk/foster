@@ -139,11 +139,6 @@ optNoCoalesceLoads("no-coalesce-loads",
   cl::desc("Disable coalescing loads of bit-or'ed values."),
   cl::cat(FosterOptCat));
 
-static cl::opt<bool>
-optCombineLoads("llvm-combine-loads",
-  cl::desc("Use LLVM's load-combining pass"),
-  cl::cat(FosterOptCat));
-
 /*
 static cl::list<const PassInfo*, bool, PassNameParser>
 cmdLinePassList(cl::desc("Optimizations available:"),
@@ -352,8 +347,8 @@ namespace  {
   // alignments.
   PM.add(createAlignmentFromAssumptionsPass());
 
-  if (optCombineLoads)
-    PM.add(createLoadCombinePass());
+  //if (optCombineLoads)
+  //  PM.add(createLoadCombinePass());
 
   // Cleanup and simplify the code after the scalar optimizations.
   addInstructionCombiningPass(PM);
