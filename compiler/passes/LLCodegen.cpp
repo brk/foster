@@ -270,14 +270,16 @@ CodegenPass::CodegenPass(llvm::Module* m, CodegenPassConfig config)
   // attributes (such as "target-features=+sse2") to match, otherwise we'll
   // get incorrect results.
   llvm::Function* f = mod->getFunction("memalloc_cell");
-  llvm::AttributeSet attrs = f->getAttributes();
-  auto FI = llvm::AttributeSet::FunctionIndex;
+  llvm::AttributeList attrs = f->getAttributes();
+  auto FI = llvm::AttributeList::FunctionIndex;
   if (!attrs.hasAttribute(FI, "no-frame-pointer-elim")) {
-    attrs.addAttribute(f->getContext(), FI, "no-frame-pointer-elim", "true");
+    attrs = attrs.addAttribute(f->getContext(), FI,
+      llvm::Attribute::get(f->getContext(), "no-frame-pointer-elim", "true"));
   }
 
-  llvm::AttributeSet toremove;
-  toremove.addAttribute(f->getContext(), FI, "stack-protector-buffer-size", "8");
+  llvm::AttrBuilder toremove;
+  toremove.addAttribute(
+      llvm::Attribute::get(f->getContext(), "stack-protector-buffer-size", "8"));
   attrs = attrs.removeAttributes(f->getContext(), FI, toremove);
   this->fosterFunctionAttributes = attrs;
 }
@@ -1147,7 +1149,7 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type,
     int ptrsize = builder.GetInsertBlock()->getModule()->getDataLayout().getPointerSize();
     llvm::Type* pad8 = llvm::ArrayType::get(builder.getInt8Ty(), 8);
     llvm::Type* pad  = llvm::ArrayType::get(builder.getInt8Ty(), 8 - ptrsize);
-    llvm::StructType* sty = llvm::StructType::get(pad8, typemap_type, pad, ty, NULL);
+    llvm::StructType* sty = llvm::StructType::get(builder.getContext(), { pad8, typemap_type, pad, ty });
     llvm::AllocaInst* cell = CreateEntryAlloca(sty, "stackref");
     cell->setAlignment(16);
     llvm::Value* slot = getPointerToIndex(cell, builder.getInt32(3), "stackref_slot");
