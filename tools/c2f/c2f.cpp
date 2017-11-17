@@ -131,6 +131,7 @@ std::string tyOpSuffix(const clang::Type* ty) {
   if (ty->isSpecificBuiltinType(BuiltinType::LongLong)) return "Int64";
   if (ty->isSpecificBuiltinType(BuiltinType::Float)) return "f32";
   if (ty->isSpecificBuiltinType(BuiltinType::Double)) return "f64";
+  if (ty->isSpecificBuiltinType(BuiltinType::LongDouble)) return "f64";
 
   if (auto pty = dyn_cast<PointerType>(ty)) {
     return "Ptr_" + tyOpSuffix(ty->getPointeeType().getTypePtr());
@@ -229,6 +230,7 @@ std::string tyName(const clang::Type* ty, std::string defaultName = "C2FUNK") {
   if (ty->isSpecificBuiltinType(BuiltinType::LongLong)) return "Int64";
   if (ty->isSpecificBuiltinType(BuiltinType::Float)) return "Float32";
   if (ty->isSpecificBuiltinType(BuiltinType::Double)) return "Float64";
+  if (ty->isSpecificBuiltinType(BuiltinType::LongDouble)) return "Float64";
 
   if (ty->isSpecificBuiltinType(BuiltinType::Void)) return "()";
 
@@ -2694,6 +2696,7 @@ int main(int argc, const char **argv) {
 //       ss = (ref None); ps = ss; S_init ps;
 //
 //  * No support yet for Clang's OpaqueValueExpr or BinaryConditionalOperator.
+
 // Other notes:
 //   * If the input program defines two types differing only in the case
 //     of the first letter (e.g. 'foo' and 'Foo'),
