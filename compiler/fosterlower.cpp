@@ -290,6 +290,10 @@ areDeclaredValueTypesOK(llvm::Module* mod,
   return true;
 }
 
+// Defined in Codegen-coro.cpp
+StructTypeAST* getSplitCoroTyp(TypeAST* argTypes);
+llvm::StructType* getSplitCoroType(llvm::Type* argTypes);
+
 namespace foster {
   void codegenLL(LLModule*, llvm::Module* mod, CodegenPassConfig config);
 }
@@ -351,26 +355,31 @@ int main(int argc, char** argv) {
 
   //================================================================
   {
-    StructTypeAST* coroast = StructTypeAST::getRecursive("foster_generic_coro.struct");
+    // Keep synchronized with libfoster_gc_roots.h
+    StructTypeAST* coroast = StructTypeAST::getRecursive("foster.coro_ast");
     std::vector<TypeAST*> coro_parts;
     coro_parts.push_back(RefTypeAST::get(TypeAST::i(999)));  // coro ctx
-    coro_parts.push_back(RefTypeAST::get(coroast));          // sibling
     coro_parts.push_back(RefTypeAST::get(TypeAST::i(999)));  // fn
     coro_parts.push_back(RefTypeAST::get(TypeAST::i(999)));  // env
-    coro_parts.push_back(RefTypeAST::get(coroast));          // invoker
+    coro_parts.push_back(RefTypeAST::get(coroast));          // parent
     coro_parts.push_back(RefTypeAST::get(
                           RefTypeAST::get(coroast)));         // indirect_self
+    coro_parts.push_back(TypeAST::i(64)); // effect_tag
     coro_parts.push_back(TypeAST::i(32)); // status
     coroast->setBody(coro_parts);
     foster_generic_coro_ast = coroast;
 
-    foster_generic_coro_t = module->getTypeByName("struct.foster_generic_coro");
+    foster_generic_coro_t = module->getTypeByName("struct.foster_bare_coro");
     // Can't do this yet, because generating type maps requires
     // access to specific coro fields.
     //foster_generic_coro_t = llvm::StructType::create(module->getContext(),
     //                                          "struct.foster_generic_coro");
     ASSERT(foster_generic_coro_t != NULL);
 
+    foster_generic_split_coro_ty = getSplitCoroType(getUnitType()->getLLVMType());
+
+    foster::ParsingContext::insertType("Foster$GenericCoro",
+      RefTypeAST::get(getSplitCoroTyp(getUnitType())));
     foster::ParsingContext::insertType("Foster$GenericClosureEnvPtr",
                                       getGenericClosureEnvType());
   }

@@ -12,14 +12,13 @@ struct Type {
     named      @ 0;
     ptr        @ 1;
     procty     @ 2;
-    coro       @ 3;
-    carray     @ 4;
-    primint    @ 5;
-    float64    @ 6;
-    array      @ 7;
-    datatype   @ 8;
-    tyconapp   @ 9;
-    struct     @ 10;
+    carray     @ 3;
+    primint    @ 4;
+    float64    @ 5;
+    array      @ 6;
+    datatype   @ 7;
+    tyconapp   @ 8;
+    struct     @ 9;
   }
 
   tag   @ 0 : Tag;
@@ -131,7 +130,7 @@ struct Letable {
 
   occ          @ 12 : PbOccurrence $optional;
   primopname   @ 13 : Text $optional;
-  primopsize   @ 14 : List(Int32); # TODO use this # optional
+  primopsize   @ 14 : List(Int64); # TODO use this # optional
   ctorinfo     @ 15 : PbCtorInfo $optional;
   arraylit     @ 16 : PbArrayLiteral $optional;
 }
@@ -224,6 +223,8 @@ struct PbCoroPrim {
     ilcoroinvoke   @ 0;
     ilcorocreate   @ 1;
     ilcoroyield    @ 2;
+    ilcoroparent   @ 3;
+    ilcoroisdead   @ 4;
   }
   tag       @ 0 : Tag;
   rettype   @ 1 : Type;

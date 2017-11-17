@@ -22,7 +22,7 @@ import Data.IORef(newIORef, readIORef, writeIORef)
 import Data.Traversable(mapM)
 import Prelude hiding (mapM, (<$>))
 import Control.Monad.State(forM, when, forM_, evalStateT, gets,
-                           liftIO, liftM, liftM2, liftM3)
+                           liftIO, liftM, liftM2)
 import Control.Monad.Trans.Except(runExceptT)
 import System.Exit(exitFailure)
 
@@ -235,6 +235,7 @@ typecheckAndFoldContextBindings ctxTC0 bindings = do
 -- |  #. Typecheck non-function definitions, in a minimal environment.
 -- |  #. Build a (conservative) dependency graph on the module's top-level
 -- |     declarations, yielding a list of SCCs of declarations.
+-- |  #. Initialize the "real" environment with data and effect ctor functions.
 -- |  #. Typecheck the SCCs bottom-up, propagating results as we go along.
 -- |  #. Make sure that all unification variables have been properly eliminated,
 -- |     or else we consider type checking to have failed
@@ -257,14 +258,15 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
                                             ,"prim_arrayLength"
                                             ,"coro_create"
                                             ,"coro_invoke"
-                                            ,"coro_yield"
+                                            ,"coro_yield_to"
                                             ]
 
     let primBindings = computeContextBindings' (filteredDecls ++ primopDecls)
     let allCtorTypes = concatMap extractCtorTypes dts
     let (nullCtors, nonNullCtors) = splitCtorTypes allCtorTypes
     let declBindings = computeContextBindings' (moduleASTdecls modast) ++
-                       computeContextBindings nonNullCtors
+                       computeContextBindings nonNullCtors ++
+                       concatMap effectContextBindings (moduleASTeffects modast)
     let nullCtorBindings = computeContextBindings nullCtors
 
     liftIO $ when verboseMode $ do
@@ -281,8 +283,9 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
 
         ctxErrsOrOK <- liftIO $ unTc tcenv0 $ do
                          let ctxAS1 = mkContext (computeContextBindings nonNullCtors)
-                                         nullCtorBindings primBindings primOpMap globalids dts
-                         let ctxTC0 = mkContext [] [] [] Map.empty [] []
+                                         nullCtorBindings primBindings primOpMap
+                                         globalids dts (moduleASTeffects modast)
+                         let ctxTC0 = mkContext [] [] [] Map.empty [] [] []
                          ctxTC1 <- tcContext ctxTC0 ctxAS1
                          foldlM typecheckAndFoldContextBindings ctxTC1 declBindings'
         case ctxErrsOrOK of
@@ -307,11 +310,13 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
     return rv
  where
    mkContext :: [ContextBinding t] -> [ContextBinding t]
-             -> [ContextBinding t] -> (Map T.Text (FosterPrim t)) -> [Ident] -> [DataType t] -> Context t
-   mkContext declBindings nullCtorBnds primBindings primOpMap globalvars datatypes =
-     Context declBindsMap nullCtorsMap primBindsMap primOpMap globalvars [] tyvarsMap [] ctorinfo dtypes
-       where ctorinfo     = getCtorInfo  datatypes
-             dtypes       = getDataTypes datatypes
+             -> [ContextBinding t] -> (Map T.Text (FosterPrim t))
+             -> [Ident] -> [DataType t] -> [EffectDecl t] -> Context t
+   mkContext declBindings nullCtorBnds primBindings primOpMap globalvars datatypes effdecls =
+     Context declBindsMap nullCtorsMap primBindsMap primOpMap globalvars [] tyvarsMap effctors [] ctorinfo dtypes
+       where effctors     = getCtorInfo' effdecls
+             ctorinfo     = getCtorInfo  datatypes
+             dtypes       = getDataTypes (datatypes ++ map dataTypeOfEffectDecl effdecls)
              primBindsMap = Map.fromList $ map unbind primBindings
              nullCtorsMap = Map.fromList $ map unbind nullCtorBnds
              declBindsMap = Map.fromList $ map unbind declBindings
@@ -323,6 +328,26 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
 
    computeContextBindings :: [(String, TypeAST, CtorId)] -> [ContextBinding TypeAST]
    computeContextBindings decls = map (\(s,t,cid) -> pair2binding (T.pack s, t, Just cid)) decls
+
+   effectContextBindings :: EffectDecl TypeAST -> [ContextBinding TypeAST]
+   effectContextBindings ed = map (\(EffectCtor dctor outty) -> 
+        -- For an effect operation    Op args => out   for effect E,
+        -- add a binding do_Op :: { args => out @E }
+        let nm = T.concat [T.pack "do_", dataCtorName dctor]
+            ty0 = FnTypeAST (dataCtorTypes dctor) outty
+                            (effectSingle (typeFormalName $ effectDeclName ed)
+                                          [TyVarAST tv | (tv, _k) <- map convertTyFormal (dataCtorDTTyF dctor)])
+                            FastCC FT_Func
+            ty = case dataCtorDTTyF dctor of
+                  [] -> ty0
+                  formals -> ForAllAST (map convertTyFormal formals) ty0 in
+        TermVarBinding nm (TypedId ty (GlobalSymbol nm), Nothing)
+      ) (effectDeclCtors ed)
+
+   dataTypeOfEffectDecl :: EffectDecl t -> DataType t
+   dataTypeOfEffectDecl (EffectDecl nm tyformals effctors rng) =
+                         DataType   nm tyformals ctors rng
+      where ctors = map effectCtorAsData effctors
 
    -- Given a data type  T (A1::K1) ... (An::Kn)
    -- returns the type   T A1 .. An   (with A1..An free).
@@ -346,8 +371,6 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
                  (T.unpack name, ctorTypeAST tyformals dtType types, cid)
                          where dtType = typeOfDataType dt
                                cid    = ctorId (typeFormalName $ dataTypeName dt) dc
-
-   nullFx = TyAppAST (TyConAST "effect.Empty") []
 
    -- Nullary constructors are constants; non-nullary ctors are functions.
    ctorTypeAST [] dtType [] = Left dtType
@@ -416,6 +439,7 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
                          (externalModuleDecls mTC)
                          (moduleASTdataTypes  mTC)
                          (moduleASTprimTypes  mTC)
+                         (moduleASTeffects    mTC)
                          (moduleASTsourceLines mAST)
 
      kNormalizeModule  mTC' ctx_tc
@@ -675,7 +699,6 @@ desugarParsedModule tcenv m = do
           TyAppP (TyConP "Bool"  )    [] -> return $ PrimIntAST         I1
           TyAppP (TyConP "Array" )   [t] -> liftM  ArrayTypeAST            (q t)
           TyAppP (TyConP "Ref"   )   [t] -> liftM  RefTypeAST              (q t)
-          TyAppP (TyConP "Coro") [o,i,fx] -> liftM3 CoroTypeAST       (q o) (q i) (q fx)
           TyAppP con types       -> liftM2   TyAppAST (q con) (mapM q types)
           TyConP nam             -> return $ TyConAST nam
           TupleTypeP k   types   -> liftM (TupleTypeAST k)    (mapM q types)
@@ -745,7 +768,18 @@ lowerModule (tc_time, kmod) = do
      (sc_time, _) <- ioTime $ runStaticChecks monomod0
      monomod2 <- knLoopHeaders  monomod0
 
+     whenDumpIR "mono-loop" $ do
+      putDocLn $ (outLn "/// Loop-headered program =============")
+      putDocLn $ (outLn $ "///               size: " ++ show (knSize (moduleILbody monomod2)))
+      _ <- liftIO $ renderKN monomod2 True
+      putDocLn $ (outLn "^^^ ===================================")
+
      monomod2a  <- knSinkBlocks   monomod2
+
+     whenDumpIR "mono-sunk" $ do
+      putDocLn $ (outLn "/// Block-sunk program =============")
+      _ <- liftIO $ renderKN monomod2a  True
+      putDocLn $ (outLn "^^^ ===================================")
 
      (mkn_time, pccmod) <- ioTime $ do
           assocBinders <- sequence [do r <- newOrdRef Nothing
@@ -771,17 +805,6 @@ lowerModule (tc_time, kmod) = do
               putDocLn $ (outLn "^^^ ===================================")
 
           return $ monomod2a { moduleILbody = pcc }
-
-     whenDumpIR "mono" $ do
-         putDocLn $ (outLn "/// Loop-headered program =============")
-         putDocLn $ (outLn $ "///               size: " ++ show (knSize (moduleILbody monomod2)))
-         _ <- liftIO $ renderKN monomod2 True
-         putDocLn $ (outLn "^^^ ===================================")
-
-     whenDumpIR "mono-sunk" $ do
-         putDocLn $ (outLn "/// Block-sunk program =============")
-         _ <- liftIO $ renderKN monomod2a  True
-         putDocLn $ (outLn "^^^ ===================================")
 
      ccmod    <- closureConvert pccmod
      whenDumpIR "cc" $ do

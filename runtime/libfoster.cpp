@@ -136,11 +136,17 @@ struct FosterVirtualCPU {
     // Per the libcoro documentation, passing all zeros creates
     // an "empty" context which is suitable as an initial source
     // for coro_transfer.
-    coro_create(&client_context, 0, 0, 0, 0);
+    coro_create(&default_coro.ctx, 0, 0, 0, 0);
+    default_coro.env = NULL;
+    default_coro.parent = NULL;
+    default_coro.indirect_self = NULL;
+    default_coro.status = FOSTER_CORO_RUNNING;
+
+    current_coro = &default_coro;
   }
 
   ~FosterVirtualCPU() {
-    foster_coro_destroy(&client_context);
+    foster_coro_destroy(&default_coro.ctx);
     free(signal_stack);
   }
 
@@ -156,12 +162,12 @@ struct FosterVirtualCPU {
     foster__assert(rv == 0, "signaltstack failed");
   }
 
-  //coro_context         runtime_context; // TODO...
-  coro_context           client_context;
+  foster_bare_coro    default_coro;
+  void*                  coro_arg;
+  void*                  coro_arg2;
 
-  // coro_invoke(c) sets this to c.
-  // coro_yield() resets this to current_coro->invoker.
-  foster_generic_coro*   current_coro;
+  // Updated by coro_invoke and coro_yield.
+  foster_bare_coro*   current_coro;
 
   AtomicBool             needs_resched;
 
@@ -175,7 +181,7 @@ inline static FosterVirtualCPU* __foster_get_current_vCPU() {
   return __foster_vCPUs[0];
 }
 
-extern "C" foster_generic_coro** __foster_get_current_coro_slot() {
+extern "C" foster_bare_coro** __foster_get_current_coro_slot() {
   return &(__foster_get_current_vCPU()->current_coro);
 }
 
@@ -403,6 +409,9 @@ uint8_t foster_ctor_id_of(void* body) {
 }
 
 void print_addr(void* x) { fprintf(stdout, "addr: %p\n", x); }
+
+void foster_printf_2p(const char* s, void* a, void*   b) { fprintf(stdout, s, a, b); }
+void foster_printf_pi(const char* s, void* a, int32_t b) { fprintf(stdout, s, a, b); }
 
 void print_newline()  { fprintf(stdout, "\n"); }
 void expect_newline() { fprintf(stderr, "\n"); }

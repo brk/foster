@@ -23,6 +23,7 @@ using foster::SourceRange;
 using foster::fosterLLVMContext;
 
 llvm::Type* foster_generic_coro_t = NULL;
+llvm::Type* foster_generic_split_coro_ty = NULL;
 TypeAST* foster_generic_coro_ast  = NULL;
 
 TypeAST* getGenericClosureEnvType() { return RefTypeAST::get(TypeAST::i(8)); }
@@ -52,7 +53,7 @@ map<llvm::Type*, TypeAST*> PrimitiveTypeAST::thinWrappers;
 TypeAST* PrimitiveTypeAST::get(const std::string& name,
                                llvm::Type* loweredType) {
   ASSERT(loweredType);
-  ASSERT(!llvm::isa<llvm::StructType>(loweredType)) << str(loweredType);
+  //ASSERT(!llvm::isa<llvm::StructType>(loweredType)) << str(loweredType);
   TypeAST* tyast = thinWrappers[loweredType];
   if (tyast) { return tyast; }
   tyast = new PrimitiveTypeAST(name, loweredType, SourceRange::getEmptyRange());
@@ -245,32 +246,6 @@ TypeAST*& TypeTypeAppAST::getContainedType(int i) {
 TypeTypeAppAST* TypeTypeAppAST::get(const vector<TypeAST*>& argTypes) {
   ASSERT(argTypes.size() >= 2) << "TypeTypeAppAST must contain at least two types.";
   return new TypeTypeAppAST(argTypes, SourceRange::getEmptyRange());
-}
-
-/////////////////////////////////////////////////////////////////////
-
-llvm::Type* CoroTypeAST::getLLVMType() const {
-  if (!repr) {
-    std::vector<llvm::Type*> fieldTypes;
-    fieldTypes.push_back(foster_generic_coro_t);
-    fieldTypes.push_back(this->a->getLLVMType());
-
-    repr = getHeapPtrTo(
-                llvm::StructType::get(fieldTypes.back()->getContext(),
-                                 fieldTypes, /*isPacked=*/false));
-  }
-  return repr;
-}
-
-TypeAST*& CoroTypeAST::getContainedType(int i) {
-  ASSERT(i >= 0 && i < getNumContainedTypes());
-  return (i == 0) ? a : b;
-}
-
-CoroTypeAST* CoroTypeAST::get(TypeAST* targ, TypeAST* tret) {
-  ASSERT(targ);
-  ASSERT(tret);
-  return new CoroTypeAST(targ, tret, SourceRange::getEmptyRange());
 }
 
 /////////////////////////////////////////////////////////////////////

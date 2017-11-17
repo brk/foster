@@ -34,6 +34,19 @@ getCtorInfo datatypes = Map.unionsWith (++) $ map getCtorInfoList datatypes
     buildCtorInfo name ctor =
       case ctorIdFor name ctor of (n, c) -> (n, [CtorInfo c ctor])
 
+getCtorInfo' :: [EffectDecl t] -> Map CtorName [(CtorId, EffectCtor t)]
+getCtorInfo' effdecls = Map.unionsWith (++) $ map getEffCtorInfoList effdecls
+  where
+    getEffCtorInfoList :: EffectDecl t -> Map CtorName [(CtorId, EffectCtor t)]
+    getEffCtorInfoList (EffectDecl formal _tyformals ctors _range) =
+          Map.fromList $ map (buildEffCtorInfo (typeFormalName formal)) ctors
+
+    buildEffCtorInfo :: DataTypeName -> EffectCtor t
+                     -> (CtorName, [(CtorId, EffectCtor t)])
+    buildEffCtorInfo name ector =
+      case ctorIdFor name (effectCtorAsData ector) of
+          (n, c) -> (n, [(c, ector)])
+
 -----------------------------------------------------------------------
 
 ctorIdFor :: String -> DataCtor t -> (CtorName, CtorId)

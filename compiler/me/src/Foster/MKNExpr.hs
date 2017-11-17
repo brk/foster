@@ -325,6 +325,7 @@ subtermsOf term =
       MKCase        _u _ _v arms   -> do return $ map mkcaseArmBody arms
       MKCont {} -> return []
       MKCall {} -> return []
+      --MKHandler     _u _ty action arms mb_x -> do return $ action : maybeToList mb_x ++ map mkcaseArmBody arms
 
 type Uplink ty = Link (Parent ty)
 data Parent ty = ParentTerm (MKTerm ty)
@@ -363,7 +364,8 @@ data MKTerm ty =
         | MKIf          (Uplink ty) ty (FreeVar ty) (Subterm ty) (Subterm ty)
         | MKCall        (Uplink ty) ty (FreeVar ty)       [FreeVar ty] (ContVar ty)
         | MKCont        (Uplink ty) ty (ContVar ty)       [FreeVar ty]
-
+        -- | MKHandler     (Uplink ty) ty (Subterm ty) [MKCaseArm (Subterm ty) ty] (Maybe (Subterm ty))
+        
 -- Does double duty, representing both regular functions and continuations.
 data MKFn expr ty
                 = MKFn { mkfnVar   :: (MKBoundVar ty)
@@ -617,6 +619,8 @@ mkOfKN_Base expr k = do
                       arms' <- mapM (qarm (CC_Tail jb)) arms
                       return $ MKCase nu' ty v' arms'
 
+        KNHandler {} -> error $ "MKNExpr.sh should not see KNHandler!"
+
         KNCall       ty v vs -> do
             (v':vs') <- qvs (v:vs)
             case k of
@@ -794,7 +798,20 @@ parentLinkT expr =
     MKIf          u  _ty _ _e1 _e2 -> u
     MKCall        u     _ty _ _s _   -> u
     MKCont        u     _ty _ _s     -> u
+    --MKHandler     u _ty _action _arms _mb_x -> u
 
+tagT :: MKTerm ty -> String
+tagT expr =
+  case expr of
+    MKLetVal      {} -> "MKLetVal"
+    MKLetRec      {} -> "MKLetRec"
+    MKLetFuns     {} -> "MKLetFuns"
+    MKLetCont     {} -> "MKLetCont"
+    MKCase        {} -> "MKCase"
+    MKIf          {} -> "MKIf"
+    MKCall        {} -> "MKCall"
+    MKCont        {} -> "MKCont"
+    --MKHandler     {} -> "MKHandler"
 
 freeVarsE :: MKExpr ty -> [FreeOcc ty]
 freeVarsE expr =
@@ -830,6 +847,7 @@ directFreeVarsT expr =
     MKIf          _  _ty v _e1 _e2   -> [v]
     MKCall        _     _ty v vs c   -> c:v:vs
     MKCont        _     _ty c vs     -> c  :vs
+    --MKHandler     _ _ty _action _arms _mb_x -> []
 
 data MaybeCont ty = YesCont (MKBoundVar ty)
                   | NoCont
@@ -948,7 +966,13 @@ knOfMK mb_retCont term0 = do
                  vs' of
             [v] | isReturn -> return $ KNVar v
             _ -> return $ KNCall ty (boundVar cvb) vs'
-
+{-
+    MKHandler     _ ty action arms mb_x -> do
+        action' <- q action
+        arms' <- mapM qarm arms
+        mb_x' <- liftMaybe q mb_x
+        return $ KNHandler ty action' arms' mb_x'
+-}
 mkKNLetRec [] [] k = k
 mkKNLetRec xs es k = KNLetRec xs es k
 
@@ -1306,6 +1330,19 @@ copyMKTerm term = do
     MKCont        _u  ty _c vs     -> do mapM qv    vs  >>= \    vs' ->
                                           qv  _c        >>= \c'  ->
                                            withLinkT $ \u -> return $ MKCont u       ty c' vs'
+                                           {-
+    MKHandler     _u ty action arms mb_x -> do
+                                         action' <- q action
+                                         arms' <- mapM qarm arms
+                                         mb_x' <- liftMaybe q mb_x
+                                         {-case mb_x of
+                                                    Nothing -> return Nothing
+                                                    Just x -> q x >>= return . Just -}
+                                         withLinkT $ \u -> lift $ do
+                                          let rv = MKHandler u ty action' arms' mb_x'
+                                          backpatchT rv (action' : maybeToList mb_x' ++ map mkcaseArmBody arms')
+                                         -}
+
   lift $ installLinks link newterm
 
 
@@ -1711,6 +1748,7 @@ analyzeContifiability knowns = do
             (_, Nothing) -> do return CantContifyWithNoFn
             ([_], _) -> do return NoNeedToContifySingleton -- Singleton call; no need to contify since we'll just inline it...
             (_, Just fn) -> do
+              dbgDoc $ text "analyzeContifiability(1)"
               mbs_conts <- mapM (contOfCall bv) occs
               case allFoundConts mbs_conts of
                 Nothing -> return HadUnknownContinuations
@@ -1758,7 +1796,8 @@ analyzeContifiability knowns = do
             case mb_fn of
               Nothing -> do
                 liftIO $ putDocLn $ text "    no fn"
-              Just fn -> do
+              Just _fn -> do
+                dbgDoc $ text "analyzeContifiability(2)"
                 aconts <- mapM (contOfCall bv) occs
                 case allFoundConts aconts of
                   Nothing -> liftIO $ putDocLn $ text "  (some continuations not found)"
@@ -1855,8 +1894,10 @@ contOfCall bv occ = do
 
     Just tm -> do
       do kn <- knOfMK NoCont tm
-         dbgDoc $ text "non call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
-      return NonCall
+         dbgDoc $ text "contOfCall: non call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
+         dbgDoc $ indent 10 (showStructure kn)
+         dbgDoc $ text "tag is " <> text (tagT tm)
+      return $ NonCall
 
 -- Collect the function vars associated with every use of a continuation variable.
 calleeOfCont occ = do
@@ -2012,8 +2053,8 @@ pccOfTopTerm uref subterm = do
               dbgDoc $ text "pccOfTopTerm saw nulled-out function link " <> pretty x
             return ()
           Just fn -> do
-            knfn <- lift $ knOfMKFn NoCont fn
             {--
+            knfn <- lift $ knOfMKFn NoCont fn
             dbgDoc $ indent 10 (pretty x)
             dbgDoc $ indent 20 (pretty knfn)
             dbgDoc $ text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
@@ -2036,6 +2077,7 @@ pccOfTopTerm uref subterm = do
           MKCall        {}              -> return ()
           MKLetCont     {} -> do error $ "MKLetCont in pccTopTerm"
           MKCont        {} -> do error $ "MKCont in pccTopTerm"
+          --MKHandler     {} -> do error $ "MKHandler in pccTopTerm"
 
       handleTopLevelBinding id expr k = do
         case expr of
@@ -2131,7 +2173,33 @@ cffnOfMKCont cv (MKFn _ vs _ subterm _isrec _annot) = do
                                  resid <- lift $ ccFreshId $ T.pack ".cr"
                                  baPutBlock head (ILetVal resid (ILCall ty v' vs') : insns)
                                         (CFCont blockid [TypedId ty resid])
+          {-
+                handle E of ARMS end
+            ==>
+                REC go = { coro => arg =>
+                    yielded = coro_invoke coro effectTagForOps arg;
+                    if coro_dead coro
+                      then yielded
+                      else
+                        case yielded of
+                            ARMS'
+                            other -> coro = search_handlers (effect_tag_of other);
+                                     coro_yield coro a;
+                        end
+                    end
+                };
+                go (coro_create E) ()    ( |> xform );
+          -}
+          {-
+          MKHandler     _u _ty action arms Nothing -> do
+            
+            resid <- lift $ ccFreshId $ T.pack ".hr"
+            baPutBlock head (letfun:call:insns) (CFCont blockid [TypedId ty resid])
 
+          MKHandler     _u _ty action arms mb_x -> do
+                                 baPutBlock head insns (error "TODO MKNExpr.hs:2176")
+            -}
+            
           MKCont        _u _ty contvar vs -> do
                                  blockid <- blockIdOf' contvar
                                  vs' <- mapM qv vs

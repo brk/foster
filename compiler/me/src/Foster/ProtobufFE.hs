@@ -83,14 +83,36 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
                                    tyf
                                    (map (cb_parse_data_ctor tyf) (unMu mu_data_ctors))
                                    (cb_parse_range          cbr)
+    CBOR_Array [tok, _, cbr, CBOR_Array [tyformal_nm, mu_tyformals, mu_effect_ctors]]
+                                                      | tok `tm` tok_EFFECT ->
+       let tyf = (map cb_parse_tyformal  (unMu mu_tyformals)) in
+       ToplevelEffect $ EffectDecl (cb_parse_tyformal      tyformal_nm)
+                                   tyf
+                                   (map (cb_parse_effect_ctor tyf) (unMu mu_effect_ctors))
+                                   (cb_parse_range          cbr)
     _ -> error $ "cb_parseToplevelItem failed: " ++ show cbor
 
+  -- ^(OF dctor tatom*);
   cb_parse_data_ctor tyf cbor = case cbor of
     CBOR_Array [tok, _, cbr, CBOR_Array (dctor : tatoms)] | tok `tm` tok_OF ->
       Foster.Base.DataCtor (cb_parse_dctor dctor) tyf (map cb_parse_tatom tatoms) Nothing (cb_parse_range cbr)
     _ -> error $ "cb_parse_data_ctor failed: " ++ show cbor
 
   cb_parse_dctor cbor = cb_parse_ctor cbor
+
+  -- ^(OF dctor ^(MU tatom*) ^(MU t?));
+  cb_parse_effect_ctor tyf cbor = case cbor of
+    CBOR_Array [tok, _, cbr, CBOR_Array [dctor, mu_tatoms, mu_mb_t]] | tok `tm` tok_OF ->
+      Foster.Base.EffectCtor
+        (Foster.Base.DataCtor (cb_parse_dctor dctor) tyf (map cb_parse_tatom (unMu mu_tatoms))
+                              Nothing (cb_parse_range cbr))
+        (case unMu mu_mb_t of
+          []  -> -- Default to unit type if no explicit annotation
+                 -- has been provided.
+                 TupleTypeP KindAnySizeType []
+          [t] -> cb_parse_t t
+          x -> error $ "cb_parse_effect_ctor (t?) failed: " ++ show x)
+    _ -> error $ "cb_parse_effect_ctor failed: " ++ show cbor
 
   cb_parse_aid :: CBOR -> String
   cb_parse_aid cbor = case cbor of
@@ -300,6 +322,14 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
         E_FnAST annot (FnAST annot name (map cb_parse_tyformal $ unMu mu_tyformals)
                                         (map cb_parse_formal   $ unMu mu_formals)
                                         (cb_parse_stmts stmts) False)
+
+    CBOR_Array [tok, _,_cbr, CBOR_Array [action, mu_matches, mu_xform]] | tok `tm` tok_HANDLE ->
+        E_Handler annot (cb_parse_e action)
+                        (map cb_parse_pmatch $ unMu mu_matches)
+                        (case unMu mu_xform of
+                          [] -> Nothing
+                          [xform] -> Just (cb_parse_e xform))
+
     _ -> error $ "cb_parse_atom failed: " ++ show cbor
 
   similarStmts (StmtExpr {})    (StmtExpr {})    = True
@@ -469,12 +499,13 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
       TypeFormal (cb_parse_aid aid) (cb_parse_range cbr) KindPointerSized
     _ -> error $ "cb_parse_tyformal failed: " ++ show cbor
 
+  cb_parse_t :: CBOR -> TypeP
   cb_parse_t cbor = case cbor of
     CBOR_Array [tok, _,_cbr, CBOR_Array [xid, tp, e]] | tok `tm` tok_REFINED ->
       RefinedTypeP (cb_parse_x_str xid) (cb_parse_tp tp) (cb_parse_e e)
     _ -> cb_parse_tp cbor
 
-
+  cb_parse_tp :: CBOR -> TypeP
   cb_parse_tp cbor = case cbor of
     CBOR_Array [tok, _,_cbr, CBOR_Array [tatom]] | tok `tm` tok_TYPE_ATOM -> cb_parse_tatom tatom
     CBOR_Array [tok, _,_cbr, CBOR_Array (tatom : tatoms)] | tok `tm` tok_TYPE_TYP_APP ->
@@ -524,8 +555,11 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
 
   cb_parse_eff :: CBOR -> Effect
   cb_parse_eff cbor = case cbor of
-    CBOR_Array [tok_row,_,_cbr,CBOR_Array [a]] | tok_row `tm` tok_EFFECT_SINGLE ->
-       effectSingle (cb_ty_of_a _cbr a)
+    CBOR_Array [tok_row,_,_cbr,CBOR_Array (a:tatoms)] | tok_row `tm` tok_EFFECT_SINGLE ->
+      case tatoms of
+        [] -> effectSingle (cb_ty_of_a _cbr a)
+        _ ->  effectSingle (TyAppP (cb_ty_of_a _cbr a) (map cb_parse_tatom tatoms))
+          
     CBOR_Array [tok_row,_,_cbr,CBOR_Array rowsyntax] | tok_row `tm` tok_EFFECT_ROW ->
       case rowsyntax of
         [] ->        effectsClosed []
@@ -549,7 +583,7 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
       case axs of
         [a]    -> cb_ty_of_a cbr a
         (a:xs) -> let (TyAppP tcon []) = cb_ty_of_a cbr a in
-                       TyAppP tcon (map (cb_ty_of_a cbr) xs) -- TODO handle minus
+                       TyAppP tcon (map cb_parse_tatom xs) -- TODO handle minus
         [] -> error $ "cb_parse_single_eff_empty failed: " ++ show cbor
     _ -> error $ "cb_parse_single_effect failed: " ++ show cbor
 
@@ -669,6 +703,7 @@ parseCallPrim' primname tys args annot = do
                            _                 -> E_StoreAST annot a b
       ("kill-entire-process",  [s@(E_StringAST {})]) ->
                                                 E_KillProcess annot s
+      ("log-type",  [e]) -> E_CallAST annot (E_PrimAST annot "log-type" [] []) [e]
       ("inline-asm", _) ->
         case (tys, args) of
           ([_], E_StringAST _ (SS_Text _ cnt) : E_StringAST _ (SS_Text _ cns) : E_BoolAST _ sideeffects : args' ) -> do
@@ -793,6 +828,7 @@ attachFormattingItem (ToplevelDefn (s,e)) = do
   ef <- attachFormatting e; return $ ToplevelDefn (s, ef)
 attachFormattingItem (ToplevelDecl de) = return $ ToplevelDecl de
 attachFormattingItem (ToplevelData dt) = return $ ToplevelData dt
+attachFormattingItem (ToplevelEffect et) = return $ ToplevelEffect et
 
 -- patterns have source ranges, not annotations.
 convertTermBinding (TermBinding evar expr) =
@@ -838,6 +874,14 @@ attachFormatting expr = do
    E_ArrayPoke    _ (ArrayIndex a b rng2 s) c -> do [x, y, z] <- mapM q [a, b, c]
                                                     an <- ana
                                                     return $ E_ArrayPoke an (ArrayIndex x y rng2 s) z
+   E_Handler      _ e bs mbe -> do e' <- q e
+                                   bs' <- mapM (\(CaseArm pat exp guard bindings rng) -> do
+                                      exp'   <-           q exp
+                                      guard' <- liftMaybe q guard
+                                      return (CaseArm pat exp' guard' bindings rng)) bs
+                                   x' <- liftMaybe q mbe
+                                   an <- ana
+                                   return $ E_Handler an e' bs' x'
    E_Case         _ e bs     -> do e' <- q e
                                    bs' <- mapM (\(CaseArm pat exp guard bindings rng) -> do
                                                        exp'   <-           q exp

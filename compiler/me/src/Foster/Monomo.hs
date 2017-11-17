@@ -16,6 +16,7 @@ import Foster.Config
 import Foster.MonoType
 import Foster.ConvertExprAST()
 import Foster.Context
+import Foster.Output
 
 import qualified Data.Text as T
 
@@ -43,7 +44,7 @@ import Control.Monad.State(evalStateT, get, gets, put, StateT, liftIO, lift)
 
 monomorphize :: ModuleIL (KNExpr' ()        TypeIL  ) TypeIL
    -> Compiled (ModuleIL (KNExpr' RecStatus MonoType) MonoType)
-monomorphize (ModuleIL body decls dts primdts lines) = do
+monomorphize (ModuleIL body decls dts primdts effdecls lines) = do
     wantedFns <- gets ccDumpFns
     let monoState0 = MonoState Map.empty Map.empty Map.empty [] wantedFns
     flip evalStateT monoState0 $ do
@@ -52,7 +53,8 @@ monomorphize (ModuleIL body decls dts primdts lines) = do
                monodts     <- monomorphizedDataTypesFrom dts specs
                monoprimdts <- monomorphizedDataTypesFrom primdts []
                monodecls <- mapM monoExternDecl decls
-               return $ ModuleIL monobody monodecls monodts monoprimdts lines
+               monoeffs  <- monomorphizedEffectDeclsFrom effdecls specs
+               return $ ModuleIL monobody monodecls (monodts ++ monoeffs) monoprimdts [] lines
 
 
 monoPrim :: MonoSubst -> FosterPrim TypeIL -> Mono (FosterPrim MonoType)
@@ -64,6 +66,7 @@ monoPrim subst prim = do
        PrimIntTrunc i1 i2 -> return $ PrimIntTrunc i1 i2
        CoroPrim   p t1 t2 -> liftM2 (CoroPrim p) (qt t1) (qt t2)
        PrimInlineAsm ty cnt cns fx -> qt ty >>= \ty' -> return $ PrimInlineAsm ty' cnt cns fx
+       LookupEffectHandler tag -> return $ LookupEffectHandler tag
 
 monoVar :: MonoSubst -> TypedId TypeIL -> Mono (TypedId MonoType)
 monoVar subst v = do
@@ -104,6 +107,7 @@ monoKN subst inTypeExpr e =
   KNNotInlined {} -> error $ "Monomo.hs expects inlining to run after monomorphization!"
   -- The cases involving sub-expressions are syntactically heavier,
   -- but are still basically trivially inductive.
+
   KNCase          t v pats -> do liftM3 KNCase          (qt t) (qv v)
                                          (mapM (monoPatternBinding subst) pats)
   KNIf            t v e1 e2-> do liftM4 KNIf (qt t) (qv v) (qq e1) (qq e2)
@@ -113,6 +117,98 @@ monoKN subst inTypeExpr e =
                                  return $ KNLetVal      id e'  b'
   KNLetRec     ids exprs e -> do (e' : exprs' ) <- mapM qq (e:exprs)
                                  return $ KNLetRec      ids exprs' e'
+
+  -- Handlers are conceptually in the above trivial-ish-sub-expression category,
+  -- but we glom on the compilation/translation to coroutine primitives here,
+  -- since monomorphization lets us get precise type distinctions in polymorphic code.
+
+  KNHandler annot t fx e pats mbx (resumeid, resumebareid) -> do
+    t' <- qt t
+    fx' <- qt fx
+    e' <- qq e
+    pats' <- mapM (monoPatternBinding subst) pats
+    mbx' <- liftMaybe qq mbx
+
+    liftIO $ putDocLn $ text ""
+    liftIO $ putDocLn $ text "KNHandler for " <$> prettyWithLineNumbers (rangeOf annot)
+    liftIO $ putDocLn $ text "      had inferred effect " <> pretty fx
+    liftIO $ putDocLn $ text "      had value    type   " <> pretty t <> text " monomorphized to " <> pretty t'
+    liftIO $ putDocLn $ text "      had action   type   " <> pretty (typeKN e)
+    liftIO $ putDocLn $ text ""
+
+    unitid <- lift $ ccFreshId $ T.pack "unit"
+    gofnidL <- lift $ ccFreshId $ T.pack "effect_handler.go"
+    let Ident prefix uniq = gofnidL
+    gofnidG <- return $ GlobalSymbol $ T.pack ("_" ++ T.unpack prefix ++ "/" ++ show uniq)
+    actionid   <- lift $ ccFreshId $ T.pack "action"
+
+    let Ident resprefix resuniq = resumeid
+    let Ident resbareprefix resbareuniq = resumebareid
+    resumeidG <- return $ GlobalSymbol $ T.pack ("_" ++ T.unpack resprefix ++ "/" ++ show resuniq)
+    resumebareidG <- return $ GlobalSymbol $ T.pack ("_" ++ T.unpack resbareprefix ++ "/" ++ show resbareuniq)
+
+    gencoroid  <- lift $ ccFreshId $ T.pack "gencoro"
+
+    let boolty = boolMonoType
+    let resumeargty = t'
+    let inputargty = PtrTypeUnknown
+    let coroty = CoroType inputargty resumeargty
+    let fnty = FnType [coroty, resumeargty] inputargty FastCC FT_Func -- arg types are a lie, for now...
+    let i64 = PrimInt I64
+    --liftM3 (KNHandler t' ) (qq e) (mapM (monoPatternBinding subst) pats) (liftMaybe qq mbe)
+
+    gofn <- do
+      coroid <- lift $ ccFreshId $ T.pack "corox"
+      argid  <- lift $ ccFreshId $ T.pack "argx"
+      ylded  <- lift $ ccFreshId $ T.pack "yielded"
+      isded  <- lift $ ccFreshId $ T.pack "isdead"
+      effectid  <- lift $ ccFreshId $ T.pack "effectid"
+      resargid  <- lift $ ccFreshId $ T.pack "resarg"
+
+      -- TODO this is wrong, should use the outty from typechecking.
+      let resumefnty = FnType [resumeargty] t' FastCC FT_Func
+      let resumefn = Fn (TypedId resumefnty resumeidG) [TypedId PtrTypeUnknown resargid]
+                      (KNCall t' (TypedId fnty gofnidL) [TypedId coroty coroid, TypedId resumeargty resargid])
+                      NotRec annot
+      let resumebarefn = Fn (TypedId resumefnty resumebareidG) [TypedId PtrTypeUnknown resargid]
+                      (KNCall t' (TypedId fnty gofnidL) [TypedId coroty coroid, TypedId resumeargty resargid])
+                      NotRec annot
+      let vs = [TypedId coroty coroid, TypedId inputargty argid]
+
+      --liftIO $ putDocLn $ text "mbx is " <> pretty mbx'
+      liftIO $ putStrLn $ "line 179"
+      fin <- case mbx' of
+                 Nothing -> return (KNVar $ TypedId resumeargty ylded)
+                 Just x -> do xformid <- lift $ ccFreshId $ T.pack "xformid"
+                              return (KNLetVal xformid x $
+                                     (KNCall resumeargty (TypedId (typeKN x) xformid)
+                                              [TypedId resumeargty ylded]))
+      liftIO $ putStrLn $ "line 186"
+      let body = --KNLetVal effectid (KNLiteral unitty (LitText $ T.pack $ show t')) $
+                 KNLetVal effectid (KNCallPrim (rangeOf annot) i64 (PrimOp "tag_of_effect" fx') []) $
+                 KNLetVal ylded (KNCallPrim (rangeOf annot) resumeargty (CoroPrim CoroInvoke inputargty resumeargty)
+                                        [TypedId coroty coroid, TypedId i64 effectid, TypedId inputargty argid]) $
+                  KNLetVal isded (KNCallPrim (rangeOf annot) boolty (CoroPrim CoroIsDead inputargty resumeargty)
+                                        [TypedId coroty coroid]) $
+                  KNIf t' (TypedId boolty isded)
+                    fin
+                    (KNLetFuns [resumeid, resumebareid] [resumefn, resumebarefn]
+                      (KNCase t' (TypedId resumeargty ylded)
+                        pats'
+                        -- TODO include 'other' branch?
+                        ))
+      -- Assume recursive, conservatively.
+      liftIO $ putStrLn $ "line 201"
+      return $ Fn (TypedId fnty gofnidG) vs body YesRec annot
+
+    let unitty = TupleType []
+    return $ KNLetFuns [gofnidL] [gofn]
+        (KNLetVal unitid (KNTuple unitty [] (rangeOf annot))
+        (KNLetVal actionid e'
+        (KNLetVal gencoroid (KNCallPrim (rangeOf annot) coroty (CoroPrim CoroCreate inputargty resumeargty)
+                          [TypedId (FnType [] t' FastCC FT_Func) actionid])
+            (KNCall t' (TypedId fnty gofnidL) [TypedId coroty gencoroid, TypedId unitty unitid]))))
+
   -- Here are the interesting bits:
   KNAppCtor       t c vs   -> do
     -- Turn (ForAll [('a,KindAnySizeType)]. (TyConAppIL Maybe 'a:KindAnySizeType))
@@ -233,7 +329,7 @@ monoKN subst inTypeExpr e =
        -- variables, but we can use a trivial bitcast if all the type
        -- arguments happen to be pointer-sized.
        Nothing ->
-         if List.all (\(_tv, kind) -> kind /= KindAnySizeType) ktvs || inTypeExpr
+         if List.all (\t -> kindOf t /= KindAnySizeType) monotys || inTypeExpr
                  -- In a type expression, we're not actually going to pass any
                  -- values at runtime, so even if we can't poly-instantiate an
                  -- unknown definition, it's still okay. If all the parameters
@@ -255,6 +351,22 @@ monoKN subst inTypeExpr e =
                ++ " (higher-rank polymorphism)...\n"
             -- -}
   KNTyApp _ _ _  -> do error $ "Expected polymorphic instantiation to affect a polymorphic variable!"
+
+instance Kinded MonoType where
+  kindOf x = case x of
+    PrimInt     {}     -> KindAnySizeType
+    StructType  {}     -> KindAnySizeType
+
+    TyCon       {}     -> KindAnySizeType
+    TyApp       {}     -> KindPointerSized
+
+    TupleType   {}     -> KindPointerSized
+    CoroType    {}     -> KindPointerSized
+    FnType      {}     -> KindPointerSized
+    ArrayType   {}     -> KindPointerSized
+    PtrType     {}     -> KindPointerSized
+    PtrTypeUnknown     -> KindPointerSized
+    RefinedType v _ _  -> kindOf (tidType v)
 
 -- TODO this probably needs to traverse inside types to find refinements...
 substRefinementArgs _v (RefinedType v e args) xs =
@@ -302,6 +414,34 @@ monoPattern subst pattern =
 monoCtorInfo subst (LLCtorInfo cid repr tys) = do
           tys' <- mapM (monoType subst) tys
           return $ (LLCtorInfo cid repr tys')
+
+monomorphizedEffectDeclsFrom :: [EffectDecl TypeIL] -> [(String, [MonoType])] -> Mono [DataType MonoType]
+monomorphizedEffectDeclsFrom eds specs = do
+   dts' <- mapM monomorphizedEffectDecls eds
+   return $ concat dts'
+ where monomorphizedEffectDecl :: EffectDecl TypeIL -> [MonoType] -> Mono (DataType MonoType)
+       monomorphizedEffectDecl (EffectDecl name formals ctors range) args = do
+                 ctors' <- mapM (monomorphizedEffectCtor subst) ctors
+                 return $    (DataType (getMonoFormal name args) []
+                                       ctors' range)
+                               where
+         subst = extendSubst emptyMonoSubst formals args
+
+         monomorphizedEffectCtor :: MonoSubst -> EffectCtor TypeIL -> Mono (DataCtor MonoType)
+         monomorphizedEffectCtor subst (EffectCtor (DataCtor name _tyformals types repr range) _outty) = do
+           types' <- mapM (monoType subst) types
+           return $ DataCtor name [] types' repr range
+
+       dtSpecMap = mapAllFromList specs
+
+       monomorphizedEffectDecls :: EffectDecl TypeIL -> Mono [DataType MonoType]
+       monomorphizedEffectDecls ed@(EffectDecl formal tyformals _ _range) =
+         -- We'll always produce the "regular" version of the data type...
+         let genericTys = [PtrTypeUnknown | _ <- tyformals] in
+         let monotyss = case Map.lookup (typeFormalName formal) dtSpecMap of
+                            Nothing -> []
+                            Just m  -> m
+         in mapM (monomorphizedEffectDecl ed) (monotyss `eqSetInsert` genericTys)
 
 monomorphizedDataTypesFrom :: [DataType TypeIL] -> [(String, [MonoType])] -> Mono [DataType MonoType]
 monomorphizedDataTypesFrom dts specs = do
@@ -353,6 +493,7 @@ monoMarkDataType (cid, repr) dtname monotys = do
   return (cid { ctorTypeName = getMonoName (ctorTypeName cid) monotys }, repr)
 
 monoExternDecl (s, t) = liftM (\t' -> (s, t')) (monoType emptyMonoSubst t)
+
 
 -- Monomorphized polymorphic values get different names.
 -- The variant in which every type is an opaque pointer keeps the original

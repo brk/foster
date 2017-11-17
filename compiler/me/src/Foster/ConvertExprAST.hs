@@ -20,6 +20,7 @@ convertToplevelItem f (ToplevelDecl de) = convertDecl f de        >>= (return . 
 convertToplevelItem f (ToplevelData dt) = convertDataTypeAST f dt >>= (return . ToplevelData)
 convertToplevelItem f (ToplevelDefn (s, e)) = do
     ex <- convertExprAST f e ; return $ ToplevelDefn (s, ex)
+convertToplevelItem f (ToplevelEffect ed) = convertEffect f ed >>= (return . ToplevelEffect)
 
 convertFun :: Monad m => (a -> m b) -> FnAST a -> m (FnAST b)
 convertFun f (FnAST rng nm tyformals formals body toplevel) = do
@@ -33,12 +34,23 @@ convertDecl f (s, ty) = do t <- f ty ; return (s, t)
 convertDataTypeAST :: (Show a, Show b) =>
                    (a -> Tc b) -> DataType a -> Tc (DataType b)
 convertDataTypeAST f (DataType dtName tyformals ctors range) = do
-  cts <- mapM convertDataCtor ctors
+  cts <- mapM (convertDataCtor f) ctors
   return $ DataType dtName tyformals cts range
+
+convertDataCtor f (DataCtor dataCtorName formals types repr range) = do
+  tys <- mapM f types
+  return $ DataCtor dataCtorName formals tys repr range
+
+convertEffect :: (Show a, Show b) =>
+                   (a -> Tc b) -> EffectDecl a -> Tc (EffectDecl b)
+convertEffect f (EffectDecl effName tyformals ctors range) = do
+  cts <- mapM convertEffectCtor ctors
+  return $ EffectDecl effName tyformals cts range
     where
-      convertDataCtor (DataCtor dataCtorName formals types repr range) = do
-        tys <- mapM f types
-        return $ DataCtor dataCtorName formals tys repr range
+      convertEffectCtor (EffectCtor dtctor outputty) = do
+        dtctor' <- convertDataCtor f dtctor
+        ty' <- f outputty
+        return $ EffectCtor dtctor' ty'
 
 convertEVar f (VarAST mt name) = do ft <- mapMaybeM f mt; return $ VarAST ft name
 
@@ -62,6 +74,11 @@ convertTermBinding f (TermBinding evar expr) = do
 convertExprAST :: Monad m => (x -> m z) -> ExprAST x -> m (ExprAST z)
 convertExprAST f expr =
   let q = convertExprAST f in
+  let qa (CaseArm pat body guard [] rng) = do
+        body' <- q body
+        pat'  <- convertPat f pat
+        grd'  <- liftMaybe q guard
+        return (CaseArm pat' body' grd' [] rng) in
   case expr of
     E_MachArrayLit rng mbt es   -> liftM2 (E_MachArrayLit rng) (mapMaybeM f mbt) (mapM (liftArrayEntryM q) es)
     E_StringAST    rng s        -> return $ (E_StringAST  rng) s
@@ -71,7 +88,7 @@ convertExprAST f expr =
     E_PrimAST      rng nm ls ts -> liftM    (E_PrimAST    rng nm ls) (mapM f ts)
     E_CompilesAST  rng me       -> liftM  (E_CompilesAST  rng) (mapMaybeM q me)
     E_IfAST        rng    a b c -> liftM3 (E_IfAST        rng)   (q a) (q b) (q c)
-    E_SeqAST       rng a b      -> liftM2 (E_SeqAST       rng)   (q a) (q b)
+    E_SeqAST       rng a b      -> liftM2 (E_SeqAST       rng)   (q a) (q b)    
     E_AllocAST     rng a rgn    -> liftM2 (E_AllocAST     rng)   (q a) (return rgn)
     E_DerefAST     rng a        -> liftM  (E_DerefAST     rng)   (q a)
     E_StoreAST     rng a b      -> liftM2 (E_StoreAST     rng)   (q a) (q b)
@@ -83,13 +100,8 @@ convertExprAST f expr =
                                                      return $ E_ArrayRead rng (ArrayIndex x y rng2 s)
     E_ArrayPoke    rng (ArrayIndex a b rng2 s) c -> do [x, y, z] <- mapM q [a, b, c]
                                                        return $ E_ArrayPoke rng (ArrayIndex x y rng2 s) z
-    E_Case         rng e arms   -> do e'    <- q e
-                                      arms' <- mapM (\(CaseArm pat body guard [] rng) -> do
-                                                          body' <- q body
-                                                          pat'  <- convertPat f pat
-                                                          grd'  <- liftMaybe q guard
-                                                          return (CaseArm pat' body' grd' [] rng)) arms
-                                      return $ E_Case     rng  e' arms'
+    E_Handler      rng e arms mb_xform -> liftM3 (E_Handler rng) (q e) (mapM qa arms) (liftMaybe q mb_xform)
+    E_Case         rng e arms   -> liftM2 (E_Case         rng) (q e) (mapM qa arms)
     E_LetRec       rng bnz e    -> liftM2 (E_LetRec       rng) (mapM (convertTermBinding f) bnz) (q e)
     E_LetAST       rng bnd e    -> liftM2 (E_LetAST       rng) (convertTermBinding f bnd) (q e)
     E_CallAST      rng b exprs  -> liftM2 (E_CallAST      rng) (q b) (mapM q exprs)

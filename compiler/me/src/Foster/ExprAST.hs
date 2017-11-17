@@ -21,6 +21,7 @@ import Foster.Base(Structured(..), Literal, TypeFormal,
                    ExprAnnot(..), rangeOf, annotComments, showComments)
 import Foster.Kind
 
+import Data.Maybe(maybeToList)
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T
 import qualified Data.ByteString as B
@@ -46,6 +47,8 @@ data ExprSkel annot ty =
         -- Control flow
         | E_IfAST         annot (ExprSkel annot ty) (ExprSkel annot ty) (ExprSkel annot ty)
         | E_SeqAST        annot (ExprSkel annot ty) (ExprSkel annot ty)
+        | E_Handler       annot (ExprSkel annot ty) [CaseArm EPattern (ExprSkel annot ty) ty]
+                                                    (Maybe (ExprSkel annot ty))
         -- Creation of bindings
         | E_Case          annot (ExprSkel annot ty) [CaseArm EPattern (ExprSkel annot ty) ty]
         | E_LetAST        annot (TermBinding ty) (ExprSkel annot ty)
@@ -121,6 +124,7 @@ instance Structured (ExprAST t) where
             E_ArrayPoke   {}       -> text $ "ArrayPokeAST "                                   ++ (exprCmnts e)
             E_TupleAST    {}       -> text $ "TupleAST     "                                   ++ (exprCmnts e)
             E_TyApp       {}       -> text $ "TyApp        "                                   ++ (exprCmnts e)
+            E_Handler     {}       -> text $ "Handler      "                                   ++ (exprCmnts e)
             E_Case        {}       -> text $ "Case         "                                   ++ (exprCmnts e)
             E_KillProcess {}       -> text $ "KillProcess  "                                   ++ (exprCmnts e)
             E_TyCheck     {}       -> text $ "TyCheck      "                                   ++ (exprCmnts e)
@@ -151,6 +155,7 @@ instance Structured (ExprAST t) where
             E_TupleAST    _rng _ exprs   -> exprs
             E_TyApp       _rng a _t      -> [a]
             E_TyCheck     _rng a _t      -> [a]
+            E_Handler     _rng e bs mbe  -> (maybeToList mbe) ++ e:(concatMap caseArmExprs bs)
             E_Case        _rng e bs      -> e:(concatMap caseArmExprs bs)
             E_LetRec      _rng bnz e     -> [termBindingExpr bnd | bnd <- bnz] ++ [e]
             E_LetAST      _rng bnd e     -> (termBindingExpr bnd):[e]
@@ -185,6 +190,7 @@ exprAnnot e = case e of
       E_VarAST        annot _     -> annot
       E_TyApp         annot _ _   -> annot
       E_TyCheck       annot _ _   -> annot
+      E_Handler       annot _ _ _ -> annot
       E_Case          annot _ _   -> annot
       E_MachArrayLit  annot _ _   -> annot
 

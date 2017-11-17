@@ -522,6 +522,18 @@ checkBody expr facts =
     KNLiteral     {} -> do dbgStr $ "no constraint for literal " ++ show expr
                            return Nothing
 
+    KNHandler _ _ty _fx action arms mb_xform _resumeid -> do
+      case mb_xform of
+        Nothing -> return ()
+        Just _xform -> return () -- TODO
+
+      _ <- forM arms $ \arm -> do
+        case caseArmGuard arm of
+            Nothing -> do facts' <- withBindings (error "withBindings.KNHandler") (caseArmBindings arm) facts
+                          checkBody (caseArmBody arm) facts'
+            Just _g -> error $ "can't yet support effect handler arms with guards in KNStaticChecks"
+      checkBody action facts
+
     KNVar v ->
        case tidType v of
          -- Gotta eta-expand to comply with restrictions on SMT-LIB 2 formulae.

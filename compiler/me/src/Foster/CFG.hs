@@ -96,10 +96,7 @@ fnFreeIds :: (Fn RecStatus BasicBlockGraph MonoType) -> [MoVar]
 fnFreeIds fn = freeTypedIds fn
 
 prettyCFFn :: Fn RecStatus BasicBlockGraph MonoType -> Doc
-prettyCFFn fn = pretty fn
-
-instance Pretty (Fn RecStatus BasicBlockGraph MonoType) where
-  pretty fn = group (lbrace <+>
+prettyCFFn fn = group (lbrace <+>
                          (align (vcat (map (\v -> showTyped (pretty v) (tidType v) <+> text "=>")
                                 (fnVars fn))))
                     <$> indent 4 (pretty (fnBody fn))

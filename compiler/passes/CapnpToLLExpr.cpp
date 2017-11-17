@@ -111,6 +111,8 @@ LLExpr* parseCoroPrim(const pb::PbCoroPrim::Reader& p) {
   case pb::PbCoroPrim::Tag::ILCOROINVOKE: return new LLCoroPrim("coro_invoke", r, a);
   case pb::PbCoroPrim::Tag::ILCOROCREATE: return new LLCoroPrim("coro_create", r, a);
   case pb::PbCoroPrim::Tag::ILCOROYIELD : return new LLCoroPrim("coro_yield",  r, a);
+  case pb::PbCoroPrim::Tag::ILCOROPARENT: return new LLCoroPrim("coro_parent", r, a);
+  case pb::PbCoroPrim::Tag::ILCOROISDEAD: return new LLCoroPrim("coro_isdead", r, a);
   }
   ASSERT(false) << "unknown coro prim tag number " << int(p.getTag());
   return NULL;
@@ -131,11 +133,12 @@ LLExpr* parseCallAsm(const pb::Letable::Reader& e) {
 LLExpr* parseCall(const pb::Letable::Reader& e) {
   if (e.hasCallasm()) return parseCallAsm(e);
 
-  ASSERT(e.getParts().size() >= 1);
   ASSERT(e.hasCallinfo());
   const pb::PbCallInfo::Reader& c = e.getCallinfo();
 
   unsigned firstArg = c.hasCoroprim() ? 0 : 1;
+  ASSERT(e.getParts().size() >= firstArg);
+
   LLExpr* base = c.hasCoroprim() ? parseCoroPrim(c.getCoroprim())
                                  : parseTermVar(e.getParts()[0]);
   std::vector<LLVar*> args;
@@ -147,12 +150,13 @@ LLExpr* parseCall(const pb::Letable::Reader& e) {
 }
 
 LLExpr* parseCallPrimOp(const pb::Letable::Reader& e) {
-  ASSERT(e.getParts().size() >= 1);
   std::vector<LLVar*> args;
   for (auto p : e.getParts()) {
     args.push_back(parseTermVar(p));
   }
-  return new LLCallPrimOp(e.getPrimopname(), args);
+  auto mb_tag = e.getPrimopsize();
+  auto tag = mb_tag.size() == 0 ? 0 : mb_tag[0];
+  return new LLCallPrimOp(e.getPrimopname(), tag, args);
 }
 
 LLExpr* parsePbInt(const pb::PBInt::Reader& i) {
@@ -614,15 +618,6 @@ TypeAST* TypeAST_from_pb(const pb::Type::Reader& t) {
       parts.push_back(TypeAST_from_pb(p));
     }
     return StructTypeAST::get(parts);
-  }
-
-  case  pb::Type::Tag::CORO: {
-    ASSERT(t.getTypeparts().size() == 2)
-        << "coro must have base and arg types,"
-        << " but #type parts is " << t.getTypeparts().size();
-    TypeAST* targ = TypeAST_from_pb(t.getTypeparts()[0]);
-    TypeAST* tret = TypeAST_from_pb(t.getTypeparts()[1]);
-    return CoroTypeAST::get(targ, tret);
   }
 
   case pb::Type::Tag::NAMED: {

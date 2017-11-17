@@ -337,8 +337,9 @@ struct CtorInfo {
 struct LLCallPrimOp : public LLExpr {
   std::vector<LLVar*> args;
   std::string op;
-  LLCallPrimOp(std::string _op, std::vector<LLVar*>& _args)
-  : LLExpr("LLCallPrimOp"), args(_args), op(_op) { }
+  int64_t tag;
+  LLCallPrimOp(std::string _op, int64_t _tag, std::vector<LLVar*>& _args)
+  : LLExpr("LLCallPrimOp"), args(_args), op(_op), tag(_tag) { }
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 

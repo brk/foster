@@ -8,6 +8,7 @@ module Foster.TypeAST(
   TypeAST(..), IntSizeBits(..)
 , MetaTyVar(..), Sigma, Rho, Tau, MTVQ(..)
 , fosBoolType, fosStringType, gFosterPrimOpsTable, primitiveDecls, primopDecls
+, effectSingle, nullFx
 , minimalTupleAST
 , convertTyFormal
 )
@@ -32,7 +33,6 @@ data TypeAST =
          | TyConAST         DataTypeName
          | TyAppAST         Rho  [Sigma]
          | TupleTypeAST     Kind [Sigma]
-         | CoroTypeAST      (Sigma) (Sigma) Effect
          | RefTypeAST       (Sigma)
          | ArrayTypeAST     (Sigma)
          | FnTypeAST        { fnTypeDomain :: [Sigma]
@@ -68,7 +68,6 @@ instance Pretty TypeAST where
         TupleTypeAST k   types          -> tupled (map pretty types) <> text (kindAsHash k)
         FnTypeAST    s t fx cc cs       -> text "(" <> pretty s <> text " =" <> text (briefCC cc) <> text ";"
                                               <+> pretty fx <> text "> " <> pretty t <> text " @{" <> text (show cs) <> text "})"
-        CoroTypeAST  s t fx             -> text "(Coro " <> pretty s <+> pretty t <+> pretty fx <> text ")"
         ForAllAST  tvs rho              -> text "(forall " <> hsep (prettyTVs tvs) <> text ". " <> pretty rho <> text ")"
         TyVarAST   tv                   -> text (show tv)
         -- MetaTyVar m                     -> text "(~(" <> pretty (descMTVQ (mtvConstraint m)) <> text ")!" <> text (show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")")
@@ -88,7 +87,6 @@ instance Show TypeAST where
         TyConAppAST    tc types         -> "(TyCon: " ++ show tc ++ joinWith " " ("":map show types) ++ ")"
         TupleTypeAST      types         -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
         FnTypeAST    s t cc cs          -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
-        CoroTypeAST  s t                -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
         ForAllAST  tvs rho              -> "(ForAll " ++ show tvs ++ ". " ++ show rho ++ ")"
         TyVarAST   tv                   -> show tv
         MetaTyVar m                     -> "(~(" ++ descMTVQ (mtvConstraint m) ++ ")!" ++ show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")"
@@ -104,7 +102,6 @@ instance Structured TypeAST where
             TyAppAST con   _               -> text "(TyAppAST" <+> pretty con <> text ")"
             TupleTypeAST   k   _           -> text $ "TupleTypeAST" ++ kindAsHash k
             FnTypeAST    {}                -> text $ "FnTypeAST"
-            CoroTypeAST  _ _ _             -> text $ "CoroTypeAST"
             ForAllAST  tvs _rho            -> text $ "ForAllAST " ++ show tvs
             TyVarAST   tv                  -> text $ "TyVarAST " ++ show tv
             -- MetaTyVar m                    -> text $ "MetaTyVar " ++ mtvDesc m
@@ -120,7 +117,6 @@ instance Structured TypeAST where
             TyAppAST     con  types        -> con:types
             TupleTypeAST  _k  types        -> types
             FnTypeAST   ss t fx _ _        -> ss ++ [t, fx]
-            CoroTypeAST  s t fx            -> [s, t, fx]
             ForAllAST  _tvs rho            -> [rho]
             TyVarAST   _tv                 -> []
             -- MetaTyVar _                    -> []
@@ -144,11 +140,10 @@ mkFnType   args rets = mkFnTypeWithFx nullFx   args rets
 
 mkProcTypeWithFx fx args rets = FnTypeAST args (minimalTupleAST rets) fx CCC    FT_Proc
 mkFnTypeWithFx   fx args rets = FnTypeAST args (minimalTupleAST rets) fx FastCC FT_Func
-mkCoroType args rets eff = CoroTypeAST (minimalTupleAST args) (minimalTupleAST rets) eff
 
 --------------------------------------------------------------------------------
-effectSingle :: String -> Effect
-effectSingle name = effectExtend (TyAppAST (TyConAST name) []) nullFx
+effectSingle :: String -> [TypeAST] -> Effect
+effectSingle name tys = effectExtend (TyAppAST (TyConAST name) tys) nullFx
 
 effectExtend :: Effect -> Effect -> Effect
 effectExtend eff row = TyAppAST (TyConAST "effect.Extend") [eff, row]
@@ -158,9 +153,6 @@ effectsExtends effs eff = foldr effectExtend eff effs
 
 effectsClosed :: [Effect] -> Effect
 effectsClosed effs = effectsExtends effs nullFx
-
-effectYield :: Tau -> Tau -> Effect
-effectYield inp outp = effectExtend (TyAppAST (TyConAST "Yield") [inp, outp]) nullFx
 --------------------------------------------------------------------------------
 
 i8  = PrimIntAST I8
@@ -235,34 +227,7 @@ primitiveDecls =
     ,(,) "prim_arrayLength" $ let a = BoundTyVar "a" (MissingSourceRange "prim_arrayLength") in
                          ForAllAST (primTyVars [a])
                            (mkProcType [ArrayTypeAST (TyVarAST a)] [i64])
-
-    -- forall a b e, { a => b  @(Yield a b | e) } -> Coro a b e
-    ,(,) "coro_create" $ let a = BoundTyVar "a" (MissingSourceRange "coro_create") in
-                         let b = BoundTyVar "b" (MissingSourceRange "coro_create") in
-                         let fx = BoundTyVar "fx" (MissingSourceRange "coro_create") in
-                         (ForAllAST (primTyVars [a, b] ++ [(fx, KindEffect)])
-                           (mkFnType [mkFnTypeWithFx (effectExtend (effectYield (TyVarAST a) (TyVarAST b)) (TyVarAST fx))
-                                                     [TyVarAST a] [TyVarAST b]]
-                                     [mkCoroType [TyVarAST a] [TyVarAST b] (TyVarAST fx)]))
-
-    -- TODO should probably include an IO effect on this, to reflect/expose
-    --      the internal mutation occuring to track the coro state.
-    -- forall a b e, (Coro a b e, a) -> b @e
-    ,(,) "coro_invoke" $ let a = BoundTyVar "a" (MissingSourceRange "coro_invoke") in
-                         let b = BoundTyVar "b" (MissingSourceRange "coro_invoke") in
-                         let fx = BoundTyVar "fx" (MissingSourceRange "coro_invoke") in
-                         (ForAllAST (primTyVars [a, b] ++ [(fx, KindEffect)])
-                            (mkFnTypeWithFx (TyVarAST fx)
-                               [(mkCoroType [TyVarAST a] [TyVarAST b] (TyVarAST fx)), (TyVarAST a)]
-                                            [TyVarAST b]))
-
-    -- forall a b, { b -> a  @(Yield a b) }
-    ,(,) "coro_yield"  $ let a = BoundTyVar "a" (MissingSourceRange "coro_yield") in
-                         let b = BoundTyVar "b" (MissingSourceRange "coro_yield") in
-                         (ForAllAST (primTyVars [a, b])
-                            (mkFnTypeWithFx (effectYield (TyVarAST a) (TyVarAST b))
-                                [TyVarAST b] [TyVarAST a]))
-
+    
     ,(,) "force_gc_for_debugging_purposes" $ mkProcType [] [i32]
 
     -- TODO this is not correct for Solaris, AIX, or SGI/Irix,

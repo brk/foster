@@ -106,7 +106,7 @@ closureConvertAndLift dataSigs u m =
     -- We lambda lift top level functions, since we know a priori
     -- that they don't have any "real" free vars.
     -- Lambda lifting then closure converts any nested functions.
-    let initialState = ILMState u Map.empty Map.empty Map.empty [] dataSigs in
+    let initialState = ILMState u Map.empty Map.empty Map.empty [] dataSigs Map.empty in
     -- Currently, globalIds is `globalIdents ctx_tc` in convertTypeILofAST in Main.hs...
     -- The list does not include any identifiers from the input module.
     let st = execState (closureConvertToplevel $ moduleILbody m)
@@ -116,6 +116,7 @@ closureConvertAndLift dataSigs u m =
         , moduleILdecls       = map (\(s,t) -> (s, monoToLL t)) (moduleILdecls m)
         , moduleILdataTypes   = map (fmap monoToLL) (moduleILdataTypes m)
         , moduleILprimTypes   = map (fmap monoToLL) (moduleILprimTypes m)
+        , moduleILeffectDecls = map (fmap monoToLL) (moduleILeffectDecls m)
         , moduleILsourceLines = moduleILsourceLines m
         }, (ilmUniq st))
 
@@ -198,9 +199,30 @@ closureConvertBlocks bbg = do
                  bbgpBody  = g'
           }
   where
+      getTagForEffect :: MonoType -> ILM Uniq
+      getTagForEffect eff = do
+        let lleff = monoToLL eff
+        tags <- gets ilmEffectTags
+        case Map.lookup lleff tags of
+          Nothing -> do uniq <- ilmNewUniq
+                        ilmAddEffectTag lleff uniq
+                        return uniq 
+          Just uniq -> return uniq
+
       transform :: BlockId -> Insn e x -> ILM (Graph Insn' e x, BlockId)
       transform ent insn = case insn of
         ILabel l                -> do return (mkFirst $ CCLabel (llb l), fst l)
+        ILetVal id (ILCallPrim _ty (PrimOp "tag_of_effect" eff) []) -> do
+          let effb = case eff of
+                        TyApp base _ -> base
+                        other        -> other
+          tag <- getTagForEffect effb
+          return (mkMiddle $ CCLetVal id (ILLiteral (LLPrimInt I64)
+                                          (LitInt $ mkLiteralIntWithTextAndBase (toInteger tag) "" 10)), ent)
+
+        ILetVal id (ILCallPrim ty (PrimOp "lookup_handler_for_effect" eff) []) -> do
+          tag <- getTagForEffect eff
+          return (mkMiddle $ CCLetVal id (ILCallPrim (monoToLL ty) (LookupEffectHandler tag) []), ent)
         ILetVal id val          -> do return (mkMiddle $ CCLetVal id (fmap monoToLL val), ent)
         ILetFuns ids fns        -> do closures <- closureConvertLetFuns ids fns
                                       return (mkMiddle $ CCLetFuns ids closures, ent)
@@ -487,6 +509,7 @@ data ILMState = ILMState {
   , ilmProcs         :: Map Ident   CCProc           -- read-write
   , ilmVals          :: [ToplevelBinding TypeLL]     -- read-write
   , ilmCtors         :: DataTypeSigs                 -- read-only per-program
+  , ilmEffectTags    :: Map TypeLL Uniq              -- read-write
 }
 type ILM a = State ILMState a
 
@@ -524,6 +547,11 @@ ilmGetProc :: Ident -> ILM (Maybe CCProc)
 ilmGetProc id = do
         old <- get
         return $ Map.lookup id (ilmProcs old)
+
+ilmAddEffectTag eff tag = do
+  old <- get
+  put $ old { ilmEffectTags = Map.insert eff tag (ilmEffectTags old) }
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||||| Boilerplate ||||||||||||||||||||||||{{{

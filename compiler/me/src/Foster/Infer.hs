@@ -16,7 +16,7 @@ import Data.Maybe(fromMaybe)
 import Text.PrettyPrint.ANSI.Leijen
 import Data.UnionFind.IO(descriptor, setDescriptor, equivalent, union)
 
-import Control.Monad(liftM, forM_, liftM, liftM2, liftM3)
+import Control.Monad(liftM, forM_, liftM, liftM2)
 
 import Foster.Base
 import Foster.TypeTC
@@ -59,7 +59,6 @@ parSubstTcTy prvNextPairs ty =
         RefTypeTC    t       -> RefTypeTC    (q t)
         ArrayTypeTC  t       -> ArrayTypeTC  (q t)
         FnTypeTC  ss t fx cc cs -> FnTypeTC     (map q ss) (q t) (q fx) cc cs -- TODO unify calling convention?
-        CoroTypeTC  s t fx   -> CoroTypeTC  (q s) (q t) (q fx)
         ForAllTC  ktvs rho   ->
                 let prvNextPairs' = prvNextPairs `assocFilterOut` (map fst ktvs)
                 in  ForAllTC  ktvs (parSubstTcTy prvNextPairs' rho)
@@ -80,7 +79,6 @@ tySubst subst ty =
         ArrayTypeTC   t        -> ArrayTypeTC  (q t)
         TupleTypeTC k types    -> TupleTypeTC k (map q types)
         FnTypeTC  ss t fx cc cs -> FnTypeTC     (map q ss) (q t) (q fx) cc cs
-        CoroTypeTC  s t fx     -> CoroTypeTC  (q s) (q t) (q fx)
         ForAllTC  tvs rho      -> ForAllTC  tvs (q rho)
         RefinedTypeTC v e args -> RefinedTypeTC (fmap q v) e args
 
@@ -148,7 +146,7 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
  --tcLift $ putStrLn ("tcUnifyLoop: t1 = " ++ show t1 ++ "; t2 = " ++ show t2)
  if illegal t1 || illegal t2
   then tcFailsMore
-        [text "Bound type variables and/or polymoprhic types cannot be unified! Unable to unify"
+        [text "Bound type variables and/or polymorphic types cannot be unified! Unable to unify"
         ,text "\t" <> pretty t1 <> string "\nand\n\t" <> pretty t2
         ,text "t1::", showStructure t1, text "t2::", showStructure t2]
   else do
@@ -218,9 +216,6 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                             ++  (TypeConstrEq a1 a2)
                                :(TypeConstrEq fx1 fx2)
                                :constraints) tysub
-
-    ((CoroTypeTC  a1 a2 fxa), (CoroTypeTC  b1 b2 fxb)) ->
-        tcUnifyLoop ((TypeConstrEq a1 b1):(TypeConstrEq a2 b2):(TypeConstrEq fxa fxb):constraints) tysub
 
     ((ForAllTC  ktyvars1 rho1), (ForAllTC  ktyvars2 rho2)) ->
         let (tyvars1, kinds1) = unzip ktyvars1 in
@@ -331,7 +326,7 @@ unifyLabels ls1 ls2 constraints =
       (_ ,[])   -> return ([],ls1,constraints)
       ([],_ )   -> return (ls2,[],constraints)
       (l1:ll1, l2:ll2) ->
-        case compare (labelName l1) (labelName l2) of
+        case compare (labelName "unifyLabels.L1" l1) (labelName "unifyLabels.L2" l2) of
           LT -> do (ds1, ds2, cs) <- unifyLabels ll1 ls2 constraints
                    return (ds1, l1:ds2, cs)
           GT -> do (ds1, ds2, cs) <- unifyLabels ls1 ll2 constraints
@@ -349,9 +344,9 @@ isEffect nm = nm == "effect.Empty" || isEffectExtend nm
 isEffectEmpty (TyAppTC (TyConTC nm) _) = nm == "effect.Empty"
 isEffectEmpty _ = False
 
-labelName :: TypeTC -> String
-labelName (TyAppTC (TyConTC nm) _) = nm
-labelName ty = error $ "labelName used on non-ctor type " ++ show ty
+labelName :: String -> TypeTC -> String
+labelName _ (TyAppTC (TyConTC nm) _) = nm
+labelName msg ty = error $ "labelName(" ++ msg ++ ") used on non-ctor type " ++ show ty
 
 extractEffectExtend :: TypeTC -> Tc ([TypeTC],TypeTC)
 extractEffectExtend t
@@ -366,7 +361,7 @@ extractEffectExtend t
     extractLabel l
       = case {-expandSyn-} l of
           --TApp (TCon tc) [_,e] | typeConName tc == nameEffectExtend
-          TyAppTC (TyConTC nm) [_, e] | isEffectExtend nm
+          TyAppTC (TyConTC nm) [_, _e] | isEffectExtend nm
             -> do (ls,tl) <- extractEffectExtend l
                   sanityCheck (isEmptyEffect tl) $ "Found an embedded open effect type..."
                   return ls
@@ -376,7 +371,8 @@ extractEffectExtend t
 extractOrderedEffect tp = do
   (labs,tl) <- extractEffectExtend tp
   labss <- concatMapM expand labs
-  let slabs = List.nub $ (List.sortBy (\l1 l2 -> compare (labelName l1) (labelName l2)) labss)
+  let slabs = List.nub $ (List.sortBy (\l1 l2 -> compare (labelName "extractOrderedEffect" l1)
+                                                         (labelName "extractOrderedEffect" l2)) labss)
   return (slabs,tl)
   where
     expand l = do
@@ -402,7 +398,6 @@ collectAllUnificationVars xs = Set.toList (Set.fromList (concatMap go xs))
             TyAppTC  con types      -> concatMap go (con:types)
             TupleTypeTC _k  types   -> concatMap go types
             FnTypeTC  ss r fx _ _   -> concatMap go (r:fx:ss)
-            CoroTypeTC  s r fx      -> concatMap go [s,r,fx]
             ForAllTC  _tvs rho      -> go rho
             TyVarTC       {}        -> []
             MetaTyVarTC   m         -> [m]
@@ -432,7 +427,6 @@ zonkType x = do
         RefTypeTC       ty      -> liftM  (RefTypeTC    ) (zonkType ty)
         ArrayTypeTC     ty      -> do --debug $ "zonking array ty: " ++ show ty
                                       liftM (ArrayTypeTC  ) (zonkType ty)
-        CoroTypeTC s r fx       -> liftM3 (CoroTypeTC  ) (zonkType s) (zonkType r) (zonkType fx)
         RefinedTypeTC (TypedId ty id) e __args   -> liftM (\t -> RefinedTypeTC (TypedId t id) e __args) (zonkType ty)
         FnTypeTC ss r fx cc cs  -> do ss' <- mapM zonkType ss
                                       r' <- zonkType r
@@ -447,10 +441,12 @@ zonkType x = do
 -- types is updated according to the unification solution.
 unify :: TypeTC -> TypeTC -> [Doc] -> Tc ()
 unify t1 t2 msgs = do
-  --z1 <- zonkType t1
-  --z2 <- zonkType t2
-  --tcLift $ putDocLn $ green $ text $ "unify " ++ show t1 ++ " ~> " ++ show z1
-  --                               ++ "\n?==? " ++ show t2 ++ " ~> " ++ show z2 ++ " (" ++ msg ++ ")"
+{-
+  z1 <- zonkType t1
+  z2 <- zonkType t2
+  tcLift $ putDocLn $ green $ text ("unify " ++ show t1 ++ " ~> " ++ show z1
+                                ++ "\n?==? " ++ show t2 ++ " ~> " ++ show z2) <+> parens (vcat msgs)
+-}
   unify' 0 t1 t2 msgs
 
 unify' !depth t1 t2 msgs | depth == 512 =
@@ -490,8 +486,11 @@ unify' !depth t1 t2 msgs = do
                                      False   -> writeTcMetaTC m x2
                                      True    -> occurdCheck   m x2
   where
-     occurdCheck m t = tcFailsMore $ [text $ "Occurs check for"
+     occurdCheck m t = do b <- zonkType (MetaTyVarTC m)
+                          tcFailsMore $ [text $ "Occurs check for"
                                ,indent 8 (pretty (MetaTyVarTC m))
+                               ,text "which is bound to"
+                               ,indent 8 (pretty b)
                                ,text "failed in"
                                ,indent 8 (pretty t)
                                ] ++ msgs ++

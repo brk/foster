@@ -18,7 +18,7 @@ tokens {
   IF='if'; THEN='then'; ELSE='else'; TRU='True'; FLS='False';
   CASE='case'; END='end'; OF='of';
   AND='and'; OR='or'; EQ='='; MINUS='-';
-  TYPE='type';
+  TYPE='type'; EFFECT='effect'; HANDLE='handle';
   COMPILES='__COMPILES__';
   HASH_MARK='#';
 
@@ -55,6 +55,7 @@ decl_or_defn :
           | EQ phrase ';'                 -> ^(DEFN x phrase) // We should allow suffixes, but only of type application.
           )
         | data_defn ';'                   -> data_defn
+        | effect_defn ';'                 -> effect_defn
         ;
 
 // Or perhaps TYPE id OF (CASE ctor ...)+
@@ -62,6 +63,11 @@ data_defn : TYPE CASE nm=tyformal
                          ('(' args+=tyformal ')')*
                          data_ctor*             -> ^(DATATYPE $nm ^(MU $args*) ^(MU data_ctor*));
 data_ctor : OF dctor tatom*                     -> ^(OF dctor tatom*);
+
+effect_defn : EFFECT nm=tyformal
+                         ('(' args+=tyformal ')')*
+                         effect_ctor*             -> ^(EFFECT $nm ^(MU $args*) ^(MU effect_ctor*));
+effect_ctor : OF dctor tatom* ('=>' t)?           -> ^(OF dctor ^(MU tatom*) ^(MU t?));
 
 opr     :       SYMBOL;
 id      :       SMALL_IDENT | UPPER_IDENT | UNDER_IDENT;
@@ -144,6 +150,7 @@ atom    :       // syntactically "closed" terms
   | '(' ')'                             -> ^(TUPLE)
   | '(' COMPILES stmts ')'              -> ^(COMPILES stmts)
   | tuple
+  | handler
   | val_abs
   ;
 
@@ -163,6 +170,13 @@ tuple : '(' stmts ( AS  t    ')'        -> ^(TYANNOT stmts t)
       ;
 
 hashq : '#'?;
+
+handler : HANDLE action=e
+          effmatch*
+          (AS xform=e)?
+          'end'                         -> ^(HANDLE $action ^(MU effmatch*) ^(MU $xform));
+ 
+effmatch : OF patside '->' stmts        -> ^(CASE patside stmts);
 
 pmatch  : p ('if' e)? '->' stmts -> ^(CASE p e stmts);
 
@@ -206,7 +220,7 @@ tp // "type phrase"
   ;
 
 minusq : '-' ? ;
-single_effect : minusq a+ -> ^(EFFECT_SINGLE minusq a+);
+single_effect : minusq a tatom* -> ^(EFFECT_SINGLE minusq a tatom*);
 
 effect : '@' (  a      -> ^(EFFECT_SINGLE a)
              | '(' ')' -> ^(EFFECT_ROW)

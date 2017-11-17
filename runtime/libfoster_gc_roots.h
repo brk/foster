@@ -12,13 +12,15 @@
 
 typedef void (*CoroProc)(void*);
 
-struct foster_generic_coro {
+// Keep synchronized with foster_generic_coro_ast defined in fosterlower.cpp
+// and the offsets in Codegen-coro.cpp
+struct foster_bare_coro {
   coro_context ctx;
-  foster_generic_coro* sibling;
   CoroProc fn;
   void* env;
-  foster_generic_coro* invoker;
-  foster_generic_coro** indirect_self;
+  foster_bare_coro* parent;
+  foster_bare_coro** indirect_self;
+  int64_t effect_tag;
   int32_t status;
 };
 
@@ -26,12 +28,15 @@ struct foster_generic_coro {
 // needing to distinguish between suspended and dormant coroutines.
 enum {
   FOSTER_CORO_INVALID,
+
   /// coro which has been invoked from but not yet yielded back to.
   /// Not safe for another thread to steal!
   FOSTER_CORO_SUSPENDED,
+
   /// coro which has no subcoroutines: no action yet, or last
   /// action was a yield.
   FOSTER_CORO_DORMANT,
+
   FOSTER_CORO_RUNNING,
   FOSTER_CORO_DEAD
 };
@@ -39,11 +44,10 @@ enum {
 namespace foster {
 namespace runtime {
 
-  int32_t              coro_status(foster_generic_coro* c) ;
-  foster_generic_coro* coro_sibling(foster_generic_coro* c);
-  foster_generic_coro* coro_invoker(foster_generic_coro* c);
-  CoroProc             coro_fn(foster_generic_coro* c)     ;
-  coro_context         coro_ctx(foster_generic_coro* c)    ;
+  int32_t              coro_status(foster_bare_coro* c);
+  foster_bare_coro*    coro_parent(foster_bare_coro* c);
+  CoroProc             coro_fn(foster_bare_coro* c)    ;
+  coro_context         coro_ctx(foster_bare_coro* c)   ;
 
 // We can't rely on assert() to print messages for us when we're
 // not on the main thread's stack.

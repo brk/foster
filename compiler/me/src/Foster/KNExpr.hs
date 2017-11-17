@@ -35,10 +35,10 @@ import Foster.MainCtorHelpers(withDataTypeCtors)
 import Foster.Kind
 import Foster.TypeTC
 import Foster.AnnExpr
-import Foster.Infer(parSubstTcTy)
+import Foster.Infer(parSubstTcTy, zonkType)
+import Foster.Typecheck(tcTypeWellFormed)
 
 import Text.PrettyPrint.ANSI.Leijen
---import Debug.Trace(trace)
 
 import qualified Data.Graph.Inductive.Graph            as Graph
 import qualified Data.Graph.Inductive.Query.DFS        as Graph
@@ -46,7 +46,7 @@ import qualified Data.Graph.Inductive.PatriciaTree     as Graph
 import qualified Data.Graph.Inductive.Query.Dominators as Graph
 
 import Control.Monad.State(gets, liftIO, evalStateT, execStateT, StateT,
-                           execState, State,
+                           execState, State, forM_,
                            liftM, liftM2, get, put, lift)
 import Control.Monad.Except(ExceptT, runExceptT, throwError, catchError)
 import Data.IORef(IORef, newIORef, readIORef, writeIORef)
@@ -65,7 +65,8 @@ ccFresh s = ccFreshId (T.pack s)
 
 --------------------------------------------------------------------
 
-type KNState = (Context TypeTC, Map String [DataType TypeTC], Map String (DataType TypeIL))
+type KNState = (Context TypeTC, Map String [DataType TypeTC], Map String [EffectDecl TypeIL]
+               ,Map String (DataType TypeIL))
 -- convertDT needs st to call tcToIL
 -- kNormalCtors uses contextBindings and nullCtorBindings of Context TypeTC
 --      but needs st to call tcToIL
@@ -79,21 +80,62 @@ kNormalizeModule :: (ModuleIL (AnnExpr TypeTC) TypeTC)
                  -> Context TypeTC ->
                 Tc (ModuleIL KNExpr TypeIL)
 kNormalizeModule m ctx = do
-    let st0 = (ctx, contextDataTypes ctx, error "convertDT wanted a TypeIL...")
+    let eds = Map.fromListWith (++) [(typeFormalName (effectDeclName ed), [ed]) | ed <- moduleILeffectDecls m]
+    -- For debugging, try replacing the empty map by a call to error
+    -- (after disabling StrictData, presumably).
+    let st0 = (ctx, contextDataTypes ctx, Map.empty, Map.empty)
     dts'   <- mapM (convertDT st0) (moduleILdataTypes m)
     prims' <- mapM (convertDT st0) (moduleILprimTypes m)
+
+    wellFormedEffectDeclsTC        (moduleILeffectDecls m)
+    effds' <- mapM (convertED st0) (moduleILeffectDecls m)
+    wellFormedEffectDeclsIL effds'
+
+    let eds' = Map.fromListWith (++) [(typeFormalName (effectDeclName ed), [ed]) | ed <- effds']
+
     let allDataTypes = prims' ++ dts'
     let dtypeMap = Map.fromList [(typeFormalName (dataTypeName dt), dt) | dt <- allDataTypes]
-    let st = (ctx, contextDataTypes ctx, dtypeMap)
+    let st = (ctx, contextDataTypes ctx, eds', dtypeMap)
     decls' <- mapM (\(s,t) -> do t' <- tcToIL st t ; return (s, t')) (moduleILdecls m)
     body' <- do { ctors <- sequence $ concatMap (kNormalCtors st) allDataTypes
+                ; effectWrappers <- sequence $ concatMap (kNormalEffectWrappers st) effds'
                 ; body  <- kNormalize st (moduleILbody m)
-                ; return $ wrapFns ctors body
+                ; return $ wrapFns (ctors ++ effectWrappers) body
                 }
-    return $ ModuleIL body' decls' dts' prims' (moduleILsourceLines m)
+    return $ ModuleIL body' decls' dts' prims' effds' (moduleILsourceLines m)
       where
         wrapFns :: [FnExprIL] -> KNExpr -> KNExpr
         wrapFns fs e = foldr (\f body -> KNLetFuns [fnIdent f] [f] body) e fs
+
+        wellFormedEffectDeclsTC :: [EffectDecl TypeTC] -> Tc ()
+        wellFormedEffectDeclsTC effdecls = do mapM_ wellFormedEffectDeclTC effdecls
+
+        wellFormedEffectDeclTC :: EffectDecl TypeTC -> Tc ()
+        wellFormedEffectDeclTC effdecl = do
+          let extctx = extendTyCtx ctx (map convertTyFormal $ effectDeclTyFormals effdecl)
+          forM_ (effectDeclCtors effdecl) $ \ec -> do
+            -- Effect decls might only mention some of their type parameters in output types,
+            -- which don't appear in the corresponding data type declarations. So we'll manually
+            -- check the type formals, which has the side effect of setting their kinds,
+            -- which might end up being checked in wellFormedEffectDeclIL.
+            tcTypeWellFormed "effect ctor output" extctx (effectCtorOutput ec)
+
+        wellFormedEffectDeclsIL :: [EffectDecl TypeIL] -> Tc ()
+        wellFormedEffectDeclsIL effdecls = do mapM_ wellFormedEffectDeclIL effdecls
+
+        wellFormedEffectDeclIL :: EffectDecl TypeIL -> Tc ()
+        wellFormedEffectDeclIL effdecl = do
+          forM_ (effectDeclCtors effdecl) $ \ec -> do
+            case kindOf (effectCtorOutput ec) of
+              KindAnySizeType ->
+                tcFails [text "The output type for effects must be representable as a pointer."
+                        ,text "The effect constructor `"
+                                <> text (T.unpack $ dataCtorName (effectCtorAsData ec))
+                                <> text "` has an output type, " <> pretty (effectCtorOutput ec)
+                                <> text ", which appears non-pointer-sized."
+                        ,prettyWithLineNumbers (effectDeclRange effdecl)]
+              _ -> return ()
+
 
 qVar :: KNState -> TypedId TypeTC -> KN (TypedId TypeIL)
 qVar st (TypedId t id) = do
@@ -106,6 +148,14 @@ kNormalizeFn st fn = do
     vs <- mapM (qVar st) (fnVars fn)
     body <- kNormalize st (fnBody fn)
     checkForUnboxedPolymorphism fn (tidType v)
+    when (show (tidIdent $ fnVar fn) `elem` ["main", "print_text_bare"]) $ do
+      let fx = fnTypeTCEffect (tidType (fnVar fn))
+      tcLift $ putStrLn $ "kNormalizeFn saw fn " ++ show (tidIdent $ fnVar fn) ++ " with type " ++ show (tidType (fnVar fn))
+      tcLift $ putStrLn $ "kNormalizeFn fx raw " ++ show fx
+      fx' <- zonkType fx
+      tcLift $ putStrLn $ "kNormalizeFn fx zonked " ++ show fx'
+
+
     return $ Fn v vs body (fnIsRec fn) (fnAnnot fn)
 
 checkForUnboxedPolymorphism fn ft = do
@@ -218,9 +268,22 @@ kNormalize st expr =
                     exprs' <- mapM go exprs
                     e'     <- go e
                     return $ KNLetRec ids exprs' e'
+
+      AnnHandler annot t fx e arms mb_xform resumeids -> do
+                                  t' <- qt t
+                                  fx' <- qt fx
+                                  e' <- go e
+                                  arms' <- compileHandlerArms arms
+                                  mb_xform' <- liftMaybe go mb_xform
+                                  if kindOf t' == KindAnySizeType
+                                    then tcFails [text "The type of effect-invoking code must (currently) be representable as a pointer."
+                                                 ,text "This appears to have the wrong kind: " <> pretty t'
+                                                 ,highlightFirstLineDoc (rangeOf annot)]
+                                    else return $ KNHandler annot t' fx' e' arms' mb_xform' resumeids
+
       AnnCase _rng t e arms -> do t' <- qt t
                                   e' <- go e
-                                  nestedLetsDo [return e'] (\[v] -> compileCaseArms arms t' v)
+                                  nestedLetsDo [return e'] (\[v] -> do compileCaseArms arms t' v)
       AnnIf _rng t  a b c   -> do t' <- qt t
                                   a' <- go a
                                   [b', c' ] <- mapM go [b, c]
@@ -250,7 +313,7 @@ kNormalize st expr =
 
                      _otherwise -> do
                        -- v[types](args) ~~>> let <fresh> = v[types] in <fresh>(args)
-                       error "tyapp of non-coro primitive..."
+                       error $ "tyapp of non-coro primitive... " ++ show primName
                        {-
                        apptysi <- mapM qt apptys
                        prim' <- ilPrim st prim
@@ -290,6 +353,17 @@ kNormalize st expr =
                            nestedLets (     map go es) (\    vars  -> KNCall t v' vars)
         knCall t b es = do nestedLets (go b:map go es) (\(vb:vars) -> KNCall t vb vars)
 
+        compileHandlerArms :: [CaseArm Pattern (AnnExpr TypeTC) TypeTC]
+                        -> KN [CaseArm PatternRepr KNExpr TypeIL]
+        compileHandlerArms arms = do
+          let gtp (CaseArm p e g b r) = do
+                p' <- qp p
+                e' <- kNormalize st e
+                g' <- liftMaybe (kNormalize st) g
+                b' <- mapM qv b
+                return (CaseArm p' e' g' b' r)
+          mapM gtp arms
+
         -- We currently perform the following source-to-source transformation
         -- on the result of a normalized pattern match:
         --  * Guard splitting:
@@ -299,19 +373,10 @@ kNormalize st expr =
         --      where continue-matching ! is a lambda containing the
         --      translation of the remaining arms.
         compileCaseArms :: [CaseArm Pattern (AnnExpr TypeTC) TypeTC]
-                        -> TypeIL
-                        -> TypedId TypeIL
+                        -> TypeIL -> TypedId TypeIL
                         -> KN KNExpr
         compileCaseArms arms t v = do
-          let gtp ::    (CaseArm Pattern (AnnExpr TypeTC) TypeTC)
-                  -> KN (CaseArm PatternRepr KNExpr TypeIL)
-              gtp (CaseArm p e g b r) = do
-                p' <- qp p
-                e' <- kNormalize st e
-                g' <- liftMaybe (kNormalize st) g
-                b' <- mapM qv b
-                return (CaseArm p' e' g' b' r)
-          arms' <- mapM gtp arms
+          arms' <- compileHandlerArms arms
 
           let go (arm:arms) | isGuarded arm = go' [arm] arms
               go allArms = uncurry go' (span (not . isGuarded) allArms)
@@ -355,13 +420,20 @@ kNormalize st expr =
 
         lookupCtor :: CtorId -> DataCtor TypeIL
         lookupCtor cid =
-            let (_, _, dtypeMap) = st in
+            let (_, _, effMap, dtypeMap) = st in
             case Map.lookup (ctorTypeName cid) dtypeMap of
                Just dt -> let
                             [ctor] = filter (\ctor -> dataCtorName ctor == T.pack (ctorCtorName cid))
                                             (dataTypeCtors dt) in
                           ctor
-               Nothing -> error $ "lookupCtor failed for " ++ show cid
+               Nothing ->
+                  case Map.lookup (ctorTypeName cid) effMap of
+                    Nothing -> error $ "lookupCtor failed for " ++ show cid
+                    Just eff ->
+                      let
+                        [ctor] = filter (\ctor -> dataCtorName ctor == T.pack (ctorCtorName cid))
+                                        (map effectCtorAsData $ concatMap effectDeclCtors eff) in
+                      ctor
 
         lookupCtorRepr :: Show ty => DataCtor ty -> CtorRepr
         lookupCtorRepr ctor = unDataCtorRepr "lookupCtorRepr" ctor
@@ -393,7 +465,8 @@ kNormalize st expr =
 
         coroPrimFor s | s == T.pack "coro_create" = Just $ CoroCreate
         coroPrimFor s | s == T.pack "coro_invoke" = Just $ CoroInvoke
-        coroPrimFor s | s == T.pack "coro_yield"  = Just $ CoroYield
+        coroPrimFor s | s == T.pack "coro_yield_to" = Just $ CoroYield
+        coroPrimFor s | s == T.pack "coro_parent" = Just $ CoroParent
         coroPrimFor _ = Nothing
 
         ilPrim :: FosterPrim TypeTC -> KN (FosterPrim TypeIL)
@@ -406,6 +479,7 @@ kNormalize st expr =
             PrimIntTrunc i1 i2 ->   return $ PrimIntTrunc i1 i2
             PrimInlineAsm ty s c x -> do ty' <- qt ty
                                          return $ PrimInlineAsm ty' s c x
+            LookupEffectHandler tag -> return $ LookupEffectHandler tag
             CoroPrim {} -> error $ "Shouldn't yet have constructed CoroPrim!"
 
 unUnified :: Unifiable v -> Tc (Maybe v)
@@ -424,7 +498,7 @@ tcToIL st typ = do
      TyConTC nm -> return $ TyConIL nm
      TyAppTC (TyConTC "Float64") [] -> return $ TyAppIL (TyConIL "Float64") []
      TyAppTC (TyConTC dtname) tys -> do
-         let (_, dtypeMapX, _) = st
+         let (_, dtypeMapX, effDeclMapX, _) = st
          case Map.lookup dtname dtypeMapX of
            Just [dt] -> case dtUnboxedRepr dt of
              Nothing -> do iltys <- mapM q tys
@@ -432,10 +506,12 @@ tcToIL st typ = do
              Just rr -> do q $ rr tys
            Just dts | length dts > 1
              -> tcFails [text "Multiple definitions for data type" <+> text dtname]
-           _ -> tcFails [text "Unable to find data type" <+> text dtname
-                        ,text "contextDataTypes ="
-                        ,pretty (map fst $ Map.toList dtypeMapX)
-                ]
+           _ -> case Map.lookup dtname effDeclMapX of
+                  Just [_] -> do iltys <- mapM q tys
+                                 return $ TyAppIL (TyConIL dtname) iltys
+                  Just eds | length eds > 1
+                    -> tcFails [text "Multiple definitions for effect " <+> text dtname]
+                  _ -> tcFails [text "Unable to find effect" <+> text dtname]
      TyAppTC _ _ -> error $ "tcToIL saw TyApp of non-TyCon"
      PrimIntTC  size    -> do return $ PrimIntIL size
      TupleTypeTC ukind types -> do tys <- mapM q types
@@ -453,14 +529,14 @@ tcToIL st typ = do
      RefinedTypeTC v e __args -> do v' <- qVar st v
                                     e' <- kNormalize st e
                                     return $ RefinedTypeIL v' e' __args
-     CoroTypeTC  s t _fx -> do [x,y] <- mapM q [s,t]
-                               return $ CoroTypeIL x y
      RefTypeTC  ty       -> do liftM PtrTypeIL (q ty)
      ArrayTypeTC   ty    -> do liftM ArrayTypeIL (q ty)
      ForAllTC  ktvs rho  -> do t <- q rho
                                return $ ForAllIL ktvs t
      TyVarTC  tv@(SkolemTyVar _ _ k) _mbk -> return $ TyVarIL tv k
      TyVarTC  tv@(BoundTyVar _ _sr)  uniK -> do
+        --do uk <- unUnified uniK
+        --   tcLift $ putDocLn $ red (text "tyVarTC(bound) ") <> pretty typ <> text "  had unifiable kind as " <> pretty uk
         k <- unUnifiedWithDefault uniK KindAnySizeType
         return $ TyVarIL tv k
      MetaTyVarTC m -> do
@@ -499,6 +575,27 @@ dtUnboxedRepr dt =
       where mapping = [(BoundTyVar nm rng, ty)
                       | (ty, TypeFormal nm rng _kind) <- zip tys formals]
 
+convertDataCtor f (DataCtor dataCtorName tyformals types repr range) = do
+  tys <- mapM f types
+  return $ DataCtor dataCtorName tyformals tys repr range
+
+convertED :: KNState -> EffectDecl TypeTC -> KN (EffectDecl TypeIL)
+convertED st (EffectDecl name formals effctors range) = do
+  let dctors = [dctor | EffectCtor dctor _ <- effctors]
+  let tys    = [ty    | EffectCtor _    ty <- effctors]
+  fakeDT <- convertDT st $ DataType name formals dctors range
+  tys' <- mapM (tcToIL st) tys
+  let effctors' = [EffectCtor dctor' ty' | (dctor', ty') <- zip (dataTypeCtors fakeDT) tys']
+  return $ EffectDecl name formals effctors' range
+  
+  {-
+  ctors' <- mapM (\(EffectCtor dctor ty) -> do
+    let f = tcToIL st
+    dctor' <- convertDataCtor f dctor
+    ty'    <- f ty
+    return $ EffectCtor dctor' ty') ctors
+  return $ EffectDecl name formals ctors' range
+  -}
 
 -- Wrinkle: need to extend the context used for checking ctors!
 convertDT :: KNState -> DataType TypeTC -> KN (DataType TypeIL)
@@ -512,10 +609,6 @@ convertDT st (DataType dtName tyformals ctors range) = do
   let reprMap = Map.fromList $ optimizedCtorRepresesentations dt
   return $ dt { dataTypeCtors = withDataTypeCtors dt (getCtorRepr reprMap optrep) }
     where
-      convertDataCtor f (DataCtor dataCtorName tyformals types repr range) = do
-        tys <- mapM f types
-        return $ DataCtor dataCtorName tyformals tys repr range
-
       getCtorRepr :: Map.Map CtorId CtorRepr -> Bool -> CtorId -> DataCtor TypeIL -> Int -> DataCtor TypeIL
       getCtorRepr _ _     _cid dc _n | Just _ <- dataCtorRepr dc = dc
       getCtorRepr _ False _cid dc  n = dc { dataCtorRepr = Just (CR_Default n) }
@@ -710,6 +803,14 @@ handleCoercionsAndConstraints ae = do
 
         AnnTuple rng _t kind exprs -> do aies <- mapM q exprs
                                          return $ AnnTuple rng _t kind aies
+        AnnHandler _rng t fx e arms mb_xform resumeid -> do
+                                         ei <- q e
+                                         bsi <- mapM (\(CaseArm p e guard bindings rng) -> do
+                                                     e' <- q e
+                                                     guard' <- liftMaybe q guard
+                                                     return (CaseArm p e' guard' bindings rng)) arms
+                                         mb_x <- liftMaybe q mb_xform
+                                         return $ AnnHandler _rng t fx ei bsi mb_x resumeid
         AnnCase _rng t e arms      -> do ei <- q e
                                          bsi <- mapM (\(CaseArm p e guard bindings rng) -> do
                                                      e' <- q e
@@ -733,9 +834,10 @@ kindCheckSubsumption :: SourceRange -> ((TyVar, Kind), TypeTC, Kind) -> Tc ()
 kindCheckSubsumption rng ((tv, tvkind), ty, tykind) = do
   if tykind `subkindOf` tvkind
     then return ()
-    else tcFails [text $ "Kind mismatch:" ++ highlightFirstLine rng
-       ++ "Cannot instantiate type variable " ++ show tv ++ " of kind " ++ show tvkind
-       ++ "\nwith type " ++ show ty ++ " of kind " ++ show tykind]
+    else do ty' <- zonkType ty
+            tcFails [text "Kind mismatch:", highlightFirstLineDoc rng
+              , text "Cannot instantiate type variable " <> pretty tv <> text " of kind " <> pretty tvkind
+              , indent 8 (text "with type " <> pretty ty' <> text " of kind " <> pretty tykind)]
 
 
 collectIntConstraints :: AnnExpr TypeTC -> Tc ()
@@ -923,7 +1025,7 @@ kNormalCtors st dtype =
                                  FnTypeIL _ r _ _ -> r
                                  ForAllIL _ (FnTypeIL _ r _ _) -> r
                                  _ -> error $ "KNExpr.hs: kNormalCtor given non-function type!"
-      let (ctx, _, _) = st
+      let (ctx, _, _, _) = st
       case termVarLookup cname (contextBindings ctx) of
         Nothing -> case termVarLookup cname (nullCtorBindings ctx) of
           Nothing -> error $ "Unable to find binder for constructor " ++ show cname
@@ -938,6 +1040,65 @@ kNormalCtors st dtype =
 
     thunk (ForAllIL ktvs rho) = ForAllIL ktvs (thunk rho)
     thunk ty = FnTypeIL [] ty FastCC FT_Proc
+
+-- Given::
+--     effect E (A1::K1) ... (An::Kn)
+--        of E_Op1 (T1::KT1) .. (Tn::KTn) => Tr
+--        ...
+--  we emit a procedure called ``do_E_Op1`` with body::
+--    { args... =>
+--      coro = prim lookup_handler_for_effect (E A1 .. An);
+--      coro_yield_to coro (Op1 args...)
+--    }
+--
+-- which the program treats as if it has type::
+--   forall (A1::K1) ... (An::Kn) { T1 => ... => Tn => Tr @ (E A1 ... An) }
+--
+--
+kNormalEffectWrappers :: KNState -> EffectDecl TypeIL -> [KN (FnExprIL)]
+kNormalEffectWrappers st ed = map kNormalEffectWrapper (zip [0..] (effectDeclCtors ed))
+  where
+    kNormalEffectWrapper :: (Int, EffectCtor TypeIL) -> KN FnExprIL
+    kNormalEffectWrapper (n, EffectCtor (DataCtor cname tyformals tys _repr range) outty) = do
+      let dname = effectDeclName ed
+      let arity = Prelude.length tys
+      let cid   = CtorId (typeFormalName dname) (T.unpack cname) arity
+      let genFreshVarOfType t = do fresh <- knFresh ".autogen"
+                                   return $ TypedId t fresh
+      vars <- mapM genFreshVarOfType tys
+      coro   <- knFresh ".coro"
+      opval  <- knFresh ".opval"
+      let effty = TyAppIL (TyConIL $ typeFormalName $ effectDeclName ed)
+                          [TyVarIL (BoundTyVar nm sr) kind | TypeFormal nm sr kind <- tyformals]
+          coroty = TupleTypeIL KindPointerSized []
+
+      let {- resty = case tidType tid of
+                        FnTypeIL _ r _ _ -> r
+                        ForAllIL _ (FnTypeIL _ r _ _) -> r
+                        _ -> error $ "KNExpr.hs: kNormalCtor given non-function type!"
+          -}
+          repr = CR_Default n
+          effb = case effty of
+                   TyAppIL base _ -> base
+                   other          -> other
+          body = KNLetVal opval (KNAppCtor effty (cid, repr) vars) -- (KNCallPrim range effty (PrimOp "effect_ctor" effty) vars)
+                   (KNLetVal coro (KNCallPrim range coroty (PrimOp "lookup_handler_for_effect" effb) [])
+                    (KNCallPrim range outty (CoroPrim CoroYield outty effty)
+                                            [TypedId coroty coro, TypedId effty opval]))
+      let ret tid = return
+               Fn { fnVar   = tid
+                  , fnVars  = vars
+                  , fnBody  = body
+                  , fnIsRec = ()
+                  , fnAnnot = annotForRange range
+                  }
+      let (ctx, _, _, _) = st
+      let do_cname = T.concat [T.pack "do_", cname]
+      case termVarLookup do_cname (contextBindings ctx) of
+        Nothing -> error $ "KNExpr.hs: Unable to find binder for effect constructor " ++ show do_cname
+        Just (TypedId t id, _) -> do t' <- tcToIL st t
+                                     ret (TypedId t' id)
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 
@@ -986,6 +1147,11 @@ collectFunctions knf = go [] (fnBody knf)
           KNNotInlined _ e -> go xs e
           KNIf            _ _ e1 e2   -> go (go xs e1) e2
           KNLetVal          _ e1 e2   -> go (go xs e1) e2
+          KNHandler _ _  _ e1 arms mb_e _ -> let es = concatMap caseArmExprs arms
+                                                 ex = case mb_e of
+                                                        Nothing -> []
+                                                        Just e2 -> [e2] in
+                                                   foldl' go xs (ex ++ e1:es)
           KNCase       _ _ arms       -> let es = concatMap caseArmExprs arms in
                                        foldl' go xs es
           KNLetRec     _ es b       -> foldl' go xs (b:es)
@@ -1017,6 +1183,11 @@ collectMentions knf = go Set.empty (fnBody knf)
           KNCall        _ v vs -> vv (uu xs vs) v
           KNIf          _ v e1 e2   -> go (go (vv xs v) e1) e2
           KNLetVal      _   e1 e2   -> go (go xs e1) e2
+          KNHandler _ _  _ ea arms mb _ -> let es = concatMap caseArmExprs arms
+                                               xx = foldl' go (go xs ea) es in
+                                           case mb of
+                                             Nothing -> xx
+                                             Just ex -> go xx ex
           KNCase        _ v arms    -> let es = concatMap caseArmExprs arms in
                                        foldl' go (vv xs v) es
           KNLetRec     _ es b ->       foldl' go xs (b:es)
@@ -1050,6 +1221,7 @@ rebuildWith rebuilder e = q e
       KNIf          ty v ethen eelse -> KNIf       ty v (q ethen) (q eelse)
       KNLetVal      id  e1   e2      -> KNLetVal   id   (q e1)    (q e2)
       KNLetRec      ids es   e       -> KNLetRec   ids (map q es) (q e)
+      KNHandler _a ty fx ea arms mbe resumeid -> KNHandler _a ty fx (q ea) (map (fmapCaseArm id q id) arms) (fmap q mbe) resumeid
       KNCase        ty v arms        -> KNCase     ty v (map (fmapCaseArm id q id) arms)
       KNLetFuns     ids fns e        -> mkLetFuns (rebuilder (zip ids fns)) (q e)
       KNCompiles _r _t e             -> KNCompiles _r _t (q e)
@@ -1073,12 +1245,14 @@ knSinkBlocks m = do
 localBlockSinking :: (Pretty t, Show t) => Fn RecStatus (KNExpr' RecStatus t) t -> Fn RecStatus (KNExpr' RecStatus t) t
 localBlockSinking knf =
     let newfn = rebuildFn knf in
+    newfn
+      {-
     let !nu = show (pretty $ fnBody newfn)
         !ol = show (pretty $ fnBody knf) in
     if nu == ol then
       newfn
       else
-        {-trace ("localBlockSinking turned\n\n" ++ show (showStructure (fnBody knf))
+        trace ("localBlockSinking turned\n\n" ++ show (showStructure (fnBody knf))
               ++ "\n\ninto\n" ++ show (showStructure (fnBody newfn))
               ++ "\nallMentions: " ++ show allMentions
               ++ "\nparents: " ++ show parents
@@ -1087,7 +1261,8 @@ localBlockSinking knf =
               ++ "\nfunctions: " ++ show (Set.toList functionsSet)
               ++ "\ncallGraph: " ++ show [(n2b x, n2b y) | (x,y) <- Graph.edges callGraph]
               ++ "\nrelocList: " ++ show [(id,tidIdent (fnVar fn), dom) | ((id,fn),dom) <- relocationTargetsList]
-              )-} newfn
+              ) newfn
+              -}
  where
   rebuildFn   = rebuildFnWith rebuilder addBindingsFor
   functions   = collectFunctions knf
@@ -1446,6 +1621,7 @@ knLoopHeaders' expr addLoopHeadersForNonTailLoops = do
     KNCompiles r t e -> KNCompiles r t (q tailq e)
     KNInlined _t0 _to _tn _old new -> q tailq new
     KNNotInlined _x e -> q tailq e
+    KNHandler a  ty fx ea arms mbe resumeid -> KNHandler a ty fx (q NotTail ea) (map (fmapCaseArm id (q tailq) id) arms) (fmap (q tailq) mbe) resumeid
     KNCase        ty v arms     -> KNCase ty v (map (fmapCaseArm id (q tailq) id) arms)
     KNIf          ty v e1 e2    -> KNIf     ty v (q tailq e1) (q tailq e2)
     KNLetVal      id   e1 e2    -> let e1' = q NotTail e1
@@ -2257,6 +2433,26 @@ knInline' expr env = do
                   Rez e1' <- knInline' e1 env
                   Rez e2' <- knInline' e2 env
                   residualize $ KNIf ty v' e1' e2'
+
+    KNHandler annot ty fx ea patbinds mb_xform resumeid -> do
+      let inlineArm (CaseArm !pat !expr !guard !vars _rng) = do
+              !ops <- mapM (\v -> mkOpExpr ("knhandler:"++show (tidIdent v)) (KNVar v) env) vars
+              let !ids  = map tidIdent vars
+              !ids'  <- mapM freshenId ids
+              let !env' = extendEnv ids ids' (map VO_E ops) env
+              !pat'  <- qp   (resVar env' ) pat
+              !vars' <- mapM (resVar env' ) vars
+              Rez !expr' <- knInline' expr env'
+              -- TODO handle guard?
+              return (CaseArm pat' expr' guard vars' _rng)
+
+      Rez ea' <- knInline' ea env
+      patbinds' <- mapM inlineArm patbinds
+      mb_xform' <- case mb_xform of
+                    Nothing -> return Nothing
+                    Just x -> do Rez x' <- knInline' x env
+                                 return $ Just x'
+      residualize $ KNHandler annot ty fx ea' patbinds' mb_xform' resumeid
 
     KNCase        ty v patbinds -> do
         let inlineArm (CaseArm !pat !expr !guard !vars _rng) = do

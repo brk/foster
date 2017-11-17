@@ -3,14 +3,14 @@
 -- Use of this source code is governed by a BSD-style license that can be
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
-module Foster.Typecheck(tcSigmaToplevel, tcSigmaToplevelNonFn,
+module Foster.Typecheck(tcSigmaToplevel, tcSigmaToplevelNonFn, tcTypeWellFormed,
                         tcContext, tcType, fnTypeShallow) where
 
 import Prelude hiding ((<$>))
 
 import qualified Data.List as List(length, zip)
 import Data.List(foldl', (\\))
-import Control.Monad(liftM, forM, liftM, liftM2, liftM3, when)
+import Control.Monad(liftM, forM, liftM, liftM2, when)
 
 import qualified Data.Text as T(Text, pack, unpack, length, head)
 import Data.Map(Map)
@@ -336,6 +336,7 @@ tcRho ctx expr expTy = do
       E_LetAST rng binding  e        -> tcRhoLet      ctx rng   binding  e expTy
       E_TyApp  rng e types           -> tcRhoTyApp    ctx rng   e types    expTy
       E_TyCheck rng e ty             -> tcRhoTyCheck  ctx rng   e ty       expTy
+      E_Handler rng e arms mb_xform  -> tcRhoHandler  ctx rng   e arms mb_xform expTy
       E_Case   rng a branches        -> tcRhoCase     ctx rng   a branches expTy
       E_AllocAST rng a rgn           -> tcRhoAlloc    ctx rng   a rgn      expTy
       E_StoreAST rng e1 e2           -> tcRhoStore    ctx rng   e1 e2      expTy
@@ -441,7 +442,11 @@ tcSigmaPrim :: Context SigmaTC -> ExprAnnot -> T.Text -> Maybe (AnnExpr SigmaTC)
 tcSigmaPrim ctx annot name = do
   case termVarLookup name (primitiveBindings ctx) of
     Just (avar, _) -> Just $  mkAnnPrimitive annot ctx avar
-    Nothing        -> Nothing
+    Nothing        ->
+      if name == T.pack "log-type"
+        then let ty = unitTypeTC in
+             Just (AnnPrimitive annot ty $ NamedPrim (TypedId ty (Ident name 0)))
+        else Nothing
 
 mkAnnPrimitive :: ExprAnnot -> Context SigmaTC -> TypedId SigmaTC -> AnnExpr SigmaTC
 mkAnnPrimitive annot ctx tid =
@@ -453,6 +458,7 @@ mkAnnPrimitive annot ctx tid =
         Just (PrimIntTrunc i1 i2) -> PrimIntTrunc i1 i2
         Just (CoroPrim {}       ) -> error $ "mkAnnPrim saw unexpected CoroPrim"
         Just (PrimInlineAsm {}  ) -> error $ "mkAnnPrim saw unexpected PrimInlineAsm"
+        Just (LookupEffectHandler tag) -> LookupEffectHandler tag
         Nothing                   -> NamedPrim tid
 -- }}}
 
@@ -950,6 +956,13 @@ tryGetVarName _ = ""
 tcSigmaCall :: Context SigmaTC -> ExprAnnot -> ExprAST TypeAST
             -> [ExprAST TypeAST] -> Expected SigmaTC -> Tc (AnnExpr SigmaTC)
 
+tcSigmaCall ctx rng (E_PrimAST _ name@"log-type" _ _) [arg] exp_ty = do
+    e <- inferSigma ctx arg name
+    tcLift $ putDocLn $ yellow (text "inferred type of ") <> highlightFirstLineDoc (rangeOf arg) <$> text " is " <> blue (pretty (typeTC e))
+    t' <- zonkType (typeTC e)
+    tcLift $ putDocLn $ yellow (text "which zonks to ") <> pretty t'
+    matchExp exp_ty (AnnTuple rng unitTypeTC KindPointerSized []) name
+
 tcSigmaCall ctx rng (E_PrimAST _ name@"assert-invariants" _ _) argtup exp_ty = do
     let mkFnTypeTC args ret = FnTypeTC args ret emptyEffectTC
                                       (UniConst FastCC) (UniConst FT_Func)
@@ -1007,42 +1020,23 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
         dbg $ text "tcRhoCall deferring to instSigma"
 
         dbg $ green (text "call: annbase is: ") <> showStructure annbase
-        {-
-        case annbase of
-          E_AnnTyApp _ _ (AnnPrimitive _ _ (NamedPrim tid)) tys
-            | identPrefix (tidIdent tid) == T.pack "coro_create"
-            -> do debugIf dbgCoro $ green (text "call: coro create: tys: ") <$$> pretty tys
-                  debugIf dbgCoro $ showStructure base
-                  return ()
-          E_AnnTyApp _ _ (AnnPrimitive _ _ (NamedPrim tid)) (inp_ty : out_ty : eff)
-            | identPrefix (tidIdent tid) == T.pack "coro_invoke"
-            -> do debugIf dbgCoro $ green (text "call: coro invoke: in/out: ") <$$> pretty inp_ty <$$> pretty out_ty
-                  return ()
-          E_AnnTyApp _ _ (AnnPrimitive _ _ (NamedPrim tid)) (inp_ty : out_ty : eff)
-            | identPrefix (tidIdent tid) == T.pack "coro_yield"
-            -> do debugIf dbgCoro $ green (text "call: coro yield: in/out: ") <$$> pretty inp_ty <$$> pretty out_ty
-                  fx <- tcGetCurrentFnFx
-                  debugIf dbgCoro $ text "call: coro yield: fx = " <> pretty fx <$$> showStructure fx
-                  unify fx (TupleTypeTC (UniConst KindPointerSized) [inp_ty, out_ty])
-                        [text $ "Inconsistent use of coro_yield " ++ highlightFirstLine (rangeOf rng)]
-                  return ()
-          _ -> return ()
-          -}
 
         ctxFx <- tcGetCurrentFnFx
-        if not $ isEmptyEffect fx
+        fx' <- zonkType fx
+        if not $ isEmptyEffect fx'
           then do
+            ctxFx' <- zonkType ctxFx
             debugIf False $ text (highlightFirstLine (rangeOf rng))
-            debugIf False $ text "ctxFx: " <> pretty ctxFx
-            debugIf False $ text "fx: " <> pretty fx
+            debugIf False $ text "ctxFx: " <> pretty ctxFx'
+            debugIf False $ text "fx: " <> pretty fx'
             debugIf False $ showStructure fun_ty
             debugIf False $ text "len argexprs:" <> pretty (length argexprs) <+> text ("tSC("++tryGetVarName base++")")
-            unify fx ctxFx [text $ "Inconsistent effects at call site: "
-                           ,text $ highlightFirstLine (rangeOf rng)
-                           ,text $ "Effect of called function:"
-                           ,indent 4 (pretty fx)
-                           ,text $ "Effect of calling context:"
-                           ,indent 4 (pretty ctxFx)]
+            unify fx ctxFx' [text $ "Inconsistent effects at call site: "
+                            ,text $ highlightFirstLine (rangeOf rng)
+                            ,text $ "Effect of called function:"
+                            ,indent 4 (pretty fx')
+                            ,text $ "Effect of calling context:"
+                            ,indent 4 (pretty ctxFx')]
           else return ()
 
         let app = mkAnnCall rng res_ty annbase args
@@ -1100,7 +1094,6 @@ tcTypeEquiv t1 t2 =
      (TyAppTC      con1 tys1  , TyAppTC   con2 tys2     ) -> allP tcTypeEquiv (con1:tys1) (con2:tys2)
      (TupleTypeTC _k1    tys1 , TupleTypeTC _k2    tys2 ) -> {- TODO kinds -} allP tcTypeEquiv tys1 tys2
      (FnTypeTC     s1 t1 fx1 c1 x1, FnTypeTC     s2 t2 fx2 c2 x2) -> allP q s1 s2 && q t1 t2 && q fx1 fx2 && liftEqUnifiable (==) c1 c2 && liftEqUnifiable (==) x1 x2
-     (CoroTypeTC   s1 t1 fx1  , CoroTypeTC   s2 t2 fx2  ) -> q s1 s2 && q t1 t2 && q fx1 fx2
      (ForAllTC   tvs1 rho1    , ForAllTC   tvs2 rho2    ) -> allP (==) tvs1 tvs2 && q rho1 rho2
      (TyVarTC    tv1 _mbk1    , TyVarTC    tv2 _mbk2    ) -> tv1 == tv2
      (MetaTyVarTC m1          , MetaTyVarTC m2          ) -> m1 == m2
@@ -1182,7 +1175,7 @@ tcRhoFn ctx f expTy = do
 mkFnName pendings = do
  u <- newTcUniq
  return $
-     T.pack $ (joinWith "__" (reverse $ map T.unpack pendings)) ++ ".anon." ++ show u ++ "_"
+     T.pack $ (joinWith "__" (reverse $ map T.unpack pendings)) ++ ".anon" ++ "." ++ show u ++ "_"
 
 -- G{a1:k1}...{an:kn}{x1 : t1}...{xn : tn} |- e ::: tb
 -- ---------------------------------------------------------------------
@@ -1550,7 +1543,6 @@ tcType' ctx refinementArgs ris typ = do
         RefTypeAST    ty      -> liftM   RefTypeTC   (q ty)
         ArrayTypeAST  ty      -> liftM   ArrayTypeTC (q ty)
         TupleTypeAST  k types -> liftM  (TupleTypeTC (UniConst k)) (mapM q types)
-        CoroTypeAST   s r fx  -> liftM3  CoroTypeTC  (q s) (q r) (q fx)
         TyConAST nam          -> return $ TyConTC nam
         TyAppAST con types    -> do kindCheckDT con types ctx
                                     liftM2 TyAppTC (q con) (mapM q types)
@@ -1668,6 +1660,101 @@ describeNumber n zero = text $
 -- }}}
 
 
+-- {{{ Effect handlers:
+{-
+    { e } : { r @ (eff|effs) }
+    arm : Eff => r'?    (r' if xform, else r)
+    xform : { r => r' }
+    
+    Within each arm declared as Eff => o,
+        resume      : { o => r'? @ effs }
+    and resume_bare : { o => r'? @ (eff|effs) }
+    -----------------------------------------
+    HANDLE e arms (AS xform) END : r'? @ effs
+-}
+tcRhoHandler :: Context SigmaTC -> ExprAnnot
+             -> ExprAST TypeAST -> [CaseArm EPattern Term TypeAST] -> Maybe (ExprAST TypeAST)
+             -> Expected RhoTC -> Tc (AnnExpr RhoTC)
+tcRhoHandler  ctx rng e arms mb_xform expTy = do
+  -- We add a thunk wrapper to capture the effect of the handled action, so as to avoid
+  -- infecting the effect of the calling function. Presumably most backends (including the
+  -- native coroutine backend) will need some form of lambda, so this lets the programmer
+  -- not bother writing the wrapper explicitly.
+  u <- newTcUniq
+  actionThunk <- inferRho ctx (E_FnAST rng (FnAST rng (T.pack $ ".fx.thunk_" ++ show u) [] [] e False)) "handled"
+
+  hp <- newTcUnificationVarTau "handler-patterns"
+
+  r   <- newTcUnificationVarTau "action"
+  r'  <- newTcUnificationVarTau "xformed"
+  resumeid <- tcFreshT $ T.pack "resume"
+  resumebareid <- tcFreshT $ T.pack "resumebare"
+
+  -- The return type of the handler (aka r'?)
+  let r'p = case mb_xform of Nothing -> r
+                             _       -> r'
+
+  effs <- newTcUnificationVarTau "handler-effs"
+
+  let preCheckBranch (CaseArm pat _ _ _ _) = checkEffectPattern ctx pat hp
+
+  ps_outtys <- forM arms preCheckBranch
+  eff <- zonkType hp
+  let fneff = effectExtendTC eff effs
+  
+  -- TODO (typeTC action)
+  let checkBranch (CaseArm pat body guard _ brng, (p, outty)) = do
+        let names = epatBoundNames pat
+        verifyNamesAreDistinct (rangeOf rng) "case" names
+
+        let resumety = FnTypeTC [outty] r effs (UniConst FastCC) (UniConst FT_Func)
+        let resumebarety = FnTypeTC [outty] r fneff (UniConst FastCC) (UniConst FT_Func)
+
+        tcLift $ putDocLn $ text "resumebarety: " <$> align (indent 10 (pretty resumebarety))
+        tcLift $ putDocLn $ text "resumebarety: " <$> align (indent 10 (showStructure resumebarety))
+
+        let bindings = extractPatternBindings p
+        let ctxbindings = [varbind id ty | (TypedId ty id) <-
+                                            TypedId resumebarety resumebareid :
+                                            TypedId resumety resumeid : bindings]
+        let ctx' = prependContextBindings ctx ctxbindings
+
+        tcLift $ putStrLn $ show (contextBindings ctx')
+
+        aguard <- liftMaybe (\g -> tcRho ctx' g (Check boolTypeTC)) guard
+        -- TODO use outty for type of resume func
+        abody <- tcRho ctx' body expTy
+        unify r'p (typeTC abody) [text $ "Failed to unify all branches of case " ++ highlightFirstLine (rangeOf rng)]
+        return (CaseArm p abody aguard bindings brng)
+
+  abranches <- forM (zip arms ps_outtys) checkBranch
+
+  _ <- subsCheckRho actionThunk (FnTypeTC [] r fneff (UniConst FastCC) (UniConst FT_Func))
+                "handler-action"
+
+  mb_xform' <- case mb_xform of
+                Nothing -> return Nothing
+                Just xform -> do
+                  xform' <- inferRho ctx xform "xform"
+                  x <- subsCheckRho xform' (FnTypeTC [r] r' effs
+                                           (UniConst FastCC) (UniConst FT_Func)) "xform"
+                  return $ Just x
+
+  --tr <- zonkType r
+  --trp <- zonkType r'p
+
+  matchExp expTy (AnnHandler rng r'p eff actionThunk abranches mb_xform' (resumeid, resumebareid)) "case"
+
+extractPatternBindings :: Pattern t -> [TypedId t]
+extractPatternBindings (P_Atom (P_Wildcard    {})) = []
+extractPatternBindings (P_Atom (P_Bool        {})) = []
+extractPatternBindings (P_Atom (P_Int         {})) = []
+extractPatternBindings (P_Atom (P_Variable _ tid)) = [tid]
+extractPatternBindings (P_Ctor _ _ ps _)  = concatMap extractPatternBindings ps
+extractPatternBindings (P_Tuple _ _ ps)   = concatMap extractPatternBindings ps
+extractPatternBindings (P_Or    _ _ ps)   = concatMap extractPatternBindings ps
+-- }}}
+
 -- {{{ CASE scrutinee OF branches END
 tcRhoCase :: Context SigmaTC -> ExprAnnot -> ExprAST TypeAST
           -> [CaseArm EPattern Term TypeAST] -> Expected RhoTC -> Tc (AnnExpr RhoTC)
@@ -1697,27 +1784,17 @@ tcRhoCase ctx rng scrutinee branches expTy = do
         return (CaseArm p abody aguard bindings brng)
   abranches <- forM branches checkBranch
   matchExp expTy (AnnCase rng u ascrutinee abranches) "case"
- where
-    checkPattern :: Context SigmaTC -> EPattern TypeAST -> TypeTC -> Tc (Pattern TypeTC)
-    -- Make sure that each pattern has the proper arity,
-    -- and record its type given a known type for the context in which
-    -- the pattern appears.
-    checkPattern ctx pattern ctxTy = case pattern of
-      EP_Wildcard r       -> do return $ P_Atom $ P_Wildcard r ctxTy
-      EP_Variable r v     -> do checkSuspiciousPatternVariable r v
-                                id <- tcFreshT (evarName v)
-                                return $ P_Atom $ P_Variable r (TypedId ctxTy id)
-      EP_Bool     r b     -> do let boolexpr = E_BoolAST (annotForRange r) b
-                                annbool <- tcRho ctx boolexpr (Check ctxTy)
-                                return $ P_Atom $ P_Bool r (typeTC annbool) b
-      EP_Int      r str   -> do (AnnLiteral _ ty (LitInt int))
-                                         <- typecheckInt (annotForRange r) str
-                                                         (Check ctxTy)
-                                --tcLift $ putDocLn $ text ("P_Int " ++ str) <+> pretty ctxTy
-                                return $ P_Atom $ P_Int r ty int
 
-      EP_Ctor     r eps s -> do
-        info@(CtorInfo cid (DataCtor _ tyformals types _repr _crng)) <- getCtorInfoForCtor ctx r s
+checkEffectPattern :: Context SigmaTC -> EPattern TypeAST -> TypeTC
+                   -> Tc (Pattern TypeTC, TypeTC)
+checkEffectPattern ctx pattern ctxTy = case pattern of
+  EP_Ctor     r eps ctorName -> do
+    case Map.lookup ctorName (contextEffectCtorInfo ctx) of
+      Just [(cid, effctor)] -> do
+        let tyformals = dataCtorDTTyF $ effectCtorAsData effctor
+            types     = dataCtorTypes $ effectCtorAsData effctor
+            info      = CtorInfo cid (effectCtorAsData effctor)
+
         sanityCheck (ctorArity cid == List.length eps) $
               "Incorrect pattern arity: expected " ++
               (show $ ctorArity cid) ++ " pattern(s), but got "
@@ -1726,63 +1803,131 @@ tcRhoCase ctx rng scrutinee branches expTy = do
               "Invariant violated: constructor arity did not match # types!"
               ++ showSourceRange r
 
-        ty@(TyAppTC _ metas) <-
-                            generateTypeSchemaForDataType ctx r (ctorTypeName cid)
+        --ty@(TyAppTC _ metas) <- generateTypeSchemaForDataType ctx r (ctorTypeName cid)
+        ty@(TyAppTC _ metas) <- do
+          formals <- mapM (\_ -> newTcUnificationVarTau ("eff-tyformal:" ++ showSourceRange r)) tyformals
+          return $ TyAppTC (TyConTC $ ctorTypeName cid) formals
+        
         let ktvs = map convertTyFormal tyformals
-        ts <- mapM (\ty -> instSigmaWith "ctor pattern" ktvs ty metas) types
+        ts <- mapM (\ty -> instSigmaWith "eff ctor pattern" ktvs ty metas) types
         ps <- sequence [checkPattern ctx p t | (p, t) <- zip eps ts]
 
-        debug $ "checkPattern for "   ++ show (pretty pattern)
-        debug $ "*** P_Ctor -  ty   " ++ show (pretty ty     )
-        debug $ "*** P_Ctor -  ty   " ++ show (pretty ctxTy  )
-        debug $ "*** P_Ctor - metas " ++ show (pretty metas  )
-        debug $ "*** P_Ctor - sgmas " ++ show (pretty ts     )
+        unify ty ctxTy [text $ "checkEffectPattern:P_Ctor " ++ show cid]
+        ty' <- zonkType ty
+        tcLift $ putDocLn $ text "ty: " <$> align (indent 10 (pretty ty))
+        tcLift $ putDocLn $ text "ty': " <$> align (indent 10 (pretty ty'))
 
-        unify ty ctxTy [text $ "checkPattern:P_Ctor " ++ show cid]
-        return $ P_Ctor r ty ps info
+        outty' <-  instSigmaWith "eff ctor pattern" ktvs (effectCtorOutput effctor) metas
+        tcLift $ putDocLn $ text "outty': " <$> align (indent 10 (pretty outty'))
 
-      EP_Or     r eps  -> do
-        let (epatFirst : rest) = eps
-        let firstNames = epatBoundNames epatFirst
-        if firstNames /= []
-           then tcFailsMore [text "Subpatterns of an 'or' cannot yet bind variables..."
-                            ,highlightFirstLineDoc (rangeOf epatFirst)]
-           else return ()
-        mapM_ (\epat -> do
-          let boundNames = epatBoundNames epat
-          if firstNames == boundNames
-            then return ()
-            else let descNames names =
-                       case names of
-                         []  -> text "no names were"
-                         [x] -> text "the name" <+> (text . T.unpack) x <+> text "was"
-                         _   -> text "the names" <+> hsep (punctuate comma (map (text . T.unpack) names)) <+> text "were"
-                    in
-                 tcFailsMore [text "The subpatterns of an 'or' must provide bindings for the same variable names."
-                             ,text "Otherwise, things would go haywire if the scrutinized value matched a branch"
-                             ,text "that didn't bind a name used by the body."
-                             ,descNames firstNames <+> text "bound by"
-                             ,highlightFirstLineDoc (rangeOf epatFirst)
-                             ,text "whereas" <+> descNames boundNames <+> text "bound by"
-                             ,highlightFirstLineDoc (rangeOf epat)
-                             ]) rest
-        pats <- mapM (\epat -> checkPattern ctx epat ctxTy) eps
-        return $ P_Or r ctxTy pats
+        return (P_Ctor r ty ps info, outty' )
 
-      EP_Tuple     r eps  -> do
-        (ts, kind) <-
-          case ctxTy of
-            TupleTypeTC kind ts -> return (ts, kind)
-            _ -> do ts <- sequence [newTcUnificationVarTau ("tup" ++ showSourceRange (rangeOf ep)) | ep <- eps]
-                    kind <- genUnifiableVar
-                    unify ctxTy (TupleTypeTC kind ts) [text "tuple-pattern"]
 
-                    return (ts, kind)
-        sanityCheck (eqLen eps ts) $
-                "Cannot match pattern against tuple type of "
-             ++ "different length." ++ showSourceRange r
-        ps <- sequence [checkPattern ctx p t | (p, t) <- zip eps ts]
-        return $ P_Tuple r (TupleTypeTC kind ts) ps
+      Nothing  -> tcFails [text $ "Missing definition for effect $" ++ T.unpack ctorName
+                          , highlightFirstLineDoc r]
+      _elsewise -> tcFails [text $ "Too many or"
+                                  ++ " too few definitions for effect $" ++ T.unpack ctorName]
+
+  _ -> tcFails [text "Effect patterns should start with a data constructor"]
+
+checkPattern :: Context SigmaTC -> EPattern TypeAST -> TypeTC
+             -> Tc (Pattern TypeTC)
+-- Make sure that each pattern has the proper arity,
+-- and record its type given a known type for the context in which
+-- the pattern appears.
+checkPattern ctx pattern ctxTy = case pattern of
+  EP_Wildcard r       -> do return $ P_Atom $ P_Wildcard r ctxTy
+  EP_Variable r v     -> do checkSuspiciousPatternVariable r v
+                            id <- tcFreshT (evarName v)
+                            return $ P_Atom $ P_Variable r (TypedId ctxTy id)
+                              where
+        checkSuspiciousPatternVariable rng var =
+          if T.unpack (evarName var) `elem` ["true", "false"]
+          then tcFails [text $ "Error: this matches a variable, not a boolean constant!"
+                          ++ highlightFirstLine rng]
+          else return ()
+
+  EP_Bool     r b     -> do let boolexpr = E_BoolAST (annotForRange r) b
+                            annbool <- tcRho ctx boolexpr (Check ctxTy)
+                            return $ P_Atom $ P_Bool r (typeTC annbool) b
+  EP_Int      r str   -> do (AnnLiteral _ ty (LitInt int))
+                                      <- typecheckInt (annotForRange r) str
+                                                      (Check ctxTy)
+                            --tcLift $ putDocLn $ text ("P_Int " ++ str) <+> pretty ctxTy
+                            return $ P_Atom $ P_Int r ty int
+
+  -- TODO
+  --  * use answer type from EffectCtor when typechecking hander arm resume funcs
+  --  * only check for effect ctors at toplevel; nested ctors are data
+  --  * merge somehow the CtorInfo and (CtorId, EffectCtor) paths in getCtorInfoForCtor
+  EP_Ctor     r eps s -> do
+    info@(CtorInfo cid (DataCtor _ tyformals types _repr _crng)) <- getCtorInfoForCtor ctx r s
+    sanityCheck (ctorArity cid == List.length eps) $
+          "Incorrect pattern arity: expected " ++
+          (show $ ctorArity cid) ++ " pattern(s), but got "
+          ++ (show $ List.length eps) ++ showSourceRange r
+    sanityCheck (ctorArity cid == List.length types) $
+          "Invariant violated: constructor arity did not match # types!"
+          ++ showSourceRange r
+
+    ty@(TyAppTC _ metas) <-
+                        generateTypeSchemaForDataType ctx r (ctorTypeName cid)
+    let ktvs = map convertTyFormal tyformals
+    ts <- mapM (\ty -> instSigmaWith "ctor pattern" ktvs ty metas) types
+    ps <- sequence [checkPattern ctx p t | (p, t) <- zip eps ts]
+
+    debug $ "checkPattern for "   ++ show (pretty pattern)
+    debug $ "*** P_Ctor -  ty   " ++ show (pretty ty     )
+    debug $ "*** P_Ctor -  ty   " ++ show (pretty ctxTy  )
+    debug $ "*** P_Ctor - metas " ++ show (pretty metas  )
+    debug $ "*** P_Ctor - sgmas " ++ show (pretty ts     )
+
+    unify ty ctxTy [text $ "checkPattern:P_Ctor " ++ show cid]
+    return $ P_Ctor r ty ps info
+
+  EP_Or     r eps  -> do
+    let (epatFirst : rest) = eps
+    let firstNames = epatBoundNames epatFirst
+    if firstNames /= []
+        then tcFailsMore [text "Subpatterns of an 'or' cannot yet bind variables..."
+                        ,highlightFirstLineDoc (rangeOf epatFirst)]
+        else return ()
+    mapM_ (\epat -> do
+      let boundNames = epatBoundNames epat
+      if firstNames == boundNames
+        then return ()
+        else let descNames names =
+                    case names of
+                      []  -> text "no names were"
+                      [x] -> text "the name" <+> (text . T.unpack) x <+> text "was"
+                      _   -> text "the names" <+> hsep (punctuate comma (map (text . T.unpack) names)) <+> text "were"
+                in
+              tcFailsMore [text "The subpatterns of an 'or' must provide bindings for the same variable names."
+                          ,text "Otherwise, things would go haywire if the scrutinized value matched a branch"
+                          ,text "that didn't bind a name used by the body."
+                          ,descNames firstNames <+> text "bound by"
+                          ,highlightFirstLineDoc (rangeOf epatFirst)
+                          ,text "whereas" <+> descNames boundNames <+> text "bound by"
+                          ,highlightFirstLineDoc (rangeOf epat)
+                          ]) rest
+    pats <- mapM (\epat -> checkPattern ctx epat ctxTy) eps
+    return $ P_Or r ctxTy pats
+
+  EP_Tuple     r eps  -> do
+    (ts, kind) <-
+      case ctxTy of
+        TupleTypeTC kind ts -> return (ts, kind)
+        _ -> do ts <- sequence [newTcUnificationVarTau ("tup" ++ showSourceRange (rangeOf ep)) | ep <- eps]
+                kind <- genUnifiableVar
+                unify ctxTy (TupleTypeTC kind ts) [text "tuple-pattern"]
+
+                return (ts, kind)
+    sanityCheck (eqLen eps ts) $
+            "Cannot match pattern against tuple type of "
+          ++ "different length." ++ showSourceRange r
+    ps <- sequence [checkPattern ctx p t | (p, t) <- zip eps ts]
+    return $ P_Tuple r (TupleTypeTC kind ts) ps
+ where
     -----------------------------------------------------------------------
     getCtorInfoForCtor :: Context SigmaTC -> SourceRange -> T.Text -> Tc (CtorInfo SigmaTC)
     getCtorInfoForCtor ctx r ctorName = do
@@ -1794,30 +1939,15 @@ tcRhoCase ctx rng scrutinee branches expTy = do
                                     ++ " too few definitions for $" ++ T.unpack ctorName
                                     ++ "\n\t" ++ show (pretty elsewise)]
 
-    generateTypeSchemaForDataType :: Context SigmaTC -> SourceRange -> DataTypeName -> Tc RhoTC
-    generateTypeSchemaForDataType ctx r typeName = do
-      case Map.lookup typeName (contextDataTypes ctx) of
-        Just [dt] -> do
-          formals <- mapM (\_ -> newTcUnificationVarTau ("dt-tyformal:" ++ showSourceRange r)) (dataTypeTyFormals dt)
-          return $ TyAppTC (TyConTC typeName) formals
-        other -> tcFails [text $ "Typecheck.generateTypeSchemaForDataType: Too many or"
-                            ++ " too few definitions for $" ++ typeName
-                            ++ "\n\t" ++ show (pretty other)]
-
-    extractPatternBindings :: Pattern t -> [TypedId t]
-    extractPatternBindings (P_Atom (P_Wildcard    {})) = []
-    extractPatternBindings (P_Atom (P_Bool        {})) = []
-    extractPatternBindings (P_Atom (P_Int         {})) = []
-    extractPatternBindings (P_Atom (P_Variable _ tid)) = [tid]
-    extractPatternBindings (P_Ctor _ _ ps _)  = concatMap extractPatternBindings ps
-    extractPatternBindings (P_Tuple _ _ ps)   = concatMap extractPatternBindings ps
-    extractPatternBindings (P_Or    _ _ ps)   = concatMap extractPatternBindings ps
-
-    checkSuspiciousPatternVariable rng var =
-      if T.unpack (evarName var) `elem` ["true", "false"]
-       then tcFails [text $ "Error: this matches a variable, not a boolean constant!"
-                      ++ highlightFirstLine rng]
-       else return ()
+generateTypeSchemaForDataType :: Context SigmaTC -> SourceRange -> DataTypeName -> Tc RhoTC
+generateTypeSchemaForDataType ctx r typeName = do
+  case Map.lookup typeName (contextDataTypes ctx) of
+    Just [dt] -> do
+      formals <- mapM (\_ -> newTcUnificationVarTau ("dt-tyformal:" ++ showSourceRange r)) (dataTypeTyFormals dt)
+      return $ TyAppTC (TyConTC typeName) formals
+    other -> tcFails [text $ "Typecheck.generateTypeSchemaForDataType: Too many or"
+                        ++ " too few definitions for $" ++ typeName
+                        ++ "\n\t" ++ show (pretty other)]
 -- }}}
 
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -1886,6 +2016,7 @@ subsCheckRho esigma rho2 msg = do
 
     (rho1, FnTypeTC as2 r2 fx2 cc2 ft2) -> do
         debug $ "subsCheckRho fn 1"
+        tcLift $ putDocLn $ text "subsCheckRho1 being called for " <> highlightFirstLineDoc (rangeOf esigma)
         (as1, r1, fx1, cc1, ft1) <- unifyFun rho1 (length as2) "sCR1"
         subsCheckFunTy as1 r1 fx1 cc1 ft1 as2 r2 fx2 cc2 ft2 msg
         return esigma
@@ -2006,7 +2137,6 @@ resolveType annot origSubst origType = go origSubst origType where
     ArrayTypeTC   ty               -> liftM  ArrayTypeTC  (q ty)
     FnTypeTC    ss t fx cc cs      -> do (t':fx':ss') <- mapM q (t:fx:ss)
                                          return $ FnTypeTC  ss' t' fx' cc cs
-    CoroTypeTC   s t fx            -> liftM3 CoroTypeTC  (q s) (q t) (q fx)
     TyConTC    nam                 -> return $ TyConTC nam
     TyAppTC    con types           -> liftM2 TyAppTC (q con) (mapM q types)
     TupleTypeTC  kind types        -> liftM  (TupleTypeTC kind) (mapM q types)
@@ -2047,7 +2177,6 @@ getFreeTyVars xs = do zs <- mapM zonkType xs
         TyAppTC con types    -> concatMap (go bound) (con:types)
         TupleTypeTC _k types     -> concatMap (go bound) types
         FnTypeTC ss r fx  _ _    -> concatMap (go bound) (r:fx:ss)
-        CoroTypeTC s r fx        -> concatMap (go bound) [s,r,fx]
         ForAllTC  tvs rho        -> go (tyvarsOf tvs ++ bound) rho
         TyVarTC   tv  _mbk       -> if tv `elem` bound then [] else [tv]
         MetaTyVarTC  {}          -> []
@@ -2131,17 +2260,17 @@ tcTypeWellFormed msg ctx typ = do
         TyAppTC con types     -> mapM_ q (con:types)
         TupleTypeTC _k types  -> mapM_ q types
         FnTypeTC  ss r fx _ _ -> mapM_ q (r:fx:ss)
-        CoroTypeTC  s r fx    -> mapM_ q [s,r,fx]
         RefTypeTC     ty      -> q ty
         ArrayTypeTC   ty      -> q ty
         RefinedTypeTC v _e  _ -> q (tidType v)
         ForAllTC   tvs rho    -> tcTypeWellFormed msg (extendTyCtx ctx tvs) rho
         TyVarTC  (SkolemTyVar {}) _mbk -> return ()
-        TyVarTC  tv@(BoundTyVar _ _) _mbk ->
+        TyVarTC  tv@(BoundTyVar _ _) mbk ->
                  case Prelude.lookup tv (contextTypeBindings ctx) of
                    Nothing -> tcFails [text $ "Unbound type variable "
                                            ++ show tv ++ " " ++ msg]
-                   Just  _ -> return ()
+                   Just kind -> do tcLift $ putStrLn $ "giving " ++ show tv ++ " kind " ++ show kind
+                                   tcUnifyKinds mbk (UniConst kind)
 
 tcContext :: Context TypeTC -> Context TypeAST -> Tc (Context SigmaTC)
 tcContext emptyCtx ctxAST = do
@@ -2161,8 +2290,7 @@ tcContext emptyCtx ctxAST = do
     case dts of
       [dt] -> do
          sanityCheck (nm == typeFormalName (dataTypeName dt)) ("Data type name mismatch for " ++ nm)
-         let tyformals = dataTypeTyFormals dt
-         let extctx = extendTyCtx ctx (map convertTyFormal tyformals)
+         let extctx = extendTyCtx ctx (map convertTyFormal $ dataTypeTyFormals dt)
          mapM_ (tcDataCtor nm extctx) (dataTypeCtors dt)
       dts -> tcFails $ [text "Data type name" <+> text nm
                         <+> text "didn't map to a single data type!"
@@ -2171,7 +2299,10 @@ tcContext emptyCtx ctxAST = do
                                    [highlightFirstLineDoc (dataTypeRange dt) | dt <- dts])
   }
 
+  debug2 (show (Map.keys $ contextDataTypes ctx))
+  debug2 "Checking data types"
   mapM_ checkDataType (Map.toList $ contextDataTypes ctx)
+  debug2 "Checking data ctors"
 
   let checkDataCtors :: [DataType TypeTC] -> Tc ()
       checkDataCtors dts = do
@@ -2216,7 +2347,6 @@ tcSubst subst typ = go typ
             TyAppTC  con types      -> TyAppTC (go con) (map go types)
             TupleTypeTC  k  types   -> TupleTypeTC k (map go types)
             FnTypeTC  ss r fx cc fp -> FnTypeTC (map go ss) (go r) (go fx) cc fp
-            CoroTypeTC  s r fx      -> CoroTypeTC (go s) (go r) (go fx)
             ForAllTC  tvs rho       -> ForAllTC tvs (go rho)
             RefTypeTC     ty        -> RefTypeTC (go ty)
             ArrayTypeTC   ty        -> ArrayTypeTC (go ty)
@@ -2251,6 +2381,7 @@ annSubst subst expr = go expr
             AnnArrayRead _rng ty ari             -> AnnArrayRead _rng (gt ty) (gai ari)
             AnnArrayPoke _rng ty ari c           -> AnnArrayPoke _rng (gt ty) (gai ari) (go c)
             AnnTuple _rng ty kind exprs          -> AnnTuple     _rng (gt ty) kind (map go exprs)
+            AnnHandler _rng ty fx e bs mbe resid -> AnnHandler   _rng (gt ty) (gt fx) (go e) (map gb bs) (fmap go mbe) resid
             AnnCase _rng ty e bs                 -> AnnCase      _rng (gt ty) (go e) (map gb bs)
             E_AnnTyApp _rng ty a argtys          -> E_AnnTyApp   _rng (gt ty) (go a) (map gt argtys)
             AnnLiteral _rng ty lit               -> AnnLiteral   _rng (gt ty) lit
@@ -2372,7 +2503,6 @@ instance Expr TypeAST where
         TyAppAST          con types -> concatMap freeVars (con:types)
         TupleTypeAST     _k   types -> concatMap freeVars types
         FnTypeAST    s t fx _cc _cs -> concatMap freeVars (t:fx:s)
-        CoroTypeAST  s t fx      -> concatMap freeVars [t,s,fx]
         ForAllAST  _tvs rho      -> freeVars rho
         TyVarAST   {}            -> []
         RefTypeAST    ty         -> freeVars ty

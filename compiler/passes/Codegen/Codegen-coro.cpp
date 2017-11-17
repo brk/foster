@@ -97,14 +97,14 @@ llvm::StructType* getSplitCoroType(
                                /*isPacked=*/ false);
 }
 
-// Returns retTy(i8* env, .. arg types ..)
+// Returns retTy(i8* env)
 llvm::FunctionType* getCoroClosureFnType(
   llvm::Type* retTy,
   llvm::Type* argTypes)
 {
   std::vector<llvm::Type*> args;
   args.push_back(builder.getInt8PtrTy());
-  addCoroArgs(args, argTypes);
+  //addCoroArgs(args, argTypes);
   return FunctionType::get(retTy, args, /*isVarArg=*/ false);
 }
 
@@ -115,6 +115,7 @@ llvm::FunctionType* getCoroInvokeFnTy(
 {
   std::vector<llvm::Type*> fnTyArgs;
   fnTyArgs.push_back(getHeapPtrTo(getSplitCoroType(argTypes)));
+  fnTyArgs.push_back(builder.getInt64Ty());
   addCoroArgs(fnTyArgs, argTypes);
   return llvm::FunctionType::get(
                    /*Result=*/   retTy,
@@ -127,6 +128,8 @@ llvm::FunctionType* getCoroYieldFnTy(
   llvm::Type* argTypes)
 {
   std::vector<llvm::Type*> fnTyArgs;
+  fnTyArgs.push_back(getHeapPtrTo(foster_generic_coro_t));
+  //fnTyArgs.push_back(builder.getInt64Ty());
   addCoroArgs(fnTyArgs, retTypes);
   return llvm::FunctionType::get(
                    /*Result=*/   argTypes,
@@ -177,11 +180,11 @@ void emitFosterAssert(llvm::Module* mod, llvm::Value* cond, const char* cstr);
 ////////////////////////////////////////////////////////////////////
 
 int coroField_Context()      { return 0; }
-int coroField_Sibling()      { return 1; }
-int coroField_Fn()           { return 2; }
-int coroField_Env()          { return 3; }
-int coroField_Invoker()      { return 4; }
-int coroField_IndirectSelf() { return 5; }
+int coroField_Fn()           { return 1; }
+int coroField_Env()          { return 2; }
+int coroField_Invoker()      { return 3; }
+int coroField_IndirectSelf() { return 4; }
+int coroField_EffectTag()    { return 5; }
 int coroField_Status()       { return 6; }
 
 ////////////////////////////////////////////////////////////////////
@@ -212,17 +215,14 @@ Value* generateInvokeYield(bool isYield,
                          int yield_dormant_or_dead,
                          CodegenPass* pass,
                          llvm::Value* coro,
+                         llvm::Value* tag, // null for yields and implicit invocations.
                          llvm::Type* retTy,
                          llvm::Type* argTypes,
                          const std::vector<llvm::Value*>& inputArgs) {
   llvm::Value* coro_slot = pass->storeAndMarkPointerAsGCRoot(coro);
 
-  Value* current_coro = NULL;
-  llvm::Value* current_coro_slot = NULL;
-  if (!isYield) {
-    current_coro_slot = codegenCurrentCoroSlot(pass->mod);
-    current_coro = builder.CreateLoad(current_coro_slot);
-  }
+  Value* current_coro_slot = codegenCurrentCoroSlot(pass->mod);
+  Value* current_coro = builder.CreateLoad(current_coro_slot);
 
   /// TODO: call coro_dump(coro)
 
@@ -241,60 +241,121 @@ Value* generateInvokeYield(bool isYield,
     expectedStatusMsg = "can only resume a dormant coroutine";
   }
 
-  Value* cond = builder.CreateICmpEQ(status, expectedStatus);
-  emitFosterAssert(pass->mod, cond, expectedStatusMsg);
+/*
+  auto prf = pass->mod->getFunction("foster_printf_pi");
+  ASSERT(prf) << "couldn't find foster_printf_pi?!?";
+    builder.CreateCall(prf,
+                     { builder.CreateBitCast(
+                        builder.CreateGlobalString("invoke/yield: current_coro is %p , status is %d\n") ,
+                        builder.getInt8PtrTy())
+                     , builder.CreateBitCast(current_coro, builder.getInt8PtrTy())
+                     , status });
 
-  // Store the input arguments to coro->arg.
-  Value* concrete_coro = builder.CreateBitCast(coro,
+    builder.CreateCall(prf,
+                     { builder.CreateBitCast(
+                        builder.CreateGlobalString("invoke/yield:         coro is %p , expst is %d\n") ,
+                        builder.getInt8PtrTy())
+                     , builder.CreateBitCast(coro,   builder.getInt8PtrTy())
+                     , expectedStatus });
+  */
+
+  Value* cond = builder.CreateICmpEQ(status, expectedStatus);
+  //emitFosterAssert(pass->mod, cond, expectedStatusMsg);
+
+  Value* target_coro_pretransfer = coro;
+
+/*
+  auto prf = pass->mod->getFunction("foster_printf_2p");
+  ASSERT(prf) << "couldn't find foster_printf_2p?!?";
+  if (isYield) {
+    builder.CreateCall(prf,
+                     { builder.CreateBitCast(
+                        builder.CreateGlobalString("pre-transfer(Y); current_coro is %p <<<, coro is %p\n") ,
+                        builder.getInt8PtrTy())
+                     , builder.CreateBitCast(current_coro, builder.getInt8PtrTy())
+                     , builder.CreateBitCast(coro,         builder.getInt8PtrTy()) });
+
+  } else {
+    builder.CreateCall(prf,
+                     { builder.CreateBitCast(
+                        builder.CreateGlobalString("pre-transfer(I); current_coro is %p, coro is %p <<<\n") ,
+                        builder.getInt8PtrTy())
+                     , builder.CreateBitCast(current_coro, builder.getInt8PtrTy())
+                     , builder.CreateBitCast(coro,         builder.getInt8PtrTy()) });
+
+  }
+  */
+
+  if (tag) {
+    builder.CreateStore(tag, gep(current_coro, 0, coroField_EffectTag(), "tag_addr"));
+  }
+
+  // Store the input arguments to target_coro->arg.
+  llvm::outs() << "inputArgs.size() is " << inputArgs.size() << "\n";
+
+  Value* concrete_coro = builder.CreateBitCast(target_coro_pretransfer,
                                          getHeapPtrTo(getSplitCoroType(
                                               (isYield ? retTy : argTypes))));
   Value* coroArg_slot = gep(concrete_coro, 0, 1);
+
+/*
+      builder.CreateCall(prf,
+                     { builder.CreateBitCast(
+                        builder.CreateGlobalString("invoke/yield:  writing args to target coro %p , dir is %d\n") ,
+                        builder.getInt8PtrTy())
+                     , builder.CreateBitCast(concrete_coro,   builder.getInt8PtrTy())
+                     , builder.getInt32( isYield ? 321 : 123 ) });
+*/
+
   if (inputArgs.size() == 1) {
     builder.CreateStore(inputArgs[0], coroArg_slot);
   } else {
+    /*
+    llvm::errs() << "concrete coro: " << *concrete_coro << "\n";
+    llvm::errs() << "coroArg_slot: " << *coroArg_slot << "\n";
+    llvm::errs() << "coroArg_slot type: " << *(coroArg_slot->getType()) << "\n";
+    llvm::errs() << "inputArgs.size(): " << inputArgs.size() << "\n";  
+    */
     for (size_t i = 0; i < inputArgs.size(); ++i) {
       Value* slot = gep(coroArg_slot, 0, i);
       builder.CreateStore(inputArgs[i], slot);
     }
   }
 
+  
   // Set the status fields of both coros.
-  Value* sibling_slot = gep(coro, 0, coroField_Sibling(), "siblingaddr");
-  Value* sibling_ptr_gen = builder.CreateLoad(sibling_slot);
-
-  Value* sib_status_addr = gep(sibling_ptr_gen, 0, coroField_Status(), "sibstatusaddr");
+  Value* curr_status_addr = gep(current_coro, 0, coroField_Status(), "status_addr");
 
   // TODO once we have multiple threads, this will need to
   // be done atomically or under a lock (and error handling added).
   if (isYield) {
     // The coro we yield from becomes dormant; the one yielded to running.
-    builder.CreateStore(builder.getInt32(FOSTER_CORO_INVALID),       status_addr);
-    builder.CreateStore(builder.getInt32(yield_dormant_or_dead), sib_status_addr);
+    builder.CreateStore(builder.getInt32(FOSTER_CORO_RUNNING),        status_addr);
+    builder.CreateStore(builder.getInt32(yield_dormant_or_dead), curr_status_addr);
   } else {
     // The coro we invoke starts running; the one we left becomes suspended.
-    builder.CreateStore(builder.getInt32(FOSTER_CORO_RUNNING),       status_addr);
-    builder.CreateStore(builder.getInt32(FOSTER_CORO_SUSPENDED), sib_status_addr);
+    builder.CreateStore(builder.getInt32(FOSTER_CORO_RUNNING),        status_addr);
+    builder.CreateStore(builder.getInt32(FOSTER_CORO_SUSPENDED), curr_status_addr);
   }
 
-  // If we're invoking, "push" the coro on the coro "stack".
+  // Record our parent when doing invocations.
   if (!isYield) {
-    ///   coro->invoker = current_coro;
-    Value* invoker_slot = gep(coro, 0, coroField_Invoker());
-    createStore(current_coro, invoker_slot);
-
-    ///   current_coro = coro;
-    createStore(coro, current_coro_slot);
+    ///  coro->invoker = current_coro;
+    createStore(current_coro, gep(coro, 0, coroField_Invoker()));
   }
+
+  ///   current_coro = coro;
+  createStore(coro, current_coro_slot);
 
   Value* coroTransfer = pass->mod->getFunction(kCoroTransfer);
   ASSERT(coroTransfer != NULL);
-  Value*     ctx_addr = gep(coro,            0, coroField_Context());
-  Value* sib_ctx_addr = gep(sibling_ptr_gen, 0, coroField_Context());
+  Value*      ctx_addr = gep(coro,         0, coroField_Context());
+  Value* curr_ctx_addr = gep(current_coro, 0, coroField_Context());
 
   llvm::Type* coro_context_ptr_ty = coroTransfer->getType()->getContainedType(0)->getContainedType(1);
   llvm::CallInst* transfer = builder.CreateCall(coroTransfer, {
-                                builder.CreateBitCast(sib_ctx_addr, coro_context_ptr_ty),
-                                builder.CreateBitCast(ctx_addr, coro_context_ptr_ty) });
+                                builder.CreateBitCast(curr_ctx_addr, coro_context_ptr_ty),
+                                builder.CreateBitCast(     ctx_addr, coro_context_ptr_ty) });
   transfer->addAttribute(1, llvm::Attribute::InReg);
   transfer->addAttribute(2, llvm::Attribute::InReg);
 
@@ -303,35 +364,31 @@ Value* generateInvokeYield(bool isYield,
 
   // A GC may have been triggered, so re-load locals from the stack.
   coro = builder.CreateLoad(coro_slot);
-  status_addr = gep(coro, 0, coroField_Status(), "statusaddr");
-  sibling_slot = gep(coro, 0, coroField_Sibling(), "siblingaddr");
-  sibling_ptr_gen = builder.CreateLoad(sibling_slot);
-
-  sib_status_addr = gep(sibling_ptr_gen, 0, coroField_Status(), "sibstatusaddr");
-
-  if (!isYield) { // likewise, pop the "stack" when we return from
-    ///   current_coro = coro->invoker;
-    Value* invoker_slot = gep(coro, 0, coroField_Invoker());
-    Value* invoker      = builder.CreateLoad(invoker_slot);
-    createStore(invoker, current_coro_slot);
-  }
+  current_coro = builder.CreateLoad(current_coro_slot);
 
   // So if we were originally yielding, then we are
   // now being re-invoked, possibly by a different
   // coro and/or a different thread!
-  // But our sibling coro remains the same, it's just the
-  // stack that it refers to that might have changed.
 
-  sibling_slot = gep(coro, 0, coroField_Sibling(), "siblingaddr");
-  sibling_ptr_gen      = builder.CreateLoad(sibling_slot);
-  Value* sibling_ptr   = builder.CreateBitCast(sibling_ptr_gen,
+/*
+  auto prf2 = pass->mod->getFunction("foster_printf_2p");
+  builder.CreateCall(prf2,
+                     { builder.CreateBitCast(
+                        builder.CreateGlobalString(isYield ? "post-transfer(Y) current %p <<<, coro is %p\n"
+                                                           : "post-transfer(I) current %p, coro is %p <<<\n"),
+                        builder.getInt8PtrTy())
+                     , builder.CreateBitCast(current_coro, builder.getInt8PtrTy())
+                     , builder.CreateBitCast(coro,         builder.getInt8PtrTy()) });
+*/
+
+  auto target_coro_posttransfer = current_coro;
+  Value* casted_ptr = builder.CreateBitCast(target_coro_posttransfer,
                                          getHeapPtrTo(getSplitCoroType(
                                                (isYield ? argTypes : retTy))));
-  /// return sibling->arg;
-  Value* sibling_arg_slot = gep(sibling_ptr, 0, 1, "sibling_arg_slot");
-  Value* sibling_arg      = builder.CreateLoad(sibling_arg_slot);
+  /// return coro->arg;
+  Value* casted_arg      = builder.CreateLoad(gep(casted_ptr, 0, 1, "casted_arg_slot"));
 
-  return sibling_arg;
+  return casted_arg;
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -400,7 +457,6 @@ Value* CodegenPass::emitCoroYieldFn(llvm::Type* retTy,
   return fn;
 }
 
-
 ////////////////////////////////////////////////////////////////////
 ////////////////////////// CORO WRAPPER  ///////////////////////////
 ////////////////////////////////////////////////////////////////////
@@ -447,9 +503,9 @@ Value* emitCoroWrapperFn(
   Value* fn      = builder.CreateBitCast(fn_gen,
                                       rawPtrTo(getCoroClosureFnType(retTy, argTypes)));
 
-  Value* sib_addr = gep(fcg, 0, coroField_Sibling(), "sibaddr");
-  Value* sib_gen  = builder.CreateLoad(sib_addr, "sib_gen");
-  Value* sib      = builder.CreateBitCast(sib_gen, getHeapPtrTo(getSplitCoroType(retTy)));
+  // We don't initialize the parent field with the current coro
+  // because it should reflect the context of its invoker,
+  // which might be different than its creator.
 
   Value* env_addr = gep(fcg, 0, coroField_Env(), "envaddr");
   Value* env      = builder.CreateLoad(env_addr, "env_ptr");
@@ -459,34 +515,47 @@ Value* emitCoroWrapperFn(
 
   std::vector<Value*> callArgs;
   callArgs.push_back(env);
-  addCoroArgs(callArgs, arg);
+  //addCoroArgs(callArgs, arg);
+
+/*
+  auto prf = pass->mod->getFunction("foster_printf_2p");
+  ASSERT(prf) << "couldn't find foster_printf_2p?!?";
+  builder.CreateCall(prf,
+                     { builder.CreateBitCast(
+                        builder.CreateGlobalString("wrapper call; coro_slot is %p, coro is %p\n") ,
+                        builder.getInt8PtrTy())
+                     , builder.CreateBitCast(coro_slot, builder.getInt8PtrTy())
+                     , builder.CreateBitCast(fcg,       builder.getInt8PtrTy()) });
+*/
 
   llvm::CallInst* call  = builder.CreateCall(fn, llvm::makeArrayRef(callArgs));
   call->setCallingConv(llvm::CallingConv::Fast);
 
-#if 0
-  // Store the result of the call in the sibling's arg slot
-  Value* sib_arg_addr = gep(sib, 0, 1, "sibargaddr");
-  builder.CreateStore(call, sib_arg_addr, /*isVolatile=*/ false);
+    llvm::outs() << "Coro call is " << str(call) << "\n";
 
-  // Mark the coro as being dead
-  Value* status_addr = gep(fcg, 0, coroField_Status(), "statusaddr");
-  builder.CreateStore(builder.getInt32(FOSTER_CORO_DEAD), status_addr);
-#else
   std::vector<Value*> inputArgs;
   inputArgs.push_back(call);
   bool isYield = true;
 
   fcg = builder.CreateLoad(coro_slot);
-  sib_addr = gep(fcg, 0, coroField_Sibling(), "sibaddr");
-  sib = builder.CreateLoad(sib_addr, "sib_final");
+  auto parent = builder.CreateLoad(gep(fcg, 0, coroField_Invoker()), "parent_final");
   // Returned value is never used because corresponds to the arg passed
   // by invoking the now-dead coroutine.
+  
+  /*
+  builder.CreateCall(prf,
+                     { builder.CreateBitCast(
+                        builder.CreateGlobalString("wrapper yield; coro is %p, parent is %p\n") ,
+                        builder.getInt8PtrTy())
+                     , builder.CreateBitCast(fcg,    builder.getInt8PtrTy())
+                     , builder.CreateBitCast(parent, builder.getInt8PtrTy()) });
+  */
+
   generateInvokeYield(isYield, FOSTER_CORO_DEAD,
-                      pass, sib, retTy, argTypes, inputArgs);
+                      pass, parent, nullptr, retTy, argTypes, inputArgs);
 
   // TODO add assertion that control flow does not reach here
-#endif
+
   builder.CreateRetVoid();
 
   if (prevBB) {
@@ -533,68 +602,53 @@ Value* CodegenPass::emitCoroCreateFn(
   this->addEntryBB(create);
 
   CtorRepr bogusCtor; bogusCtor.smallId = -1;
-  // foster_coro_i32_i32* ccoro = (foster_coro_i32_i32*) memalloc_cell(NULL);
   // foster_coro_i32_i32* fcoro = (foster_coro_i32_i32*) memalloc_cell(NULL);
-  Value* ccoro_slot = this->storeAndMarkPointerAsGCRoot(this->emitMalloc(getSplitCoroTyp(retTyp ), bogusCtor, "ccoro", /*init*/ false));
   Value* fcoro      =                                   this->emitMalloc(getSplitCoroTyp(argTyps), bogusCtor, "fcoro", /*init*/ true);
-  // See note below: no root needed because foster_coro_create is written
-  // not to induce a GC copy.
-  Value* ccoro      = builder.CreateLoad(ccoro_slot, "ccoro");
 
   // TODO call memset on the full structs
 
   Value* gfcoro = gep(fcoro, 0, 0, "gfcoro");
-  Value* gccoro = gep(ccoro, 0, 0, "gccoro");
-
-  // fcoro->g.sibling = reinterpret_cast<foster_generic_coro*>(ccoro);
-  // ccoro->g.sibling = reinterpret_cast<foster_generic_coro*>(fcoro);
-  Value* fcoro_sibling_gen = gep(gfcoro, 0, coroField_Sibling(), "fcoro_sib");
-  Value* ccoro_sibling_gen = gep(gccoro, 0, coroField_Sibling(), "ccoro_sib");
-  Value* fcoro_sibling = builder.CreateBitCast(fcoro_sibling_gen, ptrTo(ccoro->getType()));
-  Value* ccoro_sibling = builder.CreateBitCast(ccoro_sibling_gen, ptrTo(fcoro->getType()));
-  builder.CreateStore(ccoro, fcoro_sibling);
-  builder.CreateStore(fcoro, ccoro_sibling);
 
   // fcoro->g.fn = reinterpret_cast<coro_func>(pclo->code);
-  // ccoro->g.fn  = NULL;
   Value* fcoro_fn = gep(gfcoro, 0, coroField_Fn(), "fcoro_fn");
-  Value* ccoro_fn = gep(gccoro, 0, coroField_Fn(), "ccoro_fn");
-  storeNullPointerToSlot(ccoro_fn);
-
   Value* clo_code_ptr = gep(pclo, 0, 0, "clo_fn_slot");
   Value* clo_code     = builder.CreateLoad(clo_code_ptr, "clo_fn");
   Value* clo_code_gen = builder.CreateBitCast(clo_code, fcoro_fn->getType()->getContainedType(0));
   builder.CreateStore(clo_code_gen, fcoro_fn);
 
-  // ccoro->g.env = NULL;
   // fcoro->g.env = pclo->env;
   Value* fcoro_env = gep(gfcoro, 0, coroField_Env(), "fcoro_env");
-  Value* ccoro_env = gep(gccoro, 0, coroField_Env(), "ccoro_env");
-  storeNullPointerToSlot(ccoro_env);
-
   Value* clo_env_ptr = gep(pclo, 0, 1, "clo_env_slot");
   Value* clo_env     = builder.CreateLoad(clo_env_ptr, "clo_env");
   Value* clo_env_gen = builder.CreateBitCast(clo_env, fcoro_env->getType()->getContainedType(0));
   builder.CreateStore(clo_env_gen, fcoro_env);
 
-  // fcoro->g.invoker = NULL;
-  // ccoro->g.invoker = NULL;
-  Value* fcoro_invoker = gep(gfcoro, 0, coroField_Invoker(), "fcoro_sib");
-  Value* ccoro_invoker = gep(gccoro, 0, coroField_Invoker(), "ccoro_sib");
-  storeNullPointerToSlot(fcoro_invoker);
-  storeNullPointerToSlot(ccoro_invoker);
+  // fcoro->g.parent = NULL;
+  Value* fcoro_parent = gep(gfcoro, 0, coroField_Invoker(), "fcoro_parent");
+  storeNullPointerToSlot(fcoro_parent);
 
   // fcoro->g.indirect_self = NULL;
-  // ccoro->g.indirect_self = NULL;
   Value* fcoro_indirect_self = gep(gfcoro, 0, coroField_IndirectSelf(), "fcoro_self");
-  Value* ccoro_indirect_self = gep(gccoro, 0, coroField_IndirectSelf(), "ccoro_self");
   storeNullPointerToSlot(fcoro_indirect_self);
-  storeNullPointerToSlot(ccoro_indirect_self);
+
+  Value* fcoro_tag = gep(gfcoro, 0, coroField_EffectTag(), "fcoro_tag");
+  builder.CreateStore(builder.getInt64(0), fcoro_tag);
 
   Value* fcoro_status = gep(gfcoro, 0, coroField_Status(), "fcoro_status");
-  Value* ccoro_status = gep(gccoro, 0, coroField_Status(), "ccoro_status");
+  llvm::errs() << "gccoro type: " << *(gfcoro->getType()) << "\n";
+  llvm::errs() << "status slot type: " << *(fcoro_status->getType()) << "\n";
   builder.CreateStore(builder.getInt32(FOSTER_CORO_DORMANT), fcoro_status);
-  builder.CreateStore(builder.getInt32(FOSTER_CORO_INVALID), ccoro_status);
+
+  /*
+  auto prf = this->mod->getFunction("foster_printf_pi");
+  ASSERT(prf) << "couldn't find foster_printf_pi?!?";
+    builder.CreateCall(prf,
+                     { builder.CreateBitCast(
+                        builder.CreateGlobalString(".coro_create: newly allocated coro is %p , status is %d\n") ,
+                        builder.getInt8PtrTy())
+                     , builder.CreateBitCast(fcoro, builder.getInt8PtrTy())
+                     , builder.getInt32(0) });
+  */
 
   llvm::Value* wrapper = emitCoroWrapperFn(this, retTy, argTypes);
   // coro_func wrapper = ...;
@@ -620,7 +674,7 @@ Value* CodegenPass::emitCoroCreateFn(
 ////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////
 
-Value* getCurrentCoroSibling(llvm::Module* mod) {
+Value* CodegenPass::getCurrentCoroParent() {
   // The current_coro global only exists after we link in libfoster_coro.
   Value* current_coro_slot = codegenCurrentCoroSlot(mod);
   ASSERT(current_coro_slot != NULL);
@@ -629,11 +683,10 @@ Value* getCurrentCoroSibling(llvm::Module* mod) {
 
   // Ensure that we actually have a coroutine!
   emitFosterAssert(mod, builder.CreateIsNotNull(current_coro),
-                  "Cannot call yield before invoking a coroutine!");
+                  "Attempted to the a non-existent parent coroutine!");
 
-  Value* sibling_slot = gep(current_coro,
-                                    0, coroField_Sibling(), "siblingaddr");
-  return builder.CreateLoad(sibling_slot);
+  return builder.CreateLoad(gep(current_coro,
+                                    0, coroField_Invoker(), "parentaddr"));
 }
 
 // We get two benefits by lazily generating coro primitive functions:
@@ -643,32 +696,33 @@ Value* getCurrentCoroSibling(llvm::Module* mod) {
 //     libfoster_coro, which is a prerequisite for emitting LLVM
 //     from the middle-end.
 void CodegenPass::emitLazyCoroPrimInfo(bool isYield, Function* fn,
-                             llvm::Type* retTy, llvm::Type* argTys) {
+                            llvm::Type* retTy, llvm::Type* argTys) {
   std::vector<Value*> inputArgs;
   Function::arg_iterator args = fn->arg_begin();
 
   BasicBlock* prevBB = builder.GetInsertBlock();
   this->addEntryBB(fn);
 
-  Value* coro = NULL;
-  // When invoking, the coro to transfer to is available as the first arg;
-  // when yielding, we yield to the sibling of the current thread's coro.
-  if (isYield) {
-    while (args != fn->arg_end()) {
-      inputArgs.push_back(&*(args++));
-    }
-    coro = getCurrentCoroSibling(this->mod);
-  } else {
-    Value* concrete_invoked_coro = &*(args++);
-    while (args != fn->arg_end()) {
-      inputArgs.push_back(&*(args++));
-    }
-    coro = builder.CreateBitCast(concrete_invoked_coro,
-                                 getHeapPtrTo(foster_generic_coro_t));
-  }
+  Value* concrete_invoked_coro = &*(args++);
+  Value* tag = isYield ? nullptr : &*(args++);
 
+  while (args != fn->arg_end()) {
+    inputArgs.push_back(&*(args++));
+  }
+  Value* coro = builder.CreateBitCast(concrete_invoked_coro,
+                                getHeapPtrTo(foster_generic_coro_t));
+
+  llvm::errs() << "(G3)\n";
+  llvm::errs() << "retTy: " << *retTy << "\n";
+  llvm::errs() << "argTys: " << *argTys << "\n";
+  llvm::errs() << "isYield: " << isYield << "\n";
+  llvm::errs() << "# args: " << inputArgs.size() << "\n";
+  for (auto& arg : inputArgs) {
+    llvm::errs() << "   " << *arg << "\n";
+  }
+  
   builder.CreateRet(generateInvokeYield(isYield, FOSTER_CORO_DORMANT,
-                      this, coro, retTy, argTys, inputArgs));
+                      this, coro, tag, retTy, argTys, inputArgs));
 
   if (prevBB) {
     builder.SetInsertPoint(prevBB);

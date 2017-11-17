@@ -36,19 +36,6 @@ primitiveDataTypesP = [
         []
         (MissingSourceRange "Subheap")),
 
-  (let tf = [TypeFormal "o"    (MissingSourceRange "Coro.o") KindAnySizeType,
-             TypeFormal "i"    (MissingSourceRange "Coro.i") KindAnySizeType,
-             TypeFormal "e"    (MissingSourceRange "Coro.e") KindEffect] in
-   DataType (TypeFormal "Coro" (MissingSourceRange "Coro")   KindPointerSized) tf
-        []
-        (MissingSourceRange "Coro")),
-
-  (let tf = [TypeFormal "o"    (MissingSourceRange "Coro.o") KindAnySizeType,
-             TypeFormal "i"    (MissingSourceRange "Coro.i") KindAnySizeType] in
-   DataType (TypeFormal "Yield" (MissingSourceRange "Yield") KindEffect) tf
-        []
-        (MissingSourceRange "Yield")),
-
    DataType (TypeFormal "effect.Empty" (MissingSourceRange "effect.Empty") KindEffect) []
         []
         (MissingSourceRange "effect.Empty"),

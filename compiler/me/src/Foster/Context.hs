@@ -37,6 +37,7 @@ data Context ty = Context { contextBindings   :: ContextBindings ty
                           , globalIdents       :: [Ident]
                           , pendingBindings   :: [T.Text]
                           , localTypeBindings :: Map String ty -- as introduced by, e.g. foralls.
+                          , contextEffectCtorInfo :: Map CtorName [(CtorId, EffectCtor ty)]
                           , contextTypeBindings :: [(TyVar, Kind)]
                           , contextCtorInfo   :: Map CtorName     [CtorInfo ty]
                           , contextDataTypes  :: Map DataTypeName [DataType ty]
@@ -70,15 +71,16 @@ extendTyCtx ctx ktvs = ctx { contextTypeBindings =
 
 liftContextM :: (Monad m, Show t1, Show t2)
              => (t1 -> m t2) -> Context t1 -> m (Context t2)
-liftContextM f (Context cb nb pb primops gb pend tyvars tybinds ctortypeast dtinfo) = do
+liftContextM f (Context cb nb pb primops gb pend tyvars effctors tybinds ctortypeast dtinfo) = do
   cb' <- mmapM (liftCXB f) cb
   nb' <- mmapM (liftCXB f) nb
   pb' <- mmapM (liftCXB f) pb
   po' <- mmapM (liftPrimOp f) primops
   tyvars' <- mmapM f tyvars
+  ec' <- mmapM (mapM (liftEffectCtorInfo f)) effctors
   ct' <- mmapM (mapM (liftCtorInfo f)) ctortypeast
   dt' <- mmapM (mapM (liftDataType f)) dtinfo
-  return $ Context cb' nb' pb' po' gb pend tyvars' tybinds ct' dt'
+  return $ Context cb' nb' pb' po' gb pend tyvars' ec' tybinds ct' dt'
 
 mmapM :: (Monad m, Ord k) => (a -> m b) -> Map k a -> m (Map k b)
 mmapM f ka = do
@@ -90,6 +92,11 @@ liftTID f (TypedId t i) = do t2 <- f t ; return $ TypedId t2 i
 
 liftCXB :: Monad m => (t1 -> m t2) -> CtxBound t1 -> m (CtxBound t2)
 liftCXB f (tid, mb_ci) = do tid' <- liftTID f tid; return (tid' , mb_ci)
+
+liftEffectCtorInfo f (cid, EffectCtor dctor ty) = do
+  ty' <- f ty
+  dctor' <- liftDataCtor f dctor
+  return (cid, EffectCtor dctor' ty' )
 
 liftCtorInfo :: Monad m => (t1 -> m t2) -> CtorInfo t1 -> m (CtorInfo t2)
 liftCtorInfo f (CtorInfo cid datactor) =
@@ -111,6 +118,7 @@ liftPrimOp f primop =
     CoroPrim p t1 t2   -> liftM2 (CoroPrim p) (f t1) (f t2)
     PrimInlineAsm t cnt cns fx -> do t' <- f t
                                      return $ PrimInlineAsm t' cnt cns fx
+    LookupEffectHandler tag -> return $ LookupEffectHandler tag
 
 liftBinding :: Monad m => (t1 -> m t2) -> ContextBinding t1 -> m (ContextBinding t2)
 liftBinding f (TermVarBinding s (TypedId t i, mb_cid)) = do
@@ -339,7 +347,6 @@ getStructureContextMessage :: Tc Doc
 getStructureContextMessage = do
     hist <- tcGetCurrentHistory
     let outputs = map (\e -> (text "\t\t") <> textOf e 40) hist
-    let output = case outputs of
-                 [] -> (outLn $ "\tTop-level definition:")
-                 _  -> (outLn $ "\tContext for AST below is:") <> vcat outputs
-    return output
+    return $ if null outputs
+              then outLn "\tTop-level definition:"
+              else outLn ""

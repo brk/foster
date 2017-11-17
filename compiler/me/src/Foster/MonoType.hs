@@ -232,6 +232,12 @@ alphaRenameMono fn = do
       KNArrayLit    t arr vals -> liftM3 KNArrayLit   (qt t) (qv arr) (mapRightM qv vals)
       KNVar                  v -> liftM  KNVar                  (qv v)
       KNCase          t v arms -> liftM3 KNCase (qt t) (qv v) (mapM renameCaseArm arms)
+      KNHandler ann   t fx a arms x resumeid -> do t' <- qt t
+                                                   fx' <- qt fx
+                                                   a' <- renameKN a
+                                                   arms' <- mapM renameCaseArm arms
+                                                   x' <- liftMaybe renameKN x
+                                                   return $ KNHandler ann t' fx' a' arms' x' resumeid
       KNIf            t v e1 e2-> do [ethen, eelse] <- mapM renameKN [e1,e2]
                                      v' <- qv v
                                      t' <- qt t

@@ -29,7 +29,6 @@ data TypeTC =
          | TyConTC         DataTypeName
          | TyAppTC         TypeTC [TypeTC]
          | TupleTypeTC     (Unifiable Kind) [TypeTC]
-         | CoroTypeTC      TypeTC  TypeTC TypeTC -- effect
          | RefTypeTC       TypeTC
          | ArrayTypeTC     TypeTC
          | FnTypeTC        { fnTypeTCDomain :: [TypeTC]
@@ -59,24 +58,14 @@ isTau (ForAllTC {}) = False
 isTau t = all isTau (childrenOf t)
 
 emptyEffectTC = TyAppTC (TyConTC "effect.Empty") []
+effectExtendTC eff row = TyAppTC (TyConTC "effect.Extend") [eff, row]
+
 isEmptyEffect t =
   case t of TyAppTC (TyConTC nm) [] | nm == "effect.Empty" -> True
             _ -> False
 
-{-
-instance Kinded TypeTC where
-  kindOf x = case x of
-    PrimIntTC   {}       -> KindAnySizeType
-    PrimFloat64TC        -> KindAnySizeType
-    TyVarTC   _ kind     -> kind
-    TyConAppTC  {}       -> KindPointerSized
-    TupleTypeTC {}       -> KindPointerSized
-    FnTypeTC    {}       -> KindPointerSized
-    CoroTypeTC  {}       -> KindPointerSized
-    ForAllTC _ktvs rho   -> kindOf rho
-    ArrayTypeTC {}       -> KindPointerSized
-    RefTypeTC   {}       -> KindPointerSized
--}
+
+
 
 hpre [] = empty
 hpre ds = empty <+> hsep ds
@@ -105,7 +94,6 @@ instance Pretty TypeTC where
         FnTypeTC     s t fx  cc cs      -> text "(" <> pretty s <> text " ="
                                                     <> text (uni_briefCC cc) <> text ";fx=" <> pretty fx
                                                     <> text "> " <> pretty t <> prettyFuncProcComment cs <> text ")"
-        CoroTypeTC   s t fx             -> text "(Coro " <> pretty s <+> pretty t <+> pretty fx <> text ")"
         ForAllTC   tvs rho              -> text "(forall " <> hsep (prettyTVs tvs) <> text ". " <> pretty rho <> text ")"
         TyVarTC    tv _mbk              -> text (show tv)
         MetaTyVarTC m                   -> text "(~(" <> pretty (descMTVQ (mtvConstraint m)) <> text ")!" <> text (show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")")
@@ -121,7 +109,6 @@ instance Show TypeTC where
         PrimIntTC size         -> "(PrimIntTC " ++ show size ++ ")"
         TupleTypeTC _k types   -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
         FnTypeTC  s t fx cc cs -> "(" ++ show s ++ " =" ++ uni_briefCC cc ++ ";fx=" ++ show fx ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
-        CoroTypeTC s t fx      -> "(Coro " ++ show s ++ " " ++ show t ++ " " ++ show fx ++ ")"
         ForAllTC ktvs rho      -> "(ForAll " ++ show ktvs ++ ". " ++ show rho ++ ")"
         TyVarTC     tv _mbk    -> show tv
         ArrayTypeTC ty         -> "(Array " ++ show ty ++ ")"
@@ -152,7 +139,6 @@ instance Structured TypeTC where
             PrimIntTC     size      -> text $ "PrimIntTC " ++ show size
             TupleTypeTC   {}        -> text $ "TupleTypeTC"
             FnTypeTC      {}        -> text $ "FnTypeTC"
-            CoroTypeTC    {}        -> text $ "CoroTypeTC"
             ForAllTC ktvs _rho      -> text $ "ForAllTC " ++ show ktvs
             TyVarTC       {}        -> text $ "TyVarTC "
             ArrayTypeTC   {}        -> text $ "ArrayTypeTC"
@@ -167,7 +153,6 @@ instance Structured TypeTC where
             PrimIntTC       {}      -> []
             TupleTypeTC  _k types   -> types
             FnTypeTC  ss t fx _cc _cs  -> ss++[t,fx]
-            CoroTypeTC s t fx       -> [s,t,fx]
             ForAllTC  _ktvs rho     -> [rho]
             TyVarTC        _tv _mbk -> []
             ArrayTypeTC     ty      -> [ty]

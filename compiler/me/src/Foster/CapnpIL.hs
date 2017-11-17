@@ -80,8 +80,7 @@ dumpType (LLNamedType nm) =
   (defaultType_ Named) { name_of_Type_ = StrictlyJust $ u8fromString nm }
 dumpType (LLStructType types) =
   (defaultType_ Struct) { typeparts_of_Type_ = fmap dumpType types }
-dumpType (LLCoroType a b) =
-  (defaultType_ Coro) { typeparts_of_Type_ = fmap dumpType [a,b] }
+dumpType (LLCoroType {}) = dumpType (LLNamedType "Foster$GenericCoro")
 dumpType (LLPtrType ty) =
   (defaultType_ Ptr) { typeparts_of_Type_ = fmap dumpType [ty] }
 dumpType (LLArrayType ty) =
@@ -366,6 +365,12 @@ dumpExpr _ (ILCallPrim t (PrimInlineAsm fty contents constraints sideeffects) ar
 dumpExpr maygc (ILCallPrim t (NamedPrim base) args)
         = dumpCall t (dumpGlobalSymbol base) args maygc "ccc"
 
+dumpExpr _ (ILCallPrim t (LookupEffectHandler tag) _args)
+        = (defaultLetable t Ilcallprimop) {
+            primopname_of_Letable = StrictlyJust $ u8fromString "lookup_handler_for_effect",
+            primopsize_of_Letable = [fromIntegral tag]
+        }
+
 dumpExpr _ (ILCallPrim t (PrimOp op _ty) args)
         = dumpCallPrimOp t op args
 
@@ -418,9 +423,12 @@ dumpCallPrimOp t op args = -- TODO actually use prim_op_size from C++ side.
 dumpCallCoroOp t coroPrim argty retty args mayGC =
     (defaultLetable t Ilcall) {
         parts_of_Letable = map dumpVar args,
-        callinfo_of_Letable = StrictlyJust $ dumpCallInfo mayGC "fastcc" pbCoroPrim
+        callinfo_of_Letable = StrictlyJust $ dumpCallInfo mayGC callConv pbCoroPrim
     }
     where
+        callConv = case coroPrim of
+                     CoroIsDead -> "ccc"
+                     _          -> "fastcc"
         pbCoroPrim = Just $     PbCoroPrim {
                                   tag_of_PbCoroPrim = coroFnTag coroPrim
                                 , rettype_of_PbCoroPrim = dumpType retty
@@ -428,7 +436,9 @@ dumpCallCoroOp t coroPrim argty retty args mayGC =
                             }
         coroFnTag CoroInvoke = Ilcoroinvoke
         coroFnTag CoroCreate = Ilcorocreate
+        coroFnTag CoroParent = Ilcoroparent
         coroFnTag CoroYield  = Ilcoroyield
+        coroFnTag CoroIsDead = Ilcoroisdead
 
 dumpArrayLength t arr =
     (defaultLetable t Ilarraylength) { parts_of_Letable = [dumpVar arr] }

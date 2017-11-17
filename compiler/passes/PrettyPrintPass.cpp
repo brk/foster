@@ -97,14 +97,6 @@ void RefTypeAST::show(PrettyPrintTypePass* pass){
   pass->scan(PPToken(")"));
 }
 
-void CoroTypeAST::show(PrettyPrintTypePass* pass){
-  pass->scan(PPToken("Coro("));
-  pass->emit(this->getContainedType(0));
-  pass->scan(PPToken(", "));
-  pass->emit(this->getContainedType(1));
-  pass->scan(PPToken(")"));
-}
-
 void CArrayTypeAST::show(PrettyPrintTypePass* pass){
   std::stringstream ss; ss << this->getSize();
   pass->scan(PPToken("CArray["));

@@ -1,5 +1,45 @@
-Coroutine Implementation
-------------------------
+Coroutine Implementation (new)
+------------------------------
+
+Coroutines are no longer exposed at the language level; instead,
+their use has been subsumed by effects and handlers.
+
+The coroutine library we use (libcoro) provides a ``coro_transfer`` function
+which switches control between coroutines (it doesn't handle arguments).
+
+The runtime provides ``foster_coro_create``, which takes a wrapper function
+of LLVM type ``{} (i8*)``. The wrapper takes a coro struct, which has slots
+for arguments and a wrapped function closure, and calls the wrapped function,
+passing the arguments (and writing back the return value).
+The wrapped function corresponds to the action expression of a handler.
+Suppose we have a handler for an effect ``F`` within expression ``action``,
+with ``{ action } :: { N @ (F|...) }``.
+Conceptually the corresponding function will have type
+``{ Resarg => Either N F }``, where ``Resarg`` is the type specified by
+the active effect ctor's output type (since there can be many such types
+being multiplexed by the same handler, Resarg is required to have kind
+Boxed).
+
+As a premature optimization, we don't dynamically allocate an explicit
+Either value; instead, we have the handler code query the coroutine's
+status for the Either bit.
+For now, we restrict N to be of kind Boxed, so we can give the function an
+UnknownPtrType return type, and life is dandy.
+
+To support unboxed types for N, we'd probably want to modify the coro
+invoke primitive (that is, the generated code) to return the coro status
+instead of the wrapped function's return value, and instead take
+two pointers for return value slots. Or maybe just equip the coroutine
+with two arg slots? Because the N value must be handled by the wrapper,
+which basically means the coro needs the slots anyways, and if so,
+the invoke function doesn't need separate slot pointers.
+
+
+
+
+
+Coroutine Implementation (old)
+------------------------------
 
 A call to ``coro_create`` in Foster gets compiled to
 type-specialized code (``CodegenPass:emitCoroCreateFn`` in

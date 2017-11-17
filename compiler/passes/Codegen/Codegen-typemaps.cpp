@@ -290,12 +290,13 @@ GlobalVariable* emitTypeMap(
 //   }
 //   argty
 // }
-GlobalVariable* emitCoroTypeMap(StructTypeAST* typ, StructType* sty,
+GlobalVariable* emitCoroTypeMap(TypeAST* typ, StructType* sty,
                                 llvm::Module* mod) {
   bool hasKnownTypes = sty->getNumElements() == 2;
   if (!hasKnownTypes) {
     // Generic coro; don't generate a typemap,
     // because it will be the wrong size at runtime!
+    
     return NULL;
   }
 
@@ -329,16 +330,24 @@ void registerStructType(const StructTypeAST* structty,
   emitTypeMap(structty, ty, name, NotArray, ctorRepr, mod, std::vector<int>());
 }
 
-StructTypeAST*
+bool
 isCoroStructType(TypeAST* typ) {
+  if (typ == foster::ParsingContext::lookupType("Foster$GenericCoro")) return true;
+
+  if (typ->getLLVMType() == foster_generic_coro_t) {
+    return true;
+  }
+  //llvm::outs() << "isCoroStructType? " << str(typ) << "\n";
+  //llvm::outs() << "    foster_generic_coro_t = " << str(foster_generic_coro_t) << "\n";
+
   if (StructTypeAST* sty = const_cast<StructTypeAST*>(typ->castStructTypeAST())) {
     if (sty == foster_generic_coro_ast
      ||  ( sty->getNumContainedTypes() > 0
         && sty->getContainedType(0) == foster_generic_coro_ast)) {
-      return sty;
+      return true;
     }
   }
-  return NULL;
+  return false;
 }
 
 bool isValidClosureType(const llvm::Type* ty) {
@@ -389,8 +398,9 @@ llvm::GlobalVariable* getTypeMapForType(TypeAST* typ,
   llvm::GlobalVariable* gv = typeMapCache[mkTypeSig(ty, arrayStatus, ctorRepr.smallId)];
   if (gv) return gv;
 
-  if (StructTypeAST* sty = isCoroStructType(typ)) {
-    gv = emitCoroTypeMap(sty, llvm::dyn_cast<StructType>(ty), mod);
+  if (isCoroStructType(typ)) {
+    //llvm::outs() << "Emitting coro type map for " << str(typ) << "\n";
+    gv = emitCoroTypeMap(typ, llvm::dyn_cast<StructType>(ty), mod);
   } else if (/*!ty->isAbstract() &&*/ !ty->isAggregateType()) {
     gv = emitTypeMap(typ, ty, ParsingContext::freshName("gcatom"), arrayStatus,
                      ctorRepr, mod, std::vector<int>());
@@ -401,8 +411,7 @@ llvm::GlobalVariable* getTypeMapForType(TypeAST* typ,
   }
 
   if (!gv) {
-    EDiag() << "No type map for type " << str(ty) << "\n"
-            << "\tfoster_generic_coro_t is " << str(foster_generic_coro_t);
+    EDiag() << "No type map for type " << str(ty) << "\n";
     exit(1);
   }
 

@@ -15,19 +15,18 @@ using namespace foster::runtime;
 namespace foster {
 namespace runtime {
 
-  int32_t              coro_status(foster_generic_coro* c) { return c->status; }
-  foster_generic_coro* coro_sibling(foster_generic_coro* c) { return c->sibling; }
-  foster_generic_coro* coro_invoker(foster_generic_coro* c) { return c->invoker; }
-  CoroProc             coro_fn(foster_generic_coro* c) { return c->fn; }
-  coro_context         coro_ctx(foster_generic_coro* c) { return c->ctx; }
+  int32_t              coro_status(foster_bare_coro* c) { return c->status; }
+  foster_bare_coro*    coro_parent(foster_bare_coro* c) { return c->parent; }
+  CoroProc             coro_fn(foster_bare_coro* c) { return c->fn; }
+  coro_context         coro_ctx(foster_bare_coro* c) { return c->ctx; }
 
   // coro_transfer may be defined as a macro or assembly-
   // language "function." The purpose of foster_coro_transfer
   // is to get a symbol with regular C linkage, and to ensure
   // that the coro_transfer function appears in the LLVM module.
   void
-  foster_coro_transfer(foster_generic_coro* coro) {
-    coro_transfer(&coro->sibling->ctx, &coro->ctx);
+  foster_force_linking_of_coro_transfer(foster_bare_coro* coro) {
+    coro_transfer(&coro->ctx, &coro->ctx);
   }
 
 }
@@ -37,12 +36,32 @@ namespace runtime {
 
 extern "C" {
 
-foster_generic_coro** __foster_get_current_coro_slot();
+foster_bare_coro** __foster_get_current_coro_slot();
+foster_bare_coro* foster_get_current_coro_parent() {
+  return foster::runtime::coro_parent(*__foster_get_current_coro_slot());
+}
 
-void foster_coro_ensure_self_reference(foster_generic_coro* coro) {
+foster_bare_coro* foster__lookup_handler_for_effect(int64_t tag) {
+  //printf("  Current coro tag: %lld\n", (*__foster_get_current_coro_slot())->effect_tag);
+  foster_bare_coro* c = foster_get_current_coro_parent();
+  while (c) {
+    //printf("   parent coro tag: %lld\n", c->effect_tag);
+    if (c->effect_tag == tag) return c;
+    c = coro_parent(c);
+  }
+
+  printf("WARNING: foster__lookup_handler_for_effect(%lld) couldn't find a matching coro!\n", tag);
+  return NULL;
+}
+
+void foster_coro_ensure_self_reference(foster_bare_coro* coro) {
   if (coro->indirect_self != NULL) {
     *(coro->indirect_self) = coro;
   }
+}
+
+bool foster_coro_isdead(foster_bare_coro* coro) {
+  return foster::runtime::coro_status(coro) == FOSTER_CORO_DEAD;
 }
 
 // corofn :: void* -> void
@@ -54,11 +73,12 @@ void foster_coro_create(coro_func corofn,
   // TODO use mark-sweep GC for coro stacks.
   void* sptr = malloc(ssize);
   memset(sptr, 0xEE, ssize); // for debugging only
-  foster_generic_coro* coro = (foster_generic_coro*) arg;
-  coro->indirect_self = (foster_generic_coro**) malloc(sizeof(coro));
+  foster_bare_coro* coro = (foster_bare_coro*) arg;
+  coro->indirect_self = (foster_bare_coro**) malloc(sizeof(coro));
   foster_coro_ensure_self_reference(coro);
   coro_create(&coro->ctx, corofn, coro->indirect_self,
               sptr, ssize);
+  //printf("foster_coro_create(%p, %p)\n", corofn, arg);
 }
 
 // This is a no-op for the CORO_ASM backend,
@@ -75,7 +95,7 @@ void foster_coro_destroy(coro_context* ctx) {
 }
 
 void foster_coro_delete_self_reference(void* vc) {
-  foster_generic_coro* coro = (foster_generic_coro*) vc;
+  foster_bare_coro* coro = (foster_bare_coro*) vc;
   free(coro->indirect_self);
   coro->indirect_self = NULL;
 }

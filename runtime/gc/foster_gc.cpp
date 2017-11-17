@@ -431,7 +431,7 @@ struct large_array_allocator {
 // }}}
 
 // {{{ Internal utility functions
-extern "C" foster_generic_coro** __foster_get_current_coro_slot();
+extern "C" foster_bare_coro** __foster_get_current_coro_slot();
 
 void gc_assert(bool cond, const char* msg);
 
@@ -524,7 +524,7 @@ typedef heap HeapInterface;
 // {{{ Function prototype decls
 void inspect_typemap(const typemap* ti);
 void visitGCRoots(void* start_frame, HeapInterface* visitor);
-void coro_visitGCRoots(foster_generic_coro* coro, HeapInterface* visitor);
+void coro_visitGCRoots(foster_bare_coro* coro, HeapInterface* visitor);
 const typemap* tryGetTypemap(heap_cell* cell);
 // }}}
 
@@ -1130,7 +1130,7 @@ public:
     }
 
     if (map.isCoro) {
-      foster_generic_coro* coro = reinterpret_cast<foster_generic_coro*>(cell->body_addr());
+      foster_bare_coro* coro = reinterpret_cast<foster_bare_coro*>(cell->body_addr());
       coro_visitGCRoots(coro, this);
     }
   }
@@ -1287,8 +1287,8 @@ public:
       LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-rootscan-ticks", __foster_getticks_elapsed(phaseStartTicks, __foster_getticks()),  0, 60000000, 256);
 #endif
 
-    foster_generic_coro** coro_slot = __foster_get_current_coro_slot();
-    foster_generic_coro*  coro = *coro_slot;
+    foster_bare_coro** coro_slot = __foster_get_current_coro_slot();
+    foster_bare_coro*  coro = *coro_slot;
     if (coro) {
       if (ENABLE_GCLOG) {
         fprintf(gclog, "==========visiting current ccoro: %p\n", coro); fflush(gclog);
@@ -1877,7 +1877,7 @@ class copying_gc : public heap {
         }
 
         if (map.isCoro) {
-          foster_generic_coro* coro = reinterpret_cast<foster_generic_coro*>(cell->body_addr());
+          foster_bare_coro* coro = reinterpret_cast<foster_bare_coro*>(cell->body_addr());
           coro_visitGCRoots(coro, parent);
         }
       }
@@ -2197,8 +2197,8 @@ void copying_gc::gc() {
 
   visitGCRoots(__builtin_frame_address(0), this);
 
-  foster_generic_coro** coro_slot = __foster_get_current_coro_slot();
-  foster_generic_coro*  coro = *coro_slot;
+  foster_bare_coro** coro_slot = __foster_get_current_coro_slot();
+  foster_bare_coro*  coro = *coro_slot;
   if (coro) {
     if (ENABLE_GCLOG) {
       fprintf(gclog, "==========visiting current ccoro: %p\n", coro); fflush(gclog);
@@ -2350,7 +2350,7 @@ void visitGCRoots(void* start_frame, HeapInterface* visitor) {
 // Because coro_transfer is marked noinline, the first register
 // implicitly pushed is the old %eip, and the first register
 // explicitly pushed is %ebp /  %rbp, thus forming an x86 stack frame.
-void* coro_topmost_frame_pointer(foster_generic_coro* coro) {
+void* coro_topmost_frame_pointer(foster_bare_coro* coro) {
   // If the coro status is "running", we should scan the coro
   // but not its stack (since the stack will be examined from ::gc()).
   // TODO when multithreading, running coros should be stamed with
@@ -2370,7 +2370,7 @@ void* coro_topmost_frame_pointer(foster_generic_coro* coro) {
   return &sp[NUM_SAVED - 1];
 }
 
-const char* coro_status_name(foster_generic_coro* c) {
+const char* coro_status_name(foster_bare_coro* c) {
   switch (coro_status(c)) {
   case FOSTER_CORO_INVALID: return "invalid";
   case FOSTER_CORO_SUSPENDED: return "suspended";
@@ -2381,31 +2381,29 @@ const char* coro_status_name(foster_generic_coro* c) {
   }
 }
 
-void coro_print(foster_generic_coro* coro) {
+void coro_print(foster_bare_coro* coro) {
   if (!coro) return;
   fprintf(gclog, "coro %p: ", coro); fflush(stdout);
-  fprintf(gclog, "sibling %p, invoker %p, status %s, fn %p\n",
-      foster::runtime::coro_sibling(coro),
-      foster::runtime::coro_invoker(coro),
+  fprintf(gclog, "parent %p, status %s, fn %p\n",
+      foster::runtime::coro_parent(coro),
       coro_status_name(coro),
       foster::runtime::coro_fn(coro));
 }
 
-void coro_dump(foster_generic_coro* coro) {
+void coro_dump(foster_bare_coro* coro) {
   if (!coro) {
     fprintf(gclog, "cannot dump NULL coro ptr!\n");
   } else if (ENABLE_GCLOG) {
     coro_print(coro);
-    fprintf(gclog, " "); coro_print(foster::runtime::coro_sibling(coro));
   }
 }
 
 // Declared in libfoster_coro.cpp
 extern "C"
-void foster_coro_ensure_self_reference(foster_generic_coro* coro);
+void foster_coro_ensure_self_reference(foster_bare_coro* coro);
 
 // A thin wrapper around visitGCRoots.
-void coro_visitGCRoots(foster_generic_coro* coro, HeapInterface* visitor) {
+void coro_visitGCRoots(foster_bare_coro* coro, HeapInterface* visitor) {
   coro_dump(coro);
   if (!coro
    || foster::runtime::coro_status(coro) == FOSTER_CORO_INVALID

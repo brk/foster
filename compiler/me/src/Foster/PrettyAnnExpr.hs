@@ -74,7 +74,7 @@ instance (Pretty ty, Pretty expr) => Pretty (Fn rec expr ty) where
     where args []  = empty
           args frm = empty <+> hsep (map (\v -> prettyFnFormal v <+> text "=>") frm)
 
-          prettyFnFormal (TypedId _t v) = text (T.unpack $ identPrefix v)
+          prettyFnFormal (TypedId _t v) = text (show v)
 
 prettyTyFormals [] = empty
 prettyTyFormals tyfs = empty <+> text "forall" <+> hsep (map prettyTyFormal tyfs) <+> text ","
@@ -101,7 +101,7 @@ instance Pretty (ModuleAST (ExprSkel ExprAnnot) TypeP) where
             <$> text "// end functions"
 -}
 
-prettyId (TypedId _ i) = text (T.unpack $ identPrefix i)
+--prettyId (TypedId _ i) = text (T.unpack $ identPrefix i)
 
 prettyAtom e =
   case e of
@@ -113,6 +113,7 @@ prettyAtom e =
     AnnPrimitive  {} -> pretty e
     AnnLiteral    {} -> pretty e
     AnnTuple      {} -> pretty e
+    AnnHandler    {} -> pretty e
     AnnCase       {} -> pretty e
     AnnIf         {} -> pretty e
     AnnLetVar     {} -> pretty e
@@ -166,6 +167,7 @@ instance Pretty (AnnExpr TypeTC) where
                                            <$> nest 2 (kwd "then" <+> pretty b1)
                                            <$> nest 2 (kwd "else" <+> pretty b2)
                                            <$> end
+            AnnHandler annot _ _fx action arms mb_xform _ -> withAnnot annot $ prettyHandler action arms mb_xform
             AnnCase annot _ scrut arms  -> withAnnot annot $ prettyCase scrut arms
             AnnLetVar annot i bound expr -> withAnnot annot $
                                        prettyBinding i bound id

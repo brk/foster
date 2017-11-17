@@ -1,37 +1,27 @@
 Arrays
 ======
 
-Primitive Operations
---------------------
+Allowing arrays as global variables permits much easier translation of some
+C code, but doing so is only safe if those arrays are immutable.
 
-Having an interepeted implementation has been useful to keep the language design
-"honest" about the semantics, avoiding puns particular to a single implementation.
+Of course, mutable arrays are a necessity in certain circumstances.
+And sometimes, we want to mutably initialize an array and then treat it
+as immutable afterwards.
 
-For example, the interpreter is very clear that (to be updateable) array slots
-must be store locations. The question then is: does array subscripting produce
-an explicit location, modifiable via the standard assignment primitive, or do
-the operations render the store location implicit?
+Finally, the common case for arrays is dynamically-known length,
+but it's very nice to also allow arrays with fixed, statically-known length.
 
-Here the LLVM side has an answer: the correct choice is implicit.
-The primary reason is that array slots are, at the GC level, derived pointers.
-Avoiding casual creation of derived pointers is an obvious design choice.
-Furthermore, having explicit separate operations for reading and writing
-array slots also provides a nice hook for separate read and write barriers,
-such as for implementing card marking.
-Finally, it saves a "superfluous" deref at the source level for array reads.
+So as I see it, the three big questions with a simple array design are
+providing support for:
+* mutability
+* static sizing
+* freezing
 
-Put another way, array locations are not first-class
-because that would imply that instead of every ref being just a pointer,
-refs created as a result of array subscripting would have to be represented
-differently, as an array slice (for the GC to know what updated slot value
-to write). Thus we'd either need different layout
-``(pointer to slot, array pointer)``
-or different operations ``(pointer to (pointer to slot, array pointer))``.
-The same reasoning applies to slots of data structures.
 
-Disciple bites the bullet and provides a ``#`` operator;
-``a#b`` is like ``&(a.b)`` except that it produces a ref which internally
-embeds a pointer to the parent object.
+
+There are of course higher-level concerns, such as casting/aliasing certain
+types of primitive arrays, as well as APL/J-style rank typing and
+DPJ-style deterministic parallelism.
 
 Types
 -----

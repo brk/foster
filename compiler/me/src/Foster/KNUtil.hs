@@ -11,10 +11,12 @@ import Prelude hiding ((<$>))
 
 import Foster.Base
 import Foster.Kind
+import Foster.PrettyAnnExpr
 import Foster.Config(Compiled, CompilerContext(ccUniqRef))
 
 import Text.PrettyPrint.ANSI.Leijen
 
+import Data.Maybe(maybeToList)
 import Data.List(foldl')
 import Data.Map(Map)
 import qualified Data.Map as Map(insert, lookup, empty)
@@ -36,6 +38,7 @@ data KNExpr' r ty =
         | KNKillProcess ty T.Text
         -- Control flow
         | KNIf          ty (TypedId ty)    (KNExpr' r ty) (KNExpr' r ty)
+        | KNHandler ExprAnnot ty ty (KNExpr' r ty) [CaseArm PatternRepr (KNExpr' r ty) ty] (Maybe (KNExpr' r ty)) ResumeIds
         -- Creation of bindings
         | KNCase        ty (TypedId ty) [CaseArm PatternRepr (KNExpr' r ty) ty]
         | KNLetVal      Ident        (KNExpr' r ty)     (KNExpr' r ty)
@@ -95,8 +98,8 @@ showFnStructureX (Fn fnvar args body _ _srcrange) =
                  <$> indent 2 (showStructure body)
                  <$> text "}" <> line
 
-alphaRename' :: (Show r2) => Fn r (KNExpr' r2 TypeIL) TypeIL -> Compiled (Fn r (KNExpr' r2 TypeIL) TypeIL)
---alphaRename' :: Fn r (KNExpr' r2 t) t -> IORef Uniq -> IO (Fn r (KNExpr' r2 t) t)
+alphaRename' :: (Show r2) => Fn r (KNExpr' r2 TypeIL) TypeIL
+                -> Compiled (Fn r (KNExpr' r2 TypeIL) TypeIL)
 alphaRename' fn = do
   renamed <- evalStateT (renameFn fn) (RenameState Map.empty)
 
@@ -131,7 +134,8 @@ alphaRename' fn = do
         -- been duplicated by monomorphization.
         if T.pack "<anon_fn"  `T.isInfixOf` t ||
            T.pack ".anon."    `T.isInfixOf` t ||
-           T.pack ".kn.thunk" `T.isPrefixOf` t
+           T.pack ".kn.thunk" `T.isPrefixOf` t ||
+           T.pack ".fx.thunk" `T.isPrefixOf` t
           then do state <- get
                   case Map.lookup id (renameMap state) of
                     Nothing  -> do id' <- renameI id
@@ -207,6 +211,15 @@ alphaRename' fn = do
       KNArrayLit    t arr vals -> liftM3 KNArrayLit   (qt t) (qv arr) (mapRightM qv vals)
       KNVar                  v -> liftM  KNVar                  (qv v)
       KNCase          t v arms -> liftM3 KNCase (qt t) (qv v) (mapM renameCaseArm arms)
+      KNHandler annot t eff action arms mb_xform (resumeid, resumebareid) ->
+                                  do resumeid' <- renameI resumeid
+                                     resumebareid' <- renameI resumebareid
+                                     t' <- qt t
+                                     eff' <- qt eff
+                                     action' <- renameKN action
+                                     arms' <- mapM renameCaseArm arms
+                                     mb_xform' <- liftMaybe renameKN mb_xform
+                                     return $ KNHandler annot t' eff' action' arms' mb_xform' (resumeid', resumebareid')
       KNIf            t v e1 e2-> do [ethen, eelse] <- mapM renameKN [e1,e2]
                                      v' <- qv v
                                      t' <- qt t
@@ -295,6 +308,7 @@ typeKN expr =
     KNArrayPoke     t _ _    -> t
     KNArrayLit      t _ _    -> t
     KNCase          t _ _    -> t
+    KNHandler _ann t _ _ _ _ _ -> t
     KNLetVal        _ _ e    -> typeKN e
     KNLetRec        _ _ e    -> typeKN e
     KNLetFuns       _ _ e    -> typeKN e
@@ -325,6 +339,8 @@ instance (Show ty, Show rs) => Structured (KNExpr' rs ty) where
             KNDeref      {}     -> text $ "KNDeref     "
             KNStore      {}     -> text $ "KNStore     "
             KNCase _t v arms    -> text $ "KNCase      " ++ show v ++ " binding " ++ (show $ map caseArmBindings arms)
+            KNHandler _ _ty _eff _ arms _mb_xform _resumeid ->
+                                   text $ "KNHandler   " ++           " binding " ++ (show $ map caseArmBindings arms)
             KNAllocArray {}     -> text $ "KNAllocArray "
             KNArrayRead  t _    -> text $ "KNArrayRead " ++ " :: " ++ show t
             KNArrayPoke  {}     -> text $ "KNArrayPoke "
@@ -345,6 +361,8 @@ instance (Show ty, Show rs) => Structured (KNExpr' rs ty) where
             KNKillProcess {}        -> []
             KNTuple   _ vs _        -> map var vs
             KNCase _ e arms         -> (var e):(concatMap caseArmExprs arms)
+            KNHandler _ _ty _eff action arms mb_xform _resumeid ->
+                (maybeToList mb_xform)++(action:concatMap caseArmExprs arms)
             KNLetFuns _ids fns e    -> map fnBody fns ++ [e]
             KNLetVal _x b  e        -> [b, e]
             KNLetRec _x bs e        -> bs ++ [e]
@@ -408,6 +426,7 @@ knSizeHead expr = case expr of
     KNArrayPoke   {} -> 2 -- due to (potential) bounds check
     KNCall        {} -> 4 -- due to dyn. insn overhead, stack checks, etc
     KNCase        {} -> 2 -- TODO might be cheaper for let-style cases.
+    KNHandler     {} -> 8
 
     KNAppCtor     {} -> 3 -- rather like a KNTuple, plus one store for the tag.
     KNInlined _t0 _ _ _ new  -> knSizeHead new
@@ -423,35 +442,11 @@ renderKN m put = if put then putDoc (pretty m) >>= (return . Left)
 renderKNF :: FnExprIL -> String
 renderKNF m = show (pretty m)
 
-showTyped :: Pretty t => Doc -> t -> Doc
-showTyped d t = parens (parens d <+> text "::" <+> pretty t)
-
-showUnTyped d _ = d
-
-comment d = text "/*" <+> d <+> text "*/"
-
 instance Pretty TypeIL where
   pretty t = text (show t)
 
 instance Pretty AllocMemRegion where
   pretty rgn = text (show rgn)
-
-instance Pretty t => Pretty (ArrayIndex (TypedId t)) where
-  pretty (ArrayIndex b i _rng safety) =
-    prettyId b <> brackets (prettyId i) <+> comment (text $ show safety) <+> pretty (tidType b)
-
--- (<//>) ?vs? align (x <$> y)
-
-kwd  s = dullblue  (text s)
-lkwd s = dullwhite (text s)
-end    = lkwd "end"
-
-instance (Pretty t, Pretty rs, Pretty rs2) => Pretty (Fn rs (KNExpr' rs2 t) t) where
-  pretty fn = group (lbrace <+> (hsep (map (\v -> pretty v <+> text "=>") (fnVars fn)))
-                    <$> indent 4 (pretty (fnBody fn))
-                    <$> rbrace) <+> pretty (fnVar fn)
-                                <+> text "(rec?:" <+> pretty (fnIsRec fn) <+> text ")"
-                                <+> text "// :" <+> pretty (tidType $ fnVar fn)
 
 instance (Pretty body, Pretty t) => Pretty (ModuleIL body t) where
   pretty m = text "// begin decls"
@@ -501,15 +496,6 @@ instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
                                       <+> text "="
                                       <+> (indent 0 $ pretty b) <+> lkwd "in"
                                    <$> pretty k
-{-
-            KNLetFuns ids fns k -> pretty k
-                                   <$> indent 1 (lkwd "wherefuns")
-                                   <$> indent 2 (vcat [text (show id) <+> text "="
-                                                                      <+> pretty fn
-                                                      | (id, fn) <- zip ids fns
-                                                      ])
-                                                      -}
-                                   -- <$> indent 2 end
             KNLetFuns ids fns k -> text "letfuns"
                                    <$> indent 2 (vcat [text (show id) <+> text "="
                                                                       <+> pretty fn
@@ -543,6 +529,7 @@ instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
                                                           | (CaseArm pat expr guard _ _) <- bnds
                                                           ])
                                        <$> end
+            KNHandler _ann _t _eff action bnds mb_xform _resumeid -> align $ prettyHandler action bnds mb_xform
             KNAllocArray {}     -> text $ "KNAllocArray "
             KNArrayRead  t ai   -> pretty ai <+> pretty t
             KNArrayPoke  t ai v -> prettyId v <+> text ">^" <+> pretty ai <+> pretty t
@@ -586,6 +573,8 @@ knSubst m expr =
       KNArrayLit    t arr vals -> KNArrayLit      t (qv arr) (mapRight qv vals)
       KNVar                  v -> KNVar                  (qv v)
       KNCase          t v arms -> KNCase       t (qv v) (map qCaseArm arms)
+      KNHandler ann t fx a arms x resumeid -> -- The resumeid can't be externally bound, thus safe from subst.
+            KNHandler ann t fx (knSubst m a) (map qCaseArm arms) (fmap (knSubst m) x) resumeid
       KNIf            t v e1 e2-> KNIf t (qv v) (knSubst m e1) (knSubst m e2)
       KNLetVal       id e   b  -> KNLetVal id (knSubst m e) (knSubst m  b)
       KNLetRec     ids exprs e -> KNLetRec ids (map (knSubst m) exprs) (knSubst m e)
@@ -630,7 +619,7 @@ instance Show TypeIL where
         PrimIntIL size       -> "(PrimIntIL " ++ show size ++ ")"
         TupleTypeIL KindAnySizeType  typs -> "#(" ++ joinWith ", " (map show typs) ++ ")"
         TupleTypeIL _                typs ->  "(" ++ joinWith ", " (map show typs) ++ ")"
-        FnTypeIL   s t cc cs -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
+        FnTypeIL   s t cc cs -> "(" ++ show s ++ " =" ++ briefCC cc ++ "> " ++ show t ++ " /*" ++ show cs ++ "*/)"
         CoroTypeIL s t       -> "(Coro " ++ show s ++ " " ++ show t ++ ")"
         ForAllIL ktvs rho    -> "(ForAll " ++ show ktvs ++ ". " ++ show rho ++ ")"
         TyVarIL     tv kind  -> show tv ++ ":" ++ show kind

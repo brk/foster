@@ -27,6 +27,7 @@ data AnnExpr ty =
         | E_AnnFn       (Fn () (AnnExpr ty) ty)
         -- Control flow
         | AnnIf         ExprAnnot ty (AnnExpr ty) (AnnExpr ty) (AnnExpr ty)
+        | AnnHandler    ExprAnnot ty ty (AnnExpr ty) [CaseArm Pattern (AnnExpr ty) ty] (Maybe (AnnExpr ty)) ResumeIds
         -- Creation of bindings
         | AnnCase       ExprAnnot ty (AnnExpr ty) [CaseArm Pattern (AnnExpr ty) ty]
         | AnnLetVar     ExprAnnot Ident (AnnExpr ty) (AnnExpr ty)
@@ -82,6 +83,7 @@ instance TypedWith (AnnExpr ty) ty where
      AnnArrayRead _rng t _ -> t
      AnnArrayPoke  _ t _ _ -> t
      AnnAllocArray _ t _ _ _ _ -> t
+     AnnHandler _rng t _ _ _ _ _ -> t
      AnnCase _rng t _ _    -> t
      E_AnnVar _rng (tid, _)-> tidType tid
      AnnPrimitive _rng t _ -> t
@@ -112,6 +114,7 @@ instance Pretty ty => Structured (AnnExpr ty) where
       AnnArrayRead  _rng t _     -> text "AnnArrayRead :: " <> pretty t
       AnnArrayPoke  _rng t _ _   -> text "AnnArrayPoke :: " <> pretty t
       AnnTuple  {}               -> text "AnnTuple     "
+      AnnHandler {}              -> text "AnnHandler   "
       AnnCase   {}               -> text "AnnCase      "
       AnnPrimitive _r _ p        -> text "AnnPrimitive " <> pretty p
       E_AnnVar _r (tid, _)       -> text "AnnVar       " <> pretty tid <> text " :: " <> pretty (tidType tid)
@@ -141,6 +144,9 @@ instance Pretty ty => Structured (AnnExpr ty) where
       AnnArrayRead _rng _t ari             -> childrenOfArrayIndex ari
       AnnArrayPoke _rng _t ari c           -> childrenOfArrayIndex ari ++ [c]
       AnnTuple _rng _ _ exprs              -> exprs
+      AnnHandler _rng _ _ e bs mb_e _resid -> e:(concatMap caseArmExprs bs)++(case mb_e of
+                                                                                  Nothing -> []
+                                                                                  Just x  -> [x])
       AnnCase _rng _t e bs                 -> e:(concatMap caseArmExprs bs)
       E_AnnVar {}                          -> []
       AnnPrimitive {}                      -> []
@@ -161,7 +167,9 @@ instance (Structured ty, Pretty ty) => AExpr (AnnExpr ty) where
                                                                    `butnot` ids
         AnnLetFuns _rng ids fns e -> (concatMap freeIdents fns ++ freeIdents e)
                                                                    `butnot` ids
-        AnnCase _rng _t e arms    -> freeIdents e ++ concatMap caseArmFreeIds arms
+        AnnHandler _rng _t _ e arms mb_xform (resumeid,resbareid)
+                                  -> freeIdents e ++ (concatMap caseArmFreeIds arms `butnot` [resumeid, resbareid]) ++ freeIdents mb_xform
+        AnnCase _rng _t e arms    -> freeIdents e ++  concatMap caseArmFreeIds arms
         E_AnnFn f                 -> freeIdents f
         E_AnnVar _rng (v, _)      -> [tidIdent v]
         _                         -> concatMap freeIdents (childrenOf e)
@@ -188,6 +196,7 @@ annExprAnnot expr = case expr of
       AnnArrayRead annot _ _        -> annot
       AnnArrayPoke annot _ _ _      -> annot
       AnnTuple     annot _ _ _      -> annot
+      AnnHandler  annot _ _ _ _ _ _ -> annot
       AnnCase      annot _ _ _      -> annot
       E_AnnVar     annot _          -> annot
       AnnPrimitive annot _ _        -> annot

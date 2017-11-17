@@ -293,6 +293,7 @@ ssTermOfExpr expr =
     KNTyApp    _t v argtys -> SSTmExpr  $ ITyApp (idOf v) argtys
     KNCase _t a bs {-dt-}  -> SSTmExpr  $ ICase (idOf a) {-dt-} [CaseArm p (tr e) (fmap tr g) b r
                                                                 |CaseArm p e g b r <- bs] []
+    KNHandler {} -> error $ "KSmallstep.hs: KNHandler not yet implemented"
     KNAppCtor     _t cr vs -> SSTmExpr  $ IAppCtor (fst cr) (map idOf vs)
     KNKillProcess _t msg   -> SSTmExpr  $ error $ "prim kill-process: " ++ T.unpack msg
     KNCompiles {} -> SSTmValue $ SSBool True -- TODO maybe have __COMPILES__ take a default parameter for us to return?
@@ -544,7 +545,7 @@ stepExpr gs expr = do
               withTerm gs (SSTmValue $ evalPrimitiveIntTrunc from to args)
           CoroPrim prim _t1 _t2 -> evalCoroPrimitive prim gs args
           PrimInlineAsm {} -> error $ "KSmallstep.hs: Interpreter cannot handle inline asm!"
-
+          LookupEffectHandler _ -> error $ "KSmallstep.hs: Interpreter cannot yet look up effect handlers"
     ICall b vs ->
         let args = map (getval gs) vs in
         case getval gs b of

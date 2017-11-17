@@ -92,8 +92,8 @@ struct CodegenPass {
   void popExistingScope(ValueScope*);
 
   typedef std::map<std::pair<
-           std::pair<bool, llvm::Type*>,
-                           llvm::Type*>, llvm::Function*>
+           std::pair<int32_t, llvm::Type*>,
+                              llvm::Type*>, llvm::Function*>
           LazyCoroPrimInfoMap;
 
   LazyCoroPrimInfoMap                           lazyCoroPrimInfo;
@@ -153,7 +153,7 @@ struct CodegenPass {
   Value* allocateMPInt();
 
   llvm::AllocaInst* storeAndMarkPointerAsGCRoot(llvm::Value*);
-
+  Value* getCurrentCoroParent();
   Value* emitCoroCreateFn(TypeAST* retType, TypeAST* argTypes);
   Value* emitCoroInvokeFn(llvm::Type* retTy,
                           llvm::Type* argTypes);

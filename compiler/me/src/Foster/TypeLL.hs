@@ -20,7 +20,7 @@ data TypeLL =
          | LLArrayType     TypeLL
          | LLPtrType       TypeLL
          | LLPtrTypeUnknown
-         deriving (Eq, Show)
+         deriving (Eq, Show, Ord)
 
 llBoolType = LLPrimInt I1
 

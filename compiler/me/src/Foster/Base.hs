@@ -48,10 +48,10 @@ class IntSizedBits t where
 -- |||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 data CompilesResult expr = CompilesResult (OutputOr expr)
 type Uniq = Int
-data CallConv = CCC | FastCC deriving (Eq, Show)
+data CallConv = CCC | FastCC deriving (Eq, Show, Ord)
 type LogInt = Int
 data IntSizeBits = I1 | I8 | I16 | I32 | I64 | IWd | IDw -- Word/double-word
-                 deriving (Eq, Show)
+                 deriving (Eq, Show, Ord)
 
 data ProcOrFunc   = FT_Proc | FT_Func  deriving (Show, Eq)
 data RecStatus = YesRec | NotRec deriving (Eq, Ord, Show)
@@ -262,7 +262,19 @@ data CtorRepr = CR_Default     Int -- tag via indirection through heap cell meta
               | CR_Transparent     -- no runtime indirection around wrapped value (boxed)
               | CR_TransparentU    -- no runtime indirection around wrapped value (unboxed)
                 deriving (Eq, Show, Ord)
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+-- |||||||||||||||||||||||| Effects |||||||||||||||||||||||||||||{{{
+data EffectDecl ty = EffectDecl {
+    effectDeclName      :: TypeFormal
+  , effectDeclTyFormals :: [TypeFormal]
+  , effectDeclCtors     :: [EffectCtor ty]
+  , effectDeclRange     :: SourceRange
+  }
 
+data EffectCtor ty = EffectCtor {
+    effectCtorAsData :: DataCtor ty
+  , effectCtorOutput :: ty
+}
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||| Literals |||||||||||||||||||||||||||||||||{{{
 data Literal = LitInt   LiteralInt
@@ -311,6 +323,7 @@ data ToplevelItem expr ty =
       ToplevelDecl (String, ty)
     | ToplevelDefn (String, expr ty)
     | ToplevelData (DataType ty)
+    | ToplevelEffect (EffectDecl ty)
 
 data ModuleAST expr ty = ModuleAST {
           moduleASThash        :: String
@@ -322,6 +335,7 @@ data ModuleAST expr ty = ModuleAST {
 
 moduleASTdataTypes m = [dt | ToplevelData dt <- moduleASTitems m]
 moduleASTdecls     m = [de | ToplevelDecl de <- moduleASTitems m]
+moduleASTeffects   m = [ef | ToplevelEffect ef <- moduleASTitems m]
 
 data Fn rec expr ty
                 = Fn { fnVar   :: TypedId ty
@@ -348,6 +362,7 @@ data ModuleIL expr ty = ModuleIL {
         , moduleILdecls       :: [(String, ty)]
         , moduleILdataTypes   :: [DataType ty]
         , moduleILprimTypes   :: [DataType ty]
+        , moduleILeffectDecls :: [EffectDecl ty]
         , moduleILsourceLines :: SourceLines
      }
 
@@ -684,14 +699,19 @@ prettyIdent i = text (show i)
 
 prettyId (TypedId _ i) = prettyIdent i
 
+-- Handler expressions pre-allocate the ids that will be bound for the `resume` functions
+-- during typechecking; they must be kept around to be used during handler compilation.
+type ResumeIds = (Ident, Ident)
+
 data FosterPrim ty = NamedPrim (TypedId ty) -- invariant: global symbol
                    | PrimOp { ilPrimOpName :: String
                             , ilPrimOpType :: ty }
                    | PrimIntTrunc IntSizeBits IntSizeBits -- from, to
                    | CoroPrim  CoroPrim ty ty
                    | PrimInlineAsm ty T.Text T.Text Bool
+                   | LookupEffectHandler Uniq
 
-data CoroPrim = CoroCreate | CoroInvoke | CoroYield deriving (Show, Eq)
+data CoroPrim = CoroCreate | CoroInvoke | CoroYield | CoroParent | CoroIsDead deriving (Show, Eq)
 
 -- TODO distinguish stable pointers from lively pointers?
 --      stable-pointer-bit at compile time or runtime?
@@ -940,11 +960,14 @@ instance Pretty t => Pretty (FosterPrim t) where
                                        <> text "," <+> pretty t2
                                        <> text "]"
   pretty (PrimInlineAsm _ cnt _cns _haseffects) = text "inline-asm" <+> text (show cnt)
+  pretty (LookupEffectHandler tag) = text "lookup_handler_for_effect{" <> pretty tag <> text "}"
 
 instance Pretty CoroPrim where
   pretty CoroCreate = text "CoroCreate"
   pretty CoroInvoke = text "CoroInvoke"
   pretty CoroYield  = text "CoroYield"
+  pretty CoroParent = text "CoroParent"
+  pretty CoroIsDead = text "CoroIsDead"
 
 instance Pretty CtorId where
   pretty (CtorId tynm ctnm sm) = pretty tynm <> text "." <> pretty ctnm <> parens (pretty sm)
@@ -979,10 +1002,43 @@ instance Pretty t => Pretty (DataType t) where
      <$> text ";"
      <$> text ""
 
-prettyDataTypeCtor dc =
+prettyDataTypeCtorBare dc =
   text "of" <+> text "$" <> text (T.unpack $ dataCtorName dc)
                         <+> hsep (map pretty (dataCtorTypes dc))
+
+prettyDataTypeCtor dc = prettyDataTypeCtorBare dc
                         <+> text "// repr:" <+> text (show (dataCtorRepr dc))
+
+instance Pretty t => Pretty (EffectDecl t) where
+  pretty ed =
+    text "effect" <+> pretty (effectDeclName ed) <+>
+         hsep (map (parens . pretty) (effectDeclTyFormals ed))
+     <$> indent 2 (vsep (map prettyEffectCtor (effectDeclCtors ed)))
+     <$> text ";"
+     <$> text ""
+
+prettyEffectCtor ec = prettyDataTypeCtorBare (effectCtorAsData ec)
+                        <+> text "=>" <+> pretty (effectCtorOutput ec)
+
+prettyHandler :: (Pretty expr, Pretty (pat ty)) => expr -> [CaseArm pat expr ty] -> Maybe expr -> Doc
+prettyHandler action arms mb_xform =
+            kwd "handle" <+> pretty action
+            <$> indent 2 (vcat [ kwd "of" <+>
+                                        (hsep $ [{- fill 20 -} (pretty epat)]
+                                            ++  prettyGuard guard
+                                            ++ [text "->" <+> pretty body])
+                              | (CaseArm epat body guard _ _) <- arms
+                              ])
+            <> (case mb_xform of
+                 Nothing -> text ""
+                 Just x  -> text "" <$> lkwd "as" <> pretty x)
+            <$> end
+  where
+    prettyGuard Nothing  = []
+    prettyGuard (Just e) = [text "if" <+> pretty e]
+    kwd  s = dullblue  (text s)
+    lkwd s = dullwhite (text s)
+    end    = lkwd "end"
 
 prettyCase :: (Pretty expr, Pretty (pat ty)) => expr -> [CaseArm pat expr ty] -> Doc
 prettyCase scrutinee arms =
@@ -1003,6 +1059,13 @@ prettyCase scrutinee arms =
 
 instance TExpr (ArrayIndex (TypedId t)) t where
    freeTypedIds (ArrayIndex v1 v2 _ _) = [v1, v2]
+
+instance AExpr a => AExpr (Maybe a) where
+   freeIdents Nothing = []
+   freeIdents (Just x) = freeIdents x
+
+deriving instance (Show ty) => Show (EffectDecl ty)
+deriving instance (Show ty) => Show (EffectCtor ty)
 
 deriving instance (Show ty) => Show (AllocInfo ty)
 deriving instance (Eq ty)   => Eq   (AllocInfo ty)
@@ -1043,5 +1106,7 @@ deriving instance Functor CtorInfo
 deriving instance Functor DataCtor
 deriving instance Functor DataType
 deriving instance Functor ArrayIndex
+deriving instance Functor EffectDecl
+deriving instance Functor EffectCtor
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

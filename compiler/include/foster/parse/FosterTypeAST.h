@@ -26,6 +26,7 @@ struct ValAbs;
 
 // This is the (prefix) struct type for a foster coro.
 extern llvm::Type* foster_generic_coro_t;
+extern llvm::Type* foster_generic_split_coro_ty;
 extern TypeAST* foster_generic_coro_ast;
 
 struct PrettyPrintTypePass;

@@ -86,8 +86,10 @@ bool isPointerToUnknown(Type* ty) {
 }
 
 bool matchesExceptForUnknownPointers(Type* aty, Type* ety) {
-  //DDiag() << "matchesExceptForUnknownPointers ? " << str(aty) << " =?= " << str(ety);
+  DDiag() << "matchesExceptForUnknownPointers ? " << str(aty) << " =?= " << str(ety);
   if (aty == ety) return true;
+  if (aty == foster_generic_coro_t || ety == foster_generic_coro_t) return true;
+  
   if (aty->isPointerTy() && ety->isPointerTy()) {
     if (isPointerToUnknown(aty) || isPointerToUnknown(ety)) { return true; }
     return matchesExceptForUnknownPointers(slotType(aty), slotType(ety));
@@ -210,8 +212,8 @@ void assertValueHasExpectedType(llvm::Value* argV, llvm::Type* expectedType,
               << "\n had type         " << str(argV->getType())
               << "\n vs expected type " << str(expectedType)
               << "\nargV = " << str(argV)
-              << "\and base type " << str(FV->getType())
-              << "\nfor base " << str(FV);
+              << "\nand base type " << str(FV->getType())
+              << "\nfor base " << str(FV) << "\n";
 }
 
 void assertHaveCallableType(LLExpr* base, llvm::Type* FT, llvm::Value* FV) {
@@ -740,9 +742,16 @@ void passPhisAndBr(LLBlock* block, const vector<llvm::Value*>& args) {
 void LLBr::codegenTerminator(CodegenPass* pass) {
   LLBlock* block = pass->lookupBlock(this->block_id);
 
+  if (false && this->args.empty()) {
+    llvm::outs() << "{{{ Empty args!";
+    llvm::outs() << "    block_id: " << block_id << "\n";
+    llvm::outs() << "    parent: " <<  builder.GetInsertBlock()->getParent()->getName().str() << "\n";
+    llvm::outs() << "}}}\n";
+  }
   if (this->args.empty() && (llvm::StringRef(block_id).startswith(
                         builder.GetInsertBlock()->getParent()->getName().str())
-                          || llvm::StringRef(block_id).startswith("loophdr.")))
+                          || llvm::StringRef(block_id).startswith("loophdr.")
+                          || llvm::StringRef(block_id).startswith("effect_handler.go")))
   { // The "first" branch into the postalloca won't pass any actual args, so we
     // want to use the "real" function args (leaving out the invariant env ptr).
     // Other branches to postalloca will pass the new values for the arg slots.
@@ -965,6 +974,37 @@ llvm::Value* LLCoroPrim::codegen(CodegenPass* pass) {
   if (this->primName == "coro_yield") { return pass->emitCoroYieldFn(r, a); }
   if (this->primName == "coro_invoke") { return pass->emitCoroInvokeFn(r, a); }
   if (this->primName == "coro_create") { return pass->emitCoroCreateFn(retType, typeArg); }
+  if (this->primName == "coro_isdead") { 
+    auto orig = pass->mod->getFunction("foster_coro_isdead");
+    auto newty = rawPtrTo(llvm::FunctionType::get(builder.getInt1Ty(), 
+                                  { getHeapPtrTo(foster_generic_split_coro_ty) }, false));
+    llvm::outs() << "trying to cast " << str(orig->getType()) << "\nto\n" << str(newty) << "\n";
+    return builder.CreateBitCast(orig, newty);
+  }
+  if (this->primName == "coro_parent") {
+    auto fn = Function::Create(
+      /*Type=*/    llvm::FunctionType::get(
+                    /*Result=*/   getHeapPtrTo(foster_generic_coro_t),
+                    /*Params=*/   { },
+                    /*isVarArg=*/ false),
+      /*Linkage=*/ llvm::GlobalValue::InternalLinkage,
+      /*Name=*/    ".coro_parent", pass->mod);
+
+    fn->setCallingConv(llvm::CallingConv::Fast);
+    pass->markFosterFunction(fn);
+
+      
+    BasicBlock* prevBB = builder.GetInsertBlock();
+    pass->addEntryBB(fn);
+    builder.CreateRet(
+      builder.CreateBitCast(pass->getCurrentCoroParent(),
+        getHeapPtrTo(foster_generic_coro_t)));
+    if (prevBB) {
+      builder.SetInsertPoint(prevBB);
+    }
+
+    return fn;
+  }
   ASSERT(false) << "unknown coro prim: " << this->primName;
   return NULL;
 }
@@ -1451,6 +1491,14 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
 /////////////////////////////////////////////////////////////////{{{
 
 llvm::Value* LLCallPrimOp::codegen(CodegenPass* pass) {
+  if (this->op == "lookup_handler_for_effect") {
+    // Special cased because it's the only operation that needs tag.
+    llvm::Value* fn = pass->mod->getFunction("foster__lookup_handler_for_effect");
+    ASSERT(fn != NULL) << "NO foster__lookup_handler_for_effect IN MODULE! :(";
+
+    llvm::CallInst* handler = builder.CreateCall(fn, { builder.getInt64(this->tag) }, "handler");
+    return handler;
+  }
   return pass->emitPrimitiveOperation(this->op, builder,
                                       codegenAll(pass, this->args));
 }
@@ -1521,7 +1569,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
 
   if (Function* F = llvm::dyn_cast<Function>(FV)) {
     // Call to top level function
-    ASSERT(callingConv == F->getCallingConv());
+    callingConv = F->getCallingConv();
     FT = F->getFunctionType();
   } else if (isFunctionPointerTy(FV->getType())) {
     FT = dyn_cast<llvm::FunctionType>(slotType(FV));

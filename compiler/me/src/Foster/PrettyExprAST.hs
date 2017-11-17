@@ -115,6 +115,7 @@ prettyItem (ToplevelDecl (s, t)) = showTyped (text s) t
 prettyItem (ToplevelDefn (_, E_FnAST _ fn)) = prettyTopLevelFn fn
 prettyItem (ToplevelDefn (s, e)) = text s <+> text "=" <+> pretty e <> text ";"
 prettyItem (ToplevelData dt) = pretty dt
+prettyItem (ToplevelEffect ed) = pretty ed
 
 prettyId (TypedId _ i) = text (T.unpack $ identPrefix i)
 
@@ -189,6 +190,7 @@ prettyStmt e = case e of
     E_AllocAST annot e _rgn  -> withAnnot annot $ parens $ text "prim ref" <+> prettyAtom e
     E_DerefAST annot e       -> withAnnot annot $ prettyAtom e <> text "^"
     E_StoreAST annot e1 e2   -> withAnnot annot $ prettyAtom e1 <+> text ">^" <+> prettyAtom e2
+    E_Handler  annot e arms mbe -> withAnnot annot $ prettyHandler e arms mbe
     E_Case annot scrut arms  -> withAnnot annot $ prettyCase scrut arms
     E_CompilesAST annot Nothing  -> withAnnot annot $ text $ "E_CompilesAST NOTHING"
     E_CompilesAST annot (Just e) -> withAnnot annot $ parens $ text "__COMPILES__" <+> pretty e
