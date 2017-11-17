@@ -1,0 +1,46 @@
+main = {
+  //call_deref_a !;
+  call_deref_b !;
+};
+
+// Test that global symbols may be let-bound and stored in refs.
+
+g = { x : Int32 => { x } };
+
+// g :: { Int32 => { forall a, Int32 @a } @() }
+
+call_deref_a = {
+/*
+  r = (prim ref g);
+  gg = r^;
+
+  ggaf = gg 3;
+
+  expect_i32 3;
+  print_i32 (ggaf !);
+  */
+  ()
+};
+
+g2 = { x : Int32 => { forall t:Boxed, v:t => x } };
+call_deref_c = {
+  r = (prim ref g2);
+  ggc = r^;
+
+  ggcf = ggc 3;
+
+  expect_i32 3;
+  print_i32 (ggcf ());
+};
+
+
+f = { x : Int32 => x };
+
+call_deref_b = {
+  r = (prim ref f);
+  ggb = r^;
+
+  expect_i32 3;
+  print_i32 (ggb 3);
+};
+

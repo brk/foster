@@ -1,0 +1,68 @@
+
+hof-while :: { { Bool } => { () } => () };
+hof-while = { t => b =>
+  if t ! then b ! ; hof-while t b
+          else () end
+};
+
+main = { 0 };
+
+/*
+
+
+main = {
+  noinline_llvm_variant-one !;
+  noinline_llvm_variant-two !;
+
+  niters = opaquely_i32 100`000`000;
+  two    = opaquely_i32           2;
+
+  expect_i32 niters;
+  print_i32 (noinline_llvm_stress-hof niters two);
+};
+
+noinline_llvm_stress-hof = { n => k => // 100 mm iters => 1000 ms without inlining
+  x = (prim ref 0);
+  hof-while { x^ <SInt32 n } {
+     (x^ +Int32 (k -Int32 1)) >^ x
+  };
+  x^
+};
+
+hof-while = { t : {Bool} => b : { () } =>
+  if t ! then b ! ; hof-while t b
+          else () end
+};
+
+noinline_llvm_variant-one = {
+  expect_i32 0;
+  expect_i32 1;
+  expect_i32 2;
+  v = (prim ref 0);
+  n = opaquely_i32 3;
+
+  hof-while { v^ <SInt32 n } {
+    print_i32 v^ ; (v^ +Int32 1) >^ v
+  }
+};
+
+noinline_llvm_variant-two = {
+  expect_i32 0;
+  expect_i32 1;
+  expect_i32 2;
+  v = (prim ref 0);
+  n = opaquely_i32 3;
+
+  hof-while { v^ <SInt32 n } {
+    print_i32 v^ ; (v^ +Int32 1) >^ v
+  }
+  // This once triggered a bug where the closure pairs passed to hof-while
+  // were being stack-allocated, and TCO resulted in them being clobbered.
+};
+
+// TODO check this
+// hof-while-unit = { t : {Bool} => b : { () } =>
+//   if t ! then b !; hof-while-unit t b
+//           else () end
+// };
+*/

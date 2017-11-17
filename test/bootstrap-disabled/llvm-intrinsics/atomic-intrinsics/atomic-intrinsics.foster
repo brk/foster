@@ -1,0 +1,74 @@
+cmp-swap = fn(a:i32, b:i32, c:i32) {
+  llvm.atomic.cmp.swap.i32.p0i32(a, b, c)
+}
+
+test-cmp-swap = fn(a:i32) {
+  let x = llvm.atomic.cmp.swap.i32.p0i32(a, 0, 1) in {
+    expect_i32(3) ; print_i32(a)
+    expect_i32(3) ; print_i32(x)
+  }
+
+  let x = llvm.atomic.cmp.swap.i32.p0i32(a, 3, 4) in {
+    expect_i32(4) ; print_i32(a)
+    expect_i32(3) ; print_i32(x)
+  }
+}
+
+test-swap = fn(a:i32) {
+  expect_i32(13) ; print_i32(llvm.atomic.swap.i32.p0i32(a, 14))
+  expect_i32(14) ; print_i32(a)
+}
+
+test-load-add = fn(a:i32) {
+  expect_i32(23) ; print_i32(llvm.atomic.load.add.i32.p0i32(a, 1))
+  expect_i32(24) ; print_i32(a)
+}
+
+test-load-sub = fn(a:i32) {
+  expect_i32(123) ; print_i32(llvm.atomic.load.sub.i32.p0i32(a, 1))
+  expect_i32(122) ; print_i32(a)
+}
+
+// atomic.load.and.*  &  atomic.load.or.*
+// conflict with grammar keywords for now...
+
+test-load-xor = fn(a:i32) {
+  expect_i32(0b10001) ; print_i32(llvm.atomic.load.xor.i32.p0i32(a, 0b00111))
+  expect_i32(0b10110) ; print_i32(a)
+}
+
+// For LLVM 2.6, load.nand actually computes A & ~B, not ~(A & B),
+// in order to maintain compatibility with GCC 4.2
+//test-load-nand = fn(a:i32) {
+//  expect_i32(0b110101) ; print_i32(llvm.atomic.load.nand.i32.p0i32(a, 0b111011))
+//  expect_i32(0b001111) ; print_i32(a)
+//  // actual: 0b001010
+//}
+
+test-load-max = fn(a:i32) {
+  expect_i32(1234) ; print_i32(llvm.atomic.load.max.i32.p0i32(a, 1233))
+  expect_i32(1234) ; print_i32(a)
+
+  //set a = 1123
+  expect_i32(1123) ; print_i32(llvm.atomic.load.max.i32.p0i32(a, 1124))
+  expect_i32(1124) ; print_i32(a)
+}
+
+main = fn () {
+  let x = 11 in {
+    expect_i32(11)
+    // x is passed by value, not by reference;
+    // thus only a copy of x is modified by cmp-swap.
+    cmp-swap(x, 11, 22)
+    print_i32(x)
+  }
+  test-cmp-swap(3)
+ // test-swap(new 13)
+ // test-load-add(new 23)
+ // test-load-sub(new 123)
+ //
+ // test-load-xor(new  10001_2)
+ // //test-load-nand(new 110101_2)
+ //
+ // test-load-max(new 1234)
+}

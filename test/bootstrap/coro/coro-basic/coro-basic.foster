@@ -1,0 +1,56 @@
+
+main = {
+  expect_i32 1111111;
+  expect_i32 2222222;
+  expect_i32 4444444;
+  expect_i32 16;
+  expect_i32 6666;
+  expect_i32 1234;
+  expect_i32 32;
+  expect_i32 5555555;
+  expect_i32 6666666;
+  expect_i1 False;
+  expect_i32 7777;
+  expect_i32 3333333;
+  expect_i32 9999999;
+
+  print_i32 1111111;
+
+  bar = { y0 =>
+         force_gc_for_debugging_purposes !;
+         _ = coro_yield:[Array Int8,Int32] (zext_i8_to_i32 y0);
+         print_i32 5555555;
+         force_gc_for_debugging_purposes !;
+         print_i32 6666666;
+
+         // Inconsistent use of coro_yield should be marked as a type error.
+         print_i1 (__COMPILES__ coro_yield:[Array Int8, {Int32}] { 7777 });
+  };
+  foo = { y0 => bar y0 };
+  // co :: Coro (Array Int8) Int32
+  co = coro_create { x : Array Int8 =>
+         print_i32 4444444;
+         force_gc_for_debugging_purposes  !;
+         print_i8 x[0]; // 16
+         y = coro_yield:[Array Int8,Int32] 6666;
+
+         foo y[0];
+         // TODO no yield makes for an error
+         _ = coro_yield:[Array Int8, Int32] 7777;
+         9999
+  };
+  r  = (prim ref 0);
+
+    print_i32 2222222;
+  force_gc_for_debugging_purposes !;
+    print_i32 (coro_invoke co b"\x10"); // 6666
+    print_i32 1234;
+  force_gc_for_debugging_purposes !;
+    print_i32 (coro_invoke co b"\x20"); // 20
+  force_gc_for_debugging_purposes !;
+    print_i32 (coro_invoke co b"\x30");
+    print_i32 3333333;
+    print_i32 9999999;
+};
+
+

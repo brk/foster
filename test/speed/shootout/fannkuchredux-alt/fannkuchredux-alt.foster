@@ -1,0 +1,99 @@
+snafuinclude Prelude "prelude";
+
+incrBy = { r : Ref Int32 => n : Int32 => (r^ +Int32 n) >^ r; };
+decrBy = { r : Ref Int32 => n : Int32 => (r^ -Int32 n) >^ r; };
+
+part2 = { perm =>
+    REC loop = { flipsCount =>
+        k = perm[0];
+        if k ==Int32 0 then flipsCount else
+          k2 = bitlshr-Int32 (k +Int32 1) 1;
+          repeatRange 0 k2 { i =>
+            tmp = perm[i];
+            perm[k -Int32 i] >^ perm[i];
+            tmp >^ perm[k -Int32 i];
+          };
+          loop (flipsCount +Int32 1)
+        end
+    };
+    loop 0;
+};
+
+tk = { maxn : Int32 =>
+       maxflips : Ref Int32 =>
+       checksum : Ref Int32 =>
+
+  perm  = allocDArray:[Int32] 16;
+  perm1 = allocDArray:[Int32] 16;
+  count = allocDArray:[Int32] 16;
+  initR = (prim ref maxn);
+
+  repeatRange 0 maxn { k : Int32 => k >^ perm1[k]; () };
+
+  REC outerloop = { permCount =>
+    repeatRange 0 initR^ { k : Int32 => (k +Int32 1) >^ count[k]; () };
+    repeatRange 0 maxn   { k : Int32 => perm1[k] >^ perm[k]; () };
+
+    flipsCount = part2 perm;
+
+    (max-SInt32 maxflips^ flipsCount) >^ maxflips;
+    (checksum^ +Int32 (if (permCount `bitand-Int32` 1) ==Int32 0
+                        then flipsCount else 0 -Int32 flipsCount end))
+                        >^ checksum;
+
+    REC innerloop = { r =>
+
+        if r ==Int32 maxn then
+            False
+        else
+          perm0 = perm1[0];
+          repeatRange 0 r { i => perm1[i +Int32 1] >^ perm1[i]; };
+          perm0 >^ perm1[r];
+          (count[r] -Int32 1) >^ count[r];
+          if count[r] >SInt32 0
+            then
+              r >^ initR;
+              True
+            else
+              innerloop (r +Int32 1)
+          end
+        end
+    };
+
+    if innerloop 1
+      then outerloop (permCount +Int32 1)
+    end
+  };
+
+  outerloop 0;
+};
+
+in-range = { n : Int32 => a : Int32 => z : Int32 =>
+  if   n <SInt32 a then False
+  else n <=SInt32 z
+  end
+};
+
+repeatRange = { e : Int32 => n : Int32 => f : { Int32 => () } =>
+  if e <SInt32 n then f e; repeatRange (e +Int32 1) n f end
+};
+
+main = {
+    n = tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1);
+    maxflips = (prim ref 0);
+    checksum = (prim ref 0);
+
+    if in-range n 3 15 then
+      tk n maxflips checksum;
+
+      print_i32 checksum^;
+      print_text "Pfannkuchen";
+      print_i32 n;
+      print_i32 maxflips^;
+      ()
+      // printf("%d\nPfannkuchen(%d) = %d\n", checksum, max_n, maxflips);
+    else
+      print_text "usage: <prog> number";
+      ()
+    end
+};

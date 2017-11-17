@@ -1,0 +1,3 @@
+main = { foo( ; };
+
+foo = { x : Int32 => x };

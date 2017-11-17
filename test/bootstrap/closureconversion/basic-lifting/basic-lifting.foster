@@ -1,0 +1,24 @@
+test = { arg:Int32 =>
+   // syntactically nested function definition
+   // (with no free variables); equivalent to
+   // definition at top level.
+   expect_i32(3) ;  print_i32 ({ a:Int32 => a +Int32 1 } 2);
+
+  // requires closure conversion!
+  expect_i32(2 +Int32 arg) ;  print_i32 ({ x:Int32 => x +Int32 arg } 2);
+};
+
+f = { a:Int32 => b:Int32 => c:Int32 =>
+  { x:Int32 =>
+  { y:Int32 =>
+  { z:Int32 => (x *Int32 y) +Int32 z // 12 + 8 = 20
+            }(x *Int32 c) // 2*4 = 8
+            }(b +Int32 3) // 3+3 = 6
+            }(4 -Int32 a) // 4-2 = 2
+};
+
+main = {
+  test 2;
+  expect_i32 20;
+  print_i32 (f 2 3 4);
+};

@@ -1,0 +1,52 @@
+main = {
+  callcall !;
+  call_let !;
+
+  test-nested-let-var !;
+  test-nested-let-fun !;
+  test-nested-let-if !;
+};
+
+f = { { 0 } };
+
+g = { x : Int32 => { x } };
+
+callcall = {
+  expect_i32 0;
+  print_i32 ((f !) !);
+};
+
+call_let = {
+  expect_i32 2;
+  print_i32 (((gg = g; gg) 2) !);
+};
+
+call_deref_b = {
+  r = (prim ref (g 4));
+      expect_i32 4;
+      print_i32 (r^ !);
+};
+
+test-nested-let-if = {
+  expect_i32 666;
+  if (q = (z = (y1 = opaquely_i32 0;
+                y2 = opaquely_i32 1;
+                y1 +Int32 y2);
+           z2 = opaquely_i32 2;
+           z +Int32 z2);
+      q2 = opaquely_i32 3;
+      (q +Int32 q2) <SInt32 0)
+   then print_i32 777
+   else print_i32 666
+   end;
+};
+
+test-nested-let-var = {
+  expect_i32 0;
+  print_i32 (x = (g = 0; g); x);
+};
+
+test-nested-let-fun = {
+  expect_i32 0;
+  print_i32 (z = (f = { 0 }; f); z !);
+};

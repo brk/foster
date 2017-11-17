@@ -1,0 +1,117 @@
+snafuinclude Prelude "prelude";
+snafuinclude Streams "streams";
+
+// Lazy real-time (O(1) worst case) queues
+// based on the code from Okasaki's book (p.88).
+// Good for applications that use persistence heavily.
+
+type case RealtimeQueue (a:Boxed)
+      of $RealtimeQueue (Lazy (Stream a)) (List a) (Lazy (Stream a))
+;
+
+realtimeQueueEmpty :: forall (a:Boxed) { RealtimeQueue a };
+realtimeQueueEmpty = { forall a:Boxed,
+  snil = stream-nil-mediocre !;
+    RealtimeQueue snil Nil snil
+};
+
+realtimeQueueIsEmpty :: forall (a:Boxed) { RealtimeQueue a => Bool };
+realtimeQueueIsEmpty = { forall a:Boxed, q: RealtimeQueue a =>
+  case q of $RealtimeQueue f _ _ -> stream-is-nil f end
+};
+
+realtimeQueueRotate :: forall (a:Boxed) {
+         Lazy (Stream a) => List a => Lazy (Stream a) => Lazy (Stream a) };
+realtimeQueueRotate = { forall a:Boxed,
+         s1 : Lazy (Stream a) => lst : List a => s2 : Lazy (Stream a) =>
+  case (force s1,          lst)
+    of ($StreamNilV,       $Cons y _) -> eager (StreamCons (eager y) s2)
+    of ($StreamCons la ls, $Cons y ys) -> delay {
+         StreamCons la (realtimeQueueRotate ls ys
+                                        (eager (StreamCons (eager y) s2)))
+       }
+    of (_,                 _) ->
+      print_text "invariant violated in realtimeQueueRotate";
+      prim kill-entire-process "realtimeQueueRotate";
+      s1
+  end
+};
+
+realtimeQueueExec :: forall (a:Boxed) { RealtimeQueue a => RealtimeQueue a };
+realtimeQueueExec = { forall a:Boxed, q: RealtimeQueue a =>
+  case q of $RealtimeQueue f r sched ->
+    case force sched
+      of $StreamNilV       -> ff = realtimeQueueRotate f r sched;
+                              RealtimeQueue ff Nil ff
+      of $StreamCons la ls -> RealtimeQueue f r ls
+    end
+  end
+};
+
+// Worst-case time: O(1)
+realtimeQueueSnoc :: forall (a:Boxed) { RealtimeQueue a => a => RealtimeQueue a };
+realtimeQueueSnoc = { forall a:Boxed, q: RealtimeQueue a => elt : a =>
+  case q of $RealtimeQueue f r sched ->
+    realtimeQueueExec (RealtimeQueue f (Cons elt r) sched)
+  end
+};
+
+
+// Worst-case time: O(1)
+realtimeQueueHead :: forall (a:Boxed) { RealtimeQueue a => Maybe a };
+realtimeQueueHead = { forall a:Boxed, q: RealtimeQueue a =>
+  case q of $RealtimeQueue f r sched ->
+    case force f
+      of $StreamNilV       -> None
+      of $StreamCons la _  -> Some (force la)
+    end
+  end
+};
+
+// Worst-case time: O(1)
+realtimeQueueTail :: forall (a:Boxed) { RealtimeQueue a => Maybe (RealtimeQueue a) };
+realtimeQueueTail = { forall a:Boxed, q: RealtimeQueue a =>
+  case q of $RealtimeQueue f r sched ->
+    case force f
+      of $StreamNilV       -> None
+      of $StreamCons _  ls -> Some (realtimeQueueExec (RealtimeQueue ls r sched))
+    end
+  end
+};
+
+type case BInt of $B Int32;
+
+main = {
+  e0 = realtimeQueueEmpty:[BInt] !;
+  e1 = realtimeQueueSnoc e0 (B 1);
+  e2 = realtimeQueueSnoc e1 (B 2);
+  e3 = realtimeQueueSnoc e2 (B 3);
+  v1_3 = realtimeQueueHead e3;
+  v1_2 = realtimeQueueHead e2;
+  v1_1 = realtimeQueueHead e1;
+  v4 = realtimeQueueHead e0;
+  un = { v:Maybe BInt => case v of $None -> 0 of $Some ($B n) -> n end };
+
+  expect_i32 1;
+  print_i32 case v4 of $Some _ -> 0 of $None -> 1 end;
+
+  expect_i32 1; print_i32 (un v1_1);
+  expect_i32 1; print_i32 (un v1_2);
+  expect_i32 1; print_i32 (un v1_3);
+
+  case realtimeQueueTail e3
+    of $None -> ()
+    of $Some t3 ->
+      expect_i32 2;
+      print_i32 (un (realtimeQueueHead t3));
+
+      case realtimeQueueTail t3
+        of $None -> ()
+        of $Some t2 ->
+          expect_i32 3;
+          print_i32 (un (realtimeQueueHead t2));
+       end
+  end;
+
+  ()
+};

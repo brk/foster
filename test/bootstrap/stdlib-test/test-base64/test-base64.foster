@@ -1,0 +1,27 @@
+snafuinclude Text "text";
+snafuinclude Prelude "prelude";
+snafuinclude Base64 "base64";
+
+main = {
+  b"Man" `try-base64-encoding-testcase` "TWFu";
+
+  b"pleasure." `try-base64-encoding-testcase` "cGxlYXN1cmUu";
+  b"leasure."  `try-base64-encoding-testcase` "bGVhc3VyZS4=";
+  b"easure."   `try-base64-encoding-testcase` "ZWFzdXJlLg==";
+  b"asure."    `try-base64-encoding-testcase` "YXN1cmUu";
+  b"sure."     `try-base64-encoding-testcase` "c3VyZS4=";
+
+  ()
+
+/*
+  print_text ( (base64-encode-bare b"""Man is distinguished, not only by his reason, but by this singular passion from
+other animals, which is a lust of the mind, that by a perseverance of delight
+in the continued and indefatigable generation of knowledge, exceeds the short
+vehemence of any carnal pleasure.""");
+*/
+};
+
+try-base64-encoding-testcase = { inp => oup =>
+  expect_text oup;
+  print_text (textFromRawASCII (base64-encode-bare inp));
+};

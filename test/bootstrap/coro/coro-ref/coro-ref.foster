@@ -1,0 +1,57 @@
+main = {
+  expect_i32 1111111;
+  expect_i32 2222222;
+  expect_i32 4444444;
+  expect_i32 10;
+  expect_i32 6666;
+  expect_i32 1234;
+  expect_i32 20;
+  expect_i32 5555555;
+  expect_i32 6666666;
+  expect_i32 7777;
+  expect_i32 3333333;
+  expect_i32 9999999;
+
+  print_i32 1111111;
+
+
+  cofn = { x : Int32 =>
+      print_i32 4444444;
+      //force_gc_for_debugging_purposes !;
+      print_i32 x; // 10
+      y = coro_yield:[Int32,Int32] 6666;
+      f2 = { u : () =>
+          // The yielded types need not match the (local) function type.
+
+          //force_gc_for_debugging_purposes !;
+          coro_yield:[Int32,Int32] y;
+          print_i32 5555555;
+          // force_gc_for_debugging_purposes !;
+          print_i32 6666666;
+          coro_yield:[Int32,Int32] 7777;
+          9999
+      };
+      // It's okay to define this function here, but we can't call it
+      // because our context is a coroutine expecting to invoke/yield
+      // Int32 values, not () values.
+      //f3 = {   coro_yield:[(),()] ()   };
+      rv = f2 ();
+      rv
+  };
+
+  co = coro_create cofn;
+  //j0 = force_gc_for_debugging_purposes !;
+  cr  = (prim ref co);
+
+      print_i32 2222222;
+    //force_gc_for_debugging_purposes !;
+      print_i32 (coro_invoke cr^ 10); // 6666
+      print_i32 1234;
+    //force_gc_for_debugging_purposes !;
+      print_i32 (coro_invoke cr^ 20); // 20
+    force_gc_for_debugging_purposes !;
+      print_i32 (coro_invoke cr^ 30);
+      print_i32 3333333;
+      print_i32 9999999;
+};
+

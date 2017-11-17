@@ -1,0 +1,41 @@
+main = {
+  t1 5    ((1, 2), (3, (5, 5)));
+  t1 6    ((1, 2), (4, (4, 5)));
+  t1 7    ((7, 7), (3, (4, 5)));
+  t1 8    ((8, 2), (3, (4, 5)));
+  t1 123  ((1, 2), (3, (4, 5)));
+  t2 !;
+  t3 !;
+};
+
+t1 = { e : Int32 =>
+       x : ((Int32, Int32), (Int32, (Int32, Int32))) =>
+  expect_i32 e;
+  print_i32
+    case x
+      of ((x, y), (z, (5, q))) -> 5
+      of ((a, b), (4, qq    )) -> 6
+      of ((c, 7), (3, (4, 5))) -> 7
+      of ((8, d), (3, (4, 5))) -> 8
+      of (xy, zz) -> 123
+      of xyzz -> 1234
+    end;
+};
+
+t2 = {
+  expect_i32 4;
+  print_i32
+    case (1, (22, 3))
+      of (x, (9, q)) -> 7
+      of (a, (_, w)) -> a +Int32 w
+    end;
+};
+
+t3 = {
+  expect_i32 7;
+  print_i32
+    case True
+      of True  -> 7
+      of False -> 6
+    end;
+};

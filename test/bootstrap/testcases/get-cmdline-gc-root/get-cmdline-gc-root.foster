@@ -1,0 +1,10 @@
+
+// Make sure we don't try to put a i8* into a Text.DT* root slot.
+
+main = {
+  t = get_cmdline_arg_n 1; // t is a Text, thus needs a gc root
+  x = get_cmdline_arg_n 2; // because this call can GC
+  noinline_use t;          // and this forces t to be live.
+};
+
+noinline_use = { x => () };

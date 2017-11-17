@@ -1,0 +1,56 @@
+// This is a simplification of a case that comes up in the implementation
+// of (for example) bignat in the standard library, where a function
+// with inferred type tail-calls a function with a refined type.
+// The question is: what refinement, if any, is ascribed to the wrapper's
+// return value?
+
+main = {
+  ()
+};
+
+natRShd_A = { a : Array Word => ndigits : Int32 =>
+  newsize = arrayLength32 a -Int32 ndigits;
+  newDArray0 newsize { i:Int32 => a[i +Int32 ndigits] };
+};
+// Currently we give natRShd_A the un-refined type { Array Word => Int32 => Array Word }.
+// A more refined possibility would be
+//     { % aa : Array Word => % nd : Int32 => (%ndrv : Array Word :
+//              prim_arrayLength ndrv ==Int64 (sext_i32_to_i64 NEWSIZE)) }
+// where NEWSIZE is arrayLength32 aa -Int32 nd
+//
+// We can't simply propogate the refinement without substitution; a type like
+// { Array Word => Int32 => (%... : ... ==Int64 (sext_i32_to_i64 n)) }
+// is ill-scoped because it refers to n, which is not in scope.
+
+// Initializes slot a[k] with (f k)
+newDArray0 :: forall (v:Type) { % nR  : Int32 : True => { Int32 => v } =>
+                                % ndrv : Array v : prim_arrayLength ndrv ==Int64 (sext_i32_to_i64 nR)
+                             };
+newDArray0 = { nV => f =>
+  arrayFromRange32 0 nV f
+};
+
+arrayLength32 :: forall (x:Type) { % ra : Array x : True =>
+                                   % rv : Int32 : rv ==Int32 trunc_i64_to_i32 (prim_arrayLength:[x] ra) };
+arrayLength32 = { a : Array x => trunc_i64_to_i32 (prim_arrayLength a) };
+
+
+// For example, arrayFromRange32 2 5 f
+// will become  arrayMap [2,3,4] f
+// The elements will be generated in decreasing order.
+arrayFromRange32 :: forall (t:Type) { % rsm : Int32 : True =>
+                                     %  rlg : Int32 : rlg >SInt32 rsm =>
+                                     { Int32 => t } =>
+                                     % afrv : Array t : prim_arrayLength afrv ==Int64 (sext_i32_to_i64 (rlg -Int32 rsm)) };
+arrayFromRange32 = { sm => lg => f =>
+  arr = allocDArray (lg -Int32 sm);
+  REC go = { n =>
+    if n >SInt32 0 then
+      i = n -Int32 1;
+      f  (i +Int32 sm) >^ arr[i];
+      go  i
+    end
+  };
+  go (lg -Int32 sm);
+  arr
+};

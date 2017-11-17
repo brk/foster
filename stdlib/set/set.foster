@@ -1,0 +1,752 @@
+snafuinclude Prelude "prelude";
+snafuinclude List    "list";
+
+/*
+  Based on the (BSD-licensed) implementation of sets in
+  the Haskell `containers-0.5.0.0` package:
+    http://hackage.haskell.org/packages/archive/containers/0.5.0.0/doc/html/src/Data-Set-Base.html#null
+  (c) Daan Leijen 2002
+
+  The relevant license file may be found in third_party/ghc/LICENSE.txt
+ */
+
+type case Set (a:Type)
+       of $SetBin Word a (Set a) (Set a)
+       of $SetTip
+       ;
+
+setEmpty :: forall (a:Type) { Set a };
+setEmpty = { forall a:Type, SetTip };
+
+// O(1)
+setIsEmpty :: forall (a:Type) { Set a => Bool };
+setIsEmpty = { forall a:Type, s =>
+  case s
+    of $SetTip -> True
+    of _       -> False
+  end
+};
+
+// O(1)
+setSingleton :: forall (a:Type) { a => Set a };
+setSingleton = { forall a:Type, e => SetBin 1 e SetTip SetTip };
+
+// O(1)
+setSize :: forall (a:Type) { Set a => Word };
+setSize = { forall a:Type, s =>
+  case s
+    of $SetTip          -> 0
+    of $SetBin sz _ _ _ -> sz
+  end
+};
+
+
+// O(?)
+// Smart constructor which restores balance and size if necessary.
+// Precondition: [[setsBalanced l r]]
+setBin! :: forall (a:Type) { a => Set a => Set a => Set a };
+setBin! = { forall a:Type, x => l => r =>
+  SetBin (1 +Word setSize l +Word setSize r) x l r
+};
+
+// O(?)
+// Smart constructor which restores balance and size if necessary.
+setJoin :: forall (a:Type) { a => Set a => Set a => Set a };
+setJoin = { forall a:Type, x => l => r =>
+  case (l, r)
+    of ($SetTip, _) -> setInsertMin x r
+    of (_, $SetTip) -> setInsertMax x l
+    of ($SetBin sl y ly ry, $SetBin sr z lz rz) ->
+       if (setDelta !) *Word sl <UWord sr then setBalanceL z (setJoin x l lz) rz else
+       if (setDelta !) *Word sr <UWord sl then setBalanceR y ly (setJoin x ry r) else
+         setBin! x l r
+       end
+       end
+  end
+};
+
+// O(lg n)
+setMember :: forall (a:Type) { Set a => a => { a => a => Ord } => Bool };
+setMember = { forall a:Type, s => e => cmp =>
+  REC go = { s =>
+      case s
+        of $SetTip           -> False
+        of $SetBin _ elt l r ->
+          case cmp e elt
+            of $EQ -> True
+            of $LT -> go l
+            of $GT -> go r
+          end
+      end
+  };
+  go s;
+};
+
+// O(lg n)
+// Find largest element smaller than the given one.
+setLookupLT :: forall (a:Type) { Set a => a => { a => a => Ord } => Maybe a };
+setLookupLT = { forall a:Type, s => e => cmp =>
+  REC goNone = { s =>
+      case s
+        of $SetTip           -> None
+        of $SetBin _ elt l r ->
+          if isLT (cmp elt e)
+            then goSome elt r
+            else goNone l
+          end
+      end
+  };
+  REC goSome = { best => s =>
+      case s
+        of $SetTip           -> Some best
+        of $SetBin _ elt l r ->
+            if isLT (cmp elt e)
+              then goSome elt  r
+              else goSome best l
+            end
+      end
+  };
+  goNone s;
+};
+
+// O(lg n)
+// Find smallest element greater than the given one.
+setLookupGT :: forall (a:Type) { Set a => a => { a => a => Ord } => Maybe a };
+setLookupGT = { forall a:Type, s => e => cmp =>
+  REC goNone = { s =>
+      case s
+        of $SetTip           -> None
+        of $SetBin _ elt l r ->
+          if isGT (cmp elt e)
+            then goNone l
+            else goSome elt r
+          end
+      end
+  };
+  REC goSome = { best => s =>
+      case s
+        of $SetTip           -> Some best
+        of $SetBin _ elt l r ->
+            if isGT (cmp elt e)
+              then goSome best l
+              else goSome elt  r
+            end
+      end
+  };
+  goNone s;
+};
+
+// O(lg n)
+// Find largest element smaller or equal to the given one.
+setLookupLE :: forall (a:Type) { Set a => a => { a => a => Ord } => Maybe a };
+setLookupLE = { forall a:Type, s => e => cmp =>
+  REC goNone = { s =>
+      case s
+        of $SetTip           -> None
+        of $SetBin _ elt l r ->
+          case cmp elt e
+            of $LT -> goSome elt r
+            of $EQ -> Some elt
+            of $GT -> goNone l
+          end
+      end
+  };
+  REC goSome = { best => s =>
+      case s
+        of $SetTip           -> Some best
+        of $SetBin _ elt l r ->
+          case cmp elt e
+            of $LT -> goSome best l
+            of $EQ -> Some elt
+            of $GT -> goSome elt l
+          end
+      end
+  };
+  goNone s;
+};
+
+// O(lg n)
+// Find smallest element greater or equal to the given one.
+setLookupGE :: forall (a:Type) { Set a => a => { a => a => Ord } => Maybe a };
+setLookupGE = { forall a:Type, s => e => cmp =>
+  REC goNone = { s =>
+      case s
+        of $SetTip           -> None
+        of $SetBin _ elt l r ->
+          case cmp elt e
+            of $LT -> goNone r
+            of $EQ -> Some elt
+            of $GT -> goSome elt l
+          end
+      end
+  };
+  REC goSome = { best => s =>
+      case s
+        of $SetTip           -> Some best
+        of $SetBin _ elt l r ->
+          case cmp elt e
+            of $LT -> goSome best r
+            of $EQ -> Some elt
+            of $GT -> goSome elt l
+          end
+      end
+  };
+  goNone s;
+};
+
+// O(lg n)
+// If an element is equivalent to one already in the set,
+// the new element replaces the old one.
+setInsert :: forall (a:Type) { a => Set a => { a => a => Ord } => Set a };
+setInsert = { e => s => cmp =>
+  REC go = { s =>
+      case s
+        of $SetTip           -> setSingleton e
+        of $SetBin z elt l r ->
+          case cmp e elt
+            of $LT -> setBalanceL elt (go l) r
+            of $EQ -> SetBin z e l r
+            of $GT -> setBalanceR elt l (go r)
+          end
+      end
+  };
+  go s;
+};
+
+// O(lg n)
+// If an element is equivalent to one already in the set,
+// the original set is returned, not a new set.
+setInsertR :: forall (a:Type) { a => Set a => { a => a => Ord } => Set a };
+setInsertR = { e => s => cmp =>
+  REC go = { s =>
+      case s
+        of $SetTip           -> setSingleton e
+        of $SetBin _ elt l r ->
+          case cmp e elt
+            of $LT -> setBalanceL elt (go l) r
+            of $EQ -> s
+            of $GT -> setBalanceR elt l (go r)
+          end
+      end
+  };
+  go s;
+};
+
+// O(lg n)
+// If an element is equivalent to one already in the set,
+// the original set is returned, not a new set.
+setDelete :: forall (a:Type) { a => Set a => { a => a => Ord } => Set a };
+setDelete = { e => s => cmp =>
+  REC go = { s =>
+      case s
+        of $SetTip           -> s
+        of $SetBin _ elt l r ->
+          case cmp e elt
+            of $LT -> setBalanceR elt (go l) r
+            of $EQ -> setGlue! l r
+            of $GT -> setBalanceL elt l (go r)
+          end
+      end
+  };
+  go s;
+};
+
+////////////
+
+setInsertMin :: forall (a:Type) { a => Set a => Set a };
+setInsertMin = { x => s =>
+  case s
+    of $SetTip         -> setSingleton x
+    of $SetBin _ y l r -> setBalanceL y (setInsertMin x l) r
+  end
+};
+
+setInsertMax :: forall (a:Type) { a => Set a => Set a };
+setInsertMax = { x => s =>
+  case s
+    of $SetTip         -> setSingleton x
+    of $SetBin _ y l r -> setBalanceR y l (setInsertMax x r)
+  end
+};
+
+////////////
+
+// O(n+m)
+setUnion :: forall (a:Type) { Set a => Set a => { a => a => Ord } => Set a };
+setUnion = { s1 => s2 => cmp =>
+  case (s1, s2)
+    of ($SetTip, _) -> s2
+    of (_, $SetTip) -> s1
+    of _ -> setHedgeUnion! None None s1 s2 cmp
+  end
+};
+
+// O(n+m)
+setDifference :: forall (a:Type) { Set a => Set a => { a => a => Ord } => Set a };
+setDifference = { s1 => s2 => cmp =>
+  case (s1, s2)
+    of ($SetTip, _) -> s1
+    of (_, $SetTip) -> s1
+    of _ -> setHedgeDiff! None None s1 s2 cmp
+  end
+};
+
+// O(n+m)
+setIntersection :: forall (a:Type) { Set a => Set a => { a => a => Ord } => Set a };
+setIntersection = { s1 => s2 => cmp =>
+  case (s1, s2)
+    of ($SetTip, _) -> s1
+    of (_, $SetTip) -> s2
+    of _ -> setHedgeInter! None None s1 s2 cmp
+  end
+};
+
+// O(n+m)
+setIsSubsetOf :: forall (a:Type) { Set a => Set a => { a => a => Ord } => Bool };
+setIsSubsetOf = { s1 => s2 => cmp =>
+  REC go = { s1 => s2 =>
+    case (s1, s2)
+      of ($SetTip, _) -> True
+      of (_, $SetTip) -> False
+      of ($SetBin _ x l r, _) ->
+        case setSplitMember x s2 cmp
+          of (lt, found, gt) ->
+            { both found (go l lt) } `andand` { go r gt }
+        end
+    end
+  };
+  { setSize s1 <=UWord setSize s2 } `andand` { go s1 s2 };
+};
+
+setSplit :: forall (a:Type) { a => Set a => { a => a => Ord } => (Set a, Set a) };
+setSplit = { x => s => cmp =>
+  case setSplitMember x s cmp
+    of (lt, _, gt) -> (lt, gt)
+  end
+};
+
+// O(lg n)
+setSplitMember :: forall (a:Type) { a => Set a => { a => a => Ord } => (Set a, Bool, Set a) };
+setSplitMember = { x => s => cmp =>
+  case s
+    of $SetTip -> (s, False, s)
+    of $SetBin _ y l r ->
+      case cmp x y
+        of $LT -> case setSplitMember x l cmp of (lt, found, gt) -> (lt, found, setJoin y gt r) end
+        of $EQ -> (l, True, r)
+        of $GT -> case setSplitMember x r cmp of (lt, found, gt) -> (setJoin y l lt, found, gt) end
+      end
+  end
+};
+
+////////////
+
+
+
+////////////
+
+setHedgeUnion! :: forall (a:Type) { Maybe a => Maybe a => Set a => Set a => { a => a => Ord } => Set a };
+setHedgeUnion! = { blo => bhi => s1 => s2 => cmp =>
+  case (s1, s2)
+    of (_, $SetTip) -> s1
+    of (_,       $SetBin 1 x _ _) -> setInsertR x s1 cmp
+    of ($SetTip, $SetBin _ x l r) -> setJoin x (setFilterGT blo l cmp)
+                                               (setFilterLT bhi r cmp)
+    of ($SetBin _ x l r,       _) -> bmi = Some x;
+                                     setJoin x
+                                       (setHedgeUnion! blo bmi l (setTrim blo bmi s2 cmp) cmp)
+                                       (setHedgeUnion! bmi bhi r (setTrim bmi bhi s2 cmp) cmp)
+  end
+};
+
+setHedgeDiff! :: forall (a:Type) { Maybe a => Maybe a => Set a => Set a => { a => a => Ord } => Set a };
+setHedgeDiff! = { blo => bhi => s1 => s2 => cmp =>
+  case (s1, s2)
+    of ($SetTip, _) -> s1
+    of ($SetBin _ x l r, $SetTip) -> setJoin x (setFilterGT blo l cmp)
+                                               (setFilterLT bhi r cmp)
+    of (_,       $SetBin _ x l r) -> bmi = Some x;
+                                     setMerge
+                                       (setHedgeDiff! blo bmi (setTrim blo bmi s1 cmp) l cmp)
+                                       (setHedgeDiff! bmi bhi (setTrim bmi bhi s1 cmp) r cmp)
+  end
+};
+
+setHedgeInter! :: forall (a:Type) { Maybe a => Maybe a => Set a => Set a => { a => a => Ord } => Set a };
+setHedgeInter! = { blo => bhi => s1 => s2 => cmp =>
+  case (s1, s2)
+    of ($SetTip, _) -> s1
+    of (_, $SetTip) -> s2
+    of ($SetBin _ x l r, _) ->
+        bmi = Some x;
+        lp = setHedgeInter! blo bmi l (setTrim blo bmi s2 cmp) cmp;
+        rp = setHedgeInter! bmi bhi r (setTrim bmi bhi s2 cmp) cmp;
+        if setMember s2 x cmp
+          then setJoin x lp rp
+          else setMerge  lp rp
+        end
+  end
+};
+
+// TODO verify that closure conversion is lifting the helpers so we don't allocate.
+setTrim :: forall (a:Type) { Maybe a => Maybe a => Set a => { a => a => Ord } => Set a };
+setTrim = { blo => bhi => s => cmp =>
+  case (blo, bhi)
+    of ($None,    $None)    -> s
+    of ($Some lx, $None)    -> REC greater = { t =>
+                                 case t
+                                   of $SetTip         -> t
+                                   of $SetBin _ x _ r ->
+                                     if isLE (cmp x lx)
+                                       then greater r
+                                       else t
+                                     end
+                                 end
+                               };  greater s;
+    of ($None,    $Some hx) -> REC lesser  = { t =>
+                                 case t
+                                   of $SetTip         -> t
+                                   of $SetBin _ x l _ ->
+                                     if isGE (cmp x hx)
+                                       then lesser l
+                                       else t
+                                     end
+                                 end
+                               };  lesser  s;
+    of ($Some lx, $Some hx) -> REC middle = { t =>
+                                 case t
+                                   of $SetTip         -> t
+                                   of $SetBin _ x l r ->
+                                     if isLE (cmp x lx) then middle r else
+                                     if isGE (cmp x hx) then middle l else
+                                       t
+                                     end
+                                     end
+                                 end
+                               };  middle s;
+  end
+};
+
+setFilterGT :: forall (a:Type) { Maybe a => Set a => { a => a => Ord } => Set a };
+setFilterGT = { mb => s => cmp =>
+  case mb
+    of $None -> s
+    of $Some b ->
+      REC go = { s =>
+        case s
+          of $SetTip -> s
+          of $SetBin _ x l r ->
+            case cmp b x
+              of $LT -> setJoin x (go l) r
+              of $EQ -> r
+              of $GT -> go r
+            end
+        end
+      };
+      go s;
+  end
+};
+
+setFilterLT :: forall (a:Type) { Maybe a => Set a => { a => a => Ord } => Set a };
+setFilterLT = { mb => s => cmp =>
+  case mb
+    of $None -> s
+    of $Some b ->
+      REC go = { s =>
+        case s
+          of $SetTip -> s
+          of $SetBin _ x l r ->
+            case cmp b x
+              of $LT -> go l
+              of $EQ -> l
+              of $GT -> setJoin x l (go r)
+            end
+        end
+      };
+      go s;
+  end
+};
+
+////////////
+
+// O(n)
+setFoldl :: forall (a:Type) (e:Type) { Set e => { e => a => a } => a => a };
+setFoldl = { s => f => z =>
+  REC go = { s => acc =>
+      case s
+        of $SetTip           -> acc
+        of $SetBin _ elt l r -> go r (f elt (go l acc))
+      end
+  };
+  go s z;
+};
+
+// O(n)
+setFoldr :: forall (a:Type) (e:Type) { Set e => { e => a => a } => a => a };
+setFoldr = { s => f => z =>
+  REC go = { s => acc =>
+      case s
+        of $SetTip           -> acc
+        of $SetBin _ elt l r -> go l (f elt (go r acc))
+      end
+  };
+  go s z;
+};
+
+setMap :: forall (a:Type) (e:Type) { Set e => { e => a } => { a => a => Ord } => Set a };
+setMap = { s => f => cmp =>
+  setOfList (listMap f (setToList s)) cmp
+};
+
+setKeepIf :: forall (a:Type) { Set a => { a => Bool } => Set a };
+setKeepIf = { s => p =>
+  case s
+    of $SetTip -> s
+    of $SetBin _ x l r ->
+      if p x
+        then setJoin x (setKeepIf l p) (setKeepIf r p)
+        else setMerge  (setKeepIf l p) (setKeepIf r p)
+      end
+  end
+};
+
+setToList :: forall (a:Type) { Set a => List a };
+setToList = { s =>
+  setFoldr s Cons Nil
+};
+
+setToListDesc :: forall (a:Type) { Set a => List a };
+setToListDesc = { s =>
+  setFoldl s Cons Nil
+};
+
+setOfList :: forall (a:Type) { List a => { a => a => Ord } => Set a };
+setOfList = { lst => cmp =>
+  listFoldl lst { e => s => setInsert e s cmp } SetTip
+};
+
+////////////
+
+setMerge :: forall (a:Type) { Set a => Set a => Set a };
+setMerge = { l => r =>
+  case (l, r)
+    of ($SetTip, _) -> r
+    of (_, $SetTip) -> l
+    of ($SetBin sl x lx rx, $SetBin sr y ly ry) ->
+      if (setDelta !) *Word sl <UWord sr then setBalanceL y (setMerge l ly) ry else
+      if (setDelta !) *Word sr <UWord sl then setBalanceR x lx (setMerge rx r) else
+        setGlue! l r
+      end
+      end
+  end
+};
+
+// Like setMerge, but assumes the sets are balanced.
+setGlue! :: forall (a:Type) { Set a => Set a => Set a };
+setGlue! = { l => r =>
+  case (l, r)
+    of ($SetTip, _) -> r
+    of (_, $SetTip) -> l
+    of _ ->
+      if setSize l >UWord setSize r
+        then case setDeleteFindMax! l of (m, lp) -> setBalanceR m lp r end
+        else case setDeleteFindMin! r of (m, rp) -> setBalanceL m l rp end
+      end
+  end
+};
+
+// Precondition: setSize s > 0
+setDeleteFindMin! :: forall (a:Type) { Set a => (a, Set a) };
+setDeleteFindMin! = { s =>
+  case s
+    of $SetBin _ elt ($SetTip) r -> (elt, r)
+    of $SetBin _ elt l r ->
+        case setDeleteFindMin! l of (xm, lp) -> (xm, setBalanceR elt lp r) end
+    of $SetTip -> prim kill-entire-process "setDeleteFindMin! invariant violated"
+  end
+};
+
+// Precondition: setSize s > 0
+setDeleteFindMax! :: forall (a:Type) { Set a => (a, Set a) };
+setDeleteFindMax! = { s =>
+  case s
+    of $SetBin _ elt l ($SetTip) -> (elt, l)
+    of $SetBin _ elt l r ->
+        case setDeleteFindMax! r of (xm, rp) -> (xm, setBalanceL elt l rp) end
+    of $SetTip -> prim kill-entire-process "setDeleteFindMax! invariant violated"
+  end
+};
+
+setRatio = { 2 };
+setDelta = { 3 };
+
+setBalanceL :: forall (a:Type) { a => Set a => Set a => Set a };
+setBalanceL = { x => l => r =>
+  case r
+      of $SetTip        ->
+        case l
+          of $SetTip                          -> SetBin 1 x l l
+          of $SetBin _ _  ($SetTip) ($SetTip) -> SetBin 2 x l SetTip
+          of $SetBin _ lx ($SetTip) ($SetBin _ lrx _ _) ->
+              SetBin 3 lrx (setSingleton lx) (setSingleton x)
+          of $SetBin _ lx ll ($SetTip) ->
+              SetBin 3 lx ll (setSingleton x)
+          of $SetBin ls lx ll lr ->
+            case lr
+              of $SetBin lrs lrx lrl lrr ->
+                // TODO hmm int overflow?
+                if lrs <UWord ((setRatio !) *Word setSize ll)
+                  then SetBin (1 +Word ls) lx ll
+                      (SetBin (1 +Word lrs) x lr SetTip)
+                  else SetBin (1 +Word ls) lrx
+                      (SetBin (1 +Word setSize ll +Word setSize lrl) lx ll lrl)
+                      (SetBin (1 +Word setSize lrr) x lrr SetTip)
+                end
+             of _ -> prim kill-entire-process "setBalanceL invariant (1) violated";
+           end
+        end
+
+      of $SetBin rs _ _ _ ->
+          case l
+              of $SetTip              -> SetBin (rs +Word 1) x l r
+              of $SetBin ls lx ll lr ->
+                // TODO hmm int overflow?
+                if ls >UWord ((setDelta !) *Word rs)
+                  then
+                    case lr
+                      of $SetBin lrs lrx lrl lrr ->
+                        // TODO hmm int overflow?
+                        if lrs <UWord ((setRatio !) *Word setSize ll)
+                          then SetBin (1 +Word ls +Word rs) lx ll
+                              (SetBin (1 +Word rs +Word lrs) x lr r)
+                          else SetBin (1 +Word ls +Word rs) lrx
+                              (SetBin (1 +Word setSize ll +Word setSize lrl) lx ll  lrl)
+                              (SetBin (1 +Word rs         +Word setSize lrr)  x lrr  r)
+                        end
+                      of _ -> prim kill-entire-process "setBalanceL invariant (2) violated";
+                    end
+                  else SetBin (1 +Word ls +Word rs) x l r
+                end
+          end
+  end
+};
+
+
+setBalanceR :: forall (a:Type) { a => Set a => Set a => Set a };
+setBalanceR = { x => l => r =>
+  case l
+    of $SetTip ->
+      case r
+        of $SetTip -> SetBin 1 x l r
+        of $SetBin _ _  ($SetTip) ($SetTip) -> SetBin 2 x  SetTip r
+        of $SetBin _ rx ($SetTip) rr        -> SetBin 3 rx (setSingleton x) rr
+        of $SetBin _ rx ($SetBin _ rlx _ _) ($SetTip) ->
+            SetBin 3 rlx (setSingleton x) (setSingleton rx)
+        of $SetBin rs rx rl rr ->
+          case rl
+            of $SetBin rls rlx rll rlr ->
+             if rls <UWord ((setRatio !) *Word setSize rr)
+               then SetBin (1 +Word rs) rx
+                   (SetBin (1 +Word rls) x SetTip rl) rr
+               else SetBin (1 +Word rs) rlx
+                   (SetBin (1 +Word setSize rll) x SetTip rll)
+                   (SetBin (1 +Word setSize rr +Word setSize rlr) rx rlr rr)
+             end
+            of _ -> prim kill-entire-process "setBalanceR invariant (1) violated";
+          end
+      end
+
+   of $SetBin ls _ _ _ ->
+     case r
+       of $SetTip -> SetBin (1 +Word ls) x l r
+       of $SetBin rs rx rl rr ->
+         if rs >UWord ((setDelta !) *Word ls)
+           then
+             case rl
+               of $SetBin rls rlx rll rlr ->
+                 if rls <UWord ((setRatio !) *Word setSize rr)
+                   then SetBin (1 +Word ls +Word rs) rx
+                       (SetBin (1 +Word ls +Word rls) x l rl) rr
+                   else SetBin (1 +Word ls +Word rs) rlx
+                       (SetBin (1 +Word ls +Word setSize rll) x l rll)
+                       (SetBin (1 +Word setSize rr +Word setSize rlr) rx rlr rr)
+                 end
+               of _ -> prim kill-entire-process "setBalanceR invariant (2) violated"
+             end
+           else SetBin (1 +Word ls +Word rs) x l r
+         end
+      end
+  end
+};
+
+////////////
+
+// O(n)
+setSizeValid_ :: forall (a:Type) { Set a => Bool };
+setSizeValid_ = { s =>
+  REC realsize = { s =>
+    case s
+      of $SetTip          -> Some { 0 }
+      of $SetBin sz _ l r -> case (realsize l, realsize r)
+                               of ($Some nf  , $Some mf  ) ->
+                                 if (nf !) +Word (mf !) +Word 1 ==Word sz
+                                   then Some { sz }
+                                   else None
+                                 end
+                               of _ -> None
+                             end
+    end
+  };
+  case realsize s
+    of $Some fsz -> (fsz !) ==Word setSize s
+    of _ -> False
+  end
+};
+
+setBalanced :: forall (a:Type) { Set a => Bool };
+setBalanced = { s =>
+  case s
+    of $SetTip -> True
+    of $SetBin _ _ l r -> setsBalanced l r
+  end
+};
+
+setsBalanced :: forall (a:Type) { Set a => Set a => Bool };
+setsBalanced = { l => r =>
+  sl = setSize l;
+  sr = setSize r;
+  andand { either (sl +Word sr <=UWord 1)
+                  (both (sl <=UWord (setDelta !) *Word sr)
+                        (sr <=UWord (setDelta !) *Word sl)) }
+         { { setBalanced l } `andand` { setBalanced r } }
+};
+
+////////////
+
+setShowTree :: forall (a:Type) { Set a => { a => Text } => Text };
+setShowTree = { s => shw =>
+  setShowTreeRot Nil Nil s shw
+};
+
+setShowTreeRot = { forall a:Type, lbars : List Text => rbars : List Text => s : Set a => shw : { a => Text } =>
+  case s
+    of $SetTip ->           setShowTreeBars lbars `mkTextConcat` "|\n"
+    of $SetBin 1 x _ _ ->   setShowTreeBars lbars `mkTextConcat` shw x `mkTextConcat` "\n"
+    of $SetBin _ x l r ->
+        setShowTreeRot (setShowTreeWithBar rbars) (setShowTreeWithEmpty rbars) r shw `mkTextConcat`
+        setShowTreeBars lbars `mkTextConcat` shw x `mkTextConcat` "\n"               `mkTextConcat`
+        setShowTreeRot (setShowTreeWithEmpty lbars) (setShowTreeWithBar lbars) l shw
+  end
+};
+
+setShowTreeWithBar :: { List Text => List Text };
+setShowTreeWithBar   = { bars => Cons "|  " bars };
+setShowTreeWithEmpty = { bars => Cons "   " bars };
+
+setShowTreeBars = { bars : List Text =>
+  case bars
+    of $Nil -> ""
+    of $Cons _ tail -> mkTextConcat (listFoldl (listReverse tail) mkTextConcat "")
+                                   "+--"
+  end
+};

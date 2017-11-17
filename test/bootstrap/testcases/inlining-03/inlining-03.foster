@@ -1,0 +1,122 @@
+
+
+main = {
+  print_result_120 (noinline_call_fold1 !);
+  df = elapsed_time_n noinline_call_fold1_   1000;
+   print_float_p9f64 df;
+  expect_float_p9f64 df;
+
+  print_result_120 (noinline_call_fold2 !);
+  dg = elapsed_time_n noinline_call_fold2_   1000;
+   print_float_p9f64 dg;
+  expect_float_p9f64 dg;
+
+  print_result_120 (noinline_call_fold3 !);
+  ()
+};
+
+noinline_elapsed_time_once = { fg : { () } =>
+  t1 = foster_getticks !;
+  fg !;
+  t2 = foster_getticks !;
+
+  foster_getticks_elapsed t1 t2
+};
+
+// TODO verify that this gets inlined to equivalent code as noinline_elapsed_time_once
+noinline_elapsed_time_1 = { fq : { () } =>
+  elapsed_time_n fq 1
+};
+
+// TODO verify that this does NOT get fully inlined!
+noinline_elapsed_time_100 = { qq : { () } =>
+  elapsed_time_n qq 100
+};
+
+elapsed_time_n = { ff : { () } => n : Int32 =>
+  REC loop = { x : Int32 =>
+    if x <=SInt32 0 then () else
+      ff !; loop (x -Int32 1);
+    end
+  };
+
+  t1 = foster_getticks !;
+  loop n;
+  t2 = foster_getticks !;
+
+  foster_getticks_elapsed t1 t2
+};
+
+
+fold1 = { f1 => x => b => nullp => car => cdr =>
+  if nullp x
+    then b
+    else (fold1 f1 (cdr x) (f1 (car x)  b) nullp car cdr)
+  end
+};
+
+
+print_result_120 = { x : Int32 =>
+  expect_i32 120;
+  print_i32 x;
+};
+
+noinline_call_fold1_ = { noinline_call_fold1  ! ; () };
+noinline_call_fold1 = {
+   (fold1
+                   { a => b => a *Int32 b }
+                   5
+                   1
+                   { q => q ==Int32 0 }
+                   { r => r }
+                   { s => s -Int32 1 });
+};
+
+
+noinline_call_fold2_ = { noinline_call_fold2  ! ; () };
+noinline_call_fold2 = {
+  (fold2
+                   { a => b => a *Int32 b }
+                   5
+                   1
+                   { q => q ==Int32 0 }
+                   { r => r }
+                   { s => s -Int32 1 });
+};
+
+fold2 = { f2 => x => b => nullp => car => cdr =>
+  REC loop = { x => acc =>
+    if nullp x
+      then acc
+      else (loop (cdr x) (f2 (car x) acc))
+    end
+  };
+  loop x b
+};
+
+
+noinline_call_fold3_ = { noinline_call_fold3  ! ; () };
+noinline_call_fold3 = {
+   (fold3
+                   { a => b => a *Int32 b }
+                   5
+                   1
+                   { q => q ==Int32 0 }
+                   { r => r }
+                   { s => s -Int32 1 });
+};
+
+
+
+// Investigate effect of Appel's "loop-header" transformation.
+// (should be compiled without inlining)
+// Should be compiled to be no worse than fold1, possibly better.
+fold3 = { f3 => x => b => nullp => car => cdr =>
+  REC loop = { f => x => b => nullp => car => cdr =>
+    if nullp x
+      then b
+      else (loop f3 (cdr x) (f3 (car x)  b) nullp car cdr)
+    end
+  };
+  loop f3 x b nullp car cdr
+};

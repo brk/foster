@@ -1,0 +1,137 @@
+There are several broad contexts in which closures are useful, and several
+representations that are appropriate for different usages.
+
+First, there are non-escaping functions that don't reference free variables.
+Regardless of syntactic nesting, they are equivalent to a top-level function
+definition, in that they do not capture any variables, and may therefore be
+trivally lambda-lifted without requiring closure conversion.
+These are often helper functions, such as:
+
+    fn "sort-example" (xs) { sorted(xs, fn (x, y) { x > y }) }
+    
+    fn "greater" (x y) { x > y }
+    fn "sort-example-equiv" (xs) { sorted(xs, greater) }
+    
+    fn "reverse" (xs) {
+      loop = fn (xs sx) {
+        case xs of | nil => sx | y::ys => loop(ys, y::sx) end
+      } (xs nil)
+    }
+    
+Second, there are non-escaping functions that seem to reference free variables,
+but don't actually require closures, because their "free" variables are always
+present in the environment in which they execute, and thus need not be explicitly
+closed over. I'm not sure how common these are in practice:
+
+  fn (x) { fn (f) { f(x) }( id ) }
+  =>
+  fn (x) { fn (f, z) { f(z) }(id, x) }
+  =>
+  fn (x) { id(x) }
+  =>
+  fn (x) { x }
+
+
+Next, there are non-escaping functions that do reference free variables.
+These are equivalent to a top-level function with an extra env parameter.
+Because the function does not escape, callers may stack-allocate the env
+struct. Probably the most common instance of this arises from the conversion
+of `let` into `lambda`, like so:
+  
+    fn "f" (x, y) { let ax = x { let ay = y { ax + ay } } }
+    
+    fn "f" (x, y) { fn (ax) { fn (ay) { ax + ay }(y) }(x) }
+    
+    fn "f" (x, y) {
+      fn (ax) {
+        fn (ay) {
+          ax + ay // ax free
+        }(y) // y free
+      }(x)
+    }
+
+This could be closure converted like so:
+  
+    fn "inner" (envi, ay) { env.x + ay }
+    fn "outer" (envo, ax) { inner(envi { x = ax }, envo.y) }
+    fn "f" (x, y) {
+      outer(envo { y = y }, x)
+    }
+
+Or equivalently lambda lifted like so:
+
+    fn "inner" (ax, ay) { ax + ay }
+    fn "outer" (ax, ay) { inner(ax, ay) }
+    fn "f" (x, y) { outer(x, y) }
+  
+The lambda-lifted form makes it clearer to a human optimizer that the call to
+outer does no useful work, but I don't know which version is easier for LLVM's
+optimization passes to deal with. Intuitively, I would think that direct lambda-
+lifted calls are marginally easier for the optimizer. Perhaps closure conversion
+(with passed envs) is easier for the compiler middle-end to do? For escaping
+closures, is the main difference whether arguments are extracted from the env
+by the caller (lambda-lifting) or the caller (closure conversion)? Hmm. I'd
+probably need to do experimental testing to figure out which was easier/harder.
+
+I think that another wrinkle comes into play once multiple functions try to
+close over a mutable variable. For BitC, J. Shapiro suggested sharing a single
+environment between all nested functions in a given (top-level function) scope.
+I haven't yet thought through what the analogous arrangement for lambda-lifting
+would be.
+
+
+
+Finally, there are escaping functions that reference free variables.
+The classic example is the make-adder() function:
+
+    fn "make-adder" (x) { return fn (y) { x + y } }
+    fn "f" (x, y) { return make-adder(x)(y) }
+    
+In C++, this would be something like this:
+    
+    class AdderFunctor { int x; int operator()(int y) { return x + y; }  };
+    AdderFunctor makeAdder(int x) { AdderFunctor f; f.x = x; return f;  }
+    
+    int f(int x, int y) {
+      AdderFunctor af = makeAdder(x);
+      return af(y);
+    }
+    
+Note that makeAdder returns a concrete type. The above C++ is essentially sugar
+for a small struct and a standalone function:
+
+    struct __AF { int x; }
+    int __AF_call(__AF* env, int y) { return env->x + y; }
+    __AF makeAdder(int x) { __AF af; af.x = x; return af; }
+    
+    int f(int x, int y) {
+      __AF af = makeAdder(x);
+      return __AF_call(&af, y);
+    }
+    
+
+It's not encouraged by C++, but it's also possible to have virtual functors.
+In that case, invoking the closure (__AF_call above) requires two indirections:
+one through vptr to get vptr[0], and one through vptr[0] itself. Accounts of
+closure conversion as a standalone compiler pass, not done through C++ functors,
+replace vptr with vptr[0]. In either case, the representation for a closure
+is now a function pointer plus the arguments to pass to the function, instead
+of just the arguments, and calls indirect through the function pointer, like so:
+
+    struct __VF { int (*code)(int); int x; };
+    int __VAF_call(__VAF* env, int y) { return env->x + y; }
+    __VAF makeAdder(int x) {
+      __VAF vaf; vaf.x = x; vaf.code = __VAF_call; return vaf;
+    }
+    
+    int f(int x, int y) {
+      __VAF vaf = makeAdder(x);
+      return vaf.code(&vaf, y);
+   }
+   
+
+
+
+
+
+

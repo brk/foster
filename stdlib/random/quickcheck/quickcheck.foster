@@ -1,0 +1,93 @@
+snafuinclude RandomGen "random/gen";
+
+type case QCResult of $QCResult (Maybe Bool) (List Text) (List Text);
+
+qcResultStatus = { qcr : QCResult => case qcr of $QCResult mb _ _ -> mb end };
+qcResultStamp  = { qcr : QCResult => case qcr of $QCResult _ _ stamp -> stamp end };
+qcResultArgs   = { qcr : QCResult => case qcr of $QCResult _ args _ -> args end };
+
+type case Prop of $Prop (Gen QCResult);
+
+result :: { QCResult => Prop };
+result =  { res => Prop (retGen res) };
+
+evaluate :: forall (a:Type) { { a => Prop } => { a => Gen QCResult } };
+evaluate = { testable => { arg =>
+  case testable arg of $Prop gen -> gen end
+} };
+
+propForAll :: forall (t:Type) (pr:Type)
+              { { t => Text } => { pr => Prop } => Gen t =>
+                                  { t => pr } => Prop };
+propForAll = { show => tst => gen => body =>
+  eval = evaluate tst; // eval :: { pr => Gen QCResult }
+  recArg = { a => res =>
+    case res of $QCResult mb stamp args ->
+      QCResult mb stamp (Cons (show a) args)
+    end
+  };
+  Prop (bndGen gen { a =>
+      bndGen (eval (body a)) { res =>
+        retGen (recArg a res)
+      }
+    })
+};
+
+testableUnit = { u : ()   => result (QCResult None     Nil Nil) };
+
+testableBool :: { Bool => Prop };
+testableBool = { b : Bool => result (QCResult (Some b) Nil Nil) };
+
+testableFunc :: forall (t:Type) (pr:Type)
+                     { Gen t => { t => Text } => { pr => Prop } =>
+                                 { { t => pr } => Prop } };
+testableFunc = { arb => show => tst => { f =>
+  propForAll show tst arb f
+} };
+
+
+generate :: forall (t:Type) { { Int32 } => Int32 => Gen t => t };
+generate = { prng => n => g =>
+  size = rndZeroToInt32 prng n;
+  appGen g size
+};
+
+type case QCTestResult of $QCTR_Success
+                       of $QCTR_Failure   Int32 (List Text)
+                       of $QCTR_Exhausted Int32
+                       ;
+
+tests :: { { Int32 } => QCTestConfig => Gen QCResult => Int32 => Int32 => List (List Text) => QCTestResult };
+tests = { prng => config => gen => ntest => nfail => stamps =>
+  if ntest ==Int32 (configMaxTest config)
+    then QCTR_Success
+    else if nfail ==Int32 (configMaxFail config)
+        then QCTR_Exhausted nfail
+        else
+          res = generate prng ((configSize config) ntest) gen;
+          case qcResultStatus res
+            of $None      -> tests prng config gen ntest (nfail +Int32 1) stamps
+            of $Some True -> tests prng config gen (ntest +Int32 1) nfail (Cons (qcResultStamp res) stamps)
+            of $Some False -> QCTR_Failure ntest (qcResultArgs res)
+          end
+      end
+  end
+};
+
+check :: forall (t:Type) { { Int32 } => { t => Prop } => QCTestConfig => t => QCTestResult };
+check = { prng32 => testable => cfg => propfn =>
+  eval = evaluate testable; // eval :: { t => Gen QCResult }
+  tests prng32 cfg (eval propfn) 0 0 Nil;
+};
+
+type case QCTestConfig of $QCTestConfig Int32 Int32 { Int32 => Int32 };
+
+configMaxTest = { tc : QCTestConfig => case tc of $QCTestConfig m _ _  -> m end };
+configMaxFail = { tc : QCTestConfig => case tc of $QCTestConfig _ m _  -> m end };
+configSize    = { tc : QCTestConfig => case tc of $QCTestConfig _ _ f  -> f end };
+
+quickCheck :: forall (t:Type) { { Int32 } => { t => Prop } => t => QCTestResult };
+quickCheck = { prng => testable => propfn =>
+  quick = QCTestConfig 100 1000 { n => 3 +Int32 (sdiv-Int32 n 2) };
+  check prng testable quick propfn
+};

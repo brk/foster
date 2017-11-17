@@ -1,0 +1,33 @@
+main = { test 123 ; };
+
+// A regression test for the compiler mangling GC roots for recursive functions.
+
+test = { n:Int32 =>
+  REC go = { t:Text =>
+      go "^"; ()
+  };
+  ()
+};
+
+tmp_Text_bytes_iter_reverse = { t:Text =>
+                                f: { Int8 => Bool } =>
+  case t
+    of $TextFragment a n     -> tmp_bytes_iter_reverse a (n -Int32 1) f;
+    of $TextConcat   s1 s2 n ->
+        if    tmp_Text_bytes_iter_reverse s2 f
+         then tmp_Text_bytes_iter_reverse s1 f
+         else False
+        end
+   end;
+};
+
+// Returns True on success, otherwise False.
+tmp_bytes_iter_reverse = { a : Array Int8 =>
+                           n : Int32 => // invariant: n < len a
+                           f : { Int8 => Bool } =>
+  if n >=SInt32 0
+  then if f a[n] then tmp_bytes_iter_reverse a (n -Int32 1) f
+                 else False end
+  else True end
+};
+

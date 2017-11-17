@@ -1,0 +1,37 @@
+main = {
+  expect_i1 True;
+  print_i1 (__COMPILES__ {
+                f = { v :   Int32   => () };
+                ()
+              });
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ {
+                f = { v :   Int32 ()   => () };
+                ()
+              });
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ {
+                f = { v :   NonExistentType   => () };
+                ()
+              });
+
+
+  /* currently parsing errors...
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ {
+                f = { forall t:Type, v :   t ()   => () };
+                ()
+              });
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ {
+                f = { v :   () ()   => () };
+                ()
+              });
+      */
+
+  ()
+};

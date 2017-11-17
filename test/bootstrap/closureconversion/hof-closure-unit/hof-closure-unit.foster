@@ -1,0 +1,31 @@
+run-clo = { f:{Int32} => f ! };
+
+main = {
+  test-capture-zero !;
+  test-capture-one !;
+  test-run-it !;
+};
+
+test-capture-one = {
+   n = opaquely_i32 2;
+   c = { n +Int32 (opaquely_i32 3) };
+  j0 = expect_i32 5;
+  j1 = print_i32 (run-clo c);
+  ()
+};
+
+test-capture-zero = {
+  c = { (opaquely_i32 0) +Int32 (opaquely_i32 3) };
+ j0 = expect_i32 3;
+ j1 = print_i32 (run-clo c);
+ ()
+};
+
+test-run-it = {
+  expect_i32 42;
+  print_i32 (run-it fx);
+};
+
+fx = { opaquely_i32 42 };
+
+run-it = { f: {Int32} => f ! };

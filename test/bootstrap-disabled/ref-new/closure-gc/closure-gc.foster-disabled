@@ -1,0 +1,14 @@
+// IN: 255 3 5 8 13
+
+fn "main" () {
+  let n:ref i32 = new read_i32() in {
+  let c:  fn() =   fn () { print_ref(n) ; deref(n) + read_i32() }   in {
+    print_ref(n) ; print_i32(deref(n))
+    force_gc_for_debugging_purposes()
+    print_ref(n) ; print_i32(deref(n))
+    expect_i32(258)
+    print_i32(c())
+  }
+  }
+}
+

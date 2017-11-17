@@ -1,0 +1,262 @@
+// Based on Scheme's SRFI 60, which is covered
+// by the following BSD-compatible license:
+/*
+;;;; "logical.scm", bit access and operations for integers for Scheme
+;;; Copyright (C) 1991, 1993, 2001, 2003, 2005 Aubrey Jaffer
+;
+;Permission to copy this software, to modify it, to redistribute it,
+;to distribute modified versions, and to use it for any purpose is
+;granted, subject to the following restrictions and understandings.
+;
+;1.  Any copy made of this software must include this copyright notice
+;in full.
+;
+;2.  I have made no warranty or representation that the operation of
+;this software will be error-free, and I am under no obligation to
+;provide any services, by way of maintenance, update, or otherwise.
+;
+;3.  In conjunction with products arising from the use of this
+;material, there shall be no use of my name in any advertising,
+;promotional, or sales literature without prior written consent in
+;each case.
+*/
+//
+
+// Primitives provided for fixnums (8/32/64):
+//
+// bitand
+// bitnot
+// bitor
+// bitxor
+//
+// bitlshr
+// bitashr
+// bitshl
+//
+
+// Uses mask to select bits from a (1-bits in mask) or b (0-bits in mask).
+//
+// Example: bitmerge-Int32 0b`11001100 (mask)
+//                         0b`11100010 (a)
+//                         0b`10100101 (b)
+//                   ==>
+//                         0b`11100001
+//                             ^     ^
+//                         from a   from b
+bitmerge-Int32 = { mask:Int32 => a:Int32 => b:Int32 =>
+  bitor-Int32 (bitand-Int32 a               mask)
+              (bitand-Int32 b (bitnot-Int32 mask));
+};
+
+// n should be 0, 1, 2, or 3.
+make-byte-Int32 = { x : Int8 => n : Int32 =>
+  bitpos = n *Int32 8;
+  (zext_i8_to_i32 x) `bitshl-Int32` bitpos
+};
+
+clear-byte-Int32 = { v : Int32 => n : Int32 =>
+  bitand-Int32 v (bitnot-Int32 (make-byte-Int32 0xff n))
+};
+
+// Replaces the n'th byte of v with x.
+replace-byte-Int32 = { v : Int32 => n : Int32 => x : Int8 =>
+  clear-byte-Int32 v n `bitor-Int32` (make-byte-Int32 x n)
+};
+
+replace-byte-Int32-alt = { v : Int32 => n : Int32 => x : Int8 =>
+  bitmerge-Int32 (make-byte-Int32 0xff n) (make-byte-Int32 x n) v
+};
+
+// Extracts the n'th byte (little-endian) of v.
+// Precondition: n <= 3.
+extract-byte-Int32 = { v : Int32 => n : Int32 =>
+  bitfield-len-Int32 v (n *Int32 8) 8 |> trunc_i32_to_i8
+};
+
+extract-byte-Int32-alt = { v : Int32 => n : Int32 =>
+  bitlshr-Int32 v (n *Int32 8) |> trunc_i32_to_i8
+};
+
+// Extracts the n'th byte (little-endian) of v.
+// Precondition: n <= 3.
+extract-byte-Int64 = { v : Int64 => n : Int64 =>
+  bitfield-len-Int64 v (n *Int64 8) 8 |> trunc_i64_to_i8
+};
+
+extract-byte-Int64-alt = { v : Int64 => n : Int64 =>
+  trunc_i64_to_i8 (bitlshr-Int64 v (n *Int64 8))
+};
+
+// Preconditions:
+//      fin - start <= 32
+//            start <= 32
+bitfield-Int32 = { n:Int32 => start:Int32 => fin:Int32 =>
+  bitfield-len-Int32 n start (fin -Int32 start)
+};
+
+// Preconditions:
+//      len + start <= 32
+//            start <= 32
+// Example: bitfield-len-Int32 0b`1110111001100 3 8 == 10111001_2
+//                                --********---
+bitfield-len-Int32 = { n:Int32 => start:Int32 => len:Int32 =>
+  bitand-Int32 (bitnot-Int32 (bitshl-Int32 -1 len))
+               (bitlshr-Int32 n start);
+};
+
+bitfield-len-Int64 = { n:Int64 => start:Int64 => len:Int64 =>
+  bitand-Int64 (bitnot-Int64 (bitshl-Int64 -1 len))
+               (bitlshr-Int64 n start);
+};
+
+any-common-bits-Int32 = { j : Int32 => k : Int32 =>
+  (bitand-Int32 j k) !=Int32 0
+};
+
+// TODO: use ctpop intrinsic?
+bitcount-Int32 = { n : Int32 =>
+  REC count-1-bits = { k : Int32 => acc : Int32 =>
+     if k ==Int32 0 then acc else
+       count-1-bits (bitlshr-Int32 k 1) (acc +Int32 (bitand-Int32 k 1));
+     end
+  };
+
+  if n <SInt32 0 then
+    // Count 0 bits by inverting and counting 1 bits.
+    count-1-bits (bitnot-Int32 n) 0
+  else // Count 1 bits directly
+    count-1-bits n 0
+  end
+};
+
+bitlength-Int32 = { n : Int32 =>
+  REC go = { n => total =>
+             // This lookup table is not consistent with SRFI 60,
+             // but they define both 0 and -1 as being of bit length zero,
+             // which seems totally bogus.
+             case n
+               of 0 -> total
+               of 1 -> total +Int32 1
+               of 2 -> total +Int32 2
+               of 3 -> total +Int32 2
+               of 4 -> total +Int32 3
+               of 5 -> total +Int32 3
+               of 6 -> total +Int32 3
+               of 7 -> total +Int32 3
+               of _ -> go (bitlshr-Int32 n 4) (total +Int32 4);
+             end
+           };
+  go n 0;
+};
+
+bitlength-alt-Int32 = { n : Int32 =>
+  REC go = { n => total =>
+             if n ==Int32 0
+               then total
+               else go (bitlshr-Int32 n 1) (total +Int32 1)
+             end
+           };
+  go n 0
+};
+
+bitlength-alt2-Int32 = { n : Int32 =>
+  32 -Int32 (ctlz-Int32 n)
+};
+
+first-set-bit-Int32 = { n : Int32 =>
+  (bitlength-Int32 (bitand-Int32 n (negate-Int32 n))) -Int32 1
+};
+
+// Precondition: 0 <= index < 32
+//
+is-bit-set-Int32 = {  n : Int32 => index : Int32 =>
+  0 !=Int32 (bitand-Int32 n
+            (bitshl-Int32 1 index));
+};
+
+copy-bit-Int32 = { n : Int32 => newbit : Bool => index : Int32 =>
+  if newbit
+    then bitor-Int32  n               (bitshl-Int32 1 index);
+    else bitand-Int32 n (bitnot-Int32 (bitshl-Int32 1 index));
+  end
+};
+
+bit-reverse-Int32 = { k : Int32 => n : Int32 =>
+  REC go = { m => k => rvs =>
+             if k <SInt32 0
+               then if n <SInt32 0 then bitnot-Int32 rvs else rvs end
+               else go (bitlshr-Int32 m 1)
+                       (k -Int32 1)
+                       (bitor-Int32 (bitshl-Int32 rvs 1) (bitand-Int32 1 m))
+            end
+  };
+  m0 = if n <SInt32 0 then (negate-Int32 n) else n end;
+  go m0 (k -Int32 1) 0;
+};
+
+// Preconditions:
+//      fin - start < 32
+//            start < 32
+bit-field-reverse-Int32 = { n : Int32 => start : Int32 => fin : Int32 =>
+  width = fin -Int32 start;
+  mask  = bitnot-Int32 (bitshl-Int32 -1 width);
+  zn    = bitand-Int32 mask (bitashr-Int32 n start);
+
+  bitor-Int32 (bitshl-Int32 (bit-reverse-Int32 width zn) start)
+              (bitand-Int32 (bitnot-Int32 (bitshl-Int32 mask start)) n)
+};
+
+
+/////
+
+bitlength-Int64 :: { Int64 => Int32 };
+bitlength-Int64 = { k =>
+  REC go = { x => acc =>
+                 if x ==Int64 0
+                   then acc
+                   else go (bitlshr-Int64 x 1) (acc +Int32 1)
+                 end
+           };
+    go k 0
+};
+
+// TODO should this be called wordCountBits instead?
+// Note: this function implements the function called _BitScanReverse,
+//       which is equal to llvm.ctlz(0, 0) - llvm.ctlz(k, 0).
+bitlength-Word :: { Word => Int32 };
+bitlength-Word = { k =>
+  REC go = { x => acc =>
+                 if x ==Word 0
+                   then acc
+                   else go (bitlshr-Word x 1) (acc +Int32 1)
+                 end
+           };
+    go k 0
+};
+
+/////////////////////////////////////////////////////////////////////////
+
+
+// Precondition: n < 32 && n >= 0
+getBit32 = { n => 1 `bitshl-Int32` n };
+
+setBit32 = { v => n => v `bitor-Int32` getBit32 n };
+
+testBit32 = { v => n => (v `bitand-Int32` getBit32 n) !=Int32 0 };
+
+xorBit32 = { v => n => v `bitxor-Int32` getBit32 n };
+
+xorIfBit32 = { v => n => b => if b then xorBit32 v n else v end };
+
+// Precondition: n < 32 && n >= 0
+bitmask-Int32 = { len => getBit32 len -Int32 1 };
+
+// Like bitlshr, but oversize shifts saturate to zero instead of being no-ops.
+bitlshrz-Int32 = { k => n => if n <UInt32 32 then bitlshr-Int32 k n else 0 end };
+
+oneBeforeNextPowerOfTwo     = { n =>
+  -1 `bitlshrz-Int32` (ctlz-Int32 n)
+};
+oneBeforeNextPowerOfTwo_alt = { n =>
+  n `bitor-Int32` bitmask-Int32 (bitlength-Int32 n)
+};

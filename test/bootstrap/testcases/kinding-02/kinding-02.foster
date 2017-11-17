@@ -1,0 +1,30 @@
+type case List (a:Type)
+  of $Cons a (List a)
+  of $Nil
+  ;
+
+main = {
+  expect_i1 False;
+  print_i1 (sum1 (Cons 1 (Cons 2 Nil)));
+
+  expect_i1 False;
+  print_i1 (sum2 (Cons 1 (Cons 2 Nil)));
+};
+
+sum1 :: { List Int32 => Bool };
+sum1 = { xs =>
+  (__COMPILES__ 
+  case (xs as List)
+    of $Cons x zs -> x +Int32 (sum1 zs)
+    of $Nil -> 0
+  end)
+};
+
+// No annotation; does it matter?
+sum2 = { xs =>
+  (__COMPILES__ 
+  case (xs as List)
+    of $Cons x zs -> x +Int32 (sum1 zs)
+    of $Nil -> 0
+  end)
+};

@@ -1,0 +1,88 @@
+id  = { forall a:Boxed, x:a => x };
+id2 = { forall a:Boxed, x:a => x };
+
+test5 = { forall t:Boxed, x:t =>
+  f = { y : t => y };
+  g5 = id:[{ t => t }] f;
+
+  ignore = g5 x;
+  ()
+};
+
+test4 = { forall t:Boxed, x:t =>
+  f = { y : () => y };
+  g4 = id:[{ () => () }] f;
+
+  g4 ()
+};
+
+test1 = { f : { () } =>
+  //g1 = id:[{ () }] f;
+  g1 = id f;
+
+  g1 !
+};
+
+/*
+// fails due to conflation between proc-returning-void and proc-returning-unit.
+test2 =   { x : () =>
+      let g = id:[()] x;
+       in idtup g end
+  };
+idtup = { x : () => () };
+*/
+
+test3 =   { x : ((), ()) =>
+     g3 = id:[((), ())] x;
+
+     idtup2 g3
+  };
+idtup2 = { x : ((), ()) => ((), ()) };
+
+main = {
+  //id id2;
+
+  test1 { () };
+  //test2 ();
+  _ = test3 ((), ());
+
+  test4 { () };
+  test5 { () };
+
+  test4 ();
+  test5 ();
+
+  // Fails to typecheck:
+  /*
+  { forall t:Boxed, x:t =>
+      let f = { y : t => id2:[t] y };
+          g = id:[{ t => t }] f;
+       in g x end
+  } ();
+  */
+
+
+  // OK
+  { forall t:Boxed, x:t =>
+      f = { y : () => z = id2:[t] x; y };
+
+      f ()
+  } ();
+
+  // OK
+  {forall t:Boxed, x:t =>
+      f = { y : () => z = id2 (); y };
+
+      f ()
+  } ();
+
+
+  { forall t:Boxed, id2:[{ t => t }] id:[t] } ! ();
+
+  // predicative instantiation not yet supported
+  //id2:[forall t:Boxed, { t => t }] id;
+
+  ()
+
+};
+

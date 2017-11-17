@@ -1,0 +1,508 @@
+// running c2f...
+// /home/benkarel/foster/_obj/c2f csf_005.c --  -I /home/benkarel/llvm/3.9.0/bin/../lib/clang/3.9.0/include  -I /usr/lib/gcc/x86_64-linux-gnu/6.2.0/include  -I /usr/lib/gcc/x86_64-linux-gnu/6.2.0/../../../x86_64-linux-gnu/include  -I /lib/x86_64-linux-gnu/include  -I /lib/../lib64/include  -I /usr/lib/x86_64-linux-gnu/include  -I /usr/lib/gcc/x86_64-linux-gnu/6.2.0/../../../include  -I /home/benkarel/llvm/3.9.0/bin/../lib/include  -I /lib/include  -I /usr/lib/include -I /home/benkarel/sw/local/csmith-2.3.0/include/csmith-2.3.0  > c2f.raw.foster
+// running foster-fmt; c2f c2f.raw.foster status was 0
+// /home/benkarel/foster/scripts/../scripts/fosterc.py --me-arg=--fmt --bindir /home/benkarel/foster/_obj --tmpdir fosterc-standalone-tmp c2f.raw.foster
+snafuinclude C2F "c2f";
+func_1 = {
+    
+    /*
+    { /* block id: 0 */
+        const int64_t l_2 = 1L;
+        int32_t l_3 = 0xEE76F502L;
+        int32_t l_40 = (-6L);
+        int32_t l_49 = 9L;
+        int32_t l_51 = 0L;
+        int32_t l_58 = 0L;
+        int32_t l_68 = 1L;
+        int32_t l_71 = (-1L);
+        int32_t l_74 = 0x4357240EL;
+        int32_t l_75 = 0L;
+        int32_t l_77 = (-1L);
+        int32_t l_82 = 0xFAF1BECDL;
+        int32_t l_108 = 0x831B5E35L;
+        int32_t l_109 = 0x796224A1L;
+        uint8_t l_110 = 0xB9L;
+        uint32_t l_127 = 0x5BAED681L;
+    lbl_43:
+        l_3 |= l_2;
+        for (l_3 = 0; (l_3 != 10); l_3++)
+        { /* block id: 4 */
+            int16_t l_33 = 0x4D64L;
+            int32_t l_34 = 4L;
+            int32_t l_35 = 2L;
+            int32_t l_55 = 0L;
+            int32_t l_56 = 0xED4033E2L;
+            int32_t l_57 = 6L;
+            int32_t l_59 = 0xB1A73B02L;
+            int32_t l_60 = 5L;
+            int32_t l_61 = 0xF54CEAA9L;
+            int32_t l_62 = (-1L);
+            int32_t l_65 = 0xFCCEA59FL;
+            int32_t l_69 = 0x2DD31843L;
+            int32_t l_73 = 0L;
+            int8_t l_76 = 0L;
+            int32_t l_78 = 0xBFBD42F9L;
+            int32_t l_79 = 9L;
+            int32_t l_80 = (-8L);
+            int32_t l_83 = 0L;
+            int32_t l_84 = 0x979388B3L;
+            int32_t l_87 = 0L;
+            uint32_t l_89 = 0x375426BEL;
+            int64_t l_99 = 5L;
+            uint64_t l_119 = 2UL;
+            l_40 = func_6((((int16_t)func_14(func_18(((l_35 = (((uint8_t)1UL >> (uint8_t)((l_34 = (((int8_t)((int8_t)((int8_t)((uint64_t)(l_2 ^ l_3) - (uint64_t)0L) << (int8_t)4) << (int8_t)l_3) - (int8_t)l_33) == l_2)) || 65531UL)) < l_2)) > l_33), l_2, l_3, l_33), l_33, l_33) >> (int16_t)l_33) == 0x17A6L), l_3, l_3, l_33, l_3);
+            for (l_33 = 0; (l_33 < (-10)); l_33--)
+            { /* block id: 19 */
+                int32_t l_47 = 0x7E1289EDL;
+                int32_t l_48 = 1L;
+                int32_t l_50 = 3L;
+                int32_t l_52 = 0x7092FF82L;
+                int32_t l_53 = 9L;
+                int32_t l_54 = 0x5B04CE9DL;
+                int8_t l_63 = 0xCAL;
+                int32_t l_64 = 0xE6A83B1DL;
+                int32_t l_66 = 1L;
+                int32_t l_67 = 0L;
+                int32_t l_70 = 0xCF3D0097L;
+                int32_t l_72 = (-4L);
+                int32_t l_81 = 1L;
+                int32_t l_85 = 0x3464EB7FL;
+                int32_t l_86 = 1L;
+                int32_t l_88 = 0x42AC96AAL;
+                int64_t l_103 = (-6L);
+                uint64_t l_120 = 18446744073709551615UL;
+                if (l_33)
+                    goto lbl_43;
+                if ((~(((uint64_t)l_47 + (uint64_t)((((l_89--) >= (((~l_48) <= ((uint16_t)l_77 % (uint16_t)(-5L))) < 0x24B17358L)) & 2UL) != 0UL)) != l_65)))
+                { /* block id: 22 */
+                    int64_t l_95 = 1L;
+                    int32_t l_96 = (-5L);
+                    int32_t l_97 = 0x22E233ADL;
+                    int32_t l_98 = 0xA052C454L;
+                    int32_t l_100 = 0L;
+                    int32_t l_101 = 0xF36AA128L;
+                    int32_t l_102 = 1L;
+                    int32_t l_104 = 2L;
+                    int32_t l_105 = 0x54DBC71BL;
+                    int32_t l_106 = 0xEF177DAEL;
+                    int32_t l_107 = (-9L);
+                    l_110++;
+                    return l_106;
+                }
+                else
+                { /* block id: 25 */
+                    l_34 = 4L;
+                    l_49 = l_68;
+                    if (l_88)
+                        break;
+                    l_49 = 0xF365AED0L;
+                }
+                l_120 = (l_78 == (((int8_t)((uint64_t)l_3 % (uint64_t)((~(((!(l_79 > l_109)) && l_119) & l_77)) || 0x35E3094FL)) + (int8_t)l_78) <= 0x66ECL));
+                for (l_68 = 21; (l_68 != 12); l_68 -= 9)
+                { /* block id: 34 */
+                    uint32_t l_126 = 4294967295UL;
+                    if (l_65)
+                        goto lbl_43;
+                    l_78 = (+l_120);
+                    l_47 = ((uint32_t)l_126 % (uint32_t)l_127);
+                }
+            }
+            l_75 |= 0L;
+        }
+        l_77 = ((int8_t)(-1L) - (int8_t)(l_58 ^= l_77));
+        return l_3;
+    }
+    */
+    l_126 = (prim ref (trunc_i64_to_i32 4294967295));
+    l_95 = (prim ref 1);
+    l_96 = (prim ref (trunc_i64_to_i32 -5));
+    l_97 = (prim ref (trunc_i64_to_i32 585249709));
+    l_98 = (prim ref (trunc_i64_to_i32 2689778772));
+    l_100 = (prim ref 0);
+    l_101 = (prim ref (trunc_i64_to_i32 4083851560));
+    l_102 = (prim ref 1);
+    l_104 = (prim ref 2);
+    l_105 = (prim ref (trunc_i64_to_i32 1423689499));
+    l_106 = (prim ref (trunc_i64_to_i32 4011294126));
+    l_107 = (prim ref (trunc_i64_to_i32 -9));
+    l_47 = (prim ref (trunc_i64_to_i32 2115144173));
+    l_48 = (prim ref 1);
+    l_50 = (prim ref 3);
+    l_52 = (prim ref (trunc_i64_to_i32 1888681858));
+    l_53 = (prim ref 9);
+    l_54 = (prim ref (trunc_i64_to_i32 1527041693));
+    l_63 = (prim ref (trunc_i64_to_i8 202));
+    l_64 = (prim ref (trunc_i64_to_i32 3869784861));
+    l_66 = (prim ref 1);
+    l_67 = (prim ref 0);
+    l_70 = (prim ref (trunc_i64_to_i32 3476881559));
+    l_72 = (prim ref (trunc_i64_to_i32 -4));
+    l_81 = (prim ref 1);
+    l_85 = (prim ref (trunc_i64_to_i32 879029119));
+    l_86 = (prim ref 1);
+    l_88 = (prim ref (trunc_i64_to_i32 1118607018));
+    l_103 = (prim ref -6);
+    l_120 = (prim ref -1);
+    l_33 = (prim ref (trunc_i64_to_i16 19812));
+    l_34 = (prim ref 4);
+    l_35 = (prim ref 2);
+    l_55 = (prim ref 0);
+    l_56 = (prim ref (trunc_i64_to_i32 3980407778));
+    l_57 = (prim ref 6);
+    l_59 = (prim ref (trunc_i64_to_i32 2980526850));
+    l_60 = (prim ref 5);
+    l_61 = (prim ref (trunc_i64_to_i32 4115458729));
+    l_62 = (prim ref (trunc_i64_to_i32 -1));
+    l_65 = (prim ref (trunc_i64_to_i32 4241401247));
+    l_69 = (prim ref (trunc_i64_to_i32 768809027));
+    l_73 = (prim ref 0);
+    l_76 = (prim ref 0);
+    l_78 = (prim ref (trunc_i64_to_i32 3216851705));
+    l_79 = (prim ref 9);
+    l_80 = (prim ref (trunc_i64_to_i32 -8));
+    l_83 = (prim ref 0);
+    l_84 = (prim ref (trunc_i64_to_i32 2543028403));
+    l_87 = (prim ref 0);
+    l_89 = (prim ref (trunc_i64_to_i32 928261822));
+    l_99 = (prim ref 5);
+    l_119 = (prim ref 2);
+    l_2 = (prim ref 1);
+    l_3 = (prim ref (trunc_i64_to_i32 4000773378));
+    l_40 = (prim ref (trunc_i64_to_i32 -6));
+    l_49 = (prim ref 9);
+    l_51 = (prim ref 0);
+    l_58 = (prim ref 0);
+    l_68 = (prim ref 1);
+    l_71 = (prim ref (trunc_i64_to_i32 -1));
+    l_74 = (prim ref (trunc_i64_to_i32 1129784334));
+    l_75 = (prim ref 0);
+    l_77 = (prim ref (trunc_i64_to_i32 -1));
+    l_82 = (prim ref (trunc_i64_to_i32 4210147021));
+    l_108 = (prim ref (trunc_i64_to_i32 2199608885));
+    l_109 = (prim ref (trunc_i64_to_i32 2036475041));
+    l_110 = (prim ref 185);
+    l_127 = (prim ref (trunc_i64_to_i32 1538184833));
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    /* hasVal=0 */
+    
+    
+    
+    
+    /* hasVal=0 */
+    
+    
+    
+    /*L1932*//*L1932*/
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    /* hasVal=0 */
+    
+    
+    
+    
+    
+    
+    
+    
+    /* hasVal=0 */
+    
+    
+    
+    
+    
+    
+    
+    /* hasVal=0 */
+    
+    
+    
+    
+    /* hasVal=0 */
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    /* hasVal=0 */
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    REC goto_block_23 = { goto_block_22 ! };
+    REC goto_block_22 = {
+        1 >^ l_2; (trunc_i64_to_i32 4000773378) >^ l_3; (trunc_i64_to_i32 -6) >^ l_40; 9 >^ l_49; 0 >^ l_51; 0 >^ l_58; 1 >^ l_68; (trunc_i64_to_i32 -1) >^ l_71; (trunc_i64_to_i32 1129784334) >^ l_74; 0 >^ l_75; (trunc_i64_to_i32 -1) >^ l_77; (trunc_i64_to_i32 4210147021) >^ l_82; (trunc_i64_to_i32 2199608885) >^ l_108; (trunc_i64_to_i32 2036475041) >^ l_109; 185 >^ l_110; (trunc_i64_to_i32 1538184833) >^ l_127; goto_lbl_43 !
+        };
+    REC goto_lbl_43 = {
+        b_21_0 = ((bitor-Int32 l_3^ (trunc_i64_to_i32 l_2^)) >^ l_3; l_3^);
+        b_21_1 = (0 >^ l_3; l_3^);
+        goto_block_20 !
+        };
+    REC goto_block_20 = {
+        b_20_0 = if l_3^ !=Int32 10
+          then 1
+          else 0
+        end;
+        if b_20_0 !=Int32 0
+          then goto_block_19 !
+          else goto_block_1 !
+        end
+        };
+    REC goto_block_19 = {
+        (trunc_i64_to_i16 19812) >^ l_33; 4 >^ l_34; 2 >^ l_35; 0 >^ l_55; (trunc_i64_to_i32 3980407778) >^ l_56; 6 >^ l_57; (trunc_i64_to_i32 2980526850) >^ l_59; 5 >^ l_60; (trunc_i64_to_i32 4115458729) >^ l_61; (trunc_i64_to_i32 -1) >^ l_62; (trunc_i64_to_i32 4241401247) >^ l_65; (trunc_i64_to_i32 768809027) >^ l_69; 0 >^ l_73; 0 >^ l_76; (trunc_i64_to_i32 3216851705) >^ l_78; 9 >^ l_79; (trunc_i64_to_i32 -8) >^ l_80; 0 >^ l_83; (trunc_i64_to_i32 2543028403) >^ l_84; 0 >^ l_87; (trunc_i64_to_i32 928261822) >^ l_89; 5 >^ l_99; 2 >^ l_119; b_19_0 = func_18 if (if (sext_i32_to_i64 (bitashr-Int32 (zext_i8_to_i32 1) (zext_i8_to_i32 (trunc_i32_to_i8 if oror {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           if (sext_i32_to_i64 ((sext_i8_to_i32 (trunc_i32_to_i8 (bitshl-Int32 (sext_i8_to_i32 (trunc_i32_to_i8 (bitshl-Int32 (sext_i8_to_i32 (trunc_i64_to_i8 ((bitxor-Int64 l_2^ (sext_i32_to_i64 l_3^)) -Int64 0))) (sext_i8_to_i32 4)))) (sext_i8_to_i32 (trunc_i32_to_i8 l_3^))))) -Int32 (sext_i8_to_i32 (trunc_i16_to_i8 l_33^)))) ==Int64 l_2^
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             then 1
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             else 0
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           end >^ l_34; l_34^ !=Int32 0
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           } {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           True
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 then 1
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 else 0
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               end)))) <SInt64 l_2^
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        then 1
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        else 0
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      end >^ l_35; l_35^) >SInt32 (sext_i16_to_i32 l_33^)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      then 1
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      else 0
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    end (trunc_i64_to_i32 l_2^) (sext_i32_to_i64 l_3^) l_33^;
+        b_19_1 = func_14 b_19_0 (sext_i16_to_i32 l_33^) (sext_i16_to_i32 l_33^);
+        b_19_2 = func_6 (trunc_i32_to_i16 if (sext_i32_to_i64 (bitashr-Int32 (sext_i16_to_i32 b_19_1) (sext_i16_to_i32 l_33^))) ==Int64 6054
+                                            then 1
+                                            else 0
+                                          end) (trunc_i32_to_i8 l_3^) (trunc_i32_to_i16 l_3^) (sext_i16_to_i32 l_33^) l_3^;
+        b_19_3 = (b_19_2 >^ l_40; l_40^);
+        b_19_4 = (0 >^ l_33; l_33^);
+        goto_block_18 !
+        };
+    REC goto_block_18 = {
+        b_18_0 = if (sext_i16_to_i32 l_33^) <SInt32 -10
+          then 1
+          else 0
+        end;
+        if b_18_0 !=Int32 0
+          then goto_block_17 !
+          else goto_block_3 !
+        end
+        };
+    REC goto_block_17 = {
+        (trunc_i64_to_i32 2115144173) >^ l_47; 1 >^ l_48; 3 >^ l_50; (trunc_i64_to_i32 1888681858) >^ l_52; 9 >^ l_53; (trunc_i64_to_i32 1527041693) >^ l_54; (trunc_i64_to_i8 202) >^ l_63; (trunc_i64_to_i32 3869784861) >^ l_64; 1 >^ l_66; 0 >^ l_67; (trunc_i64_to_i32 3476881559) >^ l_70; (trunc_i64_to_i32 -4) >^ l_72; 1 >^ l_81; (trunc_i64_to_i32 879029119) >^ l_85; 1 >^ l_86; (trunc_i64_to_i32 1118607018) >^ l_88; -6 >^ l_103; -1 >^ l_120; b_17_0 = l_33^;
+        if b_17_0 !=Int16 0
+          then goto_block_16 !
+          else goto_block_15 !
+        end
+        };
+    REC goto_block_16 = { goto_lbl_43 ! };
+    REC goto_block_15 = {
+        b_15_0 = bitnot-Int32 if ((sext_i32_to_i64 l_47^) +Int64 (sext_i32_to_i64 if (bitand-Int64 (sext_i32_to_i64 if (postdecrInt32 l_89) >=UInt32 if (sext_i32_to_i64 if (bitnot-Int32 l_48^) <=SInt32 (srem-unsafe-Int32 (zext_i16_to_i32 (trunc_i32_to_i16 l_77^)) (zext_i16_to_i32 (trunc_i64_to_i16 -5)))
+                                                                                                                                                                           then 1
+                                                                                                                                                                           else 0
+                                                                                                                                                                         end) <SInt64 615609176
+                                                                                                                        then 1
+                                                                                                                        else 0
+                                                                                                                      end
+                                                                                                                      then 1
+                                                                                                                      else 0
+                                                                                                                    end) 2) !=Int64 0
+                                                                                    then 1
+                                                                                    else 0
+                                                                                  end)) !=Int64 (sext_i32_to_i64 l_65^)
+                                then 1
+                                else 0
+                              end;
+        if b_15_0 !=Int32 0
+          then goto_block_14 !
+          else goto_block_13 !
+        end
+        };
+    REC goto_block_14 = {
+        1 >^ l_95; (trunc_i64_to_i32 -5) >^ l_96; (trunc_i64_to_i32 585249709) >^ l_97; (trunc_i64_to_i32 2689778772) >^ l_98; 0 >^ l_100; (trunc_i64_to_i32 4083851560) >^ l_101; 1 >^ l_102; 2 >^ l_104; (trunc_i64_to_i32 1423689499) >^ l_105; (trunc_i64_to_i32 4011294126) >^ l_106; (trunc_i64_to_i32 -9) >^ l_107; b_14_0 = postincrInt8 l_110;
+        l_106^
+        };
+    REC goto_block_13 = {
+        b_13_0 = (4 >^ l_34; l_34^);
+        b_13_1 = (l_68^ >^ l_49; l_49^);
+        b_13_2 = l_88^;
+        if b_13_2 !=Int32 0
+          then goto_block_12 !
+          else goto_block_11 !
+        end
+        };
+    REC goto_block_12 = { goto_block_3 ! };
+    REC goto_block_11 = {
+        b_11_0 = ((trunc_i64_to_i32 4083527376) >^ l_49; l_49^);
+        goto_block_10 !
+        };
+    REC goto_block_10 = {
+        b_10_0 = ((sext_i32_to_i64 if l_78^ ==Int32 if (sext_i32_to_i64 ((sext_i8_to_i32 (trunc_i64_to_i8 (urem-unsafe-Int64 (sext_i32_to_i64 l_3^) (sext_i32_to_i64 if oror {
+                                                                                                                                                                                 (bitnot-Int32 (bitand-Int32 if andand {
+                                                                                                                                                                                                                           if l_79^ >SInt32 l_109^
+                                                                                                                                                                                                                             then 0
+                                                                                                                                                                                                                             else 1
+                                                                                                                                                                                                                           end !=Int32 0
+                                                                                                                                                                                                                           } {
+                                                                                                                                                                                                                           l_119^ !=Int64 0
+                                                                                                                                                                                                                           }
+                                                                                                                                                                                                               then 1
+                                                                                                                                                                                                               else 0
+                                                                                                                                                                                                             end l_77^)) !=Int32 0
+                                                                                                                                                                                 } {
+                                                                                                                                                                                 True
+                                                                                                                                                                                 }
+                                                                                                                                                                       then 1
+                                                                                                                                                                       else 0
+                                                                                                                                                                     end)))) +Int32 (sext_i8_to_i32 (trunc_i32_to_i8 l_78^)))) <=SInt64 26348
+                                       then 1
+                                       else 0
+                                     end
+                                     then 1
+                                     else 0
+                                   end) >^ l_120; l_120^);
+        b_10_1 = (21 >^ l_68; l_68^);
+        goto_block_9 !
+        };
+    REC goto_block_9 = {
+        b_9_0 = if l_68^ !=Int32 12
+          then 1
+          else 0
+        end;
+        if b_9_0 !=Int32 0
+          then goto_block_8 !
+          else goto_block_4 !
+        end
+        };
+    REC goto_block_8 = {
+        (trunc_i64_to_i32 4294967295) >^ l_126; b_8_0 = l_65^;
+        if b_8_0 !=Int32 0
+          then goto_block_7 !
+          else goto_block_6 !
+        end
+        };
+    REC goto_block_7 = { goto_lbl_43 ! };
+    REC goto_block_6 = {
+        b_6_0 = ((trunc_i64_to_i32 l_120^) >^ l_78; l_78^);
+        b_6_1 = ((urem-unsafe-Int32 l_126^ l_127^) >^ l_47; l_47^);
+        goto_block_5 !
+        };
+    REC goto_block_5 = {
+        b_5_0 = ((l_68^ -Int32 9) >^ l_68; l_68^);
+        goto_block_9 !
+        };
+    REC goto_block_4 = {
+        b_4_0 = postdecrInt16 l_33;
+        goto_block_18 !
+        };
+    REC goto_block_3 = {
+        b_3_0 = ((bitor-Int32 l_75^ (trunc_i64_to_i32 0)) >^ l_75; l_75^);
+        goto_block_2 !
+        };
+    REC goto_block_2 = {
+        b_2_0 = postincrInt32 l_3;
+        goto_block_20 !
+        };
+    REC goto_block_1 = {
+        b_1_0 = (((sext_i8_to_i32 (trunc_i64_to_i8 -1)) -Int32 (sext_i8_to_i32 (trunc_i32_to_i8 ((bitxor-Int32 l_58^ l_77^) >^ l_58; l_58^)))) >^ l_77; l_77^);
+        l_3^
+        };
+    goto_block_23 !
+    };
+
+func_6 = { p_7 : Int16 =>
+           p_8 : Int8 =>
+           p_9 : Int16 =>
+           p_10 : Int32 =>
+           p_11 : Int32 =>
+    
+    
+    
+    
+    
+    
+    l_39 = (prim ref 5830182188472531034);
+    1 >^ l_39; 
+    sext_i16_to_i32 p_9
+    };/*clast*/
+
+func_14 = { p_15 : Int32 =>
+            p_16 : Int32 =>
+            p_17 : Int32 =>
+    
+    
+    
+    
+    l_38 = (prim ref (trunc_i64_to_i32 4294967295));
+    p_16 >^ l_38; 
+    trunc_i32_to_i16 l_38^
+    };/*clast*/
+
+func_18 = { p_19 : Int32 =>
+            p_20 : Int32 =>
+            p_21 : Int64 =>
+            p_22 : Int16 =>
+    
+    
+    
+    
+    
+    l_36 = trunc_i64_to_i16 60957;
+    l_37 = (prim ref 0);
+    (sext_i16_to_i32 l_36) >^ l_37; 
+    p_20
+    };/*clast*/
+
+main = { print_i64x (zext_i32_to_i64 (func_1 !)); 0 };/*clast*/
+

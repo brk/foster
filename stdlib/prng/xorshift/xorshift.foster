@@ -1,0 +1,131 @@
+// Fast but non-cryptographically-secure random number generators.
+//
+// Based on the sample code from "Xorshift RNGs" by George Marsaglia. [1]
+//
+// Marsaglia notes that the number sequence produced satisfies the
+// DieHard test suite, but Panneton & L'Ecuyer observe that the sequence
+// is weak in other respects.  They make some suggestions for selection
+// of better generators, but overall recommend against using xorshift.
+//
+// [1] http://www.jstatsoft.org/v08/i14/paper
+// [2] http://www.iro.umontreal.ca/~lecuyer/myftp/papers/xorshift.pdf
+//
+// For all PRNGs implemented here:
+//  * Seed values must be nonzero.
+//  * A state called MxN has a period of 2^(M*N) - 1.
+//
+// See also http://www.pcg-random.org/other-rngs.html
+// which observes that 32-bit xorshift never produces zero,
+// and produces every other number exactly once.
+//
+// See also http://xoroshiro.di.unimi.it/xoroshiro128plus.c
+//
+
+/////////
+
+type case Xor1x32State
+      of $Xor1x32State Int32
+         ;
+
+xorshift-nonzero-Int32 = { x => if x ==Int32 0 then 1 else x end };
+
+xor1x32MakeState :: { Int32 => Xor1x32State };
+xor1x32MakeState = { x => Xor1x32State (xorshift-nonzero-Int32 x) };
+
+xor1x32gen :: { Xor1x32State => (Int32, Xor1x32State) };
+xor1x32gen = { s =>
+  a = 13;
+  b = 17;
+  c = 5;
+  case s of $Xor1x32State x ->
+    y0 = bitxor-Int32  x ( bitshl-Int32  x a);
+    y1 = bitxor-Int32 y0 (bitlshr-Int32 y0 b);
+    y2 = bitxor-Int32 y1 ( bitshl-Int32 y1 c);
+    (y2, xor1x32MakeState y2)
+  end
+};
+
+//////////
+
+type case Xor1x64State
+      of $Xor1x64State Int64
+         ;
+
+xorshift-nonzero-Int64 = { x => if x ==Int64 0 then 1 else x end };
+
+xor1x64MakeState :: { Int64 => Xor1x64State };
+xor1x64MakeState = { x => Xor1x64State (xorshift-nonzero-Int64 x) };
+
+xor1x64gen :: { Xor1x64State => (Int64, Xor1x64State) };
+xor1x64gen = { s =>
+  a = 13;
+  b = 7;
+  c = 17;
+  case s of $Xor1x64State x ->
+    y0 = bitxor-Int64  x ( bitshl-Int64  x a);
+    y1 = bitxor-Int64 y0 (bitlshr-Int64 y0 b);
+    y2 = bitxor-Int64 y1 ( bitshl-Int64 y1 c);
+    (y2, xor1x64MakeState y2)
+  end
+};
+
+//////////
+
+// See http://xorshift.di.unimi.it/splitmix64.c
+
+splitMix64 = { x : Int64 =>
+	z0 = x +Int64 0x9E3779B97F4A7C15;
+	z1 = (z0 `bitxor-Int64` (z0 `bitlshr-Int64` 30)) *Int64 0xBF58476D1CE4E5B9;
+	z2 = (z1 `bitxor-Int64` (z1 `bitlshr-Int64` 27)) *Int64 0x94D049BB133111EB;
+	      z2 `bitxor-Int64` (z2 `bitlshr-Int64` 31);
+};
+
+//////////
+
+// Technically xoroshiro128, not xorshift128.
+//
+// To avoid weakness in the low-order bit
+// we generate two numbers and combine the
+// high-order bits.
+
+type case Xor2x64State
+      of $Xor2x64State Int64 Int64
+         ;
+
+xor2x64MakeState :: { Int64 => Xor2x64State };
+xor2x64MakeState = { x0 =>
+  x1 = splitMix64 x0;
+  x2 = splitMix64 x1;
+  Xor2x64State x1 x2
+};
+
+xorRotl = { x : Int64 => k : Int64 =>
+  (x `bitshl-Int64` k) `bitor-Int64` (x `bitlshr-Int64` (64 -Int64 k));
+};
+
+xor2x64gen1 :: { Xor2x64State => (Int64, Xor2x64State) };
+xor2x64gen1 = { s =>
+  case s of $Xor2x64State s0 s1 ->
+    s1a = s0 `bitxor-Int64` s1;
+    s0b = (xorRotl s0 55) `bitxor-Int64` s1a
+                          `bitxor-Int64` (s1a `bitshl-Int64` 14);
+    s1b = (xorRotl s1a 36);
+    (s0 +Int64 s1, Xor2x64State s0b s1b)
+  end
+};
+
+xor2x64gen :: { Xor2x64State => (Int64, Xor2x64State) };
+xor2x64gen = { s0 =>
+  case xor2x64gen1 s0 of (v1, s1) ->
+    case xor2x64gen1 s1 of (v2, s2) ->
+      (mergeInt32 (high32BitsOf64 v1) (high32BitsOf64 v2), s2)
+    end
+  end
+};
+
+xor2x64gen32 :: { Xor2x64State => (Int32, Xor2x64State) };
+xor2x64gen32 = { s0 =>
+  case xor2x64gen1 s0 of (v1, s1) ->
+     (high32BitsOf64 v1, s1)
+  end
+};

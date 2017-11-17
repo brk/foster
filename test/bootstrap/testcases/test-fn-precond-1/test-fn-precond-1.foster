@@ -1,0 +1,11 @@
+eqInt32 :: { % aa : Int32 : True =>
+             % bb : Int32 : True =>
+             % rv : Bool : prim ==Bool rv (prim ==Int32 aa bb) };
+
+eqInt32 = { a => b => prim ==Int32 a b };
+
+main = {
+    xx = 1; yy = 4;
+    expect_i1 False;
+    print_i1 (eqInt32 xx yy)
+};

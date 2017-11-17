@@ -1,0 +1,60 @@
+main = {
+  expect_i1 True;
+  print_i1 (noinline_is-odd_a 11);
+
+  expect_i1 False;
+  print_i1 (noinline_is-odd_a 10);
+
+  noinline_testfoo !;
+
+  expect_i1 True;
+  print_i1 (noinline_is-odd_b 11);
+
+  expect_i1 False;
+  print_i1 (noinline_is-odd_b 10);
+
+  expect_i1 True;
+  print_i1 (noinline_is-odd_c 11);
+
+  expect_i1 False;
+  print_i1 (noinline_is-odd_c 10);
+};
+
+foo = { f =>
+  f 3
+};
+
+noinline_testfoo = {
+  tf = { q => q +Int32 1 };
+  expect_i32 4;
+  print_i32 (foo tf);
+};
+
+
+noinline_is-odd_a = { z:Int32 =>
+  REC noinline_even = { x:Int32 => if x ==Int32 0 then True  else
+                                   if x ==Int32 1 then False else noinline_odd  (x -Int32 1) end end };
+  REC noinline_odd  = { x:Int32 => if x ==Int32 1 then True  else noinline_even (x -Int32 1) end };
+  ignore0 = noinline_even z;
+  ignore1 = noinline_odd  z;
+
+  noinline_odd z
+};
+
+noinline_is-odd_b = { z:Int32 =>
+  REC even = { x:Int32 => if x ==Int32 0 then True  else
+                          if x ==Int32 1 then False else odd  (x -Int32 1) end end };
+  REC odd  = { y:Int32 => if y ==Int32 1 then True  else even (y -Int32 1) end };
+      ignore0 = even z;
+      ignore1 = odd  z;
+
+      odd z
+};
+
+
+noinline_is-odd_c = { z:Int32 =>
+  REC even = { x:Int32 => if x ==Int32 0 then True  else
+                          if x ==Int32 1 then False else odd  (x -Int32 1) end end };
+  REC odd  = { y:Int32 => if y ==Int32 1 then True  else even (y -Int32 1) end };
+  odd z
+};

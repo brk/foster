@@ -1,0 +1,8 @@
+main = {
+  expect_i32 0;
+  print_i32 (exp_fun2_i32 { f2 : ?? F2 =>
+                            f2 // missing !
+                          });
+};
+
+exp_fun2_i32 = { f : ?? F => f { 0 } };

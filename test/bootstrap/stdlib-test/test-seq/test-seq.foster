@@ -1,0 +1,104 @@
+snafuinclude Seq "data/seq";
+snafuinclude Prelude "prelude";
+
+print_arr = { arr : Array Int32 =>
+  print_text_bare "[";
+  enumRange32 0 (arrayLength32 arr) { idx =>
+    print_i64_bare (arr[idx] |> zext_i32_to_i64);
+    print_text_bare ", ";
+    ()
+  };
+  print_text "]";
+};
+
+print_ftTree_bare :: forall (a:Type) { { a => () } => FingerTree a => () };
+print_ftTree_bare = { print_elem_bare => ft =>
+  print_text_bare "(FingerTree ";
+  case ft
+    of $FT_Empty -> ()
+    of $FT_Single x -> print_elem_bare x;
+    of $FT_Deep sz pr m sf ->
+      print_text_bare "(sz=";
+      print_i64_bare (zext_i32_to_i64 sz);
+      print_text_bare ") ";
+
+      print_ftDigit_bare print_elem_bare pr;
+      print_ftTree_bare { node => print_ftNode_bare print_elem_bare node } m;
+      print_ftDigit_bare print_elem_bare sf;
+  end;
+  print_text_bare ")";
+  ()
+};
+
+print_ftDigit_bare :: forall (a:Type) { { a => () } => FT_Digit a => () };
+print_ftDigit_bare = { print_elem_bare => xs =>
+  print_text_bare "[";
+  case xs
+    of $FT_One a         -> print_elem_bare a;
+    of $FT_Two a b       -> print_elem_bare a; print_text_bare ","; print_elem_bare b;
+    of $FT_Three a b c   -> print_elem_bare a; print_text_bare ","; print_elem_bare b; print_text_bare ","; print_elem_bare c;
+    of $FT_Four  a b c d -> print_elem_bare a; print_text_bare ","; print_elem_bare b; print_text_bare ","; print_elem_bare c; print_text_bare ","; print_elem_bare d;
+  end;
+  print_text_bare "]";
+  ()
+};
+
+
+print_ftNode_bare :: forall (a:Type) { { a => () } => FT_Node a => () };
+print_ftNode_bare = { print_elem_bare => xs =>
+  print_text_bare "{";
+  case xs
+    of $FT_Node2 v a b   -> print_text_bare "nsz="; print_i64_bare (zext_i32_to_i64 v); print_text_bare ";"; print_elem_bare a; print_text_bare ","; print_elem_bare b;
+    of $FT_Node3 v a b c -> print_text_bare "nsz="; print_i64_bare (zext_i32_to_i64 v); print_text_bare ";"; print_elem_bare a; print_text_bare ","; print_elem_bare b; print_text_bare ","; print_elem_bare c;
+  end;
+  print_text_bare "}";
+  ()
+};
+
+unSeq = { forall a:Type, seq : Seq a =>
+  let ($Seq ft) = seq; ft
+};
+
+seqRangeUp = { n =>
+  foldRange 0 n (seqEmpty !) { idx => seq => seqPostpend seq idx };
+};
+
+seqRangeDown = { n =>
+  foldRangeDown (n -Int32 1) 0 (seqEmpty !) seqPrepend;
+};
+
+main = {
+  enumRange32 0 30 { n =>
+    expect_i32 n;
+    print_i32 (seqLength (seqReplicate32 n ()));
+  };
+
+  enumRange32 0 30 { n =>
+    arrX = arrayFromRange32 0 n { idx => idx };
+    arrY = seqToArray (seqFromFunction n { idx => idx });
+
+    expect_i1 True;
+    foldRange 0 n True { idx => b =>
+      both b (arrX[idx] ==Int32 arrY[idx])
+    } |> print_i1;
+  };
+/*
+    arrX = arrayFromRange32 0          28 { idx => idx };
+    arrY = seqToArray (seqFromFunction 28 { idx => idx });
+    print_arr arrX;
+    print_arr arrY;
+
+    print_ftTree_bare { i => print_i64_bare (zext_i32_to_i64 i); () }
+                      (unSeq (seqFromFunction 28 { idx => idx }));
+    print_text "";
+
+    print_ftTree_bare { i => print_i64_bare (zext_i32_to_i64 i); () }
+                      (unSeq (seqRangeUp 28));
+    print_text "";
+
+    print_ftTree_bare { i => print_i64_bare (zext_i32_to_i64 i); () }
+                      (unSeq (seqRangeDown 28));
+    print_text "";
+    */
+
+};

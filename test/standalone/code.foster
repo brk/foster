@@ -1,0 +1,30 @@
+// Imported from C code
+frozzle :: { Int32 => () } @ { proc = True };
+
+// Called by C code
+do_something_eh = { x : Int32 => y : Int32 =>
+  frozzle x;
+  frozzle y;
+  x +Int32 y
+};
+
+// Called by C code
+loopy_but_not_allocating = { x : Int32 => y : Int32 =>
+  REC go = { z =>
+    if z ==Int32 0
+      then ()
+      else frozzle z;
+           go (z -Int32 1);
+    end
+  };
+  go (x +Int32 y);
+};
+
+// Allocates, so will fail with an error like "NO memalloc_cell IN MODULE! :("
+// because --standalone disables linking against any sort of stdlib,
+// but doesn't statically rule out allocation...
+//
+// illegal = { f : Int32 =>
+//   { x => x +Int32 f }
+// };
+

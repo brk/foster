@@ -1,0 +1,12 @@
+main = {
+
+  rA = (prim ref 1);
+  force_gc_for_debugging_purposes !;
+  expect_i32 rA^;
+
+  rB = (prim ref 0); // rA's root is free, so rB can use it...
+  rC = (prim ref 1); // ... but rC shouldn't! If rC steals rB's
+                    // root, the result will be printing 2 instead of 1.
+  force_gc_for_debugging_purposes !;
+  print_i32 (rC^ +Int32 rB^);
+};

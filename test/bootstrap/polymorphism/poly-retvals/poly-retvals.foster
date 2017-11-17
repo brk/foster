@@ -1,0 +1,51 @@
+
+main = {
+  // Can   instantiate unboxed type variable with unboxed type (Int32).
+  expect_i1 True ; print_i1 (__COMPILES__ { forall t:Type, x:t => x } 0);
+  // Can't instantiate   boxed type variable with unboxed type (Int32).
+  expect_i1 False; print_i1 (__COMPILES__ { forall b:Boxed, x:b => x } 0);
+  // Can   instantiate   boxed type variable with   boxed type (Int32 => Int32).
+  expect_i1 True ; print_i1 (__COMPILES__ { forall b:Boxed, x:b => x } {x:Int32 => x});
+
+  // Can   instantiate unboxed type variable with unboxed type variable.
+  expect_i1 True ; print_i1 (__COMPILES__ { forall b:Type,  x:b => polya x });
+  // Can   instantiate unboxed type variable with   boxed type variable.
+  expect_i1 True ; print_i1 (__COMPILES__ { forall b:Boxed, x:b => polya x });
+  // Can   instantiate   boxed type variable with   boxed type variable.
+  expect_i1 True ; print_i1 (__COMPILES__ { forall b:Boxed, x:b => polyb x });
+  // Can't instantiate   boxed type variable with unboxed type variable.
+  expect_i1 False; print_i1 (__COMPILES__ { forall b:Type,  x:b => polyb x });
+
+  // Not yet; let is expanded early, and we don't do any binding/flow analysis.
+  //let b = { forall b:Type, x:b => x } 0;
+  //in expect_i32 0;
+  //    print_i32 b;
+  //end;
+
+  test-bool !;
+  test-int32 !;
+  test-void !;
+};
+
+test-bool = {
+  expect_i1 True ; print_i1 (polya True);
+  expect_i1 False; print_i1 (polya False);
+};
+
+
+test-int32 = {
+  expect_i32 3 ; print_i32 (polya 3);
+};
+
+test-void = {
+  expect_i1 False; print_i1 (__COMPILES__ polya !);
+  expect_i1 False; print_i1 (__COMPILES__ polyb !);
+};
+
+polyb = { forall bb:Boxed, x:bb => x };
+polya = { forall aa:Type,  x:aa => x };
+
+//test-coerce = { { forall b:Boxed, x:b => x } {x:Int32 => x}; };
+
+//bad = { forall b:Boxed, x:b => x };
+

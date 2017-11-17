@@ -1,0 +1,62 @@
+// coro_wrap = forall a b,
+//             fn (f : fn(arg : a to b)) {
+//               let c = coro_create(f) in {
+//                 fn (arg : a) { coro_invoke(c, a) }
+//               }
+//             }
+
+main = {
+  expect_i32 1111111;
+  expect_i32 2222222;
+  expect_i32 4444444;
+  expect_i32 10;
+  expect_i32 4444455;
+  expect_i32 6666;
+  expect_i32 1234;
+  expect_i32 12345;
+  expect_i32 4444466;
+  expect_i32 4444477;
+  expect_i32 20;
+  expect_i32 123456;
+  expect_i32 1234567;
+  expect_i32 5555555;
+  expect_i32 6666666;
+  expect_i32 7777;
+  expect_i32 3333333;
+  expect_i32 9999999;
+
+  print_i32 1111111;
+  co = coro_create { x : Int32 =>
+         print_i32 4444444;
+         force_gc_for_debugging_purposes  !;
+         print_i32 x; // 10
+         print_i32 4444455;
+         y = coro_yield:[Int32,Int32] 6666;
+         print_i32 4444466;
+         force_gc_for_debugging_purposes !;
+         print_i32 4444477;
+         coro_yield:[Int32,Int32] y;
+         print_i32 5555555;
+         force_gc_for_debugging_purposes !;
+         print_i32 6666666;
+         coro_yield:[Int32,Int32] 7777;
+         9999
+  };
+  //j0 = force_gc_for_debugging_purposes !;
+  r  = (prim ref 0);
+
+    print_i32 2222222;
+  force_gc_for_debugging_purposes !;
+    print_i32 (coro_invoke co 10); // 6666
+    print_i32 1234;
+  force_gc_for_debugging_purposes !;
+    print_i32 12345;
+    print_i32 (coro_invoke co 20); // 20
+    print_i32 123456;
+  force_gc_for_debugging_purposes !;
+    print_i32 1234567;
+    print_i32 (coro_invoke co 30);
+    print_i32 3333333;
+    print_i32 9999999;
+};
+

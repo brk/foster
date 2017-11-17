@@ -1,0 +1,82 @@
+
+elapsed-time :: forall (a:Type) { { a } => (Float64, a) };
+elapsed-time = { fg =>
+  t1 = foster_gettime_microsecs !;
+  v = fg !;
+  t2 = foster_gettime_microsecs !;
+
+  (foster_gettime_elapsed_secs t1 t2, v)
+};
+
+// Ticks are quicker to read and higher-resolution than times,
+// but cannot be sensibly converted to human-readable times.
+// They are, however, useful for comparative measurements.
+elapsed-ticks :: forall (a:Type) { { a } => (Float64, a) };
+elapsed-ticks = { fg =>
+  t1 = foster_getticks !;
+  v = fg !;
+  t2 = foster_getticks !;
+
+  (foster_getticks_elapsed t1 t2, v)
+};
+
+// Other functions, intended for more specialized benchmarking needs:
+
+noinline_elapsed_time_once :: { { () } => Float64 };
+noinline_elapsed_time_once = { fg : { () } =>
+  t1 = foster_getticks !;
+  fg !;
+  t2 = foster_getticks !;
+
+  foster_getticks_elapsed t1 t2
+};
+
+// TODO verify that this gets inlined to equivalent code as noinline_elapsed_time_once
+noinline_elapsed_time_1 = { fq : { () } =>
+  elapsed_time_n fq 1
+};
+
+// TODO verify that this does NOT get fully inlined!
+noinline_elapsed_time_100 = { qq : { () } =>
+  elapsed_time_n qq 100
+};
+
+elapsed_time_n :: { { () } => Int32 => Float64 };
+elapsed_time_n = { ff : { () } => n : Int32 =>
+  REC loop = { x : Int32 =>
+    if x <=SInt32 0 then () else
+      ff !; loop (x -Int32 1);
+    end
+  };
+
+  t1 = foster_getticks !;
+  loop n;
+  t2 = foster_getticks !;
+
+  if (t2 -Int64 t1) <=SInt64 (sext_i32_to_i64 n)
+    then prim kill-entire-process "problem with elapsed_time_n, too few ticks implies overoptimization";
+    else foster_getticks_elapsed t1 t2
+  end
+};
+
+
+elapsed_ticks_n :: { Int32 => { () } => Int64 };
+elapsed_ticks_n = { n => f =>
+  REC loop = { x : Int32 =>
+    if x <=SInt32 0 then () else
+      f !; loop (x -Int32 1);
+    end
+  };
+
+  t1 = foster_getticks !;
+  loop n;
+  t2 = foster_getticks !;
+
+  t2 -Int64 t1
+};
+
+time-ratio = { slowthunk => fastthunk => n =>
+  elapsed_time_n slowthunk n `div-f64`
+  elapsed_time_n fastthunk n
+};
+

@@ -1,0 +1,22 @@
+fst = { x : (Int32, Int32) => case x of (y, _) -> y end };
+
+test-coro2a = {
+  expect_i32 30;
+  expect_i32 120;
+
+  co = coro_create { pq : (Int32, Int32) =>
+         case pq of (p, q) ->
+           a = coro_yield:[(Int32,Int32),Int32] (p +Int32 q);
+           _ = coro_yield:[(Int32,Int32),Int32] ((fst a) +Int32 20);
+           print_i32 111111;
+           12345
+         end
+       };
+
+  print_i32 (coro_invoke co (10, 20));
+  print_i32 (coro_invoke co (100, 200));
+};
+
+main = {
+  test-coro2a !;
+};

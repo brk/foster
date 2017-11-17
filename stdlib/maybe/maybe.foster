@@ -1,0 +1,32 @@
+
+type case Maybe (a:Type)
+  of $Some a
+  of $None
+;
+
+/////
+
+// Partial.
+unMaybe :: forall (a:Type) { Maybe a => a };
+unMaybe = { x =>
+  case x
+    of $Some a -> a
+    of $None   -> prim kill-entire-process "unMaybe-failed";
+  end
+};
+
+isSome :: forall (a:Type) { Maybe a => Bool };
+isSome = { x =>
+  case x
+    of $Some _ -> True
+    of $None   -> False
+  end
+};
+
+isNone :: forall (a:Type) { Maybe a => Bool };
+isNone = { x =>
+  case x
+    of $Some _ -> False
+    of $None   -> True
+  end
+};

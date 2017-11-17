@@ -1,0 +1,3 @@
+main = { foo 1 2 };
+
+foo = { x:Int32 => x:Int32 => x };

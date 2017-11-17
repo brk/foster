@@ -1,0 +1,35 @@
+/* this should not be allowed...
+eqInt32 :: { % aa : Int32 : True =>
+             % bb : Int32 : prim ==Int32 bb 3 =>
+             % rv : Bool : prim ==Bool rv (prim ==Int32 aa bb) };
+
+eqInt32 = { a : Int32 =>
+            b : % bx : Int32 : prim ==Int32 bx 4  =>
+         prim ==Int32 a b       }; // :: Bool
+*/
+
+eqInt32 :: { % aa : Int32 : True =>
+             % bb : Int32 : prim ==Int32 bb 3 =>
+             % rv : Bool : prim ==Bool rv (prim ==Int32 aa bb) };
+eqInt32 = { a => b =>  prim ==Int32 a b }; // :: Bool
+
+main = {
+    xx = 1; yy = 4;
+    expect_i1 False;
+    print_i1 (__COMPILES__ eqInt32 xx yy);
+
+    // To check an expression E against a term T,
+    // we can write { v : { T => () }   =>   v E }
+
+    /*
+  expect_i1 True;
+  print_i1 (__COMPILES__ { v : {
+                                 { % yy : Int32 : prim ==Int32 yy 3 => () }     => () } =>
+                           v { x : % xx : Int32 : prim ==Int32 xx 3 => () }   );
+                           */
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ { v : {
+                                 { % yy : Int32 : prim ==Int32 yy 4 => () }     => () } =>
+                           v { x : % xx : Int32 : prim ==Int32 xx 3 => () } } );
+};

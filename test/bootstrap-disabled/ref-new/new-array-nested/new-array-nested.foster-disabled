@@ -1,0 +1,15 @@
+// IN: 2 3 5 8 13 21
+
+// Not yet sure how to handle arrays with dynamic instead of static size...
+//newarrayn = fn(n:i32 to ref array{n;i32}) { new array {n, i32} }
+// expect_i1(true) ; print_i1(__COMPILES__ let an:ref array{0;ref i32} = newarrayn(4) in { an[0] } )
+
+newaref = fn(to ref array{4;ref i32}) { new array {4, ref i32} }
+
+fn "main" () {
+  let a4:ref array{4;ref i32} = newaref() in {
+    expect_i1(true) ; print_i1(__COMPILES__ a4[0])
+    //TODO enforce array bounds checks
+    //expect_i1(false) ; print_i1(__COMPILES__ a4[9])
+  }
+}

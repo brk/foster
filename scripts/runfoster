@@ -1,0 +1,42 @@
+#!/bin/sh
+
+SD=$(dirname `which $0`)/../scripts
+R=$($SD/normpath.py $SD/..)
+
+P=$1
+shift
+T=$(dirname $P)/$(basename $P).foster
+
+if [ ! -f "${T}" ]; then
+  T=$(dirname $P)/$(basename $P)
+fi
+
+if [ -z "$R" ]; then
+  echo "Unable to compute project root, exiting!"
+  exit 1
+fi
+
+gclog_exists=$([ -f gclog.txt ] && echo "y")
+gcstats_exists=$([ -f meGCstats.txt ] && echo "y")
+
+cleanout () {
+  rm -f gclog.txt
+}
+
+cxxpath () {
+  echo $($SD/echo-llvmdir)/bin/clang++
+}
+
+if [ -f $T ]; then
+ #echo $R/scripts/run_test.py --quietish --show-stdout ${T} "$@" -I . -I $R/stdlib --bindir=$R/_obj --cxxpath=`cxxpath` && \
+      $R/scripts/run_test.py --quietish --show-stdout ${T} "$@" -I . -I $R/stdlib --bindir=$R/_obj --cxxpath=`cxxpath` || exit $?
+
+ # If the files didn't exist before, they shouldn't exist after...
+ [ -z "$gclog_exists" ]   && rm -f gclog.txt
+ [ -z "$gcstats_exists" ] && rm -f meGCstats.txt
+ exit 0
+else
+  echo "error: $T does not exist!"
+  exit 1
+fi
+
