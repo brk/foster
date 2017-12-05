@@ -695,13 +695,17 @@ cb_int cbor = case cbor of
 -- {{{
 type Effect = TypeP
 effectSingle :: Effect -> Effect
-effectSingle eff = effectExtend eff nullFx
+effectSingle eff =
+  case eff of
+    TyAppP {} -> effectExtend eff nullFx
+    TyVarP {} -> eff -- Type variables are treated as rows rather than labels.
+    _ -> error $ "ProtobufFE.hs: effectSingle given " ++ show eff
 
 effectExtend :: Effect -> Effect -> Effect
-effectExtend eff row = TyAppP (TyConP "effect.Extend") [eff, row]
+effectExtend label row = TyAppP (TyConP "effect.Extend") [label, row]
 
 effectsExtends :: [Effect] -> Effect -> Effect
-effectsExtends effs eff = foldr effectExtend eff effs
+effectsExtends labels row = foldr effectExtend row labels
 
 effectsClosed :: [Effect] -> Effect
 effectsClosed effs = effectsExtends effs nullFx
