@@ -49,7 +49,7 @@ CtorRepr parseCtorRepr(const pb::PbCtorRepr::Reader& c) { CtorRepr x;
   x.isTransparent = c.getTag() == pb::PbCtorRepr::Tag::CRTRANSPARENT;
   x.isNullary     = c.getTag() == pb::PbCtorRepr::Tag::CRNULLARY;
   x.isBoxed       = !isUnboxed;
-  x.smallId       = int64_t(c.getCtorreprtag()[0]);
+  x.smallId       = x.isTransparent ? 0 : int64_t(c.getCtorreprtag()[0]);
   return x;
 }
 
