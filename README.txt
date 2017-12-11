@@ -49,7 +49,7 @@ Mac OS X:
   Also, SWIG for building LLDB:
      sudo port install swig swig-python
 
-Ubuntu 16.04 (x64):
+Ubuntu 17.10:
   # Mercurial
   sudo apt-get install mercurial
 
@@ -57,20 +57,25 @@ Ubuntu 16.04 (x64):
   sudo apt-get install build-essential g++ g++-multilib git gnuplot \
                        python-pygments python-matplotlib  python-scipy python-sphinx \
                        python-pandas python-pip python-numpy python-qt4 \
-                       python-qscintilla2 libqscintilla2-dev swig
+                       python-qscintilla2 libqscintilla2-dev
 
-  sudo apt-get install vim vim-gnome ack-grep \
-              curl ctags aptitude libpng12-dev libcairo2-dev libc6-dev default-jdk
+  # LLDB (5.0) can't build against SWIG 3.10,
+  # which Ubuntu 17.10 ships with, so you'll need to build your own...
+
+  sudo apt-get install vim vim-gnome \
+              curl exuberant-ctags aptitude libcairo2-dev libc6-dev default-jdk
 
   sudo apt-get install m4 ministat meld \
          linux-tools-virtual linux-tools-generic \
          libffi-dev libedit-dev cmake cmake-curses-gui
 
+  # ack-grep is missing from Artful
+
   # TortoiseHG from source, since the PPA packages have been taken down.
   hg clone https://bitbucket.org/tortoisehg/thg ~/.local/tortoisehg
   # Assuming ~/.local/bin is on $PATH, which it was in Ubuntu MATE 16.04
-  mkir -p ~/.local/bin
-  ln -l ~/.local/tortoisehg/thg ~/.local/bin/thg
+  mkdir -p ~/.local/bin
+  ln -s ~/.local/tortoisehg/thg ~/.local/bin/thg
 
   # GMP is needed for GHC to build Cabal from source.
   sudo apt-get install libgmp3-dev libgmp-dev
@@ -110,8 +115,6 @@ Ubuntu 16.04 (x64):
   tar xf cabal-install-*.tar.gz
   cd cabal-install-* && ./bootstrap.sh && cd ..
 
-  cabal install happy alex
-
   # Ubuntu 16.10 has a recent-enough version of CMake, but on
   # Ubuntu 14.10, the CMake version available via apt-get is outdated.
   # To build from source (might want to pass --prefix to configure!):
@@ -122,6 +125,9 @@ Ubuntu 16.04 (x64):
   ./configure
   make
 
+
+  # You'll want the latest capnproto
+
   # You can install binutils-gold but it needs to be disabled for some Haskell packages.
 
   You can install llvm by executing   bash scripts/install-llvm.sh
@@ -130,9 +136,9 @@ Ubuntu 16.04 (x64):
 
 
   # For CSmith:
-  git clone https://github.com/csmith-project/csmith
-  cd csmith
-  ./configure --prefix=$HOME/sw/local/csmith-2016-08-26
+  git clone https://github.com/csmith-project/csmith ~/sw/local/csmith.git
+  cd ~/sw/local/csmith.git
+  ./configure --prefix=$HOME/sw/local
   make
 
 
@@ -192,7 +198,9 @@ Haskell:
         $ cd minuproto
         $ cabal --sandbox-config-file=$HOME/foster/compiler/me/cabal.sandbox.config install
 
-        $ cd ~/foster/compiler/me ; cabal install --only-dependencies
+        $ cd ~/foster/compiler/me
+        $ cabal update ; cabal install happy alex
+        $ cabal install --only-dependencies
 
 
 Other libraries/tools:
