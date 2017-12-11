@@ -15,9 +15,7 @@ pushd src
         wget http://llvm.org/releases/${LLVM_VERSION}/cfe-${LLVM_V}.tar.xz
         wget http://llvm.org/releases/${LLVM_VERSION}/compiler-rt-${LLVM_V}.tar.xz
         wget http://llvm.org/releases/${LLVM_VERSION}/llvm-${LLVM_V}.tar.xz
-        # Temporarily disabled until LLD stabilizes.
-        #       https://llvm.org/bugs/show_bug.cgi?id=27590
-        #wget http://llvm.org/releases/${LLVM_VERSION}/lld-${LLVM_V}.tar.xz
+        wget http://llvm.org/releases/${LLVM_VERSION}/lld-${LLVM_V}.tar.xz
         wget http://llvm.org/releases/${LLVM_VERSION}/lldb-${LLVM_V}.tar.xz
         wget http://llvm.org/releases/${LLVM_VERSION}/libcxx-${LLVM_V}.tar.xz
         wget http://llvm.org/releases/${LLVM_VERSION}/libcxxabi-${LLVM_V}.tar.xz
@@ -30,7 +28,7 @@ pushd src
           echo "failed to unpack..."
           exit 1
         fi
-        #mv lld-${LLVM_V}         llvm-${LLVM_V}/tools/lld
+        mv lld-${LLVM_V}         llvm-${LLVM_V}/tools/lld
         mv lldb-${LLVM_V}        llvm-${LLVM_V}/tools/lldb
         mv cfe-${LLVM_V}         llvm-${LLVM_V}/tools/clang
         mv compiler-rt-${LLVM_V} llvm-${LLVM_V}/projects/compiler-rt
