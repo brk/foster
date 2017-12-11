@@ -26,7 +26,9 @@ executable me
                        TypeSynonymInstances DeriveFunctor BangPatterns
   other-extensions:    GADTs RankNTypes ScopedTypeVariables StandaloneDeriving
                        PatternGuards NoMonoLocalBinds RecursiveDo FlexibleContexts
-  build-depends: array -any,
+  build-depends: alex -any,
+                 happy -any,
+                 array -any,
                  ansi-wl-pprint -any,
                  attoparsec -any,
                  binary -any,
