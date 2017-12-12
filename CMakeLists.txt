@@ -161,17 +161,27 @@ endif (${LLVM_ORIGINAL_CFLAGS} MATCHES         ${NO_RTTI_FLAG})
   set (LLVM_EXTRA_CFLAGS "${LLVM_EXTRA_CFLAGS} ${NDEBUG_FLAG}")
 endif (${LLVM_ORIGINAL_CFLAGS} MATCHES         ${NDEBUG_FLAG})
 
-# Collect the linker flags for us to link against LLVM
-set(LLVM_COMPONENTS_NEEDED all)
 
-execute_process(COMMAND
-    ${LLVM_CONFIG} --libs ${LLVM_COMPONENTS_NEEDED} --ldflags  --system-libs
-  OUTPUT_VARIABLE LLVM_LDFLAGS
-)
+execute_process(COMMAND ${LLVM_CONFIG} --libfiles OUTPUT_VARIABLE LLVM_LIBS)
+execute_process(COMMAND ${LLVM_CONFIG} --libdir OUTPUT_VARIABLE LLVM_LIBDIR)
 
-# Make sure that the linker flags are one physical line
-string(REPLACE "\n" " " LLVM_LDFLAGS "${LLVM_LDFLAGS}")
-string(STRIP "${LLVM_LDFLAGS}" LLVM_LDFLAGS)
+string(STRIP "${LLVM_LIBS}" LLVM_LIBS)
+string(STRIP "${LLVM_LIBDIR}" LLVM_LIBDIR)
+
+# Unfortunately CMake does the wrong thing when we try to link against
+# LLVM when the OS includes libLLVM in the system lib directory.
+set(LLVM_LDFLAGS "-L${LLVM_LIBDIR} ${LLVM_LIBS}")
+
+# (X)Ubuntu 17.10 ships with LLVM 5.0 in /usr/lib/x86_64-linux-gnu/libLLVM-5.0.so
+# which confuses CMake into thinking it doesn't need to provide an RPATH
+# entry for the LLVM version we're compiling against, even though our version
+# is likely built with a different ABI.
+
+# use, i.e. don't skip the full RPATH for the build tree
+SET(CMAKE_SKIP_BUILD_RPATH        FALSE)
+SET(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+SET(CMAKE_INSTALL_RPATH "${LLVM_LIBDIR}:${ANTLR_LIBDIR}")
+
 # }}}
 
 ####################### Compilation Rules ##########################
@@ -358,16 +368,7 @@ include_directories(
 )
 
 # {{{ Miscellaneous flag munging
-
-# Takes ldflags, which looks like
-# "... -L/path/to/llvm/lib ..." and puts
-# "-L/path/to/llvm/lib" in LLVM_LD_PATH.
-string(REGEX MATCH "-L[ ]?[^ ]+" LLVM_LD_PATH "${LLVM_LDFLAGS}")
-
-# Strip off leading -L to give the path alone.
-string(REGEX REPLACE "^-L[ ]?" "" LLVM_LD_PATH "${LLVM_LD_PATH}")
-
-link_directories(${LLVM_LD_PATH} ${ANTLR_LIBDIR})
+link_directories(${ANTLR_LIBDIR} ${LLVM_LIBDIR})
 
 add_definitions(${LLVM_CFLAGS} "-ggdb")
 

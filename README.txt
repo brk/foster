@@ -41,6 +41,12 @@ Dependencies (non-exhaustive):
   Python (and several 3rd party Python libraries)
   Pin (optional, for benchmarking analysis)
 
+Ubuntu 17.10:
+  See   scripts/ubuntu-17.10.sh
+
+  The lines in the above script related to installing ANTLR
+  also apply to Mac OS X.
+
 Mac OS X:
   You'll want to install the GNU time binary:
      brew install gnu-time       # or
@@ -48,92 +54,6 @@ Mac OS X:
 
   Also, SWIG for building LLDB:
      sudo port install swig swig-python
-
-Ubuntu 17.10:
-  # Mercurial
-  sudo apt-get install mercurial
-
-  # Compilers, build tools,
-  sudo apt-get install build-essential g++ g++-multilib git gnuplot \
-                       python-pygments python-matplotlib  python-scipy python-sphinx \
-                       python-pandas python-pip python-numpy python-qt4 \
-                       python-qscintilla2 libqscintilla2-dev
-
-  # LLDB (5.0) can't build against SWIG 3.10,
-  # which Ubuntu 17.10 ships with, so you'll need to build your own...
-
-  sudo apt-get install vim vim-gnome \
-              curl exuberant-ctags aptitude libcairo2-dev libc6-dev default-jdk
-
-  sudo apt-get install m4 ministat meld \
-         linux-tools-virtual linux-tools-generic \
-         libffi-dev libedit-dev cmake cmake-curses-gui
-
-  # ack-grep is missing from Artful
-
-  # TortoiseHG from source, since the PPA packages have been taken down.
-  hg clone https://bitbucket.org/tortoisehg/thg ~/.local/tortoisehg
-  # Assuming ~/.local/bin is on $PATH, which it was in Ubuntu MATE 16.04
-  mkdir -p ~/.local/bin
-  ln -s ~/.local/tortoisehg/thg ~/.local/bin/thg
-
-  # GMP is needed for GHC to build Cabal from source.
-  sudo apt-get install libgmp3-dev libgmp-dev
-
-  # Python packages, mostly used by benchmarking infrastructure
-  pip install pyyaml jinja2 statsmodels mpld3 seaborn
-
-  # If you want jEdit and the ninja build tool...
-
-  wget http://downloads.sourceforge.net/project/jedit/jedit/5.3.0/jedit_5.3.0_all.deb
-  sudo dpkg -i jedit_5.3.0_all.deb
-
-  git clone git://github.com/ninja-build/ninja.git
-  cd ninja
-  ./configure.py --bootstrap
-  mv ninja ~/sw/local/bin
-
-
-  # To build LLDB, you'll need editline on Linux, from
-  # http://thrysoee.dk/editline/
-  # which depends on libncurses:
-  sudo apt-get install libncurses5-dev
-
-  # For GHC, to get profiling libraries, do not use apt-get;
-  # instead, download a generic binary tarball directly from
-  #    http://www.haskell.org/ghc/download
-  # and cabal-install from
-  #    http://www.haskell.org/cabal/download.html
-  #
-  # For example:
-
-  wget http://downloads.haskell.org/~ghc/8.0.1/ghc-8.0.1-x86_64-deb8-linux.tar.xz
-  tar xf ghc-*-linux.tar.xz
-  cd ghc-* && ./configure --prefix=$HOME/.local/ghc-8.0.1 && make install && cd ..
-
-  wget https://hackage.haskell.org/package/cabal-install-1.24.0.0/cabal-install-1.24.0.0.tar.gz
-  tar xf cabal-install-*.tar.gz
-  cd cabal-install-* && ./bootstrap.sh && cd ..
-
-  # Ubuntu 16.10 has a recent-enough version of CMake, but on
-  # Ubuntu 14.10, the CMake version available via apt-get is outdated.
-  # To build from source (might want to pass --prefix to configure!):
-
-  wget https://cmake.org/files/v3.6/cmake-3.6.2.tar.gz
-  tar xf cmake-*.tar.gz
-  cd cmake-*
-  ./configure
-  make
-
-
-  # You'll want the latest capnproto
-
-  # You can install binutils-gold but it needs to be disabled for some Haskell packages.
-
-  You can install llvm by executing   bash scripts/install-llvm.sh
-
-  Assuming you already have LLVM installed, in $PATH and $PKG_CONFIG_PATH...
-
 
   # For CSmith:
   git clone https://github.com/csmith-project/csmith ~/sw/local/csmith.git
@@ -164,43 +84,6 @@ Ubuntu 17.10:
   #     $ sudo apt-get update
   #     $ sudo apt-get install cvc4 libcvc4-dev
 
-
-ANTLR on Linux and OS X:
-
-	ANTLR_VERSION=3.4
-	ANTLR_DIR=~/antlr/${ANTLR_VERSION}
-	mkdir tmp
-	cd tmp
-		wget http://antlr3.org/download/C/libantlr3c-${ANTLR_VERSION}.tar.gz
-		tar xzvf libantlr3c-${ANTLR_VERSION}.tar.gz
-                cd libantlr3c-${ANTLR_VERSION}
-		./configure --prefix=${ANTLR_DIR} --enable-64bit && make && make install
-                cd ..
-	cd ..
-	rm -rf ./tmp
-	pushd ${ANTLR_DIR}
-	wget http://antlr3.org/download/antlr-${ANTLR_VERSION}-complete.jar
-        mv antlr-${ANTLR_VERSION}-complete.jar antlr-${ANTLR_VERSION}.jar
-	popd
-
-Haskell:
-   To enable profiling, add    library-profiling: True   to   ~/.cabal/config
-   before installing any further packages.
-
-   Set up a Cabal sandbox within the ``compiler/me`` directory via::
-
-        $ cd ~/foster/compiler/me ; cabal sandbox init
-
-   Now, install minuproto somewhere:
-
-        $ cd ~/sw/local
-        $ hg clone https://bitbucket.org/b/minuproto
-        $ cd minuproto
-        $ cabal --sandbox-config-file=$HOME/foster/compiler/me/cabal.sandbox.config install
-
-        $ cd ~/foster/compiler/me
-        $ cabal update ; cabal install happy alex
-        $ cabal install --only-dependencies
 
 
 Other libraries/tools:
