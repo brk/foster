@@ -914,26 +914,27 @@ public:
 
         std::vector<CFGBlock::AdjacentBlock*> adjs;
         for (auto it = cb->succ_rbegin(); it != cb->succ_rend(); ++it) {
-          if (!it->getReachableBlock()) {
-            llvm::outs() << "(prim kill-entire-process \"CFGBlock had no reachable block!\")\n";
+          CFGBlock* b = it->getReachableBlock();
+          if (!b) { b = it->getPossiblyUnreachableBlock(); }
+          if (!b) {
+            llvm::errs() << "// Saw CFG adjacent block with no adjacency at all??" << "\n";
             continue;
           }
           if (isEmptyFallthroughAdjacent(&*it)) {
-            auto direct = it->getReachableBlock()->succ_begin()->getReachableBlock();
+            CFGBlock* direct = *(b->succ_begin());
             auto tgt0 = fallthrough[direct];
             auto tgt  = tgt0 ? tgt0 : direct;
-            labelsFor[tgt].push_back(it->getReachableBlock()->getLabel());
-            fallthrough[it->getReachableBlock()] = tgt;
+            labelsFor[tgt].push_back(b->getLabel());
+            fallthrough[b] = tgt;
           } else {
             adjs.push_back(&*it);
-            labelsFor[it->getReachableBlock()].push_back(
-                      it->getReachableBlock()->getLabel());
+            labelsFor[b].push_back(b->getLabel());
           }
         }
 
         // TODO does this handle fallthrough into the default block?
         for (auto adj : adjs) {
-          const std::vector<Stmt*>& labels = labelsFor[adj->getReachableBlock()];
+          const std::vector<Stmt*>& labels = labelsFor[*adj];
           for (size_t i = 0; i < labels.size(); ++i) {
             auto idx = labels.size() - (i + 1);
             const Stmt* lab = labels[labels.size() - (i + 1)];
@@ -995,7 +996,7 @@ public:
     if (ss->isAllEnumCasesCovered()) {
       llvm::outs() << "// all enum cases covered\n";
     } else {
-      llvm::outs() << "// not all enum cases covered...\n";
+      llvm::outs() << "// not all enum cases (explicitly) covered...\n";
     }
 
     llvm::outs() << "end\n";
@@ -1359,8 +1360,10 @@ The corresponding AST to be matched is
         visitStmt(unop->getSubExpr());
         llvm::outs() << ")";
       }
+    } else if (unop->getOpcode() == UO_Extension) {
+      visitStmt(unop->getSubExpr());
     } else {
-      llvm::outs() << "/* line 424\n";
+      llvm::outs() << "/* Unhandled unary operator:\n";
       llvm::outs().flush();
       unop->dump();
       llvm::errs().flush();
@@ -2080,7 +2083,11 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       handleSwitch(ss);
     } else if (const GotoStmt* gs = dyn_cast<GotoStmt>(stmt)) {
       llvm::outs() << "mustbecont_" << gs->getLabel()->getNameAsString() << " !\n";
-    } else if (isa<BreakStmt>(stmt) || isa<ContinueStmt>(stmt)) {
+    } else if (isa<BreakStmt>(stmt)) {
+      // Outside of switches, breaks will be handled by CFG building.
+      // Within switch statements, breaks should correspond to unit values.
+      llvm::outs () << " () ";
+    } else if (isa<ContinueStmt>(stmt)) {
       // Do nothing; should be implicitly handled by CFG building.
     } else if (const LabelStmt* ls = dyn_cast<LabelStmt>(stmt)) {
       llvm::outs() << "// TODO(c2f): label " << ls->getName() << ";\n";
@@ -2109,6 +2116,8 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       if (ctx == BooleanContext) { llvm::outs() << "("; }
       handleUnaryOperator(unop, ctx);
       if (ctx == BooleanContext) { llvm::outs() << " " << mkFosterBinop("!=", exprTy(unop)) << " 0 /*L1932*/)"; }
+    } else if (const StmtExpr* se = dyn_cast<StmtExpr>(stmt)) {
+      visitStmt(se->getSubStmt());
     } else if (const IntegerLiteral* lit = dyn_cast<IntegerLiteral>(stmt)) {
       if (ctx == BooleanContext) {
         llvm::outs() << (lit->getValue().getBoolValue() ? "True" : "False");
