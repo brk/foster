@@ -271,6 +271,20 @@ const RecordDecl* getRecordDeclFromType(const Type* ty) {
   return nullptr;
 }
 
+std::string getEnumTypeReprName(const EnumType* ety) {
+  return tyName(ety->getDecl()->getIntegerType().getTypePtr());
+}
+
+std::string getEnumTypeName(const EnumType* ety) {
+  std::string name = ety->getDecl()->getCanonicalDecl()->getNameAsString();
+  if (name.empty()) {
+    auto tnd = ety->getDecl()->getTypedefNameForAnonDecl();
+    if (tnd) name = tnd->getNameAsString();
+  }
+  if (name.empty()) name = "/*EnumType unknown*/";
+  return name;
+}
+
 std::string maybeNonUppercaseTyName(const clang::Type* ty, std::string defaultName) {
 
   if (auto dc = dyn_cast<DecayedType>(ty)) {
@@ -320,13 +334,13 @@ std::string maybeNonUppercaseTyName(const clang::Type* ty, std::string defaultNa
   if (const ParenType* rty = dyn_cast<ParenType>(ty)) { return tyName(rty->getInnerType().getTypePtr()); }
 
   if (const EnumType* ety = dyn_cast<EnumType>(ty)) {
-    std::string name = ety->getDecl()->getCanonicalDecl()->getNameAsString();
-    if (name.empty()) {
-      auto tnd = ety->getDecl()->getTypedefNameForAnonDecl();
-      if (tnd) name = tnd->getNameAsString();
-    }
-    if (name.empty()) name = "/*EnumType unknown*/";
-    return name;
+    //return getEnumTypeName(ety);
+    // We use the underlying representation (e.g. Int32) as the enum type name.
+    // Since C allows things like direct addition of enums and numeric constants,
+    // Clang doesn't explicitly represent all the coercions we'd need to
+    // have strongly-typed enum values. Probably this should be configurable,
+    // for users who'd prefer to get type errors for loose enum usage.
+    return getEnumTypeReprName(ety);
   }
 
   // If we were going to handle fixed-size array types, this is probably where we'd do it.
@@ -714,10 +728,10 @@ public:
           }
         }
       } else {
-        llvm::outs() << getBlockName(*next) << " !;\n";
+        llvm::outs() << getBlockName(*next) << " !;\n"; // emitCall
       }
     } else if (CFGBlock* next = ab->getPossiblyUnreachableBlock()) {
-      llvm::outs() << getBlockName(*next) << " !; // unreachable\n";
+      llvm::outs() << getBlockName(*next) << " !; // unreachable\n"; // emitCall
     } else {
       llvm::outs() << "prim kill-entire-process \"no-next-block\"";
     }
@@ -971,7 +985,7 @@ public:
 
     }
 
-    llvm::outs() << getBlockName(cfg->getEntry()) << " !;\n";
+    llvm::outs() << getBlockName(cfg->getEntry()) << " !;\n"; // emitCall
     StmtMap.clear();
   }
 
@@ -1435,7 +1449,7 @@ The corresponding AST to be matched is
       llvm::outs() << " ";
       visitStmt(e);
     }
-    if (ce->getNumArgs() == 0) { llvm::outs() << " !"; }
+    if (ce->getNumArgs() == 0) { llvm::outs() << " !"; } // emitCall
     llvm::outs() << ")";
   }
 
@@ -1953,7 +1967,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
     if (auto ecd = dyn_cast<EnumConstantDecl>(vd)) {
       const EnumDecl* ed = enumDeclsForConstants[ecd];
       if (ed)
-        return "(" + enumConstantAccessor(ed, ecd) + " !)";
+        return "(" + enumConstantAccessor(ed, ecd) + " !)"; // emitCall
       else
         return "(prim kill-entire-process \"ERROR-no-enum-decl-for-" + ecd->getNameAsString() + "\")";
     }
