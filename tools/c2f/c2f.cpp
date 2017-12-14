@@ -864,7 +864,9 @@ public:
 
           // We don't visit the decl itself here because it may refer to
           // out-of-scope variables.
-          llvm::outs() << vd->getName() << " = PtrRef (prim ref " << zeroValue(vd->getType().getTypePtr()) << ");";
+          llvm::outs() << fosterizedName(vd->getName())
+                       << " = PtrRef (prim ref "
+                       << zeroValue(vd->getType().getTypePtr()) << ")";
           needsVisit = false;
         }
       }
