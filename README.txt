@@ -224,3 +224,5 @@ Individual Foster programs can be run with  runfoster  .
 You can see a (colorized) output of Clang's AST for a given C program
 with   clang -fsyntax-only -Xclang -ast-dump  <includes> <program>
 
+For piping to file, add -fno-color-diagnostics.
+
