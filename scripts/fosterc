@@ -4,7 +4,7 @@ SD=$(dirname `which $0`)/../scripts
 FOSTER_ROOT=$($SD/normpath.py $SD/..)
 TMPDIR=fosterc-tmp
 
-mkdir ${TMPDIR}
+mkdir -p ${TMPDIR}
 
 MAYBE_OUT="-o $1.exe"
 
@@ -17,5 +17,5 @@ done
 echo ${SD}/fosterc.py --bindir ${FOSTER_ROOT}/_obj -I ${FOSTER_ROOT}/stdlib --tmpdir ${TMPDIR} $@ $MAYBE_OUT
 ${SD}/fosterc.py --bindir ${FOSTER_ROOT}/_obj -I ${FOSTER_ROOT}/stdlib --tmpdir ${TMPDIR} $@ $MAYBE_OUT
 
-rm meGCstats.txt
+rm -f meGCstats.txt
 rm -rf ${TMPDIR} $1.postopt.ll $1.preopt.ll
