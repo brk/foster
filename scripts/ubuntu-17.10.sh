@@ -3,7 +3,7 @@
 sudo apt-get install --yes build-essential g++ g++-multilib git gnuplot \
                        python-pygments python-matplotlib  python-scipy python-sphinx \
                        python-pandas python-pip python-numpy python-qt4 \
-                       python-qscintilla2 libqscintilla2-dev
+                       python-qscintilla2 libqscintilla2-dev z3
 sudo apt-get install --yes vim vim-gnome \
               curl exuberant-ctags aptitude libcairo2-dev libc6-dev default-jdk
 sudo apt-get install --yes m4 ministat meld \
