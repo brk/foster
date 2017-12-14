@@ -203,12 +203,14 @@ prettySeq :: (Pretty ty, IsQuietPlaceholder ty) => ExprSkel ExprAnnot ty -> Doc
 prettySeq e =
   case e of
     E_SeqAST      {} -> parens $ pretty e
+    E_LetAST      {} -> parens $ pretty e
     _ -> pretty e
 
 prettyAtom :: (Pretty ty, IsQuietPlaceholder ty) => ExprSkel ExprAnnot ty -> Doc
 prettyAtom e =
   case e of
     E_SeqAST      {} -> parens $ pretty e
+    E_LetAST      {} -> parens $ pretty e
     E_CallAST     {} -> parens $ pretty e
     _ -> pretty e
 
