@@ -840,15 +840,24 @@ public:
     markDuplicateVarDecls(decls);
 
     for (auto d : decls) {
+      bool needsVisit = true;
       if (d->isSingleDecl()) {
         if (const VarDecl* vd = dyn_cast<VarDecl>(d->getSingleDecl())) {
           mutableLocals[vd->getName()] = true;
           // Unfortunately, all variables must be treated as mutable
           // when we are doing CFG-based generation, because the CFG
           // doesn't respect variable scoping rules.
+
+          // We don't visit the decl itself here because it may refer to
+          // out-of-scope variables.
+          llvm::outs() << vd->getName() << " = PtrRef (prim ref " << zeroValue(vd->getType().getTypePtr()) << ");";
+          needsVisit = false;
         }
       }
-      visitStmt(d, StmtContext);
+      
+      if (needsVisit) { visitStmt(d, StmtContext); }
+      
+
       llvm::outs() << ";\n";
     }
 
