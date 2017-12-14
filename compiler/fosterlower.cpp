@@ -253,7 +253,8 @@ areDeclaredValueTypesOK(llvm::Module* mod,
     if (!f) { v = mod->getGlobalVariable(d->getName()); }
     else { // Make sure function callconv matches
       const FnTypeAST* fnty = t->castFnTypeAST();
-      ASSERT(fnty);
+      ASSERT(fnty) << "found non-function type for " << d->getName()  
+                   << "\n\t" << str(t);
       ASSERT(f->getCallingConv() == fnty->getCallingConventionID())
         << "\nCalling convention mismatch for symbol " << d->getName()
         << ":\n"
