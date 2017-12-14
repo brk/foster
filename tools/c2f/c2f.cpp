@@ -40,6 +40,10 @@ using namespace clang::ast_matchers;
 using namespace clang::driver;
 using namespace clang::tooling;
 
+struct {
+  std::map<std::string, bool> handledTypeNames;
+} globals;
+
 static llvm::cl::OptionCategory CtoFosterCategory("C-to-Foster");
 
 static llvm::cl::opt<bool>
@@ -189,6 +193,12 @@ std::string str(T x) {
   return ss.str();
 }
 
+bool alreadyHandled(const std::string& name) {
+  bool handled = globals.handledTypeNames[name];
+  if (!handled) globals.handledTypeNames[name] = true;
+  return handled;
+}
+
 std::string getNameForAnonymousRecordTypeWithin(const Decl* d, const TagDecl* td) {
   std::string rv;
 
@@ -275,14 +285,18 @@ std::string getEnumTypeReprName(const EnumType* ety) {
   return tyName(ety->getDecl()->getIntegerType().getTypePtr());
 }
 
-std::string getEnumTypeName(const EnumType* ety) {
-  std::string name = ety->getDecl()->getCanonicalDecl()->getNameAsString();
+std::string getEnumDeclName(const EnumDecl* ed) {
+  std::string name = ed->getCanonicalDecl()->getNameAsString();
   if (name.empty()) {
-    auto tnd = ety->getDecl()->getTypedefNameForAnonDecl();
+    auto tnd = ed->getTypedefNameForAnonDecl();
     if (tnd) name = tnd->getNameAsString();
   }
   if (name.empty()) name = "/*EnumType unknown*/";
   return name;
+}
+
+std::string getEnumTypeName(const EnumType* ety) {
+  return getEnumDeclName(ety->getDecl());
 }
 
 std::string maybeNonUppercaseTyName(const clang::Type* ty, std::string defaultName) {
@@ -722,7 +736,7 @@ public:
           llvm::outs() << "(jump = (); jump)";
         } else {
           if (last && !isa<ReturnStmt>(last)) {
-            llvm::outs() << "(prim kill-entire-process \"unreachable\")";
+            llvm::outs() << "(prim kill-entire-process \"missing-return\"; ())";
           } else {
             llvm::outs() << "/*exit block, hasValue; reachable? " << ab->isReachable() << "*/";
           }
@@ -1085,24 +1099,13 @@ public:
 
       if (auto ase = dyn_cast<ArraySubscriptExpr>(ptr)) {
         emitPokeIdx(ase, valEmitter, ctx);
-      } else if (startswith(tynm, "(Ptr") && !isDeclRefOfMutableLocal(ptr)) {
-        llvm::outs() << "(ptrSet (";
-        visitStmt(ptr);
-        llvm::outs() << ") (";
-        valEmitter();
-        llvm::outs() << ")";
-        if (ctx == ExprContext) {
-          llvm::outs() << "; "; visitStmt(ptr);
-        }
-        // TODO BooleanContext
-        llvm::outs() << ");";
       } else {
         // If we have something like (c = (b = a)),
         // translate it to (a >^ b; b) >^ c
-        llvm::outs() << "((";
-        valEmitter();
-        llvm::outs() << ") >^ (";
+        llvm::outs() << "(ptrSet (";
         visitStmt(ptr, AssignmentTarget);
+        llvm::outs() << ") (";
+        valEmitter();
         llvm::outs() << ")";
         if (ctx == ExprContext) {
           llvm::outs() << "; "; visitStmt(ptr);
@@ -1119,9 +1122,14 @@ public:
   }
 
   void emitPoke(const VarDecl* ptr, const Expr* val) {
+      llvm::outs() << "(ptrSet " << emitVarName(ptr) << " (";
+      visitStmt(val);
+      llvm::outs() << "));";
+    /*
       llvm::outs() << "((";
       visitStmt(val);
       llvm::outs() << ") >^ " << emitVarName(ptr) << ");";
+      */
   }
 
   bool isNumericLiteral(const Stmt* stmt) {
@@ -1365,22 +1373,22 @@ The corresponding AST to be matched is
       // Unary plus gets ignored, basically.
       visitStmt(unop->getSubExpr());
     } else if (unop->getOpcode() == UO_PreDec) {
-      handleIncrDecr("decr", unop);
+      handleIncrDecr("ptrDecr", unop);
     } else if (unop->getOpcode() == UO_PostDec) {
-      handleIncrDecr("postdecr", unop);
+      handleIncrDecr("ptrPostDecr", unop);
     } else if (unop->getOpcode() == UO_PostInc) {
-      handleIncrDecr("postincr", unop);
+      handleIncrDecr("ptrPostIncr", unop);
     } else if (unop->getOpcode() == UO_PreInc) {
-      handleIncrDecr("incr", unop);
+      handleIncrDecr("ptrIncr", unop);
     } else if (unop->getOpcode() == UO_AddrOf) {
       visitStmt(unop->getSubExpr(), AssignmentTarget);
     } else if (unop->getOpcode() == UO_Deref) {
-      if (isDeclRefOfMutableAlias(unop->getSubExpr())) {
-        visitStmt(unop->getSubExpr());
+      if (ctx == AssignmentTarget && isDeclRefOfMutableAlias(unop->getSubExpr())) {
+        visitStmt(unop->getSubExpr(), AssignmentTarget);
       } else {
         llvm::outs() << "(ptrGet ";
-        llvm::outs() << "/* " << tyName(exprTy(unop->getSubExpr())) << " */";
-        visitStmt(unop->getSubExpr());
+        //llvm::outs() << "/* " << tyName(exprTy(unop->getSubExpr())) << " */";
+        visitStmt(unop->getSubExpr(), ctx);
         llvm::outs() << ")";
       }
     } else if (unop->getOpcode() == UO_Extension) {
@@ -1395,9 +1403,11 @@ The corresponding AST to be matched is
     }
   }
 
+  bool isDeclRefOfMutableAlias(const ValueDecl* d) { return mutableLocalAliases[d->getName()]; }
+
   bool isDeclRefOfMutableAlias(const Expr* e) {
     if (auto dre = dyn_cast<DeclRefExpr>(e->IgnoreParenImpCasts())) {
-      return mutableLocalAliases[dre->getDecl()->getName()];
+      return isDeclRefOfMutableAlias(dre->getDecl());
     }
     return false;
   }
@@ -1975,10 +1985,13 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
   std::string emitVarName(const ValueDecl* vd) {
     if (auto ecd = dyn_cast<EnumConstantDecl>(vd)) {
       const EnumDecl* ed = enumDeclsForConstants[ecd];
+      if (!ed) ed = enumDeclsForConstants[ecd->getCanonicalDecl()];
       if (ed)
         return "(" + enumConstantAccessor(ed, ecd) + " !)"; // emitCall
-      else
+      else {
+        ecd->dump();
         return "(prim kill-entire-process \"ERROR-no-enum-decl-for-" + ecd->getNameAsString() + "\")";
+      }
     }
 
     auto it = duplicateVarDecls.find(vd);
@@ -1994,7 +2007,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
   void visitVarDecl(const VarDecl* vd) {
     if (vd->hasInit()) {
       if (mutableLocals[vd->getName()]) {
-        llvm::outs() << emitVarName(vd) << " = (prim ref ";
+        llvm::outs() << emitVarName(vd) << " = PtrRef (prim ref ";
         visitStmt(vd->getInit());
         llvm::outs() << ")";
       } else {
@@ -2026,7 +2039,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
           llvm::outs() << "(newArrayReplicate " << sz << " " << zeroval << ")";
         }
       } else {
-        llvm::outs() << emitVarName(vd) << " = (prim ref " << zeroValue(exprTy(vd)) << ")";
+        llvm::outs() << emitVarName(vd) << " = PtrRef (prim ref " << zeroValue(exprTy(vd)) << ")";
       }
     }
   }
@@ -2221,8 +2234,8 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       if (ctx == BooleanContext) { llvm::outs() << "("; }
 
       auto vd = dr->getDecl();
-      if (isPrimRef(vd) && ctx != AssignmentTarget) {
-        llvm::outs() << emitVarName(vd) << "^";
+      if (ctx != AssignmentTarget && isPrimRef(vd) && !isDeclRefOfMutableAlias(vd)) {
+        llvm::outs() << "(ptrGet " << emitVarName(vd) << ")";
       } else {
         llvm::outs() << emitVarName(vd);
       }
@@ -2313,6 +2326,17 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       } else {
         size_t childno = 0;
         for (const Stmt* c : cs->children()) {
+          if (auto ce = dyn_cast<Expr>(c)) {
+            if (!(ce->getType().getTypePtr()->isIntegralOrEnumerationType()) ) {
+              // Clang doesn't complain about pointer-valued expressions
+              // (with side effects) used as statements, but Foster is
+              // stricter about what type a statement is allowed to have.
+              // To mediate the difference, we sometimes need to add
+              // silent bindings.
+              llvm::outs() << "_ignored = ";
+            }
+          }
+
           visitStmt(c, StmtContext);
 
           if (isa<CompoundStmt>(c) || isa<BreakStmt>(c)) {
@@ -2321,7 +2345,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
             // We need to print a semicolon when compound statments
             // are embedded within other compound statments,
             // but not when they appear within switch cases...
-            llvm::outs() << ";/*clast*/\n";
+            llvm::outs() << ";\n";
           } else {
             llvm::outs() << ";\n";
           }
@@ -2412,6 +2436,12 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
 
   void handleRecordDecl(const RecordDecl* rd) {
     std::string name = fosterizedTypeName(getRecordDeclName(rd));
+
+    // When processing multiple source files that include common headers,
+    // Clang will generate multiple RecordDecl nodes, but we only want
+    // to emit code once.
+    if (alreadyHandled(name)) return;
+
     std::map<const RecordDecl*, bool> embeddedStructs;
 
     // Handle any anonymous struct fields.
@@ -2539,7 +2569,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
           ParmVarDecl* d = fd->getParamDecl(i);
           if (mutableLocals[d->getName()]) {
             llvm::outs() << fosterizedName(d->getDeclName().getAsString())
-                          << " = (prim ref "
+                          << " = PtrRef (prim ref "
                           << fosterizedName(d->getDeclName().getAsString())
                           << ");\n";
           }
@@ -2557,8 +2587,15 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
     } else if (VarDecl* vd = dyn_cast<VarDecl>(decl)) {
       llvm::outs() << "/* Unhandled global variable declaration:\n" << getText(R, *vd) << ";*/\n";
     } else if (auto ed = dyn_cast<EnumDecl>(decl)) {
+      // Even if we skip emitting this particular declaration, we still want
+      // to associate the enum constants with their corresponding EnumDecl.
       for (auto e : ed->enumerators()) {
         enumDeclsForConstants[e] = ed;
+      }
+
+      if (alreadyHandled(getEnumDeclName(ed))) return;
+
+      for (auto e : ed->enumerators()) {
         llvm::outs() << enumConstantAccessor(ed, e)
                       << " = { " << e->getInitVal().getSExtValue()
                       << " };\n";
@@ -2686,6 +2723,9 @@ private:
 // You'll probably want to invoke with -fparse-all-comments
 int main(int argc, const char **argv) {
   CommonOptionsParser op(argc, argv, CtoFosterCategory);
+  for (auto sp : op.getSourcePathList()) {
+    llvm::errs() << sp << "\n";
+  }
   ClangTool Tool(op.getCompilations(), op.getSourcePathList());
 
   return Tool.run(newFrontendActionFactory<C2F_FrontendAction>().get());

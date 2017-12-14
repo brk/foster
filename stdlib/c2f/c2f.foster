@@ -117,6 +117,34 @@ decr_Ptr_Int8_     = { r : Ref (Ptr Int8) => v = (r^ `ptrMinus` 1); v >^ r; v };
 postincr_Ptr_Int8_ = { r : Ref (Ptr Int8) => v = r^; (v `ptrPlus` 1) >^ r; v };
 postdecr_Ptr_Int8_ = { r : Ref (Ptr Int8) => v = r^; (v `ptrMinus` 1) >^ r; v };
 
+ptrIncr_Ptr_Int8_     = { r : Ptr (Ptr Int8) => v = (ptrGet r `ptrPlus` 1); ptrSet r v; v };
+ptrDecr_Ptr_Int8_     = { r : Ptr (Ptr Int8) => v = (ptrGet r `ptrMinus` 1); ptrSet r v; v };
+ptrPostIncr_Ptr_Int8_ = { r : Ptr (Ptr Int8) => v = ptrGet r; ptrSet r (v `ptrPlus` 1); v };
+ptrPostDecr_Ptr_Int8_ = { r : Ptr (Ptr Int8) => v = ptrGet r; ptrSet r (v `ptrMinus` 1); v };
+
+ptrIncr_Ptr_Int32_     = { r : Ptr (Ptr Int32) => v = (ptrGet r `ptrPlus` 1); ptrSet r v; v };
+ptrDecr_Ptr_Int32_     = { r : Ptr (Ptr Int32) => v = (ptrGet r `ptrMinus` 1); ptrSet r v; v };
+ptrPostIncr_Ptr_Int32_ = { r : Ptr (Ptr Int32) => v = ptrGet r; ptrSet r (v `ptrPlus` 1); v };
+ptrPostDecr_Ptr_Int32_ = { r : Ptr (Ptr Int32) => v = ptrGet r; ptrSet r (v `ptrMinus` 1); v };
+
+ptrIncrInt16 = { r : Ptr Int16 => v = ((ptrGet r) +Int16 1); ptrSet r v; v };
+ptrDecrInt16 = { r : Ptr Int16 => v = ((ptrGet r) -Int16 1); ptrSet r v; v };
+ptrIncrInt32 = { r : Ptr Int32 => v = ((ptrGet r) +Int32 1); ptrSet r v; v };
+ptrDecrInt32 = { r : Ptr Int32 => v = ((ptrGet r) -Int32 1); ptrSet r v; v };
+ptrIncrInt8 = { r : Ptr Int8 => v = ((ptrGet r) +Int8 1); ptrSet r v; v };
+ptrDecrInt8 = { r : Ptr Int8 => v = ((ptrGet r) -Int8 1); ptrSet r v; v };
+ptrIncrInt64 = { r : Ptr Int64 => v = ((ptrGet r) +Int64 1); ptrSet r v; v };
+ptrDecrInt64 = { r : Ptr Int64 => v = ((ptrGet r) -Int64 1); ptrSet r v; v };
+
+ptrPostIncrInt32 = { r : Ptr Int32 => v = ptrGet r; ptrSet r (v +Int32 1); v };
+ptrPostDecrInt32 = { r : Ptr Int32 => v = ptrGet r; ptrSet r (v -Int32 1); v };
+ptrPostIncrInt16 = { r : Ptr Int16 => v = ptrGet r; ptrSet r (v +Int16 1); v };
+ptrPostDecrInt16 = { r : Ptr Int16 => v = ptrGet r; ptrSet r (v -Int16 1); v };
+ptrPostIncrInt8 = { r : Ptr Int8 => v = ptrGet r; ptrSet r (v +Int8 1); v };
+ptrPostDecrInt8 = { r : Ptr Int8 => v = ptrGet r; ptrSet r (v -Int8 1); v };
+ptrPostIncrInt64 = { r : Ptr Int64 => v = ptrGet r; ptrSet r (v +Int64 1); v };
+ptrPostDecrInt64 = { r : Ptr Int64 => v = ptrGet r; ptrSet r (v -Int64 1); v };
+
 strLit :: forall (t:Type) { Array t => Ptr t };
 strLit = { s => PtrArr s 0 };
 
