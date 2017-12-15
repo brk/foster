@@ -16,7 +16,7 @@ sumof () {
 }
 
 runcloc () {
- cloc $@ --quiet --skip-uniqueness --exclude-dir=compiler/me/src/Foster/Bepb,compiler/me/src/Llvmpb,compiler/me/dist
+ cloc $@ --quiet --skip-uniqueness --fullpath --not-match-d='compiler/me/dist'
 }
 
 inspbase () {
