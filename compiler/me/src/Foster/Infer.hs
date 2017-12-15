@@ -172,6 +172,11 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                      else tcFailsMore [text $ "Unable to unify different type variables: "
                                        ++ show tv1 ++ " vs " ++ show tv2]
 
+    (t1@(TyAppTC (TyConTC _nm1) _tys1), t2@(MetaTyVarTC {}))
+          | isEffectEmpty t1 -> do
+      tcWarn [text "permitting effect subsumption of empty effect and type metavariable " <> pretty t2]
+      tcUnifyLoop constraints tysub
+
     (t1@(TyAppTC (TyConTC _nm1) _tys1), t2@(TyAppTC (TyConTC nm2) _tys2))
           | isEffectEmpty t1 && isEffectExtend nm2 -> do
       tcWarn [text "permitting effect subsumption of empty effect and " <> pretty t2]
