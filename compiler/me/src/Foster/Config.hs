@@ -86,8 +86,8 @@ ioTime act = do
   let !delta = end - start
   return (delta, result)
 
-ccWhen :: (CompilerContext -> Bool) -> IO () -> Compiled ()
-ccWhen getter action = do cond <- gets getter ; liftIO $ when cond action
+ccWhen :: (CompilerContext -> Bool) -> Compiled () -> Compiled ()
+ccWhen getter action = do cond <- gets getter ; when cond action
 
 whenDumpIR :: String -> IO () -> Compiled ()
 whenDumpIR ir action = do flags <- gets ccFlagVals

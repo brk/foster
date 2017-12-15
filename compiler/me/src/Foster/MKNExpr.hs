@@ -121,10 +121,12 @@ substVarForVar'' bx by = do
   mb_fy <- boundOcc by
   case (mb_fx, mb_fy) of
     (Just fx, Just fy) -> do
-      dbgDoc $ text $ "substVarForVar'' " ++ show (boundVar bx) ++ "  " ++ show (boundVar by)
+      ccWhen ccVerbose $ do
+        dbgDoc $ text $ "substVarForVar'' " ++ show (boundVar bx) ++ "  " ++ show (boundVar by)
       substVarForVar fx fy
     _ -> do
-      dbgDoc $ text $ "substVarForVar'' doing nothing; one or both binders are dead"
+      ccWhen ccVerbose $ do
+        dbgDoc $ text $ "substVarForVar'' doing nothing; one or both binders are dead"
       return ()
 
 mergeFreeLists :: OrdRef (Maybe (FreeOcc t)) -> OrdRef (Maybe (FreeOcc t)) -> Compiled ()
@@ -489,6 +491,8 @@ mkOfKNFn (Fn v vs expr isrec annot) = do
     vs' <- mapM mkBinder vs
     
     jb  <- genBinder ".fret" (tidType v)
+    lift $ ccWhen ccVerbose $ do
+      dbgDoc $ text "Generated return continuation " <> pretty (tidIdent $ boundVar jb) <> text " for fn " <> pretty (tidIdent v)
 
     expr' <- mkOfKN_Base expr (CC_Tail jb)
     put m
@@ -1030,8 +1034,9 @@ collectRedexes ref valbindsref expbindsref funbindsref fundefsref aliasesref sbt
                         xc <- dlcCount x
                         bc <- mkbCount x
                         fc <- dlcCount (mkfnVar mkfn)
-                        dbgDoc $ text $ "markFnBind: x  = (" ++ show xc ++ " vs " ++ show bc ++ ") " ++ show (tidIdent $ boundVar x)                
-                        dbgDoc $ text $ "            fv = (" ++ show fc ++ ") " ++ show (tidIdent $ boundVar (mkfnVar mkfn))
+                        ccWhen ccVerbose $ do
+                          dbgDoc $ text $ "markFnBind: x  = (" ++ show xc ++ " vs " ++ show bc ++ ") " ++ show (tidIdent $ boundVar x)                
+                          dbgDoc $ text $ "            fv = (" ++ show fc ++ ") " ++ show (tidIdent $ boundVar (mkfnVar mkfn))
                         if xc == 0 && not (isTextPrim (tidIdent $ boundVar x))
                           then do
                             -- dbgDoc $ text $ "killing dead fn binding " ++ show (tidIdent $ boundVar x)
@@ -1128,7 +1133,8 @@ copyBinder msg b = do
   let binder = MKBound (TypedId (tidType $ boundVar b) newid) ref
   !m <- get
   put $ extend m [tidIdent $ boundVar b] [binder]
-  dbgDoc $ text $ "copied binder " ++ show (prettyIdent $ tidIdent $ boundVar b) ++ " (" ++ msg ++ ") into " ++ show newid
+  lift $ ccWhen ccVerbose $ do
+    dbgDoc $ text $ "copied binder " ++ show (prettyIdent $ tidIdent $ boundVar b) ++ " (" ++ msg ++ ") into " ++ show newid
   return binder
  where
     ccRefresh :: Ident -> Compiled Ident
@@ -1385,10 +1391,12 @@ mknInline subterm mainCont mb_gas = do
                         dbgDoc $ text "CallOfUnknownFunction: " <+> pretty redex
                      return ()
                    CallOfSingletonFunction fn -> do
-                     do redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
+                     ccWhen ccVerbose $ do
+                        redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
                         dbgDoc $ text "CallOfSingletonFunction starting with: " <+> align (pretty redex)
 
-                     do v <- freeBinder callee
+                     ccWhen ccVerbose $ do
+                        v <- freeBinder callee
                         dbgDoc $ green (text "inlining without copying ") <> pretty (tidIdent $ boundVar v)
 
                      newbody <- betaReduceOnlyCall fn args kv     wr fd
@@ -1417,13 +1425,15 @@ mknInline subterm mainCont mb_gas = do
                      flags <- gets ccFlagVals
                      if getInliningDonate flags
                        then do
-                         do v <- freeBinder callee
+                         ccWhen ccVerbose $ do
+                            v <- freeBinder callee
                             dbgDoc $ green (text "copying and inlining DF ") <+> pretty (tidIdent $ boundVar v)
                             --kn1 <- knOfMKFn (mbContOf $ mkfnCont fn) fn
                             --dbgDoc $ text $ "pre-copy fn is " ++ show (pretty kn1)
                             return ()
                          fn' <- runCopyMKFn fn Map.empty
-                         do kn1 <- knOfMKFn (mbContOf $ mkfnCont fn) fn'
+                         ccWhen ccVerbose $ do
+                            kn1 <- knOfMKFn (mbContOf $ mkfnCont fn) fn'
                             dbgDoc $ text $ "post-copy fn is " ++ show (pretty kn1)
                          -- TODO Recursive-but-not-tail-recursive functions (RBNTRF)
                          --      will have a recursive call in the body, so we can't
@@ -1614,7 +1624,8 @@ mknInline subterm mainCont mb_gas = do
                  go (gas - 1)
 
                _ -> do
-                 do kn <- knOfMK (YesCont mainCont) mredex
+                 ccWhen ccVerbose $ do
+                    kn <- knOfMK (YesCont mainCont) mredex
                     dbgDoc $ text $ "skipping non-call/cont redex: " ++ show (pretty kn)
                  go gas
 
@@ -1899,7 +1910,8 @@ killOccurrence fo = do
     isSingleton <- freeOccIsSingleton fo
     if isSingleton
      then do
-       dbgDoc $ red (text "killing singleton binding ") <> prettyId _v
+       ccWhen ccVerbose $ do
+         dbgDoc $ red (text "killing singleton binding ") <> prettyId _v
        writeOrdRef r Nothing
      else do
        n <- dlcNext fo
@@ -1923,7 +1935,8 @@ killBinding fo knownFns aliases = do
             case Map.lookup origBinding aliases of
                     Nothing -> origBinding
                     Just bv -> bv
-    dbgDoc $ red (text "killing binding for ") <> pretty (boundVar origBinding) <> text " ~~> " <> pretty v
+    ccWhen ccVerbose $ do
+      dbgDoc $ red (text "killing binding for ") <> pretty (boundVar origBinding) <> text " ~~> " <> pretty v
     writeOrdRef r' Nothing
     case Map.lookup binding knownFns of
         Nothing -> do dbgDoc $ red (text "no killable binding for ") <> pretty v
@@ -1995,13 +2008,16 @@ pccOfTopTerm uref subterm = do
         mb_fn <- lift $ readOrdRef link
         case mb_fn of
           Nothing -> do
-            dbgDoc $ text "pccOfTopTerm saw nulled-out function link " <> pretty x
+            lift $ ccWhen ccVerbose $ do
+              dbgDoc $ text "pccOfTopTerm saw nulled-out function link " <> pretty x
             return ()
           Just fn -> do
             knfn <- lift $ knOfMKFn NoCont fn
+            {--
             dbgDoc $ indent 10 (pretty x)
             dbgDoc $ indent 20 (pretty knfn)
             dbgDoc $ text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+            --}
             
             cffn <- lift $ cffnOfMKFn uref fn
             !(fns, topbinds) <- get
@@ -2098,7 +2114,8 @@ cffnOfMKCont cv (MKFn _ vs _ subterm _isrec _annot) = do
                                                 mb_contfn <- lift $ readOrdRef link
                                                 case mb_contfn of
                                                    Nothing -> do
-                                                     dbgDoc $ text $ "cffnOfMKCont removed dead continuation " ++ show (tidIdent $ boundVar bv)
+                                                     lift $ ccWhen ccVerbose $ do
+                                                       dbgDoc $ text $ "cffnOfMKCont removed dead continuation " ++ show (tidIdent $ boundVar bv)
                                                    Just contfn -> do
                                                      cffnOfMKCont bv contfn)
                                                knowns
@@ -2217,6 +2234,7 @@ letableOfSubexpr subexpr = do
     _ -> error $ "non-Letable thing seen by letableOfSubexpr..."
 
 
+dbgDoc :: MonadIO m => Doc -> m ()
 dbgDoc d =
   if False
     then liftIO $ putDocLn d
