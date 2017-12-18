@@ -472,6 +472,8 @@ void expect_float_p9f64(double f) { return fprint_p9f64(stderr, f); }
 
 double foster__logf64(double f) { return log(f); }
 
+int32_t get_cmdline_n_args() { return __foster_globals.args.size(); }
+
 // For GC roots to work correctly, the returned pointer
 // must be of type Text (i.e. %Text.DT*) but we have no
 // way of naming that type here. So we wrap this function
