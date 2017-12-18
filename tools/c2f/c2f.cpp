@@ -2553,17 +2553,28 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
     } else if (FunctionDecl* fd = dyn_cast<FunctionDecl>(decl)) {
       if (Stmt* body = fd->getBody()) {
         bool needsCFG = false;
+        bool mainWithArgs = false;
         performFunctionLocalAnalysis(fd, needsCFG);
 
         llvm::outs() << fosterizedName(fd->getName()) << " = {\n";
-        for (unsigned i = 0; i < fd->getNumParams(); ++i) {
-          ParmVarDecl* d = fd->getParamDecl(i);
-          auto vpcset = voidPtrCasts[d];
-          const Type* ty = vpcset.unique() ? vpcset.front() : exprTy(d);
-          if (!isVoidPtr(ty)) {
-            llvm::outs() << "    " << fosterizedName(d->getDeclName().getAsString())
-                          << " : " << tyName(ty) << " =>\n";
+        if (fd->getName() == "main") {
+          mainWithArgs = fd->getNumParams() > 0;
+        } else {
+          // Emit function arguments.
+          for (unsigned i = 0; i < fd->getNumParams(); ++i) {
+            ParmVarDecl* d = fd->getParamDecl(i);
+            auto vpcset = voidPtrCasts[d];
+            const Type* ty = vpcset.unique() ? vpcset.front() : exprTy(d);
+            if (!isVoidPtr(ty)) {
+              llvm::outs() << "    " << fosterizedName(d->getDeclName().getAsString())
+                            << " : " << tyName(ty) << " =>\n";
+            }
           }
+        }
+
+        // Assume main's params are named argc and argv, for now.
+        if (mainWithArgs) {
+          llvm::outs() << "argv = c2f_argv !; argc = ptrSize argv;\n";
         }
 
         // Rebind parameters if they are observed to be mutable locals.

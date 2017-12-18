@@ -84,6 +84,15 @@ ptrMemcpy = { dst => src => n =>
   enumRange32 0 n { i => ptrSetIndex dst i (ptrGetIndex src i) };
 };
 
+ptrSize :: forall (a:Type) { Ptr a => Int32 };
+ptrSize = { ptr =>
+  case ptr
+    of $PtrNil   -> 0
+    of $PtrRef r -> 1
+    of $PtrArr arr off -> arrayLength32 arr -Int32 off
+  end
+};
+
 ptrStrlen :: { Ptr Int8 => Int64 };
 ptrStrlen = { ptr =>
   REC go = { i =>
@@ -167,3 +176,25 @@ type case ArrPtr (a:Type)
 
 incrArrPtr :: forall (a:Type) { ArrPtr a => ArrPtr a };
 incrArrPtr = { v => case v of $ArrPtr a x -> ArrPtr a (x +Int64 1) end };
+
+zeroTerminate :: { Array Int8 => Array Int8 };
+zeroTerminate = { arr =>
+  len = arrayLength32 arr;
+  out = allocDArray (len +Int32 1);
+  memcpy_i8_to_from_at_len out arr 0 len;
+  0 >^ out[len];
+  out;
+};
+
+c2f_argv :: { Ptr (Ptr Int8) };
+c2f_argv = {
+  argc = get_cmdline_n_args !;
+  argv = allocDArray:[Ptr Int8] argc |> strLit;
+  enumRange32 0 argc { n => 
+    case get_cmdline_arg_n n
+      of $TextFragment arr _ -> ptrSetIndex argv n (arr |> zeroTerminate |> strLit)
+      of $TextConcat _ _ _ -> prim kill-entire-process "c2f_argv: no support yet for concats"
+    end
+  };
+  argv
+};
