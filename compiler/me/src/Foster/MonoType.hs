@@ -153,7 +153,7 @@ alphaRenameMono fn = do
           RefinedType v e args        -> do e' <- renameKN e ; args' <- mapM renameI args ; return $ RefinedType v e' args'
 
     renameV :: TypedId MonoType -> MonoRenamed (TypedId MonoType)
-    renameV (TypedId ty id@(GlobalSymbol t)) = do
+    renameV (TypedId ty id@(GlobalSymbol t _alt)) = do
         -- We want to rename any locally-bound functions that might have
         -- been duplicated by monomorphization.
         if T.pack "<anon_fn"  `T.isInfixOf` t ||
@@ -176,8 +176,9 @@ alphaRenameMono fn = do
                        return (TypedId ty' id' )
         Just _u' -> error $ "KNUtil.hs: can't rename a variable twice! " ++ show id
 
-    renameI id@(GlobalSymbol t) = do u' <- fresh
-                                     let id' = GlobalSymbol $ t `T.append` T.pack (show u')
+    renameI id@(GlobalSymbol t alt) = do
+                                     u' <- fresh
+                                     let id' = GlobalSymbol (t `T.append` T.pack (show u')) alt
                                      remap id id'
                                      return id'
     renameI id@(Ident s _)      = do u' <- fresh

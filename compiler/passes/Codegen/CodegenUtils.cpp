@@ -529,6 +529,41 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   return NULL;
 }
 
+
+// Some C functions need to take or return types (like FILE*) for
+// which it's awkward to arrange for the LLVM representation of the Foster
+// arg/return type to agree with Clang's representation. For these functions,
+// we want to generate a wrapper which bitcasts away the type mismatch.
+void codegenAutoWrapper(llvm::Function* F,
+                        llvm::FunctionType* wrappedTy,
+                        //llvm::CallingConv::ID cc,
+                        //llvm::GlobalValue::LinkageTypes linkage,
+                           std::string symbolName,
+                           CodegenPass* pass) {
+    auto linkage = llvm::GlobalValue::ExternalLinkage;
+    auto Ffunc = Function::Create(wrappedTy, linkage, symbolName, pass->mod);
+    Ffunc->setCallingConv(F->getCallingConv());
+    pass->addEntryBB(Ffunc);
+    std::vector<llvm::Value*> args;
+    auto arg = Ffunc->arg_begin();
+    for (int n = 0; arg != Ffunc->arg_end(); ++n) {
+      args.push_back(builder.CreateBitCast(&*arg,
+                        F->getFunctionType()->getParamType(n)));
+      ++arg;
+    }
+
+    auto callInst = builder.CreateCall(F, args);
+    callInst->setTailCall(true);
+    callInst->setCallingConv(F->getCallingConv());
+
+    if (callInst->getType()->isVoidTy()) {
+      builder.CreateRetVoid();
+    } else {
+      builder.CreateRet(builder.CreateBitCast(callInst, wrappedTy->getReturnType()));
+    }
+    //pass->markFosterFunction(Ffunc);
+}
+
 struct LLProcPrimBase : public LLProc {
 protected:
   std::string name;

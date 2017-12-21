@@ -469,7 +469,8 @@ LLExpr* parseUnitValue(const pb::Letable::Reader& e) { return new LLUnitValue();
 
 LLDecl* parseDecl(const pb::Decl::Reader& e) {
   return new LLDecl(    e.getName(),
-        TypeAST_from_pb(e.getType()));
+        TypeAST_from_pb(e.getType()),
+                   e.getIsForeign());
 }
 
 LLModule* LLModule_from_capnp(const foster::be::Module::Reader& e) {

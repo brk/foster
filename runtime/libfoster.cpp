@@ -464,6 +464,30 @@ int8_t memcpy_i8_to_at_from_at_len(foster_bytes* to,   int64_t   to_at,
   return (len == req_len) ? 0 : 1;
 }
 
+// Copies a byte array (Array Int8) from the Foster heap
+// to the C heap, adding a null terminator.
+char* cstr(foster_bytes* not_assumed_null_terminated) {
+  size_t len = not_assumed_null_terminated->cap;
+  char* rv = (char*) malloc(len + 1);
+  memcpy(rv, not_assumed_null_terminated->bytes, len);
+  rv[len] = '\0';
+  return rv;
+}
+
+// Yields a direct pointer into the Foster heap,
+// typed for use in C. Note that the returned C pointer
+// does not point to a null terminated buffer!
+char* cdataptr_unsafe(foster_bytes* b, int32_t offset) {
+  return (char*) &b->bytes[0] + offset;
+}
+
+void cstr_free(char* s) { free(s); }
+
+FILE* c2f_stdin__autowrap() { return stdin; }
+FILE* c2f_stdout__autowrap() { return stdout; }
+FILE* c2f_stderr__autowrap() { return stderr; }
+
+
 void print_float_f64x(double f) { return fprint_f64x(stdout, f); }
 void expect_float_f64x(double f) { return fprint_f64x(stderr, f); }
 

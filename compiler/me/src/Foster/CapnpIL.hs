@@ -46,7 +46,8 @@ stringSG SG_Unsafe  = u8fromString "static"
 dumpBlockId (str, lab) = u8fromString (str ++ "." ++ show lab)
 
 dumpIdent :: Ident -> CapnpText
-dumpIdent (GlobalSymbol name) = u8fromText name
+dumpIdent (GlobalSymbol name NoRename)  = u8fromText name
+dumpIdent (GlobalSymbol _ (RenameTo name)) = u8fromText name
 dumpIdent i@(Ident _name num) = if num < 0
                 then error $ "cannot dump negative ident! " ++ show i
                 else u8fromString $ show i
@@ -345,7 +346,7 @@ dumpExpr maygc (ILCall t base args)
         stringOfCC CCC    = "ccc"
         ccs = stringOfCC $ extractCallConv (tidType base)
 
-dumpExpr _ (ILCallPrim t (NamedPrim (TypedId _ (GlobalSymbol gs))) [arr])
+dumpExpr _ (ILCallPrim t (NamedPrim (TypedId _ (GlobalSymbol gs _))) [arr])
         | gs == T.pack "prim_arrayLength"
         = dumpArrayLength t arr
 
@@ -528,7 +529,7 @@ dumpGlobalSymbol base =
         , typ_of_TermVar  = StrictlyJust $ dumpType (tidType base)
     }
 
-dumpMoVar t i@(GlobalSymbol _) _ = dumpGlobalSymbol (TypedId t i)
+dumpMoVar t i@(GlobalSymbol {}) _ = dumpGlobalSymbol (TypedId t i)
 dumpMoVar t i useType =
     TermVar {
           tag_of_TermVar  = Ilvar
@@ -585,11 +586,19 @@ dumpProgramToModule (ILProgram procdefs vals extern_decls datatypes (SourceLines
         let formal = dataTypeName datatype in
         Decl { name_of_Decl = u8fromString (typeFormalName formal)
              , type_of_Decl = dumpDataType formal (dataTypeCtors datatype)
+             , isForeign_of_Decl = False
              }
 
-    dumpDecl (LLExternDecl s t) =
+    dumpDecl (LLExternDecl s t NotForeign) =
         Decl { name_of_Decl = u8fromString s
              , type_of_Decl = dumpType t
+             , isForeign_of_Decl = False
+             }
+
+    dumpDecl (LLExternDecl _x t (IsForeign s)) =
+        Decl { name_of_Decl = u8fromString s
+             , type_of_Decl = dumpType t
+             , isForeign_of_Decl = True
              }
 
     dumpDataType (TypeFormal dtName _sr KindEffect) _ctors =

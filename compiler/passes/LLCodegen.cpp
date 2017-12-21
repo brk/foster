@@ -367,15 +367,25 @@ void createGCMapsSymbolIfNeeded(CodegenPass* pass) {
 
 void addExternDecls(const std::vector<LLDecl*> decls,
                     CodegenPass* pass) {
-  for (size_t i = 0; i < decls.size(); ++i) {
-     LLDecl* d = decls[i];
-     const std::string& declName = d->getName();
-     TypeAST* fosterType = d->getType();
-     if (const FnTypeAST* fnty = fosterType->castFnTypeAST()) {
-       pass->mod->getOrInsertFunction(declName, fnty->getLLVMFnType());
-     } else {
-       pass->mod->getOrInsertGlobal(declName, fosterType->getLLVMType());
-     }
+  for (auto d : decls) {
+    if (pass->config.standalone || d->isForeign) {
+      const std::string& declName = d->getName();
+      TypeAST* fosterType = d->getType();
+
+      //llvm::outs() << "addExternDecls() saw " << declName << " :: " << str(fosterType) << "\n";
+      if (const FnTypeAST* fnty = fosterType->castFnTypeAST()) {
+
+        if (llvm::Function* wrapped = pass->mod->getFunction(d->getName() + "__autowrap")) {
+          codegenAutoWrapper(wrapped, fnty->getLLVMFnType(), declName, pass);
+        } else {
+          pass->mod->getOrInsertFunction(declName, fnty->getLLVMFnType());
+        }
+
+      } else {
+        pass->mod->getOrInsertGlobal(declName, fosterType->getLLVMType());
+      }
+
+    }
   }
 }
 
@@ -391,9 +401,7 @@ llvm::GlobalVariable* emitGlobalNonArrayCell(CodegenPass* pass,
 void LLModule::codegenModule(CodegenPass* pass) {
   registerKnownDataTypes(datatype_decls, pass);
 
-  if (pass->config.standalone) {
-    addExternDecls(extern_val_decls, pass);
-  }
+  addExternDecls(extern_val_decls, pass);
 
   if (!pass->config.standalone) {
     extendWithImplementationSpecificProcs(pass, procs);

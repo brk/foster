@@ -308,10 +308,10 @@ monomorphizedDataTypesFrom dts specs = do
    dts' <- mapM monomorphizedDataTypes dts
    return $ concat dts'
  where monomorphizedDataType :: DataType TypeIL -> [MonoType] -> Mono (DataType MonoType)
-       monomorphizedDataType (DataType name formals ctors range) args = do
+       monomorphizedDataType (DataType name formals ctors isForeign range) args = do
                  ctors' <- mapM (monomorphizedCtor subst) ctors
                  return $    (DataType (getMonoFormal name args) []
-                                       ctors' range)
+                                       ctors' isForeign range)
                                where
          subst = extendSubst emptyMonoSubst formals args
 
@@ -324,10 +324,10 @@ monomorphizedDataTypesFrom dts specs = do
        dtSpecMap = mapAllFromList specs
 
        monomorphizedDataTypes :: DataType TypeIL -> Mono [DataType MonoType]
-       monomorphizedDataTypes dt@(DataType formal tyformals _ _range) =
+       monomorphizedDataTypes dt =
          -- We'll always produce the "regular" version of the data type...
-         let genericTys = [PtrTypeUnknown | _ <- tyformals] in
-         let monotyss = case Map.lookup (typeFormalName formal) dtSpecMap of
+         let genericTys = [PtrTypeUnknown | _ <- dataTypeTyFormals dt] in
+         let monotyss = case Map.lookup (typeFormalName $ dataTypeName dt) dtSpecMap of
                             Nothing -> []
                             Just m  -> m
          in mapM (monomorphizedDataType dt) (monotyss `eqSetInsert` genericTys)
@@ -352,7 +352,7 @@ monoMarkDataType (cid, repr) dtname monotys = do
   put state { monoDTSpecs = eqSetInsert (monoDTSpecs state) (dtname, monotys) }
   return (cid { ctorTypeName = getMonoName (ctorTypeName cid) monotys }, repr)
 
-monoExternDecl (s, t) = liftM (\t' -> (s, t')) (monoType emptyMonoSubst t)
+monoExternDecl (s, t, isForeign) = liftM (\t' -> (s, t', isForeign)) (monoType emptyMonoSubst t)
 
 -- Monomorphized polymorphic values get different names.
 -- The variant in which every type is an opaque pointer keeps the original
@@ -370,8 +370,8 @@ getMonoFormal (TypeFormal name sr kind) tys =
 allTypesAreBoxed tys =
           List.all (\t -> case t of { PtrTypeUnknown -> True ; _ -> False }) tys
 
-idAppend id s = case id of (GlobalSymbol o) -> (GlobalSymbol $ beforeS o)
-                           (Ident o m)      -> (Ident (beforeS o) m)
+idAppend id s = case id of (GlobalSymbol o alt) -> (GlobalSymbol (beforeS o) alt)
+                           (Ident o m)          -> (Ident (beforeS o) m)
                 where beforeS o = o `T.append` T.pack s
 
 -- Given a definition like   polyfn = { forall ...,  body }

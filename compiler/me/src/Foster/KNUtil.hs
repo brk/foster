@@ -126,7 +126,7 @@ alphaRename' fn = do
           TyVarIL        {}           -> do return $ typ
 
     renameV :: TypedId TypeIL -> Renamed (TypedId TypeIL)
-    renameV (TypedId ty id@(GlobalSymbol t)) = do
+    renameV (TypedId ty id@(GlobalSymbol t _alt)) = do
         -- We want to rename any locally-bound functions that might have
         -- been duplicated by monomorphization.
         if T.pack "<anon_fn"  `T.isInfixOf` t ||
@@ -149,10 +149,10 @@ alphaRename' fn = do
                        return (TypedId ty' id' )
         Just _u' -> error $ "KNUtil.hs: can't rename a variable twice! " ++ show id
 
-    renameI id@(GlobalSymbol t) = do u' <- fresh
-                                     let id' = GlobalSymbol $ t `T.append` T.pack (show u')
-                                     remap id id'
-                                     return id'
+    renameI id@(GlobalSymbol t alt) = do u' <- fresh
+                                         let id' = GlobalSymbol (t `T.append` T.pack (show u')) alt
+                                         remap id id'
+                                         return id'
     renameI id@(Ident s _)      = do u' <- fresh
                                      let id' = Ident s u'
                                      remap id id'
@@ -330,7 +330,7 @@ instance (Show ty, Show rs) => Structured (KNExpr' rs ty) where
             KNArrayPoke  {}     -> text $ "KNArrayPoke "
             KNArrayLit   {}     -> text $ "KNArrayLit  "
             KNTuple   _ vs _    -> text $ "KNTuple     (size " ++ (show $ length vs) ++ ")"
-            KNVar (TypedId t (GlobalSymbol name))
+            KNVar (TypedId t (GlobalSymbol name _))
                                 -> text $ "KNVar(Global):   " ++ T.unpack name ++ " :: " ++ show t
             KNVar (TypedId t i) -> text $ "KNVar(Local):   " ++ show i ++ " :: " ++ show t
             KNTyApp t _e argty  -> text $ "KNTyApp     " ++ show argty ++ "] :: " ++ show t
@@ -446,6 +446,16 @@ kwd  s = dullblue  (text s)
 lkwd s = dullwhite (text s)
 end    = lkwd "end"
 
+showDecl (s, t, isForeign) =
+  case isForeign of
+    NotForeign -> showTyped (text s) t
+    IsForeign nm ->
+      if s == nm
+        then text "foreign import" <+> showTyped (text s) t
+        else text "foreign import" <+> text s <+> text "as" <+> text nm <+> text "::" <+> pretty t
+            
+  where 
+
 instance (Pretty t, Pretty rs, Pretty rs2) => Pretty (Fn rs (KNExpr' rs2 t) t) where
   pretty fn = group (lbrace <+> (hsep (map (\v -> pretty v <+> text "=>") (fnVars fn)))
                     <$> indent 4 (pretty (fnBody fn))
@@ -455,7 +465,7 @@ instance (Pretty t, Pretty rs, Pretty rs2) => Pretty (Fn rs (KNExpr' rs2 t) t) w
 
 instance (Pretty body, Pretty t) => Pretty (ModuleIL body t) where
   pretty m = text "// begin decls"
-            <$> vcat [showTyped (text s) t | (s, t) <- moduleILdecls m]
+            <$> vcat (map showDecl (moduleILdecls m))
             <$> text "// end decls"
             <$> text "// begin datatypes"
             <$> vsep (map pretty $ moduleILdataTypes m)
@@ -485,7 +495,7 @@ instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
                    <$>  pretty e
             KNInlined t0 tb tn old new -> dullgreen (text "inlined") <+> dullwhite (pretty old) <+> text "//" <+> desc (t0, tb, tn)
                                    <$> indent 1 (pretty new)
-            KNVar (TypedId _ (GlobalSymbol name))
+            KNVar (TypedId _ (GlobalSymbol name _alt))
                                 -> (text $ "G:" ++ T.unpack name)
                        --showTyped (text $ "G:" ++ T.unpack name) t
             KNVar (TypedId t i) -> prettyId (TypedId t i)

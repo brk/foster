@@ -29,35 +29,43 @@ primitiveDataTypesP = [
             ,typ "Int32"]
             (Just (CR_Default 1))
             (MissingSourceRange "Text.TextConcat")]
-        (MissingSourceRange "Text")),
+        False (MissingSourceRange "Text")),
 
   (let tf = [] in
    DataType (TypeFormal "Subheap" (MissingSourceRange "Subheap") KindPointerSized) tf
         []
-        (MissingSourceRange "Subheap")),
+        False (MissingSourceRange "Subheap")),
 
   (let tf = [TypeFormal "o"    (MissingSourceRange "Coro.o") KindAnySizeType,
              TypeFormal "i"    (MissingSourceRange "Coro.i") KindAnySizeType,
              TypeFormal "e"    (MissingSourceRange "Coro.e") KindEffect] in
    DataType (TypeFormal "Coro" (MissingSourceRange "Coro")   KindPointerSized) tf
         []
-        (MissingSourceRange "Coro")),
+        False (MissingSourceRange "Coro")),
 
   (let tf = [TypeFormal "o"    (MissingSourceRange "Coro.o") KindAnySizeType,
              TypeFormal "i"    (MissingSourceRange "Coro.i") KindAnySizeType] in
    DataType (TypeFormal "Yield" (MissingSourceRange "Yield") KindEffect) tf
         []
-        (MissingSourceRange "Yield")),
+        False (MissingSourceRange "Yield")),
 
    DataType (TypeFormal "effect.Empty" (MissingSourceRange "effect.Empty") KindEffect) []
         []
-        (MissingSourceRange "effect.Empty"),
+        False (MissingSourceRange "effect.Empty"),
 
   (let tf = [TypeFormal "e"    (MissingSourceRange "effect.Extend.e") KindEffect,
              TypeFormal "t"    (MissingSourceRange "effect.Extend.t") KindEffect] in
    DataType (TypeFormal "effect.Extend" (MissingSourceRange "effect.Extend") KindEffect) tf
         []
-        (MissingSourceRange "effect.Extend"))
+        False (MissingSourceRange "effect.Extend")),
+
+   DataType (TypeFormal "CString" (MissingSourceRange "CString") KindPointerSized) []
+            []
+            False (MissingSourceRange "CString"),
+
+   DataType (TypeFormal "CVoid" (MissingSourceRange "CVoid") KindPointerSized) []
+            []
+            False (MissingSourceRange "CVoid")
 {-
    DataType (TypeFormal "Ndet" (MissingSourceRange "Ndet") KindEffect) []
         []

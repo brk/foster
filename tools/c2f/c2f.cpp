@@ -220,6 +220,8 @@ std::string getNameForAnonymousRecordTypeWithin(const Decl* d, const TagDecl* td
 }
 
 std::string fosterizedTypeName(std::string rv) {
+  if (rv == "_IO_FILE") return "CFile";
+
   if ((!rv.empty()) && islower(rv[0])) {
     rv[0] = toupper(rv[0]);
   }
@@ -1798,6 +1800,23 @@ The corresponding AST to be matched is
       return "v_" + name;
     }
     if (name == "strlen") return "ptrStrlen";
+    if (name == "strcmp") return "ptrStrcmp";
+
+    if (name == "feof")   return "c2f_feof";
+    if (name == "ferror") return "c2f_ferror";
+    if (name == "fwrite") return "c2f_fwrite";
+    if (name == "fread")  return "c2f_fread";
+    if (name == "fopen")  return "c2f_fopen";
+    if (name == "fclose") return "c2f_fclose";
+    if (name == "fputs")  return "c2f_fputs";
+    if (name == "fgetc")  return "c2f_fgetc";
+    if (name == "getc")   return "c2f_fgetc";
+    if (name == "_IO_getc") return "c2f_fgetc";
+    if (name == "fputc")  return "c2f_fputc";
+    if (name == "stdin") return "(c2f_stdin !)";
+    if (name == "stdout") return "(c2f_stdout !)";
+    if (name == "stderr") return "(c2f_stderr !)";
+
     return name;
   }
 

@@ -958,14 +958,14 @@ mkKNLetFuns xs es k = KNLetFuns xs es k
 
 isMainFnVar v =
   case tidIdent v of
-      GlobalSymbol t -> t == T.pack "main"
+      GlobalSymbol t _ -> t == T.pack "main"
       _ -> False
 
 isMainFn fo = do
   b <- freeBinder fo
   return $ isMainFnVar (boundVar b)
 
-isTextPrim (GlobalSymbol t) = t `elem` [T.pack "TextFragment", T.pack "TextConcat"]
+isTextPrim (GlobalSymbol t _) = t `elem` [T.pack "TextFragment", T.pack "TextConcat"]
 isTextPrim _ = False
 
 -- We detect and kill dead bindings for functions here as well.
@@ -1141,9 +1141,9 @@ copyBinder msg b = do
     ccRefresh (Ident t _) = do
         u <- ccUniq
         return $ Ident t u
-    ccRefresh (GlobalSymbol t) = do
+    ccRefresh (GlobalSymbol t alt) = do
         u <- ccUniq
-        return $ GlobalSymbol $ t `T.append` T.pack (show u)
+        return $ GlobalSymbol (t `T.append` T.pack (show u)) alt
 
 copyFreeOcc :: FreeVar t -> WithBinders t (FreeVar t)
 copyFreeOcc fv = do
@@ -1373,7 +1373,7 @@ mknInline subterm mainCont mb_gas = do
              Nothing -> dbgDoc $ text "... ran outta work"
              Just (_subterm, mredex, Nothing) -> do
                 case mredex of
-                  MKLetFuns _u [(bv,_)] _ | tidIdent (boundVar bv) == GlobalSymbol (T.pack "TextFragment") ->
+                  MKLetFuns _u [(bv,_)] _ | tidIdent (boundVar bv) == GlobalSymbol (T.pack "TextFragment") NoRename ->
                     return () -- The top-most function binding will be parentless; don't print about it though.
                   _ -> do
                     do redex <- knOfMK (YesCont mainCont) mredex
@@ -1697,7 +1697,7 @@ data Contifiability =
 
 --analyzeContifiability :: ... -> Compiled Contifiability
 analyzeContifiability knowns = do
-  let isTopLevel (GlobalSymbol _) = True
+  let isTopLevel (GlobalSymbol _ _) = True
       isTopLevel _ = False
   if all isTopLevel $ map (tidIdent.boundVar.fst) knowns
     then return GlobalsArentContifiable

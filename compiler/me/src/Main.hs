@@ -75,7 +75,7 @@ import GHC.Stats
 import System.Mem
 -}
 
-pair2binding (nm, ty, mcid) = TermVarBinding nm (TypedId ty (GlobalSymbol nm), mcid)
+pair2binding (nm, ty, mcid) = TermVarBinding nm (TypedId ty (GlobalSymbol nm NoRename), mcid)
 
 data FnsOrExpr = AllFns   [FnAST TypeAST]
                | NonFn    T.Text (ExprAST TypeAST)
@@ -119,7 +119,7 @@ typecheckSCC showASTs showAnnExprs pauseOnErrors tcenv    scc ctx = do
       ann <- case termVarLookup name (contextBindings ctx) of
                 Just cxb -> do tcSigmaToplevel (TermVarBinding name cxb) ctx expr
                 Nothing  -> do tcSigmaToplevelNonFn ctx expr
-      return (TermVarBinding name (TypedId (typeOf ann) (GlobalSymbol name), Nothing), ann)
+      return (TermVarBinding name (TypedId (typeOf ann) (GlobalSymbol name NoRename), Nothing), ann)
 
     -- Every function in the SCC should typecheck against the input context,
     -- and the resulting context should include the computed types of each
@@ -253,12 +253,12 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
     let filteredDecls = if standalone
                           then filter okForStandalone primitiveDecls
                           else primitiveDecls
-        okForStandalone (nm, _) = nm `elem` ["foster__logf64"
-                                            ,"prim_arrayLength"
-                                            ,"coro_create"
-                                            ,"coro_invoke"
-                                            ,"coro_yield"
-                                            ]
+        okForStandalone (nm, _, _) = nm `elem` ["foster__logf64"
+                                               ,"prim_arrayLength"
+                                               ,"coro_create"
+                                               ,"coro_invoke"
+                                               ,"coro_yield"
+                                               ]
 
     let primBindings = computeContextBindings' (filteredDecls ++ primopDecls)
     let allCtorTypes = concatMap extractCtorTypes dts
@@ -318,8 +318,14 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
              tyvarsMap    = Map.fromList []
              unbind (TermVarBinding s t) = (s, t)
 
-   computeContextBindings' :: [(String, TypeAST)] -> [ContextBinding TypeAST]
-   computeContextBindings' decls = map (\(s,t) -> pair2binding (T.pack s, t, Nothing)) decls
+   mkBinding' (s, t, isForeign) =
+     case isForeign of
+       NotForeign   -> pair2binding (T.pack s,  t, Nothing)
+       IsForeign nm -> TermVarBinding (T.pack s)
+                         (TypedId t (GlobalSymbol (T.pack s) (RenameTo $ T.pack nm)), Nothing)
+
+   computeContextBindings' :: [(String, TypeAST, IsForeignDecl)] -> [ContextBinding TypeAST]
+   computeContextBindings' decls = map mkBinding' decls
 
    computeContextBindings :: [(String, TypeAST, CtorId)] -> [ContextBinding TypeAST]
    computeContextBindings decls = map (\(s,t,cid) -> pair2binding (T.pack s, t, Just cid)) decls
@@ -425,7 +431,7 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
         buildExprSCC' [] = error "Main.hs: Can't build SCC of no functions!"
         buildExprSCC' es = let call_of_main = AnnCall (annotForRange $ MissingSourceRange "buildExprSCC'main!") unitTypeTC
                                                 (E_AnnVar (annotForRange $ MissingSourceRange "buildExprSCC'main")
-                                                          (TypedId mainty (GlobalSymbol $ T.pack "main"), Nothing))
+                                                          (TypedId mainty (GlobalSymbol (T.pack "main") NoRename), Nothing))
                                                 []
                                mainty = FnTypeTC [unitTypeTC] unitTypeTC (error "fx.bESCC") (UniConst FastCC) (UniConst FT_Proc)
                           in foldr build call_of_main es
@@ -435,7 +441,7 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
                build binds body = case binds of
                 [] -> body
                 [(nm, expr)] | not (isFn expr) ->
-                    AnnLetVar emptyAnnot (GlobalSymbol nm) expr body
+                    AnnLetVar emptyAnnot (GlobalSymbol nm NoRename) expr body
                 fnbinds ->
                     let fnes = map snd fnbinds in
                     if all isFn fnes
@@ -453,7 +459,7 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
           where
             funcnames = map fnAstName (moduleASTfunctions mAST)
             valuenames = Set.fromList funcnames
-            has_no_defn (s, _) = Set.notMember (T.pack s) valuenames
+            has_no_defn (s, _, _) = Set.notMember (T.pack s) valuenames
 
    processTcConstraints :: [(TcConstraint, SourceRange)] -> Tc ()
    processTcConstraints constraints = mapM_ processConstraint constraints
@@ -749,19 +755,23 @@ lowerModule (tc_time, kmod) = do
 
      (mkn_time, pccmod) <- ioTime $ do
           assocBinders <- sequence [do r <- newOrdRef Nothing
-                                       let xid = GlobalSymbol $ T.pack s
+                                       let renam = case isForeign of
+                                                     NotForeign -> NoRename
+                                                     IsForeign nm -> RenameTo (T.pack nm)
+                                       let xid = GlobalSymbol (T.pack s) renam
                                        let tid = TypedId ty xid
                                        let b = MKBound tid r
                                        return (xid, b)
-                                   | (s, ty) <- ("main", FnType [] (TupleType []) CCC FT_Proc)
+                                   | (s, ty, isForeign) <- ("main", FnType [] (TupleType []) CCC FT_Proc, NotForeign)
                                                 : moduleILdecls monomod2a]
 
           let mainBinder = head assocBinders
           let binders = Map.fromList assocBinders
+          let bndTy (_, t) = t
           mk <- evalStateT 
-                  (mkOfKNMod (moduleILbody monomod2a) (snd mainBinder))
+                  (mkOfKNMod (moduleILbody monomod2a) (bndTy mainBinder))
                   binders
-          mknInline mk (snd mainBinder) (getInliningGas flags)
+          mknInline mk (bndTy mainBinder) (getInliningGas flags)
           uref <- gets ccUniqRef
           pcc@(PreCloConv (cffns,_topbinds)) <- pccOfTopTerm uref mk
 
