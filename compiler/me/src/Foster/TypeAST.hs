@@ -175,7 +175,7 @@ primTyVars tyvars = map (\v -> (v, KindAnySizeType)) tyvars
 -- These names correspond to (the C symbols of)
 -- functions implemented by the Foster runtime.
 
-primitiveDecls =
+primitiveDecls = map (\(n,t) -> (n,t,NotForeign)) $
     [(,) "expect_i32"  $ mkProcType [i32] []
     ,(,)  "print_i32"  $ mkProcType [i32] []
     ,(,) "expect_i32x" $ mkProcType [i32] []
@@ -209,6 +209,10 @@ primitiveDecls =
 
     ,(,) "expect_newline" $ mkProcType [] []
     ,(,) "print_newline" $ mkProcType [] []
+
+    ,(,) "cstr" $ mkProcType [ArrayTypeAST i8] [TyAppAST (TyConAST "CString") []]
+    ,(,) "cdataptr_unsafe" $ mkProcType [ArrayTypeAST i8, i32] [TyAppAST (TyConAST "CString") []]
+    ,(,) "cstr_free" $ mkProcType [TyAppAST (TyConAST "CString") []] []
 
     ,(,) "memcpy_i8_to_from_at_len" $ mkProcType [ArrayTypeAST i8,
                                                 ArrayTypeAST i8, i32, i32] []
@@ -283,7 +287,7 @@ primitiveDecls =
     ,(,) "foster_subheap_shrink"   $ mkProcType [fosSubheapType] []
     ]
 
-primopDecls = map (\(name, (ty, _op)) -> (name, ty)) $ Map.toList gFosterPrimOpsTable
+primopDecls = map (\(name, (ty, _op)) -> (name, ty, NotForeign)) $ Map.toList gFosterPrimOpsTable
 
 intSize bitsize = show $ pretty bitsize
 

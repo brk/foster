@@ -68,7 +68,7 @@ ccFreshId txt = do u <- ccUniq
                    return $ Ident txt u
 
 ccRefreshLocal :: Ident -> Compiled Ident
-ccRefreshLocal (GlobalSymbol t) = return $ GlobalSymbol t
+ccRefreshLocal (GlobalSymbol t alt) = return $ GlobalSymbol t alt
 ccRefreshLocal (Ident t _) = do u <- ccUniq
                                 return $ Ident t u
 

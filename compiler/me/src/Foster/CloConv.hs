@@ -113,7 +113,7 @@ closureConvertAndLift dataSigs u m =
                        initialState in
     (ModuleIL {
           moduleILbody        = CCBody (Map.elems $ ilmProcs st) (ilmVals st)
-        , moduleILdecls       = map (\(s,t) -> (s, monoToLL t)) (moduleILdecls m)
+        , moduleILdecls       = map (\(s,t,isForeign) -> (s, monoToLL t, isForeign)) (moduleILdecls m)
         , moduleILdataTypes   = map (fmap monoToLL) (moduleILdataTypes m)
         , moduleILprimTypes   = map (fmap monoToLL) (moduleILprimTypes m)
         , moduleILsourceLines = moduleILsourceLines m
@@ -463,7 +463,7 @@ closureConvertedProc procArgs f newbody = do
 
  
 mkGlobal (TypedId t i) = mkGlobalWithType t i where
-  mkGlobalWithType ty (Ident t u) = TypedId ty (GlobalSymbol $ T.pack (T.unpack t ++ show u))
+  mkGlobalWithType ty (Ident t u) = TypedId ty (GlobalSymbol (T.pack (T.unpack t ++ show u)) NoRename)
   mkGlobalWithType ty global      = TypedId ty global
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

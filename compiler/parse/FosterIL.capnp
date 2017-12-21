@@ -270,6 +270,7 @@ struct PbOccurrence {
 struct Decl {
   name   @ 0 : Text;
   type   @ 1 : Type;
+  isForeign @ 2 : Bool;
 }
 
 struct PbToplevelItem {

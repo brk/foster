@@ -85,7 +85,7 @@ kNormalizeModule m ctx = do
     let allDataTypes = prims' ++ dts'
     let dtypeMap = Map.fromList [(typeFormalName (dataTypeName dt), dt) | dt <- allDataTypes]
     let st = (ctx, contextDataTypes ctx, dtypeMap)
-    decls' <- mapM (\(s,t) -> do t' <- tcToIL st t ; return (s, t')) (moduleILdecls m)
+    decls' <- mapM (\(s,t, isForeign) -> do t' <- tcToIL st t ; return (s, t', isForeign)) (moduleILdecls m)
     body' <- do { ctors <- sequence $ concatMap (kNormalCtors st) allDataTypes
                 ; body  <- kNormalize st (moduleILbody m)
                 ; return $ wrapFns ctors body
@@ -321,7 +321,7 @@ kNormalize st expr =
                   kid <- knFresh "kont"
                   let kty = FnTypeIL [] t FastCC FT_Proc
                   let kontOf body = Fn {
-                          fnVar      = TypedId kty (GlobalSymbol (T.pack $ show kid))
+                          fnVar      = TypedId kty (GlobalSymbol (T.pack $ show kid) NoRename)
                         , fnVars     = []
                         , fnBody     = body
                         , fnIsRec    = ()
@@ -502,13 +502,13 @@ dtUnboxedRepr dt =
 
 -- Wrinkle: need to extend the context used for checking ctors!
 convertDT :: KNState -> DataType TypeTC -> KN (DataType TypeIL)
-convertDT st (DataType dtName tyformals ctors range) = do
+convertDT st (DataType dtName tyformals ctors isForeign range) = do
   -- f :: TypeTC -> Tc TypeIL
   let f = tcToIL st
   cts <- mapM (convertDataCtor f) ctors
 
   optrep <- tcShouldUseOptimizedCtorReprs
-  let dt = DataType dtName tyformals cts range
+  let dt = DataType dtName tyformals cts isForeign range
   let reprMap = Map.fromList $ optimizedCtorRepresesentations dt
   return $ dt { dataTypeCtors = withDataTypeCtors dt (getCtorRepr reprMap optrep) }
     where
@@ -1326,7 +1326,7 @@ computeInfo census headers =
 
 ccFreshen :: Ident -> Compiled Ident
 ccFreshen (Ident name _) = ccFreshId name
-ccFreshen id@(GlobalSymbol  _) = error $ "KNExpr.hs: cannot freshen global " ++ show id
+ccFreshen id@(GlobalSymbol _ _) = error $ "KNExpr.hs: cannot freshen global " ++ show id
 ccFreshenTid (TypedId t id) = do id' <- ccFreshen id
                                  return $ TypedId t id'
 
@@ -1554,8 +1554,8 @@ selectUsefulArgs id' _ ty = error $ "KNExpr.hs wasn't expecting a non-function t
 -- later on down the road. So for pure bindings, we check to see if they are
 -- dead and should be dropped.
 
-mkGlobalWithType ty (Ident t u) = TypedId ty (GlobalSymbol $ T.pack (T.unpack t ++ show u))
-mkGlobalWithType _  (GlobalSymbol _) = error $ "KNExpr.hs: mkGlobal(WithType) of global!"
+mkGlobalWithType ty (Ident t u) = TypedId ty (GlobalSymbol (T.pack (T.unpack t ++ show u)) NoRename)
+mkGlobalWithType _  (GlobalSymbol _ _) = error $ "KNExpr.hs: mkGlobal(WithType) of global!"
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -1809,7 +1809,8 @@ freshenId id = do id' <- freshenId' id
                   return id'
 
 freshenId' :: SrcId -> In ResId
-freshenId' (GlobalSymbol name) = -- error $ "can't freshen global symbol " ++ (T.unpack name)
+freshenId' (GlobalSymbol name (RenameTo _alt)) = error $ "KNExpr.hs: freshenId' can't freshen global symbol " ++ (T.unpack name)
+freshenId' (GlobalSymbol name NoRename) = -- error $ "can't freshen global symbol " ++ (T.unpack name)
      do u <- newUniq
         return $ Ident name u
 
@@ -2157,7 +2158,7 @@ notDead _    = True
 -- We need to force TextFragment to stay around because it will be
 -- referenced by the standard library.
 relevant occst id =
-  let isRelevant = notDead occst || id == (GlobalSymbol $ T.pack "TextFragment")
+  let isRelevant = notDead occst || id == (GlobalSymbol (T.pack "TextFragment") NoRename)
   in --trace ("relevant " ++ show occst ++ " " ++ show id ++ " = " ++ show isRelevant) $
        isRelevant
 -- }}}

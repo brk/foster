@@ -111,7 +111,11 @@ instance (Pretty ty, IsQuietPlaceholder ty) => Pretty (ModuleExpr ty) where
 
 prettyImport (ident, path) = text "snafuinclude" <+> text (T.unpack ident) <+> text (T.unpack path) <> text ";"
 
-prettyItem (ToplevelDecl (s, t)) = showTyped (text s) t
+prettyItem (ToplevelDecl (s, t, NotForeign)) = showTyped (text s) t
+prettyItem (ToplevelDecl (s, t, IsForeign nm)) =
+  if s == nm
+    then text "foreign import" <+> showTyped (text s) t
+    else text "foreign import" <+> text s <+> text "as" <+> text nm <+> text "::" <+> pretty t
 prettyItem (ToplevelDefn (_, E_FnAST _ fn)) = prettyTopLevelFn fn
 prettyItem (ToplevelDefn (s, e)) = text s <+> text "=" <+> pretty e <> text ";"
 prettyItem (ToplevelData dt) = pretty dt

@@ -96,8 +96,8 @@ liftCtorInfo f (CtorInfo cid datactor) =
   liftM (CtorInfo cid) (liftDataCtor f datactor)
 
 liftDataType :: Monad m => (t1 -> m t2) -> DataType t1 -> m (DataType t2)
-liftDataType f (DataType nm formals ctors srcrange) =
-  liftM (\cs' ->DataType nm formals cs' srcrange) (mapM (liftDataCtor f) ctors)
+liftDataType f (DataType nm formals ctors isForeign srcrange) =
+  liftM (\cs' ->DataType nm formals cs'   isForeign srcrange) (mapM (liftDataCtor f) ctors)
 
 liftDataCtor :: Monad m => (t1 -> m t2) -> DataCtor t1 -> m (DataCtor t2)
 liftDataCtor f (DataCtor dataCtorName formals types repr range) = do

@@ -214,7 +214,7 @@ orMayGC _            maygc = maygc
 
 canGCPrim (PrimIntTrunc {}) = WillNotGC
 canGCPrim (PrimOp       {}) = WillNotGC
-canGCPrim (NamedPrim (TypedId _ (GlobalSymbol name))) =
+canGCPrim (NamedPrim (TypedId _ (GlobalSymbol name _alt))) =
                     if willNotGCGlobal name then WillNotGC
                                             else GCUnknown "canGCPrim:global"
 canGCPrim _ = GCUnknown "canGCPrim:other"
