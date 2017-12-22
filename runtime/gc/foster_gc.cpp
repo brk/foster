@@ -2168,19 +2168,6 @@ public:
       }
       fprintf(stats,  "allocs_of_size_more: %12" PRId64 ",\n", hpstats.bytes_req_per_alloc.back());
     }
-
-    if (!gcglobals.alloc_site_counters.empty()) {
-      fprintf(stats, "'allocation_sites' : [\n");
-      for (auto it : gcglobals.alloc_site_counters) {
-        typemap* map = it.first.second;
-        int64_t bytes_allocated = map->cell_size * it.second;
-        fprintf(stats, "{ 'typemap' : %p , 'allocations' : %12" PRId64 ", 'alloc_size':%" PRId64
-                        ", 'bytes_allocated': %10" PRId64 ", 'alloc_percent':%f,",
-                        map, it.second, map->cell_size, bytes_allocated, (double(bytes_allocated) * 100.0) / approx_bytes);
-        fprintf(stats, "  'from' : \"%s\" },\n", it.first.first);
-      }
-      fprintf(stats, "],\n");
-    }
   }
   // }}}
 
@@ -2611,6 +2598,25 @@ void gclog_time(const char* msg, base::TimeDelta d, FILE* json) {
   }
 }
 
+void dump_alloc_site_stats(FILE* stats) {
+  if (!gcglobals.alloc_site_counters.empty()) {
+    fprintf(stats, "'allocation_sites' : [\n");
+    for (auto it : gcglobals.alloc_site_counters) {
+      typemap* map = it.first.second;
+      int64_t bytes_allocated = map->cell_size * it.second;
+      fprintf(stats, "{ 'typemap' : %p , 'allocations' : %12" PRId64 ", 'alloc_size':%" PRId64
+                      ", 'bytes_allocated': %10" PRId64
+                      // ", 'alloc_percent':%f,"
+                      ,
+                      map, it.second, map->cell_size, bytes_allocated
+                      //, (double(bytes_allocated) * 100.0) / approx_bytes
+                      );
+      fprintf(stats, "  'from' : \"%s\" },\n", it.first.first);
+    }
+    fprintf(stats, "],\n");
+  }
+}
+
 FILE* print_timing_stats() {
   base::TimeTicks fin = base::TimeTicks::Now();
   base::TimeDelta total_elapsed = fin - gcglobals.init_start;
@@ -2631,6 +2637,8 @@ FILE* print_timing_stats() {
     base::StatisticsRecorder::WriteGraph("", &output);
     fprintf(gclog, "%s\n", output.c_str());
   }
+
+  dump_alloc_site_stats(gclog);
 
   fprintf(gclog, "'Num_Big_Stackwalks': %d\n", gcglobals.num_big_stackwalks);
   fprintf(gclog, "'Num_GCs_Triggered': %d\n", gcglobals.num_gcs_triggered);
