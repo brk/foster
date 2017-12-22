@@ -26,7 +26,7 @@ getCtorInfo :: [DataType t] -> Map CtorName [CtorInfo t]
 getCtorInfo datatypes = Map.unionsWith (++) $ map getCtorInfoList datatypes
   where
     getCtorInfoList :: DataType t -> Map CtorName [CtorInfo t]
-    getCtorInfoList (DataType formal _tyformals ctors _range) =
+    getCtorInfoList (DataType formal _tyformals ctors _isForeign _range) =
           Map.fromList $ map (buildCtorInfo (typeFormalName formal)) ctors
 
     buildCtorInfo :: DataTypeName -> DataCtor t
@@ -61,7 +61,7 @@ dataTypeSigs :: Show t => [DataType t] -> Map DataTypeName DataTypeSig
 dataTypeSigs datatypes = Map.fromList $ map ctorIdSet datatypes
  where
   ctorIdSet :: Show t => DataType t -> (DataTypeName, DataTypeSig)
-  ctorIdSet (DataType formal _tyformals ctors _range) =
+  ctorIdSet (DataType formal _tyformals ctors _isForeign _range) =
       (typeFormalName formal,
        DataTypeSig (Map.fromList $ map (ctorIdFor (typeFormalName formal)) ctors))
 

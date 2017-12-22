@@ -232,6 +232,14 @@ bytesFoldlBytes_Alt2 = { ba => f => acc =>
             0 (bytesLength ba) acc;
 };
 
+bytesFoldlFragments :: forall (a:Type) { Bytes => { Array Int8 => Int64 => Int64 => a => a } => a => a };
+bytesFoldlFragments = { ba => f => acc =>
+  bytesFoldlFragmentsFromLen ba f 0 (bytesLength ba) acc
+};
+
+// The provided ``f`` argument will be passed a sequence of
+// primitive byte arrays, along with offset and length information
+// describing the logically referenced subsequence of bytes.
 bytesFoldlFragmentsFromLen :: forall (a:Type) { Bytes => { Array Int8 => Int64 => Int64 => a => a }
                                      => Int64 => Int64 => a => a };
 bytesFoldlFragmentsFromLen = { bytes => f => offset => len => acc =>
@@ -256,11 +264,6 @@ bytesFoldlFragmentsFromLen = { bytes => f => offset => len => acc =>
      of $BytesEmpty -> acc
    end
  end
-};
-
-bytesFoldlFragments :: forall (a:Type) { Bytes => { Array Int8 => Int64 => Int64 => a => a } => a => a };
-bytesFoldlFragments = { ba => f => acc =>
-  bytesFoldlFragmentsFromLen ba f 0 (bytesLength ba) acc
 };
 
 bytesFlattenRaw :: { Bytes => Array Int8 };

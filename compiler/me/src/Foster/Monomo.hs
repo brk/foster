@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts, Strict #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2011 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -105,6 +105,7 @@ monoKN subst inTypeExpr e =
                                  liftM2 (KNCall t'') (qv v) (mapM qv vs)
   KNInlined {}    -> error $ "Monomo.hs expects inlining to run after monomorphization!"
   KNNotInlined {} -> error $ "Monomo.hs expects inlining to run after monomorphization!"
+  KNRelocDoms ids e -> liftM (KNRelocDoms ids) (qq e)
   -- The cases involving sub-expressions are syntactically heavier,
   -- but are still basically trivially inductive.
 
@@ -139,13 +140,13 @@ monoKN subst inTypeExpr e =
     unitid <- lift $ ccFreshId $ T.pack "unit"
     gofnidL <- lift $ ccFreshId $ T.pack "effect_handler.go"
     let Ident prefix uniq = gofnidL
-    gofnidG <- return $ GlobalSymbol $ T.pack ("_" ++ T.unpack prefix ++ "/" ++ show uniq)
+    gofnidG <- return $ GlobalSymbol (T.pack ("_" ++ T.unpack prefix ++ "/" ++ show uniq)) NoRename
     actionid   <- lift $ ccFreshId $ T.pack "action"
 
     let Ident resprefix resuniq = resumeid
     let Ident resbareprefix resbareuniq = resumebareid
-    resumeidG <- return $ GlobalSymbol $ T.pack ("_" ++ T.unpack resprefix ++ "/" ++ show resuniq)
-    resumebareidG <- return $ GlobalSymbol $ T.pack ("_" ++ T.unpack resbareprefix ++ "/" ++ show resbareuniq)
+    resumeidG <- return $ GlobalSymbol (T.pack ("_" ++ T.unpack resprefix ++ "/" ++ show resuniq)) NoRename
+    resumebareidG <- return $ GlobalSymbol (T.pack ("_" ++ T.unpack resbareprefix ++ "/" ++ show resbareuniq)) NoRename
 
     gencoroid  <- lift $ ccFreshId $ T.pack "gencoro"
 
@@ -423,7 +424,7 @@ monomorphizedEffectDeclsFrom eds specs = do
        monomorphizedEffectDecl (EffectDecl name formals ctors range) args = do
                  ctors' <- mapM (monomorphizedEffectCtor subst) ctors
                  return $    (DataType (getMonoFormal name args) []
-                                       ctors' range)
+                                       ctors' False range)
                                where
          subst = extendSubst emptyMonoSubst formals args
 
@@ -448,10 +449,10 @@ monomorphizedDataTypesFrom dts specs = do
    dts' <- mapM monomorphizedDataTypes dts
    return $ concat dts'
  where monomorphizedDataType :: DataType TypeIL -> [MonoType] -> Mono (DataType MonoType)
-       monomorphizedDataType (DataType name formals ctors range) args = do
+       monomorphizedDataType (DataType name formals ctors isForeign range) args = do
                  ctors' <- mapM (monomorphizedCtor subst) ctors
                  return $    (DataType (getMonoFormal name args) []
-                                       ctors' range)
+                                       ctors' isForeign range)
                                where
          subst = extendSubst emptyMonoSubst formals args
 
@@ -464,10 +465,10 @@ monomorphizedDataTypesFrom dts specs = do
        dtSpecMap = mapAllFromList specs
 
        monomorphizedDataTypes :: DataType TypeIL -> Mono [DataType MonoType]
-       monomorphizedDataTypes dt@(DataType formal tyformals _ _range) =
+       monomorphizedDataTypes dt =
          -- We'll always produce the "regular" version of the data type...
-         let genericTys = [PtrTypeUnknown | _ <- tyformals] in
-         let monotyss = case Map.lookup (typeFormalName formal) dtSpecMap of
+         let genericTys = [PtrTypeUnknown | _ <- dataTypeTyFormals dt] in
+         let monotyss = case Map.lookup (typeFormalName $ dataTypeName dt) dtSpecMap of
                             Nothing -> []
                             Just m  -> m
          in mapM (monomorphizedDataType dt) (monotyss `eqSetInsert` genericTys)
@@ -492,7 +493,7 @@ monoMarkDataType (cid, repr) dtname monotys = do
   put state { monoDTSpecs = eqSetInsert (monoDTSpecs state) (dtname, monotys) }
   return (cid { ctorTypeName = getMonoName (ctorTypeName cid) monotys }, repr)
 
-monoExternDecl (s, t) = liftM (\t' -> (s, t')) (monoType emptyMonoSubst t)
+monoExternDecl (s, t, isForeign) = liftM (\t' -> (s, t', isForeign)) (monoType emptyMonoSubst t)
 
 
 -- Monomorphized polymorphic values get different names.
@@ -511,8 +512,8 @@ getMonoFormal (TypeFormal name sr kind) tys =
 allTypesAreBoxed tys =
           List.all (\t -> case t of { PtrTypeUnknown -> True ; _ -> False }) tys
 
-idAppend id s = case id of (GlobalSymbol o) -> (GlobalSymbol $ beforeS o)
-                           (Ident o m)      -> (Ident (beforeS o) m)
+idAppend id s = case id of (GlobalSymbol o alt) -> (GlobalSymbol (beforeS o) alt)
+                           (Ident o m)          -> (Ident (beforeS o) m)
                 where beforeS o = o `T.append` T.pack s
 
 -- Given a definition like   polyfn = { forall ...,  body }
@@ -711,6 +712,7 @@ whenMonoWanted id action = do
     else return ()
 
 computeRecursivenessAnnotations fns ids = map annotate fns where
+  computeIsFnRec fn ids = computeIsFnRec' (freeIdents fn) ids
   annotate fn = Fn { fnVar   = fnVar fn
                    , fnVars  = fnVars fn
                    , fnBody  = fnBody fn

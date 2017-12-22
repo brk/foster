@@ -3,7 +3,7 @@
 sudo apt-get install --yes build-essential g++ g++-multilib git gnuplot \
                        python-pygments python-matplotlib  python-scipy python-sphinx \
                        python-pandas python-pip python-numpy python-qt4 \
-                       python-qscintilla2 libqscintilla2-dev z3
+                       python-qscintilla2 libqscintilla2-dev z3 libdw-dev
 sudo apt-get install --yes vim vim-gnome \
               curl exuberant-ctags aptitude libcairo2-dev libc6-dev default-jdk
 sudo apt-get install --yes m4 ministat meld \
@@ -46,7 +46,7 @@ curl https://beyondgrep.com/ack-2.20-single-file > ~/.local/bin/ack && chmod 075
   ./configure --prefix=$HOME/.local && make && make install
   cd ..
 
-  wget https://downloads.haskell.org/~ghc/8.2.2/ghc-8.2.2-x86_64-deb8-linux.tar.xz
+  wget https://downloads.haskell.org/~ghc/8.2.2/ghc-8.2.2-x86_64-deb8-linux-dwarf.tar.xz
   tar xf ghc-*.xz
   rm ghc-*.xz
   cd ghc-* && ./configure --prefix=$HOME/.local/ghc-8.2.2 && make install && cd ..
@@ -97,16 +97,12 @@ mv tmp.txt ~/.cabal/config
 
 hg clone https://bitbucket.org/b/sw ~/sw
 hg clone https://bitbucket.org/b/foster ~/foster
+hg clone https://bitbucket.org/b/minuproto ~/sw/local/minuproto
 
 cd ~/foster/compiler/me
 cabal sandbox init
-
-hg clone https://bitbucket.org/b/minuproto ~/sw/local/minuproto
-cd ~/sw/local/minuproto
-cabal --sandbox-config-file=$HOME/foster/compiler/me/cabal.sandbox.config install
-
-cd ~/foster/compiler/me
 cabal update
+cabal sandbox add-source ~/sw/local/minuproto
 cabal install happy alex
 cabal install --only-dependencies
 

@@ -278,18 +278,18 @@ GlobalVariable* emitTypeMap(
 }
 
 // The struct type is
-// { { { i8** }, \2*, void (i8*)*, i8*, \2*, i32 }, i32 }
+// { { { i8** }, void (i8*)*, i8*, \2*, i32 }, i32 }
 // {
 //   { <coro_context>           0
-//   , sibling         <---    [1]
-//   , fn              <---     2
-//   , env             <---    (3)
-//   , invoker         <---    [4]
-//   , indirect_self            5
+//   , fn              <---     1
+//   , env             <---    (2)
+//   , parent          <---    [3]
+//   , indirect_self            4
 //   , status
 //   }
 //   argty
 // }
+// See also libfoster_gc_roots.h
 GlobalVariable* emitCoroTypeMap(TypeAST* typ, StructType* sty,
                                 llvm::Module* mod) {
   bool hasKnownTypes = sty->getNumElements() == 2;
@@ -308,7 +308,7 @@ GlobalVariable* emitCoroTypeMap(TypeAST* typ, StructType* sty,
   // The pointer-to-function will be automatically skipped, and the remaining
   // pointers are precisely those which we want the GC to notice.
   CtorRepr bogusCtor; bogusCtor.smallId = -1;
-  std::vector<int> v; v.push_back(0); v.push_back(2); v.push_back(5);
+  std::vector<int> v; v.push_back(0); v.push_back(1); v.push_back(4);
   return emitTypeMap(typ, sty, ss.str(), NotArray, bogusCtor, mod, v);
 }
 

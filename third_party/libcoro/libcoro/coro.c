@@ -217,7 +217,7 @@ trampoline (int sig)
 # endif
 
 void
-coro_create (coro_context *ctx, coro_func coro, void *arg, void *sptr, long ssize)
+libcoro__coro_create (coro_context *ctx, coro_func coro, void *arg, void *sptr, long ssize)
 {
   coro_context nctx;
 # if CORO_SJLJ
@@ -421,7 +421,7 @@ coro_transfer (coro_context *prev, coro_context *next)
 }
 
 void
-coro_create (coro_context *ctx, coro_func coro, void *arg, void *sptr, long ssize)
+libcoro__coro_create (coro_context *ctx, coro_func coro, void *arg, void *sptr, long ssize)
 {
   static coro_context nctx;
   static int once;

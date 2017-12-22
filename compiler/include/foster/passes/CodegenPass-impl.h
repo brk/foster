@@ -60,6 +60,11 @@ void extendWithImplementationSpecificProcs(CodegenPass* _pass,
                                            std::vector<LLProc*>& procs);
 llvm::Constant* getConstantArrayOfString(llvm::StringRef s, bool addNull=true);
 
+void codegenAutoWrapper(llvm::Function* F,
+                        llvm::FunctionType* wrappedTy,
+                           std::string symbolName,
+                           CodegenPass* pass);
+
 ////////////////////////////////////////////////////////////////////
 
 inline bool operator<(const CtorId& a, const CtorId& b) {

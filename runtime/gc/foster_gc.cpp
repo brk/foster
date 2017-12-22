@@ -41,7 +41,8 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 #define TRACK_BYTES_ALLOCATED_PINHOOK 0
 #define GC_BEFORE_EVERY_MEMALLOC_CELL 0
 #define DEBUG_INITIALIZE_ALLOCATIONS  0
-#define  SEMA_INITIALIZE_ALLOCATIONS  0
+#define FORCE_INITIALIZE_ALLOCATIONS  0 // Initialize even when the middle end doesn't think it's necessary
+#define ELIDE_INITIALIZE_ALLOCATIONS  0 // Unsafe: ignore requests to initialize allocated memory.
 #define MEMSET_FREED_MEMORY           0
 // This included file may un/re-define these parameters, providing
 // a way of easily overriding-without-overwriting the defaults.
@@ -344,7 +345,8 @@ struct large_array_allocator {
     void* base = malloc(total_bytes + 8);
     heap_array* allot = align_as_array(base);
 
-    if (init && SEMA_INITIALIZE_ALLOCATIONS) { memset((void*) base, 0x00, total_bytes + 8); }
+    if (FORCE_INITIALIZE_ALLOCATIONS ||
+      (init && !ELIDE_INITIALIZE_ALLOCATIONS)) { memset((void*) base, 0x00, total_bytes + 8); }
     allot->set_header(arr_elt_map, mark_bits_current_value);
     allot->set_num_elts(num_elts);
     if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_array(total_bytes); }
@@ -883,7 +885,8 @@ public:
                                   int64_t  total_bytes,
                                   bool     init) {
     heap_array* allot = static_cast<heap_array*>(bumper->prechecked_alloc_noinit(total_bytes));
-    if (init && SEMA_INITIALIZE_ALLOCATIONS) { memset((void*) allot, 0x00, total_bytes); }
+    if (FORCE_INITIALIZE_ALLOCATIONS ||
+      (init && !ELIDE_INITIALIZE_ALLOCATIONS)) { memset((void*) allot, 0x00, total_bytes); }
     //fprintf(gclog, "alloc'a %d, bump = %p, low bits: %x\n", int(total_bytes), bump, intptr_t(bump) & 0xF);
     allot->set_header(arr_elt_map, this->mark_bits_current_value);
     allot->set_num_elts(num_elts);
@@ -1118,15 +1121,13 @@ public:
   void scan_with_map_and_arr(heap_cell* cell, const typemap& map,
                              heap_array* arr, int depth) {
     //fprintf(gclog, "copying %lld cell %p, map np %d, name %s\n", cell_size, cell, map.numEntries, map.name); fflush(gclog);
-    if (arr) {
-      // TODO for byte arrays and such, we can skip this loop...
+    if (!arr) {
+      scan_with_map(from_tidy(cell->body_addr()), map, depth);
+    } else if (map.numOffsets > 0) { // Skip this loop for int arrays and such.
       int64_t numcells = arr->num_elts();
       for (int64_t cellnum = 0; cellnum < numcells; ++cellnum) {
-        //fprintf(gclog, "num cells in array: %lld, curr: %lld\n", numcells, cellnum);
         scan_with_map(arr->elt_body(cellnum, map.cell_size), map, depth);
       }
-    } else {
-        scan_with_map(from_tidy(cell->body_addr()), map, depth);
     }
 
     if (map.isCoro) {
@@ -1291,11 +1292,11 @@ public:
     foster_bare_coro*  coro = *coro_slot;
     if (coro) {
       if (ENABLE_GCLOG) {
-        fprintf(gclog, "==========visiting current ccoro: %p\n", coro); fflush(gclog);
+        fprintf(gclog, "==========visiting current coro: %p\n", coro); fflush(gclog);
       }
       this->visit_root((unchecked_ptr*)coro_slot, NULL);
       if (ENABLE_GCLOG) {
-        fprintf(gclog, "==========visited current ccoro: %p\n", coro); fflush(gclog);
+        fprintf(gclog, "==========visited current coro: %p\n", coro); fflush(gclog);
       }
     }
 
@@ -1388,7 +1389,7 @@ public:
     auto num_marked_lines = count_marked_lines_for_frame15(linemap);
 
     if (ENABLE_GCLOG) {
-      fprintf(gclog, "frame %d: ", fid);
+      fprintf(gclog, "frame %u: ", fid);
       for(int i = 0;i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", (linemap[i] == 0) ? '_' : 'd'); }
       fprintf(gclog, "\n");
     }
@@ -1771,7 +1772,8 @@ class copying_gc : public heap {
                                       int64_t  total_bytes,
                                       bool     init) {
         heap_array* allot = static_cast<heap_array*>(bump);
-        if (init && SEMA_INITIALIZE_ALLOCATIONS) {
+        if (FORCE_INITIALIZE_ALLOCATIONS ||
+           (init && !ELIDE_INITIALIZE_ALLOCATIONS)) {
           memset(bump, 0x00, total_bytes);
         }
         incr_by(bump, total_bytes);
@@ -2164,19 +2166,6 @@ public:
       }
       fprintf(stats,  "allocs_of_size_more: %12" PRId64 ",\n", hpstats.bytes_req_per_alloc.back());
     }
-
-    if (!gcglobals.alloc_site_counters.empty()) {
-      fprintf(stats, "'allocation_sites' : [\n");
-      for (auto it : gcglobals.alloc_site_counters) {
-        typemap* map = it.first.second;
-        int64_t bytes_allocated = map->cell_size * it.second;
-        fprintf(stats, "{ 'typemap' : %p , 'allocations' : %12" PRId64 ", 'alloc_size':%" PRId64
-                        ", 'bytes_allocated': %10" PRId64 ", 'alloc_percent':%f,",
-                        map, it.second, map->cell_size, bytes_allocated, (double(bytes_allocated) * 100.0) / approx_bytes);
-        fprintf(stats, "  'from' : \"%s\" },\n", it.first.first);
-      }
-      fprintf(stats, "],\n");
-    }
   }
   // }}}
 
@@ -2201,11 +2190,11 @@ void copying_gc::gc() {
   foster_bare_coro*  coro = *coro_slot;
   if (coro) {
     if (ENABLE_GCLOG) {
-      fprintf(gclog, "==========visiting current ccoro: %p\n", coro); fflush(gclog);
+      fprintf(gclog, "==========visiting current coro: %p\n", coro); fflush(gclog);
     }
     this->visit_root((unchecked_ptr*)coro_slot, NULL);
     if (ENABLE_GCLOG) {
-      fprintf(gclog, "==========visited current ccoro: %p\n", coro); fflush(gclog);
+      fprintf(gclog, "==========visited current coro: %p\n", coro); fflush(gclog);
     }
   }
 
@@ -2420,21 +2409,9 @@ void coro_visitGCRoots(foster_bare_coro* coro, HeapInterface* visitor) {
   // the stack of a running coro, since we should already have done so.
   // But we will trace back the coro invocation chain and scan other stacks.
 
-  // Another point worth mentioning is that two generic_coros
-  // may point to the same stack but have different statuses:
-  // an fcoro may say "RUNNING" while a ccoro may say "SUSPENDED",
-  // because we don't bother updating the status for the current coro
-  // when we invoke away from it. But since fcoros are the only ones
-  // referenced directly by the program, it's all OK.
-
-  // Note! We scan stacks from ccoros (yielded to),
-  // not fcoros (invokable). A suspended stack will have
-  // pointers into the stack from both types of coro, but
-  // the ccoro pointer will point higher up the stack!
-
   // extract frame pointer from ctx, and visit its stack.
   void* frameptr = coro_topmost_frame_pointer(coro);
-  gc_assert(frameptr != NULL, "(c)coro frame ptr shouldn't be NULL!");
+  gc_assert(frameptr != NULL, "coro frame ptr shouldn't be NULL!");
 
   if (ENABLE_GCLOG) {
     fprintf(gclog, "========= scanning coro (%p, fn=%p, %s) stack from %p\n",
@@ -2444,7 +2421,7 @@ void coro_visitGCRoots(foster_bare_coro* coro, HeapInterface* visitor) {
   visitGCRoots(frameptr, visitor);
 
   if (ENABLE_GCLOG) {
-    fprintf(gclog, "========= scanned ccoro stack from %p\n", frameptr);
+    fprintf(gclog, "========= scanned coro stack from %p\n", frameptr);
     fflush(gclog);
   }
 }
@@ -2605,6 +2582,25 @@ void gclog_time(const char* msg, base::TimeDelta d, FILE* json) {
   }
 }
 
+void dump_alloc_site_stats(FILE* stats) {
+  if (!gcglobals.alloc_site_counters.empty()) {
+    fprintf(stats, "'allocation_sites' : [\n");
+    for (auto it : gcglobals.alloc_site_counters) {
+      typemap* map = it.first.second;
+      int64_t bytes_allocated = map->cell_size * it.second;
+      fprintf(stats, "{ 'typemap' : %p , 'allocations' : %12" PRId64 ", 'alloc_size':%" PRId64
+                      ", 'bytes_allocated': %10" PRId64
+                      // ", 'alloc_percent':%f,"
+                      ,
+                      map, it.second, map->cell_size, bytes_allocated
+                      //, (double(bytes_allocated) * 100.0) / approx_bytes
+                      );
+      fprintf(stats, "  'from' : \"%s\" },\n", it.first.first);
+    }
+    fprintf(stats, "],\n");
+  }
+}
+
 FILE* print_timing_stats() {
   base::TimeTicks fin = base::TimeTicks::Now();
   base::TimeDelta total_elapsed = fin - gcglobals.init_start;
@@ -2625,6 +2621,8 @@ FILE* print_timing_stats() {
     base::StatisticsRecorder::WriteGraph("", &output);
     fprintf(gclog, "%s\n", output.c_str());
   }
+
+  dump_alloc_site_stats(gclog);
 
   fprintf(gclog, "'Num_Big_Stackwalks': %d\n", gcglobals.num_big_stackwalks);
   fprintf(gclog, "'Num_GCs_Triggered': %d\n", gcglobals.num_gcs_triggered);

@@ -18,6 +18,7 @@ tokens {
   IF='if'; THEN='then'; ELSE='else'; TRU='True'; FLS='False';
   CASE='case'; END='end'; OF='of';
   AND='and'; OR='or'; EQ='='; MINUS='-';
+  FOREIGN='foreign'; IMPORT='import';
   TYPE='type'; EFFECT='effect'; HANDLE='handle';
   COMPILES='__COMPILES__';
   HASH_MARK='#';
@@ -56,6 +57,9 @@ decl_or_defn :
           )
         | data_defn ';'                   -> data_defn
         | effect_defn ';'                 -> effect_defn
+        | FOREIGN IMPORT x (AS id)? '::' t ';'
+                                          -> ^(FOREIGN DECL x t id?)
+        | FOREIGN TYPE tyformal   ';'     -> ^(FOREIGN TYPE tyformal)
         ;
 
 // Or perhaps TYPE id OF (CASE ctor ...)+

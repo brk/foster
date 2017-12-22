@@ -1,3 +1,4 @@
+{-# LANGUAGE Strict #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2010 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -153,7 +154,7 @@ alphaRenameMono fn = do
           RefinedType v e args        -> do e' <- renameKN e ; args' <- mapM renameI args ; return $ RefinedType v e' args'
 
     renameV :: TypedId MonoType -> MonoRenamed (TypedId MonoType)
-    renameV (TypedId ty id@(GlobalSymbol t)) = do
+    renameV (TypedId ty id@(GlobalSymbol t _alt)) = do
         -- We want to rename any locally-bound functions that might have
         -- been duplicated by monomorphization.
         if T.pack "<anon_fn"  `T.isInfixOf` t ||
@@ -176,8 +177,9 @@ alphaRenameMono fn = do
                        return (TypedId ty' id' )
         Just _u' -> error $ "KNUtil.hs: can't rename a variable twice! " ++ show id
 
-    renameI id@(GlobalSymbol t) = do u' <- fresh
-                                     let id' = GlobalSymbol $ t `T.append` T.pack (show u')
+    renameI id@(GlobalSymbol t alt) = do
+                                     u' <- fresh
+                                     let id' = GlobalSymbol (t `T.append` T.pack (show u')) alt
                                      remap id id'
                                      return id'
     renameI id@(Ident s _)      = do u' <- fresh
@@ -257,6 +259,7 @@ alphaRenameMono fn = do
       KNInlined t0 tb tn old new -> do new' <- renameKN new
                                        return $ KNInlined t0 tb tn old new'
       KNNotInlined x e -> do renameKN e >>= return . (KNNotInlined x)
+      KNRelocDoms ids e -> do liftM2 KNRelocDoms (mapM qi ids) (renameKN e)
 
     renameCaseArm (CaseArm pat expr guard vs rng) = do
         pat'   <- renamePattern pat

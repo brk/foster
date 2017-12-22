@@ -84,6 +84,15 @@ ptrMemcpy = { dst => src => n =>
   enumRange32 0 n { i => ptrSetIndex dst i (ptrGetIndex src i) };
 };
 
+ptrSize :: forall (a:Type) { Ptr a => Int32 };
+ptrSize = { ptr =>
+  case ptr
+    of $PtrNil   -> 0
+    of $PtrRef r -> 1
+    of $PtrArr arr off -> arrayLength32 arr -Int32 off
+  end
+};
+
 ptrStrlen :: { Ptr Int8 => Int64 };
 ptrStrlen = { ptr =>
   REC go = { i =>
@@ -167,3 +176,82 @@ type case ArrPtr (a:Type)
 
 incrArrPtr :: forall (a:Type) { ArrPtr a => ArrPtr a };
 incrArrPtr = { v => case v of $ArrPtr a x -> ArrPtr a (x +Int64 1) end };
+
+ptrToArr :: { Ptr Int8 => Array Int8 };
+ptrToArr = { ptr =>
+  case ptr
+    of $PtrArr arr off ->
+      if off ==Int32 0 then arr else prim kill-entire-process "ptrToArr can't yet handle non-zero offsets."
+      end
+    of _ -> prim kill-entire-process "ptrToArr requires an existing array, for now."
+  end
+};
+
+zeroTerminate :: { Array Int8 => Array Int8 };
+zeroTerminate = { arr =>
+  len = arrayLength32 arr;
+  out = allocDArray (len +Int32 1);
+  memcpy_i8_to_from_at_len out arr 0 len;
+  0 >^ out[len];
+  out;
+};
+
+c2f_argv :: { Ptr (Ptr Int8) };
+c2f_argv = {
+  argc = get_cmdline_n_args !;
+  argv = allocDArray:[Ptr Int8] argc |> strLit;
+  enumRange32 0 argc { n => 
+    case get_cmdline_arg_n n
+      of $TextFragment arr _ -> ptrSetIndex argv n (arr |> zeroTerminate |> strLit)
+      of $TextConcat _ _ _ -> prim kill-entire-process "c2f_argv: no support yet for concats"
+    end
+  };
+  argv
+};
+
+foreign type CFile;
+foreign import ferror   as c2f_ferror    :: { CFile => Int32 };
+foreign import feof     as c2f_feof      :: { CFile => Int32 };
+foreign import clearerr as c2f_clearerr  :: { CFile => Int32 };
+foreign import fopen    as c_fopen       :: { CString => CString => CFile };
+foreign import fclose   as c2f_fclose    :: { CFile => Int32 };
+
+foreign import fputc    as c2f_fputc    :: { Int32 => CFile => Int32 };
+foreign import fgetc    as c2f_fgetc    :: { CFile => Int32 };
+
+foreign import fwrite   as c_fwrite  :: { CString => Int64 => Int64 => CFile => Int64 };
+foreign import fread    as c_fread   :: { CString => Int64 => Int64 => CFile => Int64 };
+
+foreign import c2f_stdin  :: { CFile };
+foreign import c2f_stdout :: { CFile };
+foreign import c2f_stderr :: { CFile };
+
+c2f_fopen :: { Ptr Int8 => Ptr Int8 => CFile };
+c2f_fopen = { path => mode =>
+  cpath = path |> ptrToArr |> cstr;
+  cmode = mode |> ptrToArr |> cstr;
+  rv = c_fopen cpath cmode;
+  cstr_free cpath;
+  cstr_free cmode;
+  rv
+};
+
+c2f_fread :: { Ptr Int8 => Int64 => Int64 => CFile => Int64 };
+c2f_fread = { ptr => membsz => nmemb => f =>
+  case ptr
+    of $PtrArr arr off ->
+      c_fread (cdataptr_unsafe arr off) membsz nmemb f
+    of _ ->
+      prim kill-entire-process "c2f_fread requires an array input"
+  end
+};
+
+c2f_fwrite :: { Ptr Int8 => Int64 => Int64 => CFile => Int64 };
+c2f_fwrite = { ptr => membsz => nmemb => f =>
+  case ptr
+    of $PtrArr arr off ->
+      c_fwrite (cdataptr_unsafe arr off) membsz nmemb f
+    of _ ->
+      prim kill-entire-process "c2f_fwrite requires an array input"
+  end
+};

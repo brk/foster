@@ -1,4 +1,4 @@
-{-# LANGUAGE GADTs, TypeSynonymInstances, BangPatterns, RankNTypes, StrictData #-}
+{-# LANGUAGE GADTs, TypeSynonymInstances, BangPatterns, RankNTypes, Strict #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2012 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -113,7 +113,7 @@ closureConvertAndLift dataSigs u m =
                        initialState in
     (ModuleIL {
           moduleILbody        = CCBody (Map.elems $ ilmProcs st) (ilmVals st)
-        , moduleILdecls       = map (\(s,t) -> (s, monoToLL t)) (moduleILdecls m)
+        , moduleILdecls       = map (\(s,t,isForeign) -> (s, monoToLL t, isForeign)) (moduleILdecls m)
         , moduleILdataTypes   = map (fmap monoToLL) (moduleILdataTypes m)
         , moduleILprimTypes   = map (fmap monoToLL) (moduleILprimTypes m)
         , moduleILeffectDecls = map (fmap monoToLL) (moduleILeffectDecls m)
@@ -485,7 +485,7 @@ closureConvertedProc procArgs f newbody = do
 
  
 mkGlobal (TypedId t i) = mkGlobalWithType t i where
-  mkGlobalWithType ty (Ident t u) = TypedId ty (GlobalSymbol $ T.pack (T.unpack t ++ show u))
+  mkGlobalWithType ty (Ident t u) = TypedId ty (GlobalSymbol (T.pack (T.unpack t ++ show u)) NoRename)
   mkGlobalWithType ty global      = TypedId ty global
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

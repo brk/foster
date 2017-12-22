@@ -488,6 +488,8 @@ target_link_libraries(fosteroptc
 
 add_dependencies(fosteroptc
     foster_runtime_bc ${HS_ME})
+# We have a dependency here just to ensure that HS_ME
+# gets built with a bare 'make' command.
 
 ############
 

@@ -26,8 +26,13 @@ def run_cmd(cmd, showcmd=False, stdout=None, stderr=None, stdin=None):
 
   start = walltime()
   rv = 1
+  proc = None
   try:
-    rv = subprocess.call(cmd, stdout=stdout, stderr=stderr, stdin=stdin)
+    proc = subprocess.Popen(cmd, stdout=stdout, stderr=stderr, stdin=stdin)
+    rv = proc.wait()
+  except KeyboardInterrupt as e:
+    proc.terminate()
+    raise e
   except OSError:
     print ": error: Unable to execute ", cmd
     raise

@@ -1,4 +1,4 @@
-{-# LANGUAGE RecursiveDo, GADTs #-}
+{-# LANGUAGE RecursiveDo, GADTs, StrictData #-}
 -- RecursiveDo is used in dlcSingleton
 
 module Foster.MKNExpr (MKBound(MKBound), mkOfKNMod, mknInline, mknShrink,
@@ -325,7 +325,7 @@ subtermsOf term =
       MKCase        _u _ _v arms   -> do return $ map mkcaseArmBody arms
       MKCont {} -> return []
       MKCall {} -> return []
-      --MKHandler     _u _ty action arms mb_x -> do return $ action : maybeToList mb_x ++ map mkcaseArmBody arms
+      MKRelocDoms   _u _ids k -> return $ [k]
 
 type Uplink ty = Link (Parent ty)
 data Parent ty = ParentTerm (MKTerm ty)
@@ -358,14 +358,14 @@ data MKTerm ty =
         | MKLetRec      (Uplink ty) [Known ty   (Subterm ty)] (Subterm ty)
         | MKLetFuns     (Uplink ty) [Known ty (Link (MKFn (Subterm ty) ty))] (Subterm ty)
         | MKLetCont     (Uplink ty) [Known ty (Link (MKFn (Subterm ty) ty))] (Subterm ty)
+        | MKRelocDoms   (Uplink ty) [Ident] (Subterm ty)
 
         -- Control flow
         | MKCase        (Uplink ty) ty (FreeVar ty) [MKCaseArm (Subterm ty) ty]
         | MKIf          (Uplink ty) ty (FreeVar ty) (Subterm ty) (Subterm ty)
         | MKCall        (Uplink ty) ty (FreeVar ty)       [FreeVar ty] (ContVar ty)
         | MKCont        (Uplink ty) ty (ContVar ty)       [FreeVar ty]
-        -- | MKHandler     (Uplink ty) ty (Subterm ty) [MKCaseArm (Subterm ty) ty] (Maybe (Subterm ty))
-        
+
 -- Does double duty, representing both regular functions and continuations.
 data MKFn expr ty
                 = MKFn { mkfnVar   :: (MKBoundVar ty)
@@ -594,6 +594,10 @@ mkOfKN_Base expr k = do
             let rv = MKLetCont nu [known] rest'
             lift $ backpatchT rv [rest']
 
+        KNRelocDoms ids e ->
+          mkBackpatch' [e] k (\[e'] -> do
+            return $ MKRelocDoms nu ids e')
+
         KNCompiles (KNCompilesResult r) ty _expr -> do 
             genMKLetVal ".cpi" ty $ \nu' -> do
                 b <- liftIO $ readIORef r
@@ -794,24 +798,12 @@ parentLinkT expr =
     MKLetRec      u   _knowns _k -> u
     MKLetFuns     u   _knowns _k -> u
     MKLetCont     u   _knowns _k -> u
+    MKRelocDoms   u _ids _k      -> u
     MKCase        u  _ty _ _arms  -> u
     MKIf          u  _ty _ _e1 _e2 -> u
     MKCall        u     _ty _ _s _   -> u
     MKCont        u     _ty _ _s     -> u
-    --MKHandler     u _ty _action _arms _mb_x -> u
 
-tagT :: MKTerm ty -> String
-tagT expr =
-  case expr of
-    MKLetVal      {} -> "MKLetVal"
-    MKLetRec      {} -> "MKLetRec"
-    MKLetFuns     {} -> "MKLetFuns"
-    MKLetCont     {} -> "MKLetCont"
-    MKCase        {} -> "MKCase"
-    MKIf          {} -> "MKIf"
-    MKCall        {} -> "MKCall"
-    MKCont        {} -> "MKCont"
-    --MKHandler     {} -> "MKHandler"
 
 freeVarsE :: MKExpr ty -> [FreeOcc ty]
 freeVarsE expr =
@@ -843,11 +835,11 @@ directFreeVarsT expr =
     MKLetRec      {} -> []
     MKLetFuns     {} -> []
     MKLetCont     {} -> []
+    MKRelocDoms   {} -> []
     MKCase        _  _ty v _arms     -> [v]
     MKIf          _  _ty v _e1 _e2   -> [v]
     MKCall        _     _ty v vs c   -> c:v:vs
     MKCont        _     _ty c vs     -> c  :vs
-    --MKHandler     _ _ty _action _arms _mb_x -> []
 
 data MaybeCont ty = YesCont (MKBoundVar ty)
                   | NoCont
@@ -921,6 +913,7 @@ knOfMK mb_retCont term0 = do
   let qf = knOfMKFn mb_retCont
 
   case term0 of
+    MKRelocDoms   _u _ids k -> q k
     MKIf          _u  ty v e1 e2  -> do e1' <- q e1
                                         e2' <- q e2
                                         v'  <- qv v
@@ -966,13 +959,7 @@ knOfMK mb_retCont term0 = do
                  vs' of
             [v] | isReturn -> return $ KNVar v
             _ -> return $ KNCall ty (boundVar cvb) vs'
-{-
-    MKHandler     _ ty action arms mb_x -> do
-        action' <- q action
-        arms' <- mapM qarm arms
-        mb_x' <- liftMaybe q mb_x
-        return $ KNHandler ty action' arms' mb_x'
--}
+
 mkKNLetRec [] [] k = k
 mkKNLetRec xs es k = KNLetRec xs es k
 
@@ -982,14 +969,14 @@ mkKNLetFuns xs es k = KNLetFuns xs es k
 
 isMainFnVar v =
   case tidIdent v of
-      GlobalSymbol t -> t == T.pack "main"
+      GlobalSymbol t _ -> t == T.pack "main"
       _ -> False
 
 isMainFn fo = do
   b <- freeBinder fo
   return $ isMainFnVar (boundVar b)
 
-isTextPrim (GlobalSymbol t) = t `elem` [T.pack "TextFragment", T.pack "TextConcat"]
+isTextPrim (GlobalSymbol t _) = t `elem` [T.pack "TextFragment", T.pack "TextConcat"]
 isTextPrim _ = False
 
 -- We detect and kill dead bindings for functions here as well.
@@ -1006,8 +993,10 @@ collectRedexes :: (Pretty t)
                -> IORef (Map (MKBoundVar t) (Link (MKFn (Subterm t) t)))
                -> IORef (Map (MKBoundVar t) (Link (MKTerm t)))
                -> IORef (Map (MKBoundVar t) (MKBoundVar t))
+               -> IORef (Map [Ident] (MKTerm t, (Link (MKTerm t))))
                -> Subterm t -> Compiled ()
-collectRedexes ref valbindsref expbindsref funbindsref fundefsref aliasesref sbtm = go sbtm
+collectRedexes ref valbindsref expbindsref funbindsref
+                   fundefsref aliasesref relocdomsref sbtm = go sbtm
  where
    go subterm = do
     mb_term <- readOrdRef subterm
@@ -1035,6 +1024,8 @@ collectRedexes ref valbindsref expbindsref funbindsref fundefsref aliasesref sbt
                                                          fns <- knownActuals knowns
                                                          return $ k : map mkfnBody fns
                       MKCase        _u _ _v arms -> return $ map mkcaseArmBody arms
+                      MKRelocDoms _u ids k -> do liftIO $ modIORef' relocdomsref (\m -> Map.insert ids (term,k) m)
+                                                 return [k]
                       _ -> return []
 
    markValBind (x,tm) = liftIO $ modIORef' valbindsref (\m -> Map.insert x tm m)
@@ -1165,9 +1156,9 @@ copyBinder msg b = do
     ccRefresh (Ident t _) = do
         u <- ccUniq
         return $ Ident t u
-    ccRefresh (GlobalSymbol t) = do
+    ccRefresh (GlobalSymbol t alt) = do
         u <- ccUniq
-        return $ GlobalSymbol $ t `T.append` T.pack (show u)
+        return $ GlobalSymbol (t `T.append` T.pack (show u)) alt
 
 copyFreeOcc :: FreeVar t -> WithBinders t (FreeVar t)
 copyFreeOcc fv = do
@@ -1292,6 +1283,10 @@ copyMKTerm term = do
 
   -- TODO maybe have withLinkT use subtermsOf ?
   (link, newterm) <- case term of
+    MKRelocDoms   _u   ids    k   -> do k' <- q k
+                                        withLinkT $ \u -> lift $ do
+                                          let rv = MKRelocDoms u ids k'
+                                          backpatchT rv [k']
     MKLetVal      _u   known  k   -> do x' <- qk qe known
                                         k' <- q k
                                         withLinkT $ \u -> lift $ do
@@ -1330,19 +1325,6 @@ copyMKTerm term = do
     MKCont        _u  ty _c vs     -> do mapM qv    vs  >>= \    vs' ->
                                           qv  _c        >>= \c'  ->
                                            withLinkT $ \u -> return $ MKCont u       ty c' vs'
-                                           {-
-    MKHandler     _u ty action arms mb_x -> do
-                                         action' <- q action
-                                         arms' <- mapM qarm arms
-                                         mb_x' <- liftMaybe q mb_x
-                                         {-case mb_x of
-                                                    Nothing -> return Nothing
-                                                    Just x -> q x >>= return . Just -}
-                                         withLinkT $ \u -> lift $ do
-                                          let rv = MKHandler u ty action' arms' mb_x'
-                                          backpatchT rv (action' : maybeToList mb_x' ++ map mkcaseArmBody arms')
-                                         -}
-
   lift $ installLinks link newterm
 
 
@@ -1362,8 +1344,9 @@ mknInline subterm mainCont mb_gas = do
     fr <- liftIO $ newIORef Map.empty
     fd <- liftIO $ newIORef Map.empty
     ar <- liftIO $ newIORef Map.empty
+    relocDomMarkers <- liftIO $ newIORef Map.empty
     --term <- readLink "mknInline" subterm
-    collectRedexes wr kr er fr fd ar subterm
+    collectRedexes wr kr er fr fd ar relocDomMarkers subterm
 
     _knownVals <- liftIO $ readIORef kr
 
@@ -1410,7 +1393,7 @@ mknInline subterm mainCont mb_gas = do
              Nothing -> dbgDoc $ text "... ran outta work"
              Just (_subterm, mredex, Nothing) -> do
                 case mredex of
-                  MKLetFuns _u [(bv,_)] _ | tidIdent (boundVar bv) == GlobalSymbol (T.pack "TextFragment") ->
+                  MKLetFuns _u [(bv,_)] _ | tidIdent (boundVar bv) == GlobalSymbol (T.pack "TextFragment") NoRename ->
                     return () -- The top-most function binding will be parentless; don't print about it though.
                   _ -> do
                     do redex <- knOfMK (YesCont mainCont) mredex
@@ -1509,7 +1492,7 @@ mknInline subterm mainCont mb_gas = do
                          replaceWith subterm newbody
                          -- No need to kill the old binding, since the body was duplicated.
 
-                         collectRedexes wr kr er fr fd ar newbody
+                         collectRedexes wr kr er fr fd ar relocDomMarkers newbody
 
                        else return ()
 
@@ -1526,7 +1509,7 @@ mknInline subterm mainCont mb_gas = do
                              newbody <- betaReduceOnlyCall fn' args kv    wr fd
                              replaceWith subterm newbody
                              killOccurrence callee
-                             collectRedexes wr kr er fr fd ar newbody
+                             collectRedexes wr kr er fr fd ar relocDomMarkers newbody
                        else return ()
                  go (gas - 1)
               
@@ -1596,7 +1579,7 @@ mknInline subterm mainCont mb_gas = do
                                        readLink "CallOfDonatableC" mk
                          replaceWith mredex newbody
                          killOccurrence callee
-                         collectRedexes wr kr er fr fd ar newbody
+                         collectRedexes wr kr er fr fd ar relocDomMarkers newbody
                        else return ()
 -}
                    SomethingElse _fn -> do
@@ -1610,13 +1593,13 @@ mknInline subterm mainCont mb_gas = do
                              newbody <- betaReduceOnlyCall fn' args kv   wr fd  >>= readLink "CallOfDonatable"
                              replaceWith mredex newbody
                              killOccurrence callee
-                             collectRedexes wr kr er fr fd ar newbody
+                             collectRedexes wr kr er fr fd ar relocDomMarkers newbody
                              -}
                              return ()
                        else return ()
                  go (gas - 1)
 
-               MKLetFuns fnup knowns fnrest -> do
+               MKLetFuns _u knowns fnrest -> do
                  contifiability <- analyzeContifiability knowns
                  case contifiability of
                    GlobalsArentContifiable -> return ()
@@ -1652,11 +1635,30 @@ mknInline subterm mainCont mb_gas = do
                             replaceTermWith tm newterm
                             writeOrdRef (freeLink occ) (Just newterm)) occs
 
-                      -- Replace the function with a continuation; be sure to
-                      -- replace the fn's global ident with a local version!
+                      rdm <- liftIO $ readIORef relocDomMarkers
+                      let ids = [tidIdent $ boundVar bv]
+                      (target, targetrest) <-
+                          case Map.lookup ids rdm of
+                            Nothing -> do
+                              -- We have    fun f = F in fR
+                              -- and want to end up with
+                              --           cont f = F in fR
+                              -- Replace the function with a continuation; be sure to
+                              -- replace the fn's global ident with a local version!
+                              return (mredex, fnrest)
+
+                            Just targetandrest -> do
+                              -- We have fun f = F in fR   and somewhere else,   domreloc f in dR
+                              -- and want to end up with
+                              --                      fR                         cont f = F in dR
+                              --
+                              -- Remove the contified function explicitly
+                              replaceWith subterm fnrest
+                              return targetandrest
+
                       contfn <- mkKnown' bv $ fn { mkfnCont = Nothing }
-                      let letcont = MKLetCont fnup [contfn] fnrest
-                      replaceTermWith mredex letcont
+                      let letcont = MKLetCont (parentLinkT target) [contfn] targetrest
+                      replaceTermWith target letcont
 
                  go (gas - 1)
 
@@ -1734,7 +1736,7 @@ data Contifiability =
 
 --analyzeContifiability :: ... -> Compiled Contifiability
 analyzeContifiability knowns = do
-  let isTopLevel (GlobalSymbol _) = True
+  let isTopLevel (GlobalSymbol _ _) = True
       isTopLevel _ = False
   if all isTopLevel $ map (tidIdent.boundVar.fst) knowns
     then return GlobalsArentContifiable
@@ -1748,7 +1750,6 @@ analyzeContifiability knowns = do
             (_, Nothing) -> do return CantContifyWithNoFn
             ([_], _) -> do return NoNeedToContifySingleton -- Singleton call; no need to contify since we'll just inline it...
             (_, Just fn) -> do
-              dbgDoc $ text "analyzeContifiability(1)"
               mbs_conts <- mapM (contOfCall bv) occs
               case allFoundConts mbs_conts of
                 Nothing -> return HadUnknownContinuations
@@ -1797,7 +1798,6 @@ analyzeContifiability knowns = do
               Nothing -> do
                 liftIO $ putDocLn $ text "    no fn"
               Just _fn -> do
-                dbgDoc $ text "analyzeContifiability(2)"
                 aconts <- mapM (contOfCall bv) occs
                 case allFoundConts aconts of
                   Nothing -> liftIO $ putDocLn $ text "  (some continuations not found)"
@@ -1895,9 +1895,8 @@ contOfCall bv occ = do
     Just tm -> do
       do kn <- knOfMK NoCont tm
          dbgDoc $ text "contOfCall: non call w/ unknown cont for" <> pretty bv <> text ":" <> indent 10 (pretty kn)
-         dbgDoc $ indent 10 (showStructure kn)
-         dbgDoc $ text "tag is " <> text (tagT tm)
-      return $ NonCall
+         --dbgDoc $ indent 10 (showStructure kn)
+      return NonCall
 
 -- Collect the function vars associated with every use of a continuation variable.
 calleeOfCont occ = do
@@ -2053,8 +2052,8 @@ pccOfTopTerm uref subterm = do
               dbgDoc $ text "pccOfTopTerm saw nulled-out function link " <> pretty x
             return ()
           Just fn -> do
-            {--
             knfn <- lift $ knOfMKFn NoCont fn
+            {--
             dbgDoc $ indent 10 (pretty x)
             dbgDoc $ indent 20 (pretty knfn)
             dbgDoc $ text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
@@ -2077,7 +2076,7 @@ pccOfTopTerm uref subterm = do
           MKCall        {}              -> return ()
           MKLetCont     {} -> do error $ "MKLetCont in pccTopTerm"
           MKCont        {} -> do error $ "MKCont in pccTopTerm"
-          --MKHandler     {} -> do error $ "MKHandler in pccTopTerm"
+          MKRelocDoms   {} -> do error $ "MKRelocDoms in pccTopTerm"
 
       handleTopLevelBinding id expr k = do
         case expr of
@@ -2128,6 +2127,7 @@ cffnOfMKCont cv (MKFn _ vs _ subterm _isrec _annot) = do
       go subterm head insns = do
         term <- lift $ readLink "cffnOfMKCont/0" subterm
         case term of
+          MKRelocDoms _u _ids k -> go k head insns
           MKLetVal      _u (bv, subexpr) k -> do
               letable <- lift $ letableOfSubexpr subexpr
               isDead  <- lift $ binderIsDead bv
@@ -2173,33 +2173,7 @@ cffnOfMKCont cv (MKFn _ vs _ subterm _isrec _annot) = do
                                  resid <- lift $ ccFreshId $ T.pack ".cr"
                                  baPutBlock head (ILetVal resid (ILCall ty v' vs') : insns)
                                         (CFCont blockid [TypedId ty resid])
-          {-
-                handle E of ARMS end
-            ==>
-                REC go = { coro => arg =>
-                    yielded = coro_invoke coro effectTagForOps arg;
-                    if coro_dead coro
-                      then yielded
-                      else
-                        case yielded of
-                            ARMS'
-                            other -> coro = search_handlers (effect_tag_of other);
-                                     coro_yield coro a;
-                        end
-                    end
-                };
-                go (coro_create E) ()    ( |> xform );
-          -}
-          {-
-          MKHandler     _u _ty action arms Nothing -> do
-            
-            resid <- lift $ ccFreshId $ T.pack ".hr"
-            baPutBlock head (letfun:call:insns) (CFCont blockid [TypedId ty resid])
 
-          MKHandler     _u _ty action arms mb_x -> do
-                                 baPutBlock head insns (error "TODO MKNExpr.hs:2176")
-            -}
-            
           MKCont        _u _ty contvar vs -> do
                                  blockid <- blockIdOf' contvar
                                  vs' <- mapM qv vs

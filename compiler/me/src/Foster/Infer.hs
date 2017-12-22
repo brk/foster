@@ -1,3 +1,4 @@
+{-# LANGUAGE Strict #-}
 module Foster.Infer(
     tcUnifyTypes, tcUnifyFT, tcUnifyCC, tcUnifyKinds
   , parSubstTcTy

@@ -220,6 +220,8 @@ std::string getNameForAnonymousRecordTypeWithin(const Decl* d, const TagDecl* td
 }
 
 std::string fosterizedTypeName(std::string rv) {
+  if (rv == "_IO_FILE") return "CFile";
+
   if ((!rv.empty()) && islower(rv[0])) {
     rv[0] = toupper(rv[0]);
   }
@@ -1798,6 +1800,23 @@ The corresponding AST to be matched is
       return "v_" + name;
     }
     if (name == "strlen") return "ptrStrlen";
+    if (name == "strcmp") return "ptrStrcmp";
+
+    if (name == "feof")   return "c2f_feof";
+    if (name == "ferror") return "c2f_ferror";
+    if (name == "fwrite") return "c2f_fwrite";
+    if (name == "fread")  return "c2f_fread";
+    if (name == "fopen")  return "c2f_fopen";
+    if (name == "fclose") return "c2f_fclose";
+    if (name == "fputs")  return "c2f_fputs";
+    if (name == "fgetc")  return "c2f_fgetc";
+    if (name == "getc")   return "c2f_fgetc";
+    if (name == "_IO_getc") return "c2f_fgetc";
+    if (name == "fputc")  return "c2f_fputc";
+    if (name == "stdin") return "(c2f_stdin !)";
+    if (name == "stdout") return "(c2f_stdout !)";
+    if (name == "stderr") return "(c2f_stderr !)";
+
     return name;
   }
 
@@ -2553,17 +2572,28 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
     } else if (FunctionDecl* fd = dyn_cast<FunctionDecl>(decl)) {
       if (Stmt* body = fd->getBody()) {
         bool needsCFG = false;
+        bool mainWithArgs = false;
         performFunctionLocalAnalysis(fd, needsCFG);
 
         llvm::outs() << fosterizedName(fd->getName()) << " = {\n";
-        for (unsigned i = 0; i < fd->getNumParams(); ++i) {
-          ParmVarDecl* d = fd->getParamDecl(i);
-          auto vpcset = voidPtrCasts[d];
-          const Type* ty = vpcset.unique() ? vpcset.front() : exprTy(d);
-          if (!isVoidPtr(ty)) {
-            llvm::outs() << "    " << fosterizedName(d->getDeclName().getAsString())
-                          << " : " << tyName(ty) << " =>\n";
+        if (fd->getName() == "main") {
+          mainWithArgs = fd->getNumParams() > 0;
+        } else {
+          // Emit function arguments.
+          for (unsigned i = 0; i < fd->getNumParams(); ++i) {
+            ParmVarDecl* d = fd->getParamDecl(i);
+            auto vpcset = voidPtrCasts[d];
+            const Type* ty = vpcset.unique() ? vpcset.front() : exprTy(d);
+            if (!isVoidPtr(ty)) {
+              llvm::outs() << "    " << fosterizedName(d->getDeclName().getAsString())
+                            << " : " << tyName(ty) << " =>\n";
+            }
           }
+        }
+
+        // Assume main's params are named argc and argv, for now.
+        if (mainWithArgs) {
+          llvm::outs() << "argv = c2f_argv !; argc = ptrSize argv;\n";
         }
 
         // Rebind parameters if they are observed to be mutable locals.
