@@ -1,5 +1,6 @@
 snafuinclude Cbor "cbor";
 snafuinclude List "list";
+snafuinclude Bitwise "bitwise";
 
 main = {
   expect_text "21";

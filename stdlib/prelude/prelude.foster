@@ -371,6 +371,8 @@ tmp_Text_of_Int32 = { n:Int32 => tmp_Text_of_Int64 (sext_i32_to_i64 n) };
 
 tmp_Text_of_Int8  = { n:Int8  => tmp_Text_of_Int64 (sext_i8_to_i64 n) };
 
+tmp_Text_of_UInt8  = { n:Int8  => tmp_Text_of_Int64 (zext_i8_to_i64 n) };
+
 tmp_Text_2_of_Int8_nibble = { n : Int8 =>
   case n
     of 0  -> "0000"
@@ -524,16 +526,16 @@ tmp_Text_of_Int64 = { n:Int64 =>
 tmp_Text_16_of_UInt64 = { n:Int64 =>
   case splitInt64 n of
     (na, nb) ->
-      mkTextConcat (tmp_Text_16_of_UInt32 na) (tmp_Text_16_of_UInt32 nb)
+      (tmp_Text_16_of_UInt32 na) ++Text (tmp_Text_16_of_UInt32 nb)
   end
 };
 
 tmp_Text_of_UInt64 = { n:Int64 =>
   REC go = { n:Int64 => t:Text =>
-    if n <SInt64 10
+    if n <UInt64 10
       then mkTextConcat (tmp_Text_of_Int32_digit (trunc_i64_to_i32 n)) t
-      else r = trunc_i64_to_i32 (srem-Int64 n 10);
-           q =                   sdiv-Int64 n 10 ;
+      else r = trunc_i64_to_i32 (urem-Int64 n 10);
+           q =                   udiv-Int64 n 10 ;
            go q (mkTextConcat (tmp_Text_of_Int32_digit r) t);
     end
   };

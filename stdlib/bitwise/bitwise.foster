@@ -104,6 +104,11 @@ bitfield-len-Int32 = { n:Int32 => start:Int32 => len:Int32 =>
                (bitlshr-Int32 n start);
 };
 
+bitfield-len-Int8 = { n:Int8 => start:Int8 => len:Int8 =>
+  bitand-Int8 (bitnot-Int8 (bitshl-Int8 -1 len))
+              (bitlshr-Int8 n start);
+};
+
 bitfield-len-Int64 = { n:Int64 => start:Int64 => len:Int64 =>
   bitand-Int64 (bitnot-Int64 (bitshl-Int64 -1 len))
                (bitlshr-Int64 n start);
