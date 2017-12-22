@@ -943,11 +943,15 @@ kNormalCtors st dtype =
 
 -- |||||||||||||||||||||||||| Local Block Sinking |||||||||||||||{{{
 
--- This transformation re-locates functions according to their dominator tree.
+-- This transformation inserts markers for functions according to
+-- their dominator tree.
 --
 -- Block sinking is needed for contification to work properly;
 -- without it, a contifiable function would get contified into an outer scope,
 -- which doesn't work (since functions eventually get lifted to toplevel).
+-- However, moving closures to inner scopes can change the asympototic allocation
+-- profile of a program if the closure ends up not getting contified -- thus,
+-- we only insert markers rather than re-locating functions.
 --
 -- Performing sinking after monomorphization allows each monomorphization
 -- of a given function to be separately sunk.
@@ -962,7 +966,23 @@ kNormalCtors st dtype =
 -- by Olivier Danvy and Ulrik P. Schultz.
 --
 -- http://www.brics.dk/RS/99/27/BRICS-RS-99-27.pdf
-
+--
+--
+-- Brief summary of our algorithm:
+--   * Walk the AST, extracting:
+--     * Which functions contain which other functions (parent/child relation)
+--     * Which identifiers are mentioned in each function
+--   * For each function F:
+--     * Build a "call" graph in which function identifiers are nodes and mentions are edges.
+--       Prune out irrelevant edges by computing the reachable closure from F.
+--     * Compute (immediate) dominators for each node in the graph.
+--   * Now, comparing the parent/child relation with the dominator relation shows
+--     which functions need to be relocated, and where.
+--
+-- This algorithm, like many recursive functional AST traversals,
+-- is unfortunately O(n^2) in the depth of functions being nested.
+-- But fortunately n is usually small in programs written by humans.
+--
 collectFunctions :: Fn RecStatus (KNExpr' RecStatus t) t -> [(Ident, Ident, Fn RecStatus (KNExpr' RecStatus t) t)]  -- (parent, binding, child)
 collectFunctions knf = go [] (fnBody knf)
   where go xs e = case e of
@@ -984,6 +1004,7 @@ collectFunctions knf = go [] (fnBody knf)
           KNCompiles _r _t e -> go xs e
           KNInlined _t0 _to _tn _old new -> go xs new
           KNNotInlined _ e -> go xs e
+          KNRelocDoms  _ e -> go xs e
           KNIf            _ _ e1 e2   -> go (go xs e1) e2
           KNLetVal          _ e1 e2   -> go (go xs e1) e2
           KNCase       _ _ arms       -> let es = concatMap caseArmExprs arms in
@@ -1024,6 +1045,7 @@ collectMentions knf = go Set.empty (fnBody knf)
           KNCompiles _r _t e             -> go xs e
           KNInlined _t0 _to _tn _old new -> go xs new
           KNNotInlined _x e -> go xs e
+          KNRelocDoms  _  e -> go xs e
 
 rebuildFnWith rebuilder addBindingsFor f =
          let rebuiltBody = rebuildWith rebuilder (fnBody f) in
@@ -1055,6 +1077,7 @@ rebuildWith rebuilder e = q e
       KNCompiles _r _t e             -> KNCompiles _r _t (q e)
       KNInlined _t0 _to _tn _old new -> KNInlined _t0 _to _tn _old (q new)
       KNNotInlined x e -> KNNotInlined x (q e)
+      KNRelocDoms ids e -> KNRelocDoms ids (q e)
 
 mkLetFuns []       e = e
 mkLetFuns bindings e = KNLetFuns ids fns e where (ids, fns) = unzip bindings
@@ -1151,22 +1174,18 @@ localBlockSinking knf =
           doms = Map.fromList [(n2b node, n2b ndom)
                               | (node, ndom) <- Graph.iDom callGraph root]
 
-  -- Remove original bindings, if they are being relocated elsewhere.
+  -- Remove unreachable functions.
   rebuilder idsfns =
       [(id, rebuildFn fn)
       |(id, fn) <- idsfns,
-       Set.notMember (fnIdent fn) shouldBeRelocated
-        -- Discard unreachable functions.
-        && Set.member (fnIdent fn) reachable]
-    where
-        shouldBeRelocated = Set.fromList $ map (\((_id, fn), _) -> fnIdent fn)
-                                               relocationTargetsList
+       Set.member (fnIdent fn) reachable]
 
-  -- Add new bindings for functions which should be relocated.
+  -- Add relocation markers for functions which should be relocated.
   addBindingsFor f body = let (ids, fns) = unzip newfns in
                           let fnMarker fn isCyclic =
                                 fn { fnIsRec = if isCyclic then YesRec else NotRec } in
-                          let mkLetFuns' ids fns body = mkLetFuns (zip ids fns) body in
+                          let mkLetFuns' ids _fns body =
+                                if null ids then body else KNRelocDoms ids body in
                           mkFunctionSCCs ids fns body fnMarker mkLetFuns'
         where
           newfns   = [(id, rebuildFn fn)
@@ -1446,6 +1465,7 @@ knLoopHeaders' expr addLoopHeadersForNonTailLoops = do
     KNCompiles r t e -> KNCompiles r t (q tailq e)
     KNInlined _t0 _to _tn _old new -> q tailq new
     KNNotInlined _x e -> q tailq e
+    KNRelocDoms ids e -> KNRelocDoms ids (q tailq e)
     KNCase        ty v arms     -> KNCase ty v (map (fmapCaseArm id (q tailq) id) arms)
     KNIf          ty v e1 e2    -> KNIf     ty v (q tailq e1) (q tailq e2)
     KNLetVal      id   e1 e2    -> let e1' = q NotTail e1
@@ -2218,6 +2238,8 @@ knInline' expr env = do
       qav (Right v) = liftM Right (q v)
   knBumpTotalEffort
   withRaisedLevel $ case expr of
+    KNRelocDoms ids e -> do Rez e' <- knInline' e env
+                            return $ Rez $ KNRelocDoms ids e'
     KNCompiles _r _t e -> do Rez e' <- knInline' e env
                              return $ Rez $ KNCompiles _r _t e'
     KNInlined _t0 _to _tn _old new -> do Rez new' <- knInline' new env
