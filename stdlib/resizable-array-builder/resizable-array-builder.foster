@@ -44,7 +44,7 @@ rabSize = { rab =>
 };
 
 newResizableArrayBuilder = {
-  v = prim mach-array-literal 0dd_16;
+  v = prim mach-array-literal 0;
   rcap = (prim ref v);
   rsiz = (prim ref 0);
   ResizableArrayBuilder rcap rsiz
@@ -70,8 +70,16 @@ rabGrowToLimit = { rab => lim =>
 // Returns the number of bytes written.
 rabWriteBytes :: { ResizableArrayBuilder => Word => Bytes => Word };
 rabWriteBytes = { rab => offset => bs =>
-  rabCheckLimit rab (offset +Word bytesLengthWord bs);
+  rabCheckLimit rab (offset +Word (bytesLengthWord bs -Word 1));
 
+  // TODO think about how we might guarantee we don't allocate
+  // a closure every time this function is called, without
+  // inlining bytesFoldlBytes. The caller could pass in the closure
+  // over rab, but that's a gross violation of concerns.
+  // What's the automated compiler transform to do so?
+  //    * See one closure in function body, which closes over function arg.
+  //    * Transform parent to take extra param; move closure to call site.
+  //    * From there, can lift closure...
   // TODO use memcpy?
   bytesFoldlBytes bs { w8 => idx : Word =>
     rabWriteWord8_ rab (offset +Word idx) w8;
@@ -136,6 +144,29 @@ rabWriteWord64 :: { ResizableArrayBuilder => Word => Int64 => () };
 rabWriteWord64 = { rab => offset => value =>
   rabWriteWord32 rab (offset +Word 4) (bitlshr-Int64 value  32 |> trunc_i64_to_i32);
   rabWriteWord32 rab (offset +Word 0) (              value     |> trunc_i64_to_i32);
+};
+
+rabWriteWord16be :: { ResizableArrayBuilder => Word => Int32 => () };
+rabWriteWord16be = { rab => offset => value =>
+  rabCheckLimit  rab (offset +Word 1);
+  rabWriteWord8_ rab (offset +Word 1) (              value   |> trunc_i32_to_i8);
+  rabWriteWord8_ rab (offset +Word 0) (bitlshr-Int32 value 8 |> trunc_i32_to_i8);
+};
+
+rabWriteWord32be :: { ResizableArrayBuilder => Word => Int32 => () };
+rabWriteWord32be = { rab => offset => value =>
+  rabCheckLimit  rab (offset +Word 3);
+  rabWriteWord8_ rab (offset +Word 3) (              value    |> trunc_i32_to_i8);
+  rabWriteWord8_ rab (offset +Word 2) (bitlshr-Int32 value  8 |> trunc_i32_to_i8);
+  rabWriteWord8_ rab (offset +Word 1) (bitlshr-Int32 value 16 |> trunc_i32_to_i8);
+  rabWriteWord8_ rab (offset +Word 0) (bitlshr-Int32 value 24 |> trunc_i32_to_i8);
+  
+};
+
+rabWriteWord64be :: { ResizableArrayBuilder => Word => Int64 => () };
+rabWriteWord64be = { rab => offset => value =>
+  rabWriteWord32be rab (offset +Word 4) (              value    |> trunc_i64_to_i32);
+  rabWriteWord32be rab (offset +Word 0) (bitlshr-Int64 value 32 |> trunc_i64_to_i32);
 };
 
 
