@@ -43,16 +43,18 @@ cleanout () {
   rm -f gclog.txt
 }
 
+# We assume the middle-end is a prerequesite of fosteroptc
+# so we don't request it explicitly.
 build_prereqs() {
   if [ -f $R/_obj/Makefile ]; then
-    make -s -C $R/_obj fosteroptc fosterparse fosterlower me && cleanout
+    echo "make -s -C $R/_obj fosteroptc fosterparse fosterlower me && cleanout"
+    make -s -C $R/_obj fosteroptc fosterparse fosterlower && cleanout
   elif [ -f $R/_obj/build.ninja ]; then
-    ninja -C $R/_obj fosteroptc fosterparse fosterlower me && cleanout
+    ninja -C $R/_obj fosteroptc fosterparse fosterlower && cleanout
   else
     cmake --build $R/_obj --target fosteroptc && \
     cmake --build $R/_obj --target fosterparse && \
-    cmake --build $R/_obj --target fosterlower && \
-    cmake --build $R/_obj --target me && cleanout
+    cmake --build $R/_obj --target fosterlower && cleanout
   fi
 }
 
