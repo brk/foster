@@ -1,4 +1,4 @@
-{-# LANGUAGE GADTs , StandaloneDeriving, BangPatterns #-}
+{-# LANGUAGE GADTs , StandaloneDeriving, BangPatterns, Strict #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2011 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -340,8 +340,8 @@ fnIdent fn = tidIdent $ fnVar fn
 
 -- A function is recursive if any of the program-level identifiers
 -- from the SCC it is bound in appears free in its body.
-computeIsFnRec fn ids =
-  if Set.null (setIntersectLists (freeIdents fn) ids) then NotRec else YesRec
+computeIsFnRec' fnFreeIds ids =
+  if Set.null (setIntersectLists fnFreeIds ids) then NotRec else YesRec
          where setIntersectLists a b = Set.intersection (Set.fromList a)
                                                         (Set.fromList b)
 
@@ -774,9 +774,10 @@ instance Expr (EPattern ty) where
   freeVars = epatBoundNames
 
 instance AExpr body => AExpr (Fn recStatus body t) where
-    freeIdents f = let bodyvars =  freeIdents (fnBody f) in
-                   let boundvars =  map tidIdent (fnVars f) in
-                   bodyvars `butnot` boundvars
+  freeIdents f = freeIdentsFn (fnBody f) (fnVars f)
+
+freeIdentsFn :: AExpr body => body -> [TypedId t] -> [Ident]
+freeIdentsFn body vars = freeIdents body `butnot` map tidIdent vars
 
 instance IntSized IntSizeBits
  where
@@ -843,7 +844,7 @@ instance Eq Ident where
 instance Show Ident where
     show (Ident name number)   = T.unpack name ++ "!" ++ show number
     show (GlobalSymbol name (RenameTo alt)) = T.unpack name ++ "~>" ++ T.unpack alt
-    show (GlobalSymbol name _) = T.unpack name ++ "♠"
+    show (GlobalSymbol name _) = T.unpack name
 
 instance Eq (TypedId t) where
        (==) (TypedId _ a) (TypedId _ b) = (==) a b

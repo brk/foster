@@ -1,3 +1,4 @@
+{-# LANGUAGE Strict #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2011 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be

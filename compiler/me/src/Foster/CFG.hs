@@ -1,5 +1,5 @@
 {-# LANGUAGE GADTs, TypeSynonymInstances, RankNTypes, ScopedTypeVariables,
-             PatternGuards, TypeFamilies, NoMonoLocalBinds #-}
+             PatternGuards, TypeFamilies, NoMonoLocalBinds, Strict #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2011 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -253,10 +253,11 @@ rebuildGraphAccM :: (Monad m, NonLocal o, FosterNode i, NonLocal i)
                          -> (forall e x. acc -> i e x -> m (Graph o e x, acc))
                          -> m (Graph o C C, acc)
 rebuildGraphAccM mb_entrybid body init transform = do
+   let transformer insn acc = transform acc insn
    let rebuildBlockGraph blk_cc acc0 = do {
       ; let (f, ms, l) = unblock ( blockSplit blk_cc )
       ; (fg, acc1) <- transform acc0 f
-      ; (gs, accn) <- mapFoldM' ms acc1 (\insn acc -> transform acc insn)
+      ; (gs, accn) <- mapFoldM' ms acc1 transformer
       ; (lg, accm) <- transform accn l
       ; return $ (fg H.<*> catGraphs gs H.<*> lg, accm)
    }

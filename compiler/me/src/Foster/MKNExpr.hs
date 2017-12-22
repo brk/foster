@@ -1,4 +1,4 @@
-{-# LANGUAGE RecursiveDo, GADTs #-}
+{-# LANGUAGE RecursiveDo, GADTs, StrictData #-}
 -- RecursiveDo is used in dlcSingleton
 
 module Foster.MKNExpr (MKBound(MKBound), mkOfKNMod, mknInline, mknShrink,

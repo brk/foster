@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts, Strict #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2011 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -571,6 +571,7 @@ whenMonoWanted id action = do
     else return ()
 
 computeRecursivenessAnnotations fns ids = map annotate fns where
+  computeIsFnRec fn ids = computeIsFnRec' (freeIdents fn) ids
   annotate fn = Fn { fnVar   = fnVar fn
                    , fnVars  = fnVars fn
                    , fnBody  = fnBody fn

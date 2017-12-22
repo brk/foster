@@ -1,3 +1,4 @@
+{-# LANGUAGE Strict #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2012 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -229,8 +230,10 @@ newTcSkolem (tv, k) = do u <- newTcUniq
   where nameOf (BoundTyVar name _)    = name
         nameOf (SkolemTyVar name _ _) = name
 
+-- Lazy in its argument because typechecking uses an error value
+-- as a default, expected-to-be-replaced marker.
 newTcRef :: a -> Tc (IORef a)
-newTcRef v = tcLift $ newIORef v
+newTcRef ~v = tcLift $ newIORef v
 
 newTcUnificationVarEffect d = newTcUnificationVar_ MTVEffect d
 newTcUnificationVarSigma  d = newTcUnificationVar_ MTVSigma d

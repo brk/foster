@@ -1,3 +1,4 @@
+{-# LANGUAGE Strict #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2011 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -1115,8 +1116,8 @@ equivTypedId tid1 tid2 =
 equivStructureAndVarNames :: AnnExpr TypeTC -> AnnExpr TypeTC -> Bool
 equivStructureAndVarNames e1 e2 =
   let q = equivStructureAndVarNames in
-  let qf = undefined in
-  let qc = undefined in
+  let qf _f1 _f2 = error "equivStructureAndVarNames can't yet handle functions" in
+  let qc _c1 _c2 = error "equivStructureAndVarNames can't yet handle case arms" in
   let qtid = equivTypedId in
   let qp prim1 prim2 =
         case (prim1, prim2) of
