@@ -1,4 +1,4 @@
-{-# Language StrictData #-}
+{-# Language Strict #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2010 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -337,7 +337,7 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
            go block rest (letbind thing expr)
          letbind (StmtExpr    annot e)                        expr = E_SeqAST annot e expr
          letbind (StmtLetBind annot (EP_Variable _ v, bound)) expr = E_LetAST annot (TermBinding v bound) expr
-         letbind (StmtLetBind annot (pat, bound))             expr = E_Case   annot bound [CaseArm pat expr Nothing [] (error "E_Case range 3")]
+         letbind (StmtLetBind annot (pat, bound))             expr = E_Case   annot bound [CaseArm pat expr Nothing [] (rangeOf annot)]
          letbind (StmtRecBind _ _) _xpr = error "shouldn't happen"
        in
       case rev_pparts of

@@ -1,4 +1,4 @@
-{-# LANGUAGE StandaloneDeriving, BangPatterns, FlexibleContexts #-}
+{-# LANGUAGE StandaloneDeriving, BangPatterns, FlexibleContexts, Strict #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2011 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -1494,14 +1494,15 @@ knLoopHeaders' expr addLoopHeadersForNonTailLoops = do
 
                 v'inr  = TypedId (selectUsefulArgs id' mt (tidType (fnVar fn))) id'
                 v''inr = TypedId (selectUsefulArgs id' mt (tidType (fnVar fn))) id''
+                vars   = dropUselessArgs mt (fnVars fn)
                 -- The inner, tail-recursive body
                 fn'inr = Fn { fnVar   = v''inr
-                            , fnVars  = dropUselessArgs mt (fnVars fn)
+                            , fnVars  = vars
                             , fnBody  = body
-                            , fnIsRec = computeIsFnRec fn'inr [id']
+                            , fnIsRec = computeIsFnRec' (freeIdentsFn body vars) [id']
                             , fnAnnot = annotForRange (rangeOf fn)
                             }
-                
+                  
                 (v'mid, id'mid, fn'mid) =
                   if addLoopHeadersForNonTailLoops && ntc
                     then
@@ -1509,26 +1510,29 @@ knLoopHeaders' expr addLoopHeadersForNonTailLoops = do
                         -- The middle, non-tail wrapper
                         v'nt  = TypedId (selectUsefulArgs id' mt (tidType (fnVar fn))) id'nt
                         v''nt = TypedId (selectUsefulArgs id' mt (tidType (fnVar fn))) id''nt
-                        fn'nt = Fn { fnVar   = v''nt
-                                  , fnVars  = dropUselessArgs mt (fnVars fn)
-                                  , fnBody  = if tc
-                                                then KNLetFuns [ id' ] [ fn'inr ]
-                                                      (KNCall (typeKN (fnBody fn)) v'inr (dropUselessArgs mt vs' ))
-                                                else body
-                                  , fnIsRec = computeIsFnRec fn'nt [id'nt]
-                                  , fnAnnot = annotForRange (rangeOf fn)
-                                  }
+                        body' = if tc
+                                  then KNLetFuns [ id' ] [ fn'inr ]
+                                        (KNCall (typeKN (fnBody fn)) v'inr (dropUselessArgs mt vs' ))
+                                  else body
+                        fn'nt = Fn  { fnVar   = v''nt
+                                    , fnVars  = vars
+                                    , fnBody  = body'
+                                    , fnIsRec = computeIsFnRec' (freeIdentsFn body' vars) [id'nt]
+                                    , fnAnnot = annotForRange (rangeOf fn)
+                                    }
                        in (v'nt, id'nt, fn'nt)
                      else (v'inr, id', fn'inr)
 
                 -- The "original" fn definition, which calls the middle wrapper with the relevant args.
-                fn' = Fn { fnVar   = fnVar fn
-                         , fnVars  = renameUsefulArgs mt vs'
-                         , fnBody  = KNLetFuns [ id'mid ] [ fn'mid ]
-                                         (KNCall (typeKN (fnBody fn)) v'mid (dropUselessArgs mt vs' ))
-                         , fnIsRec = computeIsFnRec fn' [id]
-                         , fnAnnot = fnAnnot fn
-                         } in
+                vars'' = renameUsefulArgs mt vs'
+                body'' = KNLetFuns [ id'mid ] [ fn'mid ]
+                          (KNCall (typeKN (fnBody fn)) v'mid (dropUselessArgs mt vs' ))
+                fn' = Fn  { fnVar   = fnVar fn
+                          , fnVars  = vars''
+                          , fnBody  = body''
+                          , fnIsRec = computeIsFnRec' (freeIdentsFn body'' vars'') [id]
+                          , fnAnnot = fnAnnot fn
+                          } in
             KNLetFuns [id ] [ fn' ] (qq (Map.delete id info) r inScopeHeaders tailq b)
               
           -- No loop summary, or summary with no wrapper to generate.

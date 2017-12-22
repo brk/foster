@@ -1,3 +1,4 @@
+{-# LANGUAGE Strict #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2010 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -433,7 +434,7 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
                                                 (E_AnnVar (annotForRange $ MissingSourceRange "buildExprSCC'main")
                                                           (TypedId mainty (GlobalSymbol (T.pack "main") NoRename), Nothing))
                                                 []
-                               mainty = FnTypeTC [unitTypeTC] unitTypeTC (error "fx.bESCC") (UniConst FastCC) (UniConst FT_Proc)
+                               mainty = FnTypeTC [unitTypeTC] unitTypeTC emptyEffectTC (UniConst FastCC) (UniConst FT_Proc)
                           in foldr build call_of_main es
          where isFn (E_AnnFn {}) = True
                isFn _ = False
