@@ -41,7 +41,8 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 #define TRACK_BYTES_ALLOCATED_PINHOOK 0
 #define GC_BEFORE_EVERY_MEMALLOC_CELL 0
 #define DEBUG_INITIALIZE_ALLOCATIONS  0
-#define  SEMA_INITIALIZE_ALLOCATIONS  0
+#define FORCE_INITIALIZE_ALLOCATIONS  0 // Initialize even when the middle end doesn't think it's necessary
+#define ELIDE_INITIALIZE_ALLOCATIONS  0 // Unsafe: ignore requests to initialize allocated memory.
 #define MEMSET_FREED_MEMORY           0
 // This included file may un/re-define these parameters, providing
 // a way of easily overriding-without-overwriting the defaults.
@@ -344,7 +345,8 @@ struct large_array_allocator {
     void* base = malloc(total_bytes + 8);
     heap_array* allot = align_as_array(base);
 
-    if (init && SEMA_INITIALIZE_ALLOCATIONS) { memset((void*) base, 0x00, total_bytes + 8); }
+    if (FORCE_INITIALIZE_ALLOCATIONS ||
+      (init && !ELIDE_INITIALIZE_ALLOCATIONS)) { memset((void*) base, 0x00, total_bytes + 8); }
     allot->set_header(arr_elt_map, mark_bits_current_value);
     allot->set_num_elts(num_elts);
     if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_array(total_bytes); }
@@ -883,7 +885,8 @@ public:
                                   int64_t  total_bytes,
                                   bool     init) {
     heap_array* allot = static_cast<heap_array*>(bumper->prechecked_alloc_noinit(total_bytes));
-    if (init && SEMA_INITIALIZE_ALLOCATIONS) { memset((void*) allot, 0x00, total_bytes); }
+    if (FORCE_INITIALIZE_ALLOCATIONS ||
+      (init && !ELIDE_INITIALIZE_ALLOCATIONS)) { memset((void*) allot, 0x00, total_bytes); }
     //fprintf(gclog, "alloc'a %d, bump = %p, low bits: %x\n", int(total_bytes), bump, intptr_t(bump) & 0xF);
     allot->set_header(arr_elt_map, this->mark_bits_current_value);
     allot->set_num_elts(num_elts);
@@ -1771,7 +1774,8 @@ class copying_gc : public heap {
                                       int64_t  total_bytes,
                                       bool     init) {
         heap_array* allot = static_cast<heap_array*>(bump);
-        if (init && SEMA_INITIALIZE_ALLOCATIONS) {
+        if (FORCE_INITIALIZE_ALLOCATIONS ||
+           (init && !ELIDE_INITIALIZE_ALLOCATIONS)) {
           memset(bump, 0x00, total_bytes);
         }
         incr_by(bump, total_bytes);
