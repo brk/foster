@@ -1,5 +1,5 @@
 {-# LANGUAGE GADTs, TypeSynonymInstances, BangPatterns, RankNTypes,
-             ScopedTypeVariables, NoMonoLocalBinds #-}
+             ScopedTypeVariables, NoMonoLocalBinds, Strict #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2010 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -98,7 +98,7 @@ instance Pretty (Set.Set Ident) where pretty s = text "{" <> list (map pretty (S
 
 prepForCodegen :: ModuleIL CCBody TypeLL -> MayGCConstraints -> Compiled (ILProgram, [Proc BasicBlockGraph' ])
 prepForCodegen m mayGCconstraints0 = do
-    let decls = map (\(s,t) -> LLExternDecl s t) (moduleILdecls m)
+    let decls = map (\(s,t, isForeign) -> LLExternDecl s t isForeign) (moduleILdecls m)
     let dts = moduleILprimTypes m ++ moduleILdataTypes m
     let CCBody hprocs valbinds = moduleILbody m
     (_ep_time, combined) <- ioTime $ mapM explicateProc hprocs

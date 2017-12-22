@@ -1,4 +1,4 @@
-{-# Language StrictData #-}
+{-# Language Strict #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2010 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -70,7 +70,7 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
 
   cb_parse_ToplevelItem cbor = case cbor of
     CBOR_Array [tok, _,_cbr, CBOR_Array [x, t]] | tok `tm` tok_DECL ->
-       ToplevelDecl (cb_parse_x_str x, cb_parse_t t)
+       ToplevelDecl (cb_parse_x_str x, cb_parse_t t, NotForeign)
     CBOR_Array [tok, _,_cbr, CBOR_Array [x, phrase]] | tok `tm` tok_DEFN ->
       case (cb_parse_x_str x, cb_parse_phrase phrase) of
         (name, E_FnAST annot fn) ->
@@ -82,6 +82,7 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
        ToplevelData $ DataType (cb_parse_tyformal      tyformal_nm)
                                    tyf
                                    (map (cb_parse_data_ctor tyf) (unMu mu_data_ctors))
+                                   False
                                    (cb_parse_range          cbr)
     CBOR_Array [tok, _, cbr, CBOR_Array [tyformal_nm, mu_tyformals, mu_effect_ctors]]
                                                       | tok `tm` tok_EFFECT ->
@@ -90,6 +91,20 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
                                    tyf
                                    (map (cb_parse_effect_ctor tyf) (unMu mu_effect_ctors))
                                    (cb_parse_range          cbr)
+
+    CBOR_Array [tok, _,_cbr, CBOR_Array [CBOR_Array (tag:_), x, t]] | tok `tm` tok_FOREIGN
+                                                                   && tag `tm` tok_DECL ->
+      let name = cb_parse_x_str x in
+      ToplevelDecl (name, makeProcsWithin (cb_parse_t t), IsForeign name)
+    CBOR_Array [tok, _,_cbr, CBOR_Array [CBOR_Array (tag:_), x, t, id]] | tok `tm` tok_FOREIGN
+                                                                   && tag `tm` tok_DECL ->
+      ToplevelDecl (cb_parse_id_str id, makeProcsWithin (cb_parse_t t), IsForeign (cb_parse_x_str x))
+
+    CBOR_Array [tok, _, cbr, CBOR_Array [CBOR_Array (tag:_), tyformal_nm]] | tok `tm` tok_FOREIGN && tag `tm` _tok_TYPE ->
+      ToplevelData $ DataType (cb_parse_tyformal tyformal_nm)
+                              [] [] True
+                              (cb_parse_range          cbr)
+
     _ -> error $ "cb_parseToplevelItem failed: " ++ show cbor
 
   -- ^(OF dctor tatom*);
@@ -119,6 +134,10 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
     CBOR_Array [tok, _,_cbr, CBOR_Array [name]] | tok `tm` tok_TYPENAME -> cb_parse_typename name
     _ -> error $ "cb_parse_aid failed: " ++ show cbor
 
+  cb_parse_id_str cbor = case cbor of
+    CBOR_Array [_tok, name,_cbr, _] -> T.unpack (cborText name)
+    _ -> error $ "cb_parse_id_str failed: " ++ show cbor
+    
   cb_parse_x_str cbor = T.unpack (cb_parse_x_text cbor)
   cb_parse_x_VarAST cbor = case cb_parse_x cbor of
                              E_VarAST _ v -> v
@@ -353,7 +372,7 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
            go block rest (letbind thing expr)
          letbind (StmtExpr    annot e)                        expr = E_SeqAST annot e expr
          letbind (StmtLetBind annot (EP_Variable _ v, bound)) expr = E_LetAST annot (TermBinding v bound) expr
-         letbind (StmtLetBind annot (pat, bound))             expr = E_Case   annot bound [CaseArm pat expr Nothing [] (error "E_Case range 3")]
+         letbind (StmtLetBind annot (pat, bound))             expr = E_Case   annot bound [CaseArm pat expr Nothing [] (rangeOf annot)]
          letbind (StmtRecBind _ _) _xpr = error "shouldn't happen"
        in
       case rev_pparts of
@@ -703,7 +722,6 @@ parseCallPrim' primname tys args annot = do
                            _                 -> E_StoreAST annot a b
       ("kill-entire-process",  [s@(E_StringAST {})]) ->
                                                 E_KillProcess annot s
-      ("log-type",  [e]) -> E_CallAST annot (E_PrimAST annot "log-type" [] []) [e]
       ("inline-asm", _) ->
         case (tys, args) of
           ([_], E_StringAST _ (SS_Text _ cnt) : E_StringAST _ (SS_Text _ cns) : E_BoolAST _ sideeffects : args' ) -> do
@@ -923,3 +941,15 @@ annotOfParsedStmt ps = case ps of
   StmtExpr    annot _ -> annot
   StmtLetBind annot _ -> annot
   StmtRecBind annot _ -> annot
+
+makeProcsWithin :: TypeP -> TypeP  
+makeProcsWithin typ = go typ where
+  go x = case x of
+    TyConP    _nm                 -> x
+    TyAppP    con types           -> TyAppP (go con) (map go types)
+    TupleTypeP k  types           -> TupleTypeP k (map go types)
+    FnTypeP    s t fx cc _pf src -> FnTypeP (map go s) (go t) (fmap go fx) CCC FT_Proc src
+    ForAllP  tvs rho              -> ForAllP tvs (go rho)
+    TyVarP   {}                   -> x
+    MetaPlaceholder {}            -> x
+    RefinedTypeP nm ty _e         -> RefinedTypeP nm (go ty) _e

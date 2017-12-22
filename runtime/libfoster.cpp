@@ -126,6 +126,11 @@ void __foster_install_sigsegv_handler() {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+// The default coro struct should be dynamically allocated;
+// if it is statically allocated then it will be ignored by the
+// subheap-crossing filter in immix_trace().
+extern "C" foster_bare_coro* foster__runtime__alloc_default_coro();
+
 struct FosterVirtualCPU {
   FosterVirtualCPU() : needs_resched(0)
                      , current_coro(NULL)
@@ -133,20 +138,19 @@ struct FosterVirtualCPU {
                      {
     // Per-vCPU initialization...
 
+    current_coro = foster__runtime__alloc_default_coro();
     // Per the libcoro documentation, passing all zeros creates
     // an "empty" context which is suitable as an initial source
     // for coro_transfer.
-    coro_create(&default_coro.ctx, 0, 0, 0, 0);
-    default_coro.env = NULL;
-    default_coro.parent = NULL;
-    default_coro.indirect_self = NULL;
-    default_coro.status = FOSTER_CORO_RUNNING;
-
-    current_coro = &default_coro;
+    libcoro__coro_create(&current_coro->ctx, 0, 0, 0, 0);
+    current_coro->env = NULL;
+    current_coro->parent = NULL;
+    current_coro->indirect_self = NULL;
+    current_coro->status = FOSTER_CORO_RUNNING;
   }
 
   ~FosterVirtualCPU() {
-    foster_coro_destroy(&default_coro.ctx);
+    foster_coro_destroy(&current_coro->ctx);
     free(signal_stack);
   }
 
@@ -162,12 +166,8 @@ struct FosterVirtualCPU {
     foster__assert(rv == 0, "signaltstack failed");
   }
 
-  foster_bare_coro    default_coro;
-  void*                  coro_arg;
-  void*                  coro_arg2;
-
   // Updated by coro_invoke and coro_yield.
-  foster_bare_coro*   current_coro;
+  foster_bare_coro*      current_coro;
 
   AtomicBool             needs_resched;
 
@@ -267,13 +267,13 @@ namespace runtime {
 void initialize(int argc, char** argv, void* stack_base) {
   parse_runtime_options(argc, argv);
 
-  // TODO Initialize one default coro context per thread.
+  gc::initialize(stack_base);
+
   __foster_vCPUs.push_back(new FosterVirtualCPU());
   __foster_vCPUs[0]->install_signal_stack();
 
   __foster_install_sigsegv_handler();
 
-  gc::initialize(stack_base);
   start_scheduling_timer_thread();
 }
 
@@ -473,6 +473,30 @@ int8_t memcpy_i8_to_at_from_at_len(foster_bytes* to,   int64_t   to_at,
   return (len == req_len) ? 0 : 1;
 }
 
+// Copies a byte array (Array Int8) from the Foster heap
+// to the C heap, adding a null terminator.
+char* cstr(foster_bytes* not_assumed_null_terminated) {
+  size_t len = not_assumed_null_terminated->cap;
+  char* rv = (char*) malloc(len + 1);
+  memcpy(rv, not_assumed_null_terminated->bytes, len);
+  rv[len] = '\0';
+  return rv;
+}
+
+// Yields a direct pointer into the Foster heap,
+// typed for use in C. Note that the returned C pointer
+// does not point to a null terminated buffer!
+char* cdataptr_unsafe(foster_bytes* b, int32_t offset) {
+  return (char*) &b->bytes[0] + offset;
+}
+
+void cstr_free(char* s) { free(s); }
+
+FILE* c2f_stdin__autowrap() { return stdin; }
+FILE* c2f_stdout__autowrap() { return stdout; }
+FILE* c2f_stderr__autowrap() { return stderr; }
+
+
 void print_float_f64x(double f) { return fprint_f64x(stdout, f); }
 void expect_float_f64x(double f) { return fprint_f64x(stderr, f); }
 
@@ -480,6 +504,8 @@ void print_float_p9f64(double f) { return fprint_p9f64(stdout, f); }
 void expect_float_p9f64(double f) { return fprint_p9f64(stderr, f); }
 
 double foster__logf64(double f) { return log(f); }
+
+int32_t get_cmdline_n_args() { return __foster_globals.args.size(); }
 
 // For GC roots to work correctly, the returned pointer
 // must be of type Text (i.e. %Text.DT*) but we have no

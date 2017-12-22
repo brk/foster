@@ -1,98 +1,7 @@
+snafuinclude Coro "coro";
+
 brkpt = { x => x };
 
-type case Maybe (t:Type) of $None of $Some t;
-
-effect CoroYield (cyv:Boxed) (cyr:Boxed) of $CoroYield cyv => cyr;
-
-
-
-/*
-
-type case Coro (co:Boxed) (ci:Boxed)
-  of $Coro { ci => co @(CoroYield co ci) }
-  ;
-
-coro_createX :: forall (cco:Boxed) (cci:Boxed) { { cci => cco @(CoroYield cco cci) } => Coro cco cci };
-coro_createX = { f => Coro (prim ref f) };
-
-// Properly, this should have an effect of modifying the heap reference inside Coro.
-coro_invokeX :: forall (a:Boxed) (b:Boxed) { Coro a b => b => a };
-coro_invokeX = { c => i =>
-  case c of $Coro r ->b
-    handle r^ i
-    of $CoroYield v -> // The problem with this formulation is that each call to invoke
-                       // re-executes the ``handle`` construct, which means all but the first
-                       // will allocate an unnecessary coroutine wrapper around the existing
-                       // coroutine hidden in the ``resume`` function.
-                       resume >^ r;
-                       v
-    end
-  end
-};
-*/
-
-
-// The following formulation takes care to only execute the ``handle`` construct once,
-// by using explicit mutable state to distinguish between first and subsequent invocations.
-// The use of Maybe is a workaround for an occurs check violation that I haven't investigated yet,
-// when using ``r = (prim ref f)``.
-
-
-type case CoroState (co:Boxed) (ci:Boxed)
-  of $CoroInit { ci => co }
-  of $CoroSusp (Ref (Maybe { ci => co }))
-  ;
-
-coro_createX :: forall (cco:Boxed) (cci:Boxed) { { cci => cco @(CoroYield cco cci) } => Ref (CoroState cco cci) };
-coro_createX = { f => 
-  (prim ref (CoroInit f))
-};
-
-// Properly, this should have an effect of modifying the heap reference inside Coro.
-coro_invokeX :: forall (a:Boxed) (b:Boxed) { Ref (CoroState a b) => b => a };
-coro_invokeX = { c => i =>
-  case c^
-    of $CoroSusp rmb -> case rmb^ of $Some f -> f i of $None -> prim kill-entire-process "invariant violation" end
-    of $CoroInit f ->
-        r = (prim ref None);
-        (CoroSusp r) >^ c;
-
-        handle f i
-          of $CoroYield v -> (Some resume) >^ r; v
-          as { fin => CoroDead >^ c; fin }
-        end
-  end
-};
-
-/* A possible alternative with exposed coroutine/continuation primitives might be
-   like this, although I think this is not particularly better than the function-based
-   encoding above, and it requires the compiler to recognize and specially treat
-   handle expressions of the form ``prim coro_invoke ...``
-
-   Arguably it's worse because we now have two handle expressions.
-
-coro_createX :: forall (cco:Boxed) (cci:Boxed) { { cci => cco @(CoroYield cco cci) } => Coro cco cci };
-coro_createX = { f => 
-  Coro (prim ref (CoroInit {
-    handle f i
-      of $CoroYield v -> resumecoro >^ rc; v
-    end } ))
-};
-
-// Properly, this should have an effect of modifying the heap reference inside Coro.
-coro_invokeX :: forall (a:Boxed) (b:Boxed) { Coro a b => b => a };
-coro_invokeX = { c => i =>
-  case c of $Coro r ->
-    case r^
-      of $CoroInit f -> f i
-      of $CoroSusp k -> handle prim coro_invoke k i
-                          of $CoroYield v -> CoroSusp resumecoro >^ r; v
-                        end
-    end
-  end
-};
-
-*/
 fst :: forall (a:Type) (b:Type) { (a, b) => a };
 fst = { p => case p of (a, b) -> a end };
 
@@ -108,7 +17,7 @@ main = {
   expect_i32 1235;
   expect_i32 55544;
   expect_i32 20;
-  expect_i32 42;
+  //expect_i32 42;
   expect_i32 21;
   expect_i32 5555555;
   expect_i32 6666666;
@@ -117,14 +26,14 @@ main = {
   expect_i1 False;
   expect_i1 True;
   */
-  expect_i32 43;
+  //expect_i32 43;
   expect_i32 9999;
   expect_i32 3333333;
   expect_i32 9999999;
   
   print_i32 1111111;
   /*
-  cog = coro_createX { z : (Int64, ()) =>
+  cog = coro_create { z : (Int64, ()) =>
     print_i64 (fst z);
     a = do_CoroYield ();
     print_i64 (fst a);
@@ -150,7 +59,7 @@ main = {
               //force_gc_for_debugging_purposes !;
          print_i32 y;
 
-         //coro_invokeX cog (42, ());
+         //coro_invoke cog (42, ());
 
          z = do_CoroYield (y +Int32 1, ()); // 30 <- 21
          print_i32 5555555;
@@ -163,11 +72,11 @@ main = {
 
          //print_i1 (__COMPILES__ do_CoroYield 7777 );
 
-         //coro_invokeX cog (43, ());
+         //coro_invoke cog (43, ());
 
          brkpt (9999, ());
   };
-  co = coro_createX f;
+  co = coro_create f;
   // f :: { (Bool, Int32) => Int32 @(Yield (Bool, Int32) (Int32, ())) }
   // co :: Coro (Bool, Int32) (Int32, ())
 
@@ -176,14 +85,14 @@ main = {
     print_i32 2222;
   //force_gc_for_debugging_purposes !;
     print_i32 22222;
-    print_i32 (fst (coro_invokeX co (True, 10))); // 6666
+    print_i32 (fst (coro_invoke co (True, 10))); // 6666
 
     print_i32 1234;
   //force_gc_for_debugging_purposes !;
     print_i32 1235;
-    print_i32 (fst (coro_invokeX co (True, 20))); // 21
+    print_i32 (fst (coro_invoke co (True, 20))); // 21
   //force_gc_for_debugging_purposes !;
-    print_i32 (fst (coro_invokeX co (True, 30)));
+    print_i32 (fst (coro_invoke co (True, 30)));
     print_i32 3333333;
     print_i32 9999999;
 };

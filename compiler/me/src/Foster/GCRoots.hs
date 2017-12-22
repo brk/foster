@@ -452,7 +452,7 @@ insertDumbGCRoots bbgp0 dump = do
                                  put (Map.insert v root gcr)
                                  retLoaded root v
 
-  isGlobalFunc (GlobalSymbol _) = True
+  isGlobalFunc (GlobalSymbol _ _) = True
   isGlobalFunc (Ident _ _) = False
 
   isGCableVar v = not (isGlobalFunc (tidIdent v)) && isGCable (tidType v)

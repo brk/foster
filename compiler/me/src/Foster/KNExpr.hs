@@ -65,7 +65,9 @@ ccFresh s = ccFreshId (T.pack s)
 
 --------------------------------------------------------------------
 
-type KNState = (Context TypeTC, Map String [DataType TypeTC], Map String [EffectDecl TypeIL]
+type KNState = (Context TypeTC
+               ,Map String [DataType TypeTC]
+               ,Map String [EffectDecl TypeIL]
                ,Map String (DataType TypeIL))
 -- convertDT needs st to call tcToIL
 -- kNormalCtors uses contextBindings and nullCtorBindings of Context TypeTC
@@ -96,7 +98,7 @@ kNormalizeModule m ctx = do
     let allDataTypes = prims' ++ dts'
     let dtypeMap = Map.fromList [(typeFormalName (dataTypeName dt), dt) | dt <- allDataTypes]
     let st = (ctx, contextDataTypes ctx, eds', dtypeMap)
-    decls' <- mapM (\(s,t) -> do t' <- tcToIL st t ; return (s, t')) (moduleILdecls m)
+    decls' <- mapM (\(s,t, isForeign) -> do t' <- tcToIL st t ; return (s, t', isForeign)) (moduleILdecls m)
     body' <- do { ctors <- sequence $ concatMap (kNormalCtors st) allDataTypes
                 ; effectWrappers <- sequence $ concatMap (kNormalEffectWrappers st) effds'
                 ; body  <- kNormalize st (moduleILbody m)
@@ -298,32 +300,6 @@ kNormalize st expr =
                    prim' <- ilPrim prim
                    nestedLets (map go args) (\vars -> KNCallPrim (rangeOf annot) ti prim' vars)
 
-                -- Now that we can see type applications,
-                -- we can build coroutine primitive nodes.
-                E_AnnTyApp _ _ot (AnnPrimitive _rng _ (NamedPrim tid)) apptys ->
-                   let primName = identPrefix (tidIdent tid) in
-                   case (coroPrimFor primName, apptys) of
-                     (Just CoroCreate, [argty, retty, _fxty]) -> do
-                       [aty, rty] <- mapM qt [argty, retty]
-                       nestedLets (map go args) (\vars -> KNCallPrim (rangeOf annot) ti (CoroPrim CoroCreate aty rty) vars)
-
-                     (Just coroPrim, (argty:retty:_fxty_or_null)) -> do
-                       [aty, rty] <- mapM qt [argty, retty]
-                       nestedLets (map go args) (\vars -> KNCallPrim (rangeOf annot) ti (CoroPrim coroPrim aty rty) vars)
-
-                     _otherwise -> do
-                       -- v[types](args) ~~>> let <fresh> = v[types] in <fresh>(args)
-                       error $ "tyapp of non-coro primitive... " ++ show primName
-                       {-
-                       apptysi <- mapM qt apptys
-                       prim' <- ilPrim st prim
-                       tid' <- aiVar st tid
-                       oti <- qt ot
-                       x <- tcFreshT $ "appty_" `prependedTo` primName
-                       return $ AILetVar x (E_AITyApp oti (E_AIVar tid') apptysi)
-                                          $ AICallPrim (rangeOf annot) ti prim' argsi
-                                          -}
-
                 _else -> do knCall ti b args
 
       AnnAppCtor _ t c es -> do let repr = lookupCtorRepr (lookupCtor c)
@@ -336,7 +312,6 @@ kNormalize st expr =
           OK expr  -> do r <- tcLift $ newIORef True
                          return $ KNCompiles (KNCompilesResult r) boolTypeIL expr
           Errors _ -> do return $ KNLiteral boolTypeIL (LitBool False)
-
 
       AnnPrimitive annot _ p -> tcFails [text "Primitives must be called directly!"
                                         ,text "\tFound non-call use of " <> pretty p
@@ -386,7 +361,7 @@ kNormalize st expr =
                   kid <- knFresh "kont"
                   let kty = FnTypeIL [] t FastCC FT_Proc
                   let kontOf body = Fn {
-                          fnVar      = TypedId kty (GlobalSymbol (T.pack $ show kid))
+                          fnVar      = TypedId kty (GlobalSymbol (T.pack $ show kid) NoRename)
                         , fnVars     = []
                         , fnBody     = body
                         , fnIsRec    = ()
@@ -462,12 +437,6 @@ kNormalize st expr =
                         let patTys = map typeOf pats'
                         let cinfo' = LLCtorInfo cid (lookupCtorRepr (lookupCtor cid)) patTys
                         return $ PR_Ctor rng ty' pats' cinfo'
-
-        coroPrimFor s | s == T.pack "coro_create" = Just $ CoroCreate
-        coroPrimFor s | s == T.pack "coro_invoke" = Just $ CoroInvoke
-        coroPrimFor s | s == T.pack "coro_yield_to" = Just $ CoroYield
-        coroPrimFor s | s == T.pack "coro_parent" = Just $ CoroParent
-        coroPrimFor _ = Nothing
 
         ilPrim :: FosterPrim TypeTC -> KN (FosterPrim TypeIL)
         ilPrim prim =
@@ -583,7 +552,7 @@ convertED :: KNState -> EffectDecl TypeTC -> KN (EffectDecl TypeIL)
 convertED st (EffectDecl name formals effctors range) = do
   let dctors = [dctor | EffectCtor dctor _ <- effctors]
   let tys    = [ty    | EffectCtor _    ty <- effctors]
-  fakeDT <- convertDT st $ DataType name formals dctors range
+  fakeDT <- convertDT st $ DataType name formals dctors False range
   tys' <- mapM (tcToIL st) tys
   let effctors' = [EffectCtor dctor' ty' | (dctor', ty') <- zip (dataTypeCtors fakeDT) tys']
   return $ EffectDecl name formals effctors' range
@@ -599,13 +568,13 @@ convertED st (EffectDecl name formals effctors range) = do
 
 -- Wrinkle: need to extend the context used for checking ctors!
 convertDT :: KNState -> DataType TypeTC -> KN (DataType TypeIL)
-convertDT st (DataType dtName tyformals ctors range) = do
+convertDT st (DataType dtName tyformals ctors isForeign range) = do
   -- f :: TypeTC -> Tc TypeIL
   let f = tcToIL st
   cts <- mapM (convertDataCtor f) ctors
 
   optrep <- tcShouldUseOptimizedCtorReprs
-  let dt = DataType dtName tyformals cts range
+  let dt = DataType dtName tyformals cts isForeign range
   let reprMap = Map.fromList $ optimizedCtorRepresesentations dt
   return $ dt { dataTypeCtors = withDataTypeCtors dt (getCtorRepr reprMap optrep) }
     where
@@ -1104,11 +1073,15 @@ kNormalEffectWrappers st ed = map kNormalEffectWrapper (zip [0..] (effectDeclCto
 
 -- |||||||||||||||||||||||||| Local Block Sinking |||||||||||||||{{{
 
--- This transformation re-locates functions according to their dominator tree.
+-- This transformation inserts markers for functions according to
+-- their dominator tree.
 --
 -- Block sinking is needed for contification to work properly;
 -- without it, a contifiable function would get contified into an outer scope,
 -- which doesn't work (since functions eventually get lifted to toplevel).
+-- However, moving closures to inner scopes can change the asympototic allocation
+-- profile of a program if the closure ends up not getting contified -- thus,
+-- we only insert markers rather than re-locating functions.
 --
 -- Performing sinking after monomorphization allows each monomorphization
 -- of a given function to be separately sunk.
@@ -1123,7 +1096,23 @@ kNormalEffectWrappers st ed = map kNormalEffectWrapper (zip [0..] (effectDeclCto
 -- by Olivier Danvy and Ulrik P. Schultz.
 --
 -- http://www.brics.dk/RS/99/27/BRICS-RS-99-27.pdf
-
+--
+--
+-- Brief summary of our algorithm:
+--   * Walk the AST, extracting:
+--     * Which functions contain which other functions (parent/child relation)
+--     * Which identifiers are mentioned in each function
+--   * For each function F:
+--     * Build a "call" graph in which function identifiers are nodes and mentions are edges.
+--       Prune out irrelevant edges by computing the reachable closure from F.
+--     * Compute (immediate) dominators for each node in the graph.
+--   * Now, comparing the parent/child relation with the dominator relation shows
+--     which functions need to be relocated, and where.
+--
+-- This algorithm, like many recursive functional AST traversals,
+-- is unfortunately O(n^2) in the depth of functions being nested.
+-- But fortunately n is usually small in programs written by humans.
+--
 collectFunctions :: Fn RecStatus (KNExpr' RecStatus t) t -> [(Ident, Ident, Fn RecStatus (KNExpr' RecStatus t) t)]  -- (parent, binding, child)
 collectFunctions knf = go [] (fnBody knf)
   where go xs e = case e of
@@ -1145,6 +1134,7 @@ collectFunctions knf = go [] (fnBody knf)
           KNCompiles _r _t e -> go xs e
           KNInlined _t0 _to _tn _old new -> go xs new
           KNNotInlined _ e -> go xs e
+          KNRelocDoms  _ e -> go xs e
           KNIf            _ _ e1 e2   -> go (go xs e1) e2
           KNLetVal          _ e1 e2   -> go (go xs e1) e2
           KNHandler _ _  _ e1 arms mb_e _ -> let es = concatMap caseArmExprs arms
@@ -1195,6 +1185,7 @@ collectMentions knf = go Set.empty (fnBody knf)
           KNCompiles _r _t e             -> go xs e
           KNInlined _t0 _to _tn _old new -> go xs new
           KNNotInlined _x e -> go xs e
+          KNRelocDoms  _  e -> go xs e
 
 rebuildFnWith rebuilder addBindingsFor f =
          let rebuiltBody = rebuildWith rebuilder (fnBody f) in
@@ -1227,6 +1218,7 @@ rebuildWith rebuilder e = q e
       KNCompiles _r _t e             -> KNCompiles _r _t (q e)
       KNInlined _t0 _to _tn _old new -> KNInlined _t0 _to _tn _old (q new)
       KNNotInlined x e -> KNNotInlined x (q e)
+      KNRelocDoms ids e -> KNRelocDoms ids (q e)
 
 mkLetFuns []       e = e
 mkLetFuns bindings e = KNLetFuns ids fns e where (ids, fns) = unzip bindings
@@ -1326,22 +1318,18 @@ localBlockSinking knf =
           doms = Map.fromList [(n2b node, n2b ndom)
                               | (node, ndom) <- Graph.iDom callGraph root]
 
-  -- Remove original bindings, if they are being relocated elsewhere.
+  -- Remove unreachable functions.
   rebuilder idsfns =
       [(id, rebuildFn fn)
       |(id, fn) <- idsfns,
-       Set.notMember (fnIdent fn) shouldBeRelocated
-        -- Discard unreachable functions.
-        && Set.member (fnIdent fn) reachable]
-    where
-        shouldBeRelocated = Set.fromList $ map (\((_id, fn), _) -> fnIdent fn)
-                                               relocationTargetsList
+       Set.member (fnIdent fn) reachable]
 
   -- Add new bindings for functions which should be relocated.
   addBindingsFor f body = let (ids, fns) = unzip newfns in
                           let fnMarker fn isCyclic =
                                 fn { fnIsRec = if isCyclic then YesRec else NotRec } in
-                          let mkLetFuns' ids fns body = mkLetFuns (zip ids fns) body in
+                          let mkLetFuns' ids _fns body =
+                                if null ids then body else KNRelocDoms ids body in
                           mkFunctionSCCs ids fns body fnMarker mkLetFuns'
         where
           newfns   = [(id, rebuildFn fn)
@@ -1501,7 +1489,7 @@ computeInfo census headers =
 
 ccFreshen :: Ident -> Compiled Ident
 ccFreshen (Ident name _) = ccFreshId name
-ccFreshen id@(GlobalSymbol  _) = error $ "KNExpr.hs: cannot freshen global " ++ show id
+ccFreshen id@(GlobalSymbol _ _) = error $ "KNExpr.hs: cannot freshen global " ++ show id
 ccFreshenTid (TypedId t id) = do id' <- ccFreshen id
                                  return $ TypedId t id'
 
@@ -1621,6 +1609,7 @@ knLoopHeaders' expr addLoopHeadersForNonTailLoops = do
     KNCompiles r t e -> KNCompiles r t (q tailq e)
     KNInlined _t0 _to _tn _old new -> q tailq new
     KNNotInlined _x e -> q tailq e
+    KNRelocDoms ids e -> KNRelocDoms ids (q tailq e)
     KNHandler a  ty fx ea arms mbe resumeid -> KNHandler a ty fx (q NotTail ea) (map (fmapCaseArm id (q tailq) id) arms) (fmap (q tailq) mbe) resumeid
     KNCase        ty v arms     -> KNCase ty v (map (fmapCaseArm id (q tailq) id) arms)
     KNIf          ty v e1 e2    -> KNIf     ty v (q tailq e1) (q tailq e2)
@@ -1650,11 +1639,12 @@ knLoopHeaders' expr addLoopHeadersForNonTailLoops = do
 
                 v'inr  = TypedId (selectUsefulArgs id' mt (tidType (fnVar fn))) id'
                 v''inr = TypedId (selectUsefulArgs id' mt (tidType (fnVar fn))) id''
+                vars   = dropUselessArgs mt (fnVars fn)
                 -- The inner, tail-recursive body
                 fn'inr = Fn { fnVar   = v''inr
-                            , fnVars  = dropUselessArgs mt (fnVars fn)
+                            , fnVars  = vars
                             , fnBody  = body
-                            , fnIsRec = computeIsFnRec fn'inr [id']
+                            , fnIsRec = computeIsFnRec' (freeIdentsFn body vars) [id']
                             , fnAnnot = annotForRange (rangeOf fn)
                             }
                 
@@ -1665,26 +1655,29 @@ knLoopHeaders' expr addLoopHeadersForNonTailLoops = do
                         -- The middle, non-tail wrapper
                         v'nt  = TypedId (selectUsefulArgs id' mt (tidType (fnVar fn))) id'nt
                         v''nt = TypedId (selectUsefulArgs id' mt (tidType (fnVar fn))) id''nt
-                        fn'nt = Fn { fnVar   = v''nt
-                                  , fnVars  = dropUselessArgs mt (fnVars fn)
-                                  , fnBody  = if tc
-                                                then KNLetFuns [ id' ] [ fn'inr ]
-                                                      (KNCall (typeKN (fnBody fn)) v'inr (dropUselessArgs mt vs' ))
-                                                else body
-                                  , fnIsRec = computeIsFnRec fn'nt [id'nt]
-                                  , fnAnnot = annotForRange (rangeOf fn)
-                                  }
+                        body' = if tc
+                                  then KNLetFuns [ id' ] [ fn'inr ]
+                                        (KNCall (typeKN (fnBody fn)) v'inr (dropUselessArgs mt vs' ))
+                                  else body
+                        fn'nt = Fn  { fnVar   = v''nt
+                                    , fnVars  = vars
+                                    , fnBody  = body'
+                                    , fnIsRec = computeIsFnRec' (freeIdentsFn body' vars) [id'nt]
+                                    , fnAnnot = annotForRange (rangeOf fn)
+                                    }
                        in (v'nt, id'nt, fn'nt)
                      else (v'inr, id', fn'inr)
 
                 -- The "original" fn definition, which calls the middle wrapper with the relevant args.
-                fn' = Fn { fnVar   = fnVar fn
-                         , fnVars  = renameUsefulArgs mt vs'
-                         , fnBody  = KNLetFuns [ id'mid ] [ fn'mid ]
-                                         (KNCall (typeKN (fnBody fn)) v'mid (dropUselessArgs mt vs' ))
-                         , fnIsRec = computeIsFnRec fn' [id]
-                         , fnAnnot = fnAnnot fn
-                         } in
+                vars'' = renameUsefulArgs mt vs'
+                body'' = KNLetFuns [ id'mid ] [ fn'mid ]
+                          (KNCall (typeKN (fnBody fn)) v'mid (dropUselessArgs mt vs' ))
+                fn' = Fn  { fnVar   = fnVar fn
+                          , fnVars  = vars''
+                          , fnBody  = body''
+                          , fnIsRec = computeIsFnRec' (freeIdentsFn body'' vars'') [id]
+                          , fnAnnot = fnAnnot fn
+                          } in
             KNLetFuns [id ] [ fn' ] (qq (Map.delete id info) r inScopeHeaders tailq b)
               
           -- No loop summary, or summary with no wrapper to generate.
@@ -1730,8 +1723,8 @@ selectUsefulArgs id' _ ty = error $ "KNExpr.hs wasn't expecting a non-function t
 -- later on down the road. So for pure bindings, we check to see if they are
 -- dead and should be dropped.
 
-mkGlobalWithType ty (Ident t u) = TypedId ty (GlobalSymbol $ T.pack (T.unpack t ++ show u))
-mkGlobalWithType _  (GlobalSymbol _) = error $ "KNExpr.hs: mkGlobal(WithType) of global!"
+mkGlobalWithType ty (Ident t u) = TypedId ty (GlobalSymbol (T.pack (T.unpack t ++ show u)) NoRename)
+mkGlobalWithType _  (GlobalSymbol _ _) = error $ "KNExpr.hs: mkGlobal(WithType) of global!"
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
@@ -1985,7 +1978,8 @@ freshenId id = do id' <- freshenId' id
                   return id'
 
 freshenId' :: SrcId -> In ResId
-freshenId' (GlobalSymbol name) = -- error $ "can't freshen global symbol " ++ (T.unpack name)
+freshenId' (GlobalSymbol name (RenameTo _alt)) = error $ "KNExpr.hs: freshenId' can't freshen global symbol " ++ (T.unpack name)
+freshenId' (GlobalSymbol name NoRename) = -- error $ "can't freshen global symbol " ++ (T.unpack name)
      do u <- newUniq
         return $ Ident name u
 
@@ -2333,7 +2327,7 @@ notDead _    = True
 -- We need to force TextFragment to stay around because it will be
 -- referenced by the standard library.
 relevant occst id =
-  let isRelevant = notDead occst || id == (GlobalSymbol $ T.pack "TextFragment")
+  let isRelevant = notDead occst || id == (GlobalSymbol (T.pack "TextFragment") NoRename)
   in --trace ("relevant " ++ show occst ++ " " ++ show id ++ " = " ++ show isRelevant) $
        isRelevant
 -- }}}
@@ -2393,6 +2387,8 @@ knInline' expr env = do
       qav (Right v) = liftM Right (q v)
   knBumpTotalEffort
   withRaisedLevel $ case expr of
+    KNRelocDoms ids e -> do Rez e' <- knInline' e env
+                            return $ Rez $ KNRelocDoms ids e'
     KNCompiles _r _t e -> do Rez e' <- knInline' e env
                              return $ Rez $ KNCompiles _r _t e'
     KNInlined _t0 _to _tn _old new -> do Rez new' <- knInline' new env

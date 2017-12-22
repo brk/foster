@@ -1,3 +1,4 @@
+{-# LANGUAGE Strict #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2012 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -27,7 +28,7 @@ llBoolType = LLPrimInt I1
 type LLVar = TypedId TypeLL
 type LLPrim = FosterPrim TypeLL
 
-data LLExternDecl = LLExternDecl String TypeLL deriving (Show)
+data LLExternDecl = LLExternDecl String TypeLL IsForeignDecl deriving (Show)
 
 extractCallConv (LLProcType _ _ cc) = cc
 extractCallConv (LLPtrType (LLStructType ((LLProcType _ _ cc):_))) = cc

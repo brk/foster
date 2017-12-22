@@ -111,8 +111,9 @@ struct LLAllocate;
 struct LLDecl {
   string name;
   TypeAST* type;
-  explicit LLDecl(const string& name, TypeAST* type)
-      : name(name), type(type) {}
+  bool isForeign;
+  explicit LLDecl(const string& name, TypeAST* type, bool isForeign)
+      : name(name), type(type), isForeign(isForeign) {}
   llvm::Value* codegen(CodegenPass* pass);
   const string getName() const { return name; }
   TypeAST*     getType() const { return type; }

@@ -169,7 +169,8 @@ typedef struct coro_context coro_context;
  * This function is not reentrant, but putting a mutex around it
  * will work.
  */
-void coro_create (coro_context *ctx, /* an uninitialised coro_context */
+void libcoro__coro_create (
+                  coro_context *ctx, /* an uninitialised coro_context */
                   coro_func coro,    /* the coroutine code to be executed */
                   void *arg,         /* a single pointer passed to the coro */
                   void *sptr,        /* start of stack area */

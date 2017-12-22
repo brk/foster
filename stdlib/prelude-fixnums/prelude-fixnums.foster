@@ -29,6 +29,11 @@ octet4x32ToInt32 = { hi : Int32 => m1 : Int32 => m2 : Int32 => lo : Int32 =>
     lo)
 };
 
+octet2ToInt64 = { hi : Int8 => lo : Int8 =>
+  ((zext_i8_to_i64 hi) `bitshl-Int64` 8)  `bitor-Int64`
+   (zext_i8_to_i64 lo)
+};
+
 mergeInt32 = { hi : Int32 => lo : Int32 =>
   ((zext_i32_to_i64 hi) `bitshl-Int64` 32)  `bitor-Int64`
    (zext_i32_to_i64 lo)

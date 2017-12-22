@@ -76,8 +76,8 @@ void foster_coro_create(coro_func corofn,
   foster_bare_coro* coro = (foster_bare_coro*) arg;
   coro->indirect_self = (foster_bare_coro**) malloc(sizeof(coro));
   foster_coro_ensure_self_reference(coro);
-  coro_create(&coro->ctx, corofn, coro->indirect_self,
-              sptr, ssize);
+  libcoro__coro_create(&coro->ctx, corofn, coro->indirect_self,
+                       sptr, ssize);
   //printf("foster_coro_create(%p, %p)\n", corofn, arg);
 }
 

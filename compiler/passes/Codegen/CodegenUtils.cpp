@@ -529,6 +529,43 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   return NULL;
 }
 
+
+// Some C functions need to take or return types (like FILE*) for
+// which it's awkward to arrange for the LLVM representation of the Foster
+// arg/return type to agree with Clang's representation. For these functions,
+// we want to generate a wrapper which bitcasts away the type mismatch.
+void codegenAutoWrapper(llvm::Function* F,
+                        llvm::FunctionType* wrappedTy,
+                        //llvm::CallingConv::ID cc,
+                        //llvm::GlobalValue::LinkageTypes linkage,
+                           std::string symbolName,
+                           CodegenPass* pass) {
+    auto linkage = llvm::GlobalValue::ExternalLinkage;
+    auto Ffunc = Function::Create(wrappedTy, linkage, symbolName, pass->mod);
+    Ffunc->setCallingConv(F->getCallingConv());
+    pass->addEntryBB(Ffunc);
+    std::vector<llvm::Value*> args;
+    auto arg = Ffunc->arg_begin();
+    for (int n = 0; arg != Ffunc->arg_end(); ++n) {
+      args.push_back(builder.CreateBitCast(&*arg,
+                        F->getFunctionType()->getParamType(n)));
+      ++arg;
+    }
+
+    auto callInst = builder.CreateCall(F, args);
+    callInst->setTailCall(true);
+    callInst->setCallingConv(F->getCallingConv());
+
+    if (callInst->getType()->isVoidTy()) {
+      if (!wrappedTy->getReturnType()->isVoidTy()) {
+        builder.CreateRet(getUnitValue());
+      } else builder.CreateRetVoid();
+    } else {
+      builder.CreateRet(builder.CreateBitCast(callInst, wrappedTy->getReturnType()));
+    }
+    //pass->markFosterFunction(Ffunc);
+}
+
 struct LLProcPrimBase : public LLProc {
 protected:
   std::string name;
@@ -626,6 +663,34 @@ struct LLProcFmtTimePrim : public LLProcPrimBase {
   }
 };
 
+struct LLProcAllocDefaultCoro : public LLProcPrimBase {
+  explicit LLProcAllocDefaultCoro() {
+      this->name = "foster__runtime__alloc_default_coro";
+      std::vector<TypeAST*> argTypes;
+      std::map<std::string, std::string> annots; annots["callconv"] = "ccc";
+      this->type = new FnTypeAST(RefTypeAST::get(foster_generic_coro_ast), argTypes, annots);
+  }
+  virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) {
+    pass->markFosterFunction(F);
+    // The returned coro is uninitialized, but this should only be
+    // called by the runtime, which will do the appropriate intialization.
+    CtorRepr bogusCtor; bogusCtor.smallId = -1;
+    Value* dcoro = pass->emitMalloc(getSplitCoroTyp(getUnitType()), bogusCtor, "dcoro", /*init*/ true);
+    builder.CreateRet(builder.CreateBitCast(dcoro,
+                  ptrTo(foster_generic_coro_ast->getLLVMType())));
+  }
+
+  // Returns { { ... generic coro ... }, argTypes }
+  StructTypeAST* getSplitCoroTyp(TypeAST* argTypes)
+  {
+    std::vector<TypeAST*> parts;
+    parts.push_back(foster_generic_coro_ast);
+    parts.push_back(argTypes);
+    return StructTypeAST::get(parts);
+  }
+};
+
+
 struct LLProcSubheapCreatePrim : public LLProcPrimBase {
   explicit LLProcSubheapCreatePrim() {
       this->name = "foster_subheap_create";
@@ -709,6 +774,8 @@ void extendWithImplementationSpecificProcs(CodegenPass* _pass,
   procs.push_back(new LLProcStringOfCStringPrim());
   procs.push_back(new LLProcGetCmdlineArgPrim());
   procs.push_back(new LLProcFmtTimePrim());
+
+  procs.push_back(new LLProcAllocDefaultCoro());
 
   procs.push_back(new LLProcSubheapCreatePrim());
   procs.push_back(new LLProcSubheapActivatePrim());

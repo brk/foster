@@ -183,13 +183,26 @@ caseArmExprs arm = [caseArmBody arm] ++ caseArmGuardList arm
 caseArmFreeIds arm =
   concatMap freeIdents (caseArmExprs arm) `butnot`
         map tidIdent  (caseArmBindings arm)
-
+-- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
+-- |||||||||||||||||||||||| Effects |||||||||||||||||||||||||||||{{{
+data EffectDecl ty = EffectDecl {
+    effectDeclName      :: TypeFormal
+  , effectDeclTyFormals :: [TypeFormal]
+  , effectDeclCtors     :: [EffectCtor ty]
+  , effectDeclRange     :: SourceRange
+  }
+  
+data EffectCtor ty = EffectCtor {
+    effectCtorAsData :: DataCtor ty
+  , effectCtorOutput :: ty
+}
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||| Data Types |||||||||||||||||||||||||||||||{{{
 data DataType ty = DataType {
     dataTypeName      :: TypeFormal
   , dataTypeTyFormals :: [TypeFormal]
   , dataTypeCtors     :: [DataCtor ty]
+  , dataTypeIsForeign :: Bool
   , dataTypeRange     :: SourceRange
   }
 
@@ -262,19 +275,7 @@ data CtorRepr = CR_Default     Int -- tag via indirection through heap cell meta
               | CR_Transparent     -- no runtime indirection around wrapped value (boxed)
               | CR_TransparentU    -- no runtime indirection around wrapped value (unboxed)
                 deriving (Eq, Show, Ord)
--- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
--- |||||||||||||||||||||||| Effects |||||||||||||||||||||||||||||{{{
-data EffectDecl ty = EffectDecl {
-    effectDeclName      :: TypeFormal
-  , effectDeclTyFormals :: [TypeFormal]
-  , effectDeclCtors     :: [EffectCtor ty]
-  , effectDeclRange     :: SourceRange
-  }
 
-data EffectCtor ty = EffectCtor {
-    effectCtorAsData :: DataCtor ty
-  , effectCtorOutput :: ty
-}
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||| Literals |||||||||||||||||||||||||||||||||{{{
 data Literal = LitInt   LiteralInt
@@ -319,8 +320,9 @@ data WholeProgramAST expr ty = WholeProgramAST {
           programASTmodules    :: [ModuleAST expr ty]
      }
 
+data IsForeignDecl = NotForeign | IsForeign String deriving Show
 data ToplevelItem expr ty =
-      ToplevelDecl (String, ty)
+      ToplevelDecl (String, ty, IsForeignDecl)
     | ToplevelDefn (String, expr ty)
     | ToplevelData (DataType ty)
     | ToplevelEffect (EffectDecl ty)
@@ -352,14 +354,14 @@ fnIdent fn = tidIdent $ fnVar fn
 
 -- A function is recursive if any of the program-level identifiers
 -- from the SCC it is bound in appears free in its body.
-computeIsFnRec fn ids =
-  if Set.null (setIntersectLists (freeIdents fn) ids) then NotRec else YesRec
+computeIsFnRec' fnFreeIds ids =
+  if Set.null (setIntersectLists fnFreeIds ids) then NotRec else YesRec
          where setIntersectLists a b = Set.intersection (Set.fromList a)
                                                         (Set.fromList b)
 
 data ModuleIL expr ty = ModuleIL {
           moduleILbody        :: expr
-        , moduleILdecls       :: [(String, ty)]
+        , moduleILdecls       :: [(String, ty, IsForeignDecl)]
         , moduleILdataTypes   :: [DataType ty]
         , moduleILprimTypes   :: [DataType ty]
         , moduleILeffectDecls :: [EffectDecl ty]
@@ -682,19 +684,22 @@ whenNotM cond action = do b <- cond ; if b then return () else action
 -- |||||||||||||||||||||||||| Idents |||||||||||||||||||||||||||{{{
 
 identPrefix :: Ident -> T.Text
-identPrefix (GlobalSymbol name) = name
-identPrefix (Ident name _)      = name
+identPrefix (GlobalSymbol name _) = name
+identPrefix (Ident name _)        = name
 
 data Ident = Ident        T.Text Uniq
-           | GlobalSymbol T.Text
+           | GlobalSymbol T.Text MaybeRename
+
+data MaybeRename = NoRename | RenameTo T.Text deriving Show
 
 fmapIdent :: (T.Text -> T.Text) -> Ident -> Ident
-fmapIdent tt (Ident t u)      = Ident        (tt t) u
-fmapIdent tt (GlobalSymbol t) = GlobalSymbol (tt t)
+fmapIdent tt (Ident t u)          = Ident        (tt t) u
+fmapIdent tt (GlobalSymbol t alt) = GlobalSymbol (tt t) alt
 
 data TypedId ty = TypedId { tidType :: ty, tidIdent :: Ident }
 
-prettyIdent i@(GlobalSymbol _) = text "G:" <> text (show i)
+prettyIdent i@(GlobalSymbol _ NoRename) = text "G:" <> text (show i)
+prettyIdent i@(GlobalSymbol _ (RenameTo alt)) = text "G:" <> text (show i ++ " ~> " ++ show alt)
 prettyIdent i = text (show i)
 
 prettyId (TypedId _ i) = prettyIdent i
@@ -789,9 +794,10 @@ instance Expr (EPattern ty) where
   freeVars = epatBoundNames
 
 instance AExpr body => AExpr (Fn recStatus body t) where
-    freeIdents f = let bodyvars =  freeIdents (fnBody f) in
-                   let boundvars =  map tidIdent (fnVars f) in
-                   bodyvars `butnot` boundvars
+  freeIdents f = freeIdentsFn (fnBody f) (fnVars f)
+
+freeIdentsFn :: AExpr body => body -> [TypedId t] -> [Ident]
+freeIdentsFn body vars = freeIdents body `butnot` map tidIdent vars
 
 instance IntSized IntSizeBits
  where
@@ -807,7 +813,7 @@ instance Pretty IntSizeBits    where pretty IWd = text "Word"
                                      pretty IDw = text "WordX2"
                                      pretty I1 = text "Bool"
                                      pretty i  = text ("Int" ++ show (intSizeOf i))
-instance Pretty Ident          where pretty id = text (show id)
+instance Pretty Ident          where pretty id = prettyIdent id --text (show id)
 instance Pretty t => Pretty (TypedId t)
                                where pretty tid = pretty (tidIdent tid)
 instance SourceRanged expr => Pretty (CompilesResult expr)
@@ -831,24 +837,34 @@ deriving instance (Show ty) => Show (DataCtor ty)
 
 instance Ord Ident where compare = compareIdents
 
+pick t NoRename = t
+pick _ (RenameTo t) = t
+
 -- Give a distinct name to the Ord instance so that profiles get a more informative name.
-compareIdents (GlobalSymbol t1) (GlobalSymbol t2) = compare t1 t2
+{-compareIdents (GlobalSymbol t1 alt1)
+              (GlobalSymbol t2 alt2) = compare (pick t1 alt1) (pick t2 alt2)
+              -}
+compareIdents (GlobalSymbol _ (RenameTo alt1))
+              (GlobalSymbol _ (RenameTo alt2)) = compare alt1 alt2
+compareIdents (GlobalSymbol t1 _)
+              (GlobalSymbol t2 _) = compare t1 t2
 compareIdents (Ident t1 u1)     (Ident t2 u2)     = case compare u1 u2 of
                                                       EQ -> let rv = compare t1 t2 in
                                                             if rv == EQ then rv else
                                                                 error $ "Uniq ident failure! " ++ show ((Ident t1 u1) ,  (Ident t2 u2) )
                                                       cr -> cr
-compareIdents (GlobalSymbol _)  (Ident _  _ )     = LT
-compareIdents (Ident _ _)       (GlobalSymbol  _) = GT
+compareIdents (GlobalSymbol _ _)  (Ident _  _ )    = LT
+compareIdents (Ident _ _)       (GlobalSymbol _ _) = GT
 
 instance Eq Ident where
-    (GlobalSymbol t1) == (GlobalSymbol t2) = t1 == t2
+    (GlobalSymbol t1 alt1) == (GlobalSymbol t2 alt2) = pick t1 alt1 == pick t2 alt2
     (Ident t1 u1)     == (Ident t2 u2) = u1 == u2 && t1 == t2
     _ == _ = False
 
 instance Show Ident where
-    show (Ident name number) = T.unpack name ++ "!" ++ show number
-    show (GlobalSymbol name) = T.unpack name
+    show (Ident name number)   = T.unpack name ++ "!" ++ show number
+    show (GlobalSymbol name (RenameTo alt)) = T.unpack name ++ "~>" ++ T.unpack alt
+    show (GlobalSymbol name _) = T.unpack name
 
 instance Eq (TypedId t) where
        (==) (TypedId _ a) (TypedId _ b) = (==) a b
@@ -993,6 +1009,9 @@ instance Pretty Kind where
 instance Pretty TypeFormal where
   pretty (TypeFormal name _sr kind) =
     text name <+> text ":" <+> pretty kind
+
+instance Pretty IsForeignDecl where
+  pretty ifd = text (show ifd)
 
 instance Pretty t => Pretty (DataType t) where
   pretty dt =

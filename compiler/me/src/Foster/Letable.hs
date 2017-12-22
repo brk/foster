@@ -1,3 +1,4 @@
+{-# LANGUAGE Strict #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2011 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -214,7 +215,7 @@ orMayGC _            maygc = maygc
 
 canGCPrim (PrimIntTrunc {}) = WillNotGC
 canGCPrim (PrimOp       {}) = WillNotGC
-canGCPrim (NamedPrim (TypedId _ (GlobalSymbol name))) =
+canGCPrim (NamedPrim (TypedId _ (GlobalSymbol name _alt))) =
                     if willNotGCGlobal name then WillNotGC
                                             else GCUnknown "canGCPrim:global"
 canGCPrim _ = GCUnknown "canGCPrim:other"

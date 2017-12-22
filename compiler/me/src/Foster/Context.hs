@@ -1,3 +1,4 @@
+{-# LANGUAGE Strict #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2012 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -103,8 +104,8 @@ liftCtorInfo f (CtorInfo cid datactor) =
   liftM (CtorInfo cid) (liftDataCtor f datactor)
 
 liftDataType :: Monad m => (t1 -> m t2) -> DataType t1 -> m (DataType t2)
-liftDataType f (DataType nm formals ctors srcrange) =
-  liftM (\cs' ->DataType nm formals cs' srcrange) (mapM (liftDataCtor f) ctors)
+liftDataType f (DataType nm formals ctors isForeign srcrange) =
+  liftM (\cs' ->DataType nm formals cs'   isForeign srcrange) (mapM (liftDataCtor f) ctors)
 
 liftDataCtor :: Monad m => (t1 -> m t2) -> DataCtor t1 -> m (DataCtor t2)
 liftDataCtor f (DataCtor dataCtorName formals types repr range) = do
@@ -237,8 +238,10 @@ newTcSkolem (tv, k) = do u <- newTcUniq
   where nameOf (BoundTyVar name _)    = name
         nameOf (SkolemTyVar name _ _) = name
 
+-- Lazy in its argument because typechecking uses an error value
+-- as a default, expected-to-be-replaced marker.
 newTcRef :: a -> Tc (IORef a)
-newTcRef v = tcLift $ newIORef v
+newTcRef ~v = tcLift $ newIORef v
 
 newTcUnificationVarEffect d = newTcUnificationVar_ MTVEffect d
 newTcUnificationVarSigma  d = newTcUnificationVar_ MTVSigma d

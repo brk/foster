@@ -28,14 +28,14 @@ convertFun f (FnAST rng nm tyformals formals body toplevel) = do
     body'    <- convertExprAST f body
     return $ FnAST rng nm tyformals formals' body' toplevel
 
-convertDecl :: Monad m => (a -> m b) -> (String, a) -> m (String, b)
-convertDecl f (s, ty) = do t <- f ty ; return (s, t)
+convertDecl :: Monad m => (a -> m b) -> (String, a, IsForeignDecl) -> m (String, b, IsForeignDecl)
+convertDecl f (s, ty, isForeign) = do t <- f ty ; return (s, t, isForeign)
 
 convertDataTypeAST :: (Show a, Show b) =>
                    (a -> Tc b) -> DataType a -> Tc (DataType b)
-convertDataTypeAST f (DataType dtName tyformals ctors range) = do
+convertDataTypeAST f (DataType dtName tyformals ctors isForeign range) = do
   cts <- mapM (convertDataCtor f) ctors
-  return $ DataType dtName tyformals cts range
+  return $ DataType dtName tyformals cts isForeign range
 
 convertDataCtor f (DataCtor dataCtorName formals types repr range) = do
   tys <- mapM f types

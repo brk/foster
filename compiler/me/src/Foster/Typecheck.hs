@@ -1,3 +1,4 @@
+{-# LANGUAGE Strict #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2011 Ben Karel. All rights reserved.
 -- Use of this source code is governed by a BSD-style license that can be
@@ -1047,10 +1048,10 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
 
 mkAnnCall rng res_ty annbase args =
   case annbase of
-    E_AnnTyApp _ _ annprim@(AnnPrimitive _ _ (NamedPrim (TypedId _ (GlobalSymbol gs)))) [_argty]
+    E_AnnTyApp _ _ annprim@(AnnPrimitive _ _ (NamedPrim (TypedId _ (GlobalSymbol gs _)))) [_argty]
          | T.unpack gs == "prim_arrayLength"
       -> AnnCall rng res_ty annprim args
-    E_AnnTyApp _ _ (AnnPrimitive _ _ (NamedPrim (TypedId _ (GlobalSymbol gs)))) [argty]
+    E_AnnTyApp _ _ (AnnPrimitive _ _ (NamedPrim (TypedId _ (GlobalSymbol gs _)))) [argty]
          | T.unpack gs == "allocDArray"
       -> AnnAllocArray rng res_ty arraySize argty Nothing DoZeroInit where [arraySize] = args
     E_AnnVar _rng (_tid, Just cid)
@@ -1108,8 +1109,8 @@ equivTypedId tid1 tid2 =
 equivStructureAndVarNames :: AnnExpr TypeTC -> AnnExpr TypeTC -> Bool
 equivStructureAndVarNames e1 e2 =
   let q = equivStructureAndVarNames in
-  let qf = undefined in
-  let qc = undefined in
+  let qf _f1 _f2 = error "equivStructureAndVarNames can't yet handle functions" in
+  let qc _c1 _c2 = error "equivStructureAndVarNames can't yet handle case arms" in
   let qtid = equivTypedId in
   let qp prim1 prim2 =
         case (prim1, prim2) of
@@ -1325,7 +1326,7 @@ tcSigmaFnHelper ctx fnAST expTyRaw tyformals = do
 
     -- Note we collect free vars in the old context, since we can't possibly
     -- capture the function's arguments from the environment!
-    let fn = E_AnnFn $ Fn (TypedId fnty (GlobalSymbol $ fnAstName fnAST))
+    let fn = E_AnnFn $ Fn (TypedId fnty (GlobalSymbol (fnAstName fnAST) NoRename))
                           uniquelyNamedBinders annbody () annot
     debugDoc $ text "tcSigmaFn calling matchExp  uniquelyNamedFormals = " <> pretty (map tidType uniquelyNamedFormals)
     debugDoc $ text "tcSigmaFn calling matchExp  expTyRaw = " <> pretty expTyRaw
@@ -1469,7 +1470,7 @@ tcRhoFnHelper ctx f expTy = do
 
     -- Note we collect free vars in the old context, since we can't possibly
     -- capture the function's arguments from the environment!
-    let fn = E_AnnFn $ Fn (TypedId fnty (GlobalSymbol $ fnAstName f))
+    let fn = E_AnnFn $ Fn (TypedId fnty (GlobalSymbol (fnAstName f) NoRename))
                           uniquelyNamedBinders annbody () annot
     matchExp expTy fn "tcRhoFn"
 -- }}}
@@ -1510,7 +1511,7 @@ getUniquelyNamedFormals rng rawFormals fnProtoName = do
       where
         rename :: Ident -> Uniq -> Tc Ident
         rename (Ident p _) u = return (Ident p u)
-        rename (GlobalSymbol name) _u =
+        rename (GlobalSymbol name _alt) _u =
                 tcFails [text $ "Cannot rename global symbol " ++ show name]
 
 -- | Verify that the given formals have distinct names,

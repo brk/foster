@@ -68,3 +68,29 @@ write_bytes_chunk_to_file = { name => bytes =>
     of _ -> prim kill-entire-process "write_bytes_chunk_to_file returned ERROR";
   end
 };
+
+write_bytes_chunk_to_fd :: { Int64 => Array Int8 => Int64 };
+write_bytes_chunk_to_fd = { fd => bytes =>
+  wstatus = (prim ref 0);
+  nwrote = foster_posix_write_bytes fd bytes 0 (arrayLength bytes) wstatus;
+  case wstatus^
+    of 0 -> nwrote
+    of 1 -> prim kill-entire-process "write_bytes_chunk_to_fd returned MORE";
+    of 2 -> prim kill-entire-process "write_bytes_chunk_to_fd returned LATER";
+    of _ -> prim kill-entire-process "write_bytes_chunk_to_fd returned ERROR";
+  end
+};
+
+write_bytes_to_fd :: { Int64 => Bytes => Int64 };
+write_bytes_to_fd = { fd => bytes =>
+  wstatus = (prim ref 0);
+  bytesFoldlFragments bytes { arr => off => fin => nwritten =>
+    nwrote = foster_posix_write_bytes fd arr 0 (arrayLength arr) wstatus;
+    case wstatus^
+      of 0 -> nwrote +Int64 nwritten
+      of 1 -> prim kill-entire-process "write_bytes_to_fd returned MORE";
+      of 2 -> prim kill-entire-process "write_bytes_to_fd returned LATER";
+      of _ -> prim kill-entire-process "write_bytes_to_fd returned ERROR";
+    end
+  } 0;
+};
