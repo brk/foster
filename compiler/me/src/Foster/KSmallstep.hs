@@ -298,6 +298,7 @@ ssTermOfExpr expr =
     KNCompiles {} -> SSTmValue $ SSBool True -- TODO maybe have __COMPILES__ take a default parameter for us to return?
     KNInlined     _ _ _ _ e -> ssTermOfExpr e
     KNNotInlined        _ e -> ssTermOfExpr e
+    KNRelocDoms         _ e -> ssTermOfExpr e
 
 arrEntry _t (Right var) = SSTmExpr $ IVar $ tidIdent var
 arrEntry              (PrimIntIL isb)  (Left (LitInt lit)) = SSTmValue $ mkSSInt isb (litIntValue lit)

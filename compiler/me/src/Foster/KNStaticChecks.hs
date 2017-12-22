@@ -784,6 +784,7 @@ checkBody expr facts =
                         -- of the correspondence...
                         return Nothing
     KNKillProcess {} -> return $ withDecls facts $ \_x -> return SMT.false
+    KNRelocDoms _ e -> checkBody e facts
 
 scIntrospect :: SC x -> SC (Either CompilerFailures x)
 scIntrospect action = do state <- get

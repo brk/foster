@@ -325,6 +325,7 @@ subtermsOf term =
       MKCase        _u _ _v arms   -> do return $ map mkcaseArmBody arms
       MKCont {} -> return []
       MKCall {} -> return []
+      MKRelocDoms   _u _ids k -> return $ [k]
 
 type Uplink ty = Link (Parent ty)
 data Parent ty = ParentTerm (MKTerm ty)
@@ -357,6 +358,7 @@ data MKTerm ty =
         | MKLetRec      (Uplink ty) [Known ty   (Subterm ty)] (Subterm ty)
         | MKLetFuns     (Uplink ty) [Known ty (Link (MKFn (Subterm ty) ty))] (Subterm ty)
         | MKLetCont     (Uplink ty) [Known ty (Link (MKFn (Subterm ty) ty))] (Subterm ty)
+        | MKRelocDoms   (Uplink ty) [Ident] (Subterm ty)
 
         -- Control flow
         | MKCase        (Uplink ty) ty (FreeVar ty) [MKCaseArm (Subterm ty) ty]
@@ -592,6 +594,10 @@ mkOfKN_Base expr k = do
             let rv = MKLetCont nu [known] rest'
             lift $ backpatchT rv [rest']
 
+        KNRelocDoms ids e ->
+          mkBackpatch' [e] k (\[e'] -> do
+            return $ MKRelocDoms nu ids e')
+
         KNCompiles (KNCompilesResult r) ty _expr -> do 
             genMKLetVal ".cpi" ty $ \nu' -> do
                 b <- liftIO $ readIORef r
@@ -790,6 +796,7 @@ parentLinkT expr =
     MKLetRec      u   _knowns _k -> u
     MKLetFuns     u   _knowns _k -> u
     MKLetCont     u   _knowns _k -> u
+    MKRelocDoms   u _ids _k      -> u
     MKCase        u  _ty _ _arms  -> u
     MKIf          u  _ty _ _e1 _e2 -> u
     MKCall        u     _ty _ _s _   -> u
@@ -826,6 +833,7 @@ directFreeVarsT expr =
     MKLetRec      {} -> []
     MKLetFuns     {} -> []
     MKLetCont     {} -> []
+    MKRelocDoms   {} -> []
     MKCase        _  _ty v _arms     -> [v]
     MKIf          _  _ty v _e1 _e2   -> [v]
     MKCall        _     _ty v vs c   -> c:v:vs
@@ -903,6 +911,7 @@ knOfMK mb_retCont term0 = do
   let qf = knOfMKFn mb_retCont
 
   case term0 of
+    MKRelocDoms   _u _ids k -> q k
     MKIf          _u  ty v e1 e2  -> do e1' <- q e1
                                         e2' <- q e2
                                         v'  <- qv v
@@ -982,8 +991,10 @@ collectRedexes :: (Pretty t)
                -> IORef (Map (MKBoundVar t) (Link (MKFn (Subterm t) t)))
                -> IORef (Map (MKBoundVar t) (Link (MKTerm t)))
                -> IORef (Map (MKBoundVar t) (MKBoundVar t))
+               -> IORef (Map [Ident] (MKTerm t, (Link (MKTerm t))))
                -> Subterm t -> Compiled ()
-collectRedexes ref valbindsref expbindsref funbindsref fundefsref aliasesref sbtm = go sbtm
+collectRedexes ref valbindsref expbindsref funbindsref
+                   fundefsref aliasesref relocdomsref sbtm = go sbtm
  where
    go subterm = do
     mb_term <- readOrdRef subterm
@@ -1011,6 +1022,8 @@ collectRedexes ref valbindsref expbindsref funbindsref fundefsref aliasesref sbt
                                                          fns <- knownActuals knowns
                                                          return $ k : map mkfnBody fns
                       MKCase        _u _ _v arms -> return $ map mkcaseArmBody arms
+                      MKRelocDoms _u ids k -> do liftIO $ modIORef' relocdomsref (\m -> Map.insert ids (term,k) m)
+                                                 return [k]
                       _ -> return []
 
    markValBind (x,tm) = liftIO $ modIORef' valbindsref (\m -> Map.insert x tm m)
@@ -1268,6 +1281,10 @@ copyMKTerm term = do
 
   -- TODO maybe have withLinkT use subtermsOf ?
   (link, newterm) <- case term of
+    MKRelocDoms   _u   ids    k   -> do k' <- q k
+                                        withLinkT $ \u -> lift $ do
+                                          let rv = MKRelocDoms u ids k'
+                                          backpatchT rv [k']
     MKLetVal      _u   known  k   -> do x' <- qk qe known
                                         k' <- q k
                                         withLinkT $ \u -> lift $ do
@@ -1325,8 +1342,9 @@ mknInline subterm mainCont mb_gas = do
     fr <- liftIO $ newIORef Map.empty
     fd <- liftIO $ newIORef Map.empty
     ar <- liftIO $ newIORef Map.empty
+    relocDomMarkers <- liftIO $ newIORef Map.empty
     --term <- readLink "mknInline" subterm
-    collectRedexes wr kr er fr fd ar subterm
+    collectRedexes wr kr er fr fd ar relocDomMarkers subterm
 
     _knownVals <- liftIO $ readIORef kr
 
@@ -1472,7 +1490,7 @@ mknInline subterm mainCont mb_gas = do
                          replaceWith subterm newbody
                          -- No need to kill the old binding, since the body was duplicated.
 
-                         collectRedexes wr kr er fr fd ar newbody
+                         collectRedexes wr kr er fr fd ar relocDomMarkers newbody
 
                        else return ()
 
@@ -1489,7 +1507,7 @@ mknInline subterm mainCont mb_gas = do
                              newbody <- betaReduceOnlyCall fn' args kv    wr fd
                              replaceWith subterm newbody
                              killOccurrence callee
-                             collectRedexes wr kr er fr fd ar newbody
+                             collectRedexes wr kr er fr fd ar relocDomMarkers newbody
                        else return ()
                  go (gas - 1)
               
@@ -1559,7 +1577,7 @@ mknInline subterm mainCont mb_gas = do
                                        readLink "CallOfDonatableC" mk
                          replaceWith mredex newbody
                          killOccurrence callee
-                         collectRedexes wr kr er fr fd ar newbody
+                         collectRedexes wr kr er fr fd ar relocDomMarkers newbody
                        else return ()
 -}
                    SomethingElse _fn -> do
@@ -1573,13 +1591,13 @@ mknInline subterm mainCont mb_gas = do
                              newbody <- betaReduceOnlyCall fn' args kv   wr fd  >>= readLink "CallOfDonatable"
                              replaceWith mredex newbody
                              killOccurrence callee
-                             collectRedexes wr kr er fr fd ar newbody
+                             collectRedexes wr kr er fr fd ar relocDomMarkers newbody
                              -}
                              return ()
                        else return ()
                  go (gas - 1)
 
-               MKLetFuns fnup knowns fnrest -> do
+               MKLetFuns _u knowns fnrest -> do
                  contifiability <- analyzeContifiability knowns
                  case contifiability of
                    GlobalsArentContifiable -> return ()
@@ -1615,11 +1633,30 @@ mknInline subterm mainCont mb_gas = do
                             replaceTermWith tm newterm
                             writeOrdRef (freeLink occ) (Just newterm)) occs
 
-                      -- Replace the function with a continuation; be sure to
-                      -- replace the fn's global ident with a local version!
+                      rdm <- liftIO $ readIORef relocDomMarkers
+                      let ids = [tidIdent $ boundVar bv]
+                      (target, targetrest) <-
+                          case Map.lookup ids rdm of
+                            Nothing -> do
+                              -- We have    fun f = F in fR
+                              -- and want to end up with
+                              --           cont f = F in fR
+                              -- Replace the function with a continuation; be sure to
+                              -- replace the fn's global ident with a local version!
+                              return (mredex, fnrest)
+
+                            Just targetandrest -> do
+                              -- We have fun f = F in fR   and somewhere else,   domreloc f in dR
+                              -- and want to end up with
+                              --                      fR                         cont f = F in dR
+                              --
+                              -- Remove the contified function explicitly
+                              replaceWith subterm fnrest
+                              return targetandrest
+
                       contfn <- mkKnown' bv $ fn { mkfnCont = Nothing }
-                      let letcont = MKLetCont fnup [contfn] fnrest
-                      replaceTermWith mredex letcont
+                      let letcont = MKLetCont (parentLinkT target) [contfn] targetrest
+                      replaceTermWith target letcont
 
                  go (gas - 1)
 
@@ -2036,6 +2073,7 @@ pccOfTopTerm uref subterm = do
           MKCall        {}              -> return ()
           MKLetCont     {} -> do error $ "MKLetCont in pccTopTerm"
           MKCont        {} -> do error $ "MKCont in pccTopTerm"
+          MKRelocDoms   {} -> do error $ "MKRelocDoms in pccTopTerm"
 
       handleTopLevelBinding id expr k = do
         case expr of
@@ -2086,6 +2124,7 @@ cffnOfMKCont cv (MKFn _ vs _ subterm _isrec _annot) = do
       go subterm head insns = do
         term <- lift $ readLink "cffnOfMKCont/0" subterm
         case term of
+          MKRelocDoms _u _ids k -> go k head insns
           MKLetVal      _u (bv, subexpr) k -> do
               letable <- lift $ letableOfSubexpr subexpr
               isDead  <- lift $ binderIsDead bv

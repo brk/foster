@@ -252,6 +252,7 @@ alphaRenameMono fn = do
       KNInlined t0 tb tn old new -> do new' <- renameKN new
                                        return $ KNInlined t0 tb tn old new'
       KNNotInlined x e -> do renameKN e >>= return . (KNNotInlined x)
+      KNRelocDoms ids e -> do liftM2 KNRelocDoms (mapM qi ids) (renameKN e)
 
     renameCaseArm (CaseArm pat expr guard vs rng) = do
         pat'   <- renamePattern pat
