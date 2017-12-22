@@ -1121,15 +1121,13 @@ public:
   void scan_with_map_and_arr(heap_cell* cell, const typemap& map,
                              heap_array* arr, int depth) {
     //fprintf(gclog, "copying %lld cell %p, map np %d, name %s\n", cell_size, cell, map.numEntries, map.name); fflush(gclog);
-    if (arr) {
-      // TODO for byte arrays and such, we can skip this loop...
+    if (!arr) {
+      scan_with_map(from_tidy(cell->body_addr()), map, depth);
+    } else if (map.numOffsets > 0) { // Skip this loop for int arrays and such.
       int64_t numcells = arr->num_elts();
       for (int64_t cellnum = 0; cellnum < numcells; ++cellnum) {
-        //fprintf(gclog, "num cells in array: %lld, curr: %lld\n", numcells, cellnum);
         scan_with_map(arr->elt_body(cellnum, map.cell_size), map, depth);
       }
-    } else {
-        scan_with_map(from_tidy(cell->body_addr()), map, depth);
     }
 
     if (map.isCoro) {
