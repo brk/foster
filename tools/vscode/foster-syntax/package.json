@@ -1,0 +1,26 @@
+{
+    "name": "foster-syntax",
+    "displayName": "foster-syntax",
+    "description": "Syntax highlighting for the Foster programming language.",
+    "version": "0.0.1",
+    "publisher": "brkarel",
+    "engines": {
+        "vscode": "^1.19.0"
+    },
+    "categories": [
+        "Languages"
+    ],
+    "contributes": {
+        "languages": [{
+            "id": "foster",
+            "aliases": ["Foster", "foster"],
+            "extensions": [".foster"],
+            "configuration": "./language-configuration.json"
+        }],
+        "grammars": [{
+            "language": "foster",
+            "scopeName": "source.foster",
+            "path": "./syntaxes/Foster.tmLanguage"
+        }]
+    }
+}
