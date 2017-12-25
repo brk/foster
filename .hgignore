@@ -22,10 +22,9 @@ diff.txt
 _obj/
 tmp/
 disabled.hg/
-tools/c-viewer/
 dox/
 notes/_build/
-.vscode/
+\.vscode/
 glob:test/c2f/*.txt
 glob:test/c2f/*.foster
 glob:compiler/me/*.protox
