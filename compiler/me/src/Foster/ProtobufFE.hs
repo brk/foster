@@ -347,7 +347,8 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
                         (map cb_parse_pmatch $ unMu mu_matches)
                         (case unMu mu_xform of
                           [] -> Nothing
-                          [xform] -> Just (cb_parse_e xform))
+                          [xform] -> Just (cb_parse_e xform)
+                          _ -> error $ "multiple handler xforms??")
 
     _ -> error $ "cb_parse_atom failed: " ++ show cbor
 
@@ -642,7 +643,7 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
                             && (codepoint .&. 0xFFFE) /= 0xFFFE)
                then Just (chr codepoint)
                else Nothing
-        charOfStuff stuff orig =
+        charOfStuff stuff =
           if all isHexDigit stuff
            then if length stuff <= 6
                   then case readHex stuff of
@@ -664,7 +665,7 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
               go ('\n':          rest) acc | isBytes = go rest acc -- ignore newlines in byte literals
               go ('\\':'x':hi:lo:rest) acc | isBytes = go rest (byteOfChars hi lo:acc)
               go ('\\':'u':'{':rest) acc = let (stuff, ('}':post)) = break (== '}') rest
-                                           in  go post (charOfStuff stuff orig:acc)
+                                           in  go post (charOfStuff stuff:acc)
               -- go ('\\':'\'':rest) acc = go rest ('\'':acc)
               go (c:rest) acc | c /= '\\' = go rest (c:acc)
               go s _ = error $ "Unable to parse string " ++ show orig ++ " starting at " ++ show s
@@ -949,7 +950,7 @@ makeProcsWithin typ = go typ where
     TyConP    _nm                 -> x
     TyAppP    con types           -> TyAppP (go con) (map go types)
     TupleTypeP k  types           -> TupleTypeP k (map go types)
-    FnTypeP    s t fx cc _pf src -> FnTypeP (map go s) (go t) (fmap go fx) CCC FT_Proc src
+    FnTypeP    s t fx _cc _pf src -> FnTypeP (map go s) (go t) (fmap go fx) CCC FT_Proc src
     ForAllP  tvs rho              -> ForAllP tvs (go rho)
     TyVarP   {}                   -> x
     MetaPlaceholder {}            -> x

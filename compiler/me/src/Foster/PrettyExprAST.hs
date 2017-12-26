@@ -15,7 +15,7 @@ import Foster.ParsedType
 
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T
-import Data.Char(isAlpha, isPrint, ord, chr)
+import Data.Char(isAlpha, isPrint, ord, chr, isAscii)
 import Numeric(showHex)
 import Data.Word(Word8)
 import qualified Data.ByteString as BS(unpack)
