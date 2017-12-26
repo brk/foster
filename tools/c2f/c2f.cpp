@@ -14,6 +14,11 @@
 // Doesn't handle certain name conflicts in generated code.
 //   Specifically, accessor names (field 'anon' of type 'S')
 //   can shadow datatype construtors ('$S_anon' from whatever type).
+// Doesn't yet gracefully handle declarations/usage of unnamed,
+//   un-typedef'ed structs.
+// Doesn't handle variable-arg list function definitions.
+// Doesn't yet handle fixed-length arrays.
+// Doesn't handle global variables.
 //
 // Originally based on AST matching sample by Eli Bendersky (eliben@gmail.com).
 //------------------------------------------------------------------------------
@@ -2204,7 +2209,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
                 if (isprint(c)) {
                   llvm::outs() << c;
                 } else {
-                  llvm::outs() << llvm::format("\\u{%02x}", c);
+                  llvm::outs() << llvm::format("\\u{%02x}", (unsigned char) c);
                 }
                 break;
               }
@@ -2617,7 +2622,13 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
     } else if (TypedefDecl* fd = dyn_cast<TypedefDecl>(decl)) {
       llvm::outs() << "/* " << getText(R, *fd) << ";*/\n";
     } else if (VarDecl* vd = dyn_cast<VarDecl>(decl)) {
-      llvm::outs() << "/* Unhandled global variable declaration:\n" << getText(R, *vd) << ";*/\n";
+      llvm::outs() << "/* Unhandled global variable declaration:\n"
+        << "     	hasDefinition(): " << vd->hasDefinition() << "\n"
+        << "     	hasGlobalStorage(): " << vd->hasGlobalStorage() << "\n"
+        << "     	hasInit(): " << vd->hasInit() << "\n"
+        << "     	isDirectInit(): " << vd->isDirectInit() << "\n"
+        << "     	tyName(getType()): " << tyName(vd->getType().getTypePtr()) << "\n"
+        << getText(R, *vd) << ";*/\n";
     } else if (auto ed = dyn_cast<EnumDecl>(decl)) {
       // Even if we skip emitting this particular declaration, we still want
       // to associate the enum constants with their corresponding EnumDecl.
@@ -2770,8 +2781,8 @@ int main(int argc, const char **argv) {
 //   * Embedded anonymous structs are not well-handled yet,
 //     on either the creation/representation or accessor sides.
 //
-//   * Struct fields not yet properly translated.
-//     A field of type T can be translated to any one of:
+//   * Struct fields not yet ideally translated.
+//     A field of type T could be translated to any one of:
 //       T                         when all structs are literals and the field is never mutated,
 //                                 or if all mutations can be coalesced into struct allocation.
 //       (Ref T)                   for mutable fields with known initializer expressions,

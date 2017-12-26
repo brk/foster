@@ -618,11 +618,11 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
 
   -- TODO parse different escapes, etc.
   cb_parse_str quo chrs = case (quo, chrs) of
-    (CBOR_Array [tok, _, _, CBOR_Array []], CBOR_Array [_, val, _, _]) ->
-      E_StringAST (annotOfCbor chrs) $ cb_parse_str' tok (T.unpack $ cborText val)
+    (CBOR_Array [tok, _, _, CBOR_Array []], CBOR_Array [_, val, cbr, _]) ->
+      E_StringAST (annotOfCbor chrs) $ cb_parse_str' tok (T.unpack $ cborText val) (cb_parse_range cbr)
     _ -> error $ "cb_parse_str failed: " ++ show cbor
 
-  cb_parse_str' tok str =
+  cb_parse_str' tok str range =
     let (isBytes, isRaw, strFromQuotes) = case str of
           ('b':'r':rest) -> (True, True, rest)
           ('r':'b':rest) -> (True, True, rest)
@@ -642,7 +642,7 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
                             && (codepoint .&. 0xFFFE) /= 0xFFFE)
                then Just (chr codepoint)
                else Nothing
-        charOfStuff stuff =
+        charOfStuff stuff orig =
           if all isHexDigit stuff
            then if length stuff <= 6
                   then case readHex stuff of
@@ -651,7 +651,8 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
                             Just c -> c
                             Nothing -> error $ "Invalid codepoint..."
                         parses -> error $ "Expected one parse for " ++ show stuff ++ " but got " ++ show parses
-                  else error $ "Unicode escapes can have at most 6 hex digits"
+                  else error $ "Unicode escapes can have at most 6 hex digits.\nHad: " ++ show stuff ++
+                                "\nOrig is:\n" ++ showSourceRange range
            else error $ "Parsing non-hex unicode character names is a TODO"
         parse isBytes orig =
           let go [] acc = reverse acc
@@ -663,7 +664,7 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
               go ('\n':          rest) acc | isBytes = go rest acc -- ignore newlines in byte literals
               go ('\\':'x':hi:lo:rest) acc | isBytes = go rest (byteOfChars hi lo:acc)
               go ('\\':'u':'{':rest) acc = let (stuff, ('}':post)) = break (== '}') rest
-                                           in  go post (charOfStuff stuff:acc)
+                                           in  go post (charOfStuff stuff orig:acc)
               -- go ('\\':'\'':rest) acc = go rest ('\'':acc)
               go (c:rest) acc | c /= '\\' = go rest (c:acc)
               go s _ = error $ "Unable to parse string " ++ show orig ++ " starting at " ++ show s

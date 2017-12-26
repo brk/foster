@@ -132,6 +132,17 @@ showHex2 c s =
   let rv = showHex c s in
   if length rv == 1 then '0' : rv else rv
 
+-- We restrict our output to printable ASCII values.
+-- If we just used isPrint alone, we would take an input string
+-- like b"\u{c3}\u{ab}" with an explicit representation of
+-- the UTF-8 bytes for ë (U+00EB LATIN SMALL LETTER E WITH DIAERESIS).
+-- The compiler parses the escape codes yielding a two-byte (Char)
+-- string. The intention is that the bytes should be escaped,
+-- but U+00C3 satisfies the Unicode-aware isPrint (Ã), so our
+-- pretty printed string would be  b"Ã«" instead of b"\u{c3}\u{ab}".
+printableAscii :: Char -> Bool
+printableAscii c = isAscii c && isPrint c
+
 formatTextChar :: Char -> String
 formatTextChar c =
     case c of
@@ -141,7 +152,7 @@ formatTextChar c =
       '\\' -> "\\\\"
       '\'' -> "\\'" -- TODO selectively escape based on string bracket type
       '"'  -> "\\\""
-      _ -> if isPrint c then [c] else "\\u{" ++ showHex2 (ord c) "}"
+      _ -> if printableAscii c then [c] else "\\u{" ++ showHex2 (ord c) "}"
 
 formatBytesWord8 :: Word8 -> String
 formatBytesWord8 w =
@@ -153,14 +164,14 @@ formatBytesWord8 w =
       '\\' -> "\\\\"
       '\'' -> "\\'" -- TODO selectively escape based on string bracket type
       '"'  -> "\\\""
-      _ -> if isPrint c then [c] else "\\x" ++ showHex2 w ""
+      _ -> if printableAscii c then [c] else "\\x" ++ showHex2 w ""
 
 prettyStmt e = case e of
     E_MachArrayLit annot _mbt args -> withAnnot annot $ parens $ text "prim mach-array-literal" <+> hsep (map pretty args)
     E_VarAST annot evar     -> withAnnot annot $ pretty evar
     E_TyApp  annot e argtys -> withAnnot annot $ pretty e <> text ":[" <> hsep (punctuate comma (map pretty argtys)) <> text "]"
     E_TyCheck annot e ty    -> withAnnot annot $ parens (pretty e <+> text "as" <+> pretty ty)
-    E_KillProcess annot exp -> withAnnot annot $ text "prim kill-entire-process" <+> pretty exp
+    E_KillProcess annot exp -> withAnnot annot $ parens (text "prim kill-entire-process" <+> pretty exp)
     E_StringAST   annot (SS_Text  r t) -> withAnnot annot $             wasRaw r <> dquotes (text $ concatMap formatTextChar $ T.unpack t)
     E_StringAST   annot (SS_Bytes r b) -> withAnnot annot $ text "b" <> wasRaw r <> dquotes (text $ concatMap formatBytesWord8 $ BS.unpack b)
     E_BoolAST     annot b   -> withAnnot annot $ text $ show b
