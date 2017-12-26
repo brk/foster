@@ -2017,7 +2017,7 @@ subsCheckRho esigma rho2 msg = do
 
     (rho1, FnTypeTC as2 r2 fx2 cc2 ft2) -> do
         debug $ "subsCheckRho fn 1"
-        tcLift $ putDocLn $ text "subsCheckRho1 being called for " <> highlightFirstLineDoc (rangeOf esigma)
+        debugIf False $ text "subsCheckRho1 being called for " <> highlightFirstLineDoc (rangeOf esigma)
         (as1, r1, fx1, cc1, ft1) <- unifyFun rho1 (length as2) "sCR1"
         subsCheckFunTy as1 r1 fx1 cc1 ft1 as2 r2 fx2 cc2 ft2 msg
         return esigma
