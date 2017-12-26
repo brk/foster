@@ -8,8 +8,22 @@
         "**/CVS": true,
         "**/.DS_Store": true,
         "**/*.hi": true,
-        "**/*.o": true
+        "**/*.o": true,
+        "**/*.Po": true,
+        "**/*.pyc": true,
+        "**/*.a": true
     },
+    "search.exclude": {
+        "**/node_modules": true,
+        "**/bower_components": true,
+        "**/*.hi": true,
+        "**/*.o": true,
+        "**/*.Po": true,
+        "**/*.a": true,
+        "**/*.pyc": true,
+        "**/*.la": true
+    },
+    "editor.selectionHighlight": false,
     "python.disablePromptForFeatures": [
         "pylint"
     ],
@@ -31,6 +45,12 @@
                 "scope": "operator.postfix.caret.foster",
                 "settings": {
                     "foreground": "#c95c57"
+                }
+            },
+            {
+                "scope": "keyword.other.minor.atsign.foster",
+                "settings": {
+                    "foreground": "#ab9dc0ee"
                 }
             },
             {
