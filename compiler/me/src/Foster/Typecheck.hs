@@ -1048,12 +1048,20 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
 
 mkAnnCall rng res_ty annbase args =
   case annbase of
+    -- Strip type application to make it clear to KN that we're using
+    -- primitives in a first-order way.
     E_AnnTyApp _ _ annprim@(AnnPrimitive _ _ (NamedPrim (TypedId _ (GlobalSymbol gs _)))) [_argty]
-         | T.unpack gs == "prim_arrayLength"
+         | T.unpack gs `elem` ["prim_arrayLength"]
       -> AnnCall rng res_ty annprim args
+    E_AnnTyApp _ _ annprim@(AnnPrimitive _ _ (PrimOp nm _)) [_argty]
+      | nm `elem` ["=="]
+      -> AnnCall rng res_ty annprim args
+
     E_AnnTyApp _ _ (AnnPrimitive _ _ (NamedPrim (TypedId _ (GlobalSymbol gs _)))) [argty]
          | T.unpack gs == "allocDArray"
-      -> AnnAllocArray rng res_ty arraySize argty Nothing DoZeroInit where [arraySize] = args
+      -> case args of
+           [arraySize] -> AnnAllocArray rng res_ty arraySize argty Nothing DoZeroInit
+           other -> error $ "saw anncall of " ++ show annbase ++ " with args: " ++ show args
     E_AnnVar _rng (_tid, Just cid)
       -> AnnAppCtor rng res_ty cid  args
     _ -> AnnCall rng res_ty annbase args
