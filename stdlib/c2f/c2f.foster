@@ -20,6 +20,20 @@ type case Ptr (a:Type)
   of $PtrRef (Ref a)
   ;
 
+(==Ptr) :: forall (a:Type) { Ptr a => Ptr a => Bool };
+(==Ptr) = { p => q =>
+  case (p, q)
+    of ($PtrNil, $PtrNil) -> True
+    of ($PtrRef rp, $PtrRef rq) -> prim ==Ref rp rq
+    of ($PtrArr pa pn, $PtrArr qa qn) ->
+          if pn ==Int32 qn
+            then prim sameArrayStorage pa qa
+            else False
+          end
+    of _ -> False
+  end
+};
+
 ptrGetIndex :: forall (a:Type) { Ptr a => Int32 => a };
 ptrGetIndex = { ptr => idx =>
   case ptr

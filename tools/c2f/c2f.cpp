@@ -95,7 +95,7 @@ std::string tyOpSuffix(const clang::Type* ty) {
   if (ty->isSpecificBuiltinType(BuiltinType::LongDouble)) return "f64";
 
   if (auto pty = dyn_cast<PointerType>(ty)) {
-    return "Ptr_" + tyOpSuffix(ty->getPointeeType().getTypePtr());
+    return "Ptr /*" + tyOpSuffix(ty->getPointeeType().getTypePtr()) + "*/ ";
   }
 
   if (auto tdty = dyn_cast<TypedefType>(ty)) {
