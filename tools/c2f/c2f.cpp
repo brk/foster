@@ -61,48 +61,8 @@ optDumpOrigSource("dump-orig-source",
   llvm::cl::desc("Dump original C source in a comment before each generated function"),
   llvm::cl::cat(CtoFosterCategory));
 
-static std::string getRWText(const Rewriter &R, const SourceLocation& locstt, const SourceLocation& locend) {
-  return R.getRewrittenText(SourceRange(locstt, locend));
-}
-
 static bool startswith(const std::string& a, const std::string& b) {
   return a.size() >= b.size() && a.substr(0, b.size()) == b;
-}
-
-static std::string getText(const Rewriter &R, const SourceLocation& locstt, const SourceLocation& locend) {
-  const SourceManager &SourceManager = R.getSourceMgr();
-  SourceLocation StartSpellingLocation = SourceManager.getSpellingLoc(locstt);
-  SourceLocation EndSpellingLocation = SourceManager.getSpellingLoc(locend);
-  if (!StartSpellingLocation.isValid() || !EndSpellingLocation.isValid()) {
-    return std::string();
-  }
-  bool Invalid = true;
-  const char *Text =
-      SourceManager.getCharacterData(StartSpellingLocation, &Invalid);
-  if (Invalid) {
-    return std::string();
-  }
-  std::pair<FileID, unsigned> Start =
-      SourceManager.getDecomposedLoc(StartSpellingLocation);
-  std::pair<FileID, unsigned> End =
-      SourceManager.getDecomposedLoc(Lexer::getLocForEndOfToken(
-          EndSpellingLocation, 0, SourceManager, LangOptions()));
-  if (Start.first != End.first) {
-    // Start and end are in different files.
-    return std::string();
-  }
-  if (End.second < Start.second) {
-    // Shuffling text with macros may cause this.
-    return std::string();
-  }
-  return std::string(Text, End.second - Start.second);
-}
-
-// Returns the text that makes up 'node' in the source.
-// Returns an empty string if the text cannot be found.
-template <typename T>
-static std::string getText(const Rewriter &R, const T &Node) {
-  return getRWText(R, Node.getLocStart(), Node.getLocEnd());
 }
 
 std::string s(const char* c) { return std::string(c); }
@@ -118,14 +78,6 @@ const RecordType* bindRecordType(const Type* typ) {
     return rty;
   }
   return nullptr;
-}
-
-std::string getCompoundTextWithoutBraces(const Rewriter &R, const Stmt* mb_comp) {
-  if (llvm::isa<CompoundStmt>(mb_comp)) {
-   return getRWText(R, mb_comp->getLocStart().getLocWithOffset(1), mb_comp->getLocEnd().getLocWithOffset(-1));
-  } else {
-   return getRWText(R, mb_comp->getLocStart(), mb_comp->getLocEnd());
-  }
 }
 
 std::string tyOpSuffix(const clang::Type* ty) {
@@ -658,9 +610,102 @@ enum IfExprOrStmt {
 std::unique_ptr<CFG>
   C2F_buildCFG(const Decl *D, Stmt *Statement, ASTContext *C, const CFG::BuildOptions &BO);
 
+class FileClassifier {
+public:
+  FileClassifier(const SourceManager& sm) : SM(sm) {}
+
+  bool isFromMainFile(const SourceLocation& loc) const {
+    return SM.isWrittenInMainFile(loc);
+  }
+
+  bool isFromMainFile(const Decl* d) const {
+    return isFromMainFile(d->getLocation());
+  }
+
+  bool isFromSystemHeader(const Decl* d) const {
+    return SM.isInSystemHeader(d->getLocation());
+  }
+
+  std::string getText(const SourceLocation& locstt, const SourceLocation& locend) const {
+    SourceLocation StartSpellingLocation = SM.getSpellingLoc(locstt);
+    SourceLocation EndSpellingLocation = SM.getSpellingLoc(locend);
+    if (!StartSpellingLocation.isValid() || !EndSpellingLocation.isValid()) {
+      return std::string();
+    }
+    bool Invalid = true;
+    const char *Text = SM.getCharacterData(StartSpellingLocation, &Invalid);
+    if (Invalid) {
+      return std::string();
+    }
+    std::pair<FileID, unsigned> Start =
+        SM.getDecomposedLoc(StartSpellingLocation);
+    std::pair<FileID, unsigned> End =
+        SM.getDecomposedLoc(Lexer::getLocForEndOfToken(
+            EndSpellingLocation, 0, SM, LangOptions()));
+    if (Start.first != End.first) {
+      // Start and end are in different files.
+      return std::string();
+    }
+    if (End.second < Start.second) {
+      // Shuffling text with macros may cause this.
+      return std::string();
+    }
+    return std::string(Text, End.second - Start.second);
+  }
+
+  // Returns the text that makes up 'node' in the source.
+  // Returns an empty string if the text cannot be found.
+  template <typename T>
+  std::string getText(const T &Node) const {
+    return getText(Node.getLocStart(), Node.getLocEnd());
+  }
+
+  const SourceManager& getSourceMgr() const { return SM; }
+
+private:
+  const SourceManager& SM;
+};
+
+bool shouldProcessTopLevelDecl(const Decl* d, const FileClassifier& FC) {
+  if (!FC.isFromMainFile(d)) {
+    if (!FC.isFromSystemHeader(d)) {
+      if (auto td = dyn_cast<TagDecl>(d)) {
+        if (td->isThisDeclarationADefinition() && td->isCompleteDefinition()) {
+          return true;
+        }
+      }
+    }
+    // skip it if incomplete or from system header
+    return false;
+  }
+  return true;
+}
+
+// I couldn't figure out a better way of communicating between the
+// ClangTool invocation site and the ASTConsumer itself.
+bool gUglyHack_SawGlobalVariables = false;
+
+class C2F_GlobalVariableDetector : public ASTConsumer {
+  public:
+   C2F_GlobalVariableDetector(const SourceManager &SM) : FC(SM) {}
+   const FileClassifier FC;
+
+  bool HandleTopLevelDecl(DeclGroupRef DR) override {
+    for (DeclGroupRef::iterator b = DR.begin(), e = DR.end(); b != e; ++b) {
+      if (shouldProcessTopLevelDecl(*b, FC)) {
+        if (const VarDecl* vd = dyn_cast<VarDecl>(*b)) {
+          gUglyHack_SawGlobalVariables = true;
+          break;
+        }
+      }
+    }
+    return true;
+  }
+};
+
 class MyASTConsumer : public ASTConsumer {
 public:
-  MyASTConsumer(Rewriter &R) : lastloc(), R(R) { }
+  MyASTConsumer(const SourceManager &SM) : lastloc(), FC(SM) { }
 
   void handleIfThenElse(ContextKind ctx, IfExprOrStmt ies, const Stmt* cnd, const Stmt* thn, const Stmt* els) {
     bool needTrailingUnit = ies == AnIfStmt && !isCompoundWithTrailingReturn(thn);
@@ -824,7 +869,7 @@ public:
 
     if (optDumpOrigSource) {
       llvm::outs() << "/*\n";
-      llvm::outs() << getText(R, *stmt) << "\n";
+      llvm::outs() << FC.getText(*stmt) << "\n";
       llvm::outs() << "*/\n";
     }
 
@@ -1408,7 +1453,7 @@ The corresponding AST to be matched is
       unop->dump();
       llvm::errs().flush();
       llvm::outs() << "\n*/\n";
-      llvm::outs() << getText(R, *unop) << "\n";
+      llvm::outs() << FC.getText(*unop) << "\n";
     }
   }
 
@@ -1636,7 +1681,7 @@ The corresponding AST to be matched is
     if (TypedefNameDecl* tnd = rd->getTypedefNameForAnonDecl()) {
       name = tnd->getName();
     }
-    return name;
+    return fosterizedTypeName(name);
   }
 
   std::string zeroValueRecord(const RecordDecl* rd) {
@@ -1646,7 +1691,7 @@ The corresponding AST to be matched is
       llvm::outs() << "// TODO handle this better...\n";
       llvm::errs() << "anon record\n";
       rd->dump();
-      llvm::outs() << getText(R, *rd) << "\n";
+      llvm::outs() << FC.getText(*rd) << "\n";
       return "";
     }
 
@@ -1660,7 +1705,7 @@ The corresponding AST to be matched is
   }
 
   std::string zeroValueField(const Type* typ) {
-    return "(MutField (ref " + zeroValue(typ) + " ))";
+    return "(Field (prim ref " + zeroValue(typ) + " ))";
   }
 
   const RecordType* tryGetRecordPointee(const Type* typ) {
@@ -2016,6 +2061,8 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         return "(" + enumConstantAccessor(ed, ecd) + " !)"; // emitCall
       else {
         ecd->dump();
+        if (ecd->getInitExpr()) { ecd->getInitExpr()->dump(); }
+        ecd->getType()->dump();
         return "(prim kill-entire-process \"ERROR-no-enum-decl-for-" + ecd->getNameAsString() + "\")";
       }
     }
@@ -2064,8 +2111,10 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         } else {
           llvm::outs() << "(newArrayReplicate " << sz << " " << zeroval << ")";
         }
-      } else {
+      } else if (ty->isScalarType()) {
         llvm::outs() << emitVarName(vd) << " = PtrRef (prim ref " << zeroValue(exprTy(vd)) << ")";
+      } else {
+        llvm::outs() << emitVarName(vd) << " = (" << zeroValue(exprTy(vd)) << ")";
       }
     }
   }
@@ -2228,7 +2277,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       if (ctx == BooleanContext) {
         llvm::outs() << (lit->getValueAsApproximateDouble() != 0.0 ? "True" : "False");
       } else {
-        std::string litstr = getText(R, *lit);
+        std::string litstr = FC.getText(*lit);
         if (litstr != "") llvm::outs() << litstr;
         else {
           llvm::SmallString<128> buf;
@@ -2275,7 +2324,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         llvm::outs() << "/* line 610\n";
         stmt->dump();
         llvm::outs() << "\n*/\n";
-        llvm::outs() << getText(R, *stmt) << "\n";
+        llvm::outs() << FC.getText(*stmt) << "\n";
       }
     } else if (const CallExpr* ce = dyn_cast<CallExpr>(stmt)) {
       if (ctx == BooleanContext) { llvm::outs() << "("; }
@@ -2398,7 +2447,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         stmt->dump();
         llvm::errs() << "\n*/\n";
         llvm::errs().flush();
-        llvm::outs() << getText(R, *stmt) << "\n";
+        llvm::outs() << FC.getText(*stmt) << "\n";
       }
     } else if (!stmt) {
       llvm::outs() << "/*null stmt??*/";
@@ -2408,7 +2457,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       stmt->dump();
       llvm::errs() << "\n*/\n";
       llvm::errs().flush();
-      llvm::outs() << getText(R, *stmt) << "\n";
+      llvm::outs() << FC.getText(*stmt) << "\n";
     }
   }
 
@@ -2468,13 +2517,12 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
     // to emit code once.
     if (alreadyHandled(name)) return;
 
-    std::map<const RecordDecl*, bool> embeddedStructs;
-
-    // Handle any anonymous struct fields.
+    // Handle any anonymous struct/enum fields.
     for (auto d : rd->decls()) {
       if (const RecordDecl* erd = dyn_cast<RecordDecl>(d)) {
         handleRecordDecl(erd);
-        embeddedStructs[erd] = true;
+      } else if (auto ed = dyn_cast<EnumDecl>(d)) {
+        handleEnumDecl(ed);
       }
     }
 
@@ -2520,14 +2568,18 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
     }
   }
 
-  bool isFromMainFile(const SourceLocation loc) {
-    return R.getSourceMgr().isWrittenInMainFile(loc);
-  }
+  void handleEnumDecl(const EnumDecl* ed) {
+    for (auto e : ed->enumerators()) {
+      enumDeclsForConstants[e] = ed;
+    }
 
-  bool isFromMainFile(const Decl* d) { return isFromMainFile(d->getLocation()); }
+    if (alreadyHandled(getEnumDeclName(ed))) return;
 
-  bool isFromSystemHeader(const Decl* d) {
-    return R.getSourceMgr().isInSystemHeader(d->getLocation());
+    for (auto e : ed->enumerators()) {
+      llvm::outs() << enumConstantAccessor(ed, e)
+                    << " = { " << e->getInitVal().getSExtValue()
+                    << " };\n";
+    }
   }
 
   const ReturnStmt* getTailReturnOrNull(const Stmt* s) {
@@ -2569,6 +2621,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
           return;
         }
         if (!(rd->isClass() || rd->isStruct())) {
+          llvm::outs() << "// TODO: handle non-class, non-struct record definitions\n";
           return;
         }
 
@@ -2579,8 +2632,14 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         bool needsCFG = false;
         bool mainWithArgs = false;
         performFunctionLocalAnalysis(fd, needsCFG);
+        std::string name = fosterizedName(fd->getName());
 
-        llvm::outs() << fosterizedName(fd->getName()) << " = {\n";
+        if (gUglyHack_SawGlobalVariables && name == "main") {
+          name = "c2f_main";
+        }
+
+        llvm::outs() << name << " = {\n";
+
         if (fd->getName() == "main") {
           mainWithArgs = fd->getNumParams() > 0;
         } else {
@@ -2620,8 +2679,13 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         llvm::outs() << "};\n";
       }
     } else if (TypedefDecl* fd = dyn_cast<TypedefDecl>(decl)) {
-      llvm::outs() << "/* " << getText(R, *fd) << ";*/\n";
+      llvm::outs() << "/* " << FC.getText(*fd) << ";*/\n";
     } else if (VarDecl* vd = dyn_cast<VarDecl>(decl)) {
+      // TODO globals with initializers may still be mutable,
+      // but I don't think we detect mutable usage properly yet.
+      visitVarDecl(vd);
+      llvm::outs() << ";\n";
+#if 0
       llvm::outs() << "/* Unhandled global variable declaration:\n"
         << "     	hasDefinition(): " << vd->hasDefinition() << "\n"
         << "     	hasGlobalStorage(): " << vd->hasGlobalStorage() << "\n"
@@ -2629,20 +2693,11 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         << "     	isDirectInit(): " << vd->isDirectInit() << "\n"
         << "     	tyName(getType()): " << tyName(vd->getType().getTypePtr()) << "\n"
         << getText(R, *vd) << ";*/\n";
+#endif
     } else if (auto ed = dyn_cast<EnumDecl>(decl)) {
       // Even if we skip emitting this particular declaration, we still want
       // to associate the enum constants with their corresponding EnumDecl.
-      for (auto e : ed->enumerators()) {
-        enumDeclsForConstants[e] = ed;
-      }
-
-      if (alreadyHandled(getEnumDeclName(ed))) return;
-
-      for (auto e : ed->enumerators()) {
-        llvm::outs() << enumConstantAccessor(ed, e)
-                      << " = { " << e->getInitVal().getSExtValue()
-                      << " };\n";
-      }
+      handleEnumDecl(ed);
     } else {
       llvm::errs() << "unhandled top-level decl\n";
       decl->dump();
@@ -2656,16 +2711,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       voidPtrCasts.clear();
 
       emitCommentsFromBefore((*b)->getLocStart());
-      if (!isFromMainFile(*b)) {
-        if (!isFromSystemHeader(*b)) {
-          if (auto td = dyn_cast<TagDecl>(*b)) {
-            if (td->isThisDeclarationADefinition() && td->isCompleteDefinition()) {
-              handleSingleTopLevelDecl(*b);
-            }
-          }
-        }
-        // skip it if incomplete or from system header
-      } else {
+      if (shouldProcessTopLevelDecl(*b, FC)) {
         handleSingleTopLevelDecl(*b);
       }
     }
@@ -2691,12 +2737,12 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
   void emitCommentsFromBefore(SourceLocation loc) {
     ArrayRef<RawComment*> comments = rawcomments->getComments();
     for (unsigned i = rawcomments_lastsize; i < comments.size(); ++i) {
-      if (isFromMainFile(comments[i]->getLocStart())) {
-        if (R.getSourceMgr().isBeforeInTranslationUnit(comments[i]->getLocStart(), loc)) {
+      if (FC.isFromMainFile(comments[i]->getLocStart())) {
+        if (FC.getSourceMgr().isBeforeInTranslationUnit(comments[i]->getLocStart(), loc)) {
           // If we don't have a last location, or if the comment comes
           // after the last location, emit it.
-          if (!lastloc.isValid() || R.getSourceMgr().isBeforeInTranslationUnit(lastloc, comments[i]->getLocStart())) {
-            llvm::outs() << getText(R, *comments[i]) << "\n";
+          if (!lastloc.isValid() || FC.getSourceMgr().isBeforeInTranslationUnit(lastloc, comments[i]->getLocStart())) {
+            llvm::outs() << FC.getText(*comments[i]) << "\n";
             rawcomments_lastsize = i + 1;
           }
         }
@@ -2730,7 +2776,7 @@ private:
   std::map<std::string, bool> mutableLocals;
   std::map<std::string, bool> mutableLocalAliases;
   VoidPtrCasts voidPtrCasts;
-  Rewriter R;
+  const FileClassifier FC;
   ASTContext* Ctx;
 
   llvm::DenseMap<const ValueDecl*, int> duplicateVarDecls;
@@ -2744,34 +2790,41 @@ private:
   llvm::DenseMap<const Stmt*, BinaryOperatorKind> tweakedStmts;
 };
 
+class C2F_GlobalVariableDetector_FA : public ASTFrontendAction {
+public:
+  C2F_GlobalVariableDetector_FA() {}
+
+  std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI, StringRef file) override {
+    return llvm::make_unique<C2F_GlobalVariableDetector>(CI.getSourceManager());
+  }
+};
+
 // For each source file provided to the tool, a new FrontendAction is created.
 class C2F_FrontendAction : public ASTFrontendAction {
 public:
   C2F_FrontendAction() {}
 
   std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI, StringRef file) override {
-    TheRewriter.setSourceMgr(CI.getSourceManager(), CI.getLangOpts());
-    return llvm::make_unique<MyASTConsumer>(TheRewriter);
+    return llvm::make_unique<MyASTConsumer>(CI.getSourceManager());
   }
-
-  void EndSourceFileAction() override {
-    //TheRewriter.getEditBuffer(TheRewriter.getSourceMgr().getMainFileID())
-    //    .write(llvm::outs());
-  }
-
-private:
-  Rewriter TheRewriter;
 };
 
 // You'll probably want to invoke with -fparse-all-comments
 int main(int argc, const char **argv) {
   CommonOptionsParser op(argc, argv, CtoFosterCategory);
-  for (auto sp : op.getSourcePathList()) {
-    llvm::errs() << sp << "\n";
-  }
   ClangTool Tool(op.getCompilations(), op.getSourcePathList());
 
-  return Tool.run(newFrontendActionFactory<C2F_FrontendAction>().get());
+  gUglyHack_SawGlobalVariables = false;
+  Tool.run(newFrontendActionFactory<C2F_GlobalVariableDetector_FA>().get());
+
+
+  if (gUglyHack_SawGlobalVariables) { llvm::outs() << "main = {\n"; }
+
+  int rv = Tool.run(newFrontendActionFactory<C2F_FrontendAction>().get());
+
+  if (gUglyHack_SawGlobalVariables) { llvm::outs() << "\nc2f_main !; };\n"; }
+
+  return rv;
 }
 
 // Notes on un-handled C constructs:

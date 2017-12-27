@@ -9,17 +9,20 @@ import re
 def argsplit(args):
     files = []
     nonfiles = []
+    c2fflags = []
+
     for a in args:
         if len(a) == 0:
             continue
-
-        if a[0] == '-':
+        if (a in ['-dump-cfgs', '-dump-orig-source']):
+            c2fflags.append(a)
+        elif a[0] == '-':
             nonfiles.append(a)
         elif re.search(r"\.[ch]$", a):
             files.append(a)
         else:
             nonfiles.append(a)
-    return (files, nonfiles)
+    return (files, nonfiles, c2fflags)
 
 def arg(x):
     if ' ' in x:
@@ -28,6 +31,8 @@ def arg(x):
         return x
 
 if __name__ == '__main__':
-    fs, nf = argsplit(sys.argv[1:])
+    fs, nf, cf = argsplit(sys.argv[1:])
     print ' '.join(arg(f) for f in fs)
     print ' '.join(arg(f) for f in nf)
+    print ' '.join(arg(f) for f in cf)
+
