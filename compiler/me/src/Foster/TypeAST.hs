@@ -397,11 +397,23 @@ sizeConversions = [mkTruncate p | p <- allSizePairs, isLarger  p] ++
     i I32 = "i32"
     i I64 = "i64"
 
+unitTypeAST = TupleTypeAST KindPointerSized []
+
+eqRefType = let a = BoundTyVar "a" (MissingSourceRange "==Ref") in
+            ForAllAST (primTyVars [a])
+              (mkProcType [RefTypeAST (TyVarAST a), RefTypeAST (TyVarAST a)] [fosBoolType])
+
+eqArrayType = let a = BoundTyVar "a" (MissingSourceRange "==Ref") in
+            ForAllAST (primTyVars [a])
+              (mkProcType [ArrayTypeAST (TyVarAST a), ArrayTypeAST (TyVarAST a)] [fosBoolType])
+
 -- These primitive names are known to the interpreter and compiler backends.
 gFosterPrimOpsTable :: Map.Map String (TypeAST, FosterPrim TypeAST)
 gFosterPrimOpsTable = Map.fromList $
   [(,) "not"                  $ (,) (mkFnType [i1]  [i1]  ) $ PrimOp "bitnot" i1
   ,(,) "==Bool"               $ (,) (mkFnType [i1,i1][i1] ) $ PrimOp "==" i1
+  ,(,) "==Ref"                $ (,) eqRefType               $ PrimOp "==" (RefTypeAST unitTypeAST)
+  ,(,) "sameArrayStorage"     $ (,) eqArrayType             $ PrimOp "==" (ArrayTypeAST unitTypeAST)
   ,(,) "f64-to-s32-unsafe"    $ (,) (mkFnType [f64] [i32] ) $ PrimOp "fptosi_f64_i32" i32
   ,(,) "f64-to-u32-unsafe"    $ (,) (mkFnType [f64] [i32] ) $ PrimOp "fptoui_f64_i32" i32
   ,(,) "f64-to-s64-unsafe"    $ (,) (mkFnType [f64] [i64] ) $ PrimOp "fptosi_f64_i64" i64
