@@ -34,6 +34,9 @@ type case Ptr (a:Type)
   end
 };
 
+(!=Ptr) :: forall (a:Type) { Ptr a => Ptr a => Bool };
+(!=Ptr) = { p => q => prim not (p ==Ptr q) };
+
 ptrGetIndex :: forall (a:Type) { Ptr a => Int32 => a };
 ptrGetIndex = { ptr => idx =>
   case ptr
