@@ -1094,6 +1094,12 @@ public:
 
   }
 
+  std::string emitBooleanCoercion(const Type* ty) {
+    if (auto rty = tryGetRecordPointee(ty)) {
+      return "|> " + recordName(rty->getDecl()) + "_notnil";
+    } else return mkFosterBinop("!=", ty) + " " + zeroValue(ty);
+  }
+
   void emitPeek(const Expr* base, const Expr* idx) {
       std::string tynm = tyName(exprTy(base));
       if (startswith(tynm, "(Array")) {
@@ -1141,7 +1147,7 @@ public:
           llvm::outs() << "; "; emitPeek(base, idx);
         } else if (ctx == BooleanContext) {
           llvm::outs() << "; "; emitPeek(base, idx);
-          llvm::outs() << " " << mkFosterBinop("!=", exprTy(ase)) << " 0";
+          llvm::outs() << " " << emitBooleanCoercion(exprTy(ase));
         }
         llvm::outs() << ");";
       }
@@ -1165,7 +1171,7 @@ public:
           llvm::outs() << "; "; visitStmt(ptr);
         } else if (ctx == BooleanContext) {
           llvm::outs() << "; "; visitStmt(ptr);
-          llvm::outs() << " " << mkFosterBinop("!=", exprTy(ptr)) << " 0";
+          llvm::outs() << " " << emitBooleanCoercion(exprTy(ptr));
         }
         llvm::outs() << ");";
       }
@@ -1376,14 +1382,31 @@ The corresponding AST to be matched is
       if ((!isBooleanContext) && isComparison) { llvm::outs() << "if "; }
       if (isBooleanContext && !isComparison) { llvm::outs() << "("; }
 
-      std::string tgt = mkFosterBinop(op, exprTy(binop->getLHS()));
+      const Type* ty = exprTy(binop->getLHS());
+      std::string tgt = mkFosterBinop(op, ty);
+
+      bool isRecordPtrNilComparison = false;
+
+      if (auto rty = tryGetRecordPointee(ty)) {
+        if (op == "==" || op == "!=") {
+          auto npstatus = binop->getRHS()->isNullPointerConstant(*Ctx, clang::Expr::NPC_ValueDependentIsNull);
+          isRecordPtrNilComparison = npstatus != clang::Expr::NPCK_NotNull;
+          tgt = recordName(rty->getDecl()) + (op == "==" ? "_isnil" : "_notnil");
+        }
+      }
+      
       llvm::outs() << "(";
       visitStmt(binop->getLHS(), (binop->isCompoundAssignmentOp() ? AssignmentTarget : ExprContext));
-      llvm::outs() << " " << tgt << " ";
-      visitStmt(binop->getRHS());
+      if (isRecordPtrNilComparison) {
+        llvm::outs() << "|> " + tgt;
+      } else {
+        llvm::outs() << " " << tgt << " ";
+        visitStmt(binop->getRHS());
+      }
       llvm::outs() << ")";
 
-      if (isBooleanContext && !isComparison) { llvm::outs() << " " << mkFosterBinop("!=", exprTy(binop)) << " 0 /*L907*/)"; }
+      if (isBooleanContext && !isComparison) {
+          llvm::outs() << " " << emitBooleanCoercion(exprTy(binop)) << "/*L1390*/)"; }
       if ((!isBooleanContext) && isComparison) { llvm::outs() << " then 1 else 0 end"; }
     }
   }
@@ -1977,7 +2000,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         llvm::outs() << "(" << cast << " ";
         visitStmt(ce->getSubExpr());
         llvm::outs() << ")";
-        if (ctx == BooleanContext) { llvm::outs() << " " << mkFosterBinop("!=", exprTy(ce)) << " 0)"; }
+        if (ctx == BooleanContext) { llvm::outs() << " " << emitBooleanCoercion(exprTy(ce)) << ")"; }
         if (ctx == AssignmentTarget) { llvm::outs() << "/*TODO(c2f) cast in assignment ctx!!!*/"; }
       }
       break;
@@ -2140,7 +2163,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         llvm::outs() << "b_" << pair.first << "_" << pair.second;
         if (ctx == BooleanContext) {
           if (auto expr = dyn_cast<Expr>(stmt)) {
-            llvm::outs() << " " << mkFosterBinop("!=", exprTy(expr)) << " 0"; } }
+            llvm::outs() << " " << emitBooleanCoercion(exprTy(expr)); } }
         return;
       }
 
@@ -2216,7 +2239,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       llvm::outs() << "(" + fieldAccessorName(me, base) + " ";
       visitStmt(base, ExprContext);
       llvm::outs() << ")";
-      if (ctx == BooleanContext) { llvm::outs() << " " << mkFosterBinop("!=", exprTy(me)) << " 0 /*L1922*/)"; }
+      if (ctx == BooleanContext) { llvm::outs() << " " << emitBooleanCoercion(exprTy(me)) << " /*L2226*/)"; }
     } else if (const ArraySubscriptExpr* ase = dyn_cast<ArraySubscriptExpr>(stmt)) {
       emitPeek(ase->getBase(), ase->getIdx());
     } else if (const CompoundAssignOperator* cao = dyn_cast<CompoundAssignOperator>(stmt)) {
@@ -2226,7 +2249,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
     } else if (const UnaryOperator* unop = dyn_cast<UnaryOperator>(stmt)) {
       if (ctx == BooleanContext) { llvm::outs() << "("; }
       handleUnaryOperator(unop, ctx);
-      if (ctx == BooleanContext) { llvm::outs() << " " << mkFosterBinop("!=", exprTy(unop)) << " 0 /*L1932*/)"; }
+      if (ctx == BooleanContext) { llvm::outs() << " " << emitBooleanCoercion(exprTy(unop)) << " /*L1932*/)"; }
     } else if (const StmtExpr* se = dyn_cast<StmtExpr>(stmt)) {
       visitStmt(se->getSubStmt());
     } else if (const IntegerLiteral* lit = dyn_cast<IntegerLiteral>(stmt)) {
@@ -2315,7 +2338,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         llvm::outs() << emitVarName(vd);
       }
 
-      if (ctx == BooleanContext) { llvm::outs() << " " << mkFosterBinop("!=", exprTy(dr)) << " 0)"; }
+      if (ctx == BooleanContext) { llvm::outs() << " " << emitBooleanCoercion(exprTy(dr)) << ")"; }
 
     } else if (const CStyleCastExpr* ce = dyn_cast<CStyleCastExpr>(stmt)) {
       if (tryHandleCallMallocCasted(ce)) {
@@ -2337,7 +2360,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         handleCall(ce);
       }
 
-      if (ctx == BooleanContext) { llvm::outs() << " " << mkFosterBinop("!=", exprTy(ce)) << " 0)"; }
+      if (ctx == BooleanContext) { llvm::outs() << " " << emitBooleanCoercion(exprTy(ce)) << ")"; }
     } else if (const ImplicitValueInitExpr* ivie = dyn_cast<ImplicitValueInitExpr>(stmt)) {
       llvm::outs() << zeroValue(ivie->getType().getTypePtr());
     } else if (const InitListExpr* ile = dyn_cast<InitListExpr>(stmt)) {
@@ -2537,6 +2560,9 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       }
     }
     llvm::outs() << ";\n\n";
+
+    llvm::outs() << name << "_isnil = { v => case v of $" << name << "_nil -> True of _ -> False end };\n";
+    llvm::outs() << name << "_notnil = { v => case v of $" << name << "_nil -> False of _ -> True end };\n";
 
     // Emit field getters
     for (auto d : rd->decls()) {
