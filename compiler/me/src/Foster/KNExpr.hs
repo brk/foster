@@ -466,6 +466,7 @@ tcToIL st typ = do
   case typ of
      TyConTC nm -> return $ TyConIL nm
      TyAppTC (TyConTC "Float64") [] -> return $ TyAppIL (TyConIL "Float64") []
+     TyAppTC (TyConTC "Float32") [] -> return $ TyAppIL (TyConIL "Float32") []
      TyAppTC (TyConTC dtname) tys -> do
          let (_, dtypeMapX, effDeclMapX, _) = st
          case Map.lookup dtname dtypeMapX of

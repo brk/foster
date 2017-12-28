@@ -77,6 +77,7 @@ dumpType (LLPrimInt IWd) = dumpIntType (-32)
 dumpType (LLPrimInt IDw) = dumpIntType (-64)
 dumpType (LLPrimInt size)    = dumpIntType (fromIntegral $ intSizeOf size)
 dumpType (LLNamedType "Float64") = defaultType_ Float64
+dumpType (LLNamedType "Float32") = defaultType_ Float32
 dumpType (LLNamedType nm) =
   (defaultType_ Named) { name_of_Type_ = StrictlyJust $ u8fromString nm }
 dumpType (LLStructType types) =

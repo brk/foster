@@ -684,6 +684,7 @@ instance Kinded TypeIL where
   kindOf x = case x of
     PrimIntIL   {}       -> KindAnySizeType
     TyConIL "Float64"    -> KindAnySizeType
+    TyConIL "Float32"    -> KindAnySizeType
     TyConIL "effect.Empty"  -> KindEffect
     TyConIL "effect.Extend" -> KindEffect
     TyConIL _            -> KindPointerSized

@@ -162,6 +162,7 @@ i32 = PrimIntAST I32
 i64 = PrimIntAST I64
 i1  = PrimIntAST I1
 f64 = TyAppAST (TyConAST "Float64") []
+f32 = TyAppAST (TyConAST "Float32") []
 
 primTyVars tyvars = map (\v -> (v, KindAnySizeType)) tyvars
 
@@ -424,6 +425,11 @@ gFosterPrimOpsTable = Map.fromList $
   ,(,) "u32-to-f64"    $(,) (mkFnType [i32] [f64]     ) $ PrimOp "uitofp_f64" i32
   ,(,) "f64-as-i64"    $(,) (mkFnType [f64] [i64]     ) $ PrimOp "bitcast_i64" f64
   ,(,) "i64-as-f64"    $(,) (mkFnType [i64] [f64]     ) $ PrimOp "bitcast_f64" i64
+  ,(,) "s32-to-f32-unsafe"    $ (,) (mkFnType [i32] [f32] ) $ PrimOp "sitofp_f32" i32
+  ,(,) "u32-to-f32-unsafe"    $ (,) (mkFnType [i32] [f32] ) $ PrimOp "uitofp_f32" i32
+  ,(,) "f32-to-s32-unsafe"    $ (,) (mkFnType [f32] [i32] ) $ PrimOp "fptosi_f32_i32" i32
+  ,(,) "f32-to-u32-unsafe"    $ (,) (mkFnType [f32] [i32] ) $ PrimOp "fptoui_f32_i32" i32
   ] ++ concatMap fixnumPrimitives [I32, I64, I8, I16, IWd, IDw]
     ++ sizeConversions
     ++ flonumPrimitives "f64" f64
+    ++ flonumPrimitives "f32" f32

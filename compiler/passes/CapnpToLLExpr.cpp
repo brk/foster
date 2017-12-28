@@ -636,6 +636,10 @@ TypeAST* TypeAST_from_pb(const pb::Type::Reader& t) {
     return rv;
   }
 
+  case pb::Type::Tag::FLOAT32:
+    return PrimitiveTypeAST::get("Float32",
+                             llvm::Type::getFloatTy(fosterLLVMContext));
+                             
   case pb::Type::Tag::FLOAT64:
     return PrimitiveTypeAST::get("Float64",
                              llvm::Type::getDoubleTy(fosterLLVMContext));

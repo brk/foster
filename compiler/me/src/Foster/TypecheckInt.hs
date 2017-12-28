@@ -98,7 +98,7 @@ typecheckInt annot originalText expTy = do
       return (AnnLiteral annot ty (LitInt int))
 
 typecheckRat :: ExprAnnot -> String -> Maybe TypeTC -> Tc (AnnExpr RhoTC)
-typecheckRat annot originalText _expTyTODO = do
+typecheckRat annot originalText expTy = do
   -- TODO: be more discriminating about float vs rational numbers?
   let (negated, cleanWithoutSign, _) = extractCleanBase originalText
   let clean = if negated then '-':cleanWithoutSign else cleanWithoutSign
@@ -110,8 +110,10 @@ typecheckRat annot originalText _expTyTODO = do
                         ,indent 8 (text err) ]
     Right val -> do
       tcMaybeWarnMisleadingRat (rangeOf annot) clean val
-      return (AnnLiteral annot (TyAppTC (TyConTC "Float64") [])
-                         (LitFloat $ LiteralFloat val originalText))
+      let ty = case expTy of
+                Nothing -> TyAppTC (TyConTC "Float64") []
+                Just  t -> t
+      return (AnnLiteral annot ty (LitFloat $ LiteralFloat val originalText))
 
 tcMaybeWarnMisleadingRat range cleanText val = do
   -- It's possible that the literal given is "misleading",

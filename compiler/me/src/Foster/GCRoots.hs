@@ -461,6 +461,7 @@ insertDumbGCRoots bbgp0 dump = do
   isGCable ty = case ty of
                  LLPrimInt _            -> False
                  LLNamedType "Float64"  -> False
+                 LLNamedType "Float32"  -> False
                  LLStructType tys       -> any isGCable tys
                  LLProcType _ _ _       -> False
                  LLPtrType (LLStructType []) -> False

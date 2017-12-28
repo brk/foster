@@ -97,6 +97,7 @@ smtType (TupleType  tys) = TApp (smtI ("FosterTuple" ++ show (length tys))) (map
 smtType (StructType tys) = TApp (smtI ("FosterTuple" ++ show (length tys))) (map smtType tys)
 smtType (RefinedType v _ _) = smtType (tidType v)
 smtType (TyApp (TyCon "Float64") []) = TApp (smtI_ "$Float64") []
+smtType (TyApp (TyCon "Float32") []) = TApp (smtI_ "$Float32") []
 smtType (TyApp (TyCon nm) tys) = TApp (smtI nm) (map smtType tys)
 smtType (PtrType t) = TApp (smtI_ "$Ptr") [smtType t]
 smtType (FnType ds rt _cc _pf) = TApp (smtI $ "$Fn_" ++ show (pretty rt)) (map smtType ds)
