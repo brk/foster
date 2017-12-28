@@ -19,6 +19,7 @@ struct Type {
     datatype   @ 7;
     tyconapp   @ 8;
     struct     @ 9;
+    float32    @ 10;
   }
 
   tag   @ 0 : Tag;

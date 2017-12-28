@@ -2262,6 +2262,7 @@ tcTypeWellFormed msg ctx typ = do
         PrimIntTC      {}     -> return ()
         MetaTyVarTC    {}     -> return ()
         TyConTC "Float64" -> return ()
+        TyConTC "Float32" -> return ()
         TyConTC nm -> case Map.lookup nm (contextDataTypes ctx) of
                                    Just  _ -> return ()
                                    Nothing -> tcFails [text $ "Unknown type "
