@@ -66,6 +66,7 @@ static bool startswith(const std::string& a, const std::string& b) {
 }
 
 std::string s(const char* c) { return std::string(c); }
+std::string s(uint64_t v) { return std::to_string(v); }
 
 const RecordType* bindRecordType(const Type* typ) {
   if (const TypedefType* tty = dyn_cast<TypedefType>(typ)) {
@@ -1101,6 +1102,7 @@ public:
   }
 
   void emitPeek(const Expr* base, const Expr* idx) {
+      base = base->IgnoreParenImpCasts();
       std::string tynm = tyName(exprTy(base));
       if (startswith(tynm, "(Array")) {
         visitStmt(base);
@@ -1118,7 +1120,7 @@ public:
 
   template <typename Lam>
   void emitPokeIdx(const ArraySubscriptExpr* ase, Lam& valEmitter, ContextKind ctx) {
-      auto base = ase->getBase();
+      auto base = ase->getBase()->IgnoreParenImpCasts();
       auto idx  = ase->getIdx();
       std::string tynm = tyName(exprTy(base));
       if (startswith(tynm, "(Ptr")) {
@@ -1753,6 +1755,11 @@ The corresponding AST to be matched is
     }
     if (auto rty = dyn_cast<RecordType>(typ)) {
       return zeroValueRecord(rty->getDecl());
+    }
+    if (auto aty = dyn_cast<ConstantArrayType>(typ)) {
+      uint64_t sz = aty->getSize().getZExtValue();
+      auto zeroval = zeroValue(aty->getElementType().getTypePtr());
+      return "(newArrayReplicate " + s(sz) + " " + zeroval + ")";
     }
     return "None";
   }
