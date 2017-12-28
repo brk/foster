@@ -23,7 +23,7 @@ import Data.IORef(newIORef, readIORef, writeIORef)
 import Data.Traversable(mapM)
 import Prelude hiding (mapM, (<$>))
 import Control.Monad.State(forM, when, forM_, evalStateT, gets,
-                           liftIO, liftM, liftM2, liftM3)
+                           liftIO, liftM, liftM2)
 import Control.Monad.Trans.Except(runExceptT)
 import System.Exit(exitFailure)
 
