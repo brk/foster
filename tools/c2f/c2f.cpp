@@ -259,7 +259,33 @@ std::string getEnumTypeName(const EnumType* ety) {
   return getEnumDeclName(ety->getDecl());
 }
 
+
 std::string maybeNonUppercaseTyName(const clang::Type* ty, std::string defaultName) {
+
+  if (const PointerType* pty = dyn_cast<PointerType>(ty)) {
+    auto eltTy = pty->getPointeeType().getTypePtr();
+
+    // Special case: pointer-to-function in C becomes plain function in Foster.
+    // TODO: identify & elide C's explicit function environments.
+    if (auto dc = dyn_cast<DecayedType>(eltTy)) {
+      std::string fnty = tryParseFnTy(dc->getDecayedType().getTypePtr());
+      if (fnty != "") return fnty;
+    }
+    if (auto dc = dyn_cast<FunctionProtoType>(eltTy)) {
+      return fnTyName(dc);
+    }
+
+    // could mean either (Array t) or (Ref t) or t
+    if (isVoidPtr(pty)) return "VOIDPTR";
+    if (const RecordType* rty = bindRecordType(eltTy)) {
+      auto nm = rty->getDecl()->getNameAsString();
+      if (!nm.empty()) return nm;
+
+      return tyName(pty->getPointeeType().getTypePtr());
+    }
+
+    return "(Ptr " + tyName(eltTy) + ")";
+  }
 
   if (auto dc = dyn_cast<DecayedType>(ty)) {
     std::string fnty = tryParseFnTy(dc->getDecayedType().getTypePtr());
@@ -272,18 +298,6 @@ std::string maybeNonUppercaseTyName(const clang::Type* ty, std::string defaultNa
   if (const TypedefType* tty = dyn_cast<TypedefType>(ty)) {
     auto nm = tyName(tty->desugar().getTypePtr(), tty->getDecl()->getNameAsString());
     if (!nm.empty()) return nm;
-  }
-  if (const PointerType* pty = dyn_cast<PointerType>(ty)) {
-    // could mean either (Array t) or (Ref t) or t
-    if (isVoidPtr(pty)) return "VOIDPTR";
-    if (const RecordType* rty = bindRecordType(pty->getPointeeType().getTypePtr())) {
-      auto nm = rty->getDecl()->getNameAsString();
-      if (!nm.empty()) return nm;
-
-      return tyName(pty->getPointeeType().getTypePtr());
-    }
-
-    return "(Ptr " + tyName(pty->getPointeeType().getTypePtr()) + ")";
   }
 
   if (const ConstantArrayType* cat = dyn_cast<ConstantArrayType>(ty)) {
@@ -1965,10 +1979,12 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       visitStmt(ce->getSubExpr(), ctx);
       llvm::outs() << ")";
       break;
-    case CK_IntegralToFloating:
-      llvm::outs() << "(" << intToFloat(ce->getSubExpr(), exprTy(ce)) << " ";
-      visitStmt(ce->getSubExpr());
+    case CK_IntegralToFloating: {
+      const clang::Expr* mut_subExpr = ce->getSubExpr();
+      llvm::outs() << "(" << intToFloat(mut_subExpr, exprTy(ce)) << " ";
+      visitStmt(mut_subExpr);
       llvm::outs() << ")";
+    }
       if (ctx != ExprContext) { llvm::outs() << "/*TODO(c2f) i2f cast in non-epxr ctx*/"; }
       break;
     case CK_PointerToBoolean:
@@ -2764,12 +2780,22 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
     return "/* " + srcTy + "-to-" + tgtTy + "*/";
   }
 
-  std::string intToFloat(const Expr* srcexpr, const Type* tgt) {
+  std::string intToFloat(const Expr* &srcexpr, const Type* tgt) {
     const Type* src = exprTy(srcexpr);
-    const std::string srcTy = tyName(src);
-    const std::string tgtTy = tyName(tgt);
+    const Type* und = exprTy(srcexpr->IgnoreCasts());
+    std::string undTy = tyName(und);
+    std::string srcTy = tyName(src);
+    std::string tgtTy = tyName(tgt);
+    // If we have nested casts, generating (s8 |> s8-to-s32 |> s32-to-f32-unsafe)
+    // is correct but not ideal because it's guaranteed not to trigger ill defined cases
+    // in s32-to-f32, so we special-case certain casts here.
+    if (undTy == "Int8" && tgtTy == "Float32") {
+      srcTy = undTy;
+      srcexpr = srcexpr->IgnoreCasts();
+    }
     if (srcTy == "Int32" && tgtTy == "Float64") return (src->isSignedIntegerType() ? "s32-to-f64" : "u32-to-f64");
     if (srcTy == "Int64" && tgtTy == "Float64") return (src->isSignedIntegerType() ? "s64-to-f64-unsafe" : "u64-to-f64-unsafe");
+    if (srcTy == "Int8"  && tgtTy == "Float32") return (src->isSignedIntegerType() ? "s8-to-f32" : "u8-to-f32");
     if (srcTy == "Int32" && tgtTy == "Float32") return (src->isSignedIntegerType() ? "s32-to-f32-unsafe" : "u32-to-f32-unsafe");
     return "/* " + srcTy + "-to-" + tgtTy + "*/";
   }
