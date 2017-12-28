@@ -1961,8 +1961,9 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       visitStmt(ce->getSubExpr(), ctx);
       break;
     case CK_FloatingToIntegral:
-      llvm::outs() << " /*float-to-int cast*/ ";
+      llvm::outs() << "(" << floatToInt(ce->getSubExpr(), exprTy(ce)) << " ";
       visitStmt(ce->getSubExpr(), ctx);
+      llvm::outs() << ")";
       break;
     case CK_IntegralToFloating:
       llvm::outs() << "(" << intToFloat(ce->getSubExpr(), exprTy(ce)) << " ";
@@ -2308,7 +2309,10 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         llvm::outs() << (lit->getValueAsApproximateDouble() != 0.0 ? "True" : "False");
       } else {
         std::string litstr = FC.getText(*lit);
-        if (litstr != "") llvm::outs() << litstr;
+        if (!litstr.empty() && litstr[litstr.size() - 1] == 'f') {
+          litstr[litstr.size() - 1] = ' ';
+        }
+        if (!litstr.empty()) llvm::outs() << litstr;
         else {
           llvm::SmallString<128> buf;
           lit->getValue().toString(buf);
@@ -2751,12 +2755,22 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
     return true;
   }
 
+  std::string floatToInt(const Expr* srcexpr, const Type* tgt) {
+    const Type* src = exprTy(srcexpr);
+    const std::string srcTy = tyName(src);
+    const std::string tgtTy = tyName(tgt);
+    if (srcTy == "Float32" && tgtTy == "Int32") return (tgt->isSignedIntegerType() ? "f32-to-s32-unsafe" : "f32-to-u32-unsafe");
+    if (srcTy == "Float64" && tgtTy == "Int64") return (tgt->isSignedIntegerType() ? "f64-to-s64-unsafe" : "f64-to-u64-unsafe");
+    return "/* " + srcTy + "-to-" + tgtTy + "*/";
+  }
+
   std::string intToFloat(const Expr* srcexpr, const Type* tgt) {
     const Type* src = exprTy(srcexpr);
     const std::string srcTy = tyName(src);
     const std::string tgtTy = tyName(tgt);
     if (srcTy == "Int32" && tgtTy == "Float64") return (src->isSignedIntegerType() ? "s32-to-f64" : "u32-to-f64");
     if (srcTy == "Int64" && tgtTy == "Float64") return (src->isSignedIntegerType() ? "s64-to-f64-unsafe" : "u64-to-f64-unsafe");
+    if (srcTy == "Int32" && tgtTy == "Float32") return (src->isSignedIntegerType() ? "s32-to-f32-unsafe" : "u32-to-f32-unsafe");
     return "/* " + srcTy + "-to-" + tgtTy + "*/";
   }
 
