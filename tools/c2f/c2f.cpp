@@ -1474,7 +1474,16 @@ The corresponding AST to be matched is
     } else if (unop->getOpcode() == UO_PreInc) {
       handleIncrDecr("ptrIncr", unop);
     } else if (unop->getOpcode() == UO_AddrOf) {
-      visitStmt(unop->getSubExpr(), AssignmentTarget);
+      if (auto ase = dyn_cast<ArraySubscriptExpr>(unop->getSubExpr())) {
+        // Translate (&a[i]) as (ptrPlus a i)
+        llvm::outs() << "(ptrPlus ";
+        visitStmt(ase->getBase());
+        llvm::outs() << " ";
+        visitStmt(ase->getIdx());
+        llvm::outs() << ")";
+      } else {
+        visitStmt(unop->getSubExpr(), AssignmentTarget);
+      }
     } else if (unop->getOpcode() == UO_Deref) {
       if (ctx == AssignmentTarget && isDeclRefOfMutableAlias(unop->getSubExpr())) {
         visitStmt(unop->getSubExpr(), AssignmentTarget);
@@ -1866,7 +1875,7 @@ The corresponding AST to be matched is
           // Usually integral type mismatches are explicitly represented with
           // an IntegralCast node in the AST, but for some reason that doesn't
           // happen with compound assignments.
-          if (srcTy != dstTy) {
+          if (srcTy != dstTy && !(exprTy(binop->getLHS())->isPointerType())) {
             llvm::outs() << "("
               << intCastFromTo(srcTy, dstTy, exprTy(binop->getRHS())->isSignedIntegerType())
               << " ";

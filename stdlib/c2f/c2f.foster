@@ -73,6 +73,9 @@ ptrSet = { ptr => val =>
   end
 };
 
+(+Ptr) :: forall (a:Type) { Ptr a => Int32 => Ptr a };
+(+Ptr) = { ptr => n => ptrPlus ptr n };
+
 ptrPlus :: forall (a:Type) { Ptr a => Int32 => Ptr a };
 ptrPlus = { ptr => n =>
   case ptr
