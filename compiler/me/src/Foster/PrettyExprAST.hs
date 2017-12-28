@@ -177,10 +177,12 @@ prettyStmt e = case e of
     E_BoolAST     annot b   -> withAnnot annot $ text $ show b
     E_PrimAST     annot nm []   _ -> withAnnot annot $ text nm
     E_PrimAST     annot nm lits _ -> withAnnot annot $ text nm <+> pretty lits
-    E_CallAST annot e []    -> withAnnot annot $ pretty e <+> text "!"
+    E_CallAST annot e []    -> withAnnot annot $ prettyAtom e <+> text "!"
     E_CallAST annot e [e1,e2] | isOperator e
-                            -> withAnnot annot $ prettyAtom e1 <+> pretty e <+> prettyAtom e2
-    E_CallAST annot e es    -> withAnnot annot $ pretty e <+> align (hsep (map prettyAtom es))
+                            -> withAnnot annot $ hang 4 $ group $
+                                                 prettyAtom e1 </> pretty e <+> prettyAtom e2
+    E_CallAST annot e es    -> withAnnot annot $ hang 4 $
+                                                 sep (map (group.prettyAtom) (e:es))
     E_LetAST  annot (TermBinding evar bound) expr ->
                                withAnnot annot $
                               {- lkwd "let"
@@ -188,7 +190,7 @@ prettyStmt e = case e of
                               <+> text "="
                               <+> prettySeq bound {- <+> lkwd "in" -}
                                                   <> text ";"
-                           <$> pretty expr
+                           <> hardline <> pretty expr
     E_LetRec annot binds e -> withAnnot annot $
                            (vcat [text "REC" <+> pretty evar <+> text "="
                                              <+> pretty expr <> text ";"
@@ -212,8 +214,11 @@ prettyStmt e = case e of
     E_ArrayRead   annot ai   -> withAnnot annot $ pretty ai
     E_ArrayPoke   annot ai e -> withAnnot annot $ prettyAtom e <+> text ">^" <+> pretty ai
     E_TupleAST    annot _ es -> withAnnot annot $ parens (hsep $ punctuate comma (map pretty es))
-    E_SeqAST (ExprAnnot pre _ post) l r -> prettyExpr l <> text ";" <+> (vcat $ map pretty $ pre ++ post)
-                                        <> prettyStmt r
+    E_SeqAST (ExprAnnot pre _ post) l r ->
+      if null pre && null post
+        then prettyExpr l <> text ";" <$> prettyStmt r
+        else prettyExpr l <> text ";" </> (vcat $ map pretty $ pre ++ post)
+                                      <$$> prettyStmt r
     E_FnAST annot fn     -> withAnnot annot $ pretty fn
 
 prettySeq :: (Pretty ty, IsQuietPlaceholder ty) => ExprSkel ExprAnnot ty -> Doc
