@@ -30,9 +30,9 @@ showUnTyped d _ = d
 
 comment d = text "/*" <+> d <+> text "*/"
 
-instance Pretty e => Pretty (ArrayIndex e) where
+instance (Pretty ty, IsQuietPlaceholder ty) => Pretty (ArrayIndex (ExprSkel ExprAnnot ty)) where
   pretty (ArrayIndex b i _rng SG_Dynamic) =
-    pretty b <> brackets (pretty i)
+    prettyAtom b <> brackets (pretty i)
   pretty (ArrayIndex b i _rng SG_Static) =
     text "prim array-subscript" <+> pretty b <+> pretty i
   pretty (ArrayIndex b i _rng SG_Unsafe) =
