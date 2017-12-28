@@ -204,6 +204,12 @@ ptrToArr = { ptr =>
   end
 };
 
+s8-to-f32 :: { Int8 => Float32 };
+s8-to-f32 = { s8 => s8 |> sext_i8_to_i32 |> s32-to-f32-unsafe };
+
+u8-to-f32 :: { Int8 => Float32 };
+u8-to-f32 = { u8 => u8 |> zext_i8_to_i32 |> u32-to-f32-unsafe };
+
 zeroTerminate :: { Array Int8 => Array Int8 };
 zeroTerminate = { arr =>
   len = arrayLength32 arr;
