@@ -42,20 +42,23 @@ noinline_elapsed_time_100 = { qq : { () } =>
 };
 
 elapsed_time_n :: { { () } => Int32 => Float64 };
-elapsed_time_n = { ff : { () } => n : Int32 =>
+elapsed_time_n = { ff => n =>
   REC loop = { x : Int32 =>
     if x <=SInt32 0 then () else
       ff !; loop (x -Int32 1);
     end
   };
 
-  t1 = foster_getticks !;
+  t1 = foster_gettime_microsecs !;
   loop n;
-  t2 = foster_getticks !;
+  t2 = foster_gettime_microsecs !;
 
-  if (t2 -Int64 t1) <=SInt64 (sext_i32_to_i64 n)
-    then prim kill-entire-process "problem with elapsed_time_n, too few ticks implies overoptimization";
-    else foster_getticks_elapsed t1 t2
+  elapsed_nanos_approx = (t2 -Int64 t1) *Int64 256;
+  // If our average was less than 4 nanoseconds per iteration,
+  // something went very wrong somewhere.
+  if elapsed_nanos_approx <=SInt64 (sext_i32_to_i64 n)
+    then prim kill-entire-process "problem with elapsed_time_n, overoptimization detected";
+    else foster_gettime_elapsed_secs t1 t2
   end
 };
 
