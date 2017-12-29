@@ -1042,7 +1042,7 @@ prettyEffectCtor ec = prettyDataTypeCtorBare (effectCtorAsData ec)
 prettyHandler :: (Pretty expr, Pretty (pat ty)) => expr -> [CaseArm pat expr ty] -> Maybe expr -> Doc
 prettyHandler action arms mb_xform =
             kwd "handle" <+> pretty action
-            <$> indent 2 (vcat [ kwd "of" <+>
+            <$> indent 2 (vsep [ kwd "of" <+>
                                         (hsep $ [{- fill 20 -} (pretty epat)]
                                             ++  prettyGuard guard
                                             ++ [text "->" <+> pretty body])
@@ -1062,7 +1062,7 @@ prettyHandler action arms mb_xform =
 prettyCase :: (Pretty expr, Pretty (pat ty)) => expr -> [CaseArm pat expr ty] -> Doc
 prettyCase scrutinee arms =
             kwd "case" <+> pretty scrutinee
-            <$> indent 2 (vcat [ kwd "of" <+>
+            <$> indent 2 (vsep [ kwd "of" <+>
                                         (hsep $ [{- fill 20 -} (pretty epat)]
                                             ++  prettyGuard guard
                                             ++ [text "->" <+> pretty body])
