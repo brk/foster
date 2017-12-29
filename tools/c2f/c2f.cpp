@@ -56,6 +56,7 @@ public:
     return handled;
   }
 
+  std::map<std::string, std::string> enumPrefixForConstants;
 
   // I couldn't figure out a better way of communicating between the
   // ClangTool invocation site and the ASTConsumer itself.
@@ -74,6 +75,10 @@ optDumpOrigSource("dump-orig-source",
   llvm::cl::desc("Dump original C source in a comment before each generated function"),
   llvm::cl::cat(CtoFosterCategory));
 
+static llvm::cl::opt<bool>
+optC2FVerbose("c2f-verbose",
+  llvm::cl::desc("Enable extra debugging output"),
+  llvm::cl::cat(CtoFosterCategory));
 /*
 static bool startswith(const std::string& a, const std::string& b) {
   return a.size() >= b.size() && a.substr(0, b.size()) == b;
@@ -334,8 +339,8 @@ std::string maybeNonUppercaseTyName(const clang::Type* ty, std::string defaultNa
     if (cat->getSizeModifier() != ArrayType::Normal) {
       llvm::outs() << "// TODO(f2c) handle size modified arrays\n";
     }
-    return "(Array " + tyName(eltTy)
-                     + " /*size=" + s(size) + "*/ )";
+    return "(Ptr " + tyName(eltTy)
+                     + " /*arrsize=" + s(size) + "*/ )";
   }
 
   if (const ElaboratedType* ety = dyn_cast<ElaboratedType>(ty)) {
@@ -514,9 +519,8 @@ std::string enumPrefix(const EnumDecl* ed) {
   return prefix;
 }
 
-std::string enumConstantAccessor(const EnumDecl* ed,
-                                  const EnumConstantDecl* ecd) {
-  std::string prefix = enumPrefix(ed);
+std::string enumConstantAccessor(const std::string& prefix,
+                                 const EnumConstantDecl* ecd) {
   return prefix + ecd->getNameAsString();
 }
 
@@ -530,6 +534,8 @@ public:
     if (auto v = Result.Nodes.getNodeAs<DeclRefExpr>("binopvar")) {
       if (auto bo = Result.Nodes.getNodeAs<BinaryOperator>("binop")) {
         if (bo->isAssignmentOp() || bo->isCompoundAssignmentOp()) {
+          if (optC2FVerbose) { llvm::errs() << "MutableLocalHandler: binopvar: "
+                                            << v->getDecl()->getName() << "\n"; }
           locals[v->getDecl()->getName()] = true;
         }
       }
@@ -917,10 +923,14 @@ public:
   }
 
   void handleEnumDecl(const EnumDecl* ed) {
+    for (auto e : ed->enumerators()) {
+      globals.enumPrefixForConstants[e->getNameAsString()] = enumPrefix(ed);
+    }
+
     if (globals.alreadyHandled(getEnumDeclName(ed))) return;
 
     for (auto e : ed->enumerators()) {
-      llvm::outs() << enumConstantAccessor(ed, e)
+      llvm::outs() << enumConstantAccessor(enumPrefix(ed), e)
                     << " = { " << e->getInitVal().getSExtValue()
                     << " };\n";
     }
@@ -1206,7 +1216,7 @@ public:
 
           // We don't visit the decl itself here because it may refer to
           // out-of-scope variables.
-          llvm::outs() << fosterizedName(vd->getName())
+          llvm::outs() << emitVarName(vd)
                        << " = PtrRef (prim ref "
                        << zeroValue(vd->getType().getTypePtr()) << ") /*cfg-mutlocal*/";
           needsVisit = false;
@@ -1752,13 +1762,30 @@ The corresponding AST to be matched is
         visitStmt(unop->getSubExpr(), AssignmentTarget);
       }
     } else if (unop->getOpcode() == UO_Deref) {
-      if (ctx == AssignmentTarget && isDeclRefOfMutableAlias(unop->getSubExpr())) {
-        visitStmt(unop->getSubExpr(), AssignmentTarget);
+      // Relevant testcases:
+      //   nestedarrs_001.c
+      //                     int* p = ...; *p = 3;
+      //                                    ^- not mutable local ===> ptrSet p 3
+      //   ptr_ref_001.c
+      //   ptr_ref_002.c
+      //          
+      //    int bar(int a) { int* z = &a; --a; ++*z; return foo(z) + *z; }
+      //                                          ^                   ^
+      //                                          |     not assignment ctx ==> ptrGet z
+      //                                          +- declrefofmutablealias ==> ptrIncr (z)
+      //
+      //    int baz(int a) { int* z = &a; --a; ++*z; int* q1 = ++z; --z; return foo(z) + *z; }
+      //                                          ^-  !DRMA                ==> ptrIncr (ptrGet z)
+      if (ctx == AssignmentTarget) {
+        if (optC2FVerbose) { llvm::outs() << "/*L1774->*/ "; }
+        visitStmt(unop->getSubExpr()); // elide deref, thus not assignment context anymore
       } else {
         llvm::outs() << "(ptrGet ";
         //llvm::outs() << "/* " << tyName(exprTy(unop->getSubExpr())) << " */";
         visitStmt(unop->getSubExpr(), ctx);
         llvm::outs() << ")";
+        if (optC2FVerbose) { llvm::outs() << "/*<-L1779; " << (ctx == AssignmentTarget) << ";"
+                              << isDeclRefOfMutableAlias(unop->getSubExpr()) << "*/ "; }
       }
     } else if (unop->getOpcode() == UO_Extension) {
       visitStmt(unop->getSubExpr());
@@ -1982,7 +2009,7 @@ The corresponding AST to be matched is
         if (result_typ && szty != result_typ) {
           llvm::outs() << "// WARNING: conflicting types for this malloc... (" << tyName(result_typ) << ")\n";
         }
-        llvm::outs() << "(strLit (allocDArray:[" << tyName(szty) << "] ";
+        llvm::outs() << "(ptrOfArr (allocDArray:[" << tyName(szty) << "] ";
         visitStmt(sztyL ? binop->getRHS() :  binop->getLHS());
         llvm::outs() << "))";
         return true;
@@ -2050,7 +2077,7 @@ The corresponding AST to be matched is
     {
       uint64_t size = 0; const Type* eltTy = nullptr;
       if (tryBindConstantSizedArrayType(typ, eltTy, size)) {
-        return "(newArrayReplicate " + s(size) + " " + zeroValue(eltTy) + ")";
+        return "(ptrOfArr (newArrayReplicate " + s(size) + " " + zeroValue(eltTy) + "))";
       }
     }
 
@@ -2317,16 +2344,8 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
 
   std::string emitVarName(const ValueDecl* vd) {
     if (auto ecd = dyn_cast<EnumConstantDecl>(vd)) {
-      const EnumDecl* ed = enumDeclsForConstants[ecd];
-      if (!ed) ed = enumDeclsForConstants[ecd->getCanonicalDecl()];
-      if (ed)
-        return "(" + enumConstantAccessor(ed, ecd) + " !)"; // emitCall
-      else {
-        ecd->dump();
-        if (ecd->getInitExpr()) { ecd->getInitExpr()->dump(); }
-        ecd->getType()->dump();
-        return "(prim kill-entire-process \"ERROR-no-enum-decl-for-" + ecd->getNameAsString() + "\")";
-      }
+      auto pfx = globals.enumPrefixForConstants[ecd->getNameAsString()];
+      return "(" + enumConstantAccessor(pfx, ecd) + " !)"; // emitCall
     }
 
     auto it = duplicateVarDecls.find(vd);
@@ -2334,14 +2353,14 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       return fosterizedName(vd->getName());
     } else {
       std::string s;
-      std::stringstream ss(s); ss << fosterizedName(vd->getName()) << "_" << it->second;
+      std::stringstream ss(s); ss << fosterizedName(vd->getName()) << "___" << it->second;
       return ss.str();
     }
   }
 
   void visitVarDecl(const VarDecl* vd) {
     if (vd->hasInit()) {
-      if (mutableLocals[vd->getName()]) {
+      if (mutableLocals[vd->getName()] && !isDeclRefOfMutableLocal(vd->getInit())) {
         llvm::outs() << emitVarName(vd) << " = PtrRef (prim ref ";
         visitStmt(vd->getInit());
         llvm::outs() << ") /*vd-mutlocal*/";
@@ -2366,13 +2385,13 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
 
         llvm::outs() << emitVarName(vd) << " = ";
         if (size > 0 && size <= 16) {
-          llvm::outs() << "(strLit:[" << tyName(eltTy) << "] (prim mach-array-literal";
+          llvm::outs() << "(ptrOfArr:[" << tyName(eltTy) << "] (prim mach-array-literal";
           for (uint64_t i = 0; i < size; ++i) {
             llvm::outs() << " " << zeroval;
           }
           llvm::outs() << "))";
         } else {
-          llvm::outs() << "(newArrayReplicate " << size << " " << zeroval << ")";
+          llvm::outs() << "(ptrOfArr (newArrayReplicate " << size << " " << zeroval << "))";
         }
       } else if (ty->isScalarType()) {
         llvm::outs() << emitVarName(vd) << " = PtrRef (prim ref " << zeroValue(exprTy(vd)) << ")";
@@ -2646,7 +2665,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         }
         
 
-        llvm::outs() << "(strLit:[" << eltTyName << "] (prim mach-array-literal";
+        llvm::outs() << "(ptrOfArr:[" << eltTyName << "] (prim mach-array-literal";
         std::vector<const clang::Expr*> inits;
         collapseNestedArrayInitList(ile, inits);
         for (auto e : inits) {
@@ -2768,6 +2787,14 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
     FnBodyVisitor v(mutableLocals, innocuousReturns,
                     voidPtrCasts, needsCFG, d->getASTContext());
     v.TraverseDecl(d);
+
+    if (optC2FVerbose) {
+      llvm::errs() << "performFunctionLocalAnalysis("
+                   << d->getNameAsString() << ") computed mutable locals:\n";
+      for (auto e : mutableLocals) {
+        llvm::errs() << "    " << e.first << "\n";
+      }
+    }
   }
 
   void handleFunctionDecl(FunctionDecl* fd) {
@@ -2852,10 +2879,6 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         << "     	tyName(getType()): " << tyName(vd->getType().getTypePtr()) << "\n"
         << getText(R, *vd) << ";*/\n";
 #endif
-    } else if (const EnumDecl* ed = dyn_cast<EnumDecl>(decl)) {
-      for (auto e : ed->enumerators()) {
-        enumDeclsForConstants[e] = ed;
-      }
     } else {
 
       bool handled = isa<RecordDecl>(decl)
@@ -2964,8 +2987,6 @@ private:
   ASTContext* Ctx;
 
   llvm::DenseMap<const ValueDecl*, int> duplicateVarDecls;
-
-  llvm::DenseMap<const EnumConstantDecl*, const EnumDecl*> enumDeclsForConstants;
 
   const Stmt* currStmt; // print this one, even if it's in the map.
   typedef llvm::DenseMap<const Stmt*,std::pair<unsigned,unsigned> > StmtMapTy;

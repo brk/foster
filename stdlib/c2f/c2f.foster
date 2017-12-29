@@ -177,6 +177,9 @@ ptrPostDecrInt64 = { r : Ptr Int64 => v = ptrGet r; ptrSet r (v -Int64 1); v };
 strLit :: forall (t:Type) { Array t => Ptr t };
 strLit = { s => PtrArr s 0 };
 
+ptrOfArr :: forall (t:Type) { Array t => Ptr t };
+ptrOfArr = { s => PtrArr s 0 };
+
 printStr :: { Ptr Int8 => () };
 printStr = { ptr =>
   case ptr
