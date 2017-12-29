@@ -44,7 +44,7 @@ def compile_source(src):
   include_dirs = [bindir, runtime, runtime_gc, basedir, corodir]
   includes = ' '.join(['-I ' + path for path in include_dirs])
   defines = ' -D'.join(['', coro_method])
-  flags = debug_flag + defines + " -std=c++11"
+  flags = debug_flag + defines + " -std=c++11 -O2"
   cmd = "%s %s %s %s -emit-llvm -c -o %s" % (clang, src, includes, flags, outbc)
   if options.verbose:
     print cmd
