@@ -14,7 +14,7 @@ def argsplit(args):
     for a in args:
         if len(a) == 0:
             continue
-        if (a in ['-dump-cfgs', '-dump-orig-source']):
+        if (a in ['-dump-cfgs', '-dump-orig-source', '-c2f-verbose']):
             c2fflags.append(a)
         elif a[0] == '-':
             nonfiles.append(a)
