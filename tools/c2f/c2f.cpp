@@ -46,7 +46,20 @@ using namespace clang::driver;
 using namespace clang::tooling;
 
 struct {
+private:
   std::map<std::string, bool> handledTypeNames;
+
+public:
+  bool alreadyHandled(const std::string& name) {
+    bool handled = handledTypeNames[name];
+    if (!handled) handledTypeNames[name] = true;
+    return handled;
+  }
+
+
+  // I couldn't figure out a better way of communicating between the
+  // ClangTool invocation site and the ASTConsumer itself.
+  struct { bool SawGlobalVariables = false; } uglyhack;
 } globals;
 
 static llvm::cl::OptionCategory CtoFosterCategory("C-to-Foster");
@@ -61,9 +74,11 @@ optDumpOrigSource("dump-orig-source",
   llvm::cl::desc("Dump original C source in a comment before each generated function"),
   llvm::cl::cat(CtoFosterCategory));
 
+/*
 static bool startswith(const std::string& a, const std::string& b) {
   return a.size() >= b.size() && a.substr(0, b.size()) == b;
 }
+*/
 
 std::string s(const char* c) { return std::string(c); }
 std::string s(uint64_t v) { return std::to_string(v); }
@@ -149,12 +164,6 @@ std::string str(T x) {
   std::stringstream ss(s);
   ss << x;
   return ss.str();
-}
-
-bool alreadyHandled(const std::string& name) {
-  bool handled = globals.handledTypeNames[name];
-  if (!handled) globals.handledTypeNames[name] = true;
-  return handled;
 }
 
 std::string getNameForAnonymousRecordTypeWithin(const Decl* d, const TagDecl* td) {
@@ -259,6 +268,24 @@ std::string getEnumTypeName(const EnumType* ety) {
   return getEnumDeclName(ety->getDecl());
 }
 
+bool tryBindConstantSizedArrayType(const Type* ty,
+                                   const Type* &eltTy,
+                                   uint64_t    &size) {
+  if (auto cat = dyn_cast<ConstantArrayType>(ty)) {
+    const Type* inner = cat->getElementType().getTypePtr();
+    const uint64_t outerSize = cat->getSize().getZExtValue();
+
+    uint64_t innerSize = 0;
+    if (tryBindConstantSizedArrayType(inner, eltTy, innerSize)) {
+      size = outerSize * innerSize;
+    } else {
+      size = outerSize;
+      eltTy = inner;
+    }
+    return true;
+  }
+  return false;
+}
 
 std::string maybeNonUppercaseTyName(const clang::Type* ty, std::string defaultName) {
 
@@ -301,12 +328,14 @@ std::string maybeNonUppercaseTyName(const clang::Type* ty, std::string defaultNa
   }
 
   if (const ConstantArrayType* cat = dyn_cast<ConstantArrayType>(ty)) {
+    uint64_t size = 0; const Type* eltTy = nullptr;
+    tryBindConstantSizedArrayType(cat, eltTy, size);
+
     if (cat->getSizeModifier() != ArrayType::Normal) {
       llvm::outs() << "// TODO(f2c) handle size modified arrays\n";
     }
-    auto sz = cat->getSize();
-    return "(Array " + tyName(cat->getElementType().getTypePtr())
-                     + " /*size=" + sz.toString(10, false) + "*/ )";
+    return "(Array " + tyName(eltTy)
+                     + " /*size=" + s(size) + "*/ )";
   }
 
   if (const ElaboratedType* ety = dyn_cast<ElaboratedType>(ty)) {
@@ -402,6 +431,96 @@ std::string mkFosterBinop(const std::string& op, const clang::Type* typ) {
 
   return op + ty;
 }
+
+std::string fosterizedNameChars(std::string nm) {
+  for (size_t i = 0; i < nm.size(); ++i) {
+    char c = nm[i];
+    if (c == ' ' || c == '(' || c == ')') {
+      nm[i] = '_';
+    }
+  }
+  return nm;
+}
+
+std::string fosterizedName(const std::string& name) {
+  if (name == "to" || name == "do" || name == "type" || name == "case"
+    || name == "of" || name == "as" || name == "then" || name == "end"
+    || name == "in" || name == "effect" || name == "handle") {
+    return name + "_";
+  }
+  if (name.empty()) {
+    return "__empty__";
+  }
+  if (isupper(name[0])) {
+    return "v_" + name;
+  }
+  if (name == "strlen") return "ptrStrlen";
+  if (name == "strcmp") return "ptrStrcmp";
+
+  if (name == "feof")   return "c2f_feof";
+  if (name == "ferror") return "c2f_ferror";
+  if (name == "fwrite") return "c2f_fwrite";
+  if (name == "fread")  return "c2f_fread";
+  if (name == "fopen")  return "c2f_fopen";
+  if (name == "fclose") return "c2f_fclose";
+  if (name == "fputs")  return "c2f_fputs";
+  if (name == "fgetc")  return "c2f_fgetc";
+  if (name == "getc")   return "c2f_fgetc";
+  if (name == "_IO_getc") return "c2f_fgetc";
+  if (name == "fputc")  return "c2f_fputc";
+  if (name == "stdin") return "(c2f_stdin !)";
+  if (name == "stdout") return "(c2f_stdout !)";
+  if (name == "stderr") return "(c2f_stderr !)";
+
+  return name;
+}
+
+bool isAnonymousStructOrUnionType(const Type* ty) {
+  if (auto ety = dyn_cast<ElaboratedType>(ty)) {
+    if (auto rty = dyn_cast<RecordType>(ety->desugar().getTypePtr())) {
+      auto d = rty->getDecl();
+      return (d->getIdentifier() == NULL)
+          && (d->getNameAsString().empty())
+          && (d->getDeclName().isEmpty());
+    }
+  }
+  return false;
+}
+
+// Convert v->f, if v has type T*, to (T_f v)
+// Convert v->s.f, if v has type T*, and s is anonymous,
+//                                   to (T_s_f v)
+// Convert v->s.f, if v has type T*, and s has type S,
+//                                   to (S_f (T_s v))
+// Convert v.s->f, if v has type T*, and f has type X,
+//                                   to (X_f (T_s v))
+std::string fieldAccessorName(const MemberExpr* me, const Expr* & base) {
+  std::string path = "";
+  base = me->getBase();
+  const MemberExpr* baseme = me;
+  while (true) {
+    baseme = dyn_cast<MemberExpr>(baseme->getBase()->IgnoreImplicit());
+    if (!baseme || !isAnonymousStructOrUnionType(baseme->getType().getTypePtr()))
+      break;
+    path = path + "_" + baseme->getMemberNameInfo().getAsString();
+    base = baseme->getBase();
+  }
+  return tyName(exprTy(base)) + path + "_" + me->getMemberNameInfo().getAsString();
+}
+
+std::string enumPrefix(const EnumDecl* ed) {
+  std::string prefix = ed->getNameAsString();
+  if (!prefix.empty()) prefix += "_";
+  return prefix;
+}
+
+std::string enumConstantAccessor(const EnumDecl* ed,
+                                  const EnumConstantDecl* ecd) {
+  std::string prefix = enumPrefix(ed);
+  return prefix + ecd->getNameAsString();
+}
+
+
 
 class MutableLocalHandler : public MatchFinder::MatchCallback {
 public:
@@ -696,20 +815,176 @@ bool shouldProcessTopLevelDecl(const Decl* d, const FileClassifier& FC) {
   return true;
 }
 
-// I couldn't figure out a better way of communicating between the
-// ClangTool invocation site and the ASTConsumer itself.
-bool gUglyHack_SawGlobalVariables = false;
+class C2F_TypeDeclHandler : public ASTConsumer {
+public:
+  C2F_TypeDeclHandler(const SourceManager &SM) : FC(SM) {}
+  const FileClassifier FC;
+
+  bool HandleTopLevelDecl(DeclGroupRef DR) override {
+    for (DeclGroupRef::iterator b = DR.begin(), e = DR.end(); b != e; ++b) {
+      Decl* decl = *b;
+      if (shouldProcessTopLevelDecl(decl, FC)) {
+
+        if (const RecordDecl* rdo = dyn_cast<RecordDecl>(decl)) {
+          if (!rdo->isThisDeclarationADefinition()) {
+            continue;
+          }
+          if (RecordDecl* rd = rdo->getDefinition()) {
+            if (rd->isEnum()) {
+              llvm::outs() << "// TODO: translate enum definitions\n";
+              continue;
+            }
+            if (!(rd->isClass() || rd->isStruct())) {
+              llvm::outs() << "// TODO: handle non-class, non-struct record definitions\n";
+              continue;
+            }
+
+            handleRecordDecl(rd);
+          }
+        } else if (const TypedefDecl* fd = dyn_cast<TypedefDecl>(decl)) {
+          llvm::outs() << "/* " << FC.getText(*fd) << ";*/\n";
+        } else if (const EnumDecl* ed = dyn_cast<EnumDecl>(decl)) {
+          // Even if we skip emitting this particular declaration, we still want
+          // to associate the enum constants with their corresponding EnumDecl.
+          handleEnumDecl(ed);
+        }
+
+      }
+    }
+    return true;
+  }
+
+  void handleRecordDecl(const RecordDecl* rd) {
+    std::string name = fosterizedTypeName(getRecordDeclName(rd));
+
+    // When processing multiple source files that include common headers,
+    // Clang will generate multiple RecordDecl nodes, but we only want
+    // to emit code once.
+    if (globals.alreadyHandled(name)) return;
+
+    // Handle any anonymous struct/enum fields.
+    for (auto d : rd->decls()) {
+      if (const RecordDecl* erd = dyn_cast<RecordDecl>(d)) {
+        handleRecordDecl(erd);
+      } else if (auto ed = dyn_cast<EnumDecl>(d)) {
+        handleEnumDecl(ed);
+      }
+    }
+
+    llvm::outs() << "type case " << name
+      << "\n       of $" << name << "_nil\n"
+      // TODO when foster better supports unboxed datatypes, we should probably
+      // split record translation into boxed and unboxed portions.
+      << "\n       of $" << name << "\n";
+    for (auto d : rd->decls()) {
+      if (auto fd = dyn_cast<FieldDecl>(d)) {
+        llvm::outs() << "             " << fieldOf(tyName(exprTy(fd))) << " // " << fd->getName() << "\n";
+      }
+    }
+    llvm::outs() << ";\n\n";
+
+    llvm::outs() << name << "_isnil = { v => case v of $" << name << "_nil -> True of _ -> False end };\n";
+    llvm::outs() << name << "_notnil = { v => case v of $" << name << "_nil -> False of _ -> True end };\n";
+
+    // Emit field getters
+    for (auto d : rd->decls()) {
+      if (auto fd = dyn_cast<FieldDecl>(d)) {
+        auto fieldType = fd->getType().getTypePtr();
+        emitFieldGetter(rd, fd, name);
+        if (isAnonymousStructOrUnionType(fieldType)) {
+          std::string fieldName = fosterizedName(fd->getName());
+          emitAnonFieldGetters(rd, fd, name,
+                                getRecordDeclFromType(fieldType));
+        }
+      }
+    }
+
+    // Emit field setters
+    for (auto d : rd->decls()) {
+      if (const FieldDecl* fd = dyn_cast<FieldDecl>(d)) {
+        std::string fieldName = fosterizedName(fd->getName());
+        llvm::outs() << "set_" << name << "_" << fieldName
+          << " = { sv : " << name << " => v : " << tyName(fd->getType().getTypePtr())
+          << " => case sv\n"
+          << "of $" << name << "_nil" << " -> prim kill-entire-process \""
+                                      << "set_" << name << "_" << fieldName << " called on "
+                                      << name << "_nil" << "\"" << "\n"
+          << "of $" << name;
+        emitFieldsAsUnderscoresExcept(rd, fd, fieldName);
+        llvm::outs() << " -> setField " << fieldName << " v end };\n";
+      }
+    }
+  }
+
+  void handleEnumDecl(const EnumDecl* ed) {
+    if (globals.alreadyHandled(getEnumDeclName(ed))) return;
+
+    for (auto e : ed->enumerators()) {
+      llvm::outs() << enumConstantAccessor(ed, e)
+                    << " = { " << e->getInitVal().getSExtValue()
+                    << " };\n";
+    }
+  }
+
+  std::string fieldOf(const std::string& fieldTyName) {
+    return "(Field " +  fieldTyName + ")";
+  }
+
+  void emitFieldsAsUnderscoresExcept(const RecordDecl* rd,
+                                     const FieldDecl* fd, const std::string& fieldName) {
+    for (auto d2 : rd->decls()) {
+      if (const FieldDecl* fd2 = dyn_cast<FieldDecl>(d2)) {
+        if (fd2 == fd) {
+          llvm::outs() << " " << fieldName;
+        } else {
+          llvm::outs() << " _";
+        }
+      }
+    }
+  }
+
+  void emitFieldGetter(const RecordDecl* rd, const FieldDecl* fd,
+                       const std::string& name, bool mightBeNil = true) {
+    std::string fieldName = fosterizedName(fd->getName());
+    llvm::outs() << name << "_" << fieldName << " = { sv : " << name << " => case sv ";
+    if (mightBeNil) {
+      llvm::outs() << "of $" << name << "_nil" << " -> prim kill-entire-process \""
+                                    << "get_" << name << "_" << fieldName << " called on "
+                                    << name << "_nil" << "\"" << "\n";
+    }
+    llvm::outs() << "of $" << name;
+    emitFieldsAsUnderscoresExcept(rd, fd, fieldName);
+    llvm::outs() << " -> getField " << fieldName << " end };\n";
+  }
+
+  void emitAnonFieldGetters(const RecordDecl* ord, const FieldDecl* ofd,
+                            const std::string& name,
+                            const RecordDecl* erd) {
+    for (auto d : erd->decls()) {
+      if (auto efd = dyn_cast<FieldDecl>(d)) {
+        llvm::outs() << name << "_" << fosterizedName(ofd->getName())
+                             << "_" << fosterizedName(efd->getName())
+                     << " = { sv : " << name << " => "
+                     << getRecordDeclName(erd) << "_"
+                                    << fosterizedName(efd->getName())
+                                    << " (" <<
+                     name << "_" << fosterizedName(ofd->getName())
+                                 << " " << "sv" << ") };\n";
+      }
+    }
+  }
+};
 
 class C2F_GlobalVariableDetector : public ASTConsumer {
-  public:
-   C2F_GlobalVariableDetector(const SourceManager &SM) : FC(SM) {}
-   const FileClassifier FC;
+public:
+  C2F_GlobalVariableDetector(const SourceManager &SM) : FC(SM) {}
+  const FileClassifier FC;
 
   bool HandleTopLevelDecl(DeclGroupRef DR) override {
     for (DeclGroupRef::iterator b = DR.begin(), e = DR.end(); b != e; ++b) {
       if (shouldProcessTopLevelDecl(*b, FC)) {
         if (const VarDecl* vd = dyn_cast<VarDecl>(*b)) {
-          gUglyHack_SawGlobalVariables = true;
+          globals.uglyhack.SawGlobalVariables = true;
           break;
         }
       }
@@ -933,7 +1208,7 @@ public:
           // out-of-scope variables.
           llvm::outs() << fosterizedName(vd->getName())
                        << " = PtrRef (prim ref "
-                       << zeroValue(vd->getType().getTypePtr()) << ")";
+                       << zeroValue(vd->getType().getTypePtr()) << ") /*cfg-mutlocal*/";
           needsVisit = false;
         }
       }
@@ -1115,66 +1390,54 @@ public:
     } else return mkFosterBinop("!=", ty) + " " + zeroValue(ty);
   }
 
-  void emitPeek(const Expr* base, const Expr* idx) {
-      base = base->IgnoreParenImpCasts();
-      std::string tynm = tyName(exprTy(base));
-      if (startswith(tynm, "(Array")) {
-        visitStmt(base);
-        llvm::outs() << "[";
-        visitStmt(idx);
-        llvm::outs() << "]";
-      } else {
-        llvm::outs() << "(ptrGetIndex ";
-        visitStmt(base);
-        llvm::outs() << " ";
-        visitStmt(idx);
-        llvm::outs() << ")";
+  typedef std::vector< std::pair<const clang::Expr*, int> > Indices;
+
+  void emitSubscriptIndex(Indices& indices) {
+    llvm::outs() << "(";
+    for (size_t i = 0; i < indices.size(); ++i) {
+      if (i > 0) { llvm::outs() << " +Int32 "; }
+      llvm::outs() << "(";
+      visitStmt(indices[i].first);
+      if (indices[i].second > 1) {
+        llvm::outs() << " *Int32 " << indices[i].second;
       }
+      llvm::outs() << ")";
+    }
+    llvm::outs() << ")";
+  }
+
+  void emitPeek(const Expr* base, Indices& indices) {
+    llvm::outs() << "(ptrGetIndex ";
+    visitStmt(base);
+    llvm::outs() << " ";
+    emitSubscriptIndex(indices);
+    llvm::outs() << ")";
   }
 
   template <typename Lam>
-  void emitPokeIdx(const ArraySubscriptExpr* ase, Lam& valEmitter, ContextKind ctx) {
-      auto base = ase->getBase()->IgnoreParenImpCasts();
-      auto idx  = ase->getIdx();
+  void emitPokeIdx(const Expr* base, Indices& indices,
+                   Lam& valEmitter, ContextKind ctx) {
       std::string tynm = tyName(exprTy(base));
-      if (startswith(tynm, "(Ptr")) {
-        llvm::outs() << "(ptrSetIndex ";
-        visitStmt(base);
-        llvm::outs() << " ";
-        visitStmt(idx);
-        llvm::outs() << " ";
-        valEmitter();
+      llvm::outs() << "(ptrSetIndex ";
+      visitStmt(base);
+      llvm::outs() << " ";
+      emitSubscriptIndex(indices);
+      llvm::outs() << " ";
+      valEmitter();
 
-        if (ctx == ExprContext) {
-          llvm::outs() << "; "; emitPeek(base, idx);
-        }
-        // TODO BooleanContext
-        llvm::outs() << ");";
-      } else {
-        llvm::outs() << "((";
-        valEmitter();
-        llvm::outs() << " >^ (";
-        visitStmt(base);
-        llvm::outs() << "[";
-        visitStmt(idx);
-        llvm::outs() << "] ) )";
-
-        if (ctx == ExprContext) {
-          llvm::outs() << "; "; emitPeek(base, idx);
-        } else if (ctx == BooleanContext) {
-          llvm::outs() << "; "; emitPeek(base, idx);
-          llvm::outs() << " " << emitBooleanCoercion(exprTy(ase));
-        }
-        llvm::outs() << ");";
+      if (ctx == ExprContext) {
+        llvm::outs() << "; "; emitPeek(base, indices);
       }
+      // TODO BooleanContext
+      llvm::outs() << ");";
   }
 
   template <typename Lam>
   void emitPoke_(const Expr* ptr, Lam valEmitter, ContextKind ctx) {
-      std::string tynm = tyName(exprTy(ptr));
-
-      if (auto ase = dyn_cast<ArraySubscriptExpr>(ptr)) {
-        emitPokeIdx(ase, valEmitter, ctx);
+      //std::string tynm = tyName(exprTy(ptr));
+      Indices indices;
+      if (auto base = extractBaseAndArraySubscripts(ptr, indices)) {
+        emitPokeIdx(base, indices, valEmitter, ctx);
       } else {
         // If we have something like (c = (b = a)),
         // translate it to (a >^ b; b) >^ c
@@ -1308,16 +1571,6 @@ public:
     translateWhileLoop(fs, "while", fs->getInc());
   }
 
-  std::string fosterizedNameChars(std::string nm) {
-    for (size_t i = 0; i < nm.size(); ++i) {
-      char c = nm[i];
-      if (c == ' ' || c == '(' || c == ')') {
-        nm[i] = '_';
-      }
-    }
-    return nm;
-  }
-
   void handleIncrDecr(const std::string& incdec, const UnaryOperator* unop) {
       if (const ArraySubscriptExpr* ase = dyn_cast<ArraySubscriptExpr>(unop->getSubExpr())) {
         llvm::outs() << "(" << incdec << "Array" << tyName(unop) << " ";
@@ -1330,6 +1583,19 @@ public:
         visitStmt(unop->getSubExpr(), AssignmentTarget);
         llvm::outs() << ")";
       }
+  }
+
+  const clang::Expr* extractBaseAndArraySubscripts(const clang::Stmt* e, Indices& indices) {
+    if (const ArraySubscriptExpr* ase = dyn_cast<ArraySubscriptExpr>(e)) {
+      // Extract the number of slots represented by the base type
+      // defaulting to one for non-array types.
+      uint64_t n = 1; const clang::Type* eltTy = nullptr;
+      tryBindConstantSizedArrayType(ase->getType().getTypePtr(), eltTy, n);
+
+      indices.push_back( std::make_pair(ase->getIdx(), n ));
+      auto rv = extractBaseAndArraySubscripts(ase->getBase()->IgnoreParenImpCasts(), indices);
+      return (rv ? rv : ase->getBase());
+    } else return nullptr;
   }
 
 /* TODO
@@ -1474,12 +1740,13 @@ The corresponding AST to be matched is
     } else if (unop->getOpcode() == UO_PreInc) {
       handleIncrDecr("ptrIncr", unop);
     } else if (unop->getOpcode() == UO_AddrOf) {
-      if (auto ase = dyn_cast<ArraySubscriptExpr>(unop->getSubExpr())) {
+      Indices indices;
+      if (auto base = extractBaseAndArraySubscripts(unop->getSubExpr(), indices)) {
         // Translate (&a[i]) as (ptrPlus a i)
         llvm::outs() << "(ptrPlus ";
-        visitStmt(ase->getBase());
+        visitStmt(base);
         llvm::outs() << " ";
-        visitStmt(ase->getIdx());
+        emitSubscriptIndex(indices);
         llvm::outs() << ")";
       } else {
         visitStmt(unop->getSubExpr(), AssignmentTarget);
@@ -1779,45 +2046,15 @@ The corresponding AST to be matched is
     if (auto rty = dyn_cast<RecordType>(typ)) {
       return zeroValueRecord(rty->getDecl());
     }
-    if (auto aty = dyn_cast<ConstantArrayType>(typ)) {
-      uint64_t sz = aty->getSize().getZExtValue();
-      auto zeroval = zeroValue(aty->getElementType().getTypePtr());
-      return "(newArrayReplicate " + s(sz) + " " + zeroval + ")";
-    }
-    return "None";
-  }
 
-  bool isAnonymousStructOrUnionType(const Type* ty) {
-    if (auto ety = dyn_cast<ElaboratedType>(ty)) {
-      if (auto rty = dyn_cast<RecordType>(ety->desugar().getTypePtr())) {
-        auto d = rty->getDecl();
-        return (d->getIdentifier() == NULL)
-            && (d->getNameAsString().empty())
-            && (d->getDeclName().isEmpty());
+    {
+      uint64_t size = 0; const Type* eltTy = nullptr;
+      if (tryBindConstantSizedArrayType(typ, eltTy, size)) {
+        return "(newArrayReplicate " + s(size) + " " + zeroValue(eltTy) + ")";
       }
     }
-    return false;
-  }
 
-  // Convert v->f, if v has type T*, to (T_f v)
-  // Convert v->s.f, if v has type T*, and s is anonymous,
-  //                                   to (T_s_f v)
-  // Convert v->s.f, if v has type T*, and s has type S,
-  //                                   to (S_f (T_s v))
-  // Convert v.s->f, if v has type T*, and f has type X,
-  //                                   to (X_f (T_s v))
-  std::string fieldAccessorName(const MemberExpr* me, const Expr* & base) {
-    std::string path = "";
-    base = me->getBase();
-    const MemberExpr* baseme = me;
-    while (true) {
-      baseme = dyn_cast<MemberExpr>(baseme->getBase()->IgnoreImplicit());
-      if (!baseme || !isAnonymousStructOrUnionType(baseme->getType().getTypePtr()))
-        break;
-      path = path + "_" + baseme->getMemberNameInfo().getAsString();
-      base = baseme->getBase();
-    }
-    return tyName(exprTy(base)) + path + "_" + me->getMemberNameInfo().getAsString();
+    return "None";
   }
 
   void handleAssignment(const BinaryOperator* binop, ContextKind ctx) {
@@ -1888,39 +2125,6 @@ The corresponding AST to be matched is
         llvm::outs() << ")";
       }, ctx);
     }
-  }
-
-  std::string fosterizedName(const std::string& name) {
-    if (name == "to" || name == "do" || name == "type" || name == "case"
-     || name == "of" || name == "as" || name == "then" || name == "end"
-     || name == "in") {
-      return name + "_";
-    }
-    if (name.empty()) {
-      return "__empty__";
-    }
-    if (isupper(name[0])) {
-      return "v_" + name;
-    }
-    if (name == "strlen") return "ptrStrlen";
-    if (name == "strcmp") return "ptrStrcmp";
-
-    if (name == "feof")   return "c2f_feof";
-    if (name == "ferror") return "c2f_ferror";
-    if (name == "fwrite") return "c2f_fwrite";
-    if (name == "fread")  return "c2f_fread";
-    if (name == "fopen")  return "c2f_fopen";
-    if (name == "fclose") return "c2f_fclose";
-    if (name == "fputs")  return "c2f_fputs";
-    if (name == "fgetc")  return "c2f_fgetc";
-    if (name == "getc")   return "c2f_fgetc";
-    if (name == "_IO_getc") return "c2f_fgetc";
-    if (name == "fputc")  return "c2f_fputc";
-    if (name == "stdin") return "(c2f_stdin !)";
-    if (name == "stdout") return "(c2f_stdout !)";
-    if (name == "stderr") return "(c2f_stderr !)";
-
-    return name;
   }
 
   bool isLargerOrEqualSizedType(const Type* t1, const Type* t2) {
@@ -2097,16 +2301,18 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       }
   }
 
-  std::string enumPrefix(const EnumDecl* ed) {
-    std::string prefix = ed->getNameAsString();
-    if (!prefix.empty()) prefix += "_";
-    return prefix;
-  }
-
-  std::string enumConstantAccessor(const EnumDecl* ed,
-                                   const EnumConstantDecl* ecd) {
-    std::string prefix = enumPrefix(ed);
-    return prefix + ecd->getNameAsString();
+  void collapseNestedArrayInitList(const InitListExpr* ile, std::vector<const clang::Expr*> &inits) {
+    for (unsigned i = 0; i < ile->getNumInits(); ++i) {
+      const Expr* nie = ile->getInit(i);
+      if (const InitListExpr* nested = dyn_cast<InitListExpr>(nie)) {
+        if (isa<ConstantArrayType>(nested->getType())) {
+          collapseNestedArrayInitList(nested, inits);
+          continue;
+        }
+      }
+      // otherwise, if we didn't hit the continue above:
+      inits.push_back(nie);
+    }
   }
 
   std::string emitVarName(const ValueDecl* vd) {
@@ -2138,7 +2344,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       if (mutableLocals[vd->getName()]) {
         llvm::outs() << emitVarName(vd) << " = PtrRef (prim ref ";
         visitStmt(vd->getInit());
-        llvm::outs() << ")";
+        llvm::outs() << ") /*vd-mutlocal*/";
       } else {
         llvm::outs() << emitVarName(vd) << " = ";
         visitStmt(vd->getInit());
@@ -2153,19 +2359,20 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       }
     } else {
       const Type* ty = vd->getType().getTypePtr();
-      if (auto cat = dyn_cast<ConstantArrayType>(ty)) {
-        uint64_t sz = cat->getSize().getZExtValue();
-        auto zeroval = zeroValue(cat->getElementType().getTypePtr());
+      uint64_t size = 0;
+      const Type* eltTy = nullptr;
+      if (tryBindConstantSizedArrayType(ty, eltTy, size)) {
+        auto zeroval = zeroValue(eltTy);
 
         llvm::outs() << emitVarName(vd) << " = ";
-        if (sz > 0 && sz <= 16) {
-          llvm::outs() << "(strLit:[" << tyName(cat->getElementType().getTypePtr()) << "] (prim mach-array-literal";
-          for (uint64_t i = 0; i < sz; ++i) {
+        if (size > 0 && size <= 16) {
+          llvm::outs() << "(strLit:[" << tyName(eltTy) << "] (prim mach-array-literal";
+          for (uint64_t i = 0; i < size; ++i) {
             llvm::outs() << " " << zeroval;
           }
           llvm::outs() << "))";
         } else {
-          llvm::outs() << "(newArrayReplicate " << sz << " " << zeroval << ")";
+          llvm::outs() << "(newArrayReplicate " << size << " " << zeroval << ")";
         }
       } else if (ty->isScalarType()) {
         llvm::outs() << emitVarName(vd) << " = PtrRef (prim ref " << zeroValue(exprTy(vd)) << ")";
@@ -2187,6 +2394,9 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
 
   void visitStmt(const Stmt* stmt, ContextKind ctx = ExprContext) {
     emitCommentsFromBefore(stmt->getLocStart());
+
+    // for array subscript expression handling
+    Indices indices;
 
     // When visiting a bound substatement, emit its variable binding.
     auto it = StmtMap.find(stmt);
@@ -2273,8 +2483,8 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       visitStmt(base, ExprContext);
       llvm::outs() << ")";
       if (ctx == BooleanContext) { llvm::outs() << " " << emitBooleanCoercion(exprTy(me)) << " /*L2226*/)"; }
-    } else if (const ArraySubscriptExpr* ase = dyn_cast<ArraySubscriptExpr>(stmt)) {
-      emitPeek(ase->getBase(), ase->getIdx());
+    } else if (auto base = extractBaseAndArraySubscripts(stmt, indices)) {
+      emitPeek(base, indices);
     } else if (const CompoundAssignOperator* cao = dyn_cast<CompoundAssignOperator>(stmt)) {
       handleCompoundAssignment(cao, ctx);
     } else if (const BinaryOperator* binop = dyn_cast<BinaryOperator>(stmt)) {
@@ -2420,29 +2630,42 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         }
         llvm::outs() << ")";
       } else {
+        const Type* ty = ile->getType().getTypePtr();
+
         std::string eltTyName = "";
-        if (ile->getNumInits() > 0) { eltTyName = tyName(exprTy(ile->getInit(0))); }
-        else if (ile->hasArrayFiller()) { eltTyName = tyName(exprTy(ile->getArrayFiller())); }
-        else { // TODO constant array element type?
+        {
+          uint64_t size = 0; const Type* eltTy = nullptr;
+          if (tryBindConstantSizedArrayType(ty, eltTy, size)) {
+            eltTyName = tyName(eltTy);
+          } else {
+            if (ile->getNumInits() > 0) { eltTyName = tyName(exprTy(ile->getInit(0))); }
+            else if (ile->hasArrayFiller()) { eltTyName = tyName(exprTy(ile->getArrayFiller())); }
+            else { // TODO constant array element type?
+            }
+          } 
         }
+        
 
         llvm::outs() << "(strLit:[" << eltTyName << "] (prim mach-array-literal";
-        for (unsigned i = 0; i < ile->getNumInits(); ++i) {
+        std::vector<const clang::Expr*> inits;
+        collapseNestedArrayInitList(ile, inits);
+        for (auto e : inits) {
           llvm::outs() << " ";
-          visitStmt(ile->getInit(i));
+          visitStmt(e);
         }
+
         // Explicitly add any array values that Clang left implicit/uninitialized.
         // TODO for large arrays that are incompletely initialized, we should
         // emit code to set individual slots and rely on the runtime's
         // zero-initialization for the rest.
-        const Type* ty = ile->getType().getTypePtr();
-        if (auto cat = dyn_cast<ConstantArrayType>(ty)) {
-          uint64_t sz = cat->getSize().getZExtValue();
-          auto zeroval = zeroValue(cat->getElementType().getTypePtr());
-          for (unsigned i = ile->getNumInits(); i < sz; ++i) {
+        uint64_t size = 0; const Type* eltTy = nullptr;
+        if (tryBindConstantSizedArrayType(ty, eltTy, size)) {
+          auto zeroval = zeroValue(eltTy);
+          for (unsigned i = inits.size(); i < size; ++i) {
             llvm::outs() << " " << zeroval;
           }
         }
+
         llvm::outs() << "))";
       }
     } else if (auto cs = dyn_cast<CompoundStmt>(stmt)) {
@@ -2520,129 +2743,6 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
     }
   }
 
-  std::string fieldOf(const std::string& fieldTyName) {
-    return "(Field " +  fieldTyName + ")";
-  }
-
-  void emitFieldsAsUnderscoresExcept(const RecordDecl* rd,
-                                     const FieldDecl* fd, const std::string& fieldName) {
-    for (auto d2 : rd->decls()) {
-      if (const FieldDecl* fd2 = dyn_cast<FieldDecl>(d2)) {
-        if (fd2 == fd) {
-          llvm::outs() << " " << fieldName;
-        } else {
-          llvm::outs() << " _";
-        }
-      }
-    }
-  }
-
-  void emitFieldGetter(const RecordDecl* rd, const FieldDecl* fd,
-                       const std::string& name, bool mightBeNil = true) {
-    std::string fieldName = fosterizedName(fd->getName());
-    llvm::outs() << name << "_" << fieldName << " = { sv : " << name << " => case sv ";
-    if (mightBeNil) {
-      llvm::outs() << "of $" << name << "_nil" << " -> prim kill-entire-process \""
-                                    << "get_" << name << "_" << fieldName << " called on "
-                                    << name << "_nil" << "\"" << "\n";
-    }
-    llvm::outs() << "of $" << name;
-    emitFieldsAsUnderscoresExcept(rd, fd, fieldName);
-    llvm::outs() << " -> getField " << fieldName << " end };\n";
-  }
-
-  void emitAnonFieldGetters(const RecordDecl* ord, const FieldDecl* ofd,
-                            const std::string& name,
-                            const RecordDecl* erd) {
-    for (auto d : erd->decls()) {
-      if (auto efd = dyn_cast<FieldDecl>(d)) {
-        llvm::outs() << name << "_" << fosterizedName(ofd->getName())
-                             << "_" << fosterizedName(efd->getName())
-                     << " = { sv : " << name << " => "
-                     << getRecordDeclName(erd) << "_"
-                                    << fosterizedName(efd->getName())
-                                    << " (" <<
-                     name << "_" << fosterizedName(ofd->getName())
-                                 << " " << "sv" << ") };\n";
-      }
-    }
-  }
-
-  void handleRecordDecl(const RecordDecl* rd) {
-    std::string name = fosterizedTypeName(getRecordDeclName(rd));
-
-    // When processing multiple source files that include common headers,
-    // Clang will generate multiple RecordDecl nodes, but we only want
-    // to emit code once.
-    if (alreadyHandled(name)) return;
-
-    // Handle any anonymous struct/enum fields.
-    for (auto d : rd->decls()) {
-      if (const RecordDecl* erd = dyn_cast<RecordDecl>(d)) {
-        handleRecordDecl(erd);
-      } else if (auto ed = dyn_cast<EnumDecl>(d)) {
-        handleEnumDecl(ed);
-      }
-    }
-
-    llvm::outs() << "type case " << name
-      << "\n       of $" << name << "_nil\n"
-      // TODO when foster better supports unboxed datatypes, we should probably
-      // split record translation into boxed and unboxed portions.
-      << "\n       of $" << name << "\n";
-    for (auto d : rd->decls()) {
-      if (auto fd = dyn_cast<FieldDecl>(d)) {
-        llvm::outs() << "             " << fieldOf(tyName(exprTy(fd))) << " // " << fd->getName() << "\n";
-      }
-    }
-    llvm::outs() << ";\n\n";
-
-    llvm::outs() << name << "_isnil = { v => case v of $" << name << "_nil -> True of _ -> False end };\n";
-    llvm::outs() << name << "_notnil = { v => case v of $" << name << "_nil -> False of _ -> True end };\n";
-
-    // Emit field getters
-    for (auto d : rd->decls()) {
-      if (auto fd = dyn_cast<FieldDecl>(d)) {
-        auto fieldType = fd->getType().getTypePtr();
-        emitFieldGetter(rd, fd, name);
-        if (isAnonymousStructOrUnionType(fieldType)) {
-          std::string fieldName = fosterizedName(fd->getName());
-          emitAnonFieldGetters(rd, fd, name,
-                                getRecordDeclFromType(fieldType));
-        }
-      }
-    }
-
-    // Emit field setters
-    for (auto d : rd->decls()) {
-      if (const FieldDecl* fd = dyn_cast<FieldDecl>(d)) {
-        std::string fieldName = fosterizedName(fd->getName());
-        llvm::outs() << "set_" << name << "_" << fieldName
-          << " = { sv : " << name << " => v : " << tyName(fd->getType().getTypePtr())
-          << " => case sv\n"
-          << "of $" << name << "_nil" << " -> prim kill-entire-process \""
-                                      << "set_" << name << "_" << fieldName << " called on "
-                                      << name << "_nil" << "\"" << "\n"
-          << "of $" << name;
-        emitFieldsAsUnderscoresExcept(rd, fd, fieldName);
-        llvm::outs() << " -> setField " << fieldName << " v end };\n";
-      }
-    }
-  }
-
-  void handleEnumDecl(const EnumDecl* ed) {
-    for (auto e : ed->enumerators()) {
-      enumDeclsForConstants[e] = ed;
-    }
-
-    if (alreadyHandled(getEnumDeclName(ed))) return;
-
-    for (auto e : ed->enumerators()) {
-      llvm::outs() << enumConstantAccessor(ed, e)
-                    << " = { " << e->getInitVal().getSExtValue()
-                    << " };\n";
-    }
-  }
 
   const ReturnStmt* getTailReturnOrNull(const Stmt* s) {
     const Stmt* rv = lastStmtWithin(s);
@@ -2670,78 +2770,74 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
     v.TraverseDecl(d);
   }
 
+  void handleFunctionDecl(FunctionDecl* fd) {
+    if (Stmt* body = fd->getBody()) {
+      bool needsCFG = false;
+      bool mainWithArgs = false;
+      performFunctionLocalAnalysis(fd, needsCFG);
+      std::string name = fosterizedName(fd->getName());
+
+      if (globals.uglyhack.SawGlobalVariables && name == "main") {
+        name = "c2f_main";
+      }
+
+      // Functions at toplevel can be mutually recursive (with appropriate
+      // forward declarations) so we conservatively mark them as such if
+      // we're wrapping "toplevel" functions.
+      if (globals.uglyhack.SawGlobalVariables) {
+        llvm::outs() << "REC ";
+      }
+
+      llvm::outs() << name << " = {\n";
+
+      if (fd->getName() == "main") {
+        mainWithArgs = fd->getNumParams() > 0;
+      } else {
+        // Emit function arguments.
+        for (unsigned i = 0; i < fd->getNumParams(); ++i) {
+          ParmVarDecl* d = fd->getParamDecl(i);
+          auto vpcset = voidPtrCasts[d];
+          const Type* ty = vpcset.unique() ? vpcset.front() : exprTy(d);
+          if (!isVoidPtr(ty)) {
+            llvm::outs() << "    " << fosterizedName(d->getDeclName().getAsString())
+                          << " : " << tyName(ty) << " =>\n";
+          }
+        }
+      }
+
+      // Assume main's params are named argc and argv, for now.
+      if (mainWithArgs) {
+        llvm::outs() << "argv = c2f_argv !; argc = ptrSize argv;\n";
+      }
+
+      // Rebind parameters if they are observed to be mutable locals.
+      for (unsigned i = 0; i < fd->getNumParams(); ++i) {
+        ParmVarDecl* d = fd->getParamDecl(i);
+        if (mutableLocals[d->getName()]) {
+          llvm::outs() << fosterizedName(d->getDeclName().getAsString())
+                        << " = PtrRef (prim ref "
+                        << fosterizedName(d->getDeclName().getAsString())
+                        << ");\n";
+        }
+      }
+
+      if (needsCFG) {
+        visitStmtCFG(body);
+      } else {
+        visitStmt(body);
+      }
+      llvm::outs() << "};\n";
+    }
+  }
+
   bool isPrimRef(const ValueDecl* d) {
     return mutableLocals[d->getName()] || mutableLocalAliases[d->getName()];
   }
 
   void handleSingleTopLevelDecl(Decl* decl) {
-    if (RecordDecl* rdo = dyn_cast<RecordDecl>(decl)) {
-      if (!rdo->isThisDeclarationADefinition()) return;
-      if (RecordDecl* rd = rdo->getDefinition()) {
-        if (rd->isEnum()) {
-          llvm::outs() << "// TODO: translate enum definitions\n";
-          return;
-        }
-        if (!(rd->isClass() || rd->isStruct())) {
-          llvm::outs() << "// TODO: handle non-class, non-struct record definitions\n";
-          return;
-        }
 
-        handleRecordDecl(rd);
-      }
-    } else if (FunctionDecl* fd = dyn_cast<FunctionDecl>(decl)) {
-      if (Stmt* body = fd->getBody()) {
-        bool needsCFG = false;
-        bool mainWithArgs = false;
-        performFunctionLocalAnalysis(fd, needsCFG);
-        std::string name = fosterizedName(fd->getName());
-
-        if (gUglyHack_SawGlobalVariables && name == "main") {
-          name = "c2f_main";
-        }
-
-        llvm::outs() << name << " = {\n";
-
-        if (fd->getName() == "main") {
-          mainWithArgs = fd->getNumParams() > 0;
-        } else {
-          // Emit function arguments.
-          for (unsigned i = 0; i < fd->getNumParams(); ++i) {
-            ParmVarDecl* d = fd->getParamDecl(i);
-            auto vpcset = voidPtrCasts[d];
-            const Type* ty = vpcset.unique() ? vpcset.front() : exprTy(d);
-            if (!isVoidPtr(ty)) {
-              llvm::outs() << "    " << fosterizedName(d->getDeclName().getAsString())
-                            << " : " << tyName(ty) << " =>\n";
-            }
-          }
-        }
-
-        // Assume main's params are named argc and argv, for now.
-        if (mainWithArgs) {
-          llvm::outs() << "argv = c2f_argv !; argc = ptrSize argv;\n";
-        }
-
-        // Rebind parameters if they are observed to be mutable locals.
-        for (unsigned i = 0; i < fd->getNumParams(); ++i) {
-          ParmVarDecl* d = fd->getParamDecl(i);
-          if (mutableLocals[d->getName()]) {
-            llvm::outs() << fosterizedName(d->getDeclName().getAsString())
-                          << " = PtrRef (prim ref "
-                          << fosterizedName(d->getDeclName().getAsString())
-                          << ");\n";
-          }
-        }
-
-        if (needsCFG) {
-          visitStmtCFG(body);
-        } else {
-          visitStmt(body);
-        }
-        llvm::outs() << "};\n";
-      }
-    } else if (TypedefDecl* fd = dyn_cast<TypedefDecl>(decl)) {
-      llvm::outs() << "/* " << FC.getText(*fd) << ";*/\n";
+    if (FunctionDecl* fd = dyn_cast<FunctionDecl>(decl)) {
+      handleFunctionDecl(fd);
     } else if (VarDecl* vd = dyn_cast<VarDecl>(decl)) {
       // TODO globals with initializers may still be mutable,
       // but I don't think we detect mutable usage properly yet.
@@ -2756,13 +2852,19 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         << "     	tyName(getType()): " << tyName(vd->getType().getTypePtr()) << "\n"
         << getText(R, *vd) << ";*/\n";
 #endif
-    } else if (auto ed = dyn_cast<EnumDecl>(decl)) {
-      // Even if we skip emitting this particular declaration, we still want
-      // to associate the enum constants with their corresponding EnumDecl.
-      handleEnumDecl(ed);
+    } else if (const EnumDecl* ed = dyn_cast<EnumDecl>(decl)) {
+      for (auto e : ed->enumerators()) {
+        enumDeclsForConstants[e] = ed;
+      }
     } else {
-      llvm::errs() << "unhandled top-level decl\n";
-      decl->dump();
+
+      bool handled = isa<RecordDecl>(decl)
+                  || isa<TypedefDecl>(decl)
+                  || isa<EnumDecl>(decl);
+      if (!handled) {
+        llvm::errs() << "unhandled top-level decl\n";
+        decl->dump();
+      }
     }
   }
 
@@ -2872,6 +2974,15 @@ private:
   llvm::DenseMap<const Stmt*, BinaryOperatorKind> tweakedStmts;
 };
 
+class C2F_TypeDeclHandler_FA : public ASTFrontendAction {
+public:
+  C2F_TypeDeclHandler_FA() {}
+
+  std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI, StringRef file) override {
+    return llvm::make_unique<C2F_TypeDeclHandler>(CI.getSourceManager());
+  }
+};
+
 class C2F_GlobalVariableDetector_FA : public ASTFrontendAction {
 public:
   C2F_GlobalVariableDetector_FA() {}
@@ -2896,15 +3007,19 @@ int main(int argc, const char **argv) {
   CommonOptionsParser op(argc, argv, CtoFosterCategory);
   ClangTool Tool(op.getCompilations(), op.getSourcePathList());
 
-  gUglyHack_SawGlobalVariables = false;
+
+  Tool.run(newFrontendActionFactory<C2F_TypeDeclHandler_FA>().get());
+
+
+  globals.uglyhack.SawGlobalVariables = false;
   Tool.run(newFrontendActionFactory<C2F_GlobalVariableDetector_FA>().get());
 
 
-  if (gUglyHack_SawGlobalVariables) { llvm::outs() << "main = {\n"; }
+  if (globals.uglyhack.SawGlobalVariables) { llvm::outs() << "main = {\n"; }
 
   int rv = Tool.run(newFrontendActionFactory<C2F_FrontendAction>().get());
 
-  if (gUglyHack_SawGlobalVariables) { llvm::outs() << "\nc2f_main !; };\n"; }
+  if (globals.uglyhack.SawGlobalVariables) { llvm::outs() << "\nc2f_main !; };\n"; }
 
   return rv;
 }
