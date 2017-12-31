@@ -734,6 +734,8 @@ uint8_t count_holes_in_linemap_for_frame15(uint8_t* linemap_for_frame) {
   return numTransitions - (currentState == 1);
 }
 
+// TODO mark_lines_from_slot() function?
+
 void mark_line_for_slot(void* slot) {
   auto mdb = metadata_block_for_frame15_id(frame15_id_of(slot));
   uint8_t* linemap = &mdb->linemap[0][0];
@@ -1154,16 +1156,28 @@ public:
       return;
     }
 
-    //++gNumMarked;
-    cell->flip_mark_bits();
-    if (frame15_classification(cell) == frame15kind::immix_smallmedium) {
-      mark_line_for_slot((void*)cell);
-    }
-
     heap_array* arr = NULL;
     const typemap* map = NULL;
     int64_t cell_size;
     get_cell_metadata(cell, arr, map, cell_size);
+
+    //++gNumMarked;
+    cell->flip_mark_bits();
+    if (frame15_classification(cell) == frame15kind::immix_smallmedium) {
+      // Regular objects and arrays get their first line marked the same way.
+      mark_line_for_slot((void*)cell);
+
+      if (arr) {
+        // For arrays, mark any additional lines if necessary.
+        void* slot = (void*) cell;
+        while (cell_size > IMMIX_LINE_SIZE) {
+          // Loop invariant: at least one slot left to mark.
+          cell_size -= IMMIX_LINE_SIZE;
+          incr_by(slot, IMMIX_LINE_SIZE);
+          mark_line_for_slot(slot);
+        }
+      }
+    }
 
     // Without metadata for the cell, there's not much we can do...
     if (map) scan_with_map_and_arr(cell, *map, arr, depth - 1);
