@@ -1,0 +1,109 @@
+snafuinclude Prelude "prelude";
+snafuinclude Posix "io/posix";
+snafuinclude Bitwise "bitwise";
+snafuinclude Bytes "bytes";
+snafuinclude CBOR "cbor";
+snafuinclude Bench "bench/measure";
+
+// Try testing with
+// echo "3903e7" | xxd -r -p | $PATH_TO/cborpipe | xxd -p
+
+main = {
+  runCBORPipe !
+};
+
+testCBOR = {
+  checkEquiv b"\x1a\x6f\x7a\x85\x90" (CBOR_UInt 1870300560);
+
+  checkEquiv (prim mach-array-literal 27 0 0 0 12 19 181 249 144)
+             (CBOR_UInt 51870300560);
+
+  /*
+  checkEquiv b"\x83\x18\x2a\xf5\x39\x0b\xb8"
+            (CBOR_Array (prim mach-array-literal (CBOR_UInt 42)
+                CBOR_True (CBOR_SInt 3000)));
+  checkEquiv b"\x39\x0b\xb7" (CBOR_SInt -3000);
+
+  checkEquiv b"\x63\x66\x6f\x6f" (CBOR_TS  "foo");
+*/
+
+  checkEquiv b"\x43\x66\x6f\x6f" (CBOR_BS b"foo");
+
+  checkEquiv (prim mach-array-literal 130 67 102 111 111 245)
+         (CBOR_Array (prim mach-array-literal
+                (CBOR_BS b"foo") CBOR_True));
+
+  checkEquiv (prim mach-array-literal 251 64 9 30 184 81 235 133 31)
+             (CBOR_Double 3.14);
+};
+
+
+checkEquiv = { inbytes => incbor =>
+  outb = putCBOR incbor;
+
+  expect_text "CBOR->bytes matches reference bytes";
+  print_text  "CBOR->bytes matches reference bytes";
+  expect_i1 True;
+  print_i1 (bytesEqual outb (bytesOfRawArray inbytes));
+
+  print_text  (bytesToText outb);
+  expect_text (bytesToText (bytesOfRawArray inbytes));
+
+
+  expect_text "bytes->CBOR->bytes matches reference bytes";
+  print_text  "bytes->CBOR->bytes matches reference bytes";
+
+  parcbor = tryReadCBOR inbytes (prim ref 0);
+  outb = putCBOR parcbor;
+
+  expect_i1 True;
+  print_i1 (bytesEqual outb (bytesOfRawArray inbytes));
+  print_text (bytesToText outb);
+  expect_text (bytesToText (bytesOfRawArray inbytes));
+
+
+  expect_text (skelCBOR incbor);
+  print_text (skelCBOR parcbor);
+};
+
+
+runCBORPipe = {
+  let (rdtime, inbytes) = elapsed-time { read_stdin_bytes_list ! |> bytesFlattenRaw };
+  len32 = arrayLength32 inbytes;
+  if len32 ==Int32 0
+    then ()
+    else
+        let (detime, cbor) = elapsed-time { tryReadCBOR inbytes (prim ref 0) };
+        stdout = 1;
+        let (entime, cboroutbytes) = elapsed-time { putCBOR cbor };
+        let (wrtime, nwrote) = elapsed-time { write_bytes_to_fd stdout cboroutbytes };
+        expect_text ("Input: "  ++Text (foster_fmttime_secs rdtime));
+        expect_text ("Decode: " ++Text (foster_fmttime_secs detime));
+        expect_text ("Encode: " ++Text (foster_fmttime_secs entime));
+        expect_text ("Output: " ++Text (foster_fmttime_secs wrtime));
+        ()
+  end
+};
+
+testBytes = {
+  onetwo = bytesConcat (bytesOfRawArray b"one")
+                       (bytesOfRawArray b"two");
+  onetwothree = bytesConcat onetwo (bytesOfRawArray b"three");
+  netwothree = bytesDrop onetwothree 1;
+  netwo = bytesTake netwothree 5;
+  networth = bytesTake (bytesConcat netwo (bytesOfRawArray b"rthiness")) 8;
+
+  print_text "testBytes";
+  expect_text "testBytes";
+
+  prim_print_bytes_stdout (bytesFlattenRaw networth) 8 0;
+  print_newline !;
+
+  prim_print_bytes_stderr b"networth" 8 0;
+  expect_newline !;
+  
+  bytesFoldlFragments networth { arr => off => fin => u =>
+        prim_print_bytes_stdout arr (trunc_i64_to_i32 (fin -Int64 off)) (trunc_i64_to_i32 off);
+        
+        } ();
+};

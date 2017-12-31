@@ -1,5 +1,6 @@
 snafuinclude Bytes "bytes";
 snafuinclude Prelude "prelude";
+snafuinclude RAB "resizable-array-builder";
 
 type case CBOR
       of $CBOR_UInt Int64
@@ -14,10 +15,108 @@ type case CBOR
       of $CBOR_False
       ;
 
+bytesToText :: { Bytes => Text };
+bytesToText = { bs =>
+  (bytesFoldlBytes bs { b => t => t ++Text " " ++Text (tmp_Text_of_UInt8 b) }
+    "(Bytes") ++Text ")"
+};
+
+skelCBOR :: { CBOR => Text };
+skelCBOR = { cbor =>
+  case cbor
+    of $CBOR_UInt i64        -> "CBOR_UInt " ++Text (tmp_Text_of_UInt64 i64)
+    of $CBOR_SInt i64        -> "CBOR_SInt " ++Text (tmp_Text_of_Int64 i64)
+    of $CBOR_BS  arr8        -> "(CBOR_BS len " ++Text (bytesToText (bytesOfRawArray arr8)) ++Text ")"
+    of $CBOR_TS  text        -> "(CBOR_TS '" ++Text text ++Text "')"
+    of $CBOR_ArrayEmpty      -> "(CBOR_Array [])"
+    of $CBOR_Array arrCBORs  -> "(CBOR_Array ...)"
+    of $CBOR_Double f        -> "(CBOR_Double " ++Text (f64-as-i64 f |> tmp_Text_16_of_UInt64) ++Text ")"
+    of $CBOR_NULL            -> "CBOR_NULL"
+    of $CBOR_True            -> "CBOR_True"
+    of $CBOR_False           -> "CBOR_False"
+  end;
+};
+
+putCBOR :: { CBOR => Bytes };
+putCBOR = { cbor =>
+  rab = newResizableArrayBuilder !;
+  offset = prim ref 0;
+  
+  writeWord8 = { v =>  rabWriteWord8 rab offset^ v;
+                       (offset^ +Word 1) >^ offset; };
+  writeWord16 = { v => rabWriteWord16be rab offset^ v;
+                       (offset^ +Word 2) >^ offset; };
+  writeWord32 = { v => rabWriteWord32be rab offset^ v;
+                       (offset^ +Word 4) >^ offset; };
+  writeWord64 = { v => rabWriteWord64be rab offset^ v;
+                       (offset^ +Word 8) >^ offset; };
+  
+  putBytes = { bs => rabWriteBytes rab offset^ bs;
+                     (offset^ +Word bytesLengthWord bs) >^ offset };
+
+  putHeaderBlock = { a : Int8 => b : Int8 =>
+    rabWriteWord8 rab offset^ (bitshl-Int8 a 5 `bitor-Int8` b);
+    (offset^ +Word 1) >^ offset;
+  };
+  putHeader = { a : Int8 => val : Int64 =>
+    case ()
+      of _ if val <UInt64         24 -> putHeaderBlock a (trunc_i64_to_i8 val)
+      of _ if val <UInt64        256 -> putHeaderBlock a 24; writeWord8  (trunc_i64_to_i8  val)
+      of _ if val <UInt64      65536 -> putHeaderBlock a 25; writeWord16 (trunc_i64_to_i32 val)
+      of _ if val <UInt64 4294967296 -> putHeaderBlock a 26; writeWord32 (trunc_i64_to_i32 val)
+      of _ ->                           putHeaderBlock a 27; writeWord64 val
+    end
+  };
+
+  REC go = { c =>
+        case c
+          of $CBOR_UInt i64        -> putHeader 0 i64
+          of $CBOR_SInt i64        -> putHeader 1 (if i64 <SInt64 0 then -1 -Int64 i64 else i64 end)
+          of $CBOR_BS  arr8        -> putHeader 2 (arrayLength arr8);
+                                      putBytes (bytesOfRawArray arr8);
+          of $CBOR_TS  text        -> bytes = textEncodeUtf8 text;
+                                      putHeader 3 (bytesLength bytes); putBytes bytes;
+          of $CBOR_ArrayEmpty      -> putHeader 4 0
+          of $CBOR_Array arrCBORs  -> putHeader 4 (prim_arrayLength arrCBORs);
+                                      arrayEnum arrCBORs { cx => idx => go cx };
+                                      ()
+          of $CBOR_Double f        -> putHeaderBlock 7 27; writeWord64 (f64-as-i64 f)
+          of $CBOR_NULL            -> putHeaderBlock 7 22
+          of $CBOR_True            -> putHeaderBlock 7 21
+          of $CBOR_False           -> putHeaderBlock 7 20
+      end;
+  };
+
+  go cbor;
+
+  rabToBytes rab
+
+};
+
+textEncodeUtf8 = { t : Text =>
+  case t
+    of $TextFragment bytes _ -> bytesOfRawArray bytes // assuming utf8-encoded already...
+    of $TextConcat t1 t2 _ -> bytesConcat (textEncodeUtf8 t1) (textEncodeUtf8 t2)
+  end
+};
+
 // May fail with a runtime assert (if an array poke fails)
 // or with a None result (if a memcpy would have gone out of bounds).
 tryWriteCBOR :: { CBOR => Array Int8 => Maybe (Int64, Array Int8) };
 tryWriteCBOR = { cbor => dest =>
+
+  writeU8 = { val : Int64 => offset : Int64 =>
+    (trunc_i64_to_i8 (val `bitlshr-Int64` 56)) >^ (prim subscript dest (offset +Int64 0));
+    (trunc_i64_to_i8 (val `bitlshr-Int64` 48)) >^ (prim subscript dest (offset +Int64 1));
+    (trunc_i64_to_i8 (val `bitlshr-Int64` 40)) >^ (prim subscript dest (offset +Int64 2));
+    (trunc_i64_to_i8 (val `bitlshr-Int64` 32)) >^ (prim subscript dest (offset +Int64 3));
+    (trunc_i64_to_i8 (val `bitlshr-Int64` 24)) >^ (prim subscript dest (offset +Int64 4));
+    (trunc_i64_to_i8 (val `bitlshr-Int64` 16)) >^ (prim subscript dest (offset +Int64 5));
+    (trunc_i64_to_i8 (val `bitlshr-Int64`  8)) >^ (prim subscript dest (offset +Int64 6));
+    (trunc_i64_to_i8 val)                      >^ (prim subscript dest (offset +Int64 7));
+    offset +Int64 8
+  };
+
   writeTypeAndU = { offset : Int64 => tycode : Int8 => val : Int64 =>
     majorType = bitshl-Int8 tycode 5;
     if val <UInt64 24
@@ -42,33 +141,36 @@ tryWriteCBOR = { cbor => dest =>
                        offset +Int64 5
                   else
                        (27 `bitor-Int8` majorType) >^ dest[offset];
-                       (trunc_i64_to_i8 (val `bitlshr-Int64` 56)) >^ (prim subscript dest (offset +Int64 1));
-                       (trunc_i64_to_i8 (val `bitlshr-Int64` 48)) >^ (prim subscript dest (offset +Int64 2));
-                       (trunc_i64_to_i8 (val `bitlshr-Int64` 40)) >^ (prim subscript dest (offset +Int64 3));
-                       (trunc_i64_to_i8 (val `bitlshr-Int64` 32)) >^ (prim subscript dest (offset +Int64 4));
-                       (trunc_i64_to_i8 (val `bitlshr-Int64` 24)) >^ (prim subscript dest (offset +Int64 5));
-                       (trunc_i64_to_i8 (val `bitlshr-Int64` 16)) >^ (prim subscript dest (offset +Int64 6));
-                       (trunc_i64_to_i8 (val `bitlshr-Int64`  8)) >^ (prim subscript dest (offset +Int64 7));
-                       (trunc_i64_to_i8 val)                      >^ (prim subscript dest (offset +Int64 8));
-                       offset +Int64 9
+                       1 +Int64 (writeU8 val (offset +Int64 1));
                 end
           end
       end
     end
   };
 
-  writeSpecial = { offset => val => writeTypeAndU offset 7 val };
+  writeSpecial = { offset => val =>
+    if val <UInt64 24 then writeTypeAndU offset 7 val else
+      majorType = bitshl-Int8 7 5;
+      (trunc_i64_to_i8 val `bitor-Int8` majorType) >^ dest[offset];
+      offset +Int64 1
+    end
+  };
 
   writeByteArrRaw = { offset => arr => arr_off => arr_len =>
     memcpy_i8_to_at_from_at_len dest offset arr arr_off arr_len;
     offset +Int64 arr_len;
   };
 
-  writeByteArr = { offset => arr =>
-    offset1 = writeTypeAndU offset 2 (prim_arrayLength arr);
+  writeByteArrGeneric = { offset => arr => tycode =>
+    offset1 = writeTypeAndU offset tycode (prim_arrayLength arr);
     writeByteArrRaw offset1 arr 0 (prim_arrayLength arr)
   };
 
+  writeByteArr = { offset => arr =>
+    writeByteArrGeneric offset arr 2
+  };
+
+/*
   writeBytesOfText = { offset => bytes : Bytes =>
     offset1 = writeTypeAndU offset 3 (bytesLength bytes);
     REC go = { dest_offset => bytes => bytes_offset => bytes_len =>
@@ -88,6 +190,7 @@ tryWriteCBOR = { cbor => dest =>
     };
     go offset1 bytes 0 (bytesLength bytes);
   };
+*/
 
   REC textEncodeUtf8 = { t : Text =>
     case t
@@ -98,7 +201,7 @@ tryWriteCBOR = { cbor => dest =>
 
   writeSigned = { offset => i64 =>
     if i64 >=SInt64 0
-     then writeTypeAndU offset 0 i64
+     then writeTypeAndU offset 1 i64
      else writeTypeAndU offset 1 (-1 -Int64 i64)
     end
   };
@@ -111,11 +214,12 @@ tryWriteCBOR = { cbor => dest =>
             of $CBOR_UInt i64        -> writeTypeAndU offset 0 i64
             of $CBOR_SInt i64        -> writeSigned offset i64
             of $CBOR_BS  arr8        -> writeByteArr offset arr8
-            of $CBOR_TS  text        -> writeBytesOfText offset (textEncodeUtf8 text)
+            of $CBOR_TS  text        -> //writeBytesOfText offset (textEncodeUtf8 text)
+                                        writeByteArrGeneric offset (text |> textEncodeUtf8 |> bytesFlattenRaw) 3
             of $CBOR_ArrayEmpty      -> writeTypeAndU offset 4 0
             of $CBOR_Array arrCBORs  -> offset1 = writeTypeAndU offset 4 (prim_arrayLength arrCBORs);
                                         arrayFold arrCBORs { cbor => idx => offset => go len cbor offset } offset1
-            of $CBOR_Double f        -> offset // TODO...
+            of $CBOR_Double f        -> writeSpecial offset 27 |> writeU8 (f64-as-i64 f)
             of $CBOR_NULL            -> writeSpecial offset 22
             of $CBOR_True            -> writeSpecial offset 21
             of $CBOR_False           -> writeSpecial offset 20
@@ -130,3 +234,166 @@ tryWriteCBOR = { cbor => dest =>
   end
 };
 
+///////////////////////////////////////////////////
+
+// The offset must be mutably threaded through the parsing
+// process because some items, like arrays, are not prefixed
+// by their byte length, so only recursive calls can compute
+// the proper offset deltas.
+tryReadCBOR :: { Array Int8 => Ref Int64 => CBOR };
+tryReadCBOR = { inp => offset =>
+
+  headerbyte = inp[offset^];
+  (offset^ +Int64 1) >^ offset;
+
+  majortype     = bitfield-len-Int8 headerbyte 5 3;
+  additional    = bitfield-len-Int8 headerbyte 0 5;
+
+  case majortype
+    of 0 -> tryReadCBOR_UInt   inp offset additional
+    of 1 -> tryReadCBOR_NInt   inp offset additional
+    of 2 -> tryReadCBOR_BS     inp offset additional
+    of 3 -> tryReadCBOR_Text   inp offset additional
+    of 4 -> tryReadCBOR_Array  inp offset additional
+    of 5 -> tryReadCBOR_Map    inp offset
+    of 6 -> tryReadCBOR_Tag    inp offset
+    of 7 -> tryReadCBOR_Other  inp offset additional
+    of _ -> prim kill-entire-process "tryReadCBOR saw unknown major type"
+  end
+};
+
+// TODO handle indefinite-length arrays etc
+
+tryReadCBOR_IntV :: { Array Int8 => Ref Int64 => Int8 => Int64 };
+tryReadCBOR_IntV = { inp => offset => additional =>
+  v = case additional
+    of 24 -> inp[offset^] |> zext_i8_to_i64
+    of 25 -> octet2ToInt64 inp[offset^] inp[offset^ +Int64 1]
+    of 26 -> octet4ToInt32 inp[offset^] inp[offset^ +Int64 1] inp[offset^ +Int64 2] inp[offset^ +Int64 3]
+                          |> zext_i32_to_i64
+    of 27 -> mergeInt32 (octet4ToInt32  inp[offset^ +Int64 0] inp[offset^ +Int64 1] inp[offset^ +Int64 2] inp[offset^ +Int64 3])
+                        (octet4ToInt32  inp[offset^ +Int64 4] inp[offset^ +Int64 5] inp[offset^ +Int64 6] inp[offset^ +Int64 7])
+    of 28 -> prim kill-entire-process "tryReadCBOR_UInt saw additional type of 28"
+    of 29 -> prim kill-entire-process "tryReadCBOR_UInt saw additional type of 29"
+    of 30 -> prim kill-entire-process "tryReadCBOR_UInt saw additional type of 30"
+    of 31 -> -1 |> sext_i32_to_i64
+    of _  -> additional |> zext_i8_to_i64
+  end;
+  cborUpdateOffset offset additional;
+  v
+};
+
+cborUpdateOffset :: { Ref Int64 => Int8 => () };
+cborUpdateOffset = { offset => additional =>
+  (offset^ +Int64 (cborNextOffset additional)) >^ offset;
+};
+
+/*
+cborUpdateOffset :: { Array Int8 => Ref Int64 => Int8 => Int64 };
+cborUpdateOffset = { inp => offset =>
+  headerbyte = inp[offset];
+  additional = bitfield-len-Int8 headerbyte 0 5;
+  cborNextOffset (offset +Int64 1) additional;
+};
+*/
+
+cborNextOffset :: { Int8 => Int64 };
+cborNextOffset = { additional =>
+  case additional
+    of 24 -> 1
+    of 25 -> 2
+    of 26 -> 4
+    of 27 -> 8
+    of _  -> 0
+  end
+};
+
+tryReadCBOR_UInt :: { Array Int8 => Ref Int64 => Int8 => CBOR };
+tryReadCBOR_UInt = { inp => offset => additional =>
+  CBOR_UInt (tryReadCBOR_IntV inp offset additional)
+};
+
+tryReadCBOR_NInt :: { Array Int8 => Ref Int64 => Int8 => CBOR };
+tryReadCBOR_NInt = { inp => offset => additional =>
+  CBOR_SInt (-1 -Int64 (tryReadCBOR_IntV inp offset additional))
+};
+
+foreign import inspect_ptr_for_debugging :: { Array Int8 => CVoid };
+
+tryReadCBOR_Bytes :: { Array Int8 => Ref Int64 => Int8 => Array Int8 };
+tryReadCBOR_Bytes = { inp => offset => additional =>
+  len = tryReadCBOR_IntV inp offset additional;
+  arr = allocDArray (trunc_i64_to_i32 len);
+  /*
+  print_text "reading to freshly allocated array";
+  print_i64 len;
+  ignore = inspect_ptr_for_debugging arr;
+  */
+  memcpy_i8_to_from_at_len arr inp
+            (trunc_i64_to_i32 offset^) (trunc_i64_to_i32 len);
+  (offset^ +Int64 len) >^ offset;
+  arr
+};
+
+tryReadCBOR_BS :: { Array Int8 => Ref Int64 => Int8 => CBOR };
+tryReadCBOR_BS = { inp => offset => additional =>
+  CBOR_BS (tryReadCBOR_Bytes inp offset additional)
+};
+
+tryReadCBOR_Text :: { Array Int8 => Ref Int64 => Int8 => CBOR };
+tryReadCBOR_Text = { inp => offset => additional =>
+  arr = tryReadCBOR_Bytes inp offset additional;
+  CBOR_TS (TextFragment arr (arrayLength32 arr))
+};
+
+tryReadCBOR_Array :: { Array Int8 => Ref Int64 => Int8 => CBOR };
+tryReadCBOR_Array = { inp => offset => additional =>
+  len = tryReadCBOR_IntV inp offset additional;
+  if len ==Int64 0
+    then CBOR_ArrayEmpty
+    else
+      arr = allocDArray:[CBOR] (trunc_i64_to_i32 len);
+      REC go = { n =>
+        if n ==Int64 len then () else
+          (tryReadCBOR inp offset) >^ arr[n];
+          go (n +Int64 1)
+        end
+      };
+      go 0;
+      CBOR_Array arr
+  end
+};
+
+tryReadCBOR_Map :: { Array Int8 => Ref Int64 => CBOR };
+tryReadCBOR_Map = { inp => offset =>
+  prim kill-entire-process "tryReadCBOR_Map not yet implemented"
+};
+
+tryReadCBOR_Tag :: { Array Int8 => Ref Int64 => CBOR };
+tryReadCBOR_Tag = { inp => offset =>
+  prim kill-entire-process "tryReadCBOR_Tag not yet implemented"
+};
+
+tryReadCBOR_Other :: { Array Int8 => Ref Int64 => Int8 => CBOR };
+tryReadCBOR_Other = { inp => offset => additional =>
+  v = case additional
+    of 20 -> CBOR_False
+    of 21 -> CBOR_True
+    of 22 -> CBOR_NULL
+    of 23 -> prim kill-entire-process "tryReadCBOR_Other saw CBOR_Undefined"
+    of 24 -> prim kill-entire-process "tryReadCBOR_Other saw CBOR_Byte"
+    of 25 -> prim kill-entire-process "tryReadCBOR_Other saw CBOR_Float16"
+    of 26 -> prim kill-entire-process "tryReadCBOR_Other saw CBOR_Float32"
+    of 27 -> mergeInt32 (octet4ToInt32  inp[offset^ +Int64 0] inp[offset^ +Int64 1] inp[offset^ +Int64 2] inp[offset^ +Int64 3])
+                        (octet4ToInt32  inp[offset^ +Int64 4] inp[offset^ +Int64 5] inp[offset^ +Int64 6] inp[offset^ +Int64 7])
+             |> i64-as-f64
+             |> CBOR_Double
+    of 28 -> prim kill-entire-process "tryReadCBOR_Other saw additional type of 28"
+    of 29 -> prim kill-entire-process "tryReadCBOR_Other saw additional type of 29"
+    of 30 -> prim kill-entire-process "tryReadCBOR_Other saw additional type of 30"
+    of 31 -> prim kill-entire-process "tryReadCBOR_Other saw CBOR_Break"
+    of _  -> prim kill-entire-process "tryReadCBOR_Other saw CBOR_Unassigned"
+  end;
+  cborUpdateOffset offset additional;
+  v
+};
