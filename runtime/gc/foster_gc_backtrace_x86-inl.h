@@ -40,10 +40,8 @@ int foster_backtrace(frameinfo* frame, frameinfo* frames, size_t frames_sz) {
   int i = 0;
   while (frame && not_bogus(frame->retaddr) && frames_sz --> 0) {
     if (ENABLE_GCLOG) {
-      if (frame) {
-        fprintf(gclog, "...... frame: %p, frameptr: %p, retaddr: %p\n", frame, frame->frameptr, frame->retaddr);
-        fflush(gclog);
-      }
+      fprintf(gclog, "...... frame: %p, frameptr: %p, retaddr: %p\n", frame, frame->frameptr, frame->retaddr);
+      fflush(gclog);
     }
     frames[i] = (*frame);
     frame     = (*frame).frameptr;
