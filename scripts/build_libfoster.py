@@ -51,15 +51,25 @@ def compile_source(src):
   subprocess.call(cmd.split(" "))
   return outbc
 
+# Clang doesn't accept -disable-fp-elim when compiling to bitcode
+# (I don't know why), but we can apply a post-pass here to disable
+# frame pointer elimination, which is introduced by default with -O{1,2}.
+def finalpass(outbc, outbc0):
+  cmd = "%s -disable-fp-elim %s -o %s" % (llvmopt, outbc0, outbc)
+  return subprocess.call(cmd.split(" "))
+
 def link_all(all_bcs):
-  outbc = os.path.join(bindir, "_bitcodelibs_", "foster_runtime.bc")
+  outbc0 = os.path.join(bindir, "_bitcodelibs_", "foster_runtime.bc.0")
+  outbc  = os.path.join(bindir, "_bitcodelibs_", "foster_runtime.bc")
   # Well, actually, link all except what fosterlower.cpp links beforehand, to
   # avoid multiply-defined symbols when everything comes together at the end.
   bcs = [bc for bc in all_bcs if not (bc.endswith("libfoster_coro.bc") or bc.endswith(".h"))]
-  cmd = "%s %s -o %s" % (llvmld, " ".join(bcs), outbc)
+  cmd = "%s %s -o %s" % (llvmld, " ".join(bcs), outbc0)
   if options.verbose:
     print cmd
-  return subprocess.call(cmd.split(" "))
+  subprocess.call(cmd.split(" "))
+
+  return finalpass(outbc, outbc0)
 
 def get_libfoster_parser(usage):
   parser = OptionParser(usage=usage)
@@ -87,6 +97,7 @@ if __name__ == "__main__":
   srcdir = options.srcdir
   bindir = options.bindir
   llvmld = os.path.join(options.llvmdir, 'llvm-link')
+  llvmopt = os.path.join(options.llvmdir, 'opt')
   outdir = os.path.join(bindir, "_bitcodelibs_/gc_bc")
   ensure_dir_exists(outdir)
 
