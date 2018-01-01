@@ -172,8 +172,9 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
     LoadInst* bufload = b.CreateLoad(bufcast, "buf.load");
 
     if (bufload->getType() != exp->getType()) {
-      auto zext = new ZExtInst(bufload, exp->getType(), "buf.zext", exp);
-      exp->replaceAllUsesWith(maybeBSwap(b, needBSwap, zext));
+      auto zext = new ZExtInst(maybeBSwap(b, needBSwap, bufload),
+                               exp->getType(), "buf.zext", exp);
+      exp->replaceAllUsesWith(zext);
     } else {
       exp->replaceAllUsesWith(maybeBSwap(b, needBSwap, bufload));
     }
