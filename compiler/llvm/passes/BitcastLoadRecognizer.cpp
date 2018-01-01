@@ -163,7 +163,9 @@ struct BitcastLoadRecognizer : public BasicBlockPass {
     b.SetInsertPoint(exp);
 
     std::vector<llvm::Value*> offsets = r0->gep_offsets;
-    offsets.push_back(b.CreateAdd(r0->index_base, ci32(r0->index_offset)));
+    offsets.push_back(b.CreateAdd(r0->index_base,
+                                  ConstantInt::get(r0->index_base->getType(),
+                                                   r0->index_offset)));
     Value*    bufptr  = b.CreateGEP(r0->base, llvm::makeArrayRef(offsets), "buf.off");
     Value*    bufcast = b.CreateBitCast(bufptr, PointerType::get(newLoadType, 0),
                                               "buf.cast");
