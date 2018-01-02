@@ -808,13 +808,14 @@ private:
 
 bool shouldProcessTopLevelDecl(const Decl* d, const FileClassifier& FC) {
   if (!FC.isFromMainFile(d)) {
-    if (!FC.isFromSystemHeader(d)) {
-      if (auto td = dyn_cast<TagDecl>(d)) {
-        if (td->isThisDeclarationADefinition() && td->isCompleteDefinition()) {
-          return true;
-        }
+    if (FC.isFromSystemHeader(d)) return false;
+    if (auto td = dyn_cast<TagDecl>(d)) {
+      if (td->isThisDeclarationADefinition() && td->isCompleteDefinition()) {
+        return true;
       }
     }
+    if (isa<FunctionDecl>(d)) return true;
+
     // skip it if incomplete or from system header
     return false;
   }
@@ -1560,12 +1561,7 @@ public:
   void translateWhileLoop(const T* stmt, std::string loopname, const Stmt* extra = nullptr) {
     llvm::outs() << loopname << " { ";
       if (stmt->getCond()) {
-        if (stmt->getCond()->getType()->isPointerType()) {
-          llvm::outs() << "isNonNull ";
-        }
-        llvm::outs() << "( ";
-        visitStmt(stmt->getCond());
-        llvm::outs() << " )";
+        visitStmt(stmt->getCond(), BooleanContext);
       } else llvm::outs() << "True";
     llvm::outs() << " } {\n";
       visitStmt(stmt->getBody());
@@ -2510,7 +2506,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       handleBinaryOperator(binop, ctx);
     } else if (const UnaryOperator* unop = dyn_cast<UnaryOperator>(stmt)) {
       if (ctx == BooleanContext) { llvm::outs() << "("; }
-      handleUnaryOperator(unop, ctx);
+      handleUnaryOperator(unop, ctx == BooleanContext ? ExprContext : ctx);
       if (ctx == BooleanContext) { llvm::outs() << " " << emitBooleanCoercion(exprTy(unop)) << " /*L1932*/)"; }
     } else if (const StmtExpr* se = dyn_cast<StmtExpr>(stmt)) {
       visitStmt(se->getSubStmt());
