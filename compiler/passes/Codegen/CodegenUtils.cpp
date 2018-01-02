@@ -547,6 +547,7 @@ void codegenAutoWrapper(llvm::Function* F,
                            CodegenPass* pass) {
     auto linkage = llvm::GlobalValue::ExternalLinkage;
     auto Ffunc = Function::Create(wrappedTy, linkage, symbolName, pass->mod);
+    Ffunc->setAttributes(F->getAttributes());
     Ffunc->setCallingConv(F->getCallingConv());
     pass->addEntryBB(Ffunc);
     std::vector<llvm::Value*> args;
