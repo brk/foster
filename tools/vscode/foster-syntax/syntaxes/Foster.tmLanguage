@@ -59,7 +59,7 @@
 		</dict>
 		<dict>
 			<key>match</key>
-			<string>\b(case|type|effect|prim|snafuinclude)\b</string>
+			<string>\b(case|type|effect|prim|snafuinclude|foreign|import)\b</string>
 			<key>name</key>
 			<string>keyword.other.foster</string>
 		</dict>
