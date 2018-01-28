@@ -19,6 +19,8 @@
 #include <sys/mman.h>
 #endif
 
+#include <immintrin.h>
+
 extern "C" int64_t __foster_getticks();
 extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 
@@ -29,13 +31,15 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 // the GC we could (re-)specialize these config vars at runtime...
 #define ENABLE_GCLOG 0
 #define ENABLE_GCLOG_PREP 0
-#define ENABLE_GCLOG_ENDGC 1
+#define ENABLE_GCLOG_ENDGC 0
 #define FOSTER_GC_TRACK_BITMAPS       0
 #define FOSTER_GC_ALLOC_HISTOGRAMS    0
 #define FOSTER_GC_TIME_HISTOGRAMS     0
 #define FOSTER_GC_EFFIC_HISTOGRAMS    0
 #define GC_ASSERTIONS 0
 #define TRACK_NUM_ALLOCATIONS         0
+#define TRACK_NUM_REMSET_ROOTS        0
+#define TRACK_MARK_CONS_RATIOS        0
 #define TRACK_BYTES_KEPT_ENTRIES      0
 #define TRACK_BYTES_ALLOCATED_ENTRIES 0
 #define TRACK_BYTES_ALLOCATED_PINHOOK 0
@@ -52,8 +56,6 @@ const int kFosterGCMaxDepth = 1024;
 const int inline gSEMISPACE_SIZE() { return __foster_globals.semispace_size; }
 
 const bool wantWeirdCrashToHappen = false;
-
-//int gNumMarked = 0;
 
 /////////////////////////////////////////////////////////////////
 
@@ -281,6 +283,8 @@ struct GCGlobals {
   int num_gcs_triggered_involuntarily;
   int num_big_stackwalks;
   double subheap_ticks;
+
+  uint64_t num_objects_marked_total;
 
   // TODO initialize this with lazily-mapped zeros!
   frame15info* lazy_mapped_frame15info;
@@ -747,17 +751,40 @@ bool is_linemap15_clear(frame15* f15) {
   return count_marked_lines_for_frame15(linemap) == 0;
 }
 
-bool is_linemap_clear(frame21* f21) {
+bool is_linemap_clear(frame21* f21) __attribute((noinline)) {
     auto mdb = metadata_block_for_frame21(f21);
+#if 0
     uint64_t linehash = 0;
     for (int i = 1; i < IMMIX_F15_PER_F21; ++i) {
       uint64_t* lines = (uint64_t*) &mdb->linemap[i][0];
+      #pragma clang loop vectorize(enable)
       for (int j = 0; j < IMMIX_LINES_PER_BLOCK / 8; ++j) {
         linehash |= lines[j];
       }
       if (linehash != 0) break;
     }
     return linehash == 0;
+#else
+    __m256i linehash = _mm256_setzero_si256();
+    for (int i = 1; i < IMMIX_F15_PER_F21; ++i) {
+      __m256i* lines = (__m256i*) &mdb->linemap[i][0];
+      for (int j = 0; j < IMMIX_LINES_PER_BLOCK / sizeof(*lines); ++j) {
+        //linehash |= lines[j];
+        linehash = _mm256_or_si256(linehash, lines[j]);
+      }
+      //if (linehash != 0) break; (skipped for cleaner vectorization)
+    }
+    //return linehash == 0;
+    return _mm256_testz_si256(linehash, linehash);
+
+
+
+    /*
+    auto pstart = &mdb->linemap[1][0];
+    auto pend   = &mdb->linemap[IMMIX_F15_PER_F21 - 1][IMMIX_LINES_PER_BLOCK - 1];
+    return memchr(pstart, 1, pend - pstart) == nullptr;
+    */
+#endif
 }
 
 // {{{ metadata helpers
@@ -1050,6 +1077,7 @@ public:
     int64_t cell_size = typeinfo->cell_size; // includes space for cell header.
 
     //fprintf(gclog, "allocate_cell_slowpath triggering immix gc\n");
+    gcglobals.num_gcs_triggered_involuntarily++;
     this->immix_gc();
     //fprintf(gclog, "allocate_cell_slowpath triggered immix gc\n");
     //printf("allocate_cell_slowpath trying to establish cell precond\n"); fflush(stdout);
@@ -1098,6 +1126,7 @@ public:
     if (try_establish_alloc_precondition(bumper, req_bytes)) {
       return allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, init);
     } else {
+      gcglobals.num_gcs_triggered_involuntarily++;
       this->immix_gc();
       if (try_establish_alloc_precondition(bumper, req_bytes)) {
         //fprintf(gclog, "gc collection freed space for array, now have %lld\n", curr->free_size());
@@ -1161,8 +1190,11 @@ public:
     int64_t cell_size;
     get_cell_metadata(cell, arr, map, cell_size);
 
-    //++gNumMarked;
     cell->flip_mark_bits();
+#if TRACK_MARK_CONS_RATIOS
+    this->num_objects_marked_local++; 
+#endif
+
     if (frame15_classification(cell) == frame15kind::immix_smallmedium) {
       // Regular objects and arrays get their first line marked the same way.
       mark_line_for_slot((void*)cell);
@@ -1211,6 +1243,10 @@ public:
   }
 
   void clear_mark_bits_for_space() {
+#if TRACK_MARK_CONS_RATIOS
+    this->num_objects_marked_local = 0;
+#endif
+
     // Could filter out clean blocks, which by definition are clean because
     // their mark bits are all clear, but preliminary testing suggested it
     // wasn't faster than unconditional bulk clearing.
@@ -1270,13 +1306,14 @@ public:
 
     #if ENABLE_GCLOG || ENABLE_GCLOG_ENDGC
     auto deltaClearMarkBits = base::TimeTicks::Now() - phaseStartTime;
-    
+
     phaseStartTime = base::TimeTicks::Now();
     #endif
 #if FOSTER_GC_TIME_HISTOGRAMS
     phaseStartTicks = __foster_getticks();
 #endif
 
+    uint64_t numRemSetRoots = 0;
     // Trace from remembered set roots
     for (auto& fid : frames_pointing_here) {
       auto frame_cards = cards_for_frame15_id(fid);
@@ -1289,6 +1326,7 @@ public:
             unchecked_ptr* ptr = *finger;
             if (owns((tori*)ptr)) {
               // TODO pin values since they're being treated conservatively?
+              if (TRACK_NUM_REMSET_ROOTS) { numRemSetRoots++; }
               visit_root(ptr, "remembered_set_root");
             }
           }
@@ -1336,13 +1374,17 @@ public:
     local_frame15_allocator.clear();
     laa.sweep_arrays(this->mark_bits_current_value);
 
+    auto inspectFrame15Start = base::TimeTicks::Now();
     for (auto f15 : frame15s) {
       inspect_frame15_postgc(frame15_id_of(f15));
     }
+    auto inspectFrame15Time = base::TimeTicks::Now() - inspectFrame15Start;
 
+    auto inspectFrame21Start = base::TimeTicks::Now();
     for (auto f21 : frame21s) {
       inspect_frame21_postgc(f21);
     }
+    auto inspectFrame21Time = base::TimeTicks::Now() - inspectFrame21Start;
 
 #if ENABLE_GCLOG || ENABLE_GCLOG_ENDGC
     auto deltaPostMarkingCleanup = base::TimeTicks::Now() - phaseStartTime;
@@ -1351,6 +1393,7 @@ public:
 #endif
 #endif
     //if (TRACK_BYTES_KEPT_ENTRIES) { hpstats.bytes_kept_per_gc.record_sample(next->used_size()); }
+
 
 #if (ENABLE_GCLOG || ENABLE_GCLOG_ENDGC)
       int frame15s_total = frame15s.size() + (IMMIX_F15_PER_F21 * frame21s.size());
@@ -1362,6 +1405,17 @@ public:
           double(deltaRecursiveMarking.InMicroseconds() * 100.0)/double(delta.InMicroseconds()),
           double(deltaPostMarkingCleanup.InMicroseconds() * 100.0)/double(delta.InMicroseconds()));
 
+        fprintf(gclog, "\ttook %ld us inspecting frame15s, %ld us inspecting frame21s\n",
+            inspectFrame15Time.InMicroseconds(), inspectFrame21Time.InMicroseconds());
+
+#   if TRACK_MARK_CONS_RATIOS
+        gcglobals.num_objects_marked_total += this->num_objects_marked_local;
+        fprintf(gclog, "\t%d objects marked in this GC cycle, %d marked overall\n",
+                this->num_objects_marked_local, gcglobals.num_objects_marked_total);
+#   endif
+#   if TRACK_NUM_REMSET_ROOTS
+        fprintf(gclog, "\t%d objects identified in remset\n", numRemSetRoots);
+#   endif
       fprintf(gclog, "\t/endgc\n\n");
       fflush(gclog);
 #endif
@@ -1634,6 +1688,9 @@ private:
 
   std::vector<heap_handle<immix_space>*> subheaps;
 
+#if TRACK_MARK_CONS_RATIOS
+  int64_t num_objects_marked_local;
+#endif
   // immix_space_end
 };
 
@@ -2576,8 +2633,10 @@ void initialize(void* stack_highest_addr) {
   gcglobals.gc_time = base::TimeTicks();
   gcglobals.runtime_start = base::TimeTicks::Now();
   gcglobals.num_gcs_triggered = 0;
+  gcglobals.num_gcs_triggered_involuntarily = 0;
   gcglobals.num_big_stackwalks = 0;
   gcglobals.subheap_ticks = 0.0;
+  gcglobals.num_objects_marked_total = 0;
 }
 
 
@@ -2640,6 +2699,7 @@ FILE* print_timing_stats() {
 
   fprintf(gclog, "'Num_Big_Stackwalks': %d\n", gcglobals.num_big_stackwalks);
   fprintf(gclog, "'Num_GCs_Triggered': %d\n", gcglobals.num_gcs_triggered);
+  fprintf(gclog, "'Num_GCs_Involuntary': %d\n", gcglobals.num_gcs_triggered_involuntarily);
   fprintf(gclog, "'Subheap_Ticks': %f\n", gcglobals.subheap_ticks);
 
   gclog_time("Elapsed_runtime", total_elapsed, json);
