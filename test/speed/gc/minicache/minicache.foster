@@ -1,0 +1,116 @@
+snafuinclude Prelude "prelude";
+
+main = {
+  // B=128 buckets
+  // binary tree with N nodes
+  //    ===> heap size X
+  // max heap size H
+  // K iterations
+
+  // Results:
+  // total time
+  // GC time
+  // MMU/max pause info
+
+  b = cmdline-arg-or 1 128;
+  n = cmdline-arg-or 2 256;
+  k = cmdline-arg-or 3 1024;
+  use_subheaps = "--subheaps" ==TextBytes (get_cmdline_arg_n 4);
+
+  print_text_bare "B = "; print_i32 b;
+  print_text_bare "N = "; print_i32 n;
+  print_text_bare "K = "; print_i32 k;
+
+  print_text_bare "Estimated bucket size (bytes): "; print_i32 (n *Int32 32);
+  print_text_bare "Estimated heap needed (bytes): "; print_i32 (b *Int32 n *Int32 32);
+  print_text_bare "Estimated allocation (bytes): "; print_i32 (k *Int32 n *Int32 32);
+
+  if use_subheaps
+    then run-minicache-subheaps b n k
+    else run-minicache          b n k
+  end
+};
+
+run-minicache = { b => n => k =>
+  c = make-cache b n;
+  REC go = { idx => k =>
+    if k >=SInt32 1 then
+      newnode = make-entry n;
+
+      newnode >^ c[idx];
+
+      nidx = idx +Int32 1;
+      go (if nidx ==Int32 b then 0 else nidx end) (k -Int32 1)
+
+    end
+  }; go 0 k
+};
+
+make-cache = { b => n =>
+  // TODO debug type mismatch exposed by this
+  //newDArray0 b { idx => make-entry n };
+
+  c = allocDArray:[Tree] b;
+  enumRange32 0 b { idx => (make-entry n) >^ c[idx] };
+  c
+};
+
+/*
+with-subheap = { s => thunk =>
+  prev = foster_subheap_activate s;
+  rv = thunk !;
+  _ = foster_subheap_activate prev;
+  rv
+};
+*/
+
+run-minicache-subheaps = { b => n => k =>
+  let (c, subheaps) = make-cache-subheaps b n;
+  REC go = { idx => k =>
+    if k >=SInt32 1 then
+      s = subheaps[idx];
+      foster_subheap_activate s;
+      None >^  c[idx];
+      foster_subheap_collect s;
+      newnode = make-entry n;
+      (Some newnode) >^ c[idx];
+      
+      nidx = idx +Int32 1;
+      go (if nidx ==Int32 b then 0 else nidx end) (k -Int32 1)
+
+    end
+  }; go 0 k
+};
+
+make-cache-subheaps :: { Int32 => Int32 => (Array (Maybe Tree), Array Subheap) };
+make-cache-subheaps = { b => n =>
+  // TODO debug type mismatch exposed by this
+  //newDArray0 b { idx => make-entry n };
+
+  c = allocDArray:[Maybe Tree] b;
+  subheaps = allocDArray:[Subheap] b;  
+  enumRange32 0 b { idx =>
+    s = foster_subheap_create !;
+    s >^ subheaps[idx];
+    foster_subheap_activate s;
+      (Some (make-entry n)) >^ c[idx]
+   };
+  (c, subheaps)
+};
+
+
+type case Tree
+  of $Leaf
+  of $Branch Tree Tree Int32
+  ;
+
+make-entry = { n =>
+  if n ==Int32 0 then Leaf else
+    if n ==Int32 1
+      then Branch Leaf Leaf n
+      else
+           h = bitlshr-Int32 n 1;
+           Branch (make-entry h) (make-entry (n -Int32 (h +Int32 1))) n
+    end
+  end
+};

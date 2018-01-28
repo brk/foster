@@ -55,6 +55,17 @@ textFoldASCII = { forall a:Type, t : Text => f : { Int8 => a => a } => acc:a =>
    end;
 };
 
+snafuBytesOfText :: { Text => Bytes };
+snafuBytesOfText = { t =>
+  case t
+    of $TextFragment a n ->
+      BytesFragment a (zext_i32_to_i64 n)
+    of $TextConcat s1 s2 n ->
+      BytesConcat (snafuBytesOfText s1) (snafuBytesOfText s2) (zext_i32_to_i64 n)
+  end;
+};
+
+
 expect_text_bare = { s : Text =>
   case s
     of $TextFragment a n     -> prim_print_bytes_stderr a n 0; n
@@ -76,6 +87,13 @@ expect_text = { s : Text =>
 
 print_text = { s : Text =>
   print_text_bare s; print_newline !; ()
+};
+
+(==TextBytes) = { a : Text => b : Text =>
+  if textLength a ==Int32 textLength b
+    then bytesEqual (snafuBytesOfText a) (snafuBytesOfText b)
+    else False
+  end
 };
 
 /////
