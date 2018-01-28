@@ -753,7 +753,7 @@ bool is_linemap15_clear(frame15* f15) {
 
 bool is_linemap_clear(frame21* f21) __attribute((noinline)) {
     auto mdb = metadata_block_for_frame21(f21);
-#if 0
+#if 1
     uint64_t linehash = 0;
     for (int i = 1; i < IMMIX_F15_PER_F21; ++i) {
       uint64_t* lines = (uint64_t*) &mdb->linemap[i][0];
