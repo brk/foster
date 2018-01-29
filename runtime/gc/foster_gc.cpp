@@ -309,10 +309,10 @@ immix_worklist immix_worklist;
 // If we use 47 of those bits, we can drop the low-order 15 bits and be left
 // with 32 bits!
 typedef uint32_t frame15_id;
+typedef uint32_t frame21_id;
 
 frame15_id frame15_id_of(void* p) { return frame15_id(uintptr_t(p) >> 15); }
-uint32_t frame21_id_of(void* p) { return uint32_t(uintptr_t(p) >> 21); }
-
+frame21_id frame21_id_of(void* p) { return frame21_id(uintptr_t(p) >> 21); }
 
 uintptr_t low_n_bits(uintptr_t val, uintptr_t n) { return val & ((1 << n) - 1); }
 
@@ -599,6 +599,8 @@ struct frame15_allocator {
 
   void give_frame15(frame15* f) { spare_frame15s.push_back(f); }
 
+  // Precondition: empty()
+  // Note: we allocate frame15s from the frame21 but the space may retain ownership.
   void give_frame21(frame21* f) {
     next_frame15 = (frame15*) f;
     // Skip first frame15, which will be used for metadata.
@@ -996,7 +998,7 @@ public:
       return true;
     }
 
-    // Note: frame15_allocator will call allocate_frame21() itself if empty
+    // Note: frame15_allocator would call allocate_frame21() itself if empty
     // but we don't want it to, because the space should own any allocated
     // frames for bookkeeping purposes.
     if (local_frame15_allocator.empty()) {
