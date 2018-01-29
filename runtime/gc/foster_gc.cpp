@@ -36,10 +36,11 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 #define FOSTER_GC_ALLOC_HISTOGRAMS    0
 #define FOSTER_GC_TIME_HISTOGRAMS     0
 #define FOSTER_GC_EFFIC_HISTOGRAMS    0
+#define ENABLE_GC_TIMING              0
 #define GC_ASSERTIONS 0
 #define TRACK_NUM_ALLOCATIONS         0
-#define TRACK_NUM_REMSET_ROOTS        0
-#define TRACK_MARK_CONS_RATIOS        0
+#define TRACK_NUM_REMSET_ROOTS        1
+#define TRACK_MARK_CONS_RATIOS        1
 #define TRACK_BYTES_KEPT_ENTRIES      0
 #define TRACK_BYTES_ALLOCATED_ENTRIES 0
 #define TRACK_BYTES_ALLOCATED_PINHOOK 0
@@ -1273,25 +1274,24 @@ public:
   }
 
   void immix_gc() {
+
     //printf("GC\n");
     //fprintf(gclog, "GC\n");
 
+#if ENABLE_GC_TIMING
     base::TimeTicks gcstart = base::TimeTicks::Now();
     int64_t t0 = __foster_getticks();
+#endif
     //++hpstats.num_collections;
     if (ENABLE_GCLOG) {
       fprintf(gclog, ">>>>>>> visiting gc roots on current stack\n"); fflush(gclog);
     }
 
     //worklist.initialize();
-
     flip_current_mark_bits_value();
 
-#if ENABLE_GCLOG || ENABLE_GCLOG_ENDGC
+#if ENABLE_GC_TIMING
     base::TimeTicks phaseStartTime = base::TimeTicks::Now();
-#endif
-#if FOSTER_GC_TIME_HISTOGRAMS
-    int64_t phaseStartTicks = __foster_getticks();
 #endif
 
     // Before we begin tracing, we need to establish the invariant that
@@ -1304,13 +1304,13 @@ public:
     // formerly-clean frames that were allocated into since the last GC.
     clear_mark_bits_for_space();
 
-    #if ENABLE_GCLOG || ENABLE_GCLOG_ENDGC
+    #if ENABLE_GC_TIMING
     auto deltaClearMarkBits = base::TimeTicks::Now() - phaseStartTime;
 
     phaseStartTime = base::TimeTicks::Now();
     #endif
 #if FOSTER_GC_TIME_HISTOGRAMS
-    phaseStartTicks = __foster_getticks();
+    int64_t phaseStartTicks = __foster_getticks();
 #endif
 
     uint64_t numRemSetRoots = 0;
@@ -1354,7 +1354,7 @@ public:
 
     immix_worklist.process(this);
 
-#if ENABLE_GCLOG || ENABLE_GCLOG_ENDGC
+#if ENABLE_GC_TIMING
     auto deltaRecursiveMarking = base::TimeTicks::Now() - phaseStartTime;
     phaseStartTime = base::TimeTicks::Now();
 #endif
@@ -1374,19 +1374,27 @@ public:
     local_frame15_allocator.clear();
     laa.sweep_arrays(this->mark_bits_current_value);
 
+#if ENABLE_GC_TIMING
     auto inspectFrame15Start = base::TimeTicks::Now();
+#endif
     for (auto f15 : frame15s) {
       inspect_frame15_postgc(frame15_id_of(f15));
     }
+#if ENABLE_GC_TIMING
     auto inspectFrame15Time = base::TimeTicks::Now() - inspectFrame15Start;
+#endif
 
+#if ENABLE_GC_TIMING
     auto inspectFrame21Start = base::TimeTicks::Now();
+#endif
     for (auto f21 : frame21s) {
       inspect_frame21_postgc(f21);
     }
+#if ENABLE_GC_TIMING
     auto inspectFrame21Time = base::TimeTicks::Now() - inspectFrame21Start;
+#endif
 
-#if ENABLE_GCLOG || ENABLE_GCLOG_ENDGC
+#if ENABLE_GC_TIMING
     auto deltaPostMarkingCleanup = base::TimeTicks::Now() - phaseStartTime;
 #if FOSTER_GC_TIME_HISTOGRAMS
       LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-postgc-ticks", __foster_getticks_elapsed(phaseStartTicks, __foster_getticks()),  0, 60000000, 256);
@@ -1397,16 +1405,23 @@ public:
 
 #if (ENABLE_GCLOG || ENABLE_GCLOG_ENDGC)
       int frame15s_total = frame15s.size() + (IMMIX_F15_PER_F21 * frame21s.size());
-      auto delta = base::TimeTicks::Now() - gcstart;
-      fprintf(gclog, "%lu recycled, %lu clean f15 + %lu clean f21; (%d f15 + %d f21) = %d total (%d KB), took %ld us which was %f%% premark, %f%% marking, %f%% post-mark\n",
+      fprintf(gclog, "%lu recycled, %lu clean f15 + %lu clean f21; (%d f15 + %d f21) = %d total (%d KB)",
           recycled_frame15s.size(), clean_frame15s.size(), clean_frame21s.size(),
-        frame15s.size(), frame21s.size(), frame15s_total, frame15s_total * 32, delta.InMicroseconds(),
+          frame15s.size(), frame21s.size(), frame15s_total, frame15s_total * 32);
+      #if ENABLE_GC_TIMING
+        auto delta = base::TimeTicks::Now() - gcstart;
+        fprintf(gclog, ", took %ld us which was %f%% premark, %f%% marking, %f%% post-mark",
+          delta.InMicroseconds(),
           double(deltaClearMarkBits.InMicroseconds() * 100.0)/double(delta.InMicroseconds()),
           double(deltaRecursiveMarking.InMicroseconds() * 100.0)/double(delta.InMicroseconds()),
           double(deltaPostMarkingCleanup.InMicroseconds() * 100.0)/double(delta.InMicroseconds()));
+      #endif
+      fprintf(gclog, "\n");
 
+#if (ENABLE_GC_TIMING)
         fprintf(gclog, "\ttook %ld us inspecting frame15s, %ld us inspecting frame21s\n",
             inspectFrame15Time.InMicroseconds(), inspectFrame21Time.InMicroseconds());
+#endif
 
 #   if TRACK_MARK_CONS_RATIOS
         gcglobals.num_objects_marked_total += this->num_objects_marked_local;
@@ -1421,6 +1436,7 @@ public:
 #endif
     }
 
+#if ENABLE_GC_TIMING
     auto delta = base::TimeTicks::Now() - gcstart;
     int64_t t1 = __foster_getticks();
     if (FOSTER_GC_TIME_HISTOGRAMS) {
@@ -1429,6 +1445,7 @@ public:
     }
     gcglobals.gc_time += delta;
     gcglobals.subheap_ticks += __foster_getticks_elapsed(t0, t1);
+#endif
     gcglobals.num_gcs_triggered += 1;
   }
 
@@ -2921,7 +2938,7 @@ void foster_subheap_activate_raw(void* generic_subheap) {
 #ifndef USE_COPYING
   immix_space* subheap = ((heap_handle<immix_space>*) generic_subheap)->body;
   gcglobals.allocator = subheap;
-  fprintf(gclog, "activated subheap %p\n", subheap);
+  //fprintf(gclog, "activated subheap %p\n", subheap);
 #endif
 }
 
