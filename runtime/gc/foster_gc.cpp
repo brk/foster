@@ -39,8 +39,8 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 #define ENABLE_GC_TIMING              0
 #define GC_ASSERTIONS 0
 #define TRACK_NUM_ALLOCATIONS         0
-#define TRACK_NUM_REMSET_ROOTS        1
-#define TRACK_MARK_CONS_RATIOS        1
+#define TRACK_NUM_REMSET_ROOTS        0
+#define TRACK_MARK_CONS_RATIOS        0
 #define TRACK_BYTES_KEPT_ENTRIES      0
 #define TRACK_BYTES_ALLOCATED_ENTRIES 0
 #define TRACK_BYTES_ALLOCATED_PINHOOK 0
@@ -121,23 +121,10 @@ public:
 
 struct byte_limit {
   size_t frame15s_left;
-  size_t frame21s_left;
 
   byte_limit(size_t maxbytes) {
-    size_t max_frame21s = maxbytes >> 21;
-    auto maxbytes_after_21s = maxbytes - (max_frame21s << 21);
-    size_t max_frame15s = (maxbytes_after_21s + ((1 << 15) - 1)) >> 15;
-
-    this->frame15s_left = max_frame15s;
-    this->frame21s_left = max_frame21s;
-
-    /*
-    printf("maxbytes: %d\n", maxbytes);
-    printf("max_frame15s: %d\n", max_frame15s);
-    printf("max_frame21s: %d\n", max_frame21s);
-    printf("maxbytes_after_21s: %d\n", maxbytes_after_21s);
-    printf("lim_bytes: %d\n", (max_frame15s * (1 << 15)) + (max_frame21s * (1 << 21)));
-    */
+    // Round up; a request for 10K should be one frame15, not zero.
+    this->frame15s_left = (maxbytes + ((1 << 15) - 1)) >> 15;
   }
 };
 
@@ -304,6 +291,7 @@ immix_worklist immix_worklist;
 #define IMMIX_F15_PER_F21 64
 #define IMMIX_LINES_PER_BLOCK 128
 #define IMMIX_BYTES_PER_LINE 256
+#define IMMIX_ACTIVE_F15_PER_F21 (IMMIX_F15_PER_F21 - 1)
 
 // On a 64-bit machine, physical address space will only be 48 bits usually.
 // If we use 47 of those bits, we can drop the low-order 15 bits and be left
@@ -313,6 +301,8 @@ typedef uint32_t frame21_id;
 
 frame15_id frame15_id_of(void* p) { return frame15_id(uintptr_t(p) >> 15); }
 frame21_id frame21_id_of(void* p) { return frame21_id(uintptr_t(p) >> 21); }
+
+frame21* frame21_of_id(frame21_id x) { return (frame21*) (uintptr_t(x) << 21); }
 
 uintptr_t low_n_bits(uintptr_t val, uintptr_t n) { return val & ((1 << n) - 1); }
 
@@ -639,6 +629,66 @@ struct frame15_allocator {
 
 frame15_allocator global_frame15_allocator;
 
+
+class immix_frame_tracking {
+  // We store the frame15 count separately so that we don't need to
+  // consult the map entries in fromglobal_frame15s.
+  size_t num_frame15s_total; // including both indvidual and coalesced.
+
+  // Stores values returned from global_frame15_allocator.get_frame15();
+  // Note we store a vector rather than a set because we maintain
+  // the invariant that a given frame15 is only added once between clear()s.
+  std::map<frame21_id, std::vector<frame15*> > fromglobal_frame15s;
+
+  std::vector<frame21*> coalesced_frame21s;
+public:
+
+  template<typename Thunk>
+  void iter_frame15(Thunk thunk) {
+    for (auto mapentry : fromglobal_frame15s) {
+      for (auto f15 : mapentry.second) {
+        thunk(f15);
+      }
+    }
+  }
+
+  template<typename Thunk>
+  void iter_coalesced_frame21(Thunk thunk) {
+    for (auto f21 : coalesced_frame21s) {
+      thunk(f21);
+    }
+  }
+
+  void clear() {
+    num_frame15s_total = 0;
+    fromglobal_frame15s.clear();
+    coalesced_frame21s.clear();
+  }
+
+  void add_frame21(frame21* f) {
+    num_frame15s_total += IMMIX_ACTIVE_F15_PER_F21;
+    coalesced_frame21s.push_back(f);
+  }
+
+  void add_frame15(frame15* f) {
+    ++num_frame15s_total;
+
+    auto x = frame21_id_of(f);
+    std::vector<frame15*>& v = fromglobal_frame15s[x];
+    v.push_back(f);
+    //fprintf(gclog, "v.size() is %d for frame21 %d of f15 %p\n", v.size(), x, f);
+    if (v.size() == IMMIX_ACTIVE_F15_PER_F21) {
+      coalesced_frame21s.push_back(frame21_of_id(x));
+      fromglobal_frame15s.erase(fromglobal_frame15s.find(x));
+    }
+  }
+
+  size_t count_frame15s() { return num_frame15s_total; }
+
+  size_t count_frame21s() { return coalesced_frame21s.size(); }
+};
+
+
 // Since these pointers are guaranteed to fit within a single line,
 // we can embed the information in the start of each free span.
 class free_line_span {
@@ -843,7 +893,7 @@ bool non_kosher_addr(void* addr) {
 class immix_space : public heap {
 public:
   immix_space(byte_limit* lim) : lim(lim), mark_bits_current_value(0) {
-    fprintf(gclog, "new immix_space %p, byte limit: %p, current values: %d f15s + %d f21s\n", this, lim, lim->frame15s_left, lim->frame21s_left);
+    fprintf(gclog, "new immix_space %p, byte limit: %p, current value: %d f15s\n", this, lim, lim->frame15s_left);
   }
   // TODO take a space limit. Use a combination of local & global
   // frame21_allocators to service requests for frame15s.
@@ -990,7 +1040,7 @@ public:
       // Note: cannot call clear() on global allocator until
       // all frame15s it has distributed are relinquished.
       frame15* f = global_frame15_allocator.get_frame15();
-      frame15s.push_back(f);
+      tracking.add_frame15(f);
       set_parent_for_frame(this, f);
       bumper->base  = realigned_for_allocation(f);
       bumper->bound = offset(f, 1 << 15);
@@ -1002,21 +1052,13 @@ public:
     // but we don't want it to, because the space should own any allocated
     // frames for bookkeeping purposes.
     if (local_frame15_allocator.empty()) {
-      if (!clean_frame21s.empty()) {
-        frame21* f = clean_frame21s.back(); clean_frame21s.pop_back();
-        if (ENABLE_GCLOG_PREP) { fprintf(gclog, "giving clean frame21 to local f15 allocator: %p\n", f); }
-        local_frame15_allocator.give_frame21(f);
-      } else {
-        if (lim->frame21s_left == 0) {
-          return false; // no used frames, no new frames available. sad!
-        }
-
-        --lim->frame21s_left;
-        frame21* f = allocate_frame21();
-        frame21s.push_back(f);
-        local_frame15_allocator.give_frame21(f);
-        if (ENABLE_GCLOG_PREP) { fprintf(gclog, "grabbed & using global frame21: %p\n", f); }
+      if (clean_frame21s.empty()) {
+        return false; // no used frames, no new frames available. sad!
       }
+
+      frame21* f = clean_frame21s.back(); clean_frame21s.pop_back();
+      if (ENABLE_GCLOG_PREP) { fprintf(gclog, "giving clean frame21 to local f15 allocator: %p\n", f); }
+      local_frame15_allocator.give_frame21(f);
     }
 
     frame15* f = local_frame15_allocator.get_frame15();
@@ -1370,6 +1412,7 @@ public:
     // so that the next allocation will trigger a fetch of a new block to use.
     clear_current_blocks();
 
+    // These vectors will get filled by the calls to inspect_*_postgc().
     recycled_frame15s.clear();
     clean_frame15s.clear();
     clean_frame21s.clear();
@@ -1379,9 +1422,9 @@ public:
 #if ENABLE_GC_TIMING
     auto inspectFrame15Start = base::TimeTicks::Now();
 #endif
-    for (auto f15 : frame15s) {
-      inspect_frame15_postgc(frame15_id_of(f15));
-    }
+    tracking.iter_frame15( [this](frame15* f15) {
+      this->inspect_frame15_postgc(frame15_id_of(f15));
+    });
 #if ENABLE_GC_TIMING
     auto inspectFrame15Time = base::TimeTicks::Now() - inspectFrame15Start;
 #endif
@@ -1389,9 +1432,10 @@ public:
 #if ENABLE_GC_TIMING
     auto inspectFrame21Start = base::TimeTicks::Now();
 #endif
-    for (auto f21 : frame21s) {
+
+    tracking.iter_coalesced_frame21([this](frame21* f21) {
       inspect_frame21_postgc(f21);
-    }
+    });
 #if ENABLE_GC_TIMING
     auto inspectFrame21Time = base::TimeTicks::Now() - inspectFrame21Start;
 #endif
@@ -1406,10 +1450,10 @@ public:
 
 
 #if (ENABLE_GCLOG || ENABLE_GCLOG_ENDGC)
-      int frame15s_total = frame15s.size() + (IMMIX_F15_PER_F21 * frame21s.size());
-      fprintf(gclog, "%lu recycled, %lu clean f15 + %lu clean f21; (%d f15 + %d f21) = %d total (%d KB)",
+      int frame15s_total = tracking.count_frame15s();
+      fprintf(gclog, "%lu recycled, %lu clean f15 + %lu clean f21; %d total (%d f21) => (%d KB)",
           recycled_frame15s.size(), clean_frame15s.size(), clean_frame21s.size(),
-          frame15s.size(), frame21s.size(), frame15s_total, frame15s_total * 32);
+          frame15s_total, tracking.count_frame21s(), frame15s_total * 32);
       #if ENABLE_GC_TIMING
         auto delta = base::TimeTicks::Now() - gcstart;
         fprintf(gclog, ", took %ld us which was %f%% premark, %f%% marking, %f%% post-mark",
@@ -1616,33 +1660,31 @@ public:
 
     // Frames that are unmarked will be freed as appropriate;
     // marked frames will be kept.
-    for (auto f15 : frame15s) {
+    tracking.iter_frame15( [&](frame15* f15) {
       if (is_linemap15_clear(f15)) {
         global_frame15_allocator.give_frame15(f15);
       } else {
         keep_frame15s.push_back(f15);
       }
-    }
+    });
 
-    for (auto f21 : frame21s) {
+    tracking.iter_coalesced_frame21( [&](frame21* f21) {
       if (is_linemap_clear(f21)) {
+        // We return memory directly to the OS, not to the global allocator.
         base::AlignedFree(f21);
       } else {
         keep_frame21s.push_back(f21);
       }
-    }
+    });
 
     // Adjust frame limit counts, accounting for frames we're going to keep.
-    lim->frame15s_left += frame15s.size();
-    lim->frame15s_left -= keep_frame15s.size();
-    lim->frame21s_left += frame21s.size();
-    lim->frame21s_left -= keep_frame21s.size();
+    lim->frame15s_left += tracking.count_frame15s();
+    lim->frame15s_left -= (keep_frame15s.size() + keep_frame21s.size() * IMMIX_ACTIVE_F15_PER_F21);
 
     // Get rid of everything except the frames we wanted to keep.
-    frame15s.clear();
-    for (auto f : keep_frame15s) { frame15s.push_back(f); }
-    frame21s.clear();
-    for (auto f : keep_frame21s) { frame21s.push_back(f); }
+    tracking.clear();
+    for (auto f : keep_frame15s) { tracking.add_frame15(f); }
+    for (auto f : keep_frame21s) { tracking.add_frame21(f); }
     clear_current_blocks();
 
     recycled_frame15s.clear();
@@ -1667,12 +1709,8 @@ private:
 
   large_array_allocator laa;
 
-  // Stores values returned from global_frame15_allocator.get_frame15();
-  std::vector<frame15*> frame15s;
-  // Stores values returned from allocate_frame21();
-  std::vector<frame21*> frame21s;
-  // The above vectors store all the frames that belong to this space:
-  // used, unused, clean, & recycled.
+  // Tracks the frames that belong to this space: used, unused, clean, & recycled.
+  immix_frame_tracking tracking;
 
   // The next few vectors store the frames that the previous collection
   // identified as being viable candidates for allocation into.
