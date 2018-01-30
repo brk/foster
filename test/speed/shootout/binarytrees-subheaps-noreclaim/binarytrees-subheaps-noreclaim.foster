@@ -82,7 +82,7 @@ main = {
         else
           a = checkX (make i d);
           b = checkX (make (0 -Int32 i) d);
-            foster_subheap_collect subheap;
+            //foster_subheap_collect subheap;
           ans = a +Int32 b +Int32 t;
           sumT d (i -Int32 1) ans
       end
