@@ -37,6 +37,7 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 #define FOSTER_GC_TIME_HISTOGRAMS     0
 #define FOSTER_GC_EFFIC_HISTOGRAMS    0
 #define ENABLE_GC_TIMING              0
+#define ENABLE_GC_TIMING_TICKS        1
 #define GC_ASSERTIONS 0
 #define TRACK_NUM_ALLOCATIONS         0
 #define TRACK_NUM_REMSET_ROOTS        0
@@ -1324,8 +1325,11 @@ public:
 
 #if ENABLE_GC_TIMING
     base::TimeTicks gcstart = base::TimeTicks::Now();
+#endif
+#if ENABLE_GC_TIMING_TICKS
     int64_t t0 = __foster_getticks();
 #endif
+
     //++hpstats.num_collections;
     if (ENABLE_GCLOG) {
       fprintf(gclog, ">>>>>>> visiting gc roots on current stack\n"); fflush(gclog);
@@ -1353,7 +1357,7 @@ public:
 
     phaseStartTime = base::TimeTicks::Now();
     #endif
-#if FOSTER_GC_TIME_HISTOGRAMS
+#if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
     int64_t phaseStartTicks = __foster_getticks();
 #endif
 
@@ -1380,7 +1384,7 @@ public:
 
     visitGCRoots(__builtin_frame_address(0), this);
 
-#if FOSTER_GC_TIME_HISTOGRAMS
+#if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
       LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-rootscan-ticks", __foster_getticks_elapsed(phaseStartTicks, __foster_getticks()),  0, 60000000, 256);
 #endif
 
@@ -1402,7 +1406,7 @@ public:
     auto deltaRecursiveMarking = base::TimeTicks::Now() - phaseStartTime;
     phaseStartTime = base::TimeTicks::Now();
 #endif
-#if FOSTER_GC_TIME_HISTOGRAMS
+#if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
     phaseStartTicks = __foster_getticks();
 #endif
     // Coarse grained sweep, post-collection
@@ -1442,7 +1446,7 @@ public:
 
 #if ENABLE_GC_TIMING
     auto deltaPostMarkingCleanup = base::TimeTicks::Now() - phaseStartTime;
-#if FOSTER_GC_TIME_HISTOGRAMS
+#if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
       LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-postgc-ticks", __foster_getticks_elapsed(phaseStartTicks, __foster_getticks()),  0, 60000000, 256);
 #endif
 #endif
@@ -1484,14 +1488,20 @@ public:
 
 #if ENABLE_GC_TIMING
     auto delta = base::TimeTicks::Now() - gcstart;
-    int64_t t1 = __foster_getticks();
     if (FOSTER_GC_TIME_HISTOGRAMS) {
       LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-pause-micros", delta.InMicroseconds(),  0, 60000000, 256);
-      LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-pause-ticks", __foster_getticks_elapsed(t0, t1),  0, 60000000, 256);
     }
     gcglobals.gc_time += delta;
+#endif
+
+#if ENABLE_GC_TIMING_TICKS
+    int64_t t1 = __foster_getticks();
+    if (FOSTER_GC_TIME_HISTOGRAMS) {
+      LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-pause-ticks", __foster_getticks_elapsed(t0, t1),  0, 60000000, 256);
+    }
     gcglobals.subheap_ticks += __foster_getticks_elapsed(t0, t1);
 #endif
+
     gcglobals.num_gcs_triggered += 1;
   }
 
@@ -2757,11 +2767,15 @@ FILE* print_timing_stats() {
   fprintf(gclog, "'Num_Big_Stackwalks': %d\n", gcglobals.num_big_stackwalks);
   fprintf(gclog, "'Num_GCs_Triggered': %d\n", gcglobals.num_gcs_triggered);
   fprintf(gclog, "'Num_GCs_Involuntary': %d\n", gcglobals.num_gcs_triggered_involuntarily);
-  fprintf(gclog, "'Subheap_Ticks': %f\n", gcglobals.subheap_ticks);
+  if (ENABLE_GC_TIMING_TICKS) {
+    fprintf(gclog, "'Subheap_Ticks': %e\n", gcglobals.subheap_ticks);
+  }
 
   gclog_time("Elapsed_runtime", total_elapsed, json);
   gclog_time("Initlzn_runtime",  init_elapsed, json);
-  gclog_time("     GC_runtime",    gc_elapsed, json);
+  if (ENABLE_GC_TIMING) {
+    gclog_time("     GC_runtime",  gc_elapsed, json);
+  }
   gclog_time("Mutator_runtime",   mut_elapsed, json);
   return json;
 }
