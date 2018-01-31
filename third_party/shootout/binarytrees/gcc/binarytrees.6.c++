@@ -60,6 +60,7 @@ Node *make(int i, int d, NodePool &store)
     return store.construct(i);
 }
 
+	// pragma omp parallel for default(shared) num_threads(GetThreadCount()) schedule(dynamic, 1)
 int GetThreadCount()
 {
 	cpu_set_t cs;
@@ -93,7 +94,6 @@ int main(int argc, char *argv[])
     NodePool long_lived_store;
     Node *long_lived_tree = make(0, max_depth, long_lived_store);
 
-	// pragma omp parallel for default(shared) num_threads(GetThreadCount()) schedule(dynamic, 1)
     for (int d = min_depth; d <= max_depth; d += 2) 
     {
         int iterations = 1 << (max_depth - d + min_depth);
