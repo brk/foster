@@ -25,6 +25,8 @@ main = {
   print_text_bare "Estimated heap needed (bytes): "; print_i32 (b *Int32 n *Int32 32);
   print_text_bare "Estimated allocation (bytes): "; print_i32 (k *Int32 n *Int32 32);
 
+  print_text (if use_subheaps then "Using subheaps" else "Not using subheaps" end);
+
   if use_subheaps
     then run-minicache-subheaps b n k
     else run-minicache          b n k
@@ -38,6 +40,8 @@ run-minicache = { b => n => k =>
       newnode = make-entry n;
 
       newnode >^ c[idx];
+
+      //print_i32 (summed c[0]);
 
       nidx = idx +Int32 1;
       go (if nidx ==Int32 b then 0 else nidx end) (k -Int32 1)
@@ -112,5 +116,13 @@ make-entry = { n =>
            h = bitlshr-Int32 n 1;
            Branch (make-entry h) (make-entry (n -Int32 (h +Int32 1))) n
     end
+  end
+};
+
+summed :: { Tree => Int32 };
+summed = { t =>
+  case t
+    of $Leaf -> 0
+    of $Branch l r n -> n +Int32 summed l +Int32 summed r
   end
 };
