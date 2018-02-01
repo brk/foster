@@ -634,7 +634,7 @@ struct frame15_allocator {
     }
 
     if (!self_owned_allocated_frame21s.empty()) {
-      fprintf(gclog, "calling AlignedFree on %d frame21s\n", self_owned_allocated_frame21s.size());
+      fprintf(gclog, "calling AlignedFree on %zu frame21s\n", self_owned_allocated_frame21s.size());
       for (auto f21 : self_owned_allocated_frame21s) {
         base::AlignedFree(f21);
       }
@@ -806,7 +806,9 @@ inline void get_cell_metadata(heap_cell* cell,
   } else {
     cell_size = array_size_for(arr->num_elts(), map->cell_size);
     if (ENABLE_GCLOG) {
-      fprintf(gclog, "Collecting array of total size %lld (rounded up from %lld + %lld = %lld), cell size %lld, len %lld...\n",
+      fprintf(gclog, "Collecting array of total size %" PRId64
+                    " (rounded up from %" PRId64 " + %" PRId64 " = %" PRId64
+                    "), cell size %" PRId64 ", len %" PRId64 "...\n",
                           cell_size,
                           int64_t(sizeof(heap_array)),
                                                arr->num_elts() * map->cell_size,
@@ -1124,7 +1126,7 @@ bool is_linemap_clear(frame21* f21) {
 class immix_space : public heap {
 public:
   immix_space(byte_limit* lim) : lim(lim) {
-    fprintf(gclog, "new immix_space %p, byte limit: %p, current value: %d f15s\n", this, lim, lim->frame15s_left);
+    fprintf(gclog, "new immix_space %p, byte limit: %p, current value: %zu f15s\n", this, lim, lim->frame15s_left);
   }
   // TODO take a space limit. Use a combination of local & global
   // frame21_allocators to service requests for frame15s.
@@ -1187,7 +1189,7 @@ public:
       int startline = conservatively_unmarked_line_from(linemap, 0);
       int endline   = first_marked_line_after(linemap, startline);
       if (ENABLE_GCLOG || ENABLE_GCLOG_PREP) {
-        fprintf(gclog, "using recycled frame15 %p: startline = %d, endline = %d, # left: %d\n", f, startline, endline, recycled_frame15s.size());
+        fprintf(gclog, "using recycled frame15 %p: startline = %d, endline = %d, # left: %zu\n", f, startline, endline, recycled_frame15s.size());
         for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", linemap[i] ? 'd' : '_'); }
         fprintf(gclog, "\n");
       }
@@ -2195,7 +2197,7 @@ FILE* print_timing_stats() {
     fprintf(gclog, "'Subheap_Ticks': %e\n", gcglobals.subheap_ticks);
   }
 
-  fprintf(gclog, "sizeof immix_space: %d\n", sizeof(immix_space));
+  fprintf(gclog, "sizeof immix_space: %lu\n", sizeof(immix_space));
   //fprintf(gclog, "sizeof immix_line_space: %d\n", sizeof(immix_line_space));
 
   gclog_time("Elapsed_runtime", total_elapsed, json);
@@ -2237,7 +2239,7 @@ void gc_assert(bool cond, const char* msg) {
 void inspect_typemap(const typemap* ti) {
   fprintf(gclog, "typemap: %p\n", ti); fflush(gclog);
   if (!ti) return;
-  fprintf(gclog, "\tsize:       %lld\n", ti->cell_size);   fflush(gclog);
+  fprintf(gclog, "\tsize:       %" PRId64 "\n", ti->cell_size);   fflush(gclog);
   gc_assert(ti->cell_size > 0, "invalid typemap in inspect_typemap");
   fprintf(gclog, "\tname:       %s\n",   ti->name);        fflush(gclog);
   fprintf(gclog, "\tisCoro:     %d\n",   ti->isCoro);      fflush(gclog);
