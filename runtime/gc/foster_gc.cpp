@@ -134,20 +134,6 @@ struct allocator_range {
   bool         stable;
 };
 
-struct immix_space;
-struct immix_worklist {
-    void       initialize()      { ptrs.clear(); idx = 0; }
-    void       process(immix_space* target);
-    bool       empty()           { return idx >= ptrs.size(); }
-    void       advance()         { ++idx; }
-    heap_cell* peek_front()      { return ptrs[idx]; }
-    void       add(heap_cell* c) { ptrs.push_back(c); }
-    size_t     size()            { return ptrs.size(); }
-  private:
-    size_t                  idx;
-    std::vector<heap_cell*> ptrs;
-};
-
 typedef void* ret_addr;
 typedef void* frameptr;
 // I've looked at using std::unordered_map or google::sparsehash instead,
@@ -176,6 +162,23 @@ public:
   virtual void* allocate_cell_32(typemap* typeinfo) = 0;
   virtual void* allocate_cell_48(typemap* typeinfo) = 0;
 };
+
+#define immix_heap immix_space
+
+struct immix_space;
+struct immix_worklist {
+    void       initialize()      { ptrs.clear(); idx = 0; }
+    void       process(immix_heap* target);
+    bool       empty()           { return idx >= ptrs.size(); }
+    void       advance()         { ++idx; }
+    heap_cell* peek_front()      { return ptrs[idx]; }
+    void       add(heap_cell* c) { ptrs.push_back(c); }
+    size_t     size()            { return ptrs.size(); }
+  private:
+    size_t                  idx;
+    std::vector<heap_cell*> ptrs;
+};
+
 
 // {{{ Global data used by the GC
 FILE* gclog = NULL;
@@ -1761,7 +1764,7 @@ private:
   // immix_space_end
 };
 
-void immix_worklist::process(immix_space* target) {
+void immix_worklist::process(immix_heap* target) {
   while (!empty()) {
     heap_cell* cell = peek_front();
     advance();
