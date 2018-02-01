@@ -37,7 +37,7 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 #define FOSTER_GC_TIME_HISTOGRAMS     0
 #define FOSTER_GC_EFFIC_HISTOGRAMS    0
 #define ENABLE_GC_TIMING              0
-#define ENABLE_GC_TIMING_TICKS        1
+#define ENABLE_GC_TIMING_TICKS        0
 #define GC_ASSERTIONS 0
 #define TRACK_NUM_ALLOCATIONS         0
 #define TRACK_NUM_REMSET_ROOTS        0
