@@ -50,7 +50,7 @@ foster_bare_coro* foster__lookup_handler_for_effect(int64_t tag) {
     c = coro_parent(c);
   }
 
-  printf("WARNING: foster__lookup_handler_for_effect(%lld) couldn't find a matching coro!\n", tag);
+  printf("WARNING: foster__lookup_handler_for_effect(%" PRId64 ") couldn't find a matching coro!\n", tag);
   return NULL;
 }
 
