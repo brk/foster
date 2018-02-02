@@ -42,6 +42,7 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 #define TRACK_NUM_ALLOCATIONS         0
 #define TRACK_NUM_REMSET_ROOTS        0
 #define TRACK_MARK_CONS_RATIOS        0
+#define TRACK_WRITE_BARRIER_COUNTS    0
 #define TRACK_BYTES_KEPT_ENTRIES      0
 #define TRACK_BYTES_ALLOCATED_ENTRIES 0
 #define TRACK_BYTES_ALLOCATED_PINHOOK 0
@@ -286,6 +287,9 @@ struct GCGlobals {
   int num_gcs_triggered_involuntarily;
   int num_big_stackwalks;
   double subheap_ticks;
+
+  uint64_t write_barrier_phase0_hits;
+  uint64_t write_barrier_phase1_hits;
 
   uint64_t num_objects_marked_total;
 
@@ -1572,7 +1576,7 @@ public:
                 this->num_objects_marked_local, gcglobals.num_objects_marked_total);
 #   endif
 #   if TRACK_NUM_REMSET_ROOTS
-        fprintf(gclog, "\t%d objects identified in remset\n", numRemSetRoots);
+        fprintf(gclog, "\t%lu objects identified in remset\n", numRemSetRoots);
 #   endif
       fprintf(gclog, "\t/endgc\n\n");
       fflush(gclog);
@@ -2129,6 +2133,8 @@ void initialize(void* stack_highest_addr) {
   gcglobals.num_gcs_triggered_involuntarily = 0;
   gcglobals.num_big_stackwalks = 0;
   gcglobals.subheap_ticks = 0.0;
+  gcglobals.write_barrier_phase0_hits = 0;
+  gcglobals.write_barrier_phase1_hits = 0;
   gcglobals.num_objects_marked_total = 0;
 }
 
@@ -2193,6 +2199,10 @@ FILE* print_timing_stats() {
   fprintf(gclog, "'Num_Big_Stackwalks': %d\n", gcglobals.num_big_stackwalks);
   fprintf(gclog, "'Num_GCs_Triggered': %d\n", gcglobals.num_gcs_triggered);
   fprintf(gclog, "'Num_GCs_Involuntary': %d\n", gcglobals.num_gcs_triggered_involuntarily);
+  if (TRACK_WRITE_BARRIER_COUNTS) {
+    fprintf(gclog, "'Num_Write_Barriers_Fast': %lu\n", (gcglobals.write_barrier_phase0_hits - gcglobals.write_barrier_phase1_hits));
+    fprintf(gclog, "'Num_Write_Barriers_Slow': %lu\n",  gcglobals.write_barrier_phase1_hits);
+  }
   if (ENABLE_GC_TIMING_TICKS) {
     fprintf(gclog, "'Subheap_Ticks': %e\n", gcglobals.subheap_ticks);
   }
@@ -2374,9 +2384,12 @@ void record_memalloc_cell(typemap* typeinfo, const char* srclines) {
 void fflush_gclog() { fflush(gclog); }
 
 
-void foster_write_barrier_generic(void* val, void** slot) {
+void foster_write_barrier_generic(void* val, void** slot) /*__attribute((always_inline))*/ {
   immix_heap* hv = heap_for(val);
   immix_heap* hs = heap_for((void*)slot);
+  if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase0_hits; }
+  fprintf(gclog, "write barrier writing ptr %p from heap %p into slot %p in heap %p\n",
+      val, hv, slot, hs);
   if (hv == hs) {
     *slot = val;
     return;
@@ -2394,9 +2407,9 @@ void foster_write_barrier_generic(void* val, void** slot) {
   // since statically allocated data will never be deallocated, and can never
   // point into the program heap (by virtue of its immutability).
   if (hv) {
-    // TODO XXXX
-    //hv->remember_into(slot);
-    //hs->remember_outof(slot, val);
+    if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase1_hits; }
+    hv->remember_into(slot);
+    hs->remember_outof(slot, val);
   }
   *slot = val;
 }
