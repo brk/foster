@@ -125,6 +125,27 @@ llvm::Value* emitBitcast(llvm::Value* v, llvm::Type* dstTy, llvm::StringRef msg 
   return builder.CreateBitCast(v, dstTy, msg);
 }
 
+llvm::Value* emitGCWrite(CodegenPass* pass, Value* val, Value* base, Value* slot) {
+  if (!base) base = getNullOrZero(builder.getInt8PtrTy());
+  llvm::Constant* llvm_gcwrite = llvm::Intrinsic::getDeclaration(pass->mod,
+                                                      llvm::Intrinsic::gcwrite);
+
+  llvm::outs() << "emitting GC write" << "\n";
+  if (base) { 
+    llvm::outs() << "  base is " << *base << "\n";
+    llvm::outs() << "  base :: " << str(base->getType()) << "\n";
+  }
+  llvm::outs() << "   val is " << *val << "\n";
+  llvm::outs() << "   val :: " << str(val->getType()) << "\n";
+  llvm::outs() << "  slot is " << *slot << "\n";
+  llvm::outs() << "  slot :: " << str(slot->getType()) << "\n";
+
+  Value* base_generic = builder.CreateBitCast(base, builder.getInt8PtrTy());
+  Value* slot_generic = builder.CreateBitCast(slot, builder.getInt8PtrTy()->getPointerTo(0));
+  Value*  val_generic = builder.CreateBitCast(val,  builder.getInt8PtrTy());
+  return builder.CreateCall(llvm_gcwrite, { val_generic, base_generic, slot_generic });
+}
+
 // TODO (eventually) try emitting masks of loaded/stored heap pointers
 // to measure performance overhead of high/low tags.
 
@@ -132,18 +153,24 @@ inline llvm::Value* emitNonVolatileLoad(llvm::Value* v, llvm::Twine name) {
   return builder.CreateLoad(v, false, name);
 }
 
-llvm::Value* emitStore(llvm::Value* val,
-                       llvm::Value* ptr) {
-  ASSERT(!val->getType()->isVoidTy());
-  if (ptr->getType()->isPointerTy()
-    && !isPointerToType(ptr->getType(), val->getType())) {
-    auto eltTy = llvm::dyn_cast<llvm::PointerType>(ptr->getType())->getElementType();
-    if (matchesExceptForUnknownPointers(val->getType(), eltTy)) {
-      val = emitBitcast(val, eltTy, "specSgen");
-    }
-  }
+enum WriteSelector {
+  WriteUnspecified,
+  WriteKnownNonGC
+};
+
+llvm::Value* emitGCWriteOrStore(CodegenPass* pass,
+                       llvm::Value* val,
+                       llvm::Value* base,
+                       llvm::Value* ptr,
+                       WriteSelector w = WriteUnspecified) {
+
+
   if (isPointerToType(ptr->getType(), val->getType())) {
-    return builder.CreateStore(val, ptr, /*isVolatile=*/ false);
+    if (val->getType()->isPointerTy() && !llvm::isa<llvm::AllocaInst>(ptr)) {
+      return emitGCWrite(pass, val, base, ptr);
+    } else {
+      return builder.CreateStore(val, ptr, /*isVolatile=*/ false);
+    }  
   }
 
   builder.GetInsertBlock()->getParent()->dump();
@@ -153,6 +180,21 @@ llvm::Value* emitStore(llvm::Value* val,
           << "val is  : " << str(val) << "\n"
           << "ptr is  : " << str(ptr);
   return NULL;
+}
+
+llvm::Value* emitStore(CodegenPass* pass,
+                       llvm::Value* val,
+                       llvm::Value* ptr) {
+  ASSERT(!val->getType()->isVoidTy());
+  if (ptr->getType()->isPointerTy()
+    && !isPointerToType(ptr->getType(), val->getType())) {
+    auto eltTy = llvm::dyn_cast<llvm::PointerType>(ptr->getType())->getElementType();
+    if (matchesExceptForUnknownPointers(val->getType(), eltTy)) {
+      val = emitBitcast(val, eltTy, "specSgen");
+    }
+  }
+
+  return emitGCWriteOrStore(pass, val, nullptr, ptr);
 }
 
 Value* emitCallToInspectPtr(CodegenPass* pass, Value* ptr) {
@@ -876,7 +918,7 @@ void LLGCRootInit::codegenMiddle(CodegenPass* pass) {
   if (pass->config.emitLifetimeInfo) {
     markAsNonAllocating(builder.CreateLifetimeStart(slot));
   }
-  emitStore(v, slot);
+  emitStore(pass, v, slot);
 }
 
 void LLGCRootKill::codegenMiddle(CodegenPass* pass) {
@@ -895,22 +937,6 @@ void LLRebindId::codegenMiddle(CodegenPass* pass) {
 ////////////////////////////////////////////////////////////////////
 /////////////// LLDeref, LLStore, LLLetVals ////////////////////////
 /////////////////////////////////////////////////////////////////{{{
-
-llvm::Value* emitGCWrite(CodegenPass* pass, Value* val, Value* base, Value* slot) {
-  if (!base) base = getNullOrZero(builder.getInt8PtrTy());
-  llvm::Constant* llvm_gcwrite = llvm::Intrinsic::getDeclaration(pass->mod,
-                                                      llvm::Intrinsic::gcwrite);
-
-  llvm::outs() << "emitting GC write" << "\n";
-  llvm::outs() << "  base is " << *base << "\n";
-  llvm::outs() << "   val is " << *val << "\n";
-  llvm::outs() << "  slot is " << *slot << "\n";
-
-  Value* base_generic = builder.CreateBitCast(base, builder.getInt8PtrTy());
-  Value* slot_generic = builder.CreateBitCast(slot, builder.getInt8PtrTy()->getPointerTo(0));
-  Value*  val_generic = builder.CreateBitCast(val,  builder.getInt8PtrTy());
-  return builder.CreateCall(llvm_gcwrite, { val_generic, base_generic, slot_generic });
-}
 
 llvm::Value* emitGCRead(CodegenPass* pass, Value* base, Value* slot) {
   if (!base) base = getNullOrZero(builder.getInt8PtrTy());
@@ -941,7 +967,7 @@ llvm::Value* LLStore::codegen(CodegenPass* pass) {
   if (isTraced) {
     return emitGCWrite(pass, val, nullptr, slot);
   } else {
-    return emitStore(val, slot);
+    return emitGCWriteOrStore(pass, val, nullptr, slot, WriteKnownNonGC);
   }
 }
 
@@ -951,7 +977,7 @@ llvm::Value* LLObjectCopy::codegen(CodegenPass* pass) {
   // TODO assert that object tags are equal?
 
   llvm::Value* from_obj = emitNonVolatileLoad(vv, "copy_from_obj");
-  return emitStore(from_obj, vr);
+  return emitStore(pass, from_obj, vr);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1310,9 +1336,9 @@ llvm::Value* LLArrayPoke::codegen(CodegenPass* pass) {
   Value* val  = this->value->codegen(pass);
   Value* base = NULL;
   Value* slot = ari->codegenARI(pass, &base, val->getType());
-  builder.CreateStore(val, slot, /*isVolatile=*/ false);
+  //builder.CreateStore(val, slot, /*isVolatile=*/ false);
+  emitGCWriteOrStore(pass, val, base, slot);
   return getNullOrZero(getUnitType()->getLLVMType());
-  //return emitGCWrite(pass, val, base, slot);
 }
 
 
@@ -1387,7 +1413,11 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
         unsigned k  = ncvals[i].second;
         Value* val  = ncvals[i].first;
         Value* slot = getPointerToIndex(heapmem, llvm::ConstantInt::get(i32, k), "arr_slot");
-        builder.CreateStore(val, slot, /*isVolatile=*/ false);
+        if (val->getType()->isPointerTy()) {
+          emitGCWrite(pass, val, heapmem, slot);
+        } else {
+          builder.CreateStore(val, slot, /*isVolatile=*/ false);
+        }
       }
     } else { ASSERT(false); }
 
@@ -1403,7 +1433,8 @@ llvm::Value* LLUnitValue::codegen(CodegenPass* pass) {
   return getUnitValue();
 }
 
-void copyValuesToStruct(const std::vector<llvm::Value*>& vals,
+void copyValuesToStruct(CodegenPass* pass,
+                        const std::vector<llvm::Value*>& vals,
                         llvm::Value* tup_ptr) {
   ASSERT(tup_ptr != NULL);
   ASSERT(isPointerToStruct(tup_ptr->getType()))
@@ -1413,14 +1444,14 @@ void copyValuesToStruct(const std::vector<llvm::Value*>& vals,
 
   for (size_t i = 0; i < vals.size(); ++i) {
     Value* dst = builder.CreateConstGEP2_32(nullptr, tup_ptr, 0, i, "gep");
-    emitStore(vals[i], dst);
+    emitStore(pass, vals[i], dst);
   }
 }
 
 void LLTupleStore::codegenMiddle(CodegenPass* pass) {
   if (vars.empty()) return;
   llvm::Value* tup_ptr = this->storage->codegen(pass);
-  copyValuesToStruct(codegenAll(pass, this->vars), tup_ptr);
+  copyValuesToStruct(pass, codegenAll(pass, this->vars), tup_ptr);
 }
 
 Value* createUnboxedTuple(const std::vector<Value*>& vals) {
