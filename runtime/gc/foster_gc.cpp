@@ -688,7 +688,8 @@ struct frame15_allocator {
   std::vector<frame21*> self_owned_allocated_frame21s;
 };
 
-immix_heap* heap_for_frame15info(frame15info* finfo, void* addr) {
+__attribute((noinline))
+immix_heap* heap_for_frame15info_slowpath(frame15info* finfo, void* addr) {
   /*if (finfo->frame_classification == frame15kind::immix_linebased) {
     auto lineframe = static_cast<immix_line_frame15*>(finfo->associated);
     auto line = line_offset_within_f15(addr);
@@ -704,6 +705,14 @@ immix_heap* heap_for_frame15info(frame15info* finfo, void* addr) {
 
   return static_cast<immix_heap*>(finfo->associated);
 }
+
+immix_heap* heap_for_frame15info(frame15info* finfo, void* addr) {
+  if (finfo->frame_classification == frame15kind::immix_malloc_continue) {
+    return static_cast<immix_heap*>(finfo->associated);
+  }
+  return heap_for_frame15info_slowpath(finfo, addr);
+}
+
 
 frame15_allocator global_frame15_allocator;
 
@@ -2383,13 +2392,23 @@ void record_memalloc_cell(typemap* typeinfo, const char* srclines) {
 // Extern symbol for gdb, not direct use by generated code.
 void fflush_gclog() { fflush(gclog); }
 
+__attribute((noinline))
+immix_heap* heap_for_wb(void* val) {
+  return heap_for(val);
+}
+
+__attribute((noinline))
+void foster_write_barrier_slowpath(immix_heap* hv, immix_heap* hs, void* val, void** slot) {
+    if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase1_hits; }
+    hv->remember_into(slot);
+    hs->remember_outof(slot, val);
+}
 
 void foster_write_barrier_generic(void* val, void** slot) /*__attribute((always_inline))*/ {
-  immix_heap* hv = heap_for(val);
-  immix_heap* hs = heap_for((void*)slot);
+  immix_heap* hv = heap_for_wb(val);
+  immix_heap* hs = heap_for_wb((void*)slot);
   if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase0_hits; }
-  fprintf(gclog, "write barrier writing ptr %p from heap %p into slot %p in heap %p\n",
-      val, hv, slot, hs);
+  //fprintf(gclog, "write barrier writing ptr %p from heap %p into slot %p in heap %p\n", val, hv, slot, hs);
   if (hv == hs) {
     *slot = val;
     return;
@@ -2407,9 +2426,7 @@ void foster_write_barrier_generic(void* val, void** slot) /*__attribute((always_
   // since statically allocated data will never be deallocated, and can never
   // point into the program heap (by virtue of its immutability).
   if (hv) {
-    if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase1_hits; }
-    hv->remember_into(slot);
-    hs->remember_outof(slot, val);
+    foster_write_barrier_slowpath(hv, hs, val, slot);
   }
   *slot = val;
 }
