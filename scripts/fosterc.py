@@ -180,6 +180,10 @@ def compile_foster_to_bitcode(paths, inputfile, compilelog, finalpath, tmpdir):
                     + optlevel(options)
                     + options.optcargs)
 
+    if options.asm:
+        import hashlib
+        print "\t\t\tmd5 of assembly file:", hashlib.md5(open(outpath).read()).hexdigest()
+
     return (e1, e2, e3, e4)
 
 def link_to_executable(finalpath, exepath, paths, inputfile):
