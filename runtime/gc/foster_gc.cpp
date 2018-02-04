@@ -163,6 +163,7 @@ public:
   virtual byte_limit* get_byte_limit() = 0;
 
   virtual void force_gc_for_debugging_purposes() = 0;
+  virtual void gc_and_shrink() = 0;
 
   virtual void scan_cell(heap_cell* cell, int maxdepth) = 0;
   virtual void visit_root(unchecked_ptr* root, const char* slotname) = 0;
@@ -175,7 +176,7 @@ public:
   virtual void* allocate_cell_48(typemap* typeinfo) = 0;
 };
 
-#define immix_heap immix_space
+#define immix_heap heap
 
 struct immix_space;
 struct immix_worklist {
@@ -205,7 +206,7 @@ enum class frame15kind : uint8_t {
   immix_smallmedium, // associated is immix_space*
   immix_malloc_start, // associated is immix_malloc_frame15info*
   immix_malloc_continue, // associated is heap_array* base.
-  immix_linebased, // TODO XXXX
+  immix_linebased,
   staticdata // parent is nullptr
 };
 
@@ -297,7 +298,7 @@ struct GCGlobals {
   frame15info* lazy_mapped_frame15info;
 };
 
-GCGlobals<immix_space> gcglobals;
+GCGlobals<immix_heap> gcglobals;
 
 // The worklist would be per-GC-thread in a multithreaded implementation.
 immix_worklist immix_worklist;
@@ -688,14 +689,16 @@ struct frame15_allocator {
   std::vector<frame21*> self_owned_allocated_frame21s;
 };
 
+class immix_line_space;
+immix_line_space* get_owner_for_immix_line_frame15(immix_line_frame15* f, int line);
+
 __attribute((noinline))
 immix_heap* heap_for_frame15info_slowpath(frame15info* finfo, void* addr) {
-  /*if (finfo->frame_classification == frame15kind::immix_linebased) {
+  if (finfo->frame_classification == frame15kind::immix_linebased) {
     auto lineframe = static_cast<immix_line_frame15*>(finfo->associated);
     auto line = line_offset_within_f15(addr);
-    //(XXXX)return get_owner_for_immix_line_frame15(lineframe, line);
-    return nullptr;
-  } else*/ if (finfo->frame_classification == frame15kind::immix_malloc_continue) {
+    return (immix_heap*) get_owner_for_immix_line_frame15(lineframe, line);
+  } else if (finfo->frame_classification == frame15kind::immix_malloc_continue) {
     finfo = frame15_info_for(finfo->associated);
   } else if (finfo->frame_classification == frame15kind::immix_malloc_start) {
     immix_malloc_frame15info* maf = (immix_malloc_frame15info*) finfo->associated;
@@ -996,7 +999,6 @@ struct immix_common {
 };
 
 
-class immix_line_space;
 class immix_line_frame15;
 
 class immix_frame_tracking {
@@ -1058,6 +1060,300 @@ public:
 };
 
 
+struct immix_line_frame15 {
+  // We set aside 4 of the 128 lines in the frame, which is 3.125% overhead
+  // (1 KB out of 32).
+  // We can store per-line space pointers for the remaining 124 lines:
+  immix_line_space* owners[124];
+  // And have four words left over for (future) bookkeeping:
+  union {
+    struct {
+      bump_allocator bumper;
+      immix_line_space* last_user;
+    };
+    struct {
+      uint64_t pad1;
+      uint64_t pad2;
+      uint64_t pad3;
+      uint64_t pad4;
+    };
+  };
+
+  char begin_lines[0];
+
+
+  void mark_owner(immix_line_space* owner, int64_t nbytes);
+
+  immix_line_space* get_owner_for_line(int n) { return owners[n]; }
+};
+
+
+class immix_line_allocator {
+  immix_line_frame15* current_frame;
+
+public:
+  immix_line_allocator() : current_frame(nullptr) {}
+
+  void ensure_current_frame(immix_line_space* owner, int64_t cell_size);
+
+  void* allocate_array(immix_line_space* owner, typemap* elt_typeinfo, int64_t n, int64_t req_bytes, uint8_t mark_value, bool init) {
+    ensure_current_frame(owner, req_bytes);
+    return helpers::allocate_array_prechecked(&current_frame->bumper, elt_typeinfo, n, req_bytes, mark_value, init);
+  }
+
+  void* allocate_cell(immix_line_space* owner, int64_t cell_size, uint8_t mark_value, typemap* typeinfo) {
+    ensure_current_frame(owner, cell_size);
+    return helpers::allocate_cell_prechecked(&current_frame->bumper, typeinfo, cell_size, mark_value);
+  }
+};
+
+immix_line_allocator global_immix_line_allocator;
+
+class immix_line_space : public heap {
+public:
+  immix_common common;
+
+private:
+  // How many are we allowed to allocate before being forced to GC & reuse?
+  byte_limit* lim;
+  
+  large_array_allocator laa;
+
+  std::vector<immix_line_frame15*> used_frames;
+  immix_line_frame15* prev_used_frame;
+
+
+  // The points-into remembered set; each frame in this set needs to have its
+  // card table inspected for pointers that actually point here.
+  std::set<frame15_id> frames_pointing_here;
+
+public:
+  immix_line_space(byte_limit* lim) : lim(lim) {
+    fprintf(gclog, "new immix_line_space %p, byte limit: %p, current value: %d f15s\n", this, lim, lim->frame15s_left);
+  }
+
+  virtual void dump_stats(FILE* json) {
+    return;
+  }
+
+  virtual void scan_cell(heap_cell* cell, int depth) {
+    //common.scan_cell(this, cell, depth);
+  }
+
+  void used_frame(immix_line_frame15* f) {
+    if (f != prev_used_frame) { used_frames.push_back(f); prev_used_frame = f; }
+  }
+
+  immix_line_frame15* get_new_frame(bool secondtry = false) {
+    if (lim->frame15s_left == 0) {
+      gcglobals.num_gcs_triggered_involuntarily++;
+      helpers::oops_we_died_from_heap_starvation();
+      /* TODO actually trigger GC
+      if (secondtry) {
+        oops_we_died_from_heap_starvation();
+      } else return get_new_frame(true);
+      */
+    }
+
+    --lim->frame15s_left;
+    immix_line_frame15* lineframe = (immix_line_frame15*) global_frame15_allocator.get_frame15();
+    mark_lineframe(lineframe);
+    return lineframe;
+  }
+
+  virtual tidy* tidy_for(tori* t) { return (tidy*) t; }
+
+  virtual void* allocate_array(typemap* elt_typeinfo, int64_t n, bool init) {
+    int64_t slot_size = elt_typeinfo->cell_size; // note the name change!
+    int64_t req_bytes = array_size_for(n, slot_size);
+
+    //fprintf(gclog, "allocating array, %d elts * %d b = %d bytes\n", n, slot_size, req_bytes);
+
+    if (false && FOSTER_GC_ALLOC_HISTOGRAMS) {
+      LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-alloc-array", (int) req_bytes, 1, 33000000, 128);
+    }
+
+    if (req_bytes > (1 << 13)) {
+      // The Immix paper, since it built on top of Jikes RVM, uses an 8 KB
+      // threshold to distinguish medium-sized allocations from large ones.
+      //(XXXX)return laa.allocate_array(elt_typeinfo, n, req_bytes, init, common.get_mark_value(), this);
+    } else {
+      return global_immix_line_allocator.allocate_array(this, elt_typeinfo, n, req_bytes, common.get_mark_value(), init);
+    }
+  }
+
+
+  // Invariant: cell size is less than one line.
+  virtual void* allocate_cell(typemap* typeinfo) {
+    int64_t cell_size = typeinfo->cell_size; // includes space for cell header.
+    return global_immix_line_allocator.allocate_cell(this, cell_size, common.get_mark_value(), typeinfo);
+  }
+
+  // Invariant: N is less than one line.
+  template <int N>
+  void* allocate_cell_N(typemap* typeinfo) {
+    return global_immix_line_allocator.allocate_cell(this, N, common.get_mark_value(), typeinfo);
+  }
+
+  virtual void* allocate_cell_16(typemap* typeinfo) { return allocate_cell_N<16>(typeinfo); }
+  virtual void* allocate_cell_32(typemap* typeinfo) { return allocate_cell_N<32>(typeinfo); }
+  virtual void* allocate_cell_48(typemap* typeinfo) { return allocate_cell_N<48>(typeinfo); }
+
+
+  virtual byte_limit* get_byte_limit() { return lim; }
+  virtual void force_gc_for_debugging_purposes() { this->immix_line_gc(); }
+  virtual void gc_and_shrink() {
+    this->immix_line_gc();
+    // No shrinking for line spaces, currently.  
+  }
+
+  void visit_root(unchecked_ptr* root, const char* slotname) {
+    common.visit_root(this, root, slotname);
+  }
+
+  void clear_mark_bits_for_space() {
+    // Could filter out clean blocks, which by definition are clean because
+    // their mark bits are all clear, but preliminary testing suggested it
+    // wasn't faster than unconditional bulk clearing.
+    // Maybe the branch mispredict hurts more than the memory traffic?
+
+    for (auto lineframe : used_frames) {
+      uint8_t* linemap = linemap_for_frame15_id(frame15_id_of(lineframe));
+      const int IMMIX_LINE_FRAME15_START_LINE = 4;
+      for (int i = IMMIX_LINE_FRAME15_START_LINE; i < IMMIX_LINES_PER_BLOCK; ++i) {
+        if (lineframe->get_owner_for_line(i - IMMIX_LINE_FRAME15_START_LINE) == this) {
+          linemap[i] = 0;
+        }
+      }
+    }
+  }
+
+  void immix_line_gc() {
+    common.flip_current_mark_bits_value();
+
+    // Before we begin tracing, we need to establish the invariant that
+    // any line which might be free should be unmarked.
+    // Since the assumption is that the space is small, we do so directly.
+    clear_mark_bits_for_space();
+
+    uint64_t numRemSetRoots = 0;
+    // Trace from remembered set roots
+    for (auto& fid : frames_pointing_here) {
+      auto frame_cards = cards_for_frame15_id(fid);
+      for (int i = 0; i < IMMIX_CARDS_PER_FRAME15; ++i) {
+        if (frame_cards[i] != 0) {
+          // Scan card for pointers that point into this space.
+          unchecked_ptr** finger = (unchecked_ptr**) frame15_for_frame15_id(fid);
+          unchecked_ptr** limit  = (unchecked_ptr**) frame15_for_frame15_id(fid + 1);
+          for ( ; finger != limit; ++finger) {
+            unchecked_ptr* ptr = *finger;
+            if (owned_by((tori*)ptr, this)) {
+              // TODO pin values since they're being treated conservatively?
+              if (TRACK_NUM_REMSET_ROOTS) { numRemSetRoots++; }
+              common.visit_root(this, ptr, "remembered_set_root");
+            }
+          }
+        }
+      }
+    }
+
+    visitGCRoots(__builtin_frame_address(0), this);
+
+    foster_bare_coro** coro_slot = __foster_get_current_coro_slot();
+    foster_bare_coro*  coro = *coro_slot;
+    if (coro) {
+      if (ENABLE_GCLOG) {
+        fprintf(gclog, "==========visiting current coro: %p\n", coro); fflush(gclog);
+      }
+      common.visit_root(this, (unchecked_ptr*)coro_slot, NULL);
+      if (ENABLE_GCLOG) {
+        fprintf(gclog, "==========visited current coro: %p\n", coro); fflush(gclog);
+      }
+    }
+
+    immix_worklist.process(this);
+
+    // The regular immix space would call clear_current_blocks() here
+    // because it marks frames as recycled.
+    {
+    
+    laa.sweep_arrays(common.get_mark_value());
+    for (auto lineframe : used_frames) {
+      this->inspect_line_frame15_postgc(lineframe);
+    }
+
+
+#if (ENABLE_GCLOG || ENABLE_GCLOG_ENDGC)
+#   if TRACK_NUM_REMSET_ROOTS
+        fprintf(gclog, "\t%d objects identified in remset\n", numRemSetRoots);
+#   endif
+      fprintf(gclog, "\t/endgc-small\n\n");
+      fflush(gclog);
+#endif
+    }
+
+    // TODO gcglobals.gc_time and gcglobals.subheap_ticks
+    gcglobals.num_gcs_triggered += 1;
+  }
+
+
+  void inspect_line_frame15_postgc(immix_line_frame15* lineframe) {
+
+    //frame15* f15 = frame15_for_frame15_id(fid);
+    //if (heap_for(f15) != this) { return; }
+
+    uint8_t* linemap = linemap_for_frame15_id(frame15_id_of(lineframe));
+
+    uint8_t num_marked_lines = 0;
+    const int IMMIX_LINE_FRAME15_START_LINE = 4;
+    for (int i = IMMIX_LINE_FRAME15_START_LINE; i < IMMIX_LINES_PER_BLOCK; ++i) {
+      if (lineframe->get_owner_for_line(i - IMMIX_LINE_FRAME15_START_LINE) == this) {
+        // TODO if line not marked, relinquish ownership
+        num_marked_lines += linemap[i];
+      }
+    }
+
+    // TODO update frame15_info? does it make sense for shared frame15s?
+  }
+
+};
+
+immix_line_space* get_owner_for_immix_line_frame15(immix_line_frame15* f, int line) {
+  return f->get_owner_for_line(line - 4);
+}
+
+void immix_line_frame15::mark_owner(immix_line_space* owner, int64_t nbytes) {
+  int startline = line_offset_within_f15(bumper.base);
+  int nlines = (nbytes + (IMMIX_LINE_SIZE - 1)) / IMMIX_LINE_SIZE;
+  for (int i = 0; i < nlines; ++i) {
+    owners[startline + i] = owner;
+  }
+  owner->used_frame(this);
+}
+
+void immix_line_allocator::ensure_current_frame(immix_line_space* owner, int64_t cell_size) {
+  if (!current_frame) {
+    current_frame = owner->get_new_frame();
+  }
+  
+  // Are we continuing to allocate to our own lines,
+  // or taking ownership from another space?
+  if (current_frame->last_user != owner) {
+    current_frame->bumper.base  = realigned_to_line(current_frame->bumper.base);
+    current_frame->last_user = owner;
+  }
+
+  if (current_frame->bumper.size() < cell_size) {
+    current_frame = owner->get_new_frame();
+    current_frame->bumper.base  = &current_frame->begin_lines;
+    current_frame->bumper.bound = offset(current_frame->bumper.base,
+                                          ((1 << 15) - (1 << 10)));
+  }
+
+  current_frame->mark_owner(owner, cell_size);
+}
+
+// }}}
 
 // Invariant: IMMIX_LINES_PER_BLOCK <= 256
 // Invariant: marked lines have value 1, unmarked are 0.
@@ -1701,7 +1997,7 @@ public:
     frames_pointing_here.insert(frame15_id_of((void*) slot));
   }
 
-  void shrink() {
+  void gc_and_shrink() {
     // Establish the invariant that live frames/arrays are suitably marked.
     this->immix_gc();
 
@@ -2476,7 +2772,7 @@ void foster_subheap_activate_raw(void* generic_subheap) {
 
 void foster_subheap_shrink_raw(void* generic_subheap) {
   auto subheap = ((heap_handle<immix_heap>*) generic_subheap)->body;
-  subheap->shrink(); // XXXX TODO
+  subheap->gc_and_shrink();
   //fprintf(gclog, "shrink()-ed subheap %p\n", subheap);
 }
 
