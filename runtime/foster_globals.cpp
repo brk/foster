@@ -70,7 +70,7 @@ namespace runtime {
     bool ok;
     int ss_kb = 1024;
     ok = dv.GetInteger(kGCSemispaceSizeKb, &ss_kb);
-    __foster_globals.semispace_size = ss_kb * 1024;
+    __foster_globals.semispace_size = ssize_t(ss_kb) * 1024;
 
     std::string dump_json_stats_path;
     ok =  dv.GetString(kDumpJSONStatsPath, &dump_json_stats_path);
