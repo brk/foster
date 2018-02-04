@@ -56,7 +56,7 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 #include "gc/foster_gc_reconfig-inl.h"
 
 const int kFosterGCMaxDepth = 1024;
-const int inline gSEMISPACE_SIZE() { return __foster_globals.semispace_size; }
+const ssize_t inline gSEMISPACE_SIZE() { return __foster_globals.semispace_size; }
 
 const bool wantWeirdCrashToHappen = false;
 
@@ -132,9 +132,9 @@ public:
 };
 
 struct byte_limit {
-  size_t frame15s_left;
+  ssize_t frame15s_left;
 
-  byte_limit(size_t maxbytes) {
+  byte_limit(ssize_t maxbytes) {
     // Round up; a request for 10K should be one frame15, not zero.
     this->frame15s_left = (maxbytes + ((1 << 15) - 1)) >> 15;
   }
@@ -1130,7 +1130,7 @@ bool is_linemap_clear(frame21* f21) {
 class immix_space : public heap {
 public:
   immix_space(byte_limit* lim) : lim(lim) {
-    fprintf(gclog, "new immix_space %p, byte limit: %p, current value: %zu f15s\n", this, lim, lim->frame15s_left);
+    fprintf(gclog, "new immix_space %p, byte limit ptr: %p, current value: %zd f15s\n", this, lim, lim->frame15s_left);
   }
   // TODO take a space limit. Use a combination of local & global
   // frame21_allocators to service requests for frame15s.

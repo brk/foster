@@ -21,7 +21,7 @@ struct FosterGlobals {
   std::vector<const char*> args;
   std::string              dump_json_stats_path;
 
-  int                    semispace_size;
+  ssize_t                  semispace_size;
 
   // One timer thread for the whole runtime, not per-vCPU.
   base::SimpleThread*    scheduling_timer_thread;
