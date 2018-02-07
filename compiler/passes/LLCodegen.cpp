@@ -166,7 +166,10 @@ llvm::Value* emitGCWriteOrStore(CodegenPass* pass,
 
 
   if (isPointerToType(ptr->getType(), val->getType())) {
-    if (val->getType()->isPointerTy() && !llvm::isa<llvm::AllocaInst>(ptr)) {
+    if (val->getType()->isPointerTy()
+        && !llvm::isa<llvm::AllocaInst>(ptr)
+        && w != WriteKnownNonGC
+        && pass->config.useGC) {
       return emitGCWrite(pass, val, base, ptr);
     } else {
       return builder.CreateStore(val, ptr, /*isVolatile=*/ false);
@@ -964,7 +967,7 @@ llvm::Value* LLDeref::codegen(CodegenPass* pass) {
 llvm::Value* LLStore::codegen(CodegenPass* pass) {
   llvm::Value* val  = v->codegen(pass);
   llvm::Value* slot = r->codegen(pass);
-  if (isTraced) {
+  if (isTraced && pass->config.useGC) {
     return emitGCWrite(pass, val, nullptr, slot);
   } else {
     return emitGCWriteOrStore(pass, val, nullptr, slot, WriteKnownNonGC);
@@ -1413,7 +1416,7 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
         unsigned k  = ncvals[i].second;
         Value* val  = ncvals[i].first;
         Value* slot = getPointerToIndex(heapmem, llvm::ConstantInt::get(i32, k), "arr_slot");
-        if (val->getType()->isPointerTy()) {
+        if (val->getType()->isPointerTy() && pass->config.useGC) {
           emitGCWrite(pass, val, heapmem, slot);
         } else {
           builder.CreateStore(val, slot, /*isVolatile=*/ false);
