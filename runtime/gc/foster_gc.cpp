@@ -293,6 +293,8 @@ struct GCGlobals {
   int num_big_stackwalks;
   double subheap_ticks;
 
+  uint64_t num_allocations;
+
   uint64_t write_barrier_phase0_hits;
   uint64_t write_barrier_phase1_hits;
 
@@ -529,7 +531,7 @@ namespace helpers {
     allot->set_num_elts(num_elts);
     //if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(total_bytes); }
     if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_array(total_bytes); }
-    //if (TRACK_NUM_ALLOCATIONS) { ++parent->hpstats.num_allocations; }
+    if (TRACK_NUM_ALLOCATIONS) { ++gcglobals.num_allocations; }
 
     if (FOSTER_GC_TRACK_BITMAPS) {
       //size_t granule = granule_for(tori_of_tidy(allot->body_addr()));
@@ -554,7 +556,7 @@ namespace helpers {
     heap_cell* allot = static_cast<heap_cell*>(bumper->prechecked_alloc(cell_size));
     //if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(map->cell_size); }
     if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_cell(cell_size); }
-    //if (TRACK_NUM_ALLOCATIONS) { ++parent->hpstats.num_allocations; }
+    if (TRACK_NUM_ALLOCATIONS) { ++gcglobals.num_allocations; }
     if (FOSTER_GC_ALLOC_HISTOGRAMS) { allocate_cell_prechecked_histogram((int) cell_size); }
     allot->set_header(map, mark_value);
 
@@ -1133,7 +1135,7 @@ private:
 
 public:
   immix_line_space(byte_limit* lim) : lim(lim) {
-    fprintf(gclog, "new immix_line_space %p, byte limit: %p, current value: %d f15s\n", this, lim, lim->frame15s_left);
+    fprintf(gclog, "new immix_line_space %p, byte limit: %p, current value: %zd f15s\n", this, lim, lim->frame15s_left);
   }
 
   virtual void dump_stats(FILE* json) {
@@ -2452,6 +2454,7 @@ void initialize(void* stack_highest_addr) {
   gcglobals.num_gcs_triggered_involuntarily = 0;
   gcglobals.num_big_stackwalks = 0;
   gcglobals.subheap_ticks = 0.0;
+  gcglobals.num_allocations = 0;
   gcglobals.write_barrier_phase0_hits = 0;
   gcglobals.write_barrier_phase1_hits = 0;
   gcglobals.num_objects_marked_total = 0;
@@ -2518,6 +2521,9 @@ FILE* print_timing_stats() {
   fprintf(gclog, "'Num_Big_Stackwalks': %d\n", gcglobals.num_big_stackwalks);
   fprintf(gclog, "'Num_GCs_Triggered': %d\n", gcglobals.num_gcs_triggered);
   fprintf(gclog, "'Num_GCs_Involuntary': %d\n", gcglobals.num_gcs_triggered_involuntarily);
+  if (TRACK_NUM_ALLOCATIONS) {
+    fprintf(gclog, "'Num_Allocations': %lu\n", gcglobals.num_allocations);
+  }
   if (TRACK_WRITE_BARRIER_COUNTS) {
     fprintf(gclog, "'Num_Write_Barriers_Fast': %lu\n", (gcglobals.write_barrier_phase0_hits - gcglobals.write_barrier_phase1_hits));
     fprintf(gclog, "'Num_Write_Barriers_Slow': %lu\n",  gcglobals.write_barrier_phase1_hits);
@@ -2526,8 +2532,8 @@ FILE* print_timing_stats() {
     fprintf(gclog, "'Subheap_Ticks': %e\n", gcglobals.subheap_ticks);
   }
 
-  fprintf(gclog, "sizeof immix_space: %lu\n", sizeof(immix_space));
-  fprintf(gclog, "sizeof immix_line_space: %d\n", sizeof(immix_line_space));
+  //fprintf(gclog, "sizeof immix_space: %lu\n", sizeof(immix_space));
+  //fprintf(gclog, "sizeof immix_line_space: %lu\n", sizeof(immix_line_space));
 
   gclog_time("Elapsed_runtime", total_elapsed, json);
   gclog_time("Initlzn_runtime",  init_elapsed, json);
