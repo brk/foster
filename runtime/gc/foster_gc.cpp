@@ -168,6 +168,10 @@ public:
   virtual void scan_cell(heap_cell* cell, int maxdepth) = 0;
   virtual void visit_root(unchecked_ptr* root, const char* slotname) = 0;
 
+
+  virtual void remember_outof(void** slot, void* val) = 0;
+  virtual void remember_into(void** slot) = 0;
+
   virtual void* allocate_array(typemap* elt_typeinfo, int64_t n, bool init) = 0;
   virtual void* allocate_cell(typemap* typeinfo) = 0;
 
@@ -1316,6 +1320,16 @@ public:
     // TODO update frame15_info? does it make sense for shared frame15s?
   }
 
+  virtual void remember_outof(void** slot, void* val) {
+    auto mdb = metadata_block_for_slot((void*) slot);
+    uint8_t* cards = (uint8_t*) mdb->cardmap;
+    cards[ line_offset_within_f21((void*) slot) ] = 1;
+  }
+
+  virtual void remember_into(void** slot) {
+    frames_pointing_here.insert(frame15_id_of((void*) slot));
+  }
+
 };
 
 immix_line_space* get_owner_for_immix_line_frame15(immix_line_frame15* f, int line) {
@@ -1987,13 +2001,13 @@ public:
     return common.scan_cell(this, cell, depth);
   }
 
-  void remember_outof(void** slot, void* val) {
+  virtual void remember_outof(void** slot, void* val) {
     auto mdb = metadata_block_for_slot((void*) slot);
     uint8_t* cards = (uint8_t*) mdb->cardmap;
     cards[ line_offset_within_f21((void*) slot) ] = 1;
   }
 
-  void remember_into(void** slot) {
+  virtual void remember_into(void** slot) {
     frames_pointing_here.insert(frame15_id_of((void*) slot));
   }
 
@@ -2513,7 +2527,7 @@ FILE* print_timing_stats() {
   }
 
   fprintf(gclog, "sizeof immix_space: %lu\n", sizeof(immix_space));
-  //fprintf(gclog, "sizeof immix_line_space: %d\n", sizeof(immix_line_space));
+  fprintf(gclog, "sizeof immix_line_space: %d\n", sizeof(immix_line_space));
 
   gclog_time("Elapsed_runtime", total_elapsed, json);
   gclog_time("Initlzn_runtime",  init_elapsed, json);
