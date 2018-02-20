@@ -159,6 +159,11 @@ optPrintLLVMImports("foster-print-llvm-imports",
   cl::desc("Print imported symbols from imported LLVM modules"),
   cl::cat(FosterOptCat));
 
+static cl::opt<bool>
+optAllGCBarriers("all-gc-barriers",
+  cl::desc("Emit GC write barriers for object initialization"),
+  cl::cat(FosterOptCat));
+
 void printVersionInfo() {
   llvm::outs() << "Foster version: " << FOSTER_VERSION_STR << "\n";
   cl::PrintVersionMessage();
@@ -400,6 +405,7 @@ int main(int argc, char** argv) {
     config.trackAllocSites   = optTrackAllocSites;
     config.killDeadSlots     = !optDontKillDeadSlots;
     config.emitLifetimeInfo  = optEnableLifetimeInfo;
+    config.emitAllGCBarriers = optAllGCBarriers;
     config.disableAllArrayBoundsChecks
                              =  optDisableAllArrayBoundsChecks;
     config.standalone        = optStandalone;

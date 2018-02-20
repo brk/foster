@@ -187,7 +187,8 @@ llvm::Value* emitGCWriteOrStore(CodegenPass* pass,
 
 llvm::Value* emitStore(CodegenPass* pass,
                        llvm::Value* val,
-                       llvm::Value* ptr) {
+                       llvm::Value* ptr,
+                       WriteSelector w = WriteUnspecified) {
   ASSERT(!val->getType()->isVoidTy());
   if (ptr->getType()->isPointerTy()
     && !isPointerToType(ptr->getType(), val->getType())) {
@@ -197,7 +198,7 @@ llvm::Value* emitStore(CodegenPass* pass,
     }
   }
 
-  return emitGCWriteOrStore(pass, val, nullptr, ptr);
+  return emitGCWriteOrStore(pass, val, nullptr, ptr, w);
 }
 
 Value* emitCallToInspectPtr(CodegenPass* pass, Value* ptr) {
@@ -921,7 +922,8 @@ void LLGCRootInit::codegenMiddle(CodegenPass* pass) {
   if (pass->config.emitLifetimeInfo) {
     markAsNonAllocating(builder.CreateLifetimeStart(slot));
   }
-  emitStore(pass, v, slot);
+
+  emitStore(pass, v, slot, WriteKnownNonGC);
 }
 
 void LLGCRootKill::codegenMiddle(CodegenPass* pass) {
@@ -968,9 +970,9 @@ llvm::Value* LLStore::codegen(CodegenPass* pass) {
   llvm::Value* val  = v->codegen(pass);
   llvm::Value* slot = r->codegen(pass);
   if (isTraced && pass->config.useGC) {
-    return emitGCWrite(pass, val, nullptr, slot);
+    return emitGCWrite(pass, val, slot, slot);
   } else {
-    return emitGCWriteOrStore(pass, val, nullptr, slot, WriteKnownNonGC);
+    return emitGCWriteOrStore(pass, val, slot, slot, WriteKnownNonGC);
   }
 }
 
@@ -980,7 +982,8 @@ llvm::Value* LLObjectCopy::codegen(CodegenPass* pass) {
   // TODO assert that object tags are equal?
 
   llvm::Value* from_obj = emitNonVolatileLoad(vv, "copy_from_obj");
-  return emitStore(pass, from_obj, vr);
+  auto w = (pass->config.emitAllGCBarriers) ? WriteUnspecified : WriteKnownNonGC;
+  return emitStore(pass, from_obj, vr, w);
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -1447,7 +1450,8 @@ void copyValuesToStruct(CodegenPass* pass,
 
   for (size_t i = 0; i < vals.size(); ++i) {
     Value* dst = builder.CreateConstGEP2_32(nullptr, tup_ptr, 0, i, "gep");
-    emitStore(pass, vals[i], dst);
+    auto w = (pass->config.emitAllGCBarriers) ? WriteUnspecified : WriteKnownNonGC;
+    emitStore(pass, vals[i], dst, w);
   }
 }
 
