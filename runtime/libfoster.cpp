@@ -14,10 +14,13 @@
 #include <cstdio>
 #include <cerrno>
 #include <cstdlib>
-#include <vector>
 #include <cmath>
 
+#include <vector>
+#include <string>
+
 #include "libfoster.h"
+#include "libfoster_util.h"
 #include "foster_gc.h"
 #include "libfoster_gc_roots.h"
 #include "foster_gc_utils.h"
@@ -562,6 +565,44 @@ void* foster_fmttime_secs_raw(double secs) {
   return foster_emit_string_of_cstring(buf, strlen(buf));
 }
 
+// ptr should be a pointer to a char buf[64]
+void foster__humanize_s_ptr(double val, char* ptr, const char* unit) {
+  const char* prefix = ""; bool extreme = false;
+  if (val < 0.0) { *ptr++ = '-'; val = -val; }
+
+       if (val >= 1e21) { extreme = true; }
+  else if (val >= 1e18 ) { prefix = "E"; val *= 1e-18; }
+  else if (val >= 1e15 ) { prefix = "P"; val *= 1e-15; }
+  else if (val >= 1e12 ) { prefix = "T"; val *= 1e-12; }
+  else if (val >= 1e9 )  { prefix = "G"; val *= 1e-9 ; }
+  else if (val >= 1e6 )  { prefix = "M"; val *= 1e-6 ; }
+  else if (val >= 1e3 )  { prefix = "K"; val *= 1e-3 ; }
+  else if (val >= 0   )  { }
+  else if (val >= 1e-3 ) { prefix = "m"; val *= 1e3 ; }
+  else if (val >= 1e-6 ) { prefix = "μ"; val *= 1e6 ; }
+  else if (val >= 1e-9 ) { prefix = "n"; val *= 1e9 ; }
+  else if (val >= 1e-12) { prefix = "p"; val *= 1e12; }
+  else if (val >= 1e-15) { prefix = "f"; val *= 1e15; }
+  else if (val >= 1e-18) { prefix = "a"; val *= 1e18; }
+  else { extreme = true; }
+
+       if (val == 0.0) { snprintf(ptr, 63, "0.0 %s", unit); } // for Haskell compatibility...
+  else if (extreme)    { snprintf(ptr, 63, "%g %s", val, unit); }
+  else if (val >= 1e9) { snprintf(ptr, 63, "%.4g %s%s", val, prefix, unit); }
+  else if (val >= 1e3) { snprintf(ptr, 63, "%.0f %s%s", val, prefix, unit); }
+  else if (val >= 1e2) { snprintf(ptr, 63, "%.1f %s%s", val, prefix, unit); }
+  else if (val >= 1e1) { snprintf(ptr, 63, "%.2f %s%s", val, prefix, unit); }
+  else                 { snprintf(ptr, 63, "%.3f %s%s", val, prefix, unit); }
+}
+
+void* foster_humanize_s__autowrap(double val) {
+  char buf[64] = { 0 };
+  foster__humanize_s_ptr(val, &buf[0], "");
+  return foster_emit_string_of_cstring(buf, strlen(buf));
+}
+
+
+
 int64_t foster_gettime_microsecs() {
   return base::TimeTicks::Now().ToInternalValue();
 }
@@ -594,4 +635,14 @@ int foster__runtime__main__wrapper(int argc, char** argv) {
 }
 
 } // extern "C"
+
+
+namespace foster {
+std::string humanize_s(double val, const char* unit) {
+  char buf[64] = { 0 };
+  foster__humanize_s_ptr(val, &buf[0], unit);
+  return std::string(&buf[0]);
+}
+} // namepsace foster
+
 
