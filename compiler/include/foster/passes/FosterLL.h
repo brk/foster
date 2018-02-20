@@ -44,6 +44,7 @@ struct CodegenPassConfig {
   bool trackAllocSites;
   bool killDeadSlots;
   bool emitLifetimeInfo;
+  bool emitAllGCBarriers;
   bool disableAllArrayBoundsChecks;
   bool standalone;
 };

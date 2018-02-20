@@ -546,6 +546,7 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
   passes.add(new TargetLibraryInfoWrapperPass(TLII));
   passes.add(createTargetTransformInfoWrapperPass(tm->getTargetIRAnalysis()));
   passes.add(foster::createFosterGCLoweringPass(optNoGCBarriers));
+  passes.add(createAlwaysInlinerLegacyPass());
 
   bool disableVerify = true;
   if (tm->addPassesToEmitFile(passes, out, filetype,
