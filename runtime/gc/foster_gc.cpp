@@ -2298,7 +2298,7 @@ public:
     fprintf(gclog, "%s: %6zd f15s == %s\n", start, f15s, h.c_str());
   }
   size_t frame15s_in_reserve_recycled() { return recycled_frame15s.size(); }
-  size_t frame15s_in_reserve_clean() { return clean_frame15s.size() + (clean_frame21s.size() * IMMIX_F15_PER_F21); }
+  size_t frame15s_in_reserve_clean() { return clean_frame15s.size() + (clean_frame21s.size() * IMMIX_ACTIVE_F15_PER_F21); }
 
   void inspect_frame21_postgc(frame21* f21) {
     bool is_frame21_entirely_clear = is_linemap_clear(f21);
