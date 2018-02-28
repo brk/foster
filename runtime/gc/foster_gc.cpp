@@ -1459,7 +1459,7 @@ public:
 
       this->immix_line_gc();
 
-      fprintf(gclog, "forced smallgc reclaimed %d frames\n", lim->frame15s_left);
+      fprintf(gclog, "forced smallgc reclaimed %zd frames\n", lim->frame15s_left);
       if (secondtry) {
         helpers::oops_we_died_from_heap_starvation();
       } else return get_new_frame(true);
@@ -1741,7 +1741,7 @@ void immix_line_allocator::ensure_current_frame(immix_line_space* owner, int64_t
   // Make sure we have enough space even after realignment.
   if (current_frame->bumper.size() < cell_size) {
     current_frame = owner->get_new_frame();
-    if (ENABLE_GCLOG || ENABLE_LINE_GCLOG) { fprintf(gclog, "immix_line_allocator acquired new frame %p with bumper size %d\n",
+    if (ENABLE_GCLOG || ENABLE_LINE_GCLOG) { fprintf(gclog, "immix_line_allocator acquired new frame %p with bumper size %zu\n",
         current_frame, current_frame->bumper.size()); }
   }
 
@@ -2240,15 +2240,15 @@ public:
       describe_frame15s_count("tracking  ", frame15s_total);
       describe_frame15s_count("  recycled", frame15s_in_reserve_recycled());
       describe_frame15s_count("  clean   ", frame15s_in_reserve_clean());
-      fprintf(gclog, "tracking %d f21s, ended with %d clean f21s\n", tracking.count_frame21s(), clean_frame21s.size());
+      fprintf(gclog, "tracking %zu f21s, ended with %zu clean f21s\n", tracking.count_frame21s(), clean_frame21s.size());
 
-      fprintf(gclog, "%lu recycled, %lu clean f15 + %lu clean f21; %d total (%d f21) => (%zu f15 @ %s kept / %s)",
+      fprintf(gclog, "%zu recycled, %zu clean f15 + %zu clean f21; %zd total (%zd f21) => (%zu f15 @ %s kept / %s)",
           recycled_frame15s.size(), clean_frame15s.size(), clean_frame21s.size(),
           frame15s_total, tracking.count_frame21s(),
           frame15s_kept, total_live_size.c_str(), total_heap_size.c_str());
       if (ENABLE_GC_TIMING) {
         auto delta = now() - gcstart;
-        fprintf(gclog, ", took %ld us which was %f%% premark, %f%% marking, %f%% post-mark",
+        fprintf(gclog, ", took %zd us which was %f%% premark, %f%% marking, %f%% post-mark",
           delta.InMicroseconds(),
           double(deltaClearMarkBits.InMicroseconds() * 100.0)/double(delta.InMicroseconds()),
           double(deltaRecursiveMarking.InMicroseconds() * 100.0)/double(delta.InMicroseconds()),
