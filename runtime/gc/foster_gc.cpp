@@ -1361,6 +1361,12 @@ struct immix_line_frame15 {
   //condemned_status  get_condemned_status_for_line(int n) { return condemned[n]; }
 };
 
+static_assert( IMMIX_BYTES_PER_LINE > IMMIX_LINES_PER_BLOCK,
+            "too few entries in immix_line_frame15->condemned!");
+static_assert(  offsetof(immix_line_frame15, begin_lines)
+            == (IMMIX_LINE_FRAME15_START_LINE * IMMIX_BYTES_PER_LINE),
+            "our expectation for the positioning of begin_lines is broken!");
+
 void* first_line_of_line_frame15(immix_line_frame15* f) {
   return offset(f, IMMIX_LINE_FRAME15_START_LINE * IMMIX_LINE_SIZE);
 }
