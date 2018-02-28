@@ -13,7 +13,6 @@
 #include "base/metrics/histogram.h"
 #include "base/metrics/statistics_recorder.h"
 
-#include <sys/resource.h> // for getrlimit, RLIMIT_STACK
 #include "execinfo.h" // for backtrace
 
 #ifdef OS_LINUX
@@ -289,8 +288,6 @@ template<typename Allocator>
 struct GCGlobals {
   Allocator* allocator = NULL;
   Allocator* default_allocator = NULL;
-
-  std::vector<allocator_range> allocator_ranges;
 
   ClusterMap clusterForAddress;
 
@@ -2774,27 +2771,6 @@ uintptr_t get_offset() {
 // {{{ GC startup & shutdown
 void register_stackmaps(ClusterMap&); // see foster_gc_stackmaps.cpp
 
-size_t get_default_stack_size() {
-  struct rlimit rlim;
-  getrlimit(RLIMIT_STACK, &rlim);
-  return (size_t) (rlim.rlim_cur != RLIM_INFINITY) ? rlim.rlim_cur : 0x080000;
-}
-
-void register_allocator_ranges(void* stack_highest_addr) {
-  // ASSUMPTION: stack segments grow down, and are linear...
-  size_t stack_size = get_default_stack_size();
-  allocator_range ar;
-  ar.range.bound = stack_highest_addr;
-  ar.range.base  = (void*) (((char*) ar.range.bound) - stack_size);
-  ar.stable = true;
-  gcglobals.allocator_ranges.push_back(ar);
-
-  allocator_range datarange;
-  get_static_data_range(datarange.range);
-  datarange.stable = true;
-  gcglobals.allocator_ranges.push_back(datarange);
-}
-
 int address_space_prefix_size_log() {
   if (sizeof(void*) == 4) { return 32; }
   if (sizeof(void*) == 8) { return 47; }
@@ -2834,8 +2810,6 @@ void initialize(void* stack_highest_addr) {
   gcglobals.default_allocator = gcglobals.allocator;
 
   gcglobals.had_problems = false;
-
-  register_allocator_ranges(stack_highest_addr);
 
   register_stackmaps(gcglobals.clusterForAddress);
 
@@ -3010,15 +2984,6 @@ void inspect_typemap(const typemap* ti) {
   fprintf(gclog, "\n");
 }
 
-bool is_marked_as_stable(tori* body) {
-  for (const allocator_range& ar : gcglobals.allocator_ranges) {
-    if (ar.range.contains(static_cast<void*>(body))) {
-      return ar.stable;
-    }
-  }
-  return false;
-}
-
 extern "C" void inspect_ptr_for_debugging_purposes(void* bodyvoid) {
   /*
   unsigned align = (!(intptr_t(bodyvoid) & 0x0f)) ? 16
@@ -3036,8 +3001,6 @@ extern "C" void inspect_ptr_for_debugging_purposes(void* bodyvoid) {
   } else {
     if (gc::gcglobals.allocator->owns(body)) {
       fprintf(gclog, "\t...this pointer is owned by the main allocator");
-    } else if (is_marked_as_stable(body)) {
-      fprintf(gclog, "\t...this pointer is marked as stable");
     } else {
       fprintf(gclog, "\t...this pointer is not owned by the main allocator, nor marked as stable!");
       goto done;
