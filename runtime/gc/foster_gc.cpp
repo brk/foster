@@ -1325,6 +1325,102 @@ public:
   size_t count_frame21s() { return coalesced_frame21s.size(); }
 };
 
+
+/*
+
+                Subheap frame state transition diagram
+                ======================================
+
+ +----------+
+ |          |
+ |  global  |
+ |   pool   |
+ |          | <--------+
+ +--------+-+          |
+          |            |             condemned  <--------+
+          |            |         (5)     +               |
+          |            |              .-+++-.            |
+     (3)  |            |             /   |   \           |
+          |            |             |   |   |           |
+          |            |   +---------+   |   |           |
+          v            +   |             |   |           |
+                           v             v   v           |
+        current <-+   clean   +-+recycled     full       |
+    (1) ~~~~~~~   |     +     |  ........     ....       |
+             ...  \--<--v-----/ ..          ..           |
+               ..     (2)      ..         ...            |
+                ..            ..       ....              |
+                 ..    used  ..    .....                 |
+                  ...................                    |
+                         +                               |
+                    (4)  |                               |
+                         +-------------------------------+
+
+
+  (1) Allocations go into the current frame.
+      When it fills up, it is sent to the full bucket.
+
+  (2) Replacement frames are drawn from the clean and
+      recycled buckets, or from
+  (3) the global pool (as permitted by per-subheap limits).
+
+  (4) `subheapCondemn` siphons the subheap's used (i.e. non-clean)
+      frames into the condemned bucket. The current frame is treated
+      as clean if it is completely empty. Siphoned frames are marked
+      to permit constant time identification during collection.
+
+      If the condemned bucket is empty when collection is implicitly
+      triggered,  an implicit collection
+
+  (5) ``subheapCollect`` first inspects the remembered set.
+      followed by the stack. We note, when inspecting stack roots,
+      whether any point to condemned objects. If there are no roots
+      (from the stack or remembered set) to condemned objects from
+      uncondemned objects, the subheap can be immediately reclaimed.
+      Otherwise, we trace from the roots as usual, producing object
+      and line marks. When tracing completes, line marks are used to
+      sort frames into the appropriate buckets.
+
+      When the condemned set carries frames from multiple subheaps,
+      we can inspect each frame to determine its subheap of origin.
+
+
+      ``(subheapReclaim S)`` combines steps (4) and (5), without
+      explicitly representing the condemned set -- instead, every
+      frame in S is considered condemned.
+
+      Steps (4) and (5) each have a component that is linear in the
+      size of the condemned set, but the constant factor is roughly
+      three orders of magnitude faster than allocation itself.
+
+      Back of the envelope calculation: 1GB = 32k * 32KB.
+                                       64GB = 32k * 2MB.
+      What's the approximate cost of a round trip to memory for ~32k frames?
+            200 cycles * 32e3 / 4e6 cycles/ms => 1.6 ms
+
+      In practice, prefetching and locality of reference helps quite a lot:
+        we can scan linemaps for 32k frame15s in ~325us (on a Core i5 6600k)
+               and set condemned status bytes in ~100us (when densely packed).
+      Interestingly, when status bytes are embedded at the start of a frame15,
+      setting condemned marks is much more expensive: 800us instead of 100us.
+
+      The increased locality from tracking 2MB frame21s helps a little bit with
+      latency of line marking, on the order of ~40%.
+      If we mark 2MB frame21s in addition to lines, being able to rapidly identify
+      unmarked frames speeds reclamation by ~3.5x (~250%).
+
+      But note here that static/inline mark bytes are advantageous for coarser marks,
+      because it allows us to avoid loading a global variable during marking,
+      and since multiple frame15s share a frame21, hardware (store buffers & caches)
+      are significantly more effective.
+
+      According to (my testing of) https://github.com/wrl/thread-sync-latency-tests
+      mean latency of thread wakeup is ~20us and worst case is ~8ms, suggesting that
+      waking a sleeping thread is too risky from a latency perspective to be worth it.
+
+*/
+
+
 #define IMMIX_LINE_FRAME15_START_LINE 4
 
 struct immix_line_frame15 {
