@@ -105,10 +105,6 @@ void __foster_handle_sigsegv(int, siginfo_t* si, void*) {
           "ERROR: Foster runtime caught SIGSEGV at addr %p, aborting!\n",
           si->si_addr);
 
-  bool is_stable = foster::runtime::gc::is_marked_as_stable((foster::runtime::gc::tori*) si->si_addr);
-  if (is_stable) {
-    fprintf(stdout, "This address appears to be within the bounds of the stack or the program's data section.\n");
-  }
   fflush(stdout);
   exit(2);
 }
