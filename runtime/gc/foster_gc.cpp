@@ -15,6 +15,9 @@
 
 #include "execinfo.h" // for backtrace
 
+#include <functional>
+#include <stddef.h> // offsetof
+
 #ifdef OS_LINUX
 #include <sys/mman.h>
 #endif
@@ -146,10 +149,17 @@ struct byte_limit {
   }
 };
 
-struct allocator_range {
-  memory_range range;
-  bool         stable;
-};
+base::TimeTicks now() {
+  if (ENABLE_GC_TIMING) { return base::TimeTicks::Now(); }
+  else return base::TimeTicks();
+}
+
+base::TimeDelta timed(std::function<void()> f) {
+  auto start = now();
+  f();
+  auto fin = now();
+  return fin - start;
+}
 
 typedef void* ret_addr;
 typedef void* frameptr;
@@ -1180,6 +1190,7 @@ struct immix_common {
     immix_trace(space, root, kFosterGCMaxDepth);
   }
 
+  template <bool use_space>
   uint64_t process_remset(immix_heap* space, std::set<tori**>& incoming_ptr_addrs) {
     uint64_t numRemSetRoots = 0;
     for (tori** loc: incoming_ptr_addrs) {
@@ -1545,24 +1556,20 @@ public:
 
   void immix_line_gc() {
     auto num_marked_at_start = gcglobals.num_objects_marked_total;
-#if ENABLE_GC_TIMING
-    base::TimeTicks lineGCStartTime = base::TimeTicks::Now();
-#endif
+
+    base::TimeTicks lineGCStartTime = now();
 
     common.flip_current_mark_bits_value();
 
-#if ENABLE_GC_TIMING
-    base::TimeTicks clearMarkBitsStartTime = base::TimeTicks::Now();
-#endif
-    // Before we begin tracing, we need to establish the invariant that
-    // any line which might be free should be unmarked.
-    // Since the assumption is that the space is small, we do so directly.
-    clear_mark_bits_for_space();
-#if ENABLE_GC_TIMING
-    auto deltaClearMarkBits = base::TimeTicks::Now() - clearMarkBitsStartTime;
-#endif
+    auto deltaClearMarkBits = timed([&] () {
+      // Before we begin tracing, we need to establish the invariant that
+      // any line which might be free should be unmarked.
+      // Since the assumption is that the space is small, we do so directly.
+      clear_mark_bits_for_space();
+    });
 
-    uint64_t numRemSetRoots = common.process_remset(this, incoming_ptr_addrs);
+    // TODO check condemned set instead of assuming true
+    uint64_t numRemSetRoots = common.process_remset<true>(this, incoming_ptr_addrs);
 
     visitGCRoots(__builtin_frame_address(0), this);
 
@@ -1596,7 +1603,7 @@ public:
     }
 
 #if ENABLE_GC_TIMING && ENABLE_GCLOG_ENDGC
-    auto delta = base::TimeTicks::Now() - lineGCStartTime;
+    auto delta = now() - lineGCStartTime;
     fprintf(gclog, "used frames: %zu -> %zu, took %ld us which was %f%% premark; frames left: %zd\n",
         all_used_frames.size(), used_frames.size(),
         delta.InMicroseconds(),
@@ -2123,9 +2130,7 @@ public:
     //printf("GC\n");
     //fprintf(gclog, "GC\n");
 
-#if ENABLE_GC_TIMING
-    base::TimeTicks gcstart = base::TimeTicks::Now();
-#endif
+    base::TimeTicks gcstart = now();
 #if ENABLE_GC_TIMING_TICKS
     int64_t t0 = __foster_getticks();
 #endif
@@ -2138,36 +2143,31 @@ public:
     //worklist.initialize();
     common.flip_current_mark_bits_value();
 
-#if ENABLE_GC_TIMING
-    base::TimeTicks phaseStartTime = base::TimeTicks::Now();
-#endif
+    auto deltaClearMarkBits = timed([this] {
+      // Before we begin tracing, we need to establish the invariant that
+      // any line which might be free should be unmarked.
+      // The simple way of doing so would be to clear all the mark bits
+      // for this space. However, doing so can be wasteful if the space is
+      // mostly unused and therefore remains always clean. So we do something
+      // a little more subtle. First, clean frames by definition are unmarked.
+      // So we only need to clear the mark bits for recycled frames and
+      // formerly-clean frames that were allocated into since the last GC.
+      clear_mark_bits_for_space();
+    });
 
-    // Before we begin tracing, we need to establish the invariant that
-    // any line which might be free should be unmarked.
-    // The simple way of doing so would be to clear all the mark bits
-    // for this space. However, doing so can be wasteful if the space is
-    // mostly unused and therefore remains always clean. So we do something
-    // a little more subtle. First, clean frames by definition are unmarked.
-    // So we only need to clear the mark bits for recycled frames and
-    // formerly-clean frames that were allocated into since the last GC.
-    clear_mark_bits_for_space();
-
-    #if ENABLE_GC_TIMING
-    auto deltaClearMarkBits = base::TimeTicks::Now() - phaseStartTime;
-
-    phaseStartTime = base::TimeTicks::Now();
-    #endif
+    auto phaseStartTime = now();
 #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
     int64_t phaseStartTicks = __foster_getticks();
 #endif
 
 
-    uint64_t numRemSetRoots = common.process_remset(this, incoming_ptr_addrs);
+    // TODO check condemned set instead of assuming true
+    uint64_t numRemSetRoots = common.process_remset<true>(this, incoming_ptr_addrs);
 
     visitGCRoots(__builtin_frame_address(0), this);
 
 #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
-      LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-rootscan-ticks", __foster_getticks_elapsed(phaseStartTicks, __foster_getticks()),  0, 60000000, 256);
+    LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-rootscan-ticks", __foster_getticks_elapsed(phaseStartTicks, __foster_getticks()),  0, 60000000, 256);
 #endif
 
     foster_bare_coro** coro_slot = __foster_get_current_coro_slot();
@@ -2184,10 +2184,8 @@ public:
 
     immix_worklist.process(this);
 
-#if ENABLE_GC_TIMING
-    auto deltaRecursiveMarking = base::TimeTicks::Now() - phaseStartTime;
-    phaseStartTime = base::TimeTicks::Now();
-#endif
+    auto deltaRecursiveMarking = now() - phaseStartTime;
+    phaseStartTime = now();
 #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
     phaseStartTicks = __foster_getticks();
 #endif
@@ -2205,32 +2203,22 @@ public:
     local_frame15_allocator.clear();
     laa.sweep_arrays(common.get_mark_value());
 
-#if ENABLE_GC_TIMING
-    auto inspectFrame15Start = base::TimeTicks::Now();
-#endif
+    auto inspectFrame15Start = now();
     tracking.iter_frame15( [this](frame15* f15) {
       this->inspect_frame15_postgc(frame15_id_of(f15), f15);
     });
-#if ENABLE_GC_TIMING
-    auto inspectFrame15Time = base::TimeTicks::Now() - inspectFrame15Start;
-#endif
+    auto inspectFrame15Time = now() - inspectFrame15Start;
 
-#if ENABLE_GC_TIMING
-    auto inspectFrame21Start = base::TimeTicks::Now();
-#endif
+    auto inspectFrame21Start = now();
 
     tracking.iter_coalesced_frame21([this](frame21* f21) {
       inspect_frame21_postgc(f21);
     });
-#if ENABLE_GC_TIMING
-    auto inspectFrame21Time = base::TimeTicks::Now() - inspectFrame21Start;
-#endif
+    auto inspectFrame21Time = now() - inspectFrame21Start;
 
-#if ENABLE_GC_TIMING
-    auto deltaPostMarkingCleanup = base::TimeTicks::Now() - phaseStartTime;
+    auto deltaPostMarkingCleanup = now() - phaseStartTime;
 #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
-      LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-postgc-ticks", __foster_getticks_elapsed(phaseStartTicks, __foster_getticks()),  0, 60000000, 256);
-#endif
+    LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-postgc-ticks", __foster_getticks_elapsed(phaseStartTicks, __foster_getticks()),  0, 60000000, 256);
 #endif
     //if (TRACK_BYTES_KEPT_ENTRIES) { hpstats.bytes_kept_per_gc.record_sample(next->used_size()); }
 
@@ -2238,8 +2226,7 @@ public:
 #if (ENABLE_GCLOG || ENABLE_GCLOG_ENDGC)
       size_t frame15s_total = tracking.logical_frame15s();
       auto total_heap_size = foster::humanize_s(double(frame15s_total * (1 << 15)), "B");
-      size_t frame15s_kept = frame15s_total - (recycled_frame15s.size() + clean_frame15s.size()
-                                              + (clean_frame21s.size() * IMMIX_F15_PER_F21));
+      size_t frame15s_kept = frame15s_total - (recycled_frame15s.size() + frame15s_in_reserve_clean());
       auto total_live_size = foster::humanize_s(double(frame15s_kept) * (1 << 15), "B");
 
       fprintf(gclog, "logically %zu frame15s, comprised of %zu frame21s and %zu actual frame15s\n", frame15s_total,
@@ -2249,24 +2236,24 @@ public:
       describe_frame15s_count("  clean   ", frame15s_in_reserve_clean());
       fprintf(gclog, "tracking %d f21s, ended with %d clean f21s\n", tracking.count_frame21s(), clean_frame21s.size());
 
-      fprintf(gclog, "%lu recycled, %lu clean f15 + %lu clean f21; %d total (%d f21) => (%s kept / %s)",
+      fprintf(gclog, "%lu recycled, %lu clean f15 + %lu clean f21; %d total (%d f21) => (%zu f15 @ %s kept / %s)",
           recycled_frame15s.size(), clean_frame15s.size(), clean_frame21s.size(),
           frame15s_total, tracking.count_frame21s(),
-          total_live_size.c_str(), total_heap_size.c_str());
-      #if ENABLE_GC_TIMING
-        auto delta = base::TimeTicks::Now() - gcstart;
+          frame15s_kept, total_live_size.c_str(), total_heap_size.c_str());
+      if (ENABLE_GC_TIMING) {
+        auto delta = now() - gcstart;
         fprintf(gclog, ", took %ld us which was %f%% premark, %f%% marking, %f%% post-mark",
           delta.InMicroseconds(),
           double(deltaClearMarkBits.InMicroseconds() * 100.0)/double(delta.InMicroseconds()),
           double(deltaRecursiveMarking.InMicroseconds() * 100.0)/double(delta.InMicroseconds()),
           double(deltaPostMarkingCleanup.InMicroseconds() * 100.0)/double(delta.InMicroseconds()));
-      #endif
+      }
       fprintf(gclog, "\n");
 
-#if (ENABLE_GC_TIMING)
+      if (ENABLE_GC_TIMING) {
         fprintf(gclog, "\ttook %ld us inspecting frame15s, %ld us inspecting frame21s\n",
             inspectFrame15Time.InMicroseconds(), inspectFrame21Time.InMicroseconds());
-#endif
+      }
 
 #   if TRACK_NUM_OBJECTS_MARKED
         fprintf(gclog, "\t%d objects marked in this GC cycle, %d marked overall\n",
@@ -2281,13 +2268,13 @@ public:
 #endif
     }
 
-#if ENABLE_GC_TIMING
-    auto delta = base::TimeTicks::Now() - gcstart;
-    if (FOSTER_GC_TIME_HISTOGRAMS) {
-      LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-pause-micros", delta.InMicroseconds(),  0, 60000000, 256);
+    if (ENABLE_GC_TIMING) {
+      auto delta = now() - gcstart;
+      if (FOSTER_GC_TIME_HISTOGRAMS) {
+        LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-pause-micros", delta.InMicroseconds(),  0, 60000000, 256);
+      }
+      gcglobals.gc_time += delta;
     }
-    gcglobals.gc_time += delta;
-#endif
 
 #if ENABLE_GC_TIMING_TICKS
     int64_t t1 = __foster_getticks();
