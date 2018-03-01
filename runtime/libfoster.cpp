@@ -522,7 +522,7 @@ void* foster_get_cmdline_arg_n_raw(int32_t n) {
 
 extern int32_t opaquely_i32(int32_t n);
 
-// Provided by third_party/fftw/cycle_wrapper.c
+// Provided by third_party/fftw_cycle/cycle-wrapper.cpp
 extern int64_t __foster_getticks();
 extern double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 
