@@ -35,13 +35,18 @@ def transplant(path, newdir):
   head, tail = os.path.split(path)
   return os.path.join(newdir, tail)
 
+def replace_extension_with(path, newext):
+  preext, oldext = os.path.splitext(path)
+  return preext + newext
+
 def compile_source(src):
-  outbc = re.sub('\.cpp$', '.bc', transplant(src, outdir))
+  outbc      = replace_extension_with(transplant(src, outdir), '.bc')
   runtime_gc = os.path.join(srcdir, 'runtime', 'gc')
   runtime    = os.path.join(srcdir, 'runtime')
   basedir    = os.path.join(srcdir, 'third_party', 'chromium_base')
   corodir    = os.path.join(srcdir, 'third_party', 'libcoro')
-  include_dirs = [bindir, runtime, runtime_gc, basedir, corodir]
+  jepages    = os.path.join(srcdir, 'third_party', 'jemalloc_pages', 'include')
+  include_dirs = [bindir, runtime, runtime_gc, basedir, corodir, jepages]
   includes = ' '.join(['-I ' + path for path in include_dirs])
   defines = ' -D'.join(['', coro_method])
   flags = debug_flag + defines + " -std=c++11 -O2 -march=native"

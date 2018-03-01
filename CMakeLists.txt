@@ -326,6 +326,7 @@ set(LIBFOSTER_CPP_SOURCES
         ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc.cpp
         ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc_stackmaps.cpp
         ${PROJECT_SOURCE_DIR}/runtime/foster_globals.cpp
+        ${PROJECT_SOURCE_DIR}/third_party/jemalloc_pages/src/pages.cpp
 )
 
 add_custom_command(

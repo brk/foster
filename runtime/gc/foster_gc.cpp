@@ -18,6 +18,12 @@
 #include <functional>
 #include <stddef.h> // offsetof
 
+// jemalloc_pages
+
+bool  pages_boot(void);
+void* pages_map(void* addr, size_t size, size_t alignment, bool* commit);
+void  pages_unmap(void* addr, size_t size);
+
 #ifdef OS_LINUX
 #include <sys/mman.h>
 #endif
@@ -690,9 +696,15 @@ const typemap* tryGetTypemap(heap_cell* cell);
 // TODO use stat_tracker again?
 
 frame21* allocate_frame21() {
-  frame21* rv = (frame21*) base::AlignedAlloc(1 << 21, 1 << 21);
-  gc_assert(rv != NULL, "unable to allocate a 2MB chunk from the OS");
+  bool commit = true;
+  frame21* rv = (frame21*) pages_map(nullptr, 1 << 21, 1 << 21, &commit);
+  if (ENABLE_GCLOG_PREP) { fprintf(gclog, "allocate_frame21() returning %p\n", rv); }
+  gc_assert(commit && rv != NULL, "unable to allocate a 2MB chunk from the OS");
   return rv;
+}
+
+void deallocate_frame21(frame21* f) {
+  pages_unmap(f, 1 << 21);
 }
 
 struct frame15_allocator {
@@ -2511,7 +2523,7 @@ public:
     tracking.iter_coalesced_frame21( [&](frame21* f21) {
       if (is_linemap_clear(f21)) {
         // We return memory directly to the OS, not to the global allocator.
-        base::AlignedFree(f21);
+        deallocate_frame21(f21);
       } else {
         keep_frame21s.push_back(f21);
       }
@@ -2892,6 +2904,8 @@ void initialize(void* stack_highest_addr) {
   if (!base::TimeTicks::IsHighResolution()) {
     fprintf(gclog, "(warning: using low-resolution timer)\n");
   }
+
+  pages_boot();
 
   base::StatisticsRecorder::Initialize();
 
