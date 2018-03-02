@@ -94,7 +94,7 @@ struct heap_cell {
     return reinterpret_cast<const typemap*>(get_unmarked_header());
   }
 
-  void set_header(const typemap* data, uint8_t mark_bits) { header = HEAP_CELL_HEADER_TYPE(data) | HEAP_CELL_HEADER_TYPE(mark_bits); }
+  void set_header(const typemap* data, uintptr_t mark_bits) { header = HEAP_CELL_HEADER_TYPE(data) | HEAP_CELL_HEADER_TYPE(mark_bits); }
 
   bool is_forwarded() { return (header & FORWARDED_BIT) != 0; }
   void set_forwarded_body(tidy* newbody) {
@@ -139,7 +139,7 @@ struct heap_array {
     return reinterpret_cast<const typemap*>(get_unmarked_header());
   }
 
-  void set_header(const typemap* m, uint8_t mark_bits) { header = HEAP_CELL_HEADER_TYPE(m) | HEAP_CELL_HEADER_TYPE(mark_bits); }
+  void set_header(const typemap* m, uintptr_t mark_bits) { header = HEAP_CELL_HEADER_TYPE(m) | HEAP_CELL_HEADER_TYPE(mark_bits); }
 
   static heap_array* from_heap_cell(heap_cell* ptr) {
     return reinterpret_cast<heap_array*>(ptr);

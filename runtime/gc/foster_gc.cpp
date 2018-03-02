@@ -478,7 +478,7 @@ struct large_array_allocator {
                        int64_t  num_elts,
                        int64_t  total_bytes,
                        bool     init,
-                       uint8_t  mark_bits_current_value,
+                       uintptr_t  mark_bits_current_value,
                        immix_heap* parent) {
     void* base = malloc(total_bytes + 8);
     heap_array* allot = align_as_array(base);
@@ -646,7 +646,7 @@ namespace helpers {
                                   const typemap* arr_elt_map,
                                   int64_t  num_elts,
                                   int64_t  total_bytes,
-                                  uint8_t  mark_value,
+                                  uintptr_t  mark_value,
                                   bool     init) {
     heap_array* allot = static_cast<heap_array*>(bumper->prechecked_alloc_noinit(total_bytes));
     if (FORCE_INITIALIZE_ALLOCATIONS ||
@@ -678,7 +678,7 @@ namespace helpers {
   tidy* allocate_cell_prechecked(bump_allocator* bumper,
                                  const typemap* map,
                                  int64_t  cell_size,
-                                 uint8_t  mark_value) {
+                                 uintptr_t  mark_value) {
     heap_cell* allot = static_cast<heap_cell*>(bumper->prechecked_alloc(cell_size));
     //if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(map->cell_size); }
     if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_cell(cell_size); }
@@ -1093,13 +1093,13 @@ void mark_lines_for_slots(void* slot, uint64_t cell_size) {
 
 struct immix_common {
 
-  uint8_t prevent_constprop;
+  uintptr_t prevent_constprop;
 
   immix_common() : prevent_constprop(0) {}
 
   // As of LLVM 5.0, passing a constant (or nothing at all) actually ends up increasing (!)
   // register pressure, resulting in a net extra instruction in the critical path of allocation.
-  uint8_t prevent_const_prop() { return prevent_constprop; }
+  uintptr_t prevent_const_prop() { return prevent_constprop; }
 
   void scan_with_map_and_arr(immix_heap* space,
                              heap_cell* cell, const typemap& map,
@@ -1529,12 +1529,12 @@ public:
     ensure_current_frame(owner, 0, true);
   }
 
-  void* allocate_array(immix_line_space* owner, typemap* elt_typeinfo, int64_t n, int64_t req_bytes, uint8_t mark_value, bool init) {
+  void* allocate_array(immix_line_space* owner, typemap* elt_typeinfo, int64_t n, int64_t req_bytes, uintptr_t mark_value, bool init) {
     ensure_current_frame(owner, req_bytes);
     return helpers::allocate_array_prechecked(&current_frame->bumper, elt_typeinfo, n, req_bytes, mark_value, init);
   }
 
-  void* allocate_cell(immix_line_space* owner, int64_t cell_size, uint8_t mark_value, typemap* typeinfo) {
+  void* allocate_cell(immix_line_space* owner, int64_t cell_size, uintptr_t mark_value, typemap* typeinfo) {
     ensure_current_frame(owner, cell_size);
     return helpers::allocate_cell_prechecked(&(current_frame->bumper), typeinfo, cell_size, mark_value);
   }
