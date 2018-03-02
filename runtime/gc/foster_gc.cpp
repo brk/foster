@@ -1411,7 +1411,7 @@ struct immix_line_frame15 {
       uint64_t pad2;
       uint64_t pad3;
       uint64_t pad4;
-      uint64_t pad5;
+      //uint64_t pad5;
     };
   };
 
