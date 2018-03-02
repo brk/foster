@@ -196,9 +196,8 @@ public:
   virtual void force_gc_for_debugging_purposes() = 0;
   virtual void gc_and_shrink() = 0;
 
-  //virtual void condemn() = 0;
+  virtual void condemn() = 0;
 
-  //virtual void scan_cell(heap_cell* cell, int maxdepth) = 0;
   virtual void visit_root(unchecked_ptr* root, const char* slotname) = 0;
 
 
@@ -258,7 +257,6 @@ enum class condemned_status : uint8_t {
 struct frame15info {
   void*            associated;
   frame15kind      frame_classification;
-  uint8_t          num_marked_lines_at_last_collection;
   uint8_t          num_available_lines_at_last_collection;
   condemned_status frame_status;
 };
@@ -412,6 +410,41 @@ frame15kind classification_for_frame15_id(frame15_id fid) {
 inline
 void set_classification_for_frame15_id(frame15_id fid, frame15kind v) {
   gcglobals.lazy_mapped_frame15info[fid].frame_classification = v;
+}
+
+inline
+condemned_status compute_condemned_status_for(frame15_id fid, immix_heap* space) {
+  frame15kind fk = classification_for_frame15_id(fid);
+  if (fk == frame15kind::immix_smallmedium) {
+    return condemned_status::yes_condemned;
+  } else {
+    return condemned_status::mixed_condemned;
+  }
+}
+
+inline condemned_status get_condemned_status_for_frame15info(frame15info* finfo) { return finfo->frame_status; }
+
+inline condemned_status get_condemned_status_for_frame15_id(frame15_id fid) {
+  return gcglobals.lazy_mapped_frame15info[fid].frame_status;
+}
+
+inline
+void set_condemned_status_for_frame15_id(frame15_id fid, condemned_status s) {
+  gcglobals.lazy_mapped_frame15info[fid].frame_status = s;
+}
+
+inline
+void set_condemned_status_for_frame15_ids(frame15_id fid, int n, condemned_status s) {
+  for (int i = 0; i < n; ++i) {
+    gcglobals.lazy_mapped_frame15info[fid + i].frame_status = s;
+  }
+}
+
+inline
+void set_condemned_status_for_frame21(frame21* f21, condemned_status s) {
+  auto fid = frame15_id_of(f21);
+  memset( &gcglobals.lazy_mapped_frame15_condemned[fid], int(s), IMMIX_F15_PER_F21);
+  //gcglobals.lazy_mapped_coarse_condemned[frameX_id_of(f21, COARSE_MARK_LOG)] = s;
 }
 
 inline
@@ -614,14 +647,20 @@ bool owned_by(tori* body, immix_heap* space) {
   return heap_for((void*) body) == space;
 }
 
+condemned_status condemned_status_for(void* addr, frame15info* finfo);
 /*
 bool is_condemned_(void* slot, frame15info* finfo) {
   return condemned_status_for_frame15info(finfo, slot) == condemned_status::yes_condemned;
 }
 */
 
-bool is_condemned(void* slot, immix_heap* space) {
-  return owned_by((tori*)slot, space);
+template<bool use_space>
+bool is_condemned(void* slot, immix_heap* space, frame15info* finfo) {
+  if (use_space) {
+    return owned_by((tori*)slot, space);
+  } else {
+    return condemned_status_for(slot, finfo) == condemned_status::yes_condemned;
+  }
 }
 
 // }}}
@@ -805,19 +844,18 @@ struct frame15_allocator {
 class immix_line_space;
 immix_line_space* get_owner_for_immix_line_frame15(immix_line_frame15* f, int line);
 condemned_status get_condemned_status_for_immix_line_frame15(immix_line_frame15* f, int line);
-condemned_status condemned_status_for(void* addr);
 
 
 __attribute((noinline))
-condemned_status condemned_status_for_slowpath(frame15kind fc, void* addr) {
-  auto associated = associated_for_frame15_id(frame15_id_of(addr));
+condemned_status condemned_status_for_slowpath(frame15kind fc, void* addr, frame15info* finfo) {
+  auto associated = finfo->associated;
 
   if (fc == frame15kind::immix_linebased) {
     auto lineframe = static_cast<immix_line_frame15*>(associated);
     auto line = line_offset_within_f15(addr);
     return get_condemned_status_for_immix_line_frame15(lineframe, line);
   } else if (fc == frame15kind::immix_malloc_continue) {
-    return condemned_status_for(associated);
+    return condemned_status_for(associated, frame15_info_for(associated));
   } else if (fc == frame15kind::immix_malloc_start) {
     immix_malloc_frame15info* maf = (immix_malloc_frame15info*) associated;
     heap_array* arr = heap_array::from_heap_cell(heap_cell::for_tidy((tidy*)addr));
@@ -828,13 +866,13 @@ condemned_status condemned_status_for_slowpath(frame15kind fc, void* addr) {
   return condemned_status::not_condemned;
 }
 
-condemned_status condemned_status_for(void* addr) {
-  auto f15id = frame15_id_of(addr);
-  auto fc = classification_for_frame15_id(f15id);
+// This function should not return mixed, only yes or no.
+condemned_status condemned_status_for(void* addr, frame15info* finfo) {
+  auto fc = classification_for_frame15info(finfo);
   if (fc == frame15kind::immix_smallmedium) {
-    return gcglobals.lazy_mapped_frame15info[f15id].frame_status;
+    return get_condemned_status_for_frame15info(finfo);
   }
-  return condemned_status_for_slowpath(fc, addr);
+  return condemned_status_for_slowpath(fc, addr, finfo);
 }
 
 __attribute((noinline))
@@ -1101,16 +1139,17 @@ struct immix_common {
   // register pressure, resulting in a net extra instruction in the critical path of allocation.
   uintptr_t prevent_const_prop() { return prevent_constprop; }
 
+  template <bool use_space>
   void scan_with_map_and_arr(immix_heap* space,
                              heap_cell* cell, const typemap& map,
                              heap_array* arr, int depth) {
     //fprintf(gclog, "copying %lld cell %p, map np %d, name %s\n", cell_size, cell, map.numEntries, map.name); fflush(gclog);
     if (!arr) {
-      scan_with_map(space, from_tidy(cell->body_addr()), map, depth);
+      scan_with_map<use_space>(space, from_tidy(cell->body_addr()), map, depth);
     } else if (map.numOffsets > 0) { // Skip this loop for int arrays and such.
       int64_t numcells = arr->num_elts();
       for (int64_t cellnum = 0; cellnum < numcells; ++cellnum) {
-        scan_with_map(space, arr->elt_body(cellnum, map.cell_size), map, depth);
+        scan_with_map<use_space>(space, arr->elt_body(cellnum, map.cell_size), map, depth);
       }
     }
 
@@ -1120,13 +1159,15 @@ struct immix_common {
     }
   }
 
+  template <bool use_space>
   void scan_with_map(immix_heap* space, intr* body, const typemap& map, int depth) {
     for (int i = 0; i < map.numOffsets; ++i) {
-      immix_trace(space, (unchecked_ptr*) offset(body, map.offsets[i]),
+      immix_trace<use_space>(space, (unchecked_ptr*) offset(body, map.offsets[i]),
                            depth);
     }
   }
 
+  template <bool use_space>
   void scan_cell(immix_heap* space, heap_cell* cell, int depth) {
     if (obj_is_marked(cell)) {
       //fprintf(gclog, "cell %p was already marked\n", cell);
@@ -1160,10 +1201,11 @@ struct immix_common {
     }
 
     // Without metadata for the cell, there's not much we can do...
-    if (map) scan_with_map_and_arr(space, cell, *map, arr, depth - 1);
+    if (map) scan_with_map_and_arr<use_space>(space, cell, *map, arr, depth - 1);
   }
 
   // Jones/Hosking/Moss refer to this function as "process(fld)".
+  template <bool use_space>
   void immix_trace(immix_heap* space, unchecked_ptr* root, int depth) {
     //       |------------|       obj: |------------|
     // root: |    body    |---\        |  size/meta |
@@ -1196,7 +1238,8 @@ struct immix_common {
 
     // TODO is_full_heap || ....
     //if (!is_condemned_(body, f15info)) {
-    if (!is_condemned(body, space)) {
+    //if (!(use_space ? is_condemned(body, space, f15info) : is_condemned_(body, f15info))) {
+    if (!(is_condemned<use_space>(body, space, f15info))) {
       // When collecting a subset of the heap, we only look at condemned objects,
       // and ignore objects stored in non-condemned regions (regardless of
       // whether they are part of this particular subheap or not).
@@ -1217,7 +1260,7 @@ struct immix_common {
       //gc_assert(NULL != untag(*root), "copying gc should not null out slots");
       //gc_assert(body != untag(*root), "copying gc should return new pointers");
     } else {
-      scan_cell(space, obj, depth);
+      scan_cell<use_space>(space, obj, depth);
     }
   }
 
@@ -1228,7 +1271,9 @@ struct immix_common {
                         unchecked_ptr_val(*root),
                         (slotname ? slotname : "<unknown slot>"));
     }
-    immix_trace(space, root, kFosterGCMaxDepth);
+    
+    // TODO-X determine when to use condemned set and when not to
+    immix_trace<true>(space, root, kFosterGCMaxDepth);
   }
 
   template <bool use_space>
@@ -1236,14 +1281,14 @@ struct immix_common {
     uint64_t numRemSetRoots = 0;
     for (tori** loc: incoming_ptr_addrs) {
       // We can ignore the remembered set root if the source is also getting collected.
-      if (is_condemned(loc, space)) {
+      if (is_condemned<use_space>(loc, space, use_space ? nullptr : frame15_info_for(loc) )) {
         continue;
       }
 
       tori* ptr = *loc;
       // Otherwise, we must check whether the source slot was modified;
       // if so, it might not point into our space.
-      if (owned_by(ptr, space)) {
+      if (is_condemned<use_space>((void*)ptr, space, use_space ? nullptr : frame15_info_for((void*)ptr) )) {
         if (TRACK_NUM_REMSET_ROOTS) { numRemSetRoots++; }
         visit_root(space, (unchecked_ptr*) ptr, "remembered_set_root");
       }
@@ -1663,14 +1708,20 @@ public:
     // No shrinking for line spaces, currently.
   }
 
-  /*
   virtual void condemn() {
     for (auto lineframe : used_frames) {
+      int num_condemned_lines = 0;
       for (int i = IMMIX_LINE_FRAME15_START_LINE; i < IMMIX_LINES_PER_BLOCK; ++i) {
         if (lineframe->get_owner_for_line(i) == this) {
-          lineframe->condemned[i] = condemned_status::yes_condemned;
+          lineframe->set_condemned_status_for_line(i, condemned_status::yes_condemned);
+          ++num_condemned_lines;
         }
       }
+
+      set_condemned_status_for_frame15_id(frame15_id_of(lineframe),
+          (num_condemned_lines == (IMMIX_LINES_PER_BLOCK - IMMIX_LINE_FRAME15_START_LINE))
+            ? condemned_status::yes_condemned
+            : condemned_status::mixed_condemned);
     }
 
     global_immix_line_allocator.ensure_no_line_reuse(this);
@@ -1678,14 +1729,21 @@ public:
 
   void uncondemn() {
     for (auto lineframe : used_frames) {
+      int num_uncondemned_lines = 0;
       for (int i = IMMIX_LINE_FRAME15_START_LINE; i < IMMIX_LINES_PER_BLOCK; ++i) {
-        if (lineframe->get_owner_for_line(i) == this) {
-          lineframe->condemned[i] = condemned_status::not_condemned;
+        auto owner = lineframe->get_owner_for_line(i);
+        if (owner == this || !owner) {
+          lineframe->set_condemned_status_for_line(i, condemned_status::not_condemned);
+          ++num_uncondemned_lines;
         }
       }
+
+      set_condemned_status_for_frame15_id(frame15_id_of(lineframe),
+          (num_uncondemned_lines == (IMMIX_LINES_PER_BLOCK - IMMIX_LINE_FRAME15_START_LINE))
+            ? condemned_status::not_condemned
+            : condemned_status::mixed_condemned);
     }
   }
-  */
 
   void visit_root(unchecked_ptr* root, const char* slotname) {
     common.visit_root(this, root, slotname);
@@ -1986,6 +2044,27 @@ public:
   }
 
   virtual byte_limit* get_byte_limit() { return lim; }
+
+  virtual void condemn() {
+    fprintf(gclog, "condemning %zu frames...\n", tracking.logical_frame15s()); fflush(gclog);
+    int n = 0;
+    int m = 0;
+    auto delta = timed([&] {
+      tracking.iter_frame15( [&](frame15* f15) {
+        set_condemned_status_for_frame15_id(frame15_id_of(f15), condemned_status::yes_condemned);
+        ++n;
+      });
+      tracking.iter_coalesced_frame21( [&](frame21* f21) {
+        // The fact that we own the entire frame21 indicates that none of its frame15s are line-based.
+        set_condemned_status_for_frame21(f21, condemned_status::yes_condemned);
+        m += IMMIX_F15_PER_F21;
+      });
+      // TODO condemn array frames
+    });
+    fprintf(gclog, "condemned (%d + %d = %d) / %zu frames in %" PRId64 " microseconds\n",
+        n, m, n + m, tracking.logical_frame15s(),
+        delta.InMicroseconds());
+  }
 
   void clear_current_blocks() {
     // TODO clear mem to avoid conservative pointer leaks
@@ -2816,6 +2895,7 @@ void coro_visitGCRoots(foster_bare_coro* coro, immix_heap* visitor) {
         coro, foster::runtime::coro_fn(coro), coro_status_name(coro), frameptr);
   }
 
+  fprintf(gclog, "coro_visitGCRoots\n"); fflush(gclog);
   visitGCRoots(frameptr, visitor);
 
   if (ENABLE_GCLOG) {
@@ -2902,10 +2982,12 @@ T* allocate_lazily_zero_mapped(size_t num_elts) {
   // https://developer.apple.com/library/content/documentation/Performance/Conceptual/ManagingMemory/Articles/MemoryAlloc.html
   return (T*) malloc(sizeof(T) * num_elts);
 #elif OS_LINUX
-  T* rv = (T*) mmap(NULL, sizeof(T) * num_elts,
+
+  size_t len = sizeof(T) * num_elts;
+  T* rv = (T*) mmap(NULL, len,
     PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
 
-  if (rv == MAP_FAILED) {
+  if (rv == MAP_FAILED || !rv) {
     perror("mmap failed...");
   }
   return rv;
@@ -3332,14 +3414,12 @@ void foster_subheap_collect_raw(void* generic_subheap) {
   //fprintf(gclog, "subheap-collect done\n");
 }
 
-/*
 void foster_subheap_condemn_raw(void* generic_subheap) {
   auto subheap = ((heap_handle<immix_heap>*) generic_subheap)->body;
-  //fprintf(gclog, "collecting subheap %p\n", subheap);
+  fprintf(gclog, "condemning subheap %p\n", subheap);
   subheap->condemn();
-  //fprintf(gclog, "subheap-collect done\n");
+  fprintf(gclog, "condemned subheap %p\n", subheap);
 }
-*/
 
 
 } // extern "C"
