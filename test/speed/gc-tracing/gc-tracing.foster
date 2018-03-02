@@ -1,0 +1,447 @@
+snafuinclude Text "text";
+snafuinclude Maybe "maybe";
+snafuinclude Prelude "prelude";
+
+snafuinclude KnuthLCG "prng/knuthLCG";
+
+/*
+Without optimizations:
+
+    $ /home/benkarel/foster/_obj/test-tmpdir/gc-tracing/gc-tracing 23 --foster-runtime '{"gc_semispace_size_kb":1202400}' ; tail gclog.txt
+    stretch tree of depth 24	 check: -1
+    ok
+        skipped frame15 because its heap pointer was (nil) instead of 0xa796e0
+    1 recycled, 0 clean f15 + 0 clean f21; (6 f15 + 521 f21) = 33350 total (1067200 KB), took 3213111 us
+      /endgc
+
+    'Num_GCs_Triggered': 1
+    'Subheap_Ticks': 11258669244.000000
+    Elapsed_runtime:  4.460 s
+    Initlzn_runtime:  0.003 s
+        GC_runtime:  3.213 s
+    Mutator_runtime:  1.243 s
+
+
+  1 GB live data written+examined in 1.25s,   (just written: 0.95s)
+                 marked and left unreclaimed in 3.2s (1067200 / 3.2 = 333 MB/s)
+
+
+With optimizations:
+
+    $ /home/benkarel/foster/_obj/test-tmpdir/gc-tracing/gc-tracing 23 --foster-runtime '{"gc_semispace_size_kb":1202400}' ; tail gclog.txt
+    stretch tree of depth 24	 check: -1
+    ok
+        skipped frame15 because its heap pointer was (nil) instead of 0x1a989e0
+    1 recycled, 0 clean f15 + 0 clean f21; (6 f15 + 521 f21) = 33350 total (1067200 KB), took 497570 us which was 0.000000% premark, 0.993034% marking, 0.006966% post-mark
+      /endgc
+
+    'Num_GCs_Triggered': 1
+    'Subheap_Ticks': 1743562292.000000
+    Elapsed_runtime:  1.110 s
+    Initlzn_runtime:  0.000 s
+         GC_runtime:  0.497 s
+    Mutator_runtime:  0.612 s
+
+
+  (without check traversal:)
+    stretch tree of depth 24	 check: -1
+    ok
+        skipped frame15 because its heap pointer was (nil) instead of 0xc9a920
+    1 recycled, 0 clean f15 + 0 clean f21; (6 f15 + 521 f21) = 33350 total (1067200 KB), took 437214 us
+      /endgc
+
+    'Num_GCs_Triggered': 1
+    'Subheap_Ticks': 1532058960.000000
+    Elapsed_runtime:  0.756 s
+    Initlzn_runtime:  0.000 s
+         GC_runtime:  0.437 s
+    Mutator_runtime:  0.319 s
+
+   
+      1024 * 1 M [size 13] live data written + reclaimed in 0.248 (4000 MB/s) (0.001s GC)
+      4096 * 256k [size 11] -> 0.245s ~ .002s GC  (2550 cycles/collection)
+      16096 * 64k [size 9] ->  0.242s ~ .005s GC  (1100 cycles/collection)
+        no stack walk: 0.002s GC -> 8312836/16096 = 516 cycles per collect
+
+  Stack walk of 1024 small frames takes approx 50k cycles -> 15us.
+
+  1 * 1 GB live data written+examined in 0.55s,   (just written: 0.32s)
+                                     allocation rate: (1067200 / 0.32 = 3335 MB/s)
+                 marked and left unreclaimed in 0.44s (1067200 / 0.44 = 2425 MB/s)
+                      checking line maps took 0.0034s (1067200 / 0.0034 = 312 GB/s)
+
+  With a bump-pointer semispace allocator:
+    virtual call to non-inlined allocator; alloc rate (1067200 / 0.274 = 3895 MB/s)
+    non-virtual call to allocator;                    (1067200 / 0.257 = 4153 MB/s)
+
+    optimized:   (33.35 M allocs/990 M cycles) -> 30 cyc / alloc (~10 ns/alloc)
+    unoptimized: (33.35 M allocs/2833 M cycles) -> 85 cyc / alloc
+
+    19 M  LLC store misses -> 300M cycles?
+    35.6M L1d$ load misses -> ~500M cycles?
+    140k LLC load misses -> 50M cycles?
+    1.65 IPC
+
+*/
+
+type case Tree
+  of $TNil
+  of $Node Int32 Tree Tree
+  ;
+
+minN = { 4 };
+
+io = { s => n => t =>
+  print_i64_bare (zext_i32_to_i64 n);
+  print_i32 t;
+};
+
+main = {
+    n = tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1);
+    maxN = if n >=SInt32 6 then n else 6 end;
+    stretchN = maxN +Int32 1;
+
+    kgen = kLCG1x64HOF 0xCAFEBABE;
+    arr = allocDArray:[Tree] (1 `bitshl-Int32` (randomizeDepth !));
+
+    subheap = foster_subheap_create !;
+    foster_subheap_activate subheap;
+
+    REC xloop = { n =>
+      r = (prim ref (Some (noinline_makeRand 0 stretchN kgen arr)));
+
+      //force_gc_for_debugging_purposes !;
+
+      None >^ r;
+
+      //force_gc_for_debugging_purposes !;
+      print_text "collecting subheap";
+      foster_subheap_collect subheap;
+
+      if n ==Int32 0
+        then r
+        else xloop (n -Int32 1)
+      end;
+    };
+    r = xloop 0;
+
+    enumRange32 0 5 { x => print_i32 x; };
+
+    //foster_subheap_collect subheap;
+
+    case r^
+      of $Some t -> io "stretch tree" stretchN -1; // (checkX t);
+      of $None -> ()
+    end;
+
+    None >^ r;
+
+    case r^
+      of $Some _ -> print_i32 666;
+      of $None -> ();
+    end;
+
+/*
+    arrx = prim mach-array-literal 0 1 2 3 4 5 6 7 8 9;
+    arrayEnum arrx { v => idx => print_i64 idx; print_i64 v; };
+    shuffleArray arrx (kLCG1x64HOF 0xCAFEBABE);
+    arrayEnum arrx { v => idx => print_i64 idx; print_i64 v; };
+    */
+};
+
+randomizeDepth = { 14 };
+
+checkX = { t : Tree =>
+  case t
+    of $TNil -> 0
+    of $Node i l r ->
+      case l of $TNil -> i
+             of _ -> ((checkX l) +Int32 i) -Int32 (checkX r);
+      end
+    end
+};
+
+noinline_makeRand :: { Int32 => Int32 => { Int64 } => Array Tree => Tree };
+noinline_makeRand = { i => d => kgen => arr =>
+  if d ==Int32 (randomizeDepth !)
+    then
+        makeRandFrom  i d  kgen arr
+    else
+        i2 = i *Int32 2;
+        d2 = d -Int32 1;
+        Node i (noinline_makeRand (i2 -Int32 1) d2 kgen arr) (noinline_makeRand i2 d2 kgen arr)
+  end
+};
+
+noinline_shuffleArrayUpto :: forall (t:Type) { Array t => Int64 => { Int64 } => () };
+noinline_shuffleArrayUpto = { arr => lim => kgen => 
+  REC go = { m =>
+    i = (kgen !) `urem-Int64` (m +Int64 1);
+
+    t = arr[m];
+    arr[i] >^ arr[m];
+    t >^ arr[i];
+    
+    if m >SInt64 1
+      then go (m -Int64 1)
+    end
+  };
+  //print_i32x 0xcafebabe;
+  //print_i64 lim;
+  go (lim -Int64 1);
+};
+
+
+make = { i => d =>
+  if d ==Int32 0
+    then Node i TNil TNil
+    else i2 = i *Int32 2;
+        d2 = d -Int32 1;
+        Node i (make (i2 -Int32 1) d2) (make i2 d2)
+  end
+};
+
+makeFrom = { offset => i => d => arr =>
+  if d ==Int32 0
+    then arr[offset]
+    else
+      i2 = i *Int32 2;
+      d2 = d -Int32 1;
+      nextoff = offset +Int32 (1 `bitshl-Int32` d2);
+      Node i (makeFrom offset  (i2 -Int32 1) d2 arr)
+             (makeFrom nextoff i2            d2 arr)
+  end
+};
+
+enumRangeDown64 = { hi => lo => f =>
+  if hi >=UInt64 lo then
+    f hi; enumRangeDown64 (hi -Int64 1) lo f
+  end
+};
+
+makeRandFrom = { i => d => kgen => arr =>
+      makeFromX 0 i (zext_i32_to_i64 d) arr kgen
+};
+
+makeFromX = { offset => i => d => arr => kgen =>
+  n = 1 `bitshl-Int64` d;
+  enumRange64 0 n { idx =>
+    (Node i TNil TNil) >^ arr[idx];
+  };
+    
+  //print_i64 d;
+  //print_i64 (arrayLength arr);
+  
+  // First combine every pair of elements, putting them into the first half of the array.
+  // Repeat until we're left with a single shuffled element.
+  enumRangeDown64 d 1 { dx =>
+      lim = (1 `bitshl-Int64` dx);
+
+      noinline_shuffleArrayUpto arr lim kgen;
+
+      limdiv2 = 1 `bitshl-Int64` (dx -Int64 1);
+      enumRange64 0 limdiv2 { offset =>
+        idx = offset *Int64 2;
+        (Node i arr[idx] arr[idx +Int64 1]) >^ arr[offset];
+      };
+  };
+  arr[0]
+};
+
+
+
+
+
+
+/* TODO: this triggers a codegen bug due to mismatch between generic and non-generic pointer types.
+
+snafuinclude Text "text";
+snafuinclude Maybe "maybe";
+snafuinclude Prelude "prelude";
+
+snafuinclude KnuthLCG "prng/knuthLCG";
+
+/*
+Without optimizations:
+
+    $ /home/benkarel/foster/_obj/test-tmpdir/gc-tracing/gc-tracing 23 --foster-runtime '{"gc_semispace_size_kb":1202400}' ; tail gclog.txt
+    stretch tree of depth 24	 check: -1
+    ok
+        skipped frame15 because its heap pointer was (nil) instead of 0xa796e0
+    1 recycled, 0 clean f15 + 0 clean f21; (6 f15 + 521 f21) = 33350 total (1067200 KB), took 3213111 us
+      /endgc
+
+    'Num_GCs_Triggered': 1
+    'Subheap_Ticks': 11258669244.000000
+    Elapsed_runtime:  4.460 s
+    Initlzn_runtime:  0.003 s
+        GC_runtime:  3.213 s
+    Mutator_runtime:  1.243 s
+
+
+  1 GB live data written+examined in 1.25s,   (just written: 0.95s)
+                 marked and left unreclaimed in 3.2s (1067200 / 3.2 = 333 MB/s)
+
+
+With optimizations:
+
+    $ /home/benkarel/foster/_obj/test-tmpdir/gc-tracing/gc-tracing 23 --foster-runtime '{"gc_semispace_size_kb":1202400}' ; tail gclog.txt
+    stretch tree of depth 24	 check: -1
+    ok
+        skipped frame15 because its heap pointer was (nil) instead of 0x1a989e0
+    1 recycled, 0 clean f15 + 0 clean f21; (6 f15 + 521 f21) = 33350 total (1067200 KB), took 497570 us which was 0.000000% premark, 0.993034% marking, 0.006966% post-mark
+      /endgc
+
+    'Num_GCs_Triggered': 1
+    'Subheap_Ticks': 1743562292.000000
+    Elapsed_runtime:  1.110 s
+    Initlzn_runtime:  0.000 s
+         GC_runtime:  0.497 s
+    Mutator_runtime:  0.612 s
+
+
+  (without check traversal:)
+    stretch tree of depth 24	 check: -1
+    ok
+        skipped frame15 because its heap pointer was (nil) instead of 0xc9a920
+    1 recycled, 0 clean f15 + 0 clean f21; (6 f15 + 521 f21) = 33350 total (1067200 KB), took 437214 us
+      /endgc
+
+    'Num_GCs_Triggered': 1
+    'Subheap_Ticks': 1532058960.000000
+    Elapsed_runtime:  0.756 s
+    Initlzn_runtime:  0.000 s
+         GC_runtime:  0.437 s
+    Mutator_runtime:  0.319 s
+
+   
+      1024 * 1 M [size 13] live data written + reclaimed in 0.248 (4000 MB/s) (0.001s GC)
+      4096 * 256k [size 11] -> 0.245s ~ .002s GC  (2550 cycles/collection)
+      16096 * 64k [size 9] ->  0.242s ~ .005s GC  (1100 cycles/collection)
+        no stack walk: 0.002s GC -> 8312836/16096 = 516 cycles per collect
+
+  Stack walk of 1024 small frames takes approx 50k cycles -> 15us.
+
+  1 * 1 GB live data written+examined in 0.55s,   (just written: 0.32s)
+                                     allocation rate: (1067200 / 0.32 = 3335 MB/s)
+                 marked and left unreclaimed in 0.44s (1067200 / 0.44 = 2425 MB/s)
+                      checking line maps took 0.0034s (1067200 / 0.0034 = 312 GB/s)
+
+  With a bump-pointer semispace allocator:
+    virtual call to non-inlined allocator; alloc rate (1067200 / 0.274 = 3895 MB/s)
+    non-virtual call to allocator;                    (1067200 / 0.257 = 4153 MB/s)
+
+    optimized:   (33.35 M allocs/990 M cycles) -> 30 cyc / alloc (~10 ns/alloc)
+    unoptimized: (33.35 M allocs/2833 M cycles) -> 85 cyc / alloc
+
+    19 M  LLC store misses -> 300M cycles?
+    35.6M L1d$ load misses -> ~500M cycles?
+    140k LLC load misses -> 50M cycles?
+    1.65 IPC
+
+*/
+
+type case Tree
+  of $TNil
+  of $Node Int32 Tree Tree
+  ;
+
+minN = { 4 };
+
+io = { s => n => t =>
+  print_i64_bare (zext_i32_to_i64 n);
+  print_i32 t;
+};
+
+main = {
+    n = tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1);
+    maxN = if n >=SInt32 6 then n else 6 end;
+    stretchN = maxN +Int32 1;
+
+    kgen = kLCG1x64HOF 0xCAFEBABE;
+    arr = allocDArray:[Tree] (randomizeDepth !);
+
+    //subheap = foster_subheap_create !;
+    //foster_subheap_activate subheap;
+
+    REC xloop = { n =>
+      r = (prim ref (Some (makeRand 0 stretchN kgen arr)));
+
+      force_gc_for_debugging_purposes !;
+
+      None >^ r;
+
+      //force_gc_for_debugging_purposes !;
+      //foster_subheap_collect subheap;
+
+      if n ==Int32 0
+        then r
+        else xloop (n -Int32 1)
+      end;
+    };
+    r = xloop 0;
+
+    //foster_subheap_collect subheap;
+
+    case r^
+      of $Some t -> io "stretch tree" stretchN -1; // (checkX t);
+      of $None -> ()
+    end;
+
+    None >^ r;
+
+    case r^
+      of $Some _ -> print_i32 666;
+      of $None -> ();
+    end;
+};
+
+randomizeDepth = { 10 };
+
+checkX = { t : Tree =>
+  case t
+    of $TNil -> 0
+    of $Node i l r ->
+      case l of $TNil -> i
+             of _ -> ((checkX l) +Int32 i) -Int32 (checkX r);
+      end
+    end
+};
+
+makeRand = { i => d => kgen => arr =>
+  if d ==Int32 randomizeDepth !
+    then
+      n = 1 `bitshl-Int32` d;
+      enumRange32 0 n { idx =>
+        (Node i TNil TNil) >^ arr[idx];
+      };
+      
+      //shuffleArray arr kgen;
+
+      makeFrom 0 i d arr
+    else
+      make i d
+  end
+};
+
+makeFrom = { offset => i => d => arr =>
+  if d ==Int32 0
+    then arr[offset]
+    else
+      i2 = i *Int32 2;
+      d2 = d -Int32 1;
+      nextoff = offset +Int32 (1 `bitshl-Int32` d2);
+      Node i (makeFrom offset  (i2 -Int32 1) d2 arr)
+             (makeFrom nextoff i2            d2 arr)
+  end
+};
+
+make = { i => d =>
+  if d ==Int32 0
+    then Node i TNil TNil
+    else i2 = i *Int32 2;
+         d2 = d -Int32 1;
+         Node i (make (i2 -Int32 1) d2) (make i2 d2)
+  end
+};
+*/
