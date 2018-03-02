@@ -678,9 +678,9 @@ struct frame15_allocator {
     }
 
     if (!self_owned_allocated_frame21s.empty()) {
-      fprintf(gclog, "calling AlignedFree on %zu frame21s\n", self_owned_allocated_frame21s.size());
+      fprintf(gclog, "calling deallocate_frame21() on %zu frame21s\n", self_owned_allocated_frame21s.size());
       for (auto f21 : self_owned_allocated_frame21s) {
-        base::AlignedFree(f21);
+        deallocate_frame21(f21);
       }
       self_owned_allocated_frame21s.clear();
     }
@@ -688,11 +688,16 @@ struct frame15_allocator {
     next_frame15 = nullptr;
   }
 
-  void give_frame15(frame15* f) { spare_frame15s.push_back(f); }
+  void give_frame15(frame15* f) {
+    if (ENABLE_GCLOG_PREP) { fprintf(gclog, "give_frame15(%p)\n", f); }
+    spare_frame15s.push_back(f);
+  }
 
   // Precondition: empty()
   // Note: we allocate frame15s from the frame21 but the space may retain ownership.
   void give_frame21(frame21* f) {
+    if (ENABLE_GCLOG_PREP) { fprintf(gclog, "give_frame21(%p)\n", f); }
+
     next_frame15 = (frame15*) f;
     // Skip first frame15, which will be used for metadata.
     incr_by(next_frame15, 1 << 15);
@@ -1492,10 +1497,7 @@ private:
   std::vector<immix_line_frame15*> used_frames;
   immix_line_frame15* prev_used_frame;
 
-
-  // The points-into remembered set; each frame in this set needs to have its
-  // card table inspected for pointers that actually point here.
-  //std::set<frame15_id> frames_pointing_here;
+  // The points-into remembered set
   std::set<tori**> incoming_ptr_addrs;
 
 public:
@@ -2237,7 +2239,7 @@ public:
 #endif
 
 
-    // TODO check condemned set instead of assuming true
+    // TODO check condemned set instead of forcibly using this space
     uint64_t numRemSetRoots = common.process_remset<true>(this, incoming_ptr_addrs);
 
     visitGCRoots(__builtin_frame_address(0), this);
@@ -2286,7 +2288,6 @@ public:
     auto inspectFrame15Time = now() - inspectFrame15Start;
 
     auto inspectFrame21Start = now();
-
     tracking.iter_coalesced_frame21([this](frame21* f21) {
       inspect_frame21_postgc(f21);
     });
@@ -2318,9 +2319,8 @@ public:
           frame15s_kept, total_live_size.c_str(), total_heap_size.c_str());
       if (ENABLE_GC_TIMING) {
         auto delta = now() - gcstart;
-        fprintf(gclog, ", took %zd us which was %f%% premark, %f%% marking, %f%% post-mark",
+        fprintf(gclog, ", took %zd us which was %f%% marking, %f%% post-mark",
           delta.InMicroseconds(),
-          double(deltaClearMarkBits.InMicroseconds() * 100.0)/double(delta.InMicroseconds()),
           double(deltaRecursiveMarking.InMicroseconds() * 100.0)/double(delta.InMicroseconds()),
           double(deltaPostMarkingCleanup.InMicroseconds() * 100.0)/double(delta.InMicroseconds()));
       }
@@ -2332,7 +2332,7 @@ public:
       }
 
 #   if TRACK_NUM_OBJECTS_MARKED
-        fprintf(gclog, "\t%d objects marked in this GC cycle, %d marked overall\n",
+        fprintf(gclog, "\t%zu objects marked in this GC cycle, %zu marked overall\n",
                 gcglobals.num_objects_marked_total - num_marked_at_start,
                 gcglobals.num_objects_marked_total);
 #   endif
@@ -2936,7 +2936,7 @@ FILE* print_timing_stats() {
   base::TimeDelta    gc_elapsed = gcglobals.gc_time - base::TimeTicks();
   base::TimeDelta   mut_elapsed = total_elapsed - gc_elapsed - init_elapsed;
 
-  fprintf(gclog, "'Exact_Marking': %d\n", MARK_EXACT);
+  fprintf(gclog, "'Exact_Marking': %d\n", 1);
   fprintf(gclog, "'F15_Coalescing': %d\n", COALESCE_FRAME15S);
   fprintf(gclog, "'F21_Marking': %d\n", MARK_FRAME21S);
   fprintf(gclog, "'F21_UnsafeAssumedClean': %s\n", UNSAFE_ASSUME_F21_UNMARKED ? "true" : "false");
