@@ -249,6 +249,7 @@ primitiveDecls = map (\(n,t) -> (n,t,NotForeign)) $
     ,(,) "foster_gettime_elapsed_secs" $ mkProcType [i64, i64] [f64]
 
     ,(,) "foster_subheap_create"   $ mkProcType [] [fosSubheapType]
+    ,(,) "foster_subheap_create_small" $ mkProcType [] [fosSubheapType]
     ,(,) "foster_subheap_activate" $ mkProcType [fosSubheapType] []
     ,(,) "foster_subheap_collect"  $ mkProcType [fosSubheapType] []
     ,(,) "foster_subheap_shrink"   $ mkProcType [fosSubheapType] []
