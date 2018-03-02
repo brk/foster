@@ -7,7 +7,7 @@
 #include "foster_gc.h"
 #include "libfoster_gc_roots.h"
 #include "foster_globals.h"
-#include "stat_tracker.h"
+#include "bitmap.h"
 
 #include "base/time/time.h" // for TimeTicks, TimeDelta
 #include "base/metrics/histogram.h"
@@ -337,15 +337,25 @@ GCGlobals<immix_heap> gcglobals;
 immix_worklist immix_worklist;
 
 #define IMMIX_F15_PER_F21 64
-#define IMMIX_LINES_PER_BLOCK 128
 #define IMMIX_BYTES_PER_LINE 256
+#define IMMIX_LINES_PER_BLOCK 128
+#define IMMIX_GRANULES_PER_LINE (IMMIX_BYTES_PER_LINE / 16)
+#define IMMIX_GRANULES_PER_BLOCK (128 * IMMIX_GRANULES_PER_LINE)
 #define IMMIX_ACTIVE_F15_PER_F21 (IMMIX_F15_PER_F21 - 1)
+
+static_assert(IMMIX_GRANULES_PER_LINE == 16,    "documenting expected values");
+static_assert(IMMIX_GRANULES_PER_BLOCK == 2048, "documenting expected values");
 
 // On a 64-bit machine, physical address space will only be 48 bits usually.
 // If we use 47 of those bits, we can drop the low-order 15 bits and be left
 // with 32 bits!
 typedef uint32_t frame15_id;
 typedef uint32_t frame21_id;
+
+template <typename T>
+inline T num_granules(T size_in_bytes) { return size_in_bytes / T(16); }
+
+uintptr_t global_granule_for(void* p) { return num_granules(uintptr_t(p)); }
 
 frame15_id frame15_id_of(void* p) { return frame15_id(uintptr_t(p) >> 15); }
 frame21_id frame21_id_of(void* p) { return frame21_id(uintptr_t(p) >> 21); }
@@ -558,10 +568,6 @@ bool is_condemned(void* slot, immix_heap* space) {
   return owned_by((tori*)slot, space);
 }
 
-
-template <typename T>
-inline T num_granules(T size_in_bytes) { return size_in_bytes / T(16); }
-
 // }}}
 
 // {{{
@@ -635,54 +641,7 @@ namespace helpers {
 } // namespace helpers
 // }}}
 
-// {{{ Bitmap/bytemap utility class
 // Bitmap overhead for 16-byte granules is 8 KB per MB (roughly 1%).
-class bitmap {
-private:
-  size_t num_bytes;
-  uint8_t* bytes;
-
-public:
-  bitmap(int num_bits) {
-    // Invariant: can treat bytes as an array of uint64_t.
-    num_bytes = roundUpToNearestMultipleWeak(num_bits / 8, 8);
-    bytes = (uint8_t*) malloc(num_bytes);
-  }
-
-  ~bitmap() { free(bytes); bytes = 0; }
-
-  void clear() { memset(bytes, 0, num_bytes); }
-
-  static uint8_t get_bit(int n, uint8_t* bytes) {
-    int byte_offset = n / 8;
-    int bit_offset  = n % 8;
-    uint8_t val = bytes[byte_offset];
-    uint8_t bit = (val >> bit_offset) & 1;
-    return bit;
-  }
-
-  static void set_bit(int n, uint8_t* bytes) {
-    int byte_offset = n / 8;
-    int bit_offset  = n % 8;
-    uint8_t val = bytes[byte_offset];
-    bytes[byte_offset] = val | (1 << bit_offset);
-  }
-
-  uint8_t get_bit(int n) { return bitmap::get_bit(n, bytes); }
-  void    set_bit(int n) {        bitmap::set_bit(n, bytes); }
-
-  // For object start/finish bitmaps, we expect the bitmap to be dense
-  // and thus this loop will execute a very small number of times, and
-  // searching by byte is likely to be noise/overhead.
-  int prev_bit_onebyone(int n) {
-    while (n --> 0) {
-      if (get_bit(n)) return n;
-    }
-    return -1;
-  }
-
-};
-// }}}
 
 ////////////////////////////////////////////////////////////////////
 
@@ -2031,6 +1990,9 @@ public:
       bumper->bound = offset(f, 1 << 15);
       return true;
     }
+
+    // Note: by preferring to get new frame15s before re-using clean frame21s, we implicitly
+    // prefer expansion when tracking frame21s.
 
     if (lim->frame15s_left > 0) {
       --lim->frame15s_left;
