@@ -19,7 +19,6 @@
 #include <stddef.h> // offsetof
 
 // jemalloc_pages
-
 bool  pages_boot(void);
 void* pages_map(void* addr, size_t size, size_t alignment, bool* commit);
 void  pages_unmap(void* addr, size_t size);
@@ -74,7 +73,6 @@ const ssize_t inline gSEMISPACE_SIZE() { return __foster_globals.semispace_size;
 
 #include "foster_gc_utils.h"
 
-#include <sstream>
 #include <list>
 #include <vector>
 #include <map>
@@ -2901,66 +2899,6 @@ void coro_visitGCRoots(foster_bare_coro* coro, immix_heap* visitor) {
 }
 
 //////////////////////////////////////////////////////////////}}}
-
-// {{{ get_static_data_range
-#if OS_LINUX
-// http://stackoverflow.com/questions/4308996/finding-the-address-range-of-the-data-segment
-// Sadly, the etext symbol sometimes comes after certain rodata segments;
-// we take a conservative approach and include all the binary's text and data.
-extern "C" char __executable_start, end;
-void get_static_data_range(memory_range& r) {
-  r.base  = &__executable_start;
-  r.bound = &end;
-}
-#elif OS_MACOSX
-// http://stackoverflow.com/questions/1765969/unable-to-locate-definition-of-etext-edata-end
-//
-// However, these return static (aka file) addresses; to find the actual
-// runtime addresses, we need to query the dynamic loader to find the offset
-// it applied when loading this process.
-uintptr_t get_base();
-uintptr_t get_offset();
-
-#include <mach-o/getsect.h>
-#include <mach-o/dyld.h>
-#include <sys/param.h>
-// See also http://opensource.apple.com//source/cctools/cctools-822/libmacho/get_end.c
-void get_static_data_range(memory_range& r) {
-  uintptr_t offset = get_offset();
-  r.base  = (void*) (get_base() + offset);
-  r.bound = (void*) (get_end()  + offset);
-
-  if (!r.contains((void*) &get_static_data_range)) {
-    fprintf(gclog, "WARNING: computation of static data ranges seems to have gone awry.\n");
-    fprintf(gclog, "         The most likely consequence is that the program "
-                   "will exit with status code 99.\n");
-  }
-}
-
-// http://stackoverflow.com/questions/10301542/getting-process-base-address-in-mac-osx
-uintptr_t get_base() {
-  return getsegbyname("__TEXT")->vmaddr;
-}
-
-uintptr_t get_offset() {
-  char path[MAXPATHLEN];
-  uint32_t size = sizeof(path);
-  if (_NSGetExecutablePath(path, &size) != 0) {
-    // Due to nested links, MAXPATHLEN wasn't enough! See also `man 3 dyld`.
-    return 0;
-  }
-  for (uint32_t i = 0; i < _dyld_image_count(); i++) {
-    if (strcmp(_dyld_get_image_name(i), path) == 0) {
-      return _dyld_get_image_vmaddr_slide(i);
-    }
-  }
-  return 0;
-}
-
-#else
-#error TODO: Use Win32 to find boundaries of data segment range.
-#endif
-// }}}
 
 // {{{ GC startup & shutdown
 void register_stackmaps(ClusterMap&); // see foster_gc_stackmaps.cpp
