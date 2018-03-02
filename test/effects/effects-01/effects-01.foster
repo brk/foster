@@ -1,0 +1,10 @@
+ effect Eff1 of $Eff1 => ();
+ effect Eff2 of $Eff2 => ();
+
+attempt :: forall (e:Effect) { () @ (Eff1, Eff2 | e) };
+attempt = { foo ! };
+
+foo :: { () @ (Eff1, Eff2) };
+foo = { () };
+
+main = { () };
