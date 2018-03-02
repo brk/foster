@@ -1093,21 +1093,13 @@ void mark_lines_for_slots(void* slot, uint64_t cell_size) {
 
 struct immix_common {
 
-  uint8_t mark_bits_current_value;
+  uint8_t prevent_constprop;
 
-  immix_common() : mark_bits_current_value(0) {}
+  immix_common() : prevent_constprop(0) {}
 
-  uint8_t get_mark_value() { return mark_bits_current_value; }
-
-  inline bool is_marked(heap_cell* obj) {
-    return obj->get_mark_bits() == this->mark_bits_current_value;
-  }
-
-  void flip_current_mark_bits_value() {
-    // This value starts intialized to zero by the immix_space constructor.
-    this->mark_bits_current_value =
-      this->mark_bits_current_value ^ HEADER_MARK_BITS;
-  }
+  // As of LLVM 5.0, passing a constant (or nothing at all) actually ends up increasing (!)
+  // register pressure, resulting in a net extra instruction in the critical path of allocation.
+  uint8_t prevent_const_prop() { return prevent_constprop; }
 
   void scan_with_map_and_arr(immix_heap* space,
                              heap_cell* cell, const typemap& map,
@@ -1640,9 +1632,9 @@ public:
     }
 
     if (req_bytes > (1 << 13)) {
-      return laa.allocate_array(elt_typeinfo, n, req_bytes, init, common.get_mark_value(), this);
+      return laa.allocate_array(elt_typeinfo, n, req_bytes, init, common.prevent_const_prop(), this);
     } else {
-      return global_immix_line_allocator.allocate_array(this, elt_typeinfo, n, req_bytes, common.get_mark_value(), init);
+      return global_immix_line_allocator.allocate_array(this, elt_typeinfo, n, req_bytes, common.prevent_const_prop(), init);
     }
   }
 
@@ -1650,13 +1642,13 @@ public:
   // Invariant: cell size is less than one line.
   virtual void* allocate_cell(typemap* typeinfo) {
     int64_t cell_size = typeinfo->cell_size; // includes space for cell header.
-    return global_immix_line_allocator.allocate_cell(this, cell_size, common.get_mark_value(), typeinfo);
+    return global_immix_line_allocator.allocate_cell(this, cell_size, common.prevent_const_prop(), typeinfo);
   }
 
   // Invariant: N is less than one line.
   template <int N>
   void* allocate_cell_N(typemap* typeinfo) {
-    return global_immix_line_allocator.allocate_cell(this, N, common.get_mark_value(), typeinfo);
+    return global_immix_line_allocator.allocate_cell(this, N, common.prevent_const_prop(), typeinfo);
   }
 
   virtual void* allocate_cell_16(typemap* typeinfo) { return allocate_cell_N<16>(typeinfo); }
@@ -1718,14 +1710,7 @@ public:
 
     base::TimeTicks lineGCStartTime = now();
 
-    common.flip_current_mark_bits_value();
-
-    auto deltaClearMarkBits = timed([&] () {
-      // Before we begin tracing, we need to establish the invariant that
-      // any line which might be free should be unmarked.
-      // Since the assumption is that the space is small, we do so directly.
-      clear_mark_bits_for_space();
-    });
+    //common.flip_current_mark_bits_value();
 
     // TODO check condemned set instead of assuming true
     uint64_t numRemSetRoots = common.process_remset<true>(this, incoming_ptr_addrs);
@@ -2017,11 +2002,11 @@ public:
   // {{{ Prechecked allocation functions
   template <int N>
   tidy* allocate_cell_prechecked_N(const typemap* map) {
-    return helpers::allocate_cell_prechecked(&small_bumper, map, N, common.get_mark_value());
+    return helpers::allocate_cell_prechecked(&small_bumper, map, N, common.prevent_const_prop());
   }
 
   tidy* allocate_cell_prechecked(const typemap* map) {
-    return helpers::allocate_cell_prechecked(&small_bumper, map, map->cell_size, common.get_mark_value());
+    return helpers::allocate_cell_prechecked(&small_bumper, map, map->cell_size, common.prevent_const_prop());
   }
   // }}}
 
@@ -2031,8 +2016,8 @@ public:
   // If this function returns false, we'll trigger a GC and try again.
   // If the function still returns false after GCing, game over!
   inline bool try_establish_alloc_precondition(bump_allocator* bumper, int64_t cell_size) {
-     if (bumper->size() >= cell_size) return true;
-     return try_prep_allocatable_block(bumper, cell_size);
+     if (bumper->size() < cell_size) return try_prep_allocatable_block(bumper, cell_size);
+     return true;
   }
 
   bool try_prep_allocatable_block(bump_allocator* bumper, int64_t cell_size) __attribute__((noinline)) {
@@ -2219,7 +2204,7 @@ public:
     } else if (req_bytes > (1 << 13)) {
       // The Immix paper, since it built on top of Jikes RVM, uses an 8 KB
       // threshold to distinguish medium-sized allocations from large ones.
-      return laa.allocate_array(elt_typeinfo, n, req_bytes, init, common.get_mark_value(), this);
+      return laa.allocate_array(elt_typeinfo, n, req_bytes, init, common.prevent_const_prop(), this);
     } else {
       // If it's not small and it's not large, it must be medium.
       return allocate_array_into_bumper(&medium_bumper, elt_typeinfo, n, req_bytes, init);
@@ -2228,14 +2213,14 @@ public:
 
   void* allocate_array_into_bumper(bump_allocator* bumper, typemap* elt_typeinfo, int64_t n, int64_t req_bytes, bool init) {
     if (try_establish_alloc_precondition(bumper, req_bytes)) {
-      return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, common.get_mark_value(), init);
+      return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, common.prevent_const_prop(), init);
     } else {
       gcglobals.num_gcs_triggered_involuntarily++;
       this->immix_gc();
       if (try_establish_alloc_precondition(bumper, req_bytes)) {
         //fprintf(gclog, "gc collection freed space for array, now have %lld\n", curr->free_size());
         //fflush(gclog);
-        return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, common.get_mark_value(), init);
+        return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, common.prevent_const_prop(), init);
       } else { helpers::oops_we_died_from_heap_starvation(); return NULL; }
     }
   }
