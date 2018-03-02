@@ -24,10 +24,6 @@ bool  pages_boot(void);
 void* pages_map(void* addr, size_t size, size_t alignment, bool* commit);
 void  pages_unmap(void* addr, size_t size);
 
-#ifdef OS_LINUX
-#include <sys/mman.h>
-#endif
-
 #include <immintrin.h>
 
 extern "C" int64_t __foster_getticks();
@@ -2977,22 +2973,16 @@ int address_space_prefix_size_log() {
 
 template<typename T>
 T* allocate_lazily_zero_mapped(size_t num_elts) {
+  size_t len = sizeof(T) * num_elts;
 #if OS_MACOSX
   // On macOS, multi-page malloc() will lazily zero-initialize:
   // https://developer.apple.com/library/content/documentation/Performance/Conceptual/ManagingMemory/Articles/MemoryAlloc.html
-  return (T*) malloc(sizeof(T) * num_elts);
+  return (T*) malloc(len);
 #elif OS_LINUX
-
-  size_t len = sizeof(T) * num_elts;
-  T* rv = (T*) mmap(NULL, len,
-    PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
-
-  if (rv == MAP_FAILED || !rv) {
-    perror("mmap failed...");
-  }
-  return rv;
+  bool commit = true; // On Linux, this means (to pages_jemalloc) "map read/write"
+  return (T*) pages_map(NULL, len, 16, &commit);
 #else
-#error Need to determine how to lazy allocate pages
+#error Need to determine how to lazy allocate pages on this platform
 #endif
 }
 
