@@ -126,6 +126,14 @@ contains many extraneous lines; run ``filter-me-prof me.prof`` to generate
 Run ``hp2ps -e8in -g -c me.hp && gv me.ps`` to view the profile via a generated
 ``me.ps`` file.
 
+GHC 8.2 learned to output profiles in JSON format.
+There is a tool called ``ghc-prof-aeson-flamegraph``, installable via ``cabal``,
+which can turn such profiles into flamegraphs. Example::
+
+    gotest.sh test-bigint --profilemejson
+    cat me.prof | ~/foster/compiler/me/.cabal-sandbox/bin/ghc-prof-aeson-flamegraph | ~/FlameGraph/flamegraph.pl > me.svg
+    firefox me.svg
+
 .. note:
         See also https://downloads.haskell.org/~ghc/latest/docs/html/users_guide/hp2ps.html
 

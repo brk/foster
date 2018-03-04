@@ -104,7 +104,11 @@ def get_ghc_rts_args():
 
   # https://downloads.haskell.org/~ghc/latest/docs/html/users_guide/prof-heap.html
   if options and options.profileme:
-    ghc_rts_args.append("-p") # general time profile, written to me.prof
+    if options.profileme == "json":
+      ghc_rts_args.append("-pj") # general time profile in JSON format, written to me.prof  
+    else:
+      ghc_rts_args.append("-p") # general time profile, written to me.prof
+
     #ghc_rts_args.append("-hc") # break down space used by function (cost center)
     #ghc_rts_args.append("-hm") # break down space used by module (producer)
     #ghc_rts_args.append("-hy") # break down space used by type
@@ -323,6 +327,8 @@ def get_fosterc_parser():
                     help="Enable optimizations in fosteroptc")
   parser.add_option("--profileme", dest="profileme", action="store_true", default=False,
                     help="Enable detailed profiling of compiler middle-end")
+  parser.add_option("--profilemejson", dest="profileme", action="store_const", const="json",
+                    help="Enable  --profileme  and use JSON output")
   parser.add_option("--no_bytes_per_sec", dest="print_bytes_per_sec", action="store_false", default=True,
                     help="Disable printing of bytes-per-second for input protobuf and output executable")
   parser.add_option("--no_extra_bitcode", dest="extrabitcode", action="store_false", default=True,
