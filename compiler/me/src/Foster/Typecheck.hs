@@ -188,6 +188,10 @@ doQuantification :: AnnExpr SigmaTC -> Context SigmaTC -> Tc (AnnExpr SigmaTC)
 doQuantification e' ctx = do
     let t = typeTC e'
 
+    -- OCaml generalizes types without needing to scan the environment:
+    --    http://okmij.org/ftp/ML/generalization.html
+    -- We should eventually do the same.
+    -- Without such tricks, quantification is O(n^2).
     env_tys <- getEnvTypes ctx
     env_tvs <- collectUnboundUnificationVars env_tys
     res_tvs <- collectUnboundUnificationVars [t]
@@ -207,10 +211,9 @@ doQuantification e' ctx = do
     debugIf dbgQuant $ text "}}}}}"
     let nonfx_forall_tvs = [tv | tv <- forall_tvs, not (mtvIsEffect tv)]
     let    fx_forall_tvs = [tv | tv <- forall_tvs,     (mtvIsEffect tv)]
-    let hasEscapingMetaVars = not (null nonfx_forall_tvs)
-    case (hasEscapingMetaVars, isValue e') of
-      (_, False) -> return e' -- Don't generalize over non-values...
-      (True, _) -> do
+    case () of
+      _ | not (isValue e') -> return e' -- Don't generalize over non-values...
+      _ | not (null nonfx_forall_tvs) -> do
          tcWarn [text "the expression"
                 , indent 4 (highlightFirstLineDoc (rangeOf e'))
                 , indent 2 (text "is being given a type involving meta type variables,"
