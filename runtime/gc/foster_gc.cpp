@@ -25,7 +25,8 @@ void  pages_unmap(void* addr, size_t size);
 
 #include <immintrin.h>
 
-extern "C" int64_t __foster_getticks();
+extern "C" int64_t __foster_getticks_start();
+extern "C" int64_t __foster_getticks_end();
 extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 
 #define TRACE do { fprintf(gclog, "%s::%d\n", __FILE__, __LINE__); fflush(gclog); } while (0)
@@ -2330,7 +2331,7 @@ public:
 
     base::TimeTicks gcstart = now();
 #if ENABLE_GC_TIMING_TICKS
-    int64_t t0 = __foster_getticks();
+    int64_t t0 = __foster_getticks_start();
 #endif
 
     auto num_marked_at_start = gcglobals.num_objects_marked_total;
@@ -2462,7 +2463,7 @@ public:
     }
 
 #if ENABLE_GC_TIMING_TICKS
-    int64_t t1 = __foster_getticks();
+    int64_t t1 = __foster_getticks_end();
     if (FOSTER_GC_TIME_HISTOGRAMS) {
       LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-pause-ticks", __foster_getticks_elapsed(t0, t1),  0, 60000000, 256);
     }
