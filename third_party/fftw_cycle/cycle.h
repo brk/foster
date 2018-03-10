@@ -159,7 +159,9 @@ INLINE_ELAPSED(__inline__)
 #if defined(HAVE_MACH_ABSOLUTE_TIME) && defined(HAVE_MACH_MACH_TIME_H) && !defined(HAVE_TICK_COUNTER)
 #include <mach/mach_time.h>
 typedef uint64_t ticks;
-#define getticks mach_absolute_time
+#define getticks       mach_absolute_time
+#define getticks_start mach_absolute_time
+#define getticks_end   mach_absolute_time
 INLINE_ELAPSED(__inline__)
 #define HAVE_TICK_COUNTER
 #endif
@@ -171,11 +173,31 @@ INLINE_ELAPSED(__inline__)
 #if (defined(__GNUC__) || defined(__ICC)) && defined(__i386__)  && !defined(HAVE_TICK_COUNTER)
 typedef unsigned long long ticks;
 
+// See
+// https://www.intel.com/content/dam/www/public/us/en/documents/white-papers/ia-32-ia-64-benchmark-code-execution-paper.pdf
+static __inline__ ticks getticks_start(void)
+{
+     ticks ret;
+
+     asm volatile ("lfence\n\t" : : : "memory");
+     asm volatile ("rdtsc": "=A" (ret));
+     return ret;
+}
+
+static __inline__ ticks getticks_end(void)
+{
+     ticks ret;
+
+     asm volatile ("rdtscp": "=A" (ret));
+     asm volatile ("lfence\n\t" : : : "memory");
+     return ret;
+}
+
 static __inline__ ticks getticks(void)
 {
      ticks ret;
 
-     __asm__ __volatile__("rdtsc": "=A" (ret));
+     asm volatile ("rdtsc": "=A" (ret));
      /* no input, nothing else clobbered */
      return ret;
 }
@@ -222,9 +244,27 @@ typedef unsigned long long ticks;
 
 static __inline__ ticks getticks(void)
 {
-     unsigned a, d; 
-     asm volatile("rdtsc" : "=a" (a), "=d" (d)); 
-     return ((ticks)a) | (((ticks)d) << 32); 
+     unsigned a, d;
+     asm volatile("rdtsc" : "=a" (a), "=d" (d));
+     return ((ticks)a) | (((ticks)d) << 32);
+}
+
+static __inline__ ticks getticks_start(void)
+{
+     unsigned a, d;
+     asm volatile("lfence" : : : "memory");
+     asm volatile("rdtsc" : "=a" (a), "=d" (d));
+     return ((ticks)a) | (((ticks)d) << 32);
+}
+
+static __inline__ ticks getticks_end(void)
+{
+     unsigned a, d;
+     asm volatile("rdtscp\n\t"
+                  "mov %%eax, %0\n\t"
+                  "mov %%edx, %1\n\t" : "=r" (a), "=r" (d));
+     asm volatile("lfence" : : : "memory");
+     return ((ticks)a) | (((ticks)d) << 32);
 }
 
 INLINE_ELAPSED(__inline__)
