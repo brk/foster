@@ -4,7 +4,7 @@ cmake_minimum_required (VERSION 3.4.3)
 # ~~~~~~~~~~~~~~~~~~~~
 
 set(PYTHON python2)
-set(LLVM_VERSION 5.0.0)
+set(LLVM_VERSION 6.0.0)
 
 find_program(LLVM_CONFIG NAMES llvm-config llvm-config-${LLVM_VERSION}
   PATHS
@@ -137,6 +137,7 @@ string(REPLACE ${NDEBUG_FLAG} "" LLVM_CFLAGS "${LLVM_CFLAGS}")
 # (because we can't compile C-only code with it)
 # and unconditionally add it to CXXFLAGS later.
 string(REPLACE "-std=c++11" "" LLVM_CFLAGS "${LLVM_CFLAGS}")
+string(REPLACE "-std=c++14" "" LLVM_CFLAGS "${LLVM_CFLAGS}")
 
 # llvm-config reports flags for the compiler used to build it,
 # which may result in flags for GCC that clang++ chokes on.
@@ -373,7 +374,7 @@ link_directories(${ANTLR_LIBDIR} ${LLVM_LIBDIR})
 
 add_definitions(${LLVM_CFLAGS} "-ggdb")
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
 
 # Compressing debug sections can significantly reduce link time,
 # but the functionality is specific to GNU gold.
