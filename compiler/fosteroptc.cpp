@@ -5,7 +5,7 @@
 #include "llvm/LinkAllPasses.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Config/llvm-config.h"
-#include "llvm/CodeGen/CommandFlags.h"
+#include "llvm/CodeGen/CommandFlags.def"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
 #include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
 #include "llvm/IR/DataLayout.h"
@@ -65,8 +65,8 @@ void printUsage () {
   o << "\n";
 }
 
-void printVersionInfo() {
-  llvm::outs() << "Foster version: " << FOSTER_VERSION_STR << "\n";
+void printVersionInfo(llvm::raw_ostream& out) {
+  out << "Foster version: " << FOSTER_VERSION_STR << "\n";
   cl::PrintVersionMessage();
 }
 
@@ -516,7 +516,7 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
                         ? CodeGenOpt::None
                         : CodeGenOpt::Aggressive;
 
-  auto cgModel = CodeModel::Default;
+  Optional<CodeModel::Model> cgModel = None;
   auto tm = target->createTargetMachine(triple.getTriple(),
                                                  "", // CPU
                                                  "", // Features

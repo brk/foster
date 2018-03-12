@@ -164,8 +164,8 @@ optAllGCBarriers("all-gc-barriers",
   cl::desc("Emit GC write barriers for object initialization"),
   cl::cat(FosterOptCat));
 
-void printVersionInfo() {
-  llvm::outs() << "Foster version: " << FOSTER_VERSION_STR << "\n";
+void printVersionInfo(llvm::raw_ostream& out) {
+  out << "Foster version: " << FOSTER_VERSION_STR << "\n";
   cl::PrintVersionMessage();
 }
 

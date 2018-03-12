@@ -4,7 +4,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 
-LLVM_VERSION=5.0.0
+LLVM_VERSION=6.0.0
 LLVM_V=${LLVM_VERSION}.src
 LLVM_ROOT=${HOME}/llvm
 
@@ -19,6 +19,7 @@ pushd src
         wget http://llvm.org/releases/${LLVM_VERSION}/lldb-${LLVM_V}.tar.xz
         wget http://llvm.org/releases/${LLVM_VERSION}/libcxx-${LLVM_V}.tar.xz
         wget http://llvm.org/releases/${LLVM_VERSION}/libcxxabi-${LLVM_V}.tar.xz
+        #wget http://llvm.org/releases/${LLVM_VERSION}/clang-tools-extra-${LLVM_V}.tar.xz
 
         echo "unpacking sources..."
         for proj in $(ls *-${LLVM_V}.tar.xz); do
@@ -34,6 +35,7 @@ pushd src
         mv compiler-rt-${LLVM_V} llvm-${LLVM_V}/projects/compiler-rt
         mv libcxx-${LLVM_V}      llvm-${LLVM_V}/projects/libcxx
         mv libcxxabi-${LLVM_V}   llvm-${LLVM_V}/projects/libcxxabi
+        #mv clang-tools-extra-${LLVM_V} llvm-${LLVM_V}/tools/clang/tools/extra
         echo "done unpacking sources..."
 popd
 }
@@ -52,7 +54,7 @@ pushd src/llvm-${LLVM_V}
         #CC=clang CXX=clang++
         cmake .. -G "Unix Makefiles" -DCMAKE_INSTALL_PREFIX=${LLVM_ROOT}/${LLVM_VERSION} -DCMAKE_BUILD_TYPE="RelWithDebInfo" -DLLVM_TARGETS_TO_BUILD="host" -DLLVM_ENABLE_ASSERTIONS=ON -DLLVM_LINK_LLVM_DYLIB=ON
 
-	time make -j4
+	time make -j
 
 	make install
 popd

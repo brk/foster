@@ -35,7 +35,7 @@ curl https://beyondgrep.com/ack-2.20-single-file > ~/.local/bin/ack && chmod 075
   tar xf libedit*.gz
   rm libedit*.gz
   cd libedit*
-  ./configure --prefix=$HOME/.local && make && make install
+  ./configure --prefix=$HOME/.local && make -j && make install
   cd ..
 
 
@@ -43,13 +43,13 @@ curl https://beyondgrep.com/ack-2.20-single-file > ~/.local/bin/ack && chmod 075
   tar xf swig-*.gz
   rm swig-*.gz
   cd swig-*
-  ./configure --prefix=$HOME/.local && make && make install
+  ./configure --prefix=$HOME/.local && make -j && make install
   cd ..
 
-  wget https://downloads.haskell.org/~ghc/8.2.2/ghc-8.2.2-x86_64-deb8-linux-dwarf.tar.xz
+  wget https://downloads.haskell.org/~ghc/8.4.1/ghc-8.4.1-x86_64-deb8-linux-dwarf.tar.xz
   tar xf ghc-*.xz
   rm ghc-*.xz
-  cd ghc-* && ./configure --prefix=$HOME/.local/ghc-8.2.2 && make install && cd ..
+  cd ghc-* && ./configure --prefix=$HOME/.local/ghc-8.4.1 && make -j install && cd ..
 
   wget https://www.haskell.org/cabal/release/cabal-install-2.0.0.1/cabal-install-2.0.0.1-x86_64-unknown-linux.tar.gz
   tar xf cabal-*.gz
@@ -61,7 +61,7 @@ curl https://beyondgrep.com/ack-2.20-single-file > ~/.local/bin/ack && chmod 075
   rm     capnproto-*.gz
   cd capnproto-c++-0.6.1
   ./configure --prefix=$HOME/.local/capnp-c++-0.6.1
-  make -j4 check
+  make -j check
   make install
   cd ..
 
@@ -78,7 +78,7 @@ curl https://beyondgrep.com/ack-2.20-single-file > ~/.local/bin/ack && chmod 075
 		wget http://antlr3.org/download/C/libantlr3c-${ANTLR_VERSION}.tar.gz
 		tar xzvf libantlr3c-${ANTLR_VERSION}.tar.gz
                 cd libantlr3c-${ANTLR_VERSION}
-		./configure --prefix=${ANTLR_DIR} --enable-64bit && make && make install
+		./configure --prefix=${ANTLR_DIR} --enable-64bit && make -j && make install
                 cd ..
 	cd ..
 	rm -rf ./tmp
@@ -88,7 +88,7 @@ curl https://beyondgrep.com/ack-2.20-single-file > ~/.local/bin/ack && chmod 075
 	popd
 
 
-export PATH=$PATH:$HOME/.local/bin:$HOME/.local/capnp-c++-0.6.1/bin:$HOME/.local/ghc-8.2.2/bin
+export PATH=$PATH:$HOME/.local/bin:$HOME/.local/capnp-c++-0.6.1/bin:$HOME/.local/ghc-8.4.1/bin
 cabal update
 
 cat ~/.cabal/config | sed 's/-- library-profiling:/library-profiling: True/' > tmp.txt
