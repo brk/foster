@@ -12,7 +12,7 @@ def dropFrom(prefix, string):
         return string[len(prefix):]
     return string
 
-srcbase = os.path.expanduser("~/chrm/src/base")
+srcbase = os.path.expanduser("~/tmp/crbase")
 
 assert os.path.exists(srcbase)
 
@@ -125,7 +125,7 @@ def summarize_missing_symbols(output):
 
 def try_make():
     try:
-        subprocess.check_output(["make", "-C", "~/Code/foster/_obj"], stderr=subprocess.STDOUT)
+        subprocess.check_output(["make", "-C", "~/foster/_obj"], stderr=subprocess.STDOUT)
         print "Success!"
         return True
 
@@ -153,9 +153,13 @@ def try_make():
                 print e.output
                 return True
 
-while True:
-    finished = try_make()
-    if finished:
-        break
+def loop_make_and_copy_missing_files():
+    while True:
+        finished = try_make()
+        if finished:
+            break
+
+#try_make()
+loop_make_and_copy_missing_files()
 
 
