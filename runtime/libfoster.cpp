@@ -25,9 +25,9 @@
 #include "libfoster_gc_roots.h"
 #include "foster_gc_utils.h"
 #include "foster_globals.h"
+#include "clocktimer.h"
 
 #include "base/atomicops.h"
-#include "base/time/time.h"
 
 #include <signal.h>
 
@@ -535,9 +535,7 @@ double  foster_getticks_elapsed(int64_t t1, int64_t t2) {
 // (temporary expedient because we don't have much in the way of facilities
 //  for working with double values within foster yet...)
 // http://hackage.haskell.org/package/criterion which is under the BSD3 license.
-void* foster_fmttime_secs_raw(double secs) {
-  char buf[64] = { 0 };
-  char* ptr = &buf[0];
+void foster_fmttime_secs_ptr(double secs, char* ptr) {
   const char* unit = "s"; bool small = false;
   if (secs < 0.0) { *ptr++ = '-'; secs = -secs; }
 
@@ -550,14 +548,19 @@ void* foster_fmttime_secs_raw(double secs) {
   else if (secs >= 1e-18) { unit = "as"; secs *= 1e18; }
   else { small = true; }
 
-       if (secs == 0.0) { snprintf(ptr, 63, "0.0 s"); } // for Haskell compatibility...
-  else if (small)       { snprintf(ptr, 63, "%g s", secs); }
-  else if (secs >= 1e9) { snprintf(ptr, 63, "%.4g %s", secs, unit); }
-  else if (secs >= 1e3) { snprintf(ptr, 63, "%.0f %s", secs, unit); }
-  else if (secs >= 1e2) { snprintf(ptr, 63, "%.1f %s", secs, unit); }
-  else if (secs >= 1e1) { snprintf(ptr, 63, "%.2f %s", secs, unit); }
-  else                  { snprintf(ptr, 63, "%.3f %s", secs, unit); }
+       if (secs == 0.0) { snprintf(ptr, 62, "0.0 s"); } // for Haskell compatibility...
+  else if (small)       { snprintf(ptr, 62, "%g s", secs); }
+  else if (secs >= 1e9) { snprintf(ptr, 62, "%.4g %s", secs, unit); }
+  else if (secs >= 1e3) { snprintf(ptr, 62, "%.0f %s", secs, unit); }
+  else if (secs >= 1e2) { snprintf(ptr, 62, "%.1f %s", secs, unit); }
+  else if (secs >= 1e1) { snprintf(ptr, 62, "%.2f %s", secs, unit); }
+  else                  { snprintf(ptr, 62, "%.3f %s", secs, unit); }
 
+}
+
+void* foster_fmttime_secs_raw(double secs) {
+  char buf[64] = { 0 };
+  foster_fmttime_secs_ptr(secs, &buf[0]);
   return foster_emit_string_of_cstring(buf, strlen(buf));
 }
 
@@ -582,13 +585,13 @@ void foster__humanize_s_ptr(double val, char* ptr, const char* unit) {
   else if (val >= 1e-18) { prefix = "a"; val *= 1e18; }
   else { extreme = true; }
 
-       if (val == 0.0) { snprintf(ptr, 63, "0.0 %s", unit); } // for Haskell compatibility...
-  else if (extreme)    { snprintf(ptr, 63, "%g %s", val, unit); }
-  else if (val >= 1e9) { snprintf(ptr, 63, "%.4g %s%s", val, prefix, unit); }
-  else if (val >= 1e3) { snprintf(ptr, 63, "%.0f %s%s", val, prefix, unit); }
-  else if (val >= 1e2) { snprintf(ptr, 63, "%.1f %s%s", val, prefix, unit); }
-  else if (val >= 1e1) { snprintf(ptr, 63, "%.2f %s%s", val, prefix, unit); }
-  else                 { snprintf(ptr, 63, "%.3f %s%s", val, prefix, unit); }
+       if (val == 0.0) { snprintf(ptr, 62, "0.0 %s", unit); } // for Haskell compatibility...
+  else if (extreme)    { snprintf(ptr, 62, "%g %s", val, unit); }
+  else if (val >= 1e9) { snprintf(ptr, 62, "%.4g %s%s", val, prefix, unit); }
+  else if (val >= 1e3) { snprintf(ptr, 62, "%.0f %s%s", val, prefix, unit); }
+  else if (val >= 1e2) { snprintf(ptr, 62, "%.1f %s%s", val, prefix, unit); }
+  else if (val >= 1e1) { snprintf(ptr, 62, "%.2f %s%s", val, prefix, unit); }
+  else                 { snprintf(ptr, 62, "%.3f %s%s", val, prefix, unit); }
 }
 
 void* foster_humanize_s__autowrap(double val) {
@@ -600,10 +603,10 @@ void* foster_humanize_s__autowrap(double val) {
 
 
 int64_t foster_gettime_microsecs() {
-  return base::TimeTicks::Now().ToInternalValue();
+  return clocktimer::current_us();
 }
 double  foster_gettime_elapsed_secs(int64_t early, int64_t later) {
-  return base::TimeDelta::FromMicroseconds(later - early).InSecondsF();
+  return double(later - early) * 1e6;
 }
 
 // We want to perform aggressive link time optimization of
@@ -637,6 +640,12 @@ namespace foster {
 std::string humanize_s(double val, const char* unit) {
   char buf[64] = { 0 };
   foster__humanize_s_ptr(val, &buf[0], unit);
+  return std::string(&buf[0]);
+}
+
+std::string fmt_secs(double secs) {
+  char buf[64] = { 0 };
+  foster_fmttime_secs_ptr(secs, &buf[0]);
   return std::string(&buf[0]);
 }
 } // namepsace foster
