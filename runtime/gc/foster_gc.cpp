@@ -8,8 +8,8 @@
 #include "libfoster_gc_roots.h"
 #include "foster_globals.h"
 #include "bitmap.h"
+#include "clocktimer.h"
 
-#include "base/time/time.h" // for TimeTicks, TimeDelta
 #include "base/metrics/histogram.h"
 #include "base/metrics/statistics_recorder.h"
 
@@ -159,18 +159,6 @@ struct byte_limit {
   }
 };
 
-base::TimeTicks now() {
-  if (ENABLE_GC_TIMING) { return base::TimeTicks::Now(); }
-  else return base::TimeTicks();
-}
-
-base::TimeDelta timed(std::function<void()> f) {
-  auto start = now();
-  f();
-  auto fin = now();
-  return fin - start;
-}
-
 typedef void* ret_addr;
 typedef void* frameptr;
 // I've looked at using std::unordered_map or google::sparsehash instead,
@@ -319,9 +307,9 @@ struct GCGlobals {
 
   std::map<std::pair<const char*, typemap*>, int64_t> alloc_site_counters;
 
-  base::TimeTicks gc_time;
-  base::TimeTicks runtime_start;
-  base::TimeTicks    init_start;
+  double gc_time_us;
+
+  clocktimer init_start;
 
   int num_gcs_triggered;
   int num_gcs_triggered_involuntarily;
@@ -1761,7 +1749,9 @@ public:
   void immix_line_gc() {
     auto num_marked_at_start = gcglobals.num_objects_marked_total;
 
-    base::TimeTicks lineGCStartTime = now();
+#if ENABLE_GC_TIMING
+    clocktimer ct; ct.start();
+#endif
 
     //common.flip_current_mark_bits_value();
 
@@ -1799,11 +1789,13 @@ public:
       this->inspect_line_frame15_postgc(lineframe);
     }
 
+#if ENABLE_GC_TIMING
+    double delta_us = ct.elapsed_us();
+#endif
 #if ENABLE_GC_TIMING && ENABLE_GCLOG_ENDGC
-    auto delta = now() - lineGCStartTime;
-    fprintf(gclog, "used frames: %zu -> %zu, took %ld us; frames left: %zd\n",
+    fprintf(gclog, "used frames: %zu -> %zu, took %f us; frames left: %zd\n",
         all_used_frames.size(), used_frames.size(),
-        delta.InMicroseconds(),
+        delta_us,
         lim->frame15s_left
         );
 #endif
@@ -1819,9 +1811,13 @@ public:
       fprintf(gclog, "\t/endgc-small\n\n");
       fflush(gclog);
 #endif
-    }
 
-    // TODO gcglobals.gc_time and gcglobals.subheap_ticks
+    // TODO gcglobals.subheap_ticks
+#if ENABLE_GC_TIMING
+    gcglobals.gc_time_us += delta_us;
+#endif
+
+    }
     gcglobals.num_gcs_triggered += 1;
   }
 
@@ -2044,21 +2040,22 @@ public:
     fprintf(gclog, "condemning %zu frames...\n", tracking.logical_frame15s()); fflush(gclog);
     int n = 0;
     int m = 0;
-    auto delta = timed([&] {
-      tracking.iter_frame15( [&](frame15* f15) {
-        set_condemned_status_for_frame15_id(frame15_id_of(f15), condemned_status::yes_condemned);
-        ++n;
-      });
-      tracking.iter_coalesced_frame21( [&](frame21* f21) {
-        // The fact that we own the entire frame21 indicates that none of its frame15s are line-based.
-        set_condemned_status_for_frame21(f21, condemned_status::yes_condemned);
-        m += IMMIX_F15_PER_F21;
-      });
-      // TODO condemn array frames
+    clocktimer ct; ct.start();
+
+    tracking.iter_frame15( [&](frame15* f15) {
+      set_condemned_status_for_frame15_id(frame15_id_of(f15), condemned_status::yes_condemned);
+      ++n;
     });
-    fprintf(gclog, "condemned (%d + %d = %d) / %zu frames in %" PRId64 " microseconds\n",
+    tracking.iter_coalesced_frame21( [&](frame21* f21) {
+      // The fact that we own the entire frame21 indicates that none of its frame15s are line-based.
+      set_condemned_status_for_frame21(f21, condemned_status::yes_condemned);
+      m += IMMIX_F15_PER_F21;
+    });
+    // TODO condemn array frames
+
+    fprintf(gclog, "condemned (%d + %d = %d) / %zu frames in %f microseconds\n",
         n, m, n + m, tracking.logical_frame15s(),
-        delta.InMicroseconds());
+        ct.elapsed_us());
   }
 
   void clear_current_blocks() {
@@ -2329,7 +2326,8 @@ public:
     //printf("GC\n");
     //fprintf(gclog, "GC\n");
 
-    base::TimeTicks gcstart = now();
+    clocktimer gcstart; gcstart.start();
+    clocktimer phase;
 #if ENABLE_GC_TIMING_TICKS
     int64_t t0 = __foster_getticks_start();
 #endif
@@ -2342,7 +2340,7 @@ public:
     //worklist.initialize();
     //common.flip_current_mark_bits_value(); // TODO-X
 
-    auto phaseStartTime = now();
+    phase.start();
 #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
     int64_t phaseStartTicks = __foster_getticks();
 #endif
@@ -2371,8 +2369,8 @@ public:
 
     immix_worklist.process(this);
 
-    auto deltaRecursiveMarking = now() - phaseStartTime;
-    phaseStartTime = now();
+    auto deltaRecursiveMarking_us = phase.elapsed_us();
+    phase.start();
 #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
     phaseStartTicks = __foster_getticks();
 #endif
@@ -2390,20 +2388,19 @@ public:
     local_frame15_allocator.clear();
     laa.sweep_arrays();
 
-    //auto inspectFrame15Time = timed([&] { TODO-X
-    auto inspectFrame15Start = now();
+    clocktimer insp_ct; insp_ct.start();
     tracking.iter_frame15( [this](frame15* f15) {
       this->inspect_frame15_postgc(frame15_id_of(f15), f15);
     });
-    auto inspectFrame15Time = now() - inspectFrame15Start;
+    auto inspectFrame15Time_us = insp_ct.elapsed_us();
 
-    auto inspectFrame21Start = now();
+    insp_ct.start();
     tracking.iter_coalesced_frame21([this](frame21* f21) {
       inspect_frame21_postgc(f21);
     });
-    auto inspectFrame21Time = now() - inspectFrame21Start;
+    auto inspectFrame21Time_us = insp_ct.elapsed_us();
 
-    auto deltaPostMarkingCleanup = now() - phaseStartTime;
+    auto deltaPostMarkingCleanup_us = phase.elapsed_us();
 #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
     LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-postgc-ticks", __foster_getticks_elapsed(phaseStartTicks, __foster_getticks()),  0, 60000000, 256);
 #endif
@@ -2428,17 +2425,17 @@ public:
           frame15s_total, tracking.count_frame21s(),
           frame15s_kept, total_live_size.c_str(), total_heap_size.c_str());
       if (ENABLE_GC_TIMING) {
-        auto delta = now() - gcstart;
+        double delta_us = gcstart.elapsed_us();
         fprintf(gclog, ", took %zd us which was %f%% marking, %f%% post-mark",
-          delta.InMicroseconds(),
-          double(deltaRecursiveMarking.InMicroseconds() * 100.0)/double(delta.InMicroseconds()),
-          double(deltaPostMarkingCleanup.InMicroseconds() * 100.0)/double(delta.InMicroseconds()));
+          int64_t(delta_us),
+          (deltaRecursiveMarking_us * 100.0)/delta_us,
+          (deltaPostMarkingCleanup_us * 100.0)/delta_us);
       }
       fprintf(gclog, "\n");
 
       if (ENABLE_GC_TIMING) {
-        fprintf(gclog, "\ttook %ld us inspecting frame15s, %ld us inspecting frame21s\n",
-            inspectFrame15Time.InMicroseconds(), inspectFrame21Time.InMicroseconds());
+        fprintf(gclog, "\ttook %f us inspecting frame15s, %f us inspecting frame21s\n",
+            inspectFrame15Time_us, inspectFrame21Time_us);
       }
 
 #   if TRACK_NUM_OBJECTS_MARKED
@@ -2455,11 +2452,11 @@ public:
     }
 
     if (ENABLE_GC_TIMING) {
-      auto delta = now() - gcstart;
+      double delta_us = gcstart.elapsed_us();
       if (FOSTER_GC_TIME_HISTOGRAMS) {
-        LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-pause-micros", delta.InMicroseconds(),  0, 60000000, 256);
+        LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-pause-micros", int64_t(delta_us),  0, 60000000, 256);
       }
-      gcglobals.gc_time += delta;
+      gcglobals.gc_time_us += delta_us;
     }
 
 #if ENABLE_GC_TIMING_TICKS
@@ -2926,12 +2923,9 @@ T* allocate_lazily_zero_mapped(size_t num_elts) {
 }
 
 void initialize(void* stack_highest_addr) {
-  gcglobals.init_start = base::TimeTicks::Now();
+  gcglobals.init_start.start();
   gclog = fopen("gclog.txt", "w");
   fprintf(gclog, "----------- gclog ------------\n");
-  if (!base::TimeTicks::IsHighResolution()) {
-    fprintf(gclog, "(warning: using low-resolution timer)\n");
-  }
 
   pages_boot();
 
@@ -2944,18 +2938,15 @@ void initialize(void* stack_highest_addr) {
 
   register_stackmaps(gcglobals.clusterForAddress);
 
-  auto mapping_time = timed([&] {
-    gcglobals.lazy_mapped_frame15info             = allocate_lazily_zero_mapped<frame15info>(     size_t(1) << (address_space_prefix_size_log() - 15));
-    gcglobals.lazy_mapped_coarse_marks            = allocate_lazily_zero_mapped<uint8_t>(         size_t(1) << (address_space_prefix_size_log() - COARSE_MARK_LOG));
-    //gcglobals.lazy_mapped_coarse_condemned        = allocate_lazily_zero_mapped<condemned_status>(size_t(1) << (address_space_prefix_size_log() - COARSE_MARK_LOG));
-    gcglobals.lazy_mapped_frame15_condemned       = allocate_lazily_zero_mapped<condemned_status>(size_t(1) << (address_space_prefix_size_log() - 15));
-    //gcglobals.lazy_mapped_frame15info_associated  = allocate_lazily_zero_mapped<void*>(      size_t(1) << (address_space_prefix_size_log() - 15));
-    //
-    gcglobals.lazy_mapped_granule_marks           = allocate_lazily_zero_mapped<uint8_t>((size_t(1) << address_space_prefix_size_log()) / (16 * 1)); // byte marks
-  });
+  gcglobals.lazy_mapped_frame15info             = allocate_lazily_zero_mapped<frame15info>(     size_t(1) << (address_space_prefix_size_log() - 15));
+  gcglobals.lazy_mapped_coarse_marks            = allocate_lazily_zero_mapped<uint8_t>(         size_t(1) << (address_space_prefix_size_log() - COARSE_MARK_LOG));
+  //gcglobals.lazy_mapped_coarse_condemned        = allocate_lazily_zero_mapped<condemned_status>(size_t(1) << (address_space_prefix_size_log() - COARSE_MARK_LOG));
+  gcglobals.lazy_mapped_frame15_condemned       = allocate_lazily_zero_mapped<condemned_status>(size_t(1) << (address_space_prefix_size_log() - 15));
+  //gcglobals.lazy_mapped_frame15info_associated  = allocate_lazily_zero_mapped<void*>(      size_t(1) << (address_space_prefix_size_log() - 15));
+  //
+  gcglobals.lazy_mapped_granule_marks           = allocate_lazily_zero_mapped<uint8_t>((size_t(1) << address_space_prefix_size_log()) / (16 * 1)); // byte marks
 
-  gcglobals.gc_time = base::TimeTicks();
-  gcglobals.runtime_start = base::TimeTicks::Now();
+  gcglobals.gc_time_us = 0.0;
   gcglobals.num_gcs_triggered = 0;
   gcglobals.num_gcs_triggered_involuntarily = 0;
   gcglobals.num_big_stackwalks = 0;
@@ -2969,17 +2960,12 @@ void initialize(void* stack_highest_addr) {
 
 
 
-void gclog_time(const char* msg, base::TimeDelta d, FILE* json) {
-  fprintf(gclog, "%s: %2ld.%03ld s\n", msg,
-          long(d.InSeconds()),
-          long(d.InMilliseconds() - (d.InSeconds() * 1000)));
+void gclog_time(const char* msg, double secs, FILE* json) {
+  auto ss = fmt_secs(secs);
+  fprintf(gclog, "%s: %s\n", msg, ss.c_str());
   if (json) {
-  fprintf(json, "'%s_s' : %2ld.%03ld,\n", msg,
-          long(d.InSeconds()),
-          long(d.InMilliseconds() - (d.InSeconds() * 1000)));
-  fprintf(json, "'%s_ms': %2ld.%03ld,\n", msg,
-          long(d.InMilliseconds()),
-          long(d.InMicroseconds() - (d.InMilliseconds() * 1000)));
+  fprintf(json, "'%s_s' : %f\n", msg, secs);
+  fprintf(json, "'%s_ms': %f\n", msg, secs * 1000.0);
   }
 }
 
@@ -3003,11 +2989,9 @@ void dump_alloc_site_stats(FILE* stats) {
 }
 
 FILE* print_timing_stats() {
-  base::TimeTicks fin = base::TimeTicks::Now();
-  base::TimeDelta total_elapsed = fin - gcglobals.init_start;
-  base::TimeDelta  init_elapsed = gcglobals.runtime_start - gcglobals.init_start;
-  base::TimeDelta    gc_elapsed = gcglobals.gc_time - base::TimeTicks();
-  base::TimeDelta   mut_elapsed = total_elapsed - gc_elapsed - init_elapsed;
+  auto total_elapsed = gcglobals.init_start.elapsed_s();
+  auto gc_elapsed = gcglobals.gc_time_us / 1e6;
+  auto mut_elapsed = total_elapsed - gc_elapsed;
 
   fprintf(gclog, "'Exact_Marking': %d\n", 1);
   fprintf(gclog, "'F15_Coalescing': %d\n", COALESCE_FRAME15S);
@@ -3071,7 +3055,6 @@ FILE* print_timing_stats() {
   }
 
   gclog_time("Elapsed_runtime", total_elapsed, json);
-  gclog_time("Initlzn_runtime",  init_elapsed, json);
   if (ENABLE_GC_TIMING) {
     gclog_time("     GC_runtime",  gc_elapsed, json);
   }
