@@ -40,6 +40,7 @@
 
 #include "coro.h"
 
+#include <stddef.h>
 #include <string.h>
 
 /*****************************************************************************/
@@ -91,13 +92,18 @@ coro_init (void)
   coro_transfer (new_coro, create_coro);
 
 #if __GCC_HAVE_DWARF2_CFI_ASM && __amd64
-  asm (".cfi_undefined rip");
+  /*asm (".cfi_startproc");*/
+  /*asm (".cfi_undefined rip");*/
 #endif
 
-  volatile void* coro_arg = * (void**)indirect_arg;
+  void* coro_arg = * (void* volatile*)indirect_arg;
   foster_coro_delete_self_reference(coro_arg);
 
   func ((void *)coro_arg);
+
+#if __GCC_HAVE_DWARF2_CFI_ASM && __amd64
+  /*asm (".cfi_endproc");*/
+#endif
 
   /* the new coro returned. bad. just abort() for now */
   abort ();
@@ -121,26 +127,43 @@ trampoline (int sig)
 
 # if CORO_ASM
 
-  #if _WIN32
+  #if __arm__ && \
+      (defined __ARM_ARCH_7__  || defined __ARM_ARCH_7A__ \
+    || defined __ARM_ARCH_7R__ || defined __ARM_ARCH_7M__ \
+    || __ARM_ARCH == 7)
+    #define CORO_ARM 1
+  #endif
+
+  #if _WIN32 || __CYGWIN__
     #define CORO_WIN_TIB 1
   #endif
 
-  asm (
-       ".text\n"
-      #if defined(__APPLE__)
-       ".globl _coro_transfer\n"
+  __asm__ (
+       "\t.text\n"
+       #if _WIN32 || __CYGWIN__
+       "\t.globl _coro_transfer\n"
        "_coro_transfer:\n"
-      #else
-       ".globl coro_transfer\n"
-       ".type coro_transfer, @function\n"
+       #else
+       "\t.globl coro_transfer\n"
        "coro_transfer:\n"
-      #endif
+       #endif
        /* windows, of course, gives a shit on the amd64 ABI and uses different registers */
        /* http://blogs.msdn.com/freik/archive/2005/03/17/398200.aspx */
        #if __amd64
-         #ifdef WIN32
-           /* TODO: xmm6..15 also would need to be saved. sigh. */
+
+         #if _WIN32 || __CYGWIN__
            #define NUM_SAVED 8
+           "\tsubq $168, %rsp\t" /* one dummy qword to improve alignment */
+           "\tmovaps %xmm6, (%rsp)\n"
+           "\tmovaps %xmm7, 16(%rsp)\n"
+           "\tmovaps %xmm8, 32(%rsp)\n"
+           "\tmovaps %xmm9, 48(%rsp)\n"
+           "\tmovaps %xmm10, 64(%rsp)\n"
+           "\tmovaps %xmm11, 80(%rsp)\n"
+           "\tmovaps %xmm12, 96(%rsp)\n"
+           "\tmovaps %xmm13, 112(%rsp)\n"
+           "\tmovaps %xmm14, 128(%rsp)\n"
+           "\tmovaps %xmm15, 144(%rsp)\n"
            "\tpushq %rsi\n"
            "\tpushq %rdi\n"
            "\tpushq %rbp\n"
@@ -169,6 +192,17 @@ trampoline (int sig)
            "\tpopq %rbp\n"
            "\tpopq %rdi\n"
            "\tpopq %rsi\n"
+           "\tmovaps (%rsp), %xmm6\n"
+           "\tmovaps 16(%rsp), %xmm7\n"
+           "\tmovaps 32(%rsp), %xmm8\n"
+           "\tmovaps 48(%rsp), %xmm9\n"
+           "\tmovaps 64(%rsp), %xmm10\n"
+           "\tmovaps 80(%rsp), %xmm11\n"
+           "\tmovaps 96(%rsp), %xmm12\n"
+           "\tmovaps 112(%rsp), %xmm13\n"
+           "\tmovaps 128(%rsp), %xmm14\n"
+           "\tmovaps 144(%rsp), %xmm15\n"
+           "\taddq $168, %rsp\n"
          #else
            #define NUM_SAVED 6
            "\tpushq %rbp\n"
@@ -186,13 +220,19 @@ trampoline (int sig)
            "\tpopq %rbx\n"
            "\tpopq %rbp\n"
          #endif
-       #elif __i386
+         "\tpopq %rcx\n"
+         "\tjmpq *%rcx\n"
+
+       #elif __i386__
+
          #define NUM_SAVED 4
          "\tpushl %ebp\n"
          "\tpushl %ebx\n"
          "\tpushl %esi\n"
          "\tpushl %edi\n"
          #if CORO_WIN_TIB
+           #undef NUM_SAVED
+           #define NUM_SAVED 7
            "\tpushl %fs:0\n"
            "\tpushl %fs:4\n"
            "\tpushl %fs:8\n"
@@ -208,10 +248,86 @@ trampoline (int sig)
          "\tpopl %esi\n"
          "\tpopl %ebx\n"
          "\tpopl %ebp\n"
+         "\tpopl %ecx\n"
+         "\tjmpl *%ecx\n"
+
+       #elif CORO_ARM /* untested, what about thumb, neon, iwmmxt? */
+
+         #if __ARM_PCS_VFP
+           "\tvpush {d8-d15}\n"
+           #define NUM_SAVED (9 + 8 * 2)
+         #else
+           #define NUM_SAVED 9
+         #endif
+         "\tpush {r4-r11,lr}\n"
+         "\tstr sp, [r0]\n"
+         "\tldr sp, [r1]\n"
+         "\tpop {r4-r11,lr}\n"
+         #if __ARM_PCS_VFP
+           "\tvpop {d8-d15}\n"
+         #endif
+         "\tmov r15, lr\n"
+
+       #elif __mips__ && 0 /* untested, 32 bit only */
+
+        #define NUM_SAVED (12 + 8 * 2)
+         /* TODO: n64/o64, lw=>ld */
+
+         "\t.set    nomips16\n"
+         "\t.frame  $sp,112,$31\n"
+         #if __mips_soft_float
+           "\taddiu   $sp,$sp,-44\n"
+         #else
+           "\taddiu   $sp,$sp,-112\n"
+           "\ts.d     $f30,88($sp)\n"
+           "\ts.d     $f28,80($sp)\n"
+           "\ts.d     $f26,72($sp)\n"
+           "\ts.d     $f24,64($sp)\n"
+           "\ts.d     $f22,56($sp)\n"
+           "\ts.d     $f20,48($sp)\n"
+         #endif
+         "\tsw      $28,40($sp)\n"
+         "\tsw      $31,36($sp)\n"
+         "\tsw      $fp,32($sp)\n"
+         "\tsw      $23,28($sp)\n"
+         "\tsw      $22,24($sp)\n"
+         "\tsw      $21,20($sp)\n"
+         "\tsw      $20,16($sp)\n"
+         "\tsw      $19,12($sp)\n"
+         "\tsw      $18,8($sp)\n"
+         "\tsw      $17,4($sp)\n"
+         "\tsw      $16,0($sp)\n"
+         "\tsw      $sp,0($4)\n"
+         "\tlw      $sp,0($5)\n"
+         #if !__mips_soft_float
+           "\tl.d     $f30,88($sp)\n"
+           "\tl.d     $f28,80($sp)\n"
+           "\tl.d     $f26,72($sp)\n"
+           "\tl.d     $f24,64($sp)\n"
+           "\tl.d     $f22,56($sp)\n"
+           "\tl.d     $f20,48($sp)\n"
+         #endif
+         "\tlw      $28,40($sp)\n"
+         "\tlw      $31,36($sp)\n"
+         "\tlw      $fp,32($sp)\n"
+         "\tlw      $23,28($sp)\n"
+         "\tlw      $22,24($sp)\n"
+         "\tlw      $21,20($sp)\n"
+         "\tlw      $20,16($sp)\n"
+         "\tlw      $19,12($sp)\n"
+         "\tlw      $18,8($sp)\n"
+         "\tlw      $17,4($sp)\n"
+         "\tlw      $16,0($sp)\n"
+         "\tj       $31\n"
+         #if __mips_soft_float
+           "\taddiu   $sp,$sp,44\n"
+         #else
+           "\taddiu   $sp,$sp,112\n"
+         #endif
+
        #else
          #error unsupported architecture
        #endif
-       "\tret\n"
   );
 
 # endif
@@ -288,22 +404,22 @@ libcoro__coro_create (coro_context *ctx, coro_func coro, void *arg, void *sptr, 
 # elif CORO_LOSER
 
   coro_setjmp (ctx->env);
-  #if __CYGWIN__ && __i386
+  #if __CYGWIN__ && __i386__
     ctx->env[8]                        = (long)    coro_init;
     ctx->env[7]                        = (long)    ((char *)sptr + ssize)         - sizeof (long);
-  #elif __CYGWIN__ && __x86_64
+  #elif __CYGWIN__ && __x86_64__
     ctx->env[7]                        = (long)    coro_init;
     ctx->env[6]                        = (long)    ((char *)sptr + ssize)         - sizeof (long);
-  #elif defined(__MINGW32__)
+  #elif defined __MINGW32__
     ctx->env[5]                        = (long)    coro_init;
     ctx->env[4]                        = (long)    ((char *)sptr + ssize)         - sizeof (long);
-  #elif defined(_M_IX86)
+  #elif defined _M_IX86
     ((_JUMP_BUFFER *)&ctx->env)->Eip   = (long)    coro_init;
     ((_JUMP_BUFFER *)&ctx->env)->Esp   = (long)    STACK_ADJUST_PTR (sptr, ssize) - sizeof (long);
-  #elif defined(_M_AMD64)
+  #elif defined _M_AMD64
     ((_JUMP_BUFFER *)&ctx->env)->Rip   = (__int64) coro_init;
     ((_JUMP_BUFFER *)&ctx->env)->Rsp   = (__int64) STACK_ADJUST_PTR (sptr, ssize) - sizeof (__int64);
-  #elif defined(_M_IA64)
+  #elif defined _M_IA64
     ((_JUMP_BUFFER *)&ctx->env)->StIIP = (__int64) coro_init;
     ((_JUMP_BUFFER *)&ctx->env)->IntSp = (__int64) STACK_ADJUST_PTR (sptr, ssize) - sizeof (__int64);
   #else
@@ -322,7 +438,7 @@ libcoro__coro_create (coro_context *ctx, coro_func coro, void *arg, void *sptr, 
   #elif defined (__GNU_LIBRARY__) && defined (__i386__)
     ctx->env[0].__jmpbuf[0].__pc       = (char *)  coro_init;
     ctx->env[0].__jmpbuf[0].__sp       = (void *)  ((char *)sptr + ssize)         - sizeof (long);
-  #elif defined (__GNU_LIBRARY__) && defined (__amd64__)
+  #elif defined (__GNU_LIBRARY__) && defined (__x86_64__)
     ctx->env[0].__jmpbuf[JB_PC]        = (long)    coro_init;
     ctx->env[0].__jmpbuf[0].__sp       = (void *)  ((char *)sptr + ssize)         - sizeof (long);
   #else
@@ -337,20 +453,33 @@ libcoro__coro_create (coro_context *ctx, coro_func coro, void *arg, void *sptr, 
 
 # elif CORO_ASM
 
-  ctx->sp = (void **)(ssize + (char *)sptr);
-  *--ctx->sp = (void *)abort; /* needed for alignment only */
-  *--ctx->sp = (void *)coro_init;
-
-  #if CORO_WIN_TIB
-  *--ctx->sp = 0;                    /* ExceptionList */
-  *--ctx->sp = (char *)sptr + ssize; /* StackBase */
-  *--ctx->sp = sptr;                 /* StackLimit */
+  #if __i386__ || __x86_64__
+    ctx->sp = (void **)(ssize + (char *)sptr);
+    *--ctx->sp = (void *)abort; /* needed for alignment only */
+    *--ctx->sp = (void *)coro_init;
+    #if CORO_WIN_TIB
+      *--ctx->sp = 0;                    /* ExceptionList */
+      *--ctx->sp = (char *)sptr + ssize; /* StackBase */
+      *--ctx->sp = sptr;                 /* StackLimit */
+    #endif
+  #elif CORO_ARM
+    /* return address stored in lr register, don't push anything */
+  #else
+    #error unsupported architecture
   #endif
 
   ctx->sp -= NUM_SAVED;
-  // Make sure that ctx->sp[NUM_SAVED - 1],
-  // which is effectively a return address, is zeroed out.
   memset (ctx->sp, 0, sizeof (*ctx->sp) * NUM_SAVED);
+
+  #if __i386__ || __x86_64__
+    /* done already */
+  #elif CORO_ARM
+    ctx->sp[0] = coro; /* r4 */
+    ctx->sp[1] = arg;  /* r5 */
+    ctx->sp[8] = (char *)coro_init; /* lr */
+  #else
+    #error unsupported architecture
+  #endif
 
 # elif CORO_UCONTEXT
 
@@ -451,6 +580,9 @@ libcoro__coro_create (coro_context *ctx, coro_func coro, void *arg, void *sptr, 
 #if __UCLIBC__
       /* exists, but is borked */
       /*pthread_attr_setstacksize (&attr, (size_t)ssize);*/
+#elif __CYGWIN__
+      /* POSIX, not here */
+      pthread_attr_setstacksize (&attr, (size_t)ssize);
 #else
       pthread_attr_setstack (&attr, sptr, (size_t)ssize);
 #endif
@@ -477,7 +609,205 @@ coro_destroy (coro_context *ctx)
   pthread_cond_destroy (&ctx->cv);
 }
 
+/*****************************************************************************/
+/* fiber backend                                                             */
+/*****************************************************************************/
+#elif CORO_FIBER
+
+#define WIN32_LEAN_AND_MEAN
+#if _WIN32_WINNT < 0x0400
+  #undef _WIN32_WINNT
+  #define _WIN32_WINNT 0x0400
+#endif
+#include <windows.h>
+
+VOID CALLBACK
+coro_init (PVOID arg)
+{
+  coro_context *ctx = (coro_context *)arg;
+
+  ctx->coro (ctx->arg);
+}
+
+void
+coro_transfer (coro_context *prev, coro_context *next)
+{
+  if (!prev->fiber)
+    {
+      prev->fiber = GetCurrentFiber ();
+
+      if (prev->fiber == 0 || prev->fiber == (void *)0x1e00)
+        prev->fiber = ConvertThreadToFiber (0);
+    }
+
+  SwitchToFiber (next->fiber);
+}
+
+void
+coro_create (coro_context *ctx, coro_func coro, void *arg, void *sptr, size_t ssize)
+{
+  ctx->fiber = 0;
+  ctx->coro  = coro;
+  ctx->arg   = arg;
+
+  if (!coro)
+    return;
+
+  ctx->fiber = CreateFiber (ssize, coro_init, ctx);
+}
+
+void
+coro_destroy (coro_context *ctx)
+{
+  DeleteFiber (ctx->fiber);
+}
+
 #else
-# error unsupported backend
+  #error unsupported backend
+#endif
+
+/*****************************************************************************/
+/* stack management                                                          */
+/*****************************************************************************/
+#if CORO_STACKALLOC
+
+#include <stdlib.h>
+
+#ifndef _WIN32
+# include <unistd.h>
+#endif
+
+#if CORO_USE_VALGRIND
+# include <valgrind/valgrind.h>
+#endif
+
+#if _POSIX_MAPPED_FILES
+# include <sys/mman.h>
+# define CORO_MMAP 1
+# ifndef MAP_ANONYMOUS
+#  ifdef MAP_ANON
+#   define MAP_ANONYMOUS MAP_ANON
+#  else
+#   undef CORO_MMAP
+#  endif
+# endif
+# include <limits.h>
+#else
+# undef CORO_MMAP
+#endif
+
+#if _POSIX_MEMORY_PROTECTION
+# ifndef CORO_GUARDPAGES
+#  define CORO_GUARDPAGES 4
+# endif
+#else
+# undef CORO_GUARDPAGES
+#endif
+
+#if !CORO_MMAP
+# undef CORO_GUARDPAGES
+#endif
+
+#if !__i386__ && !__x86_64__ && !__powerpc__ && !__arm__ && !__aarch64__ && !__m68k__ && !__alpha__ && !__mips__ && !__sparc64__
+# undef CORO_GUARDPAGES
+#endif
+
+#ifndef CORO_GUARDPAGES
+# define CORO_GUARDPAGES 0
+#endif
+
+#if !PAGESIZE
+  #if !CORO_MMAP
+    #define PAGESIZE 4096
+  #else
+    static size_t
+    coro_pagesize (void)
+    {
+      static size_t pagesize;
+
+      if (!pagesize)
+        pagesize = sysconf (_SC_PAGESIZE);
+
+      return pagesize;
+    }
+
+    #define PAGESIZE coro_pagesize ()
+  #endif
+#endif
+
+int
+coro_stack_alloc (struct coro_stack *stack, unsigned int size)
+{
+  if (!size)
+    size = 256 * 1024;
+
+  stack->sptr = 0;
+  stack->ssze = ((size_t)size * sizeof (void *) + PAGESIZE - 1) / PAGESIZE * PAGESIZE;
+
+#if CORO_FIBER
+
+  stack->sptr = (void *)stack;
+  return 1;
+
+#else
+
+  size_t ssze = stack->ssze + CORO_GUARDPAGES * PAGESIZE;
+  void *base;
+
+  #if CORO_MMAP
+    /* mmap supposedly does allocate-on-write for us */
+    base = mmap (0, ssze, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
+    if (base == (void *)-1)
+      {
+        /* some systems don't let us have executable heap */
+        /* we assume they won't need executable stack in that case */
+        base = mmap (0, ssze, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
+        if (base == (void *)-1)
+          return 0;
+      }
+
+    #if CORO_GUARDPAGES
+      mprotect (base, CORO_GUARDPAGES * PAGESIZE, PROT_NONE);
+    #endif
+
+    base = (void*)((char *)base + CORO_GUARDPAGES * PAGESIZE);
+  #else
+    base = malloc (ssze);
+    if (!base)
+      return 0;
+  #endif
+
+  #if CORO_USE_VALGRIND
+    stack->valgrind_id = VALGRIND_STACK_REGISTER ((char *)base, ((char *)base) + ssze - CORO_GUARDPAGES * PAGESIZE);
+  #endif
+
+  stack->sptr = base;
+  return 1;
+
+#endif
+}
+
+void
+coro_stack_free (struct coro_stack *stack)
+{
+#if CORO_FIBER
+  /* nop */
+#else
+  #if CORO_USE_VALGRIND
+    VALGRIND_STACK_DEREGISTER (stack->valgrind_id);
+  #endif
+
+  #if CORO_MMAP
+    if (stack->sptr)
+      munmap ((void*)((char *)stack->sptr - CORO_GUARDPAGES * PAGESIZE),
+              stack->ssze                 + CORO_GUARDPAGES * PAGESIZE);
+  #else
+    free (stack->sptr);
+  #endif
+#endif
+}
+
 #endif
 
