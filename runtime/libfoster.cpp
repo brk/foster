@@ -25,6 +25,8 @@
 #include "libfoster_gc_roots.h"
 #include "foster_gc_utils.h"
 #include "foster_globals.h"
+
+#define ENABLE_CLOCKTIMER 1
 #include "clocktimer.h"
 
 #include "base/atomicops.h"

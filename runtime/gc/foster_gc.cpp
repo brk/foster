@@ -8,7 +8,6 @@
 #include "libfoster_gc_roots.h"
 #include "foster_globals.h"
 #include "bitmap.h"
-#include "clocktimer.h"
 
 #include "base/metrics/histogram.h"
 #include "base/metrics/statistics_recorder.h"
@@ -73,6 +72,8 @@ const ssize_t inline gSEMISPACE_SIZE() { return __foster_globals.semispace_size;
 /////////////////////////////////////////////////////////////////
 
 #include "foster_gc_utils.h"
+#define ENABLE_CLOCKTIMER ENABLE_GC_TIMING
+#include "clocktimer.h"
 
 #include <list>
 #include <vector>
