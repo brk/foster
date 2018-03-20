@@ -1,6 +1,3 @@
-#ifndef CLOCKTIMER_H
-#define CLOCKTIMER_H
-
 // Minimalist, header-only platform wrapper around high-resolution timer sources.
 // Significantly inspired by plf_nanotimer:
 // https://github.com/mattreecebentley/plf_nanotimer
@@ -49,9 +46,11 @@ private:
 class clocktimer {
 public:
   clocktimer() {}
-  void start() { clock_gettime(CLOCK_MONOTONIC, &st); }
+  void start() { if (ENABLE_CLOCKTIMER) clock_gettime(CLOCK_MONOTONIC, &st); }
   double elapsed_ns_d() { return double(elapsed_ns()); }
   uint64_t elapsed_ns() {
+    if (!ENABLE_CLOCKTIMER) return 0;
+
     clock_gettime(CLOCK_MONOTONIC, &nd);
     return (1000000000 * (nd.tv_sec - st.tv_sec)) + (nd.tv_nsec - st.tv_nsec);
   }
@@ -68,7 +67,5 @@ public:
 private:
   struct timespec st, nd;
 };
-
-#endif
 
 #endif
