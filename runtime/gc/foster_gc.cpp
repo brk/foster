@@ -2933,7 +2933,6 @@ FILE* print_timing_stats() {
   auto gc_elapsed = gcglobals.gc_time_us / 1e6;
   auto mut_elapsed = total_elapsed - gc_elapsed;
 
-  fprintf(gclog, "'Exact_Marking': %d\n", 1);
   fprintf(gclog, "'F15_Coalescing': %d\n", COALESCE_FRAME15S);
   fprintf(gclog, "'F21_Marking': %d\n", MARK_FRAME21S);
   fprintf(gclog, "'F21_Marking_OOL': %d\n", MARK_FRAME21S_OOL);
