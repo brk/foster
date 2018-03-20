@@ -767,24 +767,6 @@ struct LLProcSubheapCollectPrim : public LLProcPrimBase {
   }
 };
 
-struct LLProcSubheapShrinkPrim : public LLProcPrimBase {
-  explicit LLProcSubheapShrinkPrim() {
-      this->name = "foster_subheap_shrink";
-      this->argnames.push_back("handle");
-      std::vector<TypeAST*> argTypes;
-      argTypes.push_back(foster::ParsingContext::lookupType("Subheap"));
-      std::map<std::string, std::string> annots; annots["callconv"] = "ccc";
-      this->type = new FnTypeAST(VoidTypeAST::get(),
-                                 argTypes, annots);
-  }
-  virtual void codegenToFunction(CodegenPass* pass, llvm::Function* F) {
-    pass->markFosterFunction(F);
-    Function::arg_iterator AI = F->arg_begin();
-    Value* n = &*(AI++);
-    codegenCall1ToFunctionWithArg(F, pass->lookupFunctionOrDie("foster_subheap_shrink_raw"),
-      builder.CreateBitCast(n, builder.getInt8PtrTy()));
-  }
-};
 
 void extendWithImplementationSpecificProcs(CodegenPass* _pass,
                                            std::vector<LLProc*>& procs) {
@@ -801,7 +783,6 @@ void extendWithImplementationSpecificProcs(CodegenPass* _pass,
   procs.push_back(new LLProcSubheapCreateSmallPrim());
   procs.push_back(new LLProcSubheapActivatePrim());
   procs.push_back(new LLProcSubheapCollectPrim());
-  procs.push_back(new LLProcSubheapShrinkPrim());
 }
 
 
