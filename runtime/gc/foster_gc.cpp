@@ -2342,7 +2342,7 @@ public:
 
     phase.start();
 #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
-    int64_t phaseStartTicks = __foster_getticks();
+    int64_t phaseStartTicks = __foster_getticks_start();
 #endif
 
 
@@ -2352,7 +2352,7 @@ public:
     visitGCRoots(__builtin_frame_address(0), this);
 
 #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
-    LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-rootscan-ticks", __foster_getticks_elapsed(phaseStartTicks, __foster_getticks()),  0, 60000000, 256);
+    LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-rootscan-ticks", __foster_getticks_elapsed(phaseStartTicks, __foster_getticks_end()),  0, 60000000, 256);
 #endif
 
     foster_bare_coro** coro_slot = __foster_get_current_coro_slot();
@@ -2372,7 +2372,7 @@ public:
     auto deltaRecursiveMarking_us = phase.elapsed_us();
     phase.start();
 #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
-    phaseStartTicks = __foster_getticks();
+    phaseStartTicks = __foster_getticks_start();
 #endif
     // Coarse grained sweep, post-collection
     {
@@ -2399,7 +2399,7 @@ public:
 
     auto deltaPostMarkingCleanup_us = phase.elapsed_us();
 #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
-    LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-postgc-ticks", __foster_getticks_elapsed(phaseStartTicks, __foster_getticks()),  0, 60000000, 256);
+    LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-postgc-ticks", __foster_getticks_elapsed(phaseStartTicks, __foster_getticks_end()),  0, 60000000, 256);
 #endif
     //if (TRACK_BYTES_KEPT_ENTRIES) { hpstats.bytes_kept_per_gc.record_sample(next->used_size()); }
 
