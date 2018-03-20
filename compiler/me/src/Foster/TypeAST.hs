@@ -252,7 +252,6 @@ primitiveDecls = map (\(n,t) -> (n,t,NotForeign)) $
     ,(,) "foster_subheap_create_small" $ mkProcType [] [fosSubheapType]
     ,(,) "foster_subheap_activate" $ mkProcType [fosSubheapType] []
     ,(,) "foster_subheap_collect"  $ mkProcType [fosSubheapType] []
-    ,(,) "foster_subheap_shrink"   $ mkProcType [fosSubheapType] []
     ]
 
 primopDecls = map (\(name, (ty, _op)) -> (name, ty, NotForeign)) $ Map.toList gFosterPrimOpsTable

@@ -178,7 +178,6 @@ public:
   virtual byte_limit* get_byte_limit() = 0;
 
   virtual void force_gc_for_debugging_purposes() = 0;
-  virtual void gc_and_shrink() = 0;
 
   virtual void condemn() = 0;
 
@@ -1687,10 +1686,6 @@ public:
 
   virtual byte_limit* get_byte_limit() { return lim; }
   virtual void force_gc_for_debugging_purposes() { this->immix_line_gc(); }
-  virtual void gc_and_shrink() {
-    this->immix_line_gc();
-    // No shrinking for line spaces, currently.
-  }
 
   virtual void condemn() {
     for (auto lineframe : used_frames) {
@@ -2591,50 +2586,6 @@ public:
     incoming_ptr_addrs.insert((tori**) slot);
   }
 
-  void gc_and_shrink() {
-    // Establish the invariant that live frames/arrays are suitably marked.
-    this->immix_gc();
-
-    std::vector<frame15*> keep_frame15s;
-    std::vector<frame21*> keep_frame21s;
-
-    // Frames that are unmarked will be freed as appropriate;
-    // marked frames will be kept.
-    tracking.iter_frame15( [&](frame15* f15) {
-      if (is_linemap15_clear(f15)) {
-        global_frame15_allocator.give_frame15(f15);
-      } else {
-        keep_frame15s.push_back(f15);
-      }
-    });
-
-    tracking.iter_coalesced_frame21( [&](frame21* f21) {
-      if (is_linemap_clear(f21)) {
-        // We return memory directly to the OS, not to the global allocator.
-        deallocate_frame21(f21);
-      } else {
-        keep_frame21s.push_back(f21);
-      }
-    });
-
-    // Adjust frame limit counts, accounting for frames we're going to keep.
-    lim->frame15s_left += tracking.logical_frame15s();
-    lim->frame15s_left -= (keep_frame15s.size() + keep_frame21s.size() * IMMIX_ACTIVE_F15_PER_F21);
-
-    // Get rid of everything except the frames we wanted to keep.
-    tracking.clear();
-    for (auto f : keep_frame15s) { tracking.add_frame15(f); }
-    for (auto f : keep_frame21s) { tracking.add_frame21(f); }
-    clear_current_blocks();
-
-    recycled.clear();
-    clean_frame15s.clear();
-    clean_frame21s.clear();
-    local_frame15_allocator.clear();
-    laa.sweep_arrays();
-    // TODO remembered sets?
-  }
-
 public:
   // How many are we allowed to allocate before being forced to GC & reuse?
   byte_limit* lim;
@@ -3312,12 +3263,6 @@ void foster_subheap_activate_raw(void* generic_subheap) {
   immix_heap* subheap = ((heap_handle<immix_heap>*) generic_subheap)->body;
   gcglobals.allocator = subheap;
   //fprintf(gclog, "activated subheap %p\n", subheap);
-}
-
-void foster_subheap_shrink_raw(void* generic_subheap) {
-  auto subheap = ((heap_handle<immix_heap>*) generic_subheap)->body;
-  subheap->gc_and_shrink();
-  //fprintf(gclog, "shrink()-ed subheap %p\n", subheap);
 }
 
 void foster_subheap_collect_raw(void* generic_subheap) {

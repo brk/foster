@@ -46,7 +46,7 @@ main = {
     io "stretch tree" stretchN c;
 
     foster_subheap_collect subheap;
-    foster_subheap_shrink subheap;
+    //foster_subheap_shrink subheap;
 
     foster_subheap_activate subheapL;
 
