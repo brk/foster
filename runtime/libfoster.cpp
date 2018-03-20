@@ -93,7 +93,7 @@ private:
 
 ////////////////////////////////////////////////////////////////
 
-const bool kUseSchedulingTimerThread = true;
+const bool kUseSchedulingTimerThread = false;
 
 FosterGlobals __foster_globals;
 
