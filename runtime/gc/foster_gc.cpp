@@ -36,12 +36,12 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 #define ENABLE_GCLOG 0
 #define ENABLE_LINE_GCLOG 0
 #define ENABLE_GCLOG_PREP 0
-#define ENABLE_GCLOG_ENDGC 1
+#define ENABLE_GCLOG_ENDGC 0
 #define FOSTER_GC_TRACK_BITMAPS       0
 #define FOSTER_GC_ALLOC_HISTOGRAMS    0
 #define FOSTER_GC_TIME_HISTOGRAMS     0
 #define FOSTER_GC_EFFIC_HISTOGRAMS    0
-#define ENABLE_GC_TIMING              1
+#define ENABLE_GC_TIMING              0
 #define ENABLE_GC_TIMING_TICKS        0
 #define GC_ASSERTIONS 0
 #define MARK_FRAME21S                 0
@@ -747,12 +747,15 @@ void deallocate_frame21(frame21* f) {
 struct frame15_allocator {
   frame15_allocator() : next_frame15(nullptr) {}
 
-  bool empty() { return !next_frame15 && spare_frame15s.empty(); }
-
   void clear() {
     if (!spare_frame15s.empty()) {
       fprintf(gclog, "WARNING: frame15_allocator.clear() with spare frame15s...\n");
       spare_frame15s.clear();
+    }
+
+    if (!spare_frame21s.empty()) {
+      fprintf(gclog, "WARNING: frame15_allocator.clear() with spare frame21s...\n");
+      spare_frame21s.clear();
     }
 
     if (!self_owned_allocated_frame21s.empty()) {
@@ -771,26 +774,34 @@ struct frame15_allocator {
     spare_frame15s.push_back(f);
   }
 
-  // Precondition: empty()
-  // Note: we allocate frame15s from the frame21 but the space may retain ownership.
   void give_frame21(frame21* f) {
-    if (ENABLE_GCLOG_PREP) { fprintf(gclog, "give_frame21(%p)\n", f); }
-
-    next_frame15 = (frame15*) f;
-    // Skip first frame15, which will be used for metadata.
-    incr_by(next_frame15, 1 << 15);
+    spare_frame21s.push_back(f);
   }
 
+private:
+  frame21* get_frame21() {
+    if (!spare_frame21s.empty()) {
+      frame21* rv = spare_frame21s.back();
+      spare_frame21s.pop_back();
+      return rv;
+    }
+    frame21* rv = allocate_frame21();
+    self_owned_allocated_frame21s.push_back(rv);
+    return rv;
+  }
+
+public:
   frame15* get_frame15() {
     if (!spare_frame15s.empty()) {
       frame15* f = spare_frame15s.back(); spare_frame15s.pop_back();
       return f;
     }
 
-    if (empty()) {
-      frame21* f = allocate_frame21();
-      self_owned_allocated_frame21s.push_back(f);
-      give_frame21(f);
+    if (!next_frame15) {
+      frame21* f = get_frame21();
+      next_frame15 = (frame15*) f;
+      // Skip first frame15, which will be used for metadata.
+      incr_by(next_frame15, 1 << 15);
     }
 
     frame15* curr_frame15 = next_frame15;
@@ -819,6 +830,7 @@ struct frame15_allocator {
   frame15* next_frame15;
   immix_line_frame15* next_line_frame15;
   std::vector<frame15*> spare_frame15s;
+  std::vector<frame21*> spare_frame21s;
   std::vector<immix_line_frame15*> spare_line_frame15s;
 
   std::vector<frame21*> self_owned_allocated_frame21s;
@@ -1321,33 +1333,78 @@ class immix_frame_tracking {
 #endif
 
   std::vector<frame21*> coalesced_frame21s;
-public:
 
-  template<typename Thunk>
-  void iter_frame15(Thunk thunk) {
+  // These vectors will be filled by post-marking inspection,
+  // and the frames will be returned to the global pool.
+  std::vector<frame15*> clean_frame15s;
+  std::vector<frame21*> clean_frame21s;
+
+public:
+  size_t frame15s_in_reserve_clean() { return clean_frame15s.size() + (clean_frame21s.size() * IMMIX_ACTIVE_F15_PER_F21); }
+  size_t count_clean_frame15s() { return clean_frame15s.size(); }
+  size_t count_clean_frame21s() { return clean_frame21s.size(); }
+
+  void note_clean_frame15(frame15* f15) { clean_frame15s.push_back(f15); }
+  void note_clean_frame21(frame21* f21) { clean_frame21s.push_back(f21); }
+
+  void release_clean_frames(byte_limit* lim) {
+    lim->frame15s_left += frame15s_in_reserve_clean();
+    num_frame15s_total -= frame15s_in_reserve_clean();
+
+    for (auto f15 : clean_frame15s) {
+      global_frame15_allocator.give_frame15(f15);
+    }
+
+    for (auto f21 : clean_frame21s) {
+      global_frame15_allocator.give_frame21(f21);
+      //fprintf(gclog, "deallocating frame21: %p\n", f21);
+      //deallocate_frame21(f21);
+    }
+
+    clean_frame15s.clear();
+    clean_frame21s.clear();
+  }
+
+  template<typename WasUncleanThunk>
+  void iter_frame15_helper(WasUncleanThunk thunk, std::vector<frame15*>& origin) {
+    std::vector<frame15*> holder;
+    holder.swap(origin);
+    // If all frames end up clean, this effectively clears the origin vector.
+    // Tracked frame counts will be incorrect until the end of release_clean_frames().
+    for (auto f15 : holder) {
+      bool unclean = thunk(f15);
+      if (unclean) {
+        origin.push_back(f15);
+      }
+    }
+  }
+
+  template<typename WasUncleanThunk>
+  void iter_frame15(WasUncleanThunk thunk) {
 #if COALESCE_FRAME15S
     if (!fromglobal_frame15s.empty()) {
-      for (auto mapentry : fromglobal_frame15s) {
-        for (auto f15 : mapentry.second) {
-          thunk(f15);
-        }
+      for (auto& mapentry : fromglobal_frame15s) {
+        iter_frame15_helper(thunk, mapentry.second);
       }
     }
 #else
-      for (auto f15 : uncoalesced_frame15s) {
-        thunk(f15);
-      }
+      iter_frame15_helper(thunk, uncoalesced_frame15s);
 #endif
   }
 
-  template<typename Thunk>
-  void iter_coalesced_frame21(Thunk thunk) {
+  template<typename WasUncleanThunk>
+  void iter_coalesced_frame21(WasUncleanThunk thunk) {
+    // Interestingly, we don't preserve any coalesced frame21s!
+    // Unclean frame21s get split, and clean frame21s are returned to the global pool.
+    // Coalescing is a net increase in work, but it's also a net reduction in
+    // the critical path for large, mostly-empty subheaps, which is an overall win.
     for (auto f21 : coalesced_frame21s) {
       thunk(f21);
     }
+    coalesced_frame21s.clear();
   }
 
-  void clear() {
+  void clear_tracking() {
     num_frame15s_total = 0;
 #if COALESCE_FRAME15S
     fromglobal_frame15s.clear();
@@ -1369,7 +1426,7 @@ public:
     auto x = frame21_id_of(f);
     std::vector<frame15*>& v = fromglobal_frame15s[x];
     v.push_back(f);
-    //fprintf(gclog, "v.size() is %d for frame21 %d of f15 %p\n", v.size(), x, f);
+    //fprintf(gclog, "v.size() is %zu for frame21 %d of f15 %p\n", v.size(), x, f);
     if (v.size() == IMMIX_ACTIVE_F15_PER_F21) {
       coalesced_frame21s.push_back(frame21_of_id(x));
       fromglobal_frame15s.erase(fromglobal_frame15s.find(x));
@@ -1406,22 +1463,22 @@ public:
  |          |
  |  global  |
  |   pool   |
- |          | <--------+
- +--------+-+          |
-          |            |             condemned  <--------+
-          |            |         (5)     +               |
-          |            |              .-+++-.            |
-     (3)  |            |             /   |   \           |
-          |            |             |   |   |           |
-          |            |   +---------+   |   |           |
-          v            +   |             |   |           |
-                           v             v   v           |
-        current <-+   clean   +-+recycled     full       |
-    (1) ~~~~~~~   |     +     |  ........     ....       |
-             ...  \--<--v-----/ ..          ..           |
-               ..     (2)      ..         ...            |
+ |          | <---------------------------+
+ +--------+-+                             +
+          |                          condemned  <--------+
+          |                      (5)      +              |
+          |                            .-+++-.           |
+     (3)  |                           /       \          |
+          |                           |       |          |
+          |                           |       |          |
+          v                           |       |          |
+                                      v       v          |
+        current <--------------- recycled    full        |
+    (1) ~~~~~~~       (2)        ........    ....        |
+             ...                ..          ..           |
+               ..              ..         ...            |
                 ..            ..       ....              |
-                 ..    used  ..    .....                 |
+                 ..          ..    .....                 |
                   ...................                    |
                          +                               |
                     (4)  |                               |
@@ -1431,8 +1488,7 @@ public:
   (1) Allocations go into the current frame.
       When it fills up, it is sent to the full bucket.
 
-  (2) Replacement frames are drawn from the clean and
-      recycled buckets, or from
+  (2) Replacement frames are drawn from the recycled bucket, or from
   (3) the global pool (as permitted by per-subheap limits).
 
   (4) `subheapCondemn` siphons the subheap's used (i.e. non-clean)
@@ -1466,7 +1522,7 @@ public:
 
       Back of the envelope calculation: 1GB = 32k * 32KB.
                                        64GB = 32k * 2MB.
-      What's the approximate cost of a round trip to memory for ~32k frames?
+      What's the approximate cost **of a round trip to memory** for ~32k frames?
             200 cycles * 32e3 / 4e6 cycles/ms => 1.6 ms
 
       In practice, prefetching and locality of reference helps quite a lot:
@@ -2041,6 +2097,7 @@ public:
     tracking.iter_frame15( [&](frame15* f15) {
       set_condemned_status_for_frame15_id(frame15_id_of(f15), condemned_status::yes_condemned);
       ++n;
+      return true;
     });
     tracking.iter_coalesced_frame21( [&](frame21* f21) {
       // The fact that we own the entire frame21 indicates that none of its frame15s are line-based.
@@ -2115,73 +2172,20 @@ public:
       return true;
     }
 
-    /*
-    if (!recycled_frame15s.empty() && cell_size <= IMMIX_LINE_SIZE) {
-      frame15* f = recycled_frame15s.back(); recycled_frame15s.pop_back();
-      uint8_t* linemap = linemap_for_frame15_id(frame15_id_of(f));
-      int startline = MARK_EXACT
-                    ? unmarked_line_from(linemap, 0)
-                    : conservatively_unmarked_line_from(linemap, 0);
-      int endline   = first_marked_line_after(linemap, startline);
-      if (ENABLE_GCLOG || ENABLE_GCLOG_PREP) {
-        fprintf(gclog, "using recycled frame15 %p: startline = %d, endline = %d, # left: %zu\n", f, startline, endline, recycled_frame15s.size());
-        for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", linemap[i] ? 'd' : '_'); }
-        fprintf(gclog, "\n");
-      }
-      if (startline != -1) {
-        bumper->bound = offset(f, endline   * IMMIX_LINE_SIZE);
-        bumper->base  = offset(f, startline * IMMIX_LINE_SIZE);
-        bumper->base  = realigned_for_allocation(bumper->base);
-        return true;
-      }
-    }
-    */
-
-    if (!clean_frame15s.empty()) {
-      frame15* f = clean_frame15s.back(); clean_frame15s.pop_back();
-      if (ENABLE_GCLOG_PREP) { fprintf(gclog, "grabbed clean frame15: %p\n", f); }
-      if (MEMSET_FREED_MEMORY) { clear_frame15(f); }
-      bumper->base  = realigned_for_allocation(f);
-      bumper->bound = offset(f, 1 << 15);
-      return true;
-    }
-
-    // Note: by preferring to get new frame15s before re-using clean frame21s, we implicitly
-    // prefer expansion when tracking frame21s.
-
     if (lim->frame15s_left > 0) {
       --lim->frame15s_left;
       // Note: cannot call clear() on global allocator until
       // all frame15s it has distributed are relinquished.
       frame15* f = global_frame15_allocator.get_frame15();
+      if (ENABLE_GCLOG_PREP) { fprintf(gclog, "grabbed global frame15: %p into space %p\n", f, this); }
       tracking.add_frame15(f);
       set_parent_for_frame(this, f);
       bumper->base  = realigned_for_allocation(f);
       bumper->bound = offset(f, 1 << 15);
-      if (ENABLE_GCLOG_PREP) { fprintf(gclog, "grabbed global frame15: %p into space %p\n", f, this); }
       return true;
     }
 
-    // Note: frame15_allocator would call allocate_frame21() itself if empty
-    // but we don't want it to, because the space should own any allocated
-    // frames for bookkeeping purposes.
-    if (local_frame15_allocator.empty()) {
-      if (clean_frame21s.empty()) {
-        return false; // no used frames, no new frames available. sad!
-      }
-
-      frame21* f = clean_frame21s.back(); clean_frame21s.pop_back();
-      if (ENABLE_GCLOG_PREP) { fprintf(gclog, "giving clean frame21 to local f15 allocator: %p\n", f); }
-      local_frame15_allocator.give_frame21(f);
-    }
-
-    frame15* f = local_frame15_allocator.get_frame15();
-    if (MEMSET_FREED_MEMORY) { clear_frame15(f); }
-    set_parent_for_frame(this, f);
-    bumper->base  = realigned_for_allocation(f);
-    bumper->bound = offset(f, 1 << 15);
-    if (ENABLE_GCLOG_PREP) { fprintf(gclog, "using local frame15: %p\n", f); }
-    return true;
+    return false; // no used frames, no new frames available.
   }
 
   int unmarked_line_from(uint8_t* linemap, int start) {
@@ -2379,14 +2383,11 @@ public:
 
     // These vectors will get filled by the calls to inspect_*_postgc().
     recycled.clear();
-    clean_frame15s.clear();
-    clean_frame21s.clear();
-    local_frame15_allocator.clear();
     laa.sweep_arrays();
 
     clocktimer insp_ct; insp_ct.start();
     tracking.iter_frame15( [this](frame15* f15) {
-      this->inspect_frame15_postgc(frame15_id_of(f15), f15);
+      return this->inspect_frame15_postgc(frame15_id_of(f15), f15);
     });
     auto inspectFrame15Time_us = insp_ct.elapsed_us();
 
@@ -2406,18 +2407,18 @@ public:
 #if (ENABLE_GCLOG || ENABLE_GCLOG_ENDGC)
       size_t frame15s_total = tracking.logical_frame15s();
       auto total_heap_size = foster::humanize_s(double(frame15s_total * (1 << 15)), "B");
-      size_t frame15s_kept = frame15s_total - (recycled.size() + frame15s_in_reserve_clean());
+      size_t frame15s_kept = frame15s_total - (recycled.size() + tracking.frame15s_in_reserve_clean());
       auto total_live_size = foster::humanize_s(double(frame15s_kept) * (1 << 15), "B");
 
       fprintf(gclog, "logically %zu frame15s, comprised of %zu frame21s and %zu actual frame15s\n", frame15s_total,
           tracking.count_frame21s(), tracking.physical_frame15s());
       describe_frame15s_count("tracking  ", frame15s_total);
       describe_frame15s_count("  recycled", frame15s_in_reserve_recycled());
-      describe_frame15s_count("  clean   ", frame15s_in_reserve_clean());
-      fprintf(gclog, "tracking %zu f21s, ended with %zu clean f21s\n", tracking.count_frame21s(), clean_frame21s.size());
+      describe_frame15s_count("  clean   ", tracking.frame15s_in_reserve_clean());
+      fprintf(gclog, "tracking %zu f21s, ended with %zu clean f21s\n", tracking.count_frame21s(), tracking.count_clean_frame21s());
 
       fprintf(gclog, "%zu recycled, %zu clean f15 + %zu clean f21; %zd total (%zd f21) => (%zu f15 @ %s kept / %s)",
-          recycled.size(), clean_frame15s.size(), clean_frame21s.size(),
+          recycled.size(), tracking.count_clean_frame15s(), tracking.count_clean_frame21s(),
           frame15s_total, tracking.count_frame21s(),
           frame15s_kept, total_live_size.c_str(), total_heap_size.c_str());
       if (ENABLE_GC_TIMING) {
@@ -2447,6 +2448,8 @@ public:
 #endif
     }
 
+    tracking.release_clean_frames(lim);
+
     if (ENABLE_GC_TIMING) {
       double delta_us = gcstart.elapsed_us();
       if (FOSTER_GC_TIME_HISTOGRAMS) {
@@ -2471,29 +2474,29 @@ public:
     fprintf(gclog, "%s: %6zd f15s == %s\n", start, f15s, h.c_str());
   }
   size_t frame15s_in_reserve_recycled() { return recycled.size(); }
-  size_t frame15s_in_reserve_clean() { return clean_frame15s.size() + (clean_frame21s.size() * IMMIX_ACTIVE_F15_PER_F21); }
 
   void inspect_frame21_postgc(frame21* f21) {
     bool is_frame21_entirely_clear = is_linemap_clear(f21);
     if (is_frame21_entirely_clear) {
-      clean_frame21s.push_back(f21);
+      tracking.note_clean_frame21(f21);
       // TODO set frameinfo?
     } else {
       // Handle the component frame15s individually.
       frame15_id fid = frame15_id_of(f21);
+      fprintf(gclog, "   iterating frames of f21 %p\n", f21);
       for (int i = 1; i < IMMIX_F15_PER_F21; ++i) {
-        // Because we can trigger GCs before reaching the space limit for a heap,
-        // some of the frame15s for a f21 might not yet be used. If so, we should
-        // skip 'em.
         frame15* f15 = frame15_for_frame15_id(fid + i);
-        if (heap_for(f15) != this) { continue; }
-
-        inspect_frame15_postgc(fid + i, f15);
+        bool unclean = inspect_frame15_postgc(fid + i, f15);
+        if (unclean) { // Clean frames already noted;
+          // We don't want to re-track regular frame15s, only split ones.
+          fprintf(gclog, "  adding f15 %p of f21 %p\n", f15, f21);
+          tracking.add_frame15(f15);
+        }
       }
     }
   }
 
-  void inspect_frame15_postgc(frame15_id fid, frame15* f15) {
+  bool inspect_frame15_postgc(frame15_id fid, frame15* f15) {
     // TODO-X benchmark impact of using frame15_is_marked
     uint8_t* linemap = linemap_for_frame15_id(fid);
     int num_marked_lines = count_marked_lines_for_frame15(f15, linemap);
@@ -2510,8 +2513,8 @@ public:
     finfo->num_available_lines_at_last_collection = num_available_lines;
 
     if (num_marked_lines == 0) {
-      clean_frame15s.push_back(f15);
-      return;
+      tracking.note_clean_frame15(f15);
+      return false;
     }
 
     free_linegroup* nextgroup = nullptr;
@@ -2569,6 +2572,7 @@ public:
     // TODO increment mark histogram
 
     // Coarse marks must be reset after all frames have been processed.
+    return true;
   }
 
   void add_subheap_handle(heap_handle<immix_heap>* subheap) {
@@ -2602,25 +2606,9 @@ private:
   // Tracks (and coalesces) the frames that belong to this space.
   immix_frame_tracking tracking;
 
-  // The next few vectors store the frames that the previous collection
+  // Stores the empty spaces that the previous collection
   // identified as being viable candidates for allocation into.
-
-  // For now, we'll represent these as explicit lists, and reset them
-  // after each stop-the-world collection.
-  // In a concurrent setting, we'd probably have an explicit status word for
-  // each frame15info, and use transitions of the concurrently-computed status
-  // to drive transfers between such cached lists.
-  // These two lists can contain local and global frame15s.
   std::vector<free_linegroup*> recycled;
-  std::vector<frame15*> clean_frame15s;
-  std::vector<frame21*> clean_frame21s;
-
-  // This allocator wraps one frame21 at a time and doles it out as frame15s.
-  // For now, this means in practice that subheaps will usually reserve 2 MB
-  // of address space at a time, even though they only use 32 KB at a time.
-  // The main benefit of doing so is (slightly) lower metadata costs and
-  // higher locality.
-  frame15_allocator local_frame15_allocator;
 
   // The points-into remembered set; each frame in this set needs to have its
   // card table inspected for pointers that actually point here.
