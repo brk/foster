@@ -159,7 +159,7 @@ bool SpecializeAllocations::runOnBasicBlock(BasicBlock &BB) {
             ++NumSpecialized;
             Changed = true;
           } else {
-            llvm::errs() << "Saw memalloc but can't specialize size " << sz->getSExtValue() << "\n";
+            //llvm::errs() << "Saw memalloc but can't specialize size " << sz->getSExtValue() << "\n";
           }
         } else {
           errs() << "FosterMallocSpecializer wasn't able to find the called function! "
