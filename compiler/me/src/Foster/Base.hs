@@ -88,11 +88,20 @@ instance Pretty TyVar where
   pretty (BoundTyVar name _) = text "'" <> text name
   pretty (SkolemTyVar name uniq _kind) = text "$" <> text name <> text ":" <> pretty uniq
 
+type Level = Int
+data Levels = Levels { levelOld :: IORef Level
+                     , levelNew :: IORef Level
+                     }
+genericLevel = maxBound :: Int
+markedLevel = -1
+
+data TVar t = Unbound () | BoundTo t
+
 data MTVQ = MTVSigma | MTVTau | MTVEffect deriving (Eq)
 data MetaTyVar t = Meta { mtvConstraint :: MTVQ
                         , mtvDesc       :: String
                         , mtvUniq       :: Uniq
-                        , mtvRef        :: IORef (Maybe t)
+                        , mtvRef        :: IORef (TVar t)
                         }
 
 descMTVQ MTVSigma  = "S"

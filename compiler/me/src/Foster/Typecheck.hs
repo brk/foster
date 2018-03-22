@@ -916,8 +916,8 @@ classifyTypeInstSituation _ (ForAllTC {}) = return $ TI_Sigma
 classifyTypeInstSituation tys (MetaTyVarTC m) = do
   mb_t <- readTcMeta m
   case mb_t of
-    Nothing -> return $ TI_Unresolved
-    Just t  -> classifyTypeInstSituation tys t
+    Unbound _ -> return $ TI_Unresolved
+    BoundTo t -> classifyTypeInstSituation tys t
 classifyTypeInstSituation _ rho = return $ TI_Rho rho
 -- }}}
 
@@ -1565,15 +1565,15 @@ tcType' ctx refinementArgs ris typ = do
                                     let tryOverwrite (tv, MetaTyVarTC m) = do
                                             mty <- readTcMeta m
                                             case mty of
-                                                Nothing -> do ty' <- zonkType tv
-                                                              writeTcMetaTC m ty'
-                                                Just (MetaTyVarTC m') -> tryOverwrite (tv, MetaTyVarTC m' )
-                                                Just ut -> do tcFailsMore [
-                                                                  text "tcType' didn't expect unification variable" <+> text (show m) <+> text "associated"
-                                                                 ,text "with a bound type variable" <+> pretty tv <+> text "to get unified!"
-                                                                 ,indent 8 (pretty ut)
-                                                                 ,line
-                                                                 ,pretty typ]
+                                                Unbound _ -> do ty' <- zonkType tv
+                                                                writeTcMetaTC m ty'
+                                                BoundTo (MetaTyVarTC m') -> tryOverwrite (tv, MetaTyVarTC m' )
+                                                BoundTo ut -> do tcFailsMore [
+                                                                   text "tcType' didn't expect unification variable" <+> text (show m) <+> text "associated"
+                                                                  ,text "with a bound type variable" <+> pretty tv <+> text "to get unified!"
+                                                                  ,indent 8 (pretty ut)
+                                                                  ,line
+                                                                  ,pretty typ]
                                         tryOverwrite (tv, tau) = do
                                           tcFails [text "tcType'.tryOverwrite could not handle non-meta tau for type variable " <> pretty tv
                                                   ,pretty tau]
@@ -2220,8 +2220,8 @@ shZonkType x = do
 shZonkMetaType m = do
   mty <- readTcMeta m
   case mty of
-    Nothing -> do return $ MetaUnbound m
-    Just ty -> do return $ MetaBoundTo m ty
+    Unbound _  -> do return $ MetaUnbound m
+    BoundTo ty -> do return $ MetaBoundTo m ty
 
 
 -- Sad hack:
@@ -2243,9 +2243,9 @@ checkAgainst taus (ety, MetaTyVarTC m) = do
   let tryOverwrite = do
         mty <- readTcMeta m
         case mty of
-            Nothing -> do ty' <- zonkType ety
-                          writeTcMetaTC m ty'
-            Just  _ -> do return ()
+            Unbound _ -> do ty' <- zonkType ety
+                            writeTcMetaTC m ty'
+            BoundTo _ -> do return ()
 
   case ety of
     MetaTyVarTC em | em `elem` taus -> do
