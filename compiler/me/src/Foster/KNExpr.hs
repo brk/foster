@@ -82,7 +82,7 @@ kNormalizeModule :: (ModuleIL (AnnExpr TypeTC) TypeTC)
                  -> Context TypeTC ->
                 Tc (ModuleIL KNExpr TypeIL)
 kNormalizeModule m ctx = do
-    let eds = Map.fromListWith (++) [(typeFormalName (effectDeclName ed), [ed]) | ed <- moduleILeffectDecls m]
+    --let eds = Map.fromListWith (++) [(typeFormalName (effectDeclName ed), [ed]) | ed <- moduleILeffectDecls m]
     -- For debugging, try replacing the empty map by a call to error
     -- (after disabling StrictData, presumably).
     let st0 = (ctx, contextDataTypes ctx, Map.empty, Map.empty)
@@ -512,15 +512,15 @@ tcToIL st typ = do
      MetaTyVarTC m -> do
         mty <- readTcMeta m
         case mty of
-          Nothing -> if mtvIsEffect m
+          Unbound _-> if mtvIsEffect m
                        then return (TyAppIL (TyConIL "effect.Empty") [])
                        else tcFails [text $ "Found un-unified unification variable "
                                 ++ show (mtvUniq m) ++ "(" ++ mtvDesc m ++ ")!"]
-          Just t  -> let t' = shallowStripRefinedTypeTC t in
-                     -- TODO: strip refinements deeply
-                     if show t == show t'
-                       then q t'
-                       else error $ "meta ty var : " ++ show t ++ " =====> " ++ show t'
+          BoundTo t -> let t' = shallowStripRefinedTypeTC t in
+                       -- TODO: strip refinements deeply
+                       if show t == show t'
+                         then q t'
+                         else error $ "meta ty var : " ++ show t ++ " =====> " ++ show t'
 
 
 -- For datatypes which have been annotated as being unboxed (and are eligible
@@ -664,9 +664,9 @@ checkArrayIndexer b = do
             MetaTyVarTC m -> do
               mb_t <- readTcMeta m
               case mb_t of
-                Nothing -> do writeTcMeta m (PrimIntTC I32)
-                              check         (PrimIntTC I32)
-                Just tt -> check tt
+                Unbound _ -> do writeTcMeta m (PrimIntTC I32)
+                                check         (PrimIntTC I32)
+                BoundTo tt -> check tt
             PrimIntTC I1     -> return $ AIR_ZExt
             PrimIntTC I8     -> return $ AIR_ZExt
             PrimIntTC I32    -> return $ AIR_OK
@@ -693,8 +693,8 @@ ailInt rng int ty = do
     MetaTyVarTC m -> do
       mty <- readTcMeta m
       case mty of
-        Just t -> do ailInt rng int t
-        Nothing -> do tcFails [text "Int literal should have had type inferred for it!"]
+        BoundTo t -> do ailInt rng int t
+        Unbound _-> do tcFails [text "Int literal should have had type inferred for it!"]
 
     RefinedTypeTC v _ _ -> ailInt rng int (tidType v)
 

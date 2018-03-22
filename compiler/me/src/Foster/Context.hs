@@ -209,23 +209,23 @@ tcFailsMore errs = do
 sanityCheck :: Bool -> String -> Tc ()
 sanityCheck cond msg = if cond then return () else tcFails [red (text msg)]
 
-readTcMeta :: MetaTyVar ty -> Tc (Maybe ty)
+readTcMeta :: MetaTyVar ty -> Tc (TVar ty)
 readTcMeta m = tcLift $ readIORef (mtvRef m)
 
 writeTcMeta :: Show ty => MetaTyVar ty -> ty -> Tc ()
 writeTcMeta m v = do
   --tcLift $ putStrLn $ "=========== Writing meta type variable: " ++ show ((mtvDesc m, mtvUniq m)) ++ " := " ++ show v
-  tcLift $ writeIORef (mtvRef m) (Just v)
+  tcLift $ writeIORef (mtvRef m) (BoundTo v)
 
 -- A "shallow" alternative to zonking which only peeks at the topmost tycon
 shallowZonk :: TypeTC -> Tc TypeTC
 shallowZonk (MetaTyVarTC m) = do
          mty <- readTcMeta m
          case mty of
-             Nothing -> return (MetaTyVarTC m)
-             Just ty -> do ty' <- shallowZonk ty
-                           writeTcMetaTC m ty'
-                           return ty'
+             Unbound _ -> return (MetaTyVarTC m)
+             BoundTo ty -> do ty' <- shallowZonk ty
+                              writeTcMetaTC m ty'
+                              return ty'
 shallowZonk t = return t
 
 shallowStripRefinedTypeTC (RefinedTypeTC v _ _) = tidType v
@@ -250,7 +250,7 @@ newTcUnificationVarTau    d = newTcUnificationVar_ MTVTau d
 newTcUnificationVar_ :: MTVQ -> String -> Tc TypeTC
 newTcUnificationVar_ q desc = do
     u    <- newTcUniq
-    ref  <- newTcRef Nothing
+    ref  <- newTcRef (Unbound ())
     meta <- tcRecordUnificationVar (Meta q desc u ref)
     return (MetaTyVarTC meta)
       where
@@ -318,7 +318,7 @@ tcApplyIntConstraints :: Tc ()
 tcApplyIntConstraints = Tc $ \env -> do
   map <- readIORef (tcMetaIntConstraints env)
   mapM_ (\(m, neededBits) -> do writeIORef (mtvRef m)
-                                    (Just $ PrimIntTC (sizeOfBits neededBits)))
+                                    (BoundTo $ PrimIntTC (sizeOfBits neededBits)))
         (Map.toList map)
   retOK ()
  where

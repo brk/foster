@@ -414,11 +414,11 @@ zonkType x = do
     case x of
         MetaTyVarTC m -> do mty <- readTcMeta m
                             case mty of
-                              Nothing -> do --debugDoc $ string "unable to zonk meta " <> pretty x
-                                            return x
-                              Just ty -> do ty' <- zonkType ty >>= return
-                                            writeTcMetaTC m ty'
-                                            return ty'
+                              Unbound _ -> do --debugDoc $ string "unable to zonk meta " <> pretty x
+                                              return x
+                              BoundTo ty -> do ty' <- zonkType ty >>= return
+                                               writeTcMetaTC m ty'
+                                               return ty'
         PrimIntTC     {}        -> return x
         TyVarTC       {}        -> return x
         TyConTC  nm             -> return $ TyConTC nm
@@ -473,19 +473,20 @@ unify' !depth t1 t2 msgs = do
        mt1 <- readTcMeta m
        case (mt1, Map.lookup (mtvUniq m) soln) of
          (_,       Nothing)          -> return () -- no type to update to.
-         (Just x1, Just x2)          -> do unify' (depth + 1) x1 x2 msgs
+         (BoundTo x1, Just x2)          -> do unify' (depth + 1) x1 x2 msgs
          -- The unification var m1 has no bound type, but it's being
          -- associated with var m2, so we'll peek through m2.
-         (Nothing, Just (MetaTyVarTC m2)) -> do
+         (Unbound _, Just (MetaTyVarTC m2)) -> do
                          mt2 <- readTcMeta m2
                          case mt2 of
-                             Just x2 -> do --debugDoc $ pretty (MetaTyVarTC m2) <+> text "~>" <+> pretty x2
+                             BoundTo x2 -> do --debugDoc $ pretty (MetaTyVarTC m2) <+> text "~>" <+> pretty x2
                                            unify' (depth + 1) (MetaTyVarTC m) x2 msgs
-                             Nothing -> writeTcMetaTC m (MetaTyVarTC m2)
-         (Nothing, Just x2) -> do unbounds <- collectUnboundUnificationVars [x2]
-                                  case m `elem` unbounds of
-                                     False   -> writeTcMetaTC m x2
-                                     True    -> occurdCheck   m x2
+                             Unbound _ -> writeTcMetaTC m (MetaTyVarTC m2)
+         (Unbound _, Just x2) -> do
+                         unbounds <- collectUnboundUnificationVars [x2]
+                         case m `elem` unbounds of
+                            False   -> writeTcMetaTC m x2
+                            True    -> occurdCheck   m x2
   where
      occurdCheck m t = do b <- zonkType (MetaTyVarTC m)
                           tcFailsMore $ [text $ "Occurs check for"
