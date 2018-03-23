@@ -438,8 +438,16 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
                                       filter nonDefn (moduleASTitems mAST) }
 
      -- TODO get the non-fns from mTC items, wrap around buildExprSCC' ...
+    
+     call_of_main <- do
+        levels <- mkLevels
+        let mainty = FnTypeTC [unitTypeTC] unitTypeTC emptyEffectTC (UniConst FastCC) (UniConst FT_Proc) levels
+        return $ AnnCall (annotForRange $ MissingSourceRange "buildExprSCC'main!") unitTypeTC
+                                                (E_AnnVar (annotForRange $ MissingSourceRange "buildExprSCC'main")
+                                                          (TypedId mainty (GlobalSymbol (T.pack "main") NoRename), Nothing))
+                                                []
 
-     let mTC' = ModuleIL (buildExprSCC' annexprs)
+     let mTC' = ModuleIL (buildExprSCC' annexprs call_of_main)
                          (externalModuleDecls mTC)
                          (moduleASTdataTypes  mTC)
                          (moduleASTprimTypes  mTC)
@@ -449,14 +457,9 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
      kNormalizeModule  mTC' ctx_tc
 
        where
-        buildExprSCC' :: [[Binding (AnnExpr TypeTC)]] -> (AnnExpr TypeTC)
-        buildExprSCC' [] = error "Main.hs: Can't build SCC of no functions!"
-        buildExprSCC' es = let call_of_main = AnnCall (annotForRange $ MissingSourceRange "buildExprSCC'main!") unitTypeTC
-                                                (E_AnnVar (annotForRange $ MissingSourceRange "buildExprSCC'main")
-                                                          (TypedId mainty (GlobalSymbol (T.pack "main") NoRename), Nothing))
-                                                []
-                               mainty = FnTypeTC [unitTypeTC] unitTypeTC emptyEffectTC (UniConst FastCC) (UniConst FT_Proc)
-                          in foldr build call_of_main es
+        buildExprSCC' :: [[Binding (AnnExpr TypeTC)]] -> AnnExpr TypeTC -> (AnnExpr TypeTC)
+        buildExprSCC' [] _ = error "Main.hs: Can't build SCC of no functions!"
+        buildExprSCC' es call_of_main = foldr build call_of_main es
          where isFn (E_AnnFn {}) = True
                isFn _ = False
 

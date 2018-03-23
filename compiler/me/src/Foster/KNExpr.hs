@@ -487,7 +487,7 @@ tcToIL st typ = do
      TupleTypeTC ukind types -> do tys <- mapM q types
                                    kind <- unUnifiedWithDefault ukind KindPointerSized
                                    return $ TupleTypeIL kind tys
-     FnTypeTC  ss t _fx cc cs -> do
+     FnTypeTC  ss t _fx cc cs _levels -> do
         (y:xs) <- mapM q (t:ss)
         -- Un-unified placeholders occur for loops,
         -- where there are no external constraints on
@@ -845,7 +845,7 @@ applyIntLiteralConstraint ty int = do
           -- constraint that the literal fit an i8 cannot be discarded.
           -- So we collect all the constraints in a pre-pass, and then fix up
           -- un-constrained meta ty vars, while leaving constrained ones alone.
-          ty' <- shallowZonk ty
+          ty' <- repr ty
           case ty' of
             MetaTyVarTC m -> do
                     tcUpdateIntConstraint m (litIntMinBits int)

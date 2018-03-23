@@ -37,7 +37,8 @@ data TypeTC =
                            , fnTypeTCRange  :: TypeTC
                            , fnTypeTCEffect :: TypeTC
                            , fnTypeTCCallConv :: Unifiable CallConv
-                           , fnTypeTCProcOrFunc :: Unifiable ProcOrFunc }
+                           , fnTypeTCProcOrFunc :: Unifiable ProcOrFunc
+                           , fnTypeTCLevels :: Levels }
          | ForAllTC        [(TyVar, Kind)] RhoTC
          | TyVarTC           TyVar  (Unifiable Kind)
          | MetaTyVarTC     (MetaTyVar TypeTC)
@@ -100,7 +101,7 @@ instance Pretty TypeTC where
         TyAppTC con            []       -> pretty con
         TyAppTC con types               -> parens $ pretty con <> hpre (map pretty types)
         TupleTypeTC _kind types         -> tupled $ map pretty types
-        FnTypeTC     s t fx  cc cs      -> text "(" <> pretty s <> text " ="
+        FnTypeTC     s t fx  cc cs _    -> text "(" <> pretty s <> text " ="
                                                     <> text (uni_briefCC cc) <> text ";fx=" <> pretty fx
                                                     <> text "> " <> pretty t <> prettyFuncProcComment cs <> text ")"
         ForAllTC   tvs rho              -> text "(forall " <> hsep (prettyTVs tvs) <> text ". " <> pretty rho <> text ")"
@@ -117,7 +118,7 @@ instance Show TypeTC where
                                       ++ joinWith " " ("":map show types) ++ ")"
         PrimIntTC size         -> "(PrimIntTC " ++ show size ++ ")"
         TupleTypeTC _k types   -> "(" ++ joinWith ", " [show t | t <- types] ++ ")"
-        FnTypeTC  s t fx cc cs -> "(" ++ show s ++ " =" ++ uni_briefCC cc ++ ";fx=" ++ show fx ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
+        FnTypeTC  s t fx cc cs _ -> "(" ++ show s ++ " =" ++ uni_briefCC cc ++ ";fx=" ++ show fx ++ "> " ++ show t ++ " @{" ++ show cs ++ "})"
         ForAllTC ktvs rho      -> "(ForAll " ++ show ktvs ++ ". " ++ show rho ++ ")"
         TyVarTC     tv _mbk    -> show tv
         ArrayTypeTC ty         -> "(Array " ++ show ty ++ ")"
@@ -161,7 +162,7 @@ instance Structured TypeTC where
             TyAppTC con types       -> con:types
             PrimIntTC       {}      -> []
             TupleTypeTC  _k types   -> types
-            FnTypeTC  ss t fx _cc _cs  -> ss++[t,fx]
+            FnTypeTC  ss t fx _cc _cs _ -> ss++[t,fx]
             ForAllTC  _ktvs rho     -> [rho]
             TyVarTC        _tv _mbk -> []
             ArrayTypeTC     ty      -> [ty]
