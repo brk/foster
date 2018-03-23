@@ -143,6 +143,8 @@ data TcEnv = TcEnv { tcEnvUniqs        :: IORef Uniq
                    , tcConstraints        :: IORef [(TcConstraint, SourceRange)]
                    , tcSubsumptionConstraints :: IORef [(TypeTC, TypeTC)]
                    , tcCurrentFnEffect :: Maybe TypeTC
+                   , tcCurrentLevel    :: Level
+                   , tcPendingLevelAdjustments :: IORef [TypeTC]
                    , tcUseOptimizedCtorReprs :: Bool
                    , tcVerboseMode           :: Bool
                    }
@@ -276,6 +278,18 @@ tcGetCurrentFnFx :: Tc TypeTC
 tcGetCurrentFnFx = Tc $ \env -> do case tcCurrentFnEffect env of
                                      Nothing -> retOK (TyAppTC (TyConTC "effect.Empty") [])
                                      Just fx -> retOK fx
+
+tcWithLevel :: Tc a -> Tc a
+tcWithLevel (Tc f)
+    = Tc $ \env -> f (env { tcCurrentLevel = 1 + (tcCurrentLevel env) })
+
+tcGetLevel :: Tc Level
+tcGetLevel = Tc $ \env -> do retOK $ tcCurrentLevel env
+
+tcNeedsLevelAdjustment :: TypeTC -> Tc ()
+tcNeedsLevelAdjustment typ = Tc $ \env -> do
+  modIORef' (tcPendingLevelAdjustments env) (typ:)
+  retOK ()
 
 newTcUniq :: Tc Uniq
 newTcUniq = Tc $ \env -> do let ref = tcEnvUniqs env

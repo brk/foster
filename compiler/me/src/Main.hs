@@ -575,6 +575,7 @@ runCompiler ci_time wholeprog flagVals outfile = do
    constraints <- newIORef []
    smtStatsRef <- newIORef (0, [])
    cfgSizesRef <- newIORef []
+   plaref      <- newIORef []
 
    let tcenv = TcEnv {       tcEnvUniqs = uniqref,
                       tcUnificationVars = varlist,
@@ -583,6 +584,8 @@ runCompiler ci_time wholeprog flagVals outfile = do
                           tcConstraints = constraints,
                tcSubsumptionConstraints = subcnst,
                      tcCurrentFnEffect = Nothing,
+                        tcCurrentLevel = 0,
+              tcPendingLevelAdjustments = plaref,
                 tcUseOptimizedCtorReprs = getCtorOpt flagVals,
                           tcVerboseMode = getVerboseFlag flagVals }
    (nc_time, mb_errs) <- ioTime $ runExceptT $ evalStateT (compile wholeprog tcenv)
