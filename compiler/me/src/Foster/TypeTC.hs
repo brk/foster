@@ -12,6 +12,7 @@ import Prelude hiding ((<$>))
 import Foster.Base
 import Foster.Kind
 import Foster.AnnExpr(AnnExpr)
+import Foster.Config(OrdRef)
 
 import Text.PrettyPrint.ANSI.Leijen
 
@@ -65,6 +66,13 @@ isEmptyEffect t =
   case t of TyAppTC (TyConTC nm) [] | nm == "effect.Empty" -> True
             _ -> False
 
+
+type Level = Int
+data Levels = Levels { levelOld :: OrdRef Level
+                     , levelNew :: OrdRef Level
+                     } deriving Eq
+genericLevel = maxBound :: Level
+markedLevel = -1 :: Level
 
 
 
