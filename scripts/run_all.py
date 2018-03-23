@@ -19,7 +19,7 @@ all_results = []
 
 def handle_successful_test_result(result, testpath):
     if opts.quietish:
-      print os.path.basename(testpath)
+      print os.path.basename(testpath).ljust(50), ("%d ms" % result['total_elapsed']).rjust(10)
     else:
       run_test.print_result_table(result)
     run_test.classify_result(result, testpath)
