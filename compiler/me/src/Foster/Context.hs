@@ -219,6 +219,23 @@ writeTcMeta m v = do
   --tcLift $ putStrLn $ "=========== Writing meta type variable: " ++ show ((mtvDesc m, mtvUniq m)) ++ " := " ++ show v
   tcLift $ writeIORef (mtvRef m) (BoundTo v)
 
+-- Performs selective path compression: given input  x -> y -> T
+--   mutates x to point directly to T, but does not allocate given x -> T.
+-- Invariant: if the returned type is a meta type variable, it is unbound.
+repr :: TypeTC -> Tc TypeTC
+repr x = do
+  case x of
+    MetaTyVarTC m -> do mty <- readTcMeta m
+                        case mty of
+                          Unbound _ -> return x
+                          BoundTo ty -> do 
+                            case ty of -- Selective path compression
+                              MetaTyVarTC _ -> do ty' <- repr ty
+                                                  writeTcMetaTC m ty'
+                                                  return ty'
+                              _ -> return ty
+    _ -> return x
+
 -- A "shallow" alternative to zonking which only peeks at the topmost tycon
 shallowZonk :: TypeTC -> Tc TypeTC
 shallowZonk (MetaTyVarTC m) = do
@@ -323,6 +340,7 @@ instance Ord (MetaTyVar ty) where
 
 tcUpdateIntConstraint :: MetaTyVar TypeTC -> Int -> Tc ()
 tcUpdateIntConstraint km n = Tc $ \env -> do
+  putStrLn $ "updating int constraint; m = " ++ show (mtvUniq km) ++ " needs " ++ show n
   modIORef' (tcMetaIntConstraints env) (Map.insertWith max km n)
   retOK ()
 
@@ -331,8 +349,9 @@ instance Show (MetaTyVar TypeTC)  where show m = show (MetaTyVarTC m)
 tcApplyIntConstraints :: Tc ()
 tcApplyIntConstraints = Tc $ \env -> do
   map <- readIORef (tcMetaIntConstraints env)
-  mapM_ (\(m, neededBits) -> do writeIORef (mtvRef m)
-                                    (BoundTo $ PrimIntTC (sizeOfBits neededBits)))
+  mapM_ (\(m, neededBits) -> do
+            putStrLn $ "m : " ++ show (mtvUniq m) ++ " needs " ++ show neededBits
+            writeIORef (mtvRef m) (BoundTo $ PrimIntTC (sizeOfBits neededBits)))
         (Map.toList map)
   retOK ()
  where

@@ -3,45 +3,35 @@ module Foster.Infer(
     tcUnifyTypes, tcUnifyFT, tcUnifyCC, tcUnifyKinds
   , parSubstTcTy
   , tySubst
-  , extractSubstTypes
   , unify, collectUnboundUnificationVars, zonkType
 ) where
 
 import Prelude hiding ((<$>))
 
 import Data.Map(Map)
-import qualified Data.Map as Map(lookup, empty, insert, findWithDefault, singleton)
+import qualified Data.Map as Map(findWithDefault)
 import qualified Data.List as List(length, elem, lookup, nub, sortBy)
 import qualified Data.Set as Set
 import Data.Maybe(fromMaybe)
 import Text.PrettyPrint.ANSI.Leijen
 import Data.UnionFind.IO(descriptor, setDescriptor, equivalent, union)
 
-import Control.Monad(liftM, forM_, liftM, liftM2)
+import Control.Monad(liftM, liftM, liftM2, when)
+import Data.IORef(readIORef,writeIORef)
 
 import Foster.Base
 import Foster.TypeTC
 import Foster.Context
+import Foster.Config (OrdRef(ordRef))
 import Foster.Output (putDocLn)
 
 ----------------------
 
 type TypeSubst = Map Uniq TypeTC
 
-type UnifySoln = Maybe TypeSubst
-
 data TypeConstraint = TypeConstrEq TypeTC TypeTC
 
-emptyTypeSubst = Map.empty
-
 ----------------------
-
-extractSubstTypes :: [MetaTyVar TypeTC] -> TypeSubst -> Tc [TypeTC]
-extractSubstTypes metaVars tysub = do
-    mapM lookup metaVars where
-         lookup m =
-               fromMaybe (return $ MetaTyVarTC m)
-                         (fmap return $ Map.lookup (mtvUniq m) tysub)
 
 assocFilterOut :: Eq a => [(a,b)] -> [a] -> [(a,b)]
 assocFilterOut lst keys = [(a,b) | (a,b) <- lst, not(List.elem a keys)]
@@ -59,7 +49,7 @@ parSubstTcTy prvNextPairs ty =
         TupleTypeTC k  types -> TupleTypeTC k  (map q types)
         RefTypeTC    t       -> RefTypeTC    (q t)
         ArrayTypeTC  t       -> ArrayTypeTC  (q t)
-        FnTypeTC  ss t fx cc cs -> FnTypeTC     (map q ss) (q t) (q fx) cc cs -- TODO unify calling convention?
+        FnTypeTC  ss t fx cc cs levels -> FnTypeTC     (map q ss) (q t) (q fx) cc cs levels -- TODO unify calling convention?
         ForAllTC  ktvs rho   ->
                 let prvNextPairs' = prvNextPairs `assocFilterOut` (map fst ktvs)
                 in  ForAllTC  ktvs (parSubstTcTy prvNextPairs' rho)
@@ -79,7 +69,7 @@ tySubst subst ty =
         RefTypeTC     t        -> RefTypeTC    (q t)
         ArrayTypeTC   t        -> ArrayTypeTC  (q t)
         TupleTypeTC k types    -> TupleTypeTC k (map q types)
-        FnTypeTC  ss t fx cc cs -> FnTypeTC     (map q ss) (q t) (q fx) cc cs
+        FnTypeTC  ss t fx cc cs levels -> FnTypeTC     (map q ss) (q t) (q fx) cc cs levels
         ForAllTC  tvs rho      -> ForAllTC  tvs (q rho)
         RefinedTypeTC v e args -> RefinedTypeTC (fmap q v) e args
 
@@ -133,17 +123,20 @@ tcUnifyKinds uk1 uk2 = tcUnifyThings uk1 uk2
 
 -------------------------------------------------
 
-tcUnifyTypes :: TypeTC -> TypeTC -> Tc UnifySoln
-tcUnifyTypes t1 t2 = tcUnifyLoop [TypeConstrEq t1 t2] emptyTypeSubst
+tcUnifyTypes :: TypeTC -> TypeTC -> Tc ()
+tcUnifyTypes t1 t2 = tcUnifyLoop [TypeConstrEq t1 t2]
 
-tcUnifyMoreTypes tys1 tys2 constraints tysub =
- tcUnifyLoop ([TypeConstrEq a b | (a, b) <- zip tys1 tys2] ++ constraints) tysub
+tcUnifyMoreTypes tys1 tys2 constraints =
+ tcUnifyLoop ([TypeConstrEq a b | (a, b) <- zip tys1 tys2] ++ constraints)
 
 -------------------------------------------------
-tcUnifyLoop :: [TypeConstraint] -> TypeSubst -> Tc UnifySoln
-tcUnifyLoop [] tysub = return $ Just tysub
+tcUnifyLoop :: [TypeConstraint] -> Tc ()
+tcUnifyLoop [] = return ()
 
-tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
+tcUnifyLoop ((TypeConstrEq t1'0 t2'0):constraints) = do
+ t1 <- repr t1'0
+ t2 <- repr t2'0
+
  --tcLift $ putStrLn ("tcUnifyLoop: t1 = " ++ show t1 ++ "; t2 = " ++ show t2)
  if illegal t1 || illegal t2
   then tcFailsMore
@@ -160,40 +153,40 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
        _ -> return ()
    case (t1, t2) of
     ((PrimIntTC  n1), (PrimIntTC  n2)) ->
-          if n1 == n2 then do tcUnifyLoop constraints tysub
+          if n1 == n2 then do tcUnifyLoop constraints
             else tcFailsMore [text $ "Unable to unify different primitive types: "
                              ,indent 2 $ pretty n1 <> text " vs " <> pretty n2
                              ]
 
     ((TyVarTC  tv1 kind1), (TyVarTC  tv2 kind2)) ->
        if tv1 == tv2 then do tcUnifyKinds kind1 kind2
-                             tcUnifyLoop constraints tysub
+                             tcUnifyLoop constraints
                      else tcFailsMore [text $ "Unable to unify different type variables: "
                                        ++ show tv1 ++ " vs " ++ show tv2]
 
     (t1@(TyAppTC (TyConTC _nm1) _tys1), t2@(MetaTyVarTC {}))
           | isEffectEmpty t1 -> do
       tcWarn [text "permitting effect subsumption of empty effect and type metavariable " <> pretty t2]
-      tcUnifyLoop constraints tysub
+      tcUnifyLoop constraints
 
     (t1@(TyAppTC (TyConTC _nm1) _tys1), t2@(TyAppTC (TyConTC nm2) _tys2))
           | isEffectEmpty t1 && isEffectExtend nm2 -> do
       tcWarn [text "permitting effect subsumption of empty effect and " <> pretty t2]
-      tcUnifyLoop constraints tysub
+      tcUnifyLoop constraints
 
     ((TyAppTC (TyConTC nm1) _tys1), (TyAppTC (TyConTC nm2) _tys2))
           | isEffectExtend nm1 && isEffectExtend nm2 -> do
-      tcUnifyEffects t1 t2 tysub constraints
+      tcUnifyEffects t1 t2 constraints
 
     ((TyConTC  nam1), (TyConTC  nam2)) ->
-      if nam1 == nam2 then do tcUnifyLoop constraints tysub
+      if nam1 == nam2 then do tcUnifyLoop constraints
         else do msg <- getStructureContextMessage
                 tcFailsMore [text $ "Unable to unify different type constructors: "
                                   ++ nam1 ++ " vs " ++ nam2,
                              msg]
 
     ((TyAppTC  con1 tys1), (TyAppTC  con2 tys2)) ->
-      tcUnifyMoreTypes (con1:tys1) (con2:tys2) constraints tysub
+      tcUnifyMoreTypes (con1:tys1) (con2:tys2) constraints
 
     ((TupleTypeTC kind1 tys1), (TupleTypeTC kind2 tys2)) ->
         if List.length tys1 /= List.length tys2
@@ -202,21 +195,36 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
                            ++ " vs " ++ show (List.length tys2)
                            ++ ")."]
           else do tcUnifyKinds kind1 kind2
-                  tcUnifyMoreTypes tys1 tys2 constraints tysub
+                  tcUnifyMoreTypes tys1 tys2 constraints
 
     -- Mismatches between unitary tuple types probably indicate
     -- parsing/function argument handling mismatch.
 
-    ((FnTypeTC  as1 a1 fx1 cc1 ft1), (FnTypeTC  as2 a2 fx2 cc2 ft2)) -> do
-        if List.length as1 /= List.length as2
-          then tcFailsMore [string "Unable to unify functions of different arity!\n"
+    ((FnTypeTC  as1 a1 fx1 cc1 ft1 levels1), (FnTypeTC  as2 a2 fx2 cc2 ft2 levels2)) -> do
+      (_, lnew1) <- tcReadLevels levels1
+      (_, lnew2) <- tcReadLevels levels2
+      case () of
+        _ | List.length as1 /= List.length as2 ->
+          tcFailsMore [string "Unable to unify functions of different arity!\n"
                            <> pretty as1 <> string "\nvs\n" <> pretty as2]
-          else do tcUnifyCC cc1 cc2
-                  tcUnifyFT ft1 ft2
-                  tcUnifyLoop ([TypeConstrEq a b | (a, b) <- zip as1 as2]
-                            ++  (TypeConstrEq a1 a2)
-                               :(TypeConstrEq fx1 fx2)
-                               :constraints) tysub
+
+        _ | lnew1 == markedLevel || lnew2 == markedLevel ->
+          tcFailsMore [string "Occurs check failed when unifying function types"]
+
+        _ -> do let nu = min lnew1 lnew2
+                withTemporaryMarkedLevels levels1 levels2 nu $ do 
+                    tcUnifyCC cc1 cc2
+                    tcUnifyFT ft1 ft2
+                    fx1' <- repr fx1
+                    a1'  <- repr a1
+                    as1' <- mapM repr as1
+                    mapM_ (updateLevel nu) (fx1' : a1' : as1')
+                    --tcLift $ putStrLn $ "a1 : " ++ show a1
+                    --tcLift $ putStrLn $ "a1': " ++ show a1'
+                    tcUnifyLoop ([TypeConstrEq a1' a2,
+                                  TypeConstrEq fx1' fx2] ++
+                                  [TypeConstrEq a b | (a, b) <- zip as1' as2])
+                tcUnifyLoop constraints
 
     ((ForAllTC  ktyvars1 rho1), (ForAllTC  ktyvars2 rho2)) ->
         let (tyvars1, kinds1) = unzip ktyvars1 in
@@ -228,26 +236,26 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
           else let t1 = rho1 in
                let tySubst = zip tyvars2 (map (\(tv,k) -> TyVarTC  tv (UniConst k)) ktyvars1) in
                let t2 = parSubstTcTy tySubst rho2 in
-               tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
+               tcUnifyLoop ((TypeConstrEq t1 t2):constraints)
 
     ((RefinedTypeTC (TypedId t1 _n1) _e1 _), (RefinedTypeTC (TypedId t2 _n2) _e2 _)) ->
       -- TODO make sure that n/e match...
-      tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
+      tcUnifyLoop ((TypeConstrEq t1 t2):constraints)
 
-    ((MetaTyVarTC m), ty) -> tcUnifyVar m ty tysub constraints
-    (ty, (MetaTyVarTC m)) -> tcUnifyVar m ty tysub constraints
+    ((MetaTyVarTC m), ty) -> tcUnifyVar m ty constraints
+    (ty, (MetaTyVarTC m)) -> tcUnifyVar m ty constraints
 
     ((RefTypeTC  t1), (RefTypeTC  t2)) ->
-        tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
+        tcUnifyLoop ((TypeConstrEq t1 t2):constraints)
 
     ((ArrayTypeTC  t1), (ArrayTypeTC  t2)) -> do
-        tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub
+        tcUnifyLoop ((TypeConstrEq t1 t2):constraints)
 
     ((RefinedTypeTC v _ _), ty) -> do
-      tcUnifyLoop ((TypeConstrEq (tidType v) ty):constraints) tysub
+      tcUnifyLoop ((TypeConstrEq (tidType v) ty):constraints)
 
     (ty, (RefinedTypeTC v _ _)) -> do
-      tcUnifyLoop ((TypeConstrEq ty (tidType v)):constraints) tysub
+      tcUnifyLoop ((TypeConstrEq ty (tidType v)):constraints)
 
     _otherwise -> do
       msg <- getStructureContextMessage
@@ -256,23 +264,43 @@ tcUnifyLoop ((TypeConstrEq t1 t2):constraints) tysub = do
         ,text "t1::", showStructure t1, text "t2::", showStructure t2
         ,msg]
 
-tcUnifyVar :: MetaTyVar TypeTC  -> TypeTC  -> TypeSubst -> [TypeConstraint] -> Tc UnifySoln
+tcUnifyVar :: MetaTyVar TypeTC  -> TypeTC  -> [TypeConstraint] -> Tc ()
 
--- Ignore attempts to unify a meta type variable with itself.
-tcUnifyVar m1 (MetaTyVarTC m2) tysub constraints | m1 == m2
-  = tcUnifyLoop constraints tysub
+tcUnifyVar m1 (MetaTyVarTC m2) constraints =
+  if m1 == m2
+    then
+      -- Ignore attempts to unify a meta type variable with itself.
+      tcUnifyLoop constraints
+    else do
+      tvar1 <- readTcMeta m1
+      tvar2 <- readTcMeta m2
+      case (tvar1, tvar2) of
+        (Unbound _, Unbound _) -> do
+          writeTcMetaTC m1 (MetaTyVarTC m2) -- TODO other direction based on levels
+          tcUnifyLoop constraints
+        _ -> tcFailsMore [text "Invariant violated! repr returned a bound metavariable!?"]
 
-tcUnifyVar m ty tysub constraints = do
-    --do
-    --  tcm <- readTcMeta m
-    --  tcLift $ putStrLn $ "================ Unifying meta var " ++ show (pretty $ MetaTyVarTC m) ++ " :: " ++ show (pretty tcm)
-    --                 ++ "\n============================= with " ++ show (pretty $ ty)
-    let tysub' = Map.insert (mtvUniq m) ty tysub
-    tcUnifyLoop (tySubstConstraints constraints (Map.singleton (mtvUniq m) ty)) tysub'
-      where
-        tySubstConstraints constraints tysub = map tySub constraints
-          where q = tySubst tysub
-                tySub (TypeConstrEq t1 t2) = TypeConstrEq (q t1) (q t2)
+-- Invariant: ty is not a meta type variable.
+tcUnifyVar m ty constraints = do
+    {-do
+      tcm <- readTcMeta m
+      tcLift $ putStrLn $ "================ Unifying meta var " ++ show (pretty $ MetaTyVarTC m) ++ " :: " ++ show (pretty tcm)
+                     ++ "\n============================= with " ++ show (pretty $ ty)
+    -}
+    tvar <- readTcMeta m
+    case tvar of
+      Unbound _  -> do
+                       --updateLevel level ty
+                       writeTcMetaTC m ty
+                       tcUnifyLoop (                     constraints)
+      BoundTo tz -> do tcLift $ putStrLn $ "tcUnifyVar INVARIANT VIOLATED: m was not Unbound"
+                       tz' <- repr tz
+                       tcUnifyLoop (TypeConstrEq tz' ty : constraints)
+
+instance Pretty ty => Pretty (TVar ty) where
+  pretty tvar = case tvar of
+                  Unbound _ -> text "Unbound"
+                  BoundTo ty -> text "(BoundTo " <> pretty ty <> text " )"
 
 effectExtendTc eff row = TyAppTC (TyConTC "effect.Extend") [eff, row]
 
@@ -283,7 +311,7 @@ effectExtendsTc labels eff
 
 -- This code was adapted from the Apache-2-licensed implementation of Koka.
 -- See https://koka.codeplex.com/license
-tcUnifyEffects t1 t2 tysub constraints = do
+tcUnifyEffects t1 t2 constraints = do
       (ls1, tl1) <- extractOrderedEffect t1
       (ls2, tl2) <- extractOrderedEffect t2
       (ds1, ds2, labconstraints) <- unifyLabels ls1 ls2 []
@@ -292,8 +320,7 @@ tcUnifyEffects t1 t2 tysub constraints = do
          (MetaTyVarTC m1, MetaTyVarTC m2) | (mtvUniq m1 == mtvUniq m2) && not (null ds1 && null ds2)
              -> do -- trace ("unifyEffect: unification of " ++ show (tp1,tp2) ++ " is infinite") $ return ()
                    tcFails [text "Effect unification produced infinite loop"]
-         _   -> do let subst x = return (tySubst tysub x)
-
+         _   -> do 
                    let unifyTail1 ds tl desc = do
                        tcLift $ putDocLn $ text "unifyTail1 " <> pretty ds <+> pretty tl
                        if null ds then return (tl, [])
@@ -306,17 +333,11 @@ tcUnifyEffects t1 t2 tysub constraints = do
                                           return (tv, [TypeConstrEq (effectExtendsTc ds tv) tl] )
 
                    (tail1, c1) <- unifyTail1 ds1 tl1 "fx.tail1"
-                   stl2  <- subst tl2
-                   (tail2, c2) <- unifyTail2 ds2 stl2 "fx.tail2"
-                   stail1 <- subst tail1
+                   (tail2, c2) <- unifyTail2 ds2 tl2 "fx.tail2"
 
-                   let c3 = [TypeConstrEq stail1 tail2]
+                   let c3 = [TypeConstrEq tail1 tail2]
 
-                   stp1 <- subst t1
-                   stp2 <- subst t2
-                   -- trace ("unifyEffect: " ++ show (tp1,tp2) ++ " to " ++ show (stp1,stp2) ++ " with " ++ show (ds1,ds2)) $ return ()
-
-                   tcUnifyLoop (labconstraints ++ c1 ++ c2 ++ c3 ++ constraints) tysub
+                   tcUnifyLoop (labconstraints ++ c1 ++ c2 ++ c3 ++ constraints)
 
 
 -- | Unify lists of ordered labels; return the differences.
@@ -383,10 +404,60 @@ extractOrderedEffect tp = do
             then ls
             else [l]
 
+tcReadLevels :: Levels -> Tc (Level, Level)
+tcReadLevels (Levels old new) = do
+  o <- tcLift $ readIORef (ordRef old)
+  n <- tcLift $ readIORef (ordRef new)
+  return (o, n)
+
+tcWriteLevelNew (Levels old new) nu = do
+  tcLift $ writeIORef (ordRef new) nu
+
+updateLevel :: Level -> TypeTC -> Tc ()
+updateLevel level typ = do
+  let go = updateLevel level
+  case typ of
+    PrimIntTC {}            -> return ()
+    TyConTC   {}            -> return ()
+    TyVarTC   {}            -> return ()
+    TyAppTC  con types      -> mapM_ go (con:types)
+    TupleTypeTC _k  types   -> mapM_ go types
+    ForAllTC  _tvs rho      -> go rho
+    MetaTyVarTC   m         -> do
+      tvar <- readTcMeta m
+      case tvar of
+        Unbound _ -> return () -- TODO check unbound's level
+        BoundTo _t -> error $ "Update level applied to bound type variable!"
+
+    RefTypeTC     ty        -> go ty
+    ArrayTypeTC   ty        -> go ty
+    RefinedTypeTC v _ _     -> go (tidType v)
+    FnTypeTC  ss r fx _ _ levels -> do
+      (lold, lnew) <- tcReadLevels levels
+      case () of
+        _ | lnew == genericLevel -> tcFails [text "Escaped generic level..."]
+        _ | lnew == markedLevel  -> tcFails [text "Type checking encountered a circular type..."]
+        _ | lnew <= level -> return () -- No adjustment needed
+        _ -> do
+          when (lnew == lold) $ tcNeedsLevelAdjustment typ
+          tcWriteLevelNew levels level
+      --concatMap go (r:fx:ss)
+
+withTemporaryMarkedLevels levels1 levels2 newlevel action = do
+  tcWriteLevelNew levels1 markedLevel
+  tcWriteLevelNew levels2 markedLevel
+
+  rv <- action
+
+  tcWriteLevelNew levels1 newlevel
+  tcWriteLevelNew levels2 newlevel
+
+  return rv
 
 collectUnboundUnificationVars :: [TypeTC] -> Tc [MetaTyVar TypeTC]
 collectUnboundUnificationVars xs = do
   xs' <- mapM zonkType xs
+  --xs' <- mapM repr xs -- causes 'Inconsistent effects at call sites' on test-range
   return $ [m | m <- collectAllUnificationVars xs' , not $ isForIntLit m]
     where isForIntLit m = mtvDesc m == "int-lit"
 
@@ -398,7 +469,7 @@ collectAllUnificationVars xs = Set.toList (Set.fromList (concatMap go xs))
             TyConTC  {}             -> []
             TyAppTC  con types      -> concatMap go (con:types)
             TupleTypeTC _k  types   -> concatMap go types
-            FnTypeTC  ss r fx _ _   -> concatMap go (r:fx:ss)
+            FnTypeTC  ss r fx _ _ _ -> concatMap go (r:fx:ss)
             ForAllTC  _tvs rho      -> go rho
             TyVarTC       {}        -> []
             MetaTyVarTC   m         -> [m]
@@ -429,10 +500,11 @@ zonkType x = do
         ArrayTypeTC     ty      -> do --debug $ "zonking array ty: " ++ show ty
                                       liftM (ArrayTypeTC  ) (zonkType ty)
         RefinedTypeTC (TypedId ty id) e __args   -> liftM (\t -> RefinedTypeTC (TypedId t id) e __args) (zonkType ty)
-        FnTypeTC ss r fx cc cs  -> do ss' <- mapM zonkType ss
+        FnTypeTC ss r fx cc cs levels -> do
+                                      ss' <- mapM zonkType ss
                                       r' <- zonkType r
                                       fx' <- zonkType fx
-                                      return $ FnTypeTC ss' r' fx' cc cs
+                                      return $ FnTypeTC ss' r' fx' cc cs levels
 -- }}}
 
 -- {{{ Unification driver
@@ -441,52 +513,8 @@ zonkType x = do
 -- If unification succeeds, each unification variable in the two
 -- types is updated according to the unification solution.
 unify :: TypeTC -> TypeTC -> [Doc] -> Tc ()
-unify t1 t2 msgs = do
-{-
-  z1 <- zonkType t1
-  z2 <- zonkType t2
-  tcLift $ putDocLn $ green $ text ("unify " ++ show t1 ++ " ~> " ++ show z1
-                                ++ "\n?==? " ++ show t2 ++ " ~> " ++ show z2) <+> parens (vcat msgs)
--}
-  unify' 0 t1 t2 msgs
-
-unify' !depth t1 t2 msgs | depth == 512 =
-   error $ "unify hit depth 512 equating "
-        ++ show t1 ++ " and " ++ show t2 ++ "\n" ++ show msgs
-
-unify' !depth t1 t2 msgs = do
-  --debugDoc $ (green $ text ("unify " ++ show t1 ++ " ?==? " ++ show t2)) <$> vcat msgs
-  --case (t1, t2) of
-  --  (MetaTyVarTC m1, MetaTyVarTC m2) -> do
-  --    mt1 <- readTcMeta m1
-  --    mt2 <- readTcMeta m2
-  --    debugDoc $ text $ show t1 ++ " ~> " ++ show mt1
-  --    debugDoc $ text $ show t2 ++ " ~> " ++ show mt2
-  --    return ()
-  --  _ -> return ()
-
-  tcOnError msgs
-            (tcUnifyTypes t1 t2) $ \(Just soln) -> do
-     --debugDoc $ text $ "soln is: " ++ show soln
-     let univars = collectAllUnificationVars [t1, t2]
-     forM_ univars $ \m -> do
-       mt1 <- readTcMeta m
-       case (mt1, Map.lookup (mtvUniq m) soln) of
-         (_,       Nothing)          -> return () -- no type to update to.
-         (BoundTo x1, Just x2)          -> do unify' (depth + 1) x1 x2 msgs
-         -- The unification var m1 has no bound type, but it's being
-         -- associated with var m2, so we'll peek through m2.
-         (Unbound _, Just (MetaTyVarTC m2)) -> do
-                         mt2 <- readTcMeta m2
-                         case mt2 of
-                             BoundTo x2 -> do --debugDoc $ pretty (MetaTyVarTC m2) <+> text "~>" <+> pretty x2
-                                           unify' (depth + 1) (MetaTyVarTC m) x2 msgs
-                             Unbound _ -> writeTcMetaTC m (MetaTyVarTC m2)
-         (Unbound _, Just x2) -> do
-                         unbounds <- collectUnboundUnificationVars [x2]
-                         case m `elem` unbounds of
-                            False   -> writeTcMetaTC m x2
-                            True    -> occurdCheck   m x2
+unify t1 t2 msgs = do tcOnError msgs (tcUnifyTypes t1 t2) return
+                            {-
   where
      occurdCheck m t = do b <- zonkType (MetaTyVarTC m)
                           tcFailsMore $ [text $ "Occurs check for"
@@ -508,4 +536,5 @@ unify' !depth t1 t2 msgs = do
                                       <$> text " is that it requires higher-order unification, which is"
                                       <$> text " undecidable in theory. And that's not great because it"
                                       <$> text " would make the compiler slow(er) and fragile(r)...)")]
+                                      -}
 -- }}}

@@ -5,7 +5,7 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 module Foster.Typecheck(tcSigmaToplevel, tcSigmaToplevelNonFn, tcTypeWellFormed,
-                        tcContext, tcType, fnTypeShallow) where
+                        tcContext, tcType, fnTypeShallow, mkLevels) where
 
 import Prelude hiding ((<$>))
 
@@ -17,7 +17,7 @@ import qualified Data.Text as T(Text, pack, unpack, length, head)
 import Data.Map(Map)
 import qualified Data.Map as Map(lookup, insert, keys, elems, fromList, toList, null)
 import qualified Data.Set as Set(toList, fromList)
-import Data.IORef(readIORef,writeIORef)
+import Data.IORef(newIORef,readIORef,writeIORef)
 import Data.UnionFind.IO(fresh)
 
 import Foster.Base
@@ -28,6 +28,7 @@ import Foster.ExprAST
 import Foster.AnnExpr
 import Foster.Infer
 import Foster.Context
+import Foster.Config(OrdRef(OrdRef))
 import Foster.TypecheckInt(typecheckInt, typecheckRat)
 import Foster.Output(OutputOr(Errors, OK), putDocLn)
 import Foster.PrettyAnnExpr()
@@ -957,6 +958,19 @@ tcRhoCall ctx rng base argstup exp_ty = do
 tryGetVarName (E_VarAST _ v) = T.unpack $ evarName v
 tryGetVarName _ = ""
 
+newOrdRef :: a -> Tc (OrdRef a)
+newOrdRef a = do
+  u <- newTcUniq
+  r <- tcLift $ newIORef a
+  return $ OrdRef u r
+
+mkLevels :: Tc Levels
+mkLevels = do
+  curr <- tcGetLevel
+  old <- newOrdRef curr
+  new <- newOrdRef curr
+  return $ Levels old new
+
 tcSigmaCall :: Context SigmaTC -> ExprAnnot -> ExprAST TypeAST
             -> [ExprAST TypeAST] -> Expected SigmaTC -> Tc (AnnExpr SigmaTC)
 
@@ -968,8 +982,9 @@ tcSigmaCall ctx rng (E_PrimAST _ name@"log-type" _ _) [arg] exp_ty = do
     matchExp exp_ty (AnnTuple rng unitTypeTC KindPointerSized []) name
 
 tcSigmaCall ctx rng (E_PrimAST _ name@"assert-invariants" _ _) argtup exp_ty = do
+    levels <- mkLevels
     let mkFnTypeTC args ret = FnTypeTC args ret emptyEffectTC
-                                      (UniConst FastCC) (UniConst FT_Func)
+                                      (UniConst FastCC) (UniConst FT_Func) levels
 
     args <- mapM (\arg -> checkSigma ctx arg boolTypeTC) argtup
     let fnty = mkFnTypeTC [boolTypeTC | _ <- argtup] unitTypeTC
@@ -985,7 +1000,7 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
         dbg $ text "{{{"
         annbase <- inferRho ctx base "called base"
         let fun_ty = typeTC annbase
-        (args_tys, res_ty_raw, fx, _cc, _) <- unifyFun fun_ty (length argexprs) ("tSC("++tryGetVarName base++")" ++ highlightFirstLine (rangeOf rng))
+        (args_tys, res_ty_raw, fx, _cc, _, _levels) <- unifyFun fun_ty (length argexprs) ("tSC("++tryGetVarName base++")" ++ highlightFirstLine (rangeOf rng))
         dbg $ text "tcSigmaCall: fn type of" <+> pretty annbase <+> text "is " <$$>
                     indent 2 (pretty fun_ty <$$>
                               text ";; cc=" <+> text (show _cc)
@@ -1069,8 +1084,8 @@ mkAnnCall rng res_ty annbase args =
       -> AnnAppCtor rng res_ty cid  args
     _ -> AnnCall rng res_ty annbase args
 
-unifyFun :: RhoTC -> Int -> String -> Tc ([SigmaTC], RhoTC, RhoTC, Unifiable CallConv, Unifiable ProcOrFunc)
-unifyFun (FnTypeTC args res fx cc ft) _ _msg = return (args, res, fx, cc, ft)
+unifyFun :: RhoTC -> Int -> String -> Tc ([SigmaTC], RhoTC, RhoTC, Unifiable CallConv, Unifiable ProcOrFunc, Levels)
+unifyFun (FnTypeTC args res fx cc ft levels) _ _msg = return (args, res, fx, cc, ft, levels)
 unifyFun (ForAllTC {}) _ str = tcFails [text $ "invariant violated: sigma passed to unifyFun!"
                                         ,text $ "For now, lambdas given forall types must be annotated with forall markers."
                                         ,text str]
@@ -1080,8 +1095,9 @@ unifyFun tau nargs msg = do
         fx_ty  <- newTcUnificationVarEffect ("effectvar:" ++ msg)
         cc <- genUnifiableVar
         ft <- genUnifiableVar
-        unify tau (FnTypeTC arg_tys res_ty fx_ty cc ft) [text $ "unifyFun(" ++ msg ++ ")"]
-        return (arg_tys, res_ty, fx_ty, cc, ft)
+        levels <- mkLevels
+        unify tau (FnTypeTC arg_tys res_ty fx_ty cc ft levels) [text $ "unifyFun(" ++ msg ++ ")"]
+        return (arg_tys, res_ty, fx_ty, cc, ft, levels)
 -- }}}
 
 hasNonTrivialRefinementDifferences (arg_ty, var_ty) =
@@ -1105,7 +1121,8 @@ tcTypeEquiv t1 t2 =
      (TyConTC      tcnm1      , TyConTC   tcnm2         ) -> tcnm1 == tcnm2
      (TyAppTC      con1 tys1  , TyAppTC   con2 tys2     ) -> allP tcTypeEquiv (con1:tys1) (con2:tys2)
      (TupleTypeTC _k1    tys1 , TupleTypeTC _k2    tys2 ) -> {- TODO kinds -} allP tcTypeEquiv tys1 tys2
-     (FnTypeTC     s1 t1 fx1 c1 x1, FnTypeTC     s2 t2 fx2 c2 x2) -> allP q s1 s2 && q t1 t2 && q fx1 fx2 && liftEqUnifiable (==) c1 c2 && liftEqUnifiable (==) x1 x2
+     (FnTypeTC     s1 t1 fx1 c1 x1 _levels1,
+      FnTypeTC     s2 t2 fx2 c2 x2 _levels2) -> allP q s1 s2 && q t1 t2 && q fx1 fx2 && liftEqUnifiable (==) c1 c2 && liftEqUnifiable (==) x1 x2 -- ignore levels?
      (ForAllTC   tvs1 rho1    , ForAllTC   tvs2 rho2    ) -> allP (==) tvs1 tvs2 && q rho1 rho2
      (TyVarTC    tv1 _mbk1    , TyVarTC    tv2 _mbk2    ) -> tv1 == tv2
      (MetaTyVarTC m1          , MetaTyVarTC m2          ) -> m1 == m2
@@ -1264,7 +1281,7 @@ tcSigmaFnHelper ctx fnAST expTyRaw tyformals = do
                           return (annbody, typeTC annbody, fx, uniquelyNamedFormals)
       Just exp_rho' -> do
             let var_tys = map tidType uniquelyNamedFormals
-            (arg_tys, body_ty, fx, _cc, _ft) <- unifyFun exp_rho' (length var_tys) ("poly-fn-lit" ++ highlightFirstLine (rangeOf annot))
+            (arg_tys, body_ty, fx, _cc, _ft, _levels) <- unifyFun exp_rho' (length var_tys) ("poly-fn-lit" ++ highlightFirstLine (rangeOf annot))
 
             if any hasNonTrivialRefinementDifferences (zip arg_tys var_tys)
               then
@@ -1283,8 +1300,8 @@ tcSigmaFnHelper ctx fnAST expTyRaw tyformals = do
             let unMeta (MetaTyVarTC m) = m
                 unMeta other = error $ "unMeta called with " ++ show other
             _ <- mapM (checkAgainst (map unMeta taus)) (zip arg_tys var_tys)
-            var_tys'' <- mapM shZonkType var_tys
-            debugDoc $ string "var_tys'': " <+> pretty var_tys''
+            --var_tys'' <- mapM shZonkType var_tys
+            --debugDoc $ string "var_tys'': " <+> pretty var_tys''
             --debugDoc $ string "metaOf var_tys  : " <+> pretty (show $ collectAllUnificationVars var_tys)
             --debugDoc $ string "metaOf var_tys'': " <+> pretty (show $ collectAllUnificationVars $ map unMBS var_tys'')
             -- mvar_tys'' <- mapM shZonkMetaType (collectAllUnificationVars var_tys)
@@ -1303,8 +1320,9 @@ tcSigmaFnHelper ctx fnAST expTyRaw tyformals = do
     debugDoc $ text "inferred raw type of body of polymorphic function: "
                     <> pretty (typeTC annbody)
 
+    levels <- mkLevels
     let fnty0 = ForAllTC ktvs $
-            fnTypeTemplate fnAST argtys body_ty fx
+            fnTypeTemplate fnAST argtys body_ty fx levels
               where argtys = map tidType uniquelyNamedBinders
 
     -- The function type is expressed in terms of meta type variables,
@@ -1420,7 +1438,7 @@ tcRhoFnHelper ctx f expTy = do
                            -- |arg_tys| are the corresponding arguments expected
                            -- by the context (or a type annotation on the binder'
                            -- for this function).
-                           (arg_tys, body_ty, fx, _cc, _ft) <- unifyFun fnty (length uniquelyNamedFormals) ("@" ++ highlightFirstLine rng)
+                           (arg_tys, body_ty, fx, _cc, _ft, _levels) <- unifyFun fnty (length uniquelyNamedFormals) ("@" ++ highlightFirstLine rng)
 
                            -- |var_tys| are the types written down by the programmer
                            -- on the function's argument variables.
@@ -1468,7 +1486,8 @@ tcRhoFnHelper ctx f expTy = do
         Nothing      -> do inferSigma extCtx (fnAstBody f) "mono-fn body"
         Just body_ty -> do checkRho extCtx (fnAstBody f) body_ty
 
-    let fnty = fnTypeTemplate f argtys retty fx
+    levels <- mkLevels
+    let fnty = fnTypeTemplate f argtys retty fx levels
                 where argtys = map tidType uniquelyNamedBinders
                       retty  = case mbExpBodyTy of
                                  Nothing -> typeTC annbody
@@ -1502,10 +1521,10 @@ extendContext :: Context SigmaTC -> [TypedId TypeTC] -> Context SigmaTC
 extendContext ctx protoFormals =
                  prependContextBindings ctx (map bindingForVar protoFormals)
 
-fnTypeTemplate :: FnAST TypeAST -> [TypeTC] -> TypeTC -> TypeTC -> TypeTC
-fnTypeTemplate _f argtypes retty fx =
+fnTypeTemplate :: FnAST TypeAST -> [TypeTC] -> TypeTC -> TypeTC -> Levels -> TypeTC
+fnTypeTemplate _f argtypes retty fx levels =
   -- Compute "base" function type, ignoring any type parameters.
-  FnTypeTC argtypes retty fx (UniConst FastCC) (UniConst FT_Func)
+  FnTypeTC argtypes retty fx (UniConst FastCC) (UniConst FT_Func) levels
 
 -- Verify that the given formals have distinct names.
 getUniquelyNamedFormals :: SourceRange -> [TypedId ty] -> T.Text -> Tc [TypedId ty]
@@ -1616,7 +1635,8 @@ tcType' ctx refinementArgs ris typ = do
                        _ -> return extCtx
           r'  <- tcType' extCtx' refinementArgs' RIS_False r
           fx' <- tcType' ctx [] RIS_False fx
-          return $ FnTypeTC ss' r' fx' (UniConst cc) (UniConst ft)
+          levels <- mkLevels
+          return $ FnTypeTC ss' r' fx' (UniConst cc) (UniConst ft) levels
         RefinedTypeAST nm ty e -> do
           (ctx' , id) <-
                  case ris of
@@ -1713,14 +1733,16 @@ tcRhoHandler  ctx rng e arms mb_xform expTy = do
   ps_outtys <- forM arms preCheckBranch
   eff <- zonkType hp
   let fneff = effectExtendTC eff effs
+
+  levels <- mkLevels
   
   -- TODO (typeTC action)
   let checkBranch (CaseArm pat body guard _ brng, (p, outty)) = do
         let names = epatBoundNames pat
         verifyNamesAreDistinct (rangeOf rng) "case" names
 
-        let resumety = FnTypeTC [outty] r effs (UniConst FastCC) (UniConst FT_Func)
-        let resumebarety = FnTypeTC [outty] r fneff (UniConst FastCC) (UniConst FT_Func)
+        let resumety = FnTypeTC [outty] r effs (UniConst FastCC) (UniConst FT_Func) levels
+        let resumebarety = FnTypeTC [outty] r fneff (UniConst FastCC) (UniConst FT_Func) levels
 
         tcLift $ putDocLn $ text "resumebarety: " <$> align (indent 10 (pretty resumebarety))
         tcLift $ putDocLn $ text "resumebarety: " <$> align (indent 10 (showStructure resumebarety))
@@ -1741,7 +1763,7 @@ tcRhoHandler  ctx rng e arms mb_xform expTy = do
 
   abranches <- forM (zip arms ps_outtys) checkBranch
 
-  _ <- subsCheckRho actionThunk (FnTypeTC [] r fneff (UniConst FastCC) (UniConst FT_Func))
+  _ <- subsCheckRho actionThunk (FnTypeTC [] r fneff (UniConst FastCC) (UniConst FT_Func) levels)
                 "handler-action"
 
   mb_xform' <- case mb_xform of
@@ -1749,7 +1771,7 @@ tcRhoHandler  ctx rng e arms mb_xform expTy = do
                 Just xform -> do
                   xform' <- inferRho ctx xform "xform"
                   x <- subsCheckRho xform' (FnTypeTC [r] r' effs
-                                           (UniConst FastCC) (UniConst FT_Func)) "xform"
+                                           (UniConst FastCC) (UniConst FT_Func) levels) "xform"
                   return $ Just x
 
   --tr <- zonkType r
@@ -1987,8 +2009,8 @@ subsCheckRhoTy (ForAllTC ktvs rho) rho2 msg = do -- Rule SPEC
              taus <- genNonSigmaUnificationVarsLike ktvs (\n -> "instSigma type parameter " ++ show n)
              rho1 <- instSigmaWith "subsCheckRhoTy" ktvs rho taus
              subsCheckRhoTy rho1 rho2 msg
-subsCheckRhoTy rho1 (FnTypeTC as2 r2 fx2 cc2 ft2) msg = unifyFun rho1 (length as2) msg >>= \(as1, r1, fx1, cc1, ft1) -> subsCheckFunTy as1 r1 fx1 cc1 ft1 as2 r2 fx2 cc2 ft2 msg
-subsCheckRhoTy (FnTypeTC as1 r1 fx1 cc1 ft1) rho2 msg = unifyFun rho2 (length as1) msg >>= \(as2, r2, fx2, cc2, ft2) -> subsCheckFunTy as1 r1 fx1 cc1 ft1 as2 r2 fx2 cc2 ft2 msg
+subsCheckRhoTy rho1 (FnTypeTC as2 r2 fx2 cc2 ft2 lvls2) msg = unifyFun rho1 (length as2) msg >>= \(as1, r1, fx1, cc1, ft1, lvls1) -> subsCheckFunTy as1 r1 fx1 cc1 ft1 lvls1 as2 r2 fx2 cc2 ft2 lvls2 msg
+subsCheckRhoTy (FnTypeTC as1 r1 fx1 cc1 ft1 lvls1) rho2 msg = unifyFun rho2 (length as1) msg >>= \(as2, r2, fx2, cc2, ft2, lvls2) -> subsCheckFunTy as1 r1 fx1 cc1 ft1 lvls1 as2 r2 fx2 cc2 ft2 lvls2 msg
 subsCheckRhoTy tau1 tau2 msg -- Rule MONO
      = do
           logged' ("subsCheckRhoTy " ++ show (pretty (tau1, tau2)) ++ " ;; " ++ msg) $
@@ -2026,18 +2048,18 @@ subsCheckRho esigma rho2 msg = do
         debugIf False $ text $ "subsCheckRho inst. type against " ++ show rho2
         subsCheckRho erho rho2 msg
 
-    (rho1, FnTypeTC as2 r2 fx2 cc2 ft2) -> do
+    (rho1, FnTypeTC as2 r2 fx2 cc2 ft2 lvls2) -> do
         debug $ "subsCheckRho fn 1"
         debugIf False $ text "subsCheckRho1 being called for " <> highlightFirstLineDoc (rangeOf esigma)
-        (as1, r1, fx1, cc1, ft1) <- unifyFun rho1 (length as2) "sCR1"
-        subsCheckFunTy as1 r1 fx1 cc1 ft1 as2 r2 fx2 cc2 ft2 msg
+        (as1, r1, fx1, cc1, ft1, lvls1) <- unifyFun rho1 (length as2) "sCR1"
+        subsCheckFunTy as1 r1 fx1 cc1 ft1 lvls1 as2 r2 fx2 cc2 ft2 lvls2 msg
         return esigma
-    (FnTypeTC as1 r1 fx1 cc1 ft1, _)    -> do
+    (FnTypeTC as1 r1 fx1 cc1 ft1 lvls1, _)    -> do
         debug "subsCheckRho fn 2"
-        (as2, r2, fx2, cc2, ft2) <- unifyFun rho2 (length as1) "sCR2"
+        (as2, r2, fx2, cc2, ft2, lvls2) <- unifyFun rho2 (length as1) "sCR2"
         debug $ "&&&&&& r1: " ++ show r1
         debug $ "&&&&&& r2: " ++ show r2
-        subsCheckFunTy as1 r1 fx1 cc1 ft1 as2 r2 fx2 cc2 ft2 msg
+        subsCheckFunTy as1 r1 fx1 cc1 ft1 lvls1 as2 r2 fx2 cc2 ft2 lvls2 msg
         return esigma
     -- Elide the two FUN rules and subsCheckFun because we're using
     -- shallow, not deep, skolemization due to being a strict language.
@@ -2049,7 +2071,7 @@ subsCheckRho esigma rho2 msg = do
 -- }}}
 
 -- {{{ Helper functions for subsCheckRho to peek inside type constructors
-subsCheckFunTy as1 r1 fx1 cc1 ft1 as2 r2 fx2 cc2 ft2 msg = do
+subsCheckFunTy as1 r1 fx1 cc1 ft1 _lvls1 as2 r2 fx2 cc2 ft2 _lvls2 msg = do
         if eqLen as1 as2
           then return ()
           else do msg <- getStructureContextMessage
@@ -2063,6 +2085,7 @@ subsCheckFunTy as1 r1 fx1 cc1 ft1 as2 r2 fx2 cc2 ft2 msg = do
         subsCheckTy fx1 fx2 "sCFTfx"
         tcUnifyCC cc1 cc2
         tcUnifyFT ft1 ft2
+        -- TODO levels?
         return ()
 -- }}}
 
@@ -2147,8 +2170,8 @@ resolveType annot origSubst origType = go origSubst origType where
                                          Just ty -> return ty
     RefTypeTC     ty               -> liftM  RefTypeTC    (q ty)
     ArrayTypeTC   ty               -> liftM  ArrayTypeTC  (q ty)
-    FnTypeTC    ss t fx cc cs      -> do (t':fx':ss') <- mapM q (t:fx:ss)
-                                         return $ FnTypeTC  ss' t' fx' cc cs
+    FnTypeTC    ss t fx cc cs lvls -> do (t':fx':ss') <- mapM q (t:fx:ss)
+                                         return $ FnTypeTC  ss' t' fx' cc cs lvls
     TyConTC    nam                 -> return $ TyConTC nam
     TyAppTC    con types           -> liftM2 TyAppTC (q con) (mapM q types)
     TupleTypeTC  kind types        -> liftM  (TupleTypeTC kind) (mapM q types)
@@ -2188,7 +2211,7 @@ getFreeTyVars xs = do zs <- mapM zonkType xs
         TyConTC           {} -> []
         TyAppTC con types    -> concatMap (go bound) (con:types)
         TupleTypeTC _k types     -> concatMap (go bound) types
-        FnTypeTC ss r fx  _ _    -> concatMap (go bound) (r:fx:ss)
+        FnTypeTC ss r fx  _ _ _levels   -> concatMap (go bound) (r:fx:ss)
         ForAllTC  tvs rho        -> go (tyvarsOf tvs ++ bound) rho
         TyVarTC   tv  _mbk       -> if tv `elem` bound then [] else [tv]
         MetaTyVarTC  {}          -> []
@@ -2272,7 +2295,7 @@ tcTypeWellFormed msg ctx typ = do
                                                         ++ nm ++ " " ++ msg]
         TyAppTC con types     -> mapM_ q (con:types)
         TupleTypeTC _k types  -> mapM_ q types
-        FnTypeTC  ss r fx _ _ -> mapM_ q (r:fx:ss)
+        FnTypeTC  ss r fx _ _ _levels -> mapM_ q (r:fx:ss)
         RefTypeTC     ty      -> q ty
         ArrayTypeTC   ty      -> q ty
         RefinedTypeTC v _e  _ -> q (tidType v)
@@ -2359,7 +2382,7 @@ tcSubst subst typ = go typ
             TyConTC    {}           -> typ
             TyAppTC  con types      -> TyAppTC (go con) (map go types)
             TupleTypeTC  k  types   -> TupleTypeTC k (map go types)
-            FnTypeTC  ss r fx cc fp -> FnTypeTC (map go ss) (go r) (go fx) cc fp
+            FnTypeTC  ss r fx cc fp levels -> FnTypeTC (map go ss) (go r) (go fx) cc fp levels
             ForAllTC  tvs rho       -> ForAllTC tvs (go rho)
             RefTypeTC     ty        -> RefTypeTC (go ty)
             ArrayTypeTC   ty        -> ArrayTypeTC (go ty)
