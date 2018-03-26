@@ -106,7 +106,7 @@ instance Pretty TypeTC where
                                                     <> text "> " <> pretty t <> prettyFuncProcComment cs <> text ")"
         ForAllTC   tvs rho              -> text "(forall " <> hsep (prettyTVs tvs) <> text ". " <> pretty rho <> text ")"
         TyVarTC    tv _mbk              -> text (show tv)
-        MetaTyVarTC m                   -> text "(~(" <> pretty (descMTVQ (mtvConstraint m)) <> text ")!" <> text (show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")")
+        MetaTyVarTC m                   -> text "(~(" <> pretty (descMTVQ (mtvConstraint m)) <> text ")!" <> string (show (mtvUniq m) ++ ":" ++ mtvDesc m ++ ")")
         RefTypeTC     ty                -> text "(Ref " <> pretty ty <> text ")"
         ArrayTypeTC   ty                -> text "(Array " <> pretty ty <> text ")"
         RefinedTypeTC v expr args       -> text "(Refined " <> parens (pretty v <+> text "::" <> pretty (tidType v)) <> text " / " <> pretty args <$> showStructure expr <> text ")"

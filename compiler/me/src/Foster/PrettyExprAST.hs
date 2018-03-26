@@ -58,7 +58,7 @@ instance Pretty TypeP where
                                                   <+> pretty r <+> prettyFx fx <> text "}"
           ForAllP        _tyfs rho    -> text "forall ..." <+> pretty rho
           TyVarP         tv           -> pretty tv
-          MetaPlaceholder str         -> text ("?? " ++ str)
+          MetaPlaceholder str         -> string ("?? " ++ str)
           RefinedTypeP nm ty e -> text "%" <+> text nm <+> text ":" <+> pretty ty <+> text ":" <+> pretty e
 
 class IsQuietPlaceholder ty where
