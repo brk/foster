@@ -18,7 +18,7 @@ bad type variables: [$a.15::KindPointerSized]
 */
 
 testPolyAnn2b :: forall (a:Boxed) { { a } => a => { a } };
-testPolyAnn2b = { forall a:Boxed, f => e =>
+testPolyAnn2b = { f => e =>
   f
 };
 

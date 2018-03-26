@@ -8,13 +8,6 @@ main = {
   // * T unifies with (b -> b)
   // * Rule SKOL fails because the skolem constant b is now free in T.
 
-  expect_i1 False;
-  print_i1 (__COMPILES__ ({ z : ?? ZEE => () } as forall (f:Type) { f => () }) );
-  // The above is an equivalent local encoding to having, at global scope,
-  //        zee :: forall (f:Type) { f => () };
-  //        zee = { z => () };
-  //
-  // The ?? ZEE metavariable simply makes it clearer what's happening.
   ()
 };
 
@@ -23,3 +16,7 @@ boo = { forall f:Type, z : f =>
   g = { x => (x as { f => f })};
   ()
 };
+
+// This works too
+zee :: forall (f:Type) { f => () };
+zee = { z => () };

@@ -619,20 +619,19 @@ tcRhoSeq ctx annot a b expTy = do
     return (AnnLetVar annot id ea eb)
 
 tcRhoSeqCheck range ty = do
-    zt <- zonkType ty
-    case zt of
+    case ty of
       MetaTyVarTC mtv -> do --unify m unitTypeTC [text "seq-unit"]
         tcAddConstraint (TcC_SeqUnit mtv) range
       TupleTypeTC _ [] -> return ()
       PrimIntTC n | n /= I1 -> return ()
       RefinedTypeTC v _ _ -> tcRhoSeqCheck range (tidType v)
-      _ | isFnTyLike zt ->
+      _ | isFnTyLike ty ->
            tcFails [text "Sequenced expression returned a function type:"
                    , indent 2 $ vcat [prettyWithLineNumbers range
                                      ,text "Maybe you forgot a function call?"
                                      ,text $ "If not, please add a value binding to make it clear "
                                           ++ "that you want to ignore the function-valued result."]]
-      _ -> tcFails [text "Sequenced expression had a non-unit type:" <+> pretty zt
+      _ -> tcFails [text "Sequenced expression had a non-unit type:" <+> pretty ty
                    , indent 2 $ vcat [prettyWithLineNumbers range]]
 
 isFnTyLike (FnTypeTC {}) = True
@@ -975,8 +974,8 @@ tcSigmaCall :: Context SigmaTC -> ExprAnnot -> ExprAST TypeAST
 tcSigmaCall ctx rng (E_PrimAST _ name@"log-type" _ _) [arg] exp_ty = do
     e <- inferSigma ctx arg name
     tcLift $ putDocLn $ yellow (text "inferred type of ") <> highlightFirstLineDoc (rangeOf arg) <$> text " is " <> blue (pretty (typeTC e))
-    t' <- zonkType (typeTC e)
-    tcLift $ putDocLn $ yellow (text "which zonks to ") <> pretty t'
+    do t' <- zonkType (typeTC e)
+       tcLift $ putDocLn $ yellow (text "which zonks to ") <> pretty t'
     matchExp exp_ty (AnnTuple rng unitTypeTC KindPointerSized []) name
 
 tcSigmaCall ctx rng (E_PrimAST _ name@"assert-invariants" _ _) argtup exp_ty = do
@@ -1039,7 +1038,7 @@ tcSigmaCall ctx rng base argexprs exp_ty = do
         dbg $ green (text "call: annbase is: ") <> showStructure annbase
 
         ctxFx <- tcGetCurrentFnFx
-        fx' <- zonkType fx
+        fx' <- repr fx
         if not $ isEmptyEffect fx'
           then do
             ctxFx' <- zonkType ctxFx
@@ -1295,9 +1294,8 @@ tcSigmaFnHelper ctx fnAST expTyRaw tyformals = do
 
             debugDoc $ string "arg_tys: " <+> pretty arg_tys
             debugDoc $ string "zipped : " <+> pretty (zip arg_tys var_tys)
-            let unMeta (MetaTyVarTC m) = m
-                unMeta other = error $ "unMeta called with " ++ show other
-            _ <- mapM (checkAgainst (map unMeta taus)) (zip arg_tys var_tys)
+            mapM_ (\(t1, t2) -> subsCheckTy t1 t2 "sCETM") (zip var_tys arg_tys)
+            
             --var_tys'' <- mapM shZonkType var_tys
             --debugDoc $ string "var_tys'': " <+> pretty var_tys''
             --debugDoc $ string "metaOf var_tys  : " <+> pretty (show $ collectAllUnificationVars var_tys)
@@ -1582,8 +1580,7 @@ tcType' ctx refinementArgs ris typ = do
                                     let tryOverwrite (tv, MetaTyVarTC m) = do
                                             mty <- readTcMeta m
                                             case mty of
-                                                Unbound _ -> do ty' <- zonkType tv
-                                                                writeTcMetaTC m ty'
+                                                Unbound _ -> do writeTcMetaTC m tv
                                                 BoundTo (MetaTyVarTC m') -> tryOverwrite (tv, MetaTyVarTC m' )
                                                 BoundTo ut -> do tcFailsMore [
                                                                    text "tcType' didn't expect unification variable" <+> text (show m) <+> text "associated"
@@ -2025,12 +2022,13 @@ subsCheckRhoTy tau1 tau2 msg -- Rule MONO
 subsCheck :: (AnnExpr SigmaTC) -> SigmaTC -> String -> Tc (AnnExpr SigmaTC)
 -- {{{
 subsCheck esigma sigma2@(ForAllTC {}) msg = do
-  tytc0 <- zonkType (typeTC esigma)
+  --tytc0 <- zonkType (typeTC esigma)
   (skols, rho) <- skolemize sigma2
   debug $ "subsCheck skolemized sigma to " ++ show rho ++ " via " ++ show skols
                                             ++ ", now deferring to subsCheckRho"
   _ <- subsCheckRho esigma rho ("subsCheck(" ++ msg ++")")
-  tytc1 <- zonkType (typeTC esigma)
+  --tytc1 <- zonkType (typeTC esigma)
+  tytc1 <- return (typeTC esigma)
   esc_tvs <- getFreeTyVars [tytc1, sigma2]
   esc_tvs1 <- getFreeTyVars [tytc1]
   esc_tvs2 <- getFreeTyVars [sigma2]
@@ -2041,8 +2039,8 @@ subsCheck esigma sigma2@(ForAllTC {}) msg = do
                       indent 10 $ pretty (typeTC esigma),
                       text "when looking at expression",
                       highlightFirstLineDoc (rangeOf esigma),
-                      text "with pre-skolemization inferred type ",
-                      indent 10 $ pretty tytc0,
+                      --text "with pre-skolemization inferred type ",
+                      --indent 10 $ pretty tytc0,
                       text "and post-skolemization inferred type ",
                       indent 10 $ pretty tytc1,
                       text "escaping skolems:",
@@ -2269,39 +2267,6 @@ getFreeTyVars xs = do zs <- mapM zonkType xs
         ArrayTypeTC  ty          -> (go bound) ty
         RefinedTypeTC v _e _args -> (go bound) (tidType v) -- TODO handle tyvars in expr/args?
 -- }}}
-
-
--- Sad hack:
--- Given code like
---    poly2b :: forall b:Boxed, { { b => Int32 } => Int32 };
---    poly2b = { forall b:Boxed, tmp : ?? T => 0 };
--- we want to "unify" ??T with { b => Int32 },
--- but we can't literally unify because then we'd fail on code like
---    poly2b :: forall b:Boxed, { { b => Int32 } => Int32 };
---    poly2b = { forall b:Boxed, tmp : { b => Int32 } => 0 };
--- when we would try to unify the bound type variable b with itself.
--- Also, for code like
---    poly2b :: forall b:Boxed, { b => Int32 };
---    poly2b = { forall b:Boxed, tmp :?? T => 0 };
--- ... SADFACE
-checkAgainst taus (ety, MetaTyVarTC m) = do
-  debugDoc $ string "checkAgainst ety: " <+> pretty ety
-  debugDoc $ string "checkAgainst cty: " <+> pretty (MetaTyVarTC m)
-  let tryOverwrite = do
-        mty <- readTcMeta m
-        case mty of
-            Unbound _ -> do ty' <- zonkType ety
-                            writeTcMetaTC m ty'
-            BoundTo _ -> do return ()
-
-  case ety of
-    MetaTyVarTC em | em `elem` taus -> do
-        ty' <- zonkType ety
-        debugDoc $ string "checkAgainst: ety ~> " <+> pretty ty'
-        --tryOverwrite
-        return ()
-    _ -> tryOverwrite
-checkAgainst _ (_, _) = return ()
 
 -- {{{ Well-formedness checks
 -- The judgement   G |- T
