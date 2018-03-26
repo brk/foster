@@ -271,8 +271,17 @@ checkForEscapingTypeVariables e _ann ctx sigma skol_tvs = do
     debug $ "checkSigma escaping types from were " ++ show esc_tvs
          ++ "; bad tvs were " ++ show bad_tvs
          ++ highlightFirstLine (rangeOf e)
-    sanityCheck (null bad_tvs)
-                ("Type not polymorphic enough")
+    if null bad_tvs
+      then return ()
+      else do tytc <- zonkType (typeTC _ann)
+              tcFailsMore [text "Type not polymorphic enough",
+                        indent 10 $ pretty sigma,
+                        text "when looking at expression",
+                        highlightFirstLineDoc (rangeOf e),
+                        text "with inferred type ",
+                        indent 10 $ pretty tytc,
+                        text "escaping skolems:",
+                        indent 10 $ pretty bad_tvs]
 -- }}}
 
 
@@ -1982,10 +1991,13 @@ subsCheckTy sigma1 sigma2@(ForAllTC {}) msg = do
   subsCheckRhoTy sigma1 rho ("subsCheckTy(" ++ msg ++ ")")
   esc_tvs <- getFreeTyVars [sigma1, sigma2]
   let bad_tvs = filter (`elem` esc_tvs) skols
-  sanityCheck (null bad_tvs) ("subsCheck(" ++ msg ++ "): Type\n" ++ show sigma1 ++
-                       " not as polymorphic as\n" ++ show sigma2 ++
-                       "\nbad type variables: " ++ show bad_tvs)
-  return ()
+  if null bad_tvs
+    then return ()
+    else do zonked <- zonkType sigma1
+            tcFailsMore [text "Type not polymorphic enough",
+                      indent 10 $ pretty zonked,
+                      text "escaping skolems:",
+                      indent 10 $ pretty bad_tvs]
 
 subsCheckTy sigma1 rho2 msg = subsCheckRhoTy sigma1 rho2 ("subsCheckTy("++msg++")")
 
@@ -2011,15 +2023,31 @@ subsCheckRhoTy tau1 tau2 msg -- Rule MONO
 subsCheck :: (AnnExpr SigmaTC) -> SigmaTC -> String -> Tc (AnnExpr SigmaTC)
 -- {{{
 subsCheck esigma sigma2@(ForAllTC {}) msg = do
+  tytc0 <- zonkType (typeTC esigma)
   (skols, rho) <- skolemize sigma2
   debug $ "subsCheck skolemized sigma to " ++ show rho ++ " via " ++ show skols
                                             ++ ", now deferring to subsCheckRho"
   _ <- subsCheckRho esigma rho ("subsCheck(" ++ msg ++")")
-  esc_tvs <- getFreeTyVars [typeTC esigma, sigma2]
+  tytc1 <- zonkType (typeTC esigma)
+  esc_tvs <- getFreeTyVars [tytc1, sigma2]
+  esc_tvs1 <- getFreeTyVars [tytc1]
+  esc_tvs2 <- getFreeTyVars [sigma2]
   let bad_tvs = filter (`elem` esc_tvs) skols
-  sanityCheck (null bad_tvs) ("subsCheck(" ++ msg ++ "): Type\n" ++ show (typeTC esigma) ++
-                       " not as polymorphic as\n" ++ show sigma2 ++
-                       "\nbad type variables: " ++ show bad_tvs)
+  if null bad_tvs
+    then return ()
+    else do tcFailsMore [text "Type not polymorphic enough",
+                      indent 10 $ pretty (typeTC esigma),
+                      text "when looking at expression",
+                      highlightFirstLineDoc (rangeOf esigma),
+                      text "with pre-skolemization inferred type ",
+                      indent 10 $ pretty tytc0,
+                      text "and post-skolemization inferred type ",
+                      indent 10 $ pretty tytc1,
+                      text "escaping skolems:",
+                      indent 10 $ pretty bad_tvs,
+                      text "escaping tvs: ",
+                      pretty esc_tvs1,
+                      pretty esc_tvs2]
   return esigma
 
 subsCheck _esigma _rho2 _msg = tcFails [text $ "rho passed to subsCheck!"]
