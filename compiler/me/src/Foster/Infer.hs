@@ -222,17 +222,8 @@ tcUnifyLoop ((TypeConstrEq t1'0 t2'0):constraints) = do
                     tcUnifyMoreTypes (fx1' : a1' : as1') (fx2 : a2 : as2) []
                 tcUnifyLoop constraints
 
-    ((ForAllTC  ktyvars1 rho1), (ForAllTC  ktyvars2 rho2)) ->
-        let (tyvars1, kinds1) = unzip ktyvars1 in
-        let (tyvars2, kinds2) = unzip ktyvars2 in
-        if List.length tyvars1 /= List.length tyvars2
-         then tcFails [string "Unable to unify foralls of different arity!\n" <> pretty t1 <> string "\nvs\n" <> pretty t2]
-         else if kinds1 /= kinds2
-          then tcFails [text $ "Unable to unify foralls with differently-kinded type variables"]
-          else let t1 = rho1 in
-               let tySubst = zip tyvars2 (map (\(tv,k) -> TyVarTC  tv (UniConst k)) ktyvars1) in
-               let t2 = parSubstTcTy tySubst rho2 in
-               tcUnifyLoop ((TypeConstrEq t1 t2):constraints)
+    (ForAllTC {}, ForAllTC {}) ->
+         tcFailsMore [string "Unifying foralls?!?", pretty t1, string "vs", pretty t2]
 
     ((RefinedTypeTC (TypedId t1 _n1) _e1 _), (RefinedTypeTC (TypedId t2 _n2) _e2 _)) ->
       -- TODO make sure that n/e match...
