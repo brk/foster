@@ -219,11 +219,7 @@ tcUnifyLoop ((TypeConstrEq t1'0 t2'0):constraints) = do
                     a1'  <- repr a1
                     as1' <- mapM repr as1
                     mapM_ (updateLevel nu) (fx1' : a1' : as1')
-                    --tcLift $ putStrLn $ "a1 : " ++ show a1
-                    --tcLift $ putStrLn $ "a1': " ++ show a1'
-                    tcUnifyLoop ([TypeConstrEq a1' a2,
-                                  TypeConstrEq fx1' fx2] ++
-                                  [TypeConstrEq a b | (a, b) <- zip as1' as2])
+                    tcUnifyMoreTypes (fx1' : a1' : as1') (fx2 : a2 : as2) []
                 tcUnifyLoop constraints
 
     ((ForAllTC  ktyvars1 rho1), (ForAllTC  ktyvars2 rho2)) ->
