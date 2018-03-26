@@ -35,8 +35,8 @@ import Foster.MainCtorHelpers(withDataTypeCtors)
 import Foster.Kind
 import Foster.TypeTC
 import Foster.AnnExpr
-import Foster.Infer(parSubstTcTy, zonkType)
-import Foster.Typecheck(tcTypeWellFormed)
+import Foster.Infer(zonkType)
+import Foster.Typecheck(tcTypeWellFormed, tcReplaceQuantifiedVars)
 
 import Text.PrettyPrint.ANSI.Leijen
 
@@ -473,7 +473,7 @@ tcToIL st typ = do
            Just [dt] -> case dtUnboxedRepr dt of
              Nothing -> do iltys <- mapM q tys
                            return $ TyAppIL (TyConIL dtname) iltys
-             Just rr -> do q $ rr tys
+             Just rr -> do rr tys >>= q
            Just dts | length dts > 1
              -> tcFails [text "Multiple definitions for data type" <+> text dtname]
            _ -> case Map.lookup dtname effDeclMapX of
@@ -528,20 +528,21 @@ tcToIL st typ = do
 -- to "directly unboxed tuple" representation, since the context which maps
 -- names to datatypes will not persist through the rest of the compilation pipeline.
 --
-dtUnboxedRepr :: DataType TypeTC -> Maybe ([TypeTC] -> TypeTC)
+dtUnboxedRepr :: DataType TypeTC -> Maybe ([TypeTC] -> Tc TypeTC)
 dtUnboxedRepr dt =
   case dataTypeName dt of
     TypeFormal _ _ KindAnySizeType ->
       case dataTypeCtors dt of
-        [ctor] -> Just $ \tys ->
-                       TupleTypeTC (UniConst KindAnySizeType)
-                          (map (substTypeTC tys (dataCtorDTTyF ctor))
+        [ctor] -> 
+          Just $ \tys ->
+                       liftM (TupleTypeTC (UniConst KindAnySizeType))
+                          (mapM (substTypeTC tys (dataCtorDTTyF ctor))
                                (dataCtorTypes ctor))
         _ -> Nothing
     TypeFormal _ _ _otherKinds -> Nothing
  where
-    substTypeTC :: [TypeTC] -> [TypeFormal] -> TypeTC -> TypeTC
-    substTypeTC tys formals = parSubstTcTy mapping
+    substTypeTC :: [TypeTC] -> [TypeFormal] -> TypeTC -> Tc TypeTC
+    substTypeTC tys formals = tcReplaceQuantifiedVars mapping
       where mapping = [(BoundTyVar nm rng, ty)
                       | (ty, TypeFormal nm rng _kind) <- zip tys formals]
 
