@@ -5,11 +5,12 @@
 -- found in the LICENSE.txt file or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 module Foster.Typecheck(tcSigmaToplevel, tcSigmaToplevelNonFn, tcTypeWellFormed,
-                        tcContext, tcType, fnTypeShallow, mkLevels) where
+                        tcContext, tcType, fnTypeShallow, mkLevels,
+                        tcReplaceQuantifiedVars) where
 
 import Prelude hiding ((<$>))
 
-import qualified Data.List as List(length, zip)
+import qualified Data.List as List(length, zip, elem, lookup)
 import Data.List(foldl', (\\))
 import Control.Monad(liftM, forM, liftM, liftM2, when)
 
@@ -17,7 +18,8 @@ import qualified Data.Text as T(Text, pack, unpack, length, head)
 import Data.Map(Map)
 import qualified Data.Map as Map(lookup, insert, keys, elems, fromList, toList, null)
 import qualified Data.Set as Set(toList, fromList)
-import Data.IORef(newIORef,readIORef,writeIORef)
+import Data.Maybe (fromMaybe)
+import Data.IORef(readIORef,writeIORef)
 import Data.UnionFind.IO(fresh)
 
 import Foster.Base
@@ -924,11 +926,11 @@ data TypeInstSituation = TI_Empty | TI_Sigma | TI_Unresolved | TI_Rho TypeTC
 
 classifyTypeInstSituation [] _ = return $ TI_Empty
 classifyTypeInstSituation _ (ForAllTC {}) = return $ TI_Sigma
-classifyTypeInstSituation tys (MetaTyVarTC m) = do
-  mb_t <- readTcMeta m
-  case mb_t of
-    Unbound _ -> return $ TI_Unresolved
-    BoundTo t -> classifyTypeInstSituation tys t
+classifyTypeInstSituation tys tv@(MetaTyVarTC _) = do
+  t <- repr tv
+  case t of
+    MetaTyVarTC _ -> return $ TI_Unresolved
+    _ -> classifyTypeInstSituation tys t
 classifyTypeInstSituation _ rho = return $ TI_Rho rho
 -- }}}
 
@@ -1327,7 +1329,7 @@ tcSigmaFnHelper ctx fnAST expTyRaw tyformals = do
     -- that nothing has been unified with them so far, and then writing
     -- the appropriate bound type variable to the ref.
     _ <- mapM (\(t, (tv, k)) -> do
-                 t' <- shallowZonk t
+                 t' <- repr t
                  case t' of
                    (MetaTyVarTC m) -> do
                         debugDoc $ text "zonked " <> pretty t <> text " to " <> pretty t <> text "; writing " <> pretty tv
@@ -2122,9 +2124,7 @@ inst :: AnnExpr SigmaTC -> String -> Tc (AnnExpr RhoTC)
 -- type parameters with unification variables.
 -- {{{
 inst base msg = do
-  --zonked <- shallowZonk (typeTC base)
-  zonked <- return (typeTC base)
-  case zonked of
+  case typeTC base of
      ForAllTC ktvs _rho -> do
        taus <- genNonSigmaUnificationVarsLike ktvs (\n -> "inst("++msg++") type parameter " ++ vname base n)
        instWith "inst" (annExprAnnot base) base taus
@@ -2141,9 +2141,7 @@ instWith whereFrom rng aexpSigma taus = do
     return $ E_AnnTyApp rng instRho aexpSigma taus
 
 tryInstSigmaWith whereFrom sigma taus = do
-  --zonked <- shallowZonk sigma
-  zonked <- return sigma
-  case zonked of
+  case sigma of
      ForAllTC ktvs rho -> do let tailKtvs = drop (length taus) ktvs
                              partialTaus <- genNonSigmaUnificationVarsLike tailKtvs (\n -> "tISW type parameter " ++ show n)
                              instSigmaWith whereFrom ktvs rho (taus ++ partialTaus)
@@ -2159,8 +2157,44 @@ instSigmaWith whereFrom ktvs rho taus = do
                 ++ "taus: " ++ show taus ++ "\n"
                 ++ "context: " ++ whereFrom)
     let tyvarsAndTys = List.zip (tyvarsOf ktvs) taus
-    zonked <- zonkType rho -- Do a deep zonk to ensure we don't miss any vars.
-    return $ parSubstTcTy tyvarsAndTys zonked
+    z <- zonkType rho
+    tcReplaceQuantifiedVars tyvarsAndTys z
+
+assocFilterOut :: Eq a => [(a,b)] -> [a] -> [(a,b)]
+assocFilterOut lst keys = [(a,b) | (a,b) <- lst, not(List.elem a keys)]
+
+-- Substitute each element of prv with its corresponding element from nxt.
+tcReplaceQuantifiedVars :: [(TyVar, TypeTC)] -> TypeTC -> Tc TypeTC
+tcReplaceQuantifiedVars prvNextPairs ty =
+    let q = tcReplaceQuantifiedVars prvNextPairs in
+    case ty of
+        TyVarTC  tv _mbk     -> return $ fromMaybe ty $ List.lookup tv prvNextPairs
+        MetaTyVarTC m        -> do tvar <- readTcMeta m
+                                   case tvar of
+                                     Unbound _ -> return ty
+                                     BoundTo _ -> repr ty >>= q
+        PrimIntTC     {}     -> return $ ty
+        TyConTC       {}     -> return $ ty
+        TyAppTC con tys      -> do con' <- q con
+                                   tys' <- mapM q tys
+                                   return $ TyAppTC con' tys'
+        TupleTypeTC k  types -> liftM (TupleTypeTC k) (mapM q types)
+        RefTypeTC    t       -> liftM RefTypeTC    (q t)
+        ArrayTypeTC  t       -> liftM ArrayTypeTC  (q t)
+        FnTypeTC  ss t fx cc cs levels -> do
+                ss' <- mapM q ss
+                t' <- q t
+                fx' <- q fx
+                levels' <- mkLevels
+                return $ FnTypeTC ss' t' fx' cc cs levels' -- TODO unify calling convention?
+        ForAllTC  ktvs rho   -> do
+                let prvNextPairs' = prvNextPairs `assocFilterOut` (map fst ktvs)
+                rho' <- tcReplaceQuantifiedVars prvNextPairs' rho
+                return $ ForAllTC  ktvs rho'
+        RefinedTypeTC (TypedId t id) e args -> do
+          t' <- q t
+          return $ RefinedTypeTC (TypedId t' id) e args -- TODO recurse in e?
+    
 -- }}}
 
 -- {{{
@@ -2210,7 +2244,8 @@ skolemize (ForAllTC ktvs rho) = do
      skolems <- mapM newTcSkolem ktvs
      let tyvarsAndTys = List.zip (tyvarsOf ktvs)
                                  (map (\tv@(SkolemTyVar _ _ k) -> TyVarTC tv (UniConst k)) skolems)
-     return (skolems, parSubstTcTy tyvarsAndTys rho)
+     rho' <- tcReplaceQuantifiedVars tyvarsAndTys rho
+     return (skolems, rho')
 skolemize ty = return ([], ty)
 -- }}}
 
@@ -2234,32 +2269,6 @@ getFreeTyVars xs = do zs <- mapM zonkType xs
         ArrayTypeTC  ty          -> (go bound) ty
         RefinedTypeTC v _e _args -> (go bound) (tidType v) -- TODO handle tyvars in expr/args?
 -- }}}
-
-{-
-unMBS :: MetaBindStatus -> TypeTC
-unMBS (NonMeta t) = t
-unMBS (MetaUnbound m  ) = MetaTyVarTC m
-unMBS (MetaBoundTo _ t) = t
--}
-
-instance Pretty MetaBindStatus where pretty mbs = string (show mbs)
-
-data MetaBindStatus = NonMeta TypeTC
-                    | MetaUnbound (MetaTyVar TypeTC)
-                    | MetaBoundTo (MetaTyVar TypeTC) TypeTC
-                    deriving Show
-
-shZonkType :: TypeTC -> Tc MetaBindStatus
-shZonkType x = do
-    case x of
-        MetaTyVarTC m -> do shZonkMetaType m
-        _ -> return (NonMeta x)
-
-shZonkMetaType m = do
-  mty <- readTcMeta m
-  case mty of
-    Unbound _  -> do return $ MetaUnbound m
-    BoundTo ty -> do return $ MetaBoundTo m ty
 
 
 -- Sad hack:

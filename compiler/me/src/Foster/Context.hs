@@ -237,17 +237,6 @@ repr x = do
                               _ -> return ty
     _ -> return x
 
--- A "shallow" alternative to zonking which only peeks at the topmost tycon
-shallowZonk :: TypeTC -> Tc TypeTC
-shallowZonk (MetaTyVarTC m) = do
-         mty <- readTcMeta m
-         case mty of
-             Unbound _ -> return (MetaTyVarTC m)
-             BoundTo ty -> do ty' <- shallowZonk ty
-                              writeTcMetaTC m ty'
-                              return ty'
-shallowZonk t = return t
-
 shallowStripRefinedTypeTC (RefinedTypeTC v _ _) = tidType v
 shallowStripRefinedTypeTC t                     = t
 

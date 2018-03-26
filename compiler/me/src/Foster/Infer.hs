@@ -1,7 +1,6 @@
 {-# LANGUAGE Strict #-}
 module Foster.Infer(
     tcUnifyTypes, tcUnifyFT, tcUnifyCC, tcUnifyKinds
-  , parSubstTcTy
   , tySubst
   , unify, collectUnboundUnificationVars, zonkType
 ) where
@@ -32,28 +31,6 @@ type TypeSubst = Map Uniq TypeTC
 data TypeConstraint = TypeConstrEq TypeTC TypeTC
 
 ----------------------
-
-assocFilterOut :: Eq a => [(a,b)] -> [a] -> [(a,b)]
-assocFilterOut lst keys = [(a,b) | (a,b) <- lst, not(List.elem a keys)]
-
--- Substitute each element of prv with its corresponding element from nxt.
-parSubstTcTy :: [(TyVar, TypeTC)] -> TypeTC -> TypeTC
-parSubstTcTy prvNextPairs ty =
-    let q = parSubstTcTy prvNextPairs in
-    case ty of
-        TyVarTC  tv _mbk     -> fromMaybe ty $ List.lookup tv prvNextPairs
-        MetaTyVarTC   {}     -> ty
-        PrimIntTC     {}     -> ty
-        TyConTC       {}     -> ty
-        TyAppTC     con tys  -> TyAppTC (q con) (map q tys)
-        TupleTypeTC k  types -> TupleTypeTC k  (map q types)
-        RefTypeTC    t       -> RefTypeTC    (q t)
-        ArrayTypeTC  t       -> ArrayTypeTC  (q t)
-        FnTypeTC  ss t fx cc cs levels -> FnTypeTC     (map q ss) (q t) (q fx) cc cs levels -- TODO unify calling convention?
-        ForAllTC  ktvs rho   ->
-                let prvNextPairs' = prvNextPairs `assocFilterOut` (map fst ktvs)
-                in  ForAllTC  ktvs (parSubstTcTy prvNextPairs' rho)
-        RefinedTypeTC v e args -> RefinedTypeTC (fmap q v) e args -- TODO recurse in e?
 
 -- Replaces types for meta type variables (unification variables)
 -- according to the given type substitution.
