@@ -1,0 +1,15 @@
+main = {
+  ()
+};
+
+type case List (a:Type)
+  of $Nil
+  of $Cons a (List a)
+;
+
+listSortBy :: forall (s:Type) { List (List s) => () };
+listSortBy = { xxs =>
+  mergePairs = { zss => zss };
+  zzz = (mergePairs xxs   as  List (List s));
+  ()
+};
