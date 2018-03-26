@@ -505,8 +505,9 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
 
   cb_parse_formal cbor = case cbor of
     CBOR_Array [tok, _,_cbr, CBOR_Array [xid]]    | tok `tm` tok_FORMAL ->
-      let t = MetaPlaceholder ".inferred" in -- TODO
-      TypedId t (Ident (cb_parse_x_text xid) 0)
+      let name = cb_parse_x_text xid in
+      let t = MetaPlaceholder (".inferred-for." ++ T.unpack name ++ "\n" ++ showSourceRange (cb_parse_range _cbr)) in -- TODO
+      TypedId t (Ident name 0)
     CBOR_Array [tok, _,_cbr, CBOR_Array [xid, t]] | tok `tm` tok_FORMAL ->
       TypedId (cb_parse_t t) (Ident (cb_parse_x_text xid) 0)
     _ -> error $ "cb_parse_formal failed: " ++ show cbor
