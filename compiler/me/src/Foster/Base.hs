@@ -88,7 +88,14 @@ instance Pretty TyVar where
   pretty (BoundTyVar name _) = text "'" <> text name
   pretty (SkolemTyVar name uniq _kind) = text "$" <> text name <> text ":" <> pretty uniq
 
-data TVar t = Unbound () | BoundTo t
+instance Pretty t => Pretty (MetaTyVar t) where
+  pretty m = parens $ text ((mtvDesc m) ++ "~" ++ show (mtvUniq m))
+
+instance Pretty t => Show (MetaTyVar t) where
+  show m = show (pretty m)
+
+type Level = Int
+data TVar t = Unbound Level | BoundTo t
 
 data MTVQ = MTVSigma | MTVTau | MTVEffect deriving (Eq)
 data MetaTyVar t = Meta { mtvConstraint :: MTVQ

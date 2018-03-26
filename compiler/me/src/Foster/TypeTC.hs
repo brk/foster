@@ -68,8 +68,8 @@ isEmptyEffect t =
             _ -> False
 
 
-type Level = Int
-data Levels = Levels { levelOld :: OrdRef Level
+data Levels = ZeroLevels
+            | Levels { levelOld :: OrdRef Level
                      , levelNew :: OrdRef Level
                      } deriving Eq
 genericLevel = maxBound :: Level

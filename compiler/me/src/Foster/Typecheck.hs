@@ -958,19 +958,6 @@ tcRhoCall ctx rng base argstup exp_ty = do
 tryGetVarName (E_VarAST _ v) = T.unpack $ evarName v
 tryGetVarName _ = ""
 
-newOrdRef :: a -> Tc (OrdRef a)
-newOrdRef a = do
-  u <- newTcUniq
-  r <- tcLift $ newIORef a
-  return $ OrdRef u r
-
-mkLevels :: Tc Levels
-mkLevels = do
-  curr <- tcGetLevel
-  old <- newOrdRef curr
-  new <- newOrdRef curr
-  return $ Levels old new
-
 tcSigmaCall :: Context SigmaTC -> ExprAnnot -> ExprAST TypeAST
             -> [ExprAST TypeAST] -> Expected SigmaTC -> Tc (AnnExpr SigmaTC)
 
