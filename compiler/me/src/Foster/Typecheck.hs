@@ -150,8 +150,9 @@ inferSigma ctx e msg = do
   doQuantification e' ctx
 
 inferSigmaHelper :: Context SigmaTC -> Term -> String -> Tc (AnnExpr SigmaTC)
-inferSigmaHelper ctx (E_TyCheck _annot e ta) _msg = do t <- tcType ctx ta
-                                                       checkSigma ctx e t
+inferSigmaHelper ctx (E_TyCheck annot e ta) _msg = do
+    ty <- tcTypeAndResolve ctx ta annot
+    checkSigma ctx e ty
 -- Special-case variables and function literals
 -- to avoid a redundant instantation + generalization
 inferSigmaHelper ctx (E_VarAST rng v) _msg = tcSigmaVar ctx rng (evarName v)
@@ -929,8 +930,7 @@ classifyTypeInstSituation _ rho = return $ TI_Rho rho
 -- G |- e as t  ~~~>  a1 ::: t
 tcRhoTyCheck ctx annot e tya expTy = do
 -- {{{
-    ty0 <- tcType ctx tya
-    ty  <- resolveType annot (localTypeBindings ctx) ty0
+    ty <- tcTypeAndResolve ctx tya annot
     ann <- checkSigma ctx e ty
     do tcLift $ putDocLn $ text "tycheck ann result was " <> showStructure ann
     rv <- matchExp expTy ann "tycheck"
