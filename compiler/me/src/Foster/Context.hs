@@ -23,6 +23,7 @@ import Foster.Kind
 import Foster.ExprAST
 import Foster.TypeAST
 import Foster.TypeTC
+import Foster.Config(OrdRef(..))
 
 import Text.PrettyPrint.ANSI.Leijen
 import Foster.Output
@@ -268,10 +269,15 @@ newTcUnificationVarTau    d = newTcUnificationVar_ MTVTau d
 
 newTcUnificationVar_ :: MTVQ -> String -> Tc TypeTC
 newTcUnificationVar_ q desc = do
+    lvl  <- tcGetLevel
+    m <- newTcUnificationVarAtLevel lvl q desc
+    return $ MetaTyVarTC m
+
+newTcUnificationVarAtLevel :: Level -> MTVQ -> String -> Tc (MetaTyVar TypeTC)
+newTcUnificationVarAtLevel lvl q desc = do
     u    <- newTcUniq
-    ref  <- newTcRef (Unbound ())
-    meta <- tcRecordUnificationVar (Meta q desc u ref)
-    return (MetaTyVarTC meta)
+    ref  <- newTcRef (Unbound lvl)
+    tcRecordUnificationVar (Meta q desc u ref)
       where
         -- The typechecking environment maintains a list of all the unification
         -- variables created, for introspection/debugging/statistics wankery.
@@ -307,6 +313,40 @@ tcNeedsLevelAdjustment :: TypeTC -> Tc ()
 tcNeedsLevelAdjustment typ = Tc $ \env -> do
   modIORef' (tcPendingLevelAdjustments env) (typ:)
   retOK ()
+
+tcGetNeedsLevelAdjustments :: Tc [TypeTC]
+tcGetNeedsLevelAdjustments = Tc $ \env -> do
+  levs <- readIORef (tcPendingLevelAdjustments env)
+  retOK levs
+
+tcSetNeedsLevelAdjustments :: [TypeTC] -> Tc ()
+tcSetNeedsLevelAdjustments levs = Tc $ \env -> do
+  writeIORef (tcPendingLevelAdjustments env) levs
+  retOK ()
+
+tcReadLevels :: Levels -> Tc (Level, Level)
+tcReadLevels ZeroLevels = return (0, 0)
+tcReadLevels (Levels old new) = do
+  o <- tcLift $ readIORef (ordRef old)
+  n <- tcLift $ readIORef (ordRef new)
+  return (o, n)
+
+
+tcNewOrdRef :: a -> Tc (OrdRef a)
+tcNewOrdRef a = do
+  u <- newTcUniq
+  r <- tcLift $ newIORef a
+  return $ OrdRef u r
+
+mkLevels :: Tc Levels
+mkLevels = do
+  curr <- tcGetLevel
+  mkLevelsWith (curr, curr)
+
+mkLevelsWith (o, n) = do
+  old <- tcNewOrdRef o
+  new <- tcNewOrdRef n
+  return $ Levels old new
 
 newTcUniq :: Tc Uniq
 newTcUniq = Tc $ \env -> do let ref = tcEnvUniqs env
@@ -344,7 +384,7 @@ tcUpdateIntConstraint km n = Tc $ \env -> do
   modIORef' (tcMetaIntConstraints env) (Map.insertWith max km n)
   retOK ()
 
-instance Show (MetaTyVar TypeTC)  where show m = show (MetaTyVarTC m)
+--instance Show (MetaTyVar TypeTC)  where show m = show (MetaTyVarTC m)
 
 tcApplyIntConstraints :: Tc ()
 tcApplyIntConstraints = Tc $ \env -> do

@@ -271,8 +271,12 @@ tcUnifyVar m1 (MetaTyVarTC m2) constraints =
       tvar1 <- readTcMeta m1
       tvar2 <- readTcMeta m2
       case (tvar1, tvar2) of
-        (Unbound _, Unbound _) -> do
-          writeTcMetaTC m1 (MetaTyVarTC m2) -- TODO other direction based on levels
+        (Unbound lev1, Unbound lev2) -> do
+          --tcLift $ putStrLn $ "================ Unifying meta var {" ++ show lev1 ++ "} " ++ show (pretty $ MetaTyVarTC m1)
+          --              ++ "\n============================= with {" ++ show lev2 ++ "} " ++ show (pretty $ MetaTyVarTC m2)
+          if lev1 > lev2
+            then writeTcMetaTC m1 (MetaTyVarTC m2)
+            else writeTcMetaTC m2 (MetaTyVarTC m1)
           tcUnifyLoop constraints
         _ -> tcFailsMore [text "Invariant violated! repr returned a bound metavariable!?"]
 
@@ -285,13 +289,11 @@ tcUnifyVar m ty constraints = do
     -}
     tvar <- readTcMeta m
     case tvar of
-      Unbound _  -> do
-                       --updateLevel level ty
+      Unbound level -> do
+                       updateLevel level ty
                        writeTcMetaTC m ty
                        tcUnifyLoop (                     constraints)
-      BoundTo tz -> do tcLift $ putStrLn $ "tcUnifyVar INVARIANT VIOLATED: m was not Unbound"
-                       tz' <- repr tz
-                       tcUnifyLoop (TypeConstrEq tz' ty : constraints)
+      BoundTo _ -> do tcFails [text "tcUnifyVar INVARIANT VIOLATED: m was not Unbound"]
 
 instance Pretty ty => Pretty (TVar ty) where
   pretty tvar = case tvar of
@@ -400,13 +402,8 @@ extractOrderedEffect tp = do
             then ls
             else [l]
 
-tcReadLevels :: Levels -> Tc (Level, Level)
-tcReadLevels (Levels old new) = do
-  o <- tcLift $ readIORef (ordRef old)
-  n <- tcLift $ readIORef (ordRef new)
-  return (o, n)
-
-tcWriteLevelNew (Levels old new) nu = do
+tcWriteLevelNew ZeroLevels _nu = return () -- no need!
+tcWriteLevelNew (Levels _old new) nu = do
   tcLift $ writeIORef (ordRef new) nu
 
 updateLevel :: Level -> TypeTC -> Tc ()
@@ -422,8 +419,23 @@ updateLevel level typ = do
     MetaTyVarTC   m         -> do
       tvar <- readTcMeta m
       case tvar of
-        Unbound _ -> return () -- TODO check unbound's level
-        BoundTo _t -> error $ "Update level applied to bound type variable!"
+        Unbound unlev ->
+          if unlev == genericLevel
+            then tcFails [text "Update level applied to generic type variable!"]
+            else if level < unlev
+                   then do tcLift $ putStrLn $ "updateLevel overwriting " ++  show unlev ++ " with " ++ show level ++ " for " ++ show typ
+                           tcLift $ writeIORef (mtvRef m) (Unbound level)
+                   else return ()
+        BoundTo _ -> do t' <- repr typ
+                        --tcLift $ putStrLn $ "updateLevel peeked through repr " ++ show m ++ " to get " ++ show t'
+                        go t'
+        
+                                      {-
+        BoundTo _t -> tcFailsMore [text "Update level applied to bound meta type variable!",
+                                   text (show m),
+                                   pretty _t]
+                                   -}
+        --BoundTo _ -> return ()
 
     RefTypeTC     ty        -> go ty
     ArrayTypeTC   ty        -> go ty
