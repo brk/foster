@@ -158,7 +158,7 @@ retOK :: a -> IO (OutputOr a)
 retOK x = return (OK x)
 
 instance Monad Tc where
-    return x = Tc $ \_env -> return (OK x)
+    return = pure
     fail err = Tc $ \_env -> return (Errors [outLn err])
     m >>= k  = Tc $ \ env -> do result <- unTc env m
                                 case result of
@@ -166,7 +166,7 @@ instance Monad Tc where
                                   Errors ss -> return (Errors ss)
 
 instance Functor     Tc where fmap  = liftM
-instance Applicative Tc where pure  = return
+instance Applicative Tc where pure x = Tc $ \_env -> return (OK x)
                               (<*>) = ap
 
 -- | Given a Tc function and the result of a previous Tc action,
