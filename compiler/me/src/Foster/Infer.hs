@@ -1,22 +1,18 @@
 {-# LANGUAGE Strict #-}
 module Foster.Infer(
     tcUnifyTypes, tcUnifyFT, tcUnifyCC, tcUnifyKinds
-  , tySubst
   , unify, collectUnboundUnificationVars, zonkType
 ) where
 
 import Prelude hiding ((<$>))
 
-import Data.Map(Map)
-import qualified Data.Map as Map(findWithDefault)
-import qualified Data.List as List(length, elem, lookup, nub, sortBy)
+import qualified Data.List as List(length, nub, sortBy)
 import qualified Data.Set as Set
-import Data.Maybe(fromMaybe)
 import Text.PrettyPrint.ANSI.Leijen
 import Data.UnionFind.IO(descriptor, setDescriptor, equivalent, union)
 
 import Control.Monad(liftM, liftM, liftM2, when)
-import Data.IORef(readIORef,writeIORef)
+import Data.IORef(writeIORef)
 
 import Foster.Base
 import Foster.TypeTC
@@ -24,31 +20,7 @@ import Foster.Context
 import Foster.Config (OrdRef(ordRef))
 import Foster.Output (putDocLn)
 
-----------------------
-
-type TypeSubst = Map Uniq TypeTC
-
 data TypeConstraint = TypeConstrEq TypeTC TypeTC
-
-----------------------
-
--- Replaces types for meta type variables (unification variables)
--- according to the given type substitution.
-tySubst :: TypeSubst -> TypeTC -> TypeTC
-tySubst subst ty =
-    let q = tySubst subst in
-    case ty of
-        MetaTyVarTC m          -> Map.findWithDefault ty (mtvUniq m) subst
-        PrimIntTC     {}       -> ty
-        TyVarTC       {}       -> ty
-        TyConTC       {}       -> ty
-        TyAppTC con tys        -> TyAppTC (q con) (map q tys)
-        RefTypeTC     t        -> RefTypeTC    (q t)
-        ArrayTypeTC   t        -> ArrayTypeTC  (q t)
-        TupleTypeTC k types    -> TupleTypeTC k (map q types)
-        FnTypeTC  ss t fx cc cs levels -> FnTypeTC     (map q ss) (q t) (q fx) cc cs levels
-        ForAllTC  tvs rho      -> ForAllTC  tvs (q rho)
-        RefinedTypeTC v e args -> RefinedTypeTC (fmap q v) e args
 
 -------------------------------------------------
 illegal (TyVarTC (BoundTyVar {}) _) = True
