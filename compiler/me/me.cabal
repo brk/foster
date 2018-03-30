@@ -36,7 +36,7 @@ executable me
                  containers -any,
                  criterion >= 1.1.0.0,
                  cityhash -any,
-                 CBOR -any,
+                 cborg -any,
                  double-conversion >=2.0.2.0,
                  data-dword >= 0.3.1,
                  text >= 1.2.0.0,

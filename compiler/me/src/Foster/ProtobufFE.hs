@@ -14,7 +14,7 @@ import Foster.ParsedType
 import Foster.TypeAST(gFosterPrimOpsTable)
 import Foster.Tokens
 
-import Data.CBOR
+import Codec.CBOR.Term
 
 import Data.Foldable (toList)
 import Data.List(groupBy, foldl')
@@ -36,16 +36,18 @@ import Debug.Trace(trace)
 import Control.Monad.State (evalState, get, put, liftM, State)
 --------------------------------------------------------------------------------
 
+type CBOR = Term
+
 cb_parseWholeProgram :: CBOR -> Bool -> WholeProgramAST (ExprSkel ExprAnnot) TypeP
 cb_parseWholeProgram cbor standalone =
   case cbor of
-    CBOR_Array cbmods ->
+    TList cbmods ->
       let mods = map (cb_parseSourceModule standalone) cbmods in
       WholeProgramAST mods
     _ -> error "cb_parseWholeProgram expected an array of modules."
 
 cb_parseSourceModule standalone cbor = case cbor of
-  CBOR_Array [nm, _, _, CBOR_Array lines, _] ->
+  TList [nm, _, _, TList lines, _] ->
     cb_parseSourceModuleWithLines standalone sourcelines (cborText nm) cbor
       where sourcelines = SourceLines $ Seq.fromList $ map cborText lines
   _ -> error "cb_parseSourceModule"
@@ -53,9 +55,9 @@ cb_parseSourceModule standalone cbor = case cbor of
 -- Defer parsing to a separate function so that sourcelines is in scope for
 -- the function's where-clause definitions.
 cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
-  CBOR_Array [_, hash, modtree, _, CBOR_Array hiddentokens] ->
+  TList [_, hash, modtree, _, TList hiddentokens] ->
       case modtree of
-        CBOR_Array [tok, _, _, CBOR_Array (cbincludes:defn_decls)] | tok `tm` tok_MODULE ->
+        TList [tok, _, _, TList (cbincludes:defn_decls)] | tok `tm` tok_MODULE ->
           let includes  = cb_parseIncludes cbincludes
               items = map cb_parse_ToplevelItem defn_decls
               primDTs = if standalone then [] else primitiveDataTypesP
@@ -65,18 +67,19 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
   _ -> error $ "cb_parseSourceModule[2] failed"
 
  where
-  tm (CBOR_UInt x) n = x == n
+  tm :: CBOR -> Int -> Bool
+  tm (TInt x) n = x == n
   tm other _n = error $ "tm expected CBOR_UInt, got " ++ show other
 
   cb_parse_ToplevelItem cbor = case cbor of
-    CBOR_Array [tok, _,_cbr, CBOR_Array [x, t]] | tok `tm` tok_DECL ->
+    TList [tok, _,_cbr, TList [x, t]] | tok `tm` tok_DECL ->
        ToplevelDecl (cb_parse_x_str x, cb_parse_t t, NotForeign)
-    CBOR_Array [tok, _,_cbr, CBOR_Array [x, phrase]] | tok `tm` tok_DEFN ->
+    TList [tok, _,_cbr, TList [x, phrase]] | tok `tm` tok_DEFN ->
       case (cb_parse_x_str x, cb_parse_phrase phrase) of
         (name, E_FnAST annot fn) ->
                         ToplevelDefn (name, E_FnAST annot fn { fnAstName = T.pack name , fnWasToplevel = True })
         (name, expr) -> ToplevelDefn (name, expr)
-    CBOR_Array [tok, _, cbr, CBOR_Array [tyformal_nm, mu_tyformals, mu_data_ctors]]
+    TList [tok, _, cbr, TList [tyformal_nm, mu_tyformals, mu_data_ctors]]
                                                       | tok `tm` tok_DATATYPE ->
        let tyf = (map cb_parse_tyformal  (unMu mu_tyformals)) in
        ToplevelData $ DataType (cb_parse_tyformal      tyformal_nm)
@@ -84,7 +87,7 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
                                    (map (cb_parse_data_ctor tyf) (unMu mu_data_ctors))
                                    False
                                    (cb_parse_range          cbr)
-    CBOR_Array [tok, _, cbr, CBOR_Array [tyformal_nm, mu_tyformals, mu_effect_ctors]]
+    TList [tok, _, cbr, TList [tyformal_nm, mu_tyformals, mu_effect_ctors]]
                                                       | tok `tm` tok_EFFECT ->
        let tyf = (map cb_parse_tyformal  (unMu mu_tyformals)) in
        ToplevelEffect $ EffectDecl (cb_parse_tyformal      tyformal_nm)
@@ -92,15 +95,15 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
                                    (map (cb_parse_effect_ctor tyf) (unMu mu_effect_ctors))
                                    (cb_parse_range          cbr)
 
-    CBOR_Array [tok, _,_cbr, CBOR_Array [CBOR_Array (tag:_), x, t]] | tok `tm` tok_FOREIGN
+    TList [tok, _,_cbr, TList [TList (tag:_), x, t]] | tok `tm` tok_FOREIGN
                                                                    && tag `tm` tok_DECL ->
       let name = cb_parse_x_str x in
       ToplevelDecl (name, makeProcsWithin (cb_parse_t t), IsForeign name)
-    CBOR_Array [tok, _,_cbr, CBOR_Array [CBOR_Array (tag:_), x, t, id]] | tok `tm` tok_FOREIGN
+    TList [tok, _,_cbr, TList [TList (tag:_), x, t, id]] | tok `tm` tok_FOREIGN
                                                                    && tag `tm` tok_DECL ->
       ToplevelDecl (cb_parse_id_str id, makeProcsWithin (cb_parse_t t), IsForeign (cb_parse_x_str x))
 
-    CBOR_Array [tok, _, cbr, CBOR_Array [CBOR_Array (tag:_), tyformal_nm]] | tok `tm` tok_FOREIGN && tag `tm` _tok_TYPE ->
+    TList [tok, _, cbr, TList [TList (tag:_), tyformal_nm]] | tok `tm` tok_FOREIGN && tag `tm` _tok_TYPE ->
       ToplevelData $ DataType (cb_parse_tyformal tyformal_nm)
                               [] [] True
                               (cb_parse_range          cbr)
@@ -109,7 +112,7 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
 
   -- ^(OF dctor tatom*);
   cb_parse_data_ctor tyf cbor = case cbor of
-    CBOR_Array [tok, _, cbr, CBOR_Array (dctor : tatoms)] | tok `tm` tok_OF ->
+    TList [tok, _, cbr, TList (dctor : tatoms)] | tok `tm` tok_OF ->
       Foster.Base.DataCtor (cb_parse_dctor dctor) tyf (map cb_parse_tatom tatoms) Nothing (cb_parse_range cbr)
     _ -> error $ "cb_parse_data_ctor failed: " ++ show cbor
 
@@ -117,7 +120,7 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
 
   -- ^(OF dctor ^(MU tatom*) ^(MU t?));
   cb_parse_effect_ctor tyf cbor = case cbor of
-    CBOR_Array [tok, _, cbr, CBOR_Array [dctor, mu_tatoms, mu_mb_t]] | tok `tm` tok_OF ->
+    TList [tok, _, cbr, TList [dctor, mu_tatoms, mu_mb_t]] | tok `tm` tok_OF ->
       Foster.Base.EffectCtor
         (Foster.Base.DataCtor (cb_parse_dctor dctor) tyf (map cb_parse_tatom (unMu mu_tatoms))
                               Nothing (cb_parse_range cbr))
@@ -131,11 +134,11 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
 
   cb_parse_aid :: CBOR -> String
   cb_parse_aid cbor = case cbor of
-    CBOR_Array [tok, _,_cbr, CBOR_Array [name]] | tok `tm` tok_TYPENAME -> cb_parse_typename name
+    TList [tok, _,_cbr, TList [name]] | tok `tm` tok_TYPENAME -> cb_parse_typename name
     _ -> error $ "cb_parse_aid failed: " ++ show cbor
 
   cb_parse_id_str cbor = case cbor of
-    CBOR_Array [_tok, name,_cbr, _] -> T.unpack (cborText name)
+    TList [_tok, name,_cbr, _] -> T.unpack (cborText name)
     _ -> error $ "cb_parse_id_str failed: " ++ show cbor
     
   cb_parse_x_str cbor = T.unpack (cb_parse_x_text cbor)
@@ -147,26 +150,26 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
                            _ -> error "cb_parse_x_text shouldn't fail"
 
   cb_parse_x cbor = case cbor of
-    CBOR_Array [tok, _,_cbr, CBOR_Array [name]] | tok `tm` tok_TERMNAME -> cb_parse_termname name
+    TList [tok, _,_cbr, TList [name]] | tok `tm` tok_TERMNAME -> cb_parse_termname name
     _ -> error $ "cb_parse_x failed: " ++ show cbor
 
   cb_parse_VarAST cbor = case cbor of
-    CBOR_Array [_tok, name,_cbr, CBOR_Array []] -> VarAST Nothing (cborText name)
+    TList [_tok, name,_cbr, TList []] -> VarAST Nothing (cborText name)
     _ -> error $ "cb_parse_VarAST failed: " ++ show cbor
 
   cb_parse_termname cbor = case cbor of
-    CBOR_Array [_tok, name,_cbr, CBOR_Array []] -> E_VarAST (annotOfCbor cbor) (VarAST Nothing (cborText name))
+    TList [_tok, name,_cbr, TList []] -> E_VarAST (annotOfCbor cbor) (VarAST Nothing (cborText name))
     _ -> error $ "cb_parse_termname failed: " ++ show cbor
 
   cb_parse_typename cbor = case cbor of
-    CBOR_Array [_tok, name, _cbr, CBOR_Array []] -> T.unpack $ cborText name
+    TList [_tok, name, _cbr, TList []] -> T.unpack $ cborText name
     _ -> error $ "cb_parse_typename failed: " ++ show cbor
 
   -- TODO: rationals should not contain hex digits or a base specifier
   -- TOOD: e/E should only appear in rationals as exponent specifier
   cb_parse_lit_num int_ctor rat_ctor annot cbor =
    case cbor of
-    CBOR_Array [_tok, num,_cbr, CBOR_Array []] ->
+    TList [_tok, num,_cbr, TList []] ->
       let str = (T.unpack $ cborText num) in
       if '.' `elem` str
         then rat_ctor annot str
@@ -174,18 +177,18 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
     _ -> error $ "cb_parse_lit_num failed: " ++ show cbor
 
   _cb_parse_name cbor = case cbor of
-    CBOR_Array [tok, _,_cbr, CBOR_Array [_id, _name]] | tok `tm` tok_QNAME -> error "name (cb_parse_id id) (cb_parse_name name)"
+    TList [tok, _,_cbr, TList [_id, _name]] | tok `tm` tok_QNAME -> error "name (cb_parse_id id) (cb_parse_name name)"
     _ -> error $ "cb_parse_name failed: "
 
 
   cb_parse_ctor cbor = case cbor of
-    CBOR_Array [tok, _,_cbr, CBOR_Array [x]] | tok `tm` tok_CTOR ->
+    TList [tok, _,_cbr, TList [x]] | tok `tm` tok_CTOR ->
       cb_parse_x_text x
     _ -> error $ "cb_parse_ctor failed: " ++ show cbor ++ " ;; " ++ show sourceFile
 
   cb_parse_k :: CBOR -> Kind
   cb_parse_k cbor = case cbor of
-    CBOR_Array [tok, _,_cbr, CBOR_Array [aid]] | tok `tm` tok_KIND_CONST ->
+    TList [tok, _,_cbr, TList [aid]] | tok `tm` tok_KIND_CONST ->
       case cb_parse_aid aid of
         "Type"   -> KindAnySizeType
         "Boxed"  -> KindPointerSized
@@ -194,38 +197,38 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
     _ -> error $ "cb_parse_k failed: " ++ show cbor
 
   cb_parse_idbinding cbor = case cbor of
-    CBOR_Array [tok, _,_cbr, CBOR_Array [xid, e]] | tok `tm` tok_BINDING ->
+    TList [tok, _,_cbr, TList [xid, e]] | tok `tm` tok_BINDING ->
       (,) (cb_parse_patbind xid) (cb_parse_e e)
     _ -> error $ "cb_parse_idbinding failed: " ++ show cbor
 
 
   cb_parse_pbinding cbor = case cbor of
-    CBOR_Array [tok, _,_cbr, CBOR_Array [patbind, e]] | tok `tm` tok_BINDING ->
+    TList [tok, _,_cbr, TList [patbind, e]] | tok `tm` tok_BINDING ->
       (,) (cb_parse_patbind patbind) (cb_parse_e e)
     _ -> error $ "cb_parse_pbinding failed: " ++ show cbor
 
   cb_parse_patbind cbor = case cbor of
-    CBOR_Array [tok, _, cbr, CBOR_Array []]    | tok `tm` tok_WILDCARD -> EP_Wildcard (cb_parse_range cbr)
-    CBOR_Array [tok, _,_cbr, CBOR_Array [pat]] | tok `tm` tok_TUPLE    -> cb_parse_p pat
-    CBOR_Array [tok, _, cbr, CBOR_Array pats]  | tok `tm` tok_TUPLE    -> EP_Tuple    (cb_parse_range cbr) (map cb_parse_p pats)
-    CBOR_Array [tok, _, cbr, CBOR_Array pats]  | tok `tm` tok_OR       -> EP_Or       (cb_parse_range cbr) (map cb_parse_p pats)
-    CBOR_Array [tok, _, cbr, CBOR_Array [var]] | tok `tm` tok_TERMNAME -> EP_Variable (cb_parse_range cbr) (cb_parse_VarAST var)
+    TList [tok, _, cbr, TList []]    | tok `tm` tok_WILDCARD -> EP_Wildcard (cb_parse_range cbr)
+    TList [tok, _,_cbr, TList [pat]] | tok `tm` tok_TUPLE    -> cb_parse_p pat
+    TList [tok, _, cbr, TList pats]  | tok `tm` tok_TUPLE    -> EP_Tuple    (cb_parse_range cbr) (map cb_parse_p pats)
+    TList [tok, _, cbr, TList pats]  | tok `tm` tok_OR       -> EP_Or       (cb_parse_range cbr) (map cb_parse_p pats)
+    TList [tok, _, cbr, TList [var]] | tok `tm` tok_TERMNAME -> EP_Variable (cb_parse_range cbr) (cb_parse_VarAST var)
     _ -> error $ "cb_parse_patbind failed: " ++ show cbor ++ " ;; " ++ headName cbor
 
 
-  headName (CBOR_Array ((CBOR_UInt x) : _)) = tokNameOf x
+  headName (TList ((TInt x) : _)) = tokNameOf x
   headName _ = ""
 
   cb_parse_phrase :: CBOR -> ExprAST TypeP
   cb_parse_phrase cbor = case cbor of
-    CBOR_Array [tok, _,_cbr, CBOR_Array [lvalue]] | tok `tm` tok_PHRASE -> cb_parse_lvalue lvalue
-    CBOR_Array [tok, _, cbr, CBOR_Array lvalues]  | tok `tm` tok_PHRASE -> cb_parse_call (annotOfCbr cbr) (map cb_parse_lvalue lvalues)
-    CBOR_Array [tok, _,_cbr, CBOR_Array (nopr : mu_mb_tyapp : lvalues)] | tok `tm` tok_PRIMAPP ->
+    TList [tok, _,_cbr, TList [lvalue]] | tok `tm` tok_PHRASE -> cb_parse_lvalue lvalue
+    TList [tok, _, cbr, TList lvalues]  | tok `tm` tok_PHRASE -> cb_parse_call (annotOfCbr cbr) (map cb_parse_lvalue lvalues)
+    TList [tok, _,_cbr, TList (nopr : mu_mb_tyapp : lvalues)] | tok `tm` tok_PRIMAPP ->
       cb_parse_primapp (cb_parse_Text nopr) (unMu mu_mb_tyapp) (map cb_parse_lvalue lvalues) (annotOfCbor cbor)
     _ -> error $ "cb_parse_phrase failed: " ++ show cbor
 
   cb_parse_Text cbor = case cbor of
-    CBOR_Array [_tok, txt, _cbr, CBOR_Array []] -> cborText txt
+    TList [_tok, txt, _cbr, TList []] -> cborText txt
     _ -> error $ "cb_parse_Text failed: " ++ show cbor
 
   cb_parse_primapp nopr mb_tyapp_cbor exprs annot =
@@ -250,26 +253,26 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
       _ -> error "cb_parse_call with no callee??"
 
   cb_parse_lvalue cbor = case cbor of
-    CBOR_Array [tok, _,_cbr, CBOR_Array (atom : suffixes)] | tok `tm` tok_LVALUE ->
+    TList [tok, _,_cbr, TList (atom : suffixes)] | tok `tm` tok_LVALUE ->
       foldl' cb_parse_suffix (cb_parse_atom atom) suffixes
     _ -> error $ "cb_parse_lvalue failed: " ++ show cbor
 
   cb_parse_tyapp cbor = case cbor of
-    CBOR_Array [tok, _,_cbr, CBOR_Array tys] | tok `tm` tok_VAL_TYPE_APP -> map cb_parse_t tys
+    TList [tok, _,_cbr, TList tys] | tok `tm` tok_VAL_TYPE_APP -> map cb_parse_t tys
     _ -> error $ "cb_parse_tyapp failed: " ++ show cbor
 
   cb_parse_p cbor = case cbor of
-    CBOR_Array [tok, _, cbr, CBOR_Array (dctor : patoms)]| tok `tm` tok_CTOR ->
+    TList [tok, _, cbr, TList (dctor : patoms)]| tok `tm` tok_CTOR ->
         EP_Ctor (cb_parse_range cbr) (map cb_parse_patom patoms) (cb_parse_dctor dctor)
-    CBOR_Array [tok, _, cbr, CBOR_Array pats] | tok `tm` tok_OR -> EP_Or (cb_parse_range cbr) (map cb_parse_p pats)
-    CBOR_Array [_tokMU, _,_cbr, CBOR_Array [patom]] ->
+    TList [tok, _, cbr, TList pats] | tok `tm` tok_OR -> EP_Or (cb_parse_range cbr) (map cb_parse_p pats)
+    TList [_tokMU, _,_cbr, TList [patom]] ->
         cb_parse_patom patom
     _ -> error $ "cb_parse_p failed: " ++ show cbor
 
   cb_parse_pmatch cbor = case cbor of
-    CBOR_Array [tok, _, cbr, CBOR_Array [p, e, stmts]] | tok `tm` tok_CASE ->
+    TList [tok, _, cbr, TList [p, e, stmts]] | tok `tm` tok_CASE ->
         CaseArm (cb_parse_p p) (cb_parse_stmts stmts) (Just $ cb_parse_e e) [] (cb_parse_range cbr)
-    CBOR_Array [tok, _, cbr, CBOR_Array [p, stmts]]    | tok `tm` tok_CASE ->
+    TList [tok, _, cbr, TList [p, stmts]]    | tok `tm` tok_CASE ->
         CaseArm (cb_parse_p p) (cb_parse_stmts stmts) Nothing               [] (cb_parse_range cbr)
     _ -> error $ "cb_parse_pmatch failed: " ++ show cbor
 
@@ -277,20 +280,20 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
   cb_parse_suffix expr cbor =
    let annot = annotOfCbor cbor in
    case cbor of
-    CBOR_Array [tok, _,_cbr, CBOR_Array []]  | tok `tm` tok_DEREF        -> E_DerefAST annot expr
-    CBOR_Array [tok, _,_cbr, CBOR_Array [e]] | tok `tm` tok_SUBSCRIPT    -> parseCallPrim' (T.pack "subscript") [] [expr, cb_parse_e e] annot
-    CBOR_Array [tok, _,_cbr, CBOR_Array []]  | tok `tm` tok_VAL_APP      -> E_CallAST annot expr []
-    CBOR_Array [tok, _,_cbr, CBOR_Array tys] | tok `tm` tok_VAL_TYPE_APP -> E_TyApp annot expr (map cb_parse_t tys)
+    TList [tok, _,_cbr, TList []]  | tok `tm` tok_DEREF        -> E_DerefAST annot expr
+    TList [tok, _,_cbr, TList [e]] | tok `tm` tok_SUBSCRIPT    -> parseCallPrim' (T.pack "subscript") [] [expr, cb_parse_e e] annot
+    TList [tok, _,_cbr, TList []]  | tok `tm` tok_VAL_APP      -> E_CallAST annot expr []
+    TList [tok, _,_cbr, TList tys] | tok `tm` tok_VAL_TYPE_APP -> E_TyApp annot expr (map cb_parse_t tys)
     _ -> error $ "cb_parse_suffix failed: " ++ show cbor
 
-  unMu (CBOR_Array [_, _, _, CBOR_Array cbors]) = cbors
+  unMu (TList [_, _, _, TList cbors]) = cbors
   unMu cbor = error $ "unMu give non-array: " ++ show cbor
 
   unMu1 x = case unMu x of [v] -> v
                            vs -> error $ "unMu1 expected one, got " ++ show vs
 
   cb_parse_range cbr = case cbr of
-    CBOR_Array [startline, startcol, endline, endcol] ->
+    TList [startline, startcol, endline, endcol] ->
       case (cb_int startline, cb_int startcol, cb_int endline, cb_int endcol) of
         (startline, startcol, endline, endcol) ->
           SourceRange startline startcol endline endcol lines Nothing
@@ -298,51 +301,51 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
 
   annotOfCbr  cbr  = ExprAnnot [] (cb_parse_range cbr) []
   annotOfCbor cbor = case cbor of
-    CBOR_Array [_, _, cbr, _] -> annotOfCbr cbr
-    _ -> error "annotOfCbor expeted CBOR_Array"
+    TList [_, _, cbr, _] -> annotOfCbr cbr
+    _ -> error "annotOfCbor expeted TList"
 
-  isHashMark (CBOR_Array [tok, _, _cbr, _]) = tok `tm` tok_HASH_MARK
+  isHashMark (TList [tok, _, _cbr, _]) = tok `tm` tok_HASH_MARK
   isHashMark _ = False
 
   cb_parse_atom cbor =
    let annot = annotOfCbor cbor in
    case cbor of
-    CBOR_Array [tok, _,_cbr, CBOR_Array [bool]] | tok `tm` tok_BOOL     -> cb_parse_bool (E_BoolAST annot) bool
-    CBOR_Array [tok, _,_cbr, CBOR_Array [num]]  | tok `tm` tok_LIT_NUM  -> cb_parse_lit_num E_IntAST E_RatAST annot num
-    CBOR_Array [tok, _,_cbr, CBOR_Array [quo, chrs]] | tok `tm` tok_STRING -> cb_parse_str quo chrs
-    CBOR_Array [tok, _,_cbr, CBOR_Array [name]] | tok `tm` tok_TERMNAME -> cb_parse_termname name
-    CBOR_Array [tok, _,_cbr, CBOR_Array (e : pmatches)] | tok `tm` tok_CASE -> E_Case annot (cb_parse_e e) (map cb_parse_pmatch pmatches)
-    CBOR_Array [tok, _,_cbr, CBOR_Array [stmts]] | tok `tm` tok_COMPILES -> E_CompilesAST annot (Just $ cb_parse_stmts stmts)
-    {-CBOR_Array [tok, _,_cbr, CBOR_Array [mu_bindings, stmts]] | tok `tm` tok_LETS   ->
+    TList [tok, _,_cbr, TList [bool]] | tok `tm` tok_BOOL     -> cb_parse_bool (E_BoolAST annot) bool
+    TList [tok, _,_cbr, TList [num]]  | tok `tm` tok_LIT_NUM  -> cb_parse_lit_num E_IntAST E_RatAST annot num
+    TList [tok, _,_cbr, TList [quo, chrs]] | tok `tm` tok_STRING -> cb_parse_str quo chrs
+    TList [tok, _,_cbr, TList [name]] | tok `tm` tok_TERMNAME -> cb_parse_termname name
+    TList [tok, _,_cbr, TList (e : pmatches)] | tok `tm` tok_CASE -> E_Case annot (cb_parse_e e) (map cb_parse_pmatch pmatches)
+    TList [tok, _,_cbr, TList [stmts]] | tok `tm` tok_COMPILES -> E_CompilesAST annot (Just $ cb_parse_stmts stmts)
+    {-TList [tok, _,_cbr, TList [mu_bindings, stmts]] | tok `tm` tok_LETS   ->
         let mkLet s cb = E_LetAST (annotOfCbor cb) (cb_parse_binding cb) s in
         foldl' mkLet (cb_parse_stmts stmts) (reverse $ unMu mu_bindings)
-    CBOR_Array [tok, _,_cbr, CBOR_Array [mu_bindings, stmts]] | tok `tm` tok_LETREC ->
+    TList [tok, _,_cbr, TList [mu_bindings, stmts]] | tok `tm` tok_LETREC ->
         E_LetRec annot (map cb_parse_binding (unMu mu_bindings)) (cb_parse_stmts stmts)-}
-    CBOR_Array [tok, _,_cbr, CBOR_Array cbors] | tok `tm` tok_TUPLE ->
+    TList [tok, _,_cbr, TList cbors] | tok `tm` tok_TUPLE ->
       case cbors of
         []           -> E_TupleAST annot KindPointerSized []
         [stmts]      -> cb_parse_stmts stmts
         (hash:stmts:rest) | isHashMark hash ->
                         E_TupleAST annot KindAnySizeType  (cb_parse_stmts stmts : map cb_parse_e rest)
         (stmts:rest) -> E_TupleAST annot KindPointerSized (cb_parse_stmts stmts : map cb_parse_e rest)
-    CBOR_Array [tok, _,_cbr, CBOR_Array [stmts, thenstmts]] | tok `tm` tok_IF ->
+    TList [tok, _,_cbr, TList [stmts, thenstmts]] | tok `tm` tok_IF ->
         E_IfAST annot (cb_parse_stmts stmts) (cb_parse_stmts thenstmts) (E_TupleAST annot KindPointerSized [])
-    CBOR_Array [tok, _,_cbr, CBOR_Array [stmts, thenstmts, elsestmts]] | tok `tm` tok_IF ->
+    TList [tok, _,_cbr, TList [stmts, thenstmts, elsestmts]] | tok `tm` tok_IF ->
         E_IfAST annot (cb_parse_stmts stmts) (cb_parse_stmts thenstmts) (cb_parse_stmts elsestmts)
-    CBOR_Array [tok, _,_cbr, CBOR_Array [stmts, t]] | tok `tm` tok_TYANNOT ->
+    TList [tok, _,_cbr, TList [stmts, t]] | tok `tm` tok_TYANNOT ->
         E_TyCheck annot (cb_parse_stmts stmts) (cb_parse_t t)
-    CBOR_Array [tok, _,_cbr, CBOR_Array [mu_formals, mu_tyformals]]        | tok `tm` tok_VAL_ABS ->
+    TList [tok, _,_cbr, TList [mu_formals, mu_tyformals]]        | tok `tm` tok_VAL_ABS ->
         let name = T.empty in -- typechecking maintains the pending binding stack, and will update the fn name
         E_FnAST annot (FnAST annot name (map cb_parse_tyformal $ unMu mu_tyformals)
                                         (map cb_parse_formal   $ unMu mu_formals)
                                         (E_TupleAST annot KindPointerSized []) False)
-    CBOR_Array [tok, _,_cbr, CBOR_Array [mu_formals, mu_tyformals, stmts]] | tok `tm` tok_VAL_ABS ->
+    TList [tok, _,_cbr, TList [mu_formals, mu_tyformals, stmts]] | tok `tm` tok_VAL_ABS ->
         let name = T.empty in -- typechecking maintains the pending binding stack, and will update the fn name
         E_FnAST annot (FnAST annot name (map cb_parse_tyformal $ unMu mu_tyformals)
                                         (map cb_parse_formal   $ unMu mu_formals)
                                         (cb_parse_stmts stmts) False)
 
-    CBOR_Array [tok, _,_cbr, CBOR_Array [action, mu_matches, mu_xform]] | tok `tm` tok_HANDLE ->
+    TList [tok, _,_cbr, TList [action, mu_matches, mu_xform]] | tok `tm` tok_HANDLE ->
         E_Handler annot (cb_parse_e action)
                         (map cb_parse_pmatch $ unMu mu_matches)
                         (case unMu mu_xform of
@@ -359,7 +362,7 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
 
   cb_parse_stmts :: CBOR -> ExprAST TypeP
   cb_parse_stmts cbor = case cbor of
-    CBOR_Array [tok, _,_cbr, CBOR_Array (stmt_ : stmt_conts)] | tok `tm` tok_STMTS ->
+    TList [tok, _,_cbr, TList (stmt_ : stmt_conts)] | tok `tm` tok_STMTS ->
       let rev_parts = reverse $ cb_parse_stmt_ stmt_ : (map cb_parse_stmt_cont stmt_conts) in
       -- Collect consecutive blocks of rec- vs non-rec bindings.
       let rev_pparts = groupBy similarStmts rev_parts in
@@ -384,20 +387,20 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
     _ -> error $ "cb_parse_stmts " ++ show cbor
 
   cb_parse_stmt_cont cbor = case cbor of
-    CBOR_Array [tok, _,_cbr, CBOR_Array [_semi, stmt_]] | tok `tm` tok_MU ->
+    TList [tok, _,_cbr, TList [_semi, stmt_]] | tok `tm` tok_MU ->
       cb_parse_stmt_ stmt_
     _ -> error $ "cb_parse_stmt_cont " ++ show cbor
 
   cb_parse_stmt_ cbor = case cbor of
-    CBOR_Array [tok, _,_cbr, CBOR_Array [_rec, idbinding]] | tok `tm` tok_ABINDING ->
+    TList [tok, _,_cbr, TList [_rec, idbinding]] | tok `tm` tok_ABINDING ->
       StmtRecBind (annotOfCbor cbor) $ cb_parse_idbinding idbinding
-    CBOR_Array [tok, _,_cbr, CBOR_Array [       pbinding]] | tok `tm` tok_ABINDING ->
+    TList [tok, _,_cbr, TList [       pbinding]] | tok `tm` tok_ABINDING ->
       StmtLetBind (annotOfCbor cbor) $ cb_parse_pbinding pbinding
     _ -> StmtExpr (annotOfCbor cbor) $ cb_parse_e cbor
 
   cb_parse_e :: CBOR -> ExprAST TypeP
   cb_parse_e cbor = case cbor of
-    CBOR_Array [tok, _,_cbr, CBOR_Array [mu_mb_opr, mu_phrase, mu_mb_binops]] | tok `tm` tok_TERM ->
+    TList [tok, _,_cbr, TList [mu_mb_opr, mu_phrase, mu_mb_binops]] | tok `tm` tok_TERM ->
       let base0 = cb_parse_phrase (unMu1 mu_phrase) in
       let base1 = case unMu mu_mb_opr of
                     [] -> base0
@@ -412,7 +415,7 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
         ifEmpty txt tt = if T.null tt then txt else tt
         oprPrefix txt = ifEmpty txt $ T.takeWhile isOperatorish txt
         varoppair cbor = case cbor of
-            CBOR_Array [_, cbtxt,_cbr, CBOR_Array []] ->
+            TList [_, cbtxt,_cbr, TList []] ->
                let txt = cborText cbtxt in
                VarOpPair (E_VarAST (annotOfCbor cbor) (VarAST Nothing txt)) (oprPrefix txt)
             _ -> error $ "Unable to parse var " ++ show cbor in
@@ -481,67 +484,67 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
   pairwise _ _ _ = error "pairwise given list of odd length"
 
   cb_parse_patom cbor = case cbor of
-    CBOR_Array [tok, _, cbr, CBOR_Array []]   | tok `tm` tok_WILDCARD -> EP_Wildcard (cb_parse_range cbr)
-    CBOR_Array [tok, _, cbr, CBOR_Array [x]]  | tok `tm` tok_TERMNAME -> EP_Variable (cb_parse_range cbr) (cb_parse_VarAST x)
-    CBOR_Array [tok, _,_cbr, CBOR_Array [pat]] | tok `tm` tok_TUPLE -> cb_parse_p pat
-    CBOR_Array [tok, _, cbr, CBOR_Array pats]  | tok `tm` tok_TUPLE -> EP_Tuple (cb_parse_range cbr) (map cb_parse_p pats)
-    CBOR_Array [tok, _, cbr, CBOR_Array [dctor]] | tok `tm` tok_CTOR -> EP_Ctor (cb_parse_range cbr) [] (cb_parse_dctor dctor)
-    CBOR_Array [tok, _, cbr, CBOR_Array [num]]   | tok `tm` tok_LIT_NUM -> cb_parse_lit_num EP_Int EP_Int (cb_parse_range cbr) num
-    CBOR_Array [tok, _, cbr, CBOR_Array [bool]]  | tok `tm` tok_BOOL    -> cb_parse_bool    (EP_Bool (cb_parse_range cbr)) bool
+    TList [tok, _, cbr, TList []]   | tok `tm` tok_WILDCARD -> EP_Wildcard (cb_parse_range cbr)
+    TList [tok, _, cbr, TList [x]]  | tok `tm` tok_TERMNAME -> EP_Variable (cb_parse_range cbr) (cb_parse_VarAST x)
+    TList [tok, _,_cbr, TList [pat]] | tok `tm` tok_TUPLE -> cb_parse_p pat
+    TList [tok, _, cbr, TList pats]  | tok `tm` tok_TUPLE -> EP_Tuple (cb_parse_range cbr) (map cb_parse_p pats)
+    TList [tok, _, cbr, TList [dctor]] | tok `tm` tok_CTOR -> EP_Ctor (cb_parse_range cbr) [] (cb_parse_dctor dctor)
+    TList [tok, _, cbr, TList [num]]   | tok `tm` tok_LIT_NUM -> cb_parse_lit_num EP_Int EP_Int (cb_parse_range cbr) num
+    TList [tok, _, cbr, TList [bool]]  | tok `tm` tok_BOOL    -> cb_parse_bool    (EP_Bool (cb_parse_range cbr)) bool
     _ -> error $ "cb_parse_patom failed: " ++ show cbor
 
 
   cb_parse_bool ctor cbor = case cbor of
-    CBOR_Array [tok, _,_cbr, CBOR_Array []] | tok `tm` tok_TRU -> ctor True
-    CBOR_Array [tok, _,_cbr, CBOR_Array []] | tok `tm` tok_FLS -> ctor False
+    TList [tok, _,_cbr, TList []] | tok `tm` tok_TRU -> ctor True
+    TList [tok, _,_cbr, TList []] | tok `tm` tok_FLS -> ctor False
     _ -> error $ "cb_parse_bool failed: " ++ show cbor
 
 
   cb_parse_binding cbor = case cbor of
-    CBOR_Array [tok, _,_cbr, CBOR_Array [x, e]] | tok `tm` tok_BINDING ->
+    TList [tok, _,_cbr, TList [x, e]] | tok `tm` tok_BINDING ->
       TermBinding (cb_parse_x_VarAST x) (cb_parse_e e)
     _ -> error $ "cb_parse_binding failed: " ++ show cbor
 
 
   cb_parse_formal cbor = case cbor of
-    CBOR_Array [tok, _,_cbr, CBOR_Array [xid]]    | tok `tm` tok_FORMAL ->
+    TList [tok, _,_cbr, TList [xid]]    | tok `tm` tok_FORMAL ->
       let name = cb_parse_x_text xid in
       let t = MetaPlaceholder (".inferred-for." ++ T.unpack name ++ "\n" ++ showSourceRange (cb_parse_range _cbr)) in -- TODO
       TypedId t (Ident name 0)
-    CBOR_Array [tok, _,_cbr, CBOR_Array [xid, t]] | tok `tm` tok_FORMAL ->
+    TList [tok, _,_cbr, TList [xid, t]] | tok `tm` tok_FORMAL ->
       TypedId (cb_parse_t t) (Ident (cb_parse_x_text xid) 0)
     _ -> error $ "cb_parse_formal failed: " ++ show cbor
 
 
   cb_parse_tyformal cbor = case cbor of
-    CBOR_Array [tok, _, cbr, CBOR_Array [aid, k]] | tok `tm` tok_TYPEVAR_DECL ->
+    TList [tok, _, cbr, TList [aid, k]] | tok `tm` tok_TYPEVAR_DECL ->
       TypeFormal (cb_parse_aid aid) (cb_parse_range cbr) (cb_parse_k k)
-    CBOR_Array [tok, _, cbr, CBOR_Array [aid]]    | tok `tm` tok_TYPEVAR_DECL ->
+    TList [tok, _, cbr, TList [aid]]    | tok `tm` tok_TYPEVAR_DECL ->
       TypeFormal (cb_parse_aid aid) (cb_parse_range cbr) KindPointerSized
     _ -> error $ "cb_parse_tyformal failed: " ++ show cbor
 
   cb_parse_t :: CBOR -> TypeP
   cb_parse_t cbor = case cbor of
-    CBOR_Array [tok, _,_cbr, CBOR_Array [xid, tp, e]] | tok `tm` tok_REFINED ->
+    TList [tok, _,_cbr, TList [xid, tp, e]] | tok `tm` tok_REFINED ->
       RefinedTypeP (cb_parse_x_str xid) (cb_parse_tp tp) (cb_parse_e e)
     _ -> cb_parse_tp cbor
 
   cb_parse_tp :: CBOR -> TypeP
   cb_parse_tp cbor = case cbor of
-    CBOR_Array [tok, _,_cbr, CBOR_Array [tatom]] | tok `tm` tok_TYPE_ATOM -> cb_parse_tatom tatom
-    CBOR_Array [tok, _,_cbr, CBOR_Array (tatom : tatoms)] | tok `tm` tok_TYPE_TYP_APP ->
+    TList [tok, _,_cbr, TList [tatom]] | tok `tm` tok_TYPE_ATOM -> cb_parse_tatom tatom
+    TList [tok, _,_cbr, TList (tatom : tatoms)] | tok `tm` tok_TYPE_TYP_APP ->
       let tys = map cb_parse_tatom tatoms in
       case tatom of
-        CBOR_Array [tik, _, _, CBOR_Array [name]] | tik `tm` tok_TYPENAME ->
+        TList [tik, _, _, TList [name]] | tik `tm` tok_TYPENAME ->
           TyAppP (TyConP $ cb_parse_typename name) tys
         _ -> error $ "tp (cb_parse_tatom tatom) (map cb_parse_tatom tatoms)" ++ show tatom
-    CBOR_Array [tok, _,_cbr, CBOR_Array args] | tok `tm` tok_FORALL_TYPE ->
+    TList [tok, _,_cbr, TList args] | tok `tm` tok_FORALL_TYPE ->
       let (tyformals, t) = (init args, last args) in
       ForAllP (map cb_parse_tyformal tyformals) (cb_parse_t t)
     _ -> error $ "cb_parse_tp failed: " ++ show cbor
 
   unTuple cbor = case cbor of
-    CBOR_Array [tok, _, _, CBOR_Array vals] | tok `tm` tok_TUPLE -> vals
+    TList [tok, _, _, TList vals] | tok `tm` tok_TUPLE -> vals
     _ -> error $ "unTuple given " ++ show cbor
 
   cb_ty_of_str cbr name@(c:_) =
@@ -551,15 +554,15 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
   cb_ty_of_str _ [] = error $ "cb_ty_of_str cannot parse empty name!"
 
   cb_parse_tatom cbor = case cbor of
-    CBOR_Array [tok, _, cbr, CBOR_Array [typename]] | tok `tm` tok_TYPENAME ->
+    TList [tok, _, cbr, TList [typename]] | tok `tm` tok_TYPENAME ->
       cb_ty_of_str cbr (cb_parse_typename typename)
-    CBOR_Array [tok, _,_cbr, CBOR_Array [a]] | tok `tm` tok_TYPE_PLACEHOLDER ->
+    TList [tok, _,_cbr, TList [a]] | tok `tm` tok_TYPE_PLACEHOLDER ->
       MetaPlaceholder (cb_parse_aid a)
-    CBOR_Array [tok, _,_cbr, CBOR_Array [t]] | tok `tm` tok_TUPLE -> cb_parse_t t
-    CBOR_Array [tok, _,_cbr, CBOR_Array (hash:tys)] | tok `tm` tok_TUPLE && isHashMark hash
+    TList [tok, _,_cbr, TList [t]] | tok `tm` tok_TUPLE -> cb_parse_t t
+    TList [tok, _,_cbr, TList (hash:tys)] | tok `tm` tok_TUPLE && isHashMark hash
                                                                   -> TupleTypeP KindAnySizeType  (map cb_parse_t tys)
-    CBOR_Array [tok, _,_cbr, CBOR_Array tys] | tok `tm` tok_TUPLE -> TupleTypeP KindPointerSized (map cb_parse_t tys)
-    CBOR_Array [tok, _, cbr, CBOR_Array [tuple, _mu, mu_eff]]        | tok `tm` tok_FUNC_TYPE ->
+    TList [tok, _,_cbr, TList tys] | tok `tm` tok_TUPLE -> TupleTypeP KindPointerSized (map cb_parse_t tys)
+    TList [tok, _, cbr, TList [tuple, _mu, mu_eff]]        | tok `tm` tok_FUNC_TYPE ->
         let tys = map cb_parse_t (unTuple tuple) in
         let eff = let effp = map cb_parse_eff (unMu mu_eff) in
                   case effp of
@@ -567,7 +570,7 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
                     [eff] -> Just eff
                     _ -> trace ("Warning: dropping multi-parsed-effects: " ++ show effp) Nothing in
         FnTypeP (init tys) (last tys) eff FastCC FT_Func (cb_parse_range cbr)
-    CBOR_Array [tok, _, cbr, CBOR_Array [tuple, _mu, _eff, tannots]] | tok `tm` tok_FUNC_TYPE ->
+    TList [tok, _, cbr, TList [tuple, _mu, _eff, tannots]] | tok `tm` tok_FUNC_TYPE ->
         let annots = cb_parse_tannots tannots in
         let (cc, ft) = extractFnInfoFromAnnots annots in
         let tys = map cb_parse_t (unTuple tuple) in
@@ -576,12 +579,12 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
 
   cb_parse_eff :: CBOR -> Effect
   cb_parse_eff cbor = case cbor of
-    CBOR_Array [tok_row,_,_cbr,CBOR_Array (a:tatoms)] | tok_row `tm` tok_EFFECT_SINGLE ->
+    TList [tok_row,_,_cbr,TList (a:tatoms)] | tok_row `tm` tok_EFFECT_SINGLE ->
       case tatoms of
         [] -> effectSingle (cb_ty_of_a _cbr a)
         _ ->  effectSingle (TyAppP (cb_ty_of_a _cbr a) (map cb_parse_tatom tatoms))
           
-    CBOR_Array [tok_row,_,_cbr,CBOR_Array rowsyntax] | tok_row `tm` tok_EFFECT_ROW ->
+    TList [tok_row,_,_cbr,TList rowsyntax] | tok_row `tm` tok_EFFECT_ROW ->
       case rowsyntax of
         [] ->        effectsClosed []
         [mu_effs] -> effectsClosed (map cb_parse_single_effect (unMu mu_effs))
@@ -600,7 +603,7 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
 
   cb_parse_single_effect :: CBOR -> TypeP
   cb_parse_single_effect cbor = case cbor of
-    CBOR_Array [tok,_, cbr,CBOR_Array axs] | tok `tm` tok_EFFECT_SINGLE ->
+    TList [tok,_, cbr,TList axs] | tok `tm` tok_EFFECT_SINGLE ->
       case axs of
         [a]    -> cb_ty_of_a cbr a
         (a:xs) -> let (TyAppP tcon []) = cb_ty_of_a cbr a in
@@ -614,13 +617,13 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
         else (FastCC, FT_Func)
 
   cb_parse_tannots cbor = case cbor of
-    CBOR_Array [tok, _, _cbr, CBOR_Array bindings] | tok `tm` tok_BINDING ->
+    TList [tok, _, _cbr, TList bindings] | tok `tm` tok_BINDING ->
       [(evarName v, evarName x) | TermBinding v (E_VarAST _ x) <- map cb_parse_binding bindings]
     _ -> error $ "cb_parse_tannots failed: " ++ show cbor
 
   -- TODO parse different escapes, etc.
   cb_parse_str quo chrs = case (quo, chrs) of
-    (CBOR_Array [tok, _, _, CBOR_Array []], CBOR_Array [_, val, cbr, _]) ->
+    (TList [tok, _, _, TList []], TList [_, val, cbr, _]) ->
       E_StringAST (annotOfCbor chrs) $ cb_parse_str' tok (T.unpack $ cborText val) (cb_parse_range cbr)
     _ -> error $ "cb_parse_str failed: " ++ show cbor
 
@@ -679,14 +682,14 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
       (False, False) -> SS_Text  NotRaw $  T.pack $ parse isBytes strWithoutQuotes
 
   cb_parseInclude cbor = case cbor of
-    CBOR_Array [tok, _, _cbr, CBOR_Array [CBOR_Array [_, ts_ident, _cbr_i, _],
-                                                     CBOR_Array [_, ts_path , _cbr_p, _]]]
+    TList [tok, _, _cbr, TList [TList [_, ts_ident, _cbr_i, _],
+                                                     TList [_, ts_path , _cbr_p, _]]]
       | tok `tm` tok_SNAFUINCLUDE ->
             (cborText ts_ident, cborText ts_path)
     _ -> error $ "cb_parseIncludes failed"
 
   cb_parseIncludes cbor = case cbor of
-    CBOR_Array [tok, _, _, CBOR_Array includes] | tok `tm` tok_SNAFUINCLUDE ->
+    TList [tok, _, _, TList includes] | tok `tm` tok_SNAFUINCLUDE ->
       map cb_parseInclude includes
     _ -> error $ "cb_parseIncludes failed"
 
@@ -743,9 +746,9 @@ parseCallPrim' primname tys args annot = do
 
 cb_int :: CBOR -> Int
 cb_int cbor = case cbor of
-    CBOR_UInt integer -> fromIntegral integer
-    CBOR_SInt integer -> fromIntegral integer
-    CBOR_Byte word8   -> fromIntegral word8
+    TInt     int     -> int
+    TInteger integer -> fromIntegral integer
+    TSimple  word8   -> fromIntegral word8
     _ -> error $ "cb_int had unexpected input: " ++ show cbor
 
 -- {{{
@@ -787,9 +790,9 @@ resolveFormatting hiddentokens m =
                               (Seq.fromList $ map p hiddentokens) }
  where loc lineno charpos = SourceLoc (cb_int lineno) (cb_int charpos)
        p cbor = case cbor of
-          CBOR_Array [_comment, lineno, charpos, txt] ->
+          TList [_comment, lineno, charpos, txt] ->
              (loc lineno charpos, Comment (T.unpack $ cborText txt))
-          CBOR_Array [thing,    lineno, charpos] ->
+          TList [thing,    lineno, charpos] ->
             case T.unpack $ cborText thing of
                 "NEWLINE" -> (loc lineno charpos, BlankLine)
                 _ -> error $ "resolveFormatting encountered unexpected hidden token type"
@@ -922,8 +925,8 @@ liftMaybeM f m = case m of Nothing ->         return Nothing
 -- }}}
 
 cborText :: CBOR -> T.Text
-cborText (CBOR_BS bs) = TE.decodeUtf8 bs
-cborText (CBOR_TS ts) = TE.decodeUtf8 ts
+cborText (TBytes bs) = TE.decodeUtf8 bs
+cborText (TString ts) = ts
 cborText _ = error "cborText needs bytes"
 
 data OpPrec =
