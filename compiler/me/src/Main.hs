@@ -60,8 +60,8 @@ import Foster.MKNExpr
 import Foster.Kind(Kind(KindPointerSized))
 import Foster.Infer(zonkType, unify)
 
-import Data.Binary.Get
-import Data.Binary.CBOR
+import Codec.CBOR.Term
+import Codec.CBOR.Read (deserialiseFromBytes)
 
 import Text.Printf(printf)
 import Foster.Output
@@ -530,7 +530,9 @@ modulesSourceLines (WholeProgramAST mods) =
 
 readAndParseCbor infile = do
   cborbytes <- L.readFile infile
-  return $ runGet getCBOR cborbytes
+  case deserialiseFromBytes decodeTerm cborbytes of
+    Left failure -> error $ show failure
+    Right (_bs, term) -> return term
 
 main = do
   Criterion.initializeTime

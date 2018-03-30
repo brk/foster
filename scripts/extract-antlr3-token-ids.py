@@ -21,7 +21,9 @@ def formatHaskellTokenDef(pair):
   prefix = ""
   if doWeExpectTokenToBeUnused(pair[0]):
     prefix = "_"
-  return prefix + ("tok_%s = %s" % pair)
+  tok = "%stok_%s" % (prefix, pair[0])
+  return '\n'.join(["%s :: Int" % tok,
+                    "%s = %s" % (tok, pair[1])])
 
 def printHaskellTokenDefs(pairs):
   for p in pairs:
