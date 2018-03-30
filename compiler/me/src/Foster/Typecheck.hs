@@ -2294,7 +2294,7 @@ tcTypeWellFormed msg ctx typ = do
                  case Prelude.lookup tv (contextTypeBindings ctx) of
                    Nothing -> tcFails [text $ "Unbound type variable "
                                            ++ show tv ++ " " ++ msg]
-                   Just kind -> do tcLift $ putStrLn $ "giving " ++ show tv ++ " kind " ++ show kind
+                   Just kind -> do --tcLift $ putStrLn $ "giving " ++ show tv ++ " kind " ++ show kind
                                    tcUnifyKinds mbk (UniConst kind)
 
 tcContext :: Context TypeTC -> Context TypeAST -> Tc (Context SigmaTC)
