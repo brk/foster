@@ -86,7 +86,7 @@ bool isPointerToUnknown(Type* ty) {
 }
 
 bool matchesExceptForUnknownPointers(Type* aty, Type* ety) {
-  DDiag() << "matchesExceptForUnknownPointers ? " << str(aty) << " =?= " << str(ety);
+  //DDiag() << "matchesExceptForUnknownPointers ? " << str(aty) << " =?= " << str(ety);
   if (aty == ety) return true;
   if (aty == foster_generic_coro_t || ety == foster_generic_coro_t) return true;
   
