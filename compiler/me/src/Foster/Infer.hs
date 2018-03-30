@@ -432,26 +432,32 @@ withTemporaryMarkedLevels levels1 levels2 newlevel action = do
 
 collectUnboundUnificationVars :: [TypeTC] -> Tc [MetaTyVar TypeTC]
 collectUnboundUnificationVars xs = do
-  xs' <- mapM zonkType xs
-  --xs' <- mapM repr xs -- causes 'Inconsistent effects at call sites' on test-range
-  return $ [m | m <- collectAllUnificationVars xs' , not $ isForIntLit m]
+  xs' <- collectAllUnificationVars xs
+  return $ [m | m <- xs' , not $ isForIntLit m]
     where isForIntLit m = mtvDesc m == "int-lit"
 
-collectAllUnificationVars :: [TypeTC] -> [MetaTyVar TypeTC]
-collectAllUnificationVars xs = Set.toList (Set.fromList (concatMap go xs))
-  where go x =
+collectAllUnificationVars :: [TypeTC] -> Tc [MetaTyVar TypeTC]
+collectAllUnificationVars xs = do xs' <- mapM zonkType xs
+                                  foldlM go Set.empty xs' >>= return . Set.toList
+  where go uvarSet x =
           case x of
-            PrimIntTC  _            -> []
-            TyConTC  {}             -> []
-            TyAppTC  con types      -> concatMap go (con:types)
-            TupleTypeTC _k  types   -> concatMap go types
-            FnTypeTC  ss r fx _ _ _ -> concatMap go (r:fx:ss)
-            ForAllTC  _tvs rho      -> go rho
-            TyVarTC       {}        -> []
-            MetaTyVarTC   m         -> [m]
-            RefTypeTC     ty        -> go ty
-            ArrayTypeTC   ty        -> go ty
-            RefinedTypeTC v _ _     -> go (tidType v)
+            PrimIntTC  _            -> return uvarSet
+            TyConTC  {}             -> return uvarSet
+            TyAppTC  con types      -> foldlM go uvarSet (con:types)
+            TupleTypeTC _k  types   -> foldlM go uvarSet types
+            FnTypeTC  ss r fx _ _ _ -> foldlM go uvarSet (r:fx:ss)
+            ForAllTC  _tvs rho      -> go uvarSet rho
+            TyVarTC       {}        -> return uvarSet
+            MetaTyVarTC   m         -> return $ Set.insert m uvarSet
+            {-
+            MetaTyVarTC   _         -> do x' <- repr x
+                                          case x' of
+                                            MetaTyVarTC m -> return $ Set.insert m uvarSet
+                                            _ -> return uvarSet
+                                            -}
+            RefTypeTC     ty        -> go uvarSet ty
+            ArrayTypeTC   ty        -> go uvarSet ty
+            RefinedTypeTC v _ _     -> go uvarSet (tidType v)
 
 -- As in the paper, zonking recursively eliminates indirections
 -- from instantiated meta type variables.
