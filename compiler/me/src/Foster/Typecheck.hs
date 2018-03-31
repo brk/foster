@@ -187,6 +187,10 @@ checkSigma ctx e sigma = do
     return ann
 -- }}}
 
+instance (Show ty) => Show (TVar ty) where
+  show (Unbound lvl) = "Unbound:" ++ show lvl
+  show (BoundTo ty ) = "BoundTo:" ++ show ty
+
 -- {{{
 doQuantification :: AnnExpr SigmaTC -> Context SigmaTC -> Tc (AnnExpr SigmaTC)
 doQuantification e' ctx = do
@@ -203,15 +207,17 @@ doQuantification e' ctx = do
     debugIf dbgQuant $ text "{{{{"
     debugIf dbgQuant $ text "doQuantificationCheck: e' = " <$$> indent 4 (showStructure e')
     debugIf dbgQuant $ pretty t
+    t' <- zonkType t
+    debugIf dbgQuant $ text "zonked: " <$> pretty t'
     debugIf dbgQuant $ text $ "inferSigma inferred :: " ++ show t
     debugIf dbgQuant $ text "non-effect tvs: " <> (pretty $ map show [tv | tv <- forall_tvs, not (mtvIsEffect tv)])
     debugIf dbgQuant $ text "effect tvs: " <> (pretty $ map show [tv | tv <- forall_tvs, (mtvIsEffect tv)])
 
-    --forall_tys <- mapM readTcMeta forall_tvs
-    --debugIf dbgQuant $ text "env_typs"   <$> indent 2 (vcat $ map (text.show) env_tys)
-    --debugIf dbgQuant $ text "env_tyvars" <$> indent 2 (vcat $ map (text.show) env_tvs)
-    --debugIf dbgQuant $ text "res_tyvars" <$> indent 2 (vcat $ map (text.show) res_tvs)
-    --debugIf dbgQuant $ text "forall_tys" <$> indent 2 (vcat $ map (text.show) forall_tys)
+    forall_tys <- mapM readTcMeta forall_tvs
+    debugIf dbgQuant $ text "env_typs"   <$> indent 2 (vcat $ map (text.show) env_tys)
+    debugIf dbgQuant $ text "env_tyvars" <$> indent 2 (vcat $ map (text.show) env_tvs)
+    debugIf dbgQuant $ text "res_tyvars" <$> indent 2 (vcat $ map (text.show) res_tvs)
+    debugIf dbgQuant $ text "forall_tys" <$> indent 2 (vcat $ map (text.show) forall_tys)
     debugIf dbgQuant $ text "}}}}}"
     let nonfx_forall_tvs = [tv | tv <- forall_tvs, not (mtvIsEffect tv)]
     let    fx_forall_tvs = [tv | tv <- forall_tvs,     (mtvIsEffect tv)]
@@ -487,7 +493,8 @@ tcRhoBool rng b expTy = do
 -- {{{
     let ty = PrimIntTC I1
     let ab = AnnLiteral rng ty (LitBool b)
-    let check t =
+    let check t0 = do
+          t <- repr t0
           case t of
             PrimIntTC I1 -> return ab
             m@MetaTyVarTC {} -> do unify m ty [text "bool literal"]
@@ -508,7 +515,8 @@ tcRhoText rng b expTy = do
 -- {{{
     let ty = TyAppTC (TyConTC "Text") []
     let ab = AnnLiteral rng ty (LitText b)
-    let check t =
+    let check t0 = do
+          t <- repr t0
           case t of
              TyAppTC (TyConTC "Text") [] -> return ab
              m@MetaTyVarTC {} -> do unify m ty [text "text literal"]
@@ -537,7 +545,8 @@ tcRhoTextOrBytes rng (SS_Bytes _raw bs)  expTy = tcRhoBytes rng bs  expTy
 tcRhoBytes rng bs expTy = do
     let ty = ArrayTypeTC (PrimIntTC I8)
     let ab = AnnLiteral rng ty (LitByteArray bs)
-    let check t =
+    let check t0 = do
+          t <- repr t0
           case t of
              ArrayTypeTC m -> do unify m (PrimIntTC I8) [text "byte array literal"]
                                  return ab
@@ -577,7 +586,9 @@ tcRhoArrayLit ctx annot mbt args expTy = do
     let ty = ArrayTypeTC tau
     args' <- mapM (tcRhoArrayValue ctx tau) args
     let ab = AnnArrayLit annot ty args'
-    let check t = case t of
+    let check t0 = do
+          t <- repr t0
+          case t of
              (ArrayTypeTC rho) -> do unify tau rho [text "mach-array literal"]
                                      return ab
              m@MetaTyVarTC {} -> do unify m ty [text "mach-array literal"]
@@ -618,10 +629,10 @@ tcRhoSeq ctx annot a b expTy = do
     tcRhoSeqCheck (rangeOf a) (typeTC ea)
     return (AnnLetVar annot id ea eb)
 
-tcRhoSeqCheck range ty = do
+tcRhoSeqCheck range t0 = do
+    ty <- repr t0
     case ty of
-      MetaTyVarTC mtv -> do --unify m unitTypeTC [text "seq-unit"]
-        tcAddConstraint (TcC_SeqUnit mtv) range
+      MetaTyVarTC mtv  -> tcAddConstraint (TcC_SeqUnit mtv) range
       TupleTypeTC _ [] -> return ()
       PrimIntTC n | n /= I1 -> return ()
       RefinedTypeTC v _ _ -> tcRhoSeqCheck range (tidType v)
@@ -662,7 +673,8 @@ tcRhoDeref ctx rng e1 expTy = do
              (Check t) -> return t
              (Infer _) -> newTcUnificationVarTau $ "deref_type"
     a1 <- tcRho ctx e1 (Check $ RefTypeTC tau)
-    ty <- case typeTC a1 of
+    t0 <- repr $ typeTC a1
+    ty <- case t0 of
       RefTypeTC ty    -> return ty
       MetaTyVarTC  {} -> return tau
       other -> tcFails [text $ "Expected deref-ed expr "
@@ -690,14 +702,15 @@ tcRhoTuple :: Context SigmaTC -> ExprAnnot -> Kind -> [Term] -> Expected TypeTC 
 -- {{{
 tcRhoTuple ctx rng kind exprs expTy = do
    tup <- case expTy of
-     Infer _                -> tcTuple ctx rng exprs [Nothing | _ <- exprs]
-     Check (MetaTyVarTC {}) -> tcTuple ctx rng exprs [Nothing | _ <- exprs]
-     Check (TupleTypeTC kind' ts) -> do
-                               tcUnifyKinds (UniConst kind) kind'
-                               tcTuple ctx rng exprs [Just t  | t <- ts]
-     
-     Check ty -> tcFailsMore [text $ "Tuple cannot check against non-tuple type " ++ show ty
-                             , showStructure ty]
+     Infer _                    -> tcTuple ctx rng exprs [Nothing | _ <- exprs]
+     Check t0 -> do
+       t <- repr t0
+       case t of MetaTyVarTC {} -> tcTuple ctx rng exprs [Nothing | _ <- exprs]
+                 TupleTypeTC kind' ts -> do
+                                   tcUnifyKinds (UniConst kind) kind'
+                                   tcTuple ctx rng exprs [Just t  | t <- ts]
+                 _ -> tcFailsMore [text $ "Tuple cannot check against non-tuple type " ++ show t
+                                  , showStructure t]
    matchExp expTy tup (highlightFirstLine (rangeOf rng))
   where
     tcTuple ctx rng exps typs = do
@@ -732,7 +745,9 @@ tcRhoArrayRead annot sg base aiexpr expTy = do
         let expr = AnnArrayRead annot t (ArrayIndex base aiexpr rng sg)
         matchExp expTy expr "arrayread"
 
-  let check t = case t of
+  let check t0 = do
+       t <- repr t0
+       case t of
         ArrayTypeTC t -> do ck t
         MetaTyVarTC _ -> do
             t <- case expTy of
@@ -1111,6 +1126,7 @@ liftEqUnifiable f u1 u2 =
     (UniVar (x1, _), UniVar (x2, _)) -> x1 == x2
     _ -> False
 
+-- TODO maybe this should be monadic, to compute reprs first?
 tcTypeEquiv t1 t2 =
   let q = tcTypeEquiv in
   case (t1, t2) of
@@ -1381,7 +1397,8 @@ pickBetween rng argtys vartys =
                  , highlightFirstLineDoc rng]
     else mapM picked (zipTogether argtys vartys)
   where
-   picked (mb_argty, mb_varty) = do
+   picked (mb_argty_0, mb_varty) = do
+     mb_argty <- liftMaybe repr mb_argty_0
      case (mb_argty, mb_varty) of
        -- If the argty is a meta variable, we might get more specific error messages
        -- by using the definitely-not-less-specific varty.
@@ -1501,7 +1518,9 @@ tcRhoFnHelper ctx f expTy = do
     matchExp expTy fn "tcRhoFn"
 -- }}}
 
-tcSelectTy annot (argty, varty) = do
+tcSelectTy annot (argty0, varty0) = do
+    argty <- repr argty0
+    varty <- repr varty0
     case (argty, varty) of
        (_, MetaTyVarTC {}) -> do return ()
        (MetaTyVarTC {}, _) -> do
@@ -2203,8 +2222,9 @@ tcReplaceQuantifiedVars prvNextPairs ty =
 -- type variable, the culprit may be a missing call to this function somewhere.
 resolveType :: ExprAnnot -> Map String TypeTC -> TypeTC -> Tc TypeTC
 resolveType annot origSubst origType = go origSubst origType where
- go subst x =
-  let q x = go subst x in
+ go subst x0 = do
+  let q x = go subst x
+  x <- repr x0
   case x of
     PrimIntTC   _                  -> return x
     MetaTyVarTC   _                -> return x
@@ -2275,7 +2295,10 @@ tcTypeWellFormed msg ctx typ = do
   let q = tcTypeWellFormed msg ctx
   case typ of
         PrimIntTC      {}     -> return ()
-        MetaTyVarTC    {}     -> return ()
+        MetaTyVarTC m  -> do tvar <- readTcMeta m
+                             case tvar of
+                               Unbound _ -> return ()
+                               BoundTo t -> q t
         TyConTC "Float64" -> return ()
         TyConTC "Float32" -> return ()
         TyConTC nm -> case Map.lookup nm (contextDataTypes ctx) of
