@@ -517,11 +517,13 @@ tcToIL st typ = do
                        else tcFails [text $ "Found un-unified unification variable "
                                 ++ show (mtvUniq m) ++ "(" ++ mtvDesc m ++ ")!"]
           BoundTo t -> let t' = shallowStripRefinedTypeTC t in
-                       -- TODO: strip refinements deeply
+                       -- TODO: strip refinements deeply 
+                       q t'
+                       {-
                        if show t == show t'
                          then q t'
                          else error $ "meta ty var : " ++ show t ++ " =====> " ++ show t'
-
+-}
 
 -- For datatypes which have been annotated as being unboxed (and are eligible
 -- to be so represented), we want to convert from a "data type name reference"
