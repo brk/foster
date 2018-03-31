@@ -2077,7 +2077,7 @@ subsCheckRho esigma rho2 msg = do
     (_, ForAllTC {}) -> do tcFails [text $ "violated invariant: sigma passed to subsCheckRho"]
     (ForAllTC {}, _) -> do -- Rule SPEC
         debugIf False $ text $ "subsCheckRho instantiating " ++ show (typeTC esigma)
-        erho <- inst esigma ("subsCheckRho(" ++ msg ++ ")")
+        erho <- inst esigma msg --("subsCheckRho(" ++ msg ++ ")")
         debugIf False $ text $ "subsCheckRho instantiated to " ++ show (typeTC erho)
         debugIf False $ text $ "subsCheckRho inst. type against " ++ show rho2
         subsCheckRho erho rho2 msg
@@ -2582,13 +2582,13 @@ dbgVar   = False
 dbgQuant = False
 dbgSigma = False
 
-debugIf c d = when c (tcLift $ putDocLn d)
+debugIf c ~d = when c (tcLift $ putDocLn d)
 
-debug    s = do when tcVERBOSE (tcLift $ putStrLn s)
-debug2   s = do when tcVERBOSE (tcLift $ putStrLn s)
-debugDoc d = do when tcVERBOSE (tcLift $ putDocLn d)
-debugDoc2 d = do when tcVERBOSE (tcLift $ putDocLn d)
-debugDoc3 d = do when tcVERBOSE (tcLift $ putDocLn d)
+debug    ~s = do when tcVERBOSE (tcLift $ putStrLn s)
+debug2   ~s = do when tcVERBOSE (tcLift $ putStrLn s)
+debugDoc ~d = do when tcVERBOSE (tcLift $ putDocLn d)
+debugDoc2 ~d = do when tcVERBOSE (tcLift $ putDocLn d)
+debugDoc3 ~d = do when tcVERBOSE (tcLift $ putDocLn d)
 
 logged'' _msg action = do
   --tcLift $ putStrLn $ "{ " ++ _msg
