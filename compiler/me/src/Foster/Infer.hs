@@ -409,8 +409,7 @@ collectUnboundUnificationVars xs = do
     where isForIntLit m = mtvDesc m == "int-lit"
 
 collectAllUnificationVars :: [TypeTC] -> Tc [MetaTyVar TypeTC]
-collectAllUnificationVars xs = do xs' <- mapM zonkType xs
-                                  foldlM go Set.empty xs' >>= return . Set.toList
+collectAllUnificationVars xs = do foldlM go Set.empty xs  >>= return . Set.toList
   where go uvarSet x =
           case x of
             PrimIntTC  _            -> return uvarSet
@@ -420,13 +419,10 @@ collectAllUnificationVars xs = do xs' <- mapM zonkType xs
             FnTypeTC  ss r fx _ _ _ -> foldlM go uvarSet (r:fx:ss)
             ForAllTC  _tvs rho      -> go uvarSet rho
             TyVarTC       {}        -> return uvarSet
-            MetaTyVarTC   m         -> return $ Set.insert m uvarSet
-            {-
             MetaTyVarTC   _         -> do x' <- repr x
                                           case x' of
                                             MetaTyVarTC m -> return $ Set.insert m uvarSet
-                                            _ -> return uvarSet
-                                            -}
+                                            t -> go uvarSet t
             RefTypeTC     ty        -> go uvarSet ty
             ArrayTypeTC   ty        -> go uvarSet ty
             RefinedTypeTC v _ _     -> go uvarSet (tidType v)
