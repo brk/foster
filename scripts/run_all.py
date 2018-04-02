@@ -17,6 +17,9 @@ from list_all import collect_all_tests
 
 all_results = []
 
+sys.path.append(os.path.normpath(os.path.join(sys.argv[0], '../../third_party/vstinner_perf')))
+import cpu_utils
+
 def handle_successful_test_result(result, testpath):
     if opts.quietish:
       print os.path.basename(testpath).ljust(50), ("%d ms" % result['total_elapsed']).rjust(10)
@@ -54,7 +57,9 @@ def worker_run_test(info):
     return (testpath, None)
 
 def run_all_tests_fast(tests, bootstrap_dir, tmpdir):
-  pool = multiprocessing.Pool()
+  # Pool's default logic to compute available CPUs doesn't handle isolated CPUs.
+  ncpus = cpu_utils.get_available_cpu_count()
+  pool = multiprocessing.Pool(processes=ncpus)
   try:
     for result in pool.imap_unordered(worker_run_test,
                 itertools.izip(tests,
