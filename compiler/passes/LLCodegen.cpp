@@ -130,6 +130,7 @@ llvm::Value* emitGCWrite(CodegenPass* pass, Value* val, Value* base, Value* slot
   llvm::Constant* llvm_gcwrite = llvm::Intrinsic::getDeclaration(pass->mod,
                                                       llvm::Intrinsic::gcwrite);
 
+/*
   llvm::outs() << "emitting GC write" << "\n";
   if (base) { 
     llvm::outs() << "  base is " << *base << "\n";
@@ -139,6 +140,7 @@ llvm::Value* emitGCWrite(CodegenPass* pass, Value* val, Value* base, Value* slot
   llvm::outs() << "   val :: " << str(val->getType()) << "\n";
   llvm::outs() << "  slot is " << *slot << "\n";
   llvm::outs() << "  slot :: " << str(slot->getType()) << "\n";
+*/
 
   Value* base_generic = builder.CreateBitCast(base, builder.getInt8PtrTy());
   Value* slot_generic = builder.CreateBitCast(slot, builder.getInt8PtrTy()->getPointerTo(0));

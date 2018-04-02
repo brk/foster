@@ -369,7 +369,6 @@ instance Ord (MetaTyVar ty) where
 
 tcUpdateIntConstraint :: MetaTyVar TypeTC -> Int -> Tc ()
 tcUpdateIntConstraint km n = Tc $ \env -> do
-  putStrLn $ "updating int constraint; m = " ++ show (mtvUniq km) ++ " needs " ++ show n
   modIORef' (tcMetaIntConstraints env) (Map.insertWith max km n)
   retOK ()
 
@@ -379,7 +378,6 @@ tcApplyIntConstraints :: Tc ()
 tcApplyIntConstraints = Tc $ \env -> do
   map <- readIORef (tcMetaIntConstraints env)
   mapM_ (\(m, neededBits) -> do
-            putStrLn $ "m : " ++ show (mtvUniq m) ++ " needs " ++ show neededBits
             writeIORef (mtvRef m) (BoundTo $ PrimIntTC (sizeOfBits neededBits)))
         (Map.toList map)
   retOK ()

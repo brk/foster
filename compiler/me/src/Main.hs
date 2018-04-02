@@ -57,7 +57,6 @@ import Foster.MainCtorHelpers
 import Foster.ConvertExprAST
 import Foster.MainOpts
 import Foster.MKNExpr
-import Foster.Kind(Kind(KindPointerSized))
 import Foster.Infer(zonkType, unify)
 
 import Codec.CBOR.Term
@@ -474,7 +473,6 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
                            AnnLetFuns emptyAnnot (map fnIdent fns) fns body
                       else error $ "Main.hs: unable to build expr from mixed fns/non-fns"
 
-               unitTypeTC = TupleTypeTC (UniConst KindPointerSized) []
                emptyAnnot = annotForRange $ MissingSourceRange "buildExprSCC'"
 
         -- Note that we discard internal declarations, which are only useful
