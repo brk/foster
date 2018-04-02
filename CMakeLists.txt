@@ -559,6 +559,17 @@ add_custom_target(regress       USES_TERMINAL
         COMMAND echo ${REGRESS_CMD}
         COMMAND ${REGRESS_CMD})
 
+add_custom_target(regresstc       USES_TERMINAL
+  COMMAND
+      ${PYTHON} ${PROJECT_SOURCE_DIR}/scripts/run_all.py
+                 ${PROJECT_SOURCE_DIR}/test/bootstrap
+                 --bindir ${PROJECT_BINARY_DIR}
+                 --cxxpath ${CLANG}
+                 --no_extra_bitcode
+                 --quietish
+                 --me-arg=--typecheck-only
+                 -I ${PROJECT_SOURCE_DIR}/stdlib)
+
 add_custom_target(stress        USES_TERMINAL
   COMMAND ${PYTHON} ${PROJECT_SOURCE_DIR}/scripts/run_all.py
 	     ${PROJECT_SOURCE_DIR}/test/stress

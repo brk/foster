@@ -91,6 +91,8 @@ class StopAfterMiddle(Exception):
 def should_stop_after_middle():
   if '--fmt' in options.meargs:
     return True
+  if '--typecheck-only' in options.meargs:
+    return True
   return False
 
 def insert_before_each(val, vals):
@@ -166,9 +168,10 @@ def compile_foster_to_bitcode(paths, inputfile, compilelog, finalpath, tmpdir):
                      interpret + options.meargs + prog_args)
 
     if should_stop_after_middle():
-      if compilelog is not None:
-        compilelog.seek(0)
-        print compilelog.read()
+      if not options.quietish:
+        if compilelog is not None:
+            compilelog.seek(0)
+            print compilelog.read()
       raise StopAfterMiddle()
 
     # running fosterlower on the Protobuf CFG produces an LLVM

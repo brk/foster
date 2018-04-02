@@ -20,6 +20,9 @@ all_results = []
 sys.path.append(os.path.normpath(os.path.join(sys.argv[0], '../../third_party/vstinner_perf')))
 import cpu_utils
 
+def handle_StopAfterMiddle_test_result(testpath):
+    print testpath
+
 def handle_successful_test_result(result, testpath):
     if opts.quietish:
       print os.path.basename(testpath).ljust(50), ("%d ms" % result['total_elapsed']).rjust(10)
@@ -55,6 +58,8 @@ def worker_run_test(info):
     return (testpath, None) # Workers should ignore keyboard interrupts
   except run_test.TestFailed:
     return (testpath, None)
+  except run_test.StopAfterMiddle:
+    return (testpath, [])
 
 def run_all_tests_fast(tests, bootstrap_dir, tmpdir):
   # Pool's default logic to compute available CPUs doesn't handle isolated CPUs.
@@ -65,7 +70,9 @@ def run_all_tests_fast(tests, bootstrap_dir, tmpdir):
                 itertools.izip(tests,
                   itertools.repeat(tmpdir))):
        testpath, result = result
-       if result is not None:
+       if result == []:
+         handle_StopAfterMiddle_test_result(testpath)
+       elif result is not None:
          handle_successful_test_result(result, testpath)
        else:
          run_test.tests_failed.add(testpath)
@@ -81,7 +88,8 @@ def main(opts, bootstrap_dir, tmpdir):
     run_all_tests_slow(tests, bootstrap_dir, tmpdir)
   walkend = run_test.walltime()
 
-  run_test.print_result_table(run_test.aggregate_results(all_results))
+  if not "--typecheck-only" in opts.meargs:
+      run_test.print_result_table(run_test.aggregate_results(all_results))
 
   print "Total (wall-clock) time: %d ms" % run_test.elapsed(walkstart, walkend)
 

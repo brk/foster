@@ -30,6 +30,7 @@ options =
  , Option []     ["no-prealloc-opt"] (NoArg NoPreAllocOpt)"diable pre-allocation optimizations"
  , Option []     ["non-moving-gc"] (NoArg NonMovingGC)    "assume non-moving GC (for testing codegen effect of reloads)"
  , Option []     ["no-gc-at-all"]  (NoArg NoGcAtAll)      "assume no GC at all  (for testing codegen effect of root slots)"
+ , Option []     ["typecheck-only"] (NoArg TypecheckOnly) "typecheck only, no codegen"
  , Option []     ["inline-size-limit"]
                                 (ReqArg InlineSize "SIZE")"size counter value for inlining"
  ]
@@ -50,6 +51,7 @@ getNonMovingGC   (flags, _) =        NonMovingGC `elem` flags
 getNoGcAtAll     (flags, _) =        NoGcAtAll   `elem` flags
 getStripGCKills  (flags, _) =        StripGCKills `elem` flags
 getNoPreAllocOpt (flags, _) =        NoPreAllocOpt `elem` flags
+getTypecheckOnly (flags, _) =        TypecheckOnly `elem` flags
 getInlining      (flags, _) = (not $ NoInline    `elem` flags) && (Inline  `elem` flags)
 getInliningDonate(flags, _) = (not $ NoDonate    `elem` flags)
 getInliningSize  (flags, _) = foldr (\f a -> case f of InlineSize s -> Just (read s :: Int) ; _ -> a) Nothing flags
@@ -70,6 +72,7 @@ data Flag = Interpret String
           | NoPreAllocOpt
           | NonMovingGC
           | NoGcAtAll
+          | TypecheckOnly
           | NoInline
           | Inline
           | InlineGas String
