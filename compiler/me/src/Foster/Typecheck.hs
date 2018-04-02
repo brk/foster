@@ -30,7 +30,6 @@ import Foster.ExprAST
 import Foster.AnnExpr
 import Foster.Infer
 import Foster.Context
-import Foster.Config(OrdRef(OrdRef))
 import Foster.TypecheckInt(typecheckInt, typecheckRat)
 import Foster.Output(OutputOr(Errors, OK), putDocLn)
 import Foster.PrettyAnnExpr()
@@ -237,8 +236,7 @@ doQuantification e' ctx = do
             rng  = rangeOf (annExprAnnot e')
         let writeTv (mtv, tv) = writeTcMeta mtv (TyVarTC tv (UniConst KindEffect))
         mapM_ writeTv (zip fx_forall_tvs newBinders)
-        rho' <- zonkType t
-        let sigma = quantifyOver [(tv, KindEffect) | tv <- newBinders] rho'
+        let sigma = quantifyOver [(tv, KindEffect) | tv <- newBinders] t
         return $ case e' of
           E_AnnVar annot (tid, mcid) -> E_AnnVar annot ((TypedId sigma (tidIdent tid)), mcid)
           E_AnnFn fn -> E_AnnFn fn { fnVar = TypedId sigma (fnIdent fn) }
@@ -1506,10 +1504,9 @@ tcRhoFnHelper ctx f expTy = do
                                  Nothing -> typeTC annbody
                                  Just rt -> rt
 
-    fnty' <- zonkType fnty
-
-    debug2 $ "fnty for " ++ (show (fnAstName f)) ++ " is " ++ show fnty
-    debug2 $ "zonked fnty for " ++ (show (fnAstName f)) ++ " is " ++ show fnty'
+    do fnty' <- zonkType fnty
+       debug2 $ "fnty for " ++ (show (fnAstName f)) ++ " is " ++ show fnty
+       debug2 $ "zonked fnty for " ++ (show (fnAstName f)) ++ " is " ++ show fnty'
 
     -- Note we collect free vars in the old context, since we can't possibly
     -- capture the function's arguments from the environment!
@@ -1788,9 +1785,6 @@ tcRhoHandler  ctx rng e arms mb_xform expTy = do
                                            (UniConst FastCC) (UniConst FT_Func) levels) "xform"
                   return $ Just x
 
-  --tr <- zonkType r
-  --trp <- zonkType r'p
-
   matchExp expTy (AnnHandler rng r'p eff actionThunk abranches mb_xform' (resumeid, resumebareid)) "case"
 
 extractPatternBindings :: Pattern t -> [TypedId t]
@@ -2041,13 +2035,11 @@ subsCheckRhoTy tau1 tau2 msg -- Rule MONO
 subsCheck :: (AnnExpr SigmaTC) -> SigmaTC -> String -> Tc (AnnExpr SigmaTC)
 -- {{{
 subsCheck esigma sigma2@(ForAllTC {}) msg = do
-  --tytc0 <- zonkType (typeTC esigma)
   (skols, rho) <- skolemize sigma2
   debug $ "subsCheck skolemized sigma to " ++ show rho ++ " via " ++ show skols
                                             ++ ", now deferring to subsCheckRho"
   _ <- subsCheckRho esigma rho ("subsCheck(" ++ msg ++")")
-  --tytc1 <- zonkType (typeTC esigma)
-  tytc1 <- return (typeTC esigma)
+  let tytc1 = typeTC esigma
   esc_tvs <- getFreeTyVars [tytc1, sigma2]
   esc_tvs1 <- getFreeTyVars [tytc1]
   esc_tvs2 <- getFreeTyVars [sigma2]
@@ -2174,8 +2166,7 @@ instSigmaWith whereFrom ktvs rho taus = do
                 ++ "taus: " ++ show taus ++ "\n"
                 ++ "context: " ++ whereFrom)
     let tyvarsAndTys = List.zip (tyvarsOf ktvs) taus
-    z <- zonkType rho
-    tcReplaceQuantifiedVars tyvarsAndTys z
+    tcReplaceQuantifiedVars tyvarsAndTys rho
 
 assocFilterOut :: Eq a => [(a,b)] -> [a] -> [(a,b)]
 assocFilterOut lst keys = [(a,b) | (a,b) <- lst, not(List.elem a keys)]
@@ -2269,20 +2260,23 @@ skolemize ty = return ([], ty)
 
 getFreeTyVars :: [TypeTC] -> Tc [TyVar]
 -- {{{
-getFreeTyVars xs = do zs <- mapM zonkType xs
-                      return $ Set.toList (Set.fromList $ concatMap (go []) zs)
+getFreeTyVars xs = do tvs <- concatMapM (go []) xs
+                      return $ Set.toList (Set.fromList $ tvs)
                  where
-  go :: [TyVar] -> SigmaTC -> [TyVar]
+  go :: [TyVar] -> SigmaTC -> Tc [TyVar]
   go bound x =
     case x of
-        PrimIntTC         {} -> []
-        TyConTC           {} -> []
-        TyAppTC con types    -> concatMap (go bound) (con:types)
-        TupleTypeTC _k types     -> concatMap (go bound) types
-        FnTypeTC ss r fx  _ _ _levels   -> concatMap (go bound) (r:fx:ss)
+        PrimIntTC         {} -> return []
+        TyConTC           {} -> return []
+        TyAppTC con types    -> concatMapM (go bound) (con:types)
+        TupleTypeTC _k types     -> concatMapM (go bound) types
+        FnTypeTC ss r fx  _ _ _levels   -> concatMapM (go bound) (r:fx:ss)
         ForAllTC  tvs rho        -> go (tyvarsOf tvs ++ bound) rho
-        TyVarTC   tv  _mbk       -> if tv `elem` bound then [] else [tv]
-        MetaTyVarTC  {}          -> []
+        TyVarTC   tv  _mbk       -> return $ if tv `elem` bound then [] else [tv]
+        MetaTyVarTC  {}          -> do t <- repr x
+                                       case t of
+                                         MetaTyVarTC _ -> return []
+                                         _ -> go bound t
         RefTypeTC    ty          -> (go bound) ty
         ArrayTypeTC  ty          -> (go bound) ty
         RefinedTypeTC v _e _args -> (go bound) (tidType v) -- TODO handle tyvars in expr/args?

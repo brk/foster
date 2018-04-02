@@ -150,13 +150,12 @@ kNormalizeFn st fn = do
     vs <- mapM (qVar st) (fnVars fn)
     body <- kNormalize st (fnBody fn)
     checkForUnboxedPolymorphism fn (tidType v)
-    when (show (tidIdent $ fnVar fn) `elem` ["main", "print_text_bare"]) $ do
-      let fx = fnTypeTCEffect (tidType (fnVar fn))
-      tcLift $ putStrLn $ "kNormalizeFn saw fn " ++ show (tidIdent $ fnVar fn) ++ " with type " ++ show (tidType (fnVar fn))
-      tcLift $ putStrLn $ "kNormalizeFn fx raw " ++ show fx
-      fx' <- zonkType fx
-      tcLift $ putStrLn $ "kNormalizeFn fx zonked " ++ show fx'
-
+    --when (show (tidIdent $ fnVar fn) `elem` ["main", "print_text_bare"]) $ do
+    --  let fx = fnTypeTCEffect (tidType (fnVar fn))
+    --  tcLift $ putStrLn $ "kNormalizeFn saw fn " ++ show (tidIdent $ fnVar fn) ++ " with type " ++ show (tidType (fnVar fn))
+    --  tcLift $ putStrLn $ "kNormalizeFn fx raw " ++ show fx
+    --  fx' <- zonkType fx
+    --  tcLift $ putStrLn $ "kNormalizeFn fx zonked " ++ show fx'
 
     return $ Fn v vs body (fnIsRec fn) (fnAnnot fn)
 
