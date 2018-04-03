@@ -222,6 +222,10 @@ primitiveDecls = map (\(n,t) -> (n,t,NotForeign)) $
     ,(,) "expect_float_p9f64"      $ mkProcType [f64] []
     ,(,) "print_float_f64x"        $ mkProcType [f64] []
     ,(,) "expect_float_f64x"       $ mkProcType [f64] []
+    ,(,) "print_float_f64"         $ mkProcType [f64] []
+    ,(,) "expect_float_f64"        $ mkProcType [f64] []
+    ,(,) "print_float_f32"         $ mkProcType [f32] []
+    ,(,) "expect_float_f32"        $ mkProcType [f32] []
 
     ,(,) "foster__logf64"          $ mkProcType [f64] [f64]
 
@@ -322,6 +326,9 @@ flonumPrimitives tystr ty =
   ,mkPrim "=="      $ mkProcType [ty, ty] [i1]
   ,mkPrim "!="      $ mkProcType [ty, ty] [i1]
   ,mkPrim "sqrt"    $ mkProcType [ty]     [ty]
+  ,mkPrim "sin"     $ mkProcType [ty]     [ty]
+  ,mkPrim "cos"     $ mkProcType [ty]     [ty]
+  ,mkPrim "tan"     $ mkProcType [ty]     [ty]
   ,mkPrim "powi"    $ mkProcType [ty, i32]    [ty]
   ,mkPrim "muladd"  $ mkProcType [ty, ty, ty] [ty]
   ]
