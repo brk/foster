@@ -424,6 +424,18 @@ createPowi(IRBuilder<>& b, llvm::Value* vd, llvm::Value* vi) {
   return CI;
 }
 
+
+llvm::Value*
+createFtan(IRBuilder<>& b, llvm::Value* vd) {
+  Module*    m = b.GetInsertBlock()->getParent()->getParent();
+  llvm::Value* tanf = m->getFunction(
+      (vd->getType()->isFloatTy() ? "foster__tanf32" : "foster__tanf64"));
+  ASSERT(tanf != NULL) << "NO foster__tanfDD IN MODULE! :(";
+  auto ci = builder.CreateCall(tanf, { vd });
+  markAsNonAllocating(ci);
+  return ci;
+}
+
 llvm::Value*
 CodegenPass::emitPrimitiveOperation(const std::string& op,
                                     IRBuilder<>& b,
@@ -450,6 +462,8 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   else if (op == "ctlz")     { return createCtlz(b, VL, "ctlztmp"); }
   else if (op == "ctpop")    { return createIntrinsicCall(b, VL, "ctpoptmp", llvm::Intrinsic::ctpop); }
   else if (op == "fsqrt")    { return createIntrinsicCall(b, VL, "fsqrttmp", llvm::Intrinsic::sqrt); }
+  else if (op == "fsin")     { return createIntrinsicCall(b, VL, "fsintmp",  llvm::Intrinsic::sin); }
+  else if (op == "fcos")     { return createIntrinsicCall(b, VL, "fcostmp",  llvm::Intrinsic::cos); }
   else if (op == "fptosi_f64_i32") { return b.CreateFPToSI(VL, b.getInt32Ty(), "fptosi_f64_i32tmp"); }
   else if (op == "fptoui_f64_i32") { return b.CreateFPToUI(VL, b.getInt32Ty(), "fptoui_f64_i32tmp"); }
   else if (op == "fptosi_f64_i64") { return b.CreateFPToSI(VL, b.getInt64Ty(), "fptosi_f64_i64tmp"); }
@@ -463,6 +477,7 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   else if (op == "bitcast_f64")    { return b.CreateBitCast(VL, b.getDoubleTy(), "bitcast_f64tmp"); }
   else if (op == "bitcast_f32")    { return b.CreateBitCast(VL, b.getFloatTy(),  "bitcast_f64tmp"); }
   else if (op == "bitcast_i64")    { return b.CreateBitCast(VL, b.getInt64Ty(),  "bitcast_i64tmp"); }
+  else if (op == "ftan")           { return createFtan(b, VL); }
 
   ASSERT(args.size() > 1) << "CodegenUtils.cpp missing implementation of " << op << "\n";
 

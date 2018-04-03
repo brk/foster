@@ -296,6 +296,8 @@ int fprint_b2(FILE* f, Int x) {
   return n;
 }
 
+void fprint_f32(FILE* f, float x) { fprintf(f, "%f\n", x); }
+void fprint_f32x(FILE* f, float x) { fprintf(f, "%a\n", x); }
 void fprint_f64(FILE* f, double x) { fprintf(f, "%f\n", x); }
 void fprint_f64x(FILE* f, double x) { fprintf(f, "%a\n", x); }
 void fprint_p9f64(FILE* f, double x) { fprintf(f, "%.9f\n", x); }
@@ -497,6 +499,11 @@ FILE* c2f_stdin__autowrap() { return stdin; }
 FILE* c2f_stdout__autowrap() { return stdout; }
 FILE* c2f_stderr__autowrap() { return stderr; }
 
+void print_float_f32(float f) { return fprint_f32(stdout, f); }
+void expect_float_f32(float f) { return fprint_f32(stderr, f); }
+
+void print_float_f64(double f) { return fprint_f64(stdout, f); }
+void expect_float_f64(double f) { return fprint_f64(stderr, f); }
 
 void print_float_f64x(double f) { return fprint_f64x(stdout, f); }
 void expect_float_f64x(double f) { return fprint_f64x(stderr, f); }
@@ -505,6 +512,9 @@ void print_float_p9f64(double f) { return fprint_p9f64(stdout, f); }
 void expect_float_p9f64(double f) { return fprint_p9f64(stderr, f); }
 
 double foster__logf64(double f) { return log(f); }
+
+float  foster__tanf32(float  f) { return tanf(f); }
+double foster__tanf64(double f) { return tan(f); }
 
 int32_t get_cmdline_n_args() { return __foster_globals.args.size(); }
 
@@ -608,7 +618,7 @@ int64_t foster_gettime_microsecs() {
   return clocktimer::current_us();
 }
 double  foster_gettime_elapsed_secs(int64_t early, int64_t later) {
-  return double(later - early) * 1e6;
+  return double(later - early) / 1e6;
 }
 
 // We want to perform aggressive link time optimization of
