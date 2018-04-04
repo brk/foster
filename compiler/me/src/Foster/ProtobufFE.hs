@@ -17,7 +17,7 @@ import Foster.Tokens
 import Codec.CBOR.Term
 
 import Data.Foldable (toList)
-import Data.List(groupBy, foldl')
+import Data.List(groupBy, foldl', isInfixOf)
 import qualified Data.Sequence as Seq
 import qualified Data.Map as Map(lookup)
 
@@ -165,13 +165,12 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
     TList [_tok, name, _cbr, TList []] -> T.unpack $ cborText name
     _ -> error $ "cb_parse_typename failed: " ++ show cbor
 
-  -- TODO: rationals should not contain hex digits or a base specifier
-  -- TOOD: e/E should only appear in rationals as exponent specifier
+  -- TODO delay int/rat decision until later on (TypecheckInt)
   cb_parse_lit_num int_ctor rat_ctor annot cbor =
    case cbor of
     TList [_tok, num,_cbr, TList []] ->
       let str = (T.unpack $ cborText num) in
-      if '.' `elem` str
+      if '.' `elem` str || "e-" `isInfixOf` str || "E-" `isInfixOf` str
         then rat_ctor annot str
         else int_ctor annot str
     _ -> error $ "cb_parse_lit_num failed: " ++ show cbor
