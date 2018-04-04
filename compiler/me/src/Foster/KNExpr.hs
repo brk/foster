@@ -183,9 +183,7 @@ fnReturnType other = error $
 kNormalize :: KNState -> AnnExpr TypeTC -> KN KNExpr
 kNormalize st expr =
   case expr of
-      AnnLiteral annot ty (LitInt int) -> do ailInt (rangeOf annot) int ty
-                                             ti <- qt ty
-                                             return $ KNLiteral ti (LitInt int)
+      AnnLiteral annot ty (LitInt int) -> do ailInt qt (rangeOf annot) int ty
       AnnLiteral _rng ty lit  -> do ty' <- qt ty ; return $ KNLiteral ty' lit
       E_AnnVar   _rng (v,_)   -> do v'  <- qv v  ; return $ KNVar v'
       AnnKillProcess _rng t m -> do t'  <- qt t  ; return $ KNKillProcess t' m
@@ -681,7 +679,7 @@ checkArrayIndexer b = do
                          ,prettyWithLineNumbers (rangeOf b)
                          ]
 
-ailInt rng int ty = do
+ailInt qt rng int ty = do
   -- 1. We need to make sure that the types eventually given to an int
   --    are large enough to hold it.
   -- 2. For ints with an un-unified meta type variable,
@@ -690,22 +688,36 @@ ailInt rng int ty = do
   --    with the smallest type that accomodates the int.
   case ty of
     PrimIntTC isb -> do
-      sanityCheckIntLiteralNotOversized rng isb int
+      sanityCheckIntLiteralNotOversized rng (intSizeOf isb) int
+      ti <- qt ty
+      return $ KNLiteral ti (LitInt int)
 
     MetaTyVarTC m -> do
       mty <- readTcMeta m
       case mty of
-        BoundTo t -> do ailInt rng int t
+        BoundTo t -> do ailInt qt rng int t
         Unbound _-> do tcFails [text "Int literal should have had type inferred for it!"]
 
-    RefinedTypeTC v _ _ -> ailInt rng int (tidType v)
+    RefinedTypeTC v _ _ -> ailInt qt rng int (tidType v)
+
+    TyAppTC (TyConTC "Float32") [] -> do
+      sanityCheckIntLiteralNotOversized rng 23 int -- 23 bits in mantisaa, not 32!
+      ti <- qt ty
+      return $ KNLiteral ti (LitFloat $ LiteralFloat (fromIntegral $ litIntValue int)
+                                                     (litIntText int))
+
+    TyAppTC (TyConTC "Float64") [] -> do
+      sanityCheckIntLiteralNotOversized rng 53 int -- 53 bits in mantisaa, not 64!
+      ti <- qt ty
+      return $ KNLiteral ti (LitFloat $ LiteralFloat (fromIntegral $ litIntValue int)
+                                                     (litIntText int))
 
     _ -> do tcFails [text "Unable to assign integer literal the type" <+> pretty ty
                     ,prettyWithLineNumbers rng]
 
-sanityCheckIntLiteralNotOversized rng isb int =
-    sanityCheck (intSizeOf isb >= litIntMinBits int) $
-       "Int constraint violated; context-imposed exact size (in bits) was " ++ show (intSizeOf isb)
+sanityCheckIntLiteralNotOversized rng typeSize int =
+    sanityCheck (typeSize >= litIntMinBits int) $
+       "Int constraint violated; context-imposed exact size (in bits) was " ++ show typeSize
         ++ "\n                              but the literal intrinsically needs " ++ show (litIntMinBits int)
         ++ highlightFirstLine rng
 

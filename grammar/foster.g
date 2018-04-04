@@ -265,12 +265,14 @@ tabinding : x '=' e                    -> ^(BINDING x e);
 //    12.34`56
 //    12.34e+01
 //    12.34e-10
+//    0xe
+//    1e4
 
 num : NUM -> ^(LIT_NUM NUM);
 NUM			:  ('+'|'-')?
-               (DIGIT         DIGIT*     ('`' DIGIT+   )*
-               |'0' ('x'|'b') HEX_CLUMP? ('`' HEX_CLUMP)*)
-               ( '.' DIGIT* ('`' DIGIT+)* SCI_NOTATION? )?;
+               (DIGIT         DIGIT*     ('`' DIGIT+   )* ( '.' DIGIT*     ('`' DIGIT+)*     )? SCI_NOTATION?
+               |'0' ('x'|'b') HEX_CLUMP? ('`' HEX_CLUMP)* ( '.' HEX_CLUMP* ('`' HEX_CLUMP+)* )?
+               );
 fragment SCI_NOTATION	: ('e'|'E') ('+'|'-')? DIGIT+;
 fragment HEX_CLUMP      : DIGIT HEX_DIGIT* | SMALL_IDENT | UPPER_IDENT;
 
