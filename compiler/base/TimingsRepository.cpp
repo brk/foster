@@ -43,13 +43,18 @@ void TimingsRepository::print(const std::string& title) {
 
   for (auto it : total_us) {
     const string& s = it.first;
+    const string& d = descriptions[s];
+
+    if (local_us[s] < 1000 && d.empty()) {
+      continue; // Don't report on uninteresting operations.
+    }
+
     llvm::outs() << llvm::format(pathFormatString.c_str(), s.c_str())
                 << "  " << llvm::format("%5u ms", (unsigned) total_us[s] / 1000)
                 << "  " << llvm::format("%5u ms", (unsigned) local_us[s] / 1000);
-    const string& d = descriptions[s];
     if (!d.empty()) {
       llvm::outs() << " -- " << d;
-    }
+    } 
     llvm::outs() << "\n";
   }
 }
