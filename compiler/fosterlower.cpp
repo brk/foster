@@ -171,16 +171,16 @@ void printVersionInfo(llvm::raw_ostream& out) {
 
 void setTimingDescriptions() {
   using foster::gTimings;
-  gTimings.describe("total", "Overall compiler runtime (ms)");
+  gTimings.describe("total", "Overall compiler runtime");
 
-  gTimings.describe("io.proto", "Time spent parsing input protobuf file (ms)");
-  gTimings.describe("io.file",  "Time spent doing non-parsing I/O (ms)");
-  gTimings.describe("io.dot",   "Time spent writing DOT graphs (ms)");
-  gTimings.describe("io.prettyprint", "Time spent in pretty-printing (ms)");
+  gTimings.describe("io.proto", "Time spent parsing input protobuf file");
+  gTimings.describe("io.file",  "Time spent doing non-parsing I/O");
+  gTimings.describe("io.dot",   "Time spent writing DOT graphs");
+  gTimings.describe("io.prettyprint", "Time spent in pretty-printing");
 
-  gTimings.describe("llvm.opt",  "Time spent in LLVM IR optimization (ms)");
-  gTimings.describe("llvm.link", "Time spent linking LLVM modules (ms)");
-  gTimings.describe("llvm.llc",  "Time spent doing llc's job (IR->asm) (ms)");
+  gTimings.describe("llvm.opt",  "Time spent in LLVM IR optimization");
+  gTimings.describe("llvm.link", "Time spent linking LLVM modules");
+  gTimings.describe("llvm.llc",  "Time spent doing llc's job (IR->asm)");
 }
 
 std::unique_ptr<Module> readLLVMModuleFromPath(string path) {
