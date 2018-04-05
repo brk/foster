@@ -487,8 +487,18 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
    processTcConstraints :: [(TcConstraint, SourceRange)] -> Tc ()
    processTcConstraints constraints = mapM_ processConstraint constraints
       where
+        processConstraint ((TcC_IsFloat mtv), range) = do
+          zt <- repr (MetaTyVarTC mtv)
+          case zt of
+            TyAppTC (TyConTC "Float32") [] -> return ()
+            TyAppTC (TyConTC "Float64") [] -> return ()
+            m@(MetaTyVarTC _) -> unify m (TyAppTC (TyConTC "Float64") []) []
+            _ -> tcFails [text "Unable to give the type" <+> pretty zt <+>
+                          text "to the numeric constant",
+                          highlightFirstLineDoc range]
+
         processConstraint ((TcC_SeqUnit mtv), _range) = do
-            zt <- zonkType (MetaTyVarTC mtv)
+            zt <- repr (MetaTyVarTC mtv)
             case zt of
               TupleTypeTC {} -> return ()
               PrimIntTC   {} -> return ()

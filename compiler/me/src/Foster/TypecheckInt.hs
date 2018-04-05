@@ -18,7 +18,6 @@ import Foster.Base
 import Foster.Context
 import Foster.AnnExpr
 import Foster.TypeTC
-import Foster.Infer(tcUnifyTypes)
 
 data PIR_FailureCase = PIR_InvalidDigit
                      | PIR_NeedsTooManyBits
@@ -119,7 +118,8 @@ typecheckRat annot originalText expTy = do
             Nothing -> return $ float64
             Just t@(TyAppTC (TyConTC f) []) | f `elem` ["Float32", "Float64"]
                    -> return t
-            Just t@(MetaTyVarTC _) -> do tcUnifyTypes t float64 ; return float64
+            Just t@(MetaTyVarTC m) -> do tcAddConstraint (TcC_IsFloat m) (rangeOf annot)
+                                         return t
             Just t -> tcFails [text "Unable to give rational number",
                                highlightFirstLineDoc (rangeOf annot),
                                text "the type" <+> pretty t]

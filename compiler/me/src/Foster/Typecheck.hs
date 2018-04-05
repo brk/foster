@@ -1089,7 +1089,7 @@ mkAnnCall rng res_ty annbase args =
          | T.unpack gs == "allocDArray"
       -> case args of
            [arraySize] -> AnnAllocArray rng res_ty arraySize argty Nothing DoZeroInit
-           other -> error $ "saw anncall of " ++ show annbase ++ " with args: " ++ show args
+           _ -> error $ "saw anncall of " ++ show annbase ++ " with args: " ++ show args
     E_AnnVar _rng (_tid, Just cid)
       -> AnnAppCtor rng res_ty cid  args
     _ -> AnnCall rng res_ty annbase args
