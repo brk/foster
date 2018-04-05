@@ -660,8 +660,6 @@ checkBody expr facts =
         dbgStr $ "TODO: checkBody attributes for call prim " ++ show prim ++ " $ " ++ show vs
         return Nothing
 
-    KNNotInlined _ e -> checkBody e facts
-    KNInlined _t0 _to _tn _old new -> checkBody new facts
     KNCase       _ty v arms     -> do
         -- TODO: better path conditions for individual arms
         _ <- forM arms $ \arm -> do

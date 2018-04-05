@@ -26,7 +26,6 @@ data CompilerContext = CompilerContext {
         ccVerbose   :: Bool
       , ccUniqRef   :: IORef Uniq
       , ccFlagVals  :: ([Flag], [String])
-      , ccInline    :: Bool
       , ccDumpFns   :: [String]
       , ccSMTStats  :: IORef (Int, [(Double, Double)])
       , ccCFGSizes  :: IORef [(String, (Int, Int), (Int, Int) )]
@@ -34,7 +33,7 @@ data CompilerContext = CompilerContext {
 
 type CompilerFailures = [Doc]
 
-compiledThrowE :: CompilerFailures -> Compiled ()
+compiledThrowE :: CompilerFailures -> Compiled a
 compiledThrowE docs = lift $ throwE docs
 
 --instance Error Doc where strMsg s = text s

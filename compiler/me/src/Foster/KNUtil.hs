@@ -62,11 +62,6 @@ data KNExpr' r ty =
         | KNTyApp       ty (TypedId ty) [ty]
         | KNCompiles    KNCompilesResult ty (KNExpr' r ty)
         | KNRelocDoms   [Ident] (KNExpr' r ty)
-        | KNNotInlined  (String, (FoldStatus, Int, Maybe Int)) (KNExpr' r ty)
-        | KNInlined     Int Int Int (KNExpr' r ty) (KNExpr' r ty) -- old, new
-                     --          ^ "after" time of inlining new
-                     --      ^ "before" time of inlining new
-                     --  ^ time of first processing opnd
 
 -- {{{ Inlining-related definitions
 data FoldStatus = FoldTooBig Int -- size (stopped before inlining)
@@ -238,9 +233,6 @@ alphaRename' fn = do
       KNRelocDoms ids e        -> liftM2 KNRelocDoms (mapM qi ids) (renameKN e)
       KNTyApp t v argtys       -> liftM3 KNTyApp (qt t) (qv v) (return argtys)
       KNCompiles r t e         -> liftM2 (KNCompiles r) (qt t) (renameKN e)
-      KNInlined t0 tb tn old new -> do new' <- renameKN new
-                                       return $ KNInlined t0 tb tn old new'
-      KNNotInlined x e -> do renameKN e >>= return . (KNNotInlined x)
 
     renameCaseArm (CaseArm pat expr guard vs rng) = do
         pat'   <- renamePattern pat
@@ -287,7 +279,6 @@ instance (Show t, Show rs) => AExpr (KNExpr' rs t) where
                                                                    `butnot` ids
         KNCase  _t v arms    -> [tidIdent v] ++ concatMap caseArmFreeIds arms
         KNVar      v         -> [tidIdent v]
-        KNInlined _t0 _to _tn _old new   -> freeIdents new
         _                    -> concatMap freeIdents (childrenOf e)
 
 -- This is necessary due to transformations of AIIf and nestedLets
@@ -317,8 +308,6 @@ typeKN expr =
     KNVar                  v -> tidType v
     KNTyApp overallType _tm _tyArgs -> overallType
     KNCompiles _ t _           -> t
-    KNInlined _t0 _ _ _ new -> typeKN new
-    KNNotInlined _ e -> typeKN e
     KNRelocDoms _ e         -> typeKN e
 
 -- This instance is primarily needed as a prereq for KNExpr to be an AExpr,
@@ -355,8 +344,6 @@ instance (Show ty, Show rs) => Structured (KNExpr' rs ty) where
             KNTyApp t _e argty  -> text $ "KNTyApp     " ++ show argty ++ "] :: " ++ show t
             KNKillProcess t m   -> text $ "KNKillProcess " ++ show m ++ " :: " ++ show t
             KNCompiles _r _t _e -> text $ "KNCompiles    "
-            KNInlined _t0 _to _tn old _new   -> text "KNInlined " <> text (show old)
-            KNNotInlined _ e -> text "KNNotInlined " <> text (show e)
             KNRelocDoms ids _   -> text $ "KNRelocDoms " ++ show ids
     childrenOf expr =
         let var v = KNVar v in
@@ -385,8 +372,6 @@ instance (Show ty, Show rs) => Structured (KNExpr' rs ty) where
             KNTyApp _t v _argty     -> [var v]
             KNCompiles _ _ e        -> [e]
             KNRelocDoms _ e         -> [e]
-            KNInlined _t0 _to _tn _old new      -> [new]
-            KNNotInlined _ e -> [e]
 
 
 knSize :: KNExpr' r t -> (Int, Int) -- toplevel, cumulative
@@ -401,7 +386,6 @@ knSize expr = go expr (0, 0) where
                                   let ta' @ (t', _ ) = go b ta in
                                   let (_, bodies) = foldl' (\ta fn -> go (fnBody fn) ta) ta' fns in
                                   (t' + n, n + bodies)
-    KNInlined _t0 _to _tn _old new -> go new (t, a)
     _ -> ta
 
 -- Only count the effect of the head constructor.
@@ -434,8 +418,6 @@ knSizeHead expr = case expr of
     KNHandler     {} -> 8
 
     KNAppCtor     {} -> 3 -- rather like a KNTuple, plus one store for the tag.
-    KNInlined _t0 _ _ _ new  -> knSizeHead new
-    KNNotInlined _ e -> knSizeHead e
     KNRelocDoms _ e -> knSizeHead e
     KNArrayLit _ty _arr vals -> 2 + length vals
     KNCompiles    {} -> 0 -- Becomes a boolean literal
@@ -487,14 +469,6 @@ instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
   pretty e =
         case e of
             KNRelocDoms ids e        -> text "<reloc-doms<" <> pretty ids <> text ">>" <$> pretty e
-            KNNotInlined (msg,(why,at_effort,mb_cost)) e ->
-                dullred (text "notinlined") <+> dquotes (pretty msg) <+> parens (pretty why) <+> text "@" <> pretty at_effort
-                   <+> case mb_cost of
-                          Nothing -> empty
-                          Just cost -> text "at cost" <+> pretty cost
-                   <$>  pretty e
-            KNInlined t0 tb tn old new -> dullgreen (text "inlined") <+> dullwhite (pretty old) <+> text "//" <+> desc (t0, tb, tn)
-                                   <$> indent 1 (pretty new)
             KNVar (TypedId _ (GlobalSymbol name _alt))
                                 -> (text $ "G:" ++ T.unpack name)
                        --showTyped (text $ "G:" ++ T.unpack name) t
@@ -605,8 +579,6 @@ knSubst m expr =
       KNTyApp t v argtys       -> KNTyApp t (qv v) argtys
       KNCompiles r t e         -> KNCompiles r t (knSubst m e)
       KNRelocDoms ids e        -> KNRelocDoms ids (knSubst m e)
-      KNInlined t0 tb tn old new -> KNInlined t0 tb tn old (knSubst m new)
-      KNNotInlined x e -> KNNotInlined x (knSubst m e)
 
 mapArrayIndex f (ArrayIndex v1 v2 rng s) =
   let v1' = f v1
