@@ -35,7 +35,7 @@ import qualified Data.Set as Set(toList, map, union, unions, difference,
                                  member, Set, empty, size, fromList, insert)
 import qualified Data.Map as Map(singleton, insertWith, lookup, empty, fromList,
                                  adjust, insert, findWithDefault, toList)
-import qualified Data.Text as T(pack, unpack)
+import qualified Data.Text as T(pack, unpack, isInfixOf)
 import qualified Data.Graph as Graph(stronglyConnComp)
 import Data.Graph(SCC(..))
 
@@ -120,11 +120,13 @@ prepForCodegen m mayGCconstraints0 = do
               preallocprocs)
   where
    explicateProc p = do
+     let failIfUsesGC = T.isInfixOf (T.pack "mustnotalloc_") (identPrefix $ procIdent p)
+
      flagVals <- gets ccFlagVals
      (_pa_time, g0) <- ioTime $ if getNoPreAllocOpt flagVals
                                   then return $ simplifyCFG $ procBlocks p
                                   else runPreAllocationOptimizations (simplifyCFG $ procBlocks p)
-     (_ae_time, g') <- ioTime $ makeAllocationsExplicit g0
+     (_ae_time, g') <- ioTime $ makeAllocationsExplicit g0 failIfUsesGC (procIdent p)
      --liftIO $ putDocLn $ text "  makeAllocExplicit time: " <> text (Criterion.secs ae_time)
 
      return (p { procBlocks = g' }, p { procBlocks = g0 })
@@ -152,8 +154,8 @@ prepForCodegen m mayGCconstraints0 = do
    want p wantedFns = T.unpack (identPrefix (procIdent p)) `elem` wantedFns
 
 -- ||||||||||||||||||||||||| Allocation Explication  ||||||||||||{{{
-makeAllocationsExplicit :: BasicBlockGraph' -> Compiled BasicBlockGraph'
-makeAllocationsExplicit bbgp = do
+makeAllocationsExplicit :: BasicBlockGraph' -> Bool -> Ident -> Compiled BasicBlockGraph'
+makeAllocationsExplicit bbgp prohibitAllocations procId = do
      bb' <- rebuildGraphM Nothing (bbgpBody bbgp) explicate
      return $ bbgp { bbgpBody = bb' }
  where
@@ -163,7 +165,10 @@ makeAllocationsExplicit bbgp = do
     (CCGCLoad  {}        ) -> return $ mkMiddle $ insn
     (CCGCInit  {}        ) -> return $ mkMiddle $ insn
     (CCGCKill  {}        ) -> return $ mkMiddle $ insn
-    (CCLetVal id (ILAlloc v memregion)) -> do
+    (CCLetVal id (ILAlloc v memregion)) ->
+      if prohibitAllocations
+        then compiledThrowE [text "Unable to eliminate allocations from " <> pretty procId]
+        else do
             id' <- ccFreshId (T.pack "ref-alloc")
             let t = tidType v
             let info = AllocInfo t memregion "ref" Nothing Nothing ("ref-allocator:"++show t) NoZeroInit
@@ -173,7 +178,10 @@ makeAllocationsExplicit bbgp = do
     (CCLetVal _id (ILTuple _kind [] _allocsrc)) -> return $ mkMiddle $ insn
     (CCLetVal _id (ILTuple KindAnySizeType _vs _allocsrc)) -> do
             return $ mkMiddle $ insn
-    (CCLetVal  id (ILTuple KindPointerSized vs _allocsrc)) -> do
+    (CCLetVal  id (ILTuple KindPointerSized vs _allocsrc)) ->
+      if prohibitAllocations
+        then compiledThrowE [text "Unable to eliminate allocations from " <> pretty procId]
+        else do
             let t = LLStructType (map tidType vs)
             let memregion = MemRegionGlobalHeap
             let info = AllocInfo t memregion "tup" Nothing Nothing ("tup-allocator:"++show vs) NoZeroInit
@@ -187,6 +195,9 @@ makeAllocationsExplicit bbgp = do
             return $
               (mkMiddle $ CCRebindId (text "TransparentU") (TypedId (tidType v) id) v)
     (CCLetVal id (ILAppCtor genty (cid, repr) vs)) -> do
+      if prohibitAllocations
+        then compiledThrowE [text "Unable to eliminate allocations from " <> pretty procId]
+        else do
             id' <- ccFreshId (T.pack "ctor-alloc")
             let tynm = ctorTypeName cid ++ "." ++ ctorCtorName cid
             let t = LLStructType (map tidType vs)
@@ -199,7 +210,10 @@ makeAllocationsExplicit bbgp = do
               (mkMiddle $ CCLetVal id  (ILBitcast genty obj))
     (CCTupleStore   {}   ) -> return $ mkMiddle insn
     (CCLetVal  _id  _l   ) -> return $ mkMiddle insn
-    (CCLetFuns ids clos)   -> makeClosureAllocationExplicit ids clos
+    (CCLetFuns ids clos)   ->
+      if prohibitAllocations
+        then compiledThrowE [text "Unable to eliminate allocations from " <> pretty procId]
+        else makeClosureAllocationExplicit ids clos
     (CCRebindId     {}   ) -> return $ mkMiddle insn
     (CCLast         {}   ) -> return $ mkLast insn
 

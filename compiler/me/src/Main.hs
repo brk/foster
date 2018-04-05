@@ -57,7 +57,7 @@ import Foster.MainCtorHelpers
 import Foster.ConvertExprAST
 import Foster.MainOpts
 import Foster.MKNExpr
-import Foster.Infer(zonkType, unify)
+import Foster.Infer(unify)
 
 import Codec.CBOR.Term
 import Codec.CBOR.Read (deserialiseFromBytes)
@@ -606,7 +606,6 @@ runCompiler ci_time wholeprog flagVals outfile = do
                            ccVerbose  = getVerboseFlag flagVals
                          , ccFlagVals = flagVals
                          , ccDumpFns  = getDumpFns flagVals
-                         , ccInline   = getInlining flagVals
                          , ccUniqRef  = uniqref
                          , ccSMTStats = smtStatsRef
                          , ccCFGSizes = cfgSizesRef
@@ -761,10 +760,9 @@ typecheckSourceModule tcenv sm = do
 lowerModule :: String -> (Double, (ModuleIL KNExpr TypeIL))
             -> Compiled CompilerTimings
 lowerModule outfile (tc_time, kmod) = do
-     inline   <- gets ccInline
      flags    <- gets ccFlagVals
-     let donate = getInliningDonate flags
-     let insize = getInliningSize   flags
+     let _TODO_donate = getInliningDonate flags
+     let _TODO_insize = getInliningSize   flags
 
      whenDumpIR "kn" $ do
          putDocLn (outLn $ "vvvv k-normalized :====================")

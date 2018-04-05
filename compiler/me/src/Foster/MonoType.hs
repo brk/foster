@@ -256,9 +256,6 @@ alphaRenameMono fn = do
                                      return $ KNLetFuns ids' fns' b'
       KNTyApp t v argtys       -> liftM3 KNTyApp (qt t) (qv v) (return argtys)
       KNCompiles r t e         -> liftM2 (KNCompiles r) (qt t) (renameKN e)
-      KNInlined t0 tb tn old new -> do new' <- renameKN new
-                                       return $ KNInlined t0 tb tn old new'
-      KNNotInlined x e -> do renameKN e >>= return . (KNNotInlined x)
       KNRelocDoms ids e -> do liftM2 KNRelocDoms (mapM qi ids) (renameKN e)
 
     renameCaseArm (CaseArm pat expr guard vs rng) = do

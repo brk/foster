@@ -103,8 +103,6 @@ monoKN subst inTypeExpr e =
                                  --liftIO $ putStrLn $ show t'
                                  --liftIO $ putStrLn $ show t''
                                  liftM2 (KNCall t'') (qv v) (mapM qv vs)
-  KNInlined {}    -> error $ "Monomo.hs expects inlining to run after monomorphization!"
-  KNNotInlined {} -> error $ "Monomo.hs expects inlining to run after monomorphization!"
   KNRelocDoms ids e -> liftM (KNRelocDoms ids) (qq e)
   -- The cases involving sub-expressions are syntactically heavier,
   -- but are still basically trivially inductive.
