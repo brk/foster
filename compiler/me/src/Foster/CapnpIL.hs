@@ -286,7 +286,7 @@ dumpExpr _ x@(ILTuple _kindTODO [] _allocsrc) =
 dumpExpr _ x@(ILTuple KindAnySizeType vs _allocsrc) =
     (defaultLetable (typeOf x) Ilunboxedtuple) { parts_of_Letable = map dumpVar vs, type_of_Letable = StrictlyNone }
 dumpExpr _ (ILTuple _kind vs allocsrc) =
-        error $ "ProtobufIL.hs: ILTuple " ++ show vs
+        error $ "CapnpIL.hs: ILTuple " ++ show vs
             ++ "\n should have been eliminated!\n" ++ show allocsrc
 
 dumpExpr _ (ILOccurrence t v occ) =
@@ -303,7 +303,7 @@ dumpExpr _  (ILAllocArray (LLArrayType elt_ty) size memregion zeroinit) =
                                   Nothing (Just size)  "...array..." zeroinit) }
 
 dumpExpr _  (ILAllocArray nonArrayType _ _ _) =
-         error $ "ProtobufIL.hs: Can't dump ILAllocArray with non-array type "
+         error $ "CapnpIL.hs: Can't dump ILAllocArray with non-array type "
               ++ show nonArrayType
 
 dumpExpr _ x@(ILDeref ty a) =
@@ -389,7 +389,7 @@ dumpExpr _ (ILCallPrim t (PrimIntTrunc _from to) args)
         truncOp IWd = "trunc_w0"
         truncOp IDw = "trunc_w1"
 
-dumpExpr _ (ILAppCtor _ _cinfo _) = error $ "ProtobufIL.hs saw ILAppCtor, which"
+dumpExpr _ (ILAppCtor _ _cinfo _) = error $ "CapnpIL.hs saw ILAppCtor, which"
                                        ++ " should have been translated away..."
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -644,7 +644,7 @@ dumpProgramToModule (ILProgram procdefs vals extern_decls datatypes (SourceLines
         dumpType (LLStructType tys)
 
     dumpDataType (TypeFormal dtName _sr kind) ctors =
-            error $ "ProtobufIL.hs: Don't yet know how to handle " ++ dtName ++ " : " ++ show kind ++ " , with ctors..." ++ show ctors
+            error $ "CapnpIL.hs: Don't yet know how to handle " ++ dtName ++ " : " ++ show kind ++ " , with ctors..." ++ show ctors
 
 
 
