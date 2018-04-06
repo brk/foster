@@ -16,6 +16,7 @@ import Foster.ParsedType
 import Text.PrettyPrint.ANSI.Leijen
 import qualified Data.Text as T
 import Data.Char(isAlpha, isPrint, ord, chr, isAscii)
+import Data.List(isPrefixOf)
 import Numeric(showHex)
 import Data.Word(Word8)
 import qualified Data.ByteString as BS(unpack)
@@ -67,8 +68,8 @@ class IsQuietPlaceholder ty where
 instance IsQuietPlaceholder TypeP where
   isQuietPlaceholder t =
     case t of
-      MetaPlaceholder ""          -> True
-      MetaPlaceholder ".inferred" -> True
+      MetaPlaceholder ""   -> True
+      MetaPlaceholder name -> ".inferred" `isPrefixOf` name
       _ -> False
 
 lineOrSpace = line              -- line, unless undone by group, then space
