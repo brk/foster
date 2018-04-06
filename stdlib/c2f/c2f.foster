@@ -37,6 +37,31 @@ type case Ptr (a:Type)
 (!=Ptr) :: forall (a:Type) { Ptr a => Ptr a => Bool };
 (!=Ptr) = { p => q => prim not (p ==Ptr q) };
 
+(<=Ptr) :: forall (a:Type) { Ptr a => Ptr a => Bool };
+(<=Ptr) = { p => q =>
+  case (p, q)
+    of ($PtrNil, $PtrNil) -> True
+    of ($PtrRef rp, $PtrRef rq) -> prim ==Ref rp rq
+    of ($PtrArr pa pn, $PtrArr qa qn) ->
+          if pn <=SInt32 qn
+            then prim sameArrayStorage pa qa
+            else False
+          end
+    of _ -> False
+  end
+};
+
+(-Ptr) :: forall (a:Type) { Ptr a => Ptr a => Int64 };
+(-Ptr) = { p => q =>
+  case (p, q)
+    of ($PtrArr pa pn, $PtrArr qa qn) -> pn -Int32 qn |> zext_i32_to_i64
+    of _ -> 0
+  end
+};
+
+(+Ptr) :: forall (a:Type) { Ptr a => Int32 => Ptr a };
+(+Ptr) = { ptr => n => ptrPlus ptr n };
+
 ptrGetIndex :: forall (a:Type) { Ptr a => Int32 => a };
 ptrGetIndex = { ptr => idx =>
   case ptr
@@ -72,9 +97,6 @@ ptrSet = { ptr => val =>
     of $PtrArr arr off -> val >^ arr[off]
   end
 };
-
-(+Ptr) :: forall (a:Type) { Ptr a => Int32 => Ptr a };
-(+Ptr) = { ptr => n => ptrPlus ptr n };
 
 ptrPlus :: forall (a:Type) { Ptr a => Int32 => Ptr a };
 ptrPlus = { ptr => n =>
@@ -232,6 +254,9 @@ zeroTerminate = { arr =>
   0 >^ out[len];
   out;
 };
+
+c2fmalloc :: { Int64 => Ptr Int8 };
+c2fmalloc = { n => allocDArray (trunc_i64_to_i32 n) |> ptrOfArr };
 
 c2f_argv :: { Ptr (Ptr Int8) };
 c2f_argv = {
