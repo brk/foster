@@ -14,8 +14,12 @@ for arg in $@; do
   fi
 done
 
-echo ${SD}/fosterc.py --bindir ${FOSTER_ROOT}/_obj -I ${FOSTER_ROOT}/stdlib --tmpdir ${TMPDIR} $@ $MAYBE_OUT
-${SD}/fosterc.py --bindir ${FOSTER_ROOT}/_obj -I ${FOSTER_ROOT}/stdlib --tmpdir ${TMPDIR} $@ $MAYBE_OUT
+cxxpath() {
+  echo $($SD/echo-llvmdir)/bin/clang++
+}
+
+echo ${SD}/fosterc.py --bindir ${FOSTER_ROOT}/_obj -I ${FOSTER_ROOT}/stdlib --tmpdir ${TMPDIR} --cxxpath $(cxxpath) $@ $MAYBE_OUT
+${SD}/fosterc.py --bindir ${FOSTER_ROOT}/_obj -I ${FOSTER_ROOT}/stdlib --tmpdir ${TMPDIR} --cxxpath $(cxxpath) $@ $MAYBE_OUT
 
 rm -f meGCstats.txt
 rm -rf ${TMPDIR} $1.postopt.ll $1.preopt.ll

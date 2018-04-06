@@ -168,7 +168,8 @@ def compile_foster_to_bitcode(paths, inputfile, compilelog, finalpath, tmpdir):
                      interpret + options.meargs + prog_args)
 
     if should_stop_after_middle():
-      if not options.quietish:
+      # Ew!
+      if 'quietish' in dir(options) and not options.quietish:
         if compilelog is not None:
             compilelog.seek(0)
             print compilelog.read()
@@ -354,7 +355,7 @@ def get_fosterc_parser():
                     help="Just compile, don't link...")
   parser.add_option("--stacktraces", action="store_true", dest="stacktraces", default=False,
                     help="Have the middle-end produce stack traces on error")
-  parser.add_option("--cxxpath", dest="cxxpath", action="store", default="g++",
+  parser.add_option("--cxxpath", dest="cxxpath", action="store", default="MISSING_CXXPATH_ARG",
                     help="Set C++ compiler/linker path")
   parser.add_option("--tmpdir", dest="tmpdir", action="store", default=".",
                     help="Directory for storing intermediate results")
