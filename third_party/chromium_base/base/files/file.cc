@@ -87,9 +87,9 @@ void File::Initialize(const FilePath& path, uint32_t flags) {
     error_details_ = FILE_ERROR_ACCESS_DENIED;
     return;
   }
-  if (FileTracing::IsCategoryEnabled())
-    tracing_path_ = path;
-  SCOPED_FILE_TRACE("Initialize");
+  //if (FileTracing::IsCategoryEnabled())
+  //  tracing_path_ = path;
+  //SCOPED_FILE_TRACE("Initialize");
   DoInitialize(path, flags);
 }
 #endif
@@ -139,10 +139,10 @@ std::string File::ErrorToString(Error error) {
 }
 
 bool File::Flush() {
-  ElapsedTimer timer;
+  //ElapsedTimer timer;
   SCOPED_FILE_TRACE("Flush");
   bool return_value = DoFlush();
-  UMA_HISTOGRAM_TIMES("PlatformFile.FlushTime", timer.Elapsed());
+  //UMA_HISTOGRAM_TIMES("PlatformFile.FlushTime", timer.Elapsed());
   return return_value;
 }
 

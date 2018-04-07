@@ -304,7 +304,7 @@ class BASE_EXPORT File {
   static std::string ErrorToString(Error error);
 
  private:
-  friend class FileTracing::ScopedTrace;
+  //friend class FileTracing::ScopedTrace;
 
   // Creates or opens the given file. Only called if |path| has no
   // traversal ('..') components.
@@ -327,7 +327,7 @@ class BASE_EXPORT File {
   FilePath tracing_path_;
 
   // Object tied to the lifetime of |this| that enables/disables tracing.
-  FileTracing::ScopedEnabler trace_enabler_;
+  //FileTracing::ScopedEnabler trace_enabler_;
 
   Error error_details_;
   bool created_;

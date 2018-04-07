@@ -13,15 +13,15 @@ set (BASE_SOURCES
         ${CHROMIUM_BASE}/base/files/file_path.cc
         ${CHROMIUM_BASE}/base/files/file_util.cc
         ${CHROMIUM_BASE}/base/files/file.cc
-        ${CHROMIUM_BASE}/base/files/file_tracing.cc
+        #${CHROMIUM_BASE}/base/files/file_tracing.cc
         ${CHROMIUM_BASE}/base/files/scoped_file.cc
         ${CHROMIUM_BASE}/base/files/file_path_constants.cc
         ${CHROMIUM_BASE}/base/files/memory_mapped_file.cc
-        ${CHROMIUM_BASE}/base/location.cc
+        #${CHROMIUM_BASE}/base/location.cc
         ${CHROMIUM_BASE}/base/logging.cc
         ${CHROMIUM_BASE}/base/debug/alias.cc
-        ${CHROMIUM_BASE}/base/debug/debugger.cc
-        ${CHROMIUM_BASE}/base/debug/stack_trace.cc
+        #${CHROMIUM_BASE}/base/debug/debugger.cc
+        #${CHROMIUM_BASE}/base/debug/stack_trace.cc
         ##${CHROMIUM_BASE}/base/json/json_file_value_serializer.cc
         ${CHROMIUM_BASE}/base/json/json_string_value_serializer.cc
         ${CHROMIUM_BASE}/base/json/json_reader.cc
@@ -45,12 +45,12 @@ set (BASE_SOURCES
         ${CHROMIUM_BASE}/base/metrics/statistics_recorder.cc
         ${CHROMIUM_BASE}/base/md5.cc # needed by metrics_hashes.cc
         ${CHROMIUM_BASE}/base/synchronization/lock.cc
-        ${CHROMIUM_BASE}/base/memory/aligned_memory.cc
+        #${CHROMIUM_BASE}/base/memory/aligned_memory.cc
         #${CHROMIUM_BASE}/base/memory/weak_ptr.cc
-        ${CHROMIUM_BASE}/base/memory/ref_counted_memory.cc
-        ${CHROMIUM_BASE}/base/threading/thread_checker_impl.cc
-	${CHROMIUM_BASE}/base/threading/thread_local_storage.cc
-        ${CHROMIUM_BASE}/base/threading/thread_task_runner_handle.cc
+        #${CHROMIUM_BASE}/base/memory/ref_counted_memory.cc
+        #${CHROMIUM_BASE}/base/threading/thread_checker_impl.cc
+        #${CHROMIUM_BASE}/base/threading/thread_local_storage.cc
+        #${CHROMIUM_BASE}/base/threading/thread_task_runner_handle.cc
         #${CHROMIUM_BASE}/base/threading/worker_pool.cc
         ${CHROMIUM_BASE}/base/sys_info.cc
         ${CHROMIUM_BASE}/base/strings/string_util.cc
@@ -63,13 +63,13 @@ set (BASE_SOURCES
         ${CHROMIUM_BASE}/base/strings/stringprintf.cc
         #${CHROMIUM_BASE}/base/base_paths.cc
         #${CHROMIUM_BASE}/base/path_service.cc
-        ${CHROMIUM_BASE}/base/pickle.cc
-        ${CHROMIUM_BASE}/base/timer/elapsed_timer.cc
+        ${CHROMIUM_BASE}/base/pickle.cc # required for histograms
+        #${CHROMIUM_BASE}/base/timer/elapsed_timer.cc
         #${CHROMIUM_BASE}/base/platform_file.cc
         #${CHROMIUM_BASE}/base/process/process_info.cc
         #${CHROMIUM_BASE}/base/profiler/alternate_timer.cc
-        ${CHROMIUM_BASE}/base/profiler/tracked_time.cc
-	${CHROMIUM_BASE}/base/time/time.cc
+        #${CHROMIUM_BASE}/base/profiler/tracked_time.cc
+        ${CHROMIUM_BASE}/base/time/time.cc
         #${CHROMIUM_BASE}/base/tracking_info.cc # from SequencedWorkerPool
         #${CHROMIUM_BASE}/base/tracked_objects.cc
         ${CHROMIUM_BASE}/base/memory/ref_counted.cc
@@ -77,13 +77,13 @@ set (BASE_SOURCES
         #${CHROMIUM_BASE}/base/sequence_checker_impl.cc # needed by weak_ptr.cc
         #${CHROMIUM_BASE}/base/sequenced_task_runner.cc # needed by sequenced_worker_pool.cc
         ${CHROMIUM_BASE}/base/threading/thread_restrictions.cc
-        ${CHROMIUM_BASE}/base/threading/thread_collision_warner.cc
+        #${CHROMIUM_BASE}/base/threading/thread_collision_warner.cc
         ${CHROMIUM_BASE}/base/threading/thread_id_name_manager.cc
-        ${CHROMIUM_BASE}/base/threading/simple_thread.cc
+        #${CHROMIUM_BASE}/base/threading/simple_thread.cc
         #${CHROMIUM_BASE}/base/threading/sequenced_worker_pool.cc # needed by sequence_checker
-        ${CHROMIUM_BASE}/base/task_runner.cc
+        #${CHROMIUM_BASE}/base/task_runner.cc
         ${CHROMIUM_BASE}/base/strings/utf_string_conversions.cc
-        ${CHROMIUM_BASE}/base/vlog.cc
+        #${CHROMIUM_BASE}/base/vlog.cc
         ${CHROMIUM_BASE}/base/third_party/icu/icu_utf.cc
         ${CHROMIUM_BASE}/base/third_party/dmg_fp/g_fmt.cc
         ${CHROMIUM_BASE}/base/third_party/dmg_fp/dtoa.cc
@@ -160,16 +160,16 @@ if (${UNIX})
 	#${CHROMIUM_BASE}/base/posix/file_descriptor_shuffle.cc
 	${CHROMIUM_BASE}/base/threading/platform_thread_posix.cc
 	${CHROMIUM_BASE}/base/threading/thread_local_posix.cc
-	${CHROMIUM_BASE}/base/threading/thread_local_storage_posix.cc
+        #${CHROMIUM_BASE}/base/threading/thread_local_storage_posix.cc
         #${CHROMIUM_BASE}/base/threading/worker_pool_posix.cc
 	${CHROMIUM_BASE}/base/debug/debugger_posix.cc
 	${CHROMIUM_BASE}/base/time/time_posix.cc
         ${CHROMIUM_BASE}/base/sys_info_posix.cc
 	#${CHROMIUM_BASE}/base/process/process_posix.cc
         ${CHROMIUM_BASE}/base/process/process_handle_posix.cc
-	${CHROMIUM_BASE}/base/debug/stack_trace_posix.cc
-        ${CHROMIUM_BASE}/base/synchronization/waitable_event_posix.cc
-        ${CHROMIUM_BASE}/base/synchronization/condition_variable_posix.cc
+        #${CHROMIUM_BASE}/base/debug/stack_trace_posix.cc
+        #${CHROMIUM_BASE}/base/synchronization/waitable_event_posix.cc
+        #${CHROMIUM_BASE}/base/synchronization/condition_variable_posix.cc
 	#${CHROMIUM_BASE}/base/nix/xdg_util.cc
 	#${CHROMIUM_BASE}/base/third_party/xdg_user_dirs/xdg_user_dir_lookup.cc
   )
@@ -195,14 +195,14 @@ if (${WIN32})
 	${CHROMIUM_BASE}/base/debug/debugger_win.cc
 	${CHROMIUM_BASE}/base/threading/platform_thread_win.cc
 	${CHROMIUM_BASE}/base/threading/thread_local_win.cc
-	${CHROMIUM_BASE}/base/threading/thread_local_storage_win.cc
+        #${CHROMIUM_BASE}/base/threading/thread_local_storage_win.cc
         #${CHROMIUM_BASE}/base/threading/worker_pool_win.cc
 	${CHROMIUM_BASE}/base/strings/sys_string_conversions_win.cc
 	${CHROMIUM_BASE}/base/sys_info_win.cc
         #${CHROMIUM_BASE}/base/platform_file_win.cc
-	${CHROMIUM_BASE}/base/debug/stack_trace_win.cc
-        ${CHROMIUM_BASE}/base/synchronization/waitable_event_win.cc
-        ${CHROMIUM_BASE}/base/synchronization/condition_variable_win.cc
+        #${CHROMIUM_BASE}/base/debug/stack_trace_win.cc
+        #${CHROMIUM_BASE}/base/synchronization/waitable_event_win.cc
+        #${CHROMIUM_BASE}/base/synchronization/condition_variable_win.cc
   )
 endif (${WIN32})
 

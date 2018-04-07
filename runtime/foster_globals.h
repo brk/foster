@@ -5,8 +5,6 @@
 #ifndef FOSTER_GLOBALS_H
 #define FOSTER_GLOBALS_H
 
-#include "base/threading/simple_thread.h"
-
 #ifdef OS_MACOSX
 #include <objc/runtime.h>
 #include <objc/objc-runtime.h>
@@ -14,8 +12,26 @@
 typedef void* id;
 #endif
 
+#include "base/atomicops.h"
+
 #include <vector>
 #include <string>
+#include <thread>
+
+struct AtomicBool {
+  AtomicBool()         : flag(false) {}
+  AtomicBool(bool val) : flag(val) {}
+  ~AtomicBool() {}
+
+  void set(bool val) { base::subtle::Release_Store(&flag, val ? 1 : 0); }
+
+  bool get() { return (base::subtle::Acquire_Load(&flag) > 0); }
+
+private:
+  volatile base::subtle::Atomic32 flag;
+};
+
+////////////////////////////////////////////////////////////////
 
 struct FosterGlobals {
   std::vector<const char*> args;
@@ -24,7 +40,8 @@ struct FosterGlobals {
   ssize_t                  semispace_size;
 
   // One timer thread for the whole runtime, not per-vCPU.
-  base::SimpleThread*    scheduling_timer_thread;
+  AtomicBool             scheduling_timer_thread_ending;
+  std::thread*           scheduling_timer_thread;
   id                     scheduling_timer_thread_autorelease_pool;
 };
 

@@ -79,8 +79,8 @@ namespace logging {
 
 namespace {
 
-VlogInfo* g_vlog_info = nullptr;
-VlogInfo* g_vlog_info_prev = nullptr;
+//VlogInfo* g_vlog_info = nullptr;
+//VlogInfo* g_vlog_info_prev = nullptr;
 
 const char* const log_severity_names[LOG_NUM_SEVERITIES] = {
   "INFO", "WARNING", "ERROR", "FATAL" };
@@ -361,13 +361,15 @@ bool BaseInitLoggingImpl(const LoggingSettings& settings) {
     // NOTE: If |g_vlog_info| has already been initialized, it might be in use
     // by another thread. Don't delete the old VLogInfo, just create a second
     // one. We keep track of both to avoid memory leak warnings.
-    CHECK(!g_vlog_info_prev);
-    g_vlog_info_prev = g_vlog_info;
+    //CHECK(!g_vlog_info_prev);
+    //g_vlog_info_prev = g_vlog_info;
 
-    g_vlog_info =
+    //g_vlog_info = nullptr;
+    /*
         new VlogInfo(command_line->GetSwitchValueASCII(switches::kV),
                      command_line->GetSwitchValueASCII(switches::kVModule),
                      &g_min_log_level);
+                     */
   }
 
   g_logging_destination = settings.logging_dest;
@@ -417,6 +419,7 @@ int GetVlogVerbosity() {
   return std::max(-1, LOG_INFO - GetMinLogLevel());
 }
 
+/*
 int GetVlogLevelHelper(const char* file, size_t N) {
   DCHECK_GT(N, 0U);
   // Note: |g_vlog_info| may change on a different thread during startup
@@ -426,6 +429,7 @@ int GetVlogLevelHelper(const char* file, size_t N) {
       vlog_info->GetVlogLevel(base::StringPiece(file, N - 1)) :
       GetVlogVerbosity();
 }
+*/
 
 void SetLogItems(bool enable_process_id, bool enable_thread_id,
                  bool enable_timestamp, bool enable_tickcount) {
@@ -529,9 +533,10 @@ LogMessage::~LogMessage() {
 #if !defined(OFFICIAL_BUILD) && !defined(OS_NACL) && !defined(__UCLIBC__)
   if (severity_ == LOG_FATAL && !base::debug::BeingDebugged()) {
     // Include a stack trace on a fatal, unless a debugger is attached.
-    base::debug::StackTrace trace;
-    stream_ << std::endl;  // Newline to separate from log message.
-    trace.OutputToStream(&stream_);
+    //base::debug::StackTrace trace;
+    //stream_ << std::endl;  // Newline to separate from log message.
+    //trace.OutputToStream(&stream_);
+    stream_ << "\n<stack trace disabled>\n";
   }
 #endif
   stream_ << std::endl;

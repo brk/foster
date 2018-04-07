@@ -29,8 +29,6 @@
 #define ENABLE_CLOCKTIMER 1
 #include "clocktimer.h"
 
-#include "base/atomicops.h"
-
 #include <signal.h>
 
 // This file provides the bootstrap "standard library" of utility functions for
@@ -77,19 +75,6 @@
 ////////////////////////////////////////////////////////////////
 
 extern "C" void foster__assert(bool ok, const char* msg);
-
-////////////////////////////////////////////////////////////////
-
-struct AtomicBool {
-  AtomicBool(bool val) : flag(val) {}
-
-  void set(bool val) { base::subtle::Release_Store(&flag, val ? 1 : 0); }
-
-  bool get() { return (base::subtle::Acquire_Load(&flag) > 0); }
-
-private:
-  volatile base::subtle::Atomic32 flag;
-};
 
 ////////////////////////////////////////////////////////////////
 
@@ -201,26 +186,14 @@ extern "C" bool __foster_need_resched_threadlocal() {
 
 // Rather than muck about with alarms, etc,
 // we'll just use a dedicated sleepy thread.
-class FosterSchedulingTimerThread : public base::SimpleThread {
- private:
-  AtomicBool ending;
+void fosterSchedulingTimerThread(AtomicBool& ending) {
+  while (!ending.get()) {
+    const int ms = 1000;
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    printf("fosterSchedulingTimerThread\n");
 
- public:
-  virtual void Join() { // should only be called from main thread...
-    ending.set(true);
-    return base::SimpleThread::Join();
-  }
-
-  explicit FosterSchedulingTimerThread()
-    : base::SimpleThread("foster.scheduling-timer-thread"), ending(false) {}
-  virtual void Run() {
-    while (!ending.get()) {
-      const int ms = 1000;
-      base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(16));
-
-      // Mark all execution contexts as needing rescheduling.
-      __foster_get_current_vCPU()->needs_resched.set(true); // just one for now
-    }
+    // Mark all execution contexts as needing rescheduling.
+    __foster_get_current_vCPU()->needs_resched.set(true); // just one for now
   }
 };
 // }}}
@@ -252,14 +225,17 @@ namespace runtime {
       // pthread underlying base::SimpleThread for our timer will be leaked.
       __foster_globals.scheduling_timer_thread_autorelease_pool
                                                   = allocAndInitAutoreleasePool();
-      __foster_globals.scheduling_timer_thread = new FosterSchedulingTimerThread();
-      __foster_globals.scheduling_timer_thread->Start();
+      __foster_globals.scheduling_timer_thread_ending.set(false);
+      __foster_globals.scheduling_timer_thread = new std::thread(
+            fosterSchedulingTimerThread,
+            std::ref(__foster_globals.scheduling_timer_thread_ending));
     }
   }
 
   void finish_scheduling_timer_thread() {
     if (kUseSchedulingTimerThread) {
-             __foster_globals.scheduling_timer_thread->Join();
+      __foster_globals.scheduling_timer_thread_ending.set(true);
+             __foster_globals.scheduling_timer_thread->join();
       delete __foster_globals.scheduling_timer_thread;
       drainAutoreleasePool(__foster_globals.scheduling_timer_thread_autorelease_pool);
     }

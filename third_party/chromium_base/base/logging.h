@@ -253,12 +253,10 @@ BASE_EXPORT int GetVlogVerbosity();
 // __FILE__).
 
 // Note that |N| is the size *with* the null terminator.
-BASE_EXPORT int GetVlogLevelHelper(const char* file_start, size_t N);
+//BASE_EXPORT int GetVlogLevelHelper(const char* file_start, size_t N);
 
-template <size_t N>
-int GetVlogLevel(const char (&file)[N]) {
-  return GetVlogLevelHelper(file, N);
-}
+//template <size_t N>
+//int GetVlogLevel(const char (&file)[N]) { return GetVlogLevelHelper(file, N); }
 
 // Sets the common items you want to be prepended to each log message.
 // process and thread IDs default to off, the timestamp defaults to on.
@@ -354,8 +352,9 @@ const LogSeverity LOG_0 = LOG_ERROR;
 // google-glog version since it requires GCC extensions.  This means
 // that using the v-logging functions in conjunction with --vmodule
 // may be slow.
-#define VLOG_IS_ON(verboselevel) \
-  ((verboselevel) <= ::logging::GetVlogLevel(__FILE__))
+#define VLOG_IS_ON(verboselevel) false
+
+// ((verboselevel) <= ::logging::GetVlogLevel(__FILE__))
 
 // Helper macro which avoids evaluating the arguments to a stream if
 // the condition doesn't hold. Condition is evaluated once and only once.
