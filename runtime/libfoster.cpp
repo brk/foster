@@ -155,7 +155,7 @@ struct FosterVirtualCPU {
   // Updated by coro_invoke and coro_yield.
   foster_bare_coro*      current_coro;
 
-  AtomicBool             needs_resched;
+  std::atomic<bool>      needs_resched;
 
   void*                  signal_stack;
 };
@@ -175,25 +175,25 @@ extern "C" foster_bare_coro** __foster_get_current_coro_slot() {
 // $ test-tmpdir/siphash/siphash 64 20048
 extern "C" void __foster_do_resched() {
   FosterVirtualCPU* v = __foster_get_current_vCPU();
-  v->needs_resched.set(false);
+  v->needs_resched.store(false);
   printf("__foster_do_resched...\n");
 }
 
 extern "C" bool __foster_need_resched_threadlocal() {
   FosterVirtualCPU* v = __foster_get_current_vCPU();
-  return v->needs_resched.get();
+  return v->needs_resched.load();
 }
 
 // Rather than muck about with alarms, etc,
 // we'll just use a dedicated sleepy thread.
-void fosterSchedulingTimerThread(AtomicBool& ending) {
-  while (!ending.get()) {
+void fosterSchedulingTimerThread(std::atomic<bool>& ending) {
+  while (!ending.load()) {
     const int ms = 1000;
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
     printf("fosterSchedulingTimerThread\n");
 
     // Mark all execution contexts as needing rescheduling.
-    __foster_get_current_vCPU()->needs_resched.set(true); // just one for now
+    __foster_get_current_vCPU()->needs_resched.store(true); // just one for now
   }
 };
 // }}}
@@ -225,7 +225,7 @@ namespace runtime {
       // pthread underlying base::SimpleThread for our timer will be leaked.
       __foster_globals.scheduling_timer_thread_autorelease_pool
                                                   = allocAndInitAutoreleasePool();
-      __foster_globals.scheduling_timer_thread_ending.set(false);
+      __foster_globals.scheduling_timer_thread_ending.store(false);
       __foster_globals.scheduling_timer_thread = new std::thread(
             fosterSchedulingTimerThread,
             std::ref(__foster_globals.scheduling_timer_thread_ending));
@@ -234,7 +234,7 @@ namespace runtime {
 
   void finish_scheduling_timer_thread() {
     if (kUseSchedulingTimerThread) {
-      __foster_globals.scheduling_timer_thread_ending.set(true);
+      __foster_globals.scheduling_timer_thread_ending.store(true);
              __foster_globals.scheduling_timer_thread->join();
       delete __foster_globals.scheduling_timer_thread;
       drainAutoreleasePool(__foster_globals.scheduling_timer_thread_autorelease_pool);
@@ -591,7 +591,7 @@ void* foster_humanize_s__autowrap(double val) {
 
 
 int64_t foster_gettime_microsecs() {
-  return clocktimer::current_us();
+  return clocktimer<true>::current_us();
 }
 double  foster_gettime_elapsed_secs(int64_t early, int64_t later) {
   return double(later - early) / 1e6;

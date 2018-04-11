@@ -46,7 +46,8 @@ def compile_source(src):
   basedir    = os.path.join(srcdir, 'third_party', 'chromium_base')
   corodir    = os.path.join(srcdir, 'third_party', 'libcoro')
   jepages    = os.path.join(srcdir, 'third_party', 'jemalloc_pages', 'include')
-  include_dirs = [bindir, runtime, runtime_gc, basedir, corodir, jepages]
+  hdrhist    = os.path.join(srcdir, 'third_party', 'HdrHistogram_c', 'src')
+  include_dirs = [bindir, runtime, runtime_gc, basedir, corodir, jepages, hdrhist]
   includes = ' '.join(['-I ' + path for path in include_dirs])
   defines = ' -D'.join(['', coro_method])
   flags = debug_flag + defines + " -std=c++14 -O2 -march=native"
@@ -66,6 +67,7 @@ def finalpass(outbc, outbc0):
 def link_all(all_bcs):
   outbc0 = os.path.join(bindir, "_bitcodelibs_", "foster_runtime.bc.0")
   outbc  = os.path.join(bindir, "_bitcodelibs_", "foster_runtime.bc")
+  all_bcs.append(os.path.join(bindir, "_bitcodelibs_", "foster_hdrhist.bc"))
   # Well, actually, link all except what fosterlower.cpp links beforehand, to
   # avoid multiply-defined symbols when everything comes together at the end.
   bcs = [bc for bc in all_bcs if not (bc.endswith("libfoster_coro.bc") or bc.endswith(".h"))]

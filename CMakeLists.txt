@@ -23,7 +23,8 @@ execute_process(COMMAND ${LLVM_CONFIG} --bindir OUTPUT_VARIABLE LLVM_BINDIR)
 # and CMake will report an error here.
 string(REPLACE "\n" "" LLVM_BINDIR ${LLVM_BINDIR})
 
-set(CLANG ${LLVM_BINDIR}/clang++)
+set(CLANG   ${LLVM_BINDIR}/clang++)
+set(CLANG_C ${LLVM_BINDIR}/clang)
 
 string(REPLACE "++" "" CLANG_C ${CLANG})
 
@@ -320,6 +321,34 @@ add_custom_command(
 )
 
 # {{{ Use clang to build libfoster.bc
+set (hdrhist_ROOT ${PROJECT_SOURCE_DIR}/third_party/HdrHistogram_c/)
+
+#  ${hdrhist_ROOT}/src/hdr_encoding.c
+#  ${hdrhist_ROOT}/src/hdr_histogram_log.c
+#  ${hdrhist_ROOT}/src/hdr_interval_recorder.c
+#  ${hdrhist_ROOT}/src/hdr_thread.c
+#  ${hdrhist_ROOT}/src/hdr_time.c
+#  ${hdrhist_ROOT}/src/hdr_writer_reader_phaser.c
+set (hdrhist_SOURCES
+  ${hdrhist_ROOT}/src/hdr_histogram.c
+)
+
+include_directories(${hdrhist_ROOT}/src)
+
+add_custom_command(
+  OUTPUT
+   	 ${PROJECT_BINARY_DIR}/_bitcodelibs_/foster_hdrhist.bc
+  COMMAND
+     ${PYTHON} ${PROJECT_SOURCE_DIR}/scripts/build_hdrhist.py
+        --clang="${CLANG_C}"
+        --srcdir=${PROJECT_SOURCE_DIR}
+        --bindir=${PROJECT_BINARY_DIR}
+        --llvmdir="${LLVM_BINDIR}"
+         ${hdrhist_SOURCES}
+  DEPENDS
+        ${hdrhist_SOURCES}
+)
+
 set(LIBFOSTER_CPP_SOURCES
         ${PROJECT_SOURCE_DIR}/runtime/libfoster.cpp
         ${PROJECT_SOURCE_DIR}/runtime/libfoster_coro.cpp
@@ -345,6 +374,7 @@ add_custom_command(
     ${PROJECT_SOURCE_DIR}/scripts/build_libfoster.py
     ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc_utils.h
     ${PROJECT_SOURCE_DIR}/runtime/gc/foster_gc_reconfig-inl.h
+    ${PROJECT_BINARY_DIR}/_bitcodelibs_/foster_hdrhist.bc
 )
 
 # We could attach the command to build libfoster.bc directly
@@ -363,7 +393,6 @@ include_directories(
   ${PROJECT_SOURCE_DIR}/compiler/include/foster
   ${PROJECT_SOURCE_DIR}/compiler/llvm
   ${PROJECT_SOURCE_DIR}/third_party
-  ${PROJECT_SOURCE_DIR}/third_party/chromium_base
   ${PROJECT_SOURCE_DIR}/third_party/cityhash/src
   ${PROJECT_SOURCE_DIR}/third_party/fftw_cycle
   ${PROJECT_SOURCE_DIR}/third_party/cbor-cpp/src
@@ -389,9 +418,9 @@ endif(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
 # }}}
 
 #####################################################################
-include(${PROJECT_SOURCE_DIR}/third_party/chromium_base/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/libcoro/CMakeLists.txt)
 include(${PROJECT_SOURCE_DIR}/third_party/fftw_cycle/CMakeLists.txt)
+include(${PROJECT_SOURCE_DIR}/third_party/HdrHistogram_c/CMakeLists.txt)
 
 # {{{ Define inputs and dependencies between the various foster* libraries and executables.
 add_library(fosterc_base STATIC
@@ -495,7 +524,7 @@ add_dependencies(fosteroptc
 
 ############
 
-add_dependencies(foster_runtime_bc chromium_base coro)
+add_dependencies(foster_runtime_bc coro)
 
 set_target_properties(
   fosterc_passes fosterc_parse

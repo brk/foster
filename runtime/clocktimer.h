@@ -10,6 +10,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+template <bool force>
 class clocktimer {
 public:
   clocktimer() {
@@ -18,8 +19,12 @@ public:
     // (t * 1e9) / (t/s) ==> t * (1e9 / (t/s))
     freq_ns = 1e9 / double(f.QuadPart);
   }
-  void start() { QueryPerformanceCounter(&st); }
+  void start() {
+    if (!(force || ENABLE_CLOCKTIMER)) return;
+    QueryPerformanceCounter(&st);
+  }
   double elapsed_ns_d() {
+    if (!(force || ENABLE_CLOCKTIMER)) return 0.0;
     QueryPerformanceCounter(&nd);
     return double(nd.QuadPart - st.QuadPart) * freq_ns;
   }
@@ -43,13 +48,17 @@ private:
 
 #else
 
+template <bool force>
 class clocktimer {
 public:
   clocktimer() {}
-  void start() { if (ENABLE_CLOCKTIMER) clock_gettime(CLOCK_MONOTONIC, &st); }
+  void start() {
+    if (!(force || ENABLE_CLOCKTIMER)) return;
+    clock_gettime(CLOCK_MONOTONIC, &st);
+  }
   double elapsed_ns_d() { return double(elapsed_ns()); }
   uint64_t elapsed_ns() {
-    if (!ENABLE_CLOCKTIMER) return 0;
+    if (!(force || ENABLE_CLOCKTIMER)) return 0;
 
     clock_gettime(CLOCK_MONOTONIC, &nd);
     return (1000000000 * (nd.tv_sec - st.tv_sec)) + (nd.tv_nsec - st.tv_nsec);

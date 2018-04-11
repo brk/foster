@@ -9,8 +9,8 @@
 #include "foster_globals.h"
 #include "bitmap.h"
 
-#include "base/metrics/histogram.h"
-#include "base/metrics/statistics_recorder.h"
+#include "build/build_config.h" // from chromium_base
+#include "hdr_histogram.h"
 
 #include "execinfo.h" // for backtrace
 
@@ -39,10 +39,10 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 #define ENABLE_GCLOG_ENDGC 0
 #define FOSTER_GC_TRACK_BITMAPS       0
 #define FOSTER_GC_ALLOC_HISTOGRAMS    0
-#define FOSTER_GC_TIME_HISTOGRAMS     0
+#define FOSTER_GC_TIME_HISTOGRAMS     0 // Adds ~300 cycles per collection
 #define FOSTER_GC_EFFIC_HISTOGRAMS    0
 #define ENABLE_GC_TIMING              0
-#define ENABLE_GC_TIMING_TICKS        0
+#define ENABLE_GC_TIMING_TICKS        0 // Adds ~430 cycles per collection
 #define GC_ASSERTIONS 0
 #define MARK_FRAME21S                 0
 #define MARK_FRAME21S_OOL             0
@@ -245,6 +245,7 @@ struct frame15info {
 };
 
 // {{{
+#define arraysize(x) (sizeof(x)/sizeof((x)[0]))
 #define MAX_ARR_OBJ_PER_FRAME15 4
 struct immix_malloc_frame15info {
   // Since allocs are min 8K, this will be guaranteed to have size at most 4.
@@ -309,7 +310,7 @@ struct GCGlobals {
 
   double gc_time_us;
 
-  clocktimer init_start;
+  clocktimer<true> init_start;
 
   int num_gcs_triggered;
   int num_gcs_triggered_involuntarily;
@@ -329,6 +330,15 @@ struct GCGlobals {
   condemned_status* lazy_mapped_frame15_condemned;
 
   uint8_t*          lazy_mapped_granule_marks;
+
+  struct hdr_histogram* hist_gc_stackscan_frames;
+  struct hdr_histogram* hist_gc_postgc_ticks;
+  struct hdr_histogram* hist_gc_pause_micros;
+  struct hdr_histogram* hist_gc_pause_ticks;
+  struct hdr_histogram* hist_gc_rootscan_ticks;
+  struct hdr_histogram* hist_gc_alloc_array;
+  struct hdr_histogram* hist_gc_alloc_large;
+  uint64_t enum_gc_alloc_small[129];
 };
 
 GCGlobals<immix_heap> gcglobals;
@@ -655,7 +665,7 @@ namespace helpers {
   void print_heap_starvation_info(FILE* f) {
     //fprintf(f, "working set exceeded heap size of %lld bytes! aborting...\n", curr->get_size()); fflush(f);
     fprintf(f, "    try running with a larger heap size using a flag like\n");
-    fprintf(f, "      --foster-runtime '{\"gc_semispace_size_kb\":64000}'\n");
+    fprintf(f, "      --foster-heap-MB 64\n");
   }
 
   void oops_we_died_from_heap_starvation() {
@@ -691,9 +701,9 @@ namespace helpers {
 
   void allocate_cell_prechecked_histogram(int N) {
     if (N > 128) {
-      LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-alloc-large", N, 129, 33000000, 50);
+      hdr_record_value(gcglobals.hist_gc_alloc_large, int64_t(N));
     } else {
-      LOCAL_HISTOGRAM_ENUMERATION("gc-alloc-small", N, 128);
+      gcglobals.enum_gc_alloc_small[N]++;
     }
   }
 
@@ -1712,7 +1722,7 @@ public:
     //fprintf(gclog, "allocating array, %d elts * %d b = %d bytes\n", n, slot_size, req_bytes);
 
     if (false && FOSTER_GC_ALLOC_HISTOGRAMS) {
-      LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-alloc-array", (int) req_bytes, 1, 33000000, 128);
+      hdr_record_value(gcglobals.hist_gc_alloc_array, req_bytes);
     }
 
     if (req_bytes > (1 << 13)) {
@@ -1802,7 +1812,7 @@ public:
     auto num_marked_at_start = gcglobals.num_objects_marked_total;
 
 #if ENABLE_GC_TIMING
-    clocktimer ct; ct.start();
+    clocktimer<false> ct; ct.start();
 #endif
 
     //common.flip_current_mark_bits_value();
@@ -2092,7 +2102,7 @@ public:
     fprintf(gclog, "condemning %zu frames...\n", tracking.logical_frame15s()); fflush(gclog);
     int n = 0;
     int m = 0;
-    clocktimer ct; ct.start();
+    clocktimer<false> ct; ct.start();
 
     tracking.iter_frame15( [&](frame15* f15) {
       set_condemned_status_for_frame15_id(frame15_id_of(f15), condemned_status::yes_condemned);
@@ -2267,7 +2277,7 @@ public:
     //fprintf(gclog, "allocating array, %d elts * %d b = %d bytes\n", n, slot_size, req_bytes);
 
     if (false && FOSTER_GC_ALLOC_HISTOGRAMS) {
-      LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-alloc-array", (int) req_bytes, 1, 33000000, 128);
+      hdr_record_value(gcglobals.hist_gc_alloc_array, req_bytes);
     }
 
     if (req_bytes <= IMMIX_LINE_SIZE) {
@@ -2326,8 +2336,8 @@ public:
     //printf("GC\n");
     //fprintf(gclog, "GC\n");
 
-    clocktimer gcstart; gcstart.start();
-    clocktimer phase;
+    clocktimer<false> gcstart; gcstart.start();
+    clocktimer<false> phase;
 #if ENABLE_GC_TIMING_TICKS
     int64_t t0 = __foster_getticks_start();
 #endif
@@ -2352,7 +2362,7 @@ public:
     visitGCRoots(__builtin_frame_address(0), this);
 
 #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
-    LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-rootscan-ticks", __foster_getticks_elapsed(phaseStartTicks, __foster_getticks_end()),  0, 60000000, 256);
+    hdr_record_value(gcglobals.hist_gc_rootscan_ticks, __foster_getticks_elapsed(phaseStartTicks, __foster_getticks_end()));
 #endif
 
     foster_bare_coro** coro_slot = __foster_get_current_coro_slot();
@@ -2385,7 +2395,7 @@ public:
     recycled.clear();
     laa.sweep_arrays();
 
-    clocktimer insp_ct; insp_ct.start();
+    clocktimer<false> insp_ct; insp_ct.start();
     tracking.iter_frame15( [this](frame15* f15) {
       return this->inspect_frame15_postgc(frame15_id_of(f15), f15);
     });
@@ -2399,7 +2409,7 @@ public:
 
     auto deltaPostMarkingCleanup_us = phase.elapsed_us();
 #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
-    LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-postgc-ticks", __foster_getticks_elapsed(phaseStartTicks, __foster_getticks_end()),  0, 60000000, 256);
+    hdr_record_value(gcglobals.hist_gc_postgc_ticks, __foster_getticks_elapsed(phaseStartTicks, __foster_getticks_end()));
 #endif
     //if (TRACK_BYTES_KEPT_ENTRIES) { hpstats.bytes_kept_per_gc.record_sample(next->used_size()); }
 
@@ -2453,7 +2463,7 @@ public:
     if (ENABLE_GC_TIMING) {
       double delta_us = gcstart.elapsed_us();
       if (FOSTER_GC_TIME_HISTOGRAMS) {
-        LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-pause-micros", int64_t(delta_us),  0, 60000000, 256);
+        hdr_record_value(gcglobals.hist_gc_pause_micros, int64_t(delta_us));
       }
       gcglobals.gc_time_us += delta_us;
     }
@@ -2461,7 +2471,7 @@ public:
 #if ENABLE_GC_TIMING_TICKS
     int64_t t1 = __foster_getticks_end();
     if (FOSTER_GC_TIME_HISTOGRAMS) {
-      LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-pause-ticks", __foster_getticks_elapsed(t0, t1),  0, 60000000, 256);
+      hdr_record_value(gcglobals.hist_gc_pause_ticks, __foster_getticks_elapsed(t0, t1));
     }
     gcglobals.subheap_ticks += __foster_getticks_elapsed(t0, t1);
 #endif
@@ -2654,7 +2664,7 @@ void visitGCRoots(void* start_frame, immix_heap* visitor) {
     gcglobals.num_big_stackwalks += 1;
   }
   if (FOSTER_GC_TIME_HISTOGRAMS) {
-    LOCAL_HISTOGRAM_CUSTOM_COUNTS("gc-stackscan-frames", nFrames,  0, 60000000, 256);
+    hdr_record_value(gcglobals.hist_gc_stackscan_frames, int64_t(nFrames));
   }
 
   const bool SANITY_CHECK_CUSTOM_BACKTRACE = false;
@@ -2869,8 +2879,6 @@ void initialize(void* stack_highest_addr) {
 
   pages_boot();
 
-  base::StatisticsRecorder::Initialize();
-
   gcglobals.allocator = new immix_space(new byte_limit(gSEMISPACE_SIZE()));
   gcglobals.default_allocator = gcglobals.allocator;
 
@@ -2896,8 +2904,16 @@ void initialize(void* stack_highest_addr) {
   gcglobals.write_barrier_phase0_hits = 0;
   gcglobals.write_barrier_phase1_hits = 0;
   gcglobals.num_objects_marked_total = 0;
-}
 
+  hdr_init(1, 6000000, 2, &gcglobals.hist_gc_stackscan_frames);
+  hdr_init(1, 600000000, 2, &gcglobals.hist_gc_postgc_ticks);
+  hdr_init(1, 600000000, 3, &gcglobals.hist_gc_pause_micros); // 600M us => 600 seconds => 10 minutes
+  hdr_init(1, 600000000, 2, &gcglobals.hist_gc_pause_ticks);
+  hdr_init(1, 600000000, 2, &gcglobals.hist_gc_rootscan_ticks); // 600M ticks ~> 10ms (@ 6 GHz...)
+  hdr_init(1, 1000000000000, 3, &gcglobals.hist_gc_alloc_array); // 1 TB
+  hdr_init(129, 1000000, 3, &gcglobals.hist_gc_alloc_large); // 1 MB
+  memset(gcglobals.enum_gc_alloc_small, 0, sizeof(gcglobals.enum_gc_alloc_small));
+}
 
 
 void gclog_time(const char* msg, double secs, FILE* json) {
@@ -2928,6 +2944,107 @@ void dump_alloc_site_stats(FILE* stats) {
   }
 }
 
+
+static const char HDR_FOSTER_FOOTER[] =
+    "#[Mean    = %12.3f, StdDeviation   = %12.3f]\n"
+    "#[Max     = %12.3f, Total count    = %12" PRIu64 "]\n";
+
+int64_t foster_hdr_percentiles_bucket_max(struct hdr_histogram* h, int32_t tphd) {
+  struct hdr_iter iter;
+  hdr_iter_percentile_init(&iter, h, tphd);
+  int64_t prev_total = 0;
+  int64_t bucket_max = -1;
+
+  while (hdr_iter_next(&iter))
+  {
+      double  value               = iter.highest_equivalent_value;
+      int64_t total_count         = iter.cumulative_count;
+      int64_t bucket_count        = total_count - prev_total;
+
+      if (bucket_count == 0) continue;
+      bucket_max = (std::max)(bucket_max, bucket_count);
+      prev_total = total_count;
+  }
+  return bucket_max;
+}
+
+int foster_hdr_percentiles_print(
+        struct hdr_histogram* h, FILE* stream, int32_t ticks_per_half_distance)
+{
+    double value_scale = 1.0;
+    const char* line_format = "%12" PRId64 "..+%-8" PRId64 " %12f %12" PRId64 " %12" PRId64 " %12.2f";
+    int rc = 0;
+    int64_t value_hi = 0;
+    int64_t prev_total = 0;
+    int64_t prev_value_lo = 0;
+    int64_t bucket_max = foster_hdr_percentiles_bucket_max(h, ticks_per_half_distance);
+    int64_t bucket_count = 0;
+
+    struct hdr_iter iter;
+    hdr_iter_percentile_init(&iter, h, ticks_per_half_distance);
+
+    struct hdr_iter_percentiles * percentiles = &iter.specifics.percentiles;
+
+    if (fprintf(
+            stream, "%22s %12s %12s %12s %12s     (chart, linear scale)\n\n",
+            "Range", "Percentile", "BucketCount", "TotalCount", "1/(1-Percentile)") < 0)
+    {
+        rc = EIO;
+        goto cleanup;
+    }
+
+    while (hdr_iter_next(&iter))
+    {
+                value_hi            = iter.highest_equivalent_value;
+        int64_t value_lo            = iter.lowest_equivalent_value;
+        double  percentile          = percentiles->percentile / 100.0;
+        int64_t total_count         = iter.cumulative_count;
+        double  inverted_percentile = (1.0 / (1.0 - percentile));
+        bucket_count               += total_count - prev_total;
+
+        int chart_bar_size = int(60.0 * double(bucket_count)/double(bucket_max));
+        if (chart_bar_size == 0) continue;
+
+        if (fprintf(
+                stream, line_format, prev_value_lo, value_hi - prev_value_lo, percentile,
+                  total_count - prev_total, total_count, inverted_percentile) < 0)
+        {
+            rc = EIO;
+            goto cleanup;
+        }
+
+        if (fprintf(stream, "    ") < 0) { rc = EIO; goto cleanup; }
+        for (int i = 0; i < chart_bar_size; ++i) {
+          if (fprintf(stream, "-") < 0) { rc = EIO; goto cleanup; }
+        }
+        if (chart_bar_size == 0) {
+          if (fprintf(stream, ".") < 0) { rc = EIO; goto cleanup; }
+        }
+        if (fprintf(stream, "\n") < 0) { rc = EIO; goto cleanup; }
+
+        prev_total = total_count;
+        prev_value_lo = value_hi;
+        bucket_count = 0;
+    }
+
+    {
+      double mean   = hdr_mean(h)   / value_scale;
+      double stddev = hdr_stddev(h) / value_scale;
+      double max    = hdr_max(h)    / value_scale;
+      
+      if (fprintf(stream, HDR_FOSTER_FOOTER,  mean, stddev, max, h->total_count) < 0)
+      {
+          rc = EIO;
+          goto cleanup;
+      }
+      fprintf(stream, "             (keep in mind that standard deviations may not mean\n"
+                      "              what you think for non-normal distributions)\n");
+    }
+
+    cleanup:
+    return rc;
+}
+
 FILE* print_timing_stats() {
   auto total_elapsed = gcglobals.init_start.elapsed_s();
   auto gc_elapsed = gcglobals.gc_time_us / 1e6;
@@ -2942,15 +3059,53 @@ FILE* print_timing_stats() {
                 ? NULL
                 : fopen(__foster_globals.dump_json_stats_path.c_str(), "w");
   if (json) fprintf(json, "{\n");
-  if (!json &&
-      (FOSTER_GC_ALLOC_HISTOGRAMS || FOSTER_GC_TIME_HISTOGRAMS || FOSTER_GC_EFFIC_HISTOGRAMS)) {
-    fprintf(gclog, "stats recorder active? %d\n", base::StatisticsRecorder::IsActive());
-    auto gah = base::StatisticsRecorder::ToJSON("");
-    fprintf(gclog, "GC_Alloc_Histograms : %s\n", gah.c_str());
-    std::string output;
-    base::StatisticsRecorder::WriteGraph("", &output);
-    fprintf(gclog, "%s\n", output.c_str());
+
+  if (!json && FOSTER_GC_ALLOC_HISTOGRAMS) {
+    fprintf(gclog, "hist_gc_alloc_array:\n");
+    foster_hdr_percentiles_print(gcglobals.hist_gc_alloc_array, gclog, 4);
+
+    fprintf(gclog, "hist_gc_alloc_large:\n");
+    foster_hdr_percentiles_print(gcglobals.hist_gc_alloc_large, gclog, 4);
+
+    for (int i = 0; i <= 128; ++i) {
+      int64_t nallocs = gcglobals.enum_gc_alloc_small[i];
+      if (nallocs > 0) {
+        fprintf(gclog, "# allocs @ size %d bytes: %" PRId64 "\n", i, nallocs);
+      }
+    }
   }
+
+  if (!json && FOSTER_GC_TIME_HISTOGRAMS) {
+    if (ENABLE_GC_TIMING_TICKS) {
+      fprintf(gclog, "hist_gc_rootscan_ticks:\n");
+      foster_hdr_percentiles_print(gcglobals.hist_gc_rootscan_ticks, gclog, 4);
+    }
+
+    if (ENABLE_GC_TIMING_TICKS) {
+      fprintf(gclog, "hist_gc_postgc_ticks:\n");
+      foster_hdr_percentiles_print(gcglobals.hist_gc_postgc_ticks, gclog, 4);
+    }
+
+    if (ENABLE_GC_TIMING_TICKS) {
+      fprintf(gclog, "gc_pause_ticks:\n");
+      foster_hdr_percentiles_print(gcglobals.hist_gc_pause_ticks, gclog, 4);
+    }
+
+    if (ENABLE_GC_TIMING) {
+      fprintf(gclog, "hist_gc_pause_micros:\n");
+      foster_hdr_percentiles_print(gcglobals.hist_gc_pause_micros, gclog, 4);
+    }
+
+    fprintf(gclog, "gc_stackscan_frames:\n");
+    foster_hdr_percentiles_print(gcglobals.hist_gc_stackscan_frames, gclog, 4);
+  }
+
+  if (!json && FOSTER_GC_EFFIC_HISTOGRAMS) {
+    fprintf(gclog, "gc_pause_ticks:\n");
+    foster_hdr_percentiles_print(gcglobals.hist_gc_pause_ticks, gclog, 4);
+  }
+
+  fflush(gclog);
 
   dump_alloc_site_stats(gclog);
 
