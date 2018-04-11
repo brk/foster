@@ -12,24 +12,10 @@
 typedef void* id;
 #endif
 
-#include "base/atomicops.h"
-
 #include <vector>
 #include <string>
 #include <thread>
-
-struct AtomicBool {
-  AtomicBool()         : flag(false) {}
-  AtomicBool(bool val) : flag(val) {}
-  ~AtomicBool() {}
-
-  void set(bool val) { base::subtle::Release_Store(&flag, val ? 1 : 0); }
-
-  bool get() { return (base::subtle::Acquire_Load(&flag) > 0); }
-
-private:
-  volatile base::subtle::Atomic32 flag;
-};
+#include <atomic>
 
 ////////////////////////////////////////////////////////////////
 
@@ -40,7 +26,7 @@ struct FosterGlobals {
   ssize_t                  semispace_size;
 
   // One timer thread for the whole runtime, not per-vCPU.
-  AtomicBool             scheduling_timer_thread_ending;
+  std::atomic<bool>      scheduling_timer_thread_ending;
   std::thread*           scheduling_timer_thread;
   id                     scheduling_timer_thread_autorelease_pool;
 };

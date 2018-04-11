@@ -1,0 +1,57 @@
+
+type case F3
+  of $F3 Float32 Float32 Float32
+  ;
+
+f3SqrLen = { f3 => case f3 of $F3 x y z ->
+    (x *f32 x) +f32 (y *f32 y) +f32 (z *f32 z)
+  end
+};
+
+f3Plus = { f3a => f3b =>
+  case (f3a, f3b) of ($F3 xa ya za, $F3 xb yb zb) ->
+    F3 (xa +f32 xb) (ya +f32 yb) (za +f32 zb)
+  end
+};
+
+noinline_mustnotalloc_f3Dot_2case = { f3a => f3b =>
+  case f3a of $F3 xa ya za ->
+  case f3b of $F3 xb yb zb ->
+      (xa *f32 xb) +f32 (ya *f32 yb) +f32 (za *f32 zb)
+  end
+  end
+};
+
+noinline_mustnotalloc_f3Dot_naive = { f3a => f3b => case (f3a, f3b) of ($F3 xa ya za, $F3 xb yb zb) ->
+    (xa *f32 xb) +f32 (ya *f32 yb) +f32 (za *f32 zb)
+  end
+};
+
+main = {
+  expect_float_f32 56;
+  print_float_f32 (f3SqrLen (F3 2 4 6));
+
+  expect_float_f32 56;
+  print_float_f32 (f3SqrLen (f3Plus (F3 1 2 3) (F3 1 2 3)));
+
+  expect_float_f32 100000002004087734272.000000;
+  print_float_f32 1.e20;
+
+  expect_float_f64 100000000000000000000.000000;
+  print_float_f64 1.e20;
+
+  expect_float_f32 1000.0;
+  print_float_f32 1e3;
+
+  expect_i32 1000;
+  print_i32 1e3;
+
+  expect_i32 1000;
+  print_i32 1e3;
+
+  expect_float_f32 0.001;
+  print_float_f32 1e-3;
+
+  expect_float_f32 (noinline_mustnotalloc_f3Dot_naive (F3 1 2 3) (F3 1 2 3));
+  print_float_f32 (noinline_mustnotalloc_f3Dot_2case (F3 1 2 3) (F3 1 2 3));
+};

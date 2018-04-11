@@ -1,33 +1,37 @@
 #include "foster_globals.h"
 
-#include "base/values.h"
-
-#include "base/json/json_reader.h"
-
+#include <cstring>
 #include <iostream>
 #include <sstream>
+#include <cstdlib>
 
 namespace foster {
 namespace runtime {
 
-  bool streq(const char* target, const char* other) {
+  bool str_prefix_eq(const char* target, const char* other) {
     return strncmp(target, other, strlen(target)) == 0;
   }
 
+  bool streq(const char* target, const char* other) {
+    return strncmp(target, other, (std::max)(strlen(target), strlen(other)) + 1) == 0;
+  }
+
   bool is_foster_runtime_flag(const char* arg) {
-    // normalize to a single leading dash
-    const char* arg_cont = (arg && arg[0] == '-' && arg[1] == '-') ? &arg[1] : arg;
-    return streq("-foster-runtime", arg_cont);
+    return str_prefix_eq("--foster-", arg);
+  }
+
+  double parse_double(const char* s, double d) {
+    char* end = nullptr;
+    double rv = strtod(s, &end);
+    if (end == s) return d; else return rv;
   }
 
   // Trawl through argv, looking for any JSON flags destined for the runtime itself.
   // The remainder of the flags will be installed in the global .args.
-  // Note that we must be given command-line args like -foster-runtime '{ ... }',
-  //                                               not -foster-runtime='{ ... }'!
+  // Note that we must be given command-line args like -foster-runtime-X ARG,
+  //                                               not -foster-runtime-X=ARG!
   void parse_runtime_options(int argc, char** argv) {
-    base::JSONReader reader;
-    base::DictionaryValue dv;
-    bool merged = false;
+    __foster_globals.semispace_size = 1024 * 1024;
 
     for (int i = 0; i < argc; ++i) {
       const char* arg = argv[i];
@@ -35,57 +39,17 @@ namespace runtime {
         __foster_globals.args.push_back(arg);
       } else {
         if (i == argc - 1) continue; // no more to look at!
-        if (std::unique_ptr<base::Value> v = reader.ReadToValue(argv[i + 1])) {
-          base::DictionaryValue* dvp = NULL;
-          v->GetAsDictionary(&dvp);
-          if (dvp) {
-            dv.MergeDictionary(dvp); merged = true;
-          } else {
-            fprintf(stderr, "Parsed option JSON was not dict: %s\n", argv[i + 1]);
-          }
-        } else {
-          fprintf(stderr, "Parsing option JSON failed: %s\n", reader.GetErrorMessage().c_str());
+        if (streq("--foster-heap-KB", arg)) {
+          __foster_globals.semispace_size = int(parse_double(argv[i + 1], 1024.0) * 1024.0);
+        } else if (streq("--foster-heap-MB", arg)) {
+          __foster_globals.semispace_size = int(parse_double(argv[i + 1], 1.0) * 1024.0 * 1024.0);
+        } else if (streq("--foster-heap-GB", arg)) {
+          __foster_globals.semispace_size = int(parse_double(argv[i + 1], 0.001) * 1024.0 * 1024.0 * 1024.0);
+        } else if (streq("--foster-json-stats", arg)) {
+          __foster_globals.dump_json_stats_path = argv[i + 1];
         }
       }
     }
-
-    extract_global_config_options(dv);
-
-    if (false) {
-      std::stringstream ss;
-      ss << dv;
-      fprintf(stderr, "%s\n", ss.str().c_str());
-      std::string s = dump_global_config_options();
-      fprintf(stderr, "%s\n", s.c_str());
-    }
-  }
-
-  // Heads up: keys with '.' in them will not work unless the non-expanding get/set
-  // variants for DictionaryValue are used, // because JSON parsing doesn't perform
-  // path expansion.
-  const char kGCSemispaceSizeKb[] = "gc_semispace_size_kb";
-  const char kDumpJSONStatsPath[] = "dump_json_stats_path";
-
-  void extract_global_config_options(const base::DictionaryValue& dv) {
-    bool ok;
-    int ss_kb = 1024;
-    ok = dv.GetInteger(kGCSemispaceSizeKb, &ss_kb);
-    __foster_globals.semispace_size = ssize_t(ss_kb) * 1024;
-
-    std::string dump_json_stats_path;
-    ok =  dv.GetString(kDumpJSONStatsPath, &dump_json_stats_path);
-    __foster_globals.dump_json_stats_path = dump_json_stats_path;
-  }
-
-  std::string dump_global_config_options() {
-    base::DictionaryValue dv;
-
-    dv.SetInteger(kGCSemispaceSizeKb, __foster_globals.semispace_size / 1024);
-    dv.SetString( kDumpJSONStatsPath, __foster_globals.dump_json_stats_path);
-
-    std::stringstream ss;
-    ss << dv;
-    return ss.str();
   }
 
 } // end namespace foster::runtime
