@@ -26,8 +26,6 @@ string(REPLACE "\n" "" LLVM_BINDIR ${LLVM_BINDIR})
 set(CLANG   ${LLVM_BINDIR}/clang++)
 set(CLANG_C ${LLVM_BINDIR}/clang)
 
-string(REPLACE "++" "" CLANG_C ${CLANG})
-
 # We need to build our runtime with Clang in order to get LLVM bitcode,
 # which means that we need to build everything that the runtime links
 # against with Clang as well, since other compilers might make different
