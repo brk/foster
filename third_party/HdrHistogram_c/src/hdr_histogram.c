@@ -15,7 +15,7 @@
 #include <inttypes.h>
 
 #include "hdr_histogram.h"
-#include "hdr_tests.h"
+//#include "hdr_tests.h"
 
 //  ######   #######  ##     ## ##    ## ########  ######
 // ##    ## ##     ## ##     ## ###   ##    ##    ##    ##
