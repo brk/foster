@@ -7,17 +7,14 @@ set (BASE_SOURCES
         ${CHROMIUM_BASE}/base/callback_internal.cc
         ${CHROMIUM_BASE}/base/command_line.cc
         ${CHROMIUM_BASE}/base/base_switches.cc
-        #${CHROMIUM_BASE}/base/environment.cc
         ${CHROMIUM_BASE}/base/lazy_instance.cc
         ${CHROMIUM_BASE}/base/files/file_enumerator.cc
         ${CHROMIUM_BASE}/base/files/file_path.cc
         ${CHROMIUM_BASE}/base/files/file_util.cc
         ${CHROMIUM_BASE}/base/files/file.cc
-        #${CHROMIUM_BASE}/base/files/file_tracing.cc
         ${CHROMIUM_BASE}/base/files/scoped_file.cc
         ${CHROMIUM_BASE}/base/files/file_path_constants.cc
         ${CHROMIUM_BASE}/base/files/memory_mapped_file.cc
-        #${CHROMIUM_BASE}/base/location.cc
         ${CHROMIUM_BASE}/base/logging.cc
         ${CHROMIUM_BASE}/base/debug/alias.cc
         #${CHROMIUM_BASE}/base/debug/debugger.cc

@@ -174,7 +174,7 @@ void File::Close() {
   if (!IsValid())
     return;
 
-  SCOPED_FILE_TRACE("Close");
+  //SCOPED_FILE_TRACE("Close");
   ThreadRestrictions::AssertIOAllowed();
   file_.reset();
 }
@@ -183,7 +183,7 @@ int64_t File::Seek(Whence whence, int64_t offset) {
   ThreadRestrictions::AssertIOAllowed();
   DCHECK(IsValid());
 
-  SCOPED_FILE_TRACE_WITH_SIZE("Seek", offset);
+  //SCOPED_FILE_TRACE_WITH_SIZE("Seek", offset);
 
 #if defined(OS_ANDROID)
   static_assert(sizeof(int64_t) == sizeof(off64_t), "off64_t must be 64 bits");
@@ -203,7 +203,7 @@ int File::Read(int64_t offset, char* data, int size) {
   if (size < 0)
     return -1;
 
-  SCOPED_FILE_TRACE_WITH_SIZE("Read", size);
+  //SCOPED_FILE_TRACE_WITH_SIZE("Read", size);
 
   int bytes_read = 0;
   int rv;
@@ -225,7 +225,7 @@ int File::ReadAtCurrentPos(char* data, int size) {
   if (size < 0)
     return -1;
 
-  SCOPED_FILE_TRACE_WITH_SIZE("ReadAtCurrentPos", size);
+  //SCOPED_FILE_TRACE_WITH_SIZE("ReadAtCurrentPos", size);
 
   int bytes_read = 0;
   int rv;
@@ -243,7 +243,7 @@ int File::ReadAtCurrentPos(char* data, int size) {
 int File::ReadNoBestEffort(int64_t offset, char* data, int size) {
   ThreadRestrictions::AssertIOAllowed();
   DCHECK(IsValid());
-  SCOPED_FILE_TRACE_WITH_SIZE("ReadNoBestEffort", size);
+  //SCOPED_FILE_TRACE_WITH_SIZE("ReadNoBestEffort", size);
   return HANDLE_EINTR(pread(file_.get(), data, size, offset));
 }
 
@@ -253,7 +253,7 @@ int File::ReadAtCurrentPosNoBestEffort(char* data, int size) {
   if (size < 0)
     return -1;
 
-  SCOPED_FILE_TRACE_WITH_SIZE("ReadAtCurrentPosNoBestEffort", size);
+  //SCOPED_FILE_TRACE_WITH_SIZE("ReadAtCurrentPosNoBestEffort", size);
   return HANDLE_EINTR(read(file_.get(), data, size));
 }
 
@@ -267,7 +267,7 @@ int File::Write(int64_t offset, const char* data, int size) {
   if (size < 0)
     return -1;
 
-  SCOPED_FILE_TRACE_WITH_SIZE("Write", size);
+  //SCOPED_FILE_TRACE_WITH_SIZE("Write", size);
 
   int bytes_written = 0;
   int rv;
@@ -289,7 +289,7 @@ int File::WriteAtCurrentPos(const char* data, int size) {
   if (size < 0)
     return -1;
 
-  SCOPED_FILE_TRACE_WITH_SIZE("WriteAtCurrentPos", size);
+  //SCOPED_FILE_TRACE_WITH_SIZE("WriteAtCurrentPos", size);
 
   int bytes_written = 0;
   int rv;
@@ -311,14 +311,14 @@ int File::WriteAtCurrentPosNoBestEffort(const char* data, int size) {
   if (size < 0)
     return -1;
 
-  SCOPED_FILE_TRACE_WITH_SIZE("WriteAtCurrentPosNoBestEffort", size);
+  //SCOPED_FILE_TRACE_WITH_SIZE("WriteAtCurrentPosNoBestEffort", size);
   return HANDLE_EINTR(write(file_.get(), data, size));
 }
 
 int64_t File::GetLength() {
   DCHECK(IsValid());
 
-  SCOPED_FILE_TRACE("GetLength");
+  //SCOPED_FILE_TRACE("GetLength");
 
   stat_wrapper_t file_info;
   if (CallFstat(file_.get(), &file_info))
@@ -331,7 +331,7 @@ bool File::SetLength(int64_t length) {
   ThreadRestrictions::AssertIOAllowed();
   DCHECK(IsValid());
 
-  SCOPED_FILE_TRACE_WITH_SIZE("SetLength", length);
+  //SCOPED_FILE_TRACE_WITH_SIZE("SetLength", length);
   return !CallFtruncate(file_.get(), length);
 }
 
@@ -339,7 +339,7 @@ bool File::SetTimes(Time last_access_time, Time last_modified_time) {
   ThreadRestrictions::AssertIOAllowed();
   DCHECK(IsValid());
 
-  SCOPED_FILE_TRACE("SetTimes");
+  //SCOPED_FILE_TRACE("SetTimes");
 
   timeval times[2];
   times[0] = last_access_time.ToTimeVal();
@@ -351,7 +351,7 @@ bool File::SetTimes(Time last_access_time, Time last_modified_time) {
 bool File::GetInfo(Info* info) {
   DCHECK(IsValid());
 
-  SCOPED_FILE_TRACE("GetInfo");
+  //SCOPED_FILE_TRACE("GetInfo");
 
   stat_wrapper_t file_info;
   if (CallFstat(file_.get(), &file_info))
@@ -362,12 +362,12 @@ bool File::GetInfo(Info* info) {
 }
 
 File::Error File::Lock() {
-  SCOPED_FILE_TRACE("Lock");
+  //SCOPED_FILE_TRACE("Lock");
   return CallFcntlFlock(file_.get(), true);
 }
 
 File::Error File::Unlock() {
-  SCOPED_FILE_TRACE("Unlock");
+  //SCOPED_FILE_TRACE("Unlock");
   return CallFcntlFlock(file_.get(), false);
 }
 
@@ -375,7 +375,7 @@ File File::Duplicate() {
   if (!IsValid())
     return File();
 
-  SCOPED_FILE_TRACE("Duplicate");
+  //SCOPED_FILE_TRACE("Duplicate");
 
   PlatformFile other_fd = dup(GetPlatformFile());
   if (other_fd == -1)

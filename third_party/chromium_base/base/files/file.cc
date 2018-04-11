@@ -4,7 +4,7 @@
 
 #include "base/files/file.h"
 #include "base/files/file_path.h"
-#include "base/files/file_tracing.h"
+//#include "base/files/file_tracing.h"
 #include "base/metrics/histogram.h"
 #include "base/timer/elapsed_timer.h"
 #include "build/build_config.h"
@@ -140,7 +140,7 @@ std::string File::ErrorToString(Error error) {
 
 bool File::Flush() {
   //ElapsedTimer timer;
-  SCOPED_FILE_TRACE("Flush");
+  //SCOPED_FILE_TRACE("Flush");
   bool return_value = DoFlush();
   //UMA_HISTOGRAM_TIMES("PlatformFile.FlushTime", timer.Elapsed());
   return return_value;

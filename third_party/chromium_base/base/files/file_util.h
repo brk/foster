@@ -202,8 +202,8 @@ BASE_EXPORT bool SetPosixFilePermissions(const FilePath& path, int mode);
 
 // Returns true iff |executable| can be found in any directory specified by the
 // environment variable in |env|.
-BASE_EXPORT bool ExecutableExistsInPath(Environment* env,
-                                        const FilePath::StringType& executable);
+//BASE_EXPORT bool ExecutableExistsInPath(Environment* env,
+                                        //const FilePath::StringType& executable);
 
 #endif  // OS_POSIX
 

@@ -22,7 +22,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "base/environment.h"
+//#include "base/environment.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_file.h"
@@ -457,6 +457,7 @@ bool SetPosixFilePermissions(const FilePath& path,
   return true;
 }
 
+/*
 bool ExecutableExistsInPath(Environment* env,
                             const FilePath::StringType& executable) {
   std::string path;
@@ -475,6 +476,7 @@ bool ExecutableExistsInPath(Environment* env,
   }
   return false;
 }
+*/
 
 #if !defined(OS_MACOSX)
 // This is implemented in file_util_mac.mm for Mac.

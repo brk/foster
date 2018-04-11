@@ -9,7 +9,7 @@
 
 #include "base/base_export.h"
 #include "base/callback.h"
-#include "base/location.h"
+//#include "base/location.h"
 #include "base/time/time.h"
 #include "base/tracking_info.h"
 
@@ -36,7 +36,7 @@ struct BASE_EXPORT PendingTask : public TrackingInfo {
   Closure task;
 
   // The site this PendingTask was posted from.
-  tracked_objects::Location posted_from;
+  //tracked_objects::Location posted_from;
 
   // Secondary sort key for run time.
   int sequence_num;

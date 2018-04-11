@@ -12,7 +12,7 @@
 #include "base/logging.h"
 #include "base/threading/platform_thread_internal_posix.h"
 #include "base/threading/thread_id_name_manager.h"
-#include "base/tracked_objects.h"
+//#include "base/tracked_objects.h"
 #include "build/build_config.h"
 
 #if !defined(OS_NACL)
