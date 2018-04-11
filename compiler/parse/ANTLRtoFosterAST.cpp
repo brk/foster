@@ -6,9 +6,6 @@
 #include "base/InputTextBuffer.h"
 #include "base/TimingsRepository.h"
 
-#include "base/strings/utf_string_conversion_utils.h"
-#include "base/third_party/icu/icu_utf.h"
-
 #include "parse/ANTLRtoFosterAST.h"
 #include "parse/FosterAST.h"
 #include "parse/FosterTypeAST.h"
@@ -26,7 +23,6 @@
 #include "llvm/Support/FileSystem.h"
 
 #include "city.h"
-#include "pystring/pystring.h"
 
 #include "cbor.h"
 
