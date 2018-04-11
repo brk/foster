@@ -89,8 +89,6 @@ if __name__ == "__main__":
   if options.debug:
     debug_flag = "-g"
 
-  print sources
-
   bitcodes = [compile_source(source) for source in sources]
 
   status = link_all(bitcodes)
