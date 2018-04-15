@@ -1,0 +1,151 @@
+// Sparse arrays underlie (H)AMTs and QP tries,
+// as well as Google's SparseHash tree structure:
+//
+//   http://stackoverflow.com/questions/5289241/what-is-the-main-implementation-idea-behind-sparse-hash-table
+
+type case SparseArray (elem : Type)
+    of $SparseArray (Array elem) Int32
+    ;
+
+sparseArrayShow :: forall (e:Type) { SparseArray e => { e => Text } => Text };
+sparseArrayShow = { sa => sho =>
+  case sa of $SparseArray arr bitmap ->
+    mkTextConcat "(SparseArray bitmap="
+      (mkTextConcat
+        (mkTextConcat (tmp_Text_2_of_UInt32 bitmap) " arr=")
+        (mkTextConcat (listShow sho (
+            sparseArrayFoldl sa Cons Nil
+                )) ")")
+      )
+  end
+};
+
+sparseArrayEmpty :: forall (e:Type) { SparseArray e };
+sparseArrayEmpty = {
+  SparseArray (prim mach-array-literal) 0
+};
+
+sparseArrayIsEmpty :: forall (e:Type) { SparseArray e => Bool };
+sparseArrayIsEmpty = { sa =>
+  case sa of $SparseArray arr bitmap ->
+    bitmap ==Int32 0
+  end
+};
+
+sparseArrayLookup :: forall (a:Type) { SparseArray a => Int32 => Maybe a };
+sparseArrayLookup = { sa => idx =>
+  case sa of $SparseArray arr bitmap ->
+    if testBit32 bitmap idx
+      then Some arr[sparseArrayOffset bitmap idx]
+      else None
+    end
+  end
+};
+
+// Helper function to get some element from the array,
+// regardless of what its sparse index might be.
+sparseArrayElem :: forall (a:Type) { SparseArray a => Maybe a };
+sparseArrayElem = { sa =>
+  case sa of $SparseArray arr bitmap ->
+    if bitmap ==Int32 0
+      then None
+      else Some arr[0]
+    end
+  end
+};
+
+
+// idx < 32
+sparseArrayInsert :: forall (e:Type) { SparseArray e => e => Int32 => SparseArray e };
+sparseArrayInsert = { sa => elem => idx =>
+  case sa of $SparseArray arr bitmap ->
+    if testBit32 bitmap idx
+      then
+        // Replacing an existing element;
+        // don't need to grow the array or shift offsets.
+        arrx = arrayCopy arr;
+        elem >^ arrx[sparseArrayOffset bitmap idx];
+        SparseArray arrx bitmap
+      else
+        // Inserting a new element;
+        // need to grow the array and shift elements.
+        // Example:
+        //      bitmap = 0b_1010
+        //        arr  = [e1, e3]
+        //         idx = 2
+        //   newoffset = 1
+        //   newbitmap = 0b_1110
+        //        arrx = [e1, elem, e3]
+        newbitmap = bitmap `setBit32` idx;
+        newoffset = sparseArrayOffset newbitmap idx;
+        /*
+        print_i32b newbitmap;
+        print_text_bare "idx: ";
+        print_i32 idx;
+        print_text_bare "newoffset: ";
+        print_i32 newoffset;
+        print_text_bare "arr = [";
+        arrayEnum arr { e => o => print_i64_bare (zext_i32_to_i64 e); print_text_bare ", "; () };
+        print_text "]";
+        */
+        arrx = newDArray0 (arrayLength32 arr +Int32 1)
+                 { newoff =>
+                     v = case newoff `cmpUInt32` newoffset
+                       of $LT -> arr[newoff]
+                       of $EQ -> elem
+                       of $GT -> arr[newoff -Int32 1]
+                    end;
+                    /*
+                    print_text_bare "   ";
+                    print_i32 newoff;
+                    print_text_bare "   ";
+                    print_i32 v;
+                    */
+                    v
+                };
+        SparseArray arrx newbitmap;
+    end
+  end
+};
+
+// Convert from the sparse index space
+// to the dense array offset space.
+//
+// Example:
+//   bitmap = 0b_1010
+//
+//   idx  |  offset
+//   --------------
+//    1   |    0
+//    3   |    1
+//
+//
+//   bitmap = 0b_1011
+//
+//   idx  |  offset
+//   --------------
+//    0   |    0
+//    1   |    1
+//    3   |    2
+//
+sparseArrayOffset :: { Int32 => Int32 => Int32 };
+sparseArrayOffset = { bitmap => idx =>
+  bits-below = bitand-Int32 bitmap (getBit32 idx -Int32 1);
+  ctpop-Int32 bits-below
+};
+
+sparseArrayFoldl :: forall (a:Type) (e:Type) { SparseArray e => { e => a => a } => a => a };
+sparseArrayFoldl = { sa => go => acc =>
+  case sa of $SparseArray arr _ ->
+    // This throws out information about the sparse index space.
+    arrayFoldl arr go acc
+  end
+};
+
+sparseArrayPair :: forall (e:Type) { e => Int32 => e => Int32 => SparseArray e };
+sparseArrayPair = { e1 => i1 => e2 => i2 =>
+    sparseArrayEmpty !
+    |> { sa => sparseArrayInsert sa e1 i1 }
+    |> { sa => sparseArrayInsert sa e2 i2 };
+};
+
