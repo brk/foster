@@ -2716,6 +2716,7 @@ void visitGCRoots(void* start_frame, immix_heap* visitor) {
   for (int i = 0; i < nFrames; ++i) {
     ret_addr safePointAddr = frames[i].retaddr;
     frameptr fp = (frameptr) frames[i].frameptr;
+    frameptr sp = (i == 0) ? fp : offset(frames[i - 1].frameptr, 2 * sizeof(void*));
 
     const stackmap::PointCluster* pc = gcglobals.clusterForAddress[safePointAddr];
     if (!pc) {
@@ -2737,7 +2738,8 @@ void visitGCRoots(void* start_frame, immix_heap* visitor) {
     for (int a = 0; a < pc->liveCountWithMetadata; ++a) {
       int32_t     off = lo[a];
       const void*   m = ms[a];
-      void*  rootaddr = offset(fp, off);
+      void*  rootaddr = (off <= 0) ? offset(fp, off)
+                                   : offset(sp, off);
 
       visitor->visit_root(static_cast<unchecked_ptr*>(rootaddr),
                           static_cast<const char*>(m));
