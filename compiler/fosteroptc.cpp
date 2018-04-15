@@ -131,6 +131,11 @@ optDisableAllOptimizations("Onone",
   cl::cat(FosterOptCat));
 
 static cl::opt<bool>
+optNoInline("no-inline",
+  cl::desc("Disable inlining"),
+  cl::cat(FosterOptCat));
+
+static cl::opt<bool>
 optNoSpecializeMemallocs("no-specialize-memallocs",
   cl::desc("Disable specialization of memallocs of common sizes."),
   cl::cat(FosterOptCat));
@@ -419,7 +424,7 @@ void optimizeModuleAndRunPasses(Module* mod) {
       fpasses.add(foster::createBitcastLoadRecognizerPass());
     }
 
-    AddOptimizationPasses(passes, fpasses, 2, /*DisableInline*/ false);
+    AddOptimizationPasses(passes, fpasses, 2, /*DisableInline*/ optNoInline);
     AddStandardLinkPasses(passes);
 
     // Finish up by coalescing any load patterns introduced by optimization.
@@ -546,7 +551,9 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
   passes.add(new TargetLibraryInfoWrapperPass(TLII));
   passes.add(createTargetTransformInfoWrapperPass(tm->getTargetIRAnalysis()));
   passes.add(foster::createFosterGCLoweringPass(optNoGCBarriers));
-  passes.add(createAlwaysInlinerLegacyPass());
+  if (!optNoInline) {
+    passes.add(createAlwaysInlinerLegacyPass());
+  }
 
   bool disableVerify = true;
   if (tm->addPassesToEmitFile(passes, out, filetype,
