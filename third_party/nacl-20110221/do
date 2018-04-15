@@ -6,7 +6,7 @@
 
 version=`cat version`
 project=nacl
-shorthostname=`hostname | sed 's/\..*//' | tr -cd '[a-z][A-Z][0-9]'`
+shorthostname=foster
 
 top="`pwd`/build/$shorthostname"
 bin="$top/bin"
@@ -187,7 +187,6 @@ do
 
 	cp -p MACROS "$work/compile/MACROS"
 	cp -p PROTOTYPES.c "$work/compile/PROTOTYPES.c"
-	cp -p PROTOTYPES.cpp "$work/compile/PROTOTYPES.cpp"
 
 	(
 	  cd "$work/compile"
@@ -214,9 +213,6 @@ do
 	    echo ""
 	    sed 's/[ 	]CRYPTO_/ '"${opi}"'_/g' < api.h
 	    echo '#ifdef __cplusplus'
-	    echo '#include <string>'
-	    egrep "${o}"'$|'"${o}"'\(|'"${o}"'_' < PROTOTYPES.cpp \
-	    | sed "s/$o/$opi/"
 	    echo 'extern "C" {'
 	    echo '#endif'
 	    egrep "${o}"'$|'"${o}"'\(|'"${o}"'_' < PROTOTYPES.c \
@@ -364,7 +360,7 @@ do
   done
 done
 
-for language in c cpp
+for language in c
 do
   for bintype in commandline tests
   do

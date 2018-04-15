@@ -26,6 +26,8 @@
 #include "foster_gc_utils.h"
 #include "foster_globals.h"
 
+#include "crypto_hash_sha256.h"
+
 #define ENABLE_CLOCKTIMER 1
 #include "clocktimer.h"
 
@@ -474,6 +476,16 @@ void cstr_free(char* s) { free(s); }
 FILE* c2f_stdin__autowrap() { return stdin; }
 FILE* c2f_stdout__autowrap() { return stdout; }
 FILE* c2f_stderr__autowrap() { return stderr; }
+
+
+int8_t foster_crypto_hash_sha256__autowrap(foster_bytes* output, foster_bytes* input) {
+  if (output->cap != crypto_hash_sha256_BYTES) {
+    return 1;
+  }
+  return crypto_hash_sha256(reinterpret_cast<unsigned char*>(output->bytes),
+                            reinterpret_cast<const unsigned char*>(input->bytes),
+                            input->cap); // returns zero
+}
 
 void print_float_f32(float f) { return fprint_f32(stdout, f); }
 void expect_float_f32(float f) { return fprint_f32(stderr, f); }
