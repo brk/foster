@@ -1,7 +1,7 @@
 {-# LANGUAGE RecursiveDo, GADTs, StrictData #-}
 -- RecursiveDo is used in dlcSingleton
 
-module Foster.MKNExpr (MKBound(MKBound), mkOfKNMod, mknInline, mknShrink,
+module Foster.MKNExpr (MKBound(MKBound), mkOfKNMod, mknInline,
                        pccOfTopTerm, knOfMK, readLink, MaybeCont(..)) where
 
 import Foster.Base
@@ -1323,15 +1323,6 @@ copyMKTerm term = do
                                           qv  _c        >>= \c'  ->
                                            withLinkT $ \u -> return $ MKCont u       ty c' vs'
   lift $ installLinks link newterm
-
-
-mknShrink :: (Pretty t, Show t, AlphaRenamish t RecStatus)
-          => Subterm t -> MKBoundVar t -> WithBinders t (KNExpr' RecStatus t)
-mknShrink subterm mainCont = do
-  term <- lift $ readLink "mknShrink" subterm
-  kn1 <- lift $ knOfMK (YesCont mainCont) term  
-  dbgDoc $ text $ "mknShrink, term is " ++ show (pretty kn1)
-  return kn1
 
 mknInline :: Subterm MonoType -> MKBoundVar MonoType -> Maybe Int -> Compiled ()
 mknInline subterm mainCont mb_gas = do
