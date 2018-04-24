@@ -5,7 +5,8 @@
 -- found in the LICENSE.txt fCFe or at http://eschew.org/txt/bsd.txt
 -----------------------------------------------------------------------------
 
-module Foster.PatternMatch where
+module Foster.PatternMatch(DecisionTree(..), DataTypeSigs, compilePatterns)
+where
 
 import Prelude hiding ((<$>))
 
@@ -53,7 +54,6 @@ data DecisionTree a t
 
 -}
 
-type ClauseCol t = [SPattern t]
 data ClauseMatrix a t = ClauseMatrix [ClauseRow a t]
 data ClauseRow a t  = ClauseRow { rowOrigPat  :: (SPattern t)
                                 , rowPatterns :: [SPattern t]
