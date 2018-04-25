@@ -594,7 +594,7 @@ matchPattern p v =
     (SSBool b1, PR_Atom (P_Bool _ _ b2)) -> matchIf $ b1 == b2
     (_        , PR_Atom (P_Bool _ _ _ )) -> matchFailure
 
-    (SSCtorVal vid vals, PR_Ctor _ _ pats (LLCtorInfo cid _ _)) -> do
+    (SSCtorVal vid vals, PR_Ctor _ _ pats (LLCtorInfo cid _ _ _)) -> do
                                             _ <- matchIf $ vid == cid
                                             matchPatterns pats vals
     (_                 , PR_Ctor _ _ _ _) -> matchFailure

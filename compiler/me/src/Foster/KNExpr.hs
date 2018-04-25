@@ -424,11 +424,12 @@ kNormalize st expr =
             P_Or    rng ty pats -> do pats' <- mapM qp pats
                                       ty'   <- qt ty
                                       return $ PR_Or rng ty' pats'
-            P_Ctor  rng ty pats (CtorInfo cid _dc) -> do
+            P_Ctor  rng ty pats (CtorInfo cid dc) -> do
                         pats' <- mapM qp pats
                         ty'   <- qt ty
                         let patTys = map typeOf pats'
-                        let cinfo' = LLCtorInfo cid (lookupCtorRepr (lookupCtor cid)) patTys
+                        let cinfo' = LLCtorInfo cid (lookupCtorRepr (lookupCtor cid))
+                                                patTys (dataCtorLone dc)
                         return $ PR_Ctor rng ty' pats' cinfo'
 
         ilPrim :: FosterPrim TypeTC -> KN (FosterPrim TypeIL)
@@ -541,9 +542,9 @@ dtUnboxedRepr dt =
       where mapping = [(BoundTyVar nm rng, ty)
                       | (ty, TypeFormal nm rng _kind) <- zip tys formals]
 
-convertDataCtor f (DataCtor dataCtorName tyformals types repr range) = do
+convertDataCtor f (DataCtor dataCtorName tyformals types repr lone range) = do
   tys <- mapM f types
-  return $ DataCtor dataCtorName tyformals tys repr range
+  return $ DataCtor dataCtorName tyformals tys repr lone range
 
 convertED :: KNState -> EffectDecl TypeTC -> KN (EffectDecl TypeIL)
 convertED st (EffectDecl name formals effctors range) = do
@@ -985,9 +986,9 @@ kNormalCtors st dtype =
   where
     kNormalCtor :: DataType TypeIL -> DataCtor TypeIL
                 -> KN (FnExprIL)
-    kNormalCtor _datatype (DataCtor _cname _tyformals _tys Nothing _range) = do
+    kNormalCtor _datatype (DataCtor _cname _tyformals _tys Nothing lone _range) = do
       error "Cannot wrap a data constructor with no representation information."
-    kNormalCtor datatype (DataCtor cname _tyformals tys (Just repr) range) = do
+    kNormalCtor datatype (DataCtor cname _tyformals tys (Just repr) lone range) = do
       let dname = dataTypeName datatype
       let arity = Prelude.length tys
       let cid   = CtorId (typeFormalName dname) (T.unpack cname) arity
@@ -1039,7 +1040,7 @@ kNormalEffectWrappers :: KNState -> EffectDecl TypeIL -> [KN (FnExprIL)]
 kNormalEffectWrappers st ed = map kNormalEffectWrapper (zip [0..] (effectDeclCtors ed))
   where
     kNormalEffectWrapper :: (Int, EffectCtor TypeIL) -> KN FnExprIL
-    kNormalEffectWrapper (n, EffectCtor (DataCtor cname tyformals tys _repr range) outty) = do
+    kNormalEffectWrapper (n, EffectCtor (DataCtor cname tyformals tys _repr _lone range) outty) = do
       let dname = effectDeclName ed
       let arity = Prelude.length tys
       let cid   = CtorId (typeFormalName dname) (T.unpack cname) arity

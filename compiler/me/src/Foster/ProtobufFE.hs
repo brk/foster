@@ -81,18 +81,22 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
         (name, expr) -> ToplevelDefn (name, expr)
     TList [tok, _, cbr, TList [tyformal_nm, mu_tyformals, mu_data_ctors]]
                                                       | tok `tm` tok_DATATYPE ->
-       let tyf = (map cb_parse_tyformal  (unMu mu_tyformals)) in
+       let tyf = map cb_parse_tyformal (unMu mu_tyformals)
+           ctors = unMu mu_data_ctors
+           lone = length ctors == 1 in
        ToplevelData $ DataType (cb_parse_tyformal      tyformal_nm)
                                    tyf
-                                   (map (cb_parse_data_ctor tyf) (unMu mu_data_ctors))
+                                   (map (cb_parse_data_ctor tyf lone) ctors)
                                    False
                                    (cb_parse_range          cbr)
     TList [tok, _, cbr, TList [tyformal_nm, mu_tyformals, mu_effect_ctors]]
                                                       | tok `tm` tok_EFFECT ->
-       let tyf = (map cb_parse_tyformal  (unMu mu_tyformals)) in
+       let tyf = (map cb_parse_tyformal  (unMu mu_tyformals))
+           ctors = unMu mu_effect_ctors
+           lone = length ctors == 1 in
        ToplevelEffect $ EffectDecl (cb_parse_tyformal      tyformal_nm)
                                    tyf
-                                   (map (cb_parse_effect_ctor tyf) (unMu mu_effect_ctors))
+                                   (map (cb_parse_effect_ctor tyf lone) ctors)
                                    (cb_parse_range          cbr)
 
     TList [tok, _,_cbr, TList [TList (tag:_), x, t]] | tok `tm` tok_FOREIGN
@@ -111,19 +115,20 @@ cb_parseSourceModuleWithLines standalone lines sourceFile cbor = case cbor of
     _ -> error $ "cb_parseToplevelItem failed: " ++ show cbor
 
   -- ^(OF dctor tatom*);
-  cb_parse_data_ctor tyf cbor = case cbor of
+  cb_parse_data_ctor tyf lone cbor = case cbor of
     TList [tok, _, cbr, TList (dctor : tatoms)] | tok `tm` tok_OF ->
-      Foster.Base.DataCtor (cb_parse_dctor dctor) tyf (map cb_parse_tatom tatoms) Nothing (cb_parse_range cbr)
+      Foster.Base.DataCtor (cb_parse_dctor dctor) tyf (map cb_parse_tatom tatoms)
+                           Nothing lone (cb_parse_range cbr)
     _ -> error $ "cb_parse_data_ctor failed: " ++ show cbor
 
   cb_parse_dctor cbor = cb_parse_ctor cbor
 
   -- ^(OF dctor ^(MU tatom*) ^(MU t?));
-  cb_parse_effect_ctor tyf cbor = case cbor of
+  cb_parse_effect_ctor tyf lone cbor = case cbor of
     TList [tok, _, cbr, TList [dctor, mu_tatoms, mu_mb_t]] | tok `tm` tok_OF ->
       Foster.Base.EffectCtor
         (Foster.Base.DataCtor (cb_parse_dctor dctor) tyf (map cb_parse_tatom (unMu mu_tatoms))
-                              Nothing (cb_parse_range cbr))
+                              Nothing lone (cb_parse_range cbr))
         (case unMu mu_mb_t of
           []  -> -- Default to unit type if no explicit annotation
                  -- has been provided.

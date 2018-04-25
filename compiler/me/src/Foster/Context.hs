@@ -109,8 +109,8 @@ liftDataType f (DataType nm formals ctors isForeign srcrange) =
   liftM (\cs' ->DataType nm formals cs'   isForeign srcrange) (mapM (liftDataCtor f) ctors)
 
 liftDataCtor :: Monad m => (t1 -> m t2) -> DataCtor t1 -> m (DataCtor t2)
-liftDataCtor f (DataCtor dataCtorName formals types repr range) = do
-  liftM (\tys-> DataCtor dataCtorName formals tys   repr range) (mapM f types)
+liftDataCtor f (DataCtor dataCtorName formals types repr lone range) = do
+  liftM (\tys-> DataCtor dataCtorName formals tys   repr lone range) (mapM f types)
 
 liftPrimOp f primop =
   case primop of

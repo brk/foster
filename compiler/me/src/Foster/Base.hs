@@ -226,6 +226,7 @@ data DataCtor ty = DataCtor { dataCtorName  :: CtorName
                             , dataCtorDTTyF :: [TypeFormal]
                             , dataCtorTypes :: [ty]
                             , dataCtorRepr  :: Maybe CtorRepr
+                            , dataCtorLone  :: Bool
                             , dataCtorRange :: SourceRange
                             }
 
@@ -248,6 +249,7 @@ data CtorInfo ty = CtorInfo { ctorInfoId :: CtorId
 data LLCtorInfo ty = LLCtorInfo { ctorLLInfoId   :: CtorId
                                 , ctorLLInfoRepr :: CtorRepr
                                 , ctorLLInfoTys  :: [ty]
+                                , ctorLLInfoLone :: Bool -- Only one ctor?
                                 }
                      deriving (Show, Functor)
 
@@ -1108,7 +1110,8 @@ instance Eq (CtorInfo t) where
 instance Ord (LLCtorInfo ty) where
   compare = compareLLCtorInfo
 
-compareLLCtorInfo (LLCtorInfo c1 r1 _) (LLCtorInfo c2 r2 _) = compare (c1, r1) (c2, r2)
+compareLLCtorInfo (LLCtorInfo c1 r1 _ o1) (LLCtorInfo c2 r2 _ o2) =
+  compare (c1, r1, o1) (c2, r2, o2)
 
 instance Eq  (LLCtorInfo ty) where
   c1 == c2 = compare c1 c2 == EQ

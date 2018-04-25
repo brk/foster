@@ -22,12 +22,14 @@ primitiveDataTypesP = [
             [TyAppP (TyConP "Array") [typ "Int8"]
             , typ "Int32"]
             (Just (CR_Default 0))
+            False -- is lone?
             (MissingSourceRange "Text.TextFragment")
         ,DataCtor (T.pack "TextConcat"  ) tf
             [typ "Text"
             ,typ "Text"
             ,typ "Int32"]
             (Just (CR_Default 1))
+            False -- is lone?
             (MissingSourceRange "Text.TextConcat")]
         False (MissingSourceRange "Text")),
 

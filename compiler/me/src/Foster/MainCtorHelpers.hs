@@ -52,7 +52,7 @@ getCtorInfo' effdecls = Map.unionsWith (++) $ map getEffCtorInfoList effdecls
 ctorIdFor :: String -> DataCtor t -> (CtorName, CtorId)
 ctorIdFor tynm ctor = (dataCtorName ctor, ctorId tynm ctor)
 
-ctorId   tynm (DataCtor ctorName _tyformals types _repr _range) =
+ctorId   tynm (DataCtor ctorName _tyformals types _repr _lone _range) =
   CtorId tynm (T.unpack ctorName) (Prelude.length types)
 
 -----------------------------------------------------------------------

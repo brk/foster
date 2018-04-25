@@ -370,7 +370,7 @@ typecheckModule verboseMode pauseOnErrors standalone flagvals modast tcenv0 = do
 
    extractCtorTypes :: DataType TypeAST -> [(String, Either TypeAST TypeAST, CtorId)]
    extractCtorTypes dt = map nmCTy (dataTypeCtors dt)
-     where nmCTy dc@(DataCtor name tyformals types _repr _range) =
+     where nmCTy dc@(DataCtor name tyformals types _repr _lone _range) =
                  (T.unpack name, ctorTypeAST tyformals dtType types, cid)
                          where dtType = typeOfDataType dt
                                cid    = ctorId (typeFormalName $ dataTypeName dt) dc
