@@ -1000,10 +1000,9 @@ collectRedexes ref valbindsref expbindsref funbindsref
     case mb_term of
       Nothing -> return ()
       Just term -> do
-        let markRedex = liftIO $ modIORef' ref (\w -> worklistAdd w subterm)
         case term of
-          MKCall _ _ fo _ _ -> whenNotM (isMainFn fo) markRedex
-          MKCont {}         -> markRedex
+          MKCall _ _ fo _ _ -> whenNotM (isMainFn fo) (markRedex subterm)
+          MKCont {}         -> markRedex subterm
           _ -> markAndFindSubtermsOf term >>= mapM_ go
           where markAndFindSubtermsOf term =
                     case term of
@@ -1020,11 +1019,13 @@ collectRedexes ref valbindsref expbindsref funbindsref
                       MKLetCont     _u   knowns k  -> do mapM_ markCntBind knowns
                                                          fns <- knownActuals knowns
                                                          return $ k : map mkfnBody fns
-                      MKCase        _u _ _v arms -> return $ map mkcaseArmBody arms
+                      MKCase        _u _ v arms -> do x <- freeBinder v
+                                                      markRedex subterm
+                                                      return $ map mkcaseArmBody arms
                       MKRelocDoms _u ids k -> do liftIO $ modIORef' relocdomsref (\m -> Map.insert ids (term,k) m)
                                                  return [k]
                       _ -> return []
-
+   markRedex subterm  = liftIO $ modIORef' ref     (\w -> worklistAdd w subterm)
    markValBind (x,tm) = liftIO $ modIORef' valbindsref (\m -> Map.insert x tm m)
    markCntBind (x,fn) = liftIO $ modIORef' funbindsref (\m -> Map.insert x fn m)
    markExpBind (x,exlink) = do
@@ -1332,6 +1333,7 @@ mknInline subterm mainCont mb_gas = do
     fr <- liftIO $ newIORef Map.empty
     fd <- liftIO $ newIORef Map.empty
     ar <- liftIO $ newIORef Map.empty
+    bindingWorklistRef <- liftIO $ newIORef worklistEmpty
     relocDomMarkers <- liftIO $ newIORef Map.empty
     --term <- readLink "mknInline" subterm
     collectRedexes wr kr er fr fd ar relocDomMarkers subterm
