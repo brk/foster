@@ -410,9 +410,9 @@ monoPattern subst pattern =
    PR_Ctor     rng t pats ctor  -> liftM3 (PR_Ctor     rng) (monoType subst t) (mp pats)
                                                             (monoCtorInfo subst ctor)
 
-monoCtorInfo subst (LLCtorInfo cid repr tys) = do
+monoCtorInfo subst (LLCtorInfo cid repr tys isLoneCtor) = do
           tys' <- mapM (monoType subst) tys
-          return $ (LLCtorInfo cid repr tys')
+          return $ (LLCtorInfo cid repr tys' isLoneCtor)
 
 monomorphizedEffectDeclsFrom :: [EffectDecl TypeIL] -> [(String, [MonoType])] -> Mono [DataType MonoType]
 monomorphizedEffectDeclsFrom eds specs = do
@@ -427,9 +427,9 @@ monomorphizedEffectDeclsFrom eds specs = do
          subst = extendSubst emptyMonoSubst formals args
 
          monomorphizedEffectCtor :: MonoSubst -> EffectCtor TypeIL -> Mono (DataCtor MonoType)
-         monomorphizedEffectCtor subst (EffectCtor (DataCtor name _tyformals types repr range) _outty) = do
+         monomorphizedEffectCtor subst (EffectCtor (DataCtor name _tyformals types repr lone range) _outty) = do
            types' <- mapM (monoType subst) types
-           return $ DataCtor name [] types' repr range
+           return $ DataCtor name [] types' repr lone range
 
        dtSpecMap = mapAllFromList specs
 
@@ -456,9 +456,9 @@ monomorphizedDataTypesFrom dts specs = do
 
          monomorphizedCtor :: MonoSubst -> DataCtor TypeIL -> Mono (DataCtor MonoType)
          monomorphizedCtor subst
-                   (DataCtor name _tyformals types repr range) = do
+                   (DataCtor name _tyformals types repr lone range) = do
            types' <- mapM (monoType subst) types
-           return $ DataCtor name [] types' repr range
+           return $ DataCtor name [] types' repr lone range
 
        dtSpecMap = mapAllFromList specs
 

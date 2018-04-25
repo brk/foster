@@ -37,9 +37,9 @@ convertDataTypeAST f (DataType dtName tyformals ctors isForeign range) = do
   cts <- mapM (convertDataCtor f) ctors
   return $ DataType dtName tyformals cts isForeign range
 
-convertDataCtor f (DataCtor dataCtorName formals types repr range) = do
+convertDataCtor f (DataCtor dataCtorName formals types repr lone range) = do
   tys <- mapM f types
-  return $ DataCtor dataCtorName formals tys repr range
+  return $ DataCtor dataCtorName formals tys repr lone range
 
 convertEffect :: (Show a, Show b) =>
                    (a -> Tc b) -> EffectDecl a -> Tc (EffectDecl b)

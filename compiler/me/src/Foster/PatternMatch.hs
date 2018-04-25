@@ -100,13 +100,13 @@ compilePatterns bs allSigs =
     (PR_Tuple _ _ pats)     -> SP_Ctor (tupleCtor pats) (map compilePattern pats)
     (PR_Or    _ _ pats)     -> SP_Or                    (map compilePattern pats)
     where
-          ctorInfo tynm dcnm dctys repr =
-             LLCtorInfo (CtorId tynm dcnm (Prelude.length $ dctys)) repr dctys
+          ctorInfo tynm dcnm dctys repr isLoneCtor =
+             LLCtorInfo (CtorId tynm dcnm (Prelude.length $ dctys)) repr dctys isLoneCtor
 
-          boolCtor False = ctorInfo "Bool"  "False" []                (CR_Value 0)
-          boolCtor True  = ctorInfo "Bool"  "True"  []                (CR_Value 1)
-          tupleCtor pats = ctorInfo "()"    "()"    (map typeOf pats) (CR_Default 0)
-          intCtor ty li  = ctorInfo ctnm ("<"++ctnm++">") []          (CR_Value tag)
+          boolCtor False = ctorInfo "Bool"  "False" []                (CR_Value 0)   False
+          boolCtor True  = ctorInfo "Bool"  "True"  []                (CR_Value 1)   False
+          tupleCtor pats = ctorInfo "()"    "()"    (map typeOf pats) (CR_Default 0) True
+          intCtor ty li  = ctorInfo ctnm ("<"++ctnm++">") []          (CR_Value tag) False
                              where
                               isb  = intSizeBitsOf ty
                               bits = intSizeOf     isb
@@ -156,7 +156,7 @@ cc occs cm rngs allSigs =
       let caselist = [ ((c, r),
                            cc (expand o1  llci ++ orest)
                               (specialize (c,r) cm)  (ranges cm) allSigs)
-                     | llci@(LLCtorInfo c r _) <- Set.toList headCtorInfos] in
+                     | llci@(LLCtorInfo c r _ _) <- Set.toList headCtorInfos] in
       -- The selected column contains some set of constructors C1 .. Ck.
       -- Pair each constructor with the clause matrix obtained from
       -- specializing the current match matrix w/r/t that constructor,
@@ -200,7 +200,7 @@ expand occ cinfo = [extendOccurrence occ n cinfo | n <- [0 .. ctorInfoArity cinf
 extendOccurrence :: Occurrence t -> Int -> LLCtorInfo t -> Occurrence t
 extendOccurrence occ n cinfo = occ ++ [(n, cinfo)]
 
-ctorInfoArity (LLCtorInfo cid _ _) = ctorArity cid
+ctorInfoArity (LLCtorInfo cid _ _ _) = ctorArity cid
 
 instance Pretty (ClauseMatrix a t) where
   pretty (ClauseMatrix rows) =
@@ -234,7 +234,7 @@ specialize cinfo (ClauseMatrix rows) =
  ClauseMatrix (concat [specializeRow row cinfo | row <- rows])
   where
 
-    compatWith (LLCtorInfo c1 r1 _) (c2, r2) = c1 == c2 && r1 == r2
+    compatWith (LLCtorInfo c1 r1 _ _) (c2, r2) = c1 == c2 && r1 == r2
 
     specializeRow (ClauseRow orig []       a rng) _cinfo = [ClauseRow orig [] a rng]
     specializeRow (ClauseRow orig (p:rest) a rng)  cinfo@(ctor, _) =

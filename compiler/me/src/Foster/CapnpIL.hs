@@ -447,7 +447,7 @@ dumpArrayLength t arr =
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||| Other Expressions ||||||||||||||||||||||{{{
-dumpCtorInfo (LLCtorInfo cid repr tys) =
+dumpCtorInfo (LLCtorInfo cid repr tys _) =
     PbCtorInfo {
           ctorid_of_PbCtorInfo = dumpCtorIdWithRepr "dumpCtorInfo" (cid, repr)
         , ctorstructty_of_PbCtorInfo =  if null tys
@@ -632,15 +632,15 @@ dumpProgramToModule (ILProgram procdefs vals extern_decls datatypes (SourceLines
             , ctor_of_Type_ = map dumpDataCtor ctors
         }
      where
-        dumpDataCtor (DataCtor ctorName _tyformals types _repr _range) =
+        dumpDataCtor (DataCtor ctorName _tyformals types _repr _lone _range) =
           PbDataCtor { name_of_PbDataCtor = u8fromText ctorName
                      , type_of_PbDataCtor = map dumpType types
                      }
 
-    dumpDataType (TypeFormal _dtName _sr KindAnySizeType) [DataCtor _nm [] [ty] _repr _range] =
+    dumpDataType (TypeFormal _dtName _sr KindAnySizeType) [DataCtor _nm [] [ty] _repr _lone _range] =
         dumpType ty
 
-    dumpDataType (TypeFormal _dtName _sr KindAnySizeType) [DataCtor _nm []  tys _repr _range] =
+    dumpDataType (TypeFormal _dtName _sr KindAnySizeType) [DataCtor _nm []  tys _repr _lone _range] =
         dumpType (LLStructType tys)
 
     dumpDataType (TypeFormal dtName _sr kind) ctors =

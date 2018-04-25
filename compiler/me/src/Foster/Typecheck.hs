@@ -1903,7 +1903,7 @@ checkPattern ctx pattern ctxTy = case pattern of
   --  * only check for effect ctors at toplevel; nested ctors are data
   --  * merge somehow the CtorInfo and (CtorId, EffectCtor) paths in getCtorInfoForCtor
   EP_Ctor     r eps s -> do
-    info@(CtorInfo cid (DataCtor _ tyformals types _repr _crng)) <- getCtorInfoForCtor ctx r s
+    info@(CtorInfo cid (DataCtor _ tyformals types _repr _lone _crng)) <- getCtorInfoForCtor ctx r s
     sanityCheck (ctorArity cid == List.length eps) $
           "Incorrect pattern arity: expected " ++
           (show $ ctorArity cid) ++ " pattern(s), but got "
@@ -2368,7 +2368,7 @@ numberedParenListDocs docs =
   [pretty n <> text ")" <+> hang (length (show n) + 2) d | (d, n) <- zip docs [1 :: Int ..]]
 
 tcDataCtor :: String -> Context SigmaTC -> DataCtor TypeTC -> Tc ()
-tcDataCtor dtname ctx (DataCtor nm _tyfs tys _repr _rng) = do
+tcDataCtor dtname ctx (DataCtor nm _tyfs tys _repr _lone _rng) = do
   let msg = "in field of data constructor " ++ T.unpack nm ++ " of type " ++ dtname
   mapM_ (tcTypeWellFormed msg ctx) tys
 -- }}}
@@ -2493,7 +2493,7 @@ instance Pretty ty => Pretty (CtorInfo ty) where
   pretty (CtorInfo cid dc) = parens (text "CtorInfo" <+> text (show cid) <+> pretty dc)
 
 instance Pretty ty => Pretty (DataCtor ty) where
-  pretty (DataCtor name _tyformals _ctortyargs _repr _range) =
+  pretty (DataCtor name _tyformals _ctortyargs _repr _lone _range) =
         parens (text "DataCtor" <+> text (T.unpack name))
 
 retypeTID :: (t1 -> Tc t2) -> TypedId t1 -> Tc (TypedId t2)
