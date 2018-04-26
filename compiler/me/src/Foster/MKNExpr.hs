@@ -28,7 +28,7 @@ import qualified Data.Text as T
 import qualified Data.Set as Set(toList, fromList)
 import qualified Data.Map as Map
 import Data.Map(Map)
-import qualified Data.List as List(foldl', reverse)
+import qualified Data.List as List(foldl', reverse, all, any)
 import Data.Maybe(catMaybes, isJust, isNothing)
 import Data.Either(partitionEithers)
 
@@ -1053,9 +1053,8 @@ collectRedexes ref valbindsref expbindsref funbindsref
                       MKLetCont     _u   knowns k  -> do mapM_ markCntBind knowns
                                                          fns <- knownActuals knowns
                                                          return $ k : map mkfnBody fns
-                      MKCase        _u _ v arms -> do x <- freeBinder v
-                                                      markRedex subterm
-                                                      return $ map mkcaseArmBody arms
+                      MKCase        _u _ _v arms -> do markRedex subterm
+                                                       return $ map mkcaseArmBody arms
                       MKRelocDoms _u ids k -> do liftIO $ modIORef' relocdomsref (\m -> Map.insert ids (term,k) m)
                                                  return [k]
                       _ -> return []
@@ -1431,7 +1430,7 @@ mknInline subterm mainCont mb_gas = do
            processDeadBindings
            mb_mredex_parent <- worklistGet'
            case mb_mredex_parent of
-             Nothing -> dbgDoc $ text "... ran outta work"
+             Nothing -> ccWhen ccVerbose $ do liftIO $ putDocLn $ text "... ran outta work"
              Just (_subterm, mredex, Nothing) -> do
                 case mredex of
                   MKLetFuns _u [(bv,_)] _ | tidIdent (boundVar bv) == GlobalSymbol (T.pack "TextFragment") NoRename ->
@@ -1721,6 +1720,21 @@ mknInline subterm mainCont mb_gas = do
                               TermIsDead -> return ()
 
                       go (gas - 1)
+
+                    MKCase _up ty v arms -> do
+                      x <- freeBinder v
+                      expBindsMap <- liftIO $ readIORef er
+                      case Map.lookup x expBindsMap of
+                         Nothing -> do
+                           dbgDoc $ text "skipping case expression because scrutinee is unknown for " <> pretty x
+                           go gas
+                         Just _scrutLink -> do
+                           findMatchingArm replaceActiveSubtermWith ty v arms (\v -> do
+                                       x <- freeBinder v
+                                       case Map.lookup x expBindsMap of
+                                         Nothing -> return Nothing
+                                         Just link -> readLink "case.scrut" link >>= return . Just)
+                           go gas
 
                     _ -> do
                       ccWhen ccVerbose $ do
@@ -2114,11 +2128,12 @@ pccOfTopTerm uref subterm = do
               dbgDoc $ text "pccOfTopTerm saw nulled-out function link " <> pretty x
             return ()
           Just fn -> do
-            knfn <- lift $ knOfMKFn NoCont fn
             {--
-            dbgDoc $ indent 10 (pretty x)
-            dbgDoc $ indent 20 (pretty knfn)
-            dbgDoc $ text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+            do
+              knfn <- lift $ knOfMKFn NoCont fn
+              dbgDoc $ indent 10 (pretty x)
+              dbgDoc $ indent 20 (pretty knfn)
+              dbgDoc $ text "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
             --}
             
             cffn <- lift $ cffnOfMKFn uref fn
@@ -2338,12 +2353,6 @@ letableOfSubexpr subexpr = do
     _ -> error $ "non-Letable thing seen by letableOfSubexpr..."
 
 
-dbgDoc :: MonadIO m => Doc -> m ()
-dbgDoc d =
-  if False
-    then liftIO $ putDocLn d
-    else return ()
-
 --  * A very important pattern to inline is     iter x { E2 },
 --    which ends up looking like    f = { E2 }; iter x f;
 --    with f not referenced elsewhere.  Even if E2 is big enough
@@ -2355,68 +2364,6 @@ dbgDoc d =
 --    a use-once function. Such "budget donation" can reduce the variability
 --    of inlining's run-time benefits due to inlining thresholds.
 
-{- {{{ Online constant folding
-{-
-    KNCase        ty v patbinds -> do
-        ...
-        -- If something is known about v's value,
-        -- select or discard the appropriate branches.
-        -- TODO when are default branches inserted?
-        mb_const <- extractConstExpr env v
-        case mb_const of
-          IsConstant v' c -> do
-                   mr <- matchConstExpr v' c patbinds
-                   case {-trace ("match result for \n\t" ++ show c ++ " is\n\t" ++ show mr)-} mr of
-                      Right e -> knInline' e env
-                      Left patbinds0 -> do v' <- q v
-                                           !patbinds' <- mapM inlineArm patbinds0
-                                           residualize $ KNCase ty v' patbinds'
-          _ -> do v' <- q v
-                  !patbinds' <- mapM inlineArm patbinds
-                  residualize $ KNCase ty v' patbinds'
--}
-
-data ConstExpr = Lit            MonoType Literal
-               | LitTuple       MonoType [ConstStatus] SourceRange
-               | KnownCtor      MonoType (CtorId, CtorRepr) [ConstStatus]
-               deriving Show
-
-data ConstStatus = IsConstant (TypedId MonoType) ConstExpr
-                 | IsVariable (TypedId MonoType)
-                 deriving Show
-
-extractConstExpr :: SrcEnv -> TypedId MonoType -> In ConstStatus
-extractConstExpr env var = extractConstExprWith env var lookupVarOp
-
-extractConstExpr' :: SrcEnv -> TypedId MonoType -> In ConstStatus
-extractConstExpr' env var = extractConstExprWith env var (\e v -> Just $ lookupVarOp' e v)
-
-extractConstExprWith env var lookup = go var where
-  go v =
-     case lookup env v of
-       (Just (VO_E ope)) -> do
-         (e', _) <- visitE (tidIdent v, ope)
-         case e' of
-            KNLiteral ty lit      -> return $ IsConstant v $ Lit ty lit
-            KNTuple   ty vars rng -> do results <- mapM go vars
-                                        return $ IsConstant v $ LitTuple ty results rng
-            KNAppCtor ty cid vars -> do results <- mapM go vars
-                                        return $ IsConstant v $ KnownCtor ty cid results
-            -- TODO could recurse through binders
-            -- TODO could track const-ness of ctor args
-            _                     -> return $ IsVariable v
-       _ -> return $ IsVariable v
-addBindings [] e = e
-addBindings ((id, cs):rest) e = KNLetVal id (exprOfCS cs) (addBindings rest e)
-
-exprOfCS (IsVariable v)                         = KNVar v
-exprOfCS (IsConstant _ (Lit ty lit))            = KNLiteral ty lit
-exprOfCS (IsConstant _ (KnownCtor ty cid []))   = KNAppCtor ty cid []
-exprOfCS (IsConstant _ (KnownCtor ty cid args)) = KNAppCtor ty cid (map varOfCS args)
-exprOfCS (IsConstant _ (LitTuple ty args rng))  = KNTuple ty (map varOfCS args) rng
-
-varOfCS (IsVariable v  ) = v
-varOfCS (IsConstant v _) = v
 
 
 -- We'll iterate through the list of arms. Initially, our match status will be
@@ -2433,67 +2380,123 @@ varOfCS (IsConstant v _) = v
 data MatchStatus = NoPossibleMatchYet | MatchPossible
                    deriving Show
 
-data PatternMatchStatus = MatchDef [(Ident, ConstStatus)] | MatchAmbig | MatchNeg
-                          deriving Show
+data PatternMatchStatus t = MatchDef [(Ident, FreeVar t)]
+                          | MatchSeq [(FreeVar t, PatternRepr t)]
+                          | MatchAmbig
+                          | MatchNeg
 
--- Given a constant expression c, match against  (p1 -> e1) , ... , (pn -> en).
--- If c definitely matches some pattern pk, return ek.
--- Otherwise, return the list of arms which might possibly match c.
--- TODO handle partial matches:
---        case (a,b) of (True, x) -> f(x)
---      should become
---        case (a,b) of (True, x) -> f(b)
---      even thought it can't become simply ``f(b)`` because a might not be True.
-matchConstExpr :: TypedId MonoType -> ConstExpr
-               ->            [CaseArm PatternRepr (KNMono) MonoType]
-               -> In (Either [CaseArm PatternRepr (KNMono) MonoType]
-                             SrcExpr)
-matchConstExpr v c arms = go arms [] NoPossibleMatchYet
-  where go [] reverseArmsWhichMightMatch _ =
-                 -- No conclusive match found, but we can still
-                 -- match against only those arms that we didn't rule out.
-                return $ Left (reverse reverseArmsWhichMightMatch)
+matchSeq :: t -> SourceRange -> Subterm t -> (FreeVar t, PatternRepr t) -> Compiled (Subterm t)
+matchSeq ty range subterm (v, pat) = do
+  parentLink <- newOrdRef Nothing
+  let todoBindings = []
+  let rv = MKCase parentLink ty v [MKCaseArm pat subterm todoBindings range]
+  _ <- backpatchT rv [subterm]
+  newOrdRef (Just rv)
 
-        go (arm@(CaseArm pat e guard _ _):rest) armsWhichMightMatch potentialMatch =
-          let rv = matchPatternWithConst pat (IsConstant v c) in
-          case (guard, rv, potentialMatch) of
-               (Nothing, MatchDef bindings, NoPossibleMatchYet)
-                                      -> return $ Right (addBindings bindings e)
-               -- We can (in theory) discard arms which definitely won't match,
-               -- but pattern match compilation would then think that the match
-               -- is incomplete and generate DT_Fail nodes unnecessarily.
-               (Nothing, MatchNeg, _) -> go rest (arm:armsWhichMightMatch) potentialMatch
-               _                      -> go rest (arm:armsWhichMightMatch) MatchPossible
+-- Compute the residual of matching the given term ``T`` against the given
+-- pattern arms ``p1 -> e1, ... , pn -> en``.
+-- If ``c`` definitely matches one of the patterns ``pj``,
+-- replace the given case subterm by ``ej`` with appropriate substitutions.
+-- 
+findMatchingArm :: Pretty ty =>
+                   (Subterm ty -> Compiled ()) -> ty
+                ->  FreeVar ty -> [MKCaseArm (Subterm ty) ty]
+                -> (FreeVar ty -> Compiled (Maybe (MKExpr ty)))
+                -> Compiled ()
+findMatchingArm replaceCaseWith ty v arms lookupVar = go arms NoPossibleMatchYet
+  where go [] _ = return ()
+        go ((MKCaseArm pat subterm _bindings range):rest) potentialMatch = do
+              -- Map from pattern variable ids to bound vars.
+              let boundsFor = Map.fromList [(tidIdent (boundVar b), b) | b <- _bindings]
 
-        nullary True  = MatchDef []
-        nullary False = MatchNeg
+              matchRes <- matchPatternAgainst pat v
+              case (matchRes, potentialMatch) of
+                -- A definite match only "counts" if there were no earlier possible matches.
+                (MatchDef matches, NoPossibleMatchYet) -> do
+                  -- Note: matches is a list of (id, v) where id is a pattern ident and v is a FreeVar.
+                  let boundAndVars = [(v, boundsFor Map.! id) | (id, v) <- matches]
+                  mapM_ substVarForBound boundAndVars
+                  replaceCaseWith subterm
+
+                -- A match sequence is similar to a definite match, except that it
+                -- replaces one pattern match with several simpler matches,
+                -- instead of replacing a pattern match with the associated arm.
+                (MatchSeq varsPats, NoPossibleMatchYet) -> do
+                  if null varsPats
+                    then return ()
+                    else do
+                      -- TODO maybe mark the generated cases as redexes?
+                      caseSeq <- foldlM (matchSeq ty range) subterm varsPats
+                      replaceCaseWith caseSeq
+
+                -- A match that definitely won't happen can be ignored.
+                (MatchNeg  , _) -> go rest potentialMatch
+
+                -- Otherwise, we have a possible match.
+                _               -> go rest MatchPossible
 
         -- If the constant matches the pattern, return the list of bindings generated.
-        matchPatternWithConst :: PatternRepr ty -> ConstStatus -> PatternMatchStatus
-        matchPatternWithConst p cs =
-          case (cs, p) of
-            (_, PR_Atom (P_Wildcard _ _  )) -> MatchDef []
-            (_, PR_Atom (P_Variable _ tid)) -> MatchDef [(tidIdent tid, cs)]
-            (IsVariable _  , _)     -> MatchAmbig
-            (IsConstant _ c, _)     -> matchConst c p
-              where matchConst c p =
-                      case (c, p) of
-                        (Lit _ (LitInt  i1), PR_Atom (P_Int  _ _ i2)) -> nullary $ litIntValue i1 == litIntValue i2
-                        (Lit _ (LitBool b1), PR_Atom (P_Bool _ _ b2)) -> nullary $ b1 == b2
-                        (LitTuple _ args _, PR_Tuple _ _ pats) ->
-                            let parts = map (uncurry matchPatternWithConst) (zip pats args) in
-                            let res = concatMapStatuses parts in
-                            res
-                            --trace ("matched tuple const against tuple pat " ++ show p ++ "\n, parts = " ++ show parts ++ " ;;; res = " ++ show res) res
-                        (KnownCtor _ (kid, _) args, PR_Ctor _ _ pats (LLCtorInfo cid _ _)) | kid == cid ->
-                            concatMapStatuses $ map (uncurry matchPatternWithConst) (zip pats args)
-                        (_ , _) -> nullary False
+        --matchPatternAgainst :: PatternRepr ty -> FreeVar ty -> Compiled [PatternMatchStatus ty]
+        matchPatternAgainst p v = do
+          case p of
+            PR_Atom (P_Wildcard _ _  ) -> return $ MatchDef []
+            PR_Atom (P_Variable _ tid) -> return $ MatchDef [(tidIdent tid, v)]
+            _ -> do
+              mb_e <- lookupVar v
+              case mb_e of
+                Nothing -> return $ MatchAmbig
+                Just e  ->
+                  case (e, p) of
+                    (MKLiteral _ _ (LitInt  i1), PR_Atom (P_Int  _ _ i2)) -> nullary $ litIntValue i1 == litIntValue i2
+                    (MKLiteral _ _ (LitBool b1), PR_Atom (P_Bool _ _ b2)) -> nullary $ b1 == b2
+                    (MKTuple _ _ args _        , PR_Tuple _ _ pats) -> do
+                        parts <- mapM (uncurry matchPatternAgainst) (zip pats args)
+                        let pms = concatMapStatuses parts
+                        if List.all guaranteedToMatch pats
+                          then case pms of
+                                 MatchDef defs -> return $ MatchDef defs
+                                 _ -> return $ MatchSeq (zip args pats)
+                          else return pms
+                        --trace ("matched tuple const against tuple pat " ++ show p ++ "\n, parts = " ++ show parts ++ " ;;; res = " ++ show res) res
 
-        concatMapStatuses :: [PatternMatchStatus] -> PatternMatchStatus
+                    (MKAppCtor _ _ (kid, _) args, PR_Ctor _ _ pats (LLCtorInfo cid _ _ _)) | kid == cid -> do
+                      parts <- mapM (uncurry matchPatternAgainst) (zip pats args)
+                      return $ concatMapStatuses parts
+
+                    (_ , _) -> return $ MatchAmbig
+        
+        -- guaranteedToMatch :: PatternRepr ty -> Bool
+        guaranteedToMatch p =
+          case p of
+            PR_Atom (P_Wildcard {}) -> True
+            PR_Atom (P_Variable {}) -> True
+            PR_Or    _ _ pats -> List.any guaranteedToMatch pats
+            PR_Tuple _ _ pats -> List.all guaranteedToMatch pats
+            PR_Ctor  _ _ pats ctorinfo -> ctorLLInfoLone ctorinfo && List.all guaranteedToMatch pats
+            _ -> False
+
+        nullary True  = return $ MatchDef []
+        nullary False = return $ MatchNeg
+                
+        concatMapStatuses :: [PatternMatchStatus ty] -> PatternMatchStatus ty
         concatMapStatuses mbs = go mbs []
           where go []               acc = MatchDef (concat acc)
+                go [MatchSeq vp]    []  = MatchSeq vp
                 go (MatchNeg:_)    _acc = MatchNeg
                 go (MatchAmbig:_)  _acc = MatchAmbig
                 go ((MatchDef xs):rest) acc = go rest (xs : acc)
+                go ((MatchSeq _ ):_rst) _   = error $ "can't yet process MatchSeq embedded..."
 
--}-- }}} 
+{-
+-- TODO handle partial matches:
+--        case (v1,v2) of (True, x) -> f(x)
+--      can become
+--        case (v1,v2) of (True, x) -> f(v2)
+--      even thought it can't become simply ``f(v2)`` because v1 might not be True.
+-}
+
+dbgDoc :: MonadIO m => Doc -> m ()
+dbgDoc d =
+  if False
+    then liftIO $ putDocLn d
+    else return ()
