@@ -58,7 +58,7 @@ data ClauseMatrix a t = ClauseMatrix [ClauseRow a t]
 data ClauseRow a t  = ClauseRow { rowOrigPat  :: (SPattern t)
                                 , rowPatterns :: [SPattern t]
                                 , rowAction   :: a
-                                , rowSourceRange :: SourceRange }
+                                ,_rowSourceRange :: SourceRange }
 
 data SPattern t = SP_Wildcard
                 | SP_Variable (TypedId t)

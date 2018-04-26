@@ -44,7 +44,7 @@ instance Eq KNMono where e1 == e2 = show e1 == show e2
 instance IntSizedBits MonoType where
         intSizeBitsOf (PrimInt isb) = isb
         intSizeBitsOf (RefinedType v _ _) = intSizeBitsOf (tidType v)
-        intSizeBitsOf _ = error $ "Unable to compute IntSizedBits for non-PrimInt type"
+        intSizeBitsOf t = error $ "Unable to compute IntSizedBits for non-PrimInt type: " <> show (pretty t)
 
 extractFnType (FnType _ _ cc pf) = (cc, pf)
 extractFnType (PtrType (StructType [FnType _ _ cc FT_Proc, _])) = (cc, FT_Func)
