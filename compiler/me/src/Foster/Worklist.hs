@@ -7,7 +7,7 @@
 module Foster.Worklist where
 
 import Data.Sequence
-import Data.Sequence as Seq(empty)
+import Data.Sequence as Seq(empty, fromList, length)
 
 -- Add new items to the right, and take items from the left.
 data WorklistQ item = WorklistQ (Seq item)
@@ -21,9 +21,16 @@ worklistToList (WorklistQ s) = go (viewl s)
 worklistAdd :: WorklistQ item -> item -> WorklistQ item
 worklistAdd (WorklistQ s) a = WorklistQ (s |> a)
 
+worklistAddList :: WorklistQ item -> [item] -> WorklistQ item
+worklistAddList (WorklistQ s) xs = WorklistQ (s >< Seq.fromList xs)
+
 worklistGet :: WorklistQ item -> Maybe (item, WorklistQ item)
 worklistGet (WorklistQ s) =
   case viewl s of
         EmptyL  -> Nothing
         a :< s' -> Just (a, WorklistQ s')
 
+worklistLength :: WorklistQ item -> Int
+worklistLength (WorklistQ s) = Seq.length s
+        
+        
