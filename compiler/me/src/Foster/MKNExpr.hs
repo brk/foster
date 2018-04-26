@@ -18,7 +18,7 @@ import Foster.Letable
 import Foster.Kind
 
 import Control.Monad(liftM)
-import Control.Monad.State(gets, get, put, lift, liftIO,
+import Control.Monad.State(gets, get, put, lift, liftIO, forM_,
                            StateT, evalStateT, execStateT, runStateT)
 import Data.IORef(IORef, readIORef, newIORef, writeIORef)
 import Data.UnionFind.IO
@@ -288,28 +288,44 @@ type MKBoundVar t = MKBound t
 -- we'll examine the uplink, which points to the MKLetCont; from there,
 -- we'll harvest linkCF and linkCC. We can do simple identity comparisons
 -- of the uplinks in the linked terms. Thus from linkCB we update linkCC.
+--
+-- Inlining can revisit dead terms. One example of how this can happen is
+-- that (1) a singleton fn is optimized, passing a statically known argument.
+-- After substitution, uses of the fn's formal are (potentially) redexes.
+-- Thus we enqueue the uses for further processing; note specifically that
+-- this involves the ``freeLink`` of the formal's occurrence. In step (3),
+-- before visiting the occurrence's link, the same call using the formal is
+-- inlined, but via a different link -- the one from the call's parent term.
+-- In step (4), we finally re-visit the call enqueued in step 2. At this point,
+-- the call is dead, meaning its parent now points to the inlined code instead.
 
-getActiveLinkFor :: MKTerm ty -> Compiled (Subterm ty)
+data ActiveLinkStatus ty = ActiveSubterm (Subterm ty)
+                         | TermIsDead
+
+getActiveLinkFor :: Pretty ty => MKTerm ty -> Compiled (ActiveLinkStatus ty)
 getActiveLinkFor term = do
   let isLinkToOurTerm link = do
         mb_term' <- readOrdRef link
         case mb_term' of
-          Nothing -> return False
-          Just term' -> return $ parentLinkT term' == parentLinkT term
+          Nothing -> do
+            liftIO $ putStrLn $ "no term for link #" ++ show (ordRefUniq link)
+            return False
+          Just term' -> do
+            return $ parentLinkT term' == parentLinkT term
 
   parent <- readLink "linkFor" (parentLinkT term)
   case parent of
     ParentFn fn -> do
       good <- isLinkToOurTerm (mkfnBody fn)
       if good
-        then return $ mkfnBody fn
-        else error $ "linkFor: body of parent fn wasn't equal to our term!"
+        then return $ ActiveSubterm $ mkfnBody fn
+        else return $ TermIsDead
     ParentTerm p -> do
       siblings <- subtermsOf p
       goods <- mapM isLinkToOurTerm siblings
       case [sib | (True, sib) <- zip goods siblings] of
-        [] -> error "linkFor didn't find our candidate among the siblings"
-        [x] -> return x
+        [] -> return TermIsDead
+        [x] -> return $ ActiveSubterm x
         _ -> error $ "linkFor found multiple candidates among the siblings!"
 
 subtermsOf :: MKTerm t -> Compiled [Subterm t]
@@ -770,6 +786,24 @@ genContinuation contName contBindName ty_x (kf, resTy) nu restgen = do
     let rv = MKLetCont nu [known] rest'
     lift $ backpatchT rv [rest']
 
+canRemoveIfDead :: MKExpr ty -> Bool
+canRemoveIfDead expr =
+  case expr of
+    MKLiteral     {} -> True
+    MKTuple       {} -> True
+    MKKillProcess {} -> False
+    MKCallPrim    {} -> False -- TODO refine
+    MKAppCtor     {} -> True
+    MKAlloc       {} -> True
+    MKDeref       {} -> True
+    MKStore       {} -> False
+    MKAllocArray  {} -> True
+    MKArrayRead   {} -> True
+    MKArrayPoke   {} -> False
+    MKArrayLit    {} -> True
+    MKCompiles    {} -> True
+    MKTyApp       {} -> True
+    
 parentLinkE :: MKExpr ty -> Uplink ty
 parentLinkE expr =
   case expr of
@@ -1012,7 +1046,7 @@ collectRedexes ref valbindsref expbindsref funbindsref
                                                          return [k]
                       MKLetRec      _u   knowns k  -> do mapM_ markValBind knowns
                                                          return $ k : (map snd knowns)
-                      MKLetFuns     _u   knowns k  -> do liftIO $ modIORef' ref (\w -> worklistAdd w subterm) -- markRedex
+                      MKLetFuns     _u   knowns k  -> do markRedex subterm
                                                          mapM_ (markFunBind subterm) knowns
                                                          fns <- knownActuals knowns
                                                          return $ k : map mkfnBody fns
@@ -1348,6 +1382,28 @@ mknInline subterm mainCont mb_gas = do
        dbgDoc $ text $ "collected " ++ show (length (Map.toList k0)) ++ " valbinds..."
        dbgDoc $ text $ "collected " ++ show (length (Map.toList e0)) ++ " expbinds..."
        dbgDoc $ text $ "collected " ++ show (length (Map.toList f0)) ++ " funbinds..."
+       
+    let processDeadBindings = do
+          w0 <- liftIO $ readIORef bindingWorklistRef
+          case worklistGet w0 of
+            Nothing -> do return ()
+            Just (bv, w') -> do
+              liftIO $ writeIORef bindingWorklistRef w'
+              expBindMap <- liftIO $ readIORef er
+              case Map.lookup bv expBindMap of
+                Nothing -> do dbgDoc $ text "unable to find expr for dead bound var " <> pretty bv
+                              return ()
+                Just exprLink -> do
+                    e <- readLink "processDeadBindings" exprLink
+                    let freeOccs = freeVarsE e
+                    if canRemoveIfDead e && not (null freeOccs)
+                      then do dbgDoc $ yellow (text "killing " <> pretty (length freeOccs) <>
+                                               text " occurrences in dead expr bound to ") <> red (pretty bv)
+                              kn <- knOfMKExpr NoCont e
+                              dbgDoc $ indent 8 (pretty kn)
+                              mapM_ (killOccurrence bindingWorklistRef) freeOccs
+                      else return ()
+              processDeadBindings
 
     let worklistGet' = do
           w0 <- liftIO $ readIORef wr
@@ -1361,23 +1417,18 @@ mknInline subterm mainCont mb_gas = do
                 Just mredex -> do
                   parent <- readOrdRef (parentLinkT mredex)
                   return $ Just (subterm, mredex, parent)
-              {-
-              parent <- readOrdRef (parentLinkT mredex)
-              mb_altself <- readOrdRef (selfLinkT mredex)
-              case mb_altself of
-                Nothing ->
-                  error $ "item in worklist had null self-link...?"
-                Just altself ->
-                  if selfLinkT altself /= selfLinkT mredex
-                    then
-                      error $ "altself not the same as mredex?!?"
-                    else
-                      return $ Just (mredex, parent)
-                      -}
+
+    let origGas = case mb_gas of
+                    Nothing -> 42000
+                    Just gas -> gas
 
     let go 0 = dbgDoc $ text "... ran outta gas"
 
         go gas = do
+           ccWhen ccVerbose $ do
+             liftIO $ putStrLn $ "gas: " ++ show gas ++ "; step: " ++ show (origGas - gas)
+
+           processDeadBindings
            mb_mredex_parent <- worklistGet'
            case mb_mredex_parent of
              Nothing -> dbgDoc $ text "... ran outta work"
@@ -1390,278 +1441,294 @@ mknInline subterm mainCont mb_gas = do
                        dbgDoc $ red (text "skipping parentless redex: ") <+> pretty redex
                   
                 go gas
-             Just (subterm, mredex, Just _parent) -> case mredex of
-               MKCall _up _ty callee args kv -> do
-                 knownFns   <- liftIO $ readIORef fr
-                 aliases    <- liftIO $ readIORef ar
-                 situation <- classifyRedex callee args knownFns aliases
-                 case situation of
-                   CallOfUnknownFunction -> do
-                     do redex <- knOfMK NoCont mredex
-                        dbgDoc $ text "CallOfUnknownFunction: " <+> pretty redex
-                     return ()
-                   CallOfSingletonFunction fn -> do
-                     ccWhen ccVerbose $ do
-                        redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
-                        dbgDoc $ text "CallOfSingletonFunction starting with: " <+> align (pretty redex)
 
-                     ccWhen ccVerbose $ do
-                        v <- freeBinder callee
-                        dbgDoc $ green (text "inlining without copying ") <> pretty (tidIdent $ boundVar v)
+             Just (subterm, mredex, Just _parent) -> do
+              linkResult <- getActiveLinkFor mredex
+              case linkResult of
+                TermIsDead -> go (gas - 1)
 
-                     newbody <- betaReduceOnlyCall fn args kv     wr fd
+                ActiveSubterm link -> do
+                  let replaceActiveSubtermWith newthing =
+                        replaceWith bindingWorklistRef link subterm newthing
 
-                     --do nubody <- readLink "kninline-sf" newbody
-                     --   newbody' <- knOfMK NoCont nubody
-                     --   dbgDoc $ text "CallOfSingletonFunction generated: " <+> pretty newbody'
+                  case mredex of
+                    MKCall _up _ty callee args kv -> do
+                      knownFns   <- liftIO $ readIORef fr
+                      aliases    <- liftIO $ readIORef ar
+                      situation <- classifyRedex callee args knownFns aliases
+                      case situation of
+                        CallOfUnknownFunction -> do
+                          do  redex <- knOfMK NoCont mredex
+                              dbgDoc $ text "CallOfUnknownFunction: " <+> pretty redex
+                          return ()
+                        CallOfSingletonFunction fn -> do
+                          ccWhen ccVerbose $ do
+                              redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
+                              dbgDoc $ text "CallOfSingletonFunction starting with: " <+> align (pretty redex)
 
-                     replaceWith subterm newbody
-                     killBinding callee knownFns aliases
-                     -- No need to collect redexes, since the body wasn't duplicated.
+                          ccWhen ccVerbose $ do
+                              v <- freeBinder callee
+                              dbgDoc $ green (text "inlining without copying ") <> pretty (tidIdent $ boundVar v)
 
-{-
-                     case _parent of
-                            ParentTerm pt -> do
-                              kn <- knOfMK   (mbContOf $ mkfnCont fn) pt
-                              dbgDoc $ text "CallOfSingletonFunction parent tm became: " <+> pretty kn
-                            ParentFn   pf -> do
-                              kn <- knOfMKFn NoCont pf
-                              dbgDoc $ text "CallOfSingletonFunction parent fn became: " <+> pretty kn
--}
+                          newbody <- betaReduceOnlyCall fn args kv     wr fd
 
-                   CallOfDonatableFunction fn -> do
-                     do redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
-                        dbgDoc $ text "CallOfDonatableFunction: " <+> pretty redex
-                     flags <- gets ccFlagVals
-                     if getInliningDonate flags
-                       then do
-                         ccWhen ccVerbose $ do
-                            v <- freeBinder callee
-                            dbgDoc $ green (text "copying and inlining DF ") <+> pretty (tidIdent $ boundVar v)
-                            --kn1 <- knOfMKFn (mbContOf $ mkfnCont fn) fn
-                            --dbgDoc $ text $ "pre-copy fn is " ++ show (pretty kn1)
-                            return ()
-                         fn' <- runCopyMKFn fn Map.empty
-                         ccWhen ccVerbose $ do
-                            kn1 <- knOfMKFn (mbContOf $ mkfnCont fn) fn'
-                            dbgDoc $ text $ "post-copy fn is " ++ show (pretty kn1)
-                         -- TODO Recursive-but-not-tail-recursive functions (RBNTRF)
-                         --      will have a recursive call in the body, so we can't
-                         --      simply use betaReduceOnlyCall as theres more than 1 call.
-                         --
-                         --      Most functions will be given loop headers in KNExpr,
-                         --      but an un-eliminated loop header within a RBNTRF
-                         --      might change the allocation behavior of a program.
-                         --      
-                         --      If the generated fn' isn't singleton/dead, it should
-                         --      be inserted next to the original fn. (TODO)
+                          --do nubody <- readLink "kninline-sf" newbody
+                          --   newbody' <- knOfMK NoCont nubody
+                          --   dbgDoc $ text "CallOfSingletonFunction generated: " <+> pretty newbody'
 
-                         rbntr <- isRecursiveButNotTailRecursive fn'
-                         newbody <- if rbntr then do
-                           -- We don't modify the known function list, so the recursive call in
-                           -- the copied body will bottom out and not do any loop unrolling.
-                           
-                           dbgDoc $ red $ text "isRecursiveButNotTailRecursive!"
-                           -- We must disable recursive inlining or else we'd infinitely regress!
-                           
-                           knfn <- knOfMKFn NoCont $ fn'
+                          dbgDoc $ text "Invoking `replaceWith` for CallOfSingletonFunction"
+                          replaceActiveSubtermWith newbody
+                          dbgDoc $ text "Killing callee for CallOfSingletonFunction"
+                          killBinding callee knownFns aliases
+                          -- No need to collect redexes, since the body wasn't duplicated.
 
-                           kn' <- knLoopHeaders' (KNLetFuns [tidIdent $ fnVar knfn] [knfn] (KNVar $ fnVar knfn))
-                                                 True
-                           let (KNLetFuns _ [knfn'] _) = kn'
-                           dbgDoc $ text $ "loop-headered fn is " ++ show (pretty knfn')
-
-                           fn'' <- evalStateT (mkOfKNFn knfn') $
-                            Map.fromList [(tidIdent $ boundVar b, b) | (b,_) <- Map.toList knownFns]
-
-                           -- We reuse the pieces of the original MKCall because it's now dead.
-                           createLetFunAndCall fn'' (mkfnVar fn'') _ty _up args kv
-                           
-                          else do betaReduceOnlyCall fn' args kv     wr fd
-                          
-                         replaceWith subterm newbody
-                         -- No need to kill the old binding, since the body was duplicated.
-
-                         collectRedexes wr kr er fr fd ar relocDomMarkers newbody
-
-                       else return ()
-
-                   SomethingElse _fn -> do
-                     do redex <- knOfMK (mbContOf $ mkfnCont _fn) mredex
-                        dbgDoc $ text "SomethingElse (inlineNorF): " <+> align (pretty redex)
-                     if shouldInlineRedex mredex _fn
-                       then do
-                             do v <- freeBinder callee
-                                dbgDoc $ green (text "copying and inlining SE ") <+> pretty (tidIdent $ boundVar v)
-                                --kn1 <- knOfMK (YesCont mainCont) term
-                                --dbgDoc $ text $ "knOfMK, term is " ++ show (pretty kn1)
-                             fn' <- runCopyMKFn _fn Map.empty
-                             newbody <- betaReduceOnlyCall fn' args kv    wr fd
-                             replaceWith subterm newbody
-                             killOccurrence callee
-                             collectRedexes wr kr er fr fd ar relocDomMarkers newbody
-                       else return ()
-                 go (gas - 1)
-              
-               MKCont _up _ty callee args -> do
-                 knownFns   <- liftIO $ readIORef fr
-                 aliases    <- liftIO $ readIORef ar
-                 situation <- classifyRedex callee args knownFns aliases
-                 case situation of
-                   CallOfUnknownFunction -> do
-                     do cb <- freeBinder callee
-                        if T.pack ".fret" `T.isPrefixOf` (identPrefix $ tidIdent $ boundVar cb) 
-                          then return ()
-                          else do redex <- knOfMK (YesCont mainCont) mredex
-                                  dbgDoc $ red (text "CallOfUnknownCont: ") <+> pretty redex
-                     return ()
-
-                   CallOfSingletonFunction fn -> do
-                     do redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
-                        dbgDoc $ text "CallOfSingletonCont: " <+> pretty redex
-                    
-                        mapM_ (\arg -> do b <- freeBinder arg
-                                          c <- mkbCount b
-                                          dbgDoc $ text "      pre-beta occ count: " <> pretty c) args
-                                          {-
-      fob <- freeBinder fo
-      fo_c <- mkbCount fob
-      fx_c <- mkbCount b
-      dbgDoc $ text "substituting var " <> pretty (boundVar b) <> text " for " <> pretty (boundVar fob)
-      dbgDoc $ text "    occ lengths " <> pretty fx_c <> text " and " <> pretty fo_c
-
-      fo_c <- mkbCount fob
-      fx_c <- mkbCount b
-      fa <- freeBinder fox
-      dbgDoc $ text "    afteward, lengths " <> pretty fx_c <> text " and " <> pretty fo_c <> text "; fox -> " <> pretty (boundVar fa)
+      {-
+                          case _parent of
+                                  ParentTerm pt -> do
+                                    kn <- knOfMK   (mbContOf $ mkfnCont fn) pt
+                                    dbgDoc $ text "CallOfSingletonFunction parent tm became: " <+> pretty kn
+                                  ParentFn   pf -> do
+                                    kn <- knOfMKFn NoCont pf
+                                    dbgDoc $ text "CallOfSingletonFunction parent fn became: " <+> pretty kn
       -}
 
-                     do v <- freeBinder callee
-                        dbgDoc $ green (text "      beta reducing (inlining) singleton cont ") <> pretty (tidIdent $ boundVar v)
-
-                     newbody <- betaReduceOnlyCall fn args callee         wr fd
-                     
-                    --  do newbody' <- knOfMK (mbContOf $ mkfnCont fn) newbody
-                    --     dbgDoc $ text "CallOfSingletonCont: new: " <+> pretty newbody'
-
-                     mapM_ (\arg -> do b <- freeBinder arg
-                                       c <- mkbCount b
-                                       dbgDoc $ text "      pre-kill occ count: " <> pretty c) args
-
-                     replaceWith subterm newbody
-                     killBinding callee knownFns aliases
-
-                     mapM_ (\arg -> do b <- freeBinder arg
-                                       c <- mkbCount b
-                                       dbgDoc $ text "      post-kill occ count: " <> pretty c) args
-
-
-                   CallOfDonatableFunction fn -> do
-                     do redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
-                        dbgDoc $ text "CallOfDonatableCont: " <+> pretty redex
-                     return ()
-                     {-
-                     flags <- gets ccFlagVals
-                     if getInliningDonate flags
-                       then do
-                         fn' <- runCopyMKFn fn
-                         newbody <- do mk <- betaReduceOnlyCall fn' args kv   wr fd
-                                       readLink "CallOfDonatableC" mk
-                         replaceWith mredex newbody
-                         killOccurrence callee
-                         collectRedexes wr kr er fr fd ar relocDomMarkers newbody
-                       else return ()
--}
-                   SomethingElse _fn -> do
-                     do redex <- knOfMK (mbContOf $ mkfnCont _fn) mredex
-                        dbgDoc $ text "SomethingElseC: " <+> pretty redex
-                     if shouldInlineRedex mredex _fn
-                       then do
-                             dbgDoc $ text "skipping inlining continuation redex...?"
-                             {-
-                             fn' <- runCopyMKFn _fn
-                             newbody <- betaReduceOnlyCall fn' args kv   wr fd  >>= readLink "CallOfDonatable"
-                             replaceWith mredex newbody
-                             killOccurrence callee
-                             collectRedexes wr kr er fr fd ar relocDomMarkers newbody
-                             -}
-                             return ()
-                       else return ()
-                 go (gas - 1)
-
-               MKLetFuns _u knowns fnrest -> do
-                 contifiability <- analyzeContifiability knowns
-                 case contifiability of
-                   GlobalsArentContifiable -> return ()
-                   CantContifyWithNoFn -> do dbgDoc $ yellow (text "       can't contify with no fn...")
-                                             return ()
-                   NoNeedToContifySingleton -> do dbgDoc $ yellow (text "       singleton usage, no need to contify")
-                                                  return ()
-                   HadUnknownContinuations -> do dbgDoc $ red (text "       had one or more unknown continuations")
-                                                 return ()
-                   HadMultipleContinuations -> do dbgDoc $ red (text "       had too many continuations")
-                                                  return ()
-                   NoSupportForMultiBindingsYet -> do dbgDoc $ red (text "skipping considering " <> pretty (map (tidIdent.boundVar.fst) knowns) <> text " for contification")
-                                                      return ()
-                   CantContifyNestedTailCalls -> do dbgDoc $ red (text "can't contify with nested tail call...")
-                                                    return ()
-                   ContifyWith cont bv fn occs -> do
-                      dbgDoc $ green (text "       should contify!")
-                      
-                      -- Replace uses of return continuation with common cont target.
-                      let Just oldret = mkfnCont fn
-                      -- This may result in additional functions becoming contifiable,
-                      -- so we collect the uses of the old ret cont first.
-                      collectRedexesUsingFnRetCont oldret   wr fd
-                      substVarForVar'' cont oldret
-
-                      -- Replacing the Call with a Cont will kill the old cont occurrences.
-                      mapM_ (\occ -> do
-                        mb_tm <- readOrdRef (freeLink occ)
-                        case mb_tm of
-                          Nothing -> error $ "asdfasdf"
-                          Just tm@(MKCall uplink ty v vs _cont) -> do
-                            let newterm = MKCont uplink ty v vs
-                            replaceTermWith tm newterm
-                            writeOrdRef (freeLink occ) (Just newterm)) occs
-
-                      rdm <- liftIO $ readIORef relocDomMarkers
-                      let ids = [tidIdent $ boundVar bv]
-                      (target, targetrest) <-
-                          case Map.lookup ids rdm of
-                            Nothing -> do
-                              -- We have    fun f = F in fR
-                              -- and want to end up with
-                              --           cont f = F in fR
-                              -- Replace the function with a continuation; be sure to
-                              -- replace the fn's global ident with a local version!
-                              return (mredex, fnrest)
-
-                            Just targetandrest -> do
-                              -- We have fun f = F in fR   and somewhere else,   domreloc f in dR
-                              -- and want to end up with
-                              --                      fR                         cont f = F in dR
+                        CallOfDonatableFunction fn -> do
+                          do  redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
+                              dbgDoc $ text "CallOfDonatableFunction: " <+> pretty redex
+                          flags <- gets ccFlagVals
+                          if getInliningDonate flags
+                            then do
+                              ccWhen ccVerbose $ do
+                                  v <- freeBinder callee
+                                  dbgDoc $ green (text "copying and inlining DF ") <+> pretty (tidIdent $ boundVar v)
+                                  --kn1 <- knOfMKFn (mbContOf $ mkfnCont fn) fn
+                                  --dbgDoc $ text $ "pre-copy fn is " ++ show (pretty kn1)
+                                  return ()
+                              fn' <- runCopyMKFn fn Map.empty
+                              ccWhen ccVerbose $ do
+                                  kn1 <- knOfMKFn (mbContOf $ mkfnCont fn) fn'
+                                  dbgDoc $ text $ "post-copy fn is " ++ show (pretty kn1)
+                              -- TODO Recursive-but-not-tail-recursive functions (RBNTRF)
+                              --      will have a recursive call in the body, so we can't
+                              --      simply use betaReduceOnlyCall as theres more than 1 call.
                               --
-                              -- Remove the contified function explicitly
-                              replaceWith subterm fnrest
-                              return targetandrest
+                              --      Most functions will be given loop headers in KNExpr,
+                              --      but an un-eliminated loop header within a RBNTRF
+                              --      might change the allocation behavior of a program.
+                              --      
+                              --      If the generated fn' isn't singleton/dead, it should
+                              --      be inserted next to the original fn. (TODO)
 
-                      contfn <- mkKnown' bv $ fn { mkfnCont = Nothing }
-                      let letcont = MKLetCont (parentLinkT target) [contfn] targetrest
-                      replaceTermWith target letcont
+                              rbntr <- isRecursiveButNotTailRecursive fn'
+                              newbody <- if rbntr then do
+                                            -- We don't modify the known function list, so the recursive call in
+                                            -- the copied body will bottom out and not do any loop unrolling.
+                                            
+                                            dbgDoc $ red $ text "isRecursiveButNotTailRecursive!"
+                                            -- We must disable recursive inlining or else we'd infinitely regress!
+                                            
+                                            knfn <- knOfMKFn NoCont $ fn'
 
-                 go (gas - 1)
+                                            kn' <- knLoopHeaders' (KNLetFuns [tidIdent $ fnVar knfn] [knfn] (KNVar $ fnVar knfn))
+                                                                  True
+                                            let (KNLetFuns _ [knfn'] _) = kn'
+                                            dbgDoc $ text $ "loop-headered fn is " ++ show (pretty knfn')
 
-               _ -> do
-                 ccWhen ccVerbose $ do
-                    kn <- knOfMK (YesCont mainCont) mredex
-                    dbgDoc $ text $ "skipping non-call/cont redex: " ++ show (pretty kn)
-                 go gas
+                                            fn'' <- evalStateT (mkOfKNFn knfn') $
+                                              Map.fromList [(tidIdent $ boundVar b, b) | (b,_) <- Map.toList knownFns]
 
-    let gas = case mb_gas of
-                Nothing -> 42000
-                Just gas -> gas
-    go gas
+                                            -- We reuse the pieces of the original MKCall because it's now dead.
+                                            createLetFunAndCall fn'' (mkfnVar fn'') _ty _up args kv
+                                          
+                                          else do betaReduceOnlyCall fn' args kv     wr fd
+                                
+                              replaceActiveSubtermWith newbody
+                              -- No need to kill the old binding, since the body was duplicated.
+
+                              collectRedexes wr kr er fr fd ar relocDomMarkers newbody
+
+                            else return ()
+
+                        SomethingElse _fn -> do
+                          do  redex <- knOfMK (mbContOf $ mkfnCont _fn) mredex
+                              dbgDoc $ text "SomethingElse (inlineNorF): " <+> align (pretty redex)
+                          if shouldInlineRedex mredex _fn
+                            then do
+                                  do  v <- freeBinder callee
+                                      dbgDoc $ green (text "copying and inlining SE ") <+> pretty (tidIdent $ boundVar v)
+                                      --kn1 <- knOfMK (YesCont mainCont) term
+                                      --dbgDoc $ text $ "knOfMK, term is " ++ show (pretty kn1)
+                                  fn' <- runCopyMKFn _fn Map.empty
+                                  newbody <- betaReduceOnlyCall fn' args kv    wr fd
+                                  replaceActiveSubtermWith newbody
+                                  killOccurrence bindingWorklistRef callee
+                                  collectRedexes wr kr er fr fd ar relocDomMarkers newbody
+                            else return ()
+                      go (gas - 1)
+                    
+                    MKCont _up _ty callee args -> do
+                      knownFns   <- liftIO $ readIORef fr
+                      aliases    <- liftIO $ readIORef ar
+                      situation <- classifyRedex callee args knownFns aliases
+                      case situation of
+                        CallOfUnknownFunction -> do
+                          do  cb <- freeBinder callee
+                              if T.pack ".fret" `T.isPrefixOf` (identPrefix $ tidIdent $ boundVar cb) 
+                                then return ()
+                                else do redex <- knOfMK (YesCont mainCont) mredex
+                                        dbgDoc $ red (text "CallOfUnknownCont: ") <+> pretty redex
+                          return ()
+
+                        CallOfSingletonFunction fn -> do
+                          do  redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
+                              dbgDoc $ text "CallOfSingletonCont: " <+> pretty redex
+                          
+                              mapM_ (\arg -> do b <- freeBinder arg
+                                                c <- mkbCount b
+                                                dbgDoc $ text "      pre-beta occ count: " <> pretty c) args
+
+                          do  v <- freeBinder callee
+                              dbgDoc $ green (text "      beta reducing (inlining) singleton cont ") <> pretty (tidIdent $ boundVar v)
+
+                          -- If we are substituting a known argument, we should re-examine the
+                          -- substituted occurrences, which might have been made reducible.
+                          expBindMap <- liftIO $ readIORef er
+                          forM_ (zipSameLength args (mkfnVars fn)) $ \(arg, fnbv) -> do
+                            bv <- freeBinder arg
+                            if Map.member bv expBindMap
+                              then do occs <- collectOccurrences fnbv
+                                      liftIO $ modIORef' wr (\w -> worklistAddList w $ map freeLink occs)
+                              else return ()
+
+
+                          newbody <- betaReduceOnlyCall fn args callee         wr fd
+                        
+                        --  do newbody' <- knOfMK (mbContOf $ mkfnCont fn) newbody
+                        --     dbgDoc $ text "CallOfSingletonCont: new: " <+> pretty newbody'
+
+                          mapM_ (\arg -> do b <- freeBinder arg
+                                            c <- mkbCount b
+                                            dbgDoc $ text "      pre-kill occ count: " <> pretty c) args
+
+                          replaceActiveSubtermWith newbody
+                          killBinding callee knownFns aliases
+
+                          mapM_ (\arg -> do b <- freeBinder arg
+                                            c <- mkbCount b
+                                            dbgDoc $ text "      post-kill occ count: " <> pretty c) args
+
+
+                        CallOfDonatableFunction fn -> do
+                          do  redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
+                              dbgDoc $ text "CallOfDonatableCont: " <+> pretty redex
+                          return ()
+                          {-
+                          flags <- gets ccFlagVals
+                          if getInliningDonate flags
+                            then do
+                              fn' <- runCopyMKFn fn
+                              newbody <- do mk <- betaReduceOnlyCall fn' args kv   wr fd
+                                            readLink "CallOfDonatableC" mk
+                              replaceActiveSubtermWith newbody
+                              killOccurrence bindingWorklistRef callee
+                              collectRedexes wr kr er fr fd ar relocDomMarkers newbody
+                            else return ()
+      -}
+                        SomethingElse _fn -> do
+                          do  redex <- knOfMK (mbContOf $ mkfnCont _fn) mredex
+                              dbgDoc $ text "SomethingElseC: " <+> pretty redex
+                          if shouldInlineRedex mredex _fn
+                            then do
+                                  dbgDoc $ text "skipping inlining continuation redex...?"
+                                  {-
+                                  fn' <- runCopyMKFn _fn
+                                  newbody <- betaReduceOnlyCall fn' args kv   wr fd  >>= readLink "CallOfDonatable"
+                                  replaceActiveSubtermWith newbody
+                                  killOccurrence bindingWorklistRef callee
+                                  collectRedexes wr kr er fr fd ar relocDomMarkers newbody
+                                  -}
+                                  return ()
+                            else return ()
+                      go (gas - 1)
+
+                    MKLetFuns _u knowns fnrest -> do
+                      contifiability <- analyzeContifiability knowns
+                      case contifiability of
+                        GlobalsArentContifiable -> return ()
+                        CantContifyWithNoFn -> do dbgDoc $ yellow (text "       can't contify with no fn...")
+                                                  return ()
+                        NoNeedToContifySingleton -> do  dbgDoc $ yellow (text "       singleton usage, no need to contify")
+                                                        return ()
+                        HadUnknownContinuations -> do dbgDoc $ red (text "       had one or more unknown continuations")
+                                                      return ()
+                        HadMultipleContinuations -> do  dbgDoc $ red (text "       had too many continuations")
+                                                        return ()
+                        NoSupportForMultiBindingsYet -> do  dbgDoc $ red (text "skipping considering " <> pretty (map (tidIdent.boundVar.fst) knowns) <> text " for contification")
+                                                            return ()
+                        CantContifyNestedTailCalls -> do  dbgDoc $ red (text "can't contify with nested tail call...")
+                                                          return ()
+                        ContifyWith cont bv fn occs -> do
+                            dbgDoc $ green (text "       should contify!")
+                            
+                            -- Replace uses of return continuation with common cont target.
+                            let Just oldret = mkfnCont fn
+                            -- This may result in additional functions becoming contifiable,
+                            -- so we collect the uses of the old ret cont first.
+                            collectRedexesUsingFnRetCont oldret   wr fd
+                            substVarForVar'' cont oldret
+
+                            -- Replacing the Call with a Cont will kill the old cont occurrences.
+                            mapM_ (\occ -> do
+                              mb_tm <- readOrdRef (freeLink occ)
+                              case mb_tm of
+                                Nothing -> error $ "asdfasdf"
+                                Just tm@(MKCall uplink ty v vs _cont) -> do
+                                  linkResult <- getActiveLinkFor tm
+                                  case linkResult of
+                                    ActiveSubterm target -> do
+                                      let newterm = MKCont uplink ty v vs
+                                      replaceTermWith bindingWorklistRef target tm newterm
+                                      writeOrdRef (freeLink occ) (Just newterm)
+                                    TermIsDead -> return ()) occs
+
+                            rdm <- liftIO $ readIORef relocDomMarkers
+                            let ids = [tidIdent $ boundVar bv]
+                            (target, targetrest) <-
+                                case Map.lookup ids rdm of
+                                  Nothing -> do
+                                    -- We have    fun f = F in fR
+                                    -- and want to end up with
+                                    --           cont f = F in fR
+                                    -- Replace the function with a continuation; be sure to
+                                    -- replace the fn's global ident with a local version!
+                                    return (mredex, fnrest)
+
+                                  Just targetandrest -> do
+                                    -- We have fun f = F in fR   and somewhere else,   domreloc f in dR
+                                    -- and want to end up with
+                                    --                      fR                         cont f = F in dR
+                                    --
+                                    -- Remove the contified function explicitly
+                                    replaceActiveSubtermWith fnrest
+                                    return targetandrest
+
+                            linkResult <- getActiveLinkFor target
+                            case linkResult of
+                              ActiveSubterm link -> do
+                                contfn <- mkKnown' bv $ fn { mkfnCont = Nothing }
+                                let letcont = MKLetCont (parentLinkT target) [contfn] targetrest
+                                replaceTermWith bindingWorklistRef link target letcont
+                              TermIsDead -> return ()
+
+                      go (gas - 1)
+
+                    _ -> do
+                      ccWhen ccVerbose $ do
+                          kn <- knOfMK (YesCont mainCont) mredex
+                          dbgDoc $ text $ "skipping non-call/cont redex: " ++ show (pretty kn)
+                      go gas
+
+    go origGas
 
     return ()
 
@@ -1817,6 +1884,7 @@ analyzeContifiability knowns = do
 
 -- Collect the list of occurrences for the given binder,
 -- but "peek through" any bitcasts.
+collectOccurrences :: MKBoundVar t -> Compiled [FreeOcc t]
 collectOccurrences bv = do
   inits <- dlcToList bv
   initss <- mapM (\fv -> do
@@ -1914,28 +1982,29 @@ shouldInlineRedex _mredex _fn =
   -}
   False
 
-replaceWith :: Pretty ty => Subterm ty -> Subterm ty -> Compiled ()
-replaceWith poss_indir_target newsubterm = do
+replaceWith :: Pretty ty => IORef (WorklistQ (MKBoundVar ty)) -> Subterm ty ->
+               Subterm ty -> Subterm ty -> Compiled ()
+replaceWith bindingWorklistRef activeLink poss_indir_target newsubterm = do
   oldterm <- readLink "replaceWith" poss_indir_target
   newterm <- readLink "replaceWith" newsubterm
-  replaceTermWith oldterm newterm
+  replaceTermWith bindingWorklistRef activeLink oldterm newterm
   writeOrdRef poss_indir_target     (Just newterm)
 
-replaceTermWith :: Pretty ty => MKTerm ty -> MKTerm ty -> Compiled ()
-replaceTermWith oldterm newterm = do
-  target <- getActiveLinkFor oldterm
-
-  writeOrdRef target            (Just newterm)
+replaceTermWith :: Pretty ty => IORef (WorklistQ (MKBoundVar ty)) -> Subterm ty ->
+                   MKTerm ty -> MKTerm ty -> Compiled ()
+replaceTermWith bindingWorklistRef activeLink oldterm newterm = do
+  writeOrdRef activeLink           (Just newterm)
 
   let oldoccs = directFreeVarsT oldterm
   let newoccs = directFreeVarsT newterm
-  mapM_ killOccurrence (oldoccs `butnot` newoccs)
+  mapM_ (killOccurrence bindingWorklistRef) (oldoccs `butnot` newoccs)
   mapM_ (\fv -> setFreeLink fv newterm) newoccs
   readOrdRef (parentLinkT oldterm) >>= writeOrdRef (parentLinkT newterm)
 
-killOccurrence :: Pretty ty => FreeVar ty -> Compiled ()
-killOccurrence fo = do
-    MKBound _v r <- freeBinder fo -- r :: OrdRef (Maybe (FreeOcc tyx))
+killOccurrence :: Pretty ty => IORef (WorklistQ (MKBoundVar ty)) ->
+                  FreeVar ty -> Compiled ()
+killOccurrence bindingWorklistRef fo = do
+    b@(MKBound _v r) <- freeBinder fo -- r :: OrdRef (Maybe (FreeOcc tyx))
 
     isSingleton <- freeOccIsSingleton fo
     if isSingleton
@@ -1943,13 +2012,14 @@ killOccurrence fo = do
        ccWhen ccVerbose $ do
          dbgDoc $ red (text "killing singleton binding ") <> prettyId _v
        writeOrdRef r Nothing
+       liftIO $ modIORef' bindingWorklistRef (\w -> worklistAdd w b)
      else do
        n <- dlcNext fo
        p <- dlcPrev fo
        writeOrdRef (dlcNextRef p) n
        writeOrdRef (dlcPrevRef n) p
 
-    -- Make sure binder doesn't point to fo
+    -- Make sure binder doesn't point to ``fo``.
     mb_fo' <- readOrdRef r
     case mb_fo' of
       Just fo' | dlcIsSameNode fo fo' -> do
@@ -1981,6 +2051,8 @@ lookupBinding' binding m = do
     case Map.lookup binding m of
       Nothing   -> return Nothing
       Just link -> readOrdRef link
+
+zipSameLength = zip
 
 betaReduceOnlyCall fn args kv    wr fd = do
     mapM_ substVarForBound (zip args (mkfnVars fn))

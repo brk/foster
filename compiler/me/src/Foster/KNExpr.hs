@@ -986,9 +986,9 @@ kNormalCtors st dtype =
   where
     kNormalCtor :: DataType TypeIL -> DataCtor TypeIL
                 -> KN (FnExprIL)
-    kNormalCtor _datatype (DataCtor _cname _tyformals _tys Nothing lone _range) = do
+    kNormalCtor _datatype (DataCtor _cname _tyformals _tys Nothing _lone _range) = do
       error "Cannot wrap a data constructor with no representation information."
-    kNormalCtor datatype (DataCtor cname _tyformals tys (Just repr) lone range) = do
+    kNormalCtor datatype (DataCtor cname _tyformals tys (Just repr) _lone range) = do
       let dname = dataTypeName datatype
       let arity = Prelude.length tys
       let cid   = CtorId (typeFormalName dname) (T.unpack cname) arity
