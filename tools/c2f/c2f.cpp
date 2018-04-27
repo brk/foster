@@ -2163,7 +2163,7 @@ The corresponding AST to be matched is
     } else if (ty == "Int32") {
       return t->isSignedIntegerType()
                 ? isTrivialIntegerLiteralInRange(e, 0 - (1 << 31), (1 << 31) - 1)
-                : isTrivialIntegerLiteralInRange(e, 0            , (1 << 32) - 1);
+                : isTrivialIntegerLiteralInRange(e, 0            , 4294967295);
     }
 
     return false;
@@ -2252,18 +2252,16 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       break;
     case CK_IntegralCast: {
       std::string cast = "";
+      std::string srcTy = tyName(exprTy(ce->getSubExpr()));
+      std::string dstTy = tyName(exprTy(ce));
 
-      if (isNestedCastThatCancelsOut(ce)
+      if (srcTy == dstTy
+       || isNestedCastThatCancelsOut(ce)
        || isa<CharacterLiteral>(ce->getSubExpr())
        || guaranteedNotToTruncate(ce->getSubExpr(), dstTy, exprTy(ce))) {
         // don't print anything, no cast needed
       } else {
-        std::string srcTy = tyName(exprTy(ce->getSubExpr())) ;
-        std::string dstTy = tyName(exprTy(ce));
-
-        if (srcTy != dstTy) {
-          cast = intCastFromTo(srcTy, dstTy, exprTy(ce->getSubExpr())->isSignedIntegerType());
-        }
+        cast = intCastFromTo(srcTy, dstTy, exprTy(ce->getSubExpr())->isSignedIntegerType());
       }
 
       if (cast == "") {
