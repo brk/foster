@@ -155,9 +155,9 @@ bool isVoidPtr(const Type* inp_ty) {
   return ty && ty->isVoidType();
 }
 
-bool isTrivialIntegerLiteralInRange(const Expr* e, int lo, int hi) {
+bool isTrivialIntegerLiteralInRange(const Expr* e, int64_t lo, int64_t hi) {
   if (auto lit = dyn_cast<IntegerLiteral>(e)) {
-    auto se = lit->getValue().getSExtValue();
+    int64_t se = lit->getValue().getSExtValue();
     return se >= lo && se <= hi;
   }
   return false;
@@ -2150,6 +2150,25 @@ The corresponding AST to be matched is
     }
   }
 
+  bool guaranteedNotToTruncate(const Expr* e, const std::string& ty, const Type* t) {
+    // t and ty are the destination type; the source "type" is irrelevant for literals.
+    if (ty == "Int8") {
+      return t->isSignedIntegerType()
+                ? isTrivialIntegerLiteralInRange(e, 0 - (1 << 7), (1 << 7) - 1)
+                : isTrivialIntegerLiteralInRange(e, 0           , (1 << 8) - 1);
+    } else if (ty == "Int16") {
+      return t->isSignedIntegerType()
+                ? isTrivialIntegerLiteralInRange(e, 0 - (1 << 15), (1 << 15) - 1)
+                : isTrivialIntegerLiteralInRange(e, 0            , (1 << 16) - 1);
+    } else if (ty == "Int32") {
+      return t->isSignedIntegerType()
+                ? isTrivialIntegerLiteralInRange(e, 0 - (1 << 31), (1 << 31) - 1)
+                : isTrivialIntegerLiteralInRange(e, 0            , (1 << 32) - 1);
+    }
+
+    return false;
+  }
+
   bool isLargerOrEqualSizedType(const Type* t1, const Type* t2) {
     return Ctx->getTypeSize(t1) >= Ctx->getTypeSize(t2);
   }
@@ -2235,10 +2254,8 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       std::string cast = "";
 
       if (isNestedCastThatCancelsOut(ce)
-       || isTrivialIntegerLiteralInRange(ce->getSubExpr(), 0, 127)
        || isa<CharacterLiteral>(ce->getSubExpr())
-       || (exprTy(ce)->isUnsignedIntegerType() &&
-             isTrivialIntegerLiteralInRange(ce->getSubExpr(), 0, 255))) {
+       || guaranteedNotToTruncate(ce->getSubExpr(), dstTy, exprTy(ce))) {
         // don't print anything, no cast needed
       } else {
         std::string srcTy = tyName(exprTy(ce->getSubExpr())) ;
