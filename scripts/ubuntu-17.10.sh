@@ -1,5 +1,8 @@
 #!/bin/sh
 
+set -e
+set -x
+
 sudo apt-get install --yes build-essential g++ g++-multilib git gnuplot \
                        python-pygments python-matplotlib  python-scipy python-sphinx \
                        python-pandas python-pip python-numpy python-qt4 \

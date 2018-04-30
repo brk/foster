@@ -272,7 +272,7 @@ convertHaskellToFoster hspath fosterpath = do
         case d of
           H.TypeDecl _dh _ty ->
             appendFile fosterpath ("/* TODO(dumpDecl.TypeDecl):\n" ++ prettyPrint d ++ "\n*/\n\n")
-          H.DataDecl H.DataType Nothing dh qcdecls mb_der -> do
+          H.DataDecl H.DataType Nothing dh qcdecls ders -> do
             let (name, _tvbs) = parseDeclHead dh
             appendFile fosterpath $ "type case " ++ prettyPrint name ++ {- tyvars -} "\n"
             forM_ qcdecls $ \(H.QualConDecl _mb_tvbs _mb_ctx condecl) -> do
@@ -290,9 +290,9 @@ convertHaskellToFoster hspath fosterpath = do
                    appendFile fosterpath "\n/* TODO: generate record accessor functions */\n"
                appendFile fosterpath "\n"
             appendFile fosterpath ";\n"
-            case mb_der of
-              Nothing -> return ()
-              Just der -> appendFile fosterpath ("/* " ++ prettyPrint der ++ "*/\n")
+            case ders of
+              [] -> return ()
+              _  -> appendFile fosterpath ("/* # derivings: " ++ show (length ders) ++ "*/\n")
 
           H.DataDecl dor mb_ctx dh qcdecls mb_der ->
             appendFile fosterpath ("/* TODO(dumpDecl.DataDecl):\n" ++ prettyPrint d ++ "*/\n")
