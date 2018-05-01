@@ -54,7 +54,7 @@ curl https://beyondgrep.com/ack-2.20-single-file > ~/.local/bin/ack && chmod 075
   rm ghc-*.xz
   cd ghc-* && ./configure --prefix=$HOME/.local/ghc-8.4.2 && make -j install && cd ..
 
-  wget https://www.haskell.org/cabal/release/cabal-install-2.0.0.1/cabal-install-2.0.0.1-x86_64-unknown-linux.tar.gz
+  wget https://www.haskell.org/cabal/release/cabal-install-2.2.0.0/cabal-install-2.2.0.0-x86_64-unknown-linux.tar.gz
   tar xf cabal-*.gz
   rm cabal-*.gz
   mv cabal ~/.local/bin
