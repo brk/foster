@@ -8,6 +8,18 @@ LLVM_VERSION=6.0.0
 LLVM_V=${LLVM_VERSION}.src
 LLVM_ROOT=${HOME}/llvm
 
+# $0 is either a path to the script,
+# implying `which` will return an empty string,
+# or it's a path, in which case we should use `which`.
+if [ "x$(which $0)" == "x" ]; then
+SD=$(dirname $0)/../scripts
+else
+SD=$(dirname `which $0`)/../scripts
+fi
+
+FOSTER_ROOT=$($SD/normpath.py $SD/..)
+MAKEJ=$(${FOSTER_ROOT}/third_party/vstinner_perf/makej)
+
 # invoke from LLVM_ROOT
 checkout_source() {
 pushd src
@@ -54,7 +66,7 @@ pushd src/llvm-${LLVM_V}
         #CC=clang CXX=clang++
         cmake .. -G "Unix Makefiles" -DCMAKE_INSTALL_PREFIX=${LLVM_ROOT}/${LLVM_VERSION} -DCMAKE_BUILD_TYPE="RelWithDebInfo" -DLLVM_TARGETS_TO_BUILD="host" -DLLVM_ENABLE_ASSERTIONS=ON -DLLVM_LINK_LLVM_DYLIB=ON
 
-	time make -j
+	time make -j${MAKEJ}
 
 	make install
 popd
