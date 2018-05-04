@@ -66,7 +66,7 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 // a way of easily overriding-without-overwriting the defaults.
 #include "gc/foster_gc_reconfig-inl.h"
 
-const int kFosterGCMaxDepth = 1024;
+const int kFosterGCMaxDepth = 500;
 const ssize_t inline gSEMISPACE_SIZE() { return __foster_globals.semispace_size; }
 
 /////////////////////////////////////////////////////////////////
@@ -197,10 +197,11 @@ public:
 
 #define immix_heap heap
 
+struct immix_common;
 struct immix_space;
 struct immix_worklist {
     void       initialize()      { ptrs.clear(); idx = 0; }
-    void       process(immix_heap* target);
+    void       process(immix_heap* target, immix_common& common);
     bool       empty()           { return idx >= ptrs.size(); }
     void       advance()         { ++idx; }
     heap_cell* peek_front()      { return ptrs[idx]; }
@@ -449,7 +450,6 @@ inline
 void set_associated_for_frame15_id(frame15_id fid, void* v) {
   gcglobals.lazy_mapped_frame15info[fid].associated = v;
 }
-
 
 inline bool obj_is_marked(heap_cell* obj) {
   if (MARK_OBJECT_WITH_BITS) {
@@ -780,7 +780,6 @@ struct frame15_allocator {
   }
 
   void give_frame15(frame15* f) {
-    if (ENABLE_GCLOG_PREP) { fprintf(gclog, "give_frame15(%p)\n", f); }
     spare_frame15s.push_back(f);
   }
 
@@ -953,6 +952,15 @@ uint8_t frame15_id_within_f21(frame15_id global_fid) {
   return uint8_t(low_n_bits(global_fid, 21 - 15));
 }
 
+bool is_in_metadata_frame(void* obj) {
+  bool would_be_metadata_if_smallmedium = frame15_id_within_f21(frame15_id_of(obj)) == 0;
+  auto frameclass = frame15_classification(obj);
+  if (frameclass == frame15kind::immix_smallmedium
+   || frameclass == frame15kind::immix_linebased
+   || frameclass == frame15kind::unknown) { return would_be_metadata_if_smallmedium; }
+  return false;
+}
+
 frame15* frame15_for_frame15_id(frame15_id f15) {
   return (frame15*)(uintptr_t(f15) << 15);
 }
@@ -1061,7 +1069,7 @@ inline void get_cell_metadata(heap_cell* cell,
   gc_assert(cell_size > 0, "cannot copy cell lacking metadata or length");
 
   if ((map = tryGetTypemap(cell))) {
-    if (ENABLE_GCLOG) { inspect_typemap(map); }
+    //if (ENABLE_GCLOG) { inspect_typemap(map); }
     if (map->isArray) {
       arr = heap_array::from_heap_cell(cell);
     }
@@ -1201,7 +1209,7 @@ struct immix_common {
 
     if (frameclass == frame15kind::immix_smallmedium
      || frameclass == frame15kind::immix_linebased) {
-      void* slot = (void*) cell;
+        void* slot = (void*) cell;
         mark_lines_for_slots(slot, cell_size);
     }
 
@@ -1404,14 +1412,17 @@ public:
 
   template<typename WasUncleanThunk>
   void iter_coalesced_frame21(WasUncleanThunk thunk) {
-    // Interestingly, we don't preserve any coalesced frame21s!
+    // Interestingly, we don't (directly) preserve any coalesced frame21s!
     // Unclean frame21s get split, and clean frame21s are returned to the global pool.
     // Coalescing is a net increase in work, but it's also a net reduction in
     // the critical path for large, mostly-empty subheaps, which is an overall win.
-    for (auto f21 : coalesced_frame21s) {
+    std::vector<frame21*> holder;
+    holder.swap(coalesced_frame21s);
+    // Avoid problems from the callback thunk indirectly modifying coalesced_frame21s,
+    // e.g. if the entire frame is dirty, it will be re-coalesced.
+    for (auto f21 : holder) {
       thunk(f21);
     }
-    coalesced_frame21s.clear();
   }
 
   void clear_tracking() {
@@ -1834,7 +1845,7 @@ public:
       }
     }
 
-    immix_worklist.process(this);
+    immix_worklist.process(this, common);
 
     // The regular immix space would call clear_current_blocks() here
     // because it marks frames as recycled.
@@ -2176,7 +2187,8 @@ public:
       bumper->base  = realigned_for_allocation(g);
 
       if (ENABLE_GCLOG || ENABLE_GCLOG_PREP) {
-        fprintf(gclog, "using recycled line group in frame %p; # left: %zu\n", (void*)(uintptr_t(frame15_id_of(g)) << 15), recycled.size());
+        fprintf(gclog, "using recycled line group in frame %p; # lines %d; # groups left: %zu\n", (void*)(uintptr_t(frame15_id_of(g)) << 15),
+            bumper->size() / IMMIX_LINE_SIZE, recycled.size());
         //for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", linemap[i] ? 'd' : '_'); } fprintf(gclog, "\n");
       }
       return true;
@@ -2377,7 +2389,7 @@ public:
       }
     }
 
-    immix_worklist.process(this);
+    immix_worklist.process(this, common);
 
     auto deltaRecursiveMarking_us = phase.elapsed_us();
     phase.start();
@@ -2493,13 +2505,15 @@ public:
     } else {
       // Handle the component frame15s individually.
       frame15_id fid = frame15_id_of(f21);
-      fprintf(gclog, "   iterating frames of f21 %p\n", f21);
+      if (ENABLE_GCLOG) {
+        fprintf(gclog, "   inspect_frame21_postgc: iterating frames of f21 %p (%d)\n", f21, frame15_id_within_f21(frame15_id_of(f21)));
+      }
       for (int i = 1; i < IMMIX_F15_PER_F21; ++i) {
         frame15* f15 = frame15_for_frame15_id(fid + i);
         bool unclean = inspect_frame15_postgc(fid + i, f15);
         if (unclean) { // Clean frames already noted;
           // We don't want to re-track regular frame15s, only split ones.
-          fprintf(gclog, "  adding f15 %p of f21 %p\n", f15, f21);
+          if (ENABLE_GCLOG) { fprintf(gclog, "  adding f15 %p of f21 %p\n", f15, f21); }
           tracking.add_frame15(f15);
         }
       }
@@ -2630,20 +2644,16 @@ private:
   // immix_space_end
 };
 
-void immix_worklist::process(immix_heap* target) {
+void immix_worklist::process(immix_heap* target, immix_common& common) {
   while (!empty()) {
     heap_cell* cell = peek_front();
     advance();
 
-    gc_assert(false, "TODO 2727");
-    exit(1);
-    /*
     if (target) {
       common.scan_cell<true>(target, cell, kFosterGCMaxDepth);
     } else {
       common.scan_cell<false>(nullptr, cell, kFosterGCMaxDepth);
     }
-    */
   }
   initialize();
 }
@@ -2683,7 +2693,7 @@ void visitGCRoots(void* start_frame, immix_heap* visitor) {
     for (int i = 0; i < numRetAddrs; ++i) {
       if (frames[i].retaddr != retaddrs[diff + i]) {
         fprintf(gclog, "custom + system backtraces disagree: %p vs %p, diff %d\n", frames[diff + i].retaddr, retaddrs[i], diff);
-        exit(1);
+        exit(11);
       }
     }
   }
