@@ -69,6 +69,8 @@ bool isFunctionPointerTy(llvm::Type* p);
 // returns true if p == t*
 bool isPointerToType(llvm::Type* p, llvm::Type* t);
 
+bool isPointerToOpaque(llvm::Type* p);
+
 bool typesEq(llvm::Type* t1, llvm::Type* t2);
 
 void storeNullPointerToSlot(llvm::Value* slot);

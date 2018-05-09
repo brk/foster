@@ -90,6 +90,14 @@ pairingHeapDeleteMin = { forall a:Type, cmp => h =>
   end
 };
 
+pairingHeapFindAndDeleteMin :: forall (a:Type) { { a => a => Ord } => PairingHeap a => Maybe (a, PairingHeap a) };
+pairingHeapFindAndDeleteMin = { forall a:Type, cmp => h =>
+  case h
+    of $PairingHeapE -> None
+    of $PairingHeapT e l -> Some (e, pairingHeapMergePairs cmp l)
+  end
+};
+
 pairingHeapToSortedList :: forall (a:Type) { { a => a => Ord } => PairingHeap a => List a };
 pairingHeapToSortedList = { forall a:Type, cmp => h =>
   case h

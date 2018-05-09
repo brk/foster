@@ -45,6 +45,16 @@ xor1x32gen = { s =>
   end
 };
 
+xor1x32HOF :: { Int32 => { Int32 } };
+xor1x32HOF = { x =>
+  r = (prim ref (xor1x32MakeState x));
+  {
+    let (v, s) = xor1x32gen r^;
+    s >^ r;
+    v
+  }
+}; 
+
 //////////
 
 type case Xor1x64State
