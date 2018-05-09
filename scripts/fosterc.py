@@ -61,7 +61,7 @@ def get_link_flags():
                                 '-lobjc'],
     'Linux': lambda: common + ['-lrt']
   }[platform.system()]()
-  return ' '.join(flags)
+  return ' '.join(flags + ['-l%s' % f for f in options.nativelibs])
 
 def rpath(path):
   import platform
@@ -173,6 +173,10 @@ def compile_foster_to_bitcode(paths, inputfile, compilelog, finalpath, tmpdir):
             compilelog.seek(0)
             print compilelog.read()
       raise StopAfterMiddle()
+
+    for arg in options.bitcodelibs:
+        options.beargs.append("-link-against")
+        options.beargs.append(arg)
 
     # running fosterlower on the Protobuf CFG produces an LLVM
     # bitcode Module; linking a bunch of Modules produces a Module
@@ -362,6 +366,10 @@ def get_fosterc_parser():
                     help="Add import path")
   parser.add_option("-o", dest="exepath", action="store", default=None,
                     help="Set path for output result (executable, etc)")
+  parser.add_option("--nativelib", dest="nativelibs", action="append", default=[],
+                    help="Add native library to link against")
+  parser.add_option("--bitcode", dest="bitcodelibs", action="append", default=[],
+                    help="Add LLVM bitcode object to link against")
   return parser
 
 def fosterc_set_options(opts):

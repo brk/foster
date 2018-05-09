@@ -3,8 +3,26 @@ snafuinclude Bitwise "bitwise";
 
 // based on http://pastebin.com/raw.php?i=ZmkCyJmU
 
-sha256aa :: { Array Int8 => Array Int8 };
-sha256aa = { inp =>
+// Should be automatically lifted, but appears not to be (yet);
+// not lifting produces a 50% performance degradation.
+ror = { x => n => bitor-Int32 (x `bitlshr-Int32` n) (x `bitshl-Int32` (32 -Int32 n)) };
+
+// Lifting these reduces runtime by ~30%
+s2 = { x => x `bitlshr-Int32` 2 };
+sv = { x => 3 -Int32 (x `bitand-Int32` 3) };
+
+abyte = { val : Int8 => a : Array Int32 => q : Ref Int32 => w => h =>
+  bitpos = sv q^ `bitshl-Int32` 3;
+  q2 = s2 q^;
+  v = a[q2];
+  mask1 = bitnot-Int32 (0xff `bitshl-Int32` bitpos);
+  mask2 = (zext_i8_to_i32 val) `bitshl-Int32` bitpos;
+  ((v `bitand-Int32` mask1) `bitor-Int32` mask2) >^ a[q2];
+  if q^ ==Int32 63
+    then block w a q h; 0 >^ q;
+    else (q^ +Int32 1) >^ q;
+  end;
+};
 
   cube = prim mach-array-literal
       0x428a2f98 0x71374491 0xb5c0fbcf 0xe9b5dba5 0x3956c25b 0x59f111f1 0x923f82a4 0xab1c5ed5
@@ -18,16 +36,41 @@ sha256aa = { inp =>
       ;
   sqr = prim mach-array-literal 0x6a09e667 0xbb67ae85 0x3c6ef372 0xa54ff53a
                                 0x510e527f 0x9b05688c 0x1f83d9ab 0x5be0cd19;
+
+  block = { w => a => q => h =>
+    enumRange32 0 16 { n => a[n] >^ w[n] };
+    enumRange32 16 64 { n =>
+      aa = ((ror w[n -Int32 15]  7) `bitxor-Int32` (ror w[n -Int32 15] 18)) `bitxor-Int32` (w[n -Int32 15] `bitlshr-Int32`  3);
+      bb = ((ror w[n -Int32  2] 17) `bitxor-Int32` (ror w[n -Int32  2] 19)) `bitxor-Int32` (w[n -Int32  2] `bitlshr-Int32` 10);
+      (w[n -Int32 16] +Int32 w[n -Int32 7] +Int32 aa +Int32 bb) >^ w[n];
+    };
+
+    t = newDArray0 8 { i => h[i] };
+    enumRange32 0 64 { n =>
+      xa = (ror t[0] 2) `bitxor-Int32` ((ror t[0] 13) `bitxor-Int32` (ror t[0] 22));
+      xb = (ror t[4] 6) `bitxor-Int32` ((ror t[4] 11) `bitxor-Int32` (ror t[4] 25));
+      xc = (t[0] `bitand-Int32` t[1]) `bitxor-Int32` ((t[0] `bitand-Int32` t[2]) `bitxor-Int32` (t[1] `bitand-Int32` t[2]));
+      xd = (t[4] `bitand-Int32` t[5]) `bitxor-Int32` ((bitnot-Int32 t[4]) `bitand-Int32` t[6]);
+      xe = t[7] +Int32 w[n] +Int32 cube[n] +Int32 xb +Int32 xd;
+      t[6] >^ t[7]; t[5] >^ t[6]; t[4] >^ t[5]; (t[3] +Int32 xe) >^ t[4];
+      t[2] >^ t[3]; t[1] >^ t[2]; t[0] >^ t[1]; (xa +Int32 xc +Int32 xe) >^ t[0];
+    };
+    enumRange32 0 8 { n => (t[n] +Int32 h[n]) >^ h[n] };
+  };
+
+
+sha256aa :: { Array Int8 => Array Int8 };
+sha256aa = { inp =>
+
   w = newDArray0 64 { i => 0 };
   a = newDArray0 16 { i => 0 };
   h = newDArray0 8  { i => sqr[i] };
-
-  ror = { x => n => bitor-Int32 (x `bitlshr-Int32` n) (x `bitshl-Int32` (32 -Int32 n)) };
 
   ////////////////////////////////////////
 
   q = prim ref 0;
 
+/*
   block = {
     enumRange32 0 16 { n => a[n] >^ w[n] };
     enumRange32 16 64 { n =>
@@ -49,9 +92,6 @@ sha256aa = { inp =>
     enumRange32 0 8 { n => (t[n] +Int32 h[n]) >^ h[n] };
   };
 
-  s2 = { x => x `bitlshr-Int32` 2 };
-  sv = { x => 3 -Int32 (x `bitand-Int32` 3) };
-
   byte = { val : Int8 =>
     bitpos = sv q^ `bitshl-Int32` 3;
     q2 = s2 q^;
@@ -64,20 +104,21 @@ sha256aa = { inp =>
       else (q^ +Int32 1) >^ q;
     end;
   };
+  */
 
   /////////////////////////////////
 
-  arrayEnum inp { b => i => byte b };
+  arrayEnum inp { b => i => abyte b a q w h };
 
   extract-byte-Int64-offset = { x => n =>
     ((x `bitshl-Int64` 3) `bitlshr-Int64` (n `bitshl-Int64` 3)) |> trunc_i64_to_i8
   };
 
   // finish
-  byte 0x80;
-  while { q^ !=Int32 56 } { byte 0 };
+  abyte 0x80 a q w h;
+  while { q^ !=Int32 56 } { abyte 0 a q w h };
   enumRange64 0 8 { n =>
-    extract-byte-Int64-offset (arrayLength inp) (7 -Int64 n) |> byte;
+    v = extract-byte-Int64-offset (arrayLength inp) (7 -Int64 n); abyte v a q w h;
   };
 
   newDArray0 32 { n => extract-byte-Int32 h[s2 n] (sv n) };

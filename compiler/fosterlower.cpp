@@ -164,6 +164,11 @@ optAllGCBarriers("all-gc-barriers",
   cl::desc("Emit GC write barriers for object initialization"),
   cl::cat(FosterOptCat));
 
+static cl::list<std::string>
+linkAgainstBCs("link-against",
+  cl::desc("Link against the provided bitcode module(s)"),
+  cl::cat(FosterOptCat));
+
 void printVersionInfo(llvm::raw_ostream& out) {
   out << "Foster version: " << FOSTER_VERSION_STR << "\n";
   cl::PrintVersionMessage();
@@ -239,6 +244,23 @@ LLModule* readLLProgramFromCapnp(const string& pathstr) {
   return prog;
 }
 
+bool typesAreCastable(llvm::Type* t1, llvm::Type* t2) {
+  if (isFunctionPointerTy(t1) && isFunctionPointerTy(t2)) {
+    auto f1 = dyn_cast<FunctionType>(t1->getContainedType(0));
+    auto f2 = dyn_cast<FunctionType>(t2->getContainedType(0));
+    if (!typesAreCastable(f1->getReturnType(), f2->getReturnType())) return false;
+    ArrayRef<Type*> a1 = f1->params();
+    ArrayRef<Type*> a2 = f2->params();
+    if (a1.size() != a2.size()) return false;
+    for (size_t i = 0; i < a1.size(); ++i) {
+      if (!typesAreCastable(a1[i], a2[i])) return false;
+    }
+    return true;
+  }
+  if (isPointerToOpaque(t1) || isPointerToOpaque(t2)) return true;
+  return false;
+}
+
 bool
 areDeclaredValueTypesOK(llvm::Module* mod,
      const std::vector<LLDecl*>& decls) {
@@ -281,12 +303,16 @@ areDeclaredValueTypesOK(llvm::Module* mod,
        || d->getName() == "foster_posix_write_bytes_to_file") {
         gDeclaredSymbolTypes[d->getName()] = ty;
       } else {
-        EDiag() << "mismatch between declared and imported types"
-                << " for symbol " << d->getName() << ":\n"
-                << "Declared: " << str(t) << "\n"
-                << " in LLVM: " << str(ty) << "\n"
-                << "Imported: " << str(v->getType()) << "\n";
-        return false;
+        if (typesAreCastable(v->getType(), ty)) {
+          // TODO generate cast?
+        } else {
+          EDiag() << "mismatch between declared and imported types"
+                  << " for symbol " << d->getName() << ":\n"
+                  << "Declared: " << str(t) << "\n"
+                  << " in LLVM: " << str(ty) << "\n"
+                  << "Imported: " << str(v->getType()) << "\n";
+          return false;
+        }
       }
     }
     }
@@ -348,6 +374,11 @@ int main(int argc, char** argv) {
   if (!optStandalone) {
     libfoster_bc = readLLVMModuleFromPath(optBitcodeLibsDir + "/foster_runtime.bc");
     foster::putModuleFunctionsInScope(libfoster_bc.get(), module);
+
+    for (auto arg : linkAgainstBCs) {
+      auto bc = readLLVMModuleFromPath(arg);
+      linkTo(std::move(bc), arg, *module);
+    }
 
     // The module is "unclean" because it now has types that refer to libfoster_bc;
     // remove the taint by round-tripping to disk. Usually takes ~1ms.

@@ -261,6 +261,14 @@ bool isPointerToType(llvm::Type* p, llvm::Type* t) {
   return p->isPointerTy() && typesEq(p->getContainedType(0), t);
 }
 
+bool isPointerToOpaque(llvm::Type* p) {
+  if (!p->isPointerTy()) return false;
+  if (auto sty = dyn_cast<StructType>(p->getContainedType(0))) {
+    return sty->isOpaque();
+  }
+  return false;
+}
+
 void storeNullPointerToSlot(llvm::Value* slot) {
   foster::builder.CreateStore(
     llvm::ConstantPointerNull::getNullValue(slot->getType()->getContainedType(0)),
