@@ -2,8 +2,15 @@ main = {
   test-assert-bool-lits !;
   test-assert-bool-unrefined True False;
   //test-assert-bool-refined True False;
+
+  print_i32 2;
+  expect_i32 2;
+
   test-assert-bool-refined-alt !;
   test-more-bools !;
+
+  print_i32 4;
+  expect_i32 4;
 
   test-refined-array-literals !;
   test-refined-array-nonlits !;
@@ -72,8 +79,10 @@ test-assert-bool-refined-alt = {
 
 test-refined-array-literals = {
   // Unconstrained type; should it be Int32 or Int64 or ... ?
+  /*
   expect_i1 False;
   print_i1 (__COMPILES__ prim mach-array-literal 1 2 3);
+  */
 
   expect_i1 True;
   print_i1 (__COMPILES__ prim mach-array-literal :[Int32] 1 2 3);
