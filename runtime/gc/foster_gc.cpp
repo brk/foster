@@ -108,7 +108,7 @@ struct memory_range {
     if (addr >= bound) return "after";
     return "within";
   }
-  size_t size() const { return distance(base, bound); }
+  ssize_t size() const { return distance(base, bound); }
 };
 
 void* realigned_to_line(void* bump) {
@@ -2662,7 +2662,7 @@ void immix_worklist::process(immix_heap* target, immix_common& common) {
 
 // {{{ Walks the call stack, calling visitor->visit_root() along the way.
 void visitGCRoots(void* start_frame, immix_heap* visitor) {
-  enum { MAX_NUM_RET_ADDRS = 1024 };
+  enum { MAX_NUM_RET_ADDRS = 4024 };
   // Garbage collection requires 16+ KB of stack space due to these arrays.
   ret_addr  retaddrs[MAX_NUM_RET_ADDRS];
   frameinfo frames[MAX_NUM_RET_ADDRS];
@@ -2670,8 +2670,12 @@ void visitGCRoots(void* start_frame, immix_heap* visitor) {
   // Collect frame pointers and return addresses
   // for the current call stack.
   int nFrames = foster_backtrace((frameinfo*) start_frame, frames, MAX_NUM_RET_ADDRS);
-  if (nFrames == MAX_NUM_RET_ADDRS) {
+  if (nFrames > 500) {
     gcglobals.num_big_stackwalks += 1;
+  }
+  if (nFrames == MAX_NUM_RET_ADDRS) {
+    fprintf(gclog, "ERROR: backtrace is probably incomplete due to oversized stack!\n"); fflush(gclog);
+    exit(2);
   }
   if (FOSTER_GC_TIME_HISTOGRAMS) {
     hdr_record_value(gcglobals.hist_gc_stackscan_frames, int64_t(nFrames));
@@ -3270,7 +3274,8 @@ const typemap* tryGetTypemap(heap_cell* cell) {
           ((map->isCoro  != 0) && (map->isCoro  != 1))
        || ((map->isArray != 0) && (map->isArray != 1))
        || (map->numOffsets < 0)
-       || (map->cell_size  < 0));
+       || (map->cell_size  < 0)
+       || (map->cell_size  > (uint64_t(1)<<31)));
     if (is_corrupted) {
       fprintf(gclog, "Found corrupted type map:\n"); fflush(gclog);
       inspect_typemap(map);
@@ -3443,6 +3448,11 @@ void force_gc_for_debugging_purposes() {
 } // namespace foster::runtime::gc
 
 uint8_t ctor_id_of(void* constructed) {
+  uintptr_t i = uintptr_t(constructed);
+  if (i < 64) {
+    return uint8_t(i);
+  }
+
   gc::heap_cell* cell = gc::heap_cell::for_tidy((gc::tidy*) constructed);
   const gc::typemap* map = tryGetTypemap(cell);
   gc_assert(map, "foster_ctor_id_of() was unable to get a usable typemap");
