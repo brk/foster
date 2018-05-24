@@ -112,6 +112,7 @@ struct Letable {
     ilnamedtypedecl   @ 19;
     ilunboxedtuple    @ 20;
     ilkillprocess     @ 21;
+    ilglobalappctor   @ 22;
   }
   parts   @ 0 : List(TermVar); # repeated
   tag     @ 1 : Tag;
@@ -275,9 +276,15 @@ struct Decl {
   isForeign @ 2 : Bool;
 }
 
+struct CtorApp {
+  info  @ 0 : PbCtorInfo;
+  vars  @ 1 : List(TermVar);
+}
+
 struct PbToplevelItem {
   name         @ 1 : Text;
-  arr          @ 0 : PbArrayLiteral;
+  arr          @ 0 : PbArrayLiteral $optional;
+  lit          @ 2 : Letable $optional;
 }
 
 struct Module {

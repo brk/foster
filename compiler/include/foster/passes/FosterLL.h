@@ -132,9 +132,13 @@ struct LLArrayLiteral : public LLExpr {
 struct LLTopItem {
   string   name;
   LLArrayLiteral*  arrlit;
+  LLExpr*  lit;
 
   explicit LLTopItem(const string& name, LLArrayLiteral* arrlit)
-      : name(name), arrlit(arrlit) {}
+      : name(name), arrlit(arrlit), lit(nullptr) {}
+
+  explicit LLTopItem(const string& name, LLExpr* elit)
+      : name(name), arrlit(nullptr), lit(elit) {}
 };
 
 struct LLModule {
@@ -432,8 +436,10 @@ struct LLTupleStore : public LLMiddle {
 
 struct LLUnboxedTuple : public LLExpr {
   std::vector<LLVar*> vars;
+  bool isStatic;
 
-  explicit LLUnboxedTuple(const std::vector<LLVar*>& vars) : LLExpr("LLUnboxedTuple"), vars(vars) {}
+  explicit LLUnboxedTuple(const std::vector<LLVar*>& vars, bool isStatic)
+    : LLExpr("LLUnboxedTuple"), vars(vars), isStatic(isStatic) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
@@ -505,6 +511,15 @@ struct LLOccurrence : public LLExpr {
 struct LLKillProcess : public LLExpr {
   std::string stringValue;
   explicit LLKillProcess(const string& val) : LLExpr("LLKillProcess"), stringValue(val) {}
+  virtual llvm::Value* codegen(CodegenPass* pass);
+};
+
+struct LLGlobalAppCtor : public LLExpr {
+  std::vector<LLVar*> args;
+  CtorInfo ctor;
+
+  explicit LLGlobalAppCtor(CtorInfo ctor, std::vector<LLVar*> args)
+    : LLExpr("LLGlobalAppCtor"), args(args), ctor(ctor) {}
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 

@@ -122,8 +122,16 @@ closureConvertAndLift dataSigs u m =
 
 closureConvertToplevel :: PreCloConv -> ILM ()
 closureConvertToplevel (PreCloConv (cffns, topbinds)) = do
-  mapM_ (\(TopBindArray id ty lits) ->
-      recordGlobalVal (TopBindArray id (monoToLL ty) lits)) topbinds
+  let recordTopItem (TopBindArray id ty lits) =
+          recordGlobalVal (TopBindArray id (monoToLL ty) lits)
+      recordTopItem (TopBindLiteral id ty lit) =
+          recordGlobalVal (TopBindLiteral id (monoToLL ty) lit)
+      recordTopItem (TopBindTuple id ty ids) =
+          recordGlobalVal (TopBindTuple id (monoToLL ty) ids)
+      recordTopItem (TopBindAppCtor id ty cidrep ids) =
+          recordGlobalVal (TopBindAppCtor id (monoToLL ty) cidrep ids)
+
+  mapM_ recordTopItem topbinds
   mapM_ (lambdaLift []) cffns
 
 recordGlobalVal thing = do

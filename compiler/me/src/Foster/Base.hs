@@ -380,6 +380,10 @@ data ModuleIL expr ty = ModuleIL {
      }
 
 data ToplevelBinding ty = TopBindArray Ident ty [Literal]
+                        | TopBindLiteral Ident ty Literal
+                        | TopBindTuple   Ident ty [Ident]
+                        | TopBindAppCtor Ident ty (CtorId, CtorRepr) [Ident]
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||||||| Source Ranges ||||||||||||||||||||||||{{{
 
@@ -568,6 +572,7 @@ showStructure e = showStructureP e "" False
 
 concatMapM f vs = do vs' <- mapM f vs ; return $ concat vs'
 
+mapMaybeM :: (Monad m) => (a -> m b) -> Maybe a -> m (Maybe b)
 mapMaybeM _ Nothing = return Nothing
 mapMaybeM f (Just x) = f x >>= return . Just
 
@@ -714,6 +719,7 @@ prettyIdent i@(GlobalSymbol _ (RenameTo alt)) = text "G:" <> text (show i ++ " ~
 prettyIdent i = text (show i)
 
 prettyId (TypedId _ i) = prettyIdent i
+prettyTypedId (TypedId t i) = prettyIdent i <> text " :: " <> pretty t
 
 -- Handler expressions pre-allocate the ids that will be bound for the `resume` functions
 -- during typechecking; they must be kept around to be used during handler compilation.

@@ -1,0 +1,18 @@
+main = {
+  localized !;
+  globalized !;
+};
+
+localized = {
+  n = 3;
+  expect_i32 n;
+  noinline_llvm_foo { print_i32 n };
+};
+
+g = 3;
+globalized = {
+  expect_i32 g;
+  noinline_llvm_foo { print_i32 g };
+};
+
+noinline_llvm_foo = { f => f ! };
