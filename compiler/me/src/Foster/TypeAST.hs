@@ -165,6 +165,7 @@ f64 = TyAppAST (TyConAST "Float64") []
 f32 = TyAppAST (TyConAST "Float32") []
 
 primTyVars tyvars = map (\v -> (v, KindAnySizeType)) tyvars
+boxedTyVars tyvars = map (\v -> (v, KindPointerSized)) tyvars
 
 -- These names correspond to (the C symbols of)
 -- functions implemented by the Foster runtime.
@@ -319,16 +320,27 @@ flonumPrimitives tystr ty =
   ,mkPrim "-"       $ mkProcType [ty, ty] [ty]
   ,mkPrim "*"       $ mkProcType [ty, ty] [ty]
   ,mkPrim "div"     $ mkProcType [ty, ty] [ty]
+  ,mkPrim "rem"     $ mkProcType [ty, ty] [ty]
   ,mkPrim "<"       $ mkProcType [ty, ty] [i1]
   ,mkPrim ">"       $ mkProcType [ty, ty] [i1]
   ,mkPrim "<="      $ mkProcType [ty, ty] [i1]
   ,mkPrim ">="      $ mkProcType [ty, ty] [i1]
   ,mkPrim "=="      $ mkProcType [ty, ty] [i1]
   ,mkPrim "!="      $ mkProcType [ty, ty] [i1]
+  ,mkPrim "abs"     $ mkProcType [ty]     [ty]
   ,mkPrim "sqrt"    $ mkProcType [ty]     [ty]
+  ,mkPrim "exp"     $ mkProcType [ty]     [ty]
+  ,mkPrim "exp2"    $ mkProcType [ty]     [ty]
+  ,mkPrim "log"     $ mkProcType [ty]     [ty]
+  ,mkPrim "log2"    $ mkProcType [ty]     [ty]
+  ,mkPrim "log10"   $ mkProcType [ty]     [ty]
   ,mkPrim "sin"     $ mkProcType [ty]     [ty]
   ,mkPrim "cos"     $ mkProcType [ty]     [ty]
   ,mkPrim "tan"     $ mkProcType [ty]     [ty]
+  ,mkPrim "ceil"    $ mkProcType [ty]     [ty]
+  ,mkPrim "floor"   $ mkProcType [ty]     [ty]
+  ,mkPrim "round"   $ mkProcType [ty]     [ty]
+  ,mkPrim "trunc"   $ mkProcType [ty]     [ty]
   ,mkPrim "powi"    $ mkProcType [ty, i32]    [ty]
   ,mkPrim "muladd"  $ mkProcType [ty, ty, ty] [ty]
   ]
@@ -411,6 +423,10 @@ eqRefType = let a = BoundTyVar "a" (MissingSourceRange "==Ref") in
             ForAllAST (primTyVars [a])
               (mkProcType [RefTypeAST (TyVarAST a), RefTypeAST (TyVarAST a)] [fosBoolType])
 
+eqBoxedType = let a = BoundTyVar "a" (MissingSourceRange "==Boxed") in
+            ForAllAST (boxedTyVars [a])
+              (mkProcType [(TyVarAST a), (TyVarAST a)] [fosBoolType])
+
 eqArrayType = let a = BoundTyVar "a" (MissingSourceRange "==Ref") in
             ForAllAST (primTyVars [a])
               (mkProcType [ArrayTypeAST (TyVarAST a), ArrayTypeAST (TyVarAST a)] [fosBoolType])
@@ -421,6 +437,7 @@ gFosterPrimOpsTable = Map.fromList $
   [(,) "not"                  $ (,) (mkFnType [i1]  [i1]  ) $ PrimOp "bitnot" i1
   ,(,) "==Bool"               $ (,) (mkFnType [i1,i1][i1] ) $ PrimOp "==" i1
   ,(,) "==Ref"                $ (,) eqRefType               $ PrimOp "==" (RefTypeAST unitTypeAST)
+  ,(,) "==Boxed"              $ (,) eqBoxedType             $ PrimOp "==" (unitTypeAST)
   ,(,) "sameArrayStorage"     $ (,) eqArrayType             $ PrimOp "==" (ArrayTypeAST unitTypeAST)
   ,(,) "f64-to-s32-unsafe"    $ (,) (mkFnType [f64] [i32] ) $ PrimOp "fptosi_f64_i32" i32
   ,(,) "f64-to-u32-unsafe"    $ (,) (mkFnType [f64] [i32] ) $ PrimOp "fptoui_f64_i32" i32
@@ -432,10 +449,14 @@ gFosterPrimOpsTable = Map.fromList $
   ,(,) "u32-to-f64"    $(,) (mkFnType [i32] [f64]     ) $ PrimOp "uitofp_f64" i32
   ,(,) "f64-as-i64"    $(,) (mkFnType [f64] [i64]     ) $ PrimOp "bitcast_i64" f64
   ,(,) "i64-as-f64"    $(,) (mkFnType [i64] [f64]     ) $ PrimOp "bitcast_f64" i64
+  ,(,) "s64-to-f32-unsafe"    $ (,) (mkFnType [i64] [f32] ) $ PrimOp "sitofp_f32" i64
+  ,(,) "u64-to-f32-unsafe"    $ (,) (mkFnType [i64] [f32] ) $ PrimOp "uitofp_f32" i64
   ,(,) "s32-to-f32-unsafe"    $ (,) (mkFnType [i32] [f32] ) $ PrimOp "sitofp_f32" i32
   ,(,) "u32-to-f32-unsafe"    $ (,) (mkFnType [i32] [f32] ) $ PrimOp "uitofp_f32" i32
   ,(,) "f32-to-s32-unsafe"    $ (,) (mkFnType [f32] [i32] ) $ PrimOp "fptosi_f32_i32" i32
   ,(,) "f32-to-u32-unsafe"    $ (,) (mkFnType [f32] [i32] ) $ PrimOp "fptoui_f32_i32" i32
+  ,(,) "f32-to-f64"           $ (,) (mkFnType [f32] [f64] ) $ PrimOp "fpext_f64" f32
+  ,(,) "f64-to-f32"           $ (,) (mkFnType [f64] [f32] ) $ PrimOp "fptrunc_f32" f64
   ] ++ concatMap fixnumPrimitives [I32, I64, I8, I16, IWd, IDw]
     ++ sizeConversions
     ++ flonumPrimitives "f64" f64

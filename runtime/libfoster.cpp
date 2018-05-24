@@ -487,6 +487,19 @@ int8_t foster_crypto_hash_sha256__autowrap(foster_bytes* output, foster_bytes* i
                             input->cap); // returns zero
 }
 
+double foster_strtof64__autowrap(foster_bytes* b, int32_t roundmode) {
+  char* c = cstr(b);
+  double f = atof(c);
+  free(c);
+  return f;
+}
+
+void* foster_gdtoa64__autowrap(double f, int32_t mode, int32_t ndig, int32_t rounding, int32_t* decpt) {
+  char buf[64];
+  sprintf(buf, "%g", f);
+  return foster_emit_string_of_cstring(buf, strlen(buf));
+}
+
 void print_float_f32(float f) { return fprint_f32(stdout, f); }
 void expect_float_f32(float f) { return fprint_f32(stderr, f); }
 

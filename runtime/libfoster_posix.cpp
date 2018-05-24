@@ -9,7 +9,7 @@
 #include <cstdio> // for fread(), etc.
 #include <cerrno>
 #include <climits> // for SSIZE_MAX
-#include <unistd.h> // for read(), write()
+#include <unistd.h> // for read(), write(), access()
 
 #ifdef OS_LINUX
 #include <fcntl.h> // for O_RDWR
@@ -21,6 +21,8 @@
 #elif defined(OS_MACOSX)
 #include <fcntl.h> // for O_RDWR
 #endif
+
+#include <math.h> // for fpclassify
 
 // Definitions of functions which are meant to be exposed to Foster code
 // (at least for bootstrapping/utility purposes) rather than an implementation
@@ -156,4 +158,15 @@ int64_t foster_posix_get_tuntap_fd() {
   return int64_t(fd);
 }
 
+int32_t foster_posix_access__autowrap(foster_bytes* path, int32_t mode) {
+  return int32_t(access((const char*) &path->bytes[0], mode));
+}
+
+int32_t foster_posix_open3__autowrap(foster_bytes* path, int32_t flags, int32_t mode) {
+  return int32_t(open((const char*) &path->bytes[0], flags, mode));
+}
+
+
+int32_t foster_Float32_classify(float  f) { return int32_t(fpclassify(f)); }
+int32_t foster_Float64_classify(double f) { return int32_t(fpclassify(f)); }
 }
