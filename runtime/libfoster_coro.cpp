@@ -65,20 +65,26 @@ bool foster_coro_isdead(foster_bare_coro* coro) {
 }
 
 // corofn :: void* -> void
-void foster_coro_create(coro_func corofn,
-                        void* arg) {
-  long ssize = 8*1024*sizeof(void*);
+void foster_coro_create(coro_func corofn, void* arg) {
+   // 100 MB stacks just in case; but note it's virtual addr space only
+  long ssize = 100*1024*1024*sizeof(void*);
+
   // TODO allocate small stacks that grow on demand
   // (via reallocation or stack segment chaining).
   // TODO use mark-sweep GC for coro stacks.
-  void* sptr = malloc(ssize);
-  memset(sptr, 0xEE, ssize); // for debugging only
+
+  coro_stack sinfo;
+  if (!coro_stack_alloc(&sinfo, ssize / sizeof(void*))) {
+    fprintf(stderr, "Coro stack allocation failed!\n"); fflush(stderr);
+    exit(2);
+  }
+  //fprintf(stderr, "allocating a coro stack of size %ld (0x%lx): %p\n", ssize, ssize, sinfo.sptr);
+  //memset(sinfo.sptr, 0xEE, ssize); // for debugging only
   foster_bare_coro* coro = (foster_bare_coro*) arg;
   coro->indirect_self = (foster_bare_coro**) malloc(sizeof(coro));
   foster_coro_ensure_self_reference(coro);
   libcoro__coro_create(&coro->ctx, corofn, coro->indirect_self,
-                       sptr, ssize);
-  //printf("foster_coro_create(%p, %p)\n", corofn, arg);
+                       sinfo.sptr, sinfo.ssze);
 }
 
 // This is a no-op for the CORO_ASM backend,
