@@ -365,7 +365,7 @@ createIntrinsicCall2(IRBuilder<>& b, llvm::Value* v1, llvm::Value* v2,
 llvm::Value*
 createCheckedOp(CodegenPass* pass,
                 IRBuilder<>& b, llvm::Value* v1, llvm::Value* v2,
-                    const char* valname, llvm::Intrinsic::ID id) {
+                    const char* valname, const std::string& op, llvm::Intrinsic::ID id) {
   unsigned  arr[] = { 1 };
   llvm::Value* agg = createIntrinsicCall2(b, v1, v2, valname, id);
   llvm::Value* overflow_bit = b.CreateExtractValue(agg, arr);
@@ -380,7 +380,7 @@ createCheckedOp(CodegenPass* pass,
   b.SetInsertPoint(bb_err);
   std::string s;
   llvm::raw_string_ostream ss(s);
-  ss << "invariant violated for " << llvm::Intrinsic::getName(id)
+  ss << "invariant violated for LLVM intrinisic corresponding to " << op
      << "(" << str(v1->getType()) << ")"
      << "; try running under gdb and break on `foster__assert_failed`";
   llvm::Value* msg = builder.CreateBitCast(pass->getGlobalString(ss.str()),
@@ -459,11 +459,23 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   else if (op == "trunc_i64"){ return b.CreateTrunc(VL, b.getInt64Ty(), "trunci64tmp"); }
   else if (op == "trunc_w0") { return b.CreateTrunc(VL, getWordTy(b),   "truncw0tmp"); }
   else if (op == "trunc_w1") { return b.CreateTrunc(VL, getWordX2Ty(b), "truncw1tmp"); }
+  else if (op == "fpext_f64")   { return b.CreateFPExt(VL, b.getDoubleTy(), "fptexttmp"); }
+  else if (op == "fptrunc_f32") { return b.CreateFPTrunc(VL, b.getFloatTy(), "fptrunctmp"); }
   else if (op == "ctlz")     { return createCtlz(b, VL, "ctlztmp"); }
   else if (op == "ctpop")    { return createIntrinsicCall(b, VL, "ctpoptmp", llvm::Intrinsic::ctpop); }
   else if (op == "fsqrt")    { return createIntrinsicCall(b, VL, "fsqrttmp", llvm::Intrinsic::sqrt); }
+  else if (op == "fabs")     { return createIntrinsicCall(b, VL, "fabstmp",  llvm::Intrinsic::fabs); }
   else if (op == "fsin")     { return createIntrinsicCall(b, VL, "fsintmp",  llvm::Intrinsic::sin); }
   else if (op == "fcos")     { return createIntrinsicCall(b, VL, "fcostmp",  llvm::Intrinsic::cos); }
+  else if (op == "fexp")     { return createIntrinsicCall(b, VL, "fexptmp",  llvm::Intrinsic::exp); }
+  else if (op == "fexp2")    { return createIntrinsicCall(b, VL, "fexp2tmp", llvm::Intrinsic::exp2); }
+  else if (op == "flog"    ) { return createIntrinsicCall(b, VL, "flogtmp",  llvm::Intrinsic::log); }
+  else if (op == "flog2"   ) { return createIntrinsicCall(b, VL, "flogtmp",  llvm::Intrinsic::log2); }
+  else if (op == "flog10"  ) { return createIntrinsicCall(b, VL, "flogtmp",  llvm::Intrinsic::log10); }
+  else if (op == "fceil"   ) { return createIntrinsicCall(b, VL, "fceiltmp", llvm::Intrinsic::ceil); }
+  else if (op == "ffloor"  ) { return createIntrinsicCall(b, VL, "floortmp", llvm::Intrinsic::floor); }
+  else if (op == "fround"  ) { return createIntrinsicCall(b, VL, "frondtmp", llvm::Intrinsic::round); }
+  else if (op == "ftrunc"  ) { return createIntrinsicCall(b, VL, "ftrnctmp", llvm::Intrinsic::trunc); }
   else if (op == "fptosi_f64_i32") { return b.CreateFPToSI(VL, b.getInt32Ty(), "fptosi_f64_i32tmp"); }
   else if (op == "fptoui_f64_i32") { return b.CreateFPToUI(VL, b.getInt32Ty(), "fptoui_f64_i32tmp"); }
   else if (op == "fptosi_f64_i64") { return b.CreateFPToSI(VL, b.getInt64Ty(), "fptosi_f64_i64tmp"); }
@@ -496,12 +508,12 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
        if (op == "+") { return b.CreateAdd(VL, VR, "addtmp", this->config.useNUW, this->config.useNSW); }
   else if (op == "-") { return b.CreateSub(VL, VR, "subtmp", this->config.useNUW, this->config.useNSW); }
   else if (op == "*") { return b.CreateMul(VL, VR, "multmp", this->config.useNUW, this->config.useNSW); }
-  else if (op == "+uc") { return createCheckedOp(this, b, VL, VR, "addtmp", llvm::Intrinsic::uadd_with_overflow); }
-  else if (op == "*uc") { return createCheckedOp(this, b, VL, VR, "multmp", llvm::Intrinsic::umul_with_overflow); }
-  else if (op == "-uc") { return createCheckedOp(this, b, VL, VR, "subtmp", llvm::Intrinsic::usub_with_overflow); }
-  else if (op == "+sc") { return createCheckedOp(this, b, VL, VR, "addtmp", llvm::Intrinsic::sadd_with_overflow); }
-  else if (op == "*sc") { return createCheckedOp(this, b, VL, VR, "multmp", llvm::Intrinsic::smul_with_overflow); }
-  else if (op == "-sc") { return createCheckedOp(this, b, VL, VR, "subtmp", llvm::Intrinsic::ssub_with_overflow); }
+  else if (op == "+uc") { return createCheckedOp(this, b, VL, VR, "addtmp", op, llvm::Intrinsic::uadd_with_overflow); }
+  else if (op == "*uc") { return createCheckedOp(this, b, VL, VR, "multmp", op, llvm::Intrinsic::umul_with_overflow); }
+  else if (op == "-uc") { return createCheckedOp(this, b, VL, VR, "subtmp", op, llvm::Intrinsic::usub_with_overflow); }
+  else if (op == "+sc") { return createCheckedOp(this, b, VL, VR, "addtmp", op, llvm::Intrinsic::sadd_with_overflow); }
+  else if (op == "*sc") { return createCheckedOp(this, b, VL, VR, "multmp", op, llvm::Intrinsic::smul_with_overflow); }
+  else if (op == "-sc") { return createCheckedOp(this, b, VL, VR, "subtmp", op, llvm::Intrinsic::ssub_with_overflow); }
   else if (op == "sdiv-unsafe") { return b.CreateSDiv(VL, VR, "sdivtmp"); }
   else if (op == "udiv-unsafe") { return b.CreateUDiv(VL, VR, "udivtmp"); }
   else if (op == "srem-unsafe") { return b.CreateSRem(VL, VR, "sremtmp"); }
@@ -510,6 +522,7 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
   else if (op == "f+"         ) { return b.CreateFAdd(VL, VR, "faddtmp"); }
   else if (op == "f-"         ) { return b.CreateFSub(VL, VR, "fsubtmp"); }
   else if (op == "fdiv"       ) { return b.CreateFDiv(VL, VR, "fdivtmp"); }
+  else if (op == "frem"       ) { return b.CreateFRem(VL, VR, "fremtmp"); }
   else if (op == "f*"         ) { return b.CreateFMul(VL, VR, "fmultmp"); }
 
   else if (op ==  "<s"        ) { return b.CreateICmpSLT(VL, VR, "slttmp"); }

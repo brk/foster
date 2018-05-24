@@ -69,16 +69,21 @@ write_bytes_chunk_to_file = { name => bytes =>
   end
 };
 
-write_bytes_chunk_to_fd :: { Int64 => Array Int8 => Int64 };
-write_bytes_chunk_to_fd = { fd => bytes =>
+write_bytes_chunk_to_fd_from :: { Int64 => Array Int8 => Int64 => Int64 => Int64 };
+write_bytes_chunk_to_fd_from = { fd => bytes => offset => size =>
   wstatus = (prim ref 0);
-  nwrote = foster_posix_write_bytes fd bytes 0 (arrayLength bytes) wstatus;
+  nwrote = foster_posix_write_bytes fd bytes offset size  wstatus;
   case wstatus^
     of 0 -> nwrote
     of 1 -> prim kill-entire-process "write_bytes_chunk_to_fd returned MORE";
     of 2 -> prim kill-entire-process "write_bytes_chunk_to_fd returned LATER";
     of _ -> prim kill-entire-process "write_bytes_chunk_to_fd returned ERROR";
   end
+};
+
+write_bytes_chunk_to_fd :: { Int64 => Array Int8 => Int64 };
+write_bytes_chunk_to_fd = { fd => bytes =>
+  write_bytes_chunk_to_fd_from fd bytes 0 (arrayLength bytes);
 };
 
 write_bytes_to_fd :: { Int64 => Bytes => Int64 };
