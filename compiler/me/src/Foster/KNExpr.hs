@@ -508,8 +508,9 @@ tcToIL st typ = do
         case mty of
           Unbound _-> if mtvIsEffect m
                        then return (TyAppIL (TyConIL "effect.Empty") [])
-                       else tcFails [text $ "Found un-unified unification variable "
+                       else do tcWarn [text $ "Found un-unified unification variable "
                                 ++ show (mtvUniq m) ++ "(" ++ mtvDesc m ++ ")!"]
+                               return $ TupleTypeIL KindPointerSized []
           BoundTo t -> let t' = shallowStripRefinedTypeTC t in
                        -- TODO: strip refinements deeply 
                        q t'
