@@ -52,9 +52,9 @@ module  :       imports* decl_or_defn* EOF   ->  ^(MODULE ^(SNAFUINCLUDE imports
 imports :       ('snafuinclude' id s=DQUO_STR ';')     -> ^(SNAFUINCLUDE id $s);
 
 decl_or_defn :
-        x ( '::' t ';'                    -> ^(DECL x t)
-          | EQ phrase ';'                 -> ^(DEFN x phrase) // We should allow suffixes, but only of type application.
-          )
+        'REC'? x ( '::' t ';'             -> ^(DECL x t)
+                 | EQ phrase ';'          -> ^(DEFN x phrase) // We should allow suffixes, but only of type application.
+                 )
         | data_defn ';'                   -> data_defn
         | effect_defn ';'                 -> effect_defn
         | FOREIGN IMPORT x (AS id)? '::' t ';'
@@ -73,7 +73,7 @@ effect_defn : EFFECT nm=tyformal
                          effect_ctor*             -> ^(EFFECT $nm ^(MU $args*) ^(MU effect_ctor*));
 effect_ctor : OF dctor tatom* ('=>' t)?           -> ^(OF dctor ^(MU tatom*) ^(MU t?));
 
-opr     :       SYMBOL;
+opr     :       SYMBOL | MINUS;
 id      :       SMALL_IDENT | UPPER_IDENT | UNDER_IDENT;
 
 name    :     id ('.' name -> ^(QNAME id name)
@@ -107,14 +107,12 @@ k       :              // kinds
 stmts   :  stmt_ stmt_cont* ';'* -> ^(STMTS stmt_ stmt_cont*);
 stmt_   : abinding | e ;
 stmt_cont : semi=';'+ stmt_ -> ^(MU $semi stmt_);
-abinding : 'REC' idbinding -> ^(ABINDING 'REC' idbinding)
-         |        pbinding -> ^(ABINDING        pbinding);
-
-idbinding : xid '=' e    -> ^(BINDING xid e);
+abinding : 'REC' pbinding -> ^(ABINDING 'REC' pbinding)
+         |       pbinding -> ^(ABINDING       pbinding);
 pbinding  : patbind '=' e    -> ^(BINDING patbind e);
 
 patbind :
-  pid                                      // variables
+  xid                                      // variables
   | '_'                  -> ^(WILDCARD)    // wildcards
   | 'let' '(' p (',' p)* ')'   -> ^(TUPLE p+)    // tuples (products)
   ;
@@ -131,7 +129,7 @@ binop   : opr          -> opr
         ;
 
 nopr    : name | opr ;
-phrase  :       '-'?   lvalue+                  -> ^(PHRASE '-'?  lvalue+)
+phrase  :       lvalue+                         -> ^(PHRASE lvalue+)
         |       'prim' nopr tyapp? lvalue*      -> ^(PRIMAPP nopr ^(MU tyapp?) lvalue*);
 lvalue  :              atom suffix*             -> ^(LVALUE atom suffix*);
 
