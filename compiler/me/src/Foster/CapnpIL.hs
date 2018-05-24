@@ -549,6 +549,12 @@ dumpMoVar t i useType =
                              then StrictlyJust $ dumpType t
                              else StrictlyNone
     }
+dumpVarIdent i =
+    TermVar {
+          tag_of_TermVar  = Ilvar
+        , name_of_TermVar = dumpIdent i
+        , typ_of_TermVar  = StrictlyNone
+    }
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 dumpILProgramToCapnp :: ILProgram -> FilePath -> IO ()
@@ -586,11 +592,42 @@ dumpProgramToModule (ILProgram procdefs vals extern_decls datatypes (SourceLines
     dumpItem (TopBindArray id _ty@(LLArrayType ety) lits) =
       PbToplevelItem {
           name_of_PbToplevelItem = dumpIdent id
-        , arr_of_PbToplevelItem = pbArrayLit ety (map Left lits)
+        , arr_of_PbToplevelItem = StrictlyJust $ pbArrayLit ety (map Left lits)
+        , lit_of_PbToplevelItem = StrictlyNone
         }
 
     dumpItem (TopBindArray _id otherty _lits) =
         error $ "dumpItem saw top-level array with non-array type " ++ show otherty
+
+    dumpItem (TopBindLiteral id ty lit) =
+      PbToplevelItem {
+          name_of_PbToplevelItem = dumpIdent id
+        , lit_of_PbToplevelItem = StrictlyJust $ dumpLiteral ty lit
+        , arr_of_PbToplevelItem = StrictlyNone
+        }
+
+    dumpItem (TopBindTuple id ty ids) =
+      PbToplevelItem {
+          name_of_PbToplevelItem = dumpIdent id
+        , lit_of_PbToplevelItem = StrictlyJust $
+              (defaultLetable ty Ilunboxedtuple) { parts_of_Letable = map dumpVarIdent ids }
+              -- hacky detail: we use the presence of the type field to mean "static/global"
+        , arr_of_PbToplevelItem = StrictlyNone
+        }
+
+    dumpItem (TopBindAppCtor id ty (cid, repr) ids) =
+      PbToplevelItem {
+          name_of_PbToplevelItem = dumpIdent id
+        , lit_of_PbToplevelItem = StrictlyJust $
+              (defaultLetable ty Ilglobalappctor) { parts_of_Letable = map dumpVarIdent ids
+                                                  , ctorinfo_of_Letable = StrictlyJust $ 
+                        PbCtorInfo {
+                              ctorid_of_PbCtorInfo = dumpCtorIdWithRepr "dumpCtorInfo" (cid, repr)
+                            , ctorstructty_of_PbCtorInfo = StrictlyNone
+                        }
+              }
+        , arr_of_PbToplevelItem = StrictlyNone
+      }
 
     dumpDataTypeDecl :: DataType TypeLL -> Decl
     dumpDataTypeDecl datatype =

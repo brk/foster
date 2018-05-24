@@ -159,6 +159,14 @@ LLExpr* parseCallPrimOp(const pb::Letable::Reader& e) {
   return new LLCallPrimOp(e.getPrimopname(), tag, args);
 }
 
+LLExpr* parseGlobalAppCtor(const pb::Letable::Reader& e) {
+  std::vector<LLVar*> args;
+  for (auto p : e.getParts()) {
+    args.push_back(parseTermVar(p));
+  }
+  return new LLGlobalAppCtor(parseCtorInfo(e.getCtorinfo()), args);
+}
+
 LLExpr* parsePbInt(const pb::PBInt::Reader& i) {
   return new LLInt(i.getClean(), i.getBits());
 }
@@ -384,7 +392,11 @@ LLArrayLiteral* parseTopArrayLiteral(const pb::PbArrayLiteral::Reader& lit) {
 }
 
 LLTopItem* parseToplevelItem(const pb::PbToplevelItem::Reader& e) {
-  return new LLTopItem(e.getName(), parseTopArrayLiteral(e.getArr()));
+  if (e.hasArr()) {
+    return new LLTopItem(e.getName(), parseTopArrayLiteral(e.getArr()));
+  } else {
+    return new LLTopItem(e.getName(), LLExpr_from_pb(e.getLit()));
+  }
 }
 
 LLExpr* parseByteArray(const pb::Letable::Reader& e) {
@@ -458,7 +470,7 @@ LLExpr* parseUnboxedTuple(const pb::Letable::Reader& e) {
   for (auto p : e.getParts()) {
     args.push_back(parseTermVar(p));
   }
-  return new LLUnboxedTuple(args);
+  return new LLUnboxedTuple(args, e.hasType());
 }
 
 LLExpr* parseKillProcess(const pb::Letable::Reader& e) {
@@ -544,6 +556,7 @@ LLExpr* LLExpr_from_pb(const be::Letable::Reader& e) {
   case pb::Letable::Tag::ILOBJECTCOPY: rv = parseObjectCopy(e); break;
   case pb::Letable::Tag::ILUNBOXEDTUPLE:rv =parseUnboxedTuple(e); break;
   case pb::Letable::Tag::ILKILLPROCESS:rv = parseKillProcess(e); break;
+  case pb::Letable::Tag::ILGLOBALAPPCTOR:rv = parseGlobalAppCtor(e); break;
 
   default:
     EDiag() << "Unknown protobuf tag: " << int(e.getTag());

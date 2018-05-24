@@ -1,6 +1,12 @@
 main = {
     barBARARBARBAARA 42;
     fooBARBAZ___QUUUX !;
+    part3 !;
+    part4 !;
+    part5 !;
+    noinline_llvm_part6 !;
+    case noinline_llvm_None ! of $None -> ()
+                              of $Some _ _ -> () end;
 };
 
 fooBARBAZ___QUUUX = {
@@ -12,3 +18,71 @@ barBARARBARBAARA = { arg =>
 };
 
 aAAAARRRRRRAAAYYYYYY = prim mach-array-literal 42 43 44;
+
+
+sa :: Array Int8;
+sa = b" ";
+
+ascii_space :: Int8;
+ascii_space = 32;
+
+part3 = {
+  expect_i8 ascii_space;
+  print_i8 sa[0];
+};
+
+pair = (20, ascii_space);
+part4 = {
+  let (a, b) = pair;
+  expect_i8 52;
+  print_i8 (a +Int8 b);
+};
+
+type case List of $None of $Some Int32 List;
+nil = None;
+one = Some 1 nil;
+
+two :: List;
+two = (Some 2 one);
+
+alsotwo = two;
+
+sum = { list =>
+  case list of $None -> 0
+            of $Some n tail -> n +Int32 sum tail
+  end
+};
+
+part5 = {
+  expect_i32 3;
+  print_i32 (sum alsotwo);
+  expect_i32 3;
+  print_i32 (sum two);
+  expect_i32 3;
+  print_i32 (sum alsotwo);
+  expect_i32 3;
+  print_i32 (sum two);
+};
+
+noinline_llvm_None = {
+  None
+};
+
+
+noinline_llvm_part6 = {
+  REC forcecont_foo = { n : Int32 =>
+    if n ==Int32 0 then 0
+      else print_i32 (opaquely_i32 n); forcecont_bar (n -Int32 1);
+    end
+  };
+  REC forcecont_bar = { n : Int32 =>
+    if n ==Int32 0 then 0
+      else print_i32 (opaquely_i32 n); forcecont_foo (n -Int32 1);
+    end
+  };
+
+  expect_i32 3;
+  expect_i32 2;
+  expect_i32 1;
+  forcecont_foo 3;
+};

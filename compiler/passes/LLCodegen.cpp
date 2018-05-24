@@ -458,7 +458,12 @@ void LLModule::codegenModule(CodegenPass* pass) {
   }
 
   for (auto& item : items) {
-    pass->globalValues[item->name] = item->arrlit->codegen(pass);
+    if (item->arrlit) {
+      pass->globalValues[item->name] = item->arrlit->codegen(pass);
+    } else {
+      pass->globalValues[item->name] = item->lit->codegen(pass);
+      pass->insertScopedValue(item->name, pass->globalValues[item->name]);
+    }
   }
 
   // Ensure that the llvm::Function*s are created for all the function
@@ -1246,6 +1251,11 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type,
   }
 }
 
+llvm::Value* emitNullaryCtor(CtorRepr ctorRepr, llvm::Type* ptrty) {
+  llvm::Value* val = builder.getInt8(ctorRepr.smallId);
+  return builder.CreateIntToPtr(val, ptrty);
+}
+
 // If we represent a constant array as a globally-allocated/static value,
 // we simply won't call this function.
 llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
@@ -1259,9 +1269,7 @@ llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
     }
     if (this->ctorRepr.isNullary) {
       emitFakeComment("nullary ctor!");
-      llvm::Value* val = builder.getInt8(this->ctorRepr.smallId);
-      llvm::Type* ptrty = getHeapPtrTo(this->type->getLLVMType());
-      return builder.CreateIntToPtr(val, ptrty);
+      return emitNullaryCtor(this->ctorRepr, getHeapPtrTo(this->type->getLLVMType()));
       // return null pointer, or'ed with ctor smallId, bitcast to appropriate result.
     } else {
       return allocateCell(pass, this->type, this->region, this->ctorRepr,
@@ -1474,7 +1482,58 @@ Value* createUnboxedTuple(const std::vector<Value*>& vals) {
 }
 
 Value* LLUnboxedTuple::codegen(CodegenPass* pass) {
-  return createUnboxedTuple(codegenAll(pass, this->vars));
+  if (this->isStatic) {
+    if (this->vars.empty()) {
+        return getUnitValue();
+    } else {
+        std::vector<llvm::Constant*> consts;
+        for (auto v : this->vars) {
+          auto gv = pass->globalValues[v->getName()];
+          if (auto cgv = dyn_cast<llvm::Constant>(gv)) {
+            consts.push_back(cgv);
+          } else {
+            llvm::errs() << "var  " << v->getName() << " was not constant! ... " << *gv << "\n";
+            exit(2);
+          }
+        }
+
+        auto ct = llvm::ConstantStruct::getAnon(consts);
+        return emitPrivateGlobal(pass, ct, "cstup");
+        /*
+    llvm::GlobalVariable* emitGlobalNonArrayCell(CodegenPass* pass,
+                                        llvm::GlobalVariable* typemap,
+                                        llvm::Constant* body,
+                                        const std::string& name) {
+                                        */
+
+    }
+  } else {
+    return createUnboxedTuple(codegenAll(pass, this->vars));
+  }
+}
+
+
+Value* LLGlobalAppCtor::codegen(CodegenPass* pass) {
+  llvm::Type* ty = getLLVMType(this->type);
+  if (this->args.empty()) {
+    return emitNullaryCtor(this->ctor.ctorId.ctorRepr, ty);
+  }
+
+  std::vector<llvm::Constant*> consts;
+  for (auto v : this->args) {
+    auto gv = pass->globalValues[v->getName()];
+    if (auto cgv = dyn_cast<llvm::Constant>(gv)) {
+      consts.push_back(cgv);
+    } else {
+      llvm::errs() << "var  " << v->getName() << " was not constant! ... " << *gv << "\n";
+      exit(2);
+    }
+  }
+
+  llvm::GlobalVariable* ti = getTypeMapForType(type, this->ctor.ctorId.ctorRepr, pass->mod, NotArray);
+  auto ct = llvm::ConstantStruct::getAnon(consts);
+  auto globalCell = emitGlobalNonArrayCell(pass, ti, ct, "csctor");
+  return emitBitcast(builder.CreateConstGEP2_32(NULL, globalCell, 0, 2), ty);
 }
 
 ///}}}//////////////////////////////////////////////////////////////
