@@ -295,9 +295,13 @@ areDeclaredValueTypesOK(llvm::Module* mod,
     ASSERT(v) << "unable to find module entry for " << d->getName();
     llvm::Type* ty = t->getLLVMType();
     if (v->getType() != ty) {
+      if (llvm::isa<Constant>(v) && isPointerToType(v->getType(), ty)) {
+        // Imported constants should be automatically dereferenced.
+        d->autoDeref = true;
+      }
       // TODO check to see if type are sanely bit-castable
       //      (e.g. they only differ underneath a pointer...).
-      if (d->getName() == "foster_stdin_read_bytes"
+      else if (d->getName() == "foster_stdin_read_bytes"
        || d->getName() == "foster_posix_read_bytes"
        || d->getName() == "foster_posix_write_bytes"
        || d->getName() == "foster_posix_write_bytes_to_file") {

@@ -113,9 +113,9 @@ struct LLDecl {
   string name;
   TypeAST* type;
   bool isForeign;
+  bool autoDeref;
   explicit LLDecl(const string& name, TypeAST* type, bool isForeign)
-      : name(name), type(type), isForeign(isForeign) {}
-  llvm::Value* codegen(CodegenPass* pass);
+      : name(name), type(type), isForeign(isForeign), autoDeref(false) {}
   const string getName() const { return name; }
   TypeAST*     getType() const { return type; }
 };

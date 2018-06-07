@@ -423,6 +423,7 @@ void addExternDecls(const std::vector<LLDecl*> decls,
       TypeAST* fosterType = d->getType();
 
       //llvm::outs() << "addExternDecls() saw " << declName << " :: " << str(fosterType) << "\n";
+
       if (const FnTypeAST* fnty = fosterType->castFnTypeAST()) {
 
         if (llvm::Function* wrapped = pass->mod->getFunction(d->getName() + "__autowrap")) {
@@ -432,7 +433,10 @@ void addExternDecls(const std::vector<LLDecl*> decls,
         }
 
       } else {
-        pass->mod->getOrInsertGlobal(declName, fosterType->getLLVMType());
+        auto g = pass->mod->getOrInsertGlobal(declName, fosterType->getLLVMType());
+        if (d->autoDeref) {
+          pass->autoDerefs[declName] = g;
+        }
       }
 
     }
@@ -458,6 +462,8 @@ void LLModule::codegenModule(CodegenPass* pass) {
   }
 
   for (auto& item : items) {
+    //llvm::errs() << "Adding " << item->name << " to pass->globalValues\n";
+
     if (item->arrlit) {
       pass->globalValues[item->name] = item->arrlit->codegen(pass);
     } else {
@@ -1154,6 +1160,10 @@ llvm::Value* LLGlobalSymbol::codegen(CodegenPass* pass) {
   // Closure conversion emits variables with procedure type; we'd be quite
   // remiss to use the nullary global closure wrapper instead of the proc!
   bool isProc = NULL != this->type->castFnTypeAST();
+
+  if (auto v = pass->autoDerefs[this->name]) {
+    return builder.CreateLoad(v, this->name);
+  }
 
   auto v = pass->globalValues[this->name];
   if (!v || isProc) {
