@@ -426,8 +426,19 @@ void addExternDecls(const std::vector<LLDecl*> decls,
 
       if (const FnTypeAST* fnty = fosterType->castFnTypeAST()) {
 
-        if (llvm::Function* wrapped = pass->mod->getFunction(d->getName() + "__autowrap")) {
-          codegenAutoWrapper(wrapped, fnty->getLLVMFnType(), declName, pass);
+        llvm::Function* target = pass->mod->getFunction(declName);
+        if (target) {
+          if ((!target->isDeclaration()) &&
+                str(target->getType()->getContainedType(0))
+                        != str(fnty->getLLVMFnType())) {
+            // If the function we import has a different type than we expected,
+            // automatically generate a wrapper to resolve the differences in types.
+            // We only generate a wrapper when we can rename the definition;
+            // renaming a declaration only causes problems when we link against the
+            // real definition.
+            target->setName(declName + std::string() + "__autowrap");
+            codegenAutoWrapper(target, fnty->getLLVMFnType(), declName, pass);
+          }
         } else {
           pass->mod->getOrInsertFunction(declName, fnty->getLLVMFnType());
         }

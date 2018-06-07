@@ -244,8 +244,41 @@ LLModule* readLLProgramFromCapnp(const string& pathstr) {
   return prog;
 }
 
+bool isEmptyStruct(llvm::Type* t) {
+  if (llvm::StructType* s = dyn_cast<StructType>(t)) {
+    return s->getNumElements() == 0;
+  }
+  return false;
+}
+
+bool isVoidAndPointerToEmptyStruct(llvm::Type* t1, llvm::Type* t2) {
+  return t1->isVoidTy() && t2->isPointerTy() && isEmptyStruct(t2->getContainedType(0));
+}
+
+bool isZeroLengthArray(llvm::Type* t) {
+  if (auto arty = dyn_cast<ArrayType>(t)) {
+    return arty->getNumElements() == 0;
+  }
+  return false;
+}
+
+bool isArrayLike(llvm::Type* t) {
+  if (t->isPointerTy()) {
+    if (llvm::StructType* s = dyn_cast<StructType>(t->getContainedType(0))) {
+      if (s->getNumElements() == 2 && s->getContainedType(0) == foster::builder.getInt64Ty()
+        && isZeroLengthArray(s->getContainedType(1)))
+        return true;
+    }
+  }
+  return false;
+}
+
 bool typesAreCastable(llvm::Type* t1, llvm::Type* t2) {
   if (t1 == t2) return true;
+  if (isVoidAndPointerToEmptyStruct(t1, t2) || isVoidAndPointerToEmptyStruct(t2, t1)) {
+    return true;
+  }
+  if (isArrayLike(t1) || isArrayLike(t2)) return true;
 
   if (isFunctionPointerTy(t1) && isFunctionPointerTy(t2)) {
     auto f1 = dyn_cast<FunctionType>(t1->getContainedType(0));

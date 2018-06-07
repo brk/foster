@@ -154,8 +154,8 @@ For the "hello world" equivalent in SDL, we only need two such helper functions:
 
     #include <SDL2/SDL.h>
 
-    SDL_PixelFormat* SDL_GetSurfaceFormat__autowrap(SDL_Surface* s) { return s->format; }
-    SDL_Rect* SDL_NullRect__autowrap() { return NULL; }
+    SDL_PixelFormat* SDL_GetSurfaceFormat(SDL_Surface* s) { return s->format; }
+    SDL_Rect* SDL_NullRect() { return NULL; }
 
 These symbols can be imported and used on the Foster side like so::
 
@@ -170,17 +170,7 @@ These symbols can be imported and used on the Foster side like so::
        ...
     };
 
-We append ``__autowrap`` to tell the Foster compiler to automatically generate the
-appropriate bitcasts to mediate between the "C world" types and their Foster equivalents.
-Without such a (temporary expedient hack of a) marker, we would get errors such as::
-
-    ``Can't pass a value of type %struct.SDL_Rect.23* to a phi node of type %SDLRect.DT*``
-
-Autowrapping is only needed for functions brought in via bitcode. Functions accessed via
-native code (such as the core SDL2 functions) don't need autowrapping because their only
-representation in LLVM is the one we ascribe to them with a ``foreign import``.
-In the future, LLVM might obviate the need for autowrapping by making pointers "untyped".
-Anyways, we begin by compiling the above library (in ``sdlWrap.c``) to LLVM bitcode::
+We begin by compiling the above library (in ``sdlWrap.c``) to LLVM bitcode::
 
     clang sdlWrap.c -emit-llvm -c -o sdlWrap.bc
 
