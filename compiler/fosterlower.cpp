@@ -245,6 +245,8 @@ LLModule* readLLProgramFromCapnp(const string& pathstr) {
 }
 
 bool typesAreCastable(llvm::Type* t1, llvm::Type* t2) {
+  if (t1 == t2) return true;
+
   if (isFunctionPointerTy(t1) && isFunctionPointerTy(t2)) {
     auto f1 = dyn_cast<FunctionType>(t1->getContainedType(0));
     auto f2 = dyn_cast<FunctionType>(t2->getContainedType(0));
