@@ -137,16 +137,78 @@ which can turn such profiles into flamegraphs. Example::
 .. note:
         See also https://downloads.haskell.org/~ghc/latest/docs/html/users_guide/hp2ps.html
 
+
+Native Code Interop Example: SDL2
+---------------------------------
+
+A command line to build a C++ program against SDL2 might look something like this::
+
+    clang++ simplegl.cpp -O2 -lm -lSDL2 -lGL -lGLEW -std=c++11 -o simplegl.exe
+
+Foster provides (some) support for linking aginst such libraries as well.
+Foster's foreign language support is oriented around functions and primitive types.
+Unlike the equivalent C++ program, Foster cannot make direct use of the preprocessor,
+nor can Foster access constants or perform direct struct member lookups.
+To bridge the gap, you must wrap such functionality in a small auxilliary C library.
+For the "hello world" equivalent in SDL, we only need two such helper functions::
+
+    #include <SDL2/SDL.h>
+
+    SDL_PixelFormat* SDL_GetSurfaceFormat__autowrap(SDL_Surface* s) { return s->format; }
+    SDL_Rect* SDL_NullRect__autowrap() { return NULL; }
+
+These symbols can be imported and used on the Foster side like so::
+
+    foreign type SDLPixelFormat;
+    foreign type SDLSurface;
+    foreign import SDL_GetSurfaceFormat as sdlGetSurfaceFormat :: { SDLSurface => SDLPixelFormat };
+
+    main = {
+       ...
+       surface = ...;
+       pixfmt = sdlGetSurfaceFormat surface;
+       ...
+    };
+
+We append ``__autowrap`` to tell the Foster compiler to automatically generate the
+appropriate bitcasts to mediate between the "C world" types and their Foster equivalents.
+Without such a (temporary expedient hack of a) marker, we would get errors such as::
+
+    ``Can't pass a value of type %struct.SDL_Rect.23* to a phi node of type %SDLRect.DT*``
+
+Autowrapping is only needed for functions brought in via bitcode. Functions accessed via
+native code (such as the core SDL2 functions) don't need autowrapping because their only
+representation in LLVM is the one we ascribe to them with a ``foreign import``.
+In the future, LLVM might obviate the need for autowrapping by making pointers "untyped".
+Anyways, we begin by compiling the above library (in ``sdlWrap.c``) to LLVM bitcode::
+
+    clang sdlWrap.c -emit-llvm -c -o sdlWrap.bc
+
+Putting potential hot-loop operations, such as struct accesses, behind a function call
+boundary might seem doomed to be slow. But fear not!
+LLVM's powerful optimizer will boil away the wrapper functions when we compile
+our program with ``--backend-optimize``.
+
+We can then compile and run our program, linking the SDL library and our wrapper::
+
+    runfoster simplegl.foster --nativelib SDL --bitcode sdlWrap.bc --backend-optimize
+
+We can also compile to a native executable::
+
+    fosterc   simplegl.foster --nativelib SDL --bitcode sdlWrap.bc --backend-optimize -o fostergl.exe
+
+
+
 Performance-related notes
 -------------------------
 
 * The middle-end compiler takes 2m2s to build with -O2, and roughly 48s to build without optimization.
   The middle-end then runs about 30% faster, but serialization time is not affected at all.
 
-* foster-generated binaries require C++ shared libraries (chromium_base, etc)
-  due to the runtime. In a hello-world comparison, the foster binary is ~50KB bigger
-  than the C binary, and dynamic linking etc takes about 2ms.
+* In a hello-world comparison, the foster binary is ~53KB bigger than the C binary.
   Use of ``strings`` suggests strings account for 14KB of the size increase.
+  Foster-generated binaries dynamically link against a minimial selection of "standard" libraries:
+  libc, libm, librt, pthreads, libgcc_s, and libstdc++
 
 * fannkuchredux(-nogc)-unchecked
     runs 100% slower than the reference C program.
