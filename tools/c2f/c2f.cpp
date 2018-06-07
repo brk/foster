@@ -24,6 +24,7 @@
 //------------------------------------------------------------------------------
 #include <string>
 #include <sstream>
+#include <set>
 
 #include "clang/AST/AST.h"
 #include "clang/AST/ASTConsumer.h"
@@ -56,7 +57,12 @@ public:
     return handled;
   }
 
+  bool shouldIgnore(const std::string& name) {
+    return ignoredSymbolNames.find(name) != ignoredSymbolNames.end();
+  }
+
   std::map<std::string, std::string> enumPrefixForConstants;
+  std::set<std::string> ignoredSymbolNames;
 
   // I couldn't figure out a better way of communicating between the
   // ClangTool invocation site and the ASTConsumer itself.
@@ -462,6 +468,9 @@ std::string fosterizedName(const std::string& name) {
   if (name == "strlen") return "ptrStrlen";
   if (name == "strcmp") return "ptrStrcmp";
 
+  if (name == "fabs")   return "abs-f64";
+  if (name == "fabsf")  return "abs-f32";
+
   if (name == "feof")   return "c2f_feof";
   if (name == "ferror") return "c2f_ferror";
   if (name == "fwrite") return "c2f_fwrite";
@@ -809,15 +818,28 @@ private:
 bool shouldProcessTopLevelDecl(const Decl* d, const FileClassifier& FC) {
   if (!FC.isFromMainFile(d)) {
     if (FC.isFromSystemHeader(d)) return false;
+    if (auto nd = dyn_cast<NamedDecl>(d)) {
+      if (globals.shouldIgnore(nd->getNameAsString())) {
+        return false;
+      }
+    }
     if (auto td = dyn_cast<TagDecl>(d)) {
       if (td->isThisDeclarationADefinition() && td->isCompleteDefinition()) {
         return true;
       }
     }
-    if (isa<FunctionDecl>(d)) return true;
+    if (isa<FunctionDecl>(d)) {
+      return true;
+    }
 
     // skip it if incomplete or from system header
     return false;
+  }
+
+  if (auto nd = dyn_cast<NamedDecl>(d)) {
+    if (globals.shouldIgnore(nd->getNameAsString())) {
+      return false;
+    }
   }
   return true;
 }
@@ -1035,7 +1057,7 @@ public:
   std::string getBlockName(const CFGBlock& cb) {
     std::string s;
     std::stringstream ss(s);
-    ss << "mustbecont_";
+    ss << "forcecont_";
 
     if (const Stmt* lab = cb.getLabel()) {
       if (const LabelStmt* labstmt = dyn_cast<LabelStmt>(lab)) {
@@ -2574,8 +2596,12 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         llvm::outs() << (lit->getValueAsApproximateDouble() != 0.0 ? "True" : "False");
       } else {
         std::string litstr = FC.getText(*lit);
-        if (!litstr.empty() && litstr[litstr.size() - 1] == 'f') {
-          litstr[litstr.size() - 1] = ' ';
+        llvm::errs() << "// float lit str: " << litstr << "\n";
+        if (!litstr.empty()) {
+          char last = litstr[litstr.size() - 1];
+          if (last == 'f' || last == 'F') {
+            litstr[litstr.size() - 1] = ' ';
+          }
         }
         if (!litstr.empty()) llvm::outs() << litstr;
         else {
@@ -3034,11 +3060,121 @@ public:
   }
 };
 
+void initializeIgnoredSymbolNames() {
+  globals.ignoredSymbolNames.insert("csmith_sink_");
+  globals.ignoredSymbolNames.insert("__undefined");
+  globals.ignoredSymbolNames.insert("platform_main_begin");
+  globals.ignoredSymbolNames.insert("platform_main_end");
+  globals.ignoredSymbolNames.insert("transparent_crc");
+  globals.ignoredSymbolNames.insert("transparent_crc_bytes");
+  globals.ignoredSymbolNames.insert("crc32_byte");
+  globals.ignoredSymbolNames.insert("crc32_8bytes");
+  globals.ignoredSymbolNames.insert("crc32_gentab");
+  globals.ignoredSymbolNames.insert("safe_rshift_func_int64_t_s_u");
+  globals.ignoredSymbolNames.insert("safe_rshift_func_int64_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_rshift_func_int64_t_u_s");
+  globals.ignoredSymbolNames.insert("safe_rshift_func_int64_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_lshift_func_int64_t_s_u");
+  globals.ignoredSymbolNames.insert("safe_lshift_func_int64_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_lshift_func_int64_t_u_s");
+  globals.ignoredSymbolNames.insert("safe_lshift_func_int64_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_rshift_func_uint64_t_s_u");
+  globals.ignoredSymbolNames.insert("safe_rshift_func_uint64_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_rshift_func_uint64_t_u_s");
+  globals.ignoredSymbolNames.insert("safe_rshift_func_uint64_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_lshift_func_uint64_t_s_u");
+  globals.ignoredSymbolNames.insert("safe_lshift_func_uint64_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_lshift_func_uint64_t_u_s");
+  globals.ignoredSymbolNames.insert("safe_lshift_func_uint64_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_div_func_int8_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_div_func_int16_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_div_func_int32_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_div_func_int64_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_mod_func_int8_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_mod_func_int16_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_mod_func_int32_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_mod_func_int64_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_mul_func_int8_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_mul_func_int16_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_mul_func_int32_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_mul_func_int64_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_unary_minus_func_int8_t_s");
+  globals.ignoredSymbolNames.insert("safe_add_func_int8_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_sub_func_int8_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_lshift_func_int8_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_lshift_func_int8_t_s_u");
+  globals.ignoredSymbolNames.insert("safe_rshift_func_int8_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_rshift_func_int8_t_s_u");
+  globals.ignoredSymbolNames.insert("safe_unary_minus_func_int16_t_s");
+  globals.ignoredSymbolNames.insert("safe_add_func_int16_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_sub_func_int16_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_lshift_func_int16_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_lshift_func_int16_t_s_u");
+  globals.ignoredSymbolNames.insert("safe_rshift_func_int16_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_rshift_func_int16_t_s_u");
+  globals.ignoredSymbolNames.insert("safe_unary_minus_func_int32_t_s");
+  globals.ignoredSymbolNames.insert("safe_add_func_int32_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_sub_func_int32_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_lshift_func_int32_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_lshift_func_int32_t_s_u");
+  globals.ignoredSymbolNames.insert("safe_rshift_func_int32_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_rshift_func_int32_t_s_u");
+  globals.ignoredSymbolNames.insert("safe_unary_minus_func_int64_t_s");
+  globals.ignoredSymbolNames.insert("safe_add_func_int64_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_sub_func_int64_t_s_s");
+  globals.ignoredSymbolNames.insert("safe_unary_minus_func_uint8_t_u");
+  globals.ignoredSymbolNames.insert("safe_add_func_uint8_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_sub_func_uint8_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_mul_func_uint8_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_mod_func_uint8_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_div_func_uint8_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_lshift_func_uint8_t_u_s");
+  globals.ignoredSymbolNames.insert("safe_lshift_func_uint8_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_rshift_func_uint8_t_u_s");
+  globals.ignoredSymbolNames.insert("safe_rshift_func_uint8_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_unary_minus_func_uint16_t_u");
+  globals.ignoredSymbolNames.insert("safe_add_func_uint16_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_sub_func_uint16_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_mul_func_uint16_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_mod_func_uint16_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_div_func_uint16_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_lshift_func_uint16_t_u_s");
+  globals.ignoredSymbolNames.insert("safe_lshift_func_uint16_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_rshift_func_uint16_t_u_s");
+  globals.ignoredSymbolNames.insert("safe_rshift_func_uint16_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_unary_minus_func_uint32_t_u");
+  globals.ignoredSymbolNames.insert("safe_add_func_uint32_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_sub_func_uint33_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_mul_func_uint32_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_mod_func_uint32_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_div_func_uint32_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_lshift_func_uint32_t_u_s");
+  globals.ignoredSymbolNames.insert("safe_lshift_func_uint32_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_rshift_func_uint32_t_u_s");
+  globals.ignoredSymbolNames.insert("safe_rshift_func_uint32_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_unary_minus_func_uint64_t_u");
+  globals.ignoredSymbolNames.insert("safe_add_func_uint64_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_sub_func_uint64_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_mul_func_uint64_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_mod_func_uint64_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_div_func_uint64_t_u_u");
+  globals.ignoredSymbolNames.insert("safe_add_func_float_f_f");
+  globals.ignoredSymbolNames.insert("safe_sub_func_float_f_f");
+  globals.ignoredSymbolNames.insert("safe_mul_func_float_f_f");
+  globals.ignoredSymbolNames.insert("safe_div_func_float_f_f");
+  globals.ignoredSymbolNames.insert("safe_add_func_double_f_f");
+  globals.ignoredSymbolNames.insert("safe_sub_func_double_f_f");
+  globals.ignoredSymbolNames.insert("safe_mul_func_double_f_f");
+  globals.ignoredSymbolNames.insert("safe_div_func_double_f_f");
+  globals.ignoredSymbolNames.insert("safe_convert_func_float_to_int32_t");
+}
+
 // You'll probably want to invoke with -fparse-all-comments
 int main(int argc, const char **argv) {
   CommonOptionsParser op(argc, argv, CtoFosterCategory);
   ClangTool Tool(op.getCompilations(), op.getSourcePathList());
 
+  initializeIgnoredSymbolNames();
 
   Tool.run(newFrontendActionFactory<C2F_TypeDeclHandler_FA>().get());
 
@@ -3100,3 +3236,4 @@ int main(int argc, const char **argv) {
 //     we won't properly distinguish the two (both become Foo).
 //   * Missing returns from non-void-returning functions will (reasonably!)
 //     lead to type errors in the generated Foster code.
+
