@@ -473,12 +473,12 @@ char* cdataptr_unsafe(foster_bytes* b, int32_t offset) {
 
 void cstr_free(char* s) { free(s); }
 
-FILE* c2f_stdin__autowrap() { return stdin; }
-FILE* c2f_stdout__autowrap() { return stdout; }
-FILE* c2f_stderr__autowrap() { return stderr; }
+FILE* c2f_stdin() { return stdin; }
+FILE* c2f_stdout() { return stdout; }
+FILE* c2f_stderr() { return stderr; }
 
 
-int8_t foster_crypto_hash_sha256__autowrap(foster_bytes* output, foster_bytes* input) {
+int8_t foster_crypto_hash_sha256(foster_bytes* output, foster_bytes* input) {
   if (output->cap != crypto_hash_sha256_BYTES) {
     return 1;
   }
@@ -487,14 +487,14 @@ int8_t foster_crypto_hash_sha256__autowrap(foster_bytes* output, foster_bytes* i
                             input->cap); // returns zero
 }
 
-double foster_strtof64__autowrap(foster_bytes* b, int32_t roundmode) {
+double foster_strtof64(foster_bytes* b, int32_t roundmode) {
   char* c = cstr(b);
   double f = atof(c);
   free(c);
   return f;
 }
 
-void* foster_gdtoa64__autowrap(double f, int32_t mode, int32_t ndig, int32_t rounding, int32_t* decpt) {
+void* foster_gdtoa64(double f, int32_t mode, int32_t ndig, int32_t rounding, int32_t* decpt) {
   char buf[64];
   sprintf(buf, "%g", f);
   return foster_emit_string_of_cstring(buf, strlen(buf));
@@ -607,7 +607,7 @@ void foster__humanize_s_ptr(double val, char* ptr, const char* unit) {
   else                 { snprintf(ptr, 62, "%.3f %s%s", val, prefix, unit); }
 }
 
-void* foster_humanize_s__autowrap(double val) {
+void* foster_humanize_s(double val) {
   char buf[64] = { 0 };
   foster__humanize_s_ptr(val, &buf[0], "");
   return foster_emit_string_of_cstring(buf, strlen(buf));
