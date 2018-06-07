@@ -125,7 +125,19 @@ typecheckRat annot originalText expTy = do
                                text "the type" <+> pretty t]
   case base of
     2  -> error $ "binary float literals not yet implemented"
-    16 -> error $ "hex floating point literals not yet implemented"
+    16 ->
+      if exptTooLargeForType expt ty then
+        tcFails [text "Exponent too large", highlightFirstLineDoc (rangeOf annot)]
+      else
+       case Atto.parseOnly hexDoubleParser $ T.pack clean of
+         Left err -> tcFails [text "Failed to parse hex float literal " <+> parens (text clean)
+                             ,highlightFirstLineDoc (rangeOf annot)
+                             ,text "Error was:"
+                             ,indent 8 (text err) ]
+         Right (part1,part2,denom,part3) -> do
+           let val = (fromInteger part1 +
+                      (fromInteger part2 / denom)) * (encodeFloat 2 (part3 - 1))
+           return (AnnLiteral annot ty (LitFloat $ LiteralFloat val originalText))
     10 ->
       if exptTooLargeForType expt ty then
          tcFails [text "Exponent too large", highlightFirstLineDoc (rangeOf annot)]
@@ -140,6 +152,14 @@ typecheckRat annot originalText expTy = do
             tcMaybeWarnMisleadingRat (rangeOf annot) cleanE val
             return (AnnLiteral annot ty (LitFloat $ LiteralFloat val originalText))
     _ -> error $ "Unexpected rational literal base " ++ show base
+
+hexDoubleParser :: Atto.Parser (Integer, Integer, Double, Int)
+hexDoubleParser = do
+  part1 <- Atto.hexadecimal
+  (t, part2) <- Atto.option (T.pack "", 0)
+                  (Atto.char '.' *> Atto.match Atto.hexadecimal)
+  part3 <- (Atto.asciiCI (T.pack "p") *> Atto.signed Atto.decimal)
+  return (part1, part2, 16.0 ** (fromIntegral $ T.length t), part3)
 
 tcMaybeWarnMisleadingRat range cleanText val = do
   -- It's possible that the literal given is "misleading",
