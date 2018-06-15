@@ -28,6 +28,26 @@ numerical-ops = {
 
   expect_i1 True;
   print_i1 (0 <UInt64 n1);
+
+  // Literals (of sized integer types) are just syntax for bit patterns.
+  expect_i8b 0xff;
+  print_i8b 255;
+
+  expect_i8b 0b`1111`1111;
+  print_i8b -1;
+
+  expect_i1 True;
+  print_i1 (255 ==Int8 -1);
+
+  expect_i1 False;
+  print_i1 (255 ==Int32 -1);
+
+  expect_i32b 0x0000`00ff;
+  print_i32b 255;
+
+  expect_i32b 0xffff`ffff;
+  print_i32b -1;
+
 };
 
 sub8 = { n : Int8 => n -Int8 (trunc32to8 2); };

@@ -128,8 +128,8 @@ typecheckRat annot originalText expTy = do
     16 ->
       if exptTooLargeForType expt ty then
         tcFails [text "Exponent too large", highlightFirstLineDoc (rangeOf annot)]
-      else
-       case Atto.parseOnly hexDoubleParser $ T.pack clean of
+      else do
+       case Atto.parseOnly (hexDoubleParser <* Atto.endOfInput) $ T.pack clean of
          Left err -> tcFails [text "Failed to parse hex float literal " <+> parens (text clean)
                              ,highlightFirstLineDoc (rangeOf annot)
                              ,text "Error was:"
