@@ -134,6 +134,9 @@ bytesDrop32 = { ba => n => bytesDrop ba (zext_i32_to_i64 n) };
 bytesTake32 :: { Bytes => Int32 => Bytes };
 bytesTake32 = { ba => n => bytesTake ba (zext_i32_to_i64 n) };
 
+bytesSlice32 :: { Bytes => Int32 => Int32 => Bytes };
+bytesSlice32 = { ba => off => len => bytesTake32 (bytesDrop32 ba off) len };
+
 bytesDropWord :: { Bytes => Word => Bytes };
 bytesDropWord = { ba => n => bytesDrop ba (zext_Word_to_i64 n) };
 
@@ -277,6 +280,7 @@ bytesFlattenRaw = { bytes =>
   rv
 };
 
+
 bytesFlatten :: { Bytes => Bytes };
 bytesFlatten = { bytes => bytes |> bytesFlattenRaw |> bytesOfRawArray };
 
@@ -307,6 +311,10 @@ bytesGet! = { o => ba =>
     of $BytesEmpty          -> prim kill-entire-process "bytesGet! of BytesEmpty";
   end
 };
+
+// Precondition: o is a valid index for b.
+bytesGet32!    :: { Int32 => Bytes => Int8 };
+bytesGet32! = { o => ba => bytesGet! (zext_i32_to_i64 o) ba };
 
 // Precondition: 0 is a valid index for b.
 bytesGet0! :: { Bytes => Int8 };
@@ -489,6 +497,51 @@ bytesCmpAlt = { b1 => b2 =>
   go 0
 };
 
+// Return true if b1 starts with b2.
+bytesHasPrefix :: { Bytes => Bytes => Bool };
+bytesHasPrefix = { b1 => b2 =>
+  bytesEqual (bytesTake b1 (bytesLength b2)) b2
+};
+
+
+bytesCmpRaw :: { Bytes => Array Int8 => Ord };
+bytesCmpRaw = { b1 => a2 =>
+  defaultVerdict = cmp-UInt64 (bytesLength b1) (arrayLength a2);
+  len            = min-UInt64 (bytesLength b1) (arrayLength a2);
+  REC go = { idx =>
+    if idx ==Int64 len
+      then defaultVerdict
+      else res = cmp-UInt8 (bytesGet! idx b1) a2[idx];
+           if isEQ res then go (idx +Int64 1) else res end
+    end
+  };
+  go 0
+};
+
+bytesEqualRaw :: { Bytes => Array Int8 => Bool };
+bytesEqualRaw = { b1 => a2 => isEQ (bytesCmpRaw b1 a2) };
+
+bytesSliceFromTo :: { Bytes => Int64 => Int64 => Bytes };
+bytesSliceFromTo = { b => src => tgt =>
+  len = tgt -Int64 src;
+  bytesTake (bytesDrop b src) len
+};
+
+bytesIndexFrom :: { Bytes => Int64 => Int8 => Int64 };
+bytesIndexFrom = { b => idx => c =>
+  len = bytesLength b;
+  REC loop = { idx =>
+    if idx ==Int64 len
+      then idx
+      else if bytesGet! idx b ==Int8 c
+             then idx
+             else loop (idx +Int64 1)
+            end
+    end
+  };
+  loop idx
+};
+
 /*
 bytesDescribe :: { Bytes => Text };
 bytesDescribe = { bytes =>
@@ -513,3 +566,127 @@ bytesDescribe = { bytes =>
 };
 */
 
+
+// BytesChunk is a simplified form of Bytes which does not support efficient
+// concatenation. In exchange, other operations (especially indexing) are
+// more efficient.
+type case BytesChunk
+  of $BytesChunk (Array Int8) Int64 Int64 // offset, fragment length
+  ;
+
+bytesChunk :: { Array Int8 => BytesChunk };
+bytesChunk = { arr => BytesChunk arr 0 (arrayLength arr) };
+
+bytesChunkTake :: { BytesChunk => Int64 => BytesChunk };
+bytesChunkTake = { b => i =>
+  case b of $BytesChunk arr off len ->
+    BytesChunk arr off (min-SInt64 i len)
+  end
+};
+
+bytesChunkDrop :: { BytesChunk => Int64 => BytesChunk };
+bytesChunkDrop = { b => i =>
+  case b of $BytesChunk arr off len ->
+    n = (min-SInt64 i len);
+    BytesChunk arr (off +Int64 n) (len -Int64 n)
+  end
+};
+
+bytesChunkGet! :: { BytesChunk => Int64 => Int8 };
+bytesChunkGet! = { b => i =>
+  case b of $BytesChunk arr off _ ->
+    arr[off +Int64 i]
+  end
+};
+
+bytesChunkLength :: { BytesChunk => Int64 };
+bytesChunkLength = { b =>
+  case b of $BytesChunk _ _ len -> len end
+};
+
+bytesChunkHasPrefix :: { BytesChunk => BytesChunk => Bool };
+bytesChunkHasPrefix = { b1 => b2 =>
+  bytesChunkEqual (bytesChunkTake b1 (bytesChunkLength b2)) b2
+};
+
+bytesChunkCmp :: { BytesChunk => BytesChunk => Ord };
+bytesChunkCmp = { b1 => b2 =>
+  defaultVerdict = cmp-UInt64 (bytesChunkLength b1) (bytesChunkLength b2);
+  len            = min-UInt64 (bytesChunkLength b1) (bytesChunkLength b2);
+  REC go = { idx =>
+    if idx ==Int64 len
+      then defaultVerdict
+      else res = cmp-UInt8 (bytesChunkGet! b1 idx) (bytesChunkGet! b2 idx);
+           if isEQ res then go (idx +Int64 1) else res end
+    end
+  };
+  go 0
+};
+
+bytesChunkCmpRaw :: { BytesChunk => Array Int8 => Ord };
+bytesChunkCmpRaw = { b1 => a2 =>
+  defaultVerdict = cmp-UInt64 (bytesChunkLength b1) (arrayLength a2);
+  len            = min-UInt64 (bytesChunkLength b1) (arrayLength a2);
+  REC go = { idx =>
+    if idx ==Int64 len
+      then defaultVerdict
+      else res = cmp-UInt8 (bytesChunkGet! b1 idx) a2[idx];
+           if isEQ res then go (idx +Int64 1) else res end
+    end
+  };
+  go 0
+};
+
+bytesChunkEmpty = { bytesChunk b"" };
+
+bytesChunkEqual :: { BytesChunk => BytesChunk => Bool };
+bytesChunkEqual = { b1 => b2 =>
+  if bytesChunkLength b1 ==Int64 bytesChunkLength b2
+    then isEQ (bytesChunkCmp b1 b2)
+    else False
+  end
+};
+
+bytesChunkEqualRaw :: { BytesChunk => Array Int8 => Bool };
+bytesChunkEqualRaw = { b => a =>
+  if bytesChunkLength b ==Int64 arrayLength a
+    then isEQ (bytesChunkCmpRaw b a)
+    else False
+  end
+};
+
+bytesChunkFromTo :: { BytesChunk => Int64 => Int64 => BytesChunk };
+bytesChunkFromTo = { b => src => tgt =>
+  len = tgt -Int64 src;
+  bytesChunkTake (bytesChunkDrop b src) len
+};
+
+bytesChunkIndexFrom :: { BytesChunk => Int64 => Int8 => Int64 };
+bytesChunkIndexFrom = { b => idx => c =>
+  len = bytesChunkLength b;
+  REC loop = { idx =>
+    if idx ==Int64 len
+      then idx
+      else if bytesChunkGet! b idx ==Int8 c
+             then idx
+             else loop (idx +Int64 1)
+            end
+    end
+  };
+  loop idx
+};
+
+bytesChunkOfBytes :: { Bytes => BytesChunk };
+bytesChunkOfBytes = { b =>
+  case b
+    of $BytesOffset ($BytesFragment arr _) offset len -> BytesChunk arr offset len
+    of _ -> b |> bytesFlattenRaw |> bytesChunk
+  end
+};
+
+bytesOfBytesChunk :: { BytesChunk => Bytes };
+bytesOfBytesChunk = { b =>
+  case b of $BytesChunk arr offset len ->
+    BytesOffset (BytesFragment arr (offset +Int64 len)) offset len
+  end
+};

@@ -49,10 +49,10 @@ curl https://beyondgrep.com/ack-2.20-single-file > ~/.local/bin/ack && chmod 075
   ./configure --prefix=$HOME/.local && make -j && make install
   cd ..
 
-  wget https://downloads.haskell.org/~ghc/8.4.2/ghc-8.4.2-x86_64-deb8-linux-dwarf.tar.xz
+  wget https://downloads.haskell.org/~ghc/8.4.3/ghc-8.4.3-x86_64-deb8-linux-dwarf.tar.xz
   tar xf ghc-*.xz
   rm ghc-*.xz
-  cd ghc-* && ./configure --prefix=$HOME/.local/ghc-8.4.2 && make -j install && cd ..
+  cd ghc-* && ./configure --prefix=$HOME/.local/ghc-8.4.3 && make -j install && cd ..
 
   wget https://www.haskell.org/cabal/release/cabal-install-2.2.0.0/cabal-install-2.2.0.0-x86_64-unknown-linux.tar.gz
   tar xf cabal-*.gz
