@@ -41,18 +41,18 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 #define FOSTER_GC_ALLOC_HISTOGRAMS    0
 #define FOSTER_GC_TIME_HISTOGRAMS     0 // Adds ~300 cycles per collection
 #define FOSTER_GC_EFFIC_HISTOGRAMS    0
-#define ENABLE_GC_TIMING              0
-#define ENABLE_GC_TIMING_TICKS        0 // Adds ~430 cycles per collection
+#define ENABLE_GC_TIMING              1
+#define ENABLE_GC_TIMING_TICKS        1 // Adds ~430 cycles per collection
 #define GC_ASSERTIONS 0
 #define MARK_FRAME21S                 0
 #define MARK_FRAME21S_OOL             0
 #define COALESCE_FRAME15S             1
 #define MARK_OBJECT_WITH_BITS         0
 #define UNSAFE_ASSUME_F21_UNMARKED    false
-#define TRACK_NUM_ALLOCATIONS         0
-#define TRACK_NUM_ALLOC_BYTES         0
+#define TRACK_NUM_ALLOCATIONS         1
+#define TRACK_NUM_ALLOC_BYTES         1
 #define TRACK_NUM_REMSET_ROOTS        0
-#define TRACK_NUM_OBJECTS_MARKED      0
+#define TRACK_NUM_OBJECTS_MARKED      1
 #define TRACK_WRITE_BARRIER_COUNTS    0
 #define TRACK_BYTES_KEPT_ENTRIES      0
 #define TRACK_BYTES_ALLOCATED_ENTRIES 0
@@ -2674,7 +2674,7 @@ void visitGCRoots(void* start_frame, immix_heap* visitor) {
     gcglobals.num_big_stackwalks += 1;
   }
   if (nFrames == MAX_NUM_RET_ADDRS) {
-    fprintf(gclog, "ERROR: backtrace is probably incomplete due to oversized stack!\n"); fflush(gclog);
+    fprintf(gclog, "ERROR: backtrace is probably incomplete due to oversized stack! (%d frames)\n", nFrames); fflush(gclog);
     exit(2);
   }
   if (FOSTER_GC_TIME_HISTOGRAMS) {

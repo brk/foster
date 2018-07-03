@@ -494,7 +494,7 @@ double foster_strtof64(foster_bytes* b, int32_t roundmode) {
   return f;
 }
 
-void* foster_gdtoa64(double f, int32_t mode, int32_t ndig, int32_t rounding, int32_t* decpt) {
+void* foster_gdtoa64__autowrap(double f, int32_t mode, int32_t ndig, int32_t rounding, int32_t* decpt) {
   char buf[64];
   sprintf(buf, "%g", f);
   return foster_emit_string_of_cstring(buf, strlen(buf));

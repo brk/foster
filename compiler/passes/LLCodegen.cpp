@@ -179,12 +179,25 @@ llvm::Value* emitGCWriteOrStore(CodegenPass* pass,
   }
 
   builder.GetInsertBlock()->getParent()->dump();
-  ASSERT(false) << "ELIDING STORE DUE TO MISMATCHED TYPES:\n"
-          << "ptr type: " << str(ptr->getType()) << "\n"
-          << "val type: " << str(val->getType()) << "\n"
-          << "val is  : " << str(val) << "\n"
-          << "ptr is  : " << str(ptr);
+  ASSERT(false) << "in basic block " << builder.GetInsertBlock()->getName() << ":\n"
+          << "ELIDING STORE DUE TO MISMATCHED TYPES:\n"
+          << "    ptr type: " << str(ptr->getType()) << "\n"
+          << "    val type: " << str(val->getType()) << "\n"
+          << "    val is  : " << str(val) << "\n"
+          << "    ptr is  : " << str(ptr);
   return NULL;
+}
+
+llvm::Type* // nullable
+needsBitcastToMediateUnknownPointerMismatch(llvm::Value* val, llvm::Value* ptr) {
+  if (ptr->getType()->isPointerTy()
+      && !isPointerToType(ptr->getType(), val->getType())) {
+    auto eltTy = llvm::dyn_cast<llvm::PointerType>(ptr->getType())->getElementType();
+    if (matchesExceptForUnknownPointers(val->getType(), eltTy)) {
+      return eltTy;
+    }
+  }
+  return nullptr;
 }
 
 llvm::Value* emitStore(CodegenPass* pass,
@@ -192,12 +205,8 @@ llvm::Value* emitStore(CodegenPass* pass,
                        llvm::Value* ptr,
                        WriteSelector w = WriteUnspecified) {
   ASSERT(!val->getType()->isVoidTy());
-  if (ptr->getType()->isPointerTy()
-    && !isPointerToType(ptr->getType(), val->getType())) {
-    auto eltTy = llvm::dyn_cast<llvm::PointerType>(ptr->getType())->getElementType();
-    if (matchesExceptForUnknownPointers(val->getType(), eltTy)) {
-      val = emitBitcast(val, eltTy, "specSgen");
-    }
+  if (auto eltTy = needsBitcastToMediateUnknownPointerMismatch(val, ptr)) {
+    val = emitBitcast(val, eltTy, "specSgen");
   }
 
   return emitGCWriteOrStore(pass, val, nullptr, ptr, w);
@@ -422,28 +431,40 @@ void addExternDecls(const std::vector<LLDecl*> decls,
       const std::string& declName = d->getName();
       TypeAST* fosterType = d->getType();
 
-      //llvm::outs() << "addExternDecls() saw " << declName << " :: " << str(fosterType) << "\n";
+      llvm::outs() << "addExternDecls() saw " << declName << " :: " << str(fosterType) << "\n";
 
       if (const FnTypeAST* fnty = fosterType->castFnTypeAST()) {
+        
+        std::string autowrappedName = declName + std::string("__autowrap");
+        if (auto existing = pass->mod->getFunction(autowrappedName)) {
+          // If we import ``foo`` and we have a symbol ``foo__autowrap``, use it.
+          codegenAutoWrapper(existing, fnty->getLLVMFnType(), declName, pass);
+        } else if (llvm::Function* target = pass->mod->getFunction(declName)) {
+          // We have ``foo`` but no ``foo__autowrap``.
 
-        llvm::Function* target = pass->mod->getFunction(declName);
-        if (target) {
           if ((!target->isDeclaration()) &&
                 str(target->getType()->getContainedType(0))
                         != str(fnty->getLLVMFnType())) {
             // If the function we import has a different type than we expected,
             // automatically generate a wrapper to resolve the differences in types.
+            // The original function gets renamed; the new function wraps the original
+            // to provide the expected types to Foster code.
             // We only generate a wrapper when we can rename the definition;
             // renaming a declaration only causes problems when we link against the
             // real definition.
-            target->setName(declName + std::string() + "__autowrap");
+            target->setName(declName + std::string("__autowrap"));
             codegenAutoWrapper(target, fnty->getLLVMFnType(), declName, pass);
+          } else {
+            // Nothing to do; either the imported symbol already has the right type,
+            // or it's a declaration instead a definition, so we can't rename it.
           }
         } else {
+          // Unable to find either ``foo`` or ``foo__autowrap``; insert a declaration.
           pass->mod->getOrInsertFunction(declName, fnty->getLLVMFnType());
         }
 
-      } else {
+      } else { // Not a function type, must be a regular global.
+
         auto g = pass->mod->getOrInsertGlobal(declName, fosterType->getLLVMType());
         if (d->autoDeref) {
           pass->autoDerefs[declName] = g;
@@ -1373,6 +1394,11 @@ llvm::Value* LLArrayPoke::codegen(CodegenPass* pass) {
   Value* val  = this->value->codegen(pass);
   Value* base = NULL;
   Value* slot = ari->codegenARI(pass, &base, val->getType());
+
+  if (auto eltTy = needsBitcastToMediateUnknownPointerMismatch(val, slot)) {
+    val = emitBitcast(val, eltTy, "specSgen");
+  }
+
   //builder.CreateStore(val, slot, /*isVolatile=*/ false);
   emitGCWriteOrStore(pass, val, base, slot);
   return getNullOrZero(getUnitType()->getLLVMType());
