@@ -567,6 +567,8 @@ CodegenPass::emitPrimitiveOperation(const std::string& op,
 // which it's awkward to arrange for the LLVM representation of the Foster
 // arg/return type to agree with Clang's representation. For these functions,
 // we want to generate a wrapper which bitcasts away the type mismatch.
+//
+// We'll create a function with the given symbolName which calls function F.
 void codegenAutoWrapper(llvm::Function* F,
                         llvm::FunctionType* wrappedTy,
                         //llvm::CallingConv::ID cc,
