@@ -1968,7 +1968,7 @@ void immix_line_frame15::mark_owner(immix_line_space* owner, int64_t nbytes) {
     if (endline == 0) { // wrapped around
       endline = IMMIX_LINES_PER_BLOCK - IMMIX_LINE_FRAME15_START_LINE;
     }
-    for (int i = startline; i < endline; ++i) {
+    for (int i = startline; i <= endline; ++i) {
       set_owner_for_line(i, owner);
     }
   }
