@@ -1572,10 +1572,13 @@ public:
 #define IMMIX_LINE_FRAME15_START_LINE 5
 
 struct immix_line_frame15 {
-  // We set aside 5 of the 128 lines in the frame, which is 3.9% overhead
-  // (1 KB + 128b out of 32 KB).
+  // We set aside 5 (IMMIX_LINE_FRAME15_START_LINE)
+  // of the 128 lines in the frame, which is 3.9% overhead (1 KB + 256b out of 32 KB).
+
+  // One line (256 b) for condemned marks, though we only need/use IMMIX_LINES_PER_BLOCK.
   condemned_status condemned[IMMIX_BYTES_PER_LINE]; // half a line for per-line condemned bytemap
 
+  // Four lines (1024 bytes = (123+5) * 8 bytes) for owners and other metadata.
   // We can store per-line space pointers for the remaining 123 lines:
   immix_line_space* owners[123]; // 8 b * (123 + 5) = 1 KB = 4 lines
   // And have five words left over for bookkeeping:
@@ -1719,8 +1722,7 @@ public:
     mark_lineframe(lineframe);
     lineframe->last_user = this;
     lineframe->bumper.base = realigned_for_allocation(first_line_of_line_frame15(lineframe));
-    lineframe->bumper.bound = offset(first_line_of_line_frame15(lineframe),
-                                          ((1 << 15) - (1 << 10)));
+    lineframe->bumper.bound = offset(lineframe, 1 << 15);
     return lineframe;
   }
 
