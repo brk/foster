@@ -40,11 +40,11 @@ namespace runtime {
       } else {
         if (i == argc - 1) continue; // no more to look at!
         if (streq("--foster-heap-KB", arg)) {
-          __foster_globals.semispace_size = int(parse_double(argv[i + 1], 1024.0) * 1024.0);
+          __foster_globals.semispace_size = ssize_t(parse_double(argv[i + 1], 1024.0) * 1024.0);
         } else if (streq("--foster-heap-MB", arg)) {
-          __foster_globals.semispace_size = int(parse_double(argv[i + 1], 1.0) * 1024.0 * 1024.0);
+          __foster_globals.semispace_size = ssize_t(parse_double(argv[i + 1], 1.0) * 1024.0 * 1024.0);
         } else if (streq("--foster-heap-GB", arg)) {
-          __foster_globals.semispace_size = int(parse_double(argv[i + 1], 0.001) * 1024.0 * 1024.0 * 1024.0);
+          __foster_globals.semispace_size = ssize_t(parse_double(argv[i + 1], 0.001) * 1024.0 * 1024.0 * 1024.0);
         } else if (streq("--foster-json-stats", arg)) {
           __foster_globals.dump_json_stats_path = argv[i + 1];
         }
