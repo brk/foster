@@ -39,7 +39,7 @@ bool not_bogus(void* retaddr) {
 int foster_backtrace(frameinfo* frame, frameinfo* frames, size_t frames_sz) {
   int i = 0;
   while (frame && not_bogus(frame->retaddr) && frames_sz --> 0) {
-    if (ENABLE_GCLOG) {
+    if (GCLOG_DETAIL > 2) {
       fprintf(gclog, "...... frame: %p, frameptr: %p, retaddr: %p\n", frame, frame->frameptr, frame->retaddr);
       fflush(gclog);
     }
