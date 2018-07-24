@@ -33,7 +33,7 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 // These are defined as compile-time constants so that the compiler
 // can do effective dead-code elimination. If we were JIT compiling
 // the GC we could (re-)specialize these config vars at runtime...
-#define ENABLE_GCLOG 0
+#define GCLOG_DETAIL 0
 #define ENABLE_LINE_GCLOG 0
 #define ENABLE_GCLOG_PREP 0
 #define ENABLE_GCLOG_ENDGC 0
@@ -583,7 +583,7 @@ struct large_array_allocator {
         do_unmark_arr(arr);
         ++it;
       } else { // unmarked, can free associated array.
-        if (ENABLE_GCLOG) { fprintf(gclog, "freeing unmarked array %p\n", arr); }
+        if (GCLOG_DETAIL > 1) { fprintf(gclog, "freeing unmarked array %p\n", arr); }
         it = allocated.erase(it); // erase() returns incremented iterator.
         framekind_malloc_cleanup(arr);
         free(base);
@@ -1069,7 +1069,7 @@ inline void get_cell_metadata(heap_cell* cell,
   gc_assert(cell_size > 0, "cannot copy cell lacking metadata or length");
 
   if ((map = tryGetTypemap(cell))) {
-    //if (ENABLE_GCLOG) { inspect_typemap(map); }
+    if (GCLOG_DETAIL > 4) { inspect_typemap(map); }
     if (map->isArray) {
       arr = heap_array::from_heap_cell(cell);
     }
@@ -1082,7 +1082,7 @@ inline void get_cell_metadata(heap_cell* cell,
     cell_size = map->cell_size; // probably an actual pointer
   } else {
     cell_size = array_size_for(arr->num_elts(), map->cell_size);
-    if (ENABLE_GCLOG) {
+    if (GCLOG_DETAIL > 1) {
       fprintf(gclog, "Collecting array of total size %" PRId64
                     " (rounded up from %" PRId64 " + %" PRId64 " = %" PRId64
                     "), cell size %" PRId64 ", len %" PRId64 "...\n",
@@ -1279,7 +1279,7 @@ struct immix_common {
 
   void visit_root(immix_heap* space, unchecked_ptr* root, const char* slotname) {
     gc_assert(root != NULL, "someone passed a NULL root addr!");
-    if (ENABLE_GCLOG) {
+    if (GCLOG_DETAIL > 1) {
       fprintf(gclog, "\t\tSTACK SLOT %p contains ptr %p, slot name = %s\n", root,
                         unchecked_ptr_val(*root),
                         (slotname ? slotname : "<unknown slot>"));
@@ -1688,7 +1688,9 @@ private:
 
 public:
   immix_line_space(byte_limit* lim) : lim(lim) {
-    fprintf(gclog, "new immix_line_space %p, byte limit: %p, current value: %zd f15s\n", this, lim, lim->frame15s_left);
+    if (GCLOG_DETAIL > 2) {
+      fprintf(gclog, "new immix_line_space %p, byte limit: %p, current value: %zd f15s\n", this, lim, lim->frame15s_left);
+    }
   }
 
   virtual void dump_stats(FILE* json) {
@@ -1838,11 +1840,11 @@ public:
     foster_bare_coro** coro_slot = __foster_get_current_coro_slot();
     foster_bare_coro*  coro = *coro_slot;
     if (coro) {
-      if (ENABLE_GCLOG) {
+      if (GCLOG_DETAIL > 1) {
         fprintf(gclog, "==========visiting current coro: %p\n", coro); fflush(gclog);
       }
       common.visit_root(this, (unchecked_ptr*)coro_slot, NULL);
-      if (ENABLE_GCLOG) {
+      if (GCLOG_DETAIL > 1) {
         fprintf(gclog, "==========visited current coro: %p\n", coro); fflush(gclog);
       }
     }
@@ -1879,7 +1881,7 @@ public:
                 gcglobals.num_objects_marked_total - num_marked_at_start,
                 gcglobals.num_objects_marked_total);
 #   endif
-#if (ENABLE_GCLOG || ENABLE_GCLOG_ENDGC)
+#if ((GCLOG_DETAIL > 1) || ENABLE_GCLOG_ENDGC)
 #   if TRACK_NUM_REMSET_ROOTS
         fprintf(gclog, "\t%ld objects identified in remset\n", numRemSetRoots);
 #   endif
@@ -1924,14 +1926,14 @@ public:
     // but that gets into segregated freelist designs, splitting/merging, etc.
 
     if (num_marked_lines > 0) {
-      if (ENABLE_GCLOG || ENABLE_LINE_GCLOG) { fprintf(gclog, "immix_line_space reusing frame %p\n", lineframe); }
+      if ((GCLOG_DETAIL > 1) || ENABLE_LINE_GCLOG) { fprintf(gclog, "immix_line_space reusing frame %p\n", lineframe); }
       used_frame(lineframe);
     } else if (!global_immix_line_allocator.owns(lineframe)) {
-      if (ENABLE_GCLOG || ENABLE_LINE_GCLOG) { fprintf(gclog, "immix_line_space returning frame %p\n", lineframe); }
+      if ((GCLOG_DETAIL > 1) || ENABLE_LINE_GCLOG) { fprintf(gclog, "immix_line_space returning frame %p\n", lineframe); }
       lim->frame15s_left++;
       global_frame15_allocator.give_line_frame15(lineframe);
     } else {
-      if (ENABLE_GCLOG || ENABLE_LINE_GCLOG) { fprintf(gclog, "immix_line_space ignoring active-allocation frame %p\n", lineframe); }
+      if ((GCLOG_DETAIL > 1) || ENABLE_LINE_GCLOG) { fprintf(gclog, "immix_line_space ignoring active-allocation frame %p\n", lineframe); }
     }
     // TODO update frame15_info? does it make sense for shared frame15s?
   }
@@ -1979,7 +1981,7 @@ void immix_line_frame15::mark_owner(immix_line_space* owner, int64_t nbytes) {
 void immix_line_allocator::ensure_current_frame(immix_line_space* owner, int64_t cell_size, bool force_new_line) {
   if (!current_frame) {
     current_frame = owner->get_new_frame();
-    if (ENABLE_GCLOG || ENABLE_LINE_GCLOG) { fprintf(gclog, "immix_line_allocator acquired first frame %p\n", current_frame); }
+    if ((GCLOG_DETAIL > 0) || ENABLE_LINE_GCLOG) { fprintf(gclog, "immix_line_allocator acquired first frame %p\n", current_frame); }
   }
 
   // Are we continuing to allocate to our own lines,
@@ -2000,7 +2002,7 @@ void immix_line_allocator::ensure_current_frame(immix_line_space* owner, int64_t
   // Make sure we have enough space even after realignment.
   if (current_frame->bumper.size() < cell_size) {
     current_frame = owner->get_new_frame();
-    if (ENABLE_GCLOG || ENABLE_LINE_GCLOG) { fprintf(gclog, "immix_line_allocator acquired new frame %p with bumper size %zu\n",
+    if ((GCLOG_DETAIL > 1) || ENABLE_LINE_GCLOG) { fprintf(gclog, "immix_line_allocator acquired new frame %p with bumper size %zu\n",
         current_frame, current_frame->bumper.size()); }
   }
 
@@ -2188,7 +2190,7 @@ public:
       bumper->bound = g->bound;
       bumper->base  = realigned_for_allocation(g);
 
-      if (ENABLE_GCLOG || ENABLE_GCLOG_PREP) {
+      if ((GCLOG_DETAIL > 0) || ENABLE_GCLOG_PREP) {
         fprintf(gclog, "using recycled line group in frame %p; # lines %d; # groups left: %zu\n", (void*)(uintptr_t(frame15_id_of(g)) << 15),
             bumper->size() / IMMIX_LINE_SIZE, recycled.size());
         //for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", linemap[i] ? 'd' : '_'); } fprintf(gclog, "\n");
@@ -2357,7 +2359,7 @@ public:
 #endif
 
     auto num_marked_at_start = gcglobals.num_objects_marked_total;
-    if (ENABLE_GCLOG) {
+    if (GCLOG_DETAIL > 1) {
       fprintf(gclog, ">>>>>>> visiting gc roots on current stack\n"); fflush(gclog);
     }
 
@@ -2382,11 +2384,11 @@ public:
     foster_bare_coro** coro_slot = __foster_get_current_coro_slot();
     foster_bare_coro*  coro = *coro_slot;
     if (coro) {
-      if (ENABLE_GCLOG) {
+      if (GCLOG_DETAIL > 1) {
         fprintf(gclog, "==========visiting current coro: %p\n", coro); fflush(gclog);
       }
-      this->visit_root((unchecked_ptr*)coro_slot, NULL);
-      if (ENABLE_GCLOG) {
+      common.visit_root(this, (unchecked_ptr*)coro_slot, NULL);
+      if (GCLOG_DETAIL > 1) {
         fprintf(gclog, "==========visited current coro: %p\n", coro); fflush(gclog);
       }
     }
@@ -2428,7 +2430,7 @@ public:
     //if (TRACK_BYTES_KEPT_ENTRIES) { hpstats.bytes_kept_per_gc.record_sample(next->used_size()); }
 
 
-#if (ENABLE_GCLOG || ENABLE_GCLOG_ENDGC)
+#if ((GCLOG_DETAIL > 1) || ENABLE_GCLOG_ENDGC)
       size_t frame15s_total = tracking.logical_frame15s();
       auto total_heap_size = foster::humanize_s(double(frame15s_total * (1 << 15)), "B");
       size_t frame15s_kept = frame15s_total - (recycled.size() + tracking.frame15s_in_reserve_clean());
@@ -2507,7 +2509,7 @@ public:
     } else {
       // Handle the component frame15s individually.
       frame15_id fid = frame15_id_of(f21);
-      if (ENABLE_GCLOG) {
+      if (GCLOG_DETAIL > 1) {
         fprintf(gclog, "   inspect_frame21_postgc: iterating frames of f21 %p (%d)\n", f21, frame15_id_within_f21(frame15_id_of(f21)));
       }
       for (int i = 1; i < IMMIX_F15_PER_F21; ++i) {
@@ -2515,7 +2517,7 @@ public:
         bool unclean = inspect_frame15_postgc(fid + i, f15);
         if (unclean) { // Clean frames already noted;
           // We don't want to re-track regular frame15s, only split ones.
-          if (ENABLE_GCLOG) { fprintf(gclog, "  adding f15 %p of f21 %p\n", f15, f21); }
+          if (GCLOG_DETAIL > 1) { fprintf(gclog, "  adding f15 %p of f21 %p\n", f15, f21); }
           tracking.add_frame15(f15);
         }
       }
@@ -2527,7 +2529,7 @@ public:
     uint8_t* linemap = linemap_for_frame15_id(fid);
     int num_marked_lines = count_marked_lines_for_frame15(f15, linemap);
 
-    if (ENABLE_GCLOG) {
+    if (GCLOG_DETAIL > 2) {
       fprintf(gclog, "frame %u: ", fid);
       for(int i = 0;i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", (linemap[i] == 0) ? '_' : 'd'); }
       fprintf(gclog, "\n");
@@ -2583,7 +2585,7 @@ public:
     // Postcondition: nextgroup refers to leftmost hole, if any
 
     if (nextgroup) {
-      if (ENABLE_GCLOG) { fprintf(gclog, "Adding frame %p to recycled list; n marked = %d\n", f15, num_marked_lines); }
+      if (GCLOG_DETAIL > 0) { fprintf(gclog, "Adding frame %p to recycled list; n marked = %d\n", f15, num_marked_lines); }
       recycled.push_back(nextgroup);
     }
 
@@ -2687,7 +2689,7 @@ void visitGCRoots(void* start_frame, immix_heap* visitor) {
   if (SANITY_CHECK_CUSTOM_BACKTRACE) {
     // backtrace() fails when called from a coroutine's stack...
     int numRetAddrs = backtrace((void**)&retaddrs, MAX_NUM_RET_ADDRS);
-    if (ENABLE_GCLOG) {
+    if (GCLOG_DETAIL > 2) {
       for (int i = 0; i < numRetAddrs; ++i) {
         fprintf(gclog, "backtrace: %p\n", retaddrs[i]);
       }
@@ -2736,13 +2738,13 @@ void visitGCRoots(void* start_frame, immix_heap* visitor) {
 
     const stackmap::PointCluster* pc = gcglobals.clusterForAddress[safePointAddr];
     if (!pc) {
-      if (ENABLE_GCLOG) {
+      if (GCLOG_DETAIL > 3) {
         fprintf(gclog, "no point cluster for address %p with frame ptr%p\n", safePointAddr, fp);
       }
       continue;
     }
 
-    if (ENABLE_GCLOG) {
+    if (GCLOG_DETAIL > 3) {
       fprintf(gclog, "\nframe %d: retaddr %p, frame ptr %p: live count w/meta %d, w/o %d\n",
         i, safePointAddr, fp,
         pc->liveCountWithMetadata, pc->liveCountWithoutMetadata);
@@ -2819,7 +2821,7 @@ void coro_print(foster_bare_coro* coro) {
 void coro_dump(foster_bare_coro* coro) {
   if (!coro) {
     fprintf(gclog, "cannot dump NULL coro ptr!\n");
-  } else if (ENABLE_GCLOG) {
+  } else if (GCLOG_DETAIL > 2) {
     coro_print(coro);
   }
 }
@@ -2850,7 +2852,7 @@ void coro_visitGCRoots(foster_bare_coro* coro, immix_heap* visitor) {
   void* frameptr = coro_topmost_frame_pointer(coro);
   gc_assert(frameptr != NULL, "coro frame ptr shouldn't be NULL!");
 
-  if (ENABLE_GCLOG) {
+  if (GCLOG_DETAIL > 1) {
     fprintf(gclog, "========= scanning coro (%p, fn=%p, %s) stack from %p\n",
         coro, foster::runtime::coro_fn(coro), coro_status_name(coro), frameptr);
   }
@@ -2858,7 +2860,7 @@ void coro_visitGCRoots(foster_bare_coro* coro, immix_heap* visitor) {
   fprintf(gclog, "coro_visitGCRoots\n"); fflush(gclog);
   visitGCRoots(frameptr, visitor);
 
-  if (ENABLE_GCLOG) {
+  if (GCLOG_DETAIL > 1) {
     fprintf(gclog, "========= scanned coro stack from %p\n", frameptr);
     fflush(gclog);
   }
@@ -3406,7 +3408,7 @@ void* foster_subheap_create_raw() {
 
 void* foster_subheap_create_small_raw() {
   immix_line_space* subheap = new immix_line_space(gcglobals.allocator->get_byte_limit());
-  fprintf(gclog, "created small subheap %p\n", subheap);
+  if (GCLOG_DETAIL > 0) { fprintf(gclog, "created small subheap %p\n", subheap); }
   void* alloc = malloc(sizeof(heap_handle<heap>));
   heap_handle<heap>* h = (heap_handle<heap>*)
     realigned_for_allocation(alloc);
