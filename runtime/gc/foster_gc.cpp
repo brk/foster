@@ -1512,10 +1512,6 @@ struct immix_common {
 class immix_line_frame15;
 
 class immix_frame_tracking {
-  // We store the frame15 count separately so that we don't need to
-  // consult the map entries in fromglobal_frame15s.
-  size_t num_frame15s_total; // including both indvidual and coalesced.
-
   // Stores values returned from global_frame15_allocator.get_frame15();
   // Note we store a vector rather than a set because we maintain
   // the invariant that a given frame15 is only added once between clear()s.
@@ -1542,7 +1538,6 @@ public:
 
   void release_clean_frames(byte_limit* lim) {
     lim->frame15s_left += frame15s_in_reserve_clean();
-    num_frame15s_total -= frame15s_in_reserve_clean();
 
     for (auto f15 : clean_frame15s) {
       global_frame15_allocator.give_frame15(f15);
@@ -1595,6 +1590,7 @@ public:
     holder.swap(coalesced_frame21s);
     // Avoid problems from the callback thunk indirectly modifying coalesced_frame21s,
     // e.g. if the entire frame is dirty, it will be re-coalesced.
+    // Note that, at this point in execution, coalesced_frame21s is empty.
     for (auto f21 : holder) {
       thunk(f21);
     }
@@ -1611,13 +1607,10 @@ public:
   }
 
   void add_frame21(frame21* f) {
-    num_frame15s_total += IMMIX_ACTIVE_F15_PER_F21;
     coalesced_frame21s.push_back(f);
   }
 
   void add_frame15(frame15* f) {
-    ++num_frame15s_total;
-
 #if COALESCE_FRAME15S
     auto x = frame21_id_of(f);
     std::vector<frame15*>& v = fromglobal_frame15s[x];
@@ -1632,8 +1625,11 @@ public:
 #endif
   }
 
-  size_t logical_frame15s() { return num_frame15s_total; }
+  size_t logical_frame15s() {
+    return physical_frame15s() + (IMMIX_ACTIVE_F15_PER_F21 * coalesced_frame21s.size());
+  }
 
+  // Note: when COALESCE_FRAME15S is enabled, this method is O(n).
   size_t physical_frame15s() {
     size_t rv = 0;
 #if COALESCE_FRAME15S
@@ -2252,7 +2248,9 @@ public:
 
   // Marks all frames (including clean ones) as condemned.
   virtual void condemn() {
-    fprintf(gclog, "condemning %zu frames...\n", tracking.logical_frame15s()); fflush(gclog);
+    if (GCLOG_DETAIL > 0) {
+      fprintf(gclog, "condemning %zu frames...\n", tracking.logical_frame15s()); fflush(gclog);
+    }
     int n = 0;
     int m = 0;
     clocktimer<false> ct; ct.start();
@@ -2269,9 +2267,11 @@ public:
     });
     // TODO condemn array frames
 
-    fprintf(gclog, "condemned (%d + %d = %d) / %zu frames in %f microseconds\n",
-        n, m, n + m, tracking.logical_frame15s(),
-        ct.elapsed_us());
+    if (GCLOG_DETAIL > 0) {
+      fprintf(gclog, "condemned (%d + %d = %d) / %zu frames in %f microseconds\n",
+          n, m, n + m, tracking.logical_frame15s(),
+          ct.elapsed_us());
+    }
   }
 
   virtual void uncondemn() {
