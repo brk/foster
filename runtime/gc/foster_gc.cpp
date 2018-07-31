@@ -3088,6 +3088,11 @@ int foster_hdr_percentiles_print(
 
     struct hdr_iter_percentiles * percentiles = &iter.specifics.percentiles;
 
+    if (h->total_count == 0) {
+      fprintf(stream, "\t(no samples recorded)\n");
+      return 0;
+    }
+
     if (fprintf(
             stream, "%22s %12s %12s %12s %12s     (chart, linear scale)\n\n",
             "Range", "Percentile", "BucketCount", "TotalCount", "1/(1-Percentile)") < 0)
