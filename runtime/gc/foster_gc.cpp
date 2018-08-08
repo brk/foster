@@ -109,6 +109,8 @@ struct memory_range {
     return "within";
   }
   ssize_t size() const { return distance(base, bound); }
+
+  void wipe_memory(uint8_t byte) { memset(base, byte, size()); }
 };
 
 void* realigned_to_line(void* bump) {
@@ -442,6 +444,15 @@ uintptr_t line_offset_within_f15(void* slot) {
   return low_n_bits(uintptr_t(slot) >> 8, 15 - 8);
 }
 
+void clear_linemap(uint8_t* linemap) {
+  memset(linemap, 0, IMMIX_LINES_PER_BLOCK);
+}
+
+struct immix_line_frame15;
+void clear_frame15(frame15* f15) { memset(f15, 0xDD, 1 << 15); }
+void clear_frame21(frame21* f21) { memset(f21, 0xDD, 1 << 21); }
+void do_clear_line_frame15(immix_line_frame15* f);
+
 inline
 frame15info* frame15_info_for_frame15_id(frame15_id fid) {
   return &gcglobals.lazy_mapped_frame15info[fid];
@@ -532,10 +543,21 @@ inline void do_unmark_arr(heap_array* obj) {
   }
 }
 
+// TODO call this from immix line gc cleanup...
+void clear_object_mark_bits_for_frame15(void* f15) {
+  if (GCLOG_DETAIL > 2) { fprintf(gclog, "clearing granule bits for frame %p (%zu)\n", f15, frame15_id_of(f15)); }
+  if (MARK_OBJECT_WITH_BITS) {
+    memset(&gcglobals.lazy_mapped_granule_marks[global_granule_for(f15) / 8], 0, IMMIX_GRANULES_PER_BLOCK / 8);
+  } else {
+    memset(&gcglobals.lazy_mapped_granule_marks[global_granule_for(f15)], 0, IMMIX_GRANULES_PER_BLOCK);
+  }
+}
+
 
 bool line_is_marked(  int line, uint8_t* linemap) { return linemap[line] == 1; }
 bool line_is_unmarked(int line, uint8_t* linemap) { return linemap[line] == 0; }
 void do_mark_line(  int line, uint8_t* linemap) { linemap[line] = 1; }
+void do_unmark_line(int line, uint8_t* linemap) { linemap[line] = 0; }
 
 //static_assert(sizeof(frame15info) == 16, "expect frame15info to be two words");
 
@@ -570,12 +592,20 @@ struct large_array_allocator {
     allot->set_header(arr_elt_map, mark_bits_current_value);
     allot->set_num_elts(num_elts);
     if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_array(total_bytes); }
+    if (TRACK_NUM_ALLOCATIONS) { ++gcglobals.num_allocations; }
+    if (TRACK_NUM_ALLOC_BYTES) { gcglobals.num_alloc_bytes += total_bytes; }
 
     // TODO modify associated frame15infos, lazily allocate card bytes.
     toggle_framekinds_for(allot, offset(base, total_bytes + 7), parent);
     // TODO review when/where line mark bit setting happens,
     //      ensure it doesn't happen for pointers to arrays.
     allocated.push_front(base);
+
+    if (GCLOG_DETAIL > 0) {
+      fprintf(gclog, "mallocating large array (%p, body %p) in with mark bits %p, total bytes %zd, alloc #%zd\n",
+          allot, allot->body_addr(), (void*) mark_bits_current_value, total_bytes, gcglobals.num_allocations);
+    }
+
     return allot->body_addr();
   }
 
@@ -656,7 +686,6 @@ void gc_assert(bool cond, const char* msg);
 
 intr* from_tidy(tidy* t) { return (intr*) t; }
 
-struct immix_line_frame15;
 void mark_lineframe(immix_line_frame15* f) {
   auto fid = frame15_id_of(f);
   gcglobals.lazy_mapped_frame15info[fid].associated = f;
@@ -719,6 +748,7 @@ bool is_condemned(void* slot, immix_heap* space, frame15info* finfo) {
 // }}}
 
 // {{{
+bool line_for_slot_is_marked(void* slot);
 
 namespace helpers {
 
@@ -741,6 +771,7 @@ namespace helpers {
                                   uintptr_t  mark_value,
                                   bool     init) {
     heap_array* allot = static_cast<heap_array*>(bumper->prechecked_alloc_noinit(total_bytes));
+
     if (FORCE_INITIALIZE_ALLOCATIONS ||
       (init && !ELIDE_INITIALIZE_ALLOCATIONS)) { memset((void*) allot, 0x00, total_bytes); }
     //fprintf(gclog, "alloc'a %d, bump = %p, low bits: %x\n", int(total_bytes), bump, intptr_t(bump) & 0xF);
@@ -756,6 +787,18 @@ namespace helpers {
       //obj_start.set_bit(granule);
       //obj_limit.set_bit(granule + num_granules(total_bytes));
     }
+
+
+    if (GC_ASSERTIONS && line_for_slot_is_marked(allot)) {
+      fprintf(gclog, "INVARIANT VIOLATED: allocating array on a pre-marked line?!?\n");
+      exit(4);
+    }
+
+    if (GCLOG_DETAIL > 3) {
+      fprintf(gclog, "allocating array (%p, body %p) in line %d of frame %u, total bytes %zd, alloc #%zd\n",
+          allot, allot->body_addr(), line_offset_within_f15(allot), frame15_id_of(allot), total_bytes, gcglobals.num_allocations);
+    }
+
     return allot->body_addr();
   }
 
@@ -772,6 +815,7 @@ namespace helpers {
                                  int64_t  cell_size,
                                  uintptr_t  mark_value) {
     heap_cell* allot = static_cast<heap_cell*>(bumper->prechecked_alloc(cell_size));
+
     //if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(map->cell_size); }
     if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_cell(cell_size); }
     if (TRACK_NUM_ALLOCATIONS) { ++gcglobals.num_allocations; }
@@ -783,6 +827,17 @@ namespace helpers {
       //size_t granule = granule_for(tori_of_tidy(allot->body_addr()));
       //obj_start.set_bit(granule);
     }
+
+    if (GC_ASSERTIONS && line_for_slot_is_marked(allot)) {
+      fprintf(gclog, "INVARIANT VIOLATED: allocating cell on a pre-marked line?!?\n");
+      exit(4);
+    }
+
+    if (GCLOG_DETAIL > 3) {
+      fprintf(gclog, "allocating cell (%p, body %p) with map %p in line %d of frame %u, alloc #%zd\n",
+          allot, allot->body_addr(), map, line_offset_within_f15(allot), frame15_id_of(allot), gcglobals.num_allocations);
+    }
+
     return allot->body_addr();
   }
 
@@ -840,10 +895,12 @@ struct frame15_allocator {
   }
 
   void give_frame15(frame15* f) {
+    if (MEMSET_FREED_MEMORY) { clear_frame15(f); }
     spare_frame15s.push_back(f);
   }
 
   void give_frame21(frame21* f) {
+    if (MEMSET_FREED_MEMORY) { clear_frame21(f); }
     spare_frame21s.push_back(f);
   }
 
@@ -884,7 +941,12 @@ public:
     return curr_frame15;
   }
 
-  void give_line_frame15(immix_line_frame15* f) { spare_line_frame15s.push_back(f); }
+  // Invariant: f must be completely clean.
+  void give_line_frame15(immix_line_frame15* f) {
+    if (MEMSET_FREED_MEMORY) { do_clear_line_frame15(f); }
+
+    spare_line_frame15s.push_back(f);
+  }
 
   immix_line_frame15* get_line_frame15() {
     if (!spare_line_frame15s.empty()) {
@@ -1046,14 +1108,6 @@ uint8_t* cards_for_frame15_id(frame15_id fid) {
 uint8_t* linemap_for_frame15_id(frame15_id fid) {
   auto mdb = metadata_block_for_frame15_id(fid);
   return &mdb->linemap[frame15_id_within_f21(fid)][0];
-}
-
-void clear_linemap(uint8_t* linemap) {
-  memset(linemap, 0, IMMIX_LINES_PER_BLOCK);
-}
-
-void clear_frame15(frame15* f15) {
-  memset(f15, 0xDD, 1 << 15);
 }
 
 
@@ -1242,11 +1296,16 @@ struct immix_common {
     }
   }
 
+  bool is_immix_markable_frame(void* p) {
+    auto k = classification_for_frame15_id(frame15_id_of(p));
+    return (k == frame15kind::immix_smallmedium || k == frame15kind::immix_linebased);
+  }
+
   template <condemned_set_status condemned_portion>
   void scan_cell(immix_heap* space, heap_cell* cell, int depth) {
     if (obj_is_marked(cell)) {
-      //fprintf(gclog, "cell %p was already marked\n", cell);
-      if (GC_ASSERTIONS && !line_for_slot_is_marked(cell)) {
+      if (GCLOG_DETAIL > 3) { fprintf(gclog, "cell %p was already marked\n", cell); }
+      if (GC_ASSERTIONS && !line_for_slot_is_marked(cell) && is_immix_markable_frame(cell)) {
         fprintf(gclog, "GC INVARIANT VIOLATED: cell %p marked but corresponding line not marked!\n", cell);
         fflush(gclog);
         abort();
@@ -1755,7 +1814,7 @@ struct immix_line_frame15 {
   // And have five words left over for bookkeeping:
   union {
     struct {
-      bump_allocator bumper;
+      bump_allocator line_bumper;
       immix_line_space* last_user;
     };
     struct {
@@ -1780,6 +1839,13 @@ struct immix_line_frame15 {
   condemned_status get_condemned_status_for_line(int line) { return condemned[line]; }
   void set_condemned_status_for_line(int line, condemned_status c) { condemned[line] = c; }
 
+  bool realign_bumper_to_open_group(bool reset = true);
+
+  void clear_line_frame15() {
+    realign_bumper_to_open_group(true);
+    line_bumper.wipe_memory(0xDD);
+  }
+
   //condemned_status  get_condemned_status_for_line(int n) { return condemned[n]; }
 };
 
@@ -1789,10 +1855,13 @@ static_assert(  offsetof(immix_line_frame15, begin_lines)
             == (IMMIX_LINE_FRAME15_START_LINE * IMMIX_BYTES_PER_LINE),
             "our expectation for the positioning of begin_lines is broken!");
 
-void* first_line_of_line_frame15(immix_line_frame15* f) {
+void do_clear_line_frame15(immix_line_frame15* f) { f->clear_line_frame15(); }
+
+/*
+void* nth_line_of_line_frame15(immix_line_frame15* f) {
   return offset(f, IMMIX_LINE_FRAME15_START_LINE * IMMIX_BYTES_PER_LINE);
 }
-
+*/
 
 class immix_line_allocator {
   immix_line_frame15* current_frame;
@@ -1810,18 +1879,18 @@ public:
 
   void* line_allocate_array(immix_line_space* owner, typemap* elt_typeinfo, int64_t n, int64_t req_bytes, uintptr_t mark_value, bool init) {
     ensure_current_frame(owner, req_bytes);
-    return helpers::allocate_array_prechecked(&current_frame->bumper, elt_typeinfo, n, req_bytes, mark_value, init);
+    return helpers::allocate_array_prechecked(&current_frame->line_bumper, elt_typeinfo, n, req_bytes, mark_value, init);
   }
 
   void* line_allocate_cell(immix_line_space* owner, int64_t cell_size, uintptr_t mark_value, typemap* typeinfo) {
     ensure_current_frame(owner, cell_size);
-    return helpers::allocate_cell_prechecked(&(current_frame->bumper), typeinfo, cell_size, mark_value);
+    return helpers::allocate_cell_prechecked(&(current_frame->line_bumper), typeinfo, cell_size, mark_value);
   }
 
   template <uint64_t cell_size>
   void* line_allocate_cell_N(immix_line_space* owner, uintptr_t mark_value, typemap* typeinfo) {
     ensure_current_frame(owner, cell_size);
-    return helpers::allocate_cell_prechecked(&(current_frame->bumper), typeinfo, cell_size, mark_value);
+    return helpers::allocate_cell_prechecked(&(current_frame->line_bumper), typeinfo, cell_size, mark_value);
   }
 
   bool owns(immix_line_frame15* f) { return f == current_frame; }
@@ -1880,7 +1949,14 @@ public:
     // which we capture with prev_used_frame.
     // We ought to use a hash table instead of a vector
     // so that we don't grow when reusing/recycling multiple frames.
-    if (f != prev_used_frame) { used_frames.push_back(f); prev_used_frame = f; }
+    if (f != prev_used_frame) {
+      for (auto fu : used_frames) {
+        if (fu == f) {
+          fprintf(gclog, "ERROR: duplicate entries in used_frames!\n");
+        }
+      }
+      used_frames.push_back(f); prev_used_frame = f;
+    }
   }
 
   immix_line_frame15* get_new_frame(bool secondtry = false) {
@@ -1902,8 +1978,7 @@ public:
     auto lineframe = global_frame15_allocator.get_line_frame15();
     mark_lineframe(lineframe);
     lineframe->last_user = this;
-    lineframe->bumper.base = realigned_for_allocation(first_line_of_line_frame15(lineframe));
-    lineframe->bumper.bound = offset(lineframe, 1 << 15);
+    lineframe->realign_bumper_to_open_group(true);
     return lineframe;
   }
 
@@ -2003,6 +2078,8 @@ public:
     // TODO-X clear granule bits too
   }
 
+  // TODO should mark-clearing and sweeping be handled via condemned sets?
+  // 
   virtual void immix_gc_cleanup(clocktimer<false>& phase,
                                 clocktimer<false>& gcstart,
                                 double deltaRecursiveMarking_us) {
@@ -2040,26 +2117,37 @@ public:
 
     uint8_t* linemap = linemap_for_frame15_id(frame15_id_of(lineframe));
 
+    uint8_t num_others_lines = 0;
     uint8_t num_marked_lines = 0;
+    uint8_t num_freed_lines = 0;
     for (int i = IMMIX_LINE_FRAME15_START_LINE; i < IMMIX_LINES_PER_BLOCK; ++i) {
       if (lineframe->get_owner_for_line(i) == this) {
         if (linemap[i]) {
           ++num_marked_lines;
+          linemap[i] = 0;
         } else {
           lineframe->set_owner_for_line(i, nullptr);
+          ++num_freed_lines;
+        }
+      } else {
+        if (linemap[i]) {
+          ++num_others_lines;
+          linemap[i] = 0;
         }
       }
     }
+    // Invariant: every line owned by this line space has been unmarked.
+
+    // We can clear granule bits en masse since we don't need to count set bits.
+    clear_object_mark_bits_for_frame15(lineframe);
 
     // We currently only recycle blocks when every line we own(ed) is left unmarked.
     // Another possibility would be to explicitly manage lines instead of blocks,
     // but that gets into segregated freelist designs, splitting/merging, etc.
 
     if (num_marked_lines > 0) {
-      if ((GCLOG_DETAIL > 1) || ENABLE_LINE_GCLOG) { fprintf(gclog, "immix_line_space reusing frame %p\n", lineframe); }
       used_frame(lineframe);
     } else if (!global_immix_line_allocator.owns(lineframe)) {
-      if ((GCLOG_DETAIL > 1) || ENABLE_LINE_GCLOG) { fprintf(gclog, "immix_line_space returning frame %p\n", lineframe); }
       lim->frame15s_left++;
       global_frame15_allocator.give_line_frame15(lineframe);
     } else {
@@ -2091,8 +2179,8 @@ condemned_status get_condemned_status_for_immix_line_frame15(immix_line_frame15*
 
 
 void immix_line_frame15::mark_owner(immix_line_space* owner, int64_t nbytes) {
-  int startline = line_offset_within_f15(bumper.base);
-  int endline = line_offset_within_f15(offset(bumper.base, nbytes));
+  int startline = line_offset_within_f15(line_bumper.base);
+  int endline = line_offset_within_f15(offset(line_bumper.base, nbytes));
   if (endline == startline) {
     // mark just one, don't bother looping
     set_owner_for_line(startline, owner);
@@ -2108,9 +2196,42 @@ void immix_line_frame15::mark_owner(immix_line_space* owner, int64_t nbytes) {
   owner->used_frame(this);
 }
 
+// Returns true if an open group was successfully found.
+bool immix_line_frame15::realign_bumper_to_open_group(bool reset) {
+  int maxline = IMMIX_LINES_PER_BLOCK - IMMIX_LINE_FRAME15_START_LINE;
+  int startline = reset ? 0
+                        : (line_offset_within_f15(line_bumper.base) + 1);
+
+  while (startline < maxline && owners[startline] != nullptr) {
+    ++startline;
+  }
+  // Invariant: either (startline == maxline)
+  //                or (startline <  maxline && owners[startline] == nullptr)
+
+  int endline = std::min(maxline, startline + 1);
+  while (endline < maxline && owners[endline] == nullptr) {
+    ++endline;
+  }
+  // Invariant: either (endline == maxline)
+  //                or (endline <  maxline && owners[endline] != nullptr)
+
+  line_bumper.base  = offset(&begin_lines[0], startline * IMMIX_LINE_SIZE);
+  line_bumper.bound = offset(&begin_lines[0],   endline * IMMIX_LINE_SIZE);
+
+  gc_assert(startline <= maxline, "didn't expect startline to exceed maxline");
+
+  bool failed = startline >= maxline;
+  if (!failed) {
+    line_bumper.base = realigned_for_allocation(line_bumper.base);
+  } else {
+    fprintf(gclog, "realigning bumper for %p failed\n", this);
+  }
+  return !failed;
+}
+
 // Compared to the "regular" immix allocator, we have two sources of overhead here:
 // the last-owner tracking, which is needed to ensure each line has only allocations
-// coming from a single owner, and owner marking.
+// coming from a single owner; and owner marking.
 void immix_line_allocator::ensure_current_frame(immix_line_space* owner, int64_t cell_size, bool force_new_line) {
   if (!current_frame) {
     current_frame = owner->get_new_frame();
@@ -2119,24 +2240,21 @@ void immix_line_allocator::ensure_current_frame(immix_line_space* owner, int64_t
 
   // Are we continuing to allocate to our own lines,
   // or taking ownership from another space?
-  if (current_frame->last_user != owner || force_new_line) {
-    if (current_frame->bumper.size() < IMMIX_LINE_SIZE) {
-      // If we're on the last line, we cannot realign to the next line.
-      current_frame->bumper.base = current_frame->bumper.bound;
-    } else {
-      // If we have room, we can move to a new frame
-      // and check below whether we have room to allocate.
-      current_frame->bumper.base = realigned_for_allocation(
-          realigned_to_line(current_frame->bumper.base));
+  if (force_new_line
+      || (   current_frame->last_user != owner
+          && current_frame->last_user != nullptr)) {
+    if (current_frame->realign_bumper_to_open_group()) {
       current_frame->last_user = owner;
     }
+    // If realigning fails, the line bumper will be size 0, so we'll grab a new frame.
   }
 
   // Make sure we have enough space even after realignment.
-  if (current_frame->bumper.size() < cell_size) {
+  while (current_frame->line_bumper.size() < cell_size) {
+    auto prev_frame = current_frame;
     current_frame = owner->get_new_frame();
-    if ((GCLOG_DETAIL > 1) || ENABLE_LINE_GCLOG) { fprintf(gclog, "immix_line_allocator acquired new frame %p with bumper size %zu\n",
-        current_frame, current_frame->bumper.size()); }
+    if (GCLOG_DETAIL > 2) { fprintf(gclog, "immix_line_allocator acquired new frame %p with bumper size %zu to replace %p, alloc# %zd\n",
+        current_frame, current_frame->line_bumper.size(), prev_frame, gcglobals.num_allocations); }
   }
 
   current_frame->mark_owner(owner, cell_size);
@@ -2331,19 +2449,19 @@ public:
     // need one free line. Using recycled frames for medium allocations raises
     // the risk for fragmentation to require searching many recycled frames.
 
-    if (!recycled.empty() && cell_size <= IMMIX_LINE_SIZE) {
-      free_linegroup* g = recycled.back();
+    if (!recycled_lines.empty() && cell_size <= IMMIX_LINE_SIZE) {
+      free_linegroup* g = recycled_lines.back();
 
       if (g->next) {
-        recycled.back() = g->next;
-      } else { recycled.pop_back(); }
+        recycled_lines.back() = g->next;
+      } else { recycled_lines.pop_back(); }
 
       bumper->bound = g->bound;
       bumper->base  = realigned_for_allocation(g);
 
       if ((GCLOG_DETAIL > 0) || ENABLE_GCLOG_PREP) {
         fprintf(gclog, "using recycled line group in frame %p; # lines %d; # groups left: %zu\n", (void*)(uintptr_t(frame15_id_of(g)) << 15),
-            bumper->size() / IMMIX_LINE_SIZE, recycled.size());
+            bumper->size() / IMMIX_LINE_SIZE, recycled_lines.size());
         //for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", linemap[i] ? 'd' : '_'); } fprintf(gclog, "\n");
       }
       return true;
@@ -2450,7 +2568,7 @@ public:
     int64_t slot_size = elt_typeinfo->cell_size; // note the name change!
     int64_t req_bytes = array_size_for(n, slot_size);
 
-    //fprintf(gclog, "allocating array, %d elts * %d b = %d bytes\n", n, slot_size, req_bytes);
+    //fprintf(gclog, "immix space allocating array, %d elts * %d b = %d bytes\n", n, slot_size, req_bytes);
 
     if (false && FOSTER_GC_ALLOC_HISTOGRAMS) {
       hdr_record_value(gcglobals.hist_gc_alloc_array, req_bytes);
@@ -2520,7 +2638,7 @@ public:
     clear_current_blocks();
 
     // These vectors will get filled by the calls to inspect_*_postgc().
-    recycled.clear();
+    recycled_lines.clear();
     laa.sweep_arrays();
 
     clocktimer<false> insp_ct; insp_ct.start();
@@ -2541,20 +2659,26 @@ public:
 #if ((GCLOG_DETAIL > 1) || ENABLE_GCLOG_ENDGC)
       size_t frame15s_total = tracking.logical_frame15s();
       auto total_heap_size = foster::humanize_s(double(frame15s_total * (1 << 15)), "B");
-      size_t frame15s_kept = frame15s_total - (recycled.size() + tracking.frame15s_in_reserve_clean());
-      auto total_live_size = foster::humanize_s(double(frame15s_kept) * (1 << 15), "B");
+      //size_t frame15s_recycled = frame15s_in_reserve_recycled();
+      //size_t frame15s_kept = frame15s_total - (frame15s_recycled + tracking.frame15s_in_reserve_clean());
+      //auto total_live_size = foster::humanize_s(double(frame15s_kept) * (1 << 15), "B");
 
-      fprintf(gclog, "logically %zu frame15s, comprised of %zu frame21s and %zu actual frame15s\n", frame15s_total,
-          tracking.count_frame21s(), tracking.physical_frame15s());
+      fprintf(gclog, "logically %zu frame15s, comprised of %zu frame21s and %zu actual frame15s; %zd frames left\n",
+          frame15s_total,
+          tracking.count_frame21s(), tracking.physical_frame15s(), lim->frame15s_left);
       describe_frame15s_count("tracking  ", frame15s_total);
-      describe_frame15s_count("  recycled", frame15s_in_reserve_recycled());
+      //describe_frame15s_count("  recycled", frame15s_recycled);
       describe_frame15s_count("  clean   ", tracking.frame15s_in_reserve_clean());
       fprintf(gclog, "tracking %zu f21s, ended with %zu clean f21s\n", tracking.count_frame21s(), tracking.count_clean_frame21s());
 
-      fprintf(gclog, "%zu recycled, %zu clean f15 + %zu clean f21; %zd total (%zd f21) => (%zu f15 @ %s kept / %s)",
-          recycled.size(), tracking.count_clean_frame15s(), tracking.count_clean_frame21s(),
-          frame15s_total, tracking.count_frame21s(),
-          frame15s_kept, total_live_size.c_str(), total_heap_size.c_str());
+      // %zu recycled, 
+      fprintf(gclog, "%zu clean f15 + %zu clean f21; ",
+          //frame15s_recycled,
+          tracking.count_clean_frame15s(),
+          tracking.count_clean_frame21s());
+      //fprintf(gclog, "%zd total (%zd f21) => (%zd f15 @ %s kept / %s)",
+      //    frame15s_total, tracking.count_frame21s(),
+      //    frame15s_kept, total_live_size.c_str(), total_heap_size.c_str());
       if (ENABLE_GC_TIMING) {
         double delta_us = gcstart.elapsed_us();
         fprintf(gclog, ", took %zd us which was %f%% marking, %f%% post-mark",
@@ -2577,7 +2701,15 @@ public:
     auto h = foster::humanize_s(double(f15s) * (1 << 15), "B");
     fprintf(gclog, "%s: %6zd f15s == %s\n", start, f15s, h.c_str());
   }
-  size_t frame15s_in_reserve_recycled() { return recycled.size(); }
+
+  // Note: O(n) (in the number of recycled line groups).
+  size_t frame15s_in_reserve_recycled() {
+    std::set<frame15_id> recycled;
+    for (auto g : recycled_lines) {
+      recycled.insert(frame15_id_of(g));
+    }
+    return recycled.size();
+  }
 
   void inspect_frame21_postgc(frame21* f21) {
     bool is_frame21_entirely_clear = is_linemap_clear(f21);
@@ -2590,6 +2722,7 @@ public:
       if (GCLOG_DETAIL > 1) {
         fprintf(gclog, "   inspect_frame21_postgc: iterating frames of f21 %p (%d)\n", f21, frame15_id_within_f21(frame15_id_of(f21)));
       }
+
       for (int i = 1; i < IMMIX_F15_PER_F21; ++i) {
         frame15* f15 = frame15_for_frame15_id(fid + i);
         bool unclean = inspect_frame15_postgc(fid + i, f15);
@@ -2664,16 +2797,12 @@ public:
 
     if (nextgroup) {
       if (GCLOG_DETAIL > 0) { fprintf(gclog, "Adding frame %p to recycled list; n marked = %d\n", f15, num_marked_lines); }
-      recycled.push_back(nextgroup);
+      recycled_lines.push_back(nextgroup);
     }
 
     // Clear line and object mark bits.
     memset(linemap, 0, IMMIX_LINES_PER_BLOCK);
-    if (MARK_OBJECT_WITH_BITS) {
-      memset(&gcglobals.lazy_mapped_granule_marks[global_granule_for(f15) / 8], 0, IMMIX_GRANULES_PER_BLOCK / 8);
-    } else {
-      memset(&gcglobals.lazy_mapped_granule_marks[global_granule_for(f15)], 0, IMMIX_GRANULES_PER_BLOCK);
-    }
+    clear_object_mark_bits_for_frame15(f15);
 
     // TODO increment mark histogram
 
@@ -2714,7 +2843,7 @@ private:
 
   // Stores the empty spaces that the previous collection
   // identified as being viable candidates for allocation into.
-  std::vector<free_linegroup*> recycled;
+  std::vector<free_linegroup*> recycled_lines;
 
   // The points-into remembered set; each frame in this set needs to have its
   // card table inspected for pointers that actually point here.
@@ -3360,6 +3489,7 @@ done:
 // {{{ Pointer classification utilities
 const typemap* tryGetTypemap(heap_cell* cell) {
   if (uint64_t(cell->cell_size()) < uint64_t(1<<16)) return nullptr;
+  // Reminder: cell_size() and map are the same bit pattern.
   const typemap* map = cell->get_meta();
   if (GC_ASSERTIONS) {
     bool is_corrupted = (
@@ -3369,7 +3499,7 @@ const typemap* tryGetTypemap(heap_cell* cell) {
        || (map->cell_size  < 0)
        || (map->cell_size  > (uint64_t(1)<<31)));
     if (is_corrupted) {
-      fprintf(gclog, "Found corrupted type map:\n"); fflush(gclog);
+      fprintf(gclog, "Found corrupted type map for cell %p (body %p):\n", cell, cell->body_addr()); fflush(gclog);
       inspect_typemap(map);
       gc_assert(!is_corrupted, "tryGetTypemap() found corrupted typemap");
     }
@@ -3552,8 +3682,9 @@ uint8_t ctor_id_of(void* constructed) {
   gc_assert(map, "foster_ctor_id_of() was unable to get a usable typemap");
   int8_t ctorId = map->ctorId;
   if (ctorId < 0) {
-    fprintf(gc::gclog, "foster_ctor_id_of inspected bogus ctor id %d\n", ctorId);
+    fprintf(gc::gclog, "foster_ctor_id_of inspected bogus ctor id %d from cell %p in line %d of frame %u\n", ctorId, cell, line_offset_within_f15(cell), frame15_id_of(cell));
     gc::inspect_typemap(map);
+    exit(3);
   }
   return ctorId;
 }
