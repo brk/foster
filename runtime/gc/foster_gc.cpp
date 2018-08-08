@@ -1657,16 +1657,6 @@ public:
     }
   }
 
-  void clear_tracking() {
-    num_frame15s_total = 0;
-#if COALESCE_FRAME15S
-    fromglobal_frame15s.clear();
-#else
-    uncoalesced_frame15s.clear();
-#endif
-    coalesced_frame21s.clear();
-  }
-
   void add_frame21(frame21* f) {
     coalesced_frame21s.push_back(f);
   }
