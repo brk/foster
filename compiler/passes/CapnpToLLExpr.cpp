@@ -209,7 +209,7 @@ LLAllocate* parseAllocInfo(const pb::PbAllocInfo::Reader& a) {
   if (a.hasCtorrepr()) {
     ctorRepr = parseCtorRepr(a.getCtorrepr());
   } else {
-    int bogusCtorTag = -2;
+    int bogusCtorTag = 42;
     ctorRepr.smallId       = bogusCtorTag;
     ctorRepr.isTransparent = false;
   }
