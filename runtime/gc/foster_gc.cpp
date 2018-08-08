@@ -1369,6 +1369,7 @@ struct immix_common {
     if (classification_for_frame15_id(f15id) == frame15kind::staticdata) {
       // Do nothing: no need to mark, since static data never points to
       // dynamically allocated data.
+      if (GCLOG_DETAIL > 3) { fprintf(gclog, "ignoring static data cell %p\n", body); }
       return;
     }
 
@@ -1378,6 +1379,7 @@ struct immix_common {
       // whether they are part of this particular subheap or not).
       // The remembered set is guaranteed to contain all incoming pointers
       // from non-condemned regions.
+      if (GCLOG_DETAIL > 3) { fprintf(gclog, "ignoring non-condemned cell %p\n", body); }
       return;
     }
 
@@ -1959,7 +1961,10 @@ public:
         common.common_gc(this, incoming_ptr_addrs);
       }
 
-      fprintf(gclog, "forced smallgc reclaimed %zd frames\n", lim->frame15s_left);
+      if (GCLOG_DETAIL > 2) {
+        fprintf(gclog, "forced line-frame gc reclaimed %zd frames\n", lim->frame15s_left);
+      }
+
       if (secondtry) {
         helpers::oops_we_died_from_heap_starvation();
       } else return get_new_frame(true);
@@ -2536,6 +2541,10 @@ public:
       condemned_set_status_manager tmp(condemned_set_status::whole_heap_condemned);
       gcglobals.num_gcs_triggered_involuntarily++;
       common.common_gc(this, incoming_ptr_addrs);
+    }
+
+    if (GCLOG_DETAIL > 2) {
+      fprintf(gclog, "forced heap-frame gc reclaimed %zd frames\n", lim->frame15s_left);
     }
 
     if (!try_establish_alloc_precondition(&small_bumper, cell_size)) {

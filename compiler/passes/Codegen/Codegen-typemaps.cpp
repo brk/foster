@@ -192,6 +192,8 @@ GlobalVariable* constructTypeMap(llvm::Type*  ty,
                                  ArrayOrNot         arrayStatus,
                                  int8_t             ctorId,
                                  llvm::Module*      mod) {
+  //llvm::outs() << "Constructing type map with name " << name << " and ctor id " << int(ctorId) << "\n";
+
   int numPointers = pointerOffsets.size();
   StructType* typeMapTy = getTypeMapType(numPointers, mod);
 
