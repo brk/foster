@@ -343,7 +343,9 @@ struct GCGlobals {
   Allocator* allocator = NULL;
   Allocator* default_allocator = NULL;
 
-  void* subheap_handle;
+  // Invariant: null pointer when allocator == default_allocator,
+  // otherwise a heap_handle to the current allocator.
+  heap_handle<immix_heap>* allocator_handle;
 
   condemned_set<Allocator> condemned_set;
 
@@ -3111,6 +3113,7 @@ void initialize(void* stack_highest_addr) {
 
   gcglobals.allocator = new immix_space(new byte_limit(gSEMISPACE_SIZE()));
   gcglobals.default_allocator = gcglobals.allocator;
+  gcglobals.allocator_handle = nullptr;
 
   gcglobals.condemned_set.status = condemned_set_status::whole_heap_condemned;
 
@@ -3637,12 +3640,19 @@ void* foster_subheap_create_small_raw() {
   return h;
 }
 
-void foster_subheap_activate_raw(void* generic_subheap) {
+void* foster_subheap_activate_raw(void* generic_subheap) {
   // TODO make sure we properly retain (or properly remove!)
   //      a subheap that is created, installed, and then silently dropped
   //      without explicitly being destroyed.
-  immix_heap* subheap = ((heap_handle<immix_heap>*) generic_subheap)->body;
+  heap_handle<immix_heap>* handle = (heap_handle<immix_heap>*) generic_subheap;
+
+  immix_heap* subheap = (generic_subheap == nullptr)
+                          ? gcglobals.default_allocator
+                          : handle->body;
+  heap_handle<immix_heap>* prev = gcglobals.allocator_handle;
   gcglobals.allocator = subheap;
+  gcglobals.allocator_handle = handle;
+  return prev;
   //fprintf(gclog, "activated subheap %p\n", subheap);
 }
 
@@ -3662,6 +3672,7 @@ void foster_subheap_condemn_raw(void* generic_subheap) {
   gcglobals.condemned_set.spaces.insert(subheap);
 }
 
+void foster_subheap_ignore_raw(void*) { return; }
 
 } // extern "C"
 
