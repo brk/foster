@@ -204,7 +204,10 @@ llvm::Value* emitStore(CodegenPass* pass,
                        llvm::Value* val,
                        llvm::Value* ptr,
                        WriteSelector w = WriteUnspecified) {
-  ASSERT(!val->getType()->isVoidTy());
+  if (val->getType()->isVoidTy()) {
+    val = getUnitValue();
+  }
+
   if (auto eltTy = needsBitcastToMediateUnknownPointerMismatch(val, ptr)) {
     val = emitBitcast(val, eltTy, "specSgen");
   }
