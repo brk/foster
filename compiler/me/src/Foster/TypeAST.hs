@@ -255,7 +255,8 @@ primitiveDecls = map (\(n,t) -> (n,t,NotForeign)) $
 
     ,(,) "foster_subheap_create"   $ mkProcType [] [fosSubheapType]
     ,(,) "foster_subheap_create_small" $ mkProcType [] [fosSubheapType]
-    ,(,) "foster_subheap_activate" $ mkProcType [fosSubheapType] []
+    ,(,) "foster_subheap_activate" $ mkProcType [fosSubheapType] [fosSubheapType]
+    ,(,) "foster_subheap_ignore"   $ mkProcType [fosSubheapType] []
     ,(,) "foster_subheap_collect"  $ mkProcType [fosSubheapType] []
     ]
 

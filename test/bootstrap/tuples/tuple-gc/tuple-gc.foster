@@ -11,7 +11,7 @@ main = {
   test3 !;
 
   s = foster_subheap_create !;
-  foster_subheap_activate s;
+  prev = foster_subheap_activate s;
 
   test3 !;
 
