@@ -115,12 +115,17 @@ struct memory_range {
 
 void* realigned_to_line(void* bump) {
  return offset(roundUpToNearestMultipleWeak(bump, IMMIX_LINE_SIZE)
-              ,HEAP_CELL_HEADER_SIZE);
+              ,FOSTER_GC_DEFAULT_ALIGNMENT - HEAP_CELL_HEADER_SIZE);
 }
 
+// To be suitably aligned for allocation, a pointer should be positioned
+// such that the body -- after the header -- will have the proper default alignment.
+// Let P be a pointer, A be the alignment in bytes, and H the header size in bytes.
+// If P is aligned at default alignment, then P = kA, and P + (A - H) is aligned for allocation,
+// because (P + (A - H) + H) = P + A = kA + A = (k + 1) A.
 void* realigned_for_allocation(void* bump) {
  return offset(roundUpToNearestMultipleWeak(bump, FOSTER_GC_DEFAULT_ALIGNMENT)
-              ,HEAP_CELL_HEADER_SIZE);
+              ,FOSTER_GC_DEFAULT_ALIGNMENT - HEAP_CELL_HEADER_SIZE);
 }
 
 class bump_allocator : public memory_range {
