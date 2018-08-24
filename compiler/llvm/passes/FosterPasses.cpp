@@ -19,6 +19,7 @@ void runCleanupPasses(llvm::Module& mod) {
 
   llvm::legacy::PassManager passes;
   passes.add(llvm::createDeadInstEliminationPass());
+  passes.add(foster::createGCBarrierOptimizerPass());
   passes.run(mod);
 }
 
