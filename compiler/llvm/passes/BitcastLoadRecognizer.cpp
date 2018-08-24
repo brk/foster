@@ -447,7 +447,7 @@ namespace llvm {
 
 INITIALIZE_PASS(BitcastLoadRecognizer, "foster-bitcast-recognizer",
                 "Peephole optimization of suboptimal bitcasting pattern",
-                false, false);
+                true, false);
 
 namespace foster {
 
