@@ -221,7 +221,7 @@ namespace llvm {
 
 INITIALIZE_PASS(GCRootSafetyChecker, "foster-gc-root-safety-checker",
                 "Incomplete and unsound identification of dodgy gc root usage",
-                false, false)
+                true, false)
 
 namespace foster {
 

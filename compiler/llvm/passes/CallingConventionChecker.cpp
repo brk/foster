@@ -57,7 +57,7 @@ namespace llvm {
 
 INITIALIZE_PASS(CallingConventionChecker, "foster-calling-convention-checker",
                 "Check that known calls use the right calling convention",
-                false, false);
+                true, false);
 
 namespace foster {
 
