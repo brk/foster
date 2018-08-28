@@ -69,6 +69,8 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 const int kFosterGCMaxDepth = 500;
 const ssize_t inline gSEMISPACE_SIZE() { return __foster_globals.semispace_size; }
 
+extern void* foster__typeMapList[];
+
 /////////////////////////////////////////////////////////////////
 
 #include "foster_gc_utils.h"
@@ -355,6 +357,7 @@ struct GCGlobals {
   condemned_set<Allocator> condemned_set;
 
   ClusterMap clusterForAddress;
+  memory_range typemap_memory;
 
   bool had_problems;
 
@@ -1342,7 +1345,9 @@ struct immix_common {
     }
 
     // Without metadata for the cell, there's not much we can do...
-    if (map) scan_with_map_and_arr<condemned_portion>(space, cell, *map, arr, depth - 1);
+    if (map && gcglobals.typemap_memory.contains((void*) map)) {
+      scan_with_map_and_arr<condemned_portion>(space, cell, *map, arr, depth_remaining - 1);
+    }
   }
 
   // Jones/Hosking/Moss refer to this function as "process(fld)".
@@ -3152,6 +3157,20 @@ void initialize(void* stack_highest_addr) {
   hdr_init(1, 1000000000000, 3, &gcglobals.hist_gc_alloc_array); // 1 TB
   hdr_init(129, 1000000, 3, &gcglobals.hist_gc_alloc_large); // 1 MB
   memset(gcglobals.enum_gc_alloc_small, 0, sizeof(gcglobals.enum_gc_alloc_small));
+
+  if (foster__typeMapList[0]) {
+    void* min_addr_typemap = foster__typeMapList[0];
+    void* max_addr_typemap = foster__typeMapList[0];
+    // Determine the bounds of the typemap
+    for (void** typemap = &foster__typeMapList[1]; *typemap; ++typemap) {
+      min_addr_typemap = std::min(min_addr_typemap, *typemap);
+      max_addr_typemap = std::max(max_addr_typemap, *typemap);
+    }
+    gcglobals.typemap_memory.base = min_addr_typemap;
+    gcglobals.typemap_memory.bound = offset(max_addr_typemap, 8);
+  } else {
+    fprintf(gclog, "skipping type map list registration\n");
+  }
 }
 
 

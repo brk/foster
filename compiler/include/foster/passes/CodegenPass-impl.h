@@ -31,8 +31,6 @@ void registerStructType(const StructTypeAST* structty,
                         std::string    desiredName,
                         CtorRepr       ctorRepr,
                         llvm::Module*  mod);
-llvm::GlobalVariable* getTypeMapForType(TypeAST*, CtorRepr ctorRepr,
-                                        llvm::Module*, ArrayOrNot);
 
 bool mayContainGCablePointers(llvm::Type* ty);
 bool containsGCablePointers(TypeAST* typ, llvm::Type* ty);
@@ -45,7 +43,6 @@ void emitFosterArrayBoundsCheck(llvm::Module* mod, llvm::Value* idx64,
                                                    llvm::Value* len64,
                                                    const std::string& srclines);
 Value* getUnitValue();
-Value* getElementFromComposite(Value* compositeValue, int, const std::string& msg);
 Value* getPointerToIndex(Value* compositeValue,
                          Value* idxValue,
                          const std::string& name);
@@ -168,6 +165,10 @@ struct CodegenPass {
   void emitLazyCoroPrimInfo(bool isYield, llvm::Function* fn,
                            llvm::Type* retTy,
                            llvm::Type* argTypes);
+
+  llvm::GlobalVariable* getTypeMapForType(TypeAST*, CtorRepr ctorRepr,
+                                          llvm::Module*, ArrayOrNot);
+  void emitTypeMapListGlobal();
 };
 
 #endif // header guard
