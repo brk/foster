@@ -98,7 +98,7 @@ def insert_before_each(val, vals):
   return [x for v in vals for x in [val, v]]
 
 def get_ghc_rts_args():
-  ghc_rts_args = ["-smeGCstats.txt", "-M2G", "-K640K"]
+  ghc_rts_args = ["-smeGCstats.txt", "-M2G", "-K64M"]
 
   if options and options.stacktraces:
     ghc_rts_args.append('-xc') # Produce stack traces
