@@ -154,6 +154,11 @@ struct heap_handle {
   uint8_t padding[16];
 
   heap_cell* as_cell() { return (heap_cell*) &header; }
+  tidy     * as_tidy() { return (tidy*)      &body; }
+
+  static heap_handle* for_tidy(tidy* ptr) {
+    return (heap_handle*) offset((void*)ptr, -(intptr_t(sizeof(void*) + HEAP_CELL_HEADER_SIZE)));
+  }
 };
 
 

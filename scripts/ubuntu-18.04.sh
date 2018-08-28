@@ -7,7 +7,7 @@ sudo apt-get install --yes build-essential g++ g++-multilib git gnuplot \
                        python3-pygments python3-matplotlib  python3-scipy python3-sphinx \
                        python3-pandas python3-pip python3-numpy python3-pyqt4 \
                        z3 libdw-dev
-sudo apt-get install --yes mercurial vim \
+sudo apt-get install --yes mercurial vim libsparsehash-dev \
               curl exuberant-ctags aptitude libcairo2-dev libc6-dev default-jdk
 sudo apt-get install --yes m4 ministat meld \
          linux-tools-virtual linux-tools-generic \
