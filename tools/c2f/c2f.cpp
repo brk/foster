@@ -32,6 +32,7 @@
 #include "clang/ASTMatchers/ASTMatchers.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/Analysis/CFG.h"
+#include "clang/Analysis/Analyses/FormatString.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/Tooling/CommonOptionsParser.h"
@@ -534,6 +535,33 @@ std::string enumConstantAccessor(const std::string& prefix,
 }
 
 
+void emitUTF8orAsciiStringLiteral(StringRef data) {
+  // Clang's outputString uses octal escapes, but we only support
+  // Unicode escape sequences in non-byte-strings.
+  bool useTriple = data.count('\n') > 1;
+  // TODO must also check the str doesn't contain 3 consecutive dquotes.
+  // TODO distinguish text vs byte strings...?
+  llvm::outs() << "(strLit " << "b" << (useTriple ? "\"\"\"" : "\"");
+  for (char c : data) {
+    switch(c) {
+      case '\n': llvm::outs() << (useTriple ? "\n" : "\\n"); break;
+      case '\t': llvm::outs() << "\\t"; break;
+      case '\\': llvm::outs() << "\\\\"; break;
+      case '"' : llvm::outs() << (useTriple ? "\"" : "\\\""); break;
+      default:
+        if (isprint(c)) {
+          llvm::outs() << c;
+        } else {
+          llvm::outs() << llvm::format("\\u{%02x}", (unsigned char) c);
+        }
+        break;
+    }
+  }
+  llvm::outs() << "\\x00";
+  llvm::outs() << (useTriple ? "\"\"\"" : "\"");
+  llvm::outs() << ")";
+}
+
 
 class MutableLocalHandler : public MatchFinder::MatchCallback {
 public:
@@ -1008,6 +1036,117 @@ public:
   }
 };
 
+
+class C2F_FormatStringHandler : public clang::analyze_format_string::FormatStringHandler {
+public:
+  const char* prevBase;
+  ASTContext& ctx;
+
+  C2F_FormatStringHandler(const char* base, ASTContext& ctx) : prevBase(base), ctx(ctx) {}
+  ~C2F_FormatStringHandler() {}
+
+  void emitStringContentsUpTo(const char* place, unsigned offset) {
+    if (place == prevBase) {
+      return;
+    }
+
+    llvm::outs() << "(printStr ";
+    emitUTF8orAsciiStringLiteral(StringRef(prevBase, (place - prevBase)));
+    llvm::outs() << ")";
+    prevBase = place + offset;
+  }
+
+  void HandleNullChar(const char* nullChar) override {
+    emitStringContentsUpTo(nullChar, 1);
+    printf("/* handle null char */\n");
+    return;
+  }
+
+  void HandlePosition(const char* startPos, unsigned len) override {
+    emitStringContentsUpTo(startPos, len);
+    printf("/* handle position: %.*s */\n", len, startPos);
+    return;
+  }
+
+  void HandleInvalidPosition(const char* startPos, unsigned len, clang::analyze_format_string::PositionContext p) override {
+    //emitStringContentsUpTo(startPos, len);
+    printf("/* handle invalid position: %.*s */\n", len, startPos);
+    return;
+  }
+
+  void HandleZeroPosition(const char* startPos, unsigned len) override {
+    emitStringContentsUpTo(startPos, len);
+    printf("/* handle zero position: %.*s */\n", len, startPos);
+    return;
+  }
+
+  void HandleEmptyObjCModifierFlag(const char* startFlags, unsigned len) override {
+    emitStringContentsUpTo(startFlags, len);
+    printf("/* handle emtpy objc flags: %.*s */\n", len, startFlags);
+    return;
+  }
+
+  void HandleInvalidObjCModifierFlag(const char* startFlag, unsigned len) override {
+    emitStringContentsUpTo(startFlag, len);
+    printf("/* handle invalid objc flags: %.*s */\n", len, startFlag);
+    return;
+  }
+
+  void HandleObjCFlagsWithNonObjCConversion(const char* flagsStart, const char* flagsEnd, const char* conversionPos) override {
+    emitStringContentsUpTo(flagsStart, flagsEnd - flagsStart);
+    printf("/* handle objc flags: %.*s */\n", flagsEnd - flagsStart, flagsStart);
+    return;
+  }
+
+  bool HandleScanfSpecifier(const analyze_scanf::ScanfSpecifier& fs, const char* startSpecifier, unsigned specifierLen) override {
+    return true;
+  }
+
+  bool HandlePrintfSpecifier(const analyze_printf::PrintfSpecifier& fs, const char* startSpecifier, unsigned specifierLen) override {
+    emitStringContentsUpTo(startSpecifier, specifierLen);
+    fprintf(stderr, "/* handle printf specifier: %.*s */\n", specifierLen, startSpecifier);
+    fprintf(stderr, "/* format specifier: getArgIndex: %d */\n", fs.getArgIndex());
+    fprintf(stderr, "/* format specifier: usesPositionalArg: %d */\n", fs.usesPositionalArg());
+    fprintf(stderr, "/* format specifier: getPositionalArgIndex: %d */\n", fs.getPositionalArgIndex());
+    fprintf(stderr, "/* format specifier: hasStandardLengthModifier: %d */\n", fs.hasStandardLengthModifier());
+    //fprintf(stderr, "/* format specifier: hasStandardConversionSpecifier: %d */\n", fs.hasStandardConversionSpecifier());
+    fprintf(stderr, "/* format specifier: hasStandardLengthConversionCombination: %d */\n", fs.hasStandardLengthConversionCombination());
+    fprintf(stderr, "/* printf specifier: consumesDataArgument: %d */\n", fs.consumesDataArgument());
+    fprintf(stderr, "/* printf specifier: hasValidPlusPrefix: %d */\n", fs.hasValidPlusPrefix());
+    fprintf(stderr, "/* printf specifier: hasValidSpacePrefix: %d */\n", fs.hasValidSpacePrefix());
+    fprintf(stderr, "/* printf specifier: hasValidLeadingZeros: %d */\n", fs.hasValidLeadingZeros());
+    fprintf(stderr, "/* printf specifier: hasValidPrecision: %d */\n", fs.hasValidPrecision());
+    fprintf(stderr, "/* printf specifier: hasValidFieldWidth: %d */\n", fs.hasValidFieldWidth());
+    fprintf(stderr, "/* printf specifier: argType: isValid: %d */\n", fs.getArgType(ctx, false).isValid());
+    std::string tyname = fs.getArgType(ctx, false).getRepresentativeTypeName(ctx);
+    fprintf(stderr, "/* printf specifier: argType: %s */\n", tyname.c_str());
+    fflush(stderr);
+    llvm::errs() << "/* printf conversion: " << fs.getConversionSpecifier().getCharacters() << " */\n";
+    llvm::errs() << "/* printf precision: "; fs.getPrecision().toString(llvm::errs()); llvm::errs() << " */\n";
+    llvm::errs() << "/* printf field width: "; fs.getFieldWidth().toString(llvm::errs()); llvm::errs() << " */\n";
+    llvm::errs() << "/* printf length modifier: " << fs.getLengthModifier().toString() << " */\n";
+    return true;
+  }
+
+  bool HandleInvalidPrintfConversionSpecifier(const analyze_printf::PrintfSpecifier& fs, const char* startSpecifier, unsigned specifierLen) override {
+    emitStringContentsUpTo(startSpecifier, specifierLen);
+    fprintf(stderr, "/* invalid printf conversion specifier: %.*s */\n", specifierLen, startSpecifier);
+    return true;
+  }
+
+  bool HandleInvalidScanfConversionSpecifier(const analyze_scanf::ScanfSpecifier& fs, const char* startSpecifier, unsigned specifierLen) override {
+    emitStringContentsUpTo(startSpecifier, specifierLen);
+    fprintf(stderr, "/* invalid scanf conversion specifier: %.*s */\n", specifierLen, startSpecifier);
+    return true;
+  }
+
+  void HandleIncompleteScanList(const char* start, const char* end) override {
+    emitStringContentsUpTo(start, end - start);
+    printf("/* incomplete scan list: %.*s */\n", end - start, start);
+  }
+};
+
+
 class C2F_GlobalVariableDetector : public ASTConsumer {
 public:
   C2F_GlobalVariableDetector(const SourceManager &SM) : FC(SM) {}
@@ -1028,7 +1167,7 @@ public:
 
 class MyASTConsumer : public ASTConsumer {
 public:
-  MyASTConsumer(const SourceManager &SM) : lastloc(), FC(SM) { }
+  MyASTConsumer(const CompilerInstance &CI) : lastloc(), CI(CI), FC(CI.getSourceManager()) { }
 
   void handleIfThenElse(ContextKind ctx, IfExprOrStmt ies, const Stmt* cnd, const Stmt* thn, const Stmt* els) {
     bool needTrailingUnit = ies == AnIfStmt && !isCompoundWithTrailingReturn(thn);
@@ -1184,8 +1323,8 @@ public:
     if (optDumpCFGs) {
       llvm::outs().flush();
       llvm::errs() << "/*\n";
-      LangOptions LO;
-      cfg->dump(LO, false);
+      //LangOptions LO;
+      cfg->dump(CI.getLangOpts(), false);
       llvm::errs() << "\n*/\n";
       llvm::errs().flush();
     }
@@ -1887,7 +2026,9 @@ The corresponding AST to be matched is
   }
 
   bool tryHandleCallPrintf(const CallExpr* ce) {
+    // TODO handle fprintf, etc.
     if (!isDeclNamed("printf", ce->getCallee()->IgnoreParenImpCasts())) return false;
+
     if (ce->getNumArgs() == 1) {
       // Assume one-arg printf means literal text.
       llvm::outs() << "(printStr ";
@@ -1895,9 +2036,18 @@ The corresponding AST to be matched is
       llvm::outs() << ")";
       return true;
     }
+
     if (ce->getNumArgs() != 2) return false;
 
     if (auto slit = dyn_cast<StringLiteral>(ce->getArg(0)->IgnoreParenImpCasts())) {
+      const std::string& s = slit->getString();
+      bool isFreeBSDkprintf = false;
+      C2F_FormatStringHandler handler(s.c_str(), *Ctx);
+      fprintf(stderr, "// parsing format string: %s\n", s.c_str());
+      clang::analyze_format_string::ParsePrintfString(handler, &s[0], &s[s.size()],
+          CI.getLangOpts(), CI.getTarget(), isFreeBSDkprintf);
+
+
       if (slit->getString() == "%d\n") {
         std::string tynm = tyName(ce->getArg(1)->getType().getTypePtr());
         std::string printfn;
@@ -2559,31 +2709,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         llvm::outs() << "True";
       } else {
         if (lit->isUTF8() || lit->isAscii()) {
-          // Clang's outputString uses octal escapes, but we only support
-          // Unicode escape sequences in non-byte-strings.
-          StringRef data = lit->getString();
-          bool useTriple = data.count('\n') > 1;
-          // TODO must also check the str doesn't contain 3 consecutive dquotes.
-          // TODO distinguish text vs byte strings...?
-          llvm::outs() << "(strLit " << "b" << (useTriple ? "\"\"\"" : "\"");
-          for (char c : data) {
-              switch(c) {
-              case '\n': llvm::outs() << (useTriple ? "\n" : "\\n"); break;
-              case '\t': llvm::outs() << "\\t"; break;
-              case '\\': llvm::outs() << "\\\\"; break;
-              case '"' : llvm::outs() << (useTriple ? "\"" : "\\\""); break;
-              default:
-                if (isprint(c)) {
-                  llvm::outs() << c;
-                } else {
-                  llvm::outs() << llvm::format("\\u{%02x}", (unsigned char) c);
-                }
-                break;
-              }
-          }
-          llvm::outs() << "\\x00";
-          llvm::outs() << (useTriple ? "\"\"\"" : "\"");
-          llvm::outs() << ")";
+          emitUTF8orAsciiStringLiteral(lit->getString());
         } else {
           llvm::outs() << "// non UTF8 string\n";
           llvm::outs() << "(strLit ";
@@ -3020,6 +3146,7 @@ private:
   std::map<std::string, bool> mutableLocals;
   std::map<std::string, bool> mutableLocalAliases;
   VoidPtrCasts voidPtrCasts;
+  const CompilerInstance& CI;
   const FileClassifier FC;
   ASTContext* Ctx;
 
@@ -3050,13 +3177,14 @@ public:
   }
 };
 
+
 // For each source file provided to the tool, a new FrontendAction is created.
 class C2F_FrontendAction : public ASTFrontendAction {
 public:
   C2F_FrontendAction() {}
 
   std::unique_ptr<ASTConsumer> CreateASTConsumer(CompilerInstance &CI, StringRef file) override {
-    return llvm::make_unique<MyASTConsumer>(CI.getSourceManager());
+    return llvm::make_unique<MyASTConsumer>(CI);
   }
 };
 
