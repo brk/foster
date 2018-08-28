@@ -100,27 +100,6 @@ Value* getPointerToIndex(Value* ptrToCompositeValue,
   return builder.CreateGEP(ptrToCompositeValue, llvm::makeArrayRef(idx), name.c_str());
 }
 
-Value* getElementFromComposite(Value* compositeValue, int indexValue,
-                               const std::string& msg) {
-  ASSERT(indexValue >= 0);
-  Value* idxValue = builder.getInt32(indexValue);
-  Type* compositeType = compositeValue->getType();
-  // To get an element from an in-memory object, compute the address of
-  // the appropriate struct field and emit a load.
-  if (llvm::isa<llvm::PointerType>(compositeType)) {
-    Value* gep = getPointerToIndex(compositeValue, idxValue, (msg + ".subgep").c_str());
-    return builder.CreateLoad(gep, gep->getName() + "_ld");
-  } else if (llvm::isa<llvm::StructType>(compositeType)) {
-    return builder.CreateExtractValue(compositeValue, indexValue, (msg + "subexv").c_str());
-  } else if (llvm::isa<llvm::VectorType>(compositeType)) {
-    return builder.CreateExtractElement(compositeValue, idxValue, (msg + "simdexv").c_str());
-  } else {
-    EDiag() << "Cannot index into value type " << str(compositeType)
-            << " with non-constant index " << str(idxValue);
-  }
-  return NULL;
-}
-
 ////////////////////////////////////////////////////////////////////
 
 Constant* getConstantArrayOfString(llvm::StringRef s, bool addNull) {

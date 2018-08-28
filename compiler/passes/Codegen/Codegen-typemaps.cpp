@@ -318,6 +318,8 @@ void registerStructType(const StructTypeAST* structty,
                         std::string desiredName,
                         CtorRepr       ctorRepr,
                         llvm::Module* mod) {
+  ASSERT(structty != nullptr) << "registerStructType() needs a non-null type to work with.";
+
   static std::map<TypeSig, bool> registeredTypes;
 
   llvm::Type* ty = structty->getLLVMType();
@@ -392,7 +394,7 @@ bool isGenericClosureType(const llvm::Type* ty) {
   return false;
 }
 
-llvm::GlobalVariable* getTypeMapForType(TypeAST* typ,
+llvm::GlobalVariable* CodegenPass::getTypeMapForType(TypeAST* typ,
                                         CtorRepr ctorRepr,
                                         llvm::Module* mod,
                                         ArrayOrNot arrayStatus) {
@@ -413,10 +415,33 @@ llvm::GlobalVariable* getTypeMapForType(TypeAST* typ,
   }
 
   if (!gv) {
-    EDiag() << "No type map for type " << str(ty) << "\n";
+    EDiag() << "No type map for type " << str(ty) << "\nMaybe you need to call registerStructType()?\n";
     exit(1);
+  } else {
+    
   }
 
   return gv;
+}
+
+void CodegenPass::emitTypeMapListGlobal() {
+  auto ty = builder.getInt8PtrTy();
+  std::vector<Constant*> vals;
+  for (auto p : typeMapCache) {
+    vals.push_back(llvm::ConstantExpr::getBitCast(p.second, ty));
+  }
+  vals.push_back(llvm::ConstantPointerNull::getNullValue(ty));
+
+  llvm::ArrayType* arrTy = llvm::ArrayType::get(ty, vals.size());
+  Constant* carr = llvm::ConstantArray::get(arrTy, vals);
+
+  GlobalVariable* typeMapListGlobal = new GlobalVariable(
+      /*Module=*/      *mod,
+      /*Type=*/        carr->getType(),
+      /*isConstant=*/  true,
+      /*Linkage=*/     GlobalValue::ExternalLinkage,
+      /*Initializer=*/ carr,
+      /*Name=*/        "foster__typeMapList");
+  typeMapListGlobal->setAlignment(8);
 }
 

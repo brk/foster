@@ -48,6 +48,7 @@ namespace foster {
 void codegenLL(LLModule* prog, llvm::Module* mod, CodegenPassConfig config) {
   CodegenPass cp(mod, config);
   prog->codegenModule(&cp);
+  cp.emitTypeMapListGlobal();
 }
 
 void deleteCodegenPass(CodegenPass* cp) { delete cp; }
@@ -59,7 +60,7 @@ char kFosterMain[] = "foster__main";
 int  kUnknownBitsize = 999; // keep in sync with IntSizeBits in Base.hs
 
 // {{{ Internal helper functions
-bool tryBindArray(Value* base, Value*& arr, Value*& len);
+bool tryBindArray(CodegenPass* pass, Value* base, Value*& arr, Value*& len);
 
 namespace {
 
@@ -165,17 +166,21 @@ llvm::Value* emitGCWriteOrStore(CodegenPass* pass,
                        llvm::Value* base,
                        llvm::Value* ptr,
                        WriteSelector w = WriteUnspecified) {
-
-
-  if (isPointerToType(ptr->getType(), val->getType())) {
-    if (val->getType()->isPointerTy()
+  //llvm::outs() << "logging write of " << *val <<
+  //              "\n              to " << *ptr <<
+  //              "\n     isNonGC = " << (w == WriteKnownNonGC) << "; val is ptr ty? " << val->getType()->isPointerTy() << "\n";
+  bool useBarrier = val->getType()->isPointerTy()
         && !llvm::isa<llvm::AllocaInst>(ptr)
         && w != WriteKnownNonGC
-        && pass->config.useGC) {
+        && pass->config.useGC;
+  //maybeEmitCallToLogPtrWrite(pass, ptr, val, useBarrier);
+
+  if (isPointerToType(ptr->getType(), val->getType())) {
+    if (useBarrier) {
       return emitGCWrite(pass, val, base, ptr);
     } else {
       return builder.CreateStore(val, ptr, /*isVolatile=*/ false);
-    }  
+    }
   }
 
   builder.GetInsertBlock()->getParent()->dump();
@@ -322,6 +327,29 @@ void assertValueHasSameTypeAsPhiNode(llvm::Value* v, LLBlock* block, int i) {
 
 // Implementation of CodegenPass helpers {{{
 
+Value* getElementFromComposite(CodegenPass* pass, Value* compositeValue,
+                               int indexValue, const std::string& msg) {
+  ASSERT(indexValue >= 0);
+  Value* idxValue = builder.getInt32(indexValue);
+  Type* compositeType = compositeValue->getType();
+  // To get an element from an in-memory object, compute the address of
+  // the appropriate struct field and emit a load.
+  if (llvm::isa<llvm::PointerType>(compositeType)) {
+    Value* gep = getPointerToIndex(compositeValue, idxValue, (msg + ".subgep").c_str());
+    //maybeEmitCallToLogPtrRead(pass, gep);
+    return emitNonVolatileLoad(gep, gep->getName() + "_ld");
+  } else if (llvm::isa<llvm::StructType>(compositeType)) {
+    return builder.CreateExtractValue(compositeValue, indexValue, (msg + "subexv").c_str());
+  } else if (llvm::isa<llvm::VectorType>(compositeType)) {
+    return builder.CreateExtractElement(compositeValue, idxValue, (msg + "simdexv").c_str());
+  } else {
+    EDiag() << "Cannot index into value type " << str(compositeType)
+            << " with non-constant index " << str(idxValue);
+  }
+  return NULL;
+}
+
+
 CodegenPass::CodegenPass(llvm::Module* m, CodegenPassConfig config)
     : config(config), mod(m), currentProcName("<no proc yet>") {
   //dib = new DIBuilder(*mod);
@@ -373,7 +401,7 @@ llvm::Value* CodegenPass::emitFosterStringOfCString(Value* cstr, Value* sz) {
   // so it does not need a GC root.
 
   Value* hstr_bytes; Value* len;
-  if (tryBindArray(hstr, /*out*/ hstr_bytes, /*out*/ len)) {
+  if (tryBindArray(this, hstr, /*out*/ hstr_bytes, /*out*/ len)) {
     markAsNonAllocating(builder.CreateMemCpy(hstr_bytes,
                               cstr, sz, /*alignment*/ 4));
   } else { ASSERT(false); }
@@ -534,7 +562,7 @@ void LLModule::codegenModule(CodegenPass* pass) {
 
     CtorRepr ctorRepr; ctorRepr.smallId = -1;
     auto globalCell = emitGlobalNonArrayCell(pass,
-                          getTypeMapForType(TypeAST::i(64), ctorRepr, pass->mod, NotArray),
+                          pass->getTypeMapForType(TypeAST::i(64), ctorRepr, pass->mod, NotArray),
                           const_cell,
                           cloname + ".closure.cell");
 
@@ -715,7 +743,7 @@ llvm::Value* allocateSlot(CodegenPass* pass, LLVar* rootvar) {
     if (const StructTypeAST* sty = rootvar->type->castStructTypeAST()) {
       registerStructType(sty, "unboxed_tuple", ctorRepr, pass->mod);
     }
-    llvm::GlobalVariable* typemap = getTypeMapForType(rootvar->type, ctorRepr, pass->mod, NotArray);
+    llvm::GlobalVariable* typemap = pass->getTypeMapForType(rootvar->type, ctorRepr, pass->mod, NotArray);
     auto padded_ty = llvm::StructType::get(foster::fosterLLVMContext,
                                             { builder.getInt64Ty(), builder.getInt64Ty(), ty });
     llvm::AllocaInst* slot = CreateEntryAlloca(padded_ty, rootvar->getName());
@@ -1163,20 +1191,26 @@ llvm::GlobalVariable* emitGlobalNonArrayCell(CodegenPass* pass,
   cell_vals.push_back(body);
   auto const_cell = llvm::ConstantStruct::getAnon(cell_vals);
 
-  return emitPrivateGlobal(pass, const_cell, name);
+  auto rv = emitPrivateGlobal(pass, const_cell, name);
+  //llvm::errs() << "emitGlobalNonArrayCell for " << name << " is " << str(rv) << "\n";
+  return rv;
 }
 
+// Returns a tidy pointer.
 llvm::Value* emitByteArray(CodegenPass* pass, llvm::StringRef bytes, llvm::StringRef cellname) {
   auto const_arr_tidy = emitConstantArrayTidy(bytes.size(), getConstantArrayOfString(bytes));
 
   CtorRepr ctorRepr; ctorRepr.smallId = -1;
   auto arrayGlobal = emitGlobalArrayCell(pass,
-                        getTypeMapForType(TypeAST::i(8), ctorRepr, pass->mod, YesArray),
+                        pass->getTypeMapForType(TypeAST::i(8), ctorRepr, pass->mod, YesArray),
                         const_arr_tidy,
                         cellname);
 
-  return builder.CreateBitCast(getPointerToIndex(arrayGlobal, builder.getInt32(1), "cellptr"),
+  auto rv = builder.CreateBitCast(getPointerToIndex(arrayGlobal, builder.getInt32(1), "cellptr"),
                                 ArrayTypeAST::getZeroLengthTypeRef(TypeAST::i(8)), "arr_ptr");
+
+  //llvm::errs() << "emitByteArray for " << bytes << ":\n    " << str(rv) << "\n";
+  return rv;
 }
 
 llvm::Value* LLText::codegen(CodegenPass* pass) {
@@ -1270,7 +1304,7 @@ Value* allocateCell(CodegenPass* pass, TypeAST* type,
     // We enforce the invariant that the GC will scan but not attempt to copy
     // stack-allocated cells to the heap, by marking stack memory regions
     // as "stable" in foster_gc.cpp.
-    llvm::GlobalVariable* ti = getTypeMapForType(type, ctorRepr, pass->mod, NotArray);
+    llvm::GlobalVariable* ti = pass->getTypeMapForType(type, ctorRepr, pass->mod, NotArray);
     llvm::Type* typemap_type = ti->getType();
     // We include padding in order for the padding plus the typemap pointer to
     // be 16 bytes wide. This, in turn, ensures that we will align the payload
@@ -1327,7 +1361,7 @@ llvm::Value* LLAllocate::codegen(CodegenPass* pass) {
 //////////////// Arrays ////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////{{{
 
-bool tryBindArray(llvm::Value* base, Value*& arr, Value*& len) {
+bool tryBindArray(CodegenPass* pass, llvm::Value* base, Value*& arr, Value*& len) {
   // {i64, [0 x T]}*
   if (isPointerToStruct(base->getType())) {
     llvm::Type* sty = slotType(base);
@@ -1337,7 +1371,7 @@ bool tryBindArray(llvm::Value* base, Value*& arr, Value*& len) {
         llvm::dyn_cast<llvm::ArrayType>(sty->getContainedType(1))) {
         if (aty->getNumElements() == 0) {
           arr = getPointerToIndex(base, builder.getInt32(1), "arr");
-          len = getElementFromComposite(base, 0, "len");
+          len = getElementFromComposite(pass, base, 0, "len");
           return true;
         }
       }
@@ -1355,7 +1389,7 @@ Value* getArraySlot(Value* base, Value* idx, CodegenPass* pass, Type* ty,
     base = emitBitcast(base, arrayType, "genAspec");
   }
 
-  if (tryBindArray(base, arr, len)) {
+  if (tryBindArray(pass, base, arr, len)) {
     if (dynCheck && !pass->config.disableAllArrayBoundsChecks) {
       emitFosterArrayBoundsCheck(pass->mod, idx, len, srclines);
     }
@@ -1411,7 +1445,7 @@ llvm::Value* LLArrayPoke::codegen(CodegenPass* pass) {
 llvm::Value* LLArrayLength::codegen(CodegenPass* pass) {
   Value* val  = this->value->codegen(pass);
   Value* _bytes; Value* len;
-  if (tryBindArray(val, /*out*/ _bytes, /*out*/ len)) {
+  if (tryBindArray(pass, val, /*out*/ _bytes, /*out*/ len)) {
     // len already assigned.
   } else { ASSERT(false); }
   return len;
@@ -1449,7 +1483,7 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
 
     CtorRepr ctorRepr; ctorRepr.smallId = -1;
     auto arrayGlobal = emitGlobalArrayCell(pass,
-                          getTypeMapForType(this->elem_type, ctorRepr, pass->mod, YesArray),
+                          pass->getTypeMapForType(this->elem_type, ctorRepr, pass->mod, YesArray),
                           const_arr_tidy,
                           ".arr_cell");
 
@@ -1462,7 +1496,7 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
     llvm::Value* heap_arr = this->arr->codegen(pass);
 
     Value* heapmem; Value* _len;
-    if (tryBindArray(heap_arr, /*out*/ heapmem, /*out*/ _len)) {
+    if (tryBindArray(pass, heap_arr, /*out*/ heapmem, /*out*/ _len)) {
       MEMCPY_FROM_GLOBAL_TO_HEAP++;
       // Memcpy from global to heap.
 
@@ -1479,7 +1513,9 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
         unsigned k  = ncvals[i].second;
         Value* val  = ncvals[i].first;
         Value* slot = getPointerToIndex(heapmem, llvm::ConstantInt::get(i32, k), "arr_slot");
-        if (val->getType()->isPointerTy() && pass->config.useGC) {
+        bool useBarrier = val->getType()->isPointerTy() && pass->config.useGC;
+        //maybeEmitCallToLogPtrWrite(pass, slot, val, useBarrier);
+        if (useBarrier) {
           emitGCWrite(pass, val, heapmem, slot);
         } else {
           builder.CreateStore(val, slot, /*isVolatile=*/ false);
@@ -1548,7 +1584,17 @@ Value* LLUnboxedTuple::codegen(CodegenPass* pass) {
         }
 
         auto ct = llvm::ConstantStruct::getAnon(consts);
-        return emitPrivateGlobal(pass, ct, "cstup");
+        CtorRepr ctorRepr; ctorRepr.smallId = 126;
+        // TODO merge type maps for similar types?
+        
+        std::vector<int> noSkippedIndices;
+        registerStructType(this->type->castStructTypeAST(), "cstupty", ctorRepr, pass->mod);
+        auto typemap = pass->getTypeMapForType(this->type, ctorRepr, pass->mod, NotArray);
+        auto globalCell = emitGlobalNonArrayCell(pass, typemap, ct, "cstup");
+        llvm::Type* ty = getHeapPtrTo(getLLVMType(this->type)); // well, heap-formatted but not on-heap...
+        llvm::outs() << "************ " << "type map for unboxed (?) type " << str(this->type) << "\n";
+        return emitBitcast(builder.CreateConstGEP2_32(NULL, globalCell, 0, 2), ty);
+        //return emitPrivateGlobal(pass, ct, "cstup");
         /*
     llvm::GlobalVariable* emitGlobalNonArrayCell(CodegenPass* pass,
                                         llvm::GlobalVariable* typemap,
@@ -1580,7 +1626,7 @@ Value* LLGlobalAppCtor::codegen(CodegenPass* pass) {
     }
   }
 
-  llvm::GlobalVariable* ti = getTypeMapForType(type, this->ctor.ctorId.ctorRepr, pass->mod, NotArray);
+  llvm::GlobalVariable* ti = pass->getTypeMapForType(type, this->ctor.ctorId.ctorRepr, pass->mod, NotArray);
   auto ct = llvm::ConstantStruct::getAnon(consts);
   auto globalCell = emitGlobalNonArrayCell(pass, ti, ct, "csctor");
   return emitBitcast(builder.CreateConstGEP2_32(NULL, globalCell, 0, 2), ty);
@@ -1628,7 +1674,7 @@ llvm::Value* LLOccurrence::codegen(CodegenPass* pass) {
       continue;
     }
 
-    v = getElementFromComposite(v, offsets[i], "switch_insp");
+    v = getElementFromComposite(pass, v, offsets[i], "switch_insp");
   }
 
   // Consider code like         case v of Some x -> ... x ...
@@ -1741,8 +1787,8 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
     ASSERT(isPointerToStruct(FV->getType()));
     // Load code and env pointers from closure...
     llvm::Value* envPtr =
-        getElementFromComposite(FV, 1, "getCloEnv");
-    FV = getElementFromComposite(FV, 0, "getCloCode");
+        getElementFromComposite(pass, FV, 1, "getCloEnv");
+    FV = getElementFromComposite(pass, FV, 0, "getCloCode");
     FT = dyn_cast<llvm::FunctionType>(slotType(FV));
     // Pass env pointer as first parameter to function.
     valArgs.push_back(envPtr);

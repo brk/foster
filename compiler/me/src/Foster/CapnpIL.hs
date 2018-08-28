@@ -606,11 +606,11 @@ dumpProgramToModule (ILProgram procdefs vals extern_decls datatypes (SourceLines
         , arr_of_PbToplevelItem = StrictlyNone
         }
 
-    dumpItem (TopBindTuple id ty ids) =
+    dumpItem (TopBindTuple id refty@(LLPtrType unboxedty) ids) =
       PbToplevelItem {
           name_of_PbToplevelItem = dumpIdent id
         , lit_of_PbToplevelItem = StrictlyJust $
-              (defaultLetable ty Ilunboxedtuple) { parts_of_Letable = map dumpVarIdent ids }
+              (defaultLetable unboxedty Ilunboxedtuple) { parts_of_Letable = map dumpVarIdent ids }
               -- hacky detail: we use the presence of the type field to mean "static/global"
         , arr_of_PbToplevelItem = StrictlyNone
         }
