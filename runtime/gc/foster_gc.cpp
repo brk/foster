@@ -63,7 +63,7 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 #define GC_BEFORE_EVERY_MEMALLOC_CELL 0
 #define DEBUG_INITIALIZE_ALLOCATIONS  0 // Initialize even when the middle end doesn't think it's necessary
 #define ELIDE_INITIALIZE_ALLOCATIONS  0 // Unsafe: ignore requests to initialize allocated memory.
-#define MEMSET_FREED_MEMORY           0
+#define MEMSET_FREED_MEMORY           GC_ASSERTIONS
 // This included file may un/re-define these parameters, providing
 // a way of easily overriding-without-overwriting the defaults.
 #include "gc/foster_gc_reconfig-inl.h"
@@ -352,7 +352,7 @@ struct frame15info {
   void*            associated;
   frame15kind      frame_classification;
   uint8_t          num_available_lines_at_last_collection;
-  condemned_status frame_status;
+  uint8_t          num_condemned_lines;
 };
 
 // We track "available" rather than "marked" lines because it's more natural
@@ -370,14 +370,14 @@ struct immix_malloc_frame15info {
   // Since allocs are min 8K, this will be guaranteed to have size at most 4.
   heap_array*      contained[MAX_ARR_OBJ_PER_FRAME15];
   immix_heap*      parents[MAX_ARR_OBJ_PER_FRAME15];
-  condemned_status condemned[MAX_ARR_OBJ_PER_FRAME15];
+  uint8_t          condemned[MAX_ARR_OBJ_PER_FRAME15];
 
   void remove(heap_array* arr) {
     for (int i = 0; i < arraysize(condemned); ++i) {
       if (contained[i] == arr) {
         contained[i] = nullptr;
         parents[i] = nullptr;
-        condemned[i] = condemned_status::not_condemned;
+        condemned[i] = 0;
         break;
       }
     }
@@ -388,7 +388,7 @@ struct immix_malloc_frame15info {
       if (contained[i] == nullptr) {
         contained[i] = arr;
         parents[i] = parent;
-        condemned[i] = condemned_status::not_condemned;
+        condemned[i] = 0;
         break;
       }
     }
@@ -428,21 +428,6 @@ struct condemned_set {
   // but to avoid O(full-heap) work on a subheap collection,
   // we only want to reset the marks we established during each collection.
   std::set<heap_cell*> unframed_and_marked;
-
-  void uncondemn_all() {
-    // If we had a fine-grained condemned set, reset it.
-    if (status == condemned_set_status::per_frame_condemned) {
-      status = condemned_set_status::single_subheap_condemned;
-
-      for (auto space : spaces) {
-        space->uncondemn();
-      }
-    }
-
-    // Whole-heap collections ignore the condemned set,
-    // and single-subheap collections by definition have an otherwise-empty
-    // condemned set.
-  }
 
   // Use line marks to reclaim space, then reset linemaps and object marks.
   void sweep_condemned(Allocator* active_space,
@@ -499,7 +484,7 @@ struct GCGlobals {
 
   frame15info*      lazy_mapped_frame15info;
   uint8_t*          lazy_mapped_coarse_marks;
-  condemned_status* lazy_mapped_frame15_condemned;
+  uint8_t*          lazy_mapped_frame15_condemned_count;
 
   uint8_t*          lazy_mapped_granule_marks;
 
@@ -572,6 +557,7 @@ void set_classification_for_frame15_id(frame15_id fid, frame15kind v) {
   gcglobals.lazy_mapped_frame15info[fid].frame_classification = v;
 }
 
+/*
 inline
 condemned_status compute_condemned_status_for(frame15_id fid, immix_heap* space) {
   frame15kind fk = classification_for_frame15_id(fid);
@@ -581,29 +567,23 @@ condemned_status compute_condemned_status_for(frame15_id fid, immix_heap* space)
     return condemned_status::mixed_condemned;
   }
 }
+*/
 
-inline condemned_status get_condemned_status_for_frame15info(frame15info* finfo) { return finfo->frame_status; }
-
-inline condemned_status get_condemned_status_for_frame15_id(frame15_id fid) {
-  return gcglobals.lazy_mapped_frame15info[fid].frame_status;
+inline uint8_t& condemned_count_for_frame15_id(frame15_id fid) {
+  return gcglobals.lazy_mapped_frame15_condemned_count[fid];
 }
 
 inline
-void set_condemned_status_for_frame15_id(frame15_id fid, condemned_status s) {
-  gcglobals.lazy_mapped_frame15info[fid].frame_status = s;
-}
-
-inline
-void set_condemned_status_for_frame15_ids(frame15_id fid, int n, condemned_status s) {
+void set_condemned_status_for_frame15_ids(frame15_id fid, int n, uint8_t c) {
   for (int i = 0; i < n; ++i) {
-    gcglobals.lazy_mapped_frame15info[fid + i].frame_status = s;
+    gcglobals.lazy_mapped_frame15_condemned_count[fid + i] = c;
   }
 }
 
 inline
-void set_condemned_status_for_frame21(frame21* f21, condemned_status s) {
+void set_condemned_counts_for_frame21(frame21* f21, uint8_t c) {
   auto fid = frame15_id_of(f21);
-  memset( &gcglobals.lazy_mapped_frame15_condemned[fid], int(s), IMMIX_F15_PER_F21);
+  memset( &gcglobals.lazy_mapped_frame15_condemned_count[fid], int(c), IMMIX_F15_PER_F21);
   //gcglobals.lazy_mapped_coarse_condemned[frameX_id_of(f21, COARSE_MARK_LOG)] = s;
 }
 
@@ -845,7 +825,7 @@ bool owned_by(tori* body, immix_heap* space) {
 
 tidy* assume_tori_is_tidy(tori* p) { return (tidy*) p; }
 
-condemned_status condemned_status_for(void* addr, frame15info* finfo);
+uint8_t condemned_count_for(void* addr, frame15info* finfo);
 /*
 bool is_condemned_(void* slot, frame15info* finfo) {
   return condemned_status_for_frame15info(finfo, slot) == condemned_status::yes_condemned;
@@ -861,7 +841,7 @@ bool is_condemned(void* slot, immix_heap* space, frame15info* finfo) {
   } else if (condemned_portion == condemned_set_status::single_subheap_condemned) {
     return owned_by((tori*)slot, space);
   } else {
-    return condemned_status_for(slot, finfo) == condemned_status::yes_condemned;
+    return condemned_count_for(slot, finfo) > 0;
   }
 }
 
@@ -1151,32 +1131,33 @@ condemned_status get_condemned_status_for_immix_line_frame15(immix_line_frame15*
 
 
 __attribute((noinline))
-condemned_status condemned_status_for_slowpath(frame15kind fc, void* addr, frame15info* finfo) {
+uint8_t condemned_count_for_slowpath(frame15kind fc, void* addr, frame15info* finfo) {
   auto associated = finfo->associated;
 
   if (fc == frame15kind::immix_linebased) {
     auto lineframe = static_cast<immix_line_frame15*>(associated);
     auto line = line_offset_within_f15(addr);
-    return get_condemned_status_for_immix_line_frame15(lineframe, line);
+    return uint8_t(get_condemned_status_for_immix_line_frame15(lineframe, line));
   } else if (fc == frame15kind::immix_malloc_continue) {
-    return condemned_status_for(associated, frame15_info_for(associated));
+    return condemned_count_for(associated, frame15_info_for(associated));
   } else if (fc == frame15kind::immix_malloc_start) {
     immix_malloc_frame15info* maf = (immix_malloc_frame15info*) associated;
     heap_array* arr = heap_array::from_heap_cell(heap_cell::for_tidy((tidy*)addr));
     return sizedset__lookup<4>(&maf->contained[0], arr, &maf->condemned[0]);
   }
 
-  foster_assert(false, "condemned_status missing a case! maybe 'frame15kind::unknown'");
-  return condemned_status::not_condemned;
+  //foster_assert(false, "condemned_status missing a case! maybe 'frame15kind::unknown'");
+  //fprintf(gclog, "condemned_status saw fc %d for addr %p, finfo %p\n", fc, addr, finfo);
+  //gfflush(gclog);
+  return 0;
 }
 
-// This function should not return mixed, only yes or no.
-condemned_status condemned_status_for(void* addr, frame15info* finfo) {
+uint8_t condemned_count_for(void* addr, frame15info* finfo) {
   auto fc = classification_for_frame15info(finfo);
   if (fc == frame15kind::immix_smallmedium) {
-    return get_condemned_status_for_frame15info(finfo);
+    return condemned_count_for_frame15_id(frame15_id_of(addr));
   }
-  return condemned_status_for_slowpath(fc, addr, finfo);
+  return condemned_count_for_slowpath(fc, addr, finfo);
 }
 
 __attribute((noinline))
@@ -1953,7 +1934,12 @@ struct immix_line_frame15 {
   void set_owner_for_line(int n, immix_line_space* o) { owners[n - IMMIX_LINE_FRAME15_START_LINE] = o; }
 
   condemned_status get_condemned_status_for_line(int line) { return condemned[line]; }
-  void set_condemned_status_for_line(int line, condemned_status c) { condemned[line] = c; }
+  void condemn_range(used_linegroup g) {
+    for (int i = g.startline(); i < g.endline(); ++i) { condemned[i] = condemned_status::yes_condemned; }
+  }
+  void uncondemn_range(used_linegroup g) {
+    for (int i = g.startline(); i < g.endline(); ++i) { condemned[i] = condemned_status::not_condemned; }
+  }
   void reset_line_bumper() {
     line_bumper.base = &begin_lines[0];
     line_bumper.bound = offset(line_bumper.base, IMMIX_LINES_PER_LINE_FRAME15 * IMMIX_LINE_SIZE);
@@ -2225,17 +2211,9 @@ public:
     for (auto usedgroup : used_lines) {
       int num_condemned_lines = usedgroup.size_in_lines();
       auto lineframe = usedgroup.associated_lineframe();
-
-      int startline = usedgroup.startline();
-      int endline   = usedgroup.endline();
-      for (int i = startline; i < endline; ++i) {
-        lineframe->set_condemned_status_for_line(i, condemned_status::yes_condemned);
-      }
-
-      set_condemned_status_for_frame15_id(frame15_id_of(lineframe),
-          (num_condemned_lines == IMMIX_LINES_PER_LINE_FRAME15)
-            ? condemned_status::yes_condemned
-            : condemned_status::mixed_condemned);
+      lineframe->condemn_range(usedgroup);
+      condemned_count_for_frame15_id(frame15_id_of(lineframe))
+          += num_condemned_lines;
     }
 
     global_immix_line_allocator.ensure_no_line_reuse(this);
@@ -2245,17 +2223,9 @@ public:
     for (auto usedgroup : used_lines) {
       int num_uncondemned_lines = usedgroup.size_in_lines();
       auto lineframe = usedgroup.associated_lineframe();
-
-      int startline = usedgroup.startline();
-      int endline   = usedgroup.endline();
-      for (int i = startline; i < endline; ++i) {
-        lineframe->set_condemned_status_for_line(i, condemned_status::not_condemned);
-      }
-
-      set_condemned_status_for_frame15_id(frame15_id_of(lineframe),
-          (num_uncondemned_lines == IMMIX_LINES_PER_LINE_FRAME15)
-            ? condemned_status::not_condemned
-            : condemned_status::mixed_condemned);
+      lineframe->uncondemn_range(usedgroup);
+      condemned_count_for_frame15_id(frame15_id_of(lineframe))
+          -= num_uncondemned_lines;
     }
   }
 
@@ -2526,11 +2496,6 @@ void immix_common::common_gc(immix_heap* active_space,
     phaseStartTicks = __foster_getticks_start();
 #endif
 
-    // After marking finishes, and before we sweep, we can uncondemn.
-    //ct.start();
-    gcglobals.condemned_set.uncondemn_all();
-    //double uncondemn_ms = ct.elapsed_ms();
-
     //ct.start();
     gcglobals.condemned_set.sweep_condemned(active_space, phase, gcstart, deltaRecursiveMarking_us);
     //double sweep_ms = ct.elapsed_ms();
@@ -2600,17 +2565,24 @@ void condemned_set<Allocator>::sweep_condemned(Allocator* active_space,
              double deltaRecursiveMarking_us) {
   std::vector<heap_handle<immix_heap>*> subheap_handles;
 
-  switch (status) {
+  switch (this->status) {
     case condemned_set_status::single_subheap_condemned: {
       active_space->immix_sweep(phase, gcstart);
       break;
     }
 
     case condemned_set_status::per_frame_condemned: {
+      // Whole-heap collections ignore the condemned set, and single-subheap
+      // collections by definition have an implicit condemned set.
+      for (auto space : spaces) {
+        space->uncondemn();
+      }
+      
       for (auto space : spaces) {
         space->immix_sweep(phase, gcstart);
       }
       spaces.clear();
+      status = condemned_set_status::single_subheap_condemned;
       break;
     }
 
@@ -2789,13 +2761,13 @@ public:
     clocktimer<false> ct; ct.start();
 
     tracking.iter_frame15( [&](frame15* f15) {
-      set_condemned_status_for_frame15_id(frame15_id_of(f15), condemned_status::yes_condemned);
+      condemned_count_for_frame15_id(frame15_id_of(f15)) = IMMIX_LINES_PER_FRAME15;
       ++n;
       return true;
     });
     tracking.iter_coalesced_frame21( [&](frame21* f21) {
       // The fact that we own the entire frame21 indicates that none of its frame15s are line-based.
-      set_condemned_status_for_frame21(f21, condemned_status::yes_condemned);
+      set_condemned_counts_for_frame21(f21, IMMIX_LINES_PER_FRAME15);
       m += IMMIX_F15_PER_F21;
     });
     // TODO condemn array frames
@@ -2809,12 +2781,12 @@ public:
 
   virtual void uncondemn() {
     tracking.iter_frame15( [&](frame15* f15) {
-      set_condemned_status_for_frame15_id(frame15_id_of(f15), condemned_status::not_condemned);
+      condemned_count_for_frame15_id(frame15_id_of(f15)) = 0;
       return true;
     });
     tracking.iter_coalesced_frame21( [&](frame21* f21) {
       // The fact that we own the entire frame21 indicates that none of its frame15s are line-based.
-      set_condemned_status_for_frame21(f21, condemned_status::not_condemned);
+      set_condemned_counts_for_frame21(f21, 0);
     });
 
     // TODO uncondemn array frames
@@ -3556,7 +3528,7 @@ void initialize(void* stack_highest_addr) {
   gcglobals.lazy_mapped_frame15info             = allocate_lazily_zero_mapped<frame15info>(     size_t(1) << (address_space_prefix_size_log() - 15));
   gcglobals.lazy_mapped_coarse_marks            = allocate_lazily_zero_mapped<uint8_t>(         size_t(1) << (address_space_prefix_size_log() - COARSE_MARK_LOG));
   //gcglobals.lazy_mapped_coarse_condemned        = allocate_lazily_zero_mapped<condemned_status>(size_t(1) << (address_space_prefix_size_log() - COARSE_MARK_LOG));
-  gcglobals.lazy_mapped_frame15_condemned       = allocate_lazily_zero_mapped<condemned_status>(lazy_mapped_frame15_condemned_size());
+  gcglobals.lazy_mapped_frame15_condemned_count = allocate_lazily_zero_mapped<uint8_t>(lazy_mapped_frame15_condemned_size());
   //gcglobals.lazy_mapped_frame15info_associated  = allocate_lazily_zero_mapped<void*>(      size_t(1) << (address_space_prefix_size_log() - 15));
   //
   gcglobals.lazy_mapped_granule_marks           = allocate_lazily_zero_mapped<uint8_t>(lazy_mapped_granule_marks_size()); // byte marks
@@ -3865,6 +3837,7 @@ FILE* print_timing_stats() {
     gclog_time("     GC_runtime",  gc_elapsed, json);
   }
   gclog_time("Mutator_runtime",   mut_elapsed, json);
+
   return json;
 }
 
@@ -4156,9 +4129,9 @@ void foster_subheap_collect_raw(void* generic_subheap) {
 void foster_subheap_condemn_raw(void* generic_subheap) {
   heap_handle<immix_heap>* handle = heap_handle<immix_heap>::for_tidy((tidy*) generic_subheap);
   auto subheap = handle->body;
-  fprintf(gclog, "condemning subheap %p\n", subheap);
+  //fprintf(gclog, "condemning subheap %p\n", subheap);
   subheap->condemn();
-  fprintf(gclog, "condemned subheap %p\n", subheap);
+  //fprintf(gclog, "condemned subheap %p\n", subheap);
   gcglobals.condemned_set.status = condemned_set_status::per_frame_condemned;
   gcglobals.condemned_set.spaces.insert(subheap);
 }
