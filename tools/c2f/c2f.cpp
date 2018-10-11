@@ -406,7 +406,7 @@ std::string tyName(const Expr* e) { return tyName(exprTy(e)); }
 
 std::string infixOp(const std::string& op, const std::string& ty) { return "`" + op + ty + "`"; }
 
-std::string mkFosterBinop(const std::string& op, const clang::Type* typ) {
+std::string mkFosterBinop(const std::string& op, const clang::Type* typ, const clang::Type* typR) {
   if (op == "=") return op;
 
   std::string ty = tyOpSuffix(typ);
@@ -430,6 +430,14 @@ std::string mkFosterBinop(const std::string& op, const clang::Type* typ) {
       return op + "S" + ty;
     if (typ->hasUnsignedIntegerRepresentation())
       return op + "U" + ty;
+  }
+
+  if (op == "-") {
+    if (typ->isPointerType() && typR->isPointerType()) {
+      return infixOp("ptrDiff", "");
+    } else {
+      return "-" + ty;
+    }
   }
 
 
@@ -1559,7 +1567,7 @@ public:
   std::string emitBooleanCoercion(const Type* ty) {
     if (auto rty = tryGetRecordPointee(ty)) {
       return "|> " + recordName(rty->getDecl()) + "_notnil";
-    } else return mkFosterBinop("!=", ty) + " " + zeroValue(ty);
+    } else return mkFosterBinop("!=", ty, ty) + " " + zeroValue(ty);
   }
 
   typedef std::vector< std::pair<const clang::Expr*, int> > Indices;
@@ -1832,7 +1840,7 @@ The corresponding AST to be matched is
       if (isBooleanContext && !isComparison) { llvm::outs() << "("; }
 
       const Type* ty = exprTy(binop->getLHS());
-      std::string tgt = mkFosterBinop(op, ty);
+      std::string tgt = mkFosterBinop(op, ty, exprTy(binop->getRHS()));
 
       bool isRecordPtrNilComparison = false;
 
@@ -1890,7 +1898,8 @@ The corresponding AST to be matched is
         llvm::outs() << "-";
         visitStmt(unop->getSubExpr());
       } else {
-        std::string tgt = mkFosterBinop("-", exprTy(unop->getSubExpr()));
+        auto ty = exprTy(unop->getSubExpr());
+        std::string tgt = mkFosterBinop("-", ty, ty);
         llvm::outs() << "(0 " << tgt << " ";
         visitStmt(unop->getSubExpr());
         llvm::outs() << ")";
@@ -1999,6 +2008,10 @@ The corresponding AST to be matched is
         llvm::outs() << "cltz-" << tyName(exprTy(ce->getArg(0)));
         return true;
       }
+      if (dre->getDecl()->getNameAsString() == "__builtin_inff") {
+        llvm::outs() << "c2f_inf_f32";
+        return true;
+      }
       // TODO handle more builtins
     }
     return false;
@@ -2060,6 +2073,18 @@ The corresponding AST to be matched is
         visitStmt(ce->getArg(1));
         llvm::outs() << ")";
         return true;
+      } else if (slit->getString() == "%f\n") {
+        std::string tynm = tyName(ce->getArg(1)->getType().getTypePtr());
+        std::string printfn;
+        if (tynm == "Float32") printfn = "print_float_f32";
+        if (tynm == "Float64") printfn = "print_float_f64";
+        if (printfn.empty()) return false;
+
+        llvm::outs() << "(" << printfn << " ";
+        visitStmt(ce->getArg(1));
+        llvm::outs() << ")";
+        return true;
+
       } else if (slit->getString() == "%s\n") {
         std::string tynm = tyName(ce->getArg(1)->getType().getTypePtr());
         if (tynm == "(Ptr Int8)") {
@@ -2145,7 +2170,7 @@ The corresponding AST to be matched is
       if (variant == "cmp") {
         auto ty = getElementType(exprTy(ce->getArg(0)->IgnoreParenImpCasts()));
         std::string suffix = (ty->hasSignedIntegerRepresentation()) ? "S" : "U";
-        llvm::outs() << " " << mkFosterBinop("cmp-" + suffix, ty);
+        llvm::outs() << " " << mkFosterBinop("cmp-" + suffix, ty, ty);
       }
       llvm::outs() << ")";
       return true;
@@ -2273,7 +2298,7 @@ The corresponding AST to be matched is
     std::string op = binop->getOpcodeStr();
     if (op.back() == '=') op.pop_back();
 
-    std::string tgt = mkFosterBinop(op, exprTy(binop->getLHS()));
+    std::string tgt = mkFosterBinop(op, exprTy(binop->getLHS()), exprTy(binop->getRHS()));
 
     if (const MemberExpr* me = dyn_cast<MemberExpr>(binop->getLHS())) {
       // translate p->f OP= v;  to  (set_pType_f p ((pType_f p) OP v))
@@ -2398,8 +2423,9 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       }
       break;
     case CK_FloatingCast:
-      llvm::outs() << " /*float cast*/ ";
+      llvm::outs() << "(" << floatToFloat(ce->getSubExpr(), exprTy(ce)) << " ";
       visitStmt(ce->getSubExpr(), ctx);
+      llvm::outs() << ")";
       break;
     case CK_FloatingToIntegral:
       llvm::outs() << "(" << floatToInt(ce->getSubExpr(), exprTy(ce)) << " ";
@@ -3074,6 +3100,14 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
     const std::string tgtTy = tyName(tgt);
     if (srcTy == "Float32" && tgtTy == "Int32") return (tgt->isSignedIntegerType() ? "f32-to-s32-unsafe" : "f32-to-u32-unsafe");
     if (srcTy == "Float64" && tgtTy == "Int64") return (tgt->isSignedIntegerType() ? "f64-to-s64-unsafe" : "f64-to-u64-unsafe");
+    return "/* " + srcTy + "-to-" + tgtTy + "*/";
+  }
+
+  std::string floatToFloat(const Expr* srcexpr, const Type* tgt) {
+    const Type* src = exprTy(srcexpr);
+    const std::string srcTy = tyName(src);
+    const std::string tgtTy = tyName(tgt);
+    if (srcTy == "Float32" && tgtTy == "Float64") return "f32-to-f64";
     return "/* " + srcTy + "-to-" + tgtTy + "*/";
   }
 
