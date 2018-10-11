@@ -2153,6 +2153,17 @@ The corresponding AST to be matched is
     return ptrOrArrayType;
   }
 
+  void visitStmtWithIntCastTo(const Expr* e, const std::string& dstTy) {
+    auto srcTy = tyName(exprTy(e));
+    if (srcTy == dstTy) {
+      visitStmt(e);
+    } else {
+      llvm::outs() << "(" << intCastFromTo(srcTy, dstTy, exprTy(e)->isSignedIntegerType()) << " ";
+      visitStmt(e);
+      llvm::outs() << ")";
+    }
+  }
+
   // Recognize calls of the form memcpy(A1, A2, sizeof(T) * SIZE);
   // and emit                 ptrMemcpy A1  A2 SIZE
   bool tryHandleCallMemop_(const CallExpr* ce, const std::string& variant) {
@@ -2165,7 +2176,8 @@ The corresponding AST to be matched is
       llvm::outs() << " ";
       visitStmt(ce->getArg(1));
       llvm::outs() << " ";
-      visitStmt(count);
+
+      visitStmtWithIntCastTo(count, "Int32");
 
       if (variant == "cmp") {
         auto ty = getElementType(exprTy(ce->getArg(0)->IgnoreParenImpCasts()));
