@@ -10,6 +10,9 @@ mkField = { v => Field (prim ref v) };
 getField :: forall (a:Type) { Field a => a };
 getField = { f => case f of $Field r -> r^ end };
 
+getFieldRef :: forall (a:Type) { Field a => Ref a };
+getFieldRef = { f => case f of $Field r -> r end };
+
 setField :: forall (a:Type) { Field a => a => () };
 setField = { f => v => case f of $Field r -> v >^ r end };
 
@@ -51,13 +54,33 @@ type case Ptr (a:Type)
   end
 };
 
-(-Ptr) :: forall (a:Type) { Ptr a => Ptr a => Int64 };
-(-Ptr) = { p => q =>
+(<Ptr) :: forall (a:Type) { Ptr a => Ptr a => Bool };
+(<Ptr) = { p => q =>
+  case (p, q)
+    of ($PtrNil, $PtrNil) -> False
+    of ($PtrRef rp, $PtrRef rq) -> False // TODO fix
+    of ($PtrArr pa pn, $PtrArr qa qn) ->
+          if pn <SInt32 qn
+            then prim sameArrayStorage pa qa
+            else False
+          end
+    of _ -> False
+  end
+};
+
+ptrDiff :: forall (a:Type) { Ptr a => Ptr a => Int64 };
+ptrDiff = { p => q =>
   case (p, q)
     of ($PtrArr pa pn, $PtrArr qa qn) -> pn -Int32 qn |> zext_i32_to_i64
     of _ -> 0
   end
 };
+
+ptrDiff32 :: forall (a:Type) { Ptr a => Ptr a => Int32 };
+ptrDiff32 = { p => q => p `ptrDiff` q |> trunc_i64_to_i32 };
+
+(-Ptr) :: forall (a:Type) { Ptr a => Int32 => Ptr a };
+(-Ptr) = { ptr => n => ptrMinus ptr n };
 
 (+Ptr) :: forall (a:Type) { Ptr a => Int32 => Ptr a };
 (+Ptr) = { ptr => n => ptrPlus ptr n };
@@ -160,6 +183,26 @@ ptrMemcmp = { a => b => n => cmp =>
     end
   };
   go 0;
+};
+
+memmove :: forall (a:Type) { Ptr a => Ptr a => Int32 => Int32 };
+memmove = { dest => src => n =>
+  case (dest, src)
+    of ($PtrNil, $PtrNil) -> 0
+    of ($PtrRef rp, $PtrRef rq) -> 1
+    of ($PtrArr pa pn, $PtrArr qa qn) ->
+      if prim sameArrayStorage pa qa
+        then
+          if pn ==Int32 qn
+            then n
+            else // TODO fix
+                  ptrMemcpy dest src n; n
+          end
+        else ptrMemcpy dest src n; n
+      end
+
+    of _ -> 0
+  end
 };
 
 
@@ -317,3 +360,9 @@ c2f_fwrite = { ptr => membsz => nmemb => f =>
       prim kill-entire-process "c2f_fwrite requires an array input"
   end
 };
+
+c2f_inf_f32 :: { Float32 };
+c2f_inf_f32 = { (0x1.0p255 as Float32) };
+
+c2f_inf_f64 :: { Float64 };
+c2f_inf_f64 = { 0x1.0p255 };
