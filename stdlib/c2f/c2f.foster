@@ -23,6 +23,14 @@ type case Ptr (a:Type)
   of $PtrRef (Ref a)
   ;
 
+print_ptr = { p =>
+  case p
+    of $PtrNil -> print_text "PtrNil"
+    of $PtrRef _ -> print_text "PtrRef"
+    of $PtrArr a offset -> print_text_bare "PtrArr, offset="; print_i32 offset; print_text_bare "; len="; print_i32 (arrayLength32 a);
+  end
+};
+
 (==Ptr) :: forall (a:Type) { Ptr a => Ptr a => Bool };
 (==Ptr) = { p => q =>
   case (p, q)
@@ -68,6 +76,11 @@ type case Ptr (a:Type)
   end
 };
 
+(>=Ptr) :: forall (a:Type) { Ptr a => Ptr a => Bool };
+(>=Ptr) = { p => q =>
+  q <Ptr p
+};
+
 ptrDiff :: forall (a:Type) { Ptr a => Ptr a => Int64 };
 ptrDiff = { p => q =>
   case (p, q)
@@ -84,6 +97,12 @@ ptrDiff32 = { p => q => p `ptrDiff` q |> trunc_i64_to_i32 };
 
 (+Ptr) :: forall (a:Type) { Ptr a => Int32 => Ptr a };
 (+Ptr) = { ptr => n => ptrPlus ptr n };
+
+(-Ptr64) :: forall (a:Type) { Ptr a => Int64 => Ptr a };
+(-Ptr64) = { ptr => n => ptrMinus ptr (trunc_i64_to_i32 n) };
+
+(+Ptr64) :: forall (a:Type) { Ptr a => Int64 => Ptr a };
+(+Ptr64) = { ptr => n => ptrPlus ptr (trunc_i64_to_i32 n) };
 
 ptrGetIndex :: forall (a:Type) { Ptr a => Int32 => a };
 ptrGetIndex = { ptr => idx =>
@@ -144,6 +163,11 @@ ptrMemset = { ptr => v => n =>
   enumRange32 0 n { i => ptrSetIndex ptr i v };
 };
 
+arrMemset :: forall (a:Type) { Array a => Int32 => a => Int32 => () };
+arrMemset = { arr => off => v => n =>
+  enumRange32 0 n { i => v >^ arr[i +Int32 off] };
+};
+
 ptrMemcpy :: forall (a:Type) { Ptr a => Ptr a => Int32 => () };
 ptrMemcpy = { dst => src => n =>
   enumRange32 0 n { i => ptrSetIndex dst i (ptrGetIndex src i) };
@@ -185,6 +209,18 @@ ptrMemcmp = { a => b => n => cmp =>
   go 0;
 };
 
+memmove_arr :: forall (a:Type) { Array a => Int32 => Int32 => Int32 };
+memmove_arr = { arr => srcoff => n =>
+  REC loop = { i =>
+    if i <SInt32 n
+      then arr[srcoff +Int32 i] >^ arr[i];
+           loop (i +Int32 1)
+      else n
+    end
+  };
+  loop 0
+};
+
 memmove :: forall (a:Type) { Ptr a => Ptr a => Int32 => Int32 };
 memmove = { dest => src => n =>
   case (dest, src)
@@ -216,6 +252,12 @@ ptrDecr_Ptr_Int8_     = { r : Ptr (Ptr Int8) => v = (ptrGet r `ptrMinus` 1); ptr
 ptrPostIncr_Ptr_Int8_ = { r : Ptr (Ptr Int8) => v = ptrGet r; ptrSet r (v `ptrPlus` 1); v };
 ptrPostDecr_Ptr_Int8_ = { r : Ptr (Ptr Int8) => v = ptrGet r; ptrSet r (v `ptrMinus` 1); v };
 
+ptrPostIncr :: forall (a:Type) { Ptr (Ptr a) => Ptr a };
+ptrPostIncr = { r => v = ptrGet r; ptrSet r (v `ptrPlus` 1); v };
+
+ptrPostDecr :: forall (a:Type) { Ptr (Ptr a) => Ptr a };
+ptrPostDecr = { r => v = ptrGet r; ptrSet r (v `ptrMinus` 1); v };
+
 ptrIncr_Ptr_Int32_     = { r : Ptr (Ptr Int32) => v = (ptrGet r `ptrPlus` 1); ptrSet r v; v };
 ptrDecr_Ptr_Int32_     = { r : Ptr (Ptr Int32) => v = (ptrGet r `ptrMinus` 1); ptrSet r v; v };
 ptrPostIncr_Ptr_Int32_ = { r : Ptr (Ptr Int32) => v = ptrGet r; ptrSet r (v `ptrPlus` 1); v };
@@ -239,6 +281,8 @@ ptrPostDecrInt8 = { r : Ptr Int8 => v = ptrGet r; ptrSet r (v -Int8 1); v };
 ptrPostIncrInt64 = { r : Ptr Int64 => v = ptrGet r; ptrSet r (v +Int64 1); v };
 ptrPostDecrInt64 = { r : Ptr Int64 => v = ptrGet r; ptrSet r (v -Int64 1); v };
 
+ptrIncrArrayInt32 = { r : Ptr Int32 => idx => v = (ptrGetIndex r idx +Int32 1); ptrSetIndex r idx v; v };
+
 strLit :: forall (t:Type) { Array t => Ptr t };
 strLit = { s => PtrArr s 0 };
 
@@ -247,13 +291,19 @@ ptrOfArr = { s => PtrArr s 0 };
 
 printStr :: { Ptr Int8 => () };
 printStr = { ptr =>
+  printStrBare ptr;
+  print_newline !
+};
+
+printStrBare :: { Ptr Int8 => () };
+printStrBare = { ptr =>
   case ptr
-    of $PtrNil   -> print_text "(null)";
-    of $PtrRef r -> print_text "PtrRef";
+    of $PtrNil   -> print_text_bare "(null)"; ()
+    of $PtrRef r -> print_text_bare "PtrRef"; ()
     of $PtrArr arr off ->
         len = arrayLength32 arr -Int32 (off +Int32 1);
         prim_print_bytes_stdout arr len off;
-        print_newline !;
+        ()
   end
 };
 
@@ -339,6 +389,11 @@ c2f_fopen = { path => mode =>
   cstr_free cpath;
   cstr_free cmode;
   rv
+};
+
+c2f_fread_arr :: { Array Int8 => Int32 => Int64 => Int64 => CFile => Int64 };
+c2f_fread_arr = { arr => off => membsz => nmemb => f =>
+  c_fread (cdataptr_unsafe arr off) membsz nmemb f
 };
 
 c2f_fread :: { Ptr Int8 => Int64 => Int64 => CFile => Int64 };
