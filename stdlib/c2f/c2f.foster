@@ -78,6 +78,11 @@ print_ptr = { p =>
 
 (>=Ptr) :: forall (a:Type) { Ptr a => Ptr a => Bool };
 (>=Ptr) = { p => q =>
+  q <=Ptr p
+};
+
+(>Ptr) :: forall (a:Type) { Ptr a => Ptr a => Bool };
+(>Ptr) = { p => q =>
   q <Ptr p
 };
 
@@ -193,6 +198,11 @@ ptrStrlen = { ptr =>
   go 0
 };
 
+ptrStrncpy :: { Ptr Int8 => Ptr Int8 => Int32 => () };
+ptrStrncpy = { dst => src => n =>
+  ptrMemcpy dst src n
+};
+
 ptrMemcmp :: forall (a:Type) { Ptr a => Ptr a => Int32 => { a => a => Ord } => Int32 };
 ptrMemcmp = { a => b => n => cmp =>
   REC go = { i =>
@@ -257,6 +267,18 @@ ptrPostIncr = { r => v = ptrGet r; ptrSet r (v `ptrPlus` 1); v };
 
 ptrPostDecr :: forall (a:Type) { Ptr (Ptr a) => Ptr a };
 ptrPostDecr = { r => v = ptrGet r; ptrSet r (v `ptrMinus` 1); v };
+
+
+ptrIncr :: forall (a:Type) { Ptr (Ptr a) => Ptr a };
+ptrIncr = { p => ptrSet p ((ptrGet p) `ptrPlus` 1); ptrGet p };
+
+ptrDecr :: forall (a:Type) { Ptr (Ptr a) => Ptr a };
+ptrDecr = { p => ptrSet p ((ptrGet p) `ptrMinus` 1); ptrGet p };
+
+/* TODO infinite loop in the typechecker?? occurs check violation we're not catching i guess
+ptrIncr :: forall (a:Type) { Ptr (Ptr a) => Ptr a };
+ptrIncr = { p => ptrSet p (p `ptrPlus` 1); p };
+*/
 
 ptrIncr_Ptr_Int32_     = { r : Ptr (Ptr Int32) => v = (ptrGet r `ptrPlus` 1); ptrSet r v; v };
 ptrDecr_Ptr_Int32_     = { r : Ptr (Ptr Int32) => v = (ptrGet r `ptrMinus` 1); ptrSet r v; v };
@@ -377,9 +399,15 @@ foreign import fgetc    as c2f_fgetc    :: { CFile => Int32 };
 foreign import fwrite   as c_fwrite  :: { CString => Int64 => Int64 => CFile => Int64 };
 foreign import fread    as c_fread   :: { CString => Int64 => Int64 => CFile => Int64 };
 
+foreign import fseek    as c_fseek :: { CFile => Int64 => Int32 => Int32 };
+foreign import ftell    as c_ftell :: { CFile => Int64 };
+foreign import rewind   as c_rewind :: { CFile => () };
+
 foreign import c2f_stdin  :: { CFile };
 foreign import c2f_stdout :: { CFile };
 foreign import c2f_stderr :: { CFile };
+
+foreign import CFile_isnil :: { CFile => Bool };
 
 c2f_fopen :: { Ptr Int8 => Ptr Int8 => CFile };
 c2f_fopen = { path => mode =>
@@ -390,6 +418,12 @@ c2f_fopen = { path => mode =>
   cstr_free cmode;
   rv
 };
+
+c2f_fseek = { f => off32 => origin => c_fseek f (zext_i32_to_i64 off32) origin };
+
+c2f_ftell = { f => c_ftell f };
+
+c2f_rewind = { f => c_rewind f; () };
 
 c2f_fread_arr :: { Array Int8 => Int32 => Int64 => Int64 => CFile => Int64 };
 c2f_fread_arr = { arr => off => membsz => nmemb => f =>
@@ -421,3 +455,9 @@ c2f_inf_f32 = { (0x1.0p255 as Float32) };
 
 c2f_inf_f64 :: { Float64 };
 c2f_inf_f64 = { 0x1.0p255 };
+
+c2f_exit = { n =>
+  print_text "c2f_exit called";
+  prim kill-entire-process "c2f-exit";
+};
+

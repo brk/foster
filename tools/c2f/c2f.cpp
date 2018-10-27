@@ -60,9 +60,68 @@ public:
   }
 
   bool isPointeryField(const FieldDecl* fd);
+  bool isPointeryField(const ValueDecl* vd) {
+    if (auto fd = dyn_cast<FieldDecl>(vd)) {
+      return isPointeryField(fd);
+    }
+    return false;
+  }
+  bool isPointeryField(const Expr* e) {
+    if (auto me = dyn_cast<MemberExpr>(e)) {
+      return isPointeryField(me->getMemberDecl());
+    }
+    return false;
+  }
 
 private:
   std::map<std::string, bool> fullPtrFields;
+};
+
+class VarMutabilityAndPointernessTracker {
+public:
+  VarMutabilityAndPointernessTracker() {}
+
+  void notePointeryVar(const std::string& name) { pointery[name] = true; }
+  bool isPointeryVar(const FieldDecl* fd);
+  bool isPointeryVar(const std::string& v) { return pointery[v]; }
+  bool isPointeryVar(const Expr* e) {
+    if (auto dre = dyn_cast<DeclRefExpr>(e->IgnoreParenImpCasts())) {
+      return pointery[dre->getDecl()->getName()];
+    }
+    return false;
+  }
+
+  void noteMutableVar(const std::string& v) { mutableness[v] = true; }
+  bool isMutableVar(const std::string& v) { return mutableness[v]; }
+  bool isMutableVar(const Expr* e) {
+    if (auto dre = dyn_cast<DeclRefExpr>(e->IgnoreParenImpCasts())) {
+      return mutableness[dre->getDecl()->getName()];
+            // || isDeclRefOfMutableAlias(e);
+    }
+    return false;
+  }
+
+  void summarize(const std::string& name) {
+    llvm::errs() << "For function " << name << ":\n";
+    llvm::errs() << "Local variable pointerness status:\n";
+    for (auto p : pointery) {
+      llvm::errs() << "\t" << p.first << " :: " << p.second << "\n";
+    }
+    llvm::errs() << "\n";
+    llvm::errs() << "Local variable mutability status:\n";
+    for (auto p : mutableness) {
+      llvm::errs() << "\t" << p.first << " :: " << p.second << "\n";
+    }
+  }
+
+  void clear() {
+    pointery.clear();
+    mutableness.clear();
+  }
+
+private:
+  std::map<std::string, bool> pointery;
+  std::map<std::string, bool> mutableness;
 };
 
 struct {
@@ -349,7 +408,7 @@ std::string maybeNonUppercaseTyName(const clang::Type* ty, std::string defaultNa
       return tyName(pty->getPointeeType().getTypePtr());
     }
 
-    return "(Ptr " + tyName(eltTy) + ")";
+    return "(Ptr " + tyName(eltTy) + ") /*411*/";
   }
 
   if (auto dc = dyn_cast<DecayedType>(ty)) {
@@ -599,6 +658,12 @@ void emitUTF8orAsciiStringLiteral(StringRef data) {
   llvm::outs() << ")";
 }
 
+bool isPointerToPlainData(const clang::Type* ty) {
+  if (auto pty = dyn_cast<PointerType>(ty)) {
+    return pty->getPointeeType()->isScalarType();
+  }
+  return false;
+}
 
 void FieldPointernessTracker::notePointeryField(const FieldDecl* fd) {
   const RecordDecl* rd = fd->getParent();
@@ -621,23 +686,56 @@ public:
 
   virtual void run(const MatchFinder::MatchResult &Result) {
     if (auto e = Result.Nodes.getNodeAs<MemberExpr>("unaryopmem")) {
-      if (e->getMemberDecl()) {
-        globals.fpt.notePointeryField(e->getMemberDecl());
+      if (auto md = e->getMemberDecl()) {
+        if (!isPointerToPlainData(md->getType().getTypePtr())) {
+          // pointers to plain data don't need to be extra pointery;
+          // pointery-ness applies to pointers-to-structs and such,
+          // which must choose between being represented as T or Ptr T.
+          globals.fpt.notePointeryField(md);
+        }
       }
     }
     if (auto e = Result.Nodes.getNodeAs<MemberExpr>("subscriptedfield")) {
-      if (e->getMemberDecl()) {
-        globals.fpt.notePointeryField(e->getMemberDecl());
+      if (auto md = e->getMemberDecl()) {
+        if (!isa<ConstantArrayType>(md->getType())) {
+          globals.fpt.notePointeryField(md);
+        }
+      }
+    }
+
+    if (auto me = Result.Nodes.getNodeAs<MemberExpr>("binopfield")) {
+      if (auto bo = Result.Nodes.getNodeAs<BinaryOperator>("binop")) {
+        if (bo->isAssignmentOp() || bo->isCompoundAssignmentOp()) {
+          auto rhs = bo->getRHS();
+          if (rhs->getType().getTypePtr()->isPointerType()) {
+            if (looksPointery(rhs->IgnoreParenImpCasts())) {
+              globals.fpt.notePointeryField(me->getMemberDecl());
+            }
+          }
+        }
       }
     }
   }
 
+  bool looksPointery(const Expr* e) {
+    // Note that this might give wrong answers depending on processing order
+    // since we're not doing "real" unification.
+    if (auto me  = dyn_cast<MemberExpr>(e)) { return globals.fpt.isPointeryField(me); }
+
+    if (auto ase  = dyn_cast<ArraySubscriptExpr>(e)) { return false; } // convenient approximation...
+    if (auto unop = dyn_cast<UnaryOperator>(e)) {
+      if (unop->getOpcode() == UO_AddrOf) return true;
+      return looksPointery(unop->getSubExpr());
+    }
+    
+    return false;
+  }
 };
 
 // Run across each function immediately before it is translated.
 class MutableLocalHandler : public MatchFinder::MatchCallback {
 public:
-  MutableLocalHandler(std::map<std::string, bool>& locals) : locals(locals) {}
+  MutableLocalHandler(VarMutabilityAndPointernessTracker& vmpt) : vmpt(vmpt) {}
 
   virtual void run(const MatchFinder::MatchResult &Result) {
     if (auto v = Result.Nodes.getNodeAs<DeclRefExpr>("binopvar")) {
@@ -645,25 +743,51 @@ public:
         if (bo->isAssignmentOp() || bo->isCompoundAssignmentOp()) {
           if (optC2FVerbose) { llvm::errs() << "MutableLocalHandler: binopvar: "
                                             << v->getDecl()->getName() << "\n"; }
-          locals[v->getDecl()->getName()] = true;
+          vmpt.noteMutableVar(v->getDecl()->getName());
+
+          auto rhs = bo->getRHS();
+          if (rhs->getType().getTypePtr()->isPointerType()) {
+            if (looksPointery(rhs->IgnoreParenImpCasts())) {
+              vmpt.notePointeryVar(v->getDecl()->getName());
+            } else {
+              llvm::errs() << "didn't look pointery:\n";
+              rhs->IgnoreParenImpCasts()->dump();
+            }
+          }
         }
       }
     }
     if (auto v = Result.Nodes.getNodeAs<DeclRefExpr>("unaryopvar")) {
-      locals[v->getDecl()->getName()] = true;
+      vmpt.noteMutableVar(v->getDecl()->getName());
     }
     if (auto v = Result.Nodes.getNodeAs<DeclRefExpr>("addrtakenvar"))
-      locals[v->getDecl()->getName()] = true;
+      vmpt.noteMutableVar(v->getDecl()->getName());
     if (auto v = Result.Nodes.getNodeAs<VarDecl>("vardecl-noinit"))
-      locals[v->getName()] = true;
+      vmpt.noteMutableVar(v->getName());
     if (auto v = Result.Nodes.getNodeAs<VarDecl>("vardecl")) {
-      if (!v->hasInit())
-        locals[v->getName()] = true;
+      if (!v->hasInit()) {
+        vmpt.noteMutableVar(v->getName());
+      }
     }
   }
 
+  bool looksPointery(const Expr* e) {
+    // Note that this might give wrong answers depending on processing order
+    // since we're not doing "real" unification.
+    if (auto dre = dyn_cast<DeclRefExpr>(e)) { return vmpt.isPointeryVar(dre); }
+    if (auto me  = dyn_cast<MemberExpr>(e)) { return globals.fpt.isPointeryField(me); }
+
+    if (auto ase  = dyn_cast<ArraySubscriptExpr>(e)) { return false; } // convenient approximation...
+    if (auto unop = dyn_cast<UnaryOperator>(e)) {
+      if (unop->getOpcode() == UO_AddrOf) return true;
+      return looksPointery(unop->getSubExpr());
+    }
+    
+    return false;
+  }
+
 private:
-  std::map<std::string, bool>& locals;
+  VarMutabilityAndPointernessTracker& vmpt;
 };
 
 template<typename T>
@@ -723,6 +847,8 @@ class PointerUsageVisitor : public RecursiveASTVisitor<PointerUsageVisitor> {
     // SOMETHING->field[...]
     mf.addMatcher( arraySubscriptExpr(hasBase(ignoringParenImpCasts(memberExpr().bind("subscriptedfield")))) , &pfh);
 
+    // SOMETHING->field = ...
+    mf.addMatcher( binaryOperator(hasLHS(memberExpr(hasType(isAnyPointer())).bind("binopfield"))).bind("binop") , &pfh);
     mf.match(*s, ctx);
     return true;
   }
@@ -733,11 +859,11 @@ class PointerUsageVisitor : public RecursiveASTVisitor<PointerUsageVisitor> {
 
 class FnBodyVisitor : public RecursiveASTVisitor<FnBodyVisitor> {
   public:
-  FnBodyVisitor(std::map<std::string, bool>& locals,
+  FnBodyVisitor(VarMutabilityAndPointernessTracker& vmpt,
                 std::map<const Stmt*, bool>& innocuousReturns,
                 VoidPtrCasts& casts,
                 bool& needsCFG,
-                ASTContext& ctx) : locals(locals), innocuousReturns(innocuousReturns),
+                ASTContext& ctx) : vmpt(vmpt), innocuousReturns(innocuousReturns),
                         casts(casts), needsCFG(needsCFG), ctx(ctx) {}
 
   // Note: statements are visited top-down / preorder;
@@ -746,7 +872,7 @@ class FnBodyVisitor : public RecursiveASTVisitor<FnBodyVisitor> {
   bool VisitStmt(Stmt* s) {
     MatchFinder mf;
 
-    MutableLocalHandler mutloc_handler(locals);
+    MutableLocalHandler mutloc_handler(vmpt);
     // assignments: x = ...
     mf.addMatcher( binaryOperator(hasLHS(declRefExpr().bind("binopvar"))).bind("binop") , &mutloc_handler);
     // address-of &x
@@ -862,7 +988,7 @@ class FnBodyVisitor : public RecursiveASTVisitor<FnBodyVisitor> {
   }
 
   private:
-  std::map<std::string, bool>& locals;
+  VarMutabilityAndPointernessTracker& vmpt;
   std::map<const Stmt*, bool>& innocuousReturns;
   std::map<const Stmt*, bool> innocuousBreaks;
   VoidPtrCasts& casts;
@@ -1060,7 +1186,9 @@ public:
       if (const FieldDecl* fd = dyn_cast<FieldDecl>(d)) {
         std::string fieldName = fosterizedName(fd->getName());
         std::string fieldType = tyName(fd->getType().getTypePtr());
-        if (globals.fpt.isPointeryField(fd)) { fieldType = "(Ptr " + fieldType + ")"; }
+        if (globals.fpt.isPointeryField(fd)) {
+            fieldType = "(Ptr " + fieldType + ")";
+        }
         llvm::outs() << "set_" << name << "_" << fieldName
           << " = { sv : " << name << " => v : " << fieldType
           << " => case sv\n"
@@ -1161,10 +1289,12 @@ public:
 
 class C2F_FormatStringHandler : public clang::analyze_format_string::FormatStringHandler {
 public:
+  const std::string& fmtstring;
   const char* prevBase;
   ASTContext& ctx;
 
-  C2F_FormatStringHandler(const char* base, ASTContext& ctx) : prevBase(base), ctx(ctx) {}
+  C2F_FormatStringHandler(const std::string& fmtstring, const char* base, ASTContext& ctx)
+    : fmtstring(fmtstring), prevBase(base), ctx(ctx) {}
   ~C2F_FormatStringHandler() {}
 
   void emitStringContentsUpTo(const char* place, unsigned offset) {
@@ -1180,43 +1310,43 @@ public:
 
   void HandleNullChar(const char* nullChar) override {
     emitStringContentsUpTo(nullChar, 1);
-    printf("/* handle null char */\n");
+    if (fmtstring != "%d\n") { printf("/* handle null char */\n"); }
     return;
   }
 
   void HandlePosition(const char* startPos, unsigned len) override {
     emitStringContentsUpTo(startPos, len);
-    printf("/* handle position: %.*s */\n", len, startPos);
+    if (fmtstring != "%d\n") { printf("/* handle position: %.*s */\n", len, startPos); }
     return;
   }
 
   void HandleInvalidPosition(const char* startPos, unsigned len, clang::analyze_format_string::PositionContext p) override {
     //emitStringContentsUpTo(startPos, len);
-    printf("/* handle invalid position: %.*s */\n", len, startPos);
+    if (fmtstring != "%d\n") { printf("/* handle invalid position: %.*s */\n", len, startPos); }
     return;
   }
 
   void HandleZeroPosition(const char* startPos, unsigned len) override {
     emitStringContentsUpTo(startPos, len);
-    printf("/* handle zero position: %.*s */\n", len, startPos);
+    if (fmtstring != "%d\n") { printf("/* handle zero position: %.*s */\n", len, startPos); }
     return;
   }
 
   void HandleEmptyObjCModifierFlag(const char* startFlags, unsigned len) override {
     emitStringContentsUpTo(startFlags, len);
-    printf("/* handle emtpy objc flags: %.*s */\n", len, startFlags);
+    if (fmtstring != "%d\n") { printf("/* handle emtpy objc flags: %.*s */\n", len, startFlags); }
     return;
   }
 
   void HandleInvalidObjCModifierFlag(const char* startFlag, unsigned len) override {
     emitStringContentsUpTo(startFlag, len);
-    printf("/* handle invalid objc flags: %.*s */\n", len, startFlag);
+    if (fmtstring != "%d\n") { printf("/* handle invalid objc flags: %.*s */\n", len, startFlag); }
     return;
   }
 
   void HandleObjCFlagsWithNonObjCConversion(const char* flagsStart, const char* flagsEnd, const char* conversionPos) override {
     emitStringContentsUpTo(flagsStart, flagsEnd - flagsStart);
-    printf("/* handle objc flags: %.*s */\n", flagsEnd - flagsStart, flagsStart);
+    if (fmtstring != "%d\n") { printf("/* handle objc flags: %.*s */\n", flagsEnd - flagsStart, flagsStart); }
     return;
   }
 
@@ -1226,27 +1356,29 @@ public:
 
   bool HandlePrintfSpecifier(const analyze_printf::PrintfSpecifier& fs, const char* startSpecifier, unsigned specifierLen) override {
     emitStringContentsUpTo(startSpecifier, specifierLen);
-    fprintf(stderr, "/* handle printf specifier: %.*s */\n", specifierLen, startSpecifier);
-    fprintf(stderr, "/* format specifier: getArgIndex: %d */\n", fs.getArgIndex());
-    fprintf(stderr, "/* format specifier: usesPositionalArg: %d */\n", fs.usesPositionalArg());
-    fprintf(stderr, "/* format specifier: getPositionalArgIndex: %d */\n", fs.getPositionalArgIndex());
-    fprintf(stderr, "/* format specifier: hasStandardLengthModifier: %d */\n", fs.hasStandardLengthModifier());
-    //fprintf(stderr, "/* format specifier: hasStandardConversionSpecifier: %d */\n", fs.hasStandardConversionSpecifier());
-    fprintf(stderr, "/* format specifier: hasStandardLengthConversionCombination: %d */\n", fs.hasStandardLengthConversionCombination());
-    fprintf(stderr, "/* printf specifier: consumesDataArgument: %d */\n", fs.consumesDataArgument());
-    fprintf(stderr, "/* printf specifier: hasValidPlusPrefix: %d */\n", fs.hasValidPlusPrefix());
-    fprintf(stderr, "/* printf specifier: hasValidSpacePrefix: %d */\n", fs.hasValidSpacePrefix());
-    fprintf(stderr, "/* printf specifier: hasValidLeadingZeros: %d */\n", fs.hasValidLeadingZeros());
-    fprintf(stderr, "/* printf specifier: hasValidPrecision: %d */\n", fs.hasValidPrecision());
-    fprintf(stderr, "/* printf specifier: hasValidFieldWidth: %d */\n", fs.hasValidFieldWidth());
-    fprintf(stderr, "/* printf specifier: argType: isValid: %d */\n", fs.getArgType(ctx, false).isValid());
-    std::string tyname = fs.getArgType(ctx, false).getRepresentativeTypeName(ctx);
-    fprintf(stderr, "/* printf specifier: argType: %s */\n", tyname.c_str());
-    fflush(stderr);
-    llvm::errs() << "/* printf conversion: " << fs.getConversionSpecifier().getCharacters() << " */\n";
-    llvm::errs() << "/* printf precision: "; fs.getPrecision().toString(llvm::errs()); llvm::errs() << " */\n";
-    llvm::errs() << "/* printf field width: "; fs.getFieldWidth().toString(llvm::errs()); llvm::errs() << " */\n";
-    llvm::errs() << "/* printf length modifier: " << fs.getLengthModifier().toString() << " */\n";
+    if (fmtstring != "%d\n") {
+      fprintf(stderr, "/* handle printf specifier: %.*s */\n", specifierLen, startSpecifier);
+      fprintf(stderr, "/* format specifier: getArgIndex: %d */\n", fs.getArgIndex());
+      fprintf(stderr, "/* format specifier: usesPositionalArg: %d */\n", fs.usesPositionalArg());
+      fprintf(stderr, "/* format specifier: getPositionalArgIndex: %d */\n", fs.getPositionalArgIndex());
+      fprintf(stderr, "/* format specifier: hasStandardLengthModifier: %d */\n", fs.hasStandardLengthModifier());
+      //fprintf(stderr, "/* format specifier: hasStandardConversionSpecifier: %d */\n", fs.hasStandardConversionSpecifier());
+      fprintf(stderr, "/* format specifier: hasStandardLengthConversionCombination: %d */\n", fs.hasStandardLengthConversionCombination());
+      fprintf(stderr, "/* printf specifier: consumesDataArgument: %d */\n", fs.consumesDataArgument());
+      fprintf(stderr, "/* printf specifier: hasValidPlusPrefix: %d */\n", fs.hasValidPlusPrefix());
+      fprintf(stderr, "/* printf specifier: hasValidSpacePrefix: %d */\n", fs.hasValidSpacePrefix());
+      fprintf(stderr, "/* printf specifier: hasValidLeadingZeros: %d */\n", fs.hasValidLeadingZeros());
+      fprintf(stderr, "/* printf specifier: hasValidPrecision: %d */\n", fs.hasValidPrecision());
+      fprintf(stderr, "/* printf specifier: hasValidFieldWidth: %d */\n", fs.hasValidFieldWidth());
+      fprintf(stderr, "/* printf specifier: argType: isValid: %d */\n", fs.getArgType(ctx, false).isValid());
+      std::string tyname = fs.getArgType(ctx, false).getRepresentativeTypeName(ctx);
+      fprintf(stderr, "/* printf specifier: argType: %s */\n", tyname.c_str());
+      fflush(stderr);
+      llvm::errs() << "/* printf conversion: " << fs.getConversionSpecifier().getCharacters() << " */\n";
+      llvm::errs() << "/* printf precision: "; fs.getPrecision().toString(llvm::errs()); llvm::errs() << " */\n";
+      llvm::errs() << "/* printf field width: "; fs.getFieldWidth().toString(llvm::errs()); llvm::errs() << " */\n";
+      llvm::errs() << "/* printf length modifier: " << fs.getLengthModifier().toString() << " */\n";
+    }
     return true;
   }
 
@@ -1374,7 +1506,7 @@ public:
           llvm::outs() << "(jump = (); jump)";
         } else {
           if (last && !isa<ReturnStmt>(last)) {
-            llvm::outs() << "(prim kill-entire-process \"missing-return\"; ())";
+            llvm::outs() << "(prim kill-entire-process \"missing-return\")";
           } else {
             llvm::outs() << "/*exit block, hasValue; reachable? " << ab->isReachable() << "*/";
           }
@@ -1565,16 +1697,18 @@ public:
       bool needsVisit = true;
       if (d->isSingleDecl()) {
         if (const VarDecl* vd = dyn_cast<VarDecl>(d->getSingleDecl())) {
-          mutableLocals[vd->getName()] = true;
+          vmpt.noteMutableVar(vd->getName());
           // Unfortunately, all variables must be treated as mutable
           // when we are doing CFG-based generation, because the CFG
           // doesn't respect variable scoping rules.
 
           // We don't visit the decl itself here because it may refer to
           // out-of-scope variables.
+          currentVars.push_back(vd->getName());
           llvm::outs() << emitVarName(vd)
                        << " = PtrRef (prim ref "
                        << zeroValue(vd->getType().getTypePtr()) << ") /*cfg-mutlocal*/";
+          currentVars.pop_back();
           needsVisit = false;
         }
       }
@@ -1601,9 +1735,10 @@ public:
               // we must re-initialize the variable.
               if (ds->isSingleDecl()) {
                 if (const VarDecl* vd = dyn_cast<VarDecl>(ds->getSingleDecl())) {
-                  if (vd->hasInit() && mutableLocals[vd->getName()]) {
+                  bool isMut = vmpt.isMutableVar(vd->getName());
+                  if (vd->hasInit() && isMut) {
                     emitPoke(vd, vd->getInit());
-                  } else if (!mutableLocals[vd->getName()]) {
+                  } else if (!isMut) {
                     // Non-mutable declarations should be visited in-place.
                     currStmt = s;
                     visitStmt(s, StmtContext);
@@ -1684,11 +1819,13 @@ public:
     // Assuming the body is a CompoundStmt of CaseStmts...
     visitStmt(ss->getBody(), StmtContext);
 
+/*
     if (ss->isAllEnumCasesCovered()) {
       llvm::outs() << "// all enum cases covered\n";
     } else {
       llvm::outs() << "// not all enum cases (explicitly) covered...\n";
     }
+    */
 
     llvm::outs() << "end\n";
 
@@ -1707,7 +1844,7 @@ public:
     for (size_t i = 0; i < indices.size(); ++i) {
       if (i > 0) { llvm::outs() << " +Int32 "; }
       llvm::outs() << "(";
-      visitStmt(indices[i].first);
+      visitStmtWithIntCastTo(indices[i].first, "Int32");
       if (indices[i].second > 1) {
         llvm::outs() << " *Int32 " << indices[i].second;
       }
@@ -2089,8 +2226,7 @@ The corresponding AST to be matched is
         //llvm::outs() << "/* " << tyName(exprTy(unop->getSubExpr())) << " */";
         visitStmt(unop->getSubExpr(), ctx);
         llvm::outs() << ")";
-        if (optC2FVerbose) { llvm::outs() << "/*<-L1779; " << (ctx == AssignmentTarget) << ";"
-                              << isDeclRefOfMutableAlias(unop->getSubExpr()) << "*/ "; }
+        if (optC2FVerbose) { llvm::outs() << "/*2150*/"; }
       }
     } else if (unop->getOpcode() == UO_Extension) {
       visitStmt(unop->getSubExpr());
@@ -2104,6 +2240,7 @@ The corresponding AST to be matched is
     }
   }
 
+/*
   bool isDeclRefOfMutableAlias(const ValueDecl* d) { return mutableLocalAliases[d->getName()]; }
 
   bool isDeclRefOfMutableAlias(const Expr* e) {
@@ -2112,7 +2249,9 @@ The corresponding AST to be matched is
     }
     return false;
   }
+*/
 
+/*
   bool isDeclRefOfMutableLocal(const Expr* e) {
     if (auto dre = dyn_cast<DeclRefExpr>(e->IgnoreParenImpCasts())) {
       return mutableLocals[dre->getDecl()->getName()]
@@ -2120,6 +2259,7 @@ The corresponding AST to be matched is
     }
     return false;
   }
+  */
 
   bool isDeclNamed(const std::string& nm, const Expr* e) {
    if (const DeclRefExpr* dre = dyn_cast<DeclRefExpr>(e)) {
@@ -2194,7 +2334,7 @@ The corresponding AST to be matched is
     if (auto slit = dyn_cast<StringLiteral>(ce->getArg(0)->IgnoreParenImpCasts())) {
       const std::string& s = slit->getString();
       bool isFreeBSDkprintf = false;
-      C2F_FormatStringHandler handler(s.c_str(), *Ctx);
+      C2F_FormatStringHandler handler(s, s.c_str(), *Ctx);
       fprintf(stderr, "// parsing format string: %s\n", s.c_str());
       clang::analyze_format_string::ParsePrintfString(handler, &s[0], &s[s.size()],
           CI.getLangOpts(), CI.getTarget(), isFreeBSDkprintf);
@@ -2422,7 +2562,11 @@ The corresponding AST to be matched is
     if (typ->isFloatingType()) return "0.0";
     if (typ->isIntegerType()) return "0";
     if (auto rty = tryGetRecordPointee(typ)) {
-      return recordName(rty->getDecl()) + "_nil";
+      if (!currentVars.empty() && vmpt.isPointeryVar(currentVars.back())) {
+        return "PtrNil";
+      } else {
+        return recordName(rty->getDecl()) + "_nil";
+      }
     }
     if (typ->isPointerType()) return "PtrNil";
     if (auto tty = dyn_cast<TypedefType>(typ)) {
@@ -2438,7 +2582,7 @@ The corresponding AST to be matched is
     {
       uint64_t size = 0; const Type* eltTy = nullptr;
       if (tryBindConstantSizedArrayType(typ, eltTy, size)) {
-        return "(ptrOfArr (newArrayReplicate " + s(size) + " " + zeroValue(eltTy) + "))";
+        return "(ptrOfArr (newDArray " + s(size) + " { i => " + zeroValue(eltTy) + "}))";
       }
     }
 
@@ -2452,17 +2596,20 @@ The corresponding AST to be matched is
     visitStmt(e, ExprContext);
     if (shouldDeref) {
       llvm::outs() << ")";
+      if (optC2FVerbose) { llvm::outs() << "/*2516*/"; }
     }
   }
 
   void handleAssignment(const BinaryOperator* binop, ContextKind ctx) {
+    // TODO handle implicit deref if me->isArrow()
     if (const MemberExpr* me = dyn_cast<MemberExpr>(binop->getLHS())) {
       // translate p->f = x;  to  (set_pType_f p x)
+      if (optC2FVerbose) { llvm::outs() << "/* ctx : " << ctx << " */"; }
       const Expr* base = nullptr;
       llvm::outs() << "(set_" << fieldAccessorName(me, base, false) << " ";
       llvm::outs() << "(";
       //visitStmt(base, ExprContext);
-      visitWithDerefIf(base, me->isArrow() && isPrimRefDecl(base));
+      visitWithDerefIf(base, me->isArrow() && vmpt.isMutableVar(base));
       llvm::outs() << ") (";
       visitStmt(binop->getRHS());
       llvm::outs() << ")";
@@ -2473,7 +2620,7 @@ The corresponding AST to be matched is
         llvm::outs() << "; ";
         llvm::outs() << fieldAccessorName(me, base, false) << " " << "(";
           //visitStmt(base, ExprContext);
-          visitWithDerefIf(base, me->isArrow() && isPrimRefDecl(base));
+          visitWithDerefIf(base, me->isArrow() && vmpt.isMutableVar(base));
         llvm::outs() << ")";
       }
       llvm::outs() << ")";
@@ -2496,7 +2643,7 @@ The corresponding AST to be matched is
       llvm::outs() << "(set_" << accessor << " ";
       llvm::outs() << "(";
       //visitStmt(base, ExprContext);
-      visitWithDerefIf(base, me->isArrow() && isPrimRefDecl(base));
+      visitWithDerefIf(base, me->isArrow() && vmpt.isMutableVar(base));
       llvm::outs() << ") (";
 
         llvm::outs() << "(" << accessor << " ";
@@ -2765,22 +2912,35 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
   }
 
   void visitVarDecl(const VarDecl* vd) {
+    currentVars.push_back(vd->getName());
     if (vd->hasInit()) {
-      if (mutableLocals[vd->getName()] && !isDeclRefOfMutableLocal(vd->getInit())) {
+      if (vmpt.isMutableVar(vd->getName()) && !vmpt.isMutableVar(vd->getInit())) {
         llvm::outs() << emitVarName(vd) << " = PtrRef (prim ref ";
         visitStmt(vd->getInit());
-        llvm::outs() << ") /*vd-mutlocal*/";
+        llvm::outs() << ")"; // /*vd-mutlocal; a=" << isDeclRefOfMutableAlias(vd) << "*/";
       } else {
         llvm::outs() << emitVarName(vd) << " = ";
         visitStmt(vd->getInit());
 
+//        if (optC2FVerbose) {
+//          llvm::outs() << " /*mutLocal? " << mutableLocals[vd->getName()]
+//                        << "; DRML? " << isDeclRefOfMutableLocal(vd->getInit()) << " */";
+//        }
+
+#if 0
         if (auto uno = dyn_cast<UnaryOperator>(vd->getInit())) {
           if (auto dre = dyn_cast<DeclRefExpr>(uno->getSubExpr())) {
             if (isPrimRef(dre->getDecl()) && uno->getOpcode() == UO_AddrOf) {
-              mutableLocalAliases[vd->getName()] = true;
+              //mutableLocalAliases[vd->getName()] = true;
+
+              if (optC2FVerbose) {
+                llvm::outs() << " /*mutLocalAlias!*/";
+              }
+
             }
           }
         }
+#endif
       }
     } else {
       const Type* ty = vd->getType().getTypePtr();
@@ -2805,16 +2965,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         llvm::outs() << emitVarName(vd) << " = (" << zeroValue(exprTy(vd)) << ")";
       }
     }
-  }
-
-  const BinaryOperator*
-  tryBindAssignmentOp(const Stmt* stmt) {
-    if (auto bo = dyn_cast<BinaryOperator>(stmt)) {
-      if (bo->isAssignmentOp()) {
-        return bo;
-      }
-    }
-    return nullptr;
+    currentVars.pop_back();
   }
 
   void visitStmt(const Stmt* stmt, ContextKind ctx = ExprContext) {
@@ -2878,9 +3029,11 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
     } else if (const DefaultStmt* ds = dyn_cast<DefaultStmt>(stmt)) {
       llvm::outs() << "  of _ ->\n";
       visitStmt(ds->getSubStmt(), StmtContext);
+      /*
       if (isa<BreakStmt>(ds->getSubStmt())) {
-        llvm::outs() << "(breakstmt = (); breakstmt)\n";
+        llvm::outs() << "; (breakstmt = (); breakstmt)\n";
       }
+      */
     } else if (const SwitchStmt* ss = dyn_cast<SwitchStmt>(stmt)) {
       handleSwitch(ss);
     } else if (const GotoStmt* gs = dyn_cast<GotoStmt>(stmt)) {
@@ -2905,10 +3058,14 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       const Expr* base = nullptr;
       if (ctx == BooleanContext) { llvm::outs() << "("; }
       llvm::outs() << "(" + fieldAccessorName(me, base, ctx == AssignmentTarget) + " ";
-      //visitStmt(base, ExprContext);
-      visitWithDerefIf(base, me->isArrow() && isPrimRefDecl(base));
+      // If we have a chained member expr    p->f1->f2    (and we're accessing field f2)
+      // and the field f1 is represented with a pointer, we must dereference the
+      // pointer to get an object that f2's accessor can accept.
+      visitWithDerefIf(base, me->isArrow() &&
+        (vmpt.isPointeryVar(base) || 
+         globals.fpt.isPointeryField(base->IgnoreParenImpCasts())));
       llvm::outs() << ")";
-      if (ctx == BooleanContext) { llvm::outs() << " " << emitBooleanCoercion(exprTy(me)) << " /*L2226*/)"; }
+      if (ctx == BooleanContext) { llvm::outs() << " " << emitBooleanCoercion(exprTy(me)) << ")"; }
     } else if (auto base = extractBaseAndArraySubscripts(stmt, indices)) {
       emitPeek(base, indices);
     } else if (const CompoundAssignOperator* cao = dyn_cast<CompoundAssignOperator>(stmt)) {
@@ -2985,8 +3142,10 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
 
       auto vd = dr->getDecl();
 
-      if (ctx != AssignmentTarget && isPrimRef(vd) && !isDeclRefOfMutableAlias(vd)) {
+      //if (ctx != AssignmentTarget && isPrimRef(vd) && !isDeclRefOfMutableAlias(vd)) {
+      if (ctx != AssignmentTarget && vmpt.isMutableVar(vd->getName())) {
         llvm::outs() << "(ptrGet " << emitVarName(vd) << ")";
+        if (optC2FVerbose) { llvm::outs() << "/*3067*/"; }
       } else {
         llvm::outs() << emitVarName(vd);
       }
@@ -3172,17 +3331,10 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
 
     // TODO tail returns within a last-stmt do-while(0) block are innocuous.
 
-    FnBodyVisitor v(mutableLocals, innocuousReturns,
+    FnBodyVisitor v(vmpt, innocuousReturns,
                     voidPtrCasts, needsCFG, d->getASTContext());
     v.TraverseDecl(d);
-
-    if (optC2FVerbose) {
-      llvm::errs() << "performFunctionLocalAnalysis("
-                   << d->getNameAsString() << ") computed mutable locals:\n";
-      for (auto e : mutableLocals) {
-        llvm::errs() << "    " << e.first << "\n";
-      }
-    }
+    if (optC2FVerbose) { vmpt.summarize(d->getNameAsString()); }
   }
 
   void handleFunctionDecl(FunctionDecl* fd) {
@@ -3228,11 +3380,14 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       // Rebind parameters if they are observed to be mutable locals.
       for (unsigned i = 0; i < fd->getNumParams(); ++i) {
         ParmVarDecl* d = fd->getParamDecl(i);
-        if (mutableLocals[d->getName()]) {
-          llvm::outs() << fosterizedName(d->getDeclName().getAsString())
+        if (vmpt.isMutableVar(d->getName())) {
+          currentVars.push_back(d->getName());
+          assert(d->getName() == d->getDeclName().getAsString());
+          llvm::outs() << fosterizedName(d->getName())
                         << " = PtrRef (prim ref "
-                        << fosterizedName(d->getDeclName().getAsString())
+                        << fosterizedName(d->getName())
                         << ");\n";
+          currentVars.pop_back();  
         }
       }
 
@@ -3245,6 +3400,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
     }
   }
 
+/*
   bool isPrimRefDecl(const Expr* e) {
     if (auto dre = dyn_cast<DeclRefExpr>(e->IgnoreParenImpCasts())) {
       return isPrimRef(dre->getDecl());
@@ -3255,6 +3411,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
   bool isPrimRef(const ValueDecl* d) {
     return mutableLocals[d->getName()] || mutableLocalAliases[d->getName()];
   }
+*/
 
   void handleSingleTopLevelDecl(Decl* decl) {
 
@@ -3288,8 +3445,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
 
   bool HandleTopLevelDecl(DeclGroupRef DR) override {
     for (DeclGroupRef::iterator b = DR.begin(), e = DR.end(); b != e; ++b) {
-      mutableLocals.clear();
-      mutableLocalAliases.clear();
+      vmpt.clear();
       voidPtrCasts.clear();
 
       emitCommentsFromBefore((*b)->getLocStart());
@@ -3383,12 +3539,13 @@ private:
   RawCommentList* rawcomments;
   int             rawcomments_lastsize;
   SourceLocation  lastloc;
-  std::map<std::string, bool> mutableLocals;
-  std::map<std::string, bool> mutableLocalAliases;
+  VarMutabilityAndPointernessTracker vmpt;
   VoidPtrCasts voidPtrCasts;
   const CompilerInstance& CI;
   const FileClassifier FC;
   ASTContext* Ctx;
+
+  std::vector<std::string> currentVars;
 
   llvm::DenseMap<const ValueDecl*, int> duplicateVarDecls;
 
@@ -3552,14 +3709,15 @@ int main(int argc, const char **argv) {
   // full pointers and which can be optimized to elide pointer overhead.
   // This information is currently produced by the global traversal.
 
+  // Emit datatype definitions and field accessors for the program's data structures.
+  // This also computes enum prefixes, which are needed when translating code.
+  Tool.run(newFrontendActionFactory<C2F_TypeDeclHandler_FA>().get());
+
   if (globals.uglyhack.SawGlobalVariables) { llvm::outs() << "main = {\n"; }
 
   int rv = Tool.run(newFrontendActionFactory<C2F_FrontendAction>().get());
 
   if (globals.uglyhack.SawGlobalVariables) { llvm::outs() << "\nc2f_main !; };\n"; }
-
-  // Emit datatype definitions and field accessors for the program's data structures.
-  Tool.run(newFrontendActionFactory<C2F_TypeDeclHandler_FA>().get());
 
   return rv;
 }

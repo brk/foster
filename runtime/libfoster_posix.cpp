@@ -10,6 +10,7 @@
 #include <cerrno>
 #include <climits> // for SSIZE_MAX
 #include <unistd.h> // for read(), write(), access()
+#include <cstring> // for strerror_r
 
 #ifdef OS_LINUX
 #include <fcntl.h> // for O_RDWR
@@ -158,6 +159,8 @@ int64_t foster_posix_get_tuntap_fd() {
   return int64_t(fd);
 }
 
+bool CFile_isnil__autowrap(FILE* f) { return f == nullptr; }
+
 int32_t foster_posix_access__autowrap(foster_bytes* path, int32_t mode) {
   return int32_t(access((const char*) &path->bytes[0], mode));
 }
@@ -166,6 +169,13 @@ int32_t foster_posix_open3__autowrap(foster_bytes* path, int32_t flags, int32_t 
   return int32_t(open((const char*) &path->bytes[0], flags, mode));
 }
 
+int32_t foster_posix_getErrno() { return errno; }
+
+int32_t foster_posix_strError__autowrap(foster_bytes* b, int32_t errnum) {
+  char* msg = strerror(errnum);
+  strncpy((char*)&b->bytes[0], msg, (int)b->cap);
+  return strlen((char*)&b->bytes[0]);
+}
 
 int32_t foster_Float32_classify(float  f) { return int32_t(fpclassify(f)); }
 int32_t foster_Float64_classify(double f) { return int32_t(fpclassify(f)); }
