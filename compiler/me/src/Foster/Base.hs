@@ -289,11 +289,11 @@ data CtorRepr = CR_Default     Int -- tag via indirection through heap cell meta
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||| Literals |||||||||||||||||||||||||||||||||{{{
-data Literal = LitInt   LiteralInt
-             | LitFloat LiteralFloat
-             | LitText  T.Text
-             | LitBool  Bool
-             | LitByteArray B.ByteString
+data Literal = LitInt   !LiteralInt
+             | LitFloat !LiteralFloat
+             | LitText  !T.Text
+             | LitBool  !Bool
+             | LitByteArray !B.ByteString
              deriving (Show, Eq)
 
 data LiteralInt = LiteralInt { litIntValue   :: !Integer
@@ -302,8 +302,8 @@ data LiteralInt = LiteralInt { litIntValue   :: !Integer
                              , litIntBase    :: !Int
                              } deriving (Show, Eq)
 
-data LiteralFloat = LiteralFloat { litFloatValue   :: Double
-                                 , litFloatText    :: String
+data LiteralFloat = LiteralFloat { litFloatValue   :: !Double
+                                 , litFloatText    :: !String
                                  } deriving (Show, Eq)
 
 powersOfTwo = [2^k | k <- [1..]]
@@ -333,17 +333,17 @@ data WholeProgramAST expr ty = WholeProgramAST {
 
 data IsForeignDecl = NotForeign | IsForeign String deriving Show
 data ToplevelItem expr ty =
-      ToplevelDecl (String, ty, IsForeignDecl)
-    | ToplevelDefn (String, expr ty)
-    | ToplevelData (DataType ty)
-    | ToplevelEffect (EffectDecl ty)
+      ToplevelDecl !(String, ty, IsForeignDecl)
+    | ToplevelDefn !(String, expr ty)
+    | ToplevelData !(DataType ty)
+    | ToplevelEffect !(EffectDecl ty)
 
 data ModuleAST expr ty = ModuleAST {
-          moduleASThash        :: String
-        , moduleASTincludes    :: [ (T.Text, T.Text) ]
-        , moduleASTitems       :: [ToplevelItem expr ty]
-        , moduleASTsourceLines :: SourceLines
-        , moduleASTprimTypes   :: [DataType ty]
+          moduleASThash        :: !String
+        , moduleASTincludes    :: ![ (T.Text, T.Text) ]
+        , moduleASTitems       :: ![ToplevelItem expr ty]
+        , moduleASTsourceLines :: !SourceLines
+        , moduleASTprimTypes   :: ![DataType ty]
      }
 
 moduleASTdataTypes m = [dt | ToplevelData dt <- moduleASTitems m]
@@ -388,14 +388,14 @@ data ToplevelBinding ty = TopBindArray Ident ty [Literal]
 -- ||||||||||||||||||||||| Source Ranges ||||||||||||||||||||||||{{{
 
 -- Note: sourceRangeLines is *all* lines, not just those in the range.
-data SourceRange = SourceRange { sourceRangeStartLine :: !Int
-                               , sourceRangeStartCol  :: !Int
-                               , sourceRangeEndLine   :: !Int
-                               , sourceRangeEndCol    :: !Int
+data SourceRange = SourceRange { sourceRangeStartLine :: {-# UNPACK #-} !Int
+                               , sourceRangeStartCol  :: {-# UNPACK #-} !Int
+                               , sourceRangeEndLine   :: {-# UNPACK #-} !Int
+                               , sourceRangeEndCol    :: {-# UNPACK #-} !Int
                                , sourceRangeLines :: !SourceLines
                                , sourceRangeFile  :: !(Maybe String)
                                }
-                  | MissingSourceRange String
+                  | MissingSourceRange !String
 
 instance Eq SourceRange where
   (MissingSourceRange s1) == (MissingSourceRange s2) = s1 == s2
@@ -703,8 +703,8 @@ identPrefix :: Ident -> T.Text
 identPrefix (GlobalSymbol name _) = name
 identPrefix (Ident name _)        = name
 
-data Ident = Ident        T.Text Uniq
-           | GlobalSymbol T.Text MaybeRename
+data Ident = Ident        !T.Text {-# UNPACK #-} !Uniq
+           | GlobalSymbol !T.Text !MaybeRename
 
 data MaybeRename = NoRename | RenameTo T.Text deriving Show
 
@@ -865,17 +865,18 @@ compareIdents (GlobalSymbol _ (RenameTo alt1))
               (GlobalSymbol _ (RenameTo alt2)) = compare alt1 alt2
 compareIdents (GlobalSymbol t1 _)
               (GlobalSymbol t2 _) = compare t1 t2
-compareIdents (Ident t1 u1)     (Ident t2 u2)     = case compare u1 u2 of
+compareIdents (Ident t1 u1)     (Ident t2 u2)     = {-case compare u1 u2 of
                                                       EQ -> let rv = compare t1 t2 in
                                                             if rv == EQ then rv else
                                                                 error $ "Uniq ident failure! " ++ show ((Ident t1 u1) ,  (Ident t2 u2) )
-                                                      cr -> cr
+                                                      cr -> cr-}
+                                                     compare u1 u2
 compareIdents (GlobalSymbol _ _)  (Ident _  _ )    = LT
 compareIdents (Ident _ _)       (GlobalSymbol _ _) = GT
 
 instance Eq Ident where
     (GlobalSymbol t1 alt1) == (GlobalSymbol t2 alt2) = pick t1 alt1 == pick t2 alt2
-    (Ident t1 u1)     == (Ident t2 u2) = u1 == u2 && t1 == t2
+    (Ident t1 u1)     == (Ident t2 u2) = u1 == u2 {- && t1 == t2-}
     _ == _ = False
 
 instance Show Ident where
