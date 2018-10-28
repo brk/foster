@@ -602,7 +602,7 @@ mkOfKN_Base expr k = do
             lift $ backpatchT rv [subterm]
 
       nvres <- case nonvar of
-        KNLetVal      x e1 e2 | Just (_, gen) <- isExprNotTerm e1 -> do
+        KNLetVal      x e1 e2 _ | Just (_, gen) <- isExprNotTerm e1 -> do
             xb <- mkBinder (TypedId (typeKN e1) x) -- versus genBinderAndOcc
             (selfLink2, _exp) <- withLinkE gen
             subterm <- mkOfKN_Base e2 k
@@ -610,7 +610,7 @@ mkOfKN_Base expr k = do
             lift $ backpatchE rv [selfLink2]
             lift $ backpatchT rv [subterm]
 
-        KNLetVal      x e1 e2 -> do
+        KNLetVal      x e1 e2 _ -> do
             -- The 'let val' case from CwCC figure 8.
             -- Generate the continuation variable 'j'.
             jb  <- genBinder ".cont" (mkFunType [typeKN e1] (typeKN e2))
@@ -995,7 +995,7 @@ knOfMK mb_retCont term0 = do
                                         k' <- q k
                                         case mb of
                                           Nothing -> return k'
-                                          Just b' -> return $ KNLetVal x' b' k'
+                                          Just b' -> return $ mkKNLetVal x' b' k'
     MKLetRec      _u   knowns  k  -> do (xs', es')  <- qks (knOfMK mb_retCont) knowns
                                         k'  <- q k
                                         return $ mkKNLetRec xs' es' k'
@@ -1010,7 +1010,7 @@ knOfMK mb_retCont term0 = do
             YesCont cvb == mb_retCont || isMainFnVar v'
         then return $ KNCall       ty v' vs'
         else do xid <- ccFreshId $ T.pack ".ctmp"
-                return $ KNLetVal xid (KNCall ty v' vs')
+                return $ mkKNLetVal xid (KNCall ty v' vs')
                           (KNCall (tidType $ boundVar cvb) (boundVar cvb) [TypedId ty xid])
       
     -- TODO if we can match   letcont j x = ... in MKCall v vs j

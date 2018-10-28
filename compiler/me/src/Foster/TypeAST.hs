@@ -95,7 +95,7 @@ instance Show TypeAST where
         ArrayTypeAST  ty                -> "(Array " ++ show ty ++ ")"
 -}
 
-instance Structured TypeAST where
+instance Summarizable TypeAST where
     textOf e _width =
         case e of
             PrimIntAST     size            -> text $ "PrimIntAST " ++ show size
@@ -111,6 +111,7 @@ instance Structured TypeAST where
             RefinedTypeAST {}              -> text $ "RefinedTypeAST"
             MetaPlaceholderAST mtvq _      -> text $ "MetaPlaceholderAST " ++ descMTVQ mtvq
 
+instance Structured TypeAST where
     childrenOf e =
         case e of
             PrimIntAST         _           -> []

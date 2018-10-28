@@ -141,7 +141,7 @@ pointedToTypeOfVarTC v = case v of
 
 -----------------------------------------------------------------------
 
-instance Structured TypeTC where
+instance Summarizable TypeTC where
     textOf e _width =
         case e of
             TyConTC nam          -> text $ nam
@@ -156,6 +156,7 @@ instance Structured TypeTC where
             MetaTyVarTC   {}        -> text $ "MetaTyVarTC"
             RefinedTypeTC {}        -> text $ "RefinedTypeTC"
 
+instance Structured TypeTC where
     childrenOf e =
         case e of
             TyConTC {}              -> []

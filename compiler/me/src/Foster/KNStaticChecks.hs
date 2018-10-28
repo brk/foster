@@ -329,7 +329,7 @@ checkModuleExprs expr facts =
                            facts (zip ids fns)
         mapM_ (\fn -> checkFn fn facts') fns
         checkModuleExprs b facts'
-    KNLetVal _id expr b -> do
+    KNLetVal _id expr b _ -> do
         qref <- gets ccSMTStats
         _ <- evalStateT (checkBody expr facts) (SCState Map.empty qref)
         checkModuleExprs b facts
@@ -748,7 +748,7 @@ checkBody expr facts =
 
             _ -> return Nothing
 
-    KNLetVal      id   e1 e2    -> do
+    KNLetVal      id   e1 e2 _  -> do
         --dbgStr $ "letval checking bound expr for " ++ show id
         --dbgDoc $ indent 8 (pretty e1)
         mb_f   <- checkBody e1 facts

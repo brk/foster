@@ -17,6 +17,7 @@ import Data.Set as Set(Set, fromList, toList, difference, insert, empty, member,
                                       null, intersection)
 import Data.Sequence as Seq(Seq, length, index, (><))
 import Data.Map as Map(Map, fromListWith)
+import Data.Set as Set(Set, unions)
 import Data.List as List(replicate, intersperse)
 import qualified Data.Graph as Graph(SCC(..), stronglyConnComp)
 
@@ -31,7 +32,7 @@ class Expr a where
     freeVars   :: a -> [T.Text]
 
 class AExpr a where
-    freeIdents   :: a -> [Ident]
+    freeIdents   :: a -> Set Ident
 
 class TExpr a t where
     freeTypedIds   :: a -> [TypedId t]
@@ -189,9 +190,6 @@ caseArmExprs arm = [caseArmBody arm] ++ caseArmGuardList arm
     caseArmGuardList (CaseArm _ _ Nothing  _ _) = []
     caseArmGuardList (CaseArm _ _ (Just e) _ _) = [e]
 
-caseArmFreeIds arm =
-  concatMap freeIdents (caseArmExprs arm) `butnot`
-        map tidIdent  (caseArmBindings arm)
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- |||||||||||||||||||||||| Effects |||||||||||||||||||||||||||||{{{
 data EffectDecl ty = EffectDecl {
@@ -333,17 +331,17 @@ data WholeProgramAST expr ty = WholeProgramAST {
 
 data IsForeignDecl = NotForeign | IsForeign String deriving Show
 data ToplevelItem expr ty =
-      ToplevelDecl !(String, ty, IsForeignDecl)
-    | ToplevelDefn !(String, expr ty)
-    | ToplevelData !(DataType ty)
-    | ToplevelEffect !(EffectDecl ty)
+      ToplevelDecl (String, ty, IsForeignDecl)
+    | ToplevelDefn (String, expr ty)
+    | ToplevelData (DataType ty)
+    | ToplevelEffect (EffectDecl ty)
 
 data ModuleAST expr ty = ModuleAST {
-          moduleASThash        :: !String
-        , moduleASTincludes    :: ![ (T.Text, T.Text) ]
-        , moduleASTitems       :: ![ToplevelItem expr ty]
-        , moduleASTsourceLines :: !SourceLines
-        , moduleASTprimTypes   :: ![DataType ty]
+          moduleASThash        :: String
+        , moduleASTincludes    :: [ (T.Text, T.Text) ]
+        , moduleASTitems       :: [ToplevelItem expr ty]
+        , moduleASTsourceLines :: SourceLines
+        , moduleASTprimTypes   :: [DataType ty]
      }
 
 moduleASTdataTypes m = [dt | ToplevelData dt <- moduleASTitems m]
@@ -366,9 +364,7 @@ fnIdent fn = tidIdent $ fnVar fn
 -- A function is recursive if any of the program-level identifiers
 -- from the SCC it is bound in appears free in its body.
 computeIsFnRec' fnFreeIds ids =
-  if Set.null (setIntersectLists fnFreeIds ids) then NotRec else YesRec
-         where setIntersectLists a b = Set.intersection (Set.fromList a)
-                                                        (Set.fromList b)
+  if Set.null (Set.intersection fnFreeIds (Set.fromList ids)) then NotRec else YesRec
 
 data ModuleIL expr ty = ModuleIL {
           moduleILbody        :: expr
@@ -539,8 +535,10 @@ showComments other     = " ... " ++ show other
 -- ||||||||||||||||||||| Structured Things ||||||||||||||||||||||{{{
 
 class Structured a where
-    textOf     :: a -> Int -> Doc
     childrenOf :: a -> [a]
+
+class Summarizable a where
+    textOf     :: a -> Int -> Doc
 
 -- Builds trees like this:
 -- AnnSeq        :: i32
@@ -549,10 +547,10 @@ class Structured a where
 -- │ └─AnnTuple
 -- │   └─AnnInt       999999 :: i32
 
-showStructure :: (Structured a) => a -> Doc
+showStructure :: (Summarizable a, Structured a) => a -> Doc
 showStructure e = showStructureP e "" False
   where
-    showStructureP :: Structured b => b -> String -> Bool -> Doc
+    showStructureP :: (Summarizable b, Structured b) => b -> String -> Bool -> Doc
     showStructureP e prefix isLast =
         let children = childrenOf e in
         let thisIndent = prefix ++ (if isLast then "└─" else "├─") in
@@ -609,6 +607,16 @@ mapFoldM' (x:xs) b1 f = do
     (c1,  b2) <- f x b1
     (cs2, b3) <- mapFoldM' xs b2 f
     return (c1 : cs2, b3)
+
+combinedFreeIdents :: AExpr a => [a] -> Set Ident
+combinedFreeIdents xs = Set.unions $ map freeIdents xs
+
+caseArmFreeIds arm =
+   combinedFreeIdents (caseArmExprs arm) `sans`
+        map tidIdent  (caseArmBindings arm)
+
+sans :: Ord a => Set a -> [a] -> Set a
+sans base toremove = Set.difference base $ Set.fromList toremove
 
 butnot :: Ord a => [a] -> [a] -> [a]
 butnot bs zs =
@@ -771,8 +779,7 @@ mkFunctionSCCs :: AExpr fn => [Ident] -> [fn] -> expr -> (fn -> Bool -> fn) ->
 mkFunctionSCCs []  []  body _ k = k [] [] body
 mkFunctionSCCs ids fns body recMarker k =
   let idset    = Set.fromList ids
-      fnids fn = Set.toList $ Set.intersection (Set.fromList (freeIdents fn))
-                                               idset
+      fnids fn = Set.toList $ Set.intersection (freeIdents fn) idset
       callGraphList = map (\(id, fn) -> ((fn, id), id, fnids fn)) (zip ids fns)
       theSCCs       = Graph.stronglyConnComp callGraphList
   in foldr (\scc body ->
@@ -813,8 +820,8 @@ instance Expr (EPattern ty) where
 instance AExpr body => AExpr (Fn recStatus body t) where
   freeIdents f = freeIdentsFn (fnBody f) (fnVars f)
 
-freeIdentsFn :: AExpr body => body -> [TypedId t] -> [Ident]
-freeIdentsFn body vars = freeIdents body `butnot` map tidIdent vars
+freeIdentsFn :: AExpr body => body -> [TypedId t] -> Set Ident
+freeIdentsFn body vars = freeIdents body `sans` map tidIdent vars
 
 instance IntSized IntSizeBits
  where
@@ -865,18 +872,18 @@ compareIdents (GlobalSymbol _ (RenameTo alt1))
               (GlobalSymbol _ (RenameTo alt2)) = compare alt1 alt2
 compareIdents (GlobalSymbol t1 _)
               (GlobalSymbol t2 _) = compare t1 t2
-compareIdents (Ident t1 u1)     (Ident t2 u2)     = {-case compare u1 u2 of
+compareIdents (Ident t1 u1)     (Ident t2 u2)     = compare u1 u2
+                                                    {-case compare u1 u2 of
                                                       EQ -> let rv = compare t1 t2 in
                                                             if rv == EQ then rv else
                                                                 error $ "Uniq ident failure! " ++ show ((Ident t1 u1) ,  (Ident t2 u2) )
                                                       cr -> cr-}
-                                                     compare u1 u2
 compareIdents (GlobalSymbol _ _)  (Ident _  _ )    = LT
 compareIdents (Ident _ _)       (GlobalSymbol _ _) = GT
 
 instance Eq Ident where
     (GlobalSymbol t1 alt1) == (GlobalSymbol t2 alt2) = pick t1 alt1 == pick t2 alt2
-    (Ident t1 u1)     == (Ident t2 u2) = u1 == u2 {- && t1 == t2-}
+    (Ident t1 u1)     == (Ident t2 u2) = u1 == u2 {-&& t1 == t2-}
     _ == _ = False
 
 instance Show Ident where
@@ -1098,7 +1105,7 @@ instance TExpr (ArrayIndex (TypedId t)) t where
    freeTypedIds (ArrayIndex v1 v2 _ _) = [v1, v2]
 
 instance AExpr a => AExpr (Maybe a) where
-   freeIdents Nothing = []
+   freeIdents Nothing = Set.fromList []
    freeIdents (Just x) = freeIdents x
 
 deriving instance (Show ty) => Show (EffectDecl ty)

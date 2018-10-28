@@ -18,6 +18,8 @@ import Text.PrettyPrint.ANSI.Leijen
 
 import Data.Maybe(maybeToList)
 import Data.List(foldl')
+import Data.Set(Set)
+import qualified Data.Set as Set(union, unions, fromList)
 import Data.Map(Map)
 import qualified Data.Map as Map(insert, lookup, empty)
 import qualified Data.Text as T
@@ -41,7 +43,7 @@ data KNExpr' r ty =
         | KNHandler ExprAnnot ty ty (KNExpr' r ty) [CaseArm PatternRepr (KNExpr' r ty) ty] (Maybe (KNExpr' r ty)) ResumeIds
         -- Creation of bindings
         | KNCase        ty (TypedId ty) [CaseArm PatternRepr (KNExpr' r ty) ty]
-        | KNLetVal      Ident        (KNExpr' r ty)     (KNExpr' r ty)
+        | KNLetVal      Ident        (KNExpr' r ty)     (KNExpr' r ty) (Set Ident)
         | KNLetRec     [Ident]       [KNExpr' r ty]     (KNExpr' r ty)
         | KNLetFuns    [Ident] [Fn r (KNExpr' r ty) ty] (KNExpr' r ty)
         -- Use of bindings
@@ -86,6 +88,8 @@ class AlphaRenamish t rs where
   ccAlphaRename :: Fn r (KNExpr' rs t) t -> Compiled (Fn r (KNExpr' rs t) t)
 
 --------------------------------------------------------------------
+
+mkKNLetVal id e b = KNLetVal id e b (freeIdents b)
 
 --showFnStructureX :: Fn r KNExpr TypeIL -> Doc
 showFnStructureX (Fn fnvar args body _ _srcrange) =
@@ -220,9 +224,9 @@ alphaRename' fn = do
                                      v' <- qv v
                                      t' <- qt t
                                      return $ KNIf         t' v' ethen eelse
-      KNLetVal       id e   b  -> do id' <- renameI id
+      KNLetVal       id e  b _ -> do id' <- renameI id
                                      [e' , b' ] <- mapM renameKN [e, b]
-                                     return $ KNLetVal id' e'  b'
+                                     return $ KNLetVal id' e'  b' (freeIdents b')
       KNLetRec     ids exprs e -> do ids' <- mapM renameI ids
                                      (e' : exprs' ) <- mapM renameKN (e:exprs)
                                      return $ KNLetRec ids' exprs'  e'
@@ -270,16 +274,14 @@ instance Show KNCompilesResult where show _ = ""
 
 deriving instance (Show ty, Show rs) => Show (KNExpr' rs ty) -- used elsewhere...
 
-instance (Show t, Show rs) => AExpr (KNExpr' rs t) where
+instance AExpr (KNExpr' rs t) where
     freeIdents e = case e of
-        KNLetVal   id  b   e -> freeIdents b ++ (freeIdents e `butnot` [id])
-        KNLetRec   ids xps e -> (concatMap freeIdents xps ++ freeIdents e)
-                                                                   `butnot` ids
-        KNLetFuns  ids fns e -> (concatMap freeIdents fns ++ freeIdents e)
-                                                                   `butnot` ids
-        KNCase  _t v arms    -> [tidIdent v] ++ concatMap caseArmFreeIds arms
-        KNVar      v         -> [tidIdent v]
-        _                    -> concatMap freeIdents (childrenOf e)
+        KNLetVal   id  b   e efree -> freeIdents b `Set.union` (efree `sans` [id])
+        KNLetRec   ids xps e -> (combinedFreeIdents xps `Set.union` freeIdents e) `sans` ids
+        KNLetFuns  ids fns e -> (combinedFreeIdents fns `Set.union` freeIdents e) `sans` ids
+        KNCase  _t v arms    -> Set.fromList [tidIdent v] `Set.union` Set.unions (map caseArmFreeIds arms)
+        KNVar      v         -> Set.fromList [tidIdent v]
+        _                    -> combinedFreeIdents (childrenOf e)
 
 -- This is necessary due to transformations of AIIf and nestedLets
 -- introducing new bindings, which requires synthesizing a type.
@@ -302,7 +304,7 @@ typeKN expr =
     KNArrayLit      t _ _    -> t
     KNCase          t _ _    -> t
     KNHandler _ann t _ _ _ _ _ -> t
-    KNLetVal        _ _ e    -> typeKN e
+    KNLetVal        _ _ e _  -> typeKN e
     KNLetRec        _ _ e    -> typeKN e
     KNLetFuns       _ _ e    -> typeKN e
     KNVar                  v -> tidType v
@@ -312,7 +314,7 @@ typeKN expr =
 
 -- This instance is primarily needed as a prereq for KNExpr to be an AExpr,
 -- which ((childrenOf)) is needed in ILExpr for closedNamesOfKnFn.
-instance (Show ty, Show rs) => Structured (KNExpr' rs ty) where
+instance (Show ty, Show rs) => Summarizable (KNExpr' rs ty) where
     textOf e _width =
         case e of
             KNLiteral _  (LitText  _) -> text $ "KNString    "
@@ -323,7 +325,7 @@ instance (Show ty, Show rs) => Structured (KNExpr' rs ty) where
             KNCall     t _ _    -> text $ "KNCall :: " ++ show t
             KNCallPrim _ t p  _ -> text $ "KNCallPrim  " ++ (show p) ++ " :: " ++ show t
             KNAppCtor  t cid  _ -> text $ "KNAppCtor   " ++ (show cid) ++ " :: " ++ show t
-            KNLetVal   x b    _ -> text $ "KNLetVal    " ++ (show x) ++ " :: " ++ (show $ typeKN b) ++ " = ... in ... "
+            KNLetVal   x b  _ _ -> text $ "KNLetVal    " ++ (show x) ++ " :: " ++ (show $ typeKN b) ++ " = ... in ... "
             KNLetRec   _ _    _ -> text $ "KNLetRec    "
             KNLetFuns ids fns _ -> text $ "KNLetFuns   " ++ (show $ zip ids (map (tidIdent.fnVar) fns))
             KNIf      t  _ _ _  -> text $ "KNIf        " ++ " :: " ++ show t
@@ -345,6 +347,8 @@ instance (Show ty, Show rs) => Structured (KNExpr' rs ty) where
             KNKillProcess t m   -> text $ "KNKillProcess " ++ show m ++ " :: " ++ show t
             KNCompiles _r _t _e -> text $ "KNCompiles    "
             KNRelocDoms ids _   -> text $ "KNRelocDoms " ++ show ids
+
+instance Structured (KNExpr' rs ty) where
     childrenOf expr =
         let var v = KNVar v in
         case expr of
@@ -355,7 +359,7 @@ instance (Show ty, Show rs) => Structured (KNExpr' rs ty) where
             KNHandler _ _ty _eff action arms mb_xform _resumeid ->
                 (maybeToList mb_xform)++(action:concatMap caseArmExprs arms)
             KNLetFuns _ids fns e    -> map fnBody fns ++ [e]
-            KNLetVal _x b  e        -> [b, e]
+            KNLetVal _x b  e _      -> [b, e]
             KNLetRec _x bs e        -> bs ++ [e]
             KNCall     _t  v vs     -> [var v] ++ [var v | v <- vs]
             KNCallPrim _sr _t _v vs ->            [var v | v <- vs]
@@ -380,7 +384,7 @@ knSize expr = go expr (0, 0) where
                    case expr of
     KNIf          _ _ e1 e2    -> go e2 (go e1 ta)
     KNCase        _ _ arms     -> foldl' (\ta e -> go e ta) ta (concatMap caseArmExprs arms)
-    KNLetVal      _   e1 e2    -> go e2 (go e1 (t, a))
+    KNLetVal      _   e1 e2 _  -> go e2 (go e1 (t, a))
     KNLetRec     _ es b        -> foldl' (\ta e -> go e ta) (go b ta) es
     KNLetFuns    _ fns b       -> let n = length fns in
                                   let ta' @ (t', _ ) = go b ta in
@@ -480,7 +484,7 @@ instance (Pretty ty, Pretty rs) => Pretty (KNExpr' rs ty) where
             KNCall     t v vs -> showTyped (prettyId v <+> hsep (map pretty vs)) t
             KNCallPrim _ t p vs -> showUnTyped (text "prim" <+> pretty p <+> hsep (map prettyId vs)) t
             KNAppCtor  t cid  vs-> showUnTyped (text "~" <> parens (text (show cid)) <> hsep (map prettyId vs)) t
-            KNLetVal   x b    k -> lkwd "let"
+            KNLetVal   x b  k _ -> lkwd "let"
                                       <+> fill 8 (text (show x))
                                       <+> text "="
                                       <+> (indent 0 $ pretty b) <+> lkwd "in"
@@ -573,7 +577,7 @@ knSubst m expr =
       KNHandler ann t fx a arms x resumeid -> -- The resumeid can't be externally bound, thus safe from subst.
             KNHandler ann t fx (knSubst m a) (map qCaseArm arms) (fmap (knSubst m) x) resumeid
       KNIf            t v e1 e2-> KNIf t (qv v) (knSubst m e1) (knSubst m e2)
-      KNLetVal       id e   b  -> KNLetVal id (knSubst m e) (knSubst m  b)
+      KNLetVal       id e  b _ -> let b' = knSubst m b in KNLetVal id (knSubst m e) b' (freeIdents b')
       KNLetRec     ids exprs e -> KNLetRec ids (map (knSubst m) exprs) (knSubst m e)
       KNLetFuns   _ids _fns _b -> error "knSubst not yet implemented for KNLetFuns"
       KNTyApp t v argtys       -> KNTyApp t (qv v) argtys
@@ -623,7 +627,7 @@ instance Show TypeIL where
         PtrTypeIL   ty       -> "(Ptr " ++ show ty ++ ")"
         RefinedTypeIL v e _  -> "(Refined " ++ show (tidIdent v) ++ "::" ++ show (tidType v) ++ " ;; " ++ show e ++ ")"
 
-instance Structured TypeIL where
+instance Summarizable TypeIL where
     textOf e _width =
         case e of
             TyConIL nam        -> text $ nam
@@ -638,6 +642,7 @@ instance Structured TypeIL where
             PtrTypeIL     {}      -> text $ "PtrTypeIL"
             RefinedTypeIL v _e _  -> text $ "RefinedTypeIL " ++ show v
 
+instance Structured TypeIL where
     childrenOf e =
         case e of
             TyConIL {}          -> []

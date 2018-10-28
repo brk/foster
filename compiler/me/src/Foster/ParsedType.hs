@@ -41,7 +41,7 @@ instance Show TypeP where
         MetaPlaceholder s             -> "??" ++ s
         RefinedTypeP nm ty _e         -> "(Refined " ++ nm ++ " : " ++ show ty ++ " : ... )"
 
-instance Structured TypeP where
+instance Summarizable TypeP where
     textOf e _width =
         case e of
             TyAppP    con  _             -> text $ "TyAppP " ++ show con
@@ -53,6 +53,7 @@ instance Structured TypeP where
             MetaPlaceholder _s           -> text $ "MetaPlaceholder "
             RefinedTypeP _nm _ty _e      -> text $ "RefinedTypeP"
 
+instance Structured TypeP where
     childrenOf e =
         case e of
             TyConP      _nm              -> []

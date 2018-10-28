@@ -13,7 +13,7 @@ module Foster.ExprAST(
 )
 where
 
-import Foster.Base(Structured(..), Literal, TypeFormal,
+import Foster.Base(Structured(..), Summarizable(..), Literal, TypeFormal,
                    ToplevelItem(..), ModuleAST(..),
                    SourceRanged(..), TypedId(..), ArrayIndex(..),
                    AllocMemRegion, childrenOfArrayIndex, ArrayEntry(..),
@@ -100,7 +100,7 @@ termBindingName (TermBinding v _) = evarName v
 showSome (SS_Text  _raw txt) = take 40 $ show txt
 showSome (SS_Bytes _raw bs)  = take 40 $ show bs
 
-instance Structured (ExprAST t) where
+instance Summarizable (ExprAST t) where
     textOf e _width =
         let tryGetCallNameE (E_VarAST _rng (VarAST _mt v)) = T.unpack v
             tryGetCallNameE _                              = "" in
@@ -130,6 +130,8 @@ instance Structured (ExprAST t) where
             E_TyCheck     {}       -> text $ "TyCheck      "                                   ++ (exprCmnts e)
             E_VarAST _rng v        -> text $ "VarAST       " ++ T.unpack (evarName v)          ++ (exprCmnts e) -- ++ " :: " ++ show (pretty $ evarMaybeType v)
             E_MachArrayLit {}      -> text $ "MachArrayLit "                                   ++ (exprCmnts e)
+
+instance Structured (ExprAST t) where
     childrenOf e =
         let termBindingExpr (TermBinding _ e) = e in
         case e of

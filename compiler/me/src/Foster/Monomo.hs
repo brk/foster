@@ -110,10 +110,10 @@ monoKN subst inTypeExpr e =
   KNCase          t v pats -> do liftM3 KNCase          (qt t) (qv v)
                                          (mapM (monoPatternBinding subst) pats)
   KNIf            t v e1 e2-> do liftM4 KNIf (qt t) (qv v) (qq e1) (qq e2)
-  KNLetVal       id e   b  -> do case e of KNAppCtor {} -> monoAddCtorOrigin id
+  KNLetVal       id e  b _ -> do case e of KNAppCtor {} -> monoAddCtorOrigin id
                                            _ -> return ()
                                  [e' , b' ] <- mapM qq [e, b]
-                                 return $ KNLetVal      id e'  b'
+                                 return $ mkKNLetVal    id e'  b'
   KNLetRec     ids exprs e -> do (e' : exprs' ) <- mapM qq (e:exprs)
                                  return $ KNLetRec      ids exprs' e'
 
@@ -179,15 +179,15 @@ monoKN subst inTypeExpr e =
       fin <- case mbx' of
                  Nothing -> return (KNVar $ TypedId resumeargty ylded)
                  Just x -> do xformid <- lift $ ccFreshId $ T.pack "xformid"
-                              return (KNLetVal xformid x $
+                              return (mkKNLetVal xformid x $
                                      (KNCall resumeargty (TypedId (typeKN x) xformid)
                                               [TypedId resumeargty ylded]))
       liftIO $ putStrLn $ "line 186"
       let body = --KNLetVal effectid (KNLiteral unitty (LitText $ T.pack $ show t')) $
-                 KNLetVal effectid (KNCallPrim (rangeOf annot) i64 (PrimOp "tag_of_effect" fx') []) $
-                 KNLetVal ylded (KNCallPrim (rangeOf annot) resumeargty (CoroPrim CoroInvoke inputargty resumeargty)
+                 mkKNLetVal effectid (KNCallPrim (rangeOf annot) i64 (PrimOp "tag_of_effect" fx') []) $
+                 mkKNLetVal ylded (KNCallPrim (rangeOf annot) resumeargty (CoroPrim CoroInvoke inputargty resumeargty)
                                         [TypedId coroty coroid, TypedId i64 effectid, TypedId inputargty argid]) $
-                  KNLetVal isded (KNCallPrim (rangeOf annot) boolty (CoroPrim CoroIsDead inputargty resumeargty)
+                  mkKNLetVal isded (KNCallPrim (rangeOf annot) boolty (CoroPrim CoroIsDead inputargty resumeargty)
                                         [TypedId coroty coroid]) $
                   KNIf t' (TypedId boolty isded)
                     fin
@@ -202,9 +202,9 @@ monoKN subst inTypeExpr e =
 
     let unitty = TupleType []
     return $ KNLetFuns [gofnidL] [gofn]
-        (KNLetVal unitid (KNTuple unitty [] (rangeOf annot))
-        (KNLetVal actionid e'
-        (KNLetVal gencoroid (KNCallPrim (rangeOf annot) coroty (CoroPrim CoroCreate inputargty resumeargty)
+        (mkKNLetVal unitid (KNTuple unitty [] (rangeOf annot))
+        (mkKNLetVal actionid e'
+        (mkKNLetVal gencoroid (KNCallPrim (rangeOf annot) coroty (CoroPrim CoroCreate inputargty resumeargty)
                           [TypedId (FnType [] t' FastCC FT_Func) actionid])
             (KNCall t' (TypedId fnty gofnidL) [TypedId coroty gencoroid, TypedId unitty unitid]))))
 
