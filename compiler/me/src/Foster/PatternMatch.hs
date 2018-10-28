@@ -310,13 +310,15 @@ deriving instance (Show a, Show t) => Show (DecisionTree a t)
 instance Ord (CtorInfo t) where
   compare a b = compare (ctorInfoId a) (ctorInfoId b)
 
-instance (Structured a, Show t) => Structured (DecisionTree a t) where
+instance (Summarizable a, Structured a, Show t) => Summarizable (DecisionTree a t) where
     textOf e _width =
       case e of
         DT_Fail _                ->  text $ "DT_Fail      "
         DT_Leaf a idsoccs        -> (text $ "DT_Leaf    " ++ show idsoccs) <$> showStructure a
         DT_Switch  occ idsdts _  ->  text $ "DT_Switch    " ++ (show occ) ++ (show $ subIds idsdts)
                where   subIds idsDts          = map fst idsDts
+
+instance Structured (DecisionTree a t) where
     childrenOf e =
       case e of
         DT_Fail {}               -> []

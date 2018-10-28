@@ -401,7 +401,7 @@ isOK _      = False
 
 -----------------------------------------------------------------------
 
-tcShowStructure :: (Structured a) => a -> Tc Doc
+tcShowStructure :: (Structured a, Summarizable a) => a -> Tc Doc
 tcShowStructure e = do
     header <- getStructureContextMessage
     return $ header <> showStructure e

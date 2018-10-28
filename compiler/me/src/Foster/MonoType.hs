@@ -89,7 +89,7 @@ renderKNM m = show (pretty m)
 renderKNFM :: FnMono -> String
 renderKNFM m = show (pretty m)
 
-instance Structured MonoType where
+instance Summarizable MonoType where
     textOf e _width =
         case e of
             TyCon nam           -> text $ nam
@@ -104,6 +104,7 @@ instance Structured MonoType where
             PtrTypeUnknown      -> text "?"
             RefinedType v _e _  -> text $ "RefinedType " ++ show v
 
+instance Structured MonoType where
     childrenOf e =
         case e of
             TyCon {}             -> []
@@ -244,9 +245,9 @@ alphaRenameMono fn = do
                                      v' <- qv v
                                      t' <- qt t
                                      return $ KNIf         t' v' ethen eelse
-      KNLetVal       id e   b  -> do id' <- renameI id
+      KNLetVal       id e  b _ -> do id' <- renameI id
                                      [e' , b' ] <- mapM renameKN [e, b]
-                                     return $ KNLetVal id' e'  b'
+                                     return $ KNLetVal id' e'  b' (freeIdents b')
       KNLetRec     ids exprs e -> do ids' <- mapM renameI ids
                                      (e' : exprs' ) <- mapM renameKN (e:exprs)
                                      return $ KNLetRec ids' exprs'  e'

@@ -14,6 +14,8 @@ import Foster.TypeAST()
 import Text.PrettyPrint.ANSI.Leijen
 import Foster.Output(OutputOr(..))
 
+import qualified Data.Set as Set(union, unions, fromList)
+
 import qualified Data.Text as T
 
 -- Type-annotated expressions, although not necessarily with valid types.
@@ -89,7 +91,7 @@ instance TypedWith (AnnExpr ty) ty where
      AnnPrimitive _rng t _ -> t
      E_AnnTyApp _rng substitutedTy _tm _tyArgs -> substitutedTy
 
-instance Pretty ty => Structured (AnnExpr ty) where
+instance Pretty ty => Summarizable (AnnExpr ty) where
   textOf e _width =
     case e of
       AnnLiteral _ _  (LitText _)  -> text "AnnText      "
@@ -123,6 +125,8 @@ instance Pretty ty => Structured (AnnExpr ty) where
         ++ (show $ fnBoundNames annFn) ++ " :: " ++ show (pretty (fnType annFn)) where
                    fnBoundNames :: (Pretty t) => Fn r e t -> [String]
                    fnBoundNames fn = map (show . pretty) (fnVars fn)
+
+instance Structured (AnnExpr ty) where
   childrenOf e =
     case e of
       AnnLiteral {}                        -> []
@@ -161,18 +165,17 @@ rights (x:xs) = case x of Left _  -> rights xs
 
 instance (Structured ty, Pretty ty) => AExpr (AnnExpr ty) where
     freeIdents e = case e of
-        AnnPrimitive {}     -> []
-        AnnLetVar _rng  id  b   e -> freeIdents b ++ (freeIdents e `butnot` [id])
-        AnnLetRec _rng  ids xps e -> (concatMap freeIdents xps ++ freeIdents e)
-                                                                   `butnot` ids
-        AnnLetFuns _rng ids fns e -> (concatMap freeIdents fns ++ freeIdents e)
-                                                                   `butnot` ids
+        AnnPrimitive {}     -> Set.fromList []
+        AnnLetVar _rng  id  b   e -> freeIdents b `Set.union` (freeIdents e `sans` [id])
+        AnnLetRec _rng  ids xps e -> (combinedFreeIdents xps `Set.union` freeIdents e) `sans` ids
+        AnnLetFuns _rng ids fns e -> (combinedFreeIdents fns `Set.union` freeIdents e) `sans` ids
         AnnHandler _rng _t _ e arms mb_xform (resumeid,resbareid)
-                                  -> freeIdents e ++ (concatMap caseArmFreeIds arms `butnot` [resumeid, resbareid]) ++ freeIdents mb_xform
-        AnnCase _rng _t e arms    -> freeIdents e ++  concatMap caseArmFreeIds arms
+                                  -> freeIdents e `Set.union` (Set.unions (map caseArmFreeIds arms) `sans` [resumeid, resbareid])
+                                                                                                  `Set.union` freeIdents mb_xform
+        AnnCase _rng _t e arms    -> freeIdents e `Set.union` (Set.unions (map caseArmFreeIds arms))
         E_AnnFn f                 -> freeIdents f
-        E_AnnVar _rng (v, _)      -> [tidIdent v]
-        _                         -> concatMap freeIdents (childrenOf e)
+        E_AnnVar _rng (v, _)      -> Set.fromList [tidIdent v]
+        _                         -> combinedFreeIdents (childrenOf e)
 
 -----------------------------------------------------------------------
 

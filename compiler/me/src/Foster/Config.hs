@@ -1,3 +1,4 @@
+{-# LANGUAGE StrictData #-}
 -----------------------------------------------------------------------------
 -- Copyright (c) 2012 Ben Karel. All rights reserved (except for ccTime).
 -- Use of this source code is governed by a BSD-style license that can be

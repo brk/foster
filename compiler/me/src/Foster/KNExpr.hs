@@ -872,7 +872,7 @@ buildLet ident bound inexpr =
   case bound of
     -- Convert  let i = (let x = e in c) in inexpr
     -- ==>      let x = e in (let i = c in inexpr)
-    KNLetVal x e c ->   KNLetVal x e (buildLet ident c inexpr)
+    KNLetVal x e c _ -> mkKNLetVal x e (buildLet ident c inexpr)
 
     -- Convert  let f = letfuns g = ... in g in <<f>>
     --     to   letfuns g = ... in let f = g in <<f>>
@@ -883,9 +883,9 @@ buildLet ident bound inexpr =
     KNVar _ ->
       case inexpr of
         KNVar v | tidIdent v == ident -> bound
-        _                             -> KNLetVal ident bound inexpr
+        _                             -> mkKNLetVal ident bound inexpr
 
-    _ -> KNLetVal ident bound inexpr
+    _ -> mkKNLetVal ident bound inexpr
 
 
 -- | If we have a call like    base(foo, bar, blah)
@@ -1063,8 +1063,8 @@ kNormalEffectWrappers st ed = map kNormalEffectWrapper (zip [0..] (effectDeclCto
           effb = case effty of
                    TyAppIL base _ -> base
                    other          -> other
-          body = KNLetVal opval (KNAppCtor effty (cid, repr) vars) -- (KNCallPrim range effty (PrimOp "effect_ctor" effty) vars)
-                   (KNLetVal coro (KNCallPrim range coroty (PrimOp "lookup_handler_for_effect" effb) [])
+          body = mkKNLetVal opval (KNAppCtor effty (cid, repr) vars) -- (KNCallPrim range effty (PrimOp "effect_ctor" effty) vars)
+                   (mkKNLetVal coro (KNCallPrim range coroty (PrimOp "lookup_handler_for_effect" effb) [])
                     (KNCallPrim range outty (CoroPrim CoroYield outty effty)
                                             [TypedId coroty coro, TypedId effty opval]))
       let ret tid = return
@@ -1147,7 +1147,7 @@ collectFunctions knf = go [] (fnBody knf)
           KNCompiles _r _t e -> go xs e
           KNRelocDoms  _ e -> go xs e
           KNIf            _ _ e1 e2   -> go (go xs e1) e2
-          KNLetVal          _ e1 e2   -> go (go xs e1) e2
+          KNLetVal          _ e1 e2 _ -> go (go xs e1) e2
           KNHandler _ _  _ e1 arms mb_e _ -> let es = concatMap caseArmExprs arms
                                                  ex = case mb_e of
                                                         Nothing -> []
@@ -1183,7 +1183,7 @@ collectMentions knf = go Set.empty (fnBody knf)
           KNStore     _  v1 v2 -> vv (vv xs v1) v2
           KNCall        _ v vs -> vv (uu xs vs) v
           KNIf          _ v e1 e2   -> go (go (vv xs v) e1) e2
-          KNLetVal      _   e1 e2   -> go (go xs e1) e2
+          KNLetVal      _   e1 e2 _ -> go (go xs e1) e2
           KNHandler _ _  _ ea arms mb _ -> let es = concatMap caseArmExprs arms
                                                xx = foldl' go (go xs ea) es in
                                            case mb of
@@ -1219,7 +1219,7 @@ rebuildWith rebuilder e = q e
       KNArrayLit    {} -> x
       KNTyApp       {} -> x
       KNIf          ty v ethen eelse -> KNIf       ty v (q ethen) (q eelse)
-      KNLetVal      id  e1   e2      -> KNLetVal   id   (q e1)    (q e2)
+      KNLetVal      id  e1   e2 _    -> mkKNLetVal id   (q e1)    (q e2)
       KNLetRec      ids es   e       -> KNLetRec   ids (map q es) (q e)
       KNHandler _a ty fx ea arms mbe resumeid -> KNHandler _a ty fx (q ea) (map (fmapCaseArm id q id) arms) (fmap q mbe) resumeid
       KNCase        ty v arms        -> KNCase     ty v (map (fmapCaseArm id q id) arms)
@@ -1521,7 +1521,7 @@ knLoopHeaderCensus tailq activeids expr = go' tailq expr where
   go' tailq expr = case expr of
     KNCase        _ _ patbinds -> do mapM_ go (concatMap caseArmExprs patbinds)
     KNIf          _ _ e1 e2    -> do go e1 ; go e2
-    KNLetVal      id  e1 e2    -> do go' NotTail e1
+    KNLetVal      id  e1 e2 _  -> do go' NotTail e1
                                      case e1 of
                                        (KNTyApp _ v _)
                                          -> addIdRemapping id (tidIdent v)
@@ -1612,12 +1612,13 @@ knLoopHeaders' expr addLoopHeadersForNonTailLoops = do
     KNHandler a  ty fx ea arms mbe resumeid -> KNHandler a ty fx (q NotTail ea) (map (fmapCaseArm id (q tailq) id) arms) (fmap (q tailq) mbe) resumeid
     KNCase        ty v arms     -> KNCase ty v (map (fmapCaseArm id (q tailq) id) arms)
     KNIf          ty v e1 e2    -> KNIf     ty v (q tailq e1) (q tailq e2)
-    KNLetVal      id   e1 e2    -> let e1' = q NotTail e1
+    KNLetVal      id   e1 e2 fe2-> let e1' = q NotTail e1
                                        e2' = q tailq   e2
                                        knz = KNLiteral (PrimInt I1) (LitBool False)
-                                   in if isPure e1' && not (id `elem` freeIdents e2')
-                                       then KNLetVal id knz e2' -- see {note 1}
-                                       else KNLetVal id e1' e2'
+                                       frees = fe2 -- Conservative approximation to freeIdents e2'
+                                   in if isPure e1' && not (id `Set.member` frees)
+                                       then mkKNLetVal id knz e2' -- see {note 1}
+                                       else mkKNLetVal id e1' e2'
     KNLetRec      ids es  b     -> KNLetRec ids (map (q NotTail) es) (q tailq b)
     KNLetFuns     [id] [fn] b ->
         case qv id of

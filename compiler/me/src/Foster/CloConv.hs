@@ -566,8 +566,10 @@ ilmAddEffectTag eff tag = do
 renderCC m put = if put then putDoc (pretty m) >>= (return . Left)
                         else return . Right $ show (pretty m)
 
-instance Structured (String, Label) where
+instance Summarizable (String, Label) where
     textOf (str, lab) _width = text $ str ++ "." ++ show lab
+
+instance Structured (String, Label) where
     childrenOf _ = []
 
 instance UniqueMonad (State ILMState) where
