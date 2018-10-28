@@ -1,0 +1,7 @@
+#!/bin/bash
+
+# After running ./gotest.sh ... --profileme, GHC will generate a
+# me.prof file which will contain many useless "no-cost" entries;
+# this script filters those entries out of the file.
+
+grep -v '    0.0    0.0     0.0    0.0' me.prof > me.prof.txt

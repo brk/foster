@@ -1,0 +1,25 @@
+main = { () };
+
+type case D of $D ();
+
+// Once upon a time, one of these programs would trigger a segfault
+// due to a comparison function in codegen not implementing a strict
+// weak order properly.
+
+force-good =  { d : D =>
+  case d     of $D r   ->
+  case (0,0) of (a, _) ->
+  case (0,0) of (b, _) ->
+  case (0,0) of (x, _) ->
+    ()
+  end end end end
+};
+
+force-bad  =  { d : D =>
+  case d     of $D r   ->
+  case (0,0) of (a, _) ->
+  case (0,0) of (_, b) ->
+  case (0,0) of (x, _) ->
+    ()
+  end end end end
+};

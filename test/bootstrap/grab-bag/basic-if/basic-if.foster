@@ -1,0 +1,33 @@
+main = {
+  iftru !;
+  iffls !;
+
+  ifab !;
+  ifba !;
+};
+
+iftru = {
+  expect_i32 3;
+  print_i32  if 2 ==Int32 (opaquely_i32 2) then 3 else 4 end;
+};
+
+iffls = {
+  expect_i32 4;
+  print_i32  if 1 ==Int32 (opaquely_i32 2) then 3 else 4 end;
+};
+
+ifab = {
+  expect_i32 3;
+  x = 2;
+  a = 3;
+  y = if opaquely_i32 x ==Int32 2 then a else x end;
+  print_i32 y;
+};
+
+ifba = {
+  expect_i32 2;
+  x = 2;
+  a = 3;
+  y = if opaquely_i32 x ==Int32 4 then a else x end;
+  print_i32 y;
+};

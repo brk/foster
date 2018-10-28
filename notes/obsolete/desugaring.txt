@@ -1,0 +1,241 @@
+f(unpack tuple { a, b, c }) ==> f(a, b ,c)
+f(a, _, b, _, c) ==> fn (x,y) { f(a, x, b, y, c) }
+
+
+
+Examples of desugaring:
+
+( Python examples from http://www.dabeaz.com/generators/Generators.pdf )
+
+    For Loop                            While Loop (infinite loop + break)
+    -------------                       -----------
+    for x in obj:                        _iter = iter(obj)
+      # statements                       while True:
+                                           try:
+                                             x = _iter.next()
+                                           except StopIteration:
+                                             break
+                                           # statements
+                                           
+   Generator (yield)                     Manual Iterator                    
+   -----------------                     ---------------                    
+   def countdown(n):                     class countdown(object):           
+     while n > 0:                          def __init__(self, start):       
+       yield n                               self.count = start             
+       n -= 1                              def __iter__(self): return self  
+                                           def next(self):
+                                             if self.count <= 1
+                                               raise StopIteration
+                                             self.count -= 1
+                                             return self.count
+
+   Generator Expression                 For Loops + yield
+   --------------------                 -----------------
+   (expr for i in s if c1               for i in s:
+         for j in t                       if cond1:
+         ...                                for j in t:
+         if condfinal)                        ...
+                                              if condfinal: yield expr
+
+
+Lua: http://www.lua.org/manual/5.1/manual.html
+  "All global variables live as fields in ordinary Lua tables, called
+   environment tables or simply environments. Each function has its own 
+   reference to an environment [...]. When a function is called, it inherits
+   the environment from the function that created it. [...].
+   
+  "An access to a global variable `x` is equivalent to `_env.x`, which is in
+   turn equivalent to `gettable_event(_env, "x")`. This function is not defined
+   or callable in Lua. Similarly, the _env variable is not defined in Lua.
+   We use them here only for explanatory purposes."
+
+  A chunk = a sequence of statements = an anonymous function with a varaible
+                                      number of arguments.
+  A block = a chunk
+  `do <block> end` is a statement
+  
+  "An assignment to an indexed variable `t[i] = val` is equivalent to 
+                                        `settable_event(t,i,val)`
+                                        
+  for v1, ..., vm in                    do
+      e1, ..., en do                      local f, s, var = e1, ..., en
+    <body>                                while true do
+  end                                       local v1, ..., vm = f(s, var)
+                                            var = v1
+                                            if var == nil then break end
+                                            <body>
+                                          end
+                                        end
+                                        
+    a = { [f(1)] = g; "x", "y"; x = 1, f(x), [30] = 23; 45 }
+    
+  is equivalent to
+    do
+      local t = {}
+      t[f(1)] = g
+      t[1] = "x"         -- 1st exp
+      t[2] = "y"         -- 2nd exp
+      t.x = 1            -- t["x"] = 1
+      t[3] = f(x)        -- 3rd exp
+      t[30] = 23
+      t[4] = 45          -- 4th exp
+      a = t
+    end
+    
+    
+   A call `v:name(args)` is syntactic sugar for `v.name(v ,args)`,
+     except that `v` is evaluated only once.
+   
+   A call of the form `f {fields}` is syntactic sugar for `f( {fields} )`
+   
+   The statement
+     `function f () body end`
+   translates to
+     `f = function () body end`
+
+   The colon syntax is used for defining methods, that is, functions that have
+   an implicit extra parameter self. Thus, the statement
+     `function t.a.b.c:f (params) body end`
+   is syntactic sugar for
+     `t.a.b.c.f = function (self, params) body end`
+
+
+
+Fortress:
+  <| position | zone     <- zones,
+                position <- regionPositions(zone),
+                board[position] = noValue |>
+
+  (Equivalent Python syntax:
+    [ position for zone     in zones
+               for position in regionPositions(zone)
+               if board[position] == noValue ]
+               
+First desugar step:
+  zones.concatMap( fn (zone) {
+    <| position | position <- regionPositions(zone),
+                  board[position] = noValue |> })
+
+  zones.concatMap( fn (zone) {
+    regionPositions(zone).concatMap( fn (position) {
+      <| position | board[position] = noValue |> }})
+
+  zones.concatMap( fn (zone) {
+    regionPositions(zone).concatMap( fn (position) {
+      holds( board[position] == noValue,
+             fn () { <| position |> })))
+  where
+      holds = fn (p, thunk) { if p then thunk() else <| |> }
+      
+  or where
+      holds = fn (p, k) { toList(p).concatMap(k) }
+      toList = fn (p) { if p then <| () |> else <| |> }
+      
+
+  Final version:
+    zones.concatMap( fn (zone) {
+      regionPositions(zone).concatMap( fn (position) {
+        toList( board[position] == noValue ).concatMap(
+             fn () { <| position |> })))
+    where
+       toList = fn (p) { if p then <| () |> else <| |> }
+      
+  Side note: it seems like sometimes, fn () => expr
+                    is preferable to  fn () { expr }
+    (flat is better than nested?)
+    
+ What about   fnname(args) = expr
+        or    fnname(args) => expr
+        vs    fnname = fn (args) { expr }
+
+Anyways, concatMap on lists:
+  concatMap : fn (list<A>, fn (A to list<B>) to list<B>)
+            :     list<A> to  (A to list<B>) to list<B>
+  concatMap nil f = nil
+  concatMap <| x |> f = f(x)
+  concatMap (a concat b) f = (a.concatMap(f) concat b.concatMap(f)) 
+  
+  map f xs = concatMap xs (fn x => <| f(x) |>)
+  
+  xs.concatMap(fn x => <| x |>)   ===   xs
+  xs.concatMap(f).concatMap(g)    ===   xs.concatMap(fn x => f(x).concatMap(g))
+
+
+... is The List Monad!
+
+       bind : fn (list<A>, fn (A to list<B>) to list<B>)
+            :     list<A> to  (A to list<B>) to list<B>
+  bind mzero f = mzero
+  bind (return x) f = f(x)
+  bind (a OP b) f = ((bind a f) OP (bind b f)) 
+  
+  map f xs = bind xs (fn x => return(f(x)))
+  
+  bind xs return        ===   xs
+  bind (bind xs f) g)   ===   bind xs (fn x => bind f(x) g)
+
+  ...
+  
+  but reductions aren't a monad.
+  
+  xs.concatMap(f) = xs.map(f).reduce(lr)
+                  = xs.mapreduce(lr, f)
+
+
+F#:       
+
+  1 .. 10         ==>   (..) 1 10   ==>    GetRange(1, 10)
+  [ comp-expr ]   ==>   MS.FS.Collections.Seq.toList( seq { comp-expr } )
+  [| comp-expr |] ==>   MS.FS.Collections.Seq.toArray( seq { comp-expr } )
+  e1.[e2]         ==>   e1.Item(e2)
+  e1.[e2] <- e3   ==>   e1.Item(e2, e3)
+  e1.[e2 .. e2]   ==>   e1.GetSlice(e2, e3)
+  
+  if e1 then e2 else e3   ==> match (e1:bool) with true -> e2 | false -> e3
+  if e1 then e2           ==> match (e1:bool) with true -> e2 | false -> ()
+  
+  function                        ==>     fun x ->
+  | 1,j -> printfn "j = %d" j               match x with
+  | _   -> printfn "no match"               | 1,j -> printfn "j = %d" j
+                                            | _   -> printfn "no match"
+                                            
+    
+                          
+   for var = expr1 to expr2 do          let start = expr1 in 
+      expr3                     ==>     let finish = expr2 in 
+                                        for var = start to finish do expr3 done
+  (For-loops over ranges specified by variables are a primitive elaborated form.
+      When executed the iterated range is inclusive of both
+      start and end ranges, with an increment of 1.)
+    
+  for x,y in [(1,2); (3,4)] do
+    printfn "x = %d, y = %d" x y
+                                  ==>
+                                let v = expr1.GetEnumerator()
+                                try
+                                    while (v.MoveNext()) do
+                                        match v.Current with
+                                        | pat -> expr2
+                                        | _ -> ()
+                                finally
+                                    match box(v) with
+                                    | :? System.IDisposable as d -> d.Dispose()
+                                    | _ -> ()
+  
+  use ident = expr1 $in
+  expr2
+              ==>
+                      let ident = expr1
+                      try expr2
+                      finally (match (ident :> obj) with
+                               | null -> ()
+                               | _ -> (ident :> System.IDisposable).Dispose())
+
+
+  
+  lazy (printf "hello world")     ==>     new Microsoft.FSharp.Control.Lazy(
+                                            fun () -> expr)
+                                            
+  ident { comp-expr }       ==>   let b = builder-expr in b.Run(
+                                      b.Delay(fun () -> {| cexpr |}c ))
+* see manual for {| |}c translation

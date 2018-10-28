@@ -1,0 +1,33 @@
+
+type case KLCG1x64State
+      of $KLCG1x64State Int64
+         ;
+
+kLCG1x64MakeState :: { Int64 => KLCG1x64State };
+kLCG1x64MakeState = { x => KLCG1x64State x };
+
+kLCG1x64gen :: { KLCG1x64State => (Int64, KLCG1x64State) };
+kLCG1x64gen = { s =>
+  a = 6364136223846793005;
+  c = 1442695040888963407;
+  case s of $KLCG1x64State x ->
+    x0 = (a *Int64 x) +Int64 c;
+    x1 = (a *Int64 x0) +Int64 c;
+    // Merge high bits of second iteration with low bits of first iteration.
+    y0 = x0 `bitlshr-Int64` 32;
+    y1 = y0 `bitor-Int64` (x1 `bitand-Int64` 0xFFFF`FFFF`0000`0000);
+    (y1, kLCG1x64MakeState x1)
+  end
+};
+
+kLCG1x64HOF :: { Int64 => { Int64 } };
+kLCG1x64HOF = { seed =>
+  r = (prim ref (kLCG1x64MakeState seed));
+  {
+    s = r^;
+    case kLCG1x64gen s of (x, t) ->
+      t >^ r;
+      x
+    end
+  }
+};

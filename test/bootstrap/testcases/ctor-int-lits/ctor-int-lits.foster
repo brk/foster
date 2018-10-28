@@ -1,0 +1,39 @@
+main = {
+  part1 !;
+  part2 !;
+  part3 !;
+};
+
+part1 = {
+  x = case opaquely_i32 7
+	of 0   -> 1
+	of 7   -> 2
+	of 1   -> 3
+	of _   -> 4
+      end;
+  expect_i32 2;
+  print_i32 x;
+};
+
+part2 = {
+  x = case 257
+	of 0   -> 1
+	of 257 -> 2
+	of 1   -> 3
+	of _   -> 4
+      end;
+  expect_i32 2;
+  print_i32 x;
+};
+
+part3 = {
+  // Value too large to fit in i32 without loss...
+  x = case 6`000`000`000
+	of 0             -> 1
+	of 6`000`000`000 -> 2 // patterns must also hold 64-bit values, at least.
+	of 1             -> 3
+	of _             -> 4
+      end;
+  expect_i32 2;
+  print_i32 x;
+};

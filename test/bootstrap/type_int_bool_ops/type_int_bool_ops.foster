@@ -1,0 +1,45 @@
+main = {
+  expect_i32 222;
+  print_i32 if True then 222 else 111 end;
+
+  expect_i32 -111;
+  print_i32 if False then 222 else -111 end;
+
+  expect_i32 6;
+  print_i32 (opaquely_i32 0b11011011 |> ctpop-Int32);
+
+  expect_i32 24;
+  print_i32 (opaquely_i32 0b11011011 |> ctlz-Int32);
+
+                    11.0 |> expect_float_p9f64;
+  muladd-f64 2.0 3.0 5.0 |> print_float_p9f64;
+
+  // Shifts are masked to prevent undefined values.
+  (0b110 `bitshl-Int32`  0) |> expect_i32b;
+  (0b110 `bitshl-Int32` 32) |> print_i32b;
+
+  // Unable to type check input module:
+  // Int constraint violated; context-imposed exact size (in bits) was 8
+  //                               but the literal intrinsically needs 9
+  expect_i1 False;
+  print_i1 (__COMPILES__  expect_i8 -128 );
+
+  expect_i1 False; // no operator overloading, yet
+  print_i1 (__COMPILES__ (1, 2) + (3, 4));
+
+  //expect_i1 False;
+  //print_i1(__COMPILES__ -True);
+
+  expect_i1 True;
+  print_i1 (not False);
+
+  expect_i1 False; // 2 is not of type i1
+  print_i1 (__COMPILES__ if 2 then 222 else 111 end);
+
+  expect_i1 False; // tuple should typecheck elements
+  print_i1 (__COMPILES__ (if 2 then 2 else 1 end, 2));
+
+  expect_i1 False; // branches should have compatible types
+  print_i1 (__COMPILES__ if True then 3 else "3" end);
+};
+

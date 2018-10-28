@@ -1,0 +1,26 @@
+snafuinclude Sha256 "hash/sha256";
+snafuinclude Prelude "prelude";
+
+foreign import foster_crypto_hash_sha256 as nacl_sha256 :: { Array Int8 => Array Int8 => Int8 };
+
+main = {
+  // compare with
+  //  $ echo -n "821c46a0d2b95ceaa3e6ab24d481cd21a070785fcabc55c5bcbc7ac2dbdf716a" | shasum -a 256
+  a = sha256aa b"821c46a0d2b95ceaa3e6ab24d481cd21a070785fcabc55c5bcbc7ac2dbdf716a";
+  expect_text "0b94a0cf27749af79220e5251eb17ec452a968a63ee34f4461696f58f8e745fd";
+  print_text (sha256string a);
+
+
+  x64 = 0x8877665544332211;
+  expect_i8x 0x88;
+  print_i8x (extract-byte-Int64 x64 7);
+
+  expect_i8x 0x22;
+  print_i8x (extract-byte-Int64 x64 1);
+
+  h = allocDArray:[Int8] 32;
+  rv8 = nacl_sha256 h b"821c46a0d2b95ceaa3e6ab24d481cd21a070785fcabc55c5bcbc7ac2dbdf716a";
+
+  expect_text "0b94a0cf27749af79220e5251eb17ec452a968a63ee34f4461696f58f8e745fd";
+  print_text (sha256string h);
+};

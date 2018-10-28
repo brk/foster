@@ -1,0 +1,31 @@
+// http://www.research.att.com/~njas/sequences/table?a=45&fmt=4
+main = {
+  expect_i32 55;
+  print_i32 (fib-naive (opaquely_i32 10));
+
+  expect_i32 610;
+  print_i32 (fib-naive (opaquely_i32 15));
+
+  expect_i32 6765;
+  print_i32 (fib-tailrecursive (opaquely_i32 20) 0 1);
+};
+
+fib-naive = { x : Int32 =>
+  if x <SInt32 3
+    then 1
+    else (fib-naive (x -Int32 1)) +Int32
+         (fib-naive (x -Int32 2))
+  end
+};
+
+fib-tailrecursive = { x : Int32 =>
+                current : Int32 =>
+                   next : Int32 =>
+  if x ==Int32 0
+    then current
+    else fib-tailrecursive (x -Int32 1)
+                            next
+                           (current +Int32 next)
+  end
+};
+

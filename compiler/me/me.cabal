@@ -1,0 +1,109 @@
+name:                me
+version:             0.1.0.0
+synopsis:            Foster middle-end
+description:         Please see README.md
+homepage:            https://bitbucket.org/b/foster
+license:             BSD3
+--license-file:        LICENSE
+author:              Ben Karel
+maintainer:          eschew@gmail.com
+copyright:           2010-2017 Ben Karel
+category:            Languages
+build-type:          Simple
+cabal-version:       >=1.24
+
+
+
+executable me
+  hs-source-dirs:      src
+  main-is:             Main.hs
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+                       -Wall -fwarn-unused-do-bind -fwarn-tabs
+                       -fno-warn-missing-signatures -fno-warn-name-shadowing
+                       -fno-warn-type-defaults -fno-warn-orphans
+  default-extensions:  FlexibleInstances FlexibleContexts
+                       MultiParamTypeClasses DeriveDataTypeable
+                       TypeSynonymInstances DeriveFunctor BangPatterns
+  other-extensions:    GADTs RankNTypes ScopedTypeVariables StandaloneDeriving
+                       PatternGuards NoMonoLocalBinds RecursiveDo FlexibleContexts
+  build-depends: alex -any,
+                 happy -any,
+                 array -any,
+                 ansi-wl-pprint -any,
+                 attoparsec -any,
+                 binary -any,
+                 bytestring -any,
+                 containers -any,
+                 criterion >= 1.1.0.0,
+                 cityhash -any,
+                 cborg -any,
+                 double-conversion >=2.0.2.0,
+                 data-dword >= 0.3.1,
+                 text >= 1.2.0.0,
+                 mtl >= 2.2.1,
+                 transformers -any,
+                 fgl -any,
+                 floating-bits -any,
+                 haskell-src-exts -any,
+                 haskell-src-exts-simple -any,
+                 hoopl >= 3.10.1.0,
+                 time -any,
+                 union-find -any,
+                 directory -any,
+                 smtLib -any,
+                 boxes -any,
+                 process -any,
+                 minuproto >= 0.1.0.2,
+                 utf8-string -any,
+                 base -any
+  default-language:    Haskell2010
+
+  other-modules:
+      FosterIL_capnp
+      Foster.AnnExpr
+      Foster.AnnExprIL
+      Foster.Avails
+      Foster.Base
+      Foster.CFG
+      Foster.CFGOptimization
+      Foster.CloConv
+      Foster.Config
+      Foster.Context
+      Foster.ConvertExprAST
+      Foster.ExprAST
+      Foster.GCRoots
+      Foster.ILExpr
+      Foster.Infer
+      Foster.KNExpr
+      Foster.KNStaticChecks
+      Foster.KNUtil
+      Foster.KSmallstep
+      Foster.Kind
+      Foster.Letable
+      Foster.MKNExpr
+      Foster.MainCtorHelpers
+      Foster.MainOpts
+      Foster.MonoType
+      Foster.Monomo
+      Foster.Output
+      Foster.ParsedType
+      Foster.PatternMatch
+      Foster.PrettyAnnExpr
+      Foster.PrettyExprAST
+      Foster.Primitives
+      Foster.ProtobufFE
+      Foster.ProtobufIL
+      Foster.ProtobufUtils
+      Foster.RunZ3
+      Foster.TypeAST
+      Foster.TypeIL
+      Foster.TypeLL
+      Foster.TypeTC
+      Foster.Typecheck
+      Foster.TypecheckInt
+      Foster.Worklist
+
+
+source-repository head
+  type:     hg
+  location: https://bitbucket.com/b/foster

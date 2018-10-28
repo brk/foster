@@ -1,0 +1,282 @@
+snafuinclude Prelude "prelude";
+
+main = {
+  // B=128 buckets
+  // binary tree with N nodes
+  //    ===> heap size X
+  // max heap size H
+  // K passes over the array (=> (K * B) iterations)
+
+  // Results:
+  // total time
+  // GC time
+  // MMU/max pause info
+
+  b = cmdline-arg-or 1 128;
+  n = cmdline-arg-or 2 256;
+  k = cmdline-arg-or 3 10;
+  use_subheaps = "--subheaps" ==TextBytes (get_cmdline_arg_n 4);
+  use_small = "--small" ==TextBytes (get_cmdline_arg_n 4);
+
+  print_text_bare "B = "; print_i32 b;
+  print_text_bare "N = "; print_i32 n;
+  print_text_bare "K = "; print_i32 k;
+
+  print_text_bare "Estimated bucket size (bytes): "; print_i32 (n *Int32 32);
+  print_text_bare "Estimated heap needed (bytes): "; print_i32 (b *Int32 n *Int32 32);
+  print_text_bare "Estimated allocation (bytes): "; print_i64 (zext_i32_to_i64 ((k +Int32 1) *Int32 n *Int32 b) *Int64 32);
+
+  print_text (
+    if use_small then "Small subheaps" else
+      if use_subheaps then "Using subheaps" else "Not using subheaps" end
+    end);
+
+  if use_subheaps
+    then run-minicache-subheaps b n k
+    else
+      if use_small
+      then run-minicache-smallsub b n k
+      else run-minicache          b n k
+      end
+  end
+};
+
+run-minicache = { b => n => k =>
+  c = make-cache b n;
+  REC go = { idx => stepsleft =>
+    if stepsleft >=SInt32 1 then
+      newnode = make-entry n idx;
+
+      newnode >^ c[idx];
+
+      //print_i32 (summed c[0]);
+
+      nidx = idx +Int32 1;
+      go (if nidx ==Int32 b then 0 else nidx end) (stepsleft -Int32 1)
+    end
+  }; go 0 (k *Int32 b)
+};
+
+make-cache = { b => n =>
+  // TODO debug type mismatch exposed by this
+  //newDArray0 b { idx => make-entry n idx };
+
+  c = allocDArray:[Tree] b;
+  enumRange32 0 b { idx => (make-entry n idx) >^ c[idx] };
+  c
+};
+
+/*
+with-subheap = { s => thunk =>
+  prev = foster_subheap_activate s;
+  rv = thunk !;
+  _ = foster_subheap_activate prev;
+  rv
+};
+*/
+
+run-minicache-subheaps-common :: { Int32 => Int32 => Int32 => Array (Maybe Tree) => Array Subheap => () };
+run-minicache-subheaps-common = { b => n => k => c => subheaps =>
+  REC go = { idx => stepsleft =>
+    if stepsleft >=SInt32 1 then
+      s = subheaps[idx];
+      foster_subheap_activate s;
+      None >^  c[idx];
+      foster_subheap_collect s;
+      newnode = make-entry n idx;
+      (Some newnode) >^ c[idx];
+
+/*
+      if idx >SInt32 1 then
+        s = summed (fromSome c[idx -Int32 1]);
+        e = expected idx ;
+        if e >SInt32 0 then
+          if s !=Int32 e then
+            print_i64_bare (zext_i32_to_i64 idx);
+            print_text_bare " => ";
+            print_i32 s;
+          end;
+        end;
+      end;
+      */
+
+      nidx = idx +Int32 1;
+      go (if nidx ==Int32 b then 0 else nidx end) (stepsleft -Int32 1)
+    end
+  }; go 0 (k *Int32 b)
+};
+
+run-minicache-subheaps = { b => n => k =>
+  let (c, subheaps) = make-cache-subheaps b n;
+  run-minicache-subheaps-common b n k c subheaps
+};
+
+run-minicache-smallsub = { b => n => k =>
+  let (c, subheaps) = make-cache-smallsub b n;
+  run-minicache-subheaps-common b n k c subheaps
+};
+
+make-cache-subheaps :: { Int32 => Int32 => (Array (Maybe Tree), Array Subheap) };
+make-cache-subheaps = { b => n =>
+  // TODO debug type mismatch exposed by this
+  //newDArray0 b { idx => make-entry n idx };
+
+  c = allocDArray:[Maybe Tree] b;
+  subheaps = allocDArray:[Subheap] b;  
+  enumRange32 0 b { idx =>
+    s = foster_subheap_create !;
+    s >^ subheaps[idx];
+    foster_subheap_activate s;
+      (Some (make-entry n idx)) >^ c[idx]
+   };
+  (c, subheaps)
+};
+
+make-cache-smallsub :: { Int32 => Int32 => (Array (Maybe Tree), Array Subheap) };
+make-cache-smallsub = { b => n =>
+  c = allocDArray:[Maybe Tree] b;
+  subheaps = allocDArray:[Subheap] b;
+  enumRange32 0 b { idx =>
+    s = foster_subheap_create_small !;
+    s >^ subheaps[idx];
+    foster_subheap_activate s;
+      (Some (make-entry n idx)) >^ c[idx]
+   };
+  (c, subheaps)
+};
+
+
+type case Tree
+  of $Leaf
+  of $Branch Tree Tree Int32
+  ;
+
+make-entry = { n => idx =>
+  if n ==Int32 0 then Leaf else
+    if n ==Int32 1
+      then Branch Leaf Leaf idx
+      else
+           h = bitlshr-Int32 n 1;
+           Branch (make-entry h idx) (make-entry (n -Int32 (h +Int32 1)) idx) n
+    end
+  end
+};
+
+summed :: { Tree => Int32 };
+summed = { t =>
+  case t
+    of $Leaf -> 0
+    of $Branch l r n -> n +Int32 summed l +Int32 summed r
+  end
+};
+
+fromSome :: { Maybe Tree => Tree };
+fromSome = { x =>
+  case x of $Some z -> z
+    of _ -> prim kill-entire-process "Unxpected None found by fromSome"
+  end
+};
+
+expected = { idx =>
+  case idx
+ of 2 -> 1353
+ of 3 -> 1426
+ of 4 -> 1499
+ of 5 -> 1572
+ of 6 -> 1645
+ of 7 -> 1718
+ of 8 -> 1791
+ of 9 -> 1864
+ of 10 -> 1937
+ of 11 -> 2010
+ of 12 -> 2083
+ of 13 -> 2156
+ of 14 -> 2229
+ of 15 -> 2302
+ of 16 -> 2375
+ of 17 -> 2448
+ of 18 -> 2521
+ of 19 -> 2594
+ of 20 -> 2667
+ of 21 -> 2740
+ of 22 -> 2813
+ of 23 -> 2886
+ of 24 -> 2959
+ of 25 -> 3032
+ of 26 -> 3105
+ of 27 -> 3178
+ of 28 -> 3251
+ of 29 -> 3324
+ of 30 -> 3397
+ of 31 -> 3470
+ of 32 -> 3543
+ of 33 -> 3616
+ of 34 -> 3689
+ of 35 -> 3762
+ of 36 -> 3835
+ of 37 -> 3908
+ of 38 -> 3981
+ of 39 -> 4054
+ of 40 -> 4127
+ of 41 -> 4200
+ of 42 -> 4273
+ of 43 -> 4346
+ of 44 -> 4419
+ of 45 -> 4492
+ of 46 -> 4565
+ of 47 -> 4638
+ of 48 -> 4711
+ of 49 -> 4784
+ of 50 -> 4857
+ of 51 -> 4930
+ of 52 -> 5003
+ of 53 -> 5076
+ of 54 -> 5149
+ of 55 -> 5222
+ of 56 -> 5295
+ of 57 -> 5368
+ of 58 -> 5441
+ of 59 -> 5514
+ of 60 -> 5587
+ of 61 -> 5660
+ of 62 -> 5733
+ of 63 -> 5806
+ of 64 -> 5879
+ of 65 -> 5952
+ of 66 -> 6025
+ of 67 -> 6098
+ of 68 -> 6171
+ of 69 -> 6244
+ of 70 -> 6317
+ of 71 -> 6390
+ of 72 -> 6463
+ of 73 -> 6536
+ of 74 -> 6609
+ of 75 -> 6682
+ of 76 -> 6755
+ of 77 -> 6828
+ of 78 -> 6901
+ of 79 -> 6974
+ of 80 -> 7047
+ of 81 -> 7120
+ of 82 -> 7193
+ of 83 -> 7266
+ of 84 -> 7339
+ of 85 -> 7412
+ of 86 -> 7485
+ of 87 -> 7558
+ of 88 -> 7631
+ of 89 -> 7704
+ of 90 -> 7777
+ of 91 -> 7850
+ of 92 -> 7923
+ of 93 -> 7996
+ of 94 -> 8069
+ of 95 -> 8142
+ of 96 -> 8215
+ of 97 -> 8288
+ of 98 -> 8361
+ of 99 -> 8434
+ of _ -> 0
+  end
+};

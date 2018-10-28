@@ -1,0 +1,66 @@
+fn-no-gc = { n : Int32 => r : Ref Int32 =>
+  d = r^;
+  expect_i32 d;
+  print_i32  n;
+};
+
+
+// * If there are no GC points after a call returns a gc-ed pointer,
+//   then the returned pointer need not be stored in a gcroot slot.
+//   Reason: there are no further GC points
+//           across which the pointer must be stored.
+
+may-trigger-gc = {
+  x = (prim ref 0);
+  d = x ^  ;
+  d
+};
+
+needs-gc-roots = { x0 : Ref Int32 =>
+  x1 = (prim ref x0);
+  x2 = (prim ref 2 );
+  d1 = x1 ^  ;
+  d0 = d1 ^  ;
+  d0 +Int32 (x2 ^)
+};
+
+no-gc-after-new = {
+  t = may-trigger-gc ! ;
+  n = (prim ref 0);
+  n^
+};
+
+// * If a pointer is dead before a GC can be triggered,
+//   then it need not exist in a gcroot slot.
+//
+no-root-for-dead-ptrs = {
+  expect_i32   42;
+  r = (prim ref 42);
+  d = r ^     ;
+  print_i32 d;
+  may-trigger-gc !;
+};
+
+fn-late-reload = { k : Int32 =>
+  r = (prim ref 2);
+  may-trigger-gc !;
+  // r should not be reloaded here
+  if 0 ==Int32 opaquely_i32 0
+    then k
+    else r^
+  end
+};
+
+main = {
+  fn-no-gc 30 (prim ref 30);
+  no-root-for-dead-ptrs ! ;
+
+  expect_i32 0;
+  print_i32 (no-gc-after-new !);
+
+  expect_i32 5;
+  print_i32 (needs-gc-roots (prim ref 3));
+
+  expect_i32 4;
+  print_i32 (fn-late-reload 4);
+};

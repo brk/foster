@@ -1,0 +1,25 @@
+main = {
+  ex1 !;
+  ex2 !;
+  noinline_ex3 !;
+};
+
+ex1 = {
+  n = 5;
+  p = { n +Int32 n };
+  expect_i32 10;
+  print_i32 (p !);
+};
+
+ex2 = {
+  n = 5;
+  expect_i32 10;
+  print_i32 (n +Int32 n);
+};
+
+noinline_ex3 = {
+  n = 10;
+  p = { n +Int32 n };
+  expect_i32 20;
+  print_i32 (p !);
+};

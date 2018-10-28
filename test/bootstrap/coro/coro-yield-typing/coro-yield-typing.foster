@@ -1,0 +1,100 @@
+snafuinclude Coro "coro";
+
+brkpt = { x => x };
+
+fst :: forall (a:Type) (b:Type) { (a, b) => a };
+fst = { p => case p of (a, b) -> a end };
+
+main = {
+  expect_i32 1111111;
+  expect_i32 2222;
+  expect_i32 22222;
+  expect_i32 4444444;
+  expect_i32 4444445;
+  expect_i32 10;
+  expect_i32 6666;
+  expect_i32 1234;
+  expect_i32 1235;
+  expect_i32 55544;
+  expect_i32 20;
+  //expect_i32 42;
+  expect_i32 21;
+  expect_i32 5555555;
+  expect_i32 6666666;
+  /*
+  expect_i1 False;
+  expect_i1 False;
+  expect_i1 True;
+  */
+  //expect_i32 43;
+  expect_i32 9999;
+  expect_i32 3333333;
+  expect_i32 9999999;
+  
+  print_i32 1111111;
+  /*
+  cog = coro_create { z : (Int64, ()) =>
+    print_i64 (fst z);
+    a = do_CoroYield ();
+    print_i64 (fst a);
+    b = do_CoroYield ();
+    print_i64 (fst b);
+    ()
+  };
+  */
+  // cog :: Coro (Int64, ()) ()
+
+  f  = { xp : (Bool, Int32) =>
+         print_i32 4444444;
+              //force_gc_for_debugging_purposes  !;
+         print_i32 4444445;
+
+         let (_, x) = xp;
+         print_i32 x; // 10
+
+         yp = do_CoroYield (6666, ()); // 20
+         print_i32 55544;
+         let (_, y) = yp;
+
+              //force_gc_for_debugging_purposes !;
+         print_i32 y;
+
+         //coro_invoke cog (42, ());
+
+         z = do_CoroYield (y +Int32 1, ()); // 30 <- 21
+         print_i32 5555555;
+              //force_gc_for_debugging_purposes !;
+         print_i32 6666666;
+
+         // Yielding the wrong type results in a type error.
+         //print_i1 (__COMPILES__ do_CoroYield:[Int32,{Int32}] { 7777 } );
+         //print_i1 (__COMPILES__ do_CoroYield { 7777 } );
+
+         //print_i1 (__COMPILES__ do_CoroYield 7777 );
+
+         //coro_invoke cog (43, ());
+
+         brkpt (9999, ());
+  };
+  co = coro_create f;
+  // f :: { (Bool, Int32) => Int32 @(Yield (Bool, Int32) (Int32, ())) }
+  // co :: Coro (Bool, Int32) (Int32, ())
+
+  r  = (prim ref 0);
+
+    print_i32 2222;
+  //force_gc_for_debugging_purposes !;
+    print_i32 22222;
+    print_i32 (fst (coro_invoke co (True, 10))); // 6666
+
+    print_i32 1234;
+  //force_gc_for_debugging_purposes !;
+    print_i32 1235;
+    print_i32 (fst (coro_invoke co (True, 20))); // 21
+  //force_gc_for_debugging_purposes !;
+    print_i32 (fst (coro_invoke co (True, 30)));
+    print_i32 3333333;
+    print_i32 9999999;
+};
+
+

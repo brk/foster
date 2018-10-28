@@ -1,0 +1,17 @@
+#!/bin/sh
+
+SD=$(dirname `which $0`)/../scripts
+R=$(python $SD/normpath.py $SD/..)
+
+cxxpath() {
+  echo $($SD/echo-llvmdir)/bin/clang++
+}
+
+# Use regular clang instead of clang++
+CLANG=$(python $SD/normpath.py `cxxpath`/../clang)
+
+${CLANG} -Werror=division-by-zero $@ -o _runclang.exe && ./_runclang.exe
+retval=$?
+rm -rf _runclang.exe
+exit ${retval}
+

@@ -1,0 +1,45 @@
+
+type case Ord
+       of $LT
+       of $EQ
+       of $GT
+       ;
+
+
+type case List (a:Type)
+  of $Nil
+  of $Cons a (List a)
+;
+
+/* good:
+type case PairingHeap (elem:Type)
+      of $PairingHeapE
+      of $PairingHeapT elem (List (PairingHeap elem))
+      ;
+*/
+
+// bad:
+type case PairingHeap (elem:Type)
+      of $PairingHeapE
+      of $PairingHeapT elem (List (PairingHeap /*elem*/))
+      ;
+
+noinline_x = { forall a:Type, cmp : { a => a => Ord } => h1 => h2 =>
+  case (h1, h2)
+    of ($PairingHeapE, _) -> h2
+    of (_, $PairingHeapE) -> h1
+    of ($PairingHeapT ea la, $PairingHeapT eb lb) ->
+      REC aaa = { PairingHeapT eb (Cons h1 lb) };
+      bbb = { PairingHeapT ea (Cons h2 la) };
+      // For some reason, the non-recursive function gets quantified over an effect
+      // variable, thus producing a function with a polymorphic type.
+      // The resulting type application appears to disable contification,
+      // and finally the resulting code is miscompiled somewhere on the way to LLVM.
+      case cmp ea eb
+        of $GT -> aaa !;
+        of _   -> bbb !;
+      end
+  end
+};
+
+main = { () };

@@ -1,0 +1,49 @@
+main = {
+  noinline_c1 !;
+  noinline_c2 !;
+  noinline_c3 !;
+};
+
+// Make sure that we're not accidentally caching
+// inlined functions with the wrong args bound to them.
+
+noinline_c1 = {
+  expect_i32 4;
+  print_i32 (dethunk { 4 });
+};
+
+noinline_c2 = {
+  expect_i32 5;
+  print_i32 (dethunk { 5 });
+};
+
+dethunk = { t => t ! };
+
+// Example from Erlang's inliner.
+// They cite the example as one that can't be fully inlined
+// by Waddell's algorithm due to conservative treatment of
+// bindings, but we maintiain alpha-uniqueness as we go.
+//
+// Thus we fully inline to yield z = 42,
+// but we mark f and m as "seen" before inlining them,
+// which results in them being retained.
+// Later DCE passes clean them up, but it makes inlining's
+// size estimates overly conservative in some cases.
+//
+// The algorithm takes these steps:
+//   * visit call to [g m]
+//     * inline [g]
+//        * see [f] (src var)
+//     * see [m] while folding call [g m]
+//     * see [f] (res var)
+//
+// As a result, g is Dead, and m/f are each Once.
+noinline_c3 = {
+  expect_i32 42;
+  f = { x => x };
+  m = { d => d 42 };
+  g = { h => h f };
+  z = g m;
+  print_i32 z;
+};
+

@@ -1,0 +1,5 @@
+main = { () };
+
+type case DT of $DT0 ;
+
+type case DT of $DTX ;

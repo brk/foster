@@ -1,0 +1,31 @@
+main = {
+  noinline_direct !;
+  noinline_indirect !;
+};
+
+// This produces a loop directly, no matter whether inlining is enabled or not.
+noinline_direct = {
+  REC go_direct = { n : Int32 =>
+    if 4 ==Int32 opaquely_i32 n
+      then n
+      else go_direct (n +Int32 1)
+    end
+  };
+
+  expect_i32 4;
+  print_i32 (go_direct (opaquely_i32 0));
+};
+
+// This only produces a direct loop when inlining is enabled;
+noinline_indirect = {
+  app = { f => k => f k };
+  REC go_indirect = { n : Int32 =>
+    if 4 ==Int32 opaquely_i32 n
+      then n
+      else app { k => go_indirect k } (n +Int32 1)
+    end
+  };
+
+  expect_i32 4;
+  print_i32 (go_indirect (opaquely_i32 0));
+};

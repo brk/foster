@@ -1,0 +1,46 @@
+incrInt32 :: { % aa : Int32 : prim <SInt32 aa 10 =>
+               % rv : Int32 : prim ==Int32 rv (prim +Int32 aa 1) };
+incrInt32 = { a : Int32 => prim +Int32 a 1 };
+
+ltSixA :: { % bb : Int32 : prim <SInt32 bb 6 => Int32 };
+ltSixA =  {   b  : Int32 => b };
+
+ltSixB :: { % bb : Int32 : prim <SInt32 bb 6 => Int32 };
+ltSixB =  {   b  => b };
+
+//ltSixC =  {   b  :  % bb : Int32 : prim <SInt32 bb 6 => 0 };
+
+main = {
+
+    //zzz = (incrInt32 11); // not ok because need 11 < 10
+
+    //kkk = (incrInt32  5); // ok
+
+
+    nine   = 9;
+    retval = incrInt32 nine;
+
+    prim assert-invariants (prim ==Int32 retval 10);
+
+    expect_i1 False;
+    print_i1 (__COMPILES__ ltSixA retval);
+
+    expect_i1 False;
+    print_i1 (__COMPILES__ ltSixB retval);
+
+    expect_i1 False;
+    print_i1 (__COMPILES__ incrInt32 11);
+
+    expect_i1 True;
+    print_i1 (__COMPILES__ ltSixA 3);
+
+    expect_i1 False;
+    print_i1 (__COMPILES__ ltSixA nine);
+
+    expect_i1 True;
+    print_i1 (__COMPILES__ ltSixB 3);
+
+    expect_i1 False;
+    print_i1 (__COMPILES__ ltSixB nine);
+    ()
+};

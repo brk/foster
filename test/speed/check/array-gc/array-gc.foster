@@ -1,0 +1,12 @@
+main = {
+  a = allocDArray:[Ref Int32] 10;
+  print_i64 (prim_arrayLength a);
+  arrayFizz a;
+  expect_i64 (prim_arrayLength a);
+};
+
+arrayFizz = { forall t:Type, a : Array t =>
+  print_i64 (prim_arrayLength a);
+  force_gc_for_debugging_purposes !;
+  expect_i64 (prim_arrayLength a);
+};

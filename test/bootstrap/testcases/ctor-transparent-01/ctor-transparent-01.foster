@@ -1,0 +1,15 @@
+type case Tup2
+      of $Tup2 (Int32, Int32)
+      ;
+
+noinline_processTup2 = { tup2 =>
+  case tup2
+    of $Tup2 (a, b) ->
+      expect_i32 a;
+      print_i32  b;
+  end
+};
+
+main = {
+  noinline_processTup2 (Tup2 (1, 1));
+};

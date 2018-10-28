@@ -1,0 +1,12 @@
+#!/bin/sh
+
+SD=$(dirname `which $0`)/../scripts
+R=$($SD/normpath.py $SD/..)
+
+llvmconfig() {
+  cat $R/_obj/CMakeCache.txt | grep LLVM_CONFIG:FILEPATH | sed 's/LLVM_CONFIG:FILEPATH=//'
+}
+
+# go from LLVMDIR/bin/clang++
+# to      LLVMDIR
+echo $($(llvmconfig) --prefix)

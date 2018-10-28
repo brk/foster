@@ -1,0 +1,53 @@
+
+main = {
+    existsFile_EF3F635E = { x_7A5ED037 : { Int32 } => // must a fn typed arg
+        sep_DB598668 = prim ref 5; // must be defined outside of loop (obv)
+
+        REC loop = { x_C9BA77B0 : Ref Int8 => // loop must have an arg...
+              (loop sep_DB598668 as ()); // must pass as loop arg; other use doesn't count.
+        };
+
+        expect_i8 5;
+        print_i8 sep_DB598668^;
+
+        _ = (ign = {
+          loop (prim ref 4); // call must be in a function body
+        }; ign);
+
+        // a call here de-triggers the bug: loop sep_DB598668;
+
+        ()
+    };
+    // Need two calls.
+    foo = existsFile_EF3F635E { 1 };
+    bar = existsFile_EF3F635E { 2 };
+
+
+    foo = existsFile_top { 1 };
+    bar = existsFile_top { 2 };
+    ()
+};
+
+
+
+
+
+
+    existsFile_top = { x_7A5ED037 : { Int32 } => // must a fn typed arg
+        sep_DB598668 = prim ref (); // must be defined outside of loop (obv)
+
+        REC loop = { x_C9BA77B0 : Ref () => // loop must have an arg...
+              (loop sep_DB598668 as ()); // must pass as loop arg; other use doesn't count.
+        };
+
+        _ = {
+          //loop sep_DB598668 // call must be in a function body
+          loop (prim ref ()); // call must be in a function body
+        };
+
+
+        // a call here de-triggers the bug: loop sep_DB598668;
+
+        ()
+    };
+

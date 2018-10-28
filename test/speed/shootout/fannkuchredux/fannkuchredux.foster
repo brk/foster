@@ -1,0 +1,111 @@
+snafuinclude Prelude "prelude";
+
+// Transliteration of Computer Language Benchmarks Game
+// program for Free Pascal converted to C by Joseph Piché
+//                 from Java version by Oleg Mazurov and Isaac Gouy.
+//
+// http://shootout.alioth.debian.org/u32/program.php?test=fannkuchredux&lang=gcc&id=1
+
+
+incrBy = { r : Ref Int32 => n : Int32 => (r^ +Int32 n) >^ r; };
+decrBy = { r : Ref Int32 => n : Int32 => (r^ -Int32 n) >^ r; };
+
+tk = { maxn : Int32 =>
+       maxflips : Ref Int32 =>
+       checksum : Ref Int32 =>
+
+      i = (prim ref 0);
+      c = allocDArray:[Int32] 16;
+      s = allocDArray:[Int32] 16;
+      t = allocDArray:[Int32] 16;
+      odd = (prim ref False);
+
+      rotate = { n : Int32 =>
+          ec = s[0];
+          repeatRange 0 n { i : Int32 => s[i +Int32 1] >^ s[i]; () };
+          ec >^ s[n];
+      };
+
+      flip = {
+        repeatRange 0 maxn { i : Int32 => s[i] >^ t[i]; () };
+         // Naively, these references will be heap-allocated on each flip,
+         // even though they could be stack-allocated.
+         // The resulting GCs will be mostly-free, but there are costs in
+         // cache misses, and the allocator fastpath is not free either.
+         // For input size 10, the allocations incur an extra 500M insns
+         // (170M cycles on Skylake), 3.8M D1$ misses, and 16K LLC misses.
+         xo = (prim ref 0);
+         yo = (prim ref t[0]);
+         i = (prim ref 1);
+         c = (prim ref 0);
+         done = (prim ref False);
+
+          until { done^ } {
+            0    >^ xo;
+            t[0] >^ yo;
+            until { xo^ >=SInt32 yo^ } {
+              t[xo^] >^ c;
+              t[yo^] >^ t[xo^];
+              incrBy xo 1;
+              c^ >^ t[yo^];
+              decrBy yo 1;
+            };
+            incrBy i 1;
+            (t[t[0]] ==Int32 0) >^ done;
+          };
+          i^
+      };
+
+    repeatRange 0 16 { k : Int32 => k >^ s[k]; () };
+    repeatRange 0 16 { k : Int32 => 0 >^ c[k]; () };
+
+    until { maxn <=SInt32 i^ } {
+      rotate i^;
+      if c[i^] >=SInt32 i^ then
+        0 >^ c[i^];
+        incrBy i 1;
+      else
+        (c[i^] +Int32 1) >^ c[i^];
+        1 >^ i;
+        not odd^ >^ odd;
+        if s[0] >SInt32 0 then
+          f = if s[s[0]] ==Int32 0 then 1 else flip ! end;
+            if f >SInt32 maxflips^ then f >^ maxflips; () end;
+            if odd^ then checksum^ -Int32 f
+                    else checksum^ +Int32 f
+            end >^ checksum;
+            ()
+          end
+      end
+    }
+};
+
+in-range = { n : Int32 => a : Int32 => z : Int32 =>
+  if   n <SInt32 a then False
+  else n <=SInt32 z
+  end
+};
+
+repeatRange = { e : Int32 => n : Int32 => f : { Int32 => () } =>
+  if e <SInt32 n then f e; repeatRange (e +Int32 1) n f end
+};
+
+main = {
+  n = tmp_Int32_of_base_10_Text (get_cmdline_arg_n 1);
+  maxflips = (prim ref 0);
+  checksum = (prim ref 0);
+
+    if in-range n 3 15 then
+      tk n maxflips checksum;
+
+      print_i32 checksum^;
+      print_text "Pfannkuchen";
+      print_i32 n;
+      print_i32 maxflips^;
+      ()
+      // printf("%d\nPfannkuchen(%d) = %d\n", checksum, max_n, maxflips);
+    else
+      print_text "usage: <prog> number-from-3-to-15";
+    end
+};
+

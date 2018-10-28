@@ -1,0 +1,84 @@
+main = {
+  0
+};
+
+// Four variants of the stdlib function tmp_Text_bytes_iter_reverse;
+// some of these variants would get incorrect ad-hoc recursiveness
+// anntoations.
+
+// The minimal loop-headered form.
+tmp_Text_bytes_iter_reverse_D = { t:Text =>
+                                  f: { Int8 => Bool } =>
+  REC go = { tt =>
+      case tt
+        of $TextFragment a n     -> True
+        of $TextConcat   s1 s2 n ->
+            if    tmp_Text_bytes_iter_reverse_D s2 f
+             then go s1
+             else False
+            end
+       end;
+  };
+  go t;
+};
+
+// The minimal loop-headered form, with no function.
+tmp_Text_bytes_iter_reverse_A = { t:Text =>
+  REC go = { tt =>
+      case tt
+        of $TextFragment a n     -> True
+        of $TextConcat   s1 s2 n ->
+            if    tmp_Text_bytes_iter_reverse_A s2
+             then go s1
+             else False
+            end
+       end;
+  };
+  go t;
+};
+
+// Non-minimal loop-headered form.
+tmp_Text_bytes_iter_reverse_B = { t:Text =>
+                                  f: { Int8 => Bool } =>
+  REC go = { tt => ff =>
+      case tt
+        of $TextFragment a n     -> True
+        of $TextConcat   s1 s2 n ->
+            if    tmp_Text_bytes_iter_reverse_B s2 ff
+             then go s1 ff
+             else False
+            end
+       end;
+  };
+  go t f;
+};
+
+// Non-loop-headered.
+tmp_Text_bytes_iter_reverse_C = { t:Text =>
+                                  f: { Int8 => Bool } =>
+  case t
+    of $TextFragment a n     -> True
+    of $TextConcat   s1 s2 n ->
+        if    tmp_Text_bytes_iter_reverse_C s2 f
+         then tmp_Text_bytes_iter_reverse_C s1 f
+         else False
+        end
+   end;
+};
+
+
+tmp_Int32_of_base_10_Text_A = { t:Text =>
+ tmp_Text_bytes_iter_reverse_A t
+};
+
+tmp_Int32_of_base_10_Text_B = { t:Text =>
+ tmp_Text_bytes_iter_reverse_B t { n : Int8 => True }
+};
+
+tmp_Int32_of_base_10_Text_C = { t:Text =>
+ tmp_Text_bytes_iter_reverse_C t { n : Int8 => True }
+};
+
+tmp_Int32_of_base_10_Text_D = { t:Text =>
+ tmp_Text_bytes_iter_reverse_D t { n : Int8 => True }
+};

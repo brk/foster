@@ -1,0 +1,151 @@
+
+type case Gen (a:Type) of $Gen { Int32 => a };
+
+appGen :: forall (a:Type) { Gen a => Int32 => a };
+appGen = { g => v => case g of $Gen f -> f v end };
+
+retGen :: forall (a:Type) { a => Gen a };
+retGen = { a => Gen { n => a } };
+
+bndGen :: forall (a:Type) (b:Type)
+         { Gen a => { a => Gen b } => Gen b };
+bndGen = { g => k =>
+  Gen { n =>
+    v = appGen g n;
+    appGen (k v) n
+  }
+};
+
+mapGen :: forall (a:Type) (b:Type) { { a => b } => Gen a => Gen b };
+mapGen = { f => g => Gen { n => f (appGen g n) } };
+
+liftGen :: forall (x:Type) (b:Type)
+          { { x => b } => x => Gen b };
+liftGen = { f => a => Gen { n => f a } };
+
+sized :: forall (x:Type) { { Int32 => Gen x } => Gen x };
+sized = { f =>
+  Gen { n => appGen (f n) n }
+};
+
+resize :: forall (x:Type) { Int32 => Gen x => Gen x };
+resize = { n => g =>
+  Gen { m => appGen g n }
+};
+
+// TODO use rejection sampling
+rndZeroToInt32 = { prng : { Int32 } => n : Int32 =>
+  if n ==Int32 0 then 0 else
+    // The simple thing to do would be ((prng !) `urem-Int32` n)
+    // but that produces a slightly biased distribution.
+    // See https://ericlippert.com/2013/12/16/how-much-bias-is-introduced-by-the-remainder-technique/
+    //
+    // Instead, we'll (repeatedly) calculate a random number that is
+    // at most 2*n, and reject anything we get that's not <= n.
+    bitsToDiscard = ctlz-Int32 n;
+    REC loop = { raw =>
+      trimmed = raw `bitlshr-Int32` bitsToDiscard;
+
+      //prim static-assert { trimmed <= (2 *Int32 n) };
+
+      if trimmed >=UInt32 n
+        then loop (prng !)
+        else trimmed
+      end
+    };
+    loop (prng !)
+  end
+};
+
+rndRangeInt32 :: { { Int32 } => (% ra : Int32 : True)
+                             => (% rb : Int32 : ra <SInt32 rb)
+                             => Int32 /*
+                             => (% rv : Int32 : rv >=SInt32 ra
+                                            AND rv <SInt32  rb ) */ };
+rndRangeInt32 = { prng => a => b =>
+  a +Int32 (rndZeroToInt32 prng (b -Int32 a))
+};
+
+arb_Int32 :: { { Int32 } => Gen Int32 };
+arb_Int32 = { prng =>
+  sized { n =>
+    retGen (rndZeroToInt32 prng n) }
+};
+
+// Generate a **nonuniform** sample of the (representable)
+// reals between zero and one (exclusive), which excludes
+// values in (0, 2^-53).
+//
+// From http://mumble.net/~campbell/2014/04/28/random_real.c
+// See: http://mumble.net/~campbell/2014/04/28/uniform-random-float
+//
+arb_Float64_unit_53 = { prng =>
+  v64 = mergeInt32 (prng !) (prng !);
+  (bitfield-len-Int64 v64 0 53 |> u64-to-f64-unsafe)
+        *f64 (powi-f64 2.0 -53);
+};
+
+// Generates a **nonuniform** sample of the reals between
+// zero and one, which over-represents larger numbers,
+// and does not include exponents below -64.
+//
+arb_Float64_unit = { prng =>
+  v64 = mergeInt32 (prng !) (prng !);
+  (v64 |> u64-to-f64-unsafe) *f64 (powi-f64 2.0 -64);
+};
+
+// TODO port the random_real function from above link.
+
+
+// Produces normally-distributed floating point numbers
+// with mean zero and the given standard deviation
+// using Marsaglia's polar method.
+//   Impl. note: because we feed this a subset of normal
+//   doubles, the generated distribution has the tails
+//   prematurely cut off.
+arb_Float64_gauss = { prng => stddev : Float64 =>
+  REC loop = {
+     u = (2.0 *f64 arb_Float64_unit prng) -f64 1.0;
+     v = (2.0 *f64 arb_Float64_unit prng) -f64 1.0;
+     s = (u *f64 u) +f64 (v *f64 v);
+
+     case (s >=f64 1.0, s ==f64 0.0)
+       of (False, False) ->
+         tlog = -2.0 *f64 (log-f64 s);
+         mul = sqrt-f64 (tlog `div-f64` s);
+         stddev *f64 u *f64 mul;
+       of _ -> loop !
+     end
+  };
+  loop !;
+};
+
+
+arb_Pair :: forall (a:Type) (b:Type) { Gen a => Gen b => Gen (a, b) };
+arb_Pair = { ga => gb =>
+  bndGen ga { va =>
+    bndGen gb { vb =>
+      retGen (va, vb)
+    }
+  }
+};
+
+vector :: forall (x:Type) { Gen x => Int32 => Gen (List x) };
+vector = { g => targetLen =>
+  Gen { n =>
+    REC loop = { acc => len =>
+      if len ==Int32 0 then acc else
+        loop (Cons (appGen g n) acc) (len -Int32 1)
+      end
+    };
+    loop Nil targetLen
+  }
+};
+
+arb_List :: forall (t:Type) { { Int32 } => Gen t => Gen (List t) };
+arb_List  = { prng =>    ge => sized { n =>
+  m = rndZeroToInt32 prng n; vector ge m }
+};
+
+arb_ListN :: forall (t:Type) { Int32 => Gen t => Gen (List t) };
+arb_ListN = { n => ge => resize n (sized { m => vector ge m }) };

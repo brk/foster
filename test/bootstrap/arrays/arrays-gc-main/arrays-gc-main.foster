@@ -1,0 +1,15 @@
+// If main gets inlined into its caller/wrapper from the stdlib,
+// the stack slot will become invisible to the GC (because it's in
+// a non-GC'ed function), so the GC will fail to update the array,
+// which will become corrupted.
+main = {
+  a = (allocDArray:[Int32] 3);
+
+  expect_i64 3;
+  print_i64 (prim_arrayLength a);
+
+  force_gc_for_debugging_purposes !;
+
+  expect_i64 3;
+  print_i64 (prim_arrayLength a);
+};

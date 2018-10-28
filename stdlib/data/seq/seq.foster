@@ -1,0 +1,135 @@
+snafuinclude FingerTree "data/finger-tree";
+
+type case Seq (a:Type)
+      of $Seq (FingerTree a)
+      ;
+
+// Time: O(1)
+// Heap: may or may not dynamically allocate.
+seqEmpty :: forall (a:Type) { Seq a };
+seqEmpty = { Seq FT_Empty };
+
+// Time, Heap: O(1)
+seqSingleton :: forall (a:Type) { a => Seq a };
+seqSingleton = { x => Seq (FT_Single x) };
+
+// Time, Heap: O(log n)
+seqReplicate32 :: forall (a:Type)
+                   { % n : Int32 : n >=SInt32 0
+                    => a => Seq a };
+seqReplicate32 = { vn => va =>
+  //TODO swapping the args results in a less-than-ideal error message
+  //Seq (ftReplicate32 vn 1 va)
+
+  Seq (ftReplicate32 vn va 1)
+};
+
+// Time: amortized O(1)
+seqPrepend :: forall (a:Type) { a => Seq a => Seq a };
+seqPrepend = { x => seq =>
+  let ($Seq xs) = seq;
+  Seq (ftConsTreeE x xs)
+};
+
+// Time: amortized O(1)
+seqPostpend :: forall (a:Type) { Seq a => a => Seq a };
+seqPostpend = { seq => x =>
+  let ($Seq xs) = seq;
+  Seq (ftSnocTreeE xs x)
+};
+
+// Time: O(1)
+// Heap: none
+seqIsEmpty :: forall (a:Type) { Seq a => Bool };
+seqIsEmpty = { seq =>
+  let ($Seq xs) = seq;
+  case xs
+    of $FT_Empty -> True
+    of _ -> False
+  end
+};
+
+// Time, Heap: O(log(min(n1, n2)))
+seqConcat :: forall (a:Type) { Seq a => Seq a => Seq a };
+seqConcat = { s1 => s2 =>
+  let ($Seq xs, $Seq ys) = (s1, s2);
+  Seq (ftAppendTree0 ftElemSize xs ys)
+};
+
+seqLength :: forall (a:Type) { Seq a => Int32 };
+seqLength = { seq => let ($Seq xs) = seq; ftTreeSize ftElemSize xs };
+
+
+type case SeqViewR (a:Type)
+      of $SV_EmptyR
+      of $SV_Snoc (Seq a) a
+      ;
+
+type case SeqViewL (a:Type)
+      of $SV_EmptyL
+      of $SV_Cons a (Seq a)
+      ;
+
+seqViewL :: forall (a:Type) { Seq a => SeqViewL a };
+seqViewL = { seq => let ($Seq xs) = seq;
+  case ftViewL ftElemSize xs
+    of $FT_EmptyL    -> SV_EmptyL
+    of $FT_Cons a ft -> SV_Cons a (Seq ft)
+  end
+};
+
+seqViewR :: forall (a:Type) { Seq a => SeqViewR a };
+seqViewR = { seq => let ($Seq xs) = seq;
+  case ftViewR ftElemSize xs
+    of $FT_EmptyR    -> SV_EmptyR
+    of $FT_Snoc ft a -> SV_Snoc (Seq ft) a
+  end
+};
+
+seqSplitAt :: forall (a:Type) { Seq a => Int32 => (Seq a, Seq a) };
+seqSplitAt = { seq => i =>
+  case seq
+    of ($Seq ($FT_Empty)) -> (Seq FT_Empty, Seq FT_Empty)
+    of ($Seq xs) ->
+      if i >=SInt32 seqLength seq
+        then (Seq xs, Seq FT_Empty)
+        else let ($FT_Split l x r) = ftSplitTree ftElemSize i xs;
+             (Seq l, Seq (ftConsTreeE x r))
+      end
+  end
+};
+
+seqIndex :: forall (a:Type) { Seq a => Int32 => Maybe a };
+seqIndex =  { seq => idx =>
+  let ($Seq ft) = seq;
+  ftIndex ftElemSize ft idx;
+};
+
+
+seqReverse :: forall (a:Type) { Seq a => Seq a };
+seqReverse =  { seq =>
+  seqReverseWith seq { x : a => x }
+};
+
+seqReverseWith :: forall (a:Type) { Seq a => { a => a } => Seq a };
+seqReverseWith =  { seq => reverser =>
+  let ($Seq ft) = seq;
+  Seq (ftReverseTree reverser ft)
+};
+
+seqFromFunction :: forall (a:Type) { Int32 => { Int32 => a } => Seq a };
+seqFromFunction = { len => f =>
+  Seq (ftFromFunction len f)
+};
+
+seqToArray :: forall (a:Type) { Seq a => Array a };
+seqToArray = { seq =>
+  let ($Seq ft) = seq;
+  ftToArray ftElemSize ft
+};
+
+ftConsTreeE :: forall (a:Type) { a => FingerTree a => FingerTree a };
+ftConsTreeE = { e => ft => ftConsTreeS ftElemSize e ft };
+
+ftSnocTreeE :: forall (a:Type) { FingerTree a => a => FingerTree a };
+ftSnocTreeE = { ft => e => ftSnocTreeS ftElemSize ft e };

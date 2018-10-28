@@ -1,0 +1,585 @@
+snafuinclude Prelude "prelude";
+snafuinclude Map "map";
+snafuinclude Measure "bench/measure";
+
+// This program re-implements the ADEXP parsing code from the following blog posts:
+//
+//   https://medium.com/@teivah/good-code-vs-bad-code-in-golang-84cb3c5da49d
+//   https://medium.com/@val_deleplace/go-code-refactoring-the-23x-performance-hunt-156746b522f7
+//
+// Compared to the "improved" Go code (go 1.10.3), this code is about 13x faster.
+//   https://github.com/Deleplace/forks-golang-good-code-bad-code   branch: performance
+//   $ go test -bench=. | grep 'ns/op'
+//   go tool pprof suggests that nearly 40% of runtime is spend in   runtime.mallocgc.
+//   I think it's due to slow allocation + synchronization;
+//     actual GC appears to be less than 1% of runtime.
+//
+//
+// Using BytesChunk instead of Bytes increases runtime by a factor of 4,
+// because this code spends much of its time indexing byte-by-byte, and
+// the code for bytesGet is many dozens of instructions. In contrast,
+// the indexing operation for BytesChunk is three instructions (two loads + an add).
+//
+// Bounds checking is about 20% of the remaining runtime.
+
+
+main2 = {
+  bytes = b"""-TITLE IFPL
+-ADEP CYYZ
+-ALTNZ EASTERN :CREEK'()+,./
+-ADES AFIL
+-ARCID ACA878
+-ARCTYP A333
+-CEQPT SDE3FGHIJ3J5LM1ORVWXY
+-EETFIR KZLC 0035
+-EETFIR KZDV 0131
+-EETFIR KZMP 0200
+-EETFIR CZWG 0247
+-EETFIR CZUL 0349
+-EETFIR CZQX 0459
+-EETFIR EGGX 0655
+-EETFIR EGPX 0800
+-EETFIR EGTT 0831
+-EETFIR EHAA 0853
+-EETFIR EBBU 0908
+-EETFIR EDGG 0921
+-EETFIR EDUU 0921
+-ESTDATA -PTID XETBO -ETO 170302032300 -FL F390
+-ESTDATA -PTID ARKIL -ETO 170302032300 -FL F390
+-GEO -GEOID GEO01 -LATTD 490000N -LONGTD 0500000W
+-GEO -GEOID GEO02 -LATTD 500000N -LONGTD 0400000W
+-GEO -GEOID GEO04 -LATTD 520000N -LONGTD 0200000W
+-BEGIN RTEPTS
+-PT -PTID CYYZ -FL F000 -ETO 170301220429
+-PT -PTID JOOPY -FL F390 -ETO 170302002327
+-PT -PTID GEO01 -FL F390 -ETO 170302003347
+-PT -PTID BLM -FL F171 -ETO 170302051642
+-PT -PTID LSZH -FL F014 -ETO 170302052710
+-END RTEPTS
+-SPEED N0456 ARKIL
+-SPEED N0457 LIZAD
+-MSGTXT (ACH-BEL20B-LIML1050-EBBR-DOF/150521-14/HOC/1120F320 -18/PBN/B1 DOF/150521 REG/OODWK RVR/150 OPR/BEL ORGN/LSAZZQZG SRC/AFP RMK/AGCS EQUIPPED)
+-COMMENT ???FPD.F15: N0410F300 ARLES UL153 PUNSA/N0410F300 UL153
+VADEM/N0400F320 UN853 PENDU/N0400F330 UN853 IXILU/N0400F340 UN853
+DIK/N0400F320 UY37 BATTY""";
+
+
+  msg = parseAdexpMessage bytes;
+  case msg
+    of $Message
+          typ
+          msgTitle
+          msgAdep
+          msgAdes
+          msgAlternate
+          msgArcid
+          msgArctyp
+          msgCeqpt
+          msgMessageText
+          msgComment
+          msgEetfir
+          msgSpeed
+          msgEstdata
+          msgGeo
+          msgRoutePoints
+        -> print_text "parsed message";
+  end;
+
+  ff = elapsed_time_n { msg = parseAdexpMessage bytes; () } 100000;
+  print_text "elapsed:";
+  print_text (foster_fmttime_secs ff);
+  print_text "per-op:";
+  print_text (foster_fmttime_secs (ff `div-f64` 100000.0));
+
+  ()
+};
+
+parseAdexpMessage = { bytes : Array Int8 => bytes |> preprocess |> process };
+
+preprocess :: { Array Int8 => List BytesChunk };
+preprocess = {  bytes =>
+  lines = rawSplitByte bytes "\n";
+  result = prim ref Nil:[BytesChunk];
+
+  bytesBegin  = bytesOfRawArray b"-BEGIN";
+  bytesEnd    = bytesOfRawArray b"-END";
+  bytesDash   = bytesOfRawArray b"-";
+  bytesEmpty_ = bytesOfRawArray b" ";
+  bytesComment = bytesOfRawArray b"//";
+
+  currentLine = listFoldl lines { line : Bytes => currentLine : Bytes =>
+    case ()
+      of _ if bytesHasPrefix line bytesEnd ->
+        currentLine
+
+      of _ if bytesHasPrefix line bytesBegin ->
+       (Cons (bytesChunkOfBytes currentLine) result^) >^ result;
+       bytesDash `bytesConcat` (bytesDrop (trim line) (bytesLength bytesBegin +Int64 1))
+
+      of _ if bytesHasPrefix line bytesDash ->
+       (Cons (bytesChunkOfBytes currentLine) result^) >^ result;
+       trim line
+
+      of _ if bytesHasPrefix line bytesEmpty_ ->
+        (currentLine `bytesConcat` bytesEmpty_) `bytesConcat` trim line
+
+      of _ ->
+        (currentLine `bytesConcat` bytesEmpty_) `bytesConcat` trim line
+    end
+  } (bytesEmpty !);
+
+  listReverse (Cons (bytesChunkOfBytes currentLine) result^)
+};
+
+type case Message
+  of $Message
+        MessageType
+        (Ref BytesChunk) // title
+        (Ref BytesChunk) // adep
+        (Ref BytesChunk) // ades
+        (Ref BytesChunk) // alternate
+        (Ref BytesChunk) // arcid
+        (Ref BytesChunk) // arctyp
+        (Ref BytesChunk) // ceqpt
+        (Ref BytesChunk) // messagetext
+        (Ref BytesChunk) // comment
+
+        (Ref (List BytesChunk)) // eetfir
+        (Ref (List BytesChunk)) // speed
+
+        (Ref (List Estdata))
+        (Ref (List Geo))
+        (Ref (List RoutePoints))
+  ;
+
+type case LineSummary
+  of $Skip
+  of $SimpleToken BytesChunk BytesChunk
+  of $ComplexToken BytesChunk (List (Map BytesChunk BytesChunk))
+  ;
+
+type case Estdata
+  of $Estdata BytesChunk BytesChunk Int32
+  ;
+
+type case Geo
+  of $Geo BytesChunk BytesChunk BytesChunk
+  ;
+type case RoutePoints
+  of $RoutePoints BytesChunk Int32 BytesChunk
+  ;
+
+type case MessageType
+  of $AdexpType
+  ;
+
+mapLine :: { BytesChunk => BytesChunk => LineSummary };
+mapLine = { line => bytesComment =>
+  case ()
+    of _ if bytesChunkLength line ==Int64 0 -> Skip
+    of _ if bytesChunkHasPrefix line bytesComment -> Skip
+    of _ if bytesChunkGet! line 0 !=Int8 '-' -> Skip
+    of _ ->
+      case parseLine (bytesChunkDrop line 1)
+        of ($Some token, $Some value) -> parseToken token value
+        of _ -> Skip
+      end
+  end
+};
+
+parseLine :: { BytesChunk => (Maybe BytesChunk, Maybe BytesChunk) };
+parseLine = { b =>
+  if bytesChunkLength b ==Int64 0
+    then (None, None)
+    else
+      // 'OR WHAT'
+      //    ^ i = 2
+      //  bytesTake 2 => OR
+      //  bytesDrop 3 => WHAT
+
+      i = bytesChunkIndexFrom b 0 ' ';
+      if i ==Int64 bytesChunkLength b
+        then (Some b, None)
+        else (Some (bytesChunkTake b i), Some (bytesChunkDrop b (i +Int64 1)))
+      end
+  end
+};
+
+parseToken :: { BytesChunk => BytesChunk => LineSummary };
+parseToken = { token => value =>
+  if bytesChunkLength token <SInt64 2 then Skip else
+    case bytesChunkGet! token 0
+      of c if c ==Int8 'A' -> // ADEP, ALTNZ, ADES, ARCID, ARCTYP
+        case ()
+         of _ if bytesChunkEqualRaw token b"ADEP"   -> SimpleToken token value
+         of _ if bytesChunkEqualRaw token b"ADES"   -> SimpleToken token value
+         of _ if bytesChunkEqualRaw token b"ALTNZ"  -> SimpleToken token value
+         of _ if bytesChunkEqualRaw token b"ARCID"  -> SimpleToken token value
+         of _ if bytesChunkEqualRaw token b"ARCTYP" -> SimpleToken token value
+         of _ -> Skip
+        end
+
+      of c if c ==Int8 'C' -> // CEQPT, COMMENT
+        case ()
+         of _ if bytesChunkEqualRaw token b"CEQPT"   -> SimpleToken token value
+         of _ if bytesChunkEqualRaw token b"COMMENT" -> SimpleToken token value
+         of _ -> Skip
+        end
+
+      of c if c ==Int8 'E' -> // ETO, EETFIR, ESTDATA
+        case ()
+         of _ if bytesChunkEqualRaw token b"ETO"     -> SimpleToken token value
+         of _ if bytesChunkEqualRaw token b"EETFIR"  -> SimpleToken token value
+         of _ if bytesChunkEqualRaw token b"ESTDATA" -> parseComplexToken token value
+         of _ -> Skip
+        end
+      of c if c ==Int8 'F' -> // FL
+        if bytesChunkEqualRaw token b"FL"
+          then SimpleToken token value
+          else Skip
+        end
+      of c if c ==Int8 'L' -> // LATTD, LONGTD
+        case ()
+          of _ if bytesChunkEqualRaw token b"LATTD"  -> SimpleToken token value
+          of _ if bytesChunkEqualRaw token b"LONGTD" -> SimpleToken token value
+          of _ -> Skip
+        end
+      of c if c ==Int8 'G' -> // GEO, GEOID
+        case ()
+         of _ if bytesChunkEqualRaw token b"GEO"   -> parseComplexToken token value
+         of _ if bytesChunkEqualRaw token b"GEOID" -> SimpleToken token value
+         of _ -> Skip
+        end
+      of c if c ==Int8 'M' -> // MSGTXT
+        if bytesChunkEqualRaw token b"MSGTXT"
+          then SimpleToken token value
+          else Skip
+        end
+      of c if c ==Int8 'S' -> // SPEED
+        if bytesChunkEqualRaw token b"SPEED"
+          then SimpleToken token value
+          else Skip
+        end
+      of c if c ==Int8 'R' -> // RTEPTS
+        if bytesChunkEqualRaw token b"RTEPTS"
+          then parseComplexToken token value
+          else Skip
+        end
+      of c if c ==Int8 'P' -> // PTID
+        if bytesChunkEqualRaw token b"PTID"
+          then SimpleToken token value
+          else Skip
+        end
+      of c if c ==Int8 'T' -> // TITLE
+        if bytesChunkEqualRaw token b"TITLE"
+          then SimpleToken token value
+          else Skip
+        end
+      of _ -> Skip
+    end
+  end
+};
+
+trim :: { Bytes => Bytes };
+trim = { b =>
+  REC countSpacesFwd = { idx : Int64 => count : Int64 =>
+    if idx <SInt64 bytesLength b
+      then if bytesGet! idx b ==Int8 ' '
+            then countSpacesFwd (idx +Int64 1) (count +Int64 1)
+            else count
+           end
+      else count
+    end
+  };
+  REC countSpacesBwd = { idx : Int64 => count : Int64 =>
+    if idx >=SInt64 0
+      then if bytesGet! idx b ==Int8 ' '
+            then countSpacesBwd (idx -Int64 1) (count +Int64 1)
+            else count
+           end
+      else count
+    end
+  };
+
+  ftrim = (bytesDrop b (countSpacesFwd 0 0));
+  len = bytesLength ftrim;
+  numbad = countSpacesBwd (len -Int64 1) 0;
+  bytesTake ftrim (len -Int64 numbad)
+};
+
+trimAlt :: { Bytes => Bytes };
+trimAlt = { b =>
+  REC countSpacesFwd = { idx : Int64 => count : Int64 =>
+    if idx <SInt64 bytesLength b
+      then if bytesGet! idx b ==Int8 ' '
+            then countSpacesFwd (idx +Int64 1) (count +Int64 1)
+            else count
+           end
+      else count
+    end
+  };
+  REC countSpacesBwd = { idx : Int64 => count : Int64 =>
+    if idx >=SInt64 0
+      then if bytesGet! idx b ==Int8 ' '
+            then countSpacesBwd (idx -Int64 1) (count +Int64 1)
+            else count
+           end
+      else count
+    end
+  };
+
+  ftrim = (bytesDrop b (countSpacesFwd 0 0));
+  len = bytesLength ftrim;
+  numbad = countSpacesBwd (len -Int64 1) 0;
+  bytesTake ftrim (len -Int64 numbad)
+};
+
+trimChunk :: { BytesChunk => BytesChunk };
+trimChunk = { b =>
+  REC countSpacesFwd = { idx : Int64 => count : Int64 =>
+    if idx <SInt64 bytesChunkLength b
+      then if bytesChunkGet! b idx ==Int8 ' '
+            then countSpacesFwd (idx +Int64 1) (count +Int64 1)
+            else count
+           end
+      else count
+    end
+  };
+  REC countSpacesBwd = { idx : Int64 => count : Int64 =>
+    if idx >=SInt64 0
+      then if bytesChunkGet! b idx ==Int8 ' '
+            then countSpacesBwd (idx -Int64 1) (count +Int64 1)
+            else count
+           end
+      else count
+    end
+  };
+
+  ftrim = (bytesChunkDrop b (countSpacesFwd 0 0));
+  len = bytesChunkLength ftrim;
+  numbad = countSpacesBwd (len -Int64 1) 0;
+  bytesChunkTake ftrim (len -Int64 numbad)
+};
+
+parseComplexToken :: { BytesChunk => BytesChunk => LineSummary };
+parseComplexToken = { token => value =>
+  matches = findSubfields value;
+  maps = prim ref Nil;
+
+  currentMap = listFoldl matches { sub => currentMap =>
+    case parseLine sub
+      of ($Some h, $Some l) ->
+        case mapLookup currentMap h bytesChunkCmp
+          of $None   -> mapInsert h (trimChunk l) currentMap bytesChunkCmp
+          of $Some v -> (Cons currentMap maps^) >^ maps;
+                        mapEmpty !
+        end
+      of _ -> currentMap
+    end
+  } (mapEmpty !);
+
+  ComplexToken token (listReverse (Cons currentMap maps^))
+};
+
+rawBytesFromTo = { arr => src => tgt =>
+  len = tgt -Int64 src;
+  bytesTake (bytesDrop (bytesOfRawArray arr) src) len
+};
+
+rawIndexFrom :: { Array Int8 => Int64 => Int8 => Int64 };
+rawIndexFrom = { arr => idx => c =>
+  len = arrayLength arr;
+  REC loop = { idx =>
+    if idx ==Int64 len
+      then idx
+      else if arr[idx] ==Int8 c
+             then idx
+             else loop (idx +Int64 1)
+            end
+    end
+  };
+  loop idx
+};
+
+rawSplitByte :: { Array Int8 => Int8 => List Bytes };
+rawSplitByte = { arr => sep =>
+  len = arrayLength arr;
+  REC loop = { pos => chunks =>
+    tgt = rawIndexFrom arr pos sep;
+    if tgt ==Int64 len
+      then      (Cons (rawBytesFromTo arr pos tgt) chunks)
+      else loop (tgt +Int64 1)
+                (Cons (rawBytesFromTo arr pos tgt) chunks)
+    end
+  };
+  loop 0 Nil
+};
+
+bytesChunkSplitByte :: { BytesChunk => Int8 => List BytesChunk };
+bytesChunkSplitByte = { b => sep =>
+  len = bytesChunkLength b;
+  REC loop = { pos => chunks =>
+    tgt = bytesChunkIndexFrom b pos sep;
+    if tgt ==Int64 len
+      then      (Cons (bytesChunkFromTo b pos tgt) chunks)
+      else loop (tgt +Int64 1)
+                (Cons (bytesChunkFromTo b pos tgt) chunks)
+    end
+  };
+  loop 0 Nil
+};
+
+findSubfields :: { BytesChunk => List BytesChunk };
+findSubfields = { value =>
+  subfields = bytesChunkSplitByte value '-';
+  case subfields
+    of $Nil -> subfields
+    of $Cons f rest ->
+      if bytesChunkLength (trimChunk f) ==Int64 0
+        then rest
+        else subfields
+      end
+  end
+};
+
+process :: { List BytesChunk => Message };
+process = { mbytes =>
+  emp = bytesChunk b"";
+  msgTitle = prim ref emp;
+  msgAdep  = prim ref emp;
+  msgAdes  = prim ref emp;
+  msgAlternate = prim ref emp;
+  msgArcid = prim ref emp;
+  msgArctyp = prim ref emp;
+  msgCeqpt = prim ref emp;
+  msgMessageText = prim ref emp;
+  msgComment = prim ref emp;
+
+  msgEetfir = prim ref Nil;
+  msgSpeed = prim ref Nil;
+  msgEstdata = prim ref Nil;
+  msgGeo = prim ref Nil;
+  msgRoutePoints = prim ref Nil;
+
+  bytesComment = bytesChunk b"//";
+
+  listIter mbytes { idx => line =>
+    data = mapLine line bytesComment;
+    case data
+      of $Skip -> ()
+      of $SimpleToken token value ->
+        case ()
+          of _ if bytesChunkEqualRaw token b"TITLE" -> value >^ msgTitle;
+          of _ if bytesChunkEqualRaw token b"ADEP"  -> value >^ msgAdep;
+          of _ if bytesChunkEqualRaw token b"ALTNZ" -> value >^ msgAlternate;
+          of _ if bytesChunkEqualRaw token b"ADES"  -> value >^ msgAdes;
+          of _ if bytesChunkEqualRaw token b"ARCID" -> value >^ msgArcid;
+          of _ if bytesChunkEqualRaw token b"ARCTYP" -> value >^ msgArctyp;
+          of _ if bytesChunkEqualRaw token b"CEQPT" -> value >^ msgCeqpt;
+          of _ if bytesChunkEqualRaw token b"MSGTXT" -> value >^ msgMessageText;
+          of _ if bytesChunkEqualRaw token b"EETFIR" -> (Cons value msgEetfir^) >^ msgEetfir;
+          of _ if bytesChunkEqualRaw token b"SPEED"  -> (Cons value msgSpeed^) >^ msgSpeed;
+          of _ -> prim kill-entire-process "process saw unxepcted simple token"
+        end
+
+      of $ComplexToken token maps ->
+        case ()
+          of _ if bytesChunkEqualRaw token b"ESTDATA" ->
+            listIter maps { idx => map =>
+
+              case mapLookupWithDefault map (bytesChunk b"FL") (bytesChunk b"") bytesChunkCmp
+                      |> extractFlightLevel
+                of $Some lvl ->
+                  ptid = mapLookupWithDefault map (bytesChunk b"PTID") (bytesChunk b"") bytesChunkCmp;
+                  eto  = mapLookupWithDefault map (bytesChunk b"ETO" ) (bytesChunk b"") bytesChunkCmp;
+                  (Cons (Estdata ptid eto lvl) msgEstdata^) >^ msgEstdata;
+
+                of $None -> prim kill-entire-process "unable to find flight level"
+              end
+            };
+
+          of _ if bytesChunkEqualRaw token b"GEO"  ->
+            listIter maps { idx => map =>
+                  geo = mapLookupWithDefault map (bytesChunk b"GEOID" ) (bytesChunk b"") bytesChunkCmp;
+                  lat = mapLookupWithDefault map (bytesChunk b"LATTD" ) (bytesChunk b"") bytesChunkCmp;
+                  lon = mapLookupWithDefault map (bytesChunk b"LONGTD") (bytesChunk b"") bytesChunkCmp;
+                  (Cons (Geo geo lat lon) msgGeo^) >^ msgGeo;
+            };
+
+
+          of _ if bytesChunkEqualRaw token b"RTEPTS" ->
+            listIter maps { idx => map =>
+
+              case mapLookupWithDefault map (bytesChunk b"FL") (bytesChunkEmpty !) bytesChunkCmp
+                      |> extractFlightLevel
+                of $Some lvl ->
+                  ptid = mapLookupWithDefault map (bytesChunk b"PTID") (bytesChunkEmpty !) bytesChunkCmp;
+                  eto  = mapLookupWithDefault map (bytesChunk b"ETO" ) (bytesChunkEmpty !) bytesChunkCmp;
+                  (Cons (RoutePoints ptid lvl eto) msgRoutePoints^) >^ msgRoutePoints;
+
+                of $None -> prim kill-entire-process "unable to find flight level"
+              end
+            };
+
+          of _ -> prim kill-entire-process "process saw unxepcted complex token"
+        end
+
+    end
+  };
+
+  Message
+    AdexpType
+          msgTitle
+          msgAdep
+          msgAdes
+          msgAlternate
+          msgArcid
+          msgArctyp
+          msgCeqpt
+          msgMessageText
+          msgComment
+
+          msgEetfir
+          msgSpeed
+          msgEstdata
+          msgGeo
+          msgRoutePoints
+};
+
+atoi = { t:BytesChunk =>
+  base = 10;
+  REC loop = { idx => acc => pow =>
+    if idx <SInt64 0
+      then Some acc
+      else
+        c = bytesChunkGet! t idx;
+        if is_ascii_digit c
+          then
+            s = (sext_i8_to_i32 c) -Int32 48;
+            loop (idx -Int64 1) (acc +Int32 (s *Int32 pow))
+                                (pow *Int32 base)
+          else None
+        end
+    end
+  };
+  loop (bytesChunkLength t -Int64 1) 0 1
+};
+
+extractFlightLevel = { bytes => bytesChunkDrop bytes 1 |> atoi };
+
+main = {
+  expect_i32 3;
+  print_i32 (listLength32 (bytesChunkSplitByte (bytesChunk b"123-456-789") '-'));
+
+  expect_i32 3;
+  print_i32 (listLength32 (bytesChunkSplitByte (bytesChunk b"--") '-'));
+
+  expect_i32 2;
+  print_i32 (listLength32 (bytesChunkSplitByte (bytesChunk b"-") '-'));
+
+  expect_i32 1;
+  print_i32 (listLength32 (bytesChunkSplitByte (bytesChunk b"*") '-'));
+
+  main2 !
+};
+

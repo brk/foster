@@ -1,0 +1,214 @@
+main = {
+  expect_i1 True;
+  print_i1 (__COMPILES__ expgt2 4);
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ expgt2 0);
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ prim assert-invariants (0 >UInt32 0));
+
+  expect_i1 True;
+  print_i1 (__COMPILES__ prim assert-invariants (0 >=UInt32 0));
+
+  zgtz = 0 >UInt32 0;
+  ifres = if zgtz
+   then prim assert-invariants (1 >UInt32 1); // unsat (true... or dead code)
+   else ()
+  end;
+
+ fx = { x : Int32 => x };
+ expect_i1 True;
+ print_i1 (__COMPILES__ bar1g fx);
+
+ expect_i1 True;
+ print_i1 (__COMPILES__ bar1g expgt2);
+
+ // DISABLED_TEST
+ // Need to properly implement implication of refinements...
+ //expect_i1 False;
+ //print_i1 (__COMPILES__ bar1g expgt4);
+ //test-fn-implication !;
+
+ test-bar1 !;
+
+ expect_i32 1111111;
+ print_i32  1111111;
+
+ test-global-poly-refined !;
+
+ test-local-nonrec !;
+
+ expect_i1 True;
+ print_i1 (__COMPILES__ { a : Array Int8 => prim assert-invariants (prim_arrayLength a >=SInt64 0) });
+
+ /*
+ // DISABLED_TEST
+ // Embedded refinements are currently ignored :(
+ expect_i1 False;
+ print_i1 (__COMPILES__ ( { (0, 0) } as
+                          { (% ra : Int32 : ra >UInt32 2
+                            ,       Int32) }) );
+*/
+
+ expect_i1 False;
+ print_i1 (__COMPILES__ ( { 0 } as
+                          { % ra : Int32 : ra >UInt32 2 }) );
+
+ expect_i1 True;
+ print_i1 (__COMPILES__ ( { 3 } as
+                          { % ra : Int32 : ra >UInt32 2 }) );
+
+ expect_i1 True;
+ print_i1 (__COMPILES__ ( { (3, 0) } as
+                          { (% ra : Int32 : ra >UInt32 2
+                            ,       Int32) }) );
+
+ case pairi !
+   of (a, b) ->
+        expect_i1 True;
+        print_i1 (__COMPILES__ prim assert-invariants (a >UInt32 2));
+
+        expect_i1 False;
+        print_i1 (__COMPILES__ prim assert-invariants (b >UInt32 2));
+ end;
+
+ expect_i1 True;
+ print_i1 (__COMPILES__
+               { x : Int32 =>
+                if prim ==Int32 x 0
+                  then 0
+                  else prim sdiv-unsafe-Int32 4 x
+                end
+              });
+
+ expect_i1 False;
+ print_i1 (__COMPILES__
+               { x : Int32 =>
+                  prim sdiv-unsafe-Int32 4 x
+               });
+
+ ()
+
+};
+
+// Refinements of return values (postconditions); implicit dependency.
+pairi :: { (% ra : Int32 : ra >UInt32 2
+           ,       Int32) };
+pairi = { (0, 0) };
+
+/*
+// Refinements of return values (postconditions); explicit dependency.
+paird :: { % pa : Int32 : True =>
+           (% ra : Int32 : ra >UInt32 pa
+           ,       Int32) };
+paird = { a => (a +Int32 1, 0) };
+*/
+
+resi-f :: { % pa : Int32 : True =>
+          % ra : Int32 : ra >UInt32 2 };
+resi-f = { a => 3 };
+
+
+resi-t :: { % pa : Int32 : pa ==Int32 1 =>
+            % ra : Int32 : ra ==Int32 2 };
+resi-t = { a =>
+  a +Int32 1;
+};
+
+/*
+// This looks kosher but it's not, due to overflow when ``a`` is 0xFF...FF.
+resi-ff :: { % pa : Int32 : pa >UInt32 1 =>
+             % ra : Int32 : ra >UInt32 2 };
+resi-ff = { a =>
+  a +Int32 1;
+};
+*/
+
+expgt2 :: { % zz : Int32 : zz >UInt32 2 => Int32 };
+expgt2 = { yy =>
+  prim assert-invariants (yy >=UInt32 1);
+  0
+};
+
+expgt4 :: { % zz : Int32 : zz >UInt32 4 => Int32 };
+expgt4 = { yy =>
+  prim assert-invariants (yy >=UInt32 1);
+  0
+};
+
+bar1g :: { { (% qq : Int32 : qq >=UInt32 3) => Int32 } => Int32 };
+bar1g = { fz =>
+  fz 3 // should succeed: (3 >= 3)
+};
+
+test-bar1 = {
+  expect_i1 True;
+  print_i1 (__COMPILES__
+  { fz : { (% qq : Int32 : qq >=UInt32 3) => Int32 }  =>
+    fz 3 // should succeed: (3 >= 3)
+  });
+
+  expect_i1 False;
+  print_i1 (__COMPILES__
+  { fz : { % qq : Int32 : qq >=UInt32 2 => Int32 } =>
+    fz 0 // should fail: (0 >/= 2)
+  });
+};
+
+test-fn-implication = {
+  expects_noprecond = { f : { % x : Int32 : True => Int32 } =>
+    f 0
+  };
+
+  expect_i1 False;
+  print_i1 (__COMPILES__
+   { haveprecond : { (% x : Int32 : x !=Int32 255) => Int32 }
+          =>
+     expects_noprecond haveprecond });
+
+};
+
+test-local-nonrec = {
+  go_sh = {   bt :  % rbt : Int64 : True
+           => len_rem : (% r_len_rem : Int64 : rbt ==Int64 r_len_rem +Int64 zext_i32_to_i64 0)
+           =>
+         123
+      };
+
+  expect_i32 123;
+  print_i32 (go_sh 0 0);
+};
+
+
+test-global-poly-refined = {
+  test-global-poly-refinedA !;
+  //test-global-poly-refinedB !;
+};
+
+test-global-poly-refinedA = {
+  bc = arrlenA:[Int8];
+  ab = bc b"123";
+  prim assert-invariants (ab ==Int64 3);
+  ();
+};
+
+arrlenA :: forall (t:Type) { % ra : Array t : True
+         => % rv : Int64 : rv ==Int64 prim_arrayLength:[t] ra };
+arrlenA = { a => prim_arrayLength a };
+
+
+// DISABLED_TEST
+// currently broken, eep :-(
+/*
+test-global-poly-refinedB = {
+  bc = arrlenB:[Int8];
+  ab = bc b"123";
+  prim assert-invariants (ab ==Int64 3);
+  ();
+};
+
+arrlenB :: forall (t:Type) { % ra : Array t : True
+         => % rv : Int64 : rv ==Int64 prim_arrayLength ra };
+arrlenB = { a => prim_arrayLength a };
+*/

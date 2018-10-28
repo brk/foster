@@ -1,0 +1,4 @@
+snafuinclude DNE "does-not-exist";
+
+main = { () };
+

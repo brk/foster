@@ -1,0 +1,9 @@
+// IN: 2 3 5 8 13
+
+main = fn () {
+  expect_i32(2)
+  print_i32(deref(new read_i32()))
+  
+  expect_i32(42)
+  print_i32(deref(new 42))
+}

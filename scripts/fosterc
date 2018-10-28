@@ -1,0 +1,25 @@
+#!/bin/sh
+
+SD=$(dirname `which $0`)/../scripts
+FOSTER_ROOT=$($SD/normpath.py $SD/..)
+TMPDIR=fosterc-tmp
+
+mkdir -p ${TMPDIR}
+
+MAYBE_OUT="-o $1.exe"
+
+for arg in $@; do
+  if test $arg = "-o"; then
+    MAYBE_OUT=""
+  fi
+done
+
+cxxpath() {
+  echo $($SD/echo-llvmdir)/bin/clang++
+}
+
+echo ${SD}/fosterc.py --bindir ${FOSTER_ROOT}/_obj -I ${FOSTER_ROOT}/stdlib --tmpdir ${TMPDIR} --cxxpath $(cxxpath) $@ $MAYBE_OUT
+${SD}/fosterc.py --bindir ${FOSTER_ROOT}/_obj -I ${FOSTER_ROOT}/stdlib --tmpdir ${TMPDIR} --cxxpath $(cxxpath) $@ $MAYBE_OUT
+
+rm -f meGCstats.txt
+rm -rf ${TMPDIR} $1.postopt.ll $1.preopt.ll

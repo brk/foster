@@ -1,0 +1,60 @@
+#!/bin/bash
+
+SD=$(dirname `which $0`)/../scripts
+FOSTER_ROOT=$($SD/normpath.py $SD/..)
+
+LLVM_DIR=$( ${SD}/echo-llvmdir )
+LLVM_CLANG_INCLUDES=$( ${LLVM_DIR}/bin/clang -print-search-dirs | tail -n1 | sed 's/libraries: =//' | ${SD}/split-clang-includes.py)
+BINDIR=${FOSTER_ROOT}/_obj
+
+[ -d "${LLVM_DIR}" ] || echo "// LLVM dir ${LLVM_DIR} doesn't exist..."
+
+mkdir -p fosterc-standalone-tmp
+
+# Usage: c2foster cfile(s) [-I dir, etc]
+# Prints re-formatted text on stdout
+
+# Concrete example:
+# c2foster ~/zopfli/src/zopfli/tree.c -I ~/zopfli/src/zopfli > tree.foster
+cprogs=$( ${SD}/cmdparse_codefiles.py $@ | head -n1 )
+clangflags=$( ${SD}/cmdparse_codefiles.py $@ | tail -n +2 | head -n1)
+c2fflags=$( ${SD}/cmdparse_codefiles.py $@ | tail -n1 )
+
+#tmpfile=`mktemp`
+tmpfile="c2f.raw"
+
+set -o pipefail
+
+show_clang_ast () {
+  echo "// Clang AST for input C file:"
+  echo "// ${LLVM_DIR}/bin/clang -fsyntax-only -Xclang -ast-dump ${cprogs} ${LLVM_CLANG_INCLUDES} ${clangflags}"
+  ${LLVM_DIR}/bin/clang -fsyntax-only -Xclang -ast-dump ${cprogs} ${LLVM_CLANG_INCLUDES} ${clangflags} | ${SD}/clang-ast-filter.py
+  (>&2 echo "Failed to process either the input C code or the resulting Foster code...")
+  exit 1
+}
+
+echo 'snafuinclude C2F "c2f";' > ${tmpfile}.foster
+echo "// running c2f..."
+echo "// ${BINDIR}/c2f ${cprogs} ${c2fflags} -- ${LLVM_CLANG_INCLUDES} ${clangflags}  > ${tmpfile}.foster"
+#gdb --args ${BINDIR}/c2f ${cprogs} ${c2fflags} -- ${LLVM_CLANG_INCLUDES} ${clangflags}
+            ${BINDIR}/c2f ${cprogs} ${c2fflags} -- ${LLVM_CLANG_INCLUDES} ${clangflags} >> ${tmpfile}.foster
+
+c2f_status="$?"
+
+if [ "${c2f_status}" = "0" ]; then
+  echo "// running foster-fmt; c2f ${tmpfile}.foster status was ${c2f_status}"
+  echo "// ${SD}/fosterc.py --me-arg=--fmt --bindir ${BINDIR} --tmpdir fosterc-standalone-tmp ${tmpfile}.foster"
+  (${SD}/fosterc.py --me-arg=--fmt -I ${FOSTER_ROOT}/stdlib --bindir ${BINDIR} --tmpdir fosterc-standalone-tmp ${tmpfile}.foster --no-compile-log | ${SD}/ansifilter.py) || show_clang_ast ${clangflags}
+else
+  echo "// c2f failed with status ${c2f_status}; raw output was:"
+  cat ${tmpfile}.foster
+  if [ `cat ${tmpfile}.foster | wc -l` = "0" ]; then
+     show_clang_ast ${clangflags}
+  fi
+  exit 1
+fi
+
+rm -f meGCstats.txt
+#rm -rf fosterc-standalone-tmp
+#rm -f ${tmpfile}.foster
+

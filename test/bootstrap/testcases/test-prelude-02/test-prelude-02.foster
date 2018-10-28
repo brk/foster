@@ -1,0 +1,119 @@
+
+mkTextConcat = { a : Text => b : Text =>
+  lensum = (textLength a) +Int32 (textLength b);
+
+      TextConcat a b lensum
+};
+
+expect_text_bare = { s : Text =>
+  case s
+    of $TextFragment a n     -> prim_print_bytes_stderr a n 0; n
+    of $TextConcat   s1 s2 n -> expect_text_bare s1; expect_text_bare s2; n
+   end;
+};
+
+print_text_bare = { s : Text =>
+  case s
+    of $TextFragment a n     -> prim_print_bytes_stdout a n 0; n
+    of $TextConcat   s1 s2 n -> print_text_bare s1; print_text_bare s2; n
+   end;
+};
+
+textLength = { t : Text =>
+  case t
+    of $TextFragment _ n -> n
+    of $TextConcat _ _ n -> n
+   end;
+};
+
+expect_text = { s : Text =>
+  expect_text_bare s; expect_newline !; ()
+};
+
+print_text = { s : Text =>
+  print_text_bare s; print_newline !; ()
+};
+
+
+noinline_llvm_tmp_Text_of_Int32_digit = { n:Int32 =>
+  case n
+    of 0 -> "0"
+    of 1 -> "1"
+    of 2 -> "2"
+    of 3 -> "3"
+    of 4 -> "4"
+    of 5 -> "5"
+    of 6 -> "6"
+    of 7 -> "7"
+    of 8 -> "8"
+    of 9 -> "9"
+    of _ -> "<error:value passed to noinline_llvm_tmp_Text_of_Int32_digit was too large>"
+  end
+};
+
+tmp_Text_of_Int64 = { n:Int64 =>
+  if n <SInt64 0
+    then mkTextConcat "-" (noinline_llvm_tmp_Text_of_UInt64 (negate-Int64 n))
+    else                   noinline_llvm_tmp_Text_of_UInt64               n
+  end
+};
+
+srem-Int32 :: { Int32 => (% bb : Int32 : bb !=Int32 0) => Int32 };
+srem-Int32  = { a => b => prim srem-unsafe-Int32  a b };
+
+srem-Int64 :: { Int64 => (% bb : Int64 : bb !=Int64 0) => Int64 };
+srem-Int64  = { a => b => prim srem-unsafe-Int64  a b };
+
+sdiv-Int32 :: { Int32 => (% bb : Int32 : bb !=Int32 0) => Int32 };
+sdiv-Int32  = { a => b => prim sdiv-unsafe-Int32  a b };
+
+sdiv-Int64 :: { Int64 => (% bb : Int64 : bb !=Int64 0) => Int64 };
+sdiv-Int64  = { a => b => prim sdiv-unsafe-Int64  a b };
+
+noinline_llvm_tmp_Text_of_UInt64 = { n:Int64 =>
+  REC go = { n:Int64 => t:Text =>
+    if n <SInt64 10
+      then mkTextConcat (noinline_llvm_tmp_Text_of_Int32_digit (trunc_i64_to_i32 n)) t
+      else r = trunc_i64_to_i32 (srem-Int64 n 10);
+           q =                   sdiv-Int64 n 10 ;
+           go q (mkTextConcat (noinline_llvm_tmp_Text_of_Int32_digit r) t);
+    end
+  };
+  go n ""
+};
+
+
+tmp_Text_of_Int32 = { n:Int32 => tmp_Text_of_Int64 (sext_i32_to_i64 n) };
+
+noinline_tmp_Text_of_Int32 = { n:Int32 => tmp_Text_of_Int64 (sext_i32_to_i64 n) };
+
+
+
+main = {
+  expect_i32 5;
+  print_i32 (srem-Int32 105 10);
+
+  expect_i32 10;
+  print_i32 (sdiv-Int32 105 10);
+
+  noinline_llvm_part1 !; // works
+  noinline_llvm_part2 !; // works
+  noinline_llvm_part3 !; // fails
+};
+
+noinline_llvm_part1 = {
+  expect_text "123";
+  print_text (noinline_tmp_Text_of_Int32 123);
+};
+
+
+noinline_llvm_part2 = {
+  expect_text "123";
+  print_text ( tmp_Text_of_Int64 123);
+};
+
+noinline_llvm_part3 = {
+  expect_text "123";
+  print_text (tmp_Text_of_Int32 123);
+};
+

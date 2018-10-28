@@ -1,0 +1,7 @@
+[package]
+name = "bt"
+version = "0.1.0"
+authors = ["Ben Karel <eschew@gmail.com>"]
+
+[dependencies]
+typed-arena = "*"

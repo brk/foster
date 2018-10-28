@@ -1,0 +1,692 @@
+snafuinclude PreludeFixnums "prelude-fixnums";
+snafuinclude PreludeFolds   "prelude-folds";
+
+// Immutable wrapper around Array Int8 with enhanced asymptotics
+// for common operations like concatenation of bytes and taking slices/views
+// of byte arrays.
+// Standard sequence types like VList are currently limited to boxed types.
+// TODO would a specialization of VList perform better?
+
+type case Bytes
+  of $BytesEmpty
+  of $BytesFragment (Array Int8) Int64
+  of $BytesConcat   Bytes Bytes  Int64
+          // possible-but-not-yet-enforced invariant: sub-bytes not BytesEmpty.
+          // invariant: (BytesConcat a b len) -> len == (bytesLength a) + (bytesLength b).
+          //    (note, due to bytesTake, the equivalent rules do not apply
+          //           for BytesFragment or BytesOffset).
+  of $BytesOffset   Bytes Int64  Int64
+          // invariant: remaining len > 0
+          // invariant: sub-bytes not BytesOffset
+;
+
+rawBytesConcatByCopy = { a : Array Int8 => alen : Int32 =>
+                         b : Array Int8 => blen : Int32 => len : Int32 =>
+  if blen ==Int32 0 then a else
+    // We do this somewhat-unsatisfactory dance of allocating a (mutable) array,
+    // then filling its contents in via an exposed memcpy primitive.
+    // It would be nicer to have (byte-)array concatenation be a primitive of the
+    // runtime, but that would require the compiler to statically provide the
+    // runtime with the typeinfo needed to call memalloc_array.
+    //
+    // It's also not great that using this in a loop gives O(n^2) asympotic
+    // complexity rather than O(n), because we don't over-allocate our arrays.
+
+    bytes = allocDArray len;
+
+    // bytes[0..whatever]    = a[0..alen]
+    memcpy_i8_to_at_from_len bytes 0    a alen;
+
+    // bytes[alen..whatever] = b[0..blen]
+    memcpy_i8_to_at_from_len bytes alen b blen;
+
+    bytes
+  end
+};
+
+bytesEmpty :: { Bytes };
+bytesEmpty = { BytesEmpty };
+
+bytesOfOne :: { Int8 => Bytes };
+bytesOfOne = { v0 =>
+  bytesOfRawArray (prim mach-array-literal v0)
+};
+
+bytesOfFour :: { Int8 => Int8 => Int8 => Int8 => Bytes };
+bytesOfFour = { v0 => v1 => v2 => v3 =>
+  bytesOfRawArray (prim mach-array-literal v0 v1 v2 v3)
+};
+
+bytesOfEight :: { Int8 => Int8 => Int8 => Int8 =>
+                  Int8 => Int8 => Int8 => Int8 => Bytes };
+bytesOfEight = { v0 => v1 => v2 => v3 => v4 => v5 => v6 => v7 =>
+  bytesOfRawArray (prim mach-array-literal v0 v1 v2 v3 v4 v5 v6 v7)
+};
+
+bytesOfRawArray :: { Array Int8 => Bytes };
+bytesOfRawArray = { a => BytesFragment a (prim_arrayLength a) };
+
+bytesLength :: { Bytes => Int64 };
+bytesLength = { ba =>
+  case ba
+    of $BytesEmpty          -> 0
+    of $BytesFragment _ len -> len
+    of $BytesConcat _ _ len -> len
+    of $BytesOffset _ _ len -> len
+  end
+};
+
+bytesLength32 :: { Bytes => Int32 };
+bytesLength32 =  { bytes => bytesLength bytes |> cast_i64_to_i32  };
+
+bytesLengthWord :: { Bytes => Word };
+bytesLengthWord =  { bytes => bytesLength bytes |> cast_i64_to_Word };
+
+bytesConcat :: { Bytes => Bytes => Bytes };
+bytesConcat = { ba => bb =>
+  lena = bytesLength ba;
+  if lena ==Int64 0 then bb else
+    lenb = bytesLength bb;
+    if lenb ==Int64 0 then ba else
+      len = lena +Int64 lenb;
+      BytesConcat ba bb len
+    end
+  end
+};
+
+bytesConcatAlt :: { Bytes => Bytes => Bytes };
+bytesConcatAlt = { ba => bb =>
+  case (bytesLength ba, bytesLength bb)
+    of (0, _) -> bb
+    of (_, 0) -> ba
+    of (lena, lenb) -> BytesConcat ba bb (lena +Int64 lenb)
+  end
+};
+
+bytesDrop :: { Bytes => Int64 => Bytes };
+bytesDrop = { ba => n =>
+  if n ==Int64 0 then ba else
+    len = bytesLength ba -Int64 n;
+    if len <=SInt64 0
+      then BytesEmpty
+      else case ba
+            // TODO could drop half a concat if n is big enough.
+            of $BytesConcat bb bc _ ->
+              if bytesLength bb <=SInt64 n
+                then bytesDrop bc (n -Int64 bytesLength bb)
+                else // rather than re-concat a projection of the drop,
+                     // and potentially do multiple allocations,
+                     // we'll just wrap the concat in an offset...
+                     // That is, we'll do (drop (Concat a b) n) -> drop b n'
+                     //           but not (drop (Concat a b) n) -> Concat (drop a n) b
+                                      BytesOffset ba n            len
+              end
+            of $BytesOffset bb m _ -> BytesOffset bb (n +Int64 m) len
+            of _                   -> BytesOffset ba n            len
+          end
+    end
+  end
+};
+
+bytesDrop32 :: { Bytes => Int32 => Bytes };
+bytesDrop32 = { ba => n => bytesDrop ba (zext_i32_to_i64 n) };
+
+bytesTake32 :: { Bytes => Int32 => Bytes };
+bytesTake32 = { ba => n => bytesTake ba (zext_i32_to_i64 n) };
+
+bytesSlice32 :: { Bytes => Int32 => Int32 => Bytes };
+bytesSlice32 = { ba => off => len => bytesTake32 (bytesDrop32 ba off) len };
+
+bytesDropWord :: { Bytes => Word => Bytes };
+bytesDropWord = { ba => n => bytesDrop ba (zext_Word_to_i64 n) };
+
+bytesTakeWord :: { Bytes => Word => Bytes };
+bytesTakeWord = { ba => n => bytesTake ba (zext_Word_to_i64 n) };
+
+// Precondition: len >= 0
+// Postcondition: bytesLength (bytesTake b n) == min n (bytesLength b)
+bytesTake :: { Bytes => Int64 => Bytes };
+bytesTake = { ba => len =>
+  // [aaaaaaaaaaaaaaaa]
+  //          len
+  if len ==Int64 0 then BytesEmpty else
+  if len >=SInt64 bytesLength ba
+    then ba
+    else case ba
+           of $BytesFragment arr _ -> BytesFragment arr len
+           of $BytesOffset bb  m _ -> BytesOffset  bb m len
+           of $BytesConcat bb bc _ ->
+             lenFromC = len -Int64 bytesLength bb;
+             if lenFromC <=SInt64 0
+               then bytesTake bb len
+               else bytesConcat bb (bytesTake bc lenFromC)
+             end
+           of _ -> prim kill-entire-process "bytesTake invariant violated";
+         end
+  end
+  end
+};
+
+/*
+bytesFoldlBytes_Alt :: forall (a:Type) { Bytes => { Int8 => a => a } => a => a };
+bytesFoldlBytes_Alt = { ba => f => acc =>
+  // TODO(opt) this helper can't be contified (due to multiple continuations),
+  // so it will result in dynamic allocation,
+  // but its closure will be empty, meaning it could have been split out into
+  // a top-level function, thus avoiding dynamic allocation of an empty closure.
+  // That capability should be added to the contification pass,
+  // or the closure-conversion pass, or something...
+  REC go = { bytes => f => offset : Int64 => len : Int64 => acc =>
+      case bytes
+        of $BytesFragment arr _ ->
+            arrayFoldlFromTo arr (cast_i64_to_i32 offset)
+                                 (cast_i64_to_i32 (len +Int64 offset)) f acc
+        of $BytesOffset bb m len -> go bb f (offset +Int64 m) len acc
+        of $BytesConcat bb bc _ ->
+          bblen = bytesLength bb;
+          if offset <SInt64 bblen
+            then // try both; second call gets negative len if bb contains the whole range
+                 go bb f offset len acc |>
+                 go bc f 0 (len -Int64 (bblen -Int64 offset))
+            else // skip bb, go straight to bc
+                 go bc f (offset -Int64 bblen) len acc
+          end
+        of $BytesEmpty -> acc
+      end
+  };
+  go ba f 0 (bytesLength ba) acc
+};
+*/
+
+bytesFoldlBytesFromLen :: forall (a:Type) { Bytes => { Int8 => a => a }
+                                     => Int64 => Int64 => a => a };
+bytesFoldlBytesFromLen = { bytes => f => offset => len => acc =>
+ if len <=SInt64 0 then acc else
+   case bytes
+     of $BytesFragment arr xlen ->
+           arrayFoldlFromTo64 arr offset (min-UInt64 xlen (len +Int64 offset)) f acc
+     of $BytesOffset bb m xlen ->
+           bytesFoldlBytesFromLen bb f (offset +Int64 m) (min-UInt64 xlen len) acc
+     of $BytesConcat bb bc xlen ->
+           bblen = bytesLength bb;
+           if offset <SInt64 bblen
+           then // try both; second call gets negative len if bb contains the whole range
+             bytesFoldlBytesFromLen bb f offset len acc |>
+             bytesFoldlBytesFromLen bc f 0 (len -Int64 (bblen -Int64 offset))
+           else // skip bb, go straight to bc
+             bytesFoldlBytesFromLen bc f (offset -Int64 bblen) len acc
+           end
+     of $BytesEmpty -> acc
+   end
+ end
+};
+
+bytesFoldlBytes :: forall (a:Type) { Bytes => { Int8 => a => a } => a => a };
+bytesFoldlBytes = { ba => f => acc =>
+  bytesFoldlBytesFromLen ba f 0 (bytesLength ba) acc
+};
+
+bytesFoldlBytes_Alt2 :: forall (a:Type) { Bytes => { Int8 => a => a } => a => a };
+bytesFoldlBytes_Alt2 = { ba => f => acc =>
+  // Nice, but can we guarantee that inlining will allow us to
+  // eliminate the allocation for the closure capturing f?
+  bytesFoldlFragmentsFromLen ba
+            { arr => off => len => acc => arrayFoldlFromTo64 arr off len f acc }
+            0 (bytesLength ba) acc;
+};
+
+bytesFoldlFragments :: forall (a:Type) { Bytes => { Array Int8 => Int64 => Int64 => a => a } => a => a };
+bytesFoldlFragments = { ba => f => acc =>
+  bytesFoldlFragmentsFromLen ba f 0 (bytesLength ba) acc
+};
+
+// The provided ``f`` argument will be passed a sequence of
+// primitive byte arrays, along with offset and length information
+// describing the logically referenced subsequence of bytes.
+bytesFoldlFragmentsFromLen :: forall (a:Type) { Bytes => { Array Int8 => Int64 => Int64 => a => a }
+                                     => Int64 => Int64 => a => a };
+bytesFoldlFragmentsFromLen = { bytes => f => offset => len => acc =>
+ if len <=SInt64 0 then acc else
+   case bytes
+     of $BytesFragment arr xlen ->
+           target = offset +Int64 len; // this is the logical byte range we want
+           capped = min-UInt64 target xlen; // but it shouldn't fall beyond arr's
+                                            // physical boundaries
+           f arr offset capped acc
+     of $BytesOffset bb m xlen ->
+           bytesFoldlFragmentsFromLen bb f (offset +Int64 m) (min-UInt64 len xlen) acc
+     of $BytesConcat bb bc xlen ->
+           bblen = bytesLength bb;
+           if offset <SInt64 bblen
+           then // try both; second call gets negative len if bb contains the whole range
+             bytesFoldlFragmentsFromLen bb f offset len acc |>
+             bytesFoldlFragmentsFromLen bc f 0 (len -Int64 (bblen -Int64 offset))
+           else // skip bb, go straight to bc
+             bytesFoldlFragmentsFromLen bc f (offset -Int64 bblen) len acc
+           end
+     of $BytesEmpty -> acc
+   end
+ end
+};
+
+bytesFlattenRaw :: { Bytes => Array Int8 };
+bytesFlattenRaw = { bytes =>
+  rv = allocDArray (bytesLength32 bytes);
+  bytesFoldlFragments bytes { arr => fst => fin => acc =>
+      memcpy_i8_to_at_from_at_len rv  acc
+                                  arr fst  (fin -Int64 fst);
+      acc +Int64 (fin -Int64 fst)
+  } 0;
+  rv
+};
+
+
+bytesFlatten :: { Bytes => Bytes };
+bytesFlatten = { bytes => bytes |> bytesFlattenRaw |> bytesOfRawArray };
+
+// Measures the physical (as opposed to logical) space used to represent
+// the given byte array.
+bytesGetCapacity :: { Bytes => Int64 };
+bytesGetCapacity = { bytes =>
+  bytesFoldlFragments bytes { arr => fst => fin => acc => acc +Int64 (arrayLength arr) } 0;
+};
+
+bytesGetNumFragments :: { Bytes => Int64 };
+bytesGetNumFragments = { bytes =>
+  bytesFoldlFragments bytes { arr => fst => fin => acc => acc +Int64 1 } 0;
+};
+
+// Precondition: o is a valid index for b.
+bytesGet!    :: { Int64 => Bytes => Int8 };
+bytesGet! = { o => ba =>
+  case ba
+    of $BytesFragment arr _ -> arr[trunc_i64_to_i32 o];
+    of $BytesOffset bb m  _ -> bytesGet! (o +Int64 m) bb;
+    of $BytesConcat bb bc _ ->
+      afterdrop = o -Int64 bytesLength bb;
+      if afterdrop >=SInt64 0
+        then bytesGet! afterdrop bc
+        else bytesGet! o         bb
+      end
+    of $BytesEmpty          -> prim kill-entire-process "bytesGet! of BytesEmpty";
+  end
+};
+
+// Precondition: o is a valid index for b.
+bytesGet32!    :: { Int32 => Bytes => Int8 };
+bytesGet32! = { o => ba => bytesGet! (zext_i32_to_i64 o) ba };
+
+// Precondition: 0 is a valid index for b.
+bytesGet0! :: { Bytes => Int8 };
+bytesGet0! = { ba =>
+  case ba
+    of $BytesFragment arr _ -> arr[0];
+    of $BytesOffset bb m  _ -> bytesGet! m bb;
+    of $BytesConcat bb bc _ -> bytesGet0! bb;
+    of $BytesEmpty          -> prim kill-entire-process "bytesGet0! of BytesEmpty";
+  end
+};
+
+// Precondition: n is a valid index for b.
+// TODO would bytesGet o b = bytesGet0 (bytesDrop b o) be efficiently compiled?
+bytesGetAlt1! :: { Bytes => Int64 => Int8 };
+bytesGetAlt1! = { b => n =>
+  bytesGet0! (bytesDrop b n)
+};
+
+bytesGetAlt2! :: { Bytes => Int64 => Int8 };
+bytesGetAlt2! = { b => n =>
+  bytesGet! 0 (bytesDrop b n)
+};
+
+// bytesPackList  :: { List Int8 => Bytes };
+// bytesToUTF8 :: { Bytes => Text };
+// bytesOfUTF8 :: { Text => Bytes };
+
+// Precondition: i..i+7 are valid indices for bytes.
+bytesGet8LE! :: { Bytes => Int64 => Int64 };
+bytesGet8LE! = { bytes => i =>
+  a = bytesGet! (i +Int64 0) bytes;
+  b = bytesGet! (i +Int64 1) bytes;
+  c = bytesGet! (i +Int64 2) bytes;
+  d = bytesGet! (i +Int64 3) bytes;
+  e = bytesGet! (i +Int64 4) bytes;
+  f = bytesGet! (i +Int64 5) bytes;
+  g = bytesGet! (i +Int64 6) bytes;
+  h = bytesGet! (i +Int64 7) bytes;
+  mergeInt32 (octet4ToInt32 h g f e)
+             (octet4ToInt32 d c b a)
+};
+
+bytesGet8LE!Alt = { bytes => i =>
+  mergeInt32 (bytesGet4LE! bytes (i +Int64 4))
+             (bytesGet4LE! bytes  i          )
+};
+
+// Precondition: i..i+3 are valid indices for bytes.
+bytesGet4LE! :: { Bytes => Int64 => Int32 };
+bytesGet4LE! = { bytes => i =>
+  a = bytesGet! (i +Int64 0) bytes;
+  b = bytesGet! (i +Int64 1) bytes;
+  c = bytesGet! (i +Int64 2) bytes;
+  d = bytesGet! (i +Int64 3) bytes;
+  octet4ToInt32 d c b a
+};
+
+// Precondition: i..i+2 are valid indices for bytes.
+bytesGet3LE! :: { Bytes => Int64 => Int32 };
+bytesGet3LE! = { bytes => i =>
+  a = bytesGet! (i +Int64 0) bytes;
+  b = bytesGet! (i +Int64 1) bytes;
+  c = bytesGet! (i +Int64 2) bytes;
+  octet4ToInt32 0 c b a
+};
+
+// Precondition: i..i+1 are valid indices for bytes.
+bytesGet2LE! :: { Bytes => Int64 => Int32 };
+bytesGet2LE! = { bytes => i =>
+  a = bytesGet! (i +Int64 0) bytes;
+  b = bytesGet! (i +Int64 1) bytes;
+  octet4ToInt32 0 0 b a
+};
+
+// Precondition: i is a valid index for bytes.
+bytesGet1LE! :: { Bytes => Int64 => Int32 };
+bytesGet1LE! = { bytes => i =>
+  a = bytesGet! i bytes;
+  octet4ToInt32 0 0 0 a
+};
+
+// Precondition: i..i+3 are valid indices for bytes.
+bytesGet4BE! :: { Bytes => Int64 => Int32 };
+bytesGet4BE! = { bytes => i =>
+  a = bytesGet! (i +Int64 0) bytes;
+  b = bytesGet! (i +Int64 1) bytes;
+  c = bytesGet! (i +Int64 2) bytes;
+  d = bytesGet! (i +Int64 3) bytes;
+  octet4ToInt32 a b c d
+};
+
+// Precondition: i..i+2 are valid indices for bytes.
+bytesGet3BE! :: { Bytes => Int64 => Int32 };
+bytesGet3BE! = { bytes => i =>
+  a = bytesGet! (i +Int64 0) bytes;
+  b = bytesGet! (i +Int64 1) bytes;
+  c = bytesGet! (i +Int64 2) bytes;
+  octet4ToInt32 0 a b c
+};
+
+// Precondition: i..i+1 are valid indices for bytes.
+bytesGet2BE! :: { Bytes => Int64 => Int32 };
+bytesGet2BE! = { bytes => i =>
+  a = bytesGet! (i +Int64 0) bytes;
+  b = bytesGet! (i +Int64 1) bytes;
+  octet4ToInt32 0 0 a b
+};
+
+// Precondition: i is a valid index for bytes.
+bytesGet1BE! :: { Bytes => Int64 => Int32 };
+bytesGet1BE! = { bytes => i =>
+  a = bytesGet! i bytes;
+  octet4ToInt32 0 0 0 a
+};
+
+// Precondition: i..i+3 are valid indices for bytes.
+bytesGet4HI! :: { Bytes => Int64 => Int32 };
+bytesGet4HI! = { bytes => i =>
+  a = bytesGet! (i +Int64 0) bytes;
+  b = bytesGet! (i +Int64 1) bytes;
+  c = bytesGet! (i +Int64 2) bytes;
+  d = bytesGet! (i +Int64 3) bytes;
+  octet4ToInt32 a b c d
+};
+
+// Precondition: i..i+2 are valid indices for bytes.
+bytesGet3HI! :: { Bytes => Int64 => Int32 };
+bytesGet3HI! = { bytes => i =>
+  a = bytesGet! (i +Int64 0) bytes;
+  b = bytesGet! (i +Int64 1) bytes;
+  c = bytesGet! (i +Int64 2) bytes;
+  octet4ToInt32 a b c 0
+};
+
+// Precondition: i..i+1 are valid indices for bytes.
+bytesGet2HI! :: { Bytes => Int64 => Int32 };
+bytesGet2HI! = { bytes => i =>
+  a = bytesGet! (i +Int64 0) bytes;
+  b = bytesGet! (i +Int64 1) bytes;
+  octet4ToInt32 a b 0 0
+};
+
+// Precondition: i is a valid index for bytes.
+bytesGet1HI! :: { Bytes => Int64 => Int32 };
+bytesGet1HI! = { bytes => i =>
+  a = bytesGet! i bytes;
+  octet4ToInt32 a 0 0 0
+};
+
+bytesEqual :: { Bytes => Bytes => Bool };
+bytesEqual = { b1 => b2 => isEQ (bytesCmp b1 b2) };
+
+bytesCmp :: { Bytes => Bytes => Ord };
+bytesCmp = { b1 => b2 =>
+  defaultVerdict = cmp-UInt64 (bytesLength b1) (bytesLength b2);
+  len            = min-UInt64 (bytesLength b1) (bytesLength b2);
+  REC go = { idx =>
+    if idx ==Int64 len
+      then defaultVerdict
+      else res = cmp-UInt8 (bytesGet! idx b1) (bytesGet! idx b2);
+           if isEQ res then go (idx +Int64 1) else res end
+    end
+  };
+  go 0
+};
+
+// TODO compare codegen with/without optimization...
+bytesCmpAlt :: { Bytes => Bytes => Ord };
+bytesCmpAlt = { b1 => b2 =>
+  defaultVerdict = cmp-UInt64 (bytesLength b1) (bytesLength b2);
+  len            = min-UInt64 (bytesLength b1) (bytesLength b2);
+  REC go = { idx =>
+    if idx ==Int64 len
+      then defaultVerdict
+      else ordBindIfEq (cmp-UInt8 (bytesGet! idx b1) (bytesGet! idx b2))
+                       { go (idx +Int64 1) }
+    end
+  };
+  go 0
+};
+
+// Return true if b1 starts with b2.
+bytesHasPrefix :: { Bytes => Bytes => Bool };
+bytesHasPrefix = { b1 => b2 =>
+  bytesEqual (bytesTake b1 (bytesLength b2)) b2
+};
+
+
+bytesCmpRaw :: { Bytes => Array Int8 => Ord };
+bytesCmpRaw = { b1 => a2 =>
+  defaultVerdict = cmp-UInt64 (bytesLength b1) (arrayLength a2);
+  len            = min-UInt64 (bytesLength b1) (arrayLength a2);
+  REC go = { idx =>
+    if idx ==Int64 len
+      then defaultVerdict
+      else res = cmp-UInt8 (bytesGet! idx b1) a2[idx];
+           if isEQ res then go (idx +Int64 1) else res end
+    end
+  };
+  go 0
+};
+
+bytesEqualRaw :: { Bytes => Array Int8 => Bool };
+bytesEqualRaw = { b1 => a2 => isEQ (bytesCmpRaw b1 a2) };
+
+bytesSliceFromTo :: { Bytes => Int64 => Int64 => Bytes };
+bytesSliceFromTo = { b => src => tgt =>
+  len = tgt -Int64 src;
+  bytesTake (bytesDrop b src) len
+};
+
+bytesIndexFrom :: { Bytes => Int64 => Int8 => Int64 };
+bytesIndexFrom = { b => idx => c =>
+  len = bytesLength b;
+  REC loop = { idx =>
+    if idx ==Int64 len
+      then idx
+      else if bytesGet! idx b ==Int8 c
+             then idx
+             else loop (idx +Int64 1)
+            end
+    end
+  };
+  loop idx
+};
+
+/*
+bytesDescribe :: { Bytes => Text };
+bytesDescribe = { bytes =>
+  #associate   a `mkTextConcat` b `mkTextConcat` c
+          as   (mkTextConcat (mkTextConcat a b) c)
+  in
+  case bytes
+    of $BytesEmpty -> "BytesEmpty"
+    of $BytesFragment arr len ->
+        "(BytesFragment cap=" `mkTextConcat` (arrayLength arr |> tmp_Text_of_Int64) `mkTextConcat`
+                      " len=" `mkTextConcat` (len             |> tmp_Text_of_Int64) `mkTextConcat` ")"
+    of $BytesConcat a b len ->
+        "(BytesConcat len=" `mkTextConcat` (len |> tmp_Text_of_Int64) `mkTextConcat` " "
+                            `mkTextConcat` (bytesDescribe a)          `mkTextConcat` " "
+                            `mkTextConcat` (bytesDescribe b)          `mkTextConcat` ")"
+    of $BytesOffset b m len ->
+        "(BytesOffset off=" `mkTextConcat` (m   |> tmp_Text_of_Int64) `mkTextConcat`
+                    " len=" `mkTextConcat` (len |> tmp_Text_of_Int64) `mkTextConcat`
+                        " " `mkTextConcat` (bytesDescribe b)          `mkTextConcat` ")"
+  end
+  end
+};
+*/
+
+
+// BytesChunk is a simplified form of Bytes which does not support efficient
+// concatenation. In exchange, other operations (especially indexing) are
+// more efficient.
+type case BytesChunk
+  of $BytesChunk (Array Int8) Int64 Int64 // offset, fragment length
+  ;
+
+bytesChunk :: { Array Int8 => BytesChunk };
+bytesChunk = { arr => BytesChunk arr 0 (arrayLength arr) };
+
+bytesChunkTake :: { BytesChunk => Int64 => BytesChunk };
+bytesChunkTake = { b => i =>
+  case b of $BytesChunk arr off len ->
+    BytesChunk arr off (min-SInt64 i len)
+  end
+};
+
+bytesChunkDrop :: { BytesChunk => Int64 => BytesChunk };
+bytesChunkDrop = { b => i =>
+  case b of $BytesChunk arr off len ->
+    n = (min-SInt64 i len);
+    BytesChunk arr (off +Int64 n) (len -Int64 n)
+  end
+};
+
+bytesChunkGet! :: { BytesChunk => Int64 => Int8 };
+bytesChunkGet! = { b => i =>
+  case b of $BytesChunk arr off _ ->
+    arr[off +Int64 i]
+  end
+};
+
+bytesChunkLength :: { BytesChunk => Int64 };
+bytesChunkLength = { b =>
+  case b of $BytesChunk _ _ len -> len end
+};
+
+bytesChunkHasPrefix :: { BytesChunk => BytesChunk => Bool };
+bytesChunkHasPrefix = { b1 => b2 =>
+  bytesChunkEqual (bytesChunkTake b1 (bytesChunkLength b2)) b2
+};
+
+bytesChunkCmp :: { BytesChunk => BytesChunk => Ord };
+bytesChunkCmp = { b1 => b2 =>
+  defaultVerdict = cmp-UInt64 (bytesChunkLength b1) (bytesChunkLength b2);
+  len            = min-UInt64 (bytesChunkLength b1) (bytesChunkLength b2);
+  REC go = { idx =>
+    if idx ==Int64 len
+      then defaultVerdict
+      else res = cmp-UInt8 (bytesChunkGet! b1 idx) (bytesChunkGet! b2 idx);
+           if isEQ res then go (idx +Int64 1) else res end
+    end
+  };
+  go 0
+};
+
+bytesChunkCmpRaw :: { BytesChunk => Array Int8 => Ord };
+bytesChunkCmpRaw = { b1 => a2 =>
+  defaultVerdict = cmp-UInt64 (bytesChunkLength b1) (arrayLength a2);
+  len            = min-UInt64 (bytesChunkLength b1) (arrayLength a2);
+  REC go = { idx =>
+    if idx ==Int64 len
+      then defaultVerdict
+      else res = cmp-UInt8 (bytesChunkGet! b1 idx) a2[idx];
+           if isEQ res then go (idx +Int64 1) else res end
+    end
+  };
+  go 0
+};
+
+bytesChunkEmpty = { bytesChunk b"" };
+
+bytesChunkEqual :: { BytesChunk => BytesChunk => Bool };
+bytesChunkEqual = { b1 => b2 =>
+  if bytesChunkLength b1 ==Int64 bytesChunkLength b2
+    then isEQ (bytesChunkCmp b1 b2)
+    else False
+  end
+};
+
+bytesChunkEqualRaw :: { BytesChunk => Array Int8 => Bool };
+bytesChunkEqualRaw = { b => a =>
+  if bytesChunkLength b ==Int64 arrayLength a
+    then isEQ (bytesChunkCmpRaw b a)
+    else False
+  end
+};
+
+bytesChunkFromTo :: { BytesChunk => Int64 => Int64 => BytesChunk };
+bytesChunkFromTo = { b => src => tgt =>
+  len = tgt -Int64 src;
+  bytesChunkTake (bytesChunkDrop b src) len
+};
+
+bytesChunkIndexFrom :: { BytesChunk => Int64 => Int8 => Int64 };
+bytesChunkIndexFrom = { b => idx => c =>
+  len = bytesChunkLength b;
+  REC loop = { idx =>
+    if idx ==Int64 len
+      then idx
+      else if bytesChunkGet! b idx ==Int8 c
+             then idx
+             else loop (idx +Int64 1)
+            end
+    end
+  };
+  loop idx
+};
+
+bytesChunkOfBytes :: { Bytes => BytesChunk };
+bytesChunkOfBytes = { b =>
+  case b
+    of $BytesOffset ($BytesFragment arr _) offset len -> BytesChunk arr offset len
+    of _ -> b |> bytesFlattenRaw |> bytesChunk
+  end
+};
+
+bytesOfBytesChunk :: { BytesChunk => Bytes };
+bytesOfBytesChunk = { b =>
+  case b of $BytesChunk arr offset len ->
+    BytesOffset (BytesFragment arr (offset +Int64 len)) offset len
+  end
+};

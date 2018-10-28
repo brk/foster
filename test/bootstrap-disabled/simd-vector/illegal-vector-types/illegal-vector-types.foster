@@ -1,0 +1,7 @@
+main = fn () {
+  expect_i1(true)
+  print_i1(__COMPILES__ simd-vector { 11, 12, 13, 14 }[0] )
+
+  expect_i1(false) // No vectors of refs...
+  print_i1(__COMPILES__ simd-vector { ref 11, ref 12, ref 13, ref 14 }[0] )
+}

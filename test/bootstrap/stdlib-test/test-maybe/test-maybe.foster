@@ -1,0 +1,68 @@
+snafuinclude Maybe "maybe";
+
+main = {
+  tu = { 2 };
+
+  part1 tu;
+  part2 tu;
+  part3 !;
+
+  part4 !;
+
+  part6 !;
+  part5 !;
+  part7 !;
+};
+
+type case WrapMb (b:Type) of $WrapMb (Maybe b) ;
+
+part5 = {
+  z = WrapMb (Some {5});
+  x = WrapMb (None:[Int32]);
+  ()
+};
+
+part7b = { Some ("foo", 1) };
+part7 = {
+  expect_i32 1;
+  case part7b !
+    of $None -> print_i32 0
+    of $Some (f, n) -> print_i32 n
+  end;
+  ()
+};
+
+part6 = {
+  expect_i32 2;
+  t = 2;
+  s = Some:[Int32]; // KNTyApp (Some(global)) :: Maybe Int32
+  v = s t;          // s :: Int32 => Maybe Int32
+  u = unMaybe v;
+  print_i32 u;
+};
+
+part1 = { tu =>
+  expect_i32 2;
+  print_i32 ((unMaybe (Some tu)) !);
+};
+
+part2 = { tu =>
+  expect_i32 1;
+  print_i32 (if (isSome (Some tu)) then 1 else 0 end);
+};
+
+part3 = {
+  expect_i32 0;
+  n = None;                            // n :: forall (a:Boxed) Maybe a
+                                       // None = KNAppCtor Maybe.None
+  v = n:[{Int32}];                     // v :: Maybe {Int32}
+                                       //   = KNTyApp n(local)
+  r = isSome v;
+  print_i32 (if r then 1 else 0 end);
+};
+
+part4 = {
+  expect_i32 0;
+  print_i32 (if (isSome (None:[{Int32}])) then 1 else 0 end);
+};
+

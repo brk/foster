@@ -1,0 +1,70 @@
+snafuinclude Prelude "prelude";
+
+// Transliteration of Computer Language Benchmarks Game
+// program for Free Pascal contributed by Ian Osgood
+//                        and modified by Vincent Snijders.
+//
+// http://shootout.alioth.debian.org/u32/program.php?test=spectralnorm&lang=fpascal&id=1
+
+mulAtAv = { n : Int32 => v : Array Float64 => av : Array Float64 => tmp : Array Float64 =>
+  mulAv n v tmp;
+  mulAtv n tmp av;
+};
+
+mulAv = { n : Int32 => v : Array Float64 => av : Array Float64 =>
+  repeatRange 0 n { i : Int32 =>
+    0.0 >^ av[i];
+    repeatRange 0 n { j : Int32 =>
+      (av[i] +f64 (fA i j *f64 v[j])) >^ av[i]; ()
+    };
+  };
+};
+
+mulAtv = { n : Int32 => v : Array Float64 => av : Array Float64 =>
+  repeatRange 0 n { i : Int32 =>
+    0.0 >^ av[i];
+    repeatRange 0 n { j : Int32 =>
+      (av[i] +f64 (fA j i *f64 v[j])) >^ av[i]; ()
+    };
+  };
+};
+
+fA = { i : Int32 => j : Int32 =>
+  d = ((bitashr-Int32 ((i +Int32 j) *Int32 (i +Int32 j +Int32 1)) 1)
+                                                  +Int32 i +Int32 1);
+  div-f64 1.0 (s32-to-f64 d);
+};
+
+in-range = { n : Int32 => a : Int32 => z : Int32 =>
+  if   n <SInt32 a then False
+  else n <=SInt32 z
+  end
+};
+
+repeatRange :: { Int32 => Int32 => { Int32 => () } => () };
+repeatRange = { e : Int32 => n : Int32 => f : { Int32 => () } =>
+  if e <SInt32 n then f e; repeatRange (e +Int32 1) n f else () end
+};
+
+main = {
+    n   = cmdline-arg-or 1 100;
+    u   = (allocDArray:[Float64] n);
+    v   = (allocDArray:[Float64] n);
+    tmp = (allocDArray:[Float64] n);
+    vv  = (prim ref 0.0);
+    vBv = (prim ref 0.0);
+
+    repeatRange 0 n { i : Int32 => 1.0 >^ u[i]; () };
+    repeatRange 1 10 { i : Int32 => mulAtAv n u v tmp; mulAtAv n v u tmp; () };
+    repeatRange 0 n { i : Int32 =>
+      (vBv^ +f64 (u[i] *f64 v[i])) >^ vBv;
+      ( vv^ +f64 (v[i] *f64 v[i])) >^ vv;
+      ()
+    };
+
+    case n
+      of 100 -> expect_text "1.274219991";
+      of _   -> ()
+    end;
+    print_float_p9f64 (sqrt-f64 (div-f64 vBv^ vv^));
+};

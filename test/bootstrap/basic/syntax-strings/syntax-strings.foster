@@ -1,0 +1,71 @@
+snafuinclude Text "text";
+
+main = {
+  expect_i1 True;
+  print_i1 ( 'a' ==Int32 97);
+
+  expect_i1 True;
+  print_i1 ( 'a' ==Int8 97);
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ "本" ==Int8 0);
+
+  expect_text "abc";
+  print_text  """abc""";
+
+  expect_text "abc";
+  print_text  '''abc''';
+
+  expect_text "abc";
+  print_text r'abc';
+
+  expect_text "abc";
+  print_text r"abc";
+
+  expect_text "abc";
+  print_text r"""abc""";
+
+  expect_text "abc";
+  print_text r'''abc''';
+
+  expect_text "a\\nc";
+  print_text r"a\nc";
+
+  expect_text """a\\bc""";
+  print_text r"""a\bc""";
+
+  expect_text "a\nb";
+  print_text """a
+b""";
+
+  test-utf8-encoding !;
+
+  test-byte-literals !;
+};
+
+test-byte-literals = {
+  expect_text "ab c";
+  print-bytes b"ab\x20c";
+
+  expect_text "abcd";
+  print-bytes b"""ab
+cd""";
+};
+
+test-utf8-encoding = {
+  expect_text "ab=cd";
+  print-bytes b"ab\x3dcd";
+
+  expect_text "ab\u{2B}cd";
+  print-bytes b"ab+cd";
+
+  expect_text "ab\u{000b1}cd";
+  print-bytes b"ab\xc2\xb1cd"; // ab±cd
+
+  print-bytes b"PQ\xf0\x9d\x9b\xbbFX";
+  expect_text "PQ\u{1d6fb}FX"; // PQ𝛻FX
+};
+
+print-bytes = { a : Array Int8 =>
+  prim_print_bytes_stdout a (arrayLength32 a) 0; print_newline !; ()
+};

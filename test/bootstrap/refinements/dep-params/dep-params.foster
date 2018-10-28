@@ -1,0 +1,46 @@
+foo :: { % aa : Int32 : True
+      => % bb : Int32 : bb >UInt32 aa
+      => % rv : Int32 : True };
+foo =  { a => b => 42 };
+
+test-preconds = {
+  expect_i1 True;
+  print_i1 (__COMPILES__ foo 0 1);
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ foo 3 2);
+};
+
+test-postconds = {
+  // The body does not establish the function's postcondition.
+  expect_i1 False;
+  print_i1 (__COMPILES__
+    ({ a => b => c => 43 } as
+        { % xx : Int32 : True
+       =>        ()
+       => % yy : Int32 : True
+       => % zz : Int32 : yy >UInt32 xx }));
+
+
+  // This one does, though.
+  expect_i1 True;
+  print_i1 (__COMPILES__
+    ({ a => b => c =>
+       if c >UInt32 a
+         then 43
+         else prim kill-entire-process "whoops"
+       end
+     } as
+        { % xx : Int32 : True
+       =>        ()
+       => % yy : Int32 : True
+       => % zz : Int32 : yy >UInt32 xx }));
+};
+
+
+main = {
+  test-preconds !;
+
+  test-postconds !;
+  ()
+};

@@ -1,0 +1,20 @@
+#!/bin/sh
+
+SD=$(dirname `which $0`)/../scripts
+FOSTER_ROOT=$(python $SD/normpath.py $SD/..)
+TMPDIR=fosterc-standalone-tmp
+
+mkdir ${TMPDIR}
+
+MAYBE_OUT="-o $1.o"
+
+for arg in $@; do
+  if test $arg = "-o"; then
+    MAYBE_OUT=""
+  fi
+done
+
+python ${SD}/fosterc.py --standalone --bindir ${FOSTER_ROOT}/_obj --tmpdir ${TMPDIR} $@ $MAYBE_OUT
+
+rm meGCstats.txt
+rm -rf ${TMPDIR} $1.postopt.ll $1.preopt.ll

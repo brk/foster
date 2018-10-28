@@ -1,0 +1,59 @@
+main = {
+  a = 1;
+  b = -2;
+  c = 1234;
+  d = 0b10101011;
+  e = 0b`1010`1011;
+  f = 12.34;
+  g = 12.34`56;
+
+  expect_float_p9f64 12.3456;
+  print_float_p9f64 g;
+
+  h = 12.34e+1;
+  //i = 12abc.34e+01;
+  j = 12.34e1;
+  k = +2;
+  expect_i1 False;
+  print_i1 (__COMPILES__ 0FEEDFACE);
+
+  l = 0xFEEDFACE;
+  m = 0xFEED`FACE;
+
+  expect_i1 True;
+  print_i1 (l ==Int32 m);
+
+  expect_i1 True;
+  print_i1 (0x1.8p1 ==f64 3.0);
+
+  expect_i64x 0x40ad380000000000;
+  0x3.a7p10  |> f64-as-i64 |> print_i64x;
+  expect_i64x 0x3fd0000000000000;
+  0x1.0p-2   |> f64-as-i64 |> print_i64x;
+  expect_i64x 0x3810000000000000;
+  0x1.0p-126 |> f64-as-i64 |> print_i64x;
+
+  expect_i64x 0x41f0000000000000;
+  0x1.0p32 |> f64-as-i64 |> print_i64x;
+  expect_i64x 0x4200000000000000;
+  0x2.0p32 |> f64-as-i64 |> print_i64x;
+
+
+  expect_i64x 0x5fefffffffffffff;
+  0x1.fffffffffffffp511  |> f64-as-i64 |> print_i64x;
+
+  expect_i64x 0x7fcfffffffffffff;
+  0x1.fffffffffffffp1021  |> f64-as-i64 |> print_i64x;
+  expect_i64x 0x7fdfffffffffffff;
+  0x1.fffffffffffffp1022  |> f64-as-i64 |> print_i64x;
+  expect_i64x 0x7fefffffffffffff;
+  0x1.fffffffffffffp1023  |> f64-as-i64 |> print_i64x;
+  expect_i64x 0x0000000000000001;
+  0x1.0P-1074             |> f64-as-i64 |> print_i64x;
+  expect_i64x 0x0000000000000001;
+  0x0.0000000000001P-1022 |> f64-as-i64 |> print_i64x;
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ 0x1.0p1e);
+  ()
+};

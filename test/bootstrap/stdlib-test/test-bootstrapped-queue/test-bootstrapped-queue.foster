@@ -1,0 +1,22 @@
+snafuinclude BootstrappedQ "bootstrapped-queue";
+
+main = {
+  q0 = mkEmptyBootstrappedQueue !;
+  q1 = bootstrappedQueueSnoc { 1 } q0;
+  q2 = bootstrappedQueueSnoc { 2 } q1;
+  q3 = bootstrappedQueueSnoc { 3 } q2;
+  case unMaybe (bootstrappedQueueSplit q3) of (h3, t3) ->
+  case unMaybe (bootstrappedQueueSplit t3) of (h2, t2) ->
+  case unMaybe (bootstrappedQueueSplit t2) of (h1, t1) ->
+    expect_i32 1;
+    print_i32 (h3 !);
+
+    expect_i32 2;
+    print_i32 (h2 !);
+
+    expect_i32 3;
+    print_i32 (h1 !);
+  end
+  end
+  end
+};

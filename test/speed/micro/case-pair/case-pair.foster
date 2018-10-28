@@ -1,0 +1,54 @@
+snafuinclude Bench "bench/measure";
+
+main = {
+  expect_i32 1;
+  print_i32 (tp True 2);
+  expect_i32 1;
+  print_i32 (noinline_tpAlt True 2);
+
+  expect_i32 2;
+  print_i32 (tp False 2);
+  expect_i32 2;
+  print_i32 (noinline_tpAlt False 2);
+
+  expect_i32 4;
+  print_i32 (tp False 4);
+  expect_i32 4;
+  print_i32 (noinline_tpAlt False 4);
+
+  r = (prim ref noinline_tpAlt);
+  part1 !;
+};
+
+part1 = {
+  fls  = opaquely_i32 4 ==Int32 4;
+  four = opaquely_i32 4;
+  r    = (prim ref 0);
+  slower_by = time-ratio { noinline_tpAlt fls four >^ r ; () }
+                         {          tp    fls four >^ r ; () }
+                         10000;
+  expect_i1 False;
+  print_i1 (slower_by >=f64 2.0);
+
+  // TODO why does this produce a parse error?
+  //print_i1 ((slower_by >=f64 2.0) `notEqBool` (prim preAllocOptimized);
+};
+
+tp = { a => b =>
+  if a then
+    if b ==Int32 0 then 0 else 1 end
+  else
+    if b ==Int32 2 then 2 else b end
+  end;
+};
+
+noinline_tpAlt = { a => b =>
+  case (a, b)
+    of (True,  0) -> 0
+    of (True,  _) if False -> 10
+    of (True,  _) if True  -> 1
+    of (True,  _) -> 20
+    of (False, 2) -> 2
+    of (False, x) -> x
+  end
+};

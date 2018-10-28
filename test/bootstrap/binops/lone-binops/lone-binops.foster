@@ -1,0 +1,41 @@
+main = {
+  expect_i32b 0b`11100;
+  print_i32b ((bitshl-Int32) 0b`111 (opaquely_i32 2));
+
+  expect_i32b 0b`11000000`00000000`00000000`00000000;
+  print_i32b ((bitshl-Int32) 0b`1111 (opaquely_i32 30));
+
+  expect_i32b 0b`1111;
+  print_i32b ((bitor-Int32) 0b`101 (opaquely_i32 0b`1010));
+
+  expect_i32b 0b`1010;
+  print_i32b ((bitand-Int32) 0b`1111 (opaquely_i32 0b`1010));
+
+  expect_i32b 0b`11011;
+  print_i32b ((bitxor-Int32) 0b`10010 (opaquely_i32 0b`01001));
+
+  expect_i32b 0b`1111`1111`1111`1111`1111`1111`1111`1000;
+  print_i32b ((bitnot-Int32)  (opaquely_i32 0b`0000`0000`0111));
+
+  // Ensure that we forcibly mask possibly-too-large shift values.
+  expect_i32b                0b1111;
+  print_i32b ((bitshl-Int32) 0b1111 (opaquely_i32 32));
+
+  print_i32b ((bitshl-Int32) 0b1100 32);
+  expect_i32b                0b1100;
+
+  // As with Java, negative shifts are masked away.
+  print_i32b ((bitshl-Int32) 0b1111 (0 -Int32 1));
+  expect_i32b     ((bitshl-Int32) 1 31);
+
+  print_i32b ((bitshl-Int32) 0b1111 (opaquely_i32 (0 -Int32 1)));
+  expect_i32b     ((bitshl-Int32) 1 31);
+
+  expect_i8b 0b1111`0000;
+  print_i8b (bitashr-Int8 0b1000`0000 3);
+
+  expect_i8b 0b0001`0000;
+  print_i8b (bitlshr-Int8 0b1000`0000 3);
+};
+
+bitnot-Int32-wrapper = { a : Int32  => prim bitnot-Int32 a };

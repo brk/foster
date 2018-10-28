@@ -1,0 +1,12 @@
+main = {
+  p = retPair 5 { x => () };
+  // elaborated to p = retPair:[()] 5 { x => () }
+  //               p :: ( R , () ) where R = [[subst 5 for n in (%k : Int32 : k ==Int32 n)]]
+  let (px, pv) = p;
+  prim assert-invariants (px ==Int32 5);
+};
+
+retPair :: forall (v:Type) { % n : Int32 : True => { Int32 => v } =>
+                             ( (% k : Int32 : k ==Int32 n), v )
+                           };
+retPair = { vn => vf => (vn, vf vn) };

@@ -1,0 +1,70 @@
+
+type case Maybe (t:Type)
+    of $None
+    of $Some t
+    ;
+type case V
+    of $V (Ref (Maybe V)) Int32
+    ;
+
+main = {
+  patch = { x => y =>
+    case x of $V r _ ->
+      (Some y) >^ r;
+    end
+  };
+  d = V (prim ref None) 11;
+  follow = { x => case x of $V r _ ->
+    case r^ of $Some v -> v
+            of $None   -> d end end };
+  peek = { x => case x of $V _ z -> z end };
+
+  expect_i32 11;
+  print_i32 (peek d);
+  expect_i32 11;
+  print_i32 (peek (follow d));
+  v0 = V (prim ref None) 22;
+  v1 = V (prim ref None) 33;
+
+  expect_i32 22;
+  print_i32 (peek v0);
+  expect_i32 11;
+  print_i32 (peek (follow v0));
+
+  patch v0 v1;
+  patch v1 v0;
+
+  expect_i32 22;
+  print_i32 (peek v0);
+  expect_i32 33;
+  print_i32 (peek (follow v0));
+  expect_i32 22;
+  print_i32 (peek (follow (follow v0)));
+
+  force_gc_for_debugging_purposes !;
+
+  expect_i32 22;
+  print_i32 (peek v0);
+  expect_i32 33;
+  print_i32 (peek (follow v0));
+  expect_i32 22;
+  print_i32 (peek (follow (follow v0)));
+};
+
+weird1 = { forall t:Type,
+                  a : Array t =>
+                  f1 : { t => () } =>
+  prim_arrayLength a;
+  f1 a[0];
+  weird1 a f1;
+  ()
+};
+
+
+weird2 = { forall t:Type,
+                  a : Array t =>
+                  f2 : { t => () } =>
+  prim_arrayLength a;
+  f2 a[0];
+  ()
+};

@@ -1,0 +1,119 @@
+snafuinclude Splaytree "splaytree";
+
+spaces = { n : Int32 =>
+  REC go = { n => acc =>
+    if n ==Int32 0 then acc else
+      go (n -Int32 1) (mkTextConcat acc "  ");
+    end
+  };
+  go n ""
+};
+
+// TODO try removing the type annotation on `st`...
+show-splay-tree = { forall a:Boxed, st : SplayTree a => fmt : { a => Text } =>
+  REC go = { st => depth =>
+    case st
+      of $SplayNil ->
+            print_text_bare (spaces depth);
+            print_text "()";
+            ()
+      of $SplayObj v ($SplayNil) ($SplayNil) ->
+            print_text_bare (spaces depth);
+            print_text (fmt v);
+            ()
+      of $SplayObj v l r ->
+            print_text_bare (spaces depth);
+            print_text (fmt v);
+            go l (depth +Int32 1);
+            go r (depth +Int32 1);
+            ()
+    end
+  };
+  go st 0;
+  print_text "";
+};
+
+main = {
+/*
+  cmpt = { f1 => f2 => cmpSInt32 (f1 !) (f2 !) };
+  cmpn = { n => { f2 => cmpSInt32 n (f2 !) } };
+  s = SplayNil;
+*/
+
+  /*
+  // zig on left
+  x1 = SplayObj { 4 }
+          (SplayObj { 2 }
+            (SplayObj { 1 } s s)
+            (SplayObj { 3 } s s))
+          (SplayObj { 5 } s s)
+         ;
+  x1s = splay x1 (cmpn 2);
+  show-splay-tree x1  { f => tmp_Text_of_Int32 (f !) };
+  show-splay-tree x1s { f => tmp_Text_of_Int32 (f !) };
+  */
+
+  /*
+  // insert
+  x1 = SplayObj { 4 }
+          (SplayObj { 2 }
+            (SplayObj { 1 } s s)
+            s)
+          (SplayObj { 5 } s s)
+         ;
+  x2 = splay-insert-2 { 3 } x1 cmpt;
+  show-splay-tree x2 { f => tmp_Text_of_Int32 (f !) };
+  */
+
+  /*
+  // zig-zig
+  x1 = SplayObj { 6 }
+          (SplayObj { 4 }
+            (SplayObj { 2 }
+                (SplayObj { 1 } s s)
+                (SplayObj { 3 } s s))
+            (SplayObj { 5 } s s))
+          (SplayObj { 7 } s s)
+         ;
+  x1s = splay x1 (cmpn 2);
+  show-splay-tree x1  { f => tmp_Text_of_Int32 (f !) };
+  show-splay-tree x1s { f => tmp_Text_of_Int32 (f !) };
+  */
+
+  /*
+  // zig-zag
+  x1 = (SplayObj { 7 }
+          (SplayObj { 2 }
+            (SplayObj { 1 } s s)
+            (SplayObj { 4 }
+               (SplayObj { 3 } s s)
+               (SplayObj { 5 } s s)))
+          (SplayObj { 8 } s s))
+         ;
+  x1s = splay x1 (cmpn 4);
+  show-splay-tree x1  { f => tmp_Text_of_Int32 (f !) };
+  show-splay-tree x1s { f => tmp_Text_of_Int32 (f !) };
+  */
+
+  /*
+  s0 = splay-insert { 1 } s  cmpt;
+  s1 = splay-insert { 1 } s0 cmpt;
+  s2 = splay-insert { 2 } s1 cmpt;
+  s3 = splay-insert { 3 } s2 cmpt;
+  s4 = splay-insert { 4 } s3 cmpt;
+  s5 = splay-insert { 5 } s4 cmpt;
+  s6 = splay-insert { 6 } s5 cmpt;
+  show-splay-tree s0 { f => tmp_Text_of_Int32 (f !) };
+  show-splay-tree s1 { f => tmp_Text_of_Int32 (f !) };
+  show-splay-tree s2 { f => tmp_Text_of_Int32 (f !) };
+  show-splay-tree s3 { f => tmp_Text_of_Int32 (f !) };
+  show-splay-tree s4 { f => tmp_Text_of_Int32 (f !) };
+  show-splay-tree s5 { f => tmp_Text_of_Int32 (f !) };
+  show-splay-tree s6 { f => tmp_Text_of_Int32 (f !) };
+
+  TODO expect-binary-tree function.
+  */
+
+  ()
+};
+

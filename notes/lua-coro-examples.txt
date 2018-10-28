@@ -1,0 +1,55 @@
+local yield = coroutine.yield
+
+function cofun(f, x)
+    if (x < 5) then
+      print("x = " .. x);
+      y = f(x+1)
+      print("x=" .. x .. " yielding y = " .. y);
+      yield(y)
+    end
+end
+
+fun = coroutine.wrap(cofun)
+print( fun(fun, 0) )
+
+--------------------------------------
+
+
+-- Not an error: this shows that coroutines stacks are
+-- not bound to their last invoker coroutine.
+
+local yield = coroutine.yield
+
+function cf1(c2, c3)
+  return function ()
+    print(c2())
+    yield(11)
+    print(c3())
+    yield(13)
+  end
+end
+
+function cf2(c3)
+  return function()
+    print(c3())
+    yield(21)
+    yield(22)
+  end
+end
+
+function cf3()
+  return function ()
+    yield(31)
+    yield(32)
+    yield(33)
+  end
+end
+
+f3 = coroutine.wrap(cf3())
+f2 = coroutine.wrap(cf2(f3))
+f1 = coroutine.wrap(cf1(f2, f3))
+
+print(f1())
+print(f1())
+print(f1())
+

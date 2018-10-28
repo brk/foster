@@ -1,0 +1,127 @@
+main = {
+  test-ones !;
+
+  test-explicit !;
+
+  //print_i32 (ex3 Nil);
+  // Nil :: forall a, () -> List a
+  // ex3 :: forall a, List a -> Int32
+  // Nil () :: List ?x
+  //    ex3 :: List ?y -> Int32
+
+  //print_i32 (ex3 (Cons (B32 0) Nil));
+/*
+  expect_i32 1;
+  print_i32 (ex2 (Cons (B32 0) Nil:[B32]));
+
+  expect_i32 2;
+  print_i32 (ex2 (Cons (B32 0) (Cons (B32 1) Nil:[B32])));
+*/
+  ()
+};
+
+
+test-explicit = {
+  n = 0;
+  o = Nil:[B32]  ;
+  z = ex3       o;
+  w = ex3:[B32] o;
+
+  expect_i32 n;
+  print_i32  z;
+
+  expect_i32 n;
+  print_i32  w;
+
+};
+
+test-ones = {
+  n = 6;
+  o = ones n;
+  z = len       o;
+  w = len:[B32] o;
+
+  expect_i32 n;
+  print_i32  z;
+
+  expect_i32 n;
+  print_i32  w;
+
+  ()
+
+};
+
+
+ex3 = { forall c:Type,
+        z : List c => 0 };
+
+//ones :: Int32 -> List B32;
+ones = { n : Int32 =>
+  if n ==Int32 0
+   then Nil:[B32]
+   else Cons (B32 n) (ones (n -Int32 1))
+  end
+};
+
+// occ [] switched on, both subtrees are leaves
+/*
+ex2 = { forall a,
+        z : List a =>
+  case z
+    of $Nil                -> 0
+    of $Cons x ($Cons y z) -> 2
+    of $Cons x ($Nil)      -> 1
+  end
+};
+*/
+
+len = { forall d:Boxed,
+        z : List d =>
+  case z
+    of $Nil       -> 0
+    of $Cons n ns -> (len :[d] ns) +Int32 1
+  end
+};
+
+
+/*
+iscons = { forall d:Boxed,
+       z : List d =>
+  case z
+    of $Nil       -> 0
+    of $Cons n ns -> 1
+  end
+};
+*/
+
+
+/*
+len = { forall d:Boxed,
+        z : List d =>
+  case z
+    of $Nil       -> 0
+    of $Cons n ns -> 1 +Int32 (len :[d] ns)
+    // of (n, ns)      -> n +Int32 (len ns) // should fail due to type mismatch
+  end
+};
+*/
+
+type
+case B32
+  of $B32 Int32
+;
+
+type case List (a:Boxed)
+  of $Nil
+  of $Cons a (List a)
+;
+
+/*
+T3 :: Type -> Type
+type case T3 a
+type case T3 a
+  of $T1C0       // zero args
+  of $T1C1 a     // one trivial arg
+  of $T1C2 a a   // two trivial args?
+;
+*/

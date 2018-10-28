@@ -1,0 +1,53 @@
+// IN: 4 8 16 32
+
+type node = tuple { ?ref node, ?ref node, i32 }
+
+mk-full-tree = fn (depth : i32 to ref node) {
+  if depth < 1 then {
+    //print_i32(depth)
+    new node { nil, nil, depth }
+  } else {
+    fn (l : ref node, r : ref node to ref node) {
+      //print_i32(depth)
+      print_ref(l)
+      new node { l, r, depth }
+    } (mk-full-tree(depth - 1), mk-full-tree(depth - 1))
+  }
+}
+
+sum-tree = fn (n : ref node) {
+  deref(n)[2] + if deref(n)[0] != nil then {
+    2 * sum-tree(deref(n)[0])
+  } else { 0 }
+}
+
+count-nodes-in-tree = fn (n : ref node) {
+  print_ref(n)
+  print_ref(deref(n)[0])
+  print_i32(deref(n)[2])
+  
+  print_i32(12345)
+  
+  1 + if deref(n)[0] != nil then {
+    2 * count-nodes-in-tree(deref(n)[0])// + count-nodes-in-tree(deref(n)[1])
+  } else { 0 }
+}
+
+print-tree = fn (n : ref node) {
+  print_i32( deref(n)[2] )
+  if deref(n)[0] != nil then {
+    print-tree( deref(n)[0] )
+    print-tree( deref(n)[1] )
+  } else { 0 }
+}
+
+fn "main" () {
+  //for i in 1 to 0 do {
+    //let n : i32 = 3
+    //let t : ref node = mk-full-tree(n) in {
+      //print_i32(bitshl(1, n + 1) - 1)
+      //print_i32(count-nodes-in-tree(t))
+      //print-tree(t)
+    //}
+  //}
+}

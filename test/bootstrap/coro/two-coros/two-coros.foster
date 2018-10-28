@@ -1,0 +1,11 @@
+snafuinclude Coro "coro";
+
+main = {
+  expect_i32 1111111;
+  expect_i32 2222222;
+  c1 = coro_create { x : (Int32, ()) => print_i32 1111111; xp = coro_yield (); () };
+  c2 = coro_create { x : (Int32, ()) => print_i32 2222222; xp = coro_yield (); () };
+
+  coro_invoke c1 (0, ());
+  coro_invoke c2 (0, ());
+};

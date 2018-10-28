@@ -1,0 +1,37 @@
+// IN: 4 8 16 32
+
+type node = tuple { ?ref node, ?ref node, i32 }
+type mixed-node = tuple { ref node, ?ref node }
+
+test-ref-nil = fn () {
+  expect_i1(true) ; print_i1(__COMPILES__ new node { nil, nil, 100 })  
+  
+  expect_i1(false) ; print_i1(__COMPILES__ new node { nil })
+
+  expect_i1(false) ; print_i1(__COMPILES__ new node { nil, nil, 100, 200 })
+  
+  // can't assign nil to ref, only to ?ref
+  expect_i1(false) ; print_i1(__COMPILES__ new mixed-node { nil, nil })
+  
+  expect_i1(true) ; print_i1(__COMPILES__ new mixed-node { new node { nil, nil, 101 }, nil })
+
+  expect_i1(true) ; print_i1(__COMPILES__ fn (r : ?ref i32) { 0 } (nil))
+
+  expect_i1(false) ; print_i1(__COMPILES__ fn (r : ?ref i32) { deref(r) } (nil))
+
+  expect_i1(true) ; print_i1(__COMPILES__ fn (r : ?ref i32) { if r != nil then { deref(r) } else { 0 } } (nil))
+
+  expect_i1(true)  ; print_i1(__COMPILES__ fn (r : ?ref i32) { if r == nil then { 0 } else { deref(r) } } (nil))
+
+  expect_i1(false) ; print_i1(__COMPILES__ fn (r : ?ref i32) { if r == nil then { deref(r) } else { deref(r) } } (nil))
+
+  expect_i1(false) ; print_i1(__COMPILES__ let r:ref i32 = nil in { 0 })
+ 
+  expect_i1(true) ; print_i1(__COMPILES__ let r:?ref i32 = nil in { 0 })
+  
+  expect_i1(false) ; print_i1(__COMPILES__ let r:ref i32 = new node {nil,nil,0} in { 0 })
+}
+
+fn "main" () {
+  test-ref-nil()  
+}

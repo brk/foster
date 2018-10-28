@@ -1,0 +1,151 @@
+main = {
+  //build-unboxed !;
+  return-unboxed-A (0 ==Int32 opaquely_i32 0);
+  return-unboxed-B (0 ==Int32 opaquely_i32 0);
+  return-unboxed-C (0 ==Int32 opaquely_i32 0);
+};
+
+build-unboxed = {
+  t = prim tuple-unboxed 1 2 3;
+  expect_i32 0;
+  force_gc_for_debugging_purposes !;
+  print_i32 0;
+  case t
+    of (a, b, c) ->
+      expect_i32 1;
+      print_i32 a;
+      expect_i32 2;
+      print_i32 b;
+      expect_i32 3;
+      print_i32 c;
+  end;
+};
+
+return-unboxed-A = { b =>
+  t1 = { prim tuple-unboxed 1 2 3 };
+  t2 = { prim tuple-unboxed 1 2 3 };
+  tf =  if b then t1 else t2 end;
+  expect_i32 0;
+  force_gc_for_debugging_purposes !;
+  print_i32 0;
+  use-unboxed-A tf;
+
+  pass-unboxed-A ( prim tuple-unboxed 1 2 3 );
+  //pass-unboxed-A (tf !);
+};
+
+// unboxed tuple in function return
+use-unboxed-A = { tf =>
+  case tf !
+    of (a, b, c) ->
+      expect_i32 1;
+      print_i32 a;
+      expect_i32 2;
+      print_i32 b;
+      expect_i32 3;
+      print_i32 c;
+  end;
+};
+
+// unboxed tuple in function arg
+pass-unboxed-A = { ut =>
+  case ut
+    of (a, b, c) ->
+      expect_i32 1;
+      print_i32 a;
+      expect_i32 2;
+      print_i32 b;
+      expect_i32 3;
+      print_i32 c;
+  end;
+};
+
+//////////////
+
+return-unboxed-B = { b =>
+  // unboxed tuple returned from function, stored in local var
+  t =  get-unboxed-B 3 ; // if b then get-unboxed-B 3 else get-unboxed-B 4 end;
+  use-unboxed-B t 3;
+  force_gc_for_debugging_purposes !;
+  use-unboxed-B t 3;
+};
+
+get-unboxed-B = { x => prim tuple-unboxed (1, 2) x };
+
+use-unboxed-B = { t => x =>
+  case t
+    of ((a, b), c) ->
+      expect_i32 1;
+      print_i32 a;
+      expect_i32 2;
+      print_i32 b;
+      expect_i32 x;
+      print_i32 c;
+  end;
+};
+
+//////////////
+
+return-unboxed-C = { b =>
+  // unboxed tuple returned from function, stored in local var
+  t =  get-unboxed-C 6 ; // if b then get-unboxed-B 3 else get-unboxed-B 4 end;
+  use-unboxed-C t 6;
+  force_gc_for_debugging_purposes !;
+  use-unboxed-C t 6;
+};
+
+
+get-unboxed-C = { x =>
+  zz = (4, 5)#;
+  prim tuple-unboxed zz x
+};
+
+use-unboxed-C = { t : ((Int32, Int32)#, Int32)# => x =>
+  case t
+    of ((a, b), c) ->
+      expect_i32 4;
+      print_i32 a;
+      expect_i32 5;
+      print_i32 b;
+      expect_i32 x;
+      print_i32 c;
+  end;
+};
+
+//////////////
+
+build-boxed = {
+  a = prim tuple 1 2 3;
+  expect_i32 0;
+  force_gc_for_debugging_purposes !;
+  print_i32 0;
+};
+
+build-unboxed-ref = {
+  t = prim tuple-unboxed 1 2 3;
+  a = (prim ref t);
+  expect_i32 0;
+  force_gc_for_debugging_purposes !;
+  print_i32 0;
+};
+
+/*
+  This gets K-normalized to:
+        let t = prim tuple 1 2 3;
+            a = (prim ref t); in ... end
+  Which yields the following layout:
+
+         stack    |   heap
+                  |
+        [  a  ]---|---->[ * ]-----------+
+                  |                     |
+        [  t  ]---|---->[ 1 | 2 | 3 ]<--+
+                  |
+*/
+build-boxed-ref = {
+  a = (prim ref (prim tuple 1 2 3));
+     expect_i32 0;
+     force_gc_for_debugging_purposes !;
+     print_i32 0;
+};
+

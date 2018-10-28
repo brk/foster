@@ -1,0 +1,20 @@
+  // Disabled until we duplicate function bodies that are passed to
+  // C code, to ensure that the C code doesn't call fastcc functions.
+
+g_inner = fn (to i32) { 0 }
+
+g = fn (to i32) {
+  //c_invoke_fnptr_to_i32(g_inner)
+  3
+}
+
+f = fn (to i32) {
+  print_i32(g())
+}
+
+main = fn (to i32) {
+  //expect_i32(3)
+  //c_invoke_fnptr_to_i32(f)
+  0
+}
+

@@ -1,0 +1,50 @@
+
+main = {
+  t0 !;
+  t1 !;
+  t2 !;
+};
+
+t0 = {
+  expect_i32 0;
+  print_i32 (
+    case T1C0
+      of $T1C0     -> 0
+      of $T1C1 _   -> 1
+      of $T1C2 _ _ -> 2
+    end);
+};
+
+t1 = {
+  expect_i32 1;
+  print_i32 (
+    case T1C1 ()
+      of $T1C0     -> 0
+      of $T1C1 _   -> 1
+      of $T1C2 _ _ -> 2
+    end);
+};
+
+// Make sure that patterns with the wrong arity are detected.
+t2 = {
+  expect_i1 True;
+  print_i1 (__COMPILES__ { x => case x of $T1C2 _ _ -> 0 of _ -> 1 end });
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ { x => case x of $T1C2 _ _ _ -> 0 of _ -> 1 end });
+
+  expect_i1 False;
+  print_i1 (__COMPILES__ { x => case x of $T1C2 _     -> 0 of _ -> 1 end });
+};
+
+type case T1
+  of $T1C0       // zero args
+  of $T1C1 ()    // one trivial arg
+  of $T1C2 () () // two trivial args?
+;
+
+type case T2
+  of $T2C0
+  of $T2C1 Int32
+  of $T2C2 Int32 Int32
+;

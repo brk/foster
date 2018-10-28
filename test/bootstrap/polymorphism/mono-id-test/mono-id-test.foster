@@ -1,0 +1,33 @@
+id  = { forall a:Boxed, x:a => x };
+id2 = { forall a:Boxed, x:a => x };
+
+/*
+test = { forall t:Boxed, x:t =>
+    let f = id2:[t];
+        g = id f;
+    in () end
+};
+
+test2 = { forall t:Boxed, x:t =>
+    let f = { y : t => id2:[t] y };
+        g = id f;
+    in g x end
+};
+
+test3 = { forall t:Boxed, x:t =>
+    let f = { y : t => y };
+        g = id f;
+    in g x end
+};
+*/
+
+main = {
+
+  { forall t:Boxed, x:t =>
+      f = id2:[t];
+      g = id f;
+
+      g x
+  } ();
+
+};

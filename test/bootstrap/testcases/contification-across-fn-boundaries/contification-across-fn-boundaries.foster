@@ -1,0 +1,35 @@
+
+until = { cond : { Bool } => body : { () } =>
+  if cond ! then () else body ! ; until cond body end
+};
+
+flip = { maxn : Int32 =>
+
+  s = allocDArray:[Int32] 16;
+  t = allocDArray:[Int32] 16;
+  done = (prim ref False);
+
+  REC flip-helper-b = { i : Int32 => n : Int32 =>
+    if i <SInt32 n then
+      s[i] >^ t[i];
+      flip-helper-b (i +Int32 1) n;
+    else () end
+  };
+
+  flipb = {
+    flip-helper-b 0 maxn;
+    expect_i32 maxn;
+  };
+
+  until { done^ } {
+    True >^ done;
+    flipb !;
+  };
+};
+
+main = {
+      n = opaquely_i32 4;
+      flip n;
+      print_i32 n;
+};
+

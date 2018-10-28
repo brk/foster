@@ -1,0 +1,56 @@
+snafuinclude Cbor "cbor";
+snafuinclude List "list";
+snafuinclude Bitwise "bitwise";
+
+main = {
+  expect_text "21";
+  print_text (21 |> tmp_Text_of_Int64);
+
+  let (hi, lo) = splitByte 0x82;
+  print_i8 hi;
+  print_i8 lo;
+  expect_i8 8;
+  expect_i8 2;
+
+  cbor-test b"\x82\x01\x82\x02\x03"
+     (CBOR_Array (prim mach-array-literal (CBOR_UInt 1)
+        (CBOR_Array (prim mach-array-literal (CBOR_UInt 2) (CBOR_UInt 3)))));
+};
+
+cbor-test = { raw : Array Int8 => cbor =>
+  dest = allocDArray (2 *Int32 arrayLength32 raw);
+  res  = tryWriteCBOR cbor dest;
+
+  expect_i64 (arrayLength raw);
+  expect_i1 True;
+
+  case res
+    of $None -> print_i64 -1;
+                print_i1 False;
+    of $Some (len, arr_ext) ->
+            print_i64 len;
+            b = bytesOfRawArray arr_ext `bytesTake` len;
+            print_i1 (bytesOfRawArray raw `bytesEqual` b);
+
+            print_text (textOfBytes b);
+            expect_text (textOfBytes (bytesOfRawArray raw));
+  end
+};
+
+splitByte = { b : Int8 =>
+  (b `bitlshr-Int8` 4,
+   b `bitand-Int8`  0b1111)
+};
+
+textOfNibble = { b : Int8 =>
+  tmp_Text_16_of_Int32_digit (zext_i8_to_i32 b)
+};
+
+textOfByte = { b : Int8 =>
+  let (hi, lo) = splitByte b;
+  "\\x" `mkTextConcat` (textOfNibble hi `mkTextConcat` textOfNibble lo)
+};
+
+textOfBytes = { bytes =>
+  bytesFoldlBytes bytes { b => t => t `mkTextConcat` textOfByte b } ""
+};

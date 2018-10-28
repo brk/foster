@@ -1,0 +1,94 @@
+snafuinclude List "list";
+snafuinclude Prelude "prelude";
+
+main = {
+  expect_i32 5;
+  print_i32 (listLength (mkUnitListTo 5));
+
+  expect_i32 0;
+  print_i32 (listLength Nil:[()]);
+
+  lst =(Cons { 0 }
+       (Cons { 1 }
+       (Cons { 2 }
+       (Cons { 3 }
+       (Cons { 4 }
+       (Cons { 5 }
+        Nil:[{Int64}]))))));
+
+  expect_text "[0, 1, 2, 3, 4, 5, ]";
+  print_bil lst;
+
+  expect_text "[5, 4, 3, 2, 1, 0, ]";
+  print_bil (listReverse lst);
+
+  expect_text "[0, 1, 2, 3, ]";
+  print_bil (listKeepIf lst { f => (f !) <SInt64 4 });
+
+  expect_text "[0, 1, 2, 3, 4, 5, 5, 4, 3, 2, 1, 0, ]";
+  print_bil (listAppend lst (listReverse lst));
+
+  test-list-folds !;
+  test-list-to-array !;
+  test-list-sort-by !;
+};
+
+mkUnitListTo = { n : Int32 =>
+  if n ==Int32 0 then
+    Nil:[()]
+  else
+    Cons () (mkUnitListTo (n -Int32 1))
+  end
+};
+
+mkPairListTo = { n : Int32 =>
+  if n ==Int32 0 then
+    Nil:[(Int32, Int32)]
+  else
+    Cons (n, n) (mkPairListTo (n -Int32 1))
+  end
+};
+
+print_bil = { lst =>
+  print_text_bare "[";
+  listFoldl lst { f => unit => print_i64_bare (f !); print_text_bare ", "; () } ();
+  print_text "]";
+};
+
+test-list-folds = {
+  lst = Cons "a" (Cons "b" (Cons "c" Nil));
+
+  f = { x => acc =>
+    "(" `mkTextConcat` x `mkTextConcat` acc
+        `mkTextConcat` ")" };
+
+  expect_text "(c(b(a)))";
+  print_text (listFoldl lst f "");
+
+  expect_text "(a(b(c)))";
+  print_text (listFoldr lst f "");
+};
+
+test-list-to-array = {
+  lst = Cons 5 (Cons 6 (Cons 7 Nil));
+  arr = listToArray lst;
+  expect_i1 True;
+  print_i1 (arrayEq arr (prim mach-array-literal 5 6 7) { a => b => a ==Int32 b } );
+
+  expect_i1 False;
+  print_i1 (arrayEq arr (prim mach-array-literal 7 6 5) { a => b => a ==Int32 b } );
+};
+
+print_i64list = { lst =>
+  print_text_bare "[";
+  listFoldl lst { x => unit => print_i64_bare x; print_text_bare ", "; () } ();
+  print_text "]";
+};
+
+test-list-sort-by = {
+  lst = Cons 8 (Cons 6 (Cons 7 (Cons 5 Nil)));
+  sorted = listSortBy { a => b => a >=SInt64 b } lst;
+  arr = listToArray sorted;
+  expect_i1 True;
+  print_i1 (arrayEq arr (prim mach-array-literal 5 6 7 8) { a => b => a ==Int64 b } );
+};

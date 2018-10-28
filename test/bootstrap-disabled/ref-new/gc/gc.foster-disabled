@@ -1,0 +1,25 @@
+wastememory-loop  = fn (x : i32) {
+  for i in 0 to x do {
+    new i
+    print_i32(i)
+  };
+  force_gc_for_debugging_purposes()
+}
+
+wastememory-tailrecursive  = fn (x : i32) {
+  if x <= 0 then {
+    force_gc_for_debugging_purposes()
+    0
+  } else {
+    new x
+    print_i32(x)
+    wastememory-tailrecursive(x - 1)
+  }
+}
+
+fn "main" () {
+  //wastememory-loop(10`000`000)
+  wastememory-loop(10)
+  wastememory-tailrecursive(10)
+  0
+}

@@ -1,0 +1,6 @@
+type case List (a:Type)
+  of $Cons a List
+  of $Nil
+  ;
+
+main = { () };

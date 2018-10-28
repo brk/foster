@@ -1,0 +1,75 @@
+
+binop-Int32simple = {
+  expect_i32(14) ;  print_i32(2 +Int32 3 *Int32 4);
+  expect_i32(14) ;  print_i32(2 +Int32 (3 *Int32 4));
+
+  expect_i32(10) ;  print_i32(2 *Int32 3 +Int32 4);
+  expect_i32(10) ;  print_i32((2 *Int32 3) +Int32 4);
+
+  expect_i32(20) ;  print_i32((2 +Int32 3) *Int32 4);
+
+  expect_i32 2  ; print_i32(10 -Int32 5 -Int32 3);
+  expect_i32 2  ; print_i32((10 -Int32 5) -Int32 3);
+
+  expect_i32 8  ; print_i32(10 -Int32 (5 -Int32 3));
+
+  expect_i32 8  ; print_i32(10 -Int32 5 +Int32 3);
+  expect_i32 8  ; print_i32((10 -Int32 5) +Int32 3);
+};
+
+binop-Int32moderate = {
+  expect_i32 2  ; print_i32(3 -Int32 5 +Int32 7 -Int32 9 -Int32 11 +Int32 17);
+  expect_i32 33 ; print_i32(1 +Int32 2 *Int32 3 +Int32 4 *Int32 5 +Int32 6);
+  expect_i32 33 ; print_i32(((1 +Int32 (2 *Int32 3)) +Int32 (4 *Int32 5)) +Int32 6);
+
+  expect_i32 127; print_i32(1 +Int32 2 *Int32 3 +Int32 4 *Int32 5 *Int32 6);
+  expect_i32 127; print_i32((1 +Int32 (2 *Int32 3)) +Int32 ((4 *Int32 5) *Int32 6));
+
+  expect_i32 127; print_i32(0 +Int32 1 +Int32 2 *Int32 3 +Int32 4 *Int32 5 *Int32 6);
+  expect_i32 127; print_i32(((0 +Int32 1) +Int32 (2 *Int32 3)) +Int32 ((4 *Int32 5) *Int32 6));
+
+  expect_i32 4  ; print_i32(        7 -Int32 9 -Int32 11 +Int32 17);
+  expect_i32 4  ; print_i32(      ((7 -Int32 9) -Int32 11) +Int32 17);
+  expect_i32 40 ; print_i32(        77 -Int32 9 -Int32 (11 +Int32 17));
+
+  expect_i32 19 ; print_i32 (3 +Int32 (2 +Int32 3 *Int32 4) *Int32 1 +Int32 2);
+  expect_i32 19 ; print_i32 ((3 +Int32 ((2 +Int32 (3 *Int32 4)) *Int32 1)) +Int32 2);
+
+  expect_i32 19 ; print_i32 (3 +Int32 (3 *Int32 4 +Int32 2) *Int32 1 +Int32 2) ;
+  expect_i32 19 ; print_i32 ((3 +Int32 (((3 *Int32 4) +Int32 2) *Int32 1)) +Int32 2);
+};
+
+main = {
+  binop-Int32simple !;
+  binop-Int32moderate !;
+
+  expect_i1 True ; print_i1(2  <=SInt32   5 +Int32 1);
+  expect_i1 True ; print_i1(2  <=SInt32  (5 +Int32 1));
+
+  expect_i1 True ; print_i1(  5 +Int32 1  <=SInt32  9);
+  expect_i1 True ; print_i1( (5 +Int32 1) <=SInt32  9);
+
+
+  expect_i1 True ; print_i1(2 *Int32 3   <=SInt32   5 +Int32 1);
+  expect_i1 True ; print_i1(2 *Int32 3   ==Int32   5 +Int32 1);
+
+  // ==Int32_i1
+  //expect_i1 True ; print_i1(2 <SInt32 3   ==Int32   4 <=SInt32 5);
+
+  expect_i32  25 ;  print_i32(2 +Int32 3 *Int32 4 +Int32 5 +Int32 6);
+  expect_i32  68 ;  print_i32(2 +Int32 3 *Int32 4 *Int32 5 +Int32 6);
+  expect_i32  32 ;  print_i32(2 *Int32 3 +Int32 4 *Int32 5 +Int32 6);
+  expect_i32  39 ;  print_i32(7 *Int32 1 +Int32 2 *Int32 3 +Int32 4 *Int32 5 +Int32 6);
+
+  expect_i32 3     ;  print_i32(20 -Int32 10 -Int32 5 -Int32 2);
+  expect_i32 3     ;  print_i32(((20 -Int32 10) -Int32 5) -Int32 2);
+
+  expect_i32 1205  ; print_i32(1 +Int32 3 +Int32 (5 +Int32 7) *Int32 9 *Int32 11 +Int32 13);
+  expect_i32 1201  ; print_i32((5 +Int32 7) *Int32 9 *Int32 11 +Int32 13);
+
+  expect_i32 508   ; print_i32((5) *Int32 9 *Int32 11 +Int32 13);
+
+  expect_i32 311   ; print_i32 (1 +Int32 3 *Int32 9 *Int32 11 +Int32 13);
+  expect_i32 126   ; print_i32  (2 *Int32 3 +Int32 4 *Int32 5 *Int32 6);
+};
+

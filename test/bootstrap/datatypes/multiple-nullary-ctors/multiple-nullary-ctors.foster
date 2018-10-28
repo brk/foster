@@ -1,0 +1,19 @@
+
+type case T0
+  of $T0C0
+  of $T0C1
+  of $T0C2
+;
+
+main = { t0 !; };
+
+t0 = {
+  expect_i32 6;
+  print_i32
+          case T0C2
+            of $T0C0 -> 3
+            of $T0C1 -> 5
+            of $T0C2 -> 6
+          end;
+};
+

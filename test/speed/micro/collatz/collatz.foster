@@ -1,0 +1,29 @@
+snafuinclude Prelude "prelude";
+snafuinclude Bench "bench/measure";
+
+// Reimplementation of the C code from http://blog.vmchale.com/article/fast-functional
+//
+// With optimizations, we generate the same assembly inner loop as C and unsigned Rust.
+
+noinline_llvm_collatz32 :: { Int32 => Int32 };
+noinline_llvm_collatz32 = { n =>
+  REC loop = { n => c =>
+    if n !=Int32 1
+      then if (n `srem!-Int32` 2) ==Int32 0
+             then loop (n `sdiv!-Int32` 2)     (c +Int32 1)
+             else loop ((n *Int32 3) +Int32 1) (c +Int32 1)
+           end
+      else c
+    end
+  };
+  loop n 0
+};
+
+main = {
+  s = elapsed_time_n {
+          if noinline_llvm_collatz32 (opaquely_i32 106239) !=Int32 353
+              then print_i32 -1
+          end } 100`000;
+  print_text_bare "Time per iteration for 32-bit collatz_106239 : ";
+  print_text (foster_fmttime_secs (s `div-f64` 100`000.0));
+};

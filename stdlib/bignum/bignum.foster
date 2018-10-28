@@ -1,0 +1,198 @@
+snafuinclude Bignat "bignat";
+
+type case IntInf
+      of $IntInf NatInf Bool
+      ;
+
+intNat :: { IntInf => NatInf };
+intNat = { i => case i of $IntInf n _ -> n end };
+
+intNeg :: { IntInf => Bool };
+intNeg = { i => case i of $IntInf _ b -> b end };
+
+mkIntInf = { n => b =>
+        if natIsZero n then IntInf n False
+                       else IntInf n b end
+};
+
+intFromInt32 = { i : Int32 =>
+  if i <SInt32 0
+    then if i ==Int32 (minReprSInt32 !)
+           then // 0 - MIN_INT does not produce -MIN_INT,
+                //           cursed pigeonhole principle!
+                noinline_mkNegativeMinInt32 !
+           else IntInf (natFromInt32 (0 -Int32 i)) True
+         end
+    else        IntInf (natFromInt32 i)           False
+  end
+};
+
+intFromInt64 = { i : Int64 =>
+  if i <SInt64 0
+    then if i ==Int64 (minReprSInt64 !)
+           then // 0 - MIN_INT does not produce -MIN_INT,
+                //           cursed pigeonhole principle!
+                noinline_mkNegativeMinInt64 !
+           else IntInf (natFromInt64 (0 -Int64 i)) True
+         end
+    else
+                IntInf (natFromInt64 i)           False
+  end
+};
+
+intZero = { intFromInt32 0 };
+
+noinline_foo2 = { i : Int32 =>
+  if i <SInt32 0
+    then IntInf (natFromInt32 (0 -Int32 i)) True
+    else IntInf (natFromInt32 i)           False
+  end
+};
+
+noinline_foo3 = { i : Int32 =>
+  case (if i <SInt32 0 then (0 -Int32 i, True)
+                       else (         i,False) end)
+   of (x, b) -> IntInf (natFromInt32 x) b
+  end
+};
+
+noinline_mkNegativeMinInt64 = {
+  IntInf (natAdd (natFromInt64 (maxReprSInt64 !))
+                 (natFromInt64 1)) True;
+};
+
+noinline_mkNegativeMinInt32 = {
+  m64 = zext_i32_to_i64 (maxReprSInt32 !);
+  IntInf (natFromInt64 (m64 +Int64 1)) True
+};
+
+intAdd :: { IntInf => IntInf => IntInf };
+intAdd =  { i => j =>
+  a = intNat i;
+  b = intNat j;
+  if intNeg i `eqBool` intNeg j
+    then // -x + -y = -(x + y)
+         mkIntInf (natAdd a b) (intNeg i)
+    else
+         case natCmp a b
+           of $LT -> mkIntInf (natSub_precond b a) (intNeg j)
+           of _   -> mkIntInf (natSub_precond a b) (intNeg i)
+         end
+  end
+};
+
+intSub :: { IntInf => IntInf => IntInf };
+intSub =  { i => j =>
+  a = intNat i;
+  b = intNat j;
+  if intNeg i `eqBool` intNeg j
+    then case natCmp a b
+                     // if a < b, then +a - +b = -(b - a), and (-a - -b) = (+)(b - a).
+           of $LT -> mkIntInf (natSub_precond b a) (not (intNeg i))
+           of _   -> mkIntInf (natSub_precond a b)      (intNeg i)
+         end
+    else // -x  - y = -(x + y) ; x - -y = (+)(x + y)
+         mkIntInf (natAdd a b) (intNeg i)
+  end
+};
+
+// aka intShl(b), mp_mul_2d
+//
+intMul2d = { n : IntInf => k : Int32 =>
+  mkIntInf (natMul2d (intNat n) k) (intNeg n)
+};
+
+intNegate = { n : IntInf =>
+  mkIntInf (intNat n) (not (intNeg n))
+};
+
+intMulInt32 = { n : IntInf => k : Int32 =>
+  if k <SInt32 0
+    then mkIntInf (natMulInt32 (intNat n) (0 -Int32 k)) (not (intNeg n))
+    else mkIntInf (natMulInt32 (intNat n) k)                 (intNeg n)
+  end
+};
+
+intBasicMul = { i : IntInf => j : IntInf =>
+  // -x * -y = (x * y)
+ mkIntInf (natBasicMul (intNat i) (intNat j))
+          (not (intNeg i `eqBool` intNeg j))
+};
+
+intQuoRem :: { IntInf => IntInf => (IntInf, IntInf) };
+intQuoRem = { a => b =>
+  case natDiv (intNat a) (intNat b)
+    of $Some (na, nb) -> (mkIntInf na (not (intNeg a `eqBool` intNeg b))
+                         ,mkIntInf nb                        (intNeg b))
+    of $None -> prim kill-entire-process "quorem failed"
+  end
+};
+
+intCmp :: { IntInf => IntInf => Ord };
+intCmp =  { i => j =>
+  case   cmpBoolTrueLT (intNeg i) (intNeg j)
+    of $EQ   -> natCmp (intNat i) (intNat j)
+    of other -> other
+  end
+};
+
+intCmp64 :: { IntInf => Int64 => Ord };
+intCmp64 = { i => k =>
+  case (intNeg i, k <SInt64 0)
+    of (True, False) -> LT
+    of (False, True) -> GT
+    of (False,False) ->            natCmpU64 (intNat i) k
+    of (True , True) -> ordInvert (natCmpU64 (intNat i) (negate-Int64 k))
+  end
+};
+
+intLowWord = { i : IntInf =>
+  natLowWord (intNat i)
+};
+
+int_2expt = { k : Int32 =>
+  mkIntInf (nat_2expt k) False
+};
+
+intPosRShd = { i : IntInf => ndigits : Int32 =>
+  assert (ndigits >=SInt32 0) "intPosRShd: ndigits >= 0";
+  assert (ndigits !=Int32 0) "intPosRShd: ndigits != 0";
+  assert (not (intNeg i)) "intPosRShd: i >= 0";
+  mkIntInf (natRShd (intNat i) ndigits) (intNeg i)
+};
+
+/*
+intRShb = { i : IntInf => nbits : Int32 =>
+  assert (ndigits >=SInt32 0) "intPosRShd: ndigits >= 0";
+  assert (ndigits !=Int32 0) "intPosRShd: ndigits != 0";
+  assert (not (intNeg i)) "intPosRShd: i >= 0";
+  mkIntInf (natRShd (intNat i) ndigits) (intNeg i)
+};
+*/
+
+intBitAnd :: { IntInf => IntInf => IntInf };
+intBitAnd = { i => j =>
+  mkIntInf (natBitAnd (intNat i) (intNat j))
+           (both      (intNeg i) (intNeg j));
+};
+
+foster_mp_to_text_radix = { i : IntInf => r : Int32 =>
+  t = foster_nat_to_text_radix (intNat i) r;
+  if intNeg i
+    then mkTextConcat "-" t
+    else                  t
+  end
+};
+
+printIntInf = { i : IntInf =>
+  print_text (foster_mp_to_text_radix i 10);
+};
+
+expectIntInf = { i : IntInf =>
+  expect_text (foster_mp_to_text_radix i 10);
+};
+
+intCountBits = { i : IntInf =>
+  natCountBits (intNat i)
+};
+

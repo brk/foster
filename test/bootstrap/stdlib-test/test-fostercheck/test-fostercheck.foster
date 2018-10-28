@@ -1,0 +1,84 @@
+snafuinclude Prelude "prelude";
+snafuinclude KnuthLCG "prng/knuthLCG";
+snafuinclude Bitwise "bitwise";
+snafuinclude RandomGen "random/gen";
+snafuinclude QC "random/quickcheck";
+
+show_Int32 = { x : Int32 => tmp_Text_of_Int32 x };
+
+show_Tuple2 :: forall (a:Type) (b:Type) { { a => Text } => { b => Text } => (a, b) => Text };
+show_Tuple2 = { show1 => show2 => p =>
+  case p of (v1, v2) -> "(" `mkTextConcat` (show1 v1)
+                            `mkTextConcat` ", "
+                            `mkTextConcat` (show2 v2)
+                            `mkTextConcat` ")"
+  end
+};
+
+show_List :: forall (t:Type) { { t => Text } => { List t => Text } };
+show_List = { show_elt =>
+  { lst =>
+    elts = listFoldl lst { x => acc => show_elt x ++Text ", " ++Text acc } "";
+    "[" ++Text elts ++Text "]"
+  }
+};
+
+
+prop_revrev :: forall (a:Type) { { a => a => Bool } =>
+                                 { List a => Bool } };
+prop_revrev = { eq =>
+  { xs => listEqual eq xs (xs |> listReverse |> listReverse) }
+};
+
+prop_rrBRKN :: forall (a:Type) { { a => a => Bool } =>
+                                 { List a => Bool } };
+prop_rrBRKN = { eq =>
+  { xs => listEqual eq xs (xs |> listReverse) }
+};
+
+eqInt32 = { a => b => a ==Int32 b };
+
+
+prop_oBNPT_same :: { Int32 => Bool };
+prop_oBNPT_same = { n =>
+  oneBeforeNextPowerOfTwo n ==Int32 oneBeforeNextPowerOfTwo_alt n
+};
+
+prop_ctlz_trim :: { Int32 => Int32 => Bool };
+prop_ctlz_trim = { raw => oneToN =>
+  bitsToDiscard = ctlz-Int32 oneToN;
+  trimmed = raw `bitlshr-Int32` bitsToDiscard;
+
+  trimmed <=UInt32 (oneBeforeNextPowerOfTwo oneToN);
+};
+
+
+main = {
+  prng64 = kLCG1x64HOF 33223;
+  prng32 = { prng64 ! |> high32BitsOf64 };
+
+  arbListOfInt  = arb_List prng32 (arb_Int32 prng32);
+  showListOfInt = show_List show_Int32;
+  testable_list_to_bool = testableFunc arbListOfInt showListOfInt testableBool;
+
+  expect_text "prop_revrev OK";
+  case quickCheck prng32 testable_list_to_bool (prop_revrev eqInt32)
+    of $QCTR_Success     -> print_text "prop_revrev OK"
+    of $QCTR_Failure _ _ -> print_text "prop_revrev failed"
+    of $QCTR_Exhausted _ -> print_text "prop_revrev exhausted"
+  end;
+
+
+  expect_text "prop_oBNPT OK";
+  testable_Int32_to_bool = testableFunc (arb_Int32 prng32) show_Int32 testableBool;
+  case quickCheck prng32 testable_Int32_to_bool prop_oBNPT_same
+    of $QCTR_Success     -> print_text "prop_oBNPT OK"
+    of $QCTR_Failure _ q -> print_text "prop_oBNPT failed";
+                            _ = listMap print_text q;
+                            ()
+    of $QCTR_Exhausted _ -> print_text "prop_oBNPT exhausted"
+  end;
+
+
+};
+

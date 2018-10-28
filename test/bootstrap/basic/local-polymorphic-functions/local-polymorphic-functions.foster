@@ -1,0 +1,20 @@
+main = {
+  test-poly !;
+  0;
+};
+
+type case SomeBoxedType
+       of $SomeBoxedCtor Int32
+;
+
+gBoxed = { y : SomeBoxedType => y };
+
+test-poly = {
+  doubleP = { forall t:Boxed,
+            f : { t => t } =>  x : t =>
+            f (f x)
+  };
+
+  _ = doubleP:[SomeBoxedType] gBoxed (SomeBoxedCtor 0);
+  ()
+};

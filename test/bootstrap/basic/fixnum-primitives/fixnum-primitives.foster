@@ -1,0 +1,287 @@
+snafuinclude Bits "bitwise";
+snafuinclude Text "text";
+
+main = {
+  trunc8-test   !;
+  print-i8-test !;
+  i8-ops-test   !;
+
+  numerical-ops !;
+  bitwise-ops   !;
+  floating-ops  !;
+};
+
+numerical-ops = {
+
+  expect_i64 9223372036854775807;
+  print_i64 (maxReprSInt64 !);
+
+  n1 = -1;
+  expect_i1 True;
+  print_i1 (maxReprUInt64 ! ==Int64 n1);
+
+  expect_i1 True;
+  print_i1 (maxReprUInt64 ! ==Int64 ((maxReprSInt64 !) *Int64 2) +Int64 1);
+
+  expect_i1 True;
+  print_i1 (0 >SInt64 n1);
+
+  expect_i1 True;
+  print_i1 (0 <UInt64 n1);
+
+  // Literals (of sized integer types) are just syntax for bit patterns.
+  expect_i8b 0xff;
+  print_i8b 255;
+
+  expect_i8b 0b`1111`1111;
+  print_i8b -1;
+
+  expect_i1 True;
+  print_i1 (255 ==Int8 -1);
+
+  expect_i1 False;
+  print_i1 (255 ==Int32 -1);
+
+  expect_i32b 0x0000`00ff;
+  print_i32b 255;
+
+  expect_i32b 0xffff`ffff;
+  print_i32b -1;
+
+};
+
+sub8 = { n : Int8 => n -Int8 (trunc32to8 2); };
+
+trunc32to8 = { n : Int32 => trunc_i32_to_i8 n; };
+
+trunc8-test = {
+  expect_i32 0;
+  print_i32 (sext_i8_to_i32 (trunc32to8 (opaquely_i32 256)));
+};
+
+print-i8-test = {
+     expect_i32 127;
+     print_i8 (trunc32to8 (opaquely_i32 127));
+
+     expect_i32 (0 -Int32 (opaquely_i32 128));
+     print_i8 (trunc32to8 (opaquely_i32 128));
+};
+
+i8-ops-test = {
+  expect_i32 5;
+  print_i8 ((trunc32to8 3) +Int8 (trunc32to8 2));
+
+  expect_i32 0;
+  print_i8 ((trunc32to8 128) +Int8 (trunc32to8 128));
+};
+
+
+bitwise-ops = {
+  expect_i32b                0b`10111001;
+  print_i32b (bitmerge-Int32 0b`11110000
+                             0b`10110110
+                             0b`01001001);
+
+  expect_i32b                      0b`1010;
+  print_i32b (bitfield-Int32 0b`1101101010  0 4);
+
+  expect_i32                10;
+  print_i32 (bitlength-Int32 0b`11`0110`1010);
+
+  expect_i32                10;
+  print_i32 (bitlength-alt-Int32 0b`11`0110`1010);
+
+  expect_i32                 32;
+  print_i32 (bitlength-Int32 -1);
+
+  expect_i32                     32;
+  print_i32 (bitlength-alt-Int32 -1234567);
+
+  first-bit-set-Int32-test 0 1;
+  first-bit-set-Int32-test 1 2;
+  first-bit-set-Int32-test 0 3;
+  first-bit-set-Int32-test 2 4;
+  first-bit-set-Int32-test 0 5;
+  first-bit-set-Int32-test 1 6;
+  first-bit-set-Int32-test 0 7;
+  first-bit-set-Int32-test 3 8;
+
+  expect_i32b                     0b`0000`1101;
+  print_i32b (bit-reverse-Int32 8 0b`1011`0000);
+
+  expect_i1 True ; print_i1 (is-bit-set-Int32 0b`101011 0);
+  expect_i1 True ; print_i1 (is-bit-set-Int32 0b`101011 1);
+  expect_i1 False; print_i1 (is-bit-set-Int32 0b`101011 2);
+  expect_i1 True ; print_i1 (is-bit-set-Int32 0b`101011 3);
+  expect_i1 False; print_i1 (is-bit-set-Int32 0b`101011 4);
+  expect_i1 True ; print_i1 (is-bit-set-Int32 0b`101011 5);
+
+  expect_i32 1;      print_i32 (copy-bit-Int32 0  True  0);
+  expect_i32 0b0100; print_i32 (copy-bit-Int32 0  True  2);
+  expect_i32 0b1011; print_i32 (copy-bit-Int32 15 False 2);
+
+
+  expect_i32 4; print_i32 (bitcount-Int32 0b`10101010);
+  expect_i32 0; print_i32 (bitcount-Int32 0);
+  expect_i32 1; print_i32 (bitcount-Int32 -2);
+
+  expect_i32 (-1);
+  print_i32 0xFFFF`FFFF;
+};
+
+first-bit-set-Int32-test = { e : Int32 => n : Int32 =>
+  expect_i32 e; print_i32 (first-set-bit-Int32 n);
+};
+
+floating-ops = {
+  expect_float_p9f64  5.2;
+  print_float_p9f64 (0.65 *f64 (powi-f64 2.0 3));
+
+  expect_float_p9f64 42.42;
+  print_float_p9f64 (4631166901565532406 |> i64-as-f64);
+
+  expect_i64 4631166901565532406;
+  print_i64 (42.42 |> f64-as-i64);
+
+  expect_i64 6;
+  print_i64 (6.25 |> f64-to-u64-unsafe);
+
+  expect_i64 -6;
+  print_i64 (-6.25 |> f64-to-s64-unsafe);
+
+/*
+  expect_i64 4294967290;
+  print_i64 (if opaquely_i32 0 ==Int32 0 then -6.25 else 6.25 end
+              |> f64-to-u64-unsafe);
+*/
+
+  test-float-classification !;
+
+  expect_text      "18446744073709551616.000000000";
+  print_float_p9f64 18446744073709551616.0;
+
+  // A bit strange, until you realize it's the same float as above.
+  expect_text      "18446744073709551616.000000000";
+  print_float_p9f64 18446744073709552000.0;
+
+  expect_i64x (0x43efffffffffffff);
+  print_i64x  (f64-as-i64 18446744073709549568.0);
+
+  prevFloat64 = { f => i64-as-f64 ((f64-as-i64 f) -Int64 1) };
+
+  print_i32 5123;
+  expect_i32 5123;
+
+  expect_float_p9f64 18446744073709551616.0;
+  print_float_p9f64 ((maxReprUInt64 !) |> u64-to-f64-unsafe);
+
+  expect_text "0xFFFFFFFFFFFFFFFF"; // "-1" ; unsigned: "18446744073709551615";
+  print_i64x (maxReprUInt64 !);
+
+  expect_i64x 4895412794951729152;
+  print_i64x ((maxReprUInt64 !) |> u64-to-f64-unsafe |> f64-as-i64);
+
+  print_i32 123;
+  expect_i32 123;
+
+  expect_float_p9f64 18446744073709549568.0;
+  print_float_p9f64 ((maxReprUInt64 !) |> u64-to-f64-unsafe |> prevFloat64);
+
+  // Note: minimum signed i64 is 0x8000... unsigned,
+  // which is one larger than the max representable signed integer.
+  expect_float_p9f64 9223372036854775808.0;
+  print_float_p9f64 ((minReprSInt64 !) |> u64-to-f64-unsafe);
+
+  // Unlike with with maxReprUInt64, the float faithfully represents the int.
+  expect_float_p9f64 -9223372036854775808.0;
+  print_float_p9f64 ((minReprSInt64 !) |> s64-to-f64-unsafe);
+
+  expect_i64x (0x43efffffffffffff);
+  print_i64x  (f64-as-i64 18446744073709549568.1);
+
+  expect_i64x (0x43f0000000000000);
+  print_i64x (f64-as-i64 18446744073709552000.0);
+};
+
+test-float-classification = {
+  z0 = 1.41e+01;
+  z1 = 1.41e+1;
+
+  expect_float_p9f64 14.1;
+  print_float_p9f64 z0;
+
+  expect_float_p9f64 14.1;
+  print_float_p9f64 z1;
+
+  expect_text "F64_U64_Negative";
+  print_text (-1.0 |> classify-f64-to-u64 |> show_tag_Float64AsU64Cases);
+
+  expect_text "F64_U64_Exact";
+  print_text (0.0 |> classify-f64-to-u64 |> show_tag_Float64AsU64Cases);
+
+  expect_text "F64_U64_Exact";
+  print_text (2.0 |> classify-f64-to-u64 |> show_tag_Float64AsU64Cases);
+
+  expect_text "F64_U64_Rounded";
+  print_text (2.2 |> classify-f64-to-u64 |> show_tag_Float64AsU64Cases);
+
+  expect_text "F64_U64_TooBig";
+  print_text (18446744073709551616.0 |> classify-f64-to-u64 |> show_tag_Float64AsU64Cases);
+
+  expect_text "F64_U64_TooBig";
+  print_text (18446744073709551616.5 |> classify-f64-to-u64 |> show_tag_Float64AsU64Cases);
+
+
+
+  expect_text "U64_F64_Exact";
+  print_text (1 |> classify-u64-to-f64 |> show_tag_UInt64asFloat64Cases);
+
+  expect_text "U64_F64_Exact";
+  print_text (18446744073709547520 |> classify-u64-to-f64 |> show_tag_UInt64asFloat64Cases);
+
+  expect_text "U64_F64_Exact";
+  print_text (18446744073709549568 |> classify-u64-to-f64 |> show_tag_UInt64asFloat64Cases);
+
+  case (18446744073709549569 |> classify-u64-to-f64)
+   of $U64_F64_Rounded f delta ->
+     expect_float_p9f64 18446744073709549568.0;
+     print_float_p9f64 f;
+     expect_i64 -1;
+     print_i64 delta;
+
+     expect_i64 4895412794951729151;
+     print_i64 (f64-as-i64 f);
+
+   of _ -> ()
+  end;
+
+  expect_text "U64_F64_Rounded";
+  print_text (18446744073709550000 |> classify-u64-to-f64 |> show_tag_UInt64asFloat64Cases);
+
+  expect_text "U64_F64_Exact";
+  print_text (18446744073709549568 |> classify-u64-to-f64 |> show_tag_UInt64asFloat64Cases);
+
+  expect_text "U64_F64_Rounded";
+  print_text (18446744073709550591 |> classify-u64-to-f64 |> show_tag_UInt64asFloat64Cases);
+
+  expect_text "U64_F64_RoundMax";
+  print_text (18446744073709550592 |> classify-u64-to-f64 |> show_tag_UInt64asFloat64Cases);
+
+};
+
+show_tag_UInt64asFloat64Cases = { c =>
+  case c
+     of $U64_F64_RoundMax _   -> "U64_F64_RoundMax"
+     of $U64_F64_Rounded  _ _ -> "U64_F64_Rounded"
+     of $U64_F64_Exact    _   -> "U64_F64_Exact"
+  end
+};
+
+show_tag_Float64AsU64Cases = { c =>
+  case c
+     of $F64_U64_Negative _   -> "F64_U64_Negative"
+     of $F64_U64_TooBig   _   -> "F64_U64_TooBig"
+     of $F64_U64_Rounded  _ _ -> "F64_U64_Rounded"
+     of $F64_U64_Exact    _   -> "F64_U64_Exact"
+  end
+};

@@ -1,0 +1,5 @@
+main = {
+  expect_i32 567;
+  print_i64  567;
+  ()
+};

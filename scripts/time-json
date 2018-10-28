@@ -1,0 +1,8 @@
+#!/bin/sh
+
+TIME=$(which gtime)
+if [ "x${TIME}" = "x" ]; then
+  TIME=/usr/bin/time
+fi
+
+$TIME -f '{"usr_s": %U, "sys_s": %S, "tot_hms": "%E", "mjr_pf": %F, "mnr_pf": %R, "swaps": %W, "switches": %c, "waits": %w, "max_rss_kb": %M }' "$@"

@@ -1,0 +1,50 @@
+  main = {
+    const600 = 4;
+    seq573 = expect_i32 const600;
+    g = { x570 =>
+      cpr788 = print_i32 x570;
+      cpr788
+    };
+    cont814 = { x601  =>
+      c824 = { seq575 =>
+
+        anon606 = { x582 =>
+          c607 = 2;
+          cpr881 = x582 *Int32 c607;
+          cpr881
+        };
+        anon604 = { x578 =>
+          c605 = 1;
+          cpr853 = x578 +Int32 c605;
+          cpr853
+        };
+        c902 = { x609 =>
+          c907 = { x610 =>
+            seq585 = print_i32 x610;
+            c611 = 7;
+            seq586 = expect_i32 c611;
+            c612 = 3;
+            c613 = 2;
+            x614 = c612 *Int32 c613;
+            c615 = 1;
+            x616 = x614 +Int32 c615;
+            cpr964 = print_i32 x616;
+            cpr964
+          };
+          ctmp1026 = anon604 x609;
+          c907 ctmp1026;
+        };
+
+        c603 = 7;
+        seq576 = expect_i32 c603;
+        c608 = 3;
+        ctmp1027 = anon606 c608;
+        c902 ctmp1027;
+      };
+
+      c602 = 4;
+      ctmp1028 = x601 c602;
+      c824 ctmp1028;
+    };
+    cont814 g;
+  };

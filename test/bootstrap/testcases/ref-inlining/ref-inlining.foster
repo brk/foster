@@ -1,0 +1,134 @@
+main = {
+  tuprefs1  !;
+  tuprefs2  !;
+  tuprefs3 !;
+/*
+  simpler   !;
+  capture   !;
+  ref-if    !;
+
+  hof-until !;
+*/
+  //expect_i1 False; print_i1 (__COMPILES__ 0 >^ 0);
+  //expect_i1 False; print_i1 (__COMPILES__ let r = (prim ref 0); in r >^ r end);
+
+  _ignored = noinline_test_foo !;
+
+  ()
+};
+
+noinline_test_foo = {
+  resc = (prim ref 2);
+  print_i32 4;
+  expect_i32 (noinline_foo resc);
+
+  rnesc = (prim ref 4);
+  print_i32 8;
+  expect_i32 (noinline_foo rnesc);
+
+  resc
+};
+
+noinline_test_loop = {
+  // Merely being shuffled around the loop shouldn't cause rnesc to escape...
+  rnescloop = (prim ref 5);
+  REC go = { r => v =>
+    if v ==Int32 0
+      then v
+      else go r (v -Int32 1)
+    end
+  };
+  expect_i32 0;
+  print_i32 (go rnescloop 6);
+  ()
+};
+
+noinline_foo = { r =>
+  // This function will be called with r pointing into the heap and the stack.
+  a = r^;
+  force_gc_for_debugging_purposes !;
+  b = r^;
+  a +Int32 b
+};
+
+tuprefs3 = {
+  ri = (prim ref    7     );
+  //rt = (prim ref ( 2, 3 ) );
+  force_gc_for_debugging_purposes !;
+  expect_i32 7;
+  print_i32 ri^;
+
+  //expect_i32 5;
+  //case rt^ of (a,b) -> print_i32 (a +Int32 b) end;
+};
+
+
+tuprefs1 = {
+  t = (prim ref (opaquely_i32 1), prim ref 2);
+  expect_i32 1;
+  case t of (r, _) -> print_i32 r^ end;
+};
+
+tuprefs2 = {
+  r = (prim ref (1, 2, 3, 4));
+  expect_i32 4;
+  case r^ of (_, _, _, x) -> print_i32 x end;
+  expect_i32 14;
+  (11, 12, 13, 14) >^ r;
+  case r^ of (_, _, _, x) -> print_i32 x end;
+};
+
+/*
+simpler = {
+  r = (prim ref 0);
+
+  expect_i32 0;
+   print_i32 r^;
+  3 >^ r;
+  expect_i32 3;
+   print_i32 r^;
+};
+
+capture = {
+  r = (prim ref 0);
+  f = { r^ };
+
+  2 >^ r;
+  expect_i32 2;
+   print_i32 (f !);
+};
+
+ref-if = {
+  r = if 2 ==Int32 (opaquely_i32 2) then (prim ref 0) else (prim ref 1) end;
+  expect_i32 0;
+   print_i32 r^;
+};
+
+hof-until-if = { c : {Bool} => b : { () } =>
+  if c ! then () else let j0 = b !; in hof-until-if c b end
+  end
+};
+
+hof-until-case = { c : {Bool} => b : { () } =>
+  case c !
+    of True ->  ()
+    of False -> let j0 = b !; in hof-until-case c b end
+  end
+};
+
+hof-until = {
+  r = (prim ref 16);
+  expect_i32 16;
+  expect_i32 15;
+  expect_i32 14;
+  hof-until-if   { r^ ==Int32 13 } {
+            print_i32 r^; (r^ -Int32 1) >^ r;
+  };
+  expect_i32 13;
+  expect_i32 14;
+  expect_i32 15;
+  hof-until-case { r^ ==Int32 16 } {
+            print_i32 r^; (r^ +Int32 1) >^ r;
+  };
+};
+*/

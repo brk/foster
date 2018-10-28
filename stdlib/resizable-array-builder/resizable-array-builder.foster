@@ -1,0 +1,186 @@
+snafuinclude Bytes "bytes";
+
+type case ResizableArrayBuilder
+      of $ResizableArrayBuilder (Ref (Array Int8)) // capacity
+                                (Ref Word)         // actual size
+     ;
+
+rabToBytes = { rab =>
+  let ($ResizableArrayBuilder rcap rsiz) = rab;
+  v = rcap^;
+  s = rsiz^;
+  if s ==Word 0
+    then bytesEmpty !
+    else
+      bytes = allocDArray (cast_Word_to_i32 s);
+      memcpy_i8_to_at_from_len bytes 0 v (cast_Word_to_i32 s);
+      bytesOfRawArray bytes
+  end
+};
+
+rabPadToAlignment = { rab => align =>
+  sz = rabSize rab;
+  case sz `srem-unsafe-Word` align
+    of 0     -> ()
+    of extra -> // extra is in range [1..align-1]
+                // (align - extra) is in range [1..align-1]
+                // (align - extra) + sz  is a multiple of align
+                // But we want that to be the length of the byte array,
+                // so we write to the previous index.
+                rabWriteWord8 rab (sz +Word (align -Word extra) -Word 1) 0
+  end
+};
+
+rabReadWord8 = { rab => offset =>
+  let ($ResizableArrayBuilder rcap _rsiz) = rab;
+  rabCheckLimit rab offset;
+  prim subscript rcap^ (trunc_Word_to_i32 offset);
+};
+
+rabSize :: { ResizableArrayBuilder => Word };
+rabSize = { rab =>
+  let ($ResizableArrayBuilder _rcap rsiz) = rab;
+  rsiz^
+};
+
+newResizableArrayBuilder = {
+  v = prim mach-array-literal 0;
+  rcap = (prim ref v);
+  rsiz = (prim ref 0);
+  ResizableArrayBuilder rcap rsiz
+};
+
+rabGrow = { v => lim =>
+  if v <=SWord lim
+    then rabGrow (2 *Word v) lim
+    else v
+  end
+};
+
+rabGrowToLimit :: { ResizableArrayBuilder => Word => () };
+rabGrowToLimit = { rab => lim =>
+  let ($ResizableArrayBuilder rcap rsiz) = rab;
+  v0len  = arrayLengthWord rcap^;
+  newlen = rabGrow v0len lim;
+  v_ = allocDArray (newlen |> cast_Word_to_i32); // implicit zero initialization
+  memcpy_i8_to_at_from_len v_ 0 rcap^ (v0len |> cast_Word_to_i32);
+  v_ >^ rcap;
+};
+
+// Returns the number of bytes written.
+rabWriteBytes :: { ResizableArrayBuilder => Word => Bytes => Word };
+rabWriteBytes = { rab => offset => bs =>
+  rabCheckLimit rab (offset +Word (bytesLengthWord bs -Word 1));
+
+  // TODO think about how we might guarantee we don't allocate
+  // a closure every time this function is called, without
+  // inlining bytesFoldlBytes. The caller could pass in the closure
+  // over rab, but that's a gross violation of concerns.
+  // What's the automated compiler transform to do so?
+  //    * See one closure in function body, which closes over function arg.
+  //    * Transform parent to take extra param; move closure to call site.
+  //    * From there, can lift closure...
+  // TODO use memcpy?
+  bytesFoldlBytes bs { w8 => idx : Word =>
+    rabWriteWord8_ rab (offset +Word idx) w8;
+    idx +Word 1
+  } 0;
+};
+
+rabCheckLimit :: { ResizableArrayBuilder => Word => () };
+rabCheckLimit = { rab => lim =>
+  let ($ResizableArrayBuilder rcap rsiz) = rab;
+  max-SWord rsiz^ (lim +Word 1) >^ rsiz;
+  if arrayLengthWord rcap^ <=SWord lim
+    then rabGrowToLimit rab lim
+    else ()
+  end
+};
+
+rabWriteWord8_ :: { ResizableArrayBuilder => Word => Int8 => () };
+rabWriteWord8_ = { rab => offset => value =>
+  let ($ResizableArrayBuilder rcap rsiz) = rab;
+  value >^ rcap^[offset];
+};
+
+setBit   = { w => r => w `bitor-Word` (1 `bitshl-Word` r) };
+clearBit = { w => r => w `bitand-Word` (bitnot-Word (1 `bitshl-Word` r)) };
+
+setBit8   = { w => r => w `bitor-Int8` (1 `bitshl-Int8` r) };
+clearBit8 = { w => r => w `bitand-Int8` (bitnot-Int8 (1 `bitshl-Int8` r)) };
+
+rabWriteBit :: { ResizableArrayBuilder => Word => Word => Bool => () };
+rabWriteBit = { rab => offset => bitoff => value =>
+  q = (bitoff `sdiv-unsafe-Word` 8);
+  r = (bitoff `srem-unsafe-Word` 8) |> cast_Word_to_i8;
+  w = rabReadWord8 rab (offset +Word q);
+  w_ = if value then setBit8 w r else clearBit8 w r end;
+  rabWriteWord8_ rab (offset +Word q) w_
+};
+
+rabWriteWord8 :: { ResizableArrayBuilder => Word => Int8 => () };
+rabWriteWord8 = { rab => offset => value =>
+  rabCheckLimit  rab offset;
+  rabWriteWord8_ rab offset value;
+};
+
+rabWriteWord16 :: { ResizableArrayBuilder => Word => Int32 => () };
+rabWriteWord16 = { rab => offset => value =>
+  rabCheckLimit  rab (offset +Word 1);
+  rabWriteWord8_ rab (offset +Word 1) (bitlshr-Int32 value 8 |> trunc_i32_to_i8);
+  rabWriteWord8_ rab (offset +Word 0) (              value   |> trunc_i32_to_i8);
+};
+
+rabWriteWord32 :: { ResizableArrayBuilder => Word => Int32 => () };
+rabWriteWord32 = { rab => offset => value =>
+  rabCheckLimit  rab (offset +Word 3);
+  rabWriteWord8_ rab (offset +Word 3) (bitlshr-Int32 value 24 |> trunc_i32_to_i8);
+  rabWriteWord8_ rab (offset +Word 2) (bitlshr-Int32 value 16 |> trunc_i32_to_i8);
+  rabWriteWord8_ rab (offset +Word 1) (bitlshr-Int32 value  8 |> trunc_i32_to_i8);
+  rabWriteWord8_ rab (offset +Word 0) (              value    |> trunc_i32_to_i8);
+};
+
+rabWriteWord64 :: { ResizableArrayBuilder => Word => Int64 => () };
+rabWriteWord64 = { rab => offset => value =>
+  rabWriteWord32 rab (offset +Word 4) (bitlshr-Int64 value  32 |> trunc_i64_to_i32);
+  rabWriteWord32 rab (offset +Word 0) (              value     |> trunc_i64_to_i32);
+};
+
+rabWriteWord16be :: { ResizableArrayBuilder => Word => Int32 => () };
+rabWriteWord16be = { rab => offset => value =>
+  rabCheckLimit  rab (offset +Word 1);
+  rabWriteWord8_ rab (offset +Word 1) (              value   |> trunc_i32_to_i8);
+  rabWriteWord8_ rab (offset +Word 0) (bitlshr-Int32 value 8 |> trunc_i32_to_i8);
+};
+
+rabWriteWord32be :: { ResizableArrayBuilder => Word => Int32 => () };
+rabWriteWord32be = { rab => offset => value =>
+  rabCheckLimit  rab (offset +Word 3);
+  rabWriteWord8_ rab (offset +Word 3) (              value    |> trunc_i32_to_i8);
+  rabWriteWord8_ rab (offset +Word 2) (bitlshr-Int32 value  8 |> trunc_i32_to_i8);
+  rabWriteWord8_ rab (offset +Word 1) (bitlshr-Int32 value 16 |> trunc_i32_to_i8);
+  rabWriteWord8_ rab (offset +Word 0) (bitlshr-Int32 value 24 |> trunc_i32_to_i8);
+  
+};
+
+rabWriteWord64be :: { ResizableArrayBuilder => Word => Int64 => () };
+rabWriteWord64be = { rab => offset => value =>
+  rabWriteWord32be rab (offset +Word 4) (              value    |> trunc_i64_to_i32);
+  rabWriteWord32be rab (offset +Word 0) (bitlshr-Int64 value 32 |> trunc_i64_to_i32);
+};
+
+
+rabWriteInt64 :: { ResizableArrayBuilder => Word => Int64 => () };
+rabWriteInt64 = { rab => offset => value => rabWriteWord64 rab offset value };
+
+rabWriteInt32 :: { ResizableArrayBuilder => Word => Int32 => () };
+rabWriteInt32 = { rab => offset => value => rabWriteWord32 rab offset value };
+
+rabWriteInt16 :: { ResizableArrayBuilder => Word => Int32 => () };
+rabWriteInt16 = { rab => offset => value => rabWriteWord16 rab offset value };
+
+rabWriteInt8 :: { ResizableArrayBuilder => Word => Int8 => () };
+rabWriteInt8 = { rab => offset => value => rabWriteWord8 rab offset value };
+
+rabAppendWord8  = { rab => value => rabWriteWord8  rab (rabSize rab) value };
+rabAppendWord32 = { rab => value => rabWriteWord32 rab (rabSize rab) value };

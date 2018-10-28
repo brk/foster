@@ -1,0 +1,200 @@
+        C# style, with and without inline type annotations
+f = (x:int, y:int) => { x + y }
+                                              f = (x, y) => { x + y }
+
+        C-inspired syntax, with and without types
+f = (x:int, y:int) { x + y }
+                                              f = (x, y) { x + y }
+
+        Blocks, with and without inline type annotations; different separators
+f = { (x:int, y:int) => x + y }
+                                              f = { (x, y) => x + y }
+f = { |x:int, y:int| => x + y }
+                                              f = { |x, y| => x + y }
+
+        Blocks, no leading separator, comma between bindings, arrow afterwards
+f = { x:int, y:int => x + y }
+                                              f = { x, y => x + y }
+                                              f = { x, y -> x + y }
+
+        Blocks, no leading separator, consistent arrow afterwards
+        (bad for pattern matching with LL parser?)
+                                              f = { x => y => x + y }
+                                              f = { x -> y -> x + y }
+
+        Out-of-line type annotations with no flat list of bindings
+f :: Int -> Int -> Int
+f = { x y => x + y }
+
+f :: Int -> Int -> (Unit -> Int)
+f = { x y => { x + y } }
+
+        Variants of in-line type annotations
+f = { x :: Int, y :: Int => x + y }           f = { x Int, y Int => x + y }
+
+Potential uses of {} in value syntax:
+  * Lambdas: { x y => x + y }
+  * Thunks: { x + y }
+  * Maps: { 'foo' bar
+            'bar' baz }
+Potential uses of {} in type syntax:
+  * Refinement types: { x:int | x > 0 }
+  * Function types:   { Int Int -> Int }
+  * Thunk types       { Int } === { Unit -> Int }
+
+
+withPrintWriter = { file : PrintWriter, op: {PrintWriter => Unit} =>
+                      ...
+                  }
+
+
+withPrintWriter = { file : PrintWriter        =>
+                    op: (PrintWriter => Unit) =>
+                      ...
+                  }
+
+
+withPrintWriter = (file :: PrintWriter)       =>
+                  (op :: PrintWriter => Unit) => {
+                      ...
+                  }
+
+// Note that Haskell-style syntax encourages specifying
+// the return type of the function, while the above
+// syntaxes encourage not giving an explicit return type...
+withPrintWriter :: PrintWriter -> (PrintWriter -> Unit) -> ...
+withPrintWriter = (file : PrintWriter, op: PrintWriter => Unit) => {
+                      ...
+                  }
+
+contrivedExample = (op : Int => Int, op2 : (Int, Int) => Int) => {
+                     blah ; blah ; blah
+                   }
+
+contrivedExample = { (op : Int => Int,
+                      op2 : { (Int, Int) => Int} ) =>
+                     blah ; blah ; blah
+                   }
+
+withPrintWriter(file) {
+  (writer, thing) => writer.println(thing)
+}
+
+withPrintWriter(file)(fn (writer, thing) { writer.println(thing)})
+
+withPrintWriter(file) { writer, thing =>
+  writer.println(new java.util.Date)
+}
+
+
+simple = x => x + 1
+simple = (x) => x + 1
+simple = { x => x + 1 }
+
+double = (x, y) => x + y
+double = ((x, y) => x + y)
+
+double = {(x, y) => x + y }
+double = { (x, y) => x + y }
+double = { x, y => x + y }
+
+
+Juxtaposition for function calls, or {arg} instead of (arg)?
+The difference is whether { somecode } evaluates somecode
+before or after the function call.
+
+        Juxtaposition:
+                func(arg) { v => somecode }
+                ===
+                Call(Call(func, arg), Lambda(v, someccode))
+
+
+                func(arg) { somecode }
+                ===
+                Call(Call(func, arg), Lambda(_, somecode))
+        Curlies
+                func(arg) { v => somecode }
+                ===
+                Call(Call(func, arg), Lambda(v, someccode))
+
+
+                func(arg) { somecode }
+                ===
+                Call(Call(func, arg), somecode)
+
+atomic { code }.blah()  === atomic ( { code }.blah() )
+otherwise use (atomic { code }).blah()
+
+
+if (a < b) { x } { y }
+when (a < b) { x }
+
+
+if   :: forall A, (Bool, () => A, () => A) => A
+when :: forall A, (Bool, () => A) => A
+
+if :: forall A, { (Bool, {() => A}, {() => A}) => A }
+if :: forall A, { Bool, {() => A}, {() => A} => A }
+if :: forall A, { Bool, {=> A}, {=> A} => A }
+if :: forall A, { Bool, {A}, {A} => A }            {A} == {=> A} == { () => A }
+
+if :: forall A, { (Bool, {() -> A}, {() -> A}) -> A }
+if :: forall A, { Bool, {() -> A}, {() -> A} -> A }
+if :: forall A, { Bool, {-> A}, {-> A} -> A }
+if :: forall A, { Bool, {A}, {A} -> A }            {A} == {-> A} == { () -> A }
+
+
+if = { (cond, then, else) =>
+        cond match {
+                case true => then()
+                case false => else()
+        }
+     }
+
+if = { (cond, then, else) =>
+        cond match {
+                case true => then()
+                case false => else()
+        }
+     }
+
+{ a, b : a + b }
+{ a, b => a + b }
+x => x + 1
+(x, y) => x + y
+{ x, y : x + y }
+
+
+
+Lambda syntax           vs              Type Syntax
+
+{ a b | f a b }
+                                        A -> B -> C
+
+{ rand() }
+                                        () -> Int
+                                        { Int }
+
+{ T }             ====           () => T
+ A -> B -> C      ====            (A, B)  => C
+(A -> B) -> C     ====           (A => B) => C
+ A -> (B -> C)    ====            A => (B => C)
+
+
+
+f(a, b)                 vs              f a b
+                                   No overloading on arity
+Allows overloading
+        on arity
+
+                                   f a b.c
+                                   (f a b).c
+
+is      expr name expr parsed as
+                                        expr(name, expr)        Haskell
+                                        expr.name(expr)         Scala
+
+                                        and is
+                                        expr.name(expr)
+                                        equivalent to
+                                        name(expr, expr) ?

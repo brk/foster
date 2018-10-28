@@ -1,0 +1,9 @@
+run-it = { f:{Int32} => f ! };
+
+// This just tests passing of (lambda-lifted) function pointers,
+// since the anonymous function defined below is trivially closed.
+
+main = {
+  expect_i32 42;
+  print_i32 (run-it { opaquely_i32 42 } );
+};
