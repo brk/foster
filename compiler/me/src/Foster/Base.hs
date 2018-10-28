@@ -287,11 +287,11 @@ data CtorRepr = CR_Default     Int -- tag via indirection through heap cell meta
 
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 -- ||||||||||||||||||| Literals |||||||||||||||||||||||||||||||||{{{
-data Literal = LitInt   LiteralInt
-             | LitFloat LiteralFloat
-             | LitText  T.Text
-             | LitBool  Bool
-             | LitByteArray B.ByteString
+data Literal = LitInt   !LiteralInt
+             | LitFloat !LiteralFloat
+             | LitText  !T.Text
+             | LitBool  !Bool
+             | LitByteArray !B.ByteString
              deriving (Show, Eq)
 
 data LiteralInt = LiteralInt { litIntValue   :: !Integer
@@ -300,8 +300,8 @@ data LiteralInt = LiteralInt { litIntValue   :: !Integer
                              , litIntBase    :: !Int
                              } deriving (Show, Eq)
 
-data LiteralFloat = LiteralFloat { litFloatValue   :: Double
-                                 , litFloatText    :: String
+data LiteralFloat = LiteralFloat { litFloatValue   :: !Double
+                                 , litFloatText    :: !String
                                  } deriving (Show, Eq)
 
 powersOfTwo = [2^k | k <- [1..]]
@@ -384,14 +384,14 @@ data ToplevelBinding ty = TopBindArray Ident ty [Literal]
 -- ||||||||||||||||||||||| Source Ranges ||||||||||||||||||||||||{{{
 
 -- Note: sourceRangeLines is *all* lines, not just those in the range.
-data SourceRange = SourceRange { sourceRangeStartLine :: !Int
-                               , sourceRangeStartCol  :: !Int
-                               , sourceRangeEndLine   :: !Int
-                               , sourceRangeEndCol    :: !Int
+data SourceRange = SourceRange { sourceRangeStartLine :: {-# UNPACK #-} !Int
+                               , sourceRangeStartCol  :: {-# UNPACK #-} !Int
+                               , sourceRangeEndLine   :: {-# UNPACK #-} !Int
+                               , sourceRangeEndCol    :: {-# UNPACK #-} !Int
                                , sourceRangeLines :: !SourceLines
                                , sourceRangeFile  :: !(Maybe String)
                                }
-                  | MissingSourceRange String
+                  | MissingSourceRange !String
 
 instance Eq SourceRange where
   (MissingSourceRange s1) == (MissingSourceRange s2) = s1 == s2
@@ -711,7 +711,7 @@ identPrefix :: Ident -> T.Text
 identPrefix (GlobalSymbol name _) = name
 identPrefix (Ident name _)        = name
 
-data Ident = Ident        !T.Text  {-# UNPACK #-} !Uniq
+data Ident = Ident        !T.Text {-# UNPACK #-} !Uniq
            | GlobalSymbol !T.Text !MaybeRename
 
 data MaybeRename = NoRename | RenameTo T.Text deriving Show

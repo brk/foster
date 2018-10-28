@@ -289,6 +289,7 @@ void fprint_i64_bare(FILE* f, int64_t x) { fprintf(f, "%" PRId64 , x); }
 void fprint_i32(FILE* f, int32_t x) {  fprintf(f, "%d\n", x); fflush(f); }
 void fprint_i32x(FILE* f, int32_t x) { fprintf(f, "0x%X\n", x); }
 void fprint_i32b(FILE* f, int32_t x) { fprint_b2<32>(f, x); }
+void fprint_i32c(FILE* f, int32_t x) {  fprintf(f, "%c\n", x); fflush(f); }
 
 void fprint_i8b(FILE* f, int8_t x) { fprint_b2<8>(f, x); }
 
@@ -365,6 +366,7 @@ void expect_i32(int32_t x) { fprint_i32(stderr, x); }
 
 void  print_i32x(int32_t x) { fprint_i32x(stdout, x); }
 void expect_i32x(int32_t x) { fprint_i32x(stderr, x); }
+void  print_i32c(int32_t x) { fprint_i32c(stdout, x); }
 
 void  print_i32b(int32_t x) { fprint_i32b(stdout, x); }
 void expect_i32b(int32_t x) { fprint_i32b(stderr, x); }
@@ -477,6 +479,7 @@ FILE* c2f_stdin() { return stdin; }
 FILE* c2f_stdout() { return stdout; }
 FILE* c2f_stderr() { return stderr; }
 
+FILE* CFile_nil() { return NULL; }
 
 int8_t foster_crypto_hash_sha256(foster_bytes* output, foster_bytes* input) {
   if (output->cap != crypto_hash_sha256_BYTES) {

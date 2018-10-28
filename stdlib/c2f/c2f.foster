@@ -10,6 +10,9 @@ mkField = { v => Field (prim ref v) };
 getField :: forall (a:Type) { Field a => a };
 getField = { f => case f of $Field r -> r^ end };
 
+getFieldRef :: forall (a:Type) { Field a => Ref a };
+getFieldRef = { f => case f of $Field r -> r end };
+
 setField :: forall (a:Type) { Field a => a => () };
 setField = { f => v => case f of $Field r -> v >^ r end };
 
@@ -19,6 +22,14 @@ type case Ptr (a:Type)
   of $PtrArr (Array a) Int32
   of $PtrRef (Ref a)
   ;
+
+print_ptr = { p =>
+  case p
+    of $PtrNil -> print_text "PtrNil"
+    of $PtrRef _ -> print_text "PtrRef"
+    of $PtrArr a offset -> print_text_bare "PtrArr, offset="; print_i32 offset; print_text_bare "; len="; print_i32 (arrayLength32 a);
+  end
+};
 
 (==Ptr) :: forall (a:Type) { Ptr a => Ptr a => Bool };
 (==Ptr) = { p => q =>
@@ -51,16 +62,52 @@ type case Ptr (a:Type)
   end
 };
 
-(-Ptr) :: forall (a:Type) { Ptr a => Ptr a => Int64 };
-(-Ptr) = { p => q =>
+(<Ptr) :: forall (a:Type) { Ptr a => Ptr a => Bool };
+(<Ptr) = { p => q =>
+  case (p, q)
+    of ($PtrNil, $PtrNil) -> False
+    of ($PtrRef rp, $PtrRef rq) -> False // TODO fix
+    of ($PtrArr pa pn, $PtrArr qa qn) ->
+          if pn <SInt32 qn
+            then prim sameArrayStorage pa qa
+            else False
+          end
+    of _ -> False
+  end
+};
+
+(>=Ptr) :: forall (a:Type) { Ptr a => Ptr a => Bool };
+(>=Ptr) = { p => q =>
+  q <=Ptr p
+};
+
+(>Ptr) :: forall (a:Type) { Ptr a => Ptr a => Bool };
+(>Ptr) = { p => q =>
+  q <Ptr p
+};
+
+ptrDiff :: forall (a:Type) { Ptr a => Ptr a => Int64 };
+ptrDiff = { p => q =>
   case (p, q)
     of ($PtrArr pa pn, $PtrArr qa qn) -> pn -Int32 qn |> zext_i32_to_i64
     of _ -> 0
   end
 };
 
+ptrDiff32 :: forall (a:Type) { Ptr a => Ptr a => Int32 };
+ptrDiff32 = { p => q => p `ptrDiff` q |> trunc_i64_to_i32 };
+
+(-Ptr) :: forall (a:Type) { Ptr a => Int32 => Ptr a };
+(-Ptr) = { ptr => n => ptrMinus ptr n };
+
 (+Ptr) :: forall (a:Type) { Ptr a => Int32 => Ptr a };
 (+Ptr) = { ptr => n => ptrPlus ptr n };
+
+(-Ptr64) :: forall (a:Type) { Ptr a => Int64 => Ptr a };
+(-Ptr64) = { ptr => n => ptrMinus ptr (trunc_i64_to_i32 n) };
+
+(+Ptr64) :: forall (a:Type) { Ptr a => Int64 => Ptr a };
+(+Ptr64) = { ptr => n => ptrPlus ptr (trunc_i64_to_i32 n) };
 
 ptrGetIndex :: forall (a:Type) { Ptr a => Int32 => a };
 ptrGetIndex = { ptr => idx =>
@@ -121,6 +168,11 @@ ptrMemset = { ptr => v => n =>
   enumRange32 0 n { i => ptrSetIndex ptr i v };
 };
 
+arrMemset :: forall (a:Type) { Array a => Int32 => a => Int32 => () };
+arrMemset = { arr => off => v => n =>
+  enumRange32 0 n { i => v >^ arr[i +Int32 off] };
+};
+
 ptrMemcpy :: forall (a:Type) { Ptr a => Ptr a => Int32 => () };
 ptrMemcpy = { dst => src => n =>
   enumRange32 0 n { i => ptrSetIndex dst i (ptrGetIndex src i) };
@@ -146,6 +198,11 @@ ptrStrlen = { ptr =>
   go 0
 };
 
+ptrStrncpy :: { Ptr Int8 => Ptr Int8 => Int32 => () };
+ptrStrncpy = { dst => src => n =>
+  ptrMemcpy dst src n
+};
+
 ptrMemcmp :: forall (a:Type) { Ptr a => Ptr a => Int32 => { a => a => Ord } => Int32 };
 ptrMemcmp = { a => b => n => cmp =>
   REC go = { i =>
@@ -162,6 +219,38 @@ ptrMemcmp = { a => b => n => cmp =>
   go 0;
 };
 
+memmove_arr :: forall (a:Type) { Array a => Int32 => Int32 => Int32 };
+memmove_arr = { arr => srcoff => n =>
+  REC loop = { i =>
+    if i <SInt32 n
+      then arr[srcoff +Int32 i] >^ arr[i];
+           loop (i +Int32 1)
+      else n
+    end
+  };
+  loop 0
+};
+
+memmove :: forall (a:Type) { Ptr a => Ptr a => Int32 => Int32 };
+memmove = { dest => src => n =>
+  case (dest, src)
+    of ($PtrNil, $PtrNil) -> 0
+    of ($PtrRef rp, $PtrRef rq) -> 1
+    of ($PtrArr pa pn, $PtrArr qa qn) ->
+      if prim sameArrayStorage pa qa
+        then
+          if pn ==Int32 qn
+            then n
+            else // TODO fix
+                  ptrMemcpy dest src n; n
+          end
+        else ptrMemcpy dest src n; n
+      end
+
+    of _ -> 0
+  end
+};
+
 
 incr_Ptr_Int8_     = { r : Ref (Ptr Int8) => v = (r^ `ptrPlus` 1); v >^ r; v };
 decr_Ptr_Int8_     = { r : Ref (Ptr Int8) => v = (r^ `ptrMinus` 1); v >^ r; v };
@@ -172,6 +261,24 @@ ptrIncr_Ptr_Int8_     = { r : Ptr (Ptr Int8) => v = (ptrGet r `ptrPlus` 1); ptrS
 ptrDecr_Ptr_Int8_     = { r : Ptr (Ptr Int8) => v = (ptrGet r `ptrMinus` 1); ptrSet r v; v };
 ptrPostIncr_Ptr_Int8_ = { r : Ptr (Ptr Int8) => v = ptrGet r; ptrSet r (v `ptrPlus` 1); v };
 ptrPostDecr_Ptr_Int8_ = { r : Ptr (Ptr Int8) => v = ptrGet r; ptrSet r (v `ptrMinus` 1); v };
+
+ptrPostIncr :: forall (a:Type) { Ptr (Ptr a) => Ptr a };
+ptrPostIncr = { r => v = ptrGet r; ptrSet r (v `ptrPlus` 1); v };
+
+ptrPostDecr :: forall (a:Type) { Ptr (Ptr a) => Ptr a };
+ptrPostDecr = { r => v = ptrGet r; ptrSet r (v `ptrMinus` 1); v };
+
+
+ptrIncr :: forall (a:Type) { Ptr (Ptr a) => Ptr a };
+ptrIncr = { p => ptrSet p ((ptrGet p) `ptrPlus` 1); ptrGet p };
+
+ptrDecr :: forall (a:Type) { Ptr (Ptr a) => Ptr a };
+ptrDecr = { p => ptrSet p ((ptrGet p) `ptrMinus` 1); ptrGet p };
+
+/* TODO infinite loop in the typechecker?? occurs check violation we're not catching i guess
+ptrIncr :: forall (a:Type) { Ptr (Ptr a) => Ptr a };
+ptrIncr = { p => ptrSet p (p `ptrPlus` 1); p };
+*/
 
 ptrIncr_Ptr_Int32_     = { r : Ptr (Ptr Int32) => v = (ptrGet r `ptrPlus` 1); ptrSet r v; v };
 ptrDecr_Ptr_Int32_     = { r : Ptr (Ptr Int32) => v = (ptrGet r `ptrMinus` 1); ptrSet r v; v };
@@ -196,6 +303,8 @@ ptrPostDecrInt8 = { r : Ptr Int8 => v = ptrGet r; ptrSet r (v -Int8 1); v };
 ptrPostIncrInt64 = { r : Ptr Int64 => v = ptrGet r; ptrSet r (v +Int64 1); v };
 ptrPostDecrInt64 = { r : Ptr Int64 => v = ptrGet r; ptrSet r (v -Int64 1); v };
 
+ptrIncrArrayInt32 = { r : Ptr Int32 => idx => v = (ptrGetIndex r idx +Int32 1); ptrSetIndex r idx v; v };
+
 strLit :: forall (t:Type) { Array t => Ptr t };
 strLit = { s => PtrArr s 0 };
 
@@ -204,13 +313,19 @@ ptrOfArr = { s => PtrArr s 0 };
 
 printStr :: { Ptr Int8 => () };
 printStr = { ptr =>
+  printStrBare ptr;
+  print_newline !
+};
+
+printStrBare :: { Ptr Int8 => () };
+printStrBare = { ptr =>
   case ptr
-    of $PtrNil   -> print_text "(null)";
-    of $PtrRef r -> print_text "PtrRef";
+    of $PtrNil   -> print_text_bare "(null)"; ()
+    of $PtrRef r -> print_text_bare "PtrRef"; ()
     of $PtrArr arr off ->
         len = arrayLength32 arr -Int32 (off +Int32 1);
         prim_print_bytes_stdout arr len off;
-        print_newline !;
+        ()
   end
 };
 
@@ -284,9 +399,15 @@ foreign import fgetc    as c2f_fgetc    :: { CFile => Int32 };
 foreign import fwrite   as c_fwrite  :: { CString => Int64 => Int64 => CFile => Int64 };
 foreign import fread    as c_fread   :: { CString => Int64 => Int64 => CFile => Int64 };
 
+foreign import fseek    as c_fseek :: { CFile => Int64 => Int32 => Int32 };
+foreign import ftell    as c_ftell :: { CFile => Int64 };
+foreign import rewind   as c_rewind :: { CFile => () };
+
 foreign import c2f_stdin  :: { CFile };
 foreign import c2f_stdout :: { CFile };
 foreign import c2f_stderr :: { CFile };
+
+foreign import CFile_isnil :: { CFile => Bool };
 
 c2f_fopen :: { Ptr Int8 => Ptr Int8 => CFile };
 c2f_fopen = { path => mode =>
@@ -296,6 +417,17 @@ c2f_fopen = { path => mode =>
   cstr_free cpath;
   cstr_free cmode;
   rv
+};
+
+c2f_fseek = { f => off32 => origin => c_fseek f (zext_i32_to_i64 off32) origin };
+
+c2f_ftell = { f => c_ftell f };
+
+c2f_rewind = { f => c_rewind f; () };
+
+c2f_fread_arr :: { Array Int8 => Int32 => Int64 => Int64 => CFile => Int64 };
+c2f_fread_arr = { arr => off => membsz => nmemb => f =>
+  c_fread (cdataptr_unsafe arr off) membsz nmemb f
 };
 
 c2f_fread :: { Ptr Int8 => Int64 => Int64 => CFile => Int64 };
@@ -317,3 +449,15 @@ c2f_fwrite = { ptr => membsz => nmemb => f =>
       prim kill-entire-process "c2f_fwrite requires an array input"
   end
 };
+
+c2f_inf_f32 :: { Float32 };
+c2f_inf_f32 = { (0x1.0p255 as Float32) };
+
+c2f_inf_f64 :: { Float64 };
+c2f_inf_f64 = { 0x1.0p255 };
+
+c2f_exit = { n =>
+  print_text "c2f_exit called";
+  prim kill-entire-process "c2f-exit";
+};
+
