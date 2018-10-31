@@ -3125,10 +3125,11 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       if (ctx == BooleanContext) {
         llvm::outs() << (clit->getValue() ? "True" : "False");
       } else {
-        llvm::outs() << clit->getValue();
         if (isprint(clit->getValue())) {
-          llvm::outs() << " /*'" << llvm::format("%c", clit->getValue()) << "'*/ ";
+          llvm::outs() << "('" << llvm::format("%c", clit->getValue()) << "' as " 
+                       << tyName(clit->getType().getTypePtr()) << ")";
         } else {
+          llvm::outs() << clit->getValue();
           llvm::outs() << " /*'\\x" << llvm::format("%02x", clit->getValue()) << "'*/ ";
         }
       }
