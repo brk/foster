@@ -409,6 +409,9 @@ foreign import c2f_stderr :: { CFile };
 
 foreign import CFile_isnil :: { CFile => Bool };
 
+foreign import foster_sprintf_i32 :: { Int32 => Int8 => Int8 => Int32 => Int32 => Text };
+foreign import foster_sprintf_i64 :: { Int64 => Int8 => Int8 => Int32 => Int32 => Text };
+
 c2f_fopen :: { Ptr Int8 => Ptr Int8 => CFile };
 c2f_fopen = { path => mode =>
   cpath = path |> ptrToArr |> cstr;
