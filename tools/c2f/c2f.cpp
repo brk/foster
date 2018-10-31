@@ -1812,7 +1812,6 @@ public:
     }
     */
 
-    llvm::outs() << "/*line 691*/ ";
     llvm::outs() << "case ";
     visitStmt(ss->getCond());
     llvm::outs() << "\n";
