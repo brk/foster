@@ -1346,7 +1346,7 @@ public:
 
   void HandleObjCFlagsWithNonObjCConversion(const char* flagsStart, const char* flagsEnd, const char* conversionPos) override {
     emitStringContentsUpTo(flagsStart, flagsEnd - flagsStart);
-    if (fmtstring != "%d\n") { printf("/* handle objc flags: %.*s */\n", flagsEnd - flagsStart, flagsStart); }
+    if (fmtstring != "%d\n") { printf("/* handle objc flags: %.*s */\n", int(flagsEnd - flagsStart), flagsStart); }
     return;
   }
 
@@ -1396,7 +1396,7 @@ public:
 
   void HandleIncompleteScanList(const char* start, const char* end) override {
     emitStringContentsUpTo(start, end - start);
-    printf("/* incomplete scan list: %.*s */\n", end - start, start);
+    printf("/* incomplete scan list: %.*s */\n", int(end - start), start);
   }
 };
 
