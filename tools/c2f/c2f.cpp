@@ -1286,25 +1286,33 @@ public:
   }
 };
 
+class MyASTConsumer;
 
 class C2F_FormatStringHandler : public clang::analyze_format_string::FormatStringHandler {
 public:
   const std::string& fmtstring;
+  const char* base;
   const char* prevBase;
   ASTContext& ctx;
+  const CallExpr* ce;
+  MyASTConsumer& cons;
 
-  C2F_FormatStringHandler(const std::string& fmtstring, const char* base, ASTContext& ctx)
-    : fmtstring(fmtstring), prevBase(base), ctx(ctx) {}
-  ~C2F_FormatStringHandler() {}
+  C2F_FormatStringHandler(const std::string& fmtstring, const char* base, ASTContext& ctx,
+                          const CallExpr* ce, MyASTConsumer& cons)
+    : fmtstring(fmtstring), base(base), prevBase(base), ctx(ctx), ce(ce), cons(cons) {}
+  ~C2F_FormatStringHandler() {
+    emitStringContentsUpTo(base + fmtstring.size(), 0);
+  }
 
   void emitStringContentsUpTo(const char* place, unsigned offset) {
     if (place == prevBase) {
+      prevBase += offset;
       return;
     }
 
-    llvm::outs() << "/* (printStrBare ";
+    llvm::outs() << "(printStrBare ";
     emitUTF8orAsciiStringLiteral(StringRef(prevBase, (place - prevBase)));
-    llvm::outs() << "); */\n";
+    llvm::outs() << ");\n";
     prevBase = place + offset;
   }
 
@@ -1354,33 +1362,7 @@ public:
     return true;
   }
 
-  bool HandlePrintfSpecifier(const analyze_printf::PrintfSpecifier& fs, const char* startSpecifier, unsigned specifierLen) override {
-    emitStringContentsUpTo(startSpecifier, specifierLen);
-    if (fmtstring != "%d\n") {
-      fprintf(stderr, "/* handle printf specifier: %.*s */\n", specifierLen, startSpecifier);
-      fprintf(stderr, "/* format specifier: getArgIndex: %d */\n", fs.getArgIndex());
-      fprintf(stderr, "/* format specifier: usesPositionalArg: %d */\n", fs.usesPositionalArg());
-      fprintf(stderr, "/* format specifier: getPositionalArgIndex: %d */\n", fs.getPositionalArgIndex());
-      fprintf(stderr, "/* format specifier: hasStandardLengthModifier: %d */\n", fs.hasStandardLengthModifier());
-      //fprintf(stderr, "/* format specifier: hasStandardConversionSpecifier: %d */\n", fs.hasStandardConversionSpecifier());
-      fprintf(stderr, "/* format specifier: hasStandardLengthConversionCombination: %d */\n", fs.hasStandardLengthConversionCombination());
-      fprintf(stderr, "/* printf specifier: consumesDataArgument: %d */\n", fs.consumesDataArgument());
-      fprintf(stderr, "/* printf specifier: hasValidPlusPrefix: %d */\n", fs.hasValidPlusPrefix());
-      fprintf(stderr, "/* printf specifier: hasValidSpacePrefix: %d */\n", fs.hasValidSpacePrefix());
-      fprintf(stderr, "/* printf specifier: hasValidLeadingZeros: %d */\n", fs.hasValidLeadingZeros());
-      fprintf(stderr, "/* printf specifier: hasValidPrecision: %d */\n", fs.hasValidPrecision());
-      fprintf(stderr, "/* printf specifier: hasValidFieldWidth: %d */\n", fs.hasValidFieldWidth());
-      fprintf(stderr, "/* printf specifier: argType: isValid: %d */\n", fs.getArgType(ctx, false).isValid());
-      std::string tyname = fs.getArgType(ctx, false).getRepresentativeTypeName(ctx);
-      fprintf(stderr, "/* printf specifier: argType: %s */\n", tyname.c_str());
-      fflush(stderr);
-      llvm::errs() << "/* printf conversion: " << fs.getConversionSpecifier().getCharacters() << " */\n";
-      llvm::errs() << "/* printf precision: "; fs.getPrecision().toString(llvm::errs()); llvm::errs() << " */\n";
-      llvm::errs() << "/* printf field width: "; fs.getFieldWidth().toString(llvm::errs()); llvm::errs() << " */\n";
-      llvm::errs() << "/* printf length modifier: " << fs.getLengthModifier().toString() << " */\n";
-    }
-    return true;
-  }
+  bool HandlePrintfSpecifier(const analyze_printf::PrintfSpecifier& fs, const char* startSpecifier, unsigned specifierLen) override;
 
   bool HandleInvalidPrintfConversionSpecifier(const analyze_printf::PrintfSpecifier& fs, const char* startSpecifier, unsigned specifierLen) override {
     emitStringContentsUpTo(startSpecifier, specifierLen);
@@ -1519,7 +1501,7 @@ public:
           if (last && !isa<ReturnStmt>(last)) {
             llvm::outs() << "(prim kill-entire-process \"missing-return\")";
           } else {
-            llvm::outs() << "/*exit block, hasValue; reachable? " << ab->isReachable() << "*/";
+            //llvm::outs() << "/*exit block, hasValue; reachable? " << ab->isReachable() << "*/";
           }
         }
       } else {
@@ -2359,17 +2341,14 @@ The corresponding AST to be matched is
       return true;
     }
 
-    if (ce->getNumArgs() != 2) return false;
-
     if (auto slit = dyn_cast<StringLiteral>(ce->getArg(0)->IgnoreParenImpCasts())) {
       const std::string& s = slit->getString();
       bool isFreeBSDkprintf = false;
-      C2F_FormatStringHandler handler(s, s.c_str(), *Ctx);
-      fprintf(stderr, "// parsing format string: %s\n", s.c_str());
+      C2F_FormatStringHandler handler(s, s.c_str(), *Ctx, ce, *this);
       clang::analyze_format_string::ParsePrintfString(handler, &s[0], &s[s.size()],
           CI.getLangOpts(), CI.getTarget(), isFreeBSDkprintf);
-
-
+      return true;
+#if 0
       if (slit->getString() == "%d\n") {
         std::string tynm = tyName(ce->getArg(1)->getType().getTypePtr());
         std::string printfn;
@@ -2419,6 +2398,7 @@ The corresponding AST to be matched is
         llvm::outs() << ")";
         return true;
       }
+  #endif
     }
     return false;
   }
@@ -3586,6 +3566,129 @@ private:
 
   llvm::DenseMap<const Stmt*, BinaryOperatorKind> tweakedStmts;
 };
+
+
+bool C2F_FormatStringHandler::HandlePrintfSpecifier(const analyze_printf::PrintfSpecifier& fs, const char* startSpecifier, unsigned specifierLen) {
+  bool followedByNewline = startSpecifier[specifierLen] == '\n';
+  emitStringContentsUpTo(startSpecifier, specifierLen + (followedByNewline ? 1 : 0));
+
+  StringRef text(startSpecifier, specifierLen);
+  const Expr* e = ce->getArg(fs.getArgIndex() + 1);
+
+  if (text == "%d") {
+    std::string tynm = tyName(e->getType().getTypePtr());
+    // TODO use fs.getArgType() to determine non-i32 and ext/trunc usage?
+    if (followedByNewline) {
+      if (tynm == "Int64") {
+        llvm::outs() << "(print_i64 ";
+      } else {
+        llvm::outs() << "(print_i32 ";
+      }
+    } else {
+      if (tynm == "Int64") {
+        llvm::outs() << "(print_i64_bare ";
+      } else {
+        llvm::outs() << "(print_i32_bare ";
+      }
+    }    
+    cons.visitStmt(e);
+    llvm::outs() << ");\n";
+  } else if (text == "%s") {
+    if (followedByNewline) {
+      llvm::outs() << "(printStr ";
+    } else {
+      llvm::outs() << "(printStrBare ";
+    }
+    cons.visitStmt(ce->getArg(fs.getArgIndex() + 1));
+    llvm::outs() << ")";
+  } else {
+    std::string spec = fs.getConversionSpecifier().getCharacters();
+    if (spec == "d" || spec == "u" || spec == "c" || spec == "x") {
+      int8_t flag = 0;
+      int32_t width = 0;
+      int32_t precision = -1;
+
+      if (fs.hasValidSpacePrefix() && fs.hasSpacePrefix().isSet()) flag = 2;
+      else if (fs.hasValidPlusPrefix() && fs.hasPlusPrefix().isSet()) flag = 1;
+      else if (fs.hasValidLeadingZeros() && fs.hasLeadingZeros().isSet()) flag = 4;
+
+      if (fs.hasValidLeftJustified() && fs.isLeftJustified().isSet()) flag += 10;
+
+      if (fs.hasValidFieldWidth() &&
+          fs.getFieldWidth().getHowSpecified() == clang::analyze_format_string::OptionalAmount::Constant) {
+        width = fs.getFieldWidth().getConstantAmount();
+      }
+
+      if (fs.hasValidPrecision() &&
+          fs.getPrecision().getHowSpecified() == clang::analyze_format_string::OptionalAmount::Constant) {
+        precision = fs.getPrecision().getConstantAmount();
+      }
+
+      // TODO handle i64 as well.
+      std::string tynm = tyName(e->getType().getTypePtr());
+      if (tynm == "Int64") {
+        llvm::outs() << "(foster_sprintf_i64 ";
+      } else {
+        llvm::outs() << "(foster_sprintf_i32 ";
+      }
+      
+      cons.visitStmt(ce->getArg(fs.getArgIndex() + 1));
+      llvm::outs() << " ('" << spec << "' as Int8) " << int(flag) << " " << width << " " << precision;
+
+      if (followedByNewline) {
+        llvm::outs() << " |> print_text);\n";
+      } else {
+        llvm::outs() << " |> print_text_bare);\n";
+      }
+    } else if (text == "%f" || text == "%g") {
+      std::string tynm = tyName(ce->getArg(1)->getType().getTypePtr());
+      std::string printfn;
+      if (tynm == "Float32" && followedByNewline) printfn = "print_float_f32";
+      if (tynm == "Float64" && followedByNewline) printfn = "print_float_f64";
+      if (tynm == "Float32" && !followedByNewline) printfn = "print_f32_bare";
+      if (tynm == "Float64" && !followedByNewline) printfn = "print_f64_bare";
+      if (printfn.empty()) return false;
+
+      llvm::outs() << "(" << printfn << " ";
+      cons.visitStmt(e);
+      llvm::outs() << ")";
+      return true;
+
+    } else {
+      fprintf(stderr, "/* handle printf specifier: %.*s */\n", specifierLen, startSpecifier);
+      fprintf(stderr, "/* format specifier: getArgIndex: %d */\n", fs.getArgIndex());
+      fprintf(stderr, "/* format specifier: usesPositionalArg: %d */\n", fs.usesPositionalArg());
+      fprintf(stderr, "/* format specifier: getPositionalArgIndex: %d */\n", fs.getPositionalArgIndex());
+      fprintf(stderr, "/* format specifier: hasStandardLengthModifier: %d */\n", fs.hasStandardLengthModifier());
+      //fprintf(stderr, "/* format specifier: hasStandardConversionSpecifier: %d */\n", fs.hasStandardConversionSpecifier());
+      fprintf(stderr, "/* format specifier: hasStandardLengthConversionCombination: %d */\n", fs.hasStandardLengthConversionCombination());
+      fprintf(stderr, "/* printf specifier: consumesDataArgument: %d */\n", fs.consumesDataArgument());
+      fprintf(stderr, "/* printf specifier: hasValidPlusPrefix: %d */\n", fs.hasValidPlusPrefix());
+      fprintf(stderr, "/* printf specifier: hasValidSpacePrefix: %d */\n", fs.hasValidSpacePrefix());
+      fprintf(stderr, "/* printf specifier: hasValidLeadingZeros: %d */\n", fs.hasValidLeadingZeros());
+      fprintf(stderr, "/* printf specifier: hasValidPrecision: %d */\n", fs.hasValidPrecision());
+      fprintf(stderr, "/* printf specifier: hasValidFieldWidth: %d */\n", fs.hasValidFieldWidth());
+      fprintf(stderr, "/* printf specifier: argType: isValid: %d */\n", fs.getArgType(ctx, false).isValid());
+      std::string tyname = fs.getArgType(ctx, false).getRepresentativeTypeName(ctx);
+      fprintf(stderr, "/* printf specifier: argType: %s */\n", tyname.c_str());
+      fflush(stderr);
+      llvm::errs() << "/* printf conversion: " << fs.getConversionSpecifier().getCharacters() << " */\n";
+      llvm::errs() << "/* printf precision: "; fs.getPrecision().toString(llvm::errs()); llvm::errs() << " */\n";
+      llvm::errs() << "/* printf precision invalid: "; fs.getPrecision().isInvalid(); llvm::errs() << " */\n";
+      llvm::errs() << "/* printf field width: "; fs.getFieldWidth().toString(llvm::errs()); llvm::errs() << " */\n";
+      llvm::errs() << "/* printf field width not spec: "
+        << (fs.getFieldWidth().getHowSpecified() == clang::analyze_format_string::OptionalAmount::NotSpecified) << " */\n";
+      llvm::errs() << "/* printf field width valid : " << !fs.getFieldWidth().isInvalid(); llvm::errs() << " */\n";
+      llvm::errs() << "/* printf length modifier: " << fs.getLengthModifier().toString() << " */\n";
+
+      if (followedByNewline) {
+        llvm::outs() << "print_newline !;\n";
+      }
+    }
+  }
+  return true;
+}
+
 
 class C2F_TypeDeclHandler_FA : public ASTFrontendAction {
 public:
