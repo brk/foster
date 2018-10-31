@@ -1464,6 +1464,16 @@ public:
     return ss.str();
   }
 
+  std::string getBlockName(const CFGBlock* cb,
+                           std::map<const CFGBlock*, const CFGBlock*>& aliased_blocks) {
+    auto it = aliased_blocks.find(cb);
+    if (it == aliased_blocks.end()) {
+      return getBlockName(*cb);
+    } else {
+      return getBlockName(*it->second);
+    }
+  }
+
   bool isExitBlock(const CFGBlock* next) const {
     return next->getBlockID() == next->getParent()->getExit().getBlockID();
   }
@@ -1497,7 +1507,8 @@ public:
     return true;
   }
 
-  void emitJumpTo(CFGBlock::AdjacentBlock* ab, const Stmt* last) {
+  void emitJumpTo(CFGBlock::AdjacentBlock* ab, const Stmt* last,
+                  std::map<const CFGBlock*, const CFGBlock*>& aliased_blocks) {
     bool hasValue = last ? stmtHasValue(last) : true;
 
     if (CFGBlock* next = ab->getReachableBlock()) {
@@ -1512,10 +1523,10 @@ public:
           }
         }
       } else {
-        llvm::outs() << getBlockName(*next) << " !;\n"; // emitCall
+        llvm::outs() << getBlockName(next, aliased_blocks) << " !;\n"; // emitCall
       }
     } else if (CFGBlock* next = ab->getPossiblyUnreachableBlock()) {
-      llvm::outs() << getBlockName(*next) << " !; // unreachable\n"; // emitCall
+      llvm::outs() << getBlockName(next, aliased_blocks) << " !; // unreachable\n"; // emitCall
     } else {
       llvm::outs() << "prim kill-entire-process \"no-next-block\"";
     }
@@ -1565,7 +1576,8 @@ public:
     }
   }
 
-  void handleSwitchTerminator(CFGBlock* cb, const SwitchStmt* ss) {
+  void handleSwitchTerminator(CFGBlock* cb, const SwitchStmt* ss,
+                              std::map<const CFGBlock*, const CFGBlock*>& aliased_blocks) {
         // SwitchStmt terminator
         llvm::outs() << "case ";
         visitStmt(cb->getTerminatorCondition(), StmtContext);
@@ -1617,7 +1629,7 @@ public:
 
               if (i == labels.size() - 1) {
                 llvm::outs() << " -> ";
-                emitJumpTo(adj, nullptr);
+                emitJumpTo(adj, nullptr, aliased_blocks);
               } else {
                 llvm::outs() << "\n";
               }
@@ -1629,7 +1641,7 @@ public:
 
         if (defaultBlock) {
           llvm::outs() << "\n of _ -> ";
-          emitJumpTo(defaultBlock, nullptr);
+          emitJumpTo(defaultBlock, nullptr, aliased_blocks);
         }
 
         llvm::outs() << "\nend\n";
@@ -1719,9 +1731,28 @@ public:
       llvm::outs() << ";\n";
     }
 
-    for (auto it = cfg->nodes_begin(); it != cfg->nodes_end(); ++it) {
+    std::map<const CFGBlock*, const CFGBlock*> aliased_blocks;
+    // Do a pre-pass to identify aliased blocks
+    for (auto it = cfg->rbegin(); it != cfg->rend(); ++it) {
       CFGBlock* cb = *it;
       if (isExitBlock(cb)) continue;
+      if (cb->begin() == cb->end() && cb->succ_size() == 1) {
+        CFGBlock::AdjacentBlock* ab = cb->succ_begin();
+        CFGBlock* next = ab->getReachableBlock();
+        if (!next) next = ab->getPossiblyUnreachableBlock();
+        if (next) {
+          aliased_blocks[cb] = next;
+        }
+      }
+    }
+
+    for (auto it = cfg->rbegin(); it != cfg->rend(); ++it) {
+      CFGBlock* cb = *it;
+      if (isExitBlock(cb)) continue;
+
+      if (aliased_blocks.find(cb) != aliased_blocks.end()) {
+        continue; // don't emit anything for aliased blocks!
+      }
 
       llvm::outs() << "REC " << getBlockName(*cb) << " = {\n";
 
@@ -1765,9 +1796,9 @@ public:
       }
 
       if (cb->succ_size() == 1) {
-        emitJumpTo(cb->succ_begin(), getBlockTerminatorOrLastStmt(cb));
+        emitJumpTo(cb->succ_begin(), getBlockTerminatorOrLastStmt(cb), aliased_blocks);
       } else if (const SwitchStmt* ss = dyn_cast<SwitchStmt>(cb->getTerminator())) {
-        handleSwitchTerminator(cb, ss);
+        handleSwitchTerminator(cb, ss, aliased_blocks);
       } else if (cb->succ_size() == 2) {
         if (const Stmt* tc = cb->getTerminatorCondition()) {
           // Similar to handleIfThenElse, but with emitJumpTo instead of visitStmt.
@@ -1777,16 +1808,16 @@ public:
           llvm::outs() << "if ";
           visitStmt(tc, BooleanContext);
           llvm::outs() << " then ";
-          emitJumpTo(cb->succ_begin(), last);
+          emitJumpTo(cb->succ_begin(), last, aliased_blocks);
           llvm::outs() << " else ";
-          emitJumpTo(cb->succ_begin() + 1, last);
+          emitJumpTo(cb->succ_begin() + 1, last, aliased_blocks);
           llvm::outs() << "end";
         } else {
           auto s = cb->succ_begin();
           auto s1 = *s++;
           auto s2 = *s;
           if (s1 && !s2) {
-            emitJumpTo(&s1, getBlockTerminatorOrLastStmt(cb));
+            emitJumpTo(&s1, getBlockTerminatorOrLastStmt(cb), aliased_blocks);
           } else {
             llvm::outs() << "/* two succs but no terminator condition? */\n";
           }
@@ -1797,7 +1828,7 @@ public:
 
     }
 
-    llvm::outs() << getBlockName(cfg->getEntry()) << " !;\n"; // emitCall
+    llvm::outs() << getBlockName(&(cfg->getEntry()), aliased_blocks) << " !;\n"; // emitCall
     StmtMap.clear();
   }
 
