@@ -2012,9 +2012,9 @@ public:
         visitStmt(stmt->getCond(), BooleanContext);
       } else llvm::outs() << "True";
     llvm::outs() << " } {\n";
-      visitStmt(stmt->getBody());
+      visitStmt(stmt->getBody(), StmtContext);
       // If the body wasn't a compound, we'll be missing a semicolon...
-      if (extra) { llvm::outs() << "\n"; visitStmt(extra); }
+      if (extra) { llvm::outs() << "\n"; visitStmt(extra, StmtContext); }
 
       llvm::outs() << ";\n()";
     llvm::outs() << "}";
@@ -3000,6 +3000,19 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         llvm::outs() << "b_" << pair.first << "_" << pair.second << " = ";
         ctx = ExprContext;
       }
+    } else {
+      if (ctx == StmtContext) {
+        if (auto e = dyn_cast<Expr>(stmt)) {
+          if (!(e->getType().getTypePtr()->isIntegralOrEnumerationType()) ) {
+            // Clang doesn't complain about pointer-valued expressions
+            // (with side effects) used as statements, but Foster is
+            // stricter about what type a statement is allowed to have.
+            // To mediate the difference, we sometimes need to add
+            // silent bindings.
+            llvm::outs() << "_ignored = ";
+          }
+        }
+      }
     }
 
     if (const ImplicitCastExpr* ice = dyn_cast<ImplicitCastExpr>(stmt)) {
@@ -3120,7 +3133,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         llvm::outs() << (lit->getValueAsApproximateDouble() != 0.0 ? "True" : "False");
       } else {
         std::string litstr = FC.getText(*lit);
-        llvm::errs() << "// float lit str: " << litstr << "\n";
+        //llvm::errs() << "// float lit str: " << litstr << "\n";
         if (!litstr.empty()) {
           char last = litstr[litstr.size() - 1];
           if (last == 'f' || last == 'F') {
@@ -3267,17 +3280,6 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       } else {
         size_t childno = 0;
         for (const Stmt* c : cs->children()) {
-          if (auto ce = dyn_cast<Expr>(c)) {
-            if (!(ce->getType().getTypePtr()->isIntegralOrEnumerationType()) ) {
-              // Clang doesn't complain about pointer-valued expressions
-              // (with side effects) used as statements, but Foster is
-              // stricter about what type a statement is allowed to have.
-              // To mediate the difference, we sometimes need to add
-              // silent bindings.
-              llvm::outs() << "_ignored = ";
-            }
-          }
-
           visitStmt(c, StmtContext);
 
           if (isa<CompoundStmt>(c) || isa<BreakStmt>(c)) {
