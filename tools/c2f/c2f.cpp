@@ -1286,25 +1286,33 @@ public:
   }
 };
 
+class MyASTConsumer;
 
 class C2F_FormatStringHandler : public clang::analyze_format_string::FormatStringHandler {
 public:
   const std::string& fmtstring;
+  const char* base;
   const char* prevBase;
   ASTContext& ctx;
+  const CallExpr* ce;
+  MyASTConsumer& cons;
 
-  C2F_FormatStringHandler(const std::string& fmtstring, const char* base, ASTContext& ctx)
-    : fmtstring(fmtstring), prevBase(base), ctx(ctx) {}
-  ~C2F_FormatStringHandler() {}
+  C2F_FormatStringHandler(const std::string& fmtstring, const char* base, ASTContext& ctx,
+                          const CallExpr* ce, MyASTConsumer& cons)
+    : fmtstring(fmtstring), base(base), prevBase(base), ctx(ctx), ce(ce), cons(cons) {}
+  ~C2F_FormatStringHandler() {
+    emitStringContentsUpTo(base + fmtstring.size(), 0);
+  }
 
   void emitStringContentsUpTo(const char* place, unsigned offset) {
     if (place == prevBase) {
+      prevBase += offset;
       return;
     }
 
-    llvm::outs() << "/* (printStrBare ";
+    llvm::outs() << "(printStrBare ";
     emitUTF8orAsciiStringLiteral(StringRef(prevBase, (place - prevBase)));
-    llvm::outs() << "); */\n";
+    llvm::outs() << ");\n";
     prevBase = place + offset;
   }
 
@@ -1346,7 +1354,7 @@ public:
 
   void HandleObjCFlagsWithNonObjCConversion(const char* flagsStart, const char* flagsEnd, const char* conversionPos) override {
     emitStringContentsUpTo(flagsStart, flagsEnd - flagsStart);
-    if (fmtstring != "%d\n") { printf("/* handle objc flags: %.*s */\n", flagsEnd - flagsStart, flagsStart); }
+    if (fmtstring != "%d\n") { printf("/* handle objc flags: %.*s */\n", int(flagsEnd - flagsStart), flagsStart); }
     return;
   }
 
@@ -1354,33 +1362,7 @@ public:
     return true;
   }
 
-  bool HandlePrintfSpecifier(const analyze_printf::PrintfSpecifier& fs, const char* startSpecifier, unsigned specifierLen) override {
-    emitStringContentsUpTo(startSpecifier, specifierLen);
-    if (fmtstring != "%d\n") {
-      fprintf(stderr, "/* handle printf specifier: %.*s */\n", specifierLen, startSpecifier);
-      fprintf(stderr, "/* format specifier: getArgIndex: %d */\n", fs.getArgIndex());
-      fprintf(stderr, "/* format specifier: usesPositionalArg: %d */\n", fs.usesPositionalArg());
-      fprintf(stderr, "/* format specifier: getPositionalArgIndex: %d */\n", fs.getPositionalArgIndex());
-      fprintf(stderr, "/* format specifier: hasStandardLengthModifier: %d */\n", fs.hasStandardLengthModifier());
-      //fprintf(stderr, "/* format specifier: hasStandardConversionSpecifier: %d */\n", fs.hasStandardConversionSpecifier());
-      fprintf(stderr, "/* format specifier: hasStandardLengthConversionCombination: %d */\n", fs.hasStandardLengthConversionCombination());
-      fprintf(stderr, "/* printf specifier: consumesDataArgument: %d */\n", fs.consumesDataArgument());
-      fprintf(stderr, "/* printf specifier: hasValidPlusPrefix: %d */\n", fs.hasValidPlusPrefix());
-      fprintf(stderr, "/* printf specifier: hasValidSpacePrefix: %d */\n", fs.hasValidSpacePrefix());
-      fprintf(stderr, "/* printf specifier: hasValidLeadingZeros: %d */\n", fs.hasValidLeadingZeros());
-      fprintf(stderr, "/* printf specifier: hasValidPrecision: %d */\n", fs.hasValidPrecision());
-      fprintf(stderr, "/* printf specifier: hasValidFieldWidth: %d */\n", fs.hasValidFieldWidth());
-      fprintf(stderr, "/* printf specifier: argType: isValid: %d */\n", fs.getArgType(ctx, false).isValid());
-      std::string tyname = fs.getArgType(ctx, false).getRepresentativeTypeName(ctx);
-      fprintf(stderr, "/* printf specifier: argType: %s */\n", tyname.c_str());
-      fflush(stderr);
-      llvm::errs() << "/* printf conversion: " << fs.getConversionSpecifier().getCharacters() << " */\n";
-      llvm::errs() << "/* printf precision: "; fs.getPrecision().toString(llvm::errs()); llvm::errs() << " */\n";
-      llvm::errs() << "/* printf field width: "; fs.getFieldWidth().toString(llvm::errs()); llvm::errs() << " */\n";
-      llvm::errs() << "/* printf length modifier: " << fs.getLengthModifier().toString() << " */\n";
-    }
-    return true;
-  }
+  bool HandlePrintfSpecifier(const analyze_printf::PrintfSpecifier& fs, const char* startSpecifier, unsigned specifierLen) override;
 
   bool HandleInvalidPrintfConversionSpecifier(const analyze_printf::PrintfSpecifier& fs, const char* startSpecifier, unsigned specifierLen) override {
     emitStringContentsUpTo(startSpecifier, specifierLen);
@@ -1396,7 +1378,7 @@ public:
 
   void HandleIncompleteScanList(const char* start, const char* end) override {
     emitStringContentsUpTo(start, end - start);
-    printf("/* incomplete scan list: %.*s */\n", end - start, start);
+    printf("/* incomplete scan list: %.*s */\n", int(end - start), start);
   }
 };
 
@@ -1464,6 +1446,16 @@ public:
     return ss.str();
   }
 
+  std::string getBlockName(const CFGBlock* cb,
+                           std::map<const CFGBlock*, const CFGBlock*>& aliased_blocks) {
+    auto it = aliased_blocks.find(cb);
+    if (it == aliased_blocks.end()) {
+      return getBlockName(*cb);
+    } else {
+      return getBlockName(*it->second);
+    }
+  }
+
   bool isExitBlock(const CFGBlock* next) const {
     return next->getBlockID() == next->getParent()->getExit().getBlockID();
   }
@@ -1497,7 +1489,8 @@ public:
     return true;
   }
 
-  void emitJumpTo(CFGBlock::AdjacentBlock* ab, const Stmt* last) {
+  void emitJumpTo(CFGBlock::AdjacentBlock* ab, const Stmt* last,
+                  std::map<const CFGBlock*, const CFGBlock*>& aliased_blocks) {
     bool hasValue = last ? stmtHasValue(last) : true;
 
     if (CFGBlock* next = ab->getReachableBlock()) {
@@ -1508,14 +1501,14 @@ public:
           if (last && !isa<ReturnStmt>(last)) {
             llvm::outs() << "(prim kill-entire-process \"missing-return\")";
           } else {
-            llvm::outs() << "/*exit block, hasValue; reachable? " << ab->isReachable() << "*/";
+            //llvm::outs() << "/*exit block, hasValue; reachable? " << ab->isReachable() << "*/";
           }
         }
       } else {
-        llvm::outs() << getBlockName(*next) << " !;\n"; // emitCall
+        llvm::outs() << getBlockName(next, aliased_blocks) << " !;\n"; // emitCall
       }
     } else if (CFGBlock* next = ab->getPossiblyUnreachableBlock()) {
-      llvm::outs() << getBlockName(*next) << " !; // unreachable\n"; // emitCall
+      llvm::outs() << getBlockName(next, aliased_blocks) << " !; // unreachable\n"; // emitCall
     } else {
       llvm::outs() << "prim kill-entire-process \"no-next-block\"";
     }
@@ -1565,7 +1558,8 @@ public:
     }
   }
 
-  void handleSwitchTerminator(CFGBlock* cb, const SwitchStmt* ss) {
+  void handleSwitchTerminator(CFGBlock* cb, const SwitchStmt* ss,
+                              std::map<const CFGBlock*, const CFGBlock*>& aliased_blocks) {
         // SwitchStmt terminator
         llvm::outs() << "case ";
         visitStmt(cb->getTerminatorCondition(), StmtContext);
@@ -1617,7 +1611,7 @@ public:
 
               if (i == labels.size() - 1) {
                 llvm::outs() << " -> ";
-                emitJumpTo(adj, nullptr);
+                emitJumpTo(adj, nullptr, aliased_blocks);
               } else {
                 llvm::outs() << "\n";
               }
@@ -1629,7 +1623,7 @@ public:
 
         if (defaultBlock) {
           llvm::outs() << "\n of _ -> ";
-          emitJumpTo(defaultBlock, nullptr);
+          emitJumpTo(defaultBlock, nullptr, aliased_blocks);
         }
 
         llvm::outs() << "\nend\n";
@@ -1719,9 +1713,28 @@ public:
       llvm::outs() << ";\n";
     }
 
-    for (auto it = cfg->nodes_begin(); it != cfg->nodes_end(); ++it) {
+    std::map<const CFGBlock*, const CFGBlock*> aliased_blocks;
+    // Do a pre-pass to identify aliased blocks
+    for (auto it = cfg->rbegin(); it != cfg->rend(); ++it) {
       CFGBlock* cb = *it;
       if (isExitBlock(cb)) continue;
+      if (cb->begin() == cb->end() && cb->succ_size() == 1) {
+        CFGBlock::AdjacentBlock* ab = cb->succ_begin();
+        CFGBlock* next = ab->getReachableBlock();
+        if (!next) next = ab->getPossiblyUnreachableBlock();
+        if (next) {
+          aliased_blocks[cb] = next;
+        }
+      }
+    }
+
+    for (auto it = cfg->rbegin(); it != cfg->rend(); ++it) {
+      CFGBlock* cb = *it;
+      if (isExitBlock(cb)) continue;
+
+      if (aliased_blocks.find(cb) != aliased_blocks.end()) {
+        continue; // don't emit anything for aliased blocks!
+      }
 
       llvm::outs() << "REC " << getBlockName(*cb) << " = {\n";
 
@@ -1765,9 +1778,9 @@ public:
       }
 
       if (cb->succ_size() == 1) {
-        emitJumpTo(cb->succ_begin(), getBlockTerminatorOrLastStmt(cb));
+        emitJumpTo(cb->succ_begin(), getBlockTerminatorOrLastStmt(cb), aliased_blocks);
       } else if (const SwitchStmt* ss = dyn_cast<SwitchStmt>(cb->getTerminator())) {
-        handleSwitchTerminator(cb, ss);
+        handleSwitchTerminator(cb, ss, aliased_blocks);
       } else if (cb->succ_size() == 2) {
         if (const Stmt* tc = cb->getTerminatorCondition()) {
           // Similar to handleIfThenElse, but with emitJumpTo instead of visitStmt.
@@ -1777,16 +1790,16 @@ public:
           llvm::outs() << "if ";
           visitStmt(tc, BooleanContext);
           llvm::outs() << " then ";
-          emitJumpTo(cb->succ_begin(), last);
+          emitJumpTo(cb->succ_begin(), last, aliased_blocks);
           llvm::outs() << " else ";
-          emitJumpTo(cb->succ_begin() + 1, last);
+          emitJumpTo(cb->succ_begin() + 1, last, aliased_blocks);
           llvm::outs() << "end";
         } else {
           auto s = cb->succ_begin();
           auto s1 = *s++;
           auto s2 = *s;
           if (s1 && !s2) {
-            emitJumpTo(&s1, getBlockTerminatorOrLastStmt(cb));
+            emitJumpTo(&s1, getBlockTerminatorOrLastStmt(cb), aliased_blocks);
           } else {
             llvm::outs() << "/* two succs but no terminator condition? */\n";
           }
@@ -1797,7 +1810,7 @@ public:
 
     }
 
-    llvm::outs() << getBlockName(cfg->getEntry()) << " !;\n"; // emitCall
+    llvm::outs() << getBlockName(&(cfg->getEntry()), aliased_blocks) << " !;\n"; // emitCall
     StmtMap.clear();
   }
 
@@ -1812,7 +1825,6 @@ public:
     }
     */
 
-    llvm::outs() << "/*line 691*/ ";
     llvm::outs() << "case ";
     visitStmt(ss->getCond());
     llvm::outs() << "\n";
@@ -2000,9 +2012,9 @@ public:
         visitStmt(stmt->getCond(), BooleanContext);
       } else llvm::outs() << "True";
     llvm::outs() << " } {\n";
-      visitStmt(stmt->getBody());
+      visitStmt(stmt->getBody(), StmtContext);
       // If the body wasn't a compound, we'll be missing a semicolon...
-      if (extra) { llvm::outs() << "\n"; visitStmt(extra); }
+      if (extra) { llvm::outs() << "\n"; visitStmt(extra, StmtContext); }
 
       llvm::outs() << ";\n()";
     llvm::outs() << "}";
@@ -2329,17 +2341,14 @@ The corresponding AST to be matched is
       return true;
     }
 
-    if (ce->getNumArgs() != 2) return false;
-
     if (auto slit = dyn_cast<StringLiteral>(ce->getArg(0)->IgnoreParenImpCasts())) {
       const std::string& s = slit->getString();
       bool isFreeBSDkprintf = false;
-      C2F_FormatStringHandler handler(s, s.c_str(), *Ctx);
-      fprintf(stderr, "// parsing format string: %s\n", s.c_str());
+      C2F_FormatStringHandler handler(s, s.c_str(), *Ctx, ce, *this);
       clang::analyze_format_string::ParsePrintfString(handler, &s[0], &s[s.size()],
           CI.getLangOpts(), CI.getTarget(), isFreeBSDkprintf);
-
-
+      return true;
+#if 0
       if (slit->getString() == "%d\n") {
         std::string tynm = tyName(ce->getArg(1)->getType().getTypePtr());
         std::string printfn;
@@ -2389,6 +2398,7 @@ The corresponding AST to be matched is
         llvm::outs() << ")";
         return true;
       }
+  #endif
     }
     return false;
   }
@@ -2990,6 +3000,19 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         llvm::outs() << "b_" << pair.first << "_" << pair.second << " = ";
         ctx = ExprContext;
       }
+    } else {
+      if (ctx == StmtContext) {
+        if (auto e = dyn_cast<Expr>(stmt)) {
+          if (!(e->getType().getTypePtr()->isIntegralOrEnumerationType()) ) {
+            // Clang doesn't complain about pointer-valued expressions
+            // (with side effects) used as statements, but Foster is
+            // stricter about what type a statement is allowed to have.
+            // To mediate the difference, we sometimes need to add
+            // silent bindings.
+            llvm::outs() << "_ignored = ";
+          }
+        }
+      }
     }
 
     if (const ImplicitCastExpr* ice = dyn_cast<ImplicitCastExpr>(stmt)) {
@@ -3014,6 +3037,13 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       translateWhileLoop(ws, "do-while", nullptr);
     } else if (const ConditionalOperator* co = dyn_cast<ConditionalOperator>(stmt)) {
       handleIfThenElse(ctx, AnIfExpr, co->getCond(), co->getTrueExpr(), co->getFalseExpr());
+    } else if (const BinaryConditionalOperator* bco = dyn_cast<BinaryConditionalOperator>(stmt)) {
+      llvm::outs() << "(condV = ";
+      visitStmt(bco->getCommon(), ExprContext);
+      llvm::outs() << ";\n";
+      llvm::outs() << "if condV !=Int32 0 then condV else ";
+      visitStmt(bco->getFalseExpr(), ExprContext);
+      llvm::outs() << " end)\n";
     } else if (const ParenExpr* pe = dyn_cast<ParenExpr>(stmt)) {
       if (tryHandleAtomicExpr(pe->getSubExpr(), ctx)) {
         // done
@@ -3103,7 +3133,7 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
         llvm::outs() << (lit->getValueAsApproximateDouble() != 0.0 ? "True" : "False");
       } else {
         std::string litstr = FC.getText(*lit);
-        llvm::errs() << "// float lit str: " << litstr << "\n";
+        //llvm::errs() << "// float lit str: " << litstr << "\n";
         if (!litstr.empty()) {
           char last = litstr[litstr.size() - 1];
           if (last == 'f' || last == 'F') {
@@ -3125,10 +3155,11 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       if (ctx == BooleanContext) {
         llvm::outs() << (clit->getValue() ? "True" : "False");
       } else {
-        llvm::outs() << clit->getValue();
         if (isprint(clit->getValue())) {
-          llvm::outs() << " /*'" << llvm::format("%c", clit->getValue()) << "'*/ ";
+          llvm::outs() << "('" << llvm::format("%c", clit->getValue()) << "' as " 
+                       << tyName(clit->getType().getTypePtr()) << ")";
         } else {
+          llvm::outs() << clit->getValue();
           llvm::outs() << " /*'\\x" << llvm::format("%02x", clit->getValue()) << "'*/ ";
         }
       }
@@ -3249,17 +3280,6 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       } else {
         size_t childno = 0;
         for (const Stmt* c : cs->children()) {
-          if (auto ce = dyn_cast<Expr>(c)) {
-            if (!(ce->getType().getTypePtr()->isIntegralOrEnumerationType()) ) {
-              // Clang doesn't complain about pointer-valued expressions
-              // (with side effects) used as statements, but Foster is
-              // stricter about what type a statement is allowed to have.
-              // To mediate the difference, we sometimes need to add
-              // silent bindings.
-              llvm::outs() << "_ignored = ";
-            }
-          }
-
           visitStmt(c, StmtContext);
 
           if (isa<CompoundStmt>(c) || isa<BreakStmt>(c)) {
@@ -3555,6 +3575,129 @@ private:
 
   llvm::DenseMap<const Stmt*, BinaryOperatorKind> tweakedStmts;
 };
+
+
+bool C2F_FormatStringHandler::HandlePrintfSpecifier(const analyze_printf::PrintfSpecifier& fs, const char* startSpecifier, unsigned specifierLen) {
+  bool followedByNewline = startSpecifier[specifierLen] == '\n';
+  emitStringContentsUpTo(startSpecifier, specifierLen + (followedByNewline ? 1 : 0));
+
+  StringRef text(startSpecifier, specifierLen);
+  const Expr* e = ce->getArg(fs.getArgIndex() + 1);
+
+  if (text == "%d") {
+    std::string tynm = tyName(e->getType().getTypePtr());
+    // TODO use fs.getArgType() to determine non-i32 and ext/trunc usage?
+    if (followedByNewline) {
+      if (tynm == "Int64") {
+        llvm::outs() << "(print_i64 ";
+      } else {
+        llvm::outs() << "(print_i32 ";
+      }
+    } else {
+      if (tynm == "Int64") {
+        llvm::outs() << "(print_i64_bare ";
+      } else {
+        llvm::outs() << "(print_i32_bare ";
+      }
+    }    
+    cons.visitStmt(e);
+    llvm::outs() << ");\n";
+  } else if (text == "%s") {
+    if (followedByNewline) {
+      llvm::outs() << "(printStr ";
+    } else {
+      llvm::outs() << "(printStrBare ";
+    }
+    cons.visitStmt(ce->getArg(fs.getArgIndex() + 1));
+    llvm::outs() << ")";
+  } else {
+    std::string spec = fs.getConversionSpecifier().getCharacters();
+    if (spec == "d" || spec == "u" || spec == "c" || spec == "x") {
+      int8_t flag = 0;
+      int32_t width = 0;
+      int32_t precision = -1;
+
+      if (fs.hasValidSpacePrefix() && fs.hasSpacePrefix().isSet()) flag = 2;
+      else if (fs.hasValidPlusPrefix() && fs.hasPlusPrefix().isSet()) flag = 1;
+      else if (fs.hasValidLeadingZeros() && fs.hasLeadingZeros().isSet()) flag = 4;
+
+      if (fs.hasValidLeftJustified() && fs.isLeftJustified().isSet()) flag += 10;
+
+      if (fs.hasValidFieldWidth() &&
+          fs.getFieldWidth().getHowSpecified() == clang::analyze_format_string::OptionalAmount::Constant) {
+        width = fs.getFieldWidth().getConstantAmount();
+      }
+
+      if (fs.hasValidPrecision() &&
+          fs.getPrecision().getHowSpecified() == clang::analyze_format_string::OptionalAmount::Constant) {
+        precision = fs.getPrecision().getConstantAmount();
+      }
+
+      // TODO handle i64 as well.
+      std::string tynm = tyName(e->getType().getTypePtr());
+      if (tynm == "Int64") {
+        llvm::outs() << "(foster_sprintf_i64 ";
+      } else {
+        llvm::outs() << "(foster_sprintf_i32 ";
+      }
+      
+      cons.visitStmt(ce->getArg(fs.getArgIndex() + 1));
+      llvm::outs() << " ('" << spec << "' as Int8) " << int(flag) << " " << width << " " << precision;
+
+      if (followedByNewline) {
+        llvm::outs() << " |> print_text);\n";
+      } else {
+        llvm::outs() << " |> print_text_bare);\n";
+      }
+    } else if (text == "%f" || text == "%g") {
+      std::string tynm = tyName(ce->getArg(1)->getType().getTypePtr());
+      std::string printfn;
+      if (tynm == "Float32" && followedByNewline) printfn = "print_float_f32";
+      if (tynm == "Float64" && followedByNewline) printfn = "print_float_f64";
+      if (tynm == "Float32" && !followedByNewline) printfn = "print_f32_bare";
+      if (tynm == "Float64" && !followedByNewline) printfn = "print_f64_bare";
+      if (printfn.empty()) return false;
+
+      llvm::outs() << "(" << printfn << " ";
+      cons.visitStmt(e);
+      llvm::outs() << ")";
+      return true;
+
+    } else {
+      fprintf(stderr, "/* handle printf specifier: %.*s */\n", specifierLen, startSpecifier);
+      fprintf(stderr, "/* format specifier: getArgIndex: %d */\n", fs.getArgIndex());
+      fprintf(stderr, "/* format specifier: usesPositionalArg: %d */\n", fs.usesPositionalArg());
+      fprintf(stderr, "/* format specifier: getPositionalArgIndex: %d */\n", fs.getPositionalArgIndex());
+      fprintf(stderr, "/* format specifier: hasStandardLengthModifier: %d */\n", fs.hasStandardLengthModifier());
+      //fprintf(stderr, "/* format specifier: hasStandardConversionSpecifier: %d */\n", fs.hasStandardConversionSpecifier());
+      fprintf(stderr, "/* format specifier: hasStandardLengthConversionCombination: %d */\n", fs.hasStandardLengthConversionCombination());
+      fprintf(stderr, "/* printf specifier: consumesDataArgument: %d */\n", fs.consumesDataArgument());
+      fprintf(stderr, "/* printf specifier: hasValidPlusPrefix: %d */\n", fs.hasValidPlusPrefix());
+      fprintf(stderr, "/* printf specifier: hasValidSpacePrefix: %d */\n", fs.hasValidSpacePrefix());
+      fprintf(stderr, "/* printf specifier: hasValidLeadingZeros: %d */\n", fs.hasValidLeadingZeros());
+      fprintf(stderr, "/* printf specifier: hasValidPrecision: %d */\n", fs.hasValidPrecision());
+      fprintf(stderr, "/* printf specifier: hasValidFieldWidth: %d */\n", fs.hasValidFieldWidth());
+      fprintf(stderr, "/* printf specifier: argType: isValid: %d */\n", fs.getArgType(ctx, false).isValid());
+      std::string tyname = fs.getArgType(ctx, false).getRepresentativeTypeName(ctx);
+      fprintf(stderr, "/* printf specifier: argType: %s */\n", tyname.c_str());
+      fflush(stderr);
+      llvm::errs() << "/* printf conversion: " << fs.getConversionSpecifier().getCharacters() << " */\n";
+      llvm::errs() << "/* printf precision: "; fs.getPrecision().toString(llvm::errs()); llvm::errs() << " */\n";
+      llvm::errs() << "/* printf precision invalid: "; fs.getPrecision().isInvalid(); llvm::errs() << " */\n";
+      llvm::errs() << "/* printf field width: "; fs.getFieldWidth().toString(llvm::errs()); llvm::errs() << " */\n";
+      llvm::errs() << "/* printf field width not spec: "
+        << (fs.getFieldWidth().getHowSpecified() == clang::analyze_format_string::OptionalAmount::NotSpecified) << " */\n";
+      llvm::errs() << "/* printf field width valid : " << !fs.getFieldWidth().isInvalid(); llvm::errs() << " */\n";
+      llvm::errs() << "/* printf length modifier: " << fs.getLengthModifier().toString() << " */\n";
+
+      if (followedByNewline) {
+        llvm::outs() << "print_newline !;\n";
+      }
+    }
+  }
+  return true;
+}
+
 
 class C2F_TypeDeclHandler_FA : public ASTFrontendAction {
 public:

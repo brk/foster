@@ -176,6 +176,7 @@ primitiveDecls = map (\(n,t) -> (n,t,NotForeign)) $
     ,(,)  "print_i32"  $ mkProcType [i32] []
     ,(,) "expect_i32x" $ mkProcType [i32] []
     ,(,)  "print_i32x" $ mkProcType [i32] []
+    ,(,)  "print_i32_bare"  $ mkProcType [i32] []
     ,(,) "expect_i64"  $ mkProcType [i64] []
     ,(,)  "print_i64"  $ mkProcType [i64] []
     ,(,) "expect_i64x" $ mkProcType [i64] []
@@ -228,6 +229,10 @@ primitiveDecls = map (\(n,t) -> (n,t,NotForeign)) $
     ,(,) "expect_float_f64"        $ mkProcType [f64] []
     ,(,) "print_float_f32"         $ mkProcType [f32] []
     ,(,) "expect_float_f32"        $ mkProcType [f32] []
+    ,(,) "print_f64_bare"          $ mkProcType [f64] []
+    ,(,) "expect_f64_bare"         $ mkProcType [f64] []
+    ,(,) "print_f32_bare"          $ mkProcType [f32] []
+    ,(,) "expect_f32_bare"         $ mkProcType [f32] []
 
     ,(,) "foster__logf64"          $ mkProcType [f64] [f64]
 
