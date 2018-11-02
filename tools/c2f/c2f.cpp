@@ -3024,6 +3024,13 @@ sce: | | |   `-CStyleCastExpr 0x55b68a4daed8 <col:42, col:65> 'enum http_errno':
       translateWhileLoop(ws, "do-while", nullptr);
     } else if (const ConditionalOperator* co = dyn_cast<ConditionalOperator>(stmt)) {
       handleIfThenElse(ctx, AnIfExpr, co->getCond(), co->getTrueExpr(), co->getFalseExpr());
+    } else if (const BinaryConditionalOperator* bco = dyn_cast<BinaryConditionalOperator>(stmt)) {
+      llvm::outs() << "(condV = ";
+      visitStmt(bco->getCommon(), ExprContext);
+      llvm::outs() << ";\n";
+      llvm::outs() << "if condV !=Int32 0 then condV else ";
+      visitStmt(bco->getFalseExpr(), ExprContext);
+      llvm::outs() << " end)\n";
     } else if (const ParenExpr* pe = dyn_cast<ParenExpr>(stmt)) {
       if (tryHandleAtomicExpr(pe->getSubExpr(), ctx)) {
         // done
