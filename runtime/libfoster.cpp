@@ -275,8 +275,10 @@ int fprint_b2(FILE* f, Int x) {
 }
 
 void fprint_f32(FILE* f, float x) { fprintf(f, "%f\n", x); }
+void fprint_f32_bare(FILE* f, float x) { fprintf(f, "%f", x); }
 void fprint_f32x(FILE* f, float x) { fprintf(f, "%a\n", x); }
 void fprint_f64(FILE* f, double x) { fprintf(f, "%f\n", x); }
+void fprint_f64_bare(FILE* f, double x) { fprintf(f, "%f", x); }
 void fprint_f64x(FILE* f, double x) { fprintf(f, "%a\n", x); }
 void fprint_p9f64(FILE* f, double x) { fprintf(f, "%.9f\n", x); }
 // TODO .17g for doubles?
@@ -290,6 +292,7 @@ void fprint_i32(FILE* f, int32_t x) {  fprintf(f, "%d\n", x); fflush(f); }
 void fprint_i32x(FILE* f, int32_t x) { fprintf(f, "0x%X\n", x); }
 void fprint_i32b(FILE* f, int32_t x) { fprint_b2<32>(f, x); }
 void fprint_i32c(FILE* f, int32_t x) {  fprintf(f, "%c\n", x); fflush(f); }
+void fprint_i32_bare(FILE* f, int64_t x) { fprintf(f, "%d" , x); }
 
 void fprint_i8b(FILE* f, int8_t x) { fprint_b2<8>(f, x); }
 
@@ -373,6 +376,7 @@ void expect_i32b(int32_t x) { fprint_i32b(stderr, x); }
 
 int read_i32() { int32_t n; scanf(" %d", &n); return n; }
 
+void  print_i32_bare(int32_t x) { fprint_i32_bare(stdout, x); }
 void  print_i64_bare(int64_t x) { fprint_i64_bare(stdout, x); }
 void  print_i64(int64_t x) { fprint_i64(stdout, x); }
 void expect_i64(int64_t x) { fprint_i64(stderr, x); }
@@ -502,6 +506,12 @@ void* foster_gdtoa64__autowrap(double f, int32_t mode, int32_t ndig, int32_t rou
   sprintf(buf, "%g", f);
   return foster_emit_string_of_cstring(buf, strlen(buf));
 }
+
+void print_f32_bare(float f) { return fprint_f32_bare(stdout, f); }
+void expect_f32_bare(float f) { return fprint_f32_bare(stderr, f); }
+
+void print_f64_bare(double f) { return fprint_f64_bare(stdout, f); }
+void expect_f64_bare(double f) { return fprint_f64_bare(stderr, f); }
 
 void print_float_f32(float f) { return fprint_f32(stdout, f); }
 void expect_float_f32(float f) { return fprint_f32(stderr, f); }

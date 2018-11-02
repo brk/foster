@@ -179,4 +179,95 @@ int32_t foster_posix_strError__autowrap(foster_bytes* b, int32_t errnum) {
 
 int32_t foster_Float32_classify(float  f) { return int32_t(fpclassify(f)); }
 int32_t foster_Float64_classify(double f) { return int32_t(fpclassify(f)); }
+
+void* foster_emit_string_of_cstring(const char*, int32_t); // defined by the Foster compiler
+
+void* foster_sprintf_i32(int32_t x, int8_t specifier, int8_t flag,
+                         int32_t width, int32_t precision) {
+  char fmt[256];
+  char buf[512];
+  const char* flagc =
+                (flag ==  0) ? "" : // no flags; default
+                (flag ==  1) ? "+" : // signed positives
+                (flag ==  2) ? " " : // space before positives
+                (flag ==  3) ? "#" : // 0x prefix (not meaningful for d)
+                (flag ==  4) ? "0" : ""; // left pad with zeros not spaces
+                (flag == 10) ? "-" : // as above, but left justified.
+                (flag == 11) ? "-+" : 
+                (flag == 12) ? "- " : 
+                (flag == 13) ? "-#" : 
+                (flag == 14) ? "-0" : "";
+  if (!(specifier == 'd' || specifier == 'x'
+     || specifier == 'u' || specifier == 'c')) { specifier = 'd'; }
+
+  if (precision < 0) {
+    int status = sprintf(fmt, "%%%s%d%c", flagc, width, specifier);
+    //                         ^^ ^ ^ ^
+    //                         |/ | |  specifier 
+    //                         |  | width
+    //                         |  flags
+    //                         ^^ literal percent sign
+    if (status < 0 || status == 256) {
+      foster__assert(false, "error in foster_sprintf_i32");
+    }
+  } else {
+    int status = sprintf(fmt, "%%%s%d.%d%c", flagc, width, precision, specifier);
+    //                         ^^ ^ ^ ^  ^
+    //                         |/ | | |  specifier 
+    //                         |  | | precision
+    //                         |  | width
+    //                         |  flags
+    //                         ^^ literal percent sign
+    if (status < 0 || status == 256) {
+      foster__assert(false, "error in foster_sprintf_i32");
+    }
+  }
+  int rv = snprintf(buf, 512, fmt, x);
+  return foster_emit_string_of_cstring(buf, strlen(buf));
+}
+
+void* foster_sprintf_i64(int64_t x, int8_t specifier, int8_t flag,
+                         int32_t width, int32_t precision) {
+  char fmt[256];
+  char buf[512];
+  const char* flagc =
+                (flag ==  0) ? "" : // no flags; default
+                (flag ==  1) ? "+" : // signed positives
+                (flag ==  2) ? " " : // space before positives
+                (flag ==  3) ? "#" : // 0x prefix (not meaningful for d)
+                (flag ==  4) ? "0" : ""; // left pad with zeros not spaces
+                (flag == 10) ? "-" : // as above, but left justified.
+                (flag == 11) ? "-+" : 
+                (flag == 12) ? "- " : 
+                (flag == 13) ? "-#" : 
+                (flag == 14) ? "-0" : "";
+  if (!(specifier == 'd' || specifier == 'x'
+     || specifier == 'u' || specifier == 'c')) { specifier = 'd'; }
+
+  if (precision < 0) {
+    int status = sprintf(fmt, "%%%s%dll%c", flagc, width, specifier);
+    //                         ^^ ^ ^ ^
+    //                         |/ | |  specifier 
+    //                         |  | width
+    //                         |  flags
+    //                         ^^ literal percent sign
+    if (status < 0 || status == 256) {
+      foster__assert(false, "error in foster_sprintf_i32");
+    }
+  } else {
+    int status = sprintf(fmt, "%%%s%d.%dll%c", flagc, width, precision, specifier);
+    //                         ^^ ^ ^ ^  ^
+    //                         |/ | | |  specifier 
+    //                         |  | | precision
+    //                         |  | width
+    //                         |  flags
+    //                         ^^ literal percent sign
+    if (status < 0 || status == 256) {
+      foster__assert(false, "error in foster_sprintf_i32");
+    }
+  }
+  int rv = snprintf(buf, 512, fmt, x);
+  return foster_emit_string_of_cstring(buf, strlen(buf));
+}
+
 }
