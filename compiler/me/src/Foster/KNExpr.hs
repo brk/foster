@@ -1300,9 +1300,11 @@ localBlockSinking knf =
 
   reachable = Set.fromList $ map n2b $ Graph.dfs [root] callGraph
 
+  relocationTargets = Map.fromListWith (++) relocationTargetsList
+
   -- If a function is dominated by a node which is not its parent, relocate it.
   -- relocationTargetsList :: [(Fn (KNExpr' t) t, Ident)]
-  relocationTargetsList = [((id, f), dom)
+  relocationTargetsList = [(dom, [(id, f)])
                           | f_id <- Set.toList functionsSet
                           ,parent <- maybeToList $ Map.lookup f_id parentMap
                           ,dom    <- maybeToList $ Map.lookup f_id doms
@@ -1333,9 +1335,11 @@ localBlockSinking knf =
                                 if null ids then body else KNRelocDoms ids body in
                           mkFunctionSCCs ids fns body fnMarker mkLetFuns'
         where
-          newfns   = [(id, rebuildFn fn)
-                     | ((id, fn), dom) <- relocationTargetsList
-                     , dom == fnIdent f]
+          ourDominatees = case Map.lookup (fnIdent f) relocationTargets of
+                              Just xs -> xs
+                              _ -> []
+          newfns = map (\(id, fn) -> (id, rebuildFn fn)) ourDominatees
+
 -- }}}||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 
 -- ||||||||||||||||||||||||| Loop Headers |||||||||||||||||||||||{{{

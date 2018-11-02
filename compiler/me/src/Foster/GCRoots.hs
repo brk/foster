@@ -502,11 +502,13 @@ insertDumbGCKills bbgp dump allroots = do
    liftIO $ when (showOptResults || dump) $ do Boxes.printBox $ catboxes2 (bbgpBody bbgp) g'
    return bbgp { bbgpBody =  g' }
  where
+  allRootSet = Set.fromList allroots
+
   transform :: forall e x. Insn' e x -> Compiled (Graph Insn' e x)
   transform insn = case insn of
     CCLabel       _ -> return $ mkFirst insn
-                            <*> mkMiddle (CCGCKill Disabled (Set.fromList allroots))
-    CCLast       {} -> return $ mkMiddle (CCGCKill Disabled (Set.fromList allroots))
+                            <*> mkMiddle (CCGCKill Disabled allRootSet)
+    CCLast       {} -> return $ mkMiddle (CCGCKill Disabled allRootSet)
                             <*> mkLast insn
     CCGCInit     {} -> return $ mkMiddle insn
     CCGCLoad     {} -> return $ mkMiddle insn
