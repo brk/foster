@@ -134,8 +134,8 @@ typecheckRat annot originalText expTy = do
                              ,highlightFirstLineDoc (rangeOf annot)
                              ,text "Error was:"
                              ,indent 8 (text err) ]
-         Right (part1,part2,denom,part3) -> do
-           let val = (fromInteger part1 +
+         Right (negated,part1,part2,denom,part3) -> do
+           let val = (if negated then -1.0 else 1.0) * (fromInteger part1 +
                       (fromInteger part2 / denom)) * (encodeFloat 2 (part3 - 1))
            return (AnnLiteral annot ty (LitFloat $ LiteralFloat val originalText))
     10 ->
@@ -153,13 +153,14 @@ typecheckRat annot originalText expTy = do
             return (AnnLiteral annot ty (LitFloat $ LiteralFloat val originalText))
     _ -> error $ "Unexpected rational literal base " ++ show base
 
-hexDoubleParser :: Atto.Parser (Integer, Integer, Double, Int)
+hexDoubleParser :: Atto.Parser (Bool, Integer, Integer, Double, Int)
 hexDoubleParser = do
+  negated <- Atto.option False (Atto.char '-' *> return True)
   part1 <- Atto.hexadecimal
   (t, part2) <- Atto.option (T.pack "", 0)
                   (Atto.char '.' *> Atto.match Atto.hexadecimal)
   part3 <- (Atto.asciiCI (T.pack "p") *> Atto.signed Atto.decimal)
-  return (part1, part2, 16.0 ** (fromIntegral $ T.length t), part3)
+  return (negated, part1, part2, 16.0 ** (fromIntegral $ T.length t), part3)
 
 tcMaybeWarnMisleadingRat range cleanText val = do
   -- It's possible that the literal given is "misleading",
