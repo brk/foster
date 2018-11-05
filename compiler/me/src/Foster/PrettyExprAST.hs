@@ -93,6 +93,8 @@ instance (Pretty ty, IsQuietPlaceholder ty) => Pretty (FnAST ty) where
                     <$> rbrace)
     where args []  = empty
           args frm = hang 1 (empty <+> vsep (map (\v -> prettyFnFormalTy v <+> text "=>") frm))
+          --args frm = group $ align $ vsep (map arg frm)
+          --arg v = prettyFnFormalTy v <+> text "=>"
 
           prettyFnFormal (TypedId _t v) = text (T.unpack $ identPrefix v)
           prettyFnFormalTy tid =
@@ -112,11 +114,11 @@ instance (Pretty ty, IsQuietPlaceholder ty) => Pretty (ModuleExpr ty) where
 
 prettyImport (ident, path) = text "snafuinclude" <+> text (T.unpack ident) <+> text (T.unpack path) <> text ";"
 
-prettyItem (ToplevelDecl (s, t, NotForeign)) = showTyped (text s) t
+prettyItem (ToplevelDecl (s, t, NotForeign)) = text s <+> text "::" <+> pretty t <> text ";"
 prettyItem (ToplevelDecl (s, t, IsForeign nm)) =
   if s == nm
-    then text "foreign import" <+> showTyped (text s) t
-    else text "foreign import" <+> text s <+> text "as" <+> text nm <+> text "::" <+> pretty t
+    then text "foreign import" <+> text s <+>                           text "::" <+> pretty t <> text ";"
+    else text "foreign import" <+> text s <+> text "as" <+> text nm <+> text "::" <+> pretty t <> text ";"
 prettyItem (ToplevelDefn (_, E_FnAST _ fn)) = prettyTopLevelFn fn
 prettyItem (ToplevelDefn (s, e)) = text s <+> text "=" <+> pretty e <> text ";"
 prettyItem (ToplevelData dt) = pretty dt
@@ -144,26 +146,26 @@ showHex2 c s =
 printableAscii :: Char -> Bool
 printableAscii c = isAscii c && isPrint c
 
-formatTextChar :: Char -> String
-formatTextChar c =
+formatTextChar :: Bool -> Char -> String
+formatTextChar isSingleQuote c =
     case c of
       '\n' -> "\\n"
       '\r' -> "\\r"
       '\t' -> "\\t"
       '\\' -> "\\\\"
-      '\'' -> "\\'" -- TODO selectively escape based on string bracket type
+      '\'' -> if isSingleQuote then "\\'" else "'"
       '"'  -> "\\\""
       _ -> if printableAscii c then [c] else "\\u{" ++ showHex2 (ord c) "}"
 
-formatBytesWord8 :: Word8 -> String
-formatBytesWord8 w =
+formatBytesWord8 :: Bool -> Word8 -> String
+formatBytesWord8 isSingleQuote w =
   let c = chr $ fromIntegral w in
     case c of
       '\n' -> "\\n"
       '\r' -> "\\r"
       '\t' -> "\\t"
       '\\' -> "\\\\"
-      '\'' -> "\\'" -- TODO selectively escape based on string bracket type
+      '\'' -> if isSingleQuote then "\\'" else "'"
       '"'  -> "\\\""
       _ -> if printableAscii c then [c] else "\\x" ++ showHex2 w ""
 
@@ -175,11 +177,11 @@ prettyStmt e = case e of
     E_TyApp  annot e argtys -> withAnnot annot $ pretty e <> text ":[" <> hsep (punctuate comma (map pretty argtys)) <> text "]"
     E_TyCheck annot e ty    -> withAnnot annot $ parens' (pretty e <+> text "as" <+> pretty ty)
     E_KillProcess annot exp -> withAnnot annot $ parens' (text "prim kill-entire-process" <+> pretty exp)
-    E_StringAST   annot (SS_Text  r t) -> withAnnot annot $             wasRaw r <> dquotes (text $ concatMap formatTextChar $ T.unpack t)
-    E_StringAST   annot (SS_Bytes r b) -> withAnnot annot $ text "b" <> wasRaw r <> dquotes (text $ concatMap formatBytesWord8 $ BS.unpack b)
+    E_StringAST   annot (SS_Text  r t) -> withAnnot annot $             wasRaw r <> dquotes (text $ concatMap (formatTextChar False) $ T.unpack t)
+    E_StringAST   annot (SS_Bytes r b) -> withAnnot annot $ text "b" <> wasRaw r <> dquotes (text $ concatMap (formatBytesWord8 False) $ BS.unpack b)
     E_BoolAST     annot b   -> withAnnot annot $ text $ show b
-    E_PrimAST     annot nm []   _ -> withAnnot annot $ text nm
-    E_PrimAST     annot nm lits _ -> withAnnot annot $ text nm <+> pretty lits
+    E_PrimAST     annot nm []   _ -> withAnnot annot $ text "prim" <+> text nm
+    E_PrimAST     annot nm lits _ -> withAnnot annot $ text "prim" <+> text nm <+> pretty lits
     E_CallAST annot e []    -> withAnnot annot $ prettyAtom e <+> text "!"
     E_CallAST annot e [e1,e2] | isOperator e
                             -> withAnnot annot $ hang 4 $ group $
