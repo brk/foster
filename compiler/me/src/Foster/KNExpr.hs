@@ -1041,7 +1041,7 @@ kNormalEffectWrappers :: KNState -> EffectDecl TypeIL -> [KN (FnExprIL)]
 kNormalEffectWrappers st ed = map kNormalEffectWrapper (zip [0..] (effectDeclCtors ed))
   where
     kNormalEffectWrapper :: (Int, EffectCtor TypeIL) -> KN FnExprIL
-    kNormalEffectWrapper (n, EffectCtor (DataCtor cname tyformals tys _repr _lone range) outty) = do
+    kNormalEffectWrapper (n, EffectCtor (DataCtor cname tyformals tys drepr _lone range) outty) = do
       let dname = effectDeclName ed
       let arity = Prelude.length tys
       let cid   = CtorId (typeFormalName dname) (T.unpack cname) arity
@@ -1059,7 +1059,9 @@ kNormalEffectWrappers st ed = map kNormalEffectWrapper (zip [0..] (effectDeclCto
                         ForAllIL _ (FnTypeIL _ r _ _) -> r
                         _ -> error $ "KNExpr.hs: kNormalCtor given non-function type!"
           -}
-          repr = CR_Default n
+          repr = case drepr of
+                   Nothing -> CR_Default n
+                   Just r  -> r
           effb = case effty of
                    TyAppIL base _ -> base
                    other          -> other
