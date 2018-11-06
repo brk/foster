@@ -276,7 +276,7 @@ deriving instance (Show ty, Show rs) => Show (KNExpr' rs ty) -- used elsewhere..
 
 instance AExpr (KNExpr' rs t) where
     freeIdents e = case e of
-        KNLetVal   id  b   e efree -> freeIdents b `Set.union` (efree `sans` [id])
+        KNLetVal   id  b  _e efree -> freeIdents b `Set.union` (efree `sans` [id])
         KNLetRec   ids xps e -> (combinedFreeIdents xps `Set.union` freeIdents e) `sans` ids
         KNLetFuns  ids fns e -> (combinedFreeIdents fns `Set.union` freeIdents e) `sans` ids
         KNCase  _t v arms    -> Set.fromList [tidIdent v] `Set.union` Set.unions (map caseArmFreeIds arms)

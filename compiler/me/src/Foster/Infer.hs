@@ -18,7 +18,6 @@ import Foster.Base
 import Foster.TypeTC
 import Foster.Context
 import Foster.Config (OrdRef(ordRef))
-import Foster.Output (putDocLn)
 
 data TypeConstraint = TypeConstrEq TypeTC TypeTC
 
@@ -93,6 +92,7 @@ tcUnifyLoop ((TypeConstrEq t1'0 t2'0):constraints) = do
         ,text "\t" <> pretty t1 <> string "\nand\n\t" <> pretty t2
         ,text "t1::", showStructure t1, text "t2::", showStructure t2]
   else do
+    {-
    case (t1, t2) of
        ((TyAppTC (TyConTC nm1) _tys1), (TyAppTC (TyConTC nm2) _tys2))
           | isEffect nm1 && isEffect nm2 && not (isEffectEmpty t1 && isEffectEmpty t2) -> do
@@ -100,6 +100,7 @@ tcUnifyLoop ((TypeConstrEq t1'0 t2'0):constraints) = do
                                  <$> indent 4 (pretty t1)
                                  <$> indent 4 (pretty t2)
        _ -> return ()
+       -}
    case (t1, t2) of
     ((PrimIntTC  n1), (PrimIntTC  n2)) ->
           if n1 == n2 then do tcUnifyLoop constraints
@@ -260,12 +261,12 @@ tcUnifyEffects t1 t2 constraints = do
                    tcFails [text "Effect unification produced infinite loop"]
          _   -> do 
                    let unifyTail1 ds tl desc = do
-                       tcLift $ putDocLn $ text "unifyTail1 " <> pretty ds <+> pretty tl
+                       --tcLift $ putDocLn $ text "unifyTail1 " <> pretty ds <+> pretty tl
                        if null ds then return (tl, [])
                                   else do tv <- newTcUnificationVarEffect desc
                                           return (tv, [TypeConstrEq tl (effectExtendsTc ds tv)] )
                    let unifyTail2 ds tl desc = do
-                       tcLift $ putDocLn $ text "unifyTail2 " <> pretty ds <+> pretty tl
+                       --tcLift $ putDocLn $ text "unifyTail2 " <> pretty ds <+> pretty tl
                        if null ds then return (tl, [])
                                   else do tv <- newTcUnificationVarEffect desc
                                           return (tv, [TypeConstrEq (effectExtendsTc ds tv) tl] )

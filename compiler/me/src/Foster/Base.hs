@@ -13,8 +13,8 @@ import Foster.Kind
 import Foster.Output
 
 import Data.IORef(IORef, readIORef, writeIORef)
-import Data.Set as Set(Set, fromList, toList, difference, insert, empty, member,
-                                      null, intersection)
+import Data.Set as Set(fromList, toList, difference, insert, empty, member,
+                        null, intersection)
 import Data.Sequence as Seq(Seq, length, index, (><))
 import Data.Map as Map(Map, fromListWith)
 import Data.Set as Set(Set, unions)
@@ -872,7 +872,7 @@ compareIdents (GlobalSymbol _ (RenameTo alt1))
               (GlobalSymbol _ (RenameTo alt2)) = compare alt1 alt2
 compareIdents (GlobalSymbol t1 _)
               (GlobalSymbol t2 _) = compare t1 t2
-compareIdents (Ident t1 u1)     (Ident t2 u2)     = compare u1 u2
+compareIdents (Ident _t1 u1)  (Ident _t2 u2)   = compare u1 u2
                                                     {-case compare u1 u2 of
                                                       EQ -> let rv = compare t1 t2 in
                                                             if rv == EQ then rv else
@@ -883,7 +883,7 @@ compareIdents (Ident _ _)       (GlobalSymbol _ _) = GT
 
 instance Eq Ident where
     (GlobalSymbol t1 alt1) == (GlobalSymbol t2 alt2) = pick t1 alt1 == pick t2 alt2
-    (Ident t1 u1)     == (Ident t2 u2) = u1 == u2 {-&& t1 == t2-}
+    (Ident _t1 u1)         == (Ident _t2 u2) = u1 == u2 {-&& t1 == t2-}
     _ == _ = False
 
 instance Show Ident where
@@ -1046,12 +1046,9 @@ instance Pretty t => Pretty (DataType t) where
      <$> text ";"
      <$> text ""
 
-prettyDataTypeCtorBare dc =
+prettyDataTypeCtor dc =
   text "of" <+> text "$" <> text (T.unpack $ dataCtorName dc)
-                        <+> hsep (map pretty (dataCtorTypes dc))
-
-prettyDataTypeCtor dc = prettyDataTypeCtorBare dc
-                        <+> text "// repr:" <+> text (show (dataCtorRepr dc))
+                        <+> (group (hang 2 $ vsep (PP.empty : map pretty (dataCtorTypes dc))))
 
 instance Pretty t => Pretty (EffectDecl t) where
   pretty ed =
@@ -1061,7 +1058,7 @@ instance Pretty t => Pretty (EffectDecl t) where
      <$> text ";"
      <$> text ""
 
-prettyEffectCtor ec = prettyDataTypeCtorBare (effectCtorAsData ec)
+prettyEffectCtor ec = prettyDataTypeCtor (effectCtorAsData ec)
                         <+> text "=>" <+> pretty (effectCtorOutput ec)
 
 prettyHandler :: (Pretty expr, Pretty (pat ty)) => expr -> [CaseArm pat expr ty] -> Maybe expr -> Doc
