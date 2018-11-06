@@ -33,19 +33,25 @@ namespace runtime {
   void parse_runtime_options(int argc, char** argv) {
     __foster_globals.semispace_size = 1024 * 1024;
 
+    int args_to_skip = 0;
+
     for (int i = 0; i < argc; ++i) {
       const char* arg = argv[i];
+      if (args_to_skip > 0) {
+        --args_to_skip;
+        continue;
+      }
       if (!is_foster_runtime_flag(arg)) {
         __foster_globals.args.push_back(arg);
       } else {
         if (i == argc - 1) continue; // no more to look at!
-        if (streq("--foster-heap-KB", arg)) {
+        if (streq("--foster-heap-KB", arg)) { args_to_skip += 1;
           __foster_globals.semispace_size = ssize_t(parse_double(argv[i + 1], 1024.0) * 1024.0);
-        } else if (streq("--foster-heap-MB", arg)) {
+        } else if (streq("--foster-heap-MB", arg)) { args_to_skip += 1;
           __foster_globals.semispace_size = ssize_t(parse_double(argv[i + 1], 1.0) * 1024.0 * 1024.0);
-        } else if (streq("--foster-heap-GB", arg)) {
+        } else if (streq("--foster-heap-GB", arg)) { args_to_skip += 1;
           __foster_globals.semispace_size = ssize_t(parse_double(argv[i + 1], 0.001) * 1024.0 * 1024.0 * 1024.0);
-        } else if (streq("--foster-json-stats", arg)) {
+        } else if (streq("--foster-json-stats", arg)) { args_to_skip += 1;
           __foster_globals.dump_json_stats_path = argv[i + 1];
         }
       }
