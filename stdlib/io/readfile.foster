@@ -1,0 +1,17 @@
+snafuinclude C2F "c2f";
+
+readFile :: { Text => Array Int8 };
+readFile = { path =>
+  ntPathBytes = bytesConcat (snafuBytesOfText path) (bytesOfRawArray b"\x00");
+  fp = c2f_fopen
+            (strLit (bytesFlattenRaw ntPathBytes))
+            (strLit b"r\x00");
+  c2f_fseek fp 0 2;
+  sz = c2f_ftell fp;
+  _ignored = c2f_rewind fp;
+  arr = allocDArray:[Int8] (trunc_i64_to_i32 sz);
+  buf = ptrOfArr arr;
+  c2f_fread buf 1 sz fp;
+  arr
+};
+
