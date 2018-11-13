@@ -1,0 +1,7 @@
+snafuinclude Text "text";
+
+main = {
+  msg = "Hello World!";
+  expect_text msg;
+  print_text msg;
+};
