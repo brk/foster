@@ -1,0 +1,730 @@
+snafuinclude Prelude "prelude";
+snafuinclude PreludeFolds "prelude-folds";
+/*
+ The generated parser's interface is
+    ParseAlloc :: { YyParser };
+    Parse :: { YyParser => Int8 // major token number
+                        => Token // token value (yyminor)
+                        => () };
+ */
+/*
+** 2000-05-29
+**
+** The author disclaims copyright to this source code.  In place of
+** a legal notice, here is a blessing:
+**
+**    May you do good and not evil.
+**    May you find forgiveness for yourself and forgive others.
+**    May you share freely, never taking more than you give.
+**
+*************************************************************************
+** Driver template for the LEMON parser generator.
+**
+** The "lemon" program processes an LALR(1) input grammar file, then uses
+** this template to construct a parser.  The "lemon" program inserts text
+** at each "%%" line.  Also, any "P-a-r-s-e" identifer prefix (without the
+** interstitial "-" characters) contained in this template is changed into
+** the value of the %name directive from the grammar.  Otherwise, the content
+** of this template is copied straight through into the generate parser
+** source file.
+**
+** The following is the concatenation of all %include directives from the
+** input grammar file:
+*/
+//#include <stdio.h>
+/************ Begin %include sections from the grammar ************************/
+%%
+/**************** End of %include directives **********************************/
+/* These constants specify the various numeric values for terminal symbols
+** in a format understandable to "makeheaders".  This section is blank unless
+** "lemon" is run with the "-m" command-line option.
+***************** Begin makeheaders token definitions *************************/
+%%
+/**************** End makeheaders token definitions ***************************/
+
+/* The next sections is a series of control #defines.
+** various aspects of the generated parser.
+**    YYCODETYPE         is the data type used to store the integer codes
+**                       that represent terminal and non-terminal symbols.
+**                       "unsigned char" is used if there are fewer than
+**                       256 symbols.  Larger types otherwise.
+**    YYNOCODE           is a number of type YYCODETYPE that is not used for
+**                       any terminal or nonterminal symbol.
+**    YYFALLBACK         If defined, this indicates that one or more tokens
+**                       (also known as: "terminal symbols") have fall-back
+**                       values which should be used if the original symbol
+**                       would not parse.  This permits keywords to sometimes
+**                       be used as identifiers, for example.
+**    YYACTIONTYPE       is the data type used for "action codes" - numbers
+**                       that indicate what to do in response to the next
+**                       token.
+**    ParseTOKENTYPE     is the data type used for minor type for terminal
+**                       symbols.  Background: A "minor type" is a semantic
+**                       value associated with a terminal or non-terminal
+**                       symbols.  For example, for an "ID" terminal symbol,
+**                       the minor type might be the name of the identifier.
+**                       Each non-terminal can have a different minor type.
+**                       Terminal symbols all have the same minor type, though.
+**                       This macros defines the minor type for terminal 
+**                       symbols.
+**    YYMINORTYPE        is the data type used for all minor types.
+**                       This is typically a union of many types, one of
+**                       which is ParseTOKENTYPE.  The entry in the union
+**                       for terminal symbols is called "yy0".
+**    ParseARG_SDECL     A static variable declaration for the %extra_argument
+**    ParseARG_PDECL     A parameter declaration for the %extra_argument
+**    ParseARG_PARAM     Code to pass %extra_argument as a subroutine parameter
+**    ParseARG_STORE     Code to store %extra_argument into yypParser
+**    ParseARG_FETCH     Code to extract %extra_argument from yypParser
+**    ParseCTX_*         As ParseARG_ except for %extra_context
+**    YYERRORSYMBOL      is the code number of the error symbol.  If not
+**                       defined, then do no error processing.
+**    YYNSTATE           the combined number of states.
+**    YYNRULE            the number of rules in the grammar
+**    YYNTOKEN           Number of terminal symbols
+**    YY_MAX_SHIFT       Maximum value for shift actions
+**    YY_MIN_SHIFTREDUCE Minimum value for shift-reduce actions
+**    YY_MAX_SHIFTREDUCE Maximum value for shift-reduce actions
+**    YY_ERROR_ACTION    The yy_action[] code for syntax error
+**    YY_ACCEPT_ACTION   The yy_action[] code for accept
+**    YY_NO_ACTION       The yy_action[] code for no-op
+**    YY_MIN_REDUCE      Minimum value for reduce actions
+**    YY_MAX_REDUCE      Maximum value for reduce actions
+*/
+/************* Begin control #defines *****************************************/
+%%
+/************* End control #defines *******************************************/
+
+/* Next are the tables used to determine what action to take based on the
+** current state and lookahead token.  These tables are used to implement
+** functions that take a state number and lookahead value and return an
+** action integer.  
+**
+** Suppose the action integer is N.  Then the action is determined as
+** follows
+**
+**   0 <= N <= YY_MAX_SHIFT             Shift N.  That is, push the lookahead
+**                                      token onto the stack and goto state N.
+**
+**   N between YY_MIN_SHIFTREDUCE       Shift to an arbitrary state then
+**     and YY_MAX_SHIFTREDUCE           reduce by rule N-YY_MIN_SHIFTREDUCE.
+**
+**   N == YY_ERROR_ACTION               A syntax error has occurred.
+**
+**   N == YY_ACCEPT_ACTION              The parser accepts its input.
+**
+**   N == YY_NO_ACTION                  No such action.  Denotes unused
+**                                      slots in the yy_action[] table.
+**
+**   N between YY_MIN_REDUCE            Reduce by rule N-YY_MIN_REDUCE
+**     and YY_MAX_REDUCE
+**
+** The action table is constructed as a single large table named yy_action[].
+** Given state S and lookahead X, the action is computed as either:
+**
+**    (A)   N = yy_action[ yy_shift_ofst[S] + X ]
+**    (B)   N = yy_default[S]
+**
+** The (A) formula is preferred.  The B formula is used instead if
+** yy_lookahead[yy_shift_ofst[S]+X] is not equal to X.
+**
+** The formulas above are for computing the action when the lookahead is
+** a terminal symbol.  If the lookahead is a non-terminal (as occurs after
+** a reduce action) then the yy_reduce_ofst[] array is used in place of
+** the yy_shift_ofst[] array.
+**
+** The following are the tables generated in this section:
+**
+**  yy_action[]        A single table containing all actions.
+**  yy_lookahead[]     A table containing the lookahead for each entry in
+**                     yy_action.  Used to detect hash collisions.
+**  yy_shift_ofst[]    For each state, the offset into yy_action for
+**                     shifting terminals.
+**  yy_reduce_ofst[]   For each state, the offset into yy_action for
+**                     shifting non-terminals after a reduce.
+**  yy_default[]       Default action for each state.
+**
+*********** Begin parsing tables **********************************************/
+%%
+/********** End of lemon-generated parsing tables *****************************/
+
+/* The next table maps tokens (terminal symbols) into fallback tokens.  
+** If a construct like the following:
+** 
+**      %fallback ID X Y Z.
+**
+** appears in the grammar, then ID becomes a fallback token for X, Y,
+** and Z.  Whenever one of the tokens X, Y, or Z is input to the parser
+** but it does not parse, the type of the token is changed to ID and
+** the parse is retried before an error is thrown.
+**
+** This feature can be used, for example, to cause some keywords in a language
+** to revert to identifiers if they keyword does not apply in the context where
+** it appears.
+*/
+%%
+
+/* The following structure represents a single element of the
+** parser's stack.  Information stored includes:
+**
+**   +  The state number for the parser at this level of the stack.
+**
+**   +  The value of the token stored at this level of the stack.
+**      (In other words, the "major" token.)
+**
+**   +  The semantic value stored at this level of the stack.  This is
+**      the information used by the action routines in the grammar.
+**      It is sometimes called the "minor" token.
+**
+** After the "shift" half of a SHIFTREDUCE action, the stateno field
+** actually contains the reduce action for the second half of the
+** SHIFTREDUCE.
+*/
+
+//  YYACTIONTYPE stateno;  /* The state-number, or reduce action in SHIFTREDUCE */
+//      (Int8)
+//  YYCODETYPE major;      /* The major token value.  This is the code
+//                         ** number for the token at this stack level */
+//      (Int8)
+//  YYMINORTYPE minor;     /* The user-supplied minor token value.  This
+//                         ** is the value of the token  */
+
+/* The state of the parser is completely contained in an instance of
+** the following structure */
+type case YyParser
+  of $YyParser
+      (Ref Int32) // yytop;          /* Index of top element of the stack */
+      (Ref Int32) //yyerrcnt;                 /* Shifts left before out of the error */
+      //ParseARG_SDECL                /* A place to hold %extra_argument */
+      //ParseCTX_SDECL                /* A place to hold %extra_context */
+      (Ref (Array Int32)) // yystackStateno; /* The parser's stack */
+      (Ref (Array Int8)) // yystackMajor;   /* The parser's stack */
+      (Ref (Array YYMINORTYPE)) //  yystackMinor;   /* The parser's stack */
+;
+
+/* For tracing shifts, the names of all terminals and nonterminals
+** are required.  The following table supplies these names */
+yyTokenName :: { Int32 => Text };
+yyTokenName = { x =>
+%%
+};
+
+yystackStateno = { p : YyParser =>
+  case p of $YyParser _ _ /*_ _*/ ra _ _ -> ra^ end
+};
+yystackMajor = { p : YyParser =>
+  case p of $YyParser _ _ /*_ _*/ _ ra _ -> ra^ end
+};
+yystackMinor = { p : YyParser =>
+  case p of $YyParser _ _ /*_ _*/ _ _ ra -> ra^ end
+};
+yystackStatenoRef = { p : YyParser =>
+  case p of $YyParser _ _ /*_ _*/ ra _ _ -> ra end
+};
+yystackMajorRef = { p : YyParser =>
+  case p of $YyParser _ _ /*_ _*/ _ ra _ -> ra end
+};
+yystackMinorRef = { p : YyParser =>
+  case p of $YyParser _ _ /*_ _*/ _ _ ra -> ra end
+};
+
+stackSize = { p : YyParser =>
+  arrayLength32 (yystackStateno p);
+};
+
+regrow :: forall (t:Type) { Int32 => Ref (Array t) => () };
+regrow = { newSize => ra =>
+  old = ra^;
+  nu  = allocDArray newSize;
+  arrayEnum old { v => idx => v >^ nu[idx] };
+  nu >^ ra;
+  ()
+};
+
+/*
+** Try to increase the size of the parser stack.  Return the number
+** of errors.  Return 0 on success.
+*/
+yyGrowStack = { p : YyParser =>
+  newSize = ((stackSize p) *Int32 2) +Int32 100;
+
+  regrow newSize (yystackStatenoRef p);
+  regrow newSize (yystackMajorRef p);
+  regrow newSize (yystackMinorRef p);
+};
+
+/*
+** This function allocates a new parser.
+** The only argument is a pointer to a function which works like
+** malloc.
+**
+** Inputs:
+** A pointer to the function used to allocate memory.
+**
+** Outputs:
+** A pointer to a parser.  This pointer is used in subsequent calls
+** to Parse and ParseFree.
+*/
+ParseAlloc :: { YyParser };
+ParseAlloc = {
+  //ParseCTX_STORE
+  p = YyParser
+           (prim ref 0) // yytop
+           (prim ref -1) // yyerrcnt
+           /*
+           (prim ref ()) // arg
+           (prim ref ()) // ctx
+           */
+           (prim ref (prim mach-array-literal 0)) // stateno
+           (prim ref (prim mach-array-literal 0)) // major
+           (prim ref (allocDArray:[YYMINORTYPE] 0)) // minor
+           ;
+  yyGrowStack p;
+  p
+};
+
+
+/********* Begin destructor definitions **(should be empty)********************/
+%%
+/********* End destructor definitions *****************************************/
+
+yytop :: { YyParser => Int32 };
+yytop = { p : YyParser => case p of $YyParser r _ /*_ _*/ _ _ _ -> r^ end };
+
+yytopRef :: { YyParser => Ref Int32 };
+yytopRef = { p : YyParser => case p of $YyParser r _ /*_ _*/ _ _ _ -> r end };
+
+yyerrcnt :: { YyParser => Int32 };
+yyerrcnt = { p : YyParser => case p of $YyParser _ r /*_ _*/ _ _ _ -> r^ end };
+yyerrcntRef :: { YyParser => Ref Int32 };
+yyerrcntRef = { p : YyParser => case p of $YyParser _ r /*_ _*/ _ _ _ -> r end };
+
+/*
+** Pop the parser's stack once.
+**
+** If there is a destructor routine associated with the token which
+** is popped from the stack, then call it.
+*/
+yy_pop_parser_stack = { pParser : YyParser =>
+  //assert( pParser->yytos!=0 );
+  //assert( pParser->yytos > pParser->yystack );
+  pParser `bumpTopBy` -1;
+};
+
+/*
+** Clear all secondary memory allocations from the parser
+*/
+ParseFinalize = { pParser : YyParser =>
+  while { (yytop pParser) >SInt32 0 } { yy_pop_parser_stack pParser };
+};
+
+/* 
+** Deallocate and destroy a parser.  Destructors are called for
+** all stack elements before shutting the parser down.
+**
+** If the YYPARSEFREENEVERNULL macro exists (for example because it
+** is defined in a %include section of the input grammar) then it is
+** assumed that the input pointer is never NULL.
+*/
+ParseFree = { p : YyParser =>
+  ParseFinalize p;
+};
+
+/*
+** Find the appropriate action for a parser given the terminal
+** look-ahead token iLookAhead.
+*/
+yy_find_shift_action :: { Int8 => Int32 => Int32 };
+yy_find_shift_action = {
+      iLookAhead : Int8 =>    /* The look-ahead token */
+      stateno    : Int32 =>   /* Current state number */
+  if stateno >SInt32 YY_MAX_SHIFT
+    then stateno
+    else
+      //REC loop = {
+        i = yy_shift_ofst[stateno] +Int32 (zext_i8_to_i32 iLookAhead);
+        /*
+        assert( i>=0 );
+        // assert( i+YYNTOKEN <=SInt32 arraySize32 yy_lookahead );
+        assert( iLookAhead!=YYNOCODE );
+        assert( iLookAhead < YYNTOKEN );
+        */
+
+        if  { i >=SInt32 arrayLength32 yy_lookahead } `oror` { yy_lookahead[i] !=Int8 iLookAhead }
+          then
+/*#ifdef YYFALLBACK
+          Int8 iFallback;            // Fallback token
+          if( iLookAhead<sizeof(yyFallback)/sizeof(yyFallback[0])
+                && (iFallback = yyFallback[iLookAhead])!=0 ){
+            assert( yyFallback[iFallback]==0 ); // Fallback loop must terminate
+            iLookAhead = iFallback;
+            continue;
+          }
+#endif*/
+          yy_default[stateno]
+        else
+          yy_action[i]
+        end
+      //};
+  end
+};
+
+/*
+** Find the appropriate action for a parser given the non-terminal
+** look-ahead token iLookAhead.
+*/
+yy_find_reduce_action :: { Int32 => Int8 => Int32 };
+yy_find_reduce_action = {
+    stateno : Int32 =>     /* Current state number */
+    iLookAhead : Int8 =>    /* The look-ahead token */
+//#ifdef YYERRORSYMBOL
+//  if( stateno>YY_REDUCE_COUNT ){
+//    return yy_default[stateno];
+//  }
+//#else
+    //assert( stateno<=YY_REDUCE_COUNT );
+//#endif
+  //assert( iLookAhead!=YYNOCODE );
+  i = yy_reduce_ofst[stateno] +Int32 (zext_i8_to_i32 iLookAhead);
+//#ifdef YYERRORSYMBOL
+//  if( i<0 || i>=YY_ACTTAB_COUNT || yy_lookahead[i]!=iLookAhead ){
+//    return yy_default[stateno];
+//  }
+//#else
+//  assert( i>=0 && i<YY_ACTTAB_COUNT );
+//  assert( yy_lookahead[i]==iLookAhead );
+//#endif
+  yy_action[i]
+};
+
+/*
+** The following routine is called if the stack overflows.
+*/
+yyStackOverflow = { yypParser : YyParser =>
+   //ParseARG_FETCH
+   //ParseCTX_FETCH
+   while { (yytop yypParser) >SInt32 0 } { yy_pop_parser_stack yypParser };
+   /* Here code is inserted which will execute if the parser
+   ** stack every overflows */
+/******** Begin %stack_overflow code ******************************************/
+%%
+/******** End %stack_overflow code ********************************************/
+   //ParseARG_STORE /* Suppress warning about unused %extra_argument var */
+   //ParseCTX_STORE
+};
+
+bumpTopBy = { yypParser => n => r = yytopRef yypParser; (r^ +Int32 n) >^ r; () };
+growStackIfNeeded = { yypParser =>
+  if (yytop yypParser) >=SInt32 stackSize yypParser then
+    yyGrowStack yypParser;
+  end
+};
+
+/*
+** Perform a shift action.
+*/
+yy_shift = {
+      yypParser : YyParser => /* The parser to be shifted */
+      yyNewState : Int32 =>   /* The new state to shift in */
+      yyMajor : Int8 =>       /* The major token to shift in */
+      yyMinor : Token =>      /* The minor token to shift in */
+  yypParser `bumpTopBy` 1;
+  growStackIfNeeded yypParser;
+  newstate =
+      if yyNewState >SInt32 YY_MAX_SHIFT then
+        yyNewState +Int32 (YY_MIN_REDUCE -Int32 YY_MIN_SHIFTREDUCE);
+      else
+        yyNewState
+      end;
+  newstate >^ (yystackStateno yypParser)[yytop yypParser];
+  yyMajor  >^ (yystackMajor yypParser)[yytop yypParser];
+  (Yy0 yyMinor) >^ (yystackMinor yypParser)[yytop yypParser];
+};
+
+/* The following tables contain information about every rule that
+** is used during the reduce.
+*/
+/* yyRuleInfoNRhs: Negative of the number of RHS symbols in the rule */
+/* yyRuleInfoLhs:  Symbol on the left-hand side of the rule */
+%%
+
+setMinor = { val => yypParser => offset =>
+  val >^ (yystackMinor yypParser)[yytop yypParser +Int32 offset];
+};
+getMinor = { yypParser => offset =>
+  (yystackMinor yypParser)[yytop yypParser +Int32 offset]
+};
+
+/*
+** Perform a reduce action and the shift that must immediately
+** follow the reduce.
+**
+** The yyLookahead and yyLookaheadToken parameters provide reduce actions
+** access to the lookahead token (if any).  The yyLookahead will be YYNOCODE
+** if the lookahead token has already been consumed.  As this procedure is
+** only called from one place, optimizing compilers will in-line it, which
+** means that the extra parameters have no performance impact.
+*/
+/*YYACTIONTYPE*/ yy_reduce = {
+  yypParser : YyParser =>      /* The parser */
+  yyruleno : Int32 =>          /* Number of the rule by which to reduce */
+  yyLookahead : Int8 =>       /* Lookahead token, or YYNOCODE if none */
+  yyLookaheadToken : Token =>  /* Value of the lookahead token */
+  //ParseCTX_PDECL                   /* %extra_context */
+
+  //int yygoto;                     /* The next state */
+  //YYACTIONTYPE yyact;             /* The next action */
+  //int yysize;                     /* Amount to pop the stack */
+  //ParseARG_FETCH
+  //(void)yyLookahead;
+  //(void)yyLookaheadToken;
+
+  /* Check that the stack is large enough to grow by a single entry
+  ** if the RHS of the rule is empty.  This ensures that there is room
+  ** enough on the stack to push the LHS value */
+  if yyRuleInfoNRhs[yyruleno] ==Int32 0 then
+    if (yytop yypParser) >=SInt32 ((stackSize yypParser) -Int32 1) then
+      yyGrowStack yypParser
+    end;
+  end;
+
+  //yymspStateno = &yypParser->yystackStateno[(yytop yypParser)];
+  //yymspMajor = &yypParser->yystackMajor[(yytop yypParser)];
+  //yymspMinor = &yypParser->yystackMinor[(yytop yypParser)];
+
+  yylhsminor = prim ref (Yy0 MkToken);
+  case yyruleno
+  /* Beginning here are the reduction cases.  A typical example
+  ** follows:
+  **   case 0:
+  **  #line <lineno> <grammarfile>
+  **     { ... }           // User supplied code
+  **  #line <lineno> <thisfile>
+  **     break;
+  */
+/********** Begin reduce actions **********************************************/
+%%
+/********** End reduce actions ************************************************/
+  end;
+  //assert( yyruleno<sizeof(yyRuleInfo)/sizeof(yyRuleInfo[0]) );
+  yygoto = yyRuleInfoLhs[yyruleno];
+  yysize = yyRuleInfoNRhs[yyruleno];
+  yyact = yy_find_reduce_action (yystackStateno yypParser)[yysize +Int32 (yytop yypParser)]
+                                 yygoto;
+
+  /* There are no SHIFTREDUCE actions on nonterminals because the table
+  ** generator has simplified them to pure REDUCE actions. */
+  //assert( !(yyact>YY_MAX_SHIFT && yyact<=YY_MAX_SHIFTREDUCE) );
+
+  /* It is not possible for a REDUCE to be followed by an error */
+  //assert( yyact!=YY_ERROR_ACTION );
+
+  yypParser `bumpTopBy` (yysize +Int32 1);
+  yyact  >^ (yystackStateno yypParser)[yytop yypParser];
+  yygoto >^ (  yystackMajor yypParser)[yytop yypParser];
+  yyact
+};
+
+/*
+** The following code executes when the parse fails
+*/
+yy_parse_failed = { yypParser : YyParser =>           /* The parser */
+  //ParseARG_FETCH
+  //ParseCTX_FETCH
+  while { (yytop yypParser) >SInt32 0 } { yy_pop_parser_stack yypParser };
+  /* Here code is inserted which will be executed whenever the
+  ** parser fails */
+/************ Begin %parse_failure code ***************************************/
+%%
+/************ End %parse_failure code *****************************************/
+  //ParseARG_STORE /* Suppress warning about unused %extra_argument variable */
+  //ParseCTX_STORE
+};
+
+/*
+** The following code executes when a syntax error first occurs.
+*/
+yy_syntax_error = {
+      yypParser : YyParser =>           /* The parser */
+      yymajor : Int8 =>                   /* The major type of the error token */
+      yyminor : Token => /* The minor type of the error token */
+  //ParseARG_FETCH
+  //ParseCTX_FETCH
+/************ Begin %syntax_error code ****************************************/
+%%
+/************ End %syntax_error code ******************************************/
+  //ParseARG_STORE /* Suppress warning about unused %extra_argument variable */
+  //ParseCTX_STORE
+};
+
+/*
+** The following is executed when the parser accepts
+*/
+yy_accept = { yypParser : YyParser =>
+  //ParseARG_FETCH
+  //ParseCTX_FETCH
+
+  -1 >^ (yyerrcntRef yypParser);
+
+  //assert( yypParser->yytop==0);
+  /* Here code is inserted which will be executed whenever the
+  ** parser accepts */
+/*********** Begin %parse_accept code *****************************************/
+%%
+/*********** End %parse_accept code *******************************************/
+  //ParseARG_STORE /* Suppress warning about unused %extra_argument variable */
+  //ParseCTX_STORE
+};
+
+/* The main parser program.
+** The first argument is a pointer to a structure obtained from
+** "ParseAlloc" which describes the current state of the parser.
+** The second argument is the major token number.  The third is
+** the minor token.  The fourth optional argument is whatever the
+** user wants (and specified in the grammar) and is available for
+** use by the action routines.
+**
+** Inputs:
+** <ul>
+** <li> A pointer to the parser (an opaque structure.)
+** <li> The major token number.
+** <li> The minor token number.
+** <li> An option argument of a grammar-specified type.
+** </ul>
+**
+** Outputs:
+** None.
+*/
+Parse = {
+  yypParser : YyParser =>      /* The parser */
+  yymajor : Int8 =>           /* The major token code number */
+  yyminor : Token =>  /* The value for the token */
+  //ParseARG_PDECL               /* Optional %extra_argument parameter */
+
+  yyminorunion = prim ref (Yy0 yyminor);
+
+//#ifdef YYERRORSYMBOL
+//  int yyerrorhit = 0;   /* True if yymajor has invoked an error */
+//#endif
+  //ParseCTX_FETCH
+  //ParseARG_STORE
+
+//#if !defined(YYERRORSYMBOL)
+  yyendofinput = (yymajor ==Int8 0);
+//#endif
+
+  sn = (yystackStateno yypParser)[(yytop yypParser)];
+  yyact = prim ref sn;
+
+  REC loop = { skipCheck : Bool =>
+    if either skipCheck ((yytop yypParser) >SInt32 0)
+      then
+        act = yy_find_shift_action yymajor yyact^;
+        act >^ yyact;
+        case ()
+          of _ if yyact^ >=SInt32 YY_MIN_REDUCE ->
+            (yy_reduce yypParser
+                  (yyact^ -Int32 YY_MIN_REDUCE)
+                  yymajor
+                  yyminor
+                  /*ParseCTX_PARAM*/) >^ yyact;
+            loop False;
+          of _ if yyact^ <=SInt32 YY_MAX_SHIFTREDUCE ->
+            yy_shift yypParser yyact^ yymajor yyminor;
+            decrInt32 (yyerrcntRef yypParser);
+            ()
+          of _ if yyact^ ==Int32 YY_ACCEPT_ACTION ->
+            yypParser `bumpTopBy` -1;
+            yy_accept yypParser;
+            //return; (equivalent to break)
+            ()
+          of _ ->
+            //assert( yyact == YY_ERROR_ACTION );
+            (Yy0 yyminor) >^ yyminorunion;
+//#ifdef YYERRORSYMBOL
+//            int yymx;
+//#endif
+//#ifdef YYERRORSYMBOL
+//            /* A syntax error has occurred.
+//            ** The response to an error depends upon whether or not the
+//            ** grammar defines an error token "ERROR".  
+//            **
+//            ** This is what we do if the grammar does define ERROR:
+//            **
+//            **  * Call the %syntax_error function.
+//            **
+//            **  * Begin popping the stack until we enter a state where
+//            **    it is legal to shift the error symbol, then shift
+//            **    the error symbol.
+//            **
+//            **  * Set the error count to three.
+//            **
+//            **  * Begin accepting and shifting new tokens.  No new error
+//            **    processing will occur until three tokens have been
+//            **    shifted successfully.
+//            **
+//            */
+//            if( yypParser->yyerrcnt<0 ){
+//              yy_syntax_error(yypParser,yymajor,yyminor);
+//            }
+//            yymx = yypParser->yystackMajor[yypParser->yytop];
+//            if( yymx==YYERRORSYMBOL || yyerrorhit ){
+//              yymajor = YYNOCODE;
+//            }else{
+//              while( yypParser->yytop >= 0
+//                  && yymx != YYERRORSYMBOL
+//                  && (yyact = yy_find_reduce_action(
+//                              yypParser->yystackStateno[yypParser->yytop],
+//                              YYERRORSYMBOL)) >= YY_MIN_REDUCE
+//              ){
+//                yy_pop_parser_stack(yypParser);
+//              }
+//              if( yypParser->yytop < 0 || yymajor==0 ){
+//                yy_parse_failed(yypParser);
+//                yypParser->yyerrcnt = -1;
+//                yymajor = YYNOCODE;
+//              }else if( yymx!=YYERRORSYMBOL ){
+//                yy_shift(yypParser,yyact,YYERRORSYMBOL,yyminor);
+//              }
+//            }
+//            yypParser->yyerrcnt = 3;
+//            yyerrorhit = 1;
+//            if( yymajor==YYNOCODE ) break;
+//            yyact = yypParser->yystackStateno[yypParser->yytop];
+//#else  /* YYERRORSYMBOL is not defined */
+            /* This is what we do if the grammar does not define ERROR:
+            **
+            **  * Report an error message, and throw away the input token.
+            **
+            **  * If the input token is $, then fail the parse.
+            **
+            ** As before, subsequent error messages are suppressed until
+            ** three input tokens have been successfully shifted.
+            */
+            if (yyerrcnt yypParser) <=SInt32 0 then
+              yy_syntax_error yypParser yymajor yyminor;
+            end;
+            3 >^ yyerrcntRef yypParser;
+            if yyendofinput then
+              yy_parse_failed yypParser;
+              -1 >^ yyerrcntRef yypParser;
+            end;
+//#endif
+          end
+      else ()
+    end
+  };
+
+  loop True;
+};
+
+/*
+** Return the fallback token corresponding to canonical token iToken, or
+** 0 if iToken has no fallback.
+*/
+//ParseFallback = { iToken =>
+//  if iToken <SInt32 arraySize32 yyFallback
+//    then  yyFallback[iToken];
+//    else  0
+//  end
+//};

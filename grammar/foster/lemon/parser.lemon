@@ -1,0 +1,224 @@
+
+transunit ::= imports_star item_star FINI .
+
+imports ::= INCLUDE SEMI .
+
+imports_star ::= .
+imports_star ::= imports_star imports .
+
+item_star ::= .
+item_star ::= item_star item .
+
+item ::= x DCOLON t      SEMI .
+item ::= x EQUAL  phrase SEMI .
+item ::= TYPE CASE tyformal  parens_tyformal_star   datactor_star SEMI .
+item ::= EFFECT    tyformal  parens_tyformal_star effectctor_star SEMI .
+item ::= FOREIGN IMPORT x asid_opt DCOLON t SEMI .
+item ::= FOREIGN TYPE  tyformal SEMI .
+
+parens_tyformal_star ::= parens_tyformal .
+parens_tyformal_star ::= parens_tyformal_star parens_tyformal .
+
+parens_tyformal ::= LPAREN tyformal RPAREN .
+
+datactor_star ::= datactor .
+datactor_star ::= datactor_star datactor .
+
+datactor ::= OF dctor tatom_star .
+
+effectctor_star ::= effectctor .
+effectctor_star ::= effectctor_star effectctor .
+
+effectctor ::= OF dctor tatom_star .
+effectctor ::= OF dctor tatom_star DARROW t .
+
+tatom_star ::= .
+tatom_star ::= tatom_star tatom .
+
+asid ::= AS id .
+asid_opt ::= .
+asid_opt ::= asid .
+
+dctor ::= DOLLAR ctor  .
+
+ctor ::= x .
+
+x ::= id .
+a ::= id .
+
+pid ::= id .
+
+xid ::= id .
+xid ::= OPRNAME .
+
+id ::= SMALLIDENT .
+id ::= UPPERIDENT .
+id ::= UNDERIDENT .
+
+stmts ::= stmt_start stmt_cont_star .
+stmt_start ::= REC pbinding .
+stmt_start ::= ext_pbinding .
+stmt_cont ::= SEMI stmt_start_opt .
+
+stmt_start_opt ::= .
+stmt_start_opt ::= stmt_start .
+
+stmt_cont_star ::= stmt_cont .
+stmt_cont_star ::= stmt_cont_star stmt_cont .
+
+ext_pbinding ::= e              .
+ext_pbinding ::= e      EQUAL e .
+ext_pbinding ::= patlhs EQUAL e .
+
+pbinding ::= patbind EQUAL e .
+
+patbind ::= xid .
+patbind ::= patlhs .
+
+patlhs ::= UNDERSCORE .
+patlhs ::= LET LPAREN comma_separated_list_p RPAREN .
+
+comma_separated_list_p ::= p .
+comma_separated_list_p ::= comma_separated_list_p COMMA p .
+
+e ::=        phrase binops_opt .
+e ::= SYMBOL phrase binops_opt .
+
+binops ::= binop_phrase_plus .
+
+binop ::= SYMBOL .
+binop ::= BACKTICK x BACKTICK .
+
+binops_opt ::= .
+binops_opt ::= binops .
+
+binop_phrase ::= binop phrase .
+
+binop_phrase_plus ::= binop_phrase .
+binop_phrase_plus ::= binop_phrase_plus binop_phrase .
+
+phrase ::= lvalue_plus .
+phrase ::= PRIM nopr lvalue_star .
+
+lvalue_plus ::= lvalue .
+lvalue_plus ::= lvalue_plus lvalue .
+
+lvalue_star ::= .
+lvalue_star ::= lvalue_star lvalue .
+
+nopr ::= x .
+nopr ::= SYMBOL .
+
+lvalue ::= atom suffix_star .
+
+suffix ::= CARET .
+suffix ::= LBRACK e RBRACK .
+suffix ::= BANG .
+
+suffix_star ::= .
+suffix_star ::= suffix_star suffix .
+
+atom ::= x .
+atom ::= lit .
+atom ::= ifexpr .
+atom ::= CASE e of_pmatch_plus END .
+atom ::= LPAREN RPAREN .
+atom ::= LPAREN COMPILES stmts RPAREN .
+atom ::= tuple .
+atom ::= handler .
+atom ::= valabs .
+
+valabs ::= LCURLY foralls formals       RCURLY .
+valabs ::= LCURLY foralls formals stmts RCURLY .
+valabs ::= LCURLY         formals       RCURLY .
+valabs ::= LCURLY         formals stmts RCURLY .
+
+formals ::= .
+formals ::= formals formal DARROW .
+
+formal ::= pid .
+formal ::= pid COLON t .
+
+foralls ::= FORALL tyformal_star COMMA .
+
+tyformal_star ::= .
+tyformal_star ::= tyformal_star tyformal .
+
+handler ::= HANDLE e effmatch_star      END .
+handler ::= HANDLE e effmatch_star AS e END .
+
+effmatch_star ::= .
+effmatch_star ::= effmatch_star effmatch .
+
+effmatch ::= OF patside SARROW stmts .
+
+tuple ::= LPAREN stmts AS t RPAREN .
+tuple ::= LPAREN stmts comma_e_star RPAREN hash_opt .
+
+comma_e ::= COMMA e .
+comma_e_star ::= .
+comma_e_star ::= comma_e_star comma_e .
+
+hash_opt ::= .
+hash_opt ::= HASH .
+
+of_pmatch_plus ::= OF pmatch .
+of_pmatch_plus ::= of_pmatch_plus OF pmatch .
+
+pmatch ::= p      SARROW stmts .
+pmatch ::= p IF e SARROW stmts .
+
+p ::= patside orpatside_plus .
+p ::= patside .
+
+orpatside_plus ::= orpatside .
+orpatside_plus ::= orpatside_plus orpatside .
+
+orpatside ::= OR patside .
+
+patside ::= dctor patom_star .
+patside ::= patom .
+
+patom_star ::= .
+patom_star ::= patom_star patom .
+
+patom ::= x .
+patom ::= UNDERSCORE .
+patom ::= lit .
+patom ::= LPAREN RPAREN .
+patom ::= LPAREN p_sepby_COMMA RPAREN .
+
+p_sepby_COMMA ::= p .
+p_sepby_COMMA ::= p_sepby_COMMA COMMA p .
+
+lit ::= NUM .
+lit ::= STR .
+
+ifexpr ::= IF stmts THEN stmts ELSE stmts END .
+ifexpr ::= IF stmts THEN stmts            END .
+
+tyformal ::= x .
+tyformal ::= x COLON kind .
+
+kind ::= x .
+
+t ::= PERCENT x COLON tp COLON e .
+t ::= tp .
+
+tp ::= tatom tatom_plus .
+tp ::= tatom .
+
+tatom_plus ::= tatom .
+tatom_plus ::= tatom_plus tatom .
+
+tatom ::= a .
+tatom ::= LPAREN RPAREN .
+tatom ::= LPAREN t_sepby_COMMA RPAREN hash_opt .
+tatom ::= LCURLY t_sepby_DARROW RCURLY .
+
+t_sepby_DARROW ::= t .
+t_sepby_DARROW ::= t_sepby_DARROW DARROW t .
+
+t_sepby_COMMA ::= t .
+t_sepby_COMMA ::= t_sepby_COMMA COMMA t .
+

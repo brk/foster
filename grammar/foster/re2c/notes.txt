@@ -1,0 +1,36 @@
+* C2F produces mostly-correct source; there are a still a few places
+  that need tweaking, such as adding ptrGet calls.
+
+* Performance of the directly translated code is not great, in part
+  due to the overhead of the Ptr wrappers, in part due to dynamically
+  allocated ref cells for function-local mutable variables.
+
+* A few simple but awkward-to-automate changes boosts performance
+  from ~50x slower than C to ~4x slower:
+
+    * Making sure Scanner.buf's type is (Array Int8)
+      instead of (Field (Ptr (Ptr Int8))).
+
+    * Altering the scan_token call chain to pass in its "local"
+      mutable variables from the caller.
+
+    * Changing those variables to be simple Ref cells instead of Ptrs.
+
+    * Removing the Scanner_nil data constructor and associated code.
+
+
+* Other performance notes:
+
+  * GC root optimizations matter significantly:
+
+    * Failing to optimize roots results in 5x overhead vs 4x.
+
+    * By assuming non-moving roots, therefore eliding reloads,
+      we improve performance from 4x to 3x overhead. (--me-arg=--non-moving-gc)
+
+  * Disabling array bounds checking:
+        By itself:                   92M insns, 39M cycles -> ~3.5x overhead
+        Along with non-moving roots: 51M insns, 26M cycles: 2.1x
+        (foster baseline:           115M insns, 43M cycles)
+        (C      baseline:            29M insns, 12M cycles)
+

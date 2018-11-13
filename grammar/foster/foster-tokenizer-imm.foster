@@ -1,0 +1,3324 @@
+// running c2f...
+// /home/benkarel/foster/_obj/c2f tokendumper.combined.c  --  -I /home/benkarel/llvm/6.0.0/lib/clang/6.0.0/include  -I /usr/lib/gcc/x86_64-linux-gnu/7.2.0/include  -I /usr/lib/gcc/x86_64-linux-gnu/7.2.0/../../../x86_64-linux-gnu/include  -I /lib/x86_64-linux-gnu/include  -I /lib/../lib64/include  -I /usr/lib/x86_64-linux-gnu/include  -I /usr/lib/gcc/x86_64-linux-gnu/7.2.0/../../../include  -I /home/benkarel/llvm/6.0.0/bin/../lib/include  -I /lib/include  -I /usr/lib/include   > c2f.raw.foster
+// running foster-fmt; c2f c2f.raw.foster status was 0
+// /home/benkarel/foster/scripts/../scripts/fosterc.py --me-arg=--fmt --bindir /home/benkarel/foster/_obj --tmpdir fosterc-standalone-tmp c2f.raw.foster
+snafuinclude C2F "c2f";
+foreign import CFile_nil :: { CFile };
+
+// Exported API:
+// make-tokenizer :: { Array Int8 => { Token } };
+
+refGet = { r => r^ };
+refSet = { r => v => v >^ r;  };
+
+type case ImmToken : Boxed 
+  of $ImmToken_nil
+  of $ImmToken Int32 Int32 Int32 Int32 Int32
+;
+
+ImmToken_tok = { t : ImmToken =>
+  case t
+    of $ImmToken_nil -> 0
+    of $ImmToken tok _ _ _ _ -> tok
+  end
+};
+
+type case Token : Boxed 
+  of $Token
+              (Field Int32)
+              (Field Int32)
+              (Field Int32)
+              (Field Int32)
+              (Field Int32)
+;
+Token_tok = { sv : Token =>
+    case sv
+      of $Token tok _ _ _ _ -> getField tok
+    end
+};
+Token_tok_addr = { sv : Token =>
+    case sv
+      of $Token tok _ _ _ _ -> PtrRef (getFieldRef tok)
+    end
+};
+Token_line = { sv : Token =>
+    case sv
+      of $Token _ line _ _ _ -> getField line
+    end
+};
+Token_line_addr = { sv : Token =>
+    case sv
+      of $Token _ line _ _ _ -> PtrRef (getFieldRef line)
+    end
+};
+Token_col = { sv : Token =>
+    case sv
+      of $Token _ _ col _ _ -> getField col
+    end
+};
+Token_col_addr = { sv : Token =>
+    case sv
+      of $Token _ _ col _ _ -> PtrRef (getFieldRef col)
+    end
+};
+Token_endline = { sv : Token =>
+    case sv
+      of $Token _ _ _ endline _ -> getField endline
+    end
+};
+Token_endline_addr = { sv : Token =>
+    case sv
+      of $Token _ _ _ endline _ -> PtrRef (getFieldRef endline)
+    end
+};
+Token_endcol = { sv : Token =>
+    case sv
+      of $Token _ _ _ _ endcol -> getField endcol
+    end
+};
+Token_endcol_addr = { sv : Token =>
+    case sv
+      of $Token _ _ _ _ endcol -> PtrRef (getFieldRef endcol)
+    end
+};
+set_Token_tok = { sv : Token =>
+                  v : Int32 =>
+    case sv
+      of $Token tok _ _ _ _ -> setField tok v
+    end
+};
+set_Token_line = { sv : Token =>
+                   v : Int32 =>
+    case sv
+      of $Token _ line _ _ _ -> setField line v
+    end
+};
+set_Token_col = { sv : Token =>
+                  v : Int32 =>
+    case sv
+      of $Token _ _ col _ _ -> setField col v
+    end
+};
+set_Token_endline = { sv : Token =>
+                      v : Int32 =>
+    case sv
+      of $Token _ _ _ endline _ -> setField endline v
+    end
+};
+set_Token_endcol = { sv : Token =>
+                     v : Int32 =>
+    case sv
+      of $Token _ _ _ _ endcol -> setField endcol v
+    end
+};
+type case Scanner : Boxed 
+  of $Scanner 
+                (Array Int8)
+                (Field Int32)
+                (Field Int32)
+                (Field Int32)
+                (Field Int32)
+                (Field Int32)
+                (Field Int32)
+                (Field Int32)
+                (Field Int32)
+;
+
+Scanner_buf = { sv : Scanner =>
+    case sv
+      of $Scanner buf _ _ _ _ _ _ _ _ -> buf
+    end
+};
+Scanner_num_errors = { sv : Scanner =>
+    case sv
+      of $Scanner _ num_errors _ _ _ _ _ _ _ -> getField num_errors
+    end
+};
+Scanner_num_errors_addr = { sv : Scanner =>
+    case sv
+      of $Scanner _ num_errors _ _ _ _ _ _ _ -> PtrRef
+                                                    (getFieldRef num_errors)
+    end
+};
+Scanner_ptr = { sv : Scanner =>
+    case sv
+      of $Scanner _ _ ptr _ _ _ _ _ _ -> getField ptr
+    end
+};
+Scanner_ptr_addr = { sv : Scanner =>
+    case sv
+      of $Scanner _ _ ptr _ _ _ _ _ _ -> PtrRef (getFieldRef ptr)
+    end
+};
+Scanner_cur = { sv : Scanner =>
+    case sv
+      of $Scanner _ _ _ cur _ _ _ _ _ -> getField cur
+    end
+};
+Scanner_cur_addr = { sv : Scanner =>
+    case sv
+      of $Scanner _ _ _ cur _ _ _ _ _ -> PtrRef (getFieldRef cur)
+    end
+};
+Scanner_cur_incr = { sv : Scanner =>
+    case sv
+      of $Scanner _ _ _ cur _ _ _ _ _ -> r = (getFieldRef cur); v = (r^ +Int32 1); v >^ r; v
+    end
+};
+Scanner_line_incr = { sv : Scanner =>
+    case sv
+      of $Scanner _ _ _ _ _ _ line _ _ -> r = getFieldRef line; (r^ +Int32 1) >^ r;
+    end
+};
+Scanner_top = { sv : Scanner =>
+    case sv
+      of $Scanner _ _ _ _ top _ _ _ _ -> getField top
+    end
+};
+Scanner_top_addr = { sv : Scanner =>
+    case sv
+      of $Scanner _ _ _ _ top _ _ _ _ -> PtrRef (getFieldRef top)
+    end
+};
+Scanner_commentdepth = { sv : Scanner =>
+    case sv
+      of $Scanner _ _ _ _ _ commentdepth _ _ _ -> getField
+                                                      commentdepth
+    end
+};
+Scanner_commentdepth_addr = { sv : Scanner =>
+    case sv
+      of $Scanner _ _ _ _ _ commentdepth _ _ _ -> PtrRef
+                                                      (getFieldRef commentdepth)
+    end
+};
+Scanner_line = { sv : Scanner =>
+    case sv
+      of $Scanner _ _ _ _ _ _ line _ _ -> getField line
+    end
+};
+Scanner_line_addr = { sv : Scanner =>
+    case sv
+      of $Scanner _ _ _ _ _ _ line _ _ -> PtrRef (getFieldRef line)
+    end
+};
+Scanner_linepos = { sv : Scanner =>
+    case sv
+      of $Scanner _ _ _ _ _ _ _ linepos _ -> getField linepos
+    end
+};
+Scanner_linepos_addr = { sv : Scanner =>
+    case sv
+      of $Scanner _ _ _ _ _ _ _ linepos _ -> PtrRef
+                                                 (getFieldRef linepos)
+    end
+};
+Scanner_linepos_prev = { sv : Scanner =>
+    case sv
+      of $Scanner _ _ _ _ _ _ _ _ linepos_prev -> getField
+                                                      linepos_prev
+    end
+};
+Scanner_linepos_prev_addr = { sv : Scanner =>
+    case sv
+      of $Scanner _ _ _ _ _ _ _ _ linepos_prev -> PtrRef
+                                                      (getFieldRef linepos_prev)
+    end
+};
+set_Scanner_num_errors = { sv : Scanner =>
+                           v : Int32 =>
+    case sv
+      of $Scanner _ num_errors _ _ _ _ _ _ _ -> setField num_errors v
+    end
+};
+set_Scanner_ptr = { sv : Scanner =>
+                    v : Int32 =>
+    case sv
+      of $Scanner _ _ ptr _ _ _ _ _ _ -> setField ptr v
+    end
+};
+set_Scanner_cur = { sv : Scanner =>
+                    v : Int32 =>
+    case sv
+      of $Scanner _ _ _ cur _ _ _ _ _ -> setField cur v
+    end
+};
+set_Scanner_top = { sv : Scanner =>
+                    v : Int32 =>
+    case sv
+      of $Scanner _ _ _ _ top _ _ _ _ -> setField top v
+    end
+};
+set_Scanner_commentdepth = { sv : Scanner =>
+                             v : Int32 =>
+    case sv
+      of $Scanner _ _ _ _ _ commentdepth _ _ _ -> setField
+                                                      commentdepth
+                                                      v
+    end
+};
+set_Scanner_line = { sv : Scanner =>
+                     v : Int32 =>
+    case sv
+      of $Scanner _ _ _ _ _ _ line _ _ -> setField line v
+    end
+};
+set_Scanner_linepos = { sv : Scanner =>
+                        v : Int32 =>
+    case sv
+      of $Scanner _ _ _ _ _ _ _ linepos _ -> setField linepos v
+    end
+};
+set_Scanner_linepos_prev = { sv : Scanner =>
+                             v : Int32 =>
+    case sv
+      of $Scanner _ _ _ _ _ _ _ _ linepos_prev -> setField
+                                                      linepos_prev
+                                                      v
+    end
+};
+makeToken = { t : Token =>
+              tok : Int32 =>
+              scanner : Scanner =>
+    set_Token_tok t tok; 
+    set_Token_line t (Scanner_line scanner); 
+    set_Token_col
+        t
+        ((Scanner_top scanner) -Int32 (Scanner_linepos scanner)); 
+    if (Token_col t) <SInt32 0
+      then set_Token_col t 0;
+           ()
+      else ()
+    end
+};
+
+saw_newline_at = { s : Scanner =>
+                   pos : Int32 =>
+    Scanner_line_incr s;
+    set_Scanner_linepos_prev s (Scanner_linepos s); 
+    set_Scanner_linepos s pos
+};
+
+report_lexical_error = { s : Scanner =>
+                         t : Token =>
+                         msg : (Ptr Int8) =>
+                         buff_end : Int32 =>
+    offset = (Scanner_cur s) -Int32 (Scanner_linepos s);
+    printStrBare (strLit b"While \x00"); 
+    
+    (printStrBare msg);
+        (printStrBare (strLit b", unexpected character on line \x00")); 
+    
+    print_i32_bare (Scanner_line s); 
+    
+    printStrBare (strLit b":\n\x00"); 
+    
+    line_length = PtrRef (prim ref offset);
+    while
+        {
+            andand
+                {
+                    andand
+                        { (ptrGet line_length) <SInt32 82 }
+                        {
+                            ((Scanner_linepos s) +Int32 (ptrGet line_length))
+                                <SInt32 buff_end
+                        }
+                }
+                {
+                    (sext_i8_to_i32
+                         (Scanner_buf s)[(Scanner_linepos s)
+                                             +Int32 (ptrGet line_length)])
+                        !=Int32 10
+                }
+        }
+        { ptrIncrInt32 line_length; () }; 
+    /*
+    c2f_fwrite
+        (ptrPlus (Scanner_buf s) (Scanner_linepos s))
+        1
+        (ptrGet line_length)
+        (c2f_stdout !); 
+    */
+    if (ptrGet line_length) ==Int32 81
+      then printStr (strLit b"...\n\x00"); 
+           
+           ()
+      else printStr (strLit b"\n\x00"); 
+           
+           ()
+    end; 
+    
+    i = PtrRef (prim ref 0);
+    while
+        { (ptrGet i) <SInt32 offset }
+        { printStr (strLit b" \x00"); ptrIncrInt32 i; () }; 
+    
+    printStr (strLit b"^\n\x00"); 
+    
+    ptrPostIncrInt32 (Scanner_num_errors_addr s)
+};
+
+scan_token_start = { s : Scanner =>
+                     t : Token =>
+                     buff_end : Int32 =>
+                     yych : (Ref Int8) =>
+                     yyaccept : Ref Int8 =>
+    sbuf = Scanner_buf s;
+    
+    REC forcecont_yy319 = {
+        sci = Scanner_cur_incr s;
+        b_1_1 = (v* = (sbuf)[sci];
+                refSet yych v*; 
+                
+                v*);
+        b_1_2 = yych^;
+        case b_1_2
+          of (48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  65 or  66 or  67 or  68 or  69 or  70 or  97 or  98 or  99 or  100 or  101 or  102) -> 
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          
+          forcecont_yy305 !
+          of _ -> 
+          
+          forcecont_yy298 !
+        end
+        
+        
+    };
+    REC forcecont_yy317 = {
+        sci = Scanner_cur_incr s;
+        b_25_1 = (v* = (sbuf)[sci];
+                 refSet yych v*;
+                 v*);
+        b_25_2 = yych^;
+        case b_25_2
+          of (32 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy317 !
+          of 125 -> forcecont_yy305 !
+          of _ -> forcecont_yy298 !
+        end
+    };
+    REC forcecont_yy315 = {
+        sci = Scanner_cur_incr s;
+        retstmt = ();
+        retstmt;
+        jump = ();
+        jump
+    };
+    REC forcecont_yy314 = {
+        sci = Scanner_cur_incr s;
+        b_95_1 = (v* = (sbuf)[sci];
+                 refSet yych v*;
+                 v*);
+        b_95_2 = yych^;
+        case b_95_2
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143) -> forcecont_yy311 !
+          of _ -> forcecont_yy298 !
+        end
+    };
+    REC forcecont_yy313 = {
+        sci = Scanner_cur_incr s;
+        b_113_1 = (v* = (sbuf)[sci];
+                  refSet yych v*;
+                  v*);
+        b_113_2 = yych^;
+        case b_113_2
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143 or  144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy311 !
+          of _ -> forcecont_yy298 !
+        end
+    };
+    REC forcecont_yy312 = {
+        sci = Scanner_cur_incr s;
+        b_179_1 = (v* = (sbuf)[sci];
+                  refSet yych v*;
+                  v*);
+        b_179_2 = yych^;
+        case b_179_2
+          of (144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy311 !
+          of _ -> forcecont_yy298 !
+        end
+    };
+    REC forcecont_yy311 = {
+        sci = Scanner_cur_incr s;
+        b_229_1 = (v* = (sbuf)[sci];
+                  refSet yych v*;
+                  v*);
+        b_229_2 = yych^;
+        case b_229_2
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143 or  144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy309 !
+          of _ -> forcecont_yy298 !
+        end
+    };
+    REC forcecont_yy310 = {
+        sci = Scanner_cur_incr s;
+        b_295_1 = (v* = (sbuf)[sci];
+                  refSet yych v*;
+                  v*);
+        b_295_2 = yych^;
+        case b_295_2
+          of (160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy309 !
+          of _ -> forcecont_yy298 !
+        end
+    };
+    REC forcecont_yy309 = {
+        sci = Scanner_cur_incr s;
+        b_329_1 = (v* = (sbuf)[sci];
+                  refSet yych v*;
+                  v*);
+        b_329_2 = yych^;
+        case b_329_2
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143 or  144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy305 !
+          of _ -> forcecont_yy298 !
+        end
+    };
+    REC forcecont_yy308 = {
+        sci = Scanner_cur_incr s;
+        b_395_1 = (v* = (sbuf)[sci];
+                  refSet yych v*;
+                  v*);
+        b_395_2 = yych^;
+        case b_395_2
+          of (48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  65 or  66 or  67 or  68 or  69 or  70 or  97 or  98 or  99 or  100 or  101 or  102) -> forcecont_yy319 !
+          of _ -> forcecont_yy298 !
+        end
+    };
+    REC forcecont_yy307 = {
+        sci = Scanner_cur_incr s;
+        b_419_1 = (v* = (sbuf)[sci];
+                  refSet yych v*;
+                  v*);
+        b_419_2 = yych^;
+        case b_419_2
+          of 123 -> forcecont_yy317 !
+          of _ -> forcecont_yy298 !
+        end
+    };
+    REC forcecont_yy305 = {
+        sci = Scanner_cur_incr s;
+        forcecont_tridquo !
+    };
+    REC forcecont_yy304 = {
+        sci = Scanner_cur_incr s;
+        b_423_1 = (v* = (sbuf)[sci];
+                  refSet yych v*;
+                  v*);
+        b_423_2 = yych^;
+        case b_423_2
+          of 34 -> forcecont_yy315 !
+          of _ -> forcecont_yy298 !
+        end
+    };
+    REC forcecont_yy303 = {
+        sci = Scanner_cur_incr s;
+        b_426_1 = (v* = (sbuf)[sci];
+                  refSet yych v*;
+                  v*);
+        b_426_2 = yych^;
+        case b_426_2
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143) -> forcecont_yy300 !
+          of _ -> forcecont_yy298 !
+        end
+    };
+    REC forcecont_yy302 = {
+        sci = Scanner_cur_incr s;
+        b_444_1 = (v* = (sbuf)[sci];
+                  refSet yych v*;
+                  v*);
+        b_444_2 = yych^;
+        case b_444_2
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143 or  144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy300 !
+          of _ -> forcecont_yy298 !
+        end
+    };
+    REC forcecont_yy301 = {
+        sci = Scanner_cur_incr s;
+        b_510_1 = (v* = (sbuf)[sci];
+                  refSet yych v*;
+                  v*);
+        b_510_2 = yych^;
+        case b_510_2
+          of (144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy300 !
+          of _ -> forcecont_yy298 !
+        end
+    };
+    REC forcecont_yy300 = {
+        sci = Scanner_cur_incr s;
+        b_560_1 = (v* = (sbuf)[sci];
+                  refSet yych v*;
+                  v*);
+        b_560_2 = yych^;
+        case b_560_2
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143 or  144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy297 !
+          of _ -> forcecont_yy298 !
+        end
+    };
+    REC forcecont_yy299 = {
+        sci = Scanner_cur_incr s;
+        b_626_1 = (v* = (sbuf)[sci];
+                  refSet yych v*;
+                  v*);
+        b_626_2 = yych^;
+        case b_626_2
+          of (160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy297 !
+          of _ -> forcecont_yy298 !
+        end
+    };
+    REC forcecont_yy298 = {
+        b_660_0 = (v* = Scanner_ptr s;
+                  set_Scanner_cur s v*;
+                  v*);
+        b_660_1 = refGet yyaccept;
+        case b_660_1
+          of 0 -> forcecont_yy283 !
+          of 1 -> forcecont_yy287 !
+          of _ -> forcecont_yy289 !
+        end
+    };
+    REC forcecont_yy297 = {
+        sci = Scanner_cur_incr s;
+        b_664_1 = (v* = (sbuf)[sci];
+                  refSet yych v*;
+                  v*);
+        b_664_2 = yych^;
+        case b_664_2
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143 or  144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy281 !
+          of _ -> forcecont_yy298 !
+        end
+    };
+    REC forcecont_yy296 = {
+        b_730_0 = (v* = 2;
+                  refSet yyaccept v*;
+                  v*);
+        sci = Scanner_cur_incr s;
+        b_730_2 = set_Scanner_ptr s sci;
+        b_730_3 = (v* = (sbuf)[sci];
+                  refSet yych v*;
+                  v*);
+        b_730_4 = yych^;
+        case b_730_4
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143) -> forcecont_yy300 !
+          of _ -> forcecont_yy289 !
+        end
+    };
+    REC forcecont_yy295 = {
+        b_748_0 = (v* = 2;
+                  refSet yyaccept v*;
+                  v*);
+        sci = Scanner_cur_incr s;
+        b_748_2 = (v* = Scanner_cur s;
+                  set_Scanner_ptr s v*;
+                  v*);
+        b_748_3 = (v* = (sbuf)[sci];
+                  refSet yych v*;
+                  v*);
+        b_748_4 = yych^;
+        case b_748_4
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143 or  144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy300 !
+          of _ -> forcecont_yy289 !
+        end
+    };
+    REC forcecont_yy294 = {
+        b_814_0 = (v* = 2;
+                  refSet yyaccept v*;
+                  v*);
+        sci = Scanner_cur_incr s;
+        b_814_2 = (v* = Scanner_cur s;
+                  set_Scanner_ptr s v*;
+                  v*);
+        b_814_3 = (v* = (sbuf)[sci];
+                  refSet yych v*;
+                  v*);
+        b_814_4 = yych^;
+        case b_814_4
+          of (144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy300 !
+          of _ -> forcecont_yy289 !
+        end
+    };
+    REC forcecont_yy293 = {
+        b_864_0 = (v* = 2;
+                  refSet yyaccept v*;
+                  v*);
+        sci = Scanner_cur_incr s;
+        b_864_2 = (v* = Scanner_cur s;
+                  set_Scanner_ptr s v*;
+                  v*);
+        b_864_3 = (v* = (sbuf)[sci];
+                  refSet yych v*;
+                  v*);
+        b_864_4 = yych^;
+        case b_864_4
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143 or  144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy297 !
+          of _ -> forcecont_yy289 !
+        end
+    };
+    REC forcecont_yy292 = {
+        b_930_0 = (v* = 2;
+                  refSet yyaccept v*;
+                  v*);
+        sci = Scanner_cur_incr s;
+        b_930_2 = (v* = Scanner_cur s;
+                  set_Scanner_ptr s v*;
+                  v*);
+        b_930_3 = (v* = (sbuf)[sci];
+                  refSet yych v*;
+                  v*);
+        b_930_4 = yych^;
+        case b_930_4
+          of (160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy297 !
+          of _ -> forcecont_yy289 !
+        end
+    };
+    REC forcecont_yy291 = {
+        sci = Scanner_cur_incr s;
+        b_964_1 = (v* = (sbuf)[sci];
+                  refSet yych v*;
+                  v*);
+        b_964_2 = yych^;
+        case b_964_2
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143 or  144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy281 !
+          of _ -> forcecont_yy289 !
+        end
+    };
+    REC forcecont_yy290 = {
+        sci = Scanner_cur_incr s;
+        forcecont_yy289 !
+    };
+    REC forcecont_yy289 = {
+        b_1031_0 = report_lexical_error
+                       s
+                       t
+                       (strLit b"parsing triple quoted string\x00")
+                       buff_end;
+        forcecont_tridquo !
+    };
+    REC forcecont_yy288 = {
+        b_1032_0 = (v* = 2;
+                   refSet yyaccept v*;
+                   v*);
+        sci = Scanner_cur_incr s;
+        b_1032_2 = (v* = Scanner_cur s;
+                   set_Scanner_ptr s v*;
+                   v*);
+        b_1032_3 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_1032_3
+          of (0 or  1 or  2 or  3 or  4 or  5 or  6 or  7 or  8 or  9 or  10 or  11 or  12 or  13 or  14 or  15 or  16 or  17 or  18 or  19 or  20 or  21 or  22 or  23 or  24 or  25 or  26 or  27 or  28 or  29 or  30 or  31 or  32 or  33 or  34 or  35 or  36 or  37 or  38 or  39 or  40 or  41 or  42 or  43 or  44 or  45 or  46 or  47 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  58 or  59 or  60 or  61 or  62 or  63 or  64 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  91 or  92 or  93 or  94 or  95 or  96 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  118 or  119 or  121 or  122 or  123 or  124 or  125 or  126 or  127) -> forcecont_yy305 !
+          of 117 -> forcecont_yy307 !
+          of 120 -> forcecont_yy308 !
+          of (194 or  195 or  196 or  197 or  198 or  199 or  200 or  201 or  202 or  203 or  204 or  205 or  206 or  207 or  208 or  209 or  210 or  211 or  212 or  213 or  214 or  215 or  216 or  217 or  218 or  219 or  220 or  221 or  222 or  223) -> forcecont_yy309 !
+          of 224 -> forcecont_yy310 !
+          of (225 or  226 or  227 or  228 or  229 or  230 or  231 or  232 or  233 or  234 or  235 or  236 or  237 or  238 or  239) -> forcecont_yy311 !
+          of 240 -> forcecont_yy312 !
+          of (241 or  242 or  243) -> forcecont_yy313 !
+          of 244 -> forcecont_yy314 !
+          of _ -> forcecont_yy289 !
+        end
+    };
+    REC forcecont_yy286 = {
+        b_1214_0 = (v* = 1;
+                   refSet yyaccept v*;
+                   v*);
+        sci = Scanner_cur_incr s;
+        b_1214_2 = (v* = Scanner_cur s;
+                   set_Scanner_ptr s v*;
+                   v*);
+        b_1214_3 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_1214_3
+          of 34 -> forcecont_yy304 !
+          of _ -> forcecont_yy287 !
+        end
+    };
+    REC forcecont_yy284 = {
+        sci = Scanner_cur_incr s;
+        b_1217_1 = saw_newline_at s (Scanner_cur s);
+        forcecont_tridquo !
+    };
+    REC forcecont_yy281 = {
+        b_1219_0 = (v* = 0;
+                   refSet yyaccept v*;
+                   v*);
+        sci = Scanner_cur_incr s;
+        b_1219_2 = (v* = Scanner_cur s;
+                   set_Scanner_ptr s v*;
+                   v*);
+        b_1219_3 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_1219_3
+          of (0 or  1 or  2 or  3 or  4 or  5 or  6 or  7 or  8 or  9 or  11 or  12 or  13 or  14 or  15 or  16 or  17 or  18 or  19 or  20 or  21 or  22 or  23 or  24 or  25 or  26 or  27 or  28 or  29 or  30 or  31 or  32 or  33 or  35 or  36 or  37 or  38 or  39 or  40 or  41 or  42 or  43 or  44 or  45 or  46 or  47 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  58 or  59 or  60 or  61 or  62 or  63 or  64 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  91 or  93 or  94 or  95 or  96 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122 or  123 or  124 or  125 or  126 or  127) -> forcecont_yy281 !
+          of (194 or  195 or  196 or  197 or  198 or  199 or  200 or  201 or  202 or  203 or  204 or  205 or  206 or  207 or  208 or  209 or  210 or  211 or  212 or  213 or  214 or  215 or  216 or  217 or  218 or  219 or  220 or  221 or  222 or  223) -> forcecont_yy297 !
+          of 224 -> forcecont_yy299 !
+          of (225 or  226 or  227 or  228 or  229 or  230 or  231 or  232 or  233 or  234 or  235 or  236 or  237 or  238 or  239) -> forcecont_yy300 !
+          of 240 -> forcecont_yy301 !
+          of (241 or  242 or  243) -> forcecont_yy302 !
+          of 244 -> forcecont_yy303 !
+          of _ -> forcecont_yy283 !
+        end
+    };
+    REC forcecont_tridquo = {
+        refSet yyaccept 0;
+        b_1397_0 = (v* = (sbuf)[Scanner_cur s];
+                   refSet yych v*;
+                   v*);
+        case b_1397_0
+          of (0 or  1 or  2 or  3 or  4 or  5 or  6 or  7 or  8 or  9 or  11 or  12 or  13 or  14 or  15 or  16 or  17 or  18 or  19 or  20 or  21 or  22 or  23 or  24 or  25 or  26 or  27 or  28 or  29 or  30 or  31 or  32 or  33 or  35 or  36 or  37 or  38 or  39 or  40 or  41 or  42 or  43 or  44 or  45 or  46 or  47 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  58 or  59 or  60 or  61 or  62 or  63 or  64 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  91 or  93 or  94 or  95 or  96 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122 or  123 or  124 or  125 or  126 or  127) -> forcecont_yy281 !
+          of 10 -> forcecont_yy284 !
+          of 34 -> forcecont_yy286 !
+          of 92 -> forcecont_yy288 !
+          of (194 or  195 or  196 or  197 or  198 or  199 or  200 or  201 or  202 or  203 or  204 or  205 or  206 or  207 or  208 or  209 or  210 or  211 or  212 or  213 or  214 or  215 or  216 or  217 or  218 or  219 or  220 or  221 or  222 or  223) -> forcecont_yy291 !
+          of 224 -> forcecont_yy292 !
+          of (225 or  226 or  227 or  228 or  229 or  230 or  231 or  232 or  233 or  234 or  235 or  236 or  237 or  238 or  239) -> forcecont_yy293 !
+          of 240 -> forcecont_yy294 !
+          of (241 or  242 or  243) -> forcecont_yy295 !
+          of 244 -> forcecont_yy296 !
+          of _ -> forcecont_yy290 !
+        end
+    };
+    REC forcecont_yy278 = {
+        sci = Scanner_cur_incr s;
+        b_1578_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_1578_1
+          of (48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  65 or  66 or  67 or  68 or  69 or  70 or  97 or  98 or  99 or  100 or  101 or  102) -> forcecont_yy264 !
+          of _ -> forcecont_yy257 !
+        end
+    };
+    REC forcecont_yy276 = {
+        sci = Scanner_cur_incr s;
+        b_1602_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_1602_1
+          of (32 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy276 !
+          of 125 -> forcecont_yy264 !
+          of _ -> forcecont_yy257 !
+        end
+    };
+    REC forcecont_yy274 = {
+        sci = Scanner_cur_incr s;
+        retstmt = ();
+        retstmt;
+        jump = ();
+        jump
+    };
+    REC forcecont_yy273 = {
+        sci = Scanner_cur_incr s;
+        b_1672_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_1672_1
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143) -> forcecont_yy270 !
+          of _ -> forcecont_yy257 !
+        end
+    };
+    REC forcecont_yy272 = {
+        sci = Scanner_cur_incr s;
+        b_1690_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_1690_1
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143 or  144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy270 !
+          of _ -> forcecont_yy257 !
+        end
+    };
+    REC forcecont_yy271 = {
+        sci = Scanner_cur_incr s;
+        b_1756_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_1756_1
+          of (144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy270 !
+          of _ -> forcecont_yy257 !
+        end
+    };
+    REC forcecont_yy270 = {
+        sci = Scanner_cur_incr s;
+        b_1806_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_1806_1
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143 or  144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy268 !
+          of _ -> forcecont_yy257 !
+        end
+    };
+    REC forcecont_yy269 = {
+        sci = Scanner_cur_incr s;
+        b_1872_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_1872_1
+          of (160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy268 !
+          of _ -> forcecont_yy257 !
+        end
+    };
+    REC forcecont_yy268 = {
+        sci = Scanner_cur_incr s;
+        b_1906_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_1906_1
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143 or  144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy264 !
+          of _ -> forcecont_yy257 !
+        end
+    };
+    REC forcecont_yy267 = {
+        sci = Scanner_cur_incr s;
+        b_1972_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_1972_1
+          of (48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  65 or  66 or  67 or  68 or  69 or  70 or  97 or  98 or  99 or  100 or  101 or  102) -> forcecont_yy278 !
+          of _ -> forcecont_yy257 !
+        end
+    };
+    REC forcecont_yy266 = {
+        sci = Scanner_cur_incr s;
+        b_1996_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_1996_1
+          of 123 -> forcecont_yy276 !
+          of _ -> forcecont_yy257 !
+        end
+    };
+    REC forcecont_yy264 = {
+        sci = Scanner_cur_incr s;
+        forcecont_trisquo !
+    };
+    REC forcecont_yy263 = {
+        sci = Scanner_cur_incr s;
+        b_2000_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_2000_1
+          of 39 -> forcecont_yy274 !
+          of _ -> forcecont_yy257 !
+        end
+    };
+    REC forcecont_yy262 = {
+        sci = Scanner_cur_incr s;
+        b_2003_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_2003_1
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143) -> forcecont_yy259 !
+          of _ -> forcecont_yy257 !
+        end
+    };
+    REC forcecont_yy261 = {
+        sci = Scanner_cur_incr s;
+        b_2021_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_2021_1
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143 or  144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy259 !
+          of _ -> forcecont_yy257 !
+        end
+    };
+    REC forcecont_yy260 = {
+        sci = Scanner_cur_incr s;
+        b_2087_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_2087_1
+          of (144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy259 !
+          of _ -> forcecont_yy257 !
+        end
+    };
+    REC forcecont_yy259 = {
+        sci = Scanner_cur_incr s;
+        b_2137_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_2137_1
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143 or  144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy256 !
+          of _ -> forcecont_yy257 !
+        end
+    };
+    REC forcecont_yy258 = {
+        sci = Scanner_cur_incr s;
+        b_2203_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_2203_1
+          of (160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy256 !
+          of _ -> forcecont_yy257 !
+        end
+    };
+    REC forcecont_yy242 = { forcecont_trisquo ! };
+    REC forcecont_yy283 = { forcecont_tridquo ! };
+    REC forcecont_yy287 = { forcecont_tridquo ! };
+    REC forcecont_yy246 = { forcecont_trisquo ! };
+    REC forcecont_yy257 = {
+        b_2237_0 = (v* = Scanner_ptr s;
+                   set_Scanner_cur s v*;
+                   v*);
+        case refGet yyaccept
+          of 0 -> forcecont_yy242 !
+          of 1 -> forcecont_yy246 !
+          of _ -> forcecont_yy248 !
+        end
+    };
+    REC forcecont_yy256 = {
+        sci = Scanner_cur_incr s;
+        b_2241_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_2241_1
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143 or  144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy240 !
+          of _ -> forcecont_yy257 !
+        end
+    };
+    REC forcecont_yy255 = {
+        b_2307_0 = (v* = 2;
+                   refSet yyaccept v*;
+                   v*);
+        sci = Scanner_cur_incr s;
+        b_2307_2 = (v* = Scanner_cur s;
+                   set_Scanner_ptr s v*;
+                   v*);
+        b_2307_3 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_2307_3
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143) -> forcecont_yy259 !
+          of _ -> forcecont_yy248 !
+        end
+    };
+    REC forcecont_yy254 = {
+        b_2325_0 = (v* = 2;
+                   refSet yyaccept v*;
+                   v*);
+        sci = Scanner_cur_incr s;
+        b_2325_2 = (v* = Scanner_cur s;
+                   set_Scanner_ptr s v*;
+                   v*);
+        b_2325_3 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_2325_3
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143 or  144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy259 !
+          of _ -> forcecont_yy248 !
+        end
+    };
+    REC forcecont_yy253 = {
+        b_2391_0 = (v* = 2;
+                   refSet yyaccept v*;
+                   v*);
+        sci = Scanner_cur_incr s;
+        b_2391_2 = (v* = Scanner_cur s;
+                   set_Scanner_ptr s v*;
+                   v*);
+        b_2391_3 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_2391_3
+          of (144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy259 !
+          of _ -> forcecont_yy248 !
+        end
+    };
+    REC forcecont_yy252 = {
+        b_2441_0 = (v* = 2;
+                   refSet yyaccept v*;
+                   v*);
+        sci = Scanner_cur_incr s;
+        b_2441_2 = (v* = Scanner_cur s;
+                   set_Scanner_ptr s v*;
+                   v*);
+        b_2441_3 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_2441_3
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143 or  144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy256 !
+          of _ -> forcecont_yy248 !
+        end
+    };
+    REC forcecont_yy251 = {
+        b_2507_0 = (v* = 2;
+                   refSet yyaccept v*;
+                   v*);
+        sci = Scanner_cur_incr s;
+        b_2507_2 = (v* = Scanner_cur s;
+                   set_Scanner_ptr s v*;
+                   v*);
+        b_2507_3 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_2507_3
+          of (160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy256 !
+          of _ -> forcecont_yy248 !
+        end
+    };
+    REC forcecont_yy250 = {
+        sci = Scanner_cur_incr s;
+        b_2541_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_2541_1
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143 or  144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy240 !
+          of _ -> forcecont_yy248 !
+        end
+    };
+    REC forcecont_yy249 = {
+        sci = Scanner_cur_incr s;
+        forcecont_yy248 !
+    };
+    REC forcecont_yy248 = {
+        b_2608_0 = report_lexical_error
+                       s
+                       t
+                       (strLit b"parsing triple quoted string\x00")
+                       buff_end;
+        forcecont_trisquo !
+    };
+    REC forcecont_yy247 = {
+        b_2609_0 = (v* = 2;
+                   refSet yyaccept v*;
+                   v*);
+        sci = Scanner_cur_incr s;
+        b_2609_2 = (v* = Scanner_cur s;
+                   set_Scanner_ptr s v*;
+                   v*);
+        b_2609_3 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_2609_3
+          of (0 or  1 or  2 or  3 or  4 or  5 or  6 or  7 or  8 or  9 or  10 or  11 or  12 or  13 or  14 or  15 or  16 or  17 or  18 or  19 or  20 or  21 or  22 or  23 or  24 or  25 or  26 or  27 or  28 or  29 or  30 or  31 or  32 or  33 or  34 or  35 or  36 or  37 or  38 or  39 or  40 or  41 or  42 or  43 or  44 or  45 or  46 or  47 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  58 or  59 or  60 or  61 or  62 or  63 or  64 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  91 or  92 or  93 or  94 or  95 or  96 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  118 or  119 or  121 or  122 or  123 or  124 or  125 or  126 or  127) -> forcecont_yy264 !
+          of 117 -> forcecont_yy266 !
+          of 120 -> forcecont_yy267 !
+          of (194 or  195 or  196 or  197 or  198 or  199 or  200 or  201 or  202 or  203 or  204 or  205 or  206 or  207 or  208 or  209 or  210 or  211 or  212 or  213 or  214 or  215 or  216 or  217 or  218 or  219 or  220 or  221 or  222 or  223) -> forcecont_yy268 !
+          of 224 -> forcecont_yy269 !
+          of (225 or  226 or  227 or  228 or  229 or  230 or  231 or  232 or  233 or  234 or  235 or  236 or  237 or  238 or  239) -> forcecont_yy270 !
+          of 240 -> forcecont_yy271 !
+          of (241 or  242 or  243) -> forcecont_yy272 !
+          of 244 -> forcecont_yy273 !
+          of _ -> forcecont_yy248 !
+        end
+    };
+    REC forcecont_yy245 = {
+        b_2791_0 = (v* = 1;
+                   refSet yyaccept v*;
+                   v*);
+        sci = Scanner_cur_incr s;
+        b_2791_2 = (v* = Scanner_cur s;
+                   set_Scanner_ptr s v*;
+                   v*);
+        b_2791_3 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_2791_3
+          of 39 -> forcecont_yy263 !
+          of _ -> forcecont_yy246 !
+        end
+    };
+    REC forcecont_yy243 = {
+        sci = Scanner_cur_incr s;
+        b_2794_1 = saw_newline_at s (Scanner_cur s);
+        forcecont_trisquo !
+    };
+    REC forcecont_yy240 = {
+        b_2796_0 = (v* = 0;
+                   refSet yyaccept v*;
+                   v*);
+        sci = Scanner_cur_incr s;
+        b_2796_2 = (v* = Scanner_cur s;
+                   set_Scanner_ptr s v*;
+                   v*);
+        b_2796_3 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_2796_3
+          of (0 or  1 or  2 or  3 or  4 or  5 or  6 or  7 or  8 or  9 or  11 or  12 or  13 or  14 or  15 or  16 or  17 or  18 or  19 or  20 or  21 or  22 or  23 or  24 or  25 or  26 or  27 or  28 or  29 or  30 or  31 or  32 or  33 or  34 or  35 or  36 or  37 or  38 or  40 or  41 or  42 or  43 or  44 or  45 or  46 or  47 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  58 or  59 or  60 or  61 or  62 or  63 or  64 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  91 or  93 or  94 or  95 or  96 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122 or  123 or  124 or  125 or  126 or  127) -> forcecont_yy240 !
+          of (194 or  195 or  196 or  197 or  198 or  199 or  200 or  201 or  202 or  203 or  204 or  205 or  206 or  207 or  208 or  209 or  210 or  211 or  212 or  213 or  214 or  215 or  216 or  217 or  218 or  219 or  220 or  221 or  222 or  223) -> forcecont_yy256 !
+          of 224 -> forcecont_yy258 !
+          of (225 or  226 or  227 or  228 or  229 or  230 or  231 or  232 or  233 or  234 or  235 or  236 or  237 or  238 or  239) -> forcecont_yy259 !
+          of 240 -> forcecont_yy260 !
+          of (241 or  242 or  243) -> forcecont_yy261 !
+          of 244 -> forcecont_yy262 !
+          of _ -> forcecont_yy242 !
+        end
+    };
+    REC forcecont_trisquo = {
+        refSet yyaccept 0;
+        b_2974_0 = (v* = (sbuf)[Scanner_cur s];
+                   refSet yych v*;
+                   v*);
+        case b_2974_0
+          of (0 or  1 or  2 or  3 or  4 or  5 or  6 or  7 or  8 or  9 or  11 or  12 or  13 or  14 or  15 or  16 or  17 or  18 or  19 or  20 or  21 or  22 or  23 or  24 or  25 or  26 or  27 or  28 or  29 or  30 or  31 or  32 or  33 or  34 or  35 or  36 or  37 or  38 or  40 or  41 or  42 or  43 or  44 or  45 or  46 or  47 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  58 or  59 or  60 or  61 or  62 or  63 or  64 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  91 or  93 or  94 or  95 or  96 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122 or  123 or  124 or  125 or  126 or  127) -> forcecont_yy240 !
+          of 10 -> forcecont_yy243 !
+          of 39 -> forcecont_yy245 !
+          of 92 -> forcecont_yy247 !
+          of (194 or  195 or  196 or  197 or  198 or  199 or  200 or  201 or  202 or  203 or  204 or  205 or  206 or  207 or  208 or  209 or  210 or  211 or  212 or  213 or  214 or  215 or  216 or  217 or  218 or  219 or  220 or  221 or  222 or  223) -> forcecont_yy250 !
+          of 224 -> forcecont_yy251 !
+          of (225 or  226 or  227 or  228 or  229 or  230 or  231 or  232 or  233 or  234 or  235 or  236 or  237 or  238 or  239) -> forcecont_yy252 !
+          of 240 -> forcecont_yy253 !
+          of (241 or  242 or  243) -> forcecont_yy254 !
+          of 244 -> forcecont_yy255 !
+          of _ -> forcecont_yy249 !
+        end
+    };
+    REC forcecont_yy236 = {
+        sci = Scanner_cur_incr s;
+        b_3155_1 = ptrIncrInt32 (Scanner_commentdepth_addr s);
+        forcecont_comment !
+    };
+    REC forcecont_block_3157 = {
+        retstmt = ();
+        retstmt;
+        jump = ();
+        jump
+    };
+    REC forcecont_yy234 = {
+        sci = Scanner_cur_incr s;
+        b_3158_1 = if (ptrDecrInt32 (Scanner_commentdepth_addr s))
+                          ==Int32 0
+                     then 1
+                     else 0
+                   end;
+        if b_3158_1 !=Int32 0
+          then forcecont_block_3157 !
+          else forcecont_comment !
+        end
+    };
+    REC forcecont_yy233 = {
+        sci = Scanner_cur_incr s;
+        b_3159_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3159_1
+          of 42 -> forcecont_yy236 !
+          of _ -> forcecont_yy229 !
+        end
+    };
+    REC forcecont_yy232 = {
+        sci = Scanner_cur_incr s;
+        b_3162_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3162_1
+          of 47 -> forcecont_yy234 !
+          of _ -> forcecont_yy229 !
+        end
+    };
+    REC forcecont_yy230 = {
+        sci = Scanner_cur_incr s;
+        b_3165_1 = saw_newline_at s (Scanner_cur s);
+        forcecont_comment !
+    };
+    REC forcecont_yy229 = { forcecont_comment ! };
+    REC forcecont_yy228 = {
+        sci = Scanner_cur_incr s;
+        forcecont_comment !
+    };
+    REC forcecont_comment = {
+        b_3168_0 = (v* = (sbuf)[Scanner_cur s];
+                   refSet yych v*;
+                   v*);
+        case b_3168_0
+          of 10 -> forcecont_yy230 !
+          of 42 -> forcecont_yy232 !
+          of 47 -> forcecont_yy233 !
+          of _ -> forcecont_yy228 !
+        end
+    };
+    REC forcecont_yy224 = {
+        sci = Scanner_cur_incr s;
+        b_3173_1 = saw_newline_at s sci;
+        retstmt = ();
+        retstmt;
+        jump = ();
+        jump
+    };
+    REC forcecont_yy222 = {
+        sci = Scanner_cur_incr s;
+        forcecont_linecomment !
+    };
+    REC forcecont_linecomment = {
+        b_3175_0 = (v* = (sbuf)[Scanner_cur s];
+                   refSet yych v*;
+                   v*);
+        case b_3175_0
+          of 10 -> forcecont_yy224 !
+          of _ -> forcecont_yy222 !
+        end
+    };
+    REC forcecont_yy219 = {
+        b_3178_0 = makeToken t 33 s;
+        b_3178_0
+    };
+    REC forcecont_yy218 = {
+        sci = Scanner_cur_incr s;
+        b_3179_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3179_1
+          of (33 or  42 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy60 !
+          of _ -> forcecont_yy219 !
+        end
+    };
+    REC forcecont_yy217 = {
+        b_3252_0 = makeToken t 2 s;
+        b_3252_0
+    };
+    REC forcecont_yy216 = {
+        sci = Scanner_cur_incr s;
+        b_3253_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3253_1
+          of (33 or  42 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy60 !
+          of _ -> forcecont_yy217 !
+        end
+    };
+    REC forcecont_yy215 = {
+        b_3326_0 = makeToken t 9 s;
+        b_3326_0
+    };
+    REC forcecont_yy214 = {
+        sci = Scanner_cur_incr s;
+        b_3327_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3327_1
+          of (33 or  42 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy60 !
+          of _ -> forcecont_yy215 !
+        end
+    };
+    REC forcecont_yy213 = {
+        sci = Scanner_cur_incr s;
+        b_3400_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3400_1
+          of 115 -> forcecont_yy218 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy212 = {
+        sci = Scanner_cur_incr s;
+        b_3403_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3403_1
+          of 101 -> forcecont_yy216 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy211 = {
+        b_3406_0 = makeToken t 38 s;
+        b_3406_0
+    };
+    REC forcecont_yy210 = {
+        sci = Scanner_cur_incr s;
+        b_3407_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3407_1
+          of (33 or  42 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy60 !
+          of _ -> forcecont_yy211 !
+        end
+    };
+    REC forcecont_yy209 = {
+        sci = Scanner_cur_incr s;
+        b_3480_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3480_1
+          of 110 -> forcecont_yy214 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy208 = {
+        b_3483_0 = makeToken t 37 s;
+        b_3483_0
+    };
+    REC forcecont_yy207 = {
+        sci = Scanner_cur_incr s;
+        b_3484_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3484_1
+          of (33 or  42 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy60 !
+          of _ -> forcecont_yy208 !
+        end
+    };
+    REC forcecont_yy206 = {
+        b_3557_0 = makeToken t 8 s;
+        b_3557_0
+    };
+    REC forcecont_yy205 = {
+        sci = Scanner_cur_incr s;
+        b_3558_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3558_1
+          of (33 or  42 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy60 !
+          of _ -> forcecont_yy206 !
+        end
+    };
+    REC forcecont_yy204 = {
+        sci = Scanner_cur_incr s;
+        b_3631_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3631_1
+          of 101 -> forcecont_yy213 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy203 = {
+        sci = Scanner_cur_incr s;
+        b_3634_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3634_1
+          of 100 -> forcecont_yy212 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy202 = {
+        sci = Scanner_cur_incr s;
+        b_3637_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3637_1
+          of 101 -> forcecont_yy210 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy201 = {
+        sci = Scanner_cur_incr s;
+        b_3640_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3640_1
+          of 103 -> forcecont_yy209 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy200 = {
+        sci = Scanner_cur_incr s;
+        b_3643_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3643_1
+          of 108 -> forcecont_yy207 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy199 = {
+        sci = Scanner_cur_incr s;
+        b_3646_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3646_1
+          of 116 -> forcecont_yy205 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy198 = {
+        sci = Scanner_cur_incr s;
+        b_3649_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3649_1
+          of 108 -> forcecont_yy204 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy197 = {
+        b_3652_0 = makeToken t 6 s;
+        b_3652_0
+    };
+    REC forcecont_yy196 = {
+        sci = Scanner_cur_incr s;
+        b_3653_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3653_1
+          of (33 or  42 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy60 !
+          of _ -> forcecont_yy197 !
+        end
+    };
+    REC forcecont_yy195 = {
+        b_3726_0 = makeToken t 27 s;
+        b_3726_0
+    };
+    REC forcecont_yy194 = {
+        sci = Scanner_cur_incr s;
+        b_3727_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3727_1
+          of (33 or  42 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy60 !
+          of _ -> forcecont_yy195 !
+        end
+    };
+    REC forcecont_yy193 = {
+        sci = Scanner_cur_incr s;
+        b_3800_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3800_1
+          of 117 -> forcecont_yy203 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy192 = {
+        sci = Scanner_cur_incr s;
+        b_3803_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3803_1
+          of 108 -> forcecont_yy202 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy191 = {
+        sci = Scanner_cur_incr s;
+        b_3806_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3806_1
+          of 105 -> forcecont_yy201 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy190 = {
+        sci = Scanner_cur_incr s;
+        b_3809_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3809_1
+          of 108 -> forcecont_yy200 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy189 = {
+        b_3812_0 = makeToken t 46 s;
+        b_3812_0
+    };
+    REC forcecont_yy188 = {
+        sci = Scanner_cur_incr s;
+        b_3813_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3813_1
+          of (33 or  42 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy60 !
+          of _ -> forcecont_yy189 !
+        end
+    };
+    REC forcecont_yy187 = {
+        sci = Scanner_cur_incr s;
+        b_3886_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3886_1
+          of 99 -> forcecont_yy199 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy186 = {
+        sci = Scanner_cur_incr s;
+        b_3889_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3889_1
+          of 105 -> forcecont_yy198 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy185 = {
+        b_3892_0 = makeToken t 7 s;
+        b_3892_0
+    };
+    REC forcecont_yy184 = {
+        sci = Scanner_cur_incr s;
+        b_3893_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3893_1
+          of (33 or  42 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy60 !
+          of _ -> forcecont_yy185 !
+        end
+    };
+    REC forcecont_yy183 = {
+        sci = Scanner_cur_incr s;
+        b_3966_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_3966_1
+          of (48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57) -> forcecont_yy153 !
+          of (65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy181 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy181 = {
+        b_4030_0 = (v* = 1;
+                   refSet yyaccept v*;
+                   v*);
+        sci = Scanner_cur_incr s;
+        b_4030_2 = (v* = Scanner_cur s;
+                   set_Scanner_ptr s v*;
+                   v*);
+        b_4030_3 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4030_3
+          of (33 or  42 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy181 !
+          of 96 -> forcecont_yy183 !
+          of _ -> forcecont_yy32 !
+        end
+    };
+    REC forcecont_yy180 = {
+        sci = Scanner_cur_incr s;
+        b_4104_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4104_1
+          of (48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  65 or  66 or  67 or  68 or  69 or  70 or  97 or  98 or  99 or  100 or  101 or  102) -> forcecont_yy90 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy178 = {
+        sci = Scanner_cur_incr s;
+        b_4128_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4128_1
+          of (32 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy178 !
+          of 125 -> forcecont_yy90 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy177 = {
+        sci = Scanner_cur_incr s;
+        b_4197_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4197_1
+          of (48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  65 or  66 or  67 or  68 or  69 or  70 or  97 or  98 or  99 or  100 or  101 or  102) -> forcecont_yy78 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy175 = {
+        sci = Scanner_cur_incr s;
+        b_4221_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4221_1
+          of (32 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy175 !
+          of 125 -> forcecont_yy78 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy174 = {
+        sci = Scanner_cur_incr s;
+        b_4290_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4290_1
+          of 101 -> forcecont_yy196 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy173 = {
+        b_4293_0 = makeToken t 21 s;
+        b_4293_0
+    };
+    REC forcecont_yy172 = {
+        sci = Scanner_cur_incr s;
+        b_4294_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4294_1
+          of (33 or  42 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy60 !
+          of _ -> forcecont_yy173 !
+        end
+    };
+    REC forcecont_yy171 = {
+        sci = Scanner_cur_incr s;
+        b_4367_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4367_1
+          of 109 -> forcecont_yy194 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy170 = {
+        b_4370_0 = makeToken t 23 s;
+        b_4370_0
+    };
+    REC forcecont_yy169 = {
+        sci = Scanner_cur_incr s;
+        b_4371_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4371_1
+          of (33 or  42 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy60 !
+          of _ -> forcecont_yy170 !
+        end
+    };
+    REC forcecont_yy168 = {
+        sci = Scanner_cur_incr s;
+        b_4444_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4444_1
+          of 108 -> forcecont_yy193 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy167 = {
+        sci = Scanner_cur_incr s;
+        b_4447_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4447_1
+          of 100 -> forcecont_yy192 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy166 = {
+        sci = Scanner_cur_incr s;
+        b_4450_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4450_1
+          of 97 -> forcecont_yy190 !
+          of 101 -> forcecont_yy191 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy165 = {
+        b_4454_0 = makeToken t 32 s;
+        b_4454_0
+    };
+    REC forcecont_yy164 = {
+        sci = Scanner_cur_incr s;
+        b_4455_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4455_1
+          of (33 or  42 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy60 !
+          of _ -> forcecont_yy165 !
+        end
+    };
+    REC forcecont_yy163 = {
+        sci = Scanner_cur_incr s;
+        b_4528_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4528_1
+          of 101 -> forcecont_yy188 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy162 = {
+        sci = Scanner_cur_incr s;
+        b_4531_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4531_1
+          of 101 -> forcecont_yy187 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy161 = {
+        sci = Scanner_cur_incr s;
+        b_4534_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4534_1
+          of 112 -> forcecont_yy186 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy160 = {
+        sci = Scanner_cur_incr s;
+        b_4537_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4537_1
+          of 101 -> forcecont_yy184 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy159 = {
+        sci = Scanner_cur_incr s;
+        b_4540_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4540_1
+          of (48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57) -> forcecont_yy155 !
+          of (65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy157 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy157 = {
+        b_4604_0 = (v* = 1;
+                   refSet yyaccept v*;
+                   v*);
+        sci = Scanner_cur_incr s;
+        b_4604_2 = (v* = Scanner_cur s;
+                   set_Scanner_ptr s v*;
+                   v*);
+        b_4604_3 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4604_3
+          of (33 or  42 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy157 !
+          of 46 -> forcecont_yy153 !
+          of 96 -> forcecont_yy159 !
+          of _ -> forcecont_yy32 !
+        end
+    };
+    REC forcecont_yy156 = {
+        b_4679_0 = yych^;
+        case b_4679_0
+          of 46 -> forcecont_yy153 !
+          of (48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  65 or  66 or  67 or  68 or  69 or  70 or  97 or  98 or  99 or  100 or  101 or  102) -> forcecont_yy155 !
+          of 96 -> forcecont_yy159 !
+          of _ -> forcecont_yy32 !
+        end
+    };
+    REC forcecont_yy155 = {
+        b_4705_0 = (v* = 1;
+                   refSet yyaccept v*;
+                   v*);
+        sci = Scanner_cur_incr s;
+        b_4705_2 = (v* = Scanner_cur s;
+                   set_Scanner_ptr s v*;
+                   v*);
+        b_4705_3 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        forcecont_yy156 !
+    };
+    REC forcecont_yy153 = {
+        b_4706_0 = (v* = 1;
+                   refSet yyaccept v*;
+                   v*);
+        sci = Scanner_cur_incr s;
+        b_4706_2 = (v* = Scanner_cur s;
+                   set_Scanner_ptr s v*;
+                   v*);
+        b_4706_3 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4706_3
+          of (48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57) -> forcecont_yy153 !
+          of (65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy181 !
+          of 96 -> forcecont_yy183 !
+          of _ -> forcecont_yy32 !
+        end
+    };
+    REC forcecont_yy151 = {
+        sci = Scanner_cur_incr s;
+        b_4771_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4771_1
+          of (48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57) -> forcecont_yy151 !
+          of _ -> forcecont_yy32 !
+        end
+    };
+    REC forcecont_yy150 = {
+        sci = Scanner_cur_incr s;
+        b_4783_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4783_1
+          of (48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57) -> forcecont_yy151 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy149 = {
+        sci = Scanner_cur_incr s;
+        b_4795_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4795_1
+          of (48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57) -> forcecont_yy107 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy148 = {
+        sci = Scanner_cur_incr s;
+        b_4807_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4807_1
+          of (48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  65 or  66 or  67 or  68 or  69 or  70 or  97 or  98 or  99 or  100 or  101 or  102) -> forcecont_yy180 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy147 = {
+        sci = Scanner_cur_incr s;
+        b_4831_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4831_1
+          of 123 -> forcecont_yy178 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy145 = {
+        sci = Scanner_cur_incr s;
+        b_4834_1 = makeToken t 44 s;
+        forcecont_trisquo !
+    };
+    REC forcecont_yy144 = {
+        sci = Scanner_cur_incr s;
+        forcecont_yy93 !
+    };
+    REC forcecont_yy143 = {
+        sci = Scanner_cur_incr s;
+        b_4836_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4836_1
+          of (48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  65 or  66 or  67 or  68 or  69 or  70 or  97 or  98 or  99 or  100 or  101 or  102) -> forcecont_yy177 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy142 = {
+        sci = Scanner_cur_incr s;
+        b_4860_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4860_1
+          of 123 -> forcecont_yy175 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy140 = {
+        sci = Scanner_cur_incr s;
+        b_4863_1 = makeToken t 44 s;
+        forcecont_tridquo !
+    };
+    REC forcecont_yy139 = {
+        sci = Scanner_cur_incr s;
+        forcecont_yy82 !
+    };
+    REC forcecont_yy138 = {
+        sci = Scanner_cur_incr s;
+        b_4865_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4865_1
+          of 112 -> forcecont_yy174 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy137 = {
+        sci = Scanner_cur_incr s;
+        b_4868_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4868_1
+          of 99 -> forcecont_yy172 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy136 = {
+        sci = Scanner_cur_incr s;
+        b_4871_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4871_1
+          of 105 -> forcecont_yy171 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy135 = {
+        b_4874_0 = makeToken t 42 s;
+        b_4874_0
+    };
+    REC forcecont_yy134 = {
+        sci = Scanner_cur_incr s;
+        b_4875_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4875_1
+          of (33 or  42 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy60 !
+          of _ -> forcecont_yy135 !
+        end
+    };
+    REC forcecont_yy133 = {
+        b_4948_0 = makeToken t 13 s;
+        b_4948_0
+    };
+    REC forcecont_yy132 = {
+        sci = Scanner_cur_incr s;
+        b_4949_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_4949_1
+          of (33 or  42 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy60 !
+          of _ -> forcecont_yy133 !
+        end
+    };
+    REC forcecont_yy131 = {
+        sci = Scanner_cur_incr s;
+        b_5022_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5022_1
+          of 116 -> forcecont_yy169 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy130 = {
+        sci = Scanner_cur_incr s;
+        b_5025_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5025_1
+          of 99 -> forcecont_yy168 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy129 = {
+        b_5028_0 = makeToken t 41 s;
+        b_5028_0
+    };
+    REC forcecont_yy128 = {
+        sci = Scanner_cur_incr s;
+        b_5029_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5029_1
+          of (33 or  42 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy60 !
+          of _ -> forcecont_yy129 !
+        end
+    };
+    REC forcecont_yy127 = {
+        sci = Scanner_cur_incr s;
+        b_5102_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5102_1
+          of 110 -> forcecont_yy167 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy126 = {
+        sci = Scanner_cur_incr s;
+        b_5105_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5105_1
+          of 114 -> forcecont_yy166 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy125 = {
+        sci = Scanner_cur_incr s;
+        b_5108_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5108_1
+          of 100 -> forcecont_yy164 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy124 = {
+        sci = Scanner_cur_incr s;
+        b_5111_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5111_1
+          of 115 -> forcecont_yy163 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy123 = {
+        sci = Scanner_cur_incr s;
+        b_5114_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5114_1
+          of 102 -> forcecont_yy162 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy122 = {
+        sci = Scanner_cur_incr s;
+        b_5117_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5117_1
+          of 109 -> forcecont_yy161 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy121 = {
+        sci = Scanner_cur_incr s;
+        b_5120_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5120_1
+          of 115 -> forcecont_yy160 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy120 = {
+        sci = Scanner_cur_incr s;
+        b_5123_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5123_1
+          of 39 -> forcecont_yy92 !
+          of _ -> forcecont_yy91 !
+        end
+    };
+    REC forcecont_yy119 = {
+        sci = Scanner_cur_incr s;
+        b_5126_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5126_1
+          of 34 -> forcecont_yy81 !
+          of _ -> forcecont_yy79 !
+        end
+    };
+    REC forcecont_yy118 = {
+        b_5129_0 = makeToken t 15 s;
+        b_5129_0
+    };
+    REC forcecont_yy117 = {
+        sci = Scanner_cur_incr s;
+        b_5130_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5130_1
+          of (33 or  42 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy60 !
+          of _ -> forcecont_yy118 !
+        end
+    };
+    REC forcecont_yy116 = {
+        b_5203_0 = makeToken t 20 s;
+        b_5203_0
+    };
+    REC forcecont_yy114 = {
+        sci = Scanner_cur_incr s;
+        b_5204_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5204_1
+          of (33 or  42 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy114 !
+          of _ -> forcecont_yy116 !
+        end
+    };
+    REC forcecont_yy113 = {
+        b_5277_0 = makeToken t 14 s;
+        b_5277_0
+    };
+    REC forcecont_yy112 = {
+        sci = Scanner_cur_incr s;
+        b_5278_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5278_1
+          of (33 or  42 or  43 or  45 or  47 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  94 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy76 !
+          of _ -> forcecont_yy113 !
+        end
+    };
+    REC forcecont_yy111 = {
+        b_5353_0 = (v* = 1;
+                   refSet yyaccept v*;
+                   v*);
+        sci = Scanner_cur_incr s;
+        b_5353_2 = (v* = Scanner_cur s;
+                   set_Scanner_ptr s v*;
+                   v*);
+        b_5353_3 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5353_3
+          of (65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy157 !
+          of _ -> forcecont_yy156 !
+        end
+    };
+    REC forcecont_yy110 = {
+        sci = Scanner_cur_incr s;
+        b_5407_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5407_1
+          of (48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57) -> forcecont_yy33 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy109 = {
+        sci = Scanner_cur_incr s;
+        b_5419_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5419_1
+          of (43 or  45) -> forcecont_yy150 !
+          of (48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57) -> forcecont_yy151 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy108 = {
+        b_5433_0 = yych^;
+        case b_5433_0
+          of (48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57) -> forcecont_yy107 !
+          of (69 or  101) -> forcecont_yy109 !
+          of 96 -> forcecont_yy149 !
+          of _ -> forcecont_yy32 !
+        end
+    };
+    REC forcecont_yy107 = {
+        b_5448_0 = (v* = 1;
+                   refSet yyaccept v*;
+                   v*);
+        sci = Scanner_cur_incr s;
+        b_5448_2 = ( set_Scanner_ptr s sci );
+        b_5448_3 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        forcecont_yy108 !
+    };
+    REC forcecont_yy105 = {
+        sci = Scanner_cur_incr s;
+        b_5449_1 = makeToken t -3 s;
+        forcecont_linecomment !
+    };
+    REC forcecont_yy103 = {
+        sci = Scanner_cur_incr s;
+        b_5450_1 = ptrIncrInt32 (Scanner_commentdepth_addr s);
+        b_5450_2 = makeToken t -4 s;
+        forcecont_comment !
+    };
+    REC forcecont_yy102 = {
+        b_5451_0 = makeToken t 39 s;
+        b_5451_0
+    };
+    REC forcecont_yy101 = {
+        sci = Scanner_cur_incr s;
+        b_5452_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5452_1
+          of (33 or  42 or  43 or  45 or  47 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  94 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy76 !
+          of _ -> forcecont_yy102 !
+        end
+    };
+    REC forcecont_yy100 = {
+        sci = Scanner_cur_incr s;
+        b_5527_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5527_1
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143) -> forcecont_yy97 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy99 = {
+        sci = Scanner_cur_incr s;
+        b_5545_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5545_1
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143 or  144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy97 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy98 = {
+        sci = Scanner_cur_incr s;
+        b_5611_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5611_1
+          of (144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy97 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy97 = {
+        sci = Scanner_cur_incr s;
+        b_5661_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5661_1
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143 or  144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy95 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy96 = {
+        sci = Scanner_cur_incr s;
+        b_5727_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5727_1
+          of (160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy95 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy95 = {
+        sci = Scanner_cur_incr s;
+        b_5761_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5761_1
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143 or  144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy90 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy94 = {
+        sci = Scanner_cur_incr s;
+        b_5827_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_5827_1
+          of (0 or  1 or  2 or  3 or  4 or  5 or  6 or  7 or  8 or  9 or  10 or  11 or  12 or  13 or  14 or  15 or  16 or  17 or  18 or  19 or  20 or  21 or  22 or  23 or  24 or  25 or  26 or  27 or  28 or  29 or  30 or  31 or  32 or  33 or  34 or  35 or  36 or  37 or  38 or  39 or  40 or  41 or  42 or  43 or  44 or  45 or  46 or  47 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  58 or  59 or  60 or  61 or  62 or  63 or  64 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  91 or  92 or  93 or  94 or  95 or  96 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  118 or  119 or  121 or  122 or  123 or  124 or  125 or  126 or  127) -> forcecont_yy90 !
+          of 117 -> forcecont_yy147 !
+          of 120 -> forcecont_yy148 !
+          of (194 or  195 or  196 or  197 or  198 or  199 or  200 or  201 or  202 or  203 or  204 or  205 or  206 or  207 or  208 or  209 or  210 or  211 or  212 or  213 or  214 or  215 or  216 or  217 or  218 or  219 or  220 or  221 or  222 or  223) -> forcecont_yy95 !
+          of 224 -> forcecont_yy96 !
+          of (225 or  226 or  227 or  228 or  229 or  230 or  231 or  232 or  233 or  234 or  235 or  236 or  237 or  238 or  239) -> forcecont_yy97 !
+          of 240 -> forcecont_yy98 !
+          of (241 or  242 or  243) -> forcecont_yy99 !
+          of 244 -> forcecont_yy100 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy93 = {
+        b_6008_0 = makeToken t 44 s;
+        b_6008_0
+    };
+    REC forcecont_yy92 = {
+        sci = Scanner_cur_incr s;
+        b_6009_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_6009_1
+          of 39 -> forcecont_yy145 !
+          of _ -> forcecont_yy93 !
+        end
+    };
+    REC forcecont_yy91 = {
+        b_6012_0 = yych^;
+        case b_6012_0
+          of (0 or  1 or  2 or  3 or  4 or  5 or  6 or  7 or  8 or  9 or  10 or  11 or  12 or  13 or  14 or  15 or  16 or  17 or  18 or  19 or  20 or  21 or  22 or  23 or  24 or  25 or  26 or  27 or  28 or  29 or  30 or  31 or  32 or  33 or  34 or  35 or  36 or  37 or  38 or  40 or  41 or  42 or  43 or  44 or  45 or  46 or  47 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  58 or  59 or  60 or  61 or  62 or  63 or  64 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  91 or  93 or  94 or  95 or  96 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122 or  123 or  124 or  125 or  126 or  127) -> forcecont_yy90 !
+          of 39 -> forcecont_yy144 !
+          of 92 -> forcecont_yy94 !
+          of (194 or  195 or  196 or  197 or  198 or  199 or  200 or  201 or  202 or  203 or  204 or  205 or  206 or  207 or  208 or  209 or  210 or  211 or  212 or  213 or  214 or  215 or  216 or  217 or  218 or  219 or  220 or  221 or  222 or  223) -> forcecont_yy95 !
+          of 224 -> forcecont_yy96 !
+          of (225 or  226 or  227 or  228 or  229 or  230 or  231 or  232 or  233 or  234 or  235 or  236 or  237 or  238 or  239) -> forcecont_yy97 !
+          of 240 -> forcecont_yy98 !
+          of (241 or  242 or  243) -> forcecont_yy99 !
+          of 244 -> forcecont_yy100 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy90 = {
+        sci = Scanner_cur_incr s;
+        b_6193_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        forcecont_yy91 !
+    };
+    REC forcecont_yy89 = {
+        sci = Scanner_cur_incr s;
+        b_6194_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_6194_1
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143) -> forcecont_yy86 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy88 = {
+        sci = Scanner_cur_incr s;
+        b_6212_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_6212_1
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143 or  144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy86 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy87 = {
+        sci = Scanner_cur_incr s;
+        b_6278_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_6278_1
+          of (144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy86 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy86 = {
+        sci = Scanner_cur_incr s;
+        b_6328_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_6328_1
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143 or  144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy84 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy85 = {
+        sci = Scanner_cur_incr s;
+        b_6394_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_6394_1
+          of (160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy84 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy84 = {
+        sci = Scanner_cur_incr s;
+        b_6428_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_6428_1
+          of (128 or  129 or  130 or  131 or  132 or  133 or  134 or  135 or  136 or  137 or  138 or  139 or  140 or  141 or  142 or  143 or  144 or  145 or  146 or  147 or  148 or  149 or  150 or  151 or  152 or  153 or  154 or  155 or  156 or  157 or  158 or  159 or  160 or  161 or  162 or  163 or  164 or  165 or  166 or  167 or  168 or  169 or  170 or  171 or  172 or  173 or  174 or  175 or  176 or  177 or  178 or  179 or  180 or  181 or  182 or  183 or  184 or  185 or  186 or  187 or  188 or  189 or  190 or  191) -> forcecont_yy78 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy83 = {
+        sci = Scanner_cur_incr s;
+        b_6494_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_6494_1
+          of (0 or  1 or  2 or  3 or  4 or  5 or  6 or  7 or  8 or  9 or  10 or  11 or  12 or  13 or  14 or  15 or  16 or  17 or  18 or  19 or  20 or  21 or  22 or  23 or  24 or  25 or  26 or  27 or  28 or  29 or  30 or  31 or  32 or  33 or  34 or  35 or  36 or  37 or  38 or  39 or  40 or  41 or  42 or  43 or  44 or  45 or  46 or  47 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  58 or  59 or  60 or  61 or  62 or  63 or  64 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  91 or  92 or  93 or  94 or  95 or  96 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  118 or  119 or  121 or  122 or  123 or  124 or  125 or  126 or  127) -> forcecont_yy78 !
+          of 117 -> forcecont_yy142 !
+          of 120 -> forcecont_yy143 !
+          of (194 or  195 or  196 or  197 or  198 or  199 or  200 or  201 or  202 or  203 or  204 or  205 or  206 or  207 or  208 or  209 or  210 or  211 or  212 or  213 or  214 or  215 or  216 or  217 or  218 or  219 or  220 or  221 or  222 or  223) -> forcecont_yy84 !
+          of 224 -> forcecont_yy85 !
+          of (225 or  226 or  227 or  228 or  229 or  230 or  231 or  232 or  233 or  234 or  235 or  236 or  237 or  238 or  239) -> forcecont_yy86 !
+          of 240 -> forcecont_yy87 !
+          of (241 or  242 or  243) -> forcecont_yy88 !
+          of 244 -> forcecont_yy89 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy82 = {
+        b_6675_0 = makeToken t 44 s;
+        b_6675_0
+    };
+    REC forcecont_yy81 = {
+        sci = Scanner_cur_incr s;
+        b_6676_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_6676_1
+          of 34 -> forcecont_yy140 !
+          of _ -> forcecont_yy82 !
+        end
+    };
+    REC forcecont_yy80 = {
+        b_6679_0 = (v* = Scanner_ptr s;
+                   set_Scanner_cur s v*;
+                   v*);
+        case refGet yyaccept
+          of 0 -> forcecont_yy3 !
+          of 1 -> forcecont_yy32 !
+          of _ -> forcecont_yy57 !
+        end
+    };
+    REC forcecont_yy79 = {
+        b_6683_0 = yych^;
+        case b_6683_0
+          of (0 or  1 or  2 or  3 or  4 or  5 or  6 or  7 or  8 or  9 or  10 or  11 or  12 or  13 or  14 or  15 or  16 or  17 or  18 or  19 or  20 or  21 or  22 or  23 or  24 or  25 or  26 or  27 or  28 or  29 or  30 or  31 or  32 or  33 or  35 or  36 or  37 or  38 or  39 or  40 or  41 or  42 or  43 or  44 or  45 or  46 or  47 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  58 or  59 or  60 or  61 or  62 or  63 or  64 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  91 or  93 or  94 or  95 or  96 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122 or  123 or  124 or  125 or  126 or  127) -> forcecont_yy78 !
+          of 34 -> forcecont_yy139 !
+          of 92 -> forcecont_yy83 !
+          of (194 or  195 or  196 or  197 or  198 or  199 or  200 or  201 or  202 or  203 or  204 or  205 or  206 or  207 or  208 or  209 or  210 or  211 or  212 or  213 or  214 or  215 or  216 or  217 or  218 or  219 or  220 or  221 or  222 or  223) -> forcecont_yy84 !
+          of 224 -> forcecont_yy85 !
+          of (225 or  226 or  227 or  228 or  229 or  230 or  231 or  232 or  233 or  234 or  235 or  236 or  237 or  238 or  239) -> forcecont_yy86 !
+          of 240 -> forcecont_yy87 !
+          of (241 or  242 or  243) -> forcecont_yy88 !
+          of 244 -> forcecont_yy89 !
+          of _ -> forcecont_yy80 !
+        end
+    };
+    REC forcecont_yy78 = {
+        sci = Scanner_cur_incr s;
+        b_6864_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        forcecont_yy79 !
+    };
+    REC forcecont_yy77 = {
+        b_6865_0 = yych^;
+        case b_6865_0
+          of (33 or  42 or  43 or  45 or  47 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  94 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy76 !
+          of _ -> forcecont_yy25 !
+        end
+    };
+    REC forcecont_yy76 = {
+        sci = Scanner_cur_incr s;
+        b_6940_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        forcecont_yy77 !
+    };
+    REC forcecont_yy74 = {
+        sci = Scanner_cur_incr s;
+        b_6941_1 = makeToken t 35 s;
+        b_6941_1
+    };
+    REC forcecont_yy73 = {
+        sci = Scanner_cur_incr s;
+        b_6942_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_6942_1
+          of (48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy25 !
+          of _ -> forcecont_yy77 !
+        end
+    };
+    REC forcecont_yy71 = {
+        sci = Scanner_cur_incr s;
+        b_7006_1 = makeToken t 34 s;
+        b_7006_1
+    };
+    REC forcecont_yy70 = {
+        sci = Scanner_cur_incr s;
+        b_7007_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_7007_1
+          of 121 -> forcecont_yy138 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy69 = {
+        b_7010_0 = (v* = 2;
+                   refSet yyaccept v*;
+                   v*);
+        sci = Scanner_cur_incr s;
+        b_7010_2 = (set_Scanner_ptr s sci);
+        b_7010_3 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_7010_3
+          of 34 -> forcecont_yy119 !
+          of 39 -> forcecont_yy120 !
+          of 101 -> forcecont_yy137 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy68 = {
+        sci = Scanner_cur_incr s;
+        b_7015_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_7015_1
+          of 114 -> forcecont_yy136 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy67 = {
+        sci = Scanner_cur_incr s;
+        b_7018_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_7018_1
+          of 102 -> forcecont_yy132 !
+          of 114 -> forcecont_yy134 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy66 = {
+        sci = Scanner_cur_incr s;
+        b_7022_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_7022_1
+          of 101 -> forcecont_yy131 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy65 = {
+        sci = Scanner_cur_incr s;
+        b_7025_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_7025_1
+          of 102 -> forcecont_yy128 !
+          of 110 -> forcecont_yy130 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy64 = {
+        sci = Scanner_cur_incr s;
+        b_7029_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_7029_1
+          of 97 -> forcecont_yy127 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy63 = {
+        sci = Scanner_cur_incr s;
+        b_7032_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_7032_1
+          of 111 -> forcecont_yy126 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy62 = {
+        sci = Scanner_cur_incr s;
+        b_7035_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_7035_1
+          of 102 -> forcecont_yy123 !
+          of 108 -> forcecont_yy124 !
+          of 110 -> forcecont_yy125 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy61 = {
+        b_7040_0 = yych^;
+        case b_7040_0
+          of (33 or  42 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy60 !
+          of _ -> forcecont_yy57 !
+        end
+    };
+    REC forcecont_yy60 = {
+        sci = Scanner_cur_incr s;
+        b_7113_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        forcecont_yy61 !
+    };
+    REC forcecont_yy59 = {
+        sci = Scanner_cur_incr s;
+        b_7114_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_7114_1
+          of 97 -> forcecont_yy121 !
+          of 111 -> forcecont_yy122 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy58 = {
+        b_7118_0 = (v* = 2;
+                   refSet yyaccept v*;
+                   v*);
+        sci = Scanner_cur_incr s;
+        b_7118_2 = ( set_Scanner_ptr s sci );
+        b_7118_3 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_7118_3
+          of 34 -> forcecont_yy119 !
+          of 39 -> forcecont_yy120 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy57 = {
+        b_7122_0 = makeToken t 18 s;
+        b_7122_0
+    };
+    REC forcecont_yy56 = {
+        sci = Scanner_cur_incr s;
+        b_7123_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_7123_1
+          of 115 -> forcecont_yy117 !
+          of _ -> forcecont_yy61 !
+        end
+    };
+    REC forcecont_yy54 = {
+        sci = Scanner_cur_incr s;
+        b_7126_1 = makeToken t 26 s;
+        b_7126_1
+    };
+    REC forcecont_yy53 = {
+        b_7127_0 = makeToken t 22 s;
+        b_7127_0
+    };
+    REC forcecont_yy52 = {
+        sci = Scanner_cur_incr s;
+        b_7128_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_7128_1
+          of (33 or  42 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy114 !
+          of _ -> forcecont_yy53 !
+        end
+    };
+    REC forcecont_yy50 = {
+        sci = Scanner_cur_incr s;
+        b_7201_1 = makeToken t 28 s;
+        b_7201_1
+    };
+    REC forcecont_yy48 = {
+        sci = Scanner_cur_incr s;
+        b_7202_1 = makeToken t 30 s;
+        b_7202_1
+    };
+    REC forcecont_yy46 = {
+        sci = Scanner_cur_incr s;
+        b_7203_1 = makeToken t 29 s;
+        b_7203_1
+    };
+    REC forcecont_yy45 = {
+        b_7204_0 = makeToken t 19 s;
+        b_7204_0
+    };
+    REC forcecont_yy43 = {
+        sci = Scanner_cur_incr s;
+        b_7205_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_7205_1
+          of (33 or  42 or  43 or  45 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy43 !
+          of _ -> forcecont_yy45 !
+        end
+    };
+    REC forcecont_yy41 = {
+        sci = Scanner_cur_incr s;
+        b_7278_1 = makeToken t 40 s;
+        b_7278_1
+    };
+    REC forcecont_yy40 = {
+        b_7279_0 = makeToken t 5 s;
+        b_7279_0
+    };
+    REC forcecont_yy39 = {
+        sci = Scanner_cur_incr s;
+        b_7280_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_7280_1
+          of (33 or  42 or  43 or  45 or  47 or  60 or  61 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  94 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy76 !
+          of 62 -> forcecont_yy112 !
+          of _ -> forcecont_yy40 !
+        end
+    };
+    REC forcecont_yy37 = {
+        sci = Scanner_cur_incr s;
+        b_7345_1 = makeToken t 3 s;
+        b_7345_1
+    };
+    REC forcecont_yy35 = {
+        sci = Scanner_cur_incr s;
+        b_7346_1 = makeToken t 36 s;
+        b_7346_1
+    };
+    REC forcecont_yy33 = {
+        b_7347_0 = (v* = 1;
+                   refSet yyaccept v*;
+                   v*);
+        sci  = Scanner_cur_incr s;
+        b_7347_2 = (set_Scanner_ptr s sci);
+        b_7347_3 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_7347_3
+          of 46 -> forcecont_yy107 !
+          of (48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57) -> forcecont_yy33 !
+          of (69 or  101) -> forcecont_yy109 !
+          of 96 -> forcecont_yy110 !
+          of _ -> forcecont_yy32 !
+        end
+    };
+    REC forcecont_yy32 = {
+        b_7363_0 = makeToken t 43 s;
+        b_7363_0
+    };
+    REC forcecont_yy31 = {
+        b_7364_0 = (v* = 1;
+                   refSet yyaccept v*;
+                   v*);
+        sci = Scanner_cur_incr s;
+        b_7364_2 = (set_Scanner_ptr s sci);
+        b_7364_3 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_7364_3
+          of 46 -> forcecont_yy107 !
+          of (48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57) -> forcecont_yy33 !
+          of 96 -> forcecont_yy110 !
+          of (98 or  120) -> forcecont_yy111 !
+          of _ -> forcecont_yy108 !
+        end
+    };
+    REC forcecont_yy30 = {
+        sci = Scanner_cur_incr s;
+        yychnu = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case yychnu
+          of 42 -> forcecont_yy103 !
+          of 47 -> forcecont_yy105 !
+          of _ -> forcecont_yy3 !
+        end
+    };
+    REC forcecont_yy29 = {
+        sci = Scanner_cur_incr s;
+        b_7384_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_7384_1
+          of 48 -> forcecont_yy31 !
+          of (49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57) -> forcecont_yy33 !
+          of 62 -> forcecont_yy101 !
+          of _ -> forcecont_yy77 !
+        end
+    };
+    REC forcecont_yy27 = {
+        sci = Scanner_cur_incr s;
+        b_7397_1 = makeToken t 24 s;
+        b_7397_1
+    };
+    REC forcecont_yy26 = {
+        sci = Scanner_cur_incr s;
+        b_7398_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_7398_1
+          of 48 -> forcecont_yy31 !
+          of (49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57) -> forcecont_yy33 !
+          of _ -> forcecont_yy77 !
+        end
+    };
+    REC forcecont_yy25 = {
+        b_7410_0 = makeToken t 25 s;
+        b_7410_0
+    };
+    REC forcecont_yy24 = {
+        sci = Scanner_cur_incr s;
+        b_7411_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_7411_1
+          of (48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57) -> forcecont_yy25 !
+          of _ -> forcecont_yy77 !
+        end
+    };
+    REC forcecont_yy22 = {
+        sci = Scanner_cur_incr s;
+        b_7423_1 = makeToken t 12 s;
+        b_7423_1
+    };
+    REC forcecont_yy20 = {
+        sci = Scanner_cur_incr s;
+        b_7424_1 = makeToken t 11 s;
+        b_7424_1
+    };
+    REC forcecont_yy19 = {
+        b_7425_0 = (v* = 0;
+                   refSet yyaccept v*;
+                   v*);
+        sci = Scanner_cur_incr s;
+        b_7425_2 = (v* = Scanner_cur s;
+                   set_Scanner_ptr s v*;
+                   v*);
+        b_7425_3 = (v* = (sbuf)[b_7425_2];
+                   refSet yych v*;
+                   v*);
+        case b_7425_3
+          of (0 or  1 or  2 or  3 or  4 or  5 or  6 or  7 or  8 or  9 or  10 or  11 or  12 or  13 or  14 or  15 or  16 or  17 or  18 or  19 or  20 or  21 or  22 or  23 or  24 or  25 or  26 or  27 or  28 or  29 or  30 or  31 or  32 or  33 or  34 or  35 or  36 or  37 or  38 or  40 or  41 or  42 or  43 or  44 or  45 or  46 or  47 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  58 or  59 or  60 or  61 or  62 or  63 or  64 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  91 or  92 or  93 or  94 or  95 or  96 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122 or  123 or  124 or  125 or  126 or  127 or  194 or  195 or  196 or  197 or  198 or  199 or  200 or  201 or  202 or  203 or  204 or  205 or  206 or  207 or  208 or  209 or  210 or  211 or  212 or  213 or  214 or  215 or  216 or  217 or  218 or  219 or  220 or  221 or  222 or  223 or  224 or  225 or  226 or  227 or  228 or  229 or  230 or  231 or  232 or  233 or  234 or  235 or  236 or  237 or  238 or  239 or  240 or  241 or  242 or  243 or  244) -> forcecont_yy91 !
+          of 39 -> forcecont_yy92 !
+          of _ -> forcecont_yy3 !
+        end
+    };
+    REC forcecont_yy17 = {
+        sci = Scanner_cur_incr s;
+        b_7606_1 = makeToken t 47 s;
+        b_7606_1
+    };
+    REC forcecont_yy15 = {
+        sci = Scanner_cur_incr s;
+        b_7607_1 = makeToken t 16 s;
+        b_7607_1
+    };
+    REC forcecont_yy13 = {
+        sci = Scanner_cur_incr s;
+        b_7608_1 = makeToken t 40 s;
+        b_7608_1
+    };
+    REC forcecont_yy12 = {
+        b_7609_0 = (v* = 0;
+                   refSet yyaccept v*;
+                   v*);
+        sci = Scanner_cur_incr s;
+        b_7609_2 = ( set_Scanner_ptr s sci) ;
+        b_7609_3 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_7609_3
+          of (0 or  1 or  2 or  3 or  4 or  5 or  6 or  7 or  8 or  9 or  10 or  11 or  12 or  13 or  14 or  15 or  16 or  17 or  18 or  19 or  20 or  21 or  22 or  23 or  24 or  25 or  26 or  27 or  28 or  29 or  30 or  31 or  32 or  33 or  35 or  36 or  37 or  38 or  39 or  40 or  41 or  42 or  43 or  44 or  45 or  46 or  47 or  48 or  49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57 or  58 or  59 or  60 or  61 or  62 or  63 or  64 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  91 or  92 or  93 or  94 or  95 or  96 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122 or  123 or  124 or  125 or  126 or  127 or  194 or  195 or  196 or  197 or  198 or  199 or  200 or  201 or  202 or  203 or  204 or  205 or  206 or  207 or  208 or  209 or  210 or  211 or  212 or  213 or  214 or  215 or  216 or  217 or  218 or  219 or  220 or  221 or  222 or  223 or  224 or  225 or  226 or  227 or  228 or  229 or  230 or  231 or  232 or  233 or  234 or  235 or  236 or  237 or  238 or  239 or  240 or  241 or  242 or  243 or  244) -> forcecont_yy79 !
+          of 34 -> forcecont_yy81 !
+          of _ -> forcecont_yy3 !
+        end
+    };
+    REC forcecont_yy11 = {
+        b_7790_0 = makeToken t 31 s;
+        b_7790_0
+    };
+    REC forcecont_yy10 = {
+        sci = Scanner_cur_incr s;
+        b_7791_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_7791_1
+          of (33 or  42 or  43 or  45 or  47 or  60 or  61 or  62 or  63 or  65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90 or  94 or  95 or  97 or  98 or  99 or  100 or  101 or  102 or  103 or  104 or  105 or  106 or  107 or  108 or  109 or  110 or  111 or  112 or  113 or  114 or  115 or  116 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy76 !
+          of _ -> forcecont_yy11 !
+        end
+    };
+    REC forcecont_yy9 = {
+        sci = Scanner_cur_incr s;
+        b_7856_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_7856_1
+          of 10 -> forcecont_yy7 !
+          of _ -> forcecont_yy3 !
+        end
+    };
+    REC forcecont_yy7 = {
+        sci = Scanner_cur_incr s;
+        b_7859_1 = makeToken t -5 s;
+        b_7859_2 = saw_newline_at s (Scanner_cur s);
+        retstmt = ();
+        retstmt;
+        jump = ();
+        jump
+    };
+    REC forcecont_yy6 = {
+        b_7860_0 = makeToken t -2 s;
+        b_7860_0
+    };
+    REC forcecont_yy4 = {
+        sci = Scanner_cur_incr s;
+        b_7861_1 = (v* = (sbuf)[sci];
+                   refSet yych v*;
+                   v*);
+        case b_7861_1
+          of (9 or  11 or  12 or  32) -> forcecont_yy4 !
+          of _ -> forcecont_yy6 !
+        end
+    };
+    REC forcecont_yy3 = {
+        b_7867_0 = report_lexical_error
+                       s
+                       t
+                       (strLit b"parsing\x00")
+                       buff_end;
+        forcecont_regular !
+    };
+    REC forcecont_yy2 = {
+        sci = Scanner_cur_incr s;
+        forcecont_yy3 !
+    };
+    REC forcecont_block_7869 = {
+        b_7869_0 = (v* = Scanner_cur s;
+                   set_Scanner_top s v*;
+                   v*);
+        refSet yyaccept 0;
+        b_7869_1 = (v* = (sbuf)[b_7869_0];
+                  refSet yych v*;
+                   v*);
+        case b_7869_1
+          of (9 or  11 or  12 or  32) -> forcecont_yy4 !
+          of 10 -> forcecont_yy7 !
+          of 13 -> forcecont_yy9 !
+          of 33 -> forcecont_yy10 !
+          of 34 -> forcecont_yy12 !
+          of 35 -> forcecont_yy13 !
+          of 36 -> forcecont_yy15 !
+          of 37 -> forcecont_yy17 !
+          of 39 -> forcecont_yy19 !
+          of 40 -> forcecont_yy20 !
+          of 41 -> forcecont_yy22 !
+          of (42 or  60 or  62 or  63) -> forcecont_yy24 !
+          of 43 -> forcecont_yy26 !
+          of 44 -> forcecont_yy27 !
+          of 45 -> forcecont_yy29 !
+          of 47 -> forcecont_yy30 !
+          of 48 -> forcecont_yy31 !
+          of (49 or  50 or  51 or  52 or  53 or  54 or  55 or  56 or  57) -> forcecont_yy33 !
+          of 58 -> forcecont_yy35 !
+          of 59 -> forcecont_yy37 !
+          of 61 -> forcecont_yy39 !
+          of 64 -> forcecont_yy41 !
+          of (65 or  66 or  67 or  68 or  69 or  70 or  71 or  72 or  73 or  74 or  75 or  76 or  77 or  78 or  79 or  80 or  81 or  82 or  83 or  84 or  85 or  86 or  87 or  88 or  89 or  90) -> forcecont_yy43 !
+          of 91 -> forcecont_yy46 !
+          of 93 -> forcecont_yy48 !
+          of 94 -> forcecont_yy50 !
+          of 95 -> forcecont_yy52 !
+          of 96 -> forcecont_yy54 !
+          of 97 -> forcecont_yy56 !
+          of 98 -> forcecont_yy58 !
+          of 99 -> forcecont_yy59 !
+          of (100 or  103 or  106 or  107 or  109 or  110 or  113 or  115 or  117 or  118 or  119 or  120 or  121 or  122) -> forcecont_yy60 !
+          of 101 -> forcecont_yy62 !
+          of 102 -> forcecont_yy63 !
+          of 104 -> forcecont_yy64 !
+          of 105 -> forcecont_yy65 !
+          of 108 -> forcecont_yy66 !
+          of 111 -> forcecont_yy67 !
+          of 112 -> forcecont_yy68 !
+          of 114 -> forcecont_yy69 !
+          of 116 -> forcecont_yy70 !
+          of 123 -> forcecont_yy71 !
+          of 124 -> forcecont_yy73 !
+          of 125 -> forcecont_yy74 !
+          of _ -> forcecont_yy2 !
+        end
+    };
+    REC forcecont_block_7967 = {
+        b_7967_0 = makeToken t 1 s;
+        b_7967_0
+    };
+    REC forcecont_regular = {
+        b_7968_0 = if (Scanner_cur s) >=SInt32 buff_end
+                     then 1
+                     else 0
+                   end;
+        if b_7968_0 !=Int32 0
+          then forcecont_block_7967 !
+          else forcecont_block_7869 !
+        end
+    };
+    forcecont_regular !
+};
+
+scan_token = { scanner : Scanner =>
+               t : Token =>
+               buffer_size : Int32 =>
+               yych : (Ref Int8) =>
+               yyaccept : (Ref Int8) =>
+    _ignored = scan_token_start scanner t buffer_size yych yyaccept;
+    typ = Token_tok t;
+    chan = if oror { oror { oror { typ ==Int32 -2 } { typ ==Int32 -5 } } { typ ==Int32 -3 } } { typ ==Int32 -4 }
+      then 99
+      else 0
+    end;
+    endLine0 = Scanner_line scanner;
+    endCol = if (Scanner_cur scanner) ==Int32 0
+                   then 1
+                   else Scanner_cur scanner
+                 end
+                 -Int32 if (Scanner_cur scanner)
+                               ==Int32 (Scanner_linepos scanner)
+                   then Scanner_linepos_prev scanner
+                   else Scanner_linepos scanner
+                 end;
+    endLine = if oror { typ ==Int32 -3 } { typ ==Int32 -5 }
+      then endLine0 -Int32 1;
+      else endLine0
+    end; 
+    
+    set_Token_endline t endLine; 
+    
+    v* = endCol;
+    set_Token_endcol t v*; 
+    
+    chan
+};
+
+tokName = { tok : Int32 =>
+    REC forcecont_block_1 = {
+        b_1_0 = tok;
+        case b_1_0
+          of -2 -> forcecont_block_53 !
+          of -3 -> forcecont_block_52 !
+          of -4 -> forcecont_block_51 !
+          of -5 -> forcecont_block_50 !
+          of 1 -> forcecont_block_49 !
+          of 2 -> forcecont_block_48 !
+          of 3 -> forcecont_block_47 !
+          of 4 -> forcecont_block_46 !
+          of 5 -> forcecont_block_45 !
+          of 6 -> forcecont_block_44 !
+          of 7 -> forcecont_block_43 !
+          of 8 -> forcecont_block_42 !
+          of 9 -> forcecont_block_41 !
+          of 10 -> forcecont_block_40 !
+          of 11 -> forcecont_block_39 !
+          of 12 -> forcecont_block_38 !
+          of 13 -> forcecont_block_37 !
+          of 14 -> forcecont_block_36 !
+          of 15 -> forcecont_block_35 !
+          of 16 -> forcecont_block_34 !
+          of 17 -> forcecont_block_33 !
+          of 18 -> forcecont_block_32 !
+          of 19 -> forcecont_block_31 !
+          of 20 -> forcecont_block_30 !
+          of 21 -> forcecont_block_29 !
+          of 22 -> forcecont_block_28 !
+          of 23 -> forcecont_block_27 !
+          of 24 -> forcecont_block_26 !
+          of 25 -> forcecont_block_25 !
+          of 26 -> forcecont_block_24 !
+          of 27 -> forcecont_block_23 !
+          of 28 -> forcecont_block_22 !
+          of 29 -> forcecont_block_21 !
+          of 30 -> forcecont_block_20 !
+          of 31 -> forcecont_block_19 !
+          of 32 -> forcecont_block_18 !
+          of 33 -> forcecont_block_17 !
+          of 34 -> forcecont_block_16 !
+          of 35 -> forcecont_block_15 !
+          of 36 -> forcecont_block_14 !
+          of 37 -> forcecont_block_13 !
+          of 38 -> forcecont_block_12 !
+          of 39 -> forcecont_block_11 !
+          of 40 -> forcecont_block_10 !
+          of 41 -> forcecont_block_9 !
+          of 42 -> forcecont_block_8 !
+          of 43 -> forcecont_block_7 !
+          of 44 -> forcecont_block_6 !
+          of 45 -> forcecont_block_5 !
+          of 46 -> forcecont_block_4 !
+          of 47 -> forcecont_block_3 !
+          of _ -> 
+          
+          forcecont_block_2 !
+        end
+        
+        
+    };
+    REC forcecont_block_2 = { strLit b"<UNKNOWN>\x00" };
+    REC forcecont_block_3 = { strLit b"PERCENT\x00" };
+    REC forcecont_block_4 = { strLit b"ELSE\x00" };
+    REC forcecont_block_5 = { strLit b"THEN\x00" };
+    REC forcecont_block_6 = { strLit b"STR\x00" };
+    REC forcecont_block_7 = { strLit b"NUM\x00" };
+    REC forcecont_block_8 = { strLit b"OR\x00" };
+    REC forcecont_block_9 = { strLit b"IF\x00" };
+    REC forcecont_block_10 = { strLit b"HASH\x00" };
+    REC forcecont_block_11 = { strLit b"SARROW\x00" };
+    REC forcecont_block_12 = { strLit b"HANDLE\x00" };
+    REC forcecont_block_13 = { strLit b"FORALL\x00" };
+    REC forcecont_block_14 = { strLit b"COLON\x00" };
+    REC forcecont_block_15 = { strLit b"RCURLY\x00" };
+    REC forcecont_block_16 = { strLit b"LCURLY\x00" };
+    REC forcecont_block_17 = { strLit b"COMPILES\x00" };
+    REC forcecont_block_18 = { strLit b"END\x00" };
+    REC forcecont_block_19 = { strLit b"BANG\x00" };
+    REC forcecont_block_20 = { strLit b"RBRACK\x00" };
+    REC forcecont_block_21 = { strLit b"LBRACK\x00" };
+    REC forcecont_block_22 = { strLit b"CARET\x00" };
+    REC forcecont_block_23 = { strLit b"PRIM\x00" };
+    REC forcecont_block_24 = { strLit b"BACKTICK\x00" };
+    REC forcecont_block_25 = { strLit b"SYMBOL\x00" };
+    REC forcecont_block_26 = { strLit b"COMMA\x00" };
+    REC forcecont_block_27 = { strLit b"LET\x00" };
+    REC forcecont_block_28 = { strLit b"UNDERSCORE\x00" };
+    REC forcecont_block_29 = { strLit b"REC\x00" };
+    REC forcecont_block_30 = { strLit b"UNDERIDENT\x00" };
+    REC forcecont_block_31 = { strLit b"UPPERIDENT\x00" };
+    REC forcecont_block_32 = { strLit b"SMALLIDENT\x00" };
+    REC forcecont_block_33 = { strLit b"OPRNAME\x00" };
+    REC forcecont_block_34 = { strLit b"DOLLAR\x00" };
+    REC forcecont_block_35 = { strLit b"AS\x00" };
+    REC forcecont_block_36 = { strLit b"DARROW\x00" };
+    REC forcecont_block_37 = { strLit b"OF\x00" };
+    REC forcecont_block_38 = { strLit b"RPAREN\x00" };
+    REC forcecont_block_39 = { strLit b"LPAREN\x00" };
+    REC forcecont_block_40 = { strLit b"IMPORT\x00" };
+    REC forcecont_block_41 = { strLit b"FOREIGN\x00" };
+    REC forcecont_block_42 = { strLit b"EFFECT\x00" };
+    REC forcecont_block_43 = { strLit b"CASE\x00" };
+    REC forcecont_block_44 = { strLit b"TYPE\x00" };
+    REC forcecont_block_45 = { strLit b"EQUAL\x00" };
+    REC forcecont_block_46 = { strLit b"DCOLON\x00" };
+    REC forcecont_block_47 = { strLit b"SEMI\x00" };
+    REC forcecont_block_48 = { strLit b"INCLUDE\x00" };
+    REC forcecont_block_49 = { strLit b"FINI\x00" };
+    REC forcecont_block_50 = { strLit b"NEWLINE\x00" };
+    REC forcecont_block_51 = { strLit b"BLOCKCOMMENT\x00" };
+    REC forcecont_block_52 = { strLit b"LINECOMMENT\x00" };
+    REC forcecont_block_53 = { strLit b"WHITESPACE\x00" };
+    forcecont_block_1 !
+};
+
+make-tokenizer :: { Array Int8 => Ref Int32 => { Token } };
+make-tokenizer = { arr => chanref =>
+      scanner = (Scanner
+                      arr
+                      (mkField 0)
+                      (mkField 0)
+                      (mkField 0)
+                      (mkField 0)
+                      (mkField 0)
+                      (mkField 1)
+                      (mkField 0)
+                      (mkField 0));
+    yych = (prim ref 0);
+    yyaccept = (prim ref 0);
+    sz = arrayLength32 arr;
+
+/*
+    tmp = Token
+            (mkField 0)
+            (mkField 0)
+            (mkField 0)
+            (mkField 0)
+            (mkField 0);
+
+    {
+        chan = scan_token scanner tmp sz yych yyaccept;
+        chan >^ chanref;
+        ImmToken (Token_tok     tmp)
+                 (Token_line    tmp)
+                 (Token_col     tmp)
+                 (Token_endline tmp)
+                 (Token_endcol  tmp)
+    }
+    */
+
+
+
+    {
+        tmp = Token
+            (mkField 0)
+            (mkField 0)
+            (mkField 0)
+            (mkField 0)
+            (mkField 0);
+        chan = scan_token scanner tmp sz yych yyaccept;
+        chan >^ chanref;
+        tmp
+    }
+};
+
+/*
+main = {
+    argv = c2f_argv !;
+    argc = ptrSize argv;
+    fp = PtrRef (prim ref (CFile_nil !));
+    size = PtrRef (prim ref 0);
+    buff = PtrRef (prim ref PtrNil);
+    bytes = PtrRef (prim ref 0);
+
+    REC forcecont_block_1 = {
+        b_1_0 = c2f_fclose (ptrGet fp);
+        b_1_1 = // (free (ptrGet buff))
+                ();
+        0
+    };
+    REC forcecont_block_5 = { n : Int32 => tokenizer =>
+        t = tokenizer !;
+        b_5_1 = if (Token_tok t) ==Int32 1
+                  then 1
+                  else 0
+                end;
+        if b_5_1 !=Int32 0
+          then print_i32 n;
+                forcecont_block_1 !
+          else // valid token
+               forcecont_block_5 (n +Int32 1) tokenizer
+        end
+    };
+    REC forcecont_block_7 = { tokenizer =>
+        forcecont_block_5 0 tokenizer
+    };
+    REC forcecont_block_8 = {
+      /*
+        b_8_0 = fprintf
+                    (c2f_stderr !)
+                    (strLit b"Error reading input file\n\x00");
+                    */
+        b_8_1 = c2f_exit -1;
+        (prim kill-entire-process "missing-return")
+    };
+    REC forcecont_block_9 = {
+        b_9_0 = c2f_fseek (ptrGet fp) 0 2;
+        b_9_1 = c2f_ftell (ptrGet fp);
+        b_9_2 = (ptrSet size b_9_1;
+                ptrGet size);
+        b_9_3 = c2f_rewind (ptrGet fp);
+        arr   = newDArray0:[Int8]
+                         (trunc_i64_to_i32 (ptrGet size))
+                         { i => 0 };
+        b_9_4 = ptrOfArr arr;
+        b_9_5 = (ptrSet buff b_9_4;
+                ptrGet buff);
+        b_9_6 = c2f_fread (ptrGet buff) 1 (ptrGet size) (ptrGet fp);
+        b_9_7 = (ptrSet bytes b_9_6;
+                ptrGet bytes);
+        b_9_8 = if (ptrGet bytes) !=Int64 (ptrGet size)
+                  then 1
+                  else 0
+                end;
+        if b_9_8 !=Int32 0
+          then forcecont_block_8 !
+          else forcecont_block_7 (make-tokenizer arr)
+        end
+    };
+    REC forcecont_block_10 = {
+      /*
+        b_10_0 = fprintf
+                     (c2f_stderr !)
+                     (strLit b"Can't open test file: %s\n\x00")
+                     (ptrGetIndex argv 1);
+                     */
+        b_10_1 = c2f_exit -1;
+        (prim kill-entire-process "missing-return")
+    };
+    REC forcecont_block_11 = {
+        b_11_0 = c2f_fopen (ptrGetIndex argv 1) (strLit b"r\x00");
+        b_11_1 = (ptrSet fp b_11_0;
+                 ptrGet fp);
+        b_11_2 = if CFile_isnil (ptrGet fp)
+                   then 1
+                   else 0
+                 end;
+        if b_11_2 !=Int32 0
+          then forcecont_block_10 !
+          else forcecont_block_9 !
+        end
+    };
+    REC forcecont_block_12 = {
+        b_12_0 = printStrBare (strLit b"Usage: \x00");
+        (printStrBare (ptrGetIndex argv 0));
+            (printStrBare (strLit b" <input.foster>\n\x00"));
+        b_12_1 = c2f_exit 1;
+        (prim kill-entire-process "missing-return")
+    };
+    REC forcecont_block_13 = {
+        b_13_0 = if argc !=Int32 2
+                   then 1
+                   else 0
+                 end;
+        if b_13_0 !=Int32 0
+          then forcecont_block_12 !
+          else forcecont_block_11 !
+        end
+    };
+    forcecont_block_13 !
+};
+*/
