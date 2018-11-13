@@ -1904,15 +1904,16 @@ public:
       } else {
         // If we have something like (c = (b = a)),
         // translate it to (a >^ b; b) >^ c
-        llvm::outs() << "(ptrSet (";
-        visitStmt(ptr, AssignmentTarget);
-        llvm::outs() << ") (";
+        llvm::outs() << "(v* = ";
         valEmitter();
-        llvm::outs() << ")";
+        llvm::outs() << "; ptrSet (";
+        visitStmt(ptr, AssignmentTarget);
+        llvm::outs() << ") v*";
+        llvm::outs() << "";
         if (ctx == ExprContext) {
-          llvm::outs() << "; "; visitStmt(ptr);
+          llvm::outs() << "; v*";
         } else if (ctx == BooleanContext) {
-          llvm::outs() << "; "; visitStmt(ptr);
+          llvm::outs() << "; v*";
           llvm::outs() << " " << emitBooleanCoercion(exprTy(ptr));
         }
         llvm::outs() << ");";
@@ -3911,6 +3912,17 @@ int main(int argc, const char **argv) {
 //   * If the input program defines two types differing only in the case
 //     of the first letter (e.g. 'foo' and 'Foo'),
 //     we won't properly distinguish the two (both become Foo).
+//   * Mutable function-local variables are currently represented as
+//     dynamically allocated ref cells. The GC costs are reasonably small but the
+//     allocation costs can be significant for tight loops. If/when Foster supports
+//     unboxed types, we could use them for local variables. Until then, manually
+//     extracting allocations from generated hot loops can improve performance.
 //   * Missing returns from non-void-returning functions will (reasonably!)
 //     lead to type errors in the generated Foster code.
+//   * If LLVM determines that execution is guaranteed to hit (the translation of)
+//     undefined code (e.g. prim kill-entire-process "..."), it will, for reasons
+//     I haven't yet studied, aggressively eliminate the write barrier function,
+//     resulting in a linking error in the backend.
+//   * Current codegen isn't aggressive about re-using computed field values, etc,
+//     which contributes to overall slowdown of the generated code.
 
