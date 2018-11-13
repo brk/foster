@@ -1,0 +1,37 @@
+C code:
+ Performance counter stats for 'tokencount.exe /home/benkarel/mlton-git/mlton/out.sxml.foster' (4 runs):
+
+     1,231,527,258      instructions              #    2.27  insn per cycle
+       543,361,665      cycles                    #    3.797 GHz
+
+--------------------------------------------------------------------------------
+
+Foster code:
+
+Without GC roots:
+     1,653,846,015      instructions              #    2.39  insn per cycle
+       692,430,338      cycles                    #    3.675 GHz
+
+With GC roots:
+     1,881,089,420      instructions              #    2.34  insn per cycle
+       804,568,376      cycles                    #    3.477 GHz
+
+
+With GC roots, and lexer exposed via (dynamically allocating) tokenizer function:
+   14,050,690,747      instructions              #    2.61  insn per cycle
+    5,376,101,477      cycles                    #    3.869 GHz
+      (Lifting the scanner out of the tokenzing thunk confuses the write barrier
+           optimizer, resulting in many triggerings (10.5M fast, 5M slow)).
+
+Reusing one temporarily-mutable token, returning immutable tokens:
+   16,167,783,329      instructions              #    2.61  insn per cycle
+    6,193,912,546      cycles                    #    3.874 GHz
+      (Not sure why fewer allocations doesn't result in a speedup...)
+
+Forcibly disabling GC barriers with immutable tokens:
+    6,150,623,429      instructions              #    1.72  insn per cycle
+    3,584,158,866      cycles                    #    3.866 GHz
+
+Forcibly disabling GC barriers with mutable tokens:
+    7,414,354,764      instructions              #    1.91  insn per cycle
+    3,889,243,804      cycles                    #    3.863 GHz

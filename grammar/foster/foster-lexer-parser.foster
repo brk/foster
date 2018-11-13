@@ -1,0 +1,50 @@
+snafuinclude Parser "foster-parser";
+snafuinclude Tokenizer "foster-tokenizer";
+snafuinclude Prelude "prelude";
+snafuinclude Readfile "io/readfile";
+
+// Imported API:
+// make-tokenizer :: { Array Int8 => Ref Int32 => { ImmToken } };
+// ParseAlloc :: { YyParser };
+// Parse :: { YyParser => Int8 // major token number
+//                     => Token // token value (yyminor)
+//                     => () };
+
+
+main = {
+  /*
+  arr = b"""
+main = {
+  0 +Int32 1
+};
+""";
+*/
+
+  arr = readFile "/home/benkarel/mlton-git/mlton/out.sxml.foster";
+
+  chanref = (prim ref 0);
+  lex = make-tokenizer arr chanref;
+  p = ParseAlloc !;
+
+  REC loop = {
+    t = lex !;
+    case Token_tok t
+      of 1 ->
+        Parse p 0 t;
+        print_text "done";
+        print_i32 (yyerrcnt p);
+        ()
+      of k ->
+        if k <SInt32 0
+          then loop !
+          else
+            //printStr (tokName k);
+            Parse p (k |> trunc_i32_to_i8) t;
+            //print_text_bare "err cnt:";
+            //print_i32 (yyerrcnt p);
+           loop !
+        end
+    end
+  };
+  loop !
+};
