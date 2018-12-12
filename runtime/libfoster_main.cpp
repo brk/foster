@@ -26,6 +26,7 @@ int main(int argc, char** argv) {
 // programs are optimized after being linked with libfoster.
 extern "C" int32_t opaquely_i32(int32_t n) { return n; }
 extern "C" int64_t opaquely_i64(int64_t n) { return n; }
+extern "C" void*   opaquely_ptr(void*   p) { return p; }
 
 extern "C" {
   void foster_pin_hook_memalloc_cell(uint64_t nbytes) { return; }

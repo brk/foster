@@ -3506,6 +3506,8 @@ T* allocate_lazily_zero_mapped(size_t num_elts) {
 size_t lazy_mapped_frame15_condemned_size() { return (size_t(1) << (address_space_prefix_size_log() - 15)); }
 size_t lazy_mapped_granule_marks_size() {     return (size_t(1) <<  address_space_prefix_size_log()     ) / (16 * 1); } 
 
+extern "C" void* opaquely_ptr(void*);
+
 void initialize(void* stack_highest_addr) {
   gcglobals.init_start.start();
   gclog = fopen("gclog.txt", "w");
@@ -3559,10 +3561,13 @@ void initialize(void* stack_highest_addr) {
   memset(gcglobals.enum_gc_alloc_small, 0, sizeof(gcglobals.enum_gc_alloc_small));
 
   if (foster__typeMapList[0]) {
-    void* min_addr_typemap = foster__typeMapList[0];
-    void* max_addr_typemap = foster__typeMapList[0];
+    // We've gotta go out of our way to prevent Clang from trying to statically
+    // unroll this loop over constant data into a multi-gigabyte select tree.
+    void** tML = (void**) opaquely_ptr(&foster__typeMapList[0]);
+    void* min_addr_typemap = tML;
+    void* max_addr_typemap = tML;
     // Determine the bounds of the typemap
-    for (void** typemap = &foster__typeMapList[1]; *typemap; ++typemap) {
+    for (void** typemap = &tML[1]; *typemap; ++typemap) {
       min_addr_typemap = std::min(min_addr_typemap, *typemap);
       max_addr_typemap = std::max(max_addr_typemap, *typemap);
     }
