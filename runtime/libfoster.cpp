@@ -292,7 +292,7 @@ void fprint_i32(FILE* f, int32_t x) {  fprintf(f, "%d\n", x); fflush(f); }
 void fprint_i32x(FILE* f, int32_t x) { fprintf(f, "0x%X\n", x); }
 void fprint_i32b(FILE* f, int32_t x) { fprint_b2<32>(f, x); }
 void fprint_i32c(FILE* f, int32_t x) {  fprintf(f, "%c\n", x); fflush(f); }
-void fprint_i32_bare(FILE* f, int64_t x) { fprintf(f, "%d" , x); }
+void fprint_i32_bare(FILE* f, int64_t x) { fprintf(f, "%ld" , x); }
 
 void fprint_i8b(FILE* f, int8_t x) { fprint_b2<8>(f, x); }
 
