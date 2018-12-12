@@ -1439,7 +1439,7 @@ mknInline subterm mainCont mb_gas = do
               liftIO $ writeIORef bindingWorklistRef w'
               expBindMap <- liftIO $ readIORef er
               case Map.lookup bv expBindMap of
-                Nothing -> do dbgDoc $ text "unable to find expr for dead bound var " <> pretty bv
+                Nothing -> do dbgDoc $ text "processDeadBindings: unable to find expr for dead bound var " <> pretty bv
                               return ()
                 Just exprLink -> do
                     e <- readLink "processDeadBindings" exprLink
@@ -1507,6 +1507,9 @@ mknInline subterm mainCont mb_gas = do
                       (peekedThroughBitcast, situation) <- classifyRedex callee args knownFns aliases
                       case situation of
                         CallOfNonInlineableFunction fn fnlink -> do
+                          --do  redex <- knOfMK NoCont mredex
+                          --    dbgDoc $ text "CallOfNonInlineableFunction: " <+> pretty redex
+                          
                           if peekedThroughBitcast
                             then return ()
                             else considerFunctionForArityRaising er bindingWorklistRef fn fnlink callee
@@ -1527,25 +1530,13 @@ mknInline subterm mainCont mb_gas = do
 
                           newbody <- betaReduceOnlyCall fn args kv     wr fd
 
-                          --do nubody <- readLink "kninline-sf" newbody
-                          --   newbody' <- knOfMK NoCont nubody
-                          --   dbgDoc $ text "CallOfSingletonFunction generated: " <+> pretty newbody'
-
                           dbgDoc $ text "Invoking `replaceWith` for CallOfSingletonFunction"
                           replaceActiveSubtermWith newbody
                           dbgDoc $ text "Killing callee for CallOfSingletonFunction"
                           killBinding callee knownFns aliases
-                          -- No need to collect redexes, since the body wasn't duplicated.
-
-      {-
-                          case _parent of
-                                  ParentTerm pt -> do
-                                    kn <- knOfMK   (mbContOf $ mkfnCont fn) pt
-                                    dbgDoc $ text "CallOfSingletonFunction parent tm became: " <+> pretty kn
-                                  ParentFn   pf -> do
-                                    kn <- knOfMKFn NoCont pf
-                                    dbgDoc $ text "CallOfSingletonFunction parent fn became: " <+> pretty kn
-      -}
+                          -- No need to collect every redex, since the body wasn't duplicated.
+                          -- However, arg substitutions should be re-inspected.
+                          enqueueOccurrences wr args
 
                         CallOfDonatableFunction fn -> do
                           do  redex <- knOfMK (mbContOf $ mkfnCont fn) mredex
@@ -1650,15 +1641,7 @@ mknInline subterm mainCont mb_gas = do
 
                           -- If we are substituting a known argument, we should re-examine the
                           -- substituted occurrences, which might have been made reducible.
-                          expBindMap <- liftIO $ readIORef er
-                          forM_ (zipSameLength args (mkfnVars fn)) $ \(arg, fnbv) -> do
-                            bv <- freeBinder arg
-                            if Map.member bv expBindMap
-                              then do occs <- collectOccurrences fnbv
-                                      liftIO $ modIORef' wr (\w -> worklistAddList w $ map freeLink occs)
-                              else return ()
-
-
+                          enqueueKnownOccurrences er wr fn args
                           newbody <- betaReduceOnlyCall fn args callee         wr fd
                         
                         --  do newbody' <- knOfMK (mbContOf $ mkfnCont fn) newbody
@@ -1691,7 +1674,7 @@ mknInline subterm mainCont mb_gas = do
                               killOccurrence bindingWorklistRef callee
                               collectRedexes wr kr er fr fd ar relocDomMarkers newbody
                             else return ()
-      -}
+                            -}
                         SomethingElse _fn _fnlink -> do
                           do  redex <- knOfMK (mbContOf $ mkfnCont _fn) mredex
                               dbgIf dbgCont $ text "SomethingElseC: " <+> pretty redex
@@ -1768,7 +1751,23 @@ mknInline subterm mainCont mb_gas = do
 
     return ()
 
+enqueueKnownOccurrences er wr fn args = do
+  expBindMap <- liftIO $ readIORef er
+  forM_ (zipSameLength args (mkfnVars fn)) $ \(arg, fnbv) -> do
+    bv <- freeBinder arg
+    if Map.member bv expBindMap
+      then do occs <- collectOccurrences fnbv
+              dbgDoc $ text "Enqueueing substituted occs for " <> pretty fnbv
+              liftIO $ modIORef' wr (\w -> worklistAddList w $ map freeLink occs)
+      else do dbgDoc $ text "Not enqueueing substituted occs for " <> pretty bv
+              return ()
 
+-- This is like enqueueSubstitutedOccurrences but it doesn't filter on expBindMap.
+enqueueOccurrences wr args = do
+  let nq arg = do bv <- freeBinder arg
+                  occs <- collectOccurrences bv
+                  liftIO $ modIORef' wr (\w -> worklistAddList w $ map freeLink occs)
+  mapM_ nq args
 
 doContifyWith_part1 cont bv fn occs wr fd bindingWorklistRef = do
   dbgIf dbgCont $ green (text "       should contify!")
