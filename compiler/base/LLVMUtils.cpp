@@ -306,7 +306,10 @@ llvm::Constant* getNullOrZero(llvm::Type* t) {
     return llvm::ConstantPointerNull::get(p);
   } else if (llvm::isa<llvm::IntegerType>(t)) {
     return llvm::ConstantInt::get(t, 0);
+  } else if (t->isFloatingPointTy()) {
+    return llvm::ConstantFP::get(t, 0.0);
   } else {
+    t->dump();
     assert(false && "getNullOrZero given improper type");
     return NULL;
   }
