@@ -191,7 +191,7 @@ void* foster_sprintf_i32(int32_t x, int8_t specifier, int8_t flag,
                 (flag ==  1) ? "+" : // signed positives
                 (flag ==  2) ? " " : // space before positives
                 (flag ==  3) ? "#" : // 0x prefix (not meaningful for d)
-                (flag ==  4) ? "0" : ""; // left pad with zeros not spaces
+                (flag ==  4) ? "0" : // left pad with zeros not spaces
                 (flag == 10) ? "-" : // as above, but left justified.
                 (flag == 11) ? "-+" : 
                 (flag == 12) ? "- " : 
@@ -235,7 +235,7 @@ void* foster_sprintf_i64(int64_t x, int8_t specifier, int8_t flag,
                 (flag ==  1) ? "+" : // signed positives
                 (flag ==  2) ? " " : // space before positives
                 (flag ==  3) ? "#" : // 0x prefix (not meaningful for d)
-                (flag ==  4) ? "0" : ""; // left pad with zeros not spaces
+                (flag ==  4) ? "0" : // left pad with zeros not spaces
                 (flag == 10) ? "-" : // as above, but left justified.
                 (flag == 11) ? "-+" : 
                 (flag == 12) ? "- " : 
