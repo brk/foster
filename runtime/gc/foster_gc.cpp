@@ -280,7 +280,8 @@ public:
   virtual void immix_sweep(clocktimer<false>& phase,
                            clocktimer<false>& gcstart) = 0;
 
-  virtual void trim_remset() = 0;
+  //virtual void trim_remset() = 0;
+  virtual remset_t& get_incoming_ptr_addrs() = 0;
 
   virtual bool is_empty() = 0;
   virtual uint64_t approx_size_in_bytes() = 0;
@@ -1624,31 +1625,33 @@ struct immix_common {
     immix_trace<condemned_portion>(space, root, kFosterGCMaxDepth);
   }
 
-  uint64_t process_remsets(immix_heap* space, remset_t& incoming_ptr_addrs) {
+  uint64_t process_remsets(immix_heap* space) {
     // To boost tracing efficiency, pre-compile different variants of the tracing code
     // (using templates) specialized to what portion of the heap is being traced.
     switch (gcglobals.condemned_set.status) {
     case                    condemned_set_status::single_subheap_condemned:
-      return process_remset<condemned_set_status::single_subheap_condemned>(space, incoming_ptr_addrs);
+      return process_remset<condemned_set_status::single_subheap_condemned>(space);
     case                    condemned_set_status::per_frame_condemned:
-      return process_remset<condemned_set_status::per_frame_condemned>(space, incoming_ptr_addrs);
+      return process_remset<condemned_set_status::per_frame_condemned>(space);
     case                    condemned_set_status::whole_heap_condemned:
-      return process_remset<condemned_set_status::whole_heap_condemned>(space, incoming_ptr_addrs);
+      return process_remset<condemned_set_status::whole_heap_condemned>(space);
     }
   }
 
   template <condemned_set_status condemned_portion>
-  uint64_t process_remset(immix_heap* space, remset_t& incoming_ptr_addrs) {
+  uint64_t process_remset(immix_heap* space) {
+    remset_t& incoming_ptr_addrs = space->get_incoming_ptr_addrs();
     uint64_t numRemSetRoots = 0;
 
     //fprintf(gclog, "space %p has %d potentially-incoming slots\n", space, incoming_ptr_addrs.size());
 
     std::vector<tori**> slots(incoming_ptr_addrs.begin(), incoming_ptr_addrs.end());
-    for (tori** loc: slots) {
+    bool condemned = condemned_portion == condemned_set_status::per_frame_condemned;
+
+    for (tori** loc : slots) {
       // We can ignore the remembered set root if the source is also getting collected.
-      if (is_condemned<condemned_portion>(loc, space,
-            (condemned_portion == condemned_set_status::per_frame_condemned)
-                ? frame15_info_for(loc) : nullptr )) {
+      if (is_condemned<condemned_portion>(loc, space, 
+             condemned ? frame15_info_for(loc) : nullptr )) {
         if (GCLOG_DETAIL > 3) {
           fprintf(gclog, "space %p skipping ptr %p, from remset, in co-condemned slot %p\n", space, *loc, loc);
         }
@@ -1659,8 +1662,7 @@ struct immix_common {
       // Otherwise, we must check whether the source slot was modified;
       // if so, it might not point into our space.
       if (is_condemned<condemned_portion>((void*)ptr, space,
-            (condemned_portion == condemned_set_status::per_frame_condemned)
-                ? frame15_info_for((void*)ptr) : nullptr )) {
+             condemned ? frame15_info_for((void*)ptr) : nullptr )) {
         const typemap* purported_typemap = heap_cell::for_tidy(assume_tori_is_tidy(untag(make_unchecked_ptr(ptr))))->get_meta();
         if (gcglobals.typemap_memory.contains((void*) purported_typemap)) {
           if (TRACK_NUM_REMSET_ROOTS) { numRemSetRoots++; }
@@ -1678,7 +1680,7 @@ struct immix_common {
     return numRemSetRoots;
   }
 
-  void common_gc(immix_heap* active_space, remset_t& incoming_ptr_addrs, bool voluntary);
+  void common_gc(immix_heap* active_space, bool voluntary);
 };
 
 class immix_frame_tracking {
@@ -2141,7 +2143,7 @@ public:
       {
         condemned_set_status_manager tmp(condemned_set_status::whole_heap_condemned);
         if (GCLOG_DETAIL > 2) { fprintf(gclog, "get_new_(line)frame triggering immix gc\n"); }
-        common.common_gc(this, incoming_ptr_addrs, false);
+        common.common_gc(this, false);
       }
 
       if (GCLOG_DETAIL > 2) {
@@ -2203,7 +2205,7 @@ public:
 
   virtual void force_gc_for_debugging_purposes() {
     if (GCLOG_DETAIL > 2) { fprintf(gclog, "force_gc_for_debugging_purposes triggering line gc\n"); }
-    common.common_gc(this, incoming_ptr_addrs, true);
+    common.common_gc(this, true);
   }
 
   // Marks lines we own as condemned; ignores lines owned by other spaces.
@@ -2255,7 +2257,8 @@ public:
     return rv;
   }
 
-  virtual void trim_remset() { helpers::do_trim_remset(incoming_ptr_addrs, this); }
+  //virtual void trim_remset() { helpers::do_trim_remset(incoming_ptr_addrs, this); }
+  virtual remset_t& get_incoming_ptr_addrs() { return incoming_ptr_addrs; }
 
   // TODO should mark-clearing and sweeping be handled via condemned sets?
   //
@@ -2423,9 +2426,7 @@ void immix_line_allocator::ensure_sufficient_lines(immix_line_space* owner, int6
   owner->establish_ownership_for_allocation(current_frame, cell_size);
 }
 
-void immix_common::common_gc(immix_heap* active_space,
-                             remset_t& incoming_ptr_addrs,
-                             bool voluntary) {
+void immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     gcglobals.num_gcs_triggered += 1;
     if (!voluntary) { gcglobals.num_gcs_triggered_involuntarily++; }
     if (PRINT_STDOUT_ON_GC) { fprintf(stdout, "                        start GC #%d\n", gcglobals.num_gcs_triggered); fflush(stdout); }
@@ -2451,7 +2452,12 @@ void immix_common::common_gc(immix_heap* active_space,
     // Remembered sets would be ignored for full-heap collections, because
     // remembered sets skip co-condemned pointers, and everything is condemned.
     uint64_t numRemSetRoots =
-        voluntary ? process_remsets(active_space, incoming_ptr_addrs) : 0;
+        voluntary ? process_remsets(active_space) : 0;
+    if (voluntary && gcglobals.condemned_set.status == condemned_set_status::per_frame_condemned) {
+      for (auto space : gcglobals.condemned_set.spaces) {
+        numRemSetRoots += process_remsets(space);
+      }
+    }
 
     //double roots_ms = ct.elapsed_ms();
 
@@ -2812,7 +2818,7 @@ public:
 
   virtual void force_gc_for_debugging_purposes() {
     if (GCLOG_DETAIL > 2) { fprintf(gclog, "force_gc_for_debugging_purposes triggering immix gc\n"); }
-    common.common_gc(this, incoming_ptr_addrs, true);
+    common.common_gc(this, true);
   }
 
   // {{{ Prechecked allocation functions
@@ -2946,7 +2952,7 @@ public:
     // that can easily lead to nearly-doubled wasted work.
     {
       condemned_set_status_manager tmp(condemned_set_status::whole_heap_condemned);
-      common.common_gc(this, incoming_ptr_addrs, false);
+      common.common_gc(this, false);
     }
 
     if (GCLOG_DETAIL > 2) {
@@ -3000,7 +3006,7 @@ public:
       if (GCLOG_DETAIL > 2) { fprintf(gclog, "allocate_array_into_bumper triggering immix gc\n"); }
       {
         condemned_set_status_manager tmp(condemned_set_status::whole_heap_condemned);
-        common.common_gc(this, incoming_ptr_addrs, false);
+        common.common_gc(this, false);
       }
 
       if (try_establish_alloc_precondition(bumper, req_bytes)) {
@@ -3043,7 +3049,8 @@ public:
     return tracking.logical_frame15s() * (IMMIX_BYTES_PER_LINE * IMMIX_LINES_PER_FRAME15);
   }
 
-  virtual void trim_remset() { helpers::do_trim_remset(incoming_ptr_addrs, this); }
+  //virtual void trim_remset() { helpers::do_trim_remset(incoming_ptr_addrs, this); }
+  virtual remset_t& get_incoming_ptr_addrs() { return incoming_ptr_addrs; }
   
   virtual void immix_sweep(clocktimer<false>& phase,
                            clocktimer<false>& gcstart) {
