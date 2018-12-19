@@ -274,13 +274,14 @@ public:
 
   virtual void condemn() = 0;
   virtual void uncondemn() = 0;
+  virtual bool is_condemned() = 0;
 
   virtual void visit_root(unchecked_ptr* root, const char* slotname) = 0;
 
   virtual void immix_sweep(clocktimer<false>& phase,
                            clocktimer<false>& gcstart) = 0;
 
-  //virtual void trim_remset() = 0;
+  virtual void trim_remset() = 0;
   virtual remset_t& get_incoming_ptr_addrs() = 0;
 
   virtual bool is_empty() = 0;
@@ -326,22 +327,11 @@ enum class frame15kind : uint8_t {
   staticdata // parent is nullptr
 };
 
-
-/* Condemned status is associated with frame15s (and lines of line_frame_15s,
- * and individual large (array) allocations). For the latter objects, the
- * corresponding frame15 entry will be mixed_condemned.
- */
-enum class condemned_status : uint8_t {
-  not_condemned = 0,
-  yes_condemned,
-  mixed_condemned
-};
-
 /* We can collect the heap at three granularities:
  *   1) Collect the whole heap, ignoring subheap boundaries.
  *      This is used to find space triggered by heap exhaustion.
  *   2) Collect a single subheap.
- *   3) Collect whatever frames have been condemned.
+ *   3) Collect whatever subheaps have been condemned.
  */
 enum class condemned_set_status : uint8_t {
   whole_heap_condemned = 0,
@@ -485,7 +475,6 @@ struct GCGlobals {
 
   frame15info*      lazy_mapped_frame15info;
   uint8_t*          lazy_mapped_coarse_marks;
-  uint8_t*          lazy_mapped_frame15_condemned_count;
 
   uint8_t*          lazy_mapped_granule_marks;
 
@@ -556,36 +545,6 @@ frame15kind classification_for_frame15_id(frame15_id fid) {
 inline
 void set_classification_for_frame15_id(frame15_id fid, frame15kind v) {
   gcglobals.lazy_mapped_frame15info[fid].frame_classification = v;
-}
-
-/*
-inline
-condemned_status compute_condemned_status_for(frame15_id fid, immix_heap* space) {
-  frame15kind fk = classification_for_frame15_id(fid);
-  if (fk == frame15kind::immix_smallmedium) {
-    return condemned_status::yes_condemned;
-  } else {
-    return condemned_status::mixed_condemned;
-  }
-}
-*/
-
-inline uint8_t& condemned_count_for_frame15_id(frame15_id fid) {
-  return gcglobals.lazy_mapped_frame15_condemned_count[fid];
-}
-
-inline
-void set_condemned_status_for_frame15_ids(frame15_id fid, int n, uint8_t c) {
-  for (int i = 0; i < n; ++i) {
-    gcglobals.lazy_mapped_frame15_condemned_count[fid + i] = c;
-  }
-}
-
-inline
-void set_condemned_counts_for_frame21(frame21* f21, uint8_t c) {
-  auto fid = frame15_id_of(f21);
-  memset( &gcglobals.lazy_mapped_frame15_condemned_count[fid], int(c), IMMIX_F15_PER_F21);
-  //gcglobals.lazy_mapped_coarse_condemned[frameX_id_of(f21, COARSE_MARK_LOG)] = s;
 }
 
 inline
@@ -826,23 +785,19 @@ bool owned_by(tori* body, immix_heap* space) {
 
 tidy* assume_tori_is_tidy(tori* p) { return (tidy*) p; }
 
-uint8_t condemned_count_for(void* addr, frame15info* finfo);
-/*
-bool is_condemned_(void* slot, frame15info* finfo) {
-  return condemned_status_for_frame15info(finfo, slot) == condemned_status::yes_condemned;
+bool space_is_condemned(void* slot) {
+  auto space = heap_for(slot);
+  return space && space->is_condemned();
 }
-*/
 
-// ``finfo`` is only needed when the condemned portion is
-//   condemned_set_status::per_frame_condemned.
 template<condemned_set_status condemned_portion>
-bool is_condemned(void* slot, immix_heap* space, frame15info* finfo) {
+bool slot_is_condemned(void* slot, immix_heap* space) {
   if (condemned_portion == condemned_set_status::whole_heap_condemned) {
     return true;
   } else if (condemned_portion == condemned_set_status::single_subheap_condemned) {
     return owned_by((tori*)slot, space);
   } else {
-    return condemned_count_for(slot, finfo) > 0;
+    return space->is_condemned() && owned_by((tori*)slot, space);
   }
 }
 
@@ -957,6 +912,9 @@ namespace helpers {
   bool remset_entry_is_internally_stale(tori** slot) {
     tori* ptr = *slot;
     if (non_kosher_addr(ptr)) { return true; }
+    frame15kind fk = classification_for_frame15_id(frame15_id_of(ptr));
+    if (fk == frame15kind::unknown || fk == frame15kind::staticdata) { return true; }
+    
     heap_cell* cell = heap_cell::for_tidy((tidy*) ptr);
     /*
     fprintf(gclog, "considering remset      ptr %p: body line marked %d, cell line marked %d, cell granule marked %d\n",
@@ -1128,38 +1086,6 @@ public:
 
 class immix_line_space;
 immix_line_space* get_owner_for_immix_line_frame15(immix_line_frame15* f, int line);
-condemned_status get_condemned_status_for_immix_line_frame15(immix_line_frame15* f, int line);
-
-
-__attribute((noinline))
-uint8_t condemned_count_for_slowpath(frame15kind fc, void* addr, frame15info* finfo) {
-  auto associated = finfo->associated;
-
-  if (fc == frame15kind::immix_linebased) {
-    auto lineframe = static_cast<immix_line_frame15*>(associated);
-    auto line = line_offset_within_f15(addr);
-    return uint8_t(get_condemned_status_for_immix_line_frame15(lineframe, line));
-  } else if (fc == frame15kind::immix_malloc_continue) {
-    return condemned_count_for(associated, frame15_info_for(associated));
-  } else if (fc == frame15kind::immix_malloc_start) {
-    immix_malloc_frame15info* maf = (immix_malloc_frame15info*) associated;
-    heap_array* arr = heap_array::from_heap_cell(heap_cell::for_tidy((tidy*)addr));
-    return sizedset__lookup<4>(&maf->contained[0], arr, &maf->condemned[0]);
-  }
-
-  //foster_assert(false, "condemned_status missing a case! maybe 'frame15kind::unknown'");
-  //fprintf(gclog, "condemned_status saw fc %d for addr %p, finfo %p\n", fc, addr, finfo);
-  //gfflush(gclog);
-  return 0;
-}
-
-uint8_t condemned_count_for(void* addr, frame15info* finfo) {
-  auto fc = classification_for_frame15info(finfo);
-  if (fc == frame15kind::immix_smallmedium) {
-    return condemned_count_for_frame15_id(frame15_id_of(addr));
-  }
-  return condemned_count_for_slowpath(fc, addr, finfo);
-}
 
 __attribute((noinline))
 immix_heap* heap_for_slowpath(frame15kind fc, void* associated, void* addr) {
@@ -1570,19 +1496,18 @@ struct immix_common {
       return;
     }
 
-    if (!(is_condemned<condemned_portion>(body, space, f15info))) {
-      // When collecting a subset of the heap, we only look at condemned objects,
-      // and ignore objects stored in non-condemned regions (regardless of
-      // whether they are part of this particular subheap or not).
-      // The remembered set is guaranteed to contain all incoming pointers
-      // from non-condemned regions.
-      if (GCLOG_DETAIL > 3) { fprintf(gclog, "ignoring non-condemned cell %p\n", body); }
-      return;
-    }
-
-    if (GCLOG_DETAIL > 4) {
-      fprintf(gclog, "immix_trace: space %p saw pointer %p, untagged from %p; f15id %u, condemned portion: %d\n",
-        space, body, root->val, f15id, condemned_portion);
+    if ( (condemned_portion == condemned_set_status::single_subheap_condemned
+          && !owned_by(body, space)) ||
+         (condemned_portion == condemned_set_status::per_frame_condemned
+          && !space_is_condemned(body)) )
+    {
+        // When collecting a subset of the heap, we only look at condemned objects,
+        // and ignore objects stored in non-condemned regions.
+        // The remembered set is guaranteed to contain all incoming pointers
+        // from non-condemned regions.
+        if (GCLOG_DETAIL > 3) { fprintf(gclog, "immix_trace() ignoring non-condemned cell %p in line %d of (%u)\n",
+            body, line_offset_within_f15(body), f15id); }
+        return;
     }
 
     // TODO drop the assumption that body is a tidy pointer.
@@ -1643,37 +1568,33 @@ struct immix_common {
     remset_t& incoming_ptr_addrs = space->get_incoming_ptr_addrs();
     uint64_t numRemSetRoots = 0;
 
-    //fprintf(gclog, "space %p has %d potentially-incoming slots\n", space, incoming_ptr_addrs.size());
-
     std::vector<tori**> slots(incoming_ptr_addrs.begin(), incoming_ptr_addrs.end());
-    bool condemned = condemned_portion == condemned_set_status::per_frame_condemned;
-
-    for (tori** loc : slots) {
+    
+    for (tori** src_slot : slots) {
       // We can ignore the remembered set root if the source is also getting collected.
-      if (is_condemned<condemned_portion>(loc, space, 
-             condemned ? frame15_info_for(loc) : nullptr )) {
+      if (slot_is_condemned<condemned_portion>(src_slot, space)) {
         if (GCLOG_DETAIL > 3) {
-          fprintf(gclog, "space %p skipping ptr %p, from remset, in co-condemned slot %p\n", space, *loc, loc);
+          fprintf(gclog, "space %p skipping ptr %p, from remset, in co-condemned slot %p\n", space, *src_slot, src_slot);
         }
         continue;
       }
 
-      tori* ptr = *loc;
+      tori* ptr = *src_slot;
       // Otherwise, we must check whether the source slot was modified;
-      // if so, it might not point into our space.
-      if (is_condemned<condemned_portion>((void*)ptr, space,
-             condemned ? frame15_info_for((void*)ptr) : nullptr )) {
+      // if so, it might not point into our space (or might point to a
+      // non-condemned portion of our space).
+      if (slot_is_condemned<condemned_portion>((void*) ptr, space)) {
         const typemap* purported_typemap = heap_cell::for_tidy(assume_tori_is_tidy(untag(make_unchecked_ptr(ptr))))->get_meta();
         if (gcglobals.typemap_memory.contains((void*) purported_typemap)) {
           if (TRACK_NUM_REMSET_ROOTS) { numRemSetRoots++; }
           //fprintf(gclog, "space %p examining remset ptr %p in slot %p with typemap %p\n", space, *loc, loc, purported_typemap); fflush(gclog);
-          visit_root_specialized<condemned_portion>(space, (unchecked_ptr*) loc, "remembered_set_root");
+          visit_root_specialized<condemned_portion>(space, (unchecked_ptr*) src_slot, "remembered_set_root");
         } else {
-          fprintf(gclog, "space %p skipping remset bad-typemap ptr %p in slot %p\n", space, *loc, loc);
+          fprintf(gclog, "space %p skipping remset bad-typemap ptr %p in slot %p\n", space, ptr, src_slot);
         }
       } else {
         if (GCLOG_DETAIL > 3) {
-          fprintf(gclog, "space %p skipping remset non-condemned ptr %p in slot %p\n", space, *loc, loc);
+          fprintf(gclog, "space %p skipping remset non-condemned ptr %p in slot %p\n", space, ptr, src_slot);
         }
       }
     }
@@ -1906,8 +1827,8 @@ struct immix_line_frame15 {
   // We set aside 5 (IMMIX_LINE_FRAME15_START_LINE)
   // of the 128 lines in the frame, which is 3.9% overhead (1 KB + 256b out of 32 KB).
 
-  // One line (256 b) for condemned marks, though we only need/use IMMIX_LINES_PER_BLOCK.
-  condemned_status condemned[IMMIX_BYTES_PER_LINE]; // half a line for per-line condemned bytemap
+  // One line (256 b) padding.
+  uint8_t unused_metadata[IMMIX_BYTES_PER_LINE];
 
   // Four lines (1024 bytes = (123+5) * 8 bytes) for owners and other metadata.
   // We can store per-line space pointers for the remaining 123 lines:
@@ -1935,13 +1856,6 @@ struct immix_line_frame15 {
   immix_line_space* get_owner_for_line(int n) { return owners[n - IMMIX_LINE_FRAME15_START_LINE]; }
   void set_owner_for_line(int n, immix_line_space* o) { owners[n - IMMIX_LINE_FRAME15_START_LINE] = o; }
 
-  condemned_status get_condemned_status_for_line(int line) { return condemned[line]; }
-  void condemn_range(used_linegroup g) {
-    for (int i = g.startline(); i < g.endline(); ++i) { condemned[i] = condemned_status::yes_condemned; }
-  }
-  void uncondemn_range(used_linegroup g) {
-    for (int i = g.startline(); i < g.endline(); ++i) { condemned[i] = condemned_status::not_condemned; }
-  }
   void reset_line_bumper() {
     line_bumper.base = &begin_lines[0];
     line_bumper.bound = offset(line_bumper.base, IMMIX_LINES_PER_LINE_FRAME15 * IMMIX_LINE_SIZE);
@@ -1954,7 +1868,6 @@ struct immix_line_frame15 {
   }
 
   void realign_and_split_line_bumper_if(bool do_split);
-  //condemned_status  get_condemned_status_for_line(int n) { return condemned[n]; }
 };
 
 static_assert( IMMIX_BYTES_PER_LINE > IMMIX_LINES_PER_BLOCK,
@@ -1964,12 +1877,6 @@ static_assert(  offsetof(immix_line_frame15, begin_lines)
             "our expectation for the positioning of begin_lines is broken!");
 
 void do_clear_line_frame15(immix_line_frame15* f) { f->clear_line_frame15(); }
-
-/*
-void* nth_line_of_line_frame15(immix_line_frame15* f) {
-  return offset(f, IMMIX_LINE_FRAME15_START_LINE * IMMIX_BYTES_PER_LINE);
-}
-*/
 
 // Opportunistically merges when line groups are inserted in sorted order.
 void append_linegroup(std::vector<used_linegroup>& lines, used_linegroup u) {
@@ -2109,8 +2016,10 @@ private:
   // The points-into remembered set
   remset_t incoming_ptr_addrs;
 
+  bool condemned_flag;
+
 public:
-  immix_line_space() {
+  immix_line_space() : condemned_flag(false) {
     if (GCLOG_DETAIL > 2) {
       fprintf(gclog, "new immix_line_space %p, current byte limit: %zd f15s\n", this,
           gcglobals.space_limit->frame15s_left);
@@ -2210,43 +2119,15 @@ public:
 
   // Marks lines we own as condemned; ignores lines owned by other spaces.
   virtual void condemn() {
-    for (auto usedgroup : used_lines) {
-      int num_condemned_lines = usedgroup.size_in_lines();
-      auto lineframe = usedgroup.associated_lineframe();
-      lineframe->condemn_range(usedgroup);
-      condemned_count_for_frame15_id(frame15_id_of(lineframe))
-          += num_condemned_lines;
-    }
-
+    condemned_flag = true;
     global_immix_line_allocator.ensure_no_line_reuse(this);
   }
 
-  virtual void uncondemn() {
-    for (auto usedgroup : used_lines) {
-      int num_uncondemned_lines = usedgroup.size_in_lines();
-      auto lineframe = usedgroup.associated_lineframe();
-      lineframe->uncondemn_range(usedgroup);
-      condemned_count_for_frame15_id(frame15_id_of(lineframe))
-          -= num_uncondemned_lines;
-    }
-  }
+  virtual void uncondemn() { condemned_flag = false; }
+  virtual bool is_condemned() { return condemned_flag; }
 
   void visit_root(unchecked_ptr* root, const char* slotname) {
     common.visit_root(this, root, slotname);
-  }
-
-  // Clear the line map for our used lines.
-  void clear_mark_bits_for_space() {
-    for (auto usedgroup : used_lines) {
-      auto lineframe = usedgroup.associated_lineframe();
-      uint8_t* linemap = linemap_for_frame15_id(frame15_id_of(lineframe));
-
-      int startline = usedgroup.startline();
-      int endline   = usedgroup.endline();
-      for (int i = startline; i < endline; ++i) {
-        linemap[i] = 0;
-      }
-    }
   }
 
   virtual bool is_empty() { return used_lines.empty() && laa.empty(); }
@@ -2257,7 +2138,7 @@ public:
     return rv;
   }
 
-  //virtual void trim_remset() { helpers::do_trim_remset(incoming_ptr_addrs, this); }
+  virtual void trim_remset() { helpers::do_trim_remset(incoming_ptr_addrs, this); }
   virtual remset_t& get_incoming_ptr_addrs() { return incoming_ptr_addrs; }
 
   // TODO should mark-clearing and sweeping be handled via condemned sets?
@@ -2312,10 +2193,6 @@ public:
 
 immix_line_space* get_owner_for_immix_line_frame15(immix_line_frame15* f, int line) {
   return f->get_owner_for_line(line);
-}
-
-condemned_status get_condemned_status_for_immix_line_frame15(immix_line_frame15* f, int line) {
-  return f->get_condemned_status_for_line(line);
 }
 
 // Precondition: the line frame's bumper is initialized and large enough
@@ -2613,13 +2490,12 @@ void condemned_set<Allocator>::sweep_condemned(Allocator* active_space,
       //   * Allocation in A puts an arbitrary bit pattern in B's referent
       //     (especially the header/typemap)
       //   * Single-subheap GC of A follows the remset entry for B and goes off the rails.
-      /*
       gcglobals.default_allocator->trim_remset();
       for (auto handle : subheap_handles) {
         handle->body->trim_remset();
       }
-      */
 
+      //gcglobals.lines_live_at_whole_heap_gc = 0;
       gcglobals.default_allocator->immix_sweep(phase, gcstart);
       for (auto handle : subheap_handles) {
         handle->body->immix_sweep(phase, gcstart);
@@ -2747,7 +2623,7 @@ bool is_linemap_clear(frame21* f21) {
 
 class immix_space : public heap {
 public:
-  immix_space() {
+  immix_space() : condemned_flag(false) {
     if (GCLOG_DETAIL > 2) { fprintf(gclog, "new immix_space %p, current space limit: %zd f15s\n", this, gcglobals.space_limit->frame15s_left); }
 
     incoming_ptr_addrs.set_empty_key(nullptr);
@@ -2757,46 +2633,9 @@ public:
     return;
   }
 
-  // Marks all frames (including clean ones) as condemned.
-  virtual void condemn() {
-    if (GCLOG_DETAIL > 0) {
-      fprintf(gclog, "condemning %zu frames...\n", tracking.logical_frame15s()); fflush(gclog);
-    }
-    int n = 0;
-    int m = 0;
-    clocktimer<false> ct; ct.start();
-
-    tracking.iter_frame15( [&](frame15* f15) {
-      condemned_count_for_frame15_id(frame15_id_of(f15)) = IMMIX_LINES_PER_FRAME15;
-      ++n;
-      return true;
-    });
-    tracking.iter_coalesced_frame21( [&](frame21* f21) {
-      // The fact that we own the entire frame21 indicates that none of its frame15s are line-based.
-      set_condemned_counts_for_frame21(f21, IMMIX_LINES_PER_FRAME15);
-      m += IMMIX_F15_PER_F21;
-    });
-    // TODO condemn array frames
-
-    if (GCLOG_DETAIL > 0) {
-      fprintf(gclog, "condemned (%d + %d = %d) / %zu frames in %f microseconds\n",
-          n, m, n + m, tracking.logical_frame15s(),
-          ct.elapsed_us());
-    }
-  }
-
-  virtual void uncondemn() {
-    tracking.iter_frame15( [&](frame15* f15) {
-      condemned_count_for_frame15_id(frame15_id_of(f15)) = 0;
-      return true;
-    });
-    tracking.iter_coalesced_frame21( [&](frame21* f21) {
-      // The fact that we own the entire frame21 indicates that none of its frame15s are line-based.
-      set_condemned_counts_for_frame21(f21, 0);
-    });
-
-    // TODO uncondemn array frames
-  }
+  virtual void condemn() { condemned_flag = true; }
+  virtual void uncondemn() { condemned_flag = false; }
+  virtual bool is_condemned() { return condemned_flag; }
 
   void clear_current_blocks() {
     if (GCLOG_DETAIL > 3) {
@@ -3049,7 +2888,7 @@ public:
     return tracking.logical_frame15s() * (IMMIX_BYTES_PER_LINE * IMMIX_LINES_PER_FRAME15);
   }
 
-  //virtual void trim_remset() { helpers::do_trim_remset(incoming_ptr_addrs, this); }
+  virtual void trim_remset() { helpers::do_trim_remset(incoming_ptr_addrs, this); }
   virtual remset_t& get_incoming_ptr_addrs() { return incoming_ptr_addrs; }
   
   virtual void immix_sweep(clocktimer<false>& phase,
@@ -3260,6 +3099,7 @@ private:
   //std::set<frame15_id> frames_pointing_here;
   remset_t incoming_ptr_addrs;
 
+  bool condemned_flag;
   // immix_space_end
 };
 
@@ -3537,7 +3377,6 @@ void initialize(void* stack_highest_addr) {
   gcglobals.lazy_mapped_frame15info             = allocate_lazily_zero_mapped<frame15info>(     size_t(1) << (address_space_prefix_size_log() - 15));
   gcglobals.lazy_mapped_coarse_marks            = allocate_lazily_zero_mapped<uint8_t>(         size_t(1) << (address_space_prefix_size_log() - COARSE_MARK_LOG));
   //gcglobals.lazy_mapped_coarse_condemned        = allocate_lazily_zero_mapped<condemned_status>(size_t(1) << (address_space_prefix_size_log() - COARSE_MARK_LOG));
-  gcglobals.lazy_mapped_frame15_condemned_count = allocate_lazily_zero_mapped<uint8_t>(lazy_mapped_frame15_condemned_size());
   //gcglobals.lazy_mapped_frame15info_associated  = allocate_lazily_zero_mapped<void*>(      size_t(1) << (address_space_prefix_size_log() - 15));
   //
   gcglobals.lazy_mapped_granule_marks           = allocate_lazily_zero_mapped<uint8_t>(lazy_mapped_granule_marks_size()); // byte marks
