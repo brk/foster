@@ -61,13 +61,13 @@ void addCoroArgs(std::vector<llvm::Type*>& fnTyArgs,
 }
 
 // in LLCodegen.cpp
-Value* getElementFromComposite(CodegenPass* pass, Value* compositeValue, int indexValue, const std::string& msg);
+Value* getElementFromComposite(CodegenPass* pass, Value* compositeValue, int indexValue, const std::string& msg, bool assumeImmutable);
 
 void addCoroArgs(std::vector<Value*>& fnArgs,
                  llvm::Value* argVals) {
   llvm::StructType* sty;
   if (isSingleElementStruct(argVals->getType(), sty)) {
-    fnArgs.push_back(getElementFromComposite(nullptr, argVals, 0, "coroarg"));
+    fnArgs.push_back(getElementFromComposite(nullptr, argVals, 0, "coroarg", false));
   } else {
     fnArgs.push_back(argVals);
   }

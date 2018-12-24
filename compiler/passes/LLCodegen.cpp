@@ -21,6 +21,7 @@
 
 #include "llvm/IR/Metadata.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/Analysis/ConstantFolding.h"
 //#include "llvm/Analysis/DIBuilder.h"
 //#include "llvm/Support/Dwarf.h"
 
@@ -328,14 +329,31 @@ void assertValueHasSameTypeAsPhiNode(llvm::Value* v, LLBlock* block, int i) {
 // Implementation of CodegenPass helpers {{{
 
 Value* getElementFromComposite(CodegenPass* pass, Value* compositeValue,
-                               int indexValue, const std::string& msg) {
+                               int indexValue, const std::string& msg, bool assumeImmutable=false) {
   ASSERT(indexValue >= 0);
   Value* idxValue = builder.getInt32(indexValue);
   Type* compositeType = compositeValue->getType();
   // To get an element from an in-memory object, compute the address of
   // the appropriate struct field and emit a load.
+  
   if (llvm::isa<llvm::PointerType>(compositeType)) {
     Value* gep = getPointerToIndex(compositeValue, idxValue, (msg + ".subgep").c_str());
+
+    if (assumeImmutable) {
+      if (auto C = dyn_cast<llvm::ConstantExpr>(gep)) {
+        if (auto GEP = llvm::cast<llvm::GetElementPtrInst>(C->getAsInstruction())) {
+          if (auto GV = llvm::dyn_cast<llvm::GlobalVariable>(GEP->getPointerOperand())) {
+            auto V = llvm::ConstantFoldLoadThroughGEPConstantExpr(GV->getInitializer(), C);
+            if (V) {
+              GEP->deleteValue();
+              return V;
+            }
+          }
+          GEP->deleteValue();
+        }
+      }
+    }
+
     //maybeEmitCallToLogPtrRead(pass, gep);
     return emitNonVolatileLoad(gep, gep->getName() + "_ld");
   } else if (llvm::isa<llvm::StructType>(compositeType)) {
@@ -1788,7 +1806,8 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
     // Load code and env pointers from closure...
     llvm::Value* envPtr =
         getElementFromComposite(pass, FV, 1, "getCloEnv");
-    FV = getElementFromComposite(pass, FV, 0, "getCloCode");
+    FV = getElementFromComposite(pass, FV, 0, "getCloCode", true);
+
     FT = dyn_cast<llvm::FunctionType>(slotType(FV));
     // Pass env pointer as first parameter to function.
     valArgs.push_back(envPtr);
