@@ -1779,6 +1779,7 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
 
   llvm::FunctionType* FT = NULL;
   std::vector<Value*> valArgs;
+  bool fromClosure = false;
 
   llvm::CallingConv::ID callingConv = parseCallingConv(this->callconv);
 
@@ -1811,6 +1812,13 @@ llvm::Value* LLCall::codegen(CodegenPass* pass) {
     FT = dyn_cast<llvm::FunctionType>(slotType(FV));
     // Pass env pointer as first parameter to function.
     valArgs.push_back(envPtr);
+    fromClosure = true;
+  }
+
+  if (pass->config.countClosureCalls && fromClosure) {
+    auto f  = pass->mod->getFunction("foster__record_closure_call");
+    auto ci = builder.CreateCall(f);
+    markAsNonAllocating(ci);
   }
 
   assertHaveCallableType(base, FT, FV);

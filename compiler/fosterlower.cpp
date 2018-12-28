@@ -96,6 +96,11 @@ optDontKillDeadSlots("dont-kill-dead-slots",
   cl::desc("Disable nulling-out of statically dead GC root slots"),
   cl::cat(FosterOptCat));
 
+static cl::opt<bool>
+optCountClosureCalls("count-closure-calls",
+  cl::desc("Emit code to count the number of dynamic closure calls made."),
+  cl::cat(FosterOptCat));
+
 // Note: bootstrap/testcases/lifetime-no-inline-crash fails when run thusly:
 //   ./gotest.sh bootstrap/testcases/lifetime-no-inline-crash -I ../stdlib --me-arg=--no-inline --optimize=O2 --asm --be-arg=--enable-lifetime-info
 // I haven't yet figured out whether we are generating subtly incorrect lifetime
@@ -473,6 +478,7 @@ int main(int argc, char** argv) {
     config.useNSW            = optForceNSW;
     config.useNUW            = optForceNUW;
     config.trackAllocSites   = optTrackAllocSites;
+    config.countClosureCalls = optCountClosureCalls;
     config.killDeadSlots     = !optDontKillDeadSlots;
     config.emitLifetimeInfo  = optEnableLifetimeInfo;
     config.emitAllGCBarriers = optAllGCBarriers;
