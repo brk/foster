@@ -31,6 +31,7 @@ options =
  , Option []     ["non-moving-gc"] (NoArg NonMovingGC)    "assume non-moving GC (for testing codegen effect of reloads)"
  , Option []     ["no-gc-at-all"]  (NoArg NoGcAtAll)      "assume no GC at all  (for testing codegen effect of root slots)"
  , Option []     ["typecheck-only"] (NoArg TypecheckOnly) "typecheck only, no codegen"
+ , Option []     ["no-quant"] (NoArg NoQuantification)    "disable automatic polymorphic quantification (dev tool only)"
  , Option []     ["inline-size-limit"]
                                 (ReqArg InlineSize "SIZE")"size counter value for inlining"
  ]
@@ -52,6 +53,7 @@ getNoGcAtAll     (flags, _) =        NoGcAtAll   `elem` flags
 getStripGCKills  (flags, _) =        StripGCKills `elem` flags
 getNoPreAllocOpt (flags, _) =        NoPreAllocOpt `elem` flags
 getTypecheckOnly (flags, _) =        TypecheckOnly `elem` flags
+getNoQuant       (flags, _) =     NoQuantification `elem` flags
 getInlining      (flags, _) = (not $ NoInline    `elem` flags) && (Inline  `elem` flags)
 getInliningDonate(flags, _) = (not $ NoDonate    `elem` flags)
 getInliningSize  (flags, _) = foldr (\f a -> case f of InlineSize s -> Just (read s :: Int) ; _ -> a) Nothing flags
@@ -73,6 +75,7 @@ data Flag = Interpret String
           | NonMovingGC
           | NoGcAtAll
           | TypecheckOnly
+          | NoQuantification
           | NoInline
           | Inline
           | InlineGas String

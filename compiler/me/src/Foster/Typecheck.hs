@@ -148,7 +148,10 @@ inferSigma :: Context SigmaTC -> Term -> String -> Tc (AnnExpr SigmaTC)
 -- {{{
 inferSigma ctx e msg = do
   e' <- inferSigmaHelper ctx e msg
-  doQuantification e' ctx
+  shouldDoQuant <- tcShouldQuantify
+  if shouldDoQuant
+    then doQuantification e' ctx
+    else return e'
 
 inferSigmaHelper :: Context SigmaTC -> Term -> String -> Tc (AnnExpr SigmaTC)
 inferSigmaHelper ctx (E_TyCheck annot e ta) _msg = do

@@ -149,6 +149,7 @@ data TcEnv = TcEnv { tcEnvUniqs        :: IORef Uniq
                    , tcPendingLevelAdjustments :: IORef [TypeTC]
                    , tcUseOptimizedCtorReprs :: Bool
                    , tcVerboseMode           :: Bool
+                   , tcNoQuantification      :: Bool
                    }
 
 newtype Tc a = Tc (TcEnv -> IO (OutputOr a))
@@ -189,6 +190,10 @@ tcOnError msgs m k = Tc $ \env -> do result <- unTc env m
 tcWhenVerbose :: Tc () -> Tc ()
 tcWhenVerbose action = Tc $ \env ->
   if tcVerboseMode env then unTc env action else retOK ()
+
+tcShouldQuantify :: Tc Bool
+tcShouldQuantify = Tc $ \env ->
+  retOK $ not $ tcNoQuantification env
 
 tcLift :: IO a -> Tc a
 tcLift action = Tc $ \_env -> action >>= retOK

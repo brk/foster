@@ -600,7 +600,8 @@ runCompiler ci_time wholeprog flagVals outfile = do
                         tcCurrentLevel = 0,
               tcPendingLevelAdjustments = plaref,
                 tcUseOptimizedCtorReprs = getCtorOpt flagVals,
-                          tcVerboseMode = getVerboseFlag flagVals }
+                          tcVerboseMode = getVerboseFlag flagVals,
+                     tcNoQuantification = getNoQuant flagVals }
    (nc_time, mb_errs) <- ioTime $ runExceptT $ evalStateT (compile wholeprog tcenv outfile)
                     CompilerContext {
                            ccVerbose  = getVerboseFlag flagVals
