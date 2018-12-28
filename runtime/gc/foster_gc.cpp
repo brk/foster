@@ -468,12 +468,18 @@ struct GCGlobals {
 
   uint64_t num_closure_calls;
 
+  bool     in_non_default_subheap;
+  uint64_t num_alloc_bytes_in_subheaps;
+
   uint64_t write_barrier_phase0_hits;
   uint64_t write_barrier_phase1_hits;
   int64_t  write_barrier_slow_path_ticks;
 
   uint64_t num_objects_marked_total;
   uint64_t alloc_bytes_marked_total;
+
+  uint64_t max_bytes_live_at_whole_heap_gc;
+  uint64_t lines_live_at_whole_heap_gc;
 
   frame15info*      lazy_mapped_frame15info;
   uint8_t*          lazy_mapped_coarse_marks;
@@ -650,6 +656,8 @@ struct large_array_allocator {
     if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_array(total_bytes); }
     if (TRACK_NUM_ALLOCATIONS) { ++gcglobals.num_allocations; }
     if (TRACK_NUM_ALLOC_BYTES) { gcglobals.num_alloc_bytes += total_bytes; }
+    if (TRACK_NUM_ALLOC_BYTES && gcglobals.in_non_default_subheap) {
+      gcglobals.num_alloc_bytes_in_subheaps += total_bytes; }
 
     // TODO modify associated frame15infos, lazily allocate card bytes.
     toggle_framekinds_for(allot, offset(base, total_bytes + 7), parent);
@@ -847,6 +855,8 @@ namespace helpers {
     if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_array(total_bytes); }
     if (TRACK_NUM_ALLOCATIONS) { ++gcglobals.num_allocations; }
     if (TRACK_NUM_ALLOC_BYTES) { gcglobals.num_alloc_bytes += total_bytes; }
+    if (TRACK_NUM_ALLOC_BYTES && gcglobals.in_non_default_subheap) {
+      gcglobals.num_alloc_bytes_in_subheaps += total_bytes; }
 
     if (FOSTER_GC_TRACK_BITMAPS) {
       //size_t granule = granule_for(tori_of_tidy(allot->body_addr()));
@@ -887,6 +897,8 @@ namespace helpers {
     if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_cell(cell_size); }
     if (TRACK_NUM_ALLOCATIONS) { ++gcglobals.num_allocations; }
     if (TRACK_NUM_ALLOC_BYTES) { gcglobals.num_alloc_bytes += cell_size; }
+    if (TRACK_NUM_ALLOC_BYTES && gcglobals.in_non_default_subheap) {
+      gcglobals.num_alloc_bytes_in_subheaps += cell_size; }
     if (FOSTER_GC_ALLOC_HISTOGRAMS) { allocate_cell_prechecked_histogram((int) cell_size); }
     allot->set_header(map, mark_value);
 
@@ -2319,6 +2331,7 @@ void immix_common::common_gc(immix_heap* active_space, bool voluntary) {
 
     auto num_marked_at_start   = gcglobals.num_objects_marked_total;
     auto bytes_marked_at_start = gcglobals.alloc_bytes_marked_total;
+    bool isWholeHeapGC = gcglobals.condemned_set.status == condemned_set_status::whole_heap_condemned;
 
     global_immix_line_allocator.realign_and_split_line_bumper();
 
@@ -2402,12 +2415,23 @@ void immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     hdr_record_value(gcglobals.hist_gc_postgc_ticks, __foster_getticks_elapsed(phaseStartTicks, __foster_getticks_end()));
 #endif
 
+    uint64_t bytes_live = gcglobals.alloc_bytes_marked_total - bytes_marked_at_start;
+    if (TRACK_NUM_OBJECTS_MARKED) {
+      if (isWholeHeapGC) {
+        gcglobals.max_bytes_live_at_whole_heap_gc =
+          std::max(gcglobals.max_bytes_live_at_whole_heap_gc, bytes_live);
+      }
+      fprintf(gclog, "%zu bytes live in %zu line bytes; %f%% overhead\n",
+        bytes_live, gcglobals.lines_live_at_whole_heap_gc * IMMIX_BYTES_PER_LINE,
+        ((double(gcglobals.lines_live_at_whole_heap_gc * IMMIX_BYTES_PER_LINE) / double(bytes_live)) - 1.0) * 100.0);
+    }
+
 #if ((GCLOG_DETAIL > 1) || ENABLE_GCLOG_ENDGC)
 #   if TRACK_NUM_OBJECTS_MARKED
         fprintf(gclog, "\t%zu objects marked in this GC cycle, %zu marked overall; %zu bytes live\n",
                 gcglobals.num_objects_marked_total - num_marked_at_start,
                 gcglobals.num_objects_marked_total,
-                gcglobals.alloc_bytes_marked_total - bytes_marked_at_start);
+                bytes_live);
 #   endif
       if (TRACK_NUM_REMSET_ROOTS) {
         fprintf(gclog, "\t%lu objects identified in remset\n", numRemSetRoots);
@@ -2998,6 +3022,7 @@ public:
     // TODO-X benchmark impact of using frame15_is_marked
     uint8_t* linemap = linemap_for_frame15_id(fid);
     int num_marked_lines = count_marked_lines_for_frame15(f15, linemap);
+    gcglobals.lines_live_at_whole_heap_gc += num_marked_lines;
 
     if (GCLOG_DETAIL > 2) {
       fprintf(gclog, "frame %u: ", fid);
@@ -3390,6 +3415,8 @@ void initialize(void* stack_highest_addr) {
   gcglobals.subheap_ticks = 0.0;
   gcglobals.num_allocations = 0;
   gcglobals.num_alloc_bytes = 0;
+  gcglobals.in_non_default_subheap = false;
+  gcglobals.num_alloc_bytes_in_subheaps = 0;
   gcglobals.num_subheaps_created = 0;
   gcglobals.num_subheap_activations = 0;
   gcglobals.write_barrier_phase0_hits = 0;
@@ -3397,6 +3424,8 @@ void initialize(void* stack_highest_addr) {
   gcglobals.write_barrier_slow_path_ticks = 0;
   gcglobals.num_objects_marked_total = 0;
   gcglobals.alloc_bytes_marked_total = 0;
+  gcglobals.max_bytes_live_at_whole_heap_gc = 0;
+  gcglobals.lines_live_at_whole_heap_gc = 0;
   gcglobals.num_closure_calls = 0;
 
   hdr_init(1, 6000000, 2, &gcglobals.hist_gc_stackscan_frames);
@@ -3647,6 +3676,14 @@ FILE* print_timing_stats() {
   if (TRACK_NUM_ALLOC_BYTES) {
     auto s = foster::humanize_s(double(gcglobals.num_alloc_bytes), "B");
     fprintf(gclog, "'Num_Alloc_Bytes': %s\n", s.c_str());
+  }
+  if (TRACK_NUM_ALLOC_BYTES) {
+    auto s = foster::humanize_s(double(gcglobals.num_alloc_bytes_in_subheaps), "B");
+    fprintf(gclog, "'Num_Alloc_Bytes_In_Subheaps': %s\n", s.c_str());
+  }
+  if (TRACK_NUM_OBJECTS_MARKED && gcglobals.max_bytes_live_at_whole_heap_gc > 0) {
+    auto s = foster::humanize_s(double(gcglobals.max_bytes_live_at_whole_heap_gc), "B");
+    fprintf(gclog, "'Max_LiveAtFullGC_Bytes': %s\n", s.c_str());
   }
   if (TRACK_NUM_OBJECTS_MARKED && TRACK_NUM_ALLOCATIONS) {
     fprintf(gclog, "'MarkCons_Obj_div_Obj': %e\n",
@@ -3974,6 +4011,9 @@ void* foster_subheap_activate_raw(void* generic_subheap) {
   //fprintf(gclog, "subheap_activate(generic %p, handle %p, subheap %p, prev %p)\n", generic_subheap, handle, subheap, prev);
   gcglobals.allocator = subheap;
   gcglobals.allocator_handle = handle;
+
+  gcglobals.in_non_default_subheap = (subheap != gcglobals.default_allocator);
+
   //fprintf(gclog, "subheap_activate: prev %p (tidy %p))\n", prev, prev->as_tidy()); fflush(gclog);
   return prev ? prev->as_tidy() : nullptr;
   //fprintf(gclog, "activated subheap %p\n", subheap);
