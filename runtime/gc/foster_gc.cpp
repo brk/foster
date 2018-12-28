@@ -466,6 +466,8 @@ struct GCGlobals {
   uint64_t num_subheaps_created;
   uint64_t num_subheap_activations;
 
+  uint64_t num_closure_calls;
+
   uint64_t write_barrier_phase0_hits;
   uint64_t write_barrier_phase1_hits;
   int64_t  write_barrier_slow_path_ticks;
@@ -3395,6 +3397,7 @@ void initialize(void* stack_highest_addr) {
   gcglobals.write_barrier_slow_path_ticks = 0;
   gcglobals.num_objects_marked_total = 0;
   gcglobals.alloc_bytes_marked_total = 0;
+  gcglobals.num_closure_calls = 0;
 
   hdr_init(1, 6000000, 2, &gcglobals.hist_gc_stackscan_frames);
   hdr_init(1, 6000000, 2, &gcglobals.hist_gc_stackscan_roots);
@@ -3675,6 +3678,10 @@ FILE* print_timing_stats() {
       fprintf(gclog, "'Avg_GC_Ticks': %s\n", v.c_str());
     }
   }
+  {
+    auto s = foster::humanize_s(gcglobals.num_closure_calls, "");
+    fprintf(gclog, "'Num_Closure_Calls': %s\n", s.c_str());
+  }
 
   //fprintf(gclog, "sizeof immix_space: %lu\n", sizeof(immix_space));
   //fprintf(gclog, "sizeof immix_line_space: %lu\n", sizeof(immix_line_space));
@@ -3815,6 +3822,9 @@ const typemap* tryGetTypemap(heap_cell* cell) {
 /////////////////////////////////////////////////////////////////
 
 extern "C" {
+void foster__record_closure_call() {
+  gcglobals.num_closure_calls++;
+}
 
 // {{{ Allocation interface used by generated code
 void* memalloc_cell(typemap* typeinfo) {

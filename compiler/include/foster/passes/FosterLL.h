@@ -42,6 +42,7 @@ struct CodegenPassConfig {
   bool useNSW;
   bool useNUW;
   bool trackAllocSites;
+  bool countClosureCalls;
   bool killDeadSlots;
   bool emitLifetimeInfo;
   bool emitAllGCBarriers;
