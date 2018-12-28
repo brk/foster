@@ -11,7 +11,7 @@
 
 namespace foster {
 
-void runCleanupPasses(llvm::Module& mod) {
+void runCleanupPasses(llvm::Module& mod, bool noBarrierOpt) {
   llvm::legacy::FunctionPassManager fpasses(&mod);
   
   fpasses.add(llvm::createCFGSimplificationPass());
@@ -19,7 +19,9 @@ void runCleanupPasses(llvm::Module& mod) {
 
   llvm::legacy::PassManager passes;
   passes.add(llvm::createDeadInstEliminationPass());
-  passes.add(foster::createGCBarrierOptimizerPass());
+  if (!noBarrierOpt) {
+    passes.add(foster::createGCBarrierOptimizerPass());
+  }
   passes.run(mod);
 }
 

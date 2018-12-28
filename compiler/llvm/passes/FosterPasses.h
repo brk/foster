@@ -13,7 +13,7 @@ namespace llvm {
 
 namespace foster {
 
-void runCleanupPasses(llvm::Module& mod);
+void runCleanupPasses(llvm::Module& mod, bool noBarrierOpt);
 void runWarningPasses(llvm::Module& mod);
 
 llvm::Pass* createGCMallocFinderPass();

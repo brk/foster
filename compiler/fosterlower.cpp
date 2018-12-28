@@ -169,6 +169,11 @@ optAllGCBarriers("all-gc-barriers",
   cl::desc("Emit GC write barriers for object initialization"),
   cl::cat(FosterOptCat));
 
+static cl::opt<bool>
+optNoGCBarrierOpt("no-gc-barrier-opt",
+  cl::desc("Disable all optimization of GC write barriers"),
+  cl::cat(FosterOptCat));
+
 static cl::list<std::string>
 linkAgainstBCs("link-against",
   cl::desc("Link against the provided bitcode module(s)"),
@@ -496,7 +501,7 @@ int main(int argc, char** argv) {
 
   // Run cleanup passes on newly-generated code,
   // rather than wastefully on post-linked code.
-  foster::runCleanupPasses(*module);
+  foster::runCleanupPasses(*module, optNoGCBarrierOpt);
 
   if (optDumpPreLinkedIR) {
     dumpModuleToFile(module,

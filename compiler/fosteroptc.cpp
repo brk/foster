@@ -609,7 +609,7 @@ int main(int argc, char** argv) {
   llvm::Module* module = readLLVMModuleFromPath(mainModulePath);
 
   if (optCleanupOnly) {
-    foster::runCleanupPasses(*module);
+    foster::runCleanupPasses(*module, false);
     dumpModuleToBitcode(module, (gOutputNameBase + ".cleaned.bc"));
     foster::runWarningPasses(*module);
   } else if (optInternalize) {
