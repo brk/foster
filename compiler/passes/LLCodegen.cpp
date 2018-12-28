@@ -1053,7 +1053,7 @@ llvm::Value* emitGCRead(CodegenPass* pass, Value* base, Value* slot) {
 
 llvm::Value* LLDeref::codegen(CodegenPass* pass) {
   llvm::Value* ptr = base->codegen(pass);
-  if (isTraced && !llvm::isa<llvm::AllocaInst>(ptr)) {
+  if (isTraced && !llvm::isa<llvm::AllocaInst>(ptr) && pass->config.useGC) {
     return emitGCRead(pass, nullptr, ptr);
   } else {
     return emitNonVolatileLoad(ptr, "deref");
