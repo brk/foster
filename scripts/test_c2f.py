@@ -60,7 +60,7 @@ def fail_reason(foster_compile_rv):
   else:
     return "couldn't compile"
 
-def attempt_test_named(filename, copy_here_if_ok=None):
+def attempt_test_named(filename, failing, copy_here_if_ok=None):
     print "Attempting test", filename
 
     c_code = filename
@@ -92,6 +92,7 @@ def attempt_test_named(filename, copy_here_if_ok=None):
 
       if files_differ(c_out, f_out):
           print "Test case", c_code, "            FAILED (%s)" % fail_reason(f_c_rv)
+          failing.append(filename)
       else:
           print "Test case", c_code, "passed"
           if copy_here_if_ok is not None:
@@ -105,15 +106,21 @@ def attempt_test_named(filename, copy_here_if_ok=None):
     print "--------------------------------------------------"
 
 def run_on_test_c2f():
+  failing = []
   for root, d, files in os.walk("../test/c2f"):
     for cfile in fnmatch.filter(files, "*.c"):
       if not 'csmith' in root:
-        attempt_test_named(os.path.join(root, cfile))
+        attempt_test_named(os.path.join(root, cfile), failing)
+
+  if len(failing) > 0:
+    print "Failing testcases:"
+    for f in failing:
+      print "\t", f
 
 def run_on_csf_files():
   for root, d, files in os.walk("."):
     for cfile in fnmatch.filter(files, "csf_*.c"):
-      attempt_test_named(os.path.join(root, cfile))
+      attempt_test_named(os.path.join(root, cfile), failing)
 
 if __name__ == '__main__':
   #run_on_test_c2f()
