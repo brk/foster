@@ -348,6 +348,14 @@ moduleASTdataTypes m = [dt | ToplevelData dt <- moduleASTitems m]
 moduleASTdecls     m = [de | ToplevelDecl de <- moduleASTitems m]
 moduleASTeffects   m = [ef | ToplevelEffect ef <- moduleASTitems m]
 
+instance (Summarizable (expr ty), Summarizable ty) => Summarizable (ToplevelItem expr ty) where
+  textOf item _width =
+      case item of
+          ToplevelDecl (nm, _ty, _isForeign) -> text "Decl: " <> text nm
+          ToplevelDefn (nm, _expr) -> text "Defn: " <> text nm
+          ToplevelData dt -> text "Data: " <> text (typeFormalName $ dataTypeName dt)
+          ToplevelEffect _ -> text "Effect..."
+
 data Fn rec expr ty
                 = Fn { fnVar   :: TypedId ty
                      , fnVars  :: [TypedId ty]
