@@ -276,7 +276,7 @@ public:
   virtual void uncondemn() = 0;
   virtual bool is_condemned() = 0;
 
-  virtual void visit_root(unchecked_ptr* root, const char* slotname) = 0;
+  virtual uint64_t visit_root(unchecked_ptr* root, const char* slotname) = 0;
 
   virtual void immix_sweep(clocktimer<false>& phase,
                            clocktimer<false>& gcstart) = 0;
@@ -423,7 +423,7 @@ struct condemned_set {
   // Use line marks to reclaim space, then reset linemaps and object marks.
   void sweep_condemned(Allocator* active_space,
                        clocktimer<false>& phase, clocktimer<false>& gcstart,
-                       double deltaRecursiveMarking_us);
+                       bool hadEmptyRootSet);
 };
 
 template<typename Allocator>
@@ -817,7 +817,7 @@ bool slot_is_condemned(void* slot, immix_heap* space) {
 // {{{ Function prototype decls
 bool line_for_slot_is_marked(void* slot);
 void inspect_typemap(const typemap* ti);
-void visitGCRoots(void* start_frame, immix_heap* visitor);
+uint64_t visitGCRoots(void* start_frame, immix_heap* visitor);
 void coro_visitGCRoots(foster_bare_coro* coro, immix_heap* visitor);
 const typemap* tryGetTypemap(heap_cell* cell);
 // }}}
@@ -1409,8 +1409,8 @@ struct immix_common {
         fprintf(gclog, "scan_with_map scanning pointer %p from slot %p (field %d of %d in at offset %d in object %p)\n",
             *unchecked, unchecked, i, map.numOffsets, map.offsets[i], body);
       }
-      immix_trace<condemned_portion>(space, (unchecked_ptr*) unchecked,
-                                     depth);
+      uint64_t ignored =
+        immix_trace<condemned_portion>(space, (unchecked_ptr*) unchecked, depth);
     }
   }
 
@@ -1478,8 +1478,9 @@ struct immix_common {
   }
 
   // Jones/Hosking/Moss refer to this function as "process(fld)".
+  // Returns 1 if root was located in a condemned space; 0 otherwise.
   template <condemned_set_status condemned_portion>
-  void immix_trace(immix_heap* space, unchecked_ptr* root, int depth) {
+  uint64_t immix_trace(immix_heap* space, unchecked_ptr* root, int depth) {
     //       |------------|       obj: |------------|
     // root: |    body    |---\        |  size/meta |
     //       |------------|   |        |------------|
@@ -1489,7 +1490,7 @@ struct immix_common {
     //                                 |------------|
     //tidy* tidyn;
     tori* body = untag(*root);
-    if (!body) return;
+    if (!body) return 0;
 
     auto f15id = frame15_id_of((void*) body);
     auto f15info = frame15_info_for((void*) body);
@@ -1507,7 +1508,7 @@ struct immix_common {
       // Do nothing: no need to mark, since static data never points to
       // dynamically allocated data.
       if (GCLOG_DETAIL > 3) { fprintf(gclog, "ignoring static data cell %p\n", body); }
-      return;
+      return 0;
     }
 
     if ( (condemned_portion == condemned_set_status::single_subheap_condemned
@@ -1521,7 +1522,7 @@ struct immix_common {
         // from non-condemned regions.
         if (GCLOG_DETAIL > 3) { fprintf(gclog, "immix_trace() ignoring non-condemned cell %p in line %d of (%u)\n",
             body, line_offset_within_f15(body), f15id); }
-        return;
+        return 0;
     }
 
     // TODO drop the assumption that body is a tidy pointer.
@@ -1536,9 +1537,10 @@ struct immix_common {
     } else {
       scan_cell<condemned_portion>(space, obj, depth);
     }
+    return 1;
   }
 
-  void visit_root(immix_heap* space, unchecked_ptr* root, const char* slotname) {
+  uint64_t visit_root(immix_heap* space, unchecked_ptr* root, const char* slotname) {
     switch (gcglobals.condemned_set.status) {
     case                            condemned_set_status::single_subheap_condemned:
       return visit_root_specialized<condemned_set_status::single_subheap_condemned>(space, root, slotname);
@@ -1550,7 +1552,7 @@ struct immix_common {
   }
 
   template <condemned_set_status condemned_portion>
-  void visit_root_specialized(immix_heap* space, unchecked_ptr* root, const char* slotname) {
+  uint64_t visit_root_specialized(immix_heap* space, unchecked_ptr* root, const char* slotname) {
     gc_assert(root != NULL, "someone passed a NULL root addr!");
     if (GCLOG_DETAIL > 1) {
       fprintf(gclog, "\t\tSTACK SLOT %p (in (%u)) contains ptr %p, slot name = %s\n", root, frame15_id_of(root),
@@ -1561,7 +1563,7 @@ struct immix_common {
     ++gNumRootsScanned;
     
     // TODO-X determine when to use condemned set and when not to
-    immix_trace<condemned_portion>(space, root, kFosterGCMaxDepth);
+    return immix_trace<condemned_portion>(space, root, kFosterGCMaxDepth);
   }
 
   uint64_t process_remsets(immix_heap* space) {
@@ -2140,8 +2142,8 @@ public:
   virtual void uncondemn() { condemned_flag = false; }
   virtual bool is_condemned() { return condemned_flag; }
 
-  void visit_root(unchecked_ptr* root, const char* slotname) {
-    common.visit_root(this, root, slotname);
+  uint64_t visit_root(unchecked_ptr* root, const char* slotname) {
+    return common.visit_root(this, root, slotname);
   }
 
   virtual bool is_empty() { return used_lines.empty() && laa.empty(); }
@@ -2347,7 +2349,9 @@ void immix_common::common_gc(immix_heap* active_space, bool voluntary) {
         voluntary ? process_remsets(active_space) : 0;
     if (voluntary && gcglobals.condemned_set.status == condemned_set_status::per_frame_condemned) {
       for (auto space : gcglobals.condemned_set.spaces) {
-        numRemSetRoots += process_remsets(space);
+        if (space != active_space) {
+          numRemSetRoots += process_remsets(space);
+        }        
       }
     }
 
@@ -2360,7 +2364,8 @@ void immix_common::common_gc(immix_heap* active_space, bool voluntary) {
       */
 
     //ct.start();
-    visitGCRoots(__builtin_frame_address(0), active_space);
+    uint64_t numCondemnedRoots = visitGCRoots(__builtin_frame_address(0), active_space);
+    fprintf(gclog, "num condemned + remset roots: %zu\n", numCondemnedRoots + numRemSetRoots);
     //double trace_ms = ct.elapsed_ms();
 
 #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
@@ -2395,7 +2400,8 @@ void immix_common::common_gc(immix_heap* active_space, bool voluntary) {
 #endif
 
     //ct.start();
-    gcglobals.condemned_set.sweep_condemned(active_space, phase, gcstart, deltaRecursiveMarking_us);
+    bool hadEmptyRootSet = (numCondemnedRoots + numRemSetRoots) == 0;
+    gcglobals.condemned_set.sweep_condemned(active_space, phase, gcstart, hadEmptyRootSet);
     //double sweep_ms = ct.elapsed_ms();
 
 /*
@@ -2471,7 +2477,7 @@ void immix_common::common_gc(immix_heap* active_space, bool voluntary) {
 template<typename Allocator>
 void condemned_set<Allocator>::sweep_condemned(Allocator* active_space,
              clocktimer<false>& phase, clocktimer<false>& gcstart,
-             double deltaRecursiveMarking_us) {
+             bool hadEmptyRootSet) {
   std::vector<heap_handle<immix_heap>*> subheap_handles;
 
   switch (this->status) {
@@ -2677,8 +2683,8 @@ public:
     medium_bumper.base = medium_bumper.bound;
   }
 
-  virtual void visit_root(unchecked_ptr* root, const char* slotname) {
-    common.visit_root(this, root, slotname);
+  virtual uint64_t visit_root(unchecked_ptr* root, const char* slotname) {
+    return common.visit_root(this, root, slotname);
   }
 
   virtual void force_gc_for_debugging_purposes() {
@@ -3150,7 +3156,8 @@ void immix_worklist_t::process(immix_heap* target, immix_common& common) {
 #include "foster_gc_backtrace_x86-inl.h"
 
 // {{{ Walks the call stack, calling visitor->visit_root() along the way.
-void visitGCRoots(void* start_frame, immix_heap* visitor) {
+uint64_t visitGCRoots(void* start_frame, immix_heap* visitor) {
+  uint64_t condemnedRootsVisited = 0;
   enum { MAX_NUM_RET_ADDRS = 4024 };
   // Garbage collection requires 16+ KB of stack space due to these arrays.
   ret_addr  retaddrs[MAX_NUM_RET_ADDRS];
@@ -3244,13 +3251,16 @@ void visitGCRoots(void* start_frame, immix_heap* visitor) {
       void*  rootaddr = (off <= 0) ? offset(fp, off)
                                    : offset(sp, off);
 
-      visitor->visit_root(static_cast<unchecked_ptr*>(rootaddr),
-                          static_cast<const char*>(m));
+      condemnedRootsVisited +=
+        visitor->visit_root(static_cast<unchecked_ptr*>(rootaddr),
+                            static_cast<const char*>(m));
     }
 
     gc_assert(pc->liveCountWithoutMetadata == 0,
                   "TODO: scan pointer w/o metadata");
   }
+
+  return condemnedRootsVisited;
 }
 // }}}
 
@@ -3343,7 +3353,7 @@ void coro_visitGCRoots(foster_bare_coro* coro, immix_heap* visitor) {
   }
 
   fprintf(gclog, "coro_visitGCRoots\n"); fflush(gclog);
-  visitGCRoots(frameptr, visitor);
+  uint64_t numCondemnedRoots = visitGCRoots(frameptr, visitor);
 
   if (GCLOG_DETAIL > 1) {
     fprintf(gclog, "========= scanned coro stack from %p\n", frameptr);
