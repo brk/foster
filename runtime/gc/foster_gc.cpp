@@ -38,7 +38,7 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 #define GCLOG_DETAIL 0
 #define ENABLE_LINE_GCLOG 0
 #define ENABLE_GCLOG_PREP 0
-#define ENABLE_GCLOG_ENDGC 0
+#define ENABLE_GCLOG_ENDGC 1
 #define PRINT_STDOUT_ON_GC 0
 #define FOSTER_GC_TRACK_BITMAPS       0
 #define FOSTER_GC_ALLOC_HISTOGRAMS    0
@@ -242,10 +242,13 @@ struct used_linegroup {
 
 struct byte_limit {
   ssize_t frame15s_left;
+  ssize_t max_size_in_lines;
 
   byte_limit(ssize_t maxbytes) {
     // Round up; a request for 10K should be one frame15, not zero.
     this->frame15s_left = (maxbytes + ((1 << 15) - 1)) >> 15;
+    this->max_size_in_lines = this->frame15s_left * IMMIX_LINES_PER_FRAME15;
+
     auto mb = foster::humanize_s(double(maxbytes), "B");
     auto fb = foster::humanize_s(double(frame15s_left * (1 << 15)), "B");
     fprintf(gclog, "byte_limit: maxbytes = %s, maxframe15s = %ld, framebytes=%s\n",
@@ -344,6 +347,7 @@ struct frame15info {
   frame15kind      frame_classification;
   uint8_t          num_available_lines_at_last_collection;
   uint8_t          num_condemned_lines;
+  uint8_t          num_holes_at_last_full_collection;
 };
 
 // We track "available" rather than "marked" lines because it's more natural
@@ -495,9 +499,37 @@ struct GCGlobals {
   struct hdr_histogram* hist_gc_alloc_array;
   struct hdr_histogram* hist_gc_alloc_large;
   uint64_t enum_gc_alloc_small[129];
+
+  int64_t evac_candidates_found;
+
+  int evac_threshold;
+  int64_t marked_histogram[128];
 };
 
 GCGlobals<immix_heap> gcglobals;
+
+void reset_marked_histogram() {
+  for (int i = 0; i < 128; ++i) {
+    gcglobals.marked_histogram[i] = 0;
+  }
+}
+
+int select_defrag_threshold() {
+  int64_t avail = int64_t(double(gcglobals.space_limit->max_size_in_lines) * 0.02);
+  int64_t required = 0;
+
+  int thresh = 128;
+  while (thresh-- > 0) {
+    required += gcglobals.marked_histogram[thresh];
+    if (required > avail) {
+      fprintf(gclog, "defrag threshold: %d; backing off from %zd to %zd lines assumed needed vs %zd lines assumed avail\n",
+        thresh + 1,
+        required, required - gcglobals.marked_histogram[thresh], avail);
+      return thresh + 1;
+    }
+  }
+  return 0;
+}
 
 // The worklist would be per-GC-thread in a multithreaded implementation.
 immix_worklist_t immix_worklist;
@@ -596,7 +628,7 @@ inline void do_unmark_granule(void* obj) {
 }
 
 void clear_object_mark_bits_for_frame15(void* f15) {
-  if (GCLOG_DETAIL > 2) { fprintf(gclog, "clearing granule bits for frame %p (%zu)\n", f15, frame15_id_of(f15)); }
+  if (GCLOG_DETAIL > 2) { fprintf(gclog, "clearing granule bits for frame %p (%u)\n", f15, frame15_id_of(f15)); }
   if (MARK_OBJECT_WITH_BITS) {
     memset(&gcglobals.lazy_mapped_granule_marks[global_granule_for(f15) / 8], 0, IMMIX_GRANULES_PER_BLOCK / 8);
   } else {
@@ -606,7 +638,7 @@ void clear_object_mark_bits_for_frame15(void* f15) {
 
 void clear_object_mark_bits_for_frame15(void* f15, int startline, int numlines) {
   uintptr_t granule = global_granule_for(offset(f15, startline * IMMIX_BYTES_PER_LINE));
-  if (GCLOG_DETAIL > 2) { fprintf(gclog, "clearing granule bits for %d lines starting at %d in frame %p (%zu), granule %zu\n", numlines, startline, f15, frame15_id_of(f15), granule); }
+  if (GCLOG_DETAIL > 2) { fprintf(gclog, "clearing granule bits for %d lines starting at %d in frame %p (%u), granule %zu\n", numlines, startline, f15, frame15_id_of(f15), granule); }
   if (MARK_OBJECT_WITH_BITS) {
     memset(&gcglobals.lazy_mapped_granule_marks[granule / 8], 0, (numlines * IMMIX_GRANULES_PER_LINE) / 8);
   } else {
@@ -1071,7 +1103,7 @@ public:
     if (false && GC_ASSERTIONS) {
       std::set<immix_line_frame15*> spares(spare_line_frame15s.begin(), spare_line_frame15s.end());
       if (spares.count(f) > 0) {
-        fprintf(gclog, "GC INVARIANT VIOLATED: spare line frame15s contains %p already (%d duplicates)\n",
+        fprintf(gclog, "GC INVARIANT VIOLATED: spare line frame15s contains %p already (%lu duplicates)\n",
           f, spare_line_frame15s.size() - spares.size());
       }
     }
@@ -1352,7 +1384,7 @@ void mark_lines_for_slots(void* slot, uint64_t cell_size) {
   if (MARK_FRAME21S) { mark_frame21_for_slot(slot); }
   if (MARK_FRAME21S_OOL) { mark_frame21_ool_for_slot(slot); }
 
-  if (GCLOG_DETAIL > 3) { fprintf(gclog, "marking lines %d - %d for slot %p of size %zd\n", firstoff, lastoff, slot, cell_size); }
+  if (GCLOG_DETAIL > 3) { fprintf(gclog, "marking lines %lu - %lu for slot %p of size %zd\n", firstoff, lastoff, slot, cell_size); }
 
   linemap[firstoff] = 1;
   // Exact marking for small objects
@@ -1527,6 +1559,17 @@ struct immix_common {
 
     // TODO drop the assumption that body is a tidy pointer.
     heap_cell* obj = heap_cell::for_tidy(reinterpret_cast<tidy*>(body));
+    if (obj->is_forwarded()) {
+      auto tidyn = (void*) obj->get_forwarded_body();
+      *root = make_unchecked_ptr((tori*) offset(tidyn, distance(obj->body_addr(), body)));
+    } else {
+
+    bool should_opportunistically_evacuate =
+               condemned_portion == condemned_set_status::per_frame_condemned
+            && f15info->frame_classification == frame15kind::immix_smallmedium
+            && gcglobals.evac_threshold > 0
+            && space == gcglobals.default_allocator
+            && f15info->num_holes_at_last_full_collection >= gcglobals.evac_threshold;
     bool should_evacuate = false;
     if (should_evacuate) {
       //tidyn = next->ss_copy(obj, depth);
@@ -1534,9 +1577,57 @@ struct immix_common {
       //*root = make_unchecked_ptr((tori*) offset(tidyn, distance(tidy, body) ));
       //gc_assert(NULL != untag(*root), "copying gc should not null out slots");
       //gc_assert(body != untag(*root), "copying gc should return new pointers");
+    } else if (should_opportunistically_evacuate) {
+      // The Immix paper handles evacuation in (I think) the following way:
+      //  * At the end of each GC cycle, build a histogram of used+avail lines.
+      //    The Immix paper eagerly builds the used(?) histogram and lazily builds
+      //    the other; it's unclear why they can't both be computed eagerly.
+      //  * Keep a _reserve_ of unused frames, not used for allocation.
+      //    These frames are needed because otherwise we'd have no guaranteed space
+      //    to evacuate into; at the start of collection we don't yet know whether
+      //    the objects allocated since the previous collection are dead yet.
+      //  * When compacting, use histogram line counts to select _candidates_:
+      //    the (set of) most-fragmented frames from previous collection whose
+      //    used lines would fit (assuming all "new" allocations end up being dead)
+      //    into the reserved frames, plus the assumed-available lines from all
+      //    non-selected frames. Note several factors making this scheme speculative:
+      //      * Some new allocations are likely to not be dead,
+      //        leaving us with more required lines than calculated.
+      //      * Opportunistic evacuation proceeds on-demand as objects happen to be
+      //        traced; we don't proactively generate empty frames by eagerly visiting
+      //        and evacuating every object on the frame.
+      //      * We can only allocate into empty space; this means reserved frames
+      //        or completely-evacuated frames. Since collection is only triggered
+      //        when space is fully exhausted, there are no free lines in recycled frames.
+      // 
+      // Note that proactively evacuating objects would maintain object ordering but
+      // would not make space available sooner, because the rest of the heap needs
+      // to observe the installed forwarding pointers during marking.
+      //
+      //
+      // Alternate scheme:
+      //   * Don't keep a reserve of unused frames. Allocate into all available frames.
+      //   * When fragmentation is observed, at the end of some collection, choose candidates
+      //     that will fit into the just-made-available recycled lines.
+      //   * Calculate the number of needed lines to accomodate candidate data.
+      //   * Trigger the next collection "early", when the number of available
+      //     (clean + recycled) lines would fall below the number needed for candidates.
+      //   * Evacuate into recycled lines instead of reserved frames.
+      // 
+      // The advantage of this scheme is that it can (I think) sometimes make use of
+      // 
+
+      // TODO pull in scan_and_evacuate_to from the gen GC patch.
+      // Evacuation logic:
+      //   * 
+      gcglobals.evac_candidates_found++;
+      scan_cell<condemned_portion>(space, obj, depth);
     } else {
       scan_cell<condemned_portion>(space, obj, depth);
     }
+
+    }
+
     return 1;
   }
 
@@ -2335,6 +2426,11 @@ void immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     auto bytes_marked_at_start = gcglobals.alloc_bytes_marked_total;
     bool isWholeHeapGC = gcglobals.condemned_set.status == condemned_set_status::whole_heap_condemned;
 
+    if (isWholeHeapGC) {
+      gcglobals.evac_threshold = select_defrag_threshold();
+      reset_marked_histogram();
+    }
+
     global_immix_line_allocator.realign_and_split_line_bumper();
 
     phase.start();
@@ -2365,7 +2461,7 @@ void immix_common::common_gc(immix_heap* active_space, bool voluntary) {
 
     //ct.start();
     uint64_t numCondemnedRoots = visitGCRoots(__builtin_frame_address(0), active_space);
-    fprintf(gclog, "num condemned + remset roots: %zu\n", numCondemnedRoots + numRemSetRoots);
+    //fprintf(gclog, "num condemned + remset roots: %zu\n", numCondemnedRoots + numRemSetRoots);
     //double trace_ms = ct.elapsed_ms();
 
 #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
@@ -2421,7 +2517,8 @@ void immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     hdr_record_value(gcglobals.hist_gc_postgc_ticks, __foster_getticks_elapsed(phaseStartTicks, __foster_getticks_end()));
 #endif
 
-    uint64_t bytes_live = gcglobals.alloc_bytes_marked_total - bytes_marked_at_start;
+  uint64_t bytes_live = gcglobals.alloc_bytes_marked_total - bytes_marked_at_start;
+  if (GCLOG_DETAIL > 0 || ENABLE_GCLOG_ENDGC) {
     if (TRACK_NUM_OBJECTS_MARKED) {
       if (isWholeHeapGC) {
         gcglobals.max_bytes_live_at_whole_heap_gc =
@@ -2430,29 +2527,37 @@ void immix_common::common_gc(immix_heap* active_space, bool voluntary) {
       fprintf(gclog, "%zu bytes live in %zu line bytes; %f%% overhead\n",
         bytes_live, gcglobals.lines_live_at_whole_heap_gc * IMMIX_BYTES_PER_LINE,
         ((double(gcglobals.lines_live_at_whole_heap_gc * IMMIX_BYTES_PER_LINE) / double(bytes_live)) - 1.0) * 100.0);
+      gcglobals.lines_live_at_whole_heap_gc = 0;
     }
+  }
 
 #if ((GCLOG_DETAIL > 1) || ENABLE_GCLOG_ENDGC)
 #   if TRACK_NUM_OBJECTS_MARKED
+      if (isWholeHeapGC) {
         fprintf(gclog, "\t%zu objects marked in this GC cycle, %zu marked overall; %zu bytes live\n",
                 gcglobals.num_objects_marked_total - num_marked_at_start,
                 gcglobals.num_objects_marked_total,
                 bytes_live);
+      }
 #   endif
-      if (TRACK_NUM_REMSET_ROOTS) {
+      if (TRACK_NUM_REMSET_ROOTS && !isWholeHeapGC && false) {
         fprintf(gclog, "\t%lu objects identified in remset\n", numRemSetRoots);
       }
+    if (isWholeHeapGC) {
       if (ENABLE_GC_TIMING) {
         double delta_us = gcstart.elapsed_us();
         fprintf(gclog, "\ttook %zd us which was %f%% marking\n",
                           int64_t(delta_us),
                           (deltaRecursiveMarking_us * 100.0)/delta_us);      }
-      fprintf(gclog, "       num_free_lines (line spaces only): %d, num avail bytes: %zd\n", num_free_lines,
-                                       global_immix_line_allocator.count_available_bytes()); num_free_lines = 0;
+
+      fprintf(gclog, "       num_free_lines (line spaces only): %d, num avail bytes: %zd (%zd lines)\n", num_free_lines,
+                                       global_immix_line_allocator.count_available_bytes(),
+                                       global_immix_line_allocator.count_available_bytes() / IMMIX_BYTES_PER_LINE); num_free_lines = 0;
       fprintf(gclog, "\t/endgc %d of immix heap %p, voluntary? %d; gctype %d\n\n", gcglobals.num_gcs_triggered,
                                                 active_space, int(voluntary), int(gcglobals.condemned_set.status));
 
       fflush(gclog);
+    }
 #endif
 
   if (PRINT_STDOUT_ON_GC) { fprintf(stdout, "                              endgc\n"); fflush(stdout); }
@@ -2527,7 +2632,6 @@ void condemned_set<Allocator>::sweep_condemned(Allocator* active_space,
         handle->body->trim_remset();
       }
 
-      //gcglobals.lines_live_at_whole_heap_gc = 0;
       gcglobals.default_allocator->immix_sweep(phase, gcstart);
       for (auto handle : subheap_handles) {
         handle->body->immix_sweep(phase, gcstart);
@@ -2736,7 +2840,7 @@ public:
       if (MEMSET_FREED_MEMORY) { memset(g, 0xef, distance(g, g->bound)); }
 
       if ((GCLOG_DETAIL > 0) || ENABLE_GCLOG_PREP) {
-        fprintf(gclog, "after GC# %d, using recycled line group in line %d of full frame (%u); # lines %.2f (bytes %d); # groups left: %zu\n",
+        fprintf(gclog, "after GC# %d, using recycled line group in line %d of full frame (%u); # lines %.2f (bytes %zu); # groups left: %zu\n",
             gcglobals.num_gcs_triggered,
             line_offset_within_f15(bumper->base),
             frame15_id_of(g),
@@ -3052,7 +3156,9 @@ public:
     int cursor = IMMIX_LINES_PER_BLOCK;
 
     // One or more holes left to process?
-    while (num_available_lines > 0) {
+    int num_lines_to_process = num_available_lines;
+    int num_holes_found = 0;
+    while (num_lines_to_process > 0) {
       // At least one available line means this loop will terminate before cursor == 0
       // Precondition: cursor is marked
       while (line_is_marked(cursor - 1, linemap)) --cursor;
@@ -3071,7 +3177,8 @@ public:
       nextgroup = g;
 
       int num_lines_in_group = (rightmost_unmarked_line - leftmost_unmarked_line) + 1;
-      num_available_lines -= num_lines_in_group;
+      num_lines_to_process -= num_lines_in_group;
+      ++num_holes_found;
       //fprintf(gclog, "num lines in group: %d\n", num_lines_in_group); fflush(gclog);
       if (num_lines_in_group <= 0) abort();
     }
@@ -3086,7 +3193,11 @@ public:
     memset(linemap, 0, IMMIX_LINES_PER_BLOCK);
     clear_object_mark_bits_for_frame15(f15);
 
-    // TODO increment mark histogram
+    // Increment mark histogram.
+    if (gcglobals.condemned_set.status == condemned_set_status::whole_heap_condemned) {
+      finfo->num_holes_at_last_full_collection = num_holes_found;
+      gcglobals.marked_histogram[num_holes_found] += num_marked_lines;
+    }
 
     // Coarse marks must be reset after all frames have been processed.
     return true;
@@ -3437,6 +3548,8 @@ void initialize(void* stack_highest_addr) {
   gcglobals.max_bytes_live_at_whole_heap_gc = 0;
   gcglobals.lines_live_at_whole_heap_gc = 0;
   gcglobals.num_closure_calls = 0;
+  gcglobals.evac_candidates_found = 0;
+  gcglobals.evac_threshold = 0;
 
   hdr_init(1, 6000000, 2, &gcglobals.hist_gc_stackscan_frames);
   hdr_init(1, 6000000, 2, &gcglobals.hist_gc_stackscan_roots);
@@ -3447,6 +3560,8 @@ void initialize(void* stack_highest_addr) {
   hdr_init(1, 1000000000000, 3, &gcglobals.hist_gc_alloc_array); // 1 TB
   hdr_init(129, 1000000, 3, &gcglobals.hist_gc_alloc_large); // 1 MB
   memset(gcglobals.enum_gc_alloc_small, 0, sizeof(gcglobals.enum_gc_alloc_small));
+
+  reset_marked_histogram();
 
   if (foster__typeMapList[0]) {
     // We've gotta go out of our way to prevent Clang from trying to statically
