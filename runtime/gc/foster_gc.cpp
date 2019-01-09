@@ -428,6 +428,8 @@ struct condemned_set {
   void sweep_condemned(Allocator* active_space,
                        clocktimer<false>& phase, clocktimer<false>& gcstart,
                        bool hadEmptyRootSet);
+
+  int64_t approx_condemned_capacity_in_bytes(Allocator* active_space);
 };
 
 template<typename Allocator>
@@ -772,6 +774,8 @@ struct large_array_allocator {
       }
     }
   }
+
+  int64_t approx_size_in_bytes();
 
   bool empty() { return allocated.empty(); }
 };
@@ -1353,6 +1357,16 @@ inline void get_cell_metadata(heap_cell* cell,
   // }}}
 }
 
+int64_t large_array_allocator::approx_size_in_bytes() {
+  int64_t rv = 0;
+  auto it = allocated.begin();
+  while (it != allocated.end()) {
+    void* base = *it;
+    heap_array* arr = align_as_array(base);
+    rv += array_size_for(arr->num_elts(), arr->get_meta()->cell_size);
+  }
+  return rv;
+}
 // }}}
 
 // {{{
@@ -2242,7 +2256,7 @@ public:
   virtual uint64_t approx_size_in_bytes() {
     uint64_t rv = 0;
     for (auto usedgroup : used_lines) { rv += usedgroup.size_in_bytes(); }
-    return rv;
+    return rv + laa.approx_size_in_bytes();
   }
 
   virtual void trim_remset() { helpers::do_trim_remset(incoming_ptr_addrs, this); }
@@ -2496,6 +2510,11 @@ void immix_common::common_gc(immix_heap* active_space, bool voluntary) {
 #endif
 
     //ct.start();
+
+    int64_t approx_condemned_space_in_lines =
+              gcglobals.condemned_set.approx_condemned_capacity_in_bytes(active_space)
+                / IMMIX_BYTES_PER_LINE;
+
     bool hadEmptyRootSet = (numCondemnedRoots + numRemSetRoots) == 0;
     gcglobals.condemned_set.sweep_condemned(active_space, phase, gcstart, hadEmptyRootSet);
     //double sweep_ms = ct.elapsed_ms();
@@ -2524,9 +2543,11 @@ void immix_common::common_gc(immix_heap* active_space, bool voluntary) {
         gcglobals.max_bytes_live_at_whole_heap_gc =
           std::max(gcglobals.max_bytes_live_at_whole_heap_gc, bytes_live);
       }
-      fprintf(gclog, "%zu bytes live in %zu line bytes; %f%% overhead\n",
+      fprintf(gclog, "%zu bytes live in %zu line bytes; %f%% overhead; %f%% of %zd condemned lines are live\n",
         bytes_live, gcglobals.lines_live_at_whole_heap_gc * IMMIX_BYTES_PER_LINE,
-        ((double(gcglobals.lines_live_at_whole_heap_gc * IMMIX_BYTES_PER_LINE) / double(bytes_live)) - 1.0) * 100.0);
+        ((double(gcglobals.lines_live_at_whole_heap_gc * IMMIX_BYTES_PER_LINE) / double(bytes_live)) - 1.0) * 100.0,
+        ((double(gcglobals.lines_live_at_whole_heap_gc) / double(approx_condemned_space_in_lines)) * 100.0),
+        approx_condemned_space_in_lines);
       gcglobals.lines_live_at_whole_heap_gc = 0;
     }
   }
@@ -2577,6 +2598,31 @@ void immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     }
     gcglobals.subheap_ticks += __foster_getticks_elapsed(t0, t1);
 #endif
+  }
+
+template<typename Allocator>
+int64_t condemned_set<Allocator>::approx_condemned_capacity_in_bytes(Allocator* active_space) {
+    int64_t rv = 0;
+    switch (this->status) {
+    case condemned_set_status::single_subheap_condemned:
+      return active_space->approx_size_in_bytes();
+
+    case condemned_set_status::per_frame_condemned: {
+      for (auto space : spaces) {
+        rv += space->approx_size_in_bytes();
+      }
+      break;
+    }
+
+    case condemned_set_status::whole_heap_condemned: {
+      rv += gcglobals.default_allocator->approx_size_in_bytes();
+      for (auto handle : gcglobals.all_subheap_handles_except_default_allocator) {
+        rv += handle->body->approx_size_in_bytes();
+      }
+      break;
+    }
+  }
+  return rv;
   }
 
 template<typename Allocator>
@@ -3044,7 +3090,8 @@ public:
                                     && tracking.logical_frame15s() == 0; }
 
   virtual uint64_t approx_size_in_bytes() {
-    return tracking.logical_frame15s() * (IMMIX_BYTES_PER_LINE * IMMIX_LINES_PER_FRAME15);
+    return (tracking.logical_frame15s() * (IMMIX_BYTES_PER_LINE * IMMIX_LINES_PER_FRAME15))
+           + laa.approx_size_in_bytes();
   }
 
   virtual void trim_remset() { helpers::do_trim_remset(incoming_ptr_addrs, this); }
@@ -3200,10 +3247,15 @@ public:
       g->bound =                            offset(f15, (rightmost_unmarked_line + 1) * IMMIX_BYTES_PER_LINE);
 
       if (MEMSET_FREED_MEMORY) { memset(offset(g, 16), 0xdd, distance(g, g->bound) - 16); }
-      g->next = nextgroup;
-      nextgroup = g;
 
       int num_lines_in_group = (rightmost_unmarked_line - leftmost_unmarked_line) + 1;
+      if (num_lines_in_group >= 25) {
+        recycled_lines_large.push_back(g);
+      } else {
+        g->next = nextgroup;
+        nextgroup = g;
+      }
+
       num_lines_to_process -= num_lines_in_group;
       ++num_holes_found;
       //fprintf(gclog, "num lines in group: %d\n", num_lines_in_group); fflush(gclog);
