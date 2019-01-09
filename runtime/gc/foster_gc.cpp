@@ -2850,6 +2850,27 @@ public:
       }
       return true;
     }
+    
+    if (!recycled_lines_large.empty() && cell_size <= (IMMIX_LINE_SIZE * 25)) {
+      free_linegroup* g = recycled_lines_large.back();
+      recycled_lines_large.pop_back();
+
+      bumper->bound = g->bound;
+      bumper->base  = realigned_for_allocation(g);
+
+      if (MEMSET_FREED_MEMORY) { memset(g, 0xef, distance(g, g->bound)); }
+
+      if ((GCLOG_DETAIL > 0) || ENABLE_GCLOG_PREP) {
+        fprintf(gclog, "after GC# %d, using recycled large line group in line %d of full frame (%u); # lines %.2f (bytes %d); # groups left: %zu\n",
+            gcglobals.num_gcs_triggered,
+            line_offset_within_f15(bumper->base),
+            frame15_id_of(g),
+            double(bumper->size()) / double(IMMIX_LINE_SIZE),
+            bumper->size(), recycled_lines_large.size());
+        //for (int i = 0; i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", linemap[i] ? 'd' : '_'); } fprintf(gclog, "\n");
+      }
+      return true;
+    }
 
     if (gcglobals.space_limit->frame15s_left > 0) {
       --gcglobals.space_limit->frame15s_left;
@@ -3017,7 +3038,9 @@ public:
       }
       */
 
-  virtual bool is_empty() { return recycled_lines.empty() && laa.empty()
+  virtual bool is_empty() { return recycled_lines.empty()
+                                    && recycled_lines_large.empty()
+                                    && laa.empty()
                                     && tracking.logical_frame15s() == 0; }
 
   virtual uint64_t approx_size_in_bytes() {
@@ -3036,6 +3059,7 @@ public:
 
     // This vector will get filled by the calls to inspect_*_postgc().
     recycled_lines.clear();
+    recycled_lines_large.clear();
 
     //// TODO how/when do we sweep arrays from "other" subheaps for full-heap collections?
     laa.sweep_arrays();
@@ -3099,6 +3123,9 @@ public:
   size_t frame15s_in_reserve_recycled() {
     std::set<frame15_id> recycled;
     for (auto g : recycled_lines) {
+      recycled.insert(frame15_id_of(g));
+    }
+    for (auto g : recycled_lines_large) {
       recycled.insert(frame15_id_of(g));
     }
     return recycled.size();
@@ -3237,6 +3264,7 @@ private:
   // Stores the empty spaces that the previous collection
   // identified as being viable candidates for allocation into.
   std::vector<free_linegroup*> recycled_lines;
+  std::vector<free_linegroup*> recycled_lines_large;
 
   // The points-into remembered set; each frame in this set needs to have its
   // card table inspected for pointers that actually point here.
