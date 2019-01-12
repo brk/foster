@@ -68,6 +68,7 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 // a way of easily overriding-without-overwriting the defaults.
 #include "gc/foster_gc_reconfig-inl.h"
 
+const double kFosterDefragReserveFraction = 0.02;
 const int kFosterGCMaxDepth = 250;
 const ssize_t inline gSEMISPACE_SIZE() { return __foster_globals.semispace_size; }
 
@@ -306,16 +307,16 @@ public:
 struct immix_common;
 struct immix_space;
 struct immix_worklist_t {
-    void       initialize()      { ptrs.clear(); idx = 0; }
+    void       initialize()      { roots.clear(); idx = 0; }
     void       process(immix_heap* target, immix_common& common);
-    bool       empty()           { return idx >= ptrs.size(); }
+    bool       empty()           { return idx >= roots.size(); }
     void       advance()         { ++idx; }
-    heap_cell* peek_front()      { return ptrs[idx]; }
-    void       add(heap_cell* c) { ptrs.push_back(c); }
-    size_t     size()            { return ptrs.size(); }
+    unchecked_ptr* peek_front()  { return roots[idx]; }
+    void       add(unchecked_ptr* root) { roots.push_back(root); }
+    size_t     size()            { return roots.size(); }
   private:
     size_t                  idx;
-    std::vector<heap_cell*> ptrs;
+    std::vector<unchecked_ptr*> roots;
 };
 
 
@@ -504,6 +505,7 @@ struct GCGlobals {
 
   int64_t evac_candidates_found;
 
+  double last_full_gc_fragmentation_percentage;
   int evac_threshold;
   int64_t marked_histogram[128];
 };
@@ -517,7 +519,10 @@ void reset_marked_histogram() {
 }
 
 int select_defrag_threshold() {
-  int64_t avail = int64_t(double(gcglobals.space_limit->max_size_in_lines) * 0.02);
+  int64_t reserved = int64_t(double(gcglobals.space_limit->max_size_in_lines) * kFosterDefragReserveFraction);
+  // Be a little bit aggressive: the "required" count is inflated due to
+  // internal fragmentation, and it's opportunistic anyways.
+  int64_t avail = int64_t(double(reserved) * 1.25);
   int64_t required = 0;
 
   int thresh = 128;
@@ -1026,7 +1031,23 @@ void deallocate_frame21(frame21* f) {
 }
 
 struct frame15_allocator {
-  frame15_allocator() : next_frame15(nullptr) {}
+  frame15_allocator() : num_defrag_reserved_frames(0), next_frame15(nullptr) {}
+
+  void set_defrag_reserved_frames(byte_limit* b) {
+    this->num_defrag_reserved_frames =
+            int(double(b->frame15s_left) * kFosterDefragReserveFraction) + 1;
+    b->frame15s_left -= num_defrag_reserved_frames;
+    for (int i = 0; i < num_defrag_reserved_frames; ++i) {
+      defrag_frame15s.push_back(get_frame15());
+    }
+  }
+
+  frame15* try_get_frame15_for_defrag() {
+    if (defrag_frame15s.empty()) return nullptr;
+    frame15* f15 = defrag_frame15s.back();
+    defrag_frame15s.pop_back();
+    return f15;
+  }
 
   void clear() {
     if (!spare_frame15s.empty()) {
@@ -1052,7 +1073,12 @@ struct frame15_allocator {
 
   void give_frame15(frame15* f) {
     if (MEMSET_FREED_MEMORY) { clear_frame15(f); }
-    spare_frame15s.push_back(f);
+    if (defrag_frame15s.size() < num_defrag_reserved_frames) {
+      defrag_frame15s.push_back(f);
+      
+    } else {
+      spare_frame15s.push_back(f);
+    }
   }
 
   void give_frame21(frame21* f) {
@@ -1125,6 +1151,8 @@ public:
   }
 
   // Note: the associated f21 may or may not be owned by this class...
+  int num_defrag_reserved_frames;
+
   frame15* next_frame15;
   immix_line_frame15* next_line_frame15;
   std::vector<frame15*> spare_frame15s;
@@ -1132,6 +1160,7 @@ public:
   std::vector<immix_line_frame15*> spare_line_frame15s;
 
   std::vector<frame21*> self_owned_allocated_frame21s;
+  std::vector<frame15*> defrag_frame15s;
 };
 
 class immix_line_space;
@@ -1415,6 +1444,12 @@ void mark_lines_for_slots(void* slot, uint64_t cell_size) {
   }
 }
 
+bool should_opportunistically_evacuate(
+          condemned_set_status condemned_portion,
+          frame15info* f15info,
+          immix_heap* space,
+          heap_cell* obj);
+
 // This struct contains per-frame state and code shared between
 // regular and line-based immix frames.
 struct immix_common {
@@ -1426,6 +1461,11 @@ struct immix_common {
   // As of LLVM 5.0, passing a constant (or nothing at all) actually ends up increasing (!)
   // register pressure, resulting in a net extra instruction in the critical path of allocation.
   uintptr_t prevent_const_prop() { return prevent_constprop; }
+
+  template <condemned_set_status condemned_portion>
+  void* evac_with_map_and_arr(heap_cell* cell, const typemap& map,
+                             heap_array* arr, int64_t cell_size, int depth,
+                             immix_space* tospace);
 
   template <condemned_set_status condemned_portion>
   void scan_with_map_and_arr(immix_heap* space,
@@ -1466,6 +1506,27 @@ struct immix_common {
   }
 
   // Precondition: cell is part of the condemned set.
+  // Precondition: cell is not forwarded.
+  template <condemned_set_status condemned_portion>
+  void* scan_and_evacuate_to(immix_space* tospace, heap_cell* cell, int depth_remaining) {
+    if (GCLOG_DETAIL > 3) {
+      fprintf(gclog, "scanning (and evacuating) cell %p, tospace %p with remaining depth %d\n", cell, tospace, depth_remaining);
+      fflush(gclog); }
+
+    heap_array* arr = NULL;
+    const typemap* map = NULL;
+    int64_t cell_size;
+    get_cell_metadata(cell, arr, map, cell_size);
+
+    // Without metadata for the cell, there's not much we can do...
+    if (map && gcglobals.typemap_memory.contains((void*) map)) {
+      return evac_with_map_and_arr<condemned_portion>(cell, *map, arr, cell_size,
+                                                depth_remaining - 1, tospace);
+    }
+    return nullptr;
+  }
+
+  // Precondition: cell is part of the condemned set.
   template <condemned_set_status condemned_portion>
   void scan_cell(immix_heap* space, heap_cell* cell, int depth_remaining) {
     if (GCLOG_DETAIL > 3) {
@@ -1488,11 +1549,6 @@ struct immix_common {
         fflush(gclog);
         abort();
       }
-      return;
-    }
-
-    if (depth_remaining == 0) {
-      immix_worklist.add(cell);
       return;
     }
 
@@ -1526,7 +1582,11 @@ struct immix_common {
   // Jones/Hosking/Moss refer to this function as "process(fld)".
   // Returns 1 if root was located in a condemned space; 0 otherwise.
   template <condemned_set_status condemned_portion>
-  uint64_t immix_trace(immix_heap* space, unchecked_ptr* root, int depth) {
+  uint64_t immix_trace(immix_heap* space, unchecked_ptr* root, int depth_remaining) {
+    if (depth_remaining == 0) {
+      immix_worklist.add(root);
+      return 0;
+    }
     //       |------------|       obj: |------------|
     // root: |    body    |---\        |  size/meta |
     //       |------------|   |        |------------|
@@ -1575,31 +1635,15 @@ struct immix_common {
     heap_cell* obj = heap_cell::for_tidy(reinterpret_cast<tidy*>(body));
     if (obj->is_forwarded()) {
       auto tidyn = (void*) obj->get_forwarded_body();
-      *root = make_unchecked_ptr((tori*) offset(tidyn, distance(obj->body_addr(), body)));
+      *root = make_unchecked_ptr((tori*) tidyn);
     } else {
 
-    bool should_opportunistically_evacuate =
-               condemned_portion == condemned_set_status::per_frame_condemned
-            && f15info->frame_classification == frame15kind::immix_smallmedium
-            && gcglobals.evac_threshold > 0
-            && space == gcglobals.default_allocator
-            && f15info->num_holes_at_last_full_collection >= gcglobals.evac_threshold;
-    bool should_evacuate = false;
-    if (should_evacuate) {
-      //tidyn = next->ss_copy(obj, depth);
-      // Calculate the original root's updated (possibly interior) pointer.
-      //*root = make_unchecked_ptr((tori*) offset(tidyn, distance(tidy, body) ));
-      //gc_assert(NULL != untag(*root), "copying gc should not null out slots");
-      //gc_assert(body != untag(*root), "copying gc should return new pointers");
-    } else if (should_opportunistically_evacuate) {
+    if (should_opportunistically_evacuate(condemned_portion, f15info, space, obj)) {
       // The Immix paper handles evacuation in (I think) the following way:
       //  * At the end of each GC cycle, build a histogram of used+avail lines.
-      //    The Immix paper eagerly builds the used(?) histogram and lazily builds
+      //    The Immix paper eagerly builds the used histogram and lazily builds
       //    the other; it's unclear why they can't both be computed eagerly.
       //  * Keep a _reserve_ of unused frames, not used for allocation.
-      //    These frames are needed because otherwise we'd have no guaranteed space
-      //    to evacuate into; at the start of collection we don't yet know whether
-      //    the objects allocated since the previous collection are dead yet.
       //  * When compacting, use histogram line counts to select _candidates_:
       //    the (set of) most-fragmented frames from previous collection whose
       //    used lines would fit (assuming all "new" allocations end up being dead)
@@ -1611,15 +1655,17 @@ struct immix_common {
       //        traced; we don't proactively generate empty frames by eagerly visiting
       //        and evacuating every object on the frame.
       //      * We can only allocate into empty space; this means reserved frames
-      //        or completely-evacuated frames. Since collection is only triggered
-      //        when space is fully exhausted, there are no free lines in recycled frames.
-      // 
+      //        or completely-evacuated frames.
+      //  * It's not 100% clear whether Immix triggers collection only when space is
+      //    exhausted or whether it collects early to ensure a reserve of recycled lines.
+      //    Note that even an "exhausted" heap can have available lines due to skippage
+      //    from allocating medium-sized objects.
+      //
       // Note that proactively evacuating objects would maintain object ordering but
       // would not make space available sooner, because the rest of the heap needs
       // to observe the installed forwarding pointers during marking.
       //
-      //
-      // Alternate scheme:
+      // Slight tweak:
       //   * Don't keep a reserve of unused frames. Allocate into all available frames.
       //   * When fragmentation is observed, at the end of some collection, choose candidates
       //     that will fit into the just-made-available recycled lines.
@@ -1629,15 +1675,22 @@ struct immix_common {
       //   * Evacuate into recycled lines instead of reserved frames.
       // 
       // The advantage of this scheme is that it can (I think) sometimes make use of
+      // extra space: when defragmentation is not needed, we can use the "reserve."
+      // The flip side is: what about in tight heaps & evacuating medium objects?
       // 
+      //
+      // Simplification:
+      //   * Keep a reserve, but don't evacuate into recycled lines.
+      //   * Instead, steal the reserve when defrag is needed, and
+      //     return as much as possible when defrag is done. Even if the defragmented
+      //     frames don't end up entirely clean, most collections should free at least
+      //     ~2% of the heap. If collection freed less than 2% of the heap, and defrag
+      //     is still needed, maybe it's just time to call OOM?
 
-      // TODO pull in scan_and_evacuate_to from the gen GC patch.
-      // Evacuation logic:
-      //   * 
-      gcglobals.evac_candidates_found++;
-      scan_cell<condemned_portion>(space, obj, depth);
+      auto tidyn = scan_and_evacuate_to<condemned_portion>((immix_space*)space, obj, depth_remaining);
+      *root = make_unchecked_ptr((tori*) tidyn);
     } else {
-      scan_cell<condemned_portion>(space, obj, depth);
+      scan_cell<condemned_portion>(space, obj, depth_remaining);
     }
 
     }
@@ -2436,13 +2489,18 @@ void immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     int64_t t0 = __foster_getticks_start();
 #endif
 
+    gcglobals.lines_live_at_whole_heap_gc = 0;
     auto num_marked_at_start   = gcglobals.num_objects_marked_total;
     auto bytes_marked_at_start = gcglobals.alloc_bytes_marked_total;
     bool isWholeHeapGC = gcglobals.condemned_set.status == condemned_set_status::whole_heap_condemned;
 
     if (isWholeHeapGC) {
-      gcglobals.evac_threshold = select_defrag_threshold();
-      reset_marked_histogram();
+      if (gcglobals.last_full_gc_fragmentation_percentage > 40.0) {
+        gcglobals.evac_threshold = select_defrag_threshold();
+        reset_marked_histogram();
+      } else {
+        gcglobals.evac_threshold = 0;
+      }
     }
 
     global_immix_line_allocator.realign_and_split_line_bumper();
@@ -2519,6 +2577,15 @@ void immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     gcglobals.condemned_set.sweep_condemned(active_space, phase, gcstart, hadEmptyRootSet);
     //double sweep_ms = ct.elapsed_ms();
 
+    uint64_t bytes_live = gcglobals.alloc_bytes_marked_total - bytes_marked_at_start;
+    uint64_t bytes_used = gcglobals.lines_live_at_whole_heap_gc * uint64_t(IMMIX_BYTES_PER_LINE);
+    double byte_level_fragmentation_percentage =
+      ((double(bytes_used) / double(bytes_live)) - 1.0) * 100.0;
+    if (isWholeHeapGC) {
+      gcglobals.last_full_gc_fragmentation_percentage =
+        byte_level_fragmentation_percentage;
+    }
+
 /*
     if (!voluntary) {
       fprintf(gclog, "phase times:\n");
@@ -2536,7 +2603,6 @@ void immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     hdr_record_value(gcglobals.hist_gc_postgc_ticks, __foster_getticks_elapsed(phaseStartTicks, __foster_getticks_end()));
 #endif
 
-  uint64_t bytes_live = gcglobals.alloc_bytes_marked_total - bytes_marked_at_start;
   if (GCLOG_DETAIL > 0 || ENABLE_GCLOG_ENDGC) {
     if (TRACK_NUM_OBJECTS_MARKED) {
       if (isWholeHeapGC) {
@@ -2544,11 +2610,10 @@ void immix_common::common_gc(immix_heap* active_space, bool voluntary) {
           std::max(gcglobals.max_bytes_live_at_whole_heap_gc, bytes_live);
       }
       fprintf(gclog, "%zu bytes live in %zu line bytes; %f%% overhead; %f%% of %zd condemned lines are live\n",
-        bytes_live, gcglobals.lines_live_at_whole_heap_gc * IMMIX_BYTES_PER_LINE,
-        ((double(gcglobals.lines_live_at_whole_heap_gc * IMMIX_BYTES_PER_LINE) / double(bytes_live)) - 1.0) * 100.0,
+        bytes_live, bytes_used,
+        byte_level_fragmentation_percentage,
         ((double(gcglobals.lines_live_at_whole_heap_gc) / double(approx_condemned_space_in_lines)) * 100.0),
         approx_condemned_space_in_lines);
-      gcglobals.lines_live_at_whole_heap_gc = 0;
     }
   }
 
@@ -2570,10 +2635,11 @@ void immix_common::common_gc(immix_heap* active_space, bool voluntary) {
         fprintf(gclog, "\ttook %zd us which was %f%% marking\n",
                           int64_t(delta_us),
                           (deltaRecursiveMarking_us * 100.0)/delta_us);      }
-
+/*
       fprintf(gclog, "       num_free_lines (line spaces only): %d, num avail bytes: %zd (%zd lines)\n", num_free_lines,
                                        global_immix_line_allocator.count_available_bytes(),
                                        global_immix_line_allocator.count_available_bytes() / IMMIX_BYTES_PER_LINE); num_free_lines = 0;
+                                       */
       fprintf(gclog, "\t/endgc %d of immix heap %p, voluntary? %d; gctype %d\n\n", gcglobals.num_gcs_triggered,
                                                 active_space, int(voluntary), int(gcglobals.condemned_set.status));
 
@@ -2754,8 +2820,6 @@ uint8_t count_holes_in_linemap_for_frame15(uint8_t* linemap_for_frame) {
 }
 
 
-
-// TODO mark_lines_from_slot() function?
 
 bool is_linemap15_clear(frame15* f15) {
   if (!frame15_is_marked(f15)) return true;
@@ -2947,6 +3011,53 @@ public:
         if (linemap[i] != 0) return i;
       }
       return IMMIX_LINES_PER_BLOCK;
+  }
+
+  bool can_alloc_for_defrag(int64_t needed_bytes) {
+    if (small_bumper.size() >= needed_bytes) return true;
+    
+    frame15* f = global_frame15_allocator.try_get_frame15_for_defrag();
+    if (!f) {
+      // Make sure we short-circuit further attempts to defrag.
+      gcglobals.evac_threshold = 0;
+      return false;
+    }
+    
+    tracking.add_frame15(f);
+    set_parent_for_frame(this, f);
+    small_bumper.base  = realigned_for_allocation(f);
+    small_bumper.bound = offset(f, 1 << 15);
+    return true;
+  }
+
+  tidy* defrag_copy_cell(heap_cell* cell, typemap* map, int64_t cell_size) {
+    tidy* newbody = helpers::allocate_cell_prechecked(&small_bumper, map, cell_size, common.prevent_const_prop());
+    heap_cell* mcell = heap_cell::for_tidy(newbody);
+    memcpy(mcell, cell, map->cell_size);
+    cell->set_forwarded_body(newbody);
+
+    // We don't need to physically mark the object because it can only be
+    // observed through the installed forwarding address, and the
+    // is-forwarded check subsumes the obj_is_marked check.
+    if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
+    if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.alloc_bytes_marked_total += cell_size; }
+    mark_lines_for_slots(newbody, cell_size);
+
+    return newbody;
+  }
+
+  heap_array* defrag_copy_array(typemap* map, heap_array* arr, int64_t req_bytes) {
+    bool init = false;
+    tidy* newbody = helpers::allocate_array_prechecked(&small_bumper, map, arr->num_elts(), req_bytes, common.prevent_const_prop(), init);
+    heap_array* marr = heap_array::from_heap_cell(heap_cell::for_tidy(newbody));
+    memcpy(marr->elt_body(0, 0), arr->elt_body(0, 0), map->cell_size * arr->num_elts());
+    arr->set_forwarded_body(newbody);
+
+    //do_mark_obj(heap_cell::for_tidy(newbody));
+    if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
+    if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.alloc_bytes_marked_total += req_bytes; }
+    mark_lines_for_slots(newbody, req_bytes);
+    return marr;
   }
 
   // Quick benchmark suggests we can use the line-mark map
@@ -3207,7 +3318,7 @@ public:
     uint8_t* linemap = linemap_for_frame15_id(fid);
     int num_marked_lines = count_marked_lines_for_frame15(f15, linemap);
     gcglobals.lines_live_at_whole_heap_gc += num_marked_lines;
-
+    
     if (GCLOG_DETAIL > 2) {
       fprintf(gclog, "frame %u: ", fid);
       for(int i = 0;i < IMMIX_LINES_PER_BLOCK; ++i) { fprintf(gclog, "%c", (linemap[i] == 0) ? '_' : 'd'); }
@@ -3329,19 +3440,68 @@ private:
 
 void immix_worklist_t::process(immix_heap* target, immix_common& common) {
   while (!empty()) {
-    heap_cell* cell = peek_front();
+    unchecked_ptr* root = peek_front();
     advance();
 
     switch (gcglobals.condemned_set.status) {
-    case               condemned_set_status::single_subheap_condemned:
-      common.scan_cell<condemned_set_status::single_subheap_condemned>(target, cell, kFosterGCMaxDepth);
-    case               condemned_set_status::per_frame_condemned:
-      common.scan_cell<condemned_set_status::per_frame_condemned>(target, cell, kFosterGCMaxDepth);
-    case               condemned_set_status::whole_heap_condemned:
-      common.scan_cell<condemned_set_status::whole_heap_condemned>(target, cell, kFosterGCMaxDepth);
+    case                 condemned_set_status::single_subheap_condemned:
+      common.immix_trace<condemned_set_status::single_subheap_condemned>(target, root, kFosterGCMaxDepth);
+    case                 condemned_set_status::per_frame_condemned:
+      common.immix_trace<condemned_set_status::per_frame_condemned>(target, root, kFosterGCMaxDepth);
+    case                 condemned_set_status::whole_heap_condemned:
+      common.immix_trace<condemned_set_status::whole_heap_condemned>(target, root, kFosterGCMaxDepth);
     }
   }
   initialize();
+}
+
+bool should_opportunistically_evacuate(
+          condemned_set_status condemned_portion,
+          frame15info* f15info,
+          immix_heap* space,
+          heap_cell* obj) {
+  bool want_to_opportunistically_evacuate =
+              condemned_portion == condemned_set_status::whole_heap_condemned
+          && f15info->frame_classification == frame15kind::immix_smallmedium
+          && gcglobals.evac_threshold > 0
+          && space == gcglobals.default_allocator
+          && f15info->num_holes_at_last_full_collection >= gcglobals.evac_threshold;
+
+  if (want_to_opportunistically_evacuate) {
+    heap_array* arr; const typemap* map; int64_t cell_size;
+    get_cell_metadata(obj, arr, map, cell_size);
+    bool can = ((immix_space*)space)->can_alloc_for_defrag(cell_size);
+    if (!can) { fprintf(gclog, "unable to continue opportunistic evacuation...\n"); }
+    return can;
+  }
+  return false;
+}
+
+template <condemned_set_status condemned_portion>
+void* immix_common::evac_with_map_and_arr(heap_cell* cell, const typemap& map,
+                            heap_array* arr, int64_t cell_size, int depth,
+                            immix_space* tospace) {
+  if (map.isCoro == 1) {
+    foster_bare_coro* coro = reinterpret_cast<foster_bare_coro*>(cell->body_addr());
+    coro_visitGCRoots(coro, tospace);
+  }
+
+  //fprintf(gclog, "copying %lld cell %p, map np %d, name %s\n", cell_size, cell, map.numEntries, map.name); fflush(gclog);
+  if (!arr) {
+    tidy* newbody = tospace->defrag_copy_cell(cell, (typemap*)&map, cell_size);
+    scan_with_map<condemned_portion>(tospace, from_tidy(newbody), map, depth);
+    return newbody;
+  } else {
+    heap_array* marr = tospace->defrag_copy_array((typemap*)&map, arr, cell_size);
+    if (map.numOffsets > 0) { // Skip this loop for int arrays and such.
+      int64_t numcells = arr->num_elts();
+      for (int64_t cellnum = 0; cellnum < numcells; ++cellnum) {
+        //intr* elt = arr->elt_body(cellnum, map.cell_size);
+        scan_with_map<condemned_portion>(tospace, marr->elt_body(cellnum, map.cell_size), map, depth);
+      }
+    }
+    return marr->body_addr();
+  }
 }
 
 #include "foster_gc_backtrace_x86-inl.h"
@@ -3595,6 +3755,8 @@ void initialize(void* stack_highest_addr) {
   gcglobals.default_allocator = gcglobals.allocator;
   gcglobals.allocator_handle = nullptr;
 
+  global_frame15_allocator.set_defrag_reserved_frames(gcglobals.space_limit);
+
   gcglobals.condemned_set.status = condemned_set_status::single_subheap_condemned;
 
   gcglobals.had_problems = false;
@@ -3630,6 +3792,7 @@ void initialize(void* stack_highest_addr) {
   gcglobals.num_closure_calls = 0;
   gcglobals.evac_candidates_found = 0;
   gcglobals.evac_threshold = 0;
+  gcglobals.last_full_gc_fragmentation_percentage = 0.0;
 
   hdr_init(1, 6000000, 2, &gcglobals.hist_gc_stackscan_frames);
   hdr_init(1, 6000000, 2, &gcglobals.hist_gc_stackscan_roots);
