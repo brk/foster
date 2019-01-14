@@ -265,10 +265,15 @@ typedef void* frameptr;
 typedef std::map<frameptr, const stackmap::PointCluster*> ClusterMap;
 // }}}
 
+uint32_t fold_64_to_32(uint64_t x) {
+  return uint32_t(x) ^ uint32_t(x >> uint64_t(32));
+}
 
 class heap {
 public:
   virtual ~heap() {}
+
+  virtual uint32_t hash_for_object_headers() { return fold_64_to_32(uint64_t(this)); }
 
   virtual tidy* tidy_for(tori* t) = 0;
 
@@ -441,6 +446,8 @@ struct GCGlobals {
   // Invariant: null pointer when allocator == default_allocator,
   // otherwise a heap_handle to the current allocator.
   heap_handle<immix_heap>* allocator_handle;
+
+  uint32_t current_subheap_hash;
 
   condemned_set<Allocator> condemned_set;
 
@@ -681,7 +688,6 @@ struct large_array_allocator {
                        int64_t  num_elts,
                        int64_t  total_bytes,
                        bool     init,
-                       uintptr_t  mark_bits_current_value,
                        immix_heap* parent) {
     void* base = malloc(total_bytes + 8);
     heap_array* allot = align_as_array(base);
@@ -689,7 +695,7 @@ struct large_array_allocator {
     if (GC_ASSERTIONS) { gc_assert(frame15_id_of(allot) == frame15_id_of(allot->body_addr()), "large array: metadata and body address on different frames!"); }
     if (DEBUG_INITIALIZE_ALLOCATIONS ||
       (init && !ELIDE_INITIALIZE_ALLOCATIONS)) { memset((void*) base, 0x00, total_bytes + 8); }
-    allot->set_header(arr_elt_map, mark_bits_current_value);
+    allot->set_header(arr_elt_map, gcglobals.current_subheap_hash);
     allot->set_num_elts(num_elts);
     if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_array(total_bytes); }
     if (TRACK_NUM_ALLOCATIONS) { ++gcglobals.num_allocations; }
@@ -704,8 +710,8 @@ struct large_array_allocator {
     allocated.push_front(base);
 
     if (GCLOG_DETAIL > 0) {
-      fprintf(gclog, "mallocating large array (%p, body %p) in with mark bits %p, total bytes %zd, alloc #%zd\n",
-          allot, allot->body_addr(), (void*) mark_bits_current_value, total_bytes, gcglobals.num_allocations);
+      fprintf(gclog, "mallocating large array (%p, body %p) total bytes %zd, alloc #%zd\n",
+          allot, allot->body_addr(), total_bytes, gcglobals.num_allocations);
     }
 
     return allot->body_addr();
@@ -881,7 +887,7 @@ namespace helpers {
                                   const typemap* arr_elt_map,
                                   int64_t  num_elts,
                                   int64_t  total_bytes,
-                                  uintptr_t  mark_value,
+                                  uint32_t space_id,
                                   bool     init) {
     heap_array* allot = static_cast<heap_array*>(bumper->prechecked_alloc_noinit(total_bytes));
 
@@ -889,7 +895,7 @@ namespace helpers {
     if (DEBUG_INITIALIZE_ALLOCATIONS ||
       (init && !ELIDE_INITIALIZE_ALLOCATIONS)) { memset((void*) allot, 0x00, total_bytes); }
     //fprintf(gclog, "alloc'a %d, bump = %p, low bits: %x\n", int(total_bytes), bump, intptr_t(bump) & 0xF);
-    allot->set_header(arr_elt_map, mark_value);
+    allot->set_header(arr_elt_map, space_id);
     allot->set_num_elts(num_elts);
     //if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(total_bytes); }
     if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_array(total_bytes); }
@@ -929,7 +935,7 @@ namespace helpers {
   tidy* allocate_cell_prechecked(bump_allocator* bumper,
                                  const typemap* map,
                                  int64_t  cell_size,
-                                 uintptr_t  mark_value) {
+                                 uint32_t space_id) {
     heap_cell* allot = static_cast<heap_cell*>(bumper->prechecked_alloc(cell_size));
 
     if (GC_ASSERTIONS) { gc_assert(frame15_id_of(allot) == frame15_id_of(allot->body_addr()), "cell prechecked: metadata and body address on different frames!"); }
@@ -940,7 +946,7 @@ namespace helpers {
     if (TRACK_NUM_ALLOC_BYTES && gcglobals.in_non_default_subheap) {
       gcglobals.num_alloc_bytes_in_subheaps += cell_size; }
     if (FOSTER_GC_ALLOC_HISTOGRAMS) { allocate_cell_prechecked_histogram((int) cell_size); }
-    allot->set_header(map, mark_value);
+    allot->set_header(map, space_id);
 
     if (FOSTER_GC_TRACK_BITMAPS) {
       //size_t granule = granule_for(tori_of_tidy(allot->body_addr()));
@@ -2086,20 +2092,20 @@ public:
     ensure_sufficient_lines(owner, 0, true);
   }
 
-  void* line_allocate_array(immix_line_space* owner, typemap* elt_typeinfo, int64_t n, int64_t req_bytes, uintptr_t mark_value, bool init) {
+  void* line_allocate_array(immix_line_space* owner, typemap* elt_typeinfo, int64_t n, int64_t req_bytes, bool init) {
     ensure_sufficient_lines(owner, req_bytes);
-    return helpers::allocate_array_prechecked(&current_frame->line_bumper, elt_typeinfo, n, req_bytes, mark_value, init);
+    return helpers::allocate_array_prechecked(&current_frame->line_bumper, elt_typeinfo, n, req_bytes, gcglobals.current_subheap_hash, init);
   }
 
-  void* line_allocate_cell(immix_line_space* owner, int64_t cell_size, uintptr_t mark_value, typemap* typeinfo) {
+  void* line_allocate_cell(immix_line_space* owner, int64_t cell_size, typemap* typeinfo) {
     ensure_sufficient_lines(owner, cell_size);
-    return helpers::allocate_cell_prechecked(&(current_frame->line_bumper), typeinfo, cell_size, mark_value);
+    return helpers::allocate_cell_prechecked(&(current_frame->line_bumper), typeinfo, cell_size, gcglobals.current_subheap_hash);
   }
 
   template <uint64_t cell_size>
-  void* line_allocate_cell_N(immix_line_space* owner, uintptr_t mark_value, typemap* typeinfo) {
+  void* line_allocate_cell_N(immix_line_space* owner, typemap* typeinfo) {
     ensure_sufficient_lines(owner, cell_size);
-    return helpers::allocate_cell_prechecked(&(current_frame->line_bumper), typeinfo, cell_size, mark_value);
+    return helpers::allocate_cell_prechecked(&(current_frame->line_bumper), typeinfo, cell_size, gcglobals.current_subheap_hash);
   }
 
   bool owns(immix_line_frame15* f) { return f == current_frame; }
@@ -2260,9 +2266,9 @@ public:
     }
 
     if (req_bytes > (1 << 13)) {
-      return laa.allocate_array(elt_typeinfo, n, req_bytes, init, common.prevent_const_prop(), this);
+      return laa.allocate_array(elt_typeinfo, n, req_bytes, init, this);
     } else {
-      return global_immix_line_allocator.line_allocate_array(this, elt_typeinfo, n, req_bytes, common.prevent_const_prop(), init);
+      return global_immix_line_allocator.line_allocate_array(this, elt_typeinfo, n, req_bytes, init);
     }
   }
 
@@ -2270,13 +2276,13 @@ public:
   // Invariant: cell size is less than one line.
   virtual void* allocate_cell(typemap* typeinfo) {
     int64_t cell_size = typeinfo->cell_size; // includes space for cell header.
-    return global_immix_line_allocator.line_allocate_cell(this, cell_size, common.prevent_const_prop(), typeinfo);
+    return global_immix_line_allocator.line_allocate_cell(this, cell_size, typeinfo);
   }
 
   // Invariant: N is less than one line.
   template <int N>
   void* allocate_cell_N(typemap* typeinfo) {
-    return global_immix_line_allocator.line_allocate_cell_N<N>(this, common.prevent_const_prop(), typeinfo);
+    return global_immix_line_allocator.line_allocate_cell_N<N>(this, typeinfo);
   }
 
   virtual void* allocate_cell_16(typemap* typeinfo) { return allocate_cell_N<16>(typeinfo); }
@@ -2906,11 +2912,11 @@ public:
   // {{{ Prechecked allocation functions
   template <int N>
   tidy* allocate_cell_prechecked_N(const typemap* map) {
-    return helpers::allocate_cell_prechecked(&small_bumper, map, N, common.prevent_const_prop());
+    return helpers::allocate_cell_prechecked(&small_bumper, map, N, gcglobals.current_subheap_hash);
   }
 
   tidy* allocate_cell_prechecked(const typemap* map) {
-    return helpers::allocate_cell_prechecked(&small_bumper, map, map->cell_size, common.prevent_const_prop());
+    return helpers::allocate_cell_prechecked(&small_bumper, map, map->cell_size, gcglobals.current_subheap_hash);
   }
   // }}}
 
@@ -3045,7 +3051,7 @@ public:
 
   heap_array* defrag_copy_array(typemap* map, heap_array* arr, int64_t req_bytes) {
     bool init = false;
-    tidy* newbody = helpers::allocate_array_prechecked(&small_bumper, map, arr->num_elts(), req_bytes, common.prevent_const_prop(), init);
+    tidy* newbody = helpers::allocate_array_prechecked(&small_bumper, map, arr->num_elts(), req_bytes, gcglobals.current_subheap_hash, init);
     heap_array* marr = heap_array::from_heap_cell(heap_cell::for_tidy(newbody));
     memcpy(marr->elt_body(0, 0), arr->elt_body(0, 0), map->cell_size * arr->num_elts());
     arr->set_forwarded_body(newbody);
@@ -3142,7 +3148,7 @@ public:
     } else if (req_bytes > (1 << 13)) {
       // The Immix paper, since it built on top of Jikes RVM, uses an 8 KB
       // threshold to distinguish medium-sized allocations from large ones.
-      return laa.allocate_array(elt_typeinfo, n, req_bytes, init, common.prevent_const_prop(), this);
+      return laa.allocate_array(elt_typeinfo, n, req_bytes, init, this);
     } else {
       // If it's not small and it's not large, it must be medium.
       return allocate_array_into_bumper(&medium_bumper, elt_typeinfo, n, req_bytes, init);
@@ -3151,7 +3157,7 @@ public:
 
   void* allocate_array_into_bumper(bump_allocator* bumper, typemap* elt_typeinfo, int64_t n, int64_t req_bytes, bool init) {
     if (try_establish_alloc_precondition(bumper, req_bytes)) {
-      return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, common.prevent_const_prop(), init);
+      return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, init, gcglobals.current_subheap_hash);
     } else {
       if (GCLOG_DETAIL > 2) { fprintf(gclog, "allocate_array_into_bumper triggering immix gc\n"); }
       {
@@ -3162,7 +3168,7 @@ public:
       if (try_establish_alloc_precondition(bumper, req_bytes)) {
         //fprintf(gclog, "gc collection freed space for array, now have %lld\n", curr->free_size());
         //fflush(gclog);
-        return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, common.prevent_const_prop(), init);
+        return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, init, gcglobals.current_subheap_hash);
       } else { helpers::oops_we_died_from_heap_starvation(); return NULL; }
     }
   }
@@ -3751,6 +3757,7 @@ void initialize(void* stack_highest_addr) {
   gcglobals.allocator = new immix_space();
   gcglobals.default_allocator = gcglobals.allocator;
   gcglobals.allocator_handle = nullptr;
+  gcglobals.current_subheap_hash = gcglobals.allocator->hash_for_object_headers();
 
   global_frame15_allocator.set_defrag_reserved_frames(gcglobals.space_limit);
 
@@ -4368,6 +4375,7 @@ void* foster_subheap_activate_raw(void* generic_subheap) {
   //fprintf(gclog, "subheap_activate(generic %p, handle %p, subheap %p, prev %p)\n", generic_subheap, handle, subheap, prev);
   gcglobals.allocator = subheap;
   gcglobals.allocator_handle = handle;
+  gcglobals.current_subheap_hash = subheap->hash_for_object_headers();
 
   gcglobals.in_non_default_subheap = (subheap != gcglobals.default_allocator);
 
