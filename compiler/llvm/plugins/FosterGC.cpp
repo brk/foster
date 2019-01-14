@@ -271,15 +271,16 @@ struct FosterGCLowering : public llvm::FunctionPass {
   bool no_barriers;
 
   FosterGCLowering(bool disable_write_barriers = false) : FunctionPass(ID),
-    write_barrier_fn(nullptr), no_barriers(disable_write_barriers) {}
+    write_barrier_fn(nullptr),
+    no_barriers(disable_write_barriers) {}
 
   llvm::StringRef getPassName() const { return "GCRootLowering"; }
 
   virtual bool doInitialization(Module &M) {
-    write_barrier_fn = M.getFunction("foster_write_barrier_generic");
+    write_barrier_fn = M.getFunction("foster_write_barrier_with_obj_generic");
     if (!write_barrier_fn) {
       llvm::errs() << "FosterGCLowering was unable to find"
-                   << " the foster_write_barrier_generic function." << "\n";
+                   << " the foster_write_barrier_with_obj_generic function." << "\n";
       return false;
     }
     return true;
@@ -318,9 +319,22 @@ struct FosterGCLowering : public llvm::FunctionPass {
     return MadeChange;
   }
 
+  bool isNullValue(Value* v) {
+    if (auto c = dyn_cast<llvm::Constant>(v)) {
+      return c->isNullValue();
+    }
+    return false;
+  }
+
+  Value* getReplacementCallForWriteBarrier(IntrinsicInst* CI) {
+    auto obj = CI->getArgOperand(1);
+    assert(!isNullValue(obj) && "our write barrier deserves a non-null object...");
+    return CallInst::Create(write_barrier_fn,
+        { CI->getArgOperand(0), obj, CI->getArgOperand(2) }, "", CI);
+  }
+
   void lower_gcwrite(IntrinsicInst* CI) {
-    Value* WBFC = CallInst::Create(write_barrier_fn,
-        { CI->getArgOperand(0), CI->getArgOperand(2) }, "", CI);
+    Value* WBFC = getReplacementCallForWriteBarrier(CI);
     CI->replaceAllUsesWith(WBFC);
     CI->eraseFromParent();
   }

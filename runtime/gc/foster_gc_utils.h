@@ -77,10 +77,20 @@ const uint64_t HEADER_MARK_BITS = 0x01; // 0b000..00001
 const uint64_t FORWARDED_BIT    = 0x02; // 0b000..00010
 const uint64_t ALL_HEADER_BITS = HEADER_MARK_BITS | FORWARDED_BIT;
 
+
 // This should remain synchronized with getHeapCellHeaderTy()
 // in Codegen-typemaps.cpp
 #define HEAP_CELL_HEADER_TYPE uint64_t
 #define HEAP_CELL_HEADER_SIZE (sizeof(HEAP_CELL_HEADER_TYPE))
+
+NEWTYPE(cell_header, HEAP_CELL_HEADER_TYPE);
+
+// Cell header layout:
+//   [       typemap*       ]
+// U                       ^ mark bit
+// U                      ^  forwarded bit
+
+inline uint32_t space_id_of_header(uint64_t header) { return uint32_t(header >> uint64_t(32)); }
 
 struct heap_cell {
   HEAP_CELL_HEADER_TYPE header;
