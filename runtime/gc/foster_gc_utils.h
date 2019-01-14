@@ -6,6 +6,7 @@
 
 #include <inttypes.h>
 #include <cstring> // for size_t
+#include <stdlib.h> // for exit()
 
 namespace foster {
 namespace runtime {
@@ -75,8 +76,7 @@ inline bool low_bits_zero(uintptr_t val, uintptr_t n) {
 // 4-byte alignment required for typeinfo structs.
 const uint64_t HEADER_MARK_BITS = 0x01; // 0b000..00001
 const uint64_t FORWARDED_BIT    = 0x02; // 0b000..00010
-const uint64_t ALL_HEADER_BITS = HEADER_MARK_BITS | FORWARDED_BIT;
-
+const uint64_t LOW_HEADER_BITS  = HEADER_MARK_BITS | FORWARDED_BIT;
 
 // This should remain synchronized with getHeapCellHeaderTy()
 // in Codegen-typemaps.cpp
@@ -86,35 +86,53 @@ const uint64_t ALL_HEADER_BITS = HEADER_MARK_BITS | FORWARDED_BIT;
 NEWTYPE(cell_header, HEAP_CELL_HEADER_TYPE);
 
 // Cell header layout:
-//   [       typemap*       ]
-// U                       ^ mark bit
-// U                      ^  forwarded bit
+//   [  space id (32 bits)  | RC (flex) (8 bits) | typemap* (24 bits) ]
+//                                                                   ^
+//            (when fwd unset)                          fwd & mark bits
+//
+// U [        fwd ptr (64 bits, 8+ byte aligned)   when fwd bit set * ]
+//
+// Mark and forwarded bits are only set during collection;
+// the mutator doesn't see them.
 
 inline uint32_t space_id_of_header(uint64_t header) { return uint32_t(header >> uint64_t(32)); }
+inline uint8_t  flex_bits_of_header(uint64_t header) { return uint8_t(header >> uint64_t(24)); }
+inline uint32_t typemap_of_header_raw_bits(uint64_t header) { return (header & 0xFFFFFF); }
+inline const typemap* typemap_of_header(uint64_t header) {
+  return (const typemap*) (header & (0xFFFFFF ^ LOW_HEADER_BITS));
+}
+
+inline HEAP_CELL_HEADER_TYPE build_header(const typemap* data, uint32_t space_id) {
+  //if ((uintptr_t(data) >> 24) != 0) { exit(3); }
+  return   HEAP_CELL_HEADER_TYPE(data)
+        | (HEAP_CELL_HEADER_TYPE(space_id) << 32);
+}
 
 struct heap_cell {
   HEAP_CELL_HEADER_TYPE header;
   unsigned char         body[0];
   //======================================
   tidy*   body_addr() { return reinterpret_cast<tidy*>(&body); }
-  int64_t cell_size() { return header; }
+  int64_t cell_size() { return int64_t(get_meta()); }
+
+  uint64_t raw_header() { return header; }
 
   // Precondition: not forwarded
-  const typemap* get_meta() {
-    return reinterpret_cast<const typemap*>(get_unmarked_header());
-  }
+  const typemap* get_meta() { return typemap_of_header(raw_header()); }
 
-  void set_header(const typemap* data, uintptr_t mark_bits) { header = HEAP_CELL_HEADER_TYPE(data) | HEAP_CELL_HEADER_TYPE(mark_bits); }
+  void set_header(const typemap* data, uint32_t space_id) {
+    header = build_header(data, space_id);
+  }
 
   bool is_forwarded() { return (header & FORWARDED_BIT) != 0; }
   void set_forwarded_body(tidy* newbody) {
     header = HEAP_CELL_HEADER_TYPE(newbody) | FORWARDED_BIT;
   }
+  // Precondition: is forwarded
   tidy* get_forwarded_body() { return (tidy*) (header & ~FORWARDED_BIT); }
-  uint8_t get_mark_bits() { return (header & HEADER_MARK_BITS); }
-  void flip_mark_bits() { header = (header ^ HEADER_MARK_BITS); }
-  uint64_t get_unmarked_header() { return header & ~HEADER_MARK_BITS; }
-  void clear_mark_bits() { header = get_unmarked_header(); }
+
+//  uint64_t get_unmarked_header() { return header & ~HEADER_MARK_BITS; }
+//  void clear_mark_bits() { header = get_unmarked_header(); }
 
   static heap_cell* for_tidy(tidy* ptr) {
     return (heap_cell*) offset((void*)ptr, -(intptr_t(HEAP_CELL_HEADER_SIZE)));
@@ -148,9 +166,9 @@ struct heap_array {
   const typemap* get_meta() {
     return reinterpret_cast<const typemap*>(get_unmarked_header());
   }
-
-  void set_header(const typemap* m, uintptr_t mark_bits) { header = HEAP_CELL_HEADER_TYPE(m) | HEAP_CELL_HEADER_TYPE(mark_bits); }
-
+  void set_header(const typemap* data, uint32_t space_id) {
+    header = build_header(data, space_id);
+  }
   static heap_array* from_heap_cell(heap_cell* ptr) {
     return reinterpret_cast<heap_array*>(ptr);
   }
