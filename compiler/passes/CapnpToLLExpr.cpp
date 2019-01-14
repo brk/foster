@@ -459,12 +459,6 @@ LLExpr* parseStore(const pb::Letable::Reader& e) {
       parseTermVar( e.getParts()[1]), isTraced);
 }
 
-LLExpr* parseObjectCopy(const pb::Letable::Reader& e) {
-  return new LLObjectCopy(
-      parseTermVar( e.getParts()[0]),
-      parseTermVar( e.getParts()[1]));
-}
-
 LLExpr* parseUnboxedTuple(const pb::Letable::Reader& e) {
   std::vector<LLVar*> args;
   for (auto p : e.getParts()) {
@@ -553,7 +547,6 @@ LLExpr* LLExpr_from_pb(const be::Letable::Reader& e) {
   case pb::Letable::Tag::ILBYTEARRAY:  rv = parseByteArray(e); break;
   case pb::Letable::Tag::ILALLOCATE:    rv = parseAllocate(e); break;
   case pb::Letable::Tag::ILOCCURRENCE:  rv = parseOccurrence(e); break;
-  case pb::Letable::Tag::ILOBJECTCOPY: rv = parseObjectCopy(e); break;
   case pb::Letable::Tag::ILUNBOXEDTUPLE:rv =parseUnboxedTuple(e); break;
   case pb::Letable::Tag::ILKILLPROCESS:rv = parseKillProcess(e); break;
   case pb::Letable::Tag::ILGLOBALAPPCTOR:rv = parseGlobalAppCtor(e); break;
