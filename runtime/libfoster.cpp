@@ -642,7 +642,7 @@ double  foster_gettime_elapsed_secs(int64_t early, int64_t later) {
 //  which is why it doesn't contribute to their non-deadness.
 extern "C" int foster__main();
 extern "C" void foster_coro_delete_self_reference(void* vc);
-extern "C" void foster_write_barrier_generic(void* ptr, void** slot);
+extern "C" void foster_write_barrier_with_obj_generic(void* ptr, void* obj, void** slot);
 
 int foster__runtime__main__wrapper(int argc, char** argv) {
   bool tru = opaquely_i32(0) == 0;
@@ -653,7 +653,7 @@ int foster__runtime__main__wrapper(int argc, char** argv) {
   if (!tru) {
     // kung-fu grip to prevent LTO from being too mean.
     foster_coro_delete_self_reference((void*)&foster__gcmaps);
-    printf("%p\n", &foster_write_barrier_generic);
+    printf("%p\n", &foster_write_barrier_with_obj_generic);
   }
 
   return foster::runtime::cleanup();

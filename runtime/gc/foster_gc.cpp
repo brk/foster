@@ -480,7 +480,6 @@ struct GCGlobals {
 
   uint64_t write_barrier_phase0_hits;
   uint64_t write_barrier_phase1_hits;
-  int64_t  write_barrier_slow_path_ticks;
 
   uint64_t num_objects_marked_total;
   uint64_t alloc_bytes_marked_total;
@@ -3782,7 +3781,6 @@ void initialize(void* stack_highest_addr) {
   gcglobals.num_subheap_activations = 0;
   gcglobals.write_barrier_phase0_hits = 0;
   gcglobals.write_barrier_phase1_hits = 0;
-  gcglobals.write_barrier_slow_path_ticks = 0;
   gcglobals.num_objects_marked_total = 0;
   gcglobals.alloc_bytes_marked_total = 0;
   gcglobals.max_bytes_live_at_whole_heap_gc = 0;
@@ -4069,10 +4067,6 @@ FILE* print_timing_stats() {
   }
   if (ENABLE_GC_TIMING_TICKS) {
     {
-      auto s = foster::humanize_s(gcglobals.write_barrier_slow_path_ticks, "");
-      fprintf(gclog, "'Write_Barrier_Slow_Path_Ticks': %s\n", s.c_str());
-    }
-    {
       auto s = foster::humanize_s(gcglobals.subheap_ticks, "");
       fprintf(gclog, "'Subheap_Ticks': %s\n", s.c_str());
     }
@@ -4284,28 +4278,15 @@ immix_heap* heap_for_tidy(tidy* val) {
   return ((immix_heap**)val)[-2];
 }
 
-__attribute((noinline))
-void foster_write_barrier_slowpath(immix_heap* hv, immix_heap* hs, void* val, void** slot) {
-    if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase1_hits; }
-    if (GCLOG_DETAIL > 3) { fprintf(gclog, "space %p remembering slot %p with inc ptr %p and old pointer %p; slot heap is %p\n", hv, slot, val, *slot, hs); }
-    hv->remember_into(slot);
-}
-
-__attribute__((always_inline))
-void foster_write_barrier_generic(void* val, void** slot) /*__attribute((always_inline))*/ {
-//void __attribute((always_inline)) foster_write_barrier_generic(void* val, void** slot) {}
-  //immix_heap* hv = heap_for_tidy((tidy*)val);
-  //immix_heap* hs = heap_for_tidy((tidy*)slot);
-
+__attribute__((noinline))
+void foster_write_barrier_with_obj_fullpath(void* val, void* obj, void** slot) {
   immix_heap* hv = heap_for_wb(val);
   immix_heap* hs = heap_for_wb((void*)slot);
   if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase0_hits; }
   //fprintf(gclog, "write barrier (%zu) writing ptr %p from heap %p into slot %p in heap %p\n",
   //    gcglobals.write_barrier_phase0_hits, val, hv, slot, hs); fflush(gclog);
-  if (hv == hs) {
-    *slot = val;
-    return;
-  }
+
+  if (hv == hs) { return; }
 
   // Preconditions:
   //   val SHOULD NOT point into the same frame as slot
@@ -4319,15 +4300,25 @@ void foster_write_barrier_generic(void* val, void** slot) /*__attribute((always_
   // since statically allocated data will never be deallocated, and can never
   // point into the program heap (by virtue of its immutability).
   if (hv) {
-    if (false && ENABLE_GC_TIMING_TICKS) {
-      int64_t t0 = __foster_getticks_start();
-      foster_write_barrier_slowpath(hv, hs, val, slot);
-      gcglobals.write_barrier_slow_path_ticks += __foster_getticks_elapsed(t0, __foster_getticks_end());
-    } else {
-      foster_write_barrier_slowpath(hv, hs, val, slot);
-    }
+    if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase1_hits; }
+    if (GCLOG_DETAIL > 3) { fprintf(gclog, "space %p remembering slot %p with inc ptr %p and old pointer %p; slot heap is %p\n", hv, slot, val, *slot, hs); }
+    hv->remember_into(slot);
   }
+}
+
+__attribute__((always_inline))
+void foster_write_barrier_with_obj_generic(void* val, void* obj, void** slot) /*__attribute((always_inline))*/ {
   *slot = val;
+
+
+  if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase0_hits; }
+
+  if (non_kosher_addr(val)) { return; }
+
+  if ( (space_id_of_header(heap_cell::for_tidy((tidy*) val)->cell_size())
+     == space_id_of_header(heap_cell::for_tidy((tidy*) obj)->cell_size()))) { return; }
+
+  foster_write_barrier_with_obj_fullpath(val, obj, slot);
 }
 
 // We need a degree of separation between the possibly-moving

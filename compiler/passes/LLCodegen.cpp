@@ -209,6 +209,7 @@ needsBitcastToMediateUnknownPointerMismatch(llvm::Value* val, llvm::Value* ptr) 
 llvm::Value* emitStore(CodegenPass* pass,
                        llvm::Value* val,
                        llvm::Value* ptr,
+                       llvm::Value* base,
                        WriteSelector w = WriteUnspecified) {
   if (val->getType()->isVoidTy()) {
     val = getUnitValue();
@@ -218,7 +219,7 @@ llvm::Value* emitStore(CodegenPass* pass,
     val = emitBitcast(val, eltTy, "specSgen");
   }
 
-  return emitGCWriteOrStore(pass, val, nullptr, ptr, w);
+  return emitGCWriteOrStore(pass, val, base, ptr, w);
 }
 
 Value* emitCallToInspectPtr(CodegenPass* pass, Value* ptr) {
@@ -1017,7 +1018,7 @@ void LLGCRootInit::codegenMiddle(CodegenPass* pass) {
     markAsNonAllocating(builder.CreateLifetimeStart(slot));
   }
 
-  emitStore(pass, v, slot, WriteKnownNonGC);
+  emitStore(pass, v, slot, nullptr, WriteKnownNonGC);
 }
 
 void LLGCRootKill::codegenMiddle(CodegenPass* pass) {
@@ -1555,7 +1556,7 @@ void copyValuesToStruct(CodegenPass* pass,
   for (size_t i = 0; i < vals.size(); ++i) {
     Value* dst = builder.CreateConstGEP2_32(nullptr, tup_ptr, 0, i, "gep");
     auto w = (pass->config.emitAllGCBarriers) ? WriteUnspecified : WriteKnownNonGC;
-    emitStore(pass, vals[i], dst, w);
+    emitStore(pass, vals[i], dst, tup_ptr, w);
   }
 }
 
