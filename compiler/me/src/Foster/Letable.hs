@@ -40,7 +40,6 @@ data Letable ty =
         | ILAlloc       (TypedId ty) AllocMemRegion
         | ILDeref       ty           (TypedId ty)
         | ILStore       (TypedId ty) (TypedId ty)
-        | ILObjectCopy  (TypedId ty) (TypedId ty)
         -- Array operations
         | ILAllocArray  ty (TypedId ty) AllocMemRegion ZeroInit
         | ILArrayRead   ty (ArrayIndex (TypedId ty))
@@ -62,7 +61,6 @@ instance TExpr (Letable ty) ty where
       ILAlloc      v _  -> [v]
       ILDeref    _ v    -> [v]
       ILStore      v v2 -> [v,v2]
-      ILObjectCopy v v2 -> [v,v2]
       ILBitcast  _ v    -> [v]
       ILAllocArray _ v _ _ -> [v]
       ILArrayRead _ ai  -> freeTypedIds ai
@@ -82,7 +80,6 @@ instance TypedWith (Letable MonoType) MonoType where
       ILAlloc      v _  -> PtrType (tidType v)
       ILDeref      t _  -> t
       ILStore       {}  -> TupleType []
-      ILObjectCopy  {}  -> TupleType []
       ILBitcast    t _  -> t
       ILAllocArray t _ _ _ -> t
       ILArrayRead  t _  -> t
@@ -103,7 +100,6 @@ instance TypedWith (Letable TypeLL) TypeLL where
       ILAlloc      v _  -> LLPtrType (tidType v)
       ILDeref    t _    -> t
       ILStore      {}   -> LLPtrType (LLStructType [])
-      ILObjectCopy {}   -> LLPtrType (LLStructType [])
       ILBitcast  t _    -> t
       ILAllocArray t _ _ _ -> t
       ILArrayRead t _   -> t
@@ -127,7 +123,6 @@ substVarsInLetable s letable = case letable of
   ILAlloc       v rgn                      -> ILAlloc       (s v) rgn
   ILDeref       t v                        -> ILDeref       t (s v)
   ILStore       v1 v2                      -> ILStore       (s v1) (s v2)
-  ILObjectCopy  v1 v2                      -> ILObjectCopy  (s v1) (s v2)
   ILBitcast     t v                        -> ILBitcast     t (s v)
   ILAllocArray  t v amr zi                 -> ILAllocArray  t (s v) amr zi
   ILArrayRead   t (ArrayIndex v1 v2 rng a) -> ILArrayRead   t (ArrayIndex (s v1) (s v2) rng a)
@@ -150,7 +145,6 @@ letableSize letable = case letable of
       ILAlloc        {} -> 1
       ILDeref        {} -> 1 -- 0?
       ILStore        {} -> 0 -- 1?
-      ILObjectCopy   {} -> 0 -- 1?
       ILBitcast      {} -> 0
       ILAllocArray   {} -> 1
       ILArrayRead    {} -> 1
@@ -170,7 +164,6 @@ isPure letable = case letable of
       ILAlloc        {} -> True
       ILDeref        {} -> True
       ILStore     _v1 _ -> False -- true iff v1 unaliased && dead?
-      ILObjectCopy _from _to -> False -- true iff `to` unaliased && dead?
       ILBitcast      {} -> True
       ILAllocArray   {} -> True
       ILArrayRead    {} -> True
@@ -201,7 +194,6 @@ canGC mayGCmap letable =
          ILArrayRead   {} -> WillNotGC
          ILArrayPoke   {} -> WillNotGC
          ILArrayLit    {} -> MayGC
-         ILObjectCopy  {} -> WillNotGC
 
 canGCLit lit = case lit of
   LitText      {} -> MayGC -- unless we statically allocate such things

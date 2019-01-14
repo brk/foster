@@ -484,13 +484,6 @@ struct LLStore : public LLExpr {
   virtual llvm::Value* codegen(CodegenPass* pass);
 };
 
-struct LLObjectCopy : public LLExpr {
-  LLVar* from; LLVar* to;
-  explicit LLObjectCopy(LLVar* v, LLVar* r)
-    : LLExpr("LLObjectCopy"), from(v), to(r) {}
-  virtual llvm::Value* codegen(CodegenPass* pass);
-};
-
 struct LLCoroPrim : public LLExpr {
   string   primName;
   TypeAST* retType;

@@ -279,8 +279,6 @@ dumpExpr _ (ILLiteral ty lit) = dumpLiteral ty lit
 dumpExpr _ x@(ILKillProcess _ msg) =
     (defaultLetable (typeOf x) Ilkillprocess) {
             stringvalue_of_Letable = StrictlyJust $ u8fromText msg }
-dumpExpr _ x@(ILObjectCopy from to) =
-    (defaultLetable (typeOf x) Ilobjectcopy) { parts_of_Letable = [dumpVar from, dumpVar to] }
 dumpExpr _ x@(ILTuple _kindTODO [] _allocsrc) =
     (defaultLetable (typeOf x) Ilunit) { type_of_Letable = StrictlyNone }
 dumpExpr _ x@(ILTuple KindAnySizeType vs _allocsrc) =

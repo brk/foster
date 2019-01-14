@@ -164,7 +164,6 @@ instance Pretty t => Pretty (Letable t) where
       ILArrayLit _ _v _vals -> text $ "ILArrayLit..."
       ILBitcast   t v       -> text "bitcast " <+> prettyTypedVar v <+> text "to" <+> pretty t
       ILAllocate _info      -> text "allocate ..." -- <+> pretty (allocType info)
-      ILObjectCopy from to  -> text "copy object" <+> pretty from <+> text "to" <+> pretty to
 
 instance Pretty BasicBlockGraph where
  pretty bbg =

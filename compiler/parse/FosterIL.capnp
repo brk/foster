@@ -100,7 +100,7 @@ struct Letable {
     ilcallprimop      @  7;
     ilbytearray       @  8;
     ilbitcast         @  9;
-    ilobjectcopy      @ 10;
+    ilkillprocess     @ 10;
     ilderef           @ 11;
     ilstore           @ 12;
     ilif              @ 13;
@@ -111,8 +111,7 @@ struct Letable {
     ilarrayliteral    @ 18;
     ilnamedtypedecl   @ 19;
     ilunboxedtuple    @ 20;
-    ilkillprocess     @ 21;
-    ilglobalappctor   @ 22;
+    ilglobalappctor   @ 21;
   }
   parts   @ 0 : List(TermVar); # repeated
   tag     @ 1 : Tag;

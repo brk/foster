@@ -1070,16 +1070,6 @@ llvm::Value* LLStore::codegen(CodegenPass* pass) {
   }
 }
 
-llvm::Value* LLObjectCopy::codegen(CodegenPass* pass) {
-  llvm::Value* vv = from->codegen(pass);
-  llvm::Value* vr =   to->codegen(pass);
-  // TODO assert that object tags are equal?
-
-  llvm::Value* from_obj = emitNonVolatileLoad(vv, "copy_from_obj");
-  auto w = (pass->config.emitAllGCBarriers) ? WriteUnspecified : WriteKnownNonGC;
-  return emitStore(pass, from_obj, vr, w);
-}
-
 ////////////////////////////////////////////////////////////////////
 
 void trySetName(llvm::Value* v, const string& name) {
