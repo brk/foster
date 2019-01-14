@@ -1352,11 +1352,6 @@ inline void get_cell_metadata(heap_cell* cell,
                               heap_array*    & arr ,
                               const typemap* & map,
                               int64_t        & cell_size) {
-  cell_size = cell->cell_size();
-  if (GCLOG_DETAIL > 3 || cell_size <= 0) { fprintf(gclog, "obj %p in frame (%u) has size %zd (0x%zx)\n", cell,
-    frame15_id_of(cell), cell_size, cell_size); fflush(gclog); }
-  gc_assert(cell_size > 0, "cannot copy cell lacking metadata or length");
-
   if ((map = tryGetTypemap(cell))) {
     if (GCLOG_DETAIL > 4) { inspect_typemap(map); }
     if (map->isArray) {
@@ -1366,7 +1361,10 @@ inline void get_cell_metadata(heap_cell* cell,
   
   // {{{
   if (!map) {
-    // already have cell size
+    cell_size = cell->cell_size();
+    if (GCLOG_DETAIL > 3 && cell_size <= 0) { fprintf(gclog, "obj %p in frame (%u) has size %zd (0x%zx)\n", cell,
+      frame15_id_of(cell), cell_size, cell_size); fflush(gclog); }
+    gc_assert(cell_size > 0, "cannot copy cell lacking metadata or length");
   } else if (!arr) {
     cell_size = map->cell_size; // probably an actual pointer
   } else {
@@ -4425,7 +4423,7 @@ uint8_t ctor_id_of(void* constructed) {
   const gc::typemap* map = tryGetTypemap(cell);
   gc_assert(map, "foster_ctor_id_of() was unable to get a usable typemap");
   int8_t ctorId = map->ctorId;
-  if (ctorId < 0) {
+  if (GC_ASSERTIONS && ctorId < 0) {
     fprintf(gc::gclog, "foster_ctor_id_of inspected bogus ctor id %d from cell %p in line %d of frame %u\n", ctorId, cell, line_offset_within_f15(cell), frame15_id_of(cell));
     gc::inspect_typemap(map);
     exit(3);
