@@ -80,7 +80,7 @@ run-minicache-subheaps-common = { b => n => k => c => subheaps =>
   REC go = { idx => stepsleft =>
     if stepsleft >=SInt32 1 then
       s = subheaps[idx];
-      foster_subheap_activate s;
+      //_ignored = foster_subheap_activate s;
       None >^  c[idx];
       foster_subheap_collect s;
       newnode = make-entry n idx;
@@ -122,11 +122,11 @@ make-cache-subheaps = { b => n =>
   //newDArray0 b { idx => make-entry n idx };
 
   c = allocDArray:[Maybe Tree] b;
-  subheaps = allocDArray:[Subheap] b;  
+  subheaps = allocDArray:[Subheap] b;
   enumRange32 0 b { idx =>
     s = foster_subheap_create !;
     s >^ subheaps[idx];
-    foster_subheap_activate s;
+    _ignored = foster_subheap_activate s;
       (Some (make-entry n idx)) >^ c[idx]
    };
   (c, subheaps)
@@ -139,7 +139,7 @@ make-cache-smallsub = { b => n =>
   enumRange32 0 b { idx =>
     s = foster_subheap_create_small !;
     s >^ subheaps[idx];
-    foster_subheap_activate s;
+    _ignored = foster_subheap_activate s;
       (Some (make-entry n idx)) >^ c[idx]
    };
   (c, subheaps)
