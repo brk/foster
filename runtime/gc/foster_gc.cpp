@@ -50,7 +50,6 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 #define MARK_FRAME21S                 0
 #define MARK_FRAME21S_OOL             0
 #define COALESCE_FRAME15S             0
-#define MARK_OBJECT_WITH_BITS         0
 #define UNSAFE_ASSUME_F21_UNMARKED    false
 #define TRACK_NUM_ALLOCATIONS         1
 #define TRACK_NUM_ALLOC_BYTES         1
@@ -611,12 +610,8 @@ void set_associated_for_frame15_id(frame15_id fid, void* v) {
 }
 
 inline bool obj_is_marked(heap_cell* obj) {
-  if (MARK_OBJECT_WITH_BITS) {
-    return bitmap::get_bit(global_granule_for(obj), gcglobals.lazy_mapped_granule_marks) == 1;
-  } else {
-    uint8_t* markbyte = &gcglobals.lazy_mapped_granule_marks[global_granule_for(obj)];
-    return *markbyte == 1;
-  }
+  uint8_t* markbyte = &gcglobals.lazy_mapped_granule_marks[global_granule_for(obj)];
+  return *markbyte == 1;
 }
 inline bool arr_is_marked(heap_array* obj) { return obj_is_marked((heap_cell*)obj); }
 
@@ -625,38 +620,22 @@ immix_heap* heap_for(void* val);
 
 inline void do_mark_obj(heap_cell* obj) {
   if (GCLOG_DETAIL > 3) { fprintf(gclog, "setting granule bit  for object %p in frame %u\n", obj, frame15_id_of(obj)); }
-  if (MARK_OBJECT_WITH_BITS) {
-    bitmap::set_bit_to(global_granule_for(obj), 1, gcglobals.lazy_mapped_granule_marks);
-  } else {
-    gcglobals.lazy_mapped_granule_marks[global_granule_for(obj)] = 1;
-  }
+  gcglobals.lazy_mapped_granule_marks[global_granule_for(obj)] = 1;
 }
 
 inline void do_unmark_granule(void* obj) {
-  if (MARK_OBJECT_WITH_BITS) {
-    bitmap::set_bit_to(global_granule_for(obj), 0, gcglobals.lazy_mapped_granule_marks);
-  } else {
-    gcglobals.lazy_mapped_granule_marks[global_granule_for(obj)] = 0;
-  }
+  gcglobals.lazy_mapped_granule_marks[global_granule_for(obj)] = 0;
 }
 
 void clear_object_mark_bits_for_frame15(void* f15) {
   if (GCLOG_DETAIL > 2) { fprintf(gclog, "clearing granule bits for frame %p (%u)\n", f15, frame15_id_of(f15)); }
-  if (MARK_OBJECT_WITH_BITS) {
-    memset(&gcglobals.lazy_mapped_granule_marks[global_granule_for(f15) / 8], 0, IMMIX_GRANULES_PER_BLOCK / 8);
-  } else {
-    memset(&gcglobals.lazy_mapped_granule_marks[global_granule_for(f15)], 0, IMMIX_GRANULES_PER_BLOCK);
-  }
+  memset(&gcglobals.lazy_mapped_granule_marks[global_granule_for(f15)], 0, IMMIX_GRANULES_PER_BLOCK);
 }
 
 void clear_object_mark_bits_for_frame15(void* f15, int startline, int numlines) {
   uintptr_t granule = global_granule_for(offset(f15, startline * IMMIX_BYTES_PER_LINE));
   if (GCLOG_DETAIL > 2) { fprintf(gclog, "clearing granule bits for %d lines starting at %d in frame %p (%u), granule %zu\n", numlines, startline, f15, frame15_id_of(f15), granule); }
-  if (MARK_OBJECT_WITH_BITS) {
-    memset(&gcglobals.lazy_mapped_granule_marks[granule / 8], 0, (numlines * IMMIX_GRANULES_PER_LINE) / 8);
-  } else {
-    memset(&gcglobals.lazy_mapped_granule_marks[granule],     0, (numlines * IMMIX_GRANULES_PER_LINE));
-  }
+  memset(&gcglobals.lazy_mapped_granule_marks[granule],     0, (numlines * IMMIX_GRANULES_PER_LINE));
 }
 
 
