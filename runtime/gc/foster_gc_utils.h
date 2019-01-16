@@ -124,6 +124,8 @@ struct heap_cell {
     header = build_header(data, space_id);
   }
 
+  bool is_marked_inline() { return (header & HEADER_MARK_BITS) != 0; }
+
   bool is_forwarded() { return (header & FORWARDED_BIT) != 0; }
   void set_forwarded_body(tidy* newbody) {
     header = HEAP_CELL_HEADER_TYPE(newbody) | FORWARDED_BIT;

@@ -21,5 +21,5 @@ cxxpath() {
 echo ${SD}/fosterc.py --bindir ${FOSTER_ROOT}/_obj -I ${FOSTER_ROOT}/stdlib --tmpdir ${TMPDIR} --cxxpath $(cxxpath) $@ $MAYBE_OUT
 ${SD}/fosterc.py --bindir ${FOSTER_ROOT}/_obj -I ${FOSTER_ROOT}/stdlib --tmpdir ${TMPDIR} --cxxpath $(cxxpath) $@ $MAYBE_OUT
 
-rm -f meGCstats.txt
-rm -rf ${TMPDIR} $1.postopt.ll $1.preopt.ll
+#rm -f meGCstats.txt
+#rm -rf ${TMPDIR} $1.postopt.ll $1.preopt.ll
