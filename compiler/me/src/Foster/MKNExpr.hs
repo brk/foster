@@ -633,8 +633,11 @@ mkOfKN_Base expr k = do
 
         KNRelocDoms ids e -> do
           vs <- mapM mkFreeOcc' ids
+          --mapM_ (\fv -> setFreeLink fv parent) (freeVarsE mkexpr)
           mkBackpatch' [e] k (\[e'] -> do
             return $ MKRelocDoms nu vs e')
+          --mapM_ (\v -> setFreeLink v rd) vs -- vs are not free vars for RelocDoms
+          --return rd
 
         KNCompiles (KNCompilesResult r) ty _expr -> do 
             genMKLetVal ".cpi" ty $ \nu' -> do
@@ -905,7 +908,7 @@ directFreeVarsT expr =
     MKLetRec      {} -> []
     MKLetFuns     {} -> []
     MKLetCont     {} -> []
-    MKRelocDoms   {} -> []
+    MKRelocDoms   _      vs     _k   -> vs
     MKCase        _  _ty v _arms     -> [v]
     MKIf          _  _ty v _e1 _e2   -> [v]
     MKCall        _     _ty v vs c   -> c:v:vs
@@ -1789,6 +1792,9 @@ doContifyWith_part1 cont bv fn occs wr fd bindingWorklistRef = do
         liftIO $ putDocLn $ red (text "WARNING: not contifying call to " <> pretty (boundVar bv) <> text " due to missing occ term")
         return ()
 
+      Just (MKRelocDoms {}) ->
+        return ()
+
       Just tm@(MKCall uplink ty v vs _cont) -> do
         linkResult <- getActiveLinkFor tm
         case linkResult of
@@ -2052,6 +2058,21 @@ analyzeContifiability knowns knownFns = do
             ([_], _) -> do return NoNeedToContifySingleton -- Singleton call; no need to contify since we'll just inline it...
             (_, Just fn) -> do
               mbs_conts <- mapM (contOfCall bv) occs
+              mapM_ (\occ -> do
+                kont <- contOfCall bv occ
+                case kont of
+                  HigherOrder  -> dbgIf dbgCont $ text "       (higher order)"
+                  NonCall      -> dbgIf dbgCont $ text "       (non-call)"
+                  FoundCont {} -> dbgIf dbgCont $ text "       (found cont)"
+                  FakeUsage    -> dbgIf dbgCont $ text "       (fake usage from MKRelocDoms)"
+
+                mb_tm <- readOrdRef (freeLink occ)
+                case mb_tm of
+                  Nothing -> do dbgIf dbgCont $ text "    no occ??"
+                                return ()
+                  Just tm -> do kn <- knOfMK NoCont tm
+                                dbgIf dbgCont $ text "    occ: " <> indent 2 (pretty kn)
+                                return ()) occs
               case allFoundConts mbs_conts of
                 Nothing -> return HadUnknownContinuations
                 Just rawConts -> do
@@ -2213,6 +2234,7 @@ collectOccurrences bv = do
 allFoundConts [] = Just []
 allFoundConts (HigherOrder  : _) = Nothing
 allFoundConts (NonCall      : _) = Nothing
+allFoundConts (FakeUsage    :xs) = allFoundConts xs
 allFoundConts (FoundCont x _:xs) = 
   case allFoundConts xs of
     Nothing -> Nothing
@@ -2222,6 +2244,7 @@ data FoundCont =
     FoundCont    (MKBoundVar MonoType) Bool -- False if fn; True if cont (!)
   | HigherOrder
   | NonCall
+  | FakeUsage
 
 -- Collect the continuations associated with every use of the function binding.
 contOfCall bv occ = do
@@ -2251,6 +2274,9 @@ contOfCall bv occ = do
             do return $ NonCall --FoundCont vb True
           else 
             do return $ HigherOrder
+
+    Just (MKRelocDoms {}) -> do
+      return FakeUsage
 
     Just tm -> do
       do kn <- knOfMK NoCont tm
