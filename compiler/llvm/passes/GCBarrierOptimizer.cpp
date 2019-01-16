@@ -178,7 +178,7 @@ struct GCBarrierOptimizer : public ModulePass {
         if (functionsThatWillNotChangeSubheaps.count(cgn->getFunction()) == 1) {
           continue;
         }
-        cgn->dump();
+        //cgn->dump();
         for (auto callRecordIter = cgn->begin(), end = cgn->end(); callRecordIter != end; ++callRecordIter) {
           auto callee = callRecordIter->second->getFunction();
           if (mightChangeSubheaps(callee)) {
@@ -204,9 +204,9 @@ struct GCBarrierOptimizer : public ModulePass {
         for (CallGraphNode* cgn : SCC) {
           if (!cgn) { continue; }
           Function* f = cgn->getFunction();
-          if (f) {
-            llvm::outs() << "SCC/CGN node might activate new subheap: " << f->getName() << "\n";
-          }
+          //if (f) {
+          //  llvm::outs() << "SCC/CGN node might activate new subheap: " << f->getName() << "\n";
+          //}
           functionsThatMightChangeSubheaps.insert(f);
         }
       }
@@ -309,10 +309,10 @@ struct GCBarrierOptimizer : public ModulePass {
 
               if (noArgsOutsideCurrentSubheap && hasArgsInsideCurrentSubheap) {
                 ++NumCallsModified;
-                llvm::outs() << "recognized call of " << (calleeOrNull ? calleeOrNull->getName() : "<unknown>")
-                            << " as being passed only current-subheap args; " << clonedFunc
-                            << ";  isCloned? " << isCloned << "\n"
-                            << *ci << "\n";
+                //llvm::outs() << "recognized call of " << (calleeOrNull ? calleeOrNull->getName() : "<unknown>")
+                //            << " as being passed only current-subheap args; " << clonedFunc
+                //            << ";  isCloned? " << isCloned << "\n"
+                //            << *ci << "\n";
                 ci->setCalledFunction(clonedFunc);
                 calleeOrNull = clonedFunc;
                 //SCC.ReplaceNode(cgn, cloneit->second.second);
@@ -322,9 +322,9 @@ struct GCBarrierOptimizer : public ModulePass {
           
 
           if (mightChangeSubheaps(calleeOrNull)) {
-            if (calleeOrNull != nullptr) {
-              llvm::outs() << F->getName() << " clearing root list due to call of " << calleeOrNull->getName() << "\n";
-            }
+            //if (calleeOrNull != nullptr) {
+            //  llvm::outs() << F->getName() << " clearing root list due to call of " << calleeOrNull->getName() << "\n";
+            //}
             objectsInCurrentSubheap.clear();
             rootSlotsHoldingCurrentSubheapObjects.clear();
           }
