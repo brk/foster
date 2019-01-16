@@ -251,8 +251,8 @@ struct byte_limit {
 
     auto mb = foster::humanize_s(double(maxbytes), "B");
     auto fb = foster::humanize_s(double(frame15s_left * (1 << 15)), "B");
-    fprintf(gclog, "byte_limit: maxbytes = %s, maxframe15s = %ld, framebytes=%s\n",
-          mb.c_str(), frame15s_left, fb.c_str());
+    fprintf(gclog, "byte_limit: maxbytes = %s, maxframe15s = %ld, framebytes=%s, maxlines=%ld\n",
+          mb.c_str(), frame15s_left, fb.c_str(), frame15s_left * IMMIX_LINES_PER_FRAME15);
   }
 };
 
@@ -272,6 +272,8 @@ class heap {
 public:
   virtual ~heap() {}
 
+  bool next_collection_sticky;
+
   virtual uint32_t hash_for_object_headers() { return fold_64_to_32(uint64_t(this)); }
 
   virtual tidy* tidy_for(tori* t) = 0;
@@ -279,6 +281,8 @@ public:
   virtual void dump_stats(FILE* json) = 0;
 
   virtual void force_gc_for_debugging_purposes() = 0;
+
+  virtual uint64_t prepare_for_collection() = 0;
 
   virtual void condemn() = 0;
   virtual void uncondemn() = 0;
@@ -435,6 +439,8 @@ struct condemned_set {
                        bool hadEmptyRootSet);
 
   int64_t approx_condemned_capacity_in_bytes(Allocator* active_space);
+
+  void prepare_for_collection(Allocator* active_space, bool voluntary, immix_common* common, uint64_t*, uint64_t*);
 };
 
 template<typename Allocator>
@@ -523,6 +529,9 @@ void reset_marked_histogram() {
   }
 }
 
+int num_avail_defrag_frame15s();
+int num_assigned_defrag_frame15s();
+
 int select_defrag_threshold() {
   int64_t reserved = int64_t(double(gcglobals.space_limit->max_size_in_lines) * kFosterDefragReserveFraction);
   // Be a little bit aggressive: the "required" count is inflated due to
@@ -534,9 +543,9 @@ int select_defrag_threshold() {
   while (thresh-- > 0) {
     required += gcglobals.marked_histogram[thresh];
     if (required > avail) {
-      fprintf(gclog, "defrag threshold: %d; backing off from %zd to %zd lines assumed needed vs %zd lines assumed avail\n",
+      fprintf(gclog, "defrag threshold: %d; backing off from %zd to %zd lines assumed needed vs %zd lines assumed avail (%d/%d frames)\n",
         thresh + 1,
-        required, required - gcglobals.marked_histogram[thresh], avail);
+        required, required - gcglobals.marked_histogram[thresh], avail, num_avail_defrag_frame15s(), num_assigned_defrag_frame15s());
       return thresh + 1;
     }
   }
@@ -1185,6 +1194,8 @@ immix_heap* heap_for(void* addr) {
 
 frame15_allocator global_frame15_allocator;
 
+int num_avail_defrag_frame15s() { return global_frame15_allocator.defrag_frame15s.size(); }
+int num_assigned_defrag_frame15s() { return global_frame15_allocator.num_defrag_reserved_frames; }
 
 // 64 * 32 KB = 2 MB  ~~~ 2^6 * 2^15 = 2^21
 struct frame21_15_metadata_block {
@@ -1706,7 +1717,7 @@ struct immix_common {
     return immix_trace<condemned_portion>(space, root, kFosterGCMaxDepth);
   }
 
-  uint64_t process_remsets(immix_heap* space) {
+  uint64_t process_subheap_remsets(immix_heap* space) {
     // To boost tracing efficiency, pre-compile different variants of the tracing code
     // (using templates) specialized to what portion of the heap is being traced.
     switch (gcglobals.condemned_set.status) {
@@ -1809,11 +1820,29 @@ public:
     // If all frames end up clean, this effectively clears the origin vector.
     // Tracked frame counts will be incorrect until the end of release_clean_frames().
     for (auto f15 : holder) {
-      bool unclean = thunk(f15);
+      int num_lines_reclaimed = thunk(f15);
+      bool unclean = num_lines_reclaimed < IMMIX_LINES_PER_FRAME15;
       if (unclean) {
         origin.push_back(f15);
       }
     }
+  }
+
+  template<typename WasUncleanThunk>
+  void iter_frame15_void(WasUncleanThunk thunk) {
+#if COALESCE_FRAME15S
+    if (!fromglobal_frame15s.empty()) {
+      for (auto& mapentry : fromglobal_frame15s) {
+        for (auto f15 : mapentry.second) {
+          thunk(f15);
+        }
+      }
+    }
+#else
+        for (auto f15 : uncoalesced_frame15s) {
+          thunk(f15);
+        }
+#endif
   }
 
   template<typename WasUncleanThunk>
@@ -2176,6 +2205,7 @@ private:
 
 public:
   immix_line_space() : condemned_flag(false) {
+    this->next_collection_sticky = true;
     if (GCLOG_DETAIL > 2) {
       fprintf(gclog, "new immix_line_space %p, current byte limit: %zd f15s\n", this,
           gcglobals.space_limit->frame15s_left);
@@ -2273,6 +2303,11 @@ public:
     common.common_gc(this, true);
   }
 
+  virtual uint64_t prepare_for_collection() {
+    exit(42);
+    return 0;
+  }
+
   // Marks lines we own as condemned; ignores lines owned by other spaces.
   virtual void condemn() {
     condemned_flag = true;
@@ -2329,7 +2364,9 @@ public:
         }
       }
 
-      usedgroup.clear_line_and_object_mark_bits();
+      if (!this->next_collection_sticky) {
+        usedgroup.clear_line_and_object_mark_bits();
+      }
     }
   }
 
@@ -2463,7 +2500,7 @@ void immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     gcglobals.num_gcs_triggered += 1;
     if (!voluntary) { gcglobals.num_gcs_triggered_involuntarily++; }
     if (PRINT_STDOUT_ON_GC) { fprintf(stdout, "                        start GC #%d\n", gcglobals.num_gcs_triggered); fflush(stdout); }
-    //{ fprintf(gclog, "                        start GC #%d; space %p; voluntary? %d\n", gcglobals.num_gcs_triggered, active_space, voluntary); }
+    { fprintf(gclog, "                        start GC #%d; space %p; voluntary? %d; sticky? %d\n", gcglobals.num_gcs_triggered, active_space, voluntary, active_space->next_collection_sticky); }
 
     clocktimer<false> gcstart; gcstart.start();
     clocktimer<false> phase;
@@ -2488,10 +2525,17 @@ void immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     global_immix_line_allocator.realign_and_split_line_bumper();
 
     phase.start();
+    uint64_t numGenRoots = 0;
+    uint64_t numRemSetRoots = 0;
+    gcglobals.condemned_set.prepare_for_collection(active_space, voluntary, this, &numGenRoots, &numRemSetRoots);
+    auto markResettingAndRemsetTracing_us = phase.elapsed_us();
+
+    phase.start();
 #if FOSTER_GC_TIME_HISTOGRAMS && ENABLE_GC_TIMING_TICKS
     int64_t phaseStartTicks = __foster_getticks_start();
 #endif
 
+#if 0
     //clocktimer<false> ct; ct.start();
     // Remembered sets would be ignored for full-heap collections, because
     // remembered sets skip co-condemned pointers, and everything is condemned.
@@ -2504,7 +2548,7 @@ void immix_common::common_gc(immix_heap* active_space, bool voluntary) {
         }        
       }
     }
-
+#endif
     //double roots_ms = ct.elapsed_ms();
 
 /*
@@ -2647,6 +2691,48 @@ void immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     gcglobals.subheap_ticks += __foster_getticks_elapsed(t0, t1);
 #endif
   }
+
+template<typename Allocator>
+void condemned_set<Allocator>::prepare_for_collection(Allocator* active_space,
+                                                      bool voluntary,
+                                                      immix_common* common,
+                                                      uint64_t* numGenRoots,
+                                                      uint64_t* numRemSetRoots) {
+
+  switch (this->status) {
+    case condemned_set_status::single_subheap_condemned: {
+      *numGenRoots += active_space->prepare_for_collection();
+      break;
+    }
+
+    case condemned_set_status::per_frame_condemned: {
+      for (auto space : spaces) {
+        *numGenRoots += space->prepare_for_collection();
+      }
+      break;
+    }
+
+    case condemned_set_status::whole_heap_condemned: {
+      *numGenRoots += gcglobals.default_allocator->prepare_for_collection();
+      for (auto handle : gcglobals.all_subheap_handles_except_default_allocator) {
+        *numGenRoots += handle->body->prepare_for_collection();
+      }
+      break;
+    }
+  }
+
+  if (voluntary) {
+    *numRemSetRoots += common->process_subheap_remsets(active_space);
+
+    if (this->status == condemned_set_status::per_frame_condemned) {
+      for (auto space : gcglobals.condemned_set.spaces) {
+        if (space != active_space) {
+          *numRemSetRoots += common->process_subheap_remsets(space);
+        }
+      }
+    }
+  }
+}
 
 template<typename Allocator>
 int64_t condemned_set<Allocator>::approx_condemned_capacity_in_bytes(Allocator* active_space) {
@@ -2852,6 +2938,7 @@ bool is_linemap_clear(frame21* f21) {
 class immix_space : public heap {
 public:
   immix_space() : condemned_flag(false) {
+    this->next_collection_sticky = true;
     if (GCLOG_DETAIL > 2) { fprintf(gclog, "new immix_space %p, current space limit: %zd f15s\n", this, gcglobals.space_limit->frame15s_left); }
 
     incoming_ptr_addrs.set_empty_key(nullptr);
@@ -2860,6 +2947,45 @@ public:
   virtual void dump_stats(FILE* json) {
     return;
   }
+
+  virtual uint64_t prepare_for_collection() {
+    if (this->next_collection_sticky) {
+      uint64_t numRoots = 0;
+      // Process generational remset.
+      // We must be careful not to process the same root more than once;
+      // otherwise, we might evacuate the same object multiple times.
+      std::set<void**> processed;
+      for (auto slot : generational_remset) {
+        if (processed.count(slot) == 0) {
+          processed.insert(slot);
+          numRoots += common.visit_root(this, (unchecked_ptr*) slot, "generational_remset_root");
+        }
+      }
+      generational_remset.clear();
+      return numRoots;
+    } else {
+      clear_line_and_object_mark_bits();
+      return 0;
+    }
+  }
+
+  void clear_line_and_object_mark_bits() {
+      tracking.iter_frame15_void([this](frame15* f15) {
+        this->clear_line_and_object_mark_bits_for_frame15(f15);
+      });
+      if (COALESCE_FRAME15S || MARK_FRAME21S || MARK_FRAME21S_OOL) {
+        exit(42); // TODO
+      //tracking.iter_coalesced_frame21([this](frame21* f21) {
+      //});
+      }
+  }
+
+  void clear_line_and_object_mark_bits_for_frame15(frame15* f15) {
+    uint8_t* linemap = linemap_for_frame15_id(frame15_id_of(f15));
+    memset(linemap, 0, IMMIX_LINES_PER_BLOCK);
+    clear_object_mark_bits_for_frame15(f15);
+  }
+
 
   virtual void condemn() { condemned_flag = true; }
   virtual void uncondemn() { condemned_flag = false; }
@@ -3201,34 +3327,43 @@ public:
     recycled_lines.clear();
     recycled_lines_large.clear();
 
+    int num_lines_reclaimed = 0;
+
     //// TODO how/when do we sweep arrays from "other" subheaps for full-heap collections?
     laa.sweep_arrays();
 
     clocktimer<false> insp_ct; insp_ct.start();
-    tracking.iter_frame15( [this](frame15* f15) {
-      return this->inspect_frame15_postgc(frame15_id_of(f15), f15);
+    tracking.iter_frame15( [&](frame15* f15) {
+      int reclaimed = this->inspect_frame15_postgc(frame15_id_of(f15), f15);
+      num_lines_reclaimed += reclaimed;
+      return reclaimed;
     });
     auto inspectFrame15Time_us = insp_ct.elapsed_us();
 
     insp_ct.start();
-    tracking.iter_coalesced_frame21([this](frame21* f21) {
-      inspect_frame21_postgc(f21);
+    tracking.iter_coalesced_frame21([&](frame21* f21) {
+      num_lines_reclaimed += inspect_frame21_postgc(f21);
     });
     auto inspectFrame21Time_us = insp_ct.elapsed_us();
 
     auto deltaPostMarkingCleanup_us = phase.elapsed_us();
 
+    size_t frame15s_total = tracking.logical_frame15s();
+    size_t lines_tracked = (tracking.logical_frame15s() + tracking.frame15s_in_reserve_clean()) * IMMIX_LINES_PER_FRAME15;
+    double yield_percentage = 100.0 * (double(num_lines_reclaimed) / double(lines_tracked));
 
-#if ((GCLOG_DETAIL > 1) && ENABLE_GCLOG_ENDGC)
-      size_t frame15s_total = tracking.logical_frame15s();
+    this->next_collection_sticky = yield_percentage > 5.0;
+
+#if ((GCLOG_DETAIL > 1) && ENABLE_GCLOG_ENDGC) || 1
       auto total_heap_size = foster::humanize_s(double(frame15s_total * (1 << 15)), "B");
       //size_t frame15s_recycled = frame15s_in_reserve_recycled();
       //size_t frame15s_kept = frame15s_total - (frame15s_recycled + tracking.frame15s_in_reserve_clean());
       //auto total_live_size = foster::humanize_s(double(frame15s_kept) * (1 << 15), "B");
 
-      fprintf(gclog, "logically %zu frame15s, comprised of %zu frame21s and %zu actual frame15s; %zd frames left\n",
+      fprintf(gclog, "logically %zu frame15s, comprised of %zu frame21s and %zu actual frame15s; %zd frames left; %d of %d lines reclaimed (%f%%)\n",
           frame15s_total,
-          tracking.count_frame21s(), tracking.physical_frame15s(), gcglobals.space_limit->frame15s_left);
+          tracking.count_frame21s(), tracking.physical_frame15s(), gcglobals.space_limit->frame15s_left,
+          num_lines_reclaimed, int(lines_tracked), yield_percentage);
       describe_frame15s_count("tracking  ", frame15s_total);
       //describe_frame15s_count("  recycled", frame15s_recycled);
       describe_frame15s_count("  clean   ", tracking.frame15s_in_reserve_clean());
@@ -3271,11 +3406,13 @@ public:
     return recycled.size();
   }
 
-  void inspect_frame21_postgc(frame21* f21) {
+  // Returns the number of lines reclaimed.
+  int inspect_frame21_postgc(frame21* f21) {
     bool is_frame21_entirely_clear = is_linemap_clear(f21);
     if (is_frame21_entirely_clear) {
       tracking.note_clean_frame21(f21);
       // TODO set frameinfo?
+      return IMMIX_LINES_PER_FRAME15 * IMMIX_ACTIVE_F15_PER_F21;
     } else {
       // Handle the component frame15s individually.
       frame15_id fid = frame15_id_of(f21);
@@ -3283,19 +3420,24 @@ public:
         fprintf(gclog, "   inspect_frame21_postgc: iterating frames of f21 %p (%d)\n", f21, frame15_id_within_f21(frame15_id_of(f21)));
       }
 
+      int lines_reclaimed = 0;
       for (int i = 1; i < IMMIX_F15_PER_F21; ++i) {
         frame15* f15 = frame15_for_frame15_id(fid + i);
-        bool unclean = inspect_frame15_postgc(fid + i, f15);
+        int num_reclaimed = inspect_frame15_postgc(fid + i, f15);
+        lines_reclaimed += num_reclaimed;
+        bool unclean = num_reclaimed < IMMIX_LINES_PER_FRAME15;
         if (unclean) { // Clean frames already noted;
           // We don't want to re-track regular frame15s, only split ones.
           if (GCLOG_DETAIL > 1) { fprintf(gclog, "  adding f15 %p of f21 %p\n", f15, f21); }
           tracking.add_frame15(f15);
         }
       }
+      return lines_reclaimed;
     }
   }
 
-  bool inspect_frame15_postgc(frame15_id fid, frame15* f15) {
+  // Returns the number of reclaimed lines from the frame.
+  int inspect_frame15_postgc(frame15_id fid, frame15* f15) {
     // TODO-X benchmark impact of using frame15_is_marked
     uint8_t* linemap = linemap_for_frame15_id(fid);
     int num_marked_lines = count_marked_lines_for_frame15(f15, linemap);
@@ -3314,7 +3456,7 @@ public:
 
     if (num_marked_lines == 0) {
       tracking.note_clean_frame15(f15);
-      return false;
+      return num_available_lines;
     }
 
     free_linegroup* nextgroup = nullptr;
@@ -3361,9 +3503,13 @@ public:
       recycled_lines.push_back(nextgroup);
     }
 
-    // Clear line and object mark bits.
-    memset(linemap, 0, IMMIX_LINES_PER_BLOCK);
-    clear_object_mark_bits_for_frame15(f15);
+    // Previous (non-sticky-mark-bits) versions reset line and object mark bits here,
+    // after inspecting each frame. The problem with doing so is a situation like the following:
+    //   * The nursery gradually shrinks; eventually, it falls below the threshold, and
+    //     the next collection is scheduled to be unsticky.
+    //   * The next collection finds all new objects live, and reclaims zero lines, because
+    //     mark bits are reset at the *end* of a collection instead of the beginning, so
+    //     none of the old data is inspected yet.
 
     // Increment mark histogram.
     if (gcglobals.condemned_set.status == condemned_set_status::whole_heap_condemned) {
@@ -3372,7 +3518,7 @@ public:
     }
 
     // Coarse marks must be reset after all frames have been processed.
-    return true;
+    return num_available_lines;
   }
 
   virtual void remember_outof(void** slot, void* val) {
@@ -3391,6 +3537,10 @@ public:
     */
     incoming_ptr_addrs.insert((tori**) slot);
     //fprintf(gclog, "remember_into, after: count of %p is %d, size %zd\n", slot, incoming_ptr_addrs.count((tori**) slot), incoming_ptr_addrs.size());
+  }
+
+  void remember_generational(void* obj, void** slot) {
+    generational_remset.push_back(slot);
   }
 
 public:
@@ -3415,6 +3565,7 @@ private:
   // card table inspected for pointers that actually point here.
   //std::set<frame15_id> frames_pointing_here;
   remset_t incoming_ptr_addrs;
+  std::vector<void**> generational_remset;
 
   bool condemned_flag;
   // immix_space_end
@@ -4265,6 +4416,13 @@ immix_heap* heap_for_tidy(tidy* val) {
 }
 
 __attribute__((noinline))
+void foster_generational_write_barrier_slowpath(void* val, void* obj, void** slot) {
+  immix_heap* hs = heap_for_wb(obj);
+  ((immix_space*)hs)->remember_generational(obj, slot); // TODO fix this assumption
+  //do_unmark_granule(obj); // disable future barriers on this object
+}
+
+__attribute__((noinline))
 void foster_write_barrier_with_obj_fullpath(void* val, void* obj, void** slot) {
   immix_heap* hv = heap_for_wb(val);
   immix_heap* hs = heap_for_wb((void*)slot);
@@ -4301,8 +4459,15 @@ void foster_write_barrier_with_obj_generic(void* val, void* obj, void** slot) /*
 
   if (non_kosher_addr(val)) { return; }
 
+
+
   if ( (space_id_of_header(heap_cell::for_tidy((tidy*) val)->cell_size())
-     == space_id_of_header(heap_cell::for_tidy((tidy*) obj)->cell_size()))) { return; }
+     == space_id_of_header(heap_cell::for_tidy((tidy*) obj)->cell_size()))) {
+    if (obj_is_marked((heap_cell*)obj)) {
+      foster_generational_write_barrier_slowpath(val, obj, slot);
+    }
+    return;
+  }
 
   foster_write_barrier_with_obj_fullpath(val, obj, slot);
 }

@@ -6,7 +6,7 @@
 
 extern crate typed_arena;
 
-use std::thread;
+//use std::thread;
 use typed_arena::Arena;
 
 struct Tree<'a> {
