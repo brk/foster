@@ -935,6 +935,18 @@ namespace helpers {
                                  uint32_t space_id) {
     heap_cell* allot = static_cast<heap_cell*>(bumper->prechecked_alloc(cell_size));
 
+    // TODO reduce duplication...
+
+    // TODO we could pretty cheaply compute whether this object straddles lines or not via
+    //        bool did_line_increment(u64 a, u64 b) { return (a >> 8) != (b >> 8); } (2 shifts, 1 cmp, 1 setne)
+    //        or
+    //        bool did_line_increment_alt(u64 a, u64 b) { return ((a ^ b) >> 8) != 0; } (1 xor, 1 shift, 1 setne)
+    //      and embed the result in a header bit; this allows us to avoid looking up object
+    //      size when marking, I guess?
+    //          How much overhead on a benchmark that allocates and doesn't collect, like binarytrees?
+    //          How much overhead on a benchmark that mostly collects, like minicache?
+    //          How much overhead on a benchmark that's mixed, like sac-qsort?
+
     if (GC_ASSERTIONS) { gc_assert(frame15_id_of(allot) == frame15_id_of(allot->body_addr()), "cell prechecked: metadata and body address on different frames!"); }
     //if (TRACK_BYTES_ALLOCATED_ENTRIES) { parent->record_bytes_allocated(map->cell_size); }
     if (TRACK_BYTES_ALLOCATED_PINHOOK) { foster_pin_hook_memalloc_cell(cell_size); }
