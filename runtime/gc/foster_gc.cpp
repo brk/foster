@@ -35,7 +35,7 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 // These are defined as compile-time constants so that the compiler
 // can do effective dead-code elimination. If we were JIT compiling
 // the GC we could (re-)specialize these config vars at runtime...
-#define GCLOG_DETAIL 1
+#define GCLOG_DETAIL 0
 #define ENABLE_LINE_GCLOG 0
 #define ENABLE_GCLOG_PREP 0
 #define ENABLE_GCLOG_ENDGC 1
@@ -1528,31 +1528,12 @@ struct immix_common {
     return nullptr;
   }
 
-  // Precondition: cell is part of the condemned set.
+  // Precondition: cell is part of the condemned set and not yet marked.
   template <condemned_set_status condemned_portion>
   void scan_cell(immix_heap* space, heap_cell* cell, int depth_remaining) {
     if (GCLOG_DETAIL > 3) {
       fprintf(gclog, "scanning cell %p for space %p with remaining depth %d\n", cell, space, depth_remaining);
       fflush(gclog); }
-    if (obj_is_marked(cell)) {
-      if (GC_ASSERTIONS) {
-        if (gcglobals.marked_in_current_gc.count(cell) == 0) {
-          fprintf(gclog, "GC INVARIANT VIOLATED: cell %p, of frame %u, appears marked before actually being marked!\n", cell, frame15_id_of(cell));
-          fprintf(gclog, "     default allocator is %p\n", gcglobals.default_allocator);
-          fflush(gclog);
-          inspect_typemap(cell->get_meta());
-          abort();
-        }
-      }
-      if (GCLOG_DETAIL > 3) { fprintf(gclog, "cell %p was already marked\n", cell); }
-
-      if (GC_ASSERTIONS && is_immix_markable_frame(cell) && !line_for_slot_is_marked(cell)) {
-        fprintf(gclog, "GC INVARIANT VIOLATED: cell %p marked but corresponding line not marked!\n", cell);
-        fflush(gclog);
-        abort();
-      }
-      return;
-    }
 
     auto frameclass = frame15_classification(cell);
     if (GCLOG_DETAIL > 3) { fprintf(gclog, "frame classification for obj %p in frame %u is %d\n", cell, frame15_id_of(cell), int(frameclass)); }
@@ -1639,6 +1620,8 @@ struct immix_common {
     if (obj->is_forwarded()) {
       auto tidyn = (void*) obj->get_forwarded_body();
       *root = make_unchecked_ptr((tori*) tidyn);
+    } else if (obj_is_marked(obj)) {
+      // Skip marked objects.
     } else {
 
     if (should_opportunistically_evacuate(condemned_portion, f15info, space, obj)) {
@@ -1689,7 +1672,7 @@ struct immix_common {
       //     frames don't end up entirely clean, most collections should free at least
       //     ~2% of the heap. If collection freed less than 2% of the heap, and defrag
       //     is still needed, maybe it's just time to call OOM?
-
+      //fprintf(gclog, "opportunistically evacuating object %p and updating root %p\n", obj, root);
       auto tidyn = scan_and_evacuate_to<condemned_portion>((immix_space*)space, obj, depth_remaining);
       *root = make_unchecked_ptr((tori*) tidyn);
     } else {
@@ -2216,7 +2199,7 @@ private:
 
 public:
   immix_line_space() : condemned_flag(false) {
-    this->next_collection_sticky = true;
+    this->next_collection_sticky = !__foster_globals.disable_sticky;
     if (GCLOG_DETAIL > 2) {
       fprintf(gclog, "new immix_line_space %p, current byte limit: %zd f15s\n", this,
           gcglobals.space_limit->frame15s_left);
@@ -2714,6 +2697,8 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
 #endif
 
     if (was_sticky_collection && !active_space->next_collection_sticky) {
+      // We're close to running out of room. If we're REALLY close, trigger a non-sticky collection to reclaim more.
+
       int64_t defrag_headroom_lines = num_assigned_defrag_frame15s() * IMMIX_LINES_PER_FRAME15;
       // Our "nursery" is full; need a full-heap collection to reset it.
       // Question is, do we trigger an immediate collection or not?
@@ -2725,7 +2710,9 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
         fprintf(gclog, "Triggering immediate non-sticky collection!\n");
       } else {
         // Lower the yield threshold if we've raised it.
-        if (gcglobals.yield_percentage_threshold >= 9.0) { gcglobals.yield_percentage_threshold -= 5.0; }
+        if (gcglobals.yield_percentage_threshold >= (4.0 + __foster_globals.sticky_base_threshold)) {
+          gcglobals.yield_percentage_threshold -= 5.0;
+        }
       }
       return need_immediate_recollection;
     }
@@ -2981,7 +2968,7 @@ bool is_linemap_clear(frame21* f21) {
 class immix_space : public heap {
 public:
   immix_space() : condemned_flag(false) {
-    this->next_collection_sticky = true;
+    this->next_collection_sticky = !__foster_globals.disable_sticky;
     if (GCLOG_DETAIL > 2) { fprintf(gclog, "new immix_space %p, current space limit: %zd f15s\n", this, gcglobals.space_limit->frame15s_left); }
 
     incoming_ptr_addrs.set_empty_key(nullptr);
@@ -3001,6 +2988,7 @@ public:
       for (auto slot : generational_remset) {
         if (processed.count(slot) == 0) {
           processed.insert(slot);
+          //fprintf(gclog, "visiting generational remset root %p in slot %p\n", *slot, slot); fflush(gclog);
           numRoots += common.visit_root(this, (unchecked_ptr*) slot, "generational_remset_root");
         }
       }
@@ -3008,6 +2996,7 @@ public:
       return numRoots;
     } else {
       clear_line_and_object_mark_bits();
+      generational_remset.clear();
       return 0;
     }
   }
@@ -3195,6 +3184,7 @@ public:
     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.alloc_bytes_marked_total += cell_size; }
     mark_lines_for_slots(newbody, cell_size);
+    do_mark_obj(mcell);
 
     return newbody;
   }
@@ -3202,7 +3192,8 @@ public:
   heap_array* defrag_copy_array(typemap* map, heap_array* arr, int64_t req_bytes) {
     bool init = false;
     tidy* newbody = helpers::allocate_array_prechecked(&small_bumper, map, arr->num_elts(), req_bytes, gcglobals.current_subheap_hash, init);
-    heap_array* marr = heap_array::from_heap_cell(heap_cell::for_tidy(newbody));
+    heap_cell* mcell = heap_cell::for_tidy(newbody);
+    heap_array* marr = heap_array::from_heap_cell(mcell);
     memcpy(marr->elt_body(0, 0), arr->elt_body(0, 0), map->cell_size * arr->num_elts());
     arr->set_forwarded_body(newbody);
 
@@ -3210,6 +3201,7 @@ public:
     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.num_objects_marked_total++; }
     if (TRACK_NUM_OBJECTS_MARKED) { gcglobals.alloc_bytes_marked_total += req_bytes; }
     mark_lines_for_slots(newbody, req_bytes);
+    do_mark_obj(mcell);
     return marr;
   }
 
@@ -3401,7 +3393,10 @@ public:
     size_t lines_tracked = (tracking.logical_frame15s() + tracking.frame15s_in_reserve_clean()) * IMMIX_LINES_PER_FRAME15;
     double yield_percentage = 100.0 * (double(num_lines_reclaimed) / double(lines_tracked));
 
-    this->next_collection_sticky = yield_percentage > gcglobals.yield_percentage_threshold;
+    // If we see signs that we're running out of space, discard sticky bits to get more space next time.
+    this->next_collection_sticky = (!__foster_globals.disable_sticky)
+                                    && (yield_percentage > gcglobals.yield_percentage_threshold)
+                                    && ((num_avail_defrag_frame15s() * 3) > num_assigned_defrag_frame15s());
 
 #if ((GCLOG_DETAIL > 1) && ENABLE_GCLOG_ENDGC) || 1
       fprintf(gclog, "Reclaimed %.2f%% (%zd) of %zd lines.\n", yield_percentage, num_lines_reclaimed, lines_tracked);
@@ -3580,15 +3575,7 @@ public:
   }
 
   virtual void remember_into(void** slot) {
-    //frames_pointing_here.insert(frame15_id_of((void*) slot));
-    /*
-    fprintf(gclog, "remember_into, before have remembered pointers for space %p:\n", this);
-    for (auto p : incoming_ptr_addrs) {
-      fprintf(gclog, "       %p\n",  p);
-    }
-    */
     incoming_ptr_addrs.insert((tori**) slot);
-    //fprintf(gclog, "remember_into, after: count of %p is %d, size %zd\n", slot, incoming_ptr_addrs.count((tori**) slot), incoming_ptr_addrs.size());
   }
 
   void remember_generational(void* obj, void** slot) {
@@ -3978,7 +3965,7 @@ void initialize(void* stack_highest_addr) {
   gcglobals.num_closure_calls = 0;
   gcglobals.evac_candidates_found = 0;
   gcglobals.evac_threshold = 0;
-  gcglobals.yield_percentage_threshold = 5.0;
+  gcglobals.yield_percentage_threshold = __foster_globals.sticky_base_threshold;
   gcglobals.last_full_gc_fragmentation_percentage = 0.0;
 
   hdr_init(1, 6000000, 2, &gcglobals.hist_gc_stackscan_frames);
@@ -4475,17 +4462,20 @@ immix_heap* heap_for_tidy(tidy* val) {
 
 __attribute__((noinline))
 void foster_generational_write_barrier_slowpath(void* val, void* obj, void** slot) {
+  if (obj_is_marked(heap_cell::for_tidy((tidy*)val))) {
+    return; // Don't bother recording old-to-old pointers.
+  }
+  //fprintf(gclog, "remembering slot %p, currently updated to contain val %p\n", slot, val);
   immix_heap* hs = heap_for_wb(obj);
   ((immix_space*)hs)->remember_generational(obj, slot); // TODO fix this assumption
   if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase1g_hits; }
-  //do_unmark_granule(obj); // disable future barriers on this object
 }
 
 __attribute__((noinline))
 void foster_write_barrier_with_obj_fullpath(void* val, void* obj, void** slot) {
   immix_heap* hv = heap_for_wb(val);
-  immix_heap* hs = heap_for_wb((void*)slot);
-  if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase0_hits; }
+  immix_heap* hs = heap_for_wb(obj);
+  //if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase0_hits; }
   //fprintf(gclog, "write barrier (%zu) writing ptr %p from heap %p into slot %p in heap %p\n",
   //    gcglobals.write_barrier_phase0_hits, val, hv, slot, hs); fflush(gclog);
 
@@ -4513,19 +4503,21 @@ __attribute__((always_inline))
 void foster_write_barrier_with_obj_generic(void* val, void* obj, void** slot) /*__attribute((always_inline))*/ {
   *slot = val;
 
-
-  if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase0_hits; }
+  //if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase0_hits; }
 
   if (non_kosher_addr(val)) { return; }
 
-  if ( (space_id_of_header(heap_cell::for_tidy((tidy*) val)->cell_size())
-     == space_id_of_header(heap_cell::for_tidy((tidy*) obj)->cell_size()))) {
+  if (
+       (space_id_of_header(heap_cell::for_tidy((tidy*) val)->raw_header())
+     == space_id_of_header(heap_cell::for_tidy((tidy*) obj)->raw_header()))) {
     // Note we can't use line marks (even as an approximation/filter) since
     // large arrays do not have line marks.
-    if (obj_is_marked(heap_cell::for_tidy((tidy*)obj))) {
-    //if (heap_cell::for_tidy((tidy*)obj)->is_marked_inline()) {
+    if (obj_is_marked(heap_cell::for_tidy((tidy*)obj)))
+    ////if (heap_cell::for_tidy((tidy*)obj)->is_marked_inline())
+    {
       foster_generational_write_barrier_slowpath(val, obj, slot);
     }
+
     return;
   }
 
@@ -4623,6 +4615,14 @@ uint8_t ctor_id_of(void* constructed) {
   }
 
   gc::heap_cell* cell = gc::heap_cell::for_tidy((gc::tidy*) constructed);
+
+/*
+  fprintf(gc::gclog, "ctor_id_of(%p)\n", constructed);
+  if (cell->is_forwarded()) {
+    fprintf(gc::gclog, "ctor_id_of observed a forwarded pointer... huh!\n");
+  }
+*/
+
   const gc::typemap* map = tryGetTypemap(cell);
   gc_assert(map, "foster_ctor_id_of() was unable to get a usable typemap");
   int8_t ctorId = map->ctorId;
