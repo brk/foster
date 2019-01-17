@@ -29,6 +29,9 @@ struct FosterGlobals {
   std::atomic<bool>      scheduling_timer_thread_ending;
   std::thread*           scheduling_timer_thread;
   id                     scheduling_timer_thread_autorelease_pool;
+
+  bool                   disable_sticky;
+  double                 sticky_base_threshold;
 };
 
 extern FosterGlobals __foster_globals;
