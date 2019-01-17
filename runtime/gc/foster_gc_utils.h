@@ -86,11 +86,15 @@ const uint64_t LOW_HEADER_BITS  = HEADER_MARK_BITS | FORWARDED_BIT;
 NEWTYPE(cell_header, HEAP_CELL_HEADER_TYPE);
 
 // Cell header layout:
-//   [  space id (32 bits)  | RC (flex) (8 bits) | typemap* (24 bits) ]
-//                                                                   ^
+//   [  space id (32 bits)  | Flex space (8 bits) | typemap* (24 bits) ]
+//                                       i                            ^
 //            (when fwd unset)                          fwd & mark bits
 //
 // U [        fwd ptr (64 bits, 8+ byte aligned)   when fwd bit set * ]
+//
+//
+// Flex bits:  [old bit (1=old, 0=new)| RC count (7 bits)]
+//
 //
 // Mark and forwarded bits are only set during collection;
 // the mutator doesn't see them.
@@ -101,6 +105,13 @@ inline uint32_t typemap_of_header_raw_bits(uint64_t header) { return (header & 0
 inline const typemap* typemap_of_header(uint64_t header) {
   return (const typemap*) (header & (0xFFFFFF ^ LOW_HEADER_BITS));
 }
+
+inline bool header_is_old(uint64_t header) { return flex_bits_of_header(header) >= 128; }
+inline bool header_is_new(uint64_t header) { return flex_bits_of_header(header)  < 128; }
+
+// New objects do not have RC operations applied,
+// so we only see non-zero reference counts when the old bit is set.
+inline bool hit_max_rc(uint64_t header) { return flex_bits_of_header(header) == 255; }
 
 inline HEAP_CELL_HEADER_TYPE build_header(const typemap* data, uint32_t space_id) {
   //if ((uintptr_t(data) >> 24) != 0) { exit(3); }
