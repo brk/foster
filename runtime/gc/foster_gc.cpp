@@ -3313,7 +3313,7 @@ public:
 
   void* allocate_array_into_bumper(bump_allocator* bumper, typemap* elt_typeinfo, int64_t n, int64_t req_bytes, bool init) {
     if (try_establish_alloc_precondition(bumper, req_bytes)) {
-      return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, init, gcglobals.current_subheap_hash);
+      return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, gcglobals.current_subheap_hash, init);
     } else {
       if (GCLOG_DETAIL > 2) { fprintf(gclog, "allocate_array_into_bumper triggering immix gc\n"); }
       {
@@ -3326,7 +3326,7 @@ public:
       if (try_establish_alloc_precondition(bumper, req_bytes)) {
         //fprintf(gclog, "gc collection freed space for array, now have %lld\n", curr->free_size());
         //fflush(gclog);
-        return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, init, gcglobals.current_subheap_hash);
+        return helpers::allocate_array_prechecked(bumper, elt_typeinfo, n, req_bytes, gcglobals.current_subheap_hash, init);
       } else { helpers::oops_we_died_from_heap_starvation(); return NULL; }
     }
   }
