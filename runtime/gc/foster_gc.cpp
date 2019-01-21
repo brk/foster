@@ -68,7 +68,7 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 #include "gc/foster_gc_reconfig-inl.h"
 
 const double kFosterDefragReserveFraction = 0.02;
-const int kFosterGCMaxDepth = 250;
+const int kFosterGCMaxDepth = 8;
 const ssize_t inline gSEMISPACE_SIZE() { return __foster_globals.semispace_size; }
 
 extern void* foster__typeMapList[];
@@ -314,6 +314,20 @@ public:
 
 struct immix_common;
 struct immix_space;
+
+/* We can collect the heap at three granularities:
+ *   1) Collect the whole heap, ignoring subheap boundaries.
+ *      This is used to find space triggered by heap exhaustion.
+ *   2) Collect a single subheap.
+ *   3) Collect whatever subheaps have been condemned.
+ */
+enum class condemned_set_status : uint8_t {
+  whole_heap_condemned = 0,
+  single_subheap_condemned,
+  per_frame_condemned
+};
+
+/*
 struct immix_worklist_t {
     void       initialize()      { roots.clear(); idx = 0; }
     void       process(immix_heap* target, immix_common& common);
@@ -326,7 +340,19 @@ struct immix_worklist_t {
     size_t                  idx;
     std::vector<unchecked_ptr*> roots;
 };
-
+*/
+struct immix_worklist_t {
+    void       initialize()      { roots.clear(); }
+    template <condemned_set_status condemned_status>
+    void       process(immix_heap* target, immix_common& common);
+    bool       empty()           { return roots.empty(); }
+    unchecked_ptr* pop_root()  { auto root = roots.back(); roots.pop_back(); return root; }
+    void       add(unchecked_ptr* root) { roots.push_back(root); }
+    size_t     size()            { return roots.size(); }
+  private:
+    size_t                  idx;
+    std::vector<unchecked_ptr*> roots;
+};
 
 // {{{ Global data used by the GC
 
@@ -337,18 +363,6 @@ enum class frame15kind : uint8_t {
   immix_malloc_start, // associated is immix_malloc_frame15info*
   immix_malloc_continue, // associated is heap_array* base.
   staticdata // parent is nullptr
-};
-
-/* We can collect the heap at three granularities:
- *   1) Collect the whole heap, ignoring subheap boundaries.
- *      This is used to find space triggered by heap exhaustion.
- *   2) Collect a single subheap.
- *   3) Collect whatever subheaps have been condemned.
- */
-enum class condemned_set_status : uint8_t {
-  whole_heap_condemned = 0,
-  single_subheap_condemned,
-  per_frame_condemned
 };
 
 struct frame15info {
@@ -819,6 +833,11 @@ void set_frame15_classification(void* addr, frame15kind v) {
 
 // Returns either null (for static data) or a valid immix_space*.
 immix_heap* heap_for(void* addr);
+
+bool non_markable_addr(void* addr) {
+  intptr_t signed_val = intptr_t(addr);
+  return signed_val < intptr_t(0x100000000ULL);
+}
 
 bool non_kosher_addr(void* addr) {
   intptr_t signed_val = intptr_t(addr);
@@ -1485,13 +1504,14 @@ struct immix_common {
   void scan_with_map_and_arr(immix_heap* space,
                              heap_cell* cell, const typemap& map,
                              heap_array* arr, int depth) {
-    //fprintf(gclog, "copying %lld cell %p, map np %d, name %s\n", cell_size, cell, map.numEntries, map.name); fflush(gclog);
-    if (!arr) {
-      scan_with_map<condemned_portion>(space, from_tidy(cell->body_addr()), map, depth);
-    } else if (map.numOffsets > 0) { // Skip this loop for int arrays and such.
-      int64_t numcells = arr->num_elts();
-      for (int64_t cellnum = 0; cellnum < numcells; ++cellnum) {
-        scan_with_map<condemned_portion>(space, arr->elt_body(cellnum, map.cell_size), map, depth);
+    if (map.numOffsets > 0) {
+      if (!arr) {
+        scan_with_map<condemned_portion>(space, from_tidy(cell->body_addr()), map, depth);
+      } else { // Skip this loop for int arrays and such.
+        int64_t numcells = arr->num_elts();
+        for (int64_t cellnum = 0; cellnum < numcells; ++cellnum) {
+          scan_with_map<condemned_portion>(space, arr->elt_body(cellnum, map.cell_size), map, depth);
+        }
       }
     }
 
@@ -1509,8 +1529,10 @@ struct immix_common {
         fprintf(gclog, "scan_with_map scanning pointer %p from slot %p (field %d of %d in at offset %d in object %p)\n",
             *unchecked, unchecked, i, map.numOffsets, map.offsets[i], body);
       }
-      uint64_t ignored =
-        immix_trace<condemned_portion>(space, (unchecked_ptr*) unchecked, depth);
+      if (!non_markable_addr(*unchecked)) {
+        uint64_t ignored =
+          immix_trace<condemned_portion>(space, (unchecked_ptr*) unchecked, depth);
+      }
     }
   }
 
@@ -1716,10 +1738,10 @@ struct immix_common {
                         (slotname ? slotname : "<unknown slot>"));
     }
 
-    ++gNumRootsScanned;
-    
-    // TODO-X determine when to use condemned set and when not to
-    return immix_trace<condemned_portion>(space, root, kFosterGCMaxDepth);
+    if (!non_markable_addr(unchecked_ptr_val(*root))) {
+      ++gNumRootsScanned;
+      return immix_trace<condemned_portion>(space, root, kFosterGCMaxDepth);
+    } else return 0;
   }
 
   uint64_t process_subheap_remsets(immix_heap* space) {
@@ -2601,7 +2623,14 @@ bool immix_common::common_gc(immix_heap* active_space, bool voluntary) {
     }
 
     //ct.start();
-    immix_worklist.process(active_space, *this);
+    switch (gcglobals.condemned_set.status) {
+    case                 condemned_set_status::single_subheap_condemned:
+      immix_worklist.process<condemned_set_status::single_subheap_condemned>(active_space, *this);
+    case                 condemned_set_status::per_frame_condemned:
+      immix_worklist.process<condemned_set_status::per_frame_condemned>(active_space, *this);
+    case                 condemned_set_status::whole_heap_condemned:
+      immix_worklist.process<condemned_set_status::whole_heap_condemned>(active_space, *this);
+    }
     //double worklist_ms = ct.elapsed_ms();
 
     auto deltaRecursiveMarking_us = phase.elapsed_us();
@@ -3622,18 +3651,14 @@ private:
   // immix_space_end
 };
 
+
+template <condemned_set_status condemned_status>
 void immix_worklist_t::process(immix_heap* target, immix_common& common) {
   while (!empty()) {
-    unchecked_ptr* root = peek_front();
-    advance();
+    unchecked_ptr* root = pop_root();
 
-    switch (gcglobals.condemned_set.status) {
-    case                 condemned_set_status::single_subheap_condemned:
-      common.immix_trace<condemned_set_status::single_subheap_condemned>(target, root, kFosterGCMaxDepth);
-    case                 condemned_set_status::per_frame_condemned:
-      common.immix_trace<condemned_set_status::per_frame_condemned>(target, root, kFosterGCMaxDepth);
-    case                 condemned_set_status::whole_heap_condemned:
-      common.immix_trace<condemned_set_status::whole_heap_condemned>(target, root, kFosterGCMaxDepth);
+    if (!non_markable_addr(unchecked_ptr_val(*root))) {
+      common.immix_trace<condemned_status>(target, root, kFosterGCMaxDepth);
     }
   }
   initialize();
@@ -3673,7 +3698,9 @@ void* immix_common::evac_with_map_and_arr(heap_cell* cell, const typemap& map,
   //fprintf(gclog, "copying %lld cell %p, map np %d, name %s\n", cell_size, cell, map.numEntries, map.name); fflush(gclog);
   if (!arr) {
     tidy* newbody = tospace->defrag_copy_cell(cell, (typemap*)&map, cell_size);
-    scan_with_map<condemned_portion>(tospace, from_tidy(newbody), map, depth);
+    if (map.numOffsets > 0) {
+      scan_with_map<condemned_portion>(tospace, from_tidy(newbody), map, depth);
+    }
     return newbody;
   } else {
     heap_array* marr = tospace->defrag_copy_array((typemap*)&map, arr, cell_size);
@@ -4276,10 +4303,6 @@ FILE* print_timing_stats() {
 
   //fprintf(gclog, "sizeof immix_space: %lu\n", sizeof(immix_space));
   //fprintf(gclog, "sizeof immix_line_space: %lu\n", sizeof(immix_line_space));
-  {
-    auto x = foster::humanize_s(16, "");
-    fprintf(gclog, "16 -> %s\n", x.c_str());
-  }
 
   gclog_time("Elapsed_runtime", total_elapsed, json);
   if (ENABLE_GC_TIMING) {
@@ -4517,19 +4540,20 @@ void foster_write_barrier_with_obj_generic(void* val, void* obj, void** slot) /*
 
   //if (TRACK_WRITE_BARRIER_COUNTS) { ++gcglobals.write_barrier_phase0_hits; }
 
-  if (non_kosher_addr(val)) { return; }
+  if (non_markable_addr(val)) { return; }
 
   if (
        (space_id_of_header(heap_cell::for_tidy((tidy*) val)->raw_header())
      == space_id_of_header(heap_cell::for_tidy((tidy*) obj)->raw_header()))) {
     // Note we can't use line marks (even as an approximation/filter) since
     // large arrays do not have line marks.
+#if 1
     if (obj_is_marked(heap_cell::for_tidy((tidy*)obj)))
     ////if (heap_cell::for_tidy((tidy*)obj)->is_marked_inline())
     {
       foster_generational_write_barrier_slowpath(val, obj, slot);
     }
-
+#endif
     return;
   }
 
