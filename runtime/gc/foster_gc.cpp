@@ -31,7 +31,11 @@ extern "C" int64_t __foster_getticks_start();
 extern "C" int64_t __foster_getticks_end();
 extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 
+extern "C" char* __foster_fosterlower_config;
+
 #define TRACE do { fprintf(gclog, "%s::%d\n", __FILE__, __LINE__); fflush(gclog); } while (0)
+#define PREFETCH_FOR_WRITES(addr) __builtin_prefetch(addr, 1, 3)
+#define PREFETCH_FOR_MARKING(addr) __builtin_prefetch(addr, 0, 0)
 
 // These are defined as compile-time constants so that the compiler
 // can do effective dead-code elimination. If we were JIT compiling
@@ -62,6 +66,7 @@ extern "C" double  __foster_getticks_elapsed(int64_t t1, int64_t t2);
 #define TRACK_BYTES_ALLOCATED_ENTRIES 0
 #define TRACK_BYTES_ALLOCATED_PINHOOK 0
 #define GC_BEFORE_EVERY_MEMALLOC_CELL 0
+#define USE_FIFO_SIZE 0
 #define DEBUG_INITIALIZE_ALLOCATIONS  0 // Initialize even when the middle end doesn't think it's necessary
 #define ELIDE_INITIALIZE_ALLOCATIONS  0 // Unsafe: ignore requests to initialize allocated memory.
 #define MEMSET_FREED_MEMORY           GC_ASSERTIONS
@@ -3623,7 +3628,7 @@ template <condemned_set_status condemned_status>
 void immix_worklist_t::process(immix_heap* target, immix_common& common) {
   while (true) {
     unchecked_ptr* root;
-#if 0
+#if USE_FIFO_SIZE > 0
     if (!empty()) {
       root = pop_root();
       __builtin_prefetch(*(void**)root);
@@ -4282,6 +4287,9 @@ FILE* print_timing_stats() {
     auto s = foster::humanize_s(gcglobals.num_closure_calls, "");
     fprintf(gclog, "'Num_Closure_Calls': %s\n", s.c_str());
   }
+
+  fprintf(gclog, "'FosterlowerConfig': %s\n", &__foster_fosterlower_config);
+  fprintf(gclog, "'FosterGCConfig': {'FifoSize': %d, 'DefragReserveFraction: %.2f}\n", USE_FIFO_SIZE, kFosterDefragReserveFraction);
 
   /*
   fprintf(gclog, "Ref patterns seen:\n");

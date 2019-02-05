@@ -471,6 +471,22 @@ void createGCMapsSymbolIfNeeded(CodegenPass* pass) {
   }
 }
 
+void createCompilerFlagsGlobalString(CodegenPass* pass) {
+  std::string s;
+  std::stringstream ss(s);
+  ss << "{";
+  ss << "'useGC':" << pass->config.useGC << ",";
+  ss << "'killDeadSlots':" << pass->config.killDeadSlots << ",";
+  ss << "'emitLifetimeInfo':" << pass->config.emitLifetimeInfo << ",";
+  ss << "'useGenBarriers':" << pass->config.useGenBarriers << ",";
+  ss << "'useGenInitBarriers':" << pass->config.useGenInitBarriers << ",";
+  ss << "'useSubheapBarriers':" << pass->config.useSubheapBarriers << ",";
+  ss << "'disableAllArrayBoundsChecks':" << pass->config.disableAllArrayBoundsChecks;
+  ss << "}";
+  auto gv = builder.CreateGlobalString(ss.str(), "__foster_fosterlower_config");
+  gv->setLinkage(llvm::GlobalValue::ExternalLinkage);
+}
+
 void addExternDecls(const std::vector<LLDecl*> decls,
                     CodegenPass* pass) {
   for (auto d : decls) {
@@ -594,6 +610,7 @@ void LLModule::codegenModule(CodegenPass* pass) {
   codegenCoroPrimitives(pass);
 
   createGCMapsSymbolIfNeeded(pass);
+  createCompilerFlagsGlobalString(pass);
 }
 
 ////////////////////////////////////////////////////////////////////
