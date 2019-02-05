@@ -127,27 +127,22 @@ llvm::Value* emitBitcast(llvm::Value* v, llvm::Type* dstTy, llvm::StringRef msg 
   return builder.CreateBitCast(v, dstTy, msg);
 }
 
-llvm::Value* emitGCWrite(CodegenPass* pass, Value* val, Value* base, Value* slot) {
+llvm::Value* emitGCWrite(CodegenPass* pass, Value* val, Value* base, Value* slot, bool gen, bool subheap) {
   if (!base) base = getNullOrZero(builder.getInt8PtrTy());
-  llvm::Constant* llvm_gcwrite = llvm::Intrinsic::getDeclaration(pass->mod,
-                                                      llvm::Intrinsic::gcwrite);
+  auto gcwrite_fn = pass->mod->getFunction("foster_write_barrier_with_obj_generic");
 
-/*
-  llvm::outs() << "emitting GC write" << "\n";
-  if (base) { 
-    llvm::outs() << "  base is " << *base << "\n";
-    llvm::outs() << "  base :: " << str(base->getType()) << "\n";
+  if (llvm::isa<llvm::ConstantExpr>(val)) {
+    // We can elide barriers for writes of constant values
+    // (because we don't need to keep track of lost references, only added ones).
+    return builder.CreateStore(val, slot, /*isVolatile=*/ false);
+  } else {
+    Value* base_generic = builder.CreateBitCast(base, builder.getInt8PtrTy());
+    Value* slot_generic = builder.CreateBitCast(slot, builder.getInt8PtrTy()->getPointerTo(0));
+    Value*  val_generic = builder.CreateBitCast(val,  builder.getInt8PtrTy());
+    Value* need_gen     = builder.getInt8(gen     ? 1 : 0);
+    Value* need_subheap = builder.getInt8(subheap ? 1 : 0);
+    return builder.CreateCall(gcwrite_fn, { val_generic, base_generic, slot_generic, need_gen, need_subheap });
   }
-  llvm::outs() << "   val is " << *val << "\n";
-  llvm::outs() << "   val :: " << str(val->getType()) << "\n";
-  llvm::outs() << "  slot is " << *slot << "\n";
-  llvm::outs() << "  slot :: " << str(slot->getType()) << "\n";
-*/
-
-  Value* base_generic = builder.CreateBitCast(base, builder.getInt8PtrTy());
-  Value* slot_generic = builder.CreateBitCast(slot, builder.getInt8PtrTy()->getPointerTo(0));
-  Value*  val_generic = builder.CreateBitCast(val,  builder.getInt8PtrTy());
-  return builder.CreateCall(llvm_gcwrite, { val_generic, base_generic, slot_generic });
 }
 
 // TODO (eventually) try emitting masks of loaded/stored heap pointers
@@ -166,6 +161,7 @@ llvm::Value* emitGCWriteOrStore(CodegenPass* pass,
                        llvm::Value* val,
                        llvm::Value* base,
                        llvm::Value* ptr,
+                       bool needGen, bool needSubheap,
                        WriteSelector w = WriteUnspecified) {
   //llvm::outs() << "logging write of " << *val <<
   //              "\n              to " << *ptr <<
@@ -178,7 +174,7 @@ llvm::Value* emitGCWriteOrStore(CodegenPass* pass,
 
   if (isPointerToType(ptr->getType(), val->getType())) {
     if (useBarrier) {
-      return emitGCWrite(pass, val, base, ptr);
+      return emitGCWrite(pass, val, base, ptr, needGen, needSubheap);
     } else {
       return builder.CreateStore(val, ptr, /*isVolatile=*/ false);
     }
@@ -210,6 +206,7 @@ llvm::Value* emitStore(CodegenPass* pass,
                        llvm::Value* val,
                        llvm::Value* ptr,
                        llvm::Value* base,
+                       bool needGen, bool needSubheap,
                        WriteSelector w = WriteUnspecified) {
   if (val->getType()->isVoidTy()) {
     val = getUnitValue();
@@ -219,7 +216,7 @@ llvm::Value* emitStore(CodegenPass* pass,
     val = emitBitcast(val, eltTy, "specSgen");
   }
 
-  return emitGCWriteOrStore(pass, val, base, ptr, w);
+  return emitGCWriteOrStore(pass, val, base, ptr, needGen, needSubheap, w);
 }
 
 Value* emitCallToInspectPtr(CodegenPass* pass, Value* ptr) {
@@ -1018,7 +1015,7 @@ void LLGCRootInit::codegenMiddle(CodegenPass* pass) {
     markAsNonAllocating(builder.CreateLifetimeStart(slot));
   }
 
-  emitStore(pass, v, slot, nullptr, WriteKnownNonGC);
+  emitStore(pass, v, slot, nullptr, false, false, WriteKnownNonGC);
 }
 
 void LLGCRootKill::codegenMiddle(CodegenPass* pass) {
@@ -1065,9 +1062,10 @@ llvm::Value* LLStore::codegen(CodegenPass* pass) {
   llvm::Value* val  = v->codegen(pass);
   llvm::Value* slot = r->codegen(pass);
   if (isTraced && pass->config.useGC) {
-    return emitGCWrite(pass, val, slot, slot);
+    return emitGCWrite(pass, val, slot, slot, pass->config.useGenBarriers,
+                                              pass->config.useSubheapBarriers);
   } else {
-    return emitGCWriteOrStore(pass, val, slot, slot, WriteKnownNonGC);
+    return emitGCWriteOrStore(pass, val, slot, slot, false, false, WriteKnownNonGC);
   }
 }
 
@@ -1445,8 +1443,7 @@ llvm::Value* LLArrayPoke::codegen(CodegenPass* pass) {
     val = emitBitcast(val, eltTy, "specSgen");
   }
 
-  //builder.CreateStore(val, slot, /*isVolatile=*/ false);
-  emitGCWriteOrStore(pass, val, base, slot);
+  emitGCWriteOrStore(pass, val, base, slot, true, true);
   return getNullOrZero(getUnitType()->getLLVMType());
 }
 
@@ -1525,7 +1522,9 @@ llvm::Value* LLArrayLiteral::codegen(CodegenPass* pass) {
         bool useBarrier = val->getType()->isPointerTy() && pass->config.useGC;
         //maybeEmitCallToLogPtrWrite(pass, slot, val, useBarrier);
         if (useBarrier) {
-          emitGCWrite(pass, val, heapmem, slot);
+          bool gen = false;
+          bool subheap = false;
+          emitGCWrite(pass, val, heapmem, slot, gen, subheap);
         } else {
           builder.CreateStore(val, slot, /*isVolatile=*/ false);
         }
@@ -1555,8 +1554,11 @@ void copyValuesToStruct(CodegenPass* pass,
 
   for (size_t i = 0; i < vals.size(); ++i) {
     Value* dst = builder.CreateConstGEP2_32(nullptr, tup_ptr, 0, i, "gep");
-    auto w = (pass->config.emitAllGCBarriers) ? WriteUnspecified : WriteKnownNonGC;
-    emitStore(pass, vals[i], dst, tup_ptr, w);
+    bool needGen = pass->config.useGenInitBarriers;
+                          // Target is newly allocated; can't be old yet.
+                          // (Assuming no pretenuring...).
+    bool needSubheap = pass->config.useSubheapBarriers;
+    emitStore(pass, vals[i], dst, tup_ptr, needGen, needSubheap, WriteUnspecified);
   }
 }
 

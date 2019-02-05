@@ -165,8 +165,18 @@ optPrintLLVMImports("foster-print-llvm-imports",
   cl::cat(FosterOptCat));
 
 static cl::opt<bool>
-optAllGCBarriers("all-gc-barriers",
-  cl::desc("Emit GC write barriers for object initialization"),
+optUseGenInitBarriers("use-gen-init-barriers",
+  cl::desc("Emit extra generational barriers for giggles"),
+  cl::cat(FosterOptCat));
+
+static cl::opt<bool>
+optNoGenerationalBarriers("no-generational-barriers",
+  cl::desc("(Unsafe) disable emission of generational barriers"),
+  cl::cat(FosterOptCat));
+
+static cl::opt<bool>
+optNoSubheapBarriers("no-subheap-barriers",
+  cl::desc("(Unsafe) disable emission of subheap barriers"),
   cl::cat(FosterOptCat));
 
 static cl::opt<bool>
@@ -486,9 +496,11 @@ int main(int argc, char** argv) {
     config.countClosureCalls = optCountClosureCalls;
     config.killDeadSlots     = !optDontKillDeadSlots;
     config.emitLifetimeInfo  = optEnableLifetimeInfo;
-    config.emitAllGCBarriers = optAllGCBarriers;
+    config.useGenBarriers    = !optNoGenerationalBarriers;
+    config.useGenInitBarriers = optUseGenInitBarriers;
+    config.useSubheapBarriers = !optNoSubheapBarriers;
     config.disableAllArrayBoundsChecks
-                             =  optDisableAllArrayBoundsChecks;
+                             = optDisableAllArrayBoundsChecks;
     config.standalone        = optStandalone;
 
     foster::codegenLL(prog, module, config);

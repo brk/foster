@@ -4482,8 +4482,8 @@ void foster_write_barrier_with_obj_fullpath(void* val, void* obj, void** slot) {
 }
 
 // TODO implement and test per-instance customized barriers.
-__attribute__((always_inline))
-void foster_write_barrier_with_obj_generic(void* val, void* obj, void** slot) /*__attribute((always_inline))*/ {
+__attribute__((noinline)) // this attribute will be removed once the barrier optimizer runs.
+void foster_write_barrier_with_obj_generic(void* val, void* obj, void** slot, uint8_t gen, uint8_t subheap) {
   *slot = val;
 
   if (TRACK_WRITE_BARRIER_COUNTS > 3) { ++gcglobals.write_barrier_phase0_hits; }
@@ -4496,10 +4496,10 @@ void foster_write_barrier_with_obj_generic(void* val, void* obj, void** slot) /*
   if (space_id_of_header(val_header) == space_id_of_header(obj_header)) {
     // Note we can't use raw line marks (even as an approximation/filter)
     // since large arrays do not have line marks.
-    if (!header_is_young(obj_header)) {
+    if (gen && !header_is_young(obj_header)) {
       foster_generational_write_barrier_slowpath(val, obj, slot);
     }
-  } else {
+  } else if (subheap) {
     foster_write_barrier_with_obj_fullpath(val, obj, slot);
   }
 }

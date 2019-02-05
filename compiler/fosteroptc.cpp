@@ -49,7 +49,6 @@ using foster::EDiag;
 
 namespace foster {
   void linkFosterGC(); // defined in llmv/plugins/FosterGC.cpp
-  llvm::FunctionPass* createFosterGCLoweringPass(bool no_barriers);
 }
 
 using std::string;
@@ -145,10 +144,6 @@ optNoCoalesceLoads("no-coalesce-loads",
   cl::desc("Disable coalescing loads of bit-or'ed values."),
   cl::cat(FosterOptCat));
 
-static cl::opt<bool>
-optNoGCBarriers("no-gc-barriers",
-  cl::desc("Disable emission of GC write barriers"),
-  cl::cat(FosterOptCat));
 /*
 static cl::list<const PassInfo*, bool, PassNameParser>
 cmdLinePassList(cl::desc("Optimizations available:"),
@@ -413,10 +408,14 @@ void optimizeModuleAndRunPasses(Module* mod) {
   legacy::PassManager passes;
   legacy::FunctionPassManager fpasses(mod);
 
+  // Forcibly inline our write barrier now that barrier optimizations have been run.
+  mod->getFunction("foster_write_barrier_with_obj_generic")->removeFnAttr(Attribute::NoInline);
+  mod->getFunction("foster_write_barrier_with_obj_generic")->addFnAttr(Attribute::AlwaysInline);
+
   // Mark our write barrier slowpath with the "cold" calling convention,
   // to minimize instances of register clobbering on the fast path.
   applyColdCC("foster_write_barrier_with_obj_fullpath", mod);
-  applyColdCC("foster_write_barrier_generational_slowpath", mod);
+  applyColdCC("foster_generational_write_barrier_slowpath", mod);
 
   { legacy::PassManager passes_first;
     passes_first.add(llvm::createVerifierPass());
@@ -567,7 +566,6 @@ void compileToNativeAssemblyOrObject(Module* mod, const string& filename) {
   legacy::PassManager passes;
   passes.add(new TargetLibraryInfoWrapperPass(TLII));
   passes.add(createTargetTransformInfoWrapperPass(tm->getTargetIRAnalysis()));
-  passes.add(foster::createFosterGCLoweringPass(optNoGCBarriers));
   if (!optNoInline) {
     passes.add(createAlwaysInlinerLegacyPass());
   }
